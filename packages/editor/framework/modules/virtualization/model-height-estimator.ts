@@ -44,6 +44,31 @@ export interface ModelHeightEstimate {
   modelDriven: boolean
 }
 
+/** @internal Consumer-owned provenance used when applying one model estimate. */
+export interface ModelHeightEstimateApplicationState {
+  /** Whether the previous estimator result was model-driven rather than fallback. */
+  previousModelDriven: boolean
+  /** Whether the consumer still retains a height produced by live DOM measurement. */
+  hasMeasuredHeight: boolean
+  /** Whether that retained measurement still matches the current model/context. */
+  measurementFresh: boolean
+}
+
+/**
+ * @internal Decide whether the current estimator result should replace the
+ * consumer's retained height. Provenance updates remain consumer-owned and
+ * must happen even when this returns false or the numeric height is unchanged.
+ */
+export function shouldApplyModelHeightEstimate(
+  estimate: ModelHeightEstimate,
+  state: ModelHeightEstimateApplicationState,
+): boolean {
+  if (estimate.modelDriven) return true
+  if (!state.hasMeasuredHeight) return true
+  if (state.measurementFresh) return false
+  return state.previousModelDriven
+}
+
 const positiveNumber = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) && value > 0
     ? value

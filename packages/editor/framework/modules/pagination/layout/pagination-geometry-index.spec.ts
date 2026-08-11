@@ -17,6 +17,7 @@ function seed(
     nodeType: BlockNodeType.editable,
     isHeading: false,
     estimatedHeight,
+    modelDriven: false,
     ...overrides,
   }
 }
@@ -186,6 +187,101 @@ describe('PaginationGeometryIndex', () => {
       source: 'estimated',
     }))
     expect(index.revision).toBe(dirtyRevision)
+  })
+
+  it('preserves a fresh measured height across routine model-driven seed sync', () => {
+    const index = new PaginationGeometryIndex()
+    index.syncRootOrder([seed('block', 120, {modelDriven: true})])
+    index.applyMeasured([measurement('block', 160)])
+    const measuredRevision = index.revision
+
+    expect(index.syncRootOrder([
+      seed('block', 120, {modelDriven: true}),
+    ])).toBeFalse()
+    expect(index.get('block')).toEqual(jasmine.objectContaining({
+      naturalHeight: 160,
+      effectiveHeight: 160,
+      source: 'measured',
+    }))
+    expect(index.revision).toBe(measuredRevision)
+  })
+
+  it('applies a model-to-fallback transition over stale measured geometry', () => {
+    const index = new PaginationGeometryIndex()
+    index.syncRootOrder([seed('block', 240, {modelDriven: true})])
+    index.applyMeasured([measurement('block', 260, {
+      splitOffsets: [120],
+      lockHeight: 200,
+      fitScale: 0.5,
+    })])
+    index.markContentDirty(['block'])
+
+    expect(index.applyEstimatedHeights([{
+      blockId: 'block',
+      height: 48,
+      modelDriven: false,
+    }])).toBeTrue()
+    expect(index.get('block')).toEqual(jasmine.objectContaining({
+      naturalHeight: 48,
+      effectiveHeight: 48,
+      source: 'estimated',
+    }))
+    expect(index.get('block')?.splitOffsets).toBeUndefined()
+    expect(index.get('block')?.lockHeight).toBeUndefined()
+    expect(index.get('block')?.fitScale).toBeUndefined()
+  })
+
+  it('retains stale measured height for fallback-to-fallback content changes', () => {
+    const index = new PaginationGeometryIndex()
+    index.syncRootOrder([seed('block', 48)])
+    index.applyMeasured([measurement('block', 120)])
+    index.markContentDirty(['block'])
+    const revision = index.revision
+
+    expect(index.applyEstimatedHeights([{
+      blockId: 'block',
+      height: 48,
+      modelDriven: false,
+    }])).toBeFalse()
+    expect(index.get('block')).toEqual(jasmine.objectContaining({
+      naturalHeight: 120,
+      source: 'estimated',
+    }))
+    expect(index.revision).toBe(revision)
+  })
+
+  it('lets an equal model estimate hand off to fallback without a geometry revision', () => {
+    const index = new PaginationGeometryIndex()
+    index.syncRootOrder([seed('block', 120, {modelDriven: true})])
+    index.applyMeasured([measurement('block', 120)])
+    index.markContentDirty(['block'])
+    const dirtyRevision = index.revision
+
+    expect(index.applyEstimatedHeights([{
+      blockId: 'block',
+      height: 120,
+      modelDriven: true,
+    }])).toBeFalse()
+    expect(index.get('block')).toEqual(jasmine.objectContaining({
+      naturalHeight: 120,
+      effectiveHeight: 120,
+      measurementEpoch: 0,
+      source: 'estimated',
+    }))
+    expect(index.get('block')?.splitOffsets).toBeUndefined()
+    expect(index.revision).toBe(dirtyRevision)
+
+    expect(index.applyEstimatedHeights([{
+      blockId: 'block',
+      height: 48,
+      modelDriven: false,
+    }])).toBeTrue()
+    expect(index.get('block')).toEqual(jasmine.objectContaining({
+      naturalHeight: 48,
+      effectiveHeight: 48,
+      source: 'estimated',
+    }))
+    expect(index.revision).toBe(dirtyRevision + 1)
   })
 
   it('marks one root dirty once for a coalesced content batch', () => {

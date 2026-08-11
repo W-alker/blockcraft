@@ -3,9 +3,41 @@ import {
   estimateModelBlockHeight,
   estimateModelBlockHeightDetails,
   modelHeightEstimateAffectedByContentChange,
+  shouldApplyModelHeightEstimate,
 } from './model-height-estimator'
 
 describe('estimateModelBlockHeight', () => {
+  it('applies model and fallback estimates according to measurement provenance', () => {
+    const modelEstimate = {height: 240, modelDriven: true}
+    const fallbackEstimate = {height: 48, modelDriven: false}
+
+    expect(shouldApplyModelHeightEstimate(modelEstimate, {
+      previousModelDriven: false,
+      hasMeasuredHeight: true,
+      measurementFresh: true,
+    })).toBeTrue()
+    expect(shouldApplyModelHeightEstimate(fallbackEstimate, {
+      previousModelDriven: false,
+      hasMeasuredHeight: false,
+      measurementFresh: false,
+    })).toBeTrue()
+    expect(shouldApplyModelHeightEstimate(fallbackEstimate, {
+      previousModelDriven: true,
+      hasMeasuredHeight: true,
+      measurementFresh: true,
+    })).toBeFalse()
+    expect(shouldApplyModelHeightEstimate(fallbackEstimate, {
+      previousModelDriven: true,
+      hasMeasuredHeight: true,
+      measurementFresh: false,
+    })).toBeTrue()
+    expect(shouldApplyModelHeightEstimate(fallbackEstimate, {
+      previousModelDriven: false,
+      hasMeasuredHeight: true,
+      measurementFresh: false,
+    })).toBeFalse()
+  })
+
   it('lets a custom Schema estimate height from persisted props', () => {
     const estimator = jasmine.createSpy('estimateHeight')
       .and.callFake(({props, layoutMode}) =>

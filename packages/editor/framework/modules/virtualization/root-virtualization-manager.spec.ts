@@ -39,7 +39,7 @@ describe('RootVirtualizationManager', () => {
       y: 0,
       toJSON: () => ({}),
     } as DOMRect)
-    const structureChange$ = new Subject<void>()
+    const structureChange$ = new Subject<any>()
     const selection$ = new BehaviorSubject<any>(null)
     const compositionSession = {isIdle: true}
     let structureRevision = 0
@@ -131,10 +131,14 @@ describe('RootVirtualizationManager', () => {
         ...config.estimatedHeights,
       },
     })
-    const replaceRootIds = (nextIds: readonly string[]) => {
+    const replaceRootIds = (
+      nextIds: readonly string[],
+      affectedRootIds?: readonly string[],
+      affectedParentIds?: readonly string[],
+    ) => {
       ids.splice(0, ids.length, ...nextIds)
       structureRevision++
-      structureChange$.next()
+      structureChange$.next({affectedRootIds, affectedParentIds})
       layoutIds = [...ids]
       syncDom()
     }
@@ -158,6 +162,41 @@ describe('RootVirtualizationManager', () => {
       structureChange$,
       vm,
     }
+  }
+
+  function configureModelEstimateHarness(
+    h: ReturnType<typeof createHarness>,
+    initialHeight = 48,
+  ) {
+    const contentChange$ = new Subject<any>()
+    const estimates = new Map<string, number | undefined>(
+      h.ids.map(id => [id, initialHeight]),
+    )
+    const estimateHeight = jasmine.createSpy('estimateHeight').and.callFake(
+      (context: {blockId: string}) => estimates.get(context.blockId),
+    )
+    ;(h.doc.model as any).contentChange$ = contentChange$
+    ;(h.doc.model as any).getChildrenIds = (blockId: string) =>
+      blockId === 'root' ? [...h.ids] : []
+    ;(h.doc.model as any).getFlavour = () => 'custom-estimate'
+    ;(h.doc.model as any).getNodeType = () => BlockNodeType.editable
+    ;(h.doc.model as any).getProps = () => ({})
+    ;(h.doc as any).schemas = {
+      get: () => ({
+        metadata: {virtualization: {estimateHeight}},
+      }),
+    }
+    const emitContentChange = (
+      blockId: string,
+      kinds: readonly string[] = ['props'],
+    ) => contentChange$.next({
+      blockIds: [blockId],
+      kinds,
+      origin: null,
+      local: true,
+      isUndoRedo: false,
+    })
+    return {contentChange$, emitContentChange, estimateHeight, estimates}
   }
 
   it('refreshes offscreen object estimates when root content width changes', () => {
@@ -476,6 +515,50 @@ describe('RootVirtualizationManager', () => {
     projection.dispose()
   })
 
+  it('rolls back when beforeActivate synchronously makes the projection stale', async () => {
+    const h = createHarness()
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+    const heights = new HeightMap()
+    heights.bulkInit(h.ids.map(() => 120))
+    const projection = customProjection(h.ids, heights)
+    const beforeDeactivate = jasmine.createSpy('beforeDeactivate')
+
+    expect(() => registerRootLayoutProjection(h.manager, projection, {
+      beforeActivate: () => h.replaceRootIds([...h.ids, 'hook-inserted']),
+      beforeDeactivate,
+    })).toThrowError(/length mismatch/)
+
+    expect(beforeDeactivate).toHaveBeenCalledTimes(1)
+    expect((h.manager as any).layoutProjection)
+      .toBe((h.manager as any).continuousLayoutProjection)
+    expect((h.manager as any).customLayoutProjection).toBeNull()
+    expect((h.manager as any).continuousEstimateJournalSuspended).toBeFalse()
+    h.manager.dispose()
+    projection.dispose()
+  })
+
+  it('validates pre-init root drift on the first initialized custom frame', async () => {
+    const h = createHarness()
+    const heights = new HeightMap()
+    heights.bulkInit(h.ids.map(() => 120))
+    const projection = customProjection(h.ids, heights)
+    const onInvalid = jasmine.createSpy('onInvalid')
+    const release = registerRootLayoutProjection(h.manager, projection, {onInvalid})
+
+    h.replaceRootIds([...h.ids, 'late-inserted'])
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrames(3)
+
+    expect(onInvalid).toHaveBeenCalledTimes(1)
+    expect((h.manager as any).layoutProjection)
+      .toBe((h.manager as any).continuousLayoutProjection)
+    expect((h.manager as any).continuousEstimateJournalSuspended).toBeFalse()
+    release()
+    h.manager.dispose()
+    projection.dispose()
+  })
+
   it('captures the old coordinate anchor before activation side effects', async () => {
     const h = createHarness()
     h.manager.init(h.scrollContainer)
@@ -716,12 +799,613 @@ describe('RootVirtualizationManager', () => {
     heights.bulkInit(h.ids.map(() => 120))
     const projection = customProjection(h.ids, heights)
     const release = registerRootLayoutProjection(h.manager, projection)
-    ;(h.manager as any).applyMeasurements([['b0', 999]])
+    ;(h.manager as any).applyObservedMeasurements([['b0', 999]])
 
     expect(continuous.revision).toBe(revision)
     release()
     h.manager.dispose()
     projection.dispose()
+  })
+
+  it('updates equal DOM and model provenance without publishing geometry changes', async () => {
+    const h = createHarness(12, 3, {
+      estimatedHeights: {'custom-estimate': 80},
+    })
+    const model = configureModelEstimateHarness(h, 80)
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+    const continuous = (h.manager as any)
+      .continuousLayoutProjection as ContinuousLayoutProjection
+    const revision = continuous.revision
+
+    ;(h.manager as any).applyObservedMeasurements([['b0', 80]])
+
+    expect(continuous.revision).toBe(revision)
+    expect((h.manager as any).continuousHeightProvenance.get('b0')).toEqual({
+      previousModelDriven: true,
+      hasMeasuredHeight: true,
+      measurementFresh: true,
+    })
+
+    model.estimates.set('b0', undefined)
+    model.emitContentChange('b0', ['text'])
+
+    expect((h.manager as any).heights.get(0)).toBe(80)
+    expect(continuous.revision).toBe(revision)
+    expect((h.manager as any).continuousHeightProvenance.get('b0')).toEqual({
+      previousModelDriven: false,
+      hasMeasuredHeight: false,
+      measurementFresh: false,
+    })
+    h.manager.dispose()
+    model.contentChange$.complete()
+  })
+
+  it('keeps fallback measured text for ordinary props but invalidates heading semantics', async () => {
+    const h = createHarness(12, 3, {
+      estimatedHeights: {'custom-estimate': 48},
+    })
+    const model = configureModelEstimateHarness(h)
+    model.estimates.set('b0', undefined)
+    const props = new Map<string, Record<string, unknown>>(
+      h.ids.map(id => [id, {}]),
+    )
+    ;(h.doc.model as any).getProps = (blockId: string) => props.get(blockId) ?? {}
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+
+    ;(h.manager as any).applyObservedMeasurements([['b0', 120]])
+    const viewportTop = spyOn<any>(h.manager, 'getViewportTop').and.callThrough()
+    model.emitContentChange('b0', ['text'])
+    expect(viewportTop).not.toHaveBeenCalled()
+
+    props.set('b0', {align: 'center'})
+    model.emitContentChange('b0')
+
+    expect((h.manager as any).heights.get(0)).toBe(120)
+    expect((h.manager as any).continuousHeightProvenance.get('b0'))
+      .toEqual({
+        previousModelDriven: false,
+        hasMeasuredHeight: true,
+        measurementFresh: false,
+      })
+
+    props.set('b0', {align: 'center', heading: 1})
+    model.emitContentChange('b0')
+
+    expect((h.manager as any).heights.get(0)).toBe(48)
+    expect((h.manager as any).continuousHeightProvenance.get('b0'))
+      .toEqual({
+        previousModelDriven: false,
+        hasMeasuredHeight: false,
+        measurementFresh: false,
+      })
+
+    ;(h.manager as any).applyObservedMeasurements([['b0', 130]])
+    props.set('b0', {align: 'center', heading: 2})
+    model.emitContentChange('b0')
+    expect((h.manager as any).heights.get(0)).toBe(48)
+
+    ;(h.manager as any).applyObservedMeasurements([['b0', 140]])
+    props.set('b0', {align: 'center'})
+    model.emitContentChange('b0')
+    expect((h.manager as any).heights.get(0)).toBe(48)
+    h.manager.dispose()
+    model.contentChange$.complete()
+  })
+
+  it('keeps surviving measurements for root reorder but invalidates nested structure', async () => {
+    const h = createHarness(12, 3, {
+      estimatedHeights: {'custom-estimate': 48},
+    })
+    const model = configureModelEstimateHarness(h)
+    model.estimates.set('b0', undefined)
+    const originalGetPath = h.doc.model.getPath
+    ;(h.doc.model as any).getPath = (blockId: string) =>
+      blockId === 'nested'
+        ? ['root', 'b0', 'nested']
+        : originalGetPath(blockId)
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+    ;(h.manager as any).applyObservedMeasurements([['b0', 120]])
+
+    h.replaceRootIds([...h.ids].reverse(), ['b0'], ['root'])
+    const reorderedIndex = (h.manager as any).indexById.get('b0')
+    expect((h.manager as any).heights.get(reorderedIndex)).toBe(120)
+    expect((h.manager as any).continuousHeightProvenance.get('b0')
+      .hasMeasuredHeight).toBeTrue()
+
+    h.structureChange$.next({
+      affectedRootIds: ['b0'],
+      affectedParentIds: ['nested'],
+    })
+
+    expect((h.manager as any).heights.get(reorderedIndex)).toBe(48)
+    expect((h.manager as any).continuousHeightProvenance.get('b0')
+      .hasMeasuredHeight).toBeFalse()
+    h.manager.dispose()
+    model.contentChange$.complete()
+  })
+
+  it('ignores residual heading props for plain-text-only editable schemas', async () => {
+    const h = createHarness(12, 3, {
+      estimatedHeights: {'custom-estimate': 48},
+    })
+    const model = configureModelEstimateHarness(h)
+    model.estimates.set('b0', undefined)
+    const props = new Map<string, Record<string, unknown>>(
+      h.ids.map(id => [id, {heading: 1}]),
+    )
+    ;(h.doc.model as any).getProps = (blockId: string) => props.get(blockId) ?? {}
+    ;(h.doc as any).schemas = {
+      get: () => ({
+        metadata: {
+          plainTextOnly: true,
+          virtualization: {estimateHeight: model.estimateHeight},
+        },
+      }),
+    }
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+    ;(h.manager as any).applyObservedMeasurements([['b0', 120]])
+
+    props.set('b0', {heading: 2})
+    model.emitContentChange('b0')
+
+    expect((h.manager as any).heights.get(0)).toBe(120)
+    expect((h.manager as any).continuousHeightProvenance.get('b0')
+      .hasMeasuredHeight).toBeTrue()
+    h.manager.dispose()
+    model.contentChange$.complete()
+  })
+
+  it('preserves old semantics across root rebuild until same-transaction content arrives', async () => {
+    const h = createHarness(12, 3, {
+      estimatedHeights: {'custom-estimate': 48},
+    })
+    const model = configureModelEstimateHarness(h)
+    model.estimates.set('b0', undefined)
+    const props = new Map<string, Record<string, unknown>>(
+      h.ids.map(id => [id, {}]),
+    )
+    ;(h.doc.model as any).getProps = (blockId: string) => props.get(blockId) ?? {}
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+    ;(h.manager as any).applyObservedMeasurements([['b0', 120]])
+
+    props.set('b0', {heading: 1})
+    h.replaceRootIds([...h.ids].reverse(), ['b0'], ['root'])
+    model.emitContentChange('b0')
+
+    const reorderedIndex = (h.manager as any).indexById.get('b0')
+    expect((h.manager as any).heights.get(reorderedIndex)).toBe(48)
+    expect((h.manager as any).continuousHeightProvenance.get('b0')
+      .hasMeasuredHeight).toBeFalse()
+    h.manager.dispose()
+    model.contentChange$.complete()
+  })
+
+  it('replays one deduplicated dirty model estimate on release and drops paginated DOM input', async () => {
+    const h = createHarness()
+    const model = configureModelEstimateHarness(h, 180)
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+    const continuous = (h.manager as any)
+      .continuousLayoutProjection as ContinuousLayoutProjection
+    const heights = new HeightMap()
+    heights.bulkInit(h.ids.map(() => 120))
+    const projection = customProjection(h.ids, heights)
+    const release = registerRootLayoutProjection(h.manager, projection)
+    const revision = continuous.revision
+    model.estimateHeight.calls.reset()
+
+    model.estimates.set('b10', undefined)
+    model.emitContentChange('b10')
+    model.emitContentChange('b10')
+    ;(h.manager as any).applyObservedMeasurements([['b10', 999]])
+
+    expect((h.manager as any).heights.get(10)).toBe(180)
+    expect((h.manager as any).dirtyContinuousEstimateRootIds.size).toBe(1)
+
+    release()
+
+    expect((h.manager as any).heights.get(10)).toBe(48)
+    expect(model.estimateHeight).toHaveBeenCalledTimes(1)
+    expect(continuous.revision).toBe(revision + 1)
+    expect((h.manager as any).dirtyContinuousEstimateRootIds.size).toBe(0)
+    h.manager.dispose()
+    projection.dispose()
+    model.contentChange$.complete()
+  })
+
+  it('journals global sizing as O(1) dirty-all and replays current estimates once', async () => {
+    const h = createHarness(12, 3, {
+      estimatedHeights: {'custom-estimate': 48},
+    })
+    const model = configureModelEstimateHarness(h, 48)
+    const widthChange$ = new Subject<void>()
+    ;(h.doc as any).objectSizing = {
+      widthChange$,
+      rootContentWidth: 100,
+      resolve: () => null,
+    }
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+    model.estimates.set('b2', undefined)
+    model.emitContentChange('b2', ['text'])
+    ;(h.manager as any).applyObservedMeasurements([['b2', 150]])
+
+    const continuous = (h.manager as any)
+      .continuousLayoutProjection as ContinuousLayoutProjection
+    const heights = new HeightMap()
+    heights.bulkInit(h.ids.map(() => 120))
+    const projection = customProjection(h.ids, heights)
+    const release = registerRootLayoutProjection(h.manager, projection)
+    const revision = continuous.revision
+    model.estimateHeight.calls.reset()
+    model.estimates.set('b0', 80)
+    model.estimates.set('b1', 90)
+
+    widthChange$.next()
+
+    expect((h.manager as any).dirtyAllContinuousEstimates).toBeTrue()
+    expect((h.manager as any).dirtyContinuousEstimateRootIds.size).toBe(0)
+    expect(model.estimateHeight).not.toHaveBeenCalled()
+
+    release()
+
+    expect((h.manager as any).heights.get(0)).toBe(80)
+    expect((h.manager as any).heights.get(1)).toBe(90)
+    expect((h.manager as any).heights.get(2)).toBe(150)
+    expect(model.estimateHeight).toHaveBeenCalledTimes(3)
+    expect(continuous.revision).toBe(revision + 1)
+    expect((h.manager as any).dirtyAllContinuousEstimates).toBeFalse()
+    h.manager.dispose()
+    projection.dispose()
+    widthChange$.complete()
+    model.contentChange$.complete()
+  })
+
+  it('limits active global sizing placement refresh to cached placement roots', async () => {
+    const h = createHarness(12, 1000, {
+      estimatedHeights: {'custom-estimate': 48},
+    })
+    const model = configureModelEstimateHarness(h, 48)
+    const widthChange$ = new Subject<void>()
+    const getFlavour = jasmine.createSpy('getFlavour').and.callFake(
+      (blockId: string) => blockId === 'b0'
+        ? 'placement-layout'
+        : 'custom-estimate',
+    )
+    ;(h.doc.model as any).getFlavour = getFlavour
+    ;(h.doc as any).objectSizing = {
+      widthChange$,
+      rootContentWidth: 100,
+      resolve: () => null,
+    }
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+    const heights = new HeightMap()
+    heights.bulkInit(h.ids.map(() => 120))
+    const projection = customProjection(h.ids, heights)
+    const release = registerRootLayoutProjection(h.manager, projection)
+    await nextAnimationFrame()
+    getFlavour.calls.reset()
+    model.estimateHeight.calls.reset()
+
+    widthChange$.next()
+
+    expect((h.manager as any).dirtyAllContinuousEstimates).toBeTrue()
+    expect(getFlavour).toHaveBeenCalledTimes(1)
+    expect(getFlavour).toHaveBeenCalledWith('b0')
+    expect(model.estimateHeight).not.toHaveBeenCalled()
+    release()
+    h.manager.dispose()
+    projection.dispose()
+    widthChange$.complete()
+    model.contentChange$.complete()
+  })
+
+  it('updates cached placement membership for stable-id flavour replacement', async () => {
+    const h = createHarness(12, 3, {
+      estimatedHeights: {'custom-estimate': 48},
+    })
+    const model = configureModelEstimateHarness(h, 48)
+    const flavours = new Map(h.ids.map(id => [id, 'custom-estimate']))
+    ;(h.doc.model as any).getFlavour = (blockId: string) =>
+      flavours.get(blockId) ?? 'custom-estimate'
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+    const visibilityRebuild = spyOn<any>(
+      (h.manager as any).absolutePlacementVisibility,
+      'rebuild',
+    ).and.callThrough()
+
+    flavours.set('b0', 'placement-layout')
+    model.emitContentChange('b0', ['props', 'text'])
+
+    expect([...(h.manager as any).absolutePlacementRootIds]).toEqual(['b0'])
+    expect(visibilityRebuild).toHaveBeenCalledWith(['b0'])
+
+    visibilityRebuild.calls.reset()
+    flavours.set('b0', 'custom-estimate')
+    model.emitContentChange('b0', ['props', 'text'])
+
+    expect((h.manager as any).absolutePlacementRootIds.size).toBe(0)
+    expect(visibilityRebuild).toHaveBeenCalledTimes(1)
+    expect(visibilityRebuild).toHaveBeenCalledWith([])
+    h.manager.dispose()
+    model.contentChange$.complete()
+  })
+
+  it('recomputes pre-init activation changes even when projection releases before init', async () => {
+    const h = createHarness(12, 3)
+    const model = configureModelEstimateHarness(h, 60)
+    const heights = new HeightMap()
+    heights.bulkInit(h.ids.map(() => 120))
+    const projection = customProjection(h.ids, heights)
+    const release = registerRootLayoutProjection(h.manager, projection, {
+      beforeActivate: () => model.estimates.set('b0', 90),
+    })
+    const heightSync = spyOn<any>(h.manager, 'syncHeightObserver').and.callThrough()
+
+    release()
+    expect(heightSync).not.toHaveBeenCalled()
+    ;(h.manager as any).applyObservedMeasurements([['b0', 999]])
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+
+    expect((h.manager as any).heights.get(0)).toBe(90)
+    expect(heightSync).toHaveBeenCalled()
+    expect((h.manager as any).continuousEstimateJournalSuspended).toBeFalse()
+    h.manager.dispose()
+    projection.dispose()
+    model.contentChange$.complete()
+  })
+
+  it('prunes deleted dirty roots and replays a surviving structure journal once', async () => {
+    const h = createHarness(12, 4)
+    const model = configureModelEstimateHarness(h, 48)
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+    const heights = new HeightMap()
+    heights.bulkInit(h.ids.map(() => 120))
+    const projection = customProjection(h.ids, heights)
+    const release = registerRootLayoutProjection(h.manager, projection)
+    model.estimateHeight.calls.reset()
+
+    model.estimates.set('b1', 96)
+    model.estimates.set('b2', 144)
+    model.emitContentChange('b1', ['text'])
+    model.emitContentChange('b2', ['text'])
+    h.replaceRootIds(
+      h.ids.filter(id => id !== 'b2'),
+      ['b1', 'b2'],
+      ['root'],
+    )
+
+    expect((h.manager as any).dirtyContinuousEstimateRootIds.has('b2'))
+      .toBeFalse()
+    expect((h.manager as any).continuousHeightProvenance.has('b2')).toBeFalse()
+
+    release()
+
+    expect((h.manager as any).heights.get(1)).toBe(96)
+    expect(model.estimateHeight.calls.allArgs().map(args => args[0].blockId))
+      .toEqual(['b1'])
+    h.manager.dispose()
+    projection.dispose()
+    model.contentChange$.complete()
+  })
+
+  it('defers a custom root reorder revision until one continuous handoff publish', async () => {
+    const h = createHarness(12, 4)
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+    const continuous = (h.manager as any)
+      .continuousLayoutProjection as ContinuousLayoutProjection
+    const heights = new HeightMap()
+    heights.bulkInit(h.ids.map(() => 120))
+    const projection = customProjection(h.ids, heights)
+    const release = registerRootLayoutProjection(h.manager, projection)
+    const revision = continuous.revision
+
+    h.replaceRootIds([...h.ids].reverse(), [...h.ids], ['root'])
+
+    expect(continuous.revision).toBe(revision)
+    expect((h.manager as any).continuousProjectionChangePending).toBeTrue()
+
+    release()
+
+    expect(continuous.revision).toBe(revision + 1)
+    expect((h.manager as any).continuousProjectionChangePending).toBeFalse()
+    h.manager.dispose()
+    projection.dispose()
+  })
+
+  it('replays dirty estimates when invalid projection falls back to continuous layout', async () => {
+    const h = createHarness()
+    const model = configureModelEstimateHarness(h, 48)
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+    const heights = new HeightMap()
+    heights.bulkInit(h.ids.map(() => 120))
+    let projectedIds = [...h.ids]
+    const projection = customProjection(() => projectedIds, heights)
+    const onInvalid = jasmine.createSpy('onInvalid')
+    const release = registerRootLayoutProjection(h.manager, projection, {onInvalid})
+
+    model.estimates.set('b10', 180)
+    model.emitContentChange('b10')
+    projectedIds = [...h.ids].reverse()
+    projection.notifyChange()
+    await nextAnimationFrames(3)
+
+    expect(onInvalid).toHaveBeenCalledTimes(1)
+    expect((h.manager as any).layoutProjection)
+      .toBe((h.manager as any).continuousLayoutProjection)
+    expect((h.manager as any).heights.get(10)).toBe(180)
+    expect((h.manager as any).continuousEstimateJournalSuspended).toBeFalse()
+    release()
+    h.manager.dispose()
+    projection.dispose()
+    model.contentChange$.complete()
+  })
+
+  it('finishes continuous handoff and replays hook dirtiness when cleanup throws', async () => {
+    const h = createHarness()
+    const model = configureModelEstimateHarness(h, 48)
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+    const heights = new HeightMap()
+    heights.bulkInit(h.ids.map(() => 120))
+    const projection = customProjection(h.ids, heights)
+    const release = registerRootLayoutProjection(h.manager, projection, {
+      beforeDeactivate: () => {
+        model.estimates.set('b10', 180)
+        model.emitContentChange('b10')
+        throw new Error('cleanup failed')
+      },
+    })
+
+    expect(() => release()).toThrowError('cleanup failed')
+
+    expect((h.manager as any).layoutProjection)
+      .toBe((h.manager as any).continuousLayoutProjection)
+    expect((h.manager as any).customLayoutProjection).toBeNull()
+    expect((h.manager as any).continuousEstimateJournalSuspended).toBeFalse()
+    expect((h.manager as any).heights.get(10)).toBe(180)
+    h.manager.dispose()
+    projection.dispose()
+    model.contentChange$.complete()
+  })
+
+  it('finishes continuous handoff when outgoing anchor capture throws', async () => {
+    const h = createHarness()
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+    const heights = new HeightMap()
+    heights.bulkInit(h.ids.map(() => 120))
+    const projection = customProjection(h.ids, heights)
+    const beforeDeactivate = jasmine.createSpy('beforeDeactivate')
+    const release = registerRootLayoutProjection(h.manager, projection, {
+      beforeDeactivate,
+    })
+    await nextAnimationFrame()
+    const anchorError = new Error('anchor capture failed')
+    spyOn<any>(h.manager, 'captureCurrentStructureAnchor')
+      .and.throwError(anchorError)
+
+    release()
+
+    expect(h.doc.logger.warn).toHaveBeenCalledWith(
+      'layoutProjectionAnchorCaptureError: ',
+      anchorError,
+    )
+    expect(beforeDeactivate).toHaveBeenCalledTimes(1)
+    expect((h.manager as any).layoutProjection)
+      .toBe((h.manager as any).continuousLayoutProjection)
+    expect((h.manager as any).customLayoutProjection).toBeNull()
+    expect((h.manager as any).continuousEstimateJournalSuspended).toBeFalse()
+    expect((h.manager as any).customProjectionHandoffInProgress).toBeFalse()
+    h.manager.dispose()
+    projection.dispose()
+  })
+
+  it('retains a failed release replay for the first continuous reconciliation', async () => {
+    const h = createHarness()
+    const model = configureModelEstimateHarness(h, 48)
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+    const continuous = (h.manager as any)
+      .continuousLayoutProjection as ContinuousLayoutProjection
+    const heights = new HeightMap()
+    heights.bulkInit(h.ids.map(() => 120))
+    const projection = customProjection(h.ids, heights)
+    const release = registerRootLayoutProjection(h.manager, projection)
+    const revision = continuous.revision
+    model.estimates.set('b10', 180)
+    model.emitContentChange('b10')
+
+    const originalResolve = (h.manager as any)
+      .resolveModelHeightEstimate.bind(h.manager)
+    let shouldFail = true
+    spyOn<any>(h.manager, 'resolveModelHeightEstimate').and.callFake(
+      (blockId: string) => {
+        if (shouldFail) {
+          shouldFail = false
+          throw new Error('transient replay failure')
+        }
+        return originalResolve(blockId)
+      },
+    )
+
+    release()
+
+    expect(h.doc.logger.warn).toHaveBeenCalledWith(
+      'continuousEstimateReplayError: ',
+      jasmine.any(Error),
+    )
+    expect((h.manager as any).layoutProjection)
+      .toBe((h.manager as any).continuousLayoutProjection)
+    expect((h.manager as any).continuousEstimateJournalSuspended).toBeFalse()
+    expect((h.manager as any).dirtyContinuousEstimateRootIds.has('b10'))
+      .toBeTrue()
+    expect(continuous.revision).toBe(revision)
+
+    await nextAnimationFrame()
+
+    expect((h.manager as any).heights.get(10)).toBe(180)
+    expect((h.manager as any).dirtyContinuousEstimateRootIds.size).toBe(0)
+    expect(continuous.revision).toBe(revision + 1)
+    h.manager.dispose()
+    projection.dispose()
+    model.contentChange$.complete()
+  })
+
+  it('restores the custom anchor once after dirty estimates update continuous geometry', async () => {
+    const h = createHarness()
+    const model = configureModelEstimateHarness(h, 48)
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+    const heights = new HeightMap()
+    heights.bulkInit(h.ids.map(() => 120))
+    const projection = customProjection(h.ids, heights)
+    const release = registerRootLayoutProjection(h.manager, projection, {
+      beforeDeactivate: () => {
+        h.scrollContainer.scrollTop = 0
+        ;(h.manager as any).onScroll()
+      },
+    })
+    h.scrollContainer.scrollTop = 600
+    h.scrollContainer.dispatchEvent(new Event('scroll'))
+    await nextAnimationFrame()
+
+    const continuous = (h.manager as any)
+      .continuousLayoutProjection as ContinuousLayoutProjection
+    const anchorHost = h.ensureRef('b5').instance.hostElement
+    ;(anchorHost.getBoundingClientRect as jasmine.Spy).and.callFake(() =>
+      createRect(
+        continuous.contentOffsetAt(5) - h.scrollContainer.scrollTop,
+        continuous.extentAt(5),
+      ),
+    )
+    spyOn<any>(h.manager, 'syncHeightObserver').and.stub()
+    model.estimates.set('b0', 200)
+    model.emitContentChange('b0')
+
+    release()
+
+    expect((h.manager as any).pendingStructureAnchor.blockId).toBe('b5')
+    expect(h.scrollContainer.scrollTop).toBe(0)
+    ;(h.manager as any).applyObservedMeasurements([['b0', 220]])
+    expect(h.scrollContainer.scrollTop).toBe(0)
+    await nextAnimationFrame()
+    expect(h.scrollContainer.scrollTop).toBe(772)
+    expect((h.manager as any).pendingStructureAnchor).toBeNull()
+    h.manager.dispose()
+    projection.dispose()
+    model.contentChange$.complete()
   })
 
   it('captures a custom projection anchor on willChange before new geometry commits', async () => {
@@ -833,7 +1517,7 @@ describe('RootVirtualizationManager', () => {
       .continuousLayoutProjection as ContinuousLayoutProjection
     const previousRevision = projection.revision
 
-    ;(h.manager as any).applyMeasurements([
+    ;(h.manager as any).applyObservedMeasurements([
       ['b0', 60],
       ['b1', 72],
     ])
@@ -853,14 +1537,14 @@ describe('RootVirtualizationManager', () => {
     const previousRevision = projection.revision
     h.scrollContainer.scrollTop = 480
 
-    ;(h.manager as any).applyMeasurements([['b0', 48.5]])
+    ;(h.manager as any).applyObservedMeasurements([['b0', 48.5]])
 
     expect(heights.get(0)).toBe(48)
     expect(notifyChange).not.toHaveBeenCalled()
     expect(projection.revision).toBe(previousRevision)
     expect(h.scrollContainer.scrollTop).toBe(480)
 
-    ;(h.manager as any).applyMeasurements([['b0', 48.6]])
+    ;(h.manager as any).applyObservedMeasurements([['b0', 48.6]])
 
     expect(heights.get(0)).toBe(48.6)
     expect(notifyChange).toHaveBeenCalledTimes(1)
@@ -968,8 +1652,8 @@ describe('RootVirtualizationManager', () => {
     await nextAnimationFrame()
     h.vm._reconcileSparseRootChildren.calls.reset()
 
-    h.structureChange$.next()
-    h.structureChange$.next()
+    h.structureChange$.next({})
+    h.structureChange$.next({})
     await nextAnimationFrame()
 
     expect(h.vm._reconcileSparseRootChildren).toHaveBeenCalledOnceWith(h.ids)
@@ -1917,7 +2601,7 @@ describe('RootVirtualizationManager', () => {
     expect(h.mounted.has('b12')).toBeTrue()
 
     ownerId = 'b15'
-    h.structureChange$.next()
+    h.structureChange$.next({})
     expect(h.mounted.has('b15')).toBeTrue()
     await nextAnimationFrame()
 
@@ -1944,7 +2628,7 @@ describe('RootVirtualizationManager', () => {
     expect(h.mounted.has('b12')).toBeTrue()
 
     ownerId = 'b15'
-    h.structureChange$.next()
+    h.structureChange$.next({})
     await nextAnimationFrame()
 
     expect(h.mounted.has('b12')).toBeFalse()
@@ -1963,7 +2647,7 @@ describe('RootVirtualizationManager', () => {
       return ['root', id]
     }
 
-    expect(() => h.structureChange$.next()).not.toThrow()
+    expect(() => h.structureChange$.next({})).not.toThrow()
     await nextAnimationFrame()
     expect(h.mounted.has('b12')).toBeFalse()
 

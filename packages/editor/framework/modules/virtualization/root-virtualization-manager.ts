@@ -23,12 +23,15 @@ import {
 } from './types'
 import {calculateProjectedViewportRange} from './viewport-range'
 import {
-  estimateModelBlockHeight,
   estimateModelBlockHeightDetails,
+  type ModelHeightEstimate,
+  type ModelHeightEstimateApplicationState,
   modelHeightEstimateAffectedByContentChange,
+  shouldApplyModelHeightEstimate,
 } from './model-height-estimator'
 import {AbsolutePlacementVisibilityIndex} from './absolute-placement-visibility-index'
 import type {IBlockModelStructureChange} from '../../doc/model-graph'
+import {BlockNodeType} from '../../block-std/types'
 
 const DEFAULT_ESTIMATED_HEIGHT = 48
 const BLOCK_NAVIGATION_PIN = 'block-navigation'
@@ -71,6 +74,21 @@ interface ReconciledWindowSnapshot {
   readonly retainedRootIds: readonly string[]
 }
 
+interface ContinuousEstimateSemantics {
+  readonly flavour: unknown
+  readonly nodeType: unknown
+  readonly heading: unknown
+}
+
+interface ContinuousModelEstimateApplication {
+  readonly id: string
+  readonly index: number
+  readonly estimate: ModelHeightEstimate
+  readonly semantics: ContinuousEstimateSemantics
+  readonly provenance: ModelHeightEstimateApplicationState
+  readonly geometryChanged: boolean
+}
+
 export interface VirtualizationViewChange {
   mountedRootIds: readonly string[]
 }
@@ -109,9 +127,20 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
   private readonly heights = new HeightMap()
   private readonly continuousLayoutProjection = new ContinuousLayoutProjection(this.heights)
   private layoutProjection: VerticalLayoutProjection = this.continuousLayoutProjection
+  private continuousHeightProvenance =
+    new Map<string, ModelHeightEstimateApplicationState>()
+  private continuousEstimateSemantics =
+    new Map<string, ContinuousEstimateSemantics>()
+  private readonly dirtyContinuousEstimateRootIds = new Set<string>()
+  private readonly stronglyInvalidContinuousEstimateRootIds = new Set<string>()
+  private dirtyAllContinuousEstimates = false
+  private continuousEstimateJournalSuspended = false
+  private continuousProjectionChangePending = false
+  private customProjectionHandoffInProgress = false
+  private absolutePlacementRootIds = new Set<string>()
   private readonly pins = new PinRegistry()
   private readonly heightObserver = new HeightObserver(
-    (values) => this.applyMeasurements(values),
+    (values) => this.applyObservedMeasurements(values),
     undefined,
     () => this.doc.viewScale?.geometryScale ?? 1,
   )
@@ -156,7 +185,11 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
   readonly viewChange$ = new Subject<VirtualizationViewChange>()
 
   private readonly onScroll = () => {
-    if (this.pendingStructureAnchor && !this.blockNavigationTask) {
+    if (
+      this.pendingStructureAnchor &&
+      !this.blockNavigationTask &&
+      !this.customProjectionHandoffInProgress
+    ) {
       // A projection/structure update may capture an anchor one frame before
       // reconciliation. If the viewport moves in that interval, the newer
       // viewport position owns restoration; replaying the stale anchor would
@@ -197,7 +230,10 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
       observer.observe(scrollContainer)
     }
     this.spacerLayer = new ProjectionSpacerLayer(this.doc.root.childrenRenderRef!.containerElement)
-    this.rebuildModel()
+    this.rebuildModel(undefined, this.continuousEstimateJournalSuspended)
+    if (this.customLayoutProjection) {
+      this.customProjectionValidationPending = true
+    }
     this.markStructureRevisionSynchronized()
     this.unregisterSelectionAdapter = this.doc.selection.registerProjectionMountAdapter(this)
     this.unregisterPins = this.pins.subscribe(() => this.schedule())
@@ -227,6 +263,17 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     if (contentChange$) {
       this.subscriptions.add(
         contentChange$.subscribe(change => {
+          const stronglyInvalidRootIds = change.kinds?.includes('props')
+            ? change.blockIds.filter(blockId => {
+                const path = this.doc.model.getPath(blockId)
+                if (!(path?.length === 2 &&
+                  path[0] === this.doc.rootId &&
+                  path[1] === blockId)) {
+                  return false
+                }
+                return this.refreshContinuousEstimateSemantics(blockId)
+              })
+            : []
           this.refreshModelEstimates(
             change.blockIds,
             change.kinds?.includes('props') ?? true,
@@ -235,6 +282,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
               blockId,
               change,
             ),
+            stronglyInvalidRootIds,
           )
         }),
       )
@@ -282,6 +330,11 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     this.customLayoutProjectionHooks = null
     this.customProjectionValidationPending = false
     this.customProjectionFailureCount = 0
+    this.continuousHeightProvenance.clear()
+    this.continuousEstimateSemantics.clear()
+    this.clearContinuousEstimateJournal()
+    this.continuousEstimateJournalSuspended = false
+    this.customProjectionHandoffInProgress = false
     this.continuousLayoutProjection.dispose()
     this.pins.clear()
     this.selectionSnapshot = null
@@ -533,22 +586,44 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     // that point, while this manager's lazy model index is still empty.
     // Synchronize model-only state before strict validation; this does not
     // mount views or weaken genuinely stale projection detection.
-    if (!this.blockIds.length && projection.length) this.rebuildModel()
+    if (!this.blockIds.length) this.rebuildModel()
     this.validateProjection(projection)
     const anchor = this.pendingStructureAnchor ?? this.captureCurrentStructureAnchor()
+    this.pendingStructureAnchor = anchor
     this.cancelScheduledReconcile()
     this.heightObserver.disconnect()
+    // Suspend before owner hooks: pagination can synchronously mutate Yjs while
+    // installing or rolling back its reversible DOM projection.
+    this.continuousEstimateJournalSuspended = true
+    this.customProjectionHandoffInProgress = true
+    if (!this.scrollContainer) this.journalContinuousEstimateRefresh()
     try {
       hooks.beforeActivate?.()
+      const nextBlockIds = [...this.doc.model.getChildrenIds(this.doc.rootId)]
+      if (!arraysEqual(this.blockIds, nextBlockIds)) {
+        if (this.scrollContainer) this.synchronizeRootModel(false)
+        else this.rebuildModel(nextBlockIds)
+      }
+      this.validateProjection(projection)
+      this.customProjectionHandoffInProgress = false
     } catch (error) {
       try {
         hooks.beforeDeactivate?.()
       } catch (cleanupError) {
         this.doc.logger.warn('layoutProjectionCleanupError: ', cleanupError)
       }
-      this.pendingStructureAnchor = anchor
-      this.syncHeightObserver()
-      this.schedule()
+      try {
+        this.flushContinuousEstimateJournal()
+      } catch (replayError) {
+        this.doc.logger.warn('continuousEstimateReplayError: ', replayError)
+      } finally {
+        this.continuousEstimateJournalSuspended = false
+        this.customProjectionHandoffInProgress = false
+        if (this.scrollContainer && !this.fullMountFallback) {
+          this.syncHeightObserver()
+        }
+        this.schedule()
+      }
       throw error
     }
     this.customLayoutProjection = projection
@@ -570,7 +645,6 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
       this.schedule()
     }))
     this.customLayoutProjectionSubscription = projectionSubscription
-    this.pendingStructureAnchor = anchor
     this.schedule()
 
     let active = true
@@ -618,6 +692,13 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
   private reconcile(): void {
     try {
       this.repairModelStateIfNeeded()
+      if (
+        !this.fullMountFallback &&
+        !this.continuousEstimateJournalSuspended &&
+        this.layoutProjection === this.continuousLayoutProjection
+      ) {
+        this.flushContinuousEstimateJournal()
+      }
       this.reconcileFrame()
       this.reconcileFailureCount = 0
       this.fallbackMountFailureLogged = false
@@ -821,38 +902,133 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     }
   }
 
-  private rebuildModel(nextBlockIds?: readonly string[]): void {
+  private rebuildModel(
+    nextBlockIds?: readonly string[],
+    journalRetainedEstimates = false,
+  ): void {
     const previous = new Map<string, number>()
     this.blockIds.forEach((id, index) => {
       if (index < this.heights.length) previous.set(id, this.heights.get(index))
     })
     this.blockIds = [...(nextBlockIds ?? this.doc.model.getChildrenIds(this.doc.rootId))]
     this.indexById = new Map(this.blockIds.map((id, index) => [id, index]))
+    const nextProvenance = new Map<string, ModelHeightEstimateApplicationState>()
+    const nextSemantics = new Map<string, ContinuousEstimateSemantics>()
     this.heights.bulkInit(
       this.blockIds.map((id) => {
+        nextSemantics.set(
+          id,
+          this.continuousEstimateSemantics.get(id) ??
+            this.readContinuousEstimateSemantics(id),
+        )
         const retained = previous.get(id)
-        if (retained != null) return retained
-        return this.resolveEstimatedHeight(id)
+        const retainedProvenance = this.continuousHeightProvenance.get(id)
+        if (retained != null && retainedProvenance) {
+          nextProvenance.set(id, retainedProvenance)
+          return retained
+        }
+        const estimate = this.resolveModelHeightEstimate(id)
+        nextProvenance.set(id, {
+          previousModelDriven: estimate.modelDriven,
+          hasMeasuredHeight: false,
+          measurementFresh: false,
+        })
+        return retained ?? estimate.height
       }),
     )
+    this.continuousHeightProvenance = nextProvenance
+    this.continuousEstimateSemantics = nextSemantics
+    this.absolutePlacementRootIds = new Set(this.blockIds.filter(
+      id => nextSemantics.get(id)?.flavour === 'placement-layout',
+    ))
+    for (const id of [...this.dirtyContinuousEstimateRootIds]) {
+      if (!this.indexById.has(id)) this.dirtyContinuousEstimateRootIds.delete(id)
+    }
+    for (const id of [...this.stronglyInvalidContinuousEstimateRootIds]) {
+      if (!this.indexById.has(id)) {
+        this.stronglyInvalidContinuousEstimateRootIds.delete(id)
+      }
+    }
+    // Registration may happen before init installs model subscriptions. A
+    // second rebuild while the custom handoff is already suspended therefore
+    // treats retained roots as dirty instead of trusting pre-hook provenance.
+    if (journalRetainedEstimates && this.blockIds.length) {
+      this.journalContinuousEstimateRefresh()
+    }
     this.absolutePlacementVisibility.rebuild(this.blockIds)
-    this.continuousLayoutProjection.notifyChange()
+    if (this.continuousEstimateJournalSuspended) {
+      this.continuousProjectionChangePending = true
+    } else {
+      this.continuousLayoutProjection.notifyChange()
+    }
   }
 
-  private resolveEstimatedHeight(blockId: string): number {
-    return estimateModelBlockHeight(this.doc, blockId, {
+  private resolveModelHeightEstimate(blockId: string): ModelHeightEstimate {
+    return estimateModelBlockHeightDetails(this.doc, blockId, {
       estimatedHeights: this.config.estimatedHeights,
       defaultHeight: DEFAULT_ESTIMATED_HEIGHT,
       layoutMode: 'flow',
     })
   }
 
+  private readContinuousEstimateSemantics(
+    blockId: string,
+  ): ContinuousEstimateSemantics {
+    const props = this.doc.model.getProps?.(blockId)
+    const flavour = this.doc.model.getFlavour(blockId)
+    const nodeType = this.doc.model.getNodeType?.(blockId)
+    const plainTextOnly = typeof flavour === 'string' &&
+      this.doc.schemas?.get(flavour, false)?.metadata.plainTextOnly === true
+    return {
+      flavour,
+      nodeType,
+      heading: nodeType === BlockNodeType.editable && !plainTextOnly
+        ? props?.['heading'] ?? null
+        : null,
+    }
+  }
+
+  private refreshContinuousEstimateSemantics(blockId: string): boolean {
+    const previous = this.continuousEstimateSemantics.get(blockId)
+    const next = this.readContinuousEstimateSemantics(blockId)
+    this.continuousEstimateSemantics.set(blockId, next)
+    const wasPlacement = previous?.flavour === 'placement-layout'
+    const isPlacement = next.flavour === 'placement-layout'
+    if (previous !== undefined && wasPlacement !== isPlacement) {
+      if (isPlacement) this.absolutePlacementRootIds.add(blockId)
+      else this.absolutePlacementRootIds.delete(blockId)
+      this.absolutePlacementVisibility.rebuild([
+        ...this.absolutePlacementRootIds,
+      ])
+      this.schedule()
+    }
+    return previous !== undefined && (
+      previous.flavour !== next.flavour ||
+      previous.nodeType !== next.nodeType ||
+      previous.heading !== next.heading
+    )
+  }
+
   private refreshModelEstimates(
     changedBlockIds?: readonly string[],
     refreshAbsoluteVisibility = changedBlockIds === undefined,
     shouldRefreshHeight: (blockId: string) => boolean = () => true,
+    stronglyInvalidRootIds: readonly string[] = [],
   ): void {
     if (!this.scrollContainer || !this.blockIds.length) return
+    if (
+      changedBlockIds === undefined &&
+      this.continuousEstimateJournalSuspended
+    ) {
+      this.journalContinuousEstimateRefresh()
+      if (refreshAbsoluteVisibility && this.absolutePlacementRootIds.size) {
+        this.absolutePlacementVisibility.rebuild([
+          ...this.absolutePlacementRootIds,
+        ])
+        this.schedule()
+      }
+      return
+    }
     const rootIds = changedBlockIds
       ? new Set(changedBlockIds.flatMap(blockId => {
           const path = this.doc.model.getPath(blockId)
@@ -867,22 +1043,198 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
           this.doc.model.getFlavour(blockId) === 'placement-layout',
       )
     if (absoluteVisibilityChanged) {
-      this.absolutePlacementVisibility.rebuild(this.blockIds)
+      this.absolutePlacementVisibility.rebuild([
+        ...this.absolutePlacementRootIds,
+      ])
     }
-    const measurements: HeightMeasurement[] = []
-    rootIds.forEach(blockId => {
-      if (!shouldRefreshHeight(blockId)) return
-      const estimate = estimateModelBlockHeightDetails(this.doc, blockId, {
-        estimatedHeights: this.config.estimatedHeights,
-        defaultHeight: DEFAULT_ESTIMATED_HEIGHT,
-        layoutMode: 'flow',
-      })
-      if (estimate.modelDriven) {
-        measurements.push([blockId, estimate.height])
+    const heightRootIds = [...rootIds].filter(shouldRefreshHeight)
+    const heightRootIdSet = new Set(heightRootIds)
+    const strongRootIds = stronglyInvalidRootIds.filter(
+      id => heightRootIdSet.has(id),
+    )
+    if (this.continuousEstimateJournalSuspended) {
+      this.journalContinuousEstimateRefresh(
+        changedBlockIds === undefined ? undefined : heightRootIds,
+        strongRootIds,
+      )
+    } else {
+      this.applyCurrentModelEstimates(heightRootIds, strongRootIds)
+    }
+    if (absoluteVisibilityChanged) this.schedule()
+  }
+
+  private journalContinuousEstimateRefresh(
+    rootIds?: readonly string[],
+    stronglyInvalidRootIds: readonly string[] = [],
+  ): void {
+    stronglyInvalidRootIds.forEach(id => {
+      if (this.indexById.has(id)) {
+        this.stronglyInvalidContinuousEstimateRootIds.add(id)
       }
     })
-    this.applyMeasurements(measurements)
-    if (absoluteVisibilityChanged) this.schedule()
+    if (rootIds === undefined) {
+      this.dirtyAllContinuousEstimates = true
+      this.dirtyContinuousEstimateRootIds.clear()
+      return
+    }
+    if (this.dirtyAllContinuousEstimates) return
+    rootIds.forEach(id => {
+      if (this.indexById.has(id)) this.dirtyContinuousEstimateRootIds.add(id)
+    })
+  }
+
+  private clearContinuousEstimateJournal(): void {
+    this.dirtyAllContinuousEstimates = false
+    this.dirtyContinuousEstimateRootIds.clear()
+    this.stronglyInvalidContinuousEstimateRootIds.clear()
+    this.continuousProjectionChangePending = false
+  }
+
+  private flushContinuousEstimateJournal(): boolean {
+    if (
+      !this.dirtyAllContinuousEstimates &&
+      !this.dirtyContinuousEstimateRootIds.size &&
+      !this.continuousProjectionChangePending
+    ) {
+      return false
+    }
+
+    const projectionChangePending = this.continuousProjectionChangePending
+    const replayAll = this.dirtyAllContinuousEstimates
+    const rootIds = replayAll
+      ? [...this.blockIds]
+      : [...this.dirtyContinuousEstimateRootIds]
+    const stronglyInvalidRootIds = [
+      ...this.stronglyInvalidContinuousEstimateRootIds,
+    ]
+    this.clearContinuousEstimateJournal()
+    try {
+      const changed = this.applyModelEstimateBatch(
+        rootIds,
+        stronglyInvalidRootIds,
+      )
+      if (changed || projectionChangePending) {
+        this.continuousLayoutProjection.notifyChange()
+      }
+      return changed || projectionChangePending
+    } catch (error) {
+      this.continuousProjectionChangePending ||= projectionChangePending
+      if (replayAll) {
+        this.journalContinuousEstimateRefresh(
+          undefined,
+          stronglyInvalidRootIds,
+        )
+      } else {
+        this.journalContinuousEstimateRefresh(rootIds, stronglyInvalidRootIds)
+      }
+      throw error
+    }
+  }
+
+  private applyCurrentModelEstimates(
+    rootIds: readonly string[],
+    stronglyInvalidRootIds: readonly string[] = [],
+  ): void {
+    if (
+      this.disposed ||
+      !this.scrollContainer ||
+      !rootIds.length ||
+      this.layoutProjection !== this.continuousLayoutProjection
+    ) {
+      return
+    }
+    const applications = this.prepareModelEstimateBatch(
+      rootIds,
+      stronglyInvalidRootIds,
+    )
+    if (!applications.some(application => application.geometryChanged)) {
+      this.commitModelEstimateBatch(applications)
+      return
+    }
+    const viewportTop = this.getViewportTop()
+    const anchor = captureProjectedScrollAnchor(
+      this.blockIds,
+      this.continuousLayoutProjection,
+      viewportTop,
+    )
+    const changed = this.commitModelEstimateBatch(applications)
+    if (!changed) return
+    this.continuousLayoutProjection.notifyChange()
+    this.restoreContinuousMeasurementAnchor(anchor, viewportTop)
+    this.schedule()
+  }
+
+  private applyModelEstimateBatch(
+    rootIds: readonly string[],
+    stronglyInvalidRootIds: readonly string[] = [],
+  ): boolean {
+    return this.commitModelEstimateBatch(
+      this.prepareModelEstimateBatch(rootIds, stronglyInvalidRootIds),
+    )
+  }
+
+  private prepareModelEstimateBatch(
+    rootIds: readonly string[],
+    stronglyInvalidRootIds: readonly string[] = [],
+  ): readonly ContinuousModelEstimateApplication[] {
+    const stronglyInvalid = new Set(stronglyInvalidRootIds)
+    const applications: ContinuousModelEstimateApplication[] = []
+    rootIds.forEach(id => {
+      const index = this.indexById.get(id)
+      if (index === undefined) return
+      const estimate = this.resolveModelHeightEstimate(id)
+      const previous = this.continuousHeightProvenance.get(id) ?? {
+        previousModelDriven: false,
+        hasMeasuredHeight: false,
+        measurementFresh: false,
+      }
+      const applicationState: ModelHeightEstimateApplicationState = {
+        ...previous,
+        hasMeasuredHeight: stronglyInvalid.has(id)
+          ? false
+          : previous.hasMeasuredHeight,
+        measurementFresh: false,
+      }
+      const apply = shouldApplyModelHeightEstimate(estimate, applicationState)
+      const geometryChanged = apply && Math.abs(
+        this.heights.get(index) - estimate.height,
+      ) > HEIGHT_MEASUREMENT_EPSILON
+      applications.push({
+        id,
+        index,
+        estimate,
+        semantics: this.readContinuousEstimateSemantics(id),
+        provenance: {
+          previousModelDriven: estimate.modelDriven,
+          hasMeasuredHeight: apply
+            ? false
+            : applicationState.hasMeasuredHeight,
+          measurementFresh: false,
+        },
+        geometryChanged,
+      })
+    })
+    return applications
+  }
+
+  private commitModelEstimateBatch(
+    applications: readonly ContinuousModelEstimateApplication[],
+  ): boolean {
+    let changed = false
+    applications.forEach(application => {
+      this.continuousHeightProvenance.set(
+        application.id,
+        application.provenance,
+      )
+      this.continuousEstimateSemantics.set(
+        application.id,
+        application.semantics,
+      )
+      if (!application.geometryChanged) return
+      this.heights.update(application.index, application.estimate.height)
+      changed = true
+    })
+    return changed
   }
 
   private resolveRootIndices(blockIds: readonly string[]): number[] {
@@ -995,17 +1347,50 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
   }
 
   private handleStructureChange(
-    change?: Pick<IBlockModelStructureChange, 'affectedRootIds'>,
+    change?: Pick<
+      IBlockModelStructureChange,
+      'affectedRootIds' | 'affectedParentIds'
+    >,
   ): void {
     try {
       this.synchronizeRootModel(false)
       if (change?.affectedRootIds?.length) {
-        this.refreshModelEstimates(change.affectedRootIds)
+        const estimateRootIds = this.structureEstimateRootIds(
+          change,
+          change.affectedRootIds,
+        )
+        // Nested structure invalidates the owning render unit's old DOM
+        // measurement. A pure root-level insert/delete/reorder changes only
+        // order and must not downgrade surviving measured paragraphs.
+        this.refreshModelEstimates(
+          estimateRootIds,
+          true,
+          () => true,
+          estimateRootIds,
+        )
       }
       this.schedule()
     } catch (error) {
       this.handleReconcileFailure(error)
     }
+  }
+
+  private structureEstimateRootIds(
+    change: Pick<IBlockModelStructureChange, 'affectedParentIds'>,
+    affectedRootIds: readonly string[],
+  ): readonly string[] {
+    const parentIds = change.affectedParentIds ?? []
+    if (!parentIds.length) return affectedRootIds
+
+    const rootIds = new Set<string>()
+    for (const parentId of parentIds) {
+      if (parentId === this.doc.rootId) continue
+      const path = this.doc.model.getPath(parentId)
+      const rootId = path?.[0] === this.doc.rootId ? path[1] : undefined
+      if (!rootId) return affectedRootIds
+      rootIds.add(rootId)
+    }
+    return [...rootIds]
   }
 
   private synchronizeRootModel(force: boolean): boolean {
@@ -1104,6 +1489,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     this.fullMountFallback = true
     this.reconcileFailureCount = 0
     this.fallbackMountFailureLogged = false
+    this.clearContinuousEstimateJournal()
     this.pendingStructureAnchor = null
     this.spacerLayer?.clear()
     this.heightObserver.disconnect()
@@ -1315,10 +1701,12 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     this.heightObserver.sync(this.doc.vm.getMountedRootChildIds(), (id) => this.doc.vm.get(id)?.instance.hostElement)
   }
 
-  private applyMeasurements(measurements: HeightMeasurement[]): void {
+  private applyObservedMeasurements(measurements: HeightMeasurement[]): void {
     if (
+      this.disposed ||
       !this.scrollContainer ||
       !measurements.length ||
+      this.continuousEstimateJournalSuspended ||
       this.layoutProjection !== this.continuousLayoutProjection
     ) {
       return
@@ -1332,33 +1720,53 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     let changed = false
     measurements.forEach(([id, height]) => {
       const index = this.indexById.get(id)
-      if (
-        index === undefined ||
-        Math.abs(this.heights.get(index) - height) <= HEIGHT_MEASUREMENT_EPSILON
-      ) {
-        return
+      if (index === undefined) return
+      const previous = this.continuousHeightProvenance.get(id) ?? {
+        previousModelDriven: false,
+        hasMeasuredHeight: false,
+        measurementFresh: false,
       }
+      // Provenance changes even when the observer reports the same geometry;
+      // the next model fallback must know that a fresh DOM measurement exists.
+      this.continuousHeightProvenance.set(id, {
+        ...previous,
+        hasMeasuredHeight: true,
+        measurementFresh: true,
+      })
+      if (Math.abs(this.heights.get(index) - height) <= HEIGHT_MEASUREMENT_EPSILON) return
       this.heights.update(index, height)
       changed = true
     })
     if (!changed) return
     this.continuousLayoutProjection.notifyChange()
-
-    if (anchor && !this.blockNavigationTask) {
-      const restored = restoreProjectedScrollAnchor(
-        anchor,
-        (id) => this.indexById.get(id) ?? -1,
-        this.layoutProjection,
-        viewportTop,
-        this._visualToLayout(this.scrollContainer.clientHeight),
-      )
-      if (restored && Math.abs(restored.correctionPx) >= 0.5) {
-        this.scrollContainer.scrollTop += this._layoutToVisual(
-          restored.correctionPx,
-        )
-      }
-    }
+    this.restoreContinuousMeasurementAnchor(anchor, viewportTop)
     this.schedule()
+  }
+
+  private restoreContinuousMeasurementAnchor(
+    anchor: ScrollAnchorSnapshot | null,
+    viewportTop: number,
+  ): void {
+    // Projection/structure handoff owns one old-coordinate anchor until the
+    // first continuous frame. ResizeObserver may run before that frame; let it
+    // update geometry, but do not apply a competing continuous correction.
+    if (
+      !anchor ||
+      !this.scrollContainer ||
+      this.blockNavigationTask ||
+      this.pendingStructureAnchor
+    ) {
+      return
+    }
+    const restored = restoreProjectedScrollAnchor(
+      anchor,
+      (id) => this.indexById.get(id) ?? -1,
+      this.continuousLayoutProjection,
+      viewportTop,
+      this._visualToLayout(this.scrollContainer.clientHeight),
+    )
+    if (!restored || Math.abs(restored.correctionPx) < 0.5) return
+    this.scrollContainer.scrollTop += this._layoutToVisual(restored.correctionPx)
   }
 
   private getViewportTop(): number {
@@ -1411,23 +1819,48 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
   private deactivateCustomLayoutProjection(): void {
     const projection = this.customLayoutProjection
     if (!projection) return
-    const anchor = this.pendingStructureAnchor ?? this.captureCurrentStructureAnchor()
+    let anchor = this.pendingStructureAnchor
+    if (!anchor) {
+      try {
+        anchor = this.captureCurrentStructureAnchor()
+      } catch (error) {
+        this.doc.logger.warn('layoutProjectionAnchorCaptureError: ', error)
+      }
+    }
+    this.pendingStructureAnchor = anchor
     this.cancelScheduledReconcile()
     this.customLayoutProjectionSubscription?.unsubscribe()
     this.customLayoutProjectionSubscription = null
     const hooks = this.customLayoutProjectionHooks
-    this.customLayoutProjection = null
-    this.customLayoutProjectionHooks = null
-    this.customProjectionValidationPending = false
-    this.customProjectionFailureCount = 0
+    let cleanupError: unknown
+    let cleanupFailed = false
+    this.customProjectionHandoffInProgress = true
     try {
       hooks?.beforeDeactivate?.()
+    } catch (error) {
+      cleanupFailed = true
+      cleanupError = error
     } finally {
-      this.layoutProjection = this.continuousLayoutProjection
-      this.pendingStructureAnchor = anchor
-      this.syncHeightObserver()
-      this.schedule()
+      try {
+        this.flushContinuousEstimateJournal()
+      } catch (replayError) {
+        // Keep the journal intact for the first continuous reconciliation.
+        this.doc.logger.warn('continuousEstimateReplayError: ', replayError)
+      } finally {
+        this.customLayoutProjection = null
+        this.customLayoutProjectionHooks = null
+        this.customProjectionValidationPending = false
+        this.customProjectionFailureCount = 0
+        this.layoutProjection = this.continuousLayoutProjection
+        this.continuousEstimateJournalSuspended = false
+        this.customProjectionHandoffInProgress = false
+        if (this.scrollContainer && !this.fullMountFallback) {
+          this.syncHeightObserver()
+        }
+        this.schedule()
+      }
     }
+    if (cleanupFailed) throw cleanupError
   }
 
   private invalidateCustomLayoutProjection(error: unknown): void {

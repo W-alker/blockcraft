@@ -33,9 +33,9 @@ import {
   ProjectedBlockPlacement,
 } from "./paginated-layout-projection";
 import {
-  estimateModelBlockHeight,
   estimateModelBlockHeightDetails,
   modelHeightEstimateAffectedByContentChange,
+  type ModelHeightEstimate,
 } from "../../virtualization/model-height-estimator";
 
 const DEFAULT_ESTIMATED_HEIGHT = 48;
@@ -68,7 +68,7 @@ interface RootSnapshot {
 
 type PaginationGeometrySemantics = Omit<
   PaginationGeometrySeed,
-  'estimatedHeight'
+  'estimatedHeight' | 'modelDriven'
 >;
 
 function entryToMeta(entry: PaginationGeometryEntry): BlockMeta {
@@ -225,18 +225,18 @@ export class PaginationLayoutCoordinator {
     if (this.disposed) return;
     const candidates =
       rootIds ?? this.doc.model.getChildrenIds(this.doc.rootId);
-    const estimates = candidates.flatMap(blockId => {
+    const estimates = candidates.map(blockId => {
       const estimate = estimateModelBlockHeightDetails(this.doc, blockId, {
         estimatedHeights:
           this.doc.config.virtualization?.estimatedHeights ?? {},
         defaultHeight: DEFAULT_ESTIMATED_HEIGHT,
         layoutMode: 'paginated',
       });
-      if (!estimate.modelDriven) return [];
-      return [{
+      return {
         blockId,
         height: estimate.height,
-      }];
+        modelDriven: estimate.modelDriven,
+      };
     });
     this.geometryIndex.applyEstimatedHeights(estimates);
   }
@@ -342,16 +342,18 @@ export class PaginationLayoutCoordinator {
     const flavour = this.doc.model.getFlavour(blockId) ?? "unknown";
     const nodeType = this.doc.model.getNodeType(blockId) ?? BlockNodeType.void;
     const props = this.doc.model.getProps(blockId);
+    const estimate = this.estimateHeight(blockId, {
+      flavour,
+      nodeType,
+      props,
+    });
     return {
       blockId,
       flavour,
       nodeType,
       isHeading: this.isHeading(flavour, nodeType, props?.["heading"]),
-      estimatedHeight: this.resolveEstimatedHeight(blockId, {
-        flavour,
-        nodeType,
-        props,
-      }),
+      estimatedHeight: estimate.height,
+      modelDriven: estimate.modelDriven,
     };
   }
 
@@ -404,17 +406,17 @@ export class PaginationLayoutCoordinator {
     return [...rootIds];
   }
 
-  private resolveEstimatedHeight(
+  private estimateHeight(
     blockId: string,
     rootFacts?: {
       flavour: string;
       nodeType: BlockNodeType;
       props?: Record<string, unknown>;
     },
-  ): number {
+  ): ModelHeightEstimate {
     const configured =
       this.doc.config.virtualization?.estimatedHeights ?? {};
-    return estimateModelBlockHeight(this.doc, blockId, {
+    return estimateModelBlockHeightDetails(this.doc, blockId, {
       estimatedHeights: configured,
       defaultHeight: DEFAULT_ESTIMATED_HEIGHT,
       layoutMode: 'paginated',

@@ -23,6 +23,10 @@ interface ModelFact {
   readonly props?: Record<string, unknown>;
   readonly path: readonly string[];
   readonly children?: readonly string[];
+  readonly deltas?: readonly {
+    readonly insert: string | Readonly<Record<string, unknown>>;
+    readonly attributes?: Readonly<Record<string, unknown>>;
+  }[];
 }
 
 class ModelHarness {
@@ -71,6 +75,10 @@ class ModelHarness {
     this.reads.props++;
     const props = this.facts.get(blockId)?.props;
     return props ? { ...props } : undefined;
+  }
+
+  getTextDeltas(blockId: string): ModelFact['deltas'] {
+    return this.facts.get(blockId)?.deltas ?? [];
   }
 }
 
@@ -678,6 +686,99 @@ describe("PaginationLayoutCoordinator", () => {
         naturalHeight: 48,
         source: "measured",
       }));
+  });
+
+  it("replaces a stale offscreen inline-image height when estimation falls back", () => {
+    const facts = new Map<string, ModelFact>([
+      ["paragraph", fact("paragraph", {
+        deltas: [{
+          insert: {image: "image.png"},
+          attributes: {width: 320, height: 240},
+        }],
+      })],
+    ]);
+    const {doc} = createHarness(["paragraph"], facts, {paragraph: 48});
+    const coordinator = new PaginationLayoutCoordinator(doc);
+
+    const initial = coordinator.compute(config(), geometry());
+    expect(initial.entries[0]).toEqual(jasmine.objectContaining({
+      naturalHeight: 240,
+      source: "estimated",
+    }));
+    expect(coordinator.applyMeasured(
+      [measurement("paragraph", 260, {splitOffsets: [120]})],
+      coordinator.geometryRevision,
+      0,
+    ).accepted).toBeTrue();
+
+    facts.set("paragraph", fact("paragraph"));
+    coordinator.applyContentChange(contentChange(["paragraph"], ["text"]));
+    const fallback = coordinator.compute(config(), geometry());
+
+    expect(fallback.entries[0]).toEqual(jasmine.objectContaining({
+      naturalHeight: 48,
+      effectiveHeight: 48,
+      source: "estimated",
+    }));
+    expect(fallback.entries[0].splitOffsets).toBeUndefined();
+    expect(fallback.items[0].height).toBe(48);
+    expect(fallback.exact).toBeFalse();
+  });
+
+  it("preserves a fresh DOM measurement across routine model-driven compute seeds", () => {
+    const facts = new Map<string, ModelFact>([
+      ["paragraph", fact("paragraph", {
+        deltas: [{
+          insert: {image: "image.png"},
+          attributes: {width: 320, height: 240},
+        }],
+      })],
+    ]);
+    const {doc} = createHarness(["paragraph"], facts, {paragraph: 48});
+    const coordinator = new PaginationLayoutCoordinator(doc);
+    coordinator.compute(config(), geometry());
+    expect(coordinator.applyMeasured(
+      [measurement("paragraph", 260)],
+      coordinator.geometryRevision,
+      0,
+    ).accepted).toBeTrue();
+    const measuredRevision = coordinator.geometryRevision;
+
+    const state = coordinator.compute(config(), geometry());
+
+    expect(state.entries[0]).toEqual(jasmine.objectContaining({
+      naturalHeight: 260,
+      effectiveHeight: 260,
+      source: "measured",
+    }));
+    expect(state.exact).toBeTrue();
+    expect(coordinator.geometryRevision).toBe(measuredRevision);
+  });
+
+  it("retains measured ordinary text height across fallback-only dirtiness", () => {
+    const facts = new Map<string, ModelFact>([
+      ["paragraph", fact("paragraph", {deltas: [{insert: "body"}]})],
+    ]);
+    const {doc} = createHarness(["paragraph"], facts, {paragraph: 48});
+    const coordinator = new PaginationLayoutCoordinator(doc);
+    coordinator.syncRootOrder();
+    coordinator.applyMeasured(
+      [measurement("paragraph", 120)],
+      coordinator.geometryRevision,
+      0,
+    );
+
+    facts.set("paragraph", fact("paragraph", {
+      deltas: [{insert: "body changed"}],
+    }));
+    coordinator.applyContentChange(contentChange(["paragraph"], ["text"]));
+    const state = coordinator.compute(config(), geometry());
+
+    expect(state.entries[0]).toEqual(jasmine.objectContaining({
+      naturalHeight: 120,
+      source: "estimated",
+    }));
+    expect(state.exact).toBeFalse();
   });
 
   it("replaces stale measured table flow after an offscreen structure change", () => {

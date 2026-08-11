@@ -12,6 +12,7 @@ import {
   InlinePaginationBreakPlan,
   inlinePaginationBreakPlansEqual,
 } from '../view/inline-break-plan'
+import {shouldApplyModelHeightEstimate} from '../../virtualization/model-height-estimator'
 
 /** DOM/layout coordinates may drift by a fraction of a CSS pixel across mounts. */
 const LAYOUT_TOLERANCE = 0.5
@@ -33,11 +34,13 @@ export interface PaginationGeometrySeed {
   readonly nodeType: BlockNodeType
   readonly isHeading: boolean
   readonly estimatedHeight: number
+  readonly modelDriven: boolean
 }
 
 export interface PaginationGeometryEstimate {
   readonly blockId: string
   readonly height: number
+  readonly modelDriven: boolean
 }
 
 export interface PaginationGeometryEntry {
@@ -326,6 +329,18 @@ function entriesEqual(left: PaginationGeometryEntry, right: PaginationGeometryEn
     && plansEqual(left.tableCellFlowPlan, right.tableCellFlowPlan)
 }
 
+function estimatedGeometryEqual(
+  current: PaginationGeometryEntry,
+  estimated: PaginationGeometryEntry,
+): boolean {
+  return entriesEqual(current, {
+    ...estimated,
+    // Source/provenance changes do not alter pagination geometry. A model
+    // estimate may therefore take ownership without manufacturing a revision.
+    source: current.source,
+  })
+}
+
 function contextsEqual(left: PaginationMeasureContext | null, right: PaginationMeasureContext): boolean {
   return left?.contentWidth === right.contentWidth
     && left.contentHeight === right.contentHeight
@@ -338,6 +353,7 @@ function contextsEqual(left: PaginationMeasureContext | null, right: PaginationM
 export class PaginationGeometryIndex {
   private readonly entries = new Map<string, PaginationGeometryEntry>()
   private readonly measuredGeometryIds = new Set<string>()
+  private readonly modelDrivenEstimateIds = new Set<string>()
   private revisionValue = 0
   private measureContextRevisionValue = 0
   private measureContext: PaginationMeasureContext | null = null
@@ -358,6 +374,7 @@ export class PaginationGeometryIndex {
       if (!seedIds.has(blockId)) {
         this.entries.delete(blockId)
         this.measuredGeometryIds.delete(blockId)
+        this.modelDrivenEstimateIds.delete(blockId)
         changed = true
       }
     }
@@ -374,7 +391,10 @@ export class PaginationGeometryIndex {
    * heading identity is independent from the retained last-known extent.
    */
   syncRootSemantics(
-    semantics: readonly Omit<PaginationGeometrySeed, 'estimatedHeight'>[],
+    semantics: readonly Omit<
+      PaginationGeometrySeed,
+      'estimatedHeight' | 'modelDriven'
+    >[],
   ): boolean {
     const ids = new Set<string>()
     for (const next of semantics) {
@@ -400,6 +420,7 @@ export class PaginationGeometryIndex {
         isHeading: next.isHeading,
       }))
       this.measuredGeometryIds.delete(next.blockId)
+      this.modelDrivenEstimateIds.delete(next.blockId)
       changed = true
     }
     if (changed) this.revisionValue++
@@ -438,6 +459,7 @@ export class PaginationGeometryIndex {
           effectiveHeight: seed.estimatedHeight,
         })
         this.measuredGeometryIds.delete(seed.blockId)
+        this.syncModelDrivenProvenance(seed.blockId, seed.modelDriven)
         changed = true
         continue
       }
@@ -459,19 +481,41 @@ export class PaginationGeometryIndex {
           effectiveHeight: seed.estimatedHeight,
         })
         this.measuredGeometryIds.delete(seed.blockId)
+        this.syncModelDrivenProvenance(seed.blockId, seed.modelDriven)
         changed = true
         continue
       }
 
-      if (current.source === 'estimated'
-        && !this.measuredGeometryIds.has(seed.blockId)
-        && !numbersEqual(current.naturalHeight, seed.estimatedHeight)) {
-        this.entries.set(seed.blockId, {
-          ...current,
+      // Root-order reconciliation runs for every layout computation. A fresh
+      // DOM measurement is more authoritative than that routine seed; actual
+      // model changes first dirty the entry and then flow through the estimate
+      // application policy below (or applyEstimatedHeights()).
+      if (
+        this.measuredGeometryIds.has(seed.blockId)
+        && current.source === 'measured'
+      ) {
+        this.syncModelDrivenProvenance(seed.blockId, seed.modelDriven)
+        continue
+      }
+
+      const shouldApply = this.shouldApplyEstimate(seed.blockId, current, {
+        height: seed.estimatedHeight,
+        modelDriven: seed.modelDriven,
+      })
+      this.syncModelDrivenProvenance(seed.blockId, seed.modelDriven)
+      if (shouldApply) {
+        const next = invalidateMeasuredMetadata(current, {
           naturalHeight: seed.estimatedHeight,
           effectiveHeight: seed.estimatedHeight,
         })
-        changed = true
+        if (estimatedGeometryEqual(current, next)) {
+          this.entries.set(seed.blockId, next)
+          this.measuredGeometryIds.delete(seed.blockId)
+        } else {
+          this.entries.set(seed.blockId, next)
+          this.measuredGeometryIds.delete(seed.blockId)
+          changed = true
+        }
       }
     }
     return changed
@@ -515,13 +559,27 @@ export class PaginationGeometryIndex {
       )
       const current = this.entries.get(estimate.blockId)
       if (!current) continue
-      this.measuredGeometryIds.delete(estimate.blockId)
+      const shouldApply = this.shouldApplyEstimate(
+        estimate.blockId,
+        current,
+        estimate,
+      )
+      this.syncModelDrivenProvenance(
+        estimate.blockId,
+        estimate.modelDriven,
+      )
+      if (!shouldApply) continue
       const next = invalidateMeasuredMetadata(current, {
         naturalHeight: estimate.height,
         effectiveHeight: estimate.height,
       })
-      if (entriesEqual(current, next)) continue
+      if (estimatedGeometryEqual(current, next)) {
+        this.entries.set(estimate.blockId, next)
+        this.measuredGeometryIds.delete(estimate.blockId)
+        continue
+      }
       this.entries.set(estimate.blockId, next)
+      this.measuredGeometryIds.delete(estimate.blockId)
       changed = true
     }
     if (changed) this.revisionValue++
@@ -640,10 +698,31 @@ export class PaginationGeometryIndex {
     return entry ? cloneEntry(entry) : undefined
   }
 
+  private shouldApplyEstimate(
+    blockId: string,
+    current: PaginationGeometryEntry,
+    estimate: Pick<PaginationGeometryEstimate, 'height' | 'modelDriven'>,
+  ): boolean {
+    return shouldApplyModelHeightEstimate(estimate, {
+      previousModelDriven: this.modelDrivenEstimateIds.has(blockId),
+      hasMeasuredHeight: this.measuredGeometryIds.has(blockId),
+      measurementFresh: current.source === 'measured',
+    })
+  }
+
+  private syncModelDrivenProvenance(
+    blockId: string,
+    modelDriven: boolean,
+  ): void {
+    if (modelDriven) this.modelDrivenEstimateIds.add(blockId)
+    else this.modelDrivenEstimateIds.delete(blockId)
+  }
+
   clear(): void {
-    if (!this.entries.size) return
+    const hadEntries = this.entries.size > 0
     this.entries.clear()
     this.measuredGeometryIds.clear()
-    this.revisionValue++
+    this.modelDrivenEstimateIds.clear()
+    if (hadEntries) this.revisionValue++
   }
 }
