@@ -420,6 +420,35 @@ this.detach()                          // Idempotently enter retained state; doe
 this.reattach()                        // Idempotently re-init from current Yjs state and remount
 ```
 
+### Common Block Appearance Props
+
+`IBlockProps` declares two optional surface props, but the common live/viewer
+projection applies them only to editable blocks:
+
+```typescript
+block.updateProps({
+  backColor: '#FBF3DB',
+  borderColor: '#DFAB01',
+})
+
+// `null` deletes the persisted override.
+block.updateProps({backColor: null, borderColor: null})
+```
+
+`BaseBlockComponent` binds the opaque values to
+`--bc-block-background-color` / `--bc-block-border-color` and toggles the
+public `data-bc-block-background` / `data-bc-block-border` host attributes.
+The base theme owns the actual fill and 1px outline, and gives every editable
+block host a 4px radius. Do not duplicate inline
+`background-color` or outline projection in a custom block component. The fill
+uses `--bc-solid-block-background-opacity`; `transparent`, empty and missing
+values render as no override. Block-specific focused/selected highlights keep
+their existing priority over the persisted outline. The built-in Blockquote
+consumes `borderColor` as the color of its
+1px left accent bar instead of drawing the common rectangular outline.
+Non-editable blocks ignore both props in the common projection; a block such as
+Callout may still own and document a legacy block-specific appearance contract.
+
 `detach()` and `reattach()` describe a reversible view lifecycle. Permanent
 subscriptions and document-owned resources should still use `onDestroy$` or
 `DestroyRef`. View-only resources that must stop while virtualized should use

@@ -69,6 +69,79 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
+## v0.5.0 — 2026-08-12 — common block background and border colors
+
+**Severity**: minor
+
+**What changed**: `IBlockProps` now defines common `backColor` and
+`borderColor` overrides whose common projection is limited to editable blocks.
+`BaseBlockComponent`, the
+base theme and Snapshot Viewer share one surface projection. The built-in
+`BlockControllerPlugin` adds an appearance color picker for its current single
+flow block while keeping Callout's existing floating toolbar.
+
+**Why**: Background and border styling previously belonged only to individual
+blocks such as Callout and table cells. A common Block-domain contract lets
+built-in and custom blocks persist, collaborate, undo and render the same
+appearance without per-component special cases.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-plugins-block.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `IBlockProps.backColor?: string | null`
+- `IBlockProps.borderColor?: string | null`
+- `--bc-block-background-color` and `--bc-block-border-color`
+- `data-bc-block-background` and `data-bc-block-border`
+- `BlockMenuDropdownItem.menuWidth?: number` for a second-level panel whose
+  content needs a width different from the parent menu.
+- A zero-config **颜色** second-level menu in `BlockControllerPlugin` for
+  background and border colors.
+
+### Migration Recipe
+
+Custom editable blocks can remove local host bindings and use the common props:
+
+```typescript
+// before
+host: {
+  '[style.background-color]': 'props.backColor',
+  '[style.border-color]': 'props.borderColor',
+}
+
+// after
+// Extend BaseBlockComponent and persist backColor/borderColor through
+// updateProps(); the base host/theme projects both automatically.
+```
+
+Use `null` to delete an override. Existing concrete Callout values remain valid
+through Callout's block-specific compatibility surface. Non-editable common
+values remain snapshot-compatible but are ignored by the common projection;
+`transparent` remains read-compatible and renders as no override.
+
+### Behavior Changes
+
+- Concrete common fills render at the existing
+  `--bc-solid-block-background-opacity` value; concrete `borderColor` values
+  render as a 1px outline without changing block geometry or adding common
+  padding. Every editable block host receives a 4px radius. Block-specific
+  focused/selected highlights retain priority over the persisted outline.
+  Blockquote maps `borderColor` to its 1px left accent bar and does not draw the
+  common rectangular outline.
+- The menu edits only its active editable block, is hidden for
+  protected/non-editable/internal/multi selections and does not reclaim
+  absolute objects from their own toolbars. Non-editable snapshots do not
+  receive the common background/outline projection; block-specific legacy
+  surfaces such as Callout remain compatible.
+- HTML/Markdown adapters keep their existing lossy behavior; snapshots,
+  collaboration, internal copy, Snapshot Viewer and print/PDF retain the props.
+
 ## v0.4.0 — 2026-08-12 — built-in icon embed and translucent block surfaces
 
 **Severity**: minor

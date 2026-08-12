@@ -23,7 +23,9 @@ import {
         @if (item.type === "divider") {
           <span class="bc-float-toolbar__divider"></span>
         } @else if (item.type === "custom") {
-          <bc-float-toolbar-item [disabled]="isDisabled(item)">
+          <bc-float-toolbar-item class="custom-item"
+                                 [class.appearance-picker-item]="item.name === 'block-appearance-colors'"
+                                 [disabled]="isDisabled(item)">
             <div class="custom-content" (mousedown)="$event.stopPropagation()">
               @if (item.template) {
                 <ng-container *ngTemplateOutlet="item.template; context: item.templateContext || {}"></ng-container>
@@ -36,6 +38,7 @@ import {
           </bc-float-toolbar-item>
         } @else if (item.type === "dropdown") {
           <bc-float-toolbar-item [icon]="item.icon" [svgIcon]="item.svgIcon" [title]="item.desc || item.label"
+                                 [class.appearance-menu-item]="item.name === 'block-appearance'"
                                  [disabled]="isDisabled(item)"
                                  [bcOverlayDisabled]="isDisabled(item)"
                                  [expandable]="true"
@@ -45,7 +48,7 @@ import {
             <span>{{ item.label }}</span>
           </bc-float-toolbar-item>
           <ng-template #subMenuTpl>
-            <bc-float-toolbar direction="column" [styles]="subMenuStyles">
+            <bc-float-toolbar direction="column" [styles]="getSubMenuStyles(item)">
               <ng-container
                 *ngTemplateOutlet="menuItemsTpl; context: { $implicit: item.items, path: appendPath(path, item) }"></ng-container>
             </bc-float-toolbar>
@@ -106,6 +109,23 @@ import {
       font-size: 14px;
       line-height: 20px;
       flex: 1;
+    }
+
+    bc-float-toolbar-item.custom-item {
+      height: auto;
+      padding: 0;
+      cursor: default;
+    }
+
+    bc-float-toolbar-item.custom-item.appearance-picker-item,
+    bc-float-toolbar-item.custom-item.appearance-picker-item:hover {
+      padding: 0;
+      background: transparent;
+    }
+
+    bc-float-toolbar-item.appearance-menu-item:hover,
+    bc-float-toolbar-item.appearance-menu-item.float-children-opened {
+      background: transparent;
     }
 
     .switch-check {
@@ -224,8 +244,9 @@ export class BlockMenuComponent {
     return this.menuDisabled || !!("disabled" in item && item.disabled)
   }
 
-  get subMenuStyles() {
-    return `display: block; width: ${this.menuWidth}px; max-height: 70vh; overflow-y: auto;`
+  protected getSubMenuStyles(item: BlockMenuDropdownItem) {
+    const width = item.menuWidth ?? this.menuWidth
+    return `display: block; box-sizing: border-box; width: ${width}px; max-height: 70vh; padding: 0; overflow-x: hidden; overflow-y: auto;`
   }
 
   protected appendPath(path: BlockMenuDropdownItem[], item: BlockMenuDropdownItem) {

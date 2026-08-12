@@ -13,6 +13,14 @@ export function createBlockShell(snapshot: IBlockSnapshot): HTMLElement {
     element.classList.add("readonly")
   }
 
+  if (snapshot.nodeType !== BlockNodeType.root) {
+    applyBlockAppearance(
+      element,
+      snapshot.nodeType,
+      snapshot.props as Record<string, unknown>,
+    )
+  }
+
   const placement = (snapshot.props as Record<string, unknown> | undefined)?.["placement"]
   if (placement && typeof placement === "object" &&
     (placement as Record<string, unknown>)["mode"] === "absolute") {
@@ -31,6 +39,34 @@ export function createBlockShell(snapshot: IBlockSnapshot): HTMLElement {
   }
 
   return element
+}
+
+function applyBlockAppearance(
+  element: HTMLElement,
+  nodeType: BlockNodeType,
+  props: Record<string, unknown>,
+) {
+  const backColor = nodeType === BlockNodeType.editable
+    ? normalizeAppearanceColor(props["backColor"])
+    : null
+  if (backColor) {
+    element.setAttribute("data-bc-block-background", "")
+    element.style.setProperty("--bc-block-background-color", backColor)
+  }
+
+  const borderColor = nodeType === BlockNodeType.editable
+    ? normalizeAppearanceColor(props["borderColor"])
+    : null
+  if (borderColor) {
+    element.setAttribute("data-bc-block-border", "")
+    element.style.setProperty("--bc-block-border-color", borderColor)
+  }
+}
+
+function normalizeAppearanceColor(value: unknown): string | null {
+  if (typeof value !== "string") return null
+  const color = value.trim()
+  return color && color.toLowerCase() !== "transparent" ? color : null
 }
 
 function getTagName(snapshot: IBlockSnapshot): string {

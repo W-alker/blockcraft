@@ -59,6 +59,8 @@ export interface BlockMenuSortItem extends BlockMenuItemBase {
 export interface BlockMenuDropdownItem extends BlockMenuItemBase {
   type: 'dropdown'
   items: BlockMenuItem[]
+  /** Width of this dropdown's second-level panel. Defaults to the menu width. */
+  menuWidth?: number
   positions?: OverlayPosition[]
   offsetX?: number
 }

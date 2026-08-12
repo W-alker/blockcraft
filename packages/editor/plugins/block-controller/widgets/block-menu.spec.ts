@@ -31,4 +31,32 @@ describe('BlockMenuComponent svg icons', () => {
     expect(host.querySelector('mat-icon[data-mat-icon-name="bc_test_sort_icon"] svg')).not.toBeNull();
     expect(host.querySelector('.sort-action use')).toBeNull();
   });
+
+  it('marks appearance dropdown and picker items for neutral hover styling', async () => {
+    await TestBed.configureTestingModule({
+      imports: [BlockMenuComponent],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(BlockMenuComponent);
+    fixture.componentRef.setInput('items', [
+      {
+        type: 'dropdown',
+        name: 'block-appearance',
+        label: '颜色',
+        items: [],
+      },
+      {
+        type: 'custom',
+        name: 'block-appearance-colors',
+        label: '色板',
+      },
+    ]);
+    fixture.detectChanges();
+
+    const host = fixture.nativeElement as HTMLElement;
+    expect(host.querySelector('bc-float-toolbar-item.appearance-menu-item'))
+      .not.toBeNull();
+    expect(host.querySelector('bc-float-toolbar-item.appearance-picker-item'))
+      .not.toBeNull();
+  });
 });

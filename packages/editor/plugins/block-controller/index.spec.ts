@@ -5,6 +5,38 @@ import {BlockSelection} from "../../framework/modules/selection/blockSelection";
 import {BlockControllerPlugin} from "./index";
 
 describe("BlockControllerPlugin selection range handling", () => {
+  it("adds the built-in appearance section only for an editable non-leaf block", () => {
+    const plugin = new BlockControllerPlugin();
+    const block = {id: "p1", flavour: "paragraph", nodeType: BlockNodeType.editable};
+    const doc = {
+      schemas: {
+        get: jasmine.createSpy("getSchema").and.returnValue({metadata: {isLeaf: false}}),
+      },
+    };
+    (plugin as any).doc = doc;
+
+    const sections = (plugin as any).resolveAppearanceMenu({
+      activeBlock: block,
+      doc,
+    });
+
+    expect(sections.length).toBe(1);
+    expect(sections[0].key).toBe("block-appearance");
+    expect(sections[0].items[0].type).toBe("dropdown");
+    expect(sections[0].items[0].label).toBe("颜色");
+    expect(sections[0].items[0].menuWidth).toBe(240);
+    expect(sections[0].items[0].items[0].componentInputs).toEqual({block, doc});
+
+    doc.schemas.get.and.returnValue({metadata: {isLeaf: true}});
+    expect((plugin as any).resolveAppearanceMenu({activeBlock: block, doc})).toEqual([]);
+
+    doc.schemas.get.and.returnValue({metadata: {isLeaf: false}});
+    expect((plugin as any).resolveAppearanceMenu({
+      activeBlock: {...block, nodeType: BlockNodeType.void},
+      doc,
+    })).toEqual([]);
+  });
+
   const makeHarness = () => {
     const rootHost = document.createElement("div");
     const p1Host = document.createElement("p");

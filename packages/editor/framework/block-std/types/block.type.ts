@@ -87,6 +87,10 @@ export interface IBlockProps {
   textAlign?: 'center' | 'right'
   depth?: number
   placement?: BlockPositionState
+  /** Persisted editable-block fill color. `null` removes the override. */
+  backColor?: string | null
+  /** Persisted editable-block outline color. `null` removes the override. */
+  borderColor?: string | null
 
   [key: string]: SimpleValue
 }

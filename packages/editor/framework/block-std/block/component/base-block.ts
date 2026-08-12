@@ -169,12 +169,42 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     return this._props as Model['props'] & IBlockProps
   }
 
+  @HostBinding('style.--bc-block-background-color')
+  get blockBackgroundColor(): string | null {
+    return this.nodeType !== BlockNodeType.editable
+      ? null
+      : this._resolveBlockAppearanceColor(this._native?.props?.backColor)
+  }
+
+  @HostBinding('attr.data-bc-block-background')
+  get blockBackgroundAttribute(): '' | null {
+    return this.blockBackgroundColor ? '' : null
+  }
+
+  @HostBinding('style.--bc-block-border-color')
+  get blockBorderColor(): string | null {
+    return this.nodeType !== BlockNodeType.editable
+      ? null
+      : this._resolveBlockAppearanceColor(this._native?.props?.borderColor)
+  }
+
+  @HostBinding('attr.data-bc-block-border')
+  get blockBorderAttribute(): '' | null {
+    return this.blockBorderColor ? '' : null
+  }
+
   private _meta!: Model['meta']
   get meta() {
     return this._meta as Model['meta']
   }
 
   constructor() {
+  }
+
+  private _resolveBlockAppearanceColor(value: unknown): string | null {
+    if (typeof value !== 'string') return null
+    const color = value.trim()
+    return color && color.toLowerCase() !== 'transparent' ? color : null
   }
 
   ngOnInit() {

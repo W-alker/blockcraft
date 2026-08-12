@@ -2,13 +2,15 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-07
+> Last updated: 2026-08-12
 
 ## BlockControllerPlugin
 
 > `plugins/block-controller/` — Drag handle, context menu, and block-level operations.
 
-Renders a floating trigger button that follows the hovered block. Provides drag-and-drop, a built-in context menu for table operations, and fully extensible custom menu sections.
+Renders a floating trigger button that follows the hovered block. Provides
+drag-and-drop, common editable-block background/outline controls, a built-in context menu
+for table operations, and fully extensible custom menu sections.
 
 ### Configuration
 
@@ -35,6 +37,9 @@ new BlockControllerPlugin(customTools?: IContextMenuItem[], customToolHandler?: 
 | `blockMenuResolver` | `(ctx) => BlockMenuSection[]` | Dynamic menu sections based on block context |
 | `blockMenuActionHandler` | `(event, ctx) => boolean` | Handle menu item actions; return `true` to consume |
 | `positionResolver` | `BlockControllerPositionResolver` | Custom positioning logic for the trigger button |
+
+`BlockMenuDropdownItem.menuWidth` optionally sets one second-level panel's
+width; omitted dropdowns keep the surrounding menu width.
 
 ### Usage Example
 
@@ -65,6 +70,13 @@ new BlockControllerPlugin({
 
 ### Notes
 
+- The built-in **颜色** second-level menu appears only for an editable block,
+  reuses the shared color picker and writes only that block's
+  `props.backColor` / `props.borderColor`. Choosing
+  transparent deletes the prop. It never cascades to a parent Callout, table or
+  columns container, and it is absent for multi-block selections, readonly or
+  protected blocks, non-editable blocks, Schema leaf blocks,
+  root/infrastructure blocks and absolute placement objects.
 - Whole-document readonly hides mutation affordances as before. Block readonly
   keeps the trigger visible so the user can copy or unlock the block, but drag
   start and protected mutations are blocked.

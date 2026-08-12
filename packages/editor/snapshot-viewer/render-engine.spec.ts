@@ -28,6 +28,56 @@ describe("SnapshotRenderEngine", () => {
     expect(newNode).toBe(oldNode)
     expect(host.textContent).toContain("after")
   })
+
+  it("projects, updates, and clears common block appearance props", () => {
+    const host = document.createElement("div")
+    const renderer = createSnapshotRenderer()
+    const first = createParagraphFixture("paragraph-1", "styled")
+    first.props = {
+      ...first.props,
+      backColor: "#FBF3DB",
+      borderColor: "#E9E9E7",
+    }
+
+    renderer.render(host, wrapRoot([first]))
+    const block = host.querySelector<HTMLElement>('[data-block-id="paragraph-1"]')!
+    expect(block.hasAttribute("data-bc-block-background")).toBeTrue()
+    expect(block.hasAttribute("data-bc-block-border")).toBeTrue()
+    expect(block.style.getPropertyValue("--bc-block-background-color"))
+      .toBe("#FBF3DB")
+    expect(block.style.getPropertyValue("--bc-block-border-color"))
+      .toBe("#E9E9E7")
+
+    const cleared = createParagraphFixture("paragraph-1", "styled")
+    cleared.props = {...cleared.props, backColor: null, borderColor: "transparent"}
+    renderer.update(wrapRoot([cleared]))
+
+    expect(host.querySelector('[data-block-id="paragraph-1"]')).toBe(block)
+    expect(block.hasAttribute("data-bc-block-background")).toBeFalse()
+    expect(block.hasAttribute("data-bc-block-border")).toBeFalse()
+    expect(block.style.getPropertyValue("--bc-block-background-color")).toBe("")
+    expect(block.style.getPropertyValue("--bc-block-border-color")).toBe("")
+  })
+
+  it("ignores persisted appearance colors on non-editable snapshot blocks", () => {
+    const host = document.createElement("div")
+    const renderer = createSnapshotRenderer()
+    const divider: IBlockSnapshot = {
+      id: "divider-1",
+      flavour: "divider",
+      nodeType: BlockNodeType.void,
+      meta: {},
+      props: {backColor: "#FBF3DB", borderColor: "#E9E9E7"},
+      children: [],
+    }
+
+    renderer.render(host, wrapRoot([divider]))
+    const block = host.querySelector<HTMLElement>('[data-block-id="divider-1"]')!
+    expect(block.hasAttribute("data-bc-block-background")).toBeFalse()
+    expect(block.hasAttribute("data-bc-block-border")).toBeFalse()
+    expect(block.style.getPropertyValue("--bc-block-background-color")).toBe("")
+    expect(block.style.getPropertyValue("--bc-block-border-color")).toBe("")
+  })
 })
 
 function createParagraphFixture(id: string, text: string): IBlockSnapshot {

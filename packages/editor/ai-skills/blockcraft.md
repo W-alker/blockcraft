@@ -179,6 +179,31 @@ const appearance = doc.model.getProps(doc.rootId)
 doc.crud.updateBlockProps(doc.rootId, {background: null, color: null})
 ```
 
+Every editable block also accepts the common block-surface props `backColor`
+and `borderColor`. `BaseBlockComponent` projects them through
+`--bc-block-background-color` / `--bc-block-border-color` and
+`data-bc-block-background` / `data-bc-block-border`; Snapshot Viewer uses the
+same contract. Persist the opaque palette value and use `null` to remove an
+override:
+
+```typescript
+doc.crud.updateBlockProps(blockId, {
+  backColor: '#FBF3DB',
+  borderColor: '#DFAB01',
+})
+doc.crud.updateBlockProps(blockId, {backColor: null, borderColor: null})
+```
+
+The bundled `BlockControllerPlugin` exposes these two fields only for its
+current editable flow block. It does not cascade to ancestors, appear for
+non-editable/internal leaf blocks or multi-block selections, or reclaim
+absolute objects from their object-specific toolbars. Concrete `borderColor`
+values render as a 1px outline
+without changing block geometry, while block-specific focused/selected
+highlights retain priority. Every editable block host receives a 4px radius.
+Blockquote treats `borderColor` specially as the color of its 1px left accent
+bar and draws no rectangular outline.
+
 `doc.model` is read-only. Use `DocCRUD` / `DocChain` for every mutation. Model
 existence means the YBlock is reachable from the current root; it does not mean
 `doc.vm` has mounted a component. `getBlockById()` keeps its mounted-component
@@ -1073,7 +1098,7 @@ onBold(ctx: UIEventStateContext) { ... }
 | `FloatTextToolbarPlugin` | `plugins/float-text-toolbar/` | Selection-based formatting toolbar |
 | `FixedTextToolbarComponent` | `plugins/fixed-toolbar/` | Top-of-editor toolbar (Angular component, not a DocPlugin) |
 | `BlockTransformerPlugin` | `plugins/block-transformer/` | Slash menu / block conversion |
-| `BlockControllerPlugin` | `plugins/block-controller/` | Drag handle, hover menu, custom block-tool injection |
+| `BlockControllerPlugin` | `plugins/block-controller/` | Drag handle, block appearance, hover menu, custom block-tool injection |
 | `BlockGapCreatorPlugin` | `plugins/block-gap-creator/` | Click between blocks → insert paragraph |
 | `PasteFormatSelectorPlugin` | `plugins/paste-format-selector/` | Choose paste format (HTML / Markdown / plain) |
 | `OrderedBlockPlugin` | `plugins/ordered-extension/` | Auto-renumber ordered lists |

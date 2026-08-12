@@ -97,6 +97,23 @@
     position: relative;
     margin-bottom: var(--bc-segments-gap);
 
+    &[data-node-type="editable"][data-bc-block-background] {
+      background-color: var(--bc-block-background-color);
+      background-color: color-mix(
+        in srgb,
+        var(--bc-block-background-color) var(--bc-solid-block-background-opacity, 82%),
+        transparent
+      );
+    }
+
+    &[data-node-type="editable"][data-bc-block-border]:not(.blockquote-block) {
+      outline: 1px solid var(--bc-block-border-color);
+    }
+
+    &[data-node-type="editable"] {
+      border-radius: 4px;
+    }
+
     &.selected {
       // Editability is controlled via the `contenteditable` attribute toggled
       // by SelectionSelectedManager — see `_setSelectedClass` /
@@ -112,6 +129,16 @@
 
     &:last-child {
       margin-bottom: 0;
+    }
+  }
+
+  // Code owns opaque-ish child surfaces. Once a block-level fill is explicit,
+  // let the common host surface paint it instead of compositing another pair
+  // of header/body fills over the selected color.
+  div.code-block[data-bc-block-background] {
+    > .code-block__head,
+    > .edit-container-wrapper {
+      background: transparent;
     }
   }
 

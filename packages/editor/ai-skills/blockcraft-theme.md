@@ -160,7 +160,9 @@ Read `themes/base.scss` and `themes/variables.scss` for the current variable lis
 --bc-border-color
 --bc-accent-color
 --bc-selection-color
---bc-solid-block-background-opacity // default 82%; code/callout surface opacity
+--bc-block-background-color         // current block's persisted backColor
+--bc-block-border-color             // current block's persisted borderColor
+--bc-solid-block-background-opacity // default 82%; solid block surface opacity
 
 // Border
 --bc-border-radius
@@ -169,15 +171,35 @@ Read `themes/base.scss` and `themes/variables.scss` for the current variable lis
 ## Document Background Compatibility
 
 Content surfaces that intentionally carry a solid fill must preserve the
-document background context. The built-in code body/header and callout use
-`color-mix()` with `--bc-solid-block-background-opacity` (default `82%`) so a
-page background color or image remains visible without weakening text opacity.
+document background context. Every editable `BaseBlockComponent` projects
+`props.backColor` and `props.borderColor` through the public
+`--bc-block-background-color` / `--bc-block-border-color` variables and
+`data-bc-block-background` / `data-bc-block-border` attributes. The base theme
+uses `color-mix()` with `--bc-solid-block-background-opacity` (default `82%`)
+for the fill and paints a 1px solid outline only when a concrete border color is
+present, so persisted appearance does not change block geometry or replace a
+block's own border. No common padding is added. Every
+`data-node-type="editable"` block host receives a 4px radius whether or not it
+has a persisted outline. Block-specific focused/selected highlights keep their
+existing priority when they use outline, border, box-shadow or an internal
+overlay. Selection may still provide its existing background feedback without
+rewriting the persisted appearance.
+Blockquote is the deliberate exception: its `borderColor` colors the 1px left
+accent bar and does not add a rectangular host outline.
+
+Non-editable blocks do not receive the common variables or state attributes,
+even if an older snapshot contains these props. A block-specific compatibility
+surface such as Callout may continue consuming its own legacy variable.
+
+Snapshot Viewer creates the same variables and attributes on its block shells.
+Replacement block components that extend `BaseBlockComponent` receive the live
+projection automatically; themes should consume the variables instead of
+writing opaque inline backgrounds.
 
 Callout models continue to persist the original opaque `props.backColor`.
-The renderer projects that value through `--bc-callout-background-color`; do not
-store an alpha-adjusted replacement in Yjs, because repeated edits or exports
-would otherwise compound opacity. Hosts that replace `CalloutBlockComponent`
-must bind that CSS custom property rather than inline `background-color`.
+The renderer also keeps the legacy `--bc-callout-background-color` binding for
+replacement-theme compatibility; do not store an alpha-adjusted replacement in
+Yjs, because repeated edits or exports would otherwise compound opacity.
 
 ```typescript
 host: {

@@ -23,6 +23,7 @@ import {
   IContextMenuItem
 } from "./types";
 import {fixTable} from "../../blocks/table-block/callback";
+import {BlockAppearancePickerComponent} from "./widgets/block-appearance-picker";
 
 const TABLE_MENU_NAMES = {
   equalWidth: "table-equal-width",
@@ -316,6 +317,7 @@ export class BlockControllerPlugin extends DocPlugin {
 
   private resolveBlockMenus = (ctx: BlockMenuContext): BlockMenuSection[] => {
     const builtinSections = [
+      ...this.resolveAppearanceMenu(ctx),
       ...this.resolvePlacementMenu(ctx),
       ...this.resolveTableMenu(ctx),
     ]
@@ -375,6 +377,37 @@ export class BlockControllerPlugin extends DocPlugin {
       return handled
     }
     return false
+  }
+
+  private resolveAppearanceMenu(ctx: BlockMenuContext): BlockMenuSection[] {
+    const block = ctx.activeBlock
+    const schema = this.doc.schemas.get(block.flavour, false)
+    if (
+      block.nodeType !== 'editable' ||
+      schema?.metadata.isLeaf ||
+      ['placement-layout', 'render-unit', 'table-row'].includes(block.flavour)
+    ) {
+      return []
+    }
+
+    return [{
+      key: 'block-appearance',
+      items: [{
+        type: 'dropdown',
+        name: 'block-appearance',
+        icon: 'bc_sepan',
+        label: '颜色',
+        menuWidth: 240,
+        readonlyBehavior: 'hide',
+        items: [{
+          type: 'custom',
+          name: 'block-appearance-colors',
+          component: BlockAppearancePickerComponent,
+          componentInputs: {block, doc: ctx.doc},
+          readonlyBehavior: 'hide',
+        }],
+      }],
+    }]
   }
 
   private resolveTableMenu(ctx: BlockMenuContext): BlockMenuSection[] {
