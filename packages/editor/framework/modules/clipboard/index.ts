@@ -1261,6 +1261,14 @@ export class ClipboardManager {
           finalCursorOffset = textLines[textLines.length - 1].length
         }
       })
+      if (markdownText) {
+        emitFormatData('plain-text', this._captureRegion(
+          editableBlock.id,
+          fromIndex,
+          finalCursorBlockId,
+          finalCursorOffset,
+        ))
+      }
       requestAnimationFrame(() => {
         const finalBlock = this._getBlockByIdSafe(finalCursorBlockId)
         if (!finalBlock || !this.doc.isEditable(finalBlock)) return

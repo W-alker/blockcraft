@@ -121,4 +121,40 @@ describe('ClipboardManager model-first selection restore', () => {
     expect(setCursorAt).toHaveBeenCalledWith(blocks.get('p2'), 2)
     expect(recalculate).not.toHaveBeenCalled()
   })
+
+  it('offers Markdown parsing when the clipboard only exposes markdown-like plain text', async () => {
+    const {context, manager} = createHarness('# Heading')
+    const region = {
+      start: {blockId: 'p1', rel: null},
+      end: {blockId: 'p1', rel: null},
+    } as any
+    spyOn(manager as any, '_captureRegion').and.returnValue(region)
+    const events: any[] = []
+    manager.pasteFormatData$.subscribe(event => events.push(event))
+
+    expect(await manager.onPaste(context as any)).toBeTrue()
+
+    expect(events).toEqual([
+      null,
+      jasmine.objectContaining({
+        appliedType: 'plain-text',
+        htmlSnapshot: null,
+        plainText: '# Heading',
+        markdownText: '# Heading',
+        region,
+        collapsed: true,
+      }),
+    ])
+    expect((manager as any)._captureRegion).toHaveBeenCalledWith('p1', 2, 'p1', 11)
+  })
+
+  it('does not open a format session for ordinary plain text', async () => {
+    const {context, manager} = createHarness('ordinary text')
+    const events: any[] = []
+    manager.pasteFormatData$.subscribe(event => events.push(event))
+
+    expect(await manager.onPaste(context as any)).toBeTrue()
+
+    expect(events).toEqual([null])
+  })
 })
