@@ -10,12 +10,11 @@ import {
 import { CodeBlockLanguage, LANGUAGE_LIST } from "./const";
 import { loadLanguage } from "./shiki-config";
 import { debounce } from "../../global";
-import {CsInputDirective} from "@cses/ui";
 
 @Component({
   selector: 'lang-list',
   template: `
-    <input cs-input csSize="sm" (compositionstart)="isComposing = true" (compositionend)="isComposing = false"
+    <input (compositionstart)="isComposing = true" (compositionend)="isComposing = false"
            (input)="onSearch($event)" #input (keydown)="onKeydown($event)"
            placeholder="搜索语言"
     />
@@ -85,7 +84,6 @@ import {CsInputDirective} from "@cses/ui";
 
     }
   `],
-  imports: [CsInputDirective],
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush
 })
