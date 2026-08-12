@@ -3,7 +3,7 @@ import {FormsModule} from "@angular/forms";
 import {debounce} from "../../../global";
 import {AsyncPipe} from "@angular/common";
 import {FindReplaceHelper} from "../find-replace.helper";
-import {CsButtonComponent, CsInputDirective} from "@cses/ui";
+import {CsButtonComponent} from "@cses/ui";
 
 @Component({
   selector: 'find-replace',
@@ -14,7 +14,6 @@ import {CsButtonComponent, CsInputDirective} from "@cses/ui";
     FormsModule,
     AsyncPipe,
     CsButtonComponent,
-    CsInputDirective,
   ],
 })
 export class FindReplaceDialog implements OnInit, OnDestroy {

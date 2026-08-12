@@ -9,7 +9,6 @@ import {
   ViewChild
 } from "@angular/core";
 import {FormsModule} from "@angular/forms";
-import {CsInputDirective} from "@cses/ui";
 import {CommentPad} from "../../plugins/float-text-toolbar/rich-text-toolbar";
 import {MyCommentService} from "../services/comment.service";
 
@@ -17,7 +16,7 @@ import {MyCommentService} from "../services/comment.service";
   selector: "comment-pad",
   template: `
     <div class="input-wrapper">
-      <input cs-input csSize="sm" placeholder="输入评论……" [(ngModel)]="value" (keydown.enter)="$event.preventDefault(); onSubmit()"
+      <input placeholder="输入评论……" [(ngModel)]="value" (keydown.enter)="$event.preventDefault(); onSubmit()"
              (keydown.escape)="onCancel.emit()"
              #inputEle/>
     </div>
@@ -98,7 +97,6 @@ import {MyCommentService} from "../services/comment.service";
   standalone: true,
   imports: [
     FormsModule,
-    CsInputDirective,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush
 })

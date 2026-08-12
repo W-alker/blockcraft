@@ -1,6 +1,6 @@
 import {ChangeDetectionStrategy, Component, ElementRef, EventEmitter, Input, Output, ViewChild} from "@angular/core";
 import {FormsModule} from "@angular/forms";
-import {CsButtonComponent, CsInputDirective} from "@cses/ui";
+import {CsButtonComponent} from "@cses/ui";
 import {isUrl} from "../../../global";
 
 @Component({
@@ -8,13 +8,13 @@ import {isUrl} from "../../../global";
   template: `
     <div class="input-group" style="margin-bottom: 8px">
       <span>文本</span>
-      <input cs-input csSize="sm" type="text" placeholder="请输入标题" [(ngModel)]="updatedText"
-             [csError]="titleError" #titleInput (keyup.enter)="onUpdate()"
+      <input type="text" placeholder="请输入标题" [(ngModel)]="updatedText"
+             [class.error]="titleError" #titleInput (keyup.enter)="onUpdate()"
              (keydown.tab)="titleInput.focus()" (keydown.escape)="close.emit()">
     </div>
     <div class="input-group">
       <span>地址</span>
-      <input cs-input csSize="sm" type="text" placeholder="请输入地址" [(ngModel)]="updatedHref" [csError]="urlError"
+      <input type="text" placeholder="请输入地址" [(ngModel)]="updatedHref" [class.error]="urlError"
               #urlInput (keyup.enter)="onUpdate()" (keydown.escape)="close.emit()">
       <button cs-button csType="primary" csSize="sm" (click)="onUpdate()">确定</button>
     </div>
@@ -65,7 +65,6 @@ import {isUrl} from "../../../global";
   standalone: true,
   imports: [
     CsButtonComponent,
-    CsInputDirective,
     FormsModule,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush

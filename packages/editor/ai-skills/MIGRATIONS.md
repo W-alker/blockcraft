@@ -69,6 +69,33 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
+## Unreleased — 2026-08-13 — restore editor-owned input styling
+
+**Severity**: patch
+
+**What changed**: Built-in editor overlays no longer attach `CsInputDirective`
+to their native inputs and textareas. Formula source, link editing,
+find/replace, comments, media/embed URLs, code-block naming, attachment renaming
+and divider label controls once again use their existing component-scoped
+BlockCraft styles. CSES UI buttons and the other generic controls are unchanged.
+
+**Why**: The generic input directive overrides the compact geometry and focus
+presentation owned by these editor-specific surfaces. In particular, the
+formula textarea lost its original borderless editor appearance.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-toolbar.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Built-in editor input surfaces render with their previous local styles and
+  local `.error` / wrapper validation classes instead of CSES input styling.
+- This is an internal presentation rollback; host APIs and model data are
+  unchanged.
+
 ## Unreleased — 2026-08-13 — expand Word-like shapes and WordArt catalogs
 
 **Severity**: minor

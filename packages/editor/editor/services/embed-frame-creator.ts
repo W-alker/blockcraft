@@ -8,7 +8,7 @@ import {
   Output,
   ViewChild
 } from "@angular/core";
-import {CsButtonComponent, CsInputDirective} from "@cses/ui";
+import {CsButtonComponent} from "@cses/ui";
 import {IBlockSchemaOptions} from "../../framework/block-std/schema/block-schema";
 import {figmaUrlRegex, jueJinUrlRegex, urlRegex} from "../../global";
 
@@ -18,7 +18,7 @@ import {figmaUrlRegex, jueJinUrlRegex, urlRegex} from "../../global";
     <h3>{{ schema.metadata.label }}</h3>
     <div class="desc">{{ schema.metadata.description }}</div>
 
-    <input cs-input csSize="sm" type="text" [placeholder]="EMBED_FRAME_URL_START_MAP[schema.flavour] + '/...'" (input)="verifyUrl()"
+    <input type="text" [placeholder]="EMBED_FRAME_URL_START_MAP[schema.flavour] + '/...'" (input)="verifyUrl()"
            (keydown.enter)="trySubmit($event)" (keydown.escape)="onCancel.emit()" #inputElement/>
     <button cs-button csType="primary" csSize="sm" [disabled]="isDisabled" (mousedown)="trySubmit($event)">确定</button>
   `,
@@ -58,7 +58,7 @@ import {figmaUrlRegex, jueJinUrlRegex, urlRegex} from "../../global";
     }
   `],
   standalone: true,
-  imports: [CsButtonComponent, CsInputDirective],
+  imports: [CsButtonComponent],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class EmbedFrameCreator {

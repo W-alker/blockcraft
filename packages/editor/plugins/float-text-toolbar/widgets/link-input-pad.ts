@@ -7,13 +7,13 @@ import {
   Output,
   ViewChild
 } from "@angular/core";
-import {CsButtonComponent, CsInputDirective} from "@cses/ui";
+import {CsButtonComponent} from "@cses/ui";
 import {isUrl} from "../../../global";
 
 @Component({
   selector: 'link-input-pad',
   template: `
-    <input cs-input csSize="sm" type="text" (input)="onInput($event)" [csError]="!isValid" placeholder="输入链接地址" #inputElement
+    <input type="text" (input)="onInput($event)" [class.error]="!isValid" placeholder="输入链接地址" #inputElement
            (keydown.enter)="submitValue($event)" (keydown.escape)="closePad($event)"    />
     <div style="display: flex; justify-content: flex-end; gap: 8px; width: 100%;">
       <button cs-button csType="secondary" csSize="sm" (mousedown)="closePad($event)">取消</button>
@@ -56,7 +56,6 @@ import {isUrl} from "../../../global";
   standalone: true,
   imports: [
     CsButtonComponent,
-    CsInputDirective,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush
 })

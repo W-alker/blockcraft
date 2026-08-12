@@ -2,7 +2,7 @@ import {
   AfterViewInit, ChangeDetectionStrategy, ChangeDetectorRef, Component,
   ElementRef, EventEmitter, Input, OnDestroy, Output, ViewChild,
 } from "@angular/core";
-import {CsButtonComponent, CsInputDirective} from "@cses/ui";
+import {CsButtonComponent} from "@cses/ui";
 // @ts-ignore
 import katex from 'katex';
 
@@ -12,7 +12,7 @@ import katex from 'katex';
     <div class="ft-container">
       <div class="ft-preview" #preview></div>
       <div class="ft-editor">
-        <textarea cs-input csSize="sm" #latexInput class="ft-input" [value]="latex"
+        <textarea #latexInput class="ft-input" [value]="latex"
           (input)="onInput($event)" (keydown.meta.enter)="onConfirm()"
           (keydown.control.enter)="onConfirm()"
           placeholder="输入 LaTeX 公式，如 E = mc^2" rows="3"></textarea>
@@ -78,7 +78,7 @@ import katex from 'katex';
     }
   `],
   standalone: true,
-  imports: [CsButtonComponent, CsInputDirective],
+  imports: [CsButtonComponent],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class FormulaBlockToolbar implements AfterViewInit, OnDestroy {

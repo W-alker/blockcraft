@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-12
+> Last updated: 2026-08-13
 
 ## Overlay Service
 
@@ -206,8 +206,6 @@ export class MyToolbarComponent {
 Use the exact `@cses/ui@4.25.0` peer for generic toolbar chrome:
 
 - `CsButtonComponent` for textual confirm/cancel and ordinary actions;
-- `CsInputDirective` for native text inputs that must keep editor-specific
-  value/event handling;
 - `CsTooltipDirective` for hover help;
 - `CsDropdownDirective` + `CsDropdownMenuComponent` + `CsMenuDirective` /
   `CsMenuItemComponent` for accessible menus;
@@ -215,6 +213,13 @@ Use the exact `@cses/ui@4.25.0` peer for generic toolbar chrome:
   and keyboard navigation. Use its `panel` mode inside a BlockCraft-owned
   overlay and consume `csEmojiSelect`;
 - `CsEmptyComponent` and `CsMessageService` for standard feedback.
+
+Editor-owned input surfaces use native `input` / `textarea` elements with
+component-scoped BlockCraft styles. This includes formula source, link editing,
+find/replace, comments, media/embed URLs, block names and attachment renaming.
+Do not attach `CsInputDirective` to these controls: its generic geometry and
+focus presentation can override the compact overlay layout. Validation remains
+local through classes such as `.error` or a styled wrapper.
 
 Keep BlockCraft-owned components when the behavior is editor-specific, such as
 block drag handles, the inline color matrix, resize handles and table structure

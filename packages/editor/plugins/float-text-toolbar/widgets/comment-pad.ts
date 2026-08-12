@@ -10,13 +10,12 @@ import {
 } from "@angular/core";
 import {FormsModule} from "@angular/forms";
 import {ISelectionJSON} from "../../../framework";
-import {CsInputDirective} from "@cses/ui";
 
 @Component({
   selector: "comment-pad",
   template: `
     <div class="input-wrapper">
-      <input cs-input csSize="sm" placeholder="输入评论……" (keydown.enter)="$event.preventDefault(); onSubmit()"
+      <input placeholder="输入评论……" (keydown.enter)="$event.preventDefault(); onSubmit()"
              (keydown.escape)="onCancel.emit()"
              #inputEle/>
     </div>
@@ -96,7 +95,6 @@ import {CsInputDirective} from "@cses/ui";
   standalone: true,
   imports: [
     FormsModule,
-    CsInputDirective,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush
 })

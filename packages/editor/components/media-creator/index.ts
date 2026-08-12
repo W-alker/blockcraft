@@ -10,7 +10,7 @@ import {
   ViewChild,
   inject
 } from '@angular/core';
-import {CsButtonComponent, CsInputDirective} from '@cses/ui';
+import {CsButtonComponent} from '@cses/ui';
 import {DOC_FILE_SERVICE_TOKEN, IBlockSchemaOptions} from "../../framework";
 import {urlRegex} from "../../global";
 
@@ -50,7 +50,7 @@ export interface MediaCreatorResult {
     <div class="mc-body">
       @if (activeTab === 'link') {
         <div class="mc-input-wrap">
-          <input cs-input csSize="sm" type="text"
+          <input type="text"
                  [placeholder]="getUrlPlaceholder()"
                  (input)="verifyUrl()"
                  (keydown.enter)="trySubmit()"
@@ -334,7 +334,7 @@ export interface MediaCreatorResult {
 
   `],
   standalone: true,
-  imports: [CsButtonComponent, CsInputDirective],
+  imports: [CsButtonComponent],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class MediaCreatorComponent {

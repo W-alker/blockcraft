@@ -1090,8 +1090,10 @@ onBold(ctx: UIEventStateContext) { ... }
   actual shape, so it does not maintain duplicate icon resources.
 - Generic editor chrome consumes the exact `@cses/ui@4.25.0` peer. Hosts load
   `@cses/ui/styles/cses-ui.scss` for its component styles; standard buttons,
-  text inputs, tooltips, dropdown menus, EmojiPicker, empty states and messages
-  use the public API. BlockCraft theme variables, editor-specific geometry
+  tooltips, dropdown menus, EmojiPicker, empty states and messages use the
+  public API. Editor-owned native text inputs and textareas keep their scoped
+  BlockCraft styles so compact overlays retain their intended geometry and
+  validation states. BlockCraft theme variables, editor-specific geometry
   controls and existing icon paths remain unchanged.
 - Hotkey decorators use `shortKey: true` for cross-platform Cmd/Ctrl — never hardcode `metaKey`/`ctrlKey`
 - Empty editable blocks can show placeholder text on focus; `meta.plhMode:
