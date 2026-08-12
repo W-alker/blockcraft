@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-08-12 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-08-13 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -68,6 +68,88 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
+
+## Unreleased — 2026-08-13 — expand Word-like shapes and WordArt catalogs
+
+**Severity**: minor
+
+**What changed**: The built-in Shape catalog grows from 12 to 103 types and is
+organized into eight Word-like categories in the fixed insertion toolbar.
+WordArt grows from 5 to 16 visual presets, from 5 to 10 safe font stacks, and
+from 5 to 15 allowlisted whole-text effects; selected WordArt now exposes
+font-family selection directly. Fixed-toolbar Shape and WordArt insertion now
+uses a Word-like one-shot drawing gesture instead of creating the object as soon
+as a catalog item is picked.
+
+**Why**: Shape and WordArt blocks already owned safe geometry, collaborative
+text, placement, resize/rotation and lossless HTML, but the small flat catalogs
+made them unsuitable for normal document-authoring workflows. The expanded
+catalog stays model-light by keeping category and SVG data outside Yjs.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-adapter.md`
+- `blockcraft-plugins-formatting.md`
+- `blockcraft-plugins-toolbar.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `SHAPE_CATEGORIES`, `ShapeCategoryId` and `ShapeCategoryDefinition`.
+- 91 additive `ShapeKind` values across rectangles, basic shapes, lines,
+  arrows, equation shapes, flowchart, stars/banners and callouts.
+- Optional `ShapeDefinition.detailPath`, `fillable`, `supportsText` and
+  `fillRule` capabilities. Existing custom reads of `type`, `label`, `path` and
+  `textInsets` remain valid.
+- 11 additive `WordArtPresetId` values, 5 additive `WordArtFontId` values and
+  10 additive `WordArtEffect` values.
+- A font-family menu on the connected WordArt toolbar.
+
+### Migration Recipe
+
+Downstream code with exhaustive switches over the exported unions should add a
+fallback or handle the new catalog values:
+
+```typescript
+// before
+function shapeGroup(kind: ShapeKind) {
+  if (kind === 'rectangle') return 'basic'
+  if (kind === 'ellipse') return 'basic'
+  return 'legacy-other'
+}
+
+// after: prefer the framework-owned category projection
+const category = SHAPE_CATEGORIES.find(group =>
+  group.definitions.some(definition => definition.type === kind),
+)
+```
+
+Existing snapshots and HTML need no migration. `shapeType` and WordArt props
+keep the same fields; new types pass through the existing normalizers and
+`data-shape-*` / `data-word-art-*` envelopes.
+
+### Behavior Changes
+
+- The fixed-toolbar shape picker is categorized, bounded and scrollable instead
+  of a flat four-column 12-item panel. Cells are compact icon-only controls
+  whose names remain available through CSES Tooltip and `aria-label`.
+- The 16-card WordArt preset panel uses a compact six-column visual grid;
+  preset names remain available through Tooltip and accessible labels.
+- Choosing a fixed-toolbar Shape or WordArt item only arms the drawing tool.
+  Primary-pointer drag previews the final bounds and writes position plus size
+  once on release; click/release uses default dimensions. Escape,
+  pointercancel, blur, scrolling, readonly changes and teardown cancel without
+  a Yjs mutation.
+- The eight line/connector appearances paint no fill and do not expose a
+  `shape-text` editing surface. They provide Word-like visual geometry only;
+  automatic endpoint attachment remains a separate future connector domain.
+- Shape geometry with internal construction strokes paints those strokes from
+  `detailPath` without allowing SVG's implicit fill closure to distort them.
+- WordArt effects remain allowlisted transforms on the single real CSS text
+  surface. This expansion does not introduce raw CSS, mirrored SVG glyphs or a
+  separate curved-text renderer.
 
 ## Unreleased — 2026-08-12 — adopt the CSES EmojiPicker
 

@@ -45,7 +45,7 @@ describe('Shape adapters', () => {
   const markdownAdapter = new MarkdownAdapter(fileService)
 
   it('round-trips shape geometry, style, placement and rich text through HTML', async () => {
-    const shape = ShapeBlockSchema.createSnapshot('right-arrow', [
+    const shape = ShapeBlockSchema.createSnapshot('flow-decision', [
       {insert: '下一步', attributes: {'a:bold': true}},
     ])
     shape.props = {
@@ -69,7 +69,7 @@ describe('Shape adapters', () => {
     ]))
     const element = new DOMParser().parseFromString(html, 'text/html')
       .querySelector('figure[data-bc-block="shape"]')
-    expect(element?.getAttribute('data-shape-type')).toBe('right-arrow')
+    expect(element?.getAttribute('data-shape-type')).toBe('flow-decision')
     expect(element?.getAttribute('data-shape-rotation')).toBe('37.5')
     expect(element?.getAttribute('data-shape-placement-layer')).toBe('under')
     expect(element?.querySelector('[data-bc-shape-text]')?.textContent)
@@ -79,7 +79,7 @@ describe('Shape adapters', () => {
     const imported = importedRoot.children[0] as IBlockSnapshot
     expect(imported.flavour).toBe('shape')
     expect(imported.props).toEqual(jasmine.objectContaining({
-      shapeType: 'right-arrow',
+      shapeType: 'flow-decision',
       width: 260,
       height: 120,
       rotation: 37.5,

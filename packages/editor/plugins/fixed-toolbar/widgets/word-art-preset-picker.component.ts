@@ -32,7 +32,6 @@ import {
             role="menuitem"
             [attr.data-preset-id]="item.id"
             [attr.aria-label]="item.label"
-            [title]="item.label"
             [csTooltip]="item.label"
             (click)="pick.emit(item.id)"
           >
@@ -68,7 +67,7 @@ import {
       .word-art-preset-picker {
         box-sizing: border-box;
         max-width: 100%;
-        padding: 12px;
+        padding: 8px;
         border: 1px solid var(--bc-float-toolbar-divider-color);
         border-radius: 10px;
         background: var(--bc-float-toolbar-bg);
@@ -80,26 +79,26 @@ import {
       }
 
       .word-art-preset-picker__title {
-        margin-bottom: 8px;
-        font-size: 13px;
+        margin-bottom: 5px;
+        font-size: 11px;
         font-weight: 600;
-        line-height: 20px;
+        line-height: 16px;
       }
 
       .word-art-preset-picker__viewport {
         display: grid;
-        grid-auto-columns: 68px;
-        grid-auto-flow: column;
-        gap: 6px;
+        grid-template-columns: repeat(6, 48px);
+        gap: 4px;
         max-width: 100%;
-        overflow-x: auto;
-        overscroll-behavior-inline: contain;
+        max-height: min(280px, calc(100vh - 96px));
+        overflow: auto;
+        overscroll-behavior: contain;
       }
 
       .word-art-preset-picker__item {
         box-sizing: border-box;
-        width: 68px;
-        height: 64px;
+        width: 48px;
+        height: 44px;
         padding: 0;
         overflow: visible;
         border: 1px solid transparent;
@@ -122,7 +121,7 @@ import {
 
       .word-art-preset-picker__preview {
         display: inline-block;
-        font-size: 40px;
+        font-size: 30px;
         line-height: 1;
         background-clip: text;
         -webkit-background-clip: text;

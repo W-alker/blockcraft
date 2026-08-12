@@ -39,7 +39,7 @@ describe("WordArtToolbarComponent", () => {
     ]);
   });
 
-  it("keeps only local style overlay menus and the semantic shadow icon", async () => {
+  it("exposes local font and style menus with the semantic shadow icon", async () => {
     await TestBed.configureTestingModule({
       imports: [WordArtToolbarComponent],
     }).compileComponents();
@@ -56,13 +56,13 @@ describe("WordArtToolbarComponent", () => {
       host.querySelectorAll(
         "bc-float-toolbar-item.word-art-toolbar__menu-trigger",
       ).length,
-    ).toBe(4);
+    ).toBe(5);
     expect(
       host.querySelector('bc-float-toolbar-item[aria-label="艺术字预设"]'),
     ).toBeNull();
     expect(
       host.querySelector('bc-float-toolbar-item[aria-label="艺术字字体"]'),
-    ).toBeNull();
+    ).not.toBeNull();
     expect(
       host.querySelector('input[type="number"][min="8"][max="512"]'),
     ).not.toBeNull();
@@ -140,6 +140,10 @@ describe("WordArtToolbarComponent", () => {
       { value: "linear-gradient" } as BcFloatToolbarItemComponent,
       trigger,
     );
+    component.selectFontFamily(
+      { value: "slab-serif" } as BcFloatToolbarItemComponent,
+      trigger,
+    );
     component.selectEffect(
       { value: "slant-right" } as BcFloatToolbarItemComponent,
       trigger,
@@ -159,17 +163,21 @@ describe("WordArtToolbarComponent", () => {
     });
     expect(actions[1]).toEqual({
       name: "update-props",
-      value: { effect: "slant-right" },
+      value: { fontFamily: "slab-serif" },
     });
     expect(actions[2]).toEqual({
       name: "update-props",
-      value: { horizontalAlign: "right" },
+      value: { effect: "slant-right" },
     });
     expect(actions[3]).toEqual({
       name: "update-props",
+      value: { horizontalAlign: "right" },
+    });
+    expect(actions[4]).toEqual({
+      name: "update-props",
       value: { verticalAlign: "bottom" },
     });
-    expect(trigger.closePanel).toHaveBeenCalledTimes(4);
+    expect(trigger.closePanel).toHaveBeenCalledTimes(5);
   });
 
   it("matches the shape toolbar range progress without persisting on input", async () => {

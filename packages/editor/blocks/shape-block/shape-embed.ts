@@ -123,8 +123,14 @@ export const createInlineShapeEmbedConverter = (): EmbedConverter => ({
     svg.classList.add('bc-inline-shape__geometry')
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
     path.setAttribute('d', definition.path)
-    path.setAttribute('fill', props.fillColor)
+    path.setAttribute(
+      'fill',
+      definition.fillable === false ? 'none' : props.fillColor,
+    )
     path.setAttribute('fill-opacity', String(props.fillOpacity))
+    if (definition.fillRule) {
+      path.setAttribute('fill-rule', definition.fillRule)
+    }
     path.setAttribute('stroke', props.strokeColor)
     path.setAttribute('stroke-width', String(props.strokeWidth))
     path.setAttribute('vector-effect', 'non-scaling-stroke')
@@ -132,6 +138,21 @@ export const createInlineShapeEmbedConverter = (): EmbedConverter => ({
       path.setAttribute('stroke-dasharray', '10 7')
     }
     svg.appendChild(path)
+    if (definition.detailPath) {
+      const detailPath = document.createElementNS(
+        'http://www.w3.org/2000/svg',
+        'path',
+      )
+      detailPath.setAttribute('d', definition.detailPath)
+      detailPath.setAttribute('fill', 'none')
+      detailPath.setAttribute('stroke', props.strokeColor)
+      detailPath.setAttribute('stroke-width', String(props.strokeWidth))
+      detailPath.setAttribute('vector-effect', 'non-scaling-stroke')
+      if (props.strokeStyle === 'dashed') {
+        detailPath.setAttribute('stroke-dasharray', '10 7')
+      }
+      svg.appendChild(detailPath)
+    }
 
     const text = document.createElement('span')
     text.classList.add('bc-inline-shape__text')
@@ -149,6 +170,7 @@ export const createInlineShapeEmbedConverter = (): EmbedConverter => ({
       : props.verticalAlign === 'bottom'
         ? 'flex-end'
         : 'center'
+    if (definition.supportsText === false) text.hidden = true
     frame.append(svg, text)
     return shell
   },

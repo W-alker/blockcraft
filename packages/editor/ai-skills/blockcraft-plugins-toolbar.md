@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-04
+> Last updated: 2026-08-13
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
@@ -259,7 +259,8 @@ Register `PlacementLayoutBlockSchema`, `ShapeBlockSchema`,
 this.
 When `ShapeBlockSchema` is registered, the bundled
 `FixedTextToolbarComponent` also exposes a visible **插入形状** button. Its
-picker uses the same 12 `SHAPE_DEFINITIONS` and creates the selected type
+picker uses the same 103 `SHAPE_DEFINITIONS` grouped by the eight
+`SHAPE_CATEGORIES` and creates the selected type
 directly below the root `placement-layout`, near the saved selection, with the
 default `over` tier. There is no temporary root-flow shape. When the layout does
 not exist yet, the layout and its first shape are inserted as one nested
@@ -267,7 +268,11 @@ snapshot; later shapes append to the existing layout. The new shape is selected
 after the transaction completes. The entry keeps the existing `bc_tuxing`
 iconfont glyph, while every picker item renders its actual
 `ShapeDefinition.path` through the shared `ShapeIconComponent`; shape
-definitions do not maintain iconfont classes.
+definitions do not maintain iconfont classes. Its dense icon-only cells use
+Tooltip and accessible labels; only the compact category headings remain
+visible.
+Line/connector appearances paint no fill and expose no editable shape-text
+surface; automatic endpoint attachment is outside this visual shape contract.
 
 ---
 
@@ -290,12 +295,14 @@ handle is rendered. Enter also enters editing; Escape returns to whole-object
 selection. Readonly WordArt stays selectable but does not open mutation
 controls.
 
-The connected toolbar exposes font size, solid/linear-gradient fills, outline,
+The connected toolbar exposes one of 10 safe font families, font size,
+solid/linear-gradient fills, outline,
 shadow toggle, letter spacing, horizontal/vertical alignment, safe
-affine/perspective effects, inline/wrap plus the three block object layouts, absolute stack
-order and deletion. Preset and font-family selection live only in the fixed
-toolbar's **插入艺术字** visual dropdown, avoiding duplicate controls in the
-object toolbar. The shadow toggle uses the `bc_wenziyinying` iconfont glyph.
+affine/perspective/scale effects, inline/wrap plus the three block object
+layouts, absolute stack order and deletion. The 16 whole-style presets remain
+in the fixed toolbar's **插入艺术字** visual dropdown; font-family selection is
+also available on the selected object so existing WordArt can be restyled. The
+shadow toggle uses the `bc_wenziyinying` iconfont glyph.
 Horizontal and vertical alignment are two iconfont-only triggers with
 iconfont-only secondary menus, active state, tooltip and accessible names. The
 outline-width and letter-spacing ranges share the shape toolbar's themed
@@ -316,7 +323,7 @@ Register `WordArtBlockSchema`, `PlacementLayoutBlockSchema` and
 `WordArtToolbarPlugin` together with a fresh
 `createInlineWordArtEmbedConverter()`. The bundled capability factory already
 does this, and the bundled fixed toolbar exposes the **插入艺术字** visual preset
-dropdown only when the Schema is registered. Its five `A` cards reuse the
+dropdown only when the Schema is registered. Its compact 16 `A` cards reuse the
 production WordArt presentation resolver. Choosing a preset creates the
 default `艺术字` with that presentation, enters editing and selects all text.
 

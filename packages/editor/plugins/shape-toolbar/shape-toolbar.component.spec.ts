@@ -103,7 +103,7 @@ describe('ShapeToolbarComponent', () => {
     expect((component as any).textAlignItems).toBeUndefined()
   })
 
-  it('renders no native select or text-format controls', async () => {
+  it('renders no change-shape, native select or text-format controls', async () => {
     await TestBed.configureTestingModule({
       imports: [ShapeToolbarComponent],
     }).compileComponents()
@@ -114,6 +114,7 @@ describe('ShapeToolbarComponent', () => {
 
     expect(host.querySelector('select')).toBeNull()
     expect(host.querySelector('[aria-label="更改形状"]')).toBeNull()
+    expect(host.querySelector('bc-shape-picker')).toBeNull()
     expect(host.querySelector('[aria-label="文字颜色"]')).toBeNull()
     expect(host.querySelector('[aria-label="文字左对齐"]')).toBeNull()
     expect(host.querySelector('[aria-label="垂直对齐"]')).toBeNull()

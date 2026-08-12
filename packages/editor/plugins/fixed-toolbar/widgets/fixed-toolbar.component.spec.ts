@@ -3,6 +3,10 @@ import { BcOverlayTriggerDirective } from "../../../components";
 import { BlockNodeType } from "../../../framework";
 import { BlockSelection } from "../../../framework/modules/selection/blockSelection";
 import { getWordArtPreset } from "../../../blocks/word-art-block";
+import {
+  SHAPE_CATEGORIES,
+  SHAPE_DEFINITIONS,
+} from "../../../blocks/shape-block";
 import { FixedTextToolbarComponent } from "./fixed-toolbar.component";
 
 describe("FixedTextToolbarComponent boundary selections", () => {
@@ -399,7 +403,7 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
     rootHost.remove();
   });
 
-  it("inserts the selected shape directly into the placement layout and selects it", async () => {
+  it("arms shape drawing and commits the dragged size only after release", async () => {
     const {
       component,
       rootHost,
@@ -419,6 +423,11 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
     setSelection(textCursor);
     component.selectionJSON = textCursor.toJSON();
     spyOn<any>(component, "syncToolbarState");
+    let drawRequest: any;
+    spyOn<any>(component, "armObjectDrawing").and.callFake((request: any) => {
+      drawRequest = request;
+      return true;
+    });
     const trigger = jasmine.createSpyObj<BcOverlayTriggerDirective>(
       "BcOverlayTriggerDirective",
       ["closePanel"],
@@ -427,11 +436,26 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
     await (component as any).insertShape("diamond", trigger);
 
     expect(trigger.closePanel).toHaveBeenCalled();
+    expect(drawRequest.defaultWidth).toBe(180);
+    expect(drawRequest.defaultHeight).toBe(100);
+    expect(createSnapshot).not.toHaveBeenCalled();
+    expect(insertAbsoluteSnapshot).not.toHaveBeenCalled();
+
+    const anchorRect = new DOMRect(120, 80, 480, 280);
+    await drawRequest.commit({anchorRect, width: 240, height: 140});
+
     expect(createSnapshot).toHaveBeenCalledOnceWith("shape", ["diamond"]);
     expect(insertAbsoluteSnapshot).toHaveBeenCalledOnceWith(
-      shapeSnapshot,
+      {
+        ...shapeSnapshot,
+        props: {
+          ...shapeSnapshot.props,
+          width: 240,
+          height: 140,
+        },
+      },
       jasmine.objectContaining({
-        anchorRect: jasmine.any(DOMRect),
+        anchorRect,
         layer: "over",
       }),
     );
@@ -442,7 +466,7 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
     rootHost.remove();
   });
 
-  it("inserts editable word art and selects all default text", async () => {
+  it("arms WordArt drawing and edits only after the geometry is committed", async () => {
     const {
       component,
       rootHost,
@@ -463,6 +487,11 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
     setSelection(textCursor);
     component.selectionJSON = textCursor.toJSON();
     spyOn<any>(component, "syncToolbarState");
+    let drawRequest: any;
+    spyOn<any>(component, "armObjectDrawing").and.callFake((request: any) => {
+      drawRequest = request;
+      return true;
+    });
     const trigger = jasmine.createSpyObj<BcOverlayTriggerDirective>(
       "BcOverlayTriggerDirective",
       ["closePanel"],
@@ -472,10 +501,21 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
     await (component as any).insertWordArt("ocean", trigger);
 
     expect(trigger.closePanel).toHaveBeenCalled();
+    expect(drawRequest.defaultWidth).toBe(320);
+    expect(drawRequest.defaultHeight).toBe(96);
+    expect(createSnapshot).not.toHaveBeenCalled();
+    expect(insertAbsoluteSnapshot).not.toHaveBeenCalled();
+    expect(enterEditing).not.toHaveBeenCalled();
+
+    const anchorRect = new DOMRect(160, 96, 420, 140);
+    await drawRequest.commit({anchorRect, width: 420, height: 140});
+
     expect(createSnapshot).toHaveBeenCalledOnceWith("word-art", [
       "艺术字",
       {
         ...preset.props,
+        width: 420,
+        height: 140,
         gradientColors: [...preset.props.gradientColors],
         gradientStops: [...preset.props.gradientStops],
       },
@@ -486,7 +526,7 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
     expect(insertAbsoluteSnapshot).toHaveBeenCalledOnceWith(
       wordArtSnapshot,
       jasmine.objectContaining({
-        anchorRect: jasmine.any(DOMRect),
+        anchorRect,
         layer: "over",
       }),
     );
@@ -500,19 +540,19 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
     rootHost.remove();
   });
 
-  it("exposes all registered shape definitions to the picker", () => {
-    const { component, rootHost } = makeHarness();
-
-    expect((component as any).shapeDefinitions.length).toBe(12);
+  it("delegates the complete catalog to the shared categorized picker", () => {
+    expect(SHAPE_DEFINITIONS.length).toBe(103);
     expect(
-      (component as any).shapeDefinitions.map((item: any) => item.type),
-    ).toContain("notched-right-arrow");
+      SHAPE_CATEGORIES.flatMap((category) => category.definitions),
+    ).toEqual(SHAPE_DEFINITIONS);
+    expect(SHAPE_DEFINITIONS.map((item) => item.type)).toContain(
+      "notched-right-arrow",
+    );
     expect(
-      (component as any).shapeDefinitions.every(
-        (item: any) => typeof item.path === "string" && !("icon" in item),
+      SHAPE_DEFINITIONS.every(
+        (item) => typeof item.path === "string" && !("icon" in item),
       ),
     ).toBeTrue();
-    rootHost.remove();
   });
 
   it("disables generic block insertion for model table-cell selections", () => {

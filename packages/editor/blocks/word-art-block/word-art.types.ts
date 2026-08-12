@@ -29,6 +29,31 @@ export const WORD_ART_FONT_OPTIONS = [
     label: '中文楷体',
     stack: 'Kaiti SC, KaiTi, STKaiti, serif',
   },
+  {
+    id: 'condensed-sans',
+    label: '窄体黑体',
+    stack: 'Impact, "Arial Narrow", "Microsoft YaHei", sans-serif',
+  },
+  {
+    id: 'humanist-sans',
+    label: '人文无衬线',
+    stack: 'Trebuchet MS, "PingFang SC", "Microsoft YaHei", sans-serif',
+  },
+  {
+    id: 'slab-serif',
+    label: '粗衬线体',
+    stack: 'Rockwell, "Songti SC", SimSun, serif',
+  },
+  {
+    id: 'cjk-song',
+    label: '中文宋体',
+    stack: 'Songti SC, STSong, SimSun, serif',
+  },
+  {
+    id: 'monospace',
+    label: '等宽体',
+    stack: 'Menlo, Consolas, "Microsoft YaHei", monospace',
+  },
 ] as const
 
 export type WordArtFontId = typeof WORD_ART_FONT_OPTIONS[number]['id']
@@ -40,8 +65,18 @@ export type WordArtEffect =
   | 'none'
   | 'slant-left'
   | 'slant-right'
+  | 'slant-up'
+  | 'slant-down'
   | 'perspective-left'
   | 'perspective-right'
+  | 'perspective-up'
+  | 'perspective-down'
+  | 'wide'
+  | 'narrow'
+  | 'tall'
+  | 'short'
+  | 'inflate'
+  | 'deflate'
 
 export interface WordArtBlockProps extends IEditableBlockProps {
   width: number
@@ -119,8 +154,18 @@ const EFFECTS = new Set<string>([
   'none',
   'slant-left',
   'slant-right',
+  'slant-up',
+  'slant-down',
   'perspective-left',
   'perspective-right',
+  'perspective-up',
+  'perspective-down',
+  'wide',
+  'narrow',
+  'tall',
+  'short',
+  'inflate',
+  'deflate',
 ])
 
 const finiteNumber = (
@@ -359,12 +404,26 @@ const hexToRgba = (hex: string, opacity: number): string => {
 const resolveEffectTransform = (effect: WordArtEffect): string => {
   if (effect === 'slant-left') return 'skewX(-10deg)'
   if (effect === 'slant-right') return 'skewX(10deg)'
+  if (effect === 'slant-up') return 'skewY(-8deg)'
+  if (effect === 'slant-down') return 'skewY(8deg)'
   if (effect === 'perspective-left') {
     return 'perspective(600px) rotateY(-12deg)'
   }
   if (effect === 'perspective-right') {
     return 'perspective(600px) rotateY(12deg)'
   }
+  if (effect === 'perspective-up') {
+    return 'perspective(600px) rotateX(12deg)'
+  }
+  if (effect === 'perspective-down') {
+    return 'perspective(600px) rotateX(-12deg)'
+  }
+  if (effect === 'wide') return 'scaleX(1.18)'
+  if (effect === 'narrow') return 'scaleX(0.82)'
+  if (effect === 'tall') return 'scaleY(1.18)'
+  if (effect === 'short') return 'scaleY(0.82)'
+  if (effect === 'inflate') return 'scale(1.08)'
+  if (effect === 'deflate') return 'scale(0.92)'
   return ''
 }
 

@@ -11,7 +11,7 @@ import { WordArtPresetPickerComponent } from "./word-art-preset-picker.component
 describe("WordArtPresetPickerComponent", () => {
   afterEach(() => TestBed.resetTestingModule());
 
-  it("renders the five presets as visual A cards without visible labels", async () => {
+  it("renders the expanded presets as visual A cards without visible labels", async () => {
     await TestBed.configureTestingModule({
       imports: [WordArtPresetPickerComponent],
     }).compileComponents();
@@ -28,6 +28,7 @@ describe("WordArtPresetPickerComponent", () => {
       host.querySelector(".word-art-preset-picker__title")?.textContent,
     ).toBe("艺术字预设");
     expect(buttons.length).toBe(WORD_ART_PRESETS.length);
+    expect(buttons.length).toBe(16);
     expect(buttons.map((button) => button.dataset["presetId"])).toEqual(
       WORD_ART_PRESETS.map((item) => item.id),
     );

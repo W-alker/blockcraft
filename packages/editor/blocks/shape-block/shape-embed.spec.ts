@@ -52,5 +52,28 @@ describe('inline shape embed', () => {
       gap: 16,
     }))
   })
-})
 
+  it('renders open lines without a fill or editable text surface', () => {
+    const view = inlineShapeEmbedConverter.toView(createInlineShapeDelta({
+      shapeType: 'line-double-arrow',
+      strokeColor: '#2563EB',
+      strokeWidth: 3,
+    }, [{insert: '不会显示'}]))
+    const path = view.querySelector('path')
+    const text = view.querySelector<HTMLElement>('.bc-inline-shape__text')
+
+    expect(path?.getAttribute('fill')).toBe('none')
+    expect(text?.hidden).toBeTrue()
+  })
+
+  it('renders construction strokes separately from the filled geometry', () => {
+    const view = inlineShapeEmbedConverter.toView(createInlineShapeDelta({
+      shapeType: 'cube',
+    }))
+    const paths = view.querySelectorAll('path')
+
+    expect(paths.length).toBe(2)
+    expect(paths[0].getAttribute('fill')).not.toBe('none')
+    expect(paths[1].getAttribute('fill')).toBe('none')
+  })
+})

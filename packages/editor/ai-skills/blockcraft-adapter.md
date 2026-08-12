@@ -4,7 +4,7 @@
 >
 > Adapters handle HTML ↔ BlockSnapshot and Markdown ↔ BlockSnapshot conversion.
 >
-> Last updated: 2026-08-04
+> Last updated: 2026-08-13
 
 ## Architecture
 
@@ -284,6 +284,12 @@ and HTML import keeps them childless; non-empty text creates the single
 `shape-text` child. Import passes untrusted attributes, including rotation,
 through `normalizeShapeProps()` before creating the snapshot.
 
+All 103 built-in `ShapeKind` values use this same envelope. Category metadata,
+SVG geometry and detail paths are catalog-owned and are not serialized. Open
+line/connector appearances therefore round-trip through `data-shape-type` just
+like closed shapes while their non-filled/no-text behavior is recovered from
+`SHAPE_DEFINITIONS`.
+
 Markdown has no portable shape primitive. Export therefore degrades a shape to
 one readable paragraph built from its `shape-text` deltas; importing that
 Markdown produces a normal paragraph rather than attempting to reconstruct
@@ -304,6 +310,9 @@ formatting and embeds are stripped because WordArt styling is whole-block and
 the Schema is `plainTextOnly`. Markdown has no portable WordArt primitive, so
 export produces a readable paragraph and reimport intentionally produces a
 normal paragraph.
+
+The same allowlist now covers 16 built-in presets, 10 font IDs and 15 safe
+effect IDs; raw CSS is still neither persisted nor accepted during import.
 
 Inline `shape` and `word-art` representations use a separate lossless HTML
 envelope: `<span data-bc-inline-object="shape|word-art">`. The payload remains

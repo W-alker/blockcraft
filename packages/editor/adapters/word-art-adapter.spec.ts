@@ -48,7 +48,7 @@ describe('Word art adapters', () => {
       width: 360,
       height: 110,
       rotation: 25,
-      fontFamily: 'cjk-hei',
+      fontFamily: 'slab-serif',
       fontSize: 56,
       letterSpacingEm: 0.08,
       fillType: 'linear-gradient',
@@ -58,7 +58,7 @@ describe('Word art adapters', () => {
       outlineColor: '#111111',
       outlineWidthEm: 0.05,
       shadowEnabled: false,
-      effect: 'slant-right',
+      effect: 'perspective-up',
       placement: {mode: 'absolute', x: 22.5, y: 140, layer: 'under'},
     })
     const html = await htmlAdapter.toHtml(rootSnapshot([
@@ -87,14 +87,14 @@ describe('Word art adapters', () => {
       width: 360,
       height: 110,
       rotation: 25,
-      fontFamily: 'cjk-hei',
+      fontFamily: 'slab-serif',
       fontSize: 56,
       letterSpacingEm: 0.08,
       fillType: 'linear-gradient',
       gradientColors: ['#00FFFF', '#0000FF'],
       gradientStops: [0, 1],
       shadowEnabled: false,
-      effect: 'slant-right',
+      effect: 'perspective-up',
       placement: {mode: 'absolute', x: 22.5, y: 140, layer: 'under'},
     }))
   })

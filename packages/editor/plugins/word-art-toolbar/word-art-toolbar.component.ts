@@ -20,8 +20,10 @@ import {
   type WordArtBlockProps,
   type WordArtEffect,
   type WordArtFillType,
+  type WordArtFontId,
   type WordArtHorizontalAlign,
   type WordArtVerticalAlign,
+  WORD_ART_FONT_OPTIONS,
 } from "../../blocks/word-art-block";
 import { INLINE_OBJECT_WRAP_LAYOUT_OPTION } from "../object-layout/inline-object-toolbar.component";
 
@@ -49,6 +51,19 @@ export type WordArtToolbarAction =
       <div
         class="word-art-toolbar__row word-art-toolbar__row--special-settings"
       >
+        <bc-float-toolbar-item
+          class="word-art-toolbar__menu-trigger"
+          name="font-family"
+          aria-label="艺术字字体"
+          [expandable]="true"
+          [bcOverlayTrigger]="fontFamilyMenu"
+          #fontFamilyTrigger="bcOverlayTrigger"
+          [positions]="['bottom-left', 'top-left']"
+          [offsetY]="8"
+        >
+          {{ fontFamilyLabel }}
+        </bc-float-toolbar-item>
+
         <label class="word-art-toolbar__field word-art-toolbar__field--number">
           <span>字号</span>
           <input
@@ -262,6 +277,23 @@ export type WordArtToolbarAction =
             [active]="props.fillType === fillType.value"
           >
             {{ fillType.label }}
+          </bc-float-toolbar-item>
+        }
+      </bc-float-toolbar>
+    </ng-template>
+
+    <ng-template #fontFamilyMenu>
+      <bc-float-toolbar
+        direction="column"
+        (onItemClick)="selectFontFamily($event, fontFamilyTrigger)"
+      >
+        @for (font of fontFamilies; track font.id) {
+          <bc-float-toolbar-item
+            name="font-family"
+            [value]="font.id"
+            [active]="props.fontFamily === font.id"
+          >
+            <span [style.font-family]="font.stack">{{ font.label }}</span>
           </bc-float-toolbar-item>
         }
       </bc-float-toolbar>
@@ -565,6 +597,7 @@ export class WordArtToolbarComponent {
     { value: "solid", label: "纯色" },
     { value: "linear-gradient", label: "渐变" },
   ];
+  readonly fontFamilies = WORD_ART_FONT_OPTIONS;
   readonly effects: ReadonlyArray<{
     value: WordArtEffect;
     label: string;
@@ -572,8 +605,18 @@ export class WordArtToolbarComponent {
     { value: "none", label: "无效果" },
     { value: "slant-left", label: "左倾" },
     { value: "slant-right", label: "右倾" },
+    { value: "slant-up", label: "上斜" },
+    { value: "slant-down", label: "下斜" },
     { value: "perspective-left", label: "左透视" },
     { value: "perspective-right", label: "右透视" },
+    { value: "perspective-up", label: "上透视" },
+    { value: "perspective-down", label: "下透视" },
+    { value: "wide", label: "横向拉伸" },
+    { value: "narrow", label: "横向收窄" },
+    { value: "tall", label: "纵向拉伸" },
+    { value: "short", label: "纵向压缩" },
+    { value: "inflate", label: "放大" },
+    { value: "deflate", label: "缩小" },
   ];
   readonly layoutOptions = [
     BLOCK_OBJECT_LAYOUT_OPTIONS[0],
@@ -631,6 +674,13 @@ export class WordArtToolbarComponent {
     );
   }
 
+  get fontFamilyLabel(): string {
+    return (
+      this.fontFamilies.find((item) => item.id === this.props.fontFamily)
+        ?.label ?? "字体"
+    );
+  }
+
   get effectLabel(): string {
     return (
       this.effects.find((item) => item.value === this.props.effect)?.label ??
@@ -668,6 +718,16 @@ export class WordArtToolbarComponent {
   ): void {
     this.emitProps({
       fillType: String(item.value) as WordArtFillType,
+    });
+    trigger.closePanel();
+  }
+
+  selectFontFamily(
+    item: BcFloatToolbarItemComponent,
+    trigger: BcOverlayTriggerDirective,
+  ): void {
+    this.emitProps({
+      fontFamily: String(item.value) as WordArtFontId,
     });
     trigger.closePanel();
   }

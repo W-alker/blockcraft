@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-08-12
+> Last updated: 2026-08-13
 
 ## Block Types
 
@@ -812,19 +812,26 @@ const plugins = [
 ];
 ```
 
-`ShapeBlockSchema.createSnapshot(shapeType?, text?)` accepts one of the 12
-exported `SHAPE_KINDS`: rectangle, rounded rectangle, ellipse, triangle,
-diamond, star, right arrow, left-right arrow, parallelogram, hexagon, speech
-bubble, or notched right arrow. `ShapeBlockProps` persists width/height, fill,
-outline, text color/alignment, optional `rotation` in degrees and optional
-placement. `normalizeShapeProps()` returns `NormalizedShapeBlockProps`, which
-guarantees a finite rotation normalized into `[0, 360)`. Rendering uses
-normalized static SVG paths. `ShapeDefinition` stores `type`, `label`, `path`
-and `textInsets`; it does not carry a second iconfont class. The exported
-`ShapeIconComponent` renders that trusted path as a `currentColor` outline for
-the fixed toolbar's 12-item shape picker, so shape previews remain identical to
-their inserted geometry. The fixed **插入形状** button and other toolbar/menu
-glyphs continue to use iconfont classes.
+`ShapeBlockSchema.createSnapshot(shapeType?, text?)` accepts one of the 103
+exported `SHAPE_KINDS`. `SHAPE_CATEGORIES` groups the same canonical
+`SHAPE_DEFINITIONS` into the Word-like **矩形 / 基本形状 / 线条 / 箭头总汇 /
+公式形状 / 流程图 / 星与旗帜 / 标注** catalog. `ShapeBlockProps` persists
+only width/height, `shapeType`, fill, outline, text color/alignment, optional
+`rotation` in degrees and optional placement; SVG path and catalog category are
+never written into Yjs or snapshots. `normalizeShapeProps()` validates the
+expanded union and returns a finite rotation normalized into `[0, 360)`.
+
+`ShapeDefinition` stores the trusted main `path`, optional stroke-only
+`detailPath`, `textInsets`, and optional `fillable` / `supportsText` /
+`fillRule` rendering capabilities. The eight built-in line and connector
+appearances are non-filled, do not expose a shape-text editor, and keep the
+existing resize/rotation behavior; they are visual objects, not auto-snapping
+semantic connectors. `ShapeIconComponent` renders the same main and detail
+geometry as the inserted object. The fixed **插入形状** action uses the shared
+categorized picker; the selected-shape toolbar does not expose a change-shape
+control. Its dense icon-only cells expose names through CSES Tooltip and
+`aria-label`; compact category headings keep the 103 entries navigable. Other
+toolbar/menu glyphs continue to use iconfont classes.
 
 An empty shape snapshot has no child block. Passing non-empty text or deltas
 creates the single `shape-text` child; double-clicking an empty shape creates
@@ -891,7 +898,8 @@ affine/perspective effect and optional placement. Gradient colors/stops use
 parallel primitive arrays so props remain valid BlockCraft `SimpleValue`
 records. `normalizeWordArtProps()` clamps external values and
 `resolveWordArtPresentation()` resolves portable CSS without accepting raw CSS
-expressions. `WORD_ART_PRESETS`, `WORD_ART_FONT_OPTIONS`,
+expressions. The bundled catalog contains 16 `WORD_ART_PRESETS`, 10 safe
+`WORD_ART_FONT_OPTIONS` and 15 allowlisted `WordArtEffect` transforms;
 `getWordArtPreset()` and `wordArtPresentationToInlineStyle()` are public.
 
 The interaction is object/edit dual-state. Clicking text or blank space enters
@@ -900,12 +908,12 @@ caret placement. Enter also enters editing, while Escape returns to the
 whole-object selection. Object movement starts only from the four invisible
 hit regions on the visible outline—there is no separate move handle. The
 bundled fixed toolbar inserts an absolute `over` WordArt near the saved
-selection. Its **插入艺术字** control is a five-card visual preset dropdown;
+selection. Its **插入艺术字** control is a scrollable 16-card visual preset dropdown;
 choosing a card applies that preset while creating the default `艺术字`,
 navigates to its mounted view and selects all text. The object toolbar exposes
-classic presets, safe font families, solid/gradient fill,
-outline, shadow toggle, letter spacing, iconfont horizontal/vertical alignment
-submenus, effects, object layout, stack order and deletion. Its range controls
+classic presets, safe font families, solid/gradient fill, outline, shadow
+toggle, letter spacing, iconfont horizontal/vertical alignment submenus,
+effects, object layout, stack order and deletion. Its range controls
 share the shape toolbar's track, thumb and keyboard-focus treatment.
 
 The eight handles and rotation control reuse `ShapeResizerComponent`. Corners

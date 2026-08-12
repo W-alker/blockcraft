@@ -46,17 +46,29 @@ const shapeRotationTransform = (rotation: unknown): string => {
         aria-hidden="true">
         <path
           [attr.d]="definition.path"
-          [attr.fill]="shapeProps.fillColor"
+          [attr.fill]="definition.fillable === false ? 'none' : shapeProps.fillColor"
           [attr.fill-opacity]="shapeProps.fillOpacity"
+          [attr.fill-rule]="definition.fillRule ?? null"
           [attr.stroke]="shapeProps.strokeColor"
           [attr.stroke-width]="shapeProps.strokeWidth"
           [attr.stroke-dasharray]="strokeDasharray"
           vector-effect="non-scaling-stroke">
         </path>
+        @if (definition.detailPath) {
+          <path
+            [attr.d]="definition.detailPath"
+            fill="none"
+            [attr.stroke]="shapeProps.strokeColor"
+            [attr.stroke-width]="shapeProps.strokeWidth"
+            [attr.stroke-dasharray]="strokeDasharray"
+            vector-effect="non-scaling-stroke">
+          </path>
+        }
       </svg>
 
       <div
         class="shape-block__text-frame children-render-container"
+        [hidden]="definition.supportsText === false"
         [style.top.%]="definition.textInsets.top * 100"
         [style.right.%]="definition.textInsets.right * 100"
         [style.bottom.%]="definition.textInsets.bottom * 100"
@@ -165,7 +177,7 @@ export class ShapeBlockComponent extends BaseBlockComponent<ShapeBlockModel> {
   }
 
   onEditText(event: MouseEvent): void {
-    if (this.isReadonly) return
+    if (this.isReadonly || this.definition?.supportsText === false) return
     event.preventDefault()
     event.stopPropagation()
     const textBlock = this.firstChildren as

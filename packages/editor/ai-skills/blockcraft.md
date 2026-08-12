@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-08-12 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-08-13 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -816,6 +816,20 @@ layout-only toolbar can change wrap side or restore a top-bottom/under/over
 block; detailed object editing resumes on that restored block. HTML preserves
 the payload and wrap metadata, while Markdown degrades to readable text.
 
+The block shape catalog exposes 103 `SHAPE_KINDS` through eight
+`SHAPE_CATEGORIES`: rectangles, basic shapes, lines, block arrows, equation
+shapes, flowchart, stars/banners and callouts. The fixed insertion toolbar uses
+the categorized picker; the selected-shape toolbar does not expose a
+change-shape control. Line/connector appearances are visual, non-filled and
+textless; they deliberately do not claim semantic endpoint attachment. WordArt
+exposes 16 visual presets, 10 safe font families and 15 allowlisted whole-text
+transforms without adding raw CSS to the model. Picking a shape or WordArt
+preset from the fixed toolbar now arms a one-shot document drawing surface
+instead of inserting immediately. Dragging previews and commits an exact
+scale-normalized rectangle on pointer release; clicking without a drag uses the
+selected object's default dimensions. Cancel, blur, viewport movement,
+readonly and teardown paths leave Yjs unchanged.
+
 ### DocChain (Fluent Mutations)
 
 ```typescript
@@ -1072,8 +1086,8 @@ onBold(ctx: UIEventStateContext) { ... }
 - Icons use the iconfont class system: `<i class="bc_icon bc_xxx"></i>` (no PNGs,
   no inline SVGs except for multi-color). The built-in shape picker is a narrow
   geometry-preview exception: its exported `ShapeIconComponent` renders the
-  same trusted `ShapeDefinition.path` used by the actual shape, so it does not
-  maintain duplicate icon resources.
+  same trusted `ShapeDefinition.path` and optional `detailPath` used by the
+  actual shape, so it does not maintain duplicate icon resources.
 - Generic editor chrome consumes the exact `@cses/ui@4.25.0` peer. Hosts load
   `@cses/ui/styles/cses-ui.scss` for its component styles; standard buttons,
   text inputs, tooltips, dropdown menus, EmojiPicker, empty states and messages

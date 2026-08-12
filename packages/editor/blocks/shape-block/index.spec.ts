@@ -1,5 +1,7 @@
 import {
+  SHAPE_CATEGORIES,
   SHAPE_DEFINITIONS,
+  SHAPE_KINDS,
   ShapeBlockComponent,
   ShapeBlockSchema,
   ShapeIconComponent,
@@ -87,9 +89,17 @@ describe('Shape block domain', () => {
     TestBed.resetTestingModule()
   })
 
-  it('defines twelve unique normalized Office shapes', () => {
-    expect(SHAPE_DEFINITIONS.length).toBe(12)
-    expect(new Set(SHAPE_DEFINITIONS.map((item) => item.type)).size).toBe(12)
+  it('defines a categorized Word-like catalog with unique normalized shapes', () => {
+    expect(SHAPE_DEFINITIONS.length).toBe(SHAPE_KINDS.length)
+    expect(SHAPE_DEFINITIONS.length).toBeGreaterThan(90)
+    expect(new Set(SHAPE_DEFINITIONS.map((item) => item.type)).size)
+      .toBe(SHAPE_KINDS.length)
+    expect(SHAPE_CATEGORIES.length).toBe(8)
+    expect(SHAPE_CATEGORIES.every(category =>
+      category.definitions.length > 0,
+    )).toBeTrue()
+    expect(SHAPE_CATEGORIES.flatMap(category => category.definitions))
+      .toEqual(SHAPE_DEFINITIONS)
     for (const definition of SHAPE_DEFINITIONS) {
       expect(definition.path.startsWith('M')).toBeTrue()
       expect('icon' in definition).toBeFalse()
@@ -98,6 +108,29 @@ describe('Shape block domain', () => {
         expect(inset).toBeLessThan(0.5)
       }
     }
+    const lines = SHAPE_CATEGORIES.find(category => category.id === 'lines')!
+    expect(lines.definitions.length).toBeGreaterThanOrEqual(8)
+    expect(lines.definitions.every(definition =>
+      definition.fillable === false && definition.supportsText === false,
+    )).toBeTrue()
+  })
+
+  it('does not create text in line-like shapes on double click', () => {
+    const event = jasmine.createSpyObj<MouseEvent>('MouseEvent', [
+      'preventDefault',
+      'stopPropagation',
+    ])
+
+    ShapeBlockComponent.prototype.onEditText.call(
+      {
+        isReadonly: false,
+        definition: SHAPE_DEFINITIONS.find(item => item.type === 'line'),
+      } as unknown as ShapeBlockComponent,
+      event,
+    )
+
+    expect(event.preventDefault).not.toHaveBeenCalled()
+    expect(event.stopPropagation).not.toHaveBeenCalled()
   })
 
   it('creates an empty shape without an eager shape-text child', () => {

@@ -18,6 +18,12 @@ import {
         [attr.d]="path()"
         vector-effect="non-scaling-stroke">
       </path>
+      @if (detailPath()) {
+        <path
+          [attr.d]="detailPath()"
+          vector-effect="non-scaling-stroke">
+        </path>
+      }
     </svg>
   `,
   styles: [`
@@ -47,4 +53,5 @@ import {
 })
 export class ShapeIconComponent {
   readonly path = input.required<string>()
+  readonly detailPath = input<string>()
 }

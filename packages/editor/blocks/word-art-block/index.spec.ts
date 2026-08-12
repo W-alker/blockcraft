@@ -4,6 +4,8 @@ import * as Y from 'yjs'
 import {BlockNodeType} from '../../framework'
 import {ShapeResizerComponent} from '../shape-block'
 import {
+  WORD_ART_FONT_OPTIONS,
+  WORD_ART_PRESETS,
   WordArtBlockComponent,
   WordArtBlockSchema,
   calculateWordArtResize,
@@ -308,6 +310,17 @@ describe('Word art block domain', () => {
     expect(wordArtPresentationToInlineStyle(presentation.props)).toContain(
       '-webkit-text-fill-color:transparent',
     )
+  })
+
+  it('offers the expanded style, font and safe transform catalogs', () => {
+    expect(WORD_ART_PRESETS.length).toBe(16)
+    expect(WORD_ART_FONT_OPTIONS.length).toBe(10)
+    expect(new Set(WORD_ART_PRESETS.map(item => item.id)).size).toBe(16)
+    expect(new Set(WORD_ART_FONT_OPTIONS.map(item => item.id)).size).toBe(10)
+    expect(resolveWordArtPresentation({effect: 'perspective-up'})
+      .effectTransform).toBe('perspective(600px) rotateX(12deg)')
+    expect(resolveWordArtPresentation({effect: 'wide'}).effectTransform)
+      .toBe('scaleX(1.18)')
   })
 
   it('keeps corners proportional while side handles reflow one axis', () => {

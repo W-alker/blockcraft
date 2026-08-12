@@ -38,15 +38,21 @@ import { LinkInputPad } from "../../float-text-toolbar/widgets/link-input-pad";
 import { getSelectionCoveredBlockIds } from "../../../framework/modules/selection/covered-blocks";
 import { isSelectionAlive } from "../../../framework/modules/selection/liveness";
 import {
-  SHAPE_DEFINITIONS,
-  ShapeIconComponent,
+  DEFAULT_SHAPE_PROPS,
   type ShapeKind,
 } from "../../../blocks/shape-block";
+import { ShapePickerComponent } from "../../../components/shape-picker";
 import {
+  DEFAULT_WORD_ART_PROPS,
   getWordArtPreset,
   type WordArtPresetId,
 } from "../../../blocks/word-art-block";
 import { WordArtPresetPickerComponent } from "./word-art-preset-picker.component";
+import {
+  ObjectDrawInsertController,
+  type ObjectDrawInsertGeometry,
+  type ObjectDrawInsertRequest,
+} from "./object-draw-insert.controller";
 
 type TInlineToggle =
   | "bold"
@@ -456,21 +462,10 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
     </ng-template>
 
     <ng-template #shapePicker>
-      <div class="shape-picker" role="menu" aria-label="选择要插入的形状">
-        @for (definition of shapeDefinitions; track definition.type) {
-          <button
-            type="button"
-            class="shape-picker__item"
-            role="menuitem"
-            [title]="definition.label"
-            (mousedown)="onActionMouseDown($event)"
-            (click)="insertShape(definition.type, shapeTrigger)"
-          >
-            <bc-shape-icon [path]="definition.path"></bc-shape-icon>
-            <span>{{ definition.label }}</span>
-          </button>
-        }
-      </div>
+      <bc-shape-picker
+        ariaLabel="选择要插入的形状"
+        (pick)="insertShape($event, shapeTrigger)"
+      ></bc-shape-picker>
     </ng-template>
 
     <ng-template #wordArtPicker>
@@ -604,57 +599,6 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
         flex-shrink: 0;
       }
 
-      .shape-picker {
-        display: grid;
-        grid-template-columns: repeat(4, 58px);
-        gap: 4px;
-        width: max-content;
-        padding: 8px;
-        border: 1px solid var(--bc-float-toolbar-divider-color);
-        border-radius: 8px;
-        background: var(--bc-float-toolbar-bg);
-        box-shadow: var(
-          --bc-fixed-toolbar-shadow,
-          0 6px 16px rgba(15, 15, 15, 0.08)
-        );
-      }
-
-      .shape-picker__item {
-        width: 58px;
-        min-height: 52px;
-        padding: 6px 4px;
-        border: 0;
-        border-radius: 6px;
-        background: transparent;
-        color: var(--bc-float-toolbar-item-color);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 5px;
-        cursor: pointer;
-      }
-
-      .shape-picker__item:hover,
-      .shape-picker__item:focus-visible {
-        background: var(--bc-float-toolbar-item-hover-bg);
-        outline: none;
-      }
-
-      .shape-picker__item > bc-shape-icon {
-        width: 24px;
-        height: 24px;
-      }
-
-      .shape-picker__item > span {
-        max-width: 100%;
-        overflow: hidden;
-        font-size: 11px;
-        line-height: 1.2;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
       .bg-list {
         display: flex;
         gap: 6px;
@@ -721,7 +665,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
     BcTableSizePickerComponent,
     BcColumnCountPickerComponent,
     BcFontScalePickerComponent,
-    ShapeIconComponent,
+    ShapePickerComponent,
     WordArtPresetPickerComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -740,6 +684,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   private _formatBrushSourceKey: string | null = null;
   private _formatBrushLastAppliedKey: string | null = null;
   private _isApplyingFormatBrush = false;
+  private _objectDrawInsert?: ObjectDrawInsertController;
 
   constructor(private readonly cdr: ChangeDetectorRef) {}
 
@@ -808,7 +753,6 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   protected readonly listActions = LIST_ACTIONS;
   protected readonly alignActions = ALIGN_ACTIONS;
   protected readonly bgGraphList = BG_GRAPH_LIST;
-  protected readonly shapeDefinitions = SHAPE_DEFINITIONS;
   protected formatBrushActive = false;
   private _destroyed = false;
 
@@ -839,6 +783,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
         this.readonly = readonly;
         if (readonly) {
           this.clearFormatBrush();
+          this._objectDrawInsert?.cancel();
         }
         this.cdr.markForCheck();
       }),
@@ -866,6 +811,8 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   ngOnDestroy() {
     this._destroyed = true;
     this.clearFormatBrush();
+    this._objectDrawInsert?.destroy();
+    this._objectDrawInsert = undefined;
     this._sub.unsubscribe();
   }
 
@@ -1084,13 +1031,38 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     const selection = this.doc.selection.value;
     if (!this.isLiveSelection(selection)) return;
 
-    const snapshot = this.doc.schemas.createSnapshot("shape", [shapeType]);
+    const armed = this.armObjectDrawing({
+      defaultWidth: DEFAULT_SHAPE_PROPS.width,
+      defaultHeight: DEFAULT_SHAPE_PROPS.height,
+      commit: (geometry) =>
+        this.commitShape(shapeType, schema.metadata.label, geometry),
+    });
+    if (!armed) {
+      this.doc.messageService.warn(`无法在当前视图绘制${schema.metadata.label}`);
+    }
+  }
+
+  private commitShape(
+    shapeType: ShapeKind,
+    label: string,
+    geometry: ObjectDrawInsertGeometry,
+  ): void {
+    if (this._destroyed || this.readonly) return;
+    const baseSnapshot = this.doc.schemas.createSnapshot("shape", [shapeType]);
+    const snapshot: IBlockSnapshot = {
+      ...baseSnapshot,
+      props: {
+        ...baseSnapshot.props,
+        width: geometry.width,
+        height: geometry.height,
+      },
+    };
     const insertedId = this.doc.placement.insertAbsoluteSnapshot(snapshot, {
-      anchorRect: this.doc.selection.getSelectionRect(),
+      anchorRect: geometry.anchorRect,
       layer: "over",
     });
     if (!insertedId) {
-      this.doc.messageService.warn(`此处不能添加${schema.metadata.label}`);
+      this.doc.messageService.warn(`此处不能添加${label}`);
       return;
     }
     this.doc.selection.selectOrSetCursorAtBlock(insertedId, true);
@@ -1112,9 +1084,28 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     const selection = this.doc.selection.value;
     if (!this.isLiveSelection(selection)) return;
 
+    const armed = this.armObjectDrawing({
+      defaultWidth: DEFAULT_WORD_ART_PROPS.width,
+      defaultHeight: DEFAULT_WORD_ART_PROPS.height,
+      commit: (geometry) =>
+        this.commitWordArt(presetId, schema.metadata.label, geometry),
+    });
+    if (!armed) {
+      this.doc.messageService.warn(`无法在当前视图绘制${schema.metadata.label}`);
+    }
+  }
+
+  private async commitWordArt(
+    presetId: WordArtPresetId,
+    label: string,
+    geometry: ObjectDrawInsertGeometry,
+  ): Promise<void> {
+    if (this._destroyed || this.readonly) return;
     const preset = getWordArtPreset(presetId);
     const presetProps = {
       ...preset.props,
+      width: geometry.width,
+      height: geometry.height,
       gradientColors: [...preset.props.gradientColors],
       gradientStops: [...preset.props.gradientStops],
     };
@@ -1123,11 +1114,11 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       presetProps,
     ]);
     const insertedId = this.doc.placement.insertAbsoluteSnapshot(snapshot, {
-      anchorRect: this.doc.selection.getSelectionRect(),
+      anchorRect: geometry.anchorRect,
       layer: "over",
     });
     if (!insertedId) {
-      this.doc.messageService.warn(`此处不能添加${schema.metadata.label}`);
+      this.doc.messageService.warn(`此处不能添加${label}`);
       return;
     }
 
@@ -1145,6 +1136,11 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     }
     this.syncToolbarState(this.doc.selection.value);
     this.cdr.markForCheck();
+  }
+
+  private armObjectDrawing(request: ObjectDrawInsertRequest): boolean {
+    this._objectDrawInsert ??= new ObjectDrawInsertController(this.doc);
+    return this._objectDrawInsert.arm(request);
   }
 
   protected onLinkAction() {
