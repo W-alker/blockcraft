@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-03
+> Last updated: 2026-08-13
 
 ## Inline Extensions
 
@@ -89,6 +89,19 @@ The `panel` factory must return an object implementing `IMentionPanel`:
 | `updatePosition(rect)` | `(DOMRect) => void` | Plugin calls on scroll to reposition |
 | `dispose()` | `() => void` | Plugin calls when session closes |
 
+#### Public API
+
+```typescript
+mentionPlugin.openAt(block, index, replaceLength = 0): boolean
+```
+
+`openAt()` opens the same mention session at an explicit model position. A
+non-zero `replaceLength` atomically replaces that range with the configured
+mention trigger before the panel opens; this is how the built-in slash menu
+turns `/mention` into `@`. It returns `false` for stale, plain-text-only, or
+effectively readonly blocks. Command surfaces must use this API instead of
+writing an `@` into contenteditable DOM.
+
 #### Usage Example
 
 ```typescript
@@ -113,6 +126,7 @@ new MentionPlugin({
 #### Notes
 
 - Uses `OneShotCursorAnchor` for collaboration-safe cursor tracking during the mention session
+- `openAt()` is the public bridge for slash menus and other model-owned command surfaces
 - The trigger character is physically inserted into `Y.Text` and removed/replaced on confirm or cancel
 - `onConfirm` lets a host block turn a mention into a **side-effect that runs only on the acting client** rather than a CRDT-synced embed node. Use it when every collaborator observing the node would otherwise re-run the effect (e.g. a synced todo adding a task collaborator from `@user` — only the picker should write; others learn via that domain's own realtime channel)
 

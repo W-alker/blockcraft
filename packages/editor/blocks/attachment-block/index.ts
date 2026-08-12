@@ -37,6 +37,7 @@ export const AttachmentBlockSchema: IBlockSchemaOptions<AttachmentBlockModel> = 
   metadata: {
     version: 1,
     label: '附件',
+    description: '上传并展示可下载的文件',
     svgIcon: 'bc_wenjian-color',
     icon: 'bc_wenjian-color'
   }

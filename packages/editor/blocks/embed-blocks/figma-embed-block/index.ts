@@ -37,6 +37,7 @@ export const FigmaEmbedBlockSchema: IBlockSchemaOptions<FigmaEmbedBlockModel> = 
     version: 1,
     virtualization: {viewRetention: 'keep-alive'},
     label: "Figma",
+    description: "嵌入并预览 Figma 设计内容",
     svgIcon: "bc_Figma",
     icon: "bc_icon bc_Figma"
   }

@@ -4,7 +4,7 @@
 >
 > For creating new plugins, see `blockcraft-plugin.md`.
 >
-> Last updated: 2026-07-31
+> Last updated: 2026-08-13
 
 This index covers all 26 built-in plugins. Pick the category file that matches your task — don't read all files at once.
 
@@ -27,7 +27,7 @@ This index covers all 26 built-in plugins. Pick the category file that matches y
 | `FixedTextToolbarComponent` | `formatting` | Angular component inputs |
 | `BlockControllerPlugin` | `block` | `blockMenuResolver`, `blockMenuActionHandler`, `positionResolver` |
 | `BlockGapCreatorPlugin` | `block` | none (zero-config) |
-| `BlockTransformerPlugin` | `block` | `transformList` |
+| `BlockTransformerPlugin` | `block` | `transformList` array, `{ transformList, commands }`, or runtime `registerCommand(s)` |
 | `OrderedBlockPlugin` | `block` | none (zero-config) |
 | `AttachmentExtensionPlugin` | `toolbar` | `extraItems`, `onPreview`, `onExtraItemClick` |
 | `ImgToolbarPlugin` | `toolbar` | `extraItems`, `onExtraItemClick` |

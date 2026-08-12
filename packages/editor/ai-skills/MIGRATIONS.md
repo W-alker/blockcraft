@@ -96,6 +96,107 @@ formula textarea lost its original borderless editor appearance.
 - This is an internal presentation rollback; host APIs and model data are
   unchanged.
 
+## Unreleased — 2026-08-13 — unify block and inline slash commands
+
+**Severity**: minor
+
+**What changed**: `BlockTransformerPlugin` now opens a grouped insertion menu
+at any rich-text cursor and can insert both blocks and inline content. The
+built-in inline catalogue contains formula, mention, Emoji, CSES Icon, link and
+inline image. Hosts can append commands through the new options constructor,
+register or unregister commands at runtime, and `MentionPlugin.openAt()` exposes
+the existing mention flow to model-owned command surfaces. Menu search now
+supports Chinese pinyin initials, and its keyboard navigation uses one owned
+event route with a WebView fallback.
+
+**Why**: The old menu only transformed an empty paragraph into a block. Document
+authors expect a Notion/Yuque-style command surface that is searchable, works
+inside existing text, and reuses the editor's inline embed and shared CSES
+picker systems without bypassing Yjs.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-block.md`
+- `blockcraft-plugins-inline.md`
+- `blockcraft-plugins-ref.md`
+- `blockcraft-block.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `BlockTransformerPluginOptions` with optional `transformList` and `commands`.
+- `SlashCommandItem`, `SlashCommandContext`, `SlashCommandGroup`, and grouped
+  menu metadata. `SlashCommandContext.replace()` is a collaboration-safe,
+  single-use replacement for `/query` and can resolve after an async picker.
+  Host commands override a built-in command when their stable IDs match.
+- `BlockTransformerPlugin.registerCommand()`, `registerCommands()`, and
+  `unregisterCommand()` allow independently loaded host extensions to contribute
+  and clean up slash commands at runtime. Stable-ID registrations are stacked,
+  so disposing the latest override reveals the previous one.
+- `IBlockTransformConfig` adds optional `keywords`, `searchAlias`, and
+  `markdownHint`; `description` is now an optional menu-local override of Schema
+  `metadata.description`. `SlashCommandItem` adds `searchAlias` and
+  `shortcutHint` presentation fields.
+- `MentionPlugin.openAt(block, index, replaceLength?)`.
+- Built-in inline commands for formula, mention, Emoji, CSES Icon, link and
+  inline image. Emoji/Icon selection uses the CSES UI peer components.
+
+### Migration Recipe
+
+The existing array constructor remains source-compatible. Use the options form
+only when adding commands:
+
+```typescript
+// before: still valid
+new BlockTransformerPlugin(blockTransforms)
+
+// after: additive host command
+const transformer = new BlockTransformerPlugin({
+  transformList: blockTransforms,
+  commands: [{
+    id: 'inline:date',
+    label: '日期',
+    group: 'inline',
+    run: async context => {
+      const date = await chooseDate()
+      if (date) context.replace([{insert: date.label, attributes: {'d:date': date.iso}}])
+    },
+  }],
+})
+
+// Runtime extension; call the returned disposer when the feature unloads.
+const dispose = transformer.registerCommand({
+  id: 'host:approval',
+  label: '快捷审批',
+  keywords: ['workflow'],
+  run: context => context.replace([{insert: '审批'}]),
+})
+```
+
+### Behavior Changes
+
+- `/` and `、` now open the menu at any collapsed cursor in a rich editable
+  block. Leaf, plain-text-only, stale and effectively readonly blocks remain
+  excluded.
+- Choosing a block in the middle of text preserves formatted deltas on both
+  sides, removes only `/query`, and inserts the block between same-flavour
+  siblings. Empty sides are omitted.
+- The searchable menu remains open with an empty result list when no command
+  matches, so users can correct the query without retriggering it.
+- Search covers labels, IDs, flavours, explicit aliases and host `keywords`, and
+  automatically indexes Chinese label/keyword initials (`/gl` matches `高亮块`).
+- Block introductions now resolve from `IBlockTransformConfig.description`, then
+  Schema `metadata.description`, without mutating the Schema. Markdown syntax,
+  keyboard shortcuts, and quick-search aliases render separately: Markdown has
+  its own second row in the right-hand hint area, below the keyboard shortcut
+  and quick-search alias. Every bundled Block Schema now provides a plain introduction.
+  Introduction and group-label text no longer produce search matches.
+- `ArrowUp` / `ArrowDown`, `Enter`, and `Escape` are owned by one menu keyboard
+  route, with the editor event pipeline retained only as a WebView fallback; this
+  avoids duplicate jumps while keeping the caret anchored in the source block.
+- Async inserts resolve a Yjs relative range and abort safely if the target was
+  deleted or protected. All writes continue through Block/DocChain paths.
+
 ## Unreleased — 2026-08-13 — expand Word-like shapes and WordArt catalogs
 
 **Severity**: minor

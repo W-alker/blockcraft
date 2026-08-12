@@ -15,6 +15,7 @@ export const CaptionBlockSchema: IBlockSchemaOptions<CaptionBlockModel> = {
   metadata: {
     version: 1,
     label: "标题",
+    description: "为图片等内容添加标题说明",
     isLeaf: true,
     includeChildren: ['caption']
   }

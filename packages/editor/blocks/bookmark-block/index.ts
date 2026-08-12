@@ -30,6 +30,7 @@ export const BookmarkBlockSchema: IBlockSchemaOptions<BookmarkBlockModel> = {
   metadata: {
     version: 1,
     label: "网页卡片",
+    description: "将网页链接展示为预览卡片",
     svgIcon: "bc_shuqian",
     icon: "bc_icon bc_shuqian"
   }

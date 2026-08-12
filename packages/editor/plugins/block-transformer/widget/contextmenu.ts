@@ -8,52 +8,14 @@ import {
   Input,
   Output,
 } from "@angular/core";
-import { NgForOf, NgTemplateOutlet } from "@angular/common";
+import { NgForOf } from "@angular/common";
 import { MatIcon } from "@angular/material/icon";
-import {
-  BLOCK_CREATOR_SERVICE_TOKEN,
-  BlockNodeType,
-  EditableBlockComponent,
-} from "../../../framework";
-import { debounce } from "../../../global";
+import { CsIconComponent } from "@cses/ui";
+import { EditableBlockComponent } from "../../../framework";
+import { debounce, deltaToString, sliceDelta } from "../../../global";
 import {isSelectionAlive} from "../../../framework/modules/selection/liveness";
-
-interface IContextMenuOption {
-  flavour: string;
-  type: "block" | "tool" | "heading";
-  metadata: {
-    label: string;
-    icon?: string;
-    svgIcon?: string;
-    [key: string]: any;
-  };
-}
-
-type MenuNavigationKey = "Escape" | "Enter" | "ArrowUp" | "ArrowDown";
-
-const HEADING_LIST: IContextMenuOption[] = [
-  {
-    metadata: { label: "一级标题", icon: "bc_icon bc_biaoti_1", heading: 1 },
-    flavour: "heading-one",
-    type: "heading",
-  },
-  {
-    metadata: { label: "二级标题", icon: "bc_icon bc_biaoti_2", heading: 2 },
-    flavour: "heading-two",
-    type: "heading",
-  },
-  {
-    metadata: { label: "三级标题", icon: "bc_icon bc_biaoti_3", heading: 3 },
-    flavour: "heading-three",
-    type: "heading",
-  },
-  {
-    metadata: { label: "四级标题", icon: "bc_icon bc_biaoti_4", heading: 4 },
-    flavour: "heading-four",
-    type: "heading",
-  },
-];
-const TransformReg = /^[\/、].*/;
+import type {SlashMenuItem} from "../command";
+import {createSlashSearchIndex, matchesSlashSearch} from "../search";
 
 // 导航后把光标"钉"在原块里的时间窗口（ms）。WKWebView/Tauri 下 AppKit 的
 // moveUp:/moveDown: 可能比任何 sync/microtask/rAF 都晚才把 DOM caret 拽走，
@@ -66,32 +28,77 @@ const NAV_PIN_WINDOW_MS = 150;
   template: `
     <ul
       class="list"
+      role="listbox"
+      aria-label="插入内容"
       (mousedown)="onMouseDown($event)"
       (mousemove)="onMouseMove()"
       (mouseover)="onMouseOver($event)"
     >
-      @for (item of list; track item.flavour; let idx = $index) {
+      @for (item of list; track item.id; let idx = $index) {
+        @if (showGroupLabel(idx)) {
+          <li class="list__group" role="presentation">{{ item.groupLabel }}</li>
+        }
         <li
           class="list__item"
+          role="option"
           [class.active]="activeIdx === idx"
+          [attr.aria-selected]="activeIdx === idx"
           [attr.data-index]="idx"
         >
-          @if (item.metadata.svgIcon) {
+          @if (item.svgIcon) {
             <mat-icon
-              [svgIcon]="item.metadata.svgIcon"
+              [svgIcon]="item.svgIcon"
               style="width: 1em; height: 1em"
             ></mat-icon>
+          } @else if (item.csIcon) {
+            <cs-icon [csType]="item.csIcon"></cs-icon>
           } @else {
-            <i [class]="item.metadata.icon"></i>
+            <i [class]="item.icon"></i>
           }
-          <span>{{ item.metadata.label }}</span>
+          <span class="list__content">
+            <span class="list__main">
+              <span class="list__label">{{ item.label }}</span>
+              @if (item.description) {
+                <span class="list__description">{{ item.description }}</span>
+              }
+            </span>
+            @if (item.shortcutHint || item.searchHint || item.markdownHint) {
+              <span class="list__hint-stack">
+                <span class="list__hints">
+                  @if (item.shortcutHint) {
+                    <kbd
+                      class="list__hint list__hint--shortcut"
+                      aria-label="快捷键"
+                    >{{ item.shortcutHint }}</kbd>
+                  }
+                  @if (item.searchHint) {
+                    <kbd
+                      class="list__hint list__hint--search"
+                      aria-label="快捷搜索"
+                    >{{ item.searchHint }}</kbd>
+                  }
+                </span>
+                @if (item.markdownHint) {
+                  <span class="list__markdown">
+                    <span class="list__markdown-label">Markdown</span>
+                    <kbd
+                      class="list__hint list__hint--markdown"
+                      aria-label="Markdown 快捷输入"
+                    >{{ item.markdownHint }}</kbd>
+                  </span>
+                }
+              </span>
+            }
+          </span>
         </li>
+      } @empty {
+        <li class="list__empty" role="status">没有匹配的命令</li>
       }
     </ul>
   `,
   styleUrls: ["contextmenu.scss"],
   standalone: true,
-  imports: [NgForOf, NgTemplateOutlet, MatIcon],
+  imports: [NgForOf, MatIcon, CsIconComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     "[class]": `'bc-scrollable-container'`,
@@ -100,20 +107,20 @@ const NAV_PIN_WINDOW_MS = 150;
 export class BlockTransformContextMenu {
   @Input() doc!: BlockCraft.Doc;
   @Input() activeBlock!: EditableBlockComponent;
+  @Input() triggerIndex = 0;
+  @Input() items: readonly SlashMenuItem[] = [];
 
   @Output() close$ = new EventEmitter<boolean>();
+  @Output() commandSelected = new EventEmitter<SlashMenuItem>();
 
-  list: IContextMenuOption[] = [];
+  list: SlashMenuItem[] = [];
   protected activeIdx = 0;
   private isKeyboardNavigating = false;
   private lastHandledNavigationAt = 0;
   private suppressTimerId: ReturnType<typeof setTimeout> | null = null;
   private caretGuardArmed = false;
   private navTextLength = 0;
-  // WKWebView/Tauri 下回车会被 document 捕获监听 + doc.event 热键双重派发，
-  // stopImmediatePropagation 拦不住第二次，导致 select() 跑两遍（转换两次、
-  // 多出一个 textarea 视图 + 对已删块报 Block not found）。一次性护栏，确保
-  // 单次菜单只确认一次。Chrome 下本就只派发一次，加这个无副作用。
+  // 一次性护栏，避免宿主桥接层重复派发回车时执行两次命令。
   private _consumed = false;
 
   constructor(
@@ -128,73 +135,42 @@ export class BlockTransformContextMenu {
     // close$ 的订阅在 createConnectedOverlay 之后已就绪（ngOnInit 在更晚的 CD
     // 周期才跑），但同步 emit 会让 overlay 在自身 ngOnInit 内 dispose 形成
     // ngOnInit→ngOnDestroy 重入，推迟一个微任务发出更干净。
-    const parentBlock = this.activeBlock.parentBlock;
-    if (!parentBlock) {
+    if (!this.activeBlock.parentBlock) {
       queueMicrotask(() => this.close$.next(true));
       return;
     }
-    const blocks: IContextMenuOption[] = this.doc.schemas
-      .getSchemaList()
-      .filter(
-        (v) =>
-          !v.metadata.isLeaf &&
-          !v.metadata.hideInInsertMenu &&
-          !["paragraph", "root"].includes(v.flavour) &&
-          this.doc.canInsertChild(parentBlock.id, v.flavour),
-      )
-      .map((v) => ({
-        flavour: v.flavour,
-        metadata: v.metadata,
-        type: "block",
-      }));
-    const listAll = HEADING_LIST.concat(blocks);
-
+    const listAll = [...this.items];
+    const searchIndexes = new Map(
+      listAll.map(item => [item.id, createSlashSearchIndex(item)]),
+    );
     this.list = listAll;
 
     const textObserver = debounce(() => {
       if (this.doc.event.status.isComposing) return;
-      const text = this.activeBlock.textContent();
-      if (!text || !TransformReg.test(text)) {
+      const query = this.currentQuery();
+      if (query === null) {
         this.close$.next(true);
         return;
       }
-      const searchText = text.slice(1).toLowerCase();
       const matchedItems = listAll.filter(
-        (v) =>
-          v.metadata.label.startsWith(searchText) ||
-          v.flavour.toLowerCase().startsWith(searchText),
+        item => matchesSlashSearch(searchIndexes.get(item.id) ?? [], query),
       );
       if (!matchedItems.length) {
-        this.close$.next(true);
-        return;
+        this.list = [];
+        this.activeIdx = -1;
+      } else {
+        this.list = matchedItems;
+        this.activeIdx = 0;
       }
-      this.list = matchedItems;
-      this.activeIdx = 0;
       this.cdr.markForCheck();
-    }, 300);
+    }, 100);
 
     this.activeBlock.yText.observe(textObserver);
-
-    const hotKeyEvents = [
-      this.doc.event.bindHotkey({ key: "Escape" }, (evt) =>
-        this.handleHotkeyEvent(evt, "Escape"),
-      ),
-      this.doc.event.bindHotkey({ key: "Enter" }, (evt) =>
-        this.handleHotkeyEvent(evt, "Enter"),
-      ),
-      this.doc.event.bindHotkey({ key: "ArrowUp" }, (evt) =>
-        this.handleHotkeyEvent(evt, "ArrowUp"),
-      ),
-      this.doc.event.bindHotkey({ key: "ArrowDown" }, (evt) =>
-        this.handleHotkeyEvent(evt, "ArrowDown"),
-      ),
-    ];
 
     document.addEventListener("keydown", this.handleRootKeydown, true);
 
     this.destroyRef.onDestroy(() => {
       document.removeEventListener("keydown", this.handleRootKeydown, true);
-      hotKeyEvents.forEach((off) => off());
       this.activeBlock.yText?.unobserve(textObserver);
       if (this.suppressTimerId !== null) {
         clearTimeout(this.suppressTimerId);
@@ -205,34 +181,50 @@ export class BlockTransformContextMenu {
     });
   }
 
+  showGroupLabel(index: number) {
+    return index === 0 ||
+      this.list[index - 1]?.groupLabel !== this.list[index]?.groupLabel;
+  }
+
+  currentQuery(): string | null {
+    const selection = this.doc.selection.value;
+    if (
+      !isSelectionAlive(selection as any, this.doc) ||
+      !selection?.collapsed ||
+      selection.start.type !== "text" ||
+      selection.firstBlock?.id !== this.activeBlock.id ||
+      selection.start.offset <= this.triggerIndex
+    ) return null;
+    const deltas = sliceDelta(
+      this.activeBlock.textDeltas(),
+      this.triggerIndex,
+      selection.start.offset,
+    );
+    const commandText = deltaToString(deltas, "\uFFFC");
+    if (!commandText || !["/", "、"].includes(commandText[0])) return null;
+    const query = commandText.slice(1);
+    return /[\s\uFFFC]/.test(query) ? null : query;
+  }
+
   private handleRootKeydown = (event: KeyboardEvent) => {
-    if (!this.canHandleMenuKeydown()) return;
-    if (!this.handleMenuKey(event.key)) return;
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    if (!this.handleEditorKey(event.key)) return;
 
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation?.();
   };
 
-  private handleHotkeyEvent(
-    evt: BlockCraft.EventStateContext,
-    key: MenuNavigationKey,
-  ) {
-    if (!this.canHandleMenuKeydown()) return false;
-    if (!this.handleMenuKey(key)) return false;
-
-    evt.preventDefault();
-    const event = evt.getDefaultEvent() as KeyboardEvent;
-    event.stopPropagation();
-    event.stopImmediatePropagation?.();
-    return true;
-  }
-
   private canHandleMenuKeydown() {
     return !this.doc.event.status.isComposing;
   }
 
-  private handleMenuKey(key: string) {
+  /**
+   * Routes editor-owned keyboard events when a native document keydown is not
+   * available (for example through a WebView host bridge).
+   */
+  handleEditorKey(key: string) {
+    if (!this.canHandleMenuKeydown()) return false;
     switch (key) {
       case "Escape":
         this.markNavigationHandled();
@@ -257,10 +249,11 @@ export class BlockTransformContextMenu {
 
   onMouseDown(evt: MouseEvent) {
     evt.preventDefault();
-    if (evt.eventPhase === Event.AT_TARGET) {
-      return;
-    }
-
+    const li = (evt.target as HTMLElement).closest<HTMLElement>(".list__item");
+    if (!li) return;
+    const index = Number(li.dataset["index"]);
+    if (!Number.isInteger(index) || index < 0 || index >= this.list.length) return;
+    this.activeIdx = index;
     this.select();
   }
 
@@ -288,7 +281,9 @@ export class BlockTransformContextMenu {
   selectUp() {
     if (!this.list.length) return;
     this.enterKeyboardNavigation();
-    this.activeIdx = (this.activeIdx - 1 + this.list.length) % this.list.length;
+    this.activeIdx = this.activeIdx < 0
+      ? this.list.length - 1
+      : (this.activeIdx - 1 + this.list.length) % this.list.length;
     this._syncActiveClass();
     this.scrollToActive();
   }
@@ -296,7 +291,9 @@ export class BlockTransformContextMenu {
   selectDown() {
     if (!this.list.length) return;
     this.enterKeyboardNavigation();
-    this.activeIdx = (this.activeIdx + 1) % this.list.length;
+    this.activeIdx = this.activeIdx < 0
+      ? 0
+      : (this.activeIdx + 1) % this.list.length;
     this._syncActiveClass();
     this.scrollToActive();
   }
@@ -317,8 +314,10 @@ export class BlockTransformContextMenu {
       const idx = Number(el.getAttribute("data-index"));
       if (idx === this.activeIdx) {
         el.classList.add("active");
+        el.setAttribute("aria-selected", "true");
       } else {
         el.classList.remove("active");
+        el.setAttribute("aria-selected", "false");
       }
     });
   }
@@ -446,57 +445,7 @@ export class BlockTransformContextMenu {
     if (!item) return;
     this._consumed = true;
 
-    switch (item.type) {
-      case "block":
-        this.transform2Block(item.flavour as any);
-        break;
-      case "heading":
-        this.activeBlock.deleteText(0, this.activeBlock.textLength);
-        this.activeBlock.updateProps({
-          heading: item.metadata["heading"],
-        });
-        break;
-    }
-
+    this.commandSelected.emit(item);
     this.close$.next(true);
-  }
-
-  transform2Block(flavour: BlockCraft.BlockFlavour) {
-    const schema = this.doc.schemas.get(flavour)!;
-    if (schema.nodeType === BlockNodeType.editable) {
-      const snapshot = this.doc.schemas.createSnapshot(schema.flavour, [
-        [],
-        this.activeBlock.props,
-      ]);
-      void this.doc
-        .chain()
-        .replaceWithSnapshots(this.activeBlock.id, [snapshot])
-        .nextTick()
-        .setCursorAtBlock(snapshot.id, true)
-        .recalculateSelection()
-        .run();
-      return;
-    }
-
-    // TODO
-    const blockCreator = this.doc.injector.get(BLOCK_CREATOR_SERVICE_TOKEN);
-    blockCreator.getParamsByScheme(schema).then((params) => {
-      if (!params) return;
-      // activeBlock 可能在 getParamsByScheme（弹窗/异步）期间被远端删除：
-      // 对已删块 replaceWithSnapshots 无效，且读 props 会拿到陈旧值，直接放弃
-      if (!this.doc.vm.get(this.activeBlock.id)) return;
-      const newBlock = this.doc.schemas.createSnapshot(
-        schema.flavour,
-        params as any,
-      );
-      newBlock.props.depth = this.activeBlock.props.depth;
-      void this.doc
-        .chain()
-        .replaceWithSnapshots(this.activeBlock.id, [newBlock])
-        .nextTick()
-        .setCursorAtBlock(newBlock.id, true)
-        .recalculateSelection()
-        .run();
-    });
   }
 }

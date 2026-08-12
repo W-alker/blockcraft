@@ -71,6 +71,7 @@ export const MyBlockSchema: IBlockSchemaOptions<MyBlockModel> = {
   metadata: {
     version: 1,
     label: "My Block",
+    description: "Short plain-language introduction shown in insertion menus",
     icon: "bc_icon bc_my-block",
     // virtualization: {
     //   viewRetention: 'keep-alive', // preserve DOM-owned state after first mount
@@ -188,6 +189,7 @@ export const MyEditableBlockSchema: IBlockSchemaOptions<MyEditableBlockModel> =
     metadata: {
       version: 1,
       label: "My Editable Block",
+      description: "Short plain-language introduction shown in insertion menus",
       icon: "bc_icon bc_my-editable",
     },
   };
@@ -277,6 +279,7 @@ export const MyContainerSchema: IBlockSchemaOptions<MyContainerModel> = {
   metadata: {
     version: 1,
     label: "My Container",
+    description: "Short plain-language introduction shown in insertion menus",
     icon: "bc_icon bc_my-container",
     renderUnit: true, // Standalone render unit
     includeChildren: ["paragraph", "divider", "bullet", "ordered", "todo"],
@@ -352,6 +355,30 @@ const schemas = new SchemaManager([
 ### 3. Add styles (optional)
 
 Create `themes/blocks/_my-block.scss` and import in the theme entry.
+
+---
+
+## Insertion Menu Introduction (Schema field)
+
+Use `metadata.description` for a short, plain-language introduction to the
+block. Insertion surfaces such as `BlockTransformerPlugin` read this field
+without modifying it:
+
+```typescript
+metadata: {
+  version: 1,
+  label: '高亮块',
+  description: '突出展示重要信息',
+}
+```
+
+Do not place keyboard shortcuts, Markdown syntax, slash aliases, or line breaks
+in `description`. Those are interaction hints owned by the plugin configuration
+and are rendered separately from the introduction. All bundled Block Schemas,
+including internal leaf/container Schemas, provide a description so other
+host-owned insertion surfaces can reuse the same catalogue without inventing
+copy. A host can override only the slash-menu introduction through the matching
+`IBlockTransformConfig.description`; the Schema metadata remains unchanged.
 
 ---
 

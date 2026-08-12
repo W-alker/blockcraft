@@ -104,4 +104,38 @@ describe("MentionPlugin selection liveness", () => {
     expect(doc.selection.setSelection).not.toHaveBeenCalled();
     expect(panel).not.toHaveBeenCalled();
   });
+
+  it("atomically replaces a slash query when opened from another command surface", () => {
+    const block = {
+      id: "p1",
+      textLength: 12,
+      plainTextOnly: false,
+      applyDeltaOperations: jasmine.createSpy("applyDeltaOperations"),
+    };
+    const panel = jasmine.createSpy("panel");
+    const plugin = new MentionPlugin({panel});
+    const doc = {
+      vm: {get: jasmine.createSpy("get").and.returnValue(block)},
+      getBlockById: jasmine.createSpy("getBlockById").and.returnValue(block),
+      isReadonly: false,
+      selection: {setSelection: jasmine.createSpy("setSelection")},
+    };
+    (plugin as any).doc = doc;
+    spyOn<any>(plugin, "_openSession");
+
+    expect(plugin.openAt(block as any, 3, 6)).toBeTrue();
+
+    expect(block.applyDeltaOperations).toHaveBeenCalledOnceWith([
+      {retain: 3},
+      {delete: 6},
+      {insert: "@"},
+    ]);
+    expect(doc.selection.setSelection).toHaveBeenCalledOnceWith({
+      blockId: "p1",
+      type: "text",
+      index: 4,
+      length: 0,
+    });
+    expect((plugin as any)._openSession).toHaveBeenCalledOnceWith(block, 3);
+  });
 });

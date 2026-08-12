@@ -19,6 +19,7 @@ export const ParagraphBlockSchema: IBlockSchemaOptions<ParagraphBlockModel> = {
   metadata: {
     version: 1,
     label: "基础段落",
+    description: "输入普通正文内容",
     icon: "bc_icon bc_wenben",
     placeholder: {
       default: '输入"/"呼出菜单',

@@ -135,6 +135,11 @@ export interface IBlockSchemaOptions<T extends NativeBlockModel = NativeBlockMod
     icon?: string;
     svgIcon?: string;
     label: string;
+    /**
+     * Short plain-language introduction for insertion surfaces.
+     * Keep shortcuts, Markdown triggers, and search aliases in their owning UI
+     * configuration instead of embedding operational hints in this text.
+     */
     description?: string;
     // 是否是某个block的依附子块
     isLeaf?: boolean;

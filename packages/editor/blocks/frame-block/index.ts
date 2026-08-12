@@ -30,7 +30,8 @@ export const FrameBlockSchema: BlockSchemaOptions<FrameBlockModel> = {
   },
   metadata: {
     version: 1,
-    label: "自由块"
+    label: "自由块",
+    description: "创建可自由组织内容的容器"
   }
 }
 

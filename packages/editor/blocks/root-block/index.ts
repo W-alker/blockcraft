@@ -38,6 +38,7 @@ export const RootBlockSchema: IBlockSchemaOptions<RootBlockModel> = {
   metadata: {
     version: 1,
     label: "Root",
+    description: "承载整篇文档内容的根容器",
     includeChildren: ['*'],
     renderUnit: true,
     selectionScope: 'document',

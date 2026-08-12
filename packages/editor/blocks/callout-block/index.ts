@@ -37,6 +37,7 @@ export const CalloutBlockSchema: IBlockSchemaOptions<CalloutBlockModel> = {
   metadata: {
     version: 1,
     label: "高亮块",
+    description: "突出展示重要信息",
     icon: 'bc_icon bc_gaoliangkuai-color',
     svgIcon: 'bc_gaoliangkuai-color',
     renderUnit: true,

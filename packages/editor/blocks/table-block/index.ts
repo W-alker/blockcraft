@@ -57,6 +57,7 @@ export const TableBlockSchema: IBlockSchemaOptions<TableBlockModel> = {
   metadata: {
     version: 1.0,
     label: '表格',
+    description: '使用行列结构整理数据',
     includeChildren: ['table-row'],
     icon: "bc_icn bc_column-vertical",
     svgIcon: "bc_column-vertical",
@@ -87,6 +88,7 @@ export const TableRowBlockSchema: IBlockSchemaOptions<TableRowBlockModel> = {
   metadata: {
     version: 1.0,
     label: '表格行',
+    description: '承载一行表格单元格',
     includeChildren: ['table-cell'],
     isLeaf: true,
   }
@@ -109,6 +111,7 @@ export const TableCellBlockSchema: IBlockSchemaOptions<TableCellBlockModel> = {
   metadata: {
     version: 1.0,
     label: '表格单元格',
+    description: '承载单元格中的块内容',
     excludeChildren: ['table*', '*-embed', 'mermaid*', 'column*'],
     isLeaf: true,
     renderUnit: true,

@@ -1,10 +1,17 @@
 import {EditableBlockComponent, HotKeyTrigger, IBlockProps} from "../../framework";
-import {IS_MAC, sliceDelta} from "../../global";
+import {sliceDelta} from "../../global";
 
 export interface IBlockTransformConfig {
   flavour: string
-  description: string
+  /** Slash-menu introduction overriding Schema `metadata.description`. */
+  description?: string
+  /** Additional searchable aliases owned by this transform. */
+  keywords?: readonly string[]
+  /** Short alias displayed as `/alias` and included in slash search. */
+  searchAlias?: string
   markdown?: RegExp
+  /** Human-readable Markdown trigger rendered separately from the introduction. */
+  markdownHint?: string
   hotkey?: HotKeyTrigger,
   onConvert?: (doc: BlockCraft.Doc, from: EditableBlockComponent, matchedString: string) => void
 }
@@ -12,37 +19,51 @@ export interface IBlockTransformConfig {
 export const headingTransforms: IBlockTransformConfig[] = [
   {
     flavour: 'heading-one',
-    description: `一级标题(${IS_MAC ? '⌘' : 'Ctrl'} + 1)\nMarkdown: # (空格)`,
-    markdown: /^#\s$/
+    description: '用于文档主标题或最高层级章节',
+    searchAlias: 'h1',
+    markdown: /^#\s$/,
+    markdownHint: '# + 空格',
+    hotkey: {key: '1', shortKey: true},
   },
   {
     flavour: 'heading-two',
-    description: `二级标题(${IS_MAC ? '⌘' : 'Ctrl'} + 2)\nMarkdown: ## (空格)`,
-    markdown: /^##\s$/
+    description: '用于组织主要章节',
+    searchAlias: 'h2',
+    markdown: /^##\s$/,
+    markdownHint: '## + 空格',
+    hotkey: {key: '2', shortKey: true},
   },
   {
     flavour: 'heading-three',
-    description: `三级标题(${IS_MAC ? '⌘' : 'Ctrl'} + 3)\nMarkdown: ### (空格)`,
-    markdown: /^###\s$/
+    description: '用于组织章节内的小节',
+    searchAlias: 'h3',
+    markdown: /^###\s$/,
+    markdownHint: '### + 空格',
+    hotkey: {key: '3', shortKey: true},
   },
   {
     flavour: 'heading-four',
-    description: `四级标题(${IS_MAC ? '⌘' : 'Ctrl'} + 4)\nMarkdown: #### (空格)`,
-    markdown: /^####\s$/
+    description: '用于更细粒度的内容层级',
+    searchAlias: 'h4',
+    markdown: /^####\s$/,
+    markdownHint: '#### + 空格',
+    hotkey: {key: '4', shortKey: true},
   },
 ]
 
 export const blockTransforms: IBlockTransformConfig[] = [
   {
     flavour: 'bullet',
-    description: `无序列表(${IS_MAC ? '⌘' : 'Ctrl'} + Shift + L)\nMarkdown: -/+ (空格)`,
+    searchAlias: 'wxlb',
     markdown: /^[-+]\s$/,
+    markdownHint: '- 或 + 后空格',
     hotkey: {key: ['l', 'L'], shortKey: true, shiftKey: true}
   },
   {
     flavour: 'ordered',
-    description: `有序列表(${IS_MAC ? '⌘' : 'Ctrl'} + Shift + O)\nMarkdown: (数字/字母). (空格)`,
+    searchAlias: 'yxlb',
     markdown: /^(\d|[a-z])+\.\s$/,
+    markdownHint: '1. + 空格',
     hotkey: {key: ['o', 'O'], shortKey: true, shiftKey: true},
     onConvert: (doc, from, matchedString) => {
       const o = doc.schemas.createSnapshot('ordered', [sliceDelta(from.textDeltas(), matchedString.length), from.props])
@@ -67,14 +88,16 @@ export const blockTransforms: IBlockTransformConfig[] = [
   },
   {
     flavour: 'todo',
-    description: `待办事项(${IS_MAC ? '⌘' : 'Ctrl'} + Shift + T)\nMarkdown: [] (空格)`,
+    searchAlias: 'db',
     markdown: /^\[\]\s$/,
+    markdownHint: '[] + 空格',
     hotkey: {key: ['t', 'T'], shortKey: true, shiftKey: true}
   },
   {
     flavour: 'callout',
-    description: `高亮块(${IS_MAC ? '⌘' : 'Ctrl'} + Shift + Q)\nMarkdown: ! (空格)`,
+    searchAlias: 'gl',
     markdown: /^!\s$/,
+    markdownHint: '! + 空格',
     hotkey: {key: ['q', 'Q'], shortKey: true, shiftKey: true},
     onConvert: (doc, from, matchedString) => {
       const callout = doc.schemas.createSnapshot('callout', [])
@@ -90,24 +113,28 @@ export const blockTransforms: IBlockTransformConfig[] = [
   },
   {
     flavour: 'blockquote',
-    description: `引用块\nMarkdown: > (空格)`,
+    searchAlias: 'yy',
     markdown: /^>\s$/,
+    markdownHint: '> + 空格',
   },
   {
     flavour: 'divider',
-    description: `分割线(${IS_MAC ? '⌘' : 'Ctrl'} + Shift + H)\nMarkdown: --- (空格)`,
-    markdown: /^---\s$/
-  },
-  {
-    flavour: 'divider',
-    description: `分割线(${IS_MAC ? '⌘' : 'Ctrl'} + Shift + H)\nMarkdown: --- (空格)`,
+    searchAlias: 'fgx',
     markdown: /^---\s$/,
+    markdownHint: '--- + 空格',
+  },
+  {
+    flavour: 'divider',
+    searchAlias: 'fgx',
+    markdown: /^---\s$/,
+    markdownHint: '--- + 空格',
     hotkey: {key: ['h', 'H'], shortKey: true, shiftKey: true}
   },
   {
     flavour: 'code',
-    description: `代码块(${IS_MAC ? '⌘' : 'Ctrl'} + Shift + e)\nMarkdown: \`\`\` (空格)`,
+    searchAlias: 'dm',
     markdown: /^```\s$/,
+    markdownHint: '``` + 空格',
     hotkey: {key: ['E', 'e'], shortKey: true, shiftKey: true}
   }
 ]

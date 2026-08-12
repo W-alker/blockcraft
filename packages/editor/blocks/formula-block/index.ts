@@ -29,6 +29,7 @@ export const FormulaBlockSchema: IBlockSchemaOptions<FormulaBlockModel> = {
   metadata: {
     version: 1,
     label: "公式",
+    description: "插入独立展示的数学公式",
     icon: "bc_icon bc_gongshi"
   }
 }

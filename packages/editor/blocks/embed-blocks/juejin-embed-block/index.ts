@@ -32,6 +32,7 @@ export const JuejinEmbedBlockSchema: IBlockSchemaOptions<JuejinEmbedBlockModel> 
     version: 1,
     virtualization: {viewRetention: 'keep-alive'},
     label: "掘金",
+    description: "嵌入并预览掘金文章",
     svgIcon: "bc_juejin",
     icon: "bc_icon bc_juejin"
   }

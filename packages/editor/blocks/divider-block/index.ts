@@ -31,6 +31,7 @@ export const DividerBlockSchema: IBlockSchemaOptions<DividerBlockModel> = {
   metadata: {
     version: 1,
     label: "分割线",
+    description: "分隔上下内容区域",
     svgIcon: "bc_fengexian-color",
     icon: "bc_icon bc_fengexian-color"
   }

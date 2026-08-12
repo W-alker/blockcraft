@@ -36,15 +36,19 @@ describe("BlockTransformContextMenu keyboard navigation", () => {
 
     component.list = [
       {
+        id: "block:paragraph",
+        kind: "block",
+        group: "basic",
+        groupLabel: "基础内容",
         flavour: "paragraph",
-        type: "block",
-        metadata: { label: "Paragraph" },
+        label: "Paragraph",
       },
     ] as any;
     const activeBlockContainer = document.createElement("div");
     component.activeBlock = {
       id: "block-1",
       textLength: 5,
+      textDeltas: () => [{insert: "/icon"}],
       containerElement: activeBlockContainer,
       runtime: {
         domPointToModel: jasmine
@@ -229,7 +233,7 @@ describe("BlockTransformContextMenu keyboard navigation", () => {
     expect(hostElement.scrollLeft).toBe(18);
   });
 
-  it("handles ArrowDown through the hotkey fallback path", () => {
+  it("exposes ArrowDown routing for the editor event fallback path", () => {
     const { component } = createComponent({
       collapsed: true,
       start: { type: "text" },
@@ -237,25 +241,19 @@ describe("BlockTransformContextMenu keyboard navigation", () => {
     });
     spyOn(component, "selectDown");
 
-    const preventDefault = jasmine.createSpy("preventDefault");
-    const stopPropagation = jasmine.createSpy("stopPropagation");
-
-    const handled = (component as any).handleHotkeyEvent(
-      {
-        preventDefault,
-        getDefaultEvent: () =>
-          ({
-            key: "ArrowDown",
-            stopPropagation,
-          }) as unknown as KeyboardEvent,
-      },
-      "ArrowDown",
-    );
+    const handled = component.handleEditorKey("ArrowDown");
 
     expect(handled).toBeTrue();
-    expect(preventDefault).toHaveBeenCalled();
-    expect(stopPropagation).toHaveBeenCalled();
     expect(component.selectDown).toHaveBeenCalled();
+  });
+
+  it("starts keyboard navigation from the first result after an empty filter", () => {
+    const {component} = createComponent(null, null);
+    (component as any).activeIdx = -1;
+
+    component.selectDown();
+
+    expect((component as any).activeIdx).toBe(0);
   });
 
   it("still handles ArrowDown when the native selection snapshot is lost", () => {
@@ -361,5 +359,54 @@ describe("BlockTransformContextMenu keyboard navigation", () => {
     expect(component.activeBlock.setInlineRange).not.toHaveBeenCalled();
 
     (component as any)._disarmCaretGuard();
+  });
+
+  it("reads the filter query from the slash position instead of the block start", () => {
+    const block = {id: "block-1"};
+    const {component} = createComponent({
+      collapsed: true,
+      start: {type: "text", offset: 12},
+      firstBlock: block,
+    });
+    component.triggerIndex = 7;
+    component.activeBlock.textDeltas = () => [{insert: "before /icon after"}];
+
+    expect(component.currentQuery()).toBe("icon");
+  });
+
+  it("emits the selected unified slash item", () => {
+    const {component} = createComponent(null, null);
+    const item = component.list[0];
+    const selected = jasmine.createSpy("selected");
+    component.commandSelected.subscribe(selected);
+
+    component.select();
+
+    expect(selected).toHaveBeenCalledOnceWith(item);
+  });
+
+  it("selects the item directly pressed by pointer instead of a stale hover index", () => {
+    const {component} = createComponent(null, null);
+    component.list.push({
+      id: "inline:icon",
+      kind: "command",
+      group: "inline",
+      groupLabel: "行内内容",
+      label: "Icon",
+    } as any);
+    const itemElement = document.createElement("li");
+    itemElement.className = "list__item";
+    itemElement.dataset["index"] = "1";
+    const child = document.createElement("span");
+    itemElement.appendChild(child);
+    const selected = jasmine.createSpy("selected");
+    component.commandSelected.subscribe(selected);
+
+    component.onMouseDown({
+      target: child,
+      preventDefault: jasmine.createSpy("preventDefault"),
+    } as unknown as MouseEvent);
+
+    expect(selected).toHaveBeenCalledOnceWith(component.list[1]);
   });
 });

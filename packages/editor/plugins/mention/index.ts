@@ -78,33 +78,52 @@ export class MentionPlugin extends DocPlugin {
     }
 
     e.preventDefault()
-    const block = startBlock
-    const atIndex = startOffset
-
-    if (this.doc.readonlyManager?.isReadonly(block) ?? this.doc.isReadonly) {
+    if (this.doc.readonlyManager?.isReadonly(startBlock) ?? this.doc.isReadonly) {
       e.preventDefault()
       return true
     }
+    return this.openAt(startBlock, startOffset) || undefined
+  }
 
+  /**
+   * Opens the existing mention flow at an explicit model position.
+   * `replaceLength` lets command surfaces atomically replace their trigger
+   * text (for example `/mention`) with the configured mention trigger.
+   */
+  openAt(
+    block: EditableBlockComponent,
+    index: number,
+    replaceLength = 0,
+  ): boolean {
+    if (
+      !this._isBlockAlive(block) ||
+      block.plainTextOnly ||
+      (this.doc.readonlyManager?.isReadonly(block) ?? this.doc.isReadonly)
+    ) return false
+
+    if (this._isOpen) this._close$.next()
+    const start = Math.max(0, Math.min(index, block.textLength))
+    const length = Math.max(0, Math.min(replaceLength, block.textLength - start))
     this._isOpen = true
-
-    // Insert trigger char via controlled rendering
-    block.insertText(atIndex, this._trigger)
-
+    block.applyDeltaOperations([
+      ...(start ? [{retain: start}] : []),
+      ...(length ? [{delete: length}] : []),
+      {insert: this._trigger},
+    ])
     this.doc.selection.setSelection({
       blockId: block.id,
       type: 'text',
-      index: atIndex + 1,
-      length: 0
+      index: start + 1,
+      length: 0,
     })
 
     try {
-      this._openSession(block, atIndex)
+      this._openSession(block, start)
+      return true
     } catch {
       this._isOpen = false
+      return false
     }
-
-    return true
   }
 
   // ─── Mention Click ───

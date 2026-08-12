@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-12
+> Last updated: 2026-08-13
 
 ## BlockControllerPlugin
 
@@ -232,27 +232,109 @@ new BlockGapCreatorPlugin()
 
 > `plugins/block-transformer/` — Slash menu, block-type conversion, and Markdown shortcuts.
 
-Enables slash-command (`/` or `、`) to open a block-type picker, Markdown shortcuts (e.g., `# ` for heading, `- ` for bullet), and `Cmd/Ctrl+0–4` to set heading levels.
+Enables slash-command (`/` or `、`) to open one grouped insertion surface for
+blocks and inline content, Markdown shortcuts (e.g., `# ` for heading, `- ` for
+bullet), and `Cmd/Ctrl+0–4` to set heading levels. The slash trigger works at any
+collapsed text cursor in a rich editable block; it is not limited to an empty
+paragraph. While the menu is open, `ArrowUp` / `ArrowDown` move the active item,
+`Enter` selects it, and `Escape` closes the menu without moving the editor caret.
 
 ### Configuration
 
 ```typescript
-new BlockTransformerPlugin(transformList?: IBlockTransformConfig[])
+new BlockTransformerPlugin(
+  config?: readonly IBlockTransformConfig[] | BlockTransformerPluginOptions,
+)
 ```
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `transformList` | `IBlockTransformConfig[]` | `blockTransforms` (built-in list) | Block types available for conversion |
+The legacy transform-array constructor remains supported. Use the options form
+to add host-owned slash commands:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `transformList` | `readonly IBlockTransformConfig[]` | `blockTransforms` | Block types available for conversion and Markdown shortcuts |
+| `commands` | `readonly SlashCommandItem[]` | `[]` | Additional items appended to the grouped slash menu |
 
 Each `IBlockTransformConfig`:
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `flavour` | `BlockFlavour` | Target block flavour |
-| `description` | `string` | Display name in the slash menu |
+| `description` | `string` | Optional slash-menu introduction overriding Schema `metadata.description`; do not include shortcut syntax |
+| `keywords` | `readonly string[]` | Additional searchable aliases |
+| `searchAlias` | `string` | Preferred alias displayed as `/alias` and included in search |
 | `hotkey` | `HotkeyConfig` | Optional keyboard shortcut |
 | `markdown` | `RegExp` | Optional Markdown trigger pattern |
+| `markdownHint` | `string` | Human-readable Markdown trigger rendered as a trailing hint |
 | `onConvert` | `(doc, block, text) => void` | Optional custom conversion logic |
+
+Each `SlashCommandItem` has `id`, `label`, `run(context)` and optional `group`,
+`groupLabel`, `description`, `keywords`, `icon`, `svgIcon`, `csIcon`, and
+`when(context)`. `searchAlias` selects the visible `/alias`, while
+`shortcutHint` displays a host-owned shortcut without registering that binding.
+Groups are `basic`, `inline`, `media`, or `embed`. IDs must be stable; a host
+command with the same ID as a built-in command replaces that built-in command
+in place. Search indexes the label, ID, flavour, explicit alias, and `keywords`.
+Chinese labels and keywords also receive pinyin-initial keys, so `/gl` matches
+`高亮块`; descriptions and group labels are presentation-only and cannot create
+accidental search matches.
+
+For Schema block items, introduction resolution is local to this menu:
+
+1. Matching `IBlockTransformConfig.description`.
+2. Schema `metadata.description`.
+3. No introduction row.
+
+The plugin never writes the override back to Schema metadata. Markdown syntax,
+the formatted cross-platform hotkey, and `/searchAlias` are never concatenated
+into `description`. The hotkey and quick-search alias stay at the end of the
+right-hand hint area's first row; the Markdown trigger receives its own second
+row directly below them in the same right-hand area.
+
+`SlashCommandContext` exposes `doc`, `block`, `query`, `triggerIndex`,
+`triggerLength`, and a single-use `replace(deltas)` function. `replace()` keeps
+the slash range as a Yjs relative position while an async picker is open. It
+returns `false` if the range became stale, readonly, or invalid, and otherwise
+replaces `/query` through the editable block model and restores the caret.
+
+### Built-in Slash Commands
+
+The default grouped menu includes all insertable Schema blocks plus:
+
+| Group | Commands |
+|-------|----------|
+| Basic content | Paragraph, heading 1–4, editable block Schemas, and host commands assigned to `basic` |
+| Inline content | Formula, mention (when `MentionPlugin` is registered), Emoji, CSES Icon, link, and inline image (when the image Schema is registered) |
+| Media & layout | Non-editable block Schemas |
+| Third-party embed | Schemas whose flavour ends in `-embed` |
+
+Emoji and Icon use `CsEmojiPickerComponent` and `CsIconPickerComponent` from the
+exact CSES UI peer. The selected Icon is stored through the built-in inline
+`icon` embed as a `csicon csicon-<name>` class string; SVG catalogue entries are
+not accepted by this single-colour embed path.
+
+When a block item is chosen in the middle of rich text, the plugin preserves
+formatted deltas before and after `/query` in same-flavour sibling snapshots and
+inserts the new block between them. Empty sides are omitted.
+
+### Runtime Command API
+
+Commands can also be contributed after construction. Changes appear the next
+time the slash menu opens:
+
+```typescript
+const transformer = new BlockTransformerPlugin()
+const dispose = transformer.registerCommand(command)
+const disposeMany = transformer.registerCommands([commandA, commandB])
+
+dispose()                              // removes only this registration
+disposeMany()                          // removes this batch
+transformer.unregisterCommand('host:command-id') // removes all registrations for the ID
+```
+
+Registrations are stacked per stable ID. The latest registration is visible;
+disposing it reveals the previous registration, which lets independently loaded
+host extensions override and unload without deleting another extension's item.
 
 ### Built-in Hotkeys
 
@@ -279,13 +361,41 @@ new BlockTransformerPlugin([
   ...blockTransforms,  // keep defaults
   {
     flavour: 'note',
-    description: '笔记',
+    description: '记录补充说明或上下文',
     markdown: /^:::$/,  // trigger on typing :::
+    markdownHint: '::: + 空格',
+    searchAlias: 'bj',
     onConvert: (doc, block, text) => {
       // custom conversion logic
     },
   },
 ])
+
+// Keep built-ins and add a host-owned inline command.
+const transformer = new BlockTransformerPlugin({
+  commands: [{
+    id: 'inline:date',
+    label: '日期',
+    group: 'inline',
+    csIcon: 'calendar',
+    keywords: ['date', 'today'],
+    run: async context => {
+      const value = await openDatePicker()
+      if (value) context.replace([{insert: value.label, attributes: {'d:date': value.iso}}])
+    },
+  }],
+})
+
+// A feature module can contribute later and clean up on unload.
+const unregisterApproval = transformer.registerCommand({
+  id: 'host:approval',
+  label: '快捷审批',
+  keywords: ['workflow'],
+  searchAlias: 'sp',
+  shortcutHint: '⌘⇧A', // display only; the host owns the binding
+  run: context => context.replace([{insert: '审批'}]),
+})
+// unregisterApproval()
 ```
 
 ---

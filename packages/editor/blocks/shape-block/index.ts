@@ -37,6 +37,7 @@ export const ShapeTextBlockSchema:
     metadata: {
       version: 1,
       label: '形状文字',
+      description: '编辑形状内部的文字内容',
       isLeaf: true,
       hideInInsertMenu: true,
     },
@@ -81,6 +82,7 @@ export const ShapeBlockSchema: IBlockSchemaOptions<ShapeBlockModel> = {
   metadata: {
     version: 1,
     label: '形状',
+    description: '插入可编辑和自由放置的形状',
     icon: 'bc_icon bc_tuxing',
     includeChildren: ['shape-text'],
     selectionScope: 'container',
