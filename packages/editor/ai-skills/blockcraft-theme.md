@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-10
+> Last updated: 2026-08-12
 
 ## Theme Structure
 
@@ -160,9 +160,29 @@ Read `themes/base.scss` and `themes/variables.scss` for the current variable lis
 --bc-border-color
 --bc-accent-color
 --bc-selection-color
+--bc-solid-block-background-opacity // default 82%; code/callout surface opacity
 
 // Border
 --bc-border-radius
+```
+
+## Document Background Compatibility
+
+Content surfaces that intentionally carry a solid fill must preserve the
+document background context. The built-in code body/header and callout use
+`color-mix()` with `--bc-solid-block-background-opacity` (default `82%`) so a
+page background color or image remains visible without weakening text opacity.
+
+Callout models continue to persist the original opaque `props.backColor`.
+The renderer projects that value through `--bc-callout-background-color`; do not
+store an alpha-adjusted replacement in Yjs, because repeated edits or exports
+would otherwise compound opacity. Hosts that replace `CalloutBlockComponent`
+must bind that CSS custom property rather than inline `background-color`.
+
+```typescript
+host: {
+  '[style.--bc-callout-background-color]': 'props.backColor',
+}
 ```
 
 > **`--bc-lh` is a unitless line-height *ratio* (default `1.5`), not a px length.** This is deliberate:

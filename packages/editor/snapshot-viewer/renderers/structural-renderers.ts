@@ -93,7 +93,10 @@ function renderCallout(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   const element = createBlockShell(snapshot)
   const props = snapshot.props as Record<string, unknown>
   if (props["backColor"]) {
-    element.style.backgroundColor = `${props["backColor"]}`
+    element.style.setProperty(
+      "--bc-callout-background-color",
+      `${props["backColor"]}`,
+    )
   }
   if (props["color"]) {
     element.style.color = `${props["color"]}`

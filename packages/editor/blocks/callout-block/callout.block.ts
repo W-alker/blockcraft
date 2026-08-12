@@ -24,7 +24,7 @@ import { Subject, takeUntil } from "rxjs";
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
-    '[style.background-color]': 'props.backColor',
+    '[style.--bc-callout-background-color]': 'props.backColor',
     '[style.color]': 'props.color',
     '[style.border-color]': 'props.borderColor',
   }

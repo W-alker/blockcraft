@@ -38,6 +38,8 @@
   --bc-bg-gray: #ECEEEF;
   --bc-bg-gray2: #dddddd;
   --bc-bg-muted: #f8fbfe;
+  // 内容型纯色 Block 保留的实色比例；其余部分透出文档背景色/背景图。
+  --bc-solid-block-background-opacity: 82%;
 
   // Block 级只读状态
   --bc-readonly-border-color: var(--bc-color-lighter);

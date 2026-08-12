@@ -69,6 +69,108 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
+## Unreleased — 2026-08-12 — translucent content-block surfaces
+
+**Severity**: minor
+
+**What changed**: Code-block body/header surfaces and callout background fills
+now retain 82% of their solid color and let the underlying document background
+color or image show through. The opacity is controlled by the public
+`--bc-solid-block-background-opacity` theme variable. Callout snapshots keep
+their original `props.backColor`; transparency is a render projection only.
+
+**Why**: Fully opaque content blocks visually disconnected from document pages
+that use a custom background color or image. Applying opacity at render time
+keeps persisted colors stable while allowing both live and readonly surfaces to
+share the page appearance.
+
+**Affected ai-skills files**:
+
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `--bc-solid-block-background-opacity` defaults to `82%` and can be overridden
+  by a host theme.
+- Replacement callout components bind `props.backColor` through
+  `--bc-callout-background-color` so the shared theme owns alpha composition.
+
+### Migration Recipe
+
+```typescript
+// before: replacement Callout component
+host: {'[style.background-color]': 'props.backColor'}
+
+// after
+host: {'[style.--bc-callout-background-color]': 'props.backColor'}
+```
+
+### Behavior Changes
+
+- Code-block header and body no longer stack two translucent fills; each paints
+  its own non-overlapping surface so the effective opacity stays predictable.
+- Text, syntax colors, borders, selection feedback, overlays and table-cell
+  fills are unchanged.
+- No package version was changed; the release version remains a maintainer
+  decision.
+
+## Unreleased — 2026-08-12
+
+**Severity**: minor
+
+**What changed**: BlockCraft now owns the document-library `icon` inline embed.
+Every `BlockCraftDoc` installs the converter by default alongside the inline
+image converter, while an explicitly configured same-key converter continues
+to override the built-in implementation. The existing Delta shape and DOM
+round-trip remain unchanged.
+
+**Why**: Icon embed semantics belong to BlockCraft's Inline bounded context.
+Keeping the converter in each document host duplicated framework behavior and
+made existing icon deltas depend on host-specific registration.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-embed.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `INLINE_ICON_EMBED_KEY` exports the stable `icon` Delta key.
+- `inlineIconEmbedConverter` exports the built-in converter for inspection or
+  explicit host overrides.
+- `{insert: {icon: 'bc_icon bc_document'}}` now renders in every
+  `BlockCraftDoc` without a `DocConfig.embeds` entry.
+
+### Migration Recipe
+
+Document hosts can remove their equivalent local converter and registration
+after upgrading to the release that contains this change:
+
+```typescript
+// before
+new BlockCraftDoc({
+  // ...
+  embeds: [['icon', localIconEmbedConverter]],
+})
+
+// after
+new BlockCraftDoc({
+  // ...
+  // icon is built in; keep only host-specific embeds
+})
+```
+
+### Behavior Changes
+
+- Unknown `icon` deltas no longer fall back to an unregistered-embed path.
+- The converter preserves the full class string and mirrors it to `data-icon`,
+  matching existing document-library content.
+- No package version was changed; the release version remains a maintainer
+  decision.
+
 ## v0.3.2 — 2026-08-12
 
 **Severity**: patch

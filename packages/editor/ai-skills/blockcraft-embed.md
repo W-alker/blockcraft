@@ -4,7 +4,7 @@
 >
 > For inline system internals, see L2: `blockcraft-inline.md`
 >
-> Last updated: 2026-08-04
+> Last updated: 2026-08-12
 
 ## What is an Inline Embed?
 
@@ -68,7 +68,22 @@ export const myEmbedConverter: EmbedConverter = {
 };
 ```
 
-## Registration
+## Built-in Embeds
+
+The `icon` embed used by document-library content is built in and needs no
+registration:
+
+```typescript
+{
+  insert: {icon: 'bc_icon bc_document'},
+}
+```
+
+Its renderer preserves the complete iconfont class string on an `<i>` element
+and mirrors it to `data-icon` for DOM-to-Delta round-trips. BlockCraft exports
+`inlineIconEmbedConverter` and `INLINE_ICON_EMBED_KEY` for hosts that need to
+inspect or explicitly override the default representation. Registering an
+`icon` converter in `DocConfig.embeds` keeps the existing host-wins behavior.
 
 The `image` embed is built in and needs no registration:
 
@@ -177,6 +192,7 @@ if (block && block instanceof EditableBlockComponent) {
 
 | Embed Key | Converter Location | Description |
 |-----------|-------------------|-------------|
+| `icon` | `framework/block-std/inline/icon-embed.ts` | Built-in iconfont class embed; custom same-key converter wins |
 | `image` | `framework/block-std/inline/image-embed.ts` | Built-in inline image; custom same-key converter wins |
 | `shape` | `blocks/shape-block/shape-embed.ts` | Bundled inline/wrapped shape with lossless props + nested text payload |
 | `word-art` | `blocks/word-art-block/word-art-embed.ts` | Bundled inline/wrapped WordArt with lossless presentation + text payload |
@@ -239,6 +255,6 @@ metadata. Markdown deliberately emits only readable object text.
 - [ ] `toView` returns an `HTMLElement` (not a string)
 - [ ] `toDelta` correctly reconstructs the delta from the DOM element
 - [ ] Embed key in `insert` object matches the registration key
-- [ ] Converter registered in `DocConfig.embeds` array
+- [ ] Custom converter registered in `DocConfig.embeds`; built-in `icon` and `image` need no registration
 - [ ] CSS styles added for the embed element class
 - [ ] `onDestroy` implemented if the embed creates subscriptions or listeners

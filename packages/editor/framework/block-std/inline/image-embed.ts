@@ -5,6 +5,10 @@ import {
   ResourcePlaceholderController,
 } from '../../../global/resource-placeholder'
 import {INLINE_IMAGE_INTRINSIC_SIZE_EVENT} from './image-embed-events'
+import {
+  INLINE_ICON_EMBED_KEY,
+  inlineIconEmbedConverter,
+} from './icon-embed'
 
 export const INLINE_IMAGE_EMBED_KEY = 'image'
 const INLINE_IMAGE_SHELL_CLASS = 'bc-inline-image-shell'
@@ -218,6 +222,7 @@ export function withDefaultEmbedConverters(
 ): [string, EmbedConverter][] {
   return [...new Map<string, EmbedConverter>([
     [INLINE_IMAGE_EMBED_KEY, inlineImageEmbedConverter],
+    [INLINE_ICON_EMBED_KEY, inlineIconEmbedConverter],
     ...configured,
   ])]
 }

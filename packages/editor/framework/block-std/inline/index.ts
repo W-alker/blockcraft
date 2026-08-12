@@ -49,6 +49,7 @@ export class InlineManager {
 }
 
 export * from './const'
+export * from './icon-embed'
 export * from './image-embed'
 export * from './compareAttributes'
 export * from './position/inline-position-mapper'

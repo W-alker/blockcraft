@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-08-10 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-08-12 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -689,7 +689,20 @@ viewer.destroy()
 
 Use this path when the source arrives as Markdown chunks or full-text rewrites rather than prebuilt snapshots.
 
-### Default Inline Image Embed
+### Default Inline Embeds
+
+Document-library icon deltas are available without explicit registration:
+
+```typescript
+const icon = {insert: {icon: 'bc_icon bc_document'}}
+```
+
+The default converter preserves the complete iconfont class string on an
+`<i data-icon="…">` element. `INLINE_ICON_EMBED_KEY` and
+`inlineIconEmbedConverter` are public exports, and an explicit same-key entry
+in `DocConfig.embeds` overrides the built-in converter.
+
+Inline images are also built in:
 
 ```typescript
 import {createInlineImageDelta} from '@ccc/blockcraft'

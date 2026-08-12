@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-10
+> Last updated: 2026-08-12
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -301,6 +301,12 @@ square-wrap representations. A manually assembled host must pair each Plugin
 with `createInlineShapeEmbedConverter()` or
 `createInlineWordArtEmbedConverter()` in `DocConfig.embeds`; without the
 converter the Plugin warns and does not write an unrenderable Delta.
+
+`BlockCraftDoc` also installs the stateless `icon` and `image` converters by
+default, independently of the bundled capability factory. Existing
+document-library deltas such as `{insert: {icon: 'bc_icon bc_document'}}`
+therefore render without host registration. An explicit same-key entry in
+`DocConfig.embeds` still overrides either default converter.
 
 ```typescript
 const schemas = new SchemaManager([

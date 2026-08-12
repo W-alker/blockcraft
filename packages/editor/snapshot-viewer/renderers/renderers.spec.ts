@@ -7,8 +7,12 @@ import {WordArtBlockSchema} from "../../blocks";
 describe("snapshot-viewer renderers", () => {
   it("renders a callout prefix and nested paragraph children", () => {
     const host = renderFixture(createAllBlocksFixture().callout)
-    expect(host.querySelector(".callout-block-prefix")?.textContent).toContain("📢")
+    const callout = host.querySelector<HTMLElement>(".callout-block")!
+    expect(callout.querySelector(".callout-block-prefix")?.textContent).toContain("📢")
     expect(host.querySelector(".paragraph-block")).not.toBeNull()
+    expect(callout.style.getPropertyValue("--bc-callout-background-color"))
+      .toBe("#FFE6CD")
+    expect(callout.style.backgroundColor).toBe("")
   })
 
   it("renders list-like text blocks with readonly prefixes", () => {
