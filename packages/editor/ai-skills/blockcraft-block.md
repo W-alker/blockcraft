@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-08-05
+> Last updated: 2026-08-12
 
 ## Block Types
 
@@ -990,6 +990,41 @@ doc
 ```
 
 > Always prefer `DocChain` over calling `doc.crud` directly. The chain handles transaction grouping, undo history boundaries, and cursor restoration in one place.
+
+## Built-in Mermaid Fullscreen View
+
+The built-in `mermaid` container always shows a fullscreen button in its header.
+Fullscreen is an in-place viewport projection: the Mermaid host stays in its
+Angular-owned DOM tree, and the `mermaid-textarea` child remains the same Y.Text
+editing surface. Source input, IME, selection, collaboration, Undo/Redo, mode
+switching, SVG export and preview rendering therefore continue through their
+normal paths.
+
+- The `text`, `graph` and side-by-side `default` modes all fill the available
+  fullscreen content area; each visible pane owns its own scrolling.
+- Escape exits fullscreen, except while an IME composition is active. The
+  header button changes to an explicit exit action while fullscreen is active.
+- Readonly Mermaid blocks can enter fullscreen for preview, while their source
+  remains protected by the existing readonly policy.
+- Fullscreen state is local view state. It is not written to Yjs, does not enter
+  Undo history, and is not restored after reopening a document.
+- Table and Mermaid blocks share one internal fullscreen owner, so entering one
+  exits any other active fullscreen block. The active block holds a targeted
+  virtualization view lease until exit.
+- The controller temporarily locks every scrollable ancestor on the active
+  block's DOM path, including host-app containers outside BlockCraft, and
+  restores their exact overflow declarations and scroll offsets on exit. This
+  prevents Safari from painting an outer scrollbar above the fixed surface.
+- Mermaid keeps its existing graph-only `+` / `-` controls. In fullscreen it
+  consumes Ctrl/Cmd + wheel without changing graph scale, preventing the host
+  document zoom shortcut from running underneath the active block.
+- Clicking the rendered graph does not open the separate image-preview viewer
+  while Mermaid is already fullscreen; normal-flow preview behavior is unchanged.
+
+The implementation reuses the existing `is-fullscreen` host class and the
+compatibility body/isolation classes used by table fullscreen. These classes
+are BlockCraft-owned implementation details; integrations should invoke the
+built-in button rather than persisting or toggling them directly.
 
 ## Selection Scope (Schema field)
 

@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-10
+> Last updated: 2026-08-12
 
 ## Overlay Service
 
@@ -19,6 +19,7 @@ const { componentRef, overlayRef } = this.doc.overlayService.createConnectedOver
     getPositionWithOffset("bottom-left", 0, 8),
   ],
   backdrop: false,               // Optional: add a click-outside backdrop
+  clampTo: fullscreenHost,       // Optional authoritative clamp rectangle
 }, closeSubject$, closeCallback);
 
 // Pass data to component
@@ -36,6 +37,13 @@ Connected overlays use exact dimensions by default
 their origin when scrolling triggers `OverlayRef.updatePosition()`. Set
 `flexibleDimensions: true` explicitly only for overlays that need CDK to
 shrink or grow the pane within the viewport, such as long pickers.
+
+Connected overlays normally clamp their final pane to `doc.scrollContainer`.
+Pass `clampTo` when the interaction owns a different visible coordinate space,
+such as an in-place fullscreen block. An explicit `clampTo` element is the
+authoritative boundary; it is not intersected with the hidden or locked
+document scroller. CDK still chooses among `positions` and pushes within the
+viewport before BlockCraft performs this final clamp.
 
 Choose the target by ownership, not only by geometry:
 
@@ -231,6 +239,7 @@ this._close$.next();  // triggers all takeUntil subscriptions to complete
 - [ ] `createConnectedOverlay` receives a `close$` Subject
 - [ ] Block-owned overlays pass the BlockComponent itself as `target`
 - [ ] Ephemeral element-owned overlays intentionally pass an `HTMLElement`
+- [ ] Fullscreen/fixed-coordinate overlays pass their visible owner as `clampTo`
 - [ ] `closeToolbar` function resets all state
 - [ ] `destroy()` calls `closeToolbar()` and unsubscribes
 - [ ] Readonly mode checked before showing interactive UI

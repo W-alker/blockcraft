@@ -50,6 +50,57 @@
       }
     }
 
+    &.is-fullscreen {
+      position: fixed;
+      inset: 0;
+      z-index: var(--bc-table-fullscreen-z);
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      max-width: none;
+      max-height: none;
+      margin: 0 !important;
+      overflow: hidden;
+      border: 0;
+      border-radius: 0;
+      background: var(--bc-table-fullscreen-bg);
+
+      .head {
+        flex: 0 0 45px;
+      }
+
+      .content {
+        display: flex;
+        flex: 1 1 auto;
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .text-container,
+      .graph-container {
+        flex: 1 1 0;
+        min-width: 0;
+        min-height: 0;
+        height: 100%;
+        max-height: none;
+      }
+
+      &[data-mode="text"] .graph-container,
+      &[data-mode="graph"] .text-container {
+        display: none;
+      }
+
+      .text-container .mermaid-textarea {
+        box-sizing: border-box;
+        min-height: 100%;
+      }
+
+      .graph-con {
+        cursor: default;
+      }
+    }
+
     .text-container, .graph-container {
       flex: 1;
       overflow: auto;
@@ -108,7 +159,19 @@
         margin-left: 4px;
       }
 
+      .fullscreen-btn {
+        flex: 0 0 auto;
+        margin-left: 4px;
+        border: 0;
+        background: transparent;
+        font: inherit;
+      }
+
       .control-btns[hidden] + .switch-btn {
+        margin-left: auto;
+      }
+
+      .fullscreen-btn.only-fullscreen {
         margin-left: auto;
       }
 

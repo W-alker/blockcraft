@@ -899,7 +899,7 @@
 //
 // 不能把宿主应用的顶层祖先直接设为 visibility:hidden：Chromium 会把隐藏祖先下的
 // contenteditable 当成没有活动 editing host，只发原生 input、不发 beforeinput，输入
-// 因而绕过 InputTransformer / Y.Text。TableFullscreenController 改为仅隐藏活动表格
+// 因而绕过 InputTransformer / Y.Text。BlockFullscreenController 改为仅隐藏活动块
 // DOM 路径两侧的 sibling branches；祖先和 root editing host 始终保持 visible。
 // 路径标记随分页/虚拟化重父更新，CSS 也会自动覆盖全屏期间新插入的 sibling。
 // CDK overlay container 保留，供表格内下拉菜单使用。
@@ -910,7 +910,8 @@ body.bc-table-fullscreen-lock {
   // Fullscreen table stays in its Angular-owned tree. Explicit visibility is a
   // compatibility guard for host themes; no ancestor in BlockCraft's isolation
   // path is hidden.
-  .table-block.is-fullscreen {
+  .table-block.is-fullscreen,
+  .mermaid-block.is-fullscreen {
     visibility: visible !important;
   }
 

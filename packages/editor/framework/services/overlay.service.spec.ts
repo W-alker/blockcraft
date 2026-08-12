@@ -112,10 +112,13 @@ describe('DocOverlayService', () => {
       docDestroy$,
       order,
       overlay,
+      overlayElement,
+      overlayHost,
       overlayRef,
       flexiblePosition,
       releaseBlockViewLease,
       service,
+      scrollContainer,
       targetElement,
       virtualization,
     }
@@ -269,5 +272,47 @@ describe('DocOverlayService', () => {
     expect(overlayRef.updateSize).not.toHaveBeenCalled()
 
     scrollContainer.remove()
+  })
+
+  it('treats an explicit clamp owner as authoritative over the document scroller', () => {
+    const h = createOverlayHarness()
+    const fullscreenHost = document.createElement('div')
+    document.body.appendChild(fullscreenHost)
+    spyOn(h.scrollContainer, 'getBoundingClientRect').and.returnValue({
+      left: 0,
+      right: 100,
+      top: 0,
+      bottom: 100,
+      width: 100,
+      height: 100,
+    } as DOMRect)
+    spyOn(fullscreenHost, 'getBoundingClientRect').and.returnValue({
+      left: 0,
+      right: 500,
+      top: 0,
+      bottom: 300,
+      width: 500,
+      height: 300,
+    } as DOMRect)
+    spyOn(h.overlayElement, 'getBoundingClientRect').and.returnValue({
+      left: 400,
+      right: 480,
+      top: 100,
+      bottom: 160,
+      width: 80,
+      height: 60,
+    } as DOMRect)
+
+    const service = h.service as any
+    service._clampConnectedOverlay(h.overlayRef, fullscreenHost)
+
+    expect(h.overlayRef.updateSize).toHaveBeenCalledOnceWith({
+      maxWidth: '484px',
+      maxHeight: '284px',
+    })
+    expect(h.overlayHost.style.transform).toBe('')
+
+    fullscreenHost.remove()
+    h.cleanup()
   })
 })

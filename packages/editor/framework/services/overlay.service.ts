@@ -257,24 +257,12 @@ export class DocOverlayService {
     const clampRect = clampTo?.isConnected
       ? clampTo.getBoundingClientRect()
       : null;
-    const containerRect = clampRect
-      ? {
-          left: Math.max(scrollRect.left, clampRect.left),
-          right: Math.min(scrollRect.right, clampRect.right),
-          top: Math.max(scrollRect.top, clampRect.top),
-          bottom: Math.min(scrollRect.bottom, clampRect.bottom),
-          width: Math.max(
-            0,
-            Math.min(scrollRect.right, clampRect.right) -
-              Math.max(scrollRect.left, clampRect.left),
-          ),
-          height: Math.max(
-            0,
-            Math.min(scrollRect.bottom, clampRect.bottom) -
-              Math.max(scrollRect.top, clampRect.top),
-          ),
-        }
-      : scrollRect;
+    // An explicit clamp owner is authoritative. This matters for in-place
+    // fullscreen blocks: their controls live in viewport coordinates while the
+    // locked document scroller remains at its normal-flow geometry underneath.
+    // Intersecting both rectangles would push an otherwise correctly connected
+    // overlay back into the hidden document page.
+    const containerRect = clampRect ?? scrollRect;
     if (containerRect.width <= 0 || containerRect.height <= 0) return;
 
     const maxWidth = Math.max(

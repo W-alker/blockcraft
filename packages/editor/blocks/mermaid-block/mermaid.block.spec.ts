@@ -53,4 +53,34 @@ describe("MermaidBlockComponent preview selection gate", () => {
     expect(event.stopPropagation).toHaveBeenCalled();
     expect(event.preventDefault).toHaveBeenCalled();
   });
+
+  it("does not open or consume the separate graph preview while already fullscreen", async () => {
+    const block = makeBlock({
+      isInSameBlock: true,
+      start: {blockId: "mermaid-1", type: "selected"},
+      anchor: {blockId: "mermaid-1", type: "selected"},
+      head: {blockId: "mermaid-1", type: "selected"},
+    }) as MermaidBlockComponent & any;
+    block.fullscreenController = {isFullscreen: true};
+    const event = makeEvent();
+
+    await block.onPreviewGraph(event);
+
+    expect(event.stopPropagation).not.toHaveBeenCalled();
+    expect(event.preventDefault).not.toHaveBeenCalled();
+  });
+});
+
+describe("MermaidBlockComponent fullscreen delegation", () => {
+  it("reflects and toggles the shared in-place fullscreen controller", () => {
+    const block = Object.create(MermaidBlockComponent.prototype) as MermaidBlockComponent & any;
+    block.fullscreenController = {
+      isFullscreen: true,
+      toggle: jasmine.createSpy("toggle"),
+    };
+
+    expect(block.isFullscreen).toBe(true);
+    block.toggleFullscreen();
+    expect(block.fullscreenController.toggle).toHaveBeenCalledTimes(1);
+  });
 });

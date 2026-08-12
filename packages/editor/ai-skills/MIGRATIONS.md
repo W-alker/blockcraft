@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-08-10 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-08-12 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -68,6 +68,61 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
+
+## v0.3.2 — 2026-08-12
+
+**Severity**: patch
+
+**What changed**: The built-in Mermaid block now shows a fullscreen button in
+its header. Text, graph and side-by-side modes fill the viewport while keeping
+the existing `mermaid-textarea` component and rendered graph in their
+Angular-owned DOM tree. Table and Mermaid now share the same internal
+fullscreen owner, so only one block can be fullscreen at a time.
+
+**Why**: Mermaid source and preview need the same focused workspace already
+available to large tables, without moving the editable child out of the editor
+tree or bypassing InputTransformer, Y.Text, IME, collaboration and Undo/Redo.
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+- `blockcraft-toolbar.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- No new exported API. The existing table controller was generalized as an
+  internal `BlockFullscreenController`; the table-local import name remains as
+  a compatibility alias for package-internal code and tests.
+- Mermaid fullscreen holds a targeted virtualization view lease, reuses the
+  existing fullscreen isolation/body-lock lifecycle, and keeps readonly source
+  protection unchanged.
+- `DocOverlayService.createConnectedOverlay({clampTo})` keeps its existing
+  option shape, but an explicit clamp element is now the authoritative visible
+  boundary instead of being intersected with `doc.scrollContainer`.
+
+### Behavior Changes
+
+- The Mermaid header always exposes fullscreen/exit controls; Escape exits
+  unless an IME composition is active.
+- `text`, `graph` and `default` modes receive a viewport-sized scrollable
+  workspace. Fullscreen is local view state and never writes Yjs or Undo.
+- Entering Mermaid fullscreen exits a fullscreen table or Mermaid block, and
+  vice versa.
+- Mermaid retains its existing graph zoom controls. Fullscreen consumes
+  Ctrl/Cmd + wheel without changing graph scale, so the host document zoom
+  shortcut cannot run underneath it.
+- Fullscreen graph clicks no longer open the separate image-preview viewer;
+  preview clicks outside fullscreen are unchanged.
+- Fullscreen locks the resolved document scroller plus every scrollable
+  ancestor on the active block's DOM ownership path. Safari therefore cannot
+  paint a host-app outer-container scrollbar above the fixed Mermaid surface;
+  all inline overflow declarations and scroll offsets are restored on exit.
+- Mermaid header menus anchor to their actual button and clamp to the fullscreen
+  host, so a locked normal-flow document scroller cannot push them back into
+  page coordinates.
+- No host migration or package version change is required for this source
+  change; the release version remains a separate maintainer decision.
 
 ### v0.3.0-alpha.32 - 2026-08-10 (patch) — paginate oversized wrapped paragraphs
 

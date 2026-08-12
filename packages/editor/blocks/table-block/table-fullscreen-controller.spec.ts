@@ -1,4 +1,4 @@
-import { TableFullscreenController } from './table-fullscreen-controller'
+import { BlockFullscreenController, TableFullscreenController } from './table-fullscreen-controller'
 
 describe('TableFullscreenController', () => {
   let host: HTMLElement
@@ -206,10 +206,13 @@ describe('TableFullscreenController', () => {
       expect(document.querySelector('.bc-table-fullscreen-placeholder')).toBeNull()
     })
 
-    it('locks only the resolved background scroller and restores its exact state', () => {
+    it('locks the resolved scroller and outer scrollable ancestors, then restores exact state', () => {
       controller.destroy()
+      const outerScroller = document.createElement('div')
       const scrollContainer = document.createElement('div')
       const tableScroller = document.createElement('div')
+      outerScroller.style.setProperty('overflow-x', 'hidden')
+      outerScroller.style.setProperty('overflow-y', 'auto', 'important')
       scrollContainer.style.setProperty('overflow-x', 'auto', 'important')
       scrollContainer.style.setProperty('overflow-y', 'scroll')
       tableScroller.style.setProperty('overflow-x', 'auto')
@@ -228,7 +231,8 @@ describe('TableFullscreenController', () => {
       })
       host.appendChild(tableScroller)
       scrollContainer.appendChild(host)
-      document.body.appendChild(scrollContainer)
+      outerScroller.appendChild(scrollContainer)
+      document.body.appendChild(outerScroller)
       controller = new TableFullscreenController(host, () => scrollContainer)
 
       controller.set(true)
@@ -237,6 +241,10 @@ describe('TableFullscreenController', () => {
       expect(scrollContainer.style.getPropertyPriority('overflow-x')).toBe('important')
       expect(scrollContainer.style.getPropertyValue('overflow-y')).toBe('hidden')
       expect(scrollContainer.style.getPropertyPriority('overflow-y')).toBe('important')
+      expect(outerScroller.style.getPropertyValue('overflow-x')).toBe('hidden')
+      expect(outerScroller.style.getPropertyPriority('overflow-x')).toBe('important')
+      expect(outerScroller.style.getPropertyValue('overflow-y')).toBe('hidden')
+      expect(outerScroller.style.getPropertyPriority('overflow-y')).toBe('important')
       expect(tableScroller.style.getPropertyValue('overflow-x')).toBe('auto')
       expect(tableScroller.style.getPropertyValue('overflow-y')).toBe('hidden')
 
@@ -250,7 +258,11 @@ describe('TableFullscreenController', () => {
       expect(scrollContainer.style.getPropertyPriority('overflow-y')).toBe('')
       expect(scrollContainer.scrollLeft).toBe(31)
       expect(scrollContainer.scrollTop).toBe(47)
-      scrollContainer.remove()
+      expect(outerScroller.style.getPropertyValue('overflow-x')).toBe('hidden')
+      expect(outerScroller.style.getPropertyPriority('overflow-x')).toBe('')
+      expect(outerScroller.style.getPropertyValue('overflow-y')).toBe('auto')
+      expect(outerScroller.style.getPropertyPriority('overflow-y')).toBe('important')
+      outerScroller.remove()
     })
 
     it('does not lock a resolved scroller inside the fullscreen table', () => {
@@ -524,6 +536,26 @@ describe('TableFullscreenController', () => {
       const evt = new WheelEvent('wheel', { ctrlKey: true, deltaY: -100, bubbles: true, cancelable: true })
       host.dispatchEvent(evt)
       expect(controller.zoom$.value).toBe(1)
+    })
+
+    it('can consume Ctrl/Cmd+wheel without running table zoom for other fullscreen blocks', () => {
+      controller.destroy()
+      controller = new BlockFullscreenController(host, () => null, () => 1, 'block')
+      controller.set(true)
+      const bubble = jasmine.createSpy('bubble')
+      host.addEventListener('wheel', bubble)
+      const evt = new WheelEvent('wheel', {
+        ctrlKey: true,
+        deltaY: -100,
+        bubbles: true,
+        cancelable: true,
+      })
+
+      host.dispatchEvent(evt)
+
+      expect(controller.zoom$.value).toBe(1)
+      expect(evt.defaultPrevented).toBe(true)
+      expect(bubble).not.toHaveBeenCalled()
     })
   })
 })

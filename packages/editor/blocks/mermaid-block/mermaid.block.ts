@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component } from "@angular/core";
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, inject } from "@angular/core";
 import {
   BaseBlockComponent, DOC_FILE_SERVICE_TOKEN,
   generateId,
@@ -12,6 +12,7 @@ import { IMermaidType, MermaidViewMode } from "./types";
 import { debounce, nextTick } from "../../global";
 import { MermaidViewSwitchComponent } from "./widgets/mermaid-view-switch.component";
 import { isFormatOnlyDelta } from "../code-block/color-merge";
+import { BlockFullscreenController } from "../../framework/services/block-fullscreen-controller";
 
 // import {ScaleRatioPipe} from "./ratio.pipe";
 
@@ -46,6 +47,19 @@ import { isFormatOnlyDelta } from "../code-block/color-merge";
       <div class="switch-btn btn icon-btn" [hidden]="isReadonly" (mousedown)="onSwitchView($event)">
         <i class="bc_icon bc_qiehuan"></i>
       </div>
+
+      <button class="fullscreen-btn btn icon-btn"
+              type="button"
+              contenteditable="false"
+              [class.only-fullscreen]="isReadonly && props.mode === 'text'"
+              [attr.aria-label]="isFullscreen ? '退出全屏' : '全屏'"
+              [attr.title]="isFullscreen ? '退出全屏 · Esc' : '全屏'"
+              (mousedown)="$event.preventDefault(); $event.stopPropagation()"
+              (click)="toggleFullscreen(); $event.stopPropagation()">
+        <i class="bc_icon"
+           [class.bc_arrow-expand]="!isFullscreen"
+           [class.bc_x-circle-contained]="isFullscreen"></i>
+      </button>
     </div>
 
     <div class="content">
@@ -62,6 +76,10 @@ import { isFormatOnlyDelta } from "../code-block/color-merge";
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel> {
+  private fullscreenController?: BlockFullscreenController
+  private releaseFullscreenViewLease: () => void = () => undefined
+  private readonly cdr = inject(ChangeDetectorRef)
+
   protected graphScale = 1
   protected graphMaxWidth = 0
 
@@ -80,6 +98,22 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
 
   override ngAfterViewInit() {
     super.ngAfterViewInit();
+
+    this.fullscreenController = new BlockFullscreenController(
+      this.hostElement,
+      () => this.doc.scrollContainer,
+      () => this.doc.viewScale?.value ?? 1,
+      'block',
+    )
+    this.fullscreenController.state$
+      .pipe(takeUntil(this.onDestroy$))
+      .subscribe(isFullscreen => {
+        this.releaseFullscreenViewLease()
+        this.releaseFullscreenViewLease = isFullscreen
+          ? this.doc.virtualization.acquireBlockViewLease([this.id])
+          : () => undefined
+        this.cdr.markForCheck()
+      })
 
     this.graphContainer = this.hostElement.querySelector('.graph-con') as HTMLDivElement;
 
@@ -103,8 +137,19 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
   }
 
   override ngOnDestroy() {
-    super.ngOnDestroy();
+    this.fullscreenController?.destroy()
+    this.releaseFullscreenViewLease()
+    this.releaseFullscreenViewLease = () => undefined
     this.intersectionObserver.disconnect()
+    super.ngOnDestroy();
+  }
+
+  protected get isFullscreen(): boolean {
+    return this.fullscreenController?.isFullscreen ?? false
+  }
+
+  protected toggleFullscreen(): void {
+    this.fullscreenController?.toggle()
   }
 
   override _init() {
@@ -167,12 +212,13 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     $event.stopPropagation()
 
     const close$ = new Subject()
-    const btn = $event.target as HTMLElement
+    const btn = $event.currentTarget as HTMLElement
     btn.classList.add('active')
     const { componentRef } = this.doc.overlayService.createConnectedOverlay<MermaidViewSwitchComponent>({
-      target: $event.target as HTMLElement,
+      target: btn,
       component: MermaidViewSwitchComponent,
       backdrop: true,
+      clampTo: this.isFullscreen ? this.hostElement : undefined,
       positions: [getPositionWithOffset('top-right', 0, 6), getPositionWithOffset('bottom-right', 0, 6)]
     }, close$, () => {
       btn.classList.remove('active')
@@ -195,12 +241,13 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     $event.stopPropagation()
 
     const close$ = new Subject()
-    const btn = $event.target as HTMLElement
+    const btn = $event.currentTarget as HTMLElement
     btn.classList.add('active')
     const { componentRef } = this.doc.overlayService.createConnectedOverlay<MermaidTypeListComponent>({
-      target: $event.target as HTMLElement,
+      target: btn,
       component: MermaidTypeListComponent,
       backdrop: true,
+      clampTo: this.isFullscreen ? this.hostElement : undefined,
       positions: [getPositionWithOffset('top-center', 0, 6), getPositionWithOffset('bottom-center', 0, 6)]
     }, close$, () => {
       btn.classList.remove('active')
@@ -358,6 +405,7 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
   }
 
   async onPreviewGraph(evt: MouseEvent) {
+    if (this.isFullscreen) return
     const sel = this.doc.selection.value
     if (
       !sel ||
