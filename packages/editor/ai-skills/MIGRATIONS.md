@@ -69,6 +69,56 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
+## Unreleased — 2026-08-12 — adopt the CSES EmojiPicker
+
+**Severity**: major
+
+**What changed**: BlockCraft now requires the exact `@cses/ui@4.25.0` peer.
+The Callout prefix picker renders `CsEmojiPickerComponent` in BlockCraft's
+connected overlay and consumes `csEmojiSelect`. The exported BlockCraft
+`EmojiPickerComponent` and its bundled static emoji catalogue were removed.
+
+**Why**: Emoji search, categories, recent items, keyboard behavior and
+accessibility now have one owner in the shared CSES component library instead
+of a second, smaller implementation inside BlockCraft.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-toolbar.md`
+- `MIGRATIONS.md`
+
+### Breaking Changes
+
+- `EmojiPickerComponent` is no longer exported from `@ccc/blockcraft`.
+- Hosts must install the exact `@cses/ui@4.25.0` peer.
+
+### Migration Recipe
+
+```typescript
+// before
+import { EmojiPickerComponent } from '@ccc/blockcraft'
+componentRef.instance.emojiSelected.subscribe(emoji => updatePrefix(emoji))
+
+// after
+import { CsEmojiPickerComponent } from '@cses/ui'
+componentRef.instance.csEmojiSelect.subscribe(({emoji}) =>
+  updatePrefix(emoji.native),
+)
+```
+
+When a host already owns positioning and dismissal, render the CSES picker in
+its default `panel` mode. Use `csMode="popup"` only when the CSES component
+should also own its trigger and Dropdown Overlay.
+
+### Behavior Changes
+
+- Callout selection now closes the picker after updating the prefix.
+- The picker gains the CSES search, category, recent-use, virtual rendering and
+  keyboard-navigation behavior while preserving external editor focus during
+  pointer selection.
+
 ## v0.5.0 — 2026-08-12 — common block background and border colors
 
 **Severity**: minor

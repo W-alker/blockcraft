@@ -1074,11 +1074,11 @@ onBold(ctx: UIEventStateContext) { ... }
   geometry-preview exception: its exported `ShapeIconComponent` renders the
   same trusted `ShapeDefinition.path` used by the actual shape, so it does not
   maintain duplicate icon resources.
-- Generic editor chrome consumes the exact `@cses/ui@4.23.0` peer. Hosts load
+- Generic editor chrome consumes the exact `@cses/ui@4.25.0` peer. Hosts load
   `@cses/ui/styles/cses-ui.scss` for its component styles; standard buttons,
-  text inputs, tooltips, dropdown menus, empty states and messages use the
-  public API. BlockCraft theme variables, editor-specific geometry controls and
-  existing icon paths remain unchanged.
+  text inputs, tooltips, dropdown menus, EmojiPicker, empty states and messages
+  use the public API. BlockCraft theme variables, editor-specific geometry
+  controls and existing icon paths remain unchanged.
 - Hotkey decorators use `shortKey: true` for cross-platform Cmd/Ctrl — never hardcode `metaKey`/`ctrlKey`
 - Empty editable blocks can show placeholder text on focus; `meta.plhMode:
   'always'` makes it persist while the block is empty. Content regions keep

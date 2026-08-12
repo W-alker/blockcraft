@@ -22,12 +22,12 @@ Host Angular component
 The editor lives in `packages/editor`. Inside this monorepo it's published as `@org/blockcraft-editor` (consult the `package.json`). External consumers import from the package barrel `index.ts` which re-exports framework, blocks, plugins, services and types.
 
 BlockCraft's built-in editor chrome consumes the exact peer
-`@cses/ui@4.23.0`. Install that version beside `@ccc/blockcraft`; do not add
+`@cses/ui@4.25.0`. Install that version beside `@ccc/blockcraft`; do not add
 `ng-zorro-antd` for BlockCraft. Angular Material remains a peer only for the
 existing SVG/brand-icon path.
 
 ```bash
-pnpm add @ccc/blockcraft @cses/ui@4.23.0
+pnpm add @ccc/blockcraft @cses/ui@4.25.0
 ```
 
 ```typescript
@@ -1326,7 +1326,7 @@ doc.dragController.isDragging  // boolean
 - [ ] A fresh bundled capability result is used per Doc (if using the factory)
 - [ ] `BlockCraftDoc` constructed with `yDoc`, `docId`, `schemas`, `logger`, `injector`
 - [ ] Container element passed to `initBySnapshot` or `initByYBlock`
-- [ ] Exact `@cses/ui@4.23.0` peer installed
+- [ ] Exact `@cses/ui@4.25.0` peer installed
 - [ ] `@cses/ui/styles/cses-ui.scss` loaded for CSES component styles
 - [ ] BlockCraft base + selected theme stylesheet imported
 - [ ] Persistence wired up (snapshot save/load OR Yjs provider)

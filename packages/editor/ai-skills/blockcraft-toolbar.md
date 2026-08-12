@@ -196,7 +196,6 @@ export class MyToolbarComponent {
 |-----------|-------------|-------------|
 | `FloatToolbarComponent` | `components/` | Base floating toolbar shell |
 | `ColorPickerComponent` | `components/` | Color selection grid |
-| `EmojiPickerComponent` | `components/` | Emoji selection panel |
 | `BlockResizerComponent` | `components/` | Block resize handles |
 | `TableSizePickerComponent` | `components/` | Table row/column picker |
 | `ColumnCountPickerComponent` | `components/` | Column count selector |
@@ -204,7 +203,7 @@ export class MyToolbarComponent {
 
 ## Standard Control Source
 
-Use the exact `@cses/ui@4.23.0` peer for generic toolbar chrome:
+Use the exact `@cses/ui@4.25.0` peer for generic toolbar chrome:
 
 - `CsButtonComponent` for textual confirm/cancel and ordinary actions;
 - `CsInputDirective` for native text inputs that must keep editor-specific
@@ -212,6 +211,9 @@ Use the exact `@cses/ui@4.23.0` peer for generic toolbar chrome:
 - `CsTooltipDirective` for hover help;
 - `CsDropdownDirective` + `CsDropdownMenuComponent` + `CsMenuDirective` /
   `CsMenuItemComponent` for accessible menus;
+- `CsEmojiPickerComponent` for Unicode Emoji search, categories, recent items
+  and keyboard navigation. Use its `panel` mode inside a BlockCraft-owned
+  overlay and consume `csEmojiSelect`;
 - `CsEmptyComponent` and `CsMessageService` for standard feedback.
 
 Keep BlockCraft-owned components when the behavior is editor-specific, such as
