@@ -1,18 +1,123 @@
-// 分割线「花边」图案的单一真源。三个消费方（正文整条 / 正文文字两侧 / 样式弹窗预览）只传自己的高度，
-// 图案、平铺方向、贴边基线都由 mixin 决定——漏改一处就会草浮空，所以不外露原始 URI（$_ 前缀即 Sass 私有）。
-$_grass: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='26' viewBox='0 0 44 26'%3E%3Cg fill='none' stroke-linecap='round'%3E%3Cpath d='M4 26C4 19 2.5 15 2.5 10' stroke='%234CAF50' stroke-width='2.4'/%3E%3Cpath d='M8.5 26C8.5 17 11 12 13 7' stroke='%23388E3C' stroke-width='2.6'/%3E%3Cpath d='M13 26C13 21 11.5 18 11 15' stroke='%2381C784' stroke-width='2.2'/%3E%3Cpath d='M19 26C19 16 17 11 16.5 5' stroke='%2343A047' stroke-width='2.6'/%3E%3Cpath d='M24 26C24 20 26 16 27 12' stroke='%2366BB6A' stroke-width='2.4'/%3E%3Cpath d='M30 26C30 17 32.5 12 34.5 8' stroke='%23388E3C' stroke-width='2.6'/%3E%3Cpath d='M35 26C35 21 33.5 18 33 14' stroke='%2381C784' stroke-width='2.2'/%3E%3Cpath d='M40 26C40 18 41.5 14 41.5 9' stroke='%234CAF50' stroke-width='2.4'/%3E%3C/g%3E%3C/svg%3E");
-$_flower: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='24' viewBox='0 0 64 24'%3E%3Cg fill='%23F06292'%3E%3Ccircle cx='12' cy='6.2' r='3'/%3E%3Ccircle cx='16.6' cy='9.5' r='3'/%3E%3Ccircle cx='14.8' cy='14.9' r='3'/%3E%3Ccircle cx='9.2' cy='14.9' r='3'/%3E%3Ccircle cx='7.4' cy='9.5' r='3'/%3E%3C/g%3E%3Ccircle cx='12' cy='11' r='2.6' fill='%23FFD54F'/%3E%3Cellipse cx='26' cy='17' rx='4' ry='2' fill='%2381C784' transform='rotate(-25 26 17)'/%3E%3Cg fill='%23BA68C8'%3E%3Ccircle cx='40' cy='7.8' r='2.6'/%3E%3Ccircle cx='44' cy='10.7' r='2.6'/%3E%3Ccircle cx='42.5' cy='15.4' r='2.6'/%3E%3Ccircle cx='37.5' cy='15.4' r='2.6'/%3E%3Ccircle cx='36' cy='10.7' r='2.6'/%3E%3C/g%3E%3Ccircle cx='40' cy='12' r='2.2' fill='%23FFF176'/%3E%3Cellipse cx='52' cy='9' rx='3.6' ry='1.8' fill='%2366BB6A' transform='rotate(20 52 9)'/%3E%3Ccircle cx='58' cy='15' r='1.8' fill='%23F48FB1'/%3E%3C/svg%3E");
+// 分割线「花边」图案的单一真源。三个消费方（正文整条 / 正文文字两侧 / 样式弹窗预览）只传自己的高度。
+// 使用低饱和彩色 SVG：图案在浅色和深色页面上都有辨识度，又不会像高饱和贴纸那样抢正文。
+$_grass: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='84' height='24' viewBox='0 0 84 24'%3E%3Cpath d='M0 14c12-3 18 2 28-1s17-4 28 0 18 3 28 0' fill='none' stroke='%238FA39B' stroke-width='1.25' stroke-linecap='round'/%3E%3Cpath d='M25 13c-1-4-3-7-6-9M29 12c2-4 5-6 9-7M58 13c-1-4-4-7-7-8M62 14c2-4 5-6 9-6' fill='none' stroke='%237B9F8A' stroke-width='1.1' stroke-linecap='round'/%3E%3Cellipse cx='18' cy='5' rx='4.6' ry='2.2' fill='%238EB79D' transform='rotate(35 18 5)'/%3E%3Cellipse cx='38' cy='5' rx='4.8' ry='2.25' fill='%23B7CDB8' transform='rotate(-27 38 5)'/%3E%3Cellipse cx='50' cy='5' rx='4.2' ry='2.1' fill='%239DBDA6' transform='rotate(30 50 5)'/%3E%3Cellipse cx='71' cy='8' rx='4.5' ry='2.2' fill='%2386AD98' transform='rotate(-24 71 8)'/%3E%3Ccircle cx='56' cy='7.5' r='1.45' fill='%23D6A07E'/%3E%3Ccircle cx='59.5' cy='6.2' r='1.15' fill='%23C98E75'/%3E%3C/svg%3E");
+$_flower: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='112' height='24' viewBox='0 0 112 24'%3E%3Cpath d='M0 13h35m42 0h35' fill='none' stroke='%23B8AAA3' stroke-width='1.15' stroke-linecap='round'/%3E%3Cpath d='M39 13c4-5 8-7 13-7M73 13c-3-5-7-7-12-7' fill='none' stroke='%238CA88F' stroke-width='1.05' stroke-linecap='round'/%3E%3Cellipse cx='43' cy='9' rx='4.2' ry='2' fill='%239EBBA2' transform='rotate(-32 43 9)'/%3E%3Cellipse cx='70' cy='9' rx='4.2' ry='2' fill='%238FB39A' transform='rotate(30 70 9)'/%3E%3Cg fill='%23D98FA3'%3E%3Ccircle cx='52' cy='6.5' r='2.35'/%3E%3Ccircle cx='55.5' cy='9.1' r='2.35'/%3E%3Ccircle cx='54.2' cy='13.2' r='2.35'/%3E%3Ccircle cx='49.8' cy='13.2' r='2.35'/%3E%3Ccircle cx='48.5' cy='9.1' r='2.35'/%3E%3C/g%3E%3Ccircle cx='52' cy='10.1' r='1.45' fill='%23E8BE68'/%3E%3Cg fill='%23A99AC8'%3E%3Ccircle cx='64' cy='6.8' r='2.1'/%3E%3Ccircle cx='67.1' cy='9.1' r='2.1'/%3E%3Ccircle cx='65.9' cy='12.8' r='2.1'/%3E%3Ccircle cx='62.1' cy='12.8' r='2.1'/%3E%3Ccircle cx='60.9' cy='9.1' r='2.1'/%3E%3C/g%3E%3Ccircle cx='64' cy='10' r='1.25' fill='%23F0CD76'/%3E%3C/svg%3E");
+$_vine: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='104' height='24' viewBox='0 0 104 24'%3E%3Cpath d='M0 13c14-7 24 7 38 0s24-7 38 0 19 4 28-1' fill='none' stroke='%237E9C91' stroke-width='1.2' stroke-linecap='round'/%3E%3Cpath d='M19 11c-2-4-5-6-8-7m11 9c3-4 6-5 10-5m29 3c-2-4-5-6-9-7m12 9c3-4 7-5 11-4' fill='none' stroke='%2388A695' stroke-width='1' stroke-linecap='round'/%3E%3Cellipse cx='10' cy='4.5' rx='4.5' ry='2.1' fill='%238FC7B2' transform='rotate(29 10 4.5)'/%3E%3Cellipse cx='32' cy='8' rx='4.4' ry='2' fill='%23A8BFD5' transform='rotate(-24 32 8)'/%3E%3Cellipse cx='51' cy='4.5' rx='4.3' ry='2' fill='%23C3B2D5' transform='rotate(26 51 4.5)'/%3E%3Cellipse cx='76' cy='9' rx='4.6' ry='2.1' fill='%23D4B887' transform='rotate(-23 76 9)'/%3E%3Ccircle cx='39' cy='14' r='1.4' fill='%23D9988F'/%3E%3Ccircle cx='87' cy='13.5' r='1.35' fill='%23A69BC8'/%3E%3C/svg%3E");
+$_daisy: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='112' height='24' viewBox='0 0 112 24'%3E%3Cpath d='M0 13h32m48 0h32' fill='none' stroke='%23B4A89F' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M38 14c2-4 4-7 8-9m28 9c-2-4-4-7-8-9' fill='none' stroke='%238EA38F' stroke-width='1' stroke-linecap='round'/%3E%3Cg fill='%23F5E8DC'%3E%3Cellipse cx='49' cy='6.2' rx='2' ry='4'/%3E%3Cellipse cx='49' cy='13.8' rx='2' ry='4'/%3E%3Cellipse cx='45.2' cy='10' rx='4' ry='2'/%3E%3Cellipse cx='52.8' cy='10' rx='4' ry='2'/%3E%3C/g%3E%3Ccircle cx='49' cy='10' r='2' fill='%23E5B75E'/%3E%3Cg fill='%23D6DDF0'%3E%3Cellipse cx='64' cy='6.2' rx='2' ry='4'/%3E%3Cellipse cx='64' cy='13.8' rx='2' ry='4'/%3E%3Cellipse cx='60.2' cy='10' rx='4' ry='2'/%3E%3Cellipse cx='67.8' cy='10' rx='4' ry='2'/%3E%3C/g%3E%3Ccircle cx='64' cy='10' r='2' fill='%23D59C7D'/%3E%3Cellipse cx='38' cy='7' rx='4.2' ry='2' fill='%239CB8A0' transform='rotate(-28 38 7)'/%3E%3Cellipse cx='75' cy='7' rx='4.2' ry='2' fill='%2395B2A0' transform='rotate(28 75 7)'/%3E%3C/svg%3E");
+$_stars: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='104' height='24' viewBox='0 0 104 24'%3E%3Cpath d='M0 13h30m44 0h30' fill='none' stroke='%23B6AFA8' stroke-width='1.05' stroke-linecap='round'/%3E%3Cpath d='m41 4 2.1 4.2 4.7.7-3.4 3.3.8 4.7-4.2-2.2-4.2 2.2.8-4.7-3.4-3.3 4.7-.7z' fill='%23E9B86B'/%3E%3Cpath d='m62 5 1.7 3.5 3.9.6-2.8 2.7.6 3.9-3.4-1.8-3.5 1.8.7-3.9-2.8-2.7 3.9-.6z' fill='%23B3A3D2'/%3E%3Cpath d='M51 3v4m-2-2h4M76 7v5m-2.5-2.5h5' fill='none' stroke='%238FBBC2' stroke-width='1.2' stroke-linecap='round'/%3E%3Ccircle cx='29' cy='9' r='1.4' fill='%23D99BAA'/%3E%3Ccircle cx='84' cy='14' r='1.3' fill='%239DB9A4'/%3E%3C/svg%3E");
+$_berries: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='104' height='24' viewBox='0 0 104 24'%3E%3Cpath d='M0 13c13-3 22 3 35 0s22-4 34 0 23 3 35-1' fill='none' stroke='%23869D8D' stroke-width='1.15' stroke-linecap='round'/%3E%3Cpath d='M27 12c1-4 3-7 7-9m38 9c-1-4-4-7-8-9' fill='none' stroke='%23869D8D' stroke-width='1' stroke-linecap='round'/%3E%3Cellipse cx='35' cy='4' rx='4.2' ry='2' fill='%2397B89C' transform='rotate(-30 35 4)'/%3E%3Cellipse cx='63' cy='4' rx='4.2' ry='2' fill='%23A7C0A6' transform='rotate(28 63 4)'/%3E%3Cg fill='%23C77F8D'%3E%3Ccircle cx='43' cy='9' r='2.2'/%3E%3Ccircle cx='47' cy='11.5' r='2.2'/%3E%3Ccircle cx='42.5' cy='14' r='2.2'/%3E%3C/g%3E%3Cg fill='%239384B3'%3E%3Ccircle cx='58' cy='8.5' r='2.1'/%3E%3Ccircle cx='61.8' cy='11' r='2.1'/%3E%3Ccircle cx='57.5' cy='13.6' r='2.1'/%3E%3C/g%3E%3Ccircle cx='21' cy='12' r='1.35' fill='%23D79C73'/%3E%3Ccircle cx='82' cy='10' r='1.35' fill='%23C88A91'/%3E%3C/svg%3E");
 
-// $pattern: grass | flower，$size: 图案条渲染高度（宽度按原比例平铺）。
-@mixin bc-divider-edge($pattern, $size) {
-  background-repeat: repeat-x;
-  background-size: auto $size;
+// 线型 SVG 只提供 alpha 遮罩，颜色由消费方的主题 token 提供。
+// 三个遮罩都是横向无缝 tile，适用正文整条、文字两侧分段和弹窗缩略图。
+$_wave: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='8' viewBox='0 0 48 8'%3E%3Cpath d='M0 4C6 .5 12 .5 18 4S30 7.5 36 4 42 .5 48 4' fill='none' stroke='%23000' stroke-width='1.35' stroke-linecap='round'/%3E%3C/svg%3E");
+$_zigzag: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='8' viewBox='0 0 32 8'%3E%3Cpath d='M0 6 8 2l8 4 8-4 8 4' fill='none' stroke='%23000' stroke-width='1.35' stroke-linejoin='round' stroke-linecap='round'/%3E%3C/svg%3E");
+$_sketch: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='8' viewBox='0 0 96 8'%3E%3Cpath d='M0 3.8c13-1.2 21 1 34-.2s22-1.4 34 0 18 .3 28-.5' fill='none' stroke='%23000' stroke-width='1.2' stroke-linecap='round'/%3E%3Cpath d='M2 5.4c16-.7 24 .8 39-.1s25-.6 37 .2 12-.2 16-.4' fill='none' stroke='%23000' stroke-width='.55' stroke-linecap='round' opacity='.48'/%3E%3C/svg%3E");
 
-  @if $pattern == grass {
-    background-image: $_grass;
-    background-position: left bottom;   // 草根贴底，浮空就不像草地了
+// 新增的主题感知线型只在这里定义，避免正文和样式弹窗渐进偏离。
+@mixin bc-divider-line-pattern($pattern, $color, $height) {
+  position: relative;
+  height: $height;
+  border: 0;
+  background-color: transparent;
+  background-image: none;
+  background-position: center;
+  background-repeat: no-repeat;
+
+  @if $pattern == fade {
+    background-image: linear-gradient(to right,
+        transparent,
+        $color 18%,
+        $color 82%,
+        transparent);
+    background-size: 100% $height;
+  } @else if $pattern == triple-dot {
+    $dot-radius: 1.8px;
+
+    @if $height >= 8px {
+      $dot-radius: 2.3px;
+    }
+
+    background-image:
+      radial-gradient(circle at calc(50% - 11px) 50%, $color 0 $dot-radius, transparent calc(#{$dot-radius} + .25px)),
+      radial-gradient(circle at 50% 50%, $color 0 $dot-radius, transparent calc(#{$dot-radius} + .25px)),
+      radial-gradient(circle at calc(50% + 11px) 50%, $color 0 $dot-radius, transparent calc(#{$dot-radius} + .25px));
+    background-size: 100% 100%;
+  } @else if $pattern == diamond {
+    $diamond-size: 5px;
+
+    @if $height >= 8px {
+      $diamond-size: 7px;
+    }
+
+    background-image: linear-gradient(to right,
+        $color 0,
+        $color calc(50% - 11px),
+        transparent calc(50% - 11px),
+        transparent calc(50% + 11px),
+        $color calc(50% + 11px),
+        $color 100%);
+    background-size: 100% 1px;
+
+    &::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: $diamond-size;
+      height: $diamond-size;
+      border: 1.2px solid $color;
+      transform: translate(-50%, -50%) rotate(45deg);
+      box-sizing: border-box;
+    }
   } @else {
-    background-image: $_flower;
+    background-color: $color;
+    -webkit-mask-position: left center;
+    -webkit-mask-repeat: repeat-x;
+    -webkit-mask-size: auto $height;
+    mask-position: left center;
+    mask-repeat: repeat-x;
+    mask-size: auto $height;
+
+    @if $pattern == wave {
+      -webkit-mask-image: $_wave;
+      mask-image: $_wave;
+    } @else if $pattern == zigzag {
+      -webkit-mask-image: $_zigzag;
+      mask-image: $_zigzag;
+    } @else if $pattern == sketch {
+      -webkit-mask-image: $_sketch;
+      mask-image: $_sketch;
+    }
+  }
+}
+
+// $pattern: grass | flower | vine | daisy | stars | berries，$size: 图案条渲染高度（宽度按原比例平铺）。
+@mixin bc-divider-edge($pattern, $size) {
+  position: relative;
+  background-color: transparent;
+  background-image: none;
+
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-repeat: repeat-x;
+    background-size: auto $size;
     background-position: left center;
+    pointer-events: none;
+
+    @if $pattern == grass {
+      background-image: $_grass;
+    } @else if $pattern == flower {
+      background-image: $_flower;
+    } @else if $pattern == vine {
+      background-image: $_vine;
+    } @else if $pattern == daisy {
+      background-image: $_daisy;
+    } @else if $pattern == stars {
+      background-image: $_stars;
+    } @else if $pattern == berries {
+      background-image: $_berries;
+    }
   }
 }

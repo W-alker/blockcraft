@@ -197,6 +197,102 @@ const dispose = transformer.registerCommand({
 - Async inserts resolve a Yjs relative range and abort safely if the target was
   deleted or protected. All writes continue through Block/DocChain paths.
 
+## Unreleased — 2026-08-13 — enrich divider presentation styles
+
+**Severity**: minor
+
+**What changed**: The divider line catalog grows from four to ten styles with
+`fade`, `wave`, `zigzag`, `sketch`, `triple-dot` and `diamond`. The colorful
+edge catalog grows from two to six SVG patterns, monochrome lines gain an
+independent color palette, and text labels gain font size, emphasis and letter
+spacing controls. The former combined `size` selector is split into independent
+length, thickness and opacity controls. The style popup keeps a compact
+two-column line grid and theme-compatible decorative artwork, adopts CSES UI
+controls, and uses the ColorPicker's built-in palette for line and label colors.
+
+**Why**: Documents need both restrained editorial separators and more expressive
+decorative accents. Keeping every pattern in the existing divider block avoids
+new block types, extra DOM structures and duplicated rendering rules.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-plugins-toolbar.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- Six additive `DividerBlockModel.props.style` values: `fade`, `wave`,
+  `zigzag`, `sketch`, `triple-dot` and `diamond`.
+- A two-column line-style selector with named previews for all ten values.
+- Text-only top tabs plus CSES Segmented, Slider, ColorPicker, Button and Input
+  controls; the palette exposes only CSES built-in theme and standard colors,
+  and popup pointer events do not clear the active divider selection.
+- Theme-colored SVG masks for wave, zigzag and sketch, shared by the popup,
+  plain dividers and text-label segments.
+- Four additive colorful edge values: `edge-vine`, `edge-daisy`, `edge-stars`
+  and `edge-berries`; the existing `edge-grass` and `edge-flower` remain valid.
+- `DividerBlockModel.props.fontSize?: number`, with 14px as the default,
+  10–32px rendering bounds and 10 / 12 / 14 / 16 / 18 / 20 / 24 / 28 / 32px toolbar presets.
+- `DividerBlockModel.props.lineColor?: string`, applied to monochrome line
+  styles and the two line segments around a label, but not to tape or colorful
+  SVG edge artwork.
+- `DividerBlockModel.props.fontWeight?: 'normal' | 'bold'` and
+  `fontStyle?: 'normal' | 'italic'` for label emphasis.
+- `DividerBlockModel.props.letterSpacing?: number`, defaulting to 0, clamped to
+  0–8px and exposed through 0 / 0.5 / 1 / 1.5 / 2 / 3 / 4 / 6 / 8px presets.
+- Exported `DividerLength = 'short' | 'medium' | 'long' | 'full'` and
+  `DividerBlockModel.props.length?: DividerLength`, rendered at 25% / 50% / 75%
+  / 100% width.
+- Exported `DividerThickness = 'thin' | 'regular' | 'thick'` and
+  `DividerBlockModel.props.thickness?: DividerThickness`, applied consistently
+  to monochrome lines, tape height and colorful SVG artwork size.
+- `DividerBlockModel.props.opacity?: number`, clamped to 0.1–1 and applied to
+  the whole divider, including tape, artwork and optional label.
+
+### Deprecations
+
+- `DividerBlockModel.props.size` is deprecated with no removal date. It remains
+  readable for old snapshots; new toolbar writes use `length` and `thickness`.
+
+### Migration Recipe
+
+Existing snapshots need no data migration. Downstream exhaustive style lists
+may optionally add the ten new line/edge values. New code should replace one
+combined size write with explicit appearance props:
+
+```typescript
+// before: still read for compatibility
+divider.updateProps({size: 'large'})
+
+// after
+divider.updateProps({length: 'full', thickness: 'thick', opacity: .8})
+```
+
+Legacy sizes normalize as `thin` → short/thin, `small` → medium/thin,
+`medium` (and omitted) → long/regular, and `large` → full/thick. Omitted
+typography, `lineColor` and `opacity` retain the prior theme defaults; unknown
+styles continue to use the existing divider fallback behavior.
+
+### Behavior Changes
+
+- A decorative line selected on a labeled divider renders the same pattern on
+  both sides of the label.
+- The two original colorful edge styles retain their identifiers and data but
+  render with calmer, theme-compatible botanical SVG artwork; four additional
+  patterns extend the same plain and labeled-divider rendering path.
+- Label font size affects both tape labels and labels between line/edge
+  segments without changing the divider's void-block model.
+- Label weight, style and letter spacing follow the same plain/tape/edge render
+  path. Line color is independent from label `color` and intentionally
+  remains dormant when a colorful edge or tape style is selected.
+- Length now has style-independent 25% / 50% / 75% / 100% geometry, while
+  thickness controls visual weight without changing width. This intentionally
+  normalizes the slightly different widths that legacy `size` used across line,
+  tape and edge styles.
+- Opacity affects the complete divider presentation and is capped at 10% to
+  avoid an invisible selected void block.
+
 ## Unreleased — 2026-08-13 — expand Word-like shapes and WordArt catalogs
 
 **Severity**: minor

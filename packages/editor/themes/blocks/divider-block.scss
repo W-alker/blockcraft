@@ -1,5 +1,8 @@
 @use "divider-patterns" as *;
 
+$divider-color: var(--bc-divider-line-color, var(--bc-divider-color));
+$divider-color-large: var(--bc-divider-line-color, var(--bc-divider-color-large));
+
 [data-blockcraft-root="true"] {
   .divider-block {
     margin: 8px 0;
@@ -19,14 +22,14 @@
     }
 
     .divide-line {
-      background: var(--bc-border-color);
+      background: $divider-color;
       font-size: 0;
       height: 1px;
       width: 100%;
       pointer-events: none;
 
       &.solid {
-        background-color: var(--bc-divider-color);
+        background-color: $divider-color;
         height: 1px;
         width: 100%;
 
@@ -43,7 +46,7 @@
         &[data-size="large"] {
           width: 100%;
           height: 2px;
-          background-color: var(--bc-divider-color-large);
+          background-color: $divider-color-large;
         }
       }
 
@@ -51,8 +54,8 @@
         width: 100%;
         height: 1px;
         background: repeating-linear-gradient(to right,
-            var(--bc-divider-color),
-            var(--bc-divider-color) 8px,
+            $divider-color,
+            $divider-color 8px,
             transparent 8px,
             transparent 16px);
 
@@ -73,7 +76,7 @@
       }
 
       &.dotted {
-        background: radial-gradient(circle, var(--bc-divider-color) 2px, transparent 2px);
+        background: radial-gradient(circle, $divider-color 2px, transparent 2px);
         background-size: 20px 4px;
         background-repeat: repeat-x;
         height: 4px;
@@ -90,13 +93,13 @@
         &[data-size="large"] {
           height: 6px;
           width: 100%;
-          background-image: radial-gradient(circle, var(--bc-divider-color-large) 2px, transparent 2px);
+          background-image: radial-gradient(circle, $divider-color-large 2px, transparent 2px);
         }
       }
 
       &.double {
         background: unset;
-        border-color: var(--bc-divider-color);
+        border-color: $divider-color;
         border-bottom-style: double;
         border-width: 6px;
         width: 100%;
@@ -113,6 +116,71 @@
 
         &[data-size="large"] {
           width: 100%;
+        }
+      }
+
+      &.fade,
+      &.wave,
+      &.zigzag,
+      &.sketch,
+      &.triple-dot,
+      &.diamond {
+        width: 100%;
+
+        &[data-size="thin"] {
+          width: 30%;
+        }
+
+        &[data-size="small"] {
+          width: 50%;
+        }
+      }
+
+      &.fade {
+        @include bc-divider-line-pattern(fade, $divider-color, 1px);
+
+        &[data-size="large"] {
+          @include bc-divider-line-pattern(fade, $divider-color-large, 2px);
+        }
+      }
+
+      &.wave {
+        @include bc-divider-line-pattern(wave, $divider-color, 6px);
+
+        &[data-size="large"] {
+          @include bc-divider-line-pattern(wave, $divider-color-large, 8px);
+        }
+      }
+
+      &.zigzag {
+        @include bc-divider-line-pattern(zigzag, $divider-color, 6px);
+
+        &[data-size="large"] {
+          @include bc-divider-line-pattern(zigzag, $divider-color-large, 8px);
+        }
+      }
+
+      &.sketch {
+        @include bc-divider-line-pattern(sketch, $divider-color, 6px);
+
+        &[data-size="large"] {
+          @include bc-divider-line-pattern(sketch, $divider-color-large, 8px);
+        }
+      }
+
+      &.triple-dot {
+        @include bc-divider-line-pattern(triple-dot, $divider-color, 6px);
+
+        &[data-size="large"] {
+          @include bc-divider-line-pattern(triple-dot, $divider-color-large, 8px);
+        }
+      }
+
+      &.diamond {
+        @include bc-divider-line-pattern(diamond, $divider-color, 6px);
+
+        &[data-size="large"] {
+          @include bc-divider-line-pattern(diamond, $divider-color-large, 8px);
         }
       }
 
@@ -183,9 +251,12 @@
 
       // 花边：透明底图案条，不带胶带的撕边 clip-path 和旋转；size 与胶带同款只调宽度。
       &.edge-grass,
-      &.edge-flower {
-        margin: 6px 0;
-        background-color: transparent;
+      &.edge-flower,
+      &.edge-vine,
+      &.edge-daisy,
+      &.edge-stars,
+      &.edge-berries {
+        margin: 4px 0;
         width: 70%;
 
         &[data-size="thin"] {
@@ -203,13 +274,33 @@
       }
 
       &.edge-grass {
-        height: 26px;
-        @include bc-divider-edge(grass, 26px);
+        height: 20px;
+        @include bc-divider-edge(grass, 20px);
       }
 
       &.edge-flower {
-        height: 24px;
-        @include bc-divider-edge(flower, 24px);
+        height: 22px;
+        @include bc-divider-edge(flower, 22px);
+      }
+
+      &.edge-vine {
+        height: 20px;
+        @include bc-divider-edge(vine, 20px);
+      }
+
+      &.edge-daisy {
+        height: 22px;
+        @include bc-divider-edge(daisy, 22px);
+      }
+
+      &.edge-stars {
+        height: 20px;
+        @include bc-divider-edge(stars, 20px);
+      }
+
+      &.edge-berries {
+        height: 22px;
+        @include bc-divider-edge(berries, 22px);
       }
     }
 
@@ -256,39 +347,83 @@
         height: 1px;
 
         &.solid {
-          background-color: var(--bc-divider-color);
+          background-color: $divider-color;
         }
 
         &.dashed {
           height: 1px;
           background: repeating-linear-gradient(to right,
-              var(--bc-divider-color),
-              var(--bc-divider-color) 8px,
+              $divider-color,
+              $divider-color 8px,
               transparent 8px,
               transparent 16px);
         }
 
         &.dotted {
           height: 4px;
-          background: radial-gradient(circle, var(--bc-divider-color) 2px, transparent 2px);
+          background: radial-gradient(circle, $divider-color 2px, transparent 2px);
           background-size: 20px 4px;
           background-repeat: repeat-x;
         }
 
         &.double {
           height: 0;
-          border-bottom: 3px double var(--bc-divider-color);
+          border-bottom: 3px double $divider-color;
+        }
+
+        &.fade {
+          @include bc-divider-line-pattern(fade, $divider-color, 1px);
+        }
+
+        &.wave {
+          @include bc-divider-line-pattern(wave, $divider-color, 6px);
+        }
+
+        &.zigzag {
+          @include bc-divider-line-pattern(zigzag, $divider-color, 6px);
+        }
+
+        &.sketch {
+          @include bc-divider-line-pattern(sketch, $divider-color, 6px);
+        }
+
+        &.triple-dot {
+          @include bc-divider-line-pattern(triple-dot, $divider-color, 6px);
+        }
+
+        &.diamond {
+          @include bc-divider-line-pattern(diamond, $divider-color, 6px);
         }
 
         // 文字装订 + 花边：左右两段各自平铺图案条（小草 - 文字 - 小草）。
         &.edge-grass {
-          height: 20px;
-          @include bc-divider-edge(grass, 20px);
+          height: 16px;
+          @include bc-divider-edge(grass, 16px);
         }
 
         &.edge-flower {
-          height: 18px;
-          @include bc-divider-edge(flower, 18px);
+          height: 17px;
+          @include bc-divider-edge(flower, 17px);
+        }
+
+        &.edge-vine {
+          height: 16px;
+          @include bc-divider-edge(vine, 16px);
+        }
+
+        &.edge-daisy {
+          height: 17px;
+          @include bc-divider-edge(daisy, 17px);
+        }
+
+        &.edge-stars {
+          height: 16px;
+          @include bc-divider-edge(stars, 16px);
+        }
+
+        &.edge-berries {
+          height: 17px;
+          @include bc-divider-edge(berries, 17px);
         }
       }
 
@@ -349,7 +484,260 @@
         &.double {
           border-bottom-width: 6px;
         }
+
+        &.fade {
+          @include bc-divider-line-pattern(fade, $divider-color-large, 2px);
+        }
+
+        &.wave {
+          @include bc-divider-line-pattern(wave, $divider-color-large, 8px);
+        }
+
+        &.zigzag {
+          @include bc-divider-line-pattern(zigzag, $divider-color-large, 8px);
+        }
+
+        &.sketch {
+          @include bc-divider-line-pattern(sketch, $divider-color-large, 8px);
+        }
+
+        &.triple-dot {
+          @include bc-divider-line-pattern(triple-dot, $divider-color-large, 8px);
+        }
+
+        &.diamond {
+          @include bc-divider-line-pattern(diamond, $divider-color-large, 8px);
+        }
       }
+    }
+  }
+}
+
+// `size` 曾同时改变宽度与视觉重量；新模型将两者拆开，并让所有样式共享同一套档位。
+// 旧 data-size 规则留作历史快照的样式兜底，当前组件只输出下面的新属性。
+[data-blockcraft-root="true"] .divider-block {
+  .divide-line,
+  .divide-line-text {
+    &[data-length="short"] {
+      width: 25%;
+    }
+
+    &[data-length="medium"] {
+      width: 50%;
+    }
+
+    &[data-length="long"] {
+      width: 75%;
+    }
+
+    &[data-length="full"] {
+      width: 100%;
+    }
+  }
+
+  .divide-line-text {
+    min-width: min-content;
+  }
+
+  .divide-line.tape-dot-black,
+  .divide-line.tape-grid-pattern,
+  .divide-line.tape-regular-lines,
+  .divide-line.tape-gradient-blocks,
+  .divide-line.tape-gray-lines {
+    box-sizing: border-box;
+    clip-path: polygon(1% 0, 0 12%, 1% 26%, 0 38%, .8% 51%, 0 66%, .8% 84%, .2% 100%, 99.8% 100%, 100% 86%, 99.5% 72%, 100% 58%, 99.5% 44%, 100% 28%, 99.5% 14%, 99.8% 0);
+
+    &[data-thickness="thin"] {
+      height: 28px;
+      transform: rotate(.6deg);
+    }
+
+    &[data-thickness="regular"] {
+      height: 40px;
+      transform: rotate(.8deg);
+    }
+
+    &[data-thickness="thick"] {
+      height: 52px;
+      transform: none;
+    }
+  }
+
+  .divide-line.edge-grass,
+  .divide-line.edge-flower,
+  .divide-line.edge-vine,
+  .divide-line.edge-daisy,
+  .divide-line.edge-stars,
+  .divide-line.edge-berries {
+    --bc-divider-edge-size: 21px;
+
+    &::before {
+      background-size: auto var(--bc-divider-edge-size);
+    }
+
+    &[data-thickness="thin"] {
+      --bc-divider-edge-size: 14px;
+      height: 16px;
+    }
+
+    &[data-thickness="regular"] {
+      --bc-divider-edge-size: 21px;
+      height: 23px;
+    }
+
+    &[data-thickness="thick"] {
+      --bc-divider-edge-size: 30px;
+      height: 32px;
+    }
+  }
+
+  .divide-line,
+  .divide-line-text .divide-seg {
+    &[data-thickness="thin"],
+    [data-thickness="thin"] & {
+      &.solid,
+      &.dashed {
+        height: 1px;
+      }
+
+      &.dotted {
+        height: 3px;
+        background-image: radial-gradient(circle, $divider-color 1.5px, transparent 1.75px);
+        background-size: 16px 3px;
+      }
+
+      &.double {
+        border-width: 3px;
+      }
+
+      &.fade {
+        @include bc-divider-line-pattern(fade, $divider-color, 1px);
+      }
+
+      &.wave {
+        @include bc-divider-line-pattern(wave, $divider-color, 4px);
+      }
+
+      &.zigzag {
+        @include bc-divider-line-pattern(zigzag, $divider-color, 4px);
+      }
+
+      &.sketch {
+        @include bc-divider-line-pattern(sketch, $divider-color, 4px);
+      }
+
+      &.triple-dot {
+        @include bc-divider-line-pattern(triple-dot, $divider-color, 4px);
+      }
+
+      &.diamond {
+        @include bc-divider-line-pattern(diamond, $divider-color, 4px);
+      }
+    }
+
+    &[data-thickness="regular"],
+    [data-thickness="regular"] & {
+      &.solid,
+      &.dashed {
+        height: 2px;
+      }
+
+      &.dotted {
+        height: 5px;
+        background-image: radial-gradient(circle, $divider-color 2px, transparent 2.25px);
+        background-size: 20px 5px;
+      }
+
+      &.double {
+        border-width: 5px;
+      }
+
+      &.fade {
+        @include bc-divider-line-pattern(fade, $divider-color, 2px);
+      }
+
+      &.wave {
+        @include bc-divider-line-pattern(wave, $divider-color, 6px);
+      }
+
+      &.zigzag {
+        @include bc-divider-line-pattern(zigzag, $divider-color, 6px);
+      }
+
+      &.sketch {
+        @include bc-divider-line-pattern(sketch, $divider-color, 6px);
+      }
+
+      &.triple-dot {
+        @include bc-divider-line-pattern(triple-dot, $divider-color, 6px);
+      }
+
+      &.diamond {
+        @include bc-divider-line-pattern(diamond, $divider-color, 6px);
+      }
+    }
+
+    &[data-thickness="thick"],
+    [data-thickness="thick"] & {
+      &.solid,
+      &.dashed {
+        height: 3px;
+      }
+
+      &.dotted {
+        height: 8px;
+        background-image: radial-gradient(circle, $divider-color 3px, transparent 3.25px);
+        background-size: 24px 8px;
+      }
+
+      &.double {
+        border-width: 8px;
+      }
+
+      &.fade {
+        @include bc-divider-line-pattern(fade, $divider-color, 3px);
+      }
+
+      &.wave {
+        @include bc-divider-line-pattern(wave, $divider-color, 9px);
+      }
+
+      &.zigzag {
+        @include bc-divider-line-pattern(zigzag, $divider-color, 9px);
+      }
+
+      &.sketch {
+        @include bc-divider-line-pattern(sketch, $divider-color, 9px);
+      }
+
+      &.triple-dot {
+        @include bc-divider-line-pattern(triple-dot, $divider-color, 9px);
+      }
+
+      &.diamond {
+        @include bc-divider-line-pattern(diamond, $divider-color, 9px);
+      }
+    }
+  }
+
+  .divide-line-text {
+    &[data-thickness="thin"] .divide-seg[class*="edge-"] {
+      --bc-divider-edge-size: 11px;
+      height: 12px;
+    }
+
+    &[data-thickness="regular"] .divide-seg[class*="edge-"] {
+      --bc-divider-edge-size: 17px;
+      height: 18px;
+    }
+
+    &[data-thickness="thick"] .divide-seg[class*="edge-"] {
+      --bc-divider-edge-size: 24px;
+      height: 25px;
+    }
+
+    .divide-seg[class*="edge-"]::before {
+      background-size: auto var(--bc-divider-edge-size);
     }
   }
 }

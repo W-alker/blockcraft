@@ -1,80 +1,162 @@
 <!-- divider-style-popup.component.html -->
 <div class="popup">
-  <!-- Style Type Tabs -->
-  <div class="tabs">
-    <button *ngFor="let tab of styleTabs"
-            [class.active]="activeTab === tab.key"
-            (click)="setTab(tab.key)">
-      <i [ngClass]="tab.icon"></i>
-      {{ tab.label }}
-    </button>
-  </div>
+  <cs-segmented class="style-tabs"
+                csSize="small"
+                [csBlock]="true"
+                [csOptions]="styleTabOptions"
+                [ngModel]="activeTab"
+                (ngModelChange)="setTab($event)"
+                csAriaLabel="分割线样式类型" />
 
   <!-- Line Type Selection -->
-  <div class="line-options" *ngIf="activeTab === 'line'" >
-    <div *ngFor="let style of lineStyles"
-         class="line-style-item"
-         [class.selected]="selectedStyle === style"
-         (mousedown)="selectStyle(style)">
-      <span class="line" [ngClass]="style" [attr.data-tab-size]="activeSize"></span>
+  <div class="line-panel" *ngIf="activeTab === 'line'">
+    <div class="line-options"
+         [style.--bc-divider-preview-color]="activeLineColor || null">
+      <button cs-button csType="text" csSize="sm" type="button"
+              *ngFor="let style of lineStyles"
+              class="line-style-item"
+              [class.selected]="selectedStyle === style.key"
+              [title]="style.label"
+              (click)="selectStyle(style.key)">
+        <span class="line" [ngClass]="style.key"
+              [attr.data-tab-length]="activeLength"
+              [attr.data-tab-thickness]="activeThickness"
+              [style.opacity]="activeOpacity / 100"></span>
+      </button>
+    </div>
+    <div class="line-color-options" aria-label="线条颜色">
+      <span class="option-label">线色</span>
+      <cs-color-picker csMode="palette" csSize="sm"
+                       [csValue]="activeLineColor || null"
+                       [csAllowClear]="true"
+                       [csShowText]="true"
+                       [csShowAlpha]="false"
+                       (csValueChange)="setLineColor($event)" />
     </div>
   </div>
 
   <!-- Pattern or Texture Selection -->
   <div class="patterns" *ngIf="activeTab === 'tape'">
     <div class="pattern-grid">
-      <div *ngFor="let p of tapePatterns" [attr.data-tab-size]="activeSize"
-           class="pattern-box" [ngClass]="p"
-           [class.selected]="selectedStyle === p"
-           (click)="selectStyle(p)">
-      </div>
+      <button cs-button csType="text" type="button"
+              *ngFor="let p of tapePatterns"
+              [attr.data-tab-length]="activeLength"
+              [attr.data-tab-thickness]="activeThickness"
+              [style.opacity]="activeOpacity / 100"
+              class="pattern-box" [ngClass]="p"
+              [class.selected]="selectedStyle === p"
+              (click)="selectStyle(p)">
+      </button>
     </div>
   </div>
 
   <!-- Edge pattern strips (花边：小草/小花朵等图案条) -->
   <div class="patterns" *ngIf="activeTab === 'edge'">
     <div class="pattern-grid">
-      <div *ngFor="let p of edgePatterns" [attr.data-tab-size]="activeSize"
-           class="edge-box" [ngClass]="p"
-           [class.selected]="selectedStyle === p"
-           (click)="selectStyle(p)">
-      </div>
+      <button cs-button csType="text" type="button"
+              *ngFor="let p of edgePatterns"
+              [attr.data-tab-length]="activeLength"
+              [attr.data-tab-thickness]="activeThickness"
+              [style.opacity]="activeOpacity / 100"
+              class="edge-box" [ngClass]="p.key"
+              [class.selected]="selectedStyle === p.key"
+              [title]="p.label"
+              (click)="selectStyle(p.key)">
+      </button>
     </div>
   </div>
 
   <!-- Text Label options -->
   <div class="text-options" *ngIf="activeTab === 'text'">
-    <input class="text-input" type="text"
+    <input cs-input csSize="sm" class="text-input" type="text"
            [value]="labelText"
            placeholder="输入文字…"
-           (mousedown)="$event.stopPropagation()"
            (input)="setText($any($event.target).value)" />
+    <div class="font-size-row" aria-label="文字字号">
+      <span class="option-label">字号</span>
+      <cs-segmented class="segmented-control dense-segmented"
+                    csSize="small"
+                    [csBlock]="true"
+                    [csOptions]="fontSizeList"
+                    [ngModel]="activeFontSize"
+                    (ngModelChange)="setFontSize($any($event))"
+                    csAriaLabel="文字字号" />
+    </div>
+    <div class="text-style-row" aria-label="文字样式">
+      <span class="option-label">字形</span>
+      <button cs-button csType="secondary" csSize="sm" type="button" class="font-weight-button"
+              [class.active]="activeFontWeight === 'bold'"
+              (click)="toggleFontWeight()" title="粗体">B</button>
+      <button cs-button csType="secondary" csSize="sm" type="button" class="font-style-button"
+              [class.active]="activeFontStyle === 'italic'"
+              (click)="toggleFontStyle()" title="斜体">I</button>
+    </div>
+    <div class="letter-spacing-row" aria-label="文字字距">
+      <span class="option-label">字距</span>
+      <cs-segmented class="segmented-control dense-segmented letter-spacing-control"
+                    csSize="small"
+                    [csBlock]="true"
+                    [csOptions]="letterSpacingList"
+                    [ngModel]="activeLetterSpacing"
+                    (ngModelChange)="setLetterSpacing($any($event))"
+                    csAriaLabel="文字字距" />
+    </div>
     <div class="align-row">
-      <button *ngFor="let a of alignList"
-              [class.active]="activeAlign === a.key"
-              [title]="a.label"
-              (mousedown)="setAlign(a.key)">
-        <i [ngClass]="a.icon"></i>
-      </button>
+      <cs-segmented class="segmented-control"
+                    csSize="small"
+                    [csBlock]="true"
+                    [ngModel]="activeAlign"
+                    (ngModelChange)="setAlign($event)"
+                    csAriaLabel="文字对齐">
+        <label cs-segmented-item
+               *ngFor="let align of alignList"
+               [csValue]="align.key"
+               [title]="align.label">
+          <i class="bc_icon" [ngClass]="align.icon" aria-hidden="true"></i>
+          <span>{{ align.label }}</span>
+        </label>
+      </cs-segmented>
     </div>
     <div class="color-row">
-      <button type="button" class="color-swatch default"
-              [class.active]="!activeColor"
-              (mousedown)="setColor('')" title="默认">A</button>
-      <button type="button" *ngFor="let c of colors"
-              class="color-swatch"
-              [style.background]="c"
-              [class.active]="activeColor === c"
-              (mousedown)="setColor(c)" [title]="c"></button>
+      <span class="option-label">文字颜色</span>
+      <cs-color-picker csMode="palette" csSize="sm"
+                       [csValue]="activeColor || null"
+                       [csAllowClear]="true"
+                       [csShowText]="true"
+                       [csShowAlpha]="false"
+                       (csValueChange)="setColor($event)" />
     </div>
   </div>
 
-  <div class="tabs">
-    <button *ngFor="let tab of sizeList" (mousedown)="selectSize(tab.key)"
-            [class.active]="tab.key === activeSize">
-      <i [ngClass]="tab.label"></i>
-      {{ tab.label }}
-    </button>
+  <div class="appearance-controls" aria-label="分割线外观">
+    <div class="appearance-row">
+      <span class="option-label">长度</span>
+      <cs-segmented class="segmented-control"
+                    csSize="small"
+                    [csBlock]="true"
+                    [csOptions]="lengthOptions"
+                    [ngModel]="activeLength"
+                    (ngModelChange)="selectLength($any($event))"
+                    csAriaLabel="分割线长度" />
+    </div>
+    <div class="appearance-row">
+      <span class="option-label">粗细</span>
+      <cs-segmented class="segmented-control"
+                    csSize="small"
+                    [csBlock]="true"
+                    [csOptions]="thicknessOptions"
+                    [ngModel]="activeThickness"
+                    (ngModelChange)="selectThickness($any($event))"
+                    csAriaLabel="分割线粗细" />
+    </div>
+    <div class="appearance-row opacity-row">
+      <span class="option-label">透明度</span>
+      <cs-slider [csMin]="10" [csMax]="100" [csStep]="5"
+                 csAriaLabel="分割线透明度"
+                 [csValue]="activeOpacity"
+                 (csValueChange)="setOpacity($event)" />
+      <output>{{ activeOpacity }}%</output>
+    </div>
   </div>
 
 </div>
