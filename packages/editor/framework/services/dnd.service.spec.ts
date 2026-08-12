@@ -20,6 +20,7 @@ function makeMockDoc(blocks: Record<string, any>): any {
   const calls: { moveBlocks: any[][], transact: number, warn: any[] } = { moveBlocks: [], transact: 0, warn: [] }
   return {
     event: { add: () => {}, bindHotkey: () => {} },
+    root: { hostElement: document.createElement('div') },
     isReadonly: false,
     schemas: {
       isValidChildren: jasmine.createSpy('isValidChildren').and.returnValue(true),
@@ -47,6 +48,68 @@ function makeMockDoc(blocks: Record<string, any>): any {
     _calls: calls,
   }
 }
+
+describe('DocDndService external file drop target', () => {
+  function rect(x: number, y: number, width: number, height: number): DOMRect {
+    return DOMRect.fromRect({ x, y, width, height })
+  }
+
+  it('targets the first child when a file hovers over the upper blank half of a table cell', () => {
+    const cell = makeBlock('cell', 'row', 'table-cell')
+    const first = makeBlock('first', 'cell', 'paragraph')
+    const last = makeBlock('last', 'cell', 'paragraph')
+    cell.firstChildren = first
+    cell.lastChildren = last
+    first.parentBlock = cell
+    last.parentBlock = cell
+    cell.hostElement.dataset['blockId'] = cell.id
+
+    const cellRect = rect(20, 100, 200, 100)
+    const firstRect = rect(28, 112, 184, 24)
+    spyOn(cell.hostElement, 'getBoundingClientRect').and.returnValue(cellRect)
+    spyOn(first.hostElement, 'getBoundingClientRect').and.returnValue(firstRect)
+    spyOn(document, 'elementFromPoint').and.returnValue(cell.hostElement)
+
+    const doc = makeMockDoc({ cell, first, last })
+    doc.schemas.get = (flavour: string) => ({ metadata: { renderUnit: flavour === 'table-cell' } })
+    const svc = new DocDndService(doc)
+    const moveFileDropLine = spyOn<any>(svc, '_moveFileDropLine')
+
+    ;(svc as any)._updateFileDropTarget({ clientX: 80, clientY: 120 } as DragEvent)
+
+    expect((svc as any)._fileDropTarget).toBe(first)
+    expect((svc as any)._fileDropPosition).toBe('before')
+    expect(moveFileDropLine).toHaveBeenCalledOnceWith(first.hostElement, 'before', firstRect)
+  })
+
+  it('targets the last child when a file hovers over the lower blank half of a table cell', () => {
+    const cell = makeBlock('cell', 'row', 'table-cell')
+    const first = makeBlock('first', 'cell', 'paragraph')
+    const last = makeBlock('last', 'cell', 'paragraph')
+    cell.firstChildren = first
+    cell.lastChildren = last
+    first.parentBlock = cell
+    last.parentBlock = cell
+    cell.hostElement.dataset['blockId'] = cell.id
+
+    const cellRect = rect(20, 100, 200, 100)
+    const lastRect = rect(28, 164, 184, 24)
+    spyOn(cell.hostElement, 'getBoundingClientRect').and.returnValue(cellRect)
+    spyOn(last.hostElement, 'getBoundingClientRect').and.returnValue(lastRect)
+    spyOn(document, 'elementFromPoint').and.returnValue(cell.hostElement)
+
+    const doc = makeMockDoc({ cell, first, last })
+    doc.schemas.get = (flavour: string) => ({ metadata: { renderUnit: flavour === 'table-cell' } })
+    const svc = new DocDndService(doc)
+    const moveFileDropLine = spyOn<any>(svc, '_moveFileDropLine')
+
+    ;(svc as any)._updateFileDropTarget({ clientX: 80, clientY: 180 } as DragEvent)
+
+    expect((svc as any)._fileDropTarget).toBe(last)
+    expect((svc as any)._fileDropPosition).toBe('after')
+    expect(moveFileDropLine).toHaveBeenCalledOnceWith(last.hostElement, 'after', lastRect)
+  })
+})
 
 describe('DocDndService.onSortBlocks — same parent reorder', () => {
   it('rechecks readonly state before commit and leaves depth/structure untouched on rejection', () => {

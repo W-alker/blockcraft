@@ -150,10 +150,23 @@ export class DocDndService {
       return
     }
     if (!block || block.flavour === 'root') return
+
+    const hitRect = block.hostElement.getBoundingClientRect()
+    const position = calcPositionByRect(evt, hitRect)
+    const schema = this.doc.schemas.get(block.flavour)
+    if (schema?.metadata.renderUnit) {
+      // table-cell / callout / column 等 renderUnit 的空白区域属于其内部内容流。
+      // 外部文件路径也必须与内部 block 拖拽一致：用容器上下半区决定方向，
+      // 但把实际目标和蓝线都落到首/末子 block，不能把容器自身当成兄弟落点。
+      const childBlock = position === 'before' ? block.firstChildren : block.lastChildren
+      if (!childBlock) return
+      block = childBlock
+    }
+
     this._fileDropTarget = block
-    const rect = block.hostElement.getBoundingClientRect()
-    this._fileDropPosition = calcPositionByRect(evt, rect)
-    this._moveFileDropLine(block.hostElement, this._fileDropPosition, rect)
+    this._fileDropPosition = position
+    const targetRect = block.hostElement.getBoundingClientRect()
+    this._moveFileDropLine(block.hostElement, position, targetRect)
     this._updateFileDragOverChain(block)
   }
 
