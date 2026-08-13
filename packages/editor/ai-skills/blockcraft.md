@@ -1097,7 +1097,7 @@ onBold(ctx: UIEventStateContext) { ... }
   geometry-preview exception: its exported `ShapeIconComponent` renders the
   same trusted `ShapeDefinition.path` and optional `detailPath` used by the
   actual shape, so it does not maintain duplicate icon resources.
-- Generic editor chrome consumes the exact `@cses/ui@4.25.0` peer. Hosts load
+- Generic editor chrome consumes the exact `@cses/ui@4.26.1` peer. Hosts load
   `@cses/ui/styles/cses-ui.scss` for its component styles; standard buttons,
   tooltips, dropdown menus, EmojiPicker, empty states and messages use the
   public API. Editor-owned native text inputs and textareas keep their scoped

@@ -362,6 +362,9 @@ new BookmarkBlockExtensionPlugin();
 
 Shows a floating `CalloutBlockToolbar` centered above/below a callout block when the cursor is inside one of its child blocks. Tracks block resize via `ResizeObserver` (100ms throttle).
 
+The Callout prefix action opens the shared CSES EmojiPicker with an explicit
+`zh-CN` locale and persists the selected native Emoji in `props.prefix`.
+
 ### Configuration
 
 No configuration options.

@@ -239,6 +239,22 @@ collapsed text cursor in a rich editable block; it is not limited to an empty
 paragraph. While the menu is open, `ArrowUp` / `ArrowDown` move the active item,
 `Enter` selects it, and `Escape` closes the menu without moving the editor caret.
 
+Typing a half-width `:` at any position in rich editable text opens the CSES
+EmojiPicker without its search input. Text committed after `:` stays in the
+editor-owned Y.Text and controls EmojiPicker `csQuery`; choosing a result
+atomically replaces the full `:query` range. Deleting the trigger, entering
+whitespace, moving the caret outside the range, destroying the block, or
+pressing `Escape` closes the panel. This does not broaden or otherwise change
+the existing `/` / `、` slash-menu trigger path. The `/emoji` slash command
+remains available and keeps the picker's ordinary search input. Any arrow key
+activates the Emoji grid's virtual selection and is consumed before the
+document can move its caret. Real focus remains in the editor, so subsequent
+text and IME commits continue updating `csQuery`; four-direction navigation and
+`Enter` operate on the virtual active option, `Tab` / `Shift+Tab` cycle Emoji
+categories, and `Escape` closes the picker. These key bindings are owned by
+BlockTransformer; the CSES picker only exposes semantic movement and selection
+methods.
+
 ### Configuration
 
 ```typescript
@@ -309,7 +325,14 @@ The default grouped menu includes all insertable Schema blocks plus:
 | Third-party embed | Schemas whose flavour ends in `-embed` |
 
 Emoji and Icon use `CsEmojiPickerComponent` and `CsIconPickerComponent` from the
-exact CSES UI peer. The selected Icon is stored through the built-in inline
+exact CSES UI peer. The `:` type-ahead flow uses EmojiPicker's public `csQuery`
+model while input continues in the editor. Entering picker keyboard navigation
+uses EmojiPicker's preserve-focus keyboard API, so the grid renders an active
+option without taking DOM focus from BlockCraft. The shared CSES Emoji/Icon
+pickers expose `moveActive`, `selectActive`, and `moveCategory`; BlockTransformer
+maps its own arrow, Enter, and Tab bindings onto those methods. Both `:` and
+`/emoji` set the picker locale explicitly to `zh-CN`.
+The selected Icon is stored through the built-in inline
 `icon` embed as a `csicon csicon-<name>` class string; SVG catalogue entries are
 not accepted by this single-colour embed path.
 

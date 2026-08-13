@@ -1,10 +1,15 @@
-import {fakeAsync, flushMicrotasks} from "@angular/core/testing";
-import {BlockTransformerPlugin} from "./index";
-import {blockTransforms} from './const'
+import { fakeAsync, flushMicrotasks } from "@angular/core/testing";
+import { BehaviorSubject, Subject } from "rxjs";
+import * as Y from "yjs";
+import { OneShotCursorAnchor } from "../../framework";
+import { BlockTransformerPlugin } from "./index";
+import { blockTransforms } from "./const";
 
-describe('BlockTransformerPlugin ordered continuation', () => {
-  it('reads virtual root siblings from the model without materializing every component', () => {
-    const orderedTransform = blockTransforms.find(transform => transform.flavour === 'ordered')!
+describe("BlockTransformerPlugin ordered continuation", () => {
+  it("reads virtual root siblings from the model without materializing every component", () => {
+    const orderedTransform = blockTransforms.find(
+      (transform) => transform.flavour === "ordered",
+    )!;
     const parent = {
       getChildrenBlocks: jasmine.createSpy('getChildrenBlocks').and.throwError(
         'offscreen sibling component is not mounted',
@@ -215,8 +220,66 @@ describe('BlockTransformerPlugin beforeInput', () => {
     expect(plugin.openContextMenu).toHaveBeenCalledWith(block, 0)
   }))
 
-  it('opens the slash menu at the current rich-text cursor instead of only on an empty paragraph', fakeAsync(() => {
-    const plugin = createPlugin()
+  it("opens the searchless Emoji picker when a colon is typed", fakeAsync(() => {
+    const plugin = createPlugin();
+    const block = {
+      id: "emoji-block",
+      flavour: "paragraph",
+      textContent: () => ":",
+      textDeltas: () => [{ insert: ":" }],
+      textLength: 1,
+      plainTextOnly: false,
+    };
+    plugin.doc.selection.value = {
+      collapsed: true,
+      start: { type: "text", offset: 1 },
+      firstBlock: block,
+    };
+    spyOn<any>(plugin, "openColonEmojiPicker");
+    stubNextTick();
+
+    plugin.onKeyDown({
+      get: () => ({
+        raw: { key: ":", metaKey: false, ctrlKey: false, altKey: false },
+      }),
+    } as any);
+    flushMicrotasks();
+
+    expect(plugin.openColonEmojiPicker).toHaveBeenCalledOnceWith(block, 0);
+  }));
+
+  it("opens Emoji after ASCII text without changing the slash trigger path", fakeAsync(() => {
+    const plugin = createPlugin();
+    const block = {
+      id: "inline-emoji-block",
+      flavour: "paragraph",
+      textContent: () => "abc:",
+      textDeltas: () => [{ insert: "abc:" }],
+      textLength: 4,
+      plainTextOnly: false,
+    };
+    plugin.doc.selection.value = {
+      collapsed: true,
+      start: { type: "text", offset: 4 },
+      firstBlock: block,
+    };
+    spyOn<any>(plugin, "openColonEmojiPicker");
+    spyOn(plugin, "openContextMenu");
+    stubNextTick();
+
+    plugin.onKeyDown({
+      get: () => ({
+        raw: { key: ":", metaKey: false, ctrlKey: false, altKey: false },
+      }),
+    } as any);
+    flushMicrotasks();
+
+    expect(plugin.openColonEmojiPicker).toHaveBeenCalledOnceWith(block, 3);
+    expect(plugin.openContextMenu).not.toHaveBeenCalled();
+  }));
+
+  it("opens the slash menu at the current rich-text cursor instead of only on an empty paragraph", fakeAsync(() => {
+    const plugin = createPlugin();
     const block = {
       id: 'rich-slash-block',
       flavour: 'ordered',
@@ -433,9 +496,46 @@ describe('BlockTransformerPlugin beforeInput', () => {
   })
 })
 
-describe('BlockTransformerPlugin slash execution', () => {
-  it('splits formatted text around an inserted block and removes only the slash query', async () => {
-    const plugin = new BlockTransformerPlugin() as any
+describe("BlockTransformerPlugin slash execution", () => {
+  it("closes a secondary command panel when its slash range is deleted", () => {
+    const plugin = new BlockTransformerPlugin() as any;
+    const yDoc = new Y.Doc();
+    const yText = yDoc.getText("source");
+    yText.insert(0, "before /emoji after");
+    const block = {
+      id: "source",
+      yText,
+      get textLength() {
+        return yText.length;
+      },
+      textDeltas: () => yText.toDelta(),
+    };
+    plugin.doc = {
+      yDoc,
+      getBlockById: (id: string) => (id === block.id ? block : undefined),
+      isEditable: (candidate: unknown) => candidate === block,
+    };
+    const close$ = plugin.createCommandPanelClose({
+      block,
+      query: "emoji",
+      triggerIndex: 7,
+      triggerLength: 6,
+    });
+    const closed = jasmine.createSpy("closed");
+    close$.subscribe(closed);
+
+    // A collaboration edit before the command moves both relative endpoints;
+    // the still-intact slash command must keep its picker open.
+    yText.insert(0, "x");
+    expect(closed).not.toHaveBeenCalled();
+
+    // Deleting only the slash invalidates the anchored command range.
+    yText.delete(8, 1);
+    expect(closed).toHaveBeenCalledTimes(1);
+  });
+
+  it("splits formatted text around an inserted block and removes only the slash query", async () => {
+    const plugin = new BlockTransformerPlugin() as any;
     const block = {
       id: 'source',
       flavour: 'paragraph',
@@ -508,15 +608,238 @@ describe('BlockTransformerPlugin slash execution', () => {
     flushMicrotasks()
 
     expect(block.applyDeltaOperations).toHaveBeenCalledOnceWith([
-      {retain: 3},
-      {delete: 6},
-      {insert: '😀'},
-    ])
-    expect(plugin.doc.selection.setCursorAt).toHaveBeenCalledOnceWith(block, 5)
-  }))
-})
+      { retain: 3 },
+      { delete: 6 },
+      { insert: "😀" },
+    ]);
+    expect(plugin.doc.selection.setCursorAt).toHaveBeenCalledOnceWith(block, 5);
+  }));
+});
 
-describe('BlockTransformerPlugin external slash commands', () => {
+describe("BlockTransformerPlugin colon Emoji execution", () => {
+  it("captures arrows for a virtual Emoji selection without moving editor focus", () => {
+    const plugin = new BlockTransformerPlugin() as any;
+    const yDoc = new Y.Doc();
+    const yText = yDoc.getText("source");
+    yText.insert(0, ":smile");
+    const editor = document.createElement("div");
+    editor.contentEditable = "true";
+    const host = document.createElement("div");
+    const option = document.createElement("button");
+    option.className = "cs-emoji-picker__option";
+    option.dataset["emojiIndex"] = "0";
+    option.tabIndex = 0;
+    host.append(option);
+    document.body.append(editor, host);
+    const blockDestroy$ = new Subject<void>();
+    const block = {
+      id: "source",
+      yText,
+      containerElement: editor,
+      onDestroy$: blockDestroy$,
+      get textLength() {
+        return yText.length;
+      },
+      textDeltas: () => yText.toDelta(),
+      setInlineRange: jasmine.createSpy("setInlineRange"),
+      runtime: {
+        domPointToModel: jasmine.createSpy("domPointToModel").and.returnValue(6),
+      },
+    };
+    const selectionValue = {
+      collapsed: true,
+      start: { type: "text", blockId: block.id, offset: 6 },
+      end: { type: "text", blockId: block.id, offset: 6 },
+      firstBlock: block,
+      lastBlock: block,
+    };
+    const setSuppressRecalculate = jasmine.createSpy("setSuppressRecalculate");
+    const emojiSelect$ = new Subject<any>();
+    const moveActive = jasmine.createSpy("moveActive").and.returnValue(true);
+    const moveCategory = jasmine.createSpy("moveCategory").and.returnValue(true);
+    const selectActive = jasmine.createSpy("selectActive").and.returnValue(true);
+    const componentRef = {
+      instance: {
+        csEmojiSelect: emojiSelect$,
+        moveActive,
+        moveCategory,
+        selectActive,
+      },
+      location: { nativeElement: host },
+      changeDetectorRef: { detectChanges: jasmine.createSpy("detectChanges") },
+      setInput: jasmine.createSpy("setInput"),
+    };
+    plugin.doc = {
+      yDoc,
+      isReadonly: false,
+      getBlockById: (id: string) => (id === block.id ? block : undefined),
+      isEditable: (candidate: unknown) => candidate === block,
+      event: { status: { isComposing: false } },
+      selection: {
+        value: selectionValue,
+        selectionChange$: new BehaviorSubject(selectionValue),
+        setSuppressRecalculate,
+        setCursorAt: jasmine.createSpy("setCursorAt"),
+      },
+      readonlySwitch$: new Subject<boolean>(),
+      onDestroy$: new Subject<void>(),
+      overlayService: {
+        createConnectedOverlay: jasmine
+          .createSpy("createConnectedOverlay")
+          .and.returnValue({ componentRef }),
+      },
+    };
+
+    plugin.openColonEmojiPicker(block, 0);
+    editor.focus();
+    const event = new KeyboardEvent("keydown", {
+      key: "ArrowDown",
+      bubbles: true,
+      cancelable: true,
+    });
+    editor.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBeTrue();
+    expect(setSuppressRecalculate).toHaveBeenCalledOnceWith(true);
+    expect(document.activeElement).toBe(editor);
+    expect(moveActive).toHaveBeenCalledOnceWith("down", {
+      preserveFocus: true,
+    });
+
+    const searchKey = new KeyboardEvent("keydown", {
+      key: "a",
+      bubbles: true,
+      cancelable: true,
+    });
+    editor.dispatchEvent(searchKey);
+    expect(searchKey.defaultPrevented).toBeFalse();
+    expect(document.activeElement).toBe(editor);
+    expect(setSuppressRecalculate.calls.allArgs()).toEqual([[true], [false]]);
+
+    const tab = new KeyboardEvent("keydown", {
+      key: "Tab",
+      bubbles: true,
+      cancelable: true,
+    });
+    editor.dispatchEvent(tab);
+    expect(tab.defaultPrevented).toBeTrue();
+    expect(moveCategory).toHaveBeenCalledWith("next", {
+      preserveFocus: true,
+    });
+    expect(document.activeElement).toBe(editor);
+
+    const shiftTab = new KeyboardEvent("keydown", {
+      key: "Tab",
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    editor.dispatchEvent(shiftTab);
+    expect(shiftTab.defaultPrevented).toBeTrue();
+    expect(moveCategory).toHaveBeenCalledWith("previous", {
+      preserveFocus: true,
+    });
+    expect(document.activeElement).toBe(editor);
+
+    plugin.closePickerSession();
+    expect(setSuppressRecalculate.calls.allArgs()).toEqual([
+      [true],
+      [false],
+      [true],
+      [false],
+    ]);
+    emojiSelect$.complete();
+    blockDestroy$.complete();
+    editor.remove();
+    host.remove();
+  });
+
+  it("uses the text after colon as query and replaces the full trigger range", () => {
+    const plugin = new BlockTransformerPlugin() as any;
+    const yDoc = new Y.Doc();
+    const yText = yDoc.getText("source");
+    yText.insert(0, ":rocket");
+    const block = {
+      id: "source",
+      yText,
+      get textLength() {
+        return yText.length;
+      },
+      textDeltas: () => yText.toDelta(),
+      applyDeltaOperations: (operations: any[]) => yText.applyDelta(operations),
+    };
+    plugin.doc = {
+      yDoc,
+      isReadonly: false,
+      getBlockById: (id: string) => (id === block.id ? block : undefined),
+      isEditable: (candidate: unknown) => candidate === block,
+      selection: {
+        value: {
+          collapsed: true,
+          start: { type: "text", blockId: block.id, offset: 7 },
+          end: { type: "text", blockId: block.id, offset: 7 },
+          firstBlock: block,
+          lastBlock: block,
+        },
+        setCursorAt: jasmine.createSpy("setCursorAt"),
+      },
+    };
+    const anchor = new OneShotCursorAnchor(plugin.doc);
+    anchor.capture(block as any, 0);
+
+    const context = plugin.resolveEmojiTriggerContext(anchor);
+    expect(context).toEqual(
+      jasmine.objectContaining({
+        query: "rocket",
+        triggerIndex: 0,
+        triggerLength: 7,
+      }),
+    );
+
+    expect(context.replace([{ insert: "🚀" }])).toBeTrue();
+    expect(yText.toString()).toBe("🚀");
+  });
+
+  it("invalidates the session after the trigger colon is deleted", () => {
+    const plugin = new BlockTransformerPlugin() as any;
+    const yDoc = new Y.Doc();
+    const yText = yDoc.getText("source");
+    yText.insert(0, ":smile");
+    const block = {
+      id: "source",
+      yText,
+      get textLength() {
+        return yText.length;
+      },
+      textDeltas: () => yText.toDelta(),
+    };
+    plugin.doc = {
+      yDoc,
+      isReadonly: false,
+      getBlockById: (id: string) => (id === block.id ? block : undefined),
+      isEditable: (candidate: unknown) => candidate === block,
+      selection: {
+        value: {
+          collapsed: true,
+          start: { type: "text", blockId: block.id, offset: 6 },
+          end: { type: "text", blockId: block.id, offset: 6 },
+          firstBlock: block,
+          lastBlock: block,
+        },
+      },
+    };
+    const anchor = new OneShotCursorAnchor(plugin.doc);
+    anchor.capture(block as any, 0);
+
+    yText.delete(0, 1);
+    plugin.doc.selection.value.start.offset = 5;
+    plugin.doc.selection.value.end.offset = 5;
+
+    expect(plugin.resolveEmojiTriggerContext(anchor)).toBeNull();
+  });
+});
+
+describe("BlockTransformerPlugin external slash commands", () => {
   function command(id: string, label: string) {
     return {
       id,
@@ -584,6 +907,50 @@ describe('BlockTransformerPlugin external slash commands', () => {
     expect(stopImmediatePropagation).toHaveBeenCalledTimes(1)
   })
 
+  it('hands all arrow keys to the active colon Emoji session', () => {
+    const plugin = new BlockTransformerPlugin() as any
+    const activePickerSession = {
+      handleEditorKey: jasmine.createSpy('handleEditorKey').and.returnValue(true),
+    }
+    const activeMenu = {
+      handleEditorKey: jasmine.createSpy('handleEditorKey').and.returnValue(true),
+    }
+    plugin.activePickerSession = activePickerSession
+    plugin.activeMenu = activeMenu
+    const preventDefault = jasmine.createSpy('preventDefault')
+    const stopPropagation = jasmine.createSpy('stopPropagation')
+    const stopImmediatePropagation = jasmine.createSpy('stopImmediatePropagation')
+
+    for (const key of [
+      'ArrowUp',
+      'ArrowDown',
+      'ArrowLeft',
+      'ArrowRight',
+    ]) {
+      expect(plugin.onKeyDown({
+        preventDefault,
+        get: () => ({
+          raw: {
+            key,
+            metaKey: false,
+            ctrlKey: false,
+            altKey: false,
+            stopPropagation,
+            stopImmediatePropagation,
+          },
+        }),
+      } as any)).toBeTrue()
+    }
+
+    expect(
+      activePickerSession.handleEditorKey.calls.allArgs().map(args => args[0]),
+    ).toEqual(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'])
+    expect(activeMenu.handleEditorKey).not.toHaveBeenCalled()
+    expect(preventDefault).toHaveBeenCalledTimes(4)
+    expect(stopPropagation).toHaveBeenCalledTimes(4)
+    expect(stopImmediatePropagation).toHaveBeenCalledTimes(4)
+  })
+
   it('uses a transform description as a menu-only override and keeps hints separate', () => {
     const schema = {
       flavour: 'callout',
@@ -610,18 +977,44 @@ describe('BlockTransformerPlugin external slash commands', () => {
         getSchemaList: () => [schema],
         get: () => undefined,
       },
-    }
+    };
 
-    const item = plugin.buildMenuItems({parentId: 'root'})
-      .find((candidate: any) => candidate.flavour === 'callout')
+    const item = plugin
+      .buildMenuItems({ parentId: "root" })
+      .find((candidate: any) => candidate.flavour === "callout");
 
-    expect(item).toEqual(jasmine.objectContaining({
-      description: '宿主覆盖简介',
-      markdownHint: '! + 空格',
-      shortcutHint: jasmine.any(String),
-      searchHint: '/gl',
-    }))
-    expect(schema.metadata.description).toBe('Schema 简介')
-    expect(item.description).not.toContain('Markdown')
-  })
-})
+    expect(item).toEqual(
+      jasmine.objectContaining({
+        description: "宿主覆盖简介",
+        markdownHint: "! + 空格",
+        shortcutHint: jasmine.any(String),
+        searchHint: "/gl",
+      }),
+    );
+    expect(schema.metadata.description).toBe("Schema 简介");
+    expect(item.description).not.toContain("Markdown");
+  });
+
+  it("uses /hngs as the inline formula quick-search alias", () => {
+    const plugin = new BlockTransformerPlugin() as any;
+    plugin.doc = {
+      canInsertChild: () => true,
+      plugins: [],
+      schemas: {
+        getSchemaList: () => [],
+        get: () => undefined,
+      },
+    };
+
+    const item = plugin
+      .buildMenuItems({ parentId: "root" })
+      .find((candidate: any) => candidate.id === "inline:formula");
+
+    expect(item).toEqual(
+      jasmine.objectContaining({
+        searchHint: "/hngs",
+        keywords: jasmine.arrayContaining(["hngs"]),
+      }),
+    );
+  });
+});

@@ -4,9 +4,10 @@ import {
   skip,
   Subject,
   Subscription,
+  take,
   takeUntil,
 } from "rxjs";
-import {outputToObservable} from "@angular/core/rxjs-interop";
+import { outputToObservable } from "@angular/core/rxjs-interop";
 import {
   CsEmojiPickerComponent,
   CsIconPickerComponent,
@@ -22,6 +23,7 @@ import {
   EditableBlockComponent,
   EventListen,
   getPositionWithOffset,
+  OneShotCursorAnchor,
   OneShotRangeAnchor,
 } from "../../framework";
 import { UIEventStateContext } from "../../framework";
@@ -56,6 +58,14 @@ const GROUP_LABELS = {
   embed: "第三方嵌入",
 } as const;
 
+const EMOJI_NAV_PIN_WINDOW_MS = 150;
+
+type ActivePickerSession = {
+  close$: Subject<void>;
+  scheduleRefresh?(): void;
+  handleEditorKey(key: string, event?: KeyboardEvent): boolean;
+};
+
 export class BlockTransformerPlugin extends DocPlugin {
   override name = "block-transformer";
   override version = 1.0;
@@ -64,6 +74,7 @@ export class BlockTransformerPlugin extends DocPlugin {
   private pendingInputTriggerSeq = 0;
   private destroyed = false;
   private activeMenu?: BlockTransformContextMenu;
+  private activePickerSession?: ActivePickerSession;
   private readonly commandRegistry = new Map<
     string,
     {command: SlashCommandItem; token: symbol}[]
@@ -232,6 +243,12 @@ export class BlockTransformerPlugin extends DocPlugin {
     const state = evt.get("keyboardState");
     const raw = state.raw;
     if (raw.metaKey || raw.ctrlKey || raw.altKey) return false;
+    if (this.activePickerSession?.handleEditorKey(raw.key, raw)) {
+      evt.preventDefault();
+      raw.stopPropagation?.();
+      raw.stopImmediatePropagation?.();
+      return true;
+    }
     if (this.activeMenu?.handleEditorKey(raw.key)) {
       evt.preventDefault();
       raw.stopPropagation?.();
@@ -240,6 +257,11 @@ export class BlockTransformerPlugin extends DocPlugin {
     }
     this.queueInputTrigger(raw.key);
     return false;
+  }
+
+  @EventListen("compositionEnd")
+  onCompositionEnd() {
+    this.activePickerSession?.scheduleRefresh?.();
   }
 
   private _mdTransform = () => {
@@ -463,6 +485,7 @@ export class BlockTransformerPlugin extends DocPlugin {
         description: "在文字中插入 LaTeX 公式",
         group: "inline",
         csIcon: "formula",
+        searchAlias: "hngs",
         keywords: ["公式", "latex", "equation", "math"],
         run: context => this.openFormulaPicker(context),
       },
@@ -657,17 +680,63 @@ export class BlockTransformerPlugin extends DocPlugin {
     return true;
   }
 
-  private openFormulaPicker(context: SlashCommandContext) {
+  /**
+   * Keep a secondary slash-command panel owned by the command range that
+   * opened it. Relative positions allow unrelated edits before the trigger,
+   * while deleting or rewriting `/query` closes the stale panel immediately.
+   */
+  private createCommandPanelClose(context: SlashCommandContext) {
     const close$ = new Subject<void>();
-    const {componentRef} = this.doc.overlayService.createConnectedOverlay<FormulaBlockToolbar>({
-      target: context.block,
-      component: FormulaBlockToolbar,
-      backdrop: true,
-      positions: [
-        getPositionWithOffset("bottom-left", 0, 8),
-        getPositionWithOffset("top-left", 0, 8),
-      ],
-    }, close$);
+    const range = this.createCommandRange(context);
+    const trigger = modelCharacterAt(
+      context.block.textDeltas(),
+      context.triggerIndex,
+    );
+    const expectedText =
+      trigger === "/" || trigger === "、" ? `${trigger}${context.query}` : null;
+    const yText = context.block.yText;
+    const textObserver = () => {
+      const resolved = range.resolve();
+      if (
+        !expectedText ||
+        !resolved ||
+        !this.isBlockAlive(resolved.block) ||
+        resolved.length !== expectedText.length ||
+        plainTextInRange(
+          resolved.block.textDeltas(),
+          resolved.index,
+          resolved.length,
+        ) !== expectedText
+      ) {
+        close$.next();
+      }
+    };
+
+    yText.observe(textObserver);
+    close$.pipe(take(1)).subscribe(() => {
+      try {
+        yText.unobserve(textObserver);
+      } catch {}
+      range.reset();
+    });
+    return close$;
+  }
+
+  private openFormulaPicker(context: SlashCommandContext) {
+    const close$ = this.createCommandPanelClose(context);
+    const { componentRef } =
+      this.doc.overlayService.createConnectedOverlay<FormulaBlockToolbar>(
+        {
+          target: context.block,
+          component: FormulaBlockToolbar,
+          backdrop: true,
+          positions: [
+            getPositionWithOffset("bottom-left", 0, 8),
+            getPositionWithOffset("top-left", 0, 8),
+          ],
+        },
+        close$,
+      );
     componentRef.setInput("doc", this.doc);
     componentRef.setInput("initialLatex", "");
     componentRef.instance.confirm.pipe(takeUntil(close$)).subscribe(latex => {
@@ -678,18 +747,23 @@ export class BlockTransformerPlugin extends DocPlugin {
   }
 
   private openEmojiPicker(context: SlashCommandContext) {
-    const close$ = new Subject<void>();
-    const {componentRef} = this.doc.overlayService.createConnectedOverlay<CsEmojiPickerComponent>({
-      target: context.block,
-      component: CsEmojiPickerComponent,
-      backdrop: true,
-      flexibleDimensions: true,
-      positions: [
-        getPositionWithOffset("bottom-left", 0, 8),
-        getPositionWithOffset("top-left", 0, 8),
-      ],
-    }, close$);
+    const close$ = this.createCommandPanelClose(context);
+    const { componentRef } =
+      this.doc.overlayService.createConnectedOverlay<CsEmojiPickerComponent>(
+        {
+          target: context.block,
+          component: CsEmojiPickerComponent,
+          backdrop: true,
+          flexibleDimensions: true,
+          positions: [
+            getPositionWithOffset("bottom-left", 0, 8),
+            getPositionWithOffset("top-left", 0, 8),
+          ],
+        },
+        close$,
+      );
     componentRef.setInput("csMode", "panel");
+    componentRef.setInput("csLocale", "zh-CN");
     componentRef.setInput("csShowSearch", true);
     outputToObservable(componentRef.instance.csEmojiSelect)
       .pipe(takeUntil(close$))
@@ -699,18 +773,309 @@ export class BlockTransformerPlugin extends DocPlugin {
       });
   }
 
-  private openIconPicker(context: SlashCommandContext) {
+  /**
+   * Opens the type-ahead Emoji surface owned by a literal `:` in Y.Text.
+   * The editor keeps focus while typing so text and IME commits continue
+   * through InputTransformer. Arrow keys update the picker's virtual active
+   * option while the canonical and native editor selections stay pinned.
+   */
+  private openColonEmojiPicker(
+    block: EditableBlockComponent,
+    triggerIndex: number,
+  ) {
+    if (
+      this.destroyed ||
+      !this.isBlockAlive(block) ||
+      this.isReadonly(block)
+    )
+      return;
+
+    this.closeContextMenu();
+    this.closePickerSession();
+
+    const anchor = new OneShotCursorAnchor(this.doc);
+    anchor.capture(block, triggerIndex);
     const close$ = new Subject<void>();
-    const {componentRef} = this.doc.overlayService.createConnectedOverlay<CsIconPickerComponent>({
-      target: context.block,
-      component: CsIconPickerComponent,
-      backdrop: true,
-      flexibleDimensions: true,
-      positions: [
-        getPositionWithOffset("bottom-left", 0, 8),
-        getPositionWithOffset("top-left", 0, 8),
-      ],
-    }, close$);
+    const { componentRef } =
+      this.doc.overlayService.createConnectedOverlay<CsEmojiPickerComponent>(
+        {
+          target: block,
+          component: CsEmojiPickerComponent,
+          backdrop: true,
+          flexibleDimensions: true,
+          positions: [
+            getPositionWithOffset("bottom-left", 0, 8),
+            getPositionWithOffset("top-left", 0, 8),
+          ],
+        },
+        close$,
+      );
+    componentRef.setInput("csMode", "panel");
+    componentRef.setInput("csLocale", "zh-CN");
+    componentRef.setInput("csShowSearch", false);
+    componentRef.setInput("csShowCategories", true);
+
+    let refreshSeq = 0;
+    let keyboardNavigation = false;
+    let suppressingSelectionRecalculate = false;
+    let caretGuardArmed = false;
+    let navPinTimer: ReturnType<typeof setTimeout> | null = null;
+    let session!: ActivePickerSession;
+    const ownerDocument = block.containerElement.ownerDocument;
+    const picker = componentRef.instance;
+
+    const caretIsAt = (offset: number) => {
+      const dom = ownerDocument.getSelection();
+      if (!dom || !dom.isCollapsed || !dom.focusNode) return false;
+      if (!block.containerElement.contains(dom.focusNode)) return false;
+      try {
+        return (
+          block.runtime.domPointToModel(dom.focusNode, dom.focusOffset) ===
+          offset
+        );
+      } catch {
+        return true;
+      }
+    };
+    const restoreEditorCaret = () => {
+      const selection = this.doc.selection.value;
+      if (
+        !selection ||
+        !isSelectionAlive(selection as any, this.doc) ||
+        !selection.collapsed ||
+        selection.start.type !== "text" ||
+        selection.firstBlock?.id !== block.id
+      )
+        return;
+      if (!caretIsAt(selection.start.offset)) {
+        block.setInlineRange(selection.start.offset);
+      }
+    };
+    const handleCaretDrift = () => {
+      if (!this.doc.event.status.isComposing) restoreEditorCaret();
+    };
+    const releaseCaretPin = () => {
+      if (navPinTimer !== null) {
+        clearTimeout(navPinTimer);
+        navPinTimer = null;
+      }
+      if (caretGuardArmed) {
+        caretGuardArmed = false;
+        ownerDocument.removeEventListener("selectionchange", handleCaretDrift);
+      }
+      if (suppressingSelectionRecalculate) {
+        suppressingSelectionRecalculate = false;
+        this.doc.selection.setSuppressRecalculate(false);
+      }
+    };
+    const pinEditorCaret = () => {
+      if (!suppressingSelectionRecalculate) {
+        suppressingSelectionRecalculate = true;
+        this.doc.selection.setSuppressRecalculate(true);
+      }
+      restoreEditorCaret();
+      if (!caretGuardArmed) {
+        caretGuardArmed = true;
+        ownerDocument.addEventListener("selectionchange", handleCaretDrift);
+      }
+      if (navPinTimer !== null) clearTimeout(navPinTimer);
+      navPinTimer = setTimeout(releaseCaretPin, EMOJI_NAV_PIN_WINDOW_MS);
+    };
+    const refresh = () => {
+      if (this.doc.event.status.isComposing) return;
+      const context = this.resolveEmojiTriggerContext(anchor);
+      if (!context) {
+        close$.next();
+        return;
+      }
+      componentRef.setInput("csQuery", context.query);
+      if (keyboardNavigation) {
+        componentRef.changeDetectorRef.detectChanges();
+        picker.moveActive("first", { preserveFocus: true });
+      }
+    };
+    const scheduleRefresh = () => {
+      const seq = ++refreshSeq;
+      nextTick().then(() => {
+        if (
+          this.destroyed ||
+          this.activePickerSession !== session ||
+          refreshSeq !== seq
+        )
+          return;
+        refresh();
+      });
+    };
+    const syncPickerQuery = () => {
+      const context = this.resolveEmojiTriggerContext(anchor);
+      if (!context) {
+        close$.next();
+        return false;
+      }
+      componentRef.setInput("csQuery", context.query);
+      componentRef.changeDetectorRef.detectChanges();
+      return true;
+    };
+    session = {
+      close$,
+      scheduleRefresh,
+      handleEditorKey: (key, event) => {
+        if (this.doc.event.status.isComposing) return false;
+        if (key === "Escape") {
+          close$.next();
+          return true;
+        }
+        const direction = emojiGridDirectionForKey(key);
+        if (!direction && key !== "Enter" && key !== "Tab") return false;
+        if (!syncPickerQuery()) return true;
+        if (key === "Tab") {
+          const handled = picker.moveCategory(
+            event?.shiftKey ? "previous" : "next",
+            { preserveFocus: true },
+          );
+          if (handled) {
+            keyboardNavigation = true;
+            pinEditorCaret();
+          }
+          return handled;
+        }
+        if (key === "Enter") {
+          if (!keyboardNavigation) {
+            if (!picker.moveActive("first", { preserveFocus: true })) return false;
+            keyboardNavigation = true;
+          }
+          return picker.selectActive(
+            event ?? new KeyboardEvent("keydown", { key: "Enter" }),
+          );
+        }
+        const handled = picker.moveActive(direction!, {
+          preserveFocus: true,
+        });
+        if (handled) {
+          keyboardNavigation = true;
+          pinEditorCaret();
+        }
+        return handled;
+      },
+    };
+    const handleEditorKeydownCapture = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const handled = session.handleEditorKey(event.key, event);
+      if (!handled) {
+        releaseCaretPin();
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation?.();
+    };
+    ownerDocument.addEventListener(
+      "keydown",
+      handleEditorKeydownCapture,
+      true,
+    );
+    this.activePickerSession = session;
+
+    const textObserver = () => scheduleRefresh();
+    block.yText.observe(textObserver);
+    this.doc.selection.selectionChange$
+      .pipe(skip(1), takeUntil(close$))
+      .subscribe(() => scheduleRefresh());
+    merge(
+      this.doc.readonlySwitch$.pipe(filter(value => value)),
+      this.doc.onDestroy$,
+      block.onDestroy$,
+    )
+      .pipe(takeUntil(close$))
+      .subscribe(() => close$.next());
+    close$.pipe(take(1)).subscribe(() => {
+      refreshSeq++;
+      ownerDocument.removeEventListener(
+        "keydown",
+        handleEditorKeydownCapture,
+        true,
+      );
+      releaseCaretPin();
+      try {
+        block.yText.unobserve(textObserver);
+      } catch {}
+      anchor.reset();
+      if (this.activePickerSession === session) {
+        this.activePickerSession = undefined;
+      }
+    });
+
+    outputToObservable(componentRef.instance.csEmojiSelect)
+      .pipe(takeUntil(close$))
+      .subscribe(({ emoji }) => {
+        const context = this.resolveEmojiTriggerContext(anchor);
+        context?.replace([{ insert: emoji.native }]);
+        close$.next();
+      });
+
+    refresh();
+  }
+
+  private resolveEmojiTriggerContext(
+    anchor: OneShotCursorAnchor,
+  ): SlashCommandContext | null {
+    const point = anchor.resolve();
+    const selection = this.doc.selection.value;
+    if (
+      !point ||
+      !selection ||
+      !isSelectionAlive(selection as any, this.doc) ||
+      !selection.collapsed ||
+      selection.start.type !== "text" ||
+      selection.firstBlock?.id !== point.block.id ||
+      selection.start.offset <= point.index ||
+      !this.isBlockAlive(point.block) ||
+      this.isReadonly(point.block) ||
+      modelCharacterAt(point.block.textDeltas(), point.index) !== ":"
+    )
+      return null;
+
+    const triggerLength = selection.start.offset - point.index;
+    const query = plainTextInRange(
+      point.block.textDeltas(),
+      point.index + 1,
+      triggerLength - 1,
+    );
+    if (query === null || query.length > 64 || /[\s:]/.test(query)) return null;
+
+    const range = new OneShotRangeAnchor(this.doc);
+    range.capture(point.block, point.index, triggerLength);
+    return {
+      doc: this.doc,
+      block: point.block,
+      query,
+      triggerIndex: point.index,
+      triggerLength,
+      replace: (inserts) => this.replaceCommandRange(range, [...inserts]),
+    };
+  }
+
+  private closePickerSession(session?: ActivePickerSession) {
+    if (session && this.activePickerSession !== session) return;
+    this.activePickerSession?.close$.next();
+  }
+
+  private openIconPicker(context: SlashCommandContext) {
+    const close$ = this.createCommandPanelClose(context);
+    const { componentRef } =
+      this.doc.overlayService.createConnectedOverlay<CsIconPickerComponent>(
+        {
+          target: context.block,
+          component: CsIconPickerComponent,
+          backdrop: true,
+          flexibleDimensions: true,
+          positions: [
+            getPositionWithOffset("bottom-left", 0, 8),
+            getPositionWithOffset("top-left", 0, 8),
+          ],
+        },
+        close$,
+      );
     componentRef.setInput("csMode", "panel");
     componentRef.setInput("csShowSearch", true);
     componentRef.setInput("csShowCategories", true);
@@ -725,16 +1090,20 @@ export class BlockTransformerPlugin extends DocPlugin {
   }
 
   private openLinkPicker(context: SlashCommandContext) {
-    const close$ = new Subject<void>();
-    const {componentRef} = this.doc.overlayService.createConnectedOverlay<LinkEditFloatDialog>({
-      target: context.block,
-      component: LinkEditFloatDialog,
-      backdrop: true,
-      positions: [
-        getPositionWithOffset("bottom-left", 0, 8),
-        getPositionWithOffset("top-left", 0, 8),
-      ],
-    }, close$);
+    const close$ = this.createCommandPanelClose(context);
+    const { componentRef } =
+      this.doc.overlayService.createConnectedOverlay<LinkEditFloatDialog>(
+        {
+          target: context.block,
+          component: LinkEditFloatDialog,
+          backdrop: true,
+          positions: [
+            getPositionWithOffset("bottom-left", 0, 8),
+            getPositionWithOffset("top-left", 0, 8),
+          ],
+        },
+        close$,
+      );
     componentRef.setInput("text", "链接文字");
     componentRef.setInput("href", "");
     requestAnimationFrame(() => componentRef.instance.focus());
@@ -780,6 +1149,7 @@ export class BlockTransformerPlugin extends DocPlugin {
     if (this.destroyed || !this.isBlockAlive(block) || this.isReadonly(block)) return;
     // 关掉可能还存在的旧菜单。textObserver 关菜单有 debounce，用户在窗口内
     // "删除字符 → 重新输入 / 触发"时不能让两个 overlay 同时持有键盘事件。
+    this.closePickerSession();
     this.closeContextMenu();
 
     const { componentRef: cpr } =
@@ -836,12 +1206,19 @@ export class BlockTransformerPlugin extends DocPlugin {
   destroy() {
     this.destroyed = true;
     this.pendingInputTriggerSeq++;
+    this.closePickerSession();
     this.closeContextMenu();
     this.sub.unsubscribe();
   }
 
   private queueInputTrigger(inputText: string | null | undefined) {
-    if (inputText !== " " && inputText !== "\/" && inputText !== "、") return;
+    if (
+      inputText !== " " &&
+      inputText !== "\/" &&
+      inputText !== "、" &&
+      inputText !== ":"
+    )
+      return;
     const seq = ++this.pendingInputTriggerSeq;
     nextTick().then(() => {
       if (this.destroyed) return;
@@ -850,11 +1227,11 @@ export class BlockTransformerPlugin extends DocPlugin {
         this._mdTransform();
         return;
       }
-      this.tryOpenContextMenu(inputText);
+      this.tryOpenInputTrigger(inputText);
     });
   }
 
-  private tryOpenContextMenu(inputText: "/" | "、") {
+  private tryOpenInputTrigger(inputText: "/" | "、" | ":") {
     const selection = this.getCurrentSelection();
     if (
       !selection ||
@@ -873,7 +1250,7 @@ export class BlockTransformerPlugin extends DocPlugin {
       selection.start.offset,
     );
     if (triggerIndex !== null) {
-      this.openContextMenu(block, triggerIndex);
+      this.openResolvedInputTrigger(block, inputText, triggerIndex);
       return;
     }
     // 兜底：IME 输入 `、` 时 beforeInput 在 compositionEnd 之前触发，
@@ -909,7 +1286,7 @@ export class BlockTransformerPlugin extends DocPlugin {
         sel.start.type === "text" &&
         sel.firstBlock.id === block.id
       ) {
-        this.openContextMenu(block, index);
+        this.openResolvedInputTrigger(block, inputText, index);
       }
     };
     yText.observe(observer);
@@ -918,7 +1295,7 @@ export class BlockTransformerPlugin extends DocPlugin {
 
   private findTriggerIndex(
     block: EditableBlockComponent,
-    trigger: "/" | "、",
+    trigger: "/" | "、" | ":",
     cursorOffset: number,
   ): number | null {
     for (const index of [cursorOffset - 1, cursorOffset]) {
@@ -926,6 +1303,18 @@ export class BlockTransformerPlugin extends DocPlugin {
       if (modelCharacterAt(block.textDeltas(), index) === trigger) return index;
     }
     return null;
+  }
+
+  private openResolvedInputTrigger(
+    block: EditableBlockComponent,
+    trigger: "/" | "、" | ":",
+    triggerIndex: number,
+  ) {
+    if (trigger === ":") {
+      this.openColonEmojiPicker(block, triggerIndex);
+      return;
+    }
+    this.openContextMenu(block, triggerIndex);
   }
 
   private getCurrentSelection() {
@@ -960,6 +1349,33 @@ function getPlainTextFromInputEvent(event: InputEvent) {
 
 function modelCharacterAt(deltas: DeltaInsert[], index: number) {
   return sliceDelta(deltas, index, index + 1)[0]?.insert ?? null;
+}
+
+function plainTextInRange(
+  deltas: DeltaInsert[],
+  index: number,
+  length: number,
+) {
+  const range = sliceDelta(deltas, index, index + length);
+  if (range.some((delta) => typeof delta.insert !== "string")) return null;
+  return range.map((delta) => delta.insert).join("");
+}
+
+function emojiGridDirectionForKey(
+  key: string,
+): "left" | "right" | "up" | "down" | null {
+  switch (key) {
+    case "ArrowLeft":
+      return "left";
+    case "ArrowRight":
+      return "right";
+    case "ArrowUp":
+      return "up";
+    case "ArrowDown":
+      return "down";
+    default:
+      return null;
+  }
 }
 
 export type {

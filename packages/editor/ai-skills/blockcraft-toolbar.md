@@ -203,7 +203,7 @@ export class MyToolbarComponent {
 
 ## Standard Control Source
 
-Use the exact `@cses/ui@4.25.0` peer for generic toolbar chrome:
+Use the exact `@cses/ui@4.26.1` peer for generic toolbar chrome:
 
 - `CsButtonComponent` for textual confirm/cancel and ordinary actions;
 - `CsTooltipDirective` for hover help;

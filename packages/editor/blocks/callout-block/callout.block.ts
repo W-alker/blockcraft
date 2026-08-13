@@ -64,6 +64,7 @@ export class CalloutBlockComponent extends BaseBlockComponent<CalloutBlockModel>
         this._closePicker$,
       );
     componentRef.setInput("csShowSearch", true);
+    componentRef.setInput("csLocale", "zh-CN");
 
     outputToObservable(componentRef.instance.csEmojiSelect)
       .pipe(takeUntil(this._closePicker$))

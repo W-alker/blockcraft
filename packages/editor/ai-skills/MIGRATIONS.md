@@ -69,6 +69,68 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
+## Unreleased — 2026-08-13 — add colon Emoji type-ahead
+
+**Severity**: minor
+
+**What changed**: `BlockTransformerPlugin` now opens a searchless CSES
+EmojiPicker when a valid half-width `:` is typed in rich text. Characters after
+the colon remain in Y.Text and drive the picker's public `csQuery`; selection
+replaces the complete `:query` range through one model delta operation. All
+built-in BlockTransformer and Callout EmojiPicker surfaces explicitly use the
+`zh-CN` locale.
+
+**Why**: Inline Emoji insertion should stay in the writing flow instead of
+requiring the slash menu and a second search field.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-block.md`
+- `blockcraft-plugins-toolbar.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- `:` opens Emoji type-ahead at any position in rich editable text; the existing
+  `/` / `、` slash-menu trigger path is unchanged.
+- Deleting/replacing the colon, entering whitespace, leaving the query range,
+  destroying the block, or pressing `Escape` closes the picker.
+- With the `:` picker open, the first `ArrowUp` / `ArrowDown` / `ArrowLeft` /
+  `ArrowRight` enters the Emoji grid without moving the document caret. The
+  picker then owns four-direction navigation and `Enter` through a virtual
+  active option while real focus stays in the editor, so further text and IME
+  input can continue refining `:query`. `Tab` / `Shift+Tab` cycle categories,
+  and `Escape` closes the picker. BlockTransformer owns these key bindings and
+  delegates semantic movement/selection to the CSES picker methods.
+- `/emoji` remains available and continues to show EmojiPicker's search input.
+- Built-in EmojiPicker labels, search terms and category text use Chinese.
+
+## Unreleased — 2026-08-13 — align the CSES UI peer to 4.26.1
+
+**Severity**: patch
+
+**What changed**: BlockCraft now installs and requires the exact
+`@cses/ui@4.26.1` peer for its shared buttons, menus, tooltips, EmojiPicker and
+IconPicker surfaces.
+
+**Why**: Keep BlockCraft's development dependency, published peer contract and
+host installation guidance on the latest compatible CSES UI release instead
+of resolving different component-library versions in development and consumer
+applications.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-toolbar.md`
+- `MIGRATIONS.md`
+
+### Migration Recipe
+
+```bash
+pnpm add @cses/ui@4.26.1
+```
+
 ## Unreleased — 2026-08-13 — show selection state for inline Embeds
 
 **Severity**: patch

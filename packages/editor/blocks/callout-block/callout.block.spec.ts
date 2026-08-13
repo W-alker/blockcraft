@@ -40,6 +40,7 @@ describe("CalloutBlockComponent emoji picker", () => {
       }),
     );
     expect(componentRef.setInput).toHaveBeenCalledWith("csShowSearch", true);
+    expect(componentRef.setInput).toHaveBeenCalledWith("csLocale", "zh-CN");
 
     selection$.next({ emoji: { native: "🚀" } });
 
