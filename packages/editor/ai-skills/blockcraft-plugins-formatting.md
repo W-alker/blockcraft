@@ -131,18 +131,20 @@ new TextMarkerPlugin(['paragraph', 'blockquote'])
   `SHAPE_DEFINITIONS`; each compact icon-only item renders its actual
   main/detail geometry through `ShapeIconComponent` and exposes its label by
   Tooltip plus `aria-label` instead of visible per-cell text.
-- Picking a shape or WordArt preset restores the saved editor selection and
-  arms a one-shot drawing surface over the document; it does not write Yjs or
-  create a block yet. A primary-pointer drag shows a theme-colored rectangle
-  preview and commits that rectangle's scale-normalized width, height and
-  absolute position only on pointer release. A press/release without a drag
-  commits the selected type at its normal default size.
+- Picking a shape or WordArt preset arms a one-shot drawing surface over the
+  document without requiring a focused block, active Selection or saved
+  selection snapshot; it does not write Yjs or create a block yet. A
+  primary-pointer drag shows a theme-colored rectangle preview and commits that
+  rectangle's scale-normalized width, height and absolute position only on
+  pointer release. A press/release without a drag commits the selected type at
+  its normal default size.
 - The inserted shape is whole-block selected. Inserted WordArt is selected,
   revealed and enters text editing with its default text selected. Escape,
   pointer cancellation, window blur, scrolling, readonly transitions and
   toolbar destruction cancel an armed or active drawing gesture without a
   model mutation. Shape/WordArt entries remain hidden when their Schema is not
-  registered and disabled for readonly or invalid insertion contexts.
+  registered and are disabled only while the document is readonly; a missing
+  or detached drawing surface fails safely when the preset is picked.
 - Table and column actions use picker overlays from the fixed toolbar.
 - Image insertion supports either a direct image URL or local image upload.
 - Video and audio insertion are grouped under one dropdown entry and reuse the shared media-creator flow.

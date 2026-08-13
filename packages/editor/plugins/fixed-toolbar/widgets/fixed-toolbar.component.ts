@@ -297,9 +297,9 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
       title="插入形状"
       aria-label="插入形状"
       [hidden]="!doc.schemas.has('shape')"
-      [disabled]="readonly || !canInsertBlock('shape')"
+      [disabled]="readonly"
       [bcOverlayTrigger]="shapePicker"
-      [bcOverlayDisabled]="readonly || !canInsertBlock('shape')"
+      [bcOverlayDisabled]="readonly"
       (click)="shapeTrigger.openOverlay()"
       #shapeTrigger="bcOverlayTrigger"
     >
@@ -312,9 +312,9 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
       title="插入艺术字"
       aria-label="插入艺术字"
       [hidden]="!doc.schemas.has('word-art')"
-      [disabled]="readonly || !canInsertBlock('word-art')"
+      [disabled]="readonly"
       [bcOverlayTrigger]="wordArtPicker"
-      [bcOverlayDisabled]="readonly || !canInsertBlock('word-art')"
+      [bcOverlayDisabled]="readonly"
       (click)="wordArtTrigger.openOverlay()"
       #wordArtTrigger="bcOverlayTrigger"
     >
@@ -1022,14 +1022,10 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     trigger: BcOverlayTriggerDirective,
   ) {
     trigger.closePanel();
-    if (this.readonly || !this.selectionJSON) return;
+    if (this.readonly) return;
 
     const schema = this.doc.schemas.get("shape", false);
     if (!schema) return;
-
-    this.restoreSelection();
-    const selection = this.doc.selection.value;
-    if (!this.isLiveSelection(selection)) return;
 
     const armed = this.armObjectDrawing({
       defaultWidth: DEFAULT_SHAPE_PROPS.width,
@@ -1075,14 +1071,10 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     trigger: BcOverlayTriggerDirective,
   ) {
     trigger.closePanel();
-    if (this.readonly || !this.selectionJSON) return;
+    if (this.readonly) return;
 
     const schema = this.doc.schemas.get("word-art", false);
     if (!schema) return;
-
-    this.restoreSelection();
-    const selection = this.doc.selection.value;
-    if (!this.isLiveSelection(selection)) return;
 
     const armed = this.armObjectDrawing({
       defaultWidth: DEFAULT_WORD_ART_PROPS.width,

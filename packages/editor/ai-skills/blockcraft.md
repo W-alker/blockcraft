@@ -833,10 +833,11 @@ textless; they deliberately do not claim semantic endpoint attachment. WordArt
 exposes 16 visual presets, 10 safe font families and 15 allowlisted whole-text
 transforms without adding raw CSS to the model. Picking a shape or WordArt
 preset from the fixed toolbar now arms a one-shot document drawing surface
-instead of inserting immediately. Dragging previews and commits an exact
-scale-normalized rectangle on pointer release; clicking without a drag uses the
-selected object's default dimensions. Cancel, blur, viewport movement,
-readonly and teardown paths leave Yjs unchanged.
+instead of inserting immediately. This path does not require a focused block or
+active Selection. Dragging previews and commits an exact scale-normalized
+rectangle on pointer release; clicking without a drag uses the selected
+object's default dimensions. Cancel, blur, viewport movement, readonly and
+teardown paths leave Yjs unchanged.
 
 ### DocChain (Fluent Mutations)
 

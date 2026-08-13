@@ -392,6 +392,8 @@ keep the same fields; new types pass through the existing normalizers and
 - The 16-card WordArt preset panel uses a compact six-column visual grid;
   preset names remain available through Tooltip and accessible labels.
 - Choosing a fixed-toolbar Shape or WordArt item only arms the drawing tool.
+  The two entries are available without an editor focus or active Selection and
+  are disabled only for readonly documents; Schema absence still hides them.
   Primary-pointer drag previews the final bounds and writes position plus size
   once on release; click/release uses default dimensions. Escape,
   pointercancel, blur, scrolling, readonly changes and teardown cancel without

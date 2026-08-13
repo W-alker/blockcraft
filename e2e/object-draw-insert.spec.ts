@@ -18,7 +18,7 @@ async function waitForEditor(page: Page): Promise<void> {
   }, editorSelector);
 }
 
-test("fixed toolbar draws a shape before committing its exact bounds", async ({
+test("fixed toolbar draws a shape without editor focus or selection", async ({
   page,
 }) => {
   await page.goto("/");
@@ -33,11 +33,10 @@ test("fixed toolbar draws a shape before committing its exact bounds", async ({
       }
     ).ng;
     const doc = debug.getComponent(editor).doc;
-    const paragraphId = doc.model
-      .getChildrenIds(doc.rootId)
-      .find((id: string) => doc.model.getFlavour(id) === "paragraph");
-    if (!paragraphId) throw new Error("No paragraph available for insertion");
-    doc.selection.setCursorAtBlock(paragraphId, true, false);
+    doc.selection.blur();
+    if (doc.selection.value !== null) {
+      throw new Error("Editor selection did not clear before drawing");
+    }
     return doc.placement
       .getAbsoluteBlockIds()
       .filter((id: string) => doc.model.getFlavour(id) === "shape");

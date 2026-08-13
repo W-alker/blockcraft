@@ -403,25 +403,14 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
     rootHost.remove();
   });
 
-  it("arms shape drawing and commits the dragged size only after release", async () => {
+  it("arms shape drawing without an editor selection and commits only after release", async () => {
     const {
       component,
       rootHost,
-      paragraph,
-      selection,
-      setSelection,
       shapeSnapshot,
       createSnapshot,
       insertAbsoluteSnapshot,
     } = makeHarness();
-    const textCursor = selection({
-      blockId: "p1",
-      type: "text",
-      offset: 1,
-      block: paragraph,
-    } as any);
-    setSelection(textCursor);
-    component.selectionJSON = textCursor.toJSON();
     spyOn<any>(component, "syncToolbarState");
     let drawRequest: any;
     spyOn<any>(component, "armObjectDrawing").and.callFake((request: any) => {
@@ -466,26 +455,15 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
     rootHost.remove();
   });
 
-  it("arms WordArt drawing and edits only after the geometry is committed", async () => {
+  it("arms WordArt drawing without an editor selection and edits after commit", async () => {
     const {
       component,
       rootHost,
-      paragraph,
-      selection,
-      setSelection,
       wordArtSnapshot,
       createSnapshot,
       insertAbsoluteSnapshot,
       enterEditing,
     } = makeHarness();
-    const textCursor = selection({
-      blockId: "p1",
-      type: "text",
-      offset: 1,
-      block: paragraph,
-    } as any);
-    setSelection(textCursor);
-    component.selectionJSON = textCursor.toJSON();
     spyOn<any>(component, "syncToolbarState");
     let drawRequest: any;
     spyOn<any>(component, "armObjectDrawing").and.callFake((request: any) => {
