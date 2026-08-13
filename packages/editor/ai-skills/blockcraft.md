@@ -194,11 +194,15 @@ doc.crud.updateBlockProps(blockId, {
 doc.crud.updateBlockProps(blockId, {backColor: null, borderColor: null})
 ```
 
-The bundled `BlockControllerPlugin` exposes these two fields only for its
-current editable flow block. It does not cascade to ancestors, appear for
-non-editable/internal leaf blocks or multi-block selections, or reclaim
-absolute objects from their object-specific toolbars. Concrete `borderColor`
-values render as a 1px outline
+The bundled `BlockControllerPlugin` exposes these two fields for its current
+editable flow block. When a multi-block selection contains one or more eligible,
+writable editable flow blocks, the same menu resolves the complete range from
+`BlockModelGraph` and writes that eligible subset by stable ID in one Yjs
+transaction; non-editable and protected selected blocks remain untouched. Mixed
+colors among the targets display with no active swatch until the user chooses a
+value. It does not cascade to ancestors, appear for internal leaf blocks, or
+reclaim absolute objects from their object-specific toolbars. Concrete
+`borderColor` values render as a 1px outline
 without changing block geometry, while block-specific focused/selected
 highlights retain priority. Every editable block host receives a 4px radius.
 Blockquote treats `borderColor` specially as the color of its 1px left accent

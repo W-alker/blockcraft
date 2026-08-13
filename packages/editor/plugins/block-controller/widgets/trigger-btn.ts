@@ -200,7 +200,7 @@ const BUILTIN_TOOL_LIST: IContextMenuItem[] = [
                          [menuDisabled]="menuDisabled"
                          (itemAction)="handleMenuAction($event)"></bc-block-menu>
 
-          @if (!isMultiSelection && blockMenuSections.length) {
+          @if (blockMenuSections.length) {
             <span class="bc-float-toolbar__divider"></span>
             @for (section of blockMenuSections; track section.key) {
               @if (section.title) {
@@ -776,7 +776,15 @@ export class TriggerBtn {
   private resolveBlockMenuSections() {
     const ctx = this.createMenuContext()
     if (!ctx || !this.blockMenuResolver) return []
-    return (this.blockMenuResolver(ctx) || [])
+    const sections = (this.blockMenuResolver(ctx) || [])
+      .map(section => this._isMultiSelection
+        ? {
+          ...section,
+          items: section.items.filter(item => item.name === 'block-appearance'),
+        }
+        : section)
+      .filter(section => section.items.length > 0)
+    return sections
       .map(section => ({
         ...section,
         items: section.items

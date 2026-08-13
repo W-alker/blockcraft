@@ -278,14 +278,14 @@ describe('BlockTransformerPlugin beforeInput', () => {
     expect(plugin.openContextMenu).not.toHaveBeenCalled();
   }));
 
-  it("opens the slash menu at the current rich-text cursor instead of only on an empty paragraph", fakeAsync(() => {
+  it("does not open the slash menu after existing paragraph text", fakeAsync(() => {
     const plugin = createPlugin();
     const block = {
       id: 'rich-slash-block',
-      flavour: 'ordered',
-      textContent: () => 'before / after',
-      textDeltas: () => [{insert: 'before / after'}],
-      textLength: 14,
+      flavour: 'paragraph',
+      textContent: () => 'before /',
+      textDeltas: () => [{insert: 'before /'}],
+      textLength: 8,
       plainTextOnly: false,
     }
     plugin.doc.selection.value = {
@@ -303,7 +303,35 @@ describe('BlockTransformerPlugin beforeInput', () => {
     } as any)
     flushMicrotasks()
 
-    expect(plugin.openContextMenu).toHaveBeenCalledOnceWith(block, 7)
+    expect(plugin.openContextMenu).not.toHaveBeenCalled()
+  }))
+
+  it("does not open the slash menu in an otherwise empty non-paragraph block", fakeAsync(() => {
+    const plugin = createPlugin();
+    const block = {
+      id: 'ordered-slash-block',
+      flavour: 'ordered',
+      textContent: () => '/',
+      textDeltas: () => [{insert: '/'}],
+      textLength: 1,
+      plainTextOnly: false,
+    }
+    plugin.doc.selection.value = {
+      collapsed: true,
+      start: {type: 'text', offset: 1},
+      firstBlock: block,
+    }
+    spyOn(plugin, 'openContextMenu')
+    stubNextTick()
+
+    plugin.onKeyDown({
+      get: () => ({
+        raw: {key: '/', metaKey: false, ctrlKey: false, altKey: false},
+      }),
+    } as any)
+    flushMicrotasks()
+
+    expect(plugin.openContextMenu).not.toHaveBeenCalled()
   }))
 
   it('lets a later beforeInput trigger replace an earlier keyDown trigger', fakeAsync(() => {
@@ -497,6 +525,44 @@ describe('BlockTransformerPlugin beforeInput', () => {
 })
 
 describe("BlockTransformerPlugin slash execution", () => {
+  it("reads the complete slash query while selection projection is one input behind", () => {
+    const plugin = new BlockTransformerPlugin() as any;
+    const yDoc = new Y.Doc();
+    const yText = yDoc.getText("source");
+    yText.insert(0, "/icon");
+    const block = {
+      id: "source",
+      flavour: "paragraph",
+      yText,
+      get textLength() {
+        return yText.length;
+      },
+      textDeltas: () => yText.toDelta(),
+    };
+    const selection = {
+      collapsed: true,
+      start: {type: "text", blockId: block.id, offset: 1},
+      end: {type: "text", blockId: block.id, offset: 1},
+      firstBlock: block,
+      lastBlock: block,
+    };
+    plugin.doc = {
+      yDoc,
+      isReadonly: false,
+      getBlockById: (id: string) => id === block.id ? block : undefined,
+      isEditable: (candidate: unknown) => candidate === block,
+      selection: {
+        value: selection,
+        recalculate: () => ({value: selection}),
+      },
+    };
+
+    expect(plugin.resolveSlashQueryState(block, 0)).toEqual({
+      query: "icon",
+      triggerLength: 5,
+    });
+  });
+
   it("closes a secondary command panel when its slash range is deleted", () => {
     const plugin = new BlockTransformerPlugin() as any;
     const yDoc = new Y.Doc();
@@ -836,6 +902,150 @@ describe("BlockTransformerPlugin colon Emoji execution", () => {
     plugin.doc.selection.value.end.offset = 5;
 
     expect(plugin.resolveEmojiTriggerContext(anchor)).toBeNull();
+  });
+});
+
+describe("BlockTransformerPlugin slash picker keyboard execution", () => {
+  function createHarness(kind: "emoji" | "icon") {
+    const plugin = new BlockTransformerPlugin() as any;
+    const source = document.createElement("div");
+    source.contentEditable = "true";
+    const pickerHost = document.createElement("div");
+    const search = document.createElement("input");
+    pickerHost.append(search);
+    document.body.append(source, pickerHost);
+
+    const close$ = new Subject<void>();
+    const selection$ = new Subject<any>();
+    const moveActive = jasmine.createSpy("moveActive").and.returnValue(true);
+    const moveCategory = jasmine.createSpy("moveCategory").and.returnValue(true);
+    const selectActive = jasmine.createSpy("selectActive").and.returnValue(true);
+    const pickerOutput = new Subject<any>();
+    const instance = {
+      moveActive,
+      moveCategory,
+      selectActive,
+      ...(kind === "emoji"
+        ? {csEmojiSelect: pickerOutput}
+        : {csChange: pickerOutput}),
+    };
+    const componentRef = {
+      instance,
+      location: {nativeElement: pickerHost},
+      setInput: jasmine.createSpy("setInput"),
+    };
+    const block = {id: "slash-source", containerElement: source};
+    const context = {
+      block,
+      replace: jasmine.createSpy("replace"),
+    };
+    plugin.doc = {
+      event: {status: {isComposing: false}},
+      overlayService: {
+        createConnectedOverlay: jasmine
+          .createSpy("createConnectedOverlay")
+          .and.returnValue({componentRef}),
+      },
+      selection: {selectionChange$: selection$},
+    };
+    spyOn<any>(plugin, "createCommandPanelClose").and.returnValue(close$);
+
+    if (kind === "emoji") plugin.openEmojiPicker(context);
+    else plugin.openIconPicker(context);
+
+    const dispatch = (
+      key: string,
+      shiftKey = false,
+      target: HTMLElement = search,
+    ) => {
+      const event = new KeyboardEvent("keydown", {
+        key,
+        shiftKey,
+        bubbles: true,
+        cancelable: true,
+      });
+      target.dispatchEvent(event);
+      return event;
+    };
+    const destroy = () => {
+      close$.next();
+      close$.complete();
+      pickerOutput.complete();
+      selection$.complete();
+      source.remove();
+      pickerHost.remove();
+    };
+
+    return {
+      plugin,
+      close$,
+      source,
+      search,
+      moveActive,
+      moveCategory,
+      selectActive,
+      dispatch,
+      destroy,
+    };
+  }
+
+  it("routes IconPicker arrows, categories, and Enter while its search keeps focus", () => {
+    const harness = createHarness("icon");
+    harness.source.focus();
+    expect(harness.dispatch("ArrowLeft", false, harness.source).defaultPrevented).toBeTrue();
+    harness.search.focus();
+
+    for (const key of ["ArrowRight", "ArrowUp", "ArrowDown"]) {
+      expect(harness.dispatch(key).defaultPrevented).toBeTrue();
+    }
+    expect(harness.moveActive.calls.allArgs()).toEqual([
+      ["left", {preserveFocus: true}],
+      ["right", {preserveFocus: true}],
+      ["up", {preserveFocus: true}],
+      ["down", {preserveFocus: true}],
+    ]);
+
+    expect(harness.dispatch("Tab").defaultPrevented).toBeTrue();
+    expect(harness.dispatch("Tab", true).defaultPrevented).toBeTrue();
+    expect(harness.moveCategory.calls.allArgs()).toEqual([
+      ["next", {preserveFocus: true}],
+      ["previous", {preserveFocus: true}],
+    ]);
+
+    expect(harness.dispatch("Enter").defaultPrevented).toBeTrue();
+    expect(harness.selectActive).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(harness.search);
+
+    const text = harness.dispatch("a");
+    expect(text.defaultPrevented).toBeFalse();
+    expect(document.activeElement).toBe(harness.search);
+    harness.destroy();
+  });
+
+  it("routes slash EmojiPicker through the same editor-owned keyboard session", () => {
+    const harness = createHarness("emoji");
+    harness.search.focus();
+
+    const enter = harness.dispatch("Enter");
+    expect(enter.defaultPrevented).toBeTrue();
+    expect(harness.moveActive).toHaveBeenCalledOnceWith("first", {
+      preserveFocus: true,
+    });
+    expect(harness.selectActive).toHaveBeenCalledTimes(1);
+
+    expect(harness.dispatch("ArrowRight").defaultPrevented).toBeTrue();
+    expect(harness.moveActive).toHaveBeenCalledWith("right", {
+      preserveFocus: true,
+    });
+    expect(harness.dispatch("Tab").defaultPrevented).toBeTrue();
+    expect(harness.moveCategory).toHaveBeenCalledOnceWith("next", {
+      preserveFocus: true,
+    });
+
+    const escape = harness.dispatch("Escape");
+    expect(escape.defaultPrevented).toBeTrue();
+    expect(harness.plugin.activePickerSession).toBeUndefined();
+    harness.destroy();
   });
 });
 

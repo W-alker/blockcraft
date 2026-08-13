@@ -5,6 +5,7 @@ import {
   ColorPickerComponent,
 } from '../../../components'
 import {BlockNodeType} from '../../../framework'
+import {getSelectionCoveredBlockIds} from '../../../framework/modules/selection/covered-blocks'
 
 type BlockAppearanceColorType = 'backColor' | 'borderColor'
 
@@ -58,32 +59,54 @@ const BORDER_COLOR_GROUP: ColorGroup = {
   `],
 })
 export class BlockAppearancePickerComponent {
+  private _doc!: BlockCraft.Doc
+
   @Input({required: true})
-  doc!: BlockCraft.Doc
+  set doc(doc: BlockCraft.Doc) {
+    this._doc = doc
+    this.refreshState()
+  }
+
+  get doc(): BlockCraft.Doc {
+    return this._doc
+  }
 
   private _block!: BlockCraft.BlockComponent
 
   @Input({required: true})
   set block(block: BlockCraft.BlockComponent) {
     this._block = block
-    this.colorGroups = block.nodeType === BlockNodeType.editable
-      ? [BACKGROUND_COLOR_GROUP, BORDER_COLOR_GROUP]
-      : []
-    this.activeColors = {
-      backColor: block.nodeType === BlockNodeType.editable
-        ? this.normalizeActiveColor(block.props.backColor)
-        : null,
-      borderColor: block.nodeType === BlockNodeType.editable
-        ? this.normalizeActiveColor(block.props.borderColor)
-        : null,
-    }
+    this.refreshState()
   }
 
   get block(): BlockCraft.BlockComponent {
     return this._block
   }
 
-  colorGroups: ColorGroup[] = [BACKGROUND_COLOR_GROUP]
+  private _targetBlockIds: string[] = []
+
+  @Input()
+  set targetBlockIds(blockIds: readonly string[] | null | undefined) {
+    this._targetBlockIds = [...new Set((blockIds ?? []).filter(Boolean))]
+    this.refreshState()
+  }
+
+  get targetBlockIds(): readonly string[] {
+    return this._targetBlockIds
+  }
+
+  private _selectionBlockIds: string[] = []
+
+  @Input()
+  set selectionBlockIds(blockIds: readonly string[] | null | undefined) {
+    this._selectionBlockIds = [...new Set((blockIds ?? []).filter(Boolean))]
+  }
+
+  get selectionBlockIds(): readonly string[] {
+    return this._selectionBlockIds
+  }
+
+  colorGroups: ColorGroup[] = []
 
   activeColors: Record<BlockAppearanceColorType, string | null> = {
     backColor: null,
@@ -92,12 +115,20 @@ export class BlockAppearancePickerComponent {
 
   onColorPicked(event: {type: string; color: string | null}) {
     if (event.type !== 'backColor' && event.type !== 'borderColor') return
-    if (this._block.nodeType !== BlockNodeType.editable) return
-    if (!this.isWritable()) return
+    const targetIds = this.resolveWritableTargetIds()
+    if (!targetIds.length) return
 
     const color = this.normalizePersistedColor(event.color)
     try {
-      this._block.updateProps({[event.type]: color})
+      if (this.getConfiguredSelectionBlockIds().length === 1) {
+        this._block.updateProps({[event.type]: color})
+      } else {
+        this._doc.crud.transact(() => {
+          targetIds.forEach(blockId => {
+            this._doc.crud.updateBlockProps(blockId, {[event.type]: color})
+          })
+        })
+      }
     } catch (error) {
       this.doc.logger?.warn('blockAppearanceUpdateError: ', error)
       return
@@ -105,16 +136,105 @@ export class BlockAppearancePickerComponent {
     this.activeColors = {...this.activeColors, [event.type]: color}
   }
 
-  private isWritable(): boolean {
-    if (!this._block || !this.doc) return false
+  private refreshState(): void {
+    if (!this._block) return
+    const targetIds = this.getConfiguredTargetIds()
+    const eligible = targetIds.length > 0 && targetIds.every(id => this.isEditableBlock(id))
+    this.colorGroups = eligible
+      ? [BACKGROUND_COLOR_GROUP, BORDER_COLOR_GROUP]
+      : []
+    this.activeColors = eligible
+      ? {
+        backColor: this.resolveCommonColor(targetIds, 'backColor'),
+        borderColor: this.resolveCommonColor(targetIds, 'borderColor'),
+      }
+      : {backColor: null, borderColor: null}
+  }
+
+  private getConfiguredTargetIds(): string[] {
+    if (this._targetBlockIds.length) return [...this._targetBlockIds]
+    return this._block?.id ? [this._block.id] : []
+  }
+
+  private getConfiguredSelectionBlockIds(): string[] {
+    if (this._selectionBlockIds.length) return [...this._selectionBlockIds]
+    return this.getConfiguredTargetIds()
+  }
+
+  private resolveWritableTargetIds(): string[] {
+    if (!this._block || !this._doc || this._doc.isReadonly) return []
+    const targetIds = this.getConfiguredTargetIds()
+    if (!targetIds.length || !targetIds.every(id => this.isEditableBlock(id))) return []
+
     try {
-      if (this.doc.getBlockById(this._block.id) !== this._block) return false
-      const readonlyManager = this.doc.readonlyManager
-      return !(
-        readonlyManager?.isReadonly(this._block) ?? this._block.isReadonly
-      ) && !(readonlyManager?.containsReadonly(this._block) ?? false)
+      if (this._doc.getBlockById(this._block.id) !== this._block) return []
+      const selectionBlockIds = this.getConfiguredSelectionBlockIds()
+      if (selectionBlockIds.length > 1) {
+        if (!this.matchesCurrentSelection(selectionBlockIds)) return []
+        if (targetIds.some(id => !selectionBlockIds.includes(id))) return []
+        if (!targetIds.every(id => this._doc.model.exists(id))) return []
+      } else if (targetIds.length !== 1 || targetIds[0] !== this._block.id) {
+        return []
+      }
+
+      const readonlyManager = this._doc.readonlyManager
+      if (readonlyManager) {
+        if (targetIds.some(id =>
+          readonlyManager.isReadonly(id) || readonlyManager.containsReadonly(id)
+        )) return []
+      } else if (targetIds.length !== 1 || this._block.isReadonly) {
+        return []
+      }
+      return targetIds
+    } catch {
+      return []
+    }
+  }
+
+  private matchesCurrentSelection(targetIds: readonly string[]): boolean {
+    const selection = this._doc.selection.value
+    if (!selection || selection.isInSameBlock) return false
+    const selectedIds = getSelectionCoveredBlockIds(selection, this._doc)
+    return selectedIds.length === targetIds.length
+      && selectedIds.every((id, index) => id === targetIds[index])
+  }
+
+  private isEditableBlock(blockId: string): boolean {
+    if (!this._doc) return blockId === this._block?.id
+      && this._block.nodeType === BlockNodeType.editable
+    const nodeType = this._doc.model?.getNodeType?.(blockId)
+    if (nodeType !== undefined) return nodeType === BlockNodeType.editable
+    try {
+      return this._doc.getBlockById(blockId).nodeType === BlockNodeType.editable
     } catch {
       return false
+    }
+  }
+
+  private resolveCommonColor(
+    targetIds: readonly string[],
+    type: BlockAppearanceColorType,
+  ): string | null {
+    let common: string | null | undefined
+    for (const blockId of targetIds) {
+      const color = this.normalizeActiveColor(this.readBlockProps(blockId)?.[type])
+      if (common === undefined) {
+        common = color
+      } else if (common !== color) {
+        return null
+      }
+    }
+    return common ?? null
+  }
+
+  private readBlockProps(blockId: string): Record<string, unknown> | undefined {
+    const modelProps = this._doc?.model?.getProps?.(blockId)
+    if (modelProps) return modelProps
+    if (blockId === this._block?.id) return this._block.props as Record<string, unknown>
+    try {
+      return this._doc.getBlockById(blockId).props as Record<string, unknown>
+    } catch {
+      return undefined
     }
   }
 

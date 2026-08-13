@@ -381,14 +381,18 @@ export class BlockControllerPlugin extends DocPlugin {
 
   private resolveAppearanceMenu(ctx: BlockMenuContext): BlockMenuSection[] {
     const block = ctx.activeBlock
-    const schema = this.doc.schemas.get(block.flavour, false)
-    if (
-      block.nodeType !== 'editable' ||
-      schema?.metadata.isLeaf ||
-      ['placement-layout', 'render-unit', 'table-row'].includes(block.flavour)
-    ) {
-      return []
-    }
+    const selection = this.doc.selection.value
+    const selectedIds = selection ? this.resolveSelectedRangeIds(selection) : []
+    const selectionBlockIds = selectedIds.includes(block.id)
+      ? selectedIds
+      : [block.id]
+    const multiSelection = selectionBlockIds.length > 1
+    const targetBlockIds = selectionBlockIds.filter(blockId =>
+      this.isAppearanceEligible(blockId, block)
+      && (!multiSelection || !this.isAppearanceBlockProtected(blockId))
+    )
+    if (!targetBlockIds.length) return []
+    const readonlyBehavior = multiSelection ? 'allow' as const : 'hide' as const
 
     return [{
       key: 'block-appearance',
@@ -398,16 +402,48 @@ export class BlockControllerPlugin extends DocPlugin {
         icon: 'bc_sepan',
         label: '颜色',
         menuWidth: 240,
-        readonlyBehavior: 'hide',
+        readonlyBehavior,
         items: [{
           type: 'custom',
           name: 'block-appearance-colors',
           component: BlockAppearancePickerComponent,
-          componentInputs: {block, doc: ctx.doc},
-          readonlyBehavior: 'hide',
+          componentInputs: {block, doc: ctx.doc, targetBlockIds, selectionBlockIds},
+          readonlyBehavior,
         }],
       }],
     }]
+  }
+
+  private isAppearanceEligible(
+    blockId: string,
+    activeBlock: BlockCraft.BlockComponent,
+  ): boolean {
+    try {
+      const block = blockId === activeBlock.id
+        ? activeBlock
+        : this.doc.model?.exists?.(blockId)
+          ? null
+          : this.doc.getBlockById(blockId)
+      const nodeType = block?.nodeType ?? this.doc.model?.getNodeType?.(blockId)
+      const flavour = block?.flavour ?? this.doc.model?.getFlavour?.(blockId)
+      if (nodeType !== 'editable' || !flavour) return false
+      const schema = this.doc.schemas.get(flavour, false)
+      return !schema?.metadata.isLeaf
+        && !['placement-layout', 'render-unit', 'table-row'].includes(flavour)
+    } catch {
+      return false
+    }
+  }
+
+  private isAppearanceBlockProtected(blockId: string): boolean {
+    if (this.doc.isReadonly) return true
+    const manager = this.doc.readonlyManager
+    if (!manager) return true
+    try {
+      return manager.isReadonly(blockId) || manager.containsReadonly(blockId)
+    } catch {
+      return true
+    }
   }
 
   private resolveTableMenu(ctx: BlockMenuContext): BlockMenuSection[] {

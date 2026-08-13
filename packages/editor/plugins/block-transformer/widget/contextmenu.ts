@@ -189,16 +189,18 @@ export class BlockTransformContextMenu {
   currentQuery(): string | null {
     const selection = this.doc.selection.value;
     if (
+      this.activeBlock.flavour !== "paragraph" ||
+      this.triggerIndex !== 0 ||
       !isSelectionAlive(selection as any, this.doc) ||
       !selection?.collapsed ||
       selection.start.type !== "text" ||
       selection.firstBlock?.id !== this.activeBlock.id ||
-      selection.start.offset <= this.triggerIndex
+      this.activeBlock.textLength <= 0
     ) return null;
     const deltas = sliceDelta(
       this.activeBlock.textDeltas(),
       this.triggerIndex,
-      selection.start.offset,
+      this.activeBlock.textLength,
     );
     const commandText = deltaToString(deltas, "\uFFFC");
     if (!commandText || !["/", "、"].includes(commandText[0])) return null;

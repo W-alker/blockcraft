@@ -70,12 +70,15 @@ new BlockControllerPlugin({
 
 ### Notes
 
-- The built-in **颜色** second-level menu appears only for an editable block,
-  reuses the shared color picker and writes only that block's
-  `props.backColor` / `props.borderColor`. Choosing
-  transparent deletes the prop. It never cascades to a parent Callout, table or
-  columns container, and it is absent for multi-block selections, readonly or
-  protected blocks, non-editable blocks, Schema leaf blocks,
+- The built-in **颜色** second-level menu appears for an eligible editable flow
+  block and whenever a multi-block range contains at least one eligible,
+  writable editable flow block. Multi-block writes resolve stable IDs from the
+  model graph and update that eligible subset in one Yjs transaction, including
+  virtualized middle blocks; selected non-editable or protected blocks remain
+  untouched. Mixed initial colors among the targets show no active swatch until
+  the user picks one. Choosing transparent deletes the prop. The action never
+  cascades to a parent Callout, table or columns container and remains absent
+  when the range has no writable editable target, or for Schema leaf blocks,
   root/infrastructure blocks and absolute placement objects.
 - Whole-document readonly hides mutation affordances as before. Block readonly
   keeps the trigger visible so the user can copy or unlock the block, but drag
@@ -140,13 +143,19 @@ The drag is dispatched as `{ kind: 'origin-blocks', blockIds: string[] }` to
 ### Multi-block menu
 
 When a cross-block selection covers the active block, the drag-handle menu
-collapses to just **cut / copy / delete**, and those three operate on the whole
-selection range:
+adds **颜色** whenever at least one selected block is an appearance-eligible,
+writable editable flow block. The ordinary multi-block actions remain **cut /
+copy / delete** and operate on the whole selection range:
 
 - **copy** copies whole-block snapshots of every selected block
   (`clipboard.copyBlocksModel`), not an offset-sliced text range.
 - **cut** copies all then deletes every selected block by id in one transaction.
 - **delete** deletes every selected block by id in one transaction.
+
+- **颜色** writes `backColor` / `borderColor` to the selected eligible, writable
+  editable subset in one transaction and skips the other selected block types.
+  The picker fails closed if the selection changes, a target disappears, or any
+  captured target becomes protected before the click is handled.
 
 All other menu items — alignment, heading, block-type conversion, "在下方添加",
 `customTools`, and custom `blockMenuResolver` sections such as the table tools —
@@ -154,11 +163,13 @@ are hidden in multi-block mode. Single-block selection keeps the full menu
 unchanged. The multi/single judgment mirrors the drag dispatch: a cross-block
 selection whose range includes the active block (otherwise the single-block menu
 shows). If the multi-selection collapses to fewer than two blocks between opening
-the menu and clicking, the action falls back to the single-block path.
+the menu and clicking, cut/copy/delete fall back to the single-block path while
+the multi-block color picker performs no write.
 
 When any selected block is effectively readonly, or a selected ancestor
-contains a locked descendant, multi-block mode keeps only **copy**. Cut, delete
-and drag cannot partially mutate the range.
+contains a locked descendant, the range-wide actions keep only **copy**; cut,
+delete and drag cannot partially mutate the range. **颜色** may still appear for
+other selected writable editable blocks and never writes the protected block.
 
 ---
 
@@ -234,10 +245,13 @@ new BlockGapCreatorPlugin()
 
 Enables slash-command (`/` or `、`) to open one grouped insertion surface for
 blocks and inline content, Markdown shortcuts (e.g., `# ` for heading, `- ` for
-bullet), and `Cmd/Ctrl+0–4` to set heading levels. The slash trigger works at any
-collapsed text cursor in a rich editable block; it is not limited to an empty
-paragraph. While the menu is open, `ArrowUp` / `ArrowDown` move the active item,
-`Enter` selects it, and `Escape` closes the menu without moving the editor caret.
+bullet), and `Cmd/Ctrl+0–4` to set heading levels. The slash trigger is accepted
+only when `/` or `、` is the first character typed into an empty paragraph. Once
+open, `/query` must continue to occupy that whole paragraph. Filtering reads the
+complete Y.Text value rather than depending on the selection offset update
+order, so the first query character cannot prematurely close the menu.
+`ArrowUp` / `ArrowDown` move the active item, `Enter` selects it, and `Escape`
+closes the menu without moving the editor caret.
 
 Typing a half-width `:` at any position in rich editable text opens the CSES
 EmojiPicker without its search input. Text committed after `:` stays in the
@@ -330,15 +344,19 @@ model while input continues in the editor. Entering picker keyboard navigation
 uses EmojiPicker's preserve-focus keyboard API, so the grid renders an active
 option without taking DOM focus from BlockCraft. The shared CSES Emoji/Icon
 pickers expose `moveActive`, `selectActive`, and `moveCategory`; BlockTransformer
-maps its own arrow, Enter, and Tab bindings onto those methods. Both `:` and
-`/emoji` set the picker locale explicitly to `zh-CN`.
+maps its own four-direction, Enter, Tab / Shift+Tab, and Escape bindings onto
+those methods. Slash-opened Emoji and Icon pickers use the same active picker
+session whether real focus remains in the editor or moves into the picker search
+input. Navigation keys never move the document caret or transfer focus into the
+grid; ordinary search text, Backspace, and IME remain owned by the focused
+input. Both `:` and `/emoji` set the picker locale explicitly to `zh-CN`.
 The selected Icon is stored through the built-in inline
 `icon` embed as a `csicon csicon-<name>` class string; SVG catalogue entries are
 not accepted by this single-colour embed path.
 
-When a block item is chosen in the middle of rich text, the plugin preserves
-formatted deltas before and after `/query` in same-flavour sibling snapshots and
-inserts the new block between them. Empty sides are omitted.
+Choosing a block item replaces the slash-command paragraph. Inline commands
+replace the same model-owned `/query` range without moving input ownership into
+the picker.
 
 ### Runtime Command API
 

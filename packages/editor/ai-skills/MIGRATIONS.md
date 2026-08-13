@@ -69,6 +69,33 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
+## Unreleased — 2026-08-13 — apply BlockController colors to multi-block selections
+
+**Severity**: minor
+
+**What changed**: `BlockControllerPlugin` now keeps its built-in **颜色** menu
+for a cross-block selection whenever at least one covered block is an eligible,
+writable editable flow block. Picking a background or border color updates that
+stable-ID subset in one Yjs transaction, including virtualized middle blocks;
+other selected block types and protected blocks remain untouched.
+
+**Why**: Block appearance is a block-level formatting command, so paragraph
+ranges should not require repeating the same color choice one block at a time.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-plugins-block.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Mixed initial colors render with no active swatch until the user chooses one.
+- A mixed range exposes the menu as long as it contains a writable editable
+  target. Non-editable and already-protected selected blocks are skipped.
+- If the selection changes, a target disappears, or a target becomes protected
+  while the picker is open, the color action fails closed without a model write.
+
 ## Unreleased — 2026-08-13 — add colon Emoji type-ahead
 
 **Severity**: minor
@@ -192,8 +219,8 @@ formula textarea lost its original borderless editor appearance.
 
 **Severity**: minor
 
-**What changed**: `BlockTransformerPlugin` now opens a grouped insertion menu
-at any rich-text cursor and can insert both blocks and inline content. The
+**What changed**: `BlockTransformerPlugin` now opens one grouped insertion menu
+from an empty paragraph and can insert both blocks and inline content. The
 built-in inline catalogue contains formula, mention, Emoji, CSES Icon, link and
 inline image. Hosts can append commands through the new options constructor,
 register or unregister commands at runtime, and `MentionPlugin.openAt()` exposes
@@ -201,10 +228,11 @@ the existing mention flow to model-owned command surfaces. Menu search now
 supports Chinese pinyin initials, and its keyboard navigation uses one owned
 event route with a WebView fallback.
 
-**Why**: The old menu only transformed an empty paragraph into a block. Document
-authors expect a Notion/Yuque-style command surface that is searchable, works
-inside existing text, and reuses the editor's inline embed and shared CSES
-picker systems without bypassing Yjs.
+**Why**: Document authors need one searchable Notion/Yuque-style command surface
+for both block and inline insertion, while keeping `/` unambiguous inside normal
+text. The empty-paragraph boundary preserves ordinary slash typing and still
+reuses the editor's inline embed and shared CSES picker systems without
+bypassing Yjs.
 
 **Affected ai-skills files**:
 
@@ -267,12 +295,13 @@ const dispose = transformer.registerCommand({
 
 ### Behavior Changes
 
-- `/` and `、` now open the menu at any collapsed cursor in a rich editable
-  block. Leaf, plain-text-only, stale and effectively readonly blocks remain
-  excluded.
-- Choosing a block in the middle of text preserves formatted deltas on both
-  sides, removes only `/query`, and inserts the block between same-flavour
-  siblings. Empty sides are omitted.
+- `/` and `、` open the menu only as the first character of an empty paragraph.
+  The complete `/query` must remain in that paragraph; other block flavours,
+  suffix text, stale and effectively readonly blocks remain excluded. Query
+  filtering reads the complete Y.Text value and tolerates the canonical
+  selection offset being one projection tick behind the text mutation.
+- Choosing a block replaces the slash-command paragraph. Inline commands
+  replace the same model-owned `/query` range.
 - The searchable menu remains open with an empty result list when no command
   matches, so users can correct the query without retriggering it.
 - Search covers labels, IDs, flavours, explicit aliases and host `keywords`, and
@@ -286,6 +315,10 @@ const dispose = transformer.registerCommand({
 - `ArrowUp` / `ArrowDown`, `Enter`, and `Escape` are owned by one menu keyboard
   route, with the editor event pipeline retained only as a WebView fallback; this
   avoids duplicate jumps while keeping the caret anchored in the source block.
+- Slash-opened EmojiPicker and IconPicker share an editor-owned picker session:
+  four-direction keys navigate the grid, Tab / Shift+Tab cycle categories,
+  Enter selects, and Escape closes. The capture route also works from each
+  picker's search input while leaving text, Backspace, and IME input untouched.
 - Async inserts resolve a Yjs relative range and abort safely if the target was
   deleted or protected. All writes continue through Block/DocChain paths.
 

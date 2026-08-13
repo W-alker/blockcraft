@@ -12,6 +12,9 @@ import {
   CsEmojiPickerComponent,
   CsIconPickerComponent,
   type CsIconPickerChangeEvent,
+  type CsPickerCategoryDirection,
+  type CsPickerGridDirection,
+  type CsPickerNavigationOptions,
 } from "@cses/ui";
 import {
   BLOCK_CREATOR_SERVICE_TOKEN,
@@ -64,6 +67,18 @@ type ActivePickerSession = {
   close$: Subject<void>;
   scheduleRefresh?(): void;
   handleEditorKey(key: string, event?: KeyboardEvent): boolean;
+};
+
+type KeyboardNavigablePicker = {
+  moveActive(
+    direction: CsPickerGridDirection,
+    options?: CsPickerNavigationOptions,
+  ): boolean;
+  moveCategory(
+    direction: CsPickerCategoryDirection,
+    options?: CsPickerNavigationOptions,
+  ): boolean;
+  selectActive(): boolean;
 };
 
 export class BlockTransformerPlugin extends DocPlugin {
@@ -543,33 +558,15 @@ export class BlockTransformerPlugin extends DocPlugin {
     block: EditableBlockComponent,
     triggerIndex: number,
   ): SlashCommandContext | null {
-    const selection = this.getCurrentSelection();
-    if (
-      !selection ||
-      !isSelectionAlive(selection as any, this.doc) ||
-      !selection.collapsed ||
-      selection.start.type !== "text" ||
-      selection.firstBlock?.id !== block.id ||
-      selection.start.offset <= triggerIndex ||
-      !this.isBlockAlive(block) ||
-      this.isReadonly(block)
-    ) return null;
-    const trigger = modelCharacterAt(block.textDeltas(), triggerIndex);
-    if (trigger !== "/" && trigger !== "、") return null;
-    const queryDeltas = sliceDelta(
-      block.textDeltas(),
-      triggerIndex + 1,
-      selection.start.offset,
-    );
-    if (queryDeltas.some(delta => typeof delta.insert !== "string")) return null;
-    const query = queryDeltas.map(delta => delta.insert).join("");
-    if (/\s/.test(query)) return null;
+    const state = this.resolveSlashQueryState(block, triggerIndex);
+    if (!state) return null;
+    const {query, triggerLength} = state;
     const range = this.createCommandRange({
       doc: this.doc,
       block,
       query,
       triggerIndex,
-      triggerLength: selection.start.offset - triggerIndex,
+      triggerLength,
       replace: () => false,
     });
     return {
@@ -577,9 +574,45 @@ export class BlockTransformerPlugin extends DocPlugin {
       block,
       query,
       triggerIndex,
-      triggerLength: selection.start.offset - triggerIndex,
+      triggerLength,
       replace: inserts => this.replaceCommandRange(range, [...inserts]),
     };
+  }
+
+  /**
+   * Slash commands own the complete text of an otherwise empty paragraph.
+   * Keeping this invariant here prevents programmatic menu opens from
+   * reintroducing the old middle-of-rich-text trigger path.
+   */
+  private resolveSlashQueryState(
+    block: EditableBlockComponent,
+    triggerIndex: number,
+  ): {query: string; triggerLength: number} | null {
+    const selection = this.getCurrentSelection();
+    if (
+      block.flavour !== "paragraph" ||
+      triggerIndex !== 0 ||
+      !selection ||
+      !isSelectionAlive(selection as any, this.doc) ||
+      !selection.collapsed ||
+      selection.start.type !== "text" ||
+      selection.firstBlock?.id !== block.id ||
+      !this.isBlockAlive(block) ||
+      this.isReadonly(block)
+    ) return null;
+    const triggerLength = block.textLength;
+    if (triggerLength <= 0) return null;
+    const trigger = modelCharacterAt(block.textDeltas(), triggerIndex);
+    if (trigger !== "/" && trigger !== "、") return null;
+    const queryDeltas = sliceDelta(
+      block.textDeltas(),
+      triggerIndex + 1,
+      triggerLength,
+    );
+    if (queryDeltas.some(delta => typeof delta.insert !== "string")) return null;
+    const query = queryDeltas.map(delta => delta.insert).join("");
+    if (/\s/.test(query)) return null;
+    return {query, triggerLength};
   }
 
   private async executeMenuItem(
@@ -765,6 +798,12 @@ export class BlockTransformerPlugin extends DocPlugin {
     componentRef.setInput("csMode", "panel");
     componentRef.setInput("csLocale", "zh-CN");
     componentRef.setInput("csShowSearch", true);
+    this.attachCommandPickerKeyboardSession(
+      close$,
+      componentRef.instance,
+      context.block.containerElement,
+      componentRef.location.nativeElement,
+    );
     outputToObservable(componentRef.instance.csEmojiSelect)
       .pipe(takeUntil(close$))
       .subscribe(({emoji}) => {
@@ -925,7 +964,7 @@ export class BlockTransformerPlugin extends DocPlugin {
           close$.next();
           return true;
         }
-        const direction = emojiGridDirectionForKey(key);
+        const direction = pickerGridDirectionForKey(key);
         if (!direction && key !== "Enter" && key !== "Tab") return false;
         if (!syncPickerQuery()) return true;
         if (key === "Tab") {
@@ -1060,6 +1099,77 @@ export class BlockTransformerPlugin extends DocPlugin {
     this.activePickerSession?.close$.next();
   }
 
+  /**
+   * Maps editor-owned shortcuts onto a CSES picker without moving real focus
+   * into its grid. The capture route also covers the picker's search input:
+   * navigation keys are owned here, while normal text and IME remain native to
+   * that input.
+   */
+  private attachCommandPickerKeyboardSession(
+    close$: Subject<void>,
+    picker: KeyboardNavigablePicker,
+    sourceElement: HTMLElement,
+    pickerElement: HTMLElement,
+  ) {
+    this.closePickerSession();
+
+    let keyboardNavigation = false;
+    let session!: ActivePickerSession;
+    const ownerDocument = sourceElement.ownerDocument;
+    session = {
+      close$,
+      handleEditorKey: (key, event) => {
+        if (this.doc.event.status.isComposing) return false;
+        if (key === "Escape") {
+          close$.next();
+          return true;
+        }
+        if (key === "Tab") {
+          const handled = picker.moveCategory(
+            event?.shiftKey ? "previous" : "next",
+            {preserveFocus: true},
+          );
+          if (handled) keyboardNavigation = true;
+          return handled;
+        }
+        if (key === "Enter") {
+          if (!keyboardNavigation) {
+            if (!picker.moveActive("first", {preserveFocus: true})) return false;
+            keyboardNavigation = true;
+          }
+          return picker.selectActive();
+        }
+        const direction = pickerGridDirectionForKey(key);
+        if (!direction) return false;
+        const handled = picker.moveActive(direction, {preserveFocus: true});
+        if (handled) keyboardNavigation = true;
+        return handled;
+      },
+    };
+
+    const handleKeydownCapture = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as Node | null;
+      if (
+        target &&
+        !sourceElement.contains(target) &&
+        !pickerElement.contains(target)
+      ) return;
+      if (!session.handleEditorKey(event.key, event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation?.();
+    };
+    ownerDocument.addEventListener("keydown", handleKeydownCapture, true);
+    this.activePickerSession = session;
+    close$.pipe(take(1)).subscribe(() => {
+      ownerDocument.removeEventListener("keydown", handleKeydownCapture, true);
+      if (this.activePickerSession === session) {
+        this.activePickerSession = undefined;
+      }
+    });
+  }
+
   private openIconPicker(context: SlashCommandContext) {
     const close$ = this.createCommandPanelClose(context);
     const { componentRef } =
@@ -1079,6 +1189,12 @@ export class BlockTransformerPlugin extends DocPlugin {
     componentRef.setInput("csMode", "panel");
     componentRef.setInput("csShowSearch", true);
     componentRef.setInput("csShowCategories", true);
+    this.attachCommandPickerKeyboardSession(
+      close$,
+      componentRef.instance,
+      context.block.containerElement,
+      componentRef.location.nativeElement,
+    );
     outputToObservable(componentRef.instance.csChange)
       .pipe(takeUntil(close$))
       .subscribe((event: CsIconPickerChangeEvent) => {
@@ -1146,7 +1262,10 @@ export class BlockTransformerPlugin extends DocPlugin {
   }
 
   openContextMenu(block: EditableBlockComponent, triggerIndex = 0) {
-    if (this.destroyed || !this.isBlockAlive(block) || this.isReadonly(block)) return;
+    if (
+      this.destroyed ||
+      !this.resolveSlashQueryState(block, triggerIndex)
+    ) return;
     // 关掉可能还存在的旧菜单。textObserver 关菜单有 debounce，用户在窗口内
     // "删除字符 → 重新输入 / 触发"时不能让两个 overlay 同时持有键盘事件。
     this.closePickerSession();
@@ -1314,6 +1433,11 @@ export class BlockTransformerPlugin extends DocPlugin {
       this.openColonEmojiPicker(block, triggerIndex);
       return;
     }
+    if (
+      block.flavour !== "paragraph" ||
+      triggerIndex !== 0 ||
+      block.textLength !== 1
+    ) return;
     this.openContextMenu(block, triggerIndex);
   }
 
@@ -1361,9 +1485,7 @@ function plainTextInRange(
   return range.map((delta) => delta.insert).join("");
 }
 
-function emojiGridDirectionForKey(
-  key: string,
-): "left" | "right" | "up" | "down" | null {
+function pickerGridDirectionForKey(key: string): CsPickerGridDirection | null {
   switch (key) {
     case "ArrowLeft":
       return "left";

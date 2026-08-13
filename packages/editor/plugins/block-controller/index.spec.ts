@@ -9,6 +9,7 @@ describe("BlockControllerPlugin selection range handling", () => {
     const plugin = new BlockControllerPlugin();
     const block = {id: "p1", flavour: "paragraph", nodeType: BlockNodeType.editable};
     const doc = {
+      selection: {value: null},
       schemas: {
         get: jasmine.createSpy("getSchema").and.returnValue({metadata: {isLeaf: false}}),
       },
@@ -25,7 +26,12 @@ describe("BlockControllerPlugin selection range handling", () => {
     expect(sections[0].items[0].type).toBe("dropdown");
     expect(sections[0].items[0].label).toBe("颜色");
     expect(sections[0].items[0].menuWidth).toBe(240);
-    expect(sections[0].items[0].items[0].componentInputs).toEqual({block, doc});
+    expect(sections[0].items[0].items[0].componentInputs).toEqual({
+      block,
+      doc,
+      targetBlockIds: ["p1"],
+      selectionBlockIds: ["p1"],
+    });
 
     doc.schemas.get.and.returnValue({metadata: {isLeaf: true}});
     expect((plugin as any).resolveAppearanceMenu({activeBlock: block, doc})).toEqual([]);
@@ -113,6 +119,41 @@ describe("BlockControllerPlugin selection range handling", () => {
 
     expect((plugin as any).resolveSelectionActiveBlock(sel)).toBe(p1);
     expect(queryBlocksBetween).not.toHaveBeenCalled();
+    rootHost.remove();
+  });
+
+  it("targets the writable editable subset of a mixed multi-block range", () => {
+    const {plugin, doc, p1, p2, rootHost, selection} = makeHarness();
+    doc.selection.value = selection(0, 2);
+    (doc as any).isReadonly = false;
+    (doc as any).schemas = {
+      get: jasmine.createSpy("getSchema").and.returnValue({metadata: {isLeaf: false}}),
+    };
+    (doc as any).readonlyManager = {
+      isReadonly: jasmine.createSpy("isReadonly").and.returnValue(false),
+      containsReadonly: jasmine.createSpy("containsReadonly").and.returnValue(false),
+    };
+
+    const sections = (plugin as any).resolveAppearanceMenu({activeBlock: p1, doc});
+
+    const picker = sections[0].items[0].items[0];
+    expect(picker.componentInputs.targetBlockIds).toEqual(["p1", "p2"]);
+    expect(picker.componentInputs.selectionBlockIds).toEqual(["p1", "p2"]);
+    expect(sections[0].items[0].readonlyBehavior).toBe("allow");
+
+    (doc as any).readonlyManager.isReadonly.and.callFake((id: string) => id === "p2");
+    expect((plugin as any).resolveAppearanceMenu({activeBlock: p1, doc})[0]
+      .items[0].items[0].componentInputs.targetBlockIds).toEqual(["p1"]);
+
+    (doc as any).readonlyManager.isReadonly.and.returnValue(false);
+    p2.nodeType = BlockNodeType.void;
+    expect((plugin as any).resolveAppearanceMenu({activeBlock: p1, doc})[0]
+      .items[0].items[0].componentInputs.targetBlockIds).toEqual(["p1"]);
+
+    p1.nodeType = BlockNodeType.void;
+    p2.nodeType = BlockNodeType.editable;
+    expect((plugin as any).resolveAppearanceMenu({activeBlock: p1, doc})[0]
+      .items[0].items[0].componentInputs.targetBlockIds).toEqual(["p2"]);
     rootHost.remove();
   });
 

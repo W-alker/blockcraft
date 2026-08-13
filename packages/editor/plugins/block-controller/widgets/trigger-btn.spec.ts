@@ -99,6 +99,34 @@ describe("TriggerBtn multi-selection state", () => {
     rootHost.remove();
   });
 
+  it("keeps only the appearance section beside multi-block actions", () => {
+    const {component, doc, p1, rootHost, selection} = makeHarness();
+    doc.selection.value = selection(0, 2);
+    (doc as any).getBlockById = jasmine.createSpy("getBlockById").and.callFake((id: string) =>
+      id === "p1" ? p1 : null
+    );
+    component.blockMenuResolver = () => [
+      {
+        key: "block-appearance",
+        items: [{type: "dropdown", name: "block-appearance", label: "颜色", items: []}],
+      },
+      {
+        key: "custom",
+        items: [{type: "simple", name: "custom", label: "Custom"}],
+      },
+    ];
+    (component as any)._activeBlock = p1;
+    (component as any)._isMultiSelection = true;
+
+    const sections = (component as any).resolveBlockMenuSections();
+
+    expect(sections.map((section: {key: string}) => section.key))
+      .toEqual(["block-appearance"]);
+    expect(sections[0].items.map((item: {name: string}) => item.name))
+      .toEqual(["block-appearance"]);
+    rootHost.remove();
+  });
+
   it("does not resolve neighbouring ids for a collapsed boundary cursor", () => {
     const {component, doc, rootHost, selection, queryBlocksBetween} = makeHarness();
     doc.selection.value = selection(1, 1);

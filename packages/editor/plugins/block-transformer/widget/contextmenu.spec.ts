@@ -47,6 +47,7 @@ describe("BlockTransformContextMenu keyboard navigation", () => {
     const activeBlockContainer = document.createElement("div");
     component.activeBlock = {
       id: "block-1",
+      flavour: "paragraph",
       textLength: 5,
       textDeltas: () => [{insert: "/icon"}],
       containerElement: activeBlockContainer,
@@ -361,7 +362,36 @@ describe("BlockTransformContextMenu keyboard navigation", () => {
     (component as any)._disarmCaretGuard();
   });
 
-  it("reads the filter query from the slash position instead of the block start", () => {
+  it("reads the filter query when slash command text occupies the whole paragraph", () => {
+    const block = {id: "block-1"};
+    const {component} = createComponent({
+      collapsed: true,
+      start: {type: "text", offset: 5},
+      firstBlock: block,
+    });
+    component.triggerIndex = 0;
+    component.activeBlock.textDeltas = () => [{insert: "/icon"}];
+
+    expect(component.currentQuery()).toBe("icon");
+  });
+
+  it("keeps filtering when Y.Text updates before the canonical selection offset", () => {
+    const block = {id: "block-1"};
+    const {component} = createComponent({
+      collapsed: true,
+      // InputTransformer has committed `/icon`, but selection projection may
+      // still report the offset immediately after the original slash.
+      start: {type: "text", offset: 1},
+      firstBlock: block,
+    });
+    component.triggerIndex = 0;
+    (component.activeBlock as any).textLength = 5;
+    component.activeBlock.textDeltas = () => [{insert: "/icon"}];
+
+    expect(component.currentQuery()).toBe("icon");
+  });
+
+  it("rejects a slash query in the middle of existing paragraph text", () => {
     const block = {id: "block-1"};
     const {component} = createComponent({
       collapsed: true,
@@ -369,9 +399,10 @@ describe("BlockTransformContextMenu keyboard navigation", () => {
       firstBlock: block,
     });
     component.triggerIndex = 7;
+    (component.activeBlock as any).textLength = 18;
     component.activeBlock.textDeltas = () => [{insert: "before /icon after"}];
 
-    expect(component.currentQuery()).toBe("icon");
+    expect(component.currentQuery()).toBeNull();
   });
 
   it("emits the selected unified slash item", () => {
