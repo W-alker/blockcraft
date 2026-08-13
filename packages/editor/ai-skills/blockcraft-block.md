@@ -475,6 +475,12 @@ consumes `borderColor` as the color of its
 1px left accent bar instead of drawing the common rectangular outline.
 Non-editable blocks ignore both props in the common projection; a block such as
 Callout may still own and document a legacy block-specific appearance contract.
+The bundled `render-unit` is another deliberate block-specific surface: it
+persists optional `backColor` / `borderColor`, projects them through
+`--bc-render-unit-background-color` / `--bc-render-unit-border-color`, and
+draws a geometry-neutral 1px inner outline. `CalloutToolbarPlugin` exposes
+background and border palettes for this region without cascading values into
+its child blocks.
 
 `detach()` and `reattach()` describe a reversible view lifecycle. Permanent
 subscriptions and document-owned resources should still use `onDestroy$` or
@@ -1200,8 +1206,11 @@ fail closed.
 Use `doc.canInsertChild(parentId, childFlavour)` for menus and drag/drop.
 `DocCRUD` enforces the same rule for insert, move and replace. The bundled
 `render-unit` block is the generic container for host-defined content regions;
-it opts into child constraints. Template hosts should create it together with
-an empty editable child that owns any persistent placeholder.
+it opts into child constraints and uses the iconfont class
+`bc_icon bc_erjidaohang_caogaoxiang`. Template hosts should create it together
+with an empty editable child that owns any persistent placeholder. Its optional
+`backColor` / `borderColor` props style the region shell itself; child content
+keeps its own appearance props.
 
 ## Editable Block Placeholder (Schema and instance fields)
 

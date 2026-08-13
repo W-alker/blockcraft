@@ -69,6 +69,44 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
+## Unreleased — 2026-08-13 — add content-region background and border colors
+
+**Severity**: minor
+
+**What changed**: the bundled `render-unit` model now accepts optional
+`backColor` / `borderColor` props and projects them consistently in the live
+editor and Snapshot Viewer. The existing zero-config `CalloutToolbarPlugin`
+also recognizes `render-unit`, reusing one container appearance overlay instead
+of adding another stateful Plugin. The bundled region Schema now uses
+`bc_icon bc_erjidaohang_caogaoxiang`.
+
+**Why**: template content regions need the same persisted surface styling as
+highlights while keeping one overlay lifecycle, one readonly boundary and one
+Yjs mutation path.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-plugins-ref.md`
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `RenderUnitBlockModel.props` includes optional `backColor` and `borderColor`.
+- Region themes can consume `--bc-render-unit-background-color` and
+  `--bc-render-unit-border-color` from both live and snapshot surfaces.
+
+### Behavior Changes
+
+- A text selection in a direct editable `render-unit` child opens the shared
+  container toolbar with background and border palettes only.
+- Selecting an empty `render-unit` as a whole also opens the toolbar.
+- Region colors style only the container shell and never cascade model writes
+  into its children. Readonly and stale-block checks remain fail-closed.
+
 ## Unreleased — 2026-08-13 — apply BlockController colors to multi-block selections
 
 **Severity**: minor

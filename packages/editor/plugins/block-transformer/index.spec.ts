@@ -758,6 +758,11 @@ describe("BlockTransformerPlugin colon Emoji execution", () => {
 
     plugin.openColonEmojiPicker(block, 0);
     editor.focus();
+    document.getSelection()?.removeAllRanges();
+    const editorRange = document.createRange();
+    editorRange.selectNodeContents(editor);
+    editorRange.collapse(false);
+    document.getSelection()?.addRange(editorRange);
     const event = new KeyboardEvent("keydown", {
       key: "ArrowDown",
       bubbles: true,
@@ -908,12 +913,14 @@ describe("BlockTransformerPlugin colon Emoji execution", () => {
 describe("BlockTransformerPlugin slash picker keyboard execution", () => {
   function createHarness(kind: "emoji" | "icon") {
     const plugin = new BlockTransformerPlugin() as any;
+    const root = document.createElement("div");
+    root.contentEditable = "true";
     const source = document.createElement("div");
-    source.contentEditable = "true";
+    root.append(source);
     const pickerHost = document.createElement("div");
     const search = document.createElement("input");
     pickerHost.append(search);
-    document.body.append(source, pickerHost);
+    document.body.append(root, pickerHost);
 
     const close$ = new Subject<void>();
     const selection$ = new Subject<any>();
@@ -934,19 +941,37 @@ describe("BlockTransformerPlugin slash picker keyboard execution", () => {
       location: {nativeElement: pickerHost},
       setInput: jasmine.createSpy("setInput"),
     };
-    const block = {id: "slash-source", containerElement: source};
+    const block = {
+      id: "slash-source",
+      containerElement: source,
+      setInlineRange: jasmine.createSpy("setInlineRange"),
+      runtime: {
+        domPointToModel: jasmine.createSpy("domPointToModel").and.returnValue(5),
+      },
+    };
+    const selectionValue = {
+      collapsed: true,
+      start: {type: "text", offset: 5},
+      firstBlock: block,
+    };
     const context = {
       block,
       replace: jasmine.createSpy("replace"),
     };
     plugin.doc = {
       event: {status: {isComposing: false}},
+      root: {hostElement: root},
       overlayService: {
         createConnectedOverlay: jasmine
           .createSpy("createConnectedOverlay")
           .and.returnValue({componentRef}),
       },
-      selection: {selectionChange$: selection$},
+      getBlockById: () => block,
+      selection: {
+        value: selectionValue,
+        selectionChange$: selection$,
+        setSuppressRecalculate: jasmine.createSpy("setSuppressRecalculate"),
+      },
     };
     spyOn<any>(plugin, "createCommandPanelClose").and.returnValue(close$);
 
@@ -973,6 +998,7 @@ describe("BlockTransformerPlugin slash picker keyboard execution", () => {
       pickerOutput.complete();
       selection$.complete();
       source.remove();
+      root.remove();
       pickerHost.remove();
     };
 
@@ -980,10 +1006,12 @@ describe("BlockTransformerPlugin slash picker keyboard execution", () => {
       plugin,
       close$,
       source,
+      root,
       search,
       moveActive,
       moveCategory,
       selectActive,
+      block,
       dispatch,
       destroy,
     };
@@ -991,8 +1019,8 @@ describe("BlockTransformerPlugin slash picker keyboard execution", () => {
 
   it("routes IconPicker arrows, categories, and Enter while its search keeps focus", () => {
     const harness = createHarness("icon");
-    harness.source.focus();
-    expect(harness.dispatch("ArrowLeft", false, harness.source).defaultPrevented).toBeTrue();
+    harness.root.focus();
+    expect(harness.dispatch("ArrowLeft", false, harness.root).defaultPrevented).toBeTrue();
     harness.search.focus();
 
     for (const key of ["ArrowRight", "ArrowUp", "ArrowDown"]) {
@@ -1045,6 +1073,140 @@ describe("BlockTransformerPlugin slash picker keyboard execution", () => {
     const escape = harness.dispatch("Escape");
     expect(escape.defaultPrevented).toBeTrue();
     expect(harness.plugin.activePickerSession).toBeUndefined();
+    harness.destroy();
+  });
+
+  it("consumes picker navigation before an unavailable action can leak to the browser", () => {
+    const harness = createHarness("icon");
+    harness.search.focus();
+    harness.moveActive.and.returnValue(false);
+    harness.moveCategory.and.returnValue(false);
+    harness.selectActive.and.returnValue(false);
+
+    for (const key of ["ArrowDown", "Tab", "Enter"]) {
+      const event = harness.dispatch(key);
+      expect(event.defaultPrevented).withContext(key).toBeTrue();
+    }
+    expect(harness.moveActive).toHaveBeenCalledWith("down", {
+      preserveFocus: true,
+    });
+    expect(harness.moveCategory).toHaveBeenCalledWith("next", {
+      preserveFocus: true,
+    });
+    expect(harness.selectActive).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(harness.search);
+    harness.destroy();
+  });
+
+  it("normalizes legacy WebKit arrow names and keyCode-only events", () => {
+    const harness = createHarness("emoji");
+    harness.search.focus();
+
+    expect(harness.dispatch("Down").defaultPrevented).toBeTrue();
+    const keyCodeOnly = new KeyboardEvent("keydown", {
+      key: "Unidentified",
+      bubbles: true,
+      cancelable: true,
+    });
+    Object.defineProperty(keyCodeOnly, "keyCode", {value: 37});
+    harness.search.dispatchEvent(keyCodeOnly);
+
+    expect(keyCodeOnly.defaultPrevented).toBeTrue();
+    expect(harness.moveActive.calls.allArgs()).toEqual([
+      ["down", {preserveFocus: true}],
+      ["left", {preserveFocus: true}],
+    ]);
+    harness.destroy();
+  });
+
+  it("captures root-targeted keys while the native selection remains in the slash block", () => {
+    const harness = createHarness("icon");
+    const text = document.createTextNode("/icon");
+    harness.source.append(text);
+    const range = document.createRange();
+    range.setStart(text, text.length);
+    range.collapse(true);
+    const selection = document.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+    harness.root.focus();
+
+    const rootKeyDown = jasmine.createSpy("rootKeyDown");
+    const rootKeyUp = jasmine.createSpy("rootKeyUp");
+    const rootBeforeInput = jasmine.createSpy("rootBeforeInput");
+    harness.root.addEventListener("keydown", rootKeyDown);
+    harness.root.addEventListener("keyup", rootKeyUp);
+    harness.root.addEventListener("beforeinput", rootBeforeInput);
+
+    for (const key of ["ArrowDown", "Tab", "Enter"]) {
+      const down = harness.dispatch(key, false, harness.root);
+      expect(down.defaultPrevented).withContext(`${key}:keydown`).toBeTrue();
+      const up = new KeyboardEvent("keyup", {
+        key,
+        bubbles: true,
+        cancelable: true,
+      });
+      harness.root.dispatchEvent(up);
+      expect(up.defaultPrevented).withContext(`${key}:keyup`).toBeTrue();
+    }
+
+    expect(rootKeyDown).not.toHaveBeenCalled();
+    expect(rootKeyUp).not.toHaveBeenCalled();
+    expect(rootBeforeInput).not.toHaveBeenCalled();
+    expect(selection.focusNode).toBe(text);
+    expect(selection.focusOffset).toBe(text.length);
+    expect(
+      harness.plugin.doc.selection.setSuppressRecalculate,
+    ).toHaveBeenCalledWith(true);
+
+    const driftTarget = document.createTextNode("drift");
+    harness.root.append(driftTarget);
+    const driftRange = document.createRange();
+    driftRange.setStart(driftTarget, 0);
+    driftRange.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(driftRange);
+    document.dispatchEvent(new Event("selectionchange"));
+    expect(harness.block.setInlineRange).toHaveBeenCalledWith(5);
+    harness.destroy();
+  });
+
+  it("swallows the Enter event tail after selection closes the picker on keydown", () => {
+    const harness = createHarness("emoji");
+    harness.search.focus();
+    harness.selectActive.and.callFake(() => {
+      harness.close$.next();
+      return true;
+    });
+    const leaked: string[] = [];
+    for (const type of ["keydown", "keypress", "keyup", "beforeinput"]) {
+      document.body.addEventListener(type, () => leaked.push(type), {once: true});
+    }
+
+    expect(harness.dispatch("Enter").defaultPrevented).toBeTrue();
+    const press = new KeyboardEvent("keypress", {
+      key: "Enter",
+      bubbles: true,
+      cancelable: true,
+    });
+    harness.search.dispatchEvent(press);
+    const beforeInput = new InputEvent("beforeinput", {
+      inputType: "insertParagraph",
+      bubbles: true,
+      cancelable: true,
+    });
+    harness.search.dispatchEvent(beforeInput);
+    const up = new KeyboardEvent("keyup", {
+      key: "Enter",
+      bubbles: true,
+      cancelable: true,
+    });
+    harness.search.dispatchEvent(up);
+
+    expect(press.defaultPrevented).toBeTrue();
+    expect(beforeInput.defaultPrevented).toBeTrue();
+    expect(up.defaultPrevented).toBeTrue();
+    expect(leaked).toEqual([]);
     harness.destroy();
   });
 });

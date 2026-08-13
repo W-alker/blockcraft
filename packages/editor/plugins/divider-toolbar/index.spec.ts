@@ -55,6 +55,7 @@ describe("DividerExtensionPlugin delayed toolbar", () => {
 
   afterEach(() => {
     document.querySelectorAll("[data-divider-toolbar-test]").forEach(element => element.remove());
+    document.querySelectorAll("[data-divider-color-picker-test]").forEach(element => element.remove());
   });
 
   it("selects the divider itself on primary mouseDown", () => {
@@ -148,6 +149,57 @@ describe("DividerExtensionPlugin delayed toolbar", () => {
     expect(hostElement.classList.contains("divider-toolbar-active")).toBeTrue();
     plugin.destroy();
     overlayElement.remove();
+  });
+
+  it("keeps the toolbar while its open CSES color palette owns focus", () => {
+    const {plugin, selection$, dividerBlock, hostElement} = makeHarness();
+    const {overlayElement, dispose} = attachOpenToolbar(plugin, dividerBlock);
+    const colorPicker = document.createElement("cs-color-picker");
+    colorPicker.classList.add("cs-color-picker-open");
+    overlayElement.appendChild(colorPicker);
+    const palettePane = document.createElement("div");
+    palettePane.className = "cs-color-picker-overlay-pane";
+    palettePane.setAttribute("data-divider-color-picker-test", "true");
+    const palette = document.createElement("section");
+    palette.className = "cs-color-picker-panel";
+    const swatch = document.createElement("button");
+    palette.appendChild(swatch);
+    palettePane.appendChild(palette);
+    document.body.appendChild(palettePane);
+    swatch.focus();
+    plugin.init();
+
+    selection$.next(null);
+
+    expect(dispose).not.toHaveBeenCalled();
+    expect(hostElement.classList.contains("divider-toolbar-active")).toBeTrue();
+    plugin.destroy();
+    overlayElement.remove();
+    palettePane.remove();
+  });
+
+  it("does not retain the toolbar for an unrelated CSES color palette", () => {
+    const {plugin, selection$, dividerBlock, hostElement} = makeHarness();
+    const {overlayElement, dispose} = attachOpenToolbar(plugin, dividerBlock);
+    const palettePane = document.createElement("div");
+    palettePane.className = "cs-color-picker-overlay-pane";
+    palettePane.setAttribute("data-divider-color-picker-test", "true");
+    const palette = document.createElement("section");
+    palette.className = "cs-color-picker-panel";
+    const swatch = document.createElement("button");
+    palette.appendChild(swatch);
+    palettePane.appendChild(palette);
+    document.body.appendChild(palettePane);
+    swatch.focus();
+    plugin.init();
+
+    selection$.next(null);
+
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(hostElement.classList.contains("divider-toolbar-active")).toBeFalse();
+    overlayElement.remove();
+    palettePane.remove();
+    plugin.destroy();
   });
 
   it("keeps an open toolbar for the active divider selection while the overlay owns focus", () => {

@@ -162,6 +162,8 @@ Read `themes/base.scss` and `themes/variables.scss` for the current variable lis
 --bc-selection-color
 --bc-block-background-color         // current block's persisted backColor
 --bc-block-border-color             // current block's persisted borderColor
+--bc-render-unit-background-color   // content region's persisted backColor
+--bc-render-unit-border-color       // content region's persisted borderColor
 --bc-solid-block-background-opacity // default 82%; solid block surface opacity
 
 // Border
@@ -189,9 +191,16 @@ accent bar and does not add a rectangular host outline.
 
 Non-editable blocks do not receive the common variables or state attributes,
 even if an older snapshot contains these props. A block-specific compatibility
-surface such as Callout may continue consuming its own legacy variable.
+surface such as Callout may continue consuming its own legacy variable. The
+bundled `render-unit` content region deliberately owns
+`--bc-render-unit-background-color` and `--bc-render-unit-border-color`: its
+fill uses the shared solid-surface opacity, while its 1px inner outline does not
+change region geometry. Live blocks and Snapshot Viewer shells project the same
+opaque props into these variables; `transparent`, empty and missing values
+render as no visible override.
 
-Snapshot Viewer creates the same variables and attributes on its block shells.
+Snapshot Viewer creates the same common or block-specific variables and
+attributes on its block shells.
 Replacement block components that extend `BaseBlockComponent` receive the live
 projection automatically; themes should consume the variables instead of
 writing opaque inline backgrounds.

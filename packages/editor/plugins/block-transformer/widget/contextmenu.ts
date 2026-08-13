@@ -16,12 +16,18 @@ import { debounce, deltaToString, sliceDelta } from "../../../global";
 import {isSelectionAlive} from "../../../framework/modules/selection/liveness";
 import type {SlashMenuItem} from "../command";
 import {createSlashSearchIndex, matchesSlashSearch} from "../search";
+import {
+  installBlockTransformerKeyboardCapture,
+  isSlashMenuNavigationKey,
+  normalizeBlockTransformerNavigationKey,
+  type BlockTransformerKeyboardCapture,
+} from "../keyboard-routing";
 
 // 导航后把光标"钉"在原块里的时间窗口（ms）。WKWebView/Tauri 下 AppKit 的
 // moveUp:/moveDown: 可能比任何 sync/microtask/rAF 都晚才把 DOM caret 拽走，
 // 所以不再用固定时序补偿，而是在这个窗口内监听 selectionchange，等真正的
 // 移动发生时再纠正，与底层 IPC 时序解耦。
-const NAV_PIN_WINDOW_MS = 150;
+const NAV_PIN_WINDOW_MS = 300;
 
 @Component({
   selector: "block-transformer-contextmenu",
@@ -122,6 +128,7 @@ export class BlockTransformContextMenu {
   private navTextLength = 0;
   // 一次性护栏，避免宿主桥接层重复派发回车时执行两次命令。
   private _consumed = false;
+  private keyboardCapture?: BlockTransformerKeyboardCapture;
 
   constructor(
     public readonly cdr: ChangeDetectorRef,
@@ -167,10 +174,22 @@ export class BlockTransformContextMenu {
 
     this.activeBlock.yText.observe(textObserver);
 
-    document.addEventListener("keydown", this.handleRootKeydown, true);
+    const ownerDocument = this.activeBlock.containerElement.ownerDocument;
+    this.keyboardCapture = installBlockTransformerKeyboardCapture({
+      ownerDocument,
+      elements: [
+        this.activeBlock.containerElement,
+        this.host.nativeElement,
+        this.doc.root?.hostElement ?? this.activeBlock.containerElement,
+      ],
+      accepts: isSlashMenuNavigationKey,
+      isComposing: () => this.doc.event.status.isComposing,
+      onKey: key => this.handleEditorKey(key),
+    });
 
     this.destroyRef.onDestroy(() => {
-      document.removeEventListener("keydown", this.handleRootKeydown, true);
+      this.keyboardCapture?.close();
+      this.keyboardCapture = undefined;
       this.activeBlock.yText?.unobserve(textObserver);
       if (this.suppressTimerId !== null) {
         clearTimeout(this.suppressTimerId);
@@ -210,11 +229,17 @@ export class BlockTransformContextMenu {
 
   private handleRootKeydown = (event: KeyboardEvent) => {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
-    if (!this.handleEditorKey(event.key)) return;
+    if (!this.canHandleMenuKeydown()) return;
+    const navigationKey = normalizeBlockTransformerNavigationKey(
+      event.key,
+      event.keyCode,
+    );
+    if (!navigationKey || !isSlashMenuNavigationKey(navigationKey)) return;
 
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation?.();
+    this.handleEditorKey(navigationKey);
   };
 
   private canHandleMenuKeydown() {
@@ -366,13 +391,19 @@ export class BlockTransformContextMenu {
   private _armCaretGuard() {
     if (this.caretGuardArmed) return;
     this.caretGuardArmed = true;
-    document.addEventListener("selectionchange", this._onSelectionDrift);
+    this.activeBlock.containerElement.ownerDocument.addEventListener(
+      "selectionchange",
+      this._onSelectionDrift,
+    );
   }
 
   private _disarmCaretGuard() {
     if (!this.caretGuardArmed) return;
     this.caretGuardArmed = false;
-    document.removeEventListener("selectionchange", this._onSelectionDrift);
+    this.activeBlock.containerElement.ownerDocument.removeEventListener(
+      "selectionchange",
+      this._onSelectionDrift,
+    );
   }
 
   private _onSelectionDrift = () => {
@@ -400,7 +431,7 @@ export class BlockTransformContextMenu {
 
   /** 当前 DOM 折叠光标是否恰好落在 activeBlock 的 `offset` 处。 */
   private _caretIsAt(offset: number): boolean {
-    const dom = document.getSelection();
+    const dom = this.activeBlock.containerElement.ownerDocument.getSelection();
     if (!dom || !dom.isCollapsed || !dom.focusNode) return false;
     const container = this.activeBlock?.containerElement;
     if (!container || !container.contains(dom.focusNode)) return false;

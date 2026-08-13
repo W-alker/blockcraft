@@ -358,9 +358,16 @@ new BookmarkBlockExtensionPlugin();
 
 ## CalloutToolbarPlugin
 
-> `plugins/callout-toolbar/` — Toolbar for callout blocks.
+> `plugins/callout-toolbar/` — Shared appearance toolbar for Callout and
+> `render-unit` content-region blocks.
 
-Shows a floating `CalloutBlockToolbar` centered above/below a callout block when the cursor is inside one of its child blocks. Tracks block resize via `ResizeObserver` (100ms throttle).
+Shows one floating container toolbar centered above/below a supported block
+when the cursor is inside a direct editable child. A whole-block `render-unit`
+selection also opens it, which keeps an empty content region configurable.
+Callout exposes text, background and border colors; `render-unit` exposes only
+background and border colors and never cascades the values to child blocks.
+The plugin tracks block resize via one throttled `ResizeObserver` (100ms) while
+the overlay is open.
 
 The Callout prefix action opens the shared CSES EmojiPicker with an explicit
 `zh-CN` locale and persists the selected native Emoji in `props.prefix`.
@@ -375,10 +382,10 @@ new CalloutToolbarPlugin();
 
 ### Public API
 
-| Method                      | Description                                 |
-| --------------------------- | ------------------------------------------- |
-| `openToolbar(calloutBlock)` | Programmatically open toolbar for a callout |
-| `closeToolbar()`            | Dismiss the toolbar                         |
+| Method                        | Description                                                    |
+| ----------------------------- | -------------------------------------------------------------- |
+| `openToolbar(containerBlock)` | Open for a mounted `callout` or `render-unit` block             |
+| `closeToolbar()`              | Dismiss the toolbar and disconnect its block-owned observation |
 
 ---
 

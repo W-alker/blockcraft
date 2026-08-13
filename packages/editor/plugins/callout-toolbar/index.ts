@@ -14,7 +14,7 @@ export class CalloutToolbarPlugin extends DocPlugin {
 
   private _closeToolbar$ = new Subject<void>()
 
-  private _activeCalloutBlock: BlockCraft.BlockComponent | null = null
+  private _activeContainerBlock: BlockCraft.BlockComponent | null = null
 
   private _isReadonly(block: BlockCraft.BlockComponent) {
     return this.doc.readonlyManager?.isReadonly(block) ?? this.doc.isReadonly
@@ -25,52 +25,48 @@ export class CalloutToolbarPlugin extends DocPlugin {
     this._sub.add(this.doc.selection.selectionChange$.subscribe(selection => {
       this.clearTimer()
 
+      const containerBlock = this.resolveAppearanceContainer(selection)
+
       if (
         this.doc.isReadonly ||
         !selection ||
         !isSelectionAlive(selection as any, this.doc) ||
-        !selection.isInSameBlock ||
-        selection.start.type !== 'text' ||
-        selection.end.type !== 'text' ||
-        selection.firstBlock.parentBlock?.flavour !== 'callout'
+        !containerBlock
       ) {
         this._overlayRef && this.closeToolbar()
         return
       }
 
-      const calloutBlock = selection.firstBlock.parentBlock
-      if (!this._isBlockAlive(calloutBlock) || this._isReadonly(calloutBlock)) {
+      if (!this._isBlockAlive(containerBlock) || this._isReadonly(containerBlock)) {
         this._overlayRef && this.closeToolbar()
         return
       }
 
-      if (this._overlayRef && this._activeCalloutBlock === calloutBlock) return;
+      if (this._overlayRef && this._activeContainerBlock === containerBlock) return;
       this.closeToolbar()
 
       this._timer = setTimeout(() => {
         this._timer = null
-        if (this._overlayRef && this._activeCalloutBlock === calloutBlock) return;
+        if (this._overlayRef && this._activeContainerBlock === containerBlock) return;
         const currentSelection = this.doc.selection.value
+        const currentContainerBlock = this.resolveAppearanceContainer(currentSelection)
         if (
           !currentSelection ||
           !isSelectionAlive(currentSelection as any, this.doc) ||
-          !currentSelection.isInSameBlock ||
-          currentSelection.start.type !== 'text' ||
-          currentSelection.end.type !== 'text' ||
-          currentSelection.firstBlock.parentBlock?.id !== calloutBlock.id ||
-          !this._isBlockAlive(calloutBlock) ||
-          this._isReadonly(calloutBlock)
+          currentContainerBlock?.id !== containerBlock.id ||
+          !this._isBlockAlive(containerBlock) ||
+          this._isReadonly(containerBlock)
         ) {
           return
         }
 
-        this.openToolbar(calloutBlock)
+        this.openToolbar(containerBlock)
       }, 200)
     }))
     const stateChange$ = this.doc.readonlyManager?.stateChange$
     if (stateChange$) {
       this._sub.add(stateChange$.subscribe(() => {
-        const activeBlock = this._activeCalloutBlock
+        const activeBlock = this._activeContainerBlock
         if (activeBlock && (!this._isBlockAlive(activeBlock) || this._isReadonly(activeBlock))) {
           this.closeToolbar()
         }
@@ -85,19 +81,20 @@ export class CalloutToolbarPlugin extends DocPlugin {
     }
   }
 
-  openToolbar = (calloutBlock: BlockCraft.BlockComponent) => {
-    if (this._overlayRef && this._activeCalloutBlock === calloutBlock) return;
-    if (!this._isBlockAlive(calloutBlock) || this._isReadonly(calloutBlock)) return;
+  openToolbar = (containerBlock: BlockCraft.BlockComponent) => {
+    if (!this.isAppearanceContainer(containerBlock)) return;
+    if (this._overlayRef && this._activeContainerBlock === containerBlock) return;
+    if (!this._isBlockAlive(containerBlock) || this._isReadonly(containerBlock)) return;
 
-    this._activeCalloutBlock = calloutBlock
+    this._activeContainerBlock = containerBlock
 
     const resizeObs = new ResizeObserver(throttle(() => {
       this._overlayRef?.updatePosition()
     }, 100))
-    resizeObs.observe(calloutBlock.hostElement)
+    resizeObs.observe(containerBlock.hostElement)
 
     const { componentRef, overlayRef } = this.doc.overlayService.createConnectedOverlay({
-      target: calloutBlock,
+      target: containerBlock,
       component: CalloutBlockToolbar,
       positions: [
         getPositionWithOffset("top-center", 0, 8),
@@ -107,10 +104,10 @@ export class CalloutToolbarPlugin extends DocPlugin {
       this.closeToolbar()
       resizeObs.disconnect()
     })
-    componentRef.setInput('calloutBlock', calloutBlock)
+    componentRef.setInput('containerBlock', containerBlock)
     this._overlayRef = overlayRef
 
-    calloutBlock.onDestroy$?.pipe(takeUntil(this._closeToolbar$)).subscribe(() => {
+    containerBlock.onDestroy$?.pipe(takeUntil(this._closeToolbar$)).subscribe(() => {
       this.closeToolbar()
     })
   }
@@ -120,7 +117,7 @@ export class CalloutToolbarPlugin extends DocPlugin {
     this.clearTimer()
     this._overlayRef?.dispose()
     this._overlayRef = undefined
-    this._activeCalloutBlock = null
+    this._activeContainerBlock = null
   }
 
   destroy() {
@@ -134,5 +131,35 @@ export class CalloutToolbarPlugin extends DocPlugin {
     } catch {
       return false
     }
+  }
+
+  private resolveAppearanceContainer(
+    selection: typeof this.doc.selection.value,
+  ): BlockCraft.BlockComponent | null {
+    if (!selection || !selection.isInSameBlock) return null
+
+    try {
+      if (selection.start.type === 'text' && selection.end.type === 'text') {
+        const parent = selection.firstBlock.parentBlock
+        return parent && this.isAppearanceContainer(parent)
+          ? parent
+          : null
+      }
+
+      if (selection.start.type === 'selected' && selection.end.type === 'selected') {
+        const selectedBlock = selection.firstBlock
+        return selectedBlock.flavour === 'render-unit' ? selectedBlock : null
+      }
+    } catch {
+      return null
+    }
+
+    return null
+  }
+
+  private isAppearanceContainer(
+    block: BlockCraft.BlockComponent,
+  ): boolean {
+    return block.flavour === 'callout' || block.flavour === 'render-unit'
   }
 }

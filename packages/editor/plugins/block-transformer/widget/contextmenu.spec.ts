@@ -139,6 +139,27 @@ describe("BlockTransformContextMenu keyboard navigation", () => {
     expect(component.selectDown).toHaveBeenCalled();
   });
 
+  it("normalizes a legacy WebKit ArrowDown key before consuming it", () => {
+    const { component } = createComponent({
+      collapsed: true,
+      start: { type: "text" },
+      firstBlock: { id: "block-1" },
+    });
+    spyOn(component, "selectDown");
+    const preventDefault = jasmine.createSpy("preventDefault");
+
+    (component as any).handleRootKeydown({
+      key: "Unidentified",
+      keyCode: 40,
+      preventDefault,
+      stopPropagation: jasmine.createSpy("stopPropagation"),
+      stopImmediatePropagation: jasmine.createSpy("stopImmediatePropagation"),
+    } as unknown as KeyboardEvent);
+
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+    expect(component.selectDown).toHaveBeenCalledTimes(1);
+  });
+
   it("ignores immediate selection drift right after keyboard navigation", () => {
     const { component } = createComponent({
       collapsed: true,

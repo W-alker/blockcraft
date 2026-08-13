@@ -34,7 +34,7 @@ This index covers all 26 built-in plugins. Pick the category file that matches y
 | `ShapeToolbarPlugin` | `toolbar` | none (zero-config) |
 | `WordArtToolbarPlugin` | `toolbar` | none (zero-config) |
 | `BookmarkBlockExtensionPlugin` | `toolbar` | none (zero-config) |
-| `CalloutToolbarPlugin` | `toolbar` | none (zero-config) |
+| `CalloutToolbarPlugin` | `toolbar` | none; handles Callout and `render-unit` appearance |
 | `DividerExtensionPlugin` | `toolbar` | none (zero-config) |
 | `EmbedFrameExtensionPlugin` | `toolbar` | none (zero-config) |
 | `FormulaBlockExtensionPlugin` | `toolbar` | none (zero-config) |

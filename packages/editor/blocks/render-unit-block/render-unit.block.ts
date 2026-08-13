@@ -18,6 +18,8 @@ import {RenderUnitBlockModel} from './index'
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     'data-bc-render-unit': 'true',
+    '[style.--bc-render-unit-background-color]': 'props.backColor',
+    '[style.--bc-render-unit-border-color]': 'props.borderColor',
   },
 })
 export class RenderUnitBlockComponent extends BaseBlockComponent<RenderUnitBlockModel> {

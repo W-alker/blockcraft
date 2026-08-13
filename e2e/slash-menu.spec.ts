@@ -32,6 +32,21 @@ async function createEmptyParagraphWithCaret(page: Page) {
   }, editorSelector);
 }
 
+async function editorSelectionSnapshot(page: Page) {
+  return page.evaluate(() => {
+    const selection = document.getSelection();
+    const focusNode = selection?.focusNode ?? null;
+    const element = focusNode instanceof Element
+      ? focusNode
+      : focusNode?.parentElement ?? null;
+    return {
+      blockId: element?.closest<HTMLElement>("[data-block-id]")?.dataset["blockId"] ?? null,
+      focusOffset: selection?.focusOffset ?? -1,
+      activeTag: document.activeElement?.tagName ?? null,
+    };
+  });
+}
+
 test("slash menu supports arrow navigation and Chinese pinyin-initial search", async ({page}) => {
   await initialize(page);
   const blockId = await createEmptyParagraphWithCaret(page);
@@ -96,3 +111,97 @@ test("slash menu supports arrow navigation and Chinese pinyin-initial search", a
     `${editorSelector} .paragraph-block[data-block-id="${blockId}"]`,
   )).toHaveCount(0);
 });
+
+for (const picker of [
+  {
+    query: "emoji",
+    panel: ".cs-emoji-picker__panel",
+    search: ".cs-emoji-picker__search",
+    option: ".cs-emoji-picker__option",
+    active: ".cs-emoji-picker__option--keyboard-active",
+  },
+  {
+    query: "icon",
+    panel: ".cs-icon-picker__panel",
+    search: ".cs-icon-picker__search input",
+    option: ".cs-icon-picker__option",
+    active: ".cs-icon-picker__option--keyboard-active",
+  },
+] as const) {
+  test(`slash ${picker.query} picker owns arrows, Tab, and Enter`, async ({page}) => {
+    await initialize(page);
+    await createEmptyParagraphWithCaret(page);
+
+    await page.keyboard.type("/");
+    const menu = page.locator("block-transformer-contextmenu");
+    const command = menu.getByRole("option", {
+      name: new RegExp(`^${picker.query}`, "i"),
+    });
+    await expect(command).toBeVisible();
+    await command.click();
+
+    const panel = page.locator(picker.panel);
+    const search = panel.locator(picker.search);
+    await expect(panel).toBeVisible();
+    await expect(search).toBeVisible();
+    await expect(panel.locator(picker.option).first()).toBeVisible();
+    await search.focus();
+
+    await page.keyboard.press("ArrowDown");
+    await expect(panel.locator(picker.active)).toHaveCount(1);
+
+    await page.keyboard.press("Tab");
+    await expect(search).toBeFocused();
+    await expect(panel.locator(picker.active)).toHaveCount(1);
+
+    await page.keyboard.press("Enter");
+    await expect(panel).toHaveCount(0);
+  });
+
+  test(`slash ${picker.query} picker owns editor-root keys and their event tail`, async ({page}) => {
+    await page.addInitScript(() => {
+      const types = ["keydown", "keypress", "keyup", "beforeinput"];
+      (window as any).__pickerOuterEvents = [];
+      for (const type of types) {
+        window.addEventListener(type, event => {
+          const keyboard = event as KeyboardEvent;
+          const input = event as InputEvent;
+          (window as any).__pickerOuterEvents.push({
+            type,
+            key: keyboard.key ?? null,
+            inputType: input.inputType ?? null,
+          });
+        }, false);
+      }
+    });
+    await initialize(page);
+    const blockId = await createEmptyParagraphWithCaret(page);
+    await page.keyboard.type("/");
+    const menu = page.locator("block-transformer-contextmenu");
+    await menu.getByRole("option", {
+      name: new RegExp(`^${picker.query}`, "i"),
+    }).click();
+
+    const panel = page.locator(picker.panel);
+    await expect(panel.locator(picker.option).first()).toBeVisible();
+    await page.evaluate(() => ((window as any).__pickerOuterEvents = []));
+    const before = await editorSelectionSnapshot(page);
+    expect(before.blockId).toBe(blockId);
+
+    await page.keyboard.press("ArrowDown");
+    const afterArrow = await editorSelectionSnapshot(page);
+    expect(afterArrow.blockId).toBe(before.blockId);
+    expect(afterArrow.focusOffset).toBe(before.focusOffset);
+    await expect(panel.locator(picker.active)).toHaveCount(1);
+
+    await page.keyboard.press("Tab");
+    const afterTab = await editorSelectionSnapshot(page);
+    expect(afterTab.blockId).toBe(before.blockId);
+    expect(afterTab.focusOffset).toBe(before.focusOffset);
+
+    await page.keyboard.press("Enter");
+    await expect(panel).toHaveCount(0);
+    const leaked = await page.evaluate(() => (window as any).__pickerOuterEvents);
+    expect(leaked).toEqual([]);
+  });
+}

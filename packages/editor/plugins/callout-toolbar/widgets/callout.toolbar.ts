@@ -31,40 +31,49 @@ import {
 })
 export class CalloutBlockToolbar {
   @Input()
-  calloutBlock!: BlockCraft.IBlockComponents['callout']
+  containerBlock!: BlockCraft.IBlockComponents['callout'] | BlockCraft.IBlockComponents['render-unit']
 
-  colorGroups: ColorGroup[] = [
-    {
-      title: '字体颜色',
-      type: 'color',
-      list: BUILTIN_COLOR_LIST,
-      templateUse: 'font'
-    },
-    {
-      title: '背景颜色',
-      type: 'backColor',
-      list: BUILTIN_BG_COLOR_LIST,
-      templateUse: 'fill'
-    },
-    {
-      title: '边框颜色',
-      type: 'borderColor',
-      list: BUILTIN_BG_COLOR_LIST,
-      templateUse: 'fill'
-    }
-  ]
+  colorGroups: ColorGroup[] = []
   activeColors: Record<string, string | null> = {}
 
   ngOnInit() {
+    const surfaceGroups: ColorGroup[] = [
+      {
+        title: '背景颜色',
+        type: 'backColor',
+        list: BUILTIN_BG_COLOR_LIST,
+        templateUse: 'fill'
+      },
+      {
+        title: '边框颜色',
+        type: 'borderColor',
+        list: BUILTIN_BG_COLOR_LIST,
+        templateUse: 'fill'
+      }
+    ]
+    this.colorGroups = this.containerBlock.flavour === 'callout'
+      ? [{
+        title: '字体颜色',
+        type: 'color',
+        list: BUILTIN_COLOR_LIST,
+        templateUse: 'font'
+      }, ...surfaceGroups]
+      : surfaceGroups
+
+    const textColor = this.containerBlock.props['color']
     this.activeColors = {
-      color: this.calloutBlock.props.color,
-      backColor: this.calloutBlock.props.backColor,
-      borderColor: this.calloutBlock.props.borderColor
+      ...(this.containerBlock.flavour === 'callout' && typeof textColor === 'string'
+        ? {color: textColor}
+        : {}),
+      backColor: this.containerBlock.props.backColor ?? null,
+      borderColor: this.containerBlock.props.borderColor ?? null
     }
   }
 
   onColorPicked($event: { type: string; color: string | null }) {
-    this.calloutBlock.updateProps({
+    if (!this.colorGroups.some(group => group.type === $event.type)) return
+
+    this.containerBlock.updateProps({
       [`${$event.type}`]: $event.color
     })
     this.activeColors = {

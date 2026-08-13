@@ -48,6 +48,10 @@ import {
   SlashMenuItem,
 } from "./command";
 import {formatHotKeyHint, resolveSlashSearchAlias} from "./presentation";
+import {
+  installBlockTransformerKeyboardCapture,
+  normalizeBlockTransformerNavigationKey,
+} from "./keyboard-routing";
 
 const ALLOWED_HEADING_FLAVOURS: BlockCraft.BlockFlavour[] = [
   "paragraph",
@@ -61,7 +65,7 @@ const GROUP_LABELS = {
   embed: "第三方嵌入",
 } as const;
 
-const EMOJI_NAV_PIN_WINDOW_MS = 150;
+const EMOJI_NAV_PIN_WINDOW_MS = 500;
 
 type ActivePickerSession = {
   close$: Subject<void>;
@@ -258,13 +262,20 @@ export class BlockTransformerPlugin extends DocPlugin {
     const state = evt.get("keyboardState");
     const raw = state.raw;
     if (raw.metaKey || raw.ctrlKey || raw.altKey) return false;
-    if (this.activePickerSession?.handleEditorKey(raw.key, raw)) {
+    const navigationKey = normalizeBlockTransformerNavigationKey(
+      raw.key,
+      raw.keyCode,
+    );
+    if (
+      navigationKey &&
+      this.activePickerSession?.handleEditorKey(navigationKey, raw)
+    ) {
       evt.preventDefault();
       raw.stopPropagation?.();
       raw.stopImmediatePropagation?.();
       return true;
     }
-    if (this.activeMenu?.handleEditorKey(raw.key)) {
+    if (navigationKey && this.activeMenu?.handleEditorKey(navigationKey)) {
       evt.preventDefault();
       raw.stopPropagation?.();
       raw.stopImmediatePropagation?.();
@@ -801,7 +812,7 @@ export class BlockTransformerPlugin extends DocPlugin {
     this.attachCommandPickerKeyboardSession(
       close$,
       componentRef.instance,
-      context.block.containerElement,
+      context.block,
       componentRef.location.nativeElement,
     );
     outputToObservable(componentRef.instance.csEmojiSelect)
@@ -976,16 +987,18 @@ export class BlockTransformerPlugin extends DocPlugin {
             keyboardNavigation = true;
             pinEditorCaret();
           }
-          return handled;
+          return true;
         }
         if (key === "Enter") {
           if (!keyboardNavigation) {
-            if (!picker.moveActive("first", { preserveFocus: true })) return false;
-            keyboardNavigation = true;
+            keyboardNavigation = picker.moveActive("first", {
+              preserveFocus: true,
+            });
           }
-          return picker.selectActive(
+          picker.selectActive(
             event ?? new KeyboardEvent("keydown", { key: "Enter" }),
           );
+          return true;
         }
         const handled = picker.moveActive(direction!, {
           preserveFocus: true,
@@ -994,25 +1007,20 @@ export class BlockTransformerPlugin extends DocPlugin {
           keyboardNavigation = true;
           pinEditorCaret();
         }
-        return handled;
+        return true;
       },
     };
-    const handleEditorKeydownCapture = (event: KeyboardEvent) => {
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-      const handled = session.handleEditorKey(event.key, event);
-      if (!handled) {
-        releaseCaretPin();
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation?.();
-    };
-    ownerDocument.addEventListener(
-      "keydown",
-      handleEditorKeydownCapture,
-      true,
-    );
+    const keyboardCapture = installBlockTransformerKeyboardCapture({
+      ownerDocument,
+      elements: [
+        block.containerElement,
+        this.doc.root?.hostElement ?? block.containerElement,
+      ],
+      accepts: () => true,
+      isComposing: () => this.doc.event.status.isComposing,
+      onKey: (key, event) => session.handleEditorKey(key, event),
+      onTextKeyDown: releaseCaretPin,
+    });
     this.activePickerSession = session;
 
     const textObserver = () => scheduleRefresh();
@@ -1029,11 +1037,7 @@ export class BlockTransformerPlugin extends DocPlugin {
       .subscribe(() => close$.next());
     close$.pipe(take(1)).subscribe(() => {
       refreshSeq++;
-      ownerDocument.removeEventListener(
-        "keydown",
-        handleEditorKeydownCapture,
-        true,
-      );
+      keyboardCapture.close();
       releaseCaretPin();
       try {
         block.yText.unobserve(textObserver);
@@ -1108,14 +1112,92 @@ export class BlockTransformerPlugin extends DocPlugin {
   private attachCommandPickerKeyboardSession(
     close$: Subject<void>,
     picker: KeyboardNavigablePicker,
-    sourceElement: HTMLElement,
+    sourceBlock: EditableBlockComponent,
     pickerElement: HTMLElement,
   ) {
     this.closePickerSession();
 
     let keyboardNavigation = false;
+    let suppressingSelectionRecalculate = false;
+    let caretGuardArmed = false;
+    let navPinTimer: ReturnType<typeof setTimeout> | null = null;
     let session!: ActivePickerSession;
+    const sourceElement = sourceBlock.containerElement;
     const ownerDocument = sourceElement.ownerDocument;
+    const editorOwnsFocus = () => {
+      const activeElement = ownerDocument.activeElement;
+      const rootElement = this.doc.root?.hostElement;
+      if (
+        activeElement && rootElement &&
+        (activeElement === rootElement || rootElement.contains(activeElement))
+      ) return true;
+      const focusNode = ownerDocument.getSelection()?.focusNode;
+      return !!focusNode && sourceElement.contains(focusNode) &&
+        (!activeElement || !pickerElement.contains(activeElement));
+    };
+    const caretIsAt = (offset: number) => {
+      const dom = ownerDocument.getSelection();
+      if (!dom || !dom.isCollapsed || !dom.focusNode) return false;
+      if (!sourceElement.contains(dom.focusNode)) return false;
+      try {
+        return sourceBlock.runtime.domPointToModel(
+          dom.focusNode,
+          dom.focusOffset,
+        ) === offset;
+      } catch {
+        return true;
+      }
+    };
+    const restoreEditorCaret = () => {
+      const selection = this.doc.selection.value;
+      if (
+        !selection ||
+        !isSelectionAlive(selection as any, this.doc) ||
+        !selection.collapsed ||
+        selection.start.type !== "text" ||
+        selection.firstBlock?.id !== sourceBlock.id
+      ) return;
+      if (!caretIsAt(selection.start.offset)) {
+        sourceBlock.setInlineRange(selection.start.offset);
+      }
+    };
+    const handleCaretDrift = () => {
+      if (!editorOwnsFocus()) {
+        releaseCaretPin();
+        return;
+      }
+      if (!this.doc.event.status.isComposing) restoreEditorCaret();
+    };
+    const releaseCaretPin = () => {
+      if (navPinTimer !== null) {
+        clearTimeout(navPinTimer);
+        navPinTimer = null;
+      }
+      if (caretGuardArmed) {
+        caretGuardArmed = false;
+        ownerDocument.removeEventListener("selectionchange", handleCaretDrift);
+      }
+      if (suppressingSelectionRecalculate) {
+        suppressingSelectionRecalculate = false;
+        this.doc.selection.setSuppressRecalculate(false);
+      }
+    };
+    const pinEditorCaret = () => {
+      if (!editorOwnsFocus()) return;
+      if (!suppressingSelectionRecalculate) {
+        suppressingSelectionRecalculate = true;
+        this.doc.selection.setSuppressRecalculate(true);
+      }
+      restoreEditorCaret();
+      if (!caretGuardArmed) {
+        caretGuardArmed = true;
+        ownerDocument.addEventListener("selectionchange", handleCaretDrift);
+      }
+      if (navPinTimer !== null) clearTimeout(navPinTimer);
+      navPinTimer = setTimeout(releaseCaretPin, EMOJI_NAV_PIN_WINDOW_MS);
+    };
+    const handlePickerFocusIn = () => releaseCaretPin();
+    pickerElement.addEventListener("focusin", handlePickerFocusIn, true);
     session = {
       close$,
       handleEditorKey: (key, event) => {
@@ -1130,40 +1212,44 @@ export class BlockTransformerPlugin extends DocPlugin {
             {preserveFocus: true},
           );
           if (handled) keyboardNavigation = true;
-          return handled;
+          pinEditorCaret();
+          return true;
         }
         if (key === "Enter") {
           if (!keyboardNavigation) {
-            if (!picker.moveActive("first", {preserveFocus: true})) return false;
-            keyboardNavigation = true;
+            keyboardNavigation = picker.moveActive("first", {
+              preserveFocus: true,
+            });
           }
-          return picker.selectActive();
+          picker.selectActive();
+          return true;
         }
         const direction = pickerGridDirectionForKey(key);
         if (!direction) return false;
         const handled = picker.moveActive(direction, {preserveFocus: true});
         if (handled) keyboardNavigation = true;
-        return handled;
+        pinEditorCaret();
+        return true;
       },
     };
 
-    const handleKeydownCapture = (event: KeyboardEvent) => {
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-      const target = event.target as Node | null;
-      if (
-        target &&
-        !sourceElement.contains(target) &&
-        !pickerElement.contains(target)
-      ) return;
-      if (!session.handleEditorKey(event.key, event)) return;
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation?.();
-    };
-    ownerDocument.addEventListener("keydown", handleKeydownCapture, true);
+    const keyboardCapture = installBlockTransformerKeyboardCapture({
+      ownerDocument,
+      elements: [
+        sourceElement,
+        pickerElement,
+        this.doc.root?.hostElement ?? sourceElement,
+      ],
+      accepts: () => true,
+      isComposing: () => this.doc.event.status.isComposing,
+      onKey: (key, event) => session.handleEditorKey(key, event),
+      onTextKeyDown: releaseCaretPin,
+    });
     this.activePickerSession = session;
     close$.pipe(take(1)).subscribe(() => {
-      ownerDocument.removeEventListener("keydown", handleKeydownCapture, true);
+      keyboardCapture.close();
+      releaseCaretPin();
+      pickerElement.removeEventListener("focusin", handlePickerFocusIn, true);
       if (this.activePickerSession === session) {
         this.activePickerSession = undefined;
       }
@@ -1192,7 +1278,7 @@ export class BlockTransformerPlugin extends DocPlugin {
     this.attachCommandPickerKeyboardSession(
       close$,
       componentRef.instance,
-      context.block.containerElement,
+      context.block,
       componentRef.location.nativeElement,
     );
     outputToObservable(componentRef.instance.csChange)

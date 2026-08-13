@@ -3,13 +3,13 @@ import {Subject} from "rxjs";
 import {CalloutToolbarPlugin} from "./index";
 
 describe("CalloutToolbarPlugin delayed toolbar", () => {
-  const makeHarness = () => {
+  const makeHarness = (containerFlavour: "callout" | "render-unit" = "callout") => {
     const selection$ = new Subject<any>();
     const readonlyStateChange$ = new Subject<void>();
     const selectionValue = {current: null as any};
     const calloutBlock = {
-      id: "callout-1",
-      flavour: "callout",
+      id: `${containerFlavour}-1`,
+      flavour: containerFlavour,
       hostElement: document.createElement("div"),
       onDestroy$: new Subject<void>(),
     };
@@ -29,6 +29,12 @@ describe("CalloutToolbarPlugin delayed toolbar", () => {
       start: {type: "boundary", index: 0},
       end: {type: "boundary", index: 1},
       firstBlock: textBlock,
+    };
+    const wholeRegionSelection = {
+      isInSameBlock: true,
+      start: {type: "selected"},
+      end: {type: "selected"},
+      firstBlock: calloutBlock,
     };
     const doc = {
       isReadonly: false,
@@ -66,6 +72,7 @@ describe("CalloutToolbarPlugin delayed toolbar", () => {
       calloutBlock,
       calloutSelection,
       calloutBoundarySelection,
+      wholeRegionSelection,
     };
   };
 
@@ -103,6 +110,41 @@ describe("CalloutToolbarPlugin delayed toolbar", () => {
 
     selectionValue.current = calloutSelection;
     selection$.next(calloutSelection);
+    tick(250);
+
+    expect(doc.overlayService.createConnectedOverlay).toHaveBeenCalled();
+    plugin.destroy();
+  }));
+
+  it("reuses the toolbar for text selections inside render-unit blocks", fakeAsync(() => {
+    const {plugin, doc, selection$, selectionValue, calloutSelection} = makeHarness("render-unit");
+    plugin.init();
+
+    selectionValue.current = calloutSelection;
+    selection$.next(calloutSelection);
+    tick(250);
+
+    expect(doc.overlayService.createConnectedOverlay).toHaveBeenCalled();
+    const {componentRef} = doc.overlayService.createConnectedOverlay.calls.mostRecent().returnValue;
+    expect(componentRef.setInput).toHaveBeenCalledWith(
+      "containerBlock",
+      calloutSelection.firstBlock.parentBlock,
+    );
+    plugin.destroy();
+  }));
+
+  it("opens for a whole-block render-unit selection so an empty region remains configurable", fakeAsync(() => {
+    const {
+      plugin,
+      doc,
+      selection$,
+      selectionValue,
+      wholeRegionSelection,
+    } = makeHarness("render-unit");
+    plugin.init();
+
+    selectionValue.current = wholeRegionSelection;
+    selection$.next(wholeRegionSelection);
     tick(250);
 
     expect(doc.overlayService.createConnectedOverlay).toHaveBeenCalled();

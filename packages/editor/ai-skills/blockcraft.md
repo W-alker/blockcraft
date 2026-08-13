@@ -208,6 +208,15 @@ highlights retain priority. Every editable block host receives a 4px radius.
 Blockquote treats `borderColor` specially as the color of its 1px left accent
 bar and draws no rectangular outline.
 
+The bundled non-editable `render-unit` content region persists the same
+`backColor` / `borderColor` field names through its block-specific appearance
+contract. `CalloutToolbarPlugin` reuses its container toolbar for a cursor in a
+direct editable child of either Callout or `render-unit`; a whole-block
+`render-unit` selection also opens it so an empty region remains configurable.
+The region surface exposes background and border only, projects them through
+`--bc-render-unit-background-color` / `--bc-render-unit-border-color`, and uses
+the same 82% solid-surface composition in the live editor and Snapshot Viewer.
+
 `doc.model` is read-only. Use `DocCRUD` / `DocChain` for every mutation. Model
 existence means the YBlock is reachable from the current root; it does not mean
 `doc.vm` has mounted a component. `getBlockById()` keeps its mounted-component
@@ -1136,7 +1145,7 @@ onBold(ctx: UIEventStateContext) { ... }
 | `ImgToolbarPlugin` | `plugins/img-toolbar/` | Block/inline image resize, toolbar actions, and bidirectional conversion |
 | `ShapeToolbarPlugin` | `plugins/shape-toolbar/` | Shape block/inline selection, styling, inline/wrap conversion, placement, drag, resize and rotation |
 | `WordArtToolbarPlugin` | `plugins/word-art-toolbar/` | WordArt block/inline selection, styling, inline/wrap conversion, placement, drag, resize and rotation |
-| `CalloutToolbarPlugin` | `plugins/callout-toolbar/` | Callout color/icon picker |
+| `CalloutToolbarPlugin` | `plugins/callout-toolbar/` | Callout and content-region appearance picker |
 | `DividerExtensionPlugin` | `plugins/divider-toolbar/` | Divider hover toolbar (line/tape/colorful edge style, custom line color, independent length/thickness/opacity, optional text label + typography/alignment/color) |
 | `AttachmentExtensionPlugin` | `plugins/attachment-extension/` | Attachment preview/download UI |
 | `EmbedFrameExtensionPlugin` | `plugins/embed-frame-extension/` | Resize/replace iframe embeds |

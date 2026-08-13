@@ -21,6 +21,14 @@ export function createBlockShell(snapshot: IBlockSnapshot): HTMLElement {
     )
   }
 
+  if (snapshot.flavour === "render-unit") {
+    element.setAttribute("data-bc-render-unit", "true")
+    applyRenderUnitAppearance(
+      element,
+      snapshot.props as Record<string, unknown>,
+    )
+  }
+
   const placement = (snapshot.props as Record<string, unknown> | undefined)?.["placement"]
   if (placement && typeof placement === "object" &&
     (placement as Record<string, unknown>)["mode"] === "absolute") {
@@ -39,6 +47,21 @@ export function createBlockShell(snapshot: IBlockSnapshot): HTMLElement {
   }
 
   return element
+}
+
+function applyRenderUnitAppearance(
+  element: HTMLElement,
+  props: Record<string, unknown>,
+) {
+  const backColor = normalizeAppearanceColor(props["backColor"])
+  if (backColor) {
+    element.style.setProperty("--bc-render-unit-background-color", backColor)
+  }
+
+  const borderColor = normalizeAppearanceColor(props["borderColor"])
+  if (borderColor) {
+    element.style.setProperty("--bc-render-unit-border-color", borderColor)
+  }
 }
 
 function applyBlockAppearance(

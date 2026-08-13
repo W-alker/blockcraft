@@ -78,6 +78,30 @@ describe("SnapshotRenderEngine", () => {
     expect(block.style.getPropertyValue("--bc-block-background-color")).toBe("")
     expect(block.style.getPropertyValue("--bc-block-border-color")).toBe("")
   })
+
+  it("projects and updates render-unit appearance without using the editable-block contract", () => {
+    const host = document.createElement("div")
+    const renderer = createSnapshotRenderer()
+    const region = createRenderUnitFixture("region-1", "#FBF3DB", "#DFAB01")
+
+    renderer.render(host, wrapRoot([region]))
+    const block = host.querySelector<HTMLElement>('[data-block-id="region-1"]')!
+    expect(block.getAttribute("data-bc-render-unit")).toBe("true")
+    expect(block.style.getPropertyValue("--bc-render-unit-background-color"))
+      .toBe("#FBF3DB")
+    expect(block.style.getPropertyValue("--bc-render-unit-border-color"))
+      .toBe("#DFAB01")
+
+    renderer.update(wrapRoot([
+      createRenderUnitFixture("region-1", "#DDEDEA", "transparent"),
+    ]))
+
+    expect(host.querySelector('[data-block-id="region-1"]')).toBe(block)
+    expect(block.style.getPropertyValue("--bc-render-unit-background-color"))
+      .toBe("#DDEDEA")
+    expect(block.style.getPropertyValue("--bc-render-unit-border-color"))
+      .toBe("")
+  })
 })
 
 function createParagraphFixture(id: string, text: string): IBlockSnapshot {
@@ -90,6 +114,21 @@ function createParagraphFixture(id: string, text: string): IBlockSnapshot {
       depth: 0,
     },
     children: [{insert: text}],
+  }
+}
+
+function createRenderUnitFixture(
+  id: string,
+  backColor: string,
+  borderColor: string,
+): IBlockSnapshot {
+  return {
+    id,
+    flavour: "render-unit",
+    nodeType: BlockNodeType.block,
+    meta: {},
+    props: {backColor, borderColor},
+    children: [createParagraphFixture(`${id}-paragraph`, "region content")],
   }
 }
 

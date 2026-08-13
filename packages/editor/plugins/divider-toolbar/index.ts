@@ -52,7 +52,7 @@ export class DividerExtensionPlugin extends DocPlugin {
       // Retain the toolbar only for that null-selection transition. A concrete
       // new editor selection always wins, even if focus has not left the overlay yet.
       if (!selection) {
-        const overlayOwnsFocus = !!this._toolbarRef?.overlayElement?.contains(document.activeElement)
+        const overlayOwnsFocus = this._toolbarOwnsFocus()
         if (overlayOwnsFocus) return
         this._toolbarRef && this.closeToolbar()
         return
@@ -141,6 +141,25 @@ export class DividerExtensionPlugin extends DocPlugin {
     } catch {
       return false
     }
+  }
+
+  private _toolbarOwnsFocus(): boolean {
+    const toolbarElement = this._toolbarRef?.overlayElement
+    const activeElement = toolbarElement?.ownerDocument.activeElement
+    if (!toolbarElement || !(activeElement instanceof Element)) return false
+    if (toolbarElement.contains(activeElement)) return true
+
+    // CSES ColorPicker renders its palette in a sibling CDK overlay and moves
+    // focus to the active swatch. Treat only a palette opened by this divider
+    // toolbar as part of the same interaction; unrelated page palettes must not
+    // keep a stale divider toolbar alive.
+    const ownsOpenColorPicker = !!toolbarElement.querySelector(
+      'cs-color-picker.cs-color-picker-open',
+    )
+    const paletteOwnsFocus = !!activeElement.closest(
+      '.cs-color-picker-overlay-pane .cs-color-picker-panel',
+    )
+    return ownsOpenColorPicker && paletteOwnsFocus
   }
 
 }
