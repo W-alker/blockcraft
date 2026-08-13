@@ -129,6 +129,22 @@ describe('InlineRuntime inline float lifecycle', () => {
     runtime.destroy()
   })
 
+  it('parks the DOM caret after the trailing embed marker', () => {
+    const container = document.createElement('div')
+    const runtime = new InlineRuntime(
+      container,
+      new Map(withDefaultEmbedConverters()),
+    )
+    runtime.render([{insert: {icon: 'csicon csicon-add'}}])
+
+    const point = runtime.modelPointToDom(1)
+
+    expect(point.node.parentElement?.dataset['zeroSpace']).toBe('true')
+    expect(point.offset).toBe(point.node.textContent?.length ?? 0)
+    expect(runtime.domPointToModel(point.node, point.offset)).toBe(1)
+    runtime.destroy()
+  })
+
   it('projects and revokes zero-model-length pagination gaps without changing offsets', () => {
     const container = document.createElement('div')
     const runtime = new InlineRuntime(container, new Map())

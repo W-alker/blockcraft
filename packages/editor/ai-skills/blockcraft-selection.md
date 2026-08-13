@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying selection behavior or when the L1 quick reference in `blockcraft.md` isn't enough.
 >
-> Last updated: 2026-08-03 | Source of truth: `framework/modules/selection/`
+> Last updated: 2026-08-13 | Source of truth: `framework/modules/selection/`
 
 ## Architecture Overview
 
@@ -58,7 +58,7 @@ anchor/head direction (`setBaseAndExtent`, or `collapse` + `extend` fallback),
 so a backward model selection does not become forward after replay or virtual
 window repair.
 
-`SelectionSelectedManager` is presentation-only. It reconciles the previous and next covered-block sets, so unchanged blocks do not lose and regain `.selected` / `.focused` classes on high-frequency `selectionchange` events; it does not reinterpret scope or mutate the model. Under root virtualization it consumes deduplicated `viewChange$` windows, tests only mounted component IDs against model coverage segments, and repaints newly mounted fragments without expanding a long selection into every intermediate ID.
+`SelectionSelectedManager` is presentation-only. It reconciles the previous and next covered-block sets, so unchanged blocks do not lose and regain `.selected` / `.focused` classes on high-frequency `selectionchange` events; it does not reinterpret scope or mutate the model. For every mounted inline Embed whose full one-length range is covered, including host-registered converters, it also reconciles the ephemeral `.bc-inline-embed--selected` class on the outer `c-element`; a collapsed caret beside an Embed is not selected. This compensates for browsers not painting native selection inside `contenteditable=false` atomic content, including the first Shift+Arrow step that covers only the Embed. Under root virtualization it consumes deduplicated `viewChange$` windows, tests only mounted component IDs against model coverage segments, and repaints newly mounted fragments without expanding a long selection into every intermediate ID.
 
 When root virtualization is enabled, the active local selection also owns a
 mount lease over only the direct-root units containing its ordered start and end.

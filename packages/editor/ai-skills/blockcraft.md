@@ -727,6 +727,14 @@ The default converter preserves the complete iconfont class string on an
 `inlineIconEmbedConverter` are public exports, and an explicit same-key entry
 in `DocConfig.embeds` overrides the built-in converter.
 
+Every mounted inline Embed, including host-registered converters, receives the
+ephemeral `.bc-inline-embed--selected` class on its outer `c-element` while a
+local model selection fully covers that Embed's one-length range. The base
+theme paints a background for the otherwise invisible native selection across
+`contenteditable=false` content. This also keeps the first Shift+Arrow step
+across an Embed visible. The class is presentation state only and is never
+serialized into Delta content.
+
 Inline images are also built in:
 
 ```typescript

@@ -143,9 +143,19 @@ export class InlinePositionMapper {
       if (remaining <= leaf.length) {
         if (leaf.type === BlotType.Embed) {
           if (remaining === 1) {
-            // After embed: position in the gap zero-space
+            // Park after the marker, not before it. Native IME updates replace
+            // text relative to this DOM boundary; placing the caret at offset 0
+            // leaves the zero-width marker on the composing side and WebKit can
+            // append each intermediate composition value instead of replacing it.
             const gap = (leaf as EmbedBlot).gapNode
-            return { node: gap.firstChild as Text, offset: 0 }
+            const marker = gap.firstChild
+            if (marker?.nodeType === Node.TEXT_NODE) {
+              return {
+                node: marker,
+                offset: marker.textContent?.length ?? 0,
+              }
+            }
+            return {node: gap, offset: gap.childNodes.length}
           }
           // Before embed (remaining === 0 handled above)
           const wrapper = (leaf as EmbedBlot).cElement.querySelector('span[contenteditable="false"]')!

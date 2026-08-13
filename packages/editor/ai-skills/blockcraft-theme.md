@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-12
+> Last updated: 2026-08-13
 
 ## Theme Structure
 
@@ -297,6 +297,18 @@ the bundled theme repeats the WordArt frame/text display and box-model rules on
 the proxy itself. Keep those global proxy rules aligned with the ordinary
 `.bc-inline-word-art-frame` / `.bc-inline-word-art__text` rules; otherwise CSS
 WordArt can change size or lose its effect transform only while dragging.
+
+### Inline Embed Selection
+
+Every inline Embed receives `.bc-inline-embed--selected` on its outer
+`c-element` while the local model selection fully covers that one-length
+Embed. This applies equally to built-in and host-registered converters. The
+base theme applies `--bc-select-background-color` directly to the atomic
+wrapper, without a border, outline or ring. This makes Shift+Arrow selection
+visible even though the converter-owned content is
+`contenteditable=false`. The class is ephemeral Selection presentation state:
+host themes may refine its background color or radius, but must not add/remove
+the class or persist it in document content.
 
 ### Pagination View
 

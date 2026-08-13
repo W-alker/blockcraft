@@ -1,4 +1,8 @@
-import {BlockNodeType} from "../../block-std";
+import {
+  BlockNodeType,
+  InlineRuntime,
+  withDefaultEmbedConverters,
+} from "../../block-std";
 import {BlockSelection} from "./blockSelection";
 import {SelectionSelectedManager} from "./selected-manager";
 
@@ -83,6 +87,73 @@ describe("SelectionSelectedManager", () => {
 
     expect(hostElement.classList.contains("focused")).toBeTrue();
     expect(hostElement.classList.contains("selected")).toBeFalse();
+  });
+
+  it("paints every fully covered inline embed and clears stale selection state", () => {
+    const hostElement = document.createElement("p");
+    const runtime = new InlineRuntime(
+      hostElement,
+      new Map(withDefaultEmbedConverters([
+        ["mention", {
+          toView: delta => {
+            const element = document.createElement("span");
+            element.textContent = delta.insert["mention"] as string;
+            return element;
+          },
+          toDelta: element => ({insert: {mention: element.textContent ?? ""}}),
+        }],
+      ])),
+    );
+    runtime.render([
+      {insert: "a"},
+      {insert: {icon: "csicon csicon-add-circle-filled"}},
+      {insert: {mention: "Alice"}},
+      {insert: "b"},
+    ]);
+    const block = {
+      id: "p1",
+      nodeType: BlockNodeType.editable,
+      hostElement,
+      runtime,
+    };
+    const manager = new SelectionSelectedManager({
+      getBlockById: () => block,
+    } as any);
+    let selectedStart = 1;
+    let selectedEnd = 3;
+    const selection = () => ({
+      collapsed: selectedStart === selectedEnd,
+      contains: (blockId: string, offset?: number) => blockId === block.id &&
+        offset !== undefined &&
+        offset >= selectedStart &&
+        offset <= selectedEnd,
+      getBoundarySelectedChildIds: () => [block.id],
+    } as any);
+    const icon = hostElement.querySelector<HTMLElement>("i[data-icon]")!;
+    const embedBlots = hostElement.querySelectorAll<HTMLElement>("c-element");
+    const iconBlot = icon.closest<HTMLElement>("c-element")!;
+    const mentionBlot = Array.from(embedBlots).find(
+      element => element.textContent?.includes("Alice"),
+    )!;
+
+    manager.setSelected(selection());
+
+    expect(iconBlot.classList.contains("bc-inline-embed--selected")).toBeTrue();
+    expect(mentionBlot.classList.contains("bc-inline-embed--selected")).toBeTrue();
+    expect(icon.className).toBe("csicon csicon-add-circle-filled");
+
+    selectedStart = 2;
+    manager.setSelected(selection());
+
+    expect(iconBlot.classList.contains("bc-inline-embed--selected")).toBeFalse();
+    expect(mentionBlot.classList.contains("bc-inline-embed--selected")).toBeTrue();
+
+    selectedEnd = 2;
+    manager.setSelected(selection());
+
+    expect(mentionBlot.classList.contains("bc-inline-embed--selected")).toBeFalse();
+    expect(icon.className).toBe("csicon csicon-add-circle-filled");
+    runtime.destroy();
   });
 
   it("reapplies classes when the same selected block is remounted", () => {

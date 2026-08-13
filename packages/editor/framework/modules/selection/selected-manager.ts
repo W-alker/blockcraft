@@ -1,4 +1,10 @@
-import {BaseBlockComponent, BlockNodeType, EditableBlockComponent} from "../../block-std";
+import {
+  BaseBlockComponent,
+  BlotType,
+  BlockNodeType,
+  EditableBlockComponent,
+  EmbedBlot,
+} from "../../block-std";
 import {
   getMountedSelectionCoveredBlockIds,
   getSelectionCoveredBlockIds,
@@ -11,6 +17,7 @@ export class SelectionSelectedManager {
 
   private _selectedSet = new Set<BaseBlockComponent<any>>()
   private _focusedSet = new Set<EditableBlockComponent<any>>()
+  private _selectedEmbedSet = new Set<HTMLElement>()
 
   private _addSelectedClass(block: BaseBlockComponent<any>) {
     block.hostElement.classList.add('selected')
@@ -38,6 +45,54 @@ export class SelectionSelectedManager {
     })
     this._selectedSet = nextSelected
     this._focusedSet = nextFocused
+  }
+
+  private _reconcileEmbedSelection(
+    selection: BlockCraft.Selection | null,
+    editableBlocks: Set<EditableBlockComponent<any>>,
+  ) {
+    const nextSelected = new Set<HTMLElement>()
+
+    if (
+      selection &&
+      !selection.collapsed &&
+      typeof selection.contains === 'function'
+    ) {
+      editableBlocks.forEach(block => {
+        const scrollBlot = block.runtime?.scrollBlot
+        if (!scrollBlot) return
+
+        for (const leaf of scrollBlot.leaves) {
+          if (leaf.type !== BlotType.Embed) continue
+          const embed = leaf as EmbedBlot
+          const offset = scrollBlot.offsetOf(embed)
+          if (offset < 0) continue
+          try {
+            if (
+              selection.contains(block.id, offset) &&
+              selection.contains(block.id, offset + embed.length)
+            ) {
+              nextSelected.add(embed.cElement)
+            }
+          } catch {
+            // A concurrent view replacement can invalidate this presentation
+            // pass. The next model selection or mounted-window update retries.
+          }
+        }
+      })
+    }
+
+    this._selectedEmbedSet.forEach(element => {
+      if (!nextSelected.has(element)) {
+        element.classList.remove('bc-inline-embed--selected')
+      }
+    })
+    nextSelected.forEach(element => {
+      if (!this._selectedEmbedSet.has(element)) {
+        element.classList.add('bc-inline-embed--selected')
+      }
+    })
+    this._selectedEmbedSet = nextSelected
   }
 
   setSelected(
@@ -71,6 +126,7 @@ export class SelectionSelectedManager {
     }
 
     this._reconcileClasses(nextSelected, nextFocused)
+    this._reconcileEmbedSelection(selection, nextFocused)
   }
 
   private _collectMountedBlockIds(rootIds: readonly string[]): string[] {

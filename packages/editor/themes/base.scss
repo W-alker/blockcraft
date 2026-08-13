@@ -317,6 +317,23 @@
     span[contenteditable='false'] {
       margin: 0 2px;
       @include user-select(none);
+
+      // Icon fonts use their own ascent/descent metrics. Align the atomic
+      // inline icon optically with adjacent text without changing paragraph
+      // line-height or the baseline of other embed types.
+      > i[data-icon] {
+        display: inline-block;
+        line-height: 1;
+        vertical-align: -0.15em;
+      }
+    }
+
+    // Native selection does not paint contenteditable=false Embed content.
+    // Mirror the model selection on the atomic c-element without changing its
+    // inline geometry or the converter-owned view inside it.
+    c-element.bc-inline-embed--selected {
+      background-color: var(--bc-select-background-color);
+      border-radius: var(--bc-radius-sm);
     }
 
     c-element {

@@ -69,6 +69,36 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
+## Unreleased — 2026-08-13 — show selection state for inline Embeds
+
+**Severity**: patch
+
+**What changed**: Every mounted inline Embed, including host-registered
+converters, now receives the ephemeral `.bc-inline-embed--selected` class on
+its outer `c-element` while its full one-length model range is covered by the
+local selection. The base theme paints a selection background on that atomic
+wrapper, without a border, outline or ring.
+
+**Why**: Embed views live inside non-editable atomic content, so browsers do not
+paint their ordinary native `::selection` feedback. The model selection was
+already correct, but a Shift+Arrow range that first covered only an Embed could
+appear to have disappeared.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-embed.md`
+- `blockcraft-selection.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Selecting a range that fully covers any inline Embed now paints the wrapper's
+  selection state; a collapsed caret before or after it does not.
+- The state is presentation-only and does not change Delta content,
+  converter-owned DOM, copy/cut semantics or host converter overrides.
+
 ## Unreleased — 2026-08-13 — restore editor-owned input styling
 
 **Severity**: patch

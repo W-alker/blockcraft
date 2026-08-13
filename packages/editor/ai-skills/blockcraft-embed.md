@@ -4,7 +4,7 @@
 >
 > For inline system internals, see L2: `blockcraft-inline.md`
 >
-> Last updated: 2026-08-12
+> Last updated: 2026-08-13
 
 ## What is an Inline Embed?
 
@@ -84,6 +84,14 @@ and mirrors it to `data-icon` for DOM-to-Delta round-trips. BlockCraft exports
 `inlineIconEmbedConverter` and `INLINE_ICON_EMBED_KEY` for hosts that need to
 inspect or explicitly override the default representation. Registering an
 `icon` converter in `DocConfig.embeds` keeps the existing host-wins behavior.
+
+Selection presentation is converter-independent. While a local selection fully
+covers any inline Embed's one model unit, `SelectionSelectedManager` adds
+`.bc-inline-embed--selected` to its mounted outer `c-element`; the base theme
+supplies a background-only selection state. This makes Shift+Arrow selection
+visible even when the current range contains only an atomic Embed whose inner
+content is not natively selectable. The ephemeral class does not alter the
+converter-owned view or Delta data.
 
 The `image` embed is built in and needs no registration:
 
