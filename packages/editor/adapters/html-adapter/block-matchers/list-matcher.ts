@@ -2,6 +2,10 @@ import {BlockHtmlAdapterMatcher} from "../block-adapter";
 import {HastUtils, TextUtils} from "../../utils";
 import {BlockNodeType, DeltaInsert, generateId, IBlockSnapshot, STR_LINE_BREAK} from "../../../framework";
 import type {Element} from 'hast'
+import {
+  editableTypographyFromHtml,
+  editableTypographyToHtmlProperties,
+} from '../typography';
 
 const listBlockFlavour = ['bullet', 'ordered', 'todo']
 
@@ -48,7 +52,8 @@ export const listBlockAdapterMatcher: BlockHtmlAdapterMatcher = {
         nodeType: BlockNodeType.editable,
         props: {
           depth,
-          order: listType === 'ordered' ? o.index : undefined
+          order: listType === 'ordered' ? o.index : undefined,
+          ...editableTypographyFromHtml(o.node),
         },
         meta: {},
         children: deltaConverter.astToDelta(HastUtils.getInlineOnlyElementAST(o.node))
@@ -131,7 +136,7 @@ export const listBlockAdapterMatcher: BlockHtmlAdapterMatcher = {
         {
           type: 'element',
           tagName: 'li',
-          properties: {},
+          properties: editableTypographyToHtmlProperties(o.node.props),
           children: liChildren,
         },
         'children'

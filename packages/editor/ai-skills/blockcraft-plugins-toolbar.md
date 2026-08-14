@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-13
+> Last updated: 2026-08-14
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
@@ -273,6 +273,61 @@ Tooltip and accessible labels; only the compact category headings remain
 visible.
 Line/connector appearances paint no fill and expose no editable shape-text
 surface; automatic endpoint attachment is outside this visual shape contract.
+
+---
+
+## TextBoxToolbarPlugin
+
+> `plugins/text-box-toolbar/` — Whole-frame selection, preset/shape/text-effect styling and
+> object placement for the fixed-size `text-box` container.
+
+```typescript
+new TextBoxToolbarPlugin();
+```
+
+The Plugin keeps two explicit states. A selection on the `text-box` itself
+opens its connected object toolbar; a caret/range in a direct ordinary child
+uses the normal text toolbars instead. Enter or a frame double-click enters the
+first editable descendant, while Escape from a direct child selects the parent
+frame. Relative movement uses the shared Pointer Events block drag controller;
+absolute movement starts only from the frame edge and delegates to
+`BlockPlacementManager`, so text selection inside the viewport remains native.
+
+The object toolbar follows Word's object/text split. Whole-frame selection
+opens a narrow vertical rail with click-owned **布局 / 样式 / 形状 / 文字**
+entries; only one secondary settings card is visible at a time. **样式** applies
+one catalog entry as a concrete multi-key props patch. **形状** reuses the full
+Shape catalog except line/connectors that cannot own a text frame, and exposes
+CSES color/slider/number controls for shape fill, picture fill, opacity,
+outline and stroke style. Picture selection goes through the host
+`DocFileService`; it never exposes or persists a temporary raw URL input.
+**文字** combines WordArt presets with font, size, alignment, solid/gradient
+fill, outline, shadow and transform controls. Preset IDs are never persisted,
+and detailed `wa` edits remain one canonical serialized value-object write.
+
+Compact `p/bgi/bgs/bgx/bgy/bgo` remains available to Schema/CRUD callers as a
+low-level surface capability. Raw padding and background URL fields are not
+shown in the toolbar; image fit/opacity are surfaced only as semantic picture
+fill controls. Slider movement stays local and commits once on pointer/key
+completion to avoid Yjs/Undo flooding. The outer rail and all secondary cards
+remain in one block-owned connected Overlay; CSES ColorPicker/Select sibling
+panes are treated as owned interactions only while their originating control is
+open inside that toolbar.
+
+Object layout is limited to `top-bottom`, `under` and `over`; the layout card
+maps the current model to **随文字移动 / 固定在页面上** without advertising
+Square/Tight/Through wrapping. Absolute objects also expose one-step
+forward/backward stacking. No inline/wrap conversion is advertised because a
+multi-Block container has no inline Embed or block-wrap representation.
+
+Register `TextBoxBlockSchema`, `PlacementLayoutBlockSchema`, the allowed
+ordinary child schemas and `TextBoxToolbarPlugin` together. The bundled
+capability factory already does this. When the Schema is present, the fixed
+toolbar shows the `bc_wenbenkuang` **插入文本框** preset picker. Choosing a
+preset arms the shared one-shot drawing surface, creates one absolute `over`
+object with concrete preset props on pointerup, then reveals the object and
+enters its initial paragraph. Gesture cancellation never writes a temporary
+root-flow Block.
 
 ---
 

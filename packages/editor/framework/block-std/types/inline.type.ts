@@ -1,5 +1,6 @@
 import {SimpleBasicType} from "../../../global";
 import {DeltaInsert} from "./delta.type";
+import type {TypographyFontFamilyId} from '../typography'
 
 /**
  * @desc 最小的原子节点\
@@ -42,10 +43,16 @@ export type InlineCustomKey = string
  * inline text style
  */
 export interface ITextStyles {
+  /** Compact semantic typography keys used by new content. */
+  't:ff'?: TypographyFontFamilyId | null;
+  't:fs'?: number | null;
+  't:ls'?: number | null;
+  /** Legacy generic CSS keys kept read-compatible. */
   's:color'?: string | null;
   's:background'?: string | null;
   's:fontSize'?: string | null;
   's:fontFamily'?: string | null;
+  's:letterSpacing'?: string | null;
   [key: InlineStyleKey]: string | null | undefined
 }
 
@@ -54,7 +61,5 @@ export interface IExpandedAttrs {
 }
 
 export type InlineModel = DeltaInsert[]
-
-
 
 

@@ -1,5 +1,6 @@
 import {InlineModel, IInlineNodeAttrs} from "../../framework/block-std/types/inline.type";
 import {DeltaInsertEmbed, DeltaInsertText} from "../../framework/block-std/types/delta.type";
+import {applyInlineTypographyAttribute} from "../../framework/block-std/typography";
 import katex from "katex";
 
 const INLINE_ELEMENT_TAG = "c-element";
@@ -107,6 +108,10 @@ function applyAttributes(element: HTMLElement, attributes?: IInlineNodeAttrs): v
   }
 
   for (const [key, value] of Object.entries(attributes)) {
+    if (applyInlineTypographyAttribute(element, key, value)) {
+      continue
+    }
+
     if (value === null || value === undefined || value === false || value === "") {
       continue
     }
@@ -122,7 +127,11 @@ function applyAttributes(element: HTMLElement, attributes?: IInlineNodeAttrs): v
     }
 
     if (key.startsWith("s:")) {
-      element.style.setProperty(key.slice(2), `${value}`)
+      const raw = key.slice(2)
+      const property = raw.startsWith("--")
+        ? raw
+        : raw.replace(/[A-Z]/g, match => `-${match.toLowerCase()}`)
+      element.style.setProperty(property, `${value}`)
       continue
     }
 

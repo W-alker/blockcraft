@@ -207,6 +207,46 @@ describe("TextToolbarHelper boundary selections", () => {
     rootHost.remove();
   });
 
+  it("normalizes compact and legacy typography into one common toolbar state", () => {
+    const {helper, p1, p2, rootHost, selection} = makeHarness();
+    (p1 as any).props = {depth: 0, lh: 1.5};
+    (p2 as any).props = {depth: 0, lh: 1.5};
+    (p1 as any).textDeltas = () => [{insert: "one", attributes: {"t:ff": "kai", "t:fs": 1.2, "t:ls": 0.1}}];
+    (p2 as any).textDeltas = () => [{insert: "two", attributes: {
+      "s:fontFamily": '"Kaiti SC", KaiTi, serif',
+      "s:fontSize": "1.2em",
+      "s:letterSpacing": "0.1em",
+    }}];
+    const textSelection = selection(
+      {blockId: "p1", type: "text", offset: 0, block: p1},
+      {blockId: "p2", type: "text", offset: 3, block: p2},
+    );
+
+    const common = helper.getCurrentCommonAttrs(textSelection as any);
+
+    expect(common.typography).toEqual({ff: "kai", fs: 1.2, ls: 0.1});
+    expect(common.paragraph).toEqual({lh: 1.5});
+    rootHost.remove();
+  });
+
+  it("reports mixed inline and paragraph typography as undefined", () => {
+    const {helper, p1, p2, rootHost, selection} = makeHarness();
+    (p1 as any).props = {depth: 0, lh: 1.25};
+    (p2 as any).props = {depth: 0, lh: 2};
+    (p1 as any).textDeltas = () => [{insert: "one", attributes: {"t:fs": 1.2}}];
+    (p2 as any).textDeltas = () => [{insert: "two", attributes: {"t:fs": 1.5}}];
+    const textSelection = selection(
+      {blockId: "p1", type: "text", offset: 0, block: p1},
+      {blockId: "p2", type: "text", offset: 3, block: p2},
+    );
+
+    const common = helper.getCurrentCommonAttrs(textSelection as any);
+
+    expect(common.typography?.fs).toBeUndefined();
+    expect(common.paragraph?.lh).toBeUndefined();
+    rootHost.remove();
+  });
+
   it("does not update block props for a stale selection", () => {
     const {helper, doc, p1, p2, rootHost, selection} = makeHarness();
     const boundarySelection = selection(

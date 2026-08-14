@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-13
+> Last updated: 2026-08-14
 
 ## Theme Structure
 
@@ -149,6 +149,9 @@ Read `themes/base.scss` and `themes/variables.scss` for the current variable lis
 --bc-font-family
 --bc-font-size
 --bc-line-height
+--bc-fs                         // document base font size; root `fs` may override
+--bc-lh                         // document unitless line-height; root `lh` may override
+--bc-block-lh                   // editable block line-height override
 
 // Spacing
 --bc-block-padding
@@ -164,6 +167,21 @@ Read `themes/base.scss` and `themes/variables.scss` for the current variable lis
 --bc-block-border-color             // current block's persisted borderColor
 --bc-render-unit-background-color   // content region's persisted backColor
 --bc-render-unit-border-color       // content region's persisted borderColor
+--bc-render-unit-padding-top        // resolved content padding in layout px
+--bc-render-unit-padding-right
+--bc-render-unit-padding-bottom
+--bc-render-unit-padding-left
+--bc-text-box-background-color    // text-box persisted backColor
+--bc-text-box-border-color        // text-box persisted borderColor
+--bc-text-box-padding-top         // resolved fixed-frame content padding
+--bc-text-box-padding-right
+--bc-text-box-padding-bottom
+--bc-text-box-padding-left
+--bc-text-box-shape-inset-top       // Shape catalog text-safe frame
+--bc-text-box-shape-inset-right
+--bc-text-box-shape-inset-bottom
+--bc-text-box-shape-inset-left
+--bc-text-box-word-art-*            // optional WordArt presentation projection
 --bc-solid-block-background-opacity // default 82%; solid block surface opacity
 
 // Border
@@ -199,6 +217,30 @@ change region geometry. Live blocks and Snapshot Viewer shells project the same
 opaque props into these variables; `transparent`, empty and missing values
 render as no visible override.
 
+The same region projects resolved surface insets through
+`--bc-render-unit-padding-top/right/bottom/left` (each defaults to `0px`) onto
+`.render-unit-content`. A persisted background image is an absolutely
+positioned `.render-unit-background-image` sibling behind that content, not a
+CSS `background-image`; it is non-interactive, inherits the region radius and
+uses `object-fit/object-position/opacity` from the normalized model. Do not move
+the image inside `.render-unit-content`, where padding would shrink it, and do
+not replace it with raw `url(...)` CSS because print/PDF resource waiting tracks
+real images.
+
+The bundled `text-box` projects the same resolved surface contract through
+`--bc-text-box-background-color`, `--bc-text-box-border-color` and
+`--bc-text-box-padding-top/right/bottom/left`. Shape catalog geometry is painted
+as fill and outline SVG layers around the child viewport. Its decorative
+`.text-box-block__background-image` is a real image between those layers and is
+clipped to the same Shape path. `--bc-text-box-shape-inset-*` adds the Shape
+definition's text-safe frame before content padding; `--bc-text-box-word-art-*`
+projects an optional WordArt presentation without moving text ownership out of
+ordinary child Blocks. The fixed paint viewport owns clipping/scrolling so the
+outer shell does not clip resize and rotation handles. Live editing may scroll
+overflowing prose, while readonly, Snapshot Viewer and print output clip to the
+persisted frame. Keep exactly one `data-bc-print-visual-surface` on the painted
+object and mark transform handles `data-bc-print-exclude`.
+
 Snapshot Viewer creates the same common or block-specific variables and
 attributes on its block shells.
 Replacement block components that extend `BaseBlockComponent` receive the live
@@ -224,6 +266,11 @@ host: {
 > - Need a "one line tall" px length? Derive it: `calc(var(--bc-lh) * var(--bc-fs))`.
 > - Headings use `line-height: var(--bc-lh)` directly — the ratio already scales against each
 >   heading's enlarged `font-size`, so no `* N` multiplier is needed.
+
+Root `ff/fs/lh` are persisted document defaults. `ff` resolves a short catalog
+ID to a portable platform font stack; `fs` projects `--bc-fs`; `lh` projects
+`--bc-lh`. Editable `lh` projects `--bc-block-lh` and takes precedence only for
+that paragraph. Snapshot Viewer follows the same precedence.
 
 ### Whole-document visual scale
 

@@ -17,6 +17,9 @@ import {
   standalone: true,
   imports: [ShapeIconComponent, CsTooltipDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: {
+    '[class.shape-picker-host--embedded]': 'embedded',
+  },
   template: `
     <div class="shape-picker" role="menu" [attr.aria-label]="ariaLabel">
       @for (category of categories; track category.id) {
@@ -54,6 +57,20 @@ import {
     :host {
       display: block;
       max-width: calc(100vw - 24px);
+    }
+
+    :host(.shape-picker-host--embedded) {
+      max-width: none;
+    }
+
+    :host(.shape-picker-host--embedded) .shape-picker {
+      width: auto;
+      max-height: 300px;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
     }
 
     .shape-picker {
@@ -132,16 +149,34 @@ import {
   `],
 })
 export class ShapePickerComponent {
+  /** Removes standalone popup chrome when hosted inside a settings panel. */
+  @Input()
+  embedded = false
+
   @Input()
   current?: ShapeKind
 
   @Input()
   ariaLabel = '选择形状'
 
+  /** Hides line/connectors that cannot own a text frame. */
+  @Input()
+  supportsTextOnly = false
+
   @Output()
   readonly pick = new EventEmitter<ShapeKind>()
 
-  protected readonly categories = SHAPE_CATEGORIES
+  protected get categories() {
+    if (!this.supportsTextOnly) return SHAPE_CATEGORIES
+    return SHAPE_CATEGORIES
+      .map(category => ({
+        ...category,
+        definitions: category.definitions.filter(
+          definition => definition.supportsText !== false,
+        ),
+      }))
+      .filter(category => category.definitions.length > 0)
+  }
 
   protected preserveSelection(event: MouseEvent): void {
     event.preventDefault()

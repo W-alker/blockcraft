@@ -19,8 +19,12 @@ import {formulaBlockHtmlAdapterMatcher} from "./formula-matcher";
 import {mediaBlockHtmlAdapterMatcher} from "./media-matcher";
 import {shapeBlockHtmlAdapterMatcher} from "./shape-matcher";
 import {wordArtBlockHtmlAdapterMatcher} from "./word-art-matcher";
+import {renderUnitBlockHtmlAdapterMatcher} from "./render-unit-matcher";
+import {textBoxBlockHtmlAdapterMatcher} from "./text-box-matcher";
 
 export const DEFAULT_BLOCK_MATCHERS: BlockHtmlAdapterMatcher[] = [
+  renderUnitBlockHtmlAdapterMatcher,
+  textBoxBlockHtmlAdapterMatcher,
   shapeBlockHtmlAdapterMatcher,
   wordArtBlockHtmlAdapterMatcher,
   paragraphBlockHtmlAdapterMatcher,

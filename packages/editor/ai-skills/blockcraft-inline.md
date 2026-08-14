@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying the inline editing system.
 >
-> Last updated: 2026-08-10
+> Last updated: 2026-08-14
 
 ## Architecture Overview
 
@@ -257,8 +257,25 @@ InlineManager.setAttrs(element, attrs) // Apply attributes to DOM element
 | `a:` | `a:bold`, `a:link` | HTML attribute — `element.setAttribute('bold', …)` |
 | `d:` | `d:foo` | `data-*` — `element.dataset.foo = …` |
 | `s:` | `s:color`, `s:fontSize` | inline CSS — `element.style.setProperty('color' / 'font-size', …)` |
+| `t:` | `t:ff`, `t:fs`, `t:ls` | compact semantic typography resolved through the trusted font catalog and bounded numeric normalizers |
 
-A `null`/falsy value removes the attribute/style. For `s:` keys the property name is **camelCase→kebab-case** converted before `setProperty` (so `s:fontSize` → `font-size`, `s:fontFamily` → `font-family`) — `setProperty` ignores camelCase names, so this conversion is what makes those styles actually render. CSS custom properties (`s:--x`) keep their case. Relative font scaling stores `s:fontSize` as an `em` ratio, e.g. `'1.2em'` (relative to the block's base font size).
+A `null`/falsy value removes the attribute/style. For `s:` keys the property name is **camelCase→kebab-case** converted before `setProperty` (so `s:fontSize` → `font-size`, `s:fontFamily` → `font-family`) — `setProperty` ignores camelCase names, so this conversion is what makes those legacy styles actually render. CSS custom properties (`s:--x`) keep their case. Legacy relative font scaling may store `s:fontSize` as an `em` ratio; new product writes use numeric `t:fs`.
+
+New typography writes use `t:ff` (short font ID), `t:fs` (relative scale) and
+`t:ls` (letter spacing in `em`). `createInlineTypographyPatch()` also clears the
+matching legacy `s:*` alias and omits neutral `fs=1` / `ls=0`, keeping Y.Text
+runs compact. Legacy styles remain readable and HTML import normalizes supported
+values into the compact form. DOM shells retain matching `data-bc-ff/fs/ls`
+markers so `InlineManager.getAttrs()` can reconstruct canonical keys instead of
+creating camel/kebab duplicates.
+
+The shared dropdown presets cover relative scale `0.5×`–`3×` and letter
+spacing `-0.1em`–`0.5em`. They remain numeric model values; `×` / `em` are UI
+and CSS projection units only and are not duplicated in `t:fs` / `t:ls`.
+
+The built-in catalog covers system default, Arial, Calibri, Verdana, Tahoma,
+common Chinese sans/serif families, Times New Roman, Georgia, Kai, FangSong and
+monospace stacks. Persist the catalog ID rather than repeating a CSS stack.
 
 ## When to Read Source Files
 

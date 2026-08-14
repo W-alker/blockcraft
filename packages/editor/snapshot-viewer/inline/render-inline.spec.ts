@@ -58,4 +58,57 @@ describe("renderInline", () => {
     expect(formula).not.toBeNull()
     expect(formula?.getAttribute("data-latex")).toBe("E=mc^2")
   })
+
+  it("projects compact typography attributes through the shared safe catalog", () => {
+    const fragment = renderInline([{
+      insert: "Typography",
+      attributes: {
+        "t:ff": "kai",
+        "t:fs": 1.25,
+        "t:ls": 0.08,
+      },
+    }])
+
+    const element = fragment.querySelector<HTMLElement>("c-element")!
+    expect(element.dataset["bcFf"]).toBe("kai")
+    expect(element.dataset["bcFs"]).toBe("1.25")
+    expect(element.dataset["bcLs"]).toBe("0.08")
+    expect(element.style.fontFamily).toContain("Kaiti SC")
+    expect(element.style.fontSize).toBe("1.25em")
+    expect(element.style.letterSpacing).toBe("0.08em")
+  })
+
+  it("keeps legacy camelCase s: typography styles render-compatible", () => {
+    const fragment = renderInline([{
+      insert: "Legacy",
+      attributes: {
+        "s:fontFamily": "serif",
+        "s:fontSize": "1.2em",
+        "s:letterSpacing": "0.05em",
+      },
+    }])
+
+    const element = fragment.querySelector<HTMLElement>("c-element")!
+    expect(element.style.getPropertyValue("font-family")).toBe("serif")
+    expect(element.style.getPropertyValue("font-size")).toBe("1.2em")
+    expect(element.style.getPropertyValue("letter-spacing")).toBe("0.05em")
+  })
+
+  it("rejects invalid compact typography instead of exposing it as raw attributes", () => {
+    const fragment = renderInline([{
+      insert: "Unsafe",
+      attributes: {
+        "t:ff": "url(javascript:bad)" as any,
+        "t:fs": 99,
+        "t:ls": 4,
+      },
+    }])
+
+    const element = fragment.querySelector<HTMLElement>("c-element")!
+    expect(element.hasAttribute("t:ff")).toBeFalse()
+    expect(element.hasAttribute("t:fs")).toBeFalse()
+    expect(element.style.fontFamily).toBe("")
+    expect(element.style.fontSize).toBe("")
+    expect(element.style.letterSpacing).toBe("")
+  })
 })

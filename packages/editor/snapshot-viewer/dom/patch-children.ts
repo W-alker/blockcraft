@@ -56,6 +56,10 @@ export function resolveChildContainer(element: HTMLElement, snapshot: IBlockSnap
       return element
     case "callout":
       return element.querySelector(".callout-content")
+    case "render-unit":
+      return element.querySelector(".render-unit-content")
+    case "text-box":
+      return element.querySelector(".text-box-block__content")
     case "columns":
       return element.querySelector(".columns-layout")
     case "column":

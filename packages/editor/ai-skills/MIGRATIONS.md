@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-08-13 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-08-14 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -68,6 +68,254 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
+
+## Unreleased — 2026-08-14 — add composable Word-like text boxes
+
+**Severity**: minor
+
+**What changed**: BlockCraft now exports an independent `text-box` container
+Block and `TextBoxToolbarPlugin`. A text box combines fixed
+width/height/rotation and relative/absolute object placement with the existing
+compact `p/bgi/bgs/bgx/bgy/bgo` surface contract. Its content remains ordinary
+paragraph/list/blockquote child Blocks, and the bundled editor adds a one-shot
+drawing action, live resize/rotation, Shape-backed background geometry,
+optional WordArt-compatible text presentation, preset-first styling, Snapshot
+Viewer output and lossless HTML import/export. Padding and background-image
+fields remain model/API capabilities. Whole-frame selection opens a Word-style
+vertical rail with click-owned layout/style/shape/text settings cards built
+from CSES controls; picture fill uses the host file service and the toolbar does
+not expose raw padding or URL controls.
+
+**Why**: Word-style text boxes need stable drawing-object geometry without
+turning every Block into a padded image surface or duplicating the editor's
+Y.Text/IME/collaboration model inside a special leaf.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-plugin.md`
+- `blockcraft-plugins-ref.md`
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-plugins-formatting.md`
+- `blockcraft-toolbar.md`
+- `blockcraft-adapter.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `TextBoxBlockSchema`, `TextBoxBlockComponent`, `TextBoxBlockProps`,
+  `NormalizedTextBoxBlockProps`, `DEFAULT_TEXT_BOX_PROPS` and
+  `normalizeTextBoxProps()` are exported.
+- `TEXT_BOX_PRESETS`, `getTextBoxPreset()`, `TextBoxPresetDefinition`,
+  `TextBoxPresetPickerComponent`, `TextBoxWordArtStyle`,
+  `normalizeTextBoxWordArtStyle()` and `serializeTextBoxWordArtStyle()` expose
+  catalog-side presets and the compact WordArt value-object boundary.
+- `ShapePickerComponent.supportsTextOnly` filters line/connector geometries
+  that cannot own a text frame.
+- `ShapePickerComponent.embedded` and `TextBoxPresetPickerComponent.embedded`
+  remove standalone popup chrome when the catalogs are composed inside a
+  settings card.
+- `TextBoxToolbarPlugin`, `TextBoxToolbarComponent`, `TextBoxToolbarAction` and
+  `TextBoxToolbarPropsPatch` provide preset, shape, picture-fill, detailed
+  WordArt-compatible text, placement, stack and deletion commands.
+- `TextBoxToolbarPanel` and `TextBoxToolbarSide` describe the public rail panel
+  state and its right/left fallback placement.
+- `TextBoxBlockSchema.createSnapshot(text?, props?)` creates a fixed frame with
+  one normal paragraph. The bundled factory registers both Schema and Plugin.
+
+### Migration Recipe
+
+Existing documents require no migration. A custom Schema composition can opt
+in explicitly:
+
+```typescript
+const schemas = new SchemaManager([
+  ParagraphBlockSchema,
+  PlacementLayoutBlockSchema,
+  TextBoxBlockSchema,
+])
+
+const plugins = [new TextBoxToolbarPlugin()]
+
+const snapshot = TextBoxBlockSchema.createSnapshot('正文', {
+  width: 320,
+  height: 160,
+  sh: 'rounded-speech-bubble',
+  p: [12, 20],
+  bgi: 'https://cdn.example.com/paper.png',
+})
+```
+
+Preset IDs are catalog/UI state and are not persisted. Applying a preset writes
+its concrete props so later catalog changes cannot restyle existing documents.
+The optional `wa` prop is a canonical serialized primitive produced by
+`serializeTextBoxWordArtStyle()`; this keeps nested gradient arrays out of the
+single-value Y.Map boundary while preserving the complete WordArt contract.
+
+All clients in one collaborative room must register the new flavour before a
+writer persists it; the live editor still treats unknown Block flavours as a
+schema error.
+
+### Behavior Changes
+
+- The bundled fixed toolbar shows **插入文本框** only when the Schema is
+  registered. It creates an absolute `over` object only when drawing commits,
+  then enters its first paragraph.
+- Text boxes expose top-bottom/under/over in the first release. They do not
+  advertise inline or wrap because a multi-Block container has no inline Embed
+  adapter.
+- The object rail maps top-bottom to **随文字移动** and under/over to **固定在页面上**.
+  Word Square/Tight/Through wrapping remains hidden until the placement domain
+  owns a real block-wrap and anchor representation.
+- Shape/text slider drags keep preview state locally and write once on gesture
+  completion. CSES ColorPicker/Select sibling panes remain owned by the active
+  text-box toolbar while their originating control is open.
+- HTML preserves geometry, placement and surface fields. Markdown deliberately
+  flattens to readable ordinary children and drops drawing appearance.
+
+## Unreleased — 2026-08-14 — add compact document, text and paragraph typography
+
+**Severity**: minor
+
+**What changed**: BlockCraft now persists document defaults as root `ff/fs/lh`,
+paragraph line height as editable-block `lh`, and selection typography as
+compact inline `t:ff/t:fs/t:ls`. The fixed text toolbar exposes separate
+font-family, relative-scale, character-spacing, alignment and line-height
+dropdowns; the floating text toolbar keeps its previous compact formatting
+surface. Document defaults deliberately remain host/document-settings owned.
+Live
+rendering, Snapshot Viewer and HTML import/export share the same bounded
+projection.
+
+**Why**: Font and paragraph settings have different ownership and selection
+semantics. Compact semantic fields avoid repeating CSS stacks/units in every
+Y.Text run, while a shared catalog keeps rendering and external HTML safe.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-block.md`
+- `blockcraft-inline.md`
+- `blockcraft-adapter.md`
+- `blockcraft-theme.md`
+- `blockcraft-plugins-formatting.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `INLINE_TYPOGRAPHY_ATTRS`, `TYPOGRAPHY_FONT_FAMILIES`, shared presets and
+  normalization/resolution helpers are exported.
+- `ITextStyles` accepts `t:ff`, `t:fs`, `t:ls`; `IEditableBlockProps` accepts
+  `lh`; `RootBlockModel.props` accepts `ff`, `fs` and `lh`.
+- `ITextCommonAttrs.typography` and `.paragraph` distinguish inherited
+  (`null`) from mixed/unsupported (`undefined`) toolbar values.
+
+### Migration Recipe
+
+Existing `s:fontFamily`, `s:fontSize` and `s:letterSpacing` content remains
+read-compatible. New writes should use semantic patches:
+
+```typescript
+toolbar.formatText(createInlineTypographyPatch('ff', 'kai'))
+toolbar.formatText(createInlineTypographyPatch('fs', 1.25))
+toolbar.updateBlockProps({lh: 1.5})
+
+// A host-owned document settings surface may update root defaults.
+doc.crud.updateBlockProps(doc.rootId, {ff: 'serif', fs: 18, lh: 1.6})
+```
+
+Use `null` to remove a field. Neutral inline scale `1` and letter spacing `0`
+are omitted by `createInlineTypographyPatch()`.
+
+### Behavior Changes
+
+- Font stacks come from a short safe catalog covering system, common web/Office
+  and Chinese families; arbitrary inline CSS is not a font-selection product
+  contract.
+- Shared selection presets now cover relative scale `0.5×`–`3×` and character
+  spacing `-0.1em`–`0.5em`. Character-spacing menus and triggers display the
+  real numeric `em` value; the model continues to persist only compact numbers.
+- `lh` is a unitless ratio. Cross-block changes use one Yjs transaction and
+  skip non-editable/plain-text blocks.
+- HTML preserves supported root/block/inline typography with `data-bc-*` plus
+  portable CSS. Markdown remains presentation-lossy by design.
+- The fixed toolbar never mutates document-level defaults; the floating text
+  toolbar does not expose the new typography controls.
+- Selection font size remains relative scaling (`t:fs`); no absolute selection
+  font-size value is written.
+- Fixed-toolbar text and insertion actions occupy one row when possible and
+  wrap as two whole sections when width is constrained.
+
+## Unreleased — 2026-08-13 — add opt-in block surface padding and background images
+
+**Severity**: minor
+
+**What changed**: BlockCraft now exports a reusable, opt-in `BlockSurfaceProps`
+contract with one CSS-like numeric padding shorthand and a bounded background-image
+descriptor. The bundled `render-unit` is the first consumer: its live view,
+Snapshot Viewer, HTML adapter and model-only virtualization estimate now share
+the same normalizer. Background images render as decorative `<img>` layers so
+existing print/PDF image decoding can wait for them.
+
+**Why**: Word-like text containers need persisted inset and image-surface data,
+but applying one box model to every Block would conflict with paragraphs,
+tables, shapes and page margins. A reusable opt-in value contract establishes
+the data/render boundary without turning `render-unit` into a complete floating
+text-box object.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-data.md`
+- `blockcraft-adapter.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `BlockSurfaceProps`, `BlockSurfacePadding`, `BlockSurfaceImageFit`,
+  `ResolvedBlockSurface` and `ResolvedBlockSurfaceImage` are exported from the framework.
+- `normalizeBlockSurfaceProps()`, `resolveBlockSurface()` and
+  `blockSurfaceImageFitToObjectFit()` provide one bounded projection contract.
+- `RenderUnitBlockProps` extends `BlockSurfaceProps`, and
+  `RenderUnitBlockSchema.createSnapshot(meta?, props?)` accepts the new fields.
+- `--bc-render-unit-padding-top/right/bottom/left` expose the resolved content
+  insets to live and Snapshot Viewer themes.
+
+### Migration Recipe
+
+No existing document migration is required. Hosts can opt a content region in:
+
+```typescript
+const region = RenderUnitBlockSchema.createSnapshot({}, {
+  p: [16, 24],
+  bgi: 'https://cdn.example.com/paper.png',
+  bgs: 'cover',
+})
+
+doc.crud.updateBlockProps(regionId, {p: [16, 32]})
+doc.crud.updateBlockProps(regionId, {bgi: null})
+```
+
+### Behavior Changes
+
+- Padding is clamped to `0..1000` layout pixels; image positions to `0..100`
+  percent and opacity to `0..1`. Missing image options resolve to
+  `cover / 50% 50% / 1`.
+- Persisted fields use compact CSS-style keys: `p` and
+  `bgi/bgs/bgx/bgy/bgo`; the HTML envelope mirrors those names as
+  `data-bc-*` attributes.
+- `javascript:` and `vbscript:` image sources are rejected. Raw CSS background
+  strings are never persisted or interpreted.
+- HTML uses a surface-preserving `<section data-bc-block="render-unit">` envelope.
+  Standard Markdown remains intentionally presentation-lossy and keeps only the
+  region's readable child content.
+- This additive surface contract does not add size, rotation, placement,
+  resizing or insertion UI; those remain work for a dedicated text-box object.
 
 ## Unreleased — 2026-08-13 — add content-region background and border colors
 

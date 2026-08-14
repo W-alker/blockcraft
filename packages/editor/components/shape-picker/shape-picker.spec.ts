@@ -66,4 +66,31 @@ describe('ShapePickerComponent', () => {
     expect(mouseDown.defaultPrevented).toBeTrue()
     expect(picked).toEqual(['star-8'])
   })
+
+  it('can restrict the catalog to shapes that support a text frame', async () => {
+    await TestBed.configureTestingModule({
+      imports: [ShapePickerComponent],
+    }).compileComponents()
+    const fixture = TestBed.createComponent(ShapePickerComponent)
+    fixture.componentRef.setInput('supportsTextOnly', true)
+    fixture.detectChanges()
+    const host = fixture.nativeElement as HTMLElement
+
+    expect(host.querySelector('[data-shape-type="rounded-rectangle"]'))
+      .not.toBeNull()
+    expect(host.querySelector('[data-shape-type="line"]')).toBeNull()
+    expect(host.querySelector('[data-shape-type="curved-connector"]')).toBeNull()
+  })
+
+  it('removes standalone popup chrome when embedded in a settings card', async () => {
+    await TestBed.configureTestingModule({
+      imports: [ShapePickerComponent],
+    }).compileComponents()
+    const fixture = TestBed.createComponent(ShapePickerComponent)
+    fixture.componentRef.setInput('embedded', true)
+    fixture.detectChanges()
+
+    expect((fixture.nativeElement as HTMLElement).classList)
+      .toContain('shape-picker-host--embedded')
+  })
 })

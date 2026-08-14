@@ -98,6 +98,8 @@ export interface IBlockProps {
 export interface IEditableBlockProps extends IBlockProps {
   depth: number
   heading?: number
+  /** Compact unitless line-height ratio; omitted inherits the document root. */
+  lh?: number | null
 }
 
 export interface BaseBlockDesc<P extends SimpleRecord = SimpleRecord, M extends SimpleRecord = SimpleRecord> {

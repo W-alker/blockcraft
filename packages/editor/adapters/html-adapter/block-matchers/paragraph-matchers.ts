@@ -3,6 +3,10 @@ import {HastUtils} from "../../index";
 import {ParagraphBlockSchema} from "../../../blocks";
 import {BlockNodeType, DeltaInsert, generateId} from "../../../framework";
 import {isMediaContainerHtmlNode} from "./media-matcher";
+import {
+  editableTypographyFromHtml,
+  editableTypographyToHtmlProperties,
+} from '../typography';
 
 const paragraphBlockMatchTags = [
   'p',
@@ -66,6 +70,12 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
           if (!HastUtils.isParagraphLike(o.node)) return;
           if (o.parent?.node.type === 'element' && !['li', 'p'].includes(o.parent.node.tagName)) {
             const p = ParagraphBlockSchema.createSnapshot()
+            // Body typography belongs to the document root. A fallback
+            // paragraph created for direct body text should inherit it rather
+            // than persisting the same line-height as a block override.
+            if (o.node.tagName !== 'body') {
+              Object.assign(p.props, editableTypographyFromHtml(o.node))
+            }
             walkerContext.openNode(p, 'children')
             if (HastUtils.hasTextContent(o.node)) {
               (p.children as DeltaInsert[]).push(...deltaConverter.astToDelta(o.node))
@@ -77,10 +87,14 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
         }
         case 'p': {
           if (hasInlineContent(o.node)) {
-            walkerContext.openNode(ParagraphBlockSchema.createSnapshot(deltaConverter.astToDelta(o.node)), 'children').closeNode()
+            const paragraph = ParagraphBlockSchema.createSnapshot(deltaConverter.astToDelta(o.node))
+            Object.assign(paragraph.props, editableTypographyFromHtml(o.node))
+            walkerContext.openNode(paragraph, 'children').closeNode()
             walkerContext.skipAllChildren()
           } else {
-            walkerContext.openNode(ParagraphBlockSchema.createSnapshot(), 'children')
+            const paragraph = ParagraphBlockSchema.createSnapshot()
+            Object.assign(paragraph.props, editableTypographyFromHtml(o.node))
+            walkerContext.openNode(paragraph, 'children')
           }
           break;
         }
@@ -99,7 +113,7 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
               nodeType: BlockNodeType.editable,
               id: generateId(),
               flavour: 'blockquote',
-              props: {},
+              props: editableTypographyFromHtml(o.node),
               meta: {},
               children: deltas,
             },
@@ -122,6 +136,7 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
                 flavour: 'paragraph',
                 props: {
                   heading: headingBlockMatchTagsMap[o.node.tagName],
+                  ...editableTypographyFromHtml(o.node),
                 },
                 meta: {},
                 children: deltaConverter.astToDelta(o.node),
@@ -183,7 +198,7 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
               .openNode({
                 type: 'element',
                 tagName: 'h' + o.node.props['heading'],
-                properties: {},
+                properties: editableTypographyToHtmlProperties(o.node.props),
                 children: deltaConverter.deltaToAST(delta),
               }, 'children')
               .closeNode()
@@ -193,7 +208,7 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
                 {
                   type: 'element',
                   tagName: 'p',
-                  properties: {},
+                  properties: editableTypographyToHtmlProperties(o.node.props),
                   children: deltaConverter.deltaToAST(delta),
                 },
                 'children'
@@ -205,7 +220,7 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
           walkerContext.openNode({
             type: 'element',
             tagName: 'blockquote',
-            properties: {},
+            properties: editableTypographyToHtmlProperties(o.node.props),
             children: [
               {
                 type: 'element',

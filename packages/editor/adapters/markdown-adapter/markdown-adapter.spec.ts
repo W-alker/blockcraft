@@ -621,6 +621,35 @@ describe('MarkdownAdapter', () => {
   // ─── Mixed content tests ──────────────────────────────────────────
 
   describe('mixed content', () => {
+    it('flattens text-box children to readable markdown without private syntax', async () => {
+      const snapshot = createRootSnapshot([{
+        id: 'text-box-1',
+        flavour: 'text-box',
+        nodeType: BlockNodeType.block,
+        props: {
+          width: 320,
+          height: 160,
+          p: [8, 12],
+          bgi: 'https://cdn.example.com/paper.png',
+        },
+        meta: {},
+        children: [
+          createEditableSnapshot('p1', 'paragraph', [
+            {insert: 'Text box '},
+            {insert: 'content', attributes: {'a:bold': true}},
+          ], {}),
+          createEditableSnapshot('b1', 'bullet', 'List item', {depth: 0}),
+        ],
+      }]);
+
+      const markdown = await adapter.toMarkdown(snapshot);
+
+      expect(markdown).toContain('Text box **content**');
+      expect(markdown).toMatch(/[*-] List item/);
+      expect(markdown).not.toContain('text-box');
+      expect(markdown).not.toContain('cdn.example.com');
+    });
+
     it('handles heading + paragraph + list + divider sequence', async () => {
       const source = [
         '# Title',

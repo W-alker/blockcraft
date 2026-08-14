@@ -1,4 +1,16 @@
-import {BlockNodeType, DeltaInsert, EditableBlockComponent, IEditableBlockProps, IInlineNodeAttrs} from "../block-std";
+import {
+  BlockNodeType,
+  DeltaInsert,
+  EditableBlockComponent,
+  IEditableBlockProps,
+  IInlineNodeAttrs,
+  INLINE_TYPOGRAPHY_ATTRS,
+  matchTypographyFontFamily,
+  normalizeInlineFontScale,
+  normalizeInlineLetterSpacing,
+  normalizeTypographyLineHeight,
+  type TypographyFontFamilyId,
+} from "../block-std";
 import {getCommonAttributesFromDeltas, sliceDelta} from "../../global";
 import {getSelectionCoveredBlockIds} from "../modules/selection/covered-blocks";
 import {isSelectionAlive} from "../modules/selection/liveness";
@@ -7,6 +19,16 @@ export interface ITextCommonAttrs {
   attrs: Map<string, any>
   colors: Record<string, string | null>
   props: Partial<IEditableBlockProps>,
+  /** `null` means inherited/default; `undefined` means mixed or unsupported. */
+  typography?: {
+    ff: TypographyFontFamilyId | null | undefined
+    fs: number | null | undefined
+    ls: number | null | undefined
+  }
+  /** Paragraph-level typography across every editable block in the selection. */
+  paragraph?: {
+    lh: number | null | undefined
+  }
   flavour?: BlockCraft.BlockFlavour,
   allEditable?: boolean
 }
@@ -20,6 +42,8 @@ export class TextToolbarHelper {
       attrs: new Map(),
       colors: {},
       props: {},
+      typography: {ff: null, fs: null, ls: null},
+      paragraph: {lh: null},
       allEditable: false,
     }
   }
@@ -116,7 +140,9 @@ export class TextToolbarHelper {
       this.doc.crud.updateBlockProps(blockId, props)
       return
     }
-    this.doc.getBlockById(blockId).updateProps({...props})
+    // The stable ID was already checked as an editable block. Global flavour
+    // unions cannot express this runtime narrowing (root `lh` is non-nullable).
+    this.doc.getBlockById(blockId).updateProps({...props} as never)
   }
 
   private pickDeltaAttrsAt(deltas: DeltaInsert[], index: number) {
@@ -144,6 +170,68 @@ export class TextToolbarHelper {
     return prevAttrs || curAttrs || {}
   }
 
+  private parseLegacyEm(value: unknown, normalize: (value: unknown) => number | null): number | null | undefined {
+    if (value === null || value === undefined || value === '') return null
+    if (typeof value !== 'string') return undefined
+    const match = /^(-?(?:\d+(?:\.\d+)?|\.\d+))em$/i.exec(value.trim())
+    return match ? normalize(match[1]) ?? undefined : undefined
+  }
+
+  private inlineTypographyFromAttrs(attrs: IInlineNodeAttrs) {
+    let ff: TypographyFontFamilyId | null | undefined = null
+    const compactFamily = attrs[INLINE_TYPOGRAPHY_ATTRS.fontFamily]
+    if (compactFamily !== null && compactFamily !== undefined) {
+      ff = matchTypographyFontFamily(compactFamily) ?? undefined
+    } else if (attrs['s:fontFamily'] !== null && attrs['s:fontFamily'] !== undefined) {
+      ff = matchTypographyFontFamily(attrs['s:fontFamily']) ?? undefined
+    }
+
+    const compactScale = attrs[INLINE_TYPOGRAPHY_ATTRS.fontScale]
+    const fs = compactScale === null || compactScale === undefined
+      ? this.parseLegacyEm(attrs['s:fontSize'], normalizeInlineFontScale)
+      : normalizeInlineFontScale(compactScale) ?? undefined
+
+    const compactSpacing = attrs[INLINE_TYPOGRAPHY_ATTRS.letterSpacing]
+    const ls = compactSpacing === null || compactSpacing === undefined
+      ? this.parseLegacyEm(attrs['s:letterSpacing'], normalizeInlineLetterSpacing)
+      : normalizeInlineLetterSpacing(compactSpacing) ?? undefined
+
+    return {ff, fs, ls}
+  }
+
+  private commonValue<T>(values: ReadonlyArray<T | null | undefined>): T | null | undefined {
+    if (!values.length) return null
+    const first = values[0]
+    if (first === undefined) return undefined
+    return values.every(value => value !== undefined && value === first) ? first : undefined
+  }
+
+  private commonInlineTypography(deltas: readonly DeltaInsert[]) {
+    const states = deltas.length
+      ? deltas.map(delta => this.inlineTypographyFromAttrs(delta.attributes ?? {}))
+      : [this.inlineTypographyFromAttrs({})]
+    return {
+      ff: this.commonValue(states.map(state => state.ff)),
+      fs: this.commonValue(states.map(state => state.fs)),
+      ls: this.commonValue(states.map(state => state.ls)),
+    }
+  }
+
+  private paragraphTypographyFromProps(props: Partial<IEditableBlockProps>) {
+    const lineHeight = props.lh
+    return {
+      lh: lineHeight === null || lineHeight === undefined
+        ? null
+        : normalizeTypographyLineHeight(lineHeight) ?? undefined,
+    }
+  }
+
+  private commonParagraphTypography(states: Array<{lh: number | null | undefined}>) {
+    return {
+      lh: this.commonValue(states.map(state => state.lh)),
+    }
+  }
+
   getCurrentCommonAttrs(selection: BlockCraft.Selection): ITextCommonAttrs {
     if (!this.isSelectionAlive(selection)) return this.emptyCommonAttrs()
 
@@ -154,6 +242,7 @@ export class TextToolbarHelper {
     let props: Partial<IEditableBlockProps> = JSON.parse(JSON.stringify(this.blockProps(firstId)))
     let flavour: BlockCraft.BlockFlavour | undefined = this.blockFlavour(firstId)
     let allEditable = this.blockNodeType(firstId) === BlockNodeType.editable && !this.isPlainTextBlock(firstId)
+    const paragraphStates = [this.paragraphTypographyFromProps(props)]
 
     const between = getSelectionCoveredBlockIds(selection, this.doc)
 
@@ -175,6 +264,8 @@ export class TextToolbarHelper {
         attrs,
         colors,
         props,
+        typography: this.inlineTypographyFromAttrs(collapsedAttrs),
+        paragraph: this.commonParagraphTypography(paragraphStates),
         flavour,
         allEditable
       }
@@ -194,12 +285,16 @@ export class TextToolbarHelper {
         return
       }
       const blockProps = this.blockProps(blockId)
+      paragraphStates.push(this.paragraphTypographyFromProps(blockProps))
       const blockFlavour = this.blockFlavour(blockId)
       if (props.textAlign !== null && blockProps.textAlign !== props.textAlign) {
         props.textAlign = undefined
       }
       if (props.heading !== null && blockProps.heading !== props.heading) {
         props.heading = undefined
+      }
+      if (blockProps.lh !== props.lh) {
+        props.lh = undefined
       }
       if (blockFlavour !== flavour) {
         flavour = undefined
@@ -223,6 +318,8 @@ export class TextToolbarHelper {
       attrs,
       colors,
       props,
+      typography: this.commonInlineTypography(allDeltas),
+      paragraph: this.commonParagraphTypography(paragraphStates),
       flavour,
       allEditable
     }

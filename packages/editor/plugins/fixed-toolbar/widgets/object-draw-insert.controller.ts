@@ -27,7 +27,7 @@ interface DrawSurfaceBox {
 /**
  * One-shot Word-like object drawing mode owned by the fixed toolbar.
  *
- * Arming is view-only. A shape/WordArt snapshot is committed only after the
+ * Arming is view-only. An object snapshot is committed only after the
  * primary pointer is released; Escape, blur, scrolling and pointercancel leave
  * the Yjs document untouched.
  */

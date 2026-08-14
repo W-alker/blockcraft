@@ -4,6 +4,10 @@ import {HastUtils} from "../../utils";
 import {deltaToString} from "../../../global";
 import {DeltaInsert} from "../../../framework";
 import {HtmlAST} from "../../types";
+import {
+  editableTypographyFromHtml,
+  editableTypographyToHtmlProperties,
+} from '../typography';
 
 /** Extract raw text from a code `<pre>` tree, converting `<br>` to `\n` and preserving whitespace. */
 function getCodeText(node: HtmlAST): string {
@@ -37,6 +41,7 @@ export const codeBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
 
       const codeBlock = CodeBlockSchema.createSnapshot(text)
       codeBlock.props.depth = depth
+      Object.assign(codeBlock.props, editableTypographyFromHtml(o.node))
 
       walkerContext
         .openNode(codeBlock, 'children')
@@ -51,7 +56,7 @@ export const codeBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
       walkerContext.openNode({
         type: 'element',
         tagName: 'pre',
-        properties: {},
+        properties: editableTypographyToHtmlProperties(o.node.props),
         children: [
           {
             type: 'element',

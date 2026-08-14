@@ -12,7 +12,6 @@ import {
   BcColumnCountPickerComponent,
   BcFloatToolbarComponent,
   BcFloatToolbarItemComponent,
-  BcFontScalePickerComponent,
   BcOverlayTriggerDirective,
   BcTableSizePickerComponent,
   ColorGroup,
@@ -23,11 +22,19 @@ import {
 import {
   BLOCK_CREATOR_SERVICE_TOKEN,
   BlockNodeType,
+  INLINE_FONT_SCALE_PRESETS,
+  INLINE_LETTER_SPACING_PRESETS,
   IBlockSnapshot,
   IEditableBlockProps,
   IInlineNodeAttrs,
   ISelectionJSON,
+  createInlineTypographyPatch,
+  normalizeTypographyLineHeight,
+  getTypographyFontFamily,
+  PARAGRAPH_LINE_HEIGHT_PRESETS,
   TextToolbarHelper,
+  TYPOGRAPHY_FONT_FAMILIES,
+  type TypographyFontFamilyId,
 } from "../../../framework";
 import { fromEvent, merge, Subscription } from "rxjs";
 import { debounce, IS_MAC, nextTick } from "../../../global";
@@ -42,11 +49,16 @@ import {
   type ShapeKind,
 } from "../../../blocks/shape-block";
 import { ShapePickerComponent } from "../../../components/shape-picker";
+import { TextBoxPresetPickerComponent } from "../../../components/text-box-preset-picker";
 import {
   DEFAULT_WORD_ART_PROPS,
   getWordArtPreset,
   type WordArtPresetId,
 } from "../../../blocks/word-art-block";
+import {
+  getTextBoxPreset,
+  type TextBoxPresetId,
+} from "../../../blocks/text-box-block";
 import { WordArtPresetPickerComponent } from "./word-art-preset-picker.component";
 import {
   ObjectDrawInsertController,
@@ -68,6 +80,7 @@ interface IStyleMenuItem {
   name: string;
   value: any;
   intro: string;
+  icon: string;
 }
 
 interface IToolbarIconAction<T extends string = string> {
@@ -78,6 +91,17 @@ interface IToolbarIconAction<T extends string = string> {
 
 interface IFormatBrushPayload {
   inlineAttrs: IInlineNodeAttrs;
+  blockProps: Partial<Pick<IEditableBlockProps, "lh">>;
+}
+
+interface IInlineTypographyState {
+  ff: TypographyFontFamilyId | null | undefined;
+  fs: number | null | undefined;
+  ls: number | null | undefined;
+}
+
+interface IParagraphTypographyState {
+  lh: number | null | undefined;
 }
 
 type InsertPlacement =
@@ -101,11 +125,31 @@ export interface IFixedToolbarExtensionActionContext {
 }
 
 const HEADING_MENU_LIST: IStyleMenuItem[] = [
-  { name: "heading", intro: "正文", value: null },
-  { name: "heading", value: 1, intro: "一级标题" },
-  { name: "heading", value: 2, intro: "二级标题" },
-  { name: "heading", value: 3, intro: "三级标题" },
-  { name: "heading", value: 4, intro: "四级标题" },
+  { name: "heading", intro: "正文", value: null, icon: "bc_wenben" },
+  {
+    name: "heading",
+    value: 1,
+    intro: "一级标题",
+    icon: "bc_biaoti_1",
+  },
+  {
+    name: "heading",
+    value: 2,
+    intro: "二级标题",
+    icon: "bc_biaoti_2",
+  },
+  {
+    name: "heading",
+    value: 3,
+    intro: "三级标题",
+    icon: "bc_biaoti_3",
+  },
+  {
+    name: "heading",
+    value: 4,
+    intro: "四级标题",
+    icon: "bc_biaoti_4",
+  },
 ];
 
 const INLINE_TOGGLE_ACTIONS: IToolbarIconAction<TInlineToggle>[] = [
@@ -148,7 +192,8 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
 @Component({
   selector: "bc-fixed-toolbar",
   template: `
-    <ng-content select="[fixed-toolbar-prefix]"></ng-content>
+    <div class="toolbar-section toolbar-section--text">
+      <ng-content select="[fixed-toolbar-prefix]"></ng-content>
 
     <button
       class="toolbar-btn"
@@ -178,19 +223,51 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
       [bcOverlayDisabled]="readonly || !canTransformBlocks"
       #styleTrigger="bcOverlayTrigger"
     >
+      <i [class]="['bc_icon', activeStyleItem.icon, 'toolbar-btn__leading']"></i>
       <span>{{ activeStyleItem.intro }}</span>
       <i class="bc_icon bc_xiajaintou"></i>
     </button>
 
     <button
-      class="toolbar-btn toolbar-btn--dropdown"
-      title="字体缩放"
+      class="toolbar-btn toolbar-btn--style toolbar-btn--font-family"
+      title="字体"
+      aria-haspopup="menu"
       [disabled]="readonly || !allEditable"
-      [bcOverlayTrigger]="fontScalePicker"
+      [bcOverlayTrigger]="fontFamilyPicker"
       [bcOverlayDisabled]="readonly || !allEditable"
+      #fontFamilyTrigger="bcOverlayTrigger"
     >
-      <i class="bc_icon bc_wenben"></i>
-      <span class="toolbar-btn__scale">{{ activeFontScaleLabel }}</span>
+      <i class="bc_icon bc_wenben toolbar-btn__leading"></i>
+      <span>{{ activeFontFamilyLabel }}</span>
+      <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
+    </button>
+
+    <button
+      class="toolbar-btn toolbar-btn--style toolbar-btn--font-size"
+      title="文字缩放"
+      aria-haspopup="menu"
+      [disabled]="readonly || !allEditable"
+      [bcOverlayTrigger]="fontSizePicker"
+      [bcOverlayDisabled]="readonly || !allEditable"
+      #fontSizeTrigger="bcOverlayTrigger"
+    >
+      <i class="bc_icon bc_zihao-jia toolbar-btn__leading"></i>
+      <span>{{ activeFontScaleLabel }}</span>
+      <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
+    </button>
+
+    <button
+      class="toolbar-btn toolbar-btn--style toolbar-btn--letter-spacing"
+      [title]="'字符间距：' + activeLetterSpacingLabel"
+      [attr.aria-label]="'字符间距：' + activeLetterSpacingLabel"
+      aria-haspopup="menu"
+      [disabled]="readonly || !allEditable"
+      [bcOverlayTrigger]="letterSpacingPicker"
+      [bcOverlayDisabled]="readonly || !allEditable"
+      #letterSpacingTrigger="bcOverlayTrigger"
+    >
+      <i class="bc_icon bc_zengjiasuojin1 toolbar-btn__leading"></i>
+      <span>{{ activeLetterSpacingLabel }}</span>
       <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
     </button>
 
@@ -256,18 +333,34 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
       </button>
     }
 
-    @for (item of alignActions; track item.value) {
-      <button
-        class="toolbar-btn"
-        [class.active]="isAlignActive(item.value)"
-        [title]="item.title"
-        [disabled]="readonly || !allEditable"
-        (mousedown)="onActionMouseDown($event)"
-        (click)="setAlign(item.value)"
-      >
-        <i [class]="['bc_icon', item.icon]"></i>
-      </button>
-    }
+    <button
+      class="toolbar-btn toolbar-btn--dropdown"
+      [title]="activeAlignAction.title"
+      [attr.aria-label]="'对齐方式：' + activeAlignAction.title"
+      aria-haspopup="menu"
+      [disabled]="readonly || !allEditable"
+      [bcOverlayTrigger]="alignDropdown"
+      [bcOverlayDisabled]="readonly || !allEditable"
+      #alignTrigger="bcOverlayTrigger"
+    >
+      <i [class]="['bc_icon', activeAlignAction.icon]"></i>
+      <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
+    </button>
+
+    <button
+      class="toolbar-btn toolbar-btn--dropdown"
+      [title]="'行距：' + activeLineHeightLabel"
+      [attr.aria-label]="'行距：' + activeLineHeightLabel"
+      aria-haspopup="menu"
+      [disabled]="readonly || !allEditable"
+      [bcOverlayTrigger]="lineHeightPicker"
+      [bcOverlayDisabled]="readonly || !allEditable"
+      #lineHeightTrigger="bcOverlayTrigger"
+    >
+      <i class="bc_icon bc_hangjianju"></i>
+      <span class="toolbar-btn__value">{{ activeLineHeightLabel }}</span>
+      <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
+    </button>
 
     <span class="toolbar-divider"></span>
 
@@ -292,6 +385,10 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
       <i class="bc_icon bc_gongshi"></i>
     </button>
 
+    </div>
+
+    <div class="toolbar-section toolbar-section--insert">
+
     <button
       class="toolbar-btn toolbar-btn--dropdown"
       title="插入形状"
@@ -304,6 +401,21 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
       #shapeTrigger="bcOverlayTrigger"
     >
       <i class="bc_icon bc_tuxing"></i>
+      <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
+    </button>
+
+    <button
+      class="toolbar-btn toolbar-btn--dropdown"
+      title="插入文本框"
+      aria-label="插入文本框"
+      [hidden]="!doc.schemas.has('text-box')"
+      [disabled]="readonly"
+      [bcOverlayTrigger]="textBoxPicker"
+      [bcOverlayDisabled]="readonly"
+      (click)="textBoxTrigger.openOverlay()"
+      #textBoxTrigger="bcOverlayTrigger"
+    >
+      <i class="bc_icon bc_wenbenkuang"></i>
       <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
     </button>
 
@@ -395,6 +507,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
 
     <ng-content></ng-content>
     <ng-content select="[fixed-toolbar-suffix]"></ng-content>
+    </div>
 
     <ng-template #colorPicker>
       <bc-color-picker
@@ -426,11 +539,112 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
       </bc-color-picker>
     </ng-template>
 
-    <ng-template #fontScalePicker>
-      <bc-font-scale-picker
-        [current]="activeFontScale"
-        (pick)="onFontScalePicked($event)"
-      ></bc-font-scale-picker>
+    <ng-template #fontFamilyPicker>
+      <bc-float-toolbar
+        [direction]="'column'"
+        (onItemClick)="onFontFamilyItemClicked($event, fontFamilyTrigger)"
+        [gapAround]="8"
+        styles="max-height: min(60vh, 420px); overflow-y: auto"
+      >
+        <bc-float-toolbar-item
+          name="font-family"
+          [value]="null"
+          [active]="activeTypography.ff === null"
+          >默认字体</bc-float-toolbar-item
+        >
+        @for (font of fontFamilies; track font.id) {
+          <bc-float-toolbar-item
+            name="font-family"
+            [value]="font.id"
+            [active]="activeTypography.ff === font.id"
+            [style.font-family]="font.css"
+            >{{ font.label }}</bc-float-toolbar-item
+          >
+        }
+      </bc-float-toolbar>
+    </ng-template>
+
+    <ng-template #fontSizePicker>
+      <bc-float-toolbar
+        [direction]="'column'"
+        (onItemClick)="onFontScaleItemClicked($event, fontSizeTrigger)"
+        [gapAround]="8"
+        styles="max-height: min(60vh, 420px); overflow-y: auto"
+      >
+        @for (scale of fontScalePresets; track scale) {
+          <bc-float-toolbar-item
+            name="font-scale"
+            [value]="scale"
+            [active]="(activeTypography.fs ?? 1) === scale"
+            >{{ scale }}×</bc-float-toolbar-item
+          >
+        }
+      </bc-float-toolbar>
+    </ng-template>
+
+    <ng-template #letterSpacingPicker>
+      <bc-float-toolbar
+        [direction]="'column'"
+        (onItemClick)="onLetterSpacingItemClicked($event, letterSpacingTrigger)"
+        [gapAround]="8"
+        styles="max-height: min(60vh, 420px); overflow-y: auto"
+      >
+        <bc-float-toolbar-item
+          name="letter-spacing"
+          [value]="null"
+          [active]="activeTypography.ls === null"
+          >默认（0em）</bc-float-toolbar-item
+        >
+        @for (spacing of letterSpacingPresets; track spacing) {
+          <bc-float-toolbar-item
+            name="letter-spacing"
+            [value]="spacing"
+            [active]="activeTypography.ls === spacing"
+            >{{ letterSpacingOptionLabel(spacing) }}</bc-float-toolbar-item
+          >
+        }
+      </bc-float-toolbar>
+    </ng-template>
+
+    <ng-template #lineHeightPicker>
+      <bc-float-toolbar
+        [direction]="'column'"
+        (onItemClick)="onLineHeightItemClicked($event, lineHeightTrigger)"
+        [gapAround]="8"
+      >
+        <bc-float-toolbar-item
+          name="line-height"
+          [value]="null"
+          [active]="activeParagraphTypography.lh === null"
+          >默认</bc-float-toolbar-item
+        >
+        @for (lineHeight of lineHeightPresets; track lineHeight) {
+          <bc-float-toolbar-item
+            name="line-height"
+            [value]="lineHeight"
+            [active]="activeParagraphTypography.lh === lineHeight"
+            >{{ lineHeight }} 倍</bc-float-toolbar-item
+          >
+        }
+      </bc-float-toolbar>
+    </ng-template>
+
+    <ng-template #alignDropdown>
+      <bc-float-toolbar
+        [direction]="'column'"
+        (onItemClick)="onAlignItemClicked($event, alignTrigger)"
+        [gapAround]="8"
+      >
+        @for (item of alignActions; track item.value) {
+          <bc-float-toolbar-item
+            name="align"
+            [value]="item.value"
+            [icon]="item.icon"
+            [active]="isAlignActive(item.value)"
+            >{{ item.title }}</bc-float-toolbar-item
+          >
+        }
+      </bc-float-toolbar>
     </ng-template>
 
     <ng-template #quickTablePicker>
@@ -474,6 +688,12 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
       ></bc-word-art-preset-picker>
     </ng-template>
 
+    <ng-template #textBoxPicker>
+      <bc-text-box-preset-picker
+        (pick)="insertTextBox($event, textBoxTrigger)"
+      ></bc-text-box-preset-picker>
+    </ng-template>
+
     <ng-template #styleDropdown>
       <bc-float-toolbar
         [direction]="'column'"
@@ -484,6 +704,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
           <bc-float-toolbar-item
             [name]="item.name"
             [value]="item.value"
+            [icon]="item.icon"
             [active]="isHeadingItemActive(item)"
             >{{ item.intro }}
           </bc-float-toolbar-item>
@@ -495,10 +716,15 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
     `
       :host {
         display: flex;
-        align-items: center;
-        gap: 4px;
+        align-items: stretch;
+        column-gap: 4px;
+        row-gap: 4px;
         flex-wrap: wrap;
-        width: max-content;
+        width: fit-content;
+        max-width: 100%;
+        max-height: 72px;
+        box-sizing: border-box;
+        overflow-y: hidden;
         padding: var(--bc-fixed-toolbar-padding, 5px 8px);
         border: var(
           --bc-fixed-toolbar-border,
@@ -511,6 +737,22 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
         pointer-events: auto;
         transition: opacity 0.12s ease;
         will-change: transform;
+      }
+
+      .toolbar-section {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        flex: 0 0 auto;
+        max-width: 100%;
+        min-width: 0;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: none;
+      }
+
+      .toolbar-section::-webkit-scrollbar {
+        display: none;
       }
 
       :host(.hidden) {
@@ -543,6 +785,11 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
         background: var(--bc-float-toolbar-item-hover-bg);
       }
 
+      .toolbar-btn:focus-visible {
+        outline: 2px solid var(--bc-active-color);
+        outline-offset: -2px;
+      }
+
       .toolbar-btn.active {
         background: var(--bc-float-toolbar-item-active-bg);
         color: var(--bc-active-color);
@@ -564,9 +811,18 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
         flex-shrink: 0;
       }
 
+      .toolbar-btn__leading {
+        flex-shrink: 0;
+      }
+
       .toolbar-btn__scale {
         font-size: 12px;
+        text-align: center;
+      }
+
+      .toolbar-btn__value {
         min-width: 26px;
+        font-size: 11px;
         text-align: center;
       }
 
@@ -576,14 +832,32 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
 
       .toolbar-btn--style {
         gap: 4px;
-        min-width: 80px;
+        min-width: 96px;
         border: 1px solid var(--bc-border-color);
       }
 
+      .toolbar-btn--font-family {
+        width: 112px;
+      }
+
+      .toolbar-btn--font-size {
+        width: 78px;
+        min-width: 78px;
+      }
+
+      .toolbar-btn--letter-spacing {
+        width: 92px;
+        min-width: 92px;
+      }
+
       .toolbar-btn--style > span {
+        overflow: hidden;
         font-size: 12px;
         flex: 1;
+        line-height: 1;
         text-align: left;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
 
       .toolbar-btn--style > i:last-child {
@@ -664,8 +938,8 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
     ColorPickerComponent,
     BcTableSizePickerComponent,
     BcColumnCountPickerComponent,
-    BcFontScalePickerComponent,
     ShapePickerComponent,
+    TextBoxPresetPickerComponent,
     WordArtPresetPickerComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -711,6 +985,21 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
 
   @Input()
   activeProps: Partial<IEditableBlockProps> = {};
+
+  protected activeTypography: IInlineTypographyState = {
+    ff: null,
+    fs: null,
+    ls: null,
+  };
+
+  protected activeParagraphTypography: IParagraphTypographyState = {
+    lh: null,
+  };
+
+  protected readonly fontFamilies = TYPOGRAPHY_FONT_FAMILIES;
+  protected readonly fontScalePresets = INLINE_FONT_SCALE_PRESETS;
+  protected readonly letterSpacingPresets = INLINE_LETTER_SPACING_PRESETS;
+  protected readonly lineHeightPresets = PARAGRAPH_LINE_HEIGHT_PRESETS;
 
   @Input()
   activeFlavour: BlockCraft.BlockFlavour = "paragraph";
@@ -901,6 +1190,22 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     return this.activeProps.textAlign === align;
   }
 
+  protected get activeAlignAction(): IToolbarIconAction<TAlignValue> {
+    return (
+      ALIGN_ACTIONS.find((item) => this.isAlignActive(item.value)) ??
+      ALIGN_ACTIONS[0]
+    );
+  }
+
+  protected onAlignItemClicked(
+    item: BcFloatToolbarItemComponent,
+    trigger: BcOverlayTriggerDirective,
+  ) {
+    trigger.closePanel();
+    const align = ALIGN_ACTIONS.find((action) => action.value === item.value);
+    if (align) this.setAlign(align.value);
+  }
+
   protected setAlign(align: TAlignValue) {
     this.runWithSelection(() => {
       this.toolbarHelper.updateBlockProps({
@@ -936,36 +1241,83 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
 
   /** 当前选区共有的字体缩放比例（1 = 默认/正文大小）。 */
   protected get activeFontScale(): number {
-    return this.parseFontScale(this.activeAttrs.get("fontSize"));
+    return this.activeTypography.fs ?? 1;
   }
 
   protected get activeFontScaleLabel(): string {
-    return `${this.activeFontScale}×`;
+    return this.activeTypography.fs === undefined
+      ? "混合"
+      : `${Math.round(this.activeFontScale * 1000) / 1000}×`;
   }
 
-  /** 仅把 `<n>em` 解析为相对比例；px 等非比例值或缺省一律回退 1（默认大小）。 */
-  private parseFontScale(value: unknown): number {
-    if (typeof value === "string") {
-      const match = /^([\d.]+)em$/.exec(value.trim());
-      if (match) {
-        const n = Number.parseFloat(match[1]);
-        if (Number.isFinite(n) && n > 0) return Math.round(n * 100) / 100;
-      }
-    }
-    return 1;
+  protected get activeLineHeightLabel(): string {
+    const value = this.activeParagraphTypography.lh;
+    if (value === undefined) return "混合";
+    if (value === null) return "默认";
+    return `${Math.round(value * 100) / 100}×`;
   }
 
-  protected onFontScalePicked(ratio: number) {
-    // 用实时选区（与取色器一致）：picker 里的按钮在 mousedown 已 preventDefault，
-    // 不会夺走编辑器焦点，故 selection 始终是最新的——不能用面板打开时的快照，
-    // 否则「选号→输入→再选号」时会把光标回放到输入之前。
-    // 光标（collapsed）场景下 formatText 会把比例写进 pendingInsertAttrs，
-    // 后续输入自动套用该字号。
+  protected get activeLetterSpacingLabel(): string {
+    const value = this.activeTypography.ls;
+    if (value === undefined) return "混合";
+    return this.letterSpacingOptionLabel(value ?? 0);
+  }
+
+  protected get activeFontFamilyLabel(): string {
+    const family = this.activeTypography.ff;
+    if (family === undefined) return "多种字体";
+    if (family === null) return "默认字体";
+    return getTypographyFontFamily(family)?.label ?? "默认字体";
+  }
+
+  private applyInlineTypography(
+    key: "ff" | "fs" | "ls",
+    value: unknown,
+  ) {
     this.runWithSelection(() => {
-      this.toolbarHelper.formatText({
-        "s:fontSize": ratio === 1 ? null : `${ratio}em`,
-      } as IInlineNodeAttrs);
+      this.toolbarHelper.formatText(
+        createInlineTypographyPatch(key, value) as IInlineNodeAttrs,
+      );
     });
+  }
+
+  protected onFontFamilyItemClicked(
+    item: BcFloatToolbarItemComponent,
+    trigger: BcOverlayTriggerDirective,
+  ) {
+    trigger.closePanel();
+    this.applyInlineTypography("ff", item.value);
+  }
+
+  protected onFontScaleItemClicked(
+    item: BcFloatToolbarItemComponent,
+    trigger: BcOverlayTriggerDirective,
+  ) {
+    trigger.closePanel();
+    this.applyInlineTypography("fs", item.value);
+  }
+
+  protected onLetterSpacingItemClicked(
+    item: BcFloatToolbarItemComponent,
+    trigger: BcOverlayTriggerDirective,
+  ) {
+    trigger.closePanel();
+    this.applyInlineTypography("ls", item.value);
+  }
+
+  protected onLineHeightItemClicked(
+    item: BcFloatToolbarItemComponent,
+    trigger: BcOverlayTriggerDirective,
+  ) {
+    trigger.closePanel();
+    const value = normalizeTypographyLineHeight(item.value);
+    this.runWithSelection(() => {
+      this.toolbarHelper.updateBlockProps({lh: value});
+    });
+  }
+
+  protected letterSpacingOptionLabel(value: number): string {
+    return `${Math.round(value * 1000) / 1000}em`;
   }
 
   protected async insertQuickTable(
@@ -1062,6 +1414,68 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       return;
     }
     this.doc.selection.selectOrSetCursorAtBlock(insertedId, true);
+    this.syncToolbarState(this.doc.selection.value);
+    this.cdr.markForCheck();
+  }
+
+  protected insertTextBox(
+    presetId: TextBoxPresetId,
+    trigger: BcOverlayTriggerDirective,
+  ): void {
+    trigger.closePanel();
+    if (this.readonly) return;
+
+    const schema = this.doc.schemas.get("text-box", false);
+    if (!schema) return;
+    const preset = getTextBoxPreset(presetId);
+
+    const armed = this.armObjectDrawing({
+      defaultWidth: preset.defaultWidth,
+      defaultHeight: preset.defaultHeight,
+      commit: (geometry) =>
+        this.commitTextBox(presetId, schema.metadata.label, geometry),
+    });
+    if (!armed) {
+      this.doc.messageService.warn(`无法在当前视图绘制${schema.metadata.label}`);
+    }
+  }
+
+  private async commitTextBox(
+    presetId: TextBoxPresetId,
+    label: string,
+    geometry: ObjectDrawInsertGeometry,
+  ): Promise<void> {
+    if (this._destroyed || this.readonly) return;
+    const preset = getTextBoxPreset(presetId);
+    const snapshot = this.doc.schemas.createSnapshot("text-box", [
+      "",
+      {
+        ...preset.props,
+        width: geometry.width,
+        height: geometry.height,
+      },
+    ]);
+    const insertedId = this.doc.placement.insertAbsoluteSnapshot(snapshot, {
+      anchorRect: geometry.anchorRect,
+      layer: "over",
+    });
+    if (!insertedId) {
+      this.doc.messageService.warn(`此处不能添加${label}`);
+      return;
+    }
+
+    this.doc.selection.selectOrSetCursorAtBlock(insertedId, true);
+    const revealed = await this.doc.navigateToBlock(insertedId);
+    if (revealed) {
+      try {
+        const block = this.doc.getBlockById(insertedId);
+        if (block.flavour === "text-box") {
+          (block as BlockCraft.IBlockComponents["text-box"]).enterEditing(true);
+        }
+      } catch {
+        // 协同更新可能已移除视图；保留已建立的对象选区即可。
+      }
+    }
     this.syncToolbarState(this.doc.selection.value);
     this.cdr.markForCheck();
   }
@@ -1257,8 +1671,12 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
         "a:link": null,
         "s:color": null,
         "s:background": null,
+        "t:ff": null,
+        "t:fs": null,
+        "t:ls": null,
         "s:fontSize": null,
         "s:fontFamily": null,
+        "s:letterSpacing": null,
       } as unknown as IInlineNodeAttrs);
       // if (this.activeFlavour !== 'paragraph') {
       //   this.toolbarHelper.transformBlocks('paragraph')
@@ -1266,6 +1684,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       this.toolbarHelper.updateBlockProps({
         heading: undefined,
         textAlign: undefined,
+        lh: null,
       });
     });
   }
@@ -1424,11 +1843,25 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       "a:bg": this.readFormatBrushAttr(common.attrs, "bg"),
       "s:color": common.colors["color"] ?? null,
       "s:background": common.colors["backColor"] ?? null,
-      "s:fontSize": this.readFormatBrushAttr(common.attrs, "fontSize"),
     } as IInlineNodeAttrs;
+
+    const typography = common.typography;
+    if (typography?.ff !== undefined) {
+      Object.assign(inlineAttrs, createInlineTypographyPatch("ff", typography.ff));
+    }
+    if (typography?.fs !== undefined) {
+      Object.assign(inlineAttrs, createInlineTypographyPatch("fs", typography.fs));
+    }
+    if (typography?.ls !== undefined) {
+      Object.assign(inlineAttrs, createInlineTypographyPatch("ls", typography.ls));
+    }
+
+    const blockProps: Partial<Pick<IEditableBlockProps, "lh">> = {};
+    if (common.paragraph?.lh !== undefined) blockProps.lh = common.paragraph.lh;
 
     return {
       inlineAttrs,
+      blockProps,
     } satisfies IFormatBrushPayload;
   }
 
@@ -1574,6 +2007,9 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     payload: IFormatBrushPayload,
   ) {
     this.toolbarHelper.formatText(payload.inlineAttrs, selection);
+    if (Object.keys(payload.blockProps).length) {
+      this.toolbarHelper.updateBlockProps(payload.blockProps, selection);
+    }
   }
 
   protected async insertSchemaBlock(flavour: "image" | "video" | "audio") {
@@ -1874,6 +2310,8 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       this.activeAttrs = new Map<string, any>();
       this.activeColors = {};
       this.activeProps = {};
+      this.activeTypography = {ff: null, fs: null, ls: null};
+      this.activeParagraphTypography = {lh: null};
       this.activeFlavour = "paragraph";
       this.allEditable = false;
       this.canTransformBlocks = false;
@@ -1896,6 +2334,8 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       this.activeAttrs = new Map<string, any>();
       this.activeColors = {};
       this.activeProps = {};
+      this.activeTypography = {ff: null, fs: null, ls: null};
+      this.activeParagraphTypography = {lh: null};
       this.activeFlavour = "paragraph";
       this.allEditable = false;
       this.isLinkAble = false;
@@ -1906,6 +2346,12 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
 
     const common = this.toolbarHelper.getCurrentCommonAttrs(selection);
     this.activeProps = { ...common.props };
+    this.activeTypography = common.typography
+      ? {...common.typography}
+      : {ff: null, fs: null, ls: null};
+    this.activeParagraphTypography = common.paragraph
+      ? {...common.paragraph}
+      : {lh: null};
     this.activeFlavour = common.flavour || "paragraph";
     this.allEditable = this.canFormatTextSelection(selection);
     this.activeAttrs = this.allEditable

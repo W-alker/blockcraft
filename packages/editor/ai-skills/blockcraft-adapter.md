@@ -4,7 +4,7 @@
 >
 > Adapters handle HTML ↔ BlockSnapshot and Markdown ↔ BlockSnapshot conversion.
 >
-> Last updated: 2026-08-13
+> Last updated: 2026-08-14
 
 ## Architecture
 
@@ -256,6 +256,66 @@ Import prefers valid `data-bc-wr/data-bc-ar`, then falls back to legacy
 `width/height` or `data-width`. Standard Markdown does not gain private size
 syntax; an imported Markdown image therefore uses its Schema defaults.
 
+## Render Unit Surface Mapping
+
+The built-in `render-unit` matcher uses
+`<section data-bc-block="render-unit">` as a surface-preserving HTML container. Its
+children remain ordinary nested block elements. Optional shell colors use
+`data-bc-back-color` / `data-bc-border-color`; surface data uses compact keys
+that map one-to-one to persisted props:
+
+- `data-bc-p`, containing one to four space-separated numeric values;
+- `data-bc-bgi` and `data-bc-bgs`;
+- `data-bc-bgx/bgy/bgo`.
+
+Import passes all fields through `normalizeRenderUnitBlockProps()`, which also
+applies the shared bounded surface normalizer and rejects active script URL
+schemes. Raw inline `background` CSS is neither emitted nor trusted. Register
+this matcher before generic paragraph-like containers so its children attach
+to the open region snapshot.
+
+Standard Markdown has no portable container-surface syntax. Export therefore
+walks through the region and preserves readable child blocks while dropping
+padding, colors and the background image; reimport produces those ordinary
+blocks rather than reconstructing a `render-unit`. Internal BlockCraft snapshot
+copy/paste remains lossless.
+
+## Text Box Mapping
+
+The built-in `text-box` matcher uses
+`<figure data-bc-block="text-box">` as a lossless HTML envelope. It reuses
+`data-bc-p/bgi/bgs/bgx/bgy/bgo` and the common shell-color attributes, while
+fixed geometry is stored in `data-text-box-width`, `data-text-box-height` and
+`data-text-box-rotation`. Absolute placement is serialized on the same element
+with the text-box placement mode/x/y/unit/layer attributes.
+Shape-shell values use `data-bc-sh/fo/bw/bs`; the optional canonical serialized
+WordArt value uses `data-bc-wa`. Preset IDs are catalog state and therefore
+never enter HTML or Snapshot data.
+
+Ordinary paragraph/list/blockquote elements stay nested inside the figure.
+Import opens the text-box snapshot before walking those children and restores a
+default paragraph only when none survive. All external surface, geometry,
+Shape and WordArt values pass through the shared normalizers; unsupported
+line/connectors fall back to a rectangle and oversized/malformed WordArt JSON
+is discarded. Inline `background` CSS is not trusted as model data. Register
+this matcher before the generic paragraph-like matchers.
+
+Standard Markdown intentionally emits only the readable child blocks. It drops
+fixed geometry, placement and surface appearance, and Markdown import never
+guesses a text box from ordinary prose. Internal Snapshot and HTML paths remain
+lossless.
+
+## Typography Mapping
+
+HTML round-trips document root `ff/fs/lh`, editable paragraph `lh`, and
+inline `t:ff/t:fs/t:ls` through bounded `data-bc-*` fields plus portable CSS.
+Import accepts only the shared font catalog (or supported safe legacy stacks),
+relative inline `em` values and bounded numeric root/block values. Raw arbitrary
+CSS properties and expressions such as `url()`, `var()`, `calc()` or
+`expression()` are ignored. Legacy `s:fontFamily`, `s:fontSize` and
+`s:letterSpacing` export read-compatibly and normalize to compact semantic keys
+on supported HTML import. Standard Markdown intentionally drops typography.
+
 ## Shape Block Mapping
 
 `placement-layout` is a BlockCraft-internal snapshot container. HTML/Markdown
@@ -343,6 +403,7 @@ embedded shape/WordArt text as ordinary inline text.
 | Code | `html-adapter/block-matchers/code-matcher.ts` | `markdown-adapter/block-matchers/code-matcher.ts` |
 | Video / Audio | `html-adapter/block-matchers/media-matcher.ts` | `markdown-adapter/block-matchers/media-matcher.ts` |
 | Shape | `html-adapter/block-matchers/shape-matcher.ts` | `markdown-adapter/block-matchers/shape-matcher.ts` |
+| Text box | `html-adapter/block-matchers/text-box-matcher.ts` | none; ordinary children are flattened |
 | WordArt | `html-adapter/block-matchers/word-art-matcher.ts` | `markdown-adapter/block-matchers/word-art-matcher.ts` |
 
 ## 有道云笔记 `text/yne-json` 剪贴板适配器

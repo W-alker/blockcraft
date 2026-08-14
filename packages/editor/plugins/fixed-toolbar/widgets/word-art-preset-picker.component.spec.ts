@@ -94,4 +94,17 @@ describe("WordArtPresetPickerComponent", () => {
       "深海蓝",
     );
   });
+
+  it("removes standalone popup chrome when embedded in a settings card", async () => {
+    await TestBed.configureTestingModule({
+      imports: [WordArtPresetPickerComponent],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(WordArtPresetPickerComponent);
+    fixture.componentRef.setInput("embedded", true);
+    fixture.detectChanges();
+
+    expect((fixture.nativeElement as HTMLElement).classList).toContain(
+      "word-art-preset-picker-host--embedded",
+    );
+  });
 });

@@ -108,4 +108,83 @@ describe("RootBlockComponent selection entry", () => {
     expect(component.selecting$.value).toBe("start");
     fixture.destroy();
   });
+
+  it("projects compact document typography and accepts safe legacy font stacks", () => {
+    const {fixture, component} = createComponent();
+    component._native = rootNative({ff: "kai", fs: 18, lh: 1.75});
+
+    component.applyDocumentTypographyProjection();
+
+    expect(component.documentFontFamily).toContain("Kaiti SC");
+    expect(component.documentFontSize).toBe("18px");
+    expect(component.documentLineHeight).toBe("1.75");
+    expect(component.hostElement.style.fontFamily).toContain("Kaiti SC");
+    expect(component.hostElement.style.getPropertyValue("--bc-fs")).toBe("18px");
+    expect(component.hostElement.style.getPropertyValue("--bc-lh")).toBe("1.75");
+
+    component._native = rootNative({ff: "Georgia, serif"});
+    component.applyDocumentTypographyProjection();
+    expect(component.hostElement.style.fontFamily).toBe("Georgia, serif");
+    fixture.destroy();
+  });
+
+  it("drops invalid root typography instead of projecting raw CSS", () => {
+    const {fixture, component} = createComponent();
+    component._native = rootNative({
+      ff: "url(javascript:bad)",
+      fs: 9,
+      lh: 4,
+    });
+
+    component.applyDocumentTypographyProjection();
+
+    expect(component.documentFontFamily).toBeNull();
+    expect(component.documentFontSize).toBeNull();
+    expect(component.documentLineHeight).toBeNull();
+    expect(component.hostElement.style.fontFamily).toBe("");
+    expect(component.hostElement.style.getPropertyValue("--bc-fs")).toBe("");
+    expect(component.hostElement.style.getPropertyValue("--bc-lh")).toBe("");
+    fixture.destroy();
+  });
+
+  it("coalesces local/remote root typography changes into one layout refresh", async () => {
+    const {fixture, component} = createComponent();
+    const refreshLayoutMetrics = jasmine.createSpy("refreshLayoutMetrics");
+    component.doc = {refreshLayoutMetrics};
+    component._native = rootNative({ff: "sans", fs: 16, lh: 1.5});
+    component.bindDocumentTypographyProjection();
+
+    component._native.props.ff = "serif";
+    component.onPropsChange.emit(new Map([["ff", {}]]) as any);
+    await Promise.resolve();
+
+    expect(refreshLayoutMetrics).toHaveBeenCalledTimes(1);
+    expect(component.hostElement.style.fontFamily).toContain("Songti SC");
+
+    component._native.props.fs = 20;
+    component.onPropsChange.emit(new Map([["fs", {}]]) as any);
+    component._native.props.lh = 2;
+    component.onPropsChange.emit(new Map([["lh", {}]]) as any);
+    await Promise.resolve();
+
+    expect(refreshLayoutMetrics).toHaveBeenCalledTimes(2);
+    expect(component.hostElement.style.getPropertyValue("--bc-fs")).toBe("20px");
+    expect(component.hostElement.style.getPropertyValue("--bc-lh")).toBe("2");
+
+    component.onPropsChange.emit(new Map([["color", {}]]) as any);
+    await Promise.resolve();
+    expect(refreshLayoutMetrics).toHaveBeenCalledTimes(2);
+    fixture.destroy();
+  });
 });
+
+function rootNative(props: Record<string, unknown>) {
+  return {
+    id: "root",
+    flavour: "root",
+    nodeType: BlockNodeType.root,
+    props,
+    meta: {},
+    children: [],
+  } as any;
+}

@@ -2,6 +2,7 @@
   [data-node-type='editable'] {
     &[data-heading] {
       font-weight: bolder;
+      line-height: var(--bc-block-lh, var(--bc-lh));
     }
 
     &[data-heading='1'] {

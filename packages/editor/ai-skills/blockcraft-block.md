@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-08-13
+> Last updated: 2026-08-14
 
 ## Block Types
 
@@ -482,6 +482,49 @@ draws a geometry-neutral 1px inner outline. `CalloutToolbarPlugin` exposes
 background and border palettes for this region without cascading values into
 its child blocks.
 
+### Opt-in Block Surface Props
+
+Do not infer padding or background-image semantics from `IBlockProps` or
+`nodeType`. Container-like Blocks explicitly opt into the exported
+`BlockSurfaceProps` interface. The bundled `render-unit` is the first consumer:
+
+```typescript
+interface BlockSurfaceProps extends IBlockProps {
+  // CSS arity in layout px: all | vertical/horizontal | top/horizontal/bottom
+  // | top/right/bottom/left
+  p?: number | [number] | [number, number] |
+    [number, number, number] | [number, number, number, number] | null
+  bgi?: string | null // background image source
+  bgs?: 'cover' | 'contain' | 'stretch' | null // background size/fit
+  bgx?: number | null // background-position-x, percent 0..100
+  bgy?: number | null // background-position-y, percent 0..100
+  bgo?: number | null // background layer opacity, 0..1
+}
+```
+
+Keep background options as flat top-level props. Padding deliberately uses one
+`p` Y.Map entry with the same 1–4 value expansion as CSS: `12`, `[12, 24]`,
+`[8, 16, 12]`, or `[8, 12, 16, 20]`. The normalizer compresses redundant
+values back to the shortest arity. A padding edit therefore replaces the whole
+shorthand value, while background options still merge independently. Use
+`normalizeBlockSurfaceProps()` at creation/import boundaries and
+`resolveBlockSurface()` in model/render paths. Values remain numeric rather
+than arbitrary CSS strings; padding is bounded to `0..1000` layout pixels.
+Once `bgi` is valid, omitted image options resolve to `cover`, `50% 50%` and
+opacity `1`; active script schemes are rejected. `null` remains the normal
+`updateProps()`/`updateBlockProps()` delete operation.
+
+The surface image is presentation-only, sits behind children and must be an
+actual non-interactive `<img>` rather than raw `background: url(...)`. That
+keeps URL handling typed and lets the pagination print-resource barrier wait
+for image decoding. `stretch` maps to CSS `object-fit: fill`.
+
+`BlockSurfaceProps` is reusable but opt-in: ordinary editable blocks, tables,
+Shape geometry and root page margins do not consume it automatically. The
+bundled `render-unit` supplies an arbitrary-child content region; the separate
+`text-box` Block combines the same surface contract with fixed geometry,
+placement and object transforms.
+
 `detach()` and `reattach()` describe a reversible view lifecycle. Permanent
 subscriptions and document-owned resources should still use `onDestroy$` or
 `DestroyRef`. View-only resources that must stop while virtualized should use
@@ -821,6 +864,73 @@ for `Blob/File` and falls back to temporary Object URL + `HTMLImageElement` for
 WebKit compatibility. Do not put that await in an interactive built-in image
 insertion path because it delays the upload-preview state.
 
+### Built-in Word-like Text Box
+
+The bundled `text-box` flavour is a fixed-size container whose text remains in
+ordinary paragraph/list/blockquote child Blocks. Register the Schema and its
+object toolbar together with the placement infrastructure and the child
+schemas your document allows:
+
+```typescript
+import {
+  ParagraphBlockSchema,
+  PlacementLayoutBlockSchema,
+  TextBoxBlockSchema,
+  TextBoxToolbarPlugin,
+} from '@ccc/blockcraft'
+
+const schemas = new SchemaManager([
+  ParagraphBlockSchema,
+  PlacementLayoutBlockSchema,
+  TextBoxBlockSchema,
+])
+const plugins = [new TextBoxToolbarPlugin()]
+```
+
+`TextBoxBlockSchema.createSnapshot(text?, props?)` always starts with a normal
+paragraph, so Enter, IME, Y.Text collaboration and Undo use the same path as
+document prose. Its exact child allowlist is `paragraph`, `bullet`, `ordered`,
+`todo` and `blockquote`; nested media, tables and drawing objects are rejected.
+Deleting the last child restores the framework's normal fallback paragraph.
+
+`TextBoxBlockProps` extends `BlockSurfaceProps` with fixed `width`, `height` and
+`rotation`, plus a composable shape shell: `sh` (Shape catalog kind), `fo`
+(fill opacity), `bw` (outline width) and `bs` (outline style). Optional `wa` is
+a canonical serialized WordArt-compatible value object. Common `backColor`,
+`borderColor` and `placement` remain inherited Block props. Defaults are
+`240 × 120`, rectangle, rotation `0`, `p: [8, 12]`, a white fill and a gray
+outline. Use `normalizeTextBoxProps()` at creation/import boundaries and
+`normalizeTextBoxWordArtStyle()` / `serializeTextBoxWordArtStyle()` at the
+text-effect boundary. The shared compact surface keys remain `p`, `bgi`,
+`bgs`, `bgx`, `bgy` and `bgo`; there is no second text-box-specific padding or
+image record.
+
+The live Block and Snapshot Viewer render the selected Shape geometry as SVG.
+A real decorative `<img>` is clipped by that geometry behind a padded child
+viewport; non-rectangular definitions also contribute their catalog text-safe
+insets. Optional WordArt values style the ordinary child text without changing
+its Y.Text ownership. The frame stays fixed-size: editing may scroll overflowing
+content, while readonly/print output clips it. Eight resize
+handles and the rotation handle reuse `ShapeResizerComponent`; preview runs in
+an animation frame and pointerup writes one props transaction. The fixed toolbar
+opens `TEXT_BOX_PRESETS`, inserts the chosen concrete appearance into
+`placement-layout`, then enters the first paragraph. Preset IDs are never
+persisted, so changing a future catalog does not drift existing documents.
+
+`TextBoxToolbarPlugin` separates child text editing from whole-object
+selection. Enter or double-click enters text; Escape selects the frame. Its
+object toolbar is semantic and preset-first: **样式**, **形状** and
+**文字效果**, followed by **上下型**, **衬于文字下方** and
+**浮于文字上方** plus absolute stack order. Raw padding and background-image
+URL fields remain available through Schema/CRUD APIs but are not exposed as
+primary toolbar inputs. There is no inline/wrap adapter for a multi-Block
+container. HTML round-trips the complete frame, Shape, WordArt and compact
+surface fields; Markdown deliberately flattens to readable ordinary children.
+
+`text-box` is a new flavour, and live editors do not have an unknown-flavour
+fallback. Collaborative rooms must ensure every writer/reader has registered
+the Schema before any client persists one.
+
 ### Built-in Word-like Shape Block
 
 The built-in shape feature is a `shape` container block with zero or one
@@ -1159,6 +1269,12 @@ The component property governs mounted rendering. The optional
 writes use readonly-guarded `doc.crud.formatText(blockId, index, length, attrs)`;
 do not resolve a ComponentRef solely to mutate an offscreen `Y.Text`.
 
+Editable rich-text blocks also accept compact `lh?: number | null`, a bounded
+unitless line-height ratio. Missing values inherit the document root.
+`TextToolbarHelper.updateBlockProps({lh})` applies it across the model-owned
+covered block IDs in one Yjs transaction, including unmounted middle blocks;
+plain-text-only/non-editable blocks are skipped.
+
 ## Block Instance Metadata
 
 BlockCraft exposes a small, generic instance-metadata contract for editable
@@ -1209,8 +1325,8 @@ Use `doc.canInsertChild(parentId, childFlavour)` for menus and drag/drop.
 it opts into child constraints and uses the iconfont class
 `bc_icon bc_erjidaohang_caogaoxiang`. Template hosts should create it together
 with an empty editable child that owns any persistent placeholder. Its optional
-`backColor` / `borderColor` props style the region shell itself; child content
-keeps its own appearance props.
+`backColor` / `borderColor` and `BlockSurfaceProps` style the region shell and
+inset its content; child blocks keep their own appearance props.
 
 ## Editable Block Placeholder (Schema and instance fields)
 

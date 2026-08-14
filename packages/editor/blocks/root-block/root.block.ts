@@ -1,8 +1,15 @@
 import {ChangeDetectionStrategy, Component, HostListener} from "@angular/core";
-import {BaseBlockComponent, closetBlockId, createBlockGapSpace, UIEventStateContext} from "../../framework";
+import {
+  BaseBlockComponent,
+  BlockNodeType,
+  closetBlockId,
+  normalizeDocumentFontSize,
+  normalizeTypographyLineHeight,
+  resolveTypographyFontFamily,
+  UIEventStateContext,
+} from "../../framework";
 import {RootBlockModel} from "./index";
 import {BehaviorSubject, fromEvent, skip, take, takeUntil} from "rxjs";
-import {BlockNodeType} from "../../framework";
 
 @Component({
   selector: 'div.root-block[data-blockcraft-root="true"]',
@@ -10,12 +17,30 @@ import {BlockNodeType} from "../../framework";
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
-    '[style.font-family]': 'props.ff',
+    '[style.font-family]': 'documentFontFamily',
+    '[style.--bc-fs]': 'documentFontSize',
+    '[style.--bc-lh]': 'documentLineHeight',
     '[style.color]': 'props.color',
     '[style.--bc-color]': 'props.color',
   }
 })
 export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
+  private typographyRefreshQueued = false
+
+  get documentFontFamily(): string | null {
+    return resolveTypographyFontFamily(this._native?.props?.ff)
+  }
+
+  get documentFontSize(): string | null {
+    const fontSize = normalizeDocumentFontSize(this._native?.props?.fs)
+    return fontSize === null ? null : `${fontSize}px`
+  }
+
+  get documentLineHeight(): string | null {
+    const lineHeight = normalizeTypographyLineHeight(this._native?.props?.lh)
+    return lineHeight === null ? null : `${lineHeight}`
+  }
+
   @HostListener('contextmenu', ['$event'])
   onContextMenu(event: MouseEvent) {
     event.preventDefault()
@@ -78,6 +103,9 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
   override ngAfterViewInit() {
     super.ngAfterViewInit();
 
+    this.applyDocumentTypographyProjection()
+    this.bindDocumentTypographyProjection()
+
     this.doc.readonlySwitch$.pipe(takeUntil(this.onDestroy$)).subscribe(v => {
       this.hostElement.setAttribute('contenteditable', v ? 'false' : 'true')
       v ? this.hostElement.classList.add('readonly') : this.hostElement.classList.remove('readonly')
@@ -98,6 +126,46 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
         this._cleanupAllSelecting()
       }
     })
+  }
+
+  private bindDocumentTypographyProjection(): void {
+    this.onPropsChange.pipe(takeUntil(this.onDestroy$)).subscribe(changes => {
+      if (
+        !changes.has('ff') &&
+        !changes.has('fs') &&
+        !changes.has('lh')
+      ) return
+      this.scheduleDocumentTypographyRefresh()
+    })
+  }
+
+  private scheduleDocumentTypographyRefresh(): void {
+    if (this.typographyRefreshQueued) return
+    this.typographyRefreshQueued = true
+    queueMicrotask(() => {
+      this.typographyRefreshQueued = false
+      if (this.destroyRef.destroyed) return
+      // Apply the persisted values before measuring. `onPropsChange` is raised
+      // for both local and remote Yjs changes, while Angular's host bindings
+      // may not have reached the DOM yet in the same microtask.
+      this.applyDocumentTypographyProjection()
+      this.changeDetectorRef.markForCheck()
+      this.doc.refreshLayoutMetrics()
+    })
+  }
+
+  private applyDocumentTypographyProjection(): void {
+    this.setStyleProperty('font-family', this.documentFontFamily)
+    this.setStyleProperty('--bc-fs', this.documentFontSize)
+    this.setStyleProperty('--bc-lh', this.documentLineHeight)
+  }
+
+  private setStyleProperty(name: string, value: string | null): void {
+    if (value === null) {
+      this.hostElement.style.removeProperty(name)
+      return
+    }
+    this.hostElement.style.setProperty(name, value)
   }
 
   onSelectstart = (ctx: UIEventStateContext) => {

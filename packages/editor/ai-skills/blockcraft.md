@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-08-13 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-08-14 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -55,14 +55,14 @@ Three `nodeType` categories:
 |----------|-------------|------------|----------|
 | `editable` | Has inline text (Y.Text), no children | `EditableBlockComponent` | paragraph, code, bullet, ordered, todo, blockquote, caption, mermaid-textarea, word-art |
 | `void` | No children, no text | `BaseBlockComponent` | divider, image, bookmark, attachment, formula, video, audio, mermaid, embed-blocks (figma, juejin) |
-| `block` | Has block children | `BaseBlockComponent` | callout, columns, column, table, table-row, table-cell, frame, shape, render-unit, placement-layout (infrastructure) |
+| `block` | Has block children | `BaseBlockComponent` | callout, columns, column, table, table-row, table-cell, frame, shape, text-box, render-unit, placement-layout (infrastructure) |
 | `root` | Special — top-level container | `BaseBlockComponent` (root-block) | root |
 
 > **Heading is a prop, not a flavour.** H1/H2/H3 styles live in `props.heading` on `paragraph` blocks. There is no `heading-block` flavour.
 
 ### Currently Registered Block Schemas (from `editor/bundled-capabilities.ts`)
 
-`paragraph, ordered, bullet, todo, callout, code, divider, page-divider, image, table, table-row, table-cell, attachment, bookmark, figmaEmbed, juejinEmbed, caption, root, mermaid-textarea, mermaid, blockquote, columns, column, formula, video, audio, shape, shape-text, word-art, placement-layout, render-unit`
+`paragraph, ordered, bullet, todo, callout, code, divider, page-divider, image, table, table-row, table-cell, attachment, bookmark, figmaEmbed, juejinEmbed, caption, root, mermaid-textarea, mermaid, blockquote, columns, column, formula, video, audio, shape, shape-text, text-box, word-art, placement-layout, render-unit`
 
 A host application can register a subset or extend this list — see `blockcraft-app.md`.
 Hosts that need the complete reference-editor surface should call
@@ -159,6 +159,14 @@ doc.crud.moveBlocks(parentId, index, count, targetParentId, targetIndex)
 const revealed = await doc.navigateToBlock(blockId)
 ```
 
+Typography ownership is layered and compact: root `ff/fs/lh` defines document
+defaults; editable block `lh` defines paragraph line height; inline
+`t:ff/t:fs/t:ls` defines selection font, relative scale and character spacing.
+The fixed toolbar exposes font family, relative scale, character spacing,
+alignment and line height as separate dropdowns. The floating text toolbar
+keeps its existing compact selection-format surface. Document defaults belong
+in a host document-settings/styles surface and mutate through `DocCRUD`.
+
 The root block exposes optional document appearance props. `background` keeps
 the CSS shorthand as one string so color, image, position/size, repeat,
 attachment and origin/clip remain CSS-native and compact in Yjs/snapshots.
@@ -213,9 +221,34 @@ The bundled non-editable `render-unit` content region persists the same
 contract. `CalloutToolbarPlugin` reuses its container toolbar for a cursor in a
 direct editable child of either Callout or `render-unit`; a whole-block
 `render-unit` selection also opens it so an empty region remains configurable.
-The region surface exposes background and border only, projects them through
+The current container toolbar exposes background and border controls only;
+those fields project through
 `--bc-render-unit-background-color` / `--bc-render-unit-border-color`, and uses
 the same 82% solid-surface composition in the live editor and Snapshot Viewer.
+
+`render-unit` also implements the opt-in `BlockSurfaceProps` contract. Its
+persisted keys follow compact CSS-style abbreviations: `p` is a numeric CSS
+padding shorthand with one to four layout-pixel values;
+`bgi/bgs/bgx/bgy/bgo` are background image, size/fit, x/y position and opacity.
+Create or update the region through normal Schema/CRUD boundaries:
+
+```typescript
+const region = RenderUnitBlockSchema.createSnapshot({}, {
+  p: [16, 24], // vertical, horizontal
+  bgi: 'https://cdn.example.com/paper.png',
+  bgs: 'cover',
+})
+
+doc.crud.updateBlockProps(regionId, {p: [16, 32]})
+doc.crud.updateBlockProps(regionId, {bgi: null})
+```
+
+The live editor and Snapshot Viewer render the image as an actual decorative
+`<img>`, allowing existing print/PDF resource waiting to decode it. HTML
+round-trips the complete surface in a BlockCraft data envelope; standard
+Markdown intentionally retains only readable children. `render-unit` remains a
+geometry-neutral content region; use the separate bundled `text-box` Block when
+fixed geometry, placement, rotation, resizing and insertion UI are required.
 
 `doc.model` is read-only. Use `DocCRUD` / `DocChain` for every mutation. Model
 existence means the YBlock is reachable from the current root; it does not mean
@@ -1144,6 +1177,7 @@ onBold(ctx: UIEventStateContext) { ... }
 | `TableBlockBinding` | `plugins/tableBlockBinding.ts` | Table clipboard, model/explicit cell-range keyboard bindings, merge/split helpers |
 | `ImgToolbarPlugin` | `plugins/img-toolbar/` | Block/inline image resize, toolbar actions, and bidirectional conversion |
 | `ShapeToolbarPlugin` | `plugins/shape-toolbar/` | Shape block/inline selection, styling, inline/wrap conversion, placement, drag, resize and rotation |
+| `TextBoxToolbarPlugin` | `plugins/text-box-toolbar/` | Fixed text-box frame/text dual state, Word-style vertical rail and click-owned layout/style/Shape/WordArt settings cards, placement, drag and stack controls |
 | `WordArtToolbarPlugin` | `plugins/word-art-toolbar/` | WordArt block/inline selection, styling, inline/wrap conversion, placement, drag, resize and rotation |
 | `CalloutToolbarPlugin` | `plugins/callout-toolbar/` | Callout and content-region appearance picker |
 | `DividerExtensionPlugin` | `plugins/divider-toolbar/` | Divider hover toolbar (line/tape/colorful edge style, custom line color, independent length/thickness/opacity, optional text label + typography/alignment/color) |

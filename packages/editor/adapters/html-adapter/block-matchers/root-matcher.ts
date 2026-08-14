@@ -1,8 +1,13 @@
 import {BlockHtmlAdapterMatcher} from "../block-adapter";
 import {HastUtils} from "../../utils";
+import {
+  rootTypographyFromHtml,
+  rootTypographyToHtmlProperties,
+} from '../typography';
 
 export const rootBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
-  toMatch: o => HastUtils.isElement(o.node) && o.node.tagName === 'header',
+  toMatch: o =>
+    HastUtils.isElement(o.node) && ['html', 'body', 'header'].includes(o.node.tagName),
   fromMatch: o => o.node.flavour === 'root',
   toBlockSnapshot: {
     enter: (o, context) => {
@@ -10,13 +15,25 @@ export const rootBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
         return;
       }
       const {walkerContext} = context;
+      if (o.node.tagName === 'html' || o.node.tagName === 'body') {
+        // Paragraph matching runs before this matcher and can open a paragraph
+        // for direct body text. Resolve the document root from the stack so
+        // root typography is not accidentally written to (or skipped because
+        // of) that temporary editable node. Body values naturally override
+        // any earlier values imported from <html>.
+        const root = walkerContext.stack
+          .map(entry => entry.node)
+          .find(node => node.flavour === 'root')
+        if (root) Object.assign(root.props, rootTypographyFromHtml(o.node))
+        return
+      }
       if (o.node.tagName === 'header') {
         walkerContext.skipAllChildren();
       }
     },
   },
   fromBlockSnapshot: {
-    enter: (_, context) => {
+    enter: (o, context) => {
       const {walkerContext} = context;
       // const htmlRootDocContext =
       //   walkerContext.getGlobalContext('hast:html-root-doc');
@@ -100,7 +117,7 @@ export const rootBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
           {
             type: 'element',
             tagName: 'body',
-            properties: {},
+            properties: rootTypographyToHtmlProperties(o.node.props),
             children: [],
           },
           'children'
@@ -129,4 +146,3 @@ export const rootBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
     },
   },
 };
-

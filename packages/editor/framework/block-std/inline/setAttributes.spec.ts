@@ -15,6 +15,46 @@ describe('setAttributes', () => {
     expect(el.style.getPropertyValue('font-family')).toBe('serif');
   });
 
+  it('renders compact semantic typography keys and keeps their short ids in data attributes', () => {
+    setAttributes(el, {
+      't:ff': 'kai',
+      't:fs': 1.2,
+      't:ls': 0.1,
+    } as IInlineNodeAttrs);
+
+    expect(el.dataset['bcFf']).toBe('kai');
+    expect(el.dataset['bcFs']).toBe('1.2');
+    expect(el.dataset['bcLs']).toBe('0.1');
+    expect(el.style.fontFamily).toContain('Kaiti SC');
+    expect(el.style.fontSize).toBe('1.2em');
+    expect(el.style.letterSpacing).toBe('0.1em');
+  });
+
+  it('rejects invalid compact typography values instead of applying arbitrary CSS', () => {
+    setAttributes(el, {
+      't:ff': 'url(javascript:bad)',
+      't:fs': 99,
+      't:ls': 3,
+    } as unknown as IInlineNodeAttrs);
+
+    expect(el.style.fontFamily).toBe('');
+    expect(el.style.fontSize).toBe('');
+    expect(el.style.letterSpacing).toBe('');
+    expect(el.dataset['bcFf']).toBeUndefined();
+  });
+
+  it('lets compact typography win over legacy aliases in transition patches', () => {
+    setAttributes(el, {
+      't:fs': 1.5,
+      's:fontSize': null,
+      't:ls': 0.1,
+      's:letterSpacing': null,
+    } as IInlineNodeAttrs);
+
+    expect(el.style.fontSize).toBe('1.5em');
+    expect(el.style.letterSpacing).toBe('0.1em');
+  });
+
   it('still applies single-word s: style keys (no regression)', () => {
     setAttributes(el, { 's:color': 'rgb(255, 0, 0)', 's:background': 'rgb(0, 0, 255)' } as IInlineNodeAttrs);
     expect(el.style.getPropertyValue('color')).toBe('rgb(255, 0, 0)');

@@ -15,6 +15,7 @@ import {
   readInlineShapeDelta,
   readInlineWordArtDelta,
 } from '../../../blocks';
+import {inlineTypographyFromHtml} from '../typography';
 
 const isElement = (ast: HtmlAST): ast is Element => {
   return ast.type === 'element';
@@ -130,6 +131,28 @@ export const htmlTextLikeElementToDeltaMatcher: HtmlASTToDeltaMatcher = {
     return ast.children.flatMap(child =>
       context.toDelta(child, { trim: false })
     );
+  },
+};
+
+export const htmlTypographyElementToDeltaMatcher: HtmlASTToDeltaMatcher = {
+  name: 'typography-element',
+  match: ast =>
+    isElement(ast) &&
+    textLikeElementTags.includes(ast.tagName) &&
+    inlineTypographyFromHtml(ast) !== null,
+  toDelta: (ast, context) => {
+    if (!isElement(ast)) return []
+    const typography = inlineTypographyFromHtml(ast)
+    if (!typography) {
+      return ast.children.flatMap(child => context.toDelta(child, {trim: false}))
+    }
+    return ast.children.flatMap(child =>
+      context.toDelta(child, {trim: false}).map(delta => {
+        if (typeof delta.insert !== 'string') return delta
+        delta.attributes = {...delta.attributes, ...typography}
+        return delta
+      })
+    )
   },
 };
 
@@ -331,6 +354,7 @@ export const htmlInlineToDeltaMatchers: HtmlASTToDeltaMatcher[] = [
   htmlInlineObjectToDeltaMatcher,
   htmlImageToDeltaMatcher,
   htmlTextToDeltaMatcher,
+  htmlTypographyElementToDeltaMatcher,
   htmlTextLikeElementToDeltaMatcher,
   htmlStrongElementToDeltaMatcher,
   htmlItalicElementToDeltaMatcher,

@@ -76,7 +76,11 @@ export class DocumentLayoutMetricsManager {
   /** Re-read computed typography once after an external CSS-variable change. */
   refresh(): void {
     if (!this._element) return
-    this.publish(this.measure(this._element), false)
+    // Font-family and other typography changes can alter wrapping without
+    // changing the resolved font-size/line-height numbers. A refresh is an
+    // explicit invalidation request, so publish even when both metrics compare
+    // equal and let virtualization/pagination discard stale geometry.
+    this.publish(this.measure(this._element), false, true)
   }
 
   destroy(): void {
@@ -87,6 +91,7 @@ export class DocumentLayoutMetricsManager {
   private publish(
     metrics: DocumentLayoutMetrics,
     applyCss: boolean,
+    force = false,
   ): void {
     if (applyCss && this._element) {
       this._element.style.setProperty('--bc-fs', `${metrics.baseFontSize}px`)
@@ -99,6 +104,7 @@ export class DocumentLayoutMetricsManager {
       metrics.baseFontSize === this._value.baseFontSize &&
       metrics.lineHeight === this._value.lineHeight
     ) {
+      if (force) this._change.next(this._value)
       return
     }
     this._value = Object.freeze({...metrics})

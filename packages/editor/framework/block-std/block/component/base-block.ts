@@ -34,6 +34,7 @@ import {
   resolveBlockPlacement,
   resolvePlacementXInPixels,
 } from "../../../services/block-placement.manager";
+import {normalizeTypographyLineHeight} from "../../typography";
 
 export type BlockViewState = 'mounted' | 'retained' | 'destroyed'
 
@@ -191,6 +192,20 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   @HostBinding('attr.data-bc-block-border')
   get blockBorderAttribute(): '' | null {
     return this.blockBorderColor ? '' : null
+  }
+
+  @HostBinding('style.--bc-block-lh')
+  get blockLineHeight(): string | null {
+    if (this.nodeType !== BlockNodeType.editable) return null
+    const lineHeight = normalizeTypographyLineHeight(
+      this._native?.props?.['lh'],
+    )
+    return lineHeight === null ? null : `${lineHeight}`
+  }
+
+  @HostBinding('attr.data-bc-block-lh')
+  get blockLineHeightAttribute(): '' | null {
+    return this.blockLineHeight === null ? null : ''
   }
 
   private _meta!: Model['meta']

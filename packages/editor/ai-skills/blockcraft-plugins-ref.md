@@ -6,7 +6,7 @@
 >
 > Last updated: 2026-08-13
 
-This index covers all 26 built-in plugins. Pick the category file that matches your task — don't read all files at once.
+This index covers all 27 built-in plugins. Pick the category file that matches your task — don't read all files at once.
 
 ## Category Router
 
@@ -14,7 +14,7 @@ This index covers all 26 built-in plugins. Pick the category file that matches y
 |----------|------|---------|
 | Text Formatting | `blockcraft-plugins-formatting.md` | FloatTextToolbarPlugin, TextMarkerPlugin, FixedTextToolbarComponent |
 | Block Management | `blockcraft-plugins-block.md` | BlockControllerPlugin, BlockGapCreatorPlugin, BlockTransformerPlugin, OrderedBlockPlugin |
-| Block Toolbars | `blockcraft-plugins-toolbar.md` | AttachmentExtensionPlugin, ImgToolbarPlugin, ShapeToolbarPlugin, WordArtToolbarPlugin, BookmarkBlockExtensionPlugin, CalloutToolbarPlugin, DividerExtensionPlugin, EmbedFrameExtensionPlugin, FormulaBlockExtensionPlugin |
+| Block Toolbars | `blockcraft-plugins-toolbar.md` | AttachmentExtensionPlugin, ImgToolbarPlugin, ShapeToolbarPlugin, TextBoxToolbarPlugin, WordArtToolbarPlugin, BookmarkBlockExtensionPlugin, CalloutToolbarPlugin, DividerExtensionPlugin, EmbedFrameExtensionPlugin, FormulaBlockExtensionPlugin |
 | Inline & Keyboard | `blockcraft-plugins-inline.md` | InlineLinkExtension, MentionPlugin, CodeInlineEditorBinding, TableBlockBinding |
 | Utilities | `blockcraft-plugins-util.md` | PlaceholderPlugin, FindReplacePlugin, PasteFormatSelectorPlugin, DemoPresentationPlugin, TranslatePlugin, PaginationPlugin |
 
@@ -32,6 +32,7 @@ This index covers all 26 built-in plugins. Pick the category file that matches y
 | `AttachmentExtensionPlugin` | `toolbar` | `extraItems`, `onPreview`, `onExtraItemClick` |
 | `ImgToolbarPlugin` | `toolbar` | `extraItems`, `onExtraItemClick` |
 | `ShapeToolbarPlugin` | `toolbar` | none (zero-config) |
+| `TextBoxToolbarPlugin` | `toolbar` | none (zero-config) |
 | `WordArtToolbarPlugin` | `toolbar` | none (zero-config) |
 | `BookmarkBlockExtensionPlugin` | `toolbar` | none (zero-config) |
 | `CalloutToolbarPlugin` | `toolbar` | none; handles Callout and `render-unit` appearance |
@@ -67,6 +68,7 @@ const plugins = [
   new AttachmentExtensionPlugin({ onPreview: handlePreview }),
   new ImgToolbarPlugin(),
   new ShapeToolbarPlugin(),
+  new TextBoxToolbarPlugin(),
   new WordArtToolbarPlugin(),
   new BookmarkBlockExtensionPlugin(),
   new CalloutToolbarPlugin(),

@@ -21,6 +21,7 @@
 @import "blocks/formula-block";
 @import "blocks/word-art-block";
 @import "blocks/render-unit-block";
+@import "blocks/text-box-block";
 
 @import "components/color-picker";
 @import "components/float-toolbar";
@@ -112,6 +113,7 @@
 
     &[data-node-type="editable"] {
       border-radius: 4px;
+      line-height: var(--bc-block-lh, var(--bc-lh));
     }
 
     &.selected {

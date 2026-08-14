@@ -2,6 +2,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   EventEmitter,
+  Input,
   Output,
 } from "@angular/core";
 import { CsTooltipDirective } from "@cses/ui";
@@ -16,6 +17,9 @@ import {
   standalone: true,
   imports: [CsTooltipDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: {
+    '[class.word-art-preset-picker-host--embedded]': 'embedded',
+  },
   template: `
     <div
       class="word-art-preset-picker"
@@ -62,6 +66,19 @@ import {
       :host {
         display: block;
         max-width: calc(100vw - 24px);
+      }
+
+      :host(.word-art-preset-picker-host--embedded) {
+        max-width: none;
+      }
+
+      :host(.word-art-preset-picker-host--embedded)
+        .word-art-preset-picker {
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
       }
 
       .word-art-preset-picker {
@@ -133,6 +150,10 @@ import {
   ],
 })
 export class WordArtPresetPickerComponent {
+  /** Removes standalone popup chrome when hosted inside a settings panel. */
+  @Input()
+  embedded = false;
+
   @Output()
   readonly pick = new EventEmitter<WordArtPresetId>();
 

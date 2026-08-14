@@ -57,6 +57,23 @@ describe('DocumentLayoutMetricsManager', () => {
     manager.destroy()
   })
 
+  it('publishes refresh as a layout invalidation when metrics stay equal', () => {
+    const manager = new DocumentLayoutMetricsManager()
+    const changes = jasmine.createSpy('changes')
+    manager.change$.subscribe(changes)
+    manager.init(element)
+    changes.calls.reset()
+
+    manager.refresh()
+
+    expect(manager.value).toEqual({baseFontSize: 20, lineHeight: 30})
+    expect(changes).toHaveBeenCalledOnceWith({
+      baseFontSize: 20,
+      lineHeight: 30,
+    })
+    manager.destroy()
+  })
+
   it('rejects invalid explicit metrics', () => {
     const manager = new DocumentLayoutMetricsManager()
     manager.init(element)

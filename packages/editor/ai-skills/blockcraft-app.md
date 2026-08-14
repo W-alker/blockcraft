@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-13
+> Last updated: 2026-08-14
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -1144,17 +1144,41 @@ stores the default document text color and BlockCraft applies it to the root
 host and its `--bc-color` theme token so normal text and headings inherit it;
 explicit inline/block colors override the inherited value.
 
+Document typography uses three compact root props: `ff` is a trusted font
+catalog ID (`sans/hei/serif/kai/fang/mono`), `fs` is the base size in CSS pixels,
+and `lh` is a unitless default line-height ratio. The live root and Snapshot
+Viewer project them consistently. Updating `ff` explicitly invalidates layout
+geometry even when measured font-size/line-height numbers are unchanged because
+glyph metrics can rewrap text.
+
 ```typescript
 const background =
   '#f7f7f7 url("https://cdn.example.com/bg.png") center 24px / cover no-repeat scroll'
 
-doc.crud.updateBlockProps(doc.rootId, {background, color: '#182230'})
+doc.crud.updateBlockProps(doc.rootId, {
+  background,
+  color: '#182230',
+  ff: 'serif',
+  fs: 18,
+  lh: 1.6,
+})
 
 const current = doc.model.getProps(doc.rootId)?.['background'] as string | undefined
 
 // `null` deletes the prop instead of persisting an empty string.
-doc.crud.updateBlockProps(doc.rootId, {background: null, color: null})
+doc.crud.updateBlockProps(doc.rootId, {
+  background: null,
+  color: null,
+  ff: null,
+  fs: null,
+  lh: null,
+})
 ```
+
+The built-in fixed/floating text toolbars intentionally do not expose or mutate
+these root defaults. Hosts should place them in a document settings or styles
+surface and write through `DocCRUD`, keeping document ownership separate from
+selection/paragraph formatting.
 
 BlockCraft persists the value but deliberately does not paint it on a fixed DOM
 node. The host must apply it to the flow document surface and, in paginated

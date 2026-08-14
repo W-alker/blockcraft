@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when working with the CRDT data layer.
 >
-> Last updated: 2026-08-03
+> Last updated: 2026-08-13
 
 ## Architecture Overview
 
@@ -63,6 +63,24 @@ This is how `block.props.color = 'red'` automatically syncs via Yjs.
 Custom Blocks and Plugins must not assign proxied props/meta directly because a
 raw proxy assignment bypasses transaction grouping and block-readonly guards.
 Use `block.updateProps()`, guarded inline methods, `DocChain`, or `DocCRUD`.
+
+### Flat props and collaborative value boundaries
+
+Every top-level block prop is an independent entry in the block's `props`
+Y.Map. A nested `SimpleRecord` is legal snapshot data, but updating that one
+top-level key replaces the record as one collaborative value. Prefer flat
+primitive fields when users may edit parts independently.
+
+The exported `BlockSurfaceProps` makes one deliberate shorthand exception:
+padding is stored as the single `p` entry with CSS-like 1–4 numeric values.
+Changing one side therefore replaces the complete padding shorthand value.
+Background-image options (`bgi/bgs/bgx/bgy/bgo`) remain separate entries, so
+for example `bgs` and `bgo` can still merge independently. Runtime code expands
+the shorthand through `normalizeBlockSurfaceProps()` / `resolveBlockSurface()`
+and must not persist a second nested surface object.
+
+`null` passed to `updateProps()` or `updateBlockProps()` deletes that Y.Map key;
+omitted surface values resolve to defaults without a load-time migration.
 
 ## Data Flow: Write Path
 

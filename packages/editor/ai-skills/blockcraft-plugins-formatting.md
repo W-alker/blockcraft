@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-13
+> Last updated: 2026-08-14
 
 ## FloatTextToolbarPlugin
 
@@ -111,16 +111,36 @@ new TextMarkerPlugin(['paragraph', 'blockquote'])
 
 > `plugins/fixed-toolbar/widgets/fixed-toolbar.component.ts` — Fixed-position toolbar embedded in host app template.
 
-**Not a `DocPlugin`** — this is an Angular standalone component (`<bc-fixed-toolbar>`) meant to be placed directly in the host application's template. Provides heading selection, inline formatting, color pickers, font scaling (relative ratio), alignment, list conversion, shape/table/column insertion, image insertion, video/audio insertion, and link editing.
+**Not a `DocPlugin`** — this is an Angular standalone component (`<bc-fixed-toolbar>`) meant to be placed directly in the host application's template. Provides heading selection, inline formatting, font/relative-scale/character-spacing dropdowns, paragraph line-height and consolidated alignment dropdowns, color pickers, list conversion, shape/text-box/table/column insertion, image insertion, video/audio insertion, and link editing.
 
-### Font Scale
+### Typography groups
 
-- A dropdown tool (`bc-font-scale-picker`) for **relative** font sizing of the selected text — ratios, not absolute px.
-- Writes the inline style `s:fontSize` as an `em` value (e.g. ratio `1.2` → `1.2em`), so it scales relative to the block's base font size; ratio `1` removes the style (back to default).
-- A base theme rule (`c-element[style*="font-size"] { line-height: 1.5 }`) makes the line-height track the scaled font (the document's `--bc-lh / --bc-fs` ratio is a uniform `1.5`), so enlarged text grows its line instead of crowding the fixed `--bc-lh`.
-- Panel offers preset ratios (`0.5 / 0.8 / 1.0 / 1.2 / 1.5 / 2.0`) and a text `−`/`+` stepper that adjusts by `0.1em` per click (clamped to `0.5–3`).
-- The trigger button reflects the current selection's common ratio; picks apply to the live selection (picker buttons `preventDefault` on mousedown so the editor keeps focus/selection). On a collapsed caret it sets the pending insert format, so subsequent typing inherits the size.
-- `BcFontScalePickerComponent` is exported from the package root for reuse.
+- The fixed toolbar uses separate dropdowns for font family, relative font
+  scale, character spacing, alignment and paragraph line height. The floating
+  text toolbar keeps its previous compact formatting actions and does not add
+  these typography controls. Neither surface owns document defaults.
+- Font, scale, character spacing, alignment and line-height menus reuse the same
+  `BcFloatToolbarComponent` / `BcFloatToolbarItemComponent` vertical menu chrome
+  as the heading dropdown; typography does not introduce a parallel picker UI.
+- Fixed-toolbar dropdown triggers retain their iconfont leading icons. Paragraph
+  style reflects the current heading icon; font family, relative scale and
+  character spacing use the existing text/size/spacing glyphs.
+- Font size is displayed and persisted as the compact relative `t:fs` ratio;
+  the toolbar does not write absolute selection font sizes. Family and letter
+  spacing use `t:ff` / `t:ls`; paragraph line height uses block prop `lh`.
+- Relative font scale exposes dense presets from `0.5×` through `3×`. Character
+  spacing exposes `-0.1em` through `0.5em`; menu items and toolbar state show
+  the real numeric `em` value rather than descriptive names. The neutral item
+  is shown as `默认（0em）` and is still omitted from persisted Delta attrs.
+- Mixed selections display a mixed state; inherited/default values are `null`.
+  Picker mousedown preserves the live editor selection. A collapsed caret writes
+  pending insert attrs, so subsequent input inherits selection typography.
+- Line-height changes cover every editable rich-text block in the selection in
+  one transaction.
+- The fixed toolbar has two non-wrapping sections: text/link formatting and
+  insertion/object actions. They share one row when space allows and wrap as
+  whole sections to at most two rows; at extreme narrow widths each row scrolls
+  internally instead of creating a third row or page-level horizontal overflow.
 
 ### Insertion Actions
 
@@ -131,18 +151,19 @@ new TextMarkerPlugin(['paragraph', 'blockquote'])
   `SHAPE_DEFINITIONS`; each compact icon-only item renders its actual
   main/detail geometry through `ShapeIconComponent` and exposes its label by
   Tooltip plus `aria-label` instead of visible per-cell text.
-- Picking a shape or WordArt preset arms a one-shot drawing surface over the
+- Picking a shape, WordArt or text-box preset arms a one-shot drawing surface over the
   document without requiring a focused block, active Selection or saved
   selection snapshot; it does not write Yjs or create a block yet. A
   primary-pointer drag shows a theme-colored rectangle preview and commits that
   rectangle's scale-normalized width, height and absolute position only on
   pointer release. A press/release without a drag commits the selected type at
   its normal default size.
-- The inserted shape is whole-block selected. Inserted WordArt is selected,
+- The inserted shape is whole-block selected. A text box is selected, revealed
+  and enters its initial paragraph. Inserted WordArt is selected,
   revealed and enters text editing with its default text selected. Escape,
   pointer cancellation, window blur, scrolling, readonly transitions and
   toolbar destruction cancel an armed or active drawing gesture without a
-  model mutation. Shape/WordArt entries remain hidden when their Schema is not
+  model mutation. Shape/text-box/WordArt entries remain hidden when their Schema is not
   registered and are disabled only while the document is readonly; a missing
   or detached drawing surface fails safely when the preset is picked.
 - Table and column actions use picker overlays from the fixed toolbar.
@@ -154,7 +175,10 @@ new TextMarkerPlugin(['paragraph', 'blockquote'])
 - The fixed toolbar includes a one-shot format-brush action.
 - Activating it can use either a collapsed text caret or a normal text selection as the source format.
 - After activation, the brush waits for the user to finish a later non-collapsed target text selection before applying formatting, then automatically exits.
-- The brush only copies common inline text styling — bold/italic/underline/strike/code/sup/sub, text color, background, and font scale (`s:fontSize`); it does not copy heading, list flavour, alignment, links, inline formulas, or non-text block contents.
+- The brush copies common inline text styling — including compact font family,
+  scale and letter spacing — plus paragraph `lh`. It does not copy document
+  defaults, heading, list flavour, alignment, links, inline formulas, or
+  non-text block contents.
 - `Cmd/Ctrl+Shift+C` can be used to quickly enable the brush; cancellation still uses the toolbar button or `Escape`.
 
 ### Selection Behavior

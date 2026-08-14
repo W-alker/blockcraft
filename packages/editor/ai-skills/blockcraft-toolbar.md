@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-13
+> Last updated: 2026-08-14
 
 ## Overlay Service
 
@@ -200,13 +200,18 @@ export class MyToolbarComponent {
 | `TableSizePickerComponent` | `components/` | Table row/column picker |
 | `ColumnCountPickerComponent` | `components/` | Column count selector |
 | `MediaCreatorComponent` | `components/` | Media upload/URL input |
+| `ShapePickerComponent` | `components/` | Categorized Shape catalog; `supportsTextOnly` removes non-text geometries and `embedded` removes popup chrome inside a settings card |
+| `TextBoxPresetPickerComponent` | `components/` | Visual Word-like text-box preset catalog; `embedded` removes standalone popup chrome |
 
 ## Standard Control Source
 
-Use the exact `@cses/ui@4.26.1` peer for generic toolbar chrome:
+Use the exact `@cses/ui@4.27.0` peer for generic toolbar chrome:
 
 - `CsButtonComponent` for textual confirm/cancel and ordinary actions;
 - `CsTooltipDirective` for hover help;
+- `CsRadioGroupComponent`, `CsSegmentedComponent`, `CsSwitchComponent`,
+  `CsSliderComponent`, `CsInputNumberComponent`, `CsSelectComponent` and
+  `CsColorPickerComponent` for settings-card forms;
 - `CsDropdownDirective` + `CsDropdownMenuComponent` + `CsMenuDirective` /
   `CsMenuItemComponent` for accessible menus;
 - `CsEmojiPickerComponent` for Unicode Emoji search, categories, recent items
@@ -225,6 +230,15 @@ Keep BlockCraft-owned components when the behavior is editor-specific, such as
 block drag handles, the inline color matrix, resize handles and table structure
 geometry. `bc_icon` and the existing Material SVG/brand-icon path remain the
 icon sources until the separate icon migration is authorized.
+
+Do not force a settings card containing radio, switch, slider, select or color
+controls into `CsDropdownMenuComponent`; its menu semantics are for commands,
+not nested forms. A Word-style object toolbar should use one block-owned
+connected Overlay for the rail and secondary card, then click-switch local
+panel state without recreating the overlay or writing document data. When a
+CSES control creates a sibling CDK pane, the owning Plugin must recognize that
+pane only while the corresponding control inside its own toolbar has an open
+state. Pointer/focus in unrelated CSES panes must still close stale toolbars.
 
 ## Overlay Lifecycle Management
 

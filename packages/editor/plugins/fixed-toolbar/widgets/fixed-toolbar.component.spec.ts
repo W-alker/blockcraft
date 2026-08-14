@@ -3,6 +3,7 @@ import { BcOverlayTriggerDirective } from "../../../components";
 import { BlockNodeType } from "../../../framework";
 import { BlockSelection } from "../../../framework/modules/selection/blockSelection";
 import { getWordArtPreset } from "../../../blocks/word-art-block";
+import { getTextBoxPreset } from "../../../blocks/text-box-block";
 import {
   SHAPE_CATEGORIES,
   SHAPE_DEFINITIONS,
@@ -244,20 +245,36 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
       meta: {},
       children: [{ insert: "艺术字" }],
     };
+    const textBoxSnapshot = {
+      id: "new-text-box",
+      flavour: "text-box",
+      nodeType: BlockNodeType.block,
+      props: {},
+      meta: {},
+      children: [],
+    };
     const enterEditing = jasmine.createSpy("enterEditing");
+    const textBoxEnterEditing = jasmine.createSpy("textBoxEnterEditing");
     const wordArtBlock = {
       id: wordArtSnapshot.id,
       flavour: "word-art",
       enterEditing,
+    };
+    const textBoxBlock = {
+      id: textBoxSnapshot.id,
+      flavour: "text-box",
+      enterEditing: textBoxEnterEditing,
     };
     const createSnapshot = jasmine
       .createSpy("createSnapshot")
       .and.callFake((flavour: string, _args?: unknown[]) =>
         flavour === "shape"
           ? shapeSnapshot
-          : flavour === "word-art"
-            ? wordArtSnapshot
-            : tableSnapshot,
+          : flavour === "text-box"
+            ? textBoxSnapshot
+            : flavour === "word-art"
+              ? wordArtSnapshot
+              : tableSnapshot,
       );
     const chain = {
       insertBeforeSnapshots: jasmine
@@ -282,7 +299,14 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
         has: jasmine.createSpy("has").and.returnValue(true),
         get: jasmine.createSpy("get").and.callFake((flavour: string) => ({
           flavour,
-          metadata: { label: flavour === "shape" ? "形状" : "表格" },
+          metadata: {
+            label:
+              flavour === "shape"
+                ? "形状"
+                : flavour === "text-box"
+                  ? "文本框"
+                  : "表格",
+          },
         })),
         isValidChildren: jasmine
           .createSpy("isValidChildren")
@@ -293,7 +317,11 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
         createSnapshot,
       },
       getBlockById: (id: string) =>
-        id === wordArtSnapshot.id ? wordArtBlock : blocks[id],
+        id === wordArtSnapshot.id
+          ? wordArtBlock
+          : id === textBoxSnapshot.id
+            ? textBoxBlock
+            : blocks[id],
       navigateToBlock: jasmine.createSpy("navigateToBlock").and.resolveTo(true),
       canInsertChild: jasmine.createSpy("canInsertChild").and.returnValue(true),
       isEditable: (block: { nodeType: BlockNodeType }) =>
@@ -354,8 +382,10 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
       tableSnapshot,
       shapeSnapshot,
       wordArtSnapshot,
+      textBoxSnapshot,
       wordArtBlock,
       enterEditing,
+      textBoxEnterEditing,
       createSnapshot,
       insertAbsoluteSnapshot,
     };
@@ -452,6 +482,59 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
     expect(
       component.doc.selection.selectOrSetCursorAtBlock,
     ).toHaveBeenCalledOnceWith("new-shape", true);
+    rootHost.remove();
+  });
+
+  it("draws a text box and enters its first editable child after commit", async () => {
+    const {
+      component,
+      rootHost,
+      textBoxSnapshot,
+      textBoxEnterEditing,
+      createSnapshot,
+      insertAbsoluteSnapshot,
+    } = makeHarness();
+    spyOn<any>(component, "syncToolbarState");
+    let drawRequest: any;
+    spyOn<any>(component, "armObjectDrawing").and.callFake((request: any) => {
+      drawRequest = request;
+      return true;
+    });
+
+    const trigger = jasmine.createSpyObj<BcOverlayTriggerDirective>(
+      "BcOverlayTriggerDirective",
+      ["closePanel"],
+    );
+    (component as any).insertTextBox("soft-blue", trigger);
+
+    expect(trigger.closePanel).toHaveBeenCalledTimes(1);
+    expect(drawRequest.defaultWidth).toBe(280);
+    expect(drawRequest.defaultHeight).toBe(140);
+    expect(createSnapshot).not.toHaveBeenCalled();
+    expect(textBoxEnterEditing).not.toHaveBeenCalled();
+
+    const anchorRect = new DOMRect(140, 90, 300, 180);
+    await drawRequest.commit({anchorRect, width: 300, height: 180});
+
+    expect(createSnapshot).toHaveBeenCalledOnceWith("text-box", [
+      "",
+      {
+        ...getTextBoxPreset("soft-blue").props,
+        width: 300,
+        height: 180,
+      },
+    ]);
+    expect(insertAbsoluteSnapshot).toHaveBeenCalledOnceWith(
+      textBoxSnapshot,
+      jasmine.objectContaining({anchorRect, layer: "over"}),
+    );
+    expect(
+      component.doc.selection.selectOrSetCursorAtBlock,
+    ).toHaveBeenCalledOnceWith("new-text-box", true);
+    expect((component.doc as any).navigateToBlock).toHaveBeenCalledOnceWith(
+      "new-text-box",
+    );
+    expect(textBoxEnterEditing).toHaveBeenCalledOnceWith(true);
     rootHost.remove();
   });
 
@@ -877,6 +960,116 @@ describe("FixedTextToolbarComponent model-owned commands", () => {
     );
 
     expect(setCursorAtBlock).toHaveBeenCalledOnceWith("column-keep", true);
+  });
+});
+
+describe("FixedTextToolbarComponent typography ownership", () => {
+  const createComponent = () => {
+    const cdr = jasmine.createSpyObj<ChangeDetectorRef>("ChangeDetectorRef", [
+      "markForCheck",
+    ]);
+    return new FixedTextToolbarComponent(cdr);
+  };
+
+  it("writes compact inline typography through the selection helper", () => {
+    const component = createComponent();
+    const formatText = jasmine.createSpy("formatText");
+    component.utils = { formatText } as any;
+    spyOn<any>(component, "runWithSelection").and.callFake(
+      (run: () => void) => run(),
+    );
+
+    const closePanel = jasmine.createSpy("closePanel");
+    (component as any).onFontFamilyItemClicked(
+      { value: "kai" },
+      { closePanel },
+    );
+
+    expect(closePanel).toHaveBeenCalled();
+    expect(formatText).toHaveBeenCalledOnceWith({
+      "t:ff": "kai",
+      "s:fontFamily": null,
+    });
+  });
+
+  it("keeps font size as a relative scale", () => {
+    const component = createComponent();
+    const formatText = jasmine.createSpy("formatText");
+    component.utils = { formatText } as any;
+    spyOn<any>(component, "runWithSelection").and.callFake(
+      (run: () => void) => run(),
+    );
+
+    const closePanel = jasmine.createSpy("closePanel");
+    (component as any).onFontScaleItemClicked(
+      { value: 1.25 },
+      { closePanel },
+    );
+
+    expect(closePanel).toHaveBeenCalled();
+    expect(formatText).toHaveBeenCalledOnceWith({
+      "t:fs": 1.25,
+      "s:fontSize": null,
+    });
+  });
+
+  it("shows letter spacing as the persisted em value", () => {
+    const component = createComponent();
+    (component as any).activeTypography = { ff: null, fs: null, ls: 0.075 };
+
+    expect((component as any).activeLetterSpacingLabel).toBe("0.075em");
+    expect((component as any).letterSpacingOptionLabel(-0.05)).toBe(
+      "-0.05em",
+    );
+  });
+
+  it("keeps the paragraph-style leading icon in sync", () => {
+    const component = createComponent();
+
+    (component as any).activeProps = {};
+    expect((component as any).activeStyleItem.icon).toBe("bc_wenben");
+
+    (component as any).activeProps = { heading: 2 };
+    expect((component as any).activeStyleItem.icon).toBe("bc_biaoti_2");
+  });
+
+  it("uses one alignment menu and reflects the current alignment", () => {
+    const component = createComponent();
+    const updateBlockProps = jasmine.createSpy("updateBlockProps");
+    component.utils = { updateBlockProps } as any;
+    (component as any).activeProps = { textAlign: "center" };
+    spyOn<any>(component, "runWithSelection").and.callFake(
+      (run: () => void) => run(),
+    );
+
+    expect((component as any).activeAlignAction.value).toBe("center");
+
+    const closePanel = jasmine.createSpy("closePanel");
+    (component as any).onAlignItemClicked(
+      { value: "right" },
+      { closePanel },
+    );
+
+    expect(closePanel).toHaveBeenCalled();
+    expect(updateBlockProps).toHaveBeenCalledOnceWith({ textAlign: "right" });
+  });
+
+  it("writes line height as a paragraph property", () => {
+    const component = createComponent();
+    const updateBlockProps = jasmine.createSpy("updateBlockProps");
+    component.utils = { updateBlockProps } as any;
+    spyOn<any>(component, "runWithSelection").and.callFake(
+      (run: () => void) => run(),
+    );
+
+    const closePanel = jasmine.createSpy("closePanel");
+    (component as any).onLineHeightItemClicked(
+      { value: 1.5 },
+      { closePanel },
+    );
+
+    expect(closePanel).toHaveBeenCalled();
+    expect(updateBlockProps).toHaveBeenCalledOnceWith({ lh: 1.5 });
   });
 });
 

@@ -7,7 +7,12 @@ export interface RootBlockModel extends NoEditableBlockNative {
   flavour: "root",
   nodeType: BlockNodeType.root,
   props: {
+    /** Compact font-family id, or a safe legacy CSS font-family stack. */
     ff?: string
+    /** Document base font size in CSS pixels. */
+    fs?: number
+    /** Document-wide unitless line-height ratio. */
+    lh?: number
     /** Default CSS text color inherited by document blocks. */
     color?: string
     /** CSS `background` shorthand persisted with the document root. */

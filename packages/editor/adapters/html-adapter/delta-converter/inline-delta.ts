@@ -8,6 +8,7 @@ import {
   readInlineShapeDelta,
   readInlineWordArtDelta,
 } from '../../../blocks';
+import {inlineTypographyToHtmlProperties} from '../typography';
 
 
 export const boldDeltaToHtmlAdapterMatcher: InlineDeltaToHtmlAdapterMatcher = {
@@ -266,6 +267,19 @@ export const inlineObjectDeltaToHtmlAdapterMatcher:
     },
   };
 
+export const typographyDeltaToHtmlAdapterMatcher: InlineDeltaToHtmlAdapterMatcher = {
+  name: 'typography',
+  match: delta =>
+    typeof delta.insert === 'string' &&
+    inlineTypographyToHtmlProperties(delta.attributes) !== null,
+  toAST: (delta, context) => ({
+    type: 'element',
+    tagName: 'span',
+    properties: inlineTypographyToHtmlProperties(delta.attributes) ?? {},
+    children: [context.current],
+  }),
+};
+
 export const inlineDeltaToHtmlAdapterMatchers: InlineDeltaToHtmlAdapterMatcher[] =
   [
     inlineObjectDeltaToHtmlAdapterMatcher,
@@ -279,4 +293,8 @@ export const inlineDeltaToHtmlAdapterMatchers: InlineDeltaToHtmlAdapterMatcher[]
     // referenceDeltaToHtmlAdapterMatcher,
     linkDeltaToHtmlAdapterMatcher,
     mentionDeltaToHtmlAdapterMatcher,
+    // Keep typography last: the legacy link matcher rebuilds its text node
+    // instead of wrapping context.current, so an earlier typography span would
+    // otherwise be discarded for a linked, styled run.
+    typographyDeltaToHtmlAdapterMatcher,
   ];

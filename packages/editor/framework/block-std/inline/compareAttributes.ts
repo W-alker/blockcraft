@@ -1,15 +1,22 @@
 import {IInlineNodeAttrs} from "../types";
+import {
+  INLINE_TYPOGRAPHY_ATTRS,
+  inlineTypographyCssProperty,
+  inlineTypographyDatasetKey,
+  normalizeInlineFontScale,
+  normalizeInlineLetterSpacing,
+  resolveTypographyFontFamily,
+} from '../typography'
+import {getAttributesFrom} from './getAttributes'
 
 export const compareAttributesWithEle = (ele: HTMLElement, attrs?: IInlineNodeAttrs): boolean => {
-  const eleAttrKeys = ele.getAttributeNames()
-  if (!attrs) {
-    return !eleAttrKeys.length
-  }
+  const expected = Object.entries(attrs ?? {}).filter(([, value]) =>
+    value !== null && value !== undefined && value !== false && value !== '',
+  )
+  const actual = getAttributesFrom(ele)
+  if (expected.length !== Object.keys(actual).length) return false
 
-  const attrsEntries = Object.entries(attrs)
-  if (attrsEntries.length !== eleAttrKeys.length) return false  // {} is mean alone plain text element
-
-  for (const [key, attr] of attrsEntries) {
+  for (const [key, attr] of expected) {
 
     if (key.startsWith('a:')) {
       if (ele.getAttribute(`${key.slice(2)}`) !== attr + '') return false
@@ -18,8 +25,28 @@ export const compareAttributesWithEle = (ele: HTMLElement, attrs?: IInlineNodeAt
       if (ele.getAttribute('data-' + [key.slice(2)]) !== attr + '') return false
     }
     if (key.startsWith('s:')) {
-      if (ele.style[key.slice(2) as any] !== attr + '') return false
+      const raw = key.slice(2)
+      const property = raw.startsWith('--')
+        ? raw
+        : raw.replace(/[A-Z]/g, value => `-${value.toLowerCase()}`)
+      if (ele.style.getPropertyValue(property) !== attr + '') return false
     }
+    if (key.startsWith('t:')) {
+      const property = inlineTypographyCssProperty(key)
+      const datasetKey = inlineTypographyDatasetKey(key)
+      if (!property || !datasetKey) return false
+      const dataValue = ele.dataset[datasetKey]
+      if (`${attr}` !== dataValue) return false
+      const cssValue = key === INLINE_TYPOGRAPHY_ATTRS.fontFamily
+        ? resolveTypographyFontFamily(attr)
+        : key === INLINE_TYPOGRAPHY_ATTRS.fontScale
+          ? `${normalizeInlineFontScale(attr)}em`
+          : `${normalizeInlineLetterSpacing(attr)}em`
+      if (!cssValue || ele.style.getPropertyValue(property) !== cssValue) return false
+    }
+
+    if (!(key in actual)) return false
+    if (`${actual[key]}` !== `${attr}`) return false
 
   }
 
@@ -38,5 +65,3 @@ export const compareAttributes = (attrs1?: IInlineNodeAttrs, attrs2?: IInlineNod
   }
   return true
 }
-
-

@@ -1,10 +1,28 @@
 import {IBlockSnapshot} from "../../framework/block-std/types/block.type";
+import {
+  normalizeDocumentFontSize,
+  normalizeTypographyLineHeight,
+  resolveTypographyFontFamily,
+} from "../../framework/block-std/typography";
+import {
+  blockSurfaceImageFitToObjectFit,
+  resolveBlockSurface,
+} from "../../framework/block-std/block/block-surface";
+import {
+  normalizeTextBoxProps,
+  normalizeTextBoxWordArtStyle,
+  type TextBoxBlockProps,
+} from "../../blocks/text-box-block";
+import {getShapeDefinition} from "../../blocks/shape-block/shape-definitions";
+import {resolveWordArtPresentation} from "../../blocks/word-art-block";
 import {createBlockShell} from "../dom/create-block-shell";
 import {SnapshotBlockRenderer, SnapshotRenderContext} from "../types";
 
 const STRUCTURAL_FLAVOURS = new Set([
   "root",
   "placement-layout",
+  "render-unit",
+  "text-box",
   "callout",
   "divider",
   "columns",
@@ -20,6 +38,10 @@ export function createStructuralRenderers(): SnapshotBlockRenderer[] {
     canRender: (snapshot) => STRUCTURAL_FLAVOURS.has(snapshot.flavour),
     render(ctx, snapshot) {
       switch (`${snapshot.flavour}`) {
+        case "render-unit":
+          return renderRenderUnit(snapshot, ctx)
+        case "text-box":
+          return renderTextBox(snapshot, ctx)
         case "callout":
           return renderCallout(snapshot, ctx)
         case "divider":
@@ -85,8 +107,228 @@ function renderPlacementLayout(
 
 function renderRoot(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   const element = createBlockShell(snapshot)
+  const props = snapshot.props as Record<string, unknown>
+  const fontFamily = resolveTypographyFontFamily(props["ff"])
+  const fontSize = normalizeDocumentFontSize(props["fs"])
+  const lineHeight = normalizeTypographyLineHeight(props["lh"])
+  if (fontFamily) {
+    element.dataset["bcFf"] = `${props["ff"]}`
+    element.style.fontFamily = fontFamily
+  }
+  if (fontSize !== null) {
+    element.dataset["bcFs"] = `${fontSize}`
+    element.style.setProperty("--bc-fs", `${fontSize}px`)
+  }
+  if (lineHeight !== null) {
+    element.dataset["bcLh"] = `${lineHeight}`
+    element.style.setProperty("--bc-lh", `${lineHeight}`)
+  }
   appendChildren(element, ctx, snapshot.children)
   return {element}
+}
+
+function renderRenderUnit(
+  snapshot: IBlockSnapshot,
+  ctx: SnapshotRenderContext,
+) {
+  const element = createBlockShell(snapshot)
+  const {backgroundImage} = resolveBlockSurface(
+    snapshot.props as Record<string, unknown>,
+  )
+
+  if (backgroundImage && ctx.options.resourcePolicy !== "off") {
+    element.append(createSurfaceBackgroundImage(
+      "render-unit-background-image",
+      backgroundImage,
+      ctx,
+    ))
+  }
+
+  const content = document.createElement("div")
+  content.classList.add("children-render-container", "render-unit-content")
+  appendChildren(content, ctx, snapshot.children)
+  element.append(content)
+  return {element}
+}
+
+function renderTextBox(
+  snapshot: IBlockSnapshot,
+  ctx: SnapshotRenderContext,
+) {
+  const element = createBlockShell(snapshot)
+  const props = normalizeTextBoxProps(
+    snapshot.props as Partial<TextBoxBlockProps>,
+  )
+  const {padding, backgroundImage} = resolveBlockSurface(props)
+  element.setAttribute("data-bc-text-box", "true")
+  element.style.setProperty(
+    "--bc-text-box-background-color",
+    props.backColor ?? "transparent",
+  )
+  element.style.setProperty(
+    "--bc-text-box-border-color",
+    props.borderColor ?? "transparent",
+  )
+  element.style.setProperty("--bc-text-box-padding-top", `${padding.top}px`)
+  element.style.setProperty("--bc-text-box-padding-right", `${padding.right}px`)
+  element.style.setProperty("--bc-text-box-padding-bottom", `${padding.bottom}px`)
+  element.style.setProperty("--bc-text-box-padding-left", `${padding.left}px`)
+  const definition = getShapeDefinition(props.sh)
+  const shapeInsets = props.sh === "rectangle"
+    ? {top: 0, right: 0, bottom: 0, left: 0}
+    : definition.textInsets
+  element.style.setProperty(
+    "--bc-text-box-shape-inset-top",
+    `${shapeInsets.top * 100}%`,
+  )
+  element.style.setProperty(
+    "--bc-text-box-shape-inset-right",
+    `${shapeInsets.right * 100}%`,
+  )
+  element.style.setProperty(
+    "--bc-text-box-shape-inset-bottom",
+    `${shapeInsets.bottom * 100}%`,
+  )
+  element.style.setProperty(
+    "--bc-text-box-shape-inset-left",
+    `${shapeInsets.left * 100}%`,
+  )
+
+  const surface = document.createElement("div")
+  surface.classList.add("text-box-block__surface")
+  surface.setAttribute("data-bc-print-visual-surface", "")
+  surface.style.width = `${props.width}px`
+  surface.style.height = `${props.height}px`
+  surface.style.transform = props.rotation === 0
+    ? ""
+    : `rotate(${props.rotation}deg)`
+  const clipPathId = `bc-text-box-clip-${snapshot.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`
+  surface.append(createTextBoxFillGeometry(definition, props, clipPathId))
+
+  if (backgroundImage && ctx.options.resourcePolicy !== "off") {
+    const image = createSurfaceBackgroundImage(
+      "text-box-block__background-image",
+      backgroundImage,
+      ctx,
+    )
+    image.style.clipPath = `url(#${clipPathId})`
+    image.style.setProperty("-webkit-clip-path", `url(#${clipPathId})`)
+    surface.append(image)
+  }
+
+  const content = document.createElement("div")
+  content.classList.add("children-render-container", "text-box-block__content")
+  if (props.wa) {
+    const wordArt = resolveWordArtPresentation(
+      normalizeTextBoxWordArtStyle(props.wa),
+    )
+    content.classList.add("text-box-block__content--word-art")
+    element.style.setProperty(
+      "--bc-text-box-word-art-font-family",
+      wordArt.fontFamily,
+    )
+    element.style.setProperty(
+      "--bc-text-box-word-art-font-size",
+      `${wordArt.props.fontSize}px`,
+    )
+    element.style.setProperty(
+      "--bc-text-box-word-art-font-weight",
+      `${wordArt.props.fontWeight}`,
+    )
+    element.style.setProperty(
+      "--bc-text-box-word-art-font-style",
+      wordArt.props.fontStyle,
+    )
+    element.style.setProperty(
+      "--bc-text-box-word-art-letter-spacing",
+      `${wordArt.props.letterSpacingEm}em`,
+    )
+    element.style.setProperty(
+      "--bc-text-box-word-art-line-height",
+      `${wordArt.props.lineHeight}`,
+    )
+    element.style.setProperty(
+      "--bc-text-box-word-art-align",
+      wordArt.props.horizontalAlign,
+    )
+    element.style.setProperty(
+      "--bc-text-box-word-art-vertical",
+      wordArt.props.verticalAlign === "top"
+        ? "flex-start"
+        : wordArt.props.verticalAlign === "bottom"
+          ? "flex-end"
+          : "center",
+    )
+    element.style.setProperty("--bc-text-box-word-art-color", wordArt.textColor)
+    element.style.setProperty(
+      "--bc-text-box-word-art-background",
+      wordArt.backgroundImage,
+    )
+    element.style.setProperty("--bc-text-box-word-art-stroke", wordArt.textStroke)
+    element.style.setProperty("--bc-text-box-word-art-shadow", wordArt.textShadow)
+    element.style.setProperty(
+      "--bc-text-box-word-art-transform",
+      wordArt.effectTransform || "none",
+    )
+  }
+  appendChildren(content, ctx, snapshot.children)
+  surface.append(content, createTextBoxOutlineGeometry(definition, props))
+  element.append(surface)
+  return {element}
+}
+
+const SVG_NS = "http://www.w3.org/2000/svg"
+
+function createTextBoxFillGeometry(
+  definition: ReturnType<typeof getShapeDefinition>,
+  props: ReturnType<typeof normalizeTextBoxProps>,
+  clipPathId: string,
+): SVGSVGElement {
+  const svg = textBoxSvg("text-box-block__geometry--fill")
+  const defs = document.createElementNS(SVG_NS, "defs")
+  const clipPath = document.createElementNS(SVG_NS, "clipPath")
+  clipPath.id = clipPathId
+  clipPath.setAttribute("clipPathUnits", "objectBoundingBox")
+  const clipShape = document.createElementNS(SVG_NS, "path")
+  clipShape.setAttribute("d", definition.path)
+  clipShape.setAttribute("transform", "scale(.001)")
+  clipPath.append(clipShape)
+  defs.append(clipPath)
+  const fill = document.createElementNS(SVG_NS, "path")
+  fill.setAttribute("d", definition.path)
+  fill.setAttribute("fill", props.backColor)
+  fill.setAttribute("fill-opacity", `${props.fo}`)
+  if (definition.fillRule) fill.setAttribute("fill-rule", definition.fillRule)
+  svg.append(defs, fill)
+  return svg
+}
+
+function createTextBoxOutlineGeometry(
+  definition: ReturnType<typeof getShapeDefinition>,
+  props: ReturnType<typeof normalizeTextBoxProps>,
+): SVGSVGElement {
+  const svg = textBoxSvg("text-box-block__geometry--outline")
+  for (const pathValue of [definition.path, definition.detailPath]) {
+    if (!pathValue) continue
+    const path = document.createElementNS(SVG_NS, "path")
+    path.setAttribute("d", pathValue)
+    path.setAttribute("fill", "none")
+    path.setAttribute("stroke", props.borderColor)
+    path.setAttribute("stroke-width", `${props.bw}`)
+    path.setAttribute("vector-effect", "non-scaling-stroke")
+    if (props.bs === "dashed") path.setAttribute("stroke-dasharray", "10 8")
+    svg.append(path)
+  }
+  return svg
+}
+
+function textBoxSvg(modifier: string): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, "svg")
+  svg.classList.add("text-box-block__geometry", modifier)
+  svg.setAttribute("viewBox", "0 0 1000 1000")
+  svg.setAttribute("preserveAspectRatio", "none")
+  svg.setAttribute("aria-hidden", "true")
+  return svg
 }
 
 function renderCallout(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
@@ -249,4 +491,34 @@ function appendChildren(
   }
 
   children.forEach((child) => container.append(ctx.renderBlock(child as IBlockSnapshot)))
+}
+
+function resolveResourceUrl(src: string, baseUrl?: string): string {
+  if (!baseUrl) return src
+  try {
+    return new URL(src, baseUrl).toString()
+  } catch {
+    return src
+  }
+}
+
+function createSurfaceBackgroundImage(
+  className: string,
+  backgroundImage: NonNullable<
+    ReturnType<typeof resolveBlockSurface>["backgroundImage"]
+  >,
+  ctx: SnapshotRenderContext,
+): HTMLImageElement {
+  const image = document.createElement("img")
+  image.classList.add(className)
+  image.alt = ""
+  image.setAttribute("aria-hidden", "true")
+  image.loading = "eager"
+  image.decoding = "async"
+  image.draggable = false
+  image.style.objectFit = blockSurfaceImageFitToObjectFit(backgroundImage.fit)
+  image.style.objectPosition = `${backgroundImage.positionX}% ${backgroundImage.positionY}%`
+  image.style.opacity = `${backgroundImage.opacity}`
+  image.src = resolveResourceUrl(backgroundImage.src, ctx.options.baseUrl)
+  return image
 }

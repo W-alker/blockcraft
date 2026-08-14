@@ -1,4 +1,6 @@
 import {BlockNodeType, IBlockSnapshot} from "../../framework/block-std/types/block.type";
+import {resolveBlockSurface} from "../../framework/block-std/block/block-surface";
+import {normalizeTypographyLineHeight} from "../../framework/block-std/typography";
 
 export function createBlockShell(snapshot: IBlockSnapshot): HTMLElement {
   const element = document.createElement(getTagName(snapshot))
@@ -17,6 +19,13 @@ export function createBlockShell(snapshot: IBlockSnapshot): HTMLElement {
     applyBlockAppearance(
       element,
       snapshot.nodeType,
+      snapshot.props as Record<string, unknown>,
+    )
+  }
+
+  if (snapshot.nodeType === BlockNodeType.editable) {
+    applyEditableTypography(
+      element,
       snapshot.props as Record<string, unknown>,
     )
   }
@@ -49,10 +58,28 @@ export function createBlockShell(snapshot: IBlockSnapshot): HTMLElement {
   return element
 }
 
+function applyEditableTypography(
+  element: HTMLElement,
+  props: Record<string, unknown>,
+) {
+  const lineHeight = normalizeTypographyLineHeight(props["lh"])
+  if (lineHeight !== null) {
+    element.setAttribute("data-bc-block-lh", "")
+    element.style.setProperty("--bc-block-lh", `${lineHeight}`)
+  }
+
+}
+
 function applyRenderUnitAppearance(
   element: HTMLElement,
   props: Record<string, unknown>,
 ) {
+  const {padding} = resolveBlockSurface(props)
+  element.style.setProperty("--bc-render-unit-padding-top", `${padding.top}px`)
+  element.style.setProperty("--bc-render-unit-padding-right", `${padding.right}px`)
+  element.style.setProperty("--bc-render-unit-padding-bottom", `${padding.bottom}px`)
+  element.style.setProperty("--bc-render-unit-padding-left", `${padding.left}px`)
+
   const backColor = normalizeAppearanceColor(props["backColor"])
   if (backColor) {
     element.style.setProperty("--bc-render-unit-background-color", backColor)

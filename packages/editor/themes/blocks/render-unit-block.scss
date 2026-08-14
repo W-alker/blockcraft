@@ -2,7 +2,14 @@
   .render-unit-block {
     --bc-render-unit-background-color: transparent;
     --bc-render-unit-border-color: transparent;
+    --bc-render-unit-padding-top: 0px;
+    --bc-render-unit-padding-right: 0px;
+    --bc-render-unit-padding-bottom: 0px;
+    --bc-render-unit-padding-left: 0px;
+    position: relative;
+    isolation: isolate;
     min-height: calc(var(--bc-lh) * var(--bc-fs));
+    box-sizing: border-box;
     border-radius: 4px;
     background-color: var(--bc-render-unit-background-color);
     background-color: color-mix(
@@ -14,7 +21,26 @@
     outline-offset: -1px;
   }
 
+  .render-unit-background-image {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    pointer-events: none;
+    user-select: none;
+  }
+
   .render-unit-content {
+    position: relative;
+    z-index: 1;
     min-height: inherit;
+    box-sizing: border-box;
+    padding: var(--bc-render-unit-padding-top)
+      var(--bc-render-unit-padding-right)
+      var(--bc-render-unit-padding-bottom)
+      var(--bc-render-unit-padding-left);
   }
 }
