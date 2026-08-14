@@ -55,6 +55,19 @@ class WordArtTransformVisibilityHarness {
 class WordArtCssInheritanceHarness {}
 
 describe('Word art block domain', () => {
+  it('estimates an unmounted flow block from its normalized model height', () => {
+    const estimateHeight =
+      WordArtBlockSchema.metadata.virtualization?.estimateHeight
+
+    expect(estimateHeight).toBeDefined()
+    expect(estimateHeight!({
+      props: WordArtBlockSchema.createSnapshot(undefined, {height: 360}).props,
+    } as any)).toBe(360)
+    expect(estimateHeight!({
+      props: WordArtBlockSchema.createSnapshot(undefined, {height: 9_999}).props,
+    } as any)).toBe(2_000)
+  })
+
   it('shows transform controls for the editable focused state', async () => {
     await TestBed.configureTestingModule({
       imports: [WordArtTransformVisibilityHarness],

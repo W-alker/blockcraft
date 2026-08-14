@@ -69,6 +69,33 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
+## Unreleased — 2026-08-15 — model-drive fixed object height estimates
+
+**Severity**: patch
+
+**What changed**: Built-in Shape and WordArt Schemas now estimate an unmounted
+flow block from its normalized persisted `props.height` through
+`metadata.virtualization.estimateHeight`.
+
+**Why**: These objects already persist an authoritative fixed pixel frame.
+Using a generic per-flavour fallback made tall offscreen objects reserve the
+wrong height until their DOM mounted and was measured.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-perf.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Continuous virtualization and sparse pagination use model `height` for
+  unmounted Shape and WordArt root blocks.
+- Host `virtualization.estimatedHeights.shape` and
+  `virtualization.estimatedHeights['word-art']` remain fallbacks for invalid or
+  failed Schema estimators, but no longer override valid persisted geometry.
+- No API or persisted data shape changed.
+
 ## Unreleased — 2026-08-15 — make placement structural and split position from layer
 
 **Severity**: major

@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-10
+> Last updated: 2026-08-15
 
 ## Core Performance Principles
 
@@ -101,6 +101,11 @@ errors fall back safely. The callback must be synchronous, deterministic and
 DOM/network free. Persist async layout facts such as row count or height in
 props, and keep the common path `O(1)` unless the block genuinely owns a bounded
 child-height aggregation.
+
+Built-in Shape and WordArt Schemas return their normalized `props.height`
+through this callback. Their unmounted flow projection therefore follows the
+persisted fixed frame instead of a generic `estimatedHeights` value; live DOM
+measurement still corrects surrounding layout stride after mount.
 
 Built-in tables receive a bounded content-aware model estimate before their
 root view mounts. Legacy `table-row.props.height` is deliberately ignored

@@ -16,6 +16,25 @@ import {TestBed} from '@angular/core/testing'
 import type {IBlockSnapshot} from '../../framework'
 
 describe('Shape block domain', () => {
+  it('estimates an unmounted flow block from its normalized model height', () => {
+    const estimateHeight =
+      ShapeBlockSchema.metadata.virtualization?.estimateHeight
+
+    expect(estimateHeight).toBeDefined()
+    expect(estimateHeight!({
+      props: {
+        ...ShapeBlockSchema.createSnapshot().props,
+        height: 420,
+      },
+    } as any)).toBe(420)
+    expect(estimateHeight!({
+      props: {
+        ...ShapeBlockSchema.createSnapshot().props,
+        height: -1,
+      },
+    } as any)).toBe(32)
+  })
+
   it('renders a theme-colored SVG icon from the shape geometry path', async () => {
     await TestBed.configureTestingModule({
       imports: [ShapeIconComponent],

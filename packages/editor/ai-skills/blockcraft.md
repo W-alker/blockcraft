@@ -382,6 +382,11 @@ results and thrown errors fall back to object-sizing, built-in rules and
 persist every async layout fact in model props. The built-in `page-divider`
 uses this seam to reserve its visual marker in flow layout while remaining a
 zero-height manual break in paginated layout.
+Built-in Shape and WordArt blocks also use this seam: their normalized,
+persisted `props.height` is the O(1) offscreen estimate, so a custom host does
+not need a per-flavour fallback merely to preserve their fixed object frame.
+Mounted DOM measurement remains the exact correction for surrounding layout
+stride and browser projection.
 
 This is opt-in and disabled by default. Direct root children are windowed;
 their nested tables/columns/callouts remain complete atomic subtrees. Selection

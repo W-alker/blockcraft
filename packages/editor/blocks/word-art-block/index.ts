@@ -69,6 +69,9 @@ export const WordArtBlockSchema: IBlockSchemaOptions<WordArtBlockModel> = {
     placeholder: '输入艺术字',
     plainTextOnly: true,
     placement: {modes: ['relative', 'absolute']},
+    virtualization: {
+      estimateHeight: ({props}) => normalizeWordArtProps(props).height,
+    },
   },
 }
 

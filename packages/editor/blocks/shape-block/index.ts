@@ -11,6 +11,7 @@ import {ShapeBlockComponent} from './shape.block'
 import {ShapeTextBlockComponent} from './shape-text.block'
 import {
   DEFAULT_SHAPE_PROPS,
+  normalizeShapeProps,
   type ShapeBlockProps,
   type ShapeKind,
 } from './shape.types'
@@ -87,6 +88,9 @@ export const ShapeBlockSchema: IBlockSchemaOptions<ShapeBlockModel> = {
     includeChildren: ['shape-text'],
     selectionScope: 'container',
     placement: {modes: ['relative', 'absolute']},
+    virtualization: {
+      estimateHeight: ({props}) => normalizeShapeProps(props).height,
+    },
   },
 }
 
