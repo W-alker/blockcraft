@@ -115,7 +115,13 @@ export function deriveInitialImageObjectSize(
       max-width: 100%;
     }
 
-    .img-wrapper[data-bc-object-sizing] img {
+    /* Keep the ratio wrapper as the sole layout box. WebKit table cells can
+       otherwise resolve the image's percentage height to its intrinsic pixels. */
+    .img-wrapper[data-bc-object-sizing] > img {
+      position: absolute;
+      inset: 0;
+      display: block;
+      width: 100%;
       height: 100%;
       object-fit: contain;
     }
