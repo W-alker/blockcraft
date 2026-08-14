@@ -53,10 +53,15 @@ bc-virtual-float-toolbar {
       flex-direction: column;
 
       bc-float-toolbar-item {
+        box-sizing: border-box;
         margin-top: 2px;
+        min-width: 0;
+        max-width: 100%;
         padding: var(--bc-padding-sm) var(--bc-padding-md);
         width: 100%;
         justify-content: flex-start;
+        overflow: hidden;
+        text-overflow: ellipsis;
 
         &:first-of-type {
           margin-top: 0;

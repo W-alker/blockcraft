@@ -69,6 +69,46 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
+## Unreleased — 2026-08-14 — organize the fixed toolbar and make it container-responsive
+
+**Severity**: patch
+
+**What changed**: `FixedTextToolbarComponent` now keeps Shape, text box,
+WordArt, Table, columns, image and video/audio as individually visible insertion
+actions at every width. Word-like command groups retain visual separators and
+accessible names without persistent caption text. Its layout responds to the
+toolbar container through one `ResizeObserver`: a complete wide surface and a
+frequency-prioritized medium/compact surface.
+
+**Why**: Insertion capabilities must remain directly discoverable. Responsive
+space should instead come from lower-frequency formatting controls rather than
+collapsing the whole insertion domain.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-formatting.md`
+- `blockcraft-toolbar.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Insertion capabilities and their existing pickers remain individually
+  exposed at all widths.
+- Responsive mode uses the component's actual inline size with breakpoints at
+  `720px` and `1480px`; it does not depend on viewport media queries. Below the
+  wide breakpoint, font family, character spacing and line height move into
+  **更多格式**, while superscript, subscript, inline link and inline formula
+  are omitted from the fixed toolbar.
+- Visible formatting and insertion groups are centered in every responsive
+  tier; safe centering preserves the inline start when a row truly overflows.
+- Column-oriented float-toolbar menus constrain items with border-box sizing,
+  hide horizontal overflow and keep long lists vertical-scroll-only.
+- Paragraph line height is enabled for mixed multi-block selections when at
+  least one selected block is editable. Applying it updates eligible editable
+  rich-text blocks only; other text-format controls keep their stricter
+  all-selected-blocks-editable rule.
+- The floating text toolbar and object-specific toolbars are unchanged.
+
 ## Unreleased — 2026-08-14 — add composable Word-like text boxes
 
 **Severity**: minor

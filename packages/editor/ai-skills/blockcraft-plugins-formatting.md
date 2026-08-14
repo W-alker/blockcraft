@@ -135,18 +135,34 @@ new TextMarkerPlugin(['paragraph', 'blockquote'])
 - Mixed selections display a mixed state; inherited/default values are `null`.
   Picker mousedown preserves the live editor selection. A collapsed caret writes
   pending insert attrs, so subsequent input inherits selection typography.
-- Line-height changes cover every editable rich-text block in the selection in
-  one transaction.
-- The fixed toolbar has two non-wrapping sections: text/link formatting and
-  insertion/object actions. They share one row when space allows and wrap as
-  whole sections to at most two rows; at extreme narrow widths each row scrolls
-  internally instead of creating a third row or page-level horizontal overflow.
+- Line-height is enabled when a multi-block selection contains at least one
+  editable rich-text block. Applying it updates every eligible editable block
+  in one transaction and skips container, void and plain-text-only blocks;
+  other inline-format controls retain their all-blocks-editable requirement.
+- The fixed toolbar observes its own container width rather than the browser
+  viewport. At `1480px` and above it exposes the complete formatting surface;
+  from `720px` to `1479px` font family, character spacing and paragraph line
+  height move into one **更多格式** menu while superscript, subscript, inline
+  link and inline formula leave the fixed surface. Below `720px` the same
+  priority set remains and explicit previous/next buttons browse the formatting
+  row. The observer is created once per component and disconnected on destroy.
+- Word-like semantic groups keep related commands together with visual dividers
+  and accessible group names, but do not render persistent group-caption text.
+  The surface remains one lightweight document-toolbar row instead of adopting
+  a full multi-row Office Ribbon.
+- Every responsive tier centers the visible formatting and insertion groups.
+  Scrollable rows use safe centering so an overflowing row falls back to its
+  reachable inline start instead of clipping the first command.
 
 ### Insertion Actions
 
-- When the document registers `ShapeBlockSchema`, the toolbar shows an
-  **插入形状** button using the existing `bc_tuxing` iconfont glyph. Click or
-  keyboard activation opens the bounded categorized shape picker. Its 103
+- Shape, text box, WordArt, Table, columns, image and video/audio remain
+  individually visible insertion actions at every responsive width; they are
+  never consolidated into one Insert menu. Unavailable actions retain their
+  existing Schema, selection and readonly disabled states.
+- When the document registers `ShapeBlockSchema`, the toolbar shows a Shape
+  action using the existing `bc_tuxing` iconfont glyph. Click or keyboard
+  activation opens the bounded categorized shape picker. Its 103
   entries come from eight `SHAPE_CATEGORIES` backed by the shared
   `SHAPE_DEFINITIONS`; each compact icon-only item renders its actual
   main/detail geometry through `ShapeIconComponent` and exposes its label by
@@ -166,9 +182,11 @@ new TextMarkerPlugin(['paragraph', 'blockquote'])
   model mutation. Shape/text-box/WordArt entries remain hidden when their Schema is not
   registered and are disabled only while the document is readonly; a missing
   or detached drawing surface fails safely when the preset is picked.
-- Table and column actions use picker overlays from the fixed toolbar.
-- Image insertion supports either a direct image URL or local image upload.
-- Video and audio insertion are grouped under one dropdown entry and reuse the shared media-creator flow.
+- Table and column actions open their existing picker overlays directly.
+- Image insertion remains a direct action and supports either a direct image
+  URL or local image upload.
+- Video and audio remain grouped under their own dropdown and reuse the shared
+  media-creator flow.
 
 ### Format Brush
 

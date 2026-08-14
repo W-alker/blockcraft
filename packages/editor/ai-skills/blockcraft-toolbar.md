@@ -203,6 +203,17 @@ export class MyToolbarComponent {
 | `ShapePickerComponent` | `components/` | Categorized Shape catalog; `supportsTextOnly` removes non-text geometries and `embedded` removes popup chrome inside a settings card |
 | `TextBoxPresetPickerComponent` | `components/` | Visual Word-like text-box preset catalog; `embedded` removes standalone popup chrome |
 
+Column-oriented `BcFloatToolbarComponent` menus use border-box items constrained
+to the menu width. Long labels are clipped inside the item and the menu must not
+gain a horizontal scrollbar; bounded long lists scroll vertically only.
+
+The fixed toolbar treats paragraph line height as a block-level command. A
+mixed multi-block selection may open that picker when at least one selected
+block is editable; the command skips ineligible blocks. In responsive layouts,
+the **更多格式** entry therefore remains available when line height is the only
+applicable nested command, while its font and character-spacing entries stay
+disabled unless the complete text selection is editable.
+
 ## Standard Control Source
 
 Use the exact `@cses/ui@4.27.0` peer for generic toolbar chrome:

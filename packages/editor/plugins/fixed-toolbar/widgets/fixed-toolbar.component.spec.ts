@@ -10,6 +10,24 @@ import {
 } from "../../../blocks/shape-block";
 import { FixedTextToolbarComponent } from "./fixed-toolbar.component";
 
+describe("FixedTextToolbarComponent responsive layout", () => {
+  const makeComponent = () => {
+    const cdr = jasmine.createSpyObj<ChangeDetectorRef>("ChangeDetectorRef", [
+      "markForCheck",
+    ]);
+    return new FixedTextToolbarComponent(cdr);
+  };
+
+  it("uses container-width breakpoints instead of viewport breakpoints", () => {
+    const component = makeComponent();
+
+    expect((component as any).resolveToolbarLayout(1480)).toBe("wide");
+    expect((component as any).resolveToolbarLayout(1479)).toBe("balanced");
+    expect((component as any).resolveToolbarLayout(960)).toBe("balanced");
+    expect((component as any).resolveToolbarLayout(719)).toBe("compact");
+  });
+});
+
 describe("FixedTextToolbarComponent boundary selections", () => {
   const makeHarness = () => {
     const rootHost = document.createElement("div");
@@ -112,6 +130,30 @@ describe("FixedTextToolbarComponent boundary selections", () => {
       p1.id,
       p2.id,
     ]);
+    rootHost.remove();
+  });
+
+  it("enables line height when a mixed block range contains one editable text block", () => {
+    const { component, p2, rootHost, selection } = makeHarness();
+    p2.nodeType = BlockNodeType.void;
+    const mixedRange = selection(0, 2);
+
+    expect((component as any).canTransformSelection(mixedRange)).toBeFalse();
+    expect(
+      (component as any).canSetLineHeightForSelection(mixedRange),
+    ).toBeTrue();
+    rootHost.remove();
+  });
+
+  it("disables line height when a block range has no editable text block", () => {
+    const { component, p1, p2, rootHost, selection } = makeHarness();
+    p1.nodeType = BlockNodeType.void;
+    p2.nodeType = BlockNodeType.block;
+    const nonEditableRange = selection(0, 2);
+
+    expect(
+      (component as any).canSetLineHeightForSelection(nonEditableRange),
+    ).toBeFalse();
     rootHost.remove();
   });
 });
@@ -461,7 +503,7 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
     expect(insertAbsoluteSnapshot).not.toHaveBeenCalled();
 
     const anchorRect = new DOMRect(120, 80, 480, 280);
-    await drawRequest.commit({anchorRect, width: 240, height: 140});
+    await drawRequest.commit({ anchorRect, width: 240, height: 140 });
 
     expect(createSnapshot).toHaveBeenCalledOnceWith("shape", ["diamond"]);
     expect(insertAbsoluteSnapshot).toHaveBeenCalledOnceWith(
@@ -514,7 +556,7 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
     expect(textBoxEnterEditing).not.toHaveBeenCalled();
 
     const anchorRect = new DOMRect(140, 90, 300, 180);
-    await drawRequest.commit({anchorRect, width: 300, height: 180});
+    await drawRequest.commit({ anchorRect, width: 300, height: 180 });
 
     expect(createSnapshot).toHaveBeenCalledOnceWith("text-box", [
       "",
@@ -526,7 +568,7 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
     ]);
     expect(insertAbsoluteSnapshot).toHaveBeenCalledOnceWith(
       textBoxSnapshot,
-      jasmine.objectContaining({anchorRect, layer: "over"}),
+      jasmine.objectContaining({ anchorRect, layer: "over" }),
     );
     expect(
       component.doc.selection.selectOrSetCursorAtBlock,
@@ -569,7 +611,7 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
     expect(enterEditing).not.toHaveBeenCalled();
 
     const anchorRect = new DOMRect(160, 96, 420, 140);
-    await drawRequest.commit({anchorRect, width: 420, height: 140});
+    await drawRequest.commit({ anchorRect, width: 420, height: 140 });
 
     expect(createSnapshot).toHaveBeenCalledOnceWith("word-art", [
       "艺术字",
@@ -975,8 +1017,8 @@ describe("FixedTextToolbarComponent typography ownership", () => {
     const component = createComponent();
     const formatText = jasmine.createSpy("formatText");
     component.utils = { formatText } as any;
-    spyOn<any>(component, "runWithSelection").and.callFake(
-      (run: () => void) => run(),
+    spyOn<any>(component, "runWithSelection").and.callFake((run: () => void) =>
+      run(),
     );
 
     const closePanel = jasmine.createSpy("closePanel");
@@ -996,15 +1038,12 @@ describe("FixedTextToolbarComponent typography ownership", () => {
     const component = createComponent();
     const formatText = jasmine.createSpy("formatText");
     component.utils = { formatText } as any;
-    spyOn<any>(component, "runWithSelection").and.callFake(
-      (run: () => void) => run(),
+    spyOn<any>(component, "runWithSelection").and.callFake((run: () => void) =>
+      run(),
     );
 
     const closePanel = jasmine.createSpy("closePanel");
-    (component as any).onFontScaleItemClicked(
-      { value: 1.25 },
-      { closePanel },
-    );
+    (component as any).onFontScaleItemClicked({ value: 1.25 }, { closePanel });
 
     expect(closePanel).toHaveBeenCalled();
     expect(formatText).toHaveBeenCalledOnceWith({
@@ -1018,9 +1057,7 @@ describe("FixedTextToolbarComponent typography ownership", () => {
     (component as any).activeTypography = { ff: null, fs: null, ls: 0.075 };
 
     expect((component as any).activeLetterSpacingLabel).toBe("0.075em");
-    expect((component as any).letterSpacingOptionLabel(-0.05)).toBe(
-      "-0.05em",
-    );
+    expect((component as any).letterSpacingOptionLabel(-0.05)).toBe("-0.05em");
   });
 
   it("keeps the paragraph-style leading icon in sync", () => {
@@ -1038,17 +1075,14 @@ describe("FixedTextToolbarComponent typography ownership", () => {
     const updateBlockProps = jasmine.createSpy("updateBlockProps");
     component.utils = { updateBlockProps } as any;
     (component as any).activeProps = { textAlign: "center" };
-    spyOn<any>(component, "runWithSelection").and.callFake(
-      (run: () => void) => run(),
+    spyOn<any>(component, "runWithSelection").and.callFake((run: () => void) =>
+      run(),
     );
 
     expect((component as any).activeAlignAction.value).toBe("center");
 
     const closePanel = jasmine.createSpy("closePanel");
-    (component as any).onAlignItemClicked(
-      { value: "right" },
-      { closePanel },
-    );
+    (component as any).onAlignItemClicked({ value: "right" }, { closePanel });
 
     expect(closePanel).toHaveBeenCalled();
     expect(updateBlockProps).toHaveBeenCalledOnceWith({ textAlign: "right" });
@@ -1058,15 +1092,12 @@ describe("FixedTextToolbarComponent typography ownership", () => {
     const component = createComponent();
     const updateBlockProps = jasmine.createSpy("updateBlockProps");
     component.utils = { updateBlockProps } as any;
-    spyOn<any>(component, "runWithSelection").and.callFake(
-      (run: () => void) => run(),
+    spyOn<any>(component, "runWithSelection").and.callFake((run: () => void) =>
+      run(),
     );
 
     const closePanel = jasmine.createSpy("closePanel");
-    (component as any).onLineHeightItemClicked(
-      { value: 1.5 },
-      { closePanel },
-    );
+    (component as any).onLineHeightItemClicked({ value: 1.5 }, { closePanel });
 
     expect(closePanel).toHaveBeenCalled();
     expect(updateBlockProps).toHaveBeenCalledOnceWith({ lh: 1.5 });

@@ -101,6 +101,21 @@ describe("TextToolbarHelper boundary selections", () => {
     rootHost.remove();
   });
 
+  it("updates only editable text blocks in a mixed block range", () => {
+    const {helper, root, p1, p2, rootHost, selection} = makeHarness();
+    p2.nodeType = BlockNodeType.void;
+    const mixedSelection = selection(
+      {blockId: "root", type: "boundary", index: 0, block: root},
+      {blockId: "root", type: "boundary", index: 2, block: root},
+    );
+
+    helper.updateBlockProps({lh: 1.5}, mixedSelection as any);
+
+    expect(p1.updateProps).toHaveBeenCalledOnceWith({lh: 1.5});
+    expect(p2.updateProps).not.toHaveBeenCalled();
+    rootHost.remove();
+  });
+
   it("updates from the boundary content block through the text endpoint block", () => {
     const {helper, root, p1, p2, outside, rootHost, selection, queryBlocksBetween} = makeHarness();
     const mixedSelection = selection(
