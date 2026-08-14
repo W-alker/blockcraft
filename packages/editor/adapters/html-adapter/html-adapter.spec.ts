@@ -170,13 +170,11 @@ describe('HtmlAdapter', () => {
         bgx: 30,
         bgy: 70,
         bgo: 0.5,
-        placement: {
-          mode: 'absolute',
+        position: {
           x: 40,
           y: 60,
-          unit: 'px',
-          layer: 'under',
         },
+        placementLayer: 'under',
       },
       meta: {},
       children: [
@@ -198,7 +196,7 @@ describe('HtmlAdapter', () => {
     expect(html).toContain('data-text-box-height="160"');
     expect(html).toContain('data-text-box-rotation="15"');
     expect(html).toContain('data-text-box-placement-mode="absolute"');
-    expect(html).toContain('data-text-box-placement-unit="px"');
+    expect(html).not.toContain('data-text-box-placement-unit');
     expect(html).toContain('data-bc-sh="rounded-speech-bubble"');
     expect(html).toContain('data-bc-fo="0.9"');
     expect(html).toContain('data-bc-bw="2"');

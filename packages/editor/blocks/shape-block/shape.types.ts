@@ -1,4 +1,4 @@
-import type {BlockPositionState, IBlockProps} from '../../framework'
+import {resolveBlockPosition, type IBlockProps} from '../../framework'
 
 export const SHAPE_KINDS = [
   'rectangle',
@@ -124,7 +124,6 @@ export interface ShapeBlockProps extends IBlockProps {
   textColor: string
   shapeTextAlign: ShapeTextAlign
   verticalAlign: ShapeVerticalAlign
-  placement?: BlockPositionState
 }
 
 export interface NormalizedShapeBlockProps extends ShapeBlockProps {
@@ -167,6 +166,9 @@ export function normalizeShapeProps(
   const height = Number(props?.height)
   const fillOpacity = Number(props?.fillOpacity)
   const strokeWidth = Number(props?.strokeWidth)
+  const position = props?.position && typeof props.position === 'object'
+    ? resolveBlockPosition(props.position)
+    : null
 
   return {
     shapeType: isShapeKind(props?.shapeType)
@@ -205,6 +207,7 @@ export function normalizeShapeProps(
       props?.verticalAlign === 'top' || props?.verticalAlign === 'bottom'
         ? props.verticalAlign
         : DEFAULT_SHAPE_PROPS.verticalAlign,
-    ...(props?.placement ? {placement: props.placement} : {}),
+    ...(position ? {position} : {}),
+    ...(props?.placementLayer === 'under' ? {placementLayer: 'under' as const} : {}),
   }
 }

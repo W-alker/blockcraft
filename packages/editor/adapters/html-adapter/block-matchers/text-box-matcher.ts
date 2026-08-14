@@ -4,7 +4,7 @@ import {
   TextBoxBlockSchema,
   type TextBoxBlockProps,
 } from '../../../blocks'
-import type {BlockPositionState, IBlockSnapshot} from '../../../framework'
+import type {BlockPosition, IBlockSnapshot} from '../../../framework'
 import {HastUtils} from '../../utils'
 import type {BlockHtmlAdapterMatcher} from '../block-adapter'
 import {
@@ -87,7 +87,7 @@ export const textBoxBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
           dataBcBw: props.bw,
           dataBcBs: props.bs,
           dataBcWa: props.wa,
-          ...placementToHtml(props.placement),
+          ...placementToHtml(props.position, props.placementLayer),
           ...blockSurfacePropsToHtml(props),
         },
         children: [],
@@ -109,36 +109,29 @@ function wordArtProperty(
 
 function placementFromHtml(
   node: Parameters<typeof numberProperty>[0],
-): Pick<TextBoxBlockProps, 'placement'> {
+): Pick<TextBoxBlockProps, 'position' | 'placementLayer'> {
   const mode = stringProperty(node, 'dataTextBoxPlacementMode')
-  if (mode === 'relative') return {placement: {mode: 'relative'}}
   if (mode !== 'absolute') return {}
   return {
-    placement: {
-      mode: 'absolute',
+    position: {
       x: numberProperty(node, 'dataTextBoxPlacementX') ?? 0,
       y: numberProperty(node, 'dataTextBoxPlacementY') ?? 0,
-      ...(stringProperty(node, 'dataTextBoxPlacementUnit') === 'px'
-        ? {unit: 'px' as const}
-        : {}),
-      layer: stringProperty(node, 'dataTextBoxPlacementLayer') === 'under'
-        ? 'under'
-        : 'over',
     },
+    ...(stringProperty(node, 'dataTextBoxPlacementLayer') === 'under'
+      ? {placementLayer: 'under' as const}
+      : {}),
   }
 }
 
 function placementToHtml(
-  placement: BlockPositionState | null | undefined,
+  position: BlockPosition | null | undefined,
+  layer: TextBoxBlockProps['placementLayer'],
 ) {
-  if (!placement || placement.mode === 'relative') return {}
+  if (!position) return {}
   return {
     dataTextBoxPlacementMode: 'absolute',
-    dataTextBoxPlacementX: placement.x ?? 0,
-    dataTextBoxPlacementY: placement.y ?? 0,
-    ...(placement.unit === 'px'
-      ? {dataTextBoxPlacementUnit: 'px'}
-      : {}),
-    dataTextBoxPlacementLayer: placement.layer === 'under' ? 'under' : 'over',
+    dataTextBoxPlacementX: position.x,
+    dataTextBoxPlacementY: position.y,
+    dataTextBoxPlacementLayer: layer === 'under' ? 'under' : 'over',
   }
 }

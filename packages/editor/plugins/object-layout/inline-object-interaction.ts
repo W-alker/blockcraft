@@ -8,9 +8,7 @@ import {
   getPositionWithOffset,
   measureObjectPlacement,
   type BlockObjectLayout,
-  type BlockPositionState,
   type DeltaInsert,
-  type IBlockSnapshot,
   type IInlineNodeAttrs,
 } from '../../framework'
 import {
@@ -22,7 +20,6 @@ import {
 import {
   InlineImageDragProxy,
   resolveInlineImageDropTarget,
-  resolveInlineImageOverlapTarget,
 } from '../img-toolbar/inline-image-drag'
 import {
   INLINE_FLOAT_PREVIEW_ATTRIBUTE,
@@ -41,15 +38,6 @@ interface ActiveInlineObjectContext {
   shell: HTMLElement
   frame: HTMLElement
 }
-
-interface WrappedTextTarget {
-  block: EditableBlockComponent
-  offset: number
-  normalizedX: number
-}
-
-const deltaLength = (delta: DeltaInsert): number =>
-  typeof delta.insert === 'string' ? delta.insert.length : 1
 
 export class InlineObjectInteractionController {
   private readonly _subscriptions = new Subscription()
@@ -121,30 +109,20 @@ export class InlineObjectInteractionController {
     if (!snapshot) return false
     const placement = this._doc.placement.getState(block)
     const placementWidth = block.hostElement.parentElement?.clientWidth ?? 0
-    const normalizedPlacementX = placement.unit === 'px'
-      ? placement.x / Math.max(1, placementWidth)
-      : placement.x / 100
-    const visual = this._visualElement(block)
-    const rect = visual.getBoundingClientRect()
-    const target = wrap && placement.mode === 'absolute'
-      ? this._resolveWrappedTextTarget(block, rect)
-      : null
+    const normalizedPlacementX =
+      placement.x / Math.max(1, placementWidth)
     const paragraph = objectBlockSnapshotToInlineParagraph(
       snapshot,
       wrap
         ? {
             wrap: true,
             side: 'auto',
-            x: target?.normalizedX ??
-              Math.max(0, Math.min(1, normalizedPlacementX)),
+            x: Math.max(0, Math.min(1, normalizedPlacementX)),
             gap: DEFAULT_INLINE_IMAGE_WRAP_GAP,
           }
         : undefined,
     )
     if (!paragraph) return false
-    if (target && this._insertIntoCoveredText(block, paragraph, target)) {
-      return true
-    }
 
     const needsReanchor = placement.mode === 'absolute'
     const flowAnchor = needsReanchor
@@ -591,14 +569,11 @@ export class InlineObjectInteractionController {
       } catch {}
       if (!container) return
       const measured = measureObjectPlacement(context.frame, container, layout)
-      const placement: BlockPositionState = {
-        mode: 'absolute',
-        x: measured.x,
-        y: measured.y,
-        unit: 'px',
-        ...(layout === 'under' ? {layer: 'under'} : {}),
+      result.object.props = {
+        ...result.object.props,
+        position: {x: measured.x, y: measured.y},
+        ...(layout === 'under' ? {placementLayer: 'under'} : {}),
       }
-      result.object.props = {...result.object.props, placement}
     }
     this.close()
     void this._doc.chain()
@@ -625,71 +600,6 @@ export class InlineObjectInteractionController {
     )
     if (!resolved) this.close()
     return resolved
-  }
-
-  private _resolveWrappedTextTarget(
-    block: BlockCraft.BlockComponent,
-    rect: DOMRect,
-  ): WrappedTextTarget | null {
-    const target = resolveInlineImageOverlapTarget(this._doc, block.id, rect)
-    if (!target) return null
-    const targetRect = target.block.containerElement.getBoundingClientRect()
-    const width = target.block.containerElement.clientWidth || targetRect.width
-    if (width <= 0 || rect.width <= 0 || rect.height <= 0) return null
-    const preview = resolveInlineImageDragPreview({
-      containerWidth: width,
-      imageWidth: rect.width,
-      imageHeight: rect.height,
-      imageX: rect.left - targetRect.left,
-      side: 'auto',
-      gap: DEFAULT_INLINE_IMAGE_WRAP_GAP,
-    })
-    return {...target, normalizedX: preview.attributes.x}
-  }
-
-  private _insertIntoCoveredText(
-    block: BlockCraft.BlockComponent,
-    paragraph: IBlockSnapshot,
-    target: WrappedTextTarget,
-  ): boolean {
-    const parentId = this._doc.model.getParentId(block.id)
-    const sourceIndex = this._doc.model.indexInParent(block.id)
-    if (!parentId || sourceIndex < 0 || paragraph.nodeType !== 'editable') {
-      return false
-    }
-    const deltas = paragraph.children as DeltaInsert[]
-    if (!deltas.length) return false
-    const insertionLength = deltas.reduce(
-      (length, delta) => length + deltaLength(delta),
-      0,
-    )
-    const operations = [
-      ...(target.offset > 0 ? [{retain: target.offset}] : []),
-      ...deltas,
-    ]
-    this._closeBlockToolbar()
-    this._doc.crud.transact(() => {
-      this._doc.crud.applyTextDelta(target.block.id, operations)
-      this._doc.crud.deleteBlocks(parentId, sourceIndex, 1, true)
-    })
-    void this._doc.chain()
-      .nextTick()
-      .setSelection({
-        blockId: target.block.id,
-        type: 'text',
-        index: target.offset + insertionLength,
-        length: 0,
-      })
-      .run()
-    return true
-  }
-
-  private _visualElement(block: BlockCraft.BlockComponent): HTMLElement {
-    return block.hostElement.querySelector<HTMLElement>(
-      this.kind === 'shape'
-        ? '.shape-block__shell'
-        : '.word-art-block__surface',
-    ) ?? block.hostElement
   }
 
   private _hasConverter(): boolean {

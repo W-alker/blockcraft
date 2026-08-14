@@ -67,7 +67,6 @@ export function measureObjectPlacement(
     mode: 'absolute',
     x: Math.round((rect.left - box.originX) / box.visualScale),
     y: Math.round((rect.top - box.originY) / box.visualScale),
-    unit: 'px',
     layer,
   }
 }
@@ -75,7 +74,7 @@ export function measureObjectPlacement(
 export function measureBlockPlacement(host: HTMLElement): ResolvedBlockPosition {
   const box = resolvePlacementBox(host)
   if (!box) {
-    return {mode: 'absolute', x: 0, y: 0, unit: 'px', layer: 'over'}
+    return {mode: 'absolute', x: 0, y: 0, layer: 'over'}
   }
   return measureObjectPlacement(host, box.container)
 }

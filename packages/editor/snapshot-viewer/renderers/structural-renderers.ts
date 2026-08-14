@@ -98,8 +98,25 @@ function renderPlacementLayout(
   content.style.isolation = "auto"
   content.style.pointerEvents = "none"
   appendChildren(content, ctx, snapshot.children)
-  for (const child of Array.from(content.children)) {
-    if (child instanceof HTMLElement) child.style.pointerEvents = "auto"
+  const snapshots = snapshot.children as IBlockSnapshot[]
+  for (const [index, child] of Array.from(content.children).entries()) {
+    if (!(child instanceof HTMLElement)) continue
+    const props = snapshots[index]?.props as Record<string, unknown> | undefined
+    const position = props?.["position"]
+    const state = position && typeof position === "object"
+      ? position as Record<string, unknown>
+      : {}
+    const x = Number(state["x"] ?? 0)
+    const y = Number(state["y"] ?? 0)
+    const layer = props?.["placementLayer"] === "under" ? "under" : "over"
+    child.dataset["bcPlacement"] = "absolute"
+    child.dataset["bcPlacementLayer"] = layer
+    child.style.position = "absolute"
+    child.style.left = `${Number.isFinite(x) ? x : 0}px`
+    child.style.top = `${Number.isFinite(y) ? y : 0}px`
+    child.style.zIndex = layer === "under" ? "0" : "2"
+    child.style.margin = "0"
+    child.style.pointerEvents = "auto"
   }
   element.append(content)
   return {element}

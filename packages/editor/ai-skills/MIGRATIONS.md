@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-08-14 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-08-15 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -68,6 +68,87 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
+
+## Unreleased — 2026-08-15 — make placement structural and split position from layer
+
+**Severity**: major
+
+**What changed**: Object layout mode is now derived from the block tree instead
+of `props.placement.mode`. A direct root child is relative flow, while a direct
+child of the root `placement-layout` is absolute. Absolute objects persist one
+atomic `props.position: {x, y}` value in root-content layout pixels and an
+independent optional `props.placementLayer: 'under'`; omission means `over`.
+Relative objects persist neither field.
+
+**Why**: Persisting mode, coordinates, unit and layer in one placement record
+duplicated structural truth and made a drag rewrite unrelated layout state.
+Separating structural mode, atomic coordinates and stacking lets concurrent
+dragging replace only one coherent `{x, y}` object while layer commands remain
+independent. The contract also leaves a clean structural boundary for future
+group-local absolute layout.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-app.md`
+- `blockcraft-plugins-util.md`
+- `MIGRATIONS.md`
+
+### Breaking Changes
+
+- `IBlockProps.placement` and `BlockPositionState` were removed.
+- `IBlockProps.position?: BlockPosition` and
+  `IBlockProps.placementLayer?: 'under'` replace the old record.
+- `resolveBlockPlacement()` and `resolvePlacementXInPixels()` were removed.
+- Absolute coordinates no longer accept a percentage-x legacy form or a
+  persisted `unit`; both axes are root-content layout pixels.
+- Layout mode must be determined through `doc.placement.getState()` /
+  `isInAbsoluteLayout()` or parent structure, not a props field.
+
+### New APIs / Features
+
+- `BlockPosition` represents the atomic persisted `{x, y}` coordinate object.
+- `resolveBlockPosition()` normalizes that coordinate object.
+- `resolvePlacementLayer()` resolves omitted/invalid values to `over`.
+
+### Migration Recipe
+
+```typescript
+// before
+const props = {
+  placement: {
+    mode: 'absolute' as const,
+    x: 120,
+    y: 240,
+    unit: 'px' as const,
+    layer: 'under' as const,
+  },
+}
+
+// after: insert/move this block under placement-layout
+const props = {
+  position: {x: 120, y: 240},
+  placementLayer: 'under' as const,
+}
+```
+
+For relative flow, keep the block as a direct root child and omit both fields.
+No old snapshot compatibility is provided because this contract changed before
+the placement format was formally released; regenerate unreleased fixtures and
+stored development data with the new shape.
+
+### Behavior Changes
+
+- Drag release replaces `position` once; it does not rewrite mode or layer.
+- Layer changes update `placementLayer` and/or child order without rewriting
+  `position`.
+- Returning to flow moves the block structurally and clears both persisted
+  absolute-only fields.
+- Absolute → inline/wrap conversion reanchors into root flow before replacing
+  the block and never inserts into a nearby absolute object's editable child.
+- Live and Snapshot DOM emit `data-bc-placement="absolute"` only for absolute
+  children. They no longer project a `relative` marker.
 
 ## Unreleased — 2026-08-14 — organize the fixed toolbar and make it container-responsive
 

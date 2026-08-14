@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-08-14 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-08-15 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -426,12 +426,13 @@ schema through `virtualization.resolveViewRetention(context)`, including forcing
 a built-in block back to `'virtual'`. Policy resolution and lease updates are
 cold mount/structure work and add no callback or layout read to scroll frames.
 Schemas can independently opt into free block positioning with
-`metadata.placement: {modes: ['relative', 'absolute']}`. Placement is persisted
-in `props.placement`; absolute state can also carry
-`layer: 'under' | 'over'` (`over` is the default and is omitted when persisted).
-Absolute `placement.x/y` are fixed layout pixels relative to the root content
-box. Root padding is never part of either coordinate, and legacy percentage x
-values resolve against the content width rather than the padding box.
+`metadata.placement: {modes: ['relative', 'absolute']}`. This is a capability
+declaration, not persisted layout state. Placement mode is structural: an
+ordinary direct root child is relative flow, while a direct child of the root
+`placement-layout` is absolute. Absolute objects persist one atomic
+`props.position: {x, y}` value in root-content layout pixels and an independent
+optional `props.placementLayer: 'under'`; omission means `over`. Relative
+objects persist neither field. Root padding is never part of either coordinate.
 `doc.placement.setMode()` preserves the current visual position when switching
 to absolute. The standard transition is root-only: it lazily moves the object
 under one hidden, zero-height `placement-layout` at the end of `root.children`.
@@ -446,7 +447,10 @@ block's current visual center to find the nearest mounted ordinary flow sibling
 and inserts before/after that sibling's midpoint instead of jumping back to the
 old logical position. `resolveFlowAnchor()` and `reanchorToFlow()` expose the
 same stable-id operation for atomic conversions such as block image → inline
-image. Within the root placement layout, `under` and `over` each use
+image. Absolute → inline/wrap always performs that root-flow reanchor before
+representation replacement; an overlapping absolute object's editable child
+is never used as the conversion target. Within the root placement layout,
+`under` and `over` each use
 `placement-layout.children` order from back to front, with ordinary flow
 content acting as a virtual boundary between the two tiers.
 `canMoveForward()` / `canMoveBackward()` query the total stack, while
@@ -454,18 +458,21 @@ content acting as a virtual boundary between the two tiers.
 highest `under` object forward crosses it to the lowest `over` position;
 moving the lowest `over` object backward crosses it to the highest `under`
 position. Same-tier movement changes only child order; boundary movement
-changes order and layer in one Yjs transaction. `setLayer()` remains the
+changes order and `placementLayer` in one Yjs transaction. Same-tier and layer
+changes never rewrite `position`. `setLayer()` remains the
 low-level direct tier setter, and `startDrag()`
 previews with a transform before committing one `updateProps()` write on
-pointer release. Object positioning never uses native HTML5 drag/drop:
+pointer release. That write replaces the whole `{x, y}` position object, so
+collaborators never observe a torn coordinate pair. Object positioning never
+uses native HTML5 drag/drop:
 `pointercancel`, Escape and window blur all abort through the same cleanup.
 These geometry reads only occur on explicit conversion, not
 on drag or render hot paths. A host with its own layout domain can adapt mode transitions
 through `DocConfig.placement.transitionMode`; returning `true` means the host
 completed the transition. A paginated host `documentHeader` that moves the root
 when projected receives a view-only placement-origin correction; it never
-rewrites root-relative `placement.x/y`. With root virtualization enabled, a model-only
-vertical index projects each absolute child's root-relative `placement.y` and
+rewrites root-relative `position.x/y`. With root virtualization enabled, a model-only
+vertical index projects each absolute child's root-relative `position.y` and
 estimated height. The zero-height layout mounts when any projected band
 intersects the root-relative viewport plus one viewport of pre-rendering, and
 can detach when no band or interaction lease owns it. This projection does not
@@ -681,7 +688,7 @@ root 尾部的 `placement-layout` 是全局 absolute 平面，导出会按 `shee
 不同的宿主容器里提前测高。打印正文根保留
 `data-bc-placement-container`，确保 under / flow / over 层级与编辑界面一致；plane 在 flow、live
 分页和打印中都固定以 root content box 的 `0/0` 为原点并占满 content width。固定
-`placement.x/y` 不包含 root padding；旧百分比 x 仅在只读渲染阶段按 content width 固化一次。
+`position.x/y` 不包含 root padding，也不存在百分比坐标兼容分支。
 非空 placement 快照缺少只读 DOM 时，strict 导出以 `layout-diverged` 失败，不能静默丢对象。
 自定义 render provider 若会在分页稳定后关闭分页或改写 root 尺寸，必须先调用
 `captureStablePrintPlacementPlanes(root)`，再通过 `PrintRenderResult.placementPlanes` 返回 detached

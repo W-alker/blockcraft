@@ -754,7 +754,7 @@ function stageLeadingContent(
 /**
  * 把 root 级 absolute placement 平面投影到单张打印纸。
  *
- * placement.y 属于分页屏幕的连续坐标系，其中每页步长包含纸高和屏幕 pageGap；
+ * position.y 属于分页屏幕的连续坐标系，其中每页步长包含纸高和屏幕 pageGap；
  * 打印纸盒没有 pageGap，因此每页克隆保持子块原始 y，只整体反向平移对应步长。
  * 首页文档头通过 firstPageLeadingHeight 占据同一连续坐标，必须一并补回。
  */
@@ -777,7 +777,7 @@ function appendPlacementPlanes(
       ? wrapLegacyPlacementContent(capturedHost)
       : capturedContent);
     plane.setAttribute('data-bc-print-placement-plane', 'true');
-    // placement.x/y 是相对 root content box 的固定 layout px。打印正文盒本身就是
+    // position.x/y 是相对 root content box 的固定 layout px。打印正文盒本身就是
     // 该 content box，因此克隆面必须规范化为 0/0 并直接占满内容宽；纸面原点测量值
     // 只用于上游一致性校验，不能再作为补偿量写回这里。
     normalizeProjectedPlacementPlane(plane, top);

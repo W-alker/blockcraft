@@ -1,10 +1,10 @@
 import {
   BLOCK_PLACEMENT_LAYOUT_FLAVOUR,
   BlockCraftDoc,
-  BlockPositionState,
+  BlockPosition,
   IBlockSnapshot,
   generateId,
-  resolveBlockPlacement,
+  resolveBlockPosition,
 } from '@ccc/blockcraft'
 import type { ActiveDecoService } from './active-deco.service'
 
@@ -28,8 +28,9 @@ export type PlaceableProps = {
   wr?: number
   /** 宽高比 width / height。 */
   ar?: number
-  placement?: BlockPositionState
-  /** 流内上边距；absolute 的 top 使用 placement.y。 */
+  position?: BlockPosition
+  placementLayer?: 'under'
+  /** 流内上边距；absolute 的 top 使用 position.y。 */
   y?: number
   /** 旋转角度，仅 absolute 生效。 */
   deg?: number
@@ -49,8 +50,9 @@ export interface PlaceableBlock {
   textLength?: number
   childrenIds?: string[]
   updateProps(
-    props: Omit<Partial<PlaceableProps>, 'placement' | 'float' | 'deg'> & {
-      placement?: BlockPositionState | null
+    props: Omit<Partial<PlaceableProps>, 'position' | 'float' | 'deg'> & {
+      position?: BlockPosition | null
+      placementLayer?: 'under' | null
       float?: 'left' | 'right' | null
       deg?: number | null
     },
@@ -70,12 +72,9 @@ export const isPlaceableDeco = (flavour?: string): boolean =>
   flavour.startsWith('template-') &&
   flavour !== LEGACY_LAYOUT_FLAVOUR
 
-export function placementModeFromProps(
-  props?: Pick<PlaceableProps, 'placement' | 'float'>,
-): PlacementMode {
-  if (resolveBlockPlacement(props?.placement).mode === 'absolute') {
-    return 'absolute'
-  }
+export function flowPlacementModeFromProps(
+  props?: Pick<PlaceableProps, 'float'>,
+): Exclude<PlacementMode, 'absolute'> {
   return props?.float === 'left' || props?.float === 'right'
     ? 'float'
     : 'block'
@@ -91,30 +90,11 @@ const positiveNumber = (value: unknown): number | null => {
   return parsed !== null && parsed > 0 ? parsed : null
 }
 
-const canonicalPlacement = (
+const canonicalPosition = (
   value: unknown,
-  legacyZ: number | null,
-): BlockPositionState | null => {
-  if (!value || typeof value !== 'object') return null
-  const candidate = value as Partial<BlockPositionState>
-  if (candidate.mode !== 'absolute') return null
-  const storedLayer = (candidate as {layer?: unknown}).layer
-  const under =
-    storedLayer === 'under' ||
-    (
-      storedLayer !== 'over' &&
-      storedLayer !== 'normal' &&
-      storedLayer !== 'top' &&
-      legacyZ !== null &&
-      legacyZ < 0
-    )
-  return {
-    mode: 'absolute',
-    x: finiteNumber(candidate.x) ?? 0,
-    y: finiteNumber(candidate.y) ?? 0,
-    ...(candidate.unit === 'px' ? {unit: 'px' as const} : {}),
-    ...(under ? {layer: 'under'} : {}),
-  }
+): BlockPosition | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  return resolveBlockPosition(value)
 }
 
 const migrateInlineDelta = (value: unknown): unknown => {
@@ -167,24 +147,25 @@ const migrateSnapshot = (snapshot: IBlockSnapshot): IBlockSnapshot => {
   }
 
   if (isPlaceableDeco(snapshot.flavour)) {
-    const current = canonicalPlacement(props['placement'], legacyZ)
+    const current = canonicalPosition(props['position'])
     if (current) {
-      props['placement'] = current
+      props['position'] = current
     } else if (legacyX !== null) {
-      props['placement'] = {
-        mode: 'absolute',
+      props['position'] = {
         x: legacyX,
         y: finiteNumber(props['y']) ?? 0,
-        ...(legacyZ !== null && legacyZ < 0 ? {layer: 'under'} : {}),
       }
     }
+    if (legacyZ !== null && legacyZ < 0) props['placementLayer'] = 'under'
+    else if (props['placementLayer'] !== 'under') delete props['placementLayer']
     delete props['x']
     delete props['z']
     if (legacyX !== null) delete props['y']
   } else {
-    const current = canonicalPlacement(props['placement'], null)
-    if (current) props['placement'] = current
+    const current = canonicalPosition(props['position'])
+    if (current) props['position'] = current
   }
+  delete props['placement']
 
   if (String(snapshot.flavour) === 'template-logo') {
     const width = positiveNumber(props['width'])
@@ -282,10 +263,8 @@ export function normalizeTemplateSnapshots(
   const flow: IBlockSnapshot[] = []
   const absolute: IBlockSnapshot[] = []
   const partition = (child: IBlockSnapshot): void => {
-    const placement = resolveBlockPlacement(
-      (child.props as PlaceableProps | undefined)?.placement,
-    )
-    ;(placement.mode === 'absolute' ? absolute : flow).push(child)
+    const position = (child.props as PlaceableProps | undefined)?.position
+    ;(position && typeof position === 'object' ? absolute : flow).push(child)
   }
 
   for (const child of migrated) {
@@ -351,7 +330,9 @@ export function applyPlacement(
     return doc.placement.setObjectLayout(blockId, 'over')
   }
 
-  const current = placementModeFromProps(block.props)
+  const current = doc.placement.getState(blockId).mode === 'absolute'
+    ? 'absolute'
+    : flowPlacementModeFromProps(block.props)
   let changed = false
   doc.crud.transact(() => {
     if (current === 'absolute') {

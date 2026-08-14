@@ -8,7 +8,6 @@ import {
   BaseBlockComponent,
   blockSurfaceImageFitToObjectFit,
   resolveBlockSurface,
-  resolvePlacementXInPixels,
 } from '../../framework'
 import {
   ShapeResizerComponent,
@@ -43,7 +42,7 @@ const rotationTransform = (rotation: number): string =>
       data-bc-print-visual-surface
       contenteditable="false"
       [attr.data-bc-resize-preview-anchor]="
-        textBoxProps.placement?.mode === 'absolute' ? null : 'layout'
+        isAbsolute ? null : 'layout'
       "
       [style.width.px]="textBoxProps.width"
       [style.height.px]="textBoxProps.height"
@@ -239,6 +238,10 @@ export class TextBoxBlockComponent extends BaseBlockComponent<TextBoxBlockModel>
       undefined
   }
 
+  get isAbsolute(): boolean {
+    return this.doc.placement?.isInAbsoluteLayout?.(this.id) ?? false
+  }
+
   objectFit(
     fit: NonNullable<ReturnType<typeof resolveBlockSurface>['backgroundImage']>['fit'],
   ): 'cover' | 'contain' | 'fill' {
@@ -259,14 +262,16 @@ export class TextBoxBlockComponent extends BaseBlockComponent<TextBoxBlockModel>
       height: Math.round(event.height),
     }
 
-    if (current.placement?.mode === 'absolute') {
-      const containerWidth = this.placementContainer?.clientWidth ?? 0
-      next.placement = {
-        ...current.placement,
-        x: resolvePlacementXInPixels(current.placement, containerWidth) +
-          event.offsetX,
-        y: (current.placement.y ?? 0) + event.offsetY,
-        unit: 'px',
+    const placement = this.doc.placement?.getState?.(this.id) ?? {
+      mode: 'relative' as const,
+      x: 0,
+      y: 0,
+      layer: 'over' as const,
+    }
+    if (placement.mode === 'absolute') {
+      next.position = {
+        x: placement.x + event.offsetX,
+        y: placement.y + event.offsetY,
       }
     }
 

@@ -7,10 +7,10 @@ import {BlockPlacementManager} from '../block-placement.manager'
 import {deleteAbsolutePlacementObject} from './delete-command'
 
 function makeDeleteHarness(options: {
-  mode?: 'absolute' | 'relative'
+  inLayout?: boolean
   readonly?: boolean
 } = {}) {
-  const mode = options.mode ?? 'absolute'
+  const inLayout = options.inLayout ?? true
   const selection = {
     isInSameBlock: true,
     anchor: {blockId: 'shape-1', type: 'selected'},
@@ -31,10 +31,12 @@ function makeDeleteHarness(options: {
   const blur = jasmine.createSpy('blur')
   const model = {
     exists: (id: string) => ['layout', 'shape-1'].includes(id),
-    getParentId: (id: string) => id === 'shape-1' ? 'layout' : 'root',
+    getParentId: (id: string) => id === 'shape-1'
+      ? inLayout ? 'layout' : 'root'
+      : 'root',
     getFlavour: (id: string) => id === 'layout' ? 'placement-layout' : 'shape',
     getProps: (id: string) =>
-      id === 'shape-1' ? {placement: {mode, x: 12, y: 24}} : {},
+      id === 'shape-1' ? {position: {x: 12, y: 24}} : {},
     indexInParent: (id: string) => id === 'shape-1' ? 0 : -1,
   }
   const doc = {
@@ -79,7 +81,7 @@ describe('deleteAbsolutePlacementObject', () => {
   })
 
   it('leaves relative blocks on the ordinary deletion path', () => {
-    const h = makeDeleteHarness({mode: 'relative'})
+    const h = makeDeleteHarness({inLayout: false})
 
     expect(deleteAbsolutePlacementObject(h.doc, 'shape-1', 'menu')).toBeFalse()
 

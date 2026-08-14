@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-10
+> Last updated: 2026-08-15
 
 ## PlaceholderPlugin
 
@@ -403,8 +403,7 @@ the plane starts at `0/0` inside the root content box and fills its width.
 Fixed-page assembly uses a fresh canonical wrapper around the captured placement
 content, requires that wrapper's `offsetParent` to be `.bc-print-content`, and
 lays out the hidden build surface at viewport `0/0` for WebKit-safe geometry.
-Legacy percentage x is resolved once against content width; root padding is not
-encoded into fixed `placement.x/y`. Strict mode reports `layout-diverged`
+Root padding is not encoded into fixed `position.x/y`. Strict mode reports `layout-diverged`
 if a non-empty plane has no readonly DOM.
 `captureStableLayout()` publishes the canonical placement content-box origin and
 width from the same resolved pagination geometry as the page breaks. It never

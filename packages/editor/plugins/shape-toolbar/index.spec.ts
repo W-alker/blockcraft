@@ -82,7 +82,7 @@ describe('ShapeToolbarPlugin', () => {
         getFlavour: (id: string) =>
           id === 'layout' ? 'placement-layout' : 'shape',
         getProps: () => ({
-          placement: {mode: 'absolute', x: 10, y: 20},
+          position: {x: 10, y: 20},
         }),
         indexInParent: () => 0,
       },

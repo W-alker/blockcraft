@@ -922,7 +922,7 @@ describe('InputTransformer beforeInput range resolution', () => {
       flavour: 'shape',
       nodeType: BlockNodeType.block,
       parentId: 'placement-layout',
-      props: {placement: {mode: 'absolute', x: 20, y: 40}},
+      props: {position: {x: 20, y: 40}},
       childrenIds: [],
     }
     const selection = new BlockSelection(
@@ -1646,7 +1646,7 @@ describe('InputTransformer beforeInput range resolution', () => {
       flavour: 'shape',
       nodeType: BlockNodeType.block,
       parentId: 'placement-layout',
-      props: {placement: {mode: 'absolute', x: 20, y: 40}},
+      props: {position: {x: 20, y: 40}},
       childrenIds: [],
     }
     const selection = new BlockSelection(

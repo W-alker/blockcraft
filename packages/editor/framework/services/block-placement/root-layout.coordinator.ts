@@ -40,11 +40,7 @@ export class RootPlacementLayoutCoordinator {
     this.subscriptions.add(this.doc.onPropsUpdate$?.subscribe(event => {
       if (
         event.transactions.some(({block, changes}) =>
-          changes.has('placement') &&
-          (
-            block.parentId === this.runtime.rootId ||
-            this.runtime.isInAbsoluteLayout(block)
-          ),
+          block.parentId === this.runtime.rootId && changes.has('position'),
         )
       ) {
         this.queueNormalization()
@@ -107,13 +103,11 @@ export class RootPlacementLayoutCoordinator {
       ...snapshot,
       props: {
         ...snapshot.props,
-        placement: {
-          mode: 'absolute',
+        position: {
           x: placement.x,
           y: placement.y,
-          unit: 'px',
-          ...(layer === 'under' ? {layer} : {}),
         },
+        ...(layer === 'under' ? {placementLayer: layer} : {}),
       },
     }
 
@@ -201,7 +195,6 @@ export class RootPlacementLayoutCoordinator {
         0,
         hasAnchor ? (anchorRect!.top - box.originY) / box.visualScale : 0,
       )),
-      unit: 'px',
       layer,
     }
   }
@@ -237,10 +230,10 @@ export class RootPlacementLayoutCoordinator {
     const layoutIds = rootIds.filter(id =>
       this.runtime.isPlacementLayout(id),
     )
-    const absoluteRootIds = rootIds.filter(id => {
-      if (this.runtime.isPlacementLayout(id)) return false
-      return this.runtime.hasValidAbsolutePlacement(id)
-    })
+    const absoluteRootIds = rootIds.filter(id =>
+      !this.runtime.isPlacementLayout(id) &&
+      this.runtime.hasAbsolutePositionIntent(id),
+    )
     const hasLayoutChildren = layoutIds.some(
       id => this.doc.model.getChildrenIds(id).length > 0,
     )
@@ -255,8 +248,8 @@ export class RootPlacementLayoutCoordinator {
       this.doc.crud.transact(() => {
         canonicalLayoutId ??= this.ensureLayoutId()
 
-        // Merge duplicate infrastructure surfaces. Absolute children stay in
-        // the canonical layout; malformed relative children return to flow.
+        // Merge duplicate infrastructure surfaces. Placement-capable children
+        // stay absolute by structure; unsupported children return to flow.
         for (const layoutId of layoutIds) {
           const childIds = this.runtime.getLiveChildrenIds(layoutId)
           for (const id of childIds) {
@@ -285,9 +278,16 @@ export class RootPlacementLayoutCoordinator {
               this.runtime.rootId,
               canonicalIndex >= 0 ? canonicalIndex : liveRootIds.length,
             )
+            this.doc.crud.updateBlockProps(id, {
+              position: null,
+              placementLayer: null,
+            } as any)
           }
         }
 
+        // Import/conversion pipelines may first materialize an object as a
+        // root sibling with an atomic position. Normalize that transient state
+        // into the structural absolute-layout invariant in the same repair.
         for (const id of absoluteRootIds) {
           const liveRootIds =
             this.runtime.getLiveChildrenIds(this.runtime.rootId)

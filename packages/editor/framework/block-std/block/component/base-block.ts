@@ -20,6 +20,7 @@ import {
   BlockPlacementLayer,
   IBlockProps,
   IBlockSnapshot,
+  ResolvedBlockPosition,
 } from "../../types";
 import { Subject, Subscription } from "rxjs";
 import {createBlockGapSpace, generateId} from "../../../utils";
@@ -30,10 +31,6 @@ import {
   BlockReadonlyOperation,
   BlockReadonlySource,
 } from "../../../doc/block-readonly.types";
-import {
-  resolveBlockPlacement,
-  resolvePlacementXInPixels,
-} from "../../../services/block-placement.manager";
 import {normalizeTypographyLineHeight} from "../../typography";
 
 export type BlockViewState = 'mounted' | 'retained' | 'destroyed'
@@ -102,8 +99,8 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   }
 
   @HostBinding('attr.data-bc-placement')
-  get placementAttribute(): 'relative' | 'absolute' {
-    return this.resolvedPlacement.mode
+  get placementAttribute(): 'absolute' | null {
+    return this.resolvedPlacement.mode === 'absolute' ? 'absolute' : null
   }
 
   @HostBinding('style.position')
@@ -114,12 +111,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   @HostBinding('style.left.px')
   get placementLeft(): number | null {
     const placement = this.resolvedPlacement
-    if (placement.mode !== 'absolute') return null
-    const container = this.hostElement.parentElement
-    return resolvePlacementXInPixels(
-      this._native?.props?.placement,
-      container?.clientWidth ?? 0,
-    )
+    return placement.mode === 'absolute' ? placement.x : null
   }
 
   @HostBinding('style.top.px')
@@ -146,12 +138,13 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     return this.resolvedPlacement.mode === 'absolute' ? '0' : null
   }
 
-  private get resolvedPlacement() {
+  private get resolvedPlacement(): ResolvedBlockPosition {
     const capability = this.doc?.schemas?.get(this.flavour, false)?.metadata.placement
     if (!capability?.modes.includes('absolute')) {
       return {mode: 'relative' as const, x: 0, y: 0, layer: 'over' as const}
     }
-    return resolveBlockPlacement(this._native?.props?.placement)
+    return this.doc?.placement?.getState?.(this.id) ??
+      {mode: 'relative' as const, x: 0, y: 0, layer: 'over' as const}
   }
 
   childrenRenderRef?: BlockChildrenRenderRef

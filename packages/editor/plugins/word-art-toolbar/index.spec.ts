@@ -426,7 +426,7 @@ describe('WordArtToolbarPlugin', () => {
         getFlavour: (id: string) =>
           id === 'layout' ? 'placement-layout' : 'word-art',
         getProps: () => ({
-          placement: {mode: 'absolute', x: 10, y: 20},
+          position: {x: 10, y: 20},
         }),
         indexInParent: () => 0,
       },

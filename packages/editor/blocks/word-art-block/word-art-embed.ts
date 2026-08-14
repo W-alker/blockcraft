@@ -56,7 +56,11 @@ const payloadFromUnknown = (value: unknown): InlineWordArtPayload => {
     text?: DeltaInsert[]
   }>(value)
   const props = normalizeWordArtProps(raw?.props)
-  const {placement: _placement, ...inlineProps} = props
+  const {
+    position: _position,
+    placementLayer: _placementLayer,
+    ...inlineProps
+  } = props
   return {
     props: inlineProps,
     text: sanitizeText(raw?.text),
@@ -69,7 +73,11 @@ export function createInlineWordArtDelta(
   wrap?: Partial<InlineObjectWrapOptions>,
 ): DeltaInsertEmbed {
   const normalized = normalizeWordArtProps(props)
-  const {placement: _placement, ...inlineProps} = normalized
+  const {
+    position: _position,
+    placementLayer: _placementLayer,
+    ...inlineProps
+  } = normalized
   const payload: InlineWordArtPayload = {
     props: inlineProps,
     text: sanitizeText(cloneInlineObjectDeltas(text)),

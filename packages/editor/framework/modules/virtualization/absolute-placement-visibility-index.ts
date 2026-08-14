@@ -24,7 +24,7 @@ const positiveNumber = (value: unknown): number | null =>
 /**
  * Pure-model visibility projection for root-level absolute objects.
  *
- * `placement.y` and every returned band use the root children container's
+ * `position.y` and every returned band use the root children container's
  * content coordinate system. Reconciliation can therefore compare the bands
  * directly with the root-relative viewport without mounting or measuring a
  * placement child first.
@@ -92,16 +92,15 @@ export class AbsolutePlacementVisibilityIndex {
 
   private resolveBlockBand(blockId: string): VerticalBand | null {
     const props = this.doc.model.getProps(blockId) ?? {}
-    const placement = props['placement']
+    const position = props['position']
     if (
-      !placement ||
-      typeof placement !== 'object' ||
-      (placement as {mode?: unknown}).mode !== 'absolute'
+      !position ||
+      typeof position !== 'object'
     ) {
       return null
     }
 
-    const y = finiteNumber((placement as {y?: unknown}).y)
+    const y = finiteNumber((position as {y?: unknown}).y)
     const flavour = this.doc.model.getFlavour(blockId)
     const dimensions = flavour
       ? this.doc.objectSizing?.resolve(flavour, props)

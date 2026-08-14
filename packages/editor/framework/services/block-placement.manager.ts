@@ -29,8 +29,8 @@ export {
   resolvePlacementBox,
 } from './block-placement/geometry'
 export {
-  resolveBlockPlacement,
-  resolvePlacementXInPixels,
+  resolveBlockPosition,
+  resolvePlacementLayer,
 } from './block-placement/state'
 export {
   BLOCK_OBJECT_LAYOUT_OPTIONS,
@@ -251,8 +251,8 @@ export class BlockPlacementManager {
 
   /**
    * Move a block to a previously resolved visual anchor without changing its
-   * placement props. Callers can compose this inside their own transaction
-   * with clearing placement or replacing the block snapshot.
+   * position props. Callers can compose this inside their own transaction
+   * with clearing position or replacing the block snapshot.
    */
   reanchorToFlow(
     blockOrId: string | BlockCraft.BlockComponent,
@@ -277,7 +277,7 @@ export class BlockPlacementManager {
         const anchor = this.resolveFlowAnchor(block)
         this.doc.crud.transact(() => {
           if (!this.reanchorToFlow(block, anchor)) return
-          block.updateProps({placement: null} as any)
+          block.updateProps({position: null, placementLayer: null} as any)
         })
         this.rootLayout.queueNormalization()
       } else {

@@ -159,17 +159,12 @@ export const wordArtBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
       if (
         stringProperty(o.node, 'dataWordArtPlacementMode') === 'absolute'
       ) {
-        rawProps.placement = {
-          mode: 'absolute',
+        rawProps.position = {
           x: numberProperty(o.node, 'dataWordArtPlacementX') ?? 0,
           y: numberProperty(o.node, 'dataWordArtPlacementY') ?? 0,
-          ...(stringProperty(o.node, 'dataWordArtPlacementUnit') === 'px'
-            ? {unit: 'px' as const}
-            : {}),
-          layer:
-            stringProperty(o.node, 'dataWordArtPlacementLayer') === 'under'
-              ? 'under'
-              : 'over',
+        }
+        if (stringProperty(o.node, 'dataWordArtPlacementLayer') === 'under') {
+          rawProps.placementLayer = 'under'
         }
       }
       const snapshot = WordArtBlockSchema.createSnapshot(text, rawProps)
@@ -184,9 +179,7 @@ export const wordArtBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
         o.node.props as Partial<WordArtBlockProps>,
       )
       const presentation = resolveWordArtPresentation(props)
-      const placement = props.placement?.mode === 'absolute'
-        ? props.placement
-        : null
+      const position = props.position
       const delta = sanitizePlainTextDelta(
         o.node.children as DeltaInsert[],
       )
@@ -221,15 +214,12 @@ export const wordArtBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
           dataWordArtShadowOffsetY: props.shadowOffsetYEm,
           dataWordArtShadowBlur: props.shadowBlurEm,
           dataWordArtEffect: props.effect,
-          ...(placement ? {
+          ...(position ? {
             dataWordArtPlacementMode: 'absolute',
-            dataWordArtPlacementX: placement.x ?? 0,
-            dataWordArtPlacementY: placement.y ?? 0,
-            ...(placement.unit === 'px'
-              ? {dataWordArtPlacementUnit: 'px'}
-              : {}),
+            dataWordArtPlacementX: position.x,
+            dataWordArtPlacementY: position.y,
             dataWordArtPlacementLayer:
-              placement.layer === 'under' ? 'under' : 'over',
+              props.placementLayer === 'under' ? 'under' : 'over',
           } : {}),
           style: surfaceStyle(props),
         },

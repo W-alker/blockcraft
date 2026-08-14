@@ -43,7 +43,11 @@ const payloadFromUnknown = (value: unknown): InlineShapePayload => {
     text?: DeltaInsert[]
   }>(value)
   const props = normalizeShapeProps(raw?.props)
-  const {placement: _placement, ...inlineProps} = props
+  const {
+    position: _position,
+    placementLayer: _placementLayer,
+    ...inlineProps
+  } = props
   return {
     props: inlineProps,
     text: Array.isArray(raw?.text)
@@ -58,7 +62,11 @@ export function createInlineShapeDelta(
   wrap?: Partial<InlineObjectWrapOptions>,
 ): DeltaInsertEmbed {
   const normalized = normalizeShapeProps(props)
-  const {placement: _placement, ...inlineProps} = normalized
+  const {
+    position: _position,
+    placementLayer: _placementLayer,
+    ...inlineProps
+  } = normalized
   const payload: InlineShapePayload = {
     props: inlineProps,
     text: cloneInlineObjectDeltas(text),

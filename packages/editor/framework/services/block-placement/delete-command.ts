@@ -33,13 +33,7 @@ export function deleteAbsolutePlacementObject(
   const capability = flavour
     ? doc.schemas.get(flavour, false)?.metadata.placement
     : undefined
-  const placement = doc.model.getProps(blockId)?.['placement']
-  if (
-    !capability?.modes.includes('absolute') ||
-    !placement ||
-    typeof placement !== 'object' ||
-    (placement as {mode?: unknown}).mode !== 'absolute'
-  ) {
+  if (!capability?.modes.includes('absolute')) {
     return false
   }
 

@@ -7,7 +7,7 @@ describe('AbsolutePlacementVisibilityIndex', () => {
       root: block('root', ['layout']),
       layout: block('placement-layout', ['image']),
       image: block('image', [], {
-        placement: {mode: 'absolute', x: 25, y: 600},
+        position: {x: 25, y: 600},
         wr: 50,
         ar: 2,
       }),
@@ -38,7 +38,7 @@ describe('AbsolutePlacementVisibilityIndex', () => {
       root: block('root', ['layout']),
       layout: block('placement-layout', ['shape']),
       shape: block('shape', [], {
-        placement: {mode: 'absolute', x: 0, y: 400},
+        position: {x: 0, y: 400},
         width: 200,
         height: 100,
         rotation: 90,
@@ -56,7 +56,7 @@ describe('AbsolutePlacementVisibilityIndex', () => {
 
   it('rebuilds moved objects without retaining stale visibility bands', () => {
     const imageProps = {
-      placement: {mode: 'absolute', x: 0, y: 800},
+      position: {x: 0, y: 800},
       height: 120,
     }
     const doc = createDoc({
@@ -68,7 +68,7 @@ describe('AbsolutePlacementVisibilityIndex', () => {
     index.rebuild(['layout'])
     expect(index.visibleLayoutIds(0, 100, 100)).toEqual([])
 
-    imageProps.placement = {mode: 'absolute', x: 0, y: 20}
+    imageProps.position = {x: 0, y: 20}
     index.rebuild(['layout'])
 
     expect(index.visibleLayoutIds(0, 100, 100)).toEqual(['layout'])

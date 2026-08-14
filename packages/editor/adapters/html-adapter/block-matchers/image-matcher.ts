@@ -83,17 +83,13 @@ export const imageBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
           };
           snapshot.props = {
             ...snapshot.props,
-            placement: {
-              mode: 'absolute',
+            position: {
               x: toFinite(placementSource.properties['dataImagePlacementX']),
               y: toFinite(placementSource.properties['dataImagePlacementY']),
-              ...(placementSource.properties['dataImagePlacementUnit'] === 'px'
-                ? {unit: 'px' as const}
-                : {}),
-              ...(placementSource.properties['dataImagePlacementLayer'] === 'under'
-                ? {layer: 'under' as const}
-                : {}),
             },
+            ...(placementSource.properties['dataImagePlacementLayer'] === 'under'
+              ? {placementLayer: 'under' as const}
+              : {}),
           };
         }
         walkerContext.openNode(snapshot).closeNode();
@@ -125,8 +121,9 @@ export const imageBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
             ...(width !== undefined ? {width} : {}),
             ...(height !== undefined ? {height} : {}),
           };
-      const placement = o.node.props['placement']?.mode === 'absolute'
-        ? o.node.props['placement']
+      const position = o.node.props['position'] &&
+          typeof o.node.props['position'] === 'object'
+        ? o.node.props['position'] as {x?: number; y?: number}
         : null
 
       walkerContext
@@ -136,15 +133,12 @@ export const imageBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
             tagName: 'figure',
             properties: {
               dataBcBlock: 'image',
-              ...(placement ? {
+              ...(position ? {
                 dataImagePlacementMode: 'absolute',
-                dataImagePlacementX: placement.x ?? 0,
-                dataImagePlacementY: placement.y ?? 0,
-                ...(placement.unit === 'px'
-                  ? {dataImagePlacementUnit: 'px'}
-                  : {}),
+                dataImagePlacementX: position.x ?? 0,
+                dataImagePlacementY: position.y ?? 0,
                 dataImagePlacementLayer:
-                  placement.layer === 'under' ? 'under' : 'over',
+                  o.node.props['placementLayer'] === 'under' ? 'under' : 'over',
               } : {}),
             },
             children: [{

@@ -714,7 +714,9 @@ describe('Shape block domain', () => {
     ShapeBlockComponent.prototype.onResizeCommit.call(
       {
         isReadonly: false,
-        shapeProps: {placement: undefined},
+        shapeProps: {},
+        doc: {},
+        id: 'shape-1',
         updateProps,
         _shapeShell: {nativeElement: shell},
       } as unknown as ShapeBlockComponent,
@@ -745,10 +747,18 @@ describe('Shape block domain', () => {
     ShapeBlockComponent.prototype.onResizeCommit.call(
       {
         isReadonly: false,
-        shapeProps: {
-          placement: {mode: 'absolute', x: 10, y: 20, layer: 'over'},
+        shapeProps: {},
+        doc: {
+          placement: {
+            getState: () => ({
+              mode: 'absolute',
+              x: 10,
+              y: 20,
+              layer: 'over',
+            }),
+          },
         },
-        placementContainer: {clientWidth: 200},
+        id: 'shape-1',
         updateProps,
         _shapeShell: {nativeElement: shell},
       } as unknown as ShapeBlockComponent,
@@ -764,13 +774,7 @@ describe('Shape block domain', () => {
     expect(updateProps).toHaveBeenCalledOnceWith({
       width: 120,
       height: 80,
-      placement: {
-        mode: 'absolute',
-        x: 40,
-        y: 25,
-        unit: 'px',
-        layer: 'over',
-      },
+      position: {x: 30, y: 25},
     })
   })
 

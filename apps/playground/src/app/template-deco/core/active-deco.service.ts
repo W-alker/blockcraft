@@ -1,12 +1,12 @@
 import { Injectable } from '@angular/core'
-import type { BlockPositionState } from '@ccc/blockcraft'
+import type { BlockPosition } from '@ccc/blockcraft'
 import { BehaviorSubject } from 'rxjs'
 
 /** 装饰块的最小读写面（只用公开面：flavour/props/updateProps）——面板按 id 解析出块后当这个形状用。 */
 export interface DecoBlockRef {
   flavour?: string
-  props?: { placement?: BlockPositionState; wr?: number; ar?: number; y?: number; deg?: number; float?: 'left' | 'right'; align?: 'left' | 'center' | 'right'; mb?: number; ml?: number; mr?: number }
-  updateProps(p: { placement?: BlockPositionState | null; y?: number | null; deg?: number | null; float?: 'left' | 'right' | null; align?: 'left' | 'center' | 'right' | null; mb?: number | null; ml?: number | null; mr?: number | null }): void
+  props?: { position?: BlockPosition; placementLayer?: 'under'; wr?: number; ar?: number; y?: number; deg?: number; float?: 'left' | 'right'; align?: 'left' | 'center' | 'right'; mb?: number; ml?: number; mr?: number }
+  updateProps(p: { position?: BlockPosition | null; placementLayer?: 'under' | null; y?: number | null; deg?: number | null; float?: 'left' | 'right' | null; align?: 'left' | 'center' | 'right' | null; mb?: number | null; ml?: number | null; mr?: number | null }): void
 }
 
 /**

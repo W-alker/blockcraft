@@ -4,7 +4,6 @@ import {
   deriveObjectSizeFromPixels,
   DocFileService,
   DOC_FILE_SERVICE_TOKEN,
-  resolvePlacementXInPixels,
   ResizeContainerComponent,
 } from '@ccc/blockcraft'
 import { pickImageAsDataURL } from '../_shared/image-pick'
@@ -87,19 +86,17 @@ export class LogoTemplateEditComponent extends PlaceableEditBase<LogoModel> {
       Number.isFinite(this.props.ar) && this.props.ar > 0
         ? this.props.ar
         : derived.ar
-    const placement = this.props.placement
+    const placement = this.doc.placement.getState(this)
     this.lastResizeWidth = event.width
     this.updateProps({
       wr: derived.wr,
       ar: currentAr,
       width: null,
-      ...(placement?.mode === 'absolute' && event.offsetX !== 0
+      ...(placement.mode === 'absolute' && event.offsetX !== 0
         ? {
-            placement: {
-              ...placement,
-              x: resolvePlacementXInPixels(placement, event.basisWidth) +
-                event.offsetX,
-              unit: 'px',
+            position: {
+              x: placement.x + event.offsetX,
+              y: placement.y,
             },
           }
         : {}),

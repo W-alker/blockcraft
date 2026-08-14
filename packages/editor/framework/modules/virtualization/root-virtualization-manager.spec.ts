@@ -350,7 +350,7 @@ describe('RootVirtualizationManager', () => {
     ;(h.doc.model as any).getProps = (blockId: string) =>
       blockId === 'image'
         ? {
-            placement: {mode: 'absolute', x: 10, y: imageY},
+            position: {x: 10, y: imageY},
             wr: 50,
             ar: 2,
           }
@@ -424,7 +424,7 @@ describe('RootVirtualizationManager', () => {
     ;(h.doc.model as any).getProps = (blockId: string) =>
       blockId === 'shape'
         ? {
-            placement: {mode: 'absolute', x: 10, y: 600},
+            position: {x: 10, y: 600},
             width: 180,
             height: 100,
           }

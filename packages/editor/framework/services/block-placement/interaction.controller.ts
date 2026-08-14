@@ -1,10 +1,9 @@
 import {BehaviorSubject, Observable, Subscription} from 'rxjs'
-import type {BlockPositionState} from '../../block-std/types'
 import {BlockReadonlyError} from '../../doc/block-readonly.types'
 import {deleteAbsolutePlacementObject} from './delete-command'
 import {resolvePlacementBox} from './geometry'
 import {BlockPlacementRuntime} from './runtime'
-import {finitePlacementNumber, resolvePlacementXInPixels} from './state'
+import {finitePlacementNumber} from './state'
 import {
   BLOCK_PLACEMENT_LAYOUT_FLAVOUR,
   type BlockPlacementDragState,
@@ -84,7 +83,7 @@ export class BlockPlacementInteractionController {
       }
     }
     subscription.add(block.onPropsChange.subscribe(changes => {
-      if ((changes as ReadonlyMap<PropertyKey, unknown>).has('placement')) {
+      if ((changes as ReadonlyMap<PropertyKey, unknown>).has('placementLayer')) {
         sync()
       }
     }))
@@ -118,19 +117,11 @@ export class BlockPlacementInteractionController {
     }
     const current = this.runtime.getState(block)
     if (current.mode !== 'absolute') return false
-    const box = resolvePlacementBox(block.hostElement)
-    const currentX = resolvePlacementXInPixels(
-      block.props?.placement,
-      box?.width ?? 0,
-    )
-    const next: BlockPositionState = {
-      mode: 'absolute',
-      x: finitePlacementNumber(patch.x, currentX),
+    const next = {
+      x: finitePlacementNumber(patch.x, current.x),
       y: finitePlacementNumber(patch.y, current.y),
-      unit: 'px',
-      ...(current.layer === 'over' ? {} : {layer: current.layer}),
     }
-    block.updateProps({placement: next})
+    block.updateProps({position: next})
     block.changeDetectorRef.markForCheck()
     return true
   }
@@ -161,10 +152,7 @@ export class BlockPlacementInteractionController {
     const pointerStartX = event.clientX
     const pointerStartY = event.clientY
     const start = this.runtime.getState(block)
-    const placementStartX = resolvePlacementXInPixels(
-      block.props?.placement,
-      box.width,
-    )
+    const placementStartX = start.x
     const threshold = options.movementThreshold ??
       (
         (event.pointerType || 'mouse') === 'touch'

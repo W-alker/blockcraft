@@ -1,6 +1,5 @@
 import type {
   BlockPlacementLayer,
-  BlockPositionState,
 } from '../../block-std/types'
 import {BlockPlacementRuntime} from './runtime'
 
@@ -36,22 +35,16 @@ export class BlockPlacementStackCoordinator {
     }
     const current = this.runtime.getState(block)
     if (current.mode !== 'absolute') return false
-    const persistedLayer =
-      (block.props?.placement as Partial<BlockPositionState> | undefined)?.layer
+    const persistedLayer = block.props?.placementLayer
     const isCanonical =
       layer === 'under'
         ? persistedLayer === 'under'
-        : persistedLayer == null || persistedLayer === 'over'
+        : persistedLayer == null
     if (current.layer === layer && isCanonical) return true
 
-    const placement: BlockPositionState = {
-      mode: 'absolute',
-      x: current.x,
-      y: current.y,
-      ...(current.unit === 'px' ? {unit: 'px' as const} : {}),
-      ...(layer === 'over' ? {} : {layer}),
-    }
-    block.updateProps({placement})
+    block.updateProps({
+      placementLayer: layer === 'under' ? 'under' : null,
+    } as any)
     block.changeDetectorRef.markForCheck()
     return true
   }
@@ -99,7 +92,7 @@ export class BlockPlacementStackCoordinator {
     ) {
       return null
     }
-    const placement = this.runtime.getPersistedPlacement(block.id)
+    const placement = this.runtime.getPersistedState(block.id)
     if (placement.mode !== 'absolute') return null
     const layoutId = this.doc.model?.getParentId?.(block.id) ?? block.parentId
     if (!layoutId || !this.runtime.isPlacementLayout(layoutId)) return null
@@ -111,7 +104,7 @@ export class BlockPlacementStackCoordinator {
     const overIds: string[] = []
     for (const id of absoluteIds) {
       const target =
-        this.runtime.getPersistedPlacement(id).layer === 'under'
+        this.runtime.getPersistedState(id).layer === 'under'
           ? underIds
           : overIds
       target.push(id)
@@ -170,15 +163,9 @@ export class BlockPlacementStackCoordinator {
             'before',
           )
         }
-        const placement = this.runtime.getPersistedPlacement(context.block.id)
         context.block.updateProps({
-          placement: {
-            mode: 'absolute',
-            x: placement.x,
-            y: placement.y,
-            ...(placement.unit === 'px' ? {unit: 'px' as const} : {}),
-          },
-        })
+          placementLayer: null,
+        } as any)
         moved = true
         return
       }
@@ -203,15 +190,8 @@ export class BlockPlacementStackCoordinator {
           'after',
         )
       }
-      const placement = this.runtime.getPersistedPlacement(context.block.id)
       context.block.updateProps({
-        placement: {
-          mode: 'absolute',
-          x: placement.x,
-          y: placement.y,
-          ...(placement.unit === 'px' ? {unit: 'px' as const} : {}),
-          layer: 'under',
-        },
+        placementLayer: 'under',
       })
       moved = true
     })

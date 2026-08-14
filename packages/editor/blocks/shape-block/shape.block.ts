@@ -4,7 +4,7 @@ import {
   ElementRef,
   ViewChild,
 } from '@angular/core'
-import {BaseBlockComponent, resolvePlacementXInPixels} from '../../framework'
+import {BaseBlockComponent} from '../../framework'
 import {getShapeDefinition} from './shape-definitions'
 import {
   normalizeShapeProps,
@@ -202,14 +202,16 @@ export class ShapeBlockComponent extends BaseBlockComponent<ShapeBlockModel> {
       height: Math.round(event.height),
     }
 
-    if (current.placement?.mode === 'absolute') {
-      const containerWidth = this.placementContainer?.clientWidth ?? 0
-      next.placement = {
-        ...current.placement,
-        x: resolvePlacementXInPixels(current.placement, containerWidth) +
-          event.offsetX,
-        y: (current.placement.y ?? 0) + event.offsetY,
-        unit: 'px',
+    const placement = this.doc.placement?.getState?.(this.id) ?? {
+      mode: 'relative' as const,
+      x: 0,
+      y: 0,
+      layer: 'over' as const,
+    }
+    if (placement.mode === 'absolute') {
+      next.position = {
+        x: placement.x + event.offsetX,
+        y: placement.y + event.offsetY,
       }
     }
     this.updateProps(next)

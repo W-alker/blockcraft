@@ -2,7 +2,7 @@ import type {
   BlockPlacementMode,
   ResolvedBlockPosition,
 } from '../../block-std/types'
-import {resolveBlockPlacement} from './state'
+import {resolveBlockPosition, resolvePlacementLayer} from './state'
 import {BLOCK_PLACEMENT_LAYOUT_FLAVOUR} from './types'
 
 /**
@@ -35,7 +35,15 @@ export class BlockPlacementRuntime {
     blockOrId: string | BlockCraft.BlockComponent,
   ): ResolvedBlockPosition {
     const block = this.resolveBlock(blockOrId)
-    return resolveBlockPlacement(block?.props?.placement)
+    if (!block || !this.isInAbsoluteLayout(block)) {
+      return {mode: 'relative', x: 0, y: 0, layer: 'over'}
+    }
+    const position = resolveBlockPosition(block.props?.position)
+    return {
+      mode: 'absolute',
+      ...position,
+      layer: resolvePlacementLayer(block.props?.placementLayer),
+    }
   }
 
   supports(
@@ -76,18 +84,7 @@ export class BlockPlacementRuntime {
     blockOrId: string | BlockCraft.BlockComponent,
   ): boolean {
     if (this.isPlacementLayout(blockOrId)) return false
-    const id = typeof blockOrId === 'string' ? blockOrId : blockOrId.id
-    const flavour = typeof blockOrId === 'string'
-      ? this.doc.model?.getFlavour?.(id)
-      : blockOrId.flavour
-    if (!flavour) return true
-    const capability =
-      this.doc.schemas?.get?.(flavour, false)?.metadata.placement
-    if (!capability?.modes.includes('absolute')) return true
-    const persisted = typeof blockOrId === 'string'
-      ? this.doc.model?.getProps?.(id)?.['placement']
-      : blockOrId.props?.placement
-    return resolveBlockPlacement(persisted).mode !== 'absolute'
+    return !this.isInAbsoluteLayout(blockOrId)
   }
 
   isAbsoluteObjectSelection(
@@ -109,15 +106,7 @@ export class BlockPlacementRuntime {
     const ids = this.doc.model?.getChildrenIds?.(this.rootId) ??
       this.doc.root?.childrenIds ??
       fallbackIds
-    return [...ids].filter(id => {
-      if (this.isPlacementLayout(id)) return false
-      const modelPlacement = this.doc.model?.getProps?.(id)?.['placement']
-      if (modelPlacement !== undefined) {
-        return resolveBlockPlacement(modelPlacement).mode !== 'absolute'
-      }
-      const block = this.resolveBlock(id)
-      return !block || this.getState(block).mode !== 'absolute'
-    })
+    return [...ids].filter(id => !this.isPlacementLayout(id))
   }
 
   getAbsoluteBlockIds(): string[] {
@@ -125,10 +114,7 @@ export class BlockPlacementRuntime {
     return rootIds
       .filter(id => this.isPlacementLayout(id))
       .flatMap(id => [...(this.doc.model?.getChildrenIds?.(id) ?? [])])
-      .filter(id =>
-        resolveBlockPlacement(this.doc.model?.getProps?.(id)?.['placement'])
-          .mode === 'absolute',
-      )
+      .filter(id => this.hasValidAbsolutePlacement(id))
   }
 
   getLiveChildrenIds(blockId: string): string[] {
@@ -138,12 +124,29 @@ export class BlockPlacementRuntime {
       : [...(this.doc.model?.getChildrenIds?.(blockId) ?? [])]
   }
 
-  getPersistedPlacement(blockId: string): ResolvedBlockPosition {
+  getPersistedState(blockId: string): ResolvedBlockPosition {
     const yProps = this.doc.crud?.getYBlock?.(blockId)?.get('props')
     const props = typeof yProps?.toJSON === 'function'
       ? yProps.toJSON()
       : this.doc.model?.getProps?.(blockId)
-    return resolveBlockPlacement(props?.['placement'])
+    if (!this.isInAbsoluteLayout(blockId)) {
+      return {mode: 'relative', x: 0, y: 0, layer: 'over'}
+    }
+    return {
+      mode: 'absolute',
+      ...resolveBlockPosition(props?.['position']),
+      layer: resolvePlacementLayer(props?.['placementLayer']),
+    }
+  }
+
+  hasAbsolutePositionIntent(blockId: string): boolean {
+    const flavour = this.doc.model?.getFlavour?.(blockId)
+    if (!flavour) return false
+    const capability =
+      this.doc.schemas?.get?.(flavour, false)?.metadata.placement
+    if (!capability?.modes.includes('absolute')) return false
+    const position = this.doc.model?.getProps?.(blockId)?.['position']
+    return !!position && typeof position === 'object' && !Array.isArray(position)
   }
 
   hasValidAbsolutePlacement(blockId: string): boolean {
@@ -152,7 +155,7 @@ export class BlockPlacementRuntime {
     const capability =
       this.doc.schemas?.get?.(flavour, false)?.metadata.placement
     return !!capability?.modes.includes('absolute') &&
-      this.getPersistedPlacement(blockId).mode === 'absolute'
+      this.isInAbsoluteLayout(blockId)
   }
 
   isReadonly(block: BlockCraft.BlockComponent): boolean {

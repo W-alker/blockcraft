@@ -37,7 +37,7 @@ function absoluteShape(id: string, y: number): IBlockSnapshot {
     flavour: 'shape',
     nodeType: BlockNodeType.void,
     meta: {},
-    props: {placement: {mode: 'absolute', x: 0, y}},
+    props: {position: {x: 0, y}},
     children: [],
   };
 }
@@ -748,7 +748,7 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
       flavour: 'word-art',
       nodeType: BlockNodeType.editable,
       meta: {},
-      props: {placement: {mode: 'absolute', x: 24, y: wordArtY}},
+      props: {position: {x: 24, y: wordArtY}},
       children: [{insert: '非常帅气'}],
     };
     const placement = placementLayout('placement', [wordArt]);
@@ -1527,7 +1527,7 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
         flavour: 'word-art',
         nodeType: BlockNodeType.editable,
         meta: {},
-        props: {placement: {mode: 'absolute', x: 0, y: 48}},
+        props: {position: {x: 0, y: 48}},
         children: [{insert: 'WordArt'}],
       },
       {
@@ -1535,7 +1535,7 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
         flavour: 'image',
         nodeType: BlockNodeType.block,
         meta: {},
-        props: {placement: {mode: 'absolute', x: 0, y: 96}},
+        props: {position: {x: 0, y: 96}},
         children: [],
       },
     ];

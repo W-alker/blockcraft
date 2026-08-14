@@ -83,16 +83,12 @@ export const shapeBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
           ShapeBlockProps['verticalAlign'],
       }
       if (stringProperty(o.node, 'dataShapePlacementMode') === 'absolute') {
-        rawProps.placement = {
-          mode: 'absolute',
+        rawProps.position = {
           x: numberProperty(o.node, 'dataShapePlacementX') ?? 0,
           y: numberProperty(o.node, 'dataShapePlacementY') ?? 0,
-          ...(stringProperty(o.node, 'dataShapePlacementUnit') === 'px'
-            ? {unit: 'px' as const}
-            : {}),
-          layer: stringProperty(o.node, 'dataShapePlacementLayer') === 'under'
-            ? 'under'
-            : 'over',
+        }
+        if (stringProperty(o.node, 'dataShapePlacementLayer') === 'under') {
+          rawProps.placementLayer = 'under'
         }
       }
       snapshot.props = normalizeShapeProps(rawProps)
@@ -109,9 +105,7 @@ export const shapeBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
       const delta = textSnapshot?.flavour === 'shape-text'
         ? textSnapshot.children as DeltaInsert[]
         : []
-      const placement = props.placement?.mode === 'absolute'
-        ? props.placement
-        : null
+      const position = props.position
 
       walkerContext.openNode({
         type: 'element',
@@ -130,15 +124,12 @@ export const shapeBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
           dataShapeTextColor: props.textColor,
           dataShapeTextAlign: props.shapeTextAlign,
           dataShapeVerticalAlign: props.verticalAlign,
-          ...(placement ? {
+          ...(position ? {
             dataShapePlacementMode: 'absolute',
-            dataShapePlacementX: placement.x ?? 0,
-            dataShapePlacementY: placement.y ?? 0,
-            ...(placement.unit === 'px'
-              ? {dataShapePlacementUnit: 'px'}
-              : {}),
+            dataShapePlacementX: position.x,
+            dataShapePlacementY: position.y,
             dataShapePlacementLayer:
-              placement.layer === 'under' ? 'under' : 'over',
+              props.placementLayer === 'under' ? 'under' : 'over',
           } : {}),
         },
         children: hasDeltaContent(delta)

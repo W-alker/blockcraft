@@ -174,26 +174,12 @@ export class BlockPlacementFlowCoordinator {
     }
 
     const measured = measureBlockPlacement(block.hostElement)
-    // Lightweight hosts/tests that do not expose the model layer keep the
-    // previous props-only behavior; production documents take the layout path.
     if (
       !this.doc.model?.getChildrenIds ||
       !this.doc.crud?.insertBlockSnapshots ||
       !this.doc.crud?.getYBlock
     ) {
-      this.doc.crud.transact(() => {
-        block.updateProps({
-          placement: {
-            mode: 'absolute',
-            x: measured.x,
-            y: measured.y,
-            unit: 'px',
-            ...(layer === 'under' ? {layer} : {}),
-          },
-        } as any)
-      })
-      block.changeDetectorRef.markForCheck()
-      return true
+      return false
     }
 
     const sourceIndex =
@@ -213,13 +199,11 @@ export class BlockPlacementFlowCoordinator {
         targetIndex,
       )
       block.updateProps({
-        placement: {
-          mode: 'absolute',
+        position: {
           x: measured.x,
           y: measured.y,
-          unit: 'px',
-          ...(layer === 'under' ? {layer} : {}),
         },
+        placementLayer: layer === 'under' ? 'under' : null,
       } as any)
     })
     this.rootLayout.queueNormalization()

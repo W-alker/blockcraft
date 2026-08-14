@@ -59,7 +59,8 @@ describe('Word art adapters', () => {
       outlineWidthEm: 0.05,
       shadowEnabled: false,
       effect: 'perspective-up',
-      placement: {mode: 'absolute', x: 22.5, y: 140, layer: 'under'},
+      position: {x: 22.5, y: 140},
+      placementLayer: 'under',
     })
     const html = await htmlAdapter.toHtml(rootSnapshot([
       PlacementLayoutBlockSchema.createSnapshot([wordArt]),
@@ -95,7 +96,8 @@ describe('Word art adapters', () => {
       gradientStops: [0, 1],
       shadowEnabled: false,
       effect: 'perspective-up',
-      placement: {mode: 'absolute', x: 22.5, y: 140, layer: 'under'},
+      position: {x: 22.5, y: 140},
+      placementLayer: 'under',
     }))
   })
 

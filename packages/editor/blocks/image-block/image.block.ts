@@ -4,7 +4,6 @@ import {
   deriveObjectSizeFromPixels,
   DOC_FILE_SERVICE_TOKEN,
   DocFileService,
-  resolvePlacementXInPixels,
 } from '../../framework';
 import {ImageBlockModel} from './index';
 import {
@@ -263,7 +262,7 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
   }
 
   get isAbsolute(): boolean {
-    return this.props.placement?.mode === 'absolute'
+    return this.doc.placement?.isInAbsoluteLayout?.(this.id) ?? false
   }
 
   get resizeMaxWidthContainer(): HTMLElement {
@@ -401,7 +400,7 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
       this.props.ar > 0
         ? this.props.ar
         : derived.ar
-    const placement = this.props.placement
+    const placement = this.doc.placement.getState(this)
     this._awaitingLocalPreviewSize = false
     this._pendingIntrinsicSize = null
     this.updateProps({
@@ -409,13 +408,11 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
       ar: currentAr,
       width: null,
       height: null,
-      ...(placement?.mode === 'absolute' && event.offsetX !== 0
+      ...(placement.mode === 'absolute' && event.offsetX !== 0
         ? {
-            placement: {
-              ...placement,
-              x: resolvePlacementXInPixels(placement, event.basisWidth) +
-                event.offsetX,
-              unit: 'px',
+            position: {
+              x: placement.x + event.offsetX,
+              y: placement.y,
             },
           }
         : {}),

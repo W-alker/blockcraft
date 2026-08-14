@@ -1,8 +1,5 @@
 import {BlockNodeType} from '../../framework';
-import {
-  resolveInlineImageDropTarget,
-  resolveInlineImageOverlapTarget,
-} from './inline-image-drag';
+import {resolveInlineImageDropTarget} from './inline-image-drag';
 
 const setRect = (element: HTMLElement, rect: Partial<DOMRect>) => {
   element.getBoundingClientRect = () => ({
@@ -114,35 +111,6 @@ describe('inline image drop target resolution', () => {
     expect(target?.block as any).toBe(below);
     expect(target?.offset).toBe(0);
 
-    const overlapTarget = resolveInlineImageOverlapTarget(doc, 'image', {
-      left: 100,
-      top: 180,
-      right: 420,
-      bottom: 230,
-      width: 320,
-      height: 50,
-    } as DOMRect);
-    expect(overlapTarget?.block as any).toBe(below);
-
-    const nearestButNotCovered = resolveInlineImageOverlapTarget(doc, 'image', {
-      left: 100,
-      top: 100,
-      right: 420,
-      bottom: 160,
-      width: 320,
-      height: 60,
-    } as DOMRect);
-    expect(nearestButNotCovered).toBeNull();
-
-    doc.model.getPath = () => ['root', 'image', 'below'];
-    expect(resolveInlineImageOverlapTarget(doc, 'image', {
-      left: 100,
-      top: 180,
-      right: 420,
-      bottom: 230,
-      width: 320,
-      height: 50,
-    } as DOMRect)).toBeNull();
   });
 
   it('rejects a point outside the editor before querying caret geometry', () => {

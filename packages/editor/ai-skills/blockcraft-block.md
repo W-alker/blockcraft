@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-08-14
+> Last updated: 2026-08-15
 
 ## Block Types
 
@@ -617,15 +617,14 @@ under `DocConfig.virtualization`.
 
 ### Object Layout and Placement
 
-Positioning is an opt-in Schema capability. Add `placement` to the block props
-type and declare the supported modes:
+Positioning is an opt-in Schema capability. Extend the common block props and
+declare the supported modes:
 
 ```typescript
-import type {BlockPositionState} from '@ccc/blockcraft'
+import type {IBlockProps} from '@ccc/blockcraft'
 
-props: {
+interface MyVisualBlockProps extends IBlockProps {
   // block-specific props...
-  placement?: BlockPositionState
 }
 
 metadata: {
@@ -635,14 +634,15 @@ metadata: {
 }
 ```
 
-An omitted `props.placement` means relative flow. Absolute state is persisted as
-`{mode: 'absolute', x, y, layer?}`, where `x` is a percentage of the root
-children render container width, `y` is a CSS pixel offset from its top, and
-`layer` is `'under' | 'over'`. The default `over` tier is omitted when
-persisted. The base block host applies `position/left/top` only when the Schema
-supports absolute. Standard absolute placement is root-only. The manager moves
-all absolute image/shape objects under one hidden `placement-layout` at the end
-of `root.children`; relative objects remain direct root flow children:
+The Schema metadata declares capability only. Layout mode is structural: a
+direct root child is relative flow, and a direct child of `placement-layout` is
+absolute. An absolute child persists one atomic `position: {x, y}` object in
+root-content layout pixels. Its optional `placementLayer: 'under'` is stored
+separately; omission means `over`. A relative child persists neither field.
+There is no persisted `mode` or `unit`. The base block host applies
+`position/left/top` only to structurally absolute, Schema-capable children.
+Standard absolute placement is root-only. The manager moves absolute objects
+under one hidden `placement-layout` at the end of `root.children`:
 
 ```text
 root
@@ -657,15 +657,18 @@ The renderer uses explicit non-negative tiers: background, `under` (`0`),
 ordinary flow children (`1`), then `over` (`2`). This keeps an under block above
 the page background and an over block above text and media regardless of DOM
 order. The layout creates no stacking context and does not intercept pointers.
-Stale placement props on a flow-only Schema are ignored. A nested object cannot
+Stale position props on a flow-only Schema are cleared. A nested object cannot
 enter absolute placement in this phase. The infrastructure Schema accepts
 future custom positionable flavours; normalization keeps a child there only
-when its own Schema declares absolute capability and its placement is absolute.
+when its own Schema declares absolute capability. A transient direct-root
+snapshot with `position` (for example, an import or representation conversion)
+is normalized into the placement layout; stable mode still comes only from
+structure.
 Live pagination moves the placement-layout to the root's effective content
 origin through the runtime `--bc-placement-content-origin-y` value. The same
 deterministic value is used by pointer geometry and virtual visibility; it is
 derived from page margins/header bands rather than DOM displacement and is
-never stored in `placement.y`.
+never stored in `position.y`.
 
 Use the user-facing object-layout API rather than exposing positioning modes:
 
@@ -682,7 +685,7 @@ doc.placement.setObjectLayout(block, "top-bottom"); // returns to relative flow
 ```
 
 `insertAbsoluteSnapshot()` is the direct-creation path for new positionable
-objects. It normalizes the snapshot placement and returns the inserted block
+objects. It normalizes the snapshot position and returns the inserted block
 ID. If the root layout already exists, it appends the object there. If no
 layout exists yet, it inserts one nested snapshot whose initial child is the
 object; it does not create the parent and then try to look it up during the
@@ -691,7 +694,8 @@ ordinary root-flow child.
 
 `startDrag()` accepts the initiating `PointerEvent`. It uses
 `pointermove / pointerup / pointercancel` on the capture path, previews movement
-with a transform and performs one Yjs props write on release. Do not add native
+with a transform and performs one Yjs props write on release. The write replaces
+the whole `{x, y}` object; it does not issue separate coordinate writes. Do not add native
 `draggable`, `dragstart`, `dragover`, or `drop` handling for object positioning.
 
 The shared UI descriptors are exported as `BLOCK_OBJECT_LAYOUT_OPTIONS`:
@@ -709,19 +713,24 @@ flavour; this is how image blocks and future custom shapes expose the same
 **嵌入型** action without putting flavour-specific conversion logic in
 BlockController.
 
-Placement props pass through `BlockComponent.updateProps()` and structural
+Position/layer props pass through `BlockComponent.updateProps()` and structural
 moves pass through `DocCRUD`, so readonly enforcement, Yjs collaboration and
 undo/redo use the normal data path.
 On absolute → top-bottom, `setObjectLayout()` uses `setMode()` to read the
 current visual center once,
 chooses the nearest mounted ordinary root-flow sibling, inserts before
-or after that sibling's midpoint, and clears `placement` in one transaction.
+or after that sibling's midpoint, and clears `position` plus `placementLayer`
+in one transaction.
 It falls back to the end of root flow, before the layout, when no valid geometry
 exists. It does not persist or restore the object's old logical position.
 `resolveFlowAnchor()` returns a transient stable-ID
 `{parentId, anchorBlockId, side}` descriptor and `reanchorToFlow()` lets
 conversion code reuse the same move without clearing props; call both only on
 explicit conversion paths because anchor resolution reads DOM geometry.
+Absolute → inline/wrap conversion always reanchors the source from
+`placement-layout` into the root flow before replacing its representation. It
+never inserts into editable descendants of a nearby absolute object, even when
+their visual boxes overlap.
 `getRootFlowChildIds()`, `getAbsoluteBlockIds()`, `isPlacementLayout()` and
 `isInAbsoluteLayout()` expose model-first classification for integrations.
 `allowsGapCursor()` is the shared eligibility policy used by block hosts,
@@ -730,7 +739,7 @@ layout and absolute objects. `isAbsoluteObjectSelection()` recognizes the
 whole-object selection that Input must isolate from ordinary text entry.
 Under root virtualization, the zero-height `placement-layout` is not
 keep-alive. The virtualizer builds a model-only vertical index from each
-child's root-relative `placement.y` and estimated height, including `wr/ar`
+child's root-relative `position.y` and estimated height, including `wr/ar`
 media dimensions and rotated fixed-size shape bounds. If any band intersects
 the viewport plus one viewport of pre-rendering, the layout root unit mounts;
 otherwise it may detach unless Selection, drag, resize or another interaction
@@ -897,7 +906,9 @@ Deleting the last child restores the framework's normal fallback paragraph.
 `rotation`, plus a composable shape shell: `sh` (Shape catalog kind), `fo`
 (fill opacity), `bw` (outline width) and `bs` (outline style). Optional `wa` is
 a canonical serialized WordArt-compatible value object. Common `backColor`,
-`borderColor` and `placement` remain inherited Block props. Defaults are
+`borderColor`, `position` and `placementLayer` remain inherited Block props.
+The latter two are present only while the text box is structurally absolute.
+Defaults are
 `240 × 120`, rectangle, rotation `0`, `p: [8, 12]`, a white fill and a gray
 outline. Use `normalizeTextBoxProps()` at creation/import boundaries and
 `normalizeTextBoxWordArtStyle()` / `serializeTextBoxWordArtStyle()` at the
@@ -960,7 +971,7 @@ exported `SHAPE_KINDS`. `SHAPE_CATEGORIES` groups the same canonical
 `SHAPE_DEFINITIONS` into the Word-like **矩形 / 基本形状 / 线条 / 箭头总汇 /
 公式形状 / 流程图 / 星与旗帜 / 标注** catalog. `ShapeBlockProps` persists
 only width/height, `shapeType`, fill, outline, text color/alignment, optional
-`rotation` in degrees and optional placement; SVG path and catalog category are
+`rotation` in degrees and optional absolute `position` / `placementLayer`; SVG path and catalog category are
 never written into Yjs or snapshots. `normalizeShapeProps()` validates the
 expanded union and returns a finite rotation normalized into `[0, 360)`.
 
@@ -1037,7 +1048,8 @@ const plugins = [
 `WordArtBlockSchema.createSnapshot(text?, props?)` defaults to `艺术字`. The
 exported flat `WordArtBlockProps` stores fixed width/height, rotation,
 typography, solid or linear-gradient fill, outline, shadow, alignment, a safe
-affine/perspective effect and optional placement. Gradient colors/stops use
+affine/perspective effect and optional absolute `position` / `placementLayer`.
+Gradient colors/stops use
 parallel primitive arrays so props remain valid BlockCraft `SimpleValue`
 records. `normalizeWordArtProps()` clamps external values and
 `resolveWordArtPresentation()` resolves portable CSS without accepting raw CSS
@@ -1082,8 +1094,8 @@ such as links, previews and downloads. Root cannot be persistently locked.
 
 > **Gap-space behavior**: Eligible non-leaf void/container blocks dynamically
 > receive direct before/after zero-width gap spaces so a caret can land beside
-> them. The root `placement-layout` and blocks whose persisted placement is
-> absolute never receive those gaps. A mounted object removes them when it
+> them. The root `placement-layout` and its structurally absolute children
+> never receive those gaps. A mounted object removes them when it
 > enters absolute placement and restores them when it returns to relative flow.
 > `SelectionManager` also degrades stale disallowed gap snapshots to a
 > whole-block selection. See `createBlockGapSpace()` in `framework/utils/` and
@@ -1439,5 +1451,5 @@ the host or a sibling.
 - [ ] Global type declarations in `declare global { namespace BlockCraft { ... } }`
 - [ ] Schema exported from `blocks/index.ts`
 - [ ] Schema added to `SchemaManager` constructor
-- [ ] Visual blocks that need free positioning declare `props.placement` + `metadata.placement`
+- [ ] Visual blocks that need free positioning extend `IBlockProps` and declare `metadata.placement`
 - [ ] Styles added in `themes/blocks/` if needed

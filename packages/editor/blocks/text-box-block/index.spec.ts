@@ -143,7 +143,7 @@ describe('TextBoxBlockSchema', () => {
 
       expect(surface.getAttribute('contenteditable')).toBe('false')
       expect(surface.getAttribute('data-bc-resize-preview-anchor'))
-        .toBe('layout')
+        .toBeNull()
       expect(content.getAttribute('contenteditable')).toBe('true')
       expect(
         fixture.nativeElement.querySelectorAll('[data-bc-print-visual-surface]')
@@ -184,13 +184,11 @@ describe('TextBoxBlockSchema', () => {
       bgs: 'contain',
       backColor: ' transparent ',
       borderColor: ' #334155 ',
-      placement: {
-        mode: 'absolute',
+      position: {
         x: 32,
         y: 48,
-        unit: 'px',
-        layer: 'under',
       },
+      placementLayer: 'under',
     })
 
     expect(props).toEqual({
@@ -209,13 +207,11 @@ describe('TextBoxBlockSchema', () => {
       fo: 1,
       bw: 1,
       bs: 'solid',
-      placement: {
-        mode: 'absolute',
+      position: {
         x: 32,
         y: 48,
-        unit: 'px',
-        layer: 'under',
       },
+      placementLayer: 'under',
     })
   })
 

@@ -1,7 +1,6 @@
 import {
   normalizeBlockSurfaceProps,
-  resolveBlockPlacement,
-  type BlockPositionState,
+  resolveBlockPosition,
   type BlockSurfacePadding,
   type BlockSurfaceProps,
 } from '../../framework'
@@ -96,7 +95,7 @@ export function normalizeTextBoxProps(
 ): NormalizedTextBoxBlockProps {
   const input = value as Readonly<Record<string, unknown>> | null | undefined
   const surface = normalizeBlockSurfaceProps(input)
-  const placement = normalizePlacement(input?.['placement'])
+  const position = normalizePosition(input?.['position'])
   const wordArt = serializeTextBoxWordArtStyle(input?.['wa'])
 
   return {
@@ -126,7 +125,10 @@ export function normalizeTextBoxProps(
     bw: boundedNumber(input?.['bw'], DEFAULT_TEXT_BOX_PROPS.bw, 0, 20),
     bs: input?.['bs'] === 'dashed' ? 'dashed' : 'solid',
     ...(wordArt ? {wa: wordArt} : {}),
-    ...(placement ? {placement} : {}),
+    ...(position ? {position} : {}),
+    ...(input?.['placementLayer'] === 'under'
+      ? {placementLayer: 'under' as const}
+      : {}),
   }
 }
 
@@ -221,14 +223,9 @@ function normalizeTextBoxShape(value: unknown): ShapeKind {
     : value
 }
 
-function normalizePlacement(value: unknown): BlockPositionState | undefined {
-  const placement = resolveBlockPlacement(value)
-  if (placement.mode !== 'absolute') return undefined
-  return {
-    mode: 'absolute',
-    x: placement.x,
-    y: placement.y,
-    ...(placement.unit === 'px' ? {unit: 'px' as const} : {}),
-    ...(placement.layer === 'under' ? {layer: 'under' as const} : {}),
+function normalizePosition(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined
   }
+  return resolveBlockPosition(value)
 }

@@ -1,7 +1,7 @@
 import type {
-  BlockPositionState,
   IEditableBlockProps,
 } from '../../framework'
+import {resolveBlockPosition} from '../../framework'
 
 export const WORD_ART_FONT_OPTIONS = [
   {
@@ -82,7 +82,6 @@ export interface WordArtBlockProps extends IEditableBlockProps {
   width: number
   height: number
   rotation: number
-  placement?: BlockPositionState
 
   fontFamily: WordArtFontId
   fontSize: number
@@ -112,9 +111,7 @@ export interface WordArtBlockProps extends IEditableBlockProps {
   effect: WordArtEffect
 }
 
-export interface NormalizedWordArtBlockProps extends WordArtBlockProps {
-  placement?: BlockPositionState
-}
+export interface NormalizedWordArtBlockProps extends WordArtBlockProps {}
 
 export const DEFAULT_WORD_ART_PROPS: Readonly<NormalizedWordArtBlockProps> = {
   depth: 0,
@@ -196,21 +193,10 @@ export function normalizeWordArtRotation(value: unknown): number {
   return Object.is(normalized, -0) ? 0 : normalized
 }
 
-const normalizePlacement = (
-  value: unknown,
-): BlockPositionState | undefined => {
-  if (!value || typeof value !== 'object') return undefined
-  const placement = value as Record<string, unknown>
-  if (placement['mode'] !== 'absolute') return undefined
-  const unit = placement['unit'] === 'px' ? 'px' as const : undefined
-  return {
-    mode: 'absolute',
-    x: finiteNumber(placement['x'], 0, 0, unit === 'px' ? 1_000_000 : 100),
-    y: finiteNumber(placement['y'], 0, 0, 1_000_000),
-    ...(unit ? {unit} : {}),
-    layer: placement['layer'] === 'under' ? 'under' : 'over',
-  }
-}
+const normalizePosition = (value: unknown) =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? resolveBlockPosition(value)
+    : undefined
 
 const normalizeGradient = (
   colorsValue: unknown,
@@ -257,7 +243,7 @@ export function normalizeWordArtProps(
     value?.gradientStops,
   )
   const fontWeight = Number(value?.fontWeight)
-  const placement = normalizePlacement(value?.placement)
+  const position = normalizePosition(value?.position)
 
   return {
     depth: 0,
@@ -274,7 +260,10 @@ export function normalizeWordArtProps(
       2_000,
     ),
     rotation: normalizeWordArtRotation(value?.rotation),
-    ...(placement ? {placement} : {}),
+    ...(position ? {position} : {}),
+    ...(value?.placementLayer === 'under'
+      ? {placementLayer: 'under' as const}
+      : {}),
     fontFamily:
       typeof value?.fontFamily === 'string' &&
       FONT_IDS.has(value.fontFamily)

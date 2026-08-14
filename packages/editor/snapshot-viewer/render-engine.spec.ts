@@ -202,16 +202,14 @@ describe("SnapshotRenderEngine", () => {
       bgx: 25,
       bgy: 75,
       bgo: 0.45,
-      placement: {
-        mode: "absolute",
+      position: {
         x: 40,
         y: 60,
-        unit: "px",
-        layer: "under",
       },
+      placementLayer: "under",
     })
 
-    renderer.render(host, wrapRoot([textBox]))
+    renderer.render(host, wrapRoot([wrapPlacement([textBox])]))
     const block = host.querySelector<HTMLElement>(
       '[data-block-id="text-box-1"]',
     )!
@@ -250,14 +248,15 @@ describe("SnapshotRenderEngine", () => {
     expect(image.style.objectPosition).toBe("25% 75%")
     expect(image.style.opacity).toBe("0.45")
 
-    renderer.update(wrapRoot([
+    renderer.update(wrapRoot([wrapPlacement([
       createTextBoxFixture("text-box-1", {
         width: 240,
         height: 120,
         rotation: 0,
         p: 0,
+        position: {x: 40, y: 60},
       }),
-    ]))
+    ])]))
 
     expect(host.querySelector('[data-block-id="text-box-1"]')).toBe(block)
     expect(host.querySelector('[data-block-id="text-box-1-paragraph"]'))
@@ -358,6 +357,17 @@ function wrapRoot(children: IBlockSnapshot[]): IBlockSnapshot {
     id: "root-test",
     flavour: "root",
     nodeType: BlockNodeType.root,
+    meta: {},
+    props: {},
+    children,
+  }
+}
+
+function wrapPlacement(children: IBlockSnapshot[]): IBlockSnapshot {
+  return {
+    id: "placement-layout-test",
+    flavour: "placement-layout",
+    nodeType: BlockNodeType.block,
     meta: {},
     props: {},
     children,

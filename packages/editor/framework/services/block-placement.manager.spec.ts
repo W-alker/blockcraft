@@ -6,8 +6,8 @@ import {
   BlockPlacementManager,
   measureBlockPlacement,
   measureObjectPlacement,
-  resolveBlockPlacement,
-  resolvePlacementXInPixels,
+  resolveBlockPosition,
+  resolvePlacementLayer,
 } from './block-placement.manager'
 import {resolvePlacementContainerBox} from './block-placement/geometry'
 import {BaseBlockComponent} from '../block-std/block/component/base-block'
@@ -49,9 +49,11 @@ function makeHarness() {
   const onPropsChange = new Subject<Map<string, any>>()
   const onReattach$ = new Subject<void>()
   const onDetach$ = new Subject<void>()
+  const rootChildren = ['image-1']
+  const layoutChildren: string[] = []
   const parent = {
     id: 'root',
-    childrenIds: ['image-1'],
+    childrenIds: rootChildren,
   }
   const block = {
     id: 'image-1',
@@ -75,15 +77,49 @@ function makeHarness() {
   const readonlySwitch$ = new BehaviorSubject(false)
   const onDestroy$ = new Subject<void>()
   const releaseLease = jasmine.createSpy('releaseLease')
+  const childrenById = new Map<string, string[]>([
+    ['root', rootChildren],
+    ['layout', layoutChildren],
+    ['image-1', []],
+  ])
+  const flavourById = new Map<string, string>([
+    ['root', 'root'],
+    ['layout', 'placement-layout'],
+    ['image-1', 'image'],
+  ])
+  const parentOf = (id: string): string | null => {
+    for (const [parentId, children] of childrenById) {
+      if (children.includes(id)) return parentId
+    }
+    return null
+  }
   const doc = {
     config: {} as any,
     isReadonly: false,
     readonlySwitch$,
     onDestroy$,
     schemas: {
-      get: jasmine.createSpy('getSchema').and.returnValue({
-        metadata: {placement: {modes: ['relative', 'absolute']}},
+      get: jasmine.createSpy('getSchema').and.callFake((flavour: string) => ({
+        metadata: flavour === 'image'
+          ? {placement: {modes: ['relative', 'absolute']}}
+          : {},
+      })),
+      createSnapshot: jasmine.createSpy('createSnapshot').and.returnValue({
+        id: 'layout',
+        flavour: 'placement-layout',
+        nodeType: 'block',
+        props: {},
+        meta: {},
+        children: [],
       }),
+    },
+    rootId: 'root',
+    root: {id: 'root', hostElement: container, childrenIds: rootChildren},
+    model: {
+      getChildrenIds: (id: string) => [...(childrenById.get(id) ?? [])],
+      getFlavour: (id: string) => flavourById.get(id),
+      getProps: (id: string) => id === block.id ? props : {},
+      getParentId: (id: string) => parentOf(id),
     },
     getBlockById: jasmine.createSpy('getBlockById').and.callFake((id: string) =>
       id === block.id ? block : null),
@@ -99,7 +135,38 @@ function makeHarness() {
     dragController: {state: 'idle'},
     crud: {
       transact: jasmine.createSpy('transact').and.callFake((fn: () => void) => fn()),
-      moveBlocks: jasmine.createSpy('moveBlocks'),
+      getYBlock: jasmine.createSpy('getYBlock').and.callFake((id: string) => ({
+        get: (key: string) => key === 'children'
+          ? {
+              get length() { return childrenById.get(id)?.length ?? 0 },
+              toArray: () => [...(childrenById.get(id) ?? [])],
+            }
+          : key === 'props'
+            ? {toJSON: () => id === block.id ? {...props} : {}}
+            : undefined,
+      })),
+      insertBlockSnapshots: jasmine.createSpy('insertBlockSnapshots')
+        .and.callFake((parentId: string, index: number, snapshots: any[]) => {
+          const ids = snapshots.map(snapshot => snapshot.id)
+          childrenById.get(parentId)!.splice(index, 0, ...ids)
+          return ids
+        }),
+      moveBlocks: jasmine.createSpy('moveBlocks').and.callFake((
+        sourceId: string,
+        sourceIndex: number,
+        count: number,
+        targetId: string,
+        targetIndex: number,
+      ) => {
+        const moved = childrenById.get(sourceId)!.splice(sourceIndex, count)
+        childrenById.get(targetId)!.splice(targetIndex, 0, ...moved)
+        if (moved.includes(block.id)) {
+          block.parentId = targetId
+          block.parentBlock = targetId === 'root'
+            ? parent
+            : {id: 'layout', childrenIds: layoutChildren}
+        }
+      }),
     },
     virtualization: {
       acquireBlockViewLease: jasmine.createSpy('acquireBlockViewLease').and.returnValue(releaseLease),
@@ -110,7 +177,34 @@ function makeHarness() {
   }
   const manager = new BlockPlacementManager(doc as any)
 
-  return {container, host, props, block, parent, doc, manager, releaseLease}
+  const setAbsolute = (
+    position = {x: 20, y: 30},
+    layer: 'under' | 'over' = 'over',
+  ) => {
+    const rootIndex = rootChildren.indexOf(block.id)
+    if (rootIndex >= 0) rootChildren.splice(rootIndex, 1)
+    if (!rootChildren.includes('layout')) rootChildren.push('layout')
+    if (!layoutChildren.includes(block.id)) layoutChildren.push(block.id)
+    block.parentId = 'layout'
+    block.parentBlock = {id: 'layout', childrenIds: layoutChildren}
+    props['position'] = position
+    if (layer === 'under') props['placementLayer'] = 'under'
+    else delete props['placementLayer']
+  }
+
+  return {
+    container,
+    host,
+    props,
+    block,
+    parent,
+    doc,
+    manager,
+    releaseLease,
+    setAbsolute,
+    rootChildren,
+    layoutChildren,
+  }
 }
 
 function pointer(type: string, init: Partial<PointerEventInit> = {}): PointerEvent {
@@ -158,15 +252,16 @@ function makeRootLayoutNormalizationHarness() {
   ])
   const propsById = new Map<string, Record<string, any>>([
     ['legacy-absolute', {
-      placement: {mode: 'absolute', x: 10, y: 20},
+      position: {x: 10, y: 20},
     }],
     ['absolute-2', {
-      placement: {mode: 'absolute', x: 30, y: 40, layer: 'under'},
+      position: {x: 30, y: 40},
+      placementLayer: 'under',
     }],
     ['malformed-relative', {
       // A flow-only Schema must not become an absolute layout child merely
       // because a stale snapshot contains placement props.
-      placement: {mode: 'absolute', x: 99, y: 99},
+      position: {x: 99, y: 99},
     }],
   ])
   const parentOf = (id: string): string | null => {
@@ -218,6 +313,17 @@ function makeRootLayoutNormalizationHarness() {
       childrenById.delete(id)
       flavourById.delete(id)
       propsById.delete(id)
+    }),
+    updateBlockProps: jasmine.createSpy('updateBlockProps').and.callFake((
+      id: string,
+      patch: Record<string, unknown>,
+    ) => {
+      const props = propsById.get(id) ?? {}
+      for (const [key, value] of Object.entries(patch)) {
+        if (value == null) delete props[key]
+        else props[key] = value
+      }
+      propsById.set(id, props)
     }),
     insertBlockSnapshots: jasmine.createSpy('insertBlockSnapshots'),
   }
@@ -283,18 +389,10 @@ function makeStackHarness() {
     ['over-b', 'image'],
   ])
   const propsById = new Map<string, Record<string, any>>([
-    ['under-a', {
-      placement: {mode: 'absolute', x: 0, y: 0, layer: 'under'},
-    }],
-    ['over-a', {
-      placement: {mode: 'absolute', x: 0, y: 0},
-    }],
-    ['under-b', {
-      placement: {mode: 'absolute', x: 0, y: 0, layer: 'under'},
-    }],
-    ['over-b', {
-      placement: {mode: 'absolute', x: 0, y: 0},
-    }],
+    ['under-a', {position: {x: 0, y: 0}, placementLayer: 'under'}],
+    ['over-a', {position: {x: 0, y: 0}}],
+    ['under-b', {position: {x: 0, y: 0}, placementLayer: 'under'}],
+    ['over-b', {position: {x: 0, y: 0}}],
   ])
   const parentOf = (id: string): string | null => {
     for (const [parentId, children] of childrenById) {
@@ -407,7 +505,7 @@ function makeStackHarness() {
   const manager = new BlockPlacementManager(doc as any)
   const idsForLayer = (layer: 'under' | 'over') =>
     childrenById.get('layout')!.toArray().filter(id =>
-      resolveBlockPlacement(propsById.get(id)?.['placement']).layer === layer,
+      resolvePlacementLayer(propsById.get(id)?.['placementLayer']) === layer,
     )
 
   return {
@@ -465,46 +563,28 @@ describe('BlockPlacementManager', () => {
     host.remove()
   }))
 
-  it('normalizes malformed persisted values', () => {
-    expect(resolveBlockPlacement(null)).toEqual({
-      mode: 'relative',
-      x: 0,
-      y: 0,
-      layer: 'over',
-    })
-    expect(resolveBlockPlacement({mode: 'relative', x: 10, y: 20}))
-      .toEqual({mode: 'relative', x: 0, y: 0, layer: 'over'})
-    expect(resolveBlockPlacement({mode: 'absolute', x: Number.NaN, y: 12}))
-      .toEqual({mode: 'absolute', x: 0, y: 12, layer: 'over'})
-    expect(resolveBlockPlacement({mode: 'absolute', x: 1, y: 2, layer: 'under'}))
-      .toEqual({mode: 'absolute', x: 1, y: 2, layer: 'under'})
-    expect(resolveBlockPlacement({mode: 'absolute', x: 1, y: 2, layer: 'normal'}))
-      .toEqual({mode: 'absolute', x: 1, y: 2, layer: 'over'})
-    expect(resolveBlockPlacement({mode: 'absolute', x: 1, y: 2, layer: 'top'}))
-      .toEqual({mode: 'absolute', x: 1, y: 2, layer: 'over'})
-    expect(resolveBlockPlacement({mode: 'absolute', x: 120, y: 2, unit: 'px'}))
-      .toEqual({mode: 'absolute', x: 120, y: 2, unit: 'px', layer: 'over'})
-    expect(resolvePlacementXInPixels(
-      {mode: 'absolute', x: 25, y: 2},
-      500,
-    )).toBe(125)
-    expect(resolvePlacementXInPixels(
-      {mode: 'absolute', x: 25, y: 2, unit: 'px'},
-      500,
-    )).toBe(25)
+  it('normalizes atomic position and layer values', () => {
+    expect(resolveBlockPosition(null)).toEqual({x: 0, y: 0})
+    expect(resolveBlockPosition({x: Number.NaN, y: 12}))
+      .toEqual({x: 0, y: 12})
+    expect(resolveBlockPosition({x: 120, y: 2}))
+      .toEqual({x: 120, y: 2})
+    expect(resolvePlacementLayer('under')).toBe('under')
+    expect(resolvePlacementLayer('over')).toBe('over')
+    expect(resolvePlacementLayer('top')).toBe('over')
   })
 
   it('measures absolute coordinates against the direct children container', () => {
     const {container, host, manager} = makeHarness()
     expect(measureBlockPlacement(host))
-      .toEqual({mode: 'absolute', x: 125, y: 40, unit: 'px', layer: 'over'})
+      .toEqual({mode: 'absolute', x: 125, y: 40, layer: 'over'})
     expect(measureObjectPlacement(host, container, 'under'))
-      .toEqual({mode: 'absolute', x: 125, y: 40, unit: 'px', layer: 'under'})
+      .toEqual({mode: 'absolute', x: 125, y: 40, layer: 'under'})
     manager.destroy()
     container.remove()
   })
 
-  it('projects legacy percent x to a fixed inline px value before print cloning', () => {
+  it('projects structural absolute position directly in layout pixels', () => {
     const container = document.createElement('div')
     const host = document.createElement('div')
     container.appendChild(host)
@@ -519,20 +599,22 @@ describe('BlockPlacementManager', () => {
         schemas: {
           get: () => ({metadata: {placement: {modes: ['absolute']}}}),
         },
+        placement: {
+          getState: () => ({
+            mode: 'absolute',
+            x: 25,
+            y: 40,
+            layer: 'over',
+          }),
+        },
       },
       _native: {
+        id: 'shape-1',
         flavour: 'shape',
-        props: {placement: {mode: 'absolute', x: 25, y: 40}},
+        props: {position: {x: 25, y: 40}},
       },
     })
 
-    expect(block.placementLeft).toBe(125)
-    ;(block as any)._native.props.placement = {
-      mode: 'absolute',
-      x: 25,
-      y: 40,
-      unit: 'px',
-    }
     expect(block.placementLeft).toBe(25)
   })
 
@@ -549,7 +631,7 @@ describe('BlockPlacementManager', () => {
     Object.defineProperty(root, 'clientTop', {configurable: true, value: 0})
 
     expect(measureObjectPlacement(host, root))
-      .toEqual({mode: 'absolute', x: 125, y: 40, unit: 'px', layer: 'over'})
+      .toEqual({mode: 'absolute', x: 125, y: 40, layer: 'over'})
 
     root.remove()
   })
@@ -569,7 +651,7 @@ describe('BlockPlacementManager', () => {
     Object.defineProperty(root, 'clientTop', {configurable: true, value: 0})
 
     expect(measureObjectPlacement(host, root))
-      .toEqual({mode: 'absolute', x: 85, y: 30, unit: 'px', layer: 'over'})
+      .toEqual({mode: 'absolute', x: 85, y: 30, layer: 'over'})
 
     const box = resolvePlacementContainerBox(root)
     expect(box.originX).toBe(140)
@@ -689,7 +771,7 @@ describe('BlockPlacementManager', () => {
         ...shape,
         props: {
           ...shape.props,
-          placement: {mode: 'absolute', x: 125, y: 80, unit: 'px'},
+          position: {x: 125, y: 80},
         },
       }]])
     expect(insertBlockSnapshots).toHaveBeenCalledTimes(1)
@@ -702,7 +784,7 @@ describe('BlockPlacementManager', () => {
           ...shape,
           props: {
             ...shape.props,
-            placement: {mode: 'absolute', x: 125, y: 80, unit: 'px'},
+            position: {x: 125, y: 80},
           },
         }],
       }],
@@ -728,17 +810,13 @@ describe('BlockPlacementManager', () => {
     expect(manager.getObjectLayout(block as any)).toBe('top-bottom')
     expect(manager.setObjectLayout(block as any, 'under')).toBeTrue()
     expect(doc.crud.transact).toHaveBeenCalledTimes(1)
-    expect(props['placement']).toEqual({
-      mode: 'absolute',
-      x: 125,
-      y: 40,
-      unit: 'px',
-      layer: 'under',
-    })
+    expect(props['position']).toEqual({x: 125, y: 40})
+    expect(props['placementLayer']).toBe('under')
     expect(manager.getObjectLayout(block as any)).toBe('under')
 
     expect(manager.setObjectLayout(block as any, 'top-bottom')).toBeTrue()
-    expect(props['placement']).toBeUndefined()
+    expect(props['position']).toBeUndefined()
+    expect(props['placementLayer']).toBeUndefined()
 
     manager.destroy()
     container.remove()
@@ -761,14 +839,14 @@ describe('BlockPlacementManager', () => {
     container.remove()
   })
 
-  it('switches modes through block props and preserves the current visual position', () => {
+  it('switches modes through structure and preserves the current visual position', () => {
     const {container, props, block, manager} = makeHarness()
 
     expect(manager.setMode(block as any, 'absolute')).toBeTrue()
-    expect(props['placement']).toEqual({mode: 'absolute', x: 125, y: 40, unit: 'px'})
+    expect(props['position']).toEqual({x: 125, y: 40})
 
     expect(manager.setMode(block as any, 'relative')).toBeTrue()
-    expect(props['placement']).toBeUndefined()
+    expect(props['position']).toBeUndefined()
     expect(block.updateProps).toHaveBeenCalledTimes(2)
 
     manager.destroy()
@@ -776,8 +854,8 @@ describe('BlockPlacementManager', () => {
   })
 
   it('resolves the nearest flow sibling from the absolute block visual center', () => {
-    const {container, props, block, parent, manager, doc} = makeHarness()
-    props['placement'] = {mode: 'absolute', x: 20, y: 30}
+    const {container, block, manager, doc, setAbsolute, rootChildren} = makeHarness()
+    setAbsolute()
     setRect(block.hostElement, {top: 360, bottom: 440, height: 80})
 
     const tallHost = document.createElement('div')
@@ -795,7 +873,7 @@ describe('BlockPlacementManager', () => {
       props: {},
       hostElement: shortHost,
     }
-    parent.childrenIds = [tall.id, block.id, short.id]
+    rootChildren.splice(0, rootChildren.length, tall.id, short.id, 'layout')
     doc.getBlockById.and.callFake((id: string) => ({
       [block.id]: block,
       [tall.id]: tall,
@@ -813,8 +891,8 @@ describe('BlockPlacementManager', () => {
   })
 
   it('uses the target midpoint to choose before and ignores non-flow siblings', () => {
-    const {container, props, block, parent, manager, doc} = makeHarness()
-    props['placement'] = {mode: 'absolute', x: 20, y: 30}
+    const {container, block, manager, doc, setAbsolute, rootChildren} = makeHarness()
+    setAbsolute()
     setRect(block.hostElement, {top: 90, bottom: 130, height: 40})
 
     const flowHost = document.createElement('div')
@@ -828,11 +906,11 @@ describe('BlockPlacementManager', () => {
     const flow = {id: 'flow', props: {}, hostElement: flowHost}
     const absolute = {
       id: 'absolute',
-      props: {placement: {mode: 'absolute', x: 0, y: 0}},
+      props: {position: {x: 0, y: 0}},
       hostElement: absoluteHost,
     }
     const bridge = {id: 'bridge', props: {}, hostElement: bridgeHost}
-    parent.childrenIds = [absolute.id, bridge.id, block.id, flow.id]
+    rootChildren.splice(0, rootChildren.length, bridge.id, flow.id, 'layout')
     doc.getBlockById.and.callFake((id: string) => ({
       [block.id]: block,
       [flow.id]: flow,
@@ -851,7 +929,7 @@ describe('BlockPlacementManager', () => {
   })
 
   it('converts stable before/after anchors into same-parent move indexes', () => {
-    const {container, block, parent, manager, doc} = makeHarness()
+    const {container, block, manager, doc, rootChildren} = makeHarness()
     const anchor = {
       id: 'anchor',
       props: {},
@@ -869,7 +947,7 @@ describe('BlockPlacementManager', () => {
       [filler.id]: filler,
     })[id] ?? null)
 
-    parent.childrenIds = [block.id, filler.id, anchor.id]
+    rootChildren.splice(0, rootChildren.length, block.id, filler.id, anchor.id)
     expect(manager.reanchorToFlow(block as any, {
       parentId: 'root',
       anchorBlockId: anchor.id,
@@ -878,7 +956,7 @@ describe('BlockPlacementManager', () => {
     expect(doc.crud.moveBlocks).toHaveBeenCalledWith('root', 0, 1, 'root', 1)
 
     doc.crud.moveBlocks.calls.reset()
-    parent.childrenIds = [anchor.id, filler.id, block.id]
+    rootChildren.splice(0, rootChildren.length, anchor.id, filler.id, block.id)
     expect(manager.reanchorToFlow(block as any, {
       parentId: 'root',
       anchorBlockId: anchor.id,
@@ -891,8 +969,8 @@ describe('BlockPlacementManager', () => {
   })
 
   it('uses the post-delete root-end index when no flow anchor or layout exists', () => {
-    const {container, block, parent, manager, doc} = makeHarness()
-    parent.childrenIds = [block.id, 'flow']
+    const {container, block, manager, doc, rootChildren} = makeHarness()
+    rootChildren.splice(0, rootChildren.length, block.id, 'flow')
 
     expect(manager.reanchorToFlow(block as any, null)).toBeTrue()
     expect(doc.crud.moveBlocks).toHaveBeenCalledOnceWith(
@@ -907,15 +985,44 @@ describe('BlockPlacementManager', () => {
     container.remove()
   })
 
+  it('always reanchors from placement-layout to root beside absolute peers', () => {
+    const {
+      container,
+      block,
+      manager,
+      doc,
+      setAbsolute,
+      rootChildren,
+      layoutChildren,
+    } = makeHarness()
+    setAbsolute()
+    rootChildren.unshift('flow')
+    layoutChildren.push('other-absolute')
+
+    expect(manager.reanchorToFlow(block as any, null)).toBeTrue()
+    expect(doc.crud.moveBlocks).toHaveBeenCalledOnceWith(
+      'layout',
+      0,
+      1,
+      'root',
+      1,
+    )
+    expect(rootChildren).toEqual(['flow', block.id, 'layout'])
+    expect(layoutChildren).toEqual(['other-absolute'])
+
+    manager.destroy()
+    container.remove()
+  })
+
   it('moves and clears placement in one transaction when returning to flow', () => {
-    const {container, props, block, parent, manager, doc} = makeHarness()
-    props['placement'] = {mode: 'absolute', x: 20, y: 30}
+    const {container, props, block, manager, doc, setAbsolute, rootChildren} = makeHarness()
+    setAbsolute()
     const flowHost = document.createElement('div')
     container.append(flowHost)
     setRect(block.hostElement, {top: 200, bottom: 240, height: 40})
     setRect(flowHost, {top: 100, bottom: 180, height: 80})
     const flow = {id: 'flow', props: {}, hostElement: flowHost}
-    parent.childrenIds = [block.id, flow.id]
+    rootChildren.splice(0, rootChildren.length, flow.id, 'layout')
     doc.getBlockById.and.callFake((id: string) => ({
       [block.id]: block,
       [flow.id]: flow,
@@ -923,26 +1030,23 @@ describe('BlockPlacementManager', () => {
 
     expect(manager.setMode(block as any, 'relative')).toBeTrue()
     expect(doc.crud.transact).toHaveBeenCalledTimes(1)
-    expect(doc.crud.moveBlocks).toHaveBeenCalledWith('root', 0, 1, 'root', 1)
-    expect(props['placement']).toBeUndefined()
+    expect(doc.crud.moveBlocks).toHaveBeenCalledWith('layout', 0, 1, 'root', 1)
+    expect(props['position']).toBeUndefined()
 
     manager.destroy()
     container.remove()
   })
 
   it('updates semantic layers without losing absolute coordinates', () => {
-    const {container, props, block, manager} = makeHarness()
-    props['placement'] = {mode: 'absolute', x: 20, y: 30}
+    const {container, props, block, manager, setAbsolute} = makeHarness()
+    setAbsolute()
 
     expect(manager.setLayer(block as any, 'under')).toBeTrue()
-    expect(props['placement']).toEqual({
-      mode: 'absolute',
-      x: 20,
-      y: 30,
-      layer: 'under',
-    })
+    expect(props['position']).toEqual({x: 20, y: 30})
+    expect(props['placementLayer']).toBe('under')
     expect(manager.setLayer(block as any, 'over')).toBeTrue()
-    expect(props['placement']).toEqual({mode: 'absolute', x: 20, y: 30})
+    expect(props['position']).toEqual({x: 20, y: 30})
+    expect(props['placementLayer']).toBeUndefined()
 
     manager.destroy()
     container.remove()
@@ -971,22 +1075,15 @@ describe('BlockPlacementManager', () => {
       'over-a',
       'over-b',
     ])
-    expect(h.propsById.get('under-b')?.['placement']).toEqual({
-      mode: 'absolute',
-      x: 0,
-      y: 0,
-    })
+    expect(h.propsById.get('under-b')?.['position']).toEqual({x: 0, y: 0})
+    expect(h.propsById.get('under-b')?.['placementLayer']).toBeUndefined()
 
     expect(h.manager.moveBackward(h.blocks['under-b'])).toBeTrue()
     expect(h.crud.transact).toHaveBeenCalledTimes(2)
     expect(h.idsForLayer('under')).toEqual(['under-a', 'under-b'])
     expect(h.idsForLayer('over')).toEqual(['over-a', 'over-b'])
-    expect(h.propsById.get('under-b')?.['placement']).toEqual({
-      mode: 'absolute',
-      x: 0,
-      y: 0,
-      layer: 'under',
-    })
+    expect(h.propsById.get('under-b')?.['position']).toEqual({x: 0, y: 0})
+    expect(h.propsById.get('under-b')?.['placementLayer']).toBe('under')
 
     h.manager.destroy()
     h.host.remove()
@@ -1025,7 +1122,10 @@ describe('BlockPlacementManager', () => {
     expect(h.manager.moveForward(h.blocks['under-a'])).toBeFalse()
     h.readonlyManager.isReadonly.and.returnValue(false)
 
-    h.propsById.set('under-a', {placement: null})
+    h.childrenById.get('layout')!.values.splice(
+      h.childrenById.get('layout')!.values.indexOf('under-a'),
+      1,
+    )
     h.blocks['under-a'].props = h.propsById.get('under-a')
     expect(h.manager.moveForward(h.blocks['under-a'])).toBeFalse()
 
@@ -1036,12 +1136,13 @@ describe('BlockPlacementManager', () => {
     h.host.remove()
   })
 
-  it('normalizes legacy normal/top storage when setting the over layer', () => {
-    const {container, props, block, manager} = makeHarness()
-    props['placement'] = {mode: 'absolute', x: 20, y: 30, layer: 'top'}
+  it('clears the layer override when setting the default over layer', () => {
+    const {container, props, block, manager, setAbsolute} = makeHarness()
+    setAbsolute({x: 20, y: 30}, 'under')
 
     expect(manager.setLayer(block as any, 'over')).toBeTrue()
-    expect(props['placement']).toEqual({mode: 'absolute', x: 20, y: 30})
+    expect(props['position']).toEqual({x: 20, y: 30})
+    expect(props['placementLayer']).toBeUndefined()
 
     manager.destroy()
     container.remove()
@@ -1054,14 +1155,28 @@ describe('BlockPlacementManager', () => {
         schemas: {
           get: () => ({metadata: {placement: {modes: ['relative', 'absolute']}}}),
         },
+        placement: {
+          getState: () => ({
+            mode: 'absolute',
+            x: 0,
+            y: 0,
+            layer: 'under',
+          }),
+        },
       },
       _native: {
-        props: {placement: {mode: 'absolute', x: 0, y: 0, layer: 'under'}},
+        id: 'shape-1',
+        props: {position: {x: 0, y: 0}, placementLayer: 'under'},
       },
     })
 
     expect(block.placementZIndex).toBe(0)
-    ;(block as any)._native.props.placement = {mode: 'absolute', x: 0, y: 0}
+    ;(block as any).doc.placement.getState = () => ({
+      mode: 'absolute',
+      x: 0,
+      y: 0,
+      layer: 'over',
+    })
     expect(block.placementZIndex).toBe(2)
   })
 
@@ -1088,7 +1203,7 @@ describe('BlockPlacementManager', () => {
         id: 'shape-1',
         flavour: 'shape',
         nodeType: 'block',
-        props: {placement: {mode: 'absolute', x: 0, y: 0}},
+        props: {position: {x: 0, y: 0}},
       },
     })
 
@@ -1154,8 +1269,8 @@ describe('BlockPlacementManager', () => {
   })
 
   it('picks an underlay block from its edge on the root capture path', () => {
-    const {container, props, block, manager, doc} = makeHarness()
-    props['placement'] = {mode: 'absolute', x: 20, y: 30, layer: 'under'}
+    const {container, block, manager, doc, setAbsolute} = makeHarness()
+    setAbsolute({x: 20, y: 30}, 'under')
     const release = manager.registerBlockView(block as any)
     const text = document.createElement('span')
     container.appendChild(text)
@@ -1208,8 +1323,17 @@ describe('BlockPlacementManager', () => {
   })
 
   it('previews pointer movement and commits one placement update on pointerup', () => {
-    const {container, host, props, block, manager, doc, releaseLease} = makeHarness()
-    props['placement'] = {mode: 'absolute', x: 20, y: 30}
+    const {
+      container,
+      host,
+      props,
+      block,
+      manager,
+      doc,
+      releaseLease,
+      setAbsolute,
+    } = makeHarness()
+    setAbsolute()
 
     expect(manager.startDrag(pointer('pointerdown', {clientX: 200, clientY: 100}), block as any)).toBeTrue()
     expect(manager.state).toBe('armed')
@@ -1225,7 +1349,7 @@ describe('BlockPlacementManager', () => {
     window.dispatchEvent(pointer('pointerup', {clientX: 250, clientY: 125}))
 
     expect(manager.state).toBe('idle')
-    expect(props['placement']).toEqual({mode: 'absolute', x: 150, y: 55, unit: 'px'})
+    expect(props['position']).toEqual({x: 70, y: 55})
     expect(host.style.transform).toBe('')
     expect(doc.virtualization.acquireBlockViewLease).toHaveBeenCalledOnceWith(['image-1'])
     expect(releaseLease).toHaveBeenCalledTimes(1)
@@ -1237,8 +1361,8 @@ describe('BlockPlacementManager', () => {
   })
 
   it('uses the measured placement scale for pointer drag geometry', () => {
-    const {container, host, props, block, manager, doc} = makeHarness()
-    props['placement'] = {mode: 'absolute', x: 20, y: 30}
+    const {container, host, props, block, manager, doc, setAbsolute} = makeHarness()
+    setAbsolute()
     setRect(container, {left: 100, top: 50, width: 1000})
     // Deliberately conflict with the real DOM scale. Placement interactions
     // must follow the containing plane, not a configured toolbar value.
@@ -1255,7 +1379,7 @@ describe('BlockPlacementManager', () => {
 
     window.dispatchEvent(pointer('pointerup', {clientX: 250, clientY: 120}))
 
-    expect(props['placement']).toEqual({mode: 'absolute', x: 125, y: 40, unit: 'px'})
+    expect(props['position']).toEqual({x: 45, y: 40})
     expect(host.style.transform).toBe('')
 
     manager.destroy()
@@ -1263,8 +1387,8 @@ describe('BlockPlacementManager', () => {
   })
 
   it('preserves selection while armed and releases protection after a click', () => {
-    const {container, props, block, manager, doc} = makeHarness()
-    props['placement'] = {mode: 'absolute', x: 20, y: 30}
+    const {container, block, manager, doc, setAbsolute} = makeHarness()
+    setAbsolute()
 
     expect(manager.startDrag(
       pointer('pointerdown', {clientX: 200, clientY: 100}),

@@ -637,7 +637,7 @@ describe("ImgToolbarPlugin lifecycle", () => {
       nodeType: BlockNodeType.block,
       props: {
         src: "https://example.com/a.png",
-        placement: {mode: "absolute", x: 24, y: 32},
+        position: {x: 24, y: 32},
       },
       meta: {},
       children: [],
@@ -682,6 +682,10 @@ describe("ImgToolbarPlugin lifecycle", () => {
       meta: {},
       children: [],
     });
+    const placementWidth = Math.max(
+      1,
+      h.imageBlock.hostElement.parentElement?.clientWidth ?? 0,
+    );
     h.plugin.init();
 
     h.selectionValue.current = h.imageSelection;
@@ -697,10 +701,14 @@ describe("ImgToolbarPlugin lifecycle", () => {
         height: 180,
         wrap: true,
         side: "auto",
-        x: 0.36,
+        x: jasmine.any(Number),
         gap: 12,
       },
     });
+    expect(paragraph.children[0].attributes.x).toBeCloseTo(
+      36 / placementWidth,
+      8,
+    );
     expect(h.doc.placement.resolveFlowAnchor).toHaveBeenCalledOnceWith(h.imageBlock);
     expect(h.doc.placement.reanchorToFlow).toHaveBeenCalledTimes(1);
     expect(h.doc.placement.setObjectLayout).not.toHaveBeenCalled();
@@ -709,13 +717,8 @@ describe("ImgToolbarPlugin lifecycle", () => {
     h.rootHost.remove();
   }));
 
-  it("inserts an absolute image into the covered text line when enabling wrapping", fakeAsync(() => {
+  it("reanchors an absolute image to root flow before enabling wrapping", fakeAsync(() => {
     const h = makeHarness();
-    const textBlock = {
-      id: "paragraph-1",
-      textLength: 8,
-      containerElement: document.createElement("div"),
-    };
     h.placementMode.current = "absolute";
     h.doc.placement.getState.and.returnValue({
       mode: "absolute",
@@ -738,11 +741,6 @@ describe("ImgToolbarPlugin lifecycle", () => {
         children: [{insert: "说明", attributes: {bold: true}}],
       }],
     });
-    spyOn(h.plugin as any, "_resolveWrappedInlineTextTarget").and.returnValue({
-      block: textBlock,
-      offset: 3,
-      normalizedX: 0.25,
-    });
     h.plugin.init();
 
     h.selectionValue.current = h.imageSelection;
@@ -750,36 +748,14 @@ describe("ImgToolbarPlugin lifecycle", () => {
     tick(250);
     h.toolbarClicks.next({name: "object-layout", value: "wrap"});
 
-    expect(h.applyTextDelta).toHaveBeenCalledOnceWith("paragraph-1", [
-      {retain: 3},
-      {
-        insert: {image: "https://example.com/a.png"},
-        attributes: {
-          width: 320,
-          height: 180,
-          wrap: true,
-          side: "auto",
-          x: 0.25,
-          gap: 12,
-        },
-      },
-      {insert: " "},
-      {insert: "说明", attributes: {bold: true}},
-    ]);
-    expect(h.deleteBlocks).toHaveBeenCalledOnceWith(
-      "placement-layout",
-      0,
-      1,
-      true,
-    );
-    expect(h.replaceWithSnapshots).not.toHaveBeenCalled();
-    expect(h.doc.placement.reanchorToFlow).not.toHaveBeenCalled();
-    expect(h.setSelection).toHaveBeenCalledOnceWith({
-      blockId: "paragraph-1",
-      type: "text",
-      index: 7,
-      length: 0,
-    });
+    expect(h.doc.placement.resolveFlowAnchor)
+      .toHaveBeenCalledOnceWith(h.imageBlock);
+    expect(h.doc.placement.reanchorToFlow)
+      .toHaveBeenCalledOnceWith(h.imageBlock, jasmine.anything());
+    expect(h.replaceWithSnapshots).toHaveBeenCalledTimes(1);
+    expect(h.applyTextDelta).not.toHaveBeenCalled();
+    expect(h.deleteBlocks).not.toHaveBeenCalled();
+    expect(h.setSelection).not.toHaveBeenCalled();
 
     h.plugin.destroy();
     h.rootHost.remove();
@@ -795,7 +771,7 @@ describe("ImgToolbarPlugin lifecycle", () => {
       nodeType: BlockNodeType.block,
       props: {
         src: "https://example.com/a.png",
-        placement: {mode: "absolute", x: 24, y: 32},
+        position: {x: 24, y: 32},
       },
       meta: {},
       children: [],

@@ -1,5 +1,5 @@
 import { Component, HostBinding } from '@angular/core'
-import { BaseBlockComponent, NoEditableBlockNative, resolveBlockPlacement } from '@ccc/blockcraft'
+import { BaseBlockComponent, NoEditableBlockNative } from '@ccc/blockcraft'
 import { takeUntil } from 'rxjs'
 import { PlaceableProps } from '../../core/placement'
 
@@ -11,13 +11,13 @@ import { PlaceableProps } from '../../core/placement'
  * 用 @HostBinding 装饰器而不是 @Component 的 host 元数据：host 元数据**不随继承传递**，装饰器属性会。
  * 必须是 @Component（空 template、不直接使用）而非 @Directive：BaseBlockComponent 本身是 @Component，
  * Angular 禁止 Directive 继承 Component（NG0903），且这个错 ng build 不报、只在运行时炸。
- * 三态判定与 core/placement.ts 的 placementModeFromProps 同源语义：
- * 标准 placement absolute（块在 layout 容器里）> 有 float = 环绕 > 独占（走默认 block 流）。
+ * 三态判定遵循同一结构语义：块在 placement-layout 中就是 absolute；
+ * 其余流式块再由 float 区分环绕与独占。
  */
 @Component({ selector: 'placeable-deco-base', template: ``, standalone: true })
 export abstract class PlaceableDecoBase<M extends NoEditableBlockNative & { props: PlaceableProps }> extends BaseBlockComponent<M> {
   protected get isAbsolutePlacement(): boolean {
-    return resolveBlockPlacement(this.props.placement).mode === 'absolute'
+    return this.doc.placement.isInAbsoluteLayout(this.id)
   }
   /** 环绕（有 float 且非悬浮）才 float 左/右。 */
   @HostBinding('style.float') get hostFloat(): 'left' | 'right' | null { return !this.isAbsolutePlacement && this.props.float ? this.props.float : null }
@@ -85,7 +85,7 @@ export abstract class PlaceableDecoBase<M extends NoEditableBlockNative & { prop
     return dimensions ? `${dimensions.ar}` : null
   }
   /**
-   * absolute 层级完全沿用 BaseBlock 的标准 placement.layer 投影；模板只补充流内 float
+   * absolute 层级完全沿用 BaseBlock 的标准 placementLayer 投影；模板只补充流内 float
    * 的点击保障。覆盖同名 getter可复用继承的 HostBinding，不再维护第二套 props.z。
    */
   override get placementZIndex(): number | null {

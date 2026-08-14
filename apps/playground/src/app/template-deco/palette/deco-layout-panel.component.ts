@@ -3,12 +3,10 @@ import {
   BlockCraftDoc,
   BlockLockError,
   BlockPlacementLayer,
-  resolveBlockPlacement,
-  resolvePlacementXInPixels,
 } from '@ccc/blockcraft'
 import { Subscription } from 'rxjs'
 import { ActiveDecoService, DecoBlockRef } from '../core/active-deco.service'
-import { applyPlacement, isPlaceableDeco, placementModeFromProps, PlacementMode, PlaceableProps } from '../core/placement'
+import { applyPlacement, flowPlacementModeFromProps, isPlaceableDeco, PlacementMode, PlaceableProps } from '../core/placement'
 import { pageColumnContentWidth } from '../decos/_shared/page-size'
 
 /** 面板视图模型：选中物料的一次完整解析结果。一组同源派生数据收成一个对象（P1 单一真源），不拆散 signal。 */
@@ -38,7 +36,7 @@ interface PanelVM {
 const placeholdersOf = (b: DecoBlockRef): PanelVM['ph'] => {
   const el = (b as unknown as { hostElement?: HTMLElement }).hostElement
   const p = b.props as PlaceableProps | undefined
-  if (placementModeFromProps(p) === 'float') {
+  if (flowPlacementModeFromProps(p) === 'float') {
     const side = p?.float === 'right' ? 'right' : 'left'
     let sidePct = '2'
     try { const w = pageColumnContentWidth(el!); if (w) sidePct = String(Math.round((16 / w) * 1000) / 10) } catch { /* 量不到列宽就用近似值 */ }
@@ -85,20 +83,16 @@ const freezeVM = (
 
 /** 纯函数：块 + 锁解析 → 面板 VM。所有同源派生数据一次重建，避免散 signal 状态不一致。 */
 const toVM = (doc: BlockCraftDoc, blockId: string, b: DecoBlockRef): PanelVM => {
-  const mode = placementModeFromProps(b.props)
-  const position = resolveBlockPlacement(b.props?.placement)
-  const host = (b as unknown as {hostElement?: HTMLElement}).hostElement
+  const position = doc.placement.getState(blockId)
+  const mode = position.mode === 'absolute'
+    ? 'absolute'
+    : flowPlacementModeFromProps(b.props)
   return {
     ...freezeVM(doc, blockId),
     mode,
     floatSide: b.props?.float === 'right' ? 'right' : 'left',
     align: b.props?.align ?? 'left',
-    x: mode === 'absolute'
-      ? Math.round(resolvePlacementXInPixels(
-          b.props?.placement,
-          host?.parentElement?.clientWidth ?? 0,
-        ))
-      : null,
+    x: mode === 'absolute' ? Math.round(position.x) : null,
     y: mode === 'absolute' ? position.y : b.props?.y ?? null,
     layer: position.layer,
     deg: (b.props as PlaceableProps | undefined)?.deg ?? null,

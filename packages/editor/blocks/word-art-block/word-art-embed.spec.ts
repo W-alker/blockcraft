@@ -14,7 +14,8 @@ describe('inline WordArt embed', () => {
       fontSize: 42,
       fillType: 'solid',
       fillColor: '#FF0000',
-      placement: {mode: 'absolute', x: 10, y: 30},
+      position: {x: 10, y: 30},
+      placementLayer: 'under',
     }, [{insert: '发布会'}])
 
     const view = inlineWordArtEmbedConverter.toView(delta)
@@ -40,7 +41,8 @@ describe('inline WordArt embed', () => {
     )
     expect(data.props.fontFamily).toBe('serif')
     expect(data.props.rotation).toBe(12)
-    expect(data.props.placement).toBeUndefined()
+    expect(data.props['position']).toBeUndefined()
+    expect(data.props['placementLayer']).toBeUndefined()
     expect(data.text).toEqual([{insert: '发布会'}])
     expect(data.width).toBe(280)
     expect(data.height).toBe(88)

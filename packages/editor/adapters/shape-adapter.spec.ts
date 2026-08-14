@@ -61,7 +61,8 @@ describe('Shape adapters', () => {
       textColor: '#111827',
       shapeTextAlign: 'right',
       verticalAlign: 'bottom',
-      placement: {mode: 'absolute', x: 25, y: 120, layer: 'under'},
+      position: {x: 25, y: 120},
+      placementLayer: 'under',
     }
 
     const html = await htmlAdapter.toHtml(rootSnapshot([
@@ -90,7 +91,8 @@ describe('Shape adapters', () => {
       strokeStyle: 'dashed',
       shapeTextAlign: 'right',
       verticalAlign: 'bottom',
-      placement: {mode: 'absolute', x: 25, y: 120, layer: 'under'},
+      position: {x: 25, y: 120},
+      placementLayer: 'under',
     }))
     expect((imported.children[0] as IBlockSnapshot).children)
       .toEqual([{insert: '下一步', attributes: {'a:bold': true}}])
@@ -104,7 +106,8 @@ describe('Shape adapters', () => {
     )
     image.props = {
       ...image.props,
-      placement: {mode: 'absolute', x: 12.5, y: 240, layer: 'under'},
+      position: {x: 12.5, y: 240},
+      placementLayer: 'under',
     }
 
     const html = await htmlAdapter.toHtml(rootSnapshot([

@@ -19,7 +19,8 @@ describe('inline shape embed', () => {
       textColor: '#0F172A',
       shapeTextAlign: 'right',
       verticalAlign: 'bottom',
-      placement: {mode: 'absolute', x: 12, y: 40},
+      position: {x: 12, y: 40},
+      placementLayer: 'under',
     }, [{insert: '流程图'}], {
       wrap: true,
       side: 'left',
@@ -41,7 +42,8 @@ describe('inline shape embed', () => {
     const data = readInlineShapeDelta(roundTrip)
     expect(data.props.shapeType).toBe('ellipse')
     expect(data.props.rotation).toBe(25)
-    expect(data.props.placement).toBeUndefined()
+    expect(data.props['position']).toBeUndefined()
+    expect(data.props['placementLayer']).toBeUndefined()
     expect(data.text).toEqual([{insert: '流程图'}])
     expect(data).toEqual(jasmine.objectContaining({
       width: 210,

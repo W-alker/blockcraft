@@ -12,10 +12,6 @@ export interface InlineImageDropTarget {
   offset: number
 }
 
-const rectsOverlap = (a: DOMRect, b: DOMRect): boolean =>
-  Math.min(a.right, b.right) > Math.max(a.left, b.left) &&
-  Math.min(a.bottom, b.bottom) > Math.max(a.top, b.top);
-
 export interface InlineImageDragProxyPosition {
   left: number
   top: number
@@ -280,37 +276,4 @@ export function resolveInlineImageDropTarget(
       ? 0
       : nearest.block.textLength,
   };
-}
-
-/**
- * Resolves the editable text line visually covered by an absolute image.
- * Unlike the drag resolver's nearest-block fallback, this conversion helper
- * only accepts a block whose box actually overlaps the image and never
- * targets editable descendants such as the image's own caption.
- */
-export function resolveInlineImageOverlapTarget(
-  doc: BlockCraft.Doc,
-  sourceBlockId: string,
-  imageRect: DOMRect,
-): InlineImageDropTarget | null {
-  if (imageRect.width <= 0 || imageRect.height <= 0) return null;
-
-  const probeX = clampInside(
-    imageRect.left + Math.min(24, imageRect.width / 2),
-    imageRect.left,
-    imageRect.right,
-  );
-  const probeY = clampInside(
-    imageRect.top + Math.min(12, imageRect.height / 2),
-    imageRect.top,
-    imageRect.bottom,
-  );
-  const target = resolveInlineImageDropTarget(doc, probeX, probeY);
-  if (!target) return null;
-
-  const targetPath = doc.model.getPath(target.block.id);
-  if (!targetPath || targetPath.includes(sourceBlockId)) return null;
-
-  const targetRect = target.block.containerElement.getBoundingClientRect();
-  return rectsOverlap(imageRect, targetRect) ? target : null;
 }

@@ -9,7 +9,6 @@ import {
 import {fromEvent, takeUntil} from 'rxjs'
 import {
   EditableBlockComponent,
-  resolvePlacementXInPixels,
 } from '../../framework'
 import {
   ShapeResizerComponent,
@@ -42,7 +41,7 @@ const rotationTransform = (rotation: number): string =>
       data-bc-fake-range-overlay-host
       data-bc-scale-font-on-corner
       [attr.data-bc-resize-preview-anchor]="
-        wordArtProps.placement?.mode === 'absolute' ? null : 'layout'
+        isAbsolute ? null : 'layout'
       "
       [style.width.px]="wordArtProps.width"
       [style.height.px]="wordArtProps.height"
@@ -143,6 +142,10 @@ export class WordArtBlockComponent extends EditableBlockComponent<WordArtBlockMo
     )
   }
 
+  get isAbsolute(): boolean {
+    return this.doc.placement?.isInAbsoluteLayout?.(this.id) ?? false
+  }
+
   enterEditing(selectAll = false): void {
     if (this.isReadonly) return
     this.setInlineRange(
@@ -168,14 +171,16 @@ export class WordArtBlockComponent extends EditableBlockComponent<WordArtBlockMo
         : {}),
     }
 
-    if (current.placement?.mode === 'absolute') {
-      const containerWidth = this.placementContainer?.clientWidth ?? 0
-      next.placement = {
-        ...current.placement,
-        x: resolvePlacementXInPixels(current.placement, containerWidth) +
-          event.offsetX,
-        y: (current.placement.y ?? 0) + event.offsetY,
-        unit: 'px',
+    const placement = this.doc.placement?.getState?.(this.id) ?? {
+      mode: 'relative' as const,
+      x: 0,
+      y: 0,
+      layer: 'over' as const,
+    }
+    if (placement.mode === 'absolute') {
+      next.position = {
+        x: placement.x + event.offsetX,
+        y: placement.y + event.offsetY,
       }
     }
     this.updateProps(next)

@@ -2,7 +2,6 @@ import {generateId, NoEditableBlockNative} from "../../framework";
 import {
   BlockNodeType,
   BlockObjectSizeProps,
-  BlockPositionState,
   DeltaInsert,
   IBlockSchemaOptions,
 } from "../../framework";
@@ -20,7 +19,6 @@ export interface ImageBlockModel extends NoEditableBlockNative {
   props: BlockObjectSizeProps & {
     src: string;
     align?: 'center' | 'right'
-    placement?: BlockPositionState
   }
 }
 

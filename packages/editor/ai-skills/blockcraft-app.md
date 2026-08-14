@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-14
+> Last updated: 2026-08-15
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -384,7 +384,7 @@ from the first page. Disable/destroy restores the original parent, sibling
 position and inline style; host code must not reparent it while pagination is
 enabled. If removing the header from its original normal flow moves the root,
 the plugin moves the whole root instead of rewriting placement data. Absolute
-`placement.x/y` always use fixed layout pixels from the root content-box origin;
+`position.x/y` always use fixed layout pixels from the root content-box origin;
 root padding is excluded in continuous view, pagination, readonly rendering and
 fixed-page export. Undo history and collaborative data are not rewritten when
 the view changes.
@@ -486,8 +486,7 @@ The generated `.bc-print-content` remains a `data-bc-placement-container`, so
 hosts must not strip that attribute when mounting or cloning print pages; it
 owns the normal under/flow/over stacking tiers. In flow, live pagination, and
 print, the placement plane starts at `0/0` inside the root content box and fills
-that content width. Fixed `placement.x/y` never include root padding; legacy
-percentage x is resolved once against content width by the readonly renderer.
+that content width. Fixed `position.x/y` never include root padding.
 A non-empty placement snapshot without its readonly
 DOM plane is a strict `layout-diverged` failure, not a silent content drop.
 If a custom render provider disables pagination, changes root sizing, or rebuilds
@@ -761,7 +760,7 @@ remain disabled/false respectively.
   add no schema lookup, callback, or layout read to ordinary scroll frames.
 - The hidden zero-height root `placement-layout` is projected separately from
   normal flow. A model-only index compares each child's root-relative
-  `placement.y` plus estimated height with the root-relative viewport and one
+  `position.y` plus estimated height with the root-relative viewport and one
   viewport of pre-rendering. A hit mounts the layout root unit; no hit allows
   it to detach unless Selection or an interaction lease owns it. The index
   reuses `wr/ar` media sizing, includes rotated fixed-size shape bounds and
@@ -1197,7 +1196,7 @@ disposes this service automatically.
 it as a plugin. The optional `DocConfig.placement` only adapts mode transitions
 to a host layout domain. Its synchronous `transitionMode(context)` hook may call
 `context.applyDefault()` or perform a complete host transition and return
-`true`; `false`/`void` falls back to the standard props transition. The hook is
+`true`; `false`/`void` falls back to the standard structural transition. The hook is
 offered even when the current core mode equals the requested mode, so a host may
 refine multiple domain states that map to core relative flow.
 
@@ -1242,18 +1241,27 @@ children remain pointer-interactive and share the root coordinate/stacking scope
 Returning to top-bottom moves the object back near its current visual position;
 an empty layout is removed after the model graph settles.
 
+Mode is not stored in props. An ordinary direct root child is relative flow; a
+direct child of `placement-layout` is absolute. Absolute children persist one
+atomic `position: {x, y}` value in root-content layout pixels plus optional
+`placementLayer: 'under'`; omitted layer means `over`. Relative children carry
+neither field. Live and Snapshot DOM project
+`data-bc-placement="absolute"` only for absolute objects. They never emit a
+relative marker, and consumers must not treat that DOM attribute as model data.
+
 Absolute objects form one total back-to-front stack: `under` children, ordinary
 flow content as a virtual boundary, then `over` children. Sibling order inside
 the placement layout defines order within each tier. The one-step movement APIs
 swap adjacent objects in the same tier; the highest `under` object moving
 forward becomes the lowest `over` object, and the lowest `over` object moving
 backward becomes the highest `under` object. These crossings update child order
-and `placement.layer` in one Yjs transaction. The lowest `under` and highest
+and `placementLayer` in one Yjs transaction without rewriting `position`. The
+lowest `under` and highest
 `over` objects are the disabled outer boundaries.
 
 `startDrag()` is Pointer Events-only. The initiating `pointerdown` arms the
 interaction, `pointermove` previews via `translate3d`, and `pointerup` commits
-one coordinate update. `pointercancel`, Escape and window blur abort. Do not
+one atomic `{x, y}` coordinate-object update. `pointercancel`, Escape and window blur abort. Do not
 wire object positioning to native `dragstart / dragover / drop`; native HTML5
 drag/drop remains reserved for external browser/file interoperability.
 
@@ -1282,7 +1290,11 @@ adapters and coordinate tooling, but normal UI should call
 
 Returning an absolute block to relative flow first resolves its current visual
 center against mounted ordinary root-flow siblings, then moves it before/after
-the nearest sibling and clears `placement` in one transaction.
+the nearest sibling and clears `position` plus `placementLayer` in one
+transaction.
+Absolute → inline/wrap conversion follows the same root reanchor first; visual
+overlap with another absolute object never makes that object's editable child a
+conversion target.
 When implementing another atomic conversion, resolve the stable-id anchor
 before changing DOM/model state and consume it inside the conversion
 transaction:
@@ -1291,7 +1303,7 @@ transaction:
 const anchor = doc.placement.resolveFlowAnchor(block)
 doc.crud.transact(() => {
   doc.placement.reanchorToFlow(block, anchor)
-  // clear placement or replace the reanchored block here
+  // clear position/placementLayer or replace the reanchored block here
 })
 ```
 
