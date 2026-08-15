@@ -28,6 +28,7 @@ export class BlockPlacementStackCoordinator {
     if (
       !block ||
       !this.runtime.supports(block, 'absolute') ||
+      this.runtime.isInObjectGroup(block) ||
       this.runtime.isReadonly(block) ||
       (layer !== 'under' && layer !== 'over')
     ) {
@@ -88,6 +89,7 @@ export class BlockPlacementStackCoordinator {
     if (
       !block ||
       (requireWritable && this.runtime.isReadonly(block)) ||
+      this.runtime.isInObjectGroup(block) ||
       !this.runtime.supports(block, 'absolute')
     ) {
       return null

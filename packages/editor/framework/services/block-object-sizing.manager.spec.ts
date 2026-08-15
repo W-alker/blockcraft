@@ -1,5 +1,6 @@
 import {
   deriveObjectSizeFromPixels,
+  BlockObjectSizingManager,
   normalizeObjectSize,
   resolveObjectDimensions,
 } from './block-object-sizing.manager'
@@ -67,5 +68,25 @@ describe('block object sizing', () => {
     expect(
       resolveObjectDimensions({wr: 80, ar: 2}, 0, imageCapability),
     ).toBeNull()
+  })
+
+  it('resolves grouped ratio objects against the fixed group width', () => {
+    const doc = {
+      schemas: {
+        get: () => ({metadata: {objectSizing: imageCapability}}),
+      },
+      model: {
+        getParentId: (id: string) => id === 'image' ? 'group' : null,
+        getProps: (id: string) => id === 'group' ? {width: 376} : {},
+      },
+      placement: {
+        isObjectGroup: (id: string) => id === 'group',
+      },
+    }
+    const manager = new BlockObjectSizingManager(doc as any)
+
+    expect(manager.getReferenceWidth('image')).toBe(360)
+    expect(manager.resolveForBlock('image', 'image', {wr: 50, ar: 2}))
+      .toEqual(jasmine.objectContaining({width: 180, height: 90}))
   })
 })

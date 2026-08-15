@@ -4,9 +4,9 @@
 >
 > For creating new plugins, see `blockcraft-plugin.md`.
 >
-> Last updated: 2026-08-13
+> Last updated: 2026-08-15
 
-This index covers all 27 built-in plugins. Pick the category file that matches your task — don't read all files at once.
+This index covers all 28 built-in plugins. Pick the category file that matches your task — don't read all files at once.
 
 ## Category Router
 
@@ -14,7 +14,7 @@ This index covers all 27 built-in plugins. Pick the category file that matches y
 |----------|------|---------|
 | Text Formatting | `blockcraft-plugins-formatting.md` | FloatTextToolbarPlugin, TextMarkerPlugin, FixedTextToolbarComponent |
 | Block Management | `blockcraft-plugins-block.md` | BlockControllerPlugin, BlockGapCreatorPlugin, BlockTransformerPlugin, OrderedBlockPlugin |
-| Block Toolbars | `blockcraft-plugins-toolbar.md` | AttachmentExtensionPlugin, ImgToolbarPlugin, ShapeToolbarPlugin, TextBoxToolbarPlugin, WordArtToolbarPlugin, BookmarkBlockExtensionPlugin, CalloutToolbarPlugin, DividerExtensionPlugin, EmbedFrameExtensionPlugin, FormulaBlockExtensionPlugin |
+| Block Toolbars | `blockcraft-plugins-toolbar.md` | AttachmentExtensionPlugin, ImgToolbarPlugin, ObjectGroupToolbarPlugin, ShapeToolbarPlugin, TextBoxToolbarPlugin, WordArtToolbarPlugin, BookmarkBlockExtensionPlugin, CalloutToolbarPlugin, DividerExtensionPlugin, EmbedFrameExtensionPlugin, FormulaBlockExtensionPlugin |
 | Inline & Keyboard | `blockcraft-plugins-inline.md` | InlineLinkExtension, MentionPlugin, CodeInlineEditorBinding, TableBlockBinding |
 | Utilities | `blockcraft-plugins-util.md` | PlaceholderPlugin, FindReplacePlugin, PasteFormatSelectorPlugin, DemoPresentationPlugin, TranslatePlugin, PaginationPlugin |
 
@@ -31,6 +31,7 @@ This index covers all 27 built-in plugins. Pick the category file that matches y
 | `OrderedBlockPlugin` | `block` | none (zero-config) |
 | `AttachmentExtensionPlugin` | `toolbar` | `extraItems`, `onPreview`, `onExtraItemClick` |
 | `ImgToolbarPlugin` | `toolbar` | `extraItems`, `onExtraItemClick` |
+| `ObjectGroupToolbarPlugin` | `toolbar` | none (zero-config) |
 | `ShapeToolbarPlugin` | `toolbar` | none (zero-config) |
 | `TextBoxToolbarPlugin` | `toolbar` | none (zero-config) |
 | `WordArtToolbarPlugin` | `toolbar` | none (zero-config) |
@@ -67,6 +68,7 @@ const plugins = [
   new OrderedBlockPlugin(),
   new AttachmentExtensionPlugin({ onPreview: handlePreview }),
   new ImgToolbarPlugin(),
+  new ObjectGroupToolbarPlugin(), // before per-flavour object pointer plugins
   new ShapeToolbarPlugin(),
   new TextBoxToolbarPlugin(),
   new WordArtToolbarPlugin(),
@@ -97,6 +99,7 @@ inherited/collided are:
 | `CodeInlineEditorBinding` | `code-inline-editor-binding` |
 | `TableBlockBinding` | `table-block-binding` |
 | `BookmarkBlockExtensionPlugin` | `bookmark-block-extension` |
+| `ObjectGroupToolbarPlugin` | `object-group-toolbar` |
 
 ## Checklist
 

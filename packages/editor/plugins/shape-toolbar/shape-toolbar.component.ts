@@ -112,20 +112,22 @@ export type ShapeToolbarAction =
         <i class="bc_icon bc_xuxian"></i>
       </button>
 
-      <span class="shape-toolbar__divider"></span>
+      @if (!isGrouped) {
+        <span class="shape-toolbar__divider"></span>
 
-      @for (item of layoutOptions; track item.value) {
-        <button
-          type="button"
-          [csTooltip]="item.label"
-          [attr.aria-label]="item.label"
-          [class.active]="objectLayout === item.value"
-          (click)="action.emit({name: 'object-layout', value: item.value})">
-          <i [class]="'bc_icon ' + item.icon"></i>
-        </button>
+        @for (item of layoutOptions; track item.value) {
+          <button
+            type="button"
+            [csTooltip]="item.label"
+            [attr.aria-label]="item.label"
+            [class.active]="objectLayout === item.value"
+            (click)="action.emit({name: 'object-layout', value: item.value})">
+            <i [class]="'bc_icon ' + item.icon"></i>
+          </button>
+        }
       }
 
-      @if (isAbsolute) {
+      @if (isAbsolute && !isGrouped) {
         <span class="shape-toolbar__divider"></span>
         <span class="shape-toolbar__tooltip-host" csTooltip="上移一层">
           <button
@@ -383,6 +385,10 @@ export class ShapeToolbarComponent {
   get isAbsolute(): boolean {
     return this.shapeBlock.doc.placement.getState(this.shapeBlock).mode ===
       'absolute'
+  }
+
+  get isGrouped(): boolean {
+    return this.shapeBlock.doc.placement.isInObjectGroup?.(this.shapeBlock) ?? false
   }
 
   get canMoveForward(): boolean {

@@ -53,21 +53,23 @@ const ALIGN_LIST = [
                                [active]="imgBlock.props.align === item.value"></bc-float-toolbar-item>
       }
 
-      <span class="bc-float-toolbar__divider"></span>
-      @for (item of LAYOUT_OPTIONS; track item.value) {
-        @if (item.value !== 'wrap' || isAbsolute) {
-          <bc-float-toolbar-item
-            [icon]="item.icon"
-            name="object-layout"
-            [value]="item.value"
-            [csTooltip]="item.label"
-            [attr.aria-label]="item.label"
-            [active]="objectLayout === item.value">
-          </bc-float-toolbar-item>
+      @if (!isGrouped) {
+        <span class="bc-float-toolbar__divider"></span>
+        @for (item of LAYOUT_OPTIONS; track item.value) {
+          @if (item.value !== 'wrap' || isAbsolute) {
+            <bc-float-toolbar-item
+              [icon]="item.icon"
+              name="object-layout"
+              [value]="item.value"
+              [csTooltip]="item.label"
+              [attr.aria-label]="item.label"
+              [active]="objectLayout === item.value">
+            </bc-float-toolbar-item>
+          }
         }
       }
 
-      @if (isAbsolute) {
+      @if (isAbsolute && !isGrouped) {
         <span class="bc-float-toolbar__divider"></span>
         <bc-float-toolbar-item
           icon="bc_cengji-shangyi"
@@ -140,6 +142,10 @@ export class ImageToolbar {
   get isAbsolute(): boolean {
     return this._imgBlock?.doc.placement.getState(this._imgBlock).mode ===
       'absolute'
+  }
+
+  get isGrouped(): boolean {
+    return this._imgBlock?.doc.placement.isInObjectGroup?.(this._imgBlock) ?? false
   }
 
   get canMoveForward(): boolean {

@@ -233,6 +233,10 @@ export class TextBoxBlockComponent extends BaseBlockComponent<TextBoxBlockModel>
   }
 
   get placementContainer(): HTMLElement | undefined {
+    if (this.doc.placement?.isInObjectGroup?.(this.id)) {
+      const groupHost = this.hostElement.closest<HTMLElement>('[data-bc-object-group]')
+      return this.doc.objectSizing.rootContentElement ?? groupHost?.parentElement ?? undefined
+    }
     return this.hostElement.closest<HTMLElement>('[data-bc-placement-container]') ??
       this.hostElement.parentElement ??
       undefined
@@ -275,14 +279,14 @@ export class TextBoxBlockComponent extends BaseBlockComponent<TextBoxBlockModel>
       }
     }
 
-    this.updateProps(next)
+    this.doc.placement.updateObjectGeometry(this, next)
     const surface = this._surface?.nativeElement
     if (surface) surface.style.transform = rotationTransform(current.rotation)
   }
 
   commitRotation(event: ShapeRotateCommit): void {
     if (this.isReadonly) return
-    this.updateProps({rotation: event.rotation})
+    this.doc.placement.updateObjectGeometry(this, {rotation: event.rotation})
     const surface = this._surface?.nativeElement
     if (surface) surface.style.transform = rotationTransform(event.rotation)
   }

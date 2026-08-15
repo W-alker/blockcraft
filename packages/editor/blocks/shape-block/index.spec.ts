@@ -728,17 +728,17 @@ describe('Shape block domain', () => {
     shell.style.width = '48px'
     shell.style.height = '32px'
     shell.style.transform = 'translate(132px, 0px)'
-    const updateProps = jasmine.createSpy('updateProps')
+    const updateObjectGeometry = jasmine.createSpy('updateObjectGeometry')
+    const context = {
+      isReadonly: false,
+      shapeProps: {},
+      doc: {placement: {updateObjectGeometry}},
+      id: 'shape-1',
+      _shapeShell: {nativeElement: shell},
+    } as unknown as ShapeBlockComponent
 
     ShapeBlockComponent.prototype.onResizeCommit.call(
-      {
-        isReadonly: false,
-        shapeProps: {},
-        doc: {},
-        id: 'shape-1',
-        updateProps,
-        _shapeShell: {nativeElement: shell},
-      } as unknown as ShapeBlockComponent,
+      context,
       {
         width: 48,
         height: 32,
@@ -748,7 +748,7 @@ describe('Shape block domain', () => {
       },
     )
 
-    expect(updateProps).toHaveBeenCalledOnceWith({
+    expect(updateObjectGeometry).toHaveBeenCalledOnceWith(context, {
       width: 48,
       height: 32,
     })
@@ -761,26 +761,27 @@ describe('Shape block domain', () => {
     const shell = document.createElement('div')
     shell.style.width = '120px'
     shell.style.height = '80px'
-    const updateProps = jasmine.createSpy('updateProps')
+    const updateObjectGeometry = jasmine.createSpy('updateObjectGeometry')
+    const context = {
+      isReadonly: false,
+      shapeProps: {},
+      doc: {
+        placement: {
+          getState: () => ({
+            mode: 'absolute',
+            x: 10,
+            y: 20,
+            layer: 'over',
+          }),
+          updateObjectGeometry,
+        },
+      },
+      id: 'shape-1',
+      _shapeShell: {nativeElement: shell},
+    } as unknown as ShapeBlockComponent
 
     ShapeBlockComponent.prototype.onResizeCommit.call(
-      {
-        isReadonly: false,
-        shapeProps: {},
-        doc: {
-          placement: {
-            getState: () => ({
-              mode: 'absolute',
-              x: 10,
-              y: 20,
-              layer: 'over',
-            }),
-          },
-        },
-        id: 'shape-1',
-        updateProps,
-        _shapeShell: {nativeElement: shell},
-      } as unknown as ShapeBlockComponent,
+      context,
       {
         width: 120,
         height: 80,
@@ -790,7 +791,7 @@ describe('Shape block domain', () => {
       },
     )
 
-    expect(updateProps).toHaveBeenCalledOnceWith({
+    expect(updateObjectGeometry).toHaveBeenCalledOnceWith(context, {
       width: 120,
       height: 80,
       position: {x: 30, y: 25},
@@ -799,20 +800,24 @@ describe('Shape block domain', () => {
 
   it('persists a rotation commit through shape props', () => {
     const shell = document.createElement('div')
-    const updateProps = jasmine.createSpy('updateProps')
+    const updateObjectGeometry = jasmine.createSpy('updateObjectGeometry')
+    const context = {
+      isReadonly: false,
+      doc: {placement: {updateObjectGeometry}},
+      _shapeShell: {nativeElement: shell},
+    } as unknown as ShapeBlockComponent
 
     ShapeBlockComponent.prototype.onRotateCommit.call(
-      {
-        isReadonly: false,
-        updateProps,
-        _shapeShell: {nativeElement: shell},
-      } as unknown as ShapeBlockComponent,
+      context,
       {
         rotation: 37.5,
       },
     )
 
-    expect(updateProps).toHaveBeenCalledOnceWith({rotation: 37.5})
+    expect(updateObjectGeometry).toHaveBeenCalledOnceWith(
+      context,
+      {rotation: 37.5},
+    )
     expect(shell.style.transform).toBe('rotate(37.5deg)')
   })
 })

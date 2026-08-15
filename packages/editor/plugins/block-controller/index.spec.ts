@@ -197,7 +197,7 @@ describe("BlockControllerPlugin selection range handling", () => {
     expect(layoutMenu.items.map((item: {label: string}) => item.label))
       .toEqual(["上下型", "衬于文字下方", "浮于文字上方"]);
     expect(layoutMenu.items.map((item: {icon: string}) => item.icon))
-      .toEqual(["bc_fuwenben-shangxia", "bc_cengji-xia", "bc_cengji-shang"]);
+      .toEqual(["bc_tuwenraopaishangxiashi", "bc_cengji-xia", "bc_cengji-shang"]);
     expect(layoutMenu.items[2].active).toBeTrue();
 
     expect((plugin as any).handlePlacementMenuAction({

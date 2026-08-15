@@ -59,11 +59,11 @@ export type BlockPlacementMode = 'relative' | 'absolute'
 export type BlockPlacementLayer = 'under' | 'over'
 
 /**
- * Atomic absolute position in root placement-plane layout pixels.
+ * Atomic absolute position in the nearest placement-plane layout pixels.
  *
- * Layout mode is structural: a direct child of `placement-layout` is absolute;
- * an ordinary root child remains in normal flow. Position therefore carries no
- * duplicated `mode` or `unit` discriminator.
+ * Layout mode is structural: a direct child of `placement-layout` or
+ * `object-group` is absolute; an ordinary root child remains in normal flow.
+ * Position therefore carries no duplicated `mode` or `unit` discriminator.
  */
 export type BlockPosition = {
   x: number
@@ -80,7 +80,7 @@ export type ResolvedBlockPosition = {
 export interface IBlockProps {
   textAlign?: 'center' | 'right'
   depth?: number
-  /** Used only while the block is a direct child of `placement-layout`. */
+  /** Used only while the block is a direct child of an absolute placement plane. */
   position?: BlockPosition
   /** Omitted means the default `over` layer. */
   placementLayer?: 'under'

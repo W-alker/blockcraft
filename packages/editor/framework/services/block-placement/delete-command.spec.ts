@@ -8,9 +8,11 @@ import {deleteAbsolutePlacementObject} from './delete-command'
 
 function makeDeleteHarness(options: {
   inLayout?: boolean
+  inGroup?: boolean
   readonly?: boolean
 } = {}) {
   const inLayout = options.inLayout ?? true
+  const inGroup = options.inGroup ?? false
   const selection = {
     isInSameBlock: true,
     anchor: {blockId: 'shape-1', type: 'selected'},
@@ -30,11 +32,15 @@ function makeDeleteHarness(options: {
     .and.returnValue([{index: 0, length: 1}])
   const blur = jasmine.createSpy('blur')
   const model = {
-    exists: (id: string) => ['layout', 'shape-1'].includes(id),
+    exists: (id: string) => ['layout', 'group', 'shape-1'].includes(id),
     getParentId: (id: string) => id === 'shape-1'
-      ? inLayout ? 'layout' : 'root'
+      ? inGroup ? 'group' : inLayout ? 'layout' : 'root'
       : 'root',
-    getFlavour: (id: string) => id === 'layout' ? 'placement-layout' : 'shape',
+    getFlavour: (id: string) => id === 'layout'
+      ? 'placement-layout'
+      : id === 'group'
+        ? 'object-group'
+        : 'shape',
     getProps: (id: string) =>
       id === 'shape-1' ? {position: {x: 12, y: 24}} : {},
     indexInParent: (id: string) => id === 'shape-1' ? 0 : -1,
@@ -89,6 +95,15 @@ describe('deleteAbsolutePlacementObject', () => {
     expect(h.captureSelectionBeforeChange).not.toHaveBeenCalled()
     expect(h.deleteBlocks).not.toHaveBeenCalled()
     expect(h.blur).not.toHaveBeenCalled()
+  })
+
+  it('deletes a group member through the same absolute-object command', () => {
+    const h = makeDeleteHarness({inGroup: true})
+
+    expect(deleteAbsolutePlacementObject(h.doc, 'shape-1', 'input')).toBeTrue()
+
+    expect(h.deleteBlocks).toHaveBeenCalledOnceWith('group', 0, 1, true)
+    expect(h.blur).toHaveBeenCalledTimes(1)
   })
 
   it('rejects readonly deletion before capturing an undo selection', () => {

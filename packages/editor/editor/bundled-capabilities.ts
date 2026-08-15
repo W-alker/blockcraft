@@ -18,6 +18,7 @@ import {
   MermaidBlockSchema,
   MermaidTextareaBlockSchema,
   OrderedBlockSchema,
+  ObjectGroupBlockSchema,
   PageDividerBlockSchema,
   ParagraphBlockSchema,
   PlacementLayoutBlockSchema,
@@ -56,6 +57,7 @@ import {
   MentionPlugin,
   MentionPluginConfig,
   OrderedBlockPlugin,
+  ObjectGroupToolbarPlugin,
   PaginationPlugin,
   PaginationPluginOptions,
   PasteFormatSelectorPlugin,
@@ -117,6 +119,7 @@ export const BUNDLED_EDITOR_SCHEMAS: readonly IBlockSchemaOptions[] = [
   ShapeTextBlockSchema,
   TextBoxBlockSchema,
   WordArtBlockSchema,
+  ObjectGroupBlockSchema,
   PlacementLayoutBlockSchema,
   RenderUnitBlockSchema,
 ]
@@ -342,6 +345,9 @@ export function createBundledEditorCapabilities(
     new TableBlockBinding(),
     new PasteFormatSelectorPlugin(),
     new PlaceholderPlugin(options.placeholder),
+    // Must register before per-flavour object plugins so its capture listener
+    // can own shift-selection and the first click on grouped content.
+    new ObjectGroupToolbarPlugin(),
     new ImgToolbarPlugin(),
     new ShapeToolbarPlugin(),
     new TextBoxToolbarPlugin(),

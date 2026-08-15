@@ -171,6 +171,10 @@ export class ShapeBlockComponent extends BaseBlockComponent<ShapeBlockModel> {
   }
 
   get placementContainer(): HTMLElement | undefined {
+    if (this.doc.placement?.isInObjectGroup?.(this.id)) {
+      const groupHost = this.hostElement.closest<HTMLElement>('[data-bc-object-group]')
+      return this.doc.objectSizing.rootContentElement ?? groupHost?.parentElement ?? undefined
+    }
     return this.hostElement.closest<HTMLElement>('[data-bc-placement-container]') ??
       this.hostElement.parentElement ??
       undefined
@@ -214,7 +218,7 @@ export class ShapeBlockComponent extends BaseBlockComponent<ShapeBlockModel> {
         y: placement.y + event.offsetY,
       }
     }
-    this.updateProps(next)
+    this.doc.placement.updateObjectGeometry(this, next)
     const shell = this._shapeShell?.nativeElement
     if (shell) {
       shell.style.transform = shapeRotationTransform(current.rotation)
@@ -223,7 +227,7 @@ export class ShapeBlockComponent extends BaseBlockComponent<ShapeBlockModel> {
 
   onRotateCommit(event: ShapeRotateCommit): void {
     if (this.isReadonly) return
-    this.updateProps({rotation: event.rotation})
+    this.doc.placement.updateObjectGeometry(this, {rotation: event.rotation})
     const shell = this._shapeShell?.nativeElement
     if (shell) {
       shell.style.transform = shapeRotationTransform(event.rotation)

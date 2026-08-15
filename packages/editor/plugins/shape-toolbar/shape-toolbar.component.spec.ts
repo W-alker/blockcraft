@@ -9,7 +9,10 @@ import {
 import {ShapeToolbarComponent, ShapeToolbarAction} from './shape-toolbar.component'
 
 describe('ShapeToolbarComponent', () => {
-  function createComponent(mode: 'relative' | 'absolute' = 'relative') {
+  function createComponent(
+    mode: 'relative' | 'absolute' = 'relative',
+    grouped = false,
+  ) {
     const cdr = jasmine.createSpyObj<ChangeDetectorRef>(
       'ChangeDetectorRef',
       ['markForCheck'],
@@ -38,6 +41,7 @@ describe('ShapeToolbarComponent', () => {
           }),
           canMoveForward: () => true,
           canMoveBackward: () => false,
+          isInObjectGroup: () => grouped,
         },
       },
     } as any
@@ -196,6 +200,16 @@ describe('ShapeToolbarComponent', () => {
     expect(host.querySelector(
       '.shape-toolbar__tooltip-host[csTooltip] button:disabled',
     )).not.toBeNull()
+
+    fixture.componentInstance.shapeBlock = createComponent(
+      'absolute',
+      true,
+    ).shapeBlock
+    fixture.detectChanges()
+    expect(host.querySelector('[aria-label="上移一层"]')).toBeNull()
+    expect(host.querySelector('[aria-label="下移一层"]')).toBeNull()
+    expect(host.querySelector('[aria-label="嵌入型"]')).toBeNull()
+    expect(host.querySelector('[aria-label="上下型"]')).toBeNull()
 
     fixture.destroy()
     TestBed.resetTestingModule()

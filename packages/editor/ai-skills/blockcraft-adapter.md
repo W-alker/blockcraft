@@ -4,7 +4,7 @@
 >
 > Adapters handle HTML ↔ BlockSnapshot and Markdown ↔ BlockSnapshot conversion.
 >
-> Last updated: 2026-08-14
+> Last updated: 2026-08-15
 
 ## Architecture
 
@@ -240,7 +240,7 @@ export const blockMarkdownAdapterMatchers: BlockMarkdownAdapterMatcher[] = [
 - **Markdown import**: Recognize the media hint title first. If there is no hint, fall back to URL heuristics such as common media extensions or known video platform hosts.
 - **Paragraph matcher interaction**: If your markdown/html paragraph matcher also accepts raw `html`, `div`, or `paragraph` nodes, explicitly exclude media-only nodes so both matchers do not consume the same source node.
 
-Responsive object blocks preserve root-relative sizing in HTML with
+Responsive object blocks preserve placement-plane-relative sizing in HTML with
 `data-bc-wr` and `data-bc-ar`; CSS `width`/`aspect-ratio` is emitted for
 portable display:
 
@@ -279,6 +279,22 @@ walks through the region and preserves readable child blocks while dropping
 padding, colors and the background image; reimport produces those ordinary
 blocks rather than reconstructing a `render-unit`. Internal BlockCraft snapshot
 copy/paste remains lossless.
+
+## Object Group Mapping
+
+The built-in `object-group` matcher uses
+`<figure data-bc-block="object-group">` as a lossless HTML envelope. Fixed
+group geometry is stored in `data-object-group-width/height`; root placement is
+stored in `data-object-group-placement-mode/x/y/layer`. Its nested object
+elements retain their native sizing fields and local `position` values, so a
+ratio-sized image keeps `wr/ar` relative to the fixed group width.
+
+Import rejects nested groups and infrastructure children, then restores the
+surviving direct objects under one `object-group` snapshot. Register this
+matcher before the image, shape, text-box and WordArt matchers so their output
+attaches to the open group. Standard Markdown intentionally walks through the
+container and keeps only the children’s readable degradation; it does not
+reconstruct fixed group geometry.
 
 ## Text Box Mapping
 

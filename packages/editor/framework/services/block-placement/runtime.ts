@@ -3,7 +3,10 @@ import type {
   ResolvedBlockPosition,
 } from '../../block-std/types'
 import {resolveBlockPosition, resolvePlacementLayer} from './state'
-import {BLOCK_PLACEMENT_LAYOUT_FLAVOUR} from './types'
+import {
+  BLOCK_OBJECT_GROUP_FLAVOUR,
+  BLOCK_PLACEMENT_LAYOUT_FLAVOUR,
+} from './types'
 
 /**
  * Shared read-only Placement queries.
@@ -55,6 +58,7 @@ export class BlockPlacementRuntime {
     const capability =
       this.doc.schemas.get(block.flavour, false)?.metadata.placement
     if (!capability?.modes.includes(mode)) return false
+    if (this.isInObjectGroup(block)) return mode === 'absolute'
     if (mode !== 'absolute') return true
     return block.parentId === this.rootId || this.isInAbsoluteLayout(block)
   }
@@ -71,19 +75,42 @@ export class BlockPlacementRuntime {
       )
   }
 
+  isObjectGroup(
+    blockOrId: string | BlockCraft.BlockComponent,
+  ): boolean {
+    const id = typeof blockOrId === 'string' ? blockOrId : blockOrId.id
+    return this.doc.model?.getFlavour?.(id) === BLOCK_OBJECT_GROUP_FLAVOUR ||
+      (
+        typeof blockOrId !== 'string' &&
+        blockOrId.flavour === BLOCK_OBJECT_GROUP_FLAVOUR
+      )
+  }
+
+  isInObjectGroup(
+    blockOrId: string | BlockCraft.BlockComponent,
+  ): boolean {
+    const id = typeof blockOrId === 'string' ? blockOrId : blockOrId.id
+    const parentId = this.doc.model?.getParentId?.(id) ??
+      (typeof blockOrId === 'string' ? null : blockOrId.parentId)
+    return !!parentId && this.isObjectGroup(parentId)
+  }
+
   isInAbsoluteLayout(
     blockOrId: string | BlockCraft.BlockComponent,
   ): boolean {
     const id = typeof blockOrId === 'string' ? blockOrId : blockOrId.id
     const parentId = this.doc.model?.getParentId?.(id) ??
       (typeof blockOrId === 'string' ? null : blockOrId.parentId)
-    return !!parentId && this.isPlacementLayout(parentId)
+    return !!parentId &&
+      (this.isPlacementLayout(parentId) || this.isObjectGroup(parentId))
   }
 
   allowsGapCursor(
     blockOrId: string | BlockCraft.BlockComponent,
   ): boolean {
-    if (this.isPlacementLayout(blockOrId)) return false
+    if (this.isPlacementLayout(blockOrId) || this.isObjectGroup(blockOrId)) {
+      return false
+    }
     return !this.isInAbsoluteLayout(blockOrId)
   }
 
@@ -158,7 +185,7 @@ export class BlockPlacementRuntime {
       this.isInAbsoluteLayout(blockId)
   }
 
-  isReadonly(block: BlockCraft.BlockComponent): boolean {
+  isReadonly(block: string | BlockCraft.BlockComponent): boolean {
     return this.doc.isReadonly ||
       this.doc.readonlyManager.isReadonly(block) ||
       this.doc.readonlyManager.containsReadonly(block)

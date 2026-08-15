@@ -40,9 +40,9 @@ describe('InlineImageToolbar', () => {
         item.querySelector('i.bc_icon')?.classList ?? [],
       ).find(className => className !== 'bc_icon'),
     )).toEqual([
-      'bc_fuwenben-qianruzuo',
-      'bc_sizhouhuanrao',
-      'bc_fuwenben-shangxia',
+      'bc_tuwenraopaiqianrushi',
+      'bc_tuwenraopai',
+      'bc_tuwenraopaishangxiashi',
       'bc_cengji-xia',
       'bc_cengji-shang',
     ]);

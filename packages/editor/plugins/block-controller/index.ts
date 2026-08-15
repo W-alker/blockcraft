@@ -351,7 +351,7 @@ export class BlockControllerPlugin extends DocPlugin {
     const items: BlockMenuSection['items'] = [{
       type: 'dropdown',
       name: 'block-object-layout',
-      icon: layoutItems.find(item => item.active)?.icon ?? 'bc_fuwenben-shangxia',
+      icon: layoutItems.find(item => item.active)?.icon ?? 'bc_tuwenraopaishangxiashi',
       label: '文字环绕',
       items: layoutItems,
     }]

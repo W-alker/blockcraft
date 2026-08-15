@@ -380,6 +380,21 @@ Do not combine root virtualization with a second `getBoundingClientRect()` +
 tracking, can use the wrong scroll root, and leaves retained components with an
 unclear subscription lifetime.
 
+Ratio-sized members of a fixed `object-group` resolve against the persisted
+group width through `doc.objectSizing.resolveForBlock()`. Do not add one
+`ResizeObserver` per group/member: user-driven groups are not resizable in V1,
+and the existing single root observer remains the only responsive invalidation
+source. Member pointer movement previews with one transform. Pointerup calls
+`doc.placement.updateObjectGeometry()`, which performs one O(n) pure-model
+rotation-aware bounds pass and one Yjs transaction; changing the group width
+also converts ratio-member `wr` so pixels do not feed back into the new frame.
+Remote/Undo/structure repair requests are deduplicated per group in one
+microtask. Console-backed loggers expose each pass as
+`[ObjectGroup][performance] reflow <duration>ms` plus `{members, writes,
+changed, reason}` for direct profiling.
+Root virtualization indexes the group as one fixed-height absolute object; its
+nested members materialize atomically with that group.
+
 Mounted is deliberately broader than browser-visible: height-budgeted overscan
 materializes a small nearby window, and nested subtrees are atomic. Keep an
 `IntersectionObserver` only when the feature truly needs **exact intersection**

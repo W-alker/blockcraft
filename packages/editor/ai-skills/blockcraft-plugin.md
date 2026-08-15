@@ -5,7 +5,7 @@
 > For configuring existing built-in plugins, see `blockcraft-plugins-ref.md`.
 > For event system internals, see L2: `blockcraft-event.md`.
 >
-> Last updated: 2026-08-14
+> Last updated: 2026-08-15
 
 ## Plugin Lifecycle
 
@@ -320,6 +320,7 @@ The plugin owns all `ResizeObserver`, animation-frame, DOM-layer and print resou
 | Keyboard shortcuts | `FindReplacePlugin` | `plugins/findReplace/` |
 | Drag & hover | `BlockControllerPlugin` | `plugins/block-controller/` |
 | Object selection + connected toolbar | `ShapeToolbarPlugin` | `plugins/shape-toolbar/` |
+| Capture-ordered multi-object selection + container toolbar | `ObjectGroupToolbarPlugin` | `plugins/object-group-toolbar/` |
 | Container text/object dual-state + preset/Shape/WordArt controls | `TextBoxToolbarPlugin` | `plugins/text-box-toolbar/` |
 | Editable object/edit dual-state + in-block transform affordance | `WordArtToolbarPlugin` | `plugins/word-art-toolbar/` |
 | Reversible layout controller | `PaginationPlugin` | `plugins/pagination/` |

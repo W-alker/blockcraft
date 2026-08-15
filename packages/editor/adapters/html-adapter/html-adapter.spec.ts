@@ -95,6 +95,52 @@ describe('HtmlAdapter', () => {
     expect(html).not.toContain('blockcraft-json');
   });
 
+  it('round-trips object-group fixed geometry and local child placement', async () => {
+    const group: IBlockSnapshot = {
+      id: 'group-1',
+      flavour: 'object-group',
+      nodeType: BlockNodeType.block,
+      props: {
+        width: 420,
+        height: 240,
+        position: {x: 100, y: 80},
+        placementLayer: 'under',
+      },
+      meta: {},
+      children: [{
+        id: 'shape-1',
+        flavour: 'shape',
+        nodeType: BlockNodeType.block,
+        props: {
+          shapeType: 'rectangle',
+          width: 160,
+          height: 80,
+          rotation: 0,
+          position: {x: 30, y: 40},
+        },
+        meta: {},
+        children: [],
+      }],
+    }
+
+    const html = await adapter.toHtml(createRootSnapshot([group]))
+    expect(html).toContain('data-bc-block="object-group"')
+    expect(html).toContain('data-object-group-width="420"')
+
+    const imported = await adapter.toBlockSnapshot(html)
+    const importedGroup = (imported.children as IBlockSnapshot[])[0]!
+    expect(importedGroup.flavour).toBe('object-group')
+    expect(importedGroup.props).toEqual(jasmine.objectContaining({
+      width: 420,
+      height: 240,
+      position: {x: 100, y: 80},
+      placementLayer: 'under',
+    }))
+    const importedShape = (importedGroup.children as IBlockSnapshot[])[0]!
+    expect(importedShape.flavour).toBe('shape')
+    expect(importedShape.props['position']).toEqual({x: 30, y: 40})
+  });
+
   it('round-trips render-unit padding and background image props', async () => {
     const region: IBlockSnapshot = {
       id: 'region-1',

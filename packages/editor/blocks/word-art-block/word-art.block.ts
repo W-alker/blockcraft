@@ -135,6 +135,10 @@ export class WordArtBlockComponent extends EditableBlockComponent<WordArtBlockMo
   }
 
   get placementContainer(): HTMLElement | undefined {
+    if (this.doc.placement?.isInObjectGroup?.(this.id)) {
+      const groupHost = this.hostElement.closest<HTMLElement>('[data-bc-object-group]')
+      return this.doc.objectSizing.rootContentElement ?? groupHost?.parentElement ?? undefined
+    }
     return (
       this.hostElement.closest<HTMLElement>('[data-bc-placement-container]') ??
       this.hostElement.parentElement ??
@@ -183,7 +187,7 @@ export class WordArtBlockComponent extends EditableBlockComponent<WordArtBlockMo
         y: placement.y + event.offsetY,
       }
     }
-    this.updateProps(next)
+    this.doc.placement.updateObjectGeometry(this, next)
     const surface = this._surface?.nativeElement
     if (surface) {
       surface.style.transform = rotationTransform(current.rotation)
@@ -195,7 +199,7 @@ export class WordArtBlockComponent extends EditableBlockComponent<WordArtBlockMo
 
   commitRotation(event: ShapeRotateCommit): void {
     if (this.isReadonly) return
-    this.updateProps({rotation: event.rotation})
+    this.doc.placement.updateObjectGeometry(this, {rotation: event.rotation})
     const surface = this._surface?.nativeElement
     if (surface) {
       surface.style.transform = rotationTransform(event.rotation)

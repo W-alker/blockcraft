@@ -635,13 +635,14 @@ metadata: {
 ```
 
 The Schema metadata declares capability only. Layout mode is structural: a
-direct root child is relative flow, and a direct child of `placement-layout` is
-absolute. An absolute child persists one atomic `position: {x, y}` object in
-root-content layout pixels. Its optional `placementLayer: 'under'` is stored
+direct root child is relative flow, and a direct child of `placement-layout` or
+`object-group` is absolute. An absolute child persists one atomic
+`position: {x, y}` object in its parent plane's layout pixels. Its optional
+`placementLayer: 'under'` is stored
 separately; omission means `over`. A relative child persists neither field.
 There is no persisted `mode` or `unit`. The base block host applies
 `position/left/top` only to structurally absolute, Schema-capable children.
-Standard absolute placement is root-only. The manager moves absolute objects
+The standard lift/return transition is root-only. The manager moves absolute objects
 under one hidden `placement-layout` at the end of `root.children`:
 
 ```text
@@ -649,16 +650,19 @@ root
 ├─ paragraph
 ├─ image                 # relative / top-bottom
 └─ placement-layout      # infrastructure, zero height
-   ├─ image              # absolute
-   └─ shape              # absolute
+   ├─ image              # absolute, root-local position
+   └─ object-group       # absolute, fixed width/height
+      ├─ image           # absolute, group-local position and wr basis
+      └─ shape           # absolute, group-local position
 ```
 
 The renderer uses explicit non-negative tiers: background, `under` (`0`),
 ordinary flow children (`1`), then `over` (`2`). This keeps an under block above
 the page background and an over block above text and media regardless of DOM
 order. The layout creates no stacking context and does not intercept pointers.
-Stale position props on a flow-only Schema are cleared. A nested object cannot
-enter absolute placement in this phase. The infrastructure Schema accepts
+Stale position props on a flow-only Schema are cleared. `object-group` is the
+only standard nested absolute plane; other nested containers do not imply
+absolute layout. The infrastructure Schema accepts
 future custom positionable flavours; normalization keeps a child there only
 when its own Schema declares absolute capability. A transient direct-root
 snapshot with `position` (for example, an import or representation conversion)
@@ -700,12 +704,12 @@ the whole `{x, y}` object; it does not issue separate coordinate writes. Do not 
 
 The shared UI descriptors are exported as `BLOCK_OBJECT_LAYOUT_OPTIONS`:
 
-| State        | Label        | Icon                    |
-| ------------ | ------------ | ----------------------- |
-| `inline`     | 嵌入型       | `bc_fuwenben-qianruzuo` |
-| `top-bottom` | 上下型       | `bc_fuwenben-shangxia`  |
-| `under`      | 衬于文字下方 | `bc_cengji-xia`         |
-| `over`       | 浮于文字上方 | `bc_cengji-shang`       |
+| State        | Label        | Icon                        |
+| ------------ | ------------ | --------------------------- |
+| `inline`     | 嵌入型       | `bc_tuwenraopaiqianrushi`   |
+| `top-bottom` | 上下型       | `bc_tuwenraopaishangxiashi` |
+| `under`      | 衬于文字下方 | `bc_cengji-xia`             |
+| `over`       | 浮于文字上方 | `bc_cengji-shang`           |
 
 The manager can apply the three block states directly. A plugin that owns an
 inline representation registers `BlockObjectLayoutAdapter.toInline()` for its
@@ -733,6 +737,7 @@ never inserts into editable descendants of a nearby absolute object, even when
 their visual boxes overlap.
 `getRootFlowChildIds()`, `getAbsoluteBlockIds()`, `isPlacementLayout()` and
 `isInAbsoluteLayout()` expose model-first classification for integrations.
+`isObjectGroup()` and `isInObjectGroup()` distinguish the local plane.
 `allowsGapCursor()` is the shared eligibility policy used by block hosts,
 selection keyboard handling and `BlockGapCreatorPlugin`; it rejects both the
 layout and absolute objects. `isAbsoluteObjectSelection()` recognizes the
@@ -750,10 +755,10 @@ visible child currently materializes all absolute siblings. A materialized
 publishes a whole-block model selection instead of relying on DOM hit testing
 through the content above it.
 
-### Root-Relative Object Sizing
+### Placement-Plane-Relative Object Sizing
 
 Use Schema `objectSizing` for image-, video- or iframe-like blocks whose width
-must follow the root content box:
+must follow their containing sizing plane:
 
 ```typescript
 interface PreviewModel extends NoEditableBlockNative {
@@ -774,13 +779,24 @@ const PreviewSchema: IBlockSchemaOptions<PreviewModel> = {
 } as IBlockSchemaOptions<PreviewModel>;
 ```
 
-`wr` is the percentage of the root children content width; `ar` is
-`width / height`. Resolve dimensions through the document-owned manager:
+`wr` is the percentage of the nearest sizing plane width; `ar` is
+`width / height`. The plane is normally the root children content box. For a
+direct `object-group` child it is the group's fixed outer `props.width` minus
+the two `BLOCK_OBJECT_GROUP_PADDING` horizontal insets. Resolve live block
+dimensions through the document-owned manager:
 
 ```typescript
-const dimensions = this.doc.objectSizing.resolve(this.flavour, this.props);
+const dimensions = this.doc.objectSizing.resolveForBlock(
+  this.id,
+  this.flavour,
+  this.props,
+);
 // null until a responsive root width is measurable
 ```
+
+`getReferenceWidth(blockId)` exposes the same basis. The lower-level
+`resolve(flavour, props)` remains explicitly root-relative for model projections
+that operate on root objects rather than one known block ID.
 
 The exported pure helpers `normalizeObjectSize()`,
 `resolveObjectDimensions()` and `deriveObjectSizeFromPixels()` are available to
@@ -788,6 +804,78 @@ model-only renderers and adapters. They clamp `wr` to `[1, 100]`, reject invalid
 ratios and report whether dimensions came from `ratio`, `legacy` or `default`.
 Do not add a `ResizeObserver` per block or read root geometry during change
 detection.
+
+### Fixed Object Groups
+
+`ObjectGroupBlockSchema` is an internal, absolute-only container with persisted
+fixed pixel `width` and `height`. Those dimensions describe the outer frame,
+which reserves the fixed `BLOCK_OBJECT_GROUP_PADDING` inset (8 layout pixels)
+on every side. The inset content box is the member placement plane. The group
+itself has the ordinary root-local `position` and optional root stacking layer;
+its direct members have content-plane-local `position` and no independent
+under/over tier. `setLayer()`, `moveForward()` and `moveBackward()` reject
+members, and their object toolbars omit both representation/layout and
+independent stack controls. Nested groups are rejected.
+
+```typescript
+const groupId = doc.placement.group(['image-id', 'shape-id'])
+if (groupId) {
+  const memberIds = doc.placement.ungroup(groupId)
+}
+```
+
+`canGroup(ids)` requires at least two contiguous direct children of the root
+`placement-layout`, all in the same `under`/`over` layer and all Schema-capable
+for absolute placement. Grouping computes a rotation-aware visual union,
+rebases every member into local coordinates and moves the existing block IDs;
+it does not clone content. Ratio-sized images preserve their resolved pixel
+frame by converting `wr` from root width to group width. `ungroup()` performs
+the inverse conversion and restores root coordinates in one transaction. Here
+"group width" means outer `width - 2 * BLOCK_OBJECT_GROUP_PADDING`; the visual
+padding never changes a responsive member's resolved pixel size.
+
+Root absolute objects can be aligned without first creating a group:
+
+```typescript
+doc.placement.alignObjects(ids, 'left')
+doc.placement.alignObjects(ids, 'center')
+doc.placement.alignObjects(ids, 'horizontal-distribute')
+```
+
+`BlockObjectAlignment` contains the six single-axis edge/center commands,
+combined `center`, and horizontal/vertical distribution. `canAlignObjects()`
+requires at least two same-plane objects; distribution requires three. It does
+not require the same placement layer and treats an existing `object-group` as
+one fixed object. The command resolves responsive and rotated visual geometry
+from the model, then writes only each changed `position` in one Yjs
+transaction. It never freezes `wr/ar`, changes fixed `width/height`, or stores
+a persistent alignment constraint.
+
+Built-in member geometry commits must use the block-aware write path:
+
+```typescript
+doc.placement.updateObjectGeometry(block, {
+  width: nextWidth,
+  height: nextHeight,
+  position: nextLocalPosition,
+})
+```
+
+For a grouped member, this applies the requested patch and recomputes the
+rotation-aware union in the same Yjs transaction. If the union origin changes,
+the group root position and every local member position are rebased without a
+visual jump. Ratio-sized members receive a new `wr` against the new group
+content width so their resolved pixels remain stable. Remote geometry changes, Undo/Redo and
+structure changes are transaction-coalesced repair triggers; no DOM bounds or
+per-group observer participates. Every recomputation emits an info-level
+`[ObjectGroup][performance]` timing record containing `members`, `writes`,
+`changed` and `reason`.
+
+V1 deliberately has no user-driven group resize, group rotation or nested
+group contract. Automatic tight-frame maintenance is part of member geometry,
+not a group resize gesture.
+HTML and Snapshot preserve the structural container and original sizing fields;
+Markdown remains a semantic, non-placement projection.
 
 Remote built-in images and new videos start at `wr: 100`; intrinsic metadata
 fills a missing `ar`. A mounted legacy image that lacks `wr` uses its existing

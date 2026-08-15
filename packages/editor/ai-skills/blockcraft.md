@@ -36,8 +36,8 @@ A block-based rich text editor built on **Angular (standalone components)** + **
 | **Input** | Intercepts `beforeInput`, writes to Y.Text directly | `InputTransformer` in `framework/modules/input/` |
 | **Table Model** | DOM-free table coordinates, merged-cell closure and stable-ID rectangle targets | package-internal `framework/modules/table/` |
 | **Virtualization** | Optional model-first root-child windowing; nested subtrees stay atomic | `RootVirtualizationManager` in `framework/modules/virtualization/` |
-| **Object Layout** | Word-like inline/top-bottom/under/over object states projected onto Schema-gated block placement | `BlockPlacementManager` in `framework/services/` |
-| **Object Sizing** | Root-relative `wr/ar` sizing with legacy pixel compatibility | `BlockObjectSizingManager` in `framework/services/` |
+| **Object Layout** | Word-like inline/top-bottom/under/over states plus fixed-pixel object grouping, projected onto Schema-gated block placement | `BlockPlacementManager` in `framework/services/` |
+| **Object Sizing** | Placement-plane-relative `wr/ar` sizing with legacy pixel compatibility | `BlockObjectSizingManager` in `framework/services/` |
 | **Resource Placeholder** | Reusable image/video/iframe loading, failure, retry and intrinsic-size coordination | `BcResourcePlaceholderDirective` in `components/resource-placeholder/` |
 | **Block Navigation** | Mode-independent stable-ID reveal without changing selection or focus | `BlockCraftDoc.navigateToBlock()` |
 | **Pagination** | Pure page layout + reversible live view + print/PDF | `PaginationPlugin` + `framework/modules/pagination/` |
@@ -55,14 +55,14 @@ Three `nodeType` categories:
 |----------|-------------|------------|----------|
 | `editable` | Has inline text (Y.Text), no children | `EditableBlockComponent` | paragraph, code, bullet, ordered, todo, blockquote, caption, mermaid-textarea, word-art |
 | `void` | No children, no text | `BaseBlockComponent` | divider, image, bookmark, attachment, formula, video, audio, mermaid, embed-blocks (figma, juejin) |
-| `block` | Has block children | `BaseBlockComponent` | callout, columns, column, table, table-row, table-cell, frame, shape, text-box, render-unit, placement-layout (infrastructure) |
+| `block` | Has block children | `BaseBlockComponent` | callout, columns, column, table, table-row, table-cell, frame, shape, text-box, render-unit, object-group, placement-layout (infrastructure) |
 | `root` | Special — top-level container | `BaseBlockComponent` (root-block) | root |
 
 > **Heading is a prop, not a flavour.** H1/H2/H3 styles live in `props.heading` on `paragraph` blocks. There is no `heading-block` flavour.
 
 ### Currently Registered Block Schemas (from `editor/bundled-capabilities.ts`)
 
-`paragraph, ordered, bullet, todo, callout, code, divider, page-divider, image, table, table-row, table-cell, attachment, bookmark, figmaEmbed, juejinEmbed, caption, root, mermaid-textarea, mermaid, blockquote, columns, column, formula, video, audio, shape, shape-text, text-box, word-art, placement-layout, render-unit`
+`paragraph, ordered, bullet, todo, callout, code, divider, page-divider, image, table, table-row, table-cell, attachment, bookmark, figmaEmbed, juejinEmbed, caption, root, mermaid-textarea, mermaid, blockquote, columns, column, formula, video, audio, shape, shape-text, text-box, word-art, object-group, placement-layout, render-unit`
 
 A host application can register a subset or extend this list — see `blockcraft-app.md`.
 Hosts that need the complete reference-editor surface should call
@@ -434,8 +434,8 @@ Schemas can independently opt into free block positioning with
 `metadata.placement: {modes: ['relative', 'absolute']}`. This is a capability
 declaration, not persisted layout state. Placement mode is structural: an
 ordinary direct root child is relative flow, while a direct child of the root
-`placement-layout` is absolute. Absolute objects persist one atomic
-`props.position: {x, y}` value in root-content layout pixels and an independent
+`placement-layout` or `object-group` is absolute. Absolute objects persist one atomic
+`props.position: {x, y}` value in their parent plane's layout pixels and an independent
 optional `props.placementLayer: 'under'`; omission means `over`. Relative
 objects persist neither field. Root padding is never part of either coordinate.
 `doc.placement.setMode()` preserves the current visual position when switching
@@ -446,7 +446,10 @@ layout. When materializing the first layout, it inserts the layout and object as
 one nested snapshot, so no temporary root-flow object exists.
 That infrastructure block is registered by the bundled editor, excluded from
 ordinary sibling navigation and BlockController, and removed after its final
-object returns to flow. Nested container objects do not support absolute mode.
+object returns to flow. `object-group` is the one bounded nested exception: it
+is itself a fixed-pixel absolute object and its direct children use local
+absolute coordinates. Group members cannot switch to relative/inline layout
+until the group is dissolved.
 When returning an absolute block to relative flow, the manager uses the
 block's current visual center to find the nearest mounted ordinary flow sibling
 and inserts before/after that sibling's midpoint instead of jumping back to the
@@ -485,10 +488,49 @@ change the normal-flow `HeightMap` and performs no child DOM reads on scroll.
 The layout remains one atomic root render unit, so one visible absolute child
 currently materializes all of its layout siblings; descendants do not acquire
 duplicate per-object leases.
+`doc.placement.group(ids)` groups two or more contiguous, same-layer root
+absolute objects in one Yjs transaction; `ungroup(groupId)` restores their root
+coordinates. The group frame is the rotation-aware union of the members' visual
+bounds plus a fixed 8-layout-pixel inset on every side. Persisted group
+`width/height` describe this outer frame; member coordinates and ratio sizing
+use the inset content plane. A ratio-sized image changes `wr` once when crossing
+the boundary, so its pixel size stays stable while its new percentage basis
+becomes the fixed group content width. Built-in member move/resize/rotation commits use
+`doc.placement.updateObjectGeometry()`: one model-only O(n) pass tightens the
+rotation-aware group frame, rebases local positions and converts ratio members
+inside the same Yjs transaction. Pointer movement remains an O(1) transform
+preview. Each pass logs `[ObjectGroup][performance]` with elapsed milliseconds,
+member count, write count and reason through `doc.logger.info`.
+User-driven group resize, group rotation and nested groups are intentionally
+absent. The bundled `ObjectGroupToolbarPlugin` exposes Shift-click
+multi-selection, rotation-aware object alignment/distribution, 组合/取消组合,
+first-click-group/second-click-member interaction and a four-edge move band on
+the selected group. Two objects enable left/horizontal-center/right,
+top/vertical-center/bottom and combined center alignment. Horizontal and
+vertical distribution require three objects. Alignment changes only root-local
+`position` in one transaction; responsive/fixed size fields and layers remain
+unchanged. A selection on any nested
+descendant keeps the ancestor group frame visible. After the group or one of
+its descendants owns Selection, its document-capture listener no longer
+consumes member `pointerdown`, leaving local member dragging to the image,
+Shape, TextBox or WordArt Plugin.
+Only the group participates in the root placement stack. Direct members cannot
+set `placementLayer`, move forward/backward, or change representation/layout.
+Their image, Shape and WordArt toolbars omit the complete layout-control set;
+the TextBox toolbar omits its entire 布局 rail entry and panel.
+The toolbar uses `bc_combination` for 组合 and `bc_quxiaozuhe` for 取消组合.
+Object layout UI uses `bc_buju` for the layout entry,
+`bc_tuwenraopaiqianrushi` for 嵌入型,
+`bc_tuwenraopaishangxiashi` for 上下型 and `bc_tuwenraopai` for
+四周型环绕.
+
 Schemas can independently opt into responsive object sizing with
 `metadata.objectSizing: {defaultWr, defaultAr}`. Such blocks persist `props.wr`
-as a percentage of the root children content width and `props.ar` as
-width/height. `doc.objectSizing` owns the single root `ResizeObserver`, resolves
+as a percentage of the nearest sizing plane width and `props.ar` as
+width/height. The normal plane is the root children content width; a direct
+`object-group` child uses its fixed outer `props.width` minus the two 8px
+horizontal insets. `doc.objectSizing`
+owns the single root `ResizeObserver`, resolves
 live dimensions for mounted blocks, and supplies model-only height estimates to
 virtualization and sparse pagination. Built-in image and video blocks opt in;
 mounted legacy images migrate pixel `width/height` to `wr/ar` after their first
@@ -501,8 +543,8 @@ Visual resource loading is composed on top of that stable frame through
 the same neutral skeleton while loading and preserve the frame on error with
 an in-place retry action. Built-in local image creation inserts the block
 immediately, preserves the local preview plus upload-progress state, then uses
-the first successful preview dimensions to persist `ar` and a root-relative
-`wr` capped by the current parent content width. Remote and legacy images
+the first successful preview dimensions to persist `ar` and a placement-plane-
+relative `wr` capped by the current parent content width. Remote and legacy images
 without stored responsive dimensions start from the Schema default and
 backfill complete `wr/ar` on the first successful mounted load without adding
 Undo history. Continuous virtualization and
@@ -1191,6 +1233,7 @@ onBold(ctx: UIEventStateContext) { ... }
 | `ShapeToolbarPlugin` | `plugins/shape-toolbar/` | Shape block/inline selection, styling, inline/wrap conversion, placement, drag, resize and rotation |
 | `TextBoxToolbarPlugin` | `plugins/text-box-toolbar/` | Fixed text-box frame/text dual state, Word-style vertical rail and click-owned layout/style/Shape/WordArt settings cards, placement, drag and stack controls |
 | `WordArtToolbarPlugin` | `plugins/word-art-toolbar/` | WordArt block/inline selection, styling, inline/wrap conversion, placement, drag, resize and rotation |
+| `ObjectGroupToolbarPlugin` | `plugins/object-group-toolbar/` | Shift-select contiguous root absolute objects, align/distribute or group them, and enter a selected group's members |
 | `CalloutToolbarPlugin` | `plugins/callout-toolbar/` | Callout and content-region appearance picker |
 | `DividerExtensionPlugin` | `plugins/divider-toolbar/` | Divider hover toolbar (line/tape/colorful edge style, custom line color, independent length/thickness/opacity, optional text label + typography/alignment/color) |
 | `AttachmentExtensionPlugin` | `plugins/attachment-extension/` | Attachment preview/download UI |

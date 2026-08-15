@@ -1,11 +1,50 @@
 import type {
   BlockPlacementLayer,
   BlockPlacementMode,
+  IBlockProps,
 } from '../../block-std/types'
 
 export const BLOCK_PLACEMENT_LAYOUT_FLAVOUR = 'placement-layout' as const
+export const BLOCK_OBJECT_GROUP_FLAVOUR = 'object-group' as const
+/** Fixed layout-pixel inset between a group frame and its local object plane. */
+export const BLOCK_OBJECT_GROUP_PADDING = 8
+
+export interface BlockObjectGroupProps extends IBlockProps {
+  width: number
+  height: number
+}
+
+const MIN_OBJECT_GROUP_CONTENT_SIZE = 1
+const DEFAULT_OBJECT_GROUP_SIZE =
+  BLOCK_OBJECT_GROUP_PADDING * 2 + MIN_OBJECT_GROUP_CONTENT_SIZE
+
+const normalizeGroupLength = (value: unknown): number =>
+  typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? Math.max(DEFAULT_OBJECT_GROUP_SIZE, value)
+    : DEFAULT_OBJECT_GROUP_SIZE
+
+export function normalizeBlockObjectGroupProps(
+  props: Partial<BlockObjectGroupProps> | null | undefined,
+): BlockObjectGroupProps {
+  return {
+    width: normalizeGroupLength(props?.width),
+    height: normalizeGroupLength(props?.height),
+  }
+}
 
 export type BlockPlacementDragState = 'idle' | 'armed' | 'dragging'
+
+/** One-shot alignment commands for objects in the same placement plane. */
+export type BlockObjectAlignment =
+  | 'left'
+  | 'horizontal-center'
+  | 'right'
+  | 'top'
+  | 'vertical-center'
+  | 'bottom'
+  | 'center'
+  | 'horizontal-distribute'
+  | 'vertical-distribute'
 
 /**
  * User-facing object layout vocabulary.
@@ -27,12 +66,12 @@ export const BLOCK_OBJECT_LAYOUT_OPTIONS: readonly BlockObjectLayoutOption[] = [
   {
     value: 'inline',
     label: '嵌入型',
-    icon: 'bc_fuwenben-qianruzuo',
+    icon: 'bc_tuwenraopaiqianrushi',
   },
   {
     value: 'top-bottom',
     label: '上下型',
-    icon: 'bc_fuwenben-shangxia',
+    icon: 'bc_tuwenraopaishangxiashi',
   },
   {
     value: 'under',

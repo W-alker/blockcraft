@@ -291,7 +291,8 @@ const doc = new BlockCraftDoc({
 The result also exposes `schemaDefinitions`, `blockMaterials`,
 `paginationPlugin` and `translatePlugin`. `blockMaterials` is the
 BlockController-aligned projection for insertion UIs; internal child schemas,
-root and infrastructure blocks remain registered but hidden. The factory
+root and infrastructure blocks (`placement-layout`, `object-group`) remain
+registered but hidden. The factory
 throws on duplicate block flavours, embed names or plugin names, including
 duplicates introduced through `additionalSchemas` / `additionalEmbeds`.
 
@@ -1105,8 +1106,8 @@ doc.inputManger            // InputTransformer (sic — note typo in field name)
 doc.overlayService         // DocOverlayService — CDK Overlay wrapper
 doc.dndService             // DocDndService — 外部文件拖入 + commit 类方法分发
 doc.dragController         // DocInternalDragController — 内部 block 拖拽（PointerEvents 实现）
-doc.placement              // BlockPlacementManager — Word-like object layout + free positioning
-doc.objectSizing           // BlockObjectSizingManager — root-relative wr/ar resolution
+doc.placement              // BlockPlacementManager — layout, positioning, alignment and fixed grouping
+doc.objectSizing           // BlockObjectSizingManager — placement-plane-relative wr/ar resolution
 doc.messageService         // DocMessageService (resolved from DI token)
 doc.schemas                // SchemaManager
 doc.injector               // Angular Injector
@@ -1190,7 +1191,10 @@ width. `widthChange$` emits deduplicated width changes and
 `resolve(flavour, props)` returns responsive or legacy pixel dimensions for a
 Schema that declares `metadata.objectSizing`; it returns `null` for other
 flavours or before a responsive width can be measured. The document owns and
-disposes this service automatically.
+disposes this service automatically. Live block components should call
+`resolveForBlock(blockId, flavour, props)` and `getReferenceWidth(blockId)`:
+direct `object-group` children resolve against the group's fixed width without
+adding another observer; all other blocks use the root width.
 
 `doc.placement` is always constructed by `BlockCraftDoc`; hosts do not register
 it as a plugin. The optional `DocConfig.placement` only adapts mode transitions
@@ -1211,6 +1215,7 @@ semantics instead of exposing relative/absolute directly:
 const schemas = new SchemaManager([
   // existing schemas...
   PlacementLayoutBlockSchema,
+  ObjectGroupBlockSchema,
   ImageBlockSchema,
   ShapeBlockSchema,
   ShapeTextBlockSchema,
@@ -1229,10 +1234,17 @@ doc.placement.canMoveForward(block)
 doc.placement.canMoveBackward(block)
 doc.placement.moveForward(block)
 doc.placement.moveBackward(block)
+
+doc.placement.canAlignObjects(['image-id', 'shape-id'], 'center')
+doc.placement.alignObjects(['image-id', 'shape-id'], 'center')
+
+doc.placement.canGroup(['image-id', 'shape-id'])
+const groupId = doc.placement.group(['image-id', 'shape-id'])
+if (groupId) doc.placement.ungroup(groupId)
 ```
 
 The default implementation only lifts direct root children. It creates one
-zero-height `placement-layout` as the final root child and moves all absolute
+zero-height `placement-layout` as the final root child and moves all root absolute
 objects below it. Its child contract is intentionally flavour-agnostic for
 future custom shapes, but normalization retains only blocks whose own Schema
 supports absolute placement. The layout is hidden from insertion, ordinary
@@ -1240,6 +1252,17 @@ sibling navigation, Gap selection and BlockController. `under` and `over`
 children remain pointer-interactive and share the root coordinate/stacking scope.
 Returning to top-bottom moves the object back near its current visual position;
 an empty layout is removed after the model graph settles.
+
+`object-group` is a fixed-pixel local placement plane nested directly below the
+root placement layout. Group members keep their existing block IDs and use
+group-local `position`; an image's `wr` becomes relative to group width. The
+bundled `ObjectGroupToolbarPlugin` provides Shift-click selection and
+rotation-aware object alignment/distribution plus 组合/取消组合. Alignment is a
+one-shot `position` mutation: it preserves each object's size fields and layer.
+A manual assembly must register both `ObjectGroupBlockSchema` and
+`ObjectGroupToolbarPlugin`; register that Plugin before per-flavour object
+toolbars so its capture listener owns grouping selection and first-click group
+movement.
 
 Mode is not stored in props. An ordinary direct root child is relative flow; a
 direct child of `placement-layout` is absolute. Absolute children persist one
@@ -1266,7 +1289,8 @@ wire object positioning to native `dragstart / dragover / drop`; native HTML5
 drag/drop remains reserved for external browser/file interoperability.
 
 `BLOCK_OBJECT_LAYOUT_OPTIONS` is the shared UI vocabulary and icon mapping:
-`嵌入型 / bc_fuwenben-qianruzuo`, `上下型 / bc_fuwenben-shangxia`,
+`嵌入型 / bc_tuwenraopaiqianrushi`,
+`上下型 / bc_tuwenraopaishangxiashi`,
 `衬于文字下方 / bc_cengji-xia`, and
 `浮于文字上方 / bc_cengji-shang`.
 

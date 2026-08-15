@@ -218,39 +218,41 @@ export type WordArtToolbarAction =
         >
         </bc-float-toolbar-item>
 
-        <span class="word-art-toolbar__divider"></span>
+        @if (!isGrouped) {
+          <span class="word-art-toolbar__divider"></span>
 
-        @for (item of layoutOptions; track item.value) {
-          <button
-            type="button"
-            [csTooltip]="item.label"
-            [attr.aria-label]="item.label"
-            [class.active]="objectLayout === item.value"
-            (click)="action.emit({ name: 'object-layout', value: item.value })"
-          >
-            <i [class]="'bc_icon ' + item.icon"></i>
-          </button>
-        }
+          @for (item of layoutOptions; track item.value) {
+            <button
+              type="button"
+              [csTooltip]="item.label"
+              [attr.aria-label]="item.label"
+              [class.active]="objectLayout === item.value"
+              (click)="action.emit({ name: 'object-layout', value: item.value })"
+            >
+              <i [class]="'bc_icon ' + item.icon"></i>
+            </button>
+          }
 
-        @if (isAbsolute) {
-          <button
-            type="button"
-            csTooltip="上移一层"
-            aria-label="上移一层"
-            [disabled]="!canMoveForward"
-            (click)="action.emit({ name: 'move-forward' })"
-          >
-            <i class="bc_icon bc_cengji-shangyi"></i>
-          </button>
-          <button
-            type="button"
-            csTooltip="下移一层"
-            aria-label="下移一层"
-            [disabled]="!canMoveBackward"
-            (click)="action.emit({ name: 'move-backward' })"
-          >
-            <i class="bc_icon bc_cengji-xiayi"></i>
-          </button>
+          @if (isAbsolute) {
+            <button
+              type="button"
+              csTooltip="上移一层"
+              aria-label="上移一层"
+              [disabled]="!canMoveForward"
+              (click)="action.emit({ name: 'move-forward' })"
+            >
+              <i class="bc_icon bc_cengji-shangyi"></i>
+            </button>
+            <button
+              type="button"
+              csTooltip="下移一层"
+              aria-label="下移一层"
+              [disabled]="!canMoveBackward"
+              (click)="action.emit({ name: 'move-backward' })"
+            >
+              <i class="bc_icon bc_cengji-xiayi"></i>
+            </button>
+          }
         }
 
         <span class="word-art-toolbar__divider"></span>
@@ -657,6 +659,12 @@ export class WordArtToolbarComponent {
       this.wordArtBlock.doc.placement.getState(this.wordArtBlock).mode ===
       "absolute"
     );
+  }
+
+  get isGrouped(): boolean {
+    return this.wordArtBlock.doc.placement.isInObjectGroup?.(
+      this.wordArtBlock,
+    ) ?? false;
   }
 
   get canMoveForward(): boolean {

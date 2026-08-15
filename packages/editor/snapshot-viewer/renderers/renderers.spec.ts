@@ -101,6 +101,54 @@ describe("snapshot-viewer renderers", () => {
     expect(content.style.width).toBe("100%")
   })
 
+  it("renders and patches a fixed object group with local ratio sizing", () => {
+    const group: IBlockSnapshot = {
+      id: "group",
+      flavour: "object-group",
+      nodeType: BlockNodeType.block,
+      meta: {},
+      props: {width: 400, height: 220},
+      children: [{
+        id: "image-in-group",
+        flavour: "image",
+        nodeType: BlockNodeType.block,
+        meta: {},
+        props: {
+          src: "https://cdn.example.com/group.png",
+          wr: 50,
+          ar: 2,
+          position: {x: 30, y: 40},
+        },
+        children: [],
+      }],
+    }
+    const host = document.createElement("div")
+    const renderer = createSnapshotRenderer({resourcePolicy: "off"})
+    renderer.render(host, group)
+
+    const shell = host.querySelector<HTMLElement>("[data-bc-object-group]")!
+    const image = host.querySelector<HTMLElement>(
+      '[data-block-id="image-in-group"]',
+    )!
+    const figure = image.querySelector<HTMLElement>(".image-block__container")!
+    expect(shell.style.width).toBe("400px")
+    expect(shell.style.height).toBe("220px")
+    expect(shell.style.padding).toBe("8px")
+    expect(shell.querySelector<HTMLElement>(
+      ":scope > .object-group-block__children",
+    )?.style.width).toBe("100%")
+    expect(image.style.left).toBe("30px")
+    expect(image.style.top).toBe("40px")
+    expect(figure.style.width).toBe("50%")
+
+    const next = structuredClone(group)
+    ;(next.children[0] as IBlockSnapshot).props['position'] = {x: 80, y: 90}
+    renderer.update(next)
+    expect(image.style.left).toBe("80px")
+    expect(image.style.top).toBe("90px")
+    renderer.destroy()
+  })
+
   it("renders frame indentation and code shell", () => {
     const fixture = createAllBlocksFixture()
     const host = renderFixture([fixture.frame, fixture.code])

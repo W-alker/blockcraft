@@ -285,5 +285,6 @@ this._close$.next();  // triggers all takeUntil subscriptions to complete
 | `FloatTextToolbarPlugin` | Selection-based text formatting | `plugins/float-text-toolbar/` |
 | `DividerExtensionPlugin` | Block-type toolbar | `plugins/divider-toolbar/` |
 | `ImgToolbarPlugin` | Block-type toolbar with resize | `plugins/img-toolbar/` |
+| `ObjectGroupToolbarPlugin` | Multi-object alignment, distribution and grouping | `plugins/object-group-toolbar/` |
 | `CalloutToolbarPlugin` | Block-type toolbar with color picker | `plugins/callout-toolbar/` |
 | `InlineLinkExtension` | Inline element popover | `plugins/inline-link-extension/` |

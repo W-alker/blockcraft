@@ -15,7 +15,7 @@ import type {InlineObjectWrapSide} from '../../blocks'
 export const INLINE_OBJECT_WRAP_LAYOUT_OPTION = {
   value: 'wrap',
   label: '四周型环绕',
-  icon: 'bc_sizhouhuanrao',
+  icon: 'bc_tuwenraopai',
 } as const
 
 const INLINE_OBJECT_LAYOUT_OPTIONS = [

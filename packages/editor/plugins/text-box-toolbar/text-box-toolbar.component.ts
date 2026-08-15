@@ -76,21 +76,23 @@ const TEXT_BOX_LAYOUT_OPTIONS = BLOCK_OBJECT_LAYOUT_OPTIONS.filter(
       contenteditable="false"
       data-bc-text-box-toolbar>
       <nav class="text-box-toolbar__rail" aria-label="文本框快捷工具">
-        <button
-          cs-button
-          csType="text"
-          csSize="sm"
-          type="button"
-          class="text-box-toolbar__rail-button"
-          [class.active]="activePanel === 'layout'"
-          [attr.aria-expanded]="activePanel === 'layout'"
-          aria-controls="bc-text-box-layout-panel"
-          csTooltip="布局选项"
-          [csTooltipPlacement]="tooltipPlacement"
-          aria-label="布局选项"
-          (click)="togglePanel('layout')">
-          <i class="bc_icon bc_duiqifangshi" aria-hidden="true"></i>
-        </button>
+        @if (!isGrouped) {
+          <button
+            cs-button
+            csType="text"
+            csSize="sm"
+            type="button"
+            class="text-box-toolbar__rail-button"
+            [class.active]="activePanel === 'layout'"
+            [attr.aria-expanded]="activePanel === 'layout'"
+            aria-controls="bc-text-box-layout-panel"
+            csTooltip="布局选项"
+            [csTooltipPlacement]="tooltipPlacement"
+            aria-label="布局选项"
+            (click)="togglePanel('layout')">
+            <i class="bc_icon bc_buju" aria-hidden="true"></i>
+          </button>
+        }
 
         <button
           cs-button
@@ -156,7 +158,7 @@ const TEXT_BOX_LAYOUT_OPTIONS = BLOCK_OBJECT_LAYOUT_OPTIONS.filter(
         </button>
       </nav>
 
-      @if (activePanel === 'layout') {
+      @if (!isGrouped && activePanel === 'layout') {
         <section
           id="bc-text-box-layout-panel"
           class="text-box-toolbar__panel text-box-toolbar__layout-panel"
@@ -190,6 +192,7 @@ const TEXT_BOX_LAYOUT_OPTIONS = BLOCK_OBJECT_LAYOUT_OPTIONS.filter(
                 [class.active]="objectLayout === item.value"
                 [attr.aria-checked]="objectLayout === item.value"
                 [attr.aria-label]="item.label"
+                [disabled]="isGrouped"
                 (click)="setObjectLayout(item.value)">
                 <i [class]="'bc_icon ' + item.icon" aria-hidden="true"></i>
                 <span>{{ item.label }}</span>
@@ -214,7 +217,7 @@ const TEXT_BOX_LAYOUT_OPTIONS = BLOCK_OBJECT_LAYOUT_OPTIONS.filter(
             }
           </p>
 
-          @if (isAbsolute) {
+          @if (isAbsolute && !isGrouped) {
             <div class="text-box-toolbar__section-label">排列</div>
             <div class="text-box-toolbar__stack-actions">
               <button
@@ -507,6 +510,12 @@ export class TextBoxToolbarComponent {
   get isAbsolute(): boolean {
     return this.textBoxBlock.doc.placement.getState(this.textBoxBlock).mode ===
       'absolute'
+  }
+
+  get isGrouped(): boolean {
+    return this.textBoxBlock.doc.placement.isInObjectGroup?.(
+      this.textBoxBlock,
+    ) ?? false
   }
 
   get canMoveForward(): boolean {

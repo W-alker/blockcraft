@@ -797,8 +797,8 @@ describe('BlockPlacementManager', () => {
 
   it('publishes the shared Word-like object layout vocabulary', () => {
     expect(BLOCK_OBJECT_LAYOUT_OPTIONS).toEqual([
-      {value: 'inline', label: '嵌入型', icon: 'bc_fuwenben-qianruzuo'},
-      {value: 'top-bottom', label: '上下型', icon: 'bc_fuwenben-shangxia'},
+      {value: 'inline', label: '嵌入型', icon: 'bc_tuwenraopaiqianrushi'},
+      {value: 'top-bottom', label: '上下型', icon: 'bc_tuwenraopaishangxiashi'},
       {value: 'under', label: '衬于文字下方', icon: 'bc_cengji-xia'},
       {value: 'over', label: '浮于文字上方', icon: 'bc_cengji-shang'},
     ])

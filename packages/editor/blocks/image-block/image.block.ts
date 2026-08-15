@@ -76,7 +76,7 @@ export function deriveInitialImageObjectSize(
             <block-resizer
               [container]="imgWrapper"
               [maxWidthContainer]="resizeMaxWidthContainer"
-              [referenceWidth]="rootContentWidth || undefined"
+              [referenceWidth]="referenceWidth || undefined"
               [preserveRightEdge]="isAbsolute"
               (resizeCommit)="onResized($event)"/>
           }
@@ -233,15 +233,15 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
   }
 
   get objectDimensions() {
-    return this.doc.objectSizing.resolve(this.flavour, this.props)
+    return this.doc.objectSizing.resolveForBlock(this.id, this.flavour, this.props)
   }
 
   get renderedWidth(): number | null {
     const width = this.objectDimensions?.width
     if (width == null) return null
-    const rootContentWidth = this.rootContentWidth
-    return Number.isFinite(rootContentWidth) && rootContentWidth > 0
-      ? Math.min(width, rootContentWidth)
+    const referenceWidth = this.referenceWidth
+    return Number.isFinite(referenceWidth) && referenceWidth > 0
+      ? Math.min(width, referenceWidth)
       : width
   }
 
@@ -261,11 +261,19 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
     return this.doc.objectSizing.rootContentWidth
   }
 
+  get referenceWidth(): number {
+    return this.doc.objectSizing.getReferenceWidth(this.id)
+  }
+
   get isAbsolute(): boolean {
     return this.doc.placement?.isInAbsoluteLayout?.(this.id) ?? false
   }
 
   get resizeMaxWidthContainer(): HTMLElement {
+    if (this.doc.placement?.isInObjectGroup?.(this.id)) {
+      const groupHost = this.hostElement.closest<HTMLElement>('[data-bc-object-group]')
+      return this.doc.objectSizing.rootContentElement ?? groupHost?.parentElement ?? this.hostElement
+    }
     return this.isAbsolute
       ? this.doc.objectSizing.rootContentElement ?? this.hostElement
       : this.hostElement
@@ -289,6 +297,7 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
     this.doc.objectSizing.widthChange$
       .pipe(takeUntil(this.onDestroy$))
       .subscribe(() => {
+        if (this.doc.placement?.isInObjectGroup?.(this.id)) return
         this.commitPendingIntrinsicSize()
         this.changeDetectorRef.markForCheck()
       })
@@ -403,7 +412,7 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
     const placement = this.doc.placement.getState(this)
     this._awaitingLocalPreviewSize = false
     this._pendingIntrinsicSize = null
-    this.updateProps({
+    this.doc.placement.updateObjectGeometry(this, {
       wr: derived.wr,
       ar: currentAr,
       width: null,
@@ -463,7 +472,7 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
     const initialSize = deriveInitialImageObjectSize(
       size,
       this.initialAvailableWidth,
-      this.rootContentWidth,
+      this.referenceWidth,
       legacyWidth,
     )
     if (!initialSize) return false
@@ -488,13 +497,13 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
 
   /** 首次 wr/ar 迁移只读取未缩放的 layout 宽度。 */
   private get initialAvailableWidth(): number {
-    const rootWidth = this.rootContentWidth
-    if (this.isAbsolute) return rootWidth
+    const referenceWidth = this.referenceWidth
+    if (this.isAbsolute) return referenceWidth
     const hostWidth = this.hostElement.clientWidth
-    if (!Number.isFinite(hostWidth) || hostWidth <= 0) return rootWidth
-    if (!Number.isFinite(rootWidth) || rootWidth <= 0) return hostWidth
+    if (!Number.isFinite(hostWidth) || hostWidth <= 0) return referenceWidth
+    if (!Number.isFinite(referenceWidth) || referenceWidth <= 0) return hostWidth
     // CSS zoom 可能让 auto-width 图片宿主的 clientWidth 反向扩张；root
     // content width 是响应式 wr 的权威分母，也同时是顶层图片的最大可用宽度。
-    return Math.min(hostWidth, rootWidth)
+    return Math.min(hostWidth, referenceWidth)
   }
 }

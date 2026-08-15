@@ -1,4 +1,5 @@
 import {BehaviorSubject, Observable, Subscription} from 'rxjs'
+import type {IBlockProps} from '../../block-std/types'
 import {BlockReadonlyError} from '../../doc/block-readonly.types'
 import {deleteAbsolutePlacementObject} from './delete-command'
 import {resolvePlacementBox} from './geometry'
@@ -31,6 +32,10 @@ export class BlockPlacementInteractionController {
   constructor(
     private readonly doc: BlockCraft.Doc,
     private readonly runtime: BlockPlacementRuntime,
+    private readonly commitObjectGeometry: (
+      block: BlockCraft.BlockComponent,
+      patch: Partial<IBlockProps>,
+    ) => boolean,
   ) {
     this.bindDeleteHotkeys()
     this.subscriptions.add(this.doc.readonlySwitch$.subscribe(readonly => {
@@ -121,7 +126,7 @@ export class BlockPlacementInteractionController {
       x: finitePlacementNumber(patch.x, current.x),
       y: finitePlacementNumber(patch.y, current.y),
     }
-    block.updateProps({position: next})
+    if (!this.commitObjectGeometry(block, {position: next})) return false
     block.changeDetectorRef.markForCheck()
     return true
   }

@@ -6,6 +6,111 @@
   "description": "文档库2.0",
   "glyphs": [
     {
+      "icon_id": "38044427",
+      "name": "003_中心对齐",
+      "font_class": "zhongxinduiqi",
+      "unicode": "e659",
+      "unicode_decimal": 58969
+    },
+    {
+      "icon_id": "422495",
+      "name": "保存布局",
+      "font_class": "buju",
+      "unicode": "e6bd",
+      "unicode_decimal": 59069
+    },
+    {
+      "icon_id": "586719",
+      "name": "align-2-bottom",
+      "font_class": "align2bottom",
+      "unicode": "e68a",
+      "unicode_decimal": 59018
+    },
+    {
+      "icon_id": "586720",
+      "name": "align-2-center",
+      "font_class": "align2center",
+      "unicode": "e68b",
+      "unicode_decimal": 59019
+    },
+    {
+      "icon_id": "586721",
+      "name": "align-2-left",
+      "font_class": "align2left",
+      "unicode": "e68d",
+      "unicode_decimal": 59021
+    },
+    {
+      "icon_id": "586722",
+      "name": "align-2-middle",
+      "font_class": "align2middle",
+      "unicode": "e68e",
+      "unicode_decimal": 59022
+    },
+    {
+      "icon_id": "586723",
+      "name": "align-2-right",
+      "font_class": "align2right",
+      "unicode": "e690",
+      "unicode_decimal": 59024
+    },
+    {
+      "icon_id": "586724",
+      "name": "align-2-top",
+      "font_class": "align2top",
+      "unicode": "e691",
+      "unicode_decimal": 59025
+    },
+    {
+      "icon_id": "1052019",
+      "name": "图文绕排-嵌入式",
+      "font_class": "tuwenraopaiqianrushi",
+      "unicode": "e64e",
+      "unicode_decimal": 58958
+    },
+    {
+      "icon_id": "1052022",
+      "name": "图文绕排-上下式",
+      "font_class": "tuwenraopaishangxiashi",
+      "unicode": "e653",
+      "unicode_decimal": 58963
+    },
+    {
+      "icon_id": "1052023",
+      "name": "图文绕排",
+      "font_class": "tuwenraopai",
+      "unicode": "e654",
+      "unicode_decimal": 58964
+    },
+    {
+      "icon_id": "38356553",
+      "name": "横向分布",
+      "font_class": "hengxiangfenbu",
+      "unicode": "e657",
+      "unicode_decimal": 58967
+    },
+    {
+      "icon_id": "38356557",
+      "name": "纵向分布",
+      "font_class": "zongxiangfenbu",
+      "unicode": "e658",
+      "unicode_decimal": 58968
+    },
+    {
+      "icon_id": "6511437",
+      "name": "组合",
+      "font_class": "combination",
+      "unicode": "e649",
+      "unicode_decimal": 58953
+    },
+    {
+      "icon_id": "43871639",
+      "name": "取消组合",
+      "font_class": "quxiaozuhe",
+      "unicode": "e64d",
+      "unicode_decimal": 58957
+    },
+    {
       "icon_id": "4939030",
       "name": "插入分页",
       "font_class": "charufenye",
@@ -151,13 +256,6 @@
       "font_class": "leidatu",
       "unicode": "e655",
       "unicode_decimal": 58965
-    },
-    {
-      "icon_id": "43662175",
-      "name": "Property 1=环绕_四周环绕, Property 2=editoricon_square",
-      "font_class": "sizhouhuanrao",
-      "unicode": "eb61",
-      "unicode_decimal": 60257
     },
     {
       "icon_id": "39482579",

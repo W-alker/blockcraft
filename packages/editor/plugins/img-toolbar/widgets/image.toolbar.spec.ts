@@ -5,7 +5,10 @@ import {CsTooltipDirective} from '@cses/ui'
 import {ImageToolbar} from './image.toolbar'
 
 describe('ImageToolbar', () => {
-  function makeBlock(mode: 'relative' | 'absolute') {
+  function makeBlock(
+    mode: 'relative' | 'absolute',
+    grouped = false,
+  ) {
     return {
       childrenLength: 0,
       props: {},
@@ -20,6 +23,7 @@ describe('ImageToolbar', () => {
           }),
           canMoveForward: () => true,
           canMoveBackward: () => false,
+          isInObjectGroup: () => grouped,
         },
       },
     } as any
@@ -49,11 +53,11 @@ describe('ImageToolbar', () => {
 
     fixture.componentRef.setInput('imgBlock', makeBlock('relative'))
     fixture.detectChanges()
-    expect(fixture.nativeElement.querySelector('.bc_sizhouhuanrao')).toBeNull()
+    expect(fixture.nativeElement.querySelector('.bc_tuwenraopai')).toBeNull()
 
     fixture.componentRef.setInput('imgBlock', makeBlock('absolute'))
     fixture.detectChanges()
-    expect(fixture.nativeElement.querySelector('.bc_sizhouhuanrao')).not.toBeNull()
+    expect(fixture.nativeElement.querySelector('.bc_tuwenraopai')).not.toBeNull()
 
     fixture.destroy()
     TestBed.resetTestingModule()
@@ -110,6 +114,18 @@ describe('ImageToolbar', () => {
     expect(Array.from(host.querySelectorAll<HTMLElement>('[aria-label]'))
       .map(element => element.getAttribute('aria-label')))
       .toEqual(expectedTitles)
+
+    fixture.componentRef.setInput('imgBlock', makeBlock('absolute', true))
+    fixture.detectChanges()
+    expect(host.querySelector(
+      'bc-float-toolbar-item[name="move-forward"]',
+    )).toBeNull()
+    expect(host.querySelector(
+      'bc-float-toolbar-item[name="move-backward"]',
+    )).toBeNull()
+    expect(host.querySelector(
+      'bc-float-toolbar-item[name="object-layout"]',
+    )).toBeNull()
 
     fixture.destroy()
     TestBed.resetTestingModule()

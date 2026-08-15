@@ -16,6 +16,7 @@ import {
 import {
   destroyResourcePlaceholder,
 } from "../global/resource-placeholder";
+import {projectAbsolutePlaneChildren} from "./renderers/structural-renderers";
 
 export class SnapshotRenderEngine implements SnapshotRenderer {
   private container: HTMLElement | null = null
@@ -229,6 +230,7 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
       patchNode: (mounted, snapshot) => this.patchNode(mounted, snapshot, renderContext),
       mountNode: (snapshot) => this.mountNode(snapshot, renderContext),
     })
+    projectAbsolutePlaneChildren(current.element, next)
 
     return {
       snapshot: next,

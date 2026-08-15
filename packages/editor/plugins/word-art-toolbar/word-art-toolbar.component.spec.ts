@@ -13,15 +13,20 @@ import {
 } from "./word-art-toolbar.component";
 
 describe("WordArtToolbarComponent", () => {
-  function createBlock(props: Partial<WordArtBlockProps> = {}) {
+  function createBlock(
+    props: Partial<WordArtBlockProps> = {},
+    mode: "relative" | "absolute" = "relative",
+    grouped = false,
+  ) {
     return {
       wordArtProps: normalizeWordArtProps(props),
       doc: {
         placement: {
-          getObjectLayout: () => "top-bottom",
-          getState: () => ({ mode: "relative" }),
+          getObjectLayout: () => mode === "absolute" ? "over" : "top-bottom",
+          getState: () => ({ mode }),
           canMoveForward: () => false,
           canMoveBackward: () => false,
+          isInObjectGroup: () => grouped,
         },
       },
     } as any;
@@ -121,6 +126,28 @@ describe("WordArtToolbarComponent", () => {
     expect(rows[1].lastElementChild?.getAttribute("aria-label")).toBe(
       "删除艺术字",
     );
+
+    fixture.destroy();
+    TestBed.resetTestingModule();
+  });
+
+  it("hides independent stack controls for grouped WordArt", async () => {
+    await TestBed.configureTestingModule({
+      imports: [WordArtToolbarComponent],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(WordArtToolbarComponent);
+    fixture.componentInstance.wordArtBlock = createBlock(
+      {},
+      "absolute",
+      true,
+    );
+    fixture.detectChanges();
+    const host = fixture.nativeElement as HTMLElement;
+
+    expect(host.querySelector('[aria-label="上移一层"]')).toBeNull();
+    expect(host.querySelector('[aria-label="下移一层"]')).toBeNull();
+    expect(host.querySelector('[aria-label="嵌入型"]')).toBeNull();
+    expect(host.querySelector('[aria-label="上下型"]')).toBeNull();
 
     fixture.destroy();
     TestBed.resetTestingModule();

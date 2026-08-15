@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-14
+> Last updated: 2026-08-15
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
@@ -82,14 +82,19 @@ text. Merely being the nearest block is insufficient, and editable descendants
 of the source image are excluded. If no text block is actually covered, the
 action falls back to a new wrapped paragraph at the nearest visual flow anchor.
 Both paths start with `side: 'auto'` plus the standard gap.
-Absolute images also expose one-step
+The canonical icon mapping is `bc_tuwenraopaiqianrushi` for **嵌入型**,
+`bc_tuwenraopaishangxiashi` for **上下型**, and `bc_tuwenraopai` for
+**四周型环绕**.
+Root absolute images also expose one-step
 **上移一层 / 下移一层** controls using `bc_cengji-shangyi` and
 `bc_cengji-xiayi`. The controls traverse one total stack and can cross ordinary
 flow content; they are disabled only at the highest `over` and lowest `under`
-boundaries.
+boundaries. An image inside `object-group` omits both the object-layout and
+stack control sets because only its group owns root placement.
 
-Block images use the shared root-relative object resizer. The persisted width
-is `props.wr` (root content percentage) and height is derived from
+Block images use the shared placement-plane-relative object resizer. The
+persisted width is `props.wr` (normally root-content percentage; group-width
+percentage for a direct `object-group` member) and height is derived from
 `props.ar`; the aspect ratio is locked by default. Left/right handles use
 Pointer Events, animation-frame-coalesced DOM preview and one props write on
 pointerup. An old pixel-sized image remains unchanged until that first completed
@@ -192,6 +197,63 @@ new ImgToolbarPlugin({
 
 ---
 
+## ObjectGroupToolbarPlugin
+
+> `plugins/object-group-toolbar/` — Multi-object selection and fixed grouping.
+
+Shift-click extends a whole-object selection to one contiguous range of direct
+root placement children. With two or more objects, the toolbar exposes
+**左对齐 / 水平居中 / 右对齐 / 顶端对齐 / 垂直居中 / 底端对齐 / 中心对齐**.
+With three or more it also enables **横向分布 / 纵向分布**. The icons are
+`bc_align2left`, `bc_align2center`, `bc_align2right`, `bc_align2top`,
+`bc_align2middle`, `bc_align2bottom`, `bc_zhongxinduiqi`,
+`bc_hengxiangfenbu` and `bc_zongxiangfenbu`.
+The **组合** action calls `doc.placement.group(ids)`;
+selecting an `object-group` shows **取消组合** and calls `ungroup(groupId)`.
+Their toolbar glyphs are `bc_combination` and `bc_quxiaozuhe`, respectively.
+All structural moves, coordinate rebasing and image ratio conversions occur in
+one Yjs transaction.
+Alignment and distribution also use one model-only Yjs transaction, but write
+only `position`. They preserve responsive/fixed size fields and placement
+layers. Single-axis center and combined center use the average of the selected
+visual centers; distribution keeps the two endpoint centers fixed and spaces
+the intermediate centers evenly.
+The selected group toolbar also exposes **上移一层 / 下移一层** through the
+normal root placement stack; copy/delete use the standard whole-block paths.
+
+The Plugin's document-capture pointer listener must register before image,
+Shape, TextBox and WordArt object Plugins. The bundled capability factory
+already guarantees that order. On grouped content, the first click selects and
+shows the whole group; dragging any of the selected frame's four edge bands
+moves the group. Clicking a member again while the group is selected lets that
+member's existing toolbar and local drag behavior take over. Once the group or
+any nested descendant owns Selection, the capture listener leaves member
+`pointerdown` events untouched, so later member drags cannot be reclaimed as a
+new first click. A selection anywhere in the mounted group subtree keeps the
+ancestor group outline visible; this walks only the two endpoint ancestry
+chains and does not scan descendants or measure DOM.
+Member styling and local resize stay available; object-layout controls are
+omitted because flow/inline/layer transitions require ungrouping first.
+Independent **上移一层 / 下移一层** controls are omitted from every member
+toolbar; only the selected group can move through the root placement stack.
+Member move/resize/rotation commits tighten the group frame through
+`updateObjectGeometry()` without measuring DOM. The pointer-move phase remains
+transform-only.
+The frame reserves 8 layout pixels on each side between its outline and the
+local member plane, so an edge-aligned member does not overlap group chrome.
+
+```typescript
+new ObjectGroupToolbarPlugin()
+```
+
+Selection remains one contiguous range of root absolute objects. Alignment can
+cross `under`/`over` layers and can treat an existing group as one object;
+组合 stays independently disabled unless the selected range is same-layer and
+contains no existing group. V1 does not expose group resize/rotation or nested
+groups.
+
+---
+
 ## ShapeToolbarPlugin
 
 > `plugins/shape-toolbar/` — Word-like shape selection, styling and object layout.
@@ -201,10 +263,11 @@ Registers pointer selection and connected-toolbar behavior for the built-in
 outline color/width/style, deletion, and the complete object-layout set.
 Shape type is chosen only from the fixed toolbar's **插入形状** picker. Text
 color and horizontal/vertical alignment remain compatible block properties but
-are not shown in the default object toolbar. An absolute shape additionally
+are not shown in the default object toolbar. A root absolute shape additionally
 shows **上移一层 / 下移一层** with `bc_cengji-shangyi` and
 `bc_cengji-xiayi`; the same document placement APIs and total-stack boundary
-rules used by images determine whether each control is enabled.
+rules used by images determine whether each control is enabled. A grouped shape
+omits the complete layout and stack control sets.
 
 The outline-width picker uses the shared `BcOverlayTriggerDirective` and
 column `BcFloatToolbarComponent`; the shape toolbar contains no native
@@ -304,6 +367,7 @@ outline and stroke style. Picture selection goes through the host
 **文字** combines WordArt presets with font, size, alignment, solid/gradient
 fill, outline, shadow and transform controls. Preset IDs are never persisted,
 and detailed `wa` edits remain one canonical serialized value-object write.
+The **布局** rail entry uses the semantic `bc_buju` icon.
 
 Compact `p/bgi/bgs/bgx/bgy/bgo` remains available to Schema/CRUD callers as a
 low-level surface capability. Raw padding and background URL fields are not
@@ -316,8 +380,9 @@ open inside that toolbar.
 
 Object layout is limited to `top-bottom`, `under` and `over`; the layout card
 maps the current model to **随文字移动 / 固定在页面上** without advertising
-Square/Tight/Through wrapping. Absolute objects also expose one-step
-forward/backward stacking. No inline/wrap conversion is advertised because a
+Square/Tight/Through wrapping. Root absolute objects also expose one-step
+forward/backward stacking. A grouped text box omits the entire **布局** rail
+entry and panel rather than showing unavailable choices. No inline/wrap conversion is advertised because a
 multi-Block container has no inline Embed or block-wrap representation.
 
 Register `TextBoxBlockSchema`, `PlacementLayoutBlockSchema`, the allowed
@@ -354,7 +419,8 @@ The connected toolbar exposes one of 10 safe font families, font size,
 solid/linear-gradient fills, outline,
 shadow toggle, letter spacing, horizontal/vertical alignment, safe
 affine/perspective/scale effects, inline/wrap plus the three block object
-layouts, absolute stack order and deletion. The 16 whole-style presets remain
+layouts, root absolute stack order and deletion. A grouped WordArt omits the
+complete layout and stack control sets. The 16 whole-style presets remain
 in the fixed toolbar's **插入艺术字** visual dropdown; font-family selection is
 also available on the selected object so existing WordArt can be restyled. The
 shadow toggle uses the `bc_wenziyinying` iconfont glyph.

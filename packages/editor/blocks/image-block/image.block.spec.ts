@@ -43,6 +43,7 @@ describe('ImageBlockComponent local preview sizing', () => {
     setInitProps: jasmine.Spy;
   } {
     const component = Object.create(ImageBlockComponent.prototype) as any
+    component._native = {id: 'image', flavour: 'image'}
     component._props = {src: 'local://image', wr: 100}
     component.doc = {
       isReadonly: false,
@@ -53,6 +54,7 @@ describe('ImageBlockComponent local preview sizing', () => {
         get rootContentWidth() {
           return rootWidth()
         },
+        getReferenceWidth: () => rootWidth(),
       },
     }
     component.hostElement = document.createElement('div')
@@ -183,14 +185,15 @@ describe('ImageBlockComponent local preview sizing', () => {
 })
 
 describe('ImageBlockComponent rendered width', () => {
-  function createComponent(width: number, rootContentWidth: number) {
+  function createComponent(width: number, referenceWidth: number) {
     const component = Object.create(ImageBlockComponent.prototype) as any
-    component._native = {flavour: 'image'}
+    component._native = {id: 'image', flavour: 'image'}
     component._props = {src: 'https://cdn.example.com/image.png'}
     component.doc = {
       objectSizing: {
-        rootContentWidth,
-        resolve: () => ({width}),
+        rootContentWidth: referenceWidth,
+        getReferenceWidth: () => referenceWidth,
+        resolveForBlock: () => ({width}),
       },
     }
     return component as ImageBlockComponent

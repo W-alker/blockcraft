@@ -15,12 +15,17 @@ import {
 } from "../../blocks/text-box-block";
 import {getShapeDefinition} from "../../blocks/shape-block/shape-definitions";
 import {resolveWordArtPresentation} from "../../blocks/word-art-block";
+import {
+  BLOCK_OBJECT_GROUP_PADDING,
+  normalizeBlockObjectGroupProps,
+} from "../../framework";
 import {createBlockShell} from "../dom/create-block-shell";
 import {SnapshotBlockRenderer, SnapshotRenderContext} from "../types";
 
 const STRUCTURAL_FLAVOURS = new Set([
   "root",
   "placement-layout",
+  "object-group",
   "render-unit",
   "text-box",
   "callout",
@@ -60,6 +65,8 @@ export function createStructuralRenderers(): SnapshotBlockRenderer[] {
           return renderTableCell(snapshot, ctx)
         case "placement-layout":
           return renderPlacementLayout(snapshot, ctx)
+        case "object-group":
+          return renderObjectGroup(snapshot, ctx)
         case "root":
         default:
           return renderRoot(snapshot, ctx)
@@ -98,7 +105,60 @@ function renderPlacementLayout(
   content.style.isolation = "auto"
   content.style.pointerEvents = "none"
   appendChildren(content, ctx, snapshot.children)
-  const snapshots = snapshot.children as IBlockSnapshot[]
+  element.append(content)
+  projectAbsolutePlaneChildren(element, snapshot)
+  return {element}
+}
+
+function renderObjectGroup(
+  snapshot: IBlockSnapshot,
+  ctx: SnapshotRenderContext,
+) {
+  const element = createBlockShell(snapshot)
+  const props = normalizeBlockObjectGroupProps(snapshot.props)
+  element.setAttribute("data-bc-object-group", "")
+  Object.assign(element.style, {
+    width: `${props.width}px`,
+    height: `${props.height}px`,
+    boxSizing: "border-box",
+    padding: `${BLOCK_OBJECT_GROUP_PADDING}px`,
+    overflow: "visible",
+  })
+  const content = document.createElement("div")
+  content.classList.add(
+    "object-group-block__children",
+    "children-render-container",
+  )
+  content.setAttribute("data-bc-placement-container", "")
+  Object.assign(content.style, {
+    position: "relative",
+    width: "100%",
+    height: "100%",
+    boxSizing: "border-box",
+    isolation: "isolate",
+    overflow: "visible",
+  })
+  appendChildren(content, ctx, snapshot.children)
+  element.append(content)
+  projectAbsolutePlaneChildren(element, snapshot)
+  return {element}
+}
+
+/** Reapply model placement after structural snapshot children are patched. */
+export function projectAbsolutePlaneChildren(
+  element: HTMLElement,
+  snapshot: IBlockSnapshot,
+): void {
+  if (snapshot.flavour !== "placement-layout" && snapshot.flavour !== "object-group") {
+    return
+  }
+  const content = element.querySelector<HTMLElement>(
+    ":scope > .children-render-container",
+  )
+  if (!content) return
+  const snapshots = Array.isArray(snapshot.children)
+    ? snapshot.children as IBlockSnapshot[]
+    : []
   for (const [index, child] of Array.from(content.children).entries()) {
     if (!(child instanceof HTMLElement)) continue
     const props = snapshots[index]?.props as Record<string, unknown> | undefined
@@ -108,7 +168,10 @@ function renderPlacementLayout(
       : {}
     const x = Number(state["x"] ?? 0)
     const y = Number(state["y"] ?? 0)
-    const layer = props?.["placementLayer"] === "under" ? "under" : "over"
+    const layer = snapshot.flavour === "placement-layout" &&
+      props?.["placementLayer"] === "under"
+      ? "under"
+      : "over"
     child.dataset["bcPlacement"] = "absolute"
     child.dataset["bcPlacementLayer"] = layer
     child.style.position = "absolute"
@@ -118,8 +181,6 @@ function renderPlacementLayout(
     child.style.margin = "0"
     child.style.pointerEvents = "auto"
   }
-  element.append(content)
-  return {element}
 }
 
 function renderRoot(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {

@@ -13,6 +13,7 @@ describe('TextBoxToolbarComponent', () => {
   function createComponent(
     props: Record<string, unknown> = {},
     mode: 'relative' | 'absolute' = 'relative',
+    grouped = false,
   ) {
     const cdr = jasmine.createSpyObj<ChangeDetectorRef>(
       'ChangeDetectorRef',
@@ -27,6 +28,7 @@ describe('TextBoxToolbarComponent', () => {
           getState: () => ({mode, x: 0, y: 0, layer: 'over'}),
           canMoveForward: () => true,
           canMoveBackward: () => false,
+          isInObjectGroup: () => grouped,
         },
       },
     } as any
@@ -91,6 +93,8 @@ describe('TextBoxToolbarComponent', () => {
       '形状格式',
       '文字格式',
     ])
+    expect(rail.querySelector('[aria-label="布局选项"] .bc_buju')).not.toBeNull()
+    expect(rail.querySelector('.bc_duiqifangshi')).toBeNull()
 
     panelButtons[0]!.click()
     fixture.detectChanges()
@@ -116,6 +120,30 @@ describe('TextBoxToolbarComponent', () => {
       name: 'object-layout',
       value: 'top-bottom',
     }])
+  })
+
+  it('hides the complete layout surface for a grouped text box', async () => {
+    await TestBed.configureTestingModule({
+      imports: [TextBoxToolbarComponent],
+    }).compileComponents()
+    const fixture = TestBed.createComponent(TextBoxToolbarComponent)
+    fixture.componentInstance.textBoxBlock = createComponent(
+      {},
+      'absolute',
+      true,
+    ).textBoxBlock
+    fixture.componentInstance.activePanel = 'layout'
+    fixture.detectChanges()
+    const host = fixture.nativeElement as HTMLElement
+
+    expect(host.querySelector('[aria-label="布局选项"]')).toBeNull()
+    expect(host.querySelector('#bc-text-box-layout-panel')).toBeNull()
+    expect(host.querySelector('.text-box-toolbar__stack-actions')).toBeNull()
+    expect(host.textContent).not.toContain('上移一层')
+    expect(host.textContent).not.toContain('下移一层')
+
+    fixture.destroy()
+    TestBed.resetTestingModule()
   })
 
   it('applies one concrete style preset patch without persisting the preset id', () => {

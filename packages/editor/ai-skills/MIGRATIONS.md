@@ -69,6 +69,111 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
+## Unreleased — 2026-08-15 — fixed-pixel object groups and local placement planes
+
+**Severity**: minor
+
+**What changed**: Added the internal `object-group` Block, a fixed-pixel local
+absolute placement plane, model-first group/ungroup commands on
+`BlockPlacementManager`, group-aware responsive object sizing and the bundled
+`ObjectGroupToolbarPlugin`. Snapshot Viewer and HTML round-trip preserve the
+container, local positions and native child sizing fields.
+
+**Why**: Images use relative `wr/ar` sizing while Shape, TextBox and WordArt use
+fixed pixels. Freezing every object to pixels would destroy responsive image
+semantics; keeping every child root-relative would deform a composition when
+the root width changed. A fixed group plane lets each child retain its native
+model while the composition remains stable.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-app.md`
+- `blockcraft-plugin.md`
+- `blockcraft-adapter.md`
+- `blockcraft-toolbar.md`
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-plugins-ref.md`
+- `blockcraft-perf.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `ObjectGroupBlockSchema`, `ObjectGroupBlockComponent` and
+  `BLOCK_OBJECT_GROUP_FLAVOUR` plus the fixed
+  `BLOCK_OBJECT_GROUP_PADDING` (8 layout pixels).
+- `BlockObjectGroupProps` and `normalizeBlockObjectGroupProps()`.
+- `BlockPlacementManager.canGroup()`, `group()`, `canUngroup()`, `ungroup()`,
+  `isObjectGroup()`, `isInObjectGroup()` and `updateObjectGeometry()`.
+- `BlockObjectAlignment`, `BlockPlacementManager.canAlignObjects()` and
+  `alignObjects()` for model-only rotation-aware object alignment.
+- `BlockObjectSizingManager.getReferenceWidth()` and `resolveForBlock()`.
+- `ObjectGroupToolbarPlugin` and `ObjectGroupToolbarComponent`.
+
+### Migration Recipe
+
+`createBundledEditorCapabilities()` registers the new Schema and Plugin
+automatically. Manual capability assemblies that want grouping should add both,
+with the group Plugin before per-flavour object toolbars:
+
+```typescript
+const schemas = new SchemaManager([
+  RootBlockSchema,
+  PlacementLayoutBlockSchema,
+  ObjectGroupBlockSchema,
+  ImageBlockSchema,
+  ShapeBlockSchema,
+])
+
+const plugins = [
+  new ObjectGroupToolbarPlugin(),
+  new ImgToolbarPlugin(),
+  new ShapeToolbarPlugin(),
+]
+```
+
+Live ratio-sized block components should use the block-aware resolver:
+
+```typescript
+// before: always root-relative
+doc.objectSizing.resolve(block.flavour, block.props)
+
+// after: root-relative normally, group-relative for direct group members
+doc.objectSizing.resolveForBlock(block.id, block.flavour, block.props)
+```
+
+### Behavior Changes
+
+- A direct child of `object-group` is structurally absolute and its `position`
+  is local to the group rather than root content.
+- Group creation requires at least two contiguous, same-layer direct root
+  absolute objects. It computes a rotation-aware fixed frame and moves existing
+  IDs without cloning.
+- Ratio-sized images preserve their pixel frame by converting `wr` between the
+  root width and the inset group content width when grouping/ungrouping.
+- Persisted group `width/height` describe an outer frame with an 8px inset on
+  every side; member positions and ratio sizing use the inner content plane.
+- Member move/resize/rotation tightens the rotation-aware group frame in the
+  same transaction and logs `[ObjectGroup][performance]` timing metrics.
+- A selected group moves from four edge hit bands; its first content click only
+  selects the group and the second enters a member. Selection on any descendant
+  keeps the ancestor frame visible, and subsequent member pointer events stay
+  owned by that member's object Plugin.
+- Only the group owns a root-stack layer. Group members reject `setLayer()` and
+  forward/backward moves. Image/Shape/WordArt member toolbars omit layout and
+  stack controls; TextBox omits its complete 布局 entry and panel.
+- 组合 and 取消组合 use `bc_combination` and `bc_quxiaozuhe`.
+- A contiguous multi-object selection exposes six single-axis alignments,
+  combined center alignment, and horizontal/vertical distribution. Alignment
+  accepts mixed root layers and existing groups, writes only `position` in one
+  transaction, and leaves the stricter group eligibility rule independent.
+- Layout UI uses `bc_buju` for its entry,
+  `bc_tuwenraopaiqianrushi` for 嵌入型,
+  `bc_tuwenraopaishangxiashi` for 上下型 and `bc_tuwenraopai` for
+  四周型环绕.
+- User-driven group resize, group rotation and nested groups are not part of V1.
+
 ## Unreleased — 2026-08-15 — model-drive fixed object height estimates
 
 **Severity**: patch

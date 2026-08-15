@@ -1,6 +1,7 @@
 import {BehaviorSubject, distinctUntilChanged} from 'rxjs'
 import type {BlockObjectSizingCapability} from '../block-std/schema/block-schema'
 import type {IBlockProps} from '../block-std/types/block.type'
+import {BLOCK_OBJECT_GROUP_PADDING} from './block-placement/types'
 
 const MIN_WR = 1
 const MAX_WR = 100
@@ -204,6 +205,36 @@ export class BlockObjectSizingManager {
       this.rootContentWidth,
       capability,
     )
+  }
+
+  /** Resolve an object's ratio size against its nearest placement plane. */
+  resolveForBlock(
+    blockId: string,
+    flavour: string,
+    props: ObjectSizeInput | null | undefined,
+  ): ResolvedObjectDimensions | null {
+    const capability = this.getCapability(flavour)
+    if (!capability) return null
+    return resolveObjectDimensions(
+      props,
+      this.getReferenceWidth(blockId),
+      capability,
+    )
+  }
+
+  /**
+   * Ratio-sized children of an object group use its inset content-plane width;
+   * every other object keeps the document root content width as its basis.
+   */
+  getReferenceWidth(blockId: string): number {
+    const parentId = this.doc.model?.getParentId?.(blockId)
+    if (parentId && this.doc.placement?.isObjectGroup?.(parentId)) {
+      const width = this.doc.model?.getProps?.(parentId)?.['width']
+      if (typeof width === 'number' && Number.isFinite(width) && width > 0) {
+        return Math.max(1, width - BLOCK_OBJECT_GROUP_PADDING * 2)
+      }
+    }
+    return this.rootContentWidth
   }
 
   destroy(): void {

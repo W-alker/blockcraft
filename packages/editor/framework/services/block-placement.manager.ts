@@ -2,10 +2,15 @@ import {Observable, Subscription} from 'rxjs'
 import type {
   BlockPlacementLayer,
   BlockPlacementMode,
+  IBlockProps,
   IBlockSnapshot,
   ResolvedBlockPosition,
 } from '../block-std/types'
 import {BlockPlacementFlowCoordinator} from './block-placement/flow.coordinator'
+import {
+  BlockPlacementAlignmentCoordinator,
+} from './block-placement/alignment.coordinator'
+import {BlockPlacementGroupCoordinator} from './block-placement/group.coordinator'
 import {
   BlockPlacementInteractionController,
 } from './block-placement/interaction.controller'
@@ -16,6 +21,7 @@ import {BlockPlacementRuntime} from './block-placement/runtime'
 import {BlockPlacementStackCoordinator} from './block-placement/stack.coordinator'
 import {
   type AbsoluteBlockInsertOptions,
+  type BlockObjectAlignment,
   type BlockObjectBlockLayout,
   type BlockObjectLayout,
   type BlockObjectLayoutAdapter,
@@ -33,16 +39,21 @@ export {
   resolvePlacementLayer,
 } from './block-placement/state'
 export {
+  BLOCK_OBJECT_GROUP_PADDING,
   BLOCK_OBJECT_LAYOUT_OPTIONS,
+  BLOCK_OBJECT_GROUP_FLAVOUR,
   BLOCK_PLACEMENT_LAYOUT_FLAVOUR,
+  normalizeBlockObjectGroupProps,
 } from './block-placement/types'
 export type {
   AbsoluteBlockInsertOptions,
   BlockObjectBlockLayout,
+  BlockObjectAlignment,
   BlockObjectLayout,
   BlockObjectLayoutAdapter,
   BlockObjectLayoutAdapterContext,
   BlockObjectLayoutOption,
+  BlockObjectGroupProps,
   BlockPlacementConfig,
   BlockPlacementDragState,
   BlockPlacementFlowAnchor,
@@ -60,6 +71,10 @@ export type {
  */
 export class BlockPlacementManager {
   private readonly runtime = new BlockPlacementRuntime(this.doc)
+  private readonly alignment = new BlockPlacementAlignmentCoordinator(
+    this.doc,
+    this.runtime,
+  )
   private readonly rootLayout = new RootPlacementLayoutCoordinator(
     this.doc,
     this.runtime,
@@ -73,9 +88,14 @@ export class BlockPlacementManager {
     this.doc,
     this.runtime,
   )
+  private readonly groupCoordinator = new BlockPlacementGroupCoordinator(
+    this.doc,
+    this.runtime,
+  )
   private readonly interaction = new BlockPlacementInteractionController(
     this.doc,
     this.runtime,
+    (block, patch) => this.groupCoordinator.updateObjectGeometry(block, patch),
   )
   private readonly _subscriptions = new Subscription()
   private readonly _objectLayoutAdapters =
@@ -140,6 +160,14 @@ export class BlockPlacementManager {
     return this.runtime.isPlacementLayout(blockOrId)
   }
 
+  isObjectGroup(blockOrId: string | BlockCraft.BlockComponent): boolean {
+    return this.runtime.isObjectGroup(blockOrId)
+  }
+
+  isInObjectGroup(blockOrId: string | BlockCraft.BlockComponent): boolean {
+    return this.runtime.isInObjectGroup(blockOrId)
+  }
+
   isInAbsoluteLayout(blockOrId: string | BlockCraft.BlockComponent): boolean {
     return this.runtime.isInAbsoluteLayout(blockOrId)
   }
@@ -150,6 +178,57 @@ export class BlockPlacementManager {
 
   getAbsoluteBlockIds(): string[] {
     return this.runtime.getAbsoluteBlockIds()
+  }
+
+  /**
+   * Test whether two or more root absolute objects can share one alignment
+   * command. Distribution additionally requires at least three objects.
+   */
+  canAlignObjects(
+    blockIds: readonly string[],
+    alignment?: BlockObjectAlignment,
+  ): boolean {
+    return this.alignment.canAlignObjects(blockIds, alignment)
+  }
+
+  /**
+   * Apply a one-shot rotation-aware alignment without changing object sizes,
+   * responsive sizing fields or placement layers.
+   */
+  alignObjects(
+    blockIds: readonly string[],
+    alignment: BlockObjectAlignment,
+  ): boolean {
+    return this.alignment.alignObjects(blockIds, alignment)
+  }
+
+  canGroup(blockIds: readonly string[]): boolean {
+    return this.groupCoordinator.canGroup(blockIds)
+  }
+
+  group(blockIds: readonly string[]): string | null {
+    return this.groupCoordinator.group(blockIds)
+  }
+
+  canUngroup(groupId: string): boolean {
+    return this.groupCoordinator.canUngroup(groupId)
+  }
+
+  ungroup(groupId: string): string[] {
+    return this.groupCoordinator.ungroup(groupId)
+  }
+
+  /**
+   * Persist object geometry and keep a containing object-group tightly fitted.
+   * Built-in object blocks use this instead of writing size/rotation directly.
+   */
+  updateObjectGeometry(
+    blockOrId: string | BlockCraft.BlockComponent,
+    patch: Partial<IBlockProps>,
+  ): boolean {
+    const block = this.resolveBlock(blockOrId)
+    if (!block) return false
+    return this.groupCoordinator.updateObjectGeometry(block, patch)
   }
 
   /**
@@ -194,6 +273,10 @@ export class BlockPlacementManager {
   ): boolean {
     const block = this.resolveBlock(blockOrId)
     if (!block) return false
+    // Group members stay inside their fixed local plane until ungrouped. Their
+    // flavour toolbar may remain visible for style/resize, but representation
+    // or flow/layer transitions would break the group boundary.
+    if (this.runtime.isInObjectGroup(block)) return false
     if (layout === 'inline') {
       return this._objectLayoutAdapters.has(block.flavour)
     }
@@ -360,6 +443,7 @@ export class BlockPlacementManager {
 
   destroy(): void {
     this.interaction.destroy()
+    this.groupCoordinator.destroy()
     this.rootLayout.destroy()
     this._objectLayoutAdapters.clear()
     this._subscriptions.unsubscribe()

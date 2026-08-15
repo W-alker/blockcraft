@@ -21,9 +21,11 @@ import {shapeBlockHtmlAdapterMatcher} from "./shape-matcher";
 import {wordArtBlockHtmlAdapterMatcher} from "./word-art-matcher";
 import {renderUnitBlockHtmlAdapterMatcher} from "./render-unit-matcher";
 import {textBoxBlockHtmlAdapterMatcher} from "./text-box-matcher";
+import {objectGroupBlockHtmlAdapterMatcher} from "./object-group-matcher";
 
 export const DEFAULT_BLOCK_MATCHERS: BlockHtmlAdapterMatcher[] = [
   renderUnitBlockHtmlAdapterMatcher,
+  objectGroupBlockHtmlAdapterMatcher,
   textBoxBlockHtmlAdapterMatcher,
   shapeBlockHtmlAdapterMatcher,
   wordArtBlockHtmlAdapterMatcher,

@@ -4,9 +4,13 @@ import {
 } from '../../doc/block-readonly.types'
 
 const PLACEMENT_LAYOUT_FLAVOUR = 'placement-layout'
+const OBJECT_GROUP_FLAVOUR = 'object-group'
+
+const isAbsolutePlacementPlane = (flavour: unknown): boolean =>
+  flavour === PLACEMENT_LAYOUT_FLAVOUR || flavour === OBJECT_GROUP_FLAVOUR
 
 /**
- * Delete one absolute object from a placement layout without applying the
+ * Delete one absolute object from its placement plane without applying the
  * render-unit "keep one paragraph" fallback.
  *
  * This command deliberately stays package-internal. Keyboard handlers and
@@ -24,7 +28,7 @@ export function deleteAbsolutePlacementObject(
   const parentId = doc.model.getParentId(blockId)
   if (
     !parentId ||
-    doc.model.getFlavour(parentId) !== PLACEMENT_LAYOUT_FLAVOUR
+    !isAbsolutePlacementPlane(doc.model.getFlavour(parentId))
   ) {
     return false
   }
@@ -58,7 +62,9 @@ export function deleteAbsolutePlacementObject(
   if (!deleted.length) return false
 
   // Never recalculate against a block that no longer exists. The layout
-  // normalizer may subsequently remove the empty placement-layout.
+  // normalizer may subsequently remove the empty root placement-layout. An
+  // object group deliberately remains valid while empty so entering a group
+  // and deleting its last member never deletes the selected group implicitly.
   if (ownsSelection) doc.selection.blur()
   return true
 }
