@@ -96,6 +96,90 @@ test('full rendering initializes the model and root before mounting placeable bl
   expect(fatal).toEqual([])
 })
 
+test('undoing top-bottom layout restores a visible absolute object with virtualization', async ({page}) => {
+  await page.goto('/')
+  await page.getByRole('button', {name: '初始化', exact: true}).click()
+  await waitForEditor(page)
+
+  const imageId = await page.evaluate(async (selector) => {
+    const editor = document.querySelector(selector)
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor!).doc
+    const rootIds = doc.model.getChildrenIds(doc.rootId) as string[]
+    const id = rootIds.find(blockId => doc.model.getFlavour(blockId) === 'image')
+    if (!id) throw new Error('Image target is unavailable')
+
+    const pagination = doc.plugins.find((plugin: any) => plugin.name === 'pagination')
+    if (!pagination) throw new Error('PaginationPlugin is unavailable')
+    pagination.enable()
+    await doc.virtualization.scrollToBlock(id)
+    doc.selection.selectBlock(id)
+    doc.crud.undoManager.stopCapturing()
+    if (!doc.placement.setMode(id, 'absolute')) {
+      throw new Error('Failed to lift image into absolute placement')
+    }
+    doc.placement.updateAbsolute(id, {y: 1500})
+    const peerSnapshot = doc.schemas.createSnapshot('shape', [])
+    const peerId = doc.placement.insertAbsoluteSnapshot(peerSnapshot)
+    if (!peerId) throw new Error('Failed to insert absolute peer')
+    doc.placement.updateAbsolute(peerId, {y: 5000})
+    await new Promise<void>(resolve =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    )
+    await doc.virtualization.scrollToBlock(id)
+    doc.crud.undoManager.clearHistory()
+    doc.crud.undoManager.stopCapturing()
+    return id
+  }, editorSelector)
+
+  await page.evaluate(({selector, id}) => {
+    const editor = document.querySelector(selector)
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor!).doc
+    doc.selection.blur()
+    if (!doc.placement.setObjectLayout(id, 'top-bottom')) {
+      throw new Error('Failed to restore image to top-bottom layout')
+    }
+  }, {selector: editorSelector, id: imageId})
+  await page.locator('button[title="撤销"]').click()
+
+  await waitForAnimationFrames(page, 8)
+
+  await expect.poll(() => page.evaluate(({selector, id}) => {
+    const editor = document.querySelector(selector)
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor!).doc
+    const parentId = doc.model.getParentId(id)
+    const parentFlavour = parentId ? doc.model.getFlavour(parentId) : null
+    const props = doc.model.getProps(id)
+    const block = doc.vm.get(id)?.instance
+    const layoutMounted = parentId
+      ? doc.vm.getMountedRootChildIds().includes(parentId)
+      : false
+    const rect = block?.hostElement.getBoundingClientRect()
+    const viewport = doc.scrollContainer.getBoundingClientRect()
+    return {
+      parentFlavour,
+      position: props?.position ?? null,
+      layoutMounted,
+      connected: block?.hostElement.isConnected === true,
+      visible: !!rect && rect.bottom > viewport.top && rect.top < viewport.bottom,
+    }
+  }, {selector: editorSelector, id: imageId}), {timeout: 10_000}).toEqual({
+    parentFlavour: 'placement-layout',
+    position: {x: expect.any(Number), y: expect.any(Number)},
+    layoutMounted: true,
+    connected: true,
+    visible: true,
+  })
+})
+
 test('experimental pagination keeps root mounting sparse across scroll and config changes', async ({page}) => {
   test.setTimeout(60_000)
   const fatal = observeFatalDiagnostics(page)

@@ -403,6 +403,15 @@ export class DocVM {
         component.instance.hostElement.remove()
         return
       }
+      // A cross-parent transaction can deliver the mounted destination's
+      // children insertion before the sparse-root deletion. In that order the
+      // destination has already adopted this ComponentRef and moved its host.
+      // Root reconciliation must release only its stale sparse reference; it
+      // no longer owns the component lifecycle or DOM.
+      if (component.instance.parentId !== this.root.id) {
+        this.retainedRootIds.delete(id)
+        return
+      }
       this._visitComponentSubtree(component, child => child.instance.detach())
       this.retainedRootIds.add(id)
     })
@@ -444,6 +453,10 @@ export class DocVM {
       if (!component) return
       if (this.get(id) !== component) {
         component.instance.hostElement.remove()
+        return
+      }
+      if (component.instance.parentId !== this.root.id) {
+        this.retainedRootIds.delete(id)
         return
       }
       if (this.doc.model.exists(id)) {
@@ -800,7 +813,12 @@ export class BlockChildrenRenderRef {
     if (index < 0) return undefined
     const [component] = this._compRefs.splice(index, 1)
     this._sparseModelIndices.delete(id)
-    component.instance.hostElement.remove()
+    // The destination parent may already have adopted the same ComponentRef
+    // earlier in this Yjs transaction. Removing the stale root projection must
+    // not pull its host back out of that destination.
+    if (component.instance.parentId === this.block.id) {
+      component.instance.hostElement.remove()
+    }
     return component
   }
 

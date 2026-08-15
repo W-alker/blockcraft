@@ -551,6 +551,29 @@ describe('DocVM sparse root mounts', () => {
     expect(target.instance.childrenRenderRef?.ids).toEqual([])
   })
 
+  it('preserves a mounted nested adoption when its insert precedes sparse-root removal', () => {
+    const rootChildren = yBlocks.get('root')!.get('children') as Y.Array<string>
+    rootChildren.delete(0, rootChildren.length)
+    rootChildren.insert(0, ['text', 'target'])
+    vm.createRootOnlyByYBlock(yBlocks.get('root')!)
+    const text = vm.mountRootChild('text')
+    const target = vm.mountRootChild('target')
+
+    rootChildren.delete(0, 1)
+    ;(yBlocks.get('target')!.get('children') as Y.Array<string>).insert(0, ['text'])
+
+    // Yjs deep-event order is not an ownership guarantee. Exercise the order
+    // that used to detach the host after the destination had already adopted it.
+    vm.insert(target, 0, [text])
+    vm.applySparseRootChildrenDelta([{delete: 1}])
+
+    expect(text.instance.parentId).toBe('target')
+    expect(text.instance.isAttached).toBeTrue()
+    expect(target.instance.hostElement.contains(text.instance.hostElement)).toBeTrue()
+    expect(target.instance.childrenRenderRef?.ids).toEqual(['text'])
+    expect(vm.getRetainedRootChildIds()).not.toContain('text')
+  })
+
   it('keeps an adopted text block retained until its offscreen target is mounted', () => {
     const rootChildren = yBlocks.get('root')!.get('children') as Y.Array<string>
     rootChildren.delete(0, rootChildren.length)
