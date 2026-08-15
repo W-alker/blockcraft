@@ -1,0 +1,25 @@
+@use '../function' as *;
+
+[data-blockcraft-root="true"] {
+  // 日期是随文对象：不设自己的字号/行高，跟着所在段落走，
+  // 否则基准字号缩放时它会脱队（第一原则规则 4）。
+  .bc-inline-date {
+    display: inline;
+    border-radius: var(--bc-radius-sm);
+    padding: 0 2px;
+    color: inherit;
+    cursor: pointer;
+    // 「2026-08-14 15:54」不该在中间断行。
+    white-space: nowrap;
+    transition: background-color var(--bc-transition-fast);
+  }
+
+  .bc-inline-date:hover {
+    background: var(--bc-bg-hover);
+  }
+
+  .bc-inline-date.editing {
+    background: var(--bc-active-color-lighter);
+    box-shadow: 0 0 0 1px var(--bc-active-color);
+  }
+}

@@ -47,6 +47,7 @@ import {
   BookmarkBlockExtensionPlugin,
   CalloutToolbarPlugin,
   CodeInlineEditorBinding,
+  DateInlineExtensionPlugin,
   DividerExtensionPlugin,
   EmbedFrameExtensionPlugin,
   FindReplacePlugin,
@@ -78,8 +79,10 @@ import {
   DocPlugin,
   EmbedConverter,
   IBlockSchemaOptions,
+  INLINE_DATE_EMBED_KEY,
   InlineManager,
   SchemaManager,
+  createInlineDateEmbedConverter,
 } from '../framework'
 
 /**
@@ -247,6 +250,7 @@ function createBundledInlineEmbeds(): [string, EmbedConverter][] {
   return [
     [INLINE_SHAPE_EMBED_KEY, createInlineShapeEmbedConverter()],
     [INLINE_WORD_ART_EMBED_KEY, createInlineWordArtEmbedConverter()],
+    [INLINE_DATE_EMBED_KEY, createInlineDateEmbedConverter()],
     [
       'mention',
       {
@@ -357,6 +361,7 @@ export function createBundledEditorCapabilities(
     new EmbedFrameExtensionPlugin(),
     new BookmarkBlockExtensionPlugin(),
     new FormulaBlockExtensionPlugin(),
+    new DateInlineExtensionPlugin(),
     new InlineLinkExtension(options.openLink),
     new MentionPlugin(options.mention ?? createFallbackMentionConfig()),
     new DividerExtensionPlugin(),

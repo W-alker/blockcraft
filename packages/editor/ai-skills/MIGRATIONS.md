@@ -84,6 +84,28 @@ fixed pixels. Freezing every object to pixels would destroy responsive image
 semantics; keeping every child root-relative would deform a composition when
 the root width changed. A fixed group plane lets each child retain its native
 model while the composition remains stable.
+## Unreleased — 2026-08-14 — add the bundled `date` inline embed
+
+**Severity**: minor
+
+**What changed**: a new bundled inline embed `date` renders a frozen date/time
+stamp inside the text flow. The `/日期` slash command (`inline:date`, group
+`inline`) inserts one carrying the current local time; clicking it opens
+`DateInlineExtensionPlugin`'s dialog, which pairs `@cses/ui`'s
+`cs-date-time-picker` with an 11-entry format list. Delta shape is
+`{insert: {date: 'YYYY-MM-DDTHH:mm'}, attributes: {format}}` — the frozen value
+and its display format are stored separately. Both are mirrored onto
+`data-bc-date-value` / `data-bc-date-format` on a `span.bc-inline-date` so
+DOM-to-Delta round-trips (copy/paste, HTML import) reconstruct from DOM alone.
+
+**Why**: "insert today's date" is a baseline document affordance, and doing it
+as an inline embed rather than a block keeps it inside the sentence where
+authors want it. Two decisions are load-bearing. The value is a **local
+wall-clock stamp, frozen at insertion** — not a UTC instant and not recomputed
+at render time — so every collaborator in every timezone reads the same thing;
+a live clock would make the document's content depend on when it was opened.
+And the format lives in `attributes`, not inside the value, so switching format
+is a pure presentation change that can never rewrite or lose the frozen stamp.
 
 **Affected ai-skills files**:
 
@@ -185,21 +207,48 @@ flow block from its normalized persisted `props.height` through
 **Why**: These objects already persist an authoritative fixed pixel frame.
 Using a generic per-flavour fallback made tall offscreen objects reserve the
 wrong height until their DOM mounted and was measured.
+- `blockcraft-embed.md`
+- `blockcraft-plugins-ref.md`
+- `blockcraft-plugins-inline.md`
+- `blockcraft-plugins-block.md`
 
-**Affected ai-skills files**:
+### New APIs / Features
 
-- `blockcraft.md`
-- `blockcraft-perf.md`
-- `MIGRATIONS.md`
+- `INLINE_DATE_EMBED_KEY`, `INLINE_DATE_CLASS`, `INLINE_DATE_FORMAT_ATTR`
+- `INLINE_DATE_FORMATS`, `DEFAULT_INLINE_DATE_FORMAT`, `InlineDateFormat`,
+  `InlineDateData`
+- `createInlineDateDelta()`, `readInlineDateDelta()`, `readInlineDateElement()`,
+  `closestInlineDateElement()`
+- `formatInlineDateValue()`, `toInlineDateValue()`, `parseInlineDateValue()`,
+  `isInlineDateFormat()`
+- `createInlineDateEmbedConverter()` — a factory, not a shared constant, because
+  bundled capabilities require one converter instance per document
+- `DateInlineExtensionPlugin` (runtime id `date-inline-extension`),
+  `InlineDateEditDialog`, `InlineDateEditResult`
+- CSS class `.bc-inline-date` (plus `.editing`), themed in
+  `themes/blocks/inline-date.scss`
 
-### Behavior Changes
+### Migration Recipe
 
-- Continuous virtualization and sparse pagination use model `height` for
-  unmounted Shape and WordArt root blocks.
-- Host `virtualization.estimatedHeights.shape` and
-  `virtualization.estimatedHeights['word-art']` remain fallbacks for invalid or
-  failed Schema estimators, but no longer override valid persisted geometry.
-- No API or persisted data shape changed.
+Nothing to change — the embed, the plugin and the slash command are all
+registered automatically by `createBundledEditorCapabilities()`. Hosts that
+build their own capability list opt in explicitly:
+
+```typescript
+// embeds
+[INLINE_DATE_EMBED_KEY, createInlineDateEmbedConverter()],
+
+// plugins
+new DateInlineExtensionPlugin(),
+```
+
+**Watch for a key collision.** The bundled list now occupies the `date` key,
+and `additionalEmbeds` is appended rather than merged — so a host that was
+already passing its own `date` converter through
+`createBundledEditorCapabilities({additionalEmbeds})` will now throw
+`Duplicate Embed name: date` from `validateBundledEditorCapabilities()`. The
+host-wins merge in `withDefaultEmbedConverters()` (the `DocConfig.embeds` path)
+is unaffected. Rename the host key, or drop it if the bundled embed suffices.
 
 ## Unreleased — 2026-08-15 — make placement structural and split position from layer
 
@@ -321,6 +370,49 @@ collapsing the whole insertion domain.
   rich-text blocks only; other text-format controls keep their stricter
   all-selected-blocks-editable rule.
 - The floating text toolbar and object-specific toolbars are unchanged.
+- `blockcraft-plugins-block.md`
+- `blockcraft-plugins-toolbar.md`
+
+### New APIs / Features
+
+- `OrderedNumberFormat`, `OrderedFormatDescriptor`, `ORDERED_NUMBER_FORMATS`
+- `formatOrderedNumber()`, `resolveOrderedPrefix()`, `isOrderedNumberFormat()`,
+  `resolveOrderedDigitFontSize()`
+- `resolveOrderedRunIds()`, `applyOrderedStyleToRun()` and the counter
+  predicates (`prunesCounter()`, `isSameCounter()`, …) now live in the
+  `ordered-block` domain layer so the toolbar and the plugin share one
+  definition of "one list run"
+- `BcOrderedFormatPickerComponent` (`bc-ordered-format-picker`)
+- `ordered` props `nf` / `nc` / `nff`
+- HTML round-trip through `data-bc-nf` / `data-bc-nc` / `data-bc-nff` on
+  `<li>`, plus `<ol type>` for the two formats HTML can express
+
+### Migration Recipe
+
+Marker rendering must go through the shared resolver so the editor and Snapshot
+Viewer cannot drift. Hosts that reimplemented the prefix should switch:
+
+```typescript
+// before
+const marker = `${getNumberPrefix(props.order, props.depth)}.`
+
+// after
+const {text, circled} = resolveOrderedPrefix(props.order, props.depth, props.nf)
+```
+
+### Behavior Changes
+
+- The marker's text node moved one level deeper, into
+  `.ordered-block-prefix__num`. Code that matched `event.target` against the
+  button element must use `closest('.ordered-block-prefix')`; reading
+  `textContent` off the button is unaffected.
+- Documents without `nf` render exactly as before — the legacy
+  depth-cycling appearance (`1.` → `a.` → `III.`) is still the default, and
+  `getNumberPrefix()` keeps its signature and output.
+- Numbering format and marker styling are written with the default transaction
+  origin, so one undo restores the whole run. Automatic `order` repair keeps
+  using `ORIGIN_SYSTEM_REPAIR` and stays out of undo history.
+- Markdown cannot express any of this and still exports plain `1.` numbering.
 
 ## Unreleased — 2026-08-14 — add composable Word-like text boxes
 

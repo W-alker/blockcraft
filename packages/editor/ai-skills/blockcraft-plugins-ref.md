@@ -15,7 +15,7 @@ This index covers all 28 built-in plugins. Pick the category file that matches y
 | Text Formatting | `blockcraft-plugins-formatting.md` | FloatTextToolbarPlugin, TextMarkerPlugin, FixedTextToolbarComponent |
 | Block Management | `blockcraft-plugins-block.md` | BlockControllerPlugin, BlockGapCreatorPlugin, BlockTransformerPlugin, OrderedBlockPlugin |
 | Block Toolbars | `blockcraft-plugins-toolbar.md` | AttachmentExtensionPlugin, ImgToolbarPlugin, ObjectGroupToolbarPlugin, ShapeToolbarPlugin, TextBoxToolbarPlugin, WordArtToolbarPlugin, BookmarkBlockExtensionPlugin, CalloutToolbarPlugin, DividerExtensionPlugin, EmbedFrameExtensionPlugin, FormulaBlockExtensionPlugin |
-| Inline & Keyboard | `blockcraft-plugins-inline.md` | InlineLinkExtension, MentionPlugin, CodeInlineEditorBinding, TableBlockBinding |
+| Inline & Keyboard | `blockcraft-plugins-inline.md` | InlineLinkExtension, MentionPlugin, DateInlineExtensionPlugin, CodeInlineEditorBinding, TableBlockBinding |
 | Utilities | `blockcraft-plugins-util.md` | PlaceholderPlugin, FindReplacePlugin, PasteFormatSelectorPlugin, DemoPresentationPlugin, TranslatePlugin, PaginationPlugin |
 
 ## Quick Lookup
@@ -42,6 +42,7 @@ This index covers all 28 built-in plugins. Pick the category file that matches y
 | `FormulaBlockExtensionPlugin` | `toolbar` | none (zero-config) |
 | `InlineLinkExtension` | `inline` | `openLink` callback |
 | `MentionPlugin` | `inline` | `panel` (required), `trigger`, `onMentionClick` |
+| `DateInlineExtensionPlugin` | `inline` | none (zero-config) |
 | `CodeInlineEditorBinding` | `inline` | none (zero-config) |
 | `TableBlockBinding` | `inline` | none (zero-config) |
 | `PlaceholderPlugin` | `util` | `overrides`; supports instance `plh` / `plhMode` on editable blocks |
@@ -79,6 +80,7 @@ const plugins = [
   new FormulaBlockExtensionPlugin(),
   new InlineLinkExtension(),
   new MentionPlugin({ panel: mentionPanelFactory }),
+  new DateInlineExtensionPlugin(),
   new CodeInlineEditorBinding(),
   new TableBlockBinding(),
   new FindReplacePlugin(),

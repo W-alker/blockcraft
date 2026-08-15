@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-13
+> Last updated: 2026-08-14
 
 ## Inline Extensions
 
@@ -129,6 +129,41 @@ new MentionPlugin({
 - `openAt()` is the public bridge for slash menus and other model-owned command surfaces
 - The trigger character is physically inserted into `Y.Text` and removed/replaced on confirm or cancel
 - `onConfirm` lets a host block turn a mention into a **side-effect that runs only on the acting client** rather than a CRDT-synced embed node. Use it when every collaborator observing the node would otherwise re-run the effect (e.g. a synced todo adding a task collaborator from `@user` — only the picker should write; others learn via that domain's own realtime channel)
+
+---
+
+### DateInlineExtensionPlugin
+
+> `plugins/date-inline-extension/` — Click-to-edit for the bundled `date` inline embed.
+> Runtime plugin ID: `date-inline-extension`.
+
+Clicking a `.bc-inline-date` embed opens a connected overlay holding a
+`cs-date-time-picker` and the format list. The list previews each format
+against the currently drafted moment rather than showing token strings, so the
+author picks by appearance.
+
+#### Configuration
+
+```typescript
+new DateInlineExtensionPlugin()   // zero-config
+```
+
+#### Behavior
+
+| Aspect | Behavior |
+|--------|----------|
+| Insertion | Owned by the `/日期` slash command (`inline:date`), not by this plugin |
+| Value semantics | **Frozen.** The plugin never subscribes to a clock and never recomputes at render time — see the `date` embed in `blockcraft-embed.md` |
+| Commit | Only on 确定. The write replaces the embed, which recreates the DOM node the overlay is anchored to, so live-applying each keystroke would strand the anchor |
+| Write path | `applyDeltaOperations([{retain: i}, {delete: 1}, {insert, attributes}])`, with `i` resolved from a live DOM range so a concurrent edit upstream can't misplace it |
+| Readonly | Closes on `subscribeReadonlyChange` and on block-level `readonlyManager.stateChange$` |
+
+#### Notes
+
+- The embed's logical length is always 1, so the update is a `delete: 1` +
+  re-insert rather than an in-place DOM mutation
+- The cursor is restored to `embedIndex + 1` on the next frame, matching
+  `FormulaBlockExtensionPlugin`'s inline path
 
 ---
 

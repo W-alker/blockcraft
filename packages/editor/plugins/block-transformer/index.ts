@@ -20,6 +20,7 @@ import {
   BLOCK_CREATOR_SERVICE_TOKEN,
   BindHotKey,
   BlockNodeType,
+  createInlineDateDelta,
   createInlineImageDelta,
   type DeltaInsert,
   DocPlugin,
@@ -561,6 +562,20 @@ export class BlockTransformerPlugin extends DocPlugin {
         keywords: ["图片", "image", "photo"],
         when: () => !!this.doc.schemas.get("image", false),
         run: context => this.openInlineImagePicker(context),
+      },
+      {
+        id: "inline:date",
+        label: "日期",
+        description: "插入当前日期时间，可再点开改格式",
+        group: "inline",
+        csIcon: "date-time",
+        searchAlias: "rq",
+        keywords: ["日期", "时间", "date", "time", "now", "今天"],
+        // 选中即定格当下：不弹选择器，先落一个值下去，改留给点击弹框。
+        run: context => {
+          const delta = createInlineDateDelta(new Date());
+          if (delta) context.replace([delta]);
+        },
       },
     ];
   }

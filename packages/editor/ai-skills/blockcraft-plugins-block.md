@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-13
+> Last updated: 2026-08-14
 
 ## BlockControllerPlugin
 
@@ -334,7 +334,7 @@ The default grouped menu includes all insertable Schema blocks plus:
 | Group | Commands |
 |-------|----------|
 | Basic content | Paragraph, heading 1–4, editable block Schemas, and host commands assigned to `basic` |
-| Inline content | Formula, mention (when `MentionPlugin` is registered), Emoji, CSES Icon, link, and inline image (when the image Schema is registered) |
+| Inline content | Formula, mention (when `MentionPlugin` is registered), Emoji, CSES Icon, link, date, and inline image (when the image Schema is registered) |
 | Media & layout | Non-editable block Schemas |
 | Third-party embed | Schemas whose flavour ends in `-embed` |
 
@@ -353,6 +353,11 @@ input. Both `:` and `/emoji` set the picker locale explicitly to `zh-CN`.
 The selected Icon is stored through the built-in inline
 `icon` embed as a `csicon csicon-<name>` class string; SVG catalogue entries are
 not accepted by this single-colour embed path.
+
+The `date` command (`inline:date`) opens no picker: it freezes the current
+local time straight into a `date` embed, and editing is deferred to
+`DateInlineExtensionPlugin`'s click dialog. Inserting through a picker would
+make the common case — "stamp now" — cost two interactions.
 
 Choosing a block item replaces the slash-command paragraph. Inline commands
 replace the same model-owned `/query` range without moving input ownership into

@@ -4,7 +4,7 @@
 >
 > For inline system internals, see L2: `blockcraft-inline.md`
 >
-> Last updated: 2026-08-13
+> Last updated: 2026-08-14
 
 ## What is an Inline Embed?
 
@@ -204,8 +204,50 @@ if (block && block instanceof EditableBlockComponent) {
 | `image` | `framework/block-std/inline/image-embed.ts` | Built-in inline image; custom same-key converter wins |
 | `shape` | `blocks/shape-block/shape-embed.ts` | Bundled inline/wrapped shape with lossless props + nested text payload |
 | `word-art` | `blocks/word-art-block/word-art-embed.ts` | Bundled inline/wrapped WordArt with lossless presentation + text payload |
+| `date` | `framework/block-std/inline/date-embed.ts` | Bundled frozen date/time stamp with a selectable display format |
 | `mention` | `editor/editor.ts` (inline) | @mention with user ID |
 | `latex` | `editor/editor.ts` (inline) | KaTeX formula rendering |
+
+## Bundled Date Embed
+
+`createBundledEditorCapabilities()` registers a fresh `date` converter per
+document. The `/日期` slash command inserts one stamped with the current local
+time; `DateInlineExtensionPlugin` owns click-to-edit (see
+`blockcraft-plugins-inline.md`).
+
+```typescript
+{
+  insert: {date: '2026-08-14T15:54'},
+  attributes: {format: 'YYYY-MM-DD HH:mm'},
+}
+```
+
+Two rules the shape encodes:
+
+- **The value is frozen, not live.** It is a *local wall-clock* stamp
+  (`YYYY-MM-DDTHH:mm`), never a UTC instant and never recomputed at render
+  time — the embed must read the same for every collaborator in every timezone.
+- **The format lives in `attributes`, not in the value.** Switching format is a
+  presentation change and must never risk rewriting the frozen value.
+
+`toView` renders the formatted text and mirrors both fields onto
+`data-bc-date-value` / `data-bc-date-format` so `toDelta` can rebuild the delta
+from DOM alone (copy/paste, HTML import). The text node is derived output and
+is never read back.
+
+| Export | Purpose |
+|--------|---------|
+| `INLINE_DATE_EMBED_KEY` / `INLINE_DATE_CLASS` | Delta key `'date'`; view class `'bc-inline-date'` |
+| `INLINE_DATE_FORMATS` / `DEFAULT_INLINE_DATE_FORMAT` | The 11 selectable formats; default `'YYYY-MM-DD HH:mm'` |
+| `createInlineDateDelta(dateOrValue, format?)` | Builds the delta; unknown formats fall back to the default |
+| `readInlineDateDelta(delta)` / `readInlineDateElement(el)` | Reads `{value, format}` back from a delta or a rendered element |
+| `formatInlineDateValue(value, format)` | Renders a stamp; echoes unparsable input verbatim |
+| `toInlineDateValue(date)` / `parseInlineDateValue(value)` | `Date` ↔ stamp; parse rejects out-of-range fields instead of rolling over |
+| `createInlineDateEmbedConverter()` | Factory — one converter instance per document |
+
+Format tokens: `YYYY` `MMM` `MM` `M` `DD` `D` `HH` `H` `mm`, plus `dddd`
+(`星期五`) and `ddd` (`周五`). They are substituted in one pass, longest token
+first, so a token's own output can never be re-matched by a later token.
 
 ## Inline Image Adapter Semantics
 
