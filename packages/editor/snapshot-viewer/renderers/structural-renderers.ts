@@ -14,6 +14,10 @@ import {
   type TextBoxBlockProps,
 } from "../../blocks/text-box-block";
 import {getShapeDefinition} from "../../blocks/shape-block/shape-definitions";
+import {
+  getTextBoxArtwork,
+  resolveTextBoxArtworkSrc,
+} from "../../blocks/text-box-block";
 import {resolveWordArtPresentation} from "../../blocks/word-art-block";
 import {
   BLOCK_OBJECT_GROUP_PADDING,
@@ -239,6 +243,12 @@ function renderTextBox(
   )
   const {padding, backgroundImage} = resolveBlockSurface(props)
   element.setAttribute("data-bc-text-box", "true")
+  element.setAttribute("data-bc-text-box-wm", props.wm)
+  // Same variable name as the live Block so one theme rule drives both paths.
+  // Horizontal frames leave it unset and fall back to `horizontal-tb`.
+  if (props.wm === "v") {
+    element.style.setProperty("--bc-text-box-writing-mode", "vertical-rl")
+  }
   element.style.setProperty(
     "--bc-text-box-background-color",
     props.backColor ?? "transparent",
@@ -252,9 +262,14 @@ function renderTextBox(
   element.style.setProperty("--bc-text-box-padding-bottom", `${padding.bottom}px`)
   element.style.setProperty("--bc-text-box-padding-left", `${padding.left}px`)
   const definition = getShapeDefinition(props.sh)
-  const shapeInsets = props.sh === "rectangle"
-    ? {top: 0, right: 0, bottom: 0, left: 0}
-    : definition.textInsets
+  // Same precedence as the live Block: a catalog drawing carries its own
+  // text-safe frame, a plain rectangle has none, otherwise the shape's.
+  const artwork = getTextBoxArtwork(props.bgi)
+  const shapeInsets = artwork
+    ? artwork.textInsets
+    : props.sh === "rectangle"
+      ? {top: 0, right: 0, bottom: 0, left: 0}
+      : definition.textInsets
   element.style.setProperty(
     "--bc-text-box-shape-inset-top",
     `${shapeInsets.top * 100}%`,
@@ -283,10 +298,14 @@ function renderTextBox(
   const clipPathId = `bc-text-box-clip-${snapshot.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`
   surface.append(createTextBoxFillGeometry(definition, props, clipPathId))
 
-  if (backgroundImage && ctx.options.resourcePolicy !== "off") {
+  // `bgi` is a reference; the drawing itself never travels in the snapshot.
+  const paintedSrc = backgroundImage
+    ? resolveTextBoxArtworkSrc(backgroundImage.src)
+    : null
+  if (backgroundImage && paintedSrc && ctx.options.resourcePolicy !== "off") {
     const image = createSurfaceBackgroundImage(
       "text-box-block__background-image",
-      backgroundImage,
+      {...backgroundImage, src: paintedSrc},
       ctx,
     )
     image.style.clipPath = `url(#${clipPathId})`

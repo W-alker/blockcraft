@@ -1,3 +1,4 @@
+import {FormsModule} from '@angular/forms'
 import {
   ChangeDetectionStrategy,
   Component,
@@ -5,10 +6,17 @@ import {
   Input,
   Output,
 } from '@angular/core'
-import {CsTooltipDirective} from '@cses/ui'
 import {
-  TEXT_BOX_PRESETS,
+  CsSegmentedComponent,
+  CsTooltipDirective,
+  type CsSegmentedOptions,
+} from '@cses/ui'
+import {
+  getTextBoxPresetCategoriesFor,
+  getTextBoxPresetsFor,
+  resolveTextBoxArtworkSrc,
   normalizeTextBoxWordArtStyle,
+  type TextBoxPresetCategory,
   type TextBoxPresetId,
 } from '../../blocks/text-box-block'
 import {getShapeDefinition} from '../../blocks/shape-block/shape-definitions'
@@ -17,7 +25,7 @@ import {resolveWordArtPresentation} from '../../blocks/word-art-block'
 @Component({
   selector: 'bc-text-box-preset-picker',
   standalone: true,
-  imports: [CsTooltipDirective],
+  imports: [CsSegmentedComponent, CsTooltipDirective, FormsModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[class.text-box-preset-picker-host--embedded]': 'embedded',
@@ -29,6 +37,21 @@ import {resolveWordArtPresentation} from '../../blocks/word-art-block'
       role="menu"
       aria-label="选择文本框样式">
       <div class="text-box-preset-picker__title">文本框样式</div>
+      <!-- Same mousedown guard the grid buttons carry: each tab is a label
+           wrapping a radio, so a plain click pulls focus out of the editor and
+           drops the selection this picker is being shown for. cs-segmented
+           commits on click, not on the radio's own state, so suppressing the
+           default costs nothing. -->
+      <cs-segmented
+        class="text-box-preset-picker__tabs"
+        csSize="small"
+        [csBlock]="true"
+        [csOptions]="categoryOptions"
+        [ngModel]="activeCategory"
+        (ngModelChange)="setCategory($event)"
+        (mousedown)="preserveSelection($event)"
+        csAriaLabel="文本框分类">
+      </cs-segmented>
       <div class="text-box-preset-picker__grid">
         @for (item of items; track item.id) {
           <button
@@ -43,16 +66,48 @@ import {resolveWordArtPresentation} from '../../blocks/word-art-block'
             (mousedown)="preserveSelection($event)"
             (click)="pick.emit(item.id)">
             <span class="text-box-preset-picker__preview" aria-hidden="true">
+              <!-- Three layers, in the same order the live Block paints them:
+                   shape fill, then the surface image, then the outline. Drawing
+                   fill and outline in one pass buries the image under an opaque
+                   fill, which blanks out every entry that pairs a fill opacity
+                   with a decorated surface. -->
               <svg viewBox="0 0 1000 1000" preserveAspectRatio="none">
                 <path
                   [attr.d]="item.path"
                   [attr.fill]="item.props.backColor"
                   [attr.fill-opacity]="item.props.fo"
-                  [attr.stroke]="item.props.borderColor"
+                  [attr.fill-rule]="item.fillRule"
+                  stroke="none">
+                </path>
+              </svg>
+              @if (item.artworkSrc) {
+                <img
+                  class="text-box-preset-picker__bg"
+                  [src]="item.artworkSrc"
+                  [style.object-fit]="item.backgroundFit"
+                  alt=""
+                  loading="eager"
+                  decoding="async">
+              }
+              <svg viewBox="0 0 1000 1000" preserveAspectRatio="none">
+                <path
+                  [attr.d]="item.path"
+                  fill="none"
+                  [attr.stroke]="item.previewStroke"
                   [attr.stroke-width]="item.previewStrokeWidth"
                   [attr.stroke-dasharray]="item.props.bs === 'dashed' ? '24 16' : null"
                   vector-effect="non-scaling-stroke">
                 </path>
+                @if (item.detailPath) {
+                  <path
+                    [attr.d]="item.detailPath"
+                    fill="none"
+                    [attr.stroke]="item.previewStroke"
+                    [attr.stroke-width]="item.previewStrokeWidth"
+                    [attr.stroke-dasharray]="item.props.bs === 'dashed' ? '24 16' : null"
+                    vector-effect="non-scaling-stroke">
+                  </path>
+                }
               </svg>
               <span
                 class="text-box-preset-picker__sample"
@@ -94,6 +149,13 @@ import {resolveWordArtPresentation} from '../../blocks/word-art-block'
       box-shadow: none;
     }
 
+    /* Embedded hosts supply their own heading, so the standalone one would
+       duplicate it. */
+    :host(.text-box-preset-picker-host--embedded)
+      .text-box-preset-picker__title {
+      display: none;
+    }
+
     .text-box-preset-picker {
       box-sizing: border-box;
       width: min(430px, calc(100vw - 16px));
@@ -113,6 +175,13 @@ import {resolveWordArtPresentation} from '../../blocks/word-art-block'
       font-size: 11px;
       font-weight: 600;
       line-height: 16px;
+    }
+
+    /* Skin only the outer spacing — the tab strip itself is cs-segmented, and
+       overriding its layout would break the sliding thumb it measures. */
+    .text-box-preset-picker__tabs {
+      display: block;
+      margin-bottom: 7px;
     }
 
     .text-box-preset-picker__grid {
@@ -145,12 +214,21 @@ import {resolveWordArtPresentation} from '../../blocks/word-art-block'
       height: 58px;
     }
 
+
     .text-box-preset-picker__preview svg {
       position: absolute;
       inset: 0;
       width: 100%;
       height: 100%;
       overflow: visible;
+    }
+
+    .text-box-preset-picker__bg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
     }
 
     .text-box-preset-picker__sample {
@@ -191,17 +269,66 @@ export class TextBoxPresetPickerComponent {
   @Output()
   readonly pick = new EventEmitter<TextBoxPresetId>()
 
-  protected readonly items = TEXT_BOX_PRESETS.map(preset => {
-    const definition = getShapeDefinition(preset.props.sh ?? 'rectangle')
-    return {
-      ...preset,
-      path: definition.path,
-      previewStrokeWidth: Math.max(1, Number(preset.props.bw ?? 1)),
-      wordArt: preset.props.wa
-        ? resolveWordArtPresentation(normalizeTextBoxWordArtStyle(preset.props.wa))
-        : null,
-    }
-  })
+  protected activeCategory: TextBoxPresetCategory = 'featured'
+
+  /**
+   * Shape tabs only. Direction is a frame flag applied on top of whichever
+   * style is picked — a vertical frame reuses the same catalog entry — so
+   * splitting the catalog by direction would just duplicate every row.
+   */
+  protected readonly categoryOptions: CsSegmentedOptions =
+    getTextBoxPresetCategoriesFor('h').map(category => ({
+      value: category.id,
+      label: category.label,
+    }))
+
+  /**
+   * Rebuilt per tab rather than precomputed once: the catalog is small, and
+   * each entry has to resolve its shape path and word-art presentation before
+   * the preview can draw it.
+   */
+  protected get items() {
+    const visible = getTextBoxPresetsFor('h', this.activeCategory)
+    return visible.map(preset => {
+      const definition = getShapeDefinition(preset.props.sh ?? 'rectangle')
+      return {
+        ...preset,
+        path: definition.path,
+        // Without these two the double-line frames and rings collapse into a
+        // plain rectangle or a solid disc in the thumbnail.
+        detailPath: definition.detailPath ?? null,
+        fillRule: definition.fillRule ?? null,
+        // `bgi` holds a `bc:` reference rather than the drawing, so the
+        // thumbnail resolves it the same way the Block does — handing the raw
+        // value to `<img>` renders every decorated entry as a broken image.
+        artworkSrc: preset.props.bgi
+          ? resolveTextBoxArtworkSrc(preset.props.bgi)
+          : null,
+        // Decorated presets carry their whole appearance in the surface image
+        // and set `bw: 0` / `fo: 0`, so a shape-only thumbnail renders blank.
+        backgroundFit: preset.props.bgs === 'stretch'
+          ? 'fill'
+          : preset.props.bgs === 'contain' ? 'contain' : 'cover',
+        // `bw: 0` means the entry draws its own outline inside the surface
+        // image. Forcing a minimum hairline here would ring every such preset
+        // with an unwanted border in its default color.
+        previewStroke: Number(preset.props.bw ?? 1) > 0
+          ? preset.props.borderColor
+          : 'none',
+        previewStrokeWidth: Math.max(1, Number(preset.props.bw ?? 1)),
+        wordArt: preset.props.wa
+          ? resolveWordArtPresentation(
+            normalizeTextBoxWordArtStyle(preset.props.wa),
+          )
+          : null,
+      }
+    })
+  }
+
+
+  protected setCategory(value: string | number): void {
+    this.activeCategory = value as TextBoxPresetCategory
+  }
 
   protected preserveSelection(event: MouseEvent): void {
     event.preventDefault()

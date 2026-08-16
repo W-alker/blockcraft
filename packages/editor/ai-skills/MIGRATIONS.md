@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-08-15 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-08-17 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -68,6 +68,222 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
+
+## Unreleased — 2026-08-16 — catalog drawings move to a registry; `bgi` holds a reference
+
+**Severity**: minor
+
+**What changed**: the 36 decorated text-box presets no longer inline their
+drawing. `bgi` now holds a `bc:<id>` reference into a new artwork registry that
+carries the drawing **and its text-safe frame**. New exports from
+`@ccc/blockcraft`: `TextBoxArtwork`, `TEXT_BOX_ARTWORK_SCHEME`,
+`textBoxArtworkRef()`, `registerTextBoxArtwork()`, `getTextBoxArtwork()`,
+`resolveTextBoxArtworkSrc()`, `findTextBoxArtworkBySrc()`, and one
+`*_TEXT_BOX_ARTWORK` array per shape tab.
+
+**Why**: two separate faults, one cause — a drawing was being treated as
+document content instead of as an asset.
+
+*Weight.* `bgi` is a reference field: the shape panel's own image flow uploads
+through `DOC_FILE_SERVICE_TOKEN` and stores the URL the host returns. Inlining a
+`data:` URI put 0.3–1.6 KB of SVG into every decorated frame — 903 bytes median,
+1.4 KB serialized for a whole text box against 161 bytes for one of the original
+shape-built presets. That rode along in every Yjs sync, undo entry and export;
+twenty framed text boxes cost ~18 KB of document. References cost 25 bytes, a
+97% reduction, and the drawings ship with the package.
+
+*Geometry.* The text-safe frame was held in `p`, which is absolute px, while the
+drawing stretches with the frame (`preserveAspectRatio="none"` plus
+`bgs: 'stretch'`). It was therefore only correct at the size each entry was
+drawn for, and frames are dragged to arbitrary sizes. Measured live: a
+`bubble-r-blob-halo` drawn at 540x160 kept a 360px-wide text rectangle inside a
+balloon whose interior had become 270px — the text crossed the outline by 90px.
+Most 线框 / 矩形 entries broke too, just at larger sizes (`rect-r-rainbow-cloud`
+above 187px tall, `outline-r-rainbow` above 220px, and so on). As fractions in
+the registry the reserve tracks the frame at any size.
+
+This is the mechanism the original eight presets already used, reached a
+different way: `sh` names geometry plus `textInsets`, and `bgi` now names a
+drawing plus its own `textInsets`. `_shapeInset()` resolves artwork first, then
+the `rectangle` exemption, then the shape — which is why 24 rectangle-framed
+entries could not be fixed by choosing a different `sh`.
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+- `blockcraft-adapter.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `getTextBoxArtwork(src)` returns the registry entry for a `bc:` reference,
+  `null` for a URL, a legacy inline URI, or an id this build does not know.
+- `resolveTextBoxArtworkSrc(src)` returns what to paint: the registered drawing
+  for a reference, the value itself for anything else, `null` for an unknown
+  reference.
+- `findTextBoxArtworkBySrc(src)` collapses an expanded drawing back to its entry.
+- `registerTextBoxArtwork(entries)` lets a catalog module own its own drawings.
+
+### Behavior Changes
+
+- HTML export expands a reference into the drawing so the file stands alone
+  elsewhere; import collapses a recognised drawing back to its reference.
+- An unrecognised `bc:` reference paints nothing rather than handing `<img>` a
+  source it cannot load, leaving an ordinary framed text box.
+- The shape panel's 选择图片 / 替换图片 / 移除 controls now key off
+  *uploaded* images only. They share the `bgi` field with catalog drawings, so
+  before this a single click on a decorated frame replaced or erased the
+  preset's artwork.
+- Documents written before this keep their inline `data:` URI and render exactly
+  as they did; nothing is rewritten underneath them. They simply stay large, and
+  their reserve stays fixed-px.
+
+## Unreleased — 2026-08-16 — paragraph spacing works inside a text box again
+
+**Severity**: patch
+
+**What changed**: `.text-box-block__content > [data-block-id]` states its
+segment spacing logically — `margin-block-start` / `margin-block-end` — and both
+now carry base.scss's own fallback chain, `var(--bc-block-sb, 0)` and
+`var(--bc-block-sa, var(--bc-segments-gap))`.
+
+**Why**: the vertical-text-direction change restated the gap logically so a
+`vertical-rl` frame would not stack its segments on the inline axis, but wrote
+the value literally as `var(--bc-segments-gap)`. That selector outranks
+base.scss, so a paragraph's 段后间距 (`sa`) was silently ignored inside a text
+box while it kept working everywhere else in the document — set it to 40px and
+the frame still rendered 10px. 段前间距 (`sb`) was worse: nothing restated it,
+so in a vertical frame it landed on the inline axis and pushed the text
+sideways instead of spacing the paragraphs.
+
+**Affected ai-skills files**:
+
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- `--bc-block-sa` and `--bc-block-sb` now reach paragraphs inside a text box,
+  and land on the frame's own block axis in both directions. Horizontal frames
+  with no spacing props set render exactly as before — the logical properties
+  resolve to `margin-top` / `margin-bottom` under `horizontal-tb`.
+- The last child still ends at zero, so a trailing gap cannot eat into a fixed
+  frame's bottom reserve.
+
+## Unreleased — 2026-08-16 — text-box content reserve is geometry, not padding
+
+**Severity**: patch
+
+**What changed**: `.text-box-block__content` no longer carries the frame's
+reserve as `padding`. `--bc-text-box-shape-inset-*` and
+`--bc-text-box-padding-*` are now summed into the viewport's own
+`top/right/bottom/left`, and `padding` is `0`. Both variables keep their names,
+their values and their producers — the Block and the Snapshot Viewer emit them
+unchanged, and `p` means exactly what it meant.
+
+**Why**: padding only reserves the two start edges. `padding-top` /
+`padding-left` offset where the first line begins, so they always hold; the end
+edges are trailing space in the flow, and `overflow` clips at the padding box,
+not the content box. The moment the text was taller than the frame it painted
+straight through the bottom reserve — in the editor it scrolled across the ink
+(the reserve reappeared only at maximum scroll), and under readonly / print /
+Snapshot Viewer `overflow: hidden` the last line was clipped mid-glyph at the
+frame edge with the ornament covered.
+
+It showed worst on the 气泡 tab because a tail hangs below the balloon, so those
+entries carry the catalog's biggest bottom reserve — 27%–41% of frame height,
+against 12%–16% typical in 线框 and 12%–19% in 矩形 — and leave only 36%–56% of
+the frame for text, which a normal sentence overruns in five or six lines. The
+mechanism was never bubble-specific.
+
+All four physical sides moved rather than just `bottom`, because a vertical
+frame is `vertical-rl` and its block flow ends on the left.
+
+**Affected ai-skills files**:
+
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Layout is byte-identical while the text fits the frame. Once it overflows,
+  the viewport scrolls (editing) or clips (readonly / print / Snapshot Viewer)
+  at the reserve line instead of over the frame's own artwork.
+- The reserve band is no longer part of the editable viewport, so clicking it —
+  a bubble's tail, a ribbon's skirt — no longer places a caret. The caret has to
+  be placed in the text area. Nothing could be typed into that band before
+  either; only the hit target changed.
+- Themes that overrode `.text-box-block__content { padding }` to retune the
+  reserve now have no effect. Override the four `--bc-text-box-padding-*`
+  variables instead, which is what they were for.
+- Seventeen catalog entries had their bottom reserve retuned in the same change.
+  (Those measurements now live in the artwork registry as fractions — see the
+  entry above — but they are the same numbers.)
+  While the reserve was soft an over-generous bottom cost nothing; as geometry
+  it costs a line of text, so each was re-measured by rasterising its `bgi` at
+  frame size and scanning down from the text rectangle for the first non-paper
+  pixel. Entries with ornament below keep its clearance; entries with nothing
+  below share a flat 12px margin off the `bw` line. Nine of them gain a line at
+  the default 16px/1.5. The other nineteen were left alone — eleven of the
+  twelve 气泡 entries already sat within 3px of their own ink, and the three
+  built on `plaque` / `cloud` / `folded-corner` take most of their reserve from
+  those shapes' `textInsets` rather than from `p`.
+
+## Unreleased — 2026-08-16 — text-box catalog: shared tab control, horizontal-only picks, lighter bubble contours
+
+**Severity**: patch
+
+**What changed**: three adjustments to the text-box preset catalog, none of
+which touches a published surface — the two entries the catalog was introduced
+in are still Unreleased and have been corrected in place rather than reversed
+here.
+
+1. `TextBoxPresetPickerComponent` no longer takes a `wm` input and no longer
+   splits the catalog by direction. Its tab strip is now `CsSegmentedComponent`
+   from `@cses/ui` instead of hand-written buttons.
+2. The fixed toolbar's 插入文本框 panel dropped its catalog direction toggle.
+   The two 横向 / 竖向 buttons still insert a plain frame in either direction;
+   a catalog pick is always stamped `wm: 'h'` at the preset's own proportion.
+3. The 气泡 tab's four heavy contours were thinned — `ink-shout` 5.2 → 2.6,
+   `pixel-frame` 10 → 4, `crimson-oval` 6 → 3.4, `pixel-cloud` 8 → 4 canvas
+   units, and `ink-shout`'s impact strokes rescaled with its rim.
+
+**Why**: transposing a preset does not rotate it. Both the Shape path and the
+`bgi` surface image stretch (`preserveAspectRatio="none"`), so a vertical
+catalog was showing every entry smeared rather than reoriented. Direction is a
+frame flag that belongs on top of a pick, not a second copy of the catalog.
+
+The stroke change is about reach, not taste: 气泡 entries draw their contour
+inside `bgi` with `bw: 0`, so unlike the 线框 / 矩形 tabs — where the frame is a
+real `bw: 2` outline the toolbar can edit — nothing downstream can thin them
+afterwards. Tracing the reference sheet literally put four of them at 6–12 real
+px, three to six times the other tabs, with no way out.
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+- `blockcraft-plugins-toolbar.md`
+- `MIGRATIONS.md`
+
+### Breaking Changes
+
+None shipped. `TextBoxPresetPickerComponent.wm` existed only in an Unreleased
+entry; that entry's New APIs list has been corrected instead of deprecating a
+never-published input.
+
+### Behavior Changes
+
+- Every tab is now offered unconditionally. `getTextBoxPresetsFor(wm, cat?)`
+  and `getTextBoxPresetCategoriesFor(wm)` keep their `wm` parameter and their
+  filtering; the picker simply passes `'h'`.
+- The tab strip suppresses `mousedown` the same way the preset grid does. Each
+  cs-segmented tab is a `<label>` wrapping a radio, so a plain click would pull
+  focus out of the editor and drop the selection the picker was opened for;
+  cs-segmented commits on `click`, so the default costs nothing.
+- 气泡 contours land at roughly 3–5 real px instead of 6–12. Ornaments drawn as
+  fat round-capped strokes — confetti capsules, speed bars, the gold gloss arc —
+  were left alone; they are shapes, not borders.
 
 ## Unreleased — 2026-08-15 — fixed-pixel object groups and local placement planes
 
@@ -413,6 +629,151 @@ const {text, circled} = resolveOrderedPrefix(props.order, props.depth, props.nf)
   origin, so one undo restores the whole run. Automatic `order` repair keeps
   using `ORIGIN_SYSTEM_REPAIR` and stays out of undo history.
 - Markdown cannot express any of this and still exports plain `1.` numbering.
+
+## Unreleased — 2026-08-14 — group the text-box catalog into shape tabs
+
+**Severity**: minor
+
+**What changed**: `TEXT_BOX_PRESETS` grew from 8 to 44 entries, grouped into
+Word-style tabs (精选 / 线框 / 矩形 / 气泡) via a new optional `cat`
+field. Each shape tab carries both geometry-only entries built from the Shape
+catalog and decorated entries whose whole appearance — border, texture and
+ornament — is a drawing named through `bgi`. (Those drawings were inlined as
+`data:image/svg+xml` URIs at first; a later entry above moves them into the
+artwork registry and leaves only a reference in the document.) The preset picker
+gained a `CsSegmentedComponent` tab strip and thumbnails that render the surface
+image, detail strokes and even-odd fills.
+
+**Why**: a flat list of eight entries could not express Word's shape
+categories, and geometry alone cannot produce hand-drawn borders, ribbons or
+multi-color ornament — a Shape shell paints one fill and one stroke. Painting
+the ornament into the surface image keeps that expressiveness without a new
+Block, a new render path, or any external asset.
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+- `blockcraft-plugins-toolbar.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `TEXT_BOX_PRESET_CATEGORIES`, `TextBoxPresetCategory` and
+  `TextBoxPresetEntry` are exported.
+- `TextBoxPresetDefinition` accepts optional `cat` and `wm`.
+- `getTextBoxPresetsFor(wm, cat?)` and `getTextBoxPresetCategoriesFor(wm)`
+  return the entries and tabs valid for a direction.
+
+### Behavior Changes
+
+- The picker renders one tab at a time rather than the whole catalog. It is
+  horizontal-only and always queries `getTextBoxPresetsFor('h', cat)`: direction
+  is a frame flag applied on top of a pick, not a second copy of the catalog.
+  The query functions still take `wm` for callers that do need it.
+- Decorated presets set `sh: 'rectangle'` with `bw: 0` / `fo: 0`; the shape
+  exists only to define the clip region, because the surface image is clipped
+  to the shape path. A non-rectangular shell would crop the ornament and limit
+  strokes to one width and color.
+- Preset ids remain non-persisted catalog state. `TextBoxPresetId` is still a
+  literal union: every catalog module ends in
+  `as const satisfies readonly TextBoxPresetDefinition[]`, because an explicit
+  array annotation anywhere in the chain widens `id` to `string`.
+- Surface images stay under 1.6 KB each and use only the shared palette.
+- The 线框 / 矩形 / 气泡 tabs split responsibility between the two layers: the
+  frame is a real `bw` outline on the chosen shape, so it stays editable and
+  keeps a constant width at any frame size, while `bgi` carries ornament only.
+  气泡 is the deliberate exception — a speech balloon is not a rectangle with a
+  badge on it, so those entries set `bw: 0` and draw the contour themselves.
+- Because the surface image is clipped to the shape and the outline paints above
+  it, ornament cannot bleed past the frame or interrupt the border. Entries whose
+  source art does both settle for ornament tucked inside the edge. One entry
+  escapes this by picking `folded-corner`, whose `detailPath` makes the notch
+  part of the real border.
+- Card-shaped tabs set `fo: 1` over a white `backColor`. A transparent card lets
+  a colored page show through while the ornament keeps its own hardcoded white,
+  which reads as stray white marks rather than as a card.
+- `p` is reverse-engineered per entry from the drawing's innermost extent — for a
+  curve that means its true extreme, not its bounding box — with the two axes
+  scaled separately. Non-rectangular shapes add their `textInsets` underneath
+  `p`, so the two stack.
+
+## Unreleased — 2026-08-14 — add Word-like vertical text direction to text boxes
+
+**Severity**: minor
+
+**What changed**: `text-box` gained a compact `wm` writing-direction flag
+(`'h'` | `'v'`, default `'h'`). A vertical frame renders `writing-mode:
+vertical-rl`, projected through the new `--bc-text-box-writing-mode` variable
+shared by the live Block and Snapshot Viewer. The bundled fixed toolbar's
+text-box entry now opens a Word-style panel: **横向** / **竖向** insert a plain
+frame with no catalog styling, and a direction switch above the style catalog
+draws every preview at the proportion the chosen direction produces. The
+object rail's text panel gained a **文字方向** control, and its two alignment
+rows relabel themselves per direction. The default frame outline is now black.
+
+**Why**: vertical text is the defining visual of Chinese poster-style
+templates, and a frame-level flag reuses the existing paragraph children,
+Y.Text model and IME path instead of introducing a second text representation.
+CSS logical axes already flip alignment and block stacking, so the model needs
+one flag rather than a mirrored set of properties.
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-theme.md`
+- `blockcraft-adapter.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `TextBoxWritingMode` and `DEFAULT_VERTICAL_TEXT_BOX_SIZE` are exported.
+- `TextBoxBlockProps.wm` and `NormalizedTextBoxBlockProps.wm` carry the
+  direction; `normalizeTextBoxProps()` defaults it to `'h'` and rejects any
+  other value.
+- `TextBoxPresetDefinition` gained optional `cat` (catalog tab) and `wm`
+  (directions the preset is offered in; omitted means both).
+  `TEXT_BOX_PRESET_CATEGORIES` and `TextBoxPresetCategory` are exported.
+- `--bc-text-box-writing-mode` exposes the resolved direction to live and
+  Snapshot Viewer themes.
+
+### Migration Recipe
+
+Existing documents require no migration — an absent `wm` normalizes to `'h'`
+and renders exactly as before.
+
+```typescript
+const snapshot = TextBoxBlockSchema.createSnapshot('正文', {
+  width: 120,
+  height: 240,
+  wm: 'v',
+})
+
+doc.crud.updateBlockProps(textBoxId, {wm: 'h'})
+```
+
+### Behavior Changes
+
+- `DEFAULT_TEXT_BOX_PROPS.borderColor` changed from `#64748B` to `#000000`,
+  and the theme's `--bc-text-box-border-color` fallback follows. Existing
+  documents persist their own outline color and are unaffected; only frames
+  created without an explicit appearance pick up the new default.
+- The toolbar's 横向 / 竖向 entries pass geometry and direction only, letting
+  the normalizer supply appearance. There is no "plain" preset to keep in sync.
+- Picking a catalog preset while the catalog is set to 竖向 transposes the
+  preset's default width/height and stamps `wm: 'v'`.
+- Text-box children now space themselves with `margin-block-end`. Under
+  `horizontal-tb` this resolves to the previous `margin-bottom`, so horizontal
+  frames are unchanged; vertical frames get correct inter-block spacing.
+- The embedded preset catalog no longer renders its own heading, because every
+  embedded host already supplies one.
+- HTML round-trips the direction as `data-bc-wm`. Markdown stays
+  presentation-lossy and drops it.
+- Known limitation, unchanged by this release: a caret that leaves a
+  fixed-size frame is not scrolled into view, because
+  `SelectionManager.scrollSelectionIntoView()` only scrolls the document-level
+  container on its vertical axis. This already affected horizontal frames;
+  vertical frames surface it on the horizontal axis.
 
 ## Unreleased — 2026-08-14 — add composable Word-like text boxes
 

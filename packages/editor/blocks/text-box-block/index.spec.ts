@@ -8,11 +8,14 @@ import {
 } from '../../framework'
 import {
   DEFAULT_TEXT_BOX_PROPS,
+  getTextBoxArtwork,
+  getTextBoxPreset,
   TextBoxBlockComponent,
   TextBoxBlockSchema,
   normalizeTextBoxProps,
   normalizeTextBoxWordArtStyle,
   serializeTextBoxWordArtStyle,
+  type TextBoxBlockProps,
 } from './index'
 
 @Component({
@@ -32,6 +35,134 @@ import {
   styleUrl: '../../themes/blocks/text-box-block.scss',
 })
 class TextBoxFocusStyleHarness {}
+
+/**
+ * A frame whose text can never fit, so the reserve is under real pressure.
+ * The vars are the ones the Block and the Snapshot Viewer both emit; the
+ * numbers are a bubble-sized reserve (a tail hangs below the balloon, so the
+ * bottom is the biggest side).
+ */
+@Component({
+  selector: 'text-box-reserve-harness',
+  standalone: true,
+  template: `
+    <div data-blockcraft-root="true">
+      <div
+        class="text-box-block"
+        style="
+          --bc-text-box-padding-top: 20px;
+          --bc-text-box-padding-right: 30px;
+          --bc-text-box-padding-bottom: 60px;
+          --bc-text-box-padding-left: 40px;
+        ">
+        <div class="text-box-block__surface" style="width: 300px; height: 200px">
+          <div class="text-box-block__content" contenteditable="true">
+            <p style="flex: none; height: 400px; margin: 0">超长内容</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  `,
+  styleUrl: '../../themes/blocks/text-box-block.scss',
+})
+class TextBoxReserveHarness {}
+
+/**
+ * Two frames, same two paragraphs, same spacing props — one horizontal, one
+ * vertical. `sb` / `sa` are what 段落设置 writes; the vertical frame is what
+ * the logical-axis restatement exists for.
+ */
+@Component({
+  selector: 'text-box-spacing-harness',
+  standalone: true,
+  template: `
+    <div data-blockcraft-root="true">
+      <div class="text-box-block">
+        <div class="text-box-block__surface" style="width: 300px; height: 200px">
+          <div class="text-box-block__content">
+            <p
+              id="h-first"
+              data-block-id
+              data-node-type="editable"
+              style="--bc-block-sb: 12px; --bc-block-sa: 40px">一</p>
+            <p data-block-id data-node-type="editable">二</p>
+          </div>
+        </div>
+      </div>
+      <p
+        id="outside"
+        data-block-id
+        data-node-type="editable"
+        style="--bc-block-sb: 12px; --bc-block-sa: 40px">框外</p>
+      <div class="text-box-block" style="--bc-text-box-writing-mode: vertical-rl">
+        <div class="text-box-block__surface" style="width: 200px; height: 300px">
+          <div class="text-box-block__content">
+            <p
+              id="v-first"
+              data-block-id
+              data-node-type="editable"
+              style="--bc-block-sb: 12px; --bc-block-sa: 40px">一</p>
+            <p data-block-id data-node-type="editable">二</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  `,
+  styles: [],
+  styleUrls: [
+    '../../themes/base.scss',
+    '../../themes/blocks/text-box-block.scss',
+  ],
+})
+class TextBoxSpacingHarness {}
+
+/**
+ * One decorated preset at its design size and at a frame stretched well away
+ * from it. The insets come from the artwork registry as percentages, which is
+ * the whole point of the exercise.
+ */
+@Component({
+  selector: 'text-box-artwork-frame-harness',
+  standalone: true,
+  template: `
+    <div data-blockcraft-root="true">
+      <div
+        class="text-box-block"
+        [style]="insetStyle">
+        <div
+          id="design-size"
+          class="text-box-block__surface"
+          style="width: 360px; height: 240px">
+          <div class="text-box-block__content"></div>
+        </div>
+      </div>
+      <div
+        class="text-box-block"
+        [style]="insetStyle">
+        <div
+          id="stretched"
+          class="text-box-block__surface"
+          style="width: 540px; height: 160px">
+          <div class="text-box-block__content"></div>
+        </div>
+      </div>
+    </div>
+  `,
+  styleUrl: '../../themes/blocks/text-box-block.scss',
+})
+class TextBoxArtworkFrameHarness {
+  private readonly insets = getTextBoxArtwork(
+    (getTextBoxPreset('bubble-r-blob-halo').props as {bgi?: string}).bgi!,
+  )!.textInsets
+
+  protected readonly insetStyle =
+    `--bc-text-box-shape-inset-top: ${this.insets.top * 100}%;` +
+    `--bc-text-box-shape-inset-right: ${this.insets.right * 100}%;` +
+    `--bc-text-box-shape-inset-bottom: ${this.insets.bottom * 100}%;` +
+    `--bc-text-box-shape-inset-left: ${this.insets.left * 100}%;` +
+    '--bc-text-box-padding-top: 0px; --bc-text-box-padding-right: 0px;' +
+    '--bc-text-box-padding-bottom: 0px; --bc-text-box-padding-left: 0px;'
+}
 
 describe('TextBoxBlockSchema', () => {
   it('keeps focused content borderless and scrollable without visible scrollbars', async () => {
@@ -57,6 +188,123 @@ describe('TextBoxBlockSchema', () => {
 
       content.scrollTop = 24
       expect(content.scrollTop).toBeGreaterThan(0)
+    } finally {
+      fixture.destroy()
+      TestBed.resetTestingModule()
+    }
+  })
+
+  it('reserves the frame edges as geometry, so overflowing text cannot reach them', async () => {
+    await TestBed.configureTestingModule({
+      imports: [TextBoxReserveHarness],
+    }).compileComponents()
+    const fixture = TestBed.createComponent(TextBoxReserveHarness)
+    fixture.detectChanges()
+    const surface = fixture.nativeElement.querySelector(
+      '.text-box-block__surface',
+    ) as HTMLElement
+    const content = fixture.nativeElement.querySelector(
+      '.text-box-block__content',
+    ) as HTMLElement
+
+    try {
+      // Padding would only offset the two start edges. The end edges are
+      // trailing space in the flow and `overflow` clips at the padding box, so
+      // text taller than the frame paints straight through the bottom reserve —
+      // over a bubble's rim and down its tail. The reserve has to shrink the box.
+      expect(getComputedStyle(content).padding).toBe('0px')
+      expect(content.offsetWidth).toBe(300 - 40 - 30)
+      expect(content.offsetHeight).toBe(200 - 20 - 60)
+
+      const frame = surface.getBoundingClientRect()
+      const box = content.getBoundingClientRect()
+      expect(box.top - frame.top).toBeCloseTo(20, 0)
+      expect(frame.bottom - box.bottom).toBeCloseTo(60, 0)
+
+      // The content is twice the frame's height; scrolled to the end it still
+      // stops at the reserve line rather than running into the tail.
+      content.scrollTop = content.scrollHeight
+      expect(content.getBoundingClientRect().bottom)
+        .toBeCloseTo(frame.bottom - 60, 0)
+    } finally {
+      fixture.destroy()
+      TestBed.resetTestingModule()
+    }
+  })
+
+  it('keeps 段落设置 spacing working inside a frame, on the frame\'s own axis', async () => {
+    await TestBed.configureTestingModule({
+      imports: [TextBoxSpacingHarness],
+    }).compileComponents()
+    const fixture = TestBed.createComponent(TextBoxSpacingHarness)
+    fixture.detectChanges()
+    const host = fixture.nativeElement as HTMLElement
+
+    try {
+      // Horizontal: the logical properties resolve to the very same physical
+      // ones base.scss uses, so the author's values arrive untouched. A literal
+      // gap here would outrank `--bc-block-sa` and the field would look broken
+      // inside a text box while working everywhere else.
+      const h = getComputedStyle(host.querySelector('#h-first')!)
+      expect(h.marginTop).toBe('12px')
+      expect(h.marginBottom).toBe('40px')
+
+      // Same two values on an ordinary paragraph outside any frame: the point
+      // of the fix is that the two agree, so this pins base.scss's own chain
+      // alongside the frame's restatement of it.
+      const out = getComputedStyle(host.querySelector('#outside')!)
+      expect(out.marginTop).toBe(h.marginTop)
+      expect(out.marginBottom).toBe(h.marginBottom)
+
+      // Vertical (`vertical-rl`): the block axis runs right-to-left, so the
+      // same two values have to land on the right and left edges. Left as
+      // physical margins they would push the text sideways and let the
+      // segments touch.
+      const v = getComputedStyle(host.querySelector('#v-first')!)
+      expect(v.marginRight).toBe('12px')
+      expect(v.marginLeft).toBe('40px')
+      expect(v.marginTop).toBe('0px')
+      expect(v.marginBottom).toBe('0px')
+    } finally {
+      fixture.destroy()
+      TestBed.resetTestingModule()
+    }
+  })
+
+  it('scales a decorated frame\'s text area with the frame itself', async () => {
+    await TestBed.configureTestingModule({
+      imports: [TextBoxArtworkFrameHarness],
+    }).compileComponents()
+    const fixture = TestBed.createComponent(TextBoxArtworkFrameHarness)
+    fixture.detectChanges()
+    const host = fixture.nativeElement as HTMLElement
+
+    try {
+      const measure = (id: string) => {
+        const surface = host.querySelector(`#${id}`) as HTMLElement
+        const content = surface.querySelector(
+          '.text-box-block__content',
+        ) as HTMLElement
+        const s = surface.getBoundingClientRect()
+        const c = content.getBoundingClientRect()
+        return {
+          width: c.width / s.width,
+          height: c.height / s.height,
+          left: (c.left - s.left) / s.width,
+        }
+      }
+
+      // Same artwork, two very different frames. The drawing is stretched to
+      // the frame (`preserveAspectRatio="none"` plus `bgs: 'stretch'`), so its
+      // text-safe area has to stretch with it. As fixed px it did not: a frame
+      // dragged from 360x240 to 540x160 kept a 360px-wide text rectangle inside
+      // a balloon whose interior had become 270px wide.
+      const design = measure('design-size')
+      const stretched = measure('stretched')
+
+      expect(stretched.width).toBeCloseTo(design.width, 3)
+      expect(stretched.height).toBeCloseTo(design.height, 3)
+      expect(stretched.left).toBeCloseTo(design.left, 3)
     } finally {
       fixture.destroy()
       TestBed.resetTestingModule()
@@ -207,12 +455,32 @@ describe('TextBoxBlockSchema', () => {
       fo: 1,
       bw: 1,
       bs: 'solid',
+      wm: 'h',
       position: {
         x: 32,
         y: 48,
       },
       placementLayer: 'under',
     })
+  })
+
+  it('defaults the writing mode to horizontal and only accepts the vertical flag', () => {
+    expect(normalizeTextBoxProps({}).wm).toBe('h')
+    expect(normalizeTextBoxProps({wm: 'v'}).wm).toBe('v')
+    // Unknown values fall back rather than reaching the theme as a raw string.
+    expect(normalizeTextBoxProps({wm: 'vertical-rl'} as never).wm).toBe('h')
+    expect(normalizeTextBoxProps({wm: null} as never).wm).toBe('h')
+  })
+
+  it('creates a plain frame with the default black outline', () => {
+    const snapshot = TextBoxBlockSchema.createSnapshot('', {wm: 'v'})
+    const props = normalizeTextBoxProps(
+      snapshot.props as Partial<TextBoxBlockProps>,
+    )
+
+    expect(props.wm).toBe('v')
+    expect(props.borderColor).toBe('#000000')
+    expect(props.sh).toBe('rectangle')
   })
 
   it('normalizes the shape shell and serialized WordArt value object', () => {

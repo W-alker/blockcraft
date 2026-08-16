@@ -2,6 +2,8 @@ import {BlockNodeType, DocAttachmentInfo, DocFileService, IBlockSnapshot} from '
 import {
   normalizeTextBoxWordArtStyle,
   serializeTextBoxWordArtStyle,
+  getTextBoxArtwork,
+  getTextBoxPreset,
 } from '../../blocks/text-box-block';
 import {HtmlAdapter} from './html-adapter';
 
@@ -204,6 +206,7 @@ describe('HtmlAdapter', () => {
         fo: 0.9,
         bw: 2,
         bs: 'dashed',
+        wm: 'v',
         wa: serializeTextBoxWordArtStyle({
           fillType: 'solid',
           fillColor: '#2563EB',
@@ -247,6 +250,7 @@ describe('HtmlAdapter', () => {
     expect(html).toContain('data-bc-fo="0.9"');
     expect(html).toContain('data-bc-bw="2"');
     expect(html).toContain('data-bc-bs="dashed"');
+    expect(html).toContain('data-bc-wm="v"');
     expect(html).toContain('data-bc-wa=');
     expect(html).toContain('data-bc-p="8 12 16 20"');
     expect(html).toContain(
@@ -268,6 +272,38 @@ describe('HtmlAdapter', () => {
     expect((importedTextBox.children as IBlockSnapshot[]).map(child =>
       child.flavour,
     )).toEqual(['paragraph', 'bullet']);
+  });
+
+  it('expands a catalog drawing on export and collapses it back on import', async () => {
+    const preset = getTextBoxPreset('bubble-r-blob-halo');
+    const reference = (preset.props as {bgi?: string}).bgi!;
+    const artwork = getTextBoxArtwork(reference)!;
+    const textBox: IBlockSnapshot = {
+      id: 'text-box-artwork',
+      flavour: 'text-box',
+      nodeType: BlockNodeType.block,
+      props: {...preset.props, width: 360, height: 240},
+      meta: {},
+      children: [createParagraphSnapshot('text-box-art-p', 'framed')],
+    };
+
+    const html = await adapter.toHtml(createRootSnapshot([textBox]));
+
+    // Exported HTML has to stand on its own in whatever opens it, so the
+    // reference is expanded into the drawing it names.
+    expect(html).toContain('data:image/svg+xml');
+    expect(html).not.toContain(reference);
+
+    const imported = await adapter.toBlockSnapshot(html);
+    const importedTextBox = (imported.children as IBlockSnapshot[])[0]!;
+
+    // …and collapsed again on the way back, or a round trip would leave the
+    // expanded copy in the document — exactly what the reference exists to
+    // keep out of snapshots.
+    expect(importedTextBox.props['bgi']).toBe(reference);
+    expect(JSON.stringify(importedTextBox.props))
+      .not.toContain('data:image/svg+xml');
+    expect(artwork.src.length).toBeGreaterThan(reference.length * 10);
   });
 
   it('keeps a default paragraph when no supported text-box children survive', async () => {

@@ -42,6 +42,15 @@ export type TextBoxWordArtStyle = Pick<
   | 'effect'
 >
 
+/**
+ * Compact text flow direction. `h` keeps the document's normal
+ * `horizontal-tb`; `v` switches the frame to Word-style vertical text.
+ *
+ * Only the frame carries the direction — child paragraphs stay ordinary
+ * Blocks, and CSS logical axes flip alignment and block stacking on their own.
+ */
+export type TextBoxWritingMode = 'h' | 'v'
+
 export interface TextBoxBlockProps extends BlockSurfaceProps {
   width: number
   height: number
@@ -54,6 +63,8 @@ export interface TextBoxBlockProps extends BlockSurfaceProps {
   bw?: number
   /** Shape outline style. */
   bs?: ShapeStrokeStyle
+  /** Compact text flow direction; omitted inherits horizontal. */
+  wm?: TextBoxWritingMode
   /** Canonical serialized WordArt-compatible text effect value object. */
   wa?: string | null
 }
@@ -69,6 +80,7 @@ export interface NormalizedTextBoxBlockProps extends TextBoxBlockProps {
   fo: number
   bw: number
   bs: ShapeStrokeStyle
+  wm: TextBoxWritingMode
   wa?: string
 }
 
@@ -79,12 +91,22 @@ Readonly<NormalizedTextBoxBlockProps> = {
   rotation: 0,
   p: [8, 12],
   backColor: '#FFFFFF',
-  borderColor: '#64748B',
+  borderColor: '#000000',
   sh: 'rectangle',
   fo: 1,
   bw: 1,
   bs: 'solid',
+  wm: 'h',
 }
+
+/**
+ * Vertical frames are drawn tall rather than wide. Callers that insert without
+ * picking a preset use this to seed the drawing gesture.
+ */
+export const DEFAULT_VERTICAL_TEXT_BOX_SIZE = {
+  width: DEFAULT_TEXT_BOX_PROPS.height,
+  height: DEFAULT_TEXT_BOX_PROPS.width,
+} as const
 
 const MIN_WIDTH = 48
 const MIN_HEIGHT = 32
@@ -124,6 +146,7 @@ export function normalizeTextBoxProps(
     fo: boundedNumber(input?.['fo'], DEFAULT_TEXT_BOX_PROPS.fo, 0, 1),
     bw: boundedNumber(input?.['bw'], DEFAULT_TEXT_BOX_PROPS.bw, 0, 20),
     bs: input?.['bs'] === 'dashed' ? 'dashed' : 'solid',
+    wm: input?.['wm'] === 'v' ? 'v' : 'h',
     ...(wordArt ? {wa: wordArt} : {}),
     ...(position ? {position} : {}),
     ...(input?.['placementLayer'] === 'under'

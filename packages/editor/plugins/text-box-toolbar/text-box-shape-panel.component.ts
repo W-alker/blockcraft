@@ -23,6 +23,7 @@ import {
   type DocFileService,
 } from '../../framework'
 import {
+  getTextBoxArtwork,
   type NormalizedTextBoxBlockProps,
   type TextBoxBlockProps,
 } from '../../blocks/text-box-block'
@@ -129,9 +130,9 @@ type ShapePanelSection = 'shape' | 'fill' | 'outline'
                 [disabled]="uploading"
                 (click)="backgroundFile.click()">
                 <i class="bc_icon bc_tupian-color" aria-hidden="true"></i>
-                {{ props.bgi ? '替换图片' : '选择图片' }}
+                {{ hasUploadedImage ? '替换图片' : '选择图片' }}
               </button>
-              @if (props.bgi) {
+              @if (hasUploadedImage) {
                 <button
                   cs-button
                   csType="text"
@@ -149,7 +150,7 @@ type ShapePanelSection = 'shape' | 'fill' | 'outline'
             }
           </div>
 
-          @if (props.bgi) {
+          @if (hasUploadedImage) {
             <div class="text-box-shape-panel__row text-box-shape-panel__row--stacked">
               <span class="text-box-shape-panel__label">图片适应</span>
               <cs-segmented
@@ -478,6 +479,17 @@ export class TextBoxShapePanelComponent implements OnChanges {
     if (!this.imageTransparencyDirty) return
     this.imageTransparencyDirty = false
     this.patch.emit({bgo: 1 - this.imageTransparency / 100})
+  }
+
+  /**
+   * Only a host-uploaded image is the user's to replace or remove. A catalog
+   * drawing sits in the same `bgi` field but is part of the chosen style —
+   * offering 替换/移除 for it means one click silently wipes the preset's
+   * artwork and leaves an empty frame.
+   */
+  protected get hasUploadedImage(): boolean {
+    const src = this.props.bgi
+    return typeof src === 'string' && !!src && !getTextBoxArtwork(src)
   }
 
   removeBackground(): void {

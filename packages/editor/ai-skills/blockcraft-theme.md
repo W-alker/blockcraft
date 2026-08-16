@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-14
+> Last updated: 2026-08-16
 
 ## Theme Structure
 
@@ -171,9 +171,10 @@ Read `themes/base.scss` and `themes/variables.scss` for the current variable lis
 --bc-render-unit-padding-right
 --bc-render-unit-padding-bottom
 --bc-render-unit-padding-left
+--bc-text-box-writing-mode        // vertical-rl on vertical frames; unset = horizontal-tb
 --bc-text-box-background-color    // text-box persisted backColor
 --bc-text-box-border-color        // text-box persisted borderColor
---bc-text-box-padding-top         // resolved fixed-frame content padding
+--bc-text-box-padding-top         // resolved fixed-frame reserve (applied as an offset, not padding)
 --bc-text-box-padding-right
 --bc-text-box-padding-bottom
 --bc-text-box-padding-left
@@ -232,8 +233,20 @@ The bundled `text-box` projects the same resolved surface contract through
 `--bc-text-box-padding-top/right/bottom/left`. Shape catalog geometry is painted
 as fill and outline SVG layers around the child viewport. Its decorative
 `.text-box-block__background-image` is a real image between those layers and is
-clipped to the same Shape path. `--bc-text-box-shape-inset-*` adds the Shape
-definition's text-safe frame before content padding; `--bc-text-box-word-art-*`
+clipped to the same Shape path. `--bc-text-box-shape-inset-*` carries the text-safe
+frame — from the artwork registry when `bgi` names a drawing, otherwise from the
+Shape definition and is summed with the padding variables into the
+viewport's own `top/right/bottom/left`, with `padding: 0` — the reserve is
+geometry on all four sides. As real padding it only held on the two start
+edges: padding offsets where the first line begins, while the end edges are
+trailing space in the flow and `overflow` clips at the padding box, so text
+taller than the frame painted straight through the bottom reserve. Layout is
+unchanged while the text fits. Segment spacing inside the frame is
+restated logically (`margin-block-start` / `margin-block-end`) so a vertical
+frame stacks on the right axis, and keeps base.scss's `--bc-block-sb` /
+`--bc-block-sa` fallbacks — writing the gap literally there outranks those two
+variables and breaks 段落设置 spacing inside text boxes only.
+`--bc-text-box-word-art-*`
 projects an optional WordArt presentation without moving text ownership out of
 ordinary child Blocks. The fixed paint viewport owns clipping/scrolling so the
 outer shell does not clip resize and rotation handles. Live editing may scroll

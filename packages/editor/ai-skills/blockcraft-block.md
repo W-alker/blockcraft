@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-08-15
+> Last updated: 2026-08-16
 
 ## Block Types
 
@@ -998,7 +998,62 @@ a canonical serialized WordArt-compatible value object. Common `backColor`,
 The latter two are present only while the text box is structurally absolute.
 Defaults are
 `240 × 120`, rectangle, rotation `0`, `p: [8, 12]`, a white fill and a gray
-outline. Use `normalizeTextBoxProps()` at creation/import boundaries and
+outline.
+
+Compact `wm` (`'h'` | `'v'`, default `'h'`) selects the text direction. A
+vertical frame renders `writing-mode: vertical-rl` through
+`--bc-text-box-writing-mode`; horizontal frames omit the variable so the theme
+falls back to `horizontal-tb`. Direction is a frame flag, not a second set of
+properties: `text-align` and the `flex-direction: column` main axis are both
+logical, so alignment and child stacking flip on their own. Only the labels in
+the object rail change. `DEFAULT_VERTICAL_TEXT_BOX_SIZE` transposes the default
+geometry for callers that insert a vertical frame.
+
+`TEXT_BOX_PRESETS` is grouped into shape tabs through the optional `cat` field
+(`featured` / `outline` / `rect` / `bubble`), and a preset may limit
+itself to one direction with `wm`. Two kinds coexist in each tab: geometry-only
+entries driven by `sh`, and decorated entries that set `sh: 'rectangle'` with
+`bw: 0` / `fo: 0` and name a drawing from the artwork registry in `bgi`. The second kind exists because the surface image is
+clipped to the shape path and a Shape shell paints only one fill and one
+stroke — hand-drawn borders, ribbons and multi-color ornament need the image.
+Query them with `getTextBoxPresetsFor()` / `getTextBoxPresetCategoriesFor()`.
+
+Those drawings live in a registry, not in the document. `bgi` holds a `bc:<id>`
+reference; `getTextBoxArtwork()` / `resolveTextBoxArtworkSrc()` turn it into the
+inline SVG at render time, and anything that is not a `bc:` reference — a URL the
+host's upload service returned — passes through untouched. The registry is the
+same idea as the Shape catalog: `sh` names geometry plus `textInsets`, `bgi`
+names a drawing plus its own `textInsets`. Two consequences follow. The drawing
+never travels in a snapshot, a Yjs sync, an undo entry or an export, which is
+worth 0.3–1.6 KB per frame. And the frame's text-safe area is a *fraction* of the
+frame, so it tracks whatever size the author drags — held as fixed px in `p` it
+was only correct at the size each entry was drawn for, and a stretched frame ran
+its text straight through the artwork.
+
+`_shapeInset()` resolves in that order: the artwork's insets when `bgi` names
+one, then nothing at all for `sh: 'rectangle'` (a plain rectangle has no artwork
+to dodge), then the shape's own. `p` stays what it always was — optical padding
+in absolute px, stacked on top of whichever inset wins.
+
+Decorated entries split the work between the two layers: the frame is a real
+`bw` outline on the chosen shape — editable from the toolbar and a constant
+width at any frame size — while `bgi` carries ornament only. Bubbles are the
+exception and draw their own contour with `bw: 0`, because a balloon is not a
+rectangle wearing a badge.
+
+Two consequences are worth knowing before adding entries. The surface image is
+clipped to the shape and the outline paints above it, so ornament can neither
+bleed past the frame nor interrupt the border; picking a shape whose
+`detailPath` already breaks the outline (`folded-corner`) is the only way to get
+that reading. And a non-rectangular shape contributes its `textInsets`
+underneath `p`, so the two stack — `_shapeInset()` returns `0%` only for
+`rectangle`.
+
+Child spacing inside a frame uses `margin-block-end`, which resolves to the
+document's usual `margin-bottom` under `horizontal-tb`. A caret that leaves the
+fixed frame is **not** scrolled into view in either direction —
+`SelectionManager.scrollSelectionIntoView()` only scrolls the document-level
+container on its vertical axis. Use `normalizeTextBoxProps()` at creation/import boundaries and
 `normalizeTextBoxWordArtStyle()` / `serializeTextBoxWordArtStyle()` at the
 text-effect boundary. The shared compact surface keys remain `p`, `bgi`,
 `bgs`, `bgx`, `bgy` and `bgo`; there is no second text-box-specific padding or

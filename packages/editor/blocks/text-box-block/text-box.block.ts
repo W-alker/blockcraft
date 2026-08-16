@@ -16,6 +16,10 @@ import {
 } from '../shape-block'
 import {getShapeDefinition} from '../shape-block/shape-definitions'
 import {
+  getTextBoxArtwork,
+  resolveTextBoxArtworkSrc,
+} from './presets/artwork'
+import {
   resolveWordArtPresentation,
   type WordArtPresentation,
 } from '../word-art-block/word-art.types'
@@ -67,7 +71,7 @@ const rotationTransform = (rotation: number): string =>
         </path>
       </svg>
 
-      @if (blockSurface.backgroundImage; as image) {
+      @if (backgroundImage; as image) {
         <img
           class="text-box-block__background-image"
           [src]="image.src"
@@ -130,6 +134,8 @@ const rotationTransform = (rotation: number): string =>
   `,
   host: {
     'data-bc-text-box': 'true',
+    '[attr.data-bc-text-box-wm]': 'textBoxProps.wm',
+    '[style.--bc-text-box-writing-mode]': 'writingMode',
     '[style.--bc-text-box-background-color]': 'textBoxProps.backColor',
     '[style.--bc-text-box-border-color]': 'textBoxProps.borderColor',
     '[style.--bc-text-box-padding-top]': 'blockSurface.padding.top + "px"',
@@ -183,6 +189,14 @@ export class TextBoxBlockComponent extends BaseBlockComponent<TextBoxBlockModel>
     return this.textBoxProps.bs === 'dashed' ? '10 8' : null
   }
 
+  /**
+   * Projects the frame's text flow direction. Horizontal frames emit nothing so
+   * the theme's `horizontal-tb` fallback keeps existing documents byte-identical.
+   */
+  get writingMode(): string | null {
+    return this.textBoxProps.wm === 'v' ? 'vertical-rl' : null
+  }
+
   get wordArtPresentation(): WordArtPresentation | null {
     const style = normalizeTextBoxWordArtStyle(this.textBoxProps.wa)
     return style ? resolveWordArtPresentation(style) : null
@@ -210,6 +224,20 @@ export class TextBoxBlockComponent extends BaseBlockComponent<TextBoxBlockModel>
     if (value === 'top') return 'flex-start'
     if (value === 'bottom') return 'flex-end'
     return 'center'
+  }
+
+  /**
+   * The paintable surface image. `bgi` holds a reference — `bc:<id>` for a
+   * catalog drawing, a host URL for an uploaded one — so the registry resolves
+   * it here rather than handing the raw value to `<img>`. An id this build does
+   * not know paints nothing, which leaves an ordinary framed box rather than a
+   * broken-image icon.
+   */
+  get backgroundImage() {
+    const image = this.blockSurface.backgroundImage
+    if (!image) return null
+    const src = resolveTextBoxArtworkSrc(image.src)
+    return src ? {...image, src} : null
   }
 
   get shapeInsetTop(): string {
@@ -291,9 +319,19 @@ export class TextBoxBlockComponent extends BaseBlockComponent<TextBoxBlockModel>
     if (surface) surface.style.transform = rotationTransform(event.rotation)
   }
 
+  /**
+   * The frame's text-safe area, as a percentage so it tracks the frame at any
+   * size. A catalog drawing carries its own — no shape can describe where a
+   * hand-drawn balloon's rim sits — and takes precedence over the shape's,
+   * whose value the drawing is painted over anyway. `rectangle` alone reports
+   * nothing: a plain rectangle has no artwork to dodge and its whole area is
+   * usable.
+   */
   private _shapeInset(
     side: 'top' | 'right' | 'bottom' | 'left',
   ): string {
+    const artwork = getTextBoxArtwork(this.textBoxProps.bgi)
+    if (artwork) return `${artwork.textInsets[side] * 100}%`
     if (this.textBoxProps.sh === 'rectangle') return '0%'
     return `${this.shapeDefinition.textInsets[side] * 100}%`
   }

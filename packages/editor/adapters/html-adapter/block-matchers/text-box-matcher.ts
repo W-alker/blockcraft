@@ -1,7 +1,10 @@
 import {
+  findTextBoxArtworkBySrc,
   normalizeTextBoxProps,
   ParagraphBlockSchema,
+  resolveTextBoxArtworkSrc,
   TextBoxBlockSchema,
+  textBoxArtworkRef,
   type TextBoxBlockProps,
 } from '../../../blocks'
 import type {BlockPosition, IBlockSnapshot} from '../../../framework'
@@ -13,6 +16,33 @@ import {
   numberProperty,
   stringProperty,
 } from './block-surface-properties'
+
+/**
+ * Exported HTML has to stand on its own in whatever opens it, so a `bc:`
+ * reference is expanded back into the drawing it names. Nothing else is
+ * touched: uploaded images are already URLs, and an unknown reference is
+ * dropped rather than written out as an unloadable `src`.
+ */
+function expandArtwork(
+  properties: NonNullable<ReturnType<typeof blockSurfacePropsToHtml>>,
+): typeof properties {
+  const src = properties['dataBcBgi']
+  if (typeof src !== 'string' || !src) return properties
+  return {...properties, dataBcBgi: resolveTextBoxArtworkSrc(src) ?? undefined}
+}
+
+/**
+ * The inverse, on the way in. Without it a round trip through HTML would leave
+ * the expanded copy sitting in the document — the very thing the reference
+ * exists to keep out of snapshots. A drawing this build does not recognise
+ * (someone else's image, or a newer catalog) stays as it arrived.
+ */
+function collapseArtwork(
+  surface: ReturnType<typeof blockSurfacePropsFromHtml>,
+): typeof surface {
+  const artwork = findTextBoxArtworkBySrc(surface.bgi)
+  return artwork ? {...surface, bgi: textBoxArtworkRef(artwork.id)} : surface
+}
 
 const TEXT_BOX_CHILD_FLAVOURS = new Set([
   'paragraph',
@@ -32,7 +62,7 @@ export const textBoxBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
     enter: (o, context) => {
       if (!HastUtils.isElement(o.node)) return
       const props: Partial<TextBoxBlockProps> = {
-        ...blockSurfacePropsFromHtml(o.node),
+        ...collapseArtwork(blockSurfacePropsFromHtml(o.node)),
         width: numberProperty(o.node, 'dataTextBoxWidth'),
         height: numberProperty(o.node, 'dataTextBoxHeight'),
         rotation: numberProperty(o.node, 'dataTextBoxRotation'),
@@ -42,6 +72,7 @@ export const textBoxBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
         fo: numberProperty(o.node, 'dataBcFo'),
         bw: numberProperty(o.node, 'dataBcBw'),
         bs: stringProperty(o.node, 'dataBcBs') as TextBoxBlockProps['bs'],
+        wm: stringProperty(o.node, 'dataBcWm') as TextBoxBlockProps['wm'],
         wa: wordArtProperty(o.node),
         ...placementFromHtml(o.node),
       }
@@ -86,9 +117,10 @@ export const textBoxBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
           dataBcFo: props.fo,
           dataBcBw: props.bw,
           dataBcBs: props.bs,
+          dataBcWm: props.wm,
           dataBcWa: props.wa,
           ...placementToHtml(props.position, props.placementLayer),
-          ...blockSurfacePropsToHtml(props),
+          ...expandArtwork(blockSurfacePropsToHtml(props)),
         },
         children: [],
       }, 'children')

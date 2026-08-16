@@ -1,7 +1,7 @@
 [data-blockcraft-root="true"] .text-box-block,
 .bc-snapshot-viewer .text-box-block {
   --bc-text-box-background-color: #ffffff;
-  --bc-text-box-border-color: #64748b;
+  --bc-text-box-border-color: #000000;
   --bc-text-box-padding-top: 8px;
   --bc-text-box-padding-right: 12px;
   --bc-text-box-padding-bottom: 8px;
@@ -54,26 +54,43 @@
     user-select: none;
   }
 
+  // The frame's reserve — shape inset plus the block's own `p` — is geometry,
+  // not padding. Padding only works on the two start edges: it offsets where
+  // the first line begins, so top/left always hold. The end edges are trailing
+  // space in the flow, and `overflow` clips at the padding box, so the moment
+  // the text is taller than the frame it paints straight through the bottom
+  // reserve — over a bubble's rim and down its tail. Folding both terms into
+  // the offsets makes the box itself end at the reserve: identical layout while
+  // the text fits, and scrolled or clipped at the reserve line once it doesn't.
+  // Written on all four physical sides rather than patching `bottom` alone,
+  // because a vertical frame is `vertical-rl` and its block flow ends on the
+  // left.
   .text-box-block__content {
     position: absolute;
     z-index: 2;
-    top: var(--bc-text-box-shape-inset-top, 0%);
-    right: var(--bc-text-box-shape-inset-right, 0%);
-    bottom: var(--bc-text-box-shape-inset-bottom, 0%);
-    left: var(--bc-text-box-shape-inset-left, 0%);
+    top: calc(var(--bc-text-box-shape-inset-top, 0%) +
+      var(--bc-text-box-padding-top));
+    right: calc(var(--bc-text-box-shape-inset-right, 0%) +
+      var(--bc-text-box-padding-right));
+    bottom: calc(var(--bc-text-box-shape-inset-bottom, 0%) +
+      var(--bc-text-box-padding-bottom));
+    left: calc(var(--bc-text-box-shape-inset-left, 0%) +
+      var(--bc-text-box-padding-left));
     box-sizing: border-box;
     width: auto;
     height: auto;
     min-width: 0;
     min-height: 0;
     margin: 0;
-    padding: var(--bc-text-box-padding-top)
-      var(--bc-text-box-padding-right)
-      var(--bc-text-box-padding-bottom)
-      var(--bc-text-box-padding-left);
+    padding: 0;
     overflow: auto;
     display: flex;
     flex-direction: column;
+    // `horizontal-tb` fallback keeps horizontal frames identical: the Block only
+    // emits this variable for vertical ones. `flex-direction: column` and
+    // `text-align` both follow logical axes, so stacking and alignment flip
+    // themselves — no direction-specific rules needed below.
+    writing-mode: var(--bc-text-box-writing-mode, horizontal-tb);
     outline: none;
     box-shadow: none;
     scrollbar-width: none;
@@ -88,8 +105,25 @@
       height: 0;
     }
 
-    > [data-block-id]:last-child {
+    // Paragraph spacing ships as physical `margin-top` / `margin-bottom`
+    // (base.scss), which in a vertical frame lands on the inline axis: the
+    // segments touch and the author's 段前 pushes text sideways instead. Saying
+    // it logically fixes the axis and resolves to those same two physical
+    // properties under `horizontal-tb`, so horizontal frames are untouched.
+    //
+    // Both keep base.scss's own fallback chain. Writing the gap literally here —
+    // as a first pass did — silently outranks `--bc-block-sa` / `--bc-block-sb`,
+    // and the 段落设置 spacing fields stop working inside a text box while they
+    // still work everywhere else in the document.
+    > [data-block-id] {
+      margin-top: 0;
       margin-bottom: 0;
+      margin-block-start: var(--bc-block-sb, 0);
+      margin-block-end: var(--bc-block-sa, var(--bc-segments-gap));
+    }
+
+    > [data-block-id]:last-child {
+      margin-block-end: 0;
     }
   }
 

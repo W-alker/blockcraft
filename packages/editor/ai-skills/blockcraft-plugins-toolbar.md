@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-15
+> Last updated: 2026-08-17
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
@@ -369,10 +369,21 @@ fill, outline, shadow and transform controls. Preset IDs are never persisted,
 and detailed `wa` edits remain one canonical serialized value-object write.
 The **布局** rail entry uses the semantic `bc_buju` icon.
 
+**文字** also owns the **文字方向** switch, which writes the frame's `wm` prop
+rather than a WordArt style. Because `text-align` and the flex main axis are
+logical, a vertical frame flips what each alignment control does on screen, so
+the two alignment rows swap their displayed labels and options while the
+underlying `horizontalAlign` / `verticalAlign` fields stay put. No stored value
+is rewritten when the direction changes.
+
 Compact `p/bgi/bgs/bgx/bgy/bgo` remains available to Schema/CRUD callers as a
 low-level surface capability. Raw padding and background URL fields are not
 shown in the toolbar; image fit/opacity are surfaced only as semantic picture
-fill controls. Slider movement stays local and commits once on pointer/key
+fill controls. Those controls — 选择图片 / 替换图片 / 移除 plus fit and opacity —
+key off *uploaded* images only, meaning a `bgi` that is not a `bc:` artwork
+reference. A catalog drawing shares the same field but belongs to the chosen
+style, so offering to replace or remove it means one click wipes the preset's
+artwork and leaves an empty frame. Slider movement stays local and commits once on pointer/key
 completion to avoid Yjs/Undo flooding. The outer rail and all secondary cards
 remain in one block-owned connected Overlay; CSES ColorPicker/Select sibling
 panes are treated as owned interactions only while their originating control is
@@ -388,11 +399,23 @@ multi-Block container has no inline Embed or block-wrap representation.
 Register `TextBoxBlockSchema`, `PlacementLayoutBlockSchema`, the allowed
 ordinary child schemas and `TextBoxToolbarPlugin` together. The bundled
 capability factory already does this. When the Schema is present, the fixed
-toolbar shows the `bc_wenbenkuang` **插入文本框** preset picker. Choosing a
-preset arms the shared one-shot drawing surface, creates one absolute `over`
-object with concrete preset props on pointerup, then reveals the object and
-enters its initial paragraph. Gesture cancellation never writes a temporary
-root-flow Block.
+toolbar shows the `bc_wenbenkuang` **插入文本框** panel, laid out like Word:
+**横向** / **竖向** on top, then the style catalog.
+
+The two direction entries insert a plain frame — they pass geometry and `wm`
+only, so `normalizeTextBoxProps()` supplies the appearance and there is no
+"plain" preset to keep in sync with the defaults. The catalog below is
+horizontal-only: it groups by shape (`CsSegmentedComponent` tabs) and stamps
+`wm: 'h'` on every pick. Presets are not offered transposed because Shape
+geometry and the `bgi` surface image both stretch
+(`preserveAspectRatio="none"`) instead of rotating, so a tall frame smears the
+ornament rather than reorienting it. `getTextBoxPresetsFor(wm, cat?)` still
+filters by direction for callers that need it, and bundled speech bubbles still
+declare `wm: ['h']`; the picker simply queries it as `'h'`.
+
+Either entry arms the shared one-shot drawing surface, creates one absolute
+`over` object on pointerup, then reveals the object and enters its initial
+paragraph. Gesture cancellation never writes a temporary root-flow Block.
 
 ---
 

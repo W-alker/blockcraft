@@ -4,7 +4,7 @@
 >
 > Adapters handle HTML ↔ BlockSnapshot and Markdown ↔ BlockSnapshot conversion.
 >
-> Last updated: 2026-08-15
+> Last updated: 2026-08-16
 
 ## Architecture
 
@@ -265,7 +265,11 @@ children remain ordinary nested block elements. Optional shell colors use
 that map one-to-one to persisted props:
 
 - `data-bc-p`, containing one to four space-separated numeric values;
-- `data-bc-bgi` and `data-bc-bgs`;
+- `data-bc-bgi` and `data-bc-bgs`. A text-box `bgi` holding a `bc:<id>` artwork
+  reference is **expanded** into its inline SVG on export so the HTML stands on
+  its own in whatever opens it, and **collapsed** back to the reference on
+  import — otherwise a round trip would leave the expanded copy in the document,
+  which is exactly what the reference exists to keep out of snapshots;
 - `data-bc-bgx/bgy/bgo`.
 
 Import passes all fields through `normalizeRenderUnitBlockProps()`, which also
@@ -305,8 +309,8 @@ fixed geometry is stored in `data-text-box-width`, `data-text-box-height` and
 `data-text-box-rotation`. Absolute placement is serialized on the same element
 with the text-box placement mode/x/y/unit/layer attributes.
 Shape-shell values use `data-bc-sh/fo/bw/bs`; the optional canonical serialized
-WordArt value uses `data-bc-wa`. Preset IDs are catalog state and therefore
-never enter HTML or Snapshot data.
+WordArt value uses `data-bc-wa`; the text direction uses `data-bc-wm`. Preset
+IDs are catalog state and therefore never enter HTML or Snapshot data.
 
 Ordinary paragraph/list/blockquote elements stay nested inside the figure.
 Import opens the text-box snapshot before walking those children and restores a

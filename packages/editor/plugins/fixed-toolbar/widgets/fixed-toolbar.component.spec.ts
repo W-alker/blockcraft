@@ -3,7 +3,10 @@ import { BcOverlayTriggerDirective } from "../../../components";
 import { BlockNodeType } from "../../../framework";
 import { BlockSelection } from "../../../framework/modules/selection/blockSelection";
 import { getWordArtPreset } from "../../../blocks/word-art-block";
-import { getTextBoxPreset } from "../../../blocks/text-box-block";
+import {
+  DEFAULT_TEXT_BOX_PROPS,
+  getTextBoxPreset,
+} from "../../../blocks/text-box-block";
 import {
   SHAPE_CATEGORIES,
   SHAPE_DEFINITIONS,
@@ -562,6 +565,7 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
       "",
       {
         ...getTextBoxPreset("soft-blue").props,
+        wm: "h",
         width: 300,
         height: 180,
       },
@@ -577,6 +581,75 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
       "new-text-box",
     );
     expect(textBoxEnterEditing).toHaveBeenCalledOnceWith(true);
+    rootHost.remove();
+  });
+
+  it("inserts a plain vertical text box without any catalog styling", async () => {
+    const {component, rootHost, createSnapshot} = makeHarness();
+    spyOn<any>(component, "syncToolbarState");
+    let drawRequest: any;
+    spyOn<any>(component, "armObjectDrawing").and.callFake((request: any) => {
+      drawRequest = request;
+      return true;
+    });
+    const trigger = jasmine.createSpyObj<BcOverlayTriggerDirective>(
+      "BcOverlayTriggerDirective",
+      ["closePanel"],
+    );
+
+    (component as any).insertPlainTextBox("v", trigger);
+
+    // Vertical frames are drawn tall: the horizontal default, transposed.
+    expect(drawRequest.defaultWidth).toBe(DEFAULT_TEXT_BOX_PROPS.height);
+    expect(drawRequest.defaultHeight).toBe(DEFAULT_TEXT_BOX_PROPS.width);
+
+    await drawRequest.commit({
+      anchorRect: new DOMRect(0, 0, 120, 240),
+      width: 120,
+      height: 240,
+    });
+
+    // Only geometry and direction — appearance comes from the normalizer, so
+    // there is no "plain" preset that could drift from the defaults.
+    expect(createSnapshot).toHaveBeenCalledOnceWith("text-box", [
+      "",
+      {wm: "v", width: 120, height: 240},
+    ]);
+    rootHost.remove();
+  });
+
+  it("keeps catalog picks horizontal at the preset's own proportion", async () => {
+    const {component, rootHost, createSnapshot} = makeHarness();
+    spyOn<any>(component, "syncToolbarState");
+    let drawRequest: any;
+    spyOn<any>(component, "armObjectDrawing").and.callFake((request: any) => {
+      drawRequest = request;
+      return true;
+    });
+    const trigger = jasmine.createSpyObj<BcOverlayTriggerDirective>(
+      "BcOverlayTriggerDirective",
+      ["closePanel"],
+    );
+
+    (component as any).insertTextBox("soft-blue", trigger);
+
+    // Decorated presets bake their ornament into a stretched surface image, so
+    // a transposed frame would deform it. Vertical frames come from the two
+    // direction buttons above the catalog, which insert a plain box.
+    const preset = getTextBoxPreset("soft-blue");
+    expect(drawRequest.defaultWidth).toBe(preset.defaultWidth);
+    expect(drawRequest.defaultHeight).toBe(preset.defaultHeight);
+
+    await drawRequest.commit({
+      anchorRect: new DOMRect(0, 0, 280, 140),
+      width: 280,
+      height: 140,
+    });
+
+    expect(createSnapshot).toHaveBeenCalledOnceWith("text-box", [
+      "",
+      {...preset.props, wm: "h", width: 280, height: 140},
+    ]);
     rootHost.remove();
   });
 

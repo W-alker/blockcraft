@@ -14,6 +14,7 @@ import {
 
 export * from './text-box.types'
 export * from './text-box.presets'
+export * from './presets/artwork'
 export {TextBoxBlockComponent} from './text-box.block'
 
 export interface TextBoxBlockModel extends NoEditableBlockNative {

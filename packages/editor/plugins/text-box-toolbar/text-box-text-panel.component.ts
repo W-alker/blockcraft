@@ -24,6 +24,7 @@ import {
   serializeTextBoxWordArtStyle,
   type TextBoxBlockProps,
   type TextBoxWordArtStyle,
+  type TextBoxWritingMode,
 } from '../../blocks/text-box-block'
 import {
   getWordArtPreset,
@@ -180,26 +181,38 @@ const EFFECT_OPTIONS: ReadonlyArray<{value: WordArtEffect; label: string}> = [
           </div>
 
           <div class="text-box-text-panel__row text-box-text-panel__row--stacked">
-            <span class="text-box-text-panel__label">水平对齐</span>
+            <span class="text-box-text-panel__label">文字方向</span>
             <cs-segmented
               csSize="small"
               [csBlock]="true"
-              [csOptions]="horizontalAlignOptions"
-              [ngModel]="currentStyle.horizontalAlign"
-              (ngModelChange)="setHorizontalAlign($event)"
-              csAriaLabel="文本框文字水平对齐">
+              [csOptions]="writingModeOptions"
+              [ngModel]="wm"
+              (ngModelChange)="setWritingMode($event)"
+              csAriaLabel="文本框文字方向">
             </cs-segmented>
           </div>
 
           <div class="text-box-text-panel__row text-box-text-panel__row--stacked">
-            <span class="text-box-text-panel__label">垂直对齐</span>
+            <span class="text-box-text-panel__label">{{ inlineAlignLabel }}</span>
             <cs-segmented
               csSize="small"
               [csBlock]="true"
-              [csOptions]="verticalAlignOptions"
+              [csOptions]="inlineAlignOptions"
+              [ngModel]="currentStyle.horizontalAlign"
+              (ngModelChange)="setHorizontalAlign($event)"
+              [csAriaLabel]="'文本框文字' + inlineAlignLabel">
+            </cs-segmented>
+          </div>
+
+          <div class="text-box-text-panel__row text-box-text-panel__row--stacked">
+            <span class="text-box-text-panel__label">{{ blockAlignLabel }}</span>
+            <cs-segmented
+              csSize="small"
+              [csBlock]="true"
+              [csOptions]="blockAlignOptions"
               [ngModel]="currentStyle.verticalAlign"
               (ngModelChange)="setVerticalAlign($event)"
-              csAriaLabel="文本框文字垂直对齐">
+              [csAriaLabel]="'文本框文字' + blockAlignLabel">
             </cs-segmented>
           </div>
 
@@ -507,6 +520,9 @@ export class TextBoxTextPanelComponent implements OnChanges {
   @Input()
   style: TextBoxWordArtStyle | null = null
 
+  @Input()
+  wm: TextBoxWritingMode = 'h'
+
   @Output()
   readonly patch = new EventEmitter<Partial<TextBoxBlockProps>>()
 
@@ -515,6 +531,10 @@ export class TextBoxTextPanelComponent implements OnChanges {
     {value: 'font', label: '字体'},
     {value: 'fill', label: '填充与轮廓'},
     {value: 'effects', label: '效果'},
+  ]
+  readonly writingModeOptions: CsSegmentedOptions = [
+    {value: 'h', label: '横向'},
+    {value: 'v', label: '竖向'},
   ]
   readonly horizontalAlignOptions: CsSegmentedOptions = [
     {value: 'left', label: '左'},
@@ -525,6 +545,21 @@ export class TextBoxTextPanelComponent implements OnChanges {
     {value: 'top', label: '顶端'},
     {value: 'middle', label: '居中'},
     {value: 'bottom', label: '底端'},
+  ]
+  /**
+   * `horizontalAlign` drives `text-align` and `verticalAlign` drives the flex
+   * main axis. Both are logical, so a vertical frame flips what the user sees
+   * without any model change — only the labels have to follow.
+   */
+  private readonly verticalInlineAlignOptions: CsSegmentedOptions = [
+    {value: 'left', label: '顶端'},
+    {value: 'center', label: '居中'},
+    {value: 'right', label: '底端'},
+  ]
+  private readonly verticalBlockAlignOptions: CsSegmentedOptions = [
+    {value: 'top', label: '右'},
+    {value: 'middle', label: '中'},
+    {value: 'bottom', label: '左'},
   ]
   readonly fillTypeOptions: CsSegmentedOptions = [
     {value: 'solid', label: '纯色'},
@@ -606,6 +641,32 @@ export class TextBoxTextPanelComponent implements OnChanges {
     this.emitStyle({
       fontStyle: this.currentStyle.fontStyle === 'italic' ? 'normal' : 'italic',
     })
+  }
+
+  get inlineAlignLabel(): string {
+    return this.wm === 'v' ? '垂直对齐' : '水平对齐'
+  }
+
+  get blockAlignLabel(): string {
+    return this.wm === 'v' ? '水平对齐' : '垂直对齐'
+  }
+
+  get inlineAlignOptions(): CsSegmentedOptions {
+    return this.wm === 'v'
+      ? this.verticalInlineAlignOptions
+      : this.horizontalAlignOptions
+  }
+
+  get blockAlignOptions(): CsSegmentedOptions {
+    return this.wm === 'v'
+      ? this.verticalBlockAlignOptions
+      : this.verticalAlignOptions
+  }
+
+  setWritingMode(value: string | number): void {
+    if (value !== 'h' && value !== 'v') return
+    if (value === this.wm) return
+    this.patch.emit({wm: value})
   }
 
   setHorizontalAlign(value: string | number): void {

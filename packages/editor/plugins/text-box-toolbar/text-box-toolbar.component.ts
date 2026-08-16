@@ -30,6 +30,7 @@ import {
   type TextBoxBlockProps,
   type TextBoxPresetId,
   type TextBoxWordArtStyle,
+  type TextBoxWritingMode,
 } from '../../blocks/text-box-block'
 import {
   getWordArtPreset,
@@ -280,6 +281,7 @@ const TEXT_BOX_LAYOUT_OPTIONS = BLOCK_OBJECT_LAYOUT_OPTIONS.filter(
         <div id="bc-text-box-text-panel">
           <bc-text-box-text-panel
             [style]="wordArtStyle"
+            [wm]="writingMode"
             (patch)="emitPatch($event)">
           </bc-text-box-text-panel>
         </div>
@@ -489,6 +491,10 @@ export class TextBoxToolbarComponent {
 
   get wordArtStyle(): TextBoxWordArtStyle | null {
     return normalizeTextBoxWordArtStyle(this.props.wa) ?? null
+  }
+
+  get writingMode(): TextBoxWritingMode {
+    return this.normalizedProps.wm
   }
 
   get shapeType(): ShapeKind {

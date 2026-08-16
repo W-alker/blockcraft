@@ -58,8 +58,12 @@ import {
   type WordArtPresetId,
 } from "../../../blocks/word-art-block";
 import {
+  DEFAULT_TEXT_BOX_PROPS,
+  DEFAULT_VERTICAL_TEXT_BOX_SIZE,
   getTextBoxPreset,
+  type TextBoxBlockProps,
   type TextBoxPresetId,
+  type TextBoxWritingMode,
 } from "../../../blocks/text-box-block";
 import { WordArtPresetPickerComponent } from "./word-art-preset-picker.component";
 import {
@@ -627,9 +631,34 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
       </ng-template>
 
       <ng-template #textBoxPicker>
-        <bc-text-box-preset-picker
-          (pick)="insertTextBox($event, textBoxTrigger)"
-        ></bc-text-box-preset-picker>
+        <div class="text-box-insert-panel">
+          <div
+            class="text-box-insert-panel__directions"
+            role="group"
+            aria-label="插入文本框"
+          >
+            @for (option of textBoxDirections; track option.wm) {
+              <button
+                type="button"
+                class="text-box-insert-panel__direction"
+                [attr.data-wm]="option.wm"
+                [attr.aria-label]="option.label"
+                (mousedown)="$event.preventDefault()"
+                (click)="insertPlainTextBox(option.wm, textBoxTrigger)"
+              >
+                <i class="bc_icon" [class]="option.icon"></i>
+                <span>{{ option.label }}</span>
+              </button>
+            }
+          </div>
+          <div class="text-box-insert-panel__catalog-head">
+            <span>文本框样式</span>
+          </div>
+          <bc-text-box-preset-picker
+            [embedded]="true"
+            (pick)="insertTextBox($event, textBoxTrigger)"
+          ></bc-text-box-preset-picker>
+        </div>
       </ng-template>
 
     <ng-template #responsiveMorePicker>
@@ -938,6 +967,63 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
         pointer-events: auto;
         transition: opacity 0.12s ease;
         will-change: transform;
+      }
+
+      /* Owns the popup chrome the embedded catalog gives up, so the direction
+         actions and the style catalog read as one Word-style panel. */
+      .text-box-insert-panel {
+        box-sizing: border-box;
+        width: min(430px, calc(100vw - 16px));
+        max-height: min(420px, calc(100vh - 24px));
+        padding: 8px;
+        overflow: auto;
+        overscroll-behavior: contain;
+        border: 1px solid var(--bc-float-toolbar-divider-color);
+        border-radius: 10px;
+        background: var(--bc-float-toolbar-bg);
+        color: var(--bc-float-toolbar-item-color);
+        box-shadow: var(
+          --bc-fixed-toolbar-shadow,
+          0 6px 16px rgba(15, 15, 15, 0.08)
+        );
+      }
+
+      .text-box-insert-panel__directions {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        margin-bottom: 7px;
+        padding-bottom: 7px;
+        border-bottom: 1px solid var(--bc-float-toolbar-divider-color);
+      }
+
+      .text-box-insert-panel__direction {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 8px;
+        border: 1px solid transparent;
+        border-radius: 7px;
+        background: transparent;
+        color: inherit;
+        font-size: 12px;
+        line-height: 18px;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .text-box-insert-panel__direction:hover,
+      .text-box-insert-panel__direction:focus-visible {
+        border-color: var(--bc-active-color-light);
+        background: var(--bc-float-toolbar-item-hover-bg);
+        outline: none;
+      }
+
+      .text-box-insert-panel__catalog-head {
+        margin-bottom: 7px;
+        font-size: 11px;
+        font-weight: 600;
+        line-height: 16px;
       }
 
       .toolbar-section {
@@ -1417,6 +1503,15 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   protected readonly fontScalePresets = INLINE_FONT_SCALE_PRESETS;
   protected readonly letterSpacingPresets = INLINE_LETTER_SPACING_PRESETS;
   protected readonly lineHeightPresets = PARAGRAPH_LINE_HEIGHT_PRESETS;
+  /** Word's 横向 / 竖向 insert entries, shown above the style catalog. */
+  protected readonly textBoxDirections: readonly {
+    wm: TextBoxWritingMode;
+    label: string;
+    icon: string;
+  }[] = [
+    { wm: "h", label: "横向", icon: "bc_zhizhangfangxiang_hengxiang" },
+    { wm: "v", label: "竖向", icon: "bc_zhizhangfangxiang_zongxiang" },
+  ];
 
   @Input()
   activeFlavour: BlockCraft.BlockFlavour = "paragraph";
@@ -1875,6 +1970,35 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     this.cdr.markForCheck();
   }
 
+  /**
+   * Word's 横向 / 竖向 entries: a plain frame with no catalog styling. Passing
+   * only geometry and direction lets `normalizeTextBoxProps()` supply the
+   * default appearance, so there is no "plain" preset to keep in sync.
+   */
+  protected insertPlainTextBox(
+    wm: TextBoxWritingMode,
+    trigger: BcOverlayTriggerDirective,
+  ): void {
+    trigger.closePanel();
+    if (this.readonly) return;
+
+    const schema = this.doc.schemas.get("text-box", false);
+    if (!schema) return;
+    const size = wm === "v"
+      ? DEFAULT_VERTICAL_TEXT_BOX_SIZE
+      : DEFAULT_TEXT_BOX_PROPS;
+
+    const armed = this.armObjectDrawing({
+      defaultWidth: size.width,
+      defaultHeight: size.height,
+      commit: (geometry) =>
+        this.commitTextBox({ wm }, schema.metadata.label, geometry),
+    });
+    if (!armed) {
+      this.doc.messageService.warn(`无法在当前视图绘制${schema.metadata.label}`);
+    }
+  }
+
   protected insertTextBox(
     presetId: TextBoxPresetId,
     trigger: BcOverlayTriggerDirective,
@@ -1886,11 +2010,19 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     if (!schema) return;
     const preset = getTextBoxPreset(presetId);
 
+    // Catalog picks are always horizontal: the decorated presets bake their
+    // ornament into a stretched, non-rotating surface image, so a transposed
+    // frame would deform it. Vertical frames come from the two direction
+    // buttons above, which insert a plain box.
     const armed = this.armObjectDrawing({
       defaultWidth: preset.defaultWidth,
       defaultHeight: preset.defaultHeight,
       commit: (geometry) =>
-        this.commitTextBox(presetId, schema.metadata.label, geometry),
+        this.commitTextBox(
+          { ...preset.props, wm: "h" },
+          schema.metadata.label,
+          geometry,
+        ),
     });
     if (!armed) {
       this.doc.messageService.warn(
@@ -1899,17 +2031,17 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     }
   }
 
+  /** Shared insertion tail. Callers decide the appearance; geometry wins. */
   private async commitTextBox(
-    presetId: TextBoxPresetId,
+    props: Readonly<Partial<TextBoxBlockProps>>,
     label: string,
     geometry: ObjectDrawInsertGeometry,
   ): Promise<void> {
     if (this._destroyed || this.readonly) return;
-    const preset = getTextBoxPreset(presetId);
     const snapshot = this.doc.schemas.createSnapshot("text-box", [
       "",
       {
-        ...preset.props,
+        ...props,
         width: geometry.width,
         height: geometry.height,
       },
