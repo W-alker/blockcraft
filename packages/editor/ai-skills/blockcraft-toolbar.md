@@ -274,7 +274,9 @@ the toolbar progressively condenses based on measured overflow. Only the final
 narrow tier enables host-level horizontal scrolling with a thin
 transparent-track scrollbar; neither section creates a competing inner scroll
 range or overlays the other. Use safe centering so content stays centered while
-it fits and the inline start remains reachable once it overflows.
+it fits and the inline start remains reachable once it overflows. Measure only
+the visible formatting and insertion sections; projected dropdown-menu template
+hosts must not force a false condensed state.
 
 Editor-owned input surfaces use native `input` / `textarea` elements with
 component-scoped BlockCraft styles. This includes formula source, link editing,

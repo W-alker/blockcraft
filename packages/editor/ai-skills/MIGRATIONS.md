@@ -1153,12 +1153,13 @@ collapsing the whole insertion domain.
 - Insertion capabilities and their existing pickers remain individually
   exposed at all widths.
 - Responsive mode uses the component's actual inline size and rendered
-  overflow rather than viewport media queries or fixed pixel breakpoints. It
+  overflow of its visible formatting/insertion sections rather than viewport
+  media queries, fixed pixel breakpoints or projected dropdown templates. It
   first tries the complete layout, then moves font family/scale, character
   spacing and line height into **更多格式** while omitting superscript/subscript,
   inline link and inline formula. If content still overflows, bold, italic,
-  underline and inline code collapse into one **文字格式** dropdown;
-  strike-through stays directly visible.
+  underline, strike-through, inline code, superscript and subscript collapse
+  into one **文字格式** dropdown.
 - Visible formatting and insertion groups are centered in every responsive
   tier while they fit. The toolbar progressively condenses before scrolling;
   only the narrowest tier exposes one thin horizontal scrollbar and preserves

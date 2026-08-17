@@ -195,14 +195,14 @@ const INLINE_TOGGLE_ACTIONS: IToolbarIconAction<TInlineToggle>[] = [
   { value: "code", icon: "bc_daimakuai", title: "行内代码" },
 ];
 
-const NARROW_INLINE_ACTIONS = INLINE_TOGGLE_ACTIONS.filter(
-  (item): item is IToolbarIconAction<"bold" | "italic" | "underline" | "code"> =>
-    item.value !== "strike",
-);
-
 const SCRIPT_ACTIONS: IToolbarIconAction<TScriptToggle>[] = [
   { value: "sup", icon: "bc_shangbiao", title: "上标" },
   { value: "sub", icon: "bc_xiabiao", title: "下标" },
+];
+
+const NARROW_INLINE_ACTIONS: IToolbarIconAction<TInlineToggle>[] = [
+  ...INLINE_TOGGLE_ACTIONS,
+  ...SCRIPT_ACTIONS,
 ];
 
 const LIST_ACTIONS: IToolbarIconAction<TListFlavour>[] = [
@@ -1365,7 +1365,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
         display: none;
       }
 
-      .toolbar-inline-more {
+      .toolbar-btn.toolbar-inline-more {
         display: none;
       }
 
@@ -1419,7 +1419,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
         display: none;
       }
 
-      :host(.toolbar-layout--narrow) .toolbar-inline-more {
+      :host(.toolbar-layout--narrow) .toolbar-btn.toolbar-inline-more {
         display: inline-flex;
       }
 
@@ -1927,13 +1927,33 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     }
     this._layoutFitFrame = view.requestAnimationFrame(() => {
       this._layoutFitFrame = null;
-      if (this._destroyed || host.scrollWidth <= host.clientWidth + 1) return;
+      if (this._destroyed || !this.hasVisibleToolbarOverflow(host)) return;
       const nextLayout = this.nextToolbarLayout(this.toolbarLayout);
       if (!nextLayout) return;
       this.toolbarLayout = nextLayout;
       this.cdr.markForCheck();
       this.scheduleToolbarFit();
     });
+  }
+
+  private hasVisibleToolbarOverflow(host: HTMLElement) {
+    const sections = Array.from(host.children).filter(
+      (child): child is HTMLElement =>
+        child instanceof HTMLElement && child.classList.contains("toolbar-section"),
+    );
+    if (!sections.length) return false;
+
+    const style = host.ownerDocument.defaultView?.getComputedStyle(host);
+    const paddingInline = style
+      ? (Number.parseFloat(style.paddingLeft) || 0) +
+        (Number.parseFloat(style.paddingRight) || 0)
+      : 0;
+    const columnGap = style ? Number.parseFloat(style.columnGap) || 0 : 0;
+    const contentWidth = sections.reduce(
+      (width, section) => width + section.scrollWidth,
+      paddingInline + columnGap * Math.max(0, sections.length - 1),
+    );
+    return contentWidth > host.clientWidth + 1;
   }
 
   protected nextToolbarLayout(
@@ -2014,9 +2034,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     });
   }
 
-  protected isNarrowInlineAction(
-    value: TInlineToggle,
-  ): value is "bold" | "italic" | "underline" | "code" {
+  protected isNarrowInlineAction(value: TInlineToggle): boolean {
     return NARROW_INLINE_ACTIONS.some((item) => item.value === value);
   }
 
@@ -2031,7 +2049,12 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     trigger: IToolbarPopupController,
   ) {
     trigger.close();
-    this.toggleInlineAttr(item.value as TInlineToggle);
+    const value = item.value as TInlineToggle;
+    if (value === "sup" || value === "sub") {
+      this.toggleScriptAttr(value);
+      return;
+    }
+    this.toggleInlineAttr(value);
   }
 
   protected get activeScriptAction(): IToolbarIconAction<TScriptToggle> {

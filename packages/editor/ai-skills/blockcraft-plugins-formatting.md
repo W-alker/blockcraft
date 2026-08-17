@@ -188,12 +188,13 @@ new TextMarkerPlugin(['paragraph', 'blockquote'])
   other inline-format controls retain their all-blocks-editable requirement.
 - The fixed toolbar observes its own container width rather than the browser
   viewport. Each actual width change first tries the complete surface and then
-  degrades one tier only when the rendered content truly overflows. The first
+  degrades one tier only when the two visible toolbar sections truly overflow;
+  projected dropdown-template hosts do not participate in this measurement. The first
   tier moves the paired font family/scale control, character spacing and
   paragraph line height into **更多格式**, while superscript/subscript, inline
   link and inline formula leave the fixed surface. If that still does not fit,
-  the narrow tier collapses bold, italic, underline and inline code into one
-  **文字格式** dropdown while strike-through remains direct. The observer is
+  the narrow tier collapses bold, italic, underline, strike-through, inline
+  code, superscript and subscript into one **文字格式** dropdown. The observer is
   created once per component and disconnected on destroy.
 - Word-like semantic groups keep related commands together with visual dividers
   and accessible group names, but do not render persistent group-caption text.

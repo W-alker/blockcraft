@@ -29,15 +29,63 @@ describe("FixedTextToolbarComponent responsive layout", () => {
     expect((component as any).nextToolbarLayout("narrow")).toBeNull();
   });
 
-  it("collapses frequent inline toggles only in the narrow tier", () => {
+  it("collapses all inline formatting toggles in the narrow tier", () => {
     const component = makeComponent();
 
     expect(
       (component as any).narrowInlineActions.map(
         (item: {value: string}) => item.value,
       ),
-    ).toEqual(["bold", "italic", "underline", "code"]);
-    expect((component as any).isNarrowInlineAction("strike")).toBeFalse();
+    ).toEqual([
+      "bold",
+      "italic",
+      "underline",
+      "strike",
+      "code",
+      "sup",
+      "sub",
+    ]);
+    expect((component as any).isNarrowInlineAction("strike")).toBeTrue();
+    expect((component as any).isNarrowInlineAction("sup")).toBeTrue();
+    expect((component as any).isNarrowInlineAction("sub")).toBeTrue();
+  });
+
+  it("keeps superscript and subscript mutually exclusive from the narrow menu", () => {
+    const component = makeComponent();
+    const trigger = {close: jasmine.createSpy("close")};
+    const toggleScript = spyOn<any>(component, "toggleScriptAttr");
+    const toggleInline = spyOn<any>(component, "toggleInlineAttr");
+
+    (component as any).onNarrowInlineItemClicked({value: "sup"}, trigger);
+
+    expect(trigger.close).toHaveBeenCalled();
+    expect(toggleScript).toHaveBeenCalledOnceWith("sup");
+    expect(toggleInline).not.toHaveBeenCalled();
+  });
+
+  it("measures only visible toolbar sections when deciding to condense", () => {
+    const component = makeComponent();
+    const host = document.createElement("div");
+    const text = document.createElement("div");
+    const insert = document.createElement("div");
+    const dropdownTemplateHost = document.createElement("cs-dropdown-menu");
+    text.className = "toolbar-section toolbar-section--text";
+    insert.className = "toolbar-section toolbar-section--insert";
+    host.style.paddingInline = "8px";
+    host.style.columnGap = "4px";
+    host.append(text, insert, dropdownTemplateHost);
+    Object.defineProperty(host, "clientWidth", {value: 500});
+    Object.defineProperty(text, "scrollWidth", {value: 200});
+    Object.defineProperty(insert, "scrollWidth", {
+      configurable: true,
+      value: 200,
+    });
+    Object.defineProperty(dropdownTemplateHost, "scrollWidth", {value: 1000});
+
+    expect((component as any).hasVisibleToolbarOverflow(host)).toBeFalse();
+
+    Object.defineProperty(insert, "scrollWidth", {value: 320});
+    expect((component as any).hasVisibleToolbarOverflow(host)).toBeTrue();
   });
 
   it("keeps only frequent typography values in quick dropdowns", () => {
