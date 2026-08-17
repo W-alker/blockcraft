@@ -3,6 +3,7 @@ import type {EmbedConverter} from './index'
 
 export const INLINE_DATE_EMBED_KEY = 'date'
 export const INLINE_DATE_CLASS = 'bc-inline-date'
+const INLINE_DATE_VALUE_CLASS = 'bc-inline-date__value'
 
 /**
  * Stored value is a frozen local wall-clock stamp (`YYYY-MM-DDTHH:mm`), never a
@@ -217,10 +218,16 @@ export function createInlineDateEmbedConverter(): EmbedConverter {
     toView: delta => {
       const {value, format} = readInlineDateDelta(delta)
       const span = document.createElement('span')
+      const icon = document.createElement('i')
+      const text = document.createElement('span')
       span.className = INLINE_DATE_CLASS
       span.dataset['bcDateValue'] = value
       span.dataset['bcDateFormat'] = format
-      span.textContent = formatInlineDateValue(value, format)
+      icon.className = 'csicon csicon-date-time'
+      icon.setAttribute('aria-hidden', 'true')
+      text.className = INLINE_DATE_VALUE_CLASS
+      text.textContent = formatInlineDateValue(value, format)
+      span.append(icon, text)
       return span
     },
     toDelta: element => {

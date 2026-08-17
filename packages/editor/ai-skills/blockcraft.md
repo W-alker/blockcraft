@@ -1296,7 +1296,7 @@ onBold(ctx: UIEventStateContext) { ... }
 | `FormulaBlockExtensionPlugin` | `plugins/formula-extension/` | KaTeX edit panel for formula blocks |
 | `InlineLinkExtension` | `plugins/inline-link-extension/` | Link hover card + open behavior |
 | `MentionPlugin` | `plugins/mention/` | `@`-trigger with pluggable panel factory |
-| `DateInlineExtensionPlugin` | `plugins/date-inline-extension/` | Click-to-edit dialog for the `date` inline embed |
+| `DateInlineExtensionPlugin` | `plugins/date-inline-extension/` | Click-to-edit dialog for the calendar-icon `date` inline chip |
 | `FindReplacePlugin` | `plugins/findReplace/` | Cmd+F find & replace |
 | `TranslatePlugin` | `plugins/translate/` | Block translation via DI service |
 | `PlaceholderPlugin` | `plugins/placeholder/` | Renders focused or persistent placeholders on empty editable blocks; supports per-block `meta.plh` / `meta.plhMode`, per-flavour overrides and Schema defaults |

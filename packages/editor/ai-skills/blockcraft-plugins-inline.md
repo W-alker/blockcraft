@@ -127,6 +127,9 @@ new MentionPlugin({
 
 - Uses `OneShotCursorAnchor` for collaboration-safe cursor tracking during the mention session
 - `openAt()` is the public bridge for slash menus and other model-owned command surfaces
+- A preceding atomic inline Embed is a valid trigger boundary, like a space or
+  line break; typing `@` immediately after a date, formula, image or other Embed
+  opens Mention rather than treating the Embed as part of a word
 - The trigger character is physically inserted into `Y.Text` and removed/replaced on confirm or cancel
 - `onConfirm` lets a host block turn a mention into a **side-effect that runs only on the acting client** rather than a CRDT-synced embed node. Use it when every collaborator observing the node would otherwise re-run the effect (e.g. a synced todo adding a task collaborator from `@user` — only the picker should write; others learn via that domain's own realtime channel)
 

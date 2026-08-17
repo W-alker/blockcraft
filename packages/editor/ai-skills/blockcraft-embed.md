@@ -231,7 +231,10 @@ Two rules the shape encodes:
 - **The format lives in `attributes`, not in the value.** Switching format is a
   presentation change and must never risk rewriting the frozen value.
 
-`toView` renders the formatted text and mirrors both fields onto
+`toView` renders a theme-aware date chip with the `@cses/ui`
+`csicon csicon-date-time` icon followed by the formatted text. The chip occupies
+exactly one inherited line-height while its icon and value remain slightly
+smaller and quieter than surrounding text. It mirrors both fields onto
 `data-bc-date-value` / `data-bc-date-format` so `toDelta` can rebuild the delta
 from DOM alone (copy/paste, HTML import). The text node is derived output and
 is never read back.

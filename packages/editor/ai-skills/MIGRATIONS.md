@@ -69,6 +69,62 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
+## Unreleased — 2026-08-17 — allow Mention after inline Embeds
+
+**Severity**: patch
+
+**What changed**: `MentionPlugin` now treats a preceding atomic inline Embed as
+a valid `@` trigger boundary, alongside a space, line break or the start of a
+line. This applies uniformly to date, mention, formula, image and custom Embed
+values, each of which occupies one model position.
+
+**Why**: the existing boundary check received an object from
+`characterAtDelta()` for an Embed and rejected it as if it were a word
+character. As a result, typing `@` immediately after a date Embed could not open
+the Mention panel.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-inline.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Typing the configured Mention trigger immediately after any inline Embed now
+  opens the normal Mention session. Trigger behavior after ordinary text,
+  whitespace and line breaks is unchanged.
+
+## Unreleased — 2026-08-17 — refine the bundled date embed presentation
+
+**Severity**: patch
+
+**What changed**: the default `date` inline Embed now renders the existing
+`@cses/ui` `csicon-date-time` icon before its formatted value and uses a compact,
+theme-aware chip treatment with distinct hover, editing and atomic-selection
+states. Its Delta shape, data attributes, frozen wall-clock value and format
+behavior are unchanged.
+
+**Why**: the text-only date was hard to distinguish from ordinary document
+content and its interaction affordance appeared only on hover. The icon and
+quiet surface make the editable object recognizable without overpowering the
+surrounding sentence.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-embed.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- `createInlineDateEmbedConverter().toView()` includes an
+  `i.csicon.csicon-date-time[aria-hidden="true"]` before the derived date text in
+  `.bc-inline-date__value`.
+- `.bc-inline-date` is an inline-flex chip whose colors come entirely from
+  existing BlockCraft theme variables; no new theme token is required. Its
+  border-box height is one inherited line-height (`1lh`), while the icon and
+  value use smaller internal font sizes.
+
 ## Unreleased — 2026-08-17 — add paragraph-level font scaling for editable blocks
 
 **Severity**: minor
@@ -1153,13 +1209,12 @@ collapsing the whole insertion domain.
 - Insertion capabilities and their existing pickers remain individually
   exposed at all widths.
 - Responsive mode uses the component's actual inline size and rendered
-  overflow of its visible formatting/insertion sections rather than viewport
-  media queries, fixed pixel breakpoints or projected dropdown templates. It
+  overflow rather than viewport media queries or fixed pixel breakpoints. It
   first tries the complete layout, then moves font family/scale, character
   spacing and line height into **更多格式** while omitting superscript/subscript,
   inline link and inline formula. If content still overflows, bold, italic,
-  underline, strike-through, inline code, superscript and subscript collapse
-  into one **文字格式** dropdown.
+  underline and inline code collapse into one **文字格式** dropdown;
+  strike-through stays directly visible.
 - Visible formatting and insertion groups are centered in every responsive
   tier while they fit. The toolbar progressively condenses before scrolling;
   only the narrowest tier exposes one thin horizontal scrollbar and preserves

@@ -57,6 +57,46 @@ describe("MentionPlugin async cursor restore", () => {
 });
 
 describe("MentionPlugin selection liveness", () => {
+  it("opens after an atomic inline embed such as a date", () => {
+    const block = {
+      id: "p1",
+      plainTextOnly: false,
+      textDeltas: jasmine.createSpy("textDeltas").and.returnValue([
+        {insert: {date: "2026-08-17T18:00"}},
+      ]),
+    };
+    const selection = {
+      anchor: {blockId: "p1", type: "text", offset: 1},
+      head: {blockId: "p1", type: "text", offset: 1},
+      start: {blockId: "p1", type: "text", offset: 1},
+      end: {blockId: "p1", type: "text", offset: 1},
+      commonParent: "root",
+      collapsed: true,
+      firstBlock: block,
+      lastBlock: block,
+    };
+    const plugin = new MentionPlugin({panel: jasmine.createSpy("panel")});
+    const doc = {
+      model: {exists: jasmine.createSpy("exists").and.returnValue(true)},
+      isReadonly: false,
+      selection: {value: selection},
+    };
+    (plugin as any).doc = doc;
+    spyOn(plugin, "openAt").and.returnValue(true);
+    const preventDefault = jasmine.createSpy("preventDefault");
+
+    expect(plugin.onBindingInput({
+      getDefaultEvent: () => ({
+        data: "@",
+        isComposing: false,
+        preventDefault,
+      }),
+    } as any)).toBeTrue();
+
+    expect(preventDefault).toHaveBeenCalled();
+    expect(plugin.openAt).toHaveBeenCalledOnceWith(block as any, 1);
+  });
+
   it("does not open a mention session from a stale text cursor", () => {
     const block = {
       id: "p1",

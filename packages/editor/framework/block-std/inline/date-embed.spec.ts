@@ -166,6 +166,11 @@ describe('createInlineDateEmbedConverter', () => {
 
     expect(view.className).toBe(INLINE_DATE_CLASS)
     expect(view.textContent).toBe('2026年8月14日 星期五')
+    expect(view.querySelector('i')?.className)
+      .toBe('csicon csicon-date-time')
+    expect(view.querySelector('i')?.getAttribute('aria-hidden')).toBe('true')
+    expect(view.querySelector('.bc-inline-date__value')?.textContent)
+      .toBe('2026年8月14日 星期五')
     expect(view.dataset['bcDateValue']).toBe(VALUE)
     expect(view.dataset['bcDateFormat']).toBe('YYYY年M月D日 dddd')
   })

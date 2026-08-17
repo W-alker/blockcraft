@@ -74,7 +74,8 @@ export class MentionPlugin extends DocPlugin {
     // Only trigger after a space or at the beginning of the line
     if (startOffset > 0) {
       const prevChar = characterAtDelta(startBlock.textDeltas(), startOffset)
-      if (prevChar !== ' ' && prevChar !== '\n') return
+      const followsInlineEmbed = prevChar !== null && typeof prevChar === 'object'
+      if (!followsInlineEmbed && prevChar !== ' ' && prevChar !== '\n') return
     }
 
     e.preventDefault()
