@@ -4,7 +4,10 @@ import {
   BlockReadonlyOperation,
 } from '../../doc/block-readonly.types'
 import {BlockPlacementManager} from '../block-placement.manager'
-import {deleteAbsolutePlacementObject} from './delete-command'
+import {
+  deleteAbsolutePlacementObject,
+  deleteAbsolutePlacementObjects,
+} from './delete-command'
 
 function makeDeleteHarness(options: {
   inLayout?: boolean
@@ -103,6 +106,37 @@ describe('deleteAbsolutePlacementObject', () => {
     expect(deleteAbsolutePlacementObject(h.doc, 'shape-1', 'input')).toBeTrue()
 
     expect(h.deleteBlocks).toHaveBeenCalledOnceWith('group', 0, 1, true)
+    expect(h.blur).toHaveBeenCalledTimes(1)
+  })
+
+  it('deletes a contiguous multi-object selection in one undo step', () => {
+    const h = makeDeleteHarness()
+    const ids = ['shape-1', 'word-art-2']
+    h.doc.model.exists = (id: string) => ['layout', ...ids].includes(id)
+    h.doc.model.getParentId = (id: string) => ids.includes(id)
+      ? 'layout'
+      : 'root'
+    h.doc.model.getFlavour = (id: string) => id === 'layout'
+      ? 'placement-layout'
+      : id === 'shape-1'
+        ? 'shape'
+        : 'word-art'
+    h.doc.model.indexInParent = (id: string) => ids.indexOf(id)
+    h.doc.selection.value = {
+      anchor: {blockId: 'layout', type: 'boundary', index: 0},
+      head: {blockId: 'layout', type: 'boundary', index: 2},
+      getBoundarySelectedChildIds: () => ids,
+    }
+
+    expect(deleteAbsolutePlacementObjects(h.doc, ids, 'input')).toBeTrue()
+
+    expect(h.assertRemovable).toHaveBeenCalledOnceWith(
+      ids,
+      BlockReadonlyOperation.Delete,
+      'input',
+    )
+    expect(h.captureSelectionBeforeChange).toHaveBeenCalledTimes(1)
+    expect(h.deleteBlocks).toHaveBeenCalledOnceWith('layout', 0, 2, true)
     expect(h.blur).toHaveBeenCalledTimes(1)
   })
 

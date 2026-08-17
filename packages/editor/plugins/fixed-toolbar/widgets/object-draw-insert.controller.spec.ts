@@ -172,4 +172,35 @@ describe("ObjectDrawInsertController", () => {
     controller.destroy();
     root.remove();
   });
+
+  it("ignores scroll events from an unrelated dropdown overlay", () => {
+    const { root, commit, controller, arm, layer } = makeHarness();
+    const overlay = document.createElement("div");
+    document.body.appendChild(overlay);
+    expect(arm()).toBeTrue();
+
+    overlay.dispatchEvent(new Event("scroll"));
+
+    expect(layer()).not.toBeNull();
+    expect(commit).not.toHaveBeenCalled();
+
+    controller.destroy();
+    overlay.remove();
+    root.remove();
+  });
+
+  it("cancels when the editor drawing surface scrolls", () => {
+    const { root, commit, controller, arm } = makeHarness();
+    expect(arm()).toBeTrue();
+
+    root.dispatchEvent(new Event("scroll"));
+
+    expect(
+      document.querySelector('[data-bc-object-draw-layer="true"]'),
+    ).toBeNull();
+    expect(commit).not.toHaveBeenCalled();
+
+    controller.destroy();
+    root.remove();
+  });
 });

@@ -86,13 +86,18 @@ describe("WordArtPresetPickerComponent", () => {
     const ocean = fixture.debugElement.query(
       By.css('[data-preset-id="ocean"]'),
     );
+    const mouseDown = new MouseEvent("mousedown", {
+      bubbles: true,
+      cancelable: true,
+    });
+
+    ocean.nativeElement.dispatchEvent(mouseDown);
 
     ocean.nativeElement.click();
 
+    expect(mouseDown.defaultPrevented).toBeTrue();
     expect(picked).toEqual(["ocean"]);
-    expect(ocean.injector.get(CsTooltipDirective).csTooltip()).toBe(
-      "深海蓝",
-    );
+    expect(ocean.injector.get(CsTooltipDirective).csTooltip()).toBe("深海蓝");
   });
 
   it("removes standalone popup chrome when embedded in a settings card", async () => {

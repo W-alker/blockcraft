@@ -124,7 +124,7 @@ export class ObjectDrawInsertController {
     view.addEventListener("keydown", this.onKeyDown, true);
     view.addEventListener("blur", this.onCancelEvent, true);
     view.addEventListener("resize", this.onCancelEvent, true);
-    view.addEventListener("scroll", this.onCancelEvent, true);
+    view.addEventListener("scroll", this.onScroll, true);
     return true;
   }
 
@@ -149,7 +149,7 @@ export class ObjectDrawInsertController {
     view?.removeEventListener("keydown", this.onKeyDown, true);
     view?.removeEventListener("blur", this.onCancelEvent, true);
     view?.removeEventListener("resize", this.onCancelEvent, true);
-    view?.removeEventListener("scroll", this.onCancelEvent, true);
+    view?.removeEventListener("scroll", this.onScroll, true);
     view?.removeEventListener("pointermove", this.onPointerMove, true);
     view?.removeEventListener("pointerup", this.onPointerUp, true);
     view?.removeEventListener("pointercancel", this.onPointerCancel, true);
@@ -273,6 +273,35 @@ export class ObjectDrawInsertController {
   private readonly onCancelEvent = (): void => {
     this.cancel();
   };
+
+  private readonly onScroll = (event: Event): void => {
+    const target = event.target;
+    if (
+      target === this.view ||
+      target === this.ownerDocument ||
+      this.isDrawingSurfaceScrollTarget(target)
+    ) {
+      this.cancel();
+    }
+  };
+
+  /**
+   * Window capture receives scroll events from every scrollable overlay too.
+   * Only scrolling that can move the editor surface invalidates the geometry;
+   * dropdown/tooltip scrolling must not immediately disarm a freshly picked
+   * drawing tool.
+   */
+  private isDrawingSurfaceScrollTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof Node) || !this.root || !this.surface) return false;
+    return (
+      target === this.root ||
+      target === this.surface ||
+      target.contains(this.root) ||
+      target.contains(this.surface) ||
+      this.root.contains(target) ||
+      this.surface.contains(target)
+    );
+  }
 
   private paintPreview(): void {
     if (!this.preview || !this.layer || !this.startBox) return;

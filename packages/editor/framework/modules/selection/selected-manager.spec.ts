@@ -114,7 +114,7 @@ describe("SelectionSelectedManager", () => {
     expect(hostElement.classList.contains("selected")).toBeFalse();
   });
 
-  it("does not add block pseudo-selection to a mixed selected-to-text range", () => {
+  it("projects block focus across a mixed selected-to-text range", () => {
     const selectedHost = document.createElement("div");
     const textHost = document.createElement("p");
     const blocks: Record<string, any> = {
@@ -140,8 +140,8 @@ describe("SelectionSelectedManager", () => {
       getBoundarySelectedChildIds: () => ["divider", "paragraph"],
     } as any);
 
-    expect(selectedHost.classList.contains("selected")).toBeFalse();
-    expect(textHost.classList.contains("focused")).toBeFalse();
+    expect(selectedHost.classList.contains("selected")).toBeTrue();
+    expect(textHost.classList.contains("focused")).toBeTrue();
 
     manager.setSelected({
       start: {blockId: "paragraph", type: "text", offset: 1},
@@ -150,8 +150,8 @@ describe("SelectionSelectedManager", () => {
       getBoundarySelectedChildIds: () => ["paragraph", "divider"],
     } as any);
 
-    expect(selectedHost.classList.contains("selected")).toBeFalse();
-    expect(textHost.classList.contains("focused")).toBeFalse();
+    expect(selectedHost.classList.contains("selected")).toBeTrue();
+    expect(textHost.classList.contains("focused")).toBeTrue();
 
     manager.setSelected({
       start: {blockId: "divider", type: "selected"},
@@ -224,7 +224,7 @@ describe("SelectionSelectedManager", () => {
 
     expect(iconBlot.classList.contains("bc-inline-embed--selected")).toBeTrue();
     expect(mentionBlot.classList.contains("bc-inline-embed--selected")).toBeTrue();
-    expect(hostElement.classList.contains("focused")).toBeFalse();
+    expect(hostElement.classList.contains("focused")).toBeTrue();
     expect(icon.className).toBe("csicon csicon-add-circle-filled");
 
     selectedStart = 2;
@@ -300,7 +300,7 @@ describe("SelectionSelectedManager", () => {
     expect(mountedClassList.add).toHaveBeenCalledOnceWith("focused");
   });
 
-  it("does not add block pseudo selection while a boundary range remounts", () => {
+  it("replays a long boundary selection only across the currently mounted roots", () => {
     const ids = ["p0", "p1", "p2"];
     const mounted = new Set(["p0", "p2"]);
     const classLists = Object.fromEntries(ids.map(id => [id, {
@@ -334,19 +334,52 @@ describe("SelectionSelectedManager", () => {
     const manager = new SelectionSelectedManager(doc as any);
 
     manager.setSelected(selection, ["p0", "p2"]);
-    expect(classLists["p0"].add).not.toHaveBeenCalled();
+    expect(classLists["p0"].add).toHaveBeenCalledOnceWith("focused");
     expect(classLists["p1"].add).not.toHaveBeenCalled();
-    expect(classLists["p2"].add).not.toHaveBeenCalled();
+    expect(classLists["p2"].add).toHaveBeenCalledOnceWith("focused");
 
     mounted.delete("p0");
     mounted.add("p1");
     manager.setSelected(selection, ["p1", "p2"]);
-    expect(classLists["p0"].remove).not.toHaveBeenCalled();
-    expect(classLists["p1"].add).not.toHaveBeenCalled();
-    expect(classLists["p2"].add).not.toHaveBeenCalled();
+    expect(classLists["p0"].remove).toHaveBeenCalledOnceWith("focused");
+    expect(classLists["p1"].add).toHaveBeenCalledOnceWith("focused");
+    expect(classLists["p2"].add).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps native-backed ranges free of generic block pseudo-selection", () => {
+  it("keeps focus chrome for a placement-layout object boundary selection", () => {
+    const shapeHost = document.createElement("div");
+    const wordArtHost = document.createElement("div");
+    const blocks: Record<string, any> = {
+      shape: {
+        id: "shape",
+        nodeType: BlockNodeType.block,
+        hostElement: shapeHost,
+      },
+      "word-art": {
+        id: "word-art",
+        nodeType: BlockNodeType.editable,
+        hostElement: wordArtHost,
+      },
+    };
+    const manager = new SelectionSelectedManager({
+      placement: {
+        isPlacementLayout: (id: string) => id === "placement-layout",
+      },
+      getBlockById: (id: string) => blocks[id],
+    } as any);
+
+    manager.setSelected({
+      start: {blockId: "placement-layout", type: "boundary", index: 0},
+      end: {blockId: "placement-layout", type: "boundary", index: 2},
+      collapsed: false,
+      getBoundarySelectedChildIds: () => ["shape", "word-art"],
+    } as any);
+
+    expect(shapeHost.classList.contains("selected")).toBeTrue();
+    expect(wordArtHost.classList.contains("focused")).toBeTrue();
+  });
+
+  it("projects generic block focus across mounted native-backed ranges", () => {
     const ids = [
       "callout-a", "nested-paragraph-a", "nested-divider-a",
       "paragraph-a", "divider-a",
@@ -453,12 +486,12 @@ describe("SelectionSelectedManager", () => {
       "callout-a", "paragraph-a", "divider-a", "placement-layout",
     ]);
 
-    expect(hosts["callout-a"].classList.contains("selected")).toBeFalse();
+    expect(hosts["callout-a"].classList.contains("selected")).toBeTrue();
     expect(hosts["nested-paragraph-a"].classList.contains("focused")).toBeFalse();
     expect(hosts["nested-divider-a"].classList.contains("selected")).toBeFalse();
-    expect(hosts["paragraph-a"].classList.contains("focused")).toBeFalse();
-    expect(hosts["divider-a"].classList.contains("selected")).toBeFalse();
-    expect(hosts["placement-layout"].classList.contains("selected")).toBeFalse();
+    expect(hosts["paragraph-a"].classList.contains("focused")).toBeTrue();
+    expect(hosts["divider-a"].classList.contains("selected")).toBeTrue();
+    expect(hosts["placement-layout"].classList.contains("selected")).toBeTrue();
     expect(hosts["absolute-object"].classList.contains("selected")).toBeFalse();
 
     mounted.clear();
@@ -475,12 +508,12 @@ describe("SelectionSelectedManager", () => {
 
     expect(hosts["paragraph-a"].classList.contains("focused")).toBeFalse();
     expect(hosts["divider-a"].classList.contains("selected")).toBeFalse();
-    expect(hosts["callout-b"].classList.contains("selected")).toBeFalse();
+    expect(hosts["callout-b"].classList.contains("selected")).toBeTrue();
     expect(hosts["nested-paragraph-b"].classList.contains("focused")).toBeFalse();
     expect(hosts["nested-divider-b"].classList.contains("selected")).toBeFalse();
-    expect(hosts["paragraph-b"].classList.contains("focused")).toBeFalse();
-    expect(hosts["divider-b"].classList.contains("selected")).toBeFalse();
-    expect(hosts["placement-layout"].classList.contains("selected")).toBeFalse();
+    expect(hosts["paragraph-b"].classList.contains("focused")).toBeTrue();
+    expect(hosts["divider-b"].classList.contains("selected")).toBeTrue();
+    expect(hosts["placement-layout"].classList.contains("selected")).toBeTrue();
     expect(hosts["absolute-object"].classList.contains("selected")).toBeFalse();
 
     manager.setSelected({
@@ -611,8 +644,8 @@ describe("SelectionSelectedManager", () => {
 
     expect(column1Host.classList.contains("selected")).toBeFalse();
     expect(column2Host.classList.contains("selected")).toBeFalse();
-    expect(p1Host.classList.contains("focused")).toBeFalse();
-    expect(p2Host.classList.contains("focused")).toBeFalse();
+    expect(p1Host.classList.contains("focused")).toBeTrue();
+    expect(p2Host.classList.contains("focused")).toBeTrue();
     expect(doc.queryBlocksBetween).not.toHaveBeenCalled();
 
     rootHost.remove();
@@ -699,15 +732,15 @@ describe("SelectionSelectedManager", () => {
     manager.setSelected(selection as any);
 
     expect(calloutHost.classList.contains("selected")).toBeFalse();
-    expect(calloutTextHost.classList.contains("focused")).toBeFalse();
-    expect(outsideTextHost.classList.contains("focused")).toBeFalse();
+    expect(calloutTextHost.classList.contains("focused")).toBeTrue();
+    expect(outsideTextHost.classList.contains("focused")).toBeTrue();
     expect(doc.queryBlocksThroughPathDeeply).toHaveBeenCalledOnceWith(calloutText, outsideText);
     expect(doc.queryBlocksBetween).not.toHaveBeenCalled();
 
     rootHost.remove();
   });
 
-  it("keeps a reversed mixed native range free of block pseudo-selection", () => {
+  it("marks the content blocks for a reversed mixed boundary-to-text selection", () => {
     const rootHost = document.createElement("div");
     const calloutHost = document.createElement("section");
     const p1Host = document.createElement("p");
@@ -764,8 +797,8 @@ describe("SelectionSelectedManager", () => {
     expect(selection.lastBlock).toBe(p1 as any);
     expect(rootHost.classList.contains("selected")).toBeFalse();
     expect(rootHost.classList.contains("focused")).toBeFalse();
-    expect(calloutHost.classList.contains("selected")).toBeFalse();
-    expect(p1Host.classList.contains("focused")).toBeFalse();
+    expect(calloutHost.classList.contains("selected")).toBeTrue();
+    expect(p1Host.classList.contains("focused")).toBeTrue();
     expect(doc.queryBlocksBetween).toHaveBeenCalledOnceWith(callout, p1, true);
 
     manager.setSelected(null);

@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying selection behavior or when the L1 quick reference in `blockcraft.md` isn't enough.
 >
-> Last updated: 2026-08-17 | Source of truth: `framework/modules/selection/`
+> Last updated: 2026-08-18 | Source of truth: `framework/modules/selection/`
 
 ## Architecture Overview
 
@@ -58,7 +58,7 @@ anchor/head direction (`setBaseAndExtent`, or `collapse` + `extend` fallback),
 so a backward model selection does not become forward after replay or virtual
 window repair.
 
-`SelectionSelectedManager` is presentation-only. It reconciles the previous and next covered-block sets, so unchanged blocks do not lose and regain `.selected` / `.focused` classes on high-frequency `selectionchange` events; it does not reinterpret scope or mutate the model. Generic block classes are interaction state: block themes use them for opaque fills, resize handles and other chrome. A non-collapsed native-backed range therefore receives no generic block pseudo-selection, including mixed whole-block↔text endpoints and covered editable, void or empty structural blocks. A text range wholly inside one editable block keeps only that owning block's `.focused` editing chrome; collapsed text cursors and explicit whole-block/model-only selections retain their existing focused/selected behavior. Inline atomic content remains separate: for every directly covered mounted editable block, the manager reconciles the ephemeral `.bc-inline-embed--selected` class on any fully covered outer `c-element`; a collapsed caret beside an Embed is not selected. Under root virtualization it consumes deduplicated `viewChange$` windows, tests only mounted component IDs against model coverage segments, and repaints newly mounted fragments without expanding a long selection into every intermediate ID. Because native-backed ranges add no generic block class, the model-only `placement-layout` branch also cannot reveal object handles or become a disconnected pseudo-selection.
+`SelectionSelectedManager` is presentation-only. It reconciles the previous and next covered-block sets, so unchanged blocks do not lose and regain `.selected` / `.focused` classes on high-frequency `selectionchange` events; it does not reinterpret scope or mutate the model. Every covered mounted editable block receives `.focused`, while covered mounted void/container blocks receive `.selected`; this applies consistently to native-backed ranges, boundary ranges and explicit whole-block/model-only selections. For every mounted inline Embed whose full one-length range is covered, including host-registered converters, it also reconciles the separate ephemeral `.bc-inline-embed--selected` class on the outer `c-element`; a collapsed caret beside an Embed is not selected. This compensates for browsers not painting native selection inside `contenteditable=false` atomic content, including the first Shift+Arrow step that covers only the Embed. Under root virtualization it consumes deduplicated `viewChange$` windows, tests only mounted component IDs against model coverage segments, and repaints newly mounted fragments without expanding a long selection into every intermediate ID.
 
 When root virtualization is enabled, the active local selection also owns a
 mount lease over only the direct-root units containing its ordered start and end.
@@ -216,7 +216,7 @@ A boundary point represents a **position between children of a container/root bl
 - `index: childrenLength` means after the last child.
 - `[boundary(0), boundary(childrenLength)]` means "the container's child content is selected" without selecting the container block itself.
 
-Non-collapsed DOM selections whose endpoints land on `.children-render-container` or a wrapper around it normalize to boundary points. Non-collapsed cross-block endpoints that land on a child block's leading/trailing gap text anchor or void/container block chrome also normalize back to the parent boundary index (`before` = child index, `after` = child index + 1). A same-block leading→trailing gap or chrome range still represents explicit whole-block `selected`. `SelectionManager` can build/replay DOM Ranges from boundary JSON, while `SelectionSelectedManager` leaves their covered blocks free of generic `.selected` / `.focused` interaction classes and only reconciles Inline Embed atomic fallback. Undo/redo snapshots store boundary anchor/head indexes as Yjs relative positions over the parent's children array.
+Non-collapsed DOM selections whose endpoints land on `.children-render-container` or a wrapper around it normalize to boundary points. Non-collapsed cross-block endpoints that land on a child block's leading/trailing gap text anchor or void/container block chrome also normalize back to the parent boundary index (`before` = child index, `after` = child index + 1). A same-block leading→trailing gap or chrome range still represents explicit whole-block `selected`. `SelectionManager` can build/replay DOM Ranges from boundary JSON, `SelectionSelectedManager` paints the covered mounted child blocks, and undo/redo snapshots store boundary anchor/head indexes as Yjs relative positions over the parent's children array.
 
 When `SelectionManager` builds a DOM Range from boundary points, it projects
 each non-collapsed endpoint inside the adjacent child: editable children use
@@ -769,15 +769,18 @@ Repeated Ctrl/Cmd+A from normal-flow content that promotes to the root boundary
 still covers the entire
 `root.children` interval, including the layout subtree. Full-document
 copy/cut/delete therefore preserves or removes absolute objects through the
-normal recursive snapshot/delete path. Its native Range remains flow-only, and
-native-backed ranges receive no generic block interaction-class projection, so
-the layout plane and its object handles are not painted as a second selection
-layer. The layout host itself never
+normal recursive snapshot/delete path. Its native Range remains flow-only,
+while the generic covered-block projection continues to paint the mounted block
+IDs covered by the model selection. A placement-layout boundary selection, such
+as Shift-multi-select, therefore paints each covered absolute object. The layout
+host itself never
 becomes a Gap cursor, whole-block toolbar target or BlockController target.
 Clicking an absolute object still creates a whole-block model selection for its
-object-specific toolbar and Delete/Backspace handling. In that whole-object
-state ordinary printable input, IME, Enter, Tab and paste are prevented without
-clearing the selection; object tools and deletion remain available. A nested
+object-specific toolbar and Delete/Backspace handling. A placement-layout
+boundary interval created by Shift-multi-select has the same object-owned input
+isolation: ordinary printable input, IME, Enter, Tab and paste are prevented
+without clearing the selection, while Delete/Backspace removes the selected
+object interval in one undo step. Object tools remain available. A nested
 editable child such as `shape-text` keeps ordinary text-selection behavior.
 
 ## Backward Compatibility

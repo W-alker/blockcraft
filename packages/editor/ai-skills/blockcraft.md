@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-08-17 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-08-18 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -583,9 +583,11 @@ sequential wrapped anchors reserve non-overlapping exclusion bands. Ordinary
 measured text heights are not overwritten by fallback estimates.
 The layout and absolute descendants have no gap-cursor eligibility. Stale gap
 selection snapshots degrade to whole-object selection, and normal gaps are
-restored when an object returns to relative flow. While a whole absolute object
-is selected, ordinary typing, IME, Enter, Tab and paste are isolated from the
-document input path; Delete/Backspace and object tools remain available.
+restored when an object returns to relative flow. While one absolute object or
+a Shift-selected object interval owns Selection, ordinary typing, IME, Enter,
+Tab and paste are isolated from the document input path without clearing the
+selection; Delete/Backspace deletes the selected object set in one undo step,
+and object tools remain available.
 Under-content blocks can be selected again from a narrow
 visible edge band through model selection. Placement containers use explicit
 background / under / flow / over tiers, so under blocks remain visible and
@@ -610,17 +612,11 @@ larger change is measured normally. Sparse pagination applies the same boundary:
 a warm retained host performs no pagination measurement, while a recreated host
 is verified once and equal canonical geometry stops before full pagination or
 scroll-anchor restoration.
-Local selection classes consume the same signal. Explicit whole-block
-selections keep their generic selected/focused interaction state. Native-backed
-ranges, including mixed whole-block↔text endpoints, add no generic block
-pseudo-selection to covered editable,
-void or structural blocks; a text range wholly inside one editable keeps only
-that owning block's `.focused` editing chrome. Inline Embeds use their separate
-atomic fallback class. Root ranges therefore leave the model-only absolute
-placement plane unpainted, and virtual scrolling cannot reveal object handles
-or stack block-sized fills over the native highlight. Newly mounted fragments
-are reconciled from the current model selection without enumerating the complete
-range. A
+Local selection classes consume the same signal: only mounted covered blocks
+receive `.selected` / `.focused`, and newly mounted fragments are repainted
+from the current model selection without enumerating the complete range. Inline
+Embeds additionally use their separate atomic fallback class when their full
+one-length model range is covered. A
 non-collapsed virtual-root boundary Range anchors inside its adjacent pinned
 block edges rather than mutable offsets on the root container, so replacing
 intermediate DOM cannot shrink it. The Range is also reasserted from the

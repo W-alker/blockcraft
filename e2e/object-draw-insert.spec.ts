@@ -120,3 +120,53 @@ test("fixed toolbar draws a shape without editor focus or selection", async ({
   expect(inserted!.visualHeight).toBeCloseTo(120, 0);
   expect(inserted!.selectedId).toBe(inserted!.id);
 });
+
+test("fixed toolbar draws WordArt after choosing a preset", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "初始化", exact: true }).click();
+  await waitForEditor(page);
+
+  const trigger = page.locator('bc-fixed-toolbar [aria-label="插入艺术字"]');
+  await expect(trigger).toBeEnabled();
+  await trigger.click();
+  await page.locator('[data-preset-id="ocean"]').click();
+
+  const drawLayer = page.locator('[data-bc-object-draw-layer="true"]');
+  await expect(drawLayer).toBeVisible();
+  const layerBox = await drawLayer.boundingBox();
+  if (!layerBox) throw new Error("Drawing layer has no visual bounds");
+
+  const start = {
+    x: layerBox.x + Math.min(140, layerBox.width / 3),
+    y: layerBox.y + Math.min(160, layerBox.height / 3),
+  };
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(start.x + 240, start.y + 100, { steps: 4 });
+  await page.mouse.up();
+  await expect(drawLayer).toHaveCount(0);
+
+  const inserted = await page.evaluate((selector) => {
+    const editor = document.querySelector(selector)!;
+    const debug = (
+      window as unknown as {
+        ng: { getComponent: (target: Element) => { doc: any } };
+      }
+    ).ng;
+    const doc = debug.getComponent(editor).doc;
+    const id = doc.placement
+      .getAbsoluteBlockIds()
+      .find(
+        (candidate: string) => doc.model.getFlavour(candidate) === "word-art",
+      );
+    if (!id) return null;
+    const props = doc.model.getProps(id);
+    return { id, width: props.width, height: props.height };
+  }, editorSelector);
+
+  expect(inserted).not.toBeNull();
+  expect(inserted!.width).toBe(240);
+  expect(inserted!.height).toBe(100);
+});

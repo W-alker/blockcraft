@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying text input behavior.
 >
-> Last updated: 2026-08-03
+> Last updated: 2026-08-18
 
 ## Architecture Overview
 
@@ -43,18 +43,20 @@ This protects complex native selections such as container-block / nested-block s
 
 ### Absolute Object Selection
 
-A same-block whole selection whose persisted placement is absolute is an object
-selection, not a request to replace that block with text.
+A same-block whole selection whose persisted placement is absolute, or a
+non-empty boundary interval inside `placement-layout` / `object-group`, is an
+object selection—not a request to replace those blocks with text.
 `BlockPlacementManager.isAbsoluteObjectSelection()` is the centralized semantic
 check used by Input. In this state printable keydown fallback, non-deletion
 `beforeinput`, IME composition start, Enter, Tab and paste are prevented while
-the model selection remains on the object. Input must not materialize a
-paragraph, create a composition session or let native contenteditable mutate
-the DOM.
+the model selection remains on the object set. Input must not materialize a
+paragraph inside the placement plane, create a composition session, modify the
+layout container's indentation or let native contenteditable mutate the DOM.
 
 This is input isolation, not readonly. Delete/Backspace still follows the
-whole-block deletion path, and object drag, resize, styling and layout
-transitions remain legal. Once a shape double-click focuses its nested
+placement deletion path; a multi-selection deletes its contiguous object
+interval in one undo step. Object drag, resize, styling and layout transitions
+remain legal. Once a shape double-click focuses its nested
 `shape-text` editable child, the selection is text-shaped and the normal
 InputTransformer/CompositionSession pipeline applies.
 

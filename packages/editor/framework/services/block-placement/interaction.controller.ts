@@ -1,7 +1,7 @@
 import {BehaviorSubject, Observable, Subscription} from 'rxjs'
 import type {IBlockProps} from '../../block-std/types'
 import {BlockReadonlyError} from '../../doc/block-readonly.types'
-import {deleteAbsolutePlacementObject} from './delete-command'
+import {deleteAbsolutePlacementObjects} from './delete-command'
 import {resolvePlacementBox} from './geometry'
 import {BlockPlacementRuntime} from './runtime'
 import {finitePlacementNumber} from './state'
@@ -334,13 +334,14 @@ export class BlockPlacementInteractionController {
 
     const handleDelete: BlockCraft.EventHandler = context => {
       const selection = context.get('keyboardState').selection
-      if (!this.runtime.isAbsoluteObjectSelection(selection)) return
+      const blockIds = this.runtime.getAbsoluteObjectSelectionIds(selection)
+      if (!blockIds) return
 
       try {
         if (
-          !deleteAbsolutePlacementObject(
+          !deleteAbsolutePlacementObjects(
             this.doc,
-            selection.anchor.blockId,
+            blockIds,
             'input',
           )
         ) {

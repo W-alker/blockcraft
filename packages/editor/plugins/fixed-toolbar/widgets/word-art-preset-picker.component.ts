@@ -18,7 +18,7 @@ import {
   imports: [CsTooltipDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
-    '[class.word-art-preset-picker-host--embedded]': 'embedded',
+    "[class.word-art-preset-picker-host--embedded]": "embedded",
   },
   template: `
     <div
@@ -37,6 +37,7 @@ import {
             [attr.data-preset-id]="item.id"
             [attr.aria-label]="item.label"
             [csTooltip]="item.label"
+            (mousedown)="preserveSelection($event)"
             (click)="pick.emit(item.id)"
           >
             <span
@@ -72,8 +73,7 @@ import {
         max-width: none;
       }
 
-      :host(.word-art-preset-picker-host--embedded)
-        .word-art-preset-picker {
+      :host(.word-art-preset-picker-host--embedded) .word-art-preset-picker {
         padding: 0;
         border: 0;
         border-radius: 0;
@@ -166,6 +166,11 @@ export class WordArtPresetPickerComponent {
 
   @Output()
   readonly pick = new EventEmitter<WordArtPresetId>();
+
+  protected preserveSelection(event: MouseEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+  }
 
   protected readonly items = WORD_ART_PRESETS.map((item) => ({
     id: item.id,

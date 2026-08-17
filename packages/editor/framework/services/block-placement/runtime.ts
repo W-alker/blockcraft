@@ -117,16 +117,49 @@ export class BlockPlacementRuntime {
   isAbsoluteObjectSelection(
     selection: BlockCraft.Selection | null | undefined,
   ): boolean {
+    return this.getAbsoluteObjectSelectionIds(selection) !== null
+  }
+
+  /**
+   * Resolve object-owned selections without depending on mounted components.
+   * A direct whole-block selection owns one object; Shift multi-selection owns
+   * a non-empty boundary interval inside an absolute placement plane.
+   */
+  getAbsoluteObjectSelectionIds(
+    selection: BlockCraft.Selection | null | undefined,
+  ): string[] | null {
+    if (!selection) return null
     if (
-      !selection?.isInSameBlock ||
-      selection.anchor.type !== 'selected' ||
-      selection.head.type !== 'selected' ||
-      selection.anchor.blockId !== selection.head.blockId ||
-      this.isPlacementLayout(selection.anchor.blockId)
+      selection.isInSameBlock &&
+      selection.anchor.type === 'selected' &&
+      selection.head.type === 'selected' &&
+      selection.anchor.blockId === selection.head.blockId &&
+      !this.isPlacementLayout(selection.anchor.blockId) &&
+      !this.allowsGapCursor(selection.anchor.blockId)
     ) {
-      return false
+      return [selection.anchor.blockId]
     }
-    return !this.allowsGapCursor(selection.anchor.blockId)
+
+    if (
+      selection.anchor.type !== 'boundary' ||
+      selection.head.type !== 'boundary' ||
+      selection.anchor.blockId !== selection.head.blockId
+    ) {
+      return null
+    }
+    const hostId = selection.anchor.blockId
+    if (!this.isPlacementLayout(hostId) && !this.isObjectGroup(hostId)) {
+      return null
+    }
+    const ids = selection.getBoundarySelectedChildIds?.() ?? null
+    if (!ids?.length) return null
+    if (ids.some(id =>
+      this.doc.model?.getParentId?.(id) !== hostId ||
+      this.allowsGapCursor(id)
+    )) {
+      return null
+    }
+    return [...ids]
   }
 
   getRootFlowChildIds(fallbackIds: readonly string[] = []): string[] {

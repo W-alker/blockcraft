@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-08-17 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-08-18 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -68,6 +68,39 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
+
+## Unreleased — 2026-08-18 — isolate multi-selected absolute objects from document input
+
+**Severity**: patch
+
+**What changed**: a non-empty boundary selection inside `placement-layout` or
+`object-group` now has the same input-isolation semantics as a single selected
+absolute object. Printable input, IME, Enter, Tab and paste preserve the object
+selection. Delete/Backspace removes the selected contiguous object interval in
+one undo step.
+
+**Why**: Shift-multi-select is represented by boundary endpoints rather than
+same-block `selected` endpoints. The previous absolute-selection predicate did
+not recognize that model shape, so printable input could replace the selected
+objects with a paragraph and Tab could enter the layout container's normal
+indentation path.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-input.md`
+- `blockcraft-selection.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Object-owned input isolation now covers both single and Shift-multi-selected
+  absolute objects.
+- Multi-object deletion validates readonly state for the complete set, captures
+  one undo bookmark, force-deletes one contiguous placement range and then
+  clears the stale selection.
+- Root/document boundary selections remain on the ordinary document input path.
+- No package version was modified.
 
 ## Unreleased — 2026-08-17 — add inline-only slash menus inside paragraphs
 
@@ -352,28 +385,18 @@ createInlineShapeDelta(props, text, {
   only after 2px movement; pointerup below the threshold remains a click.
 - No package version was modified.
 
-## Unreleased — 2026-08-17 — single-layer native ranges and absolute-object click takeover
+## Unreleased — 2026-08-17 — absolute-object click takeover
 
 **Severity**: patch
 
-**What changed**: non-collapsed native-backed selections, including mixed
-whole-block↔text ranges, no longer apply generic `.selected` / `.focused`
-block pseudo-selection to their covered range.
-A text range wholly inside one editable block keeps that owning block's focused
-editing chrome, and Inline Embeds keep their separate atomic fallback. Explicit
-whole-block/model-only selections retain their interaction state. Text-box
-resize/rotate controls now opt out of underlay edge
+**What changed**: text-box resize/rotate controls now opt out of underlay edge
 picking and reproject their owning object after the pointerdown dispatch; an
 armed absolute border click reprojects the unchanged object selection after
 pointer protection is released.
 
-**Why**: virtual-window repaint previously restored `.selected` on newly
-mounted containers, void blocks and empty leaves, visually stacking block-sized
-blue strips over the browser Range. Covered editable blocks could also regain
-focus-only controls. Because these generic classes activate object chrome, they
-cannot serve as neutral native-range fallback. A document selection could also
-expose an absolute text-box resizer; hitting a handle or completing a no-move
-border click could leave the old document Range behind the active object.
+**Why**: a document selection could expose an absolute text-box resizer;
+hitting a handle or completing a no-move border click could leave the old
+document Range behind the active object.
 
 **Affected ai-skills files**:
 
@@ -383,15 +406,6 @@ border click could leave the old document Range behind the active object.
 
 ### Behavior Changes
 
-- Explicit whole-block/model-only selections retain their generic interaction
-  classes. Native-backed ranges rely on the browser paint and add no generic
-  block class, including for void and empty leaves; same-editable text ranges
-  keep only the one owning `.focused` surface.
-- Fully covered Inline Embeds continue to use `.bc-inline-embed--selected`,
-  without requiring their editable host to be generically focused.
-- Root select-all keeps the absolute layout subtree in its canonical model for
-  copy/cut/delete, but does not paint that non-native branch or reveal its
-  object controls.
 - Resize/rotate handles reproject their text box selection after root capture
   and after gesture completion while preserving the shared resizer gesture; a
   click on an absolute move edge reasserts the same object Range after the armed pointer guard ends.
