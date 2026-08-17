@@ -732,3 +732,99 @@ test('virtual scrolling does not add generic block pseudo-selection to select-al
   expect(afterScroll.mountedKey.split(',')).toContain(targetCalloutId)
   expect(afterScroll.nativeText).toContain('滚动选区结构块 70')
 })
+
+test('block drag handle moves a root paragraph into an absolute text box', async ({page}) => {
+  await initialize(page)
+  const inserted = await page.evaluate(async selector => {
+    const editor = document.querySelector(selector)!
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor).doc
+    const textBox = doc.schemas.createSnapshot('text-box', [
+      '',
+      {width: 360, height: 220},
+    ])
+    const paragraphs = ['第一段', '第二段', '第三段'].map(text =>
+      doc.schemas.createSnapshot('paragraph', [text]),
+    )
+    const rootParagraph = doc.schemas.createSnapshot('paragraph', ['Root 段落'])
+    textBox.children = paragraphs
+    doc.crud.insertBlockSnapshots(doc.rootId, 0, [rootParagraph, textBox])
+    await new Promise<void>(resolve =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    )
+    doc.placement.setMode(doc.getBlockById(textBox.id), 'absolute')
+    await new Promise<void>(resolve =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    )
+    doc.getBlockById(textBox.id).hostElement.scrollIntoView({block: 'center'})
+    return {
+      textBoxId: textBox.id as string,
+      rootParagraphId: rootParagraph.id as string,
+      paragraphIds: paragraphs.map(paragraph => paragraph.id as string),
+    }
+  }, editorSelector)
+
+  const [firstId, secondId, thirdId] = inserted.paragraphIds
+  const rootParagraph = page.locator(
+    `${editorSelector} [data-block-id="${inserted.rootParagraphId}"]`,
+  )
+  const textBox = page.locator(
+    `${editorSelector} .text-box-block[data-block-id="${inserted.textBoxId}"]`,
+  )
+  const first = textBox.locator(`[data-block-id="${firstId}"]`)
+  await expect(first).toBeVisible()
+  await expect(rootParagraph).toBeVisible()
+
+  // The drag handle is editor chrome, so a root-originated block drag must keep
+  // absolute objects hit-testable and allow their nested flow blocks as targets.
+  await rootParagraph.dispatchEvent('mouseover')
+  const handleHost = page.locator(`${editorSelector} bc-drag-handle`)
+  const handle = handleHost.locator('.btn')
+  await expect(handleHost).toHaveAttribute('data-bc-placement-pick-ignore', '')
+  await expect(handle).toBeVisible()
+  await expect.poll(() => handleHost.evaluate(element => (
+    window as unknown as {
+      ng: {getComponent: (target: Element) => {activeBlock?: {id: string}}}
+    }
+  ).ng.getComponent(element)?.activeBlock?.id ?? null)).toBe(
+    inserted.rootParagraphId,
+  )
+  await handleHost.evaluate(element => Promise.all(
+    element.getAnimations().map(animation => animation.finished),
+  ))
+  const handleBox = await handle.boundingBox()
+  const firstBox = await first.boundingBox()
+  expect(handleBox).not.toBeNull()
+  expect(firstBox).not.toBeNull()
+  await page.mouse.move(
+    handleBox!.x + handleBox!.width / 2,
+    handleBox!.y + handleBox!.height / 2,
+  )
+  await page.mouse.down()
+  await page.mouse.move(
+    firstBox!.x + firstBox!.width / 2,
+    firstBox!.y + 2,
+    {steps: 6},
+  )
+  await page.mouse.up()
+  await expect.poll(() => page.evaluate(({selector, textBoxId, sourceId}) => {
+    const editor = document.querySelector(selector)!
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor).doc
+    return {
+      textBoxChildren: doc.model.getChildrenIds(textBoxId),
+      sourceParent: doc.model.getParentId(sourceId),
+    }
+  }, {
+    selector: editorSelector,
+    textBoxId: inserted.textBoxId,
+    sourceId: inserted.rootParagraphId,
+  })).toEqual({
+    textBoxChildren: [inserted.rootParagraphId, firstId, secondId, thirdId],
+    sourceParent: inserted.textBoxId,
+  })
+})

@@ -1322,6 +1322,22 @@ describe('BlockPlacementManager', () => {
     container.remove()
   })
 
+  it('keeps absolute-object editor chrome interactive', () => {
+    const {container, manager} = makeHarness()
+    const chrome = document.createElement('bc-drag-handle')
+    chrome.setAttribute('data-bc-placement-pick-ignore', '')
+    container.appendChild(chrome)
+
+    chrome.dispatchEvent(pointer('pointerdown'))
+
+    expect(container.hasAttribute(
+      'data-bc-flow-selection-passthrough',
+    )).toBeFalse()
+
+    manager.destroy()
+    container.remove()
+  })
+
   it('previews pointer movement and commits one placement update on pointerup', () => {
     const {
       container,

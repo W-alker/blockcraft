@@ -275,6 +275,10 @@ const BUILTIN_TOOL_LIST: IContextMenuItem[] = [
   imports: [NgTemplateOutlet, BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerDirective, CsTooltipDirective, MatIcon, BlockMenuComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
+    // The handle is editor chrome rather than native flow-selection content.
+    // Keeping placement hit-testing active lets root blocks target nested
+    // content inside absolute objects such as text boxes.
+    'data-bc-placement-pick-ignore': '',
     '[attr.contenteditable]': 'false',
     '[style.display]': 'display',
   }

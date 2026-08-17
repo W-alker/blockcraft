@@ -472,7 +472,10 @@ export class BlockPlacementInteractionController {
       : event.target instanceof Node
         ? event.target.parentElement
         : null
-    if (target?.closest('[data-block-id][data-bc-placement="absolute"]')) {
+    if (target?.closest(
+      '[data-block-id][data-bc-placement="absolute"], ' +
+      '[data-bc-placement-pick-ignore]',
+    )) {
       return
     }
 
