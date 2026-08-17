@@ -2,6 +2,7 @@ import {IBlockSnapshot} from "../framework/block-std/types/block.type";
 import {InlineModel} from "../framework/block-std/types/inline.type";
 import {DeltaInsert} from "../framework/block-std/types/delta.type";
 import {patchChildren, resolveChildContainer} from "./dom/patch-children";
+import {projectParagraphSiblingSpacing} from "./dom/create-block-shell";
 import {normalizeSnapshot} from "./dom/normalize-snapshot";
 import {renderInline} from "./inline/render-inline";
 import {createBuiltinRendererRegistry} from "./registry";
@@ -122,6 +123,7 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
         .filter((child): child is HTMLElement => child instanceof HTMLElement && child.hasAttribute("data-block-id"))
       : []
 
+    projectParagraphSiblingSpacing(childSnapshots, childElements)
     return {
       snapshot,
       element,
@@ -230,6 +232,10 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
       patchNode: (mounted, snapshot) => this.patchNode(mounted, snapshot, renderContext),
       mountNode: (snapshot) => this.mountNode(snapshot, renderContext),
     })
+    projectParagraphSiblingSpacing(
+      this.getBlockChildren(next),
+      children.map(child => child.element),
+    )
     projectAbsolutePlaneChildren(current.element, next)
 
     return {

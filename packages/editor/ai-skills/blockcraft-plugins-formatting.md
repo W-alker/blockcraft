@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-14
+> Last updated: 2026-08-17
 
 ## FloatTextToolbarPlugin
 
@@ -115,18 +115,65 @@ new TextMarkerPlugin(['paragraph', 'blockquote'])
 
 ### Typography groups
 
-- The fixed toolbar uses separate dropdowns for font family, relative font
-  scale, character spacing, alignment and paragraph line height. The floating
-  text toolbar keeps its previous compact formatting actions and does not add
-  these typography controls. Neither surface owns document defaults.
+- The fixed toolbar presents font family and relative font scale as one
+  adjacent, iconless Word-style control pair. Character spacing and paragraph
+  line height remain independent dropdowns, with character spacing immediately
+  before line height. The floating text toolbar keeps its previous compact
+  formatting actions and does not add these typography controls. Neither
+  surface owns document defaults.
 - Font, scale, character spacing, alignment and line-height menus reuse the same
   `BcFloatToolbarComponent` / `BcFloatToolbarItemComponent` vertical menu chrome
   as the heading dropdown; typography does not introduce a parallel picker UI.
-- Fixed-toolbar dropdown triggers retain their iconfont leading icons. Paragraph
-  style reflects the current heading icon; font family, relative scale and
-  character spacing use the existing text/size/spacing glyphs.
-- Font size is displayed and persisted as the compact relative `t:fs` ratio;
-  the toolbar does not write absolute selection font sizes. Family and letter
+- Every fixed-toolbar dropdown is hosted by `CsDropdownDirective` and
+  `CsDropdownMenuComponent`; the compact **更多格式** branches use
+  `CsSubmenuComponent`. All first-level dropdowns and nested submenus open on
+  hover, while CSES retains click/touch and keyboard activation. The inner
+  BlockCraft picker/menu components remain the content surface. Tooltip overlays
+  opened from a menu item therefore do not dismiss the owning dropdown merely
+  because the pointer enters the Tooltip. Open first-level triggers retain the
+  same background as their hover state; nested picker wrappers become
+  backgroundless content so the CSES submenu draws the only popup card.
+  Responsive second-level pickers add no extra host gap; the CSES panel and the
+  inner 4px content padding are the only spacing owners.
+- First-level overlays use the trigger width as their minimum and expand only
+  when menu content needs more room. Font-scale quick choices are
+  `0.75/0.875/1/1.25/1.5/1.75/2/2.5/3`; character-spacing quick choices are
+  `-0.05/-0.025/0.025/0.05/0.1em` plus default. The complete numeric range
+  remains available through **更多设置…**.
+- Split controls use one hover surface across their main action and caret. The
+  caret adds a second local highlight on hover/open so its separate dropdown
+  action remains discoverable. Ordered-list style and superscript/subscript use
+  this pattern; the baseline main action repeats the active or most recently
+  chosen command, and choosing one baseline clears the other.
+- Each corresponding menu ends with **更多设置…** and the
+  `bc_version_settings` icon. Font family, relative scale and character spacing
+  open the CSES font modal at that field; alignment and line height open the
+  CSES paragraph modal at that field. Modal, tabs, selects, numeric inputs,
+  segmented controls, color pickers and buttons come from `@cses/ui`.
+- Font settings include family, relative scale, bold/italic style, text and
+  highlight colors, underline/strike/code and character spacing. The character
+  spacing tab stays limited to scale, spacing and preview; it does not duplicate
+  baseline effects or preset buttons. Paragraph settings include alignment,
+  space before/after and line height. Paragraph values persist as `psb/psa/lh`;
+  adjacent spacing is
+  `max(previous.psa, next.psb)` and is not stored as a redundant third value.
+- Dialog edits are drafts: preview changes immediately, but Yjs changes only
+  after **确定**. **取消**, Escape, mask policy and readonly transitions do not
+  commit. A saved model Selection is replayed before applying the result, and
+  every confirm uses one transaction. Paragraph settings always target the
+  complete eligible selection.
+- Mixed fields remain untouched until the user changes that field. This keeps
+  a single known setting from flattening unrelated mixed formatting across the
+  selection. Individual fields expose document-default values where applicable;
+  the dialogs do not expose a whole-dialog reset action.
+- Paragraph style keeps its current heading icon. The paired font-family and
+  relative-scale fields intentionally omit leading icons; responsive
+  **更多格式** uses `bc_zihao` for the scale submenu. Character spacing uses
+  `bc_zijianju` and stays adjacent to paragraph line height.
+- Font size stays relative rather than absolute. A complete editable block
+  persists compact paragraph scale `pfs`; a partial range or collapsed caret
+  persists/queues inline `t:fs`. Effective text scale is `pfs × t:fs`, so list
+  markers and todo controls follow full-block scaling. Family and letter
   spacing use `t:ff` / `t:ls`; paragraph line height uses block prop `lh`.
 - Relative font scale exposes dense presets from `0.5×` through `3×`. Character
   spacing exposes `-0.1em` through `0.5em`; menu items and toolbar state show
@@ -140,26 +187,32 @@ new TextMarkerPlugin(['paragraph', 'blockquote'])
   in one transaction and skips container, void and plain-text-only blocks;
   other inline-format controls retain their all-blocks-editable requirement.
 - The fixed toolbar observes its own container width rather than the browser
-  viewport. At `1480px` and above it exposes the complete formatting surface;
-  from `720px` to `1479px` font family, character spacing and paragraph line
-  height move into one **更多格式** menu while superscript, subscript, inline
-  link and inline formula leave the fixed surface. Below `720px` the same
-  priority set remains and explicit previous/next buttons browse the formatting
-  row. The observer is created once per component and disconnected on destroy.
+  viewport. Each actual width change first tries the complete surface and then
+  degrades one tier only when the rendered content truly overflows. The first
+  tier moves the paired font family/scale control, character spacing and
+  paragraph line height into **更多格式**, while superscript/subscript, inline
+  link and inline formula leave the fixed surface. If that still does not fit,
+  the narrow tier collapses bold, italic, underline and inline code into one
+  **文字格式** dropdown while strike-through remains direct. The observer is
+  created once per component and disconnected on destroy.
 - Word-like semantic groups keep related commands together with visual dividers
   and accessible group names, but do not render persistent group-caption text.
   The surface remains one lightweight document-toolbar row instead of adopting
   a full multi-row Office Ribbon.
-- Every responsive tier centers the visible formatting and insertion groups.
-  Scrollable rows use safe centering so an overflowing row falls back to its
-  reachable inline start instead of clipping the first command.
+- Every responsive tier keeps formatting and insertion as sibling, non-shrinking
+  sections in one row. The toolbar centers when it fits and progressively
+  condenses before scrolling. Only the narrowest tier may expose one lightweight
+  horizontal scrollbar as a last resort; safe centering preserves the reachable
+  inline start instead of letting insertion cover formatting.
 
 ### Insertion Actions
 
 - Shape, text box, WordArt, Table, columns, image and video/audio remain
   individually visible insertion actions at every responsive width; they are
   never consolidated into one Insert menu. Unavailable actions retain their
-  existing Schema, selection and readonly disabled states.
+  existing Schema, selection and readonly disabled states. The insertion
+  section never overlays the formatting section; both travel together in the
+  toolbar's horizontal scroll range.
 - When the document registers `ShapeBlockSchema`, the toolbar shows a Shape
   action using the existing `bc_tuxing` iconfont glyph. Click or keyboard
   activation opens the bounded categorized shape picker. Its 103
@@ -167,6 +220,10 @@ new TextMarkerPlugin(['paragraph', 'blockquote'])
   `SHAPE_DEFINITIONS`; each compact icon-only item renders its actual
   main/detail geometry through `ShapeIconComponent` and exposes its label by
   Tooltip plus `aria-label` instead of visible per-cell text.
+- When the document registers `TextBoxBlockSchema`, **插入文本框** opens the
+  线框 / 矩形 / 气泡 style catalog directly. It has no 精选 tab and no fixed-toolbar
+  横向 / 竖向 shortcuts; 默认白框 is the first 线框 entry, and text direction is
+  changed later from the selected text box's own text settings.
 - Picking a shape, WordArt or text-box preset arms a one-shot drawing surface over the
   document without requiring a focused block, active Selection or saved
   selection snapshot; it does not write Yjs or create a block yet. A
@@ -193,8 +250,10 @@ new TextMarkerPlugin(['paragraph', 'blockquote'])
 - The fixed toolbar includes a one-shot format-brush action.
 - Activating it can use either a collapsed text caret or a normal text selection as the source format.
 - After activation, the brush waits for the user to finish a later non-collapsed target text selection before applying formatting, then automatically exits.
-- The brush copies common inline text styling — including compact font family,
-  scale and letter spacing — plus paragraph `lh`. It does not copy document
+- The brush copies common inline text styling — including compact font family
+  and letter spacing — plus context-sensitive font scale and paragraph `lh`.
+  A complete target block receives `pfs`; a partial target receives `t:fs`.
+  It does not copy document
   defaults, heading, list flavour, alignment, links, inline formulas, or
   non-text block contents.
 - `Cmd/Ctrl+Shift+C` can be used to quickly enable the brush; cancellation still uses the toolbar button or `Escape`.
@@ -202,8 +261,22 @@ new TextMarkerPlugin(['paragraph', 'blockquote'])
 ### Selection Behavior
 
 - Heading and list transforms work on cross-block text selections as long as every covered block is editable and not `plainTextOnly`.
+- The ordered-list control is a split button: its main area toggles the list, while the caret opens the ordered marker library. Picking a marker updates each automatic-numbering group reached by the selection; same-level ordinary paragraphs do not split that group.
 - Link and inline-formula actions remain restricted to same-block text selections; on cross-block selections the buttons stay visible but disabled.
 - Inline-format buttons still follow text-range availability; block-level transforms are more permissive than inline text formatting.
+
+`TextToolbarHelper.transformBlocks()` accepts an optional third `props` argument
+and forwards it to the target Schema snapshot. This lets one command transform
+the block flavour and initialize semantic props atomically:
+
+```typescript
+helper.transformBlocks('ordered', selection, {ms: 'r2'})
+```
+
+For font scale, use `TextToolbarHelper.formatTypography()` instead of writing
+an inline patch directly. `getFontScaleTargets()` is model-only and partitions
+cross-block selections into complete paragraph targets and partial inline
+targets; it does not read DOM geometry or install observers.
 
 ### Component Inputs
 

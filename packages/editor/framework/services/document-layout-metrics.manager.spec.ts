@@ -16,7 +16,7 @@ describe('DocumentLayoutMetricsManager', () => {
     const manager = new DocumentLayoutMetricsManager()
     manager.init(element)
 
-    expect(manager.value).toEqual({baseFontSize: 20, lineHeight: 30})
+    expect(manager.value).toEqual({baseFontSize: 20, lineHeight: 30, segmentGap: 10})
     manager.destroy()
   })
 
@@ -24,12 +24,14 @@ describe('DocumentLayoutMetricsManager', () => {
     const manager = new DocumentLayoutMetricsManager({
       baseFontSize: 24,
       lineHeight: 36,
+      segmentGap: 12,
     })
     manager.init(element)
 
-    expect(manager.value).toEqual({baseFontSize: 24, lineHeight: 36})
+    expect(manager.value).toEqual({baseFontSize: 24, lineHeight: 36, segmentGap: 12})
     expect(element.style.getPropertyValue('--bc-fs')).toBe('24px')
     expect(element.style.getPropertyValue('--bc-lh')).toBe('1.5')
+    expect(element.style.getPropertyValue('--bc-segments-gap')).toBe('12px')
     manager.destroy()
   })
 
@@ -41,10 +43,11 @@ describe('DocumentLayoutMetricsManager', () => {
     changes.calls.reset()
 
     manager.update({baseFontSize: 32, lineHeight: 40})
-    expect(manager.value).toEqual({baseFontSize: 32, lineHeight: 40})
+    expect(manager.value).toEqual({baseFontSize: 32, lineHeight: 40, segmentGap: 10})
     expect(changes).toHaveBeenCalledOnceWith({
       baseFontSize: 32,
       lineHeight: 40,
+      segmentGap: 10,
     })
 
     element.style.removeProperty('--bc-fs')
@@ -52,8 +55,19 @@ describe('DocumentLayoutMetricsManager', () => {
     element.style.fontSize = '18px'
     element.style.lineHeight = '27px'
     manager.refresh()
-    expect(manager.value).toEqual({baseFontSize: 18, lineHeight: 27})
+    expect(manager.value).toEqual({baseFontSize: 18, lineHeight: 27, segmentGap: 10})
     expect(changes).toHaveBeenCalledTimes(2)
+    manager.destroy()
+  })
+
+  it('accepts an explicit zero default segment gap', () => {
+    const manager = new DocumentLayoutMetricsManager({segmentGap: 0})
+    manager.init(element)
+
+    expect(manager.segmentGap).toBe(0)
+    expect(element.style.getPropertyValue('--bc-segments-gap')).toBe('0px')
+    manager.update({segmentGap: 8})
+    expect(manager.segmentGap).toBe(8)
     manager.destroy()
   })
 
@@ -66,10 +80,11 @@ describe('DocumentLayoutMetricsManager', () => {
 
     manager.refresh()
 
-    expect(manager.value).toEqual({baseFontSize: 20, lineHeight: 30})
+    expect(manager.value).toEqual({baseFontSize: 20, lineHeight: 30, segmentGap: 10})
     expect(changes).toHaveBeenCalledOnceWith({
       baseFontSize: 20,
       lineHeight: 30,
+      segmentGap: 10,
     })
     manager.destroy()
   })
@@ -80,6 +95,7 @@ describe('DocumentLayoutMetricsManager', () => {
 
     expect(() => manager.update({baseFontSize: 0})).toThrowError(RangeError)
     expect(() => manager.update({lineHeight: Number.NaN})).toThrowError(RangeError)
+    expect(() => manager.update({segmentGap: -1})).toThrowError(RangeError)
     manager.destroy()
   })
 })

@@ -49,7 +49,9 @@
       overflow-y: visible;
 
       [data-block-id]:last-child {
-        margin-bottom: 0;
+        // Suppress only the inherited theme gap at the container edge. A
+        // persisted paragraph-after value remains part of the document.
+        margin-bottom: var(--bc-block-sa, 0pt);
       }
     }
 

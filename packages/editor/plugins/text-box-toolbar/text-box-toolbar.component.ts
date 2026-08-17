@@ -1,4 +1,3 @@
-import {FormsModule} from '@angular/forms'
 import {
   ChangeDetectionStrategy,
   ChangeDetectorRef,
@@ -9,8 +8,6 @@ import {
 } from '@angular/core'
 import {
   CsButtonComponent,
-  CsRadioComponent,
-  CsRadioGroupComponent,
   CsTooltipDirective,
 } from '@cses/ui'
 import {
@@ -60,13 +57,10 @@ const TEXT_BOX_LAYOUT_OPTIONS = BLOCK_OBJECT_LAYOUT_OPTIONS.filter(
   selector: 'bc-text-box-toolbar',
   standalone: true,
   imports: [
-    FormsModule,
     TextBoxPresetPickerComponent,
     TextBoxShapePanelComponent,
     TextBoxTextPanelComponent,
     CsButtonComponent,
-    CsRadioComponent,
-    CsRadioGroupComponent,
     CsTooltipDirective,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -201,23 +195,6 @@ const TEXT_BOX_LAYOUT_OPTIONS = BLOCK_OBJECT_LAYOUT_OPTIONS.filter(
             }
           </div>
 
-          <div class="text-box-toolbar__section-label">位置基准</div>
-          <cs-radio-group
-            class="text-box-toolbar__anchor-options"
-            csName="text-box-anchor-mode"
-            [ngModel]="anchorMode"
-            (ngModelChange)="setAnchorMode($event)">
-            <label cs-radio csValue="move">随文字移动</label>
-            <label cs-radio csValue="fixed">固定在页面上</label>
-          </cs-radio-group>
-          <p class="text-box-toolbar__layout-hint">
-            @if (anchorMode === 'move') {
-              文本框作为上下型对象参与正文流。
-            } @else {
-              文本框固定放置，并可调整前后层级。
-            }
-          </p>
-
           @if (isAbsolute && !isGrouped) {
             <div class="text-box-toolbar__section-label">排列</div>
             <div class="text-box-toolbar__stack-actions">
@@ -295,6 +272,7 @@ const TEXT_BOX_LAYOUT_OPTIONS = BLOCK_OBJECT_LAYOUT_OPTIONS.filter(
     }
 
     .text-box-toolbar {
+      --text-box-settings-panel-width: 288px;
       display: flex;
       align-items: center;
       gap: 8px;
@@ -359,10 +337,10 @@ const TEXT_BOX_LAYOUT_OPTIONS = BLOCK_OBJECT_LAYOUT_OPTIONS.filter(
 
     .text-box-toolbar__panel {
       box-sizing: border-box;
-      width: min(380px, calc(100vw - 86px));
+      width: min(var(--text-box-settings-panel-width), calc(100vw - 86px));
       max-width: 100%;
       max-height: min(520px, calc(100vh - 24px));
-      padding: 12px;
+      padding: 10px;
       overflow: auto;
       overscroll-behavior: contain;
       border: 1px solid var(--bc-float-toolbar-divider-color, #e2e8f0);
@@ -375,8 +353,8 @@ const TEXT_BOX_LAYOUT_OPTIONS = BLOCK_OBJECT_LAYOUT_OPTIONS.filter(
       display: flex;
       align-items: flex-start;
       justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 12px;
+      gap: 8px;
+      margin-bottom: 10px;
     }
 
     .text-box-toolbar__panel-header strong,
@@ -429,20 +407,6 @@ const TEXT_BOX_LAYOUT_OPTIONS = BLOCK_OBJECT_LAYOUT_OPTIONS.filter(
       color: var(--bc-active-color, #4857e2);
     }
 
-    .text-box-toolbar__anchor-options {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 8px;
-    }
-
-    .text-box-toolbar__layout-hint {
-      margin: 8px 0 0 24px;
-      color: var(--bc-color-secondary, #64748b);
-      font-size: 11px;
-      line-height: 16px;
-    }
-
     .text-box-toolbar__stack-actions {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -457,9 +421,6 @@ const TEXT_BOX_LAYOUT_OPTIONS = BLOCK_OBJECT_LAYOUT_OPTIONS.filter(
       margin-right: 4px;
     }
 
-    .text-box-toolbar__style-panel {
-      width: min(430px, calc(100vw - 86px));
-    }
   `],
 })
 export class TextBoxToolbarComponent {
@@ -509,10 +470,6 @@ export class TextBoxToolbarComponent {
     return this.textBoxBlock.doc.placement.getObjectLayout(this.textBoxBlock)
   }
 
-  get anchorMode(): 'move' | 'fixed' {
-    return this.objectLayout === 'top-bottom' ? 'move' : 'fixed'
-  }
-
   get isAbsolute(): boolean {
     return this.textBoxBlock.doc.placement.getState(this.textBoxBlock).mode ===
       'absolute'
@@ -549,14 +506,6 @@ export class TextBoxToolbarComponent {
 
   setObjectLayout(value: BlockObjectBlockLayout): void {
     this.action.emit({name: 'object-layout', value})
-  }
-
-  setAnchorMode(value: unknown): void {
-    if (value === 'move') {
-      this.setObjectLayout('top-bottom')
-    } else if (value === 'fixed') {
-      this.setObjectLayout(this.objectLayout === 'under' ? 'under' : 'over')
-    }
   }
 
   applyPreset(

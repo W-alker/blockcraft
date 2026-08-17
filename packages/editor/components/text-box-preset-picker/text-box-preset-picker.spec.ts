@@ -16,18 +16,19 @@ describe('TextBoxPresetPickerComponent', () => {
       imports: [TextBoxPresetPickerComponent],
     }).compileComponents()
     const fixture = TestBed.createComponent(TextBoxPresetPickerComponent)
-    fixture.componentRef.setInput('current', 'speech')
+    fixture.componentRef.setInput('current', 'classic')
     fixture.detectChanges()
     const host = fixture.nativeElement as HTMLElement
     const items = host.querySelectorAll<HTMLButtonElement>('[data-preset-id]')
-    const featured = getTextBoxPresetsFor('h', 'featured')
+    const outline = getTextBoxPresetsFor('h', 'outline')
 
     // The grid is one tab, not the whole catalog.
-    expect(items.length).toBe(featured.length)
+    expect(items.length).toBe(outline.length)
     expect(items.length).toBeLessThan(TEXT_BOX_PRESETS.length)
-    expect(host.querySelector('[data-preset-id="speech"]')
+    expect(host.querySelector('[data-preset-id="classic"]')
       ?.getAttribute('aria-checked')).toBe('true')
-    expect(host.textContent).toContain('对话气泡')
+    expect(host.textContent).toContain('默认白框')
+    expect(host.textContent).not.toContain('精选')
   })
 
   it('switches the grid when another shape tab is chosen', async () => {
@@ -37,24 +38,24 @@ describe('TextBoxPresetPickerComponent', () => {
     const fixture = TestBed.createComponent(TextBoxPresetPickerComponent)
     fixture.detectChanges()
     const host = fixture.nativeElement as HTMLElement
-    const outlineTab = Array.from(
+    const bubbleTab = Array.from(
       host.querySelectorAll<HTMLElement>('.cs-segmented-item'),
-    ).find(tab => tab.textContent?.trim() === '线框')!
+    ).find(tab => tab.textContent?.trim() === '气泡')!
 
     // Full pointer sequence, not a bare click: the tab strip suppresses
     // mousedown to hold the editor's selection, and that must not swallow the
     // click that actually switches tabs.
-    outlineTab.dispatchEvent(
+    bubbleTab.dispatchEvent(
       new MouseEvent('mousedown', {bubbles: true, cancelable: true}),
     )
-    outlineTab.click()
+    bubbleTab.click()
     fixture.detectChanges()
 
     const ids = Array.from(
       host.querySelectorAll<HTMLElement>('[data-preset-id]'),
     ).map(item => item.dataset['presetId']!)
-    expect(ids.length).toBe(getTextBoxPresetsFor('h', 'outline').length)
-    expect(ids.every(id => id.startsWith('outline-'))).toBeTrue()
+    expect(ids.length).toBe(getTextBoxPresetsFor('h', 'bubble').length)
+    expect(ids.every(id => id.startsWith('bubble-'))).toBeTrue()
   })
 
   it('offers shape tabs only, with no direction split', async () => {
@@ -73,26 +74,25 @@ describe('TextBoxPresetPickerComponent', () => {
     expect(tabLabels).toEqual(
       getTextBoxPresetCategoriesFor('h').map(category => category.label),
     )
+    expect(tabLabels).toEqual(['线框', '矩形', '气泡'])
   })
 
-  it('paints detail strokes and even-odd holes so shape-built entries survive the thumbnail', async () => {
-    await TestBed.configureTestingModule({
-      imports: [TextBoxPresetPickerComponent],
-    }).compileComponents()
-    const fixture = TestBed.createComponent(TextBoxPresetPickerComponent)
-    fixture.detectChanges()
-    const host = fixture.nativeElement as HTMLElement
+  it('keeps only the default white frame from the former featured styles', () => {
+    const ids = TEXT_BOX_PRESETS.map(item => String(item.id))
 
-    // The 精选 tab is the one still built from Shape geometry rather than a
-    // surface image; `paper-note` uses `folded-corner`, whose detail stroke
-    // draws the fold. Without it the thumbnail is a plain rectangle.
-    //
-    // No bundled preset currently uses an even-odd shape, so `fill-rule` is
-    // deliberately not asserted here — the projection exists for shapes that
-    // need it, but asserting an unused path would test nothing.
-    expect(host.querySelector('[data-preset-id="paper-note"]')).not.toBeNull()
-    expect(host.querySelectorAll('svg path[fill="none"]').length)
-      .toBeGreaterThan(0)
+    expect(getTextBoxPresetsFor('h', 'outline').map(item => item.id))
+      .toContain('classic')
+    for (const removed of [
+      'soft-blue',
+      'paper-note',
+      'speech',
+      'cloud',
+      'ink-title',
+      'royal-banner',
+      'neon-card',
+    ]) {
+      expect(ids).not.toContain(removed)
+    }
   })
 
   it('renders the surface image for decorated entries', async () => {
@@ -114,7 +114,9 @@ describe('TextBoxPresetPickerComponent', () => {
     const images = host.querySelectorAll<HTMLImageElement>(
       '.text-box-preset-picker__bg',
     )
-    expect(images.length).toBe(getTextBoxPresetsFor('h', 'outline').length)
+    const decoratedCount = getTextBoxPresetsFor('h', 'outline')
+      .filter(item => !!item.props.bgi).length
+    expect(images.length).toBe(decoratedCount)
     expect(Array.from(images).every(img => img.src.startsWith('data:image/svg+xml')))
       .toBeTrue()
   })
@@ -128,16 +130,16 @@ describe('TextBoxPresetPickerComponent', () => {
     fixture.componentInstance.pick.subscribe(value => picked.push(value))
     fixture.detectChanges()
     const button = (fixture.nativeElement as HTMLElement)
-      .querySelector<HTMLButtonElement>('[data-preset-id="royal-banner"]')!
+      .querySelector<HTMLButtonElement>('[data-preset-id="classic"]')!
 
     button.click()
 
-    expect(picked).toEqual(['royal-banner'])
-    expect(getTextBoxPreset('royal-banner').props).toEqual(
-      jasmine.objectContaining({sh: 'ribbon'}),
+    expect(picked).toEqual(['classic'])
+    expect(getTextBoxPreset('classic').props).toEqual(
+      jasmine.objectContaining({sh: 'rectangle'}),
     )
-    expect(getTextBoxPreset('royal-banner').props)
-      .not.toEqual(jasmine.objectContaining({preset: 'royal-banner'}))
+    expect(getTextBoxPreset('classic').props)
+      .not.toEqual(jasmine.objectContaining({preset: 'classic'}))
   })
 
   it('removes standalone popup chrome when embedded in a settings card', async () => {

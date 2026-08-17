@@ -96,8 +96,21 @@
   }
 
   [data-block-id] {
+    // Paragraph-spacing variables describe this block's sibling boundary.
+    // Custom properties inherit by default, so an outer Callout/TextBox that
+    // owns the following root paragraph's `psb` would otherwise leak that
+    // value into its nested paragraphs. Inline HostBindings / Snapshot styles
+    // still override these block-local reset values when the block owns one.
+    --bc-block-sb: initial;
+    --bc-block-sa: initial;
+    --bc-next-block-sb: initial;
+    --bc-block-leading-sb: initial;
+    --bc-block-fs-scale: 1;
     position: relative;
-    margin-bottom: var(--bc-segments-gap);
+    margin-bottom: max(
+      var(--bc-block-sa, var(--bc-segments-gap)),
+      var(--bc-next-block-sb, 0pt)
+    );
 
     &[data-node-type="editable"][data-bc-block-background] {
       background-color: var(--bc-block-background-color);
@@ -115,23 +128,32 @@
     &[data-node-type="editable"] {
       border-radius: 4px;
       line-height: var(--bc-block-lh, var(--bc-lh));
+      padding-block-start: var(--bc-block-leading-sb, 0pt);
     }
 
     &.selected {
-      // Editability is controlled via the `contenteditable` attribute toggled
-      // by SelectionSelectedManager — see `_setSelectedClass` /
-      // `_clearAllClass`. CSS here only owns visual feedback.
+      // This class is reserved for explicit/model-owned block interaction
+      // state. Native-backed ranges never reuse its opaque host fill.
       background-color: var(--bc-select-background-color);
 
-      // TODO
       ::selection {
-        background: transparent;
+        background-color: transparent;
+        color: inherit;
+      }
+
+      // Keep this separate from `::selection`: Chromium discards a grouped
+      // selector when it does not recognize one of the pseudo-elements.
+      ::-moz-selection {
+        background-color: transparent;
         color: inherit;
       }
     }
 
     &:last-child {
-      margin-bottom: 0;
+      // Structural default gaps stop at a container boundary, but an explicit
+      // paragraph-after value is authored content and must remain visible on
+      // the final paragraph (including single-paragraph containers).
+      margin-bottom: var(--bc-block-sa, 0pt);
     }
   }
 
@@ -301,8 +323,8 @@
       color: var(--bc-placeholder-color, var(--bc-color));
       opacity: .72;
       position: absolute;
-      top: 0;
-      left: 0;
+      inset-block-start: 0;
+      inset-inline-start: 0;
       pointer-events: none;
       white-space: nowrap;
     }

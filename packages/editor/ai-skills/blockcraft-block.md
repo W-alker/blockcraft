@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-08-16
+> Last updated: 2026-08-17
 
 ## Block Types
 
@@ -1009,9 +1009,11 @@ logical, so alignment and child stacking flip on their own. Only the labels in
 the object rail change. `DEFAULT_VERTICAL_TEXT_BOX_SIZE` transposes the default
 geometry for callers that insert a vertical frame.
 
-`TEXT_BOX_PRESETS` is grouped into shape tabs through the optional `cat` field
-(`featured` / `outline` / `rect` / `bubble`), and a preset may limit
-itself to one direction with `wm`. Two kinds coexist in each tab: geometry-only
+`TEXT_BOX_PRESETS` is grouped into three shape tabs through the optional `cat`
+field (`outline` / `rect` / `bubble`), and a preset may limit itself to one
+direction with `wm`. The only retained former curated style is **默认白框**;
+it is the first entry of 线框 rather than occupying a separate 精选 tab. Two
+kinds coexist in the catalog: geometry-only
 entries driven by `sh`, and decorated entries that set `sh: 'rectangle'` with
 `bw: 0` / `fo: 0` and name a drawing from the artwork registry in `bgi`. The second kind exists because the surface image is
 clipped to the shape path and a Shape shell paints only one fill and one
@@ -1032,8 +1034,11 @@ its text straight through the artwork.
 
 `_shapeInset()` resolves in that order: the artwork's insets when `bgi` names
 one, then nothing at all for `sh: 'rectangle'` (a plain rectangle has no artwork
-to dodge), then the shape's own. `p` stays what it always was — optical padding
-in absolute px, stacked on top of whichever inset wins.
+to dodge), then the shape's own. `p` remains optical padding in absolute px,
+stacked on top of whichever inset wins. That combination belongs to the chosen
+style, not to the text-box type as a whole: 默认白框 keeps ordinary `p`, while
+decorated frames and bubbles set `p` to zero and let their proportional
+`textInsets` define the actual editable safe area.
 
 Decorated entries split the work between the two layers: the frame is a real
 `bw` outline on the chosen shape — editable from the toolbar and a constant
@@ -1380,7 +1385,7 @@ Supported values:
 | `document`              | Top-level document scope; normally only `root` declares this.                       |
 | `table`                 | Closed table scope. Descendants share one table selection domain.                   |
 | `columns`               | Layout scope whose child columns are transparent to text selection.                 |
-| `container`             | Closed generic container scope such as callout/highlight.                           |
+| `container`             | Closed generic container scope such as callout/highlight or text box.               |
 | `transparent` / omitted | This block does not create a scope; descendants inherit the nearest ancestor scope. |
 
 Built-in declarations:
@@ -1390,12 +1395,17 @@ Built-in declarations:
 | `root`                         | `document`       |
 | `table`                        | `table`          |
 | `columns`                      | `columns`        |
-| `callout`                      | `container`      |
+| `callout` / `text-box`         | `container`      |
 | `mermaid` / `mermaid-textarea` | `transparent`    |
 
 `SelectionManager` reads this field through the registered schema. Do not add
 flavour-specific checks in input, toolbar, or selection-class code; derive
 behavior from the resolved scope / `SelectionScopePolicy` instead.
+Cmd/Ctrl+A follows the same contract: from any descendant text point in a
+`container` scope, the first press selects the scope block's complete child
+boundary range. Repeated presses stay at that range only when the scope belongs
+to an absolute object; a normal-flow container continues through its parent to
+the document root.
 
 ## Plain-Text Formatting Capability (Schema field)
 
@@ -1424,11 +1434,69 @@ The component property governs mounted rendering. The optional
 writes use readonly-guarded `doc.crud.formatText(blockId, index, length, attrs)`;
 do not resolve a ComponentRef solely to mutate an offscreen `Y.Text`.
 
-Editable rich-text blocks also accept compact `lh?: number | null`, a bounded
-unitless line-height ratio. Missing values inherit the document root.
-`TextToolbarHelper.updateBlockProps({lh})` applies it across the model-owned
-covered block IDs in one Yjs transaction, including unmounted middle blocks;
-plain-text-only/non-editable blocks are skipped.
+Editable rich-text blocks also accept compact paragraph typography props:
+
+| Prop | Unit / range | Meaning |
+|------|--------------|---------|
+| `pfs` | ratio, `0.5..3` | Paragraph base font scale; missing/`null` inherits `1` |
+| `lh` | unitless, `1..3` | Paragraph line-height ratio; missing inherits the root |
+| `psb` | pt, `0..120` | Space before |
+| `psa` | pt, `0..120` | Space after; missing inherits `--bc-segments-gap` |
+
+Adjacent paragraph spacing is one physical gap: `max(previous.psa,
+next.psb)`. The first child's `psb` becomes leading block padding and the last
+child has no trailing gap. This avoids margin collapse differences and keeps
+pagination's `border-box + margin-bottom` stride authoritative. Use the shared
+`normalizeParagraphSpacing()` and `paragraphPointsToCss/Pixels()` rather than
+writing unbounded values or assuming `1pt === 1px`.
+
+`pfs` scales the editable host rather than only its inline text container, so
+ordered markers, bullet prefixes and todo controls inherit the same size. The
+effective text scale is `pfs × t:fs`; heading scale multiplies that paragraph
+base. Use `normalizeParagraphFontScale()` and omit neutral `1` as `null`.
+`TextToolbarHelper.formatTypography({fontScale}, selection)` decides ownership
+from model offsets: complete blocks write `pfs` and clear their stale inline
+size, partial ranges write `t:fs`, and a collapsed caret updates pending insert
+attrs only. Existing inline-only documents are not migrated automatically.
+
+`TextToolbarHelper.updateBlockProps({...})` applies these props across the
+model-owned covered block IDs in one Yjs transaction, including unmounted
+middle blocks; plain-text-only/non-editable blocks are skipped. Changes to a
+following paragraph's `psb` also invalidate the preceding mounted sibling,
+because that sibling owns the effective physical gap.
+
+## Ordered Block Marker Library
+
+The built-in `ordered` block separates counter state from marker presentation:
+
+```typescript
+interface OrderedBlockModel {
+  props: {
+    order: number
+    start?: number | null
+    ms?: OrderedMarkerStyleId | null
+  } & IEditableBlockProps
+}
+```
+
+`order` / `start` remain owned by `OrderedBlockPlugin`. Compact `ms` is only a
+presentation preset. Missing, `null`, or an unknown value renders through the
+legacy `depth` cycle, so stored documents retain their old appearance. New
+list items inherit a valid marker preset from the source props or the existing
+automatic-numbering group, but never inherit `order` or `start`.
+
+The exported `ORDERED_MARKER_STYLES` catalog contains 12 presets. Render with
+`resolveOrderedMarker(order, depth, ms)`; it returns `{text,
+enclosure}`. `ms` persists a stable two-character ID (`n1..n5`, `a1..a2`,
+`r1..r2`, `c1..c2`, or `o1`). `o1` returns a plain number plus `enclosure:
+'circle'`, and the theme owns the circle geometry. Do not substitute Unicode
+circled-number glyphs because their coverage ends early and varies by font.
+
+`resolveOrderedMarkerGroupIds()` and `applyOrderedMarkerStyle()` operate only
+on stable IDs through `BlockModelGraph` / `DocCRUD`. A marker group is the same
+counter segment used by automatic numbering: it matches the anchor
+`depth + heading`, crosses same-level ordinary paragraphs, and stops at the
+counter's structural-pruning boundary or the next explicit positive `start`.
 
 ## Block Instance Metadata
 

@@ -10,12 +10,21 @@
   width: fit-content;
   background: transparent;
 
-  &.selected {
+  &.selected,
+  &.text-box-block--editing {
     background: transparent;
 
     > .text-box-block__surface > shape-resizer {
       display: block;
     }
+  }
+
+  // Text editing keeps the paragraph's native caret/selection, while the frame
+  // still communicates which object's settings toolbar is active. Keep this on
+  // the outer surface so the inner contenteditable remains free of focus chrome.
+  &.text-box-block--editing > .text-box-block__surface {
+    outline: 2px solid var(--bc-active-color, #4857e2);
+    outline-offset: 2px;
   }
 
   .text-box-block__surface {
@@ -83,7 +92,13 @@
     min-height: 0;
     margin: 0;
     padding: 0;
-    overflow: auto;
+    overflow: hidden;
+    // A fixed-size frame can be taller than its child paragraphs. Give the
+    // remaining block-axis space to the last real child so a click there hits
+    // that paragraph's native editing surface instead of the container's
+    // contenteditable boundary. This is the same ownership model as Callout/
+    // 高亮块: visible content space belongs to a child Block, with no
+    // blank-area click handler or synthetic caret calculation.
     display: flex;
     flex-direction: column;
     // `horizontal-tb` fallback keeps horizontal frames identical: the Block only
@@ -93,17 +108,9 @@
     writing-mode: var(--bc-text-box-writing-mode, horizontal-tb);
     outline: none;
     box-shadow: none;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
     touch-action: auto;
     user-select: text;
     -webkit-user-select: text;
-
-    &::-webkit-scrollbar {
-      display: none;
-      width: 0;
-      height: 0;
-    }
 
     // Paragraph spacing ships as physical `margin-top` / `margin-bottom`
     // (base.scss), which in a vertical frame lands on the inline axis: the
@@ -118,12 +125,31 @@
     > [data-block-id] {
       margin-top: 0;
       margin-bottom: 0;
-      margin-block-start: var(--bc-block-sb, 0);
-      margin-block-end: var(--bc-block-sa, var(--bc-segments-gap));
+      margin-block-start: 0;
+      margin-block-end: max(
+        var(--bc-block-sa, var(--bc-segments-gap)),
+        var(--bc-next-block-sb, 0pt)
+      );
     }
 
     > [data-block-id]:last-child {
-      margin-block-end: 0;
+      flex: 1 0 auto;
+      // Do not manufacture the theme's default gap at the frame edge, while
+      // still honoring an explicitly authored paragraph-after value.
+      margin-block-end: var(--bc-block-sa, 0pt);
+    }
+  }
+
+  &[data-bc-text-box-wm='v'] {
+    // List markers precede text on the vertical inline axis. Their original
+    // physical right margin moves them sideways instead of opening that gap.
+    // Keep the parent's flex-start alignment so the marker stays on the first
+    // (rightmost) column even when long vertical text wraps into several columns.
+    .ordered-block-prefix,
+    .todo-block-button,
+    .bullet-block-prefix {
+      margin-right: 0;
+      margin-inline-end: .25em;
     }
   }
 
@@ -145,6 +171,12 @@
     text-shadow: var(--bc-text-box-word-art-shadow);
     transform: var(--bc-text-box-word-art-transform, none);
     transform-origin: center;
+
+    // WordArt uses the container's own vertical alignment. Do not let the
+    // ordinary prose whitespace owner consume the alignment space.
+    > [data-block-id]:last-child {
+      flex: 0 0 auto;
+    }
 
     // Text-box content stays in ordinary rich-text child Blocks. Keep their
     // structural/inline formatting, but force the shared WordArt paint layer

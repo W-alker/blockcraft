@@ -1,7 +1,7 @@
 import {OverlayRef} from '@angular/cdk/overlay'
 import {NgZone} from '@angular/core'
 import {fromEvent, Subject, Subscription, takeUntil} from 'rxjs'
-import type {InlineObjectKind, InlineObjectWrapSide} from '../../blocks'
+import type {InlineObjectKind} from '../../blocks'
 import {
   DEFAULT_INLINE_IMAGE_WRAP_GAP,
   EditableBlockComponent,
@@ -223,7 +223,6 @@ export class InlineObjectInteractionController {
     this._context = context
     context.shell.classList.add('bc-inline-object-shell--selected')
     const wrap = delta.attributes?.['wrap'] === true
-    const side = delta.attributes?.['side']
     const {overlayRef, componentRef} =
       this._doc.overlayService.createConnectedOverlay<
         InlineObjectToolbarComponent
@@ -238,10 +237,6 @@ export class InlineObjectInteractionController {
     this._toolbarRef = overlayRef
     componentRef.setInput('label', this.kind === 'shape' ? '形状' : '艺术字')
     componentRef.setInput('layout', wrap ? 'wrap' : 'inline')
-    componentRef.setInput(
-      'side',
-      side === 'left' || side === 'right' ? side : 'auto',
-    )
     componentRef.instance.onItemClicked
       .pipe(takeUntil(this._close$))
       .subscribe(item => this._handleInlineAction(
@@ -269,44 +264,13 @@ export class InlineObjectInteractionController {
     event.preventDefault()
     event.stopPropagation()
     this._inlineWrapDragCancel?.()
-    context.shell.setAttribute(INLINE_FLOAT_PREVIEW_ATTRIBUTE, '')
-    const releaseLayoutFreeze =
-      context.block.runtime.acquireFloatLayoutFreeze?.() ?? (() => undefined)
-    let releaseViewLease: () => void = () => undefined
-    try {
-      releaseViewLease = this._doc.virtualization.acquireBlockViewLease([
-        context.blockId,
-      ])
-    } catch {
-      context.shell.removeAttribute(INLINE_FLOAT_PREVIEW_ATTRIBUTE)
-      releaseLayoutFreeze()
-      return
-    }
-
-    let proxy: InlineImageDragProxy
-    try {
-      proxy = new InlineImageDragProxy(
-        context.frame,
-        frameRect,
-        event.clientX,
-        event.clientY,
-        {
-          className: 'bc-inline-object-drag-proxy',
-          attribute: 'data-bc-inline-object-drag-proxy',
-          preserveTransform: true,
-        },
-      )
-    } catch {
-      context.shell.removeAttribute(INLINE_FLOAT_PREVIEW_ATTRIBUTE)
-      releaseViewLease()
-      releaseLayoutFreeze()
-      return
-    }
-
     const pointerId = event.pointerId
     const startClientX = event.clientX
     const startClientY = event.clientY
-    let moved = false
+    let proxy: InlineImageDragProxy | undefined
+    let releaseLayoutFreeze: (() => void) | undefined
+    let releaseViewLease: (() => void) | undefined
+    let dragStarted = false
     let cleaned = false
     let released = false
     const zone = this._doc.injector.get(NgZone)
@@ -320,7 +284,8 @@ export class InlineObjectInteractionController {
       document.removeEventListener('keydown', onKeyDown, true)
       document.removeEventListener('selectstart', onSelectStart, true)
       context.shell.removeAttribute(INLINE_FLOAT_PREVIEW_ATTRIBUTE)
-      proxy.destroy()
+      proxy?.destroy()
+      proxy = undefined
       try {
         if (context.frame.hasPointerCapture(pointerId)) {
           context.frame.releasePointerCapture(pointerId)
@@ -334,12 +299,12 @@ export class InlineObjectInteractionController {
       if (released) return
       released = true
       try {
-        releaseViewLease()
+        releaseViewLease?.()
       } catch (error) {
         this._doc.logger.warn('inlineObjectDragViewLeaseReleaseError: ', error)
       }
       try {
-        releaseLayoutFreeze()
+        releaseLayoutFreeze?.()
       } catch (error) {
         this._doc.logger.warn('inlineObjectDragLayoutFreezeReleaseError: ', error)
       }
@@ -348,28 +313,85 @@ export class InlineObjectInteractionController {
       cleanup()
       releaseDragResources()
     }
+    const beginDrag = (clientX: number, clientY: number): boolean => {
+      if (dragStarted) return true
+      if (
+        !this._resolveLiveContext(context) ||
+        !context.frame.isConnected ||
+        !context.block.containerElement.isConnected
+      ) return false
+
+      context.shell.setAttribute(INLINE_FLOAT_PREVIEW_ATTRIBUTE, '')
+      const nextReleaseLayoutFreeze =
+        context.block.runtime.acquireFloatLayoutFreeze?.() ??
+        (() => undefined)
+      let nextReleaseViewLease: () => void
+      try {
+        nextReleaseViewLease =
+          this._doc.virtualization.acquireBlockViewLease([context.blockId])
+      } catch {
+        context.shell.removeAttribute(INLINE_FLOAT_PREVIEW_ATTRIBUTE)
+        nextReleaseLayoutFreeze()
+        return false
+      }
+
+      let nextProxy: InlineImageDragProxy
+      try {
+        nextProxy = new InlineImageDragProxy(
+          context.frame,
+          frameRect,
+          startClientX,
+          startClientY,
+          {
+            className: 'bc-inline-object-drag-proxy',
+            attribute: 'data-bc-inline-object-drag-proxy',
+            preserveTransform: true,
+          },
+        )
+      } catch {
+        context.shell.removeAttribute(INLINE_FLOAT_PREVIEW_ATTRIBUTE)
+        nextReleaseViewLease()
+        nextReleaseLayoutFreeze()
+        return false
+      }
+
+      releaseLayoutFreeze = nextReleaseLayoutFreeze
+      releaseViewLease = nextReleaseViewLease
+      proxy = nextProxy
+      dragStarted = true
+      proxy.move(clientX, clientY)
+      return true
+    }
     const onPointerMove = (moveEvent: PointerEvent) => {
       if (moveEvent.pointerId !== pointerId) return
-      moveEvent.preventDefault()
-      moved = moved || Math.hypot(
+      if (Math.hypot(
         moveEvent.clientX - startClientX,
         moveEvent.clientY - startClientY,
-      ) >= 2
-      proxy.move(moveEvent.clientX, moveEvent.clientY)
+      ) < 2) return
+      moveEvent.preventDefault()
+      if (!beginDrag(moveEvent.clientX, moveEvent.clientY)) {
+        cancel()
+        return
+      }
+      proxy?.move(moveEvent.clientX, moveEvent.clientY)
     }
     const onPointerUp = (upEvent: PointerEvent) => {
       if (upEvent.pointerId !== pointerId) return
-      moved = moved || Math.hypot(
+      const crossedThreshold = Math.hypot(
         upEvent.clientX - startClientX,
         upEvent.clientY - startClientY,
       ) >= 2
+      if (!dragStarted && !crossedThreshold) {
+        cleanup()
+        return
+      }
+      if (!beginDrag(upEvent.clientX, upEvent.clientY) || !proxy) {
+        cancel()
+        return
+      }
       proxy.move(upEvent.clientX, upEvent.clientY)
       const proxyPosition = proxy.position()
       cleanup()
-      if (!moved) {
-        releaseDragResources()
-        return
-      }
       const live = this._resolveLiveContext(context)
       const source = resolveInlineObjectDeltaAtOffset(
         context.block.textDeltas(),
@@ -401,6 +423,11 @@ export class InlineObjectInteractionController {
         target = {...target, offset: context.offset}
       }
       const attributes = live.delta.attributes ?? {}
+      const {side: _side, ...automaticWrapAttributes} = attributes
+      const movedDelta = {
+        ...source.delta,
+        attributes: automaticWrapAttributes,
+      }
       const normalizedX = isWrapped
         ? resolveInlineImageDragPreview({
             containerWidth: targetWidth,
@@ -411,7 +438,7 @@ export class InlineObjectInteractionController {
               ? attributes['height']
               : frameRect.height,
             imageX: proxyPosition.left - targetRect.left,
-            side: attributes['side'] as InlineObjectWrapSide | undefined,
+            side: 'auto',
             gap: typeof attributes['gap'] === 'number'
               ? attributes['gap']
               : undefined,
@@ -424,7 +451,7 @@ export class InlineObjectInteractionController {
         targetBlockId: target.block.id,
         targetOffset: target.offset,
         targetLength: target.block.textLength,
-        delta: source.delta,
+        delta: movedDelta,
         normalizedX,
       })
       this.close()
@@ -479,12 +506,6 @@ export class InlineObjectInteractionController {
     name: string,
     value: unknown,
   ): void {
-    if (name === 'inline-wrap-side') {
-      if (value === 'auto' || value === 'left' || value === 'right') {
-        this._setWrapSide(context, value)
-      }
-      return
-    }
     if (name !== 'object-layout') return
     if (value === 'wrap') {
       this._setWrap(context, true)
@@ -511,9 +532,10 @@ export class InlineObjectInteractionController {
       ownerRect.width
     const current = resolved.delta.attributes ?? {}
     const attrs = enabled
-      ? enableInlineImageWrap({
+      ? (() => {
+        const wrappedAttrs = enableInlineImageWrap({
           wrap: current['wrap'] === true ? true : undefined,
-          side: current['side'] as InlineObjectWrapSide | undefined,
+          side: undefined,
           x: typeof current['x'] === 'number' ? current['x'] : undefined,
           gap: typeof current['gap'] === 'number' ? current['gap'] : undefined,
         }, {
@@ -523,6 +545,8 @@ export class InlineObjectInteractionController {
             : 0,
           gap: DEFAULT_INLINE_IMAGE_WRAP_GAP,
         })
+        return {...wrappedAttrs, side: null}
+      })()
       : disableInlineImageWrap()
     this.close()
     context.block.formatText(
@@ -530,16 +554,6 @@ export class InlineObjectInteractionController {
       1,
       attrs as unknown as IInlineNodeAttrs,
     )
-  }
-
-  private _setWrapSide(
-    context: ActiveInlineObjectContext,
-    side: InlineObjectWrapSide,
-  ): void {
-    const resolved = this._resolveLiveContext(context)
-    if (!resolved?.delta.attributes?.['wrap']) return
-    this.close()
-    context.block.formatText(context.offset, 1, {side})
   }
 
   private _convertInlineToBlock(

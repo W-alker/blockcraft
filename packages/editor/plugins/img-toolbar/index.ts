@@ -12,7 +12,6 @@ import {
   IBlockSnapshot,
   IInlineNodeAttrs,
   InlineImageData,
-  InlineImageWrapSide,
   measureObjectPlacement,
   ORIGIN_NO_RECORD,
 } from "../../framework";
@@ -667,7 +666,6 @@ export class ImgToolbarPlugin extends DocPlugin {
     componentRef.setInput('width', size.width);
     componentRef.setInput('height', size.height);
     componentRef.setInput('layout', data.wrap ? 'wrap' : 'inline');
-    componentRef.setInput('side', data.side ?? 'auto');
     componentRef.instance.onItemClicked
       .pipe(takeUntil(this._inlineClose$))
       .subscribe(item => {
@@ -688,16 +686,6 @@ export class ImgToolbarPlugin extends DocPlugin {
             this._convertInlineImageToBlock(context, item.value);
           }
           return;
-        }
-        if (
-          item.name === 'inline-wrap-side' &&
-          (
-            item.value === 'auto' ||
-            item.value === 'left' ||
-            item.value === 'right'
-          )
-        ) {
-          this._setInlineImageWrapSide(context, item.value);
         }
       });
   }
@@ -741,7 +729,8 @@ export class ImgToolbarPlugin extends DocPlugin {
       const initialX = ownerWidth > 0
         ? (frameRect.left - ownerRect.left) / ownerWidth
         : 0;
-      attributes = enableInlineImageWrap(current, {
+      const {side: _side, ...automaticCurrent} = current;
+      attributes = enableInlineImageWrap(automaticCurrent, {
         side: 'auto',
         x: initialX,
         gap: DEFAULT_INLINE_IMAGE_WRAP_GAP,
@@ -757,22 +746,6 @@ export class ImgToolbarPlugin extends DocPlugin {
         1,
         attributes as unknown as IInlineNodeAttrs,
       );
-    });
-  }
-
-  private _setInlineImageWrapSide(
-    context: ActiveInlineImageContext,
-    side: InlineImageWrapSide,
-  ): void {
-    const current = this._resolveLiveInlineImage(context);
-    if (!current?.wrap) {
-      this.closeInlineToolbar();
-      return;
-    }
-
-    this.closeInlineToolbar();
-    this.doc.crud.transact(() => {
-      context.block.formatText(context.offset, 1, {side});
     });
   }
 
@@ -945,7 +918,7 @@ export class ImgToolbarPlugin extends DocPlugin {
         imageWidth: live.width ?? frameRect.width,
         imageHeight: live.height ?? frameRect.height,
         imageX: proxyPosition.left - targetRect.left,
-        side: live.side,
+        side: 'auto',
         gap: live.gap,
       });
       const plan = planInlineImageAnchorMove({
@@ -955,7 +928,10 @@ export class ImgToolbarPlugin extends DocPlugin {
         targetBlockId: target.block.id,
         targetOffset: target.offset,
         targetLength: target.block.textLength,
-        delta: sourceDelta,
+        delta: {
+          ...sourceDelta,
+          attributes: {...sourceDelta.attributes, side: 'auto'},
+        },
         normalizedX: placement.attributes.x,
       });
       this.closeInlineToolbar();
@@ -1121,7 +1097,7 @@ export class ImgToolbarPlugin extends DocPlugin {
           imageWidth: size.width,
           imageHeight: size.height,
           imageX: result.left - boundsRect.left,
-          side: current.side,
+          side: 'auto',
           gap: current.gap,
         }).attributes,
       };

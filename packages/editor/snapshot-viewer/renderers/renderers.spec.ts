@@ -24,6 +24,24 @@ describe("snapshot-viewer renderers", () => {
     expect(host.querySelector(".todo-block.is-checked")).not.toBeNull()
   })
 
+  it("renders ordered marker presets through the shared formatter", () => {
+    const ordered: IBlockSnapshot = {
+      id: 'ordered-circle',
+      flavour: 'ordered',
+      nodeType: BlockNodeType.editable,
+      props: {depth: 0, order: 9, ms: 'o1'},
+      meta: {},
+      children: [{insert: 'tenth'}],
+    }
+    const host = renderFixture(ordered)
+    const prefix = host.querySelector<HTMLElement>('.ordered-block-prefix')!
+    const text = prefix.querySelector<HTMLElement>('.ordered-block-prefix__text')!
+
+    expect(prefix.dataset['bcMarkerEnclosure']).toBe('circle')
+    expect(text.textContent).toBe('10')
+    expect(text.style.fontSize).toBe('0.62em')
+  })
+
   it("renders heading paragraphs, blockquotes, and captions with editable containers", () => {
     const fixture = createAllBlocksFixture()
     const host = renderFixture([fixture.headingParagraph, fixture.blockquote, fixture.caption])
@@ -31,6 +49,40 @@ describe("snapshot-viewer renderers", () => {
     expect(host.querySelector('.paragraph-block[data-heading="2"]')).not.toBeNull()
     expect(host.querySelector(".blockquote-block .edit-container")).not.toBeNull()
     expect(host.querySelector("figcaption.caption-block")).not.toBeNull()
+  })
+
+  it("projects persisted paragraph spacing", () => {
+    const paragraph: IBlockSnapshot = {
+      id: "paragraph-spacing",
+      flavour: "paragraph",
+      nodeType: BlockNodeType.editable,
+      props: {pfs: 1.5, lh: 1.75, psb: 6, psa: 12, pis: 18, pie: 9, pti: -24},
+      meta: {},
+      children: [{insert: "Paragraph spacing"}],
+    }
+    const nextParagraph: IBlockSnapshot = {
+      ...paragraph,
+      id: "paragraph-spacing-next",
+      props: {psb: 18},
+      children: [{insert: "Next paragraph"}],
+    }
+    const host = renderFixture([paragraph, nextParagraph])
+    const element = host.querySelector<HTMLElement>(
+      '[data-block-id="paragraph-spacing"]',
+    )!
+
+    expect(element.style.getPropertyValue("--bc-block-fs-scale")).toBe("1.5")
+    expect(element.style.fontSize).toBe("150%")
+    expect(element.style.getPropertyValue("--bc-block-lh")).toBe("1.75")
+    expect(element.style.getPropertyValue("--bc-block-sb")).toBe("6pt")
+    expect(element.style.getPropertyValue("--bc-block-sa")).toBe("12pt")
+    expect(element.style.getPropertyValue("--bc-block-leading-sb")).toBe("6pt")
+    expect(element.style.getPropertyValue("--bc-next-block-sb")).toBe("18pt")
+    expect(element.style.marginBlockStart).toBe("")
+    expect(element.style.marginBlockEnd).toBe("")
+    expect(element.style.paddingInlineStart).toBe("")
+    expect(element.style.paddingInlineEnd).toBe("")
+    expect(element.style.getPropertyValue("--bc-block-text-indent")).toBe("")
   })
 
   it("renders editable word art with CSS-owned presentation data", () => {

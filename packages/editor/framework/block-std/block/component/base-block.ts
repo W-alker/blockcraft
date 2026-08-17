@@ -31,7 +31,13 @@ import {
   BlockReadonlyOperation,
   BlockReadonlySource,
 } from "../../../doc/block-readonly.types";
-import {normalizeTypographyLineHeight} from "../../typography";
+import {
+  normalizeParagraphFontScale,
+  resolveEditableBlockFontScale,
+  normalizeParagraphSpacing,
+  normalizeTypographyLineHeight,
+  paragraphPointsToCss,
+} from "../../typography";
 
 export type BlockViewState = 'mounted' | 'retained' | 'destroyed'
 
@@ -201,6 +207,63 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     return this.blockLineHeight === null ? null : ''
   }
 
+  @HostBinding('style.--bc-block-fs-scale')
+  get blockFontScale(): string | null {
+    if (this.nodeType !== BlockNodeType.editable) return null
+    const scale = normalizeParagraphFontScale(this._native?.props?.['pfs'])
+    return scale === null ? null : `${scale}`
+  }
+
+  @HostBinding('style.font-size')
+  get blockFontSize(): string | null {
+    if (this.nodeType !== BlockNodeType.editable) return null
+    const props = this._native?.props as Record<string, unknown> | undefined
+    if (normalizeParagraphFontScale(props?.['pfs']) === null) return null
+    return `${resolveEditableBlockFontScale(props, this._native?.flavour) * 100}%`
+  }
+
+  @HostBinding('style.--bc-block-sb')
+  get blockSpaceBefore(): string | null {
+    if (this.nodeType !== BlockNodeType.editable) return null
+    return this._paragraphPointCss(
+      normalizeParagraphSpacing(this._native?.props?.['psb']),
+    )
+  }
+
+  @HostBinding('style.--bc-block-sa')
+  get blockSpaceAfter(): string | null {
+    if (this.nodeType !== BlockNodeType.editable) return null
+    return this._paragraphPointCss(
+      normalizeParagraphSpacing(this._native?.props?.['psa']),
+    )
+  }
+
+  /**
+   * BlockCraft stores paragraph-before on the following paragraph, but lays
+   * out one physical gap on the preceding sibling. This keeps pagination's
+   * height stride (`border-box + margin-bottom`) authoritative and avoids
+   * browser-dependent vertical-margin collapsing.
+   */
+  @HostBinding('style.--bc-next-block-sb')
+  get nextBlockSpaceBefore(): string | null {
+    const model = this.doc?.model
+    const nextId = model?.getNextSiblingId?.(this.id)
+    if (!nextId || model.getNodeType(nextId) !== BlockNodeType.editable) {
+      return null
+    }
+    return this._paragraphPointCss(
+      normalizeParagraphSpacing(model.getProps(nextId)?.['psb']),
+    )
+  }
+
+  @HostBinding('style.--bc-block-leading-sb')
+  get leadingBlockSpaceBefore(): string | null {
+    if (this.nodeType !== BlockNodeType.editable) return null
+    const model = this.doc?.model
+    if (model?.getPreviousSiblingId?.(this.id)) return null
+    return this.blockSpaceBefore
+  }
+
   private _meta!: Model['meta']
   get meta() {
     return this._meta as Model['meta']
@@ -213,6 +276,10 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     if (typeof value !== 'string') return null
     const color = value.trim()
     return color && color.toLowerCase() !== 'transparent' ? color : null
+  }
+
+  private _paragraphPointCss(value: number | null): string | null {
+    return value === null ? null : paragraphPointsToCss(value)
   }
 
   ngOnInit() {

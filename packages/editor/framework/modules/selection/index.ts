@@ -63,6 +63,28 @@ interface ProjectionMountRequest {
   scrollIntoView?: boolean
 }
 
+type NavigationArrowKey = 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight'
+
+interface NavigationFence {
+  readonly key: NavigationArrowKey
+  readonly ownerBlockId: string
+  readonly sourceBlockId: string
+  readonly sourceJSON: ISelectionJSON
+  readonly sourceRange: Range
+  readonly projectionVersion: number
+}
+
+const NAVIGATION_ARROW_KEYS = new Set<NavigationArrowKey>([
+  'ArrowUp',
+  'ArrowDown',
+  'ArrowLeft',
+  'ArrowRight',
+])
+// Chromium can dispatch the keyup before the queued selectionchange. Keep the
+// one-shot fence alive beyond that task, while every new user/model intent
+// clears it synchronously.
+const NAVIGATION_FENCE_EXPIRY_MS = 120
+
 @DocEventRegister
 export class SelectionManager {
 
@@ -79,6 +101,8 @@ export class SelectionManager {
   private _compositionSelectionRecheckVersion = 0
   private _primaryPointerDown = false
   private _releasePrimaryPointerLayoutFreeze: (() => void) | null = null
+  private _navigationFence: NavigationFence | null = null
+  private _navigationFenceExpiryTimer: ReturnType<typeof setTimeout> | null = null
   private _projectionVersion = 0
   private _projectionFrame: number | null = null
   private _projectionMountAdapter: SelectionProjectionMountAdapter | null = null
@@ -145,6 +169,7 @@ export class SelectionManager {
     })
     this.doc.afterInit(this._bindEvents)
     this.doc.onDestroy$.pipe(take(1)).subscribe(() => {
+      this._clearNavigationFence()
       this._cancelCompositionSelectionRecheck()
       this._cancelProjectionFrame()
       this._cancelProjectionMountRequest()
@@ -246,6 +271,21 @@ export class SelectionManager {
       // The short programmatic projection window is different: when an IME
       // session recovers during that window, remember this native change and
       // replay it once the window expires instead of dropping it forever.
+      const navigationFence = this._handleNavigationFenceSelectionChange()
+      if (navigationFence === 'repaired') return
+      if (navigationFence === 'inside-moved') {
+        this._clearNavigationFence()
+        if (this.doc.event.status.isComposing) {
+          this._queueCompositionSelectionRecheck()
+        } else if (!this._suppressRecalculate) {
+          this.recalculate()
+        }
+        return
+      }
+      // A delayed programmatic selectionchange can arrive after keydown but
+      // before the browser performs its arrow default. Do not let that no-op
+      // event clear the fence that belongs to the pending navigation intent.
+      if (navigationFence === 'inside-unchanged') return
       if (this._suppressRecalculate) return
       if (this.doc.event.status.isComposing) {
         this._queueCompositionSelectionRecheck()
@@ -288,7 +328,21 @@ export class SelectionManager {
         this.selectAllChildren(block)
       })
 
+    fromEvent<KeyboardEvent>(root.hostElement, 'keydown', {capture: true})
+      .pipe(takeUntil(this.doc.onDestroy$))
+      .subscribe(event => this._armNavigationFence(event))
+    fromEvent<KeyboardEvent>(root.hostElement, 'keyup', {capture: true})
+      .pipe(takeUntil(this.doc.onDestroy$))
+      .subscribe(event => {
+        if (this._navigationFence?.key === event.key) {
+          this._settleNavigationFenceAfterKeyup()
+        }
+      })
+
     const ownerWindow = this._surface.ownerDocument.defaultView ?? this._surface.ownerDocument
+    fromEvent(ownerWindow, 'blur')
+      .pipe(takeUntil(this.doc.onDestroy$))
+      .subscribe(() => this._clearNavigationFence())
     fromEvent<PointerEvent>(root.hostElement, 'pointerdown', {capture: true})
       .pipe(takeUntil(this.doc.onDestroy$))
       .subscribe(event => {
@@ -451,7 +505,204 @@ export class SelectionManager {
     }
   }
 
+  private _armNavigationFence(event: KeyboardEvent): void {
+    this._settleNavigationFenceBeforeKeyboardIntent()
+    const key = event.key as NavigationArrowKey
+    if (
+      !NAVIGATION_ARROW_KEYS.has(key) ||
+      event.shiftKey ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey ||
+      isNativeInputTarget(event.target)
+    ) {
+      return
+    }
+
+    const current = this.value
+    if (
+      !current?.collapsed ||
+      !current.isInSameBlock ||
+      current.start.type !== 'text' ||
+      current.end.type !== 'text'
+    ) {
+      return
+    }
+
+    try {
+      const scope = resolveSelectionScope(
+        current.start,
+        id => this.doc.getBlockById(id) as any,
+      )
+      if (scope?.kind !== 'container') return
+      const owner = this._readBlock(scope.blockId)
+      if (
+        !owner?.hostElement.isConnected ||
+        this.doc.placement?.isInAbsoluteLayout?.(owner) !== true
+      ) {
+        return
+      }
+
+      const nativeSelection = this._surface.getNativeSelection()
+      if (!nativeSelection?.rangeCount || !nativeSelection.isCollapsed) return
+      const sourceRange = nativeSelection.getRangeAt(0).cloneRange()
+      if (
+        !owner.hostElement.contains(sourceRange.startContainer) ||
+        !owner.hostElement.contains(sourceRange.endContainer) ||
+        closetBlockId(sourceRange.startContainer) !== current.start.blockId ||
+        closetBlockId(sourceRange.endContainer) !== current.start.blockId
+      ) {
+        return
+      }
+
+      this._navigationFence = {
+        key,
+        ownerBlockId: owner.id,
+        sourceBlockId: current.start.blockId,
+        sourceJSON: current.toJSON(),
+        sourceRange,
+        projectionVersion: this._projectionVersion,
+      }
+    } catch {
+      this._clearNavigationFence()
+    }
+  }
+
+  private _handleNavigationFenceSelectionChange():
+    | 'none'
+    | 'inside-unchanged'
+    | 'inside-moved'
+    | 'repaired' {
+    const fence = this._navigationFence
+    if (!fence) return 'none'
+
+    const current = this.value
+    if (
+      !current ||
+      fence.projectionVersion !== this._projectionVersion ||
+      !sameSelectionJSON(current.toJSON(), fence.sourceJSON)
+    ) {
+      this._clearNavigationFence()
+      return 'none'
+    }
+
+    const owner = this._readBlock(fence.ownerBlockId)
+    if (
+      !owner?.hostElement.isConnected ||
+      this.doc.placement?.isInAbsoluteLayout?.(owner) !== true
+    ) {
+      this._clearNavigationFence()
+      return 'none'
+    }
+
+    const nativeSelection = this._surface.getNativeSelection()
+    const nativeInsideOwner = !!nativeSelection?.rangeCount &&
+      !!nativeSelection.anchorNode &&
+      !!nativeSelection.focusNode &&
+      owner.hostElement.contains(nativeSelection.anchorNode) &&
+      owner.hostElement.contains(nativeSelection.focusNode)
+    if (nativeInsideOwner) {
+      return this._nativeRangeMatchesNavigationSource(fence)
+        ? 'inside-unchanged'
+        : 'inside-moved'
+    }
+
+    // Native arrow navigation is allowed to resolve visual lines/columns, but
+    // an absolute container is a closed editing plane. Restore the exact DOM
+    // caret captured on keydown before the escaped Range reaches recalculate().
+    this._clearNavigationFence()
+    this._surface.focusEditingHost(fence.sourceBlockId)
+    try {
+      if (this._canRestoreNavigationSourceRange(fence, owner)) {
+        this._applyDomRange(fence.sourceRange)
+      } else {
+        this._applyDomRangeForSelection(
+          current,
+          false,
+          this._projectionVersion,
+          false,
+        )
+      }
+    } catch {
+      this._surface.clearNativeSelection()
+      this._recoverDomProjection(
+        fence.sourceJSON,
+        this._projectionVersion,
+      )
+    }
+    return 'repaired'
+  }
+
+  private _nativeRangeMatchesNavigationSource(fence: NavigationFence): boolean {
+    const nativeSelection = this._surface.getNativeSelection()
+    if (!nativeSelection?.rangeCount || !nativeSelection.isCollapsed) return false
+    const range = nativeSelection.getRangeAt(0)
+    return range.startContainer === fence.sourceRange.startContainer &&
+      range.startOffset === fence.sourceRange.startOffset &&
+      range.endContainer === fence.sourceRange.endContainer &&
+      range.endOffset === fence.sourceRange.endOffset
+  }
+
+  private _canRestoreNavigationSourceRange(
+    fence: NavigationFence,
+    owner: BlockCraft.BlockComponent,
+  ): boolean {
+    const {sourceRange} = fence
+    return sourceRange.startContainer.isConnected &&
+      sourceRange.endContainer.isConnected &&
+      owner.hostElement.contains(sourceRange.startContainer) &&
+      owner.hostElement.contains(sourceRange.endContainer) &&
+      closetBlockId(sourceRange.startContainer) === fence.sourceBlockId &&
+      closetBlockId(sourceRange.endContainer) === fence.sourceBlockId
+  }
+
+  private _settleNavigationFenceBeforeKeyboardIntent(): void {
+    const result = this._handleNavigationFenceSelectionChange()
+    if (result === 'inside-moved') {
+      this._clearNavigationFence()
+      if (!this.doc.event.status.isComposing && !this._suppressRecalculate) {
+        this.recalculate()
+      }
+    } else if (result === 'inside-unchanged') {
+      this._clearNavigationFence()
+    }
+  }
+
+  private _settleNavigationFenceAfterKeyup(): void {
+    const result = this._handleNavigationFenceSelectionChange()
+    if (result === 'inside-moved') {
+      this._clearNavigationFence()
+      if (!this.doc.event.status.isComposing && !this._suppressRecalculate) {
+        this.recalculate()
+      }
+      return
+    }
+    if (result === 'inside-unchanged') {
+      this._scheduleNavigationFenceExpiry()
+    }
+  }
+
+  private _clearNavigationFence(): void {
+    this._navigationFence = null
+    if (this._navigationFenceExpiryTimer !== null) {
+      clearTimeout(this._navigationFenceExpiryTimer)
+      this._navigationFenceExpiryTimer = null
+    }
+  }
+
+  private _scheduleNavigationFenceExpiry(): void {
+    if (this._navigationFenceExpiryTimer !== null) {
+      clearTimeout(this._navigationFenceExpiryTimer)
+    }
+    const fence = this._navigationFence
+    this._navigationFenceExpiryTimer = setTimeout(() => {
+      this._navigationFenceExpiryTimer = null
+      if (this._navigationFence === fence) this._navigationFence = null
+    }, NAVIGATION_FENCE_EXPIRY_MS)
+  }
+
   private _beginPrimaryPointerIntent(target?: EventTarget | null): void {
+    this._clearNavigationFence()
     this._primaryPointerDown = true
     this._suppressProgrammaticSelectionChangeUntil = 0
     this._cancelCompositionSelectionRecheck()
@@ -565,10 +816,13 @@ export class SelectionManager {
       return {value: null, next: execNext ? undefined : next}
     }
 
-    // Root boundary selections may deliberately project to descendant text/gap
-    // points so the browser paints only normal-flow content. Preserve the
-    // canonical model selection when selectionchange reports that exact Range.
-    if (this._matchesCurrentRootBoundaryProjection(range)) {
+    // Boundary selections deliberately project to descendant text/gap points.
+    // Besides keeping virtual-root endpoints stable, this is required for a
+    // nested contenteditable (for example a text box): Chromium retains a
+    // parent-offset Range there but does not paint its selected glyphs. Preserve
+    // the canonical structural selection when selectionchange reports the exact
+    // descendant-backed projection.
+    if (this._matchesCurrentBoundaryProjection(range)) {
       return {value: this.value}
     }
 
@@ -737,6 +991,7 @@ export class SelectionManager {
   // ── Model state management ──
 
   private _publishState(selection: BlockSelection | null) {
+    this._clearNavigationFence()
     this._cancelProjectionFrame()
     this._cancelProjectionMountRequest()
     this._projectionVersion += 1
@@ -1072,15 +1327,14 @@ export class SelectionManager {
     }
   }
 
-  private _matchesCurrentRootBoundaryProjection(range: Range): boolean {
+  private _matchesCurrentBoundaryProjection(range: Range): boolean {
     const current = this.value
-    const rootId = this.doc.root.id
     if (
       !current ||
+      current.collapsed ||
       current.start.type !== 'boundary' ||
       current.end.type !== 'boundary' ||
-      current.start.blockId !== rootId ||
-      current.end.blockId !== rootId
+      current.start.blockId !== current.end.blockId
     ) {
       return false
     }
@@ -1415,11 +1669,11 @@ export class SelectionManager {
       block.hostElement
     const childIds = block.childrenIds ?? []
     const index = Math.max(0, Math.min(point.index ?? 0, childIds.length))
-    // Root child offsets are live and rebase when virtual siblings mount. Keep
-    // non-collapsed endpoints inside the pinned adjacent block instead.
-    const stableChildEdge = useStableChildEdge &&
-      !!this.doc.virtualization?.enabled &&
-      point.blockId === this.doc.root.id
+    // Parent child offsets can be structurally correct without being paintable:
+    // Chromium does not render their glyph highlight inside nested editable
+    // hosts, and virtual root offsets can rebase while siblings mount. Keep
+    // every non-collapsed boundary endpoint inside its adjacent child instead.
+    const stableChildEdge = useStableChildEdge
     const childNodes = Array.from(container.childNodes)
     const neighbours = this._getBoundaryProjectionNeighbours(
       point.blockId,

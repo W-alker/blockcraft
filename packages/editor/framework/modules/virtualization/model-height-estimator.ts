@@ -2,7 +2,12 @@ import {
   BlockNodeType,
   DeltaInsert,
   DeltaInsertEmbed,
+  normalizeParagraphFontScale,
+  normalizeParagraphSpacing,
+  normalizeTypographyLineHeight,
+  paragraphPointsToPixels,
   readInlineImageDelta,
+  resolveEditableBlockFontScale,
 } from '../../block-std'
 import type {
   BlockModelHeightEstimateContext,
@@ -209,14 +214,19 @@ function estimateBlock(
       knownFacts?.nodeType ??
       doc.model.getNodeType?.(blockId)
     if (nodeType === BlockNodeType.editable) {
+      const props = knownFacts?.props ?? doc.model.getProps(blockId) ?? {}
       const inlineImageHeight = estimateInlineImageLineHeight(
         doc.model.getTextDeltas?.(blockId) ?? [],
         doc.objectSizing?.rootContentWidth ?? 0,
       )
-      return {
-        height: Math.max(fallback, inlineImageHeight),
-        modelDriven: inlineImageHeight > 0,
-      }
+      return estimateEditableBlockHeight(
+        doc,
+        blockId,
+        props,
+        fallback,
+        doc.objectSizing?.rootContentWidth ?? 0,
+        inlineImageHeight,
+      )
     }
 
     if (flavour === 'table') {
@@ -408,13 +418,17 @@ function estimateTableCellChildHeight(
   // inspection would make a large sampled table pay for rich-text materialize
   // work before it mounts. DOM measurement remains the exact correction path.
   const textLength = Math.max(0, doc.model.getTextLength?.(childId) ?? 0)
+  const props = doc.model.getProps(childId) ?? {}
   const rootFontSize =
     positiveNumber(doc.layoutMetrics?.baseFontSize) ?? 16
-  const rootLineHeight =
-    positiveNumber(doc.layoutMetrics?.lineHeight) ??
-    rootFontSize * TABLE_ESTIMATED_LINE_HEIGHT_RATIO
-  const fontScale = estimateEditableBlockFontScale(
-    doc.model.getProps(childId),
+  const paragraphLineHeight = normalizeTypographyLineHeight(props['lh'])
+  const rootLineHeight = paragraphLineHeight === null
+    ? positiveNumber(doc.layoutMetrics?.lineHeight) ??
+      rootFontSize * TABLE_ESTIMATED_LINE_HEIGHT_RATIO
+    : rootFontSize * paragraphLineHeight
+  const fontScale = resolveEditableBlockFontScale(
+    props,
+    doc.model.getFlavour(childId),
   )
   const characterWidth = rootFontSize *
     TABLE_ESTIMATED_CHARACTER_WIDTH_RATIO * fontScale
@@ -426,18 +440,119 @@ function estimateTableCellChildHeight(
       Math.max(1, contentWidth),
     ),
   )
-  return lineCount * lineHeight
+  if (!hasParagraphTypographyFacts(props)) return lineCount * lineHeight
+  return lineCount * lineHeight + paragraphOuterSpacing(
+    doc,
+    childId,
+    props,
+  )
 }
 
-function estimateEditableBlockFontScale(
-  props: Record<string, unknown> | undefined,
+function estimateEditableBlockHeight(
+  doc: BlockCraft.Doc,
+  blockId: string,
+  props: Record<string, unknown>,
+  fallback: number,
+  contentWidth: number,
+  inlineImageHeight: number,
+): ModelHeightEstimate {
+  const hasParagraphFacts = hasParagraphTypographyFacts(props)
+  if (!hasParagraphFacts) {
+    return {
+      height: Math.max(fallback, inlineImageHeight),
+      modelDriven: inlineImageHeight > 0,
+    }
+  }
+  const baseFontSize = positiveNumber(doc.layoutMetrics?.baseFontSize) ?? 16
+  const defaultLineHeight = positiveNumber(doc.layoutMetrics?.lineHeight) ??
+    baseFontSize * 1.5
+  const defaultGap = nonNegativeNumber(doc.layoutMetrics?.segmentGap) ?? 10
+  const lineHeightRatio = normalizeTypographyLineHeight(props['lh'])
+  const headingScale = resolveEditableBlockFontScale(
+    props,
+    doc.model.getFlavour(blockId),
+  )
+  const lineHeight = (
+    lineHeightRatio === null
+      ? defaultLineHeight
+      : baseFontSize * lineHeightRatio
+  ) * headingScale
+  const textLength = Math.max(0, doc.model.getTextLength?.(blockId) ?? 0)
+  const characterWidth = baseFontSize * DEFAULT_ESTIMATED_CHARACTER_WIDTH /
+    16 * headingScale
+  const lineCount = contentWidth > 0
+    ? Math.max(1, Math.ceil(
+        textLength * characterWidth / contentWidth,
+      ))
+    : 1
+  const estimatedTextHeight = lineCount * lineHeight
+  const fallbackContentHeight = Math.max(0, fallback - defaultGap)
+  const spacing = paragraphOuterSpacing(doc, blockId, props)
+  const height = Math.max(
+    fallbackContentHeight,
+    estimatedTextHeight,
+    inlineImageHeight,
+  ) + spacing
+  return {
+    height,
+    modelDriven: inlineImageHeight > 0 || hasParagraphFacts,
+  }
+}
+
+function paragraphOuterSpacing(
+  doc: BlockCraft.Doc,
+  blockId: string,
+  props: Record<string, unknown>,
 ): number {
-  const heading = props?.['heading']
-  if (heading === 1) return 2
-  if (heading === 2) return 1.8
-  if (heading === 3) return 1.6
-  if (heading === 4) return 1.4
-  return 1
+  const previousId = siblingId(doc, blockId, -1)
+  const nextId = siblingId(doc, blockId, 1)
+  const leading = previousId
+    ? 0
+    : paragraphPointsToPixels(normalizeParagraphSpacing(props['psb']) ?? 0)
+  const ownAfter = normalizeParagraphSpacing(props['psa'])
+  if (!nextId) {
+    return leading + paragraphPointsToPixels(ownAfter ?? 0)
+  }
+
+  const defaultGap = nonNegativeNumber(doc.layoutMetrics?.segmentGap) ?? 10
+  const nextBefore = doc.model.getNodeType(nextId) === BlockNodeType.editable
+    ? normalizeParagraphSpacing(doc.model.getProps(nextId)?.['psb'])
+    : null
+  const trailing = Math.max(
+    ownAfter === null ? defaultGap : paragraphPointsToPixels(ownAfter),
+    paragraphPointsToPixels(nextBefore ?? 0),
+  )
+  return leading + trailing
+}
+
+function hasParagraphTypographyFacts(props: Record<string, unknown>): boolean {
+  return [
+    normalizeParagraphFontScale(props['pfs']),
+    normalizeTypographyLineHeight(props['lh']),
+    normalizeParagraphSpacing(props['psb']),
+    normalizeParagraphSpacing(props['psa']),
+  ].some(value => value !== null)
+}
+
+function siblingId(
+  doc: BlockCraft.Doc,
+  blockId: string,
+  offset: -1 | 1,
+): string | null {
+  const model = doc.model as typeof doc.model & {
+    getPreviousSiblingId?: (id: string) => string | null
+    getNextSiblingId?: (id: string) => string | null
+  }
+  const direct = offset < 0
+    ? model.getPreviousSiblingId?.(blockId)
+    : model.getNextSiblingId?.(blockId)
+  if (direct !== undefined) return direct
+
+  const parentId = model.getParentId?.(blockId)
+  if (!parentId) return null
+  const siblings = model.getChildrenIds?.(parentId) ?? []
+  const index = siblings.indexOf(blockId)
+  return index < 0 ? null : siblings[index + offset] ?? null
 }
 
 function projectSampledTotal(
@@ -516,8 +631,8 @@ function estimateInlineImageLineHeight(
       continue
     }
     const isImage = typeof delta.insert['image'] === 'string'
-    const isInlineObject =
-      typeof delta.insert['shape'] === 'string' ||
+    const isShape = typeof delta.insert['shape'] === 'string'
+    const isInlineObject = isShape ||
       typeof delta.insert['word-art'] === 'string'
     if (!isImage && !isInlineObject) continue
     const data = isImage
@@ -526,10 +641,7 @@ function estimateInlineImageLineHeight(
           width: positiveNumber(delta.attributes?.['width']) ?? undefined,
           height: positiveNumber(delta.attributes?.['height']) ?? undefined,
           wrap: delta.attributes?.['wrap'] === true,
-          side: delta.attributes?.['side'] === 'left' ||
-              delta.attributes?.['side'] === 'right'
-            ? delta.attributes['side']
-            : 'auto',
+          side: 'auto',
           x: typeof delta.attributes?.['x'] === 'number'
             ? delta.attributes['x']
             : undefined,

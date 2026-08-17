@@ -1,4 +1,4 @@
-import {TestBed} from '@angular/core/testing'
+import {fakeAsync, TestBed, tick} from '@angular/core/testing'
 import {Subject} from 'rxjs'
 import {WordArtToolbarPlugin} from './index'
 import {WordArtTransformOverlayComponent} from './word-art-transform-overlay.component'
@@ -292,19 +292,23 @@ describe('WordArtToolbarPlugin', () => {
     hostElement.remove()
   })
 
-  it('creates only the toolbar overlay because transforms live in the block', () => {
+  it('keeps one side overlay and repositions it after panel changes', fakeAsync(() => {
     const plugin = new WordArtToolbarPlugin()
     const action = new Subject<any>()
+    const panelChange = new Subject<any>()
     const onPropsChange = new Subject<void>()
     const onDestroy$ = new Subject<boolean>()
     const overlayRef = jasmine.createSpyObj('OverlayRef', [
       'dispose',
       'updatePosition',
+      'getConfig',
     ])
+    overlayRef.getConfig.and.returnValue({positionStrategy: null})
     const componentRef = {
       setInput: jasmine.createSpy('setInput'),
       instance: {
         action,
+        panelChange,
         cdr: jasmine.createSpyObj('ChangeDetectorRef', ['markForCheck']),
       },
     }
@@ -331,18 +335,62 @@ describe('WordArtToolbarPlugin', () => {
     expect(createConnectedOverlay.calls.mostRecent().args[0].component).toBe(
       WordArtToolbarComponent,
     )
+    expect(createConnectedOverlay.calls.mostRecent().args[0].positions[0])
+      .toEqual(jasmine.objectContaining({
+        originX: 'end',
+        originY: 'center',
+        overlayX: 'start',
+        overlayY: 'center',
+        offsetX: 10,
+      }))
     expect(componentRef.setInput).toHaveBeenCalledOnceWith(
       'wordArtBlock',
       block,
     )
     expect(resizer.style.display).toBe('block')
 
+    panelChange.next('format')
+    tick(17)
+    expect(overlayRef.updatePosition).toHaveBeenCalledTimes(1)
+
     plugin.closeOverlays()
     expect(resizer.style.display).toBe('')
     action.complete()
+    panelChange.complete()
     onPropsChange.complete()
     onDestroy$.complete()
     hostElement.remove()
+  }))
+
+  it('owns only CSES child overlays opened from the active toolbar', () => {
+    const plugin = new WordArtToolbarPlugin()
+    const toolbar = document.createElement('div')
+    const picker = document.createElement('cs-color-picker')
+    picker.className = 'cs-color-picker-open'
+    const select = document.createElement('cs-select')
+    select.className = 'cs-select-open'
+    toolbar.append(picker, select)
+    ;(plugin as any)._toolbarRef = {overlayElement: toolbar}
+
+    const colorPane = document.createElement('div')
+    colorPane.className = 'cs-color-picker-overlay-pane'
+    const colorPanel = document.createElement('div')
+    colorPanel.className = 'cs-color-picker-panel'
+    colorPane.appendChild(colorPanel)
+
+    const selectPane = document.createElement('div')
+    selectPane.className = 'cs-select-panel'
+    const selectPanel = document.createElement('div')
+    selectPanel.className = 'cs-select-dropdown'
+    selectPane.appendChild(selectPanel)
+
+    expect((plugin as any)._isToolbarTarget(colorPanel)).toBeTrue()
+    expect((plugin as any)._isToolbarTarget(selectPanel)).toBeTrue()
+
+    picker.classList.remove('cs-color-picker-open')
+    select.classList.remove('cs-select-open')
+    expect((plugin as any)._isToolbarTarget(colorPanel)).toBeFalse()
+    expect((plugin as any)._isToolbarTarget(selectPanel)).toBeFalse()
   })
 
   it('keeps the toolbar through the pointer-to-input focus transition', () => {

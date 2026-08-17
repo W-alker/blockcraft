@@ -10,6 +10,7 @@ import {
 import {IS_MAC} from "../../../global";
 import {closetBlockId, isZeroSpace, resolveBlockGapSide} from "../../utils";
 import {searchEditableDescendant} from "./index";
+import {resolveCommonSelectionScope} from './scope'
 import {IBoundarySelectionPoint, ISelectionPointJSON, ITextSelectionPoint} from "./types";
 import type {SelectionSurfaceAdapter} from './surface-adapter';
 
@@ -240,6 +241,48 @@ export class SelectionKeyboard {
     if (!parent) return false
     this.doc.selection.selectAllChildren(parent)
     return true
+  }
+
+  /**
+   * A closed container owns one editing domain even when its content is split
+   * across several paragraph Blocks. Resolve that semantic domain through the
+   * schema contract instead of hard-coding text-box/callout flavours here.
+   */
+  private _containerScopeForSelection(
+    selection: BlockCraft.Selection,
+  ): BlockCraft.BlockComponent | null {
+    try {
+      const scope = resolveCommonSelectionScope(
+        selection.anchor,
+        selection.head,
+        id => this.doc.getBlockById(id) as any,
+      )
+      return scope?.kind === 'container'
+        ? this._getBlockByIdSafe(scope.blockId)
+        : null
+    } catch {
+      // Stale/lazy endpoint access already fails closed elsewhere in the
+      // keyboard path. Ctrl+A must not turn it into a destructive guess.
+      return null
+    }
+  }
+
+  /**
+   * Select-all is capped only by an absolute object boundary. A normal-flow
+   * container remains part of the document ladder, even though its semantic
+   * selection scope still guards pointer/input ranges from crossing outside.
+   */
+  private _isInsideAbsoluteObject(
+    block: BlockCraft.BlockComponent,
+  ): boolean {
+    let current: BlockCraft.BlockComponent | null = block
+    while (current && current.nodeType !== BlockNodeType.root) {
+      if (this.doc.placement?.isInAbsoluteLayout?.(current) === true) {
+        return true
+      }
+      current = this._parentBlock(current)
+    }
+    return false
   }
 
   private _isSameOrAncestor(
@@ -875,6 +918,18 @@ export class SelectionKeyboard {
     evt.preventDefault()
     evt.stopPropagation()
     if (this._selectTableFromTableCellSelection(sel)) return true
+
+    const containerScope = this._containerScopeForSelection(sel)
+    if (containerScope) {
+      // The first press treats a multi-paragraph container as one editing
+      // surface. A repeated press is capped only when that surface belongs to
+      // an absolute object; normal-flow callouts/highlights continue to root.
+      if (!this._isFullBoundarySelection(sel, containerScope)) {
+        this.doc.selection.selectAllChildren(containerScope)
+        return true
+      }
+      if (this._isInsideAbsoluteObject(containerScope)) return true
+    }
 
     const common = this._getBlockByIdSafe(sel.commonParent)
     if (!common) return true

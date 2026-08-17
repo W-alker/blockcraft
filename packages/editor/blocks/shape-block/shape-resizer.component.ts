@@ -113,6 +113,9 @@ export function calculateShapeResize(
   selector: 'shape-resizer',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: {
+    'data-bc-placement-pick-ignore': '',
+  },
   template: `
     @if (borderDraggable) {
       @for (edge of moveEdges; track edge) {

@@ -155,6 +155,58 @@ describe('estimateModelBlockHeight', () => {
     expect(estimateModelBlockHeight(doc as any, 'paragraph')).toBe(300)
   })
 
+  it('uses paragraph spacing and line height as model facts', () => {
+    const doc = createDoc({
+      root: block('root', BlockNodeType.root, {}, ['first', 'second']),
+      first: block('paragraph', BlockNodeType.editable, {
+        lh: 2,
+        psa: 6,
+        pis: 72,
+        pti: 24,
+      }),
+      second: block('paragraph', BlockNodeType.editable, {psb: 12}),
+    })
+    doc.model.getTextLength = (id: string) => id === 'first' ? 200 : 0
+    doc.objectSizing.rootContentWidth = 400
+
+    const estimate = estimateModelBlockHeightDetails(doc as any, 'first')
+
+    expect(estimate.modelDriven).toBeTrue()
+    // Four 32px lines plus max(6pt after, 12pt before) = 16 CSS px.
+    expect(estimate.height).toBe(144)
+  })
+
+  it('multiplies model-only line height and wrapping width by pfs', () => {
+    const doc = createDoc({
+      paragraph: {
+        ...block('paragraph', BlockNodeType.editable, {pfs: 2}),
+        deltas: [{insert: 'a'.repeat(200)}],
+      },
+    })
+    doc.objectSizing.rootContentWidth = 400
+
+    const estimate = estimateModelBlockHeightDetails(doc as any, 'paragraph')
+
+    // Eight wrapped lines at the doubled 48px line height.
+    expect(estimate).toEqual({height: 384, modelDriven: true})
+  })
+
+  it('keeps explicit before and after spacing on a final paragraph', () => {
+    const doc = createDoc({
+      root: block('root', BlockNodeType.root, {}, ['paragraph']),
+      paragraph: block('paragraph', BlockNodeType.editable, {
+        psb: 6,
+        psa: 12,
+      }),
+    })
+
+    const estimate = estimateModelBlockHeightDetails(doc as any, 'paragraph')
+
+    expect(estimate.modelDriven).toBeTrue()
+    // 38px fallback content + 8px before + 16px after.
+    expect(estimate.height).toBe(62)
+  })
+
   it('reserves model height for wrapped inline shapes and WordArt', () => {
     const shapeDoc = createDoc({
       paragraph: {
@@ -314,6 +366,35 @@ describe('estimateModelBlockHeight', () => {
               wrap: true,
               side: 'auto',
               x: 0.375,
+              gap: 12,
+            },
+          },
+        ],
+      },
+    })
+    doc.objectSizing.resolve.and.returnValue(null)
+    doc.objectSizing.rootContentWidth = 400
+
+    expect(estimateModelBlockHeight(doc as any, 'paragraph')).toBe(108)
+  })
+
+  it('ignores stale side metadata when estimating a wrapped shape', () => {
+    const doc = createDoc({
+      paragraph: {
+        flavour: 'paragraph',
+        nodeType: BlockNodeType.editable,
+        props: {},
+        children: [],
+        deltas: [
+          {insert: '字'.repeat(120)},
+          {
+            insert: {shape: '{}'},
+            attributes: {
+              width: 100,
+              height: 96,
+              wrap: true,
+              side: 'left',
+              x: 0.1,
               gap: 12,
             },
           },

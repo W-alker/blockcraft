@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-15
+> Last updated: 2026-08-17
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -642,6 +642,7 @@ interface DocConfig {
   layoutMetrics?: {                       // resolved document typography in CSS px
     baseFontSize?: number                 // --bc-fs; measured once when omitted
     lineHeight?: number                   // resolved root line-box height
+    segmentGap?: number                   // --bc-segments-gap; non-negative
   }
   virtualization?: VirtualizationConfig   // root-child view virtualization; default disabled
   placement?: BlockPlacementConfig        // optional synchronous mode-transition adapter
@@ -654,15 +655,15 @@ is therefore never exposed as the initialized document policy; immediate model
 writes from initialization observers are accepted or rejected against
 `DocConfig.readonly`.
 
-`layoutMetrics` is the document-wide typography source for model-first height
+`layoutMetrics` is the document-wide typography/spacing source for model-first height
 projection. When omitted, BlockCraft reads the initialized root's computed
-`font-size` and `line-height` exactly once. Estimators never call
+`font-size`, `line-height` and `--bc-segments-gap` exactly once. Estimators never call
 `getComputedStyle()` themselves. A host that changes `--bc-fs` / `--bc-lh`
 after initialization must use one of the explicit refresh paths:
 
 ```typescript
 // Make the supplied pixel metrics authoritative and update the root CSS vars.
-doc.updateLayoutMetrics({baseFontSize: 18, lineHeight: 27})
+doc.updateLayoutMetrics({baseFontSize: 18, lineHeight: 27, segmentGap: 10})
 
 // Or change CSS externally first, then perform one deliberate computed read.
 doc.refreshLayoutMetrics()
@@ -671,7 +672,9 @@ doc.refreshLayoutMetrics()
 Both APIs invalidate continuous virtualization and sparse pagination estimates;
 mounted blocks still converge through their normal `ResizeObserver` path.
 Schema `metadata.virtualization.estimateHeight(context)` callbacks receive the
-same `baseFontSize` and `lineHeight` facts alongside `rootContentWidth`.
+same `baseFontSize`, `lineHeight` and `segmentGap` facts alongside
+`rootContentWidth`. Paragraph `lh/psb/psa` changes invalidate the
+model-first estimate; no estimator reads DOM or materializes offscreen deltas.
 
 `blockMutationPolicy` is a host-owned document invariant evaluated before a
 Yjs mutation or undo/redo replay. Its operation is one of `delete`, `move`,

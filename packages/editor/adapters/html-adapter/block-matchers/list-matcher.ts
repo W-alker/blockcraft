@@ -6,6 +6,11 @@ import {
   editableTypographyFromHtml,
   editableTypographyToHtmlProperties,
 } from '../typography';
+import {
+  orderedListHtmlProperties,
+  orderedListTypeForProps,
+  orderedMarkerFromHtml,
+} from '../ordered-marker';
 
 const listBlockFlavour = ['bullet', 'ordered', 'todo']
 
@@ -40,9 +45,11 @@ export const listBlockAdapterMatcher: BlockHtmlAdapterMatcher = {
         o.next.properties['bc:depth'] = depth
       }
 
-      const parentList = o.parent?.node as unknown as Element;
+      const parentList = o.parent && HastUtils.isElement(o.parent.node)
+        ? o.parent.node as Element
+        : undefined;
       let listType = 'bullet';
-      if (parentList.tagName === 'ol') {
+      if (parentList?.tagName === 'ol') {
         listType = 'ordered';
       }
 
@@ -54,6 +61,7 @@ export const listBlockAdapterMatcher: BlockHtmlAdapterMatcher = {
           depth,
           order: listType === 'ordered' ? o.index : undefined,
           ...editableTypographyFromHtml(o.node),
+          ...(listType === 'ordered' ? orderedMarkerFromHtml(parentList) : {}),
         },
         meta: {},
         children: deltaConverter.astToDelta(HastUtils.getInlineOnlyElementAST(o.node))
@@ -117,15 +125,21 @@ export const listBlockAdapterMatcher: BlockHtmlAdapterMatcher = {
 
       const listTag = o.node.flavour === 'ordered' ? 'ol' : 'ul';
       const currentTNode = walkerContext.currentNode() as unknown as Element | undefined;
+      const desiredListType = o.node.flavour === 'ordered'
+        ? orderedListTypeForProps(o.node.props)
+        : null;
       const isInMatchingList = currentTNode?.type === 'element'
-        && currentTNode?.tagName === listTag;
+        && currentTNode?.tagName === listTag
+        && (currentTNode.properties?.['type'] ?? null) === desiredListType;
 
       if (!isInMatchingList) {
         walkerContext.openNode(
           {
             type: 'element',
             tagName: listTag,
-            properties: {},
+            properties: o.node.flavour === 'ordered'
+              ? orderedListHtmlProperties(o.node.props)
+              : {},
             children: [],
           },
           'children'
@@ -136,7 +150,9 @@ export const listBlockAdapterMatcher: BlockHtmlAdapterMatcher = {
         {
           type: 'element',
           tagName: 'li',
-          properties: editableTypographyToHtmlProperties(o.node.props),
+          properties: {
+            ...editableTypographyToHtmlProperties(o.node.props),
+          },
           children: liChildren,
         },
         'children'
@@ -149,8 +165,14 @@ export const listBlockAdapterMatcher: BlockHtmlAdapterMatcher = {
       const nextListTag = next && listBlockFlavour.includes(next.flavour)
         ? (next.flavour === 'ordered' ? 'ol' : 'ul')
         : null;
+      const currentListType = o.node.flavour === 'ordered'
+        ? orderedListTypeForProps(o.node.props)
+        : null;
+      const nextListType = next?.flavour === 'ordered'
+        ? orderedListTypeForProps(next.props)
+        : null;
 
-      if (nextListTag !== listTag) {
+      if (nextListTag !== listTag || nextListType !== currentListType) {
         walkerContext.closeNode();
       }
     },

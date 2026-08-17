@@ -577,18 +577,6 @@ describe('ImgToolbarPlugin inline-image interaction', () => {
     h.destroy();
   });
 
-  it('changes which side receives wrapped text without resetting x', () => {
-    const h = makeHarness(false, true);
-    h.plugin.init();
-    h.image.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, button: 0}));
-
-    h.toolbarClicks.next({name: 'inline-wrap-side', value: 'left'});
-
-    expect(h.paragraphBlock.formatText)
-      .toHaveBeenCalledOnceWith(1, 1, {side: 'left'});
-    h.destroy();
-  });
-
   it('moves a translucent proxy in x/y while the committed frame stays put', fakeAsync(() => {
     const h = makeHarness(false, true);
     h.plugin.init();

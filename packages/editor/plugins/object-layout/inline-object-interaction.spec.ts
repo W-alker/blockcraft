@@ -89,6 +89,7 @@ describe('InlineObjectInteractionController', () => {
       setInlineRange,
     } as any
     const onItemClicked = new Subject<any>()
+    const setInput = jasmine.createSpy('setInput')
     const overlayRef = {
       overlayElement: document.createElement('div'),
       dispose: jasmine.createSpy('dispose'),
@@ -104,7 +105,7 @@ describe('InlineObjectInteractionController', () => {
         createConnectedOverlay: () => ({
           overlayRef,
           componentRef: {
-            setInput: jasmine.createSpy('setInput'),
+            setInput,
             instance: {onItemClicked},
           },
         }),
@@ -129,6 +130,7 @@ describe('InlineObjectInteractionController', () => {
     expect(setInlineRange).toHaveBeenCalledOnceWith(3, 1)
     expect(shell.classList.contains('bc-inline-object-shell--selected'))
       .toBeTrue()
+    expect(setInput).not.toHaveBeenCalledWith('side', jasmine.anything())
     controller.destroy()
     onItemClicked.complete()
     root.remove()
@@ -157,16 +159,19 @@ describe('InlineObjectInteractionController', () => {
             {shapeType: 'star'},
             [{insert: '重点'}],
             wrapped
-              ? {wrap: true, side: 'auto', x: 0.2, gap: 12}
+              ? {wrap: true, x: 0.2, gap: 12}
               : undefined,
           )
         : createInlineWordArtDelta(
             {fontSize: 48},
             [{insert: '艺术字'}],
             wrapped
-              ? {wrap: true, side: 'auto', x: 0.2, gap: 12}
+              ? {wrap: true, x: 0.2, gap: 12}
               : undefined,
           )
+      if (wrapped) {
+        delta.attributes = {...delta.attributes, side: 'left'}
+      }
       const deltas = [{insert: 'abc'}, delta]
       const releaseLayoutFreeze = jasmine.createSpy('releaseLayoutFreeze')
       const releaseViewLease = jasmine.createSpy('releaseViewLease')
@@ -256,11 +261,29 @@ describe('InlineObjectInteractionController', () => {
       }))
 
       ;(controller as any)._onPointerDown(event)
+      expect(document.querySelector(
+        '[data-bc-inline-object-drag-proxy]',
+      )).toBeNull()
+      window.dispatchEvent(new PointerEvent('pointerup', {
+        clientX: 120,
+        clientY: 40,
+        pointerId: 7,
+      }))
+      expect(document.querySelector(
+        '[data-bc-inline-object-drag-proxy]',
+      )).toBeNull()
+      expect(applyTextDelta).not.toHaveBeenCalled()
+
+      setInlineRange.calls.reset()
+      ;(controller as any)._onPointerDown(event)
       window.dispatchEvent(new PointerEvent('pointermove', {
         clientX: 220,
         clientY: 80,
         pointerId: 7,
       }))
+      expect(document.querySelector(
+        '[data-bc-inline-object-drag-proxy]',
+      )).not.toBeNull()
       window.dispatchEvent(new PointerEvent('pointerup', {
         clientX: 220,
         clientY: 80,
@@ -276,6 +299,7 @@ describe('InlineObjectInteractionController', () => {
         expect(operations[1].attributes['wrap']).toBeTrue()
         expect(operations[1].attributes['x']).toBeGreaterThan(0.2)
         expect(operations[1].attributes['x']).toBeLessThanOrEqual(0.4)
+        expect(operations[1].attributes['side']).toBeUndefined()
       } else {
         expect(operations[1].attributes['wrap']).toBeUndefined()
         expect(operations[1].attributes['x']).toBeUndefined()

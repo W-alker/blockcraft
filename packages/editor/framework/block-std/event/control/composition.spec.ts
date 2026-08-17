@@ -113,6 +113,51 @@ describe("CompositionControl stale session recovery", () => {
     h.destroy();
   });
 
+  it("keeps composition active when the native caret is restored before reset", async () => {
+    const h = createHarness();
+    h.start();
+
+    h.setNativeCursor(h.editB, 1);
+    document.dispatchEvent(new Event("selectionchange"));
+    h.setNativeCursor(h.editA, 2);
+    document.dispatchEvent(new Event("selectionchange"));
+
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect(h.control.isComposing).toBeTrue();
+    h.destroy();
+  });
+
+  it("rechecks the restored native caret before a queued reset runs", async () => {
+    const h = createHarness();
+    h.start();
+
+    h.setNativeCursor(h.editB, 1);
+    document.dispatchEvent(new Event("selectionchange"));
+    h.setNativeCursor(h.editA, 2);
+
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect(h.control.isComposing).toBeTrue();
+    h.destroy();
+  });
+
+  it("does not treat a different host with the same block id as restored", async () => {
+    const h = createHarness();
+    h.start();
+    const clonedHost = document.createElement("p");
+    clonedHost.dataset["blockId"] = "a";
+    const clonedEdit = document.createElement("span");
+    clonedEdit.textContent = "clone";
+    clonedHost.appendChild(clonedEdit);
+    h.root.appendChild(clonedHost);
+
+    h.setNativeCursor(clonedEdit, 2);
+    document.dispatchEvent(new Event("selectionchange"));
+
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect(h.control.isComposing).toBeFalse();
+    h.destroy();
+  });
+
   it("recovers on a new primary pointer intent", () => {
     const h = createHarness();
     h.start();

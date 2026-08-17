@@ -110,3 +110,66 @@ bc-virtual-float-toolbar {
   }
 
 }
+
+// CSES submenu already owns the popup surface. Keep BlockCraft's vertical
+// picker as content only so responsive fixed-toolbar submenus render one card.
+.bc-fixed-toolbar-submenu .cs-submenu-panel {
+  bc-float-toolbar .bc-float-toolbar__wrapper {
+    background: transparent;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}
+
+.bc-fixed-toolbar-dropdown {
+  max-inline-size: calc(100vw - 24px);
+
+  // CSES defaults standard dropdowns to 3 * interactive-xl (about 288px).
+  // Fixed-toolbar menus instead start at the matched trigger width and only
+  // expand when their intrinsic content genuinely needs more room.
+  .cs-dropdown-standard-menu {
+    min-inline-size: 100%;
+  }
+
+  .cs-dropdown-standard-menu > bc-float-toolbar {
+    display: block;
+    box-sizing: border-box;
+    min-inline-size: 100%;
+  }
+}
+
+.bc-fixed-toolbar-dropdown .cs-dropdown-standard-menu > bc-float-toolbar,
+.bc-fixed-toolbar-submenu .cs-submenu-panel > bc-float-toolbar {
+  .bc-float-toolbar__wrapper[data-direction="column"] {
+    scrollbar-color: color-mix(
+      in srgb,
+      var(--bc-float-toolbar-divider-color) 72%,
+      transparent
+    ) transparent;
+    scrollbar-width: thin;
+
+    &::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      border: 2px solid transparent;
+      border-radius: 999px;
+      background: color-mix(
+        in srgb,
+        var(--bc-float-toolbar-divider-color) 72%,
+        transparent
+      );
+      background-clip: padding-box;
+    }
+
+    &::-webkit-scrollbar-thumb:hover {
+      background: var(--bc-float-toolbar-divider-color);
+      background-clip: padding-box;
+    }
+  }
+}

@@ -11,7 +11,6 @@ import {
   BcFloatToolbarItemComponent,
 } from '../../components'
 import {BLOCK_OBJECT_LAYOUT_OPTIONS} from '../../framework'
-import type {InlineObjectWrapSide} from '../../blocks'
 export const INLINE_OBJECT_WRAP_LAYOUT_OPTION = {
   value: 'wrap',
   label: '四周型环绕',
@@ -23,16 +22,6 @@ const INLINE_OBJECT_LAYOUT_OPTIONS = [
   INLINE_OBJECT_WRAP_LAYOUT_OPTION,
   ...BLOCK_OBJECT_LAYOUT_OPTIONS.slice(1),
 ] as const
-
-const INLINE_OBJECT_WRAP_SIDE_OPTIONS: readonly {
-  value: InlineObjectWrapSide
-  label: string
-  icon: string
-}[] = [
-  {value: 'auto', label: '自动环绕', icon: 'bc_duiqifangshi'},
-  {value: 'left', label: '文字在左', icon: 'bc_tupianjuyou'},
-  {value: 'right', label: '文字在右', icon: 'bc_tupianjuzuo'},
-]
 
 @Component({
   selector: 'bc-inline-object-toolbar',
@@ -56,18 +45,6 @@ const INLINE_OBJECT_WRAP_SIDE_OPTIONS: readonly {
           [attr.aria-label]="item.label"
           [active]="item.value === layout" />
       }
-      @if (layout === 'wrap') {
-        <span class="bc-float-toolbar__divider"></span>
-        @for (item of wrapSideOptions; track item.value) {
-          <bc-float-toolbar-item
-            [icon]="item.icon"
-            name="inline-wrap-side"
-            [value]="item.value"
-            [csTooltip]="item.label"
-            [attr.aria-label]="item.label"
-            [active]="item.value === side" />
-        }
-      }
     </bc-float-toolbar>
   `,
   styles: [`
@@ -84,11 +61,9 @@ const INLINE_OBJECT_WRAP_SIDE_OPTIONS: readonly {
 export class InlineObjectToolbarComponent {
   @Input() label = '对象'
   @Input() layout: 'inline' | 'wrap' = 'inline'
-  @Input() side: InlineObjectWrapSide = 'auto'
 
   @Output()
   readonly onItemClicked = new EventEmitter<BcFloatToolbarItemComponent>()
 
   protected readonly layoutOptions = INLINE_OBJECT_LAYOUT_OPTIONS
-  protected readonly wrapSideOptions = INLINE_OBJECT_WRAP_SIDE_OPTIONS
 }

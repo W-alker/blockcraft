@@ -4,7 +4,7 @@
 >
 > For inline system internals, see L2: `blockcraft-inline.md`
 >
-> Last updated: 2026-08-14
+> Last updated: 2026-08-17
 
 ## What is an Inline Embed?
 
@@ -128,8 +128,9 @@ the shell remains the atomic Embed and, while wrapped, owns the float exclusion
 geometry. `InlineRuntime` contains the float by deriving
 `data-bc-inline-float-owner` on the editable container. When
 `ImgToolbarPlugin` is registered, clicking this default shell exposes
-proportional resize handles, the ordinary/wrapped layout switch, text-side
-controls and reverse block conversion. Horizontal Pointer Events dragging
+proportional resize handles, the ordinary/wrapped layout switch and reverse
+block conversion. The toolbar does not expose automatic/left/right text-side
+actions. Horizontal Pointer Events dragging
 uses a body-level inert x/y proxy while the committed frame stays fixed;
 pointerup may update normalized `x` and move the one-length Delta anchor in the
 same or another compatible editable block through one Yjs transaction. The
@@ -284,20 +285,26 @@ const doc = new BlockCraftDoc({
 
 Both payloads are JSON strings because `DeltaInsertEmbed` values stay within
 the primitive `SimpleBasicType` contract. Short Delta attributes carry
-`width/height` and optional `wrap/side/x/gap`, allowing the shared float layout
-and model-only virtualization estimator to work without parsing presentation
-payloads. Each object remains one model unit.
+`width/height`; Shape and WordArt wrapping add `wrap/x/gap`. This lets the
+shared float layout and model-only virtualization estimator work without
+parsing presentation payloads. Each object remains one model unit.
+`InlineShapeData` and `InlineWordArtData` have no `side`;
+`createInlineShapeDelta(..., wrapOptions)` and
+`createInlineWordArtDelta(..., wrapOptions)` accept their exported
+Shape/WordArt wrap-option types. Incoming `side` metadata is ignored.
 
 The generated view uses
 `.bc-inline-object-shell[data-bc-inline-object="shape|word-art"]` and
 `.bc-inline-object-frame[data-bc-inline-float-frame]`. A wrapped shell also
 projects `data-bc-inline-float-layout="wrap"`. Clicking it calls
 `EditableBlockComponent.setInlineRange(offset, 1)`, keeping copy/cut and native
-selection aligned. The inline toolbar changes layout and text side; detailed
+selection aligned. Both toolbars change only layout: **四周型环绕** always uses
+automatic text wrapping and exposes no text-side controls. Detailed
 shape/WordArt editing is restored by converting back to a block.
 
 HTML uses a `<span data-bc-inline-object>` with the lossless payload and wrap
-metadata. Markdown deliberately emits only readable object text.
+metadata. Shape and WordArt HTML omit `data-bc-wrap-side`. Markdown deliberately
+emits only readable object text.
 
 ## Checklist
 

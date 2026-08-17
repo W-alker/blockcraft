@@ -82,11 +82,86 @@ describe("SelectionSelectedManager", () => {
     } as any);
 
     manager.setSelected({
+      start: {blockId: block.id, type: "selected"},
+      end: {blockId: block.id, type: "selected"},
+      collapsed: false,
       getBoundarySelectedChildIds: () => [block.id],
     } as any);
 
     expect(hostElement.classList.contains("focused")).toBeTrue();
     expect(hostElement.classList.contains("selected")).toBeFalse();
+  });
+
+  it("keeps one editable surface focused for a same-block text range", () => {
+    const hostElement = document.createElement("div");
+    const block = {
+      id: "code-1",
+      nodeType: BlockNodeType.editable,
+      hostElement,
+    };
+    const manager = new SelectionSelectedManager({
+      getBlockById: () => block,
+    } as any);
+
+    manager.setSelected({
+      start: {blockId: block.id, type: "text", offset: 1},
+      end: {blockId: block.id, type: "text", offset: 4},
+      collapsed: false,
+      getBoundarySelectedChildIds: () => [block.id],
+    } as any);
+
+    expect(hostElement.classList.contains("focused")).toBeTrue();
+    expect(hostElement.classList.contains("selected")).toBeFalse();
+  });
+
+  it("does not add block pseudo-selection to a mixed selected-to-text range", () => {
+    const selectedHost = document.createElement("div");
+    const textHost = document.createElement("p");
+    const blocks: Record<string, any> = {
+      divider: {
+        id: "divider",
+        nodeType: BlockNodeType.void,
+        hostElement: selectedHost,
+      },
+      paragraph: {
+        id: "paragraph",
+        nodeType: BlockNodeType.editable,
+        hostElement: textHost,
+      },
+    };
+    const manager = new SelectionSelectedManager({
+      getBlockById: (id: string) => blocks[id],
+    } as any);
+
+    manager.setSelected({
+      start: {blockId: "divider", type: "selected"},
+      end: {blockId: "paragraph", type: "text", offset: 2},
+      collapsed: false,
+      getBoundarySelectedChildIds: () => ["divider", "paragraph"],
+    } as any);
+
+    expect(selectedHost.classList.contains("selected")).toBeFalse();
+    expect(textHost.classList.contains("focused")).toBeFalse();
+
+    manager.setSelected({
+      start: {blockId: "paragraph", type: "text", offset: 1},
+      end: {blockId: "divider", type: "selected"},
+      collapsed: false,
+      getBoundarySelectedChildIds: () => ["paragraph", "divider"],
+    } as any);
+
+    expect(selectedHost.classList.contains("selected")).toBeFalse();
+    expect(textHost.classList.contains("focused")).toBeFalse();
+
+    manager.setSelected({
+      start: {blockId: "divider", type: "selected"},
+      end: {blockId: "paragraph", type: "selected"},
+      collapsed: false,
+      getBoundarySelectedChildIds: () => ["divider", "paragraph"],
+    } as any);
+
+    expect(selectedHost.classList.contains("selected")).toBeTrue();
+    expect(textHost.classList.contains("focused")).toBeTrue();
   });
 
   it("paints every fully covered inline embed and clears stale selection state", () => {
@@ -121,14 +196,23 @@ describe("SelectionSelectedManager", () => {
     } as any);
     let selectedStart = 1;
     let selectedEnd = 3;
-    const selection = () => ({
-      collapsed: selectedStart === selectedEnd,
-      contains: (blockId: string, offset?: number) => blockId === block.id &&
-        offset !== undefined &&
-        offset >= selectedStart &&
-        offset <= selectedEnd,
-      getBoundarySelectedChildIds: () => [block.id],
-    } as any);
+    const selection = () => {
+      const collapsed = selectedStart === selectedEnd;
+      return {
+        start: collapsed
+          ? {blockId: block.id, type: "text", offset: selectedStart}
+          : {blockId: "root", type: "boundary", index: 0},
+        end: collapsed
+          ? {blockId: block.id, type: "text", offset: selectedEnd}
+          : {blockId: "root", type: "boundary", index: 1},
+        collapsed,
+        contains: (blockId: string, offset?: number) => blockId === block.id &&
+          offset !== undefined &&
+          offset >= selectedStart &&
+          offset <= selectedEnd,
+        getBoundarySelectedChildIds: () => [block.id],
+      } as any;
+    };
     const icon = hostElement.querySelector<HTMLElement>("i[data-icon]")!;
     const embedBlots = hostElement.querySelectorAll<HTMLElement>("c-element");
     const iconBlot = icon.closest<HTMLElement>("c-element")!;
@@ -140,6 +224,7 @@ describe("SelectionSelectedManager", () => {
 
     expect(iconBlot.classList.contains("bc-inline-embed--selected")).toBeTrue();
     expect(mentionBlot.classList.contains("bc-inline-embed--selected")).toBeTrue();
+    expect(hostElement.classList.contains("focused")).toBeFalse();
     expect(icon.className).toBe("csicon csicon-add-circle-filled");
 
     selectedStart = 2;
@@ -215,7 +300,7 @@ describe("SelectionSelectedManager", () => {
     expect(mountedClassList.add).toHaveBeenCalledOnceWith("focused");
   });
 
-  it("replays a long boundary selection only across the currently mounted roots", () => {
+  it("does not add block pseudo selection while a boundary range remounts", () => {
     const ids = ["p0", "p1", "p2"];
     const mounted = new Set(["p0", "p2"]);
     const classLists = Object.fromEntries(ids.map(id => [id, {
@@ -249,16 +334,168 @@ describe("SelectionSelectedManager", () => {
     const manager = new SelectionSelectedManager(doc as any);
 
     manager.setSelected(selection, ["p0", "p2"]);
-    expect(classLists["p0"].add).toHaveBeenCalledOnceWith("focused");
+    expect(classLists["p0"].add).not.toHaveBeenCalled();
     expect(classLists["p1"].add).not.toHaveBeenCalled();
-    expect(classLists["p2"].add).toHaveBeenCalledOnceWith("focused");
+    expect(classLists["p2"].add).not.toHaveBeenCalled();
 
     mounted.delete("p0");
     mounted.add("p1");
     manager.setSelected(selection, ["p1", "p2"]);
-    expect(classLists["p0"].remove).toHaveBeenCalledOnceWith("focused");
-    expect(classLists["p1"].add).toHaveBeenCalledOnceWith("focused");
-    expect(classLists["p2"].add).toHaveBeenCalledTimes(1);
+    expect(classLists["p0"].remove).not.toHaveBeenCalled();
+    expect(classLists["p1"].add).not.toHaveBeenCalled();
+    expect(classLists["p2"].add).not.toHaveBeenCalled();
+  });
+
+  it("keeps native-backed ranges free of generic block pseudo-selection", () => {
+    const ids = [
+      "callout-a", "nested-paragraph-a", "nested-divider-a",
+      "paragraph-a", "divider-a",
+      "callout-b", "nested-paragraph-b", "nested-divider-b",
+      "paragraph-b", "divider-b",
+      "placement-layout", "absolute-object",
+    ];
+    const childrenById: Record<string, string[]> = {
+      root: [
+        "callout-a", "paragraph-a", "divider-a",
+        "callout-b", "paragraph-b", "divider-b",
+        "placement-layout",
+      ],
+      "callout-a": ["nested-paragraph-a", "nested-divider-a"],
+      "callout-b": ["nested-paragraph-b", "nested-divider-b"],
+      "nested-paragraph-a": [],
+      "nested-paragraph-b": [],
+      "nested-divider-a": [],
+      "nested-divider-b": [],
+      "paragraph-a": [],
+      "paragraph-b": [],
+      "divider-a": [],
+      "divider-b": [],
+      "placement-layout": ["absolute-object"],
+      "absolute-object": [],
+    };
+    const parentById: Record<string, string | null> = {
+      root: null,
+      "callout-a": "root",
+      "callout-b": "root",
+      "nested-paragraph-a": "callout-a",
+      "nested-divider-a": "callout-a",
+      "nested-paragraph-b": "callout-b",
+      "nested-divider-b": "callout-b",
+      "paragraph-a": "root",
+      "divider-a": "root",
+      "paragraph-b": "root",
+      "divider-b": "root",
+      "placement-layout": "root",
+      "absolute-object": "placement-layout",
+    };
+    const nodeTypeById: Record<string, BlockNodeType> = {
+      "callout-a": BlockNodeType.block,
+      "callout-b": BlockNodeType.block,
+      "nested-paragraph-a": BlockNodeType.editable,
+      "nested-paragraph-b": BlockNodeType.editable,
+      "nested-divider-a": BlockNodeType.void,
+      "nested-divider-b": BlockNodeType.void,
+      "paragraph-a": BlockNodeType.editable,
+      "paragraph-b": BlockNodeType.editable,
+      "divider-a": BlockNodeType.void,
+      "divider-b": BlockNodeType.void,
+      "placement-layout": BlockNodeType.block,
+      "absolute-object": BlockNodeType.void,
+    };
+    const hosts = Object.fromEntries(ids.map(id => [id, document.createElement("div")]));
+    const blocks = Object.fromEntries(ids.map(id => [id, {
+      id,
+      nodeType: nodeTypeById[id],
+      hostElement: hosts[id],
+      childrenIds: childrenById[id],
+      childrenLength: childrenById[id].length,
+    }]));
+    const mounted = new Set([
+      "callout-a", "nested-paragraph-a", "nested-divider-a",
+      "paragraph-a", "divider-a",
+      "placement-layout", "absolute-object",
+    ]);
+    const pathOf = (id: string): string[] => {
+      const path = [id];
+      let parent = parentById[id];
+      while (parent) {
+        path.unshift(parent);
+        parent = parentById[parent];
+      }
+      return path;
+    };
+    const doc = {
+      model: {
+        getChildrenIds: (id: string) => childrenById[id] ?? [],
+        getParentId: (id: string) => parentById[id] ?? null,
+        getPath: pathOf,
+        indexInParent: (id: string) => {
+          const parent = parentById[id];
+          return parent ? childrenById[parent].indexOf(id) : -1;
+        },
+      },
+      vm: {isMounted: (id: string) => mounted.has(id)},
+      placement: {
+        isPlacementLayout: (id: string) => id === "placement-layout",
+      },
+      getBlockById: (id: string) => blocks[id],
+      queryBlocksBetween: jasmine.createSpy("queryBlocksBetween"),
+    };
+    const selection = {
+      start: {blockId: "root", type: "boundary", index: 0},
+      end: {blockId: "root", type: "boundary", index: 7},
+      getTableCellSelection: () => null,
+      collapsed: false,
+    } as any;
+    const manager = new SelectionSelectedManager(doc as any);
+
+    manager.setSelected(selection, [
+      "callout-a", "paragraph-a", "divider-a", "placement-layout",
+    ]);
+
+    expect(hosts["callout-a"].classList.contains("selected")).toBeFalse();
+    expect(hosts["nested-paragraph-a"].classList.contains("focused")).toBeFalse();
+    expect(hosts["nested-divider-a"].classList.contains("selected")).toBeFalse();
+    expect(hosts["paragraph-a"].classList.contains("focused")).toBeFalse();
+    expect(hosts["divider-a"].classList.contains("selected")).toBeFalse();
+    expect(hosts["placement-layout"].classList.contains("selected")).toBeFalse();
+    expect(hosts["absolute-object"].classList.contains("selected")).toBeFalse();
+
+    mounted.clear();
+    mounted.add("callout-b");
+    mounted.add("nested-paragraph-b");
+    mounted.add("nested-divider-b");
+    mounted.add("paragraph-b");
+    mounted.add("divider-b");
+    mounted.add("placement-layout");
+    mounted.add("absolute-object");
+    manager.setSelected(selection, [
+      "callout-b", "paragraph-b", "divider-b", "placement-layout",
+    ]);
+
+    expect(hosts["paragraph-a"].classList.contains("focused")).toBeFalse();
+    expect(hosts["divider-a"].classList.contains("selected")).toBeFalse();
+    expect(hosts["callout-b"].classList.contains("selected")).toBeFalse();
+    expect(hosts["nested-paragraph-b"].classList.contains("focused")).toBeFalse();
+    expect(hosts["nested-divider-b"].classList.contains("selected")).toBeFalse();
+    expect(hosts["paragraph-b"].classList.contains("focused")).toBeFalse();
+    expect(hosts["divider-b"].classList.contains("selected")).toBeFalse();
+    expect(hosts["placement-layout"].classList.contains("selected")).toBeFalse();
+    expect(hosts["absolute-object"].classList.contains("selected")).toBeFalse();
+
+    manager.setSelected({
+      start: {blockId: "callout-b", type: "selected"},
+      end: {blockId: "callout-b", type: "selected"},
+      firstBlockId: "callout-b",
+      firstBlock: blocks["callout-b"],
+      isInSameBlock: true,
+      getTableCellSelection: () => null,
+      collapsed: false,
+    } as any, ["callout-b"]);
+
+    expect(hosts["callout-b"].classList.contains("selected")).toBeTrue();
+    expect(hosts["paragraph-b"].classList.contains("focused")).toBeFalse();
+    expect(hosts["divider-b"].classList.contains("selected")).toBeFalse();
   });
 
   it("does not mark column containers selected for cross-column text selections", () => {
@@ -374,8 +611,8 @@ describe("SelectionSelectedManager", () => {
 
     expect(column1Host.classList.contains("selected")).toBeFalse();
     expect(column2Host.classList.contains("selected")).toBeFalse();
-    expect(p1Host.classList.contains("focused")).toBeTrue();
-    expect(p2Host.classList.contains("focused")).toBeTrue();
+    expect(p1Host.classList.contains("focused")).toBeFalse();
+    expect(p2Host.classList.contains("focused")).toBeFalse();
     expect(doc.queryBlocksBetween).not.toHaveBeenCalled();
 
     rootHost.remove();
@@ -462,15 +699,15 @@ describe("SelectionSelectedManager", () => {
     manager.setSelected(selection as any);
 
     expect(calloutHost.classList.contains("selected")).toBeFalse();
-    expect(calloutTextHost.classList.contains("focused")).toBeTrue();
-    expect(outsideTextHost.classList.contains("focused")).toBeTrue();
+    expect(calloutTextHost.classList.contains("focused")).toBeFalse();
+    expect(outsideTextHost.classList.contains("focused")).toBeFalse();
     expect(doc.queryBlocksThroughPathDeeply).toHaveBeenCalledOnceWith(calloutText, outsideText);
     expect(doc.queryBlocksBetween).not.toHaveBeenCalled();
 
     rootHost.remove();
   });
 
-  it("marks the content blocks for a reversed mixed boundary-to-text selection", () => {
+  it("keeps a reversed mixed native range free of block pseudo-selection", () => {
     const rootHost = document.createElement("div");
     const calloutHost = document.createElement("section");
     const p1Host = document.createElement("p");
@@ -527,8 +764,8 @@ describe("SelectionSelectedManager", () => {
     expect(selection.lastBlock).toBe(p1 as any);
     expect(rootHost.classList.contains("selected")).toBeFalse();
     expect(rootHost.classList.contains("focused")).toBeFalse();
-    expect(calloutHost.classList.contains("selected")).toBeTrue();
-    expect(p1Host.classList.contains("focused")).toBeTrue();
+    expect(calloutHost.classList.contains("selected")).toBeFalse();
+    expect(p1Host.classList.contains("focused")).toBeFalse();
     expect(doc.queryBlocksBetween).toHaveBeenCalledOnceWith(callout, p1, true);
 
     manager.setSelected(null);

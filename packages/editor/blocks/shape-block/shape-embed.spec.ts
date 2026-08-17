@@ -23,7 +23,6 @@ describe('inline shape embed', () => {
       placementLayer: 'under',
     }, [{insert: '流程图'}], {
       wrap: true,
-      side: 'left',
       x: 0.4,
       gap: 16,
     })
@@ -49,10 +48,27 @@ describe('inline shape embed', () => {
       width: 210,
       height: 130,
       wrap: true,
-      side: 'left',
       x: 0.4,
       gap: 16,
     }))
+    expect(roundTrip.attributes?.['side']).toBeUndefined()
+  })
+
+  it('drops legacy text-side metadata and always renders automatic wrapping', () => {
+    const delta = createInlineShapeDelta(
+      {shapeType: 'ellipse'},
+      [{insert: '旧形状'}],
+      {wrap: true, x: 0.2, gap: 12},
+    )
+    delta.attributes = {...delta.attributes, side: 'left'}
+
+    const view = inlineShapeEmbedConverter.toView(delta)
+    expect(view.dataset['bcInlineFloatSide']).toBe('auto')
+    expect(readInlineShapeDelta(delta)).not.toEqual(
+      jasmine.objectContaining({side: jasmine.anything()}),
+    )
+    expect(inlineShapeEmbedConverter.toDelta(view).attributes?.['side'])
+      .toBeUndefined()
   })
 
   it('renders open lines without a fill or editable text surface', () => {

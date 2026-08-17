@@ -269,7 +269,7 @@ export class TextBoxPresetPickerComponent {
   @Output()
   readonly pick = new EventEmitter<TextBoxPresetId>()
 
-  protected activeCategory: TextBoxPresetCategory = 'featured'
+  protected activeCategory: TextBoxPresetCategory = 'outline'
 
   /**
    * Shape tabs only. Direction is a frame flag applied on top of whichever

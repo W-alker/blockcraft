@@ -1,9 +1,5 @@
 import { TestBed } from "@angular/core/testing";
 import {
-  BcFloatToolbarItemComponent,
-  BcOverlayTriggerDirective,
-} from "../../components";
-import {
   normalizeWordArtProps,
   type WordArtBlockProps,
 } from "../../blocks/word-art-block";
@@ -44,7 +40,24 @@ describe("WordArtToolbarComponent", () => {
     ]);
   });
 
-  it("exposes local font and style menus with the semantic shadow icon", async () => {
+  it("switches one click-owned secondary panel without writing document data", () => {
+    const component = new WordArtToolbarComponent({} as any);
+    component.wordArtBlock = createBlock();
+    const panels: Array<string | null> = [];
+    const actions: WordArtToolbarAction[] = [];
+    component.panelChange.subscribe((panel) => panels.push(panel));
+    component.action.subscribe((action) => actions.push(action));
+
+    component.togglePanel("layout");
+    component.togglePanel("format");
+    component.togglePanel("format");
+
+    expect(panels).toEqual(["layout", "format", null]);
+    expect(component.activePanel).toBeNull();
+    expect(actions).toEqual([]);
+  });
+
+  it("renders a compact rail and the click-owned format sections", async () => {
     await TestBed.configureTestingModule({
       imports: [WordArtToolbarComponent],
     }).compileComponents();
@@ -55,47 +68,66 @@ describe("WordArtToolbarComponent", () => {
     });
     fixture.detectChanges();
     const host = fixture.nativeElement as HTMLElement;
+    const rail = host.querySelector<HTMLElement>(".word-art-toolbar__rail")!;
+    const panelButtons = rail.querySelectorAll<HTMLButtonElement>(
+      "button[aria-controls]",
+    );
 
     expect(host.querySelector("select")).toBeNull();
+    expect(Array.from(panelButtons).map((button) => button.ariaLabel)).toEqual([
+      "布局选项",
+      "艺术字格式",
+    ]);
+    expect(rail.querySelector('[aria-label="布局选项"] .bc_buju')).not.toBeNull();
     expect(
-      host.querySelectorAll(
-        "bc-float-toolbar-item.word-art-toolbar__menu-trigger",
-      ).length,
-    ).toBe(5);
+      rail.querySelector('[aria-label="艺术字格式"] .bc_yishuzishengcheng'),
+    ).not.toBeNull();
+    expect(host.querySelector("#bc-word-art-format-panel")).toBeNull();
+
+    panelButtons[1]!.click();
+    fixture.detectChanges();
+    const formatPanel = host.querySelector<HTMLElement>(
+      "#bc-word-art-format-panel",
+    )!;
+    expect(formatPanel).not.toBeNull();
+    expect(getComputedStyle(formatPanel).width).toBe("288px");
     expect(
-      host.querySelector('bc-float-toolbar-item[aria-label="艺术字预设"]'),
-    ).toBeNull();
-    expect(
-      host.querySelector('bc-float-toolbar-item[aria-label="艺术字字体"]'),
+      host.querySelector('cs-select[aria-label="艺术字字体"]'),
     ).not.toBeNull();
     expect(
-      host.querySelector('input[type="number"][min="8"][max="512"]'),
+      host.querySelector("cs-input-number"),
     ).not.toBeNull();
     expect(
-      host.querySelector('bc-float-toolbar-item[aria-label="艺术字填充类型"]'),
+      host.querySelector('cs-segmented[csarialabel="艺术字水平对齐"]'),
     ).not.toBeNull();
     expect(
-      host.querySelector('bc-float-toolbar-item[aria-label="艺术字效果"]'),
+      host.querySelector('cs-segmented[csarialabel="艺术字垂直对齐"]'),
+    ).not.toBeNull();
+    expect(host.querySelector("cs-slider")).not.toBeNull();
+    expect(host.querySelector("bc-float-toolbar-item")).toBeNull();
+
+    fixture.componentInstance.setFormatSection("fill");
+    fixture.detectChanges();
+    expect(
+      host.querySelector('cs-segmented[csarialabel="艺术字填充类型"]'),
+    ).not.toBeNull();
+    expect(host.querySelector("cs-color-picker")).not.toBeNull();
+
+    fixture.componentInstance.setFormatSection("effects");
+    fixture.detectChanges();
+    expect(
+      host.querySelector('cs-select[aria-label="艺术字效果"]'),
     ).not.toBeNull();
     expect(
-      host.querySelector(
-        'bc-float-toolbar-item[aria-label="水平对齐"] .bc_zuoduiqi',
-      ),
+      host.querySelector('.word-art-toolbar__label .bc_wenziyinying'),
     ).not.toBeNull();
-    expect(
-      host.querySelector(
-        'bc-float-toolbar-item[aria-label="垂直对齐"] .bc_juzhongduiqi1',
-      ),
-    ).not.toBeNull();
-    expect(
-      host.querySelector('button[aria-label="投影"] .bc_wenziyinying'),
-    ).not.toBeNull();
+    expect(host.querySelector("cs-switch")).not.toBeNull();
 
     fixture.destroy();
     TestBed.resetTestingModule();
   });
 
-  it("keeps special settings and object actions in two fixed rows", async () => {
+  it("keeps layouts in a secondary card instead of the primary rail", async () => {
     await TestBed.configureTestingModule({
       imports: [WordArtToolbarComponent],
     }).compileComponents();
@@ -103,29 +135,18 @@ describe("WordArtToolbarComponent", () => {
     fixture.componentInstance.wordArtBlock = createBlock();
     fixture.detectChanges();
     const host = fixture.nativeElement as HTMLElement;
-    const toolbar = host.querySelector<HTMLElement>(".word-art-toolbar")!;
-    const rows = toolbar.querySelectorAll<HTMLElement>(
-      ":scope > .word-art-toolbar__row",
-    );
 
-    expect(rows.length).toBe(2);
-    expect(getComputedStyle(toolbar).flexDirection).toBe("column");
-    expect(getComputedStyle(rows[0]).flexWrap).toBe("nowrap");
-    expect(getComputedStyle(rows[1]).flexWrap).toBe("nowrap");
-    expect(
-      rows[0].classList.contains("word-art-toolbar__row--special-settings"),
-    ).toBeTrue();
-    expect(rows[0].querySelector('[aria-label="艺术字效果"]')).not.toBeNull();
-    expect(rows[0].querySelector('[aria-label="水平对齐"]')).toBeNull();
-    expect(
-      rows[1].classList.contains("word-art-toolbar__row--object-actions"),
-    ).toBeTrue();
-    expect(rows[1].firstElementChild?.getAttribute("aria-label")).toBe(
-      "水平对齐",
-    );
-    expect(rows[1].lastElementChild?.getAttribute("aria-label")).toBe(
-      "删除艺术字",
-    );
+    expect(host.querySelector('[aria-label="嵌入型"]')).toBeNull();
+    host.querySelector<HTMLButtonElement>('[aria-label="布局选项"]')!.click();
+    fixture.detectChanges();
+    const layoutPanel = host.querySelector<HTMLElement>(
+      "#bc-word-art-layout-panel",
+    )!;
+    expect(layoutPanel).not.toBeNull();
+    expect(getComputedStyle(layoutPanel).width).toBe("288px");
+    expect(host.querySelector('[aria-label="嵌入型"]')).not.toBeNull();
+    expect(host.querySelector('[aria-label="四周型环绕"]')).not.toBeNull();
+    expect(host.querySelector('[aria-label="删除艺术字"]')).not.toBeNull();
 
     fixture.destroy();
     TestBed.resetTestingModule();
@@ -144,6 +165,7 @@ describe("WordArtToolbarComponent", () => {
     fixture.detectChanges();
     const host = fixture.nativeElement as HTMLElement;
 
+    expect(host.querySelector('[aria-label="布局选项"]')).toBeNull();
     expect(host.querySelector('[aria-label="上移一层"]')).toBeNull();
     expect(host.querySelector('[aria-label="下移一层"]')).toBeNull();
     expect(host.querySelector('[aria-label="嵌入型"]')).toBeNull();
@@ -153,36 +175,17 @@ describe("WordArtToolbarComponent", () => {
     TestBed.resetTestingModule();
   });
 
-  it("emits typed updates and closes every overlay menu", () => {
+  it("emits typed updates from the CSES controls", () => {
     const component = new WordArtToolbarComponent({} as any);
     component.wordArtBlock = createBlock();
     const actions: WordArtToolbarAction[] = [];
     component.action.subscribe((action) => actions.push(action));
-    const trigger = jasmine.createSpyObj<BcOverlayTriggerDirective>(
-      "BcOverlayTriggerDirective",
-      ["closePanel"],
-    );
 
-    component.selectFillType(
-      { value: "linear-gradient" } as BcFloatToolbarItemComponent,
-      trigger,
-    );
-    component.selectFontFamily(
-      { value: "slab-serif" } as BcFloatToolbarItemComponent,
-      trigger,
-    );
-    component.selectEffect(
-      { value: "slant-right" } as BcFloatToolbarItemComponent,
-      trigger,
-    );
-    component.selectHorizontalAlign(
-      { value: "right" } as BcFloatToolbarItemComponent,
-      trigger,
-    );
-    component.selectVerticalAlign(
-      { value: "bottom" } as BcFloatToolbarItemComponent,
-      trigger,
-    );
+    component.setFillType("linear-gradient");
+    component.setFontFamily("slab-serif");
+    component.setEffect("slant-right");
+    component.setHorizontalAlign("right");
+    component.setVerticalAlign("bottom");
 
     expect(actions[0]).toEqual({
       name: "update-props",
@@ -204,56 +207,34 @@ describe("WordArtToolbarComponent", () => {
       name: "update-props",
       value: { verticalAlign: "bottom" },
     });
-    expect(trigger.closePanel).toHaveBeenCalledTimes(5);
   });
 
-  it("matches the shape toolbar range progress without persisting on input", async () => {
-    await TestBed.configureTestingModule({
-      imports: [WordArtToolbarComponent],
-    }).compileComponents();
-    const fixture = TestBed.createComponent(WordArtToolbarComponent);
-    fixture.componentInstance.wordArtBlock = createBlock({
+  it("keeps CSES slider changes local until the interaction is committed", () => {
+    const component = new WordArtToolbarComponent({} as any);
+    component.wordArtBlock = createBlock({
       outlineWidthEm: 0.05,
       letterSpacingEm: 0.4,
     });
     const actions: WordArtToolbarAction[] = [];
-    fixture.componentInstance.action.subscribe((action) =>
-      actions.push(action),
-    );
-    fixture.detectChanges();
-    const host = fixture.nativeElement as HTMLElement;
-    const outline = host.querySelector<HTMLInputElement>(
-      'input[type="range"][aria-label="描边粗细"]',
-    )!;
-    const spacing = host.querySelector<HTMLInputElement>(
-      'input[type="range"][aria-label="字间距"]',
-    )!;
+    component.action.subscribe((action) => actions.push(action));
 
-    expect(outline.style.getPropertyValue("--word-art-range-progress")).toBe(
-      "25%",
-    );
-    expect(
-      Number.parseFloat(
-        spacing.style.getPropertyValue("--word-art-range-progress"),
-      ),
-    ).toBeCloseTo(50, 8);
-
-    outline.value = "0.1";
-    outline.dispatchEvent(new Event("input"));
-    expect(outline.style.getPropertyValue("--word-art-range-progress")).toBe(
-      "50%",
-    );
+    component.draftOutlineWidth(0.1);
+    component.draftLetterSpacing(0.6);
+    expect(component.outlineWidthValue).toBe(0.1);
+    expect(component.letterSpacingValue).toBe(0.6);
     expect(actions).toEqual([]);
 
-    outline.dispatchEvent(new Event("change"));
+    component.commitOutlineWidth();
+    component.commitLetterSpacing();
     expect(actions).toEqual([
       {
         name: "update-props",
         value: { outlineWidthEm: 0.1 },
       },
+      {
+        name: "update-props",
+        value: { letterSpacingEm: 0.6 },
+      },
     ]);
-
-    fixture.destroy();
-    TestBed.resetTestingModule();
   });
 });

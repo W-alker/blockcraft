@@ -6,8 +6,12 @@ import {
   normalizeDocumentFontSize,
   normalizeInlineFontScale,
   normalizeInlineLetterSpacing,
+  normalizeParagraphFontScale,
+  normalizeParagraphSpacing,
   normalizeTypographyLineHeight,
+  paragraphPointsToPixels,
   resolveTypographyFontFamily,
+  resolveEditableBlockFontScale,
 } from "./typography";
 
 describe("compact typography contract", () => {
@@ -32,12 +36,21 @@ describe("compact typography contract", () => {
   it("normalizes and bounds compact numeric values", () => {
     expect(normalizeInlineFontScale(1.23456)).toBe(1.235);
     expect(normalizeInlineFontScale(4)).toBeNull();
+    expect(normalizeParagraphFontScale(1.23456)).toBe(1.235);
+    expect(normalizeParagraphFontScale(4)).toBeNull();
     expect(normalizeInlineLetterSpacing(-0.1)).toBe(-0.1);
     expect(normalizeInlineLetterSpacing(0.6)).toBeNull();
     expect(normalizeDocumentFontSize(16)).toBe(16);
     expect(normalizeDocumentFontSize(9)).toBeNull();
     expect(normalizeTypographyLineHeight(1.75)).toBe(1.75);
     expect(normalizeTypographyLineHeight(0)).toBeNull();
+    expect(normalizeParagraphSpacing(12.3456)).toBe(12.346);
+    expect(normalizeParagraphSpacing(121)).toBeNull();
+    expect(paragraphPointsToPixels(12)).toBe(16);
+    expect(resolveEditableBlockFontScale({pfs: 1.5, heading: 2}, "paragraph"))
+      .toBeCloseTo(2.7, 6);
+    expect(resolveEditableBlockFontScale({pfs: 1.5}, "caption"))
+      .toBeCloseTo(1.35, 6);
   });
 
   it("provides dense relative scale and em letter-spacing presets", () => {

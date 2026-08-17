@@ -17,17 +17,23 @@ import {
   serializeTextBoxWordArtStyle,
   type TextBoxBlockProps,
 } from './index'
+import {ShapeResizerComponent} from '../shape-block'
 
 @Component({
   selector: 'text-box-focus-style-harness',
   standalone: true,
+  imports: [ShapeResizerComponent],
   template: `
     <div data-blockcraft-root="true">
-      <div class="text-box-block">
-        <div class="text-box-block__surface" style="width: 160px; height: 64px">
+      <div class="text-box-block text-box-block--editing">
+        <div
+          #surface
+          class="text-box-block__surface"
+          style="width: 160px; height: 64px">
           <div class="text-box-block__content" contenteditable="true">
-            <p style="flex: none; height: 240px; margin: 0">可滚动内容</p>
+            <p style="flex: none; height: 240px; margin: 0">裁剪内容</p>
           </div>
+          <shape-resizer [target]="surface"></shape-resizer>
         </div>
       </div>
     </div>
@@ -69,8 +75,8 @@ class TextBoxReserveHarness {}
 
 /**
  * Two frames, same two paragraphs, same spacing props — one horizontal, one
- * vertical. `sb` / `sa` are what 段落设置 writes; the vertical frame is what
- * the logical-axis restatement exists for.
+ * vertical. `sb` / `sa` are what 段落设置 writes; `leading-sb` is the
+ * first-sibling projection used by the one-gap layout model.
  */
 @Component({
   selector: 'text-box-spacing-harness',
@@ -84,7 +90,7 @@ class TextBoxReserveHarness {}
               id="h-first"
               data-block-id
               data-node-type="editable"
-              style="--bc-block-sb: 12px; --bc-block-sa: 40px">一</p>
+              style="--bc-block-sb: 12px; --bc-block-leading-sb: 12px; --bc-block-sa: 40px">一</p>
             <p data-block-id data-node-type="editable">二</p>
           </div>
         </div>
@@ -93,7 +99,7 @@ class TextBoxReserveHarness {}
         id="outside"
         data-block-id
         data-node-type="editable"
-        style="--bc-block-sb: 12px; --bc-block-sa: 40px">框外</p>
+        style="--bc-block-sb: 12px; --bc-block-leading-sb: 12px; --bc-block-sa: 40px">框外</p>
       <div class="text-box-block" style="--bc-text-box-writing-mode: vertical-rl">
         <div class="text-box-block__surface" style="width: 200px; height: 300px">
           <div class="text-box-block__content">
@@ -101,7 +107,7 @@ class TextBoxReserveHarness {}
               id="v-first"
               data-block-id
               data-node-type="editable"
-              style="--bc-block-sb: 12px; --bc-block-sa: 40px">一</p>
+              style="--bc-block-sb: 12px; --bc-block-leading-sb: 12px; --bc-block-sa: 40px">一</p>
             <p data-block-id data-node-type="editable">二</p>
           </div>
         </div>
@@ -115,6 +121,112 @@ class TextBoxReserveHarness {}
   ],
 })
 class TextBoxSpacingHarness {}
+
+@Component({
+  selector: 'text-box-vertical-list-harness',
+  standalone: true,
+  template: `
+    <div data-blockcraft-root="true">
+      <div
+        class="text-box-block"
+        data-bc-text-box-wm="v"
+        style="--bc-text-box-writing-mode: vertical-rl">
+        <div class="text-box-block__surface" style="width: 240px; height: 300px">
+          <div class="text-box-block__content">
+            <div id="vertical-ordered" class="ordered-block" data-block-id>
+              <button class="ordered-block-prefix" contenteditable="false">
+                <span class="ordered-block-prefix__text">1.</span>
+              </button>
+              <div class="edit-container" style="inline-size: 72px">
+                有序文本需要换成多列才能验证首列对齐
+              </div>
+            </div>
+            <div id="vertical-todo" class="todo-block" data-block-id>
+              <button class="todo-block-button" contenteditable="false">□</button>
+              <div class="edit-container" style="inline-size: 72px">
+                待办文本需要换成多列才能验证首列对齐
+              </div>
+            </div>
+            <div id="vertical-bullet" class="bullet-block" data-block-id>
+              <span class="bullet-block-prefix" contenteditable="false">
+                <span class="point"></span>
+              </span>
+              <div class="edit-container" style="inline-size: 72px">
+                项目文本需要换成多列才能验证首列对齐
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `,
+  styles: [],
+  styleUrls: [
+    '../../themes/base.scss',
+    '../../themes/blocks/text-box-block.scss',
+  ],
+})
+class TextBoxVerticalListHarness {}
+
+@Component({
+  selector: 'text-box-placeholder-harness',
+  standalone: true,
+  template: `
+    <div data-blockcraft-root="true">
+      <div class="text-box-block" data-bc-text-box-wm="h">
+        <div class="text-box-block__surface" style="width: 180px; height: 100px">
+          <div class="text-box-block__content">
+            <p
+              id="horizontal-placeholder"
+              class="paragraph-block edit-container bc-placeholder-empty bc-placeholder-target"
+              data-block-id
+              data-node-type="editable"
+              data-placeholder="输入文字"></p>
+          </div>
+        </div>
+      </div>
+      <div
+        class="text-box-block"
+        data-bc-text-box-wm="v"
+        style="--bc-text-box-writing-mode: vertical-rl">
+        <div class="text-box-block__surface" style="width: 180px; height: 100px">
+          <div class="text-box-block__content">
+            <p
+              id="vertical-placeholder"
+              class="paragraph-block edit-container bc-placeholder-empty bc-placeholder-target"
+              data-block-id
+              data-node-type="editable"
+              data-placeholder="输入文字"></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  `,
+  styles: [
+    `
+      #horizontal-placeholder,
+      #vertical-placeholder {
+        width: 140px;
+        height: 60px;
+        margin: 0;
+        pointer-events: none;
+      }
+
+      #horizontal-placeholder::before,
+      #vertical-placeholder::before {
+        content: '';
+        inline-size: 12px;
+        block-size: 12px;
+        pointer-events: auto;
+      }
+    `,
+  ],
+  styleUrls: [
+    '../../themes/base.scss',
+    '../../themes/blocks/text-box-block.scss',
+  ],
+})
+class TextBoxPlaceholderHarness {}
 
 /**
  * One decorated preset at its design size and at a frame stretched well away
@@ -165,7 +277,7 @@ class TextBoxArtworkFrameHarness {
 }
 
 describe('TextBoxBlockSchema', () => {
-  it('keeps focused content borderless and scrollable without visible scrollbars', async () => {
+  it('clips focused overflow without making the content area scrollable', async () => {
     await TestBed.configureTestingModule({
       imports: [TextBoxFocusStyleHarness],
     }).compileComponents()
@@ -173,6 +285,12 @@ describe('TextBoxBlockSchema', () => {
     fixture.detectChanges()
     const content = fixture.nativeElement.querySelector(
       '.text-box-block__content',
+    ) as HTMLElement
+    const surface = fixture.nativeElement.querySelector(
+      '.text-box-block__surface',
+    ) as HTMLElement
+    const resizer = fixture.nativeElement.querySelector(
+      'shape-resizer',
     ) as HTMLElement
 
     try {
@@ -182,12 +300,12 @@ describe('TextBoxBlockSchema', () => {
       expect(document.activeElement).toBe(content)
       expect(style.outlineStyle).toBe('none')
       expect(style.boxShadow).toBe('none')
-      expect(style.overflowX).toBe('auto')
-      expect(style.overflowY).toBe('auto')
-      expect(style.getPropertyValue('scrollbar-width')).toBe('none')
-
-      content.scrollTop = 24
-      expect(content.scrollTop).toBeGreaterThan(0)
+      expect(style.display).toBe('flex')
+      expect(style.overflowX).toBe('hidden')
+      expect(style.overflowY).toBe('hidden')
+      expect(content.scrollHeight).toBeGreaterThan(content.clientHeight)
+      expect(getComputedStyle(surface).outlineWidth).toBe('2px')
+      expect(getComputedStyle(resizer).display).toBe('block')
     } finally {
       fixture.destroy()
       TestBed.resetTestingModule()
@@ -221,11 +339,103 @@ describe('TextBoxBlockSchema', () => {
       expect(box.top - frame.top).toBeCloseTo(20, 0)
       expect(frame.bottom - box.bottom).toBeCloseTo(60, 0)
 
-      // The content is twice the frame's height; scrolled to the end it still
-      // stops at the reserve line rather than running into the tail.
-      content.scrollTop = content.scrollHeight
+      // Overflow is clipped at the usable content box, before the bubble tail.
+      expect(getComputedStyle(content).overflow).toBe('hidden')
       expect(content.getBoundingClientRect().bottom)
         .toBeCloseTo(frame.bottom - 60, 0)
+    } finally {
+      fixture.destroy()
+      TestBed.resetTestingModule()
+    }
+  })
+
+  it('aligns vertical list markers with the first wrapped text column', async () => {
+    await TestBed.configureTestingModule({
+      imports: [TextBoxVerticalListHarness],
+    }).compileComponents()
+    const fixture = TestBed.createComponent(TextBoxVerticalListHarness)
+    fixture.detectChanges()
+    const host = fixture.nativeElement as HTMLElement
+
+    try {
+      const cases = [
+        ['vertical-ordered', '.ordered-block-prefix'],
+        ['vertical-todo', '.todo-block-button'],
+        ['vertical-bullet', '.bullet-block-prefix'],
+      ] as const
+
+      for (const [id, prefixSelector] of cases) {
+        const block = host.querySelector<HTMLElement>(`#${id}`)!
+        const prefix = block.querySelector<HTMLElement>(prefixSelector)!
+        const text = block.querySelector<HTMLElement>('.edit-container')!
+        const markerRect = prefix.getBoundingClientRect()
+        const textRect = text.getBoundingClientRect()
+        const prefixStyle = getComputedStyle(prefix)
+
+        expect(getComputedStyle(block).alignItems).toBe('flex-start')
+        expect(prefixStyle.marginRight).toBe('0px')
+        expect(parseFloat(prefixStyle.marginInlineEnd)).toBeGreaterThan(0)
+        expect(textRect.width).toBeGreaterThan(markerRect.width)
+        expect(markerRect.right).toBeCloseTo(textRect.right, 0)
+        expect(textRect.top).toBeGreaterThan(markerRect.bottom)
+      }
+    } finally {
+      fixture.destroy()
+      TestBed.resetTestingModule()
+    }
+  })
+
+  it('places an empty paragraph placeholder at its logical writing start', async () => {
+    await TestBed.configureTestingModule({
+      imports: [TextBoxPlaceholderHarness],
+    }).compileComponents()
+    const fixture = TestBed.createComponent(TextBoxPlaceholderHarness)
+    fixture.detectChanges()
+    const host = fixture.nativeElement as HTMLElement
+
+    try {
+      const horizontal = host.querySelector<HTMLElement>(
+        '#horizontal-placeholder',
+      )!
+      const vertical = host.querySelector<HTMLElement>(
+        '#vertical-placeholder',
+      )!
+      const horizontalRect = horizontal.getBoundingClientRect()
+      const verticalRect = vertical.getBoundingClientRect()
+      const hitsPlaceholderAt = (element: HTMLElement, x: number, y: number) =>
+        document.elementFromPoint(x, y) === element
+
+      expect(getComputedStyle(horizontal).writingMode).toBe('horizontal-tb')
+      expect(
+        hitsPlaceholderAt(
+          horizontal,
+          horizontalRect.left + 6,
+          horizontalRect.top + 6,
+        ),
+      ).toBeTrue()
+      expect(
+        hitsPlaceholderAt(
+          horizontal,
+          horizontalRect.right - 6,
+          horizontalRect.top + 6,
+        ),
+      ).toBeFalse()
+
+      expect(getComputedStyle(vertical).writingMode).toBe('vertical-rl')
+      expect(
+        hitsPlaceholderAt(
+          vertical,
+          verticalRect.right - 6,
+          verticalRect.top + 6,
+        ),
+      ).toBeTrue()
+      expect(
+        hitsPlaceholderAt(
+          vertical,
+          verticalRect.left + 6,
+          verticalRect.top + 6,
+        ),
+      ).toBeFalse()
     } finally {
       fixture.destroy()
       TestBed.resetTestingModule()
@@ -241,19 +451,15 @@ describe('TextBoxBlockSchema', () => {
     const host = fixture.nativeElement as HTMLElement
 
     try {
-      // Horizontal: the logical properties resolve to the very same physical
-      // ones base.scss uses, so the author's values arrive untouched. A literal
-      // gap here would outrank `--bc-block-sa` and the field would look broken
-      // inside a text box while working everywhere else.
+      // Horizontal: the leading before-space stays on the first paragraph,
+      // while after-space owns the following sibling boundary.
       const h = getComputedStyle(host.querySelector('#h-first')!)
-      expect(h.marginTop).toBe('12px')
+      expect(h.paddingTop).toBe('12px')
       expect(h.marginBottom).toBe('40px')
 
-      // Same two values on an ordinary paragraph outside any frame: the point
-      // of the fix is that the two agree, so this pins base.scss's own chain
-      // alongside the frame's restatement of it.
+      // The same first-sibling projection outside a frame uses the same axis.
       const out = getComputedStyle(host.querySelector('#outside')!)
-      expect(out.marginTop).toBe(h.marginTop)
+      expect(out.paddingTop).toBe(h.paddingTop)
       expect(out.marginBottom).toBe(h.marginBottom)
 
       // Vertical (`vertical-rl`): the block axis runs right-to-left, so the
@@ -261,7 +467,7 @@ describe('TextBoxBlockSchema', () => {
       // physical margins they would push the text sideways and let the
       // segments touch.
       const v = getComputedStyle(host.querySelector('#v-first')!)
-      expect(v.marginRight).toBe('12px')
+      expect(v.paddingRight).toBe('12px')
       expect(v.marginLeft).toBe('40px')
       expect(v.marginTop).toBe('0px')
       expect(v.marginBottom).toBe('0px')

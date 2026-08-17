@@ -2,13 +2,17 @@ import type {Element, Properties} from 'hast'
 import {
   INLINE_TYPOGRAPHY_ATTRS,
   IBlockProps,
+  IEditableBlockProps,
   IInlineNodeAttrs,
   isTypographyFontFamilyId,
   matchTypographyFontFamily,
   normalizeDocumentFontSize,
   normalizeInlineFontScale,
   normalizeInlineLetterSpacing,
+  normalizeParagraphFontScale,
+  normalizeParagraphSpacing,
   normalizeTypographyLineHeight,
+  paragraphPointsToCss,
   resolveTypographyFontFamily,
 } from '../../framework'
 
@@ -64,6 +68,31 @@ const pixels = (value: unknown): number | null => {
   if (typeof value !== 'string') return null
   const match = /^([+]?(?:\d+(?:\.\d+)?|\.\d+))px$/i.exec(value.trim())
   return match ? normalizeDocumentFontSize(Number(match[1])) : null
+}
+
+const points = (
+  value: unknown,
+  normalize: (value: unknown) => number | null,
+): number | null => {
+  if (typeof value === 'number') return normalize(value)
+  if (typeof value !== 'string') return null
+  const source = value.trim()
+  const pointMatch = /^([+-]?(?:\d+(?:\.\d+)?|\.\d+))pt$/i.exec(source)
+  if (pointMatch) return normalize(Number(pointMatch[1]))
+  const pixelMatch = /^([+-]?(?:\d+(?:\.\d+)?|\.\d+))px$/i.exec(source)
+  return pixelMatch ? normalize(Number(pixelMatch[1]) * 0.75) : normalize(source)
+}
+
+const relativeFontScale = (value: unknown): number | null => {
+  if (typeof value === 'number') return normalizeParagraphFontScale(value)
+  if (typeof value !== 'string') return null
+  const source = value.trim()
+  const em = /^([+]?(?:\d+(?:\.\d+)?|\.\d+))em$/i.exec(source)
+  if (em) return normalizeParagraphFontScale(Number(em[1]))
+  const percent = /^([+]?(?:\d+(?:\.\d+)?|\.\d+))%$/i.exec(source)
+  return percent
+    ? normalizeParagraphFontScale(Number(percent[1]) / 100)
+    : null
 }
 
 const safeFontId = (value: unknown) => {
@@ -137,25 +166,54 @@ export const inlineTypographyFromHtml = (
 export const editableTypographyToHtmlProperties = (
   props: IBlockProps,
 ): Properties => {
+  const pfs = normalizeParagraphFontScale(props['pfs'])
   const lh = normalizeTypographyLineHeight(props['lh'])
+  const psb = normalizeParagraphSpacing(props['psb'])
+  const psa = normalizeParagraphSpacing(props['psa'])
   const declarations: string[] = []
   const properties: Properties = {}
+  if (pfs !== null) {
+    properties['dataBcPfs'] = pfs
+    declarations.push(`font-size: ${pfs * 100}%`)
+  }
   if (lh !== null) {
     properties['dataBcLh'] = lh
     declarations.push(`line-height: ${lh}`)
+  }
+  if (psb !== null) {
+    properties['dataBcSb'] = psb
+    declarations.push(`margin-top: ${paragraphPointsToCss(psb)}`)
+  }
+  if (psa !== null) {
+    properties['dataBcSa'] = psa
+    declarations.push(`margin-bottom: ${paragraphPointsToCss(psa)}`)
   }
   return {...properties, ...styleProperties(declarations)}
 }
 
 export const editableTypographyFromHtml = (
   element: Element,
-): Partial<Pick<IBlockProps, 'lh'>> => {
+): Partial<IEditableBlockProps> => {
   const style = parseStyle(element.properties)
+  const pfs = normalizeParagraphFontScale(
+    propertyValue(element.properties, 'dataBcPfs'),
+  ) ?? relativeFontScale(style.get('font-size'))
   const lh = normalizeTypographyLineHeight(
     propertyValue(element.properties, 'dataBcLh'),
   ) ?? unitless(style.get('line-height'), normalizeTypographyLineHeight)
+  const psb = points(
+    propertyValue(element.properties, 'dataBcSb') ?? style.get('margin-top'),
+    normalizeParagraphSpacing,
+  )
+  const psa = points(
+    propertyValue(element.properties, 'dataBcSa') ?? style.get('margin-bottom'),
+    normalizeParagraphSpacing,
+  )
   return {
+    ...(pfs === null ? {} : {pfs}),
     ...(lh === null ? {} : {lh}),
+    ...(psb === null ? {} : {psb}),
+    ...(psa === null ? {} : {psa}),
   }
 }
 

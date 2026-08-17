@@ -1,4 +1,7 @@
-import {OverlayRef} from '@angular/cdk/overlay'
+import {
+  FlexibleConnectedPositionStrategy,
+  OverlayRef,
+} from '@angular/cdk/overlay'
 import {fromEvent, Subject, Subscription, takeUntil} from 'rxjs'
 import {
   BindHotKey,
@@ -21,7 +24,7 @@ import {
 export * from './word-art-toolbar.component'
 export * from './word-art-transform-overlay.component'
 
-const ROTATION_HANDLE_CLEARANCE = 52
+const TOOLBAR_GAP = 10
 
 export class WordArtToolbarPlugin extends DocPlugin {
   override name = 'word-art-toolbar'
@@ -33,6 +36,7 @@ export class WordArtToolbarPlugin extends DocPlugin {
   private _activeBlockHost?: HTMLElement
   private _activeResizer?: HTMLElement
   private _toolbarPointerActive = false
+  private _toolbarPositionFrame: number | null = null
   private _closing = false
   private _inlineObject?: InlineObjectInteractionController
 
@@ -89,6 +93,10 @@ export class WordArtToolbarPlugin extends DocPlugin {
     this._closing = true
     this._closeOverlays$.next()
     this._toolbarRef?.dispose()
+    if (this._toolbarPositionFrame !== null) {
+      cancelAnimationFrame(this._toolbarPositionFrame)
+      this._toolbarPositionFrame = null
+    }
     this._toolbarRef = undefined
     this._activeResizer?.style.removeProperty('display')
     this._activeResizer = undefined
@@ -151,8 +159,10 @@ export class WordArtToolbarPlugin extends DocPlugin {
           target: block,
           component: WordArtToolbarComponent,
           positions: [
-            getPositionWithOffset('top-center', 0, ROTATION_HANDLE_CLEARANCE),
-            getPositionWithOffset('bottom-center', 0, 8),
+            getPositionWithOffset('right-center', TOOLBAR_GAP, 0),
+            getPositionWithOffset('left-center', TOOLBAR_GAP, 0),
+            getPositionWithOffset('right-top', TOOLBAR_GAP, 0),
+            getPositionWithOffset('left-top', TOOLBAR_GAP, 0),
           ],
           clampTo: this.doc.scrollContainer ?? undefined,
         },
@@ -164,6 +174,20 @@ export class WordArtToolbarPlugin extends DocPlugin {
     toolbar.componentRef.instance.action
       .pipe(takeUntil(this._closeOverlays$))
       .subscribe((action) => this._handleAction(block, action))
+    toolbar.componentRef.instance.panelChange
+      .pipe(takeUntil(this._closeOverlays$))
+      .subscribe(() => this._scheduleToolbarPositionUpdate())
+    const positionStrategy = toolbar.overlayRef.getConfig().positionStrategy
+    if (positionStrategy instanceof FlexibleConnectedPositionStrategy) {
+      positionStrategy.positionChanges
+        .pipe(takeUntil(this._closeOverlays$))
+        .subscribe((change) => {
+          const side = change.connectionPair.originX === 'start'
+            ? 'left'
+            : 'right'
+          toolbar.componentRef.setInput('side', side)
+        })
+    }
 
     block.onPropsChange.pipe(takeUntil(this._closeOverlays$)).subscribe(() => {
       toolbar.componentRef.instance.cdr.markForCheck()
@@ -314,6 +338,16 @@ export class WordArtToolbarPlugin extends DocPlugin {
     this._toolbarPointerActive = false
   }
 
+  private _scheduleToolbarPositionUpdate(): void {
+    if (this._toolbarPositionFrame !== null) {
+      cancelAnimationFrame(this._toolbarPositionFrame)
+    }
+    this._toolbarPositionFrame = requestAnimationFrame(() => {
+      this._toolbarPositionFrame = null
+      this._toolbarRef?.updatePosition()
+    })
+  }
+
   private _toolbarOwnsInteraction(): boolean {
     if (this._toolbarPointerActive) return true
     const ownerDocument =
@@ -329,6 +363,28 @@ export class WordArtToolbarPlugin extends DocPlugin {
     const toolbarElement = this._toolbarRef?.overlayElement
     if (!target || !toolbarElement) return false
     if (toolbarElement.contains(target)) return true
+
+    // CSES selects and color pickers attach their panels as sibling CDK
+    // overlays. Treat them as toolbar-owned only while the originating
+    // control in this WordArt toolbar is open.
+    const ownsOpenColorPicker = !!toolbarElement.querySelector(
+      'cs-color-picker.cs-color-picker-open',
+    )
+    if (
+      ownsOpenColorPicker &&
+      !!target.closest('.cs-color-picker-overlay-pane .cs-color-picker-panel')
+    ) {
+      return true
+    }
+    const ownsOpenSelect = !!toolbarElement.querySelector(
+      'cs-select.cs-select-open',
+    )
+    if (
+      ownsOpenSelect &&
+      !!target.closest('.cs-select-panel .cs-select-dropdown')
+    ) {
+      return true
+    }
 
     const binding = target.closest<HTMLElement>(
       '[data-float-binding][data-float-id]',

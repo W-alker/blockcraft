@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-14
+> Last updated: 2026-08-17
 
 ## BlockControllerPlugin
 
@@ -451,7 +451,10 @@ const unregisterApproval = transformer.registerCommand({
 > `plugins/ordered-extension/` — Auto-numbering for ordered list blocks.
 > Runtime plugin ID: `ordered-block`.
 
-Maintains correct sequential numbering across ordered list blocks. Recalculates `order` props when blocks are inserted, deleted, or have `depth`/`heading` changed. Also shows a prefix-click toolbar to change list style and start number.
+Maintains correct sequential numbering across ordered list blocks. Recalculates
+`order` props when blocks are inserted, deleted, or have `depth`/`heading`
+changed. Clicking a marker opens the numbering library plus continue / restart
+commands.
 
 ### Configuration
 
@@ -473,3 +476,17 @@ new OrderedBlockPlugin()
 - A `start`-only prop change uses a local recalculation range and stops at the next explicit `start` boundary for the same `depth` + `heading`
 - Returning from a nested depth to a shallower depth clears deeper counters, so nested ordered lists restart under the next parent item
 - Shows `OrderedPrefixToolbar` when the list prefix button is clicked
+- The fixed-toolbar split button uses `BcOrderedMarkerPickerComponent`, which
+  offers the automatic depth cycle and 12 explicit `ms` presets. The
+  prefix toolbar remains focused on continue / restart / recalculate and does
+  not duplicate the marker library
+- Marker changes call `applyOrderedMarkerStyle()` with stable IDs. They update
+  the anchor's automatic-numbering group, cross same-level non-ordered siblings,
+  stop at structural counter pruning or an explicit restart, skip readonly
+  blocks, and use one normal Yjs transaction so Undo restores the whole change
+- Marker changes do not schedule or rewrite `order`; automatic counter repair
+  continues to use `ORIGIN_SYSTEM_REPAIR`
+- Newly inserted ordered blocks that omit `ms` inherit the valid preset of the
+  automatic-numbering group they join, including across same-level non-ordered
+  siblings. Existing blocks are not backfilled, explicit styles are preserved,
+  and a positive `start` boundary begins a group without inheritance

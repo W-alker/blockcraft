@@ -1,0 +1,82 @@
+<div class="bc-paragraph-layout">
+  <div class="bc-paragraph-form">
+    <section class="bc-settings-section">
+      <h3>常规</h3>
+      <div class="bc-settings-field" data-setting-field="paragraph-align">
+        <span>对齐方式</span>
+        <cs-segmented csSize="small" [csBlock]="true"
+          [ngModel]="align()"
+          (ngModelChange)="setAlign($event)" csAriaLabel="段落对齐方式">
+          <label cs-segmented-item csValue="left">
+            <span class="bc-segmented-option">
+              <i class="bc_icon bc_zuoduiqi" aria-hidden="true"></i>左对齐
+            </span>
+          </label>
+          <label cs-segmented-item csValue="center">
+            <span class="bc-segmented-option">
+              <i class="bc_icon bc_juzhongduiqi" aria-hidden="true"></i>居中
+            </span>
+          </label>
+          <label cs-segmented-item csValue="right">
+            <span class="bc-segmented-option">
+              <i class="bc_icon bc_youduiqi" aria-hidden="true"></i>右对齐
+            </span>
+          </label>
+        </cs-segmented>
+      </div>
+    </section>
+
+    <section class="bc-settings-section">
+      <h3>间距</h3>
+      <div class="bc-settings-grid bc-settings-grid--two">
+        <label class="bc-settings-field">
+          <span>段前</span>
+          <div class="bc-number-field">
+            <cs-input-number csSize="sm" [csMin]="0" [csMax]="120"
+              [csStep]="2" [csPrecision]="1" [csValue]="spaceBeforeValue"
+              [csPlaceholder]="mixedNumberPlaceholder" (csValueChange)="setSpacing('psb', $event)" />
+            <span>pt</span>
+          </div>
+        </label>
+        <label class="bc-settings-field">
+          <span>段后</span>
+          <div class="bc-number-field">
+            <cs-input-number csSize="sm" [csMin]="0" [csMax]="120"
+              [csStep]="2" [csPrecision]="1" [csValue]="spaceAfterValue"
+              [csPlaceholder]="mixedNumberPlaceholder" (csValueChange)="setSpacing('psa', $event)" />
+            <span>pt</span>
+          </div>
+        </label>
+        <label class="bc-settings-field bc-settings-field--wide" data-setting-field="line-height">
+          <span>行距</span>
+          <cs-select csSize="sm" csVariant="outlined"
+            [csValue]="lineHeightSelectValue" [csPlaceholder]="lineHeightPlaceholder"
+            (csValueChange)="setLineHeight($event)">
+            <cs-option [csValue]="defaultLineHeightValue" [csLabel]="defaultLineHeightLabel" />
+            @for (value of lineHeights; track value) {
+              <cs-option [csValue]="value" [csLabel]="value + ' 倍'" />
+            }
+          </cs-select>
+        </label>
+      </div>
+      <p class="bc-spacing-note">
+        段间距由上一段“段后”和下一段“段前”取较大值，文档不重复存第三个间距值。
+      </p>
+    </section>
+  </div>
+
+  <aside class="bc-paragraph-preview" aria-label="段落设置预览">
+    <span>预览</span>
+    <div class="bc-mini-paper">
+      <p>这是上一段文字，用于观察段前间距。</p>
+      <p class="bc-focus-paragraph"
+        [style.margin-top]="previewSpaceBefore"
+        [style.margin-bottom]="previewSpaceAfter"
+        [style.line-height]="previewLineHeight"
+        [style.text-align]="previewTextAlign">
+        这是当前段落。调整行距、段前和段后时，预览会即时更新，但不会写入文档。
+      </p>
+      <p>这是下一段文字，用于观察段后间距。</p>
+    </div>
+  </aside>
+</div>

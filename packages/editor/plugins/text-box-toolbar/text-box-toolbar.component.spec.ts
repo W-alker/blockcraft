@@ -1,5 +1,6 @@
 import {ChangeDetectorRef} from '@angular/core'
 import {TestBed} from '@angular/core/testing'
+import {By} from '@angular/platform-browser'
 import {
   getTextBoxPreset,
   normalizeTextBoxWordArtStyle,
@@ -101,25 +102,108 @@ describe('TextBoxToolbarComponent', () => {
     expect(fixture.nativeElement.querySelector(
       '#bc-text-box-layout-panel',
     )).not.toBeNull()
+    expect(fixture.nativeElement.textContent).not.toContain('位置基准')
+    expect(fixture.nativeElement.textContent).not.toContain('随文字移动')
+    expect(fixture.nativeElement.textContent).not.toContain('固定在页面上')
+    expect(fixture.nativeElement.querySelector(
+      '.text-box-toolbar__anchor-options',
+    )).toBeNull()
     fixture.destroy()
   })
 
-  it('maps the Word-like move/fixed choice only to supported placement states', () => {
-    const relative = createComponent()
-    const relativeActions: TextBoxToolbarAction[] = []
-    relative.action.subscribe(action => relativeActions.push(action))
-    relative.setAnchorMode('fixed')
+  it('keeps every secondary settings card on the mini panel geometry', async () => {
+    await TestBed.configureTestingModule({
+      imports: [TextBoxToolbarComponent],
+    }).compileComponents()
+    const fixture = TestBed.createComponent(TextBoxToolbarComponent)
+    fixture.componentInstance.textBoxBlock = {
+      props: {},
+      doc: {
+        placement: {
+          getObjectLayout: () => 'top-bottom',
+          getState: () => ({mode: 'relative'}),
+          canMoveForward: () => false,
+          canMoveBackward: () => false,
+        },
+      },
+    } as any
+    const host = fixture.nativeElement as HTMLElement
+    const assertMiniSurface = (
+      widthOwner: HTMLElement,
+      scrollSurface: HTMLElement,
+    ) => {
+      expect(getComputedStyle(widthOwner).width).toBe('288px')
+      expect(scrollSurface.clientWidth).toBeGreaterThan(0)
+      expect(scrollSurface.scrollWidth).toBeLessThanOrEqual(
+        scrollSurface.clientWidth,
+      )
+    }
 
-    const absolute = createComponent({}, 'absolute')
-    const absoluteActions: TextBoxToolbarAction[] = []
-    absolute.action.subscribe(action => absoluteActions.push(action))
-    absolute.setAnchorMode('move')
+    fixture.componentInstance.activePanel = 'layout'
+    fixture.componentInstance.cdr.markForCheck()
+    fixture.detectChanges()
+    const layout = host.querySelector<HTMLElement>(
+      '#bc-text-box-layout-panel',
+    )!
+    assertMiniSurface(layout, layout)
 
-    expect(relativeActions).toEqual([{name: 'object-layout', value: 'over'}])
-    expect(absoluteActions).toEqual([{
-      name: 'object-layout',
-      value: 'top-bottom',
-    }])
+    fixture.componentInstance.activePanel = 'style'
+    fixture.componentInstance.cdr.markForCheck()
+    fixture.detectChanges()
+    const style = host.querySelector<HTMLElement>(
+      '#bc-text-box-style-panel',
+    )!
+    assertMiniSurface(style, style)
+    const presetPicker = style.querySelector<HTMLElement>(
+      '.text-box-preset-picker',
+    )!
+    expect(presetPicker.scrollWidth).toBeLessThanOrEqual(
+      presetPicker.clientWidth,
+    )
+
+    fixture.componentInstance.activePanel = 'shape'
+    fixture.componentInstance.cdr.markForCheck()
+    fixture.detectChanges()
+    const shapeHost = host.querySelector<HTMLElement>(
+      'bc-text-box-shape-panel',
+    )!
+    const shapePanel = shapeHost.querySelector<HTMLElement>(
+      '.text-box-shape-panel',
+    )!
+    const shapeDebug = fixture.debugElement.query(
+      By.directive(TextBoxShapePanelComponent),
+    )
+    const shapeComponent = shapeDebug.componentInstance as
+      TextBoxShapePanelComponent
+    for (const section of ['shape', 'fill', 'outline']) {
+      shapeComponent.setSection(section)
+      shapeDebug.injector.get(ChangeDetectorRef).markForCheck()
+      fixture.detectChanges()
+      assertMiniSurface(shapeHost, shapePanel)
+    }
+
+    fixture.componentInstance.activePanel = 'text'
+    fixture.componentInstance.cdr.markForCheck()
+    fixture.detectChanges()
+    const textHost = host.querySelector<HTMLElement>(
+      'bc-text-box-text-panel',
+    )!
+    const textPanel = textHost.querySelector<HTMLElement>(
+      '.text-box-text-panel',
+    )!
+    const textDebug = fixture.debugElement.query(
+      By.directive(TextBoxTextPanelComponent),
+    )
+    const textComponent = textDebug.componentInstance as
+      TextBoxTextPanelComponent
+    for (const section of ['preset', 'font', 'fill', 'effects']) {
+      textComponent.setSection(section)
+      textDebug.injector.get(ChangeDetectorRef).markForCheck()
+      fixture.detectChanges()
+      assertMiniSurface(textHost, textPanel)
+    }
+
+    fixture.destroy()
   })
 
   it('hides the complete layout surface for a grouped text box', async () => {
@@ -151,13 +235,13 @@ describe('TextBoxToolbarComponent', () => {
     const actions: TextBoxToolbarAction[] = []
     component.action.subscribe(action => actions.push(action))
 
-    component.applyPreset('soft-blue', closeTrigger())
+    component.applyPreset('classic', closeTrigger())
 
     expect(actions).toEqual([{
       name: 'update-props',
-      value: {...getTextBoxPreset('soft-blue').props},
+      value: {...getTextBoxPreset('classic').props},
     }])
-    expect(actions[0]).not.toEqual(jasmine.objectContaining({preset: 'soft-blue'}))
+    expect(actions[0]).not.toEqual(jasmine.objectContaining({preset: 'classic'}))
   })
 
   it('supports any text-owning shape and complete WordArt preset values', () => {

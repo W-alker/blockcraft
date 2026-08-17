@@ -32,10 +32,11 @@ export interface InlineWordArtData extends InlineWordArtPayload {
   width: number
   height: number
   wrap?: true
-  side?: 'auto' | 'left' | 'right'
   x?: number
   gap?: number
 }
+
+export type InlineWordArtWrapOptions = Omit<InlineObjectWrapOptions, 'side'>
 
 const sanitizeText = (value: unknown): DeltaInsert[] => {
   if (!Array.isArray(value)) return []
@@ -70,7 +71,7 @@ const payloadFromUnknown = (value: unknown): InlineWordArtPayload => {
 export function createInlineWordArtDelta(
   props: Partial<WordArtBlockProps> | null | undefined,
   text: readonly DeltaInsert[] = [],
-  wrap?: Partial<InlineObjectWrapOptions>,
+  wrap?: Partial<InlineWordArtWrapOptions>,
 ): DeltaInsertEmbed {
   const normalized = normalizeWordArtProps(props)
   const {
@@ -82,15 +83,16 @@ export function createInlineWordArtDelta(
     props: inlineProps,
     text: sanitizeText(cloneInlineObjectDeltas(text)),
   }
+  const {side: _side, ...attributes} = createInlineObjectAttributes(
+    normalized.width,
+    normalized.height,
+    wrap,
+  )
   return {
     insert: {
       [INLINE_WORD_ART_EMBED_KEY]: serializeInlineObjectPayload(payload),
     },
-    attributes: createInlineObjectAttributes(
-      normalized.width,
-      normalized.height,
-      wrap,
-    ),
+    attributes,
   }
 }
 
@@ -98,13 +100,14 @@ export function readInlineWordArtDelta(
   delta: DeltaInsertEmbed,
 ): InlineWordArtData {
   const payload = payloadFromUnknown(delta.insert[INLINE_WORD_ART_EMBED_KEY])
+  const {side: _side, ...layout} = readInlineObjectLayout(
+    delta,
+    payload.props.width,
+    payload.props.height,
+  )
   return {
     ...payload,
-    ...readInlineObjectLayout(
-      delta,
-      payload.props.width,
-      payload.props.height,
-    ),
+    ...layout,
   }
 }
 

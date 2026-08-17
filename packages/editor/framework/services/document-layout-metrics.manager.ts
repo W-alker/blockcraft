@@ -5,6 +5,8 @@ export interface DocumentLayoutMetrics {
   readonly baseFontSize: number
   /** Resolved root line box height in layout CSS pixels. */
   readonly lineHeight: number
+  /** Resolved default block-to-block gap in layout CSS pixels. */
+  readonly segmentGap: number
 }
 
 export type DocumentLayoutMetricsConfig = Partial<DocumentLayoutMetrics>
@@ -12,10 +14,16 @@ export type DocumentLayoutMetricsConfig = Partial<DocumentLayoutMetrics>
 const DEFAULT_METRICS: DocumentLayoutMetrics = {
   baseFontSize: 16,
   lineHeight: 24,
+  segmentGap: 10,
 }
 
 const positiveNumber = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? value
+    : null
+
+const nonNegativeNumber = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0
     ? value
     : null
 
@@ -50,16 +58,22 @@ export class DocumentLayoutMetricsManager {
     return this._value.lineHeight
   }
 
+  get segmentGap(): number {
+    return this._value.segmentGap
+  }
+
   init(element: HTMLElement): void {
     if (this._element === element) return
     this._element = element
     const measured = this.measure(element)
     const configuredFontSize = positiveNumber(this.configured.baseFontSize)
     const configuredLineHeight = positiveNumber(this.configured.lineHeight)
+    const configuredSegmentGap = nonNegativeNumber(this.configured.segmentGap)
     this.publish({
       baseFontSize: configuredFontSize ?? measured.baseFontSize,
       lineHeight: configuredLineHeight ?? measured.lineHeight,
-    }, configuredFontSize !== null || configuredLineHeight !== null)
+      segmentGap: configuredSegmentGap ?? measured.segmentGap,
+    }, configuredFontSize !== null || configuredLineHeight !== null || configuredSegmentGap !== null)
   }
 
   /** Update metrics and the matching root CSS custom properties explicitly. */
@@ -70,7 +84,10 @@ export class DocumentLayoutMetricsManager {
     const lineHeight = metrics.lineHeight === undefined
       ? this._value.lineHeight
       : this.requirePositive('lineHeight', metrics.lineHeight)
-    this.publish({baseFontSize, lineHeight}, true)
+    const segmentGap = metrics.segmentGap === undefined
+      ? this._value.segmentGap
+      : this.requireNonNegative('segmentGap', metrics.segmentGap)
+    this.publish({baseFontSize, lineHeight, segmentGap}, true)
   }
 
   /** Re-read computed typography once after an external CSS-variable change. */
@@ -99,10 +116,12 @@ export class DocumentLayoutMetricsManager {
         '--bc-lh',
         `${metrics.lineHeight / metrics.baseFontSize}`,
       )
+      this._element.style.setProperty('--bc-segments-gap', `${metrics.segmentGap}px`)
     }
     if (
       metrics.baseFontSize === this._value.baseFontSize &&
-      metrics.lineHeight === this._value.lineHeight
+      metrics.lineHeight === this._value.lineHeight &&
+      metrics.segmentGap === this._value.segmentGap
     ) {
       if (force) this._change.next(this._value)
       return
@@ -119,7 +138,10 @@ export class DocumentLayoutMetricsManager {
     const lineHeight = positiveNumber(
       Number.parseFloat(style?.lineHeight ?? ''),
     ) ?? baseFontSize * 1.5
-    return {baseFontSize, lineHeight}
+    const segmentGap = nonNegativeNumber(
+      Number.parseFloat(style?.getPropertyValue('--bc-segments-gap') ?? ''),
+    ) ?? DEFAULT_METRICS.segmentGap
+    return {baseFontSize, lineHeight, segmentGap}
   }
 
   private requirePositive(
@@ -129,5 +151,14 @@ export class DocumentLayoutMetricsManager {
     const normalized = positiveNumber(value)
     if (normalized !== null) return normalized
     throw new RangeError(`Document layout metric ${name} must be positive`)
+  }
+
+  private requireNonNegative(
+    name: keyof DocumentLayoutMetrics,
+    value: unknown,
+  ): number {
+    const normalized = nonNegativeNumber(value)
+    if (normalized !== null) return normalized
+    throw new RangeError(`Document layout metric ${name} must be non-negative`)
   }
 }

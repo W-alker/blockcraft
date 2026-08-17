@@ -95,8 +95,14 @@ export interface IBlockProps {
 export interface IEditableBlockProps extends IBlockProps {
   depth: number
   heading?: number
+  /** Paragraph base font scale; omitted/null inherits the document base size. */
+  pfs?: number | null
   /** Compact unitless line-height ratio; omitted inherits the document root. */
   lh?: number | null
+  /** Paragraph space before, in typographic points. */
+  psb?: number | null
+  /** Paragraph space after, in typographic points; omitted inherits the theme gap. */
+  psa?: number | null
 }
 
 export interface BaseBlockDesc<P extends SimpleRecord = SimpleRecord, M extends SimpleRecord = SimpleRecord> {

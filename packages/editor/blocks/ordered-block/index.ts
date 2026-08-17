@@ -6,6 +6,7 @@ import {
   EditableBlockCreateSnapshotParams
 } from "../../framework";
 import {OrderedBlockComponent} from "./ordered.block";
+import {isOrderedMarkerStyleId, OrderedMarkerStyleId} from "./utils";
 export * from './utils'
 
 export interface OrderedBlockModel extends EditableBlockNative {
@@ -13,14 +14,30 @@ export interface OrderedBlockModel extends EditableBlockNative {
   props: {
     order: number
     start?: number | null
+    /** Word-like marker preset. Missing/null keeps the historical depth cycle. */
+    ms?: OrderedMarkerStyleId | null
   } & IEditableBlockProps
+}
+
+const createEditableOrderedSnapshot = editableBlockCreateSnapShotFn<OrderedBlockModel>(
+  'ordered',
+  {order: 0},
+)
+
+const createOrderedSnapshot = (...args: EditableBlockCreateSnapshotParams) => {
+  const snapshot = createEditableOrderedSnapshot(...args)
+  const markerStyle = args[1]?.['ms']
+  if (isOrderedMarkerStyleId(markerStyle)) {
+    snapshot.props['ms'] = markerStyle
+  }
+  return snapshot
 }
 
 export const OrderedBlockSchema: IBlockSchemaOptions<OrderedBlockModel> = {
   flavour: 'ordered',
   nodeType: BlockNodeType.editable,
   component: OrderedBlockComponent,
-  createSnapshot: editableBlockCreateSnapShotFn<OrderedBlockModel>('ordered', {order: 0}),
+  createSnapshot: createOrderedSnapshot,
   metadata: {
     version: 1,
     label: "有序列表",

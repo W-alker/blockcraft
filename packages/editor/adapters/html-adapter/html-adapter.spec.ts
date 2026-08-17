@@ -6,6 +6,7 @@ import {
   getTextBoxPreset,
 } from '../../blocks/text-box-block';
 import {HtmlAdapter} from './html-adapter';
+import {ORDERED_MARKER_STYLES} from '../../blocks/ordered-block';
 
 class TestDocFileService extends DocFileService {
   uploadImg(): Promise<string> {
@@ -88,6 +89,19 @@ const createParagraphSnapshot = (id: string, text: string): IBlockSnapshot => ({
   children: [{insert: text}],
 });
 
+const createOrderedSnapshot = (
+  id: string,
+  text: string,
+  markerStyle?: string,
+): IBlockSnapshot => ({
+  id,
+  flavour: 'ordered',
+  nodeType: BlockNodeType.editable,
+  props: {depth: 0, order: 0, ...(markerStyle ? {ms: markerStyle} : {})},
+  meta: {},
+  children: [{insert: text}],
+});
+
 describe('HtmlAdapter', () => {
   const adapter = new HtmlAdapter(new TestDocFileService());
 
@@ -95,6 +109,45 @@ describe('HtmlAdapter', () => {
     const html = await adapter.toHtml(createRootSnapshot([]));
 
     expect(html).not.toContain('blockcraft-json');
+  });
+
+  it('uses only portable ol types and emits no private marker-style attribute', async () => {
+    const portableTypes = new Map([
+      ['n1', '1'],
+      ['a1', 'a'],
+      ['a2', 'A'],
+      ['r1', 'i'],
+      ['r2', 'I'],
+    ])
+    for (const style of ORDERED_MARKER_STYLES) {
+      const html = await adapter.toHtml(createRootSnapshot([
+        createOrderedSnapshot(`ordered-${style.id}`, style.label, style.id),
+      ]));
+      expect(html).not.toContain('data-bc-ms');
+
+      const imported = await adapter.toBlockSnapshot(html);
+      const ordered = (imported.children as IBlockSnapshot[])[0]!;
+      expect(ordered.flavour).withContext(style.id).toBe('ordered');
+      const portableType = portableTypes.get(style.id)
+      if (portableType) {
+        expect(html).withContext(style.id).toContain(`type="${portableType}"`)
+        expect(ordered.props['ms']).withContext(style.id).toBe(style.id);
+      } else {
+        expect(ordered.props['ms']).withContext(style.id).toBeUndefined();
+      }
+    }
+  });
+
+  it('maps portable external ol types and ignores private marker data', async () => {
+    const importedRoman = await adapter.toBlockSnapshot('<ol type="I"><li>Roman</li></ol>');
+    const roman = (importedRoman.children as IBlockSnapshot[])[0]!;
+    expect(roman.props['ms']).toBe('r2');
+
+    const importedPrivate = await adapter.toBlockSnapshot(
+      '<ol><li data-bc-ms="o1">Private</li></ol>',
+    );
+    const privateItem = (importedPrivate.children as IBlockSnapshot[])[0]!;
+    expect(privateItem.props['ms']).toBeUndefined();
   });
 
   it('round-trips object-group fixed geometry and local child placement', async () => {
@@ -424,7 +477,17 @@ describe('HtmlAdapter', () => {
         id: 'paragraph-typography',
         flavour: 'paragraph',
         nodeType: BlockNodeType.editable,
-        props: {depth: 0, lh: 1.8},
+        props: {
+          depth: 0,
+          pfs: 1.5,
+          lh: 1.8,
+          psb: 6,
+          psa: 12,
+          // Dormant legacy indent props must not re-enter HTML/CSS projection.
+          pis: 18,
+          pie: 9,
+          pti: -24,
+        },
         meta: {},
         children: [{
           insert: '排版示例',
@@ -446,7 +509,19 @@ describe('HtmlAdapter', () => {
       expect(body.style.fontSize).toBe('18px');
       expect(body.style.lineHeight).toBe('1.6');
       expect(paragraph.getAttribute('data-bc-lh')).toBe('1.8');
+      expect(paragraph.getAttribute('data-bc-pfs')).toBe('1.5');
+      expect(paragraph.getAttribute('data-bc-sb')).toBe('6');
+      expect(paragraph.getAttribute('data-bc-sa')).toBe('12');
+      expect(paragraph.hasAttribute('data-bc-is')).toBeFalse();
+      expect(paragraph.hasAttribute('data-bc-ie')).toBeFalse();
+      expect(paragraph.hasAttribute('data-bc-ti')).toBeFalse();
       expect(paragraph.style.lineHeight).toBe('1.8');
+      expect(paragraph.style.fontSize).toBe('150%');
+      expect(paragraph.style.marginTop).toBe('6pt');
+      expect(paragraph.style.marginBottom).toBe('12pt');
+      expect(paragraph.style.paddingInlineStart).toBe('');
+      expect(paragraph.style.paddingInlineEnd).toBe('');
+      expect(paragraph.style.textIndent).toBe('');
       expect(inline.getAttribute('data-bc-ff')).toBe('kai');
       expect(inline.getAttribute('data-bc-fs')).toBe('1.25');
       expect(inline.getAttribute('data-bc-ls')).toBe('0.08');
@@ -462,7 +537,10 @@ describe('HtmlAdapter', () => {
       }));
       const importedParagraph = (imported.children as IBlockSnapshot[])[0];
       expect(importedParagraph.props).toEqual(jasmine.objectContaining({
+        pfs: 1.5,
         lh: 1.8,
+        psb: 6,
+        psa: 12,
       }));
       expect(importedParagraph.children).toEqual([{
         insert: '排版示例',

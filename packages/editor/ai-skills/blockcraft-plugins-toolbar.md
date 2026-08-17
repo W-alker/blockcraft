@@ -147,13 +147,12 @@ and virtual-rendering-safe without adding an Undo step.
 
 The default inline-image converter additionally exposes an inline-only
 **四周型环绕** action; it does not extend global block object-layout options.
-Choosing it keeps the image as the same one-length Embed and persists
-`wrap: true`, `side: 'auto' | 'left' | 'right'`, normalized `x`, and optional
-pixel `gap`. **嵌入型** removes those four attributes without moving the Embed.
-The secondary controls are **自动环绕（auto） / 文字在左 / 文字在右**.
-Eligible `auto` geometry lays real editable text on both sides; near-edge auto
-and explicit left/right use one side. The visible `.bc-inline-image-frame` is
-the resize and connected-overlay target. Both ordinary and wrapped inline-image
+Choosing it keeps the image as the same one-length Embed and uses the automatic
+text-wrapping policy. The toolbar exposes no 自动环绕 / 文字在左 / 文字在右
+secondary actions. **嵌入型** removes wrapping without moving the Embed.
+Eligible geometry lays real editable text on both sides; near an edge it uses
+the wider readable side. The visible `.bc-inline-image-frame` is the resize and
+connected-overlay target. Both ordinary and wrapped inline-image
 resize gestures keep that committed frame and the owning editable layout fixed,
 while an inert body-level outline with a live `width × height` label previews
 the proportional target size. The opposite horizontal edge stays fixed, the
@@ -282,7 +281,7 @@ The layout actions are:
 | Action          | Behavior                                                                                        |
 | --------------- | ----------------------------------------------------------------------------------------------- |
 | `inline`        | **嵌入型**; serializes shape props plus its `shape-text` Delta into one `shape` Embed           |
-| `wrap`          | **四周型环绕**; creates the same Embed with `wrap/side/x/gap`; an overlapping absolute shape enters the covered text line directly |
+| `wrap`          | **四周型环绕**; creates the same Embed with `wrap/x/gap`; an overlapping absolute shape enters the covered text line directly      |
 | `top-bottom`    | **上下型**; clears absolute coordinates and reanchors to relative flow                          |
 | `under`         | **衬于文字下方**; enters absolute placement below ordinary content                              |
 | `over`          | **浮于文字上方**; enters absolute placement above ordinary content                              |
@@ -291,11 +290,16 @@ The layout actions are:
 
 Clicking an inline shape selects its one-character Embed in both
 `BlockSelection` and the native Range, then opens a layout-only toolbar with
-inline/wrap, text-side and reverse block conversion actions. The Embed keeps
-all shape props and nested text Delta; detailed text/style editing stays on the
-block representation, so switch back to top-bottom/under/over to edit it.
-Both plain inline and wrapped shapes can be dragged immediately from their
-selected frame. The Pointer Events proxy maps release x/y back to a same- or
+inline/wrap and reverse block conversion actions. **四周型环绕** is the one
+shape text-wrapping mode; the toolbar does not expose 自动环绕 / 文字在左 /
+文字在右. Shape Delta persists `wrap/x/gap` only and always resolves wrapping
+with the automatic geometry policy. The Embed keeps all shape props and nested
+text Delta; detailed text/style editing stays on the block representation, so
+switch back to top-bottom/under/over to edit it.
+Both plain inline and wrapped shapes can be dragged from their selected frame,
+but a plain click only selects and opens the toolbar. The drag
+proxy is created only after pointer movement crosses the 2px threshold. The
+Pointer Events proxy maps release x/y back to a same- or
 cross-editable-block Delta anchor in one Yjs transaction; wrapped shapes also
 update normalized `x`, while plain inline shapes keep no float coordinates.
 HTML preserves the object payload and wrap metadata; Markdown emits readable
@@ -349,10 +353,20 @@ new TextBoxToolbarPlugin();
 ```
 
 The Plugin keeps two explicit states. A selection on the `text-box` itself
-opens its connected object toolbar; a caret/range in a direct ordinary child
-uses the normal text toolbars instead. Enter or a frame double-click enters the
-first editable descendant, while Escape from a direct child selects the parent
-frame. Relative movement uses the shared Pointer Events block drag controller;
+opens its connected object toolbar with resize/rotation handles. A caret/range
+whose text or child-boundary endpoints belong to the same text box keeps that
+settings toolbar open alongside the normal text toolbars and adds
+`.text-box-block--editing` to the frame host; the theme paints only an outer
+focus outline, leaving the inner contenteditable free of browser focus chrome.
+Enter or a frame double-click enters the first editable descendant, while
+Escape from a direct child selects the parent frame. The intentional nested
+`contenteditable=false → true` island keeps object selection and text editing
+separate. Within that inner editing host, ordinary prose uses a column layout
+whose last real child owns any remaining block-axis space, matching the
+Callout/高亮块 rule that visible content space belongs to a child Block.
+Browser caret hit testing can therefore resolve fixed-frame whitespace without
+a Plugin-level blank-area click handler or synthetic caret calculation.
+Relative movement uses the shared Pointer Events block drag controller;
 absolute movement starts only from the frame edge and delegates to
 `BlockPlacementManager`, so text selection inside the viewport remains native.
 
@@ -389,31 +403,34 @@ remain in one block-owned connected Overlay; CSES ColorPicker/Select sibling
 panes are treated as owned interactions only while their originating control is
 open inside that toolbar.
 
-Object layout is limited to `top-bottom`, `under` and `over`; the layout card
-maps the current model to **随文字移动 / 固定在页面上** without advertising
-Square/Tight/Through wrapping. Root absolute objects also expose one-step
-forward/backward stacking. A grouped text box omits the entire **布局** rail
-entry and panel rather than showing unavailable choices. No inline/wrap conversion is advertised because a
-multi-Block container has no inline Embed or block-wrap representation.
+Object layout is limited to `top-bottom`, `under` and `over`; those three
+choices are the layout card's only placement controls. It does not repeat them
+through a separate **位置基准 / 随文字移动 / 固定在页面上** section, and it
+does not advertise Square/Tight/Through wrapping. Root absolute objects also
+expose one-step forward/backward stacking. A grouped text box omits the entire
+**布局** rail entry and panel rather than showing unavailable choices. No
+inline/wrap conversion is advertised because a multi-Block container has no
+inline Embed or block-wrap representation.
 
 Register `TextBoxBlockSchema`, `PlacementLayoutBlockSchema`, the allowed
 ordinary child schemas and `TextBoxToolbarPlugin` together. The bundled
 capability factory already does this. When the Schema is present, the fixed
-toolbar shows the `bc_wenbenkuang` **插入文本框** panel, laid out like Word:
-**横向** / **竖向** on top, then the style catalog.
+toolbar shows the `bc_wenbenkuang` **插入文本框** action and opens the style
+catalog directly. The fixed surface does not repeat **横向** / **竖向** plain
+insertion shortcuts; direction remains available from the selected text box's
+**文本** settings.
 
-The two direction entries insert a plain frame — they pass geometry and `wm`
-only, so `normalizeTextBoxProps()` supplies the appearance and there is no
-"plain" preset to keep in sync with the defaults. The catalog below is
-horizontal-only: it groups by shape (`CsSegmentedComponent` tabs) and stamps
-`wm: 'h'` on every pick. Presets are not offered transposed because Shape
+The catalog is horizontal-only: it groups entries into 线框 / 矩形 / 气泡
+(`CsSegmentedComponent` tabs), keeps **默认白框** first in 线框, and stamps
+`wm: 'h'` on every pick. There is no separate 精选 tab. Presets are not offered
+transposed because Shape
 geometry and the `bgi` surface image both stretch
 (`preserveAspectRatio="none"`) instead of rotating, so a tall frame smears the
 ornament rather than reorienting it. `getTextBoxPresetsFor(wm, cat?)` still
 filters by direction for callers that need it, and bundled speech bubbles still
 declare `wm: ['h']`; the picker simply queries it as `'h'`.
 
-Either entry arms the shared one-shot drawing surface, creates one absolute
+Picking a style arms the shared one-shot drawing surface, creates one absolute
 `over` object on pointerup, then reveals the object and enters its initial
 paragraph. Gesture cancellation never writes a temporary root-flow Block.
 
@@ -438,20 +455,33 @@ handle is rendered. Enter also enters editing; Escape returns to whole-object
 selection. Readonly WordArt stays selectable but does not open mutation
 controls.
 
-The connected toolbar exposes one of 10 safe font families, font size,
-solid/linear-gradient fills, outline,
-shadow toggle, letter spacing, horizontal/vertical alignment, safe
-affine/perspective/scale effects, inline/wrap plus the three block object
-layouts, root absolute stack order and deletion. A grouped WordArt omits the
-complete layout and stack control sets. The 16 whole-style presets remain
-in the fixed toolbar's **插入艺术字** visual dropdown; font-family selection is
-also available on the selected object so existing WordArt can be restyled. The
-shadow toggle uses the `bc_wenziyinying` iconfont glyph.
-Horizontal and vertical alignment are two iconfont-only triggers with
-iconfont-only secondary menus, active state, tooltip and accessible names. The
-outline-width and letter-spacing ranges share the shape toolbar's themed
-progress track, thumb and focus ring. Styling is whole-block; it does not write
-per-character inline attributes.
+The connected toolbar now follows the same two-level object pattern as TextBox.
+Its narrow vertical rail exposes **布局 / 艺术字格式 / 删除** and sits on the
+available left or right side of the selected object. Clicking **布局** opens a
+secondary card containing inline/wrap plus the three block object layouts and,
+for a root absolute object, stack order. Clicking **艺术字格式** opens a
+secondary card whose local tabs group the existing controls into 字体、填充与
+轮廓、效果. Only one secondary card is visible, and panel switching stays
+inside the same block-owned connected Overlay without writing document data.
+The Plugin repositions that Overlay on the next animation frame after card
+geometry changes. Both secondary cards are capped at 288px rather than
+expanding to the former wide settings surfaces. A grouped WordArt omits the
+complete 布局 rail entry and card.
+
+The formatting card continues to expose one of 10 safe font families, font
+size, solid/linear-gradient fills, outline, shadow toggle, letter spacing,
+horizontal/vertical alignment and safe affine/perspective/scale effects. The 16
+whole-style presets remain in the fixed toolbar's **插入艺术字** visual
+dropdown; font-family selection is also available on the selected object so
+existing WordArt can be restyled. The shadow toggle uses the
+`bc_wenziyinying` iconfont glyph. Generic form fields use CSES `Select`,
+`Segmented`, `InputNumber`, `ColorPicker`, `Slider` and `Switch` controls;
+BlockCraft continues to own only the editor-specific rail and layout geometry.
+Letter-spacing and outline-width slider previews stay local and commit once at
+the end of pointer/key interaction, avoiding Yjs and Undo flooding. Styling is
+whole-block; it does not write per-character inline attributes. CSES select and
+color-picker sibling panes count as owned interactions only while their
+originating control is open inside this toolbar.
 
 The real WordArt surface owns `ShapeResizerComponent` and
 `calculateWordArtResize()` while the Plugin creates only the connected
@@ -460,8 +490,8 @@ prevents rotated resize previews from drifting. Corners preserve the object
 aspect ratio and preview the scaled font size; left/right reflow width,
 top/bottom adjust height, and the rotation handle commits normalized degrees.
 Gesture previews run outside Angular and commit once on pointerup. The
-toolbar's fill, effect and alignment choices use the shared overlay menu
-components rather than native selects.
+toolbar's fill, effect and alignment choices use the standard CSES form
+components rather than native controls or BlockCraft command-menu components.
 
 Register `WordArtBlockSchema`, `PlacementLayoutBlockSchema` and
 `WordArtToolbarPlugin` together with a fresh
@@ -475,9 +505,10 @@ Choosing **嵌入型** or **四周型环绕** serializes normalized whole-object
 and plain-text Delta into one `word-art` Embed. An absolute object that visibly
 overlaps editable text is inserted at that covered line; otherwise it falls
 back to the nearest flow anchor. Clicking the Embed selects its length-one
-range and opens the same layout-only inline-object toolbar used by shapes.
-The selected frame supports the same immediate Pointer Events drag in both
-plain inline and wrapped modes, including cross-paragraph anchor movement.
+range and opens the same layout-only inline-object toolbar used by shapes; it
+does not expose text-side actions. A click creates no drag proxy. Pointer Events
+drag begins only after movement crosses the 2px threshold in both plain inline
+and wrapped modes, including cross-paragraph anchor movement.
 Top-bottom/under/over restores a WordArt block without losing presentation or
 text. HTML round-trips the payload; Markdown degrades to readable text.
 

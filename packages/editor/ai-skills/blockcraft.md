@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-08-15 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-08-17 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -160,12 +160,37 @@ const revealed = await doc.navigateToBlock(blockId)
 ```
 
 Typography ownership is layered and compact: root `ff/fs/lh` defines document
-defaults; editable block `lh` defines paragraph line height; inline
-`t:ff/t:fs/t:ls` defines selection font, relative scale and character spacing.
-The fixed toolbar exposes font family, relative scale, character spacing,
-alignment and line height as separate dropdowns. The floating text toolbar
+defaults; editable block `pfs/lh/psb/psa` defines paragraph base scale, line
+height and spacing; inline `t:ff/t:fs/t:ls` defines selection font, relative
+multiplier and character spacing. Effective text scale is `pfs × t:fs`.
+Complete-block font scaling writes `pfs` so ordered/bullet/todo prefixes inherit
+it; partial ranges and collapsed carets keep `t:fs`. This selection/model rule
+requires no DOM measurement or resize listener, and old inline-only documents
+are not migrated automatically.
+The fixed toolbar presents font family and relative scale as one adjacent,
+iconless Word-style control pair. Character spacing sits immediately before
+paragraph line height, while superscript/subscript share a split action whose
+main half repeats the active or most recently chosen baseline command. Each
+typography menu ends in a CSES **更多设置…** dialog focused on its originating
+field. Dialog edits remain draft-only until confirm. The floating text toolbar
 keeps its existing compact selection-format surface. Document defaults belong
 in a host document-settings/styles surface and mutate through `DocCRUD`.
+
+Ordered blocks optionally persist compact `ms` (marker style), selected from a 12-preset
+Word-like marker library (`1.`, `1)`, `(1)`, `1、`, `01.`, alphabetic, Roman,
+Chinese and circled forms). Missing / `null` keeps the historical depth cycle.
+Preset IDs are stable two-character codes: `n1..n5`, `a1..a2`, `r1..r2`,
+`c1..c2`, and `o1`.
+Use `resolveOrderedMarker()` for live or custom rendering and
+`applyOrderedMarkerStyle()` for a model-first, one-transaction numbering-group
+update. A marker group follows the automatic counter's `depth + heading` and
+structural-pruning rules: same-level non-ordered siblings do not break it,
+while a shallower boundary, relevant heading boundary, or explicit positive
+`start` does. The fixed toolbar exposes a split ordered-list button, and the
+live marker toolbar remains limited to continue / restart / recalculate.
+When a newly inserted ordered block joins an existing counter group and omits
+`ms`, it inherits the group's valid marker preset even across same-level
+non-ordered siblings. Explicit `start` begins a new group and does not inherit.
 
 The root block exposes optional document appearance props. `background` keeps
 the CSS shorthand as one string so color, image, position/size, repeat,
@@ -549,12 +574,13 @@ without stored responsive dimensions start from the Schema default and
 backfill complete `wr/ar` on the first successful mounted load without adding
 Undo history. Continuous virtualization and
 sparse pagination share one DOM-free model estimator for `wr/ar` media and
-inline-object `width/height`. Wrapped inline images, shapes and WordArt additionally reserve their
-contained object-plus-gap height and estimate constrained text lines from
-persisted `side/x/gap`. Eligible centered `side: 'auto'` images use the
-combined left-plus-right interval capacity; sequential wrapped anchors reserve
-non-overlapping exclusion bands. Ordinary measured text heights are not
-overwritten by fallback estimates.
+inline-object `width/height`. Wrapped inline images, shapes and WordArt
+additionally reserve their contained object-plus-gap height and estimate
+constrained text lines. Images read persisted `side/x/gap`; Shape and WordArt
+read `x/gap` and always use automatic wrapping geometry. Eligible centered
+automatic objects use the combined left-plus-right interval capacity;
+sequential wrapped anchors reserve non-overlapping exclusion bands. Ordinary
+measured text heights are not overwritten by fallback estimates.
 The layout and absolute descendants have no gap-cursor eligibility. Stale gap
 selection snapshots degrade to whole-object selection, and normal gaps are
 restored when an object returns to relative flow. While a whole absolute object
@@ -584,9 +610,17 @@ larger change is measured normally. Sparse pagination applies the same boundary:
 a warm retained host performs no pagination measurement, while a recreated host
 is verified once and equal canonical geometry stops before full pagination or
 scroll-anchor restoration.
-Local selection classes consume the same signal: only mounted covered blocks
-receive `.selected` / `.focused`, and newly mounted fragments are repainted
-from the current model selection without enumerating the complete range. A
+Local selection classes consume the same signal. Explicit whole-block
+selections keep their generic selected/focused interaction state. Native-backed
+ranges, including mixed whole-block↔text endpoints, add no generic block
+pseudo-selection to covered editable,
+void or structural blocks; a text range wholly inside one editable keeps only
+that owning block's `.focused` editing chrome. Inline Embeds use their separate
+atomic fallback class. Root ranges therefore leave the model-only absolute
+placement plane unpainted, and virtual scrolling cannot reveal object handles
+or stack block-sized fills over the native highlight. Newly mounted fragments
+are reconciled from the current model selection without enumerating the complete
+range. A
 non-collapsed virtual-root boundary Range anchors inside its adjacent pinned
 block edges rather than mutable offsets on the root container, so replacing
 intermediate DOM cannot shrink it. The Range is also reasserted from the
@@ -914,14 +948,18 @@ inline image's current visual coordinates.
 Embed converters. `ShapeToolbarPlugin` and `WordArtToolbarPlugin` expose
 **嵌入型 / 四周型环绕** in addition to their block layouts. The conversion
 stores normalized object props and text Delta in one primitive JSON Embed value
-and keeps `width/height/wrap/side/x/gap` as short attributes. An absolute object
-visibly covering editable text enters that covered line directly; otherwise it
-uses the nearest visual flow anchor.
+and keeps compact layout attributes. Shape and WordArt use
+`width/height/wrap/x/gap` and have no persisted `side`. An absolute
+object visibly covering editable text enters that covered line directly;
+otherwise it uses the nearest visual flow anchor.
 
 Clicking either inline object calls `setInlineRange(offset, 1)`, so the
 canonical selection and DOM Range both cover the Embed for copy/cut. The
-layout-only toolbar can change wrap side or restore a top-bottom/under/over
-block; detailed object editing resumes on that restored block. HTML preserves
+layout-only toolbar can restore a top-bottom/under/over block. Neither inline
+Shape nor WordArt exposes 自动环绕 / 文字在左 / 文字在右 controls:
+**四周型环绕** is the sole text-wrapping mode. A click selects and opens the
+toolbar without creating a drag proxy; movement must cross 2px before dragging
+starts. Detailed object editing resumes on the restored block. HTML preserves
 the payload and wrap metadata, while Markdown degrades to readable text.
 
 The block shape catalog exposes 103 `SHAPE_KINDS` through eight
@@ -938,6 +976,16 @@ active Selection. Dragging previews and commits an exact scale-normalized
 rectangle on pointer release; clicking without a drag uses the selected
 object's default dimensions. Cancel, blur, viewport movement, readonly and
 teardown paths leave Yjs unchanged.
+
+The selected WordArt block uses the same compact two-level toolbar structure as
+TextBox: a left/right vertical rail keeps **布局 / 艺术字格式 / 删除** visible,
+while layout and formatting open as one click-owned secondary card inside the
+same connected Overlay. Both secondary cards are capped at 288px; the format
+card groups the existing controls into 字体、填充与轮廓、效果 sections. Its generic form fields
+use CSES Select、Segmented、InputNumber、ColorPicker、Slider and Switch
+components. Opening or switching a card writes no model data; slider previews
+stay local, and only a concrete or completed control action emits the existing
+props update.
 
 ### DocChain (Fluent Mutations)
 
@@ -1062,6 +1110,9 @@ doc.selection.getSelectedText()         // string
 // centralized behind the internal zero-cache SelectionSurfaceAdapter.
 // Non-collapsed container-boundary DOM endpoints normalize to boundary points:
 //   { blockId: container.id, type: 'boundary', index: childBoundaryIndex }
+// Programmatic boundary ranges project to adjacent child text/gap edges so a
+// nested editable container paints a visible native selection; exact DOM
+// resampling retains the canonical boundary model.
 // Same-container boundary ranges in paragraph-capable renderUnit containers
 // support Yjs-owned replace/delete/IME materialization.
 // Shift+Arrow over void/container gap blocks, and Shift+Arrow leaving a
@@ -1096,9 +1147,9 @@ doc.selection.getSelectedText()         // string
 // top-level children and is the topmost document scope.
 // When native drag crosses a closed scope, the internal endpoint is projected
 // to the scope block's parent boundary instead of collapsing the whole range.
-// Input/IME and selected-class behavior read SelectionScopePolicy; columns
-// preserves cross-column text tails, while table/columns use endpoint-only
-// generic selected classes for text-shaped ranges.
+// Input/IME behavior reads SelectionScopePolicy; columns preserves
+// cross-column text tails. Native-backed ranges do not reuse generic
+// selected/focused interaction classes for their covered blocks.
 
 // Type-narrowing example
 const sel = doc.selection.value
@@ -1130,7 +1181,10 @@ doc.selection.setGapCursor(block, 'before' | 'after', scrollIntoView?)  // gap c
 doc.selection.setTableCellSelection(table, anchorCell, headCell?, scrollIntoView?) // model-owned table rectangle
 doc.selection.extendTo(editableBlock, offset)  // shift+click
 doc.selection.selectAllChildren(block)         // editable text range; container/root boundary range
-// Ctrl+A ladder: partial text -> full text -> parent boundary range -> parent content
+// Ctrl+A boundary: inside a container scope (text-box/callout), the first press
+// selects the container's complete child boundary range. Repeated presses stay
+// there only when the container is inside an absolute object; normal-flow
+// containers continue through their parent to root.
 doc.selection.blur()                           // clear
 
 // Optional virtual-renderer bridge. The disposer and AbortSignal cancel stale
@@ -1231,8 +1285,8 @@ onBold(ctx: UIEventStateContext) { ... }
 | `TableBlockBinding` | `plugins/tableBlockBinding.ts` | Table clipboard, model/explicit cell-range keyboard bindings, merge/split helpers |
 | `ImgToolbarPlugin` | `plugins/img-toolbar/` | Block/inline image resize, toolbar actions, and bidirectional conversion |
 | `ShapeToolbarPlugin` | `plugins/shape-toolbar/` | Shape block/inline selection, styling, inline/wrap conversion, placement, drag, resize and rotation |
-| `TextBoxToolbarPlugin` | `plugins/text-box-toolbar/` | Fixed text-box frame/text dual state, Word-style vertical rail and click-owned layout/style/Shape/WordArt settings cards, placement, drag and stack controls |
-| `WordArtToolbarPlugin` | `plugins/word-art-toolbar/` | WordArt block/inline selection, styling, inline/wrap conversion, placement, drag, resize and rotation |
+| `TextBoxToolbarPlugin` | `plugins/text-box-toolbar/` | Fixed text-box frame/text dual state, Word-style vertical rail and click-owned layout/style/Shape/WordArt settings cards; style-owned editable safe area, placement, drag and stack controls |
+| `WordArtToolbarPlugin` | `plugins/word-art-toolbar/` | WordArt block/inline selection, TextBox-style two-level styling toolbar, inline/wrap conversion, placement, drag, resize and rotation |
 | `ObjectGroupToolbarPlugin` | `plugins/object-group-toolbar/` | Shift-select contiguous root absolute objects, align/distribute or group them, and enter a selected group's members |
 | `CalloutToolbarPlugin` | `plugins/callout-toolbar/` | Callout and content-region appearance picker |
 | `DividerExtensionPlugin` | `plugins/divider-toolbar/` | Divider hover toolbar (line/tape/colorful edge style, custom line color, independent length/thickness/opacity, optional text label + typography/alignment/color) |

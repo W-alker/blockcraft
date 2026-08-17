@@ -1,6 +1,10 @@
 import {IBlockSnapshot} from "../../framework/block-std/types/block.type";
 import {InlineModel} from "../../framework/block-std/types/inline.type";
-import {getNumberPrefix} from "../../blocks/ordered-block/utils/get-number-prefix";
+import {
+  OrderedMarkerStyleId,
+  resolveOrderedMarker,
+  resolveOrderedMarkerDigitScale,
+} from "../../blocks/ordered-block/utils/get-number-prefix";
 import {renderHighlightedCodeModel} from "../highlight/render-highlighted-code";
 import {renderInline} from "../inline/render-inline";
 import {createBlockShell} from "../dom/create-block-shell";
@@ -69,11 +73,25 @@ function renderOrdered(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   const element = createBlockShell(snapshot)
   applyListAlignment(element, snapshot)
 
-  const props = snapshot.props as Record<string, number>
+  const props = snapshot.props as Record<string, unknown>
+  const marker = resolveOrderedMarker(
+    Number(props["order"] ?? 0),
+    Number(props["depth"] ?? 0),
+    props["ms"] as OrderedMarkerStyleId | null | undefined,
+  )
   const prefix = document.createElement("button")
   prefix.classList.add("ordered-block-prefix")
+  prefix.setAttribute("type", "button")
   prefix.setAttribute("contenteditable", "false")
-  prefix.textContent = `${getNumberPrefix(props["order"] || 0, props["depth"] || 0)}.`
+  if (marker.enclosure) {
+    prefix.setAttribute("data-bc-marker-enclosure", marker.enclosure)
+  }
+  const text = document.createElement("span")
+  text.classList.add("ordered-block-prefix__text")
+  const digitScale = resolveOrderedMarkerDigitScale(marker.text, marker.enclosure)
+  if (digitScale) text.style.fontSize = digitScale
+  text.textContent = marker.text
+  prefix.append(text)
 
   element.append(prefix, createEditableContainer(ctx, snapshot))
   return {element}

@@ -1,6 +1,4 @@
 import {TestBed} from '@angular/core/testing';
-import {By} from '@angular/platform-browser';
-import {CsTooltipDirective} from '@cses/ui';
 import {InlineImageToolbar} from './inline-image.toolbar';
 
 describe('InlineImageToolbar', () => {
@@ -48,12 +46,11 @@ describe('InlineImageToolbar', () => {
     ]);
   });
 
-  it('shows typed wrap-side controls only for square wrapping', () => {
+  it('does not split four-sided wrapping into text-side actions', () => {
     const fixture = TestBed.configureTestingModule({
       imports: [InlineImageToolbar],
     }).createComponent(InlineImageToolbar);
     fixture.componentRef.setInput('layout', 'wrap');
-    fixture.componentRef.setInput('side', 'left');
     fixture.detectChanges();
 
     const sideItems = Array.from<HTMLElement>(
@@ -61,18 +58,6 @@ describe('InlineImageToolbar', () => {
         'bc-float-toolbar-item[name="inline-wrap-side"]',
       ),
     );
-    expect(sideItems.length).toBe(3);
-    expect(fixture.debugElement.queryAll(
-      By.directive(CsTooltipDirective),
-    ).length).toBe(8);
-    expect(sideItems[1].classList.contains('active')).toBeTrue();
-
-    let value: unknown;
-    fixture.componentInstance.onItemClicked.subscribe(item => value = item.value);
-    sideItems[2].dispatchEvent(new MouseEvent(
-      'mousedown',
-      {bubbles: true, cancelable: true},
-    ));
-    expect(value).toBe('right');
+    expect(sideItems.length).toBe(0);
   });
 });

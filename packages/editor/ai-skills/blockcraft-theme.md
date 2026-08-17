@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-16
+> Last updated: 2026-08-17
 
 ## Theme Structure
 
@@ -80,6 +80,25 @@ rendered projection of Yjs metadata; use
 `doc.setBlockReadonly(blockId, readonly, {kind})` for model changes. Likewise,
 the reveal attribute changes only appearance and never grants unlock access.
 
+## Ordered Marker DOM Contract
+
+Live rendering and Snapshot rendering share this marker structure:
+
+```html
+<button class="ordered-block-prefix">
+  <span class="ordered-block-prefix__text">1.</span>
+</button>
+```
+
+The circle preset adds `data-bc-marker-enclosure="circle"` to the button. Its
+compact ring is theme-owned CSS geometry using `currentColor`, and even a
+single digit is optically reduced inside it. The ring includes print color
+adjustment and is not a Unicode circled-number glyph. Hosts may style the
+documented classes and attribute but must keep the inner text span because live
+and Snapshot views use the same contract. Pointer handlers should resolve the
+button with `closest('.ordered-block-prefix')` instead of assuming it is the
+direct event target.
+
 ## Collaboration Cursor Colors
 
 `BlockCraftAwareness.setLocalUser()` accepts an optional concrete CSS
@@ -151,9 +170,15 @@ Read `themes/base.scss` and `themes/variables.scss` for the current variable lis
 --bc-line-height
 --bc-fs                         // document base font size; root `fs` may override
 --bc-lh                         // document unitless line-height; root `lh` may override
+--bc-block-fs-scale             // editable paragraph `pfs` ratio
 --bc-block-lh                   // editable block line-height override
 
 // Spacing
+--bc-segments-gap               // default inter-block gap in CSS px
+--bc-block-sb                   // persisted paragraph space-before in pt
+--bc-block-sa                   // persisted paragraph space-after in pt
+--bc-next-block-sb              // following editable sibling's space-before
+--bc-block-leading-sb           // first-child leading space-before
 --bc-block-padding
 --bc-block-margin
 
@@ -252,7 +277,17 @@ ordinary child Blocks. The fixed paint viewport owns clipping/scrolling so the
 outer shell does not clip resize and rotation handles. Live editing may scroll
 overflowing prose, while readonly, Snapshot Viewer and print output clip to the
 persisted frame. Keep exactly one `data-bc-print-visual-surface` on the painted
-object and mark transform handles `data-bc-print-exclude`.
+object and mark transform handles `data-bc-print-exclude`. While a descendant
+text selection owns the frame, `TextBoxToolbarPlugin` adds
+`.text-box-block--editing`; the base text-box theme paints the active-color
+outline on `.text-box-block__surface`, not on `.text-box-block__content`, so the
+outer object context remains visible without restoring the hidden browser focus
+outline or scrollbar chrome on the editable viewport. The intentional nested
+`contenteditable=false → true` editing island remains in place. Ordinary
+text-box prose uses a column layout whose last real child grows across remaining
+block-axis space, so native caret hit testing reaches the paragraph throughout
+the frame without a blank-area event handler. The WordArt presentation variant
+does not grow its last child because it owns vertical alignment itself.
 
 Snapshot Viewer creates the same common or block-specific variables and
 attributes on its block shells.
@@ -284,6 +319,35 @@ Root `ff/fs/lh` are persisted document defaults. `ff` resolves a short catalog
 ID to a portable platform font stack; `fs` projects `--bc-fs`; `lh` projects
 `--bc-lh`. Editable `lh` projects `--bc-block-lh` and takes precedence only for
 that paragraph. Snapshot Viewer follows the same precedence.
+
+Editable `pfs` projects `--bc-block-fs-scale` and an effective relative
+`font-size` on the editable host. `resolveEditableBlockFontScale()` combines
+the paragraph value with built-in heading/caption presentation scale before
+that percentage is written. Inline `t:fs` remains an `em` multiplier, so
+effective text size is root `fs × pfs × t:fs`; ordered/bullet/todo prefixes
+inherit the same host size. This percentage projection avoids relying on
+nested CSS typed-arithmetic support in older WebKit/WKWebView.
+Every `[data-block-id]` resets the scale variable to `1` to prevent a container's
+custom property from leaking into nested paragraphs.
+
+Paragraph spacing and indentation use typographic points in persisted props,
+then project through the variables above. The common theme owns exactly one
+gap between siblings:
+
+```scss
+margin-bottom: max(
+  var(--bc-block-sa, var(--bc-segments-gap)),
+  var(--bc-next-block-sb, 0pt)
+);
+```
+
+The last child resets that margin to zero. A first editable child's `psb`
+projects as `padding-block-start` through `--bc-block-leading-sb`; later
+paragraphs contribute through the previous sibling's
+`--bc-next-block-sb`. Do not add an independent `margin-top` rule: it would
+reintroduce browser-dependent collapse,
+double gaps in flex/text-box containers and pagination stride drift. Snapshot
+Viewer projects the same sibling variables after mounting or patching children.
 
 ### Whole-document visual scale
 

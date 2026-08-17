@@ -62,6 +62,10 @@ describe("TextToolbarHelper boundary selections", () => {
         transact: (fn: () => void) => fn(),
         replaceWithSnapshots: jasmine.createSpy("replaceWithSnapshots"),
       },
+      inputManger: {
+        peekNextInsertAttrs: jasmine.createSpy("peekNextInsertAttrs").and.returnValue(null),
+        setNextInsertAttrs: jasmine.createSpy("setNextInsertAttrs"),
+      },
       selection: {
         setSelection: jasmine.createSpy("setSelection"),
         setSuppressRecalculate: jasmine.createSpy("setSuppressRecalculate"),
@@ -98,6 +102,23 @@ describe("TextToolbarHelper boundary selections", () => {
     expect(p1.updateProps).toHaveBeenCalledOnceWith({textAlign: "center"});
     expect(p2.updateProps).toHaveBeenCalledOnceWith({textAlign: "center"});
     expect(outside.updateProps).not.toHaveBeenCalled();
+    rootHost.remove();
+  });
+
+  it("reads every block when reporting typography for a boundary range", () => {
+    const {helper, root, p1, p2, rootHost, selection} = makeHarness();
+    (p1 as any).props = {depth: 0, pfs: 1.5};
+    (p2 as any).props = {depth: 0, pfs: 1.5};
+    (p1 as any).textDeltas = () => [{insert: "one", attributes: {"t:ff": "kai"}}];
+    (p2 as any).textDeltas = () => [{insert: "two", attributes: {"t:ff": "kai"}}];
+    const boundarySelection = selection(
+      {blockId: "root", type: "boundary", index: 0, block: root},
+      {blockId: "root", type: "boundary", index: 2, block: root},
+    );
+
+    const common = helper.getCurrentCommonAttrs(boundarySelection as any);
+
+    expect(common.typography).toEqual({ff: "kai", fs: 1.5, ls: null});
     rootHost.remove();
   });
 
@@ -224,8 +245,8 @@ describe("TextToolbarHelper boundary selections", () => {
 
   it("normalizes compact and legacy typography into one common toolbar state", () => {
     const {helper, p1, p2, rootHost, selection} = makeHarness();
-    (p1 as any).props = {depth: 0, lh: 1.5};
-    (p2 as any).props = {depth: 0, lh: 1.5};
+    (p1 as any).props = {depth: 0, lh: 1.5, psb: 6, psa: 12};
+    (p2 as any).props = {depth: 0, lh: 1.5, psb: 6, psa: 12};
     (p1 as any).textDeltas = () => [{insert: "one", attributes: {"t:ff": "kai", "t:fs": 1.2, "t:ls": 0.1}}];
     (p2 as any).textDeltas = () => [{insert: "two", attributes: {
       "s:fontFamily": '"Kaiti SC", KaiTi, serif',
@@ -233,14 +254,19 @@ describe("TextToolbarHelper boundary selections", () => {
       "s:letterSpacing": "0.1em",
     }}];
     const textSelection = selection(
-      {blockId: "p1", type: "text", offset: 0, block: p1},
-      {blockId: "p2", type: "text", offset: 3, block: p2},
+      {blockId: "p1", type: "text", offset: 1, block: p1},
+      {blockId: "p2", type: "text", offset: 2, block: p2},
     );
 
     const common = helper.getCurrentCommonAttrs(textSelection as any);
 
     expect(common.typography).toEqual({ff: "kai", fs: 1.2, ls: 0.1});
-    expect(common.paragraph).toEqual({lh: 1.5});
+    expect(common.paragraph).toEqual({
+      pfs: null,
+      lh: 1.5,
+      psb: 6,
+      psa: 12,
+    });
     rootHost.remove();
   });
 
@@ -251,14 +277,95 @@ describe("TextToolbarHelper boundary selections", () => {
     (p1 as any).textDeltas = () => [{insert: "one", attributes: {"t:fs": 1.2}}];
     (p2 as any).textDeltas = () => [{insert: "two", attributes: {"t:fs": 1.5}}];
     const textSelection = selection(
-      {blockId: "p1", type: "text", offset: 0, block: p1},
-      {blockId: "p2", type: "text", offset: 3, block: p2},
+      {blockId: "p1", type: "text", offset: 1, block: p1},
+      {blockId: "p2", type: "text", offset: 2, block: p2},
     );
 
     const common = helper.getCurrentCommonAttrs(textSelection as any);
 
     expect(common.typography?.fs).toBeUndefined();
     expect(common.paragraph?.lh).toBeUndefined();
+    rootHost.remove();
+  });
+
+  it("promotes a complete text block font scale to pfs and clears inline size", () => {
+    const {helper, doc, p1, rootHost, selection} = makeHarness();
+    const textSelection = selection(
+      {blockId: "p1", type: "text", offset: 0, block: p1},
+      {blockId: "p1", type: "text", offset: 3, block: p1},
+    );
+
+    helper.formatTypography({fontScale: 1.5}, textSelection as any);
+
+    expect(p1.updateProps).toHaveBeenCalledOnceWith({pfs: 1.5});
+    expect(p1.formatText).toHaveBeenCalledOnceWith(0, 3, {
+      "t:fs": null,
+      "s:fontSize": null,
+    });
+    expect(doc.selection.setSelection).toHaveBeenCalledWith(
+      textSelection.start,
+      textSelection.end,
+    );
+    rootHost.remove();
+  });
+
+  it("keeps a partial text range as inline font scale", () => {
+    const {helper, p1, rootHost, selection} = makeHarness();
+    const textSelection = selection(
+      {blockId: "p1", type: "text", offset: 1, block: p1},
+      {blockId: "p1", type: "text", offset: 2, block: p1},
+    );
+
+    helper.formatTypography({fontScale: 1.5}, textSelection as any);
+
+    expect(p1.updateProps).not.toHaveBeenCalled();
+    expect(p1.formatText).toHaveBeenCalledOnceWith(1, 1, {
+      "t:fs": 1.5,
+      "s:fontSize": null,
+    });
+    rootHost.remove();
+  });
+
+  it("partitions a cross-block font scale into paragraph and inline targets", () => {
+    const {helper, p1, p2, rootHost, selection} = makeHarness();
+    const textSelection = selection(
+      {blockId: "p1", type: "text", offset: 0, block: p1},
+      {blockId: "p2", type: "text", offset: 2, block: p2},
+    );
+
+    helper.formatTypography({fontScale: 1.25}, textSelection as any);
+
+    expect(p1.updateProps).toHaveBeenCalledOnceWith({pfs: 1.25});
+    expect(p1.formatText).toHaveBeenCalledOnceWith(0, 3, {
+      "t:fs": null,
+      "s:fontSize": null,
+    });
+    expect(p2.updateProps).not.toHaveBeenCalled();
+    expect(p2.formatText).toHaveBeenCalledOnceWith(0, 2, {
+      "t:fs": 1.25,
+      "s:fontSize": null,
+    });
+    rootHost.remove();
+  });
+
+  it("stores a collapsed caret font scale only as next-insert attrs", () => {
+    const {helper, doc, p1, rootHost, selection} = makeHarness();
+    const caret = selection(
+      {blockId: "p1", type: "text", offset: 1, block: p1},
+      {blockId: "p1", type: "text", offset: 1, block: p1},
+    );
+
+    helper.formatTypography({fontScale: 1.5}, caret as any);
+
+    expect(doc.inputManger.setNextInsertAttrs).toHaveBeenCalledWith(
+      {"t:fs": 1.5},
+      {blockId: "p1", index: 1},
+    );
+    expect(p1.updateProps).not.toHaveBeenCalled();
+    expect(p1.formatText).toHaveBeenCalledOnceWith(1, 0, {
+      "t:fs": 1.5,
+      "s:fontSize": null,
+    });
     rootHost.remove();
   });
 
@@ -317,9 +424,18 @@ describe("TextToolbarHelper boundary selections", () => {
       return 1;
     });
 
-    helper.transformBlocks("bullet", textSelection as any);
+    helper.transformBlocks("ordered", textSelection as any, {
+      ms: "a2",
+    });
     flushMicrotasks();
 
+    expect(doc.schemas.createSnapshot).toHaveBeenCalledWith(
+      "ordered",
+      jasmine.arrayContaining([
+        jasmine.any(Array),
+        jasmine.objectContaining({ms: "a2"}),
+      ]),
+    );
     expect(doc.selection.setSuppressRecalculate.calls.allArgs()).toEqual([[true], [false]]);
     expect(doc.selection.replay).toHaveBeenCalledOnceWith({
       anchor: {blockId: "replacement-1", type: "text", offset: 0},

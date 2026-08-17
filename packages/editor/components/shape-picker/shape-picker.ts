@@ -73,6 +73,10 @@ import {
       box-shadow: none;
     }
 
+    :host(.shape-picker-host--embedded) .shape-picker__grid {
+      grid-template-columns: repeat(8, minmax(0, 1fr));
+    }
+
     .shape-picker {
       box-sizing: border-box;
       width: min(320px, calc(100vw - 16px));

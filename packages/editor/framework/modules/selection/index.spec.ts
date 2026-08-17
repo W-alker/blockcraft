@@ -81,6 +81,203 @@ describe('SelectionManager DOM selection normalization', () => {
     };
   }
 
+  function createAbsoluteContainerManager() {
+    document.getSelection()?.removeAllRanges();
+
+    const rootHost = document.createElement('div');
+    rootHost.dataset['blockId'] = 'root';
+    rootHost.dataset['nodeType'] = BlockNodeType.root;
+    rootHost.contentEditable = 'true';
+
+    const outsideHost = document.createElement('p');
+    outsideHost.dataset['blockId'] = 'outside';
+    outsideHost.dataset['nodeType'] = BlockNodeType.editable;
+    const outsideContainer = document.createElement('span');
+    const outsideText = document.createTextNode('outside');
+    outsideContainer.appendChild(outsideText);
+    outsideHost.appendChild(outsideContainer);
+
+    const textBoxHost = document.createElement('div');
+    textBoxHost.dataset['blockId'] = 'text-box';
+    textBoxHost.dataset['nodeType'] = BlockNodeType.block;
+    textBoxHost.contentEditable = 'false';
+    const editingHost = document.createElement('div');
+    editingHost.className = 'text-box-block__content';
+    editingHost.contentEditable = 'true';
+    const insideHost = document.createElement('p');
+    insideHost.dataset['blockId'] = 'inside';
+    insideHost.dataset['nodeType'] = BlockNodeType.editable;
+    const insideContainer = document.createElement('span');
+    const insideText = document.createTextNode('inside');
+    insideContainer.appendChild(insideText);
+    insideHost.appendChild(insideContainer);
+    editingHost.appendChild(insideHost);
+    textBoxHost.appendChild(editingHost);
+    rootHost.append(outsideHost, textBoxHost);
+    document.body.appendChild(rootHost);
+
+    const onDestroy$ = new Subject<void>();
+    const rootBlock = {
+      id: 'root',
+      flavour: 'root',
+      nodeType: BlockNodeType.root,
+      hostElement: rootHost,
+      childrenIds: ['outside', 'text-box'],
+      childrenLength: 2,
+    } as any;
+    const outsideBlock = {
+      id: 'outside',
+      flavour: 'paragraph',
+      nodeType: BlockNodeType.editable,
+      hostElement: outsideHost,
+      containerElement: outsideContainer,
+      parentId: rootBlock.id,
+      parentBlock: rootBlock,
+      textLength: outsideText.length,
+    } as any;
+    const textBoxBlock = {
+      id: 'text-box',
+      flavour: 'text-box',
+      nodeType: BlockNodeType.block,
+      hostElement: textBoxHost,
+      parentId: rootBlock.id,
+      parentBlock: rootBlock,
+      childrenIds: ['inside'],
+      childrenLength: 1,
+    } as any;
+    const insideBlock = {
+      id: 'inside',
+      flavour: 'paragraph',
+      nodeType: BlockNodeType.editable,
+      hostElement: insideHost,
+      containerElement: insideContainer,
+      parentId: textBoxBlock.id,
+      parentBlock: textBoxBlock,
+      textLength: insideText.length,
+      runtime: {
+        mapper: {
+          modelPointToDomPoint: (_container: HTMLElement, offset: number) => ({
+            node: insideText,
+            offset,
+          }),
+          domPointToModelPoint: (
+            _container: HTMLElement,
+            _node: Node,
+            offset: number,
+          ) => offset,
+        },
+      },
+    } as any;
+    outsideBlock.runtime = {
+      mapper: {
+        modelPointToDomPoint: (_container: HTMLElement, offset: number) => ({
+          node: outsideText,
+          offset,
+        }),
+        domPointToModelPoint: (
+          _container: HTMLElement,
+          _node: Node,
+          offset: number,
+        ) => offset,
+      },
+    };
+
+    const blocks = new Map([
+      [rootBlock.id, rootBlock],
+      [outsideBlock.id, outsideBlock],
+      [textBoxBlock.id, textBoxBlock],
+      [insideBlock.id, insideBlock],
+    ]);
+    let selectionChangeHandler: ((event: Event) => void) | null = null;
+    const doc = {
+      root: rootBlock,
+      rootId: rootBlock.id,
+      event: {
+        add() {},
+        bindHotkey() {},
+        status: {isComposing: false},
+        customListen(_target: EventTarget, type: string) {
+          return {
+            subscribe(fn: (event: Event) => void) {
+              if (type === 'selectionchange') selectionChangeHandler = fn;
+              return {unsubscribe() {}};
+            },
+          };
+        },
+      },
+      afterInit(fn: (root: any) => void) {
+        fn(rootBlock);
+      },
+      onDestroy$,
+      getBlockById: (id: string) => blocks.get(id),
+      isEditable: (block: any) => block?.nodeType === BlockNodeType.editable,
+      schemas: {
+        get: (flavour: string) => ({
+          metadata: {
+            selectionScope: flavour === 'root'
+              ? 'document'
+              : flavour === 'text-box'
+                ? 'container'
+                : undefined,
+          },
+        }),
+      },
+      placement: {
+        isInAbsoluteLayout: (block: any) => block?.id === textBoxBlock.id,
+      },
+      compareBlockPosition: () => 0,
+      queryBlocksBetween: () => [],
+      logger: {warn: jasmine.createSpy('warn')},
+    } as any;
+    for (const block of blocks.values()) block.doc = doc;
+
+    const manager = new SelectionManager(doc);
+    doc.selection = manager;
+    const setNativeCursor = (node: Text, offset: number) => {
+      const range = document.createRange();
+      range.setStart(node, offset);
+      range.collapse(true);
+      const selection = document.getSelection()!;
+      selection.removeAllRanges();
+      selection.addRange(range);
+    };
+    const dispatchSelectionChange = () =>
+      selectionChangeHandler?.(new Event('selectionchange'));
+    const dispatchArrow = (key: string) => {
+      const event = new KeyboardEvent('keydown', {
+        key,
+        bubbles: true,
+        cancelable: true,
+      });
+      insideHost.dispatchEvent(event);
+      return event;
+    };
+    const dispatchArrowKeyup = (key: string) => {
+      const event = new KeyboardEvent('keyup', {
+        key,
+        bubbles: true,
+        cancelable: true,
+      });
+      insideHost.dispatchEvent(event);
+      return event;
+    };
+
+    return {
+      manager,
+      doc,
+      rootHost,
+      editingHost,
+      insideHost,
+      insideText,
+      outsideText,
+      insideBlock,
+      setNativeCursor,
+      dispatchSelectionChange,
+      dispatchArrow,
+      dispatchArrowKeyup,
+    };
+  }
+
   afterEach(() => {
     document.getSelection()?.removeAllRanges();
     document.querySelectorAll('[data-block-id="root"]').forEach(el => el.remove());
@@ -529,6 +726,122 @@ describe('SelectionManager DOM selection normalization', () => {
     await new Promise(resolve => setTimeout(resolve, 30));
 
     expect(recalculateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('repairs a plain-arrow native caret that escapes an absolute container', () => {
+    const h = createAbsoluteContainerManager();
+    h.manager.setCursorAt(h.insideBlock, 3);
+    const recalculate = spyOn(h.manager, 'recalculate').and.callThrough();
+
+    const keydown = h.dispatchArrow('ArrowUp');
+    h.setNativeCursor(h.outsideText, 2);
+    h.rootHost.focus();
+    h.dispatchSelectionChange();
+
+    expect(keydown.defaultPrevented).toBeFalse();
+    expect(recalculate).not.toHaveBeenCalled();
+    expect(h.manager.value?.start.type).toBe('text');
+    expect(h.manager.value?.start.blockId).toBe(h.insideBlock.id);
+    expect(h.manager.value?.start.type === 'text'
+      ? h.manager.value.start.offset
+      : null).toBe(3);
+    expect(h.insideHost.contains(document.getSelection()?.anchorNode ?? null))
+      .toBeTrue();
+    expect(document.activeElement).toBe(h.editingHost);
+    expect((h.manager as any)._navigationFence).toBeNull();
+  });
+
+  it('accepts a plain-arrow caret move that stays in the absolute container', () => {
+    const h = createAbsoluteContainerManager();
+    h.manager.setCursorAt(h.insideBlock, 3);
+    const recalculate = spyOn(h.manager, 'recalculate').and.returnValue({
+      value: h.manager.value,
+    });
+
+    h.dispatchArrow('ArrowUp');
+    h.setNativeCursor(h.insideText, 1);
+    h.dispatchSelectionChange();
+
+    expect(recalculate).toHaveBeenCalledTimes(1);
+    expect(document.getSelection()?.anchorOffset).toBe(1);
+    expect((h.manager as any)._navigationFence).toBeNull();
+  });
+
+  it('repairs an escaped caret synchronously on keyup before selectionchange', () => {
+    const h = createAbsoluteContainerManager();
+    h.manager.setCursorAt(h.insideBlock, 3);
+
+    h.dispatchArrow('ArrowUp');
+    h.setNativeCursor(h.outsideText, 2);
+    h.dispatchArrowKeyup('ArrowUp');
+
+    expect(h.manager.value?.start.blockId).toBe(h.insideBlock.id);
+    expect(h.insideHost.contains(document.getSelection()?.anchorNode ?? null))
+      .toBeTrue();
+    expect((h.manager as any)._navigationFence).toBeNull();
+  });
+
+  it('repairs a pending escape before arming a repeated arrow intent', () => {
+    const h = createAbsoluteContainerManager();
+    h.manager.setCursorAt(h.insideBlock, 3);
+
+    h.dispatchArrow('ArrowUp');
+    h.setNativeCursor(h.outsideText, 2);
+    h.dispatchArrow('ArrowUp');
+
+    expect(h.manager.value?.start.blockId).toBe(h.insideBlock.id);
+    expect(h.insideHost.contains(document.getSelection()?.anchorNode ?? null))
+      .toBeTrue();
+    expect((h.manager as any)._navigationFence).not.toBeNull();
+  });
+
+  it('falls back to canonical projection when the captured source range rebases', () => {
+    const h = createAbsoluteContainerManager();
+    h.manager.setCursorAt(h.insideBlock, 3);
+    h.dispatchArrow('ArrowUp');
+    const fence = (h.manager as any)._navigationFence;
+    const rebased = document.createRange();
+    rebased.setStart(h.editingHost, 0);
+    rebased.collapse(true);
+    fence.sourceRange = rebased;
+    const project = spyOn<any>(h.manager, '_applyDomRangeForSelection')
+      .and.callThrough();
+
+    h.setNativeCursor(h.outsideText, 2);
+    h.dispatchSelectionChange();
+
+    expect(project).toHaveBeenCalled();
+    expect(h.manager.value?.start.blockId).toBe(h.insideBlock.id);
+    expect(h.insideHost.contains(document.getSelection()?.anchorNode ?? null))
+      .toBeTrue();
+  });
+
+  it('repairs a composing caret escape without consuming the candidate arrow', () => {
+    const h = createAbsoluteContainerManager();
+    h.manager.setCursorAt(h.insideBlock, 4);
+    h.doc.event.status.isComposing = true;
+    const recalculate = spyOn(h.manager, 'recalculate').and.callThrough();
+
+    const keydown = h.dispatchArrow('ArrowUp');
+    h.setNativeCursor(h.outsideText, 2);
+    h.dispatchSelectionChange();
+
+    expect(keydown.defaultPrevented).toBeFalse();
+    expect(recalculate).not.toHaveBeenCalled();
+    expect(h.manager.value?.start.blockId).toBe(h.insideBlock.id);
+    expect(document.getSelection()?.anchorOffset).toBe(4);
+    expect(h.insideHost.contains(document.getSelection()?.anchorNode ?? null))
+      .toBeTrue();
+  });
+
+  it('does not fence the same container while it participates in normal flow', () => {
+    const h = createAbsoluteContainerManager();
+    h.doc.placement.isInAbsoluteLayout = () => false;
+    h.manager.setCursorAt(h.insideBlock, 3);
+
+    h.dispatchArrow('ArrowUp');
+
+    expect((h.manager as any)._navigationFence).toBeNull();
   });
 
   it('selects editable children through the canonical model immediately', () => {
@@ -990,10 +1303,10 @@ describe('SelectionManager DOM selection normalization', () => {
 
     const nativeSelection = document.getSelection()!;
     const range = nativeSelection.getRangeAt(0);
-    expect(range.startContainer).toBe(content);
+    expect(range.startContainer).toBe(p1Host);
     expect(range.startOffset).toBe(0);
-    expect(range.endContainer).toBe(content);
-    expect(range.endOffset).toBe(2);
+    expect(range.endContainer).toBe(p2Host);
+    expect(range.endOffset).toBe(0);
   });
 
   it('maps boundary points around a gap block to its gap text anchors', () => {
@@ -1132,6 +1445,8 @@ describe('SelectionManager DOM selection normalization', () => {
     return {
       manager,
       content,
+      p1Host,
+      p2Host,
       dispatchSelectionChange: () => selectionChangeHandler?.(new Event('selectionchange')),
     };
   }
@@ -1282,8 +1597,13 @@ describe('SelectionManager DOM selection normalization', () => {
 
     expect(manager.value?.getBoundarySelectedChildIds()).toEqual(['p1', 'p2']);
     const range = document.getSelection()!.getRangeAt(0);
-    expect(range.startContainer).toBe(content);
-    expect(range.endContainer).toBe(content);
+    expect(range.startContainer).toBe(p1Host);
+    expect(range.endContainer).toBe(p2Host);
+
+    const modelSelection = manager.value?.toJSON();
+    (manager as any)._suppressProgrammaticSelectionChangeUntil = 0;
+    manager.recalculate();
+    expect(manager.value?.toJSON()).toEqual(modelSelection);
   });
 
   it('projects and recovers a full-root range between the outer flow block edges', async () => {
@@ -1423,7 +1743,7 @@ describe('SelectionManager DOM selection normalization', () => {
   });
 
   it('replays reversed boundary JSON without normalizing canonical anchor/head', () => {
-    const {manager, content} = createBoundaryBridgeManager();
+    const {manager, p1Host, p2Host} = createBoundaryBridgeManager();
 
     manager.replay({
       anchor: {blockId: 'callout-1', type: 'boundary', index: 2},
@@ -1440,10 +1760,10 @@ describe('SelectionManager DOM selection normalization', () => {
     });
     expect(value?.getBoundarySelectedChildIds()).toEqual(['p1', 'p2']);
     const range = document.getSelection()!.getRangeAt(0);
-    expect(range.startContainer).toBe(content);
+    expect(range.startContainer).toBe(p1Host);
     expect(range.startOffset).toBe(0);
-    expect(range.endContainer).toBe(content);
-    expect(range.endOffset).toBe(2);
+    expect(range.endContainer).toBe(p2Host);
+    expect(range.endOffset).toBe(0);
   });
 
   it('derives text and rects from a reversed boundary model without changing anchor/head', () => {
@@ -1589,10 +1909,10 @@ describe('SelectionManager DOM selection normalization', () => {
     expect(value?.isAllSelected).toBeFalse();
     expect(value?.getBoundarySelectedChildIds()).toEqual(['p1', 'p2']);
     const range = document.getSelection()!.getRangeAt(0);
-    expect(range.startContainer).toBe(content);
+    expect(range.startContainer).toBe(p1Host);
     expect(range.startOffset).toBe(0);
-    expect(range.endContainer).toBe(content);
-    expect(range.endOffset).toBe(2);
+    expect(range.endContainer).toBe(p2Host);
+    expect(range.endOffset).toBe(0);
   });
 
   function createTableManager() {

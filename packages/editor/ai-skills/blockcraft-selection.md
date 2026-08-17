@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying selection behavior or when the L1 quick reference in `blockcraft.md` isn't enough.
 >
-> Last updated: 2026-08-13 | Source of truth: `framework/modules/selection/`
+> Last updated: 2026-08-17 | Source of truth: `framework/modules/selection/`
 
 ## Architecture Overview
 
@@ -58,7 +58,7 @@ anchor/head direction (`setBaseAndExtent`, or `collapse` + `extend` fallback),
 so a backward model selection does not become forward after replay or virtual
 window repair.
 
-`SelectionSelectedManager` is presentation-only. It reconciles the previous and next covered-block sets, so unchanged blocks do not lose and regain `.selected` / `.focused` classes on high-frequency `selectionchange` events; it does not reinterpret scope or mutate the model. For every mounted inline Embed whose full one-length range is covered, including host-registered converters, it also reconciles the ephemeral `.bc-inline-embed--selected` class on the outer `c-element`; a collapsed caret beside an Embed is not selected. This compensates for browsers not painting native selection inside `contenteditable=false` atomic content, including the first Shift+Arrow step that covers only the Embed. Under root virtualization it consumes deduplicated `viewChange$` windows, tests only mounted component IDs against model coverage segments, and repaints newly mounted fragments without expanding a long selection into every intermediate ID.
+`SelectionSelectedManager` is presentation-only. It reconciles the previous and next covered-block sets, so unchanged blocks do not lose and regain `.selected` / `.focused` classes on high-frequency `selectionchange` events; it does not reinterpret scope or mutate the model. Generic block classes are interaction state: block themes use them for opaque fills, resize handles and other chrome. A non-collapsed native-backed range therefore receives no generic block pseudo-selection, including mixed whole-block↔text endpoints and covered editable, void or empty structural blocks. A text range wholly inside one editable block keeps only that owning block's `.focused` editing chrome; collapsed text cursors and explicit whole-block/model-only selections retain their existing focused/selected behavior. Inline atomic content remains separate: for every directly covered mounted editable block, the manager reconciles the ephemeral `.bc-inline-embed--selected` class on any fully covered outer `c-element`; a collapsed caret beside an Embed is not selected. Under root virtualization it consumes deduplicated `viewChange$` windows, tests only mounted component IDs against model coverage segments, and repaints newly mounted fragments without expanding a long selection into every intermediate ID. Because native-backed ranges add no generic block class, the model-only `placement-layout` branch also cannot reveal object handles or become a disconnected pseudo-selection.
 
 When root virtualization is enabled, the active local selection also owns a
 mount lease over only the direct-root units containing its ordered start and end.
@@ -216,9 +216,20 @@ A boundary point represents a **position between children of a container/root bl
 - `index: childrenLength` means after the last child.
 - `[boundary(0), boundary(childrenLength)]` means "the container's child content is selected" without selecting the container block itself.
 
-Non-collapsed DOM selections whose endpoints land on `.children-render-container` or a wrapper around it normalize to boundary points. Non-collapsed cross-block endpoints that land on a child block's leading/trailing gap text anchor or void/container block chrome also normalize back to the parent boundary index (`before` = child index, `after` = child index + 1). A same-block leading→trailing gap or chrome range still represents explicit whole-block `selected`. `SelectionManager` can build/replay DOM Ranges from boundary JSON, `SelectedManager` paints the covered child blocks, and undo/redo snapshots store boundary anchor/head indexes as Yjs relative positions over the parent's children array.
+Non-collapsed DOM selections whose endpoints land on `.children-render-container` or a wrapper around it normalize to boundary points. Non-collapsed cross-block endpoints that land on a child block's leading/trailing gap text anchor or void/container block chrome also normalize back to the parent boundary index (`before` = child index, `after` = child index + 1). A same-block leading→trailing gap or chrome range still represents explicit whole-block `selected`. `SelectionManager` can build/replay DOM Ranges from boundary JSON, while `SelectionSelectedManager` leaves their covered blocks free of generic `.selected` / `.focused` interaction classes and only reconciles Inline Embed atomic fallback. Undo/redo snapshots store boundary anchor/head indexes as Yjs relative positions over the parent's children array.
 
-When `SelectionManager` builds a DOM Range from boundary points, it prefers the adjacent child block's gap text anchor when that child has leading/trailing block gap fillers. `normalizeRange()` treats those non-collapsed cross-block gap anchors, and cross-block void/container chrome endpoints, as the same parent boundary points on the way back. This keeps Shift+Arrow and native drag ranges that cross void/container blocks anchored on stable structural positions without letting Safari/WebKit reinterpret the model as a whole-block `selected` endpoint or internal child text.
+When `SelectionManager` builds a DOM Range from boundary points, it projects
+each non-collapsed endpoint inside the adjacent child: editable children use
+their real inline text edge, while void/container children prefer their gap
+text anchor. This makes a container-wide range visibly paint in Chromium even
+inside a nested `contenteditable=false -> true` island; a parent child-offset
+Range remains structurally valid there but may paint no glyph highlight.
+`recalculate()` recognizes that exact descendant-backed Range and preserves the
+canonical boundary model. `normalizeRange()` treats non-collapsed cross-block
+gap anchors, and cross-block void/container chrome endpoints, as the same
+parent boundary points on the way back. This keeps Shift+Arrow and native drag
+ranges stable without letting Safari/WebKit reinterpret the model as a
+whole-block `selected` endpoint or internal child text.
 
 Input over a same-container boundary range is structural and Yjs-owned when the owning container is a `renderUnit` that accepts paragraphs:
 
@@ -263,10 +274,22 @@ Shift+Arrow uses `gap` only as the collapsed starting caret. Once the user exten
 
 Ctrl+A is model-first and climbs by content coverage, not by DOM highlight shape:
 
-- Partial/collapsed editable text -> `selectAllChildren(editable)` creates a full text range and shows the "press again" hint.
+- Partial/collapsed text or a partial range inside a `container` scope ->
+  `selectAllChildren(container)` creates one boundary range over all of that
+  container's children. A text box therefore selects all of its paragraphs on
+  the first press, regardless of which child owns the caret; the same rule
+  applies to callout/highlight containers.
+- Partial/collapsed editable text outside a `container` scope ->
+  `selectAllChildren(editable)` creates a full text range and shows the hint.
 - Full editable text range -> `selectAllChildren(parent)` creates a parent content range, except table-cell paragraphs first promote to table-cell selection.
 - Partial container/root boundary range -> `selectAllChildren(container)` expands to all direct children.
-- Full container boundary range or explicit whole-block `selected` -> `selectAllChildren(parent)` climbs one level. Full root boundary selection stays at root.
+- Full `container`-scope boundary range inside an absolute object -> consume
+  the shortcut and keep the selection inside that object.
+- Full normal-flow `container` boundary range -> continue the parent/root
+  select-all ladder.
+- Full root/document boundary range or an explicit whole-block `selected` ->
+  `selectAllChildren(parent)` climbs when a parent exists. Full root boundary
+  selection stays at root.
 - Model table-cell selection -> `selectBlock(table)` selects the whole table block.
 
 This keeps repeated Ctrl+A aligned with the same `boundary` model that Shift+Arrow uses around gap/container blocks. It also avoids asking the browser to reinterpret a container DOM range before input/IME runs.
@@ -586,7 +609,8 @@ DOM `selectionchange` event
   → _applyState()
       → validate lazy block references; stale ids become null
       → selectionChange$.next(selection)
-      → SelectedManager paints `.selected` / `.focused` classes
+      → SelectedManager reconciles explicit/model-only block interaction
+        classes, same-editable focus, and Inline Embed atomic fallback
 ```
 
 Programmatic gap cursor flow:
@@ -710,6 +734,21 @@ Readonly/frozen blocks remain selectable, but their mutation and drag paths
 still reject through the existing readonly boundary. This does not add DOM
 queries to `selectionchange`, scroll, or reconciliation hot paths.
 
+Object resize/rotate controls reproject that same whole-block selection in a
+microtask after the root pointer-intent and target gesture handlers have run.
+This preserves the shared resizer's pointer capture while ensuring the root
+capture path cannot clear the new projection guard; the gesture completion
+reasserts the object once more after the resize/rotation commit. Resizer chrome also marks
+itself as placement-pick-ignored, so an underlay object's edge picker cannot
+consume the gesture before it reaches the handle. An absolute border move
+that remains in the placement controller's `armed` state replays the still-live
+object selection on pointerup, after recalculation suppression is released. A
+click therefore cannot leave an older document Range painted behind the object;
+an actual drag still clears selection at the movement threshold and does not
+reassert it on drop. Border dragging captures the initiating pointer on its
+actual owner window; pointer cancel, lost capture, blur and destroy all release
+the view lease and selection-recalculation guard.
+
 ## Root Placement Layout Boundaries
 
 Standard absolute objects are children of the final root
@@ -726,12 +765,16 @@ and restore it after returning to relative flow. `SelectionKeyboard`,
 checks. `setGapCursor()` and JSON selection replay degrade a stale disallowed
 gap endpoint to the object's whole-block selected state.
 
-Repeated Ctrl/Cmd+A that promotes to the root boundary still covers the entire
+Repeated Ctrl/Cmd+A from normal-flow content that promotes to the root boundary
+still covers the entire
 `root.children` interval, including the layout subtree. Full-document
 copy/cut/delete therefore preserves or removes absolute objects through the
-normal recursive snapshot/delete path. The layout host itself never becomes a
-Gap cursor, whole-block toolbar target or BlockController target. Clicking an
-absolute object may still create a whole-block model selection for its
+normal recursive snapshot/delete path. Its native Range remains flow-only, and
+native-backed ranges receive no generic block interaction-class projection, so
+the layout plane and its object handles are not painted as a second selection
+layer. The layout host itself never
+becomes a Gap cursor, whole-block toolbar target or BlockController target.
+Clicking an absolute object still creates a whole-block model selection for its
 object-specific toolbar and Delete/Backspace handling. In that whole-object
 state ordinary printable input, IME, Enter, Tab and paste are prevented without
 clearing the selection; object tools and deletion remain available. A nested

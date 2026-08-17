@@ -51,7 +51,7 @@ export class CompositionControl {
     this._compositionBlockHost = null
   }
 
-  private _queueReset = () => {
+  private _queueReset = (ownerDocument: Document) => {
     if (this._compositionResetTimer !== null) return
     const version = this._compositionVersion
     this._compositionResetTimer = setTimeout(() => {
@@ -59,6 +59,9 @@ export class CompositionControl {
       // A synchronous compositionend/pointer recovery or a new composition
       // supersedes this stale-selection recovery.
       if (version !== this._compositionVersion) return
+      if (this._isNativeSelectionInsideCompositionHost(ownerDocument)) {
+        return
+      }
       this._reset()
     }, 0)
   }
@@ -88,19 +91,32 @@ export class CompositionControl {
   private _onSelectionChange = (ownerDocument: Document) => {
     if (!this._isComposing) return
     if (this._compositionBlockHost && !this._compositionBlockHost.isConnected) {
-      this._queueReset()
+      this._queueReset(ownerDocument)
       return
     }
 
     const anchorNode = ownerDocument.getSelection()?.anchorNode
     if (!anchorNode || !this._compositionBlockId) return
-    const anchorBlockId = this._resolveBlockHost(anchorNode)?.dataset['blockId']
-    if (anchorBlockId && anchorBlockId !== this._compositionBlockId) {
-      // Keep the state stable across the complete native event dispatch. Some
-      // Zone/browser combinations run a microtask checkpoint between adjacent
-      // listeners, so a macrotask boundary is required here.
-      this._queueReset()
+    if (this._isNativeSelectionInsideCompositionHost(ownerDocument)) {
+      this._cancelQueuedReset()
+      return
     }
+    // Keep the state stable across the complete native event dispatch. Some
+    // Zone/browser combinations run a microtask checkpoint between adjacent
+    // listeners, so a macrotask boundary is required here. The timer rechecks
+    // the original host identity, which also covers same-id remounts and a
+    // selection whose anchor is inside while its focus escaped.
+    this._queueReset(ownerDocument)
+  }
+
+  private _isNativeSelectionInsideCompositionHost(ownerDocument: Document): boolean {
+    const host = this._compositionBlockHost
+    const selection = ownerDocument.getSelection()
+    return !!host?.isConnected &&
+      !!selection?.anchorNode &&
+      !!selection.focusNode &&
+      host.contains(selection.anchorNode) &&
+      host.contains(selection.focusNode)
   }
 
   private _onPointerDown = (event: PointerEvent) => {

@@ -528,7 +528,7 @@ describe('InlineRuntime inline float lifecycle', () => {
       createInlineShapeDelta(
         {shapeType: 'ellipse', width: 180, height: 100},
         [{insert: '环绕形状'}],
-        {wrap: true, side: 'auto', x: 0.35, gap: 12},
+        {wrap: true, x: 0.35, gap: 12},
       ),
       {insert: after},
     ])
@@ -696,15 +696,17 @@ describe('InlineRuntime inline float lifecycle', () => {
     runtime.destroy()
   })
 
-  it('paginates after an explicit single-side shape band without clearing its float', () => {
+  it('ignores legacy shape-side metadata when paginating its wrap band', () => {
     const {container, runtime} = createConnectedInlineRuntime()
     const after = '单侧环绕形状后的长文本继续形成安全视觉行。'.repeat(55)
+    const shape = createInlineShapeDelta(
+      {shapeType: 'ellipse', width: 160, height: 80},
+      [{insert: '环绕形状'}],
+      {wrap: true, x: 0.1, gap: 12},
+    )
+    shape.attributes = {...shape.attributes, side: 'left'}
     runtime.render([
-      createInlineShapeDelta(
-        {shapeType: 'ellipse', width: 160, height: 80},
-        [{insert: '单侧形状'}],
-        {wrap: true, side: 'right', x: 0.1, gap: 12},
-      ),
+      shape,
       {insert: after},
     ])
     refreshInlineFloatLayout(runtime)

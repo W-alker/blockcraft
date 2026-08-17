@@ -22,11 +22,12 @@ export type IInlineNodeAttrs = ITextStyles & IBaseInlineAttr & IExpandedAttrs
 export type InlineAttrKey = `a:${string}`
 
 interface IBaseInlineAttr {
-  'a:bold'?: boolean;
-  'a:italic'?: boolean;
-  'a:underline'?: boolean;
-  'a:strike'?: boolean;
-  'a:code'?: boolean;
+  /** `null` removes an existing format in a Y.Text format operation. */
+  'a:bold'?: boolean | null;
+  'a:italic'?: boolean | null;
+  'a:underline'?: boolean | null;
+  'a:strike'?: boolean | null;
+  'a:code'?: boolean | null;
   'a:link'?: string | null;
 }
 
@@ -61,5 +62,4 @@ export interface IExpandedAttrs {
 }
 
 export type InlineModel = DeltaInsert[]
-
 

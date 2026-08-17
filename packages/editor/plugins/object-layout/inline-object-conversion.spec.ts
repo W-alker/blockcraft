@@ -16,7 +16,6 @@ describe('inline object conversion', () => {
     shape.props = {...shape.props, width: 240, height: 120, rotation: 30}
     const paragraph = objectBlockSnapshotToInlineParagraph(shape, {
       wrap: true,
-      side: 'auto',
       x: 0.25,
       gap: 12,
     })!

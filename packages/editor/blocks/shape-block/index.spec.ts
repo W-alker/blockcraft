@@ -65,6 +65,7 @@ describe('Shape block domain', () => {
     fixture.detectChanges()
 
     const host = fixture.nativeElement as HTMLElement
+    expect(host.hasAttribute('data-bc-placement-pick-ignore')).toBeTrue()
     expect(host.querySelectorAll('.shape-resizer__handle').length).toBe(8)
     expect(host.querySelector('.shape-resizer__rotation-stem')).not.toBeNull()
     expect(

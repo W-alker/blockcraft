@@ -1,10 +1,9 @@
 import { ChangeDetectorRef } from "@angular/core";
-import { BcOverlayTriggerDirective } from "../../../components";
+import { CsDropdownDirective } from "@cses/ui";
 import { BlockNodeType } from "../../../framework";
 import { BlockSelection } from "../../../framework/modules/selection/blockSelection";
 import { getWordArtPreset } from "../../../blocks/word-art-block";
 import {
-  DEFAULT_TEXT_BOX_PROPS,
   getTextBoxPreset,
 } from "../../../blocks/text-box-block";
 import {
@@ -21,13 +20,60 @@ describe("FixedTextToolbarComponent responsive layout", () => {
     return new FixedTextToolbarComponent(cdr);
   };
 
-  it("uses container-width breakpoints instead of viewport breakpoints", () => {
+  it("degrades container layouts one tier at a time when content overflows", () => {
     const component = makeComponent();
 
-    expect((component as any).resolveToolbarLayout(1480)).toBe("wide");
-    expect((component as any).resolveToolbarLayout(1479)).toBe("balanced");
-    expect((component as any).resolveToolbarLayout(960)).toBe("balanced");
-    expect((component as any).resolveToolbarLayout(719)).toBe("compact");
+    expect((component as any).nextToolbarLayout("wide")).toBe("balanced");
+    expect((component as any).nextToolbarLayout("balanced")).toBe("compact");
+    expect((component as any).nextToolbarLayout("compact")).toBe("narrow");
+    expect((component as any).nextToolbarLayout("narrow")).toBeNull();
+  });
+
+  it("collapses frequent inline toggles only in the narrow tier", () => {
+    const component = makeComponent();
+
+    expect(
+      (component as any).narrowInlineActions.map(
+        (item: {value: string}) => item.value,
+      ),
+    ).toEqual(["bold", "italic", "underline", "code"]);
+    expect((component as any).isNarrowInlineAction("strike")).toBeFalse();
+  });
+
+  it("keeps only frequent typography values in quick dropdowns", () => {
+    const component = makeComponent();
+
+    expect((component as any).quickFontScalePresets).toEqual([
+      0.75, 0.875, 1, 1.25, 1.5, 1.75, 2, 2.5, 3,
+    ]);
+    expect((component as any).quickLetterSpacingPresets).toEqual([
+      -0.05, -0.025, 0.025, 0.05, 0.1,
+    ]);
+  });
+
+  it("keeps superscript and subscript in one mutually exclusive split action", () => {
+    const component = makeComponent();
+    const formatText = jasmine.createSpy("formatText");
+    component.utils = {formatText} as any;
+    component.activeAttrs = new Map([["sup", true]]);
+    spyOn<any>(component, "runWithSelection").and.callFake(
+      (run: () => void) => run(),
+    );
+
+    (component as any).toggleScriptAttr("sub");
+
+    expect(formatText).toHaveBeenCalledWith({
+      "a:sub": true,
+      "a:sup": null,
+    });
+  });
+
+  it("uses the active baseline action as the split-button main action", () => {
+    const component = makeComponent();
+    component.activeAttrs = new Map([["sub", true]]);
+
+    expect((component as any).activeScriptAction.value).toBe("sub");
+    expect((component as any).activeScriptAction.icon).toBe("bc_xiabiao");
   });
 });
 
@@ -122,6 +168,16 @@ describe("FixedTextToolbarComponent boundary selections", () => {
 
     expect((component as any).canTransformSelection(boundaryRange)).toBeTrue();
     expect(queryBlocksBetween).not.toHaveBeenCalled();
+    rootHost.remove();
+  });
+
+  it("enables paragraph-aware font scaling for a boundary block range", () => {
+    const { component, rootHost, selection } = makeHarness();
+    const boundaryRange = selection(0, 2);
+
+    expect(
+      (component as any).canSetFontScaleForSelection(boundaryRange),
+    ).toBeTrue();
     rootHost.remove();
   });
 
@@ -492,14 +548,14 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
       drawRequest = request;
       return true;
     });
-    const trigger = jasmine.createSpyObj<BcOverlayTriggerDirective>(
-      "BcOverlayTriggerDirective",
-      ["closePanel"],
+    const trigger = jasmine.createSpyObj<CsDropdownDirective>(
+      "CsDropdownDirective",
+      ["close"],
     );
 
     await (component as any).insertShape("diamond", trigger);
 
-    expect(trigger.closePanel).toHaveBeenCalled();
+    expect(trigger.close).toHaveBeenCalled();
     expect(drawRequest.defaultWidth).toBe(180);
     expect(drawRequest.defaultHeight).toBe(100);
     expect(createSnapshot).not.toHaveBeenCalled();
@@ -546,15 +602,15 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
       return true;
     });
 
-    const trigger = jasmine.createSpyObj<BcOverlayTriggerDirective>(
-      "BcOverlayTriggerDirective",
-      ["closePanel"],
+    const trigger = jasmine.createSpyObj<CsDropdownDirective>(
+      "CsDropdownDirective",
+      ["close"],
     );
-    (component as any).insertTextBox("soft-blue", trigger);
+    (component as any).insertTextBox("classic", trigger);
 
-    expect(trigger.closePanel).toHaveBeenCalledTimes(1);
-    expect(drawRequest.defaultWidth).toBe(280);
-    expect(drawRequest.defaultHeight).toBe(140);
+    expect(trigger.close).toHaveBeenCalledTimes(1);
+    expect(drawRequest.defaultWidth).toBe(260);
+    expect(drawRequest.defaultHeight).toBe(132);
     expect(createSnapshot).not.toHaveBeenCalled();
     expect(textBoxEnterEditing).not.toHaveBeenCalled();
 
@@ -564,7 +620,7 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
     expect(createSnapshot).toHaveBeenCalledOnceWith("text-box", [
       "",
       {
-        ...getTextBoxPreset("soft-blue").props,
+        ...getTextBoxPreset("classic").props,
         wm: "h",
         width: 300,
         height: 180,
@@ -584,40 +640,6 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
     rootHost.remove();
   });
 
-  it("inserts a plain vertical text box without any catalog styling", async () => {
-    const {component, rootHost, createSnapshot} = makeHarness();
-    spyOn<any>(component, "syncToolbarState");
-    let drawRequest: any;
-    spyOn<any>(component, "armObjectDrawing").and.callFake((request: any) => {
-      drawRequest = request;
-      return true;
-    });
-    const trigger = jasmine.createSpyObj<BcOverlayTriggerDirective>(
-      "BcOverlayTriggerDirective",
-      ["closePanel"],
-    );
-
-    (component as any).insertPlainTextBox("v", trigger);
-
-    // Vertical frames are drawn tall: the horizontal default, transposed.
-    expect(drawRequest.defaultWidth).toBe(DEFAULT_TEXT_BOX_PROPS.height);
-    expect(drawRequest.defaultHeight).toBe(DEFAULT_TEXT_BOX_PROPS.width);
-
-    await drawRequest.commit({
-      anchorRect: new DOMRect(0, 0, 120, 240),
-      width: 120,
-      height: 240,
-    });
-
-    // Only geometry and direction — appearance comes from the normalizer, so
-    // there is no "plain" preset that could drift from the defaults.
-    expect(createSnapshot).toHaveBeenCalledOnceWith("text-box", [
-      "",
-      {wm: "v", width: 120, height: 240},
-    ]);
-    rootHost.remove();
-  });
-
   it("keeps catalog picks horizontal at the preset's own proportion", async () => {
     const {component, rootHost, createSnapshot} = makeHarness();
     spyOn<any>(component, "syncToolbarState");
@@ -626,17 +648,16 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
       drawRequest = request;
       return true;
     });
-    const trigger = jasmine.createSpyObj<BcOverlayTriggerDirective>(
-      "BcOverlayTriggerDirective",
-      ["closePanel"],
+    const trigger = jasmine.createSpyObj<CsDropdownDirective>(
+      "CsDropdownDirective",
+      ["close"],
     );
 
-    (component as any).insertTextBox("soft-blue", trigger);
+    (component as any).insertTextBox("classic", trigger);
 
-    // Decorated presets bake their ornament into a stretched surface image, so
-    // a transposed frame would deform it. Vertical frames come from the two
-    // direction buttons above the catalog, which insert a plain box.
-    const preset = getTextBoxPreset("soft-blue");
+    // Fixed-toolbar catalog insertion keeps the chosen style's own horizontal
+    // proportion; text direction can be changed after insertion.
+    const preset = getTextBoxPreset("classic");
     expect(drawRequest.defaultWidth).toBe(preset.defaultWidth);
     expect(drawRequest.defaultHeight).toBe(preset.defaultHeight);
 
@@ -668,15 +689,15 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
       drawRequest = request;
       return true;
     });
-    const trigger = jasmine.createSpyObj<BcOverlayTriggerDirective>(
-      "BcOverlayTriggerDirective",
-      ["closePanel"],
+    const trigger = jasmine.createSpyObj<CsDropdownDirective>(
+      "CsDropdownDirective",
+      ["close"],
     );
     const preset = getWordArtPreset("ocean");
 
     await (component as any).insertWordArt("ocean", trigger);
 
-    expect(trigger.closePanel).toHaveBeenCalled();
+    expect(trigger.close).toHaveBeenCalled();
     expect(drawRequest.defaultWidth).toBe(320);
     expect(drawRequest.defaultHeight).toBe(96);
     expect(createSnapshot).not.toHaveBeenCalled();
@@ -775,14 +796,14 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
     const insertColumns = spyOn<any>(component, "insertColumns").and.resolveTo(
       {},
     );
-    const trigger = jasmine.createSpyObj<BcOverlayTriggerDirective>(
-      "BcOverlayTriggerDirective",
-      ["closePanel"],
+    const trigger = jasmine.createSpyObj<CsDropdownDirective>(
+      "CsDropdownDirective",
+      ["close"],
     );
 
     await (component as any).insertColumnsBlock({ count: 2 }, trigger);
 
-    expect(trigger.closePanel).toHaveBeenCalled();
+    expect(trigger.close).toHaveBeenCalled();
     expect(insertColumns).not.toHaveBeenCalled();
     rootHost.remove();
   });
@@ -1012,14 +1033,14 @@ describe("FixedTextToolbarComponent model-owned commands", () => {
     spyOn<any>(component, "canUseColumnPicker").and.returnValue(true);
     spyOn<any>(component, "insertColumns").and.resolveTo({ id: "columns-1" });
     const syncToolbarState = spyOn<any>(component, "syncToolbarState");
-    const trigger = jasmine.createSpyObj<BcOverlayTriggerDirective>(
-      "BcOverlayTriggerDirective",
-      ["closePanel"],
+    const trigger = jasmine.createSpyObj<CsDropdownDirective>(
+      "CsDropdownDirective",
+      ["close"],
     );
 
     await (component as any).insertColumnsBlock({ count: 2 }, trigger);
 
-    expect(trigger.closePanel).toHaveBeenCalled();
+    expect(trigger.close).toHaveBeenCalled();
     expect(recalculate).not.toHaveBeenCalled();
     expect(syncToolbarState).toHaveBeenCalledOnceWith(selection);
     expect(cdr.markForCheck).toHaveBeenCalled();
@@ -1094,13 +1115,13 @@ describe("FixedTextToolbarComponent typography ownership", () => {
       run(),
     );
 
-    const closePanel = jasmine.createSpy("closePanel");
+    const close = jasmine.createSpy("close");
     (component as any).onFontFamilyItemClicked(
       { value: "kai" },
-      { closePanel },
+      { close },
     );
 
-    expect(closePanel).toHaveBeenCalled();
+    expect(close).toHaveBeenCalled();
     expect(formatText).toHaveBeenCalledOnceWith({
       "t:ff": "kai",
       "s:fontFamily": null,
@@ -1109,20 +1130,17 @@ describe("FixedTextToolbarComponent typography ownership", () => {
 
   it("keeps font size as a relative scale", () => {
     const component = createComponent();
-    const formatText = jasmine.createSpy("formatText");
-    component.utils = { formatText } as any;
+    const formatTypography = jasmine.createSpy("formatTypography");
+    component.utils = { formatTypography } as any;
     spyOn<any>(component, "runWithSelection").and.callFake((run: () => void) =>
       run(),
     );
 
-    const closePanel = jasmine.createSpy("closePanel");
-    (component as any).onFontScaleItemClicked({ value: 1.25 }, { closePanel });
+    const close = jasmine.createSpy("close");
+    (component as any).onFontScaleItemClicked({ value: 1.25 }, { close });
 
-    expect(closePanel).toHaveBeenCalled();
-    expect(formatText).toHaveBeenCalledOnceWith({
-      "t:fs": 1.25,
-      "s:fontSize": null,
-    });
+    expect(close).toHaveBeenCalled();
+    expect(formatTypography).toHaveBeenCalledOnceWith({fontScale: 1.25});
   });
 
   it("shows letter spacing as the persisted em value", () => {
@@ -1154,10 +1172,10 @@ describe("FixedTextToolbarComponent typography ownership", () => {
 
     expect((component as any).activeAlignAction.value).toBe("center");
 
-    const closePanel = jasmine.createSpy("closePanel");
-    (component as any).onAlignItemClicked({ value: "right" }, { closePanel });
+    const close = jasmine.createSpy("close");
+    (component as any).onAlignItemClicked({ value: "right" }, { close });
 
-    expect(closePanel).toHaveBeenCalled();
+    expect(close).toHaveBeenCalled();
     expect(updateBlockProps).toHaveBeenCalledOnceWith({ textAlign: "right" });
   });
 
@@ -1169,10 +1187,10 @@ describe("FixedTextToolbarComponent typography ownership", () => {
       run(),
     );
 
-    const closePanel = jasmine.createSpy("closePanel");
-    (component as any).onLineHeightItemClicked({ value: 1.5 }, { closePanel });
+    const close = jasmine.createSpy("close");
+    (component as any).onLineHeightItemClicked({ value: 1.5 }, { close });
 
-    expect(closePanel).toHaveBeenCalled();
+    expect(close).toHaveBeenCalled();
     expect(updateBlockProps).toHaveBeenCalledOnceWith({ lh: 1.5 });
   });
 });

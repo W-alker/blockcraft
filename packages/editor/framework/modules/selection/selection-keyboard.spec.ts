@@ -993,6 +993,165 @@ describe('SelectionKeyboard – Ctrl+A ladder', () => {
   });
 });
 
+describe('SelectionKeyboard – Ctrl+A container layout boundary', () => {
+  function createContainerCtrlAHarness(absolute = false) {
+    const root = {
+      id: 'root',
+      flavour: 'root',
+      nodeType: BlockNodeType.root,
+      childrenIds: ['text-box-1'],
+      childrenLength: 1,
+    } as any;
+    const textBox = {
+      id: 'text-box-1',
+      flavour: 'text-box',
+      nodeType: BlockNodeType.block,
+      parentId: root.id,
+      parentBlock: root,
+      childrenIds: ['p-1', 'p-2'],
+      childrenLength: 2,
+    } as any;
+    const paragraph = {
+      id: 'p-1',
+      flavour: 'paragraph',
+      nodeType: BlockNodeType.editable,
+      textLength: 5,
+      parentId: textBox.id,
+      parentBlock: textBox,
+    } as any;
+    const paragraph2 = {
+      id: 'p-2',
+      flavour: 'paragraph',
+      nodeType: BlockNodeType.editable,
+      textLength: 4,
+      parentId: textBox.id,
+      parentBlock: textBox,
+    } as any;
+    const blocks = new Map<string, any>([
+      [root.id, root],
+      [textBox.id, textBox],
+      [paragraph.id, paragraph],
+      [paragraph2.id, paragraph2],
+    ]);
+    const doc = {
+      event: eventStub(),
+      getBlockById: jasmine.createSpy('getBlockById')
+        .and.callFake((id: string) => blocks.get(id)),
+      isEditable: jasmine.createSpy('isEditable')
+        .and.callFake((block: any) => block?.nodeType === BlockNodeType.editable),
+      schemas: {
+        get: jasmine.createSpy('get').and.callFake((flavour: string) => ({
+          metadata: {
+            selectionScope: flavour === 'text-box'
+              ? 'container'
+              : flavour === 'root'
+                ? 'document'
+                : undefined,
+          },
+        })),
+      },
+      selection: {
+        selectAllChildren: jasmine.createSpy('selectAllChildren'),
+        selectBlock: jasmine.createSpy('selectBlock'),
+        setTableCellSelection: jasmine.createSpy('setTableCellSelection'),
+      },
+      messageService: {
+        info: jasmine.createSpy('info'),
+      },
+      placement: {
+        isInAbsoluteLayout: jasmine.createSpy('isInAbsoluteLayout')
+          .and.callFake((block: any) => absolute && block?.id === textBox.id),
+      },
+    } as any;
+    for (const block of blocks.values()) block.doc = doc;
+
+    return {
+      keyboard: createKeyboard(doc),
+      doc,
+      root,
+      textBox,
+      paragraph,
+      paragraph2,
+    };
+  }
+
+  it('selects every text-box paragraph on the first Ctrl+A from any child paragraph', () => {
+    const {keyboard, doc, textBox, paragraph2} = createContainerCtrlAHarness();
+    const point = textPoint(paragraph2, 2);
+    const ctx = ctrlACtxFor({
+      commonParent: paragraph2.id,
+      anchor: point,
+      head: point,
+      start: point,
+      end: point,
+      isInSameBlock: true,
+    });
+
+    const result = keyboard.handleCtrlA(ctx);
+
+    expect(result).toBeTrue();
+    expect(doc.selection.selectAllChildren).toHaveBeenCalledOnceWith(textBox);
+    expect(doc.messageService.info).not.toHaveBeenCalled();
+  });
+
+  it('keeps repeated Ctrl+A capped at an absolute text box', () => {
+    const {keyboard, doc, root, textBox} = createContainerCtrlAHarness(true);
+    const start = {
+      blockId: textBox.id,
+      type: 'boundary',
+      index: 0,
+      block: textBox,
+    };
+    const end = {
+      blockId: textBox.id,
+      type: 'boundary',
+      index: textBox.childrenLength,
+      block: textBox,
+    };
+    const ctx = ctrlACtxFor({
+      commonParent: textBox.id,
+      anchor: start,
+      head: end,
+      start,
+      end,
+    });
+
+    const result = keyboard.handleCtrlA(ctx);
+
+    expect(result).toBeTrue();
+    expect(doc.selection.selectAllChildren).not.toHaveBeenCalled();
+    expect(doc.selection.selectAllChildren).not.toHaveBeenCalledWith(root);
+  });
+
+  it('lifts a full normal-flow text box selection to root content', () => {
+    const {keyboard, doc, root, textBox} = createContainerCtrlAHarness();
+    const start = {
+      blockId: textBox.id,
+      type: 'boundary',
+      index: 0,
+      block: textBox,
+    };
+    const end = {
+      blockId: textBox.id,
+      type: 'boundary',
+      index: textBox.childrenLength,
+      block: textBox,
+    };
+    const ctx = ctrlACtxFor({
+      commonParent: textBox.id,
+      anchor: start,
+      head: end,
+      start,
+      end,
+    });
+
+    const result = keyboard.handleCtrlA(ctx);
+
+    expect(result).toBeTrue();
+    expect(doc.selection.selectAllChildren).toHaveBeenCalledOnceWith(root);
+  });
+});
+
 describe('SelectionKeyboard – Shift extension follows the model head', () => {
   let doc: MockDoc;
   let keyboard: any;

@@ -47,4 +47,21 @@ describe('inline WordArt embed', () => {
     expect(data.width).toBe(280)
     expect(data.height).toBe(88)
   })
+
+  it('drops legacy text-side metadata from wrapped WordArt', () => {
+    const delta = createInlineWordArtDelta(
+      {width: 240, height: 80},
+      [{insert: '旧艺术字'}],
+      {wrap: true, x: 0.25, gap: 12},
+    )
+    delta.attributes = {...delta.attributes, side: 'right'}
+
+    const view = inlineWordArtEmbedConverter.toView(delta)
+    expect(view.dataset['bcInlineFloatSide']).toBe('auto')
+    expect(readInlineWordArtDelta(delta)).not.toEqual(
+      jasmine.objectContaining({side: jasmine.anything()}),
+    )
+    expect(inlineWordArtEmbedConverter.toDelta(view).attributes?.['side'])
+      .toBeUndefined()
+  })
 })

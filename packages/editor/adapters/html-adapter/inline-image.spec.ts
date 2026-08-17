@@ -180,7 +180,6 @@ describe('HtmlAdapter inline images', () => {
       rotation: 15,
     }, [{insert: '重点'}], {
       wrap: true,
-      side: 'right',
       x: 0.2,
       gap: 12,
     })
@@ -203,6 +202,9 @@ describe('HtmlAdapter inline images', () => {
       '[data-bc-inline-object="shape"][data-bc-wrap="square"]',
     )).not.toBeNull()
     expect(exported.querySelector(
+      '[data-bc-inline-object="shape"]',
+    )?.hasAttribute('data-bc-wrap-side')).toBeFalse()
+    expect(exported.querySelector(
       '[data-bc-inline-object="word-art"]',
     )?.textContent).toBe('新品')
 
@@ -215,7 +217,6 @@ describe('HtmlAdapter inline images', () => {
         width: 180,
         height: 120,
         wrap: true,
-        side: 'right',
         x: 0.2,
         text: [{insert: '重点'}],
       }),

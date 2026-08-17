@@ -8,9 +8,10 @@ import {
   TextBoxBlockSchema,
   textBoxArtworkRef,
 } from '../index'
+import {BUBBLE_R_TEXT_BOX_ARTWORK} from './bubble-r'
 
 /** Every catalog entry that ships a drawing rather than plain shape geometry. */
-const decorated = TEXT_BOX_PRESETS.filter(preset => 'bgi' in preset.props)
+const decorated = TEXT_BOX_PRESETS.filter((preset) => 'bgi' in preset.props)
 
 describe('text-box artwork registry', () => {
   it('keeps drawings out of the document and resolves them at render time', () => {
@@ -46,8 +47,9 @@ describe('text-box artwork registry', () => {
     // `bc:` into an `<img>` would show a broken-image icon; dropping it leaves
     // an ordinary framed text box.
     expect(getTextBoxArtwork(textBoxArtworkRef('not-a-real-id'))).toBeNull()
-    expect(resolveTextBoxArtworkSrc(textBoxArtworkRef('not-a-real-id')))
-      .toBeNull()
+    expect(
+      resolveTextBoxArtworkSrc(textBoxArtworkRef('not-a-real-id')),
+    ).toBeNull()
     expect(getTextBoxArtwork(null)).toBeNull()
   })
 
@@ -58,16 +60,15 @@ describe('text-box artwork registry', () => {
       (decorated[0].props as {bgi?: string}).bgi!,
     )!
     expect(findTextBoxArtworkBySrc(artwork.src)).toBe(artwork)
-    expect(findTextBoxArtworkBySrc('data:image/svg+xml;utf8,%3Csvg%2F%3E'))
-      .toBeNull()
+    expect(
+      findTextBoxArtworkBySrc('data:image/svg+xml;utf8,%3Csvg%2F%3E'),
+    ).toBeNull()
     expect(findTextBoxArtworkBySrc(null)).toBeNull()
   })
 
   it('carries the text-safe frame as fractions so it survives a resize', () => {
     for (const preset of decorated) {
-      const artwork = getTextBoxArtwork(
-        (preset.props as {bgi?: string}).bgi!,
-      )!
+      const artwork = getTextBoxArtwork((preset.props as {bgi?: string}).bgi!)!
       const {top, right, bottom, left} = artwork.textInsets
 
       // Fractions of the frame, not pixels. Held as px in `p` the reserve was
@@ -78,15 +79,87 @@ describe('text-box artwork registry', () => {
         expect(value).toBeGreaterThanOrEqual(0)
         expect(value).toBeLessThan(1)
       }
-      expect(top + bottom).withContext(preset.id).toBeLessThan(1)
-      expect(left + right).withContext(preset.id).toBeLessThan(1)
+      expect(top + bottom)
+        .withContext(preset.id)
+        .toBeLessThan(1)
+      expect(left + right)
+        .withContext(preset.id)
+        .toBeLessThan(1)
 
       // The reserve lives in one place now. Leaving a copy in `p` would stack
       // a second, non-scaling inset underneath it.
       const padding = (preset.props as {p?: readonly number[]}).p
-      expect(padding?.every(value => value === 0))
+      expect(padding?.every((value) => value === 0))
         .withContext(preset.id)
         .toBeTrue()
+    }
+  })
+
+  it('derives the editable region from the chosen style, not one padding tuple', () => {
+    const plain = getTextBoxPreset('classic')
+    const bubble = getTextBoxPreset('bubble-r-ink-shout')
+    const bubbleArtwork = getTextBoxArtwork(
+      (bubble.props as {bgi?: string}).bgi,
+    )!
+
+    // A plain rectangle has no contour to avoid, so it keeps ordinary optical
+    // padding. The balloon clears its asymmetric rim and tail through the
+    // drawing's proportional safe area and carries no second fixed reserve.
+    expect(plain.props.p).toEqual([10, 14])
+    expect((plain.props as {bgi?: string}).bgi).toBeUndefined()
+    expect(bubble.props.p).toEqual([0, 0, 0, 0])
+    expect(bubbleArtwork.textInsets.bottom).toBeGreaterThan(
+      bubbleArtwork.textInsets.top,
+    )
+    expect(bubbleArtwork.textInsets.right).not.toBe(
+      bubbleArtwork.textInsets.left,
+    )
+  })
+
+  it('fits every bubble drawing closely to its selectable frame', async () => {
+    const width = 300
+    const height = 200
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const context = canvas.getContext('2d')!
+
+    for (const artwork of BUBBLE_R_TEXT_BOX_ARTWORK) {
+      const image = new Image()
+      await new Promise<void>((resolve, reject) => {
+        image.onload = () => resolve()
+        image.onerror = () => reject(new Error(`无法加载 ${artwork.id}`))
+        image.src = artwork.src
+      })
+
+      context.clearRect(0, 0, width, height)
+      context.drawImage(image, 0, 0, width, height)
+      const pixels = context.getImageData(0, 0, width, height).data
+      let left = width
+      let top = height
+      let right = -1
+      let bottom = -1
+
+      for (let y = 0; y < height; y += 1) {
+        for (let x = 0; x < width; x += 1) {
+          if (pixels[(y * width + x) * 4 + 3] < 8) continue
+          left = Math.min(left, x)
+          top = Math.min(top, y)
+          right = Math.max(right, x)
+          bottom = Math.max(bottom, y)
+        }
+      }
+
+      // Keep a small anti-aliasing gutter, but never persist the reference
+      // sheet's transparent card reserve as part of the selectable object.
+      expect(left).withContext(`${artwork.id}: left`).toBeLessThanOrEqual(5)
+      expect(top).withContext(`${artwork.id}: top`).toBeLessThanOrEqual(5)
+      expect(right)
+        .withContext(`${artwork.id}: right`)
+        .toBeGreaterThanOrEqual(width - 6)
+      expect(bottom)
+        .withContext(`${artwork.id}: bottom`)
+        .toBeGreaterThanOrEqual(height - 6)
     }
   })
 

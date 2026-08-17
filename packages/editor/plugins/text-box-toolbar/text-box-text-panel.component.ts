@@ -407,15 +407,15 @@ const EFFECT_OPTIONS: ReadonlyArray<{value: WordArtEffect; label: string}> = [
   styles: [`
     :host {
       display: block;
-      width: min(400px, calc(100vw - 86px));
+      width: min(var(--text-box-settings-panel-width, 288px), calc(100vw - 86px));
       max-width: 100%;
     }
 
     .text-box-text-panel {
       box-sizing: border-box;
       width: 100%;
-      max-height: min(540px, calc(100vh - 24px));
-      padding: 12px;
+      max-height: min(520px, calc(100vh - 24px));
+      padding: 10px;
       overflow: auto;
       overscroll-behavior: contain;
       border: 1px solid var(--bc-float-toolbar-divider-color);
@@ -429,7 +429,7 @@ const EFFECT_OPTIONS: ReadonlyArray<{value: WordArtEffect; label: string}> = [
       display: flex;
       align-items: flex-start;
       justify-content: space-between;
-      gap: 12px;
+      gap: 8px;
       margin-bottom: 10px;
     }
 
@@ -453,29 +453,29 @@ const EFFECT_OPTIONS: ReadonlyArray<{value: WordArtEffect; label: string}> = [
 
     .text-box-text-panel__tabs {
       display: block;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
     }
 
     .text-box-text-panel__form {
       display: grid;
-      gap: 12px;
+      gap: 8px;
     }
 
     .text-box-text-panel__row {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       min-width: 0;
     }
 
     .text-box-text-panel__row--stacked {
       display: grid;
-      grid-template-columns: 78px minmax(0, 1fr);
+      grid-template-columns: 66px minmax(0, 1fr);
     }
 
     .text-box-text-panel__row--slider {
       display: grid;
-      grid-template-columns: 78px minmax(0, 1fr) 54px;
+      grid-template-columns: 66px minmax(0, 1fr) 44px;
     }
 
     .text-box-text-panel__row--slider output {
@@ -485,9 +485,9 @@ const EFFECT_OPTIONS: ReadonlyArray<{value: WordArtEffect; label: string}> = [
     }
 
     .text-box-text-panel__label {
-      flex: 0 0 78px;
+      flex: 0 0 66px;
       color: var(--bc-color-secondary, #64748b);
-      font-size: 12px;
+      font-size: 11px;
     }
 
     .text-box-text-panel__row cs-select,
@@ -510,8 +510,8 @@ const EFFECT_OPTIONS: ReadonlyArray<{value: WordArtEffect; label: string}> = [
 
     .text-box-text-panel__subsection {
       display: grid;
-      gap: 12px;
-      padding-top: 12px;
+      gap: 8px;
+      padding-top: 8px;
       border-top: 1px solid var(--bc-float-toolbar-divider-color);
     }
   `],

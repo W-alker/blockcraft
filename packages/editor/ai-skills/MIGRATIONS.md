@@ -69,6 +69,585 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
+## Unreleased — 2026-08-17 — add paragraph-level font scaling for editable blocks
+
+**Severity**: minor
+
+**What changed**: editable rich-text blocks now accept the optional compact
+`pfs` paragraph font-scale prop (`0.5..3`). The fixed toolbar promotes a font
+scale to `pfs` when the selected range covers a complete eligible block, while
+partial text and collapsed carets continue to use inline `t:fs`. Live blocks,
+Snapshot Viewer, HTML round-trip and model-only height estimation share the
+same paragraph scale.
+
+**Why**: ordered numbers, bullet markers and todo controls are block siblings
+of the inline text container, so an inline-only `t:fs` cannot resize them. A
+block-owned scale lets every visual part inherit one font size without DOM
+measurement, resize listeners or duplicated marker state.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-toolbar.md`
+- `blockcraft-plugins-formatting.md`
+- `blockcraft-adapter.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `IEditableBlockProps.pfs?: number | null` stores the paragraph scale.
+- `normalizeParagraphFontScale()` validates the compact `0.5..3` range.
+- `TextToolbarHelper.getFontScaleTargets()`, `canFormatFontScale()` and
+  `formatTypography()` expose the model-only paragraph/inline targeting rule.
+- `resolveEditableBlockFontScale()` combines `pfs` with heading/caption
+  presentation scale for live, Snapshot and model-only rendering.
+- `--bc-block-fs-scale` exposes the persisted paragraph scale to themes; live
+  and Snapshot hosts project the effective size as a relative percentage.
+
+### Migration Recipe
+
+Custom toolbars that want list markers and todo controls to follow full-block
+font scaling should use the paragraph-aware command:
+
+```typescript
+// before: always inline, marker siblings do not resize
+helper.formatText(createInlineTypographyPatch('fs', 1.5), selection)
+
+// after: complete blocks use pfs; partial ranges and carets use t:fs
+helper.formatTypography({fontScale: 1.5}, selection)
+```
+
+Existing documents are not rewritten or inferred. Historical whole-block
+`t:fs` runs keep their old appearance until the user reapplies a full-block
+scale.
+
+### Behavior Changes
+
+- A complete eligible block stores `pfs` and clears `t:fs` / legacy
+  `s:fontSize` across that block; a partial range stores only inline `t:fs`.
+- Effective text scale is `pfs × t:fs`. Heading scale multiplies the same
+  paragraph base.
+- Cross-block commands partition each covered editable block in one Yjs
+  transaction. Non-editable and `plainTextOnly` blocks are skipped.
+- The implementation reads only Selection/model offsets; it performs no DOM
+  geometry reads and installs no resize or mutation observer.
+
+## Unreleased — 2026-08-17 — make the WordArt toolbar a two-level object toolbar
+
+**Severity**: minor
+
+**What changed**: the bundled selected-WordArt toolbar now uses the same
+left/right vertical-rail and click-owned secondary-card structure as TextBox.
+The rail exposes 布局、艺术字格式 and 删除; the format card groups the existing
+controls into 字体、填充与轮廓、效果. `WordArtToolbarComponent` adds local panel
+state, a `side` input and a `panelChange` output so the owning Plugin can keep
+one connected Overlay positioned while card geometry changes. Both secondary
+cards are capped at 288px, and the format card's generic form fields use CSES
+Select、Segmented、
+InputNumber、ColorPicker、Slider and Switch components.
+
+**Why**: the previous two-row toolbar exposed every control at once, producing
+a wide floating surface that competed with the selected object. The two-level
+structure keeps the primary surface compact while preserving all existing
+WordArt styling and placement actions. Reusing CSES form controls keeps the
+selected-object settings consistent with the TextBox settings surface.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-toolbar.md`
+- `blockcraft-plugins-toolbar.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `WordArtToolbarPanel`, `WordArtToolbarSide` and `WordArtFormatSection` are
+  exported from `plugins/word-art-toolbar/word-art-toolbar.component`.
+- `WordArtToolbarComponent.side` selects the rail/card order after CDK chooses
+  the available side.
+- `WordArtToolbarComponent.panelChange` reports panel-only geometry changes;
+  it does not represent or perform a document mutation.
+
+### Migration Recipe
+
+No host migration is required when using `WordArtToolbarPlugin`. A custom host
+that creates `WordArtToolbarComponent` directly may optionally consume the new
+panel geometry output:
+
+```typescript
+componentRef.setInput('side', 'right')
+componentRef.instance.panelChange.subscribe(() => overlayRef.updatePosition())
+```
+
+### Behavior Changes
+
+- The default toolbar no longer renders its complete formatting and layout
+  controls in two always-visible horizontal rows.
+- Opening, closing or switching the local secondary card does not write Yjs or
+  create Undo history. Existing `WordArtToolbarAction` payloads are unchanged.
+- Letter-spacing and outline-width slider movement stays local and emits one
+  props update only when the interaction completes.
+- CSES Select and ColorPicker sibling panes remain toolbar-owned only while the
+  originating control inside this WordArt toolbar is open.
+
+## Unreleased — 2026-08-17 — collapse inline-object wrapping controls and defer drag proxies
+
+**Severity**: major
+
+**What changed**: bundled inline image, Shape and WordArt toolbars now expose
+**四周型环绕** as one product behavior and remove 自动环绕 / 文字在左 /
+文字在右. Shape and WordArt Delta no longer persist `side`; their data types
+remove that field and their creation helpers use Shape/WordArt-specific wrap
+option types. Their HTML no longer emits `data-bc-wrap-side`. Shape/WordArt
+pointerdown also defers drag-proxy creation until movement crosses 2px.
+
+**Why**: the three side buttons exposed an implementation detail as product
+features even though 四周型环绕 already means that text should wrap around the
+object. Separately, creating the proxy on pointerdown made a normal Shape or
+WordArt click flash a drag ghost before the user expressed drag intent.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-embed.md`
+- `blockcraft-inline.md`
+- `blockcraft-plugins-toolbar.md`
+- `MIGRATIONS.md`
+
+### Breaking Changes
+
+- `InlineShapeData.side` and `InlineWordArtData.side` are removed.
+- `createInlineShapeDelta()` and `createInlineWordArtDelta()` no longer accept
+  a wrap-side choice.
+- Existing Shape/WordArt `side` attributes and imported
+  `data-bc-wrap-side` values are ignored rather than migrated.
+
+### New APIs / Features
+
+- `InlineShapeWrapOptions` is the Shape-specific `wrap/x/gap` option type.
+- `InlineWordArtWrapOptions` is the WordArt-specific `wrap/x/gap` option type.
+
+### Migration Recipe
+
+Remove `side` from programmatic Shape and WordArt creation:
+
+```typescript
+// before
+createInlineShapeDelta(props, text, {
+  wrap: true,
+  side: 'left',
+  x: 0.32,
+  gap: 12,
+})
+
+createInlineWordArtDelta(props, text, {
+  wrap: true,
+  x: 0.32,
+  gap: 12,
+})
+
+// after
+createInlineShapeDelta(props, text, {
+  wrap: true,
+  x: 0.32,
+  gap: 12,
+})
+```
+
+### Behavior Changes
+
+- All bundled inline-object toolbars omit the three text-side actions. Wrapped
+  objects use automatic geometry in the product UI.
+- Shape/WordArt drag, DOM conversion, HTML round-trip and model-only height
+  estimation all ignore or remove stale `side` metadata.
+- Shape/WordArt pointerdown selects and opens the toolbar without creating a
+  proxy, acquiring a layout freeze or taking a virtual-view lease. Those start
+  only after 2px movement; pointerup below the threshold remains a click.
+- No package version was modified.
+
+## Unreleased — 2026-08-17 — single-layer native ranges and absolute-object click takeover
+
+**Severity**: patch
+
+**What changed**: non-collapsed native-backed selections, including mixed
+whole-block↔text ranges, no longer apply generic `.selected` / `.focused`
+block pseudo-selection to their covered range.
+A text range wholly inside one editable block keeps that owning block's focused
+editing chrome, and Inline Embeds keep their separate atomic fallback. Explicit
+whole-block/model-only selections retain their interaction state. Text-box
+resize/rotate controls now opt out of underlay edge
+picking and reproject their owning object after the pointerdown dispatch; an
+armed absolute border click reprojects the unchanged object selection after
+pointer protection is released.
+
+**Why**: virtual-window repaint previously restored `.selected` on newly
+mounted containers, void blocks and empty leaves, visually stacking block-sized
+blue strips over the browser Range. Covered editable blocks could also regain
+focus-only controls. Because these generic classes activate object chrome, they
+cannot serve as neutral native-range fallback. A document selection could also
+expose an absolute text-box resizer; hitting a handle or completing a no-move
+border click could leave the old document Range behind the active object.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-selection.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Explicit whole-block/model-only selections retain their generic interaction
+  classes. Native-backed ranges rely on the browser paint and add no generic
+  block class, including for void and empty leaves; same-editable text ranges
+  keep only the one owning `.focused` surface.
+- Fully covered Inline Embeds continue to use `.bc-inline-embed--selected`,
+  without requiring their editable host to be generically focused.
+- Root select-all keeps the absolute layout subtree in its canonical model for
+  copy/cut/delete, but does not paint that non-native branch or reveal its
+  object controls.
+- Resize/rotate handles reproject their text box selection after root capture
+  and after gesture completion while preserving the shared resizer gesture; a
+  click on an absolute move edge reasserts the same object Range after the armed pointer guard ends.
+  Move-edge drag also owns pointer capture and releases its view/selection
+  guards on lost capture. Geometry behavior is unchanged.
+- No exported TypeScript signature or package version changed.
+
+## Unreleased — 2026-08-17 — Word-like font and paragraph settings dialogs
+
+**Severity**: minor
+
+**What changed**: fixed-toolbar font family, relative scale, character spacing,
+alignment and line-height menus now end with a `bc_version_settings`
+**更多设置…** action. It opens a field-focused `@cses/ui` font or paragraph
+modal. Editable blocks gain bounded paragraph spacing props; live rendering,
+Snapshot Viewer, HTML round-trip and model-first virtual height estimation use
+the same contract.
+
+**Why**: presets alone could not express paragraph before/after spacing or a
+consolidated Word-like typography workflow. Persisting semantic point values
+keeps Yjs compact, while one effective sibling gap avoids margin collapse
+differences across flow, text-box/flex, pagination and readonly rendering.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-block.md`
+- `blockcraft-plugins-formatting.md`
+- `blockcraft-adapter.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `IEditableBlockProps.psb/psa`: paragraph before/after spacing in points.
+- `normalizeParagraphSpacing()`, `paragraphPointsToCss()` and
+  `paragraphPointsToPixels()`.
+- `DocumentLayoutMetrics.segmentGap` and
+  `DocConfig.layoutMetrics.segmentGap`; zero is a valid explicit default gap.
+- `IInlineNodeAttrs`' built-in boolean format keys explicitly accept `null` as
+  the existing Y.Text format-removal value.
+- HTML `data-bc-sb/sa` round-trip fields.
+
+### Migration Recipe
+
+Hosts writing paragraph settings should persist the semantic props rather than
+inline DOM margins:
+
+```typescript
+// before: view-only and not collaborative
+paragraphElement.style.marginBottom = '12pt'
+
+// after: collaborative, undoable and pagination-aware
+doc.crud.updateBlockProps(paragraphId, {
+  psb: 6,
+  psa: 12,
+})
+```
+
+### Behavior Changes
+
+- Dialog edits only update preview until **确定**. Confirm replays the saved
+  model Selection and commits once; cancel/Escape/readonly never commit.
+- Mixed values remain untouched until explicitly changed; the dialogs do not
+  expose a whole-dialog reset action.
+- The effective gap between siblings is
+  `max(previous.psa, next.psb)`. Missing `psa` inherits
+  `--bc-segments-gap`; the first child's `psb` is leading padding and the last
+  child has no trailing gap.
+- Paragraph props affect offscreen height estimation and invalidate adjacent
+  mounted spacing owners without scanning the entire virtualized root.
+- The floating toolbar and document-level `ff/fs/lh` ownership remain
+  unchanged. No package version was modified.
+
+## Unreleased — 2026-08-17 — fixed-toolbar dropdown lifecycle
+
+**Severity**: patch
+
+**What changed**: every popup trigger inside `FixedTextToolbarComponent` now
+uses `CsDropdownDirective` with `CsDropdownMenuComponent`. The responsive
+**更多格式** branches use `CsSubmenuComponent`; complex color, table-size,
+shape, text-box and other visual pickers keep their existing BlockCraft content
+and explicit close-on-pick behavior. First-level dropdowns and responsive
+second-level submenus now open on hover. Font family and relative scale form an
+adjacent iconless control pair, superscript/subscript share a split action, and
+character spacing moves beside paragraph line height.
+
+**Why**: the previous `BcOverlayTriggerDirective` treated a Tooltip's sibling
+CDK overlay as a different floating binding. Moving the pointer from a menu item
+onto its Tooltip therefore closed the entire dropdown. CSES dropdown ownership
+keeps Tooltip overlays compatible with the menu that opened them.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-formatting.md`
+- `blockcraft-toolbar.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Hovering a Tooltip opened by fixed-toolbar dropdown content no longer closes
+  the dropdown.
+- Hovering any enabled fixed-toolbar dropdown trigger opens its menu; hovering a
+  **更多格式** submenu item opens the nested menu. Click/touch and keyboard
+  activation remain available.
+- An open dropdown trigger keeps the toolbar hover background. Responsive
+  nested pickers render inside the CSES submenu's single card instead of drawing
+  a second BlockCraft panel surface or adding a second 8px host gap.
+- Dropdown overlays use their trigger width as the minimum, then grow only for
+  intrinsic menu content; the fixed-toolbar scope suppresses CSES's generic
+  three-`interactive-xl` menu minimum so compact menus are not forced to about
+  288px. Font-scale presets cover `0.75×` through `3×`, including
+  `1.75×/2×/2.5×/3×`; character-spacing presets retain their high-frequency
+  quick values. **更多设置…** keeps the complete numeric controls. Scrollable
+  vertical menus use a thin, transparent-track scrollbar.
+- The ordered-list split control highlights the complete control when either
+  half is hovered; its caret receives an additional local hover/open highlight.
+- Superscript/subscript use the same split-control interaction. Its main action
+  repeats the active or most recently selected baseline command; choosing one
+  clears the other.
+- Wide layouts render font family and relative scale as one adjacent iconless
+  pair. Responsive layouts move both fields into **更多格式** and use `bc_zihao`
+  for the scale submenu. Character spacing uses `bc_zijianju` immediately
+  before paragraph line height.
+- Fixed-toolbar dropdown triggers now expose the CSES open/disabled classes and
+  ARIA state. No exported TypeScript signature or host configuration changes.
+
+## Unreleased — 2026-08-17 — add a Word-like ordered marker library
+
+**Severity**: minor
+
+**What changed**: ordered blocks can persist one optional semantic
+`ms` (marker style). Its value is one stable two-character code. The built-in
+library supplies 12 Arabic, alphabetic, Roman, Chinese and CSS-circle presets.
+The fixed ordered-list control is now a split
+button and is the only marker-style entry point. The marker-click toolbar keeps
+its existing continue / restart / recalculate scope. Live rendering, Snapshot
+rendering share the same marker resolver. HTML uses only its standard `<ol
+type>` subset and deliberately degrades unsupported presets.
+
+**Why**: depth-based cycling remains useful as a default, but it did not let a
+user choose the visual grammar of one numbered group. Marker identity is now
+kept separate from counter repair and from unrelated text formatting.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-plugins-block.md`
+- `blockcraft-plugins-formatting.md`
+- `blockcraft-adapter.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `OrderedMarkerStyleId`, `OrderedMarkerEnclosure`,
+  `OrderedMarkerStyleDescriptor`, `ORDERED_MARKER_STYLES`
+- `formatOrderedMarker()`, `resolveOrderedMarker()`,
+  `isOrderedMarkerStyleId()` and `resolveOrderedMarkerDigitScale()`
+- `resolveOrderedMarkerGroupIds()` and `applyOrderedMarkerStyle()`
+- `BcOrderedMarkerPickerComponent` (`bc-ordered-marker-picker`)
+- ordered block prop `ms`
+- compact preset IDs `n1..n5`, `a1..a2`, `r1..r2`, `c1..c2`, and `o1`
+- optional third `props` argument on `TextToolbarHelper.transformBlocks()`
+- portable HTML mapping through `<ol type="1|a|A|i|I">`; no private marker
+  attribute is emitted
+
+### Migration Recipe
+
+Hosts that render ordered prefixes themselves should use the shared resolver:
+
+```typescript
+// before
+const marker = `${getNumberPrefix(props.order, props.depth)}.`
+
+// after
+const marker = resolveOrderedMarker(
+  props.order,
+  props.depth,
+  props.ms,
+).text
+```
+
+### Behavior Changes
+
+- Missing, null or unknown `ms` preserves the exact legacy depth
+  cycle (`1.` → `a.` → `III.`).
+- Picking a style follows the automatic counter's numbered-group boundary for
+  the anchor `depth + heading`: same-level ordinary paragraphs do not split the
+  group; structural pruning or an explicit positive `start` does.
+- A marker-only props change never schedules or writes `order`. User marker
+  changes use one normal transaction; automatic counter repair continues to
+  use `ORIGIN_SYSTEM_REPAIR`.
+- A newly inserted ordered block that omits `ms` inherits a valid marker preset
+  from the automatic-numbering group it joins, including across same-level
+  ordinary paragraphs. Existing blocks are not backfilled; an explicit preset
+  wins, and a positive `start` boundary does not inherit from the prior group.
+- The CSS-circle preset uses a compact `1.15em` ring and optically scales even
+  single-digit content; it does not depend on font-specific circled glyphs.
+- Marker text now lives in `.ordered-block-prefix__text`. Pointer integrations
+  must use `closest('.ordered-block-prefix')` when the inner span is the target.
+- HTML preserves the five presets expressible through standard `<ol type>` and
+  intentionally degrades the other seven to ordinary numbering. It emits and
+  imports no private marker-style attribute. Standard Markdown likewise exports
+  ordinary `1.` numbering because it has no marker-style primitive.
+- This additive change does not modify the package version.
+
+## Unreleased — 2026-08-17 — simplify the text-box catalog and keep style-owned safe areas
+
+**Severity**: patch
+
+**What changed**: the Unreleased text-box catalog now exposes only 线框 / 矩形 /
+气泡. The former 精选 category and seven decorative curated entries were
+removed; **默认白框** is the one retained entry and now leads 线框. The fixed
+toolbar's **插入文本框** menu opens that catalog directly instead of putting
+**横向** / **竖向** plain-frame shortcuts above it. Catalog styles keep their
+own editable safe-area data: the plain white rectangle uses ordinary pixel
+padding, while decorated frames and bubbles use their artwork or Shape
+`textInsets` with zero duplicated `p`.
+
+**Why**: 精选 duplicated the semantic tabs without adding a distinct styling
+rule, and the fixed toolbar repeated direction controls that already belong to
+the selected text box. More importantly, one shared padding tuple cannot match
+both a rectangular white frame and an asymmetric balloon with a tail. The
+frame's visible interior must be part of the style definition and must scale
+with the frame.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-plugins-formatting.md`
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-toolbar.md`
+- `MIGRATIONS.md`
+
+### Breaking Changes
+
+None shipped. `featured` and the removed preset ids existed only in the
+Unreleased catalog work. Source-preview consumers must stop passing
+`cat: 'featured'` or referring to `soft-blue`, `paper-note`, `speech`, `cloud`,
+`ink-title`, `royal-banner` and `neon-card`.
+
+### Behavior Changes
+
+- `TEXT_BOX_PRESET_CATEGORIES` is now `outline` / `rect` / `bubble`, and
+  `TextBoxPresetCategory` no longer includes `featured`.
+- Fixed-toolbar insertion always starts from a horizontal catalog style.
+  Writing direction can still be changed from the selected text box's text
+  settings; the frame model and `wm` API are unchanged.
+- 默认白框 keeps `p: [10, 14]`. Decorated catalog entries keep `p` at zero and
+  derive the editable viewport from their proportional `textInsets`, which the
+  live Block and Snapshot Viewer already resolve with the same precedence.
+- This correction does not modify the package version.
+
+## Unreleased — 2026-08-17 — container Ctrl+A follows the object layout boundary
+
+**Severity**: patch
+
+**What changed**: the first Cmd/Ctrl+A from text inside a
+`metadata.selectionScope: 'container'` block now selects that container's full
+child boundary range. In a text box this means all paragraphs are selected at
+once, regardless of which paragraph owns the caret. A repeated shortcut stays
+there only when the container belongs to an absolute object; normal-flow
+containers continue through their parent to root. Non-collapsed boundary DOM
+projection now uses adjacent child text/gap edges so nested editable containers
+paint a visible browser selection while retaining their structural model range.
+
+**Why**: a rich-text container is one user-visible editing surface even when its
+model content is split across several editable Blocks, but semantic selection
+scope is not the same thing as document select-all ownership. Absolute objects
+must isolate editing from the flow document; Callout/高亮块 in normal flow must
+still participate in the ordinary ladder. Chromium also accepts a parent-offset
+Range inside nested contenteditable islands without painting its glyphs, so the
+browser view needs descendant-backed endpoints.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-selection.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- `SelectionKeyboard` resolves the common semantic scope through
+  `resolveCommonSelectionScope()`; it does not hard-code text-box or callout
+  flavours and performs no DOM/layout read.
+- Table-cell promotion remains higher priority. Non-container document text
+  keeps the prior progressive full-paragraph → parent-content ladder.
+- A full container boundary range is terminal only inside an absolute object.
+  A normal-flow text box, Callout or highlight container continues through its
+  parent to root on the next shortcut.
+- Programmatic boundary ranges anchor editable endpoints in the first/last
+  child text and preserve their boundary model on exact DOM resampling. The
+  TextBox toolbar also remains active for that boundary selection.
+- This correction does not modify the package version.
+
+## Unreleased — 2026-08-17 — text-box focus and layout-card refinement
+
+**Severity**: patch
+
+**What changed**: `TextBoxToolbarPlugin` now keeps the text-box settings overlay
+open when a caret or text range belongs to any editable descendant of the same
+`text-box`. It marks that frame with `.text-box-block--editing`, whose bundled
+theme paints an outer active-color outline. The existing nested
+`contenteditable=false → true` object/text editing boundary remains; within the
+inner host, the last ordinary child now grows across any remaining block-axis
+space. The layout card no longer repeats its three object-layout choices through
+a separate **位置基准 / 随文字移动 / 固定在页面上** control.
+
+**Why**: the previous whole-object-only condition closed the settings overlay as
+soon as a paragraph acquired a caret. Previously, fixed-frame whitespace
+belonged to the inner editing container instead of a real child Block, so the
+browser could not derive a paragraph text point there and only precise hits on
+rendered paragraph content appeared to focus the text box. Assigning that space
+to the last child gives native caret hit testing a real paragraph target, like
+Callout/高亮块, without weakening the object/text editing boundary.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Descendant text editing now shows both the normal text-formatting surface and
+  the owning text box's settings toolbar.
+- The editing outline belongs to the outer frame; inner focus outline and
+  scrollbar chrome remain suppressed, and resize/rotation handles remain
+  exclusive to whole-object selection.
+- Text-box whitespace interaction is layout/HTML-native; no blank-area event
+  handler or geometry read was added to the Plugin.
+- The layout card still exposes `top-bottom`, `under` and `over`, plus stack
+  controls for absolute objects; only the redundant position-basis section and
+  its UI-only mapping were removed.
+
 ## Unreleased — 2026-08-16 — catalog drawings move to a registry; `bgi` holds a reference
 
 **Severity**: minor
@@ -242,9 +821,9 @@ here.
 1. `TextBoxPresetPickerComponent` no longer takes a `wm` input and no longer
    splits the catalog by direction. Its tab strip is now `CsSegmentedComponent`
    from `@cses/ui` instead of hand-written buttons.
-2. The fixed toolbar's 插入文本框 panel dropped its catalog direction toggle.
-   The two 横向 / 竖向 buttons still insert a plain frame in either direction;
-   a catalog pick is always stamped `wm: 'h'` at the preset's own proportion.
+2. The fixed toolbar's 插入文本框 panel dropped direction controls entirely and
+   opens the catalog directly. A catalog pick is always stamped `wm: 'h'` at
+   the preset's own proportion; selected-object text settings still change it.
 3. The 气泡 tab's four heavy contours were thinned — `ink-shout` 5.2 → 2.6,
    `pixel-frame` 10 → 4, `crimson-oval` 6 → 3.4, `pixel-cloud` 8 → 4 canvas
    units, and `ink-shout`'s impact strokes rescaled with its rim.
@@ -556,7 +1135,8 @@ WordArt, Table, columns, image and video/audio as individually visible insertion
 actions at every width. Word-like command groups retain visual separators and
 accessible names without persistent caption text. Its layout responds to the
 toolbar container through one `ResizeObserver`: a complete wide surface and a
-frequency-prioritized medium/compact surface.
+frequency-prioritized medium/compact surface. Formatting and insertion now stay
+as non-shrinking siblings in one horizontal scroll range.
 
 **Why**: Insertion capabilities must remain directly discoverable. Responsive
 space should instead come from lower-frequency formatting controls rather than
@@ -572,13 +1152,18 @@ collapsing the whole insertion domain.
 
 - Insertion capabilities and their existing pickers remain individually
   exposed at all widths.
-- Responsive mode uses the component's actual inline size with breakpoints at
-  `720px` and `1480px`; it does not depend on viewport media queries. Below the
-  wide breakpoint, font family, character spacing and line height move into
-  **更多格式**, while superscript, subscript, inline link and inline formula
-  are omitted from the fixed toolbar.
+- Responsive mode uses the component's actual inline size and rendered
+  overflow rather than viewport media queries or fixed pixel breakpoints. It
+  first tries the complete layout, then moves font family/scale, character
+  spacing and line height into **更多格式** while omitting superscript/subscript,
+  inline link and inline formula. If content still overflows, bold, italic,
+  underline and inline code collapse into one **文字格式** dropdown;
+  strike-through stays directly visible.
 - Visible formatting and insertion groups are centered in every responsive
-  tier; safe centering preserves the inline start when a row truly overflows.
+  tier while they fit. The toolbar progressively condenses before scrolling;
+  only the narrowest tier exposes one thin horizontal scrollbar and preserves
+  the inline start. Insertion no longer compresses, covers or independently
+  scrolls past the formatting section.
 - Column-oriented float-toolbar menus constrain items with border-box sizing,
   hide horizontal overflow and keep long lists vertical-scroll-only.
 - Paragraph line height is enabled for mixed multi-block selections when at
@@ -586,57 +1171,15 @@ collapsing the whole insertion domain.
   rich-text blocks only; other text-format controls keep their stricter
   all-selected-blocks-editable rule.
 - The floating text toolbar and object-specific toolbars are unchanged.
-- `blockcraft-plugins-block.md`
-- `blockcraft-plugins-toolbar.md`
-
-### New APIs / Features
-
-- `OrderedNumberFormat`, `OrderedFormatDescriptor`, `ORDERED_NUMBER_FORMATS`
-- `formatOrderedNumber()`, `resolveOrderedPrefix()`, `isOrderedNumberFormat()`,
-  `resolveOrderedDigitFontSize()`
-- `resolveOrderedRunIds()`, `applyOrderedStyleToRun()` and the counter
-  predicates (`prunesCounter()`, `isSameCounter()`, …) now live in the
-  `ordered-block` domain layer so the toolbar and the plugin share one
-  definition of "one list run"
-- `BcOrderedFormatPickerComponent` (`bc-ordered-format-picker`)
-- `ordered` props `nf` / `nc` / `nff`
-- HTML round-trip through `data-bc-nf` / `data-bc-nc` / `data-bc-nff` on
-  `<li>`, plus `<ol type>` for the two formats HTML can express
-
-### Migration Recipe
-
-Marker rendering must go through the shared resolver so the editor and Snapshot
-Viewer cannot drift. Hosts that reimplemented the prefix should switch:
-
-```typescript
-// before
-const marker = `${getNumberPrefix(props.order, props.depth)}.`
-
-// after
-const {text, circled} = resolveOrderedPrefix(props.order, props.depth, props.nf)
-```
-
-### Behavior Changes
-
-- The marker's text node moved one level deeper, into
-  `.ordered-block-prefix__num`. Code that matched `event.target` against the
-  button element must use `closest('.ordered-block-prefix')`; reading
-  `textContent` off the button is unaffected.
-- Documents without `nf` render exactly as before — the legacy
-  depth-cycling appearance (`1.` → `a.` → `III.`) is still the default, and
-  `getNumberPrefix()` keeps its signature and output.
-- Numbering format and marker styling are written with the default transaction
-  origin, so one undo restores the whole run. Automatic `order` repair keeps
-  using `ORIGIN_SYSTEM_REPAIR` and stays out of undo history.
-- Markdown cannot express any of this and still exports plain `1.` numbering.
 
 ## Unreleased — 2026-08-14 — group the text-box catalog into shape tabs
 
 **Severity**: minor
 
-**What changed**: `TEXT_BOX_PRESETS` grew from 8 to 44 entries, grouped into
-Word-style tabs (精选 / 线框 / 矩形 / 气泡) via a new optional `cat`
-field. Each shape tab carries both geometry-only entries built from the Shape
+**What changed**: `TEXT_BOX_PRESETS` grew from 8 to 37 entries, grouped into
+Word-style tabs (线框 / 矩形 / 气泡) via a new optional `cat` field. The retained
+**默认白框** leads 线框 rather than occupying a separate 精选 category. Each
+shape tab carries both geometry-only entries built from the Shape
 catalog and decorated entries whose whole appearance — border, texture and
 ornament — is a drawing named through `bgi`. (Those drawings were inlined as
 `data:image/svg+xml` URIs at first; a later entry above moves them into the
@@ -692,10 +1235,10 @@ Block, a new render path, or any external asset.
 - Card-shaped tabs set `fo: 1` over a white `backColor`. A transparent card lets
   a colored page show through while the ornament keeps its own hardcoded white,
   which reads as stray white marks rather than as a card.
-- `p` is reverse-engineered per entry from the drawing's innermost extent — for a
-  curve that means its true extreme, not its bounding box — with the two axes
-  scaled separately. Non-rectangular shapes add their `textInsets` underneath
-  `p`, so the two stack.
+- The editable safe area is reverse-engineered per drawing from its innermost
+  extent — for a curve that means its true extreme, not its bounding box — and
+  stored as proportional `textInsets`. Decorated entries keep `p` at zero so a
+  fixed second reserve does not stack underneath it.
 
 ## Unreleased — 2026-08-14 — add Word-like vertical text direction to text boxes
 
@@ -704,11 +1247,9 @@ Block, a new render path, or any external asset.
 **What changed**: `text-box` gained a compact `wm` writing-direction flag
 (`'h'` | `'v'`, default `'h'`). A vertical frame renders `writing-mode:
 vertical-rl`, projected through the new `--bc-text-box-writing-mode` variable
-shared by the live Block and Snapshot Viewer. The bundled fixed toolbar's
-text-box entry now opens a Word-style panel: **横向** / **竖向** insert a plain
-frame with no catalog styling, and a direction switch above the style catalog
-draws every preview at the proportion the chosen direction produces. The
-object rail's text panel gained a **文字方向** control, and its two alignment
+shared by the live Block and Snapshot Viewer. The bundled fixed toolbar inserts
+horizontal catalog styles; writing direction is changed from the object rail's
+**文本 / 文字方向** control, whose two alignment
 rows relabel themselves per direction. The default frame outline is now black.
 
 **Why**: vertical text is the defining visual of Chinese poster-style
@@ -758,10 +1299,10 @@ doc.crud.updateBlockProps(textBoxId, {wm: 'h'})
   and the theme's `--bc-text-box-border-color` fallback follows. Existing
   documents persist their own outline color and are unaffected; only frames
   created without an explicit appearance pick up the new default.
-- The toolbar's 横向 / 竖向 entries pass geometry and direction only, letting
-  the normalizer supply appearance. There is no "plain" preset to keep in sync.
-- Picking a catalog preset while the catalog is set to 竖向 transposes the
-  preset's default width/height and stamps `wm: 'v'`.
+- Fixed-toolbar catalog picks are stamped `wm: 'h'`; selected-object settings
+  remain the place to change direction.
+- Host code can still create a vertical frame with `wm: 'v'`, but must provide
+  suitable geometry; the fixed toolbar no longer transposes catalog defaults.
 - Text-box children now space themselves with `margin-block-end`. Under
   `horizontal-tb` this resolves to the previous `margin-bottom`, so horizontal
   frames are unchanged; vertical frames get correct inter-block spacing.

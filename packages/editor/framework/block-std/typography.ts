@@ -215,6 +215,25 @@ export const matchTypographyFontFamily = (
 export const normalizeInlineFontScale = (value: unknown): number | null =>
   boundedNumber(value, 0.5, 3);
 
+/** Compact paragraph-level font scale persisted on editable Block props. */
+export const normalizeParagraphFontScale = (value: unknown): number | null =>
+  boundedNumber(value, 0.5, 3);
+
+/** Resolve paragraph scale together with the block's built-in semantic size. */
+export const resolveEditableBlockFontScale = (
+  props: Record<string, unknown> | undefined,
+  flavour?: string,
+): number => {
+  const paragraphScale = normalizeParagraphFontScale(props?.['pfs']) ?? 1;
+  const heading = props?.['heading'];
+  let presentationScale = flavour === 'caption' ? 0.9 : 1;
+  if (heading === 1) presentationScale = 2;
+  else if (heading === 2) presentationScale = 1.8;
+  else if (heading === 3) presentationScale = 1.6;
+  else if (heading === 4) presentationScale = 1.4;
+  return roundCompact(paragraphScale * presentationScale);
+};
+
 export const normalizeInlineLetterSpacing = (value: unknown): number | null =>
   boundedNumber(value, -0.1, 0.5);
 
@@ -223,6 +242,15 @@ export const normalizeDocumentFontSize = (value: unknown): number | null =>
 
 export const normalizeTypographyLineHeight = (value: unknown): number | null =>
   boundedNumber(value, 1, 3);
+
+/** Paragraph dialog values are persisted in typographic points. */
+export const normalizeParagraphSpacing = (value: unknown): number | null =>
+  boundedNumber(value, 0, 120);
+
+export const paragraphPointsToCss = (value: number): string => `${value}pt`;
+
+export const paragraphPointsToPixels = (value: number): number =>
+  Math.round(value * 4 / 3 * 1000) / 1000;
 
 /**
  * Produces one canonical inline-format patch and removes its legacy CSS alias.

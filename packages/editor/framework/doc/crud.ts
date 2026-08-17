@@ -372,6 +372,20 @@ export class DocCRUD {
           changes: changes.keys,
         })
       }
+      if (keyProp === 'props' && changes.keys.has('psb')) {
+        // Paragraph-before is projected as the previous sibling's effective
+        // margin-bottom. Its own border-box does not resize, so explicitly
+        // refresh the mounted spacing owner when this value changes.
+        const previousId = this.doc.model.getPreviousSiblingId(blockId)
+        const previous = previousId ? this.vm.get(previousId) : null
+        if (previous && !previous.hostView.destroyed) {
+          Promise.resolve().then(() => {
+            if (!previous.hostView.destroyed) {
+              previous.instance.changeDetectorRef.markForCheck()
+            }
+          })
+        }
+      }
       const bm = this.vm.get(blockId)
       if (!bm) {
         // Virtualized blocks may be structurally live without a component.
@@ -386,6 +400,11 @@ export class DocCRUD {
           const desiredIds = (!tr.local || isUndoRedo || tr.origin === ORIGIN_SYSTEM_REPAIR)
             ? this.doc.model.getChildrenIds(blockId)
             : target.toArray()
+          this._markParagraphSpacingStructureOwners(
+            previousIds,
+            desiredIds,
+            changes.delta,
+          )
           if (tr.origin !== ORIGIN_SKIP_SYNC) {
             changes.delta.forEach(change => {
               if (change.insert) {
@@ -545,6 +564,59 @@ export class DocCRUD {
   ): void {
     this._reconcileParentViewsFromModel(affectedParentIds)
     this._settleInsertedComponentOwnership(owners)
+  }
+
+  /**
+   * A sibling insertion/removal can change the preceding block's projected
+   * `--bc-next-block-sb` without resizing that block. Refresh only the delta
+   * boundaries rather than scanning every child in a large virtualized root.
+   */
+  private _markParagraphSpacingStructureOwners(
+    previousIds: readonly string[],
+    desiredIds: readonly string[],
+    delta: ReadonlyArray<{retain?: number; delete?: number; insert?: unknown}>,
+  ): void {
+    const ids = new Set<string>()
+    const add = (id: string | undefined) => id && ids.add(id)
+    add(previousIds[0])
+    add(desiredIds[0])
+
+    let previousIndex = 0
+    let desiredIndex = 0
+    delta.forEach(change => {
+      if (change.retain) {
+        previousIndex += change.retain
+        desiredIndex += change.retain
+      }
+      if (change.delete) {
+        add(previousIds[previousIndex - 1])
+        add(previousIds[previousIndex + change.delete])
+        add(desiredIds[desiredIndex - 1])
+        add(desiredIds[desiredIndex])
+        previousIndex += change.delete
+      }
+      if (change.insert) {
+        const insertedLength = Array.isArray(change.insert)
+          ? change.insert.length
+          : 1
+        add(previousIds[previousIndex - 1])
+        add(previousIds[previousIndex])
+        add(desiredIds[desiredIndex - 1])
+        add(desiredIds[desiredIndex])
+        add(desiredIds[desiredIndex + insertedLength - 1])
+        add(desiredIds[desiredIndex + insertedLength])
+        desiredIndex += insertedLength
+      }
+    })
+
+    Promise.resolve().then(() => {
+      ids.forEach(id => {
+        const ref = this.vm.get(id)
+        if (ref && !ref.hostView.destroyed) {
+          ref.instance.changeDetectorRef.markForCheck()
+        }
+      })
+    })
   }
 
   /**

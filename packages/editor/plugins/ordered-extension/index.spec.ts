@@ -147,10 +147,13 @@ const createPrefixMouseDownContext = (blockId: string) => {
   host.setAttribute('data-block-id', blockId)
   const button = document.createElement('button')
   button.classList.add('ordered-block-prefix')
+  const text = document.createElement('span')
+  text.classList.add('ordered-block-prefix__text')
+  button.appendChild(text)
   host.appendChild(button)
   const event = {
     button: 0,
-    target: button,
+    target: text,
   } as unknown as MouseEvent
 
   return {
@@ -252,6 +255,83 @@ describe('OrderedBlockPlugin', () => {
 
     await waitForAutoOrder()
 
+    expect([blocks[0].props['order'], blocks[2].props['order']]).toEqual([0, 1])
+    plugin.destroy()
+  })
+
+  it('inherits the numbered-group marker style when a non-contiguous ordered block is inserted', async () => {
+    const {onChildrenUpdate$, plugin, registerParent, updateBlockProps} = createPluginHarness()
+    const blocks = [
+      createOrderedBlock('ordered-1', {order: 0, ms: 'a2'}),
+      createBlock('paragraph-1'),
+      createOrderedBlock('ordered-2', {order: 0}),
+    ]
+    const parent = attachToParent(blocks)
+    registerParent(parent, blocks)
+
+    triggerInserted(onChildrenUpdate$, parent, blocks[2])
+    await waitForAutoOrder()
+
+    expect(blocks[2].props['order']).toBe(1)
+    expect(blocks[2].props['ms']).toBe('a2')
+    expect(updateBlockProps).toHaveBeenCalledWith('ordered-2', {
+      order: 1,
+      ms: 'a2',
+    })
+    plugin.destroy()
+  })
+
+  it('does not inherit marker style across an explicit restart boundary', async () => {
+    const {onChildrenUpdate$, plugin, registerParent} = createPluginHarness()
+    const blocks = [
+      createOrderedBlock('ordered-1', {order: 0, ms: 'a2'}),
+      createBlock('paragraph-1'),
+      createOrderedBlock('ordered-restart', {order: 0, start: 5}),
+    ]
+    const parent = attachToParent(blocks)
+    registerParent(parent, blocks)
+
+    triggerInserted(onChildrenUpdate$, parent, blocks[2])
+    await waitForAutoOrder()
+
+    expect(blocks[2].props['order']).toBe(4)
+    expect(blocks[2].props['ms']).toBeUndefined()
+    plugin.destroy()
+  })
+
+  it('preserves an explicitly supplied marker style on an inserted ordered block', async () => {
+    const {onChildrenUpdate$, plugin, registerParent} = createPluginHarness()
+    const blocks = [
+      createOrderedBlock('ordered-1', {order: 0, ms: 'a2'}),
+      createBlock('paragraph-1'),
+      createOrderedBlock('ordered-2', {order: 0, ms: 'r1'}),
+    ]
+    const parent = attachToParent(blocks)
+    registerParent(parent, blocks)
+
+    triggerInserted(onChildrenUpdate$, parent, blocks[2])
+    await waitForAutoOrder()
+
+    expect(blocks[2].props['order']).toBe(1)
+    expect(blocks[2].props['ms']).toBe('r1')
+    plugin.destroy()
+  })
+
+  it('does not schedule or write automatic order when only ms changes', async () => {
+    const {onPropsUpdate$, plugin, registerParent, updateBlockProps} = createPluginHarness()
+    const blocks = [
+      createOrderedBlock('ordered-1', {order: 0}),
+      createBlock('paragraph-1'),
+      createOrderedBlock('ordered-2', {order: 1}),
+    ]
+    const parent = attachToParent(blocks)
+    registerParent(parent, blocks)
+
+    blocks[0].props['ms'] = 'a2'
+    triggerPropsChanged(onPropsUpdate$, blocks[0], ['ms'])
+    await waitForAutoOrder()
+
+    expect(updateBlockProps).not.toHaveBeenCalled()
     expect([blocks[0].props['order'], blocks[2].props['order']]).toEqual([0, 1])
     plugin.destroy()
   })

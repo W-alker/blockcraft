@@ -254,7 +254,6 @@ export const inlineObjectDeltaToHtmlAdapterMatcher:
           ...(data.wrap
             ? {
                 dataBcWrap: 'square',
-                dataBcWrapSide: data.side,
                 dataBcWrapX: data.x,
                 ...(data.gap === undefined
                   ? {}

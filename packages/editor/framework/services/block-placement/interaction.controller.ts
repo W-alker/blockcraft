@@ -154,6 +154,12 @@ export class BlockPlacementInteractionController {
     if (!box) return false
 
     const pointerId = event.pointerId
+    const ownerDocument = host.ownerDocument
+    const ownerWindow = ownerDocument.defaultView ?? window
+    const pointerCaptureTarget = event.target instanceof Element &&
+      event.target.ownerDocument === host.ownerDocument
+      ? event.target
+      : null
     const pointerStartX = event.clientX
     const pointerStartY = event.clientY
     const start = this.runtime.getState(block)
@@ -182,12 +188,21 @@ export class BlockPlacementInteractionController {
     const cleanup = () => {
       if (cleaned) return
       cleaned = true
-      window.removeEventListener('pointermove', onPointerMove, true)
-      window.removeEventListener('pointerup', onPointerUp, true)
-      window.removeEventListener('pointercancel', onPointerCancel, true)
-      window.removeEventListener('keydown', onKeydown, true)
-      window.removeEventListener('blur', onWindowBlur)
-      document.removeEventListener('selectstart', onSelectStart, true)
+      ownerWindow.removeEventListener('pointermove', onPointerMove, true)
+      ownerWindow.removeEventListener('pointerup', onPointerUp, true)
+      ownerWindow.removeEventListener('pointercancel', onPointerCancel, true)
+      ownerWindow.removeEventListener('keydown', onKeydown, true)
+      ownerWindow.removeEventListener('blur', onWindowBlur)
+      pointerCaptureTarget?.removeEventListener(
+        'lostpointercapture',
+        onLostPointerCapture,
+      )
+      ownerDocument.removeEventListener('selectstart', onSelectStart, true)
+      try {
+        if (pointerCaptureTarget?.hasPointerCapture(pointerId)) {
+          pointerCaptureTarget.releasePointerCapture(pointerId)
+        }
+      } catch {}
       restorePreview()
       try {
         releaseLease()
@@ -211,9 +226,7 @@ export class BlockPlacementInteractionController {
       if (!moved) {
         moved = true
         this.stateSubject.next('dragging')
-        if (document.activeElement instanceof HTMLElement) {
-          document.activeElement.blur()
-        }
+        ;(ownerDocument.activeElement as HTMLElement | null)?.blur?.()
         try {
           this.doc.selection.blur()
         } catch {}
@@ -232,7 +245,16 @@ export class BlockPlacementInteractionController {
     const onPointerUp = (upEvent: PointerEvent) => {
       if (upEvent.pointerId !== pointerId) return
       const shouldCommit = moved && isLiveWritable()
+      const shouldReassertSelection = !moved &&
+        isLiveWritable() &&
+        this.runtime.isAbsoluteObjectSelection(this.doc.selection.value) &&
+        this.doc.selection.value?.anchor.blockId === block.id
       cleanup()
+      // `armed` suppresses native selectionchange while compatibility mouse
+      // events finish. Reproject the still-current object selection only after
+      // that guard is released, so a click cannot leave an older document Range
+      // painted behind the selected absolute object.
+      if (shouldReassertSelection) this.doc.selection.selectBlock(block)
       if (!shouldCommit) return
       this.updateAbsolute(block, {
         x: placementStartX + dx / box.visualScale,
@@ -241,6 +263,9 @@ export class BlockPlacementInteractionController {
     }
     const onPointerCancel = (cancelEvent: PointerEvent) => {
       if (cancelEvent.pointerId === pointerId) cleanup()
+    }
+    const onLostPointerCapture = (lostEvent: Event) => {
+      if ((lostEvent as PointerEvent).pointerId === pointerId) cleanup()
     }
     const onKeydown = (keyEvent: KeyboardEvent) => {
       if (keyEvent.key === 'Escape') cleanup()
@@ -257,12 +282,19 @@ export class BlockPlacementInteractionController {
     // 保护调用方刚写入的 BlockSelection；真正超过阈值后再主动 blur。
     this.doc.selection.setSuppressRecalculate(true)
     this.doc.ngZone.runOutsideAngular(() => {
-      window.addEventListener('pointermove', onPointerMove, true)
-      window.addEventListener('pointerup', onPointerUp, true)
-      window.addEventListener('pointercancel', onPointerCancel, true)
-      window.addEventListener('keydown', onKeydown, true)
-      window.addEventListener('blur', onWindowBlur)
-      document.addEventListener('selectstart', onSelectStart, true)
+      ownerWindow.addEventListener('pointermove', onPointerMove, true)
+      ownerWindow.addEventListener('pointerup', onPointerUp, true)
+      ownerWindow.addEventListener('pointercancel', onPointerCancel, true)
+      ownerWindow.addEventListener('keydown', onKeydown, true)
+      ownerWindow.addEventListener('blur', onWindowBlur)
+      pointerCaptureTarget?.addEventListener(
+        'lostpointercapture',
+        onLostPointerCapture,
+      )
+      ownerDocument.addEventListener('selectstart', onSelectStart, true)
+      try {
+        pointerCaptureTarget?.setPointerCapture(pointerId)
+      } catch {}
     })
     this.cleanupDrag = cleanup
     this.stateSubject.next('armed')

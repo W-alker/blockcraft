@@ -6,6 +6,20 @@
   "description": "文档库2.0",
   "glyphs": [
     {
+      "icon_id": "44594292",
+      "name": "字间距",
+      "font_class": "zijianju",
+      "unicode": "e660",
+      "unicode_decimal": 58976
+    },
+    {
+      "icon_id": "44764392",
+      "name": "字号",
+      "font_class": "zihao",
+      "unicode": "ea40",
+      "unicode_decimal": 59968
+    },
+    {
       "icon_id": "38044427",
       "name": "003_中心对齐",
       "font_class": "zhongxinduiqi",

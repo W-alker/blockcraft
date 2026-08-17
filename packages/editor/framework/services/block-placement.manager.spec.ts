@@ -1411,4 +1411,57 @@ describe('BlockPlacementManager', () => {
     manager.destroy()
     container.remove()
   })
+
+  it('reprojects the current absolute-object selection after an armed click', () => {
+    const {container, block, manager, doc, setAbsolute} = makeHarness()
+    setAbsolute()
+    ;(doc.selection as any).value = {
+      isInSameBlock: true,
+      anchor: {type: 'selected', blockId: block.id},
+      head: {type: 'selected', blockId: block.id},
+    }
+    doc.selection.selectBlock.calls.reset()
+
+    expect(manager.startDrag(
+      pointer('pointerdown', {clientX: 200, clientY: 100}),
+      block as any,
+    )).toBeTrue()
+    window.dispatchEvent(pointer('pointerup', {clientX: 200, clientY: 100}))
+
+    expect(doc.selection.setSuppressRecalculate.calls.allArgs()).toEqual([
+      [true],
+      [false],
+    ])
+    expect(doc.selection.selectBlock).toHaveBeenCalledOnceWith(block)
+
+    manager.destroy()
+    container.remove()
+  })
+
+  it('releases an absolute drag guard when pointer capture is lost', () => {
+    const {container, host, block, manager, doc, setAbsolute} = makeHarness()
+    setAbsolute()
+    const edge = document.createElement('span')
+    host.appendChild(edge)
+    const setPointerCapture = spyOn(edge, 'setPointerCapture')
+    spyOn(edge, 'hasPointerCapture').and.returnValue(false)
+    const releasePointerCapture = spyOn(edge, 'releasePointerCapture')
+    const down = pointer('pointerdown', {clientX: 200, clientY: 100})
+    Object.defineProperty(down, 'target', {value: edge})
+
+    expect(manager.startDrag(down, block as any)).toBeTrue()
+    expect(setPointerCapture).toHaveBeenCalledOnceWith(7)
+
+    edge.dispatchEvent(pointer('lostpointercapture'))
+
+    expect(manager.state).toBe('idle')
+    expect(doc.selection.setSuppressRecalculate.calls.allArgs()).toEqual([
+      [true],
+      [false],
+    ])
+    expect(releasePointerCapture).not.toHaveBeenCalled()
+
+    manager.destroy()
+    container.remove()
+  })
 })

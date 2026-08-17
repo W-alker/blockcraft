@@ -4,7 +4,7 @@
 >
 > Adapters handle HTML ↔ BlockSnapshot and Markdown ↔ BlockSnapshot conversion.
 >
-> Last updated: 2026-08-16
+> Last updated: 2026-08-17
 
 ## Architecture
 
@@ -327,14 +327,30 @@ lossless.
 
 ## Typography Mapping
 
-HTML round-trips document root `ff/fs/lh`, editable paragraph `lh`, and
-inline `t:ff/t:fs/t:ls` through bounded `data-bc-*` fields plus portable CSS.
+HTML round-trips document root `ff/fs/lh`, editable paragraph
+`pfs/lh/psb/psa`, and inline `t:ff/t:fs/t:ls` through bounded
+`data-bc-*` fields plus portable CSS. Paragraph fields map to
+`data-bc-pfs/lh/sb/sa` and relative `font-size`, `line-height`,
+`margin-top/bottom`. `pfs` accepts only bounded `em`/percent relative values;
+it is not inferred from an absolute font size. Paragraph spacing is
+stored as typographic points;
+plain external `px` values import through the standard `0.75pt/px` conversion.
+Paragraph padding and `text-indent` are not imported as BlockCraft typography.
 Import accepts only the shared font catalog (or supported safe legacy stacks),
 relative inline `em` values and bounded numeric root/block values. Raw arbitrary
 CSS properties and expressions such as `url()`, `var()`, `calc()` or
 `expression()` are ignored. Legacy `s:fontFamily`, `s:fontSize` and
 `s:letterSpacing` export read-compatibly and normalize to compact semantic keys
 on supported HTML import. Standard Markdown intentionally drops typography.
+
+## Ordered Marker Mapping
+
+Ordered blocks persist the compact semantic `ms` field, not generated marker
+text. HTML does not emit a private marker-style attribute. The five styles with
+a native equivalent split `<ol>` groups as needed and emit
+`type="1|a|A|i|I"`; import maps those standard values back to `ms`. The other
+seven presets intentionally degrade to ordinary HTML numbering. Standard
+Markdown likewise has no marker-style syntax and emits ordinary `1.` numbering.
 
 ## Shape Block Mapping
 

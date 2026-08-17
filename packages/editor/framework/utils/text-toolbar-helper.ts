@@ -3,11 +3,15 @@ import {
   DeltaInsert,
   EditableBlockComponent,
   IEditableBlockProps,
+  IBlockProps,
   IInlineNodeAttrs,
   INLINE_TYPOGRAPHY_ATTRS,
+  createInlineTypographyPatch,
   matchTypographyFontFamily,
   normalizeInlineFontScale,
   normalizeInlineLetterSpacing,
+  normalizeParagraphFontScale,
+  normalizeParagraphSpacing,
   normalizeTypographyLineHeight,
   type TypographyFontFamilyId,
 } from "../block-std";
@@ -27,10 +31,20 @@ export interface ITextCommonAttrs {
   }
   /** Paragraph-level typography across every editable block in the selection. */
   paragraph?: {
+    pfs: number | null | undefined
     lh: number | null | undefined
+    psb: number | null | undefined
+    psa: number | null | undefined
   }
   flavour?: BlockCraft.BlockFlavour,
   allEditable?: boolean
+}
+
+export interface IFontScaleTarget {
+  blockId: string
+  kind: 'paragraph' | 'inline'
+  start: number
+  length: number
 }
 
 export class TextToolbarHelper {
@@ -43,7 +57,7 @@ export class TextToolbarHelper {
       colors: {},
       props: {},
       typography: {ff: null, fs: null, ls: null},
-      paragraph: {lh: null},
+      paragraph: {pfs: null, lh: null, psb: null, psa: null},
       allEditable: false,
     }
   }
@@ -220,16 +234,110 @@ export class TextToolbarHelper {
   private paragraphTypographyFromProps(props: Partial<IEditableBlockProps>) {
     const lineHeight = props.lh
     return {
+      pfs: this.normalizedParagraphValue(props.pfs, normalizeParagraphFontScale),
       lh: lineHeight === null || lineHeight === undefined
         ? null
         : normalizeTypographyLineHeight(lineHeight) ?? undefined,
+      psb: this.normalizedParagraphValue(props.psb, normalizeParagraphSpacing, true),
+      psa: this.normalizedParagraphValue(props.psa, normalizeParagraphSpacing),
     }
   }
 
-  private commonParagraphTypography(states: Array<{lh: number | null | undefined}>) {
+  private normalizedParagraphValue(
+    value: unknown,
+    normalize: (value: unknown) => number | null,
+    zeroIsDefault = false,
+  ): number | null | undefined {
+    if (value === null || value === undefined) return null
+    const normalized = normalize(value)
+    if (normalized === null) return undefined
+    return zeroIsDefault && normalized === 0 ? null : normalized
+  }
+
+  private commonParagraphTypography(states: Array<{
+    pfs: number | null | undefined
+    lh: number | null | undefined
+    psb: number | null | undefined
+    psa: number | null | undefined
+  }>) {
     return {
+      pfs: this.commonValue(states.map(state => state.pfs)),
       lh: this.commonValue(states.map(state => state.lh)),
+      psb: this.commonValue(states.map(state => state.psb)),
+      psa: this.commonValue(states.map(state => state.psa)),
     }
+  }
+
+  /**
+   * Resolve model-only font-scale targets. A range that covers a complete
+   * editable block becomes paragraph formatting; every other text range stays
+   * inline. No DOM geometry or observers are involved.
+   */
+  getFontScaleTargets(
+    selection: BlockCraft.Selection | null = this.doc.selection.value,
+  ): IFontScaleTarget[] {
+    if (!selection || !this.isSelectionAlive(selection) || selection.isAllSelected) return []
+
+    let coveredIds: string[]
+    try {
+      coveredIds = getSelectionCoveredBlockIds(selection, this.doc)
+    } catch {
+      return []
+    }
+
+    const startId = this.firstBlockId(selection)
+    const endId = this.lastBlockId(selection)
+    const targets: IFontScaleTarget[] = []
+
+    for (const blockId of coveredIds) {
+      if (this.blockNodeType(blockId) !== BlockNodeType.editable || this.isPlainTextBlock(blockId)) continue
+
+      const textLength = this.blockTextLength(blockId)
+      let start = 0
+      let end = textLength
+      if (selection.start.type === 'text' && blockId === startId) {
+        start = Math.max(0, Math.min(selection.start.offset, textLength))
+      }
+      if (selection.end.type === 'text' && blockId === endId) {
+        end = Math.max(0, Math.min(selection.end.offset, textLength))
+      }
+      if (end < start) [start, end] = [end, start]
+
+      const isCollapsedCaret = selection.collapsed &&
+        selection.start.type === 'text' &&
+        blockId === startId
+      const completeBlock = !isCollapsedCaret && start === 0 && end === textLength
+      targets.push({
+        blockId,
+        kind: completeBlock ? 'paragraph' : 'inline',
+        start,
+        length: end - start,
+      })
+    }
+
+    return targets
+  }
+
+  canFormatFontScale(selection: BlockCraft.Selection | null = this.doc.selection.value): boolean {
+    return this.getFontScaleTargets(selection).length > 0
+  }
+
+  private commonFontScaleForTargets(targets: readonly IFontScaleTarget[]) {
+    return this.commonValue(targets.map(target => {
+      if (target.kind === 'paragraph') {
+        return this.normalizedParagraphValue(
+          this.blockProps(target.blockId).pfs,
+          normalizeParagraphFontScale,
+        )
+      }
+      return this.commonInlineTypography(
+        sliceDelta(
+          this.blockDeltas(target.blockId),
+          target.start,
+          target.start + target.length,
+        ),
+      ).fs
+    }))
   }
 
   getCurrentCommonAttrs(selection: BlockCraft.Selection): ITextCommonAttrs {
@@ -277,6 +385,12 @@ export class TextToolbarHelper {
         ? selection.end.offset
         : this.blockTextLength(firstId)
       allDeltas.push(...sliceDelta(this.blockDeltas(firstId), startOffset, endOffset))
+    } else if (
+      between.includes(firstId) &&
+      this.blockNodeType(firstId) === BlockNodeType.editable &&
+      !this.isPlainTextBlock(firstId)
+    ) {
+      allDeltas.push(...this.blockDeltas(firstId))
     }
 
     between.filter(id => id !== firstId).forEach(blockId => {
@@ -295,6 +409,9 @@ export class TextToolbarHelper {
       }
       if (blockProps.lh !== props.lh) {
         props.lh = undefined
+      }
+      for (const key of ['psb', 'psa'] as const) {
+        if (blockProps[key] !== props[key]) props[key] = undefined
       }
       if (blockFlavour !== flavour) {
         flavour = undefined
@@ -318,11 +435,86 @@ export class TextToolbarHelper {
       attrs,
       colors,
       props,
-      typography: this.commonInlineTypography(allDeltas),
+      typography: {
+        ...this.commonInlineTypography(allDeltas),
+        fs: this.commonFontScaleForTargets(this.getFontScaleTargets(selection)),
+      },
       paragraph: this.commonParagraphTypography(paragraphStates),
       flavour,
       allEditable
     }
+  }
+
+  /**
+   * Apply typography with paragraph-aware font scaling. Family, letter spacing
+   * and effects still target the selected text; font scale is promoted to
+   * `pfs` only for complete blocks and clears stale full-block inline size.
+   */
+  formatTypography(
+    options: {
+      attrs?: IInlineNodeAttrs
+      fontScale?: unknown
+    },
+    selection: BlockCraft.Selection | null = this.doc.selection.value,
+  ): void {
+    if (!selection || !this.isSelectionAlive(selection)) return
+
+    const targets = this.getFontScaleTargets(selection)
+    if (!targets.length) return
+    const hasFontScale = Object.prototype.hasOwnProperty.call(options, 'fontScale')
+    const normalizedScale = hasFontScale
+      ? options.fontScale === null || options.fontScale === undefined
+        ? 1
+        : normalizeParagraphFontScale(options.fontScale)
+      : null
+    if (hasFontScale && normalizedScale === null) return
+
+    const attrs = options.attrs ?? {}
+    const hasAttrs = Object.keys(attrs).length > 0
+    if (!hasAttrs && !hasFontScale) return
+
+    if (selection.collapsed && selection.start.type === 'text') {
+      const caretPatch = {
+        ...attrs,
+        ...(hasFontScale
+          ? createInlineTypographyPatch('fs', normalizedScale)
+          : {}),
+      } as IInlineNodeAttrs
+      this.formatText(caretPatch, selection)
+      return
+    }
+
+    const s = selection.start
+    const e = selection.end
+    this.doc.crud.transact(() => {
+      for (const target of targets) {
+        if (hasAttrs && target.length > 0) {
+          this.formatBlockText(target.blockId, target.start, target.length, attrs)
+        }
+        if (!hasFontScale) continue
+
+        if (target.kind === 'paragraph') {
+          this.updateBlockPropsById(target.blockId, {
+            pfs: normalizedScale === 1 ? null : normalizedScale,
+          })
+          if (target.length > 0) {
+            this.formatBlockText(target.blockId, 0, target.length, {
+              [INLINE_TYPOGRAPHY_ATTRS.fontScale]: null,
+              's:fontSize': null,
+            })
+          }
+        } else if (target.length > 0) {
+          this.formatBlockText(
+            target.blockId,
+            target.start,
+            target.length,
+            createInlineTypographyPatch('fs', normalizedScale) as IInlineNodeAttrs,
+          )
+        }
+      }
+    })
+
+    this.doc.selection.setSelection(s, e)
   }
 
   formatText = (attrs: IInlineNodeAttrs, selection: BlockCraft.Selection | null = this.doc.selection.value) => {
@@ -408,7 +600,11 @@ export class TextToolbarHelper {
     })
   }
 
-  transformBlocks(flavour: BlockCraft.BlockFlavour, selection: BlockCraft.Selection | null = this.doc.selection.value) {
+  transformBlocks(
+    flavour: BlockCraft.BlockFlavour,
+    selection: BlockCraft.Selection | null = this.doc.selection.value,
+    props?: IBlockProps,
+  ) {
     if (!selection) return
     if (!this.isSelectionAlive(selection)) return
 
@@ -437,7 +633,8 @@ export class TextToolbarHelper {
           const blockProps = this.blockProps(id)
           const newBlock = this.doc.schemas.createSnapshot(flavour, [this.blockDeltas(id), {
             ...blockProps,
-            heading: flavour === 'ordered' ? blockProps.heading : null
+            heading: flavour === 'ordered' ? blockProps.heading : null,
+            ...props,
           }])
           idMap.set(id, newBlock.id)
           this.doc.crud.replaceWithSnapshots(id, [newBlock])

@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying the inline editing system.
 >
-> Last updated: 2026-08-14
+> Last updated: 2026-08-17
 
 ## Architecture Overview
 
@@ -147,8 +147,12 @@ When an image Delta has `wrap: true`, the shell projects
 `InlineRuntime` owns one package-internal `InlineFloatLayoutController`.
 The same float controller recognizes bundled Shape/WordArt shells through the
 generic `data-bc-inline-float-layout`, `data-bc-inline-float-frame`, size,
-side, x and gap dataset contract. Image-specific attributes remain supported
-for backward compatibility. `side: 'auto'` produces dual-side geometry only when both text intervals are
+side, x and gap dataset contract. Shape and WordArt Delta do not persist
+`side`; their converters always project the internal side as `auto` and ignore
+incoming values. Images retain their generic programmatic side metadata, but
+the bundled toolbar exposes only the automatic wrapping product behavior.
+Image-specific attributes remain supported for backward compatibility.
+`side: 'auto'` produces dual-side geometry only when both text intervals are
 at least 96 CSS pixels; explicit `left/right` and unsafe auto positions keep
 the contained CSS-float fallback. Dual mode measures browser Range geometry,
 splits TextBlots only at grapheme-safe model offsets, and moves the real Blot
@@ -205,8 +209,9 @@ ResizeObserver output. A stale content/context revision or a replaced Runtime
 clears the projection and schedules a fresh plan; offsets are never clamped and
 reused across revisions.
 
-`ImgToolbarPlugin` changes `wrap/side/x/gap` through one Embed
-`formatText()` transaction. Wrapped-image drag leaves the committed frame and
+`ImgToolbarPlugin` changes `wrap/x/gap` through one Embed `formatText()`
+transaction and normalizes the internal side to `auto`. Wrapped-image drag
+leaves the committed frame and
 fragment boundaries unchanged while a fixed, inert proxy follows x/y outside
 contenteditable. Pointerup maps proxy x to normalized `x` and pointer y to a
 model anchor, then performs one same-block or cross-block Yjs transaction.
@@ -221,9 +226,11 @@ for both plain inline and wrapped modes. The inert
 moving outside contenteditable. Release moves the exact one-length Embed Delta
 to the resolved same- or cross-editable-block anchor in one transaction. A
 plain inline object preserves its attributes without adding float coordinates;
-a wrapped object additionally recalculates normalized `x`. The first primary
-pointerdown both selects the Embed and arms the gesture, so no second click is
-required.
+a wrapped object additionally recalculates normalized `x`. Shape and WordArt
+moves also drop any stale `side` attribute. The first primary pointerdown
+selects the Embed and arms a pending gesture, but creates no proxy or layout
+lease until movement crosses 2px. A pointerup below that threshold remains a
+plain click.
 
 ## Attributes
 

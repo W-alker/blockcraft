@@ -4,7 +4,7 @@ import {TextBoxToolbarPlugin} from './index'
 import {TextBoxToolbarComponent} from './text-box-toolbar.component'
 
 describe('TextBoxToolbarPlugin', () => {
-  it('opens the object toolbar only for whole text-box selection', () => {
+  it('opens the object toolbar for a whole text-box selection', () => {
     const plugin = new TextBoxToolbarPlugin()
     const openToolbar = spyOn<any>(plugin, '_openToolbar')
     const closeToolbar = spyOn(plugin, 'closeToolbar')
@@ -25,7 +25,71 @@ describe('TextBoxToolbarPlugin', () => {
       commonParent: 'root',
     })
 
-    expect(openToolbar).toHaveBeenCalledOnceWith(block)
+    expect(openToolbar).toHaveBeenCalledOnceWith(block, false)
+    expect(closeToolbar).not.toHaveBeenCalled()
+  })
+
+  it('keeps the text-box toolbar active for text in any descendant paragraph', () => {
+    const plugin = new TextBoxToolbarPlugin()
+    const openToolbar = spyOn<any>(plugin, '_openToolbar')
+    const closeToolbar = spyOn(plugin, 'closeToolbar')
+    const block = makeBlock()
+    const nested = {id: 'nested-1', flavour: 'callout', parentBlock: block}
+    const paragraph = {
+      id: 'paragraph-1',
+      flavour: 'paragraph',
+      parentBlock: nested,
+    }
+    ;(plugin as any).doc = {
+      isReadonly: false,
+      model: {exists: () => true},
+      readonlyManager: {isReadonly: () => false},
+    }
+
+    ;(plugin as any)._onSelectionChange({
+      isInSameBlock: true,
+      anchor: {type: 'text', blockId: paragraph.id, block: paragraph},
+      head: {type: 'text', blockId: paragraph.id, block: paragraph},
+      start: {type: 'text', blockId: paragraph.id, block: paragraph},
+      end: {type: 'text', blockId: paragraph.id, block: paragraph},
+      firstBlock: paragraph,
+      lastBlock: paragraph,
+      firstBlockId: paragraph.id,
+      lastBlockId: paragraph.id,
+      commonParent: block.id,
+    })
+
+    expect(openToolbar).toHaveBeenCalledOnceWith(block, true)
+    expect(closeToolbar).not.toHaveBeenCalled()
+  })
+
+  it('keeps the text-box toolbar active for its child-boundary selection', () => {
+    const plugin = new TextBoxToolbarPlugin()
+    const openToolbar = spyOn<any>(plugin, '_openToolbar')
+    const closeToolbar = spyOn(plugin, 'closeToolbar')
+    const block = makeBlock()
+    const first = {id: 'paragraph-1', flavour: 'paragraph', parentBlock: block}
+    const last = {id: 'paragraph-2', flavour: 'paragraph', parentBlock: block}
+    ;(plugin as any).doc = {
+      isReadonly: false,
+      model: {exists: () => true},
+      readonlyManager: {isReadonly: () => false},
+    }
+
+    ;(plugin as any)._onSelectionChange({
+      isInSameBlock: false,
+      anchor: {type: 'boundary', blockId: block.id, index: 0, block},
+      head: {type: 'boundary', blockId: block.id, index: 2, block},
+      start: {type: 'boundary', blockId: block.id, index: 0, block},
+      end: {type: 'boundary', blockId: block.id, index: 2, block},
+      firstBlock: first,
+      lastBlock: last,
+      firstBlockId: first.id,
+      lastBlockId: last.id,
+      commonParent: block.id,
+    })
+
+    expect(openToolbar).toHaveBeenCalledOnceWith(block, true)
     expect(closeToolbar).not.toHaveBeenCalled()
   })
 
@@ -102,6 +166,117 @@ describe('TextBoxToolbarPlugin', () => {
     expect(selectBlock).not.toHaveBeenCalled()
   })
 
+  it('keeps plain arrow navigation inside the horizontal text box edges', () => {
+    const plugin = new TextBoxToolbarPlugin()
+    const textBox = makeBlock()
+    const first = makeEditableBlock('paragraph-1', textBox)
+    const middle = makeEditableBlock('paragraph-2', textBox)
+    const last = makeEditableBlock('paragraph-3', textBox)
+    ;(plugin as any).doc = {
+      model: {
+        getChildrenIds: (id: string) => id === textBox.id
+          ? [first.id, middle.id, last.id]
+          : [],
+      },
+    }
+
+    for (const key of ['ArrowUp', 'ArrowLeft']) {
+      const preventDefault = jasmine.createSpy(`preventDefault-${key}`)
+      const context = arrowContext(
+        collapsedTextSelection(first, {atStart: true}),
+        key,
+        preventDefault,
+      )
+
+      expect(plugin.onKeepCaretInsideTextBox(context)).toBeTrue()
+      expect(preventDefault).toHaveBeenCalledTimes(1)
+    }
+
+    for (const key of ['ArrowDown', 'ArrowRight']) {
+      const preventDefault = jasmine.createSpy(`preventDefault-${key}`)
+      const context = arrowContext(
+        collapsedTextSelection(last, {atEnd: true}),
+        key,
+        preventDefault,
+      )
+
+      expect(plugin.onKeepCaretInsideTextBox(context)).toBeTrue()
+      expect(preventDefault).toHaveBeenCalledTimes(1)
+    }
+
+    const internalContext = arrowContext(
+      collapsedTextSelection(middle, {atStart: true}),
+      'ArrowUp',
+    )
+    expect(plugin.onKeepCaretInsideTextBox(internalContext)).toBeUndefined()
+    expect(internalContext.preventDefault).not.toHaveBeenCalled()
+  })
+
+  it('uses core model-edge directions in a vertical text box', () => {
+    const plugin = new TextBoxToolbarPlugin()
+    const textBox = makeBlock()
+    textBox.props = {wm: 'v'}
+    const first = makeEditableBlock('paragraph-1', textBox)
+    const last = makeEditableBlock('paragraph-2', textBox)
+    ;(plugin as any).doc = {
+      model: {
+        getChildrenIds: (id: string) => id === textBox.id
+          ? [first.id, last.id]
+          : [],
+      },
+    }
+
+    const startUp = arrowContext(
+      collapsedTextSelection(first, {atStart: true}),
+      'ArrowUp',
+    )
+    const startLeft = arrowContext(
+      collapsedTextSelection(first, {atStart: true}),
+      'ArrowLeft',
+    )
+    const endDown = arrowContext(
+      collapsedTextSelection(last, {atEnd: true}),
+      'ArrowDown',
+    )
+    const endRight = arrowContext(
+      collapsedTextSelection(last, {atEnd: true}),
+      'ArrowRight',
+    )
+
+    for (const context of [startUp, startLeft, endDown, endRight]) {
+      expect(plugin.onKeepCaretInsideTextBox(context)).toBeTrue()
+      expect(context.preventDefault).toHaveBeenCalledTimes(1)
+    }
+  })
+
+  it('does not trap a caret before the edge of a nested branch', () => {
+    const plugin = new TextBoxToolbarPlugin()
+    const textBox = makeBlock()
+    const branch = {
+      id: 'callout-1',
+      flavour: 'callout',
+      parentBlock: textBox,
+    }
+    const first = makeEditableBlock('paragraph-1', branch)
+    const second = makeEditableBlock('paragraph-2', branch)
+    ;(plugin as any).doc = {
+      model: {
+        getChildrenIds: (id: string) => {
+          if (id === textBox.id) return [branch.id]
+          if (id === branch.id) return [first.id, second.id]
+          return []
+        },
+      },
+    }
+    const context = arrowContext(
+      collapsedTextSelection(second, {atStart: true}),
+      'ArrowUp',
+    )
+
+    expect(plugin.onKeepCaretInsideTextBox(context)).toBeUndefined()
+    expect(context.preventDefault).not.toHaveBeenCalled()
+  })
+
   it('enters editing on double click without starting a move', () => {
     const plugin = new TextBoxToolbarPlugin()
     const block = makeBlock()
@@ -168,6 +343,43 @@ describe('TextBoxToolbarPlugin', () => {
     block.hostElement.remove()
   })
 
+  it('reprojects the object selection after a resize-handle pointer intent', fakeAsync(() => {
+    const plugin = new TextBoxToolbarPlugin()
+    const block = makeBlock()
+    const resizer = document.createElement('shape-resizer')
+    const handle = document.createElement('button')
+    handle.className = 'shape-resizer__handle'
+    resizer.appendChild(handle)
+    block.hostElement.appendChild(resizer)
+    document.body.appendChild(block.hostElement)
+    const selectBlock = jasmine.createSpy('selectBlock')
+    ;(plugin as any).doc = {
+      root: {hostElement: block.hostElement},
+      getBlockById: () => block,
+      model: {exists: () => true},
+      selection: {selectBlock},
+    }
+    const event = new PointerEvent('pointerdown', {
+      button: 0,
+      pointerId: 1,
+      cancelable: true,
+    })
+    Object.defineProperty(event, 'target', {value: handle})
+
+    ;(plugin as any)._onPointerDown(event)
+
+    expect(selectBlock).not.toHaveBeenCalled()
+    tick()
+    expect(selectBlock).toHaveBeenCalledOnceWith(block)
+    // The shared ShapeResizer still owns the bubbling resize interaction.
+    expect(event.defaultPrevented).toBeFalse()
+
+    ;(plugin as any)._finishResizerGesture()
+    tick()
+    expect(selectBlock).toHaveBeenCalledTimes(2)
+    block.hostElement.remove()
+  }))
+
   it('normalizes semantic single-key and multi-key appearance patches', () => {
     const plugin = new TextBoxToolbarPlugin()
     const block = makeBlock()
@@ -205,6 +417,24 @@ describe('TextBoxToolbarPlugin', () => {
     block.hostElement.remove()
   })
 
+  it('persists the compact text-box writing mode', () => {
+    const plugin = new TextBoxToolbarPlugin()
+    const block = makeBlock()
+    document.body.appendChild(block.hostElement)
+    ;(plugin as any).doc = {
+      getBlockById: () => block,
+      readonlyManager: {isReadonly: () => false},
+    }
+
+    ;(plugin as any)._handleAction(block, {
+      name: 'update-props',
+      value: {wm: 'v'},
+    })
+
+    expect(block.updateProps).toHaveBeenCalledOnceWith({wm: 'v'})
+    block.hostElement.remove()
+  })
+
   it('creates a block-owned overlay and refreshes it on props/panel changes', fakeAsync(() => {
     const plugin = new TextBoxToolbarPlugin()
     const block = makeBlock()
@@ -233,7 +463,7 @@ describe('TextBoxToolbarPlugin', () => {
       scrollContainer: null,
     }
 
-    ;(plugin as any)._openToolbar(block)
+    ;(plugin as any)._openToolbar(block, true)
     block.onPropsChange.next()
     panelChange.next('shape')
     tick(17)
@@ -253,8 +483,10 @@ describe('TextBoxToolbarPlugin', () => {
     expect(componentRef.setInput).toHaveBeenCalledOnceWith('textBoxBlock', block)
     expect(componentRef.instance.cdr.markForCheck).toHaveBeenCalledTimes(1)
     expect(overlayRef.updatePosition).toHaveBeenCalledTimes(2)
+    expect(block.hostElement.classList.contains('text-box-block--editing')).toBeTrue()
 
     plugin.closeToolbar()
+    expect(block.hostElement.classList.contains('text-box-block--editing')).toBeFalse()
     block.hostElement.remove()
   }))
 
@@ -372,6 +604,48 @@ function keyboardContext(
 ) {
   return {
     get: () => ({selection}),
+    preventDefault,
+  } as any
+}
+
+function makeEditableBlock(
+  id: string,
+  parentBlock: Record<string, unknown>,
+) {
+  return {
+    id,
+    flavour: 'paragraph',
+    parentBlock,
+    textLength: 4,
+  }
+}
+
+function collapsedTextSelection(
+  block: ReturnType<typeof makeEditableBlock>,
+  edge: {atStart?: boolean; atEnd?: boolean; offset?: number},
+) {
+  const offset = edge.offset ?? (edge.atEnd ? block.textLength : 0)
+  const point = {type: 'text', blockId: block.id, block, offset}
+  return {
+    collapsed: true,
+    isInSameBlock: true,
+    anchor: point,
+    head: point,
+    start: point,
+    end: point,
+    firstBlock: block,
+    isStartOfBlock: edge.atStart ?? offset === 0,
+    isEndOfBlock: edge.atEnd ?? offset === block.textLength,
+  }
+}
+
+function arrowContext(
+  selection: Record<string, unknown>,
+  key: string,
+  preventDefault = jasmine.createSpy('preventDefault'),
+) {
+  return {
+    get: () => ({selection, raw: {key}}),
     preventDefault,
   } as any
 }

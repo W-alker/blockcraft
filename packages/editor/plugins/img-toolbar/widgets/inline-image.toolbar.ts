@@ -12,7 +12,6 @@ import {
 } from '../../../components';
 import {
   BLOCK_OBJECT_LAYOUT_OPTIONS,
-  InlineImageWrapSide,
 } from '../../../framework';
 import {INLINE_IMAGE_WRAP_LAYOUT_OPTION} from './inline-image-layout-options';
 
@@ -22,28 +21,6 @@ const INLINE_IMAGE_LAYOUT_OPTIONS = [
   BLOCK_OBJECT_LAYOUT_OPTIONS[0],
   INLINE_IMAGE_WRAP_LAYOUT_OPTION,
   ...BLOCK_OBJECT_LAYOUT_OPTIONS.slice(1),
-] as const;
-
-const INLINE_IMAGE_WRAP_SIDE_OPTIONS: readonly {
-  value: InlineImageWrapSide
-  label: string
-  icon: string
-}[] = [
-  {
-    value: 'auto',
-    label: '自动环绕',
-    icon: 'bc_duiqifangshi',
-  },
-  {
-    value: 'left',
-    label: '文字在左',
-    icon: 'bc_tupianjuyou',
-  },
-  {
-    value: 'right',
-    label: '文字在右',
-    icon: 'bc_tupianjuzuo',
-  },
 ] as const;
 
 @Component({
@@ -59,17 +36,6 @@ const INLINE_IMAGE_WRAP_SIDE_OPTIONS: readonly {
           [value]="item.value"
           [csTooltip]="item.label"
           [active]="item.value === layout" />
-      }
-      @if (layout === 'wrap') {
-        <span class="bc-float-toolbar__divider"></span>
-        @for (item of WRAP_SIDE_OPTIONS; track item.value) {
-          <bc-float-toolbar-item
-            [icon]="item.icon"
-            name="inline-wrap-side"
-            [value]="item.value"
-            [csTooltip]="item.label"
-            [active]="item.value === side" />
-        }
       }
     </bc-float-toolbar>
   `,
@@ -95,11 +61,9 @@ export class InlineImageToolbar {
   @Input({required: true}) width = 0;
   @Input({required: true}) height = 0;
   @Input() layout: InlineImageToolbarLayout = 'inline';
-  @Input() side: InlineImageWrapSide = 'auto';
 
   @Output()
   readonly onItemClicked = new EventEmitter<BcFloatToolbarItemComponent>();
 
   protected readonly LAYOUT_OPTIONS = INLINE_IMAGE_LAYOUT_OPTIONS;
-  protected readonly WRAP_SIDE_OPTIONS = INLINE_IMAGE_WRAP_SIDE_OPTIONS;
 }

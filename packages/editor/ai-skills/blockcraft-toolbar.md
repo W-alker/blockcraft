@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-14
+> Last updated: 2026-08-17
 
 ## Overlay Service
 
@@ -201,7 +201,7 @@ export class MyToolbarComponent {
 | `ColumnCountPickerComponent` | `components/` | Column count selector |
 | `MediaCreatorComponent` | `components/` | Media upload/URL input |
 | `ShapePickerComponent` | `components/` | Categorized Shape catalog; `supportsTextOnly` removes non-text geometries and `embedded` removes popup chrome inside a settings card |
-| `TextBoxPresetPickerComponent` | `components/` | Visual Word-like text-box preset catalog; `embedded` removes standalone popup chrome |
+| `TextBoxPresetPickerComponent` | `components/` | Visual 线框 / 矩形 / 气泡 text-box catalog with 默认白框 first in 线框; `embedded` removes standalone popup chrome |
 
 Column-oriented `BcFloatToolbarComponent` menus use border-box items constrained
 to the menu width. Long labels are clipped inside the item and the menu must not
@@ -213,6 +213,13 @@ block is editable; the command skips ineligible blocks. In responsive layouts,
 the **更多格式** entry therefore remains available when line height is the only
 applicable nested command, while its font and character-spacing entries stay
 disabled unless the complete text selection is editable.
+
+Font scale has its own model-only eligibility path. A complete editable block
+uses paragraph prop `pfs`, while partial text and collapsed carets use inline
+`t:fs`; cross-block selections partition those targets in one Yjs transaction.
+This makes ordered markers, bullets and todo controls inherit full-block scale
+without DOM measurement or resize listeners. Font family and character spacing
+remain ordinary inline commands.
 
 ## Standard Control Source
 
@@ -230,6 +237,45 @@ Use the exact `@cses/ui@4.27.0` peer for generic toolbar chrome:
   overlay and consume `csEmojiSelect`;
 - `CsEmptyComponent` and `CsMessageService` for standard feedback.
 
+Use the CSES dropdown lifecycle for fixed-toolbar popup triggers, including
+BlockCraft-owned complex panels such as color, table-size and visual preset
+pickers. Keep those complex components as projected dropdown content and close
+them explicitly after a confirmed pick (`[csClickHide]="false"`); do not force
+their grids or forms into `CsMenuItemComponent`. Use `CsMenuDirective` and
+`CsSubmenuComponent` for actual nested command menus. Fixed-toolbar first-level
+dropdowns use `csTrigger="hover"`, and nested menus use
+`csTriggerSubMenuAction="hover"`; click/touch and keyboard activation remain
+available through CSES. This ownership model also keeps a dropdown open while a
+menu item's `CsTooltipDirective` renders in its separate CDK overlay.
+Style `.cs-dropdown-trigger-open` on the trigger itself for persistent hover
+feedback. When a `BcFloatToolbarComponent` is projected inside a CSES submenu,
+remove only its wrapper surface background/shadow under a submenu-specific
+overlay class; the outer CSES panel owns the single visible card.
+Set `csMatchTriggerWidth` on fixed-toolbar dropdowns: CSES treats the trigger as
+the overlay minimum rather than a forced fixed width, so intrinsic picker/menu
+content may still expand without clipping. Override CSES's generic
+three-`interactive-xl` standard-menu minimum inside the fixed-toolbar overlay;
+otherwise compact heading and typography menus are widened to about 288px even
+when their trigger and longest item need less space. Scope lightweight thin
+scrollbars to fixed-toolbar vertical dropdown/submenu content instead of
+changing every BlockCraft toolbar globally.
+
+The fixed toolbar uses the same split-control shell for ordered-list presets
+and superscript/subscript: hovering either half highlights the whole control,
+while the caret receives an additional hover/open state. Font family and
+relative scale form one adjacent, iconless Word-style pair on the wide surface;
+responsive layouts move both fields into **更多格式** so the pair is never left
+visually half-present; that responsive scale submenu uses `bc_zihao`. Character
+spacing uses `bc_zijianju` immediately before paragraph line height.
+
+Formatting and insertion are non-shrinking sibling sections of the fixed
+toolbar's single row. When their combined intrinsic width exceeds the host,
+the toolbar progressively condenses based on measured overflow. Only the final
+narrow tier enables host-level horizontal scrolling with a thin
+transparent-track scrollbar; neither section creates a competing inner scroll
+range or overlays the other. Use safe centering so content stays centered while
+it fits and the inline start remains reachable once it overflows.
+
 Editor-owned input surfaces use native `input` / `textarea` elements with
 component-scoped BlockCraft styles. This includes formula source, link editing,
 find/replace, comments, media/embed URLs, block names and attachment renaming.
@@ -246,10 +292,17 @@ Do not force a settings card containing radio, switch, slider, select or color
 controls into `CsDropdownMenuComponent`; its menu semantics are for commands,
 not nested forms. A Word-style object toolbar should use one block-owned
 connected Overlay for the rail and secondary card, then click-switch local
-panel state without recreating the overlay or writing document data. When a
-CSES control creates a sibling CDK pane, the owning Plugin must recognize that
-pane only while the corresponding control inside its own toolbar has an open
-state. Pointer/focus in unrelated CSES panes must still close stale toolbars.
+panel state without recreating the overlay or writing document data.
+`TextBoxToolbarComponent` and `WordArtToolbarComponent` are the bundled
+references for this two-level pattern; both keep a narrow left/right rail and
+emit a panel-only geometry signal so the owning Overlay can reposition on the
+next animation frame. Their generic form fields use the matching CSES controls
+(`CsSelect`, `CsSegmented`, `CsInputNumber`, `CsColorPicker`, `CsSlider` and
+`CsSwitch`) while editor-specific layout geometry stays BlockCraft-owned.
+When a CSES control creates a sibling CDK pane, the
+owning Plugin must recognize that pane only while the corresponding control
+inside its own toolbar has an open state. Pointer/focus in unrelated CSES panes
+must still close stale toolbars.
 
 ## Overlay Lifecycle Management
 

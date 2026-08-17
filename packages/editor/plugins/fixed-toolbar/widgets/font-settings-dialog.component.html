@@ -1,0 +1,127 @@
+<cs-tabs
+  csSize="small"
+  [csAnimated]="false"
+  [csSelectedIndex]="selectedTab()"
+  (csSelectedIndexChange)="selectedTab.set($event)">
+  <cs-tab csTitle="字体">
+    <div class="bc-settings-panel">
+      <section class="bc-settings-section">
+        <h3>字体</h3>
+        <div class="bc-settings-grid bc-settings-grid--two">
+          <label class="bc-settings-field" data-setting-field="font-family">
+            <span>字体</span>
+            <cs-select
+              csSize="sm"
+              csVariant="outlined"
+              [csValue]="familySelectValue"
+              [csPlaceholder]="familyPlaceholder"
+              (csValueChange)="setFamily($event)">
+              <cs-option [csValue]="defaultSelectValue" csLabel="文档默认" />
+              @for (font of fonts; track font.id) {
+                <cs-option [csValue]="font.id" [csLabel]="font.label" csCustomContent>
+                  <span class="bc-option-content" [style.font-family]="font.css">
+                    {{ font.label }}
+                  </span>
+                </cs-option>
+              }
+            </cs-select>
+          </label>
+
+          <label class="bc-settings-field">
+            <span>字形</span>
+            <cs-select csSize="sm" csVariant="outlined"
+              [csValue]="fontStyle()" (csValueChange)="setFontStyle($event)">
+              @for (option of styleOptions; track option.value) {
+                <cs-option [csValue]="option.value" [csLabel]="option.label" />
+              }
+            </cs-select>
+          </label>
+        </div>
+      </section>
+
+      <section class="bc-settings-section">
+        <h3>颜色与突出显示</h3>
+        <div class="bc-settings-grid bc-settings-grid--two">
+          <div class="bc-settings-field">
+            <span>文字颜色</span>
+            <cs-color-picker
+              csMode="palette"
+              csSize="sm"
+              [csValue]="color()"
+              [csAllowClear]="true"
+              [csShowText]="true"
+              [csShowAlpha]="false"
+              (csChangeComplete)="setColor($event.value)">
+            </cs-color-picker>
+          </div>
+          <div class="bc-settings-field">
+            <span>突出显示</span>
+            <cs-color-picker
+              csMode="palette"
+              csSize="sm"
+              [csValue]="highlight()"
+              [csAllowClear]="true"
+              [csShowText]="true"
+              [csShowAlpha]="false"
+              (csChangeComplete)="setHighlight($event.value)">
+            </cs-color-picker>
+          </div>
+        </div>
+      </section>
+
+      <div class="bc-settings-preview">
+        <span class="bc-settings-preview__label">预览</span>
+        <div [style.font-family]="previewFontFamily"
+          [style.font-size]="previewFontSize"
+          [style.font-weight]="previewFontWeight"
+          [style.font-style]="previewFontStyle"
+          [style.letter-spacing]="previewLetterSpacing"
+          [style.color]="color() || null"
+          [style.background-color]="highlight() || null"
+          [style.text-decoration]="previewDecoration">
+          BlockCraft 字体预览 AaBbCc 123
+        </div>
+      </div>
+    </div>
+  </cs-tab>
+
+  <cs-tab csTitle="字符间距">
+    <div class="bc-settings-panel bc-settings-panel--spacing">
+      <section class="bc-settings-section">
+        <h3>缩放与字符间距</h3>
+        <div class="bc-settings-grid bc-settings-grid--two">
+          <label class="bc-settings-field" data-setting-field="font-scale">
+            <span>文字缩放</span>
+            <div class="bc-number-field">
+              <cs-input-number csSize="sm" [csMin]="50" [csMax]="300"
+                [csStep]="12.5" [csPrecision]="1"
+                [csValue]="scalePercentValue"
+                [csPlaceholder]="scalePlaceholder"
+                (csValueChange)="setScale($event === null ? null : $event / 100)" />
+              <span>%</span>
+            </div>
+          </label>
+          <label class="bc-settings-field" data-setting-field="letter-spacing">
+            <span>字符间距</span>
+            <div class="bc-number-field">
+              <cs-input-number csSize="sm" [csMin]="-0.1" [csMax]="0.5"
+                [csStep]="0.025" [csPrecision]="3" [csValue]="spacingInputValue"
+                [csPlaceholder]="spacingPlaceholder"
+                (csValueChange)="setSpacing($event)" />
+              <span>em</span>
+            </div>
+          </label>
+        </div>
+      </section>
+
+      <div class="bc-settings-preview bc-settings-preview--large">
+        <span class="bc-settings-preview__label">预览</span>
+        <div [style.font-family]="previewFontFamily"
+          [style.font-size]="previewFontSize"
+          [style.letter-spacing]="previewLetterSpacing">
+          字符间距预览 AaBbCc
+        </div>
+      </div>
+    </div>
+  </cs-tab>
+</cs-tabs>

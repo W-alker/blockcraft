@@ -29,6 +29,25 @@
       &:hover {
         background-color: var(--bc-select-background-color);
       }
+
+      &[data-bc-marker-enclosure="circle"] {
+        box-sizing: border-box;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.15em;
+        height: 1.15em;
+        padding: 0;
+        border: .0625em solid currentColor;
+        border-radius: 50%;
+        line-height: 1;
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+
+        .ordered-block-prefix__text {
+          line-height: 1;
+        }
+      }
     }
 
     .edit-container {

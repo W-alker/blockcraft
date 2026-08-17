@@ -1,6 +1,7 @@
 import {
   registerTextBoxArtwork,
   textBoxArtworkRef as art,
+  type TextBoxArtwork,
 } from './artwork'
 import type {TextBoxPresetDefinition} from '../text-box.presets'
 
@@ -23,35 +24,31 @@ import type {TextBoxPresetDefinition} from '../text-box.presets'
  *
  * Canvas and reserve:
  *
- * - `viewBox="0 0 300 200"` with `preserveAspectRatio="none"`. A 5:3 canvas
- *   under a 3:2 frame would stretch the vertical by 11% — survivable for a
- *   blob, fatal for the two pixel entries, whose square cells would arrive as
- *   rectangles.
+ * - Every drawing is authored in a 300x200 source canvas and painted through a
+ *   tight per-entry viewport. The viewport removes transparent card reserve so
+ *   the visible silhouette follows the text-box frame, while keeping a small
+ *   anti-aliasing gutter around detached strokes and ornaments.
  * - Frames are 360x240; 420x280 for the one entry whose silhouette leaves the
  *   narrowest column; 280x240 for the two whose reference mass is a circle. A
- *   frame's own ratio decides how the 3:2 canvas is squashed, so the two
- *   scale factors are read off separately: `defaultWidth/300` horizontally and
- *   `defaultHeight/200` vertically (1.2/1.2, 1.4/1.4, and 0.9333/1.2). Each `p`
- *   below is its canvas reserve times the factor for that axis, which is why
- *   the two 280-wide entries carry unequal horizontal and vertical multipliers.
- *   The comment on every entry quotes the reserve in *canvas* units, because
- *   that is the space the drawing was solved in.
+ *   frame's own ratio decides how the 3:2 canvas is squashed. The comment on
+ *   every entry quotes the safe reserve in *canvas* units, because that is the
+ *   space the drawing was solved in; the artwork registry stores the result as
+ *   four frame fractions so it follows any later resize.
  * - A 280x240 frame also squashes circles into upright ovals, so the round
  *   ornaments in those two entries ship as `<ellipse>` with `rx/ry = 1.286`
  *   (= 1.2/0.9333) and land on screen as circles.
  * - `bgs: 'stretch'` is mandatory. Any other fit letterboxes the drawing and
  *   the tail stops meeting the balloon.
- * - `text-box.block.ts` forces `textInsets` to 0% for `sh: 'rectangle'`, so `p`
- *   is the only thing keeping text off the ink. Each reserve is solved against
+ * - Every artwork owns `textInsets`, so the editable region follows the visible
+ *   balloon rather than the fallback rectangle. Each reserve is solved against
  *   the *innermost* edge of the curve at the text rectangle's own corners, not
  *   against the silhouette's bounding box: on an oval whose box top is y=11,
  *   the boundary directly above the first character sits at y=29, and a reserve
  *   cut to the box runs the outline straight through that line. Three entries
  *   here have an inner ornament — a dotted ring, a dashed rule, a hatch band —
  *   that is closer in still, and those are measured against the ornament.
- * - `p` is fixed px while the drawing stretches, so resizing a frame far from
- *   its default loosens the reserve. That is a property of `BlockSurfaceProps`,
- *   not something an entry can fix.
+ * - Decorated entries keep `p` at zero. Otherwise the style-specific safe area
+ *   and a second fixed-pixel reserve would stack and shrink the editor twice.
  *
  * Every entry pins `wm: ['h']`. Tails are baked into a drawing that stretches
  * but never rotates, so a tall frame would smear one into a spike pointing the
@@ -94,11 +91,59 @@ const C = {
  * moves. `#` is written bare inside the markup so this call escapes it once;
  * writing `%23` by hand double-encodes into `%2523` and kills the reference.
  */
-const uri = (inner: string): string =>
-  'data:image/svg+xml;utf8,' + encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 200" ` +
-    `preserveAspectRatio="none">${inner}</svg>`,
+const SOURCE_WIDTH = 300
+const SOURCE_HEIGHT = 200
+type ArtworkViewport = readonly [
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+]
+
+/**
+ * Tight paint bounds in source-canvas units. These include a three-unit optical
+ * gutter beyond the measured alpha bounds, so strokes stay intact without the
+ * old card-sized transparent reserve becoming part of the selected frame.
+ */
+const VIEWPORTS = {
+  'bubble-r-ink-shout': [10, 3, 289, 171],
+  'bubble-r-pixel-frame': [30, 20, 250, 165],
+  'bubble-r-crimson-oval': [13, 8, 274, 171],
+  'bubble-r-slant-banner': [31, 33, 250, 142],
+  'bubble-r-blue-emboss': [19, 1, 276, 180],
+  'bubble-r-cloud-spike': [16, 7, 271, 187],
+  'bubble-r-sketch-violet': [19, 14, 262, 174],
+  'bubble-r-solid-mint': [15, 5, 265, 184],
+  'bubble-r-blob-halo': [9, 2, 284, 197],
+  'bubble-r-dashed-note': [40, 20, 226, 176],
+  'bubble-r-pixel-cloud': [11, 5, 282, 188],
+  'bubble-r-solid-gold': [15, 7, 262, 188],
+} as const satisfies Record<string, ArtworkViewport>
+
+type BubbleArtworkId = keyof typeof VIEWPORTS
+type ArtworkInsets = TextBoxArtwork['textInsets']
+
+const fittedInsets = (
+  insets: ArtworkInsets,
+  [x, y, width, height]: ArtworkViewport,
+): ArtworkInsets => ({
+  top: (insets.top * SOURCE_HEIGHT - y) / height,
+  right: (x + width - (1 - insets.right) * SOURCE_WIDTH) / width,
+  bottom: (y + height - (1 - insets.bottom) * SOURCE_HEIGHT) / height,
+  left: (insets.left * SOURCE_WIDTH - x) / width,
+})
+
+const uri = (inner: string, [x, y, width, height]: ArtworkViewport): string => {
+  return (
+    'data:image/svg+xml;utf8,' +
+    encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${x} ${y} ${width} ${height}" ` +
+        `preserveAspectRatio="none">${inner}</svg>`,
+    )
   )
+}
+
+const viewportFor = (id: BubbleArtworkId): ArtworkViewport => VIEWPORTS[id]
 
 /**
  * The 8-bit four-petal sparkle used by the two pixel entries: a 5x5 cell
@@ -173,170 +218,221 @@ export const BUBBLE_R_TEXT_BOX_ARTWORK = registerTextBoxArtwork([
     id: 'bubble-r-ink-shout',
     src: uri(
       `<path d="M15 79C15 39 77 11 141 11 190 11 232 24 252 46 261 56 262 68 ` +
-      `260 80 257 112 208 141 145 146L105 146 56 168 81 144C39 139 15 115 15 ` +
-      `79Z" fill="${C.white}" stroke="${C.ink}" stroke-width="2.6" ` +
-      `stroke-linejoin="round"/>` +
-      `<g fill="none" stroke="${C.ink}" stroke-linecap="round">` +
-      `<path d="M246 107Q226 124 197 136" stroke-width="3.8"/>` +
-      `<path d="M250 30 276 8M262 48 290 38M268 66 294 60" ` +
-      `stroke-width="2.4"/>` +
-      `<path d="M28 84Q34 58 52 42M226 106Q216 122 198 129" ` +
-      `stroke-width="1.4"/></g>`,
+        `260 80 257 112 208 141 145 146L105 146 56 168 81 144C39 139 15 115 15 ` +
+        `79Z" fill="${C.white}" stroke="${C.ink}" stroke-width="2.6" ` +
+        `stroke-linejoin="round"/>` +
+        `<g fill="none" stroke="${C.ink}" stroke-linecap="round">` +
+        `<path d="M246 107Q226 124 197 136" stroke-width="3.8"/>` +
+        `<path d="M250 30 276 8M262 48 290 38M268 66 294 60" ` +
+        `stroke-width="2.4"/>` +
+        `<path d="M28 84Q34 58 52 42M226 106Q216 122 198 129" ` +
+        `stroke-width="1.4"/></g>`,
+      viewportFor('bubble-r-ink-shout'),
     ),
-    textInsets: {top: 0.145833, right: 0.283333, bottom: 0.358333, left: 0.2},
+    textInsets: fittedInsets(
+      {top: 0.145833, right: 0.283333, bottom: 0.358333, left: 0.2},
+      viewportFor('bubble-r-ink-shout'),
+    ),
   },
   {
     id: 'bubble-r-pixel-frame',
     src: uri(
       `<path d="M45 25H255V35H265V45H275V125H265V135H255V145H215V180H205V170` +
-      `H195V160H185V150H175V145H45V135H35V45H45Z" fill="${C.white}" ` +
-      `stroke="${C.plum}" stroke-width="4"/>` +
-      `<g fill="${C.amber}">` +
-      spark(250, 44, 5.5) + spark(56, 98, 4) + spark(246, 114, 2.5) +
-      spark(62, 36, 3) +
-      `</g><g fill="${C.gold}">` +
-      sparkCore(250, 44, 5.5) + sparkCore(56, 98, 4) +
-      `</g>`,
+        `H195V160H185V150H175V145H45V135H35V45H45Z" fill="${C.white}" ` +
+        `stroke="${C.plum}" stroke-width="4"/>` +
+        `<g fill="${C.amber}">` +
+        spark(250, 44, 5.5) +
+        spark(56, 98, 4) +
+        spark(246, 114, 2.5) +
+        spark(62, 36, 3) +
+        `</g><g fill="${C.gold}">` +
+        sparkCore(250, 44, 5.5) +
+        sparkCore(56, 98, 4) +
+        `</g>`,
+      viewportFor('bubble-r-pixel-frame'),
     ),
-    textInsets: {top: 0.170833, right: 0.216667, bottom: 0.308333, left: 0.247222},
+    textInsets: fittedInsets(
+      {top: 0.170833, right: 0.216667, bottom: 0.308333, left: 0.247222},
+      viewportFor('bubble-r-pixel-frame'),
+    ),
   },
   {
     id: 'bubble-r-crimson-oval',
     src: uri(
       `<path d="M18 82C18 42 82 13 152 13 222 13 282 44 282 84 282 121 231 ` +
-      `148 160 150L138 151Q131 162 126 172Q121 160 112 149C56 144 18 118 18` +
-      ` 82Z" fill="${C.white}" stroke="${C.crimson}" stroke-width="3.4"/>`,
+        `148 160 150L138 151Q131 162 126 172Q121 160 112 149C56 144 18 118 18` +
+        ` 82Z" fill="${C.white}" stroke="${C.crimson}" stroke-width="3.4"/>`,
+      viewportFor('bubble-r-crimson-oval'),
     ),
-    textInsets: {top: 0.154167, right: 0.233333, bottom: 0.345833, left: 0.233333},
+    textInsets: fittedInsets(
+      {top: 0.154167, right: 0.233333, bottom: 0.345833, left: 0.233333},
+      viewportFor('bubble-r-crimson-oval'),
+    ),
   },
   {
     id: 'bubble-r-slant-banner',
     src: uri(
       `<defs><linearGradient id="v" x1="0" y1="0" x2="1" y2="1">` +
-      `<stop offset="0" stop-color="#6D28D9"/>` +
-      `<stop offset="1" stop-color="#A855F7"/></linearGradient></defs>` +
-      `<path d="M46 128H130L118 168H34Z" fill="url(#v)"/>` +
-      `<path d="M100 36H260L256 52H96Z" fill="${C.mint}"/>` +
-      `<path d="M72 50H277L253 143H233L213 170 210 143H48Z" ` +
-      `fill="${C.white}" stroke="${C.slate}" stroke-width="1.4"/>` +
-      `<path d="M48 143H210L213 170 233 143H253" fill="none" ` +
-      `stroke="${C.slate}" stroke-width="3.2" stroke-linejoin="round"/>`,
+        `<stop offset="0" stop-color="#6D28D9"/>` +
+        `<stop offset="1" stop-color="#A855F7"/></linearGradient></defs>` +
+        `<path d="M46 128H130L118 168H34Z" fill="url(#v)"/>` +
+        `<path d="M100 36H260L256 52H96Z" fill="${C.mint}"/>` +
+        `<path d="M72 50H277L253 143H233L213 170 210 143H48Z" ` +
+        `fill="${C.white}" stroke="${C.slate}" stroke-width="1.4"/>` +
+        `<path d="M48 143H210L213 170 233 143H253" fill="none" ` +
+        `stroke="${C.slate}" stroke-width="3.2" stroke-linejoin="round"/>`,
+      viewportFor('bubble-r-slant-banner'),
     ),
-    textInsets: {top: 0.270833, right: 0.166667, bottom: 0.304167, left: 0.247222},
+    textInsets: fittedInsets(
+      {top: 0.270833, right: 0.166667, bottom: 0.304167, left: 0.247222},
+      viewportFor('bubble-r-slant-banner'),
+    ),
   },
   {
     id: 'bubble-r-blue-emboss',
     src: uri(
       `<circle cx="40" cy="50" r="16" fill="${C.mist}"/>` +
-      `<g fill="none" stroke="${C.ash}" stroke-width="2.4" ` +
-      `stroke-linecap="round" stroke-dasharray="0 7">` +
-      `<path d="M24 128h122M24 138h122M24 148h122M24 158h122"/>` +
-      `<path d="M170 14h116M170 24h116M170 34h116"/></g>` +
-      `<path d="${EMBOSS}" fill="${C.indigo}" transform="translate(7,7)"/>` +
-      `<path d="${EMBOSS}" fill="${C.white}" stroke="${C.slate}" ` +
-      `stroke-width="1.4"/>` +
-      `<g fill="none" stroke-width="1.6" stroke-linecap="round">` +
-      `<path d="M86 8 91 15 86 22 81 15Z" stroke="${C.sun}"/>` +
-      `<path d="M58 6 63 15 53 15Z" stroke="${C.indigo}"/>` +
-      `<path d="M282 61 287 70 277 70Z" stroke="${C.sun}"/>` +
-      `<path d="M281 112 285 117 281 122 277 117Z" stroke="${C.indigo}"/>` +
-      `<path d="M276 146 288 139" stroke="${C.indigo}" ` +
-      `stroke-width="7"/></g>`,
+        `<g fill="none" stroke="${C.ash}" stroke-width="2.4" ` +
+        `stroke-linecap="round" stroke-dasharray="0 7">` +
+        `<path d="M24 128h122M24 138h122M24 148h122M24 158h122"/>` +
+        `<path d="M170 14h116M170 24h116M170 34h116"/></g>` +
+        `<path d="${EMBOSS}" fill="${C.indigo}" transform="translate(7,7)"/>` +
+        `<path d="${EMBOSS}" fill="${C.white}" stroke="${C.slate}" ` +
+        `stroke-width="1.4"/>` +
+        `<g fill="none" stroke-width="1.6" stroke-linecap="round">` +
+        `<path d="M86 8 91 15 86 22 81 15Z" stroke="${C.sun}"/>` +
+        `<path d="M58 6 63 15 53 15Z" stroke="${C.indigo}"/>` +
+        `<path d="M282 61 287 70 277 70Z" stroke="${C.sun}"/>` +
+        `<path d="M281 112 285 117 281 122 277 117Z" stroke="${C.indigo}"/>` +
+        `<path d="M276 146 288 139" stroke="${C.indigo}" ` +
+        `stroke-width="7"/></g>`,
+      viewportFor('bubble-r-blue-emboss'),
     ),
-    textInsets: {top: 0.2, right: 0.161111, bottom: 0.316667, left: 0.194444},
+    textInsets: fittedInsets(
+      {top: 0.2, right: 0.161111, bottom: 0.316667, left: 0.194444},
+      viewportFor('bubble-r-blue-emboss'),
+    ),
   },
   {
     id: 'bubble-r-cloud-spike',
     src: uri(
       `<g fill="none" stroke="${C.cloud}" stroke-linecap="round">` +
-      `<path d="M147 34A44 44 0 0 1 218 50L252 24 243 70A14 14 0 0 1 257 ` +
-      `96A30 30 0 0 1 220 140A44 44 0 0 1 147 158A44 44 0 0 1 74 140A30 30 ` +
-      `0 0 1 43 96A30 30 0 0 1 74 52A44 44 0 0 1 147 34Z" ` +
-      `fill="${C.white}" stroke-width="2.4"/>` +
-      `<path d="M22 88A34 34 0 0 1 52 44M92 22A58 58 0 0 1 150 16M74 180A56 ` +
-      `56 0 0 1 136 190M228 166A38 38 0 0 0 262 128M272 44A34 34 0 0 1 282 ` +
-      `74" stroke-width="1.8"/></g>`,
+        `<path d="M147 34A44 44 0 0 1 218 50L252 24 243 70A14 14 0 0 1 257 ` +
+        `96A30 30 0 0 1 220 140A44 44 0 0 1 147 158A44 44 0 0 1 74 140A30 30 ` +
+        `0 0 1 43 96A30 30 0 0 1 74 52A44 44 0 0 1 147 34Z" ` +
+        `fill="${C.white}" stroke-width="2.4"/>` +
+        `<path d="M22 88A34 34 0 0 1 52 44M92 22A58 58 0 0 1 150 16M74 180A56 ` +
+        `56 0 0 1 136 190M228 166A38 38 0 0 0 262 128M272 44A34 34 0 0 1 282 ` +
+        `74" stroke-width="1.8"/></g>`,
+      viewportFor('bubble-r-cloud-spike'),
     ),
-    textInsets: {top: 0.279167, right: 0.205556, bottom: 0.320833, left: 0.230556},
+    textInsets: fittedInsets(
+      {top: 0.279167, right: 0.205556, bottom: 0.320833, left: 0.230556},
+      viewportFor('bubble-r-cloud-spike'),
+    ),
   },
   {
     id: 'bubble-r-sketch-violet',
     src: uri(
       `<g fill="none" stroke="${C.violet}" stroke-linecap="round">` +
-      `<path d="M103 18H264A13 13 0 0 1 277 31V117A13 13 0 0 1 264 130H240Q` +
-      `244 155 250 183Q214 157 192 130H103A13 13 0 0 1 90 117V31A13 13 0 0 ` +
-      `1 103 18Z" fill="${C.white}" stroke-width="1.6"/>` +
-      `<g stroke-width="1"><path d="M267 34V112A10 10 0 0 1 257 122H240M190 ` +
-      `122H107"/>` +
-      `<path d="M275 34l-8 7M275 42l-8 7M275 50l-8 7M275 58l-8 7M275 66l-8 ` +
-      `7M275 74l-8 7M275 82l-8 7M275 90l-8 7M275 98l-8 7M275 106l-8 7M275 ` +
-      `114l-8 7M106 129l7-8M118 129l7-8M130 129l7-8M142 129l7-8M154 129l7-8` +
-      `M166 129l7-8M178 129l7-8M188 129l6-7M242 129l7-8M252 129l7-8M226 ` +
-      `138l9 4M230 150l9 4M234 162l9 4M238 174l7 4"/></g>` +
-      `<path d="${SPEED}" stroke-width="7"/>` +
-      `<path d="${SPEED}" stroke="${C.white}" stroke-width="4.4"/></g>`,
+        `<path d="M103 18H264A13 13 0 0 1 277 31V117A13 13 0 0 1 264 130H240Q` +
+        `244 155 250 183Q214 157 192 130H103A13 13 0 0 1 90 117V31A13 13 0 0 ` +
+        `1 103 18Z" fill="${C.white}" stroke-width="1.6"/>` +
+        `<g stroke-width="1"><path d="M267 34V112A10 10 0 0 1 257 122H240M190 ` +
+        `122H107"/>` +
+        `<path d="M275 34l-8 7M275 42l-8 7M275 50l-8 7M275 58l-8 7M275 66l-8 ` +
+        `7M275 74l-8 7M275 82l-8 7M275 90l-8 7M275 98l-8 7M275 106l-8 7M275 ` +
+        `114l-8 7M106 129l7-8M118 129l7-8M130 129l7-8M142 129l7-8M154 129l7-8` +
+        `M166 129l7-8M178 129l7-8M188 129l6-7M242 129l7-8M252 129l7-8M226 ` +
+        `138l9 4M230 150l9 4M234 162l9 4M238 174l7 4"/></g>` +
+        `<path d="${SPEED}" stroke-width="7"/>` +
+        `<path d="${SPEED}" stroke="${C.white}" stroke-width="4.4"/></g>`,
+      viewportFor('bubble-r-sketch-violet'),
     ),
-    textInsets: {top: 0.141667, right: 0.127778, bottom: 0.408333, left: 0.333333},
+    textInsets: fittedInsets(
+      {top: 0.141667, right: 0.127778, bottom: 0.408333, left: 0.333333},
+      viewportFor('bubble-r-sketch-violet'),
+    ),
   },
   {
     id: 'bubble-r-solid-mint',
     src: uri(
       `<path d="${MINT}" fill="${C.matcha}"/>` +
-      `<path d="${MINT}" fill="none" stroke="${C.charcoal}" ` +
-      `stroke-width="1.8" transform="translate(4,-4)"/>`,
+        `<path d="${MINT}" fill="none" stroke="${C.charcoal}" ` +
+        `stroke-width="1.8" transform="translate(4,-4)"/>`,
+      viewportFor('bubble-r-solid-mint'),
     ),
-    textInsets: {top: 0.179167, right: 0.228571, bottom: 0.345833, left: 0.207143},
+    textInsets: fittedInsets(
+      {top: 0.179167, right: 0.228571, bottom: 0.345833, left: 0.207143},
+      viewportFor('bubble-r-solid-mint'),
+    ),
   },
   {
     id: 'bubble-r-blob-halo',
     src: uri(
       `<path d="${BLOB}" fill="${C.haze}"/>` +
-      `<path d="${BLOB}" fill="${C.white}" ` +
-      `transform="translate(153 98)scale(.95)translate(-153 -98)"/>` +
-      `<g fill="none" stroke="${C.steel}" stroke-width="1.6" ` +
-      `stroke-linecap="round"><path d="${BLOB}"/>` +
-      `<path d="M20 66Q32 36 60 18M182 6Q222 12 250 30M288 116Q292 140 278 ` +
-      `158M108 190Q146 200 184 188M14 118Q10 138 20 156"/></g>`,
+        `<path d="${BLOB}" fill="${C.white}" ` +
+        `transform="translate(153 98)scale(.95)translate(-153 -98)"/>` +
+        `<g fill="none" stroke="${C.steel}" stroke-width="1.6" ` +
+        `stroke-linecap="round"><path d="${BLOB}"/>` +
+        `<path d="M20 66Q32 36 60 18M182 6Q222 12 250 30M288 116Q292 140 278 ` +
+        `158M108 190Q146 200 184 188M14 118Q10 138 20 156"/></g>`,
+      viewportFor('bubble-r-blob-halo'),
     ),
-    textInsets: {top: 0.229167, right: 0.213889, bottom: 0.2375, left: 0.286111},
+    textInsets: fittedInsets(
+      {top: 0.229167, right: 0.213889, bottom: 0.2375, left: 0.286111},
+      viewportFor('bubble-r-blob-halo'),
+    ),
   },
   {
     id: 'bubble-r-dashed-note',
     src: uri(
       `<path d="${NOTE}" fill="${C.skyTint}" transform="translate(7,7)"/>` +
-      `<path d="${NOTE}" fill="${C.white}" stroke="${C.slate}" ` +
-      `stroke-width="1.4"/>` +
-      `<rect x="53" y="33" width="194" height="100" rx="14" fill="none" ` +
-      `stroke="${C.sky}" stroke-width="1.3" stroke-dasharray="6 5"/>`,
+        `<path d="${NOTE}" fill="${C.white}" stroke="${C.slate}" ` +
+        `stroke-width="1.4"/>` +
+        `<rect x="53" y="33" width="194" height="100" rx="14" fill="none" ` +
+        `stroke="${C.sky}" stroke-width="1.3" stroke-dasharray="6 5"/>`,
+      viewportFor('bubble-r-dashed-note'),
     ),
-    textInsets: {top: 0.208333, right: 0.205556, bottom: 0.370833, left: 0.205556},
+    textInsets: fittedInsets(
+      {top: 0.208333, right: 0.205556, bottom: 0.370833, left: 0.205556},
+      viewportFor('bubble-r-dashed-note'),
+    ),
   },
   {
     id: 'bubble-r-pixel-cloud',
     src: uri(
       `<g stroke-width="4"><path d="${PIXEL_CLOUD}" fill="${C.navyTint}" ` +
-      `stroke="${C.navyTint}" transform="translate(8,8)"/>` +
-      `<path d="${PIXEL_CLOUD}" fill="${C.white}" stroke="${C.navy}"/></g>` +
-      `<path d="${PIXEL_CLOUD}" fill="none" stroke="${C.amber}" ` +
-      `stroke-width="3" stroke-dasharray="0 9" stroke-linecap="round" ` +
-      `transform="translate(155 100)scale(.93)translate(-155 -100)"/>` +
-      `<g fill="${C.leaf}"><path d="M248 14q16-12 20 4-14 14-20-4z"/>` +
-      `<path d="M14 152q14-12 18 4-13 13-18-4z"/></g>` +
-      `<g fill="${C.amber}"><circle cx="286" cy="58" r="4"/>` +
-      `<circle cx="48" cy="176" r="4"/></g>`,
+        `stroke="${C.navyTint}" transform="translate(8,8)"/>` +
+        `<path d="${PIXEL_CLOUD}" fill="${C.white}" stroke="${C.navy}"/></g>` +
+        `<path d="${PIXEL_CLOUD}" fill="none" stroke="${C.amber}" ` +
+        `stroke-width="3" stroke-dasharray="0 9" stroke-linecap="round" ` +
+        `transform="translate(155 100)scale(.93)translate(-155 -100)"/>` +
+        `<g fill="${C.leaf}"><path d="M248 14q16-12 20 4-14 14-20-4z"/>` +
+        `<path d="M14 152q14-12 18 4-13 13-18-4z"/></g>` +
+        `<g fill="${C.amber}"><circle cx="286" cy="58" r="4"/>` +
+        `<circle cx="48" cy="176" r="4"/></g>`,
+      viewportFor('bubble-r-pixel-cloud'),
     ),
-    textInsets: {top: 0.35, right: 0.207143, bottom: 0.289286, left: 0.3},
+    textInsets: fittedInsets(
+      {top: 0.35, right: 0.207143, bottom: 0.289286, left: 0.3},
+      viewportFor('bubble-r-pixel-cloud'),
+    ),
   },
   {
     id: 'bubble-r-solid-gold',
     src: uri(
       `<g fill="${C.gold}"><ellipse cx="146" cy="92" rx="128" ry="82"/>` +
-      `<ellipse cx="245" cy="174" rx="23" ry="18"/></g>` +
-      `<path d="M226 40Q246 52 252 72" fill="none" stroke="${C.white}" ` +
-      `stroke-width="8" stroke-linecap="round"/>` +
-      `<ellipse cx="258" cy="92" rx="7" ry="5.5" fill="${C.white}"/>`,
+        `<ellipse cx="245" cy="174" rx="23" ry="18"/></g>` +
+        `<path d="M226 40Q246 52 252 72" fill="none" stroke="${C.white}" ` +
+        `stroke-width="8" stroke-linecap="round"/>` +
+        `<ellipse cx="258" cy="92" rx="7" ry="5.5" fill="${C.white}"/>`,
+      viewportFor('bubble-r-solid-gold'),
     ),
-    textInsets: {top: 0.170833, right: 0.3, bottom: 0.270833, left: 0.185714},
+    textInsets: fittedInsets(
+      {top: 0.170833, right: 0.3, bottom: 0.270833, left: 0.185714},
+      viewportFor('bubble-r-solid-gold'),
+    ),
   },
 ])
 

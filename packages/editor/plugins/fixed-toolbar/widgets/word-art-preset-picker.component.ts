@@ -81,6 +81,16 @@ import {
         box-shadow: none;
       }
 
+      :host(.word-art-preset-picker-host--embedded)
+        .word-art-preset-picker__viewport {
+        grid-template-columns: repeat(auto-fill, minmax(42px, 1fr));
+      }
+
+      :host(.word-art-preset-picker-host--embedded)
+        .word-art-preset-picker__item {
+        width: 100%;
+      }
+
       .word-art-preset-picker {
         box-sizing: border-box;
         max-width: 100%;

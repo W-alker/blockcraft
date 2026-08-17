@@ -32,10 +32,11 @@ export interface InlineShapeData extends InlineShapePayload {
   width: number
   height: number
   wrap?: true
-  side?: 'auto' | 'left' | 'right'
   x?: number
   gap?: number
 }
+
+export type InlineShapeWrapOptions = Omit<InlineObjectWrapOptions, 'side'>
 
 const payloadFromUnknown = (value: unknown): InlineShapePayload => {
   const raw = parseInlineObjectPayload<{
@@ -59,7 +60,7 @@ const payloadFromUnknown = (value: unknown): InlineShapePayload => {
 export function createInlineShapeDelta(
   props: Partial<ShapeBlockProps> | null | undefined,
   text: readonly DeltaInsert[] = [],
-  wrap?: Partial<InlineObjectWrapOptions>,
+  wrap?: Partial<InlineShapeWrapOptions>,
 ): DeltaInsertEmbed {
   const normalized = normalizeShapeProps(props)
   const {
@@ -71,15 +72,16 @@ export function createInlineShapeDelta(
     props: inlineProps,
     text: cloneInlineObjectDeltas(text),
   }
+  const {side: _side, ...attributes} = createInlineObjectAttributes(
+    normalized.width,
+    normalized.height,
+    wrap,
+  )
   return {
     insert: {
       [INLINE_SHAPE_EMBED_KEY]: serializeInlineObjectPayload(payload),
     },
-    attributes: createInlineObjectAttributes(
-      normalized.width,
-      normalized.height,
-      wrap,
-    ),
+    attributes,
   }
 }
 
@@ -87,13 +89,14 @@ export function readInlineShapeDelta(
   delta: DeltaInsertEmbed,
 ): InlineShapeData {
   const payload = payloadFromUnknown(delta.insert[INLINE_SHAPE_EMBED_KEY])
+  const {side: _side, ...layout} = readInlineObjectLayout(
+    delta,
+    payload.props.width,
+    payload.props.height,
+  )
   return {
     ...payload,
-    ...readInlineObjectLayout(
-      delta,
-      payload.props.width,
-      payload.props.height,
-    ),
+    ...layout,
   }
 }
 

@@ -101,32 +101,94 @@ export class SelectionSelectedManager {
   ) {
     const nextSelected = new Set<BaseBlockComponent<any>>()
     const nextFocused = new Set<EditableBlockComponent<any>>()
+    const nextEmbedCandidates = new Set<EditableBlockComponent<any>>()
 
     if (selection) {
+      const mountedBlockIds = mountedRootIds
+        ? this._collectMountedBlockIds(mountedRootIds)
+        : undefined
       const coveredIds = mountedRootIds
         ? getMountedSelectionCoveredBlockIds(
           selection,
           this.doc,
-          this._collectMountedBlockIds(mountedRootIds),
+          mountedBlockIds!,
         )
         : getSelectionCoveredBlockIds(selection, this.doc)
-      coveredIds.forEach(id => {
-        let block: BaseBlockComponent<any>
-        try {
-          block = this.doc.getBlockById(id) as BaseBlockComponent<any>
-        } catch {
-          return
-        }
-        if (block.nodeType === BlockNodeType.editable) {
-          nextFocused.add(block as EditableBlockComponent<any>)
-        } else {
-          nextSelected.add(block)
-        }
-      })
+      const nativeBackedRange = this._isNativeBackedRange(selection)
+      const nativeFocusedBlockId = nativeBackedRange
+        ? this._readSingleTextRangeBlockId(selection)
+        : null
+      coveredIds.forEach(id => this._collectPresentationBlocks(
+        id,
+        nativeBackedRange,
+        nativeFocusedBlockId,
+        nextSelected,
+        nextFocused,
+        nextEmbedCandidates,
+      ))
     }
 
     this._reconcileClasses(nextSelected, nextFocused)
-    this._reconcileEmbedSelection(selection, nextFocused)
+    this._reconcileEmbedSelection(selection, nextEmbedCandidates)
+  }
+
+  /**
+   * Generic `.selected` / `.focused` classes are interaction state, not a
+   * neutral range fallback: block themes use them to reveal resize handles,
+   * tool chrome and opaque host fills. A native-backed range therefore owns
+   * its complete visual projection. Only explicit/model-only block
+   * selections receive generic block classes. The one exception is a text
+   * range wholly inside one editable block: that editing surface keeps its
+   * real `.focused` chrome. Inline Embeds keep their narrow atomic fallback
+   * through a separate candidate set.
+   */
+  private _collectPresentationBlocks(
+    blockId: string,
+    nativeBackedRange: boolean,
+    nativeFocusedBlockId: string | null,
+    selected: Set<BaseBlockComponent<any>>,
+    focused: Set<EditableBlockComponent<any>>,
+    embedCandidates: Set<EditableBlockComponent<any>>,
+  ): void {
+    let block: BaseBlockComponent<any>
+    try {
+      block = this.doc.getBlockById(blockId) as BaseBlockComponent<any>
+    } catch {
+      return
+    }
+
+    if (block.nodeType === BlockNodeType.editable) {
+      const editable = block as EditableBlockComponent<any>
+      embedCandidates.add(editable)
+      if (!nativeBackedRange || block.id === nativeFocusedBlockId) {
+        focused.add(editable)
+      }
+      return
+    }
+    if (!nativeBackedRange) selected.add(block)
+  }
+
+  private _isNativeBackedRange(selection: BlockCraft.Selection): boolean {
+    const start = selection.start
+    const end = selection.end
+    if (!start || !end || selection.collapsed) return false
+    if (start.type === 'table-cell' || end.type === 'table-cell') return false
+    // A selected↔text (or selected↔boundary/gap) range still owns a real
+    // DOM Range between the whole-block edge and the other endpoint. Only a
+    // selected↔selected range is the explicit/model-owned block presentation.
+    return start.type !== 'selected' || end.type !== 'selected'
+  }
+
+  private _readSingleTextRangeBlockId(
+    selection: BlockCraft.Selection,
+  ): string | null {
+    const start = selection.start
+    const end = selection.end
+    return start?.type === 'text' &&
+      end?.type === 'text' &&
+      start.blockId === end.blockId
+      ? start.blockId
+      : null
   }
 
   private _collectMountedBlockIds(rootIds: readonly string[]): string[] {

@@ -234,7 +234,7 @@ type ShapePanelSection = 'shape' | 'fill' | 'outline'
   styles: [`
     :host {
       display: block;
-      width: min(380px, calc(100vw - 86px));
+      width: min(var(--text-box-settings-panel-width, 288px), calc(100vw - 86px));
       max-width: 100%;
     }
 
@@ -242,7 +242,7 @@ type ShapePanelSection = 'shape' | 'fill' | 'outline'
       box-sizing: border-box;
       width: 100%;
       max-height: min(520px, calc(100vh - 24px));
-      padding: 12px;
+      padding: 10px;
       overflow: auto;
       overscroll-behavior: contain;
       border: 1px solid var(--bc-float-toolbar-divider-color);
@@ -279,7 +279,7 @@ type ShapePanelSection = 'shape' | 'fill' | 'outline'
 
     .text-box-shape-panel__tabs {
       display: block;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
     }
 
     .text-box-shape-panel__catalog {
@@ -288,24 +288,24 @@ type ShapePanelSection = 'shape' | 'fill' | 'outline'
 
     .text-box-shape-panel__form {
       display: grid;
-      gap: 12px;
+      gap: 8px;
     }
 
     .text-box-shape-panel__row {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       min-width: 0;
     }
 
     .text-box-shape-panel__row--stacked {
       display: grid;
-      grid-template-columns: 78px minmax(0, 1fr);
+      grid-template-columns: 66px minmax(0, 1fr);
     }
 
     .text-box-shape-panel__row--slider {
       display: grid;
-      grid-template-columns: 78px minmax(0, 1fr) 38px;
+      grid-template-columns: 66px minmax(0, 1fr) 38px;
     }
 
     .text-box-shape-panel__row--slider output {
@@ -315,9 +315,9 @@ type ShapePanelSection = 'shape' | 'fill' | 'outline'
     }
 
     .text-box-shape-panel__label {
-      flex: 0 0 78px;
+      flex: 0 0 66px;
       color: var(--bc-color-secondary, #64748b);
-      font-size: 12px;
+      font-size: 11px;
     }
 
     .text-box-shape-panel__row cs-color-picker,
@@ -332,12 +332,12 @@ type ShapePanelSection = 'shape' | 'fill' | 'outline'
     }
 
     .text-box-shape-panel__subsection {
-      padding-top: 12px;
+      padding-top: 8px;
       border-top: 1px solid var(--bc-float-toolbar-divider-color);
     }
 
     .text-box-shape-panel__subheading {
-      margin-bottom: 8px;
+      margin-bottom: 6px;
       font-size: 12px;
       font-weight: 600;
     }

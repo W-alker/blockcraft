@@ -27,6 +27,7 @@ export * from './text-box-toolbar.component'
 
 const TOOLBAR_GAP = 10
 const TEXT_BOX_FLAVOUR = 'text-box'
+const TEXT_BOX_EDITING_CLASS = 'text-box-block--editing'
 const SURFACE_PROP_KEYS = new Set([
   'backColor',
   'borderColor',
@@ -43,6 +44,7 @@ const TEXT_BOX_APPEARANCE_PROP_KEYS = new Set([
   'fo',
   'bw',
   'bs',
+  'wm',
   'wa',
 ])
 
@@ -63,6 +65,7 @@ export class TextBoxToolbarPlugin extends DocPlugin {
   private _activeBlockHost?: HTMLElement
   private _toolbarPointerActive = false
   private _toolbarPositionFrame: number | null = null
+  private _resizerGesture?: {block: TextBoxBlock; pointerId: number}
   private _closing = false
 
   init(): void {
@@ -90,12 +93,25 @@ export class TextBoxToolbarPlugin extends DocPlugin {
     this._subscription.add(
       fromEvent<PointerEvent>(document, 'pointerup', {capture: true})
         .pipe(takeUntil(this.doc.onDestroy$))
-        .subscribe(() => this._endToolbarPointerInteraction()),
+        .subscribe(event => {
+          this._endToolbarPointerInteraction()
+          this._finishResizerGesture(event.pointerId)
+        }),
     )
     this._subscription.add(
       fromEvent<PointerEvent>(document, 'pointercancel', {capture: true})
         .pipe(takeUntil(this.doc.onDestroy$))
-        .subscribe(() => this._endToolbarPointerInteraction()),
+        .subscribe(event => {
+          this._endToolbarPointerInteraction()
+          this._finishResizerGesture(event.pointerId)
+        }),
+    )
+    this._subscription.add(
+      fromEvent(window, 'blur')
+        .pipe(takeUntil(this.doc.onDestroy$))
+        .subscribe(() => {
+          this._resizerGesture = undefined
+        }),
     )
     this._subscription.add(
       fromEvent<MouseEvent>(document, 'dblclick', {capture: true})
@@ -115,6 +131,7 @@ export class TextBoxToolbarPlugin extends DocPlugin {
   }
 
   destroy(): void {
+    this._resizerGesture = undefined
     this.closeToolbar()
     this._subscription.unsubscribe()
     this._closeToolbar$.complete()
@@ -131,6 +148,7 @@ export class TextBoxToolbarPlugin extends DocPlugin {
     }
     this._toolbarRef = undefined
     this._toolbarComponent = undefined
+    this._activeBlockHost?.classList.remove(TEXT_BOX_EDITING_CLASS)
     this._activeBlockId = undefined
     this._activeBlockHost = undefined
     this._toolbarPointerActive = false
@@ -178,6 +196,51 @@ export class TextBoxToolbarPlugin extends DocPlugin {
     return true
   }
 
+  @BindHotKey(
+    {
+      key: ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'],
+      shiftKey: false,
+    },
+    {flavour: TEXT_BOX_FLAVOUR},
+  )
+  onKeepCaretInsideTextBox(ctx: UIEventStateContext): true | void {
+    const state = ctx.get('keyboardState')
+    const selection = state.selection
+    if (
+      !selection.collapsed ||
+      !selection.isInSameBlock ||
+      selection.anchor.type !== 'text' ||
+      selection.head.type !== 'text'
+    ) {
+      return
+    }
+
+    const block = selection.firstBlock
+    const textBox = this._findTextBoxAncestor(block)
+    if (!textBox) return
+
+    const key = state.raw.key
+    // SelectionKeyboard's explicit edge navigation is model-directional even
+    // when CSS writing-mode is vertical. Stop only the directions that core
+    // would turn into a sibling/parent jump; visual in-block navigation stays
+    // native and is guarded by SelectionManager's absolute-container fence.
+    const isStartDirection = key === 'ArrowUp' || key === 'ArrowLeft'
+    if (
+      !(isStartDirection
+        ? selection.isStartOfBlock
+        : selection.isEndOfBlock) ||
+      !this._isAtTextBoxTreeEdge(block, textBox, isStartDirection)
+    ) {
+      return
+    }
+
+    // Leaving text editing is an explicit Escape action for text boxes. At the
+    // outer content edge, keep the caret in place instead of letting the core
+    // container-navigation fallback bubble into the document root.
+    ctx.preventDefault()
+    return true
+  }
+
   private _onSelectionChange(selection: BlockCraft.Selection | null): void {
     if (this.doc.isReadonly) {
       this.closeToolbar()
@@ -188,27 +251,29 @@ export class TextBoxToolbarPlugin extends DocPlugin {
       this.closeToolbar()
       return
     }
-    if (
-      !isSelectionAlive(selection as any, this.doc) ||
-      !selection.isInSameBlock ||
-      selection.anchor.type !== 'selected' ||
-      selection.head.type !== 'selected' ||
-      selection.firstBlock.flavour !== TEXT_BOX_FLAVOUR
-    ) {
+    if (!isSelectionAlive(selection as any, this.doc)) {
       this.closeToolbar()
       return
     }
 
-    const block = selection.firstBlock as TextBoxBlock
+    const target = this._resolveSelectionTextBox(selection)
+    if (!target) {
+      this.closeToolbar()
+      return
+    }
+    const {block, editing} = target
     if (this.doc.readonlyManager.isReadonly(block)) {
       this.closeToolbar()
       return
     }
-    this._openToolbar(block)
+    this._openToolbar(block, editing)
   }
 
-  private _openToolbar(block: TextBoxBlock): void {
-    if (this._activeBlockId === block.id && this._toolbarRef) return
+  private _openToolbar(block: TextBoxBlock, editing: boolean): void {
+    if (this._activeBlockId === block.id && this._toolbarRef) {
+      this._setEditingClass(block, editing)
+      return
+    }
     this.closeToolbar()
     if (!block.hostElement.isConnected) return
 
@@ -233,6 +298,7 @@ export class TextBoxToolbarPlugin extends DocPlugin {
     this._toolbarComponent = toolbar.componentRef.instance
     this._activeBlockId = block.id
     this._activeBlockHost = block.hostElement
+    this._setEditingClass(block, editing)
     toolbar.componentRef.setInput('textBoxBlock', block)
     toolbar.componentRef.instance.action
       .pipe(takeUntil(this._closeToolbar$))
@@ -329,6 +395,7 @@ export class TextBoxToolbarPlugin extends DocPlugin {
 
   private _onPointerDown(event: PointerEvent): void {
     if (event.button !== 0) return
+    this._resizerGesture = undefined
     const target = this._resolveElement(event.target)
 
     if (this._isToolbarTarget(target)) {
@@ -342,11 +409,20 @@ export class TextBoxToolbarPlugin extends DocPlugin {
       if (!isInEditor) return
     }
 
+    const resizer = target?.closest('shape-resizer')
     const moveEdge = target?.closest('.shape-resizer__move-edge')
-    if (target?.closest('shape-resizer') && !moveEdge) return
-
     const block = this._resolvePointerBlock(target)
     if (!block) return
+
+    // Resize and rotate handles own the target-phase gesture. Let the editor
+    // root observe this primary-pointer intent first, then reproject the object
+    // selection in a microtask. Selecting synchronously from document capture
+    // would have its projection guard cleared again by the root capture path.
+    if (resizer && !moveEdge) {
+      this._resizerGesture = {block, pointerId: event.pointerId}
+      this._queueObjectSelection(block)
+      return
+    }
     const readonly = this.doc.readonlyManager.isReadonly(block)
 
     event.preventDefault()
@@ -354,7 +430,7 @@ export class TextBoxToolbarPlugin extends DocPlugin {
     this.doc.selection.selectBlock(block)
 
     if (!moveEdge || readonly) return
-    this._openToolbar(block)
+    this._openToolbar(block, false)
     this._startBorderDrag(event, block)
   }
 
@@ -429,26 +505,18 @@ export class TextBoxToolbarPlugin extends DocPlugin {
     // flash and disappear immediately after a valid object selection.
     if (
       target === this.doc.root.hostElement &&
-      this._hasActiveWholeBlockSelection()
+      this._hasActiveTextBoxSelection()
     ) {
       return
     }
     this.closeToolbar()
   }
 
-  private _hasActiveWholeBlockSelection(): boolean {
+  private _hasActiveTextBoxSelection(): boolean {
     const selection = this.doc.selection.value
-    if (
-      !selection ||
-      !selection.isInSameBlock ||
-      selection.anchor.type !== 'selected' ||
-      selection.head.type !== 'selected'
-    ) {
-      return false
-    }
     try {
-      return selection.firstBlock.id === this._activeBlockId &&
-        selection.firstBlock.flavour === TEXT_BOX_FLAVOUR
+      return !!selection &&
+        this._resolveSelectionTextBox(selection)?.block.id === this._activeBlockId
     } catch {
       return false
     }
@@ -528,6 +596,89 @@ export class TextBoxToolbarPlugin extends DocPlugin {
     } catch {
       return null
     }
+  }
+
+  private _resolveSelectionTextBox(
+    selection: BlockCraft.Selection,
+  ): {block: TextBoxBlock; editing: boolean} | null {
+    try {
+      if (
+        selection.isInSameBlock &&
+        selection.anchor.type === 'selected' &&
+        selection.head.type === 'selected' &&
+        selection.firstBlock.flavour === TEXT_BOX_FLAVOUR
+      ) {
+        return {block: selection.firstBlock as TextBoxBlock, editing: false}
+      }
+
+      const isInternalEndpoint = (type: string) =>
+        type === 'text' || type === 'boundary'
+      if (
+        !isInternalEndpoint(selection.start.type) ||
+        !isInternalEndpoint(selection.end.type)
+      ) {
+        return null
+      }
+      const first = this._findTextBoxAncestor(selection.firstBlock)
+      const last = this._findTextBoxAncestor(selection.lastBlock)
+      return first && last?.id === first.id
+        ? {block: first, editing: true}
+        : null
+    } catch {
+      return null
+    }
+  }
+
+  private _findTextBoxAncestor(
+    block: BlockCraft.BlockComponent | null,
+  ): TextBoxBlock | null {
+    let current = block
+    while (current) {
+      if (current.flavour === TEXT_BOX_FLAVOUR) return current as TextBoxBlock
+      current = current.parentBlock
+    }
+    return null
+  }
+
+  private _isAtTextBoxTreeEdge(
+    block: BlockCraft.BlockComponent,
+    textBox: TextBoxBlock,
+    start: boolean,
+  ): boolean {
+    let current = block
+    try {
+      while (current.parentBlock) {
+        const parent = current.parentBlock
+        const children = this.doc.model.getChildrenIds(parent.id)
+        const edgeId = start ? children[0] : children[children.length - 1]
+        if (edgeId !== current.id) return false
+        if (parent.id === textBox.id) return true
+        current = parent
+      }
+    } catch {
+      return false
+    }
+    return false
+  }
+
+  private _setEditingClass(block: TextBoxBlock, editing: boolean): void {
+    block.hostElement.classList.toggle(TEXT_BOX_EDITING_CLASS, editing)
+  }
+
+  private _finishResizerGesture(pointerId?: number): void {
+    const gesture = this._resizerGesture
+    if (!gesture || (pointerId !== undefined && gesture.pointerId !== pointerId)) {
+      return
+    }
+    this._resizerGesture = undefined
+    this._queueObjectSelection(gesture.block)
+  }
+
+  private _queueObjectSelection(block: TextBoxBlock): void {
+    queueMicrotask(() => {
+      if (this._subscription.closed || !this._isBlockAlive(block)) return
+      this.doc.selection.selectBlock(block)
+    })
   }
 
   /**

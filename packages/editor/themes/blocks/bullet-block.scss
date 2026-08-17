@@ -13,21 +13,21 @@
       min-width: 1em;
 
       .square {
-        width: calc(var(--bc-fs) * 0.4);
-        height: calc(var(--bc-fs) * 0.4);
+        width: 0.4em;
+        height: 0.4em;
         background-color: var(--bc-active-color);
       }
 
       .circle {
-        width: calc(var(--bc-fs) * 0.4);
-        height: calc(var(--bc-fs) * 0.4);
+        width: 0.4em;
+        height: 0.4em;
         border-radius: 50%;
         border: 1px solid var(--bc-active-color);
       }
 
       .point {
-        width: calc(var(--bc-fs) * 0.4);
-        height:calc(var(--bc-fs) * 0.4);
+        width: 0.4em;
+        height: 0.4em;
         border-radius: 50%;
         background-color: var(--bc-active-color);
       }
