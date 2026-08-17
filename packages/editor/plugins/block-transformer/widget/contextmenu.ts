@@ -12,7 +12,7 @@ import { NgForOf } from "@angular/common";
 import { MatIcon } from "@angular/material/icon";
 import { CsIconComponent } from "@cses/ui";
 import { EditableBlockComponent } from "../../../framework";
-import { debounce, deltaToString, sliceDelta } from "../../../global";
+import { debounce } from "../../../global";
 import {isSelectionAlive} from "../../../framework/modules/selection/liveness";
 import type {SlashMenuItem} from "../command";
 import {createSlashSearchIndex, matchesSlashSearch} from "../search";
@@ -22,6 +22,10 @@ import {
   normalizeBlockTransformerNavigationKey,
   type BlockTransformerKeyboardCapture,
 } from "../keyboard-routing";
+import {
+  isSlashQueryCursorOwned,
+  resolveSlashQueryRange,
+} from "../slash-query";
 
 // 导航后把光标"钉"在原块里的时间窗口（ms）。WKWebView/Tauri 下 AppKit 的
 // moveUp:/moveDown: 可能比任何 sync/microtask/rAF 都晚才把 DOM caret 拽走，
@@ -209,22 +213,22 @@ export class BlockTransformContextMenu {
     const selection = this.doc.selection.value;
     if (
       this.activeBlock.flavour !== "paragraph" ||
-      this.triggerIndex !== 0 ||
       !isSelectionAlive(selection as any, this.doc) ||
       !selection?.collapsed ||
       selection.start.type !== "text" ||
       selection.firstBlock?.id !== this.activeBlock.id ||
       this.activeBlock.textLength <= 0
     ) return null;
-    const deltas = sliceDelta(
+    const state = resolveSlashQueryRange(
       this.activeBlock.textDeltas(),
       this.triggerIndex,
-      this.activeBlock.textLength,
     );
-    const commandText = deltaToString(deltas, "\uFFFC");
-    if (!commandText || !["/", "、"].includes(commandText[0])) return null;
-    const query = commandText.slice(1);
-    return /[\s\uFFFC]/.test(query) ? null : query;
+    if (!state || !isSlashQueryCursorOwned(
+      this.triggerIndex,
+      state.triggerLength,
+      selection.start.offset,
+    )) return null;
+    return state.query;
   }
 
   private handleRootKeydown = (event: KeyboardEvent) => {

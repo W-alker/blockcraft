@@ -278,7 +278,7 @@ describe('BlockTransformerPlugin beforeInput', () => {
     expect(plugin.openContextMenu).not.toHaveBeenCalled();
   }));
 
-  it("does not open the slash menu after existing paragraph text", fakeAsync(() => {
+  it("opens the inline-only slash menu after existing paragraph text", fakeAsync(() => {
     const plugin = createPlugin();
     const block = {
       id: 'rich-slash-block',
@@ -303,7 +303,7 @@ describe('BlockTransformerPlugin beforeInput', () => {
     } as any)
     flushMicrotasks()
 
-    expect(plugin.openContextMenu).not.toHaveBeenCalled()
+    expect(plugin.openContextMenu).toHaveBeenCalledOnceWith(block, 7)
   }))
 
   it("does not open the slash menu in an otherwise empty non-paragraph block", fakeAsync(() => {
@@ -558,6 +558,36 @@ describe("BlockTransformerPlugin slash execution", () => {
     };
 
     expect(plugin.resolveSlashQueryState(block, 0)).toEqual({
+      query: "icon",
+      triggerLength: 5,
+    });
+  });
+
+  it("owns only the slash token inside existing paragraph text", () => {
+    const plugin = new BlockTransformerPlugin() as any;
+    const block = {
+      id: "source",
+      flavour: "paragraph",
+      textLength: 18,
+      textDeltas: () => [{insert: "before /icon after"}],
+    };
+    const selection = {
+      collapsed: true,
+      start: {type: "text", blockId: block.id, offset: 12},
+      end: {type: "text", blockId: block.id, offset: 12},
+      firstBlock: block,
+      lastBlock: block,
+    };
+    plugin.doc = {
+      isReadonly: false,
+      getBlockById: (id: string) => id === block.id ? block : undefined,
+      selection: {
+        value: selection,
+        recalculate: () => ({value: selection}),
+      },
+    };
+
+    expect(plugin.resolveSlashQueryState(block, 7)).toEqual({
       query: "icon",
       triggerLength: 5,
     });
@@ -1388,5 +1418,27 @@ describe("BlockTransformerPlugin external slash commands", () => {
         keywords: jasmine.arrayContaining(["hngs"]),
       }),
     );
+  });
+
+  it("offers only inline commands for a slash inside paragraph text", () => {
+    const plugin = new BlockTransformerPlugin() as any;
+    plugin.doc = {
+      canInsertChild: () => true,
+      plugins: [],
+      schemas: {
+        getSchemaList: () => [{
+          flavour: "paragraph",
+          nodeType: "editable",
+          metadata: {label: "正文"},
+        }],
+        get: () => undefined,
+      },
+    };
+
+    const items = plugin.buildMenuItems({parentId: "root"}, true);
+
+    expect(items.length).toBeGreaterThan(0);
+    expect(items.every((item: any) => item.group === "inline")).toBeTrue();
+    expect(items.some((item: any) => item.kind !== "command")).toBeFalse();
   });
 });

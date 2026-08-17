@@ -53,6 +53,10 @@ import {
   installBlockTransformerKeyboardCapture,
   normalizeBlockTransformerNavigationKey,
 } from "./keyboard-routing";
+import {
+  isSlashQueryCursorOwned,
+  resolveSlashQueryRange,
+} from "./slash-query";
 
 const ALLOWED_HEADING_FLAVOURS: BlockCraft.BlockFlavour[] = [
   "paragraph",
@@ -372,7 +376,10 @@ export class BlockTransformerPlugin extends DocPlugin {
     return true;
   };
 
-  private buildMenuItems(block: EditableBlockComponent): SlashMenuItem[] {
+  private buildMenuItems(
+    block: EditableBlockComponent,
+    inlineOnly = false,
+  ): SlashMenuItem[] {
     const parentId = block.parentId;
     if (!parentId) return [];
     const transformConfigs = new Map<string, IBlockTransformConfig>();
@@ -465,6 +472,9 @@ export class BlockTransformerPlugin extends DocPlugin {
     );
     const mediaBlocks = blockItems.filter(item => item.group === "media");
     const embedBlocks = blockItems.filter(item => item.group === "embed");
+    if (inlineOnly) {
+      return inlineCommands.filter(item => item.group === "inline");
+    }
     return [
       ...paragraphBlocks,
       ...this.buildHeadingMenuItems(),
@@ -605,11 +615,6 @@ export class BlockTransformerPlugin extends DocPlugin {
     };
   }
 
-  /**
-   * Slash commands own the complete text of an otherwise empty paragraph.
-   * Keeping this invariant here prevents programmatic menu opens from
-   * reintroducing the old middle-of-rich-text trigger path.
-   */
   private resolveSlashQueryState(
     block: EditableBlockComponent,
     triggerIndex: number,
@@ -617,7 +622,6 @@ export class BlockTransformerPlugin extends DocPlugin {
     const selection = this.getCurrentSelection();
     if (
       block.flavour !== "paragraph" ||
-      triggerIndex !== 0 ||
       !selection ||
       !isSelectionAlive(selection as any, this.doc) ||
       !selection.collapsed ||
@@ -626,19 +630,13 @@ export class BlockTransformerPlugin extends DocPlugin {
       !this.isBlockAlive(block) ||
       this.isReadonly(block)
     ) return null;
-    const triggerLength = block.textLength;
-    if (triggerLength <= 0) return null;
-    const trigger = modelCharacterAt(block.textDeltas(), triggerIndex);
-    if (trigger !== "/" && trigger !== "、") return null;
-    const queryDeltas = sliceDelta(
-      block.textDeltas(),
-      triggerIndex + 1,
-      triggerLength,
-    );
-    if (queryDeltas.some(delta => typeof delta.insert !== "string")) return null;
-    const query = queryDeltas.map(delta => delta.insert).join("");
-    if (/\s/.test(query)) return null;
-    return {query, triggerLength};
+    const state = resolveSlashQueryRange(block.textDeltas(), triggerIndex);
+    if (!state || !isSlashQueryCursorOwned(
+      triggerIndex,
+      state.triggerLength,
+      selection.start.offset,
+    )) return null;
+    return state;
   }
 
   private async executeMenuItem(
@@ -1388,7 +1386,7 @@ export class BlockTransformerPlugin extends DocPlugin {
     cpr.setInput("activeBlock", block);
     cpr.setInput("doc", this.doc);
     cpr.setInput("triggerIndex", triggerIndex);
-    cpr.setInput("items", this.buildMenuItems(block));
+    cpr.setInput("items", this.buildMenuItems(block, triggerIndex > 0));
     this.activeMenu = cpr.instance;
 
     cpr.instance.commandSelected
@@ -1412,7 +1410,8 @@ export class BlockTransformerPlugin extends DocPlugin {
             !isSelectionAlive(v as any, this.doc) ||
             !v.isInSameBlock ||
             !v.collapsed ||
-            v.firstBlock.id !== block.id,
+            v.firstBlock.id !== block.id ||
+            cpr.instance.currentQuery() === null,
         ),
       ),
       block.onDestroy$,
@@ -1534,11 +1533,7 @@ export class BlockTransformerPlugin extends DocPlugin {
       this.openColonEmojiPicker(block, triggerIndex);
       return;
     }
-    if (
-      block.flavour !== "paragraph" ||
-      triggerIndex !== 0 ||
-      block.textLength !== 1
-    ) return;
+    if (block.flavour !== "paragraph") return;
     this.openContextMenu(block, triggerIndex);
   }
 

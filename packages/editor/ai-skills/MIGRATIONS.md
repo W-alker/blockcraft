@@ -69,6 +69,35 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
+## Unreleased — 2026-08-17 — add inline-only slash menus inside paragraphs
+
+**Severity**: minor
+
+**What changed**: `BlockTransformerPlugin` now accepts `/` and `、` inside
+existing paragraph text. A non-zero trigger position receives an inline-only
+menu; paragraph-start triggers keep the complete block and inline catalog. The
+session owns only its contiguous slash token and replaces only that range.
+
+**Why**: inline commands such as Mention, Emoji, Icon, Link, inline Image,
+Formula and Date are useful inside a sentence, but the old empty-paragraph-only
+gate made them inaccessible there. Offering block commands in the same context
+would split or restructure surrounding text unexpectedly, so the in-text menu
+is deliberately narrower.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-block.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- `/` or `、` at paragraph index `0` keeps the complete grouped menu.
+- A trigger at a non-zero paragraph index shows only commands whose group is
+  `inline`; block, heading, media and embed items are excluded.
+- The query ends at the first whitespace or inline Embed. Moving the caret
+  outside the token or typing whitespace closes the menu, and command
+  replacement preserves text before and after it.
+
 ## Unreleased — 2026-08-17 — allow Mention after inline Embeds
 
 **Severity**: patch
@@ -1209,12 +1238,13 @@ collapsing the whole insertion domain.
 - Insertion capabilities and their existing pickers remain individually
   exposed at all widths.
 - Responsive mode uses the component's actual inline size and rendered
-  overflow rather than viewport media queries or fixed pixel breakpoints. It
+  overflow of its visible formatting/insertion sections rather than viewport
+  media queries, fixed pixel breakpoints or projected dropdown templates. It
   first tries the complete layout, then moves font family/scale, character
   spacing and line height into **更多格式** while omitting superscript/subscript,
   inline link and inline formula. If content still overflows, bold, italic,
-  underline and inline code collapse into one **文字格式** dropdown;
-  strike-through stays directly visible.
+  underline, strike-through, inline code, superscript and subscript collapse
+  into one **文字格式** dropdown.
 - Visible formatting and insertion groups are centered in every responsive
   tier while they fit. The toolbar progressively condenses before scrolling;
   only the narrowest tier exposes one thin horizontal scrollbar and preserves

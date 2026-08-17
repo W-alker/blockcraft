@@ -243,13 +243,16 @@ new BlockGapCreatorPlugin()
 
 > `plugins/block-transformer/` — Slash menu, block-type conversion, and Markdown shortcuts.
 
-Enables slash-command (`/` or `、`) to open one grouped insertion surface for
-blocks and inline content, Markdown shortcuts (e.g., `# ` for heading, `- ` for
-bullet), and `Cmd/Ctrl+0–4` to set heading levels. The slash trigger is accepted
-only when `/` or `、` is the first character typed into an empty paragraph. Once
-open, `/query` must continue to occupy that whole paragraph. Filtering reads the
-complete Y.Text value rather than depending on the selection offset update
-order, so the first query character cannot prematurely close the menu.
+Enables slash-command (`/` or `、`) to open one grouped insertion surface,
+Markdown shortcuts (e.g., `# ` for heading, `- ` for bullet), and
+`Cmd/Ctrl+0–4` to set heading levels. At the start of a paragraph the menu keeps
+the complete block + inline catalog. Inside existing paragraph text it opens an
+inline-only catalog and never offers headings, blocks, media or third-party
+embeds. The command owns only the contiguous `/query` token up to the first
+space or inline Embed, so inserting an inline result preserves text on both
+sides. Filtering reads model Y.Text rather than depending on selection offset
+update order, so the first query character cannot prematurely close the menu.
+Moving the caret outside that token or typing whitespace closes the menu.
 `ArrowUp` / `ArrowDown` move the active item, `Enter` selects it, and `Escape`
 closes the menu without moving the editor caret.
 
@@ -258,9 +261,10 @@ EmojiPicker without its search input. Text committed after `:` stays in the
 editor-owned Y.Text and controls EmojiPicker `csQuery`; choosing a result
 atomically replaces the full `:query` range. Deleting the trigger, entering
 whitespace, moving the caret outside the range, destroying the block, or
-pressing `Escape` closes the panel. This does not broaden or otherwise change
-the existing `/` / `、` slash-menu trigger path. The `/emoji` slash command
-remains available and keeps the picker's ordinary search input. Any arrow key
+pressing `Escape` closes the panel. This does not change the slash catalogs:
+paragraph-start `/` / `、` keeps the complete catalog, while an in-text trigger
+uses the inline-only catalog. The `/emoji` slash command remains available and
+keeps the picker's ordinary search input. Any arrow key
 activates the Emoji grid's virtual selection and is consumed before the
 document can move its caret. Real focus remains in the editor, so subsequent
 text and IME commits continue updating `csQuery`; four-direction navigation and

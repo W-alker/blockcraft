@@ -412,11 +412,25 @@ describe("BlockTransformContextMenu keyboard navigation", () => {
     expect(component.currentQuery()).toBe("icon");
   });
 
-  it("rejects a slash query in the middle of existing paragraph text", () => {
+  it("reads only the slash query in the middle of existing paragraph text", () => {
     const block = {id: "block-1"};
     const {component} = createComponent({
       collapsed: true,
       start: {type: "text", offset: 12},
+      firstBlock: block,
+    });
+    component.triggerIndex = 7;
+    (component.activeBlock as any).textLength = 18;
+    component.activeBlock.textDeltas = () => [{insert: "before /icon after"}];
+
+    expect(component.currentQuery()).toBe("icon");
+  });
+
+  it("rejects a middle slash query after the caret leaves its token", () => {
+    const block = {id: "block-1"};
+    const {component} = createComponent({
+      collapsed: true,
+      start: {type: "text", offset: 18},
       firstBlock: block,
     });
     component.triggerIndex = 7;
