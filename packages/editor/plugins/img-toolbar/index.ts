@@ -106,6 +106,7 @@ export class ImgToolbarPlugin extends DocPlugin {
 
   private _sub = new Subscription();
   private _toolbarRef?: OverlayRef;
+  private _activeImageBlock?: BlockCraft.IBlockComponents["image"];
   private _openToolbarTimer?: number;
   private _pendingImageClickCleanup?: () => void;
 
@@ -353,6 +354,11 @@ export class ImgToolbarPlugin extends DocPlugin {
         this._toolbarRef && this.closeToolbar();
         return;
       }
+      if (this._toolbarRef && this._activeImageBlock === imgBlock) {
+        this.clearOpenToolbarTimer();
+        return;
+      }
+      this.closeToolbar();
       this.clearOpenToolbarTimer();
       this._openToolbarTimer = setTimeout(() => {
         this._openToolbarTimer = undefined;
@@ -392,6 +398,8 @@ export class ImgToolbarPlugin extends DocPlugin {
           );
 
         this._toolbarRef = overlayRef;
+        this._activeImageBlock = imgBlock as
+          BlockCraft.IBlockComponents["image"];
         componentRef.setInput("imgBlock", imgBlock);
 
         if (this.options?.extraItems?.length) {
@@ -529,6 +537,7 @@ export class ImgToolbarPlugin extends DocPlugin {
     this._closeToolbar$.next();
     this._toolbarRef?.dispose();
     this._toolbarRef = undefined;
+    this._activeImageBlock = undefined;
   };
 
   closeInlineToolbar = () => {

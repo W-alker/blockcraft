@@ -475,6 +475,61 @@ describe("ImgToolbarPlugin lifecycle", () => {
     rootHost.remove();
   }));
 
+  it("rebinds the toolbar and actions when another image is selected", fakeAsync(() => {
+    const h = makeHarness();
+    const secondHost = document.createElement("div");
+    const secondWrapper = document.createElement("div");
+    const secondImage = document.createElement("img");
+    secondHost.setAttribute("data-block-id", "img-2");
+    secondWrapper.className = "img-wrapper";
+    secondWrapper.appendChild(secondImage);
+    secondHost.appendChild(secondWrapper);
+    h.rootHost.appendChild(secondHost);
+    const secondBlock = {
+      id: "img-2",
+      flavour: "image",
+      nodeType: BlockNodeType.void,
+      hostElement: secondHost,
+      props: {src: "https://example.com/b.png"},
+      childrenLength: 0,
+      updateProps: jasmine.createSpy("secondImage.updateProps"),
+      onPropsChange: new Subject<void>(),
+      onDestroy$: new Subject<void>(),
+    };
+    const secondSelection = {
+      isInSameBlock: true,
+      anchor: {type: "selected"},
+      head: {type: "selected"},
+      firstBlock: secondBlock,
+      firstBlockId: secondBlock.id,
+      commonParent: secondBlock.id,
+    };
+    h.doc.getBlockById.and.callFake((id: string) =>
+      id === secondBlock.id ? secondBlock : h.imageBlock,
+    );
+    h.plugin.init();
+
+    h.selectionValue.current = h.imageSelection;
+    h.selection$.next(h.imageSelection);
+    tick(250);
+    h.selectionValue.current = secondSelection;
+    h.selection$.next(secondSelection);
+    tick(250);
+
+    expect(h.doc.overlayService.createConnectedOverlay).toHaveBeenCalledTimes(2);
+    expect(h.doc.overlayService.createConnectedOverlay.calls.argsFor(0)[0].target)
+      .toBe(h.imageHost.querySelector("img"));
+    expect(h.doc.overlayService.createConnectedOverlay.calls.argsFor(1)[0].target)
+      .toBe(secondImage);
+
+    h.toolbarClicks.next({name: "align", value: "right"});
+    expect(h.imageBlock.updateProps).not.toHaveBeenCalled();
+    expect(secondBlock.updateProps).toHaveBeenCalledOnceWith({align: "right"});
+
+    h.plugin.destroy();
+    h.rootHost.remove();
+  }));
+
   it("does not open toolbar for readonly image blocks", fakeAsync(() => {
     const {plugin, doc, rootHost, selection$, selectionValue, imageSelection} = makeHarness();
     doc.readonlyManager.isReadonly.and.returnValue(true);

@@ -1,6 +1,87 @@
 import {ShapeToolbarPlugin} from './index'
+import {Subject} from 'rxjs'
 
 describe('ShapeToolbarPlugin', () => {
+  it('rebinds the toolbar anchor and actions when another shape is selected', () => {
+    const createBlock = (id: string) => {
+      const hostElement = document.createElement('div')
+      const shell = document.createElement('div')
+      shell.className = 'shape-block__shell'
+      hostElement.appendChild(shell)
+      document.body.appendChild(hostElement)
+      return {
+        id,
+        flavour: 'shape',
+        hostElement,
+        onPropsChange: new Subject<void>(),
+        updateProps: jasmine.createSpy(`${id}.updateProps`),
+      }
+    }
+    const firstBlock = createBlock('shape-1')
+    const secondBlock = createBlock('shape-2')
+    const overlays = [
+      {
+        overlayRef: {
+          dispose: jasmine.createSpy('first.dispose'),
+          updatePosition: jasmine.createSpy('first.updatePosition'),
+        },
+        componentRef: {
+          setInput: jasmine.createSpy('first.setInput'),
+          instance: {
+            action: new Subject<any>(),
+            cdr: {markForCheck: jasmine.createSpy('first.markForCheck')},
+          },
+        },
+      },
+      {
+        overlayRef: {
+          dispose: jasmine.createSpy('second.dispose'),
+          updatePosition: jasmine.createSpy('second.updatePosition'),
+        },
+        componentRef: {
+          setInput: jasmine.createSpy('second.setInput'),
+          instance: {
+            action: new Subject<any>(),
+            cdr: {markForCheck: jasmine.createSpy('second.markForCheck')},
+          },
+        },
+      },
+    ]
+    const createConnectedOverlay = jasmine
+      .createSpy('createConnectedOverlay')
+      .and.returnValues(...overlays)
+    const plugin = new ShapeToolbarPlugin()
+    ;(plugin as any).doc = {
+      overlayService: {createConnectedOverlay},
+      readonlyManager: {isReadonly: () => false},
+      scrollContainer: null,
+    }
+
+    ;(plugin as any)._openToolbar(firstBlock)
+    ;(plugin as any)._openToolbar(secondBlock)
+
+    expect(overlays[0].overlayRef.dispose).toHaveBeenCalledTimes(1)
+    expect(createConnectedOverlay.calls.argsFor(0)[0].target)
+      .toBe(firstBlock.hostElement.firstElementChild)
+    expect(createConnectedOverlay.calls.argsFor(1)[0].target)
+      .toBe(secondBlock.hostElement.firstElementChild)
+    expect(overlays[1].componentRef.setInput)
+      .toHaveBeenCalledOnceWith('shapeBlock', secondBlock)
+
+    overlays[1].componentRef.instance.action.next({
+      name: 'fill-color',
+      value: '#123456',
+    })
+    expect(firstBlock.updateProps).not.toHaveBeenCalled()
+    expect(secondBlock.updateProps).toHaveBeenCalledOnceWith({
+      fillColor: '#123456',
+    })
+
+    plugin.closeToolbar()
+    firstBlock.hostElement.remove()
+    secondBlock.hostElement.remove()
+  })
+
   it('exits shape text editing to whole-shape selection on Escape', () => {
     const shapeHost = document.createElement('div')
     document.body.appendChild(shapeHost)

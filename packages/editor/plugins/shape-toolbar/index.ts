@@ -30,6 +30,7 @@ export class ShapeToolbarPlugin extends DocPlugin {
   private readonly _subscription = new Subscription()
   private readonly _closeToolbar$ = new Subject<void>()
   private _toolbarRef?: OverlayRef
+  private _activeBlock?: BlockCraft.IBlockComponents['shape']
   private _pendingShapeClickCleanup?: () => void
   private _inlineObject?: InlineObjectInteractionController
 
@@ -90,6 +91,7 @@ export class ShapeToolbarPlugin extends DocPlugin {
     this._closeToolbar$.next()
     this._toolbarRef?.dispose()
     this._toolbarRef = undefined
+    this._activeBlock = undefined
   }
 
   @BindHotKey({key: 'Escape'}, {flavour: 'shape-text'})
@@ -109,7 +111,9 @@ export class ShapeToolbarPlugin extends DocPlugin {
   private _openToolbar(
     block: BlockCraft.IBlockComponents['shape'],
   ): void {
-    if (this._toolbarRef || !block.hostElement.isConnected) return
+    if (this._toolbarRef && this._activeBlock === block) return
+    this.closeToolbar()
+    if (!block.hostElement.isConnected) return
     const shell = block.hostElement.querySelector<HTMLElement>(
       '.shape-block__shell',
     )
@@ -135,6 +139,7 @@ export class ShapeToolbarPlugin extends DocPlugin {
       )
 
     this._toolbarRef = overlayRef
+    this._activeBlock = block
     componentRef.setInput('shapeBlock', block)
     componentRef.instance.action
       .pipe(takeUntil(this._closeToolbar$))
@@ -220,7 +225,7 @@ export class ShapeToolbarPlugin extends DocPlugin {
     if (block.flavour !== 'shape' || !block.hostElement.isConnected) return
     const shapeBlock = block as BlockCraft.IBlockComponents['shape']
     this.doc.selection.selectBlock(shapeBlock)
-    if (!this._toolbarRef) this._openToolbar(shapeBlock)
+    this._openToolbar(shapeBlock)
     this._confirmShapeClickSelection(event, shapeBlock)
     if (this.doc.readonlyManager.isReadonly(shapeBlock)) return
 
