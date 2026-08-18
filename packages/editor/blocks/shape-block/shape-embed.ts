@@ -16,6 +16,10 @@ import {
 } from '../inline-object'
 import {getShapeDefinition} from './shape-definitions'
 import {
+  normalizeCustomShapeGeometry,
+  resolveShapeRenderGeometry,
+} from './shape-geometry'
+import {
   normalizeShapeProps,
   type ShapeBlockProps,
 } from './shape.types'
@@ -118,6 +122,12 @@ export const createInlineShapeEmbedConverter = (): EmbedConverter => ({
       height: data.height,
     })
     const definition = getShapeDefinition(props.shapeType)
+    const renderGeometry = resolveShapeRenderGeometry(
+      props.shapeType,
+      definition,
+      normalizeCustomShapeGeometry(props.customGeometry),
+      props.adjustments,
+    )
     const {shell, frame} = createInlineObjectShell('shape', data)
     shell.classList.add('bc-inline-shape-shell')
     frame.classList.add('bc-inline-shape-frame')
@@ -129,40 +139,27 @@ export const createInlineShapeEmbedConverter = (): EmbedConverter => ({
       : `rotate(${props.rotation}deg)`
 
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-    svg.setAttribute('viewBox', '0 0 1000 1000')
+    svg.setAttribute('viewBox', renderGeometry.viewBox)
     svg.setAttribute('preserveAspectRatio', 'none')
     svg.classList.add('bc-inline-shape__geometry')
-    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-    path.setAttribute('d', definition.path)
-    path.setAttribute(
-      'fill',
-      definition.fillable === false ? 'none' : props.fillColor,
-    )
-    path.setAttribute('fill-opacity', String(props.fillOpacity))
-    if (definition.fillRule) {
-      path.setAttribute('fill-rule', definition.fillRule)
-    }
-    path.setAttribute('stroke', props.strokeColor)
-    path.setAttribute('stroke-width', String(props.strokeWidth))
-    path.setAttribute('vector-effect', 'non-scaling-stroke')
-    if (props.strokeStyle === 'dashed') {
-      path.setAttribute('stroke-dasharray', '10 7')
-    }
-    svg.appendChild(path)
-    if (definition.detailPath) {
-      const detailPath = document.createElementNS(
+    for (const item of renderGeometry.paths) {
+      const path = document.createElementNS(
         'http://www.w3.org/2000/svg',
         'path',
       )
-      detailPath.setAttribute('d', definition.detailPath)
-      detailPath.setAttribute('fill', 'none')
-      detailPath.setAttribute('stroke', props.strokeColor)
-      detailPath.setAttribute('stroke-width', String(props.strokeWidth))
-      detailPath.setAttribute('vector-effect', 'non-scaling-stroke')
-      if (props.strokeStyle === 'dashed') {
-        detailPath.setAttribute('stroke-dasharray', '10 7')
+      path.setAttribute('d', item.d)
+      path.setAttribute('fill', item.fillable ? props.fillColor : 'none')
+      path.setAttribute('fill-opacity', String(props.fillOpacity))
+      if (item.fillable && renderGeometry.fillRule) {
+        path.setAttribute('fill-rule', renderGeometry.fillRule)
       }
-      svg.appendChild(detailPath)
+      path.setAttribute('stroke', props.strokeColor)
+      path.setAttribute('stroke-width', String(props.strokeWidth))
+      path.setAttribute('vector-effect', 'non-scaling-stroke')
+      if (props.strokeStyle === 'dashed') {
+        path.setAttribute('stroke-dasharray', '10 7')
+      }
+      svg.appendChild(path)
     }
 
     const text = document.createElement('span')

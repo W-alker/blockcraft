@@ -208,7 +208,9 @@ export class ShapeToolbarPlugin extends DocPlugin {
     const target = event.target
     if (!(target instanceof Element)) return
     if (!this.doc.root.hostElement.contains(target)) return
-    if (target.closest('shape-resizer')) return
+    if (target.closest(
+      'shape-resizer, shape-geometry-editor, shape-adjustment-editor',
+    )) return
     if (target.closest('.shape-text-block')) return
 
     const shell = target.closest<HTMLElement>('.shape-block__shell')

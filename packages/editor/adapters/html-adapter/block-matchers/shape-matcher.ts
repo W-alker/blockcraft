@@ -34,6 +34,16 @@ const numberProperty = (
   return Number.isFinite(parsed) ? parsed : undefined
 }
 
+const jsonProperty = (node: Element, name: string): unknown => {
+  const value = stringProperty(node, name)
+  if (!value || value.length > 64 * 1024) return undefined
+  try {
+    return JSON.parse(value)
+  } catch {
+    return undefined
+  }
+}
+
 const findTextElement = (node: Element): Element | null =>
   node.children.find(child =>
     HastUtils.isElement(child) &&
@@ -81,6 +91,10 @@ export const shapeBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
           ShapeBlockProps['shapeTextAlign'],
         verticalAlign: stringProperty(o.node, 'dataShapeVerticalAlign') as
           ShapeBlockProps['verticalAlign'],
+        adjustments: jsonProperty(o.node, 'dataShapeAdjustments') as
+          ShapeBlockProps['adjustments'],
+        customGeometry: stringProperty(o.node, 'dataShapeGeometry') as
+          ShapeBlockProps['customGeometry'],
       }
       if (stringProperty(o.node, 'dataShapePlacementMode') === 'absolute') {
         rawProps.position = {
@@ -124,6 +138,12 @@ export const shapeBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
           dataShapeTextColor: props.textColor,
           dataShapeTextAlign: props.shapeTextAlign,
           dataShapeVerticalAlign: props.verticalAlign,
+          ...(props.adjustments ? {
+            dataShapeAdjustments: JSON.stringify(props.adjustments),
+          } : {}),
+          ...(props.customGeometry ? {
+            dataShapeGeometry: props.customGeometry,
+          } : {}),
           ...(position ? {
             dataShapePlacementMode: 'absolute',
             dataShapePlacementX: position.x,

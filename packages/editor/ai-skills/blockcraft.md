@@ -969,7 +969,17 @@ The block shape catalog exposes 103 `SHAPE_KINDS` through eight
 shapes, flowchart, stars/banners and callouts. The fixed insertion toolbar uses
 the categorized picker; the selected-shape toolbar does not expose a
 change-shape control. Line/connector appearances are visual, non-filled and
-textless; they deliberately do not claim semantic endpoint attachment. WordArt
+textless. Their endpoints, intermediate nodes and cubic handles use a safe
+versioned custom-path overlay that previews locally and commits one atomic Yjs
+value on pointerup; they deliberately do not claim semantic attachment to other
+shapes. Catalogue shapes continue to omit path data until a user edits one of
+these handles. Sixteen common catalogue shapes additionally expose yellow
+parameter handles for corners, vertices, skew, arrow proportions or callout
+pointers; those gestures persist only flat numeric `adjustments`, not paths.
+The other 87 catalogue definitions receive trusted edit-only path projections,
+so all 103 built-in Shape kinds expose yellow draggable nodes while untouched
+documents remain path-free.
+WordArt
 exposes 16 visual presets, 10 safe font families and 15 allowlisted whole-text
 transforms without adding raw CSS to the model. Picking a shape or WordArt
 preset from the fixed toolbar now arms a one-shot document drawing surface

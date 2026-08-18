@@ -8,6 +8,8 @@ import {
   ImageBlockSchema,
   PlacementLayoutBlockSchema,
   ShapeBlockSchema,
+  createDefaultEditableShapeGeometry,
+  serializeCustomShapeGeometry,
 } from '../blocks'
 import {HtmlAdapter} from './html-adapter/html-adapter'
 import {MarkdownAdapter} from './markdown-adapter/markdown-adapter'
@@ -63,6 +65,10 @@ describe('Shape adapters', () => {
       verticalAlign: 'bottom',
       position: {x: 25, y: 120},
       placementLayer: 'under',
+      adjustments: {bend: 420},
+      customGeometry: serializeCustomShapeGeometry(
+        createDefaultEditableShapeGeometry('curved-connector'),
+      ),
     }
 
     const html = await htmlAdapter.toHtml(rootSnapshot([
@@ -73,6 +79,8 @@ describe('Shape adapters', () => {
     expect(element?.getAttribute('data-shape-type')).toBe('flow-decision')
     expect(element?.getAttribute('data-shape-rotation')).toBe('37.5')
     expect(element?.getAttribute('data-shape-placement-layer')).toBe('under')
+    expect(element?.getAttribute('data-shape-adjustments')).toContain('bend')
+    expect(element?.getAttribute('data-shape-geometry')).toContain('paths')
     expect(element?.querySelector('[data-bc-shape-text]')?.textContent)
       .toBe('下一步')
 
@@ -93,6 +101,8 @@ describe('Shape adapters', () => {
       verticalAlign: 'bottom',
       position: {x: 25, y: 120},
       placementLayer: 'under',
+      adjustments: {bend: 420},
+      customGeometry: jasmine.stringMatching('"version":1'),
     }))
     expect((imported.children[0] as IBlockSnapshot).children)
       .toEqual([{insert: '下一步', attributes: {'a:bold': true}}])

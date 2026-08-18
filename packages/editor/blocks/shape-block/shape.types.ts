@@ -1,4 +1,11 @@
 import {resolveBlockPosition, type IBlockProps} from '../../framework'
+import {
+  normalizeCustomShapeGeometry,
+  normalizeShapeAdjustments,
+} from './shape-geometry'
+import {SHAPE_GEOMETRY_VERSION} from './shape-geometry.constants'
+
+export {SHAPE_GEOMETRY_VERSION} from './shape-geometry.constants'
 
 export const SHAPE_KINDS = [
   'rectangle',
@@ -111,6 +118,79 @@ export type ShapeStrokeStyle = 'solid' | 'dashed'
 export type ShapeTextAlign = 'left' | 'center' | 'right'
 export type ShapeVerticalAlign = 'top' | 'middle' | 'bottom'
 
+/**
+ * Word/DrawingML-style parameter values for catalogue geometry. The catalogue
+ * owns the formulas; snapshots only retain the user's compact inputs.
+ */
+export type ShapeAdjustmentValues = Record<string, number>
+
+declare const serializedCustomShapeGeometry: unique symbol
+export type SerializedCustomShapeGeometry = string & {
+  readonly [serializedCustomShapeGeometry]: true
+}
+
+export interface ShapeMovePathCommand {
+  type: 'move'
+  x: number
+  y: number
+}
+
+export interface ShapeLinePathCommand {
+  type: 'line'
+  x: number
+  y: number
+}
+
+export interface ShapeCubicPathCommand {
+  type: 'cubic'
+  control1X: number
+  control1Y: number
+  control2X: number
+  control2Y: number
+  x: number
+  y: number
+}
+
+export interface ShapeArcPathCommand {
+  type: 'arc'
+  radiusX: number
+  radiusY: number
+  rotation: number
+  largeArc: boolean
+  sweep: boolean
+  x: number
+  y: number
+}
+
+export interface ShapeClosePathCommand {
+  type: 'close'
+}
+
+export type ShapePathCommand =
+  | ShapeMovePathCommand
+  | ShapeLinePathCommand
+  | ShapeCubicPathCommand
+  | ShapeArcPathCommand
+  | ShapeClosePathCommand
+
+export interface CustomShapePath {
+  /** Open linework stays unfilled; closed freeforms opt in explicitly. */
+  fill: boolean
+  commands: ShapePathCommand[]
+}
+
+/**
+ * A safe, editable alternative to arbitrary SVG markup. Geometry coordinates
+ * live in their own view box while placement/size/rotation stay on the block.
+ */
+export interface CustomShapeGeometry {
+  version: typeof SHAPE_GEOMETRY_VERSION
+  width: number
+  height: number
+  fillRule?: 'evenodd'
+  paths: CustomShapePath[]
+}
+
 export interface ShapeBlockProps extends IBlockProps {
   shapeType: ShapeKind
   width: number
@@ -124,6 +204,9 @@ export interface ShapeBlockProps extends IBlockProps {
   textColor: string
   shapeTextAlign: ShapeTextAlign
   verticalAlign: ShapeVerticalAlign
+  adjustments?: ShapeAdjustmentValues
+  /** Versioned, validated CustomShapeGeometry encoded as one atomic JSON value. */
+  customGeometry?: SerializedCustomShapeGeometry
 }
 
 export interface NormalizedShapeBlockProps extends ShapeBlockProps {
@@ -169,6 +252,8 @@ export function normalizeShapeProps(
   const position = props?.position && typeof props.position === 'object'
     ? resolveBlockPosition(props.position)
     : null
+  const adjustments = normalizeShapeAdjustments(props?.adjustments)
+  const customGeometry = normalizeCustomShapeGeometry(props?.customGeometry)
 
   return {
     shapeType: isShapeKind(props?.shapeType)
@@ -209,5 +294,10 @@ export function normalizeShapeProps(
         : DEFAULT_SHAPE_PROPS.verticalAlign,
     ...(position ? {position} : {}),
     ...(props?.placementLayer === 'under' ? {placementLayer: 'under' as const} : {}),
+    ...(adjustments ? {adjustments} : {}),
+    ...(customGeometry ? {
+      customGeometry: JSON.stringify(customGeometry) as
+        SerializedCustomShapeGeometry,
+    } : {}),
   }
 }

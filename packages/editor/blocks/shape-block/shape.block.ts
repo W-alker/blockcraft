@@ -6,13 +6,29 @@ import {
 } from '@angular/core'
 import {BaseBlockComponent} from '../../framework'
 import {getShapeDefinition} from './shape-definitions'
+import {resolveShapeAdjustmentProjection} from './shape-adjustments'
+import {
+  createDefaultEditableShapeGeometry,
+  normalizeCustomShapeGeometry,
+  resolveShapeRenderGeometry,
+  serializeCustomShapeGeometry,
+} from './shape-geometry'
+import {
+  createEditableShapeGeometryFromDefinition,
+} from './shape-path-parser'
 import {
   normalizeShapeProps,
   normalizeShapeRotation,
+  type CustomShapeGeometry,
   type NormalizedShapeBlockProps,
   type ShapeBlockProps,
+  type ShapeAdjustmentValues,
 } from './shape.types'
 import type {ShapeBlockModel} from './index'
+import {
+  ShapeAdjustmentEditorComponent,
+} from './shape-adjustment-editor.component'
+import {ShapeGeometryEditorComponent} from './shape-geometry-editor.component'
 import {
   ShapeResizerComponent,
   type ShapeRotateCommit,
@@ -27,7 +43,11 @@ const shapeRotationTransform = (rotation: unknown): string => {
 @Component({
   selector: 'div.shape-block',
   standalone: true,
-  imports: [ShapeResizerComponent],
+  imports: [
+    ShapeAdjustmentEditorComponent,
+    ShapeGeometryEditorComponent,
+    ShapeResizerComponent,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div
@@ -40,24 +60,18 @@ const shapeRotationTransform = (rotation: unknown): string => {
       [style.transform]="rotationTransform"
       (dblclick)="onEditText($event)">
       <svg
+        #shapeGeometry
         class="shape-block__geometry"
-        viewBox="0 0 1000 1000"
+        [attr.viewBox]="renderGeometry.viewBox"
         preserveAspectRatio="none"
         aria-hidden="true">
-        <path
-          [attr.d]="definition.path"
-          [attr.fill]="definition.fillable === false ? 'none' : shapeProps.fillColor"
-          [attr.fill-opacity]="shapeProps.fillOpacity"
-          [attr.fill-rule]="definition.fillRule ?? null"
-          [attr.stroke]="shapeProps.strokeColor"
-          [attr.stroke-width]="shapeProps.strokeWidth"
-          [attr.stroke-dasharray]="strokeDasharray"
-          vector-effect="non-scaling-stroke">
-        </path>
-        @if (definition.detailPath) {
+        @for (path of renderGeometry.paths; track $index) {
           <path
-            [attr.d]="definition.detailPath"
-            fill="none"
+            data-bc-shape-render-path
+            [attr.d]="path.d"
+            [attr.fill]="path.fillable ? shapeProps.fillColor : 'none'"
+            [attr.fill-opacity]="shapeProps.fillOpacity"
+            [attr.fill-rule]="path.fillable ? renderGeometry.fillRule ?? null : null"
             [attr.stroke]="shapeProps.strokeColor"
             [attr.stroke-width]="shapeProps.strokeWidth"
             [attr.stroke-dasharray]="strokeDasharray"
@@ -86,6 +100,22 @@ const shapeRotationTransform = (rotation: unknown): string => {
           (resizeCommit)="onResizeCommit($event)"
           (rotateCommit)="onRotateCommit($event)">
         </shape-resizer>
+        @if (editableGeometry) {
+          <shape-geometry-editor
+            [targetSvg]="shapeGeometry"
+            [shapeType]="shapeProps.shapeType"
+            [geometry]="editableGeometry"
+            (geometryCommit)="onGeometryCommit($event)">
+          </shape-geometry-editor>
+        }
+        @if (hasAdjustmentEditor) {
+          <shape-adjustment-editor
+            [targetSvg]="shapeGeometry"
+            [shapeType]="shapeProps.shapeType"
+            [adjustments]="shapeProps.adjustments"
+            (adjustmentsCommit)="onAdjustmentsCommit($event)">
+          </shape-adjustment-editor>
+        }
       }
     </div>
   `,
@@ -98,6 +128,14 @@ const shapeRotationTransform = (rotation: unknown): string => {
     }
 
     :host(.selected) shape-resizer {
+      display: block;
+    }
+
+    :host(.selected) shape-geometry-editor {
+      display: block;
+    }
+
+    :host(.selected) shape-adjustment-editor {
       display: block;
     }
 
@@ -148,12 +186,47 @@ export class ShapeBlockComponent extends BaseBlockComponent<ShapeBlockModel> {
   @ViewChild('shapeShell', {read: ElementRef})
   private readonly _shapeShell?: ElementRef<HTMLElement>
 
+  @ViewChild('shapeGeometry', {read: ElementRef})
+  private readonly _shapeGeometry?: ElementRef<SVGSVGElement>
+
   get shapeProps(): NormalizedShapeBlockProps {
     return normalizeShapeProps(this.props)
   }
 
   get definition() {
     return getShapeDefinition(this.shapeProps.shapeType)
+  }
+
+  get renderGeometry() {
+    return resolveShapeRenderGeometry(
+      this.shapeProps.shapeType,
+      this.definition,
+      this.customGeometry,
+      this.shapeProps.adjustments,
+    )
+  }
+
+  get customGeometry(): CustomShapeGeometry | undefined {
+    return normalizeCustomShapeGeometry(this.shapeProps.customGeometry)
+  }
+
+  get editableGeometry(): CustomShapeGeometry | undefined {
+    if (this.isReadonly) return undefined
+    if (this.customGeometry) return this.customGeometry
+    if (resolveShapeAdjustmentProjection(
+      this.shapeProps.shapeType,
+      this.shapeProps.adjustments,
+    )) return undefined
+    return createDefaultEditableShapeGeometry(this.shapeProps.shapeType) ??
+      createEditableShapeGeometryFromDefinition(this.definition)
+  }
+
+  get hasAdjustmentEditor(): boolean {
+    return !this.isReadonly && !this.customGeometry &&
+      !!resolveShapeAdjustmentProjection(
+      this.shapeProps.shapeType,
+      this.shapeProps.adjustments,
+    )
   }
 
   get strokeDasharray(): string | null {
@@ -232,5 +305,19 @@ export class ShapeBlockComponent extends BaseBlockComponent<ShapeBlockModel> {
     if (shell) {
       shell.style.transform = shapeRotationTransform(event.rotation)
     }
+  }
+
+  onGeometryCommit(geometry: CustomShapeGeometry): void {
+    if (this.isReadonly) return
+    const serialized = serializeCustomShapeGeometry(geometry)
+    if (!serialized) return
+    this.doc.placement.updateObjectGeometry(this, {customGeometry: serialized})
+    const svg = this._shapeGeometry?.nativeElement
+    if (svg) svg.setAttribute('viewBox', `0 0 ${geometry.width} ${geometry.height}`)
+  }
+
+  onAdjustmentsCommit(adjustments: ShapeAdjustmentValues): void {
+    if (this.isReadonly) return
+    this.doc.placement.updateObjectGeometry(this, {adjustments})
   }
 }

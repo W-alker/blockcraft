@@ -326,8 +326,22 @@ placement drag coordinator; native HTML5 drag/drop is not involved. Eight
 resize handles and the top-center drag-rotation handle share one gesture
 coordinator. Rotation previews per animation frame, Shift snaps to 15°, and
 pointerup commits one `updateProps()` transaction. The toolbar's top placement
-keeps clearance for the rotation handle; pointerdown inside `shape-resizer`
-never starts object movement.
+keeps clearance for the rotation handle; pointerdown inside `shape-resizer` or
+`shape-geometry-editor` never starts object movement. Selected line, connector
+and scribble shapes additionally expose endpoint/node handles; cubic shapes
+expose their two control handles and guide lines. The gesture updates only the
+SVG preview until pointerup, then writes one validated atomic `customGeometry`
+value so collaboration and Undo never observe partial curves.
+Common catalogue shapes use the same gesture boundary with yellow round
+adjustment handles. Rounded rectangles, triangle, parallelogram, trapezoid,
+cardinal/bidirectional block arrows and rectangular/rounded callouts persist
+only a flat `adjustments` record; blue square handles remain reserved for cubic
+curve controls.
+All other catalogue shapes project their trusted static path into yellow
+editable nodes on selection. Quadratic/smooth segments expose equivalent blue
+cubic controls; catalogue arcs are split into cubic segments so their nodes and
+controls remain usable. The projection becomes atomic `customGeometry` only
+after the first completed gesture.
 
 Register `PlacementLayoutBlockSchema`, `ShapeBlockSchema`,
 `ShapeTextBlockSchema`, `ShapeToolbarPlugin`, and a fresh
@@ -348,7 +362,8 @@ definitions do not maintain iconfont classes. Its dense icon-only cells use
 Tooltip and accessible labels; only the compact category headings remain
 visible.
 Line/connector appearances paint no fill and expose no editable shape-text
-surface; automatic endpoint attachment is outside this visual shape contract.
+surface. Their geometry endpoints are editable, but automatic attachment to
+another shape remains outside this visual shape contract.
 
 ---
 

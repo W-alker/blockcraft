@@ -8,6 +8,8 @@ import {
   ShapeResizerComponent,
   calculateShapeRotation,
   calculateShapeResize,
+  createDefaultEditableShapeGeometry,
+  normalizeCustomShapeGeometry,
   normalizeShapeRotation,
   normalizeShapeProps,
   rotateShapeVector,
@@ -820,5 +822,41 @@ describe('Shape block domain', () => {
       {rotation: 37.5},
     )
     expect(shell.style.transform).toBe('rotate(37.5deg)')
+  })
+
+  it('persists one validated custom-geometry value per handle gesture', () => {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    const updateObjectGeometry = jasmine.createSpy('updateObjectGeometry')
+    const context = {
+      isReadonly: false,
+      doc: {placement: {updateObjectGeometry}},
+      _shapeGeometry: {nativeElement: svg},
+    } as unknown as ShapeBlockComponent
+    const geometry = createDefaultEditableShapeGeometry('curved-connector')!
+
+    ShapeBlockComponent.prototype.onGeometryCommit.call(context, geometry)
+
+    const patch = updateObjectGeometry.calls.mostRecent().args[1]
+    expect(updateObjectGeometry).toHaveBeenCalledTimes(1)
+    expect(typeof patch.customGeometry).toBe('string')
+    expect(normalizeCustomShapeGeometry(patch.customGeometry)).toEqual(geometry)
+    expect(svg.getAttribute('viewBox')).toBe('0 0 1000 1000')
+  })
+
+  it('persists catalogue adjustments once per yellow-handle gesture', () => {
+    const updateObjectGeometry = jasmine.createSpy('updateObjectGeometry')
+    const context = {
+      isReadonly: false,
+      doc: {placement: {updateObjectGeometry}},
+    } as unknown as ShapeBlockComponent
+
+    ShapeBlockComponent.prototype.onAdjustmentsCommit.call(context, {
+      headLength: 420,
+      shaftThickness: 360,
+    })
+
+    expect(updateObjectGeometry).toHaveBeenCalledOnceWith(context, {
+      adjustments: {headLength: 420, shaftThickness: 360},
+    })
   })
 })

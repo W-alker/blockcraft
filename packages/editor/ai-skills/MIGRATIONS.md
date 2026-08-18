@@ -69,6 +69,98 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
+## Unreleased — 2026-08-18 — add editable Shape endpoints and safe custom paths
+
+**Severity**: minor
+
+**What changed**: the built-in `shape` block now supports Word/DrawingML-style
+optional adjustment values and safe custom path geometry. Selected line,
+connector and scribble shapes expose endpoint, node and cubic control handles;
+sixteen common catalogue shapes expose yellow parameter handles for corners,
+vertices, skew, arrow proportions and callout pointers. Each completed gesture
+persists one validated atomic geometry or flat adjustment value.
+The remaining catalogue definitions are converted from their trusted static
+paths only for editing, so all 103 built-in Shape kinds expose draggable nodes
+without adding path data to untouched snapshots.
+
+**Why**: fixed catalogue SVG paths could be resized and rotated but their line
+endpoints and curves could not be edited independently. Persisting arbitrary SVG
+or node-level Yjs structures would either create an injection surface or expose
+invalid partial curve states during collaboration.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-plugins-toolbar.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `ShapeBlockProps.adjustments?: Record<string, number>` stores flat catalogue
+  adjustment inputs. Built-in projections cover three rounded-rectangle forms,
+  triangle, parallelogram, trapezoid, six block arrows and four callouts.
+- `ShapeBlockProps.customGeometry?: SerializedCustomShapeGeometry` stores one
+  versioned, validated JSON value compatible with the existing `SimpleValue`
+  props boundary.
+- `CustomShapeGeometry`, `CustomShapePath` and the safe `move` / `line` /
+  `cubic` / `arc` / `close` command union describe decoded geometry. Optional
+  `fillRule: 'evenodd'` retains holes in compound shapes.
+- `normalizeCustomShapeGeometry()`, `serializeCustomShapeGeometry()`,
+  `createDefaultEditableShapeGeometry()` and the path projection helpers are
+  exported for hosts that create custom Shape tooling.
+
+### Migration Recipe
+
+Existing snapshots and hosts need no migration. To author a custom curve, use
+the validated codec rather than assigning raw SVG:
+
+```typescript
+const encoded = serializeCustomShapeGeometry({
+  version: 1,
+  width: 1000,
+  height: 1000,
+  paths: [{
+    fill: false,
+    commands: [
+      {type: 'move', x: 0, y: 500},
+      {
+        type: 'cubic',
+        control1X: 250,
+        control1Y: 0,
+        control2X: 750,
+        control2Y: 1000,
+        x: 1000,
+        y: 500,
+      },
+    ],
+  }],
+})
+
+if (encoded) doc.crud.updateBlockProps(shapeId, {customGeometry: encoded})
+```
+
+### Behavior Changes
+
+- Catalogue shapes remain path-free and render exactly as before until a user
+  completes an editable geometry gesture.
+- Pointer move changes only local SVG/handle presentation. Pointerup writes one
+  geometry value and therefore creates one Undo intent; Escape, pointer cancel,
+  blur and teardown restore the committed path without a model write.
+- Catalogue adjustment gestures follow the same preview/commit boundary and
+  persist only `radius`, `apexX`, `inset`, `headLength`, `shaftThickness`,
+  `tailX` and `tailY` as applicable. Explicit `customGeometry` takes precedence.
+- All other built-in definitions use an internal trusted-path projection for
+  editing. It accepts only absolute `M/L/H/V/C/S/Q/T/A/Z`, converts quadratic
+  and smooth segments plus catalogue arcs to cubic controls, and stores nothing
+  until the first completed node gesture. The public safe geometry codec still
+  validates explicit `arc` commands supplied by hosts.
+- `customGeometry` accepts no SVG/XML, event attributes, URLs, filters or
+  foreign objects. Invalid versions, commands, coordinates and oversized
+  payloads are ignored by normalization.
+- Automatic connector attachment is still not implemented.
+- No package version was modified.
+
 ## Unreleased — 2026-08-18 — allow object groups in top-bottom flow
 
 **Severity**: patch

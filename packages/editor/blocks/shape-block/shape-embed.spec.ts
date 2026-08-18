@@ -3,6 +3,10 @@ import {
   inlineShapeEmbedConverter,
   readInlineShapeDelta,
 } from './shape-embed'
+import {
+  createDefaultEditableShapeGeometry,
+  serializeCustomShapeGeometry,
+} from './shape-geometry'
 
 describe('inline shape embed', () => {
   it('preserves shape props, text and wrap layout through the DOM converter', () => {
@@ -82,6 +86,23 @@ describe('inline shape embed', () => {
 
     expect(path?.getAttribute('fill')).toBe('none')
     expect(text?.hidden).toBeTrue()
+  })
+
+  it('renders and preserves validated custom curve geometry', () => {
+    const customGeometry = serializeCustomShapeGeometry(
+      createDefaultEditableShapeGeometry('curved-connector'),
+    )!
+    const delta = createInlineShapeDelta({
+      shapeType: 'curved-connector',
+      customGeometry,
+    })
+    const view = inlineShapeEmbedConverter.toView(delta)
+
+    expect(view.querySelector('path')?.getAttribute('d'))
+      .toContain('C260 800 260 200 520 200')
+    expect(readInlineShapeDelta(
+      inlineShapeEmbedConverter.toDelta(view),
+    ).props.customGeometry).toBe(customGeometry)
   })
 
   it('renders construction strokes separately from the filled geometry', () => {

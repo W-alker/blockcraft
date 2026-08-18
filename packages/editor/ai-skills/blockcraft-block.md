@@ -1135,17 +1135,25 @@ const plugins = [
 exported `SHAPE_KINDS`. `SHAPE_CATEGORIES` groups the same canonical
 `SHAPE_DEFINITIONS` into the Word-like **矩形 / 基本形状 / 线条 / 箭头总汇 /
 公式形状 / 流程图 / 星与旗帜 / 标注** catalog. `ShapeBlockProps` persists
-only width/height, `shapeType`, fill, outline, text color/alignment, optional
-`rotation` in degrees and optional absolute `position` / `placementLayer`; SVG path and catalog category are
-never written into Yjs or snapshots. `normalizeShapeProps()` validates the
-expanded union and returns a finite rotation normalized into `[0, 360)`.
+width/height, `shapeType`, fill, outline, text color/alignment, optional
+`rotation` in degrees and optional absolute `position` / `placementLayer`.
+Catalogue SVG paths and categories are never written into Yjs or snapshots.
+Parameterised catalogue shapes may additionally persist one flat numeric
+`adjustments` record. Editable line/freeform geometry persists as one validated,
+versioned JSON string in `customGeometry`; it is an atomic top-level Yjs prop,
+not arbitrary SVG markup or a nested node-level CRDT. `normalizeShapeProps()`
+validates these optional values and returns a finite rotation normalized into
+`[0, 360)`.
 
 `ShapeDefinition` stores the trusted main `path`, optional stroke-only
 `detailPath`, `textInsets`, and optional `fillable` / `supportsText` /
 `fillRule` rendering capabilities. The eight built-in line and connector
-appearances are non-filled, do not expose a shape-text editor, and keep the
-existing resize/rotation behavior; they are visual objects, not auto-snapping
-semantic connectors. `ShapeIconComponent` renders the same main and detail
+appearances are non-filled and do not expose a shape-text editor. When selected,
+their nodes and cubic control points are editable through a dedicated overlay;
+pointer movement previews outside Angular and pointerup stores one complete
+`customGeometry` value through the ordinary placement/Undo transaction. They
+remain visual objects rather than auto-snapping semantic connectors.
+`ShapeIconComponent` renders the same main and detail
 geometry as the inserted object. The fixed **插入形状** action uses the shared
 categorized picker; the selected-shape toolbar does not expose a change-shape
 control. Its dense icon-only cells expose names through CSES Tooltip and
@@ -1169,6 +1177,31 @@ west/north compensation is converted back to page coordinates before absolute
 placement is updated. Shape text remains a normal Y.Text editing surface and
 therefore participates in collaboration, undo/redo and inline formatting while
 rotating visually with its parent shape.
+
+The exported `CustomShapeGeometry` format owns a separate finite `width/height`
+coordinate space and one to eight safe paths. A path accepts only `move`,
+`line`, `cubic`, `arc` and `close`, with at most 512 commands and a 64 KiB serialized
+ceiling. Use `serializeCustomShapeGeometry()` before writing and
+`normalizeCustomShapeGeometry()` when reading external data. Built-in line,
+elbow, curved-connector and scribble definitions use
+`createDefaultEditableShapeGeometry()` only as an edit projection; old
+snapshots stay catalogue-only until the first completed handle gesture.
+
+The built-in adjustment projection currently covers rounded/single-rounded/
+same-side-rounded rectangles, triangle, parallelogram, trapezoid, four
+single-direction and two bidirectional block arrows, plus rectangular/rounded
+speech bubbles and wedge callouts. These shapes expose one or two yellow round
+handles and persist only their named finite numbers (`radius`, `apexX`, `inset`,
+`headLength`, `shaftThickness`, `tailX`, `tailY`). Pointer movement is a local
+path preview; pointerup writes the complete flat record once. Explicit
+`customGeometry` has precedence and suppresses catalogue adjustment handles.
+Every remaining built-in Shape definition receives an edit-only projection
+from its trusted catalogue path. The internal converter accepts only the
+catalogue's absolute `M/L/H/V/C/S/Q/T/A/Z` subset, converts quadratic and
+smooth commands and catalogue arcs to explicit cubic controls, and retains
+`evenodd` compound-path fill. The projection is not persisted until the first
+completed yellow-node gesture, so untouched snapshots remain path-free. Across
+the parameter and path modes, all 103 built-in Shape kinds are editable.
 
 `ShapeRotateCommit`, `calculateShapeRotation()`, `rotateShapeVector()` and
 `normalizeShapeRotation()` are exported for custom shape UI and testing.
