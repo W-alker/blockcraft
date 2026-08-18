@@ -45,6 +45,7 @@ describe('BlockPlacement group commands', () => {
       if (existing) return existing
       const block = {
         id,
+        hostElement: document.createElement('div'),
         get flavour() { return flavours.get(id) },
         get parentId() { return parentOf(id) },
         get props() { return props.get(id) ?? {} },
@@ -73,7 +74,9 @@ describe('BlockPlacement group commands', () => {
           metadata: {
             ...(flavour === 'image' ? {objectSizing: imageCapability} : {}),
             ...(['image', 'shape', 'object-group'].includes(flavour)
-              ? {placement: {modes: ['absolute']}}
+              ? {placement: {modes: flavour === 'object-group'
+                ? ['relative', 'absolute']
+                : ['absolute']}}
               : {}),
           },
         }),
@@ -241,6 +244,40 @@ describe('BlockPlacement group commands', () => {
       position: {x: 100, y: 100},
     }))
     expect(h.props.get('shape')!['position']).toEqual({x: 520, y: 100})
+  })
+
+  it('moves the whole group to top-bottom flow without changing local members', () => {
+    const h = makeHarness()
+    h.manager.group(['image', 'shape'])
+    const imageBefore = structuredClone(h.props.get('image'))
+    const shapeBefore = structuredClone(h.props.get('shape'))
+
+    expect(h.manager.supportsObjectLayout('group', 'top-bottom')).toBeTrue()
+    expect(h.manager.setObjectLayout('group', 'top-bottom')).toBeTrue()
+
+    expect(h.children.get('root')).toEqual(['group', 'layout'])
+    expect(h.children.get('layout')).toEqual([])
+    expect(h.children.get('group')).toEqual(['image', 'shape'])
+    expect(h.props.get('group')!['position']).toBeUndefined()
+    expect(h.props.get('group')!['placementLayer']).toBeUndefined()
+    expect(h.props.get('image')).toEqual(imageBefore)
+    expect(h.props.get('shape')).toEqual(shapeBefore)
+    expect(h.manager.getObjectLayout('group')).toBe('top-bottom')
+    expect(h.manager.supportsObjectLayout('image', 'top-bottom')).toBeFalse()
+  })
+
+  it('keeps a top-bottom group in flow when member geometry tightens its frame', () => {
+    const h = makeHarness()
+    h.manager.group(['image', 'shape'])
+    h.manager.setObjectLayout('group', 'top-bottom')
+
+    expect(h.manager.updateAbsolute('image', {x: -50, y: 30})).toBeTrue()
+
+    expect(h.children.get('root')).toEqual(['group', 'layout'])
+    expect(h.children.get('layout')).toEqual([])
+    expect(h.props.get('group')!['position']).toBeUndefined()
+    expect(h.manager.getObjectLayout('group')).toBe('top-bottom')
+    expect(h.props.get('image')!['position']).toEqual({x: 0, y: 30})
   })
 
   it('rejects mixed layers and non-contiguous ranges', () => {

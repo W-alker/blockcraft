@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-17
+> Last updated: 2026-08-18
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
@@ -217,8 +217,15 @@ only `position`. They preserve responsive/fixed size fields and placement
 layers. Single-axis center and combined center use the average of the selected
 visual centers; distribution keeps the two endpoint centers fixed and spaces
 the intermediate centers evenly.
-The selected group toolbar also exposes **上移一层 / 下移一层** through the
-normal root placement stack; copy/delete use the standard whole-block paths.
+The selected group toolbar exposes **上下型 / 衬于文字下方 / 浮于文字上方**
+for the group as one atomic object. Top-bottom moves the fixed group frame into
+root flow without changing member-local coordinates; under/over restores root
+absolute placement. It also exposes **上移一层 / 下移一层** while absolute;
+copy/delete use the standard whole-block paths. The absolute frame-edge drag
+regions are hidden in top-bottom flow so ordinary block reorder owns movement.
+Because dissolving a group projects its members back into the root absolute
+plane, **取消组合** is enabled only while the group is under/over; the layout
+buttons remain available in top-bottom flow so the state is always reversible.
 
 The Plugin's document-capture pointer listener must register before image,
 Shape, TextBox and WordArt object Plugins. The bundled capability factory
@@ -231,8 +238,10 @@ any nested descendant owns Selection, the capture listener leaves member
 new first click. A selection anywhere in the mounted group subtree keeps the
 ancestor group outline visible; this walks only the two endpoint ancestry
 chains and does not scan descendants or measure DOM.
-Member styling and local resize stay available; object-layout controls are
-omitted because flow/inline/layer transitions require ungrouping first.
+Member styling and local resize stay available; member-level object-layout
+controls remain omitted because flow/inline/layer transitions would break the
+group boundary. Only the selected group frame owns the three block-layout
+choices.
 Independent **上移一层 / 下移一层** controls are omitted from every member
 toolbar; only the selected group can move through the root placement stack.
 Member move/resize/rotation commits tighten the group frame through

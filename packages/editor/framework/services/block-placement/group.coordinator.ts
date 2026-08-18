@@ -429,6 +429,8 @@ export class BlockPlacementGroupCoordinator {
       contentHeight + BLOCK_OBJECT_GROUP_PADDING * 2,
     )
     const groupPosition = resolveBlockPosition(groupProps['position'])
+    const groupIsAbsolute =
+      this.runtime.getPersistedState(groupId).mode === 'absolute'
     const nextGroupPosition = {
       x: roundPlacementGeometry(groupPosition.x + bounds.left),
       y: roundPlacementGeometry(groupPosition.y + bounds.top),
@@ -438,7 +440,10 @@ export class BlockPlacementGroupCoordinator {
     const groupPatch: Record<string, any> = {}
     if (!sameGeometryNumber(groupProps['width'], width)) groupPatch['width'] = width
     if (!sameGeometryNumber(groupProps['height'], height)) groupPatch['height'] = height
-    if (!samePosition(groupProps['position'], nextGroupPosition)) {
+    if (
+      groupIsAbsolute &&
+      !samePosition(groupProps['position'], nextGroupPosition)
+    ) {
       groupPatch['position'] = nextGroupPosition
     }
     if (Object.keys(groupPatch).length) {

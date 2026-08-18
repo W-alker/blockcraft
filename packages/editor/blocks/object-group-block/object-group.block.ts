@@ -17,6 +17,7 @@ import type {ObjectGroupBlockModel} from './index'
     '[style.height.px]': 'groupProps.height',
     '[style.box-sizing]': "'border-box'",
     '[style.padding.px]': 'groupPadding',
+    '[style.--bc-object-group-padding.px]': 'groupPadding',
     '[style.overflow]': "'visible'",
   },
   template: `
@@ -63,7 +64,8 @@ import type {ObjectGroupBlockModel} from './index'
       cursor: move;
     }
 
-    :host(.selected) > .object-group-block__move-edge {
+    :host([data-bc-placement='absolute'].selected) >
+      .object-group-block__move-edge {
       display: block;
     }
 

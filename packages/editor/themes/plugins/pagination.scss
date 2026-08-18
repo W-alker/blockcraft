@@ -122,6 +122,62 @@ body.bc-table-fullscreen-lock
    其余确认超页的原子块才裁剪。 */
 [data-blockcraft-root="true"].bc-paginated,
 [data-blockcraft-root="true"].bc-print-content {
+  /* Fixed-size object Blocks can participate in ordinary root flow. Their
+     persisted frame may be taller than one page, but a flow unit cannot own
+     more than one page body. Root absolute objects remain untouched. */
+  > .object-group-block:not([data-bc-placement='absolute']),
+  > .text-box-block:not([data-bc-placement='absolute']),
+  > .word-art-block:not([data-bc-placement='absolute']),
+  > .shape-block:not([data-bc-placement='absolute']) {
+    max-block-size: var(--bc-page-content-height);
+    /* Selection outlines and resize/rotation controls deliberately sit beyond
+       the object frame. The host must not become their clipping ancestor. */
+    overflow: visible !important;
+  }
+
+  /* The persisted height lives on each visual frame rather than its Block
+     host. Clamp that frame as well, so its geometry and resizer target share
+     the single-page size while the surrounding interaction chrome stays
+     visible. The inner content layers already own their normal clipping. */
+  > .text-box-block:not([data-bc-placement='absolute'])
+    > .text-box-block__surface,
+  > .word-art-block:not([data-bc-placement='absolute'])
+    > .word-art-block__surface,
+  > .shape-block:not([data-bc-placement='absolute'])
+    > .shape-block__shell {
+    max-block-size: var(--bc-page-content-height);
+  }
+
+  /* A root-flow group keeps its members in a local absolute plane. That local
+     `data-bc-placement='absolute'` must not opt the members out of the page
+     cap: the outer group's flow mode owns the pagination boundary. As above,
+     cap hosts/visual frames but never turn either into a clipping ancestor. */
+  > .object-group-block:not([data-bc-placement='absolute'])
+    > .object-group-block__children {
+    > .image-block,
+    > .text-box-block,
+    > .word-art-block,
+    > .shape-block {
+      max-block-size: calc(
+        var(--bc-page-content-height)
+        - var(--bc-object-group-padding, 8px)
+        - var(--bc-object-group-padding, 8px)
+      );
+      overflow: visible !important;
+    }
+
+    > .image-block > .image-block__container > .img-wrapper,
+    > .text-box-block > .text-box-block__surface,
+    > .word-art-block > .word-art-block__surface,
+    > .shape-block > .shape-block__shell {
+      max-block-size: calc(
+        var(--bc-page-content-height)
+        - var(--bc-object-group-padding, 8px)
+        - var(--bc-object-group-padding, 8px)
+      );
+    }
+  }
+
   > .bc-page-height-locked {
     max-height: var(--bc-page-content-height);
     overflow: hidden;

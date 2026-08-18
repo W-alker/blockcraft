@@ -77,11 +77,72 @@ import {LiveHeightSource} from './live-height-source';
         locked
         <span data-zero-space="true" data-block-zero-space="true" data-block-gap-side="after">&#8203;</span>
       </div>
+      <div class="object-group-block root-flow-fixed-object"
+           style="height: 600px; padding: 8px; box-sizing: border-box;
+                  overflow: visible; --bc-object-group-padding: 8px">
+        <div class="object-group-block__children" style="height: 100%">
+          <div class="image-block nested-flow-group-member"
+               data-bc-placement="absolute" style="overflow: visible">
+            <figure class="image-block__container">
+              <div class="img-wrapper nested-flow-group-member-surface"
+                   style="position: relative; height: 600px; overflow: visible">
+                <span class="object-control-probe"
+                      style="position: absolute; top: -20px"></span>
+              </div>
+            </figure>
+          </div>
+          <div class="text-box-block nested-flow-group-member"
+               data-bc-placement="absolute" style="overflow: visible">
+            <div class="text-box-block__surface nested-flow-group-member-surface"
+                 style="position: relative; height: 600px; overflow: visible">
+              <span class="object-control-probe"
+                    style="position: absolute; top: -20px"></span>
+            </div>
+          </div>
+          <div class="word-art-block nested-flow-group-member"
+               data-bc-placement="absolute" style="overflow: visible">
+            <div class="word-art-block__surface nested-flow-group-member-surface"
+                 style="position: relative; height: 600px; overflow: visible">
+              <span class="object-control-probe"
+                    style="position: absolute; top: -20px"></span>
+            </div>
+          </div>
+          <div class="shape-block nested-flow-group-member"
+               data-bc-placement="absolute" style="overflow: visible">
+            <div class="shape-block__shell nested-flow-group-member-surface"
+                 style="position: relative; height: 600px; overflow: visible">
+              <span class="object-control-probe"
+                    style="position: absolute; top: -20px"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="text-box-block root-flow-fixed-object">
+        <div class="text-box-block__surface root-flow-fixed-object-surface"
+             style="position: relative; height: 600px; overflow: visible">
+          <span class="object-control-probe" style="position: absolute; top: -20px"></span>
+        </div>
+      </div>
+      <div class="word-art-block root-flow-fixed-object">
+        <div class="word-art-block__surface root-flow-fixed-object-surface"
+             style="position: relative; height: 600px; overflow: visible">
+          <span class="object-control-probe" style="position: absolute; top: -20px"></span>
+        </div>
+      </div>
+      <div class="shape-block root-flow-fixed-object">
+        <div class="shape-block__shell root-flow-fixed-object-surface"
+             style="position: relative; height: 600px; overflow: visible">
+          <span class="object-control-probe" style="position: absolute; top: -20px"></span>
+        </div>
+      </div>
       <div data-bc-placement-layout
            style="position: absolute; inset: 0 0 auto; width: auto; height: 0;
                   box-sizing: border-box; padding: inherit">
         <div class="children-render-container"
-             style="position: relative; box-sizing: border-box; width: 100%; height: 0"></div>
+             style="position: relative; box-sizing: border-box; width: 100%; height: 0">
+          <div class="object-group-block nested-absolute-fixed-object"
+               data-bc-placement="absolute" style="height: 600px; overflow: visible"></div>
+        </div>
       </div>
       </div>
     </div>
@@ -220,6 +281,56 @@ describe('pagination theme block constraints', () => {
     expect(getComputedStyle(nestedCodeBody).overflowY).toBe('auto');
     expect(getComputedStyle(nestedImage).maxHeight).toBe('200px');
     expect(getComputedStyle(nestedImage).overflow).toBe('hidden');
+  });
+
+  it('caps root-flow object frames without clipping their interaction chrome', () => {
+    const host = fixture.nativeElement as HTMLElement;
+    const flowObjects = Array.from(host.querySelectorAll<HTMLElement>(
+      '.root-flow-fixed-object',
+    ));
+    const flowSurfaces = Array.from(host.querySelectorAll<HTMLElement>(
+      '.root-flow-fixed-object-surface',
+    ));
+    const groupedMembers = Array.from(host.querySelectorAll<HTMLElement>(
+      '.nested-flow-group-member',
+    ));
+    const groupedSurfaces = Array.from(host.querySelectorAll<HTMLElement>(
+      '.nested-flow-group-member-surface',
+    ));
+    const absoluteObject = host.querySelector<HTMLElement>(
+      '.nested-absolute-fixed-object',
+    )!;
+
+    expect(flowObjects.map(element => getComputedStyle(element).maxHeight))
+      .toEqual(['200px', '200px', '200px', '200px']);
+    expect(flowObjects.map(element => getComputedStyle(element).overflow))
+      .toEqual(['visible', 'visible', 'visible', 'visible']);
+    expect(flowSurfaces.map(element => getComputedStyle(element).maxHeight))
+      .toEqual(['200px', '200px', '200px']);
+    expect(flowSurfaces.map(element => getComputedStyle(element).overflow))
+      .toEqual(['visible', 'visible', 'visible']);
+    expect(flowSurfaces.map(element => element.getBoundingClientRect().height))
+      .toEqual([200, 200, 200]);
+    for (const surface of flowSurfaces) {
+      const probe = surface.querySelector<HTMLElement>('.object-control-probe')!;
+      expect(probe.getBoundingClientRect().top)
+        .toBeLessThan(surface.getBoundingClientRect().top);
+    }
+    expect(groupedMembers.map(element => getComputedStyle(element).maxHeight))
+      .toEqual(['184px', '184px', '184px', '184px']);
+    expect(groupedMembers.map(element => getComputedStyle(element).overflow))
+      .toEqual(['visible', 'visible', 'visible', 'visible']);
+    expect(groupedSurfaces.map(element => getComputedStyle(element).maxHeight))
+      .toEqual(['184px', '184px', '184px', '184px']);
+    expect(groupedSurfaces.map(element => element.getBoundingClientRect().height))
+      .toEqual([184, 184, 184, 184]);
+    for (const surface of groupedSurfaces) {
+      const probe = surface.querySelector<HTMLElement>('.object-control-probe')!;
+      expect(probe.getBoundingClientRect().top)
+        .toBeLessThan(surface.getBoundingClientRect().top);
+    }
+    expect(getComputedStyle(absoluteObject).maxHeight).toBe('none');
+    expect(getComputedStyle(absoluteObject).overflow).toBe('visible');
   });
 
   it('constrains the media wrapper without zooming the block coordinate system', () => {

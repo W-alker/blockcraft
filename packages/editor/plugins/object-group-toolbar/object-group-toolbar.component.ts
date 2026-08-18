@@ -6,7 +6,11 @@ import {
   Output,
 } from '@angular/core'
 import {CsTooltipDirective} from '@cses/ui'
-import type {BlockObjectAlignment} from '../../framework'
+import {
+  BLOCK_OBJECT_LAYOUT_OPTIONS,
+  type BlockObjectAlignment,
+  type BlockObjectBlockLayout,
+} from '../../framework'
 
 export type ObjectGroupToolbarMode = 'group' | 'ungroup'
 export type ObjectGroupToolbarAction =
@@ -14,6 +18,12 @@ export type ObjectGroupToolbarAction =
   | BlockObjectAlignment
   | 'move-forward'
   | 'move-backward'
+  | {name: 'object-layout'; value: BlockObjectBlockLayout}
+
+const GROUP_LAYOUT_ITEMS = BLOCK_OBJECT_LAYOUT_OPTIONS.filter(
+  (item): item is typeof item & {value: BlockObjectBlockLayout} =>
+    item.value !== 'inline',
+)
 
 const ALIGNMENT_ITEMS: readonly {
   value: BlockObjectAlignment
@@ -72,6 +82,19 @@ const ALIGNMENT_ITEMS: readonly {
         <span class="object-group-toolbar__divider"></span>
       }
       @if (mode === 'ungroup') {
+        @for (item of layoutItems; track item.value) {
+          <button
+            type="button"
+            class="object-group-toolbar__icon-button"
+            [class.object-group-toolbar__icon-button--active]="objectLayout === item.value"
+            [csTooltip]="item.label"
+            [attr.aria-label]="item.label"
+            [attr.aria-pressed]="objectLayout === item.value"
+            (click)="action.emit({name: 'object-layout', value: item.value})">
+            <i [attr.class]="'bc_icon ' + item.icon"></i>
+          </button>
+        }
+        <span class="object-group-toolbar__divider"></span>
         <button
           type="button"
           csTooltip="上移一层"
@@ -94,7 +117,7 @@ const ALIGNMENT_ITEMS: readonly {
         type="button"
         [csTooltip]="mode === 'group' ? '组合' : '取消组合'"
         [attr.aria-label]="mode === 'group' ? '组合' : '取消组合'"
-        [disabled]="mode === 'group' && !canGroup"
+        [disabled]="mode === 'group' ? !canGroup : !canUngroup"
         (click)="action.emit(mode)">
         <i
           class="bc_icon"
@@ -144,6 +167,11 @@ const ALIGNMENT_ITEMS: readonly {
       padding: 0;
     }
 
+    .object-group-toolbar__icon-button--active {
+      background: var(--bc-bg-active, color-mix(in srgb, var(--bc-active-color, #4857e2) 12%, transparent));
+      color: var(--bc-active-color, #4857e2);
+    }
+
     button:disabled {
       opacity: .45;
       cursor: not-allowed;
@@ -159,8 +187,11 @@ const ALIGNMENT_ITEMS: readonly {
 })
 export class ObjectGroupToolbarComponent {
   readonly alignmentItems = ALIGNMENT_ITEMS
+  readonly layoutItems = GROUP_LAYOUT_ITEMS
   @Input({required: true}) mode: ObjectGroupToolbarMode = 'group'
+  @Input() objectLayout: BlockObjectBlockLayout = 'over'
   @Input() canGroup = false
+  @Input() canUngroup = false
   @Input() canDistribute = false
   @Input() canMoveForward = false
   @Input() canMoveBackward = false

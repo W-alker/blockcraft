@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-17
+> Last updated: 2026-08-18
 
 ## Theme Structure
 
@@ -454,7 +454,8 @@ the class or persist it in document content.
 | `--bc-pagination-backdrop-bg` | `#f5f5f4` | Scroll-container background between sheets |
 | `--bc-page-chrome-color` | `#9b9b97` | Header/footer text color |
 | `--bc-page-chrome-fs` | `12px` | Header/footer font size |
-| `--bc-page-content-height` | runtime page content height | Maximum height inherited by top-level void/code blocks in live and print pagination |
+| `--bc-page-content-height` | runtime page content height | Maximum height inherited by oversized atomic/code blocks and direct-root fixed flow objects in live and print pagination |
+| `--bc-object-group-padding` | `8px` | Object-group frame inset projected by live and Snapshot renderers; nested pagination caps subtract both block-axis sides |
 
 Runtime classes are `.bc-paginated` on the document root,
 `.bc-paginated-scroll` on the actual scroll container,
@@ -495,6 +496,16 @@ it from paper size, margins and header/footer bands. The theme predefines the
 top-level atomic/code-block cap with `max-height: var(--bc-page-content-height)`;
 hosts may read the token but should change page geometry through
 `PaginationPlugin.updateConfig()` rather than overriding it independently.
+Direct-root top-bottom `object-group`, `text-box`, `word-art` and `shape` frames
+are always capped by the same token. Their Block hosts keep overflow visible so
+selection outlines, resize endpoints and rotation controls outside the frame
+are not clipped; each object's existing inner content layer remains responsible
+for content overflow. The selector is deliberately owned by root flow:
+absolute objects below `placement-layout` remain uncapped, while members of a
+top-bottom `object-group` inherit the same frame cap from that outer flow unit.
+The member cap subtracts the group's block-start and block-end padding through
+`--bc-object-group-padding`; local placement geometry and visible interaction
+chrome remain intact.
 
 Pagination overrides live in `themes/plugins/pagination.scss`, imported at the
 end of `base.scss` so they can safely override ordinary block styles. The cap

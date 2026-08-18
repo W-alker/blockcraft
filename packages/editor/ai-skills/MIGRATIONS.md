@@ -69,6 +69,50 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
+## Unreleased — 2026-08-18 — allow object groups in top-bottom flow
+
+**Severity**: patch
+
+**What changed**: the bundled `object-group` Schema now supports both relative
+and absolute placement. Its selected-group toolbar exposes **上下型 / 衬于文字下方 /
+浮于文字上方** for the group as one atomic object while keeping every member in
+the existing local absolute plane.
+
+**Why**: a completed group previously remained absolute-only even though its
+fixed outer frame can participate safely in root flow. This made the standard
+top-bottom object layout unavailable for combinations.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-block.md`
+- `blockcraft-perf.md`
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- `ObjectGroupBlockSchema.metadata.placement.modes` is now
+  `['relative', 'absolute']`.
+- Top-bottom clears the group's root coordinates and reanchors the complete
+  frame in normal flow; member positions, sizes and ordering remain local and
+  unchanged.
+- A top-bottom group uses ordinary block reorder instead of the absolute frame
+  edge drag regions. Later member geometry commits cannot recreate root
+  absolute position intent. Member-level layout transitions remain unavailable.
+- Paginated live/print CSS caps direct-root top-bottom groups, text boxes,
+  WordArt and Shapes to `--bc-page-content-height` at their visual frame while
+  keeping host overflow visible for selection and resize chrome. Members of a
+  top-bottom group receive the same visual-frame cap despite remaining locally
+  absolute. That member cap subtracts both block-axis sides of the group's
+  `--bc-object-group-padding`; root absolute placement objects remain uncapped.
+- Cancelling a group remains an absolute-plane operation, so the action is
+  enabled after choosing under/over; the selected-group toolbar remains open in
+  top-bottom flow to make that transition directly available.
+- No package version was modified.
+
 ## Unreleased — 2026-08-18 — isolate multi-selected absolute objects from document input
 
 **Severity**: patch

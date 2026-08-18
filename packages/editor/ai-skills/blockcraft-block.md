@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-08-17
+> Last updated: 2026-08-18
 
 ## Block Types
 
@@ -649,9 +649,10 @@ under one hidden `placement-layout` at the end of `root.children`:
 root
 ├─ paragraph
 ├─ image                 # relative / top-bottom
+├─ object-group          # relative / top-bottom, fixed width/height
 └─ placement-layout      # infrastructure, zero height
    ├─ image              # absolute, root-local position
-   └─ object-group       # absolute, fixed width/height
+   └─ object-group       # absolute under/over, fixed width/height
       ├─ image           # absolute, group-local position and wr basis
       └─ shape           # absolute, group-local position
 ```
@@ -807,15 +808,16 @@ detection.
 
 ### Fixed Object Groups
 
-`ObjectGroupBlockSchema` is an internal, absolute-only container with persisted
-fixed pixel `width` and `height`. Those dimensions describe the outer frame,
-which reserves the fixed `BLOCK_OBJECT_GROUP_PADDING` inset (8 layout pixels)
-on every side. The inset content box is the member placement plane. The group
-itself has the ordinary root-local `position` and optional root stacking layer;
-its direct members have content-plane-local `position` and no independent
-under/over tier. `setLayer()`, `moveForward()` and `moveBackward()` reject
-members, and their object toolbars omit both representation/layout and
-independent stack controls. Nested groups are rejected.
+`ObjectGroupBlockSchema` is an internal fixed-size container with persisted
+pixel `width` and `height`. The complete group can be a relative root-flow
+object or an absolute root under/over object. Those dimensions describe the
+outer frame, which reserves the fixed `BLOCK_OBJECT_GROUP_PADDING` inset (8
+layout pixels) on every side. The inset content box is always the member
+placement plane. Direct members keep content-plane-local absolute `position`
+and no independent under/over tier in either outer layout. `setLayer()`,
+`moveForward()` and `moveBackward()` reject members, and their object toolbars
+omit both representation/layout and independent stack controls. Nested groups
+are rejected.
 
 ```typescript
 const groupId = doc.placement.group(['image-id', 'shape-id'])
@@ -823,6 +825,21 @@ if (groupId) {
   const memberIds = doc.placement.ungroup(groupId)
 }
 ```
+
+The selected group toolbar applies `top-bottom`, `under` or `over` only to the
+atomic outer frame. Returning to flow preserves member-local positions and
+dimensions; absolute frame-edge drag regions are hidden so ordinary block
+reorder owns movement. Later member geometry tightening resizes and rebases the
+local plane without recreating a root `position`, so the group stays in flow.
+`ungroup()` projects members back to the root absolute
+plane and is therefore available while the group is under/over.
+Paginated live/print themes cap a top-bottom group frame, text box, WordArt or
+Shape at `--bc-page-content-height` with a direct-root CSS selector. When the
+outer group is top-bottom, the same cap applies to its local image, text-box,
+WordArt and Shape member frames even though those members remain locally
+absolute. Their available cap subtracts the outer frame's block-start and
+block-end `BLOCK_OBJECT_GROUP_PADDING`; root absolute placement objects remain
+unaffected.
 
 `canGroup(ids)` requires at least two contiguous direct children of the root
 `placement-layout`, all in the same `under`/`over` layer and all Schema-capable

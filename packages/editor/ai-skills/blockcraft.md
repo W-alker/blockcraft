@@ -472,9 +472,15 @@ one nested snapshot, so no temporary root-flow object exists.
 That infrastructure block is registered by the bundled editor, excluded from
 ordinary sibling navigation and BlockController, and removed after its final
 object returns to flow. `object-group` is the one bounded nested exception: it
-is itself a fixed-pixel absolute object and its direct children use local
-absolute coordinates. Group members cannot switch to relative/inline layout
-until the group is dissolved.
+is a fixed-pixel object whose direct children always use local absolute
+coordinates. The group as one atomic object can switch between top-bottom flow
+and root under/over placement; individual members still cannot switch to
+relative/inline layout until the group is dissolved.
+In paginated live/print views, a direct-root top-bottom `object-group`,
+`text-box`, `word-art` or `shape` is CSS-capped to
+`--bc-page-content-height` and clipped. Absolute objects and local group
+members are outside that direct-root flow selector and keep their placement
+geometry.
 When returning an absolute block to relative flow, the manager uses the
 block's current visual center to find the nearest mounted ordinary flow sibling
 and inserts before/after that sibling's midpoint instead of jumping back to the

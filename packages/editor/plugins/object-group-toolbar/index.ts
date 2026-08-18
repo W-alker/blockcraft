@@ -6,6 +6,7 @@ import {
   DocPlugin,
   getPositionWithOffset,
   type BlockObjectAlignment,
+  type BlockObjectBlockLayout,
 } from '../../framework'
 import {
   ObjectGroupToolbarComponent,
@@ -20,7 +21,9 @@ interface GroupSelectionState {
   anchor: HTMLElement
   blockIds: string[]
   canGroup: boolean
+  canUngroup: boolean
   canDistribute: boolean
+  objectLayout: BlockObjectBlockLayout
   canMoveForward: boolean
   canMoveBackward: boolean
 }
@@ -193,7 +196,11 @@ export class ObjectGroupToolbarPlugin extends DocPlugin {
       state.mode,
       state.blockIds.join(','),
       state.canGroup,
+      state.canUngroup,
       state.canDistribute,
+      state.objectLayout,
+      state.canMoveForward,
+      state.canMoveBackward,
     ].join(':')
     if (this._toolbarRef && this._toolbarKey === key) return
     this.closeToolbar()
@@ -216,7 +223,9 @@ export class ObjectGroupToolbarPlugin extends DocPlugin {
     this._toolbarKey = key
     componentRef.setInput('mode', state.mode)
     componentRef.setInput('canGroup', state.canGroup)
+    componentRef.setInput('canUngroup', state.canUngroup)
     componentRef.setInput('canDistribute', state.canDistribute)
+    componentRef.setInput('objectLayout', state.objectLayout)
     componentRef.setInput('canMoveForward', state.canMoveForward)
     componentRef.setInput('canMoveBackward', state.canMoveBackward)
     componentRef.instance.action
@@ -231,8 +240,7 @@ export class ObjectGroupToolbarPlugin extends DocPlugin {
       selection.isInSameBlock &&
       selection.anchor.type === 'selected' &&
       selection.head.type === 'selected' &&
-      this.doc.placement.isObjectGroup(selection.firstBlockId) &&
-      this.doc.placement.canUngroup(selection.firstBlockId)
+      this.doc.placement.isObjectGroup(selection.firstBlockId)
     ) {
       const group = this.safeGetBlock(selection.firstBlockId)
       return group?.hostElement.isConnected
@@ -241,7 +249,9 @@ export class ObjectGroupToolbarPlugin extends DocPlugin {
             anchor: group.hostElement,
             blockIds: [group.id],
             canGroup: false,
+            canUngroup: this.doc.placement.canUngroup(group.id),
             canDistribute: false,
+            objectLayout: this.doc.placement.getObjectLayout(group),
             canMoveForward: this.doc.placement.canMoveForward(group.id),
             canMoveBackward: this.doc.placement.canMoveBackward(group.id),
           }
@@ -257,10 +267,12 @@ export class ObjectGroupToolbarPlugin extends DocPlugin {
           anchor: first.hostElement,
           blockIds: ids,
           canGroup: this.doc.placement.canGroup(ids),
+          canUngroup: false,
           canDistribute: this.doc.placement.canAlignObjects(
             ids,
             'horizontal-distribute',
           ),
+          objectLayout: 'over',
           canMoveForward: false,
           canMoveBackward: false,
         }
@@ -272,6 +284,15 @@ export class ObjectGroupToolbarPlugin extends DocPlugin {
     blockIds: readonly string[],
   ): void {
     this.closeToolbar()
+    if (typeof mode === 'object') {
+      const groupId = blockIds[0]
+      if (!groupId) return
+      const group = this.safeGetBlock(groupId)
+      if (!group) return
+      this.doc.placement.setObjectLayout(group, mode.value)
+      queueMicrotask(() => this.syncToolbar())
+      return
+    }
     if (isObjectAlignment(mode)) {
       this.doc.placement.alignObjects(blockIds, mode)
       queueMicrotask(() => this.syncToolbar())

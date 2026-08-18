@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-17
+> Last updated: 2026-08-18
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -1256,12 +1256,14 @@ children remain pointer-interactive and share the root coordinate/stacking scope
 Returning to top-bottom moves the object back near its current visual position;
 an empty layout is removed after the model graph settles.
 
-`object-group` is a fixed-pixel local placement plane nested directly below the
-root placement layout. Group members keep their existing block IDs and use
-group-local `position`; an image's `wr` becomes relative to group width. The
-bundled `ObjectGroupToolbarPlugin` provides Shift-click selection and
-rotation-aware object alignment/distribution plus 组合/取消组合. Alignment is a
-one-shot `position` mutation: it preserves each object's size fields and layer.
+`object-group` is a fixed-pixel local placement plane whose outer frame can be
+either a direct root top-bottom block or a root under/over object. Group members
+keep their existing block IDs and group-local absolute `position`; an image's
+`wr` becomes relative to group width. The bundled `ObjectGroupToolbarPlugin`
+provides Shift-click selection, rotation-aware object alignment/distribution,
+上下型/衬于文字下方/浮于文字上方 for the atomic group, and 组合/
+取消组合. Alignment is a one-shot `position` mutation: it preserves each
+object's size fields and layer.
 A manual assembly must register both `ObjectGroupBlockSchema` and
 `ObjectGroupToolbarPlugin`; register that Plugin before per-flavour object
 toolbars so its capture listener owns grouping selection and first-click group

@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-15
+> Last updated: 2026-08-18
 
 ## Core Performance Principles
 
@@ -392,8 +392,9 @@ Remote/Undo/structure repair requests are deduplicated per group in one
 microtask. Console-backed loggers expose each pass as
 `[ObjectGroup][performance] reflow <duration>ms` plus `{members, writes,
 changed, reason}` for direct profiling.
-Root virtualization indexes the group as one fixed-height absolute object; its
-nested members materialize atomically with that group.
+Root virtualization indexes the group as one fixed-height root unit in either
+top-bottom or absolute placement; its nested members materialize atomically
+with that group.
 
 Mounted is deliberately broader than browser-visible: height-budgeted overscan
 materializes a small nearby window, and nested subtrees are atomic. Keep an

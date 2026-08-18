@@ -19,11 +19,22 @@ describe('ObjectGroupToolbarPlugin', () => {
       .not.toContain('bc_quxiaozuhe')
 
     fixture.componentRef.setInput('mode', 'ungroup')
+    fixture.componentRef.setInput('canUngroup', true)
+    fixture.componentRef.setInput('objectLayout', 'top-bottom')
     fixture.detectChanges()
     expect(host.querySelector('[aria-label="取消组合"] i')?.classList)
       .toContain('bc_quxiaozuhe')
     expect(host.querySelector('[aria-label="取消组合"] i')?.classList)
       .not.toContain('bc_combination')
+    expect(host.querySelector('[aria-label="上下型"] i')?.classList)
+      .toContain('bc_tuwenraopaishangxiashi')
+    expect(host.querySelector('[aria-label="衬于文字下方"] i')?.classList)
+      .toContain('bc_cengji-xia')
+    expect(host.querySelector('[aria-label="浮于文字上方"] i')?.classList)
+      .toContain('bc_cengji-shang')
+    expect(host.querySelector('[aria-label="上下型"]')?.getAttribute(
+      'aria-pressed',
+    )).toBe('true')
   })
 
   it('renders the Word-like alignment icons and gates distribution at three objects', async () => {
@@ -124,6 +135,27 @@ describe('ObjectGroupToolbarPlugin', () => {
     expect((plugin as any).syncToolbar).toHaveBeenCalled()
   }))
 
+  it('delegates whole-group layout without exposing member layout changes', fakeAsync(() => {
+    const group = {id: 'group'}
+    const setObjectLayout = jasmine.createSpy('setObjectLayout')
+      .and.returnValue(true)
+    const plugin = new ObjectGroupToolbarPlugin()
+    ;(plugin as any).doc = {
+      placement: {setObjectLayout},
+      getBlockById: () => group,
+    }
+    ;(plugin as any).syncToolbar = jasmine.createSpy('syncToolbar')
+
+    ;(plugin as any).execute({
+      name: 'object-layout',
+      value: 'top-bottom',
+    }, ['group'])
+
+    expect(setObjectLayout).toHaveBeenCalledOnceWith(group, 'top-bottom')
+    flushMicrotasks()
+    expect((plugin as any).syncToolbar).toHaveBeenCalled()
+  }))
+
   it('keeps alignment available when the selected objects cannot be grouped', () => {
     const host = document.createElement('div')
     document.body.append(host)
@@ -148,7 +180,46 @@ describe('ObjectGroupToolbarPlugin', () => {
       anchor: host,
       blockIds: ['image', 'object-group'],
       canGroup: false,
+      canUngroup: false,
       canDistribute: false,
+      objectLayout: 'over',
+      canMoveForward: false,
+      canMoveBackward: false,
+    })
+    host.remove()
+  })
+
+  it('keeps the selected group toolbar available in top-bottom flow', () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    const plugin = new ObjectGroupToolbarPlugin()
+    ;(plugin as any).doc = {
+      selection: {
+        value: {
+          isInSameBlock: true,
+          anchor: {blockId: 'group', type: 'selected'},
+          head: {blockId: 'group', type: 'selected'},
+          firstBlockId: 'group',
+        },
+      },
+      placement: {
+        isObjectGroup: (id: string) => id === 'group',
+        canUngroup: () => false,
+        getObjectLayout: () => 'top-bottom',
+        canMoveForward: () => false,
+        canMoveBackward: () => false,
+      },
+      getBlockById: () => ({id: 'group', hostElement: host}),
+    }
+
+    expect((plugin as any).resolveToolbarState()).toEqual({
+      mode: 'ungroup',
+      anchor: host,
+      blockIds: ['group'],
+      canGroup: false,
+      canUngroup: false,
+      canDistribute: false,
+      objectLayout: 'top-bottom',
       canMoveForward: false,
       canMoveBackward: false,
     })

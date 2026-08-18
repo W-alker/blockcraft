@@ -128,6 +128,10 @@ function renderObjectGroup(
     padding: `${BLOCK_OBJECT_GROUP_PADDING}px`,
     overflow: "visible",
   })
+  element.style.setProperty(
+    "--bc-object-group-padding",
+    `${BLOCK_OBJECT_GROUP_PADDING}px`,
+  )
   const content = document.createElement("div")
   content.classList.add(
     "object-group-block__children",
