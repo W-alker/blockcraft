@@ -1,4 +1,7 @@
-import { resolvePlacementContainerBox } from "../../../framework/services/block-placement/geometry";
+import {
+  resolvePlacementContainerBox,
+  resolvePlacementPlaneBounds,
+} from "../../../framework/services/block-placement/geometry";
 
 const DRAG_THRESHOLD_PX = 4;
 const MIN_OBJECT_WIDTH = 48;
@@ -19,8 +22,11 @@ export interface ObjectDrawInsertRequest {
 interface DrawSurfaceBox {
   originX: number;
   originY: number;
-  width: number;
   visualScale: number;
+  /** 可放置区边界，placement 内容原点坐标；左/上为负即压在编辑器内边距上。 */
+  minX: number;
+  maxX: number;
+  minY: number;
   maxY: number;
 }
 
@@ -341,9 +347,11 @@ export class ObjectDrawInsertController {
     let left: number;
     let top: number;
 
+    const planeWidth = Math.max(MIN_OBJECT_WIDTH, box.maxX - box.minX);
+
     if (dragged) {
       width = Math.min(
-        box.width,
+        planeWidth,
         Math.max(MIN_OBJECT_WIDTH, Math.abs(endX - this.startLocalX)),
       );
       height = Math.max(MIN_OBJECT_HEIGHT, Math.abs(endY - this.startLocalY));
@@ -353,7 +361,7 @@ export class ObjectDrawInsertController {
         endY < this.startLocalY ? this.startLocalY - height : this.startLocalY;
     } else {
       width = Math.min(
-        box.width,
+        planeWidth,
         Math.max(MIN_OBJECT_WIDTH, request.defaultWidth),
       );
       height = Math.max(MIN_OBJECT_HEIGHT, request.defaultHeight);
@@ -363,8 +371,11 @@ export class ObjectDrawInsertController {
 
     width = Math.round(width);
     height = Math.round(height);
-    left = Math.min(Math.max(0, box.width - width), Math.max(0, left));
-    top = Math.max(0, top);
+    left = Math.min(
+      Math.max(box.minX, box.maxX - width),
+      Math.max(box.minX, left),
+    );
+    top = Math.max(box.minY, top);
 
     return {
       anchorRect: new DOMRect(
@@ -381,14 +392,17 @@ export class ObjectDrawInsertController {
   private measureSurface(): DrawSurfaceBox | null {
     if (!this.surface || !this.root) return null;
     const placement = resolvePlacementContainerBox(this.surface);
+    const bounds = resolvePlacementPlaneBounds(placement);
     const rootRect = this.root.getBoundingClientRect();
     return {
       originX: placement.originX,
       originY: placement.originY,
-      width: placement.width,
       visualScale: placement.visualScale,
+      minX: bounds.minX,
+      maxX: bounds.maxX,
+      minY: bounds.minY,
       maxY: Math.max(
-        0,
+        bounds.minY,
         (rootRect.bottom - placement.originY) / placement.visualScale,
       ),
     };
@@ -396,15 +410,15 @@ export class ObjectDrawInsertController {
 
   private clientToLocalX(clientX: number, box: DrawSurfaceBox): number {
     return Math.min(
-      box.width,
-      Math.max(0, (clientX - box.originX) / box.visualScale),
+      box.maxX,
+      Math.max(box.minX, (clientX - box.originX) / box.visualScale),
     );
   }
 
   private clientToLocalY(clientY: number, box: DrawSurfaceBox): number {
     return Math.min(
       box.maxY,
-      Math.max(0, (clientY - box.originY) / box.visualScale),
+      Math.max(box.minY, (clientY - box.originY) / box.visualScale),
     );
   }
 

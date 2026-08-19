@@ -54,6 +54,69 @@ class WordArtTransformVisibilityHarness {
 })
 class WordArtCssInheritanceHarness {}
 
+/**
+ * 对象宽度契约：浮动（absolute）宽度不设上限，落回文档流收敛到内容列。
+ * 编辑器内由 base.scss 按 data-bc-object / data-bc-object-surface 实施；
+ * 快照查看器没有那对标记，由 word-art scss 的 .bc-snapshot-viewer 规则按
+ * 同一契约补齐。base.scss @import 了 word-art scss，一个 styleUrl 覆盖两边。
+ */
+@Component({
+  selector: 'word-art-width-contract-harness',
+  standalone: true,
+  template: `
+    <div
+      data-blockcraft-root="true"
+      style="position: relative; box-sizing: border-box; width: 500px;
+        padding: 0 20px 0 40px"
+    >
+      <div data-plane="" style="position: relative; width: 100%">
+        <div
+          class="word-art-block"
+          data-block-id="wa-float"
+          data-bc-object=""
+          data-bc-placement="absolute"
+          data-live-float=""
+          style="position: absolute; left: -40px; top: 0; margin: 0"
+        >
+          <div
+            class="word-art-block__surface"
+            data-bc-object-surface=""
+            style="width: 800px; height: 60px"
+          ></div>
+        </div>
+        <div
+          class="word-art-block"
+          data-block-id="wa-flow"
+          data-bc-object=""
+          data-live-flow=""
+        >
+          <div
+            class="word-art-block__surface"
+            data-bc-object-surface=""
+            style="width: 800px; height: 60px"
+          ></div>
+        </div>
+      </div>
+    </div>
+    <div class="bc-snapshot-viewer" style="position: relative; width: 440px">
+      <div class="word-art-block" data-viewer-flow="">
+        <div class="word-art-block__surface" style="width: 800px; height: 60px"></div>
+      </div>
+      <div
+        class="word-art-block"
+        data-bc-placement="absolute"
+        data-viewer-float=""
+        style="position: absolute; left: 0; top: 0; margin: 0"
+      >
+        <div class="word-art-block__surface" style="width: 800px; height: 60px"></div>
+      </div>
+    </div>
+  `,
+  styleUrl: '../../themes/base.scss',
+  schemas: [CUSTOM_ELEMENTS_SCHEMA],
+})
+class WordArtWidthContractHarness {}
+
 describe('Word art block domain', () => {
   it('estimates an unmounted flow block from its normalized model height', () => {
     const estimateHeight =
@@ -345,6 +408,35 @@ describe('Word art block domain', () => {
     expect(corner.height).toBe(144)
     expect(side.width).toBe(400)
     expect(side.height).toBe(96)
+  })
+
+  it('frees floating word art of width caps in editor and snapshot contexts', async () => {
+    await TestBed.configureTestingModule({
+      imports: [WordArtWidthContractHarness],
+    }).compileComponents()
+    const fixture = TestBed.createComponent(WordArtWidthContractHarness)
+    document.body.appendChild(fixture.nativeElement)
+    fixture.detectChanges()
+
+    const host = fixture.nativeElement as HTMLElement
+    const surfaceOf = (probe: string) =>
+      host.querySelector<HTMLElement>(`[${probe}] .word-art-block__surface`)!
+        .getBoundingClientRect().width
+
+    try {
+      // 内容列 = 500 - 40 - 20 = 440。
+      expect(host.querySelector<HTMLElement>('[data-plane]')!.clientWidth).toBe(440)
+      // 编辑器：流内收敛到内容列，浮动比编辑器还宽也不截。
+      expect(surfaceOf('data-live-flow')).toBe(440)
+      expect(surfaceOf('data-live-float')).toBe(800)
+      // 快照查看器：同一契约由 word-art scss 的 viewer 作用域实施。
+      expect(surfaceOf('data-viewer-flow')).toBe(440)
+      expect(surfaceOf('data-viewer-float')).toBe(800)
+    } finally {
+      fixture.nativeElement.remove()
+      fixture.destroy()
+      TestBed.resetTestingModule()
+    }
   })
 
   it('exposes immutable classic presets without sharing style arrays', () => {

@@ -44,6 +44,7 @@ const rotationTransform = (rotation: number): string =>
       #textBoxSurface
       class="text-box-block__surface"
       data-bc-print-visual-surface
+      data-bc-object-surface
       contenteditable="false"
       [attr.data-bc-resize-preview-anchor]="
         isAbsolute ? null : 'layout'
@@ -123,6 +124,7 @@ const rotationTransform = (rotation: number): string =>
           data-bc-print-exclude="true"
           [target]="textBoxSurface"
           [maxWidthContainer]="placementContainer"
+          [maxWidthResolver]="objectMaxWidthResolver"
           [rotation]="textBoxProps.rotation"
           [borderDraggable]="true"
           rotationLabel="旋转文本框"
@@ -258,16 +260,6 @@ export class TextBoxBlockComponent extends BaseBlockComponent<TextBoxBlockModel>
 
   get surfaceTransform(): string {
     return rotationTransform(this.textBoxProps.rotation)
-  }
-
-  get placementContainer(): HTMLElement | undefined {
-    if (this.doc.placement?.isInObjectGroup?.(this.id)) {
-      const groupHost = this.hostElement.closest<HTMLElement>('[data-bc-object-group]')
-      return this.doc.objectSizing.rootContentElement ?? groupHost?.parentElement ?? undefined
-    }
-    return this.hostElement.closest<HTMLElement>('[data-bc-placement-container]') ??
-      this.hostElement.parentElement ??
-      undefined
   }
 
   get isAbsolute(): boolean {

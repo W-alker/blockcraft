@@ -186,6 +186,16 @@
     margin: 0;
   }
 
+  // 对象宽度契约：浮动（absolute）时宽度完全归用户，不设上限；落回文档流
+  // （上下型）时渲染宽度收敛到内容列（编辑器 - 内边距），存储的宽度 props
+  // 原样保留，再次浮动即恢复。宿主标记由 BaseBlockComponent 按 Schema 的
+  // placement 能力自动打上，承载行内宽度的表面元素由各块模板标
+  // data-bc-object-surface——块自身不要再写第二套 max-width。
+  [data-bc-object]:not([data-bc-placement='absolute']),
+  [data-bc-object]:not([data-bc-placement='absolute']) [data-bc-object-surface] {
+    max-width: 100%;
+  }
+
   // A native text drag that starts in flow content must keep hit-testing the
   // flow beneath overlaid objects. Object-originated gestures never set this
   // transient root attribute, so selection/edit/drag inside the object keeps

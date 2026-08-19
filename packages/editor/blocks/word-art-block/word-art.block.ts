@@ -38,6 +38,7 @@ const rotationTransform = (rotation: number): string =>
       #surface
       class="word-art-block__surface"
       data-bc-print-visual-surface
+      data-bc-object-surface
       data-bc-fake-range-overlay-host
       data-bc-scale-font-on-corner
       [attr.data-bc-resize-preview-anchor]="
@@ -74,6 +75,7 @@ const rotationTransform = (rotation: number): string =>
         <shape-resizer
           [target]="surface"
           [maxWidthContainer]="placementContainer"
+          [maxWidthResolver]="objectMaxWidthResolver"
           [rotation]="wordArtProps.rotation"
           [borderDraggable]="true"
           [resizeCalculator]="resizeCalculator"
@@ -131,18 +133,6 @@ export class WordArtBlockComponent extends EditableBlockComponent<WordArtBlockMo
       this._surface?.nativeElement ??
       this.hostElement.querySelector<HTMLElement>('.word-art-block__surface') ??
       this.hostElement
-    )
-  }
-
-  get placementContainer(): HTMLElement | undefined {
-    if (this.doc.placement?.isInObjectGroup?.(this.id)) {
-      const groupHost = this.hostElement.closest<HTMLElement>('[data-bc-object-group]')
-      return this.doc.objectSizing.rootContentElement ?? groupHost?.parentElement ?? undefined
-    }
-    return (
-      this.hostElement.closest<HTMLElement>('[data-bc-placement-container]') ??
-      this.hostElement.parentElement ??
-      undefined
     )
   }
 

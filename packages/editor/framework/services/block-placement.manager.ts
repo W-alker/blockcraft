@@ -33,6 +33,7 @@ export {
   measureBlockPlacement,
   measureObjectPlacement,
   resolvePlacementBox,
+  resolvePlacementPlaneBounds,
 } from './block-placement/geometry'
 export {
   resolveBlockPosition,

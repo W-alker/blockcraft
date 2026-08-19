@@ -15,6 +15,7 @@ import {
   rotateShapeVector,
 } from './index'
 import {TestBed} from '@angular/core/testing'
+import * as Y from 'yjs'
 import type {IBlockSnapshot} from '../../framework'
 
 describe('Shape block domain', () => {
@@ -549,6 +550,221 @@ describe('Shape block domain', () => {
       offsetY: 0,
       handle: 'south-east',
     }])
+  })
+
+  it('caps a resize with the resolver-provided limit, not the host container', () => {
+    const zone = {
+      runOutsideAngular: (fn: () => void) => fn(),
+      run: (fn: () => void) => fn(),
+    } as any
+    const resizer = new ShapeResizerComponent(zone)
+    const target = document.createElement('div')
+    target.style.width = '180px'
+    target.style.height = '100px'
+    spyOn(target, 'getBoundingClientRect').and.returnValue({
+      left: 0,
+      top: 0,
+      width: 360,
+      height: 200,
+    } as DOMRect)
+    // The container only supplies the visual-scale reference; the width cap
+    // comes from the resolver evaluated at gesture start.
+    const container = document.createElement('div')
+    Object.defineProperty(container, 'clientWidth', {value: 500})
+    spyOn(container, 'getBoundingClientRect').and.returnValue({
+      left: 0,
+      top: 0,
+      width: 1000,
+      height: 1200,
+    } as DOMRect)
+    resizer.target = target
+    resizer.maxWidthContainer = container
+    resizer.maxWidthResolver = () => 700
+
+    const commits: any[] = []
+    resizer.resizeCommit.subscribe((event) => commits.push(event))
+    const handle = document.createElement('button')
+    spyOn(handle, 'setPointerCapture')
+    const down = new PointerEvent('pointerdown', {
+      button: 0,
+      pointerId: 31,
+      clientX: 100,
+      clientY: 100,
+    })
+    Object.defineProperty(down, 'currentTarget', {value: handle})
+    resizer.onPointerDown(down, 'south-east')
+
+    ;(resizer as any)._onPointerUp(new PointerEvent('pointerup', {
+      pointerId: 31,
+      clientX: 3000,
+      clientY: 100,
+    }))
+
+    expect(commits.length).toBe(1)
+    expect(commits[0].width).toBe(700)
+  })
+
+  it('leaves the resize uncapped when the resolver reports no limit', () => {
+    const zone = {
+      runOutsideAngular: (fn: () => void) => fn(),
+      run: (fn: () => void) => fn(),
+    } as any
+    const resizer = new ShapeResizerComponent(zone)
+    const target = document.createElement('div')
+    target.style.width = '180px'
+    target.style.height = '100px'
+    spyOn(target, 'getBoundingClientRect').and.returnValue({
+      left: 0,
+      top: 0,
+      width: 360,
+      height: 200,
+    } as DOMRect)
+    const container = document.createElement('div')
+    Object.defineProperty(container, 'clientWidth', {value: 500})
+    spyOn(container, 'getBoundingClientRect').and.returnValue({
+      left: 0,
+      top: 0,
+      width: 1000,
+      height: 1200,
+    } as DOMRect)
+    resizer.target = target
+    resizer.maxWidthContainer = container
+    // 浮动对象：resolver 显式返回 null，宽度完全归用户。
+    resizer.maxWidthResolver = () => null
+
+    const commits: any[] = []
+    resizer.resizeCommit.subscribe((event) => commits.push(event))
+    const handle = document.createElement('button')
+    spyOn(handle, 'setPointerCapture')
+    const down = new PointerEvent('pointerdown', {
+      button: 0,
+      pointerId: 33,
+      clientX: 100,
+      clientY: 100,
+    })
+    Object.defineProperty(down, 'currentTarget', {value: handle})
+    resizer.onPointerDown(down, 'south-east')
+
+    ;(resizer as any)._onPointerUp(new PointerEvent('pointerup', {
+      pointerId: 33,
+      clientX: 3000,
+      clientY: 100,
+    }))
+
+    expect(commits.length).toBe(1)
+    // 180 + (3000 - 100) / 2x visual scale = 1630 — far beyond both widths.
+    expect(commits[0].width).toBe(1630)
+  })
+
+  it('falls back to the container width when no plane resolver is bound', () => {
+    const zone = {
+      runOutsideAngular: (fn: () => void) => fn(),
+      run: (fn: () => void) => fn(),
+    } as any
+    const resizer = new ShapeResizerComponent(zone)
+    const target = document.createElement('div')
+    target.style.width = '180px'
+    target.style.height = '100px'
+    spyOn(target, 'getBoundingClientRect').and.returnValue({
+      left: 0,
+      top: 0,
+      width: 360,
+      height: 200,
+    } as DOMRect)
+    const container = document.createElement('div')
+    Object.defineProperty(container, 'clientWidth', {value: 500})
+    spyOn(container, 'getBoundingClientRect').and.returnValue({
+      left: 0,
+      top: 0,
+      width: 1000,
+      height: 1200,
+    } as DOMRect)
+    resizer.target = target
+    resizer.maxWidthContainer = container
+
+    const commits: any[] = []
+    resizer.resizeCommit.subscribe((event) => commits.push(event))
+    const handle = document.createElement('button')
+    spyOn(handle, 'setPointerCapture')
+    const down = new PointerEvent('pointerdown', {
+      button: 0,
+      pointerId: 32,
+      clientX: 100,
+      clientY: 100,
+    })
+    Object.defineProperty(down, 'currentTarget', {value: handle})
+    resizer.onPointerDown(down, 'south-east')
+
+    ;(resizer as any)._onPointerUp(new PointerEvent('pointerup', {
+      pointerId: 32,
+      clientX: 3000,
+      clientY: 100,
+    }))
+
+    expect(commits.length).toBe(1)
+    expect(commits[0].width).toBe(500)
+  })
+
+  it('marks the object host and sizing surface for the shared width contract', async () => {
+    await TestBed.configureTestingModule({
+      imports: [ShapeBlockComponent],
+    }).compileComponents()
+
+    const snapshot = ShapeBlockSchema.createSnapshot()
+    snapshot.props.width = 500
+    snapshot.props.height = 80
+    const yDoc = new Y.Doc()
+    const yBlock = new Y.Map<unknown>()
+    yDoc.getMap('blocks').set(snapshot.id, yBlock)
+    const yProps = new Y.Map<unknown>()
+    for (const [key, value] of Object.entries(snapshot.props)) {
+      yProps.set(key, value)
+    }
+    yBlock.set('props', yProps)
+    yBlock.set('meta', new Y.Map<unknown>())
+    yBlock.set('children', new Y.Array<string>())
+    const doc = {
+      isReadonly: false,
+      config: {embeds: []},
+      schemas: {get: () => ShapeBlockSchema},
+      placement: {
+        allowsGapCursor: () => false,
+        isInAbsoluteLayout: () => true,
+        isInObjectGroup: () => false,
+        registerBlockView: () => null,
+        getState: () => ({mode: 'absolute', x: -40, y: 0, layer: 'over'}),
+      },
+      readonlyManager: {
+        isReadonly: () => false,
+        resolve: () => ({readonly: false, source: null}),
+      },
+    } as unknown as BlockCraft.Doc
+
+    const fixture = TestBed.createComponent(ShapeBlockComponent)
+    fixture.componentRef.setInput('model', snapshot)
+    fixture.componentRef.setInput('yBlock', yBlock)
+    fixture.componentRef.setInput('doc', doc)
+    document.body.appendChild(fixture.nativeElement)
+
+    try {
+      fixture.detectChanges()
+      const host = fixture.nativeElement as HTMLElement
+
+      // 宽度契约的两个标记：宿主由 BaseBlockComponent 按 Schema 能力打，
+      // 表面由块模板打；base.scss 按它们实施「流内收敛、浮动不限宽」。
+      expect(host.getAttribute('data-bc-object')).toBe('')
+      expect(host.getAttribute('data-bc-placement')).toBe('absolute')
+      expect(
+        host.querySelector<HTMLElement>('.shape-block__shell')!
+          .hasAttribute('data-bc-object-surface'),
+      ).toBeTrue()
+      // 浮动状态下拉伸不设上限。
+      expect(fixture.componentInstance.objectMaxWidthResolver()).toBeNull()
+    } finally {
+      fixture.nativeElement.remove()
+      fixture.destroy()
+      TestBed.resetTestingModule()
+    }
   })
 
   it('commits the final drag rotation once and restores preview ownership', () => {

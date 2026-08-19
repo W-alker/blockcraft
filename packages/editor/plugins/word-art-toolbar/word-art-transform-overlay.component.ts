@@ -32,6 +32,7 @@ import {
           [target]="wordArtBlock.surfaceElement"
           [previewMirror]="previewMirror"
           [maxWidthContainer]="wordArtBlock.placementContainer"
+          [maxWidthResolver]="wordArtBlock.objectMaxWidthResolver"
           [rotation]="wordArtBlock.wordArtProps.rotation"
           [resizeCalculator]="resizeCalculator"
           rotationLabel="旋转艺术字"

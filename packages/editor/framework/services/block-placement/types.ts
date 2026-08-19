@@ -131,6 +131,28 @@ export interface PlacementBox {
   width: number
   /** 实测 visual px / layout px，比配置值更能覆盖 WebKit 的 CSS zoom 差异。 */
   visualScale: number
+  /**
+   * 内容原点到容器 padding box 各边的距离（layout px）。
+   *
+   * placement x/y 的原点是内容盒左上角，但对象允许压在编辑器内边距上，因此
+   * 「可放置区」比内容盒大一圈。这三个值把这一圈换算回同一套内容原点坐标，
+   * 不变量：`contentInsetLeft + width + contentInsetRight === clientWidth`。
+   */
+  contentInsetLeft: number
+  contentInsetRight: number
+  contentInsetTop: number
+}
+
+/**
+ * 可放置区边界，用 placement 内容原点坐标表达（左/上为负即压在内边距上）。
+ *
+ * 纵向只给下界：向下的可用高度由具体调用方按自己的视图（根高度、页面高度）
+ * 决定，几何层不假设文档有多长。
+ */
+export interface PlacementPlaneBounds {
+  minX: number
+  maxX: number
+  minY: number
 }
 
 /**

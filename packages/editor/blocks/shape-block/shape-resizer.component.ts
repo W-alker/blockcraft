@@ -292,6 +292,12 @@ export class ShapeResizerComponent implements OnDestroy {
   @Input({required: true}) target!: HTMLElement
   @Input() previewMirror?: HTMLElement
   @Input() maxWidthContainer?: HTMLElement
+  /**
+   * 拉伸宽度上限求值器（layout px）。手势开始时求值一次：它要读布局，既不能
+   * 进变更检测路径，也不该在每次 pointermove 里重算。返回 null 表示不设上限
+   * （浮动对象的宽度完全归用户）；未绑定求值器时退回容器 clientWidth。
+   */
+  @Input() maxWidthResolver?: () => number | null
   @Input() rotation = 0
   @Input() rotationLabel = '旋转形状'
   @Input() borderDraggable = false
@@ -327,6 +333,7 @@ export class ShapeResizerComponent implements OnDestroy {
   private _startCenter: ShapeVector | null = null
   private _startPointerAngle = 0
   private _gestureVisualScale = 1
+  private _gestureMaxWidth = Number.POSITIVE_INFINITY
   private _startBox: ShapeResizeBox | null = null
   private _previewBox: ShapeResizeBox | null = null
   private _previewRotation: number | null = null
@@ -373,6 +380,14 @@ export class ShapeResizerComponent implements OnDestroy {
     const measuredScale = scaleContainer && scaleContainer.clientWidth > 0
       ? scaleContainer.getBoundingClientRect().width / scaleContainer.clientWidth
       : 1
+    const resolvedMaxWidth = this.maxWidthResolver?.()
+    this._gestureMaxWidth = resolvedMaxWidth === null
+      ? Number.POSITIVE_INFINITY
+      : typeof resolvedMaxWidth === 'number' &&
+          Number.isFinite(resolvedMaxWidth) &&
+          resolvedMaxWidth > 0
+        ? resolvedMaxWidth
+        : scaleContainer?.clientWidth ?? Number.POSITIVE_INFINITY
     this._gestureVisualScale = Number.isFinite(measuredScale) && measuredScale > 0
       ? measuredScale
       : 1
@@ -522,6 +537,7 @@ export class ShapeResizerComponent implements OnDestroy {
     this._startInlineStyle = null
     this._startMirrorInlineStyle = null
     this._gestureVisualScale = 1
+    this._gestureMaxWidth = Number.POSITIVE_INFINITY
   }
 
   private _applyPointerPreview(event: PointerEvent): void {
@@ -589,8 +605,7 @@ export class ShapeResizerComponent implements OnDestroy {
 
   private _calculateResizePreview(event: PointerEvent): ShapeResizeBox | null {
     if (!this._startBox || this._activeGesture?.kind !== 'resize') return null
-    const maxWidth =
-      this.maxWidthContainer?.clientWidth ?? Number.POSITIVE_INFINITY
+    const maxWidth = this._gestureMaxWidth
     const localDelta = rotateShapeVector(
       {
         x: (event.clientX - this._startClientX) / this._gestureVisualScale,

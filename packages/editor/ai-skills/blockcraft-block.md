@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-08-18
+> Last updated: 2026-08-19
 
 ## Block Types
 
@@ -691,7 +691,30 @@ doc.placement.setObjectLayout(block, "top-bottom"); // returns to relative flow
 
 `insertAbsoluteSnapshot()` is the direct-creation path for new positionable
 objects. It normalizes the snapshot position and returns the inserted block
-ID. If the root layout already exists, it appends the object there. If no
+ID. The normalized landing point is bounded by the **padding box** of
+the placement container, not by its content box: `position.x/y` still measure
+from the content origin, but an object may sit on the editor padding (page
+margins under pagination), so the plane's own lower bounds are negative.
+`resolvePlacementPlaneBounds(box)` turns any `PlacementBox` into that
+`{minX, maxX, minY}` triple — `minX = -contentInsetLeft`,
+`maxX = width + contentInsetRight`, `minY = -contentInsetTop` — so
+`maxX - minX === container.clientWidth`. Pointer-driven object drawing uses the
+same bounds, so drawing and insertion agree on where the editor ends.
+
+**Object width contract** (shared, capability-driven): while an object floats
+(`absolute` placement) its width belongs entirely to the user — resizing has no
+cap and rendering never clamps it. Back in the flow (top-bottom), the rendered
+width collapses to the content column (editor minus padding) while the stored
+`width` prop is preserved. The contract is enforced by `themes/base.scss` on an
+attribute pair: `BaseBlockComponent` stamps `data-bc-object` on every block
+whose Schema declares the `absolute` placement mode, and the block template
+marks the element carrying the inline `width` with `data-bc-object-surface`.
+Do not add your own `max-width` to these elements, and do not gate any of this
+on flavour. For resizers, bind `BaseBlockComponent.objectMaxWidthResolver` into
+`ShapeResizerComponent.maxWidthResolver` — it returns `null` (uncapped) while
+floating and the content-column width in flow, evaluated once per gesture.
+
+If the root layout already exists, it appends the object there. If no
 layout exists yet, it inserts one nested snapshot whose initial child is the
 object; it does not create the parent and then try to look it up during the
 same Yjs transaction. The object therefore never appears as a temporary

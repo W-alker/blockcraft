@@ -144,6 +144,47 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     return this.resolvedPlacement.mode === 'absolute' ? '0' : null
   }
 
+  /**
+   * Schema 声明了 absolute 放置能力的块是「对象」。base.scss 以此实施对象
+   * 宽度契约：浮动时宽度不设上限，落回文档流时渲染宽度收敛到内容列。
+   */
+  @HostBinding('attr.data-bc-object')
+  get objectAttribute(): '' | null {
+    const capability = this.doc?.schemas?.get(this.flavour, false)?.metadata.placement
+    return capability?.modes.includes('absolute') ? '' : null
+  }
+
+  /**
+   * 对象所在的放置容器。组内成员以文档内容列为参照，根级对象取最近的
+   * placement 容器；resizer 用它量视觉缩放，流内拉伸也以它的宽度封顶。
+   */
+  get placementContainer(): HTMLElement | undefined {
+    if (this.doc.placement?.isInObjectGroup?.(this.id)) {
+      const groupHost = this.hostElement.closest<HTMLElement>('[data-bc-object-group]')
+      return this.doc.objectSizing.rootContentElement ?? groupHost?.parentElement ?? undefined
+    }
+    return this.hostElement.closest<HTMLElement>('[data-bc-placement-container]') ??
+      this.hostElement.parentElement ??
+      undefined
+  }
+
+  private _objectMaxWidthResolver?: () => number | null
+
+  /**
+   * 传给 resizer 的拉伸宽度上限求值器：浮动（absolute）时宽度完全归用户，
+   * 返回 null 表示不设上限；流内收敛到内容列宽（编辑器 - 内边距）。
+   *
+   * 用求值器而不是绑定一个数字：它要读布局，只能在手势开始那一刻算。引用惰性
+   * 创建后保持稳定，OnPush 下不会每轮变更检测都换一个新输入。
+   */
+  get objectMaxWidthResolver(): () => number | null {
+    return this._objectMaxWidthResolver ??= () => {
+      if (this.resolvedPlacement.mode === 'absolute') return null
+      const width = this.placementContainer?.clientWidth
+      return typeof width === 'number' && width > 0 ? width : null
+    }
+  }
+
   private get resolvedPlacement(): ResolvedBlockPosition {
     const capability = this.doc?.schemas?.get(this.flavour, false)?.metadata.placement
     if (!capability?.modes.includes('absolute')) {

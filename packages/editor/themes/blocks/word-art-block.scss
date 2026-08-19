@@ -2,7 +2,6 @@
 .bc-snapshot-viewer .word-art-block {
   display: block;
   width: fit-content;
-  max-width: 100%;
   margin-inline: auto;
   background: transparent;
 
@@ -18,7 +17,6 @@
     position: relative;
     display: flex;
     box-sizing: border-box;
-    max-width: 100%;
     transform-origin: center center;
     touch-action: none;
   }
@@ -59,6 +57,17 @@
     background: transparent;
     -webkit-text-stroke: inherit;
     text-shadow: inherit;
+  }
+}
+
+// 对象宽度契约在编辑器内由 base.scss 按 data-bc-object 统一实施；静态快照
+// 渲染没有那个宿主标记，这里按同一规则补齐：流内收敛到内容列，浮动
+// （absolute）不设上限。
+.bc-snapshot-viewer .word-art-block:not([data-bc-placement='absolute']) {
+  max-width: 100%;
+
+  .word-art-block__surface {
+    max-width: 100%;
   }
 }
 

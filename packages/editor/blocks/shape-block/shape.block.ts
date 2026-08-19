@@ -54,6 +54,7 @@ const shapeRotationTransform = (rotation: unknown): string => {
       #shapeShell
       class="shape-block__shell"
       data-bc-print-visual-surface
+      data-bc-object-surface
       contenteditable="false"
       [style.width.px]="shapeProps.width"
       [style.height.px]="shapeProps.height"
@@ -96,6 +97,7 @@ const shapeRotationTransform = (rotation: unknown): string => {
         <shape-resizer
           [target]="shapeShell"
           [maxWidthContainer]="placementContainer"
+          [maxWidthResolver]="objectMaxWidthResolver"
           [rotation]="shapeProps.rotation"
           (resizeCommit)="onResizeCommit($event)"
           (rotateCommit)="onRotateCommit($event)">
@@ -120,10 +122,11 @@ const shapeRotationTransform = (rotation: unknown): string => {
     </div>
   `,
   styles: [`
+    /* 宽度契约（流内收敛到内容列、浮动不设上限）由 base.scss 按
+       data-bc-object / data-bc-object-surface 统一实施，这里不再写 max-width。 */
     :host {
       display: block;
       width: fit-content;
-      max-width: 100%;
       background: transparent !important;
     }
 
@@ -141,7 +144,6 @@ const shapeRotationTransform = (rotation: unknown): string => {
 
     .shape-block__shell {
       position: relative;
-      max-width: 100%;
       box-sizing: border-box;
       transform-origin: center center;
       touch-action: none;
@@ -241,16 +243,6 @@ export class ShapeBlockComponent extends BaseBlockComponent<ShapeBlockModel> {
 
   get rotationTransform(): string {
     return shapeRotationTransform(this.shapeProps.rotation)
-  }
-
-  get placementContainer(): HTMLElement | undefined {
-    if (this.doc.placement?.isInObjectGroup?.(this.id)) {
-      const groupHost = this.hostElement.closest<HTMLElement>('[data-bc-object-group]')
-      return this.doc.objectSizing.rootContentElement ?? groupHost?.parentElement ?? undefined
-    }
-    return this.hostElement.closest<HTMLElement>('[data-bc-placement-container]') ??
-      this.hostElement.parentElement ??
-      undefined
   }
 
   onEditText(event: MouseEvent): void {

@@ -1,5 +1,6 @@
 import {BehaviorSubject, Subject} from 'rxjs'
-import {fakeAsync, flushMicrotasks} from '@angular/core/testing'
+import {Component} from '@angular/core'
+import {TestBed, fakeAsync, flushMicrotasks} from '@angular/core/testing'
 import {ORIGIN_NO_RECORD} from '../doc/origins'
 import {
   BLOCK_OBJECT_LAYOUT_OPTIONS,
@@ -9,8 +10,51 @@ import {
   resolveBlockPosition,
   resolvePlacementLayer,
 } from './block-placement.manager'
-import {resolvePlacementContainerBox} from './block-placement/geometry'
+import {
+  resolvePlacementContainerBox,
+  resolvePlacementPlaneBounds,
+} from './block-placement/geometry'
 import {BaseBlockComponent} from '../block-std/block/component/base-block'
+
+/**
+ * 对象宽度契约（base.scss）：`data-bc-object` 宿主流内收敛到内容列，浮动
+ * （absolute）不设上限。标记与真实渲染一致：宿主标记来自 BaseBlockComponent
+ * 的 HostBinding，表面标记来自各块模板的 `data-bc-object-surface`。
+ */
+@Component({
+  selector: 'object-width-contract-harness',
+  standalone: true,
+  template: `
+    <div
+      data-blockcraft-root="true"
+      style="position: relative; box-sizing: border-box; width: 500px;
+        padding: 0 20px 0 40px"
+    >
+      <div style="position: relative; width: 100%">
+        <div
+          data-block-id="flow"
+          data-bc-object=""
+          data-flow=""
+          style="width: fit-content"
+        >
+          <div data-bc-object-surface="" style="width: 800px; height: 40px"></div>
+        </div>
+        <div
+          data-block-id="float"
+          data-bc-object=""
+          data-bc-placement="absolute"
+          data-float=""
+          style="position: absolute; left: -40px; top: 0; width: fit-content;
+            margin: 0"
+        >
+          <div data-bc-object-surface="" style="width: 800px; height: 40px"></div>
+        </div>
+      </div>
+    </div>
+  `,
+  styleUrl: '../../themes/base.scss',
+})
+class ObjectWidthContractHarness {}
 
 function setRect(el: HTMLElement, rect: Partial<DOMRect>): void {
   el.getBoundingClientRect = () => ({
@@ -661,8 +705,63 @@ describe('BlockPlacementManager', () => {
     root.remove()
   })
 
-  it('inserts a new object directly into the root placement layout', () => {
+  it('frees a floating object of width caps while flow collapses to the column', async () => {
+    await TestBed.configureTestingModule({
+      imports: [ObjectWidthContractHarness],
+    }).compileComponents()
+    const fixture = TestBed.createComponent(ObjectWidthContractHarness)
+    document.body.appendChild(fixture.nativeElement)
+    fixture.detectChanges()
+
+    const host = fixture.nativeElement as HTMLElement
+    const flowSurface = host.querySelector<HTMLElement>(
+      '[data-flow] [data-bc-object-surface]',
+    )!
+    const floatHost = host.querySelector<HTMLElement>('[data-float]')!
+    const floatSurface = host.querySelector<HTMLElement>(
+      '[data-float] [data-bc-object-surface]',
+    )!
+
+    try {
+      // 流内：宿主与表面都收敛到内容列（500 - 40 - 20 = 440）。
+      expect(flowSurface.getBoundingClientRect().width).toBe(440)
+      // 浮动：宽度完全归用户，可以比编辑器本身还宽。
+      expect(floatHost.getBoundingClientRect().width).toBe(800)
+      expect(floatSurface.getBoundingClientRect().width).toBe(800)
+    } finally {
+      fixture.nativeElement.remove()
+      fixture.destroy()
+      TestBed.resetTestingModule()
+    }
+  })
+
+  it('exposes the padding box as the placeable plane', () => {
+    const root = document.createElement('div')
+    root.style.padding = '10px 20px 30px 40px'
+    root.style.setProperty('--bc-placement-content-origin-y', '120px')
+    document.body.appendChild(root)
+    setRect(root, {left: 100, top: 50, width: 500})
+    Object.defineProperty(root, 'clientWidth', {configurable: true, value: 500})
+    Object.defineProperty(root, 'clientLeft', {configurable: true, value: 0})
+    Object.defineProperty(root, 'clientTop', {configurable: true, value: 0})
+
+    const box = resolvePlacementContainerBox(root)
+    const bounds = resolvePlacementPlaneBounds(box)
+
+    // Objects may sit on the editor padding, so the plane is one padding ring
+    // wider than the content box on both axes.
+    expect(bounds).toEqual({minX: -40, maxX: 460, minY: -130})
+    expect(bounds.maxX - bounds.minX).toBe(root.clientWidth)
+
+    root.remove()
+  })
+
+  const makeInsertionHarness = (options: {
+    selectionRect: DOMRect
+    padding?: string
+  }) => {
     const rootHost = document.createElement('div')
+    if (options.padding) rootHost.style.padding = options.padding
     document.body.appendChild(rootHost)
     // The host is visually scaled to 2x while its layout width stays 500px.
     // Selection DOMRects are visual pixels and must be normalised before the
@@ -756,12 +855,38 @@ describe('BlockPlacementManager', () => {
         fn({hostElement: rootHost}),
       selection: {
         getSelectionRect: jasmine.createSpy('getSelectionRect').and.returnValue(
-          new DOMRect(350, 210, 0, 48),
+          options.selectionRect,
         ),
       },
       logger: {warn: jasmine.createSpy('warn')},
     }
     const manager = new BlockPlacementManager(doc as any)
+    const insertedPosition = () =>
+      (doc.schemas.createSnapshot.calls.mostRecent()
+        .args[1] as any[])[0][0].props.position
+
+    return {
+      rootHost,
+      shape,
+      layout,
+      doc,
+      manager,
+      insertBlockSnapshots,
+      insertDepths,
+      insertedPosition,
+    }
+  }
+
+  it('inserts a new object directly into the root placement layout', () => {
+    const {
+      rootHost,
+      shape,
+      layout,
+      doc,
+      manager,
+      insertBlockSnapshots,
+      insertDepths,
+    } = makeInsertionHarness({selectionRect: new DOMRect(350, 210, 0, 48)})
 
     const insertedId = manager.insertAbsoluteSnapshot(shape)
 
@@ -790,6 +915,35 @@ describe('BlockPlacementManager', () => {
       }],
     ])
     expect(insertDepths.every(depth => depth > 0)).toBeTrue()
+
+    manager.destroy()
+    rootHost.remove()
+  })
+
+  it('keeps an insertion anchored inside the root padding', () => {
+    // Content origin sits at (180, 70) in visual px: 100 + 40 * 2 / 50 + 10 * 2.
+    // The anchor is up and left of it, i.e. on the editor padding itself.
+    const {rootHost, shape, manager, insertedPosition} = makeInsertionHarness({
+      padding: '10px 20px 30px 40px',
+      selectionRect: new DOMRect(120, 54, 0, 48),
+    })
+
+    expect(manager.insertAbsoluteSnapshot(shape)).toBe(shape.id)
+    expect(insertedPosition()).toEqual({x: -30, y: -8})
+
+    manager.destroy()
+    rootHost.remove()
+  })
+
+  it('stops an insertion at the editor edge instead of the content edge', () => {
+    const {rootHost, shape, manager, insertedPosition} = makeInsertionHarness({
+      padding: '10px 20px 30px 40px',
+      selectionRect: new DOMRect(-400, -400, 0, 48),
+    })
+
+    expect(manager.insertAbsoluteSnapshot(shape)).toBe(shape.id)
+    // -padding-left / -padding-top: the padding box is the outer boundary.
+    expect(insertedPosition()).toEqual({x: -40, y: -10})
 
     manager.destroy()
     rootHost.remove()

@@ -2,7 +2,7 @@ import type {
   BlockPlacementLayer,
   ResolvedBlockPosition,
 } from '../../block-std/types'
-import type {PlacementBox} from './types'
+import type {PlacementBox, PlacementPlaneBounds} from './types'
 
 export const resolvePlacementContainerBox = (
   container: HTMLElement,
@@ -37,6 +37,25 @@ export const resolvePlacementContainerBox = (
         - paddingRight,
     ),
     visualScale,
+    contentInsetLeft: paddingLeft,
+    contentInsetRight: paddingRight,
+    contentInsetTop: paddingTop + contentOriginY,
+  }
+}
+
+/**
+ * 可放置区 = 容器的 padding box。
+ *
+ * 物料可以压在编辑器内边距（分页下即页边距）上，但不越出编辑器本身，因此
+ * 边界取 padding box 而不是内容盒或视口。返回值与 placement x/y 同坐标系。
+ */
+export function resolvePlacementPlaneBounds(
+  box: PlacementBox,
+): PlacementPlaneBounds {
+  return {
+    minX: -box.contentInsetLeft,
+    maxX: box.width + box.contentInsetRight,
+    minY: -box.contentInsetTop,
   }
 }
 

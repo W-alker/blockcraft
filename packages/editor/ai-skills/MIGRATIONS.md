@@ -69,6 +69,126 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
+## Unreleased — 2026-08-19 — objects land on the editor padding; floating width is uncapped
+
+**Severity**: minor
+
+**What changed**: two related placement-domain changes.
+
+1. The placeable plane for root absolute objects is now the placement
+   container's **padding box** instead of its content box. Drawing an object
+   with the fixed toolbar's crosshair, and the landing point computed by
+   `insertAbsoluteSnapshot()`, both accept coordinates on the editor padding —
+   under pagination, the page margins. `PlacementBox` gained
+   `contentInsetLeft` / `contentInsetRight` / `contentInsetTop`, and
+   `resolvePlacementPlaneBounds()` derives the `{minX, maxX, minY}` plane
+   bounds from them.
+2. The object width contract is now a shared framework capability. While an
+   object **floats** (`absolute` placement) its width belongs entirely to the
+   user: resizing has **no cap** and rendering never clamps it, even beyond the
+   editor itself. When it returns to the flow (top-bottom), its **rendered**
+   width collapses to the content column (editor minus padding); the stored
+   `width` prop is preserved, so floating it again restores the full size.
+   This applies to every block whose Schema declares the `absolute` placement
+   mode — shape, text box, word art, object group — never to a hard-coded
+   flavour list.
+
+**Why**: object drawing and insertion clamped every coordinate to
+`[0, contentWidth]` while dragging never clamped, so the paths disagreed about
+where the editor ends. Resizing was capped by the DOM parent's `clientWidth`
+and shape/word-art carried their own `max-width: 100%`, so a floating object
+was silently truncated at the content column even though its props already
+stored a wider value. `position.x/y` keeps measuring from the content origin,
+which pagination and print projection depend on; only the bounds moved.
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `PlacementPlaneBounds` (`{minX, maxX, minY}`) exported from
+  `framework/services/block-placement/types`.
+- `resolvePlacementPlaneBounds(box: PlacementBox): PlacementPlaneBounds` exported
+  from `framework/services/block-placement/geometry` and re-exported from
+  `block-placement.manager`.
+- `PlacementBox.contentInsetLeft` / `.contentInsetRight` / `.contentInsetTop` —
+  distance from the content origin to each padding-box edge, in layout px.
+  Invariant: `contentInsetLeft + width + contentInsetRight === clientWidth`.
+- `data-bc-object` host attribute — stamped by `BaseBlockComponent` on every
+  block whose Schema `placement.modes` includes `'absolute'`.
+- `data-bc-object-surface` template attribute — marks the element carrying the
+  object's inline `width`. `themes/base.scss` enforces the width contract on
+  the host/surface pair (`max-width: 100%` in flow, unconstrained while
+  absolute); blocks must not declare a second `max-width` for these elements.
+- `BaseBlockComponent.placementContainer` — hoisted from the shape / text-box /
+  word-art components, which carried three identical copies. Subclasses inherit
+  it; the per-block getters are gone.
+- `BaseBlockComponent.objectMaxWidthResolver` — reference-stable
+  `() => number | null` for binding into resizers: `null` while floating
+  (no cap), the content-column width in flow.
+- `ShapeResizerComponent.maxWidthResolver` — optional `() => number | null`
+  evaluated once per gesture. **Returning `null` means "no cap"**; a positive
+  number is the cap in layout px. When the input is absent the resizer falls
+  back to `maxWidthContainer.clientWidth`, and `maxWidthContainer` otherwise
+  only supplies the visual-scale reference.
+
+### Migration Recipe
+
+Code that assumed the placeable plane starts at `0` should read the bounds
+instead of hard-coding the content box:
+
+```typescript
+// before
+const x = Math.min(box.width - objectWidth, Math.max(0, localX))
+
+// after
+const bounds = resolvePlacementPlaneBounds(box)
+const x = Math.min(bounds.maxX - objectWidth, Math.max(bounds.minX, localX))
+```
+
+Anyone constructing a `PlacementBox` literal (test doubles included) must supply
+the three new fields; `resolvePlacementContainerBox()` already fills them in.
+
+A custom object block that declared its own width caps should delete them and
+mark its sizing surface instead:
+
+```html
+<!-- before: component CSS carried max-width: 100% (+ absolute overrides) -->
+<!-- after: one attribute, base.scss owns the rest -->
+<div class="my-object__surface" data-bc-object-surface
+  [style.width.px]="props.width"></div>
+```
+
+### Behavior Changes
+
+- A drawn or inserted object may now carry a negative `position.x` / `position.y`
+  (down to `-paddingLeft` / `-paddingTop`) and may extend to
+  `contentWidth + paddingRight`. Consumers that assumed non-negative placement
+  coordinates need to handle the padding band.
+- The outer landing boundary is still the editor itself: a pointer outside the
+  padding box is clamped to that box rather than left unbounded.
+- Resizing a floating shape / text box / word art is **uncapped**; the committed
+  `width` may exceed the editor width. Flow resizing stays capped at the
+  content column.
+- A wide object falling back to the flow renders at the content-column width
+  without mutating its stored `width` prop.
+- `text-box` now participates in the flow cap too (it previously declared no
+  `max-width` at all and could overflow the content column while in flow).
+- The snapshot viewer applies the same contract to word art through
+  `.bc-snapshot-viewer`-scoped rules (its static DOM has no `data-bc-object`).
+- `ShapeResizerComponent` reads its width cap once at gesture start rather
+  than on every `pointermove`, removing a per-frame layout read.
+- Object dragging is unchanged — it was never clamped.
+- Ratio-sized objects (`image`, `video`) are unaffected: `wr` stays clamped to
+  `1..100` percent of the root content width.
+- Relative to the previous unreleased draft only (never released):
+  `doc.placement.getObjectPlaneWidth()` and
+  `BaseBlockComponent.objectPlaneWidthResolver` are gone, and the placeable
+  plane no longer caps resizing.
+- No package version was modified.
+
 ## Unreleased — 2026-08-18 — add editable Shape endpoints and safe custom paths
 
 **Severity**: minor

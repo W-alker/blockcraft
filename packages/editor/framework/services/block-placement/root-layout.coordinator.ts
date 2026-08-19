@@ -5,7 +5,10 @@ import type {
   ResolvedBlockPosition,
 } from '../../block-std/types'
 import {ORIGIN_NO_RECORD} from '../../doc/origins'
-import {resolvePlacementContainerBox} from './geometry'
+import {
+  resolvePlacementContainerBox,
+  resolvePlacementPlaneBounds,
+} from './geometry'
 import {BlockPlacementRuntime} from './runtime'
 import {finitePlacementNumber} from './state'
 import {
@@ -173,6 +176,7 @@ export class RootPlacementLayoutCoordinator {
       this.doc.root.childrenRenderRef?.containerElement ??
       this.doc.root.hostElement
     const box = resolvePlacementContainerBox(rootContent)
+    const bounds = resolvePlacementPlaneBounds(box)
     const hasAnchor =
       !!anchorRect &&
       Number.isFinite(anchorRect.left) &&
@@ -184,15 +188,17 @@ export class RootPlacementLayoutCoordinator {
     const localX = hasAnchor
       ? (anchorRect!.left - box.originX) / box.visualScale
       : 0
+    // 落点只受「编辑器本身」约束：可放置区是容器的 padding box，对象允许压在
+    // 内边距（分页下即页边距）上，因此下界为负而不是内容盒的 0。
     const objectWidth = finitePlacementNumber(snapshot.props?.['width'])
     const maxX = objectWidth > 0
-      ? Math.max(0, box.width - objectWidth)
-      : box.width
+      ? Math.max(bounds.minX, bounds.maxX - objectWidth)
+      : bounds.maxX
     return {
       mode: 'absolute',
-      x: Math.round(Math.min(maxX, Math.max(0, localX))),
+      x: Math.round(Math.min(maxX, Math.max(bounds.minX, localX))),
       y: Math.round(Math.max(
-        0,
+        bounds.minY,
         hasAnchor ? (anchorRect!.top - box.originY) / box.visualScale : 0,
       )),
       layer,

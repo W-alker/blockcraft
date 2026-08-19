@@ -4,9 +4,10 @@ import {
 } from "./object-draw-insert.controller";
 
 describe("ObjectDrawInsertController", () => {
-  const makeHarness = () => {
+  const makeHarness = (options: { padding?: string } = {}) => {
     const root = document.createElement("div");
     const surface = document.createElement("div");
+    if (options.padding) surface.style.padding = options.padding;
     root.appendChild(surface);
     document.body.appendChild(root);
 
@@ -186,6 +187,83 @@ describe("ObjectDrawInsertController", () => {
 
     controller.destroy();
     overlay.remove();
+    root.remove();
+  });
+
+  it("draws onto the editor padding instead of snapping into the content box", () => {
+    // Padding 40/24 over a 2x visual scale puts the content origin at
+    // (148, 130); the click below lands on the padding, left of and above it.
+    const { root, commit, controller, arm, layer } = makeHarness({
+      padding: "40px 24px",
+    });
+    expect(arm()).toBeTrue();
+
+    layer().dispatchEvent(
+      new PointerEvent("pointerdown", {
+        pointerId: 5,
+        button: 0,
+        isPrimary: true,
+        clientX: 110,
+        clientY: 60,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    layer().dispatchEvent(
+      new PointerEvent("pointerup", {
+        pointerId: 5,
+        button: 0,
+        clientX: 110,
+        clientY: 60,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+
+    const geometry = commit.calls.mostRecent()
+      .args[0] as ObjectDrawInsertGeometry;
+    expect(geometry.anchorRect.left).toBe(110);
+    expect(geometry.anchorRect.top).toBe(60);
+
+    controller.destroy();
+    root.remove();
+  });
+
+  it("still stops at the editor edge, not at the content edge", () => {
+    const { root, commit, controller, arm, layer } = makeHarness({
+      padding: "40px 24px",
+    });
+    expect(arm()).toBeTrue();
+
+    layer().dispatchEvent(
+      new PointerEvent("pointerdown", {
+        pointerId: 6,
+        button: 0,
+        isPrimary: true,
+        clientX: -400,
+        clientY: -400,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    layer().dispatchEvent(
+      new PointerEvent("pointerup", {
+        pointerId: 6,
+        button: 0,
+        clientX: -400,
+        clientY: -400,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+
+    const geometry = commit.calls.mostRecent()
+      .args[0] as ObjectDrawInsertGeometry;
+    // The root's own padding-box corner: the object never leaves the editor.
+    expect(geometry.anchorRect.left).toBe(100);
+    expect(geometry.anchorRect.top).toBe(50);
+
+    controller.destroy();
     root.remove();
   });
 
