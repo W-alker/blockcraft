@@ -27,7 +27,6 @@ export * from './text-box-toolbar.component'
 
 const TOOLBAR_GAP = 10
 const TEXT_BOX_FLAVOUR = 'text-box'
-const TEXT_BOX_EDITING_CLASS = 'text-box-block--editing'
 const SURFACE_PROP_KEYS = new Set([
   'backColor',
   'borderColor',
@@ -148,7 +147,6 @@ export class TextBoxToolbarPlugin extends DocPlugin {
     }
     this._toolbarRef = undefined
     this._toolbarComponent = undefined
-    this._activeBlockHost?.classList.remove(TEXT_BOX_EDITING_CLASS)
     this._activeBlockId = undefined
     this._activeBlockHost = undefined
     this._toolbarPointerActive = false
@@ -257,23 +255,23 @@ export class TextBoxToolbarPlugin extends DocPlugin {
     }
 
     const target = this._resolveSelectionTextBox(selection)
-    if (!target) {
+    // Text editing inside the frame shows no object chrome at all — the same
+    // convention as the shape block: handles, outline and the settings rail
+    // are exclusive to whole-object selection.
+    if (!target || target.editing) {
       this.closeToolbar()
       return
     }
-    const {block, editing} = target
+    const {block} = target
     if (this.doc.readonlyManager.isReadonly(block)) {
       this.closeToolbar()
       return
     }
-    this._openToolbar(block, editing)
+    this._openToolbar(block)
   }
 
-  private _openToolbar(block: TextBoxBlock, editing: boolean): void {
-    if (this._activeBlockId === block.id && this._toolbarRef) {
-      this._setEditingClass(block, editing)
-      return
-    }
+  private _openToolbar(block: TextBoxBlock): void {
+    if (this._activeBlockId === block.id && this._toolbarRef) return
     this.closeToolbar()
     if (!block.hostElement.isConnected) return
 
@@ -298,7 +296,6 @@ export class TextBoxToolbarPlugin extends DocPlugin {
     this._toolbarComponent = toolbar.componentRef.instance
     this._activeBlockId = block.id
     this._activeBlockHost = block.hostElement
-    this._setEditingClass(block, editing)
     toolbar.componentRef.setInput('textBoxBlock', block)
     toolbar.componentRef.instance.action
       .pipe(takeUntil(this._closeToolbar$))
@@ -430,7 +427,7 @@ export class TextBoxToolbarPlugin extends DocPlugin {
     this.doc.selection.selectBlock(block)
 
     if (!moveEdge || readonly) return
-    this._openToolbar(block, false)
+    this._openToolbar(block)
     this._startBorderDrag(event, block)
   }
 
@@ -659,10 +656,6 @@ export class TextBoxToolbarPlugin extends DocPlugin {
       return false
     }
     return false
-  }
-
-  private _setEditingClass(block: TextBoxBlock, editing: boolean): void {
-    block.hostElement.classList.toggle(TEXT_BOX_EDITING_CLASS, editing)
   }
 
   private _finishResizerGesture(pointerId?: number): void {

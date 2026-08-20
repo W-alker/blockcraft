@@ -10,21 +10,15 @@
   width: fit-content;
   background: transparent;
 
-  &.selected,
-  &.text-box-block--editing {
+  // Frame chrome (handles + outline via shape-resizer) is exclusive to
+  // whole-object selection, matching the shape block: a caret inside the
+  // frame edits like plain prose, with no object chrome at all.
+  &.selected {
     background: transparent;
 
     > .text-box-block__surface > shape-resizer {
       display: block;
     }
-  }
-
-  // Text editing keeps the paragraph's native caret/selection, while the frame
-  // still communicates which object's settings toolbar is active. Keep this on
-  // the outer surface so the inner contenteditable remains free of focus chrome.
-  &.text-box-block--editing > .text-box-block__surface {
-    outline: 2px solid var(--bc-active-color, #4857e2);
-    outline-offset: 2px;
   }
 
   .text-box-block__surface {

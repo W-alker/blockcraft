@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-08-18 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-08-20 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -68,6 +68,96 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
+
+## Unreleased — 2026-08-20 — 极简 preset leads the text-box 线框 catalog
+
+**Severity**: minor
+
+**What changed**: `TEXT_BOX_PRESETS` gained a curated **极简** entry
+(`id: 'no-fill'`) that now leads the 线框 tab, ahead of 默认白框. It is the
+classic white frame with its fill zeroed — `fo: 0`, the same value the 无填充
+button writes — so the slate border stays visible in the picker thumbnail and
+on the canvas while the surface behind the text is fully transparent. The
+picker additionally renders a transparency checkerboard inside the fill-less
+thumbnail: on the picker's near-white panel, a transparent fill and a white
+fill would otherwise look identical.
+`getTextBoxPreset()` no longer falls back to the catalog's first slot for
+unknown ids; the fallback is pinned to 默认白框 (`'classic'`).
+
+**Why**: a text box without a fill was only reachable by picking 默认白框 and
+then clearing the fill by hand in the shape panel. A fully invisible variant
+(no fill *and* no border) was considered and rejected: it renders an empty
+swatch in the picker and an invisible object on the canvas.
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+- `blockcraft-plugins-formatting.md`
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-toolbar.md`
+
+### New APIs / Features
+
+- New `TextBoxPresetId` member: `'no-fill'` (label 极简, `cat: 'outline'`,
+  first entry of 线框 and of the whole catalog).
+
+### Behavior Changes
+
+- `getTextBoxPresetsFor(wm, 'outline')[0]` is now 极简; 默认白框 is second.
+  Preset ids are never persisted, so existing documents are unaffected.
+- `getTextBoxPreset(unknownId)` still resolves to 默认白框, but by explicit id
+  rather than by catalog position.
+
+## Unreleased — 2026-08-20 — text editing inside a text box shows no object chrome
+
+**Severity**: minor (reverses an 0.5.0 UI refinement and removes the
+`.text-box-block--editing` theme hook — treat as major at release time if a
+downstream theme targets that class)
+
+**What changed**: while a caret or text/child-boundary range belongs to a
+descendant of a `text-box`, the frame now shows **no object chrome at all**:
+`TextBoxToolbarPlugin` closes the settings rail instead of keeping it open, the
+bundled theme no longer displays the `shape-resizer` (handles + active-color
+outline) for that state, and the `.text-box-block--editing` host class is gone
+— the plugin never applies it and the theme no longer styles it. Frame chrome
+(resize/rotation handles, outline, settings rail) is now exclusive to the
+whole-object `.selected` state. Enter / frame double-click still enters the
+first editable descendant; Escape still returns to the whole-frame selection;
+clicking the frame's padding, border or shape shell still selects the whole
+object. This matches the `shape` block convention, which has always dropped
+its chrome while `shape-text` owns the caret. Because the editing state now
+has no chrome, the fixed toolbar's text-box insertion tail no longer enters
+the initial paragraph after commit: both the crosshair drag-draw and the
+click-place gestures end at the whole-object selection, keeping handles and
+the settings rail visible on the freshly inserted frame.
+
+**Why**: template consumers fill text boxes in documents created from a
+template. With the 0.5.0 keep-open refinement, merely placing the caret to type
+surfaced resize handles, an outline and the settings rail — object-editing
+affordances the filling flow never needs. Typing in a frame should read like
+typing in plain prose; object styling remains one Escape or frame-click away.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-theme.md`
+- `blockcraft-plugins-formatting.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- `TextBoxToolbarPlugin` closes the object toolbar on descendant text or
+  child-boundary selections (0.5.0 kept it open alongside the text toolbars).
+- The fixed toolbar's 插入文本框 commit no longer calls `enterEditing` on the
+  new frame. Drag-draw and click-place both finish whole-object selected with
+  handles and the settings rail visible; typing starts with a content click or
+  Enter.
+- The bundled theme's `shape-resizer` display rule now matches only
+  `.text-box-block.selected`; the editing-state outline on
+  `.text-box-block__surface` is removed.
+- `.text-box-block--editing` is no longer applied to the frame host. Downstream
+  CSS targeting it becomes dead; remove such rules or key them off `.selected`.
+- This entry does not modify the package version.
 
 ## Unreleased — 2026-08-19 — objects land on the editor padding; floating width is uncapped
 

@@ -72,6 +72,38 @@ import {resolveWordArtPresentation} from '../../blocks/word-art-block'
                    fill, which blanks out every entry that pairs a fill opacity
                    with a decorated surface. -->
               <svg viewBox="0 0 1000 1000" preserveAspectRatio="none">
+                <!-- The picker panel is the same near-white as a white fill,
+                     so a fill-less entry and 默认白框 would render identical
+                     thumbnails. The graphics-app transparency checkerboard,
+                     clipped to the shape, is what tells them apart. -->
+                @if (item.checker) {
+                  <defs>
+                    <pattern
+                      [attr.id]="checkerPatternId(item.id)"
+                      patternUnits="userSpaceOnUse"
+                      width="250"
+                      height="250">
+                      <rect
+                        class="text-box-preset-picker__checker-cell"
+                        width="125"
+                        height="125">
+                      </rect>
+                      <rect
+                        class="text-box-preset-picker__checker-cell"
+                        x="125"
+                        y="125"
+                        width="125"
+                        height="125">
+                      </rect>
+                    </pattern>
+                  </defs>
+                  <path
+                    [attr.d]="item.path"
+                    [attr.fill]="'url(#' + checkerPatternId(item.id) + ')'"
+                    [attr.fill-rule]="item.fillRule"
+                    stroke="none">
+                  </path>
+                }
                 <path
                   [attr.d]="item.path"
                   [attr.fill]="item.props.backColor"
@@ -215,6 +247,11 @@ import {resolveWordArtPresentation} from '../../blocks/word-art-block'
     }
 
 
+    .text-box-preset-picker__checker-cell {
+      fill: var(--bc-float-toolbar-divider-color);
+      opacity: .55;
+    }
+
     .text-box-preset-picker__preview svg {
       position: absolute;
       inset: 0;
@@ -259,6 +296,23 @@ import {resolveWordArtPresentation} from '../../blocks/word-art-block'
   `],
 })
 export class TextBoxPresetPickerComponent {
+  private static patternSeq = 0
+
+  /**
+   * SVG pattern ids are document-global, and this picker mounts in two places
+   * that can coexist (the fixed toolbar's insert popup and the text-box
+   * toolbar rail). Without a per-instance salt both emit the same id, url(#…)
+   * resolves to whichever comes first in document order, and destroying that
+   * one leaves the survivor's fill-less thumbnail with a dangling reference —
+   * visually identical to 默认白框, the exact confusion the checkerboard exists
+   * to prevent.
+   */
+  private readonly patternScope = TextBoxPresetPickerComponent.patternSeq++
+
+  protected checkerPatternId(presetId: string): string {
+    return `bc-text-box-checker-${this.patternScope}-${presetId}`
+  }
+
   /** Removes standalone popup chrome when hosted inside a settings panel. */
   @Input()
   embedded = false
@@ -309,6 +363,11 @@ export class TextBoxPresetPickerComponent {
         backgroundFit: preset.props.bgs === 'stretch'
           ? 'fill'
           : preset.props.bgs === 'contain' ? 'contain' : 'cover',
+        // Fill-less and undecorated: nothing would distinguish this thumbnail
+        // from a white-filled one on the picker's near-white panel, so the
+        // preview marks the transparent surface with a checkerboard. Decorated
+        // entries also zero `fo`, but their artwork already fills the tile.
+        checker: !preset.props.bgi && Number(preset.props.fo ?? 1) === 0,
         // `bw: 0` means the entry draws its own outline inside the surface
         // image. Forcing a minimum hairline here would ring every such preset
         // with an unwanted border in its default color.

@@ -2646,18 +2646,12 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       return;
     }
 
+    // Stay whole-object selected. Text editing shows no frame chrome, so
+    // entering the initial paragraph here would hide the handles and the
+    // settings rail right after insertion; typing is one content click or
+    // Enter away, matching a click on an existing frame.
     this.doc.selection.selectOrSetCursorAtBlock(insertedId, true);
-    const revealed = await this.doc.navigateToBlock(insertedId);
-    if (revealed) {
-      try {
-        const block = this.doc.getBlockById(insertedId);
-        if (block.flavour === "text-box") {
-          (block as BlockCraft.IBlockComponents["text-box"]).enterEditing(true);
-        }
-      } catch {
-        // 协同更新可能已移除视图；保留已建立的对象选区即可。
-      }
-    }
+    await this.doc.navigateToBlock(insertedId);
     this.syncToolbarState(this.doc.selection.value);
     this.cdr.markForCheck();
   }

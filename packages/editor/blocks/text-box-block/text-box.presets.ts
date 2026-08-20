@@ -35,27 +35,55 @@ export interface TextBoxPresetDefinition {
 }
 
 /**
- * The one retained default is assigned to its semantic shape tab instead of
+ * The retained defaults are assigned to their semantic shape tab instead of
  * occupying a parallel "featured" category.
+ *
+ * 极简 and 默认白框 are the SAME classic frame diverging only in fill opacity —
+ * the shared fields live once so retuning the border/padding/default size moves
+ * both entries together, instead of relying on a spec assertion to notice drift.
  */
+// Typed annotation, NOT `as const`: the shared const carries no `id`, so no
+// literal type is load-bearing here — and a const-asserted `p: [10, 14]` loses
+// literal "freshness" when spread, which the mutable-tuple BlockSurfacePadding
+// target then rejects (fresh literals inside `as const satisfies` get the
+// readonly relaxation; a spread from a standalone const does not).
+const CLASSIC_FRAME: Pick<TextBoxPresetDefinition, 'cat' | 'defaultWidth' | 'defaultHeight' | 'props'> = {
+  cat: 'outline',
+  defaultWidth: 260,
+  defaultHeight: 132,
+  props: {
+    sh: 'rectangle',
+    p: [10, 14],
+    backColor: '#FFFFFF',
+    borderColor: '#64748B',
+    bw: 1,
+    bs: 'solid',
+    wa: null,
+  },
+}
+
+/** Named default: `getTextBoxPreset` falls back here, not to a magic-id lookup. */
+const CLASSIC_TEXT_BOX_PRESET = {
+  id: 'classic',
+  label: '默认白框',
+  ...CLASSIC_FRAME,
+  props: {...CLASSIC_FRAME.props, fo: 1},
+} as const satisfies TextBoxPresetDefinition
+
 const CURATED_TEXT_BOX_PRESETS = [
   {
-    id: 'classic',
-    label: '默认白框',
-    cat: 'outline',
-    defaultWidth: 260,
-    defaultHeight: 132,
-    props: {
-      sh: 'rectangle',
-      p: [10, 14],
-      backColor: '#FFFFFF',
-      borderColor: '#64748B',
-      fo: 1,
-      bw: 1,
-      bs: 'solid',
-      wa: null,
-    },
+    // The classic frame with its fill zeroed — `fo: 0` is the same value the
+    // 无填充 button writes, so the panel state reads consistently and
+    // re-picking a fill color restores `fo: 1` on its own. The border stays,
+    // which is what keeps the thumbnail and the canvas presence visible; a
+    // fully invisible variant was considered and rejected for exactly that
+    // blank-swatch problem.
+    id: 'no-fill',
+    label: '极简',
+    ...CLASSIC_FRAME,
+    props: {...CLASSIC_FRAME.props, fo: 0},
   },
+  CLASSIC_TEXT_BOX_PRESET,
 ] as const satisfies readonly TextBoxPresetDefinition[]
 
 /**
@@ -69,7 +97,7 @@ const CURATED_TEXT_BOX_PRESETS = [
  * `TextBoxPresetId` from a literal union.
  */
 export const TEXT_BOX_PRESETS = [
-  // The default white frame stays first in the outline tab.
+  // The curated pair leads the outline tab: 极简 first, 默认白框 second.
   ...CURATED_TEXT_BOX_PRESETS,
   // One decorated set per shape tab, each entry replicating a specific cell of
   // a reference sheet rather than invented from scratch. Earlier drafts that
@@ -91,7 +119,12 @@ export type TextBoxPresetEntry =
   Omit<TextBoxPresetDefinition, 'id'> & {id: TextBoxPresetId}
 
 export function getTextBoxPreset(value: unknown): TextBoxPresetDefinition {
-  return TEXT_BOX_PRESETS.find(item => item.id === value) ?? TEXT_BOX_PRESETS[0]
+  // Unknown ids fall back to the classic white frame, not to whatever entry
+  // happens to lead the catalog — the no-fill entry took the first slot, and
+  // a stale id silently resolving to a fill-less frame would look like data
+  // loss rather than a fallback. The default is the named constant itself, so
+  // renaming or retiring the id breaks the build instead of a runtime lookup.
+  return TEXT_BOX_PRESETS.find(item => item.id === value) ?? CLASSIC_TEXT_BOX_PRESET
 }
 
 /**

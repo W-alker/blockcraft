@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-17
+> Last updated: 2026-08-20
 
 ## Overlay Service
 
@@ -201,7 +201,7 @@ export class MyToolbarComponent {
 | `ColumnCountPickerComponent` | `components/` | Column count selector |
 | `MediaCreatorComponent` | `components/` | Media upload/URL input |
 | `ShapePickerComponent` | `components/` | Categorized Shape catalog; `supportsTextOnly` removes non-text geometries and `embedded` removes popup chrome inside a settings card |
-| `TextBoxPresetPickerComponent` | `components/` | Visual 线框 / 矩形 / 气泡 text-box catalog with 默认白框 first in 线框; `embedded` removes standalone popup chrome |
+| `TextBoxPresetPickerComponent` | `components/` | Visual 线框 / 矩形 / 气泡 text-box catalog with 极简 then 默认白框 first in 线框; `embedded` removes standalone popup chrome |
 
 Column-oriented `BcFloatToolbarComponent` menus use border-box items constrained
 to the menu width. Long labels are clipped inside the item and the menu must not
