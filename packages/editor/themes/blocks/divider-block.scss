@@ -514,7 +514,9 @@ $divider-color-large: var(--bc-divider-line-color, var(--bc-divider-color-large)
 }
 
 // `size` 曾同时改变宽度与视觉重量；新模型将两者拆开，并让所有样式共享同一套档位。
-// 旧 data-size 规则留作历史快照的样式兜底，当前组件只输出下面的新属性。
+// 旧 data-size 规则自 2026-08-20 起已无发射方（snapshot viewer 的 divider 渲染器改走
+// resolveDividerPresentation，legacy `size` 在解析层折算成 data-length/data-thickness，
+// 与编辑器同一条路）。整段属死代码，留一个发布周期给下游主题过渡，下轮清理删除。
 [data-blockcraft-root="true"] .divider-block {
   .divide-line,
   .divide-line-text {

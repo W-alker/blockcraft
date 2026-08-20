@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-18
+> Last updated: 2026-08-20
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -136,6 +136,88 @@ failure/retry frame as the editor. `renderer.update()` replaces resource frames
 atomically so live listeners are never cloned into inert markup, and
 `renderer.destroy()` disposes all block and inline-image resource controllers.
 `resourcePolicy: 'off'` continues to avoid mounting iframe resources.
+
+Editable blocks carrying an always-on placeholder (`meta.plh` with
+`meta.plhMode: 'always'`) render the hint when their delta is empty, using the
+same CSS contract as the editor's PlaceholderPlugin (`data-placeholder` +
+`.bc-placeholder-target` / `.bc-placeholder-empty`); focus-driven placeholders
+are editor-only. Dividers render with full `DividerBlockComponent` parity
+(text/tape variants, length/thickness/align/opacity, legacy `size` fallback)
+via the shared `resolveDividerPresentation()`. Root snapshots project their
+document typography (`ff`/`fs`/`lh`) and text color (`color` →
+`style.color` + `--bc-color`, matching `RootBlockComponent`); document
+`background` stays a host concern.
+
+### Extending the snapshot viewer with custom renderers
+
+Hosts that register their own block flavours or inline embeds in the editor can
+teach the snapshot viewer to render them through two `SnapshotViewerOptions`
+fields. Both apply to first render **and** to incremental `update()` patches,
+and both flow through `createMarkdownStreamViewer({viewerOptions})` unchanged.
+
+```typescript
+import {
+  createSnapshotRenderer,
+  SnapshotBlockRenderer,
+  SnapshotInlineEmbedRenderer,
+} from '@org/blockcraft-editor'
+
+const weatherRenderer: SnapshotBlockRenderer = {
+  canRender: (snapshot) => `${snapshot.flavour}` === 'weather-material',
+  render: (ctx, snapshot) => {
+    const element = document.createElement('div')
+    element.classList.add('weather-material')
+    element.textContent = `${snapshot.props['city'] ?? ''}`
+    return {element}
+  },
+}
+
+const personEmbed: SnapshotInlineEmbedRenderer = (delta) => {
+  const span = document.createElement('span')
+  span.textContent = `@${delta.insert['person'] ?? ''}`
+  return span
+}
+
+const renderer = createSnapshotRenderer({
+  blockRenderers: [weatherRenderer],       // matched before the builtin registry
+  inlineEmbeds: {person: personEmbed},     // keyed by the embed's insert key
+})
+```
+
+Contract:
+
+- **`blockRenderers` are matched first** (first `canRender` wins), so they can
+  claim custom flavours and deliberately override builtin ones. The generic
+  fallback renderer stays last. A too-broad `canRender` (e.g. `() => true`)
+  swallows every builtin block — keep predicates flavour-scoped.
+- **The engine stamps `data-block-id` / `data-node-type`** on the element a
+  custom renderer returns (if absent). Child mapping and absolute placement
+  projection identify block roots by these attributes; do not remove them.
+- **Patching**: a renderer without `patch` is updated by syncing attributes and
+  child nodes from a fresh render onto the mounted element, so the produced DOM
+  must stay **stateless** — no captured listeners or controllers. If the DOM
+  owns live resources, register cleanup via `ctx.registerDisposable(target,
+  cleanup)` (runs when the element leaves the tree or the renderer is
+  destroyed), or implement `patch` — then the engine delegates the whole
+  update to you and stops tracking that block's children (your renderer owns
+  the entire subtree, including child reconciliation).
+- **Container-style renderers** append child blocks via `ctx.renderBlock(child)`
+  and mark the hosting element with the **`data-bc-snapshot-children`**
+  attribute. The patch engine locates the child container through it and
+  reconciles children in place; exactly one element per block should carry it,
+  the marked container must hold **only child-block elements** (reconciliation
+  is positional — a decorative node inside it gets trimmed on update), and the
+  marker also works when overriding a builtin container flavour. A marker
+  inside a nested block never leaks to an unmarked ancestor.
+- **`inlineEmbeds`** maps an embed key (the single key of the delta's `insert`
+  object) to a view factory. It is consulted before the builtin `latex` /
+  `mention` views; a factory that **throws falls back to the generic embed
+  chip** instead of breaking the document. The editor-side `EmbedConverter`
+  contract is DOM-compatible, so an existing readonly converter usually plugs
+  in directly: `{person: personConverter.toView}`.
+- Async work (fetching preview data, heavy rendering) belongs in
+  `ctx.scheduleEnhancement(task)` — namespace `task.key` with your flavour to
+  avoid cache collisions with builtin tasks.
 
 ## Markdown Stream Viewer
 

@@ -6,8 +6,8 @@ import {
   resolveOrderedMarkerDigitScale,
 } from "../../blocks/ordered-block/utils/get-number-prefix";
 import {renderHighlightedCodeModel} from "../highlight/render-highlighted-code";
-import {renderInline} from "../inline/render-inline";
 import {createBlockShell} from "../dom/create-block-shell";
+import {createEditableContainer} from "../dom/editable-container";
 import {SnapshotBlockRenderer, SnapshotRenderContext} from "../types";
 
 const TEXT_FLAVOURS = new Set([
@@ -49,7 +49,7 @@ export function createTextRenderers(): SnapshotBlockRenderer[] {
 function renderSimpleEditable(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   const element = createBlockShell(snapshot)
   applyEditableProps(element, snapshot)
-  element.append(createEditableContainer(ctx, snapshot))
+  element.append(createEditableContainer(ctx, snapshot, {host: element}))
   return {element}
 }
 
@@ -65,7 +65,7 @@ function renderBullet(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   marker.classList.add(getBulletClass(snapshot))
   prefix.append(marker)
 
-  element.append(prefix, createEditableContainer(ctx, snapshot))
+  element.append(prefix, createEditableContainer(ctx, snapshot, {host: element}))
   return {element}
 }
 
@@ -93,7 +93,7 @@ function renderOrdered(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   text.textContent = marker.text
   prefix.append(text)
 
-  element.append(prefix, createEditableContainer(ctx, snapshot))
+  element.append(prefix, createEditableContainer(ctx, snapshot, {host: element}))
   return {element}
 }
 
@@ -114,7 +114,7 @@ function renderTodo(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   icon.className = `bc_icon ${props["checked"] ? "bc_xuanzhong-fill" : "bc_weixuanzhong"}`
   button.append(icon)
 
-  element.append(button, createEditableContainer(ctx, snapshot))
+  element.append(button, createEditableContainer(ctx, snapshot, {host: element}))
   return {element}
 }
 
@@ -150,7 +150,9 @@ function renderCode(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
     wrapper.style.height = `${props["h"]}px`
   }
 
-  const content = createEditableContainer(ctx, snapshot, "pre")
+  // No `host`: shiki restructures this container, so the always-placeholder
+  // contract deliberately does not apply to highlighted code.
+  const content = createEditableContainer(ctx, snapshot, {tag: "pre"})
   scheduleCodeHighlight(content, snapshot, ctx, {
     lang: `${props["lang"] || "PlainText"}`,
     withLineBreak: true,
@@ -169,20 +171,6 @@ function renderMermaidTextarea(snapshot: IBlockSnapshot, ctx: SnapshotRenderCont
     withLineBreak: false,
   })
   return {element}
-}
-
-function createEditableContainer(
-  ctx: SnapshotRenderContext,
-  snapshot: IBlockSnapshot,
-  tagName: "div" | "pre" = "div"
-) {
-  const content = document.createElement(tagName)
-  content.classList.add("edit-container")
-  if (snapshot.flavour !== "code" && snapshot.props.textAlign) {
-    content.style.textAlign = `${snapshot.props.textAlign}`
-  }
-  content.append(ctx.createInlineContent(snapshot.children as InlineModel))
-  return content
 }
 
 function scheduleCodeHighlight(
@@ -212,7 +200,10 @@ function scheduleCodeHighlight(
     }),
     apply: (model) => {
       target.replaceChildren()
-      target.append(renderInline(model as InlineModel))
+      // ctx.createInlineContent, not a bare renderInline: it threads
+      // inlineEmbeds AND registers resource-placeholder disposables — this
+      // apply hook must not be the one inline path that skips either.
+      target.append(ctx.createInlineContent(model as InlineModel))
     },
   })
 }

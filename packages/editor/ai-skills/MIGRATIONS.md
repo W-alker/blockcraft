@@ -69,6 +69,106 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
+## Unreleased — 2026-08-20 — Snapshot viewer accepts host block renderers and inline embed views
+
+**Severity**: minor
+
+**What changed**: `SnapshotViewerOptions` gained two additive extension points.
+`blockRenderers?: SnapshotBlockRenderer[]` prepends host renderers to the
+builtin registry (first `canRender` wins; the generic fallback stays last), so
+consumer-registered flavours no longer degrade to an empty block shell in
+`bc-snapshot-viewer` / `createSnapshotRenderer`. `inlineEmbeds?: Record<string,
+SnapshotInlineEmbedRenderer>` maps an embed insert key to a DOM view factory,
+consulted before the builtin `latex`/`mention` views; a factory that throws
+falls back to the generic embed chip. Both extension points apply on first
+render and on incremental `update()` patches (the inline map is threaded
+through every `renderInline` call site, including the c-element level delta
+diff), and both flow through `createMarkdownStreamViewer({viewerOptions})`.
+Supporting changes: the engine now stamps `data-block-id` / `data-node-type`
+onto custom-rendered block roots when absent; `resolveChildContainer` resolves
+unknown flavours through a new `data-bc-snapshot-children` attribute convention
+so container-style custom renderers participate in child patching; the types
+`SnapshotBlockRenderer`, `SnapshotInlineEmbedRenderer`, `SnapshotRenderContext`,
+`SnapshotRenderResult`, `SnapshotEnhancementTask` and `MountedSnapshotNode` are
+now exported from the package root.
+
+**Why**: downstream template libraries render document previews with the
+snapshot viewer, but their business materials (custom void blocks and inline
+embeds registered in the editor) rendered as empty shells / plain-text chips
+because the renderer registry was hardcoded. Options-based injection was chosen
+over a global registration API (no shared mutable state, per-instance scoping)
+and over mounting host Angular components (the viewer stays independent from
+`BlockCraftDoc`, plugins and Yjs).
+
+**Affected ai-skills files**:
+
+- `blockcraft-app.md` (new "Extending the snapshot viewer with custom renderers" section)
+- `blockcraft.md` (Snapshot Viewer quick-reference now shows the extension fields)
+
+### New APIs / Features
+
+- `SnapshotViewerOptions.blockRenderers?: SnapshotBlockRenderer[]`
+- `SnapshotViewerOptions.inlineEmbeds?: Record<string, SnapshotInlineEmbedRenderer>`
+- `SnapshotInlineEmbedRenderer` type (`(delta: DeltaInsertEmbed) => HTMLElement`)
+- New package-root type exports: `SnapshotBlockRenderer`, `SnapshotRenderContext`,
+  `SnapshotRenderResult`, `SnapshotEnhancementTask`, `MountedSnapshotNode`
+- `data-bc-snapshot-children` attribute convention for container-style custom renderers
+
+### Migration Recipe
+
+No action required for existing consumers — both fields are optional and the
+builtin registry is unchanged. To render custom materials in previews:
+
+```typescript
+// before: custom flavours fall through to the generic empty shell
+const renderer = createSnapshotRenderer({baseUrl})
+
+// after: hosts inject their own renderers per viewer instance
+const renderer = createSnapshotRenderer({
+  baseUrl,
+  blockRenderers: [weatherRenderer],
+  inlineEmbeds: {person: personEmbedConverter.toView},
+})
+```
+
+### Behavior Changes
+
+- Block elements produced by custom renderers are stamped with
+  `data-block-id` / `data-node-type` when the renderer did not set them.
+  Builtin renderers already set both — no observable change without
+  `blockRenderers`.
+- `resolveChildContainer` now resolves the `[data-bc-snapshot-children]`
+  marker whenever the builtin selector misses (previously unknown flavours
+  returned `null` unconditionally) — including for custom renderers that
+  override a builtin container flavour. Editable/void blocks skip the scan
+  entirely, and a marker is only adopted when its nearest `[data-block-id]`
+  ancestor is the block being resolved (no leaking a nested block's container
+  into an unmarked ancestor). The marked container must hold only child-block
+  elements. Builtin markup never carries the marker, so builtin blocks are
+  unaffected.
+- `SnapshotBlockRenderer.patch` is now dispatched: when a matched renderer
+  defines it, the engine calls it on `update()` and stops tracking that
+  block's children (the renderer owns its subtree). Builtin renderers define
+  no `patch`, so this is observable only through `options.blockRenderers`.
+- The viewer's divider renderer now mirrors `DividerBlockComponent` exactly
+  (text/tape variants, `length`/`thickness`/`align`/`opacity`, label styling,
+  the deprecated `size` fallback, and the `.bc-block-content` wrapper the theme
+  keys on). Previously it only understood the legacy `style`/`size` props, so
+  configured dividers degraded to a default full-width line in previews. The
+  resolution rules were extracted to `resolveDividerPresentation()`
+  (`blocks/divider-block/divider-presentation.ts`), shared by both surfaces.
+- Editable blocks with `meta.plhMode === "always"` and an empty delta now render
+  their `meta.plh` hint through the editor's placeholder CSS contract
+  (`data-placeholder` + `.bc-placeholder-target` on the container,
+  `.empty.bc-placeholder-empty` on the host), plus a filler `<br>` so the empty
+  container keeps a real line box (the hint itself is an absolutely-positioned
+  `::before` and must not take part in layout). Incremental `update()`
+  re-renders the block when placeholder visibility flips. Focus-driven
+  placeholders remain editor-only — snapshots have no cursor.
+- The root renderer now projects `props.color` as `style.color` + `--bc-color`,
+  matching `RootBlockComponent`'s host bindings. Document `background` remains a
+  host concern on both surfaces (the editor root does not bind it either).
+
 ## Unreleased — 2026-08-20 — 极简 preset leads the text-box 线框 catalog
 
 **Severity**: minor

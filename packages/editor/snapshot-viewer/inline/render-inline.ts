@@ -1,11 +1,15 @@
 import {InlineModel, IInlineNodeAttrs} from "../../framework/block-std/types/inline.type";
 import {DeltaInsertEmbed, DeltaInsertText} from "../../framework/block-std/types/delta.type";
 import {applyInlineTypographyAttribute} from "../../framework/block-std/typography";
+import {SnapshotInlineEmbedRenderer} from "../types";
 import katex from "katex";
 
 const INLINE_ELEMENT_TAG = "c-element";
 
-export function renderInline(model: InlineModel): DocumentFragment {
+export function renderInline(
+  model: InlineModel,
+  inlineEmbeds?: Record<string, SnapshotInlineEmbedRenderer>,
+): DocumentFragment {
   const fragment = document.createDocumentFragment()
 
   for (const item of model) {
@@ -14,7 +18,7 @@ export function renderInline(model: InlineModel): DocumentFragment {
       continue
     }
 
-    fragment.append(createEmbedElement(item as DeltaInsertEmbed))
+    fragment.append(createEmbedElement(item as DeltaInsertEmbed, inlineEmbeds))
   }
 
   return fragment
@@ -39,20 +43,44 @@ function createTextElement(item: DeltaInsertText): HTMLElement {
   return element
 }
 
-function createEmbedElement(item: DeltaInsertEmbed): HTMLElement {
+function createEmbedElement(
+  item: DeltaInsertEmbed,
+  inlineEmbeds?: Record<string, SnapshotInlineEmbedRenderer>,
+): HTMLElement {
   const element = document.createElement(INLINE_ELEMENT_TAG)
   applyAttributes(element, item.attributes)
 
   const [embedKey = "embed"] = Object.keys(item.insert)
   const wrapper = document.createElement("span")
   wrapper.setAttribute("contenteditable", "false")
-  wrapper.append(createInlineEmbedView(item, embedKey))
+  wrapper.append(createInlineEmbedView(item, embedKey, inlineEmbeds))
 
   element.append(wrapper)
   return element
 }
 
-function createInlineEmbedView(item: DeltaInsertEmbed, embedKey: string): HTMLElement {
+function createInlineEmbedView(
+  item: DeltaInsertEmbed,
+  embedKey: string,
+  inlineEmbeds?: Record<string, SnapshotInlineEmbedRenderer>,
+): HTMLElement {
+  const custom = inlineEmbeds?.[embedKey]
+  if (custom) {
+    // A broken host renderer must not take the whole document preview down —
+    // degrade to the generic chip, same contract as failed enhancement tasks.
+    // That covers bad RETURN VALUES too, not just throws: append(null) would
+    // stringify to a literal "null" in the document.
+    try {
+      const view = custom(item)
+      if (view instanceof HTMLElement) {
+        return view
+      }
+    } catch {
+      // fall through to the generic chip
+    }
+    return createGenericEmbedElement(item, embedKey)
+  }
+
   switch (embedKey) {
     case "latex":
       return createInlineFormulaElement(`${item.insert[embedKey] || ""}`)
