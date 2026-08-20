@@ -3009,7 +3009,9 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   protected canCaptureFormatBrush(
     selection: BlockCraft.Selection | null = this.doc.selection.value,
   ) {
-    return this.canFormatTextSelection(selection);
+    return (
+      this.canFormatTextSelection(selection) && selection?.start.type === "text"
+    );
   }
 
   private canApplyFormatBrush(selection: BlockCraft.Selection | null) {
@@ -3023,7 +3025,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
 
   private buildFormatBrushPayload(selection: BlockCraft.Selection) {
     const common = this.toolbarHelper.getCurrentCommonAttrs(selection);
-    if (!common.allEditable || selection.start.type !== "text") return null;
+    if (selection.start.type !== "text") return null;
 
     const inlineAttrs: IInlineNodeAttrs = {
       "a:bold": this.readFormatBrushAttr(common.attrs, "bold"),
@@ -3542,7 +3544,8 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     this.canSetFontScale = this.canSetFontScaleForSelection(selection);
     this.canSetLineHeight = this.canSetLineHeightForSelection(selection);
     this.canUseColumns = this.canUseColumnPicker(selection);
-    if (!this.canTransformBlocks) {
+    const canFormatText = this.canFormatTextSelection(selection);
+    if (!canFormatText && !this.canSetFontScale && !this.canSetLineHeight) {
       this.activeAttrs = new Map<string, any>();
       this.activeColors = {};
       this.activeProps = {};
@@ -3568,7 +3571,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       ? { ...common.paragraph }
       : {pfs: null, lh: null, psb: null, psa: null};
     this.activeFlavour = common.flavour || "paragraph";
-    this.allEditable = this.canFormatTextSelection(selection);
+    this.allEditable = canFormatText;
     this.activeAttrs = this.allEditable
       ? new Map(common.attrs)
       : new Map<string, any>();
@@ -3614,11 +3617,11 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   }
 
   private canFormatTextSelection(selection: BlockCraft.Selection | null) {
-    return (
-      this.isLiveSelection(selection) &&
-      selection.start.type === "text" &&
-      this.canTransformSelection(selection)
-    );
+    if (!this.isLiveSelection(selection) || selection.isAllSelected)
+      return false;
+    if (this.isReadonlySelection(selection)) return false;
+    if (selection.collapsed && selection.start.type !== "text") return false;
+    return this.hasEditableTextTarget(selection);
   }
 
   private canSetLineHeightForSelection(
@@ -3628,6 +3631,10 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       return false;
     if (this.isReadonlySelection(selection)) return false;
 
+    return this.hasEditableTextTarget(selection);
+  }
+
+  private hasEditableTextTarget(selection: BlockCraft.Selection) {
     try {
       return this.getSelectedBlockIds(selection).some((id) =>
         this.isEditableTextBlockId(id),

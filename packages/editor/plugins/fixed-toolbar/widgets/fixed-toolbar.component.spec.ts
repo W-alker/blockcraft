@@ -130,7 +130,8 @@ describe("FixedTextToolbarComponent boundary selections", () => {
     const rootHost = document.createElement("div");
     const p1Host = document.createElement("p");
     const p2Host = document.createElement("p");
-    rootHost.append(p1Host, p2Host);
+    const p3Host = document.createElement("p");
+    rootHost.append(p1Host, p2Host, p3Host);
     document.body.appendChild(rootHost);
 
     const root = {
@@ -138,8 +139,8 @@ describe("FixedTextToolbarComponent boundary selections", () => {
       flavour: "root",
       nodeType: BlockNodeType.root,
       hostElement: rootHost,
-      childrenIds: ["p1", "p2"],
-      childrenLength: 2,
+      childrenIds: ["p1", "p2", "p3"],
+      childrenLength: 3,
     };
     const makeBlock = (
       id: string,
@@ -159,7 +160,8 @@ describe("FixedTextToolbarComponent boundary selections", () => {
     });
     const p1 = makeBlock("p1", p1Host, 0);
     const p2 = makeBlock("p2", p2Host, 1);
-    const blocks: Record<string, any> = { root, p1, p2 };
+    const p3 = makeBlock("p3", p3Host, 2);
+    const blocks: Record<string, any> = { root, p1, p2, p3 };
     const queryBlocksBetween = jasmine
       .createSpy("queryBlocksBetween")
       .and.callFake(
@@ -194,7 +196,7 @@ describe("FixedTextToolbarComponent boundary selections", () => {
           blocks[a].hostElement.compareDocumentPosition(blocks[b].hostElement),
       );
 
-    return { component, p1, p2, rootHost, selection, queryBlocksBetween };
+    return { component, p1, p2, p3, rootHost, selection, queryBlocksBetween };
   };
 
   it("does not treat a collapsed boundary cursor as a transformable block range", () => {
@@ -246,9 +248,34 @@ describe("FixedTextToolbarComponent boundary selections", () => {
     const mixedRange = selection(0, 2);
 
     expect((component as any).canTransformSelection(mixedRange)).toBeFalse();
+    expect((component as any).canFormatTextSelection(mixedRange)).toBeTrue();
     expect(
       (component as any).canSetLineHeightForSelection(mixedRange),
     ).toBeTrue();
+    (component as any).syncToolbarState(mixedRange);
+    expect(component.canTransformBlocks).toBeFalse();
+    expect(component.allEditable).toBeTrue();
+    rootHost.remove();
+  });
+
+  it("keeps text formatting enabled when editable endpoints span a non-editable block", () => {
+    const { component, p1, p2, p3, rootHost } = makeHarness();
+    p2.nodeType = BlockNodeType.void;
+    const blocks = { p1, p2, p3 } as Record<string, any>;
+    const mixedTextRange = new BlockSelection(
+      { blockId: "p1", type: "text", offset: 0, block: p1 } as any,
+      { blockId: "p3", type: "text", offset: 1, block: p3 } as any,
+      "root",
+      (id) => blocks[id],
+      (a, b) =>
+        blocks[a].hostElement.compareDocumentPosition(blocks[b].hostElement),
+    );
+
+    expect((component as any).canTransformSelection(mixedTextRange)).toBeFalse();
+    expect((component as any).canFormatTextSelection(mixedTextRange)).toBeTrue();
+    (component as any).syncToolbarState(mixedTextRange);
+    expect(component.canTransformBlocks).toBeFalse();
+    expect(component.allEditable).toBeTrue();
     rootHost.remove();
   });
 
@@ -260,6 +287,9 @@ describe("FixedTextToolbarComponent boundary selections", () => {
 
     expect(
       (component as any).canSetLineHeightForSelection(nonEditableRange),
+    ).toBeFalse();
+    expect(
+      (component as any).canFormatTextSelection(nonEditableRange),
     ).toBeFalse();
     rootHost.remove();
   });
