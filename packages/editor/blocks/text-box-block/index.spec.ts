@@ -25,7 +25,7 @@ import {ShapeResizerComponent} from '../shape-block'
   imports: [ShapeResizerComponent],
   template: `
     <div data-blockcraft-root="true">
-      <div class="text-box-block text-box-block--editing">
+      <div class="text-box-block selected">
         <div
           #surface
           class="text-box-block__surface"
@@ -304,8 +304,12 @@ describe('TextBoxBlockSchema', () => {
       expect(style.overflowX).toBe('hidden')
       expect(style.overflowY).toBe('hidden')
       expect(content.scrollHeight).toBeGreaterThan(content.clientHeight)
-      expect(getComputedStyle(surface).outlineWidth).toBe('2px')
       expect(getComputedStyle(resizer).display).toBe('block')
+
+      // Text editing shows no frame chrome: without whole-object selection
+      // the resizer must fall back to its hidden default.
+      resizer.closest('.text-box-block')!.classList.remove('selected')
+      expect(getComputedStyle(resizer).display).toBe('none')
     } finally {
       fixture.destroy()
       TestBed.resetTestingModule()

@@ -664,7 +664,7 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
     rootHost.remove();
   });
 
-  it("draws a text box and enters its first editable child after commit", async () => {
+  it("draws a text box and keeps the whole-object selection after commit", async () => {
     const {
       component,
       rootHost,
@@ -714,7 +714,9 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
     expect((component.doc as any).navigateToBlock).toHaveBeenCalledOnceWith(
       "new-text-box",
     );
-    expect(textBoxEnterEditing).toHaveBeenCalledOnceWith(true);
+    // Text editing shows no frame chrome; the insertion tail must stay at the
+    // whole-object selection so handles and the settings rail remain visible.
+    expect(textBoxEnterEditing).not.toHaveBeenCalled();
     rootHost.remove();
   });
 

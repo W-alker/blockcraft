@@ -48,7 +48,37 @@ export function patchChildren(options: {
   return nextChildren
 }
 
-export function resolveChildContainer(element: HTMLElement, snapshot: IBlockSnapshot): HTMLElement | null {
+export function resolveChildContainer(
+  element: HTMLElement | null | undefined,
+  snapshot: IBlockSnapshot,
+): HTMLElement | null {
+  // Editable mounts recurse over inline deltas without elements (see
+  // createMountedNode's childElements indexing) — tolerate the missing element
+  // for every branch, not just unknown flavours.
+  if (!element) {
+    return null
+  }
+  // Editable and void blocks never host child blocks: skip both the flavour
+  // switch and the marker scan. This is load-bearing for cost, not just
+  // clarity — a highlighted code block alone mounts thousands of <c-element>s
+  // that a subtree query would walk for nothing.
+  const nodeType = `${snapshot.nodeType}`
+  if (nodeType === "editable" || nodeType === "void") {
+    return null
+  }
+  // The builtin selector is tried first (cheap, exact); the marker is the
+  // fallback — which also serves custom renderers that OVERRIDE a builtin
+  // container flavour, whose DOM won't match the builtin selector. Builtin
+  // hits pass the same ownership check: an overriding renderer without its own
+  // `.callout-content` must not adopt one from a nested real callout child.
+  const builtin = resolveBuiltinChildContainer(element, snapshot)
+  if (builtin && (builtin === element || builtin.closest("[data-block-id]") === element)) {
+    return builtin
+  }
+  return resolveMarkedChildContainer(element)
+}
+
+function resolveBuiltinChildContainer(element: HTMLElement, snapshot: IBlockSnapshot): HTMLElement | null {
   switch (`${snapshot.flavour}`) {
     case "root":
     case "frame":
@@ -78,4 +108,27 @@ export function resolveChildContainer(element: HTMLElement, snapshot: IBlockSnap
     default:
       return null
   }
+}
+
+/**
+ * Container-style custom renderers (options.blockRenderers) mark their child
+ * host with `data-bc-snapshot-children`. The marked container must hold ONLY
+ * child-block elements — patching reconciles its children positionally, so a
+ * decorative node inside it would be trimmed on the first update.
+ *
+ * A subtree hit can also belong to a NESTED block (a wrapper renderer without
+ * its own marker around a marked container child) — adopting it would splice
+ * this block's children into the descendant's DOM. Ownership is checked by the
+ * candidate's nearest block root: only a marker whose closest `[data-block-id]`
+ * ancestor is this element itself counts.
+ */
+function resolveMarkedChildContainer(element: HTMLElement): HTMLElement | null {
+  if (element.matches("[data-bc-snapshot-children]")) {
+    return element
+  }
+  const marked = element.querySelector<HTMLElement>("[data-bc-snapshot-children]")
+  if (!marked) {
+    return null
+  }
+  return marked.closest("[data-block-id]") === element ? marked : null
 }

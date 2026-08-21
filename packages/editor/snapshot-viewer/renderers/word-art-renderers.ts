@@ -5,6 +5,7 @@ import {
 } from '../../blocks'
 import type {InlineModel} from '../../framework/block-std/types/inline.type'
 import {createBlockShell} from '../dom/create-block-shell'
+import {projectAlwaysPlaceholder} from '../dom/always-placeholder'
 import type {SnapshotBlockRenderer} from '../types'
 
 export function createWordArtRenderers(): SnapshotBlockRenderer[] {
@@ -59,6 +60,9 @@ export function createWordArtRenderers(): SnapshotBlockRenderer[] {
       content.append(
         ctx.createInlineContent(snapshot.children as InlineModel),
       )
+      // Word-art is an editable flavour too — a fill-in region with
+      // meta.plh/plhMode:'always' must show its hint here, same as paragraphs.
+      projectAlwaysPlaceholder(element, content, snapshot)
 
       surface.append(content)
       element.append(surface)

@@ -3,6 +3,7 @@ import {InlineModel} from "../framework/block-std/types/inline.type";
 import {DeltaInsert} from "../framework/block-std/types/delta.type";
 import {patchChildren, resolveChildContainer} from "./dom/patch-children";
 import {projectParagraphSiblingSpacing} from "./dom/create-block-shell";
+import {alwaysPlaceholderVisible} from "./dom/always-placeholder";
 import {normalizeSnapshot} from "./dom/normalize-snapshot";
 import {renderInline} from "./inline/render-inline";
 import {createBuiltinRendererRegistry} from "./registry";
@@ -31,7 +32,9 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
 
   constructor(options: SnapshotViewerOptions = {}) {
     this.options = options
-    this.renderers = createBuiltinRendererRegistry()
+    // Host renderers go first so they can claim custom flavours (and override
+    // builtins when they choose to); the generic fallback stays last.
+    this.renderers = [...(options.blockRenderers ?? []), ...createBuiltinRendererRegistry()]
   }
 
   render(container: HTMLElement, snapshot: IBlockSnapshot | IBlockSnapshot[]): void {
@@ -107,7 +110,18 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
       throw new Error(`No snapshot renderer found for flavour "${snapshot.flavour}"`)
     }
 
-    return renderer.render(renderContext, snapshot).element
+    const element = renderer.render(renderContext, snapshot).element
+    // Child mapping and placement projection identify block roots by these
+    // attributes; stamp them so custom renderers cannot break the contract.
+    // hasAttribute over dataset: this runs once per block on the mount hot
+    // path, and builtin shells always carry both already.
+    if (!element.hasAttribute("data-block-id")) {
+      element.setAttribute("data-block-id", snapshot.id)
+    }
+    if (!element.hasAttribute("data-node-type")) {
+      element.setAttribute("data-node-type", `${snapshot.nodeType}`)
+    }
+    return element
   }
 
   private mountNode(snapshot: IBlockSnapshot, renderContext: SnapshotRenderContext): MountedSnapshotNode {
@@ -135,7 +149,7 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
     const renderContext: SnapshotRenderContext = {
       renderBlock: (snapshot) => this.renderBlock(snapshot, renderContext),
       createInlineContent: (model: InlineModel) => {
-        const fragment = renderInline(model)
+        const fragment = renderInline(model, this.options.inlineEmbeds)
         fragment
           .querySelectorAll<HTMLElement>('.bc-resource-placeholder-frame')
           .forEach(frame => {
@@ -166,6 +180,21 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
 
     if (snapshotsAreEqual(current.snapshot, next)) {
       return current
+    }
+
+    // A renderer that implements `patch` owns its whole subtree: the engine
+    // hands over the mounted node and stops tracking children (builtin
+    // renderers define no `patch`, so this is reachable only through
+    // options.blockRenderers). Without this dispatch the documented hook would
+    // be dead API and stateful custom DOM would be clobbered by syncElement.
+    const patchingRenderer = this.renderers.find(candidate => candidate.canRender(next))
+    if (patchingRenderer?.patch) {
+      patchingRenderer.patch(renderContext, current, next)
+      return {
+        snapshot: next,
+        element: current.element,
+        children: [],
+      }
     }
 
     if (next.nodeType === "editable" || next.nodeType === "void") {
@@ -341,6 +370,19 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
     if (!propsEqual(current.snapshot.props, next.props)) {
       return false
     }
+    // Meta drives render-time projection too (the always-placeholder contract
+    // today, anything else tomorrow), and the delta-level patch below never
+    // looks at it — a meta-only change (e.g. the plh hint text) would report
+    // success while the DOM keeps the stale projection. Bail to a full
+    // re-render on any meta difference.
+    if (!metaEqual(current.snapshot.meta, next.meta)) {
+      return false
+    }
+    // Placeholder visibility also flips on DELTA changes (empty ↔ filled) with
+    // identical meta — the delta patch would append text next to a stale hint.
+    if (alwaysPlaceholderVisible(current.snapshot) !== alwaysPlaceholderVisible(next)) {
+      return false
+    }
     const oldDelta = current.snapshot.children as unknown as DeltaInsert[]
     const newDelta = next.children as unknown as DeltaInsert[]
     if (!Array.isArray(oldDelta) || !Array.isArray(newDelta)) {
@@ -353,13 +395,13 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
     // 1) Pure-append fast path — works even when the container has been restructured
     //    (e.g. shiki tokenized a code block into many <c-element>s). We only need to
     //    locate the trailing text node and appendData the new tail.
-    if (tryAppendOnlyDelta(editContainer, oldDelta, newDelta)) {
+    if (tryAppendOnlyDelta(editContainer, oldDelta, newDelta, this.options.inlineEmbeds)) {
       return true
     }
     // 2) Structural c-element-level diff — requires the container children still map
     //    1:1 to the old delta.
     if (editContainer.childNodes.length === oldDelta.length) {
-      return applyInlineDelta(editContainer, oldDelta, newDelta)
+      return applyInlineDelta(editContainer, oldDelta, newDelta, this.options.inlineEmbeds)
     }
     return false
   }
@@ -462,6 +504,10 @@ function propsEqual(a: IBlockSnapshot["props"], b: IBlockSnapshot["props"]): boo
   return JSON.stringify(a ?? {}) === JSON.stringify(b ?? {})
 }
 
+function metaEqual(a: IBlockSnapshot["meta"], b: IBlockSnapshot["meta"]): boolean {
+  return JSON.stringify(a ?? {}) === JSON.stringify(b ?? {})
+}
+
 function deltaAttributesEqual(
   a?: DeltaInsert["attributes"],
   b?: DeltaInsert["attributes"],
@@ -482,6 +528,7 @@ function applyInlineDelta(
   container: HTMLElement,
   oldDelta: DeltaInsert[],
   newDelta: DeltaInsert[],
+  inlineEmbeds?: SnapshotViewerOptions["inlineEmbeds"],
 ): boolean {
   const commonLen = Math.min(oldDelta.length, newDelta.length)
 
@@ -514,7 +561,7 @@ function applyInlineDelta(
     }
 
     // Attributes, embed type or text-vs-embed changed → replace just this c-element.
-    const replacement = renderInline([newItem]).firstElementChild as HTMLElement | null
+    const replacement = renderInline([newItem], inlineEmbeds).firstElementChild as HTMLElement | null
     if (!replacement) {
       return false
     }
@@ -522,7 +569,7 @@ function applyInlineDelta(
   }
 
   if (newDelta.length > oldDelta.length) {
-    const extras = renderInline(newDelta.slice(oldDelta.length))
+    const extras = renderInline(newDelta.slice(oldDelta.length), inlineEmbeds)
     container.appendChild(extras)
   } else if (oldDelta.length > newDelta.length) {
     while (container.childNodes.length > newDelta.length) {
@@ -594,6 +641,7 @@ function tryAppendOnlyDelta(
   container: HTMLElement,
   oldDelta: DeltaInsert[],
   newDelta: DeltaInsert[],
+  inlineEmbeds?: SnapshotViewerOptions["inlineEmbeds"],
 ): boolean {
   // Only handle pure-text deltas; embeds change structure and need real diffing.
   for (const item of oldDelta) {
@@ -635,7 +683,7 @@ function tryAppendOnlyDelta(
 
   // Append entirely new delta items as fresh c-elements.
   if (newDelta.length > oldDelta.length) {
-    const extras = renderInline(newDelta.slice(oldDelta.length))
+    const extras = renderInline(newDelta.slice(oldDelta.length), inlineEmbeds)
     container.appendChild(extras)
   }
 

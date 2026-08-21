@@ -25,11 +25,11 @@ describe('TextBoxToolbarPlugin', () => {
       commonParent: 'root',
     })
 
-    expect(openToolbar).toHaveBeenCalledOnceWith(block, false)
+    expect(openToolbar).toHaveBeenCalledOnceWith(block)
     expect(closeToolbar).not.toHaveBeenCalled()
   })
 
-  it('keeps the text-box toolbar active for text in any descendant paragraph', () => {
+  it('closes the object toolbar when text in a descendant paragraph is edited', () => {
     const plugin = new TextBoxToolbarPlugin()
     const openToolbar = spyOn<any>(plugin, '_openToolbar')
     const closeToolbar = spyOn(plugin, 'closeToolbar')
@@ -59,11 +59,11 @@ describe('TextBoxToolbarPlugin', () => {
       commonParent: block.id,
     })
 
-    expect(openToolbar).toHaveBeenCalledOnceWith(block, true)
-    expect(closeToolbar).not.toHaveBeenCalled()
+    expect(openToolbar).not.toHaveBeenCalled()
+    expect(closeToolbar).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps the text-box toolbar active for its child-boundary selection', () => {
+  it('closes the object toolbar for its child-boundary selection', () => {
     const plugin = new TextBoxToolbarPlugin()
     const openToolbar = spyOn<any>(plugin, '_openToolbar')
     const closeToolbar = spyOn(plugin, 'closeToolbar')
@@ -89,8 +89,8 @@ describe('TextBoxToolbarPlugin', () => {
       commonParent: block.id,
     })
 
-    expect(openToolbar).toHaveBeenCalledOnceWith(block, true)
-    expect(closeToolbar).not.toHaveBeenCalled()
+    expect(openToolbar).not.toHaveBeenCalled()
+    expect(closeToolbar).toHaveBeenCalledTimes(1)
   })
 
   it('enters the first editable descendant on Enter', () => {
@@ -463,7 +463,7 @@ describe('TextBoxToolbarPlugin', () => {
       scrollContainer: null,
     }
 
-    ;(plugin as any)._openToolbar(block, true)
+    ;(plugin as any)._openToolbar(block)
     block.onPropsChange.next()
     panelChange.next('shape')
     tick(17)
@@ -483,10 +483,8 @@ describe('TextBoxToolbarPlugin', () => {
     expect(componentRef.setInput).toHaveBeenCalledOnceWith('textBoxBlock', block)
     expect(componentRef.instance.cdr.markForCheck).toHaveBeenCalledTimes(1)
     expect(overlayRef.updatePosition).toHaveBeenCalledTimes(2)
-    expect(block.hostElement.classList.contains('text-box-block--editing')).toBeTrue()
 
     plugin.closeToolbar()
-    expect(block.hostElement.classList.contains('text-box-block--editing')).toBeFalse()
     block.hostElement.remove()
   }))
 

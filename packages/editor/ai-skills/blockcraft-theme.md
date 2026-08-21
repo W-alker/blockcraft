@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-18
+> Last updated: 2026-08-20
 
 ## Theme Structure
 
@@ -278,11 +278,11 @@ outer shell does not clip resize and rotation handles. Live editing may scroll
 overflowing prose, while readonly, Snapshot Viewer and print output clip to the
 persisted frame. Keep exactly one `data-bc-print-visual-surface` on the painted
 object and mark transform handles `data-bc-print-exclude`. While a descendant
-text selection owns the frame, `TextBoxToolbarPlugin` adds
-`.text-box-block--editing`; the base text-box theme paints the active-color
-outline on `.text-box-block__surface`, not on `.text-box-block__content`, so the
-outer object context remains visible without restoring the hidden browser focus
-outline or scrollbar chrome on the editable viewport. The intentional nested
+text selection owns the frame, the frame shows no selection chrome at all:
+resize/rotation handles and the active-color outline are exclusive to the
+whole-object `.selected` state, matching the shape block convention, and the
+hidden browser focus outline and scrollbar chrome on the editable viewport stay
+suppressed. The intentional nested
 `contenteditable=false → true` editing island remains in place. Ordinary
 text-box prose uses a column layout whose last real child grows across remaining
 block-axis space, so native caret hit testing reaches the paragraph throughout

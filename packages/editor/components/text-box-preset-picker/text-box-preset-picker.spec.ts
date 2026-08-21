@@ -77,6 +77,39 @@ describe('TextBoxPresetPickerComponent', () => {
     expect(tabLabels).toEqual(['线框', '矩形', '气泡'])
   })
 
+  it('leads 线框 with the no-fill frame while unknown ids fall back to 默认白框', () => {
+    const outline = getTextBoxPresetsFor('h', 'outline')
+
+    // 极简 is the classic frame with its fill zeroed — the same `fo: 0` the
+    // 无填充 button writes — so the border keeps both the thumbnail and the
+    // canvas presence visible instead of rendering an empty swatch.
+    expect(outline[0].id).toBe('no-fill')
+    expect(outline[0].props).toEqual({
+      ...getTextBoxPreset('classic').props,
+      fo: 0,
+    })
+
+    // The fallback is pinned to the classic frame rather than the catalog's
+    // first slot: a stale id resolving to a fill-less frame would read as
+    // data loss, not as a fallback.
+    expect(getTextBoxPreset('no-such-preset').id).toBe('classic')
+  })
+
+  it('marks the fill-less thumbnail with a transparency checkerboard', async () => {
+    await TestBed.configureTestingModule({
+      imports: [TextBoxPresetPickerComponent],
+    }).compileComponents()
+    const fixture = TestBed.createComponent(TextBoxPresetPickerComponent)
+    fixture.detectChanges()
+    const host = fixture.nativeElement as HTMLElement
+
+    // The picker panel is the same near-white as a white fill, so without the
+    // checkerboard 极简 and 默认白框 render identical thumbnails.
+    expect(host.querySelector('[data-preset-id="no-fill"] pattern'))
+      .not.toBeNull()
+    expect(host.querySelector('[data-preset-id="classic"] pattern')).toBeNull()
+  })
+
   it('keeps only the default white frame from the former featured styles', () => {
     const ids = TEXT_BOX_PRESETS.map(item => String(item.id))
 

@@ -14,6 +14,8 @@ import {
   type TextBoxBlockProps,
 } from "../../blocks/text-box-block";
 import {getShapeDefinition} from "../../blocks/shape-block/shape-definitions";
+import {resolveDividerPresentation} from "../../blocks/divider-block/divider-presentation";
+import type {DividerBlockModel} from "../../blocks/divider-block";
 import {
   getTextBoxArtwork,
   resolveTextBoxArtworkSrc,
@@ -208,6 +210,13 @@ function renderRoot(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   if (lineHeight !== null) {
     element.dataset["bcLh"] = `${lineHeight}`
     element.style.setProperty("--bc-lh", `${lineHeight}`)
+  }
+  // Document text color — same pair RootBlockComponent binds ('[style.color]' +
+  // '[style.--bc-color]'). Document background stays a host concern in both
+  // surfaces: the editor root does not bind it either.
+  if (typeof props["color"] === "string" && props["color"]) {
+    element.style.color = `${props["color"]}`
+    element.style.setProperty("--bc-color", `${props["color"]}`)
   }
   appendChildren(element, ctx, snapshot.children)
   return {element}
@@ -463,13 +472,67 @@ function renderCallout(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
 
 function renderDivider(snapshot: IBlockSnapshot) {
   const element = createBlockShell(snapshot)
-  const props = snapshot.props as Record<string, unknown>
-  const line = document.createElement("div")
-  line.classList.add("divide-line", `${props["style"] || "solid"}`)
-  if (props["size"]) {
-    line.dataset["size"] = `${props["size"]}`
+  const props = snapshot.props as DividerBlockModel["props"]
+  // Same resolver as DividerBlockComponent (length/thickness with the deprecated
+  // `size` fallback, opacity/label clamps) and the same DOM contract: the theme's
+  // divider rules key off `.divider-block > .bc-block-content` and the
+  // data-length / data-thickness / data-align attributes.
+  const view = resolveDividerPresentation(props)
+
+  const content = document.createElement("div")
+  content.classList.add("bc-block-content")
+  if (props.lineColor) {
+    content.style.setProperty("--bc-divider-line-color", `${props.lineColor}`)
   }
-  element.append(line)
+
+  const applyLineAttrs = (line: HTMLElement, withAlign: boolean) => {
+    line.dataset["length"] = view.length
+    line.dataset["thickness"] = view.thickness
+    if (withAlign) {
+      line.dataset["align"] = view.align
+    }
+    if (view.opacity !== 1) {
+      line.style.opacity = `${view.opacity}`
+    }
+  }
+  const createLabel = () => {
+    const label = document.createElement("span")
+    label.classList.add("divide-label")
+    if (props.color) {
+      label.style.color = `${props.color}`
+    }
+    label.style.fontSize = `${view.label.fontSize}px`
+    label.style.fontWeight = view.label.fontWeight
+    label.style.fontStyle = view.label.fontStyle
+    label.style.letterSpacing = `${view.label.letterSpacing}px`
+    label.textContent = view.text
+    return label
+  }
+
+  if (view.text && view.isTape) {
+    const line = document.createElement("div")
+    line.classList.add("divide-line", "divide-tape", view.style)
+    applyLineAttrs(line, true)
+    line.append(createLabel())
+    content.append(line)
+  } else if (view.text) {
+    const line = document.createElement("div")
+    line.classList.add("divide-line-text")
+    applyLineAttrs(line, true)
+    const leadingSegment = document.createElement("span")
+    leadingSegment.classList.add("divide-seg", view.style)
+    const trailingSegment = document.createElement("span")
+    trailingSegment.classList.add("divide-seg", view.style)
+    line.append(leadingSegment, createLabel(), trailingSegment)
+    content.append(line)
+  } else {
+    const line = document.createElement("div")
+    line.classList.add("divide-line", view.style)
+    applyLineAttrs(line, false)
+    content.append(line)
+  }
+
+  element.append(content)
   return {element}
 }
 

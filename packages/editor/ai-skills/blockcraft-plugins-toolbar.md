@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-18
+> Last updated: 2026-08-20
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
@@ -378,10 +378,10 @@ new TextBoxToolbarPlugin();
 
 The Plugin keeps two explicit states. A selection on the `text-box` itself
 opens its connected object toolbar with resize/rotation handles. A caret/range
-whose text or child-boundary endpoints belong to the same text box keeps that
-settings toolbar open alongside the normal text toolbars and adds
-`.text-box-block--editing` to the frame host; the theme paints only an outer
-focus outline, leaving the inner contenteditable free of browser focus chrome.
+whose text or child-boundary endpoints belong to the same text box closes that
+object toolbar and shows no frame chrome at all — matching the shape block
+convention, text editing keeps only the normal text toolbars, so filling in a
+frame reads like editing plain prose.
 Enter or a frame double-click enters the first editable descendant, while
 Escape from a direct child selects the parent frame. The intentional nested
 `contenteditable=false → true` island keeps object selection and text editing
@@ -445,7 +445,8 @@ insertion shortcuts; direction remains available from the selected text box's
 **文本** settings.
 
 The catalog is horizontal-only: it groups entries into 线框 / 矩形 / 气泡
-(`CsSegmentedComponent` tabs), keeps **默认白框** first in 线框, and stamps
+(`CsSegmentedComponent` tabs), keeps **极简** then **默认白框** first in
+线框, and stamps
 `wm: 'h'` on every pick. There is no separate 精选 tab. Presets are not offered
 transposed because Shape
 geometry and the `bgi` surface image both stretch

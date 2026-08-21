@@ -1,6 +1,7 @@
 import {ChangeDetectionStrategy, Component} from "@angular/core";
 import {BaseBlockComponent} from "../../framework";
-import {DividerBlockModel, DividerLength, DividerThickness} from "./index";
+import {DividerBlockModel} from "./index";
+import {DividerPresentation, resolveDividerPresentation} from "./divider-presentation";
 
 @Component({
   selector: 'div.divider-block',
@@ -8,45 +9,49 @@ import {DividerBlockModel, DividerLength, DividerThickness} from "./index";
     <!-- Gap-cursor PoC: content wrapped in .bc-block-content so the host becomes a
          flex [leading gap] / .bc-block-content / [trailing gap] column (see the
          uniform rule in base.scss). Gap fillers are prepended/appended to the HOST. -->
+    <!-- @let: the resolver runs ONCE per change-detection pass instead of once
+         per binding (~10 bindings below) — per-getter delegation allocated a
+         fresh presentation object for every read. -->
+    @let v = view;
     <div class="bc-block-content"
          [style.--bc-divider-line-color]="props.lineColor || null">
-      @if (props.text) {
-        @if (isTape) {
-          <div [class]="['divide-line', 'divide-tape', resolvedStyle]"
-               [attr.data-length]="resolvedLength"
-               [attr.data-thickness]="resolvedThickness"
-               [attr.data-align]="align"
-               [style.opacity]="dividerOpacity"
+      @if (v.text) {
+        @if (v.isTape) {
+          <div [class]="['divide-line', 'divide-tape', v.style]"
+               [attr.data-length]="v.length"
+               [attr.data-thickness]="v.thickness"
+               [attr.data-align]="v.align"
+               [style.opacity]="v.opacity"
                contenteditable="false">
             <span class="divide-label"
                   [style.color]="props.color || null"
-                  [style.font-size.px]="labelFontSize"
-                  [style.font-weight]="labelFontWeight"
-                  [style.font-style]="labelFontStyle"
-                  [style.letter-spacing.px]="labelLetterSpacing">{{ props.text }}</span>
+                  [style.font-size.px]="v.label.fontSize"
+                  [style.font-weight]="v.label.fontWeight"
+                  [style.font-style]="v.label.fontStyle"
+                  [style.letter-spacing.px]="v.label.letterSpacing">{{ v.text }}</span>
           </div>
         } @else {
           <div class="divide-line-text"
-               [attr.data-length]="resolvedLength"
-               [attr.data-thickness]="resolvedThickness"
-               [attr.data-align]="align"
-               [style.opacity]="dividerOpacity"
+               [attr.data-length]="v.length"
+               [attr.data-thickness]="v.thickness"
+               [attr.data-align]="v.align"
+               [style.opacity]="v.opacity"
                contenteditable="false">
-            <span [class]="['divide-seg', resolvedStyle]"></span>
+            <span [class]="['divide-seg', v.style]"></span>
             <span class="divide-label"
                   [style.color]="props.color || null"
-                  [style.font-size.px]="labelFontSize"
-                  [style.font-weight]="labelFontWeight"
-                  [style.font-style]="labelFontStyle"
-                  [style.letter-spacing.px]="labelLetterSpacing">{{ props.text }}</span>
-            <span [class]="['divide-seg', resolvedStyle]"></span>
+                  [style.font-size.px]="v.label.fontSize"
+                  [style.font-weight]="v.label.fontWeight"
+                  [style.font-style]="v.label.fontStyle"
+                  [style.letter-spacing.px]="v.label.letterSpacing">{{ v.text }}</span>
+            <span [class]="['divide-seg', v.style]"></span>
           </div>
         }
       } @else {
-        <div [class]="['divide-line', resolvedStyle]"
-             [attr.data-length]="resolvedLength"
-             [attr.data-thickness]="resolvedThickness"
-             [style.opacity]="dividerOpacity"
+        <div [class]="['divide-line', v.style]"
+             [attr.data-length]="v.length"
+             [attr.data-thickness]="v.thickness"
+             [style.opacity]="v.opacity"
              contenteditable="false"></div>
       }
     </div>
@@ -55,68 +60,10 @@ import {DividerBlockModel, DividerLength, DividerThickness} from "./index";
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class DividerBlockComponent extends BaseBlockComponent<DividerBlockModel> {
-  get resolvedStyle(): string {
-    return this.props.style || 'solid';
-  }
-
-  get isTape(): boolean {
-    return this.resolvedStyle.startsWith('tape');
-  }
-
-  get align(): string {
-    return this.props.align ?? 'center';
-  }
-
-  get resolvedLength(): DividerLength {
-    if (this.props.length === 'short' || this.props.length === 'medium'
-      || this.props.length === 'long' || this.props.length === 'full') {
-      return this.props.length;
-    }
-
-    switch (this.props.size) {
-      case 'thin':
-        return 'short';
-      case 'small':
-        return 'medium';
-      case 'large':
-        return 'full';
-      default:
-        return 'long';
-    }
-  }
-
-  get resolvedThickness(): DividerThickness {
-    if (this.props.thickness === 'thin' || this.props.thickness === 'regular'
-      || this.props.thickness === 'thick') {
-      return this.props.thickness;
-    }
-
-    if (this.props.size === 'thin' || this.props.size === 'small') {
-      return 'thin';
-    }
-    return this.props.size === 'large' ? 'thick' : 'regular';
-  }
-
-  get dividerOpacity(): number {
-    const value = Number(this.props.opacity);
-    return Number.isFinite(value) ? Math.min(1, Math.max(0.1, value)) : 1;
-  }
-
-  get labelFontSize(): number {
-    const value = Number(this.props.fontSize);
-    return Number.isFinite(value) ? Math.min(32, Math.max(10, value)) : 14;
-  }
-
-  get labelFontWeight(): string {
-    return this.props.fontWeight === 'bold' ? '700' : '400';
-  }
-
-  get labelFontStyle(): string {
-    return this.props.fontStyle === 'italic' ? 'italic' : 'normal';
-  }
-
-  get labelLetterSpacing(): number {
-    const value = Number(this.props.letterSpacing);
-    return Number.isFinite(value) ? Math.min(8, Math.max(0, value)) : 0;
+  // 画法（含 deprecated `size` 的回落与各项钳制）收在 resolveDividerPresentation 一处，
+  // snapshot viewer 的 divider 渲染器吃同一份——两处各写一遍就会漂。
+  // 模板经 @let 每轮只读一次；不缓存是刻意的（props 是稳定代理，按引用记忆化会失灵）。
+  protected get view(): DividerPresentation {
+    return resolveDividerPresentation(this.props);
   }
 }

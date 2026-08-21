@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-08-18 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-08-20 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -815,10 +815,15 @@ Undo 历史。
 ### Snapshot Viewer (Display Only)
 
 ```typescript
-import { createSnapshotRenderer } from '@ccc/blockcraft'
+import { createSnapshotRenderer, SnapshotBlockRenderer } from '@ccc/blockcraft'
 
 const renderer = createSnapshotRenderer({
   resourcePolicy: 'eager',
+  // Host extensions (optional): custom block renderers are matched BEFORE the
+  // builtin registry; inlineEmbeds maps an embed insert key to a DOM factory.
+  // Full contract: blockcraft-app.md § Extending the snapshot viewer.
+  blockRenderers: [myMaterialRenderer satisfies SnapshotBlockRenderer],
+  inlineEmbeds: { person: personConverter.toView },
 })
 
 renderer.render(containerEl, rootSnapshot)

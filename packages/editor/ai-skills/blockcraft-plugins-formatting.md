@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-17
+> Last updated: 2026-08-20
 
 ## FloatTextToolbarPlugin
 
@@ -223,8 +223,9 @@ new TextMarkerPlugin(['paragraph', 'blockquote'])
   Tooltip plus `aria-label` instead of visible per-cell text.
 - When the document registers `TextBoxBlockSchema`, **插入文本框** opens the
   线框 / 矩形 / 气泡 style catalog directly. It has no 精选 tab and no fixed-toolbar
-  横向 / 竖向 shortcuts; 默认白框 is the first 线框 entry, and text direction is
-  changed later from the selected text box's own text settings.
+  横向 / 竖向 shortcuts; 极简 and 默认白框 are the first two 线框 entries,
+  and text direction is changed later from the selected text box's own text
+  settings.
 - Picking a shape, WordArt or text-box preset arms a one-shot drawing surface over the
   document without requiring a focused block, active Selection or saved
   selection snapshot; it does not write Yjs or create a block yet. A
@@ -232,8 +233,10 @@ new TextMarkerPlugin(['paragraph', 'blockquote'])
   rectangle's scale-normalized width, height and absolute position only on
   pointer release. A press/release without a drag commits the selected type at
   its normal default size.
-- The inserted shape is whole-block selected. A text box is selected, revealed
-  and enters its initial paragraph. Inserted WordArt is selected,
+- The inserted shape is whole-block selected. A text box is selected and
+  revealed, staying whole-object selected so its resize handles and settings
+  rail are visible; entering its text is one content click or Enter away.
+  Inserted WordArt is selected,
   revealed and enters text editing with its default text selected. Escape,
   pointer cancellation, window blur, scrolling, readonly transitions and
   toolbar destruction cancel an armed or active drawing gesture without a

@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-08-19
+> Last updated: 2026-08-20
 
 ## Block Types
 
@@ -1051,8 +1051,14 @@ geometry for callers that insert a vertical frame.
 
 `TEXT_BOX_PRESETS` is grouped into three shape tabs through the optional `cat`
 field (`outline` / `rect` / `bubble`), and a preset may limit itself to one
-direction with `wm`. The only retained former curated style is **默认白框**;
-it is the first entry of 线框 rather than occupying a separate 精选 tab. Two
+direction with `wm`. Two curated entries lead 线框 rather than occupying a
+separate 精选 tab: **极简** first — the classic frame with `fo: 0`, the same
+value the 无填充 button writes, so the border stays visible while the fill is
+gone — then **默认白框**. The picker marks the fill-less thumbnail with a
+transparency checkerboard, because on the picker's near-white panel it would
+otherwise be indistinguishable from the white-filled frame.
+`getTextBoxPreset()` falls back to 默认白框 for
+unknown ids, not to the catalog's first slot. Two
 kinds coexist in the catalog: geometry-only
 entries driven by `sh`, and decorated entries that set `sh: 'rectangle'` with
 `bw: 0` / `fo: 0` and name a drawing from the artwork registry in `bgi`. The second kind exists because the surface image is
