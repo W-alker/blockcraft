@@ -24,11 +24,13 @@ describe('ShapeToolbarPlugin', () => {
         overlayRef: {
           dispose: jasmine.createSpy('first.dispose'),
           updatePosition: jasmine.createSpy('first.updatePosition'),
+          getConfig: () => ({positionStrategy: null}),
         },
         componentRef: {
           setInput: jasmine.createSpy('first.setInput'),
           instance: {
             action: new Subject<any>(),
+            panelChange: new Subject<any>(),
             cdr: {markForCheck: jasmine.createSpy('first.markForCheck')},
           },
         },
@@ -37,11 +39,13 @@ describe('ShapeToolbarPlugin', () => {
         overlayRef: {
           dispose: jasmine.createSpy('second.dispose'),
           updatePosition: jasmine.createSpy('second.updatePosition'),
+          getConfig: () => ({positionStrategy: null}),
         },
         componentRef: {
           setInput: jasmine.createSpy('second.setInput'),
           instance: {
             action: new Subject<any>(),
+            panelChange: new Subject<any>(),
             cdr: {markForCheck: jasmine.createSpy('second.markForCheck')},
           },
         },
@@ -80,6 +84,93 @@ describe('ShapeToolbarPlugin', () => {
     plugin.closeToolbar()
     firstBlock.hostElement.remove()
     secondBlock.hostElement.remove()
+  })
+
+  it('keeps the toolbar while an owned panel degrades the shape selection', () => {
+    const hostElement = document.createElement('div')
+    document.body.appendChild(hostElement)
+    const block = {id: 'shape-1', flavour: 'shape', hostElement}
+    const otherBlock = {id: 'shape-2', flavour: 'shape', hostElement}
+    const plugin = new ShapeToolbarPlugin()
+    const closeToolbar = spyOn(plugin, 'closeToolbar')
+    ;(plugin as any).doc = {
+      isReadonly: false,
+      readonlyManager: {isReadonly: () => false},
+      getBlockById: (id: string) => id === 'shape-1' ? block : otherBlock,
+    }
+    ;(plugin as any)._toolbarRef = {overlayElement: document.createElement('div')}
+    ;(plugin as any)._activeBlock = block
+    const owns = spyOn(plugin as any, '_toolbarOwnsInteraction')
+    // 取色器弹层打开后，native 重算把整块选中降级成同块 boundary 选区
+    const degraded = {
+      isInSameBlock: true,
+      firstBlock: block,
+      anchor: {blockId: 'shape-1', type: 'boundary', index: 0},
+      head: {blockId: 'shape-1', type: 'boundary', index: 0},
+    }
+
+    owns.and.returnValue(true)
+    ;(plugin as any)._onSelectionChange(degraded)
+    ;(plugin as any)._onSelectionChange(null)
+    expect(closeToolbar).not.toHaveBeenCalled()
+
+    // 持有交互但选区已跑到别的形状：仍然关闭
+    ;(plugin as any)._onSelectionChange({
+      ...degraded,
+      firstBlock: otherBlock,
+      anchor: {blockId: 'shape-2', type: 'boundary', index: 0},
+      head: {blockId: 'shape-2', type: 'boundary', index: 0},
+    })
+    expect(closeToolbar).toHaveBeenCalledTimes(1)
+
+    // 不再持有交互：同块降级选区也关闭
+    closeToolbar.calls.reset()
+    owns.and.returnValue(false)
+    ;(plugin as any)._onSelectionChange(degraded)
+    expect(closeToolbar).toHaveBeenCalledTimes(1)
+
+    hostElement.remove()
+  })
+
+  it('writes a fill-style change atomically through one updateProps call', () => {
+    const hostElement = document.createElement('div')
+    document.body.appendChild(hostElement)
+    const block = {
+      id: 'shape-1',
+      flavour: 'shape',
+      hostElement,
+      updateProps: jasmine.createSpy('updateProps'),
+    }
+    const plugin = new ShapeToolbarPlugin()
+    ;(plugin as any).doc = {readonlyManager: {isReadonly: () => false}}
+
+    ;(plugin as any)._handleAction(block, {
+      name: 'fill-style',
+      value: {
+        fillType: 'linear-gradient',
+        gradientAngle: 160,
+        gradientColors: ['#26405E', '#58402E'],
+        gradientStops: [0, 1],
+      },
+    })
+    expect(block.updateProps).toHaveBeenCalledOnceWith({
+      fillType: 'linear-gradient',
+      gradientAngle: 160,
+      gradientColors: ['#26405E', '#58402E'],
+      gradientStops: [0, 1],
+    })
+
+    block.updateProps.calls.reset()
+    ;(plugin as any)._handleAction(block, {
+      name: 'fill-style',
+      value: {fillType: 'solid', fillColor: '#FF0000'},
+    })
+    expect(block.updateProps).toHaveBeenCalledOnceWith({
+      fillType: 'solid',
+      fillColor: '#FF0000',
+    })
+
+    hostElement.remove()
   })
 
   it('exits shape text editing to whole-shape selection on Escape', () => {

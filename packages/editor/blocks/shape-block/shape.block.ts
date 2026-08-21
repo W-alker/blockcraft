@@ -19,6 +19,8 @@ import {
 import {
   normalizeShapeProps,
   normalizeShapeRotation,
+  resolveShapeFillGradient,
+  shapeGradientToSvgVector,
   type CustomShapeGeometry,
   type NormalizedShapeBlockProps,
   type ShapeBlockProps,
@@ -66,11 +68,28 @@ const shapeRotationTransform = (rotation: unknown): string => {
         [attr.viewBox]="renderGeometry.viewBox"
         preserveAspectRatio="none"
         aria-hidden="true">
+        @if (fillGradient; as gradient) {
+          <defs>
+            <linearGradient
+              [attr.id]="fillGradientId"
+              [attr.x1]="gradient.vector.x1"
+              [attr.y1]="gradient.vector.y1"
+              [attr.x2]="gradient.vector.x2"
+              [attr.y2]="gradient.vector.y2">
+              @for (stop of gradient.stopList; track $index) {
+                <stop
+                  [attr.offset]="stop.offset"
+                  [attr.stop-color]="stop.color">
+                </stop>
+              }
+            </linearGradient>
+          </defs>
+        }
         @for (path of renderGeometry.paths; track $index) {
           <path
             data-bc-shape-render-path
             [attr.d]="path.d"
-            [attr.fill]="path.fillable ? shapeProps.fillColor : 'none'"
+            [attr.fill]="path.fillable ? fillPaint : 'none'"
             [attr.fill-opacity]="shapeProps.fillOpacity"
             [attr.fill-rule]="path.fillable ? renderGeometry.fillRule ?? null : null"
             [attr.stroke]="shapeProps.strokeColor"
@@ -233,6 +252,32 @@ export class ShapeBlockComponent extends BaseBlockComponent<ShapeBlockModel> {
 
   get strokeDasharray(): string | null {
     return this.shapeProps.strokeStyle === 'dashed' ? '10 7' : null
+  }
+
+  /** SVG 渐变 def 的 id 以 block id 收尾，保证同文档多形状互不串用。 */
+  get fillGradientId(): string {
+    return `bc-shape-fill-${this.id}`
+  }
+
+  get fillGradient(): {
+    vector: ReturnType<typeof shapeGradientToSvgVector>
+    stopList: Array<{color: string; offset: number}>
+  } | null {
+    const gradient = resolveShapeFillGradient(this.shapeProps)
+    if (!gradient) return null
+    return {
+      vector: shapeGradientToSvgVector(gradient.angle),
+      stopList: gradient.colors.map((color, index) => ({
+        color,
+        offset: gradient.stops[index],
+      })),
+    }
+  }
+
+  get fillPaint(): string {
+    return this.shapeProps.fillType === 'linear-gradient'
+      ? `url(#${this.fillGradientId})`
+      : this.shapeProps.fillColor
   }
 
   get verticalJustify(): 'flex-start' | 'center' | 'flex-end' {

@@ -4,8 +4,15 @@ import {
   normalizeShapeAdjustments,
 } from './shape-geometry'
 import {SHAPE_GEOMETRY_VERSION} from './shape-geometry.constants'
+import {
+  DEFAULT_SHAPE_GRADIENT,
+  normalizeShapeGradient,
+  type ShapeFillType,
+  type ShapeGradientFill,
+} from './shape-fill'
 
 export {SHAPE_GEOMETRY_VERSION} from './shape-geometry.constants'
+export * from './shape-fill'
 
 export const SHAPE_KINDS = [
   'rectangle',
@@ -197,6 +204,12 @@ export interface ShapeBlockProps extends IBlockProps {
   height: number
   rotation?: number
   fillColor: string
+  /** 缺省视为 'solid'，旧文档无需迁移。 */
+  fillType?: ShapeFillType
+  /** CSS 角度语义（0deg 朝上、顺时针）。仅 fillType 为渐变时参与渲染。 */
+  gradientAngle?: number
+  gradientColors?: string[]
+  gradientStops?: number[]
   fillOpacity: number
   strokeColor: string
   strokeWidth: number
@@ -211,6 +224,7 @@ export interface ShapeBlockProps extends IBlockProps {
 
 export interface NormalizedShapeBlockProps extends ShapeBlockProps {
   rotation: number
+  fillType: ShapeFillType
 }
 
 export const DEFAULT_SHAPE_PROPS: Readonly<NormalizedShapeBlockProps> = {
@@ -219,6 +233,7 @@ export const DEFAULT_SHAPE_PROPS: Readonly<NormalizedShapeBlockProps> = {
   height: 100,
   rotation: 0,
   fillColor: '#93C5FD',
+  fillType: 'solid',
   fillOpacity: 1,
   strokeColor: '#2563EB',
   strokeWidth: 2,
@@ -254,6 +269,19 @@ export function normalizeShapeProps(
     : null
   const adjustments = normalizeShapeAdjustments(props?.adjustments)
   const customGeometry = normalizeCustomShapeGeometry(props?.customGeometry)
+  const fillType: ShapeFillType = props?.fillType === 'linear-gradient'
+    ? 'linear-gradient'
+    : 'solid'
+  // 渐变值对象在两种情况下保留：正在使用渐变，或曾配置过渐变
+  // （切回纯色后再切回渐变时不丢用户配色）。
+  const gradient = fillType === 'linear-gradient' ||
+    Array.isArray(props?.gradientColors)
+    ? normalizeShapeGradient(
+      props?.gradientAngle,
+      props?.gradientColors,
+      props?.gradientStops,
+    )
+    : null
 
   return {
     shapeType: isShapeKind(props?.shapeType)
@@ -269,6 +297,12 @@ export function normalizeShapeProps(
     fillColor: HEX_COLOR.test(props?.fillColor ?? '')
       ? props!.fillColor!
       : DEFAULT_SHAPE_PROPS.fillColor,
+    fillType,
+    ...(gradient ? {
+      gradientAngle: gradient.angle,
+      gradientColors: gradient.colors,
+      gradientStops: gradient.stops,
+    } : {}),
     fillOpacity: Number.isFinite(fillOpacity)
       ? Math.min(1, Math.max(0, fillOpacity))
       : DEFAULT_SHAPE_PROPS.fillOpacity,
@@ -299,5 +333,20 @@ export function normalizeShapeProps(
       customGeometry: JSON.stringify(customGeometry) as
         SerializedCustomShapeGeometry,
     } : {}),
+  }
+}
+
+/**
+ * 渲染侧取当前生效的渐变填充；纯色返回 null。
+ * 入参须是 normalizeShapeProps 的产物（渐变字段已保证有效）。
+ */
+export function resolveShapeFillGradient(
+  props: NormalizedShapeBlockProps,
+): ShapeGradientFill | null {
+  if (props.fillType !== 'linear-gradient') return null
+  return {
+    angle: props.gradientAngle ?? DEFAULT_SHAPE_GRADIENT.angle,
+    colors: props.gradientColors ?? [...DEFAULT_SHAPE_GRADIENT.colors],
+    stops: props.gradientStops ?? [...DEFAULT_SHAPE_GRADIENT.stops],
   }
 }

@@ -108,6 +108,33 @@ describe('Shape adapters', () => {
       .toEqual([{insert: '下一步', attributes: {'a:bold': true}}])
   })
 
+  it('round-trips a linear-gradient fill through HTML', async () => {
+    const shape = ShapeBlockSchema.createSnapshot('rectangle')
+    shape.props = {
+      ...shape.props,
+      fillType: 'linear-gradient',
+      gradientAngle: 160,
+      gradientColors: ['#26405E', '#58402E'],
+      gradientStops: [0, 1],
+    }
+
+    const html = await htmlAdapter.toHtml(rootSnapshot([shape]))
+    const element = new DOMParser().parseFromString(html, 'text/html')
+      .querySelector('figure[data-bc-block="shape"]')
+    expect(element?.getAttribute('data-shape-fill-type'))
+      .toBe('linear-gradient')
+    expect(element?.getAttribute('data-shape-gradient-angle')).toBe('160')
+
+    const importedRoot = await htmlAdapter.toBlockSnapshot(html)
+    const imported = importedRoot.children[0] as IBlockSnapshot
+    expect(imported.props).toEqual(jasmine.objectContaining({
+      fillType: 'linear-gradient',
+      gradientAngle: 160,
+      gradientColors: ['#26405E', '#58402E'],
+      gradientStops: [0, 1],
+    }))
+  })
+
   it('flattens the placement layout while preserving image placement in HTML', async () => {
     const image = ImageBlockSchema.createSnapshot(
       'https://example.com/image.png',

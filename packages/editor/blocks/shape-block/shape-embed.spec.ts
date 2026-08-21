@@ -115,4 +115,29 @@ describe('inline shape embed', () => {
     expect(paths[0].getAttribute('fill')).not.toBe('none')
     expect(paths[1].getAttribute('fill')).toBe('none')
   })
+
+  it('renders a linear-gradient fill through an SVG gradient def', () => {
+    const view = inlineShapeEmbedConverter.toView(createInlineShapeDelta({
+      shapeType: 'rectangle',
+      fillType: 'linear-gradient',
+      gradientAngle: 160,
+      gradientColors: ['#26405E', '#58402E'],
+      gradientStops: [0, 1],
+    }))
+
+    const gradient = view.querySelector('defs linearGradient')
+    expect(gradient).not.toBeNull()
+    const gradientId = gradient!.getAttribute('id')!
+    expect(view.querySelector('path')?.getAttribute('fill'))
+      .toBe(`url(#${gradientId})`)
+    const stops = gradient!.querySelectorAll('stop')
+    expect(stops.length).toBe(2)
+    expect(stops[0].getAttribute('stop-color')).toBe('#26405E')
+    expect(stops[1].getAttribute('stop-color')).toBe('#58402E')
+
+    // round-trip 后渐变仍然生效
+    const data = readInlineShapeDelta(inlineShapeEmbedConverter.toDelta(view))
+    expect(data.props.fillType).toBe('linear-gradient')
+    expect(data.props.gradientColors).toEqual(['#26405E', '#58402E'])
+  })
 })

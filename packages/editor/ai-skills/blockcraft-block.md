@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-08-20
+> Last updated: 2026-08-21
 
 ## Block Types
 
@@ -1166,6 +1166,13 @@ exported `SHAPE_KINDS`. `SHAPE_CATEGORIES` groups the same canonical
 公式形状 / 流程图 / 星与旗帜 / 标注** catalog. `ShapeBlockProps` persists
 width/height, `shapeType`, fill, outline, text color/alignment, optional
 `rotation` in degrees and optional absolute `position` / `placementLayer`.
+Fill supports solid and linear-gradient modes through the structured
+`fillType` / `gradientAngle` / `gradientColors` / `gradientStops` fields
+(compare WordArt); a missing `fillType` means solid, so legacy documents need
+no migration, and raw CSS gradient strings are never persisted. Gradients
+render as per-block SVG `<linearGradient>` defs in both the block component and
+the inline shape Embed; `SHAPE_FILL_GRADIENT_PRESETS` ships the Word-like
+built-in gallery and preset IDs are never persisted.
 Catalogue SVG paths and categories are never written into Yjs or snapshots.
 Parameterised catalogue shapes may additionally persist one flat numeric
 `adjustments` record. Editable line/freeform geometry persists as one validated,

@@ -267,18 +267,48 @@ groups.
 > `plugins/shape-toolbar/` — Word-like shape selection, styling and object layout.
 
 Registers pointer selection and connected-toolbar behavior for the built-in
-`shape` block. The compact object toolbar exposes fill color and opacity,
+`shape` block. The compact object toolbar exposes fill and opacity,
 outline color/width/style, deletion, and the complete object-layout set.
 Shape type is chosen only from the fixed toolbar's **插入形状** picker. Text
 color and horizontal/vertical alignment remain compatible block properties but
 are not shown in the default object toolbar. A root absolute shape additionally
 shows **上移一层 / 下移一层** with `bc_cengji-shangyi` and
 `bc_cengji-xiayi`; the same document placement APIs and total-stack boundary
-rules used by images determine whether each control is enabled. A grouped shape
-omits the complete layout and stack control sets.
+rules used by images determine whether each control is enabled. Its 布局 panel
+also shows a labeled **页面对齐** group of three inline buttons (靠左 / 水平居中 /
+靠右, same form as the TextBox toolbar); each calls
+`doc.placement.alignObjectsToPlane([blockId], value)`, which snaps the shape's
+rotation-aware visual bounds to the placement plane's left edge, horizontal
+center or right edge and writes only `position.x`. A grouped shape
+omits the complete layout and stack control sets, including 页面对齐.
 
-The outline-width picker uses the shared `BcOverlayTriggerDirective` and
-column `BcFloatToolbarComponent`; the shape toolbar contains no native
+The toolbar follows the text-box/WordArt rail-plus-panel form instead of one
+long horizontal strip: a compact vertical rail anchored beside the shape
+(right-top first, left-top fallback; the `side` input flips tooltip placement)
+offers **布局选项** (`bc_buju`, hidden for grouped shapes), **形状样式**
+(`bc_sepan`) and a standalone **删除形状** entry. Each rail entry toggles one
+inline panel; `panelChange` reports open/close so the plugin can reposition
+the overlay.
+
+The 布局 panel holds the 文字环绕 grid (five options including 四周型环绕),
+and — for free absolute shapes — the 排列 stack actions plus the 页面对齐
+direct-option group (same form as the text-box toolbar). The 样式 panel embeds
+`ShapeFillPanelComponent` (纯色/渐变 segmented switch: solid palette picker, or
+the built-in `SHAPE_FILL_GRADIENT_PRESETS` swatch grid plus
+起始颜色/结束颜色/渐变角度 custom controls), the 填充透明度 slider, and the
+轮廓 section (CSES palette 颜色, 粗细 radio row, 实线/虚线 radio row). Every
+fill change emits one atomic `fill-style` action (`ShapeFillChange`) written
+through a single `updateProps()` call so undo stays one step; the legacy
+`fill-color` action remains accepted for compatibility.
+
+The plugin keeps the toolbar open while panel interaction owns focus via the
+shared `isObjectToolbarOwnedTarget()` / `hasOpenOwnedSubOverlay()` guards in
+`plugins/object-layout/object-toolbar-interaction.ts` (also used by the
+WordArt toolbar). While that ownership holds, a native `selectionchange`
+recalculation that clears the selection or degrades the whole-shape
+`selected` state into a same-block `boundary` selection (typical when a CSES
+color-picker popup takes focus) no longer closes the toolbar; leaving the shape
+or losing ownership still closes it. The shape toolbar contains no native
 `select` elements.
 
 ```typescript

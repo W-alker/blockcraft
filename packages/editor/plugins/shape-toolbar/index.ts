@@ -1,4 +1,7 @@
-import {OverlayRef} from '@angular/cdk/overlay'
+import {
+  FlexibleConnectedPositionStrategy,
+  OverlayRef,
+} from '@angular/cdk/overlay'
 import {fromEvent, merge, Subject, Subscription, takeUntil} from 'rxjs'
 import {
   BindHotKey,
@@ -8,6 +11,7 @@ import {
   UIEventStateContext,
 } from '../../framework'
 import {getShapeDefinition} from '../../blocks/shape-block'
+import {BlockSelection} from '../../framework/modules/selection/blockSelection'
 import {isSelectionAlive} from '../../framework/modules/selection/liveness'
 import {
   deleteAbsolutePlacementObject,
@@ -19,10 +23,15 @@ import {
 import {
   InlineObjectInteractionController,
 } from '../object-layout/inline-object-interaction'
+import {
+  hasOpenOwnedSubOverlay,
+  isObjectToolbarOwnedTarget,
+} from '../object-layout/object-toolbar-interaction'
 
 export * from './shape-toolbar.component'
+export * from './shape-fill-panel.component'
 
-const SHAPE_ROTATION_HANDLE_CLEARANCE = 52
+const SHAPE_TOOLBAR_GAP = 10
 
 export class ShapeToolbarPlugin extends DocPlugin {
   override name = 'shape-toolbar'
@@ -33,6 +42,7 @@ export class ShapeToolbarPlugin extends DocPlugin {
   private _activeBlock?: BlockCraft.IBlockComponents['shape']
   private _pendingShapeClickCleanup?: () => void
   private _inlineObject?: InlineObjectInteractionController
+  private _toolbarPointerActive = false
 
   init(): void {
     this._inlineObject = new InlineObjectInteractionController(
@@ -52,30 +62,69 @@ export class ShapeToolbarPlugin extends DocPlugin {
         .pipe(takeUntil(this.doc.onDestroy$))
         .subscribe(event => this._onShapePointerDown(event)),
     )
+    this._subscription.add(
+      fromEvent<PointerEvent>(document, 'pointerup', {capture: true})
+        .pipe(takeUntil(this.doc.onDestroy$))
+        .subscribe(() => { this._toolbarPointerActive = false }),
+    )
+    this._subscription.add(
+      fromEvent<PointerEvent>(document, 'pointercancel', {capture: true})
+        .pipe(takeUntil(this.doc.onDestroy$))
+        .subscribe(() => { this._toolbarPointerActive = false }),
+    )
 
     this._subscription.add(
-      this.doc.selection.selectionChange$.subscribe(selection => {
-        if (
-          this.doc.isReadonly ||
-          !selection ||
-          !isSelectionAlive(selection as any, this.doc) ||
-          !selection.isInSameBlock ||
-          selection.firstBlock.flavour !== 'shape' ||
-          selection.anchor.type !== 'selected' ||
-          selection.head.type !== 'selected'
-        ) {
-          this.closeToolbar()
-          return
-        }
-        const block = selection.firstBlock as
-          BlockCraft.IBlockComponents['shape']
-        if (this.doc.readonlyManager.isReadonly(block)) {
-          this.closeToolbar()
-          return
-        }
-        this._openToolbar(block)
-      }),
+      this.doc.selection.selectionChange$.subscribe(selection =>
+        this._onSelectionChange(selection),
+      ),
     )
+  }
+
+  private _onSelectionChange(selection: BlockSelection | null): void {
+    if (this.doc.isReadonly) {
+      this.closeToolbar()
+      return
+    }
+    // 工具条面板（取色器弹层、数字输入等）会把焦点带出编辑器；此时
+    // native selectionchange 触发的重算可能把选区清空，或把形状的整块
+    // 选中降级成同一块上的 boundary 选区。只要交互归属仍在工具条，
+    // 且选区没有离开当前形状，就不能把工具条关掉。
+    const owned =
+      !!this._toolbarRef &&
+      !!this._activeBlock?.hostElement.isConnected &&
+      this._toolbarOwnsInteraction()
+    if (!selection) {
+      if (owned) return
+      this.closeToolbar()
+      return
+    }
+    const alive = isSelectionAlive(selection as any, this.doc)
+    if (
+      !alive ||
+      !selection.isInSameBlock ||
+      selection.firstBlock.flavour !== 'shape' ||
+      selection.anchor.type !== 'selected' ||
+      selection.head.type !== 'selected'
+    ) {
+      if (
+        owned &&
+        alive &&
+        selection.isInSameBlock &&
+        this._activeBlock &&
+        selection.firstBlock.id === this._activeBlock.id
+      ) {
+        return
+      }
+      this.closeToolbar()
+      return
+    }
+    const block = selection.firstBlock as
+      BlockCraft.IBlockComponents['shape']
+    if (this.doc.readonlyManager.isReadonly(block)) {
+      this.closeToolbar()
+      return
+    }
+    this._openToolbar(block)
   }
 
   destroy(): void {
@@ -92,6 +141,21 @@ export class ShapeToolbarPlugin extends DocPlugin {
     this._toolbarRef?.dispose()
     this._toolbarRef = undefined
     this._activeBlock = undefined
+    this._toolbarPointerActive = false
+  }
+
+  private _toolbarOwnsInteraction(): boolean {
+    if (this._toolbarPointerActive) return true
+    const toolbarElement = this._toolbarRef?.overlayElement
+    if (!toolbarElement) return false
+    // 填充面板/粗细下拉开着期间视为工具条持有交互：面板挂载可能触发
+    // 杂散 selectionchange 清空模型选区，而焦点并未进入面板。
+    if (hasOpenOwnedSubOverlay(toolbarElement)) return true
+    const activeElement = toolbarElement.ownerDocument.activeElement
+    return (
+      activeElement instanceof Element &&
+      isObjectToolbarOwnedTarget(toolbarElement, activeElement)
+    )
   }
 
   @BindHotKey({key: 'Escape'}, {flavour: 'shape-text'})
@@ -124,13 +188,11 @@ export class ShapeToolbarPlugin extends DocPlugin {
         {
           target: shell,
           component: ShapeToolbarComponent,
+          // 顶对齐侧边锚定（与文本框工具条一致）：面板开合只向下伸缩，
+          // rail 左上角钉在形状旁，且不与顶部旋转手柄抢位。
           positions: [
-            getPositionWithOffset(
-              'top-center',
-              0,
-              SHAPE_ROTATION_HANDLE_CLEARANCE,
-            ),
-            getPositionWithOffset('bottom-center', 0, 8),
+            getPositionWithOffset('right-top', SHAPE_TOOLBAR_GAP, 0),
+            getPositionWithOffset('left-top', SHAPE_TOOLBAR_GAP, 0),
           ],
           clampTo: this.doc.scrollContainer ?? undefined,
         },
@@ -144,6 +206,20 @@ export class ShapeToolbarPlugin extends DocPlugin {
     componentRef.instance.action
       .pipe(takeUntil(this._closeToolbar$))
       .subscribe(action => this._handleAction(block, action))
+    componentRef.instance.panelChange
+      .pipe(takeUntil(this._closeToolbar$))
+      .subscribe(() => overlayRef.updatePosition())
+    const positionStrategy = overlayRef.getConfig().positionStrategy
+    if (positionStrategy instanceof FlexibleConnectedPositionStrategy) {
+      positionStrategy.positionChanges
+        .pipe(takeUntil(this._closeToolbar$))
+        .subscribe(change => {
+          componentRef.setInput(
+            'side',
+            change.connectionPair.originX === 'start' ? 'left' : 'right',
+          )
+        })
+    }
     block.onPropsChange
       .pipe(takeUntil(this._closeToolbar$))
       .subscribe(() => {
@@ -179,12 +255,31 @@ export class ShapeToolbarPlugin extends DocPlugin {
       this.closeToolbar()
       return
     }
+    if (action.name === 'plane-align') {
+      this.doc.placement.alignObjectsToPlane([block.id], action.value)
+      return
+    }
     if (action.name === 'move-forward') {
       this.doc.placement.moveForward(block)
       return
     }
     if (action.name === 'move-backward') {
       this.doc.placement.moveBackward(block)
+      return
+    }
+    if (action.name === 'fill-style') {
+      // 一次 updateProps 原子写入填充模式与渐变值，undo 只产生一步。
+      block.updateProps(action.value.fillType === 'solid'
+        ? {
+            fillType: 'solid',
+            fillColor: action.value.fillColor,
+          }
+        : {
+            fillType: 'linear-gradient',
+            gradientAngle: action.value.gradientAngle,
+            gradientColors: action.value.gradientColors,
+            gradientStops: action.value.gradientStops,
+          })
       return
     }
 
@@ -207,6 +302,10 @@ export class ShapeToolbarPlugin extends DocPlugin {
     if (event.button !== 0) return
     const target = event.target
     if (!(target instanceof Element)) return
+    if (isObjectToolbarOwnedTarget(this._toolbarRef?.overlayElement, target)) {
+      this._toolbarPointerActive = true
+      return
+    }
     if (!this.doc.root.hostElement.contains(target)) return
     if (target.closest(
       'shape-resizer, shape-geometry-editor, shape-adjustment-editor',

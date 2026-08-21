@@ -81,6 +81,13 @@ export const shapeBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
         height: numberProperty(o.node, 'dataShapeHeight'),
         rotation: numberProperty(o.node, 'dataShapeRotation'),
         fillColor: stringProperty(o.node, 'dataShapeFill'),
+        fillType: stringProperty(o.node, 'dataShapeFillType') as
+          ShapeBlockProps['fillType'],
+        gradientAngle: numberProperty(o.node, 'dataShapeGradientAngle'),
+        gradientColors: jsonProperty(o.node, 'dataShapeGradientColors') as
+          ShapeBlockProps['gradientColors'],
+        gradientStops: jsonProperty(o.node, 'dataShapeGradientStops') as
+          ShapeBlockProps['gradientStops'],
         fillOpacity: numberProperty(o.node, 'dataShapeFillOpacity'),
         strokeColor: stringProperty(o.node, 'dataShapeStroke'),
         strokeWidth: numberProperty(o.node, 'dataShapeStrokeWidth'),
@@ -131,6 +138,12 @@ export const shapeBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
           dataShapeHeight: props.height,
           dataShapeRotation: props.rotation,
           dataShapeFill: props.fillColor,
+          dataShapeFillType: props.fillType,
+          ...(props.gradientColors ? {
+            dataShapeGradientAngle: props.gradientAngle,
+            dataShapeGradientColors: JSON.stringify(props.gradientColors),
+            dataShapeGradientStops: JSON.stringify(props.gradientStops),
+          } : {}),
           dataShapeFillOpacity: props.fillOpacity,
           dataShapeStroke: props.strokeColor,
           dataShapeStrokeWidth: props.strokeWidth,

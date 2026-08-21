@@ -1,7 +1,8 @@
-import type {
-  DeltaInsert,
-  DeltaInsertEmbed,
-  EmbedConverter,
+import {
+  generateId,
+  type DeltaInsert,
+  type DeltaInsertEmbed,
+  type EmbedConverter,
 } from '../../framework'
 import {
   cloneInlineObjectDeltas,
@@ -21,6 +22,8 @@ import {
 } from './shape-geometry'
 import {
   normalizeShapeProps,
+  resolveShapeFillGradient,
+  shapeGradientToSvgVector,
   type ShapeBlockProps,
 } from './shape.types'
 
@@ -142,13 +145,47 @@ export const createInlineShapeEmbedConverter = (): EmbedConverter => ({
     svg.setAttribute('viewBox', renderGeometry.viewBox)
     svg.setAttribute('preserveAspectRatio', 'none')
     svg.classList.add('bc-inline-shape__geometry')
+
+    // 行内形状没有 block id，为本次渲染生成一次性的渐变 def id。
+    const gradient = resolveShapeFillGradient(props)
+    let fillPaint = props.fillColor
+    if (gradient) {
+      const gradientId = `bc-shape-fill-e-${generateId()}`
+      const defs = document.createElementNS(
+        'http://www.w3.org/2000/svg',
+        'defs',
+      )
+      const linearGradient = document.createElementNS(
+        'http://www.w3.org/2000/svg',
+        'linearGradient',
+      )
+      linearGradient.setAttribute('id', gradientId)
+      const vector = shapeGradientToSvgVector(gradient.angle)
+      linearGradient.setAttribute('x1', String(vector.x1))
+      linearGradient.setAttribute('y1', String(vector.y1))
+      linearGradient.setAttribute('x2', String(vector.x2))
+      linearGradient.setAttribute('y2', String(vector.y2))
+      gradient.colors.forEach((color, index) => {
+        const stop = document.createElementNS(
+          'http://www.w3.org/2000/svg',
+          'stop',
+        )
+        stop.setAttribute('offset', String(gradient.stops[index]))
+        stop.setAttribute('stop-color', color)
+        linearGradient.appendChild(stop)
+      })
+      defs.appendChild(linearGradient)
+      svg.appendChild(defs)
+      fillPaint = `url(#${gradientId})`
+    }
+
     for (const item of renderGeometry.paths) {
       const path = document.createElementNS(
         'http://www.w3.org/2000/svg',
         'path',
       )
       path.setAttribute('d', item.d)
-      path.setAttribute('fill', item.fillable ? props.fillColor : 'none')
+      path.setAttribute('fill', item.fillable ? fillPaint : 'none')
       path.setAttribute('fill-opacity', String(props.fillOpacity))
       if (item.fillable && renderGeometry.fillRule) {
         path.setAttribute('fill-rule', renderGeometry.fillRule)

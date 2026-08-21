@@ -125,6 +125,85 @@ doc.placement.alignObjects([aId, bId], 'left') // needs ≥ 2 objects
 doc.placement.alignObjectsToPlane([blockId], 'horizontal-center')
 ```
 
+## Unreleased — 2026-08-21 — Shape 填充支持线性渐变；形状工具条改为类目式面板
+
+**Severity**: minor
+
+**What changed**: `ShapeBlockProps` gained optional structured gradient-fill
+fields — `fillType: 'solid' | 'linear-gradient'`, `gradientAngle`,
+`gradientColors`, `gradientStops` — mirroring the WordArt fill contract. A
+missing `fillType` still means solid, so existing documents render unchanged.
+The shape block component and the inline shape Embed both render gradients as
+per-instance SVG `<linearGradient>` defs; the HTML adapter round-trips the new
+fields through `dataShapeFillType` / `dataShapeGradient*` attributes. The shape
+toolbar was restructured from one long strip into the text-box/WordArt
+rail-plus-panel form: rail entries 布局选项 / 形状样式 / 删除形状, with the
+样式 panel embedding `ShapeFillPanelComponent` (纯色 palette / 渐变 preset
+gallery `SHAPE_FILL_GRADIENT_PRESETS` + custom start/end color and angle),
+填充透明度, and the 轮廓 controls (CSES palette color, width and line-style
+radio rows); the 布局 panel holds 文字环绕, 排列 and 页面对齐. Fill changes
+emit one atomic `fill-style` action; the old `fill-color` action stays
+accepted but is `@deprecated`. The plugin anchors the toolbar right-top /
+left-top beside the shape and feeds the `side` input from position changes.
+Supporting change: the WordArt toolbar's
+interaction-ownership check was extracted to the shared
+`isObjectToolbarOwnedTarget()` / `hasOpenOwnedSubOverlay()` helpers in
+`plugins/object-layout/object-toolbar-interaction.ts`, now also used by the
+shape toolbar so panel interaction (including the stray `selectionchange`
+fired when a panel with form controls mounts) no longer closes it.
+
+**Why**: 模板场景需要 Word 式的形状渐变填充；长条工具条容不下渐变与
+轮廓设置，遂对齐文本框/艺术字的类目式面板。同时修复面板/下拉交互中
+杂散 selectionchange 丢选区导致工具条整体关闭的问题。
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`（ShapeBlockProps 填充契约）
+- `blockcraft-plugins-toolbar.md`（ShapeToolbarPlugin 类目式面板与填充）
+
+### Deprecations
+
+- `ShapeToolbarAction` 的 `{name: 'fill-color'}` 变体 `@deprecated`（无移除
+  计划）；UI 改发 `{name: 'fill-style', value: ShapeFillChange}`。
+
+### New APIs / Features
+
+- `ShapeBlockProps.fillType / gradientAngle / gradientColors / gradientStops`
+- `ShapeFillType`, `ShapeGradientFill`, `ShapeFillGradientPreset`,
+  `DEFAULT_SHAPE_GRADIENT`, `SHAPE_FILL_GRADIENT_PRESETS`,
+  `normalizeShapeGradient()`, `normalizeShapeGradientAngle()`,
+  `shapeGradientToCss()`, `shapeGradientToSvgVector()`,
+  `resolveShapeFillGradient()`（`blocks/shape-block` barrel 导出）
+- `ShapeFillPanelComponent` / `ShapeFillChange` / `ShapeToolbarPanel` /
+  `ShapeToolbarSide`（`plugins/shape-toolbar`；`ShapeToolbarComponent` 新增
+  `side` input 与 `panelChange` output）
+- `isObjectToolbarOwnedTarget()` / `hasOpenOwnedSubOverlay()`
+  （`plugins/object-layout`）
+
+### Migration Recipe
+
+```typescript
+// 写入渐变填充（一次事务）
+block.updateProps({
+  fillType: 'linear-gradient',
+  gradientAngle: 160,
+  gradientColors: ['#26405E', '#58402E'],
+  gradientStops: [0, 1],
+})
+
+// 回到纯色
+block.updateProps({fillType: 'solid', fillColor: '#93C5FD'})
+```
+
+### Behavior Changes
+
+- 形状工具条由横向长条改为侧边 rail + 面板（右上优先、左上回退），
+  填充/透明度/轮廓收进「形状样式」面板，环绕/排列/页面对齐收进
+  「布局选项」面板；`ShapeToolbarComponent` 不再渲染横向按钮条。
+- 工具条面板交互期间（含面板挂载触发的杂散 selectionchange、取色器弹层
+  抢占焦点把整块选中重算成同块 boundary 选区、或选区暂空）形状工具条
+  不再自动关闭；选区离开当前形状或交互归属丢失时仍会关闭。
+
 ## Unreleased — 2026-08-20 — Snapshot viewer accepts host block renderers and inline embed views
 
 **Severity**: minor

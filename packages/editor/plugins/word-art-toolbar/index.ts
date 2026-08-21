@@ -20,6 +20,9 @@ import {
 import {
   InlineObjectInteractionController,
 } from '../object-layout/inline-object-interaction'
+import {
+  isObjectToolbarOwnedTarget,
+} from '../object-layout/object-toolbar-interaction'
 
 export * from './word-art-toolbar.component'
 export * from './word-art-transform-overlay.component'
@@ -360,43 +363,9 @@ export class WordArtToolbarPlugin extends DocPlugin {
   }
 
   private _isToolbarTarget(target: Element | null): boolean {
-    const toolbarElement = this._toolbarRef?.overlayElement
-    if (!target || !toolbarElement) return false
-    if (toolbarElement.contains(target)) return true
-
-    // CSES selects and color pickers attach their panels as sibling CDK
-    // overlays. Treat them as toolbar-owned only while the originating
-    // control in this WordArt toolbar is open.
-    const ownsOpenColorPicker = !!toolbarElement.querySelector(
-      'cs-color-picker.cs-color-picker-open',
-    )
-    if (
-      ownsOpenColorPicker &&
-      !!target.closest('.cs-color-picker-overlay-pane .cs-color-picker-panel')
-    ) {
-      return true
-    }
-    const ownsOpenSelect = !!toolbarElement.querySelector(
-      'cs-select.cs-select-open',
-    )
-    if (
-      ownsOpenSelect &&
-      !!target.closest('.cs-select-panel .cs-select-dropdown')
-    ) {
-      return true
-    }
-
-    const binding = target.closest<HTMLElement>(
-      '[data-float-binding][data-float-id]',
-    )
-    const bindingId = binding?.getAttribute('data-float-id')
-    if (!bindingId) return false
-    return Array.from(
-      toolbarElement.querySelectorAll<HTMLElement>(
-        '[data-float-binding][data-float-id]',
-      ),
-    ).some(
-      (candidate) => candidate.getAttribute('data-float-id') === bindingId,
+    return isObjectToolbarOwnedTarget(
+      this._toolbarRef?.overlayElement,
+      target,
     )
   }
 

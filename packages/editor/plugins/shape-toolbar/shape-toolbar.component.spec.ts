@@ -2,11 +2,7 @@ import {ChangeDetectorRef} from '@angular/core'
 import {By} from '@angular/platform-browser'
 import {TestBed} from '@angular/core/testing'
 import {CsTooltipDirective} from '@cses/ui'
-import {
-  BcFloatToolbarItemComponent,
-  BcOverlayTriggerDirective,
-} from '../../components'
-import {ShapeToolbarComponent, ShapeToolbarAction} from './shape-toolbar.component'
+import {ShapeToolbarComponent, ShapeToolbarAction, ShapeToolbarPanel} from './shape-toolbar.component'
 
 describe('ShapeToolbarComponent', () => {
   function createComponent(
@@ -41,6 +37,7 @@ describe('ShapeToolbarComponent', () => {
           }),
           canMoveForward: () => true,
           canMoveBackward: () => false,
+          canAlignObjectsToPlane: () => true,
           isInObjectGroup: () => grouped,
         },
       },
@@ -66,48 +63,66 @@ describe('ShapeToolbarComponent', () => {
     const actions: ShapeToolbarAction[] = []
     component.action.subscribe(action => actions.push(action))
 
-    component.emitString('fill-color', {
-      target: {value: '#FF0000'},
-    } as any)
     component.emitNumber('fill-opacity', {
       target: {value: '0.6'},
     } as any)
-    component.toggleStrokeStyle()
-    const trigger = jasmine.createSpyObj<BcOverlayTriggerDirective>(
-      'BcOverlayTriggerDirective',
-      ['closePanel'],
-    )
-    component.selectStrokeWidth(
-      {value: 6} as BcFloatToolbarItemComponent,
-      trigger,
-    )
+    component.setStrokeColor('#FF0000')
+    component.setStrokeColor(null)
+    component.setStrokeWidth(6)
+    component.setStrokeStyle('dashed')
+    // 与当前线型相同的选择不重复发动作
+    component.setStrokeStyle('solid')
 
     expect(actions).toEqual([
-      {name: 'fill-color', value: '#FF0000'},
       {name: 'fill-opacity', value: 0.6},
-      {name: 'stroke-style', value: 'dashed'},
+      {name: 'stroke-color', value: '#FF0000'},
       {name: 'stroke-width', value: 6},
+      {name: 'stroke-style', value: 'dashed'},
     ])
-    expect(trigger.closePanel).toHaveBeenCalledTimes(1)
   })
 
-  it('exposes only the unified outline-width dropdown data', () => {
+  it('emits one atomic fill-style action from the fill panel', () => {
     const component = createComponent()
+    const actions: ShapeToolbarAction[] = []
+    component.action.subscribe(action => actions.push(action))
 
-    expect(component.strokeWidthLabel).toBe('2 px')
-    expect(component.strokeWidthOptions).toEqual([
-      {value: 0, label: '无'},
-      {value: 1, label: '1 px'},
-      {value: 2, label: '2 px'},
-      {value: 3, label: '3 px'},
-      {value: 4, label: '4 px'},
-      {value: 6, label: '6 px'},
+    component.onFillChange({
+      fillType: 'linear-gradient',
+      gradientAngle: 160,
+      gradientColors: ['#26405E', '#58402E'],
+      gradientStops: [0, 1],
+    })
+    component.onFillChange({fillType: 'solid', fillColor: '#FF0000'})
+
+    expect(actions).toEqual([
+      {
+        name: 'fill-style',
+        value: {
+          fillType: 'linear-gradient',
+          gradientAngle: 160,
+          gradientColors: ['#26405E', '#58402E'],
+          gradientStops: [0, 1],
+        },
+      },
+      {name: 'fill-style', value: {fillType: 'solid', fillColor: '#FF0000'}},
     ])
-    expect((component as any).shapeDefinitions).toBeUndefined()
-    expect((component as any).textAlignItems).toBeUndefined()
   })
 
-  it('renders no change-shape, native select or text-format controls', async () => {
+  it('toggles rail panels and reports size changes for repositioning', () => {
+    const component = createComponent()
+    const panels: Array<ShapeToolbarPanel | null> = []
+    component.panelChange.subscribe(panel => panels.push(panel))
+
+    component.togglePanel('style')
+    component.togglePanel('style')
+    component.togglePanel('layout')
+    component.closePanel()
+
+    expect(panels).toEqual(['style', null, 'layout', null])
+    expect(component.activePanel).toBeNull()
+  })
+
+  it('renders a collapsed rail with layout, style and delete entries', async () => {
     await TestBed.configureTestingModule({
       imports: [ShapeToolbarComponent],
     }).compileComponents()
@@ -116,41 +131,38 @@ describe('ShapeToolbarComponent', () => {
     fixture.detectChanges()
     const host = fixture.nativeElement as HTMLElement
 
+    expect(host.querySelector('.shape-toolbar__panel')).toBeNull()
     expect(host.querySelector('select')).toBeNull()
-    expect(host.querySelector('[aria-label="更改形状"]')).toBeNull()
     expect(host.querySelector('bc-shape-picker')).toBeNull()
-    expect(host.querySelector('[aria-label="文字颜色"]')).toBeNull()
-    expect(host.querySelector('[aria-label="文字左对齐"]')).toBeNull()
-    expect(host.querySelector('[aria-label="垂直对齐"]')).toBeNull()
-    expect(host.querySelector(
-      'bc-float-toolbar-item[name="stroke-width"]',
-    )).not.toBeNull()
-    expect(host.querySelector(
-      '[aria-label="形状填充"] .bc_tianchongyanse',
-    )).not.toBeNull()
-    expect(host.querySelector(
-      'button[aria-label="实线/虚线"] .bc_xuxian',
-    )).not.toBeNull()
-    expect(host.querySelector('.shape-toolbar [title]')).toBeNull()
-
     const tooltipTitles = fixture.debugElement
       .queryAll(By.directive(CsTooltipDirective))
       .map(debugElement =>
         debugElement.injector.get(CsTooltipDirective).csTooltip(),
       )
-    expect(tooltipTitles).toEqual([
-      '形状填充',
-      '填充透明度',
-      '轮廓颜色',
-      '轮廓粗细',
-      '实线/虚线',
-      '嵌入型',
-      '四周型环绕',
-      '上下型',
-      '衬于文字下方',
-      '浮于文字上方',
-      '删除形状',
-    ])
+    expect(tooltipTitles).toEqual(['布局选项', '形状样式', '删除形状'])
+
+    fixture.destroy()
+    TestBed.resetTestingModule()
+  })
+
+  it('renders fill, opacity and outline controls inside the style panel', async () => {
+    await TestBed.configureTestingModule({
+      imports: [ShapeToolbarComponent],
+    }).compileComponents()
+    const fixture = TestBed.createComponent(ShapeToolbarComponent)
+    fixture.componentInstance.shapeBlock = createComponent().shapeBlock
+    fixture.componentInstance.activePanel = 'style'
+    fixture.detectChanges()
+    const host = fixture.nativeElement as HTMLElement
+
+    expect(host.querySelector('bc-shape-fill-panel')).not.toBeNull()
+    expect(host.querySelector('cs-color-picker')).not.toBeNull()
+    expect(host.querySelectorAll(
+      '[aria-label="轮廓粗细"] .shape-toolbar__option',
+    ).length).toBe(6)
+    expect(host.querySelectorAll(
+      '[aria-label="轮廓线型"] .shape-toolbar__option',
+    ).length).toBe(2)
 
     const range = host.querySelector<HTMLInputElement>(
       '.shape-toolbar__range input[type="range"]',
@@ -160,58 +172,74 @@ describe('ShapeToolbarComponent', () => {
     range!.value = '0.4'
     range!.dispatchEvent(new Event('input'))
     expect(range!.style.getPropertyValue('--shape-range-progress')).toBe('40%')
-    expect(host.querySelector('[aria-label="上移一层"]')).toBeNull()
-    expect(host.querySelector('[aria-label="下移一层"]')).toBeNull()
 
     fixture.destroy()
     TestBed.resetTestingModule()
   })
 
-  it('renders stack controls only for absolute shapes', async () => {
+  it('renders stack and page-alignment controls only for free absolute shapes', async () => {
     await TestBed.configureTestingModule({
       imports: [ShapeToolbarComponent],
     }).compileComponents()
     const fixture = TestBed.createComponent(ShapeToolbarComponent)
     fixture.componentInstance.shapeBlock = createComponent('absolute').shapeBlock
+    fixture.componentInstance.activePanel = 'layout'
     const actions: ShapeToolbarAction[] = []
     fixture.componentInstance.action.subscribe(action => actions.push(action))
     fixture.detectChanges()
     const host = fixture.nativeElement as HTMLElement
-    const forward = host.querySelector<HTMLButtonElement>(
-      'button[aria-label="上移一层"]',
-    )
-    const backward = host.querySelector<HTMLButtonElement>(
-      'button[aria-label="下移一层"]',
-    )
 
+    const buttons = Array.from(host.querySelectorAll<HTMLButtonElement>(
+      '.shape-toolbar__stack-actions button',
+    ))
+    const forward = buttons.find(b => b.textContent!.includes('上移一层'))
+    const backward = buttons.find(b => b.textContent!.includes('下移一层'))
     expect(forward?.querySelector('.bc_cengji-shangyi')).not.toBeNull()
     expect(backward?.querySelector('.bc_cengji-xiayi')).not.toBeNull()
-    expect(forward?.disabled).toBeFalse()
-    expect(backward?.disabled).toBeTrue()
+    // 禁用态的具体呈现属于 cs-button；这里断言组件闸门。
+    expect(fixture.componentInstance.canMoveForward).toBeTrue()
+    expect(fixture.componentInstance.canMoveBackward).toBeFalse()
     forward!.click()
     expect(actions).toContain({name: 'move-forward'})
-    const tooltipTitles = fixture.debugElement
-      .queryAll(By.directive(CsTooltipDirective))
-      .map(debugElement =>
-        debugElement.injector.get(CsTooltipDirective).csTooltip(),
-      )
-    expect(tooltipTitles).toContain('上移一层')
-    expect(tooltipTitles).toContain('下移一层')
-    expect(host.querySelector(
-      '.shape-toolbar__tooltip-host[csTooltip] button:disabled',
-    )).not.toBeNull()
+    expect(host.querySelectorAll(
+      '.shape-toolbar__plane-align-actions button',
+    ).length).toBe(3)
 
-    fixture.componentInstance.shapeBlock = createComponent(
-      'absolute',
-      true,
-    ).shapeBlock
+    // 相对流内形状：布局面板保留环绕，但无排列/页面对齐
+    fixture.componentRef.setInput(
+      'shapeBlock',
+      createComponent('relative').shapeBlock,
+    )
     fixture.detectChanges()
-    expect(host.querySelector('[aria-label="上移一层"]')).toBeNull()
-    expect(host.querySelector('[aria-label="下移一层"]')).toBeNull()
-    expect(host.querySelector('[aria-label="嵌入型"]')).toBeNull()
-    expect(host.querySelector('[aria-label="上下型"]')).toBeNull()
+    expect(host.querySelector('.shape-toolbar__stack-actions')).toBeNull()
+    expect(host.querySelector('.shape-toolbar__plane-align-actions')).toBeNull()
+    expect(host.querySelectorAll('.shape-toolbar__layout-option').length).toBe(5)
+
+    // 组内形状：整个布局入口与面板都不出现
+    fixture.componentRef.setInput(
+      'shapeBlock',
+      createComponent('absolute', true).shapeBlock,
+    )
+    fixture.detectChanges()
+    expect(host.querySelector('.shape-toolbar__panel')).toBeNull()
+    expect(host.querySelector('[aria-label="布局选项"]')).toBeNull()
 
     fixture.destroy()
     TestBed.resetTestingModule()
+  })
+
+  it('emits page alignment from the layout panel options', () => {
+    const component = createComponent('absolute')
+    const actions: ShapeToolbarAction[] = []
+    component.action.subscribe(action => actions.push(action))
+
+    component.selectPlaneAlign('right')
+
+    expect(actions).toEqual([{name: 'plane-align', value: 'right'}])
+    expect(component.planeAlignOptions.map(item => item.value)).toEqual([
+      'left',
+      'horizontal-center',
+      'right',
+    ])
   })
 })
