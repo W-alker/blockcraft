@@ -112,6 +112,77 @@ describe('BlockPlacementAlignmentCoordinator', () => {
     expect(coordinator.alignObjects(['shape-a', 'image-b'], 'right')).toBeFalse()
     expect(transact).not.toHaveBeenCalled()
   })
+
+  it('aligns a single object to the plane edges and center', () => {
+    const left = makeAlignmentHarness()
+    expect(left.coordinator.canAlignObjectsToPlane(['image-b'])).toBeTrue()
+    expect(left.coordinator.alignObjectsToPlane(['image-b'], 'left')).toBeTrue()
+    expect(left.propsById.get('image-b')!['position']).toEqual({x: 0, y: 40})
+
+    const center = makeAlignmentHarness()
+    expect(center.coordinator.alignObjectsToPlane(
+      ['shape-a'],
+      'horizontal-center',
+    )).toBeTrue()
+    expect(center.propsById.get('shape-a')!['position']).toEqual({x: 90, y: 20})
+
+    const right = makeAlignmentHarness()
+    expect(right.coordinator.alignObjectsToPlane(['image-b'], 'right')).toBeTrue()
+    expect(right.propsById.get('image-b')!['position']).toEqual({x: 160, y: 40})
+  })
+
+  it('plane-aligns rotated objects by their visual bounds', () => {
+    const {coordinator, doc, propsById} = makeAlignmentHarness()
+
+    // shape-c is 20x10 rotated 90°: its visual band is 10 wide around x+5.
+    expect(coordinator.alignObjectsToPlane(['shape-c'], 'right')).toBeTrue()
+    expect(propsById.get('shape-c')!['position']).toEqual({x: 185, y: 80})
+
+    const geometry = resolvePlacementObjectGeometry(doc as any, 'shape-c')!
+    expect(resolvePlacementObjectVisualBounds(geometry).right).toBe(200)
+  })
+
+  it('plane-aligns every selected object independently in one transaction', () => {
+    const {coordinator, propsById, transact, updateBlockProps} =
+      makeAlignmentHarness()
+
+    expect(coordinator.alignObjectsToPlane(
+      ['shape-a', 'image-b'],
+      'left',
+    )).toBeTrue()
+    expect(transact).toHaveBeenCalledTimes(1)
+    expect(updateBlockProps).toHaveBeenCalledTimes(2)
+    expect(propsById.get('shape-a')!['position']).toEqual({x: 0, y: 20})
+    expect(propsById.get('image-b')!['position']).toEqual({x: 0, y: 40})
+  })
+
+  it('treats an already plane-aligned object as a successful no-op', () => {
+    const {coordinator, transact} = makeAlignmentHarness()
+
+    expect(coordinator.alignObjectsToPlane(['shape-a'], 'left')).toBeTrue()
+    expect(coordinator.alignObjectsToPlane(['shape-a'], 'left')).toBeTrue()
+    expect(transact).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects plane alignment without objects, plane width or write access', () => {
+    const {coordinator, doc, readonlyIds, transact} = makeAlignmentHarness()
+
+    expect(coordinator.canAlignObjectsToPlane([])).toBeFalse()
+    expect(coordinator.canAlignObjectsToPlane(['missing'])).toBeFalse()
+    expect(coordinator.canAlignObjectsToPlane(
+      ['shape-a'],
+      'top' as any,
+    )).toBeFalse()
+
+    readonlyIds.add('shape-a')
+    expect(coordinator.alignObjectsToPlane(['shape-a'], 'left')).toBeFalse()
+    readonlyIds.delete('shape-a')
+
+    doc.objectSizing.rootContentWidth = 0
+    expect(coordinator.canAlignObjectsToPlane(['shape-a'])).toBeFalse()
+    expect(coordinator.alignObjectsToPlane(['shape-a'], 'left')).toBeFalse()
+    expect(transact).not.toHaveBeenCalled()
+  })
 })
 
 function makeAlignmentHarness() {

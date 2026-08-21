@@ -25,6 +25,7 @@ import {
   type BlockObjectBlockLayout,
   type BlockObjectLayout,
   type BlockObjectLayoutAdapter,
+  type BlockObjectPlaneAlignment,
   type BlockPlacementDragState,
   type BlockPlacementFlowAnchor,
 } from './block-placement/types'
@@ -43,6 +44,7 @@ export {
   BLOCK_OBJECT_GROUP_PADDING,
   BLOCK_OBJECT_LAYOUT_OPTIONS,
   BLOCK_OBJECT_GROUP_FLAVOUR,
+  BLOCK_OBJECT_PLANE_ALIGNMENT_OPTIONS,
   BLOCK_PLACEMENT_LAYOUT_FLAVOUR,
   normalizeBlockObjectGroupProps,
 } from './block-placement/types'
@@ -55,6 +57,8 @@ export type {
   BlockObjectLayoutAdapterContext,
   BlockObjectLayoutOption,
   BlockObjectGroupProps,
+  BlockObjectPlaneAlignment,
+  BlockObjectPlaneAlignmentOption,
   BlockPlacementConfig,
   BlockPlacementDragState,
   BlockPlacementFlowAnchor,
@@ -201,6 +205,30 @@ export class BlockPlacementManager {
     alignment: BlockObjectAlignment,
   ): boolean {
     return this.alignment.alignObjects(blockIds, alignment)
+  }
+
+  /**
+   * Test whether one or more root absolute objects can align against the
+   * placement plane itself (page left/center/right). Requires a measured
+   * plane width; group members are excluded like every alignment command.
+   */
+  canAlignObjectsToPlane(
+    blockIds: readonly string[],
+    alignment?: BlockObjectPlaneAlignment,
+  ): boolean {
+    return this.alignment.canAlignObjectsToPlane(blockIds, alignment)
+  }
+
+  /**
+   * Snap each object's rotation-aware visual bounds to the plane edge/center
+   * in one transaction. Only `position.x` changes; `y`, sizes and layers are
+   * preserved.
+   */
+  alignObjectsToPlane(
+    blockIds: readonly string[],
+    alignment: BlockObjectPlaneAlignment,
+  ): boolean {
+    return this.alignment.alignObjectsToPlane(blockIds, alignment)
   }
 
   canGroup(blockIds: readonly string[]): boolean {

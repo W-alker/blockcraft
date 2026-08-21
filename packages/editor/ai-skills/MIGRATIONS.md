@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-08-20 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-08-21 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -68,6 +68,62 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
+
+## Unreleased — 2026-08-21 — absolute objects align to the page plane; TextBox/Shape toolbars gain 页面对齐
+
+**Severity**: minor
+
+**What changed**: `BlockPlacementManager` gained a plane-relative alignment
+command pair: `canAlignObjectsToPlane(blockIds, alignment?)` and
+`alignObjectsToPlane(blockIds, alignment)` with the new
+`BlockObjectPlaneAlignment` type (`'left' | 'horizontal-center' | 'right'`).
+Unlike the existing `alignObjects()` (mutual alignment, minimum two objects),
+the reference is the root placement plane itself: each object's rotation-aware
+visual bounds snap independently to the plane's left edge, horizontal center
+(`rootContentWidth / 2`) or right edge, so a single floating object is a valid
+target. Only `position.x` is written, in one Yjs transaction; `y`, sizes,
+responsive fields and `placementLayer` are untouched. The command requires the
+same placement-layout parent and readonly rules as every alignment command plus
+a measured plane width, so object-group members are excluded. The shared
+`BLOCK_OBJECT_PLANE_ALIGNMENT_OPTIONS` catalog (`靠左 / 水平居中 / 靠右` with
+`bc_align2left/center/right` icons) is exported for toolbar consumers. The
+TextBox and Shape layout panels expose the command as their own labeled
+**页面对齐** section of three inline buttons below 排列, disabled while
+`canAlignObjectsToPlane()` is false (e.g. before the plane width is measured).
+Both emit a new `plane-align` toolbar action; grouped members never see the
+control.
+
+**Why**: a floating text box or shape could only be positioned by hand-dragging;
+there was no way to align it relative to the page (Word's align-to-page
+left/center/right). Vertical page alignment is deliberately absent: in flow
+view the plane height is the whole document, so top/middle/bottom-of-page has
+no stable meaning.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md` (Object Layout quick reference: plane alignment API)
+- `blockcraft-plugins-toolbar.md` (TextBoxToolbarPlugin + ShapeToolbarPlugin 页面对齐 control)
+
+### New APIs / Features
+
+- `BlockPlacementManager.canAlignObjectsToPlane(blockIds, alignment?)`
+- `BlockPlacementManager.alignObjectsToPlane(blockIds, alignment)`
+- `BlockObjectPlaneAlignment` type and `BlockObjectPlaneAlignmentOption` interface
+- `BLOCK_OBJECT_PLANE_ALIGNMENT_OPTIONS` exported catalog
+- `plane-align` action on `TextBoxToolbarAction` / `ShapeToolbarAction`
+
+### Migration Recipe
+
+No action required — everything is additive. To align a floating object to the
+page from host code:
+
+```typescript
+// before: only mutual multi-object alignment existed
+doc.placement.alignObjects([aId, bId], 'left') // needs ≥ 2 objects
+
+// after: one object aligns against the plane itself
+doc.placement.alignObjectsToPlane([blockId], 'horizontal-center')
+```
 
 ## Unreleased — 2026-08-20 — Snapshot viewer accepts host block renderers and inline embed views
 

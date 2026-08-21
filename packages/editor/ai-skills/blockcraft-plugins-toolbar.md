@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-20
+> Last updated: 2026-08-21
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
@@ -296,6 +296,7 @@ The layout actions are:
 | `over`          | **浮于文字上方**; enters absolute placement above ordinary content                              |
 | `move-forward`  | Move an absolute shape one step toward the foreground, including crossing ordinary flow content |
 | `move-backward` | Move an absolute shape one step toward the background, including crossing ordinary flow content |
+| `plane-align`   | Snap an absolute shape's visual bounds to the placement plane's left edge / horizontal center / right edge; only `position.x` changes |
 
 Clicking an inline shape selects its one-character Embed in both
 `BlockSelection` and the native Range, then opens a layout-only toolbar with
@@ -431,7 +432,10 @@ Object layout is limited to `top-bottom`, `under` and `over`; those three
 choices are the layout card's only placement controls. It does not repeat them
 through a separate **位置基准 / 随文字移动 / 固定在页面上** section, and it
 does not advertise Square/Tight/Through wrapping. Root absolute objects also
-expose one-step forward/backward stacking. A grouped text box omits the entire
+expose one-step forward/backward stacking in the 排列 section, plus a separate
+labeled **页面对齐** section of three inline buttons (靠左 / 水平居中 / 靠右)
+that call `doc.placement.alignObjectsToPlane([blockId], value)` and write only
+`position.x`. A grouped text box omits the entire
 **布局** rail entry and panel rather than showing unavailable choices. No
 inline/wrap conversion is advertised because a multi-Block container has no
 inline Embed or block-wrap representation.

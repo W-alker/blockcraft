@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-08-20 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-08-21 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -540,7 +540,17 @@ the selected group. Two objects enable left/horizontal-center/right,
 top/vertical-center/bottom and combined center alignment. Horizontal and
 vertical distribution require three objects. Alignment changes only root-local
 `position` in one transaction; responsive/fixed size fields and layers remain
-unchanged. A selection on any nested
+unchanged.
+`doc.placement.alignObjectsToPlane(blockIds, alignment)` additionally aligns
+one or more root absolute objects against the placement plane itself:
+`'left' | 'horizontal-center' | 'right'` snaps each object's rotation-aware
+visual bounds to the plane's left edge, horizontal center or right edge
+independently, writing only `position.x` in one transaction.
+`canAlignObjectsToPlane()` gates on the same placement-layout parent and
+readonly rules plus a measured plane width, so group members are excluded. The
+TextBox and Shape object toolbars expose it as an inline three-button 页面对齐
+group (`BLOCK_OBJECT_PLANE_ALIGNMENT_OPTIONS`) for a single absolute object,
+disabled while `canAlignObjectsToPlane()` is false. A selection on any nested
 descendant keeps the ancestor group frame visible. After the group or one of
 its descendants owns Selection, its document-capture listener no longer
 consumes member `pointerdown`, leaving local member dragging to the image,

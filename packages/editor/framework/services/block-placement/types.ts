@@ -47,6 +47,27 @@ export type BlockObjectAlignment =
   | 'vertical-distribute'
 
 /**
+ * One-shot horizontal alignment of root absolute objects relative to the
+ * placement plane itself (page left edge / horizontal center / right edge).
+ * Unlike {@link BlockObjectAlignment}, the reference is the plane, so a single
+ * object is a valid target.
+ */
+export type BlockObjectPlaneAlignment = 'left' | 'horizontal-center' | 'right'
+
+export interface BlockObjectPlaneAlignmentOption {
+  value: BlockObjectPlaneAlignment
+  label: string
+  icon: string
+}
+
+export const BLOCK_OBJECT_PLANE_ALIGNMENT_OPTIONS:
+  readonly BlockObjectPlaneAlignmentOption[] = [
+  {value: 'left', label: '靠左', icon: 'bc_align2left'},
+  {value: 'horizontal-center', label: '水平居中', icon: 'bc_align2center'},
+  {value: 'right', label: '靠右', icon: 'bc_align2right'},
+] as const
+
+/**
  * User-facing object layout vocabulary.
  *
  * `inline` changes the object representation and is therefore handled by a

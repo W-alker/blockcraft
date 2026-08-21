@@ -12,7 +12,9 @@ import {
 } from '@cses/ui'
 import {
   BLOCK_OBJECT_LAYOUT_OPTIONS,
+  BLOCK_OBJECT_PLANE_ALIGNMENT_OPTIONS,
   type BlockObjectBlockLayout,
+  type BlockObjectPlaneAlignment,
 } from '../../framework'
 import {
   type BcOverlayTriggerDirective,
@@ -44,6 +46,7 @@ export type TextBoxToolbarSide = 'left' | 'right'
 export type TextBoxToolbarAction =
   | {name: 'update-props'; value: TextBoxToolbarPropsPatch}
   | {name: 'object-layout'; value: BlockObjectBlockLayout}
+  | {name: 'plane-align'; value: BlockObjectPlaneAlignment}
   | {name: 'move-forward'}
   | {name: 'move-backward'}
   | {name: 'delete'}
@@ -218,6 +221,27 @@ const TEXT_BOX_LAYOUT_OPTIONS = BLOCK_OBJECT_LAYOUT_OPTIONS.filter(
                 <i class="bc_icon bc_cengji-xiayi" aria-hidden="true"></i>
                 下移一层
               </button>
+            </div>
+
+            <div class="text-box-toolbar__section-label">页面对齐</div>
+            <div
+              class="text-box-toolbar__plane-align-actions"
+              role="group"
+              aria-label="页面对齐">
+              @for (item of planeAlignOptions; track item.value) {
+                <button
+                  cs-button
+                  csType="secondary"
+                  csSize="sm"
+                  type="button"
+                  class="text-box-toolbar__plane-align-option"
+                  [attr.aria-label]="item.label"
+                  [disabled]="!canAlignToPlane"
+                  (click)="selectPlaneAlign(item.value)">
+                  <i [class]="'bc_icon ' + item.icon" aria-hidden="true"></i>
+                  {{ item.label }}
+                </button>
+              }
             </div>
           }
         </section>
@@ -421,6 +445,22 @@ const TEXT_BOX_LAYOUT_OPTIONS = BLOCK_OBJECT_LAYOUT_OPTIONS.filter(
       margin-right: 4px;
     }
 
+    .text-box-toolbar__plane-align-actions {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    /* 288px 面板三等分后每格约 84px，压缩水平内边距避免「水平居中」被截断 */
+    .text-box-toolbar__plane-align-option.cs-btn {
+      min-width: 0;
+      padding: 0 4px;
+    }
+
+    .text-box-toolbar__plane-align-option .bc_icon {
+      margin-right: 4px;
+    }
+
   `],
 })
 export class TextBoxToolbarComponent {
@@ -438,6 +478,7 @@ export class TextBoxToolbarComponent {
   readonly panelChange = new EventEmitter<TextBoxToolbarPanel | null>()
 
   readonly layoutOptions = TEXT_BOX_LAYOUT_OPTIONS
+  readonly planeAlignOptions = BLOCK_OBJECT_PLANE_ALIGNMENT_OPTIONS
   activePanel: TextBoxToolbarPanel | null = null
 
   constructor(readonly cdr: ChangeDetectorRef) {}
@@ -489,6 +530,13 @@ export class TextBoxToolbarComponent {
     return this.textBoxBlock.doc.placement.canMoveBackward(this.textBoxBlock)
   }
 
+  /** 页面对齐依赖已测量的 plane 宽度；未就绪时按钮禁用而非静默空点。 */
+  get canAlignToPlane(): boolean {
+    return this.textBoxBlock.doc.placement.canAlignObjectsToPlane(
+      [this.textBoxBlock.id],
+    )
+  }
+
   get tooltipPlacement(): 'left' | 'right' {
     return this.side === 'right' ? 'left' : 'right'
   }
@@ -506,6 +554,10 @@ export class TextBoxToolbarComponent {
 
   setObjectLayout(value: BlockObjectBlockLayout): void {
     this.action.emit({name: 'object-layout', value})
+  }
+
+  selectPlaneAlign(value: BlockObjectPlaneAlignment): void {
+    this.action.emit({name: 'plane-align', value})
   }
 
   applyPreset(

@@ -1,4 +1,7 @@
-import type {BlockObjectAlignment} from './types'
+import type {
+  BlockObjectAlignment,
+  BlockObjectPlaneAlignment,
+} from './types'
 import {BlockPlacementRuntime} from './runtime'
 import {
   type PlacementObjectGeometry,
@@ -17,6 +20,11 @@ interface ObjectWithBounds {
   bounds: PlacementObjectVisualBounds
 }
 
+interface PositionPatch {
+  id: string
+  position: {x: number; y: number}
+}
+
 const DISTRIBUTION_ALIGNMENTS = new Set<BlockObjectAlignment>([
   'horizontal-distribute',
   'vertical-distribute',
@@ -31,11 +39,19 @@ const OBJECT_ALIGNMENTS = new Set<BlockObjectAlignment>([
   'center',
   ...DISTRIBUTION_ALIGNMENTS,
 ])
+const PLANE_ALIGNMENTS = new Set<BlockObjectPlaneAlignment>([
+  'left',
+  'horizontal-center',
+  'right',
+])
 
 const sameGeometryNumber = (current: number, next: number): boolean =>
   Math.abs(current - next) < 0.0001
 
-/** Model-only multi-object alignment inside one root placement plane. */
+/**
+ * Model-only alignment inside one root placement plane: multi-object mutual
+ * alignment/distribution, plus plane-relative (page) horizontal alignment.
+ */
 export class BlockPlacementAlignmentCoordinator {
   constructor(
     private readonly doc: BlockCraft.Doc,
@@ -71,6 +87,43 @@ export class BlockPlacementAlignmentCoordinator {
       ) return []
       return [{id: object.id, position: {x, y}}]
     })
+    return this.commitPositions(patches)
+  }
+
+  canAlignObjectsToPlane(
+    blockIds: readonly string[],
+    alignment?: BlockObjectPlaneAlignment,
+  ): boolean {
+    return this.resolvePlaneCandidate(blockIds, alignment) !== null
+  }
+
+  /**
+   * Align each object horizontally against the plane itself. Every selected
+   * object snaps independently — the reference is the plane edge/center, not
+   * the other objects — so a single object is a valid target.
+   */
+  alignObjectsToPlane(
+    blockIds: readonly string[],
+    alignment: BlockObjectPlaneAlignment,
+  ): boolean {
+    const candidate = this.resolvePlaneCandidate(blockIds, alignment)
+    if (!candidate) return false
+    const planeWidth = this.doc.objectSizing.rootContentWidth
+    const patches = candidate.objects.flatMap(object => {
+      const bounds = resolvePlacementObjectVisualBounds(object)
+      const offset = alignment === 'left'
+        ? -bounds.left
+        : alignment === 'horizontal-center'
+          ? planeWidth / 2 - bounds.centerX
+          : planeWidth - bounds.right
+      const x = roundPlacementGeometry(object.x + offset)
+      if (sameGeometryNumber(object.x, x)) return []
+      return [{id: object.id, position: {x, y: object.y}}]
+    })
+    return this.commitPositions(patches)
+  }
+
+  private commitPositions(patches: readonly PositionPatch[]): boolean {
     if (!patches.length) return true
 
     this.doc.crud.transact(() => {
@@ -86,8 +139,25 @@ export class BlockPlacementAlignmentCoordinator {
     alignment?: BlockObjectAlignment,
   ): AlignmentCandidate | null {
     if (alignment !== undefined && !OBJECT_ALIGNMENTS.has(alignment)) return null
-    const uniqueIds = [...new Set(blockIds)]
     const minimum = alignment && DISTRIBUTION_ALIGNMENTS.has(alignment) ? 3 : 2
+    return this.resolveObjects(blockIds, minimum)
+  }
+
+  private resolvePlaneCandidate(
+    blockIds: readonly string[],
+    alignment?: BlockObjectPlaneAlignment,
+  ): AlignmentCandidate | null {
+    if (alignment !== undefined && !PLANE_ALIGNMENTS.has(alignment)) return null
+    // An unmeasured plane (width 0) has no meaningful edges or center.
+    if (!(this.doc.objectSizing.rootContentWidth > 0)) return null
+    return this.resolveObjects(blockIds, 1)
+  }
+
+  private resolveObjects(
+    blockIds: readonly string[],
+    minimum: number,
+  ): AlignmentCandidate | null {
+    const uniqueIds = [...new Set(blockIds)]
     if (uniqueIds.length < minimum || this.doc.isReadonly) return null
     if (uniqueIds.some(id => this.runtime.isReadonly(id))) return null
 

@@ -348,6 +348,11 @@ export class TextBoxToolbarPlugin extends DocPlugin {
       }
       return
     }
+    if (action.name === 'plane-align') {
+      this.doc.placement.alignObjectsToPlane([block.id], action.value)
+      this._toolbarComponent?.cdr.markForCheck()
+      return
+    }
     if (action.name === 'move-forward') {
       this.doc.placement.moveForward(block)
       this._toolbarComponent?.cdr.markForCheck()

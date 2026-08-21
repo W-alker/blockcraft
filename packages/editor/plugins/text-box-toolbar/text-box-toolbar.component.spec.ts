@@ -29,6 +29,7 @@ describe('TextBoxToolbarComponent', () => {
           getState: () => ({mode, x: 0, y: 0, layer: 'over'}),
           canMoveForward: () => true,
           canMoveBackward: () => false,
+          canAlignObjectsToPlane: () => true,
           isInObjectGroup: () => grouped,
         },
       },
@@ -77,6 +78,7 @@ describe('TextBoxToolbarComponent', () => {
           getState: () => ({mode: 'relative'}),
           canMoveForward: () => false,
           canMoveBackward: () => false,
+          canAlignObjectsToPlane: () => true,
         },
       },
     } as any
@@ -124,6 +126,7 @@ describe('TextBoxToolbarComponent', () => {
           getState: () => ({mode: 'relative'}),
           canMoveForward: () => false,
           canMoveBackward: () => false,
+          canAlignObjectsToPlane: () => true,
         },
       },
     } as any
@@ -228,6 +231,48 @@ describe('TextBoxToolbarComponent', () => {
 
     fixture.destroy()
     TestBed.resetTestingModule()
+  })
+
+  it('offers three inline page-alignment options in the absolute layout panel', async () => {
+    await TestBed.configureTestingModule({
+      imports: [TextBoxToolbarComponent],
+    }).compileComponents()
+    const fixture = TestBed.createComponent(TextBoxToolbarComponent)
+    fixture.componentInstance.textBoxBlock =
+      createComponent({}, 'absolute').textBoxBlock
+    fixture.componentInstance.activePanel = 'layout'
+    fixture.detectChanges()
+    const host = fixture.nativeElement as HTMLElement
+
+    const options = host.querySelectorAll<HTMLButtonElement>(
+      '.text-box-toolbar__plane-align-actions ' +
+        '.text-box-toolbar__plane-align-option',
+    )
+    expect(Array.from(options).map(option => option.textContent?.trim()))
+      .toEqual(['靠左', '水平居中', '靠右'])
+    expect(
+      host.querySelectorAll('.text-box-toolbar__section-label')[2]!.textContent,
+    ).toContain('页面对齐')
+
+    fixture.destroy()
+    TestBed.resetTestingModule()
+  })
+
+  it('emits page alignment directly from an inline option', () => {
+    const component = createComponent({}, 'absolute')
+    const actions: TextBoxToolbarAction[] = []
+    component.action.subscribe(action => actions.push(action))
+
+    component.selectPlaneAlign('horizontal-center')
+
+    expect(actions).toEqual([
+      {name: 'plane-align', value: 'horizontal-center'},
+    ])
+    expect(component.planeAlignOptions.map(option => option.value)).toEqual([
+      'left',
+      'horizontal-center',
+      'right',
+    ])
   })
 
   it('applies one concrete style preset patch without persisting the preset id', () => {
