@@ -74,6 +74,11 @@ export class PaginationPlugin extends DocPlugin {
     return this._config
   }
 
+  /** 宿主首页文档头配置；只读投影面可用它构建独立副本。 */
+  get documentHeader(): Readonly<PaginationDocumentHeaderOptions> | undefined {
+    return this._documentHeader
+  }
+
   override init(): void {
     if (this._exportAbort.signal.aborted) this._exportAbort = new AbortController()
     this._registered = true

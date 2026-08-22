@@ -22,6 +22,12 @@ import {
 } from "./drawing/drawing-tools";
 import {DrawingCanvas} from "./drawing/drawing-canvas";
 import {DrawingToolbarComponent, DrawingToolType} from "./drawing/drawing-toolbar.component";
+import {PaginationPlugin} from "../pagination";
+import {PaginationDocumentHeaderOptions} from "../../framework/modules/pagination";
+
+type PresentationLayoutMode = 'flow' | 'paginated';
+type PaginatedScaleMode = 'fit' | 'manual';
+type PaginatedScrollAnchor = {x: number; y: number};
 
 export interface DemoConfig {
   // presentation?: {
@@ -38,24 +44,27 @@ export interface DemoConfig {
   },
   cover?: DemoCoverBlockModel['props']
   /**
-   * 演示模式相对源文档字号的放大倍数。
-   * demo 容器的 --bc-fs 会被设为 sourceFs * fontScale，表格列宽（colWidths）
-   * 按同样倍数缩放。默认 1.5。设为 1 可关闭放大。
+   * 流式演示页的整体视觉缩放。通过 demo Doc 的 viewScale 统一缩放完整页面，
+   * 不改写字号、行高、段间距或 Snapshot 尺寸。默认 1.5，范围 0.5–2。
+   * 分页演示会按真实纸页自动适配视口，不读取该值。
+   */
+  viewScale?: number
+  /**
+   * @deprecated 请使用 viewScale。为了兼容旧调用，未传 viewScale 时它作为别名，
+   * 但现在缩放的是完整页面，不再单独改写 --bc-fs。
    */
   fontScale?: number
   /**
-   * 演示模式相对源文档行高（--bc-lh）的缩放倍数。默认与 fontScale 保持一致，
-   * 这样 lh / fs 比例不变。需要更紧凑或更宽松的行距时单独设置。
+   * @deprecated 请直接修改文档行高。仅作为旧调用的显式兼容修正量保留。
    */
   lineHeightScale?: number
   /**
-   * 演示模式相对源文档块间距（--bc-segments-gap）的缩放倍数。默认与 fontScale
-   * 保持一致；单独设置可让段落留白更窄或更宽。
+   * @deprecated 请直接修改文档块间距。仅作为旧调用的显式兼容修正量保留。
    */
   segmentsGapScale?: number
 }
 
-const DEFAULT_DEMO_FONT_SCALE = 1.5;
+const DEFAULT_DEMO_VIEW_SCALE = 1.5;
 
 export class PresentationController {
   private pages: IBlockSnapshot[][] = [];
@@ -63,6 +72,10 @@ export class PresentationController {
   private controlBarRef: ComponentRef<DemoControlBarComponent> | null = null;
   private eventCleanups: (() => void)[] = [];
   private presentationContainer: HTMLElement | null = null;
+  private presentationViewport: HTMLElement | null = null;
+  private presentationTrack: HTMLElement | null = null;
+  private presentationSurface: HTMLElement | null = null;
+  private presentationScaleProbe: HTMLElement | null = null;
   private bodyThemeBeforePresentation: string | null = null;
   private presentationTheme: string | null = null;
   private bodyThemeCaptured = false;
@@ -74,6 +87,11 @@ export class PresentationController {
   private isImgPreviewMode = false;
   private needReenterFullscreen = false;
   private currentPreview: SimpleImagePreview | null = null;
+  private layoutMode: PresentationLayoutMode = 'flow';
+  private sourcePaginationPlugin: PaginationPlugin | null = null;
+  private demoPaginationPlugin: PaginationPlugin | null = null;
+  private paginatedFitScale = 1;
+  private paginatedScaleMode: PaginatedScaleMode = 'fit';
 
   private _demoDoc: BlockCraft.Doc | null = null;
 
@@ -87,20 +105,29 @@ export class PresentationController {
     // 演示文档是独立的临时只读投影，不应显示或传播源文档的持久锁权限。
     // 文档级 readonly 仍会完整保留，负责阻断所有用户输入与普通 CRUD 调用。
     const rootSnapshot = stripBlockLockMetaDeep(this.originDoc.exportSnapshot()!);
+    this.sourcePaginationPlugin = this.findEnabledPaginationPlugin();
+    this.layoutMode = this.sourcePaginationPlugin ? 'paginated' : 'flow';
 
-    this.pages = analyzePages(rootSnapshot.children as IBlockSnapshot[]);
-
-    if(this.config.cover) {
-      this.pages.unshift([DemoCoverBlockSchema.createSnapshot(this.config.cover)])
+    if (this.layoutMode === 'flow') {
+      this.pages = analyzePages(rootSnapshot.children as IBlockSnapshot[]);
+      if(this.config.cover) {
+        this.pages.unshift([DemoCoverBlockSchema.createSnapshot(this.config.cover)])
+      }
     }
 
-    if (this.pages.length === 0) {
+    if (this.layoutMode === 'flow' && this.pages.length === 0) {
       console.warn('No pages to present');
       return;
     }
 
     nextTick().then(() => {
       this.createDemoDocAndContainer(rootSnapshot)
+
+      if (this.totalPages === 0) {
+        console.warn('No pages to present');
+        this.destroy();
+        return;
+      }
 
       this.enterFullscreen();
 
@@ -115,11 +142,16 @@ export class PresentationController {
 
   createDemoDocAndContainer(rootSnapshot: IBlockSnapshot) {
     const schemas = this.originDoc.schemas.getSchemaList()
-    schemas.push(DemoCoverBlockSchema)
+    if (this.layoutMode === 'flow') {
+      schemas.push(DemoCoverBlockSchema)
+    }
     const schemaStore = new SchemaManager(schemas)
-    // 重新注册根block
-    schemaStore.register(DemoRootBlockSchema)
-    rootSnapshot.children = []
+    if (this.layoutMode === 'flow') {
+      // 流式演示使用专用根 Block 承载逐页 Snapshot；分页演示必须保留源 Root
+      // Schema，否则额外包装会改变真实分页测量。
+      schemaStore.register(DemoRootBlockSchema)
+      rootSnapshot.children = []
+    }
     const presentationContainer = document.createElement('div')
     presentationContainer.className = 'presentation-stage';
     presentationContainer.style.cssText = `
@@ -135,38 +167,49 @@ export class PresentationController {
       padding: 10vh 10vw;
       box-sizing: border-box;
     `
-    // 根据源文档当前 --bc-fs / --bc-lh / --bc-segments-gap 注入演示模式各自的尺寸。
-    // 默认所有 scale 都跟随 fontScale，使整体节奏保持源文档比例；用户可在 config 中
-    // 单独覆盖 lineHeightScale / segmentsGapScale 调整行距和块间距。表格 colWidths
-    // 用 fontScale 缩放。子级（含 demo-root）通过 CSS 变量继承读取这些值。
-    const sourceFs = this.readSourceCssLength('--bc-fs', 16);
-    // --bc-lh 现为无单位比例（line-height ratio），不是 px 长度。
-    const sourceLhRatio = this.readSourceCssLength('--bc-lh', 1.5);
-    const sourceGap = this.readSourceCssLength('--bc-segments-gap', 10);
-    presentationContainer.style.setProperty('--bc-fs', `${sourceFs * this.getFontScale()}px`);
-    // 无单位比例自身随字号等比放大，默认（lineHeightScale === fontScale）保持源比例不变；
-    // 仅当 lineHeightScale ≠ fontScale 时按两者之比调整行距松紧。最终视觉行高
-    // = ratio × demo--bc-fs = (sourceLhRatio·LHS/FS) × (sourceFs·FS) = sourceLhRatio·sourceFs·LHS，
-    // 与旧的 `sourceLhPx × LHS` 完全等价。保持无单位是为了兼容 WebKit 的 CSS zoom。
-    presentationContainer.style.setProperty(
-      '--bc-lh',
-      `${sourceLhRatio * this.getLineHeightScale() / this.getFontScale()}`,
-    );
-    presentationContainer.style.setProperty('--bc-segments-gap', `${sourceGap * this.getSegmentsGapScale()}px`);
+    // 仅复制源文档已解析的排版 token，不在这一层改变数值。
+    // 完整页面的放大在 demo Doc 初始化后由 viewScale 统一完成。
+    this.copySourceLayoutTokens(presentationContainer);
+    this.applyLegacySpacingOverrides(presentationContainer);
 
     this.captureBodyTheme();
     this.presentationContainer = presentationContainer;
+    const runtimeSurface = this.createRuntimeSurface(presentationContainer);
+    const plugins = this.layoutMode === 'paginated'
+      ? [this.createDemoPaginationPlugin(runtimeSurface.mountContainer)]
+      : [];
     this._demoDoc = new BlockCraftDoc(
-      this.createDemoDocConfig(schemaStore, presentationContainer),
+      this.createDemoDocConfig(
+        schemaStore,
+        runtimeSurface.scrollContainer,
+        plugins,
+      ),
     );
     document.body.appendChild(presentationContainer);
-    this._demoDoc.initBySnapshot(rootSnapshot, presentationContainer);
+    this._demoDoc.initBySnapshot(rootSnapshot, runtimeSurface.mountContainer);
+    if (this.layoutMode === 'paginated') {
+      this.markPaginatedRootAsPresentationSurface();
+      // 同步捕获会强制发布当前 live 分页，页框 DOM 与内容断点同源。
+      this.demoPaginationPlugin?.captureStableLayout();
+    }
+    this.applyPresentationViewScale();
+    if (this.layoutMode === 'paginated') {
+      this.bindPaginatedPageCount();
+    }
+  }
+
+  private markPaginatedRootAsPresentationSurface(): void {
+    const root = this._demoDoc?.root?.hostElement;
+    if (!root) return;
+    root.classList.add('demo-root');
+    root.setAttribute('data-bc-surface', 'presentation');
   }
 
   /** Build an isolated runtime config for the transient presentation surface. */
   private createDemoDocConfig(
     schemas: SchemaManager,
     scrollContainer: HTMLElement,
+    plugins: BlockCraft.Plugin[] = [],
   ): DocConfig {
     const theme = this.bodyThemeBeforePresentation
       ?? this.originDoc.config.theme
@@ -174,7 +217,7 @@ export class PresentationController {
     this.presentationTheme = theme;
     return {
       ...this.originDoc.config,
-      plugins: [],
+      plugins,
       yDoc: new Y.Doc(),
       // A page is one exact presentation unit. Sparse root mounting can hide
       // page content and invalidates drawing/transition geometry.
@@ -186,6 +229,91 @@ export class PresentationController {
       schemas,
       readonly: true,
     };
+  }
+
+  private createRuntimeSurface(container: HTMLElement): {
+    mountContainer: HTMLElement;
+    scrollContainer: HTMLElement;
+  } {
+    if (this.layoutMode === 'flow') {
+      this.presentationSurface = container;
+      return {mountContainer: container, scrollContainer: container};
+    }
+
+    container.style.padding = '0';
+    container.style.overflow = 'hidden';
+    const viewport = document.createElement('div');
+    viewport.className = 'presentation-page-viewport';
+    const track = document.createElement('div');
+    track.className = 'presentation-page-track';
+    const surface = document.createElement('div');
+    surface.className = 'presentation-page-surface';
+    const scaleProbe = document.createElement('div');
+    scaleProbe.className = 'presentation-scale-probe';
+    track.appendChild(surface);
+    viewport.append(scaleProbe, track);
+    container.appendChild(viewport);
+    this.presentationViewport = viewport;
+    this.presentationTrack = track;
+    this.presentationSurface = surface;
+    this.presentationScaleProbe = scaleProbe;
+    return {mountContainer: surface, scrollContainer: viewport};
+  }
+
+  private createDemoPaginationPlugin(surface: HTMLElement): PaginationPlugin {
+    const source = this.sourcePaginationPlugin;
+    if (!source) throw new Error('Paginated presentation requires an enabled PaginationPlugin');
+    const documentHeader = this.clonePaginationDocumentHeader(source.documentHeader, surface);
+    const plugin = new PaginationPlugin({
+      ...source.config,
+      enabled: true,
+      experimentalSparseView: false,
+      documentHeader,
+    });
+    this.demoPaginationPlugin = plugin;
+    return plugin;
+  }
+
+  private clonePaginationDocumentHeader(
+    options: Readonly<PaginationDocumentHeaderOptions> | undefined,
+    surface: HTMLElement,
+  ): PaginationDocumentHeaderOptions | undefined {
+    if (!options) return undefined;
+    const source = typeof options.element === 'function'
+      ? options.element()
+      : options.element;
+    if (!source) return undefined;
+    const clone = source.cloneNode(true) as HTMLElement;
+    const clonedElements = [clone, ...Array.from(clone.querySelectorAll<HTMLElement>('*'))];
+    for (const element of clonedElements) {
+      element.removeAttribute('id');
+      for (const attribute of ['for', 'aria-labelledby', 'aria-describedby', 'aria-controls', 'aria-owns']) {
+        element.removeAttribute(attribute);
+      }
+    }
+    clone.setAttribute('aria-hidden', 'true');
+    clone.setAttribute('inert', '');
+    surface.appendChild(clone);
+    return {...options, element: clone};
+  }
+
+  private findEnabledPaginationPlugin(): PaginationPlugin | null {
+    return this.originDoc.plugins.find(
+      (plugin): plugin is PaginationPlugin =>
+        plugin instanceof PaginationPlugin && plugin.enabled,
+    ) ?? null;
+  }
+
+  private get totalPages(): number {
+    if (this.layoutMode === 'flow') return this.pages.length;
+    return this.getPaginatedSheets().length;
+  }
+
+  private getPaginatedSheets(): HTMLElement[] {
+    if (!this.presentationSurface) return [];
+    return Array.from(
+      this.presentationSurface.querySelectorAll<HTMLElement>('.bc-page-sheet'),
+    );
   }
 
   private captureBodyTheme(): void {
@@ -238,18 +366,26 @@ export class PresentationController {
     appRef.attachView(controlBarRef.hostView)
 
     this.controlBarRef.setInput('currentPage', 1);
-    this.controlBarRef.setInput('totalPages', this.pages.length);
+    this.controlBarRef.setInput('totalPages', this.totalPages);
+    this.controlBarRef.setInput('showZoomControls', this.layoutMode === 'paginated');
+    this.updatePaginatedScaleControls();
     this.controlBarRef.instance.updateView()
 
     // 监听事件
     const prevSub = controlBarRef.instance.prev.subscribe(() => this.prev());
     const nextSub = controlBarRef.instance.next.subscribe(() => this.next());
+    const zoomInSub = controlBarRef.instance.zoomIn.subscribe(() => this.zoomPaginatedPage(0.1));
+    const zoomOutSub = controlBarRef.instance.zoomOut.subscribe(() => this.zoomPaginatedPage(-0.1));
+    const fitPageSub = controlBarRef.instance.fitPage.subscribe(() => this.fitPaginatedPage());
     const exitSub = controlBarRef.instance.exit.subscribe(() => this.destroy());
     const drawingSub = controlBarRef.instance.toggleDrawing.subscribe(() => this.toggleDrawing());
 
     this.eventCleanups.push(() => {
       prevSub.unsubscribe();
       nextSub.unsubscribe();
+      zoomInSub.unsubscribe();
+      zoomOutSub.unsubscribe();
+      fitPageSub.unsubscribe();
       exitSub.unsubscribe();
       drawingSub.unsubscribe();
     });
@@ -289,6 +425,28 @@ export class PresentationController {
         this.tryReenterFullscreen();
       }
 
+      if (
+        this.layoutMode === 'paginated'
+        && (e.ctrlKey || e.metaKey)
+        && !this.isImgPreviewMode
+      ) {
+        if (e.key === '+' || e.key === '=') {
+          e.preventDefault();
+          this.zoomPaginatedPage(0.1);
+          return;
+        }
+        if (e.key === '-' || e.key === '_') {
+          e.preventDefault();
+          this.zoomPaginatedPage(-0.1);
+          return;
+        }
+        if (e.key === '0') {
+          e.preventDefault();
+          this.fitPaginatedPage();
+          return;
+        }
+      }
+
       switch (e.key) {
         case 'ArrowDown':
         case 'ArrowRight':
@@ -322,6 +480,8 @@ export class PresentationController {
     this.eventCleanups.push(() => {
       document.removeEventListener('keydown', keydownHandler);
     });
+
+    this.bindPaginatedZoomWheel();
 
     // 鼠标点击导航（上半部分=上一页，下半部分=下一页）
     const clickHandler = (e: MouseEvent) => {
@@ -405,7 +565,7 @@ export class PresentationController {
   }
 
   private renderPage(index: number) {
-    if (index < 0 || index >= this.pages.length) return;
+    if (index < 0 || index >= this.totalPages) return;
     if (!this._demoDoc?.root) return;
 
     // 翻页前保存当前页绘图状态
@@ -418,7 +578,11 @@ export class PresentationController {
 
     this.currentPageIndex = index;
 
-    this.updatePageContent(index);
+    if (this.layoutMode === 'flow') {
+      this.updatePageContent(index);
+    } else {
+      this.positionPaginatedPage(index);
+    }
     // 翻页后恢复新页绘图
     if (this.drawingCanvas) {
       this.drawingCanvas.restorePageState(index);
@@ -427,7 +591,7 @@ export class PresentationController {
 
     // 更新进度
     if (this.controlBarRef) {
-      this.controlBarRef.instance.totalPages = this.pages.length;
+      this.controlBarRef.instance.totalPages = this.totalPages;
       this.controlBarRef.setInput('currentPage', index + 1);
       this.controlBarRef.instance.updateView();
     }
@@ -437,7 +601,7 @@ export class PresentationController {
     const demoDoc = this._demoDoc;
     if (!demoDoc?.root) return;
 
-    const currentPage = this.scaleTableColWidths(this.pages[index]);
+    const currentPage = this.pages[index];
 
     // 演示文档及 DOM 始终保持只读；只有框架内置的页面投影事务可以替换
     // 临时根内容。该 origin 不进入 undo，也不会向 readonlySwitch$ 广播可写状态。
@@ -457,69 +621,257 @@ export class PresentationController {
     }
   }
 
-  // demo fs = sourceFs * fontScale，所以表格 colWidths 的缩放比例
-  // 就是同一个 fontScale，跟当前源文档具体多少像素无关。
-  // 外部未传入或值非法（<=0）时回落到 DEFAULT_DEMO_FONT_SCALE。
-  private getFontScale(): number {
-    return this.normalizeScale(this.config.fontScale, DEFAULT_DEMO_FONT_SCALE);
+  private getViewScale(): number {
+    const configured = this.config.viewScale ?? this.config.fontScale;
+    const positive = Number.isFinite(configured) && (configured as number) > 0
+      ? configured as number
+      : DEFAULT_DEMO_VIEW_SCALE;
+    return Math.round(Math.min(2, Math.max(0.5, positive)) * 100) / 100;
   }
 
-  // 行高 / 块间距默认跟随 fontScale，保持整体节奏与源文档比例一致；
-  // 用户在 config 中显式给值时单独覆盖。
-  private getLineHeightScale(): number {
-    return this.normalizeScale(this.config.lineHeightScale, this.getFontScale());
-  }
-
-  private getSegmentsGapScale(): number {
-    return this.normalizeScale(this.config.segmentsGapScale, this.getFontScale());
-  }
-
-  private normalizeScale(v: number | undefined, fallback: number): number {
-    return Number.isFinite(v) && (v as number) > 0 ? (v as number) : fallback;
-  }
-
-  // 读源文档 root 的 computed CSS 数值变量（--bc-fs / --bc-segments-gap 为 px 长度，
-  // --bc-lh 为无单位行高比例）；parseFloat 对两者都适用。源未挂载或变量异常时退回 fallback。
-  private readSourceCssLength(varName: string, fallback: number): number {
+  private copySourceLayoutTokens(target: HTMLElement): void {
     const root = (this.originDoc as any)?.root?.hostElement as HTMLElement | undefined;
-    if (root) {
-      const v = parseFloat(getComputedStyle(root).getPropertyValue(varName));
-      if (Number.isFinite(v) && v > 0) return v;
+    if (!root) return;
+    const style = getComputedStyle(root);
+    for (const token of ['--bc-fs', '--bc-lh', '--bc-segments-gap']) {
+      const value = style.getPropertyValue(token).trim()
+        || root.style.getPropertyValue(token).trim();
+      if (value) target.style.setProperty(token, value);
     }
-    return fallback;
   }
 
-  // 递归遍历 snapshot 树，对 flavour === 'table' 的节点按字号比例缩放 colWidths。
-  // 返回新对象，不修改 this.pages 原始数据，确保多次翻页结果一致。
-  private scaleTableColWidths(snapshots: IBlockSnapshot[]): IBlockSnapshot[] {
-    const ratio = this.getFontScale();
-    if (ratio === 1) return snapshots;
-    return snapshots.map(snap => this.scaleSnapshot(snap, ratio));
+  private applyLegacySpacingOverrides(target: HTMLElement): void {
+    const viewScale = this.getViewScale();
+    const overrides = [
+      ['--bc-lh', this.config.lineHeightScale],
+      ['--bc-segments-gap', this.config.segmentsGapScale],
+    ] as const;
+    for (const [token, configured] of overrides) {
+      if (!Number.isFinite(configured) || (configured as number) <= 0) continue;
+      const sourceValue = target.style.getPropertyValue(token).trim();
+      if (!sourceValue) continue;
+      const correction = Math.round(((configured as number) / viewScale) * 10000) / 10000;
+      target.style.setProperty(token, `calc(${sourceValue} * ${correction})`);
+    }
   }
 
-  private scaleSnapshot(snap: IBlockSnapshot, ratio: number): IBlockSnapshot {
-    let next = snap;
-    const colWidths = (snap.props as any)?.colWidths;
-    if (snap.flavour === 'table' && Array.isArray(colWidths)) {
-      next = {
-        ...snap,
-        props: {
-          ...snap.props,
-          colWidths: colWidths.map((w: number) => Math.round(w * ratio)),
-        },
-      };
+  private applyPresentationViewScale(): void {
+    const demoDoc = this._demoDoc;
+    if (!demoDoc?.root) return;
+    if (this.layoutMode === 'paginated') {
+      this.applyPaginatedFitScale(true);
+      return;
     }
-    if (Array.isArray(next.children) && next.children.length > 0) {
-      next = {
-        ...next,
-        children: (next.children as IBlockSnapshot[]).map(child => this.scaleSnapshot(child, ratio)),
-      } as IBlockSnapshot;
+    // 先设值再 attach，避免根节点先以 1x 投影后再跳变。
+    demoDoc.viewScale.setScale(this.getViewScale());
+    demoDoc.viewScale.attach(demoDoc.root.hostElement);
+  }
+
+  private applyPaginatedFitScale(forceFit = false): void {
+    const demoDoc = this._demoDoc;
+    const viewport = this.presentationViewport;
+    const surface = this.presentationSurface;
+    const scaleProbe = this.presentationScaleProbe;
+    const firstSheet = this.getPaginatedSheets()[0];
+    if (!demoDoc?.root || !viewport || !surface || !scaleProbe || !firstSheet) return;
+
+    const pageWidth = firstSheet.offsetWidth;
+    const pageHeight = firstSheet.offsetHeight;
+    const viewportWidth = viewport.clientWidth;
+    const viewportHeight = viewport.clientHeight;
+    if (pageWidth <= 0 || pageHeight <= 0 || viewportWidth <= 0 || viewportHeight <= 0) return;
+
+    // 分页演示以一张真实纸页为适配单位。先冻结分页面的逻辑宽度，避免缩放后
+    // 容器宽度反馈到分页计算，继而改变断点。
+    surface.style.width = `${pageWidth}px`;
+    // ViewScaleManager 会规范到两位小数；向下取整可保证规范化后页面仍不越界。
+    this.paginatedFitScale = Math.floor(
+      Math.min(viewportWidth / pageWidth, viewportHeight / pageHeight) * 100,
+    ) / 100;
+    if (forceFit) this.paginatedScaleMode = 'fit';
+    const targetScale = this.paginatedScaleMode === 'fit'
+      ? this.paginatedFitScale
+      : demoDoc.viewScale.value;
+    this.applyPaginatedScale(targetScale);
+  }
+
+  private applyPaginatedScale(scale: number): void {
+    const demoDoc = this._demoDoc;
+    const surface = this.presentationSurface;
+    const scaleProbe = this.presentationScaleProbe;
+    if (!demoDoc || !surface || !scaleProbe) return;
+
+    const scrollAnchor = this.capturePaginatedScrollAnchor();
+    const normalizedScale = demoDoc.viewScale.setScale(scale);
+    // CSS zoom 会让百分比媒体、表格等重新参与布局并产生像素取整差异。
+    // 分页面只做不重排的 transform；独立探针负责把同一比例投影给几何系统。
+    demoDoc.viewScale.attach(scaleProbe);
+    surface.style.transformOrigin = 'top left';
+    surface.style.transform = `scale(${normalizedScale})`;
+    surface.setAttribute('data-bc-view-scale', String(normalizedScale));
+    this.updatePaginatedScaleControls();
+    this.positionPaginatedPage(this.currentPageIndex, scrollAnchor);
+  }
+
+  private zoomPaginatedPage(delta: number): void {
+    if (this.layoutMode !== 'paginated' || !this._demoDoc) return;
+    this.paginatedScaleMode = 'manual';
+    this.applyPaginatedScale(this._demoDoc.viewScale.value + delta);
+  }
+
+  private fitPaginatedPage(): void {
+    if (this.layoutMode !== 'paginated') return;
+    this.paginatedScaleMode = 'fit';
+    this.applyPaginatedFitScale(true);
+  }
+
+  private updatePaginatedScaleControls(): void {
+    if (!this.controlBarRef || this.layoutMode !== 'paginated' || !this._demoDoc) return;
+    const scale = this._demoDoc.viewScale.value;
+    this.controlBarRef.setInput('zoomPercent', Math.round(scale * 100));
+    this.controlBarRef.setInput(
+      'fitPageActive',
+      this.paginatedScaleMode === 'fit'
+        && Math.abs(scale - this.paginatedFitScale) < 0.005,
+    );
+    this.controlBarRef.instance.updateView();
+  }
+
+  private bindPaginatedZoomWheel(): void {
+    const viewport = this.presentationViewport;
+    if (this.layoutMode !== 'paginated' || !viewport) return;
+    let pendingDirection = 0;
+    let frame = 0;
+    const wheelHandler = (event: WheelEvent) => {
+      if ((!event.ctrlKey && !event.metaKey) || event.deltaY === 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      pendingDirection = event.deltaY < 0 ? 1 : -1;
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        this.zoomPaginatedPage(pendingDirection * 0.1);
+        pendingDirection = 0;
+      });
+    };
+    viewport.addEventListener('wheel', wheelHandler, {capture: true, passive: false});
+    this.eventCleanups.push(() => {
+      if (frame) cancelAnimationFrame(frame);
+      viewport.removeEventListener('wheel', wheelHandler, true);
+    });
+  }
+
+  private positionPaginatedPage(
+    index: number,
+    scrollAnchor?: PaginatedScrollAnchor | null,
+  ): void {
+    const viewport = this.presentationViewport;
+    const track = this.presentationTrack;
+    const surface = this.presentationSurface;
+    const sheet = this.getPaginatedSheets()[index];
+    if (!viewport || !track || !surface || !sheet || !this._demoDoc) return;
+
+    const scale = this._demoDoc.viewScale.value;
+    const pageTop = this.getOffsetTopWithin(sheet, surface) * scale;
+    const pageWidth = sheet.offsetWidth * scale;
+    const pageHeight = sheet.offsetHeight * scale;
+    const trackWidth = Math.max(viewport.clientWidth, pageWidth);
+    const trackHeight = Math.max(viewport.clientHeight, pageHeight);
+    const centeredLeft = Math.max(0, (trackWidth - pageWidth) / 2);
+    const centeredTop = Math.max(0, (trackHeight - pageHeight) / 2);
+
+    // track 是当前纸页的真实滚动画布；surface 只负责把完整分页文档中的当前页
+    // 投影到画布内。其他页由 track 裁掉，避免放大后滚动穿越到相邻页。
+    track.style.width = `${this.roundLayoutValue(trackWidth)}px`;
+    track.style.height = `${this.roundLayoutValue(trackHeight)}px`;
+    track.style.transform = '';
+    surface.style.left = `${this.roundLayoutValue(centeredLeft)}px`;
+    surface.style.top = `${this.roundLayoutValue(centeredTop - pageTop)}px`;
+
+    if (scrollAnchor) {
+      viewport.scrollLeft = this.clampScrollOffset(
+        scrollAnchor.x * trackWidth - viewport.clientWidth / 2,
+        trackWidth - viewport.clientWidth,
+      );
+      viewport.scrollTop = this.clampScrollOffset(
+        scrollAnchor.y * trackHeight - viewport.clientHeight / 2,
+        trackHeight - viewport.clientHeight,
+      );
+    } else {
+      viewport.scrollLeft = Math.max(0, (trackWidth - viewport.clientWidth) / 2);
+      viewport.scrollTop = 0;
     }
-    return next;
+  }
+
+  private capturePaginatedScrollAnchor(): PaginatedScrollAnchor | null {
+    const viewport = this.presentationViewport;
+    const track = this.presentationTrack;
+    if (!viewport || !track) return null;
+    const width = Math.max(track.offsetWidth, viewport.clientWidth);
+    const height = Math.max(track.offsetHeight, viewport.clientHeight);
+    if (width <= 0 || height <= 0) return null;
+    return {
+      x: (viewport.scrollLeft + viewport.clientWidth / 2) / width,
+      y: (viewport.scrollTop + viewport.clientHeight / 2) / height,
+    };
+  }
+
+  private clampScrollOffset(value: number, max: number): number {
+    return Math.max(0, Math.min(Math.max(0, max), value));
+  }
+
+  private roundLayoutValue(value: number): number {
+    return Math.round(value * 100) / 100;
+  }
+
+  private getOffsetTopWithin(element: HTMLElement, ancestor: HTMLElement): number {
+    let top = 0;
+    let current: HTMLElement | null = element;
+    while (current && current !== ancestor) {
+      top += current.offsetTop;
+      current = current.offsetParent as HTMLElement | null;
+    }
+    return top;
+  }
+
+  private bindPaginatedPageCount(): void {
+    const backdrop = this.presentationSurface
+      ?.querySelector<HTMLElement>('.bc-pagination-backdrop');
+    if (!backdrop) return;
+
+    const syncCurrentPage = () => {
+      const total = this.totalPages;
+      if (total === 0) return;
+      this.currentPageIndex = Math.min(this.currentPageIndex, total - 1);
+      if (this.controlBarRef) {
+        this.controlBarRef.instance.totalPages = total;
+        this.controlBarRef.setInput('currentPage', this.currentPageIndex + 1);
+        this.controlBarRef.instance.updateView();
+      }
+      this.positionPaginatedPage(
+        this.currentPageIndex,
+        this.capturePaginatedScrollAnchor(),
+      );
+    };
+
+    const pageObserver = new MutationObserver(syncCurrentPage);
+    pageObserver.observe(backdrop, {childList: true});
+    this.eventCleanups.push(() => pageObserver.disconnect());
+
+    if (typeof ResizeObserver !== 'undefined' && this.presentationViewport) {
+      const resizeObserver = new ResizeObserver(() => {
+        this.applyPaginatedFitScale();
+        syncCurrentPage();
+      });
+      resizeObserver.observe(this.presentationViewport);
+      this.eventCleanups.push(() => resizeObserver.disconnect());
+    }
+
+    syncCurrentPage();
   }
 
   next() {
-    if (this.currentPageIndex < this.pages.length - 1) {
+    if (this.currentPageIndex < this.totalPages - 1) {
       this.renderPage(this.currentPageIndex + 1);
     }
   }
@@ -788,6 +1140,17 @@ export class PresentationController {
     this._demoDoc = null;
     this.presentationContainer?.remove();
     this.presentationContainer = null;
+    this.presentationViewport = null;
+    this.presentationTrack = null;
+    this.presentationSurface = null;
+    this.presentationScaleProbe = null;
+    this.sourcePaginationPlugin = null;
+    this.demoPaginationPlugin = null;
+    this.pages = [];
+    this.currentPageIndex = 0;
+    this.layoutMode = 'flow';
+    this.paginatedFitScale = 1;
+    this.paginatedScaleMode = 'fit';
     this.restoreBodyTheme();
   }
 }

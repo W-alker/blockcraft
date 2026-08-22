@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-08-21 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-08-22 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -68,6 +68,134 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
+
+## Unreleased — 2026-08-22 — demo mode follows the active document layout
+
+**Severity**: minor
+
+**What changed**: `DemoPresentationPlugin` now selects its presentation model
+from the source document's active layout. A flow document keeps the existing
+slide analyzer and optional synthetic cover. A document with an enabled
+`PaginationPlugin` instead creates a complete isolated readonly snapshot Doc,
+registers a fresh pagination plugin with the source page config and a visual
+clone of its document header, and navigates the real `.bc-page-sheet` results.
+Paginated presentation fits one sheet into its clipped viewport and translates
+between sheets with a non-layout visual transform, without rewriting Snapshot
+content or calculating a second set of manual slide breaks.
+`PaginationPlugin.documentHeader` is now exposed as a
+readonly getter so isolated renderers can construct their own DOM copy instead
+of moving or reusing the live host element.
+
+**Why**: flow slides and paper pagination have different page ownership rules.
+Applying the flow analyzer or a fixed presentation scale to an already
+paginated document changed wrapping, table fragmentation and page geometry,
+making demo mode disagree with the authoring view.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-util.md` (layout selection, paginated demo behavior and PaginationPlugin API)
+
+### New APIs / Features
+
+- `PaginationPlugin.documentHeader` — returns the configured readonly
+  `PaginationDocumentHeaderOptions`, if present, for isolated visual projections.
+- Demo mode automatically reuses the active pagination configuration and real
+  page sheets when the source `PaginationPlugin.enabled` is `true`.
+
+### Migration Recipe
+
+No call-site change is required. Keep the source pagination plugin enabled when
+entering demo mode to present paper pages; disable it to use flow-slide analysis:
+
+```typescript
+pagination.enable()
+doc.enterDemoMode() // real paginated sheets
+
+pagination.disable()
+doc.enterDemoMode({cover}) // existing flow-slide mode
+```
+
+### Behavior Changes
+
+- `DemoConfig.cover` is intentionally ignored for paginated presentation,
+  because injecting a synthetic page would change the source document's page
+  breaks and first-page document-header geometry.
+- `DemoConfig.viewScale` and its deprecated aliases continue to control flow
+  presentation. Paginated presentation derives an independent fit-page scale
+  from the real sheet and viewport dimensions.
+- Only an enabled source `PaginationPlugin` selects paginated presentation;
+  merely registering a disabled plugin leaves the existing flow behavior intact.
+- Paginated presentation disables experimental sparse rendering. If the live
+  sparse result still contains estimates, demo mode uses the complete exact
+  readonly page result instead of preserving a transient mounted-window count.
+- The paginated viewport now uses the complete presentation stage. Its control
+  bar exposes zoom out, percentage/fit-page and zoom in; keyboard and
+  Ctrl/Cmd-wheel zoom are supported. Manual presentation zoom remains a local
+  visual transform and does not recompute pagination or mutate the source Doc.
+  A manually enlarged current sheet now expands an isolated scroll canvas, so
+  its overflow can be panned on both axes without scrolling into another page.
+
+## Unreleased — 2026-08-22 — demo mode uses uniform whole-page view scaling
+
+**Severity**: minor
+
+**What changed**: `DemoConfig` gained `viewScale`, which applies the existing
+`DocumentViewScaleManager` to the complete readonly `.demo-root`. Demo mode now
+copies the source `--bc-fs`, `--bc-lh` and `--bc-segments-gap` values unchanged,
+projects compact root typography through the same normalizers as the authoring
+root, keeps the flow surface fitted to the presentation stage's existing content
+width, and inserts page Snapshots without rewriting table `colWidths`.
+`fontScale` remains as a deprecated fallback alias for `viewScale` so existing
+callers still receive the requested magnification, but its implementation now
+scales the whole page instead of changing only `--bc-fs`. Explicit legacy
+`lineHeightScale` and `segmentsGapScale` values remain supported as deprecated
+pre-zoom compatibility corrections.
+
+**Why**: changing the base font and a subset of spacing/table dimensions caused
+presentation layout to reflow differently from the real document. Fixed-size
+objects, table geometry, wrapping and block boundaries did not share one scale.
+A single view scale preserves the document's relative geometry while leaving
+presentation controls at screen size.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-util.md` (DemoPresentationPlugin configuration and scaling contract)
+
+### Deprecations
+
+- `DemoConfig.fontScale` is a deprecated alias for `viewScale` (no removal date).
+- `DemoConfig.lineHeightScale` and `DemoConfig.segmentsGapScale` are deprecated
+  compatibility corrections (no removal date); new integrations should persist
+  document typography/spacing instead.
+
+### New APIs / Features
+
+- `DemoConfig.viewScale?: number` — uniform whole-page presentation scale,
+  default `1.5`, clamped by `DocumentViewScaleManager` to `0.5–2`.
+
+### Migration Recipe
+
+```typescript
+// before: enlarged only typography and selected spacing/table dimensions
+doc.enterDemoMode({fontScale: 1.5})
+
+// after: enlarges the complete page through one normalized geometry scale
+doc.enterDemoMode({viewScale: 1.5})
+```
+
+Existing `fontScale` calls continue to work as an alias. Remove explicit
+`lineHeightScale` / `segmentsGapScale` when the presentation should exactly
+match document layout proportions.
+
+### Behavior Changes
+
+- Default demo mode no longer rewrites `--bc-fs`, `--bc-lh`, block spacing or
+  table `colWidths`; all page content is uniformly zoomed.
+- The flow presentation root continues to fill the stage's content width; whole-
+  page zoom does not narrow the visible slide or change the existing `10vw`
+  presentation safe margins.
+- Root document `ff/fs/lh/color` props now project onto the presentation root
+  through the same safe normalization as the authoring root.
 
 ## Unreleased — 2026-08-21 — absolute objects align to the page plane; TextBox/Shape toolbars gain 页面对齐
 

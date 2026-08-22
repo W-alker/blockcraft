@@ -13,4 +13,15 @@ describe("DemoRootComponent", () => {
     expect(selector).toContain('[data-blockcraft-root="true"]');
     expect(selector).toContain('[data-bc-surface="presentation"]');
   });
+
+  it("projects the same compact document typography as the authoring root", () => {
+    const component = Object.create(DemoRootComponent.prototype) as any;
+    component._native = {
+      props: {ff: "kai", fs: 18, lh: 1.75},
+    };
+
+    expect(component.documentFontFamily).toContain("Kaiti SC");
+    expect(component.documentFontSize).toBe("18px");
+    expect(component.documentLineHeight).toBe("1.75");
+  });
 });

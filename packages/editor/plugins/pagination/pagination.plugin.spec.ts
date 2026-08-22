@@ -77,6 +77,14 @@ describe('PaginationPlugin', () => {
     expect(plugin.config.margins).toEqual({top: 40, left: 20, bottom: 30})
   })
 
+  it('exposes the configured document header for isolated readonly projections', () => {
+    const element = document.createElement('header')
+    const documentHeader = {element, gap: 16}
+    const plugin = new PaginationPlugin({documentHeader})
+
+    expect(plugin.documentHeader).toBe(documentHeader)
+  })
+
   it('applies an initially enabled view when document initialization completes', () => {
     const {doc, rootHost} = createDoc()
     const afterInitCallbacks: Array<() => void> = []

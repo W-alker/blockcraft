@@ -1,6 +1,12 @@
 import {ChangeDetectionStrategy, Component} from "@angular/core";
 import {RootBlockModel} from "../../../blocks/root-block";
-import {BaseBlockComponent, IBlockSchemaOptions} from "../../../framework";
+import {
+  BaseBlockComponent,
+  IBlockSchemaOptions,
+  normalizeDocumentFontSize,
+  normalizeTypographyLineHeight,
+  resolveTypographyFontFamily,
+} from "../../../framework";
 import {RootBlockSchema} from "../../../blocks";
 
 @Component({
@@ -14,10 +20,27 @@ import {RootBlockSchema} from "../../../blocks";
   host: {
     'contenteditable': 'false',
     'aria-readonly': 'true',
-    '[style.font-family]': 'props.ff',
+    '[style.font-family]': 'documentFontFamily',
+    '[style.--bc-fs]': 'documentFontSize',
+    '[style.--bc-lh]': 'documentLineHeight',
+    '[style.color]': 'props.color',
+    '[style.--bc-color]': 'props.color',
   }
 })
 export class DemoRootComponent extends BaseBlockComponent<RootBlockModel>{
+  get documentFontFamily(): string | null {
+    return resolveTypographyFontFamily(this._native?.props?.ff)
+  }
+
+  get documentFontSize(): string | null {
+    const fontSize = normalizeDocumentFontSize(this._native?.props?.fs)
+    return fontSize === null ? null : `${fontSize}px`
+  }
+
+  get documentLineHeight(): string | null {
+    const lineHeight = normalizeTypographyLineHeight(this._native?.props?.lh)
+    return lineHeight === null ? null : `${lineHeight}`
+  }
 }
 
 export const DemoRootBlockSchema: IBlockSchemaOptions<RootBlockModel> = {

@@ -2,24 +2,55 @@
   --preview-bg: rgba(0, 0, 0, 0.95);
   --preview-close-color: #ffffff;
   --preview-close-hover: #ff4757;
+
+  .presentation-page-viewport {
+    position: absolute;
+    inset: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+
+  .presentation-page-track {
+    position: relative;
+    width: 100%;
+    min-height: 100%;
+    overflow: hidden;
+  }
+
+  .presentation-page-surface {
+    position: absolute;
+    top: 0;
+    left: 0;
+    margin: 0;
+    transition: transform 160ms ease, top 300ms ease, left 160ms ease;
+    will-change: transform, top, left;
+  }
+
+  .presentation-scale-probe {
+    position: absolute;
+    width: 1000px;
+    height: 1px;
+    visibility: hidden;
+    pointer-events: none;
+  }
 }
 
-.presentation-stage > .demo-root[data-blockcraft-root="true"][data-bc-surface="presentation"] {
-  width: 100%;
-  // --bc-fs / --bc-lh / --bc-segments-gap 由 PresentationController 根据源文档
-  // 对应变量 × 各自 scale（config.fontScale / lineHeightScale / segmentsGapScale）
-  // 注入到 .presentation-stage 父容器，子级（含 demo-root）通过 CSS 变量继承。
-  // 这里不再 calc 派生，避免 stylesheet 规则覆盖父级注入的继承值。
-
-  margin: 0;
-  padding: 0;
-  min-height: 100%;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
+.presentation-stage .demo-root[data-blockcraft-root="true"][data-bc-surface="presentation"] {
+  // 源文档排版 token 保持原值；整页放大由 demo Doc 的 viewScale
+  // 在该根节点上统一施加，避免只改字号导致换行和固定尺寸对象失真。
   user-select: none;
   -webkit-user-select: none;
   -moz-user-select: none;
+
+  &:not(.bc-paginated) {
+    width: 100%;
+    margin: 0 auto;
+    padding: 0;
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
 
   @keyframes slideIn {
     to {

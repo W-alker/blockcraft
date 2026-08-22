@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-15
+> Last updated: 2026-08-22
 
 ## PlaceholderPlugin
 
@@ -215,27 +215,85 @@ doc.exitDemoMode()
 | Config Field | Type | Default | Description |
 |-------------|------|---------|-------------|
 | `preview.showToolbar` | `boolean` | `true` | Whether to show the control toolbar in presentation mode |
-| `cover` | `DemoCoverBlockModel['props']` | `undefined` | Optional cover page props (title / subtitle / etc.). When provided, a cover page is prepended as the first slide |
-| `fontScale` | `number` | `1.5` | Demo container's `--bc-fs` is set to `sourceFs * fontScale`; table `colWidths` are scaled by the same factor so column widths stay consistent with the enlarged font. Must be `> 0`; set to `1` to disable enlargement |
-| `lineHeightScale` | `number` | `fontScale` | Demo container's `--bc-lh` is set to `sourceLh * lineHeightScale`. Defaults to `fontScale` so line height tracks font size; override for tighter / looser line spacing. Must be `> 0` |
-| `segmentsGapScale` | `number` | `fontScale` | Demo container's `--bc-segments-gap` is set to `sourceGap * segmentsGapScale`. Defaults to `fontScale` so block spacing tracks font size; override for tighter / looser paragraph gaps. Must be `> 0` |
+| `cover` | `DemoCoverBlockModel['props']` | `undefined` | Optional cover page props for **flow presentation**. Ignored in paginated presentation so source page breaks remain unchanged |
+| `viewScale` | `number` | `1.5` | Uniform visual scale for the complete **flow presentation** root through `demoDoc.viewScale`; clamped to `0.5–2`. Paginated presentation uses automatic fit-page scale |
+| `fontScale` | `number` | `undefined` | **Deprecated alias** for `viewScale`, used only when `viewScale` is absent. It no longer rewrites `--bc-fs` |
+| `lineHeightScale` | `number` | `undefined` | **Deprecated compatibility correction** applied only when explicitly provided. Prefer changing the document line height |
+| `segmentsGapScale` | `number` | `undefined` | **Deprecated compatibility correction** applied only when explicitly provided. Prefer changing the document spacing |
 
-### Font / spacing scaling behavior
+### Layout selection and scaling behavior
 
-The demo container reads the source doc's computed `--bc-fs`, `--bc-lh`, `--bc-segments-gap` and injects scaled versions onto `.presentation-stage`. Each axis has its own scale, and the two spacing scales default to `fontScale` so the source doc's overall rhythm is preserved when only one knob is touched. The demo SCSS no longer derives `--bc-lh` / `--bc-segments-gap` via `calc()` — the JS injection is the single source of truth and cascades down to `.demo-root`. Table column widths (`props.colWidths`) are multiplied by `fontScale` on every page render; the original `pages` data is not mutated.
+Demo mode follows the source document's active layout:
+
+- **Flow layout** — keeps the existing slide analyzer, optional synthetic
+  `cover`, and manual `viewScale`. Headings, callouts and page-divider Blocks
+  retain their existing slide-boundary behavior.
+- **Paginated layout** — selected only when the source Doc contains an enabled
+  `PaginationPlugin`. Demo mode creates a complete isolated readonly Doc with a
+  fresh pagination plugin, copies the source pagination config, and renders the
+  same real page-sheet model. Its viewport fills the complete presentation
+  stage and fits one sheet proportionally against the full viewport, then
+  translates between sheets; Snapshot content is not split or rewritten. The
+  fit-page transform does not participate in layout, so percentage media and
+  table geometry are not reflowed by presentation scaling.
+
+The paginated copy disables sparse rendering so every page is present for
+stable navigation. If the source opted into experimental sparse pagination and
+its current result still contains estimates, presentation intentionally uses
+the complete exact readonly result rather than copying that transient estimate;
+the exact page count may therefore settle beyond the currently mounted sparse
+viewport. A configured `documentHeader` is deep-cloned into the readonly
+surface rather than moving the live host element. The clone is
+visual-only and has IDs/reference attributes removed. `cover` is ignored in
+this path because inserting it would alter the source break model and first-page
+header geometry. Likewise, paginated mode derives its scale from the actual
+sheet and viewport dimensions instead of applying `DemoConfig.viewScale`.
+
+Paginated presentation adds zoom-out, current-percentage/fit-page, and zoom-in
+controls to the presentation control bar. Clicking the percentage restores
+fit-page mode. `Ctrl/Cmd + +`, `Ctrl/Cmd + -`, `Ctrl/Cmd + 0`, and
+`Ctrl/Cmd + wheel` provide the same actions. Manual zoom remains local to the
+transient presentation surface and never changes pagination, Snapshot data or
+the source Doc's view scale. Resizing stays in fit-page mode until the user
+chooses a manual zoom; manual scale is then preserved across viewport resizes.
+When a manually zoomed sheet exceeds the viewport, the current sheet owns an
+explicit page-sized scroll canvas and can be panned horizontally and vertically.
+Other sheets remain clipped outside that canvas, so scrolling never changes the
+current presentation page. Zoom preserves the current viewport center; page
+navigation resets the new sheet to its top-center position.
+
+For flow layout, the demo container copies the source Doc's resolved `--bc-fs`,
+`--bc-lh` and `--bc-segments-gap` values unchanged. Root `ff/fs/lh/color` props
+use the same normalization and projection as the authoring root. After the
+readonly demo Doc mounts, `viewScale` attaches to `.demo-root` and applies one
+CSS `zoom` to the complete page. The flow root continues to fill the
+presentation stage's content width instead of inheriting the narrower authoring
+editor host width. CSS zoom resolves that `100%` surface against the available
+stage, so the visible slide width and the stage's `10vw` safe margins remain the
+same as the previous flow presentation. Text, tables, media, shapes and
+fixed-pixel geometry share one coordinate scale; Snapshot geometry is no longer
+changed by a presentation-only typography rewrite. Table `colWidths` and every
+other Snapshot prop are inserted unchanged. Screen chrome such as the control
+bar stays outside the scaled root.
+
+The deprecated `lineHeightScale` and `segmentsGapScale` remain only for callers
+that explicitly requested presentation-specific spacing. Their pre-zoom
+correction preserves the old effective visual factor without changing
+`--bc-fs`; new integrations should express typography in document props and use
+only `viewScale` for presentation magnification.
 
 ```typescript
-// Default 1.5× across the board
+// Default: uniform 1.5× whole-page scale
 doc.enterDemoMode();
 
-// Bigger font but keep source line height proportional (lh scales to 1.8 too)
+// Uniform 1.8× scale; layout proportions stay unchanged
+doc.enterDemoMode({ viewScale: 1.8 });
+
+// Legacy alias; equivalent to viewScale: 1.8
 doc.enterDemoMode({ fontScale: 1.8 });
 
-// Compact mode: font scaled up, but line height and gap stay closer to source
-doc.enterDemoMode({ fontScale: 1.5, lineHeightScale: 1.2, segmentsGapScale: 1 });
-
-// No enlargement at all (presentation matches source exactly)
-doc.enterDemoMode({ fontScale: 1 });
+// No magnification
+doc.enterDemoMode({ viewScale: 1 });
 ```
 
 ---
@@ -269,9 +327,11 @@ new PaginationPlugin(options?: PaginationPluginOptions)
 |--------|-------------|
 | `enabled` | Current live-layout state |
 | `config` | Current pagination config (without enabled state) |
+| `documentHeader` | Configured readonly `PaginationDocumentHeaderOptions`, when present; isolated renderers must clone its element rather than reuse the live node |
 | `enable()` / `disable()` | Apply or fully remove the reversible pagination view |
 | `updateConfig(partial)` | Merge config and schedule one frame-coalesced recompute |
 | `recompute()` | Request a manual recompute while enabled |
+| `captureStableLayout()` | Synchronously publish and return the current reusable stable page layout when available |
 | `print()` | Build WYSIWYG print pages; reuses live measurements when enabled |
 | `exportToPdf(name, options?)` | Browser print or host-native PDF; reuses the current stable page result unless `options.pagination` requests reflow |
 
