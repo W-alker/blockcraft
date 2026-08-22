@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-22
+> Last updated: 2026-08-23
 
 ## PlaceholderPlugin
 
@@ -241,9 +241,15 @@ The paginated copy disables sparse rendering so every page is present for
 stable navigation. If the source opted into experimental sparse pagination and
 its current result still contains estimates, presentation intentionally uses
 the complete exact readonly result rather than copying that transient estimate;
-the exact page count may therefore settle beyond the currently mounted sparse
-viewport. A configured `documentHeader` is deep-cloned into the readonly
-surface rather than moving the live host element. The clone is
+the presentation controller waits for the isolated pagination runtime, forces
+an exact recompute, and verifies that the current page plus the following two
+pages have both page sheets and mounted top-level Block DOM before entering or
+turning a page. Each displayed page immediately warms the next two-page window;
+resource/font changes invalidate that readiness and force the next navigation
+to revalidate it. The exact page count may therefore settle beyond the
+currently mounted sparse viewport before controls become available. A
+configured `documentHeader` is deep-cloned into the readonly surface rather
+than moving the live host element. The clone is
 visual-only and has IDs/reference attributes removed. `cover` is ignored in
 this path because inserting it would alter the source break model and first-page
 header geometry. Likewise, paginated mode derives its scale from the actual

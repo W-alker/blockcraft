@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-08-22 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-08-23 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -128,6 +128,10 @@ doc.enterDemoMode({cover}) // existing flow-slide mode
 - Paginated presentation disables experimental sparse rendering. If the live
   sparse result still contains estimates, demo mode uses the complete exact
   readonly page result instead of preserving a transient mounted-window count.
+  Startup now waits for the isolated pagination controller, forces an exact
+  recompute, and verifies the current page plus two following pages against the
+  same stable layout and mounted Block DOM before presentation or navigation is
+  allowed. Later image/font changes invalidate that readiness for the next turn.
 - The paginated viewport now uses the complete presentation stage. Its control
   bar exposes zoom out, percentage/fit-page and zoom in; keyboard and
   Ctrl/Cmd-wheel zoom are supported. Manual presentation zoom remains a local

@@ -260,6 +260,77 @@ describe("PresentationController", () => {
     expect((flow as any).findEnabledPaginationPlugin()).toBeNull();
   });
 
+  it("waits until the current page and two following pages share one exact rendered layout", async () => {
+    const surface = document.createElement("div");
+    for (let index = 0; index < 3; index++) {
+      const sheet = document.createElement("div");
+      sheet.className = "bc-page-sheet";
+      surface.appendChild(sheet);
+    }
+    for (const id of ["page-0", "page-1"]) {
+      const block = document.createElement("div");
+      block.setAttribute("data-block-id", id);
+      surface.appendChild(block);
+    }
+    const layout = {
+      result: {
+        pages: ["page-0", "page-1", "page-2"].map((id, index) => ({
+          index,
+          usedHeight: 100,
+          slots: [{id}],
+        })),
+        byBlock: new Map(),
+      },
+    } as any;
+    const recompute = jasmine.createSpy("recompute");
+    let captures = 0;
+    const captureStableLayout = jasmine.createSpy("captureStableLayout").and.callFake(() => {
+      captures++;
+      if (captures === 2) {
+        const block = document.createElement("div");
+        block.setAttribute("data-block-id", "page-2");
+        surface.appendChild(block);
+      }
+      return layout;
+    });
+    const controller = new PresentationController({} as BlockCraft.Doc, {});
+    (controller as any).layoutMode = "paginated";
+    (controller as any).presentationSurface = surface;
+    (controller as any).demoPaginationPlugin = {recompute, captureStableLayout};
+    spyOn<any>(controller, "waitForPresentationFrame").and.resolveTo();
+
+    const ready = await (controller as any).ensurePaginatedLookahead(0);
+
+    expect(ready).toBeTrue();
+    expect(recompute).toHaveBeenCalledTimes(2);
+    expect(captureStableLayout).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not turn a paginated page until its two-page lookahead is ready", async () => {
+    const surface = document.createElement("div");
+    for (let index = 0; index < 3; index++) {
+      const sheet = document.createElement("div");
+      sheet.className = "bc-page-sheet";
+      surface.appendChild(sheet);
+    }
+    let release!: (ready: boolean) => void;
+    const readiness = new Promise<boolean>(resolve => release = resolve);
+    const controller = new PresentationController({} as BlockCraft.Doc, {});
+    (controller as any).layoutMode = "paginated";
+    (controller as any).presentationSurface = surface;
+    spyOn<any>(controller, "ensurePaginatedLookahead").and.returnValue(readiness);
+    const renderPage = spyOn<any>(controller, "renderPage");
+
+    controller.next();
+    expect(renderPage).not.toHaveBeenCalled();
+
+    release(true);
+    await readiness;
+    await Promise.resolve();
+
+    expect(renderPage).toHaveBeenCalledOnceWith(1);
+  });
+
   it("clones the pagination document header as a non-interactive visual copy", () => {
     const source = document.createElement("section");
     source.id = "source-header";

@@ -24,6 +24,7 @@ import {DrawingCanvas} from "./drawing/drawing-canvas";
 import {DrawingToolbarComponent, DrawingToolType} from "./drawing/drawing-toolbar.component";
 import {PaginationPlugin} from "../pagination";
 import {PaginationDocumentHeaderOptions} from "../../framework/modules/pagination";
+import {StablePaginationLayout} from "../../framework/modules/pagination/view/stable-pagination-layout";
 
 type PresentationLayoutMode = 'flow' | 'paginated';
 type PaginatedScaleMode = 'fit' | 'manual';
@@ -65,6 +66,8 @@ export interface DemoConfig {
 }
 
 const DEFAULT_DEMO_VIEW_SCALE = 1.5;
+const PAGINATED_LOOKAHEAD_PAGES = 2;
+const PAGINATED_PREPARE_MAX_FRAMES = 12;
 
 export class PresentationController {
   private pages: IBlockSnapshot[][] = [];
@@ -92,6 +95,10 @@ export class PresentationController {
   private demoPaginationPlugin: PaginationPlugin | null = null;
   private paginatedFitScale = 1;
   private paginatedScaleMode: PaginatedScaleMode = 'fit';
+  private paginatedStableLayout: StablePaginationLayout | null = null;
+  private paginatedPreparation: Promise<boolean> | null = null;
+  private paginatedNavigationPending = false;
+  private lifecycleRevision = 0;
 
   private _demoDoc: BlockCraft.Doc | null = null;
 
@@ -102,6 +109,7 @@ export class PresentationController {
   }
 
   start() {
+    const lifecycleRevision = ++this.lifecycleRevision;
     // 演示文档是独立的临时只读投影，不应显示或传播源文档的持久锁权限。
     // 文档级 readonly 仍会完整保留，负责阻断所有用户输入与普通 CRUD 调用。
     const rootSnapshot = stripBlockLockMetaDeep(this.originDoc.exportSnapshot()!);
@@ -120,24 +128,43 @@ export class PresentationController {
       return;
     }
 
-    nextTick().then(() => {
-      this.createDemoDocAndContainer(rootSnapshot)
+    nextTick().then(() => void this.startPresentation(rootSnapshot, lifecycleRevision))
 
-      if (this.totalPages === 0) {
-        console.warn('No pages to present');
-        this.destroy();
-        return;
-      }
+  }
 
-      this.enterFullscreen();
+  private async startPresentation(
+    rootSnapshot: IBlockSnapshot,
+    lifecycleRevision: number,
+  ): Promise<void> {
+    if (lifecycleRevision !== this.lifecycleRevision) return;
+    this.createDemoDocAndContainer(rootSnapshot)
 
-      this.renderControlBar();
+    if (
+      this.layoutMode === 'paginated'
+      && !await this.ensurePaginatedLookahead(0, lifecycleRevision)
+    ) {
+      if (lifecycleRevision !== this.lifecycleRevision) return;
+      console.warn('Paginated presentation layout is not ready');
+      this.destroy();
+      return;
+    }
+    if (lifecycleRevision !== this.lifecycleRevision) return;
 
-      this.bindEvents();
+    if (this.totalPages === 0) {
+      console.warn('No pages to present');
+      this.destroy();
+      return;
+    }
 
-      this.renderPage(0);
-    })
-
+    this.applyPresentationViewScale();
+    if (this.layoutMode === 'paginated') {
+      this.bindPaginatedPageCount();
+      this.bindPaginatedReadinessInvalidation();
+    }
+    this.enterFullscreen();
+    this.renderControlBar();
+    this.bindEvents();
+    this.renderPage(0);
   }
 
   createDemoDocAndContainer(rootSnapshot: IBlockSnapshot) {
@@ -189,12 +216,6 @@ export class PresentationController {
     this._demoDoc.initBySnapshot(rootSnapshot, runtimeSurface.mountContainer);
     if (this.layoutMode === 'paginated') {
       this.markPaginatedRootAsPresentationSurface();
-      // 同步捕获会强制发布当前 live 分页，页框 DOM 与内容断点同源。
-      this.demoPaginationPlugin?.captureStableLayout();
-    }
-    this.applyPresentationViewScale();
-    if (this.layoutMode === 'paginated') {
-      this.bindPaginatedPageCount();
     }
   }
 
@@ -314,6 +335,85 @@ export class PresentationController {
     return Array.from(
       this.presentationSurface.querySelectorAll<HTMLElement>('.bc-page-sheet'),
     );
+  }
+
+  /**
+   * 分页演示不复用源编辑器可能仍是稀疏估算的分页结果。临时只读 Doc 完整挂载后，
+   * 等待分页 controller 就绪并同步捕获一次 exact 布局；当前页和后两页的页框、
+   * 顶层 Block DOM 都属于同一布局版本时，才允许进入或继续翻页。
+   */
+  private ensurePaginatedLookahead(
+    pageIndex: number,
+    lifecycleRevision = this.lifecycleRevision,
+  ): Promise<boolean> {
+    if (this.layoutMode !== 'paginated') return Promise.resolve(true);
+    if (this.isPaginatedLookaheadReady(this.paginatedStableLayout, pageIndex)) {
+      return Promise.resolve(true);
+    }
+    if (this.paginatedPreparation) {
+      return this.paginatedPreparation.then(ready => ready
+        && this.isPaginatedLookaheadReady(this.paginatedStableLayout, pageIndex));
+    }
+
+    const preparation = this.preparePaginatedLookahead(pageIndex, lifecycleRevision);
+    this.paginatedPreparation = preparation;
+    return preparation.finally(() => {
+      if (this.paginatedPreparation === preparation) {
+        this.paginatedPreparation = null;
+      }
+    });
+  }
+
+  private async preparePaginatedLookahead(
+    pageIndex: number,
+    lifecycleRevision: number,
+  ): Promise<boolean> {
+    for (let attempt = 0; attempt < PAGINATED_PREPARE_MAX_FRAMES; attempt++) {
+      if (lifecycleRevision !== this.lifecycleRevision) return false;
+      this.demoPaginationPlugin?.recompute();
+      await this.waitForPresentationFrame();
+      if (lifecycleRevision !== this.lifecycleRevision) return false;
+
+      // captureStableLayout 是同步重排屏障；它会取消尚未执行的分页 RAF，基于当前
+      // 完整只读 DOM 重新测量并同步发布对应页框。
+      const layout = this.demoPaginationPlugin?.captureStableLayout() ?? null;
+      if (!this.isPaginatedLookaheadReady(layout, pageIndex)) continue;
+      this.paginatedStableLayout = layout;
+      return true;
+    }
+    return false;
+  }
+
+  private isPaginatedLookaheadReady(
+    layout: StablePaginationLayout | null,
+    pageIndex: number,
+  ): layout is StablePaginationLayout {
+    if (!layout || pageIndex < 0 || pageIndex >= layout.result.pages.length) return false;
+    const sheets = this.getPaginatedSheets();
+    if (sheets.length !== layout.result.pages.length) return false;
+
+    const readyThrough = Math.min(
+      layout.result.pages.length - 1,
+      pageIndex + PAGINATED_LOOKAHEAD_PAGES,
+    );
+    const mountedBlockIds = new Set(
+      Array.from(
+        this.presentationSurface?.querySelectorAll<HTMLElement>('[data-block-id]') ?? [],
+        element => element.getAttribute('data-block-id'),
+      ).filter((id): id is string => id !== null),
+    );
+    for (let index = pageIndex; index <= readyThrough; index++) {
+      if (layout.result.pages[index].slots.some(slot => !mountedBlockIds.has(slot.id))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private waitForPresentationFrame(): Promise<void> {
+    const view = this.presentationSurface?.ownerDocument.defaultView;
+    if (!view) return Promise.resolve();
+    return new Promise(resolve => view.requestAnimationFrame(() => resolve()));
   }
 
   private captureBodyTheme(): void {
@@ -582,6 +682,8 @@ export class PresentationController {
       this.updatePageContent(index);
     } else {
       this.positionPaginatedPage(index);
+      // 当前页显示后立即预热新的两页前瞻；用户很快继续翻页时通常无需等待。
+      void this.ensurePaginatedLookahead(index);
     }
     // 翻页后恢复新页绘图
     if (this.drawingCanvas) {
@@ -839,7 +941,8 @@ export class PresentationController {
       ?.querySelector<HTMLElement>('.bc-pagination-backdrop');
     if (!backdrop) return;
 
-    const syncCurrentPage = () => {
+    const syncCurrentPage = (invalidateLayout = false) => {
+      if (invalidateLayout) this.paginatedStableLayout = null;
       const total = this.totalPages;
       if (total === 0) return;
       this.currentPageIndex = Math.min(this.currentPageIndex, total - 1);
@@ -854,7 +957,7 @@ export class PresentationController {
       );
     };
 
-    const pageObserver = new MutationObserver(syncCurrentPage);
+    const pageObserver = new MutationObserver(() => syncCurrentPage(true));
     pageObserver.observe(backdrop, {childList: true});
     this.eventCleanups.push(() => pageObserver.disconnect());
 
@@ -870,16 +973,65 @@ export class PresentationController {
     syncCurrentPage();
   }
 
+  private bindPaginatedReadinessInvalidation(): void {
+    const surface = this.presentationSurface;
+    if (!surface) return;
+    const invalidate = () => {
+      this.paginatedStableLayout = null;
+    };
+    surface.addEventListener('load', invalidate, true);
+    surface.addEventListener('error', invalidate, true);
+    this.eventCleanups.push(() => {
+      surface.removeEventListener('load', invalidate, true);
+      surface.removeEventListener('error', invalidate, true);
+    });
+
+    const fonts = surface.ownerDocument.fonts;
+    if (fonts && typeof fonts.addEventListener === 'function') {
+      fonts.addEventListener('loadingdone', invalidate);
+      this.eventCleanups.push(() => fonts.removeEventListener('loadingdone', invalidate));
+    }
+  }
+
   next() {
-    if (this.currentPageIndex < this.totalPages - 1) {
+    if (this.currentPageIndex >= this.totalPages - 1 || this.paginatedNavigationPending) return;
+    if (this.layoutMode !== 'paginated') {
       this.renderPage(this.currentPageIndex + 1);
+      return;
+    }
+    void this.navigatePaginatedPage(this.currentPageIndex + 1, this.currentPageIndex);
+  }
+
+  private async navigatePaginatedPage(
+    targetIndex: number,
+    lookaheadFromIndex: number,
+  ): Promise<void> {
+    const lifecycleRevision = this.lifecycleRevision;
+    const fromIndex = this.currentPageIndex;
+    this.paginatedNavigationPending = true;
+    try {
+      const ready = await this.ensurePaginatedLookahead(lookaheadFromIndex, lifecycleRevision);
+      if (
+        !ready
+        || lifecycleRevision !== this.lifecycleRevision
+        || this.currentPageIndex !== fromIndex
+      ) return;
+      if (targetIndex >= 0 && targetIndex < this.totalPages) this.renderPage(targetIndex);
+    } finally {
+      if (lifecycleRevision === this.lifecycleRevision) {
+        this.paginatedNavigationPending = false;
+      }
     }
   }
 
   prev() {
-    if (this.currentPageIndex > 0) {
+    if (this.currentPageIndex <= 0 || this.paginatedNavigationPending) return;
+    if (this.layoutMode !== 'paginated') {
       this.renderPage(this.currentPageIndex - 1);
+      return;
     }
+    const targetIndex = this.currentPageIndex - 1;
+    void this.navigatePaginatedPage(targetIndex, targetIndex);
   }
 
   // ─── Drawing ───
@@ -1118,6 +1270,7 @@ export class PresentationController {
   }
 
   destroy() {
+    this.lifecycleRevision++;
     (navigator as any).keyboard?.unlock?.();
 
     if (document.fullscreenElement) {
@@ -1151,6 +1304,9 @@ export class PresentationController {
     this.layoutMode = 'flow';
     this.paginatedFitScale = 1;
     this.paginatedScaleMode = 'fit';
+    this.paginatedStableLayout = null;
+    this.paginatedPreparation = null;
+    this.paginatedNavigationPending = false;
     this.restoreBodyTheme();
   }
 }
