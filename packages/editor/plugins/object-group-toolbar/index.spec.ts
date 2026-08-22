@@ -104,8 +104,8 @@ describe('ObjectGroupToolbarPlugin', () => {
       selection: {
         value: {
           isInSameBlock: true,
-          anchor: {type: 'selected'},
-          head: {type: 'selected'},
+          anchor: {blockId: 'image', type: 'selected'},
+          head: {blockId: 'image', type: 'selected'},
           firstBlockId: 'image',
         },
         replay,
@@ -113,6 +113,73 @@ describe('ObjectGroupToolbarPlugin', () => {
     }
 
     expect((plugin as any).extendObjectSelection('shape')).toBeTrue()
+    expect(replay).toHaveBeenCalledOnceWith({
+      anchor: {blockId: 'layout', type: 'boundary', index: 0},
+      head: {blockId: 'layout', type: 'boundary', index: 2},
+      commonParent: 'layout',
+    })
+  })
+
+  it('keeps sibling objects selectable when alignment mutations are unavailable', () => {
+    const replay = jasmine.createSpy('replay')
+    const canAlignObjects = jasmine.createSpy('canAlignObjects')
+      .and.returnValue(false)
+    const plugin = new ObjectGroupToolbarPlugin()
+    ;(plugin as any).doc = {
+      model: {
+        getParentId: (id: string) => ['image', 'shape'].includes(id)
+          ? 'layout'
+          : null,
+        getChildrenIds: () => ['image', 'shape'],
+      },
+      placement: {
+        isPlacementLayout: (id: string) => id === 'layout',
+        canAlignObjects,
+      },
+      selection: {
+        value: {
+          anchor: {blockId: 'image', type: 'selected'},
+          head: {blockId: 'image', type: 'selected'},
+        },
+        replay,
+      },
+    }
+
+    expect((plugin as any).extendObjectSelection('shape')).toBeTrue()
+    expect(canAlignObjects).not.toHaveBeenCalled()
+    expect(replay).toHaveBeenCalledOnceWith({
+      anchor: {blockId: 'layout', type: 'boundary', index: 0},
+      head: {blockId: 'layout', type: 'boundary', index: 2},
+      commonParent: 'layout',
+    })
+  })
+
+  it('resolves a nested editable selection to its owning absolute object', () => {
+    const replay = jasmine.createSpy('replay')
+    const parents: Record<string, string> = {
+      'shape-text': 'shape',
+      shape: 'layout',
+      image: 'layout',
+    }
+    const plugin = new ObjectGroupToolbarPlugin()
+    ;(plugin as any).doc = {
+      model: {
+        getParentId: (id: string) => parents[id] ?? null,
+        getChildrenIds: () => ['shape', 'image'],
+      },
+      placement: {
+        isPlacementLayout: (id: string) => id === 'layout',
+      },
+      selection: {
+        value: {
+          anchor: {blockId: 'shape-text', type: 'text', offset: 1},
+          head: {blockId: 'shape-text', type: 'text', offset: 1},
+        },
+        replay,
+      },
+    }
+
+    expect((plugin as any).extendObjectSelection('image')).toBeTrue()
     expect(replay).toHaveBeenCalledOnceWith({
       anchor: {blockId: 'layout', type: 'boundary', index: 0},
       head: {blockId: 'layout', type: 'boundary', index: 2},

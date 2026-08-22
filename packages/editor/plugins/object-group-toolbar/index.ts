@@ -156,7 +156,7 @@ export class ObjectGroupToolbarPlugin extends DocPlugin {
     if (targetIndex < 0) return false
 
     const selection = this.doc.selection.value
-    let anchorIndex = targetIndex
+    let anchorIndex = -1
     if (
       selection?.anchor.type === 'boundary' &&
       selection.head.type === 'boundary' &&
@@ -167,23 +167,33 @@ export class ObjectGroupToolbarPlugin extends DocPlugin {
         0,
         Math.min(selection.anchor.index, selection.head.index),
       )
-    } else if (
-      selection?.isInSameBlock &&
-      selection.anchor.type === 'selected' &&
-      selection.head.type === 'selected'
-    ) {
-      const selectedId = selection.firstBlockId
-      if (this.doc.model.getParentId(selectedId) === parentId) {
-        anchorIndex = siblings.indexOf(selectedId)
-      }
+    } else if (selection) {
+      const anchorId = this.resolveDirectPlacementChildId(
+        selection.anchor.blockId,
+        parentId,
+      )
+      if (anchorId) anchorIndex = siblings.indexOf(anchorId)
     }
     if (anchorIndex < 0 || anchorIndex === targetIndex) return false
     const from = Math.min(anchorIndex, targetIndex)
     const to = Math.max(anchorIndex, targetIndex) + 1
-    const ids = siblings.slice(from, to)
-    if (!this.doc.placement.canAlignObjects(ids)) return false
     this.selectBoundary(parentId, from, to)
     return true
+  }
+
+  private resolveDirectPlacementChildId(
+    blockId: string,
+    placementLayoutId: string,
+  ): string | null {
+    let currentId: string | null = blockId
+    const visited = new Set<string>()
+    while (currentId && !visited.has(currentId)) {
+      visited.add(currentId)
+      const parentId = this.doc.model.getParentId(currentId)
+      if (parentId === placementLayoutId) return currentId
+      currentId = parentId
+    }
+    return null
   }
 
   private syncToolbar(): void {
