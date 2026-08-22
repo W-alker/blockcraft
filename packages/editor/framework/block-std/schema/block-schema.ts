@@ -29,6 +29,31 @@ export type BlockSelectionScopeMetadata =
   | "transparent"
 
 /**
+ * Lets one placement-capable Block participate in document flow while relative
+ * and become its own editing scope only after entering an absolute plane.
+ */
+export interface BlockPlacementSelectionScopeMetadata {
+  relative: BlockSelectionScopeMetadata
+  absolute: BlockSelectionScopeMetadata
+}
+
+export type BlockSelectionScopeCapability =
+  | BlockSelectionScopeMetadata
+  | BlockPlacementSelectionScopeMetadata
+
+/** Schema-owned block-frame and child-editing interaction. */
+export interface BlockSelectionInteractionCapability {
+  /** Direct interaction with the block's own frame selects the whole Block. */
+  frame: 'selectable'
+  /**
+   * Optional transition between frame selection and editable descendants.
+   * `absolute` keeps relative flow aligned with transparent blocks such as
+   * Mermaid while making the same Block a closed object in placement layout.
+   */
+  editingBoundary?: 'always' | 'absolute'
+}
+
+/**
  * Controls whether a materialized block view may leave the live document.
  * `keep-alive` is intended for DOM-owned state such as iframe browsing
  * contexts and media playback positions.
@@ -182,7 +207,17 @@ export interface IBlockSchemaOptions<T extends NativeBlockModel = NativeBlockMod
      * - "columns": column descendants share one layout scope.
      * - "container": closed generic container scope such as callout/highlight.
      */
-    selectionScope?: BlockSelectionScopeMetadata
+    selectionScope?: BlockSelectionScopeCapability
+    /**
+     * Optional block-frame interaction owned by Selection.
+     *
+     * This is independent from `selectionScope`: scope controls which text
+     * endpoints may form one range, while interaction controls whether the
+     * container frame itself is selectable and can enter/exit child editing.
+     * A Block view may declare precise descendant hit regions with
+     * `data-bc-selection-interaction-frame`; unmarked descendants remain native.
+     */
+    selectionInteraction?: BlockSelectionInteractionCapability
     /**
      * Opts this flavour into the framework block-placement capability.
      * Omitted schemas remain flow-only even if stale props contain placement.

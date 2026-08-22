@@ -1,4 +1,9 @@
-import {BaseBlockComponent, BlockNodeType, BlockSelectionScopeMetadata} from "../../block-std";
+import {
+  BaseBlockComponent,
+  BlockNodeType,
+  BlockSelectionScopeCapability,
+  BlockSelectionScopeMetadata,
+} from "../../block-std";
 import {ISelectionPoint} from "./types";
 
 export type SelectionScopeKind = Exclude<BlockSelectionScopeMetadata, "transparent">
@@ -173,7 +178,13 @@ function readSchemaSelectionScope(
   const schemas = block.doc?.schemas
   if (!schemas?.get) return null
   try {
-    return schemas.get(block.flavour, false)?.metadata.selectionScope ?? null
+    const capability = schemas.get(block.flavour, false)
+      ?.metadata.selectionScope as BlockSelectionScopeCapability | undefined
+    if (!capability) return null
+    if (typeof capability === 'string') return capability
+    const isAbsolute = block.doc?.placement
+      ?.isInAbsoluteLayout?.(block) === true
+    return isAbsolute ? capability.absolute : capability.relative
   } catch {
     return null
   }

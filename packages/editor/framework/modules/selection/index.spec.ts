@@ -1731,6 +1731,15 @@ describe('SelectionManager DOM selection normalization', () => {
     expect(recoveredRange.endOffset)
       .toBe(flow2Trailing.firstChild!.textContent!.length);
 
+    // A new text click is allowed to replace the recovered Ctrl+A projection.
+    // Browsers can publish an empty Selection between pointerdown and the new
+    // caret; that transient state must not resurrect the full-root range.
+    (manager as any)._beginPrimaryPointerIntent(flow1Text);
+    document.getSelection()!.removeAllRanges();
+    expect(manager.recalculate().value).toBeNull();
+    expect(manager.value).toBeNull();
+    (manager as any)._primaryPointerDown = false;
+
     const outsideButton = document.createElement('button');
     outsideButton.setAttribute('data-selection-test-outside', 'true');
     document.body.appendChild(outsideButton);
@@ -2182,6 +2191,165 @@ describe('SelectionManager DOM selection normalization', () => {
 
     expect(manager.value).toBeNull();
     expect(document.getSelection()?.rangeCount).toBe(0);
+  });
+});
+
+describe('SelectionManager placement-aware frame interaction', () => {
+  function createHarness(absolute = false) {
+    const rootHost = document.createElement('div');
+    rootHost.dataset['blockId'] = 'root';
+    const frameHost = document.createElement('div');
+    frameHost.dataset['blockId'] = 'frame';
+    const childHost = document.createElement('p');
+    childHost.dataset['blockId'] = 'child';
+    frameHost.appendChild(childHost);
+    rootHost.appendChild(frameHost);
+    document.body.appendChild(rootHost);
+
+    const root = {
+      id: 'root',
+      flavour: 'root',
+      nodeType: BlockNodeType.root,
+      hostElement: rootHost,
+    } as any;
+    const frame = {
+      id: 'frame',
+      flavour: 'text-box',
+      nodeType: BlockNodeType.block,
+      hostElement: frameHost,
+      parentBlock: root,
+      parentId: root.id,
+    } as any;
+    const child = {
+      id: 'child',
+      flavour: 'paragraph',
+      nodeType: BlockNodeType.editable,
+      hostElement: childHost,
+      parentBlock: frame,
+      parentId: frame.id,
+    } as any;
+    const blocks = new Map([
+      [root.id, root],
+      [frame.id, frame],
+      [child.id, child],
+    ]);
+    const doc = {
+      root,
+      event: {add() {}, bindHotkey() {}},
+      afterInit() {},
+      onDestroy$: new Subject<void>(),
+      getBlockById: (id: string) => blocks.get(id),
+      schemas: {
+        get: (flavour: string) => ({
+          metadata: {
+            selectionInteraction: flavour === 'text-box'
+              ? {frame: 'selectable', editingBoundary: 'absolute'}
+              : undefined,
+          },
+        }),
+      },
+      readonlyManager: {isReadonly: () => false},
+      placement: {isInAbsoluteLayout: () => absolute},
+      compareBlockPosition: () => 0,
+      queryBlocksBetween: () => [],
+      logger: {warn: jasmine.createSpy('warn')},
+    } as any;
+    const manager = new SelectionManager(doc);
+    doc.selection = manager;
+
+    return {manager, rootHost, frameHost, childHost, frame};
+  }
+
+  function pointerDown(target: Element): PointerEvent {
+    const event = new PointerEvent('pointerdown', {
+      button: 0,
+      isPrimary: true,
+      cancelable: true,
+    });
+    Object.defineProperty(event, 'target', {value: target});
+    return event;
+  }
+
+  it('selects only the declared container frame, leaving descendant text native', () => {
+    const h = createHarness();
+    const selectBlock = spyOn(h.manager, 'selectBlock');
+    const frameEvent = pointerDown(h.frameHost);
+    const childEvent = pointerDown(h.childHost);
+    const frameHitTarget = document.createElement('span');
+    frameHitTarget.setAttribute('data-bc-selection-interaction-frame', '');
+    h.frameHost.appendChild(frameHitTarget);
+    const frameHitEvent = pointerDown(frameHitTarget);
+    const undecoratedWrapper = document.createElement('span');
+    h.frameHost.appendChild(undecoratedWrapper);
+    const wrapperEvent = pointerDown(undecoratedWrapper);
+    const resizeHandle = document.createElement('button');
+    resizeHandle.setAttribute('data-bc-selection-interaction-ignore', '');
+    h.frameHost.appendChild(resizeHandle);
+    const resizeEvent = pointerDown(resizeHandle);
+
+    (h.manager as any)._handleSelectableFramePointerDown(frameEvent);
+    (h.manager as any)._handleSelectableFramePointerDown(childEvent);
+    (h.manager as any)._handleSelectableFramePointerDown(frameHitEvent);
+    (h.manager as any)._handleSelectableFramePointerDown(wrapperEvent);
+    (h.manager as any)._handleSelectableFramePointerDown(resizeEvent);
+
+    expect(frameEvent.defaultPrevented).toBeTrue();
+    expect(childEvent.defaultPrevented).toBeFalse();
+    expect(frameHitEvent.defaultPrevented).toBeTrue();
+    expect(wrapperEvent.defaultPrevented).toBeFalse();
+    expect(resizeEvent.defaultPrevented).toBeFalse();
+    expect(selectBlock).toHaveBeenCalledTimes(2);
+    expect(selectBlock).toHaveBeenCalledWith(h.frame);
+    h.rootHost.remove();
+  });
+
+  it('projects whole-frame selection into the selected presentation class', () => {
+    const h = createHarness();
+
+    h.manager.selectBlock(h.frame);
+
+    expect(h.manager.value?.isAllSelected).toBeTrue();
+    expect(h.frameHost.classList.contains('selected')).toBeTrue();
+    h.rootHost.remove();
+  });
+
+  it('enters editing from a direct frame double-click only while absolute', () => {
+    const h = createHarness(true);
+    const setCursorAtBlock = spyOn(h.manager, 'setCursorAtBlock');
+    const frameEvent = new MouseEvent('dblclick', {
+      button: 0,
+      cancelable: true,
+    });
+    Object.defineProperty(frameEvent, 'target', {value: h.frameHost});
+    const childEvent = new MouseEvent('dblclick', {
+      button: 0,
+      cancelable: true,
+    });
+    Object.defineProperty(childEvent, 'target', {value: h.childHost});
+
+    (h.manager as any)._handleClosedContainerDoubleClick(frameEvent);
+    (h.manager as any)._handleClosedContainerDoubleClick(childEvent);
+
+    expect(frameEvent.defaultPrevented).toBeTrue();
+    expect(childEvent.defaultPrevented).toBeFalse();
+    expect(setCursorAtBlock).toHaveBeenCalledOnceWith(h.frame, true);
+    h.rootHost.remove();
+  });
+
+  it('keeps a relative frame double-click Mermaid-like', () => {
+    const h = createHarness();
+    const setCursorAtBlock = spyOn(h.manager, 'setCursorAtBlock');
+    const event = new MouseEvent('dblclick', {
+      button: 0,
+      cancelable: true,
+    });
+    Object.defineProperty(event, 'target', {value: h.frameHost});
+
+    (h.manager as any)._handleClosedContainerDoubleClick(event);
+
+    expect(event.defaultPrevented).toBeFalse();
+    expect(setCursorAtBlock).not.toHaveBeenCalled();
+    h.rootHost.remove();
   });
 });
 

@@ -100,6 +100,15 @@ const rotationTransform = (rotation: number): string =>
         preserveAspectRatio="none"
         aria-hidden="true">
         <path
+          class="text-box-block__frame-hit-target"
+          data-bc-selection-interaction-frame
+          [attr.d]="shapeDefinition.path"
+          fill="none"
+          stroke="transparent"
+          stroke-width="12"
+          vector-effect="non-scaling-stroke">
+        </path>
+        <path
           [attr.d]="shapeDefinition.path"
           fill="none"
           [attr.stroke]="textBoxProps.borderColor"
@@ -122,6 +131,7 @@ const rotationTransform = (rotation: number): string =>
       @if (!isReadonly) {
         <shape-resizer
           data-bc-print-exclude="true"
+          data-bc-selection-interaction-ignore
           [target]="textBoxSurface"
           [maxWidthContainer]="placementContainer"
           [maxWidthResolver]="objectMaxWidthResolver"

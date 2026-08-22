@@ -46,6 +46,15 @@
     z-index: 3;
   }
 
+  // The visible outline remains presentation-only. This transparent stroke is
+  // the frame's explicit interaction plane, so clicking the border selects the
+  // whole text box while the interior continues to belong to native text
+  // editing. `vector-effect` in the template keeps this band stable under
+  // object resizing and document scaling.
+  .text-box-block__frame-hit-target {
+    pointer-events: stroke;
+  }
+
   .text-box-block__background-image {
     position: absolute;
     inset: 0;

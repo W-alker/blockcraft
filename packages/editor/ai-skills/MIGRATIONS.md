@@ -69,6 +69,89 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
+## Unreleased — 2026-08-23 — Placement-aware frame selection
+
+**Severity**: minor
+
+**What changed**: Block Schema metadata can now resolve `selectionScope`
+statically or by placement with `{ relative, absolute }`. It also adds a
+structured `selectionInteraction` capability that independently declares a
+selectable frame and an `always` or `absolute` frame/child editing boundary.
+Core Selection owns those capabilities and placement-sensitive keyboard
+boundaries. The built-in `text-box` uses a transparent scope and no editing
+boundary in relative flow, matching Mermaid text behavior; in absolute
+placement it becomes a closed container. `TextBoxToolbarPlugin` retains only
+toolbar, resize and move-gesture ownership. Descendant-rendered frame borders
+can now declare their precise Selection-owned hit region with
+`data-bc-selection-interaction-frame`.
+
+**Why**: a flow text box is part of the document's reading/editing stream and
+must behave like Mermaid for caret, word selection, IME, arrows and Ctrl/Cmd+A.
+Only an absolutely placed text box is an isolated editing object. Expressing
+that distinction in Schema and resolving it through Selection/Placement avoids
+both flavour checks and duplicated Plugin state machines.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md` (Selection quick reference)
+- `blockcraft-block.md` (Schema field and TextBox declaration)
+- `blockcraft-selection.md` (frame, keyboard and placement policy)
+- `blockcraft-plugins-toolbar.md` (TextBox Plugin ownership boundary)
+
+### New APIs / Features
+
+- `BlockPlacementSelectionScopeMetadata`
+- `BlockSelectionScopeCapability`
+- `BlockSelectionInteractionCapability`
+- `IBlockSchemaOptions.metadata.selectionScope` accepts either a static scope
+  or `{ relative, absolute }`.
+- `IBlockSchemaOptions.metadata.selectionInteraction` accepts
+  `BlockSelectionInteractionCapability`.
+
+### Migration Recipe
+
+Existing Blocks require no change. Custom selectable containers can remove
+their flavour-specific frame and keyboard handlers and declare:
+
+```typescript
+metadata: {
+  selectionScope: {
+    relative: 'transparent',
+    absolute: 'container',
+  },
+  selectionInteraction: {
+    frame: 'selectable',
+    editingBoundary: 'absolute',
+  },
+}
+```
+
+When the visible frame is rendered below the Block host, mark only its border
+hit plane; do not mark the editable surface:
+
+```html
+<path data-bc-selection-interaction-frame></path>
+```
+
+Use a static `selectionScope` or `editingBoundary: 'always'` when placement
+should not change the behavior. Scope, frame selection and editing-boundary
+transitions remain intentionally independent.
+
+### Behavior Changes
+
+- A direct relative or absolute text-box frame click selects the whole frame.
+- Whole-frame selection applies the standard `.selected` presentation class;
+  the built-in text box exposes a scale-stable transparent border hit band.
+- A relative text box resolves to `transparent`: descendant caret, double-click,
+  IME, Enter/Escape, arrows and Ctrl/Cmd+A follow ordinary document behavior,
+  matching Mermaid.
+- An absolute text box resolves to `container`; Enter/direct-frame double-click
+  and Escape transition between frame and direct editable child through
+  Selection, not `TextBoxToolbarPlugin`.
+- Absolute edge arrows and repeated Ctrl/Cmd+A remain capped at the object.
+- A new primary-pointer text gesture replaces a full-document Ctrl/Cmd+A range
+  even when Chromium/WebKit transiently clears the native Range first.
+
 ## Unreleased — 2026-08-22 — demo mode follows the active document layout
 
 **Severity**: minor

@@ -612,6 +612,14 @@ describe('TextBoxBlockSchema', () => {
           .querySelector('shape-resizer')
           ?.getAttribute('data-bc-print-exclude'),
       ).toBe('true')
+      const frameHitTarget = fixture.nativeElement.querySelector(
+        '.text-box-block__frame-hit-target',
+      ) as SVGPathElement | null
+      expect(frameHitTarget).not.toBeNull()
+      expect(frameHitTarget?.hasAttribute(
+        'data-bc-selection-interaction-frame',
+      )).toBeTrue()
+      expect(frameHitTarget?.getAttribute('stroke')).toBe('transparent')
 
       fixture.componentInstance.enterEditing(true)
       expect(setCursorAtBlock).toHaveBeenCalledOnceWith(
@@ -741,7 +749,14 @@ describe('TextBoxBlockSchema', () => {
       'blockquote',
     ])
     expect(TextBoxBlockSchema.metadata.renderUnit).toBeTrue()
-    expect(TextBoxBlockSchema.metadata.selectionScope).toBe('container')
+    expect(TextBoxBlockSchema.metadata.selectionScope).toEqual({
+      relative: 'transparent',
+      absolute: 'container',
+    })
+    expect(TextBoxBlockSchema.metadata.selectionInteraction).toEqual({
+      frame: 'selectable',
+      editingBoundary: 'absolute',
+    })
     expect(TextBoxBlockSchema.metadata.placement?.modes).toEqual([
       'relative',
       'absolute',

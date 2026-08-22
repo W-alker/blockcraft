@@ -4,12 +4,9 @@ import {
 } from '@angular/cdk/overlay'
 import {fromEvent, Subject, Subscription, takeUntil} from 'rxjs'
 import {
-  BindHotKey,
-  BlockNodeType,
   closetBlockId,
   DocPlugin,
   getPositionWithOffset,
-  UIEventStateContext,
 } from '../../framework'
 import {
   normalizeTextBoxProps,
@@ -113,11 +110,6 @@ export class TextBoxToolbarPlugin extends DocPlugin {
         }),
     )
     this._subscription.add(
-      fromEvent<MouseEvent>(document, 'dblclick', {capture: true})
-        .pipe(takeUntil(this.doc.onDestroy$))
-        .subscribe(event => this._onDoubleClick(event)),
-    )
-    this._subscription.add(
       fromEvent<FocusEvent>(document, 'focusin', {capture: true})
         .pipe(takeUntil(this.doc.onDestroy$))
         .subscribe(event => this._onFocusIn(event)),
@@ -151,92 +143,6 @@ export class TextBoxToolbarPlugin extends DocPlugin {
     this._activeBlockHost = undefined
     this._toolbarPointerActive = false
     this._closing = false
-  }
-
-  @BindHotKey({key: 'Enter'}, {flavour: TEXT_BOX_FLAVOUR})
-  onEnterEditing(ctx: UIEventStateContext): true | void {
-    const selection = ctx.get('keyboardState').selection
-    if (
-      !selection.isInSameBlock ||
-      selection.anchor.type !== 'selected' ||
-      selection.head.type !== 'selected'
-    ) {
-      return
-    }
-    const block = selection.firstBlock as TextBoxBlock
-    if (block.flavour !== TEXT_BOX_FLAVOUR) return
-    if (!this._enterFirstEditable(block)) return
-    ctx.preventDefault()
-    return true
-  }
-
-  @BindHotKey({key: 'Escape'})
-  onDirectChildEscape(ctx: UIEventStateContext): true | void {
-    const selection = ctx.get('keyboardState').selection
-    if (
-      !selection.isInSameBlock ||
-      selection.anchor.type !== 'text' ||
-      selection.head.type !== 'text'
-    ) {
-      return
-    }
-
-    const child = selection.firstBlock
-    const parent = child.parentBlock
-    if (
-      parent?.flavour !== TEXT_BOX_FLAVOUR ||
-      !parent.hostElement.isConnected
-    ) {
-      return
-    }
-    ctx.preventDefault()
-    this.doc.selection.selectBlock(parent)
-    return true
-  }
-
-  @BindHotKey(
-    {
-      key: ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'],
-      shiftKey: false,
-    },
-    {flavour: TEXT_BOX_FLAVOUR},
-  )
-  onKeepCaretInsideTextBox(ctx: UIEventStateContext): true | void {
-    const state = ctx.get('keyboardState')
-    const selection = state.selection
-    if (
-      !selection.collapsed ||
-      !selection.isInSameBlock ||
-      selection.anchor.type !== 'text' ||
-      selection.head.type !== 'text'
-    ) {
-      return
-    }
-
-    const block = selection.firstBlock
-    const textBox = this._findTextBoxAncestor(block)
-    if (!textBox) return
-
-    const key = state.raw.key
-    // SelectionKeyboard's explicit edge navigation is model-directional even
-    // when CSS writing-mode is vertical. Stop only the directions that core
-    // would turn into a sibling/parent jump; visual in-block navigation stays
-    // native and is guarded by SelectionManager's absolute-container fence.
-    const isStartDirection = key === 'ArrowUp' || key === 'ArrowLeft'
-    if (
-      !(isStartDirection
-        ? selection.isStartOfBlock
-        : selection.isEndOfBlock) ||
-      !this._isAtTextBoxTreeEdge(block, textBox, isStartDirection)
-    ) {
-      return
-    }
-
-    // Leaving text editing is an explicit Escape action for text boxes. At the
-    // outer content edge, keep the caret in place instead of letting the core
-    // container-navigation fallback bubble into the document root.
-    ctx.preventDefault()
-    return true
   }
 
   private _onSelectionChange(selection: BlockCraft.Selection | null): void {
@@ -425,55 +331,19 @@ export class TextBoxToolbarPlugin extends DocPlugin {
       this._queueObjectSelection(block)
       return
     }
+    // Ordinary frame selection is owned by Selection through the Schema's
+    // selectable-frame capability. This Plugin only claims the explicit
+    // border-move gesture that also starts a placement drag.
+    if (!moveEdge) return
     const readonly = this.doc.readonlyManager.isReadonly(block)
 
     event.preventDefault()
     event.stopPropagation()
     this.doc.selection.selectBlock(block)
 
-    if (!moveEdge || readonly) return
+    if (readonly) return
     this._openToolbar(block)
     this._startBorderDrag(event, block)
-  }
-
-  private _onDoubleClick(event: MouseEvent): void {
-    if (event.button !== 0) return
-    const target = this._resolveElement(event.target)
-    if (!target || this._isToolbarTarget(target)) return
-    if (target.closest('shape-resizer')) return
-    const block = this._resolveTextBoxAncestor(target)
-    if (!block || !this._enterFirstEditable(block)) return
-    event.preventDefault()
-    event.stopPropagation()
-  }
-
-  private _enterFirstEditable(block: TextBoxBlock): boolean {
-    if (
-      !this._isBlockAlive(block) ||
-      this.doc.readonlyManager.isReadonly(block)
-    ) {
-      return false
-    }
-    const childId = this._findFirstEditableDescendantId(block.id)
-    if (!childId) return false
-    this.doc.selection.setCursorAtBlock(childId, true)
-    return true
-  }
-
-  private _findFirstEditableDescendantId(blockId: string): string | null {
-    const pending = [...this.doc.model.getChildrenIds(blockId)].reverse()
-    const visited = new Set<string>()
-    while (pending.length) {
-      const id = pending.pop()!
-      if (visited.has(id)) continue
-      visited.add(id)
-      if (this.doc.model.getNodeType(id) === BlockNodeType.editable) return id
-      const children = this.doc.model.getChildrenIds(id)
-      for (let index = children.length - 1; index >= 0; index--) {
-        pending.push(children[index]!)
-      }
-    }
-    return null
   }
 
   private _startBorderDrag(
@@ -642,27 +512,6 @@ export class TextBoxToolbarPlugin extends DocPlugin {
     return null
   }
 
-  private _isAtTextBoxTreeEdge(
-    block: BlockCraft.BlockComponent,
-    textBox: TextBoxBlock,
-    start: boolean,
-  ): boolean {
-    let current = block
-    try {
-      while (current.parentBlock) {
-        const parent = current.parentBlock
-        const children = this.doc.model.getChildrenIds(parent.id)
-        const edgeId = start ? children[0] : children[children.length - 1]
-        if (edgeId !== current.id) return false
-        if (parent.id === textBox.id) return true
-        current = parent
-      }
-    } catch {
-      return false
-    }
-    return false
-  }
-
   private _finishResizerGesture(pointerId?: number): void {
     const gesture = this._resizerGesture
     if (!gesture || (pointerId !== undefined && gesture.pointerId !== pointerId)) {
@@ -677,30 +526,6 @@ export class TextBoxToolbarPlugin extends DocPlugin {
       if (this._subscription.closed || !this._isBlockAlive(block)) return
       this.doc.selection.selectBlock(block)
     })
-  }
-
-  /**
-   * Double-click may land on a real paragraph/list child. Resolve the owning
-   * text-box frame without changing the single-click path, which deliberately
-   * leaves descendant text selection to the normal editing pipeline.
-   */
-  private _resolveTextBoxAncestor(target: Element): TextBoxBlock | null {
-    if (!this.doc.root.hostElement.contains(target)) return null
-    const host = target.closest<HTMLElement>(
-      '[data-bc-text-box][data-block-id]',
-    )
-    const blockId = host?.getAttribute('data-block-id')
-    if (!host || !blockId) return null
-    try {
-      const block = this.doc.getBlockById(blockId)
-      return block.flavour === TEXT_BOX_FLAVOUR &&
-        block.hostElement === host &&
-        block.hostElement.isConnected
-        ? block as TextBoxBlock
-        : null
-    } catch {
-      return null
-    }
   }
 
   private _resolveActiveBlock(): TextBoxBlock | null {

@@ -11,6 +11,7 @@ import {IS_MAC} from "../../../global";
 import {closetBlockId, isZeroSpace, resolveBlockGapSide} from "../../utils";
 import {searchEditableDescendant} from "./index";
 import {resolveCommonSelectionScope} from './scope'
+import {hasClosedContainerEditingBoundary} from './interaction-policy'
 import {IBoundarySelectionPoint, ISelectionPointJSON, ITextSelectionPoint} from "./types";
 import type {SelectionSurfaceAdapter} from './surface-adapter';
 
@@ -662,6 +663,13 @@ export class SelectionKeyboard {
     // No sibling: bubble up to exit an enclosing container block.
     const parent = block.parentBlock
     if (parent && parent.nodeType === BlockNodeType.block) {
+      // An absolute placement object is its own navigation plane. Keep the
+      // canonical caret at its outer content edge; Escape owns the explicit
+      // transition back to whole-frame selection. Relative containers still
+      // take the ordinary gap/parent path below.
+      if (this.doc.placement?.isInAbsoluteLayout?.(parent) === true) {
+        return true
+      }
       if (this._supportsBlockGap(parent)) {
         this.doc.selection.setGapCursor(parent, isLeft ? 'before' : 'after')
       } else {
@@ -959,6 +967,31 @@ export class SelectionKeyboard {
     return true
   }
 
+  @BindHotKey({key: 'Enter'})
+  private _handleClosedContainerEnter(ctx: UIEventStateContext) {
+    const selection = ctx.get('keyboardState').selection
+    if (
+      !selection.isInSameBlock ||
+      selection.anchor.type !== 'selected' ||
+      selection.head.type !== 'selected'
+    ) {
+      return
+    }
+
+    const block = selection.firstBlock
+    if (!hasClosedContainerEditingBoundary(this.doc, block)) return
+    if (
+      this.doc.isReadonly ||
+      this.doc.readonlyManager?.isReadonly?.(block)
+    ) {
+      return
+    }
+
+    ctx.preventDefault()
+    this.doc.selection.setCursorAtBlock(block, true)
+    return true
+  }
+
   @BindHotKey({key: 'Home', shortKey: null, shiftKey: false})
   handleHome(context: UIEventStateContext) {
     const state = context.get('keyboardState')
@@ -1005,6 +1038,19 @@ export class SelectionKeyboard {
   private _handleEscape(ctx: UIEventStateContext) {
     const state = ctx.get('keyboardState')
     const sel = state.selection
+    if (
+      sel.collapsed &&
+      sel.isInSameBlock &&
+      sel.anchor.type === 'text' &&
+      sel.head.type === 'text'
+    ) {
+      const parent = this._parentBlock(sel.firstBlock)
+      if (hasClosedContainerEditingBoundary(this.doc, parent)) {
+        ctx.preventDefault()
+        this.doc.selection.selectBlock(parent)
+        return true
+      }
+    }
     if (sel.collapsed) return
     if (sel.start.type !== 'text' && sel.isInSameBlock) return
     ctx.preventDefault()

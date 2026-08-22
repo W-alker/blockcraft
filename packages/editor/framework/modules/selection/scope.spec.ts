@@ -1,4 +1,7 @@
-import {BlockNodeType, BlockSelectionScopeMetadata} from "../../block-std";
+import {
+  BlockNodeType,
+  BlockSelectionScopeCapability,
+} from "../../block-std";
 import {ISelectionPoint} from "./types";
 import {
   getSelectionScopePolicy,
@@ -13,16 +16,20 @@ import {Subject} from "rxjs";
 import {createBlockGapSpace} from "../../utils/zero-gap";
 
 describe("Selection scope", () => {
-  const DEFAULT_SCOPE_BY_FLAVOUR: Record<string, BlockSelectionScopeMetadata> = {
+  const DEFAULT_SCOPE_BY_FLAVOUR: Record<string, BlockSelectionScopeCapability> = {
     root: "document",
     table: "table",
     columns: "columns",
     callout: "container",
     mermaid: "transparent",
     "mermaid-textarea": "transparent",
+    "text-box": {relative: "transparent", absolute: "container"},
   }
 
-  function schemaDoc(selectionScope: BlockSelectionScopeMetadata | null | undefined) {
+  function schemaDoc(
+    selectionScope: BlockSelectionScopeCapability | null | undefined,
+    absolute = false,
+  ) {
     return {
       schemas: {
         get: () => ({
@@ -31,6 +38,7 @@ describe("Selection scope", () => {
           },
         }),
       },
+      placement: {isInAbsoluteLayout: () => absolute},
     }
   }
 
@@ -39,7 +47,8 @@ describe("Selection scope", () => {
     flavour: string,
     nodeType: BlockNodeType,
     parent?: any,
-    selectionScope: BlockSelectionScopeMetadata | null | undefined = DEFAULT_SCOPE_BY_FLAVOUR[flavour],
+    selectionScope: BlockSelectionScopeCapability | null | undefined = DEFAULT_SCOPE_BY_FLAVOUR[flavour],
+    absolute = false,
   ) {
     const hostElement = document.createElement(nodeType === BlockNodeType.editable ? "p" : "div")
     hostElement.setAttribute("data-block-id", id)
@@ -51,7 +60,7 @@ describe("Selection scope", () => {
       hostElement,
       parentId: parent?.id ?? null,
       parentBlock: parent ?? null,
-      doc: schemaDoc(selectionScope),
+      doc: schemaDoc(selectionScope, absolute),
     } as any
   }
 
@@ -263,6 +272,38 @@ describe("Selection scope", () => {
     expect(resolveCommonSelectionScope(text(textarea), text(p), getBlock)).toEqual({
       kind: "document",
       blockId: "root",
+    })
+  })
+
+  it("uses Mermaid-like document scope for a relative text box", () => {
+    const root = block("root", "root", BlockNodeType.root)
+    const textBox = block("text-box-1", "text-box", BlockNodeType.block, root)
+    const child = block("p1", "paragraph", BlockNodeType.editable, textBox)
+    const outside = block("p2", "paragraph", BlockNodeType.editable, root)
+    const getBlock = getBlockFactory({root, "text-box-1": textBox, p1: child, p2: outside})
+
+    expect(resolveCommonSelectionScope(text(child), text(outside), getBlock)).toEqual({
+      kind: "document",
+      blockId: "root",
+    })
+  })
+
+  it("closes an absolute text box into its own container scope", () => {
+    const root = block("root", "root", BlockNodeType.root)
+    const textBox = block(
+      "text-box-1",
+      "text-box",
+      BlockNodeType.block,
+      root,
+      DEFAULT_SCOPE_BY_FLAVOUR["text-box"],
+      true,
+    )
+    const child = block("p1", "paragraph", BlockNodeType.editable, textBox)
+    const getBlock = getBlockFactory({root, "text-box-1": textBox, p1: child})
+
+    expect(resolveSelectionScope(text(child), getBlock)).toEqual({
+      kind: "container",
+      blockId: "text-box-1",
     })
   })
 

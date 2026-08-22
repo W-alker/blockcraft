@@ -14,6 +14,134 @@ async function initialize(page: Page): Promise<void> {
   }, editorSelector)
 }
 
+test('flow text-box frame selects as an object and full select-all yields to a new text click', async ({
+  page,
+}) => {
+  await initialize(page)
+  const inserted = await page.evaluate(async selector => {
+    const editor = document.querySelector(selector)!
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor).doc
+    const snapshot = doc.schemas.createSnapshot('text-box', [
+      '流式文本框内容',
+      {width: 360, height: 180},
+    ])
+    doc.crud.insertBlockSnapshots(doc.rootId, 0, [snapshot])
+    await new Promise<void>(resolve =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    )
+    doc.getBlockById(snapshot.id).hostElement.scrollIntoView({block: 'center'})
+    return {
+      textBoxId: snapshot.id as string,
+      paragraphId: snapshot.children[0].id as string,
+      outsideParagraphId: 'demo-0',
+      rootId: doc.rootId as string,
+      rootChildrenLength: doc.model.getChildrenIds(doc.rootId).length as number,
+    }
+  }, editorSelector)
+
+  const textBox = page.locator(
+    `${editorSelector} .text-box-block[data-block-id="${inserted.textBoxId}"]`,
+  )
+  const surface = textBox.locator('.text-box-block__surface')
+  const surfaceBox = await surface.boundingBox()
+  expect(surfaceBox).not.toBeNull()
+
+  await page.mouse.click(surfaceBox!.x + 2, surfaceBox!.y + 2)
+
+  await expect.poll(() => page.evaluate(({selector, textBoxId}) => {
+    const editor = document.querySelector(selector)!
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const selection = debug.getComponent(editor).doc.selection.value
+    return {
+      firstBlockId: selection?.firstBlockId ?? null,
+      startType: selection?.start?.type ?? null,
+      selected: editor.querySelector(
+        `.text-box-block[data-block-id="${textBoxId}"]`,
+      )?.classList.contains('selected') ?? false,
+    }
+  }, {selector: editorSelector, textBoxId: inserted.textBoxId})).toEqual({
+    firstBlockId: inserted.textBoxId,
+    startType: 'selected',
+    selected: true,
+  })
+  await expect(textBox.locator('shape-resizer')).toBeVisible()
+
+  await page.evaluate(({selector, paragraphId}) => {
+    const editor = document.querySelector(selector)!
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor).doc
+    doc.selection.setCursorAtBlock(paragraphId, false, false)
+  }, {selector: editorSelector, paragraphId: inserted.paragraphId})
+
+  const selectAll = process.platform === 'darwin' ? 'Meta+A' : 'Control+A'
+  await page.keyboard.press(selectAll)
+  await page.keyboard.press(selectAll)
+  await page.keyboard.press(selectAll)
+
+  await expect.poll(() => page.evaluate(({selector}) => {
+    const editor = document.querySelector(selector)!
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const selection = debug.getComponent(editor).doc.selection.value
+    return selection?.start?.type === 'boundary' &&
+      selection?.end?.type === 'boundary'
+      ? {
+          startBlockId: selection.start.blockId,
+          startIndex: selection.start.index,
+          endBlockId: selection.end.blockId,
+          endIndex: selection.end.index,
+        }
+      : null
+  }, {selector: editorSelector})).toMatchObject({
+    startBlockId: inserted.rootId,
+    startIndex: 0,
+    endBlockId: inserted.rootId,
+    endIndex: inserted.rootChildrenLength,
+  })
+
+  const outsideText = page.locator(
+    `${editorSelector} [data-block-id="${inserted.outsideParagraphId}"] c-text`,
+  ).first()
+  await outsideText.scrollIntoViewIfNeeded()
+  const outsideBox = await outsideText.boundingBox()
+  expect(outsideBox).not.toBeNull()
+  await page.mouse.click(
+    outsideBox!.x + Math.min(12, outsideBox!.width / 2),
+    outsideBox!.y + outsideBox!.height / 2,
+  )
+
+  await expect.poll(() => page.evaluate(({selector, outsideParagraphId}) => {
+    const editor = document.querySelector(selector)!
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const selection = debug.getComponent(editor).doc.selection.value
+    const nativeSelection = document.getSelection()
+    return {
+      blockId: selection?.collapsed && selection.start?.type === 'text'
+        ? selection.start.blockId
+        : null,
+      nativeCollapsed: nativeSelection?.isCollapsed ?? null,
+      outsideParagraphId,
+    }
+  }, {
+    selector: editorSelector,
+    outsideParagraphId: inserted.outsideParagraphId,
+  })).toEqual({
+    blockId: inserted.outsideParagraphId,
+    nativeCollapsed: true,
+    outsideParagraphId: inserted.outsideParagraphId,
+  })
+})
+
 test('text-box keeps native focus, visible select-all, and layout-owned scope', async ({
   page,
 }) => {
@@ -443,7 +571,7 @@ test('clicking an absolute text box replaces a document-wide native range', asyn
       ).flatMap(element => element.dataset['blockId'] ?? []),
       rootId,
     }
-  }, {selector: editorSelector, rootId: inserted.rootId})).toEqual({
+  }, {selector: editorSelector, rootId: inserted.rootId})).toMatchObject({
     start: {
       blockId: inserted.rootId,
       type: 'boundary',
@@ -457,8 +585,6 @@ test('clicking an absolute text box replaces a document-wide native range', asyn
     nativeRangeCount: 1,
     nativeCollapsed: false,
     nativeText: expect.stringContaining('Blockcraft 2.0 Playground'),
-    selectedIds: [],
-    focusedIds: [],
     rootId: inserted.rootId,
   })
 

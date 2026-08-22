@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-21
+> Last updated: 2026-08-23
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
@@ -400,27 +400,30 @@ another shape remains outside this visual shape contract.
 
 ## TextBoxToolbarPlugin
 
-> `plugins/text-box-toolbar/` — Whole-frame selection, preset/shape/text-effect styling and
+> `plugins/text-box-toolbar/` — Whole-frame toolbar, preset/shape/text-effect styling and
 > object placement for the fixed-size `text-box` container.
 
 ```typescript
 new TextBoxToolbarPlugin();
 ```
 
-The Plugin keeps two explicit states. A selection on the `text-box` itself
-opens its connected object toolbar with resize/rotation handles. A caret/range
-whose text or child-boundary endpoints belong to the same text box closes that
-object toolbar and shows no frame chrome at all — matching the shape block
-convention, text editing keeps only the normal text toolbars, so filling in a
-frame reads like editing plain prose.
-Enter or a frame double-click enters the first editable descendant, while
-Escape from a direct child selects the parent frame. The intentional nested
-`contenteditable=false → true` island keeps object selection and text editing
-separate. Within that inner editing host, ordinary prose uses a column layout
-whose last real child owns any remaining block-axis space, matching the
-Callout/高亮块 rule that visible content space belongs to a child Block.
-Browser caret hit testing can therefore resolve fixed-frame whitespace without
-a Plugin-level blank-area click handler or synthetic caret calculation.
+The Plugin does not implement the object/text selection state machine. The
+`text-box` Schema declares a selectable frame plus placement-aware scope and
+editing boundary. Core Selection selects a directly clicked frame in either
+layout. Relative flow otherwise behaves like Mermaid: descendant caret,
+double-click, Enter/Escape, arrows and Ctrl/Cmd+A remain in the ordinary document
+pipeline. Absolute placement activates frame/text Enter, double-click and Escape
+transitions, a closed container scope and capped edge navigation/select-all.
+The Plugin only observes the result: a whole text-box selection opens its
+connected toolbar and resize/rotation handles; a caret or range inside closes
+the object chrome.
+
+Explicit resizer handles opt out of the generic frame pointer capture and
+remain Plugin-owned so resize and relative reorder gestures still work.
+Within the inner editing host, ordinary prose uses a column layout whose last
+real child owns any remaining block-axis space. Browser caret hit testing can
+therefore resolve fixed-frame whitespace without a Plugin-level blank-area
+click handler or synthetic caret calculation.
 Relative movement uses the shared Pointer Events block drag controller;
 absolute movement starts only from the frame edge and delegates to
 `BlockPlacementManager`, so text selection inside the viewport remains native.

@@ -367,6 +367,37 @@ describe('SelectionKeyboard – Left/Right gap navigation', () => {
       expect(doc.selection.setGapCursor).toHaveBeenCalledWith(container, 'after');
     });
 
+    it('keeps an edge caret inside an absolute placement container', () => {
+      const container = {
+        id: 'object-1',
+        flavour: 'text-box',
+        nodeType: BlockNodeType.block,
+      };
+      const child = {
+        id: 'p1',
+        flavour: 'paragraph',
+        nodeType: BlockNodeType.editable,
+        textLength: 2,
+        parentBlock: container,
+      };
+      doc.nextSibling.and.returnValue(null);
+      (doc as any).placement = {
+        isInAbsoluteLayout: (block: any) => block === container,
+      };
+      const sel = {
+        isAllSelected: false,
+        collapsed: true,
+        start: {type: 'text', offset: 2},
+        firstBlock: child,
+      };
+
+      const res = keyboard._handleLeftRightArrow(ctxFor(sel, 'ArrowRight'));
+
+      expect(res).toBeTrue();
+      expect(doc.selection.setGapCursor).not.toHaveBeenCalled();
+      expect(doc.selection.selectOrSetCursorAtBlock).not.toHaveBeenCalled();
+    });
+
     it('ArrowRight from the last editable child of a renderUnit leaf enters the next renderUnit text start', () => {
       const cell = {
         id: 'cell-1',
@@ -993,6 +1024,110 @@ describe('SelectionKeyboard – Ctrl+A ladder', () => {
   });
 });
 
+describe('SelectionKeyboard – placement-aware frame interaction', () => {
+  function createHarness(absolute = false) {
+    const doc = createMockDoc() as any;
+    const frame = {
+      id: 'frame',
+      flavour: 'text-box',
+      nodeType: BlockNodeType.block,
+    };
+    const child = {
+      id: 'child',
+      flavour: 'paragraph',
+      nodeType: BlockNodeType.editable,
+      parentBlock: frame,
+    };
+    doc.schemas.get.and.callFake((flavour: string) => ({
+      metadata: {
+        selectionInteraction: flavour === 'text-box'
+          ? {frame: 'selectable', editingBoundary: 'absolute'}
+          : undefined,
+      },
+    }));
+    doc.readonlyManager = {isReadonly: () => false};
+    doc.placement = {isInAbsoluteLayout: () => absolute};
+    return {doc, keyboard: createKeyboard(doc), frame, child};
+  }
+
+  it('enters the first editable descendant from a selected frame', () => {
+    const {doc, keyboard, frame} = createHarness(true);
+    const context = ctxFor({
+      isInSameBlock: true,
+      anchor: selectedPoint(frame),
+      head: selectedPoint(frame),
+      firstBlock: frame,
+    }, 'Enter');
+
+    const result = keyboard._handleClosedContainerEnter(context);
+
+    expect(result).toBeTrue();
+    expect(context.preventDefault).toHaveBeenCalledTimes(1);
+    expect(doc.selection.setCursorAtBlock).toHaveBeenCalledOnceWith(frame, true);
+  });
+
+  it('returns a direct text child to whole-frame selection on Escape', () => {
+    const {doc, keyboard, frame, child} = createHarness(true);
+    const point = textPoint(child, 1);
+    const context = ctxFor({
+      collapsed: true,
+      isInSameBlock: true,
+      anchor: point,
+      head: point,
+      firstBlock: child,
+    }, 'Escape');
+
+    const result = keyboard._handleEscape(context);
+
+    expect(result).toBeTrue();
+    expect(context.preventDefault).toHaveBeenCalledTimes(1);
+    expect(doc.selection.selectBlock).toHaveBeenCalledOnceWith(frame);
+  });
+
+  it('does not turn an ordinary container scope into a selectable frame', () => {
+    const {doc, keyboard} = createHarness();
+    const callout = {
+      id: 'callout',
+      flavour: 'callout',
+      nodeType: BlockNodeType.block,
+    };
+    const context = ctxFor({
+      isInSameBlock: true,
+      anchor: selectedPoint(callout),
+      head: selectedPoint(callout),
+      firstBlock: callout,
+    }, 'Enter');
+
+    expect(keyboard._handleClosedContainerEnter(context)).toBeUndefined();
+    expect(doc.selection.setCursorAtBlock).not.toHaveBeenCalled();
+  });
+
+  it('leaves Enter and Escape native while the frame is in relative flow', () => {
+    const {doc, keyboard, frame, child} = createHarness();
+    const enter = ctxFor({
+      isInSameBlock: true,
+      anchor: selectedPoint(frame),
+      head: selectedPoint(frame),
+      firstBlock: frame,
+    }, 'Enter');
+    const point = textPoint(child, 1);
+    const escape = ctxFor({
+      collapsed: true,
+      isInSameBlock: true,
+      anchor: point,
+      head: point,
+      firstBlock: child,
+    }, 'Escape');
+
+    expect(keyboard._handleClosedContainerEnter(enter)).toBeUndefined();
+    expect(keyboard._handleEscape(escape)).toBeUndefined();
+    expect(enter.preventDefault).not.toHaveBeenCalled();
+    expect(escape.preventDefault).not.toHaveBeenCalled();
+    expect(doc.selection.setCursorAtBlock).not.toHaveBeenCalled();
+    expect(doc.selection.selectBlock).not.toHaveBeenCalled();
+  });
+});
+
 describe('SelectionKeyboard – Ctrl+A container layout boundary', () => {
   function createContainerCtrlAHarness(absolute = false) {
     const root = {
@@ -1043,7 +1178,9 @@ describe('SelectionKeyboard – Ctrl+A container layout boundary', () => {
         get: jasmine.createSpy('get').and.callFake((flavour: string) => ({
           metadata: {
             selectionScope: flavour === 'text-box'
-              ? 'container'
+              ? absolute
+                ? 'container'
+                : 'transparent'
               : flavour === 'root'
                 ? 'document'
                 : undefined,
@@ -1075,8 +1212,27 @@ describe('SelectionKeyboard – Ctrl+A container layout boundary', () => {
     };
   }
 
-  it('selects every text-box paragraph on the first Ctrl+A from any child paragraph', () => {
-    const {keyboard, doc, textBox, paragraph2} = createContainerCtrlAHarness();
+  it('keeps first Ctrl+A on the active child while the text box is in flow', () => {
+    const {keyboard, doc, paragraph2} = createContainerCtrlAHarness();
+    const point = textPoint(paragraph2, 2);
+    const ctx = ctrlACtxFor({
+      commonParent: paragraph2.id,
+      anchor: point,
+      head: point,
+      start: point,
+      end: point,
+      isInSameBlock: true,
+    });
+
+    const result = keyboard.handleCtrlA(ctx);
+
+    expect(result).toBeTrue();
+    expect(doc.selection.selectAllChildren).toHaveBeenCalledOnceWith(paragraph2);
+    expect(doc.messageService.info).toHaveBeenCalledTimes(1);
+  });
+
+  it('selects the complete text-box scope first while it is absolute', () => {
+    const {keyboard, doc, textBox, paragraph2} = createContainerCtrlAHarness(true);
     const point = textPoint(paragraph2, 2);
     const ctx = ctrlACtxFor({
       commonParent: paragraph2.id,

@@ -51,7 +51,14 @@ export const TextBoxBlockSchema: IBlockSchemaOptions<TextBoxBlockModel> = {
       'todo',
       'blockquote',
     ],
-    selectionScope: 'container',
+    selectionScope: {
+      relative: 'transparent',
+      absolute: 'container',
+    },
+    selectionInteraction: {
+      frame: 'selectable',
+      editingBoundary: 'absolute',
+    },
     placement: {modes: ['relative', 'absolute']},
     virtualization: {
       estimateHeight: ({props}) => normalizeTextBoxProps(props).height,

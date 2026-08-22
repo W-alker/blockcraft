@@ -52,6 +52,10 @@ import {
 } from './surface-adapter';
 import type {SelectionProjectionMountAdapter} from './projection-mount-adapter';
 import {resolveTableCellSelectionTarget} from '../table';
+import {
+  hasClosedContainerEditingBoundary,
+  hasSelectableBlockFrame,
+} from './interaction-policy';
 
 const DOM_PROJECTION_RETRY_LIMIT = 8
 
@@ -230,6 +234,78 @@ export class SelectionManager {
     }
   }
 
+  private _selectableFrameAtTarget(
+    target: EventTarget | null,
+  ): BlockCraft.BlockComponent | null {
+    if (!(target instanceof Node) || !this.doc.root.hostElement.contains(target)) {
+      return null
+    }
+    const targetElement = target instanceof Element
+      ? target
+      : target.parentElement
+    if (!targetElement) return null
+
+    const declaredFrame = targetElement.closest(
+      '[data-bc-selection-interaction-frame]',
+    )
+    const blockId = closetBlockId(declaredFrame ?? targetElement)
+    const block = blockId ? this._readBlock(blockId) : null
+    if (!hasSelectableBlockFrame(this.doc, block)) return null
+
+    // A selectable container has two interaction planes: descendant content
+    // remains native, while the block's own host or an explicitly declared
+    // frame hit region selects the whole object. Requiring an owned frame role
+    // prevents a generic wrapper/background descendant from swallowing text
+    // selection merely because its nearest block is selectable.
+    if (!declaredFrame && targetElement !== block.hostElement) return null
+    return block
+  }
+
+  private _handleSelectableFramePointerDown(event: PointerEvent): void {
+    if (
+      event.defaultPrevented ||
+      !event.isPrimary ||
+      event.button !== 0 ||
+      isNativeInputTarget(event.target)
+    ) {
+      return
+    }
+    const target = event.target instanceof Element ? event.target : null
+    if (target?.closest('[data-bc-selection-interaction-ignore]')) return
+
+    const block = this._selectableFrameAtTarget(event.target)
+    if (!block) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    this.selectBlock(block)
+  }
+
+  private _handleClosedContainerDoubleClick(event: MouseEvent): void {
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      isNativeInputTarget(event.target)
+    ) {
+      return
+    }
+    const target = event.target instanceof Element ? event.target : null
+    if (target?.closest('[data-bc-selection-interaction-ignore]')) return
+
+    const block = this._selectableFrameAtTarget(event.target)
+    if (!hasClosedContainerEditingBoundary(this.doc, block)) return
+    if (
+      this.doc.isReadonly ||
+      this.doc.readonlyManager?.isReadonly?.(block)
+    ) {
+      return
+    }
+
+    event.preventDefault()
+    event.stopPropagation()
+    this.setCursorAtBlock(block, true)
+  }
+
   get value() {
     const selection = this.selectionChange$.value
     if (!selection) return null
@@ -349,7 +425,11 @@ export class SelectionManager {
         if (event.isPrimary && event.button === 0) {
           this._beginPrimaryPointerIntent(event.target)
         }
+        this._handleSelectableFramePointerDown(event)
       })
+    fromEvent<MouseEvent>(root.hostElement, 'dblclick', {capture: true})
+      .pipe(takeUntil(this.doc.onDestroy$))
+      .subscribe(event => this._handleClosedContainerDoubleClick(event))
     const releasePrimaryPointer = () => {
       this._primaryPointerDown = false
       this._releasePrimaryPointerFreeze()
@@ -739,6 +819,13 @@ export class SelectionManager {
   }
 
   private _recoverableMissingRootProjection(): BlockSelection | null {
+    // A primary pointer gesture intentionally replaces the current selection.
+    // Chromium/WebKit may transiently publish an empty native Selection between
+    // pointerdown and the new caret/range. Reprojecting a full-root boundary in
+    // that interval traps the old Ctrl+A selection and makes every later text
+    // click appear inert.
+    if (this._primaryPointerDown) return null
+
     const current = this.value
     const rootId = this.doc.root.id
     if (

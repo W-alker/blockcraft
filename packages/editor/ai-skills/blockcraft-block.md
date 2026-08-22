@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-08-21
+> Last updated: 2026-08-23
 
 ## Block Types
 
@@ -1122,9 +1122,17 @@ opens `TEXT_BOX_PRESETS`, inserts the chosen concrete appearance into
 `placement-layout`, then enters the first paragraph. Preset IDs are never
 persisted, so changing a future catalog does not drift existing documents.
 
-`TextBoxToolbarPlugin` separates child text editing from whole-object
-selection. Enter or double-click enters text; Escape selects the frame. Its
-object toolbar is semantic and preset-first: **样式**, **形状** and
+The Schema declares a placement-aware Selection contract. Its frame remains
+selectable in either layout, but relative `top-bottom` flow uses a transparent
+selection scope just like Mermaid: descendant caret, double-click, IME, arrows
+and Ctrl/Cmd+A follow the surrounding document, with no Enter/Escape object/text
+transition. In absolute placement the same Block resolves to a closed
+`container` scope: Enter or a direct-frame double-click enters text, Escape from
+a direct editable child returns to the frame, edge arrows cannot escape the
+object plane, and repeated Ctrl/Cmd+A is capped there. Core Selection owns these
+rules; `TextBoxToolbarPlugin` only observes the resulting state and owns the
+toolbar plus explicit resize/reorder gestures. Its object
+toolbar is semantic and preset-first: **样式**, **形状** and
 **文字效果**, followed by **上下型**, **衬于文字下方** and
 **浮于文字上方** plus absolute stack order. Raw padding and background-image
 URL fields remain available through Schema/CRUD APIs but are not exposed as
@@ -1455,12 +1463,24 @@ built-in button rather than persisting or toggling them directly.
 ## Selection Scope (Schema field)
 
 Container-like blocks can declare how their descendants participate in
-cross-parent selection via `metadata.selectionScope`.
+cross-parent selection via `metadata.selectionScope`. Use one static scope when
+placement does not affect the editing domain:
 
 ```typescript
 metadata: {
   // ...
   selectionScope: 'container',
+}
+```
+
+Placement-capable Blocks can instead resolve the scope structurally:
+
+```typescript
+metadata: {
+  selectionScope: {
+    relative: 'transparent',
+    absolute: 'container',
+  },
 }
 ```
 
@@ -1471,27 +1491,69 @@ Supported values:
 | `document`              | Top-level document scope; normally only `root` declares this.                       |
 | `table`                 | Closed table scope. Descendants share one table selection domain.                   |
 | `columns`               | Layout scope whose child columns are transparent to text selection.                 |
-| `container`             | Closed generic container scope such as callout/highlight or text box.               |
+| `container`             | Closed generic container scope such as callout/highlight or an absolute text box.   |
 | `transparent` / omitted | This block does not create a scope; descendants inherit the nearest ancestor scope. |
 
 Built-in declarations:
 
-| Flavour                        | `selectionScope` |
-| ------------------------------ | ---------------- |
-| `root`                         | `document`       |
-| `table`                        | `table`          |
-| `columns`                      | `columns`        |
-| `callout` / `text-box`         | `container`      |
-| `mermaid` / `mermaid-textarea` | `transparent`    |
+| Flavour                        | `selectionScope`                                  |
+| ------------------------------ | ------------------------------------------------- |
+| `root`                         | `document`                                        |
+| `table`                        | `table`                                           |
+| `columns`                      | `columns`                                         |
+| `callout`                      | `container`                                       |
+| `text-box`                     | relative `transparent`; absolute `container`      |
+| `mermaid` / `mermaid-textarea` | `transparent`                                     |
 
 `SelectionManager` reads this field through the registered schema. Do not add
 flavour-specific checks in input, toolbar, or selection-class code; derive
 behavior from the resolved scope / `SelectionScopePolicy` instead.
-Cmd/Ctrl+A follows the same contract: from any descendant text point in a
-`container` scope, the first press selects the scope block's complete child
-boundary range. Repeated presses stay at that range only when the scope belongs
-to an absolute object; a normal-flow container continues through its parent to
-the document root.
+Cmd/Ctrl+A follows the resolved scope. In a `container` scope the first press
+selects the scope block's complete child boundary range; repeated presses stay
+there when it is an absolute object. A relative text box resolves as
+`transparent`, so the first press selects the active editable child and later
+presses follow the ordinary parent/document ladder, exactly like Mermaid text.
+
+## Selection Interaction (Schema field)
+
+`selectionScope` defines a text range domain; it does not make the container
+frame an object-selection target. A Block that needs a selectable frame around
+otherwise normal editable descendants declares the independent interaction:
+
+```typescript
+metadata: {
+  selectionInteraction: {
+    frame: 'selectable',
+    editingBoundary: 'absolute',
+  },
+}
+```
+
+`frame: 'selectable'` makes the Block host itself selectable. A frame whose
+visible border is rendered by a descendant (for example an SVG path) marks the
+precise hit region with `data-bc-selection-interaction-frame`; unmarked wrapper
+and editable descendants remain native. `editingBoundary` independently enables the
+frame/child transition either `always` or only in `absolute` placement:
+
+- direct non-descendant frame click → whole-block selection;
+- while the editing boundary is active, Enter or direct-frame double-click →
+  first editable descendant;
+- while the editing boundary is active, Escape from a direct editable child →
+  whole-block selection;
+- descendant pointer/text/IME/Ctrl/Cmd+A → normal Selection/Input handling.
+
+```html
+<path data-bc-selection-interaction-frame></path>
+```
+
+The framework resolves both placement-aware capabilities through the Placement
+domain; Selection and plugins must not inspect flavour. Relative text boxes use
+the same transparent editing behavior as Mermaid, while absolute text boxes are
+closed and capped. Interactive frame controls can add
+`data-bc-selection-interaction-ignore` so Selection does not consume their
+pointer gesture. `text-box` declares the placement-aware capability; `callout`
+deliberately has no selectable-frame interaction even though it uses a static
+`selectionScope: 'container'`.
 
 ## Plain-Text Formatting Capability (Schema field)
 

@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-08-21 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-08-23 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -1168,15 +1168,23 @@ doc.selection.getSelectedText()         // string
 // void/container chrome round-trip back to parent boundary points; same-block
 // leading→trailing gap/chrome ranges stay selected.
 // Recalculated cross-parent DOM ranges are accepted only inside the same
-// semantic scope. Scopes come from schema `metadata.selectionScope`
-// (`document`, `table`, `columns`, `container`; omitted/`transparent` inherits
-// the nearest ancestor scope). root.id is the commonParent used to address
-// top-level children and is the topmost document scope.
+// semantic scope. Scopes come from schema `metadata.selectionScope`: either a
+// static value (`document`, `table`, `columns`, `container`, `transparent`) or
+// `{ relative, absolute }`. Omitted/currently transparent Blocks inherit the
+// nearest ancestor scope. root.id is the commonParent used to address top-level
+// children and is the topmost document scope.
 // When native drag crosses a closed scope, the internal endpoint is projected
 // to the scope block's parent boundary instead of collapsing the whole range.
 // Input/IME behavior reads SelectionScopePolicy; columns preserves
 // cross-column text tails. Native-backed ranges do not reuse generic
 // selected/focused interaction classes for their covered blocks.
+// `metadata.selectionInteraction` is independent from scope.
+// `frame: 'selectable'` makes a direct frame click select the Block;
+// descendant-rendered borders mark their hit region with
+// `data-bc-selection-interaction-frame`, while editable descendants stay native;
+// `editingBoundary: 'always' | 'absolute'` controls Enter/direct-frame
+// double-click entry and Escape back to the frame. The built-in text box is
+// transparent like Mermaid in relative flow and closed only when absolute.
 
 // Type-narrowing example
 const sel = doc.selection.value
@@ -1208,10 +1216,10 @@ doc.selection.setGapCursor(block, 'before' | 'after', scrollIntoView?)  // gap c
 doc.selection.setTableCellSelection(table, anchorCell, headCell?, scrollIntoView?) // model-owned table rectangle
 doc.selection.extendTo(editableBlock, offset)  // shift+click
 doc.selection.selectAllChildren(block)         // editable text range; container/root boundary range
-// Ctrl+A boundary: inside a container scope (text-box/callout), the first press
-// selects the container's complete child boundary range. Repeated presses stay
-// there only when the container is inside an absolute object; normal-flow
-// containers continue through their parent to root.
+// Ctrl+A boundary: inside a resolved container scope (absolute text-box or
+// callout), the first press selects the container's complete child boundary
+// range. A relative text-box is transparent, so it starts by selecting the
+// active editable child like Mermaid and then follows the parent/root ladder.
 doc.selection.blur()                           // clear
 
 // Optional virtual-renderer bridge. The disposer and AbortSignal cancel stale

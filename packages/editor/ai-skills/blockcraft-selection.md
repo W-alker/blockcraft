@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying selection behavior or when the L1 quick reference in `blockcraft.md` isn't enough.
 >
-> Last updated: 2026-08-18 | Source of truth: `framework/modules/selection/`
+> Last updated: 2026-08-23 | Source of truth: `framework/modules/selection/`
 
 ## Architecture Overview
 
@@ -274,13 +274,13 @@ Shift+Arrow uses `gap` only as the collapsed starting caret. Once the user exten
 
 Ctrl+A is model-first and climbs by content coverage, not by DOM highlight shape:
 
-- Partial/collapsed text or a partial range inside a `container` scope ->
-  `selectAllChildren(container)` creates one boundary range over all of that
-  container's children. A text box therefore selects all of its paragraphs on
-  the first press, regardless of which child owns the caret; the same rule
-  applies to callout/highlight containers.
+- Partial/collapsed text or a partial range inside a resolved `container` scope
+  -> `selectAllChildren(container)` creates one boundary range over all of that
+  container's children. This applies to callout/highlight containers and to a
+  text box while it is in absolute placement.
 - Partial/collapsed editable text outside a `container` scope ->
-  `selectAllChildren(editable)` creates a full text range and shows the hint.
+  `selectAllChildren(editable)` creates a full text range and shows the hint. A
+  relative-flow text box is transparent, so it follows this Mermaid-like path.
 - Full editable text range -> `selectAllChildren(parent)` creates a parent content range, except table-cell paragraphs first promote to table-cell selection.
 - Partial container/root boundary range -> `selectAllChildren(container)` expands to all direct children.
 - Full `container`-scope boundary range inside an absolute object -> consume
@@ -650,15 +650,41 @@ doc.selection.replay(json)
 
 ### Selection Scope Guard
 
-`recalculate()` no longer treats "different physical parent block" as automatically invalid. If anchor/head have different physical containers, it resolves each endpoint through `selection/scope.ts`. The resolver walks up the block tree and reads each block's registered schema `metadata.selectionScope`; blocks with no declaration or `selectionScope: 'transparent'` inherit the nearest ancestor scope. Endpoints inside the same **semantic editing scope** are kept. When a drag crosses from one scope to another, the endpoint inside a closed scope is projected to that scope block's parent `boundary` point (`before` for document-ordered start, `after` for document-ordered end). After publishing that repaired model, Selection uses `Selection.setBaseAndExtent()` (with a Range/extend fallback) to place the native anchor/focus on the same boundary DOM points, preserving backward selection. This extra DOM write occurs only when scope repair changed an endpoint, performs no layout read, and does not suppress the next native event; a boundary-backed follow-up normalization requires no repair and therefore no second write. Only ranges that still cannot be represented after projection are collapsed and ignored.
+`recalculate()` no longer treats "different physical parent block" as automatically invalid. If anchor/head have different physical containers, it resolves each endpoint through `selection/scope.ts`. The resolver walks up the block tree and reads each block's registered schema `metadata.selectionScope`; the declaration may be a static scope or a placement map `{ relative, absolute }`. Blocks with no declaration or a currently resolved `selectionScope: 'transparent'` inherit the nearest ancestor scope. Endpoints inside the same **semantic editing scope** are kept. When a drag crosses from one scope to another, the endpoint inside a closed scope is projected to that scope block's parent `boundary` point (`before` for document-ordered start, `after` for document-ordered end). After publishing that repaired model, Selection uses `Selection.setBaseAndExtent()` (with a Range/extend fallback) to place the native anchor/focus on the same boundary DOM points, preserving backward selection. This extra DOM write occurs only when scope repair changed an endpoint, performs no layout read, and does not suppress the next native event; a boundary-backed follow-up normalization requires no repair and therefore no second write. Only ranges that still cannot be represented after projection are collapsed and ignored.
 
 Scope rules:
 
 - **Document/root scope** — `metadata.selectionScope: 'document'`; normal top-level text/blocks resolve to the topmost document scope. Their `commonParent` uses `root.id` so the editor can address the root child list; because root has no parent, it is never projected beyond itself.
 - **Table scope** — `metadata.selectionScope: 'table'`; descendants of table structural children, plus model-owned `table-cell` points, resolve to the owning table scope. A table cell and root paragraph are different scopes and are rejected.
 - **Columns scope** — `metadata.selectionScope: 'columns'`; descendants of transparent column children resolve to the owning columns scope, allowing native text ranges across columns while still keeping the whole columns block selection in the parent/document fallback.
-- **Container scope** — `metadata.selectionScope: 'container'`; content and boundary points resolve to that closed container. A container's internal text cannot be selected together with outside root text through `recalculate()`; selecting the whole container as a block is still parent-scope.
+- **Container scope** — `metadata.selectionScope: 'container'`, statically or for the current placement; content and boundary points resolve to that closed container. A container's internal text cannot be selected together with outside root text through `recalculate()`; selecting the whole container as a block is still parent-scope.
 - **Transparent containers** — no declaration or `metadata.selectionScope: 'transparent'`; descendants inherit the nearest ancestor scope, so blocks such as mermaid text can participate in document-level text selections and deletion paths.
+
+Selection scope and frame interaction are separate contracts. A Block can
+declare `metadata.selectionInteraction.frame: 'selectable'` to delegate direct
+frame selection to Selection in every placement. Its optional
+`editingBoundary: 'always' | 'absolute'` controls when Enter or a direct-frame
+double-click enters the first editable descendant and Escape from a direct
+editable child returns to the frame. Targets inside descendant Blocks remain
+in the native text pipeline, so word selection, caret placement and IME are
+unchanged. The Block host is an implicit frame hit target; descendant-rendered
+border regions opt in explicitly with `data-bc-selection-interaction-frame`.
+This lets an SVG/HTML outline expose a stable hit band without making its whole
+surface intercept child editing. Elements such as resize handles can opt out of frame capture with
+`data-bc-selection-interaction-ignore` and retain their own pointer gesture.
+
+Full-root boundary projection recovery also yields to an active primary-pointer
+gesture. Chromium and WebKit may transiently clear the native Range between
+pointerdown and the new text caret; Selection treats that as replacement intent
+instead of resurrecting the previous Ctrl/Cmd+A range.
+
+The built-in text box combines placement-aware scope and interaction. In
+relative flow it is transparent like Mermaid: Enter/Escape/double-click are not
+repurposed, edge arrows use the normal flow ladder, and Ctrl/Cmd+A starts with
+the active editable child before climbing toward root. In an absolute placement
+plane it resolves to a closed container: core Selection fences native arrow
+escape and caps repeated Ctrl/Cmd+A at the object. No Plugin should duplicate
+these rules.
 
 `SelectionScopePolicy` keeps scope-specific behavior out of callers:
 
