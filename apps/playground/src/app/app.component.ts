@@ -34,7 +34,6 @@ import { demoJSON } from './demo.data';
 import { RouterLink } from '@angular/router';
 import { resolveCollaborationRoot } from './collaboration-root';
 import {
-  createDocumentAgentSystemPrompt,
   DocumentAgentContext,
   DocumentAgentPanelComponent,
   DocumentAgentPlugin,
@@ -42,6 +41,8 @@ import {
   DocumentAgentResult,
   DocumentAgentRunner,
   DocumentAgentToolExecutor,
+  BlockCraftEditorAgent,
+  captureBlockCraftAgentDocumentContext,
 } from 'blockcraft-agent';
 import { PlaygroundDocumentAgentTransport } from './document-agent-transport';
 import {
@@ -675,7 +676,6 @@ const ACTION_SECTIONS: DebugSection[] = [
         class="agent-launcher"
         aria-label="打开文档 Agent"
         title="打开文档 Agent"
-        (pointerdown)="openAgentDialog($event)"
         (click)="openAgentDialog($event)">
         Agent
       </button>
@@ -1478,6 +1478,7 @@ export class AppComponent implements AfterViewInit, OnDestroy {
   private _selectionSub?: Subscription;
   private _agentContextSub?: Subscription;
   private _agentPlugin?: DocumentAgentPlugin;
+  private _editorAgent?: BlockCraftEditorAgent;
   private _agentOverlayRef?: OverlayRef;
   private _agentDialogComponent?: ComponentRef<DocumentAgentPanelComponent>;
   private _agentDialogClose$?: Subject<void>;
@@ -1506,6 +1507,7 @@ export class AppComponent implements AfterViewInit, OnDestroy {
   agentContext: DocumentAgentContext | null = null;
   agentResult: DocumentAgentResult | null = null;
   private agentResultContext: DocumentAgentContext | null = null;
+  private agentApplyContext: DocumentAgentContext | null = null;
   agentError: string | null = null;
   agentBusy = false;
   agentDialogOpen = false;
@@ -1585,6 +1587,7 @@ graph TD
     this.closeAgentDialog();
     this._agentPlugin?.destroy();
     this._agentPlugin = undefined;
+    this._editorAgent = undefined;
     this.stopMonitor();
     this.stopSimulation();
     this.stopMarkdownStreamPlayback();
@@ -1917,6 +1920,7 @@ graph TD
     if (!editor.doc.isInitialized) {
       editor.doc.initBySnapshot(snapshot, this.editorDocumentSurface);
     }
+    this.ensureSelectionDebugSubscription(editor);
     this.agentContext = this._agentPlugin?.getContext() ?? this.agentContext;
     return editor;
   }
@@ -1931,8 +1935,14 @@ graph TD
       ]);
       editor.doc.initBySnapshot(rootSnapshot, this.editorDocumentSurface);
     }
+    this.ensureSelectionDebugSubscription(editor);
     this.agentContext = this._agentPlugin?.getContext() ?? this.agentContext;
     return editor;
+  }
+
+  private ensureSelectionDebugSubscription(editor: EditorComponent): void {
+    if (!editor.doc.isInitialized || this._selectionSub) return;
+    this._subscribeSelection();
   }
 
   private ensureAgentPlugin(editor: EditorComponent): void {
@@ -1941,10 +1951,12 @@ graph TD
     const plugin = new DocumentAgentPlugin();
     plugin.register(editor.doc);
     this._agentPlugin = plugin;
+    this._editorAgent = new BlockCraftEditorAgent(editor.doc, this.agentRunner);
     this._agentContextSub = plugin.contextChange$.subscribe(context => {
       this.zone.run(() => {
         this.agentContext = context;
         if (context) this.agentError = null;
+        this.syncAgentDialogState();
         this.cdr.markForCheck();
       });
     });
@@ -1955,18 +1967,25 @@ graph TD
     event?.preventDefault();
     event?.stopPropagation();
 
-    if (this._agentOverlayRef?.hasAttached()) return;
+    if (this._agentOverlayRef || this._agentDialogComponent) return;
 
     const editor = this.editor;
-    const liveContext = this._agentPlugin?.getContext() ?? this.agentContext;
-    const context = this.agentResultContext ?? liveContext;
     if (!editor) return;
+    if (!editor.doc.isInitialized) this.ensureEditorInitialized();
+    this.ensureAgentPlugin(editor);
+    const liveContext = this._editorAgent?.getContext() ?? this.agentContext;
+    const context = this.agentResultContext ?? liveContext;
+    if (!context) {
+      this.agentError = '文档上下文还没有准备好，请稍后再试。';
+      this.cdr.markForCheck();
+      return;
+    }
 
     if (context) this.renderAgentFakeRange(editor, context);
     this._agentDialogClose$ = new Subject<void>();
     const {componentRef, overlayRef} = editor.doc.overlayService.createGlobalOverlay<DocumentAgentPanelComponent>({
       component: DocumentAgentPanelComponent,
-      backdrop: true,
+      backdrop: false,
       top: '72px',
       end: '24px',
     }, this._agentDialogClose$, () => {
@@ -1983,6 +2002,7 @@ graph TD
     this._agentDialogComponent = componentRef;
     this.agentDialogOpen = true;
     componentRef.setInput('context', context);
+    componentRef.setInput('liveContext', liveContext);
     componentRef.setInput('task', 'rewrite');
     this.syncAgentDialogState();
 
@@ -1993,14 +2013,16 @@ graph TD
   }
 
   closeAgentDialog(): void {
+    const overlayRef = this._agentOverlayRef;
     const close$ = this._agentDialogClose$;
     this._agentDialogClose$ = undefined;
+    this._agentOverlayRef = undefined;
+    this._agentDialogComponent = undefined;
     if (close$) {
       close$.next();
       close$.complete();
     }
-    this._agentOverlayRef = undefined;
-    this._agentDialogComponent = undefined;
+    overlayRef?.dispose();
     this.destroyAgentFakeRange();
     this.agentDialogOpen = false;
     this.cdr.markForCheck();
@@ -2027,30 +2049,38 @@ graph TD
     const componentRef = this._agentDialogComponent;
     if (!componentRef) return;
 
+    componentRef.setInput('liveContext', this.agentContext);
     componentRef.setInput('busy', this.agentBusy);
     componentRef.setInput('error', this.agentError);
     componentRef.setInput('result', this.agentResult);
   }
 
   async runAgentRequest(request: DocumentAgentRequest): Promise<void> {
-    const context = request.context;
-    if (!context || this.agentBusy) return;
+    const context = this._editorAgent?.getContext(request.context.scope) ?? request.context;
+    const editorAgent = this._editorAgent;
+    if (!context || !editorAgent || this.agentBusy) return;
 
     this.agentBusy = true;
     this.agentError = null;
     this.agentResult = null;
     this.agentResultContext = null;
+    this.agentApplyContext = this.editor
+      ? captureBlockCraftAgentDocumentContext(this.editor.doc)
+      : null;
     this.syncAgentDialogState();
     this.cdr.markForCheck();
 
     try {
-      this.agentResult = await this.agentRunner.run({
+      this.agentResult = await editorAgent.run({
         ...request,
-        systemPrompt: createDocumentAgentSystemPrompt(request.task),
+        context,
       });
       this.agentResultContext = context;
+      this._agentDialogComponent?.instance.addAssistantResult(this.agentResult);
     } catch (error) {
-      this.agentError = error instanceof Error ? error.message : 'Agent 请求失败';
+      const message = error instanceof Error ? error.message : 'Agent 请求失败';
+      this.agentError = message;
+      this._agentDialogComponent?.instance.addAssistantError(message);
     } finally {
       this.agentBusy = false;
       this.syncAgentDialogState();
@@ -2061,21 +2091,38 @@ graph TD
   applyAgentResult(): void {
     const editor = this.editor;
     const context = this.agentResultContext;
+    const applyContext = this.agentApplyContext ?? context;
     const result = this.agentResult;
-    if (!editor || !context || !result) return;
+    if (!editor || !context || !applyContext || !result) return;
+    if (!result.operations.length) {
+      this.agentError = '这次建议没有可应用的修改。请让 Agent 返回具体的文案或排版调整。';
+      this._agentDialogComponent?.instance.addAssistantError(this.agentError);
+      this.syncAgentDialogState();
+      this.cdr.markForCheck();
+      return;
+    }
 
-    const execution = new DocumentAgentToolExecutor(editor.doc, context).execute({
+    const execution = this._editorAgent?.executeTool({
+      name: 'blockcraft.apply_changes',
+      arguments: result,
+    }, {allowWrite: true}, applyContext) ?? new DocumentAgentToolExecutor(editor.doc, applyContext).execute({
       name: 'blockcraft.apply_changes',
       arguments: result,
     }, {allowWrite: true});
     if (execution.ok) {
+      const appliedCount = typeof execution.data === 'object' && execution.data !== null &&
+        'applied' in execution.data && typeof execution.data.applied === 'number'
+        ? execution.data.applied
+        : result.operations.length;
       this.agentResult = null;
       this.agentResultContext = null;
+      this.agentApplyContext = null;
       this.agentError = null;
+      this._agentDialogComponent?.instance.addAssistantNotice(`已应用 ${appliedCount} 项修改。`);
       this.syncAgentDialogState();
-      this.closeAgentDialog();
     } else {
       this.agentError = execution.error || 'Agent 修改应用失败';
+      this._agentDialogComponent?.instance.addAssistantError(this.agentError);
       this.syncAgentDialogState();
     }
     this.cdr.markForCheck();
@@ -2084,6 +2131,7 @@ graph TD
   discardAgentResult(): void {
     this.agentResult = null;
     this.agentResultContext = null;
+    this.agentApplyContext = null;
     this.agentError = null;
     this.syncAgentDialogState();
     this.cdr.markForCheck();

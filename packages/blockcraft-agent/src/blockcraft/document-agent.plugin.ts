@@ -11,8 +11,14 @@ export class DocumentAgentPlugin extends DocPlugin {
 
   override init(): void {
     this.selectionSubscription = this.doc.selection.selectionChange$.subscribe(() => {
-      this.contextChange$.next(captureBlockCraftAgentContext(this.doc as BlockCraftDoc))
+      this.publishContext()
     })
+    // Document content is intentionally pulled on demand by getContext() when
+    // the user sends a request. Re-capturing the full document on every Yjs
+    // text/props event would repeatedly materialize a large context while the
+    // user is typing. Selection changes remain eager because they change the
+    // visible context scope and the fake-range affordance.
+    this.publishContext()
   }
 
   getContext(): DocumentAgentContext | null {
@@ -23,5 +29,9 @@ export class DocumentAgentPlugin extends DocPlugin {
     this.selectionSubscription?.unsubscribe()
     this.selectionSubscription = undefined
     this.contextChange$.complete()
+  }
+
+  private publishContext(): void {
+    this.contextChange$.next(captureBlockCraftAgentContext(this.doc as BlockCraftDoc))
   }
 }

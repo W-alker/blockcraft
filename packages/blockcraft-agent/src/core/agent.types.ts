@@ -12,9 +12,32 @@ export type DocumentAgentTask =
 export interface DocumentAgentContextBlock {
   blockId: string
   flavour: string
+  parentId?: string | null
+  index?: number
+  childIds?: readonly string[]
   props?: Readonly<Record<string, unknown>>
   textDeltas?: readonly unknown[]
   snapshot?: unknown
+}
+
+export interface DocumentAgentEditorState {
+  rootId: string
+  isReadonly: boolean
+  selection: ISelectionJSON | null
+  selectedText: string
+  structureRevision: number
+  capabilities: readonly DocumentAgentSchemaCapability[]
+}
+
+export interface DocumentAgentSchemaCapability {
+  flavour: string
+  nodeType: string
+  label: string
+  description?: string
+  includeChildren?: readonly string[]
+  excludeChildren?: readonly string[]
+  placementModes?: readonly string[]
+  plainTextOnly?: boolean
 }
 
 export type DocumentAgentContextScope = 'selection' | 'document'
@@ -32,16 +55,27 @@ export interface DocumentAgentContext {
   selection: ISelectionJSON | null
   selectedText: string
   blocks: readonly DocumentAgentContextBlock[]
+  capabilities?: readonly DocumentAgentSchemaCapability[]
   baseRevision: {
     structureRevision: number
     contentFingerprint: string
   }
 }
 
+export interface DocumentAgentImageAttachment {
+  type: 'image'
+  mimeType: 'image/jpeg' | 'image/png' | 'image/webp'
+  name: string
+  dataUrl: string
+  width: number
+  height: number
+}
+
 export interface DocumentAgentRequest {
   task: DocumentAgentTask
   instruction: string
   context: DocumentAgentContext
+  attachments?: readonly DocumentAgentImageAttachment[]
   /** Optional runtime prompt supplied by a trusted host during development. */
   systemPrompt?: string
 }
@@ -64,6 +98,32 @@ export type DocumentAgentOperation =
       parentId: string
       index: number
       snapshots: readonly unknown[]
+    }
+  | {
+      kind: 'create-blocks'
+      parentId: string
+      index: number
+      flavour: string
+      params: readonly unknown[]
+    }
+  | {
+      kind: 'apply-text-delta'
+      blockId: string
+      delta: readonly unknown[]
+    }
+  | {
+      kind: 'delete-blocks'
+      parentId: string
+      index: number
+      count: number
+    }
+  | {
+      kind: 'move-blocks'
+      parentId: string
+      index: number
+      count: number
+      targetId: string
+      targetIndex: number
     }
 
 export interface DocumentAgentResult {

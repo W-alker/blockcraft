@@ -1,4 +1,4 @@
-import type {BlockCraftDoc, IBlockProps, IBlockSnapshot} from '@ccc/blockcraft'
+import {BlockNodeType, type BlockCraftDoc, type IBlockProps, type IBlockSnapshot} from '@ccc/blockcraft'
 import type {
   DocumentAgentContext,
   DocumentAgentPropValue,
@@ -127,6 +127,68 @@ export class DocumentAgentOperationApplier {
       return
     }
 
+    if (operation.kind === 'create-blocks') {
+      assertBlockInContext(context, operation.parentId)
+      if (!this.doc.model.exists(operation.parentId)) {
+        throw new DocumentAgentApplyError('stale', `Parent ${operation.parentId} no longer exists.`)
+      }
+      const childCount = this.doc.model.getChildrenIds(operation.parentId).length
+      if (operation.index > childCount) {
+        throw new DocumentAgentApplyError('invalid', `Invalid insertion index for ${operation.parentId}.`)
+      }
+      if (!this.doc.schemas.has(operation.flavour)) {
+        throw new DocumentAgentApplyError('invalid', `Schema ${operation.flavour} is not registered.`)
+      }
+      if (!this.doc.canInsertChild(operation.parentId, operation.flavour as BlockCraft.BlockFlavour)) {
+        throw new DocumentAgentApplyError('invalid', `Schema ${operation.flavour} is not allowed in ${operation.parentId}.`)
+      }
+      const snapshot = this.createSnapshot(operation)
+      if (!this.isSnapshotTreeValid(snapshot)) {
+        throw new DocumentAgentApplyError('invalid', `Schema ${operation.flavour} created an invalid snapshot.`)
+      }
+      return
+    }
+
+    if (operation.kind === 'apply-text-delta') {
+      assertBlockInContext(context, operation.blockId)
+      if (!this.doc.model.exists(operation.blockId)) {
+        throw new DocumentAgentApplyError('stale', `Block ${operation.blockId} no longer exists.`)
+      }
+      if (this.doc.model.getTextDeltas(operation.blockId) === undefined) {
+        throw new DocumentAgentApplyError('invalid', `Block ${operation.blockId} is not editable.`)
+      }
+      return
+    }
+
+    if (operation.kind === 'delete-blocks') {
+      assertBlockInContext(context, operation.parentId)
+      assertChildRange(this.doc, operation.parentId, operation.index, operation.count)
+      return
+    }
+
+    if (operation.kind === 'move-blocks') {
+      assertBlockInContext(context, operation.parentId)
+      assertBlockInContext(context, operation.targetId)
+      assertChildRange(this.doc, operation.parentId, operation.index, operation.count)
+      const targetChildren = this.doc.model.getChildrenIds(operation.targetId)
+      if (operation.targetIndex > targetChildren.length) {
+        throw new DocumentAgentApplyError('invalid', `Invalid move index for ${operation.targetId}.`)
+      }
+      if (operation.parentId === operation.targetId &&
+          operation.targetIndex >= operation.index &&
+          operation.targetIndex <= operation.index + operation.count) {
+        throw new DocumentAgentApplyError('invalid', 'A block range cannot be moved into itself.')
+      }
+      for (const blockId of this.doc.model.getChildrenIds(operation.parentId)
+        .slice(operation.index, operation.index + operation.count)) {
+        const flavour = this.doc.model.getFlavour(blockId)
+        if (!flavour || !this.doc.canInsertChild(operation.targetId, flavour as BlockCraft.BlockFlavour)) {
+          throw new DocumentAgentApplyError('invalid', `Block ${blockId} is not allowed in ${operation.targetId}.`)
+        }
+      }
+      return
+    }
+
     throw new DocumentAgentApplyError('unsupported', 'Agent returned an unsupported operation.')
   }
 
@@ -158,7 +220,53 @@ export class DocumentAgentOperationApplier {
       return
     }
 
+    if (operation.kind === 'create-blocks') {
+      this.doc.crud.insertBlockSnapshots(
+        operation.parentId,
+        operation.index,
+        [this.createSnapshot(operation)],
+      )
+      return
+    }
+
+    if (operation.kind === 'apply-text-delta') {
+      this.doc.crud.applyTextDelta(operation.blockId, operation.delta as never[])
+      return
+    }
+
+    if (operation.kind === 'delete-blocks') {
+      this.doc.crud.deleteBlocks(operation.parentId, operation.index, operation.count)
+      return
+    }
+
+    if (operation.kind === 'move-blocks') {
+      this.doc.crud.moveBlocks(
+        operation.parentId,
+        operation.index,
+        operation.count,
+        operation.targetId,
+        operation.targetIndex,
+      )
+      return
+    }
+
     throw new DocumentAgentApplyError('unsupported', 'Agent returned an unsupported operation.')
+  }
+
+  private createSnapshot(
+    operation: Extract<DocumentAgentOperation, {kind: 'create-blocks'}>,
+  ): IBlockSnapshot {
+    try {
+      return this.doc.schemas.createSnapshot(
+        operation.flavour as BlockCraft.BlockFlavour,
+        operation.params as BlockCraft.BlockCreateParameters<BlockCraft.BlockFlavour>,
+      ) as IBlockSnapshot
+    } catch (error) {
+      throw new DocumentAgentApplyError(
+        'invalid',
+        `Unable to create ${operation.flavour} from the supplied parameters: ${error instanceof Error ? error.message : 'invalid parameters'}`,
+      )
+    }
   }
 
   private isSnapshotInsertable(
@@ -173,9 +281,14 @@ export class DocumentAgentOperationApplier {
   }
 
   private isSnapshotTreeValid(snapshot: BlockSnapshotLike): boolean {
-    if (!Array.isArray(snapshot.children)) return true
     const schema = this.doc.schemas.get(snapshot.flavour, false)
     if (!schema) return false
+    // Editable block children are Inline Delta entries, not nested Block
+    // Snapshots. Only container/root block children belong to this recursive
+    // tree validation.
+    if (schema.nodeType === BlockNodeType.editable || !Array.isArray(snapshot.children)) {
+      return true
+    }
     return snapshot.children.every(child => {
       if (!isBlockSnapshotLike(child)) return false
       if (!this.doc.schemas.isValidChildrenForInstance(
@@ -231,6 +344,21 @@ function assertBlockInContext(context: DocumentAgentContext, blockId: string): v
     'invalid',
     `Block ${blockId} is outside the Agent request context.`,
   )
+}
+
+function assertChildRange(
+  doc: BlockCraftDoc,
+  parentId: string,
+  index: number,
+  count: number,
+): void {
+  if (!doc.model.exists(parentId)) {
+    throw new DocumentAgentApplyError('stale', `Parent ${parentId} no longer exists.`)
+  }
+  const childCount = doc.model.getChildrenIds(parentId).length
+  if (index < 0 || count < 1 || index + count > childCount) {
+    throw new DocumentAgentApplyError('invalid', `Invalid child range for ${parentId}.`)
+  }
 }
 
 type BlockSnapshotLike = {
