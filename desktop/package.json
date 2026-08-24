@@ -1,0 +1,16 @@
+{
+  "name": "@blockcraft/desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "../node_modules/.bin/ng serve --configuration development --port 4201",
+    "build": "../node_modules/.bin/ng build --configuration production",
+    "test": "../node_modules/.bin/ng test --watch=false --browsers=ChromeHeadless",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}
