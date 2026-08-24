@@ -208,12 +208,16 @@ describe('pagination theme block constraints', () => {
     root.classList.add('bc-table-fullscreen-isolation-container');
     table.classList.add('bc-table-fullscreen-isolation-branch');
     table.classList.add('is-fullscreen');
+    const resizePreview = document.createElement('div');
+    resizePreview.setAttribute('data-bc-table-col-resize-preview', '');
+    document.body.appendChild(resizePreview);
     try {
       expect(getComputedStyle(root).transform).toBe('none');
       expect(getComputedStyle(root).left).toBe('0px');
       expect(root.parentElement!.scrollWidth).toBeLessThanOrEqual(root.parentElement!.clientWidth + 1);
       expect(getComputedStyle(dynamicSibling).visibility).toBe('hidden');
       expect(getComputedStyle(dynamicSibling).pointerEvents).toBe('none');
+      expect(getComputedStyle(resizePreview).visibility).toBe('visible');
       const rect = table.getBoundingClientRect();
       expect(rect.left).toBeCloseTo(0, 0);
       expect(rect.top).toBeCloseTo(0, 0);
@@ -228,6 +232,7 @@ describe('pagination theme block constraints', () => {
       table.classList.remove('bc-table-fullscreen-isolation-branch');
       root.classList.remove('bc-table-fullscreen-isolation-container');
       document.body.classList.remove('bc-table-fullscreen-lock');
+      resizePreview.remove();
       editable.remove();
     }
 

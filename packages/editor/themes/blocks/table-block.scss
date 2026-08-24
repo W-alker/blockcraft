@@ -923,10 +923,10 @@ body.bc-table-fullscreen-lock {
 }
 
 body.bc-table-fullscreen-lock.bc-table-fullscreen-isolation-container
-  > :not(.bc-table-fullscreen-isolation-branch):not(.cdk-overlay-container),
+  > :not(.bc-table-fullscreen-isolation-branch):not(.cdk-overlay-container):not([data-bc-table-col-resize-preview]),
 body.bc-table-fullscreen-lock
   .bc-table-fullscreen-isolation-container
-  > :not(.bc-table-fullscreen-isolation-branch):not(.cdk-overlay-container) {
+  > :not(.bc-table-fullscreen-isolation-branch):not(.cdk-overlay-container):not([data-bc-table-col-resize-preview]) {
   visibility: hidden !important;
   opacity: 0 !important;
   pointer-events: none !important;

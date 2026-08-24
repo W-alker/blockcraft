@@ -425,6 +425,9 @@ describe("TableBlockComponent column resize", () => {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
     const resizeBar = document.createElement("div");
+    const resizeGuide = document.createElement("div");
+    resizeGuide.className = "bar";
+    resizeBar.appendChild(resizeGuide);
     resizeBar.setAttribute("data-bc-native-input", "");
     cell.dataset["blockId"] = "cell-1";
     row.appendChild(cell);
@@ -731,11 +734,22 @@ describe("TableBlockComponent column resize", () => {
 
       expect(harness.resizeBar.style.left).toBe("288px");
       expect(Number.parseFloat(harness.resizeBar.style.left) + 12).toBe(300);
+      expect((harness.resizeBar.firstElementChild as HTMLElement).style.left)
+        .toBe("100%");
+      expect((harness.resizeBar.firstElementChild as HTMLElement).style.transform)
+        .toBe("translateX(-100%)");
       expect(harness.resizeBar.classList.contains("is-visible")).toBeTrue();
       expect(harness.table._columnResizeHandleAnchor).toEqual({
         cellId: "cell-1",
         boundaryCell: harness.cell,
       });
+
+      harness.cell.getBoundingClientRect = () => new DOMRect(10, 30, 120, 60);
+      harness.table._positionColumnResizeHandle("cell-1", harness.cell);
+      expect((harness.resizeBar.firstElementChild as HTMLElement).style.left)
+        .toBe("");
+      expect((harness.resizeBar.firstElementChild as HTMLElement).style.transform)
+        .toBe("");
     } finally {
       harness.destroy();
     }

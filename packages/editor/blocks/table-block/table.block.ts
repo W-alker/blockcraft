@@ -4103,9 +4103,17 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     // a table that already fits does not gain a 6px horizontal scrollbar.
     // Geometry-based capture still accepts the pointer just outside the visual
     // boundary, so this does not narrow Safari's resize ownership seam.
+    const idealHandleVisualLeft = Math.max(
+      0,
+      boundaryVisual - handleVisualWidth / 2,
+    )
+    const maxHandleVisualLeft = Math.max(
+      0,
+      wrapperVisualWidth - handleVisualWidth,
+    )
     const handleVisualLeft = Math.min(
-      Math.max(0, boundaryVisual - handleVisualWidth / 2),
-      Math.max(0, wrapperVisualWidth - handleVisualWidth),
+      idealHandleVisualLeft,
+      maxHandleVisualLeft,
     )
     const handleLeft = this._stylePositionFromVisualDistance(
       handleVisualLeft,
@@ -4116,6 +4124,16 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       cellRect.top - wrapperRect.top,
     )}px`
     bar.style.height = `${this._styleSizeFromBcrDistance(cellRect.height)}px`
+    // Keep the wide hit target inside the scrollable wrapper, but let its thin
+    // visible line still meet the actual last-column border. Right-aligning the
+    // line also keeps the painted pixels inside the wrapper, so the old
+    // horizontal-overflow regression does not return.
+    const visibleLine = bar.firstElementChild as HTMLElement | null
+    if (visibleLine) {
+      const clampedRight = idealHandleVisualLeft > maxHandleVisualLeft
+      visibleLine.style.left = clampedRight ? '100%' : ''
+      visibleLine.style.transform = clampedRight ? 'translateX(-100%)' : ''
+    }
     bar.classList.add('is-visible')
     this._columnResizeHandleAnchor = {cellId, boundaryCell}
   }
