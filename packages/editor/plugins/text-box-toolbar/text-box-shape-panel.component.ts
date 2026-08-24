@@ -29,6 +29,7 @@ import {
 } from '../../blocks/text-box-block'
 import {ShapePickerComponent} from '../../components'
 import type {ShapeKind, ShapeStrokeStyle} from '../../blocks/shape-block'
+import {urlRegex} from '../../global'
 
 type ShapePanelSection = 'shape' | 'fill' | 'outline'
 
@@ -130,9 +131,9 @@ type ShapePanelSection = 'shape' | 'fill' | 'outline'
                 [disabled]="uploading"
                 (click)="backgroundFile.click()">
                 <i class="bc_icon bc_tupian-color" aria-hidden="true"></i>
-                {{ hasUploadedImage ? '替换图片' : '选择图片' }}
+                {{ hasCustomImage ? '替换图片' : '选择图片' }}
               </button>
-              @if (hasUploadedImage) {
+              @if (hasCustomImage) {
                 <button
                   cs-button
                   csType="text"
@@ -143,6 +144,24 @@ type ShapePanelSection = 'shape' | 'fill' | 'outline'
                 </button>
               }
             </div>
+            <div class="text-box-shape-panel__image-link">
+              <input
+                type="url"
+                aria-label="背景图片链接"
+                placeholder="输入 http(s) 图片链接"
+                [ngModel]="backgroundUrl"
+                (ngModelChange)="draftBackgroundUrl($event)"
+                (keydown.enter)="applyBackgroundUrl()">
+              <button
+                cs-button
+                csType="secondary"
+                csSize="sm"
+                type="button"
+                [disabled]="!backgroundUrl.trim()"
+                (click)="applyBackgroundUrl()">
+                应用
+              </button>
+            </div>
             @if (backgroundStatus) {
               <p class="text-box-shape-panel__status" aria-live="polite">
                 {{ backgroundStatus }}
@@ -150,7 +169,7 @@ type ShapePanelSection = 'shape' | 'fill' | 'outline'
             }
           </div>
 
-          @if (hasUploadedImage) {
+          @if (hasCustomImage) {
             <div class="text-box-shape-panel__row text-box-shape-panel__row--stacked">
               <span class="text-box-shape-panel__label">图片适应</span>
               <cs-segmented
@@ -162,6 +181,38 @@ type ShapePanelSection = 'shape' | 'fill' | 'outline'
                 csAriaLabel="背景图片适应方式">
               </cs-segmented>
             </div>
+            @if (props.bgs !== 'stretch') {
+              <div class="text-box-shape-panel__row text-box-shape-panel__row--slider">
+                <span class="text-box-shape-panel__label">水平位置</span>
+                <cs-slider
+                  [csMin]="0"
+                  [csMax]="100"
+                  [csStep]="1"
+                  csAriaLabel="背景图片水平位置"
+                  [csValue]="imagePositionX"
+                  (csValueChange)="draftImagePosition('x', $event)"
+                  (pointerup)="commitImagePosition('x')"
+                  (keyup)="commitImagePosition('x')"
+                  (blur)="commitImagePosition('x')">
+                </cs-slider>
+                <output>{{ imagePositionX }}%</output>
+              </div>
+              <div class="text-box-shape-panel__row text-box-shape-panel__row--slider">
+                <span class="text-box-shape-panel__label">垂直位置</span>
+                <cs-slider
+                  [csMin]="0"
+                  [csMax]="100"
+                  [csStep]="1"
+                  csAriaLabel="背景图片垂直位置"
+                  [csValue]="imagePositionY"
+                  (csValueChange)="draftImagePosition('y', $event)"
+                  (pointerup)="commitImagePosition('y')"
+                  (keyup)="commitImagePosition('y')"
+                  (blur)="commitImagePosition('y')">
+                </cs-slider>
+                <output>{{ imagePositionY }}%</output>
+              </div>
+            }
             <div class="text-box-shape-panel__row text-box-shape-panel__row--slider">
               <span class="text-box-shape-panel__label">图片透明度</span>
               <cs-slider
@@ -352,6 +403,32 @@ type ShapePanelSection = 'shape' | 'fill' | 'outline'
       margin-right: 4px;
     }
 
+    .text-box-shape-panel__image-link {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .text-box-shape-panel__image-link input {
+      box-sizing: border-box;
+      width: 100%;
+      min-width: 0;
+      height: 30px;
+      padding: 0 8px;
+      border: 1px solid var(--bc-float-toolbar-divider-color);
+      border-radius: 6px;
+      outline: none;
+      background: var(--bc-float-toolbar-bg);
+      color: inherit;
+      font: inherit;
+    }
+
+    .text-box-shape-panel__image-link input:focus {
+      border-color: var(--bc-active-color, #4857e2);
+      box-shadow: 0 0 0 2px var(--bc-active-color-bg, #eef2ff);
+    }
+
     .text-box-shape-panel__file-input {
       display: none;
     }
@@ -385,11 +462,17 @@ export class TextBoxShapePanelComponent implements OnChanges {
   activeSection: ShapePanelSection = 'shape'
   fillTransparency = 0
   imageTransparency = 0
+  imagePositionX = 50
+  imagePositionY = 50
   uploading = false
   backgroundStatus = ''
+  backgroundUrl = ''
 
   private fillTransparencyDirty = false
   private imageTransparencyDirty = false
+  private imagePositionXDirty = false
+  private imagePositionYDirty = false
+  private backgroundUrlDirty = false
 
   constructor(private readonly cdr: ChangeDetectorRef) {}
 
@@ -399,6 +482,15 @@ export class TextBoxShapePanelComponent implements OnChanges {
     }
     if (!this.imageTransparencyDirty) {
       this.imageTransparency = Math.round((1 - (this.props.bgo ?? 1)) * 100)
+    }
+    if (!this.imagePositionXDirty) {
+      this.imagePositionX = this.props.bgx ?? 50
+    }
+    if (!this.imagePositionYDirty) {
+      this.imagePositionY = this.props.bgy ?? 50
+    }
+    if (!this.backgroundUrlDirty) {
+      this.backgroundUrl = this.hasCustomImage ? this.props.bgi!.trim() : ''
     }
   }
 
@@ -470,6 +562,29 @@ export class TextBoxShapePanelComponent implements OnChanges {
     this.patch.emit({bgs: value as BlockSurfaceImageFit})
   }
 
+  draftImagePosition(axis: 'x' | 'y', value: CsSliderValue): void {
+    const position = normalizePercent(value)
+    if (axis === 'x') {
+      this.imagePositionX = position
+      this.imagePositionXDirty = true
+    } else {
+      this.imagePositionY = position
+      this.imagePositionYDirty = true
+    }
+  }
+
+  commitImagePosition(axis: 'x' | 'y'): void {
+    if (axis === 'x') {
+      if (!this.imagePositionXDirty) return
+      this.imagePositionXDirty = false
+      this.patch.emit({bgx: this.imagePositionX})
+      return
+    }
+    if (!this.imagePositionYDirty) return
+    this.imagePositionYDirty = false
+    this.patch.emit({bgy: this.imagePositionY})
+  }
+
   draftImageTransparency(value: CsSliderValue): void {
     this.imageTransparency = normalizePercent(value)
     this.imageTransparencyDirty = true
@@ -482,18 +597,38 @@ export class TextBoxShapePanelComponent implements OnChanges {
   }
 
   /**
-   * Only a host-uploaded image is the user's to replace or remove. A catalog
+   * Only a user-supplied link or upload is replaceable/removable. A catalog
    * drawing sits in the same `bgi` field but is part of the chosen style —
    * offering 替换/移除 for it means one click silently wipes the preset's
    * artwork and leaves an empty frame.
    */
-  protected get hasUploadedImage(): boolean {
+  protected get hasCustomImage(): boolean {
     const src = this.props.bgi
     return typeof src === 'string' && !!src && !getTextBoxArtwork(src)
   }
 
+  draftBackgroundUrl(value: string): void {
+    this.backgroundUrl = value
+    this.backgroundUrlDirty = true
+    this.backgroundStatus = ''
+  }
+
+  applyBackgroundUrl(): void {
+    const url = this.backgroundUrl.trim()
+    if (!urlRegex.test(url)) {
+      this.backgroundStatus = '请输入有效的 http(s) 图片链接'
+      return
+    }
+    this.backgroundUrl = url
+    this.backgroundUrlDirty = false
+    this.patch.emit({bgi: url})
+    this.backgroundStatus = '图片链接已应用'
+  }
+
   removeBackground(): void {
     this.backgroundStatus = ''
+    this.backgroundUrl = ''
+    this.backgroundUrlDirty = false
     this.patch.emit({bgi: null})
   }
 
@@ -528,6 +663,8 @@ export class TextBoxShapePanelComponent implements OnChanges {
         this.cdr.markForCheck()
       })
       this.patch.emit({bgi: url})
+      this.backgroundUrl = url
+      this.backgroundUrlDirty = false
       this.backgroundStatus = '图片已应用'
     } catch {
       this.backgroundStatus = '图片上传失败'

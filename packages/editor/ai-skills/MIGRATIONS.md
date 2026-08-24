@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-08-23 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-08-24 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -68,6 +68,43 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
+
+## Unreleased — 2026-08-24 — text-box picture-fill controls
+
+**Severity**: minor
+
+**What changed**: `TextBoxToolbarPlugin` now accepts a validated `http(s)`
+image link in the text-box picture-fill controls, alongside the existing local
+upload flow. It also exposes horizontal and vertical percentage-position
+sliders backed by the existing `bgx/bgy` props. The controls keep the compact
+surface contract used by live rendering, Snapshot Viewer, HTML export and
+print/PDF.
+
+**Why**: externally hosted images should not need to be downloaded and uploaded
+again before they can be used as a text-box background.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-toolbar.md` (picture-fill input behavior)
+
+### New APIs / Features
+
+- The built-in text-box shape panel exposes an `http(s)` background-image link
+  input with apply-button and Enter-key submission.
+- Non-stretched custom images expose 0–100 horizontal and vertical position
+  sliders; 50/50 is centered.
+
+### Migration Recipe
+
+No call-site or stored-document migration is required. Existing `bgi` values
+already use the same URL contract.
+
+### Behavior Changes
+
+- Invalid or empty link values are not written to the document.
+- Applied links are trimmed before one `update-props` action writes `bgi`.
+- Position slider movement remains local and writes `bgx` or `bgy` once when
+  the interaction completes.
 
 ## Unreleased — 2026-08-23 — Placement-aware frame selection
 

@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-23
+> Last updated: 2026-08-24
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
@@ -434,8 +434,9 @@ entries; only one secondary settings card is visible at a time. **样式** appli
 one catalog entry as a concrete multi-key props patch. **形状** reuses the full
 Shape catalog except line/connectors that cannot own a text frame, and exposes
 CSES color/slider/number controls for shape fill, picture fill, opacity,
-outline and stroke style. Picture selection goes through the host
-`DocFileService`; it never exposes or persists a temporary raw URL input.
+outline and stroke style. Picture fill accepts either an `http(s)` image link
+or a local image uploaded through the host `DocFileService`; both persist the
+resolved URL in `bgi`.
 **文字** combines WordArt presets with font, size, alignment, solid/gradient
 fill, outline, shadow and transform controls. Preset IDs are never persisted,
 and detailed `wa` edits remain one canonical serialized value-object write.
@@ -449,10 +450,12 @@ underlying `horizontalAlign` / `verticalAlign` fields stay put. No stored value
 is rewritten when the direction changes.
 
 Compact `p/bgi/bgs/bgx/bgy/bgo` remains available to Schema/CRUD callers as a
-low-level surface capability. Raw padding and background URL fields are not
-shown in the toolbar; image fit/opacity are surfaced only as semantic picture
-fill controls. Those controls — 选择图片 / 替换图片 / 移除 plus fit and opacity —
-key off *uploaded* images only, meaning a `bgi` that is not a `bc:` artwork
+low-level surface capability. Raw padding is not shown in the toolbar; the
+background URL is exposed as a validated `http(s)` picture-fill link alongside
+选择图片 / 替换图片 / 移除, fit, horizontal/vertical percentage position and
+opacity. Position controls write `bgx/bgy` once after slider interaction and
+stay hidden for `stretch`, where `object-position` has no visible effect. These
+controls key off *custom* images, meaning a `bgi` that is not a `bc:` artwork
 reference. A catalog drawing shares the same field but belongs to the chosen
 style, so offering to replace or remove it means one click wipes the preset's
 artwork and leaves an empty frame. Slider movement stays local and commits once on pointer/key

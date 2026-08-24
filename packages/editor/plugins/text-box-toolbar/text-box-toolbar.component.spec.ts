@@ -119,7 +119,12 @@ describe('TextBoxToolbarComponent', () => {
     }).compileComponents()
     const fixture = TestBed.createComponent(TextBoxToolbarComponent)
     fixture.componentInstance.textBoxBlock = {
-      props: {},
+      props: {
+        bgi: 'https://cdn.example.com/text-box-paper.png',
+        bgs: 'cover',
+        bgx: 25,
+        bgy: 75,
+      },
       doc: {
         placement: {
           getObjectLayout: () => 'top-bottom',
@@ -183,6 +188,12 @@ describe('TextBoxToolbarComponent', () => {
       shapeDebug.injector.get(ChangeDetectorRef).markForCheck()
       fixture.detectChanges()
       assertMiniSurface(shapeHost, shapePanel)
+      if (section === 'fill') {
+        expect(shapePanel.textContent).toContain('水平位置')
+        expect(shapePanel.textContent).toContain('垂直位置')
+        expect(shapeComponent.imagePositionX).toBe(25)
+        expect(shapeComponent.imagePositionY).toBe(75)
+      }
     }
 
     fixture.componentInstance.activePanel = 'text'
@@ -333,11 +344,21 @@ describe('TextBoxToolbarComponent', () => {
     panel.draftFillTransparency(35)
     panel.commitFillTransparency()
     panel.commitFillTransparency()
+    panel.draftImagePosition('x', 20)
+    panel.draftImagePosition('x', 35)
+    panel.commitImagePosition('x')
+    panel.commitImagePosition('x')
+    panel.draftImagePosition('y', 70)
+    panel.commitImagePosition('y')
 
-    expect(patches).toEqual([{fo: 0.65}])
+    expect(patches).toEqual([
+      {fo: 0.65},
+      {bgx: 35},
+      {bgy: 70},
+    ])
   })
 
-  it('applies picture fill through the host upload service without a raw URL field', async () => {
+  it('applies picture fill through the host upload service', async () => {
     const cdr = jasmine.createSpyObj<ChangeDetectorRef>(
       'ChangeDetectorRef',
       ['markForCheck'],
@@ -368,6 +389,30 @@ describe('TextBoxToolbarComponent', () => {
       bgi: 'https://cdn.example.com/text-box-paper.png',
     }])
     expect(panel.backgroundStatus).toBe('图片已应用')
+  })
+
+  it('applies a trimmed http(s) picture-fill link and rejects invalid input', () => {
+    const cdr = jasmine.createSpyObj<ChangeDetectorRef>(
+      'ChangeDetectorRef',
+      ['markForCheck'],
+    )
+    const panel = new TextBoxShapePanelComponent(cdr)
+    panel.props = normalizeTextBoxProps({})
+    panel.textBoxBlock = {} as any
+    const patches: Record<string, unknown>[] = []
+    panel.patch.subscribe(value => patches.push(value))
+
+    panel.draftBackgroundUrl('not-a-link')
+    panel.applyBackgroundUrl()
+    expect(patches).toEqual([])
+    expect(panel.backgroundStatus).toBe('请输入有效的 http(s) 图片链接')
+
+    panel.draftBackgroundUrl('  https://cdn.example.com/text-box-paper.png  ')
+    panel.applyBackgroundUrl()
+    expect(patches).toEqual([{
+      bgi: 'https://cdn.example.com/text-box-paper.png',
+    }])
+    expect(panel.backgroundStatus).toBe('图片链接已应用')
   })
 
   it('starts detailed text formatting from a neutral style and serializes once', () => {
