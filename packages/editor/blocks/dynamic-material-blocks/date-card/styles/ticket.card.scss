@@ -1,0 +1,82 @@
+// 「票根」档。尺寸一律 `calc(设计px * var(--u, 1px))`，卡片被拖大拖小时整张等比缩放——
+// 全表唯一允许出现 px 的地方是边框，理由见下。
+//
+// 边框走 `--dc-bw / --dc-bs / --dc-bc`（配置项「边框」——档位值形如 `2px dashed`）。
+// 底色走 `--dc-bg`：**缺席时回落一层浅浅的自身文字色**（不是透明），因为「票根」的识别度
+// 一半来自那块底——没有底色它就退化成一个排得松散的长卷。
+:host {
+    display: block;
+    // **宽度一律由内容定（fit-content）**，卡面档也不例外：卡面 = 内容 + 内边距，
+    // 关掉星期/年份时卡面跟着收，不会在面里空一大块（写死设计宽就会）。
+    // 实测过窄槽不会挤压它：面板缩略图 128px 槽里票根仍是 176.7px（超出由槽自己 overflow 管），
+    // 所以"预览里换行/压字"不是宽度没写死造成的，是缩略图那条 --u 公式漏了限宽（已修）。
+    width: calc(190 * var(--u, 1px));
+    box-sizing: border-box;
+}
+
+.card {
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: calc(9.5 * var(--u, 1px));
+    padding: calc(11.4 * var(--u, 1px)) calc(13.3 * var(--u, 1px));
+    border: var(--dc-bw, 0px) var(--dc-bs, solid) var(--dc-bc, transparent);
+    border-radius: calc(7.6 * var(--u, 1px));
+    background: var(--dc-bg, color-mix(in srgb, var(--dc-fg, #1f2329) 7%, transparent));
+
+    // 上下两个半圆缺口。两个 radial-gradient 各挖一个洞，`intersect` 让两个洞同时生效
+    // （默认的 add 是并集，两张 mask 叠起来等于没挖）。圆心的 calc(57 * var(--u, 1px)) 与 .card__perf 的位置
+    // 是同一条竖线上的两个数，改一个要改另一个——票根的「撕线」必须穿过缺口。
+    mask-image:
+        radial-gradient(circle calc(5.7 * var(--u, 1px)) at calc(57 * var(--u, 1px)) 0, transparent 98%, #000 100%),
+        radial-gradient(circle calc(5.7 * var(--u, 1px)) at calc(57 * var(--u, 1px)) 100%, transparent 98%, #000 100%);
+    mask-composite: intersect;
+}
+
+.card__day {
+    flex: none;
+    // **下限而不是钉死**：钉死 32.3 时两位数（43.7px 字号下约 48px）会溢出去压到打孔虚线上，
+    // 补 nowrap 只是把"换行"换成了"溢出"。下限保证 1 号到 9 号仍占同样的槽——撕线不会跟着日期左右晃，
+    // 这正是当初钉宽度想要的；两位数则自己撑开。（同 min-width: fit-content 那条思路。）
+    min-width: calc(32.3 * var(--u, 1px));
+    white-space: nowrap;
+    color: var(--dc-fg, #1f2329);
+    font-size: calc(43.7 * var(--u, 1px));          // 43.7px
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    line-height: 0.95;
+    text-align: center;
+}
+
+// 撕线。用 border-left 画而不是 1px 的实体块：虚线的疏密由浏览器按线宽算，
+// 实体块只能自己拼渐变，且缩放时会糊。
+.card__perf {
+    flex: none;
+    align-self: stretch;
+    width: 0;
+    border-left: calc(1.71 * var(--u, 1px)) dashed color-mix(in srgb, var(--dc-fg, #1f2329) 32%, transparent);
+}
+
+.card__col {
+    display: flex;
+    flex-direction: column;
+    gap: calc(1.9 * var(--u, 1px));
+    min-width: 0;
+}
+
+.card__mon {
+    display: flex;
+    gap: 0.45em;
+    color: var(--dc-fg, #1f2329);
+    font-size: calc(17.1 * var(--u, 1px));           // 17.1px
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    line-height: 1.2;
+    text-transform: uppercase;
+}
+
+.card__week {
+    color: color-mix(in srgb, var(--dc-fg, #1f2329) 55%, transparent);
+    font-size: calc(14.3 * var(--u, 1px));         // 14.3px
+    line-height: 1.25;
+}

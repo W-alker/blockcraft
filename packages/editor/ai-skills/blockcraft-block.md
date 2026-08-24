@@ -1383,6 +1383,26 @@ this.onTextChange  // Subject<{ op: DeltaOperation[]; tr: Y.Transaction }>
 
 ## DocChain: Block Operations
 
+### Template-authoring draft props
+
+BlockCraft ships `weather`, `date-card`, and `person-card` as canonical void
+blocks. Do not create parallel `template-*` schemas. A host that edits reusable
+templates stores unresolved author choices under namespaced instance meta with
+`draftPropMetaKey(key)` (for example `draft:style`) and may pass those values in
+`InternalDragData` as `initMeta`. The built-in dynamic blocks project declared
+draft keys for presentation without mutating their real props.
+
+When a host creates a normal document from a template it owns the materializing
+transition: resolve every draft value, write the result to the corresponding
+real prop, and remove the consumed `draft:*` meta. Geometry and placement remain
+real props in both states. Normal documents should never retain template draft
+meta.
+
+Use `DYNAMIC_MATERIAL_DATA` to provide host data for dynamic blocks without
+coupling BlockCraft to authentication or business services. The person-card
+payload is a neutral display snapshot; weather access implements
+`DynamicMaterialDataPort`.
+
 `DocChain` is the fluent transaction builder. Each method enqueues a step; `run()` commits everything in a single Yjs transaction. Async tasks can be interleaved with `.task()`.
 
 ```typescript

@@ -9,7 +9,13 @@ export type InternalDragState = 'idle' | 'armed' | 'dragging' | 'dropping'
 export type InternalDragData =
   | { kind: 'origin-block'; blockId: string }
   | { kind: 'origin-blocks'; blockIds: string[] }
-  | { kind: 'new-block'; flavour: BlockCraft.BlockFlavour; initProps?: IBlockProps }
+  | {
+      kind: 'new-block'
+      flavour: BlockCraft.BlockFlavour
+      initProps?: IBlockProps
+      /** Initial metadata merged into the detached snapshot before insertion. */
+      initMeta?: Record<string, unknown>
+    }
 
 export interface InternalDragOptions {
   /** ghost 文本预览，不传则从源 block textContent 抽取 */
@@ -409,6 +415,7 @@ export class DocInternalDragController {
         this._data.initProps ?? {},
         this._prevBlock,
         this._prevDragPosition,
+        this._data.initMeta ?? {},
       )
     }
   }

@@ -16,7 +16,7 @@ import { calcDragLineRect, calcPositionByRect, type DragLineRect, type DragPosit
 export enum DocDndDataTypes {
   /** @deprecated 内部 block 拖拽改走 DocInternalDragController + InternalDragData，本枚举值不再使用。 */
   originBlock = 'origin-block',
-  /** @deprecated 同上。新 block 拖入请用 dragController.startDrag(evt, { kind: 'new-block', flavour, initProps? })。 */
+  /** @deprecated 同上。新 block 拖入请用 dragController.startDrag(evt, { kind: 'new-block', flavour, initProps?, initMeta? })。 */
   newBlock = 'new-block',
   /** @deprecated 配套 newBlock 使用，已废弃。 */
   newBlockProps = 'new-block-props',
@@ -664,7 +664,13 @@ export class DocDndService {
     }
   }
 
-  onInsertNewBlock(flavour: BlockCraft.BlockFlavour, initProps: IBlockProps, targetBlock: BlockCraft.BlockComponent, position: DragPosition) {
+  onInsertNewBlock(
+    flavour: BlockCraft.BlockFlavour,
+    initProps: IBlockProps,
+    targetBlock: BlockCraft.BlockComponent,
+    position: DragPosition,
+    initMeta: Record<string, unknown> = {},
+  ) {
     if (position === 'none') return
     const targetParent = targetBlock.parentBlock
     if (!targetParent) return
@@ -685,6 +691,7 @@ export class DocDndService {
       if (!this._tryAssertInsertable(currentParent.id, BlockReadonlyOperation.Insert)) return
       const snapshot = this.doc.schemas.createSnapshot(flavour, <any>params)
       initProps && Object.assign(snapshot.props, initProps)
+      initMeta && Object.assign(snapshot.meta, initMeta)
       void this.doc.chain()
         .insertSnapshots(currentParent.id, targetBlock.getIndexOfParent() + (position === 'after' ? 1 : 0), [snapshot])
         .setCursorAtBlock(snapshot.id, true)

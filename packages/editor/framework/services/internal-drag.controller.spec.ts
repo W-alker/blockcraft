@@ -287,6 +287,35 @@ describe('DocInternalDragController state machine', () => {
     dispatchPointerCancel(target)
   })
 
+  it('forwards initial metadata when a new block is dropped', () => {
+    const destination = makeBlock('destination', target)
+    const evt = makePointerEvent('pointerdown', {clientX: 100, clientY: 100})
+    Object.defineProperty(evt, 'target', {value: target})
+    ctrl.startDrag(evt, {
+      kind: 'new-block',
+      flavour: 'paragraph',
+      initProps: {depth: 1},
+      initMeta: {'draft:style': 'calendar'},
+    })
+    ;(ctrl as any)._enterDragging(
+      makePointerEvent('pointermove', {clientX: 110, clientY: 110}),
+    )
+    ;(ctrl as any)._prevBlock = destination
+    ;(ctrl as any)._prevDragPosition = 'after'
+
+    ;(ctrl as any)._onWindowPointerUp(
+      makePointerEvent('pointerup', {pointerId: 1}),
+    )
+
+    expect(doc.dndService.onInsertNewBlock).toHaveBeenCalledWith(
+      'paragraph',
+      {depth: 1},
+      destination,
+      'after',
+      {'draft:style': 'calendar'},
+    )
+  })
+
   it('uses 8px threshold for touch input', () => {
     const evt = makePointerEvent('pointerdown', { clientX: 100, clientY: 100, pointerType: 'touch' })
     Object.defineProperty(evt, 'target', { value: target })

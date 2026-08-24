@@ -11,9 +11,11 @@ import {
   ColumnBlockSchema,
   ColumnsBlockSchema,
   DividerBlockSchema,
+  DateCardBlockSchema,
   FigmaEmbedBlockSchema,
   FormulaBlockSchema,
   ImageBlockSchema,
+  PersonCardBlockSchema,
   JuejinEmbedBlockSchema,
   MermaidBlockSchema,
   MermaidTextareaBlockSchema,
@@ -36,6 +38,7 @@ import {
   TableRowBlockSchema,
   TodoBlockSchema,
   VideoBlockSchema,
+  WeatherBlockSchema,
   WordArtBlockSchema,
 } from '../blocks'
 import {
@@ -125,6 +128,9 @@ export const BUNDLED_EDITOR_SCHEMAS: readonly IBlockSchemaOptions[] = [
   ObjectGroupBlockSchema,
   PlacementLayoutBlockSchema,
   RenderUnitBlockSchema,
+  WeatherBlockSchema,
+  DateCardBlockSchema,
+  PersonCardBlockSchema,
 ]
 
 export type BundledBlockMaterialGroupKey = 'base' | 'other' | 'embed'

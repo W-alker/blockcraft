@@ -54,7 +54,7 @@ Three `nodeType` categories:
 | nodeType | Description | Base Class | Examples |
 |----------|-------------|------------|----------|
 | `editable` | Has inline text (Y.Text), no children | `EditableBlockComponent` | paragraph, code, bullet, ordered, todo, blockquote, caption, mermaid-textarea, word-art |
-| `void` | No children, no text | `BaseBlockComponent` | divider, image, bookmark, attachment, formula, video, audio, mermaid, embed-blocks (figma, juejin) |
+| `void` | No children, no text | `BaseBlockComponent` | divider, image, bookmark, attachment, formula, video, audio, mermaid, embed-blocks (figma, juejin), weather, date-card, person-card |
 | `block` | Has block children | `BaseBlockComponent` | callout, columns, column, table, table-row, table-cell, frame, shape, text-box, render-unit, object-group, placement-layout (infrastructure) |
 | `root` | Special — top-level container | `BaseBlockComponent` (root-block) | root |
 
@@ -62,7 +62,7 @@ Three `nodeType` categories:
 
 ### Currently Registered Block Schemas (from `editor/bundled-capabilities.ts`)
 
-`paragraph, ordered, bullet, todo, callout, code, divider, page-divider, image, table, table-row, table-cell, attachment, bookmark, figmaEmbed, juejinEmbed, caption, root, mermaid-textarea, mermaid, blockquote, columns, column, formula, video, audio, shape, shape-text, text-box, word-art, object-group, placement-layout, render-unit`
+`paragraph, ordered, bullet, todo, callout, code, divider, page-divider, image, table, table-row, table-cell, attachment, bookmark, figmaEmbed, juejinEmbed, caption, root, mermaid-textarea, mermaid, blockquote, columns, column, formula, video, audio, shape, shape-text, text-box, word-art, object-group, placement-layout, render-unit, weather, date-card, person-card`
 
 A host application can register a subset or extend this list — see `blockcraft-app.md`.
 Hosts that need the complete reference-editor surface should call
@@ -1393,6 +1393,13 @@ packages/editor/ai-skills/         # also shipped at node_modules/@ccc/blockcraf
 ```
 
 ## Versioning & Migrations
+
+Canonical dynamic blocks are exported as `WeatherBlockSchema`,
+`DateCardBlockSchema`, and `PersonCardBlockSchema`, with flavours `weather`,
+`date-card`, and `person-card`. Reusable-template authoring is a host state, not
+a second schema family: unresolved values use `draft:*` meta and are projected
+only for display. See `blockcraft-block.md` for the materialization boundary and
+`DYNAMIC_MATERIAL_DATA` host port.
 
 The skill pack and the framework are versioned together. Whenever the framework refactors or adds public API, three things move in lock-step in the same PR:
 

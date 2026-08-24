@@ -1,0 +1,68 @@
+// 「邮戳」档。尺寸一律 `calc(设计px * var(--u, 1px))`，唯一的裸 px 是配置项「边框」那一圈。
+//
+// 边框走 `--dc-bw / --dc-bs / --dc-bc`（配置项「边框」——档位值形如 `2px dashed`），
+// 画在**最外层**：作者开了边框，就是在圆的外面再套一圈，双圈仍在里面，两者不打架。
+:host {
+    display: block;
+    // **这一档的宽度必须写死**，与其他档不同：它的形状是 `aspect-ratio` 钉死的正圆，
+    // 形状本身就是设计对象。跟着 fit-content 的话，关掉星期/年份后内容一少，
+    // 宽度塌下去、圆环跟着缩成一小坨，文字顶到边（实测图里就是这样）。
+    // 其余档（台历/翻页牌/票根/横幅/行签/人员卡/天气）没有这个约束，宽度跟内容走。
+    width: calc(132 * var(--u, 1px));
+    box-sizing: border-box;
+}
+
+// 外层只负责「是个正圆」和承接配置项边框。**不画任何视觉**，圈全在 .card__ring 上。
+.card {
+    box-sizing: border-box;
+    aspect-ratio: 1;
+    border: var(--dc-bw, 0px) var(--dc-bs, solid) var(--dc-bc, transparent);
+    border-radius: 50%;
+    background: var(--dc-bg, transparent);
+}
+
+// 双圈：粗的那圈是自己的 border，细的那圈用 outline + offset 画在它**内侧**
+// （outline 不占盒模型，不会把内容挤小；用第二个 div 画则要多一层嵌套还得算半径）。
+// outline 的负 offset 正是「往里缩」，这是它少数几个比 box-shadow 顺手的场合。
+.card__ring {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: calc(0.79 * var(--u, 1px));
+    width: 100%;
+    height: 100%;
+    padding: calc(7.92 * var(--u, 1px));
+    border: calc(2.11 * var(--u, 1px)) solid var(--dc-fg, #1f2329);
+    border-radius: 50%;
+    outline: calc(0.92 * var(--u, 1px)) solid var(--dc-fg, #1f2329);
+    outline-offset: calc(-4.75 * var(--u, 1px));
+}
+
+.card__mon {
+    display: flex;
+    gap: 0.4em;
+    color: var(--dc-fg, #1f2329);
+    font-size: calc(12.5 * var(--u, 1px));         // 12.5px
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    line-height: 1.2;
+    text-transform: uppercase;
+}
+
+.card__day {
+    color: var(--dc-fg, #1f2329);
+    font-size: calc(39.6 * var(--u, 1px));          // 39.6px
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    line-height: 0.95;
+}
+
+.card__week {
+    color: color-mix(in srgb, var(--dc-fg, #1f2329) 62%, transparent);
+    font-size: calc(10.6 * var(--u, 1px));           // 10.6px
+    letter-spacing: 0.16em;
+    line-height: 1.2;
+    text-transform: uppercase;
+}

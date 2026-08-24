@@ -1,0 +1,62 @@
+// 「翻页牌」档。尺寸一律 `calc(设计px * var(--u, 1px))`，唯一的裸 px 是配置项「边框」那一圈。
+//
+// 边框走 `--dc-bw / --dc-bs / --dc-bc`；底色与字色走 `--dc-bg / --dc-fg`，
+// 但这一档的**兜底是深底白字**（全家唯一），缘由见组件注释。
+// 所有装饰（缝、星期带）一律由 `--dc-fg` 兑出来，不写死白色——作者把字体色调成别的颜色时，
+// 装饰跟着走才是一张卡；写死白色会在浅色字上留下两道看不见的线。
+:host {
+    display: block;
+    // **宽度一律由内容定（fit-content）**，卡面档也不例外：卡面 = 内容 + 内边距，
+    // 关掉星期/年份时卡面跟着收，不会在面里空一大块（写死设计宽就会）。
+    // 实测过窄槽不会挤压它：面板缩略图 128px 槽里票根仍是 176.7px（超出由槽自己 overflow 管），
+    // 所以"预览里换行/压字"不是宽度没写死造成的，是缩略图那条 --u 公式漏了限宽（已修）。
+    width: calc(136 * var(--u, 1px));
+    box-sizing: border-box;
+}
+
+.card {
+    position: relative;        // 翻页缝按它定位
+    box-sizing: border-box;
+    overflow: hidden;          // 星期带要被圆角裁住，否则底部两角会露出直角
+    border: var(--dc-bw, 0px) var(--dc-bs, solid) var(--dc-bc, transparent);
+    border-radius: calc(8.16 * var(--u, 1px));
+    background: var(--dc-bg, #262a30);
+    text-align: center;
+}
+
+.card__ym {
+    padding: calc(9.52 * var(--u, 1px)) calc(5.44 * var(--u, 1px)) calc(4.08 * var(--u, 1px));
+    color: color-mix(in srgb, var(--dc-fg, #fff) 72%, transparent);
+    font-size: calc(12.2 * var(--u, 1px));           // 12.2px
+    letter-spacing: 0.1em;
+    line-height: 1.2;
+}
+
+.card__day {
+    padding: 0 0 calc(9.52 * var(--u, 1px));
+    color: var(--dc-fg, #fff);
+    font-size: calc(51.7 * var(--u, 1px));          // 51.7px
+    font-weight: 600;
+    letter-spacing: -0.04em;
+    line-height: 0.9;
+}
+
+// 缝画在大数字的腰上（52% 是**看出来的位置**不是几何中点：数字的视觉重心比盒子中点低一点，
+// 压在 50% 会显得偏上）。用 border-top 而不是 background，1px 以下的线才不会被取整抹掉。
+.card__seam {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 52%;
+    height: 0;
+    border-top: calc(1.09 * var(--u, 1px)) solid color-mix(in srgb, var(--dc-fg, #fff) 22%, #0000);
+}
+
+.card__week {
+    padding: calc(4.76 * var(--u, 1px)) 0 calc(5.44 * var(--u, 1px));
+    background: color-mix(in srgb, var(--dc-fg, #fff) 12%, transparent);
+    color: color-mix(in srgb, var(--dc-fg, #fff) 88%, transparent);
+    font-size: calc(11.6 * var(--u, 1px));         // 11.6px
+    letter-spacing: 0.14em;
+    line-height: 1.2;
+}

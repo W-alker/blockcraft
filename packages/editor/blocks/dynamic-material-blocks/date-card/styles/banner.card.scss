@@ -1,0 +1,111 @@
+// ③ banner —— 横幅日期。固定内容宽 184px；下面每个数字统一乘 `var(--u, 1px)` 等比缩放。
+// 全表不出现 px（:host 的 --mtl-w 兜底值除外）：缩略图把宽度压到 72px，px 写死的部分不会跟着缩。
+// 不写 [blockcraft-theme="dark"] 分支——本版不做深色主题，将来补是纯增。
+//
+// 设计宽度是实测内容宽，外层固定框由该值加公共内边距派生，
+// 内容却按容器百分比排，比例固定 ⇒ 内容填不满盒子的部分永远是空白（选中框一框特别显眼）。
+// 那一版靠"等比放大 cqw + 同倍缩小设计宽"把空白挤掉，只能对一种文本长度成立；
+// 内部尺度独立成 --u，文本长短不再改变模型几何。
+// 盒子却收到了内容附近。
+//
+// **目标是内容约占 87%，不是 100%。** 一度真的调到了 100%（盒子严丝合缝贴住内容），当场溢出：
+// ① **量错了字体**：用的是裸页面的 -apple-system，而真正生效的是 src/styles.scss:599 的
+//    `html,body{font-family:'PingFang SC' !important}`。（styles.scss:67 那个 `--font-family: Arial`
+//    是死 token，全仓 0 处消费——我查到它就当成了答案，这个错犯了两次。）
+// ② 内容宽本身随数据变：月份缩写不等宽（最坏是 Jan / Mar），星期七种也不同宽。
+// 现在留 13% 余量（两侧各约 6.5%），是拿**真字体文件** + 12 月 × 5 种日号 × 7 种星期
+// 全矩阵扫出最坏值之后定的。改任何字号后都要重量（scratch 的 measure 脚本）。
+//
+// **默认没有背景色。** 原型截图上那片深紫是那张图的页面底，不是这个物料的一部分——
+// 它是一组排版，不是一张卡：巨大的细体数字 + 竖线 + 两行小字，靠字号与字距拉开层次，
+// 底色交给文档纸面。左右也因此没有内边距：没有卡面要撑开，留白由正文自己决定。
+// 「默认」这两个字是 2026-08 加的：背景色成了配置项（`--dc-bg`），作者主动配了才有底。
+// 兜底值仍是 transparent，所以不配就与从前一字不差——这一档的设计定位没变。
+//
+// 字色走 --dc-fg（配置项「字体颜色」，缺省近黑）。次要文字用 color-mix 从字色兑白，
+// 而不是写死一个灰：换成蓝色字色时，灰字会显脏，兑出来的浅色才跟它是一家。
+// **不做自动对比色**：字色是作者手动选的（见 date-card.material.ts 的 FG 注释）。
+
+:host {
+    display: block;
+    width: calc(184 * var(--u, 1px));
+    box-sizing: border-box;
+}
+
+// 排版容器。尺度全靠 `--u`（宿主绑的 px 变量）：任何嵌套层级它都是同一个值，
+// 不像 em 会按元素自己的字号复合；外层固定框负责选中与组合几何。
+// 边框与背景走 `--dc-bw / --dc-bs / --dc-bc / --dc-bg`（配置项「边框」「背景颜色」——档位值形如 `2px dashed`）。
+// **默认全是空的**——这一档的设定就是「没有卡面」，兜底值保持原样（transparent / 0），
+// 于是不配任何东西时这张卡与加这三个变量之前一字不差，defaultAr 也不用重量。
+//
+// 垂直内边距**由边框粗细算出来**（`--dc-bw` × 2），不是写死一个常数：
+// 写死的话默认态（绝大多数）会凭空高出十几个 px，那全是看不见的空——这一档没有卡面，
+// 高出来的部分只会让块在正文里多占位置。跟着边框走则是「有框才留呼吸」，
+// 无框时 padding 恒等于 0，高度回到原设计。
+// 边框粗细是全表唯一的 px，刻意如此：线跟着卡片等比放大会变成一道黑杠。
+.card {
+    display: flex;
+    align-items: center;
+    // 居中而不是靠左：这两档没有卡面，宽度是模型给的固定框，
+    // 内容靠左会贴在框的一角、和框的实际范围对不上（面板宫格里尤其明显）。
+    justify-content: center;
+    box-sizing: border-box;
+    padding: calc(var(--dc-bw, 0px) * 2) 0;
+    border: var(--dc-bw, 0px) var(--dc-bs, solid) var(--dc-bc, transparent);
+    border-radius: calc(6.07 * var(--u, 1px));
+    background: var(--dc-bg, transparent);
+}
+
+// 大数字（D，不补前导零）。200 字重是原型的关键特征——细笔画撑起大字号才有那种「刻上去」的
+// 感觉，一加粗立刻变成促销横幅。负字距收紧两位数。
+.card__day {
+    flex: none;
+    color: var(--dc-fg, #1f2329);
+    font-size: calc(45 * var(--u, 1px)); // 45px
+    font-weight: 200;
+    letter-spacing: -0.02em;
+    line-height: 1;
+}
+
+// 竖分隔线。用空 span 而不是 border-left，是因为它只占 calc(22.08 * var(--u, 1px)) 高、不跟着行高走
+.card__rule {
+    flex: none;
+    width: calc(1 * var(--u, 1px)); // 1px
+    height: calc(27.5 * var(--u, 1px)); // 27.5px
+    margin: 0 calc(11.5 * var(--u, 1px)); // 11.5px
+    background: color-mix(in srgb, var(--dc-fg, #1f2329) 28%, transparent);
+}
+
+.card__col {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.4;
+    white-space: nowrap; // 缩略图尺度下字号是零点几 px，宁可溢出被裁也不要换行成两行糊团
+}
+
+// 月份缩写。琥珀色是整组里唯一的暖色，也是原型最抓眼的一笔；它**不跟主色走**，
+// 否则换个主色这一笔就没了，整条排版会塌成一个颜色。字越小、字距越开越挺。
+// 大写是**显示层**的事（TS 里存的仍是 'Aug'），所以用 text-transform 而不是 .toUpperCase()
+.card__mon {
+    color: #d98515;
+    font-size: calc(12 * var(--u, 1px)); // 12px
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.45em;
+    // 字距会在最后一个字母后面也留一份，靠左排时它会把后面的东西推开，负 margin 抵掉
+    margin-right: -0.45em;
+}
+
+// 星期 · 年份。两段各自可缺席（格式档），**中点由相邻兄弟规则画**——
+// 拼死在插值串里的话，去掉年份会留下「星期五 ·」这么个断尾。
+.card__sub {
+    display: flex;
+    color: color-mix(in srgb, var(--dc-fg, #1f2329) 68%, transparent);
+    font-size: calc(12.7 * var(--u, 1px)); // 12.7px
+
+    & span + span::before {
+        content: '·';
+        margin: 0 0.4em;
+    }
+}

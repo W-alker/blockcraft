@@ -69,6 +69,61 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
+## v0.6.0 — 2026-08-24 — Canonical dynamic blocks and template draft projection
+
+**Severity**: minor
+
+**What changed**: BlockCraft now exports the canonical `weather`, `date-card`,
+and `person-card` void-block schemas and their presentation helpers. Template
+authors can keep unresolved configuration in namespaced `draft:*` block meta,
+project it for editing, and materialize it into real props when a host creates a
+normal document. New-block drag data can carry initial metadata, and dynamic
+weather data is provided through the optional `DYNAMIC_MATERIAL_DATA` host port.
+
+**Why**: Template editing and normal documents need one stable flavour family.
+Keeping template-only choices in meta avoids parallel `template-*` schemas,
+while preserving the host boundary for authentication and business data.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `WeatherBlockSchema`, `DateCardBlockSchema`, and `PersonCardBlockSchema`
+- `DYNAMIC_MATERIAL_DATA` and `DynamicMaterialDataPort`
+- `draftPropMetaKey()`, `readDraftProp()`, `projectDraftProps()`, and
+  `hasDraftProps()`
+- `InternalDragData.initMeta?: Record<string, unknown>`
+
+### Migration Recipe
+
+Hosts should stop registering parallel template-only schemas. While editing a
+template, store unresolved choices in block meta and pass them during drag:
+
+```typescript
+dragController.startDrag(event, {
+  kind: 'new-block',
+  flavour: 'date-card',
+  initMeta: {
+    [draftPropMetaKey('style')]: 'calendar',
+  },
+})
+```
+
+When creating a normal document, resolve each `draft:*` entry into its matching
+real prop and delete the consumed meta key. Geometry and placement stay in real
+props in both states. Existing persisted documents are not migrated by
+BlockCraft.
+
+### Behavior Changes
+
+- The bundled schema set now includes `weather`, `date-card`, and `person-card`.
+- Dynamic blocks project declared draft keys for display without mutating props.
+- A dropped new-block snapshot merges `initMeta` before insertion.
+
 ## Unreleased — 2026-08-24 — Text-box and WordArt object focus affordances
 
 **Severity**: minor

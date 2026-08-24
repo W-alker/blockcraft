@@ -1,0 +1,100 @@
+// ③ column —— 竖排人员。固定内容宽 70px；下面每个数字统一乘 `var(--u, 1px)` 等比缩放。
+// 全表不出现裸 px：缩略图把 --u 压到零点几，裸 px 的部分不会跟着缩。
+// 不写 [blockcraft-theme="dark"] 分支——本版不做深色主题，将来补是纯增。
+//
+// 三档里唯一接近方形的一档（ar≈1.10），也是唯一一档「宽度由内容之外的东西决定」的：
+// 横排两档的宽度是「头像 + 一行字」自然排出来的，竖排的宽度只受头像与姓名里更宽的那个约束，
+// 所以设计宽度取的是 56px 头像与四字姓名（约 56px）之上留一点余量的数。
+//
+// 没有底色、没有卡面：底色交给文档纸面，和另外两档一致。
+
+:host {
+    display: block;
+    width: calc(70 * var(--u, 1px));
+    box-sizing: border-box;
+}
+
+// 排版容器。尺度全靠 `--u`（宿主绑的 px 变量）：任何嵌套层级它都是同一个值，
+// 不像 em 会按元素自己的字号复合；外层固定框负责选中与组合几何。
+.card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    box-sizing: border-box;
+    gap: calc(8 * var(--u, 1px)); // 8px
+    min-width: 0;
+}
+
+// 头像。圆角吃 --pc-avatar-radius（圆形 50% / 方形圆角 22%），用百分比而非 px。
+// 尺寸再乘 --pc-avatar-scale（「头像大小」：小 0.75 / 中 1 / 大 1.25，本档即 42 / 56 / 70px）——
+// 只乘头像、不乘字号和 gap，理由见 row.card.scss 同处。
+.card__avatar {
+    flex: none;
+    box-sizing: border-box; // 白描边算进头像尺寸内，加这圈不会让它变大
+    width: calc(56 * var(--pc-avatar-scale, 1) * var(--u, 1px)); // 56px（中）
+    height: calc(56.11 * var(--pc-avatar-scale, 1) * var(--u, 1px));
+    // 白描边（「头像形状」的另一半：radius 管形状、border 管这一圈）。
+    // 白纸上它是隐形的，真正起作用的是**卡片浮于图片或彩色块之上**时——那一圈白把头像与底分开，
+    // 不然深色头像会和深色底糊成一片。box-sizing 已是 border-box，加这圈不会让头像变大。
+    border: calc(3 * var(--u, 1px)) solid #fff; // 3px
+
+    border-radius: var(--pc-avatar-radius, 50%);
+    // 不用 object-fit: cover：头像小的时候 cover 会把人脸裁掉一圈，模板编辑区与右侧面板缩略图里
+    // 尤其看不清。让图片按自己的比例填满即可（头像源本就是方图）。
+    background: #f1f2f4;
+}
+
+// 姓名 + 部门这一行。max-width:100% 是竖排特有的一道闸：这一行是 column flex 的子项，
+// 交叉轴上默认按内容宽伸展（align-items:center 只管摆位、不封顶），
+// 姓名一长就会左右各鼓出去一截、越过头像的边——横排两档因为主轴受限不会有这个问题。
+.card__line {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    min-width: 0;
+    max-width: 100%;
+    gap: calc(4 * var(--u, 1px)); // 4px
+}
+
+// 姓名。跟 --pc-color 走。三件套 overflow/text-overflow/white-space 缺一不可：
+// 少 overflow 没省略号、少 nowrap 会换行把卡片撑高（ar 固定，撑高就是版面错位）。
+.card__name {
+    // **flex-shrink 必须是 0，不是 1。** 只要留一点收缩量，姓名就会比内容窄零点几个像素，
+    // 而 text-overflow 只认「scrollWidth > clientWidth」——亚像素也算，当场吃掉一个字。
+    // 实测：权重 1:100 时姓名 59.8/60px，看起来就是「欧阳…」少一个字；改 0 之后 60.2/60，完整。
+    // max-width 兜的是另一头：姓名单独就超长时它不收缩会顶破卡片，夹到 100% 后省略号照常触发。
+    flex: 0 0 auto;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--pc-color, #1f2329);
+    font-size: calc(14 * var(--u, 1px)); // 14px
+    line-height: 1.4;
+}
+
+// 部门/职务。固定灰、不跟主色走（副信息不该和姓名抢注意力），与行内人员的 DESC_STYLE 同值。
+// 竖排窄，这一截被截断是常态——不是没设计好，是「宽度波动没有上界」的既定代价。
+.card__desc {
+    // 收缩全部落在部门身上（姓名 shrink 为 0）：部门是可关的副信息，先截它。
+    // 首版两者同为 1，按各自宽度等比收缩，部门越长姓名被削得越狠，主信息反而先没了。
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #8a919f;
+    font-size: calc(11 * var(--u, 1px)); // 11px
+    line-height: 1.4;
+}
+
+// 占位态**不加任何视觉装饰**——模板态与文档态长得一模一样，只是文字换成标签
+// （「文档创建人 / 部门/职务 / 拼音」）。
+//
+// 曾经有一圈虚线头像 + 姓名下的虚线下划线，那是占位文案还叫 `XXX` 时的产物：三个 X 不加提示
+// 看不出是占位。改成标签式之后文字本身就说清楚了，再画虚线是**重复表达**，而且那道 `___`
+// 在真实版面里很扎眼——模板编辑区因此比文档态丑一大截，得不偿失。
+//
+// class 绑定也随之从模板里去掉了：没有规则消费它就是死代码。
+// 将来真要区分（比如深色主题下），`view.placeholder` 这个数据位还在，重新挂上即可。

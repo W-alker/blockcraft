@@ -1,0 +1,71 @@
+// ② square — 极简方块。设计宽 140px；下面每个数字就是设计稿 px，乘 `var(--u, 1px)` 缩放（`--u: 1px` = 原尺寸）。
+// 全表不出现 px（:host 的 --mtl-w 兜底值除外）：缩略图把宽度压到 72px，px 写死的部分不会跟着缩。
+// 不写 [blockcraft-theme="dark"] 分支——本版不做深色主题，将来补是纯增。
+//
+// 原型是「近黑底 + 一个几乎顶天立地的白数字」，全部内容就是**极端对比**。
+// **2026-08-18 按需求把缺省改成了无底黑字**——等于回到当初被推翻的那版「浅底」，
+// 这一档因此不再有原型的那种张力，只剩一个大数字加两行小标签。
+// 记下来是因为它是个**已知的取舍**，不是漏改：深底白字仍然一键可得（配 --dc-bg + --dc-fg），
+// 只是不再是默认。真要恢复原样，改下面那行 background 的兜底值即可，排版一个数都不用动。
+
+:host {
+    // 契约四件套（设计 §3.6）：宿主可用 --mtl-w 覆盖宽度，内部一律靠容器查询等比缩放。
+    display: block;
+    // **这一档的宽度必须写死**，与其他档不同：它的形状是 `aspect-ratio` 钉死的正方，
+    // 形状本身就是设计对象。跟着 fit-content 的话，关掉星期/年份后内容一少，
+    // 宽度塌下去、方块跟着缩成一小坨，文字顶到边（实测图里就是这样）。
+    // 其余档（台历/翻页牌/票根/横幅/行签/人员卡/天气）没有这个约束，宽度跟内容走。
+    width: calc(140 * var(--u, 1px));
+    box-sizing: border-box;
+}
+
+// 卡面。背景/圆角/内边距不能挂在 :host 上——**元素永远不是自己的查询容器**，
+// aspect-ratio 也放这里：正方形由自身宽度定高，宿主给多宽就多高，永远不用传高度。
+// box-sizing 必须显式再写一次——aspect-ratio 量的是 box-sizing 指定的那个盒，
+// content-box 下内边距会把「正方形」撑成竖条。
+//
+// 底色 = 主色本身（--dc-color，缺省近黑），所以换颜色时整块跟着走，不写死任何一个色。
+// 边框走 `--dc-bw / --dc-bs / --dc-bc`（配置项「边框」——档位值形如 `2px dashed`，由 splitBorder 拆成粗细与线型），是全表**唯一**允许出现 px 的地方：
+// 边框在视觉上是「一条线」，跟着卡片等比放大会变成一道黑杠，所以宿主传绝对 px。
+// aspect-ratio 量的是 box-sizing 指定的那个盒，border-box 下边框吃进宽度，正方形不会被顶歪。
+.card {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    // 居中成组、不再 space-between：正方形里只有两三行字，两极对齐会在中间留一大块空。
+    justify-content: center;
+    gap: calc(2.1 * var(--u, 1px));
+    aspect-ratio: 1;
+    padding: calc(13.3 * var(--u, 1px));
+    border: var(--dc-bw, 0px) var(--dc-bs, solid) var(--dc-bc, transparent);
+    border-radius: calc(14 * var(--u, 1px));
+    background: var(--dc-bg, transparent);
+}
+
+// 顶行：2026-08（极简档退成 Aug）。字距用 em 不用 px——em 跟着自身字号缩，缩略图里比例才守得住。
+// 只有 45% 不透明度：它是标签不是内容，越退后，下面那个数字越站得住。
+.card__ym {
+    color: color-mix(in srgb, var(--dc-fg, #1f2329) 45%, transparent);
+    font-size: calc(15.4 * var(--u, 1px)); // 15.4px
+    letter-spacing: 0.08em;
+    line-height: 1.2;
+}
+
+// 底行：周五（短式 ddd）。与顶行**同字号同透明度**，把大数字对称地夹在中间——
+// 做成一上一下的一对标签，而不是给它单独设计一档字阶，正方形才不会头重脚轻。
+.card__week {
+    color: color-mix(in srgb, var(--dc-fg, #1f2329) 45%, transparent);
+    font-size: calc(15.4 * var(--u, 1px)); // 15.4px
+    letter-spacing: 0.08em;
+    line-height: 1.2;
+}
+
+// 大数字（DD，补零）。这张卡就靠它：字号吃掉半个卡面，负字距把两位数收紧，
+// line-height .88 削掉数字上方的空铅，让它真的贴着底边而不是浮在中间。
+.card__day {
+    color: var(--dc-fg, #1f2329);
+    font-size: calc(47.6 * var(--u, 1px)); // 47.6px
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    line-height: 0.88;
+}
