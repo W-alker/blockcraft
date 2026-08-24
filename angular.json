@@ -73,6 +73,9 @@
         },
         "serve": {
           "builder": "@angular-devkit/build-angular:dev-server",
+          "options": {
+            "proxyConfig": "apps/playground/proxy.conf.json"
+          },
           "configurations": {
             "production": {
               "buildTarget": "playground:build:production"
@@ -115,6 +118,29 @@
               "zone.js/testing"
             ]
           }
+        }
+      }
+    },
+    "blockcraft-agent": {
+      "projectType": "library",
+      "root": "packages/blockcraft-agent",
+      "sourceRoot": "packages/blockcraft-agent/src",
+      "prefix": "bc",
+      "architect": {
+        "build": {
+          "builder": "@angular-devkit/build-angular:ng-packagr",
+          "options": {
+            "project": "packages/blockcraft-agent/ng-package.json"
+          },
+          "configurations": {
+            "production": {
+              "tsConfig": "packages/blockcraft-agent/tsconfig.lib.prod.json"
+            },
+            "development": {
+              "tsConfig": "packages/blockcraft-agent/tsconfig.lib.json"
+            }
+          },
+          "defaultConfiguration": "production"
         }
       }
     }

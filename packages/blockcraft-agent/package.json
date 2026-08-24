@@ -1,0 +1,11 @@
+{
+  "name": "blockcraft-agent",
+  "version": "0.1.0",
+  "peerDependencies": {
+    "@angular/common": "^20.0.0",
+    "@angular/core": "^20.0.0",
+    "@ccc/blockcraft": ">=0.5.9 <1.0.0",
+    "rxjs": "^7.8.0"
+  },
+  "sideEffects": false
+}

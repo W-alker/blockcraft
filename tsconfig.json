@@ -10,6 +10,14 @@
       "@ccc/blockcraft/*": [
         "./packages/editor/*",
         "./dist/editor/*"
+      ],
+      "blockcraft-agent": [
+        "./packages/blockcraft-agent/src/public-api.ts",
+        "./dist/blockcraft-agent"
+      ],
+      "blockcraft-agent/*": [
+        "./packages/blockcraft-agent/src/*",
+        "./dist/blockcraft-agent/*"
       ]
     },
     "outDir": "./dist/out-tsc",

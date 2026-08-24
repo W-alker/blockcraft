@@ -1,0 +1,21 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../dist/out-tsc/blockcraft-agent/lib",
+    "declaration": true,
+    "declarationMap": true,
+    "inlineSources": true,
+    "types": [],
+    "paths": {
+      "@ccc/blockcraft": [
+        "./dist/editor"
+      ],
+      "@ccc/blockcraft/*": [
+        "./dist/editor/*"
+      ]
+    }
+  },
+  "exclude": [
+    "**/*.spec.ts"
+  ]
+}

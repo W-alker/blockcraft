@@ -1,4 +1,5 @@
-import { AfterViewInit, ChangeDetectorRef, Component, ElementRef, NgZone, OnDestroy, ViewChild, inject } from '@angular/core';
+import { AfterViewInit, ChangeDetectorRef, Component, ComponentRef, ElementRef, NgZone, OnDestroy, ViewChild, inject } from '@angular/core';
+import { OverlayRef } from '@angular/cdk/overlay';
 import { DomSanitizer } from '@angular/platform-browser';
 import { MatIconRegistry } from '@angular/material/icon';
 import {
@@ -26,12 +27,23 @@ import {PaginationSettingsComponent} from './pagination-settings.component';
 import {DocumentScaleSettingsComponent} from './document-scale-settings.component';
 import { debugTableMerge, fixTable } from '@ccc/blockcraft/blocks/table-block/callback';
 import { BlockCraftAwareness } from '@ccc/blockcraft/editor/awa';
-import { Subscription } from 'rxjs';
+import { Subject, Subscription } from 'rxjs';
 import { WebsocketProvider } from 'y-websocket';
 import * as Y from 'yjs';
 import { demoJSON } from './demo.data';
 import { RouterLink } from '@angular/router';
 import { resolveCollaborationRoot } from './collaboration-root';
+import {
+  createDocumentAgentSystemPrompt,
+  DocumentAgentContext,
+  DocumentAgentPanelComponent,
+  DocumentAgentPlugin,
+  DocumentAgentRequest,
+  DocumentAgentResult,
+  DocumentAgentRunner,
+  DocumentAgentToolExecutor,
+} from 'blockcraft-agent';
+import { PlaygroundDocumentAgentTransport } from './document-agent-transport';
 import {
   IME_SCENARIO_LABELS,
   ImeCollaborationRunnerState,
@@ -384,6 +396,23 @@ const ACTION_SECTIONS: DebugSection[] = [
             }
           </div>
         </section>
+
+        <section class="sidebar-card agent-card">
+          <div class="selection-header">
+            <span class="section-title">文档 Agent</span>
+            <span class="status-pill" [class.status-pill--active]="!!agentContext">{{ agentContext ? (agentContext.scope === 'document' ? '整篇文档' : '当前选区') : '初始化中' }}</span>
+          </div>
+          <p class="agent-card__hint">打开浮动对话框后，选区会被锁定，输入时不会丢失上下文。</p>
+          @if (agentBusy) {
+            <div class="agent-status agent-status--busy">Codex 正在生成建议…</div>
+          }
+          @if (agentResult) {
+            <div class="agent-status">有待应用的修改建议，请点击左上角 Agent 按钮查看。</div>
+          }
+          @if (agentError && !agentDialogOpen) {
+            <div class="agent-status agent-status--error">{{ agentError }}</div>
+          }
+        </section>
       </aside>
 
       <main class="editor-main">
@@ -640,6 +669,16 @@ const ACTION_SECTIONS: DebugSection[] = [
           </section>
         }
       </main>
+
+      <button
+        type="button"
+        class="agent-launcher"
+        aria-label="打开文档 Agent"
+        title="打开文档 Agent"
+        (pointerdown)="openAgentDialog($event)"
+        (click)="openAgentDialog($event)">
+        Agent
+      </button>
     </div>
   `,
   styles: [`
@@ -1437,6 +1476,13 @@ export class AppComponent implements AfterViewInit, OnDestroy {
   private _collabAmbiguousRootLogged = false;
   private _awareness?: BlockCraftAwareness;
   private _selectionSub?: Subscription;
+  private _agentContextSub?: Subscription;
+  private _agentPlugin?: DocumentAgentPlugin;
+  private _agentOverlayRef?: OverlayRef;
+  private _agentDialogComponent?: ComponentRef<DocumentAgentPanelComponent>;
+  private _agentDialogClose$?: Subject<void>;
+  private _agentFakeRange?: {destroy: () => void};
+  private readonly agentRunner = new DocumentAgentRunner(new PlaygroundDocumentAgentTransport());
 
   readonly updateList: Uint8Array[] = [];
   editorInitialized = false;
@@ -1457,6 +1503,12 @@ export class AppComponent implements AfterViewInit, OnDestroy {
   provider?: WebsocketProvider;
   selectionJson: string | null = null;
   selectionMeta: DebugMetaItem[] = [];
+  agentContext: DocumentAgentContext | null = null;
+  agentResult: DocumentAgentResult | null = null;
+  private agentResultContext: DocumentAgentContext | null = null;
+  agentError: string | null = null;
+  agentBusy = false;
+  agentDialogOpen = false;
   activeMainTab: 'editor' | 'viewer' = 'editor';
   activeViewerMode: 'snapshot' | 'markdown-stream' = 'snapshot';
   snapshotViewerSnapshot: IBlockSnapshot = this.createDemoSnapshot();
@@ -1529,6 +1581,10 @@ graph TD
     this._demoController?.destroy();
     this.quitRoom();
     this._selectionSub?.unsubscribe();
+    this._agentContextSub?.unsubscribe();
+    this.closeAgentDialog();
+    this._agentPlugin?.destroy();
+    this._agentPlugin = undefined;
     this.stopMonitor();
     this.stopSimulation();
     this.stopMarkdownStreamPlayback();
@@ -1857,14 +1913,17 @@ graph TD
 
   private ensureEditorInitialized(snapshot: IBlockSnapshot = this.createDemoSnapshot()) {
     const editor = this.requireEditor();
+    this.ensureAgentPlugin(editor);
     if (!editor.doc.isInitialized) {
       editor.doc.initBySnapshot(snapshot, this.editorDocumentSurface);
     }
+    this.agentContext = this._agentPlugin?.getContext() ?? this.agentContext;
     return editor;
   }
 
   private ensureEmptyEditorReady() {
     const editor = this.requireEditor();
+    this.ensureAgentPlugin(editor);
     if (!editor.doc.isInitialized) {
       const rootSnapshot = editor.doc.schemas.createSnapshot('root', [
         editor.rootId,
@@ -1872,7 +1931,162 @@ graph TD
       ]);
       editor.doc.initBySnapshot(rootSnapshot, this.editorDocumentSurface);
     }
+    this.agentContext = this._agentPlugin?.getContext() ?? this.agentContext;
     return editor;
+  }
+
+  private ensureAgentPlugin(editor: EditorComponent): void {
+    if (this._agentPlugin) return;
+
+    const plugin = new DocumentAgentPlugin();
+    plugin.register(editor.doc);
+    this._agentPlugin = plugin;
+    this._agentContextSub = plugin.contextChange$.subscribe(context => {
+      this.zone.run(() => {
+        this.agentContext = context;
+        if (context) this.agentError = null;
+        this.cdr.markForCheck();
+      });
+    });
+    this.agentContext = plugin.getContext();
+  }
+
+  openAgentDialog(event?: Event): void {
+    event?.preventDefault();
+    event?.stopPropagation();
+
+    if (this._agentOverlayRef?.hasAttached()) return;
+
+    const editor = this.editor;
+    const liveContext = this._agentPlugin?.getContext() ?? this.agentContext;
+    const context = this.agentResultContext ?? liveContext;
+    if (!editor) return;
+
+    if (context) this.renderAgentFakeRange(editor, context);
+    this._agentDialogClose$ = new Subject<void>();
+    const {componentRef, overlayRef} = editor.doc.overlayService.createGlobalOverlay<DocumentAgentPanelComponent>({
+      component: DocumentAgentPanelComponent,
+      backdrop: true,
+      top: '72px',
+      end: '24px',
+    }, this._agentDialogClose$, () => {
+      this._agentDialogClose$?.complete();
+      this._agentDialogClose$ = undefined;
+      this.destroyAgentFakeRange();
+      this._agentOverlayRef = undefined;
+      this._agentDialogComponent = undefined;
+      this.agentDialogOpen = false;
+      this.cdr.markForCheck();
+    });
+
+    this._agentOverlayRef = overlayRef;
+    this._agentDialogComponent = componentRef;
+    this.agentDialogOpen = true;
+    componentRef.setInput('context', context);
+    componentRef.setInput('task', 'rewrite');
+    this.syncAgentDialogState();
+
+    componentRef.instance.request.subscribe(request => void this.runAgentRequest(request));
+    componentRef.instance.apply.subscribe(() => this.applyAgentResult());
+    componentRef.instance.discard.subscribe(() => this.discardAgentResult());
+    componentRef.instance.close.subscribe(() => this.closeAgentDialog());
+  }
+
+  closeAgentDialog(): void {
+    const close$ = this._agentDialogClose$;
+    this._agentDialogClose$ = undefined;
+    if (close$) {
+      close$.next();
+      close$.complete();
+    }
+    this._agentOverlayRef = undefined;
+    this._agentDialogComponent = undefined;
+    this.destroyAgentFakeRange();
+    this.agentDialogOpen = false;
+    this.cdr.markForCheck();
+  }
+
+  private renderAgentFakeRange(editor: EditorComponent, context: DocumentAgentContext): void {
+    this.destroyAgentFakeRange();
+    if (!context.selection) return;
+    try {
+      this._agentFakeRange = editor.doc.selection.createFakeRange(context.selection, {
+        bgColor: 'var(--bc-select-background-color)',
+      });
+    } catch (error) {
+      editor.doc.logger.warn(`Agent 伪选区创建失败: ${error}`);
+    }
+  }
+
+  private destroyAgentFakeRange(): void {
+    this._agentFakeRange?.destroy();
+    this._agentFakeRange = undefined;
+  }
+
+  private syncAgentDialogState(): void {
+    const componentRef = this._agentDialogComponent;
+    if (!componentRef) return;
+
+    componentRef.setInput('busy', this.agentBusy);
+    componentRef.setInput('error', this.agentError);
+    componentRef.setInput('result', this.agentResult);
+  }
+
+  async runAgentRequest(request: DocumentAgentRequest): Promise<void> {
+    const context = request.context;
+    if (!context || this.agentBusy) return;
+
+    this.agentBusy = true;
+    this.agentError = null;
+    this.agentResult = null;
+    this.agentResultContext = null;
+    this.syncAgentDialogState();
+    this.cdr.markForCheck();
+
+    try {
+      this.agentResult = await this.agentRunner.run({
+        ...request,
+        systemPrompt: createDocumentAgentSystemPrompt(request.task),
+      });
+      this.agentResultContext = context;
+    } catch (error) {
+      this.agentError = error instanceof Error ? error.message : 'Agent 请求失败';
+    } finally {
+      this.agentBusy = false;
+      this.syncAgentDialogState();
+      this.cdr.markForCheck();
+    }
+  }
+
+  applyAgentResult(): void {
+    const editor = this.editor;
+    const context = this.agentResultContext;
+    const result = this.agentResult;
+    if (!editor || !context || !result) return;
+
+    const execution = new DocumentAgentToolExecutor(editor.doc, context).execute({
+      name: 'blockcraft.apply_changes',
+      arguments: result,
+    }, {allowWrite: true});
+    if (execution.ok) {
+      this.agentResult = null;
+      this.agentResultContext = null;
+      this.agentError = null;
+      this.syncAgentDialogState();
+      this.closeAgentDialog();
+    } else {
+      this.agentError = execution.error || 'Agent 修改应用失败';
+      this.syncAgentDialogState();
+    }
+    this.cdr.markForCheck();
+  }
+
+  discardAgentResult(): void {
+    this.agentResult = null;
+    this.agentResultContext = null;
+    this.agentError = null;
+    this.syncAgentDialogState();
+    this.cdr.markForCheck();
   }
 
   private get markdownStreamRenderer() {
