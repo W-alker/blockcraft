@@ -50,6 +50,19 @@ const rotationTransform = (rotation: number): string =>
       [style.transform]="surfaceTransform"
       [style.align-items]="verticalAlignment"
     >
+      @if (!isReadonly) {
+        <button
+          type="button"
+          class="word-art-block__object-handle"
+          data-bc-print-exclude="true"
+          data-bc-selection-interaction-ignore
+          data-bc-placement-pick-ignore
+          contenteditable="false"
+          aria-label="选中艺术字并拖动"
+          title="选中艺术字并拖动">
+          <i class="bc_icon bc_yidong" aria-hidden="true"></i>
+        </button>
+      }
       <div
         class="word-art-block__editor edit-container"
         [attr.data-bc-word-art-print-props]="printProps"

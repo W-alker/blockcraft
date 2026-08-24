@@ -93,7 +93,7 @@ describe('TextBoxToolbarPlugin', () => {
     expect(closeToolbar).toHaveBeenCalledTimes(1)
   })
 
-  it('starts movement only from the shared resizer border edge', () => {
+  it('starts movement from the shared resizer border edge', () => {
     const plugin = new TextBoxToolbarPlugin()
     const block = makeBlock()
     const resizer = document.createElement('shape-resizer')
@@ -121,6 +121,41 @@ describe('TextBoxToolbarPlugin', () => {
       cancelable: true,
     })
     Object.defineProperty(event, 'target', {value: edge})
+
+    ;(plugin as any)._onPointerDown(event)
+
+    expect(selectBlock).toHaveBeenCalledOnceWith(block)
+    expect(startDrag).toHaveBeenCalledOnceWith(event, block)
+    expect(event.defaultPrevented).toBeTrue()
+    block.hostElement.remove()
+  })
+
+  it('selects and starts movement from the text-box object handle', () => {
+    const plugin = new TextBoxToolbarPlugin()
+    const block = makeBlock()
+    const handle = document.createElement('button')
+    handle.className = 'text-box-block__object-handle'
+    block.hostElement.appendChild(handle)
+    document.body.appendChild(block.hostElement)
+    const selectBlock = jasmine.createSpy('selectBlock')
+    const startDrag = jasmine.createSpy('startDrag')
+    ;(plugin as any).doc = {
+      root: {hostElement: block.hostElement},
+      getBlockById: () => block,
+      selection: {selectBlock},
+      readonlyManager: {isReadonly: () => false},
+      placement: {
+        getState: () => ({mode: 'absolute'}),
+        startDrag,
+      },
+    }
+    spyOn<any>(plugin, '_openToolbar')
+    const event = new PointerEvent('pointerdown', {
+      button: 0,
+      pointerId: 1,
+      cancelable: true,
+    })
+    Object.defineProperty(event, 'target', {value: handle})
 
     ;(plugin as any)._onPointerDown(event)
 

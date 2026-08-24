@@ -487,10 +487,8 @@ export type WordArtToolbarAction =
       box-sizing: border-box;
       width: min(288px, calc(100vw - 86px));
       max-width: 100%;
-      max-height: min(520px, calc(100vh - 24px));
       padding: 10px;
-      overflow: auto;
-      overscroll-behavior: contain;
+      overflow: visible;
       border: 1px solid var(--bc-float-toolbar-divider-color, #e2e8f0);
       border-radius: 12px;
       background: var(--bc-float-toolbar-bg, #fff);

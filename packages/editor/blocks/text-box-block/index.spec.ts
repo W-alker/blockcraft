@@ -33,6 +33,7 @@ import {ShapeResizerComponent} from '../shape-block'
           <div class="text-box-block__content" contenteditable="true">
             <p style="flex: none; height: 240px; margin: 0">裁剪内容</p>
           </div>
+          <button class="text-box-block__object-handle"></button>
           <shape-resizer [target]="surface"></shape-resizer>
         </div>
       </div>
@@ -292,6 +293,9 @@ describe('TextBoxBlockSchema', () => {
     const resizer = fixture.nativeElement.querySelector(
       'shape-resizer',
     ) as HTMLElement
+    const objectHandle = fixture.nativeElement.querySelector(
+      '.text-box-block__object-handle',
+    ) as HTMLElement
 
     try {
       content.focus()
@@ -305,11 +309,15 @@ describe('TextBoxBlockSchema', () => {
       expect(style.overflowY).toBe('hidden')
       expect(content.scrollHeight).toBeGreaterThan(content.clientHeight)
       expect(getComputedStyle(resizer).display).toBe('block')
+      expect(getComputedStyle(objectHandle).display).toBe('none')
 
       // Text editing shows no frame chrome: without whole-object selection
-      // the resizer must fall back to its hidden default.
+      // the resizer must fall back to its hidden default while the compact
+      // object handle becomes available without drawing a frame outline.
       resizer.closest('.text-box-block')!.classList.remove('selected')
       expect(getComputedStyle(resizer).display).toBe('none')
+      expect(getComputedStyle(objectHandle).display).toBe('flex')
+      expect(getComputedStyle(objectHandle).pointerEvents).toBe('auto')
     } finally {
       fixture.destroy()
       TestBed.resetTestingModule()
@@ -612,6 +620,17 @@ describe('TextBoxBlockSchema', () => {
           .querySelector('shape-resizer')
           ?.getAttribute('data-bc-print-exclude'),
       ).toBe('true')
+      const objectHandle = fixture.nativeElement.querySelector(
+        '.text-box-block__object-handle',
+      ) as HTMLButtonElement | null
+      expect(objectHandle).not.toBeNull()
+      expect(objectHandle?.getAttribute('aria-label'))
+        .toBe('选中文本框并拖动')
+      expect(objectHandle?.hasAttribute(
+        'data-bc-selection-interaction-ignore',
+      )).toBeTrue()
+      expect(objectHandle?.hasAttribute('data-bc-placement-pick-ignore'))
+        .toBeTrue()
       const frameHitTarget = fixture.nativeElement.querySelector(
         '.text-box-block__frame-hit-target',
       ) as SVGPathElement | null
@@ -633,6 +652,9 @@ describe('TextBoxBlockSchema', () => {
       fixture.detectChanges()
       expect(content.getAttribute('contenteditable')).toBe('false')
       expect(fixture.nativeElement.querySelector('shape-resizer')).toBeNull()
+      expect(fixture.nativeElement.querySelector(
+        '.text-box-block__object-handle',
+      )).toBeNull()
     } finally {
       fixture.destroy()
       yDoc.destroy()
@@ -755,6 +777,7 @@ describe('TextBoxBlockSchema', () => {
     })
     expect(TextBoxBlockSchema.metadata.selectionInteraction).toEqual({
       frame: 'selectable',
+      escapeToFrame: 'always',
       editingBoundary: 'absolute',
     })
     expect(TextBoxBlockSchema.metadata.placement?.modes).toEqual([

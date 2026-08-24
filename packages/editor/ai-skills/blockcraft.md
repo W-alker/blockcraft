@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-08-23 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-08-24 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -1007,8 +1007,9 @@ teardown paths leave Yjs unchanged.
 The selected WordArt block uses the same compact two-level toolbar structure as
 TextBox: a left/right vertical rail keeps **布局 / 艺术字格式 / 删除** visible,
 while layout and formatting open as one click-owned secondary card inside the
-same connected Overlay. Both secondary cards are capped at 288px; the format
-card groups the existing controls into 字体、填充与轮廓、效果 sections. Its generic form fields
+same connected Overlay. Both secondary cards are 288px wide and size to their
+active content without an internal scrollbar; the format card groups the
+existing controls into 字体、填充与轮廓、效果 sections. Its generic form fields
 use CSES Select、Segmented、InputNumber、ColorPicker、Slider and Switch
 components. Opening or switching a card writes no model data; slider previews
 stay local, and only a concrete or completed control action emits the existing
@@ -1183,8 +1184,13 @@ doc.selection.getSelectedText()         // string
 // descendant-rendered borders mark their hit region with
 // `data-bc-selection-interaction-frame`, while editable descendants stay native;
 // `editingBoundary: 'always' | 'absolute'` controls Enter/direct-frame
-// double-click entry and Escape back to the frame. The built-in text box is
-// transparent like Mermaid in relative flow and closed only when absolute.
+// double-click entry. `escapeToFrame: 'always' | 'absolute'` independently
+// controls Escape from a direct editable child back to whole-frame selection.
+// When omitted, Escape follows `editingBoundary` for backward compatibility.
+// The built-in text box keeps ordinary relative-flow entry but always exposes
+// Escape as a reliable keyboard path to its object frame. Editable WordArt
+// declares `always` for both fields: core Selection owns Enter/Escape while
+// direct text clicks remain native.
 
 // Type-narrowing example
 const sel = doc.selection.value

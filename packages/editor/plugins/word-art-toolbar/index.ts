@@ -4,11 +4,9 @@ import {
 } from '@angular/cdk/overlay'
 import {fromEvent, Subject, Subscription, takeUntil} from 'rxjs'
 import {
-  BindHotKey,
   closetBlockId,
   DocPlugin,
   getPositionWithOffset,
-  UIEventStateContext,
 } from '../../framework'
 import {BlockSelection} from '../../framework/modules/selection/blockSelection'
 import {isSelectionAlive} from '../../framework/modules/selection/liveness'
@@ -37,8 +35,8 @@ export class WordArtToolbarPlugin extends DocPlugin {
   private _toolbarRef?: OverlayRef
   private _activeBlockId?: string
   private _activeBlockHost?: HTMLElement
-  private _activeResizer?: HTMLElement
   private _toolbarPointerActive = false
+  private _toolbarPointerGraceUntil = 0
   private _toolbarPositionFrame: number | null = null
   private _closing = false
   private _inlineObject?: InlineObjectInteractionController
@@ -101,46 +99,12 @@ export class WordArtToolbarPlugin extends DocPlugin {
       this._toolbarPositionFrame = null
     }
     this._toolbarRef = undefined
-    this._activeResizer?.style.removeProperty('display')
-    this._activeResizer = undefined
+    this._activeBlockHost?.classList.remove('word-art-block--object-selected')
     this._activeBlockId = undefined
     this._activeBlockHost = undefined
     this._toolbarPointerActive = false
+    this._toolbarPointerGraceUntil = 0
     this._closing = false
-  }
-
-  @BindHotKey({key: 'Enter'}, {flavour: 'word-art'})
-  onEnterEditing(ctx: UIEventStateContext): true | void {
-    const selection = ctx.get('keyboardState').selection
-    if (
-      !selection.isInSameBlock ||
-      selection.anchor.type !== 'selected' ||
-      selection.head.type !== 'selected'
-    ) {
-      return
-    }
-    const block = selection.firstBlock
-    if (block.flavour !== 'word-art') return
-    ctx.preventDefault()
-    ;(block as BlockCraft.IBlockComponents['word-art']).enterEditing()
-    return true
-  }
-
-  @BindHotKey({key: 'Escape'}, {flavour: 'word-art'})
-  onEscapeEditing(ctx: UIEventStateContext): true | void {
-    const selection = ctx.get('keyboardState').selection
-    if (
-      !selection.isInSameBlock ||
-      selection.anchor.type !== 'text' ||
-      selection.head.type !== 'text'
-    ) {
-      return
-    }
-    const block = selection.firstBlock
-    if (block.flavour !== 'word-art') return
-    ctx.preventDefault()
-    this.doc.selection.selectBlock(block)
-    return true
   }
 
   private _openOverlays(block: BlockCraft.IBlockComponents['word-art']): void {
@@ -151,10 +115,7 @@ export class WordArtToolbarPlugin extends DocPlugin {
     if (!block.hostElement.isConnected) return
     this._activeBlockId = block.id
     this._activeBlockHost = block.hostElement
-    this._activeResizer =
-      block.hostElement.querySelector<HTMLElement>('shape-resizer') ??
-      undefined
-    this._activeResizer?.style.setProperty('display', 'block')
+    this._activeBlockHost.classList.add('word-art-block--object-selected')
 
     const toolbar =
       this.doc.overlayService.createConnectedOverlay<WordArtToolbarComponent>(
@@ -250,6 +211,7 @@ export class WordArtToolbarPlugin extends DocPlugin {
 
     if (this._isToolbarTarget(target)) {
       this._toolbarPointerActive = true
+      this._toolbarPointerGraceUntil = 0
       return
     }
 
@@ -261,13 +223,14 @@ export class WordArtToolbarPlugin extends DocPlugin {
     }
 
     const moveEdge = target?.closest('.shape-resizer__move-edge')
+    const objectHandle = target?.closest('.word-art-block__object-handle')
     if (target?.closest('shape-resizer') && !moveEdge) return
 
     const block = this._resolvePointerBlock(target)
     if (!block) return
     const readonly = this.doc.readonlyManager.isReadonly(block)
 
-    if (moveEdge) {
+    if (moveEdge || objectHandle) {
       event.preventDefault()
       event.stopPropagation()
       this.doc.selection.selectBlock(block)
@@ -284,13 +247,16 @@ export class WordArtToolbarPlugin extends DocPlugin {
       return
     }
     const editorTarget = !!target?.closest('.word-art-block__editor')
+    // A pointer inside the real WordArt surface is an explicit return to text
+    // editing. Close object chrome before the browser projects its native
+    // Range, even if a toolbar button still temporarily owns focus.
+    if (this._toolbarRef) this.closeOverlays()
     if (editorTarget && this._isEditingBlock(block)) return
     if (!editorTarget) {
       event.preventDefault()
       event.stopPropagation()
     }
     block.enterEditing()
-    this._openOverlays(block)
   }
 
   private _onSelectionChange(selection: BlockSelection | null): void {
@@ -308,6 +274,18 @@ export class WordArtToolbarPlugin extends DocPlugin {
       !selection.isInSameBlock ||
       selection.firstBlock.flavour !== 'word-art'
     ) {
+      this.closeOverlays()
+      return
+    }
+    if (
+      selection.anchor.type !== 'selected' ||
+      selection.head.type !== 'selected'
+    ) {
+      // Clicking a control in the object toolbar can transiently make the
+      // browser report the editable WordArt Range again. The toolbar's own
+      // pointer/focus ownership wins over that intermediate DOM projection;
+      // a real return to the WordArt editor still closes object chrome.
+      if (this._toolbarRef && this._toolbarOwnsInteraction()) return
       this.closeOverlays()
       return
     }
@@ -339,6 +317,9 @@ export class WordArtToolbarPlugin extends DocPlugin {
 
   private _endToolbarPointerInteraction(): void {
     this._toolbarPointerActive = false
+    // Browser selection/focus projection may settle just after pointerup.
+    // Keep a short ownership grace without scheduling a timer or retaining DOM.
+    this._toolbarPointerGraceUntil = Date.now() + 100
   }
 
   private _scheduleToolbarPositionUpdate(): void {
@@ -353,6 +334,7 @@ export class WordArtToolbarPlugin extends DocPlugin {
 
   private _toolbarOwnsInteraction(): boolean {
     if (this._toolbarPointerActive) return true
+    if (Date.now() < this._toolbarPointerGraceUntil) return true
     const ownerDocument =
       this._toolbarRef?.overlayElement.ownerDocument ?? document
     const activeElement = ownerDocument.activeElement

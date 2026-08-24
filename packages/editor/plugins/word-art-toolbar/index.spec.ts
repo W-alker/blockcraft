@@ -5,50 +5,6 @@ import {WordArtTransformOverlayComponent} from './word-art-transform-overlay.com
 import {WordArtToolbarComponent} from './word-art-toolbar.component'
 
 describe('WordArtToolbarPlugin', () => {
-  it('enters editing from whole-object selection on Enter', () => {
-    const enterEditing = jasmine.createSpy('enterEditing')
-    const plugin = new WordArtToolbarPlugin()
-    const preventDefault = jasmine.createSpy('preventDefault')
-    const context = {
-      get: () => ({
-        selection: {
-          isInSameBlock: true,
-          anchor: {type: 'selected'},
-          head: {type: 'selected'},
-          firstBlock: {flavour: 'word-art', enterEditing},
-        },
-      }),
-      preventDefault,
-    } as any
-
-    expect(plugin.onEnterEditing(context)).toBeTrue()
-    expect(preventDefault).toHaveBeenCalled()
-    expect(enterEditing).toHaveBeenCalled()
-  })
-
-  it('returns editing to whole-object selection on Escape', () => {
-    const block = {flavour: 'word-art'}
-    const selectBlock = jasmine.createSpy('selectBlock')
-    const plugin = new WordArtToolbarPlugin()
-    ;(plugin as any).doc = {selection: {selectBlock}}
-    const preventDefault = jasmine.createSpy('preventDefault')
-    const context = {
-      get: () => ({
-        selection: {
-          isInSameBlock: true,
-          anchor: {type: 'text'},
-          head: {type: 'text'},
-          firstBlock: block,
-        },
-      }),
-      preventDefault,
-    } as any
-
-    expect(plugin.onEscapeEditing(context)).toBeTrue()
-    expect(preventDefault).toHaveBeenCalled()
-    expect(selectBlock).toHaveBeenCalledOnceWith(block)
-  })
-
   it('enters editing immediately from the text surface without arming drag', () => {
     const plugin = new WordArtToolbarPlugin()
     const enterEditing = jasmine.createSpy('enterEditing')
@@ -83,7 +39,7 @@ describe('WordArtToolbarPlugin', () => {
     }
     spyOn<any>(plugin, '_resolvePointerBlock').and.returnValue(block)
     spyOn<any>(plugin, '_isEditingBlock').and.returnValue(false)
-    spyOn<any>(plugin, '_openOverlays')
+    const openOverlays = spyOn<any>(plugin, '_openOverlays')
     const event = new PointerEvent('pointerdown', {
       button: 0,
       pointerId: 22,
@@ -102,6 +58,7 @@ describe('WordArtToolbarPlugin', () => {
     expect(startRelativeDrag).not.toHaveBeenCalled()
     expect(preventDefault).not.toHaveBeenCalled()
     expect(stopPropagation).not.toHaveBeenCalled()
+    expect(openOverlays).not.toHaveBeenCalled()
     hostElement.remove()
   })
 
@@ -141,6 +98,92 @@ describe('WordArtToolbarPlugin', () => {
     hostElement.remove()
   })
 
+  it('opens object chrome only for a whole WordArt selection', () => {
+    const plugin = new WordArtToolbarPlugin()
+    const block = {
+      id: 'word-art-selected',
+      flavour: 'word-art',
+      hostElement: document.createElement('div'),
+    } as any
+    ;(plugin as any).doc = {
+      isReadonly: false,
+      model: {exists: () => true},
+      readonlyManager: {isReadonly: () => false},
+    }
+    const openOverlays = spyOn<any>(plugin, '_openOverlays')
+
+    ;(plugin as any)._onSelectionChange({
+      isInSameBlock: true,
+      anchor: {type: 'selected', blockId: block.id, block},
+      head: {type: 'selected', blockId: block.id, block},
+      firstBlock: block,
+      firstBlockId: block.id,
+      lastBlockId: block.id,
+      commonParent: block.id,
+    })
+
+    expect(openOverlays).toHaveBeenCalledOnceWith(block)
+  })
+
+  it('closes object chrome while WordArt text is edited', () => {
+    const plugin = new WordArtToolbarPlugin()
+    const block = {
+      id: 'word-art-editing',
+      flavour: 'word-art',
+      hostElement: document.createElement('div'),
+    } as any
+    ;(plugin as any).doc = {
+      isReadonly: false,
+      model: {exists: () => true},
+      readonlyManager: {isReadonly: () => false},
+    }
+    const closeOverlays = spyOn(plugin, 'closeOverlays')
+
+    ;(plugin as any)._onSelectionChange({
+      isInSameBlock: true,
+      anchor: {type: 'text', blockId: block.id, block},
+      head: {type: 'text', blockId: block.id, block},
+      firstBlock: block,
+      firstBlockId: block.id,
+      lastBlockId: block.id,
+      commonParent: block.id,
+    })
+
+    expect(closeOverlays).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps object chrome through a toolbar-owned text-range transition', () => {
+    const plugin = new WordArtToolbarPlugin()
+    const block = {
+      id: 'word-art-toolbar-transition',
+      flavour: 'word-art',
+      hostElement: document.createElement('div'),
+    } as any
+    ;(plugin as any).doc = {
+      isReadonly: false,
+      model: {exists: () => true},
+      readonlyManager: {isReadonly: () => false},
+    }
+    ;(plugin as any)._toolbarRef = {
+      overlayElement: document.createElement('div'),
+    }
+    ;(plugin as any)._toolbarPointerActive = true
+    ;(plugin as any)._endToolbarPointerInteraction()
+    const closeOverlays = spyOn(plugin, 'closeOverlays')
+
+    ;(plugin as any)._onSelectionChange({
+      isInSameBlock: true,
+      anchor: {type: 'text', blockId: block.id, block},
+      head: {type: 'text', blockId: block.id, block},
+      firstBlock: block,
+      firstBlockId: block.id,
+      lastBlockId: block.id,
+      commonParent: block.id,
+    })
+
+    expect(closeOverlays).not.toHaveBeenCalled()
+  })
+
   it('focuses text from blank surface space without arming drag', () => {
     const plugin = new WordArtToolbarPlugin()
     const enterEditing = jasmine.createSpy('enterEditing')
@@ -170,7 +213,7 @@ describe('WordArtToolbarPlugin', () => {
     }
     spyOn<any>(plugin, '_resolvePointerBlock').and.returnValue(block)
     spyOn<any>(plugin, '_isEditingBlock').and.returnValue(false)
-    spyOn<any>(plugin, '_openOverlays')
+    const openOverlays = spyOn<any>(plugin, '_openOverlays')
     const event = new PointerEvent('pointerdown', {
       button: 0,
       pointerId: 23,
@@ -188,6 +231,7 @@ describe('WordArtToolbarPlugin', () => {
     expect(startRelativeDrag).not.toHaveBeenCalled()
     expect(preventDefault).toHaveBeenCalledTimes(1)
     expect(stopPropagation).toHaveBeenCalledTimes(1)
+    expect(openOverlays).not.toHaveBeenCalled()
     hostElement.remove()
   })
 
@@ -233,6 +277,50 @@ describe('WordArtToolbarPlugin', () => {
     ;(plugin as any)._onPointerDown(event)
 
     expect(enterEditing).not.toHaveBeenCalled()
+    expect(selectBlock).toHaveBeenCalledOnceWith(block)
+    expect(startDrag).toHaveBeenCalledOnceWith(event, block)
+    expect(event.defaultPrevented).toBeTrue()
+    hostElement.remove()
+  })
+
+  it('selects and moves from the WordArt object handle', () => {
+    const plugin = new WordArtToolbarPlugin()
+    const startDrag = jasmine.createSpy('startDrag')
+    const selectBlock = jasmine.createSpy('selectBlock')
+    const hostElement = document.createElement('div')
+    const surface = document.createElement('div')
+    surface.className = 'word-art-block__surface'
+    const handle = document.createElement('button')
+    handle.className = 'word-art-block__object-handle'
+    surface.appendChild(handle)
+    hostElement.appendChild(surface)
+    document.body.appendChild(hostElement)
+    const block = {
+      id: 'word-art-handle',
+      flavour: 'word-art',
+      hostElement,
+    } as any
+    ;(plugin as any).doc = {
+      selection: {selectBlock},
+      readonlyManager: {isReadonly: () => false},
+      placement: {
+        getState: () => ({mode: 'absolute'}),
+        startDrag,
+      },
+      dragController: {state: 'idle'},
+    }
+    spyOn<any>(plugin, '_resolvePointerBlock').and.returnValue(block)
+    spyOn<any>(plugin, '_openOverlays')
+    const event = new PointerEvent('pointerdown', {
+      button: 0,
+      pointerId: 27,
+      bubbles: true,
+      cancelable: true,
+    })
+    handle.dispatchEvent(event)
+
+    ;(plugin as any)._onPointerDown(event)
+
     expect(selectBlock).toHaveBeenCalledOnceWith(block)
     expect(startDrag).toHaveBeenCalledOnceWith(event, block)
     expect(event.defaultPrevented).toBeTrue()
@@ -347,14 +435,16 @@ describe('WordArtToolbarPlugin', () => {
       'wordArtBlock',
       block,
     )
-    expect(resizer.style.display).toBe('block')
+    expect(hostElement.classList.contains('word-art-block--object-selected'))
+      .toBeTrue()
 
     panelChange.next('format')
     tick(17)
     expect(overlayRef.updatePosition).toHaveBeenCalledTimes(1)
 
     plugin.closeOverlays()
-    expect(resizer.style.display).toBe('')
+    expect(hostElement.classList.contains('word-art-block--object-selected'))
+      .toBeFalse()
     action.complete()
     panelChange.complete()
     onPropsChange.complete()

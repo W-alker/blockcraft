@@ -1,3 +1,5 @@
+@use "object-focus-handle" as *;
+
 [data-blockcraft-root="true"] .text-box-block,
 .bc-snapshot-viewer .text-box-block {
   --bc-text-box-background-color: #ffffff;
@@ -26,6 +28,29 @@
     isolation: isolate;
     box-sizing: border-box;
     transform-origin: center center;
+  }
+
+  .text-box-block__object-handle {
+    @include object-focus-handle;
+  }
+
+  &:hover .text-box-block__object-handle,
+  &:focus-within .text-box-block__object-handle {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  @media (hover: none) {
+    .text-box-block__object-handle {
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
+
+  // Whole-object selection already exposes the full resizer chrome. Keep the
+  // compact entry handle out of that state, including hover-less devices.
+  &.selected .text-box-block__object-handle {
+    display: none;
   }
 
   .text-box-block__geometry {

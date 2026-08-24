@@ -46,6 +46,14 @@ export interface BlockSelectionInteractionCapability {
   /** Direct interaction with the block's own frame selects the whole Block. */
   frame: 'selectable'
   /**
+   * Optional Escape transition from a direct editable child back to the frame.
+   * This is independent from `editingBoundary`, so a relative-flow container
+   * can preserve ordinary Enter/double-click editing while still exposing a
+   * reliable keyboard path to whole-object selection. When omitted, Escape
+   * retains the `editingBoundary` policy for backward compatibility.
+   */
+  escapeToFrame?: 'always' | 'absolute'
+  /**
    * Optional transition between frame selection and editable descendants.
    * `absolute` keeps relative flow aligned with transparent blocks such as
    * Mermaid while making the same Block a closed object in placement layout.

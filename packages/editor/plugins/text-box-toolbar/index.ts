@@ -319,6 +319,7 @@ export class TextBoxToolbarPlugin extends DocPlugin {
 
     const resizer = target?.closest('shape-resizer')
     const moveEdge = target?.closest('.shape-resizer__move-edge')
+    const objectHandle = target?.closest('.text-box-block__object-handle')
     const block = this._resolvePointerBlock(target)
     if (!block) return
 
@@ -334,7 +335,7 @@ export class TextBoxToolbarPlugin extends DocPlugin {
     // Ordinary frame selection is owned by Selection through the Schema's
     // selectable-frame capability. This Plugin only claims the explicit
     // border-move gesture that also starts a placement drag.
-    if (!moveEdge) return
+    if (!moveEdge && !objectHandle) return
     const readonly = this.doc.readonlyManager.isReadonly(block)
 
     event.preventDefault()

@@ -21,8 +21,11 @@ import {
   imports: [ShapeResizerComponent],
   template: `
     <div data-blockcraft-root="true">
-      <div class="word-art-block" [class.focused]="focused">
+      <div
+        class="word-art-block"
+        [class.word-art-block--object-selected]="objectSelected">
         <div #surface class="word-art-block__surface">
+          <button class="word-art-block__object-handle"></button>
           <shape-resizer [target]="surface"></shape-resizer>
         </div>
       </div>
@@ -32,7 +35,7 @@ import {
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
 })
 class WordArtTransformVisibilityHarness {
-  focused = true
+  objectSelected = true
 }
 
 @Component({
@@ -131,7 +134,7 @@ describe('Word art block domain', () => {
     } as any)).toBe(2_000)
   })
 
-  it('shows transform controls for the editable focused state', async () => {
+  it('switches between the compact handle and whole-object transform chrome', async () => {
     await TestBed.configureTestingModule({
       imports: [WordArtTransformVisibilityHarness],
     }).compileComponents()
@@ -140,12 +143,19 @@ describe('Word art block domain', () => {
     const resizer = fixture.nativeElement.querySelector(
       'shape-resizer',
     ) as HTMLElement
+    const objectHandle = fixture.nativeElement.querySelector(
+      '.word-art-block__object-handle',
+    ) as HTMLButtonElement
 
     expect(getComputedStyle(resizer).display).toBe('block')
+    expect(getComputedStyle(objectHandle).display).toBe('none')
 
-    fixture.componentInstance.focused = false
+    fixture.componentInstance.objectSelected = false
     fixture.detectChanges()
+    objectHandle.focus()
     expect(getComputedStyle(resizer).display).toBe('none')
+    expect(getComputedStyle(objectHandle).display).toBe('flex')
+    expect(getComputedStyle(objectHandle).pointerEvents).toBe('auto')
 
     fixture.destroy()
     TestBed.resetTestingModule()
@@ -246,6 +256,14 @@ describe('Word art block domain', () => {
       expect(editor.style.transform).toBe('')
       expect(editor.getAttribute('contenteditable')).toBe('true')
       expect(editor.isContentEditable).toBeTrue()
+      const objectHandle = fixture.nativeElement.querySelector(
+        '.word-art-block__object-handle',
+      ) as HTMLButtonElement | null
+      expect(objectHandle).not.toBeNull()
+      expect(objectHandle?.getAttribute('aria-label')).toBe('选中艺术字并拖动')
+      expect(objectHandle?.hasAttribute(
+        'data-bc-selection-interaction-ignore',
+      )).toBeTrue()
       expect(
         fixture.nativeElement.querySelectorAll('.shape-resizer__move-edge')
           .length,
@@ -289,6 +307,9 @@ describe('Word art block domain', () => {
       expect(
         fixture.nativeElement.querySelector('.shape-resizer__move-edge'),
       ).toBeNull()
+      expect(fixture.nativeElement.querySelector(
+        '.word-art-block__object-handle',
+      )).toBeNull()
     } finally {
       document.getSelection()?.removeAllRanges()
       fixture.destroy()
@@ -309,6 +330,11 @@ describe('Word art block domain', () => {
       ),
     ).toBeFalse()
     expect(WordArtBlockSchema.metadata.plainTextOnly).toBeTrue()
+    expect(WordArtBlockSchema.metadata.selectionInteraction).toEqual({
+      frame: 'selectable',
+      escapeToFrame: 'always',
+      editingBoundary: 'always',
+    })
   })
 
   it('strips rich inline attributes and embeds at creation time', () => {

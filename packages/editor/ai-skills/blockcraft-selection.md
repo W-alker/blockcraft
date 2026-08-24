@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying selection behavior or when the L1 quick reference in `blockcraft.md` isn't enough.
 >
-> Last updated: 2026-08-23 | Source of truth: `framework/modules/selection/`
+> Last updated: 2026-08-24 | Source of truth: `framework/modules/selection/`
 
 ## Architecture Overview
 
@@ -664,8 +664,11 @@ Selection scope and frame interaction are separate contracts. A Block can
 declare `metadata.selectionInteraction.frame: 'selectable'` to delegate direct
 frame selection to Selection in every placement. Its optional
 `editingBoundary: 'always' | 'absolute'` controls when Enter or a direct-frame
-double-click enters the first editable descendant and Escape from a direct
-editable child returns to the frame. Targets inside descendant Blocks remain
+double-click enters the first editable descendant. The independent
+`escapeToFrame: 'always' | 'absolute'` capability controls when Escape from a
+direct editable child selects the frame. When omitted, the Escape transition
+falls back to `editingBoundary` so existing custom schemas keep their behavior.
+Targets inside descendant Blocks remain
 in the native text pipeline, so word selection, caret placement and IME are
 unchanged. The Block host is an implicit frame hit target; descendant-rendered
 border regions opt in explicitly with `data-bc-selection-interaction-frame`.
@@ -679,12 +682,19 @@ pointerdown and the new text caret; Selection treats that as replacement intent
 instead of resurrecting the previous Ctrl/Cmd+A range.
 
 The built-in text box combines placement-aware scope and interaction. In
-relative flow it is transparent like Mermaid: Enter/Escape/double-click are not
+relative flow it is transparent like Mermaid: Enter/double-click are not
 repurposed, edge arrows use the normal flow ladder, and Ctrl/Cmd+A starts with
-the active editable child before climbing toward root. In an absolute placement
-plane it resolves to a closed container: core Selection fences native arrow
-escape and caps repeated Ctrl/Cmd+A at the object. No Plugin should duplicate
-these rules.
+the active editable child before climbing toward root. Its
+`escapeToFrame: 'always'` declaration still lets a collapsed direct-child caret
+return to whole-frame selection. In an absolute placement plane it resolves to
+a closed container: core Selection fences native arrow escape and caps repeated
+Ctrl/Cmd+A at the object. No Plugin should duplicate these rules.
+
+The built-in editable `word-art` frame declares both interaction transitions as
+`always`. Because its Y.Text lives on the frame Block itself, Escape first tests
+the current editable Block before falling back to its parent; it therefore
+selects WordArt itself, while a paragraph inside a text box still selects its
+container parent. Direct WordArt text clicks stay in the native caret pipeline.
 
 `SelectionScopePolicy` keeps scope-specific behavior out of callers:
 

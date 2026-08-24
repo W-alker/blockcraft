@@ -57,6 +57,7 @@ export const TextBoxBlockSchema: IBlockSchemaOptions<TextBoxBlockModel> = {
     },
     selectionInteraction: {
       frame: 'selectable',
+      escapeToFrame: 'always',
       editingBoundary: 'absolute',
     },
     placement: {modes: ['relative', 'absolute']},

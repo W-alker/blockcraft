@@ -21,6 +21,23 @@ export function hasSelectableBlockFrame(
   return readSelectionInteraction(doc, block)?.frame === 'selectable'
 }
 
+/** Whether Escape from a direct editable child should select this frame. */
+export function allowsEscapeToBlockFrame(
+  doc: BlockCraft.Doc,
+  block: BlockCraft.BlockComponent | null | undefined,
+): block is BlockCraft.BlockComponent {
+  if (!block) return false
+  const interaction = readSelectionInteraction(doc, block)
+  const escapeToFrame = interaction?.escapeToFrame ?? interaction?.editingBoundary
+  if (escapeToFrame === 'always') return true
+  if (escapeToFrame !== 'absolute') return false
+  try {
+    return doc.placement?.isInAbsoluteLayout?.(block) === true
+  } catch {
+    return false
+  }
+}
+
 /** Whether this block currently owns a closed frame/child editing boundary. */
 export function hasClosedContainerEditingBoundary(
   doc: BlockCraft.Doc,

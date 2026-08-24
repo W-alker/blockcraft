@@ -88,6 +88,20 @@ const rotationTransform = (rotation: number): string =>
           [draggable]="false">
       }
 
+      @if (!isReadonly) {
+        <button
+          type="button"
+          class="text-box-block__object-handle"
+          data-bc-print-exclude="true"
+          data-bc-selection-interaction-ignore
+          data-bc-placement-pick-ignore
+          contenteditable="false"
+          aria-label="选中文本框并拖动"
+          title="选中文本框并拖动">
+          <i class="bc_icon bc_yidong" aria-hidden="true"></i>
+        </button>
+      }
+
       <div
         class="text-box-block__content children-render-container"
         [class.text-box-block__content--word-art]="wordArtPresentation"

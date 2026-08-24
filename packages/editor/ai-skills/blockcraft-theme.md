@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-20
+> Last updated: 2026-08-24
 
 ## Theme Structure
 
@@ -288,6 +288,15 @@ text-box prose uses a column layout whose last real child grows across remaining
 block-axis space, so native caret hit testing reaches the paragraph throughout
 the frame without a blank-area event handler. The WordArt presentation variant
 does not grow its last child because it owns vertical alignment itself.
+
+TextBox and editable WordArt share the internal `object-focus-handle` theme
+mixin, which renders their 24×14 top select/move handles straddling the frame
+edge so the contenteditable root cannot steal their hit target. Neither object
+adds an editing-state frame outline. TextBox hides its handle for `.selected`; WordArt uses the
+Plugin-owned `.word-art-block--object-selected` class because editable Blocks
+otherwise use `.focused` for both caret and whole-block coverage. Only that
+WordArt object class reveals `shape-resizer`; ordinary WordArt text focus keeps
+the resizer hidden.
 
 Snapshot Viewer creates the same common or block-specific variables and
 attributes on its block shells.

@@ -14,6 +14,87 @@ async function initialize(page: Page): Promise<void> {
   }, editorSelector)
 }
 
+test('flow text-box object handle and Escape select the whole frame', async ({
+  page,
+}) => {
+  await initialize(page)
+  const inserted = await page.evaluate(async selector => {
+    const editor = document.querySelector(selector)!
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor).doc
+    const snapshot = doc.schemas.createSnapshot('text-box', [
+      '流式文本框内容',
+      {width: 360, height: 180},
+    ])
+    doc.crud.insertBlockSnapshots(doc.rootId, 0, [snapshot])
+    await new Promise<void>(resolve =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    )
+    doc.getBlockById(snapshot.id).hostElement.scrollIntoView({block: 'center'})
+    doc.selection.setCursorAtBlock(snapshot.children[0].id, true, false)
+    return {
+      textBoxId: snapshot.id as string,
+      paragraphId: snapshot.children[0].id as string,
+    }
+  }, editorSelector)
+
+  const textBox = page.locator(
+    `${editorSelector} .text-box-block[data-block-id="${inserted.textBoxId}"]`,
+  )
+  const objectHandle = textBox.locator('.text-box-block__object-handle')
+  await expect(textBox).toBeVisible()
+  await expect(objectHandle).toBeVisible()
+  await expect(textBox).not.toHaveClass(/\bselected\b/)
+  expect(await textBox.evaluate(element => getComputedStyle(element).outlineStyle))
+    .toBe('none')
+
+  await objectHandle.click()
+
+  await expect.poll(() => page.evaluate(selector => {
+    const editor = document.querySelector(selector)!
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const selection = debug.getComponent(editor).doc.selection.value
+    return {
+      firstBlockId: selection?.firstBlockId ?? null,
+      startType: selection?.start?.type ?? null,
+    }
+  }, editorSelector)).toEqual({
+    firstBlockId: inserted.textBoxId,
+    startType: 'selected',
+  })
+  await expect(textBox.locator('shape-resizer')).toBeVisible()
+  await expect(objectHandle).toBeHidden()
+
+  await page.evaluate(({selector, paragraphId}) => {
+    const editor = document.querySelector(selector)!
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    debug.getComponent(editor).doc.selection.setCursorAtBlock(
+      paragraphId,
+      true,
+      false,
+    )
+  }, {selector: editorSelector, paragraphId: inserted.paragraphId})
+  await page.keyboard.press('Escape')
+
+  await expect.poll(() => page.evaluate(selector => {
+    const editor = document.querySelector(selector)!
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const selection = debug.getComponent(editor).doc.selection.value
+    return selection?.start?.type === 'selected'
+      ? selection.firstBlockId
+      : null
+  }, editorSelector))
+    .toBe(inserted.textBoxId)
+})
+
 test('flow text-box frame selects as an object and full select-all yields to a new text click', async ({
   page,
 }) => {
@@ -212,10 +293,10 @@ test('text-box keeps native focus, visible select-all, and layout-owned scope', 
       ? selection.firstBlockId
       : null
   }, editorSelector)).toBe(inserted.paragraphId)
-  await expect(textBox).toHaveClass(/\btext-box-block--editing\b/)
+  await expect(textBox).not.toHaveClass(/\bselected\b/)
   await expect(page.locator('[data-bc-text-box-toolbar]')).toBeVisible()
   await expect(paragraph).toHaveClass(/\bfocused\b/)
-  await expect(textBox.locator('shape-resizer')).toBeVisible()
+  await expect(textBox.locator('shape-resizer')).toBeHidden()
 
   await page.keyboard.press(
     process.platform === 'darwin' ? 'Meta+A' : 'Control+A',

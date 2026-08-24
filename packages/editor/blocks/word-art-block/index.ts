@@ -68,6 +68,11 @@ export const WordArtBlockSchema: IBlockSchemaOptions<WordArtBlockModel> = {
     icon: 'bc_icon bc_yishuzishengcheng',
     placeholder: '输入艺术字',
     plainTextOnly: true,
+    selectionInteraction: {
+      frame: 'selectable',
+      escapeToFrame: 'always',
+      editingBoundary: 'always',
+    },
     placement: {modes: ['relative', 'absolute']},
     virtualization: {
       estimateHeight: ({props}) => normalizeWordArtProps(props).height,

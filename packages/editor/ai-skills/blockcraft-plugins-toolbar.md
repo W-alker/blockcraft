@@ -410,16 +410,20 @@ new TextBoxToolbarPlugin();
 The Plugin does not implement the object/text selection state machine. The
 `text-box` Schema declares a selectable frame plus placement-aware scope and
 editing boundary. Core Selection selects a directly clicked frame in either
-layout. Relative flow otherwise behaves like Mermaid: descendant caret,
-double-click, Enter/Escape, arrows and Ctrl/Cmd+A remain in the ordinary document
-pipeline. Absolute placement activates frame/text Enter, double-click and Escape
-transitions, a closed container scope and capped edge navigation/select-all.
+layout. Relative flow otherwise behaves like Mermaid for descendant caret,
+double-click, Enter, arrows and Ctrl/Cmd+A, while `escapeToFrame: 'always'`
+provides a direct keyboard path back to whole-object selection. Absolute
+placement additionally activates frame/text Enter and double-click transitions,
+a closed container scope and capped edge navigation/select-all.
 The Plugin only observes the result: a whole text-box selection opens its
 connected toolbar and resize/rotation handles; a caret or range inside closes
 the object chrome.
 
 Explicit resizer handles opt out of the generic frame pointer capture and
 remain Plugin-owned so resize and relative reorder gestures still work.
+The hover/focus-revealed `.text-box-block__object-handle` uses the same ownership:
+clicking it selects the whole text box and the pointer gesture moves the object,
+without adding an editing-state outline or intercepting the inner text surface.
 Within the inner editing host, ordinary prose uses a column layout whose last
 real child owns any remaining block-axis space. Browser caret hit testing can
 therefore resolve fixed-frame whitespace without a Plugin-level blank-area
@@ -438,8 +442,11 @@ outline and stroke style. Picture fill accepts either an `http(s)` image link
 or a local image uploaded through the host `DocFileService`; both persist the
 resolved URL in `bgi`.
 **文字** combines WordArt presets with font, size, alignment, solid/gradient
-fill, outline, shadow and transform controls. Preset IDs are never persisted,
-and detailed `wa` edits remain one canonical serialized value-object write.
+fill, outline, shadow and transform controls. Applying a whole-style preset
+preserves the text box's current font size (or its neutral inherited 16px size)
+instead of importing the standalone WordArt preset's display size. Preset IDs
+are never persisted, and detailed `wa` edits remain one canonical serialized
+value-object write.
 The **布局** rail entry uses the semantic `bc_buju` icon.
 
 **文字** also owns the **文字方向** switch, which writes the frame's `wm` prop
@@ -510,15 +517,25 @@ paragraph. Gesture cancellation never writes a temporary root-flow Block.
 new WordArtToolbarPlugin();
 ```
 
-This zero-config Plugin owns the `word-art` object/edit dual state. Clicking
+The `word-art` Schema and core Selection own the object/edit dual state. Clicking
 text or blank space enters the direct Y.Text editor without arming object
 movement; once editing, normal text clicks use the browser's native caret
-placement. Relative reorder or absolute placement drag starts only from the
-four invisible hit regions on the visible selection border. The eight resize
-handles and rotation handle keep higher hit priority, and no separate move
-handle is rendered. Enter also enters editing; Escape returns to whole-object
-selection. Readonly WordArt stays selectable but does not open mutation
+placement. A compact top `.word-art-block__object-handle`, matching the text-box
+handle, selects the whole object and starts relative reorder or absolute
+placement drag. The four invisible selected-border hit regions remain available
+for movement, and the eight resize handles plus rotation handle keep higher hit
+priority. Core Selection handles Enter into editing and Escape back to
+whole-object selection through Schema metadata; the Plugin no longer duplicates
+those hotkeys. Readonly WordArt stays selectable but does not open mutation
 controls.
+
+Object chrome is exclusive to a whole-object selection. The Plugin applies
+`.word-art-block--object-selected`, opens the connected settings rail and lets
+the bundled theme reveal `ShapeResizerComponent`. A caret or range in WordArt's
+Y.Text closes the rail, removes that class and hides the resizer; no editing-state
+outline is added. Toolbar-owned pointer/focus settling is ignored so opening
+**艺术字格式** cannot flash closed on a transient native text Range; an explicit
+pointer back into the WordArt surface still closes object chrome immediately.
 
 The connected toolbar now follows the same two-level object pattern as TextBox.
 Its narrow vertical rail exposes **布局 / 艺术字格式 / 删除** and sits on the
@@ -529,9 +546,9 @@ secondary card whose local tabs group the existing controls into 字体、填充
 轮廓、效果. Only one secondary card is visible, and panel switching stays
 inside the same block-owned connected Overlay without writing document data.
 The Plugin repositions that Overlay on the next animation frame after card
-geometry changes. Both secondary cards are capped at 288px rather than
-expanding to the former wide settings surfaces. A grouped WordArt omits the
-complete 布局 rail entry and card.
+geometry changes. Both secondary cards are 288px wide and let their active-tab
+content determine height without introducing an internal scrollbar. A grouped
+WordArt omits the complete 布局 rail entry and card.
 
 The formatting card continues to expose one of 10 safe font families, font
 size, solid/linear-gradient fills, outline, shadow toggle, letter spacing,
@@ -550,7 +567,9 @@ originating control is open inside this toolbar.
 
 The real WordArt surface owns `ShapeResizerComponent` and
 `calculateWordArtResize()` while the Plugin creates only the connected
-toolbar. Keeping text, outline and handles in one transform coordinate system
+toolbar. The separate top handle uses
+`data-bc-selection-interaction-ignore` so its move gesture remains Plugin-owned.
+Keeping text, outline and handles in one transform coordinate system
 prevents rotated resize previews from drifting. Corners preserve the object
 aspect ratio and preview the scaled font size; left/right reflow width,
 top/bottom adjust height, and the rotation handle commits normalized degrees.

@@ -1041,7 +1041,11 @@ describe('SelectionKeyboard – placement-aware frame interaction', () => {
     doc.schemas.get.and.callFake((flavour: string) => ({
       metadata: {
         selectionInteraction: flavour === 'text-box'
-          ? {frame: 'selectable', editingBoundary: 'absolute'}
+          ? {
+              frame: 'selectable',
+              escapeToFrame: 'always',
+              editingBoundary: 'absolute',
+            }
           : undefined,
       },
     }));
@@ -1084,6 +1088,59 @@ describe('SelectionKeyboard – placement-aware frame interaction', () => {
     expect(doc.selection.selectBlock).toHaveBeenCalledOnceWith(frame);
   });
 
+  it('keeps editingBoundary as the Escape fallback for existing schemas', () => {
+    const {doc, keyboard, frame, child} = createHarness(true);
+    doc.schemas.get.and.callFake((flavour: string) => ({
+      metadata: {
+        selectionInteraction: flavour === 'text-box'
+          ? {frame: 'selectable', editingBoundary: 'absolute'}
+          : undefined,
+      },
+    }));
+    const point = textPoint(child, 1);
+    const context = ctxFor({
+      collapsed: true,
+      isInSameBlock: true,
+      anchor: point,
+      head: point,
+      firstBlock: child,
+    }, 'Escape');
+
+    expect(keyboard._handleEscape(context)).toBeTrue();
+    expect(doc.selection.selectBlock).toHaveBeenCalledOnceWith(frame);
+  });
+
+  it('returns an editable selectable frame to its own object selection', () => {
+    const {doc, keyboard} = createHarness();
+    const wordArt = {
+      id: 'word-art',
+      flavour: 'word-art',
+      nodeType: BlockNodeType.editable,
+    };
+    doc.schemas.get.and.callFake((flavour: string) => ({
+      metadata: {
+        selectionInteraction: flavour === 'word-art'
+          ? {
+              frame: 'selectable',
+              escapeToFrame: 'always',
+              editingBoundary: 'always',
+            }
+          : undefined,
+      },
+    }));
+    const point = textPoint(wordArt as any, 1);
+    const context = ctxFor({
+      collapsed: true,
+      isInSameBlock: true,
+      anchor: point,
+      head: point,
+      firstBlock: wordArt,
+    }, 'Escape');
+
+    expect(keyboard._handleEscape(context)).toBeTrue();
+    expect(doc.selection.selectBlock).toHaveBeenCalledOnceWith(wordArt);
+  });
+
   it('does not turn an ordinary container scope into a selectable frame', () => {
     const {doc, keyboard} = createHarness();
     const callout = {
@@ -1102,7 +1159,7 @@ describe('SelectionKeyboard – placement-aware frame interaction', () => {
     expect(doc.selection.setCursorAtBlock).not.toHaveBeenCalled();
   });
 
-  it('leaves Enter and Escape native while the frame is in relative flow', () => {
+  it('keeps Enter native but lets Escape select the frame in relative flow', () => {
     const {doc, keyboard, frame, child} = createHarness();
     const enter = ctxFor({
       isInSameBlock: true,
@@ -1120,11 +1177,11 @@ describe('SelectionKeyboard – placement-aware frame interaction', () => {
     }, 'Escape');
 
     expect(keyboard._handleClosedContainerEnter(enter)).toBeUndefined();
-    expect(keyboard._handleEscape(escape)).toBeUndefined();
+    expect(keyboard._handleEscape(escape)).toBeTrue();
     expect(enter.preventDefault).not.toHaveBeenCalled();
-    expect(escape.preventDefault).not.toHaveBeenCalled();
+    expect(escape.preventDefault).toHaveBeenCalledTimes(1);
     expect(doc.selection.setCursorAtBlock).not.toHaveBeenCalled();
-    expect(doc.selection.selectBlock).not.toHaveBeenCalled();
+    expect(doc.selection.selectBlock).toHaveBeenCalledOnceWith(frame);
   });
 });
 

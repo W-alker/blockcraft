@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-08-23
+> Last updated: 2026-08-24
 
 ## Block Types
 
@@ -1125,13 +1125,14 @@ persisted, so changing a future catalog does not drift existing documents.
 The Schema declares a placement-aware Selection contract. Its frame remains
 selectable in either layout, but relative `top-bottom` flow uses a transparent
 selection scope just like Mermaid: descendant caret, double-click, IME, arrows
-and Ctrl/Cmd+A follow the surrounding document, with no Enter/Escape object/text
-transition. In absolute placement the same Block resolves to a closed
-`container` scope: Enter or a direct-frame double-click enters text, Escape from
-a direct editable child returns to the frame, edge arrows cannot escape the
-object plane, and repeated Ctrl/Cmd+A is capped there. Core Selection owns these
-rules; `TextBoxToolbarPlugin` only observes the resulting state and owns the
-toolbar plus explicit resize/reorder gestures. Its object
+and Ctrl/Cmd+A follow the surrounding document, and Enter is not repurposed.
+`escapeToFrame: 'always'` independently lets Escape from a direct editable child
+select the whole frame in either layout. In absolute placement the same Block
+resolves to a closed `container` scope: Enter or a direct-frame double-click
+enters text, edge arrows cannot escape the object plane, and repeated Ctrl/Cmd+A
+is capped there. Core Selection owns these rules; `TextBoxToolbarPlugin` only
+observes the resulting state and owns the toolbar plus the explicit top-handle,
+resize and reorder gestures. Its object
 toolbar is semantic and preset-first: **样式**, **形状** and
 **文字效果**, followed by **上下型**, **衬于文字下方** and
 **浮于文字上方** plus absolute stack order. Raw padding and background-image
@@ -1301,9 +1302,14 @@ expressions. The bundled catalog contains 16 `WORD_ART_PRESETS`, 10 safe
 
 The interaction is object/edit dual-state. Clicking text or blank space enters
 its direct text surface; normal clicks inside an active editor keep native
-caret placement. Enter also enters editing, while Escape returns to the
-whole-object selection. Object movement starts only from the four invisible
-hit regions on the visible outline—there is no separate move handle. The
+caret placement. `selectionInteraction` declares `editingBoundary: 'always'`
+and `escapeToFrame: 'always'`, so core Selection owns Enter into editing and
+Escape back to whole-object selection. The hover/focus-revealed
+`.word-art-block__object-handle` matches the text-box handle: it selects and
+moves the object without intercepting the editable text surface. Whole-object
+selection applies `.word-art-block--object-selected`, which alone exposes the
+resizer and object toolbar; text editing shows neither. Object movement also
+remains available from the four invisible selected-border hit regions. The
 bundled fixed toolbar inserts an absolute `over` WordArt near the saved
 selection. Its **插入艺术字** control is a scrollable 16-card visual preset dropdown;
 choosing a card applies that preset while creating the default `艺术字`,
@@ -1524,6 +1530,7 @@ otherwise normal editable descendants declares the independent interaction:
 metadata: {
   selectionInteraction: {
     frame: 'selectable',
+    escapeToFrame: 'always',
     editingBoundary: 'absolute',
   },
 }
@@ -1532,13 +1539,16 @@ metadata: {
 `frame: 'selectable'` makes the Block host itself selectable. A frame whose
 visible border is rendered by a descendant (for example an SVG path) marks the
 precise hit region with `data-bc-selection-interaction-frame`; unmarked wrapper
-and editable descendants remain native. `editingBoundary` independently enables the
-frame/child transition either `always` or only in `absolute` placement:
+and editable descendants remain native. `editingBoundary` independently enables
+Enter/direct-frame double-click entry either `always` or only in `absolute`
+placement. `escapeToFrame` uses the same values but controls only Escape from a
+direct editable child back to whole-frame selection. When omitted, Escape keeps
+following `editingBoundary` for backward compatibility:
 
 - direct non-descendant frame click → whole-block selection;
 - while the editing boundary is active, Enter or direct-frame double-click →
   first editable descendant;
-- while the editing boundary is active, Escape from a direct editable child →
+- while `escapeToFrame` is active, Escape from a direct editable child →
   whole-block selection;
 - descendant pointer/text/IME/Ctrl/Cmd+A → normal Selection/Input handling.
 
@@ -1546,12 +1556,15 @@ frame/child transition either `always` or only in `absolute` placement:
 <path data-bc-selection-interaction-frame></path>
 ```
 
-The framework resolves both placement-aware capabilities through the Placement
+The framework resolves all placement-aware capabilities through the Placement
 domain; Selection and plugins must not inspect flavour. Relative text boxes use
-the same transparent editing behavior as Mermaid, while absolute text boxes are
-closed and capped. Interactive frame controls can add
+the same transparent entry/editing behavior as Mermaid, while
+`escapeToFrame: 'always'` still provides a direct object-selection path.
+Absolute text boxes are closed and capped. Interactive frame controls can add
 `data-bc-selection-interaction-ignore` so Selection does not consume their
-pointer gesture. `text-box` declares the placement-aware capability; `callout`
+pointer gesture. The built-in `.text-box-block__object-handle` uses that opt-out
+and delegates select/move to `TextBoxToolbarPlugin`. `text-box` declares the
+placement-aware capability; `callout`
 deliberately has no selectable-frame interaction even though it uses a static
 `selectionScope: 'container'`.
 

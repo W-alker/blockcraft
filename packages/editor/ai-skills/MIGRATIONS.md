@@ -69,6 +69,80 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
+## Unreleased — 2026-08-24 — Text-box and WordArt object focus affordances
+
+**Severity**: minor
+
+**What changed**: `BlockSelectionInteractionCapability` adds the optional
+`escapeToFrame: 'always' | 'absolute'` field, independently controlling the
+Escape transition from a direct editable child to whole-frame selection. The
+built-in `text-box` enables it in every placement and adds a top object handle
+that selects and moves the frame without intercepting text editing. Editable
+`word-art` now declares both transitions as `always`, uses the same compact
+handle, and limits its toolbar/resizer chrome to whole-object selection.
+Omitting the new field preserves the existing `editingBoundary` Escape policy.
+
+**Why**: text-box and WordArt content should remain one-click editable, but
+relying on thin invisible frame hit bands made whole-object focus difficult.
+Both object types need the same discoverable select/move path without restoring
+the distracting editing-state outline and transform chrome.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md` (Selection quick reference)
+- `blockcraft-block.md` (Schema interaction field and object declarations)
+- `blockcraft-selection.md` (independent Escape transition policy)
+- `blockcraft-plugins-toolbar.md` (text-box and WordArt handle ownership)
+- `blockcraft-theme.md` (shared handle and WordArt object-state classes)
+
+### New APIs / Features
+
+- `BlockSelectionInteractionCapability.escapeToFrame?: 'always' | 'absolute'`
+- `.text-box-block__object-handle` is the built-in text-box select/move
+  affordance.
+- `.word-art-block__object-handle` is the matching WordArt select/move
+  affordance.
+- `.word-art-block--object-selected` is the bundled WordArt whole-object chrome
+  hook. Do not use `.focused` to infer WordArt object mode.
+
+### Migration Recipe
+
+Existing Blocks require no change. Custom selectable containers that want
+Escape to select the frame without also changing Enter or double-click entry
+can declare the capabilities independently:
+
+```typescript
+metadata: {
+  selectionInteraction: {
+    frame: 'selectable',
+    escapeToFrame: 'always',
+    editingBoundary: 'absolute',
+  },
+}
+```
+
+### Behavior Changes
+
+- A collapsed caret in a direct editable child of the built-in text box now
+  returns to whole-text-box selection on Escape in both relative and absolute
+  placement.
+- Hovering the text box, focusing one of its descendants, or using a
+  hover-less pointer surface reveals the top object handle. No editing-state
+  frame outline is added.
+- Clicking or dragging the handle selects the text box first; drag routing
+  remains placement-aware through the existing object movement controllers.
+- Editable WordArt now uses the same object/edit split: its compact handle
+  selects/moves the object, core Selection handles Enter/Escape, and a text
+  caret or range closes the object toolbar and hides resize/rotation chrome.
+- TextBox WordArt presets preserve the current text size (or the neutral 16px
+  inherited size) instead of importing the standalone preset's display size.
+- TextBox and WordArt handles are both 24×14 and straddle the top frame edge so
+  they remain real hit targets inside a contenteditable root. No editing-state
+  frame outline is added.
+- WordArt toolbar-owned pointer/focus transitions keep the rail and format card
+  alive while native selection settles; the 288px secondary cards size to
+  their active content without an internal scrollbar.
+
 ## Unreleased — 2026-08-24 — text-box picture-fill controls
 
 **Severity**: minor

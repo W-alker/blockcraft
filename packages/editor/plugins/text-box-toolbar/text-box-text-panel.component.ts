@@ -27,7 +27,6 @@ import {
   type TextBoxWritingMode,
 } from '../../blocks/text-box-block'
 import {
-  getWordArtPreset,
   WORD_ART_FONT_OPTIONS,
   type WordArtEffect,
   type WordArtFillType,
@@ -38,6 +37,7 @@ import {
   type WordArtVerticalAlign,
 } from '../../blocks/word-art-block'
 import {WordArtPresetPickerComponent} from '../fixed-toolbar/widgets/word-art-preset-picker.component'
+import {serializeTextBoxWordArtPreset} from './text-box-word-art-preset'
 
 type TextPanelSection = 'preset' | 'font' | 'fill' | 'effects'
 
@@ -612,8 +612,7 @@ export class TextBoxTextPanelComponent implements OnChanges {
   }
 
   applyPreset(value: WordArtPresetId): void {
-    const style = normalizeTextBoxWordArtStyle(getWordArtPreset(value).props)
-    const serialized = serializeTextBoxWordArtStyle(style)
+    const serialized = serializeTextBoxWordArtPreset(value, this.currentStyle)
     if (serialized) this.patch.emit({wa: serialized})
   }
 

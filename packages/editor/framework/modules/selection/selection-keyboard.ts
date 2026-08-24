@@ -11,7 +11,10 @@ import {IS_MAC} from "../../../global";
 import {closetBlockId, isZeroSpace, resolveBlockGapSide} from "../../utils";
 import {searchEditableDescendant} from "./index";
 import {resolveCommonSelectionScope} from './scope'
-import {hasClosedContainerEditingBoundary} from './interaction-policy'
+import {
+  allowsEscapeToBlockFrame,
+  hasClosedContainerEditingBoundary,
+} from './interaction-policy'
 import {IBoundarySelectionPoint, ISelectionPointJSON, ITextSelectionPoint} from "./types";
 import type {SelectionSurfaceAdapter} from './surface-adapter';
 
@@ -1044,10 +1047,13 @@ export class SelectionKeyboard {
       sel.anchor.type === 'text' &&
       sel.head.type === 'text'
     ) {
-      const parent = this._parentBlock(sel.firstBlock)
-      if (hasClosedContainerEditingBoundary(this.doc, parent)) {
+      const current = sel.firstBlock
+      const frame = allowsEscapeToBlockFrame(this.doc, current)
+        ? current
+        : this._parentBlock(current)
+      if (allowsEscapeToBlockFrame(this.doc, frame)) {
         ctx.preventDefault()
-        this.doc.selection.selectBlock(parent)
+        this.doc.selection.selectBlock(frame)
         return true
       }
     }

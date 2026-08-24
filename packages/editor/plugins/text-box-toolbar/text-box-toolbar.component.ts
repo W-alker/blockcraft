@@ -24,7 +24,6 @@ import {
   getTextBoxPreset,
   normalizeTextBoxProps,
   normalizeTextBoxWordArtStyle,
-  serializeTextBoxWordArtStyle,
   type NormalizedTextBoxBlockProps,
   type TextBoxBlockProps,
   type TextBoxPresetId,
@@ -32,12 +31,12 @@ import {
   type TextBoxWritingMode,
 } from '../../blocks/text-box-block'
 import {
-  getWordArtPreset,
   type WordArtPresetId,
 } from '../../blocks/word-art-block'
 import type {ShapeKind} from '../../blocks/shape-block'
 import {TextBoxShapePanelComponent} from './text-box-shape-panel.component'
 import {TextBoxTextPanelComponent} from './text-box-text-panel.component'
+import {serializeTextBoxWordArtPreset} from './text-box-word-art-preset'
 
 export type TextBoxToolbarPropsPatch = Partial<TextBoxBlockProps>
 export type TextBoxToolbarPanel = 'layout' | 'style' | 'shape' | 'text'
@@ -582,8 +581,10 @@ export class TextBoxToolbarComponent {
     trigger?: BcOverlayTriggerDirective,
   ): void {
     trigger?.closePanel()
-    const style = normalizeTextBoxWordArtStyle(getWordArtPreset(presetId).props)
-    const serialized = serializeTextBoxWordArtStyle(style)
+    const serialized = serializeTextBoxWordArtPreset(
+      presetId,
+      this.wordArtStyle,
+    )
     if (serialized) this.emitPatch({wa: serialized})
   }
 

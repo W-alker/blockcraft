@@ -1,3 +1,5 @@
+@use "object-focus-handle" as *;
+
 [data-blockcraft-root="true"] .word-art-block,
 .bc-snapshot-viewer .word-art-block {
   display: block;
@@ -9,16 +11,37 @@
     background: transparent;
   }
 
-  &.focused shape-resizer {
-    display: block;
-  }
-
   .word-art-block__surface {
     position: relative;
     display: flex;
     box-sizing: border-box;
     transform-origin: center center;
     touch-action: none;
+  }
+
+  .word-art-block__object-handle {
+    @include object-focus-handle;
+  }
+
+  &:hover .word-art-block__object-handle,
+  &:focus-within .word-art-block__object-handle {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  @media (hover: none) {
+    .word-art-block__object-handle {
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
+
+  &.word-art-block--object-selected .word-art-block__object-handle {
+    display: none;
+  }
+
+  &.word-art-block--object-selected shape-resizer {
+    display: block;
   }
 
   .word-art-block__editor {

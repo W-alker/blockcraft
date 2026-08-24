@@ -91,6 +91,8 @@ describe("WordArtToolbarComponent", () => {
     )!;
     expect(formatPanel).not.toBeNull();
     expect(getComputedStyle(formatPanel).width).toBe("288px");
+    expect(getComputedStyle(formatPanel).overflow).toBe("visible");
+    expect(getComputedStyle(formatPanel).maxHeight).toBe("none");
     expect(
       host.querySelector('cs-select[aria-label="艺术字字体"]'),
     ).not.toBeNull();

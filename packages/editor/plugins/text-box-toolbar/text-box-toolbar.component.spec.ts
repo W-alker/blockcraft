@@ -301,7 +301,8 @@ describe('TextBoxToolbarComponent', () => {
   })
 
   it('supports any text-owning shape and complete WordArt preset values', () => {
-    const component = createComponent()
+    const currentStyle = normalizeTextBoxWordArtStyle({fontSize: 22})!
+    const component = createComponent({wa: JSON.stringify(currentStyle)})
     const actions: TextBoxToolbarAction[] = []
     component.action.subscribe(action => actions.push(action))
 
@@ -318,6 +319,7 @@ describe('TextBoxToolbarComponent', () => {
       ? normalizeTextBoxWordArtStyle(second.value.wa)
       : null
     expect(wordArt).toEqual(jasmine.objectContaining({
+      fontSize: 22,
       fillType: 'solid',
       fillColor: '#F0ABFC',
       effect: 'none',
@@ -437,6 +439,17 @@ describe('TextBoxToolbarComponent', () => {
       effect: 'none',
     }))
     expect(second?.letterSpacingEm).toBe(0.24)
+  })
+
+  it('keeps the current text size when a WordArt preset is chosen', () => {
+    const panel = new TextBoxTextPanelComponent()
+    panel.style = normalizeTextBoxWordArtStyle({fontSize: 27}) ?? null
+    const patches: Record<string, unknown>[] = []
+    panel.patch.subscribe(value => patches.push(value))
+
+    panel.applyPreset('neon')
+
+    expect(normalizeTextBoxWordArtStyle(patches[0]?.['wa'])?.fontSize).toBe(27)
   })
 })
 
