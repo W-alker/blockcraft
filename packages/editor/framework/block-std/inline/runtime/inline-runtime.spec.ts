@@ -2,6 +2,7 @@ import {
   createInlineImageDelta,
   withDefaultEmbedConverters,
 } from '../image-embed'
+import type {EmbedConverter} from '../index'
 import {InlineRuntime} from './inline-runtime'
 import {INLINE_PAGINATION_GAP_ATTRIBUTE} from './inline-pagination-projection'
 import {InlineRangeMeasurer} from './inline-fragment-layout'
@@ -23,6 +24,7 @@ const TEST_IMAGE_URL =
 function createConnectedInlineRuntime(
   width = 600,
   options?: ConstructorParameters<typeof InlineRuntime>[2],
+  configuredEmbeds: [string, EmbedConverter][] = [],
 ): {
   host: HTMLElement
   container: HTMLElement
@@ -44,10 +46,10 @@ function createConnectedInlineRuntime(
 
   const runtime = new InlineRuntime(
     container,
-    new Map([
-      ...withDefaultEmbedConverters(),
+    new Map(withDefaultEmbedConverters([
       ['shape', createInlineShapeEmbedConverter()] as const,
-    ]),
+      ...configuredEmbeds,
+    ])),
     options,
   )
   return {host, container, runtime}
@@ -817,6 +819,181 @@ describe('InlineRuntime inline float lifecycle', () => {
     expect(
       container.querySelector('[data-bc-inline-fragment-group]'),
     ).toBeNull()
+  })
+
+  it('keeps heading Mention, link and formula geometry out of a wrapped image', () => {
+    const mentionConverter: EmbedConverter = {
+      toView: delta => {
+        const span = document.createElement('span')
+        span.dataset['richMention'] = 'true'
+        span.style.display = 'inline-block'
+        span.style.whiteSpace = 'nowrap'
+        span.textContent = `@${String(delta.insert['mention'] ?? '')}`
+        return span
+      },
+      toDelta: element => ({
+        insert: {mention: (element.textContent ?? '').replace(/^@/, '')},
+      }),
+    }
+    const latexConverter: EmbedConverter = {
+      toView: delta => {
+        const span = document.createElement('span')
+        span.dataset['richLatex'] = 'true'
+        span.style.display = 'inline-block'
+        span.style.whiteSpace = 'nowrap'
+        span.textContent = String(delta.insert['latex'] ?? '')
+        return span
+      },
+      toDelta: element => ({
+        insert: {latex: element.textContent ?? ''},
+      }),
+    }
+    const {container, runtime} = createConnectedInlineRuntime(
+      682,
+      undefined,
+      [
+        ['mention', mentionConverter],
+        ['latex', latexConverter],
+      ],
+    )
+    container.style.fontFamily = 'Arial'
+    container.style.fontSize = '32px'
+    container.style.fontWeight = '700'
+    container.style.lineHeight = '48px'
+    container.style.fontVariantNumeric = 'tabular-nums'
+    container.style.whiteSpace = 'pre-wrap'
+
+    const prefix = 'Blockcraft 2.0 Playground：'
+    const bold = '用真实 block 组合'
+    const beforeMention = ' 展示正式编辑器需要覆盖的内容结构，包括 '
+    const punctuation = '、'
+    const linked = '产品文档'
+    const beforeFormula = ' 和行内公式 '
+    const suffix = '。'
+    const image = createInlineImageDelta(TEST_IMAGE_URL, 180, 108, {
+      wrap: true,
+      side: 'auto',
+      x: 0.32,
+      gap: 12,
+    })!
+    runtime.render([
+      {insert: prefix},
+      image,
+      {insert: bold, attributes: {'a:bold': true}},
+      {insert: beforeMention},
+      {
+        insert: {mention: 'Alice Chen'},
+        attributes: {mentionId: 'user_alice', mentionType: 'user'},
+      },
+      {insert: punctuation},
+      {insert: linked, attributes: {'a:link': 'https://blockcraft.dev/docs'}},
+      {insert: beforeFormula},
+      {insert: {latex: 'E = mc²'}},
+      {insert: suffix},
+    ])
+    const pendingFrame = container.querySelector<HTMLElement>(
+      '.bc-inline-image-frame',
+    )!
+    // The package Karma target does not load the application-level frame
+    // display rule. Keep the test geometry equivalent to the real editor.
+    pendingFrame.style.display = 'block'
+    refreshInlineFloatLayout(runtime)
+
+    const expectedLength =
+      prefix.length + 1 + bold.length + beforeMention.length + 1 +
+      punctuation.length + linked.length + beforeFormula.length + 1 +
+      suffix.length
+    const mentionOffset =
+      prefix.length + 1 + bold.length + beforeMention.length
+    const formulaOffset =
+      mentionOffset + 1 + punctuation.length + linked.length +
+      beforeFormula.length
+
+    const expectRichLayout = () => {
+      const group = container.querySelector<HTMLElement>(
+        '[data-bc-inline-fragment-group]',
+      )!
+      const frame = group?.querySelector<HTMLElement>(
+        '.bc-inline-image-frame',
+      )!
+      const mention = container.querySelector<HTMLElement>(
+        '[data-rich-mention]',
+      )!.closest<HTMLElement>('c-element')!
+      const link = container.querySelector<HTMLElement>(
+        'c-element[link="https://blockcraft.dev/docs"]',
+      )!
+      const formula = container.querySelector<HTMLElement>(
+        '[data-rich-latex]',
+      )!.closest<HTMLElement>('c-element')!
+
+      expect(group).not.toBeNull()
+      expect(frame).not.toBeNull()
+      expect(mention.isConnected).toBeTrue()
+      expect(link.isConnected).toBeTrue()
+      expect(formula.isConnected).toBeTrue()
+
+      const groupRect = group.getBoundingClientRect()
+      const frameRect = frame.getBoundingClientRect()
+      const frameLeft = groupRect.left + Number.parseFloat(frame.style.left)
+      const frameRight = frameLeft + Number.parseFloat(frame.style.width)
+      const overlapsFrame = (rect: DOMRect) =>
+        rect.left < frameRight - 0.75 &&
+        rect.right > frameLeft + 0.75 &&
+        rect.top < frameRect.bottom - 0.75 &&
+        rect.bottom > frameRect.top + 0.75
+
+      for (const richNode of [mention, link, formula]) {
+        expect(overlapsFrame(richNode.getBoundingClientRect())).toBeFalse()
+      }
+
+      for (const left of Array.from(group.querySelectorAll<HTMLElement>(
+        '[data-bc-inline-fragment-side="left"]',
+      ))) {
+        const rect = left.getBoundingClientRect()
+        if (rect.width > 0.75) {
+          expect(rect.right).toBeLessThanOrEqual(frameLeft - 12 + 0.75)
+        }
+      }
+      for (const right of Array.from(group.querySelectorAll<HTMLElement>(
+        '[data-bc-inline-fragment-side="right"]',
+      ))) {
+        const rect = right.getBoundingClientRect()
+        if (rect.width > 0.75) {
+          expect(rect.left).toBeGreaterThanOrEqual(frameRight + 12 - 0.75)
+          expect(rect.right).toBeLessThanOrEqual(
+            container.getBoundingClientRect().right + 0.75,
+          )
+        }
+      }
+    }
+    const expectRichOffsets = () => {
+      for (const offset of [
+        mentionOffset,
+        mentionOffset + 1,
+        formulaOffset,
+        formulaOffset + 1,
+      ]) {
+        const point = runtime.modelPointToDom(offset)
+        expect(runtime.domPointToModel(point.node, point.offset)).toBe(offset)
+      }
+    }
+
+    expect(getComputedStyle(container).fontSize).toBe('32px')
+    expect(getComputedStyle(container).fontWeight).toBe('700')
+    expect(runtime.textLength).toBe(expectedLength)
+    expectRichLayout()
+    expectRichOffsets()
+
+    runtime.applyDelta([{retain: expectedLength}, {insert: '增量'}])
+    refreshInlineFloatLayout(runtime)
+    expect(runtime.textLength).toBe(expectedLength + 2)
+    expectRichLayout()
+    expectRichOffsets()
+
+    runtime.destroy()
+    expect(container.querySelector(
+      '[data-bc-inline-fragment-group]',
+    )).toBeNull()
   })
 
   it('defers a dirty refresh while a layout freeze lease is held', () => {

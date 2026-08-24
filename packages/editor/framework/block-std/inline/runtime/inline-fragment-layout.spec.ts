@@ -129,6 +129,43 @@ describe('inline fragment layout', () => {
     ).toBeNull()
   })
 
+  it('tries the right interval before rejecting an atomic unit that cannot fit left', () => {
+    const {scroll} = createScroll([
+      {insert: {image: 'test'}},
+      {insert: 'after'},
+    ])
+    const anchor = scroll.leaves[0] as EmbedBlot
+    const geometry = resolveInlineFloatGeometry({
+      containerWidth: 600,
+      imageWidth: 180,
+      imageHeight: 20,
+      x: 0.35,
+      side: 'auto',
+      gap: 0,
+    })
+
+    const plan = buildInlineFragmentPlan({
+      anchor,
+      anchorOffset: 0,
+      lineStart: 0,
+      endOffset: scroll.textLength,
+      lineHeight: 20,
+      geometry,
+      fitFragment: (start, end, _width, measureAdvance) => ({
+        end: measureAdvance ? start : Math.min(end, start + 1),
+        advance: 0,
+      }),
+      nextOffset: offset => offset + 1,
+    })
+
+    expect(plan).not.toBeNull()
+    expect(plan!.rows[0]).toEqual({
+      left: {start: 0, end: 0},
+      right: {start: 0, end: 1},
+      leftAdvance: 0,
+    })
+  })
+
   it('keeps safe line candidates nearest a long anchor', () => {
     const text = 'a'.repeat(3000)
     const {container, scroll} = createScroll([
@@ -211,6 +248,106 @@ describe('inline fragment layout', () => {
     measurer.endLayoutPass()
 
     expect(fit).toEqual({end: text.length, advance: 0})
+    host.remove()
+  })
+
+  it('keeps heading font metrics and ordinary atomic Embeds in hidden measurement', () => {
+    const mentionConverter: EmbedConverter = {
+      toView: delta => {
+        const span = document.createElement('span')
+        span.dataset['measureMention'] = 'true'
+        span.style.display = 'inline-block'
+        span.style.width = '80px'
+        span.style.whiteSpace = 'nowrap'
+        span.textContent = String(delta.insert['mention'] ?? '')
+        return span
+      },
+      toDelta: element => ({
+        insert: {mention: element.textContent ?? ''},
+      }),
+    }
+    const container = document.createElement('div')
+    const scroll = new ScrollBlot(
+      container,
+      new Map([['mention', mentionConverter]]),
+    )
+    scroll.build([
+      {insert: 'aa'},
+      {insert: {mention: 'Alice'}},
+      {insert: 'bb'},
+    ])
+    const host = document.createElement('div')
+    container.className = 'edit-container'
+    container.style.cssText = [
+      'display:block',
+      'width:400px',
+      'font-family:Arial',
+      'font-size:32px',
+      'font-weight:700',
+      'line-height:48px',
+      'font-variant-numeric:tabular-nums',
+      'white-space:pre-wrap',
+      'word-break:break-all',
+    ].join(';')
+    host.appendChild(container)
+    document.body.appendChild(host)
+
+    const prefix = scroll.leaves[0] as TextBlot
+    const mention = scroll.leaves[1] as EmbedBlot
+    const suffix = scroll.leaves[2] as TextBlot
+    const throughMentionRange = document.createRange()
+    throughMentionRange.setStart(prefix.textNode, 0)
+    throughMentionRange.setEndAfter(mention.cElement)
+    const throughSuffixRange = document.createRange()
+    throughSuffixRange.setStart(prefix.textNode, 0)
+    throughSuffixRange.setEnd(suffix.textNode, 1)
+    const throughMention = throughMentionRange.getBoundingClientRect().width
+    const throughFirstSuffix = throughSuffixRange.getBoundingClientRect().width
+    const fragmentWidth = (throughMention + throughFirstSuffix) / 2
+    const measurer = new InlineRangeMeasurer(container, scroll, () =>
+      document.createRange(),
+    )
+
+    measurer.beginLayoutPass()
+    const measurement = (measurer as unknown as {
+      _createMeasurementContent(
+        start: number,
+        end: number,
+        width: number,
+      ): {root: HTMLElement}
+    })._createMeasurementContent(0, scroll.textLength, 400)
+    const measuredMention = measurement.root.querySelector<HTMLElement>(
+      '[data-measure-mention]',
+    )!.closest<HTMLElement>('c-element')!
+    const measuredMentionWidth = measuredMention.getBoundingClientRect().width
+    const sourceStyle = getComputedStyle(container)
+    const measuredStyle = getComputedStyle(measurement.root)
+    const sourceFontMetrics = {
+      fontFamily: sourceStyle.fontFamily,
+      fontSize: sourceStyle.fontSize,
+      fontWeight: sourceStyle.fontWeight,
+      fontStyle: sourceStyle.fontStyle,
+      fontStretch: sourceStyle.fontStretch,
+      fontVariant: sourceStyle.fontVariant,
+      lineHeight: sourceStyle.lineHeight,
+    }
+    const measuredFontMetrics = {
+      fontFamily: measuredStyle.fontFamily,
+      fontSize: measuredStyle.fontSize,
+      fontWeight: measuredStyle.fontWeight,
+      fontStyle: measuredStyle.fontStyle,
+      fontStretch: measuredStyle.fontStretch,
+      fontVariant: measuredStyle.fontVariant,
+      lineHeight: measuredStyle.lineHeight,
+    }
+    const fit = measurer.fitFragment(0, scroll.textLength, fragmentWidth, true)
+    measurement.root.remove()
+    measurer.endLayoutPass()
+
+    expect(throughFirstSuffix).toBeGreaterThan(throughMention)
+    expect(measuredMentionWidth).toBeGreaterThanOrEqual(80)
+    expect(measuredFontMetrics).toEqual(sourceFontMetrics)
+    expect(fit.end).toBeLessThan(scroll.textLength)
     host.remove()
   })
 

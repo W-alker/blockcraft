@@ -11,6 +11,10 @@ export const INLINE_FRAGMENT_ROW_ATTRIBUTE = 'data-bc-inline-fragment-row'
 export const INLINE_FRAGMENT_SIDE_ATTRIBUTE = 'data-bc-inline-fragment-side'
 export const INLINE_FRAGMENT_ANCHOR_ATTRIBUTE = 'data-bc-inline-fragment-anchor'
 
+const INLINE_WRAPPED_FLOAT_SELECTOR =
+  '[data-bc-inline-float][data-bc-inline-float-layout="wrap"], ' +
+  '[data-bc-inline-float][data-bc-inline-image-layout="wrap"]'
+
 export interface InlineFragmentRange {
   start: number
   end: number
@@ -92,26 +96,21 @@ export function buildInlineFragmentPlan(
       input.geometry.leftTextWidth,
       true,
     )
-    const leftEnd = ensureProgress(cursor, limit, leftFit.end, input.nextOffset)
+    const leftEnd = normalizeFitEnd(cursor, limit, leftFit.end)
     const rightFit = input.fitFragment(
       leftEnd,
       limit,
       input.geometry.rightTextWidth,
       false,
     )
-    const rightEnd = ensureProgress(
-      leftEnd,
-      limit,
-      rightFit.end,
-      input.nextOffset,
-    )
+    const rightEnd = normalizeFitEnd(leftEnd, limit, rightFit.end)
+    if (rightEnd <= cursor && cursor < limit) return null
     rows.push({
       left: {start: cursor, end: leftEnd},
       right: {start: leftEnd, end: rightEnd},
-      leftAdvance: normalizeAdvance(
-        leftFit.advance,
-        input.geometry.leftTextWidth,
-      ),
+      leftAdvance: leftEnd > cursor
+        ? normalizeAdvance(leftFit.advance, input.geometry.leftTextWidth)
+        : 0,
     })
     cursor = rightEnd
     if (cursor >= limit && rows.length >= minimumRows) break
@@ -134,15 +133,13 @@ function normalizeAdvance(value: number, availableWidth: number): number {
   return Math.min(Math.max(0, availableWidth), value)
 }
 
-function ensureProgress(
+function normalizeFitEnd(
   start: number,
   limit: number,
   measuredEnd: number,
-  nextOffset: (offset: number, end: number) => number,
 ): number {
-  const safeEnd = Math.max(start, Math.min(limit, measuredEnd))
-  if (safeEnd > start || start >= limit) return safeEnd
-  return Math.max(start, Math.min(limit, nextOffset(start, limit)))
+  if (!Number.isFinite(measuredEnd)) return start
+  return Math.max(start, Math.min(limit, measuredEnd))
 }
 
 /**
@@ -491,6 +488,12 @@ export class InlineRangeMeasurer {
     root.style.width = `${width}px`
     root.style.maxWidth = `${width}px`
     root.style.font = style.font
+    root.style.fontFamily = style.fontFamily
+    root.style.fontSize = style.fontSize
+    root.style.fontStyle = style.fontStyle
+    root.style.fontWeight = style.fontWeight
+    root.style.fontStretch = style.fontStretch
+    root.style.fontVariant = style.fontVariant
     root.style.fontKerning = style.fontKerning
     root.style.fontFeatureSettings = style.fontFeatureSettings
     root.style.fontVariationSettings = style.fontVariationSettings
@@ -500,6 +503,7 @@ export class InlineRangeMeasurer {
     root.style.whiteSpace = style.whiteSpace || 'break-spaces'
     root.style.wordBreak = style.wordBreak || 'break-all'
     root.style.direction = style.direction
+    root.style.textTransform = style.textTransform
 
     const points = new Map<number, MeasurementPoint>()
     const offsets = this.safeOffsets(start, end, candidateCap)
@@ -531,16 +535,18 @@ export class InlineRangeMeasurer {
         }
       } else {
         const clone = leaf.cElement.cloneNode(true) as HTMLElement
-        for (const frame of Array.from(
-          clone.querySelectorAll(
-            '[data-bc-inline-float-frame], .bc-inline-image-frame',
-          ),
-        )) {
-          frame.remove()
+        if (leaf.embedElement.matches(INLINE_WRAPPED_FLOAT_SELECTOR)) {
+          for (const frame of Array.from(
+            clone.querySelectorAll(
+              '[data-bc-inline-float-frame], .bc-inline-image-frame',
+            ),
+          )) {
+            frame.remove()
+          }
+          clone.style.display = 'inline-block'
+          clone.style.width = '0'
+          clone.style.height = '0'
         }
-        clone.style.display = 'inline-block'
-        clone.style.width = '0'
-        clone.style.height = '0'
         root.appendChild(clone)
         points.set(to, {node: root, offset: root.childNodes.length})
       }
