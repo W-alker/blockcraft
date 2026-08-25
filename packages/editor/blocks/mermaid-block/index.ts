@@ -45,6 +45,7 @@ export const MermaidBlockSchema: IBlockSchemaOptions<MermaidBlockModel> = {
     description: '使用 Mermaid 语法创建图表',
     svgIcon: 'bc_mermaid',
     icon: 'bf_icon bc_mermaid',
+    includeChildren: ['mermaid-textarea'],
     selectionScope: 'transparent',
   }
 }

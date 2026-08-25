@@ -45,6 +45,11 @@ Return JSON only with this shape:
       "flavour": string,
       "params": unknown[]
   } | {
+      "kind": "replace-block",
+      "blockId": string,
+      "flavour": string,
+      "params": unknown[]
+  } | {
       "kind": "apply-text-delta",
       "blockId": string,
       "delta": object[]
@@ -69,6 +74,19 @@ formatting properties already present in the context or listed by the host.
 Use create-blocks for new blocks so the host can call the registered Schema's
 createSnapshot and generate IDs safely. Prefer schema-native operations over
 inventing raw snapshots.
+To transform an existing block into another registered representation, use
+replace-block with the existing blockId, target flavour and Schema parameters;
+the host calls DocCRUD.replaceWithSnapshots atomically. Do not simulate a
+replacement with DOM changes or delete/insert instructions when a Schema
+replacement is available.
+For Mermaid diagrams, create the outer 'mermaid' block with params
+'[mode, source]', where mode is 'text', 'graph', or 'default' and source is
+plain Mermaid DSL. The Schema creates its internal 'mermaid-textarea' child;
+never create that child directly under the document root.
+For an existing Mermaid block, switching to preview-only means an
+update-block-props operation with props {"mode":"graph"}; text-only is
+{"mode":"text"} and text-plus-preview is {"mode":"default"}. This is a
+model property update, not a DOM or data-mode operation.
 An empty paragraph, list item or container child is still a valid structural
 target. To remove it, use delete-blocks with its actual parentId, index and
 count; never claim that an empty block cannot be changed just because it has

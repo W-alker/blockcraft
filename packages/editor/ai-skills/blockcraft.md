@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-08-24 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-08-25 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -54,8 +54,8 @@ Three `nodeType` categories:
 | nodeType | Description | Base Class | Examples |
 |----------|-------------|------------|----------|
 | `editable` | Has inline text (Y.Text), no children | `EditableBlockComponent` | paragraph, code, bullet, ordered, todo, blockquote, caption, mermaid-textarea, word-art |
-| `void` | No children, no text | `BaseBlockComponent` | divider, image, bookmark, attachment, formula, video, audio, mermaid, embed-blocks (figma, juejin), weather, date-card, person-card |
-| `block` | Has block children | `BaseBlockComponent` | callout, columns, column, table, table-row, table-cell, frame, shape, text-box, render-unit, object-group, placement-layout (infrastructure) |
+| `void` | No children, no text | `BaseBlockComponent` | divider, image, bookmark, attachment, formula, video, audio, embed-blocks (figma, juejin), weather, date-card, person-card |
+| `block` | Has block children | `BaseBlockComponent` | callout, columns, column, table, table-row, table-cell, frame, shape, text-box, mermaid, render-unit, object-group, placement-layout (infrastructure) |
 | `root` | Special — top-level container | `BaseBlockComponent` (root-block) | root |
 
 > **Heading is a prop, not a flavour.** H1/H2/H3 styles live in `props.heading` on `paragraph` blocks. There is no `heading-block` flavour.

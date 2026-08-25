@@ -1,4 +1,25 @@
 import {MermaidBlockComponent} from "./mermaid.block";
+import {MermaidBlockSchema} from "./index";
+import type {IBlockSnapshot} from "../../framework";
+
+describe("MermaidBlockSchema", () => {
+  it("declares the generated source child for model-first validation", () => {
+    const snapshot = MermaidBlockSchema.createSnapshot(
+      "text",
+      "flowchart LR\n  A --> B",
+    );
+
+    expect(MermaidBlockSchema.metadata.includeChildren).toEqual([
+      "mermaid-textarea",
+    ]);
+    expect(snapshot.children).toHaveSize(1);
+    const source = snapshot.children[0] as IBlockSnapshot;
+    expect(source.flavour).toBe("mermaid-textarea");
+    expect(source.children).toEqual([
+      {insert: "flowchart LR\n  A --> B"},
+    ]);
+  });
+});
 
 describe("MermaidBlockComponent preview selection gate", () => {
   const makeBlock = (selection: any) => {

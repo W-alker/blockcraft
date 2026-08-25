@@ -69,6 +69,31 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
+## v0.6.1 — 2026-08-25 — Mermaid child Schema validation
+
+**Severity**: patch
+
+**What changed**: The built-in `mermaid` Schema now declares its generated
+`mermaid-textarea` child through `metadata.includeChildren`. The BlockCraft
+model-first child validator can therefore validate Mermaid snapshots produced
+by `MermaidBlockSchema.createSnapshot(mode, source)`.
+
+**Why**: Mermaid already creates an editable source child internally, but its
+Schema metadata omitted that relationship. Agent-created Mermaid snapshots were
+valid at runtime yet were rejected before insertion as invalid snapshots.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- `doc.canInsertChild()` and model-first snapshot validation now recognize
+  `mermaid-textarea` as the valid child of a `mermaid` block. Hosts should still
+  create the outer `mermaid` block and let its Schema generate the source child.
+
 ## v0.6.0 — 2026-08-24 — Canonical dynamic blocks and template draft projection
 
 **Severity**: minor

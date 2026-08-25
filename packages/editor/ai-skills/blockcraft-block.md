@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-08-24
+> Last updated: 2026-08-25
 
 ## Block Types
 
@@ -1454,6 +1454,10 @@ doc
 ## Built-in Mermaid Fullscreen View
 
 The built-in `mermaid` container always shows a fullscreen button in its header.
+Its Schema creates one `mermaid-textarea` editable child from the Mermaid source
+and declares `metadata.includeChildren: ['mermaid-textarea']`; hosts and
+model-first operations should create the outer `mermaid` block rather than
+inserting `mermaid-textarea` directly under the document root.
 Fullscreen is an in-place viewport projection: the Mermaid host stays in its
 Angular-owned DOM tree, and the `mermaid-textarea` child remains the same Y.Text
 editing surface. Source input, IME, selection, collaboration, Undo/Redo, mode

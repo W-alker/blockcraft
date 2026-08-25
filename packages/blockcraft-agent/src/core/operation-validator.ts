@@ -62,6 +62,15 @@ export function validateDocumentAgentResult(
       return
     }
 
+    if (operation.kind === 'replace-block') {
+      if (!operation.blockId) errors.push(`Operation ${index} is missing blockId.`)
+      if (!operation.flavour) errors.push(`Operation ${index} is missing flavour.`)
+      if (!Array.isArray(operation.params) || !operation.params.every(isJsonValue)) {
+        errors.push(`Operation ${index} must contain JSON replacement parameters.`)
+      }
+      return
+    }
+
     if (operation.kind === 'apply-text-delta') {
       if (!operation.blockId) errors.push(`Operation ${index} is missing blockId.`)
       if (!Array.isArray(operation.delta) || !operation.delta.every(isTextDeltaOperation)) {

@@ -18,7 +18,7 @@ BlockCraft Editor Agent 的编辑器适配包，覆盖文档写作、模型读�
 - `DOCUMENT_AGENT_TOOL_DEFINITIONS`：供支持 function calling 的模型声明工具；
 - `DocumentAgentToolExecutor`：提供读取、搜索、预览和确认后写入的受控工具执行器。
 
-Agent 操作目前支持文本替换、富文本 Delta、Schema 驱动创建块、插入已形成的
+Agent 操作目前支持文本替换、富文本 Delta、Schema 驱动创建块、Schema 驱动替换块、插入已形成的
 Snapshot、块删除、块移动和受控的 `update-block-props`。属性更新只
 允许白名单中的文档/排版属性或请求上下文中已有的属性，并且必须经过版本校验
  和用户确认后才会通过 `DocCRUD` 写入。
@@ -26,6 +26,11 @@ Snapshot、块删除、块移动和受控的 `update-block-props`。属性更新
 新块优先使用 `create-blocks`：模型只返回 flavour 和 Schema createSnapshot 参数，
 宿主负责调用 Schema、生成 block ID、应用默认值并验证父子关系，避免模型手写 ID
 和完整 Snapshot。
+
+现有块的表示变换使用 `replace-block`，宿主通过
+`DocCRUD.replaceWithSnapshots()` 原子替换，适合链接视图、卡片视图、嵌入视图等
+由编辑器 Schema 定义的变换。Mermaid 的文本/预览切换属于持久化 `props.mode`，
+使用 `update-block-props`；全屏、缩放和图片预览属于临时宿主 UI 状态，不是文档操作。
 
 宿主接入 function calling 时，把 `DOCUMENT_AGENT_TOOL_DEFINITIONS` 传给模型，
 再将模型的工具调用交给 `DocumentAgentToolExecutor`。`preview_changes` 永远不

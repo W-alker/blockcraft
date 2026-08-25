@@ -107,6 +107,12 @@ export type DocumentAgentOperation =
       params: readonly unknown[]
     }
   | {
+      kind: 'replace-block'
+      blockId: string
+      flavour: string
+      params: readonly unknown[]
+    }
+  | {
       kind: 'apply-text-delta'
       blockId: string
       delta: readonly unknown[]

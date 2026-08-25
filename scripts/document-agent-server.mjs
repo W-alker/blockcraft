@@ -77,6 +77,17 @@ const resultSchema = {
             type: 'object',
             additionalProperties: false,
             properties: {
+              kind: {type: 'string', enum: ['replace-block']},
+              blockId: {type: 'string'},
+              flavour: {type: 'string'},
+              params: {type: 'string'},
+            },
+            required: ['kind', 'blockId', 'flavour', 'params'],
+          },
+          {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
               kind: {type: 'string', enum: ['apply-text-delta']},
               blockId: {type: 'string'},
               delta: {type: 'string'},
@@ -178,6 +189,9 @@ function normalizeAgentResult(result) {
       if (operation.kind === 'create-blocks') {
         return {...operation, params: parseJsonField(operation.params, 'params')}
       }
+      if (operation.kind === 'replace-block') {
+        return {...operation, params: parseJsonField(operation.params, 'params')}
+      }
       return operation
     }),
   }
@@ -199,9 +213,10 @@ function createAgentPayload(request) {
     context: request.context,
     attachments: (request.attachments ?? []).map(({dataUrl: _dataUrl, ...attachment}) => attachment),
     editorAgentContract: [
-      'Validated operations include replace-text, update-block-props, insert-blocks, create-blocks, apply-text-delta, delete-blocks, and move-blocks.',
+      'Validated operations include replace-text, update-block-props, insert-blocks, create-blocks, replace-block, apply-text-delta, delete-blocks, and move-blocks.',
       'An empty paragraph or list item is still a valid structural target. Use delete-blocks with its actual parentId, index, and count.',
       'Never claim that an empty block cannot be safely changed merely because it has no text.',
+      'For Mermaid preview-only mode use update-block-props on the existing mermaid block with props {"mode":"graph"}; never manipulate DOM or data-mode.',
     ],
   }
 }

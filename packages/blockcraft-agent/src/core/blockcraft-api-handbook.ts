@@ -36,6 +36,7 @@ WRITE APIs (the host executes these only after validation and user confirmation)
 - doc.crud.applyTextDelta(blockId, delta)
 - doc.crud.updateBlockProps(blockId, props)
 - doc.crud.insertBlockSnapshots(parentId, index, snapshots)
+- doc.crud.replaceWithSnapshots(blockId, snapshots)
 - doc.crud.deleteBlockById(blockId), deleteBlocks(parentId, index, count)
 - doc.crud.moveBlocks(parentId, index, count, targetParentId, targetIndex)
 - doc.schemas.createSnapshot(flavour, params)
@@ -46,6 +47,9 @@ AGENT OPERATION MAPPING:
   host-allowlisted presentation props may be changed.
 - create-blocks asks the host to call doc.schemas.createSnapshot(flavour, params)
   so the host, not the model, generates block IDs and normalized defaults.
+- replace-block asks the host to create one Schema snapshot and atomically call
+  doc.crud.replaceWithSnapshots on an existing block. Use this for representation
+  changes such as bookmark/embed/card or inline transformations.
 - insert-blocks is a compatibility path for trusted, already formed snapshots;
   prefer create-blocks for new content and never invent snapshot IDs.
 - apply-text-delta maps to doc.crud.applyTextDelta and is the rich-text path
@@ -59,9 +63,9 @@ BLOCK TAXONOMY:
 - editable: paragraph, ordered, bullet, todo, blockquote, caption, code,
   mermaid-textarea, word-art. Text lives in model inline/Y.Text deltas.
 - block/container: root, callout, columns, column, table, table-row, table-cell,
-  frame, shape, text-box, object-group, placement-layout, render-unit.
+  frame, shape, text-box, mermaid, object-group, placement-layout, render-unit.
 - void: divider, page-divider, image, attachment, bookmark, formula, video,
-  audio, mermaid and registered embed blocks.
+  audio and registered embed blocks.
 
 DESIGN BLOCK CREATE CONTRACTS:
 - shape: createSnapshot('shape', [shapeType, optionalText]); text is a
@@ -79,6 +83,14 @@ DESIGN BLOCK CREATE CONTRACTS:
   gradientColors, gradientStops, outlineColor, outlineWidthEm,
   shadowEnabled, shadowColor, shadowOpacity, shadowOffsetXEm,
   shadowOffsetYEm, shadowBlurEm and effect.
+- mermaid: createSnapshot('mermaid', [mode, source]); mode is 'text', 'graph',
+  or 'default', and source is the plain Mermaid DSL string. The Schema creates
+  the internal 'mermaid-textarea' child; never insert that child directly under
+  the document root.
+- Existing Mermaid view mode changes use update-block-props on the Mermaid
+  block with {mode: 'graph'} for preview-only, {mode: 'text'} for source-only,
+  and {mode: 'default'} for source plus preview. Never set data-mode or
+  manipulate the rendered DOM.
 - paragraph headings are props.heading; do not invent a heading flavour.
 
 LAYOUT RULES:

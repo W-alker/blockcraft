@@ -101,6 +101,13 @@ export class DocumentAgentOperationApplier {
           throw new DocumentAgentApplyError('invalid', `Property ${key} has an unsupported value.`)
         }
       }
+      if (
+        contextBlock?.flavour === 'mermaid' &&
+        'mode' in operation.props &&
+        !['text', 'graph', 'default'].includes(String(operation.props['mode']))
+      ) {
+        throw new DocumentAgentApplyError('invalid', 'Mermaid mode must be text, graph, or default.')
+      }
       return
     }
 
@@ -141,6 +148,28 @@ export class DocumentAgentOperationApplier {
       }
       if (!this.doc.canInsertChild(operation.parentId, operation.flavour as BlockCraft.BlockFlavour)) {
         throw new DocumentAgentApplyError('invalid', `Schema ${operation.flavour} is not allowed in ${operation.parentId}.`)
+      }
+      const snapshot = this.createSnapshot(operation)
+      if (!this.isSnapshotTreeValid(snapshot)) {
+        throw new DocumentAgentApplyError('invalid', `Schema ${operation.flavour} created an invalid snapshot.`)
+      }
+      return
+    }
+
+    if (operation.kind === 'replace-block') {
+      assertBlockInContext(context, operation.blockId)
+      if (!this.doc.model.exists(operation.blockId)) {
+        throw new DocumentAgentApplyError('stale', `Block ${operation.blockId} no longer exists.`)
+      }
+      const parentId = this.doc.model.getParentId(operation.blockId)
+      if (!parentId) {
+        throw new DocumentAgentApplyError('invalid', `Block ${operation.blockId} cannot be replaced.`)
+      }
+      if (!this.doc.schemas.has(operation.flavour)) {
+        throw new DocumentAgentApplyError('invalid', `Schema ${operation.flavour} is not registered.`)
+      }
+      if (!this.doc.canInsertChild(parentId, operation.flavour as BlockCraft.BlockFlavour)) {
+        throw new DocumentAgentApplyError('invalid', `Schema ${operation.flavour} is not allowed in ${parentId}.`)
       }
       const snapshot = this.createSnapshot(operation)
       if (!this.isSnapshotTreeValid(snapshot)) {
@@ -229,6 +258,14 @@ export class DocumentAgentOperationApplier {
       return
     }
 
+    if (operation.kind === 'replace-block') {
+      this.doc.crud.replaceWithSnapshots(
+        operation.blockId,
+        [this.createSnapshot(operation)],
+      )
+      return
+    }
+
     if (operation.kind === 'apply-text-delta') {
       this.doc.crud.applyTextDelta(operation.blockId, operation.delta as never[])
       return
@@ -254,7 +291,7 @@ export class DocumentAgentOperationApplier {
   }
 
   private createSnapshot(
-    operation: Extract<DocumentAgentOperation, {kind: 'create-blocks'}>,
+    operation: Extract<DocumentAgentOperation, {kind: 'create-blocks' | 'replace-block'}>,
   ): IBlockSnapshot {
     try {
       return this.doc.schemas.createSnapshot(

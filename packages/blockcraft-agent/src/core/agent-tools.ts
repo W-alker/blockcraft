@@ -33,6 +33,7 @@ const operationSchema = {
           'update-block-props',
           'insert-blocks',
           'create-blocks',
+          'replace-block',
           'apply-text-delta',
           'delete-blocks',
           'move-blocks',
