@@ -38,6 +38,7 @@ import {
   normalizeTypographyLineHeight,
   paragraphPointsToCss,
 } from "../../typography";
+import {RevisionUnsupportedOperationError} from '../../../revision/errors'
 
 export type BlockViewState = 'mounted' | 'retained' | 'destroyed'
 
@@ -152,6 +153,39 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   get objectAttribute(): '' | null {
     const capability = this.doc?.schemas?.get(this.flavour, false)?.metadata.placement
     return capability?.modes.includes('absolute') ? '' : null
+  }
+
+  @HostBinding('attr.data-bc-revision-kind')
+  get revisionKindAttribute(): string | null {
+    return this.doc?.revisions?.getBlockPresentation(this.id).kind ?? null
+  }
+
+  @HostBinding('attr.data-bc-revision-state')
+  get revisionStateAttribute(): string | null {
+    return this.doc?.revisions?.getBlockPresentation(this.id).state ?? null
+  }
+
+  @HostBinding('attr.data-bc-revision-ids')
+  get revisionIdsAttribute(): string | null {
+    const ids = this.doc?.revisions?.getBlockPresentation(this.id).revisionIds ?? []
+    return ids.length ? ids.join(',') : null
+  }
+
+  @HostBinding('attr.data-bc-revision-hidden')
+  get revisionHiddenAttribute(): '' | null {
+    return this.doc?.revisions?.getBlockPresentation(this.id).hidden ? '' : null
+  }
+
+  @HostBinding('attr.data-bc-revision-boundary-before')
+  get revisionBoundaryAttribute(): string | null {
+    return this.doc?.revisions?.getBlockPresentation(this.id).boundaryBefore ?? null
+  }
+
+  @HostBinding('attr.data-bc-revision-view')
+  get revisionViewAttribute(): string | null {
+    return this.nodeType === BlockNodeType.root
+      ? this.doc?.revisions?.viewMode ?? null
+      : null
   }
 
   /**
@@ -625,7 +659,8 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   }
 
   get isReadonly(): boolean {
-    return this.doc.readonlyManager?.isReadonly(this) ?? !!this.doc.isReadonly
+    return this.doc?.revisions?.viewMode === 'final' ||
+      (this.doc.readonlyManager?.isReadonly(this) ?? !!this.doc.isReadonly)
   }
 
   get isExplicitReadonly(): boolean {
@@ -647,6 +682,11 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     // Lightweight render/test hosts created before BlockReadonlyManager existed
     // may not provide it. A real BlockCraftDoc always does.
     const resolution = this.doc.readonlyManager?.resolve(this)
+    if (this.doc?.revisions?.viewMode === 'final') {
+      this.hostElement.dataset['bcReadonly'] = 'revision-final'
+      this.hostElement.removeAttribute('data-bc-lock-kind')
+      return
+    }
     if (!resolution?.readonly) {
       this.hostElement.removeAttribute('data-bc-readonly')
       this.hostElement.removeAttribute('data-bc-lock-kind')
@@ -748,6 +788,9 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     )
     if (!changedKeys.length) return
     this.doc.readonlyManager.assertPropsWritable(this, BlockReadonlyOperation.Props)
+    if (this.doc.revisions?.isTracking) {
+      throw new RevisionUnsupportedOperationError('修订模式 v1 暂不支持块属性或格式修订')
+    }
     this.doc.crud.transact(() => {
       for (const key of changedKeys) {
         if (props[key] === null) {

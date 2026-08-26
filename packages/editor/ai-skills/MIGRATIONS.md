@@ -111,6 +111,100 @@ if (controller.canResume) controller.resume()
   progress. Explicit `destroy()` remains the final cleanup boundary and resets
   the saved page.
 
+## v0.7.0 — 2026-08-25 — Revision / track-changes domain
+
+**Severity**: minor
+
+**What changed**: BlockCraft adds a document-owned Revision domain for
+non-destructive text and structural change tracking, append-only collaborative
+review decisions, deterministic conflict projection, complete document
+snapshots, checkpoint compaction, reusable review UI and revision theme tokens.
+
+**Why**: Hosts need Word-like track changes that converges for offline authors
+and reviewers without moving authentication, authorization or synchronization
+policy into the editor.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-input.md`
+- `blockcraft-inline.md`
+- `blockcraft-data.md`
+- `blockcraft-test.md`
+- `blockcraft-theme.md`
+- `blockcraft-plugins-util.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `RevisionMode`, `RevisionViewMode`, `RevisionActorSnapshot`,
+  `RevisionRecord`, `RevisionDecision`, `RevisionStatus`,
+  `RevisionOverlapConflict`, `RevisionCheckpoint`, related query/state/error
+  contracts, and `BlockCraftDocumentSnapshot`
+- `DocConfig.revision` and `doc.revisions` with actor/mode/view queries,
+  accept/reject/redecide/batch commands, `resolveOverlap()`,
+  `projectFinalSnapshot()` and `compactResolved()`
+- `BlockCraftDoc.initByDocumentSnapshot()` and
+  `BlockCraftDoc.exportDocumentSnapshot()`
+- `RevisionToolbarComponent` and `RevisionReviewPanelComponent`
+- `DocExportManager.exportToHtml()`; JSON/HTML/Markdown/PDF/print clean exports
+  use `doc.revisions.projectFinalSnapshot()`
+- `--bc-revision-*` theme variables and `data-bc-revision-*` DOM hooks
+
+### Migration Recipe
+
+Existing consumers require no change. Content-only persistence remains valid:
+
+```typescript
+const content = doc.exportSnapshot()
+doc.initBySnapshot(content!, container)
+```
+
+Hosts that enable revisions must persist the complete document instead:
+
+```typescript
+const doc = new BlockCraftDoc({
+  ...config,
+  revision: {actor: {actorId: currentUser.id}, mode: 'off'},
+})
+
+doc.initByDocumentSnapshot(await loadCompleteDocument(), container)
+await saveCompleteDocument(doc.exportDocumentSnapshot())
+```
+
+Authorization still belongs to the host. Only call review commands after the
+host has granted the action; BlockCraft validates revision state, not roles.
+
+### Behavior Changes
+
+- Enabling tracking without a valid `actorId` throws instead of creating an
+  anonymous change.
+- Final projection and clean export throw `RevisionConflictError` while an
+  opposite decision head or structural overlap is active.
+- Content Undo/Redo includes revision records but not review decisions.
+- Revision mode v1 fails closed for format revisions, table row/column edits,
+  object geometry/movement and unsupported cross-container structure.
+- Later inline edits may cross existing text revisions. Destructive ranges are
+  split by active dependency boundaries and kept in one review group, so an
+  outer insertion decision cannot absorb adjacent original text. Insert ranges
+  are boundary-tight while same-author resizing explicitly updates their
+  targets. Repeating a same-author pending/accepted text or whole-block deletion
+  reuses the active record, while an extension records only uncovered content;
+  rejected proposals can be made again and different authors retain independent
+  attribution/decisions. Code-block syntax highlighting preserves the same
+  temporary revision attribution and yields foreground/background painting to
+  revision theme colors while a token is visibly pending or conflicted.
+- Revision-only presentation changes invalidate affected pagination roots, and
+  bundled asynchronous Inline renderers replay any page-gap projection they
+  revoke. Hidden resolved blocks contribute neither border-box height nor
+  authored trailing margin. `captureStableLayout()` continues to expose the
+  exact live markup layout, while clean print/PDF never reuses that geometry
+  while revision records remain.
+- Absolute positioned blocks use external solid/dashed/double revision
+  outlines without changing their persisted under/over stacking layer.
+
+
 ## v0.6.1 — 2026-08-25 — Mermaid child Schema validation
 
 **Severity**: patch

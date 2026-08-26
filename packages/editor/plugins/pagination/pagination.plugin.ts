@@ -1,6 +1,7 @@
 import {
   BindHotKey,
   DocPlugin,
+  RevisionConflictError,
   UIEventStateContext,
 } from '../../framework'
 import {getScrollContainer} from '../../global'
@@ -137,7 +138,7 @@ export class PaginationPlugin extends DocPlugin {
     let pages: PrintPages | null = null
     try {
       const layout = this._enabled
-        ? this._captureReusableLayout()
+        ? this._captureFinalProjectionLayout()
         : undefined
       const snapshot = this._snapshot()
       pages = await buildPrintPages(snapshot, this._config, {
@@ -147,6 +148,7 @@ export class PaginationPlugin extends DocPlugin {
       await printPagesInPage(pages, this._config)
     } catch (error) {
       this.doc.logger.warn('pagination print failed: ', error)
+      if (error instanceof RevisionConflictError) throw error
     } finally {
       pages?.dispose()
       this._printing = false
@@ -171,7 +173,7 @@ export class PaginationPlugin extends DocPlugin {
       }
       // 这两次读取之间不 await：layout 与 snapshot 对应同一个主线程文档版本。
       const layout = !options.pagination && this._enabled
-        ? this._captureReusableLayout()
+        ? this._captureFinalProjectionLayout()
         : undefined
       const snapshot = this._snapshot()
       const config = options.pagination ?? this._config
@@ -317,8 +319,17 @@ export class PaginationPlugin extends DocPlugin {
     return layout
   }
 
+  /** Markup geometry is never reusable for a clean final-projection export. */
+  private _captureFinalProjectionLayout(): ReturnType<
+    PaginationPlugin['_captureReusableLayout']
+  > {
+    if ((this.doc.revisions?.list().length ?? 0) > 0) return undefined
+    return this._captureReusableLayout()
+  }
+
   private _snapshot() {
-    const snapshot = this.doc.exportSnapshot()
+    const snapshot = this.doc.revisions?.projectFinalSnapshot?.()
+      ?? this.doc.exportSnapshot()
     if (!snapshot) {
       throw new PaginationExportError(
         'layout-not-ready',

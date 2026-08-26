@@ -1,13 +1,24 @@
-import {DeltaInsert, DeltaInsertText, DeltaOperation} from '../../framework/block-std/types';
+import {
+  DeltaInsert,
+  DeltaInsertText,
+  DeltaOperation,
+  IInlineNodeAttrs,
+} from '../../framework/block-std/types';
 
-type ColorAttrs = {'s:color'?: string; 's:background'?: string};
+const MODEL_PRESENTATION_KEYS = [
+  's:color',
+  's:background',
+  's:display',
+  'a:data-bc-revision-ids',
+  'a:data-bc-revision-kind',
+  'a:data-bc-revision-state',
+] as const;
+const LINE_BREAK_IGNORED_KEYS = new Set<string>(['s:color', 's:background']);
 
-const COLOR_KEYS = ['s:color', 's:background'] as const;
-
-interface ColorRun {
+interface PresentationRun {
   start: number;
   end: number;
-  attrs: ColorAttrs;
+  attrs: IInlineNodeAttrs;
 }
 
 const insertLen = (insert: DeltaInsert['insert']): number =>
@@ -21,17 +32,17 @@ const insertLen = (insert: DeltaInsert['insert']): number =>
  * 切勿把 null 放进合并结果去 override：setAttributes 视 null 为「删除样式」，
  * 会连 Shiki 色一起抹掉。
  */
-/** 从模型 deltas 抽取稀疏的用户颜色 run（只取 s:color / s:background）。 */
-function toColorRuns(modelDeltas: DeltaInsert[]): ColorRun[] {
-  const runs: ColorRun[] = [];
+/** 从模型 deltas 抽取需要覆盖 Shiki 的用户色彩与临时修订投影。 */
+function toPresentationRuns(modelDeltas: DeltaInsert[]): PresentationRun[] {
+  const runs: PresentationRun[] = [];
   let offset = 0;
   for (const op of modelDeltas) {
     const len = insertLen(op.insert);
     const attrs = op.attributes;
     if (attrs) {
-      const picked: ColorAttrs = {};
+      const picked: IInlineNodeAttrs = {};
       let has = false;
-      for (const k of COLOR_KEYS) {
+      for (const k of MODEL_PRESENTATION_KEYS) {
         const v = attrs[k];
         if (v != null) {
           picked[k] = v as string;
@@ -46,7 +57,7 @@ function toColorRuns(modelDeltas: DeltaInsert[]): ColorRun[] {
 }
 
 /** 覆盖 abs 的 run（run 升序、不重叠），无则 null。 */
-function runAt(runs: ColorRun[], abs: number): ColorRun | null {
+function runAt(runs: PresentationRun[], abs: number): PresentationRun | null {
   for (const r of runs) {
     if (abs < r.start) return null;
     if (abs < r.end) return r;
@@ -55,7 +66,7 @@ function runAt(runs: ColorRun[], abs: number): ColorRun | null {
 }
 
 /** 严格大于 abs 的下一个 run 边界（无则 Infinity）。 */
-function nextBoundary(runs: ColorRun[], abs: number): number {
+function nextBoundary(runs: PresentationRun[], abs: number): number {
   for (const r of runs) {
     if (abs < r.start) return r.start;
     if (abs < r.end) return r.end;
@@ -64,9 +75,26 @@ function nextBoundary(runs: ColorRun[], abs: number): number {
 }
 
 /**
- * 把用户颜色 attr 叠加到 Shiki deltas 之上。
- * 两个输入覆盖「同一份纯文本」；用户键优先（s:color 覆盖、s:background 叠加）。
- * 保留 Shiki deltas 上的 d:lineBreak 等结构性 attr；不对 lineBreak 段染色。
+ * Shiki writes foreground/background colors as inline styles. While a code
+ * fragment is visibly marked for review those inline declarations would beat
+ * the revision theme selectors, so remove only the competing presentation
+ * styles. Once the fragment is no longer marked, the next projection keeps
+ * the original Shiki colors again.
+ */
+function letRevisionThemeOwnColors(attrs: IInlineNodeAttrs): IInlineNodeAttrs {
+  const state = attrs['a:data-bc-revision-state'];
+  if (state !== 'pending' && state !== 'conflict') return attrs;
+  const themed = {...attrs};
+  delete themed['s:color'];
+  delete themed['s:background'];
+  return themed;
+}
+
+/**
+ * 把模型展示 attr 叠加到 Shiki deltas 之上。
+ * 两个输入覆盖「同一份纯文本」；用户色彩和临时修订属性优先。
+ * 保留 Shiki deltas 上的 d:lineBreak 等结构性 attr；lineBreak 不继承用户
+ * 颜色，但仍保留修订归因与隐藏状态。
  *
  * 契约：modelDeltas 与 shikiDeltas 必须描述同一字符序列、同一偏移空间。
  * modelDeltas 只能含 string insert 或 break embed（均计长度 1，与 textContent() 的
@@ -77,7 +105,7 @@ export function mergeColorOverShiki(
   shikiDeltas: DeltaInsertText[],
   modelDeltas: DeltaInsert[],
 ): DeltaInsertText[] {
-  const runs = toColorRuns(modelDeltas);
+  const runs = toPresentationRuns(modelDeltas);
   if (!runs.length) return shikiDeltas;
 
   const out: DeltaInsertText[] = [];
@@ -85,7 +113,14 @@ export function mergeColorOverShiki(
   for (const op of shikiDeltas) {
     const text = op.insert;
     if (op.attributes?.['d:lineBreak']) {
-      out.push(op);
+      const run = runAt(runs, offset);
+      const attrs = {...(op.attributes ?? {})};
+      if (run) {
+        for (const [key, value] of Object.entries(run.attrs)) {
+          if (!LINE_BREAK_IGNORED_KEYS.has(key)) attrs[key] = value;
+        }
+      }
+      out.push({insert: text, attributes: attrs});
       offset += text.length;
       continue;
     }
@@ -96,7 +131,10 @@ export function mergeColorOverShiki(
       const end = Math.min(text.length, nextBoundary(runs, abs) - offset);
       const slice = text.slice(i, end);
       if (run) {
-        out.push({insert: slice, attributes: {...op.attributes, ...run.attrs}});
+        out.push({
+          insert: slice,
+          attributes: letRevisionThemeOwnColors({...op.attributes, ...run.attrs}),
+        });
       } else {
         out.push(op.attributes ? {insert: slice, attributes: op.attributes} : {insert: slice});
       }
@@ -108,10 +146,10 @@ export function mergeColorOverShiki(
 }
 
 // CodeInlineRuntime.groupTokenLines 用本函数算行指纹。
-// 指纹含 s:background，使「纯背景色变更」也能被行级 diff 检测到。
-/** 行级 diff 指纹：text + s:color + s:background。 */
+// 指纹包含所有覆盖 Shiki 的展示属性，使纯样式/修订状态变化也能触发行级 diff。
 export const deltaFingerprint = (d: DeltaInsertText): string =>
-  `${d.insert}\0${d.attributes?.['s:color'] || ''}\0${d.attributes?.['s:background'] || ''}\0`;
+  `${d.insert}\0${MODEL_PRESENTATION_KEYS.map(key =>
+    `${key}:${d.attributes?.[key] ?? ''}`).join('\0')}\0`;
 
 /**
  * 判断一组 delta op 是否「纯格式变更」：只有 retain（可带 attributes），无 insert/delete。

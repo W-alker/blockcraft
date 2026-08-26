@@ -2,6 +2,7 @@ import {
   applyInlinePaginationGaps,
   clearInlinePaginationGaps,
   isInlinePaginationProjectionWritable,
+  subscribeInlinePaginationProjectionInvalidated,
   whenInlinePaginationProjectionWritable,
 } from '../../../block-std/inline/runtime/inline-pagination-access'
 import type {InlinePaginationGap} from '../../../block-std/inline/runtime/inline-pagination-projection'
@@ -80,6 +81,10 @@ export class InlineBreakApplier {
   private _revision = 0
   private _activeUpdate: number | null = null
   private readonly _projectionReadyWatches = new Map<
+    string,
+    {runtime: object; release: () => void}
+  >()
+  private readonly _projectionInvalidationWatches = new Map<
     string,
     {runtime: object; release: () => void}
   >()
@@ -184,6 +189,7 @@ export class InlineBreakApplier {
       this._unmaterialized.delete(id)
       const runtime = this._applied.get(id)
       this._releaseProjectionReadyWatch(id)
+      this._releaseProjectionInvalidationWatch(id)
       if (!runtime) continue
       clearInlinePaginationGaps(runtime)
       this._applied.delete(id)
@@ -257,6 +263,7 @@ export class InlineBreakApplier {
     this._gaps.clear()
     this._unmaterialized.clear()
     this._releaseAllProjectionReadyWatches()
+    this._releaseAllProjectionInvalidationWatches()
   }
 
   destroy(): void {
@@ -272,6 +279,7 @@ export class InlineBreakApplier {
       clearInlinePaginationGaps(runtime)
       this._applied.delete(id)
       this._releaseProjectionReadyWatch(id)
+      this._releaseProjectionInvalidationWatch(id)
     }
 
     for (const [id, gaps] of this._gaps) {
@@ -282,9 +290,11 @@ export class InlineBreakApplier {
         clearInlinePaginationGaps(previous)
         this._applied.delete(id)
         this._releaseProjectionReadyWatch(id)
+        this._releaseProjectionInvalidationWatch(id)
       }
       if (!runtime) {
         this._releaseProjectionReadyWatch(id)
+        this._releaseProjectionInvalidationWatch(id)
         failed.add(id)
         continue
       }
@@ -296,18 +306,21 @@ export class InlineBreakApplier {
         } else {
           this._releaseProjectionReadyWatch(id)
         }
+        this._releaseProjectionInvalidationWatch(id)
         failed.add(id)
         continue
       }
       this._releaseProjectionReadyWatch(id)
       this._applied.set(id, runtime)
+      this._watchProjectionInvalidation(id, runtime)
     }
     return failed
   }
 
   private _clearApplied(): void {
-    for (const runtime of this._applied.values()) {
+    for (const [id, runtime] of this._applied) {
       clearInlinePaginationGaps(runtime)
+      this._releaseProjectionInvalidationWatch(id)
     }
     this._applied.clear()
   }
@@ -324,6 +337,34 @@ export class InlineBreakApplier {
       this._onProjectionReady()
     })
     this._projectionReadyWatches.set(id, {runtime, release})
+  }
+
+  private _watchProjectionInvalidation(id: string, runtime: object): void {
+    const current = this._projectionInvalidationWatches.get(id)
+    if (current?.runtime === runtime) return
+    current?.release()
+    const release = subscribeInlinePaginationProjectionInvalidated(
+      runtime,
+      () => {
+        if (this._applied.get(id) !== runtime) return
+        this._applied.delete(id)
+        this._releaseProjectionInvalidationWatch(id)
+        this._onProjectionReady()
+      },
+    )
+    this._projectionInvalidationWatches.set(id, {runtime, release})
+  }
+
+  private _releaseProjectionInvalidationWatch(id: string): void {
+    this._projectionInvalidationWatches.get(id)?.release()
+    this._projectionInvalidationWatches.delete(id)
+  }
+
+  private _releaseAllProjectionInvalidationWatches(): void {
+    for (const watch of this._projectionInvalidationWatches.values()) {
+      watch.release()
+    }
+    this._projectionInvalidationWatches.clear()
   }
 
   private _releaseProjectionReadyWatch(id: string): void {

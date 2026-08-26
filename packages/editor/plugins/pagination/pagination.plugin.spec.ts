@@ -461,6 +461,28 @@ describe('PaginationPlugin', () => {
     expect(plugin.captureStableLayout()).toBe(layout as any)
   })
 
+  it('keeps the live layout capturable while revisions exist but excludes it from final export', () => {
+    const plugin = new PaginationPlugin()
+    const layout = {revision: 1}
+    const controller = {
+      captureStableLayout: jasmine.createSpy('captureStableLayout')
+        .and.returnValue(layout),
+      canReuseStableLayoutForExport: true,
+    }
+    ;(plugin as any)._controller = controller
+    ;(plugin as any)._registered = true
+    ;(plugin as any)._enabled = true
+    ;(plugin as any)._destroyed = false
+    ;(plugin as any).doc = {
+      isInitialized: true,
+      revisions: {list: () => [{id: 'revision-1'}]},
+    }
+
+    expect(plugin.captureStableLayout()).toBe(layout as any)
+    expect((plugin as any)._captureFinalProjectionLayout()).toBeUndefined()
+    expect(controller.captureStableLayout).toHaveBeenCalledTimes(1)
+  })
+
   it('rolls back the full-document lease when pagination enable fails', () => {
     const {doc} = createDoc()
     const release = jasmine.createSpy('releaseFullDocumentViewLease')

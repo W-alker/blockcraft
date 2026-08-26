@@ -32,6 +32,11 @@ export class CodeInlineEditorBinding extends DocPlugin {
   @EventListen('compositionEnd', {flavour: 'code'})
   @EventListen('compositionEnd', {flavour: 'mermaid-textarea'})
   private _handleCompositionEnd(context: UIEventStateContext) {
+    // Revision-aware IME commits are owned by InputTransformer. Let its global
+    // compositionEnd handler attach attribution and keep the whole commit in a
+    // single revision group instead of writing directly to Y.Text here.
+    if (this.doc.revisions?.isTracking) return false
+
     const ev = context.getDefaultEvent<CompositionEvent>()
     const compositionState = context.get('compositionState')
     ev.preventDefault()

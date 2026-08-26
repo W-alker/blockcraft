@@ -1,9 +1,10 @@
 import {PaginationPdfResult} from '../framework/modules/pagination/export'
+import {RevisionConflictError} from '../framework'
 import {PaginationPlugin} from '../plugins/pagination'
 import {DocExportManager} from './export-manager'
 
 describe('DocExportManager pagination PDF', () => {
-  it('exports JSON from the model snapshot without traversing the root view', async () => {
+  it('exports JSON from the clean revision projection without traversing the root view', async () => {
     const snapshot = {
       id: 'root',
       flavour: 'root',
@@ -12,24 +13,46 @@ describe('DocExportManager pagination PDF', () => {
       meta: {},
       children: [],
     }
-    const exportSnapshot = jasmine.createSpy('exportSnapshot').and.returnValue(snapshot)
+    const projectFinalSnapshot = jasmine.createSpy('projectFinalSnapshot').and.returnValue(snapshot)
     const rootToSnapshot = jasmine.createSpy('toSnapshot')
     const createObjectURL = spyOn(URL, 'createObjectURL').and.returnValue('blob:blockcraft-test')
     const revokeObjectURL = spyOn(URL, 'revokeObjectURL')
     const click = spyOn(HTMLAnchorElement.prototype, 'click')
     const doc = {
-      exportSnapshot,
+      revisions: {projectFinalSnapshot},
       root: {toSnapshot: rootToSnapshot},
       plugins: [],
     } as unknown as BlockCraft.Doc
 
     await new DocExportManager(doc).exportToJson('document.json')
 
-    expect(exportSnapshot).toHaveBeenCalledTimes(1)
+    expect(projectFinalSnapshot).toHaveBeenCalledTimes(1)
     expect(rootToSnapshot).not.toHaveBeenCalled()
     expect(createObjectURL).toHaveBeenCalled()
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:blockcraft-test')
     expect(click).toHaveBeenCalledTimes(1)
+  })
+
+  it('rethrows revision conflicts from clean HTML and Markdown exports', async () => {
+    const conflict = new RevisionConflictError('存在修订冲突', ['r1'], ['c1'])
+    const projectFinalSnapshot = jasmine.createSpy('projectFinalSnapshot')
+      .and.callFake(() => { throw conflict })
+    const fromSnapshot = jasmine.createSpy('fromSnapshot')
+    const doc = {
+      revisions: {projectFinalSnapshot},
+      injector: {
+        get: () => ({getAdapter: () => ({fromSnapshot})}),
+      },
+      logger: {error: jasmine.createSpy('error')},
+      plugins: [],
+    } as unknown as BlockCraft.Doc
+    const manager = new DocExportManager(doc)
+
+    await expectAsync(manager.exportToHtml('document.html')).toBeRejectedWith(conflict)
+    await expectAsync(manager.exportToMarkdown('document.md')).toBeRejectedWith(conflict)
+
+    expect(projectFinalSnapshot).toHaveBeenCalledTimes(2)
+    expect(fromSnapshot).not.toHaveBeenCalled()
   })
 
   it('delegates the host backend to the pagination plugin without taking another snapshot', async () => {

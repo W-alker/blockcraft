@@ -2,13 +2,13 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying the inline editing system.
 >
-> Last updated: 2026-08-17
+> Last updated: 2026-08-26
 
 ## Architecture Overview
 
 ```
 Y.Text (Yjs, source of truth)
-  → toDelta() → DeltaInsert[]
+  → toDelta() → RevisionAttributionAdapter view projection → DeltaInsert[]
   → InlineRuntime.render(deltas) or applyDelta(ops)
   → ScrollBlot tree (runtime middle layer)
   → DOM (<div.edit-container> with <c-element>/<c-text> tags)
@@ -31,6 +31,33 @@ Y.Text (Yjs, source of truth)
 | `framework/block-std/inline/blot/cursor-blot.ts` | `CursorBlot` — temporary IME blot (length=0) |
 | `framework/block-std/inline/position/` | `InlinePositionMapper` — model ↔ DOM position |
 | `framework/block-std/inline/const.ts` | Constants, attribute helpers |
+| `framework/revision/attribution-adapter.ts` | Package-internal Yjs 13 relative-position and temporary revision-attribute boundary |
+
+## Revision Projection
+
+Revision metadata is not stored as one competing Y.Text format value. Before a
+full inline render, `DocumentRevisionManager.projectInlineDeltas()` splits the
+current delta at active relative ranges and injects temporary
+`data-bc-revision-ids`, `data-bc-revision-kind`, and
+`data-bc-revision-state` attributes. Overlapping inline changes therefore keep
+all attribution IDs and can apply dependency-aware projection without last
+writer wins.
+
+Blocks with text revisions currently take the guarded full-render path so the
+temporary attribution stays exact after local or remote changes. Blocks without
+text revisions keep the normal incremental `InlineRuntime.applyDelta()` fast
+path. The package-internal `RevisionAttributionAdapter` isolates this Yjs 13
+implementation so a later Yjs renderer can replace it without changing public
+Revision records.
+
+`CodeInlineRuntime` is a second full-render owner because Shiki rebuilds token
+runs asynchronously. Its model/Shiki merge must preserve the temporary
+revision IDs, kind, state and hidden display attribute in addition to user
+foreground/background colors; otherwise syntax highlighting would erase the
+revision presentation after the initial synchronous render. While a token is
+`pending` or `conflict`, the merge omits its competing Shiki/user foreground
+and background inline styles so the `--bc-revision-*` theme wins; the next
+unmarked/final projection restores normal syntax colors.
 
 ## Blot Tree Structure
 
@@ -201,6 +228,12 @@ component teardown. Selection projection guards preserve the current
 anchor/head. Pointer, wrapped-object and IME leases keep the previous stable
 projection in place; pagination retries only after the refreshed float plan is
 writable again.
+
+Bundled custom renderers enter the same package-internal canonical mutation
+boundary. When a synchronous or asynchronous rebuild revokes live page gaps,
+`inline-pagination-access.ts` notifies the pagination owner and cached Y.Text
+anchors are replayed on its next coalesced frame. Code and Mermaid Shiki passes
+therefore cannot leave projection bookkeeping ahead of the actual Blot DOM.
 
 Before natural text geometry is read again, the pagination owner synchronously
 revokes its previous inline gaps. It batches all natural DOM reads before

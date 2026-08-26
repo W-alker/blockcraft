@@ -354,9 +354,9 @@ new PaginationPlugin(options?: PaginationPluginOptions)
 | `enable()` / `disable()` | Apply or fully remove the reversible pagination view |
 | `updateConfig(partial)` | Merge config and schedule one frame-coalesced recompute |
 | `recompute()` | Request a manual recompute while enabled |
-| `captureStableLayout()` | Synchronously publish and return the current reusable stable page layout when available |
-| `print()` | Build WYSIWYG print pages; reuses live measurements when enabled |
-| `exportToPdf(name, options?)` | Browser print or host-native PDF; reuses the current stable page result unless `options.pagination` requests reflow |
+| `captureStableLayout()` | Synchronously publish and return the current exact live page layout when available, including markup-view Revision geometry; print/PDF independently reject that geometry for a clean final projection |
+| `print()` | Build clean final-projection print pages; reuses live measurements only when no revision records remain |
+| `exportToPdf(name, options?)` | Browser print or host-native PDF; revision conflicts throw, and revision records force a readonly final-projection reflow |
 
 ```typescript
 const pagination = new PaginationPlugin({
@@ -397,7 +397,7 @@ hook fails export with `layout-not-ready`; `resourcePolicy: 'best-effort'` only
 converts the final generic stability timeout to a warning and does not swallow a
 business preparation failure.
 
-The plugin changes only local DOM/CSS view state. It never writes Yjs and produces no Undo item. `print()` and `exportToPdf()` obtain the complete document through `doc.exportSnapshot()`, so virtualized offscreen blocks are included without mounting editor views merely to serialize them.
+The plugin changes only local DOM/CSS view state. It never writes Yjs and produces no Undo item. `print()` and `exportToPdf()` obtain the complete clean document through `doc.revisions.projectFinalSnapshot()`, so virtualized offscreen blocks are included without mounting editor views merely to serialize them. Pending revisions project as accepted, rejected revisions are reversed, and active decision or structural conflicts throw `RevisionConflictError`. Markup geometry is never reused while revision records remain.
 
 Live pagination supports a configured scroll container that is an outer
 ancestor rather than the root's direct parent. The actual scroll container

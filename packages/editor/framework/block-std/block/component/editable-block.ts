@@ -7,6 +7,7 @@ import { INLINE_CONTAINER_CLASS, TextBlot, BlotType } from "../../inline";
 import { InlineRuntime } from "../../inline/runtime/inline-runtime";
 import { Subject } from "rxjs";
 import {BlockReadonlyOperation} from "../../../doc/block-readonly.types";
+import {RevisionUnsupportedOperationError} from '../../../revision/errors'
 
 @Component({
   selector: 'editable-block',
@@ -113,7 +114,7 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
     super.applyReadonlyViewState()
     if (!this._containerElement) return
 
-    if (this.isReadonly) {
+    if (this.isReadonly || this.doc.revisions?.viewMode === 'final') {
       if (this._containerElement.getAttribute('contenteditable') !== 'false') {
         this._containerElement.setAttribute('contenteditable', 'false')
         this._containerElement.dataset['bcReadonlyEditable'] = 'true'
@@ -152,7 +153,10 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
   }
 
   rerender() {
-    this._runtime.render(this.textDeltas())
+    const deltas = this.textDeltas()
+    this._runtime.render(
+      this.doc.revisions?.projectInlineDeltas(this.id, deltas) ?? deltas,
+    )
     // 任意一次 rerender 都顺手清掉 WebKit 留下的宿主克隆（首次输入即可自愈）。
     this._pruneDuplicateHostClones()
   }
@@ -160,18 +164,30 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
   insertText(index: number, text: string, attributes?: DeltaInsert['attributes']) {
     if (!text) return
     this.doc.readonlyManager.assertTextWritable(this, BlockReadonlyOperation.Text)
-    this.yText.insert(index, text, attributes)
+    if (this.doc.revisions?.isTracking) {
+      this.doc.revisions.insertText(this.id, index, text, attributes)
+    } else {
+      this.yText.insert(index, text, attributes)
+    }
   }
 
   deleteText(index: number, length = this.textLength - index) {
     if (!length) return
     this.doc.readonlyManager.assertTextWritable(this, BlockReadonlyOperation.Text)
-    this.yText.delete(index, length)
+    if (this.doc.revisions?.isTracking) {
+      this.doc.revisions.deleteText(this.id, index, length)
+    } else {
+      this.yText.delete(index, length)
+    }
   }
 
   replaceText(index: number, length: number, text?: string | null, attributes?: DeltaInsert['attributes']) {
     if (length <= 0 && !text) return
     this.doc.readonlyManager.assertTextWritable(this, BlockReadonlyOperation.Replace)
+    if (this.doc.revisions?.isTracking) {
+      this.doc.revisions.replaceText(this.id, index, length, text, attributes)
+      return
+    }
     const delta: DeltaOperation[] = []
     index > 0 && delta.push({ retain: index })
     length > 0 && delta.push({ delete: length })
@@ -182,13 +198,20 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
   formatText(index: number, length: number, attributes: DeltaInsert['attributes']) {
     if (!length || !Object.keys(attributes ?? {}).length) return
     this.doc.readonlyManager.assertTextWritable(this, BlockReadonlyOperation.Format)
+    if (this.doc.revisions?.isTracking) {
+      throw new RevisionUnsupportedOperationError('修订模式 v1 暂不支持格式修订')
+    }
     this.yText.format(index, length, attributes as any)
   }
 
   applyDeltaOperations(delta: DeltaOperation[]) {
     if (!delta.length) return
     this.doc.readonlyManager.assertTextWritable(this, BlockReadonlyOperation.Text)
-    this.yText.applyDelta(delta)
+    if (this.doc.revisions?.isTracking) {
+      this.doc.revisions.applyDelta(this.id, delta)
+    } else {
+      this.yText.applyDelta(delta)
+    }
   }
 
   protected _applyDeltaToYText(deltas: DeltaOperation[]) {
@@ -206,6 +229,10 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
   protected _applyDeltaToView(deltas: DeltaOperation[]) {
     if (!this.isAttached) {
       this.dirtyWhileDetached = true
+      return
+    }
+    if (this.doc.revisions?.hasTextRevisions(this.id)) {
+      this._rerenderRestoringCursor(deltas)
       return
     }
     try {

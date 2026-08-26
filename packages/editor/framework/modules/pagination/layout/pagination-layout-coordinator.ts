@@ -188,6 +188,29 @@ export class PaginationLayoutCoordinator {
     ));
   }
 
+  /** @internal Revision-only DOM projection invalidation. */
+  applyPresentationChange(rootIds: readonly string[]): void {
+    if (this.disposed) return;
+    const affectedRootIds = [...new Set(rootIds)];
+    this.geometryIndex.markContentDirty(affectedRootIds);
+    this.geometryIndex.applyEstimatedHeights(affectedRootIds.map(blockId => {
+      if (this.doc.revisions?.getBlockPresentation(blockId).hidden) {
+        return {blockId, height: 0, modelDriven: true};
+      }
+      const estimate = estimateModelBlockHeightDetails(this.doc, blockId, {
+        estimatedHeights:
+          this.doc.config.virtualization?.estimatedHeights ?? {},
+        defaultHeight: DEFAULT_ESTIMATED_HEIGHT,
+        layoutMode: 'paginated',
+      });
+      return {
+        blockId,
+        height: estimate.height,
+        modelDriven: estimate.modelDriven,
+      };
+    }));
+  }
+
   applyStructureChange(change: IBlockModelStructureChange): void {
     if (this.disposed) return;
     const affectedRootIds = change.affectedRootIds

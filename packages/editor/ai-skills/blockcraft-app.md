@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-20
+> Last updated: 2026-08-26
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -13,7 +13,7 @@ Host Angular component
   ├── Provides DI tokens (file, message, block-creator, link-previewer, adapter)
   ├── Creates the full bundled capability set, or builds a subset SchemaManager
   ├── Constructs a BlockCraftDoc({ yDoc, docId, schemas, plugins, embeds, … })
-  ├── Calls doc.initBySnapshot(snapshot, containerEl) OR doc.initByYBlock(yRoot, containerEl)
+  ├── Calls doc.initBySnapshot(snapshot, containerEl), doc.initByDocumentSnapshot(complete, containerEl), OR doc.initByYBlock(yRoot, containerEl)
   └── Loads a theme stylesheet (light, dark, …)
 ```
 
@@ -504,6 +504,9 @@ viewport, recompute the ratio, and pass it to `setScale()`.
 ```typescript
 const exports = new DocExportManager(doc)
 
+await exports.exportToHtml('document.html')
+await exports.exportToMarkdown('document.md')
+
 // Browser: opens the system print dialog; the user can choose "Save as PDF".
 await exports.exportToPdf('document.pdf')
 
@@ -525,6 +528,12 @@ await pagination.print()
 ```
 
 With an enabled plugin and no explicit `options.pagination`, `exportToPdf()` captures the current stable page result, then renders the same snapshot through a readonly `BlockCraftDoc`. This preserves page count, block placement and table fragments without cloning the focused editor or using snapshot-viewer. In experimental sparse mode, an estimated (`exact: false`) live result is never reused: export falls back to the complete readonly reflow. Passing `options.pagination` intentionally requests a new reflow. If the plugin is disabled, its config is used for an offscreen readonly reflow; without a plugin the fallback is A4.
+
+JSON, HTML, Markdown, print and PDF are clean exports. They obtain content from
+`doc.revisions.projectFinalSnapshot()`: pending revisions are projected as
+accepted, rejected revisions are reversed, and any active decision or structure
+conflict throws `RevisionConflictError`. When revision records remain, PDF does
+not reuse markup-view geometry and performs a readonly final-projection reflow.
 
 `prepareDocument` runs after that readonly copy is initialized and receives only
 the copy's `doc` and `root`. Use it to trigger and await business-block data/view
@@ -1107,11 +1116,65 @@ this.doc.onTextUpdate$.subscribe(({ blockId, op, tr }) => { … })
 this.doc.selection.selectionChange$.subscribe(sel => { … })
 ```
 
+## Revision / Track Changes
+
+Revision is optional and document-owned. The host supplies only an identity
+snapshot and initial mode; authentication, authorization, role checks, epoch
+admission and provider lifecycle stay outside the editor.
+
+```typescript
+const doc = new BlockCraftDoc({
+  // normal DocConfig fields...
+  revision: {
+    actor: {
+      actorId: session.user.id,
+      displayName: session.user.displayName,
+      avatarUrl: session.user.avatarUrl,
+    },
+    mode: 'off',
+  },
+})
+
+doc.revisions.setMode('track')
+doc.revisions.state$.subscribe(({revisions, conflicts, epoch}) => {
+  renderReviewPanel(revisions, conflicts, epoch)
+})
+```
+
+Calling `setMode('track')` without a non-empty `actorId` throws
+`RevisionActorRequiredError`; the editor never creates anonymous revisions.
+Review UI may use the exported `RevisionToolbarComponent` and
+`RevisionReviewPanelComponent`. They emit intents and do not decide whether the
+current user may review; the host decides whether to render them and whether to
+invoke `accept()`, `reject()`, `redecide()`, batch commands or
+`resolveOverlap()`.
+
+`setViewMode('final')` validates conflicts and changes editor writeability, but
+the clean document should be rendered from an isolated snapshot:
+
+```typescript
+doc.revisions.setViewMode('final')
+const finalRoot = doc.revisions.projectFinalSnapshot()
+const preview = new BlockCraftDoc({...previewConfig, readonly: true})
+preview.initBySnapshot(finalRoot, finalContainer)
+```
+
+Pending changes are treated as proposed/accepted in Final; rejected changes are
+reverse-projected. Any opposite review heads or structural overlap causes
+`RevisionConflictError`, which also blocks clean HTML/Markdown/PDF export paths
+that first request the final snapshot.
+
+For destructive compaction, the host must provide both the current epoch and
+Yjs state vector. `compactResolved()` rejects pending/conflicted state, applies
+all decisions, clears revision history, and increments `revisionEpoch`. The
+host synchronization layer must reject older-epoch offline replicas and make
+them reload.
+
 ## Step 9 — Persistence
 
 BlockCraft does **not** persist on its own. The host owns that. Two common patterns:
 
-### A) Snapshot-based persistence (offline / single-user)
+### A) Snapshot-based persistence (offline / single-user, no revisions)
 
 ```typescript
 // Save: serialize the complete model without requiring mounted block views
@@ -1123,6 +1186,22 @@ await this.api.save(this.docId, json)
 const snapshot = await this.api.load(this.docId)
 this.doc.initBySnapshot(snapshot, this.containerRef.nativeElement)
 ```
+
+When revisions must survive save/load, use the complete document contract. The
+inner `BlockCraftDocumentSnapshot.version` is currently `1`; any outer file or
+database envelope and its migration policy belong to the host application.
+
+```typescript
+const complete = this.doc.exportDocumentSnapshot()
+await this.api.save(this.docId, complete)
+
+const restored = await this.api.load(this.docId)
+this.doc.initByDocumentSnapshot(restored, this.containerRef.nativeElement)
+```
+
+`BlockCraftDocumentSnapshot` contains `root`, `revisions`, `decisions`, and
+`revisionEpoch`. Existing `exportSnapshot()` / `initBySnapshot()` remain the
+content-only compatibility path and intentionally do not persist review state.
 
 ### B) Yjs sync (multi-user / collaborative)
 

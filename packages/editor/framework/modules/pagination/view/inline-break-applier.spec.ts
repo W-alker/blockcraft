@@ -169,6 +169,39 @@ describe('InlineBreakApplier', () => {
     }
   })
 
+  it('replays cached anchors after an async canonical renderer revokes the projection', () => {
+    const runtime = {}
+    const apply = jasmine.createSpy('apply').and.returnValue(true)
+    const ready = jasmine.createSpy('ready')
+    let notifyInvalidated: (() => void) | undefined
+    const release = registerInlinePaginationAccess(runtime, {
+      apply,
+      clear: () => undefined,
+      measureLineStarts: () => [],
+      subscribeProjectionInvalidated: listener => {
+        notifyInvalidated = listener
+        return () => {
+          if (notifyInvalidated === listener) notifyInvalidated = undefined
+        }
+      },
+    })
+    const applier = new InlineBreakApplier({
+      getBlockById: () => ({runtime}),
+    } as unknown as BlockCraft.Doc, ready)
+
+    try {
+      applier.apply([meta()], result, 100, 20, 10)
+      notifyInvalidated?.()
+
+      expect(ready).toHaveBeenCalledTimes(1)
+      applier.apply([meta()], result, 100, 20, 10)
+      expect(apply).toHaveBeenCalledTimes(2)
+    } finally {
+      applier.destroy()
+      release()
+    }
+  })
+
   it('preflights a mounted frozen runtime before its first continuation', () => {
     const runtime = {}
     const ready = jasmine.createSpy('ready')

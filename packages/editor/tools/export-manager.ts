@@ -1,5 +1,9 @@
 import {downloadFile} from "../global";
-import {ClipboardDataType, DOC_ADAPTER_SERVICE_TOKEN} from "../framework";
+import {
+  ClipboardDataType,
+  DOC_ADAPTER_SERVICE_TOKEN,
+  RevisionConflictError,
+} from "../framework";
 import {
   exportDocumentToPdf,
   PaginationPdfOptions,
@@ -44,6 +48,20 @@ export class DocExportManager {
       await downloadFile(blob, name)
     } catch (e) {
       this.doc.logger.error('export to markdown failed', e)
+      if (e instanceof RevisionConflictError) throw e
+    }
+  }
+
+  async exportToHtml(name: string) {
+    try {
+      const htmlAdapter = this.doc.injector.get(DOC_ADAPTER_SERVICE_TOKEN)?.getAdapter(ClipboardDataType.HTML)
+      if (!htmlAdapter) return
+      const text = await htmlAdapter.fromSnapshot(this._snapshot())
+      const blob = new Blob([text], {type: 'text/html'})
+      await downloadFile(blob, name)
+    } catch (e) {
+      this.doc.logger.error('export to html failed', e)
+      if (e instanceof RevisionConflictError) throw e
     }
   }
 
@@ -98,8 +116,6 @@ export class DocExportManager {
   }
 
   private _snapshot() {
-    const snapshot = this.doc.exportSnapshot()
-    if (!snapshot) throw new Error('Document model is not ready for export')
-    return snapshot
+    return this.doc.revisions.projectFinalSnapshot()
   }
 }

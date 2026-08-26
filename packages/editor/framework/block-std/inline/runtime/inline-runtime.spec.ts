@@ -11,6 +11,7 @@ import {
   clearInlinePaginationGaps,
   isInlinePaginationProjectionWritable,
   measureInlinePaginationLineStarts,
+  subscribeInlinePaginationProjectionInvalidated,
   whenInlinePaginationProjectionWritable,
 } from './inline-pagination-access'
 import {
@@ -230,6 +231,30 @@ describe('InlineRuntime inline float lifecycle', () => {
     expect(container.querySelector(`[${INLINE_PAGINATION_GAP_ATTRIBUTE}]`)).toBeNull()
     expect(runtime.textLength).toBe(7)
     expect(runtime.scrollBlot.leaves.map(leaf => leaf.domNode.textContent).join('')).toBe('abcdef!')
+    runtime.destroy()
+  })
+
+  it('notifies pagination when a canonical mutation revokes its live projection', () => {
+    const container = document.createElement('div')
+    const runtime = new InlineRuntime(container, new Map())
+    const invalidated = jasmine.createSpy('invalidated')
+    const unsubscribe = subscribeInlinePaginationProjectionInvalidated(
+      runtime,
+      invalidated,
+    )
+    runtime.render([{insert: 'abcdef'}])
+    applyInlinePaginationGaps(runtime, [{
+      offset: 3,
+      height: 100,
+      backdropOffset: 70,
+      backdropHeight: 20,
+    }])
+
+    runtime.render([{insert: 'abcdef'}])
+    runtime.render([{insert: 'abcdef'}])
+
+    expect(invalidated).toHaveBeenCalledTimes(1)
+    unsubscribe()
     runtime.destroy()
   })
 

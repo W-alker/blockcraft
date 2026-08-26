@@ -117,6 +117,19 @@ describe('LiveHeightSource atomic block measurement', () => {
     expect(meta?.lockHeight).toBeUndefined()
   })
 
+  it('removes the authored margin from a revision-hidden block slot', () => {
+    source = createSource(55, 464)
+    expect(source.measure()[0]?.height).toBe(472)
+
+    host.style.display = 'none'
+    source.invalidateMeasurements(['embed-1'])
+    const [meta] = source.measure()
+
+    expect(meta?.naturalHeight).toBe(0)
+    expect(meta?.height).toBe(0)
+    expect(meta?.trailingSpacing).toBe(0)
+  })
+
   it('does not count clipped atomic overflow as page stride', () => {
     source = createSource(176, 180)
     host.style.overflow = 'hidden'

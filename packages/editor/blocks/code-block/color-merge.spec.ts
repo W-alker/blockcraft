@@ -98,6 +98,100 @@ describe('mergeColorOverShiki', () => {
     const model: DeltaInsert[] = [{insert: 'a', attributes: {'s:color': 'red'}}];
     expect(mergeColorOverShiki(shiki, model)).toEqual([]);
   });
+
+  it('preserves revision attribution when Shiki splits the marked text', () => {
+    const shiki: DeltaInsertText[] = [
+      {insert: 'const', attributes: {'s:color': '#shiki-a'}},
+      {insert: ' value', attributes: {'s:color': '#shiki-b'}},
+    ];
+    const revisionAttrs = {
+      'a:data-bc-revision-ids': 'revision-1',
+      'a:data-bc-revision-kind': 'insert',
+      'a:data-bc-revision-state': 'pending',
+    } as const;
+    const model: DeltaInsert[] = [
+      {insert: 'co'},
+      {insert: 'nst val', attributes: revisionAttrs},
+      {insert: 'ue'},
+    ];
+
+    expect(mergeColorOverShiki(shiki, model)).toEqual([
+      {insert: 'co', attributes: {'s:color': '#shiki-a'}},
+      {insert: 'nst', attributes: revisionAttrs},
+      {insert: ' val', attributes: revisionAttrs},
+      {insert: 'ue', attributes: {'s:color': '#shiki-b'}},
+    ]);
+  });
+
+  it('lets pending and conflict revision theme colors beat inline code colors', () => {
+    const shiki: DeltaInsertText[] = [{
+      insert: 'ab',
+      attributes: {'s:color': '#shiki', 's:background': '#shiki-bg'},
+    }];
+    const model: DeltaInsert[] = [
+      {
+        insert: 'a',
+        attributes: {
+          's:color': '#user',
+          's:background': '#user-bg',
+          'a:data-bc-revision-kind': 'insert',
+          'a:data-bc-revision-state': 'pending',
+        },
+      },
+      {
+        insert: 'b',
+        attributes: {
+          'a:data-bc-revision-kind': 'insert',
+          'a:data-bc-revision-state': 'conflict',
+        },
+      },
+    ];
+
+    expect(mergeColorOverShiki(shiki, model)).toEqual([
+      {
+        insert: 'a',
+        attributes: {
+          'a:data-bc-revision-kind': 'insert',
+          'a:data-bc-revision-state': 'pending',
+        },
+      },
+      {
+        insert: 'b',
+        attributes: {
+          'a:data-bc-revision-kind': 'insert',
+          'a:data-bc-revision-state': 'conflict',
+        },
+      },
+    ]);
+  });
+
+  it('keeps revision hiding on a line break without applying user colors to it', () => {
+    const shiki: DeltaInsertText[] = [
+      {insert: '\n', attributes: {'d:lineBreak': true}},
+    ];
+    const model: DeltaInsert[] = [{
+      insert: '\n',
+      attributes: {
+        's:color': 'red',
+        's:background': 'yellow',
+        's:display': 'none',
+        'a:data-bc-revision-ids': 'revision-1',
+        'a:data-bc-revision-kind': 'delete',
+        'a:data-bc-revision-state': 'accepted',
+      },
+    }];
+
+    expect(mergeColorOverShiki(shiki, model)).toEqual([{
+      insert: '\n',
+      attributes: {
+        'd:lineBreak': true,
+        's:display': 'none',
+        'a:data-bc-revision-ids': 'revision-1',
+        'a:data-bc-revision-kind': 'delete',
+        'a:data-bc-revision-state': 'accepted',
+      },
+    }]);
+  });
 });
 
 describe('deltaFingerprint', () => {
@@ -111,6 +205,19 @@ describe('deltaFingerprint', () => {
     const a: DeltaInsertText = {insert: 'x', attributes: {'s:color': 'red'}};
     const b: DeltaInsertText = {insert: 'x', attributes: {'s:color': 'red'}};
     expect(deltaFingerprint(a)).toBe(deltaFingerprint(b));
+  });
+
+  it('differs when only revision attribution changes', () => {
+    const a: DeltaInsertText = {insert: 'x'};
+    const b: DeltaInsertText = {
+      insert: 'x',
+      attributes: {
+        'a:data-bc-revision-ids': 'revision-1',
+        'a:data-bc-revision-kind': 'insert',
+        'a:data-bc-revision-state': 'pending',
+      },
+    };
+    expect(deltaFingerprint(a)).not.toBe(deltaFingerprint(b));
   });
 });
 

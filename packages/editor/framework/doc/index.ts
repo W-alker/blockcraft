@@ -52,6 +52,11 @@ import {
   BlockMutationPolicy,
   BlockMutationPolicyManager,
 } from './block-mutation-policy'
+import {
+  BlockCraftDocumentSnapshot,
+  DocumentRevisionManager,
+  RevisionConfig,
+} from '../revision'
 
 export interface DocConfig {
   docId: string
@@ -90,6 +95,8 @@ export interface DocConfig {
    * mutations. The policy runs before a Yjs transaction is applied.
    */
   blockMutationPolicy?: BlockMutationPolicy
+  /** Optional track-changes identity snapshot and initial mode. Authorization remains host-owned. */
+  revision?: RevisionConfig
 }
 
 export const Y_BLOCK_MAP_NAME = 'blocks'
@@ -134,6 +141,7 @@ export class BlockCraftDoc {
   readonly onMetaUpdate$ = this.crud.onMetaUpdate$
   readonly readonlyManager = new BlockReadonlyManager(this)
   readonly mutationPolicy = new BlockMutationPolicyManager(this)
+  readonly revisions: DocumentRevisionManager
 
   private readonly _plugins: DocPlugin[] = []
 
@@ -259,6 +267,7 @@ export class BlockCraftDoc {
     this._bindReadonlyViolationFeedback()
     this.onDestroy(() => this._disposeSubsystems())
     this._yBlockMap = this.yDoc.getMap<YBlock>(Y_BLOCK_MAP_NAME)
+    this.revisions = new DocumentRevisionManager(this, this.config.revision)
   }
 
   private _disposeSubsystems(): void {
@@ -309,6 +318,18 @@ export class BlockCraftDoc {
     if (yDoc) yDoc.transact(writeSnapshot)
     else writeSnapshot()
     this._initByPreparedYRoot(yRoot, container, 'initBySnapshot', startedAt)
+  }
+
+  /** Initialize a complete document snapshot, including revisions and decisions. */
+  initByDocumentSnapshot(snapshot: BlockCraftDocumentSnapshot, container: HTMLElement): void {
+    if (this._root) return
+    this.initBySnapshot(snapshot.root, container)
+    this.revisions.importDocumentSnapshot(snapshot)
+  }
+
+  /** Export content plus the complete revision domain. */
+  exportDocumentSnapshot(): BlockCraftDocumentSnapshot {
+    return this.revisions.exportDocumentSnapshot()
   }
 
   initByYBlock(yRoot: YBlock, container: HTMLElement) {

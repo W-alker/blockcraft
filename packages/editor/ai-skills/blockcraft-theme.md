@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-24
+> Last updated: 2026-08-26
 
 ## Theme Structure
 
@@ -115,6 +115,36 @@ a theme token. A host that needs a product/account color should send
 `{id, name, color}` through Awareness; ordinary theme overrides should focus on
 the tag's typography, radius and shadow.
 
+## Revision Markup Contract
+
+Inline projection uses
+`c-element[data-bc-revision-kind][data-bc-revision-state]`. Block insertion,
+deletion and structural boundaries use the same state/kind attributes on the
+block host plus `data-bc-revision-boundary-before`. Conflict state never reuses
+comment markers; comments and revisions remain separate visual channels.
+
+Hosts can override the light/dark defaults through these tokens:
+
+```scss
+--bc-revision-insert-color
+--bc-revision-insert-bg
+--bc-revision-delete-color
+--bc-revision-delete-bg
+--bc-revision-boundary-color
+--bc-revision-conflict-color
+--bc-revision-conflict-bg
+```
+
+The reusable review components use the existing iconfont and these variables;
+do not replace their single-color icons with inline SVG or image assets.
+
+Absolute objects keep their persisted `under` / `over` stacking layer while
+marked. Because their image/canvas/frame descendants may be opaque, the base
+theme does not use the ordinary host fill or inset stripe for them: pending
+insertions use an external solid outline, pending deletions a dashed outline,
+and conflicts a double outline. Host overrides must not raise `z-index` merely
+to expose a marker, because that would change document placement semantics.
+
 ## Snapshot Viewer Styling
 
 The standalone snapshot-viewer reuses the same block class naming and `[data-blockcraft-root="true"]` readonly styling model as the editor wherever practical.
@@ -188,6 +218,13 @@ Read `themes/base.scss` and `themes/variables.scss` for the current variable lis
 --bc-border-color
 --bc-accent-color
 --bc-selection-color
+--bc-revision-insert-color
+--bc-revision-insert-bg
+--bc-revision-delete-color
+--bc-revision-delete-bg
+--bc-revision-boundary-color
+--bc-revision-conflict-color
+--bc-revision-conflict-bg
 --bc-block-background-color         // current block's persisted backColor
 --bc-block-border-color             // current block's persisted borderColor
 --bc-render-unit-background-color   // content region's persisted backColor

@@ -34,6 +34,7 @@ import {registerRootLayoutProjection} from "../../virtualization/root-virtualiza
 import {DocumentHeaderLayer} from './document-header-layer';
 import {InlineBreakApplier} from './inline-break-applier';
 import {cloneInlinePaginationBreakPlan} from './inline-break-plan';
+import {subscribeRevisionPresentationChange} from '../../../revision/presentation-change';
 
 interface FontLoadingEventTarget {
   addEventListener(type: "loadingdone", listener: EventListener): void;
@@ -239,6 +240,20 @@ export class PaginatedViewController {
           // InlineRuntime 会在任意文本/格式 Delta 前撤销零模型长度分页页缝。
           // 即使新旧自然 border-box 等高，也必须在下一帧重放分页投影；不能只依赖
           // ResizeObserver。scheduleRecompute 自身会把同帧内容变化合并为一次。
+          this.scheduleRecompute();
+        }),
+      );
+      const revisionManager = this.doc.revisions
+      if (revisionManager) this._subs.add(
+        subscribeRevisionPresentationChange(revisionManager, change => {
+          const rootIds = this._rootIdsForChangedBlocks(change.blockIds);
+          if (!rootIds.length) return;
+          this._heightSource.invalidateMeasurements(rootIds);
+          this._inlineBreaks.invalidate(rootIds);
+          this._shadowLayout = null;
+          this._runShadowMutation('revision-presentation-change', () =>
+            this.layoutCoordinator.applyPresentationChange(rootIds),
+          );
           this.scheduleRecompute();
         }),
       );

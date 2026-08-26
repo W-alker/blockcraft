@@ -140,4 +140,21 @@ describe("CodeInlineEditorBinding selection liveness", () => {
     ]);
     expect(doc.selection.recalculate).not.toHaveBeenCalled();
   });
+
+  it("delegates tracked IME commits to InputTransformer", () => {
+    const plugin = new CodeInlineEditorBinding();
+    (plugin as any).doc = {
+      revisions: {isTracking: true},
+    };
+    const context = {
+      getDefaultEvent: jasmine.createSpy("getDefaultEvent"),
+      get: jasmine.createSpy("get"),
+    };
+
+    const handled = (plugin as any)._handleCompositionEnd(context);
+
+    expect(handled).toBeFalse();
+    expect(context.getDefaultEvent).not.toHaveBeenCalled();
+    expect(context.get).not.toHaveBeenCalled();
+  });
 });

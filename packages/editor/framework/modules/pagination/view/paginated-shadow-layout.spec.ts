@@ -11,6 +11,7 @@ import {
   PaginationLayoutState,
 } from "../layout/pagination-layout-coordinator";
 import { PaginatedViewController } from "./paginated-view.controller";
+import {emitRevisionPresentationChange} from '../../../revision/presentation-change';
 
 const CONFIG: PaginationConfig = {
   pageSize: { width: 400, height: 220 },
@@ -39,6 +40,7 @@ interface Harness {
   readonly compositionSession: { isIdle: boolean };
   readonly eventStatus: { isComposing: boolean };
   readonly logger: { warn: jasmine.Spy };
+  readonly revisionManager: object;
   setHeading(heading: number | undefined): void;
   destroy(): void;
 }
@@ -104,6 +106,9 @@ function createHarness(): Harness {
   const logger = { warn: jasmine.createSpy("warn") };
   const compositionSession = { isIdle: true };
   const eventStatus = { isComposing: false };
+  const revisionManager = {
+    getBlockPresentation: () => ({hidden: false}),
+  };
   let heading: number | undefined;
   const block = {
     id: "root-block",
@@ -149,6 +154,7 @@ function createHarness(): Harness {
     onPropsUpdate$,
     inputManger: { compositionSession },
     event: { status: eventStatus },
+    revisions: revisionManager,
     ngZone: { runOutsideAngular: (fn: () => void) => fn() },
     getBlockById: (blockId: string) =>
       blockId === "root-block" ? block : null,
@@ -169,6 +175,7 @@ function createHarness(): Harness {
     compositionSession,
     eventStatus,
     logger,
+    revisionManager,
     setHeading: nextHeading => {
       heading = nextHeading;
       facts.set("root-block", {
@@ -743,6 +750,48 @@ describe("PaginatedViewController shadow layout", () => {
       expect(applyContentChange).toHaveBeenCalledTimes(3);
       expect(requestFrame).toHaveBeenCalledTimes(3);
       expect(cancelFrame).toHaveBeenCalledTimes(2);
+    } finally {
+      controller.destroy();
+      harness.destroy();
+    }
+  });
+
+  it("invalidates affected roots for revision-only presentation changes", () => {
+    const harness = createHarness();
+    const coordinator = new PaginationLayoutCoordinator(harness.doc);
+    const applyPresentationChange = spyOn(
+      coordinator,
+      "applyPresentationChange",
+    ).and.stub();
+    const controller = new PaginatedViewController(
+      harness.doc,
+      CONFIG,
+      harness.scrollContainer,
+      coordinator,
+    );
+
+    try {
+      controller.enable();
+      const internals = controller as any;
+      const invalidateMeasurements = spyOn(
+        internals._heightSource,
+        "invalidateMeasurements",
+      ).and.callThrough();
+      const invalidateInlineBreaks = spyOn(
+        internals._inlineBreaks,
+        "invalidate",
+      ).and.callThrough();
+      const scheduleRecompute = spyOn(
+        controller,
+        "scheduleRecompute",
+      ).and.stub();
+
+      emitRevisionPresentationChange(harness.revisionManager, ["nested"]);
+
+      expect(invalidateMeasurements).toHaveBeenCalledOnceWith(["root-block"]);
+      expect(invalidateInlineBreaks).toHaveBeenCalledOnceWith(["root-block"]);
+      expect(applyPresentationChange).toHaveBeenCalledOnceWith(["root-block"]);
+      expect(scheduleRecompute).toHaveBeenCalledTimes(1);
     } finally {
       controller.destroy();
       harness.destroy();

@@ -155,6 +155,71 @@
       // the final paragraph (including single-paragraph containers).
       margin-bottom: var(--bc-block-sa, 0pt);
     }
+
+    &[data-bc-revision-hidden] {
+      display: none !important;
+    }
+
+    &[data-bc-revision-state="pending"][data-bc-revision-kind="insert"] {
+      box-shadow: inset 3px 0 0 var(--bc-revision-insert-color);
+      background-color: var(--bc-revision-insert-bg);
+    }
+
+    &[data-bc-revision-state="pending"][data-bc-revision-kind="delete"] {
+      box-shadow: inset 3px 0 0 var(--bc-revision-delete-color);
+      background-color: var(--bc-revision-delete-bg);
+    }
+
+    &[data-bc-revision-state="conflict"] {
+      outline: 2px solid var(--bc-revision-conflict-color);
+      background-color: var(--bc-revision-conflict-bg);
+    }
+
+    &[data-bc-revision-boundary-before]::before {
+      content: '';
+      position: absolute;
+      inset-inline: 0;
+      top: -2px;
+      border-top: 2px dashed var(--bc-revision-boundary-color);
+      pointer-events: none;
+    }
+
+    &[data-bc-revision-boundary-before="delete"]::before {
+      border-top-color: var(--bc-revision-delete-color);
+    }
+
+    &[data-bc-revision-boundary-before="conflict"]::before {
+      border-top-color: var(--bc-revision-conflict-color);
+      border-top-style: solid;
+    }
+  }
+
+  // Absolute objects often own opaque image/canvas/frame descendants, so a
+  // host background or inset stripe is either invisible or contaminates the
+  // object surface. Keep the placement stack untouched and paint the revision
+  // marker outside the object's own box instead.
+  [data-block-id][data-bc-placement='absolute'][data-bc-revision-state='pending'] {
+    background-color: transparent;
+    box-shadow: none;
+    outline-width: 2px;
+    outline-offset: 3px;
+  }
+
+  [data-block-id][data-bc-placement='absolute'][data-bc-revision-state='pending'][data-bc-revision-kind='insert'] {
+    outline-color: var(--bc-revision-insert-color);
+    outline-style: solid;
+  }
+
+  [data-block-id][data-bc-placement='absolute'][data-bc-revision-state='pending'][data-bc-revision-kind='delete'] {
+    outline-color: var(--bc-revision-delete-color);
+    outline-style: dashed;
+  }
+
+  [data-block-id][data-bc-placement='absolute'][data-bc-revision-state='conflict'] {
+    background-color: transparent;
+    box-shadow: none;
+    outline: 3px double var(--bc-revision-conflict-color);
+    outline-offset: 3px;
   }
 
   // Code owns opaque-ish child surfaces. Once a block-level fill is explicit,
@@ -489,6 +554,27 @@
         border-bottom: 4px solid var(--bc-comment-border-color);
       }
 
+
+      &[data-bc-revision-state="pending"][data-bc-revision-kind="insert"] {
+        color: var(--bc-revision-insert-color);
+        background-color: var(--bc-revision-insert-bg);
+        text-decoration: underline;
+        text-decoration-thickness: 2px;
+        text-underline-offset: 2px;
+      }
+
+      &[data-bc-revision-state="pending"][data-bc-revision-kind="delete"] {
+        color: var(--bc-revision-delete-color);
+        background-color: var(--bc-revision-delete-bg);
+        text-decoration: line-through;
+      }
+
+      &[data-bc-revision-state="conflict"] {
+        background-color: var(--bc-revision-conflict-bg);
+        text-decoration-color: var(--bc-revision-conflict-color);
+        outline: 1px solid var(--bc-revision-conflict-color);
+      }
+
       &[mention-placeholder="true"] {
         color: var(--bc-color-light);
       }
@@ -498,6 +584,27 @@
     a {
       word-break: break-all;
       text-wrap: wrap;
+    }
+  }
+
+  &[data-bc-revision-view="final"] {
+    c-element[data-bc-revision-kind] {
+      color: inherit;
+      background: transparent;
+      text-decoration: none;
+      outline: none;
+    }
+
+    [data-block-id][data-bc-revision-state],
+    [data-block-id][data-bc-placement='absolute'][data-bc-revision-state] {
+      box-shadow: none;
+      background: transparent;
+      outline: none;
+      outline-offset: 0;
+    }
+
+    [data-bc-revision-boundary-before]::before {
+      display: none;
     }
   }
 

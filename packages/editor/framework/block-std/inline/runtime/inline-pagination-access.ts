@@ -15,6 +15,7 @@ interface InlinePaginationAccess {
   measureLineStarts(limit?: number): InlinePaginationLineStart[]
   projectionWritable?(): boolean
   whenProjectionWritable?(listener: () => void): () => void
+  subscribeProjectionInvalidated?(listener: () => void): () => void
 }
 
 const accessByRuntime = new WeakMap<object, InlinePaginationAccess>()
@@ -64,4 +65,17 @@ export function whenInlinePaginationProjectionWritable(
     return () => { active = false }
   }
   return access.whenProjectionWritable(listener)
+}
+
+/**
+ * @internal Observe a canonical InlineRuntime mutation that revoked a live
+ * pagination projection. Pagination uses this to replay its cached anchors
+ * after asynchronous renderers (for example Shiki) finish rebuilding DOM.
+ */
+export function subscribeInlinePaginationProjectionInvalidated(
+  runtime: object,
+  listener: () => void,
+): () => void {
+  return accessByRuntime.get(runtime)?.subscribeProjectionInvalidated?.(listener)
+    ?? (() => undefined)
 }

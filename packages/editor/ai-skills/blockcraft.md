@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-08-25 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-08-26 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -29,6 +29,7 @@ A block-based rich text editor built on **Angular (standalone components)** + **
 | **Model Graph** | DOM-free, read-only Yjs tree queries for mounted or unmounted blocks | `BlockModelGraph` in `framework/doc/model-graph.ts` |
 | **Block Readonly** | Owner-aware, inherited write protection resolved from `meta.lock` against the model graph | `BlockReadonlyManager` in `framework/doc/block-readonly-manager.ts` |
 | **Mutation Policy** | Optional host-defined guard for structural, instance-meta and undo/redo mutations | `BlockMutationPolicyManager` in `framework/doc/block-mutation-policy.ts` |
+| **Revision** | Track-changes domain for non-destructive edits, append-only review decisions, conflict projection and checkpoints | `DocumentRevisionManager` at `doc.revisions` |
 | **Block** | A node in the document tree; has flavour, nodeType, props | `BaseBlockComponent` / `EditableBlockComponent` |
 | **Plugin** | Extends editor behavior; event handlers + hotkeys | `DocPlugin` in `framework/plugin/` |
 | **Inline** | Rich text within editable blocks; Blot tree on Y.Text | `InlineRuntime` in `framework/block-std/inline/` |
@@ -120,6 +121,7 @@ packages/editor/
 | Understand/modify inline blot system | `blockcraft-inline.md` | L2 |
 | Understand/modify event system | `blockcraft-event.md` | L2 |
 | Understand/modify Yjs data model | `blockcraft-data.md` | L2 |
+| Configure or extend Revision / track changes | `blockcraft-app.md` + `blockcraft-input.md` + `blockcraft-data.md` | L1 + L2 |
 | **Upgrade `@ccc/blockcraft` and find what changed** | `MIGRATIONS.md` | — |
 | **Add a new framework feature and document the version bump** | `MIGRATIONS.md` (mandatory for every architectural change) | — |
 
@@ -158,6 +160,36 @@ doc.crud.moveBlocks(parentId, index, count, targetParentId, targetIndex)
 // Rendering-mode-independent reveal; preserves model/native selection + focus.
 const revealed = await doc.navigateToBlock(blockId)
 ```
+
+### Revision / Track Changes
+
+```typescript
+doc.revisions.setActor({actorId: currentUser.id, displayName: currentUser.name})
+doc.revisions.setMode('track')
+doc.revisions.setViewMode('markup')
+
+const pending = doc.revisions.list({status: 'pending'})
+doc.revisions.accept(pending[0].id)       // append-only decision
+doc.revisions.redecide(pending[0].id, 'reject')
+
+const finalRoot = doc.revisions.projectFinalSnapshot()
+const complete = doc.exportDocumentSnapshot()
+```
+
+Revision v1 covers text insert/delete/replace, cross-block deletion,
+same-parent editable block split/merge, and whole-block insert/delete. Format
+changes, table row/column operations, object geometry/movement, cross-container
+structure, and Original view are intentionally unsupported. `final` is a
+readonly projection; a host should mount `projectFinalSnapshot()` in an
+isolated readonly `BlockCraftDoc`. Permissions and synchronization admission
+remain host responsibilities; BlockCraft only validates the supplied actor and
+revision state. A line edit crossing existing inline revisions is split at
+their relative-range boundaries and stacked through `dependsOn` while keeping
+one review-card group. Destructive structural overlaps still form an explicit
+conflict instead of choosing a winner. Repeating a text or whole-block deletion
+already proposed by the same author reuses its active pending/accepted record;
+an extended gesture records only the uncovered remainder. Another author keeps
+an independent deletion record and review decision.
 
 Typography ownership is layered and compact: root `ff/fs/lh` defines document
 defaults; editable block `pfs/lh/psb/psa` defines paragraph base scale, line
@@ -820,7 +852,7 @@ Undo 历史。
 
 当一个真实表格行因超长单元格而高过页面内容区时，分页器会惰性收集单元格直属 Block 边界和 Editable Block 的视觉行首，在同一逻辑单元格内生成可逆续排。各列可以在不同安全锚点换页，屏幕投影只插入零模型长度页缝，不拆 Yjs 行/单元格，也不创建 Undo 历史。表格的虚拟内容高度、屏幕内部页缝和后续顶层 Block 共同进入同一布局坐标系，因此表格下方内容不会再沿用表格的自然高度而向上漂移。IME composition 期间保留上一版稳定布局，结束后再重排；打印/PDF 消费同一稳定锚点快照。
 
-`DocExportManager` 只提供 JSON、Markdown 与 PDF/打印导出，不再提供 `exportToJpeg()` 或 DOM-to-image 渲染配置。需要位图截图的宿主应在应用层选择并维护独立的截图方案。
+`DocExportManager` 提供 JSON、HTML、Markdown 与 PDF/打印导出，不再提供 `exportToJpeg()` 或 DOM-to-image 渲染配置。所有干净导出都使用 Revision 最终投影；存在决策或结构冲突时抛出 `RevisionConflictError`。需要位图截图的宿主应在应用层选择并维护独立的截图方案。
 
 ### Snapshot Viewer (Display Only)
 

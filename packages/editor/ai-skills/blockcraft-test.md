@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-04-07
+> Last updated: 2026-08-26
 
 ## Test Setup
 
@@ -14,6 +14,30 @@ pnpm nx build editor       # Build the library
 pnpm nx test editor         # Run tests
 pnpm nx test playground     # Run playground app tests
 ```
+
+## Testing Revision / Track Changes
+
+Revision tests need more than DOM snapshots. Cover three independent layers:
+
+1. **Input**: typing, continuous delete, replacement, paste, IME atomics,
+   same-parent split/merge, cross-block ranges, whole-block operations, own
+   pending insertion resizing, edits crossing existing revision boundaries,
+   same-author repeated/extended deletion deduplication, rejected deletion
+   reproposal, different-author overlap attribution, code-block highlighting
+   attribution, absolute-object marker geometry and Undo selection restoration.
+2. **CRDT**: create at least two `Y.Doc` replicas, fork offline, apply updates in
+   different and repeated orders, then compare resolved status/final snapshot.
+   Include opposite decisions, late heads, nested dependencies, overlapping
+   deletion and structural conflict groups.
+3. **Projection/persistence**: pending/accepted/rejected final snapshots,
+   conflict-gated clean export, complete snapshot round trip, checkpoint
+   state-vector/epoch validation and old-epoch rejection in the host sync layer.
+
+UI/E2E should assert review-card navigation, batch intent wiring, conflict
+guidance, comment-marker coexistence and that the mounted Final document has
+`contenteditable="false"`. Run the focused Revision, Input, Inline and Undo
+suites before the editor build. Host-specific file envelopes and migrations are
+tested in their owning application, not in the editor package.
 
 ## Testing Blocks
 

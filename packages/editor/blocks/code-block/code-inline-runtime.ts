@@ -1,4 +1,7 @@
-import {InlineRuntime} from "../../framework/block-std/inline/runtime/inline-runtime";
+import {
+  InlineRuntime,
+  runInlineRuntimeCanonicalMutation,
+} from "../../framework/block-std/inline/runtime/inline-runtime";
 import {EmbedConverterMap} from "../../framework/block-std/inline/blot/scroll-blot";
 import {DeltaInsert, DeltaInsertText, DeltaOperation, InlineModel} from "../../framework/block-std/types";
 import {mergeColorOverShiki, deltaFingerprint} from "./color-merge";
@@ -109,6 +112,19 @@ interface IRenderOptions {
   lang: string;
   withLineBreak?: boolean;
   theme?: string;
+  canonicalHost?: CodeInlineRuntimeHost;
+}
+
+interface CodeInlineSelection {
+  anchor: number;
+  head: number;
+}
+
+interface CodeInlineRuntimeHost {
+  readModel: () => {text: string; deltas: DeltaInsert[]};
+  hasTextRevisions: () => boolean;
+  isCompositionBusy: () => boolean;
+  readSelection: () => CodeInlineSelection | null;
 }
 
 /**
@@ -136,6 +152,19 @@ export class CodeInlineRuntime extends InlineRuntime {
    * 若将来虚拟化改为把 hostElement 移出 DOM，此守卫需要换成 _isGone 式判断。
    */
   private _renderToken = 0
+  private _canonicalRenderFrame: number | null = null
+  private _canonicalRenderGeneration = 0
+  private _destroyed = false
+
+  private readonly _handleNativeInput = () => {
+    const host = this._options.canonicalHost
+    if (
+      !host ||
+      host.isCompositionBusy() ||
+      !host.hasTextRevisions()
+    ) return
+    this._requestCanonicalRender(true)
+  }
 
   constructor(
     container: HTMLElement,
@@ -144,6 +173,9 @@ export class CodeInlineRuntime extends InlineRuntime {
   ) {
     super(container, embedConverters)
     this._options = options
+    if (options.canonicalHost) {
+      container.addEventListener('input', this._handleNativeInput)
+    }
   }
 
   setLang(lang: string) {
@@ -154,6 +186,18 @@ export class CodeInlineRuntime extends InlineRuntime {
   setTheme(theme: string) {
     this._options.theme = theme
     this._lineFPs = []
+  }
+
+  /**
+   * The base editable block always renders the projected deltas synchronously.
+   * CodeInlineRuntime then owns the canonical Shiki pass for every host that
+   * opts into the shared binding (code and Mermaid textarea).
+   */
+  override render(deltas: InlineModel) {
+    super.render(deltas)
+    const host = this._options.canonicalHost
+    if (!host) return
+    this._requestCanonicalRender(host.isCompositionBusy())
   }
 
   /**
@@ -228,8 +272,9 @@ export class CodeInlineRuntime extends InlineRuntime {
 
     const myToken = ++this._renderToken
     try {
-      const text = opts?.block.textContent() ?? this._getPlainText()
-      const modelDeltas = opts?.block.textDeltas?.() ?? []
+      const canonical = this._options.canonicalHost?.readModel()
+      const text = canonical?.text ?? opts?.block.textContent() ?? this._getPlainText()
+      const modelDeltas = canonical?.deltas ?? opts?.block.textDeltas?.() ?? []
       const newDeltas = await this._tokenize(text, modelDeltas)
       // 陈旧/已卸载守卫：更新的高亮请求已抢占，或块在 tokenize 期间被移除
       if (myToken !== this._renderToken || !this.container.isConnected) return
@@ -239,7 +284,12 @@ export class CodeInlineRuntime extends InlineRuntime {
       if (arraysEqual(this._lineFPs, newFPs)) return
 
       if (!this._lineFPs.length) {
-        this.scrollBlot.build(newDeltas)
+        super.render(newDeltas)
+      } else if (this._options.canonicalHost?.hasTextRevisions()) {
+        // Revision presentation may coexist with a live inline-pagination
+        // projection. Let InlineRuntime revoke that projection coherently
+        // before rebuilding attributed Shiki runs.
+        super.render(newDeltas)
       } else {
         this._patchLinesByBlot(newLines, newFPs)
       }
@@ -250,17 +300,18 @@ export class CodeInlineRuntime extends InlineRuntime {
         opts.block.setInlineRange(pos)
       }
     } catch (error) {
+      if (this._destroyed || myToken !== this._renderToken) return
       console.error('[CodeInlineRuntime] highlight failed:', error)
-      this._lineFPs = []
-      this._renderPlainText()
+      this._renderCanonicalFallback()
     }
   }
 
   async renderCode(getText?: () => string, getModelDeltas?: () => DeltaInsert[]) {
     const myToken = ++this._renderToken
     try {
-      const text = getText?.() ?? this._getPlainText()
-      const modelDeltas = getModelDeltas?.() ?? []
+      const canonical = this._options.canonicalHost?.readModel()
+      const text = getText?.() ?? canonical?.text ?? this._getPlainText()
+      const modelDeltas = getModelDeltas?.() ?? canonical?.deltas ?? []
       const deltas = await this._tokenize(text, modelDeltas)
 
       // 陈旧/已卸载守卫：更新的 renderCode/diffHighLight 已抢占令牌，或块在
@@ -270,34 +321,151 @@ export class CodeInlineRuntime extends InlineRuntime {
       // Capture cursor AFTER async tokenization, right before rebuild.
       // This ensures we capture the position set by any intervening operations
       // (e.g. undo replay that runs during the await).
-      const sel = document.getSelection()
-      const isHere = !!(sel?.rangeCount && this.container.contains(sel.focusNode))
-      let cursorPos = 0
-      if (isHere) {
-        try {
-          cursorPos = this.mapper.domPointToModelPoint(this.container, sel!.focusNode!, sel!.focusOffset)
-        } catch { /* cursor capture failed, will skip restore */ }
-      }
+      const sel = this.container.ownerDocument.getSelection()
+      const isHere = !!(
+        sel?.rangeCount &&
+        sel.anchorNode &&
+        sel.focusNode &&
+        this.container.contains(sel.anchorNode) &&
+        this.container.contains(sel.focusNode)
+      )
+      const capturedSelection = isHere && sel
+        ? this._options.canonicalHost?.readSelection() ?? this._readNativeSelection(sel)
+        : null
 
-      this.scrollBlot.build(deltas)
+      super.render(deltas)
       const lines = groupTokenLines(deltas)
       this._lineFPs = lines.map(l => l.fp)
 
-      // Restore cursor after rebuild
-      if (isHere) {
-        try {
-          const pt = this.mapper.modelPointToDomPoint(this.container, cursorPos)
-          sel!.setPosition(pt.node as Node, pt.offset)
-        } catch { /* restore failed, cursor may have moved */ }
+      if (sel && capturedSelection) {
+        this._restoreNativeSelection(sel, capturedSelection)
       }
     } catch (error) {
+      if (this._destroyed || myToken !== this._renderToken) return
       console.error('[CodeInlineRuntime] render failed:', error)
-      this._lineFPs = []
-      this._renderPlainText()
+      this._renderCanonicalFallback()
     }
   }
 
+  override destroy() {
+    if (this._destroyed) return
+    this._destroyed = true
+    this.container.removeEventListener('input', this._handleNativeInput)
+    this._cancelCanonicalRender()
+    this._canonicalRenderGeneration++
+    this._renderToken++
+    super.destroy()
+  }
+
   // ─── Internal ───
+
+  private _requestCanonicalRender(afterNativeMutation = false) {
+    if (this._destroyed || !this._options.canonicalHost) return
+
+    // A pending post-native frame already subsumes ordinary model renders.
+    if (!afterNativeMutation && this._canonicalRenderFrame !== null) return
+
+    const generation = ++this._canonicalRenderGeneration
+    if (!afterNativeMutation) {
+      queueMicrotask(() => {
+        if (
+          this._destroyed ||
+          generation !== this._canonicalRenderGeneration ||
+          this._canonicalRenderFrame !== null
+        ) return
+        void this.renderCode()
+      })
+      return
+    }
+
+    const ownerWindow = this.container.ownerDocument.defaultView
+    if (!ownerWindow) {
+      queueMicrotask(() => {
+        if (
+          this._destroyed ||
+          generation !== this._canonicalRenderGeneration ||
+          this._options.canonicalHost?.isCompositionBusy()
+        ) return
+        void this.renderCode()
+      })
+      return
+    }
+
+    if (this._canonicalRenderFrame !== null) {
+      ownerWindow.cancelAnimationFrame(this._canonicalRenderFrame)
+    }
+    this._canonicalRenderFrame = ownerWindow.requestAnimationFrame(() => {
+      this._canonicalRenderFrame = null
+      if (
+        this._destroyed ||
+        generation !== this._canonicalRenderGeneration ||
+        this._options.canonicalHost?.isCompositionBusy()
+      ) return
+      void this.renderCode()
+    })
+  }
+
+  private _cancelCanonicalRender() {
+    if (this._canonicalRenderFrame === null) return
+    this.container.ownerDocument.defaultView
+      ?.cancelAnimationFrame(this._canonicalRenderFrame)
+    this._canonicalRenderFrame = null
+  }
+
+  private _readNativeSelection(selection: Selection): CodeInlineSelection | null {
+    if (!selection.anchorNode || !selection.focusNode) return null
+    try {
+      return {
+        anchor: this.mapper.domPointToModelPoint(
+          this.container,
+          selection.anchorNode,
+          selection.anchorOffset,
+        ),
+        head: this.mapper.domPointToModelPoint(
+          this.container,
+          selection.focusNode,
+          selection.focusOffset,
+        ),
+      }
+    } catch {
+      return null
+    }
+  }
+
+  private _restoreNativeSelection(
+    selection: Selection,
+    captured: CodeInlineSelection,
+  ) {
+    try {
+      const anchor = this.mapper.modelPointToDomPoint(this.container, captured.anchor)
+      const head = this.mapper.modelPointToDomPoint(this.container, captured.head)
+      if (typeof selection.setBaseAndExtent === 'function') {
+        selection.setBaseAndExtent(
+          anchor.node as Node,
+          anchor.offset,
+          head.node as Node,
+          head.offset,
+        )
+        return
+      }
+      selection.removeAllRanges()
+      selection.collapse(anchor.node as Node, anchor.offset)
+      selection.extend?.(head.node as Node, head.offset)
+    } catch {
+      // The model may have changed again while the asynchronous tokenizer ran.
+      // A newer model render owns the next selection projection.
+    }
+  }
+
+  private _renderCanonicalFallback() {
+    const canonical = this._options.canonicalHost?.readModel()
+    this._lineFPs = []
+    if (canonical) {
+      super.render(canonical.deltas)
+      return
+    }
+    this._renderPlainText()
+  }
 
   private _getPlainText(): string {
     let text = ''
@@ -323,7 +491,7 @@ export class CodeInlineRuntime extends InlineRuntime {
     } else {
       if (text) deltas.push({insert: text})
     }
-    this.scrollBlot.build(deltas)
+    super.render(deltas)
     const lines = groupTokenLines(deltas)
     this._lineFPs = lines.map(l => l.fp)
   }
@@ -334,6 +502,15 @@ export class CodeInlineRuntime extends InlineRuntime {
    * and replaces only the changed lines.
    */
   private _patchLinesByBlot(newLines: TokenLine[], newFPs: string[]) {
+    runInlineRuntimeCanonicalMutation(this, () =>
+      this._patchCanonicalLinesByBlot(newLines, newFPs),
+    )
+  }
+
+  private _patchCanonicalLinesByBlot(
+    newLines: TokenLine[],
+    newFPs: string[],
+  ) {
     const blotLines = this._groupBlotsByLine()
     const oldFPs = this._lineFPs
     const blotLen = blotLines.length

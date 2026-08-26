@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying text input behavior.
 >
-> Last updated: 2026-08-18
+> Last updated: 2026-08-26
 
 ## Architecture Overview
 
@@ -18,6 +18,44 @@ beforeInput / keydown / compositionStart
 ```
 
 **Key principle**: The editor intercepts `beforeInput` for `EditableBlockComponent` surfaces, prevents default browser behavior, and writes directly to Yjs. The DOM is never the source of truth for editable blocks — Yjs is.
+
+### Revision-aware execution
+
+When `doc.revisions.isTracking` is true, the same planner and executor route
+text insert/delete/replace, paste, cross-block selection edits, Enter splits,
+paragraph-boundary Backspace/Delete merges and IME commits through
+`DocumentRevisionManager`. Local and remote changes therefore still converge
+through the normal Yjs observe/render path; there is no local-only revision DOM
+path. One IME composition is one atomic revision, while adjacent same-author
+text gestures in the same tracking session can share a review-card `groupId`.
+
+Deletion is non-destructive: text remains in Y.Text and is attributed by
+relative range; whole blocks remain in the block tree; split/merge keeps both
+same-parent editable blocks and records a boundary revision. A user may directly
+shrink or extend their own pending insertion. A later inline edit may cross
+pending or decided text revisions: Input keeps the user gesture in one group,
+splits destructive ranges wherever the active dependency set changes, and
+stacks each segment through `dependsOn`. This prevents rejecting an outer
+insertion from also discarding adjacent original text. Normal Undo/Redo tracks
+content and revision records together, but append-only review decisions are
+excluded; review reversal uses `redecide()`.
+
+Repeated deletion is effect-idempotent per author. If a same-author pending or
+accepted `text-delete` / `block-delete` already covers the requested content,
+the manager reuses that record and produces no new Yjs mutation. Extending the
+gesture creates records only for uncovered ranges or block IDs. Rejected
+proposals may be proposed again, while another author receives an independent
+record so attribution and approval remain separate.
+
+Pending insertion ranges use tight relative boundaries. A different author's
+insert at the start/end is adjacent; an insert strictly inside is dependent.
+Only the original author may resize their own uncontested pending insertion,
+and that fast path rewrites the relative target after the Y.Text mutation.
+
+Revision v1 fails closed with `RevisionUnsupportedOperationError` for format
+changes, table-cell structural edits, block movement, props/object geometry and
+unsupported cross-container structure. Do not fall through to native
+`contenteditable` behavior for these cases.
 
 ### Adapter / Planner / Executor
 

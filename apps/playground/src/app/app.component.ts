@@ -60,6 +60,7 @@ type DebugActionId =
   | 'init'
   | 'theme'
   | 'readonly'
+  | 'toggleRevision'
   | 'toggleVirtualization'
   | 'insert'
   | 'undo'
@@ -186,6 +187,7 @@ const ACTION_SECTIONS: DebugSection[] = [
       { id: 'init', label: '初始化', tone: 'primary' },
       { id: 'theme', label: '主题' },
       { id: 'readonly', label: '只读' },
+      { id: 'toggleRevision', label: '修订模式' },
       { id: 'toggleVirtualization', label: '虚拟渲染' },
       { id: 'addData', label: '追加段落' }
     ]
@@ -280,6 +282,12 @@ const ACTION_SECTIONS: DebugSection[] = [
                 {{ virtualizationEnabled ? '开启' : '关闭' }}
               </span>
             </div>
+            <div class="status-item">
+              <span class="status-item__label">修订模式</span>
+              <span class="status-pill" [class.status-pill--active]="revisionTrackingEnabled">
+                {{ revisionTrackingEnabled ? '开启' : '关闭' }}
+              </span>
+            </div>
             <div class="status-item status-item--wide">
               <span class="status-item__label">更新监听</span>
               <span class="status-pill" [class.status-pill--active]="isListeningUpdate">{{ updateStatus }}</span>
@@ -300,9 +308,12 @@ const ACTION_SECTIONS: DebugSection[] = [
                       class="nav-button"
                       [class.nav-button--primary]="action.tone === 'primary'"
                       [class.nav-button--danger]="action.tone === 'danger'"
+                      [attr.aria-pressed]="action.id === 'toggleRevision' ? revisionTrackingEnabled : null"
                       (click)="runAction(action.id)"
                     >
-                      {{ action.label }}
+                      {{ action.id === 'toggleRevision'
+                        ? (revisionTrackingEnabled ? '关闭修订' : '开启修订')
+                        : action.label }}
                     </button>
                   }
                 </div>
@@ -1601,6 +1612,10 @@ graph TD
     return this.editor?.doc.isReadonly ?? true;
   }
 
+  get revisionTrackingEnabled(): boolean {
+    return this.editor?.doc.revisions.mode === 'track';
+  }
+
   get editorDoc() {
     return this.editor?.doc ?? null;
   }
@@ -1779,6 +1794,9 @@ graph TD
         return;
       case 'readonly':
         this.toggleReadonly();
+        return;
+      case 'toggleRevision':
+        this.toggleRevisionMode();
         return;
       case 'toggleVirtualization':
         this.toggleVirtualization();
@@ -2377,6 +2395,25 @@ graph TD
   toggleReadonly() {
     const editor = this.ensureEditorInitialized();
     editor.doc.toggleReadonly(!editor.doc.isReadonly);
+  }
+
+  toggleRevisionMode() {
+    const editor = this.ensureEditorInitialized();
+    const revisions = editor.doc.revisions;
+
+    if (revisions.mode === 'track') {
+      revisions.setMode('off');
+    } else {
+      if (!revisions.currentActor) {
+        revisions.setActor({
+          actorId: `playground-${editor.doc.yDoc.clientID}`,
+          displayName: 'Playground 调试用户',
+        });
+      }
+      revisions.setMode('track');
+    }
+
+    this.cdr.markForCheck();
   }
 
   toggleCopyFilter() {

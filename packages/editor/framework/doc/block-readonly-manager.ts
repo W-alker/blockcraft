@@ -122,7 +122,9 @@ export class BlockReadonlyManager {
     // Angular renders the Root component before BlockModelGraph.build(). During
     // that short bootstrap window readonlySwitch$ is deliberately true, so the
     // document policy can be answered without asking an index that is not ready.
-    if (!this.initialized && this.doc.isReadonly) {
+    if (!this.initialized && (
+      this.doc.isReadonly || this.doc.revisions?.viewMode === 'final'
+    )) {
       return {
         readonly: true,
         source: {kind: "document"},
@@ -131,7 +133,7 @@ export class BlockReadonlyManager {
       };
     }
     const blockId = this.getBlockId(block);
-    if (this.doc.isReadonly) {
+    if (this.doc.isReadonly || this.doc.revisions?.viewMode === 'final') {
       return {
         readonly: true,
         source: {kind: "document"},
@@ -433,6 +435,13 @@ export class BlockReadonlyManager {
     );
     this.subscriptions.add(
       this.doc.readonlySwitch$.subscribe(() => {
+        this.resolutionCache.clear();
+        this.refreshSubtree(this.doc.rootId);
+        this.stateChangeSubject.next();
+      }),
+    );
+    if (this.doc.revisions) this.subscriptions.add(
+      this.doc.revisions.viewMode$.subscribe(() => {
         this.resolutionCache.clear();
         this.refreshSubtree(this.doc.rootId);
         this.stateChangeSubject.next();

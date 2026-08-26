@@ -166,6 +166,23 @@ export class LiveHeightSource {
   }
 
   /**
+   * Revision presentation changed without a block-model mutation. Drop only
+   * the affected mounted measurements so the next coalesced pagination pass
+   * remeasures canonical DOM without invalidating every root in the document.
+   */
+  invalidateMeasurements(rootIds: Iterable<string>): void {
+    for (const id of new Set(rootIds)) {
+      const host = this._safeBlock(id)?.hostElement as HTMLElement | undefined;
+      if (!host) continue;
+      this._naturalDom.delete(host);
+      this._completedMeasurements.delete(host);
+      this._pendingInitialResize.delete(host);
+      this._layoutOwnedBlockSizes.delete(host);
+      this._lastUncappedHeights.delete(host);
+    }
+  }
+
+  /**
    * @internal 当前 mounted roots 是否还有未完成、上下文过期或 host 已替换的测量。
    * 调用不读取布局；真实尺寸变化仍由 ResizeObserver 使对应 host cache 失效。
    */
@@ -238,6 +255,23 @@ export class LiveHeightSource {
       const cs = getComputedStyle(el);
       // 忽略 margin-top（它要么是 0，要么是 gap-applier 施加的下推间隙，都不算块自身高度）。
       const currentMarginBottom = parseFloat(cs.marginBottom) || 0;
+
+      // A resolved whole-block revision stays in the canonical tree but is not
+      // a visual pagination slot. `display:none` must suppress its authored
+      // margin as well as its border box, otherwise a zero-height phantom gap
+      // survives in the live page model.
+      if (cs.display === 'none') {
+        this._appendMeasurement(metas, id, el, options, {
+          id,
+          flavour: block.flavour,
+          nodeType: block.nodeType,
+          isHeading: this._isHeading(block),
+          naturalHeight: 0,
+          height: 0,
+          trailingSpacing: 0,
+        });
+        continue;
+      }
 
       const geom = measureTablePaginationGeometry(block, opts);
       if (geom) {

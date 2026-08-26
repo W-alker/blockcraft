@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when working with the CRDT data layer.
 >
-> Last updated: 2026-08-13
+> Last updated: 2026-08-26
 
 ## Architecture Overview
 
@@ -10,9 +10,10 @@
 BlockCraftDoc
   ├── model: BlockModelGraph                   derived, read-only reachable tree
   ├── readonlyManager: BlockReadonlyManager   derived permission/cache layer
+  ├── revisions: DocumentRevisionManager      revision/query/projection domain
   └── yDoc: Y.Doc
-       └── yBlockMap: Y.Map<string, YBlock>    key = "blocks"
-            └── YBlock: Y.Map
+       ├── yBlockMap: Y.Map<string, YBlock>    key = "blocks"
+       │    └── YBlock: Y.Map
                  ├── id: string
                  ├── flavour: string
                  ├── nodeType: number
@@ -20,6 +21,9 @@ BlockCraftDoc
                  ├── meta: Y.Map               (metadata)
                  ├── children: Y.Array<string>  (child block IDs)
                  └── text?: Y.Text              (inline content, editable blocks only)
+       ├── Y.Map<RevisionRecord>               key = "bc:revisions"
+       ├── Y.Map<RevisionDecision>             key = "bc:revision-decisions"
+       └── Y.Map<unknown>                      key = "bc:revision-meta"
 ```
 
 ## Key Files
@@ -34,6 +38,7 @@ BlockCraftDoc
 | `framework/doc/sync-lifecycle.ts` | Internal remote transaction before/after view-sync lifecycle |
 | `framework/doc/vm.ts` | `DocVM` — Angular component creation/lookup |
 | `framework/doc/undoManger.ts` | `DocUndoManager` — undo/redo with selection (note: filename is "Manger") |
+| `framework/revision/` | Revision records, append-only decisions, projection, conflict detection and checkpoint compaction |
 | `framework/modules/selection/relative-bookmark.ts` | Shared Yjs-relative selection bookmark codec |
 | `framework/modules/selection/live-bookmark-tracker.ts` | Revisioned current-selection bookmark used by remote sync |
 | `framework/modules/selection/remote-selection-reconciler.ts` | Selection-owned remote bookmark reconciliation |
@@ -459,6 +464,61 @@ DocCRUD's existing `onMetaUpdate$` stream reports local, remote and Undo/Redo
 changes by stable block ID. `PlaceholderPlugin` keeps one doc-level
 subscription and filters it to the active block and `plh` key; metadata remains
 excluded from `BlockModelGraph.contentChange$`.
+
+## Revision CRDT and Complete Snapshot
+
+Canonical content remains in the existing block/Y.Text tree until a validated
+checkpoint. `bc:revisions` stores non-destructive range/block/boundary records;
+`bc:revision-decisions` stores append-only decision nodes with `supersedes`;
+`bc:revision-meta` stores the current epoch. Active decision heads converge by
+set semantics: both accept and reject means `conflict`, and a redecision must
+supersede every head visible at that moment. A late offline head can therefore
+reopen conflict instead of being silently discarded.
+
+Text targets use encoded `Y.RelativePosition` values in the live CRDT. Complete
+JSON export converts them to current absolute start/end offsets and recreates
+relative positions after loading the root snapshot:
+
+Text-insert targets are boundary-tight: a later insertion exactly at either
+edge remains adjacent instead of being absorbed into the older revision. The
+original author can still grow or shrink their own pending insertion because
+that mutation explicitly rewrites the target to its new range. Destructive
+gestures crossing active ranges are split at dependency boundaries while their
+records retain one shared review `groupId`.
+
+```typescript
+interface BlockCraftDocumentSnapshot {
+  version: 1
+  root: IBlockSnapshot
+  revisions: RevisionSnapshotRecord[]
+  decisions: RevisionDecision[]
+  revisionEpoch: number
+}
+
+const complete = doc.exportDocumentSnapshot()
+doc.initByDocumentSnapshot(complete, container)
+```
+
+`exportSnapshot()` / `initBySnapshot()` remain content-only compatibility APIs.
+Undo scopes include `bc:revisions` with the block map so an edit and its
+revision attribution undo atomically; `bc:revision-decisions` is deliberately
+outside content history. `compactResolved({epoch, stateVector})` is the only
+materialization path and requires no pending/conflicted revisions plus an exact
+state-vector match.
+
+Overlapping line edits are dependency-aware rather than rejected wholesale.
+For a non-destructive deletion that crosses existing revision boundaries, the
+manager creates adjacent `text-delete` records for each distinct active
+dependency set, all under the same `groupId`. Rejecting an insertion ancestor
+therefore discards only the segment inside that insertion; original text in an
+adjacent segment remains independently reviewable. Rejected nested deletions
+also do not override a still-pending insertion's markup kind.
+
+Active deletion effects are idempotent for the same actor. Repeating a pending
+or accepted text/whole-block deletion reuses the existing record, and an
+extended selection persists only the uncovered text segments or block IDs.
+Rejected records do not suppress a fresh proposal. Different actors still
+store independent overlapping deletion records and decision histories.
 
 ## IBlockSnapshot Format
 

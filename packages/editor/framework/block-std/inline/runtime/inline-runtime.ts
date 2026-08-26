@@ -17,6 +17,19 @@ import {
   registerInlinePaginationAccess,
 } from './inline-pagination-access'
 
+const canonicalMutationByRuntime = new WeakMap<
+  InlineRuntime,
+  (mutation: () => void) => void
+>()
+
+/** @internal Shared only by bundled InlineRuntime subclasses. */
+export function runInlineRuntimeCanonicalMutation(
+  runtime: InlineRuntime,
+  mutation: () => void,
+): void {
+  canonicalMutationByRuntime.get(runtime)?.(mutation)
+}
+
 const PAGINATION_LINE_TOLERANCE = 0.75
 const PAGINATION_EXACT_LINE_LIMIT = 64
 
@@ -154,6 +167,7 @@ export class InlineRuntime {
   private readonly _paginationProjection: InlinePaginationProjection
   private _releaseFloatForPagination?: () => void
   private _releasePaginationAccess: () => void = () => undefined
+  private readonly _paginationProjectionInvalidatedListeners = new Set<() => void>()
   private readonly _paginationOptions?: {
     beginSelectionProjection?: () => (() => void)
   }
@@ -166,6 +180,10 @@ export class InlineRuntime {
       beginSelectionProjection?: () => (() => void)
     },
   ) {
+    canonicalMutationByRuntime.set(
+      this,
+      mutation => this._runCanonicalMutation(mutation),
+    )
     this._paginationOptions = options
     this._scrollBlot = new ScrollBlot(container, embedConverters)
     this._mapper = new InlinePositionMapper()
@@ -184,6 +202,10 @@ export class InlineRuntime {
         this._inlineFloatLayout.paginationProjectionWritable,
       whenProjectionWritable: listener =>
         this._inlineFloatLayout.whenPaginationProjectionWritable(listener),
+      subscribeProjectionInvalidated: listener => {
+        this._paginationProjectionInvalidatedListeners.add(listener)
+        return () => this._paginationProjectionInvalidatedListeners.delete(listener)
+      },
     })
   }
 
@@ -204,9 +226,7 @@ export class InlineRuntime {
    * Replaces all existing blots and DOM.
    */
   render(deltas: InlineModel) {
-    this._prepareForMutation()
-    this._scrollBlot.build(deltas)
-    this._inlineFloatLayout.sync()
+    this._runCanonicalMutation(() => this._scrollBlot.build(deltas))
   }
 
   /**
@@ -214,9 +234,26 @@ export class InlineRuntime {
    * Updates the blot tree and patches the DOM in-place.
    */
   applyDelta(ops: DeltaOperation[]) {
-    this._prepareForMutation()
-    this._scrollBlot.applyDelta(ops)
-    this._inlineFloatLayout.sync()
+    this._runCanonicalMutation(() => this._scrollBlot.applyDelta(ops))
+  }
+
+  /**
+   * Shared boundary for subclasses that patch the canonical Blot tree.
+   * Pagination projection is revoked before the mutation and its owner is
+   * notified afterwards so cached page gaps can be replayed deterministically.
+   */
+  private _runCanonicalMutation(mutation: () => void): void {
+    const paginationProjectionInvalidated = this._prepareForMutation()
+    try {
+      mutation()
+      this._inlineFloatLayout.sync()
+    } finally {
+      if (paginationProjectionInvalidated) {
+        for (const listener of [...this._paginationProjectionInvalidatedListeners]) {
+          listener()
+        }
+      }
+    }
   }
 
   /** @internal Used by IME and wrapped-image pointer interactions. */
@@ -276,9 +313,11 @@ export class InlineRuntime {
   }
 
   /** Restore one canonical DOM once before a model-owned Blot mutation. */
-  private _prepareForMutation(): void {
-    const hasProjection = this._paginationProjection.active
+  private _prepareForMutation(): boolean {
+    const hasPaginationProjection = this._paginationProjection.active
       || !!this._releaseFloatForPagination
+      || this._inlineFloatLayout.hasPaginationGaps
+    const hasProjection = hasPaginationProjection
       || this._inlineFloatLayout.hasProjection
     const releaseSelectionGuard = hasProjection
       ? this._beginSelectionProjection?.()
@@ -292,6 +331,7 @@ export class InlineRuntime {
     } finally {
       releaseSelectionGuard?.()
     }
+    return hasPaginationProjection
   }
 
   /**
@@ -535,9 +575,11 @@ export class InlineRuntime {
    * Tear down and clean up.
    */
   destroy() {
+    canonicalMutationByRuntime.delete(this)
     this._clearPaginationGaps()
     this._releasePaginationAccess()
     this._releasePaginationAccess = () => undefined
+    this._paginationProjectionInvalidatedListeners.clear()
     this._inlineFloatLayout.destroy()
     this._scrollBlot.detachAll()
   }

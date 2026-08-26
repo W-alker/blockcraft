@@ -7,7 +7,7 @@ import {
   STR_LINE_BREAK
 } from "../../framework";
 import { CodeBlockModel } from "./index";
-import { isLanguageSupported, loadLanguage, SHIKI_LANGUAGE_MAP } from "./shiki-config";
+import { SHIKI_LANGUAGE_MAP } from "./shiki-config";
 import { fromEvent, Subject, take, throttleTime } from "rxjs";
 import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
 import { LangListComponent } from "./lang-list.component";
@@ -74,6 +74,15 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
       lang: SHIKI_LANGUAGE_MAP[this.props.lang],
       withLineBreak: true,
       theme: this.doc.theme.includes('light') ? 'github-light' : 'github-dark',
+      canonicalHost: {
+        readModel: () => ({
+          text: this.textContent(),
+          deltas: this._projectedTextDeltas(),
+        }),
+        hasTextRevisions: () => !!this.doc.revisions?.hasTextRevisions(this.id),
+        isCompositionBusy: () => this._isCompositionProjectionBusy(),
+        readSelection: () => this._readCanonicalSelection(),
+      },
     })
     this._runtime = this._codeRuntime
   }
@@ -112,7 +121,12 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
     if (this.doc.event.status.isComposing) return
     nextTick().then(() => {
       this._codeRuntime.diffHighLight(e, {
-        block: this,
+        block: {
+          id: this.id,
+          textContent: () => this.textContent(),
+          textDeltas: () => this._projectedTextDeltas(),
+          setInlineRange: index => this.setInlineRange(index),
+        },
         selectionValue: this.doc.selection.value,
         normalizeRange: (range: Range) => normalizeRange(
           range,
@@ -122,24 +136,28 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
     })
   }, 200)
 
-  override rerender() {
-    // Synchronous blot tree build first (plain text, no colors).
-    // This ensures the blot tree is immediately available for cursor positioning
-    // (e.g. after compositionEnd which calls rerender then setInlineRange).
-    super.rerender()
+  private _isCompositionProjectionBusy() {
+    return this.doc.event.status.isComposing ||
+      !this.doc.inputManger.compositionSession.isIdle
+  }
 
-    // Defer async Shiki highlighting to next microtask.
-    // This ensures setInlineRange() (called after rerender in compositionEnd)
-    // has already set the DOM cursor before renderCode captures/restores it.
-    const shikiLang = SHIKI_LANGUAGE_MAP[this.props.lang]
-    if (!isLanguageSupported(shikiLang)) {
-      loadLanguage(this.props.lang).then(() => {
-        this._codeRuntime.renderCode(() => this.textContent(), () => this.textDeltas())
-      })
-    } else {
-      queueMicrotask(() => {
-        this._codeRuntime.renderCode(() => this.textContent(), () => this.textDeltas())
-      })
+  private _projectedTextDeltas() {
+    const deltas = this.textDeltas()
+    return this.doc.revisions?.projectInlineDeltas(this.id, deltas) ?? deltas
+  }
+
+  private _readCanonicalSelection() {
+    const selection = this.doc.selection.value
+    if (
+      !selection?.isInSameBlock ||
+      selection.anchor.type !== 'text' ||
+      selection.head.type !== 'text' ||
+      selection.anchor.blockId !== this.id ||
+      selection.head.blockId !== this.id
+    ) return null
+    return {
+      anchor: selection.anchor.offset,
+      head: selection.head.offset,
     }
   }
 

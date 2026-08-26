@@ -65,6 +65,15 @@
   --bc-comment-bg-color: rgba(255, 239, 186, 0.6);
   --bc-comment-border-color: rgba(255, 239, 186, 1);
 
+  // 修订模式。宿主可覆盖这些变量，无需替换 Revision UI。
+  --bc-revision-insert-color: #137333;
+  --bc-revision-insert-bg: rgba(52, 168, 83, 0.14);
+  --bc-revision-delete-color: #c5221f;
+  --bc-revision-delete-bg: rgba(234, 67, 53, 0.12);
+  --bc-revision-boundary-color: #1a73e8;
+  --bc-revision-conflict-color: #b06000;
+  --bc-revision-conflict-bg: rgba(249, 171, 0, 0.18);
+
   // 光标颜色
   --bc-caret-color: #000000;
   --bc-caret-color-on-mark: #000000;

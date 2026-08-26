@@ -45,6 +45,13 @@ body[blockcraft-theme="dark"] {
   --bc-highlight-bg-color: rgba(255, 198, 10, 0.2);
   --bc-comment-bg-color: rgba(251, 243, 219, 0.15);
   --bc-comment-border-color: rgba(251, 243, 219, 0.4);
+  --bc-revision-insert-color: #81c995;
+  --bc-revision-insert-bg: rgba(129, 201, 149, 0.16);
+  --bc-revision-delete-color: #f28b82;
+  --bc-revision-delete-bg: rgba(242, 139, 130, 0.16);
+  --bc-revision-boundary-color: #8ab4f8;
+  --bc-revision-conflict-color: #fdd663;
+  --bc-revision-conflict-bg: rgba(253, 214, 99, 0.18);
 
   // 光标颜色
   --bc-caret-color: #ffffff;

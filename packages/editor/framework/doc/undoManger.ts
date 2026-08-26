@@ -1,5 +1,4 @@
 import * as Y from "yjs";
-import {YBlock} from "../block-std";
 import {ORIGIN_SKIP_SYNC} from "./crud";
 import {BehaviorSubject} from "rxjs";
 import {StackItem, StackItemEvent} from "yjs/dist/src/utils/UndoManager";
@@ -31,11 +30,14 @@ export class DocUndoManger {
   private _pendingUndoSnapshot: RelativeSelectionBookmark | null | undefined = undefined
   private _pendingRedoSnapshot: RelativeSelectionBookmark | null | undefined = undefined
 
-  constructor(private doc: BlockCraft.Doc, private readonly yBlockMap: Y.Map<YBlock>, options?: {
+  constructor(
+    private doc: BlockCraft.Doc,
+    private readonly undoScope: Y.AbstractType<any> | Y.AbstractType<any>[],
+    options?: {
     trackedOrigins?: any[]
     captureTimeout?: number
   }) {
-    this._yUndoManager = new Y.UndoManager(yBlockMap, {
+    this._yUndoManager = new Y.UndoManager(undoScope, {
       captureTimeout: options?.captureTimeout || 500,
       trackedOrigins: new Set<any>(options?.trackedOrigins || [ORIGIN_SKIP_SYNC, null])
     })
@@ -238,7 +240,7 @@ export class DocUndoManger {
 
     event.changedParentTypes.forEach((events) => {
       for (const yEvent of events) {
-        if (yEvent.target === this.yBlockMap && yEvent instanceof Y.YMapEvent) {
+        if (this._isBlockMap(yEvent.target) && yEvent instanceof Y.YMapEvent) {
           yEvent.changes.keys.forEach((_change, blockId) => merged.add(blockId))
           continue
         }
@@ -275,6 +277,11 @@ export class DocUndoManger {
     event.stackItem.meta.set(BLOCK_READONLY_AFFECTED_IDS, merged)
   }
 
+  private _isBlockMap(target: Y.AbstractType<any>): boolean {
+    const scopes = Array.isArray(this.undoScope) ? this.undoScope : [this.undoScope]
+    return scopes[0] === target
+  }
+
   private _isBlockChildrenArray(type: Y.AbstractType<any>): type is Y.Array<string> {
     if (!(type instanceof Y.Array)) return false
     const parentSub = (type as unknown as { _item?: { parentSub?: unknown } })._item?.parentSub
@@ -282,10 +289,11 @@ export class DocUndoManger {
   }
 
   private _findBlockIdForType(type: Y.AbstractType<any>): string | null {
+    const yBlockMap = Array.isArray(this.undoScope) ? this.undoScope[0] : this.undoScope
     let current: Y.AbstractType<any> | null = type
-    while (current && current !== this.yBlockMap) {
+    while (current && current !== yBlockMap) {
       const parent: Y.AbstractType<any> | null = current.parent
-      if (parent === this.yBlockMap) {
+      if (parent === yBlockMap) {
         const parentSub = (current as unknown as { _item?: { parentSub?: unknown } })._item?.parentSub
         return typeof parentSub === 'string' ? parentSub : null
       }

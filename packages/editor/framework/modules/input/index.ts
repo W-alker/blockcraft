@@ -448,6 +448,32 @@ export class InputTransformer {
     return attrs;
   }
 
+  private _runRevisionGroup<T>(callback: () => T): T {
+    return this.doc.revisions?.isTracking
+      ? this.doc.revisions.runInGroup(callback)
+      : callback();
+  }
+
+  private _insertTextWithRevision(
+    block: EditableBlockComponent,
+    index: number,
+    text: string,
+    attributes?: DeltaInsert['attributes'],
+    origin: unknown = null,
+    preserveUndefinedAttributes = false,
+  ): void {
+    if (this.doc.revisions?.isTracking) {
+      this.doc.revisions.insertText(block.id, index, text, attributes, origin);
+      return;
+    }
+    this.doc.crud.transact(() => {
+      if (attributes !== undefined || preserveUndefinedAttributes) {
+        block.yText.insert(index, text, attributes);
+      }
+      else block.yText.insert(index, text);
+    }, origin);
+  }
+
   /**
    * Typing over a non-collapsed selection must keep the inline format shared by
    * the replaced text — e.g. selecting two chars inside a bold run and typing
@@ -733,11 +759,13 @@ export class InputTransformer {
       text ? [text] : [],
     );
 
-    this.doc.crud.transact(() => {
-      if (target.count > 0) {
-        this.doc.crud.deleteBlocks(target.host.id, target.from, target.count, true);
-      }
-      this.doc.crud.insertBlocks(target.host.id, target.from, [paragraph]);
+    this._runRevisionGroup(() => {
+      this.doc.crud.transact(() => {
+        if (target.count > 0) {
+          this.doc.crud.deleteBlocks(target.host.id, target.from, target.count, true);
+        }
+        this.doc.crud.insertBlocks(target.host.id, target.from, [paragraph]);
+      });
     });
 
     const block = this.doc.getBlockById(paragraph.id);
@@ -1067,6 +1095,7 @@ export class InputTransformer {
 
       if (
         needsMerge &&
+        !this.doc.revisions?.isTracking &&
         plan.start.kind === "text" &&
         plan.end?.kind === "text"
       ) {
@@ -1188,15 +1217,22 @@ export class InputTransformer {
         { allowNearby: true },
       );
       const cursorIndex = insertIndex + text.length;
-      this.doc.crud.transact(() => {
-        insertBlock.yText.insert(insertIndex, text, insertAttrs);
+      this._runRevisionGroup(() => {
+        this._insertTextWithRevision(
+          insertBlock as EditableBlockComponent,
+          insertIndex,
+          text,
+          insertAttrs,
+          ORIGIN_SKIP_SYNC,
+          true,
+        );
         insertBlock.rerender();
         this.doc.virtualization?.settleCompositionView?.();
         // Set cursor synchronously after rerender to avoid selectionchange race.
         // queueMicrotask would leave a gap where selectionchange fires with
         // invalid DOM selection (isComposing is already false), resetting cursor to 0.
         this._setCommittedCompositionCursor(insertBlock as EditableBlockComponent, cursorIndex);
-      }, ORIGIN_SKIP_SYNC);
+      });
 
       // Drain deferred patches WITHOUT replaying.
       // rerender() already built the blot tree from the full Y.Text model,
@@ -1295,6 +1331,11 @@ export class InputTransformer {
     if (plan.kind === "unsupported") {
       ev.preventDefault();
       this.doc.selection.blur();
+      return true;
+    }
+    if (this.doc.revisions?.isTracking && plan.kind === "table-cell") {
+      ev.preventDefault();
+      this.doc.messageService.warn("修订模式 v1 暂不支持表格单元格结构修改");
       return true;
     }
 
@@ -1449,9 +1490,12 @@ export class InputTransformer {
 
     if (pendingInsertAttrs !== undefined) {
       ev.preventDefault();
-      this.doc.crud.transact(() => {
-        editableBlock.yText.insert(plan.offset, text, pendingInsertAttrs);
-      });
+      this._insertTextWithRevision(
+        editableBlock,
+        plan.offset,
+        text,
+        pendingInsertAttrs,
+      );
       if (!this._setTextCursor(editableBlock.id, plan.offset + text.length)) {
         this.doc.selection.blur();
       }
@@ -1464,17 +1508,19 @@ export class InputTransformer {
 
     if (needsRerender) {
       // Zero-space / end-break: DOM was manually patched above, use ORIGIN_SKIP_SYNC + rerender
-      this.doc.crud.transact(() => {
-        editableBlock.yText.insert(plan.offset, text);
-      }, ORIGIN_SKIP_SYNC);
+      this._insertTextWithRevision(
+        editableBlock,
+        plan.offset,
+        text,
+        undefined,
+        ORIGIN_SKIP_SYNC,
+      );
       editableBlock.rerender();
       editableBlock.setInlineRange(plan.offset + text.length);
     } else {
       // Normal input: controlled rendering — preventDefault lets observer sync blot tree
       ev.preventDefault();
-      this.doc.crud.transact(() => {
-        editableBlock.yText.insert(plan.offset, text);
-      });
+      this._insertTextWithRevision(editableBlock, plan.offset, text);
       if (!this._setTextCursor(editableBlock.id, plan.offset + text.length)) {
         this.doc.selection.blur();
       }
@@ -1535,33 +1581,33 @@ export class InputTransformer {
       const editable = this._clearContainerToEmptyParagraph(resolved.host);
       if (!editable) return false;
       if (text) {
-        this.doc.crud.transact(() => {
-          editable.yText.insert(0, text);
-        });
+        this._insertTextWithRevision(editable, 0, text);
       }
       return this._setTextCursor(editable.id, text ? text.length : 0);
     }
 
     const paragraph = this.doc.schemas.createSnapshot("paragraph", [text]);
-    this.doc.crud.transact(() => {
-      this.doc.crud.insertBlocksAfter(target.end.id, [paragraph]);
-      if (target.start.id !== target.end.id) {
-        const throughPath = this.doc.queryBlocksThroughPathDeeply(
-          target.start,
-          target.end,
-        );
-        if (throughPath.length) {
-          throughPath.forEach((through) => {
-            this.doc.crud.deleteBlocks(
-              through.parent,
-              through.index,
-              through.length,
-            );
-          });
+    this._runRevisionGroup(() => {
+      this.doc.crud.transact(() => {
+        this.doc.crud.insertBlocksAfter(target.end.id, [paragraph]);
+        if (target.start.id !== target.end.id) {
+          const throughPath = this.doc.queryBlocksThroughPathDeeply(
+            target.start,
+            target.end,
+          );
+          if (throughPath.length) {
+            throughPath.forEach((through) => {
+              this.doc.crud.deleteBlocks(
+                through.parent,
+                through.index,
+                through.length,
+              );
+            });
+          }
+          this.doc.crud.deleteBlockById(target.end.id);
         }
-        this.doc.crud.deleteBlockById(target.end.id);
-      }
-      this.doc.crud.deleteBlockById(target.start.id);
+        this.doc.crud.deleteBlockById(target.start.id);
+      });
     });
 
     this._setTextSelectionWhenReady(paragraph.id, text.length);
@@ -1664,6 +1710,9 @@ export class InputTransformer {
     merge = false,
     skipAppend = false,
   ): boolean {
+    if (this.doc.revisions?.isTracking) {
+      return this._trackPlannedRange(plan, text, merge);
+    }
     const start = this._resolveReplaceEdge(plan.start);
     const end = plan.end ? this._resolveReplaceEdge(plan.end) : null;
     if (!start || (plan.end && !end)) return false;
@@ -1769,6 +1818,91 @@ export class InputTransformer {
     return true;
   }
 
+  private _trackPlannedRange(
+    plan: RangeEditPlan,
+    text?: string | null,
+    merge = false,
+  ): boolean {
+    const start = this._resolveReplaceEdge(plan.start);
+    const end = plan.end ? this._resolveReplaceEdge(plan.end) : null;
+    if (!start || (plan.end && !end)) return false;
+
+    const shouldMerge = !!end && merge && plan.tailMode === "merge";
+    if (
+      shouldMerge &&
+      start.block.parentId !== end?.block.parentId
+    ) {
+      this.doc.messageService.warn("修订模式 v1 仅支持同父级文本块合并");
+      return false;
+    }
+
+    this.doc.crud.undoManager.captureSelectionBeforeChange();
+    if (plan.stabilizeAt) this._stabilizePlannedRangeCursor(plan.stabilizeAt);
+
+    this._runRevisionGroup(() => {
+      const throughPath = end
+        ? this.doc.queryBlocksThroughPathDeeply(start.block, end.block)
+          .filter(through => through.length > 0)
+        : [];
+      throughPath.forEach(through => {
+        this.doc.crud.deleteBlocks(through.parent, through.index, through.length);
+      });
+
+      if (start.kind === "text") {
+        this.doc.revisions.deleteText(
+          start.blockId,
+          start.from,
+          start.to - start.from,
+        );
+      } else {
+        this.doc.crud.deleteBlockById(start.blockId);
+      }
+
+      if (end && end.blockId !== start.blockId) {
+        if (end.kind === "text") {
+          this.doc.revisions.deleteText(
+            end.blockId,
+            end.from,
+            end.to - end.from,
+          );
+        } else {
+          this.doc.crud.deleteBlockById(end.blockId);
+        }
+      }
+
+      if (shouldMerge && start.kind === "text" && end?.kind === "text") {
+        this.doc.revisions.recordBoundary(
+          "block-merge",
+          start.block.parentId!,
+          start.blockId,
+          end.blockId,
+        );
+      }
+
+      if (text && plan.insertAt) {
+        const insertBlock = this._getLiveBlockById<EditableBlockComponent>(
+          plan.insertAt.blockId,
+        );
+        if (insertBlock) {
+          const attrs = this._inheritedReplaceAttrs(
+            insertBlock,
+            plan.insertAt.offset,
+            start.kind === "text" && start.blockId === insertBlock.id
+              ? start.to - start.from
+              : 0,
+          );
+          this.doc.revisions.insertText(
+            insertBlock.id,
+            plan.insertAt.offset,
+            text,
+            attrs,
+          );
+        }
+      }
+    });
+    return true;
+  }
+
   private _deleteAllSelected(
     range: BlockSelection | BlockRangeEditPlan,
   ) {
@@ -1782,26 +1916,28 @@ export class InputTransformer {
     const deletedIndex = this._blockIndexInParent(target.start, parent);
     const prevBlock = this.doc.prevSibling(target.start);
     const nextBlock = this.doc.nextSibling(target.end);
-    this.doc.yDoc.transact(() => {
-      if (target.start.id === target.end.id) {
+    this._runRevisionGroup(() => {
+      this.doc.yDoc.transact(() => {
+        if (target.start.id === target.end.id) {
+          this.doc.crud.deleteBlockById(target.start.id);
+          return;
+        }
+        const throughPath = this.doc.queryBlocksThroughPathDeeply(
+          target.start,
+          target.end,
+        );
+        if (throughPath.length) {
+          throughPath.forEach((through) => {
+            this.doc.crud.deleteBlocks(
+              through.parent,
+              through.index,
+              through.length,
+            );
+          });
+        }
         this.doc.crud.deleteBlockById(target.start.id);
-        return;
-      }
-      const throughPath = this.doc.queryBlocksThroughPathDeeply(
-        target.start,
-        target.end,
-      );
-      if (throughPath.length) {
-        throughPath.forEach((through) => {
-          this.doc.crud.deleteBlocks(
-            through.parent,
-            through.index,
-            through.length,
-          );
-        });
-      }
-      this.doc.crud.deleteBlockById(target.start.id);
-      this.doc.crud.deleteBlockById(target.end.id);
+        this.doc.crud.deleteBlockById(target.end.id);
+      });
     });
     restoreSelectionAfterBlockDelete(this.doc, parent, deletedIndex, prevBlock, nextBlock, "previous");
     return true;
@@ -2025,6 +2161,18 @@ export class InputTransformer {
         if (!(error instanceof BlockReadonlyError)) throw error;
         return true;
       }
+      if (this.doc.revisions?.isTracking) {
+        prevBlock.setInlineRange(prevBlock.textLength);
+        this._runRevisionGroup(() => {
+          this.doc.revisions.recordBoundary(
+            "block-merge",
+            block.parentId!,
+            prevBlock.id,
+            block.id,
+          );
+        });
+        return true;
+      }
       // 「读取本块文本 → 并入前块 → 删除本块」必须是同一个 Yjs 事务：
       // 拆开时协同方会观察到文本已并入但本块仍存在的中间态。选区设置是
       // 纯本地副作用，放在事务外，避免 selectionChange$ 订阅者在事务中途执行。
@@ -2096,6 +2244,18 @@ export class InputTransformer {
           );
         } catch (error) {
           if (!(error instanceof BlockReadonlyError)) throw error;
+          return true;
+        }
+        if (this.doc.revisions?.isTracking) {
+          block.setInlineRange(block.textLength);
+          this._runRevisionGroup(() => {
+            this.doc.revisions.recordBoundary(
+              "block-merge",
+              block.parentId!,
+              block.id,
+              nextBlock.id,
+            );
+          });
           return true;
         }
         // 与 Backspace 合并对称：读取、并入、删块放进同一事务，见上方说明。
@@ -2256,6 +2416,10 @@ export class InputTransformer {
       return true;
     }
 
+    if (this.doc.revisions?.isTracking) {
+      return this._trackParagraphSplit(block, offset);
+    }
+
     // 空段落
     if (!block.textLength) {
       if (block.props.heading) {
@@ -2317,6 +2481,61 @@ export class InputTransformer {
       })
       .selectOrSetCursorAtBlock(p.id, true)
       .run();
+    return true;
+  }
+
+  private _trackParagraphSplit(
+    block: EditableBlockComponent,
+    offset: number,
+  ): true {
+    const parentId = block.parentId;
+    if (!parentId) {
+      this.doc.selection.blur();
+      return true;
+    }
+
+    const tail = sliceDelta(block.textDeltas(), offset);
+    const right = offset === 0
+      ? block
+      : null;
+    const paragraph = this.doc.schemas.createSnapshot(
+      offset === 0 ? block.flavour : (
+        block.textLength && !block.heading && block.flavour !== "blockquote"
+          ? block.flavour
+          : "paragraph"
+      ),
+      [
+        offset === 0 ? [] : tail,
+        {
+          ...block.props,
+          heading: offset === 0 ? null : block.props.heading ?? null,
+        },
+      ],
+    );
+
+    this.doc.crud.undoManager.captureSelectionBeforeChange();
+    this._runRevisionGroup(() => {
+      this.doc.crud.transact(() => {
+        this.doc.revisions.runWithoutTracking(() => {
+          if (offset === 0) {
+            this.doc.crud.insertBlocksBefore(block, [paragraph]);
+          } else {
+            block.yText.delete(offset, block.textLength - offset);
+            this.doc.crud.insertBlocksAfter(block, [paragraph]);
+          }
+        });
+        this.doc.revisions.recordBoundary(
+          "block-split",
+          parentId,
+          offset === 0 ? paragraph.id : block.id,
+          right?.id ?? paragraph.id,
+        );
+      });
+    });
+    this._setTextSelectionWhenReady(
+      offset === 0 ? block.id : paragraph.id,
+      0,
+    );
     return true;
   }
 }

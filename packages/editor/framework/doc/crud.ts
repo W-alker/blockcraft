@@ -26,6 +26,8 @@ import {
 } from "./origins";
 import {BlockReadonlyOperation} from "./block-readonly.types";
 import {writeSnapshotsToYBlockMap} from './snapshot-yblock'
+import {generateId} from '../utils'
+import {RevisionUnsupportedOperationError} from '../revision/errors'
 export {
   ORIGIN_BLOCK_READONLY_CONTROL,
   ORIGIN_SKIP_SYNC,
@@ -133,7 +135,11 @@ export class DocCRUD {
     )
     this.doc.afterInit(() => {
 
-      this.undoManager = new DocUndoManger(this.doc, this.yBlockMap)
+      const revisionMap = this.doc.revisions?.yRevisionMap
+      this.undoManager = new DocUndoManger(
+        this.doc,
+        revisionMap ? [this.yBlockMap, revisionMap] : this.yBlockMap,
+      )
 
       // 注：children 完整性修复已前移到 initByYBlock 构建组件树【之前】执行
       // （见 repairChildRefsOnLoad）。afterInit 在构建之后，此处再修会让删除的
@@ -223,6 +229,9 @@ export class DocCRUD {
     if (!changedKeys.length) return
 
     this.doc.readonlyManager.assertPropsWritable(blockId, BlockReadonlyOperation.Props)
+    if (this.doc.revisions?.isTracking) {
+      throw new RevisionUnsupportedOperationError('修订模式 v1 暂不支持块属性或格式修订')
+    }
     this.transact(() => {
       changedKeys.forEach(key => {
         const next = props[key]
@@ -245,6 +254,10 @@ export class DocCRUD {
     if (length <= 0 && !text) return
     const yText = this._getEditableYText(blockId)
     this.doc.readonlyManager.assertTextWritable(blockId, BlockReadonlyOperation.Replace)
+    if (this.doc.revisions?.isTracking) {
+      this.doc.revisions.replaceText(blockId, index, length, text, attributes)
+      return
+    }
     const delta: DeltaOperation[] = []
     if (index > 0) delta.push({retain: index})
     if (length > 0) delta.push({delete: length})
@@ -256,6 +269,10 @@ export class DocCRUD {
     if (!delta.length) return
     const yText = this._getEditableYText(blockId)
     this.doc.readonlyManager.assertTextWritable(blockId, BlockReadonlyOperation.Text)
+    if (this.doc.revisions?.isTracking) {
+      this.doc.revisions.applyDelta(blockId, delta)
+      return
+    }
     this.transact(() => yText.applyDelta(delta))
   }
 
@@ -989,6 +1006,10 @@ export class DocCRUD {
 
     this.transact(() => {
       this._insertBySnapshots(parentYBlock, index, validSnapshots)
+      this.doc.revisions?.recordBlockInsertion(
+        validSnapshots.map(snapshot => snapshot.id),
+        parentId,
+      )
     })
     return validSnapshots.map(snapshot => snapshot.id)
   }
@@ -1082,6 +1103,14 @@ export class DocCRUD {
     })
     this.doc.readonlyManager.assertRemovable(removableIds, BlockReadonlyOperation.Delete)
 
+    if (this.doc.revisions?.isTracking) {
+      this.undoManager?.captureSelectionBeforeChange?.()
+      this.transact(() => {
+        this.doc.revisions.recordBlockDeletion(removableIds, parent)
+      })
+      return [{index, length: removableIds.length}]
+    }
+
     if (index === 0 && count >= children.length && !force) {
       const parentSchema = this.doc.schemas.get(parentYBlock.get('flavour'))!
       if (parentSchema.metadata.allowEmptyChildren) {
@@ -1166,10 +1195,21 @@ export class DocCRUD {
       }
     }
     this.transact(() => {
-      this._delete(parentYBlock, index, 1)
-      if (snapshots?.length) {
-        this._insertBySnapshots(parentYBlock, index, snapshots)
+      if (this.doc.revisions?.isTracking) {
+        const groupId = generateId()
+        if (snapshots?.length) {
+          this._insertBySnapshots(parentYBlock, index + 1, snapshots)
+          this.doc.revisions.recordBlockInsertion(
+            snapshots.map(snapshot => snapshot.id),
+            parentId,
+            groupId,
+          )
+        }
+        this.doc.revisions.recordBlockDeletion([blockId], parentId, groupId)
+        return
       }
+      this._delete(parentYBlock, index, 1)
+      if (snapshots?.length) this._insertBySnapshots(parentYBlock, index, snapshots)
     })
     return snapshots.map(snapshot => snapshot.id)
   }
@@ -1226,6 +1266,9 @@ export class DocCRUD {
 
   moveBlocks(parentId: string, index: number, count: number, targetId: string, targetIndex: number) {
     if (count <= 0) return
+    if (this.doc.revisions?.isTracking) {
+      throw new RevisionUnsupportedOperationError('修订模式 v1 暂不支持移动块；请退出修订模式后操作')
+    }
     // Read the live Y.Map directly. A caller may create a target container and
     // move children into it in the same outer transaction, before ModelGraph's
     // observer has published the newly reachable node.
