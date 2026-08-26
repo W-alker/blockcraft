@@ -23,6 +23,12 @@ type DocumentAgentChatMessage = {
   tone?: 'normal' | 'error'
 }
 
+function createDocumentAgentSessionId(): string {
+  const generatedId = globalThis.crypto?.randomUUID?.()
+  if (generatedId) return generatedId
+  return `agent-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+}
+
 @Component({
   selector: 'bc-document-agent-panel',
   standalone: true,
@@ -203,6 +209,7 @@ export class DocumentAgentPanelComponent implements AfterViewInit {
   @ViewChild('composer') private composer?: ElementRef<HTMLTextAreaElement>
   @ViewChild('imageInput') private imageInput?: ElementRef<HTMLInputElement>
 
+  readonly sessionId = createDocumentAgentSessionId()
   readonly context = input<DocumentAgentContext | null>(null)
   readonly liveContext = input<DocumentAgentContext | null>(null)
   readonly task = input<DocumentAgentTask>('rewrite')
@@ -324,6 +331,7 @@ export class DocumentAgentPanelComponent implements AfterViewInit {
       task: this.task(),
       instruction,
       context,
+      sessionId: this.sessionId,
       attachments: attachment ? [attachment] : undefined,
     })
   }

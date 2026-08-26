@@ -75,6 +75,8 @@ export interface DocumentAgentRequest {
   task: DocumentAgentTask
   instruction: string
   context: DocumentAgentContext
+  /** Opaque short-lived conversation key; it is not document context. */
+  sessionId?: string
   attachments?: readonly DocumentAgentImageAttachment[]
   /** Optional runtime prompt supplied by a trusted host during development. */
   systemPrompt?: string

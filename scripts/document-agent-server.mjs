@@ -17,6 +17,11 @@ const provider = process.env['DOCUMENT_AGENT_PROVIDER'] ?? (apiKey ? 'openai' : 
 const codexCliModel = process.env['CODEX_CLI_MODEL']
 const allowPromptOverride = process.env['DOCUMENT_AGENT_ALLOW_PROMPT_OVERRIDE'] === 'true'
 const maxBodyBytes = 2 * 1024 * 1024
+const sessionTtlMs = 2 * 60 * 60 * 1000
+const maxSessionCount = 100
+const maxSessionTurns = 6
+const maxSessionMemoryChars = 8_000
+const sessions = new Map()
 
 const resultSchema = {
   type: 'object',
@@ -206,11 +211,120 @@ function parseJsonField(value, fieldName) {
   }
 }
 
-function createAgentPayload(request) {
+function truncateText(value, maxChars) {
+  if (typeof value !== 'string') return ''
+  return value.length <= maxChars ? value : value.slice(0, maxChars) + '…'
+}
+
+function normalizeSessionId(value) {
+  if (typeof value !== 'string') return null
+  const sessionId = value.trim()
+  if (!sessionId || sessionId.length > 128) return null
+  return sessionId
+}
+
+function pruneSessions(now = Date.now()) {
+  for (const [sessionId, session] of sessions) {
+    if (now - session.lastUsedAt > sessionTtlMs) sessions.delete(sessionId)
+  }
+
+  while (sessions.size > maxSessionCount) {
+    let oldestId = null
+    let oldestTime = Infinity
+    for (const [sessionId, session] of sessions) {
+      if (session.lastUsedAt < oldestTime) {
+        oldestId = sessionId
+        oldestTime = session.lastUsedAt
+      }
+    }
+    if (!oldestId) break
+    sessions.delete(oldestId)
+  }
+}
+
+function getSession(sessionId) {
+  const normalizedId = normalizeSessionId(sessionId)
+  if (!normalizedId) return null
+
+  const now = Date.now()
+  pruneSessions(now)
+  let session = sessions.get(normalizedId)
+  if (!session) {
+    session = {lastUsedAt: now, turns: []}
+    sessions.set(normalizedId, session)
+  } else {
+    session.lastUsedAt = now
+  }
+  pruneSessions(now)
+  return session
+}
+
+function compactOperation(operation) {
+  if (!operation || typeof operation !== 'object') return {kind: 'unknown'}
+
+  const compact = {kind: operation.kind}
+  for (const field of ['blockId', 'parentId', 'index', 'count', 'flavour', 'targetId', 'targetIndex', 'from', 'to']) {
+    if (operation[field] !== undefined) compact[field] = operation[field]
+  }
+  if (operation.kind === 'replace-text') {
+    compact.replacementLength = typeof operation.replacement === 'string'
+      ? operation.replacement.length
+      : 0
+  }
+  if (operation.kind === 'update-block-props') {
+    compact.propKeys = operation.props && typeof operation.props === 'object'
+      ? Object.keys(operation.props).slice(0, 20)
+      : []
+  }
+  if (operation.kind === 'insert-blocks') compact.snapshotCount = operation.snapshots?.length ?? 0
+  if (operation.kind === 'apply-text-delta') compact.deltaCount = operation.delta?.length ?? 0
+  if (operation.kind === 'create-blocks' || operation.kind === 'replace-block') {
+    compact.paramsCount = operation.params?.length ?? 0
+  }
+  return compact
+}
+
+function getSessionMemory(session) {
+  if (!session?.turns.length) return null
+
+  const turns = session.turns.slice(-maxSessionTurns)
+  while (turns.length > 1 && JSON.stringify(turns).length > maxSessionMemoryChars) {
+    turns.shift()
+  }
+  return {
+    turnCount: session.turns.length,
+    previousTurns: turns,
+  }
+}
+
+function rememberSessionTurn(session, request, result) {
+  if (!session || !result || typeof result !== 'object') return
+  session.turns = [
+    ...session.turns,
+    {
+      instruction: truncateText(request.instruction, 1_800),
+      assistantSummary: truncateText(result.summary, 1_800),
+      draft: truncateText(result.draft, 1_200) || undefined,
+      operations: Array.isArray(result.operations)
+        ? result.operations.slice(0, 8).map(compactOperation)
+        : [],
+    },
+  ].slice(-maxSessionTurns)
+  session.lastUsedAt = Date.now()
+}
+
+function createAgentPayload(request, session) {
+  const sessionMemory = getSessionMemory(session)
   return {
     task: request.task,
     instruction: request.instruction,
     context: request.context,
+    ...(sessionMemory ? {
+      sessionMemory: {
+        note: 'Bounded reference-only memory from earlier turns. The current context and instruction are authoritative; do not assume old operations were applied.',
+        ...sessionMemory,
+      },
+    } : {}),
     attachments: (request.attachments ?? []).map(({dataUrl: _dataUrl, ...attachment}) => attachment),
     editorAgentContract: [
       'Validated operations include replace-text, update-block-props, insert-blocks, create-blocks, replace-block, apply-text-delta, delete-blocks, and move-blocks.',
@@ -259,7 +373,7 @@ function runProcess(command, args, input, timeoutMs = 120_000) {
   })
 }
 
-async function runLocalCodex(request) {
+async function runLocalCodex(request, session) {
   const workingDir = await mkdtemp(join(tmpdir(), 'blockcraft-agent-'))
   const schemaPath = join(workingDir, 'result.schema.json')
   const outputPath = join(workingDir, 'result.json')
@@ -283,7 +397,7 @@ async function runLocalCodex(request) {
     'Return only a JSON object matching the supplied output schema. Do not edit files or run commands.',
     'The transport schema encodes props, snapshots, delta, and params as JSON strings. Emit valid JSON strings for those nested values; the host decodes them before validation.',
     JSON.stringify({
-      ...createAgentPayload(request),
+      ...createAgentPayload(request, session),
       imageNote: request.attachments?.length
         ? 'An image attachment exists, but this local Codex CLI smoke path should rely on the structured document context rather than claiming to see the image.'
         : undefined,
@@ -315,9 +429,9 @@ async function runLocalCodex(request) {
   }
 }
 
-async function runAgent(request) {
+async function runAgent(request, session) {
   if (provider === 'codex-cli') {
-    return runLocalCodex(request)
+    return runLocalCodex(request, session)
   }
 
   if (provider !== 'openai') {
@@ -336,7 +450,7 @@ async function runAgent(request) {
   const input = [{
     role: 'user',
     content: [
-      {type: 'input_text', text: JSON.stringify(createAgentPayload(request))},
+      {type: 'input_text', text: JSON.stringify(createAgentPayload(request, session))},
       ...attachments.map(attachment => ({
         type: 'input_image',
         image_url: attachment.dataUrl,
@@ -401,7 +515,9 @@ const server = http.createServer(async (request, response) => {
 
   try {
     const body = await readJson(request)
-    const result = await runAgent(body)
+    const session = getSession(body.sessionId)
+    const result = await runAgent(body, session)
+    rememberSessionTurn(session, body, result)
     sendJson(response, 200, {result})
   } catch (error) {
     const message = error instanceof Error ? error.message : '未知 Agent 错误'

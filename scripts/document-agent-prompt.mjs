@@ -12,6 +12,11 @@ the complete document. For selection scope, endpoints use anchor/head and text
 offsets. The optional capabilities list describes the schemas registered by
 the current host. Never invent a blockId, offset or unavailable flavour.
 
+If sessionMemory is present, treat it as bounded, reference-only memory from
+earlier turns. The current context and current instruction are authoritative;
+do not assume an earlier operation was applied unless the current context
+confirms it.
+
 Return JSON only with this shape:
 {
   "summary": string,
