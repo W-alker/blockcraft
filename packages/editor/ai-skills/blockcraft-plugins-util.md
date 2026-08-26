@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-23
+> Last updated: 2026-08-26
 
 ## PlaceholderPlugin
 
@@ -199,6 +199,23 @@ new PasteFormatSelectorPlugin()
 > `plugins/demo-presentation/demo-presentation.plugin.ts` — Presentation/demo mode.
 
 Extends the `doc` object at runtime with `enterDemoMode()` and `exitDemoMode()` methods. Delegates to an internal `PresentationController`.
+
+Hosts that own their presentation menu can instantiate `PresentationController`
+directly. `start()` always begins from the first page; after the user exits the
+fullscreen surface, `canResume` remains true and `resume()` recreates the
+isolated readonly runtime at the last flow slide or paginated paper sheet.
+`destroy()` permanently discards that session and resets its saved position.
+
+```typescript
+const presentation = new PresentationController(doc, config)
+presentation.start()
+
+// Later, after the user exits presentation:
+if (presentation.canResume) presentation.resume()
+
+// Use only when the host is discarding/replacing the complete session.
+presentation.destroy()
+```
 
 ### Configuration
 

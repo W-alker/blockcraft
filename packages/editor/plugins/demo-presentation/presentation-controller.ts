@@ -99,6 +99,7 @@ export class PresentationController {
   private paginatedPreparation: Promise<boolean> | null = null;
   private paginatedNavigationPending = false;
   private lifecycleRevision = 0;
+  private sessionStarted = false;
 
   private _demoDoc: BlockCraft.Doc | null = null;
 
@@ -108,7 +109,24 @@ export class PresentationController {
   ) {
   }
 
-  start() {
+  /** Whether this controller owns a presentation position that can be resumed. */
+  get canResume(): boolean {
+    return this.sessionStarted;
+  }
+
+  /** Start a new presentation from its first flow slide or paper sheet. */
+  start(): void {
+    this.beginPresentation(0);
+  }
+
+  /** Resume the last exited presentation position for either layout mode. */
+  resume(): boolean {
+    if (!this.canResume || this._demoDoc) return false;
+    this.beginPresentation(this.currentPageIndex);
+    return true;
+  }
+
+  private beginPresentation(requestedPageIndex: number): void {
     const lifecycleRevision = ++this.lifecycleRevision;
     // 演示文档是独立的临时只读投影，不应显示或传播源文档的持久锁权限。
     // 文档级 readonly 仍会完整保留，负责阻断所有用户输入与普通 CRUD 调用。
@@ -125,16 +143,23 @@ export class PresentationController {
 
     if (this.layoutMode === 'flow' && this.pages.length === 0) {
       console.warn('No pages to present');
+      this.sessionStarted = false;
       return;
     }
 
-    nextTick().then(() => void this.startPresentation(rootSnapshot, lifecycleRevision))
+    this.sessionStarted = true;
+    nextTick().then(() => void this.startPresentation(
+      rootSnapshot,
+      lifecycleRevision,
+      requestedPageIndex,
+    ))
 
   }
 
   private async startPresentation(
     rootSnapshot: IBlockSnapshot,
     lifecycleRevision: number,
+    requestedPageIndex: number,
   ): Promise<void> {
     if (lifecycleRevision !== this.lifecycleRevision) return;
     this.createDemoDocAndContainer(rootSnapshot)
@@ -156,6 +181,22 @@ export class PresentationController {
       return;
     }
 
+    const pageIndex = Math.min(
+      Math.max(Number.isInteger(requestedPageIndex) ? requestedPageIndex : 0, 0),
+      this.totalPages - 1,
+    );
+    if (
+      this.layoutMode === 'paginated'
+      && pageIndex > 0
+      && !await this.ensurePaginatedLookahead(pageIndex, lifecycleRevision)
+    ) {
+      if (lifecycleRevision !== this.lifecycleRevision) return;
+      console.warn('Paginated presentation resume page is not ready');
+      this.destroy();
+      return;
+    }
+    if (lifecycleRevision !== this.lifecycleRevision) return;
+
     this.applyPresentationViewScale();
     if (this.layoutMode === 'paginated') {
       this.bindPaginatedPageCount();
@@ -164,7 +205,7 @@ export class PresentationController {
     this.enterFullscreen();
     this.renderControlBar();
     this.bindEvents();
-    this.renderPage(0);
+    this.renderPage(pageIndex);
   }
 
   createDemoDocAndContainer(rootSnapshot: IBlockSnapshot) {
@@ -477,7 +518,7 @@ export class PresentationController {
     const zoomInSub = controlBarRef.instance.zoomIn.subscribe(() => this.zoomPaginatedPage(0.1));
     const zoomOutSub = controlBarRef.instance.zoomOut.subscribe(() => this.zoomPaginatedPage(-0.1));
     const fitPageSub = controlBarRef.instance.fitPage.subscribe(() => this.fitPaginatedPage());
-    const exitSub = controlBarRef.instance.exit.subscribe(() => this.destroy());
+    const exitSub = controlBarRef.instance.exit.subscribe(() => this.exitPresentation());
     const drawingSub = controlBarRef.instance.toggleDrawing.subscribe(() => this.toggleDrawing());
 
     this.eventCleanups.push(() => {
@@ -571,7 +612,7 @@ export class PresentationController {
           break;
         case 'Escape':
           e.preventDefault();
-          !this.isImgPreviewMode && this.destroy();
+          !this.isImgPreviewMode && this.exitPresentation();
           break;
       }
     };
@@ -653,7 +694,7 @@ export class PresentationController {
           this.currentPreview?.hide();
           this.needReenterFullscreen = true;
         } else {
-          this.destroy();
+          this.exitPresentation();
         }
       }
     };
@@ -1269,7 +1310,19 @@ export class PresentationController {
     this.currentPreview.show();
   }
 
-  destroy() {
+  private exitPresentation(): void {
+    this.teardownPresentationRuntime();
+  }
+
+  destroy(): void {
+    this.sessionStarted = false;
+    this.teardownPresentationRuntime();
+    this.pages = [];
+    this.currentPageIndex = 0;
+    this.layoutMode = 'flow';
+  }
+
+  private teardownPresentationRuntime(): void {
     this.lifecycleRevision++;
     (navigator as any).keyboard?.unlock?.();
 
@@ -1299,9 +1352,6 @@ export class PresentationController {
     this.presentationScaleProbe = null;
     this.sourcePaginationPlugin = null;
     this.demoPaginationPlugin = null;
-    this.pages = [];
-    this.currentPageIndex = 0;
-    this.layoutMode = 'flow';
     this.paginatedFitScale = 1;
     this.paginatedScaleMode = 'fit';
     this.paginatedStableLayout = null;

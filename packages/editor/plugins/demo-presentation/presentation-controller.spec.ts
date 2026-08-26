@@ -122,6 +122,86 @@ describe("PresentationController", () => {
     expect(harness.readonly).toBeFalse();
   });
 
+  it("resumes the saved page through the public layout-independent API", () => {
+    const controller = new PresentationController({} as BlockCraft.Doc, {});
+    const beginPresentation = spyOn<any>(controller, "beginPresentation");
+    (controller as any).sessionStarted = true;
+    (controller as any).currentPageIndex = 4;
+
+    expect(controller.canResume).toBeTrue();
+    expect(controller.resume()).toBeTrue();
+    expect(beginPresentation).toHaveBeenCalledOnceWith(4);
+  });
+
+  it("does not resume a controller without history or over an active runtime", () => {
+    const controller = new PresentationController({} as BlockCraft.Doc, {});
+    const beginPresentation = spyOn<any>(controller, "beginPresentation");
+
+    expect(controller.canResume).toBeFalse();
+    expect(controller.resume()).toBeFalse();
+
+    (controller as any).sessionStarted = true;
+    (controller as any)._demoDoc = {};
+    expect(controller.resume()).toBeFalse();
+    expect(beginPresentation).not.toHaveBeenCalled();
+  });
+
+  it("keeps the page position on presentation exit and clears it on destroy", () => {
+    const controller = new PresentationController({} as BlockCraft.Doc, {});
+    (controller as any).sessionStarted = true;
+    (controller as any).currentPageIndex = 3;
+    (controller as any).pages = [[paragraph("page-1")]];
+    spyOn<any>(controller, "teardownPresentationRuntime");
+
+    (controller as any).exitPresentation();
+
+    expect(controller.canResume).toBeTrue();
+    expect((controller as any).currentPageIndex).toBe(3);
+    expect((controller as any).pages.length).toBe(1);
+
+    controller.destroy();
+
+    expect(controller.canResume).toBeFalse();
+    expect((controller as any).currentPageIndex).toBe(0);
+    expect((controller as any).pages).toEqual([]);
+  });
+
+  it("prepares and restores the saved paginated sheet before rendering it", async () => {
+    const surface = document.createElement("div");
+    for (let index = 0; index < 5; index++) {
+      const sheet = document.createElement("div");
+      sheet.className = "bc-page-sheet";
+      surface.appendChild(sheet);
+    }
+    const controller = new PresentationController({} as BlockCraft.Doc, {});
+    (controller as any).layoutMode = "paginated";
+    (controller as any).presentationSurface = surface;
+    const createRuntime = spyOn<any>(controller, "createDemoDocAndContainer");
+    const ensureLookahead = spyOn<any>(controller, "ensurePaginatedLookahead")
+      .and.resolveTo(true);
+    spyOn<any>(controller, "applyPresentationViewScale");
+    spyOn<any>(controller, "bindPaginatedPageCount");
+    spyOn<any>(controller, "bindPaginatedReadinessInvalidation");
+    spyOn<any>(controller, "enterFullscreen");
+    spyOn<any>(controller, "renderControlBar");
+    spyOn<any>(controller, "bindEvents");
+    const renderPage = spyOn<any>(controller, "renderPage");
+    const lifecycleRevision = (controller as any).lifecycleRevision;
+
+    await (controller as any).startPresentation(
+      paragraph("root"),
+      lifecycleRevision,
+      3,
+    );
+
+    expect(createRuntime).toHaveBeenCalled();
+    expect(ensureLookahead.calls.allArgs()).toEqual([
+      [0, lifecycleRevision],
+      [3, lifecycleRevision],
+    ]);
+    expect(renderPage).toHaveBeenCalledOnceWith(3);
+  });
+
   it("projects the original page snapshots without presentation-only table rewrites", () => {
     const harness = createHarness();
     const page = [{

@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-08-24 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-08-26 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -68,6 +68,48 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
+
+## Unreleased — 2026-08-26 — Resumable flow and paginated presentation
+
+**Severity**: minor
+
+**What changed**: `PresentationController` now exposes the layout-independent
+`canResume` getter and `resume()` command. Leaving fullscreen preserves the
+current flow slide or paginated paper-sheet index; `destroy()` still permanently
+clears the complete presentation session.
+
+**Why**: The previous host integration inferred history from the controller's
+private flow-only `pages` array, so paginated presentations could not offer the
+same continue action and normal teardown also discarded the saved position.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-util.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `PresentationController.canResume: boolean`
+- `PresentationController.resume(): boolean`
+
+### Migration Recipe
+
+Hosts should stop inspecting or invoking private controller members:
+
+```typescript
+// before: flow-only and unsupported
+const pages = (controller as any).pages
+if (pages?.length) (controller as any).renderPage(savedIndex)
+
+// after: works for flow and pagination
+if (controller.canResume) controller.resume()
+```
+
+### Behavior Changes
+
+- Control-bar exit, Escape, and browser fullscreen exit preserve presentation
+  progress. Explicit `destroy()` remains the final cleanup boundary and resets
+  the saved page.
 
 ## v0.6.1 — 2026-08-25 — Mermaid child Schema validation
 
