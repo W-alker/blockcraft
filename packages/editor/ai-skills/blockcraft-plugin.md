@@ -5,7 +5,7 @@
 > For configuring existing built-in plugins, see `blockcraft-plugins-ref.md`.
 > For event system internals, see L2: `blockcraft-event.md`.
 >
-> Last updated: 2026-08-15
+> Last updated: 2026-08-27
 
 ## Plugin Lifecycle
 
@@ -269,6 +269,47 @@ And export from `plugins/index.ts`:
 export { MyPlugin } from './my-feature';
 ```
 
+## Headless Plugin Pattern
+
+A Plugin does not need Angular components, Overlay or DOM ownership. Keep the
+domain/controller layer headless when multiple hosts may provide different
+review, toolbar or mobile UIs:
+
+```typescript
+const revisionReview = new RevisionReviewPlugin()
+
+const doc = new BlockCraftDoc({
+  ...config,
+  plugins: [revisionReview],
+})
+
+revisionReview.state$.subscribe(state => {
+  // Bind state.items/current to any host UI. This callback performs no editor
+  // mutation until the host explicitly invokes a command.
+})
+
+revisionReview.activateRevision(revisionId)
+revisionReview.readContent() // exact model-only type/text fragments
+revisionReview.keep()   // accept/redecide the whole revision group
+revisionReview.revert() // reject/redecide the whole revision group
+```
+
+The optional default UI stays outside the Plugin boundary. Bind
+`RevisionReviewPanelComponent` to the same headless instance and forward its
+`RevisionReviewIntent` values to `RevisionReviewUiController.handleIntent()`.
+The controller may also be attached to the document scroller to open the
+default marker popover. A custom host can replace either component while
+retaining the same Plugin state and commands.
+
+Headless Plugins should:
+
+- depend on model/domain services rather than DOM attributes or geometry;
+- expose readonly state and explicit commands;
+- avoid role/permission policy when that belongs to the host;
+- recompute indexes only on the owning domain's change stream, not input,
+  selection or rendering hot paths;
+- keep `init()` / `destroy()` subscription ownership symmetric.
+
 ### Runtime-enabled plugin example: Pagination
 
 `PaginationPlugin` is registered once and can be enabled without rebuilding the document:
@@ -321,3 +362,4 @@ The plugin owns all `ResizeObserver`, animation-frame, DOM-layer and print resou
 | Drag & hover | `BlockControllerPlugin` | `plugins/block-controller/` |
 | Model-first object selection + connected mixed format panel | `ObjectFormatToolbarPlugin` | `plugins/object-format-toolbar/` |
 | Reversible layout controller | `PaginationPlugin` | `plugins/pagination/` |
+| Headless domain command/state layer | `RevisionReviewPlugin` | `plugins/revision-review/` |

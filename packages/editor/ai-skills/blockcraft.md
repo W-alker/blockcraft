@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-08-26 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-08-27 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -91,7 +91,7 @@ packages/editor/
 │   └── services/           # DI tokens (file, message, blockCreator, etc.)
 ├── blocks/                 # All block implementations (one dir per block)
 ├── plugins/                # All plugin implementations (one dir per plugin)
-├── components/             # Reusable UI components (toolbar, pickers)
+├── components/             # Reusable UI components (toolbar, pickers, optional revision review UI)
 ├── snapshot-viewer/        # Standalone display-only snapshot renderer
 ├── adapters/               # HTML/Markdown import/export
 ├── themes/                 # CSS themes (base, light, dark, per-block styles)
@@ -173,14 +173,27 @@ const pending = doc.revisions.list({status: 'pending'})
 doc.revisions.accept(pending[0].id)       // append-only decision
 doc.revisions.redecide(pending[0].id, 'reject')
 
+// Incremental headless projections can refresh only the affected groups.
+doc.revisions.change$.subscribe(change => {
+  change.groupIds.forEach(groupId =>
+    updateReviewGroup(groupId, doc.revisions.listGroup(groupId)))
+})
+
+// Optional headless review command/state layer (registered as a DocPlugin).
+revisionReview.activateRevision(pending[0].id)
+revisionReview.keep()                     // accept or redecide the whole group
+revisionReview.revert()                   // reject or redecide the whole group
+
 const finalRoot = doc.revisions.projectFinalSnapshot()
 const complete = doc.exportDocumentSnapshot()
 ```
 
 Revision v1 covers text insert/delete/replace, cross-block deletion,
 same-parent editable block split/merge, and whole-block insert/delete. Format
-changes, table row/column operations, object geometry/movement, cross-container
-structure, and Original view are intentionally unsupported. `final` is a
+changes, table row/column operations, object geometry/movement and
+cross-container structure are not represented as v1 revisions: they continue
+through the normal Yjs/Undo path without creating a Diff, and tracking mode
+does not disable those features. Original view remains unsupported. `final` is a
 readonly projection; a host should mount `projectFinalSnapshot()` in an
 isolated readonly `BlockCraftDoc`. Permissions and synchronization admission
 remain host responsibilities; BlockCraft only validates the supplied actor and
@@ -1370,11 +1383,36 @@ onBold(ctx: UIEventStateContext) { ... }
 | `TranslatePlugin` | `plugins/translate/` | Block translation via DI service |
 | `PlaceholderPlugin` | `plugins/placeholder/` | Renders focused or persistent placeholders on empty editable blocks; supports per-block `meta.plh` / `meta.plhMode`, per-flavour overrides and Schema defaults |
 | `PaginationPlugin` | `plugins/pagination/` | Opt-in live pagination, page settings, print shortcut and WYSIWYG printing |
+| `RevisionReviewPlugin` | `plugins/revision-review/` | Headless grouped review state, exact revision-content query, model-only navigation and keep/revert commands over `doc.revisions` |
 
 > A host app can pass any subset of these (plus its own custom plugins) into `DocConfig.plugins`. See `blockcraft-app.md`.
 > Hosts that want this exact stack should use
 > `createBundledEditorCapabilities()`; manually constructing a subset remains
 > supported.
+
+Revision review UI is deliberately separate from that Plugin. Hosts may use
+`RevisionReviewPopoverComponent`, `RevisionReviewPanelComponent` and
+`RevisionReviewUiController` from `components/revision-review/`, replace them
+independently, or render no review UI at all. The controller owns only marker
+delegation, connected Overlay lifetime and stable-block navigation; it never
+derives roles or acquires a full-document virtualization lease.
+The default panel obtains exact type/text fragments through headless
+`review.readContent()`, keeps the full review order model-side and projects
+compact comment-style cards only for revision anchors currently mounted by the
+document virtualization window. Those cards follow `doc.scrollContainer`; their
+previous/next and “接收修订 / 拒绝修订” controls are iconfont buttons with tooltips. The
+default “待处理” queue contains pending and conflicted items only, so accepting
+or rejecting a revision removes its card from the current projection as soon as
+headless state updates. Accepted/rejected items remain model-side and appear
+only when the user explicitly opens “已处理” for history or redecision. The
+panel presents one structural overlap at a time and identifies both choices by
+actor, revision type, time and exact `readContent()` fragment instead of the
+ambiguous “former/latter” wording; “接收此项” emits `resolve-overlap` and the
+Revision domain rejects the mutually exclusive side. The
+connected popover is deliberately limited to actor identity, revision time and
+the same two decision icons. Root `placement-layout` nodes are infrastructure and
+never receive whole-block revision presentation; a first absolute-object insert
+targets the actual object child.
 
 ## Architecture Docs (Background Reading)
 

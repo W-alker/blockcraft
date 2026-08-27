@@ -1,0 +1,937 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BlockCraft 修订快捷评审插件 HTML 示意</title>
+  <link rel="stylesheet" href="../packages/editor/assets/iconfont/bc-iconfont.css">
+  <style>
+    :root {
+      color-scheme: light;
+      --bc-active: #1668dc;
+      --bc-active-hover: #0f5fcf;
+      --bc-active-soft: #eaf3ff;
+      --bc-text: #20242b;
+      --bc-text-secondary: #5f6875;
+      --bc-text-tertiary: #89919d;
+      --bc-border: #d9dee7;
+      --bc-border-soft: #e9edf2;
+      --bc-canvas: #edf0f4;
+      --bc-surface: #ffffff;
+      --bc-surface-raised: #ffffff;
+      --bc-hover: #f4f6f8;
+      --bc-insert: #137333;
+      --bc-insert-bg: rgba(52, 168, 83, .14);
+      --bc-delete: #c5221f;
+      --bc-delete-bg: rgba(234, 67, 53, .12);
+      --bc-conflict: #b06000;
+      --bc-conflict-bg: rgba(249, 171, 0, .18);
+      --bc-shadow-sm: 0 1px 3px rgb(31 42 55 / 8%);
+      --bc-shadow-lg: 0 16px 40px rgb(31 42 55 / 16%), 0 4px 12px rgb(31 42 55 / 8%);
+      --bc-focus: 0 0 0 3px rgb(22 104 220 / 18%);
+      font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      --bc-active: #7db2f6;
+      --bc-active-hover: #9ac4f9;
+      --bc-active-soft: #173b68;
+      --bc-text: #edf2f8;
+      --bc-text-secondary: #b5bfcb;
+      --bc-text-tertiary: #8996a7;
+      --bc-border: #465264;
+      --bc-border-soft: #354152;
+      --bc-canvas: #111821;
+      --bc-surface: #202a36;
+      --bc-surface-raised: #263241;
+      --bc-hover: #2c3949;
+      --bc-insert: #81c995;
+      --bc-insert-bg: rgba(129, 201, 149, .16);
+      --bc-delete: #f28b82;
+      --bc-delete-bg: rgba(242, 139, 130, .16);
+      --bc-conflict: #fdd663;
+      --bc-conflict-bg: rgba(253, 214, 99, .18);
+      --bc-shadow-sm: 0 1px 3px rgb(0 0 0 / 24%);
+      --bc-shadow-lg: 0 18px 46px rgb(0 0 0 / 42%), 0 4px 12px rgb(0 0 0 / 28%);
+      --bc-focus: 0 0 0 3px rgb(125 178 246 / 24%);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; }
+    body {
+      margin: 0;
+      overflow-x: hidden;
+      color: var(--bc-text);
+      background: var(--bc-canvas);
+      font-size: 13px;
+    }
+    button { font: inherit; }
+    button, [role="button"] { cursor: pointer; }
+    button:focus-visible, [role="button"]:focus-visible {
+      outline: 0;
+      box-shadow: var(--bc-focus);
+    }
+    .bc_icon { line-height: 1; }
+
+    .prototype-bar {
+      min-height: 54px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 9px 18px;
+      color: #f7f9fc;
+      background: #1f2937;
+      border-bottom: 1px solid rgb(255 255 255 / 8%);
+    }
+    .prototype-title { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+    .prototype-title strong { font-size: 14px; font-weight: 680; white-space: nowrap; }
+    .prototype-title span { overflow: hidden; color: #aeb8c5; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+    .prototype-actions { display: flex; align-items: center; gap: 8px; }
+    .prototype-tag {
+      padding: 4px 8px;
+      color: #cbd5e1;
+      border: 1px solid rgb(255 255 255 / 15%);
+      border-radius: 999px;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .icon-button, .button {
+      min-height: 32px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 0 11px;
+      color: var(--bc-text-secondary);
+      border: 1px solid var(--bc-border);
+      border-radius: 7px;
+      background: var(--bc-surface-raised);
+      transition: color .16s ease, background-color .16s ease, border-color .16s ease, box-shadow .16s ease;
+    }
+    .icon-button { width: 32px; padding: 0; }
+    .icon-button:hover, .button:hover { color: var(--bc-text); background: var(--bc-hover); }
+    .button.primary { color: #fff; border-color: var(--bc-active); background: var(--bc-active); }
+    .button.primary:hover { color: #fff; border-color: var(--bc-active-hover); background: var(--bc-active-hover); }
+    .button.quiet { border-color: transparent; background: transparent; }
+    .button.accept { color: var(--bc-insert); border-color: color-mix(in srgb, var(--bc-insert) 34%, var(--bc-border)); }
+    .button.reject { color: var(--bc-delete); border-color: color-mix(in srgb, var(--bc-delete) 34%, var(--bc-border)); }
+    .button:disabled { cursor: not-allowed; opacity: .46; }
+
+    .app-shell {
+      width: min(1480px, calc(100vw - 28px));
+      height: calc(100vh - 82px);
+      min-height: 680px;
+      margin: 14px auto;
+      display: grid;
+      grid-template-rows: 46px minmax(0, 1fr);
+      overflow: hidden;
+      background: var(--bc-surface);
+      border: 1px solid var(--bc-border);
+      border-radius: 10px;
+      box-shadow: 0 8px 26px rgb(31 42 55 / 10%);
+    }
+
+    .docbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--bc-border-soft);
+    }
+    .doc-meta, .doc-controls, .view-switch { display: flex; align-items: center; }
+    .doc-meta { gap: 9px; min-width: 0; }
+    .doc-mark {
+      width: 25px;
+      height: 25px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      color: #fff;
+      background: var(--bc-active);
+      border-radius: 6px;
+      font-weight: 750;
+    }
+    .doc-name { font-weight: 650; white-space: nowrap; }
+    .doc-state { color: var(--bc-text-tertiary); font-size: 11px; white-space: nowrap; }
+    .doc-controls { gap: 7px; }
+    .track-state {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 9px;
+      color: var(--bc-active);
+      background: var(--bc-active-soft);
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 620;
+    }
+    .view-switch { gap: 2px; padding: 2px; background: var(--bc-hover); border-radius: 7px; }
+    .view-switch button {
+      min-height: 28px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 0 9px;
+      color: var(--bc-text-secondary);
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+    }
+    .view-switch button.is-active { color: var(--bc-active); background: var(--bc-surface-raised); box-shadow: var(--bc-shadow-sm); }
+
+    .workspace {
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 326px;
+    }
+    .stage {
+      position: relative;
+      min-width: 0;
+      min-height: 0;
+      padding: 34px 28px 64px;
+      overflow: auto;
+      background: var(--bc-canvas);
+      scroll-behavior: smooth;
+    }
+    .page {
+      width: min(720px, calc(100% - 8px));
+      min-height: 920px;
+      margin: 0 auto;
+      padding: 64px 72px 76px;
+      color: var(--bc-text);
+      background: var(--bc-surface);
+      box-shadow: 0 2px 13px rgb(31 42 55 / 15%);
+    }
+    .page-kicker { margin: 0 0 9px; color: var(--bc-active); font-size: 11px; font-weight: 750; letter-spacing: .13em; }
+    .page h1 { margin: 0; font: 500 30px/1.28 Georgia, "Songti SC", serif; }
+    .page-subtitle { margin: 11px 0 28px; color: var(--bc-text-tertiary); font-size: 12px; }
+    .page h2 { margin: 32px 0 8px; font: 600 18px/1.4 Georgia, "Songti SC", serif; }
+    .page p, .page li { font: 15px/1.9 Georgia, "Songti SC", serif; }
+    .page p { margin: 0 0 17px; }
+    .page ul { margin: 8px 0 18px; padding-left: 22px; }
+    .page-note {
+      margin-bottom: 26px;
+      padding: 11px 13px;
+      color: var(--bc-text-secondary);
+      background: var(--bc-hover);
+      border-left: 3px solid var(--bc-active);
+      font: 12px/1.65 Inter, "PingFang SC", sans-serif;
+    }
+    .page-note strong { color: var(--bc-text); }
+
+    .revision-mark {
+      position: relative;
+      border-radius: 2px;
+      outline: 0;
+      transition: color .16s ease, background-color .16s ease, box-shadow .16s ease, opacity .16s ease;
+    }
+    .revision-mark[data-status="pending"][data-part="insert"] {
+      color: var(--bc-insert);
+      background: var(--bc-insert-bg);
+      box-shadow: inset 0 -2px 0 var(--bc-insert);
+    }
+    .revision-mark[data-status="pending"][data-part="delete"] {
+      color: var(--bc-delete);
+      background: var(--bc-delete-bg);
+      text-decoration: line-through;
+      text-decoration-thickness: 1.5px;
+    }
+    .revision-mark.is-active {
+      box-shadow: 0 0 0 2px var(--bc-surface), 0 0 0 4px var(--bc-active);
+    }
+    .revision-mark.is-hidden { display: none; }
+    .revision-mark.is-normal { color: inherit; background: transparent; text-decoration: none; box-shadow: none; }
+    .revision-mark.is-normal.is-active { box-shadow: 0 0 0 2px var(--bc-surface), 0 0 0 4px var(--bc-active); }
+
+    .revision-block {
+      position: relative;
+      margin: 24px -18px 18px;
+      padding: 13px 18px 13px 20px;
+      border-radius: 6px;
+      transition: background-color .16s ease, box-shadow .16s ease, opacity .16s ease;
+    }
+    .revision-block[data-status="pending"] { background: var(--bc-insert-bg); box-shadow: inset 3px 0 0 var(--bc-insert); }
+    .revision-block.is-active { outline: 2px solid var(--bc-active); outline-offset: 3px; }
+    .revision-block.is-normal { background: transparent; box-shadow: none; }
+    .revision-block.is-hidden { display: none; }
+    .revision-block p { margin-bottom: 0; }
+    .block-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      margin-bottom: 6px;
+      color: var(--bc-insert);
+      font: 700 10px/1 Inter, "PingFang SC", sans-serif;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .revision-popover {
+      position: absolute;
+      z-index: 20;
+      width: min(390px, calc(100vw - 28px));
+      padding: 10px;
+      color: var(--bc-text);
+      background: var(--bc-surface-raised);
+      border: 1px solid var(--bc-border);
+      border-radius: 9px;
+      box-shadow: var(--bc-shadow-lg);
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(5px);
+      transition: opacity .14s ease, transform .14s ease, visibility .14s ease;
+    }
+    .revision-popover.is-open { opacity: 1; visibility: visible; transform: translateY(0); }
+    .popover-main { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 9px; }
+    .revision-dot {
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      background: var(--bc-active);
+      border-radius: 50%;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .popover-copy { min-width: 0; }
+    .popover-title-row { display: flex; align-items: center; gap: 7px; }
+    .popover-title { overflow: hidden; font-size: 12px; font-weight: 670; text-overflow: ellipsis; white-space: nowrap; }
+    .popover-status { color: var(--bc-text-tertiary); font-size: 10px; white-space: nowrap; }
+    .popover-meta { margin-top: 2px; color: var(--bc-text-tertiary); font-size: 10px; }
+    .popover-actions { display: flex; align-items: center; gap: 6px; }
+    .popover-nav { display: flex; align-items: center; gap: 1px; margin-right: 2px; }
+    .popover-nav .icon-button { width: 27px; height: 27px; min-height: 27px; border-color: transparent; background: transparent; }
+    .popover-nav .is-next i { transform: rotate(180deg); }
+    .popover-count { min-width: 30px; color: var(--bc-text-tertiary); font-size: 10px; text-align: center; }
+    .popover-readonly {
+      display: none;
+      padding: 7px 9px;
+      color: var(--bc-text-tertiary);
+      background: var(--bc-hover);
+      border-radius: 6px;
+      font-size: 11px;
+    }
+    .revision-popover[data-readonly="true"] .popover-actions { display: none; }
+    .revision-popover[data-readonly="true"] .popover-readonly { display: block; }
+
+    .review-panel {
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr) auto;
+      background: var(--bc-surface);
+      border-left: 1px solid var(--bc-border);
+    }
+    .review-header { padding: 18px 16px 12px; }
+    .review-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    .review-header h2 { margin: 0; font-size: 16px; }
+    .review-header p { margin: 4px 0 0; color: var(--bc-text-tertiary); font-size: 11px; }
+    .pending-count {
+      padding: 4px 8px;
+      color: var(--bc-active);
+      background: var(--bc-active-soft);
+      border-radius: 999px;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+    .review-filters { display: flex; gap: 5px; margin-top: 13px; }
+    .filter-button {
+      min-height: 27px;
+      padding: 0 8px;
+      color: var(--bc-text-secondary);
+      border: 1px solid transparent;
+      border-radius: 6px;
+      background: transparent;
+      font-size: 11px;
+    }
+    .filter-button:hover { background: var(--bc-hover); }
+    .filter-button.is-active { color: var(--bc-active); border-color: var(--bc-active-soft); background: var(--bc-active-soft); }
+    .batch-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 16px 12px; }
+    .batch-actions .button { min-height: 30px; font-size: 11px; }
+
+    .review-list { display: grid; align-content: start; gap: 9px; padding: 0 12px 20px; overflow: auto; }
+    .review-card {
+      padding: 11px;
+      border: 1px solid var(--bc-border);
+      border-radius: 9px;
+      background: var(--bc-surface-raised);
+      box-shadow: var(--bc-shadow-sm);
+      transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+    }
+    .review-card:hover { border-color: color-mix(in srgb, var(--bc-active) 45%, var(--bc-border)); }
+    .review-card.is-active { border-color: var(--bc-active); box-shadow: 0 0 0 2px var(--bc-active-soft); }
+    .card-button {
+      width: 100%;
+      padding: 0;
+      color: inherit;
+      border: 0;
+      background: transparent;
+      text-align: left;
+    }
+    .card-meta { display: grid; grid-template-columns: 27px minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+    .card-avatar { width: 27px; height: 27px; display: grid; place-items: center; color: #fff; border-radius: 50%; font-size: 11px; font-weight: 700; }
+    .card-person strong, .card-person time { display: block; }
+    .card-person strong { font-size: 12px; }
+    .card-person time { margin-top: 2px; color: var(--bc-text-tertiary); font-size: 10px; }
+    .card-state { color: var(--bc-text-tertiary); font-size: 10px; }
+    .card-state[data-status="accepted"] { color: var(--bc-insert); }
+    .card-state[data-status="rejected"] { color: var(--bc-delete); }
+    .card-summary { margin: 9px 0 3px; color: var(--bc-text); font-size: 12px; line-height: 1.5; }
+    .card-preview { overflow: hidden; color: var(--bc-text-secondary); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+    .card-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 10px; }
+    .card-actions .button { min-height: 29px; padding: 0 7px; font-size: 11px; }
+    .empty-state { padding: 40px 18px; color: var(--bc-text-tertiary); text-align: center; }
+    .empty-state i { display: block; margin-bottom: 8px; font-size: 22px; }
+    .empty-state strong { display: block; margin-bottom: 4px; color: var(--bc-text-secondary); }
+
+    .intent-note {
+      padding: 12px 16px 15px;
+      color: var(--bc-text-tertiary);
+      border-top: 1px solid var(--bc-border-soft);
+      font-size: 10px;
+      line-height: 1.55;
+    }
+    .intent-note strong { color: var(--bc-text-secondary); }
+
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      z-index: 40;
+      min-width: 270px;
+      max-width: calc(100vw - 28px);
+      padding: 10px 14px;
+      color: #fff;
+      background: #263241;
+      border-radius: 7px;
+      box-shadow: var(--bc-shadow-lg);
+      text-align: center;
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(-50%, 8px);
+      transition: opacity .18s ease, transform .18s ease;
+    }
+    .toast.is-visible { opacity: 1; transform: translate(-50%, 0); }
+
+    @media (max-width: 980px) {
+      .app-shell { height: auto; min-height: calc(100vh - 82px); }
+      .workspace { grid-template-columns: 1fr; grid-template-rows: minmax(620px, 72vh) minmax(420px, auto); }
+      .review-panel { border-top: 1px solid var(--bc-border); border-left: 0; }
+      .review-list { max-height: 460px; }
+    }
+    @media (max-width: 720px) {
+      .prototype-bar { align-items: flex-start; flex-direction: column; gap: 8px; }
+      .prototype-title span, .prototype-tag { display: none; }
+      .app-shell { width: calc(100vw - 16px); margin: 8px auto; }
+      .doc-state, .track-state span, .view-switch i { display: none; }
+      .doc-controls { gap: 4px; }
+      .view-switch button { padding: 0 7px; }
+      .stage { padding: 18px 10px 48px; }
+      .page { width: 100%; min-height: 760px; padding: 42px 32px 58px; }
+      .page h1 { font-size: 25px; }
+      .revision-popover { position: fixed; inset: auto 10px 12px; width: auto; }
+      .popover-main { grid-template-columns: 28px minmax(0, 1fr); }
+      .popover-actions, .popover-readonly { grid-column: 1 / -1; }
+      .popover-actions { justify-content: flex-end; padding-top: 6px; border-top: 1px solid var(--bc-border-soft); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="prototype-bar">
+    <div class="prototype-title">
+      <strong>修订快捷评审插件</strong>
+      <span>点击正文中的修订，体验“保留 / 撤回”和重新裁决</span>
+    </div>
+    <div class="prototype-actions">
+      <span class="prototype-tag">HTML PROTOTYPE · 不接真实数据</span>
+      <button class="icon-button" id="themeToggle" type="button" aria-label="切换深浅主题" title="切换深浅主题">
+        <i class="bc_icon bc_eye-open" aria-hidden="true"></i>
+      </button>
+      <button class="button" id="resetButton" type="button">
+        <i class="bc_icon bc_arrow-rotate-left" aria-hidden="true"></i>
+        重置示例
+      </button>
+    </div>
+  </header>
+
+  <main class="app-shell">
+    <header class="docbar">
+      <div class="doc-meta">
+        <span class="doc-mark" aria-hidden="true">B</span>
+        <strong class="doc-name">修订模式产品说明</strong>
+        <span class="doc-state">已保存 · 3 位协作者</span>
+      </div>
+      <div class="doc-controls">
+        <span class="track-state"><i class="bc_icon bc_xiuding" aria-hidden="true"></i><span>修订中</span></span>
+        <div class="view-switch" aria-label="修订视图">
+          <button class="is-active" id="markupViewButton" type="button" data-view="markup">
+            <i class="bc_icon bc_xianshipizhu" aria-hidden="true"></i>显示标记
+          </button>
+          <button id="finalViewButton" type="button" data-view="final">
+            <i class="bc_icon bc_eye-open" aria-hidden="true"></i>最终
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <section class="stage" id="stage" aria-label="文档编辑画布">
+        <article class="page" id="page">
+          <p class="page-kicker">BLOCKCRAFT / REVISION V1</p>
+          <h1>让每一次修改都可理解、可选择</h1>
+          <p class="page-subtitle">修订模式交互说明 · 2026 年 8 月</p>
+
+          <div class="page-note">
+            <strong>试一试：</strong>点击绿色新增、红色删除、替换内容或整段新增。正文旁浮层适合快速处理当前修订，右侧面板适合连续评审与重新裁决。
+          </div>
+
+          <p>
+            BlockCraft 的修订能力让协作编辑变得
+            <span class="revision-mark" role="button" tabindex="0" data-revision-id="rev-insert" data-part="insert" data-status="pending">可审计、可协作</span>。
+            正文仍然是非破坏性源数据，所有审批结果都通过追加式决策记录下来。
+          </p>
+
+          <p>
+            编辑器不再
+            <span class="revision-mark" role="button" tabindex="0" data-revision-id="rev-delete" data-part="delete" data-status="pending">替宿主判断评审权限</span>，
+            它只提供稳定的修订查询、定位和裁决意图；账号、角色与同步准入仍由宿主负责。
+          </p>
+
+          <h2>评审动作应该贴近内容</h2>
+          <p>
+            选中修订后，不必把注意力移到远处。插件在内容附近展示作者、状态和两个明确动作：
+            将
+            <span class="revision-mark" role="button" tabindex="0" data-revision-id="rev-replace" data-part="delete" data-status="pending">“接受 / 拒绝”</span>
+            <span class="revision-mark" role="button" tabindex="0" data-revision-id="rev-replace" data-part="insert" data-status="pending">“保留内容 / 撤回修订”</span>，
+            让结果比命令本身更容易理解。
+          </p>
+
+          <div class="revision-block" role="button" tabindex="0" data-revision-id="rev-block" data-part="insert" data-status="pending">
+            <span class="block-badge"><i class="bc_icon bc_xiuding-2" aria-hidden="true"></i>新增段落</span>
+            <p>对于整块新增、整块删除或结构边界，插件沿用同一组动作，但在摘要中明确说明影响范围，避免用户误以为只处理了光标附近的一小段文字。</p>
+          </div>
+
+          <h2>裁决可以重新打开</h2>
+          <p>一次接受或撤回不会抹掉历史。若离线协作者产生相反决策，状态会重新进入冲突；评审者可以覆盖当前活动决策头，再次选择结果。</p>
+          <ul>
+            <li>显示标记：保留上下文，适合评审。</li>
+            <li>最终视图：将待审内容按拟接受结果投影，并保持只读。</li>
+            <li>结构冲突：不静默选胜者，转入冲突处理入口。</li>
+          </ul>
+        </article>
+
+        <div class="revision-popover" id="revisionPopover" role="toolbar" aria-label="当前修订快捷操作" data-readonly="false">
+          <div class="popover-main">
+            <span class="revision-dot" id="popoverAvatar" aria-hidden="true">林</span>
+            <div class="popover-copy">
+              <div class="popover-title-row">
+                <strong class="popover-title" id="popoverTitle">新增文字</strong>
+                <span class="popover-status" id="popoverStatus">待审</span>
+              </div>
+              <div class="popover-meta" id="popoverMeta">林语 · 2 分钟前</div>
+            </div>
+            <div class="popover-actions">
+              <div class="popover-nav" aria-label="切换修订">
+                <button class="icon-button" id="previousRevision" type="button" aria-label="上一条修订" title="上一条修订">
+                  <i class="bc_icon bc_chevron-left" aria-hidden="true"></i>
+                </button>
+                <span class="popover-count" id="popoverCount">1 / 4</span>
+                <button class="icon-button is-next" id="nextRevision" type="button" aria-label="下一条修订" title="下一条修订">
+                  <i class="bc_icon bc_chevron-left" aria-hidden="true"></i>
+                </button>
+              </div>
+              <button class="button reject" id="rejectCurrent" type="button">
+                <i class="bc_icon bc_x-01" aria-hidden="true"></i><span>撤回</span>
+              </button>
+              <button class="button primary" id="acceptCurrent" type="button">
+                <i class="bc_icon bc_check-ok" aria-hidden="true"></i><span>保留</span>
+              </button>
+            </div>
+            <div class="popover-readonly">最终视图只读；切回“显示标记”后可继续裁决。</div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="review-panel" aria-label="修订评审面板">
+        <header class="review-header">
+          <div class="review-title-row">
+            <div>
+              <h2>修订</h2>
+              <p><span id="recordCount">4</span> 条记录 · epoch 3</p>
+            </div>
+            <span class="pending-count" id="pendingCount">4 待审</span>
+          </div>
+          <div class="review-filters" role="group" aria-label="筛选修订">
+            <button class="filter-button is-active" type="button" data-filter="all">全部</button>
+            <button class="filter-button" type="button" data-filter="pending">待审</button>
+            <button class="filter-button" type="button" data-filter="resolved">已处理</button>
+          </div>
+        </header>
+
+        <div class="batch-actions">
+          <button class="button reject" id="rejectAll" type="button">全部撤回</button>
+          <button class="button accept" id="acceptAll" type="button">全部保留</button>
+        </div>
+
+        <div class="review-list" id="reviewList"></div>
+
+        <footer class="intent-note">
+          <strong>边界说明：</strong>该界面只应订阅无头 <code>RevisionReviewPlugin.state$</code>，并调用 <code>keep / revert / activate</code>。插件不判断角色权限；宿主决定是否注册、展示和调用这些命令。
+        </footer>
+      </aside>
+    </div>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    const initialRevisions = [
+      {
+        id: 'rev-insert',
+        label: '新增文字',
+        author: '林语',
+        avatar: '林',
+        color: '#3975c6',
+        time: '2 分钟前',
+        preview: '可审计、可协作',
+        kind: 'insert',
+        status: 'pending',
+      },
+      {
+        id: 'rev-delete',
+        label: '删除文字',
+        author: '周行',
+        avatar: '周',
+        color: '#b55b38',
+        time: '8 分钟前',
+        preview: '替宿主判断评审权限',
+        kind: 'delete',
+        status: 'pending',
+      },
+      {
+        id: 'rev-replace',
+        label: '替换文字 · 2 个原子操作',
+        author: '林语',
+        avatar: '林',
+        color: '#3975c6',
+        time: '11 分钟前',
+        preview: '“接受 / 拒绝” → “保留内容 / 撤回修订”',
+        kind: 'replace',
+        status: 'pending',
+      },
+      {
+        id: 'rev-block',
+        label: '新增内容块',
+        author: '陈墨',
+        avatar: '陈',
+        color: '#7657b1',
+        time: '18 分钟前',
+        preview: '对于整块新增、整块删除或结构边界……',
+        kind: 'insert',
+        status: 'pending',
+      },
+    ]
+
+    let revisions = cloneInitialRevisions()
+    let activeRevisionId = 'rev-insert'
+    let activeFilter = 'all'
+    let viewMode = 'markup'
+    let toastTimer = 0
+
+    const stage = document.getElementById('stage')
+    const popover = document.getElementById('revisionPopover')
+    const reviewList = document.getElementById('reviewList')
+    const pendingCount = document.getElementById('pendingCount')
+    const acceptCurrent = document.getElementById('acceptCurrent')
+    const rejectCurrent = document.getElementById('rejectCurrent')
+
+    function cloneInitialRevisions() {
+      return initialRevisions.map(revision => ({...revision}))
+    }
+
+    function activeRevision() {
+      return revisions.find(revision => revision.id === activeRevisionId) || revisions[0]
+    }
+
+    function statusLabel(status) {
+      return {pending: '待审', accepted: '已保留', rejected: '已撤回'}[status]
+    }
+
+    function actionLabels(revision) {
+      if (revision.status === 'accepted') return {reject: '改为撤回', accept: '已保留'}
+      if (revision.status === 'rejected') return {reject: '已撤回', accept: '改为保留'}
+      return {reject: '撤回', accept: '保留'}
+    }
+
+    function revisionElements(id) {
+      return [...document.querySelectorAll(`[data-revision-id="${id}"]`)]
+    }
+
+    function updateDocumentProjection() {
+      revisions.forEach(revision => {
+        revisionElements(revision.id).forEach(element => {
+          const part = element.dataset.part
+          element.dataset.status = revision.status
+          element.classList.toggle('is-active', revision.id === activeRevisionId && popover.classList.contains('is-open'))
+          element.classList.remove('is-hidden', 'is-normal')
+
+          const projectedAction = revision.status === 'pending' ? 'accept' : revision.status === 'accepted' ? 'accept' : 'reject'
+          const shouldHide = projectedAction === 'accept' ? part === 'delete' : part === 'insert'
+
+          if (viewMode === 'final' || revision.status !== 'pending') {
+            element.classList.toggle('is-hidden', shouldHide)
+            element.classList.toggle('is-normal', !shouldHide)
+          }
+        })
+      })
+    }
+
+    function renderReviewList() {
+      const visible = revisions.filter(revision => {
+        if (activeFilter === 'pending') return revision.status === 'pending'
+        if (activeFilter === 'resolved') return revision.status !== 'pending'
+        return true
+      })
+
+      reviewList.innerHTML = visible.length ? visible.map(revision => {
+        const labels = actionLabels(revision)
+        return `
+          <article class="review-card ${revision.id === activeRevisionId ? 'is-active' : ''}" data-card-id="${revision.id}">
+            <button class="card-button" type="button" data-navigate="${revision.id}" aria-label="定位到${revision.label}">
+              <div class="card-meta">
+                <span class="card-avatar" style="background:${revision.color}" aria-hidden="true">${revision.avatar}</span>
+                <span class="card-person"><strong>${revision.author}</strong><time>${revision.time}</time></span>
+                <span class="card-state" data-status="${revision.status}">${statusLabel(revision.status)}</span>
+              </div>
+              <p class="card-summary">${revision.label}</p>
+              <div class="card-preview">${revision.preview}</div>
+            </button>
+            <div class="card-actions">
+              <button class="button reject" type="button" data-decision="reject" data-id="${revision.id}" ${revision.status === 'rejected' || viewMode === 'final' ? 'disabled' : ''}>
+                <i class="bc_icon bc_x-01" aria-hidden="true"></i>${labels.reject}
+              </button>
+              <button class="button accept" type="button" data-decision="accept" data-id="${revision.id}" ${revision.status === 'accepted' || viewMode === 'final' ? 'disabled' : ''}>
+                <i class="bc_icon bc_check-ok" aria-hidden="true"></i>${labels.accept}
+              </button>
+            </div>
+          </article>
+        `
+      }).join('') : `
+        <div class="empty-state">
+          <i class="bc_icon bc_xiuding-2" aria-hidden="true"></i>
+          <strong>没有符合条件的修订</strong>
+          <span>切换筛选条件查看其他记录。</span>
+        </div>
+      `
+
+      const pending = revisions.filter(revision => revision.status === 'pending').length
+      pendingCount.textContent = `${pending} 待审`
+      document.getElementById('rejectAll').disabled = pending === 0 || viewMode === 'final'
+      document.getElementById('acceptAll').disabled = pending === 0 || viewMode === 'final'
+    }
+
+    function updatePopover() {
+      const revision = activeRevision()
+      if (!revision) return
+      const labels = actionLabels(revision)
+      const index = revisions.findIndex(item => item.id === revision.id)
+      document.getElementById('popoverAvatar').textContent = revision.avatar
+      document.getElementById('popoverAvatar').style.background = revision.color
+      document.getElementById('popoverTitle').textContent = revision.label
+      document.getElementById('popoverStatus').textContent = statusLabel(revision.status)
+      document.getElementById('popoverMeta').textContent = `${revision.author} · ${revision.time}`
+      document.getElementById('popoverCount').textContent = `${index + 1} / ${revisions.length}`
+      rejectCurrent.querySelector('span').textContent = labels.reject
+      acceptCurrent.querySelector('span').textContent = labels.accept
+      rejectCurrent.disabled = revision.status === 'rejected' || viewMode === 'final'
+      acceptCurrent.disabled = revision.status === 'accepted' || viewMode === 'final'
+      popover.dataset.readonly = String(viewMode === 'final')
+    }
+
+    function combinedRect(elements) {
+      const rects = elements.filter(element => !element.classList.contains('is-hidden')).map(element => element.getBoundingClientRect())
+      if (!rects.length) return null
+      const left = Math.min(...rects.map(rect => rect.left))
+      const right = Math.max(...rects.map(rect => rect.right))
+      const top = Math.min(...rects.map(rect => rect.top))
+      const bottom = Math.max(...rects.map(rect => rect.bottom))
+      return {left, right, top, bottom, width: right - left, height: bottom - top}
+    }
+
+    function positionPopover() {
+      if (!popover.classList.contains('is-open') || window.innerWidth <= 720) return
+      const targetRect = combinedRect(revisionElements(activeRevisionId))
+      if (!targetRect) {
+        closePopover()
+        return
+      }
+      const stageRect = stage.getBoundingClientRect()
+      const width = popover.offsetWidth
+      const height = popover.offsetHeight
+      const contentLeft = targetRect.left - stageRect.left + stage.scrollLeft
+      const contentTop = targetRect.top - stageRect.top + stage.scrollTop
+      const minLeft = stage.scrollLeft + 10
+      const maxLeft = stage.scrollLeft + stage.clientWidth - width - 10
+      const desiredLeft = contentLeft + targetRect.width / 2 - width / 2
+      const left = Math.max(minLeft, Math.min(maxLeft, desiredLeft))
+      const above = contentTop - height - 12
+      const top = above > stage.scrollTop + 8 ? above : contentTop + targetRect.height + 12
+      popover.style.left = `${left}px`
+      popover.style.top = `${top}px`
+    }
+
+    function selectRevision(id, options = {}) {
+      activeRevisionId = id
+      popover.classList.add('is-open')
+      updateDocumentProjection()
+      updatePopover()
+      renderReviewList()
+      requestAnimationFrame(() => {
+        if (options.scroll !== false) {
+          const target = revisionElements(id).find(element => !element.classList.contains('is-hidden'))
+          target?.scrollIntoView({behavior: 'smooth', block: 'center', inline: 'nearest'})
+        }
+        requestAnimationFrame(positionPopover)
+      })
+    }
+
+    function closePopover() {
+      popover.classList.remove('is-open')
+      updateDocumentProjection()
+    }
+
+    function decide(id, action, options = {}) {
+      if (viewMode === 'final') return
+      const revision = revisions.find(item => item.id === id)
+      if (!revision) return
+      const nextStatus = action === 'accept' ? 'accepted' : 'rejected'
+      const wasResolved = revision.status !== 'pending'
+      revision.status = nextStatus
+      updateDocumentProjection()
+      updatePopover()
+      renderReviewList()
+      positionPopover()
+      if (!options.silent) {
+        const verb = action === 'accept' ? '已保留内容' : '已撤回修订'
+        showToast(`${verb}${wasResolved ? '，已追加一次重新裁决' : ''}`)
+      }
+    }
+
+    function decideAll(action) {
+      if (viewMode === 'final') return
+      revisions.filter(revision => revision.status === 'pending').forEach(revision => {
+        revision.status = action === 'accept' ? 'accepted' : 'rejected'
+      })
+      updateDocumentProjection()
+      updatePopover()
+      renderReviewList()
+      positionPopover()
+      showToast(action === 'accept' ? '已保留全部待审修订' : '已撤回全部待审修订')
+    }
+
+    function moveRevision(direction) {
+      const current = revisions.findIndex(revision => revision.id === activeRevisionId)
+      const next = (current + direction + revisions.length) % revisions.length
+      selectRevision(revisions[next].id)
+    }
+
+    function setViewMode(mode) {
+      viewMode = mode
+      document.querySelectorAll('[data-view]').forEach(button => button.classList.toggle('is-active', button.dataset.view === mode))
+      updateDocumentProjection()
+      updatePopover()
+      renderReviewList()
+      if (popover.classList.contains('is-open')) requestAnimationFrame(positionPopover)
+      showToast(mode === 'final' ? '已进入最终视图：待审修订按拟接受结果只读展示' : '已返回显示标记视图')
+    }
+
+    function showToast(message) {
+      const toast = document.getElementById('toast')
+      toast.textContent = message
+      toast.classList.add('is-visible')
+      window.clearTimeout(toastTimer)
+      toastTimer = window.setTimeout(() => toast.classList.remove('is-visible'), 2300)
+    }
+
+    function resetPrototype() {
+      revisions = cloneInitialRevisions()
+      activeRevisionId = 'rev-insert'
+      activeFilter = 'all'
+      document.querySelectorAll('[data-filter]').forEach(button => button.classList.toggle('is-active', button.dataset.filter === 'all'))
+      setViewMode('markup')
+      selectRevision(activeRevisionId, {scroll: false})
+      showToast('示例已重置')
+    }
+
+    document.querySelectorAll('[data-revision-id]').forEach(element => {
+      element.addEventListener('click', event => {
+        event.stopPropagation()
+        selectRevision(element.dataset.revisionId, {scroll: false})
+      })
+      element.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          selectRevision(element.dataset.revisionId, {scroll: false})
+        }
+      })
+    })
+
+    reviewList.addEventListener('click', event => {
+      const decision = event.target.closest('[data-decision]')
+      if (decision) {
+        decide(decision.dataset.id, decision.dataset.decision)
+        return
+      }
+      const navigate = event.target.closest('[data-navigate]')
+      if (navigate) selectRevision(navigate.dataset.navigate)
+    })
+
+    document.querySelectorAll('[data-filter]').forEach(button => {
+      button.addEventListener('click', () => {
+        activeFilter = button.dataset.filter
+        document.querySelectorAll('[data-filter]').forEach(item => item.classList.toggle('is-active', item === button))
+        renderReviewList()
+      })
+    })
+
+    document.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click', () => setViewMode(button.dataset.view)))
+    document.getElementById('previousRevision').addEventListener('click', () => moveRevision(-1))
+    document.getElementById('nextRevision').addEventListener('click', () => moveRevision(1))
+    acceptCurrent.addEventListener('click', () => decide(activeRevisionId, 'accept'))
+    rejectCurrent.addEventListener('click', () => decide(activeRevisionId, 'reject'))
+    document.getElementById('acceptAll').addEventListener('click', () => decideAll('accept'))
+    document.getElementById('rejectAll').addEventListener('click', () => decideAll('reject'))
+    document.getElementById('resetButton').addEventListener('click', resetPrototype)
+    document.getElementById('themeToggle').addEventListener('click', () => {
+      document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'
+      requestAnimationFrame(positionPopover)
+    })
+    stage.addEventListener('scroll', () => requestAnimationFrame(positionPopover), {passive: true})
+    window.addEventListener('resize', () => requestAnimationFrame(positionPopover), {passive: true})
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape') closePopover()
+      if ((event.ctrlKey || event.metaKey) && event.key === ']') {
+        event.preventDefault()
+        moveRevision(1)
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key === '[') {
+        event.preventDefault()
+        moveRevision(-1)
+      }
+    })
+
+    renderReviewList()
+    updateDocumentProjection()
+    selectRevision(activeRevisionId, {scroll: false})
+  </script>
+</body>
+</html>

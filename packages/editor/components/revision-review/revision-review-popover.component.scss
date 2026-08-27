@@ -1,0 +1,90 @@
+:host {
+  display: block;
+  width: max-content;
+  max-width: min(270px, calc(100vw - 20px));
+}
+
+.revision-review-popover {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: 100%;
+  min-height: 32px;
+  padding: 4px 5px;
+  overflow: hidden;
+  color: var(--bc-color);
+  background: var(--bc-bg-elevated);
+  border: 1px solid var(--bc-border-color);
+  border-radius: 7px;
+  box-shadow: var(--bc-fixed-toolbar-shadow, 0 8px 22px rgba(15, 23, 42, .16));
+}
+
+.revision-review-popover__avatar {
+  display: grid;
+  flex: 0 0 22px;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  color: #fff;
+  border-radius: 50%;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.revision-review-popover__actor {
+  min-width: 0;
+  max-width: 72px;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.revision-review-popover__time {
+  flex: 0 0 auto;
+  color: var(--bc-color-lighter);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.revision-review-popover__actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.revision-review-popover__action {
+  display: inline-flex;
+}
+
+.revision-review-popover__button {
+  display: inline-grid;
+  place-items: center;
+  width: 23px;
+  height: 23px;
+  min-width: 23px;
+  padding: 0;
+  color: var(--bc-color-light);
+  background: var(--bc-bg-primary);
+  border: 1px solid var(--bc-border-color);
+  border-radius: 5px;
+  font: inherit;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+
+  &:hover:not(:disabled) { background: var(--bc-bg-hover); }
+  &:focus-visible { outline: 2px solid var(--bc-active-color-lighter); outline-offset: 1px; }
+  &:disabled { opacity: .42; cursor: default; }
+  &.is-revert { color: var(--bc-revision-delete-color); }
+  &.is-keep {
+    color: var(--bc-revision-insert-color);
+    border-color: color-mix(in srgb, var(--bc-revision-insert-color) 34%, var(--bc-border-color));
+  }
+
+  i { font-size: 11px; }
+}

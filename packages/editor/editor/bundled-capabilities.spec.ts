@@ -17,6 +17,7 @@ describe('bundled editor capabilities', () => {
     expect(pluginNames).toContain('EmbedFrameExtensionPlugin')
     expect(pluginNames).toContain('bookmark-block-extension')
     expect(pluginNames).toContain('object-format-toolbar')
+    expect(pluginNames).toContain('revision-review')
     expect(pluginNames).not.toContain('word-art-toolbar')
     expect(pluginNames).not.toContain('text-box-toolbar')
     expect(pluginNames).not.toContain('object-group-toolbar')
@@ -38,6 +39,8 @@ describe('bundled editor capabilities', () => {
     expect(first.embeds.every(([, converter], index) =>
       converter !== second.embeds[index][1],
     )).toBeTrue()
+    expect(first.revisionReviewPlugin).not.toBe(second.revisionReviewPlugin)
+    expect(first.plugins).toContain(first.revisionReviewPlugin)
   })
 
   it('projects only user-creatable blocks into the palette', () => {

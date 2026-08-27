@@ -18,6 +18,10 @@ import {
   MarkdownStreamRenderer,
   PaginationPlugin,
   PresentationController,
+  RevisionReviewIntent,
+  RevisionReviewPanelComponent,
+  RevisionReviewPlugin,
+  RevisionReviewUiController,
   SnapshotViewerComponent,
   createMarkdownStreamViewer,
   generateId,
@@ -61,6 +65,7 @@ type DebugActionId =
   | 'theme'
   | 'readonly'
   | 'toggleRevision'
+  | 'toggleRevisionPanel'
   | 'toggleVirtualization'
   | 'insert'
   | 'undo'
@@ -188,6 +193,7 @@ const ACTION_SECTIONS: DebugSection[] = [
       { id: 'theme', label: '主题' },
       { id: 'readonly', label: '只读' },
       { id: 'toggleRevision', label: '修订模式' },
+      { id: 'toggleRevisionPanel', label: '修订面板' },
       { id: 'toggleVirtualization', label: '虚拟渲染' },
       { id: 'addData', label: '追加段落' }
     ]
@@ -240,6 +246,7 @@ const ACTION_SECTIONS: DebugSection[] = [
     SnapshotViewerComponent,
     PaginationSettingsComponent,
     DocumentScaleSettingsComponent,
+    RevisionReviewPanelComponent,
     RouterLink,
   ],
   template: `
@@ -308,12 +315,16 @@ const ACTION_SECTIONS: DebugSection[] = [
                       class="nav-button"
                       [class.nav-button--primary]="action.tone === 'primary'"
                       [class.nav-button--danger]="action.tone === 'danger'"
-                      [attr.aria-pressed]="action.id === 'toggleRevision' ? revisionTrackingEnabled : null"
+                      [attr.aria-pressed]="action.id === 'toggleRevision'
+                        ? revisionTrackingEnabled
+                        : (action.id === 'toggleRevisionPanel' ? revisionPanelOpen : null)"
                       (click)="runAction(action.id)"
                     >
                       {{ action.id === 'toggleRevision'
                         ? (revisionTrackingEnabled ? '关闭修订' : '开启修订')
-                        : action.label }}
+                        : (action.id === 'toggleRevisionPanel'
+                          ? (revisionPanelOpen ? '关闭修订面板' : '打开修订面板')
+                          : action.label) }}
                     </button>
                   }
                 </div>
@@ -496,39 +507,52 @@ const ACTION_SECTIONS: DebugSection[] = [
               [stickyTop]="0">
             </bc-fixed-toolbar>
           }
-          <section
-            class="editor-stage"
-            [class.editor-stage--flow]="!paginationEnabled">
-            <article #documentHeader class="playground-document-header">
-              <div class="playground-document-header__eyebrow">宿主文档头 · root 外部</div>
-              <h1>BlockCraft 分页坐标验证文档</h1>
-              <div class="playground-document-header__meta">
-                <span class="playground-document-header__avatar">BC</span>
-                <span>BlockCraft Playground</span>
-                <span class="playground-document-header__divider" aria-hidden="true"></span>
-                <span>连续布局与分页布局复用同一 DOM</span>
-              </div>
-            </article>
-            @if (virtualizationEnabled) {
-              <block-craft-editor
-                #editor
-                [stickyTop]="0"
-                [showFixedToolbar]="false"
-                [virtualizationEnabled]="true"
-                [paginationSparseView]="true"
-                [paginationDocumentHeader]="paginationDocumentHeaderOptions">
-              </block-craft-editor>
-            } @else {
-              <block-craft-editor
-                #editor
-                [stickyTop]="0"
-                [showFixedToolbar]="false"
-                [virtualizationEnabled]="false"
-                [paginationSparseView]="false"
-                [paginationDocumentHeader]="paginationDocumentHeaderOptions">
-              </block-craft-editor>
+          <div
+            class="revision-review-workspace"
+            [class.revision-review-workspace--panel-open]="revisionPanelOpen">
+            <section
+              class="editor-stage"
+              [class.editor-stage--flow]="!paginationEnabled">
+              <article #documentHeader class="playground-document-header">
+                <div class="playground-document-header__eyebrow">宿主文档头 · root 外部</div>
+                <h1>BlockCraft 分页坐标验证文档</h1>
+                <div class="playground-document-header__meta">
+                  <span class="playground-document-header__avatar">BC</span>
+                  <span>BlockCraft Playground</span>
+                  <span class="playground-document-header__divider" aria-hidden="true"></span>
+                  <span>连续布局与分页布局复用同一 DOM</span>
+                </div>
+              </article>
+              @if (virtualizationEnabled) {
+                <block-craft-editor
+                  #editor
+                  [stickyTop]="0"
+                  [showFixedToolbar]="false"
+                  [virtualizationEnabled]="true"
+                  [paginationSparseView]="true"
+                  [paginationDocumentHeader]="paginationDocumentHeaderOptions">
+                </block-craft-editor>
+              } @else {
+                <block-craft-editor
+                  #editor
+                  [stickyTop]="0"
+                  [showFixedToolbar]="false"
+                  [virtualizationEnabled]="false"
+                  [paginationSparseView]="false"
+                  [paginationDocumentHeader]="paginationDocumentHeaderOptions">
+                </block-craft-editor>
+              }
+            </section>
+            @if (revisionPanelOpen && editorDoc && revisionReviewPlugin) {
+              <bc-revision-review-panel
+                class="playground-revision-review-panel"
+                [doc]="editorDoc!"
+                [review]="revisionReviewPlugin!"
+                [canReview]="true"
+                (intent)="onRevisionReviewIntent($event)">
+              </bc-revision-review-panel>
             }
-          </section>
+          </div>
         }
 
         @if (activeMainTab === 'editor' && paginationEnabled && paginationPlugin) {
@@ -1059,6 +1083,7 @@ const ACTION_SECTIONS: DebugSection[] = [
 
     .editor-stage {
       flex: 1;
+      min-width: 0;
       min-height: 0;
       overflow: auto;
       padding: 20px;
@@ -1066,6 +1091,31 @@ const ACTION_SECTIONS: DebugSection[] = [
       background: var(--bc-bg-elevated);
       border: 1px solid var(--bc-border-color-light);
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+    }
+
+    .revision-review-workspace {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      flex: 1;
+      min-width: 0;
+      min-height: 0;
+      gap: 0;
+      overflow: hidden;
+    }
+
+    .revision-review-workspace--panel-open {
+      grid-template-columns: minmax(0, 1fr) minmax(300px, 340px);
+    }
+
+    .playground-revision-review-panel {
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+      border-radius: 0 20px 20px 0;
+    }
+
+    .revision-review-workspace--panel-open .editor-stage {
+      border-radius: 24px 0 0 24px;
     }
 
     .viewer-demo-panel {
@@ -1446,6 +1496,10 @@ const ACTION_SECTIONS: DebugSection[] = [
         justify-content: flex-start;
       }
 
+      .revision-review-workspace--panel-open {
+        grid-template-columns: minmax(0, 1fr) 300px;
+      }
+
       .markdown-stream-demo {
         grid-template-columns: 1fr;
       }
@@ -1494,12 +1548,15 @@ export class AppComponent implements AfterViewInit, OnDestroy {
   private _agentDialogComponent?: ComponentRef<DocumentAgentPanelComponent>;
   private _agentDialogClose$?: Subject<void>;
   private _agentFakeRange?: {destroy: () => void};
+  private _revisionReviewUi?: RevisionReviewUiController;
+  private _revisionReviewDoc = null as EditorComponent['doc'] | null;
   private readonly agentRunner = new DocumentAgentRunner(new PlaygroundDocumentAgentTransport());
 
   readonly updateList: Uint8Array[] = [];
   editorInitialized = false;
   isListeningUpdate = false;
   virtualizationEnabled = true;
+  revisionPanelOpen = false;
   documentScaleViewport: HTMLElement | null = null;
   documentScaleStage: HTMLElement | null = null;
   documentScaleSurface: HTMLElement | null = null;
@@ -1606,6 +1663,9 @@ graph TD
     this._markdownStreamViewer = null;
     this._disposeCopyFilter?.();
     this._disposeCopyFilter = null;
+    this._revisionReviewUi?.destroy();
+    this._revisionReviewUi = undefined;
+    this._revisionReviewDoc = null;
   }
 
   get isReadonly() {
@@ -1618,6 +1678,12 @@ graph TD
 
   get editorDoc() {
     return this.editor?.doc ?? null;
+  }
+
+  get revisionReviewPlugin(): RevisionReviewPlugin | null {
+    return this.editor?.doc.plugins.find(
+      plugin => plugin instanceof RevisionReviewPlugin,
+    ) ?? null;
   }
 
   get paginationPlugin(): PaginationPlugin | null {
@@ -1798,6 +1864,9 @@ graph TD
       case 'toggleRevision':
         this.toggleRevisionMode();
         return;
+      case 'toggleRevisionPanel':
+        this.toggleRevisionPanel();
+        return;
       case 'toggleVirtualization':
         this.toggleVirtualization();
         return;
@@ -1938,6 +2007,7 @@ graph TD
     if (!editor.doc.isInitialized) {
       editor.doc.initBySnapshot(snapshot, this.editorDocumentSurface);
     }
+    this.ensureRevisionReviewUi(editor);
     this.ensureSelectionDebugSubscription(editor);
     this.agentContext = this._agentPlugin?.getContext() ?? this.agentContext;
     return editor;
@@ -1953,6 +2023,7 @@ graph TD
       ]);
       editor.doc.initBySnapshot(rootSnapshot, this.editorDocumentSurface);
     }
+    this.ensureRevisionReviewUi(editor);
     this.ensureSelectionDebugSubscription(editor);
     this.agentContext = this._agentPlugin?.getContext() ?? this.agentContext;
     return editor;
@@ -2414,6 +2485,45 @@ graph TD
     }
 
     this.cdr.markForCheck();
+  }
+
+  toggleRevisionPanel(): void {
+    const editor = this.ensureEditorInitialized();
+    this.ensureRevisionReviewUi(editor);
+    this.revisionPanelOpen = !this.revisionPanelOpen;
+    this.cdr.markForCheck();
+  }
+
+  onRevisionReviewIntent(intent: RevisionReviewIntent): void {
+    if (intent.type === 'close') {
+      this.revisionPanelOpen = false;
+      this.cdr.markForCheck();
+      return;
+    }
+    const editor = this.ensureEditorInitialized();
+    this.ensureRevisionReviewUi(editor);
+    this._revisionReviewUi?.handleIntent(intent);
+  }
+
+  private ensureRevisionReviewUi(editor: EditorComponent): void {
+    if (this._revisionReviewDoc === editor.doc && this._revisionReviewUi) {
+      this._revisionReviewUi.attach();
+      return;
+    }
+    this._revisionReviewUi?.destroy();
+    const review = editor.doc.plugins.find(
+      plugin => plugin instanceof RevisionReviewPlugin,
+    );
+    if (!review) {
+      throw new Error('RevisionReviewPlugin is not registered.');
+    }
+    this._revisionReviewDoc = editor.doc;
+    this._revisionReviewUi = new RevisionReviewUiController(
+      editor.doc,
+      review,
+      {canReview: () => true},
+    );
+    this._revisionReviewUi.attach();
   }
 
   toggleCopyFilter() {

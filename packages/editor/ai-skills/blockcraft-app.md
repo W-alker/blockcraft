@@ -371,7 +371,7 @@ const doc = new BlockCraftDoc({
 ```
 
 The result also exposes `schemaDefinitions`, `blockMaterials`,
-`paginationPlugin` and `translatePlugin`. `blockMaterials` is the
+`paginationPlugin`, `revisionReviewPlugin` and `translatePlugin`. `blockMaterials` is the
 BlockController-aligned projection for insertion UIs; internal child schemas,
 root and infrastructure blocks (`placement-layout`, `object-group`) remain
 registered but hidden. The factory
@@ -1136,18 +1136,76 @@ const doc = new BlockCraftDoc({
 })
 
 doc.revisions.setMode('track')
-doc.revisions.state$.subscribe(({revisions, conflicts, epoch}) => {
-  renderReviewPanel(revisions, conflicts, epoch)
+capabilities.revisionReviewPlugin.state$.subscribe(state => {
+  renderReviewPanel(state)
 })
 ```
 
+Existing-block props/formatting, format-only Delta, inline-object insertion,
+block movement, table-cell structure and cross-container structure are not
+represented as v1 revisions. They remain available through the normal Yjs/Undo
+mutation path and create no Diff; tracking mode is not a feature gate.
+
 Calling `setMode('track')` without a non-empty `actorId` throws
 `RevisionActorRequiredError`; the editor never creates anonymous revisions.
-Review UI may use the exported `RevisionToolbarComponent` and
-`RevisionReviewPanelComponent`. They emit intents and do not decide whether the
-current user may review; the host decides whether to render them and whether to
-invoke `accept()`, `reject()`, `redecide()`, batch commands or
-`resolveOverlap()`.
+`RevisionReviewPlugin` is the optional headless review layer. It groups atomic
+records by `groupId`, exposes model-only active/next/previous state and maps
+`keep()` / `revert()` to append-only group decisions. It creates no component,
+DOM or Overlay and does not move Selection. Any host UI may bind to
+`revisionReviewPlugin.state$` and obtain exact atomic type/text fragments with
+`revisionReviewPlugin.readContent(itemId)`; the Plugin never decides whether the current
+user may review. The host decides whether to render controls and whether to
+call review commands. Internally it consumes the incremental Revision change
+stream, so normal target-anchor rewrites do not force a full review-list scan.
+
+Hosts that want the package's default UI can opt into it without changing the
+headless Plugin:
+
+```typescript
+import {
+  RevisionReviewPanelComponent,
+  RevisionReviewUiController,
+  type RevisionReviewIntent,
+} from '@ccc/blockcraft'
+
+reviewUi = new RevisionReviewUiController(doc, capabilities.revisionReviewPlugin, {
+  canReview: () => this.sessionMayReview,
+})
+
+// Call after initBySnapshot/initByDocumentSnapshot has established the scroller.
+reviewUi.attach()
+
+onReviewIntent(intent: RevisionReviewIntent) {
+  if (intent.type === 'close') {
+    this.reviewPanelOpen = false
+    return
+  }
+  reviewUi.handleIntent(intent)
+}
+```
+
+```html
+@if (reviewPanelOpen) {
+  <bc-revision-review-panel
+    [doc]="doc"
+    [review]="capabilities.revisionReviewPlugin"
+    [canReview]="sessionMayReview"
+    (intent)="onReviewIntent($event)" />
+}
+```
+
+Attaching the controller also enables the default connected popover when a
+rendered `data-bc-revision-ids` marker is clicked. Offscreen panel navigation
+uses the document's stable block navigation and a single-block view lease; the
+review panel must not acquire a full-document lease. Destroy the controller
+with the host if the Doc is not destroyed at the same time. Give the panel the
+same visible height as the editor viewport: it keeps review ordering model-side,
+renders only anchors mounted by document virtualization, follows
+`doc.scrollContainer` through coalesced animation-frame measurements and
+forwards panel wheel input to that scroller. The default mini cards use
+iconfont + Tooltip navigation/decision controls; the connected mini popover
+shows actor, revision time and “接收修订 / 拒绝修订” icons only. These labels
+still emit the headless `keep` / `revert` intents respectively.
 
 `setViewMode('final')` validates conflicts and changes editor writeability, but
 the clean document should be rendered from an isolated snapshot:

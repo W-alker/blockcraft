@@ -125,6 +125,14 @@ export interface RevisionStateSnapshot {
   epoch: number
 }
 
+export interface RevisionDomainChange {
+  kind: 'records' | 'decisions' | 'meta'
+  revisionIds: readonly string[]
+  groupIds: readonly string[]
+  /** Structural conflict projection may need a cold-path refresh. */
+  conflictsChanged: boolean
+}
+
 export interface RevisionReviewAction {
   type: 'accept' | 'reject' | 'redecide'
   revisionId: string

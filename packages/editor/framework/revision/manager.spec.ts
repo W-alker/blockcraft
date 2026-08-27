@@ -43,6 +43,72 @@ describe('DocumentRevisionManager', () => {
     expect(harness.text(FIRST_ID)).toBe('aXbc')
   })
 
+  it('applies an untrackable mixed Delta normally without creating a partial Diff', () => {
+    const harness = createHarness('abc', '')
+
+    harness.manager.applyDelta(FIRST_ID, [
+      {retain: 1},
+      {delete: 1},
+      {insert: 'X'},
+      {retain: 1, attributes: {'a:bold': true}},
+    ])
+
+    expect(harness.text(FIRST_ID)).toBe('aXc')
+    expect(harness.manager.list()).toEqual([])
+    expect(harness.yText(FIRST_ID).toDelta()).toEqual([
+      {insert: 'aX'},
+      {insert: 'c', attributes: {'a:bold': true}},
+    ])
+  })
+
+  it('inserts an unsupported inline object normally without creating a Diff', () => {
+    const harness = createHarness('abc', '')
+
+    harness.manager.applyDelta(FIRST_ID, [
+      {retain: 1},
+      {insert: {mention: 'member-1'}},
+    ])
+
+    expect(harness.manager.list()).toEqual([])
+    expect(harness.yText(FIRST_ID).toDelta()).toEqual([
+      {insert: 'a'},
+      {insert: {mention: 'member-1'}},
+      {insert: 'bc'},
+    ])
+  })
+
+  it('reads only the canonical content owned by a revision', () => {
+    const insertion = createHarness('abc', '')
+    const insertionId = insertion.manager.insertText(FIRST_ID, 1, 'XY')!
+    expect(insertion.manager.readRevisionContent(insertionId)).toBe('XY')
+
+    const deletion = createHarness('abc', '')
+    const deletionId = deletion.manager.deleteText(FIRST_ID, 1, 1)!
+    expect(deletion.manager.readRevisionContent(deletionId)).toBe('b')
+
+    const wholeBlock = createHarness('first', 'second')
+    const blockId = wholeBlock.manager.recordBlockDeletion([FIRST_ID], ROOT_ID)!
+    expect(wholeBlock.manager.readRevisionContent(blockId)).toBe('first')
+  })
+
+  it('keeps exact content when consecutive typing expands one insertion', () => {
+    const harness = createHarness('abc', '')
+    harness.yDoc.transact(() => {
+      harness.yText(FIRST_ID).insertEmbed(1, {type: 'test-embed'})
+    })
+    const revisionId = harness.manager.insertText(FIRST_ID, 4, ' ')!
+    'REVIEW_UI'.split('').forEach(character => {
+      harness.manager.insertText(
+        FIRST_ID,
+        harness.yText(FIRST_ID).length,
+        character,
+      )
+    })
+
+    expect(harness.manager.list({kind: 'text-insert'})).toHaveSize(1)
+    expect(harness.manager.readRevisionContent(revisionId)).toBe(' REVIEW_UI')
+  })
+
   it('publishes affected block ids for revision-only presentation changes', () => {
     const harness = createHarness('abc', '')
     const changes: string[][] = []
@@ -61,6 +127,38 @@ describe('DocumentRevisionManager', () => {
     expect(new Set(changes.at(-1))).toEqual(new Set([FIRST_ID, ROOT_ID]))
 
     unsubscribe()
+  })
+
+  it('publishes incremental domain changes and indexes revision groups', () => {
+    const harness = createHarness('abc', '')
+    const changes: Array<{
+      kind: string
+      revisionIds: readonly string[]
+      groupIds: readonly string[]
+    }> = []
+    harness.manager.change$.subscribe(change => changes.push(change))
+
+    const revisionId = harness.manager.insertText(FIRST_ID, 1, 'X')!
+    const groupId = harness.manager.get(revisionId).groupId
+    expect(changes.at(-1)).toEqual(jasmine.objectContaining({
+      kind: 'records',
+      revisionIds: [revisionId],
+      groupIds: [groupId],
+    }))
+    expect(harness.manager.listGroup(groupId).map(item => item.id))
+      .toEqual([revisionId])
+
+    harness.manager.insertText(FIRST_ID, 2, 'Y')
+    expect(changes.at(-1)?.groupIds).toEqual([groupId])
+    expect(harness.manager.listGroup(groupId)).toHaveSize(1)
+
+    harness.manager.accept(revisionId)
+    expect(changes.at(-1)).toEqual(jasmine.objectContaining({
+      kind: 'decisions',
+      revisionIds: [revisionId],
+      groupIds: [groupId],
+    }))
+    expect(harness.manager.listGroup(groupId)[0].status).toBe('accepted')
   })
 
   it('keeps replacement insertion outside the deletion attribution range', () => {
@@ -408,6 +506,19 @@ function createHarness(firstText: string, secondText: string, withActor = true) 
       exists: (id: string) => yBlockMap.has(id),
       getParentId: (id: string) => id === ROOT_ID ? null : ROOT_ID,
       getChildrenIds: (id: string) => id === ROOT_ID ? [FIRST_ID, SECOND_ID] : [],
+      toSnapshot: (id: string) => {
+        if (id === ROOT_ID) return exportRoot(yBlockMap)
+        const block = yBlockMap.get(id)
+        if (!block) return null
+        return {
+          id,
+          flavour: 'paragraph',
+          nodeType: BlockNodeType.editable,
+          props: {},
+          meta: {},
+          children: (block.get('children') as unknown as Y.Text).toDelta(),
+        } as IBlockSnapshot
+      },
     },
     crud: {
       undoManager: null,
@@ -432,6 +543,8 @@ function createHarness(firstText: string, secondText: string, withActor = true) 
     manager,
     text: (id: string) =>
       (yBlockMap.get(id)!.get('children') as unknown as Y.Text).toString(),
+    yText: (id: string) =>
+      yBlockMap.get(id)!.get('children') as unknown as Y.Text,
   }
 }
 

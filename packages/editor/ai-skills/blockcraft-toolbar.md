@@ -202,10 +202,38 @@ export class MyToolbarComponent {
 | `MediaCreatorComponent` | `components/` | Media upload/URL input |
 | `ShapePickerComponent` | `components/` | Categorized Shape catalog; `supportsTextOnly` removes non-text geometries and `embedded` removes popup chrome inside a settings card |
 | `TextBoxPresetPickerComponent` | `components/` | Visual 线框 / 矩形 / 气泡 text-box catalog with 极简 then 默认白框 first in 线框; `embedded` removes standalone popup chrome |
+| `RevisionReviewPopoverComponent` | `components/revision-review/` | Minimal connected quick-review UI with actor identity, revision time and iconfont “接收修订 / 拒绝修订” actions with tooltips |
+| `RevisionReviewPanelComponent` | `components/revision-review/` | Content-sized comment-card-style review panel whose default queue contains only pending/conflicted cards; accepted/rejected history is explicit, cards follow mounted document anchors, and structural overlaps show one focused conflict with exact choices |
+| `RevisionReviewUiController` | `components/revision-review/` | Optional marker/Overlay/navigation adapter over the headless review Plugin |
 
 Column-oriented `BcFloatToolbarComponent` menus use border-box items constrained
 to the menu width. Long labels are clipped inside the item and the menu must not
 gain a horizontal scrollbar; bounded long lists scroll vertically only.
+
+For revision review, keep the connected popover, overall panel and domain
+Plugin as separate lifecycles. `RevisionReviewUiController.attach()` installs
+one delegated listener on the document scroller. `reveal(itemId)` navigates by
+stable block ID and acquires only that block's virtual view lease; closing the
+Overlay releases it. The panel maintains the complete model-side review order,
+but renders only cards whose `data-bc-revision-ids` anchors are mounted by the
+document virtualization window. Document scroll, resize and `viewChange$`
+events coalesce into one animation-frame measurement; panel wheel input is
+forwarded to `doc.scrollContainer`. It must not acquire a full-document lease.
+Neither UI component owns permission policy. Keep previous/next controls in
+panel cards rather than the connected popover. Use iconfont buttons with
+tooltips for card navigation and the “接收修订 / 拒绝修订” decisions; the
+popover shows actor, revision time and the same two decision icons, then closes through the Overlay
+outside-pointer/Escape lifecycle.
+The panel opens on its “待处理” queue. Once a `keep` / `revert` decision updates
+an item to accepted or rejected, that card leaves the current projection
+immediately. The headless item remains available under the explicit “已处理”
+filter for history and redecision; the UI does not compact or delete Revision
+records.
+Do not label structural-overlap decisions as an abstract “former/latter” pair.
+The default panel presents one conflict at a time, maps both revision IDs back
+to headless `readContent()` data, and shows each actor, revision type, time and
+exact fragment. Choosing “接收此项” emits one `resolve-overlap` intent; the
+Revision domain rejects the mutually exclusive side.
 
 The fixed toolbar treats paragraph line height as a block-level command. A
 mixed multi-block selection may open that picker when at least one selected

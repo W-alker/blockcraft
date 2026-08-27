@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-26
+> Last updated: 2026-08-27
 
 ## PlaceholderPlugin
 
@@ -318,6 +318,98 @@ doc.enterDemoMode({ fontScale: 1.8 });
 // No magnification
 doc.enterDemoMode({ viewScale: 1 });
 ```
+
+---
+
+## RevisionReviewPlugin
+
+> `plugins/revision-review/index.ts` — Headless review state and commands over
+> the document-owned Revision domain.
+
+This Plugin creates no Angular component, DOM node or Overlay. It builds its
+initial group index once, then consumes `doc.revisions.change$` and refreshes
+only affected `groupId` values. Text-target anchor rewrites that do not change
+review semantics do not republish `state$`. It preserves a stable active item
+and exposes explicit keep/revert commands. Authentication, authorization and
+the decision to render or call controls remain host-owned.
+
+```typescript
+const review = new RevisionReviewPlugin()
+const doc = new BlockCraftDoc({...config, plugins: [review]})
+
+review.state$.subscribe(({items, activeItem, pendingItemCount, conflicts}) => {
+  renderWithAnyHostUI({items, activeItem, pendingItemCount, conflicts})
+})
+
+review.activateRevision(revisionId)
+review.readContent()     // exact type/text segments for the active group
+review.keep()            // doc.revisions.acceptGroup(activeItem.id)
+review.revert()          // doc.revisions.rejectGroup(activeItem.id)
+review.next()
+```
+
+### Public API
+
+| Member | Description |
+|--------|-------------|
+| `state$` | `RevisionReviewState` with grouped items, active item/index, pending atom/group counts, conflicts, mode/view/epoch |
+| `list(query?)` | Filter groups by status, kind, actor or affected block ID without scanning DOM |
+| `readContent(itemId?)` | Read exact atomic type/text segments for one group without mounting a block view or scanning unrelated document content |
+| `activate(itemId)` / `activateRevision(revisionId)` | Set the model-only active review item; does not scroll or change Selection |
+| `next(options?)` / `previous(options?)` | Navigate all or filtered groups; wrapping is enabled by default |
+| `keep(itemId?)` / `revert(itemId?)` | Accept/reject the whole group. Existing opposite heads are superseded through the normal append-only Revision decision path |
+| `keepAll(query?)` / `revertAll(query?)` | Batch group commands; omitted query targets pending groups only |
+| `resolveOverlap(conflictId, keepRevisionIds)` | Forward an explicit structural-overlap decision to `doc.revisions` |
+
+`RevisionReviewItem` contains only domain facts: `revisionIds`, `kinds`, actor
+snapshots, time bounds, merged status, affected stable block IDs, dependencies,
+active decision IDs and structural conflict IDs. It intentionally contains no
+labels, icons, geometry, permission flags or component references.
+
+`keep()` and `keepAll()` fail closed with `RevisionOverlapError` when a target
+belongs to a structural overlap; accepting every side cannot resolve that
+conflict. Use `resolveOverlap()` explicitly. `revert()` remains valid because
+rejecting one side removes it from the active structural conflict set.
+
+The bundled capability factory registers a fresh instance and returns it as
+`capabilities.revisionReviewPlugin`. Manual hosts can omit it and call
+`doc.revisions` directly.
+
+The Plugin does not subscribe to the full `doc.revisions.state$` snapshot on
+the hot path. `DocumentRevisionManager.listGroup()` and its incremental
+`change$` contract keep repeated typing and decision updates proportional to
+the affected review groups; structural conflict changes remain an explicit
+cold-path conflict refresh.
+
+### Optional default review UI
+
+The package exports a separate default UI layer without changing the headless
+Plugin contract:
+
+| Export | Responsibility |
+|--------|----------------|
+| `RevisionReviewPopoverComponent` | Present actor identity, revision time and iconfont “接收修订 / 拒绝修订” controls with tooltips for the active group; intents remain `keep` / `revert` |
+| `RevisionReviewPanelComponent` | Default pending/conflict review queue plus explicit processed history; accepted/rejected cards leave the current projection immediately, mounted cards follow document anchors, and one focused structural conflict exposes exact choices |
+| `RevisionReviewUiController` | Delegate marker clicks, reveal stable block IDs, hold the active block view lease and own connected Overlay cleanup |
+| `RevisionReviewIntent` / `RevisionReviewPopoverIntent` | UI intent values; they contain no role decision or Yjs mutation |
+
+The panel calls headless `readContent()` instead of deriving a paragraph
+preview from a block snapshot. Text revisions therefore show only their exact
+relative-position range; whole-block revisions show the targeted block text;
+split/merge boundaries show a structural placeholder. It indexes item IDs by
+block and refreshes only cards affected by `contentChange$.blockIds`. The full
+review order remains model-only; on document scroll, resize or virtualization
+`viewChange$`, one animation-frame pass measures only revision markers mounted
+under the current root view and lays out the corresponding cards without a
+horizontal scrollbar. Wheel input over the panel scrolls `doc.scrollContainer`,
+so the cards and document remain one viewport. Activating an offscreen card calls
+`BlockCraftDoc.navigateToBlock()` and holds only
+`virtualization.acquireBlockViewLease([blockId])` while the popover is open.
+Do not replace this with a full-document view lease.
+
+`canReview` is a host-provided snapshot used only to disable the default
+controls. The host remains responsible for whether to render the components
+and whether to forward an intent to `handleIntent()`.
 
 ---
 

@@ -67,6 +67,7 @@ import {
   PasteFormatSelectorPlugin,
   PlaceholderPlugin,
   PlaceholderPluginOptions,
+  RevisionReviewPlugin,
   TableBlockBinding,
   TextMarkerPlugin,
   TranslatePlugin,
@@ -223,6 +224,7 @@ export interface BundledEditorCapabilities {
   plugins: readonly DocPlugin[]
   blockMaterials: readonly BundledBlockMaterialGroup[]
   paginationPlugin: PaginationPlugin
+  revisionReviewPlugin: RevisionReviewPlugin
   translatePlugin: TranslatePlugin
 }
 
@@ -329,6 +331,7 @@ export function createBundledEditorCapabilities(
 ): BundledEditorCapabilities {
   const translatePlugin = new TranslatePlugin(options.translate)
   const paginationPlugin = new PaginationPlugin(options.pagination)
+  const revisionReviewPlugin = new RevisionReviewPlugin()
   const blockControllerPlugin = new BlockControllerPlugin(
     mergeBlockControllerOptions(
       options.blockController,
@@ -352,6 +355,7 @@ export function createBundledEditorCapabilities(
     new TableBlockBinding(),
     new PasteFormatSelectorPlugin(),
     new PlaceholderPlugin(options.placeholder),
+    revisionReviewPlugin,
     new ObjectFormatToolbarPlugin(),
     new ImgToolbarPlugin(),
     new CalloutToolbarPlugin(),
@@ -383,6 +387,7 @@ export function createBundledEditorCapabilities(
     plugins,
     blockMaterials: BUNDLED_EDITOR_BLOCK_MATERIAL_GROUPS,
     paginationPlugin,
+    revisionReviewPlugin,
     translatePlugin,
   }
 }

@@ -922,6 +922,10 @@ export class InputTransformer {
     text: string | null,
     mode: "text-cursor" | "table-selection" | "anchor-cursor",
   ): string | null {
+    if (this.doc.revisions?.isTracking) {
+      return this.doc.revisions.runWithoutTracking(() =>
+        this._replaceTableCellSelection(source, text, mode));
+    }
     const target = this._resolveTableCellSelection(source);
     if (!target) return null;
 
@@ -1333,12 +1337,6 @@ export class InputTransformer {
       this.doc.selection.blur();
       return true;
     }
-    if (this.doc.revisions?.isTracking && plan.kind === "table-cell") {
-      ev.preventDefault();
-      this.doc.messageService.warn("修订模式 v1 暂不支持表格单元格结构修改");
-      return true;
-    }
-
     const isDelete = ev.inputType.startsWith("delete");
     if (
       isDelete &&
@@ -1563,12 +1561,19 @@ export class InputTransformer {
   private _replaceSelectedBlocksWithParagraph(
     range: BlockRangeEditPlan,
     text: string,
-  ) {
+  ): boolean {
     const target = this._resolveWholeBlockRange(range);
     if (!target) return false;
     const resolved = this._resolveBlockSelectionHost(target.end);
     if (!resolved) {
       return false;
+    }
+    if (
+      this.doc.revisions?.isTracking &&
+      (resolved.mode === "inside" || target.start.parentId !== target.end.parentId)
+    ) {
+      return this.doc.revisions.runWithoutTracking(() =>
+        this._replaceSelectedBlocksWithParagraph(range, text));
     }
 
     this.doc.crud.undoManager.captureSelectionBeforeChange();
@@ -1828,12 +1833,9 @@ export class InputTransformer {
     if (!start || (plan.end && !end)) return false;
 
     const shouldMerge = !!end && merge && plan.tailMode === "merge";
-    if (
-      shouldMerge &&
-      start.block.parentId !== end?.block.parentId
-    ) {
-      this.doc.messageService.warn("修订模式 v1 仅支持同父级文本块合并");
-      return false;
+    if (end && start.block.parentId !== end.block.parentId) {
+      return this.doc.revisions.runWithoutTracking(() =>
+        this._replacePlannedRange(plan, text, merge));
     }
 
     this.doc.crud.undoManager.captureSelectionBeforeChange();
@@ -1905,9 +1907,16 @@ export class InputTransformer {
 
   private _deleteAllSelected(
     range: BlockSelection | BlockRangeEditPlan,
-  ) {
+  ): boolean {
     const target = this._resolveWholeBlockRange(range);
     if (!target) return false;
+    if (
+      this.doc.revisions?.isTracking &&
+      target.start.parentId !== target.end.parentId
+    ) {
+      return this.doc.revisions.runWithoutTracking(() =>
+        this._deleteAllSelected(range));
+    }
 
     // Pre-capture selection for undo BEFORE deleting blocks
     this.doc.crud.undoManager.captureSelectionBeforeChange();

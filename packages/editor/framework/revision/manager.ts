@@ -1,16 +1,16 @@
 import * as Y from 'yjs'
-import {BehaviorSubject} from 'rxjs'
+import {BehaviorSubject, Subject} from 'rxjs'
 import type {BlockCraftDoc} from '../doc'
 import {ORIGIN_NO_RECORD} from '../doc/origins'
 import {BlockNodeType, DeltaInsert, DeltaOperation, IBlockSnapshot} from '../block-std'
-import {generateId} from '../utils'
+import {generateId, snapshots2Text} from '../utils'
+import {deltaToString, sliceDelta} from '../../global'
 import {
   RevisionActorRequiredError,
   RevisionCheckpointError,
   RevisionConflictError,
   RevisionNotFoundError,
   RevisionOverlapError,
-  RevisionUnsupportedOperationError,
 } from './errors'
 import {
   BlockCraftDocumentSnapshot,
@@ -22,6 +22,7 @@ import {
   RevisionConfig,
   RevisionDecision,
   RevisionDecisionAction,
+  RevisionDomainChange,
   RevisionKind,
   RevisionListQuery,
   RevisionMode,
@@ -82,6 +83,7 @@ export class DocumentRevisionManager {
     conflicts: [],
     epoch: 0,
   })
+  readonly change$ = new Subject<RevisionDomainChange>()
 
   private actor: RevisionActorSnapshot | null = null
   private trackingBypassDepth = 0
@@ -98,6 +100,7 @@ export class DocumentRevisionManager {
     at: number
   } | null = null
   private readonly revisionsByBlock = new Map<string, Set<string>>()
+  private readonly revisionsByGroup = new Map<string, Set<string>>()
   private readonly decisionsByRevision = new Map<string, Set<string>>()
   private readonly resolvedByRevision = new Map<string, ResolvedRevision>()
   private readonly attribution: RevisionAttributionAdapter =
@@ -120,6 +123,7 @@ export class DocumentRevisionManager {
     if (config?.mode) this.setMode(config.mode)
 
     this.rebuildBlockIndex()
+    this.rebuildGroupIndex()
     this.rebuildDecisionIndex()
     this.rebuildResolvedIndex()
     this.yRevisionMap.observe(this.onRevisionMapChange)
@@ -230,10 +234,48 @@ export class DocumentRevisionManager {
       .sort(compareRevision)
   }
 
+  listGroup(groupId: string): ResolvedRevision[] {
+    return [...(this.revisionsByGroup.get(groupId) ?? [])]
+      .map(id => this.resolvedByRevision.get(id))
+      .filter((record): record is ResolvedRevision => !!record)
+      .map(cloneResolvedRevision)
+      .sort(compareRevision)
+  }
+
   get(revisionId: string): ResolvedRevision {
     const record = this.resolvedByRevision.get(revisionId)
     if (!record) throw new RevisionNotFoundError(`修订不存在：${revisionId}`)
     return cloneResolvedRevision(record)
+  }
+
+  /**
+   * Reads the canonical content owned by one revision without projecting UI.
+   *
+   * Text revisions return only their relative-position range. Whole-block
+   * revisions return only the targeted block subtrees. Structural boundaries
+   * do not own text and therefore return an empty string.
+   */
+  readRevisionContent(revisionId: string): string {
+    const record = this.get(revisionId)
+    if (record.target.kind === 'text') {
+      const yText = this.tryGetYText(record.target.blockId)
+      const range = this.resolveTextRange(record.target)
+      return yText && range
+        ? deltaToString(
+          sliceDelta(yText.toDelta() as DeltaInsert[], range.start, range.end),
+          '\ufffc',
+        )
+        : ''
+    }
+    if (record.target.kind === 'boundary') return ''
+    return record.target.blockIds
+      .map(blockId => {
+        if (!this.doc.model.exists(blockId)) return ''
+        const snapshot = this.doc.model.toSnapshot(blockId)
+        return snapshot ? snapshots2Text([snapshot]).replace(/\n$/, '') : ''
+      })
+      .filter(Boolean)
+      .join('\n')
   }
 
   accept(revisionId: string): RevisionDecision {
@@ -257,11 +299,11 @@ export class DocumentRevisionManager {
   }
 
   acceptGroup(groupId: string): RevisionDecision[] {
-    return this.decideMany(this.list().filter(item => item.groupId === groupId), 'accept')
+    return this.decideMany(this.listGroup(groupId), 'accept')
   }
 
   rejectGroup(groupId: string): RevisionDecision[] {
-    return this.decideMany(this.list().filter(item => item.groupId === groupId), 'reject')
+    return this.decideMany(this.listGroup(groupId), 'reject')
   }
 
   resolveOverlap(conflictId: string, keepRevisionIds: readonly string[]): RevisionDecision[] {
@@ -572,7 +614,7 @@ export class DocumentRevisionManager {
   ): string[] {
     if (!delta.length) return []
     const yText = this.getYText(blockId)
-    if (!this.isTracking) {
+    if (!this.isTracking || !canTrackTextDelta(delta)) {
       this.doc.crud.transact(() => yText.applyDelta([...delta]), origin)
       return []
     }
@@ -587,11 +629,6 @@ export class DocumentRevisionManager {
       this.doc.crud.transact(() => {
         for (const operation of delta) {
           if (operation.retain) {
-            if (operation.attributes && Object.keys(operation.attributes).length) {
-              throw new RevisionUnsupportedOperationError(
-                '修订模式 v1 暂不支持格式修订',
-              )
-            }
             cursor += operation.retain
           }
           if (operation.delete) {
@@ -606,11 +643,7 @@ export class DocumentRevisionManager {
             })
           }
           if (operation.insert !== undefined) {
-            if (typeof operation.insert !== 'string') {
-              throw new RevisionUnsupportedOperationError(
-                '修订模式 v1 暂不支持新增行内对象',
-              )
-            }
+            if (typeof operation.insert !== 'string') continue
             const id = this.insertText(
               blockId,
               cursor,
@@ -1048,23 +1081,40 @@ export class DocumentRevisionManager {
     this.mode$.complete()
     this.viewMode$.complete()
     this.state$.complete()
+    this.change$.complete()
   }
 
   private readonly onRevisionMapChange = (event: Y.YMapEvent<RevisionRecord>) => {
     const affected = new Set<string>()
+    const revisionIds = new Set<string>()
+    const groupIds = new Set<string>()
+    let conflictsChanged = false
     for (const key of event.keysChanged) {
       const change = event.changes.keys.get(key)
       const previous = change?.oldValue as RevisionRecord | undefined
       const next = this.yRevisionMap.get(key)
       if (previous) {
+        revisionIds.add(previous.id)
+        groupIds.add(previous.groupId)
+        conflictsChanged ||= isStructural(previous)
         this.resolvedByRevision.delete(previous.id)
+        this.revisionsByGroup.get(previous.groupId)?.delete(previous.id)
+        if (!this.revisionsByGroup.get(previous.groupId)?.size) {
+          this.revisionsByGroup.delete(previous.groupId)
+        }
         revisionBlockIds(previous).forEach(blockId => {
           affected.add(blockId)
           this.revisionsByBlock.get(blockId)?.delete(previous.id)
         })
       }
       if (next) {
+        revisionIds.add(next.id)
+        groupIds.add(next.groupId)
+        conflictsChanged ||= isStructural(next)
         this.resolvedByRevision.set(next.id, this.resolveRecord(next))
+        const groupRevisionIds = this.revisionsByGroup.get(next.groupId) ?? new Set<string>()
+        groupRevisionIds.add(next.id)
+        this.revisionsByGroup.set(next.groupId, groupRevisionIds)
         revisionBlockIds(next).forEach(blockId => {
           affected.add(blockId)
           const ids = this.revisionsByBlock.get(blockId) ?? new Set<string>()
@@ -1075,11 +1125,20 @@ export class DocumentRevisionManager {
     }
     this.refreshBlocks(affected)
     emitRevisionPresentationChange(this, affected)
+    this.change$.next({
+      kind: 'records',
+      revisionIds: [...revisionIds].sort(),
+      groupIds: [...groupIds].sort(),
+      conflictsChanged,
+    })
     this.queueStateEmit()
   }
 
   private readonly onDecisionMapChange = (event: Y.YMapEvent<RevisionDecision>) => {
     const affected = new Set<string>()
+    const revisionIds = new Set<string>()
+    const groupIds = new Set<string>()
+    let conflictsChanged = false
     for (const key of event.keysChanged) {
       const previous = event.changes.keys.get(key)?.oldValue as RevisionDecision | undefined
       const next = this.yDecisionMap.get(key)
@@ -1093,18 +1152,35 @@ export class DocumentRevisionManager {
       }
       const revisionId = next?.revisionId ?? previous?.revisionId
       if (!revisionId) continue
+      revisionIds.add(revisionId)
       const record = this.yRevisionMap.get(revisionId)
       if (record) {
+        groupIds.add(record.groupId)
+        conflictsChanged ||= isStructural(record)
         this.resolvedByRevision.set(record.id, this.resolveRecord(record))
         revisionBlockIds(record).forEach(id => affected.add(id))
       }
     }
     this.refreshBlocks(affected)
     emitRevisionPresentationChange(this, affected)
+    this.change$.next({
+      kind: 'decisions',
+      revisionIds: [...revisionIds].sort(),
+      groupIds: [...groupIds].sort(),
+      conflictsChanged,
+    })
     this.queueStateEmit()
   }
 
-  private readonly onMetaMapChange = () => this.queueStateEmit()
+  private readonly onMetaMapChange = () => {
+    this.change$.next({
+      kind: 'meta',
+      revisionIds: [],
+      groupIds: [],
+      conflictsChanged: false,
+    })
+    this.queueStateEmit()
+  }
 
   private appendDecision(revisionId: string, action: RevisionDecisionAction): RevisionDecision {
     const actor = this.requireActor()
@@ -1457,6 +1533,15 @@ export class DocumentRevisionManager {
     }
   }
 
+  private rebuildGroupIndex(): void {
+    this.revisionsByGroup.clear()
+    for (const record of this.yRevisionMap.values()) {
+      const ids = this.revisionsByGroup.get(record.groupId) ?? new Set<string>()
+      ids.add(record.id)
+      this.revisionsByGroup.set(record.groupId, ids)
+    }
+  }
+
   private rebuildDecisionIndex(): void {
     this.decisionsByRevision.clear()
     for (const decision of this.yDecisionMap.values()) {
@@ -1742,6 +1827,17 @@ function mergeRanges(
 
 function normalizeEpoch(value: number): number {
   return Number.isSafeInteger(value) && value >= 0 ? value : 0
+}
+
+function canTrackTextDelta(delta: readonly DeltaOperation[]): boolean {
+  return delta.every(operation =>
+    !(
+      operation.retain &&
+      operation.attributes &&
+      Object.keys(operation.attributes).length > 0
+    ) &&
+    (operation.insert === undefined || typeof operation.insert === 'string'),
+  )
 }
 
 function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {

@@ -7,7 +7,6 @@ import { INLINE_CONTAINER_CLASS, TextBlot, BlotType } from "../../inline";
 import { InlineRuntime } from "../../inline/runtime/inline-runtime";
 import { Subject } from "rxjs";
 import {BlockReadonlyOperation} from "../../../doc/block-readonly.types";
-import {RevisionUnsupportedOperationError} from '../../../revision/errors'
 
 @Component({
   selector: 'editable-block',
@@ -198,9 +197,6 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
   formatText(index: number, length: number, attributes: DeltaInsert['attributes']) {
     if (!length || !Object.keys(attributes ?? {}).length) return
     this.doc.readonlyManager.assertTextWritable(this, BlockReadonlyOperation.Format)
-    if (this.doc.revisions?.isTracking) {
-      throw new RevisionUnsupportedOperationError('修订模式 v1 暂不支持格式修订')
-    }
     this.yText.format(index, length, attributes as any)
   }
 

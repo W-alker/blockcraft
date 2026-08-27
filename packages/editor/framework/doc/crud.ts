@@ -27,7 +27,6 @@ import {
 import {BlockReadonlyOperation} from "./block-readonly.types";
 import {writeSnapshotsToYBlockMap} from './snapshot-yblock'
 import {generateId} from '../utils'
-import {RevisionUnsupportedOperationError} from '../revision/errors'
 export {
   ORIGIN_BLOCK_READONLY_CONTROL,
   ORIGIN_SKIP_SYNC,
@@ -229,9 +228,6 @@ export class DocCRUD {
     if (!changedKeys.length) return
 
     this.doc.readonlyManager.assertPropsWritable(blockId, BlockReadonlyOperation.Props)
-    if (this.doc.revisions?.isTracking) {
-      throw new RevisionUnsupportedOperationError('修订模式 v1 暂不支持块属性或格式修订')
-    }
     this.transact(() => {
       changedKeys.forEach(key => {
         const next = props[key]
@@ -1266,9 +1262,6 @@ export class DocCRUD {
 
   moveBlocks(parentId: string, index: number, count: number, targetId: string, targetIndex: number) {
     if (count <= 0) return
-    if (this.doc.revisions?.isTracking) {
-      throw new RevisionUnsupportedOperationError('修订模式 v1 暂不支持移动块；请退出修订模式后操作')
-    }
     // Read the live Y.Map directly. A caller may create a target container and
     // move children into it in the same outer transaction, before ModelGraph's
     // observer has published the newly reachable node.

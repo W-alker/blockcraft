@@ -63,11 +63,16 @@ export class RootPlacementLayoutCoordinator {
       BLOCK_PLACEMENT_LAYOUT_FLAVOUR,
       [],
     )
-    const ids = this.doc.crud.insertBlockSnapshots(
+    const insert = () => this.doc.crud.insertBlockSnapshots(
       this.runtime.rootId,
       this.doc.model.getChildrenIds(this.runtime.rootId).length,
       [snapshot],
     )
+    // placement-layout is editor infrastructure, never authored content. It
+    // must not become the visible target of a whole-block revision.
+    const ids = this.doc.revisions
+      ? this.doc.revisions.runWithoutTracking(insert)
+      : insert()
     if (!ids[0]) throw new Error('Failed to create placement layout')
     return ids[0]
   }
@@ -137,12 +142,18 @@ export class RootPlacementLayoutCoordinator {
           BLOCK_PLACEMENT_LAYOUT_FLAVOUR,
           [[positionedSnapshot]],
         )
-        const layoutIds = this.doc.crud.insertBlockSnapshots(
+        const insert = () => this.doc.crud.insertBlockSnapshots(
           this.runtime.rootId,
           this.doc.model.getChildrenIds(this.runtime.rootId).length,
           [layoutSnapshot],
         )
+        const layoutIds = this.doc.revisions
+          ? this.doc.revisions.runWithoutTracking(insert)
+          : insert()
         insertedId = layoutIds[0] ? positionedSnapshot.id : null
+        if (insertedId && this.doc.revisions?.isTracking) {
+          this.doc.revisions.recordBlockInsertion([insertedId], layoutIds[0])
+        }
       })
     } catch (error) {
       this.doc.logger.warn('insertAbsoluteSnapshotError: ', error)
@@ -217,7 +228,12 @@ export class RootPlacementLayoutCoordinator {
         continue
       }
       try {
-        this.doc.crud.deleteBlockById(layoutId)
+        const remove = () => this.doc.crud.deleteBlockById(layoutId)
+        if (this.doc.revisions) {
+          this.doc.revisions.runWithoutTracking(remove)
+        } else {
+          remove()
+        }
       } catch (error) {
         this.doc.logger.warn('removeEmptyPlacementLayoutError: ', error)
       }

@@ -1,18 +1,23 @@
-import type {
-  RevisionDecisionAction,
-  RevisionMode,
-  RevisionViewMode,
-} from '../../framework/revision'
+import type {RevisionMode, RevisionViewMode} from '../../framework/revision'
 
 export type RevisionToolbarIntent =
   | {type: 'set-mode'; mode: RevisionMode}
   | {type: 'set-view-mode'; viewMode: RevisionViewMode}
 
 export type RevisionReviewIntent =
-  | {type: 'accept-all'}
-  | {type: 'reject-all'}
-  | {type: 'accept-group'; groupId: string}
-  | {type: 'reject-group'; groupId: string}
-  | {type: 'redecide'; revisionId: string; action: RevisionDecisionAction}
-  | {type: 'navigate'; revisionId: string}
+  | {type: 'activate'; itemId: string}
+  | {type: 'keep'; itemId: string}
+  | {type: 'revert'; itemId: string}
+  | {type: 'keep-all'}
+  | {type: 'revert-all'}
   | {type: 'resolve-overlap'; conflictId: string; keepRevisionIds: string[]}
+  | {type: 'close'}
+
+export type RevisionReviewPopoverIntent =
+  | {type: 'previous'}
+  | {type: 'next'}
+  | {type: 'keep'; itemId: string}
+  | {type: 'revert'; itemId: string}
+  | {type: 'close'}
+
+export type RevisionReviewFilter = 'all' | 'pending' | 'resolved'

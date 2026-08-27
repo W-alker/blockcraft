@@ -262,7 +262,8 @@ if (controller.canResume) controller.resume()
 **What changed**: BlockCraft adds a document-owned Revision domain for
 non-destructive text and structural change tracking, append-only collaborative
 review decisions, deterministic conflict projection, complete document
-snapshots, checkpoint compaction, reusable review UI and revision theme tokens.
+snapshots, checkpoint compaction, a headless review Plugin, optional reusable
+review UI and revision theme tokens.
 
 **Why**: Hosts need Word-like track changes that converges for offline authors
 and reviewers without moving authentication, authorization or synchronization
@@ -277,7 +278,10 @@ policy into the editor.
 - `blockcraft-data.md`
 - `blockcraft-test.md`
 - `blockcraft-theme.md`
+- `blockcraft-plugin.md`
+- `blockcraft-plugins-ref.md`
 - `blockcraft-plugins-util.md`
+- `blockcraft-toolbar.md`
 - `MIGRATIONS.md`
 
 ### New APIs / Features
@@ -287,11 +291,31 @@ policy into the editor.
   `RevisionOverlapConflict`, `RevisionCheckpoint`, related query/state/error
   contracts, and `BlockCraftDocumentSnapshot`
 - `DocConfig.revision` and `doc.revisions` with actor/mode/view queries,
-  accept/reject/redecide/batch commands, `resolveOverlap()`,
+  accept/reject/redecide/batch commands, `resolveOverlap()`, incremental
+  `change$` / `listGroup()`, `readRevisionContent()`,
   `projectFinalSnapshot()` and `compactResolved()`
 - `BlockCraftDoc.initByDocumentSnapshot()` and
   `BlockCraftDoc.exportDocumentSnapshot()`
-- `RevisionToolbarComponent` and `RevisionReviewPanelComponent`
+- `RevisionToolbarComponent`, `RevisionReviewPopoverComponent`,
+  `RevisionReviewPanelComponent`, `RevisionReviewUiController` and the
+  `RevisionReviewIntent` / `RevisionReviewPopoverIntent` UI contracts. The
+  overall panel shows content-sized comment-style cards (exact fragments clamp
+  to two lines) for mounted document revision anchors, follows the document
+  scroller, clips horizontal overflow and owns card-local iconfont
+  navigation/decision controls with tooltips. Its default “待处理” queue drops
+  accepted/rejected cards immediately after the headless state update; those
+  records remain available only under the explicit “已处理” history filter for
+  redecision. Structural overlaps are focused one at a time and identify both
+  choices by actor, revision type, time and exact fragment before emitting
+  `resolve-overlap`, instead of exposing ambiguous “former/latter” actions. The
+  compact popover shows actor identity, revision time and “接收修订 / 拒绝修订”
+  icon actions (emitting `keep` / `revert` intents); the controller reveals
+  offscreen targets with a stable block ID and one targeted block view lease
+- `RevisionReviewPlugin`, `RevisionReviewState`, `RevisionReviewItem` and
+  related query/navigation/content contracts, including `readContent()`. The
+  bundled capability factory returns its fresh instance as
+  `revisionReviewPlugin`; the Plugin is headless and refreshes only affected
+  revision groups
 - `DocExportManager.exportToHtml()`; JSON/HTML/Markdown/PDF/print clean exports
   use `doc.revisions.projectFinalSnapshot()`
 - `--bc-revision-*` theme variables and `data-bc-revision-*` DOM hooks
@@ -327,8 +351,11 @@ host has granted the action; BlockCraft validates revision state, not roles.
 - Final projection and clean export throw `RevisionConflictError` while an
   opposite decision head or structural overlap is active.
 - Content Undo/Redo includes revision records but not review decisions.
-- Revision mode v1 fails closed for format revisions, table row/column edits,
-  object geometry/movement and unsupported cross-container structure.
+- Revision mode v1 no longer disables valid operations it cannot represent.
+  Format/props, inline-object Delta, table-cell structure, block movement and
+  cross-container composites continue through their normal Yjs/Undo paths and
+  create no Diff; a composite bypasses tracking as one operation, so it cannot
+  leave a partial revision record.
 - Later inline edits may cross existing text revisions. Destructive ranges are
   split by active dependency boundaries and kept in one review group, so an
   outer insertion decision cannot absorb adjacent original text. Insert ranges
@@ -347,6 +374,9 @@ host has granted the action; BlockCraft validates revision state, not roles.
   while revision records remain.
 - Absolute positioned blocks use external solid/dashed/double revision
   outlines without changing their persisted under/over stacking layer.
+- Root `placement-layout` nodes never receive whole-block revision attribution.
+  The first absolute-object insert records and paints the actual object child,
+  matching later inserts, replacements and deletions.
 
 
 ## v0.6.1 — 2026-08-25 — Mermaid child Schema validation

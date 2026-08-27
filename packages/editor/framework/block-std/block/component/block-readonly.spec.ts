@@ -59,6 +59,7 @@ function createEditableHarness() {
 
   return {
     block: block as EditableBlockComponent,
+    doc,
     host,
     readonlyManager,
     setSource(value: any) { source = value; },
@@ -147,5 +148,19 @@ describe("Block readonly API", () => {
 
     expect(h.readonlyManager.assertTextWritable).not.toHaveBeenCalled();
     expect(h.readonlyManager.assertPropsWritable).not.toHaveBeenCalled();
+  });
+
+  it("keeps unsupported props and text formatting available during revision tracking", () => {
+    const h = createEditableHarness();
+    (h.doc as any).revisions = {isTracking: true};
+
+    h.block.updateProps({textAlign: "center"});
+    h.block.formatText(0, 2, {"a:bold": true});
+
+    expect((h.block as any).yBlock.get("props").get("textAlign")).toBe("center");
+    expect(h.block.textDeltas()).toEqual([
+      {insert: "or", attributes: {"a:bold": true}},
+      {insert: "iginal"},
+    ]);
   });
 });

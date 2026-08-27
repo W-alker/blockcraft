@@ -38,7 +38,6 @@ import {
   normalizeTypographyLineHeight,
   paragraphPointsToCss,
 } from "../../typography";
-import {RevisionUnsupportedOperationError} from '../../../revision/errors'
 
 export type BlockViewState = 'mounted' | 'retained' | 'destroyed'
 
@@ -788,9 +787,6 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     )
     if (!changedKeys.length) return
     this.doc.readonlyManager.assertPropsWritable(this, BlockReadonlyOperation.Props)
-    if (this.doc.revisions?.isTracking) {
-      throw new RevisionUnsupportedOperationError('修订模式 v1 暂不支持块属性或格式修订')
-    }
     this.doc.crud.transact(() => {
       for (const key of changedKeys) {
         if (props[key] === null) {

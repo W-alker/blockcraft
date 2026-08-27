@@ -52,10 +52,12 @@ insert at the start/end is adjacent; an insert strictly inside is dependent.
 Only the original author may resize their own uncontested pending insertion,
 and that fast path rewrites the relative target after the Y.Text mutation.
 
-Revision v1 fails closed with `RevisionUnsupportedOperationError` for format
-changes, table-cell structural edits, block movement, props/object geometry and
-unsupported cross-container structure. Do not fall through to native
-`contenteditable` behavior for these cases.
+Valid operations that Revision v1 cannot represent—format changes, table-cell
+structural edits, block movement, props/object geometry and cross-container
+structure—continue through the normal model executor and Yjs/Undo path while
+bypassing revision attribution, and create no Diff. This is a model fallback,
+never a fallthrough to native `contenteditable` behavior. Invalid or stale edit
+plans still fail closed.
 
 ### Adapter / Planner / Executor
 

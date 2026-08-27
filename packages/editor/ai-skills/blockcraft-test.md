@@ -39,6 +39,11 @@ guidance, comment-marker coexistence and that the mounted Final document has
 suites before the editor build. Host-specific file envelopes and migrations are
 tested in their owning application, not in the editor package.
 
+For categories outside Revision v1, assert that tracking does not disable the
+underlying Yjs/Undo operation, no Revision records are created and compound
+operations never leave a partial Diff. Cover at least format-only/inline-object
+Delta, block props/movement, table-cell replacement and cross-container ranges.
+
 ## Testing Blocks
 
 ### Unit Test Template

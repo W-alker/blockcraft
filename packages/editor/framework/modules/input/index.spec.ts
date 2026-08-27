@@ -2215,6 +2215,49 @@ describe('InputTransformer typed-over-selection format inheritance', () => {
     expect(doc.crud.deleteBlockById).not.toHaveBeenCalled()
   })
 
+  it('executes a cross-container replacement normally without a Diff while tracking', () => {
+    const {
+      doc,
+      transformer,
+      selection,
+      leftDelete,
+      leftInsert,
+      rightDelete,
+    } = createCrossColumnTextRangeHarness()
+    let bypassDepth = 0
+    const runWithoutTracking = jasmine.createSpy('runWithoutTracking')
+      .and.callFake((callback: () => unknown) => {
+        bypassDepth += 1
+        try {
+          return callback()
+        } finally {
+          bypassDepth -= 1
+        }
+      })
+    const revisions = {
+      get isTracking() {
+        return bypassDepth === 0
+      },
+      runWithoutTracking,
+      deleteText: jasmine.createSpy('revision.deleteText'),
+      insertText: jasmine.createSpy('revision.insertText'),
+      recordBoundary: jasmine.createSpy('revision.recordBoundary'),
+    }
+    ;(doc as any).revisions = revisions
+
+    const plan = transformer['_planSelectionEdit'](selection)
+    expect(plan.kind).toBe('range')
+    expect(transformer['_replacePlannedRange'](plan, 'Z', true)).toBeTrue()
+
+    expect(runWithoutTracking).toHaveBeenCalledTimes(1)
+    expect(leftDelete).toHaveBeenCalledWith(3, 5)
+    expect(leftInsert).toHaveBeenCalledWith(3, 'Z', undefined)
+    expect(rightDelete).toHaveBeenCalledWith(0, 4)
+    expect(revisions.deleteText).not.toHaveBeenCalled()
+    expect(revisions.insertText).not.toHaveBeenCalled()
+    expect(revisions.recordBoundary).not.toHaveBeenCalled()
+  })
+
   it('executes a model range without reading block refs from selection endpoints', () => {
     const {
       transformer,
@@ -2444,6 +2487,47 @@ describe('InputTransformer table-cell selection editing', () => {
     expect(doc.selection.recalculate).not.toHaveBeenCalled()
     expect(doc.selection.setTableCellSelection).not.toHaveBeenCalled()
     expect(doc.selection.blur).not.toHaveBeenCalled()
+  })
+
+  it('keeps table-cell replacement available without a Diff while tracking', () => {
+    const harness = createTableCellEditingHarness()
+    const {doc, transformer} = harness
+    let bypassDepth = 0
+    const runWithoutTracking = jasmine.createSpy('runWithoutTracking')
+      .and.callFake((callback: () => unknown) => {
+        bypassDepth += 1
+        try {
+          return callback()
+        } finally {
+          bypassDepth -= 1
+        }
+      })
+    ;(doc as any).revisions = {
+      get isTracking() {
+        return bypassDepth === 0
+      },
+      runWithoutTracking,
+    }
+    spyOn(transformer.compositionSession, 'updateAnchorFromInputEvent')
+    const preventDefault = jasmine.createSpy('preventDefault')
+    const event = {
+      target: null,
+      inputType: 'insertText',
+      data: '你',
+      isComposing: false,
+      defaultPrevented: false,
+      getTargetRanges: () => [],
+      preventDefault,
+    }
+
+    const result = transformer['_handleBeforeInput'](makeBeforeInputContext(event))
+
+    expect(result).toBeTrue()
+    expect(preventDefault).toHaveBeenCalled()
+    expect(runWithoutTracking).toHaveBeenCalledTimes(1)
+    expect(doc.crud.deleteBlocks).toHaveBeenCalledTimes(4)
+    expect(doc.crud.insertBlockSnapshots).toHaveBeenCalledTimes(4)
+    expect(harness.anchorParagraph.textContent()).toBe('你')
   })
 
   it('aborts table-cell typing when a model endpoint is stale', () => {

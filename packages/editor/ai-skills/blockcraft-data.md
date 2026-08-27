@@ -533,11 +533,46 @@ therefore discards only the segment inside that insertion; original text in an
 adjacent segment remains independently reviewable. Rejected nested deletions
 also do not override a still-pending insertion's markup kind.
 
+Review integrations that maintain their own projection should use the
+incremental group contract instead of rescanning `state$.revisions` after every
+Yjs update:
+
+```typescript
+doc.revisions.change$.subscribe(change => {
+  for (const groupId of change.groupIds) {
+    updateReviewGroup(groupId, doc.revisions.listGroup(groupId))
+  }
+  if (change.conflictsChanged) refreshStructuralConflicts()
+})
+```
+
+`RevisionDomainChange` reports `records`, `decisions` or `meta`, the affected
+revision/group IDs and whether structural-conflict projection may have
+changed. Indexes and resolved statuses are updated before the event is emitted.
+`mode$` and `viewMode$` remain the dedicated mode streams; `state$` remains the
+complete compatibility snapshot for low-frequency consumers. Rewriting only a
+text revision's relative target still emits the affected group, allowing a
+consumer such as `RevisionReviewPlugin` to compare semantic group state and
+avoid republishing unchanged cards.
+
+`doc.revisions.readRevisionContent(revisionId)` is the model-only content
+query for review UIs. Text targets resolve their `Y.RelativePosition` anchors
+and return only that range; whole-block targets serialize only their targeted
+subtrees; split/merge boundaries return an empty string because the boundary
+owns no paragraph text. The query never mounts a Block view.
+
 Active deletion effects are idempotent for the same actor. Repeating a pending
 or accepted text/whole-block deletion reuses the existing record, and an
 extended selection persists only the uncovered text segments or block IDs.
 Rejected records do not suppress a fresh proposal. Different actors still
 store independent overlapping deletion records and decision histories.
+
+Revision tracking is attribution, not a mutation capability gate. Operations
+outside the v1 record model—props/formatting, format or inline-object Delta,
+block movement, table-cell structure and cross-container structure—commit via
+their normal Yjs transaction and Undo path with no Revision record. Composite
+fallbacks bypass tracking for the whole transaction so they cannot leave a
+partial Diff beside an otherwise untracked mutation.
 
 ## IBlockSnapshot Format
 

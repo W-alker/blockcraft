@@ -1,3 +1,5 @@
 export * from './revision-review.types'
 export * from './revision-toolbar.component'
+export * from './revision-review-popover.component'
 export * from './revision-review-panel.component'
+export * from './revision-review-ui.controller'

@@ -16,7 +16,7 @@ This index covers the built-in plugins. Pick the category file that matches your
 | Block Management | `blockcraft-plugins-block.md` | BlockControllerPlugin, BlockGapCreatorPlugin, BlockTransformerPlugin, OrderedBlockPlugin |
 | Block Toolbars | `blockcraft-plugins-toolbar.md` | AttachmentExtensionPlugin, ImgToolbarPlugin, ObjectFormatToolbarPlugin, BookmarkBlockExtensionPlugin, CalloutToolbarPlugin, DividerExtensionPlugin, EmbedFrameExtensionPlugin, FormulaBlockExtensionPlugin |
 | Inline & Keyboard | `blockcraft-plugins-inline.md` | InlineLinkExtension, MentionPlugin, DateInlineExtensionPlugin, CodeInlineEditorBinding, TableBlockBinding |
-| Utilities | `blockcraft-plugins-util.md` | PlaceholderPlugin, FindReplacePlugin, PasteFormatSelectorPlugin, DemoPresentationPlugin, TranslatePlugin, PaginationPlugin |
+| Utilities | `blockcraft-plugins-util.md` | PlaceholderPlugin, FindReplacePlugin, PasteFormatSelectorPlugin, DemoPresentationPlugin, RevisionReviewPlugin, TranslatePlugin, PaginationPlugin |
 
 ## Quick Lookup
 
@@ -48,6 +48,7 @@ This index covers the built-in plugins. Pick the category file that matches your
 | `DemoPresentationPlugin` | `util` | none (zero-config) |
 | `TranslatePlugin` | `util` | `service` (required), language options |
 | `PaginationPlugin` | `util` | page geometry, browser/host-native WYSIWYG PDF printing, runtime enable, print shortcut |
+| `RevisionReviewPlugin` | `util` | none (headless grouped state + keep/revert commands) |
 
 ## Plugin Composition Pattern
 
@@ -79,6 +80,7 @@ const plugins = [
   new TableBlockBinding(),
   new FindReplacePlugin(),
   new PasteFormatSelectorPlugin(),
+  new RevisionReviewPlugin(),
   new PaginationPlugin({enabled: false, pageSize: 'A4'}),
   translatePlugin,
 ];
@@ -96,6 +98,7 @@ inherited/collided are:
 | `TableBlockBinding` | `table-block-binding` |
 | `BookmarkBlockExtensionPlugin` | `bookmark-block-extension` |
 | `ObjectFormatToolbarPlugin` | `object-format-toolbar` |
+| `RevisionReviewPlugin` | `revision-review` |
 
 ## Checklist
 

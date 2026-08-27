@@ -428,7 +428,7 @@ describe('DocCRUD', () => {
     expect(doc.readonlyManager.runSystemRepair).toHaveBeenCalledTimes(1)
   })
 
-  it('writes block props by model id without a mounted component', () => {
+  it('writes untracked block props by model id while revision tracking is active', () => {
     const {crud, doc, store} = createDocHarness()
     const yBlock = native2YBlock({
       id: 'offscreen-props',
@@ -439,6 +439,7 @@ describe('DocCRUD', () => {
       children: [],
     } as unknown as NativeBlockModel)
     doc.yBlockMap.set('offscreen-props', yBlock)
+    ;(doc as any).revisions = {isTracking: true}
 
     crud.updateBlockProps('offscreen-props', {
       depth: 2,
@@ -866,14 +867,21 @@ describe('DocCRUD', () => {
     expect(doc.yBlockMap.has(child.id)).toBeTrue()
   })
 
-  it('keeps the mounted view synchronized when moving an existing block', () => {
-    const {crud, rootRef, store} = createDocHarness()
+  it('moves blocks normally without a Diff while revision tracking is active', () => {
+    const {crud, doc, rootRef, store} = createDocHarness()
     crud.insertBlocks(rootRef.instance.id, 0, [
       createEditableSnapshot('move-a'),
       createEditableSnapshot('move-b'),
       createEditableSnapshot('move-c'),
     ])
     const movedRef = store.get('move-a')
+    const recordBlockInsertion = jasmine.createSpy('recordBlockInsertion')
+    const recordBlockDeletion = jasmine.createSpy('recordBlockDeletion')
+    ;(doc as any).revisions = {
+      isTracking: true,
+      recordBlockInsertion,
+      recordBlockDeletion,
+    }
 
     crud.moveBlocks(rootRef.instance.id, 0, 1, rootRef.instance.id, 2)
 
@@ -884,6 +892,8 @@ describe('DocCRUD', () => {
       'move-a',
     ])
     expect(store.get('move-a')).toBe(movedRef)
+    expect(recordBlockInsertion).not.toHaveBeenCalled()
+    expect(recordBlockDeletion).not.toHaveBeenCalled()
   })
 
   it('mounts a sparse-root replacement after moving it out of a container in the same transaction', () => {
