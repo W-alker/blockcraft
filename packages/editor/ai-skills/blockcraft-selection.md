@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying selection behavior or when the L1 quick reference in `blockcraft.md` isn't enough.
 >
-> Last updated: 2026-08-24 | Source of truth: `framework/modules/selection/`
+> Last updated: 2026-08-25 | Source of truth: `framework/modules/selection/`
 
 ## Architecture Overview
 
@@ -794,8 +794,10 @@ that infrastructure node, so typing or navigation at the final paragraph does
 not enter an absolute object.
 
 The layout and every currently absolute descendant are also ineligible for gap
-cursors. Mounted hosts remove direct gap DOM when entering absolute placement
-and restore it after returning to relative flow. `SelectionKeyboard`,
+cursors. A root-flow `object-group` in top-bottom mode is eligible, so selecting
+the group has the same native keyboard anchor and before/after gap cursor as
+other flow container blocks. Mounted hosts remove direct gap DOM when entering
+absolute placement and restore it after returning to relative flow. `SelectionKeyboard`,
 `BlockGapCreatorPlugin` and block hosts all consult
 `BlockPlacementManager.allowsGapCursor()` instead of duplicating flavour
 checks. `setGapCursor()` and JSON selection replay degrade a stale disallowed

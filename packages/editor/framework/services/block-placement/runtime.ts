@@ -108,9 +108,7 @@ export class BlockPlacementRuntime {
   allowsGapCursor(
     blockOrId: string | BlockCraft.BlockComponent,
   ): boolean {
-    if (this.isPlacementLayout(blockOrId) || this.isObjectGroup(blockOrId)) {
-      return false
-    }
+    if (this.isPlacementLayout(blockOrId)) return false
     return !this.isInAbsoluteLayout(blockOrId)
   }
 

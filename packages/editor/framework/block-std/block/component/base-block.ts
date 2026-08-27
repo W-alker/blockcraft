@@ -535,7 +535,14 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
 
     this._blockGapSub = new Subscription()
     this._blockGapSub.add(this.onPropsChange.subscribe(changes => {
-      if (changes.has('placement' as keyof Model['props'])) scheduleSync()
+      if (
+        changes.has('position' as keyof Model['props']) ||
+        changes.has('placementLayer' as keyof Model['props'])
+      ) {
+        // Object mode changes also reparent the same ComponentRef. Defer until
+        // the transaction's structural projection has adopted its new parent.
+        scheduleSync()
+      }
     }))
     this._blockGapSub.add(this.onReattach$.subscribe(scheduleSync))
     scheduleSync()

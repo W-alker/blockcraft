@@ -1,6 +1,6 @@
 import {BehaviorSubject, Subject} from 'rxjs'
 import {Component} from '@angular/core'
-import {TestBed, fakeAsync, flushMicrotasks} from '@angular/core/testing'
+import {TestBed, fakeAsync, flushMicrotasks, tick} from '@angular/core/testing'
 import {ORIGIN_NO_RECORD} from '../doc/origins'
 import {
   BLOCK_OBJECT_LAYOUT_OPTIONS,
@@ -1377,6 +1377,49 @@ describe('BlockPlacementManager', () => {
     expect(restored[0].getAttribute('data-block-gap-side')).toBe('before')
     expect(restored[1].getAttribute('data-block-gap-side')).toBe('after')
   })
+
+  it('resyncs block gap DOM after a structural placement transition', fakeAsync(() => {
+    const host = document.createElement('div')
+    const allowsGapCursor = jasmine.createSpy('allowsGapCursor')
+      .and.returnValue(false)
+    const onPropsChange = new Subject<Map<string, any>>()
+    const onReattach$ = new Subject<void>()
+    const block = Object.create(BaseBlockComponent.prototype) as BaseBlockComponent
+    Object.assign(block as any, {
+      hostElement: host,
+      onPropsChange,
+      onReattach$,
+      _viewState: 'mounted',
+      _blockGapFrame: null,
+      doc: {
+        schemas: {
+          get: () => ({metadata: {isLeaf: false}}),
+        },
+        placement: {allowsGapCursor},
+      },
+      _native: {
+        id: 'group-1',
+        flavour: 'object-group',
+        nodeType: 'block',
+        props: {position: {x: 10, y: 20}},
+      },
+    })
+
+    ;(block as any)._bindBlockGapSpaces()
+    tick(17)
+    expect(host.querySelectorAll(
+      ':scope > [data-block-zero-space="true"]',
+    ).length).toBe(0)
+
+    allowsGapCursor.and.returnValue(true)
+    onPropsChange.next(new Map([['position', {}]]))
+    tick(17)
+
+    expect(host.querySelectorAll(
+      ':scope > [data-block-zero-space="true"]',
+    ).length).toBe(2)
+    ;(block as any)._blockGapSub.unsubscribe()
+  }))
 
   it('does not mount gap DOM on placement-layout', () => {
     const host = document.createElement('div')

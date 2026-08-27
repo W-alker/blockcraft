@@ -307,6 +307,30 @@ if (controller.canResume) controller.resume()
   progress. Explicit `destroy()` remains the final cleanup boundary and resets
   the saved page.
 
+## v0.7.1 — 2026-08-25 — Root-flow object-group gap cursor
+
+**Severity**: patch
+
+**What changed**: An `object-group` in root-flow top-bottom mode now mounts the
+standard before/after gap anchors used by other flow container blocks. Whole-
+group selection consequently retains a native keyboard focus anchor.
+
+**Why**: Object groups were excluded by flavour even after leaving the absolute
+placement plane, so their root-flow representation could be selected visually
+but did not support gap cursors or the normal selected-block keyboard path.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-selection.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Root-flow top-bottom object groups accept before/after gap cursors and selected-
+  block keyboard events. Absolute object groups and every member inside an
+  object group remain ineligible for gap cursors.
+
 ## v0.7.0 — 2026-08-25 — Revision / track-changes domain
 
 **Severity**: minor

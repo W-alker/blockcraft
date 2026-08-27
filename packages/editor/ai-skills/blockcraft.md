@@ -651,9 +651,11 @@ read `x/gap` and always use automatic wrapping geometry. Eligible centered
 automatic objects use the combined left-plus-right interval capacity;
 sequential wrapped anchors reserve non-overlapping exclusion bands. Ordinary
 measured text heights are not overwritten by fallback estimates.
-The layout and absolute descendants have no gap-cursor eligibility. Stale gap
-selection snapshots degrade to whole-object selection, and normal gaps are
-restored when an object returns to relative flow. While one absolute object or
+The layout and absolute descendants have no gap-cursor eligibility. A root-flow
+`object-group` in top-bottom mode is the bounded exception: it exposes the same
+before/after gap cursor and keyboard selection anchor as other flow container
+blocks. Stale gaps on absolute objects degrade to whole-object selection, and
+normal gaps are restored when an object returns to relative flow. While one absolute object or
 a Shift-selected object interval owns Selection, ordinary typing, IME, Enter,
 Tab and paste are isolated from the document input path without clearing the
 selection; Delete/Backspace deletes the selected object set in one undo step,
