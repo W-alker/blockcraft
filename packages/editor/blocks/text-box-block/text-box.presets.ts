@@ -1,11 +1,9 @@
-import {BUBBLE_R_TEXT_BOX_PRESETS} from './presets/bubble-r'
-import {OUTLINE_R_TEXT_BOX_PRESETS} from './presets/outline-r'
-import {RECT_R_TEXT_BOX_PRESETS} from './presets/rect-r'
+import { GALLERY_TEXT_BOX_PRESETS } from "./presets/gallery";
 import {
   TEXT_BOX_OBJECT_FORMAT_CAPABILITY,
   type TextBoxBlockProps,
   type TextBoxWritingMode,
-} from './text-box.types'
+} from "./text-box.types";
 import {
   createObjectPaint,
   storeObjectEffects,
@@ -16,58 +14,83 @@ import {
   type ObjectPaint,
   type ObjectPictureFit,
   type ObjectTextFrame,
-} from '../../framework'
-import {TEXT_BOX_ARTWORK_SCHEME} from './presets/artwork'
-import type {ShapeKind} from '../shape-block/shape.types'
+} from "../../framework";
+import { TEXT_BOX_ARTWORK_SCHEME } from "./presets/artwork";
+import type {
+  ShapeAdjustmentValues,
+  ShapeKind,
+} from "../shape-block/shape.types";
 
-export type TextBoxPresetPatch = Partial<TextBoxBlockProps>
+export type TextBoxPresetPatch = Partial<TextBoxBlockProps>;
 
 export interface TextBoxPresetAuthoringProps {
-  sh?: ShapeKind
-  p?: number | [number] | [number, number] |
-    [number, number, number] | [number, number, number, number]
-  backColor?: string
-  borderColor?: string
-  bw?: number
-  bs?: 'solid' | 'dashed'
-  fo?: number
-  bgi?: string
-  bgs?: ObjectPictureFit
-  bgo?: number
-  wm?: TextBoxWritingMode
-  wa?: null
+  sh?: ShapeKind;
+  adjustments?: ShapeAdjustmentValues;
+  p?:
+    | number
+    | [number]
+    | [number, number]
+    | [number, number, number]
+    | [number, number, number, number];
+  backColor?: string;
+  borderColor?: string;
+  bw?: number;
+  bs?: "solid" | "dashed";
+  fo?: number;
+  bgi?: string;
+  bgs?: ObjectPictureFit;
+  bgo?: number;
+  wm?: TextBoxWritingMode;
+  tc?: string;
+  align?: "left" | "center" | "right";
+  valign?: "top" | "middle" | "bottom";
+  fontFamily?: string;
+  fontSize?: number;
+  fontWeight?: 400 | 500 | 600 | 700 | 800 | 900;
+  shadow?: "soft" | "lifted" | "hard-offset" | "neon";
+  effect?: "bevel" | "gradient-mesh";
+  wa?: null;
 }
 
-/** Catalog grouping, mirroring Word's text-box shape tabs. */
+/** Product-facing gallery groups. The previous three-tab catalog is retired. */
 export const TEXT_BOX_PRESET_CATEGORIES = [
-  {id: 'outline', label: '线框'},
-  {id: 'rect', label: '矩形'},
-  {id: 'bubble', label: '气泡'},
-] as const
+  { id: "office", label: "办公经典" },
+  { id: "quote", label: "引言" },
+  { id: "sidebar", label: "侧边栏" },
+  { id: "editorial", label: "杂志" },
+  { id: "shape", label: "异形" },
+  { id: "bubble", label: "气泡" },
+  { id: "note", label: "纸张" },
+  { id: "culture", label: "文化风格" },
+  { id: "material", label: "材质效果" },
+  { id: "vertical", label: "竖排" },
+] as const;
 
 export type TextBoxPresetCategory =
-  typeof TEXT_BOX_PRESET_CATEGORIES[number]['id']
+  (typeof TEXT_BOX_PRESET_CATEGORIES)[number]["id"];
 
 export interface TextBoxPresetDefinition {
-  id: string
-  label: string
-  defaultWidth: number
-  defaultHeight: number
+  id: string;
+  label: string;
+  defaultWidth: number;
+  defaultHeight: number;
   /** Catalog tab. Omitted entries appear in every tab. */
-  cat?: TextBoxPresetCategory
+  cat?: TextBoxPresetCategory;
   /**
    * Directions this preset is offered in. Omitted means both — direction is a
-   * frame flag, not a second copy of the data. Only geometries whose decoration
-   * has a fixed orientation (bubble tails) restrict themselves.
+   * frame flag, not a second copy of the data. Callout shapes and purpose-built
+   * vertical labels opt into the direction their geometry was designed for.
    */
-  wm?: readonly TextBoxWritingMode[]
-  props: Readonly<TextBoxPresetAuthoringProps>
+  wm?: readonly TextBoxWritingMode[];
+  props: Readonly<TextBoxPresetAuthoringProps>;
 }
 
 /** Resolved catalog entry written directly through DocCRUD/Yjs. */
-export interface ResolvedTextBoxPresetDefinition
-  extends Omit<TextBoxPresetDefinition, 'props'> {
-  props: Readonly<TextBoxPresetPatch>
+export interface ResolvedTextBoxPresetDefinition extends Omit<
+  TextBoxPresetDefinition,
+  "props"
+> {
+  props: Readonly<TextBoxPresetPatch>;
 }
 
 /**
@@ -78,50 +101,102 @@ export interface ResolvedTextBoxPresetDefinition
  */
 function canonicalizePreset<T extends TextBoxPresetDefinition>(
   preset: T,
-): Omit<T, 'props'> & {props: Readonly<TextBoxPresetPatch>} {
-  const source = preset.props
-  const defaults = TEXT_BOX_OBJECT_FORMAT_CAPABILITY.defaults
-  const defaultFill = defaults.shapeFill ?? createObjectPaint('solid')
-  const defaultOutline = defaults.shapeOutline!
-  const opacity = typeof source['fo'] === 'number'
-    ? Math.min(1, Math.max(0, source['fo']))
-    : 1
-  const image = typeof source['bgi'] === 'string' ? source['bgi'].trim() : ''
-  const artwork = image.startsWith(TEXT_BOX_ARTWORK_SCHEME) ? image : ''
-  const color = typeof source['backColor'] === 'string'
-    ? source['backColor'].trim()
-    : defaultFill.type === 'solid'
-      ? defaultFill.color
-      : '#FFFFFF'
-  const shapeFill: ObjectPaint = image && !artwork
-    ? {
-        ...createObjectPaint('picture'),
-        src: image,
-        fit: normalizePictureFit(source['bgs']),
-        opacity: typeof source['bgo'] === 'number'
-          ? Math.min(1, Math.max(0, source['bgo']))
-          : opacity,
-      }
-    : {
-        ...(opacity === 0 || color === 'transparent'
-          ? {type: 'none' as const}
-          : {
-              type: 'solid' as const,
-              color,
-              opacity,
-            }),
-      }
-  const outlineWidth = typeof source['bw'] === 'number'
-    ? Math.max(0, source['bw'])
-    : defaultOutline.width
-  const outlineColor = typeof source['borderColor'] === 'string'
-    ? source['borderColor'].trim()
-    : defaultOutline.color
+): Omit<T, "props"> & { props: Readonly<TextBoxPresetPatch> } {
+  const source = preset.props;
+  const defaults = TEXT_BOX_OBJECT_FORMAT_CAPABILITY.defaults;
+  const defaultFill = defaults.shapeFill ?? createObjectPaint("solid");
+  const defaultOutline = defaults.shapeOutline!;
+  const opacity =
+    typeof source["fo"] === "number"
+      ? Math.min(1, Math.max(0, source["fo"]))
+      : 1;
+  const image = typeof source["bgi"] === "string" ? source["bgi"].trim() : "";
+  const artwork = image.startsWith(TEXT_BOX_ARTWORK_SCHEME) ? image : "";
+  const color =
+    typeof source["backColor"] === "string"
+      ? source["backColor"].trim()
+      : defaultFill.type === "solid"
+        ? defaultFill.color
+        : "#FFFFFF";
+  const shapeFill: ObjectPaint =
+    source.effect === "gradient-mesh"
+      ? {
+          type: "linear-gradient",
+          angle: 135,
+          opacity,
+          stops: [
+            { color: "#DDF7FF", offset: 0, opacity: 1 },
+            { color: "#E8D9FF", offset: 0.48, opacity: 1 },
+            { color: "#FFE4D6", offset: 1, opacity: 1 },
+          ],
+        }
+      : image && !artwork
+        ? {
+            ...createObjectPaint("picture"),
+            src: image,
+            fit: normalizePictureFit(source["bgs"]),
+            opacity:
+              typeof source["bgo"] === "number"
+                ? Math.min(1, Math.max(0, source["bgo"]))
+                : opacity,
+          }
+        : {
+            ...(opacity === 0 || color === "transparent"
+              ? { type: "none" as const }
+              : {
+                  type: "solid" as const,
+                  color,
+                  opacity,
+                }),
+          };
+  const outlineWidth =
+    typeof source["bw"] === "number"
+      ? Math.max(0, source["bw"])
+      : defaultOutline.width;
+  const outlineColor =
+    typeof source["borderColor"] === "string"
+      ? source["borderColor"].trim()
+      : defaultOutline.color;
   const textFrame: ObjectTextFrame = {
     ...defaults.textFrame!,
-    margins: normalizeMargins(source['p'], defaults.textFrame!.margins),
-    direction: source['wm'] === 'v' ? 'vertical-rl' : 'horizontal',
-  }
+    margins: normalizeMargins(source["p"], defaults.textFrame!.margins),
+    direction: source["wm"] === "v" ? "vertical-rl" : "horizontal",
+    horizontalAlign: source.align ?? defaults.textFrame!.horizontalAlign,
+    verticalAlign: source.valign ?? defaults.textFrame!.verticalAlign,
+  };
+  const shadow = source.shadow;
+  const shapeEffects = {
+    ...defaults.shapeEffects!,
+    shadow: shadow
+      ? {
+          enabled: true,
+          color: shadow === "neon" ? "#54E8FF" : "#172334",
+          opacity:
+            shadow === "hard-offset" ? 0.3 : shadow === "neon" ? 0.55 : 0.2,
+          blur: shadow === "hard-offset" ? 0 : shadow === "lifted" ? 22 : 14,
+          angle: shadow === "hard-offset" ? 45 : 90,
+          distance: shadow === "hard-offset" ? 9 : shadow === "neon" ? 0 : 8,
+        }
+      : defaults.shapeEffects!.shadow,
+    glow:
+      source.shadow === "neon" || source.effect === "bevel"
+        ? {
+            enabled: true,
+            color: source.shadow === "neon" ? "#54E8FF" : "#FFFFFF",
+            opacity: source.shadow === "neon" ? 0.7 : 0.5,
+            radius: source.shadow === "neon" ? 18 : 5,
+          }
+        : defaults.shapeEffects!.glow,
+  };
+  const textStyle = {
+    ...defaults.textStyle!,
+    fontFamily: source.fontFamily ?? defaults.textStyle!.fontFamily,
+    fontSize: source.fontSize ?? defaults.textStyle!.fontSize,
+    fontWeight: source.fontWeight ?? defaults.textStyle!.fontWeight,
+    fill: source.tc
+      ? { type: "solid" as const, color: source.tc, opacity: 1 }
+      : defaults.textStyle!.fill,
+  };
   return {
     ...preset,
     props: {
@@ -129,150 +204,85 @@ function canonicalizePreset<T extends TextBoxPresetDefinition>(
       height: preset.defaultHeight,
       rotation: defaults.rotation,
       lockRatio: defaults.lockAspectRatio,
-      shape: source.sh ?? 'rectangle',
+      shape: source.sh ?? "rectangle",
+      ...(source.adjustments
+        ? { adjustments: { ...source.adjustments } }
+        : {}),
       fill: storeObjectPaint(shapeFill),
       outline: storeObjectLine({
         ...defaultOutline,
-        type: outlineWidth === 0 || outlineColor === 'transparent'
-          ? 'none'
-          : 'line',
-        color: outlineColor === 'transparent'
-          ? defaultOutline.color
-          : outlineColor,
+        type:
+          outlineWidth === 0 || outlineColor === "transparent"
+            ? "none"
+            : "line",
+        color:
+          outlineColor === "transparent" ? defaultOutline.color : outlineColor,
         width: outlineWidth,
-        dash: source['bs'] === 'dashed' ? 'dash' : 'solid',
+        dash: source["bs"] === "dashed" ? "dash" : "solid",
       }),
-      effects: storeObjectEffects(defaults.shapeEffects!),
+      effects: storeObjectEffects(shapeEffects),
       textFrame: storeObjectTextFrame(textFrame),
-      textStyle: storeObjectTextStyle(defaults.textStyle!),
-      ...(artwork ? {artwork} : {}),
+      textStyle: storeObjectTextStyle(textStyle),
+      ...(artwork ? { artwork } : {}),
     },
-  }
+  };
 }
 
 function normalizeMargins(
   value: unknown,
-  fallback: ObjectTextFrame['margins'],
-): ObjectTextFrame['margins'] {
+  fallback: ObjectTextFrame["margins"],
+): ObjectTextFrame["margins"] {
   if (!Array.isArray(value) || (value.length !== 2 && value.length !== 4)) {
-    return [...fallback]
+    return [...fallback];
   }
-  const numbers = value.map(item => typeof item === 'number' && Number.isFinite(item)
-    ? Math.min(200, Math.max(0, item))
-    : 0)
+  const numbers = value.map((item) =>
+    typeof item === "number" && Number.isFinite(item)
+      ? Math.min(200, Math.max(0, item))
+      : 0,
+  );
   return value.length === 2
     ? [numbers[0]!, numbers[1]!, numbers[0]!, numbers[1]!]
-    : [numbers[0]!, numbers[1]!, numbers[2]!, numbers[3]!]
+    : [numbers[0]!, numbers[1]!, numbers[2]!, numbers[3]!];
 }
 
 function normalizePictureFit(value: unknown): ObjectPictureFit {
-  return value === 'contain' || value === 'stretch' ? value : 'cover'
+  return value === "contain" || value === "stretch" ? value : "cover";
 }
 
 /**
- * The retained defaults are assigned to their semantic shape tab instead of
- * occupying a parallel "featured" category.
- *
- * 极简 and 默认白框 are the SAME classic frame diverging only in fill opacity —
- * the shared fields live once so retuning the border/padding/default size moves
- * both entries together, instead of relying on a spec assertion to notice drift.
- */
-// Typed annotation, NOT `as const`: the shared const carries no `id`, so no
-// literal type is load-bearing here — and a const-asserted `p: [10, 14]` loses
-// literal "freshness" when spread, which the mutable-tuple BlockSurfacePadding
-// target then rejects (fresh literals inside `as const satisfies` get the
-// readonly relaxation; a spread from a standalone const does not).
-const CLASSIC_FRAME: Pick<TextBoxPresetDefinition, 'cat' | 'defaultWidth' | 'defaultHeight' | 'props'> = {
-  cat: 'outline',
-  defaultWidth: 260,
-  defaultHeight: 132,
-  props: {
-    sh: 'rectangle',
-    p: [10, 14],
-    backColor: '#FFFFFF',
-    borderColor: '#64748B',
-    bw: 1,
-    bs: 'solid',
-    wa: null,
-  },
-}
-
-/** Named default: `getTextBoxPreset` falls back here, not to a magic-id lookup. */
-const CLASSIC_TEXT_BOX_PRESET = {
-  id: 'classic',
-  label: '默认白框',
-  ...CLASSIC_FRAME,
-  props: {...CLASSIC_FRAME.props, fo: 1},
-} as const satisfies TextBoxPresetDefinition
-
-const CANONICAL_CLASSIC_TEXT_BOX_PRESET = canonicalizePreset(
-  CLASSIC_TEXT_BOX_PRESET,
-)
-
-const CURATED_TEXT_BOX_PRESETS = [
-  {
-    // The classic frame with its fill zeroed — `fo: 0` is the same value the
-    // 无填充 button writes, so the panel state reads consistently and
-    // re-picking a fill color restores `fo: 1` on its own. The border stays,
-    // which is what keeps the thumbnail and the canvas presence visible; a
-    // fully invisible variant was considered and rejected for exactly that
-    // blank-swatch problem.
-    id: 'no-fill',
-    label: '极简',
-    ...CLASSIC_FRAME,
-    props: {...CLASSIC_FRAME.props, fo: 0},
-  },
-  CLASSIC_TEXT_BOX_PRESET,
-] as const satisfies readonly TextBoxPresetDefinition[]
-
-/**
- * Catalog-side Word-like text-box styles. Preset IDs are never persisted;
- * choosing one writes its concrete appearance values into the block props.
- *
- * Each shape tab lives in its own module so the catalog can grow without one
- * file becoming the merge point for every contributor. `as const` is load
- * bearing on every part: an explicit `TextBoxPresetDefinition[]` annotation
- * anywhere in this chain widens `id` to `string` and collapses
- * `TextBoxPresetId` from a literal union.
+ * Word-inspired gallery. IDs from the retired outline/rect/bubble catalog are
+ * intentionally absent; choosing an entry persists only concrete appearance.
  */
 export const TEXT_BOX_PRESETS = [
-  // The curated pair leads the outline tab: 极简 first, 默认白框 second.
-  ...CURATED_TEXT_BOX_PRESETS.map(canonicalizePreset),
-  // One decorated set per shape tab, each entry replicating a specific cell of
-  // a reference sheet rather than invented from scratch. Earlier drafts that
-  // improvised their own ornament vocabulary were replaced wholesale: a catalog
-  // reads as a set only when every entry answers to the same source.
-  ...OUTLINE_R_TEXT_BOX_PRESETS.map(canonicalizePreset),
-  ...RECT_R_TEXT_BOX_PRESETS.map(canonicalizePreset),
-  ...BUBBLE_R_TEXT_BOX_PRESETS.map(canonicalizePreset),
-] as const satisfies readonly ResolvedTextBoxPresetDefinition[]
+  ...GALLERY_TEXT_BOX_PRESETS.map(canonicalizePreset),
+] as const satisfies readonly ResolvedTextBoxPresetDefinition[];
 
-export type TextBoxPresetId = typeof TEXT_BOX_PRESETS[number]['id']
+const DEFAULT_TEXT_BOX_PRESET = canonicalizePreset(GALLERY_TEXT_BOX_PRESETS[0]);
+
+export type TextBoxPresetId = (typeof TEXT_BOX_PRESETS)[number]["id"];
 
 /**
  * A catalog entry with its id narrowed back to the union. The widened
  * `TextBoxPresetDefinition` view is needed to read optional keys off the
  * `as const` union, but callers that emit a pick still need the literal type.
  */
-export type TextBoxPresetEntry =
-  Omit<ResolvedTextBoxPresetDefinition, 'id'> & {id: TextBoxPresetId}
+export type TextBoxPresetEntry = Omit<ResolvedTextBoxPresetDefinition, "id"> & {
+  id: TextBoxPresetId;
+};
 
 export function getTextBoxPreset(
   value: unknown,
 ): ResolvedTextBoxPresetDefinition {
-  // Unknown ids fall back to the classic white frame, not to whatever entry
-  // happens to lead the catalog — the no-fill entry took the first slot, and
-  // a stale id silently resolving to a fill-less frame would look like data
-  // loss rather than a fallback. The default is the named constant itself, so
-  // renaming or retiring the id breaks the build instead of a runtime lookup.
-  return TEXT_BOX_PRESETS.find(item => item.id === value) ??
-    CANONICAL_CLASSIC_TEXT_BOX_PRESET
+  return (
+    TEXT_BOX_PRESETS.find((item) => item.id === value) ??
+    DEFAULT_TEXT_BOX_PRESET
+  );
 }
 
 /**
  * Presets offered for a direction. A preset opts out by listing directions
- * explicitly — bundled speech bubbles are horizontal-only because their tails
- * are baked into a stretched, non-rotating path.
+ * explicitly; bundled callout geometry is horizontal-only, while the vertical
+ * category carries purpose-built tall frames with vertical text direction.
  */
 export function getTextBoxPresetsFor(
   wm: TextBoxWritingMode,
@@ -281,18 +291,19 @@ export function getTextBoxPresetsFor(
   // Widened view: the `as const` union drops absent optional keys entirely, so
   // `preset.wm` is unreadable on it. `TEXT_BOX_PRESETS` itself stays literal
   // because `TextBoxPresetId` is derived from it.
-  const all: readonly TextBoxPresetEntry[] = TEXT_BOX_PRESETS
-  return all.filter(preset =>
-    (!preset.wm || preset.wm.includes(wm)) &&
-    (!cat || !preset.cat || preset.cat === cat),
-  )
+  const all: readonly TextBoxPresetEntry[] = TEXT_BOX_PRESETS;
+  return all.filter(
+    (preset) =>
+      (!preset.wm || preset.wm.includes(wm)) &&
+      (!cat || !preset.cat || preset.cat === cat),
+  );
 }
 
 /** Tabs that still have at least one preset in the given direction. */
 export function getTextBoxPresetCategoriesFor(
   wm: TextBoxWritingMode,
-): readonly {id: TextBoxPresetCategory; label: string}[] {
-  return TEXT_BOX_PRESET_CATEGORIES.filter(category =>
-    getTextBoxPresetsFor(wm, category.id).length > 0,
-  )
+): readonly { id: TextBoxPresetCategory; label: string }[] {
+  return TEXT_BOX_PRESET_CATEGORIES.filter(
+    (category) => getTextBoxPresetsFor(wm, category.id).length > 0,
+  );
 }

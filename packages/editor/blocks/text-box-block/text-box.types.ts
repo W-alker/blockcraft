@@ -22,9 +22,11 @@ import {
   type BlockSurfaceProps,
 } from '../../framework'
 import {getShapeDefinition} from '../shape-block/shape-definitions'
+import {normalizeShapeAdjustments} from '../shape-block/shape-geometry'
 import {
   SHAPE_KINDS,
   isShapeKind,
+  type ShapeAdjustmentValues,
   type ShapeKind,
   type ShapeStrokeStyle,
 } from '../shape-block/shape.types'
@@ -40,6 +42,8 @@ export type TextBoxWritingMode = 'h' | 'v'
 export interface TextBoxBlockProps extends BlockObjectFormatProps {
   /** Shape-shell kind; geometry remains catalog-side. */
   shape?: ShapeKind | null
+  /** Shape-catalogue adjustment values, such as a callout tail position. */
+  adjustments?: ShapeAdjustmentValues | null
   /** Built-in catalog decoration. Never reused as a user picture URL. */
   artwork?: string | null
 }
@@ -51,6 +55,7 @@ export interface NormalizedTextBoxBlockProps {
   position?: NonNullable<TextBoxBlockProps['position']>
   placementLayer?: 'under'
   artwork?: string
+  adjustments?: ShapeAdjustmentValues
   lockAspectRatio: boolean
   shapeType: ShapeKind
   shapeFill: ObjectPaint
@@ -153,6 +158,7 @@ export function normalizeTextBoxProps(
   const textFrame = objectFormat.textFrame!
   const position = normalizePosition(input?.['position'])
   const textStyle = objectFormat.textStyle!
+  const adjustments = normalizeShapeAdjustments(input?.['adjustments'])
 
   return {
     width: boundedDimension(objectFormat.width, DEFAULT_TEXT_BOX_PROPS.width, MIN_WIDTH),
@@ -182,6 +188,7 @@ export function normalizeTextBoxProps(
     ...(typeof input?.['artwork'] === 'string'
       ? {artwork: input['artwork']}
       : {}),
+    ...(adjustments ? {adjustments} : {}),
     ...(position ? {position} : {}),
     ...(input?.['placementLayer'] === 'under'
       ? {placementLayer: 'under' as const}
@@ -206,6 +213,7 @@ export function normalizeTextBoxSnapshotProps(
     textFrame: storeObjectTextFrame(normalized.textFrame),
     textStyle: storeObjectTextStyle(normalized.textStyle),
     ...(normalized.artwork ? {artwork: normalized.artwork} : {}),
+    ...(normalized.adjustments ? {adjustments: normalized.adjustments} : {}),
     ...(normalized.position ? {position: normalized.position} : {}),
     ...(normalized.placementLayer === 'under'
       ? {placementLayer: 'under' as const}

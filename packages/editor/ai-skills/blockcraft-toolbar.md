@@ -201,7 +201,7 @@ export class MyToolbarComponent {
 | `ColumnCountPickerComponent` | `components/` | Column count selector |
 | `MediaCreatorComponent` | `components/` | Media upload/URL input |
 | `ShapePickerComponent` | `components/` | Categorized Shape catalog; `supportsTextOnly` removes non-text geometries and `embedded` removes popup chrome inside a settings card |
-| `TextBoxPresetPickerComponent` | `components/` | Visual 线框 / 矩形 / 气泡 text-box catalog with 极简 then 默认白框 first in 线框; `embedded` removes standalone popup chrome |
+| `TextBoxPresetPickerComponent` | `components/` | 58-style text-box gallery in 10 `CsTabsComponent` categories; only the tab strip scrolls horizontally, and `embedded` removes standalone popup chrome |
 | `RevisionReviewPopoverComponent` | `components/revision-review/` | Minimal connected quick-review UI with actor identity, revision time and iconfont “接收修订 / 拒绝修订” actions with tooltips |
 | `RevisionReviewPanelComponent` | `components/revision-review/` | Content-sized comment-card-style review panel whose default queue contains only pending/conflicted cards; accepted/rejected history is explicit, cards follow mounted document anchors, and structural overlaps show one focused conflict with exact choices |
 | `RevisionReviewUiController` | `components/revision-review/` | Optional marker/Overlay/navigation adapter over the headless review Plugin |

@@ -13,6 +13,10 @@ import {
   type TextBoxBlockProps,
 } from "../../blocks/text-box-block";
 import {getShapeDefinition} from "../../blocks/shape-block/shape-definitions";
+import {
+  resolveAdjustedShapeTextInsets,
+  resolveShapeAdjustmentProjection,
+} from "../../blocks/shape-block/shape-adjustments";
 import {resolveDividerPresentation} from "../../blocks/divider-block/divider-presentation";
 import type {DividerBlockModel} from "../../blocks/divider-block";
 import {
@@ -287,6 +291,13 @@ function renderTextBox(
   element.style.setProperty("--bc-text-box-padding-bottom", `${padding.bottom}px`)
   element.style.setProperty("--bc-text-box-padding-left", `${padding.left}px`)
   const definition = getShapeDefinition(props.shapeType)
+  const adjustmentProjection = resolveShapeAdjustmentProjection(
+    props.shapeType,
+    props.adjustments,
+  )
+  const renderDefinition = adjustmentProjection
+    ? {...definition, path: adjustmentProjection.path, detailPath: undefined}
+    : definition
   // Same precedence as the live Block: a catalog drawing carries its own
   // text-safe frame, a plain rectangle has none, otherwise the shape's.
   const artwork = getTextBoxArtwork(props.artwork)
@@ -294,7 +305,11 @@ function renderTextBox(
     ? artwork.textInsets
     : props.shapeType === "rectangle"
       ? {top: 0, right: 0, bottom: 0, left: 0}
-      : definition.textInsets
+      : resolveAdjustedShapeTextInsets(
+          props.shapeType,
+          props.adjustments,
+          definition.textInsets,
+        )
   element.style.setProperty(
     "--bc-text-box-shape-inset-top",
     `${shapeInsets.top * 100}%`,
@@ -323,7 +338,7 @@ function renderTextBox(
   surface.style.filter = objectEffectsFilter(format.shapeEffects!)
   const clipPathId = `bc-text-box-clip-${snapshot.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`
   surface.append(createTextBoxFillGeometry(
-    definition,
+    renderDefinition,
     format.shapeFill!,
     clipPathId,
   ))
@@ -443,7 +458,7 @@ function renderTextBox(
   }
   appendChildren(content, ctx, snapshot.children)
   surface.append(content, createTextBoxOutlineGeometry(
-    definition,
+    renderDefinition,
     format.shapeOutline!,
   ))
   element.append(surface)

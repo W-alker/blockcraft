@@ -1,8 +1,8 @@
 import { TestBed } from "@angular/core/testing";
 import {
   TEXT_BOX_PRESETS,
+  TEXT_BOX_PRESET_CATEGORIES,
   getTextBoxPreset,
-  getTextBoxPresetCategoriesFor,
   getTextBoxPresetsFor,
   normalizeTextBoxProps,
   type TextBoxPresetId,
@@ -17,22 +17,21 @@ describe("TextBoxPresetPickerComponent", () => {
       imports: [TextBoxPresetPickerComponent],
     }).compileComponents();
     const fixture = TestBed.createComponent(TextBoxPresetPickerComponent);
-    fixture.componentRef.setInput("current", "classic");
+    fixture.componentRef.setInput("current", "office-simple");
     fixture.detectChanges();
     const host = fixture.nativeElement as HTMLElement;
     const items = host.querySelectorAll<HTMLButtonElement>("[data-preset-id]");
-    const outline = getTextBoxPresetsFor("h", "outline");
+    const office = getTextBoxPresetsFor("h", "office");
 
     // The grid is one tab, not the whole catalog.
-    expect(items.length).toBe(outline.length);
+    expect(items.length).toBe(office.length);
     expect(items.length).toBeLessThan(TEXT_BOX_PRESETS.length);
     expect(
       host
-        .querySelector('[data-preset-id="classic"]')
+        .querySelector('[data-preset-id="office-simple"]')
         ?.getAttribute("aria-checked"),
     ).toBe("true");
-    expect(host.textContent).toContain("默认白框");
-    expect(host.textContent).not.toContain("精选");
+    expect(host.textContent).toContain("基础文本框");
   });
 
   it("switches the grid when another shape tab is chosen", async () => {
@@ -43,7 +42,7 @@ describe("TextBoxPresetPickerComponent", () => {
     fixture.detectChanges();
     const host = fixture.nativeElement as HTMLElement;
     const bubbleTab = Array.from(
-      host.querySelectorAll<HTMLElement>(".cs-segmented-item"),
+      host.querySelectorAll<HTMLElement>(".cs-tabs-tab"),
     ).find((tab) => tab.textContent?.trim() === "气泡")!;
 
     // Full pointer sequence, not a bare click: the tab strip suppresses
@@ -58,11 +57,12 @@ describe("TextBoxPresetPickerComponent", () => {
     const ids = Array.from(
       host.querySelectorAll<HTMLElement>("[data-preset-id]"),
     ).map((item) => item.dataset["presetId"]!);
-    expect(ids.length).toBe(getTextBoxPresetsFor("h", "bubble").length);
-    expect(ids.every((id) => id.startsWith("bubble-"))).toBeTrue();
+    expect(ids).toEqual(
+      getTextBoxPresetsFor("h", "bubble").map((item) => item.id),
+    );
   });
 
-  it("offers shape tabs only, with no direction split", async () => {
+  it("offers all ten semantic categories including vertical styles", async () => {
     await TestBed.configureTestingModule({
       imports: [TextBoxPresetPickerComponent],
     }).compileComponents();
@@ -70,70 +70,119 @@ describe("TextBoxPresetPickerComponent", () => {
     fixture.detectChanges();
     const host = fixture.nativeElement as HTMLElement;
     const tabLabels = Array.from(
-      host.querySelectorAll<HTMLElement>(".cs-segmented-item"),
+      host.querySelectorAll<HTMLElement>(".cs-tabs-tab"),
     ).map((tab) => tab.textContent!.trim());
 
-    // Direction is a frame flag applied on top of a pick, not a second copy of
-    // the catalog, so every shape tab is offered unconditionally.
+    // Vertical is a semantic category with purpose-built tall presets, not a
+    // duplicate direction switch applied to every horizontal style.
     expect(tabLabels).toEqual(
-      getTextBoxPresetCategoriesFor("h").map((category) => category.label),
+      TEXT_BOX_PRESET_CATEGORIES.map((category) => category.label),
     );
-    expect(tabLabels).toEqual(["线框", "矩形", "气泡"]);
+    expect(tabLabels).toEqual([
+      "办公经典",
+      "引言",
+      "侧边栏",
+      "杂志",
+      "异形",
+      "气泡",
+      "纸张",
+      "文化风格",
+      "材质效果",
+      "竖排",
+    ]);
   });
 
-  it("leads 线框 with the no-fill frame while unknown ids fall back to 默认白框", () => {
-    const outline = getTextBoxPresetsFor("h", "outline");
-
-    // 极简 and 默认白框 now persist only canonical object-format sections;
-    // preview aliases are resolved at the catalog boundary.
-    expect(outline[0].id).toBe("no-fill");
-    expect(normalizeTextBoxProps(outline[0].props).fo).toBe(0);
-    expect(normalizeTextBoxProps(getTextBoxPreset("classic").props).fo).toBe(1);
-
-    // The fallback is pinned to the classic frame rather than the catalog's
-    // first slot: a stale id resolving to a fill-less frame would read as
-    // data loss, not as a fallback.
-    expect(getTextBoxPreset("no-such-preset").id).toBe("classic");
-  });
-
-  it("marks the fill-less thumbnail with a transparency checkerboard", async () => {
+  it("scrolls only the tab strip and lets the style content expand", async () => {
     await TestBed.configureTestingModule({
       imports: [TextBoxPresetPickerComponent],
     }).compileComponents();
     const fixture = TestBed.createComponent(TextBoxPresetPickerComponent);
     fixture.detectChanges();
     const host = fixture.nativeElement as HTMLElement;
+    const picker = host.querySelector<HTMLElement>(".text-box-preset-picker")!;
+    const nav = host.querySelector<HTMLElement>(".cs-tabs-nav")!;
 
-    // The picker panel is the same near-white as a white fill, so without the
-    // checkerboard 极简 and 默认白框 render identical thumbnails.
-    expect(
-      host.querySelector('[data-preset-id="no-fill"] pattern'),
-    ).not.toBeNull();
-    expect(host.querySelector('[data-preset-id="classic"] pattern')).toBeNull();
-    expect(
-      host
-        .querySelector('[data-preset-id="classic"] path')
-        ?.getAttribute("fill"),
-    ).toBe("#FFFFFF");
+    expect(getComputedStyle(picker).overflow).toBe("visible");
+    expect(getComputedStyle(picker).maxHeight).toBe("none");
+    expect(getComputedStyle(nav).overflowX).toBe("auto");
+    expect(getComputedStyle(nav).overflowY).toBe("hidden");
+    expect(getComputedStyle(nav).scrollbarWidth).toBe("none");
+
+    const before = nav.scrollLeft;
+    const wheel = new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      deltaY: 120,
+    });
+    nav.dispatchEvent(wheel);
+    expect(nav.scrollWidth).toBeGreaterThan(nav.clientWidth);
+    expect(nav.scrollLeft).toBeGreaterThan(before);
+    expect(wheel.defaultPrevented).toBeTrue();
   });
 
-  it("keeps only the default white frame from the former featured styles", () => {
+  it("uses the new Word classic style as the unknown-id fallback", () => {
+    const office = getTextBoxPresetsFor("h", "office");
+
+    expect(office[0].id).toBe("office-simple");
+    expect(normalizeTextBoxProps(office[0].props).fo).toBe(1);
+    expect(getTextBoxPreset("no-such-preset").id).toBe("office-simple");
+  });
+
+  it("replaces the former catalog wholesale with 58 unique gallery styles", () => {
     const ids = TEXT_BOX_PRESETS.map((item) => String(item.id));
 
-    expect(
-      getTextBoxPresetsFor("h", "outline").map((item) => item.id),
-    ).toContain("classic");
+    expect(ids.length).toBe(58);
+    expect(new Set(ids).size).toBe(58);
     for (const removed of [
-      "soft-blue",
-      "paper-note",
-      "speech",
-      "cloud",
-      "ink-title",
-      "royal-banner",
-      "neon-card",
+      "classic",
+      "no-fill",
+      "outline-r-ink-swallow",
+      "rect-r-notes-rule",
+      "bubble-r-solid-gold",
     ]) {
       expect(ids).not.toContain(removed);
     }
+  });
+
+  it("uses Chinese labels for every visible category and preset", () => {
+    const latin = /[A-Za-z]/;
+    expect(
+      TEXT_BOX_PRESET_CATEGORIES.every((item) => !latin.test(item.label)),
+    ).toBeTrue();
+    expect(TEXT_BOX_PRESETS.every((item) => !latin.test(item.label))).toBeTrue();
+  });
+
+  it("models bubbles as callout geometry and vertical labels as vertical frames", () => {
+    const bubbles = getTextBoxPresetsFor("h", "bubble").map((preset) =>
+      normalizeTextBoxProps(preset.props),
+    );
+    const vertical = getTextBoxPresetsFor("v", "vertical").map((preset) =>
+      normalizeTextBoxProps(preset.props),
+    );
+
+    expect(bubbles.length).toBe(14);
+    expect(bubbles.filter((props) => !!props.artwork).length).toBe(2);
+    expect(
+      bubbles.every(
+        (props) =>
+          !!props.artwork ||
+          !!props.adjustments ||
+          props.shapeType === "cloud-callout" ||
+          props.shapeType === "explosion",
+      ),
+    ).toBeTrue();
+    expect(
+      normalizeTextBoxProps(getTextBoxPreset("bubble-top-left").props)
+        .adjustments,
+    ).toEqual({ tailX: 170, tailY: 0 });
+    expect(
+      normalizeTextBoxProps(getTextBoxPreset("bubble-side-right").props)
+        .adjustments,
+    ).toEqual({ tailX: 1000, tailY: 500 });
+    expect(vertical.length).toBe(3);
+    expect(
+      vertical.every((props) => props.textFrame.direction === "vertical-rl"),
+    ).toBeTrue();
   });
 
   it("renders the surface image for decorated entries", async () => {
@@ -143,11 +192,11 @@ describe("TextBoxPresetPickerComponent", () => {
     const fixture = TestBed.createComponent(TextBoxPresetPickerComponent);
     fixture.detectChanges();
     const host = fixture.nativeElement as HTMLElement;
-    const outlineTab = Array.from(
-      host.querySelectorAll<HTMLElement>(".cs-segmented-item"),
-    ).find((tab) => tab.textContent?.trim() === "线框")!;
+    const officeTab = Array.from(
+      host.querySelectorAll<HTMLElement>(".cs-tabs-tab"),
+    ).find((tab) => tab.textContent?.trim() === "办公经典")!;
 
-    outlineTab.click();
+    officeTab.click();
     fixture.detectChanges();
 
     // Decorated entries zero out fill and stroke, so a shape-only thumbnail
@@ -155,7 +204,7 @@ describe("TextBoxPresetPickerComponent", () => {
     const images = host.querySelectorAll<HTMLImageElement>(
       ".text-box-preset-picker__bg",
     );
-    const decoratedCount = getTextBoxPresetsFor("h", "outline").filter(
+    const decoratedCount = getTextBoxPresetsFor("h", "office").filter(
       (item) => !!normalizeTextBoxProps(item.props).artwork,
     ).length;
     expect(images.length).toBe(decoratedCount);
@@ -176,17 +225,17 @@ describe("TextBoxPresetPickerComponent", () => {
     fixture.detectChanges();
     const button = (
       fixture.nativeElement as HTMLElement
-    ).querySelector<HTMLButtonElement>('[data-preset-id="classic"]')!;
+    ).querySelector<HTMLButtonElement>('[data-preset-id="office-simple"]')!;
 
     button.click();
 
-    expect(picked).toEqual(["classic"]);
-    expect(normalizeTextBoxProps(getTextBoxPreset("classic").props).shapeType).toBe(
-      "rectangle",
-    );
-    expect(getTextBoxPreset("classic").props.fill).toBeTruthy();
-    expect(getTextBoxPreset("classic").props).not.toEqual(
-      jasmine.objectContaining({ preset: "classic" }),
+    expect(picked).toEqual(["office-simple"]);
+    expect(
+      normalizeTextBoxProps(getTextBoxPreset("office-simple").props).shapeType,
+    ).toBe("rectangle");
+    expect(getTextBoxPreset("office-simple").props.fill).toBeTruthy();
+    expect(getTextBoxPreset("office-simple").props).not.toEqual(
+      jasmine.objectContaining({ preset: "office-simple" }),
     );
   });
 

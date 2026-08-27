@@ -580,16 +580,13 @@ catalog directly. The fixed surface does not repeat **横向** / **竖向** plai
 insertion shortcuts; direction remains available from the selected text box's
 **文本** settings.
 
-The catalog is horizontal-only: it groups entries into 线框 / 矩形 / 气泡
-(`CsSegmentedComponent` tabs), keeps **极简** then **默认白框** first in
-线框, and stamps
-`wm: 'h'` on every pick. There is no separate 精选 tab. Presets are not offered
-transposed because Shape
-geometry and the `bgi` surface image both stretch
-(`preserveAspectRatio="none"`) instead of rotating, so a tall frame smears the
-ornament rather than reorienting it. `getTextBoxPresetsFor(wm, cat?)` still
-filters by direction for callers that need it, and bundled speech bubbles still
-declare `wm: ['h']`; the picker simply queries it as `'h'`.
+The picker exposes all 58 gallery styles through `CsTabsComponent` /
+`CsTabComponent`: 办公经典 / 引言 / 侧边栏 / 杂志 / 异形 / 气泡 / 纸张 /
+文化风格 / 材质效果 / 竖排. The navigation row alone scrolls horizontally;
+the active grid expands to its natural height without a nested content
+scroller. `getTextBoxPresetsFor(wm, cat?)` still filters by direction: callout
+geometry remains horizontal, while the three vertical presets persist
+`textFrame.direction: 'vertical-rl'` and their tall default dimensions.
 
 Picking a style arms the shared one-shot drawing surface, creates one absolute
 `over` object on pointerup, then reveals the object and enters its initial

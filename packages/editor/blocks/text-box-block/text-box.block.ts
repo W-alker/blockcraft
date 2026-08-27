@@ -27,6 +27,10 @@ import {
   type ShapeResizeCommit,
   type ShapeRotateCommit,
 } from '../shape-block'
+import {
+  resolveAdjustedShapeTextInsets,
+  resolveShapeAdjustmentProjection,
+} from '../shape-block/shape-adjustments'
 import {getShapeDefinition} from '../shape-block/shape-definitions'
 import {
   getTextBoxArtwork,
@@ -75,7 +79,7 @@ const rotationTransform = (rotation: number): string =>
           <clipPath
             [attr.id]="clipPathId"
             clipPathUnits="objectBoundingBox">
-            <path [attr.d]="shapeDefinition.path" transform="scale(.001)"></path>
+            <path [attr.d]="shapePath" transform="scale(.001)"></path>
           </clipPath>
           @if (textBoxFormat.shapeFill?.type === 'linear-gradient') {
             <linearGradient [attr.id]="gradientId"
@@ -90,7 +94,7 @@ const rotationTransform = (rotation: number): string =>
           }
         </defs>
         <path
-          [attr.d]="shapeDefinition.path"
+          [attr.d]="shapePath"
           [attr.fill]="frameFill"
           [attr.fill-opacity]="frameFillOpacity"
           [attr.fill-rule]="shapeDefinition.fillRule ?? null">
@@ -168,14 +172,14 @@ const rotationTransform = (rotation: number): string =>
         <path
           class="text-box-block__frame-hit-target"
           data-bc-selection-interaction-frame
-          [attr.d]="shapeDefinition.path"
+          [attr.d]="shapePath"
           fill="none"
           stroke="transparent"
           stroke-width="12"
           vector-effect="non-scaling-stroke">
         </path>
         <path
-          [attr.d]="shapeDefinition.path"
+          [attr.d]="shapePath"
           fill="none"
           [attr.stroke]="frameStroke"
           [attr.stroke-opacity]="textBoxFormat.shapeOutline?.opacity"
@@ -185,9 +189,9 @@ const rotationTransform = (rotation: number): string =>
           [attr.stroke-linejoin]="textBoxFormat.shapeOutline?.join"
           vector-effect="non-scaling-stroke">
         </path>
-        @if (shapeDefinition.detailPath) {
+        @if (shapeDetailPath; as detailPath) {
           <path
-            [attr.d]="shapeDefinition.detailPath"
+            [attr.d]="detailPath"
             fill="none"
             [attr.stroke]="frameStroke"
             [attr.stroke-opacity]="textBoxFormat.shapeOutline?.opacity"
@@ -291,6 +295,23 @@ export class TextBoxBlockComponent extends BaseBlockComponent<TextBoxBlockModel>
 
   get shapeDefinition() {
     return getShapeDefinition(this.textBoxProps.shapeType)
+  }
+
+  get shapeAdjustmentProjection() {
+    return resolveShapeAdjustmentProjection(
+      this.textBoxProps.shapeType,
+      this.textBoxProps.adjustments,
+    )
+  }
+
+  get shapePath(): string {
+    return this.shapeAdjustmentProjection?.path ?? this.shapeDefinition.path
+  }
+
+  get shapeDetailPath(): string | null {
+    return this.shapeAdjustmentProjection
+      ? null
+      : this.shapeDefinition.detailPath ?? null
   }
 
   get clipPathId(): string {
@@ -539,7 +560,11 @@ export class TextBoxBlockComponent extends BaseBlockComponent<TextBoxBlockModel>
     const artwork = getTextBoxArtwork(this.textBoxProps.artwork)
     if (artwork) return `${artwork.textInsets[side] * 100}%`
     if (this.textBoxProps.shapeType === 'rectangle') return '0%'
-    return `${this.shapeDefinition.textInsets[side] * 100}%`
+    return `${resolveAdjustedShapeTextInsets(
+      this.textBoxProps.shapeType,
+      this.textBoxProps.adjustments,
+      this.shapeDefinition.textInsets,
+    )[side] * 100}%`
   }
 
   private _scheduleAutoFit(): void {

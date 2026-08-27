@@ -1,4 +1,5 @@
 import type {ShapeAdjustmentValues, ShapeKind} from './shape.types'
+import type {ShapeTextInsets} from './shape-definitions'
 
 export interface ShapeAdjustmentHandle {
   id: string
@@ -15,6 +16,7 @@ export interface ShapeAdjustmentProjection {
 
 type Point = {x: number; y: number}
 type CardinalArrowKind = 'right-arrow' | 'left-arrow' | 'up-arrow' | 'down-arrow'
+type CalloutSide = 'top' | 'right' | 'bottom' | 'left'
 
 const clamp = (value: unknown, min: number, max: number, fallback: number): number => {
   const number = Number(value)
@@ -27,6 +29,62 @@ const point = (x: number, y: number): Point => ({x, y})
 const pointsPath = (points: readonly Point[]): string => points
   .map(({x, y}, index) => `${index === 0 ? 'M' : 'L'}${x} ${y}`)
   .join('') + 'Z'
+
+const calloutSide = (tailX: number, tailY: number): CalloutSide => {
+  const distances: readonly [CalloutSide, number][] = [
+    ['top', tailY],
+    ['right', 1000 - tailX],
+    ['bottom', 1000 - tailY],
+    ['left', tailX],
+  ]
+  return distances.reduce((nearest, candidate) =>
+    candidate[1] < nearest[1] ? candidate : nearest,
+  distances[2]!)[0]
+}
+
+const calloutPath = (
+  side: CalloutSide,
+  tailX: number,
+  tailY: number,
+  rounded: boolean,
+  wedge: boolean,
+): string => {
+  const halfBase = wedge ? 85 : 55
+  const left = clamp(tailX - halfBase, 120, 780, 415)
+  const right = clamp(tailX + halfBase, 220, 880, 585)
+  const top = clamp(tailY - halfBase, 120, 780, 415)
+  const bottom = clamp(tailY + halfBase, 220, 880, 585)
+  if (!rounded) {
+    if (side === 'top') {
+      return `M0 240H${left}L${tailX} ${tailY}L${right} 240H1000V1000H0Z`
+    }
+    if (side === 'right') {
+      return `M0 0H760V${top}L${tailX} ${tailY}L760 ${bottom}V1000H0Z`
+    }
+    if (side === 'left') {
+      return `M240 0H1000V1000H240V${bottom}L${tailX} ${tailY}L240 ${top}Z`
+    }
+    return `M0 0H1000V760H${right}L${tailX} ${tailY}L${left} 760H0Z`
+  }
+  if (side === 'top') {
+    return `M120 240H${left}L${tailX} ${tailY}L${right} 240H880` +
+      'Q1000 240 1000 360V880Q1000 1000 880 1000H120' +
+      'Q0 1000 0 880V360Q0 240 120 240Z'
+  }
+  if (side === 'right') {
+    return `M120 0H640Q760 0 760 120V${top}L${tailX} ${tailY}` +
+      `L760 ${bottom}V880Q760 1000 640 1000H120` +
+      'Q0 1000 0 880V120Q0 0 120 0Z'
+  }
+  if (side === 'left') {
+    return `M360 0H880Q1000 0 1000 120V880Q1000 1000 880 1000H360` +
+      `Q240 1000 240 880V${bottom}L${tailX} ${tailY}L240 ${top}` +
+      'V120Q240 0 360 0Z'
+  }
+  return `M120 0H880Q1000 0 1000 120V640Q1000 760 880 760` +
+    `H${right}L${tailX} ${tailY}L${left} 760H120` +
+    'Q0 760 0 640V120Q0 0 120 0Z'
+}
 
 const orientCardinalPoint = (
   shapeType: CardinalArrowKind,
@@ -109,18 +167,42 @@ const calloutProjection = (
     shapeType === 'wedge-round-callout'
   const wedge = shapeType === 'wedge-rect-callout' ||
     shapeType === 'wedge-round-callout'
-  const rightBase = wedge ? 430 : 360
-  const leftBase = wedge ? 260 : 190
-  const path = rounded
-    ? `M120 0H880Q1000 0 1000 120V640Q1000 760 880 760` +
-      `H${rightBase}L${tailX} ${tailY}L${leftBase} 760H120` +
-      'Q0 760 0 640V120Q0 0 120 0Z'
-    : `M0 0H1000V760H${rightBase}L${tailX} ${tailY}` +
-      `L${leftBase} 760H0Z`
+  const path = calloutPath(
+    calloutSide(tailX, tailY), tailX, tailY, rounded, wedge,
+  )
   return {
     path,
     adjustments: {tailX, tailY},
     handles: [{id: 'tail', x: tailX, y: tailY, label: '调整标注指向'}],
+  }
+}
+
+/** Keeps the editable text area on the body side of an adjusted callout. */
+export function resolveAdjustedShapeTextInsets(
+  shapeType: ShapeKind,
+  values: ShapeAdjustmentValues | undefined,
+  fallback: ShapeTextInsets,
+): ShapeTextInsets {
+  if (
+    shapeType !== 'speech-bubble' &&
+    shapeType !== 'rounded-speech-bubble' &&
+    shapeType !== 'wedge-rect-callout' &&
+    shapeType !== 'wedge-round-callout'
+  ) return fallback
+  const projection = calloutProjection(shapeType, values ?? {})
+  const side = calloutSide(
+    projection.adjustments['tailX']!,
+    projection.adjustments['tailY']!,
+  )
+  const bodyInset = Math.max(
+    fallback.top, fallback.right, fallback.bottom, fallback.left,
+  )
+  const edgeInset = Math.min(fallback.top, fallback.right, fallback.left)
+  return {
+    top: side === 'top' ? bodyInset : edgeInset,
+    right: side === 'right' ? bodyInset : edgeInset,
+    bottom: side === 'bottom' ? bodyInset : edgeInset,
+    left: side === 'left' ? bodyInset : edgeInset,
   }
 }
 

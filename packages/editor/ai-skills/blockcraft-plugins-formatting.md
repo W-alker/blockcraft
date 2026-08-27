@@ -222,10 +222,11 @@ new TextMarkerPlugin(['paragraph', 'blockquote'])
   main/detail geometry through `ShapeIconComponent` and exposes its label by
   Tooltip plus `aria-label` instead of visible per-cell text.
 - When the document registers `TextBoxBlockSchema`, **插入文本框** opens the
-  线框 / 矩形 / 气泡 style catalog directly. It has no 精选 tab and no fixed-toolbar
-  横向 / 竖向 shortcuts; 极简 and 默认白框 are the first two 线框 entries,
-  and text direction is changed later from the selected text box's own text
-  settings.
+  58-style catalog directly. Its `cs-tabs` categories are 办公经典 / 引言 /
+  侧边栏 / 杂志 / 异形 / 气泡 / 纸张 / 文化风格 / 材质效果 / 竖排. Only the
+  tab strip scrolls horizontally; the card content expands and is not placed
+  in a nested vertical scroller. Vertical presets carry their own
+  `vertical-rl` frame direction.
 - Picking a shape, WordArt or text-box preset arms a one-shot drawing surface over the
   document without requiring a focused block, active Selection or saved
   selection snapshot; it does not write Yjs or create a block yet. A

@@ -250,6 +250,97 @@ const extension = {
 - Built-in runtime capability semantics are unchanged; their source of truth is
   now the owning Block directory.
 
+## Unreleased — 2026-08-28 — Text-box callout adjustment contract
+
+**Severity**: minor
+
+**What changed**: `TextBoxBlockProps` and `NormalizedTextBoxBlockProps` now
+accept optional `adjustments: Record<string, number>`. Text-box callout geometry
+uses the same `tailX` / `tailY` projection as Shape in the live editor, preset
+picker and Snapshot Viewer. The callout projection now selects the nearest
+frame edge, so top, right, bottom and left tails keep their intended direction
+and move the editable text-safe inset to that edge.
+
+**Why**: the gallery prototype used presentation-only `tail` and `leader`
+fields. Persisting only `shape` silently discarded those values and made
+several distinct bubble styles render with the same default lower-left tail.
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `TextBoxBlockProps.adjustments?: ShapeAdjustmentValues | null`
+- `NormalizedTextBoxBlockProps.adjustments?: ShapeAdjustmentValues`
+
+### Migration Recipe
+
+Store callout direction through canonical numeric adjustments rather than
+prototype-only strings:
+
+```typescript
+// before: ignored by the TextBox normalizer
+const prototypePreset = {shape: 'wedge-round-callout', tail: 'top-left'}
+
+// after: persisted and rendered by every TextBox projection
+const snapshot = TextBoxBlockSchema.createSnapshot('正文', {
+  shape: 'wedge-round-callout',
+  adjustments: {tailX: 170, tailY: 0},
+})
+```
+
+### Behavior Changes
+
+- Existing text boxes without `adjustments` keep the default lower-left tail.
+- Adjusted callout paths and their text-safe insets now match between the live
+  editor, preset thumbnail and Snapshot Viewer.
+- Gallery leader-line callouts remain registry artwork because one closed
+  callout Shape cannot represent a separate box and leader line.
+
+## Unreleased — 2026-08-27 — Text-box gallery replacement
+
+**Severity**: major
+
+**What changed**: the bundled text-box preset catalog was replaced wholesale
+with 58 Word-inspired single-object styles in ten categories. The picker now
+uses `CsTabsComponent` / `CsTabComponent`; only its category row scrolls, while
+the style grid expands without vertical clipping.
+
+**Why**: the former three groups were visually repetitive and mixed decorative
+bitmap silhouettes with editable callout semantics. The new catalog separates
+shape geometry, surface ornament and text styling, and includes real editable
+callout shapes plus explicit vertical presets.
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+- `blockcraft-toolbar.md`
+- `blockcraft-plugins-formatting.md`
+- `blockcraft-plugins-toolbar.md`
+- `MIGRATIONS.md`
+
+### Breaking Changes
+
+- Category ids `outline` and `rect` were removed. The new ids are `office`,
+  `quote`, `sidebar`, `editorial`, `shape`, `bubble`, `note`, `culture`,
+  `material` and `vertical`.
+- Preset ids `classic`, `no-fill`, `outline-r-*`, `rect-r-*` and `bubble-r-*`
+  are not retained. Unknown ids resolve to `office-simple`.
+
+### Migration Recipe
+
+Replace any hard-coded old preset/category ids with a new gallery id, or derive
+choices from `TEXT_BOX_PRESETS` and `TEXT_BOX_PRESET_CATEGORIES` at runtime.
+
+### Behavior Changes
+
+- The picker renders ten `cs-tab` panes instead of a segmented three-way
+  switch.
+- The tab navigation is horizontally scrollable; the picker content itself is
+  not a scroll container.
+
 ## Unreleased — 2026-08-27 — Scoped revision Diff writes
 
 **Severity**: minor

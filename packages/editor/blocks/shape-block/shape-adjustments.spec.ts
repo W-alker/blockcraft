@@ -1,5 +1,6 @@
 import {getShapeDefinition} from './shape-definitions'
 import {
+  resolveAdjustedShapeTextInsets,
   resolveShapeAdjustmentProjection,
   updateShapeAdjustment,
 } from './shape-adjustments'
@@ -79,6 +80,32 @@ describe('Shape catalogue adjustments', () => {
 
     expect(next.adjustments).toEqual({tailX: 720, tailY: 940})
     expect(next.path).toContain('L720 940')
+  })
+
+  it('projects callout tails and text-safe insets toward every frame edge', () => {
+    const definition = getShapeDefinition('wedge-round-callout')
+    const cases = [
+      {adjustments: {tailX: 170, tailY: 0}, edge: 'top', token: 'L170 0'},
+      {adjustments: {tailX: 1000, tailY: 500}, edge: 'right', token: 'L1000 500'},
+      {adjustments: {tailX: 500, tailY: 1000}, edge: 'bottom', token: 'L500 1000'},
+      {adjustments: {tailX: 0, tailY: 500}, edge: 'left', token: 'L0 500'},
+    ] as const
+
+    for (const item of cases) {
+      const projection = resolveShapeAdjustmentProjection(
+        'wedge-round-callout',
+        item.adjustments,
+      )!
+      const insets = resolveAdjustedShapeTextInsets(
+        'wedge-round-callout',
+        item.adjustments,
+        definition.textInsets,
+      )
+      expect(projection.path).withContext(item.edge).toContain(item.token)
+      expect(insets[item.edge])
+        .withContext(item.edge)
+        .toBe(Math.max(...Object.values(insets)))
+    }
   })
 
   it('projects adjustments through the ordinary Shape renderer', () => {

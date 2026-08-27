@@ -1146,7 +1146,11 @@ document prose. Its exact child allowlist is `paragraph`, `bullet`, `ordered`,
 Deleting the last child restores the framework's normal fallback paragraph.
 
 `TextBoxBlockProps` uses fixed `width`, `height`, `rotation` plus the unified
-`lockRatio/shape/fill/outline/effects/textFrame/textStyle` fields. The names
+`lockRatio/shape/fill/outline/effects/textFrame/textStyle` fields. It also
+accepts the same optional flat numeric `adjustments` record as catalog Shape
+geometry. Callout presets use `tailX` / `tailY` in the normalized `0..1000`
+shape coordinate plane; the nearest frame edge determines whether the tail is
+top, right, bottom or left. The names
 stay concise by omitting redundant domain prefixes while remaining readable.
 The structured sections are primitive-only
 atomic records; old surface aliases such as `fo/bw/wm/wa/backColor/borderColor`
@@ -1157,13 +1161,15 @@ Defaults are `240 × 120`, rectangle, rotation `0`,
 direction is `textFrame.direction: 'horizontal' | 'vertical-rl' |
 'rotate-90' | 'rotate-270'`; the former compact `wm` field is not persisted.
 
-`TEXT_BOX_PRESETS` remains grouped into `outline` / `rect` / `bubble` catalog
-tabs. The source modules use compact authoring data internally, but
+`TEXT_BOX_PRESETS` is the 58-style gallery grouped into `office`, `quote`,
+`sidebar`, `editorial`, `shape`, `bubble`, `note`, `culture`, `material` and
+`vertical`. The source module uses compact authoring data internally, but
 `TEXT_BOX_PRESETS` and `getTextBoxPreset()` expose only canonical
 `fill/outline/effects/textFrame/textStyle` sections. Preset IDs and catalog authoring keys never enter
 snapshots.
-`getTextBoxPreset()` falls back to 默认白框 for unknown ids, not to the
-catalog's first slot. Decorated entries store their artwork registry reference
+`getTextBoxPreset()` falls back to `office-simple` for unknown ids. The former
+`classic`, `no-fill`, `outline-r-*`, `rect-r-*` and `bubble-r-*` IDs are not
+retained. Decorated entries store their artwork registry reference
 in the separate `artwork` prop because hand-drawn borders, ribbons and multi-color
 ornament are catalog decoration, not a user picture fill. Query the catalog with
 `getTextBoxPresetsFor()` / `getTextBoxPresetCategoriesFor()`.
@@ -1182,8 +1188,14 @@ frame, so it tracks whatever size the author drags. Canonical
 that proportional safe area.
 
 Decorated entries split work between catalog artwork and the editable
-`outline`. Bubbles are the exception and carry their own contour in the
-artwork with an explicit no-outline state.
+`outline`. Ordinary gallery ornament is surface paint with zero geometry inset;
+`textFrame.margins` owns its editable safe area. A drawing that owns silhouette
+geometry, such as a leader-line callout, provides proportional `textInsets` in
+the artwork registry. Other bubble entries use real `ShapeKind`
+callout/cloud/explosion geometry plus canonical `adjustments`, so they remain
+one editable TextBox object rather than a visual composition. Live Block,
+picker and Snapshot Viewer all resolve the same adjusted path and directional
+text-safe area.
 
 Two consequences are worth knowing before adding entries. The surface image is
 clipped to the shape and the outline paints above it, so ornament can neither
