@@ -35,6 +35,7 @@ import {
   RevisionTarget,
   RevisionTextTarget,
   RevisionViewMode,
+  RevisionWriteScopeOptions,
 } from './types'
 import {
   RevisionAttributionAdapter,
@@ -87,6 +88,7 @@ export class DocumentRevisionManager {
 
   private actor: RevisionActorSnapshot | null = null
   private trackingBypassDepth = 0
+  private revisionWriteScopeDepth = 0
   private forcedGroupId: string | null = null
   private sessionId = generateId()
   private lastGroup: {
@@ -144,7 +146,8 @@ export class DocumentRevisionManager {
   }
 
   get isTracking(): boolean {
-    return this.mode === 'track' && this.trackingBypassDepth === 0
+    return (this.mode === 'track' || this.revisionWriteScopeDepth > 0) &&
+      this.trackingBypassDepth === 0
   }
 
   get currentActor(): RevisionActorSnapshot | null {
@@ -207,8 +210,40 @@ export class DocumentRevisionManager {
     }
   }
 
+  /**
+   * Runs synchronous document mutations as one attributed revision Diff.
+   *
+   * Unlike `setMode('track')`, this does not change `mode$` or leave tracking
+   * enabled for later user input. Actor/session/group state is restored even
+   * when the callback throws. The callback must complete synchronously.
+   */
+  runAsRevision<T>(
+    actor: RevisionActorSnapshot,
+    callback: () => T,
+    options: RevisionWriteScopeOptions = {},
+  ): T {
+    const previousActor = this.actor
+    const previousSessionId = this.sessionId
+    const previousLastGroup = this.lastGroup
+    const normalizedActor = normalizeActor(actor)
+    const groupId = options.groupId?.trim() || generateId()
+
+    this.actor = normalizedActor
+    this.sessionId = generateId()
+    this.lastGroup = null
+    this.revisionWriteScopeDepth += 1
+    try {
+      return this.runInGroup(callback, groupId)
+    } finally {
+      this.revisionWriteScopeDepth -= 1
+      this.actor = previousActor
+      this.sessionId = previousSessionId
+      this.lastGroup = previousLastGroup
+    }
+  }
+
   /** @internal Groups one input gesture into a single review card. */
-  runInGroup<T>(callback: () => T, groupId = generateId()): T {
+  runInGroup<T>(callback: () => T, groupId = this.forcedGroupId ?? generateId()): T {
     const previous = this.forcedGroupId
     this.forcedGroupId = groupId
     try {
@@ -614,7 +649,11 @@ export class DocumentRevisionManager {
   ): string[] {
     if (!delta.length) return []
     const yText = this.getYText(blockId)
-    if (!this.isTracking || !canTrackTextDelta(delta)) {
+    if (!this.isTracking) {
+      this.doc.crud.transact(() => yText.applyDelta([...delta]), origin)
+      return []
+    }
+    if (!canTrackTextDelta(delta)) {
       this.doc.crud.transact(() => yText.applyDelta([...delta]), origin)
       return []
     }
@@ -1588,6 +1627,14 @@ export class DocumentRevisionManager {
   }
 }
 
+function canTrackTextDelta(delta: readonly DeltaOperation[]): boolean {
+  return delta.every(operation =>
+    !(operation.retain && operation.attributes &&
+      Object.keys(operation.attributes).length > 0) &&
+    (operation.insert === undefined || typeof operation.insert === 'string'),
+  )
+}
+
 function normalizeActor(actor: RevisionActorSnapshot): RevisionActorSnapshot {
   const actorId = `${actor?.actorId ?? ''}`.trim()
   if (!actorId) throw new RevisionActorRequiredError('actorId 不能为空')
@@ -1827,17 +1874,6 @@ function mergeRanges(
 
 function normalizeEpoch(value: number): number {
   return Number.isSafeInteger(value) && value >= 0 ? value : 0
-}
-
-function canTrackTextDelta(delta: readonly DeltaOperation[]): boolean {
-  return delta.every(operation =>
-    !(
-      operation.retain &&
-      operation.attributes &&
-      Object.keys(operation.attributes).length > 0
-    ) &&
-    (operation.insert === undefined || typeof operation.insert === 'string'),
-  )
 }
 
 function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {

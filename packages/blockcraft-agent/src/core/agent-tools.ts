@@ -8,6 +8,9 @@ export type DocumentAgentToolName =
   | 'blockcraft.get_block'
   | 'blockcraft.get_document_context'
   | 'blockcraft.get_schema_capabilities'
+  | 'blockcraft.get_capability_directory'
+  | 'blockcraft.get_capability'
+  | 'blockcraft.delegate'
   | 'blockcraft.search_document'
   | 'blockcraft.preview_changes'
   | 'blockcraft.apply_changes'
@@ -23,39 +26,91 @@ const operationSchema = {
   type: 'array',
   description: '经过 BlockCraft 规则约束的结构化文档操作。',
   items: {
-    type: 'object',
-    additionalProperties: true,
-    properties: {
-      kind: {
-        type: 'string',
-        enum: [
-          'replace-text',
-          'update-block-props',
-          'insert-blocks',
-          'create-blocks',
-          'replace-block',
-          'apply-text-delta',
-          'delete-blocks',
-          'move-blocks',
-        ],
-      },
-      blockId: {type: 'string'},
-      from: {type: 'integer', minimum: 0},
-      to: {type: 'integer', minimum: 0},
-      replacement: {type: 'string'},
-      props: {type: 'object'},
-      parentId: {type: 'string'},
-      index: {type: 'integer', minimum: 0},
-      snapshots: {type: 'array'},
-      flavour: {type: 'string'},
-      params: {type: 'array'},
-      delta: {type: 'array'},
-      count: {type: 'integer', minimum: 1},
-      targetId: {type: 'string'},
-      targetIndex: {type: 'integer', minimum: 0},
-    },
+    oneOf: [
+      operationVariant('replace-text', {
+        blockId: {type: 'string'},
+        from: {type: 'integer', minimum: 0},
+        to: {type: 'integer', minimum: 0},
+        replacement: {type: 'string'},
+      }, ['blockId', 'from', 'to', 'replacement']),
+      operationVariant('update-block-props', {
+        blockId: {type: 'string'},
+        props: {type: 'object'},
+      }, ['blockId', 'props']),
+      operationVariant('create-blocks', {
+        parentId: {type: 'string'},
+        index: {type: 'integer', minimum: 0},
+        flavour: {type: 'string'},
+        params: {type: 'array'},
+        clientRef: {type: 'string', pattern: '^[A-Za-z][A-Za-z0-9._-]{0,63}$'},
+      }, ['parentId', 'index', 'flavour', 'params']),
+      operationVariant('replace-block', {
+        blockId: {type: 'string'},
+        flavour: {type: 'string'},
+        params: {type: 'array'},
+        clientRef: {type: 'string', pattern: '^[A-Za-z][A-Za-z0-9._-]{0,63}$'},
+      }, ['blockId', 'flavour', 'params']),
+      operationVariant('apply-text-delta', {
+        blockId: {type: 'string'},
+        delta: {
+          type: 'array',
+          items: {
+            oneOf: [
+              textDeltaVariant('retain', {type: 'integer', minimum: 1}, true),
+              textDeltaVariant('insert', {anyOf: [{type: 'string'}, {type: 'object'}]}, true),
+              textDeltaVariant('delete', {type: 'integer', minimum: 1}, false),
+            ],
+          },
+        },
+      }, ['blockId', 'delta']),
+      operationVariant('delete-blocks', {
+        parentId: {type: 'string'},
+        index: {type: 'integer', minimum: 0},
+        count: {type: 'integer', minimum: 1},
+      }, ['parentId', 'index', 'count']),
+      operationVariant('move-blocks', {
+        parentId: {type: 'string'},
+        index: {type: 'integer', minimum: 0},
+        count: {type: 'integer', minimum: 1},
+        targetId: {type: 'string'},
+        targetIndex: {type: 'integer', minimum: 0},
+      }, ['parentId', 'index', 'count', 'targetId', 'targetIndex']),
+    ],
   },
+  maxItems: 100,
 } as Record<string, unknown>
+
+function textDeltaVariant(
+  operation: 'retain' | 'insert' | 'delete',
+  valueSchema: Record<string, unknown>,
+  allowsAttributes: boolean,
+): Record<string, unknown> {
+  return {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      [operation]: valueSchema,
+      ...(allowsAttributes ? {attributes: {type: 'object'}} : {}),
+    },
+    required: [operation],
+  }
+}
+
+function operationVariant(
+  kind: DocumentAgentOperation['kind'],
+  properties: Record<string, unknown>,
+  required: readonly string[],
+): Record<string, unknown> {
+  return {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      kind: {type: 'string', enum: [kind]},
+      ...properties,
+    },
+    required: ['kind', ...required],
+  }
+}
 
 export const DOCUMENT_AGENT_TOOL_DEFINITIONS: readonly DocumentAgentToolDefinition[] = [
   {
@@ -86,6 +141,48 @@ export const DOCUMENT_AGENT_TOOL_DEFINITIONS: readonly DocumentAgentToolDefiniti
     name: 'blockcraft.get_document_context',
     description: '读取当前 BlockCraft 文档的完整模型上下文和版本指纹。',
     parameters: {type: 'object', properties: {}, additionalProperties: false},
+  },
+  {
+    type: 'function',
+    name: 'blockcraft.get_capability_directory',
+    description: '读取当前宿主注册给 Agent 的自定义 Block、Plugin、Context、Skill 和语义工具目录。',
+    parameters: {type: 'object', properties: {}, additionalProperties: false},
+  },
+  {
+    type: 'function',
+    name: 'blockcraft.get_capability',
+    description: '按能力 ID 读取宿主声明的完整 Agent Capability，包含创建参数和允许动作。',
+    parameters: {
+      type: 'object',
+      properties: {capabilityId: {type: 'string'}},
+      required: ['capabilityId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: 'function',
+    name: 'blockcraft.delegate',
+    description: '把只读分析、写作、结构规划、图片复原、宿主工作流或质量复核任务委派给独立 specialist 模型回合。',
+    parameters: {
+      type: 'object',
+      properties: {
+        specialist: {
+          type: 'string',
+          enum: [
+            'document-analysis',
+            'content-writing',
+            'structure-planning',
+            'visual-reconstruction',
+            'host-workflow',
+            'quality-review',
+          ],
+        },
+        objective: {type: 'string'},
+        input: {},
+      },
+      required: ['specialist', 'objective'],
+      additionalProperties: false,
+    },
   },
   {
     type: 'function',
@@ -148,6 +245,9 @@ const toolNames: Record<DocumentAgentToolName, true> = {
   'blockcraft.get_block': true,
   'blockcraft.get_document_context': true,
   'blockcraft.get_schema_capabilities': true,
+  'blockcraft.get_capability_directory': true,
+  'blockcraft.get_capability': true,
+  'blockcraft.delegate': true,
   'blockcraft.search_document': true,
   'blockcraft.preview_changes': true,
   'blockcraft.apply_changes': true,

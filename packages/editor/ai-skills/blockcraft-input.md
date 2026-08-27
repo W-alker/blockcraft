@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying text input behavior.
 >
-> Last updated: 2026-08-26
+> Last updated: 2026-08-27
 
 ## Architecture Overview
 
@@ -21,7 +21,8 @@ beforeInput / keydown / compositionStart
 
 ### Revision-aware execution
 
-When `doc.revisions.isTracking` is true, the same planner and executor route
+When `doc.revisions.isTracking` is true—either because global mode is `track`
+or while a synchronous `runAsRevision()` scope is active—the same planner and executor route
 text insert/delete/replace, paste, cross-block selection edits, Enter splits,
 paragraph-boundary Backspace/Delete merges and IME commits through
 `DocumentRevisionManager`. Local and remote changes therefore still converge
@@ -52,12 +53,17 @@ insert at the start/end is adjacent; an insert strictly inside is dependent.
 Only the original author may resize their own uncontested pending insertion,
 and that fast path rewrites the relative target after the Y.Text mutation.
 
-Valid operations that Revision v1 cannot represent—format changes, table-cell
-structural edits, block movement, props/object geometry and cross-container
-structure—continue through the normal model executor and Yjs/Undo path while
+Revision v1 does not model format changes, inline-object insertion, table
+row/column or cell-structure edits, block movement, object geometry, or
+cross-container structure. Those valid editor operations stay enabled: execute
+the complete operation through its normal Yjs/Undo path while temporarily
 bypassing revision attribution, and create no Diff. This is a model fallback,
-never a fallthrough to native `contenteditable` behavior. Invalid or stale edit
-plans still fail closed.
+never a fallback to native `contenteditable`. Invalid/stale edit plans still
+fail closed before browser DOM mutation.
+
+`runAsRevision()` does not change `mode$` and must not span asynchronous user
+input. Its callback is for immediate programmatic CRUD only; after the callback
+returns, ordinary user input follows the previously configured global mode.
 
 ### Adapter / Planner / Executor
 

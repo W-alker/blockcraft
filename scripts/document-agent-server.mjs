@@ -21,6 +21,8 @@ const sessionTtlMs = 2 * 60 * 60 * 1000
 const maxSessionCount = 100
 const maxSessionTurns = 6
 const maxSessionMemoryChars = 8_000
+const maxToolHistoryItems = 24
+const maxToolHistoryChars = 64_000
 const sessions = new Map()
 
 const resultSchema = {
@@ -59,22 +61,12 @@ const resultSchema = {
             type: 'object',
             additionalProperties: false,
             properties: {
-              kind: {type: 'string', enum: ['insert-blocks']},
-              parentId: {type: 'string'},
-              index: {type: 'integer', minimum: 0},
-              snapshots: {type: 'array', items: {type: 'string'}},
-            },
-            required: ['kind', 'parentId', 'index', 'snapshots'],
-          },
-          {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
               kind: {type: 'string', enum: ['create-blocks']},
               parentId: {type: 'string'},
               index: {type: 'integer', minimum: 0},
               flavour: {type: 'string'},
               params: {type: 'string'},
+              clientRef: {type: ['string', 'null'], pattern: '^[A-Za-z][A-Za-z0-9._-]{0,63}$'},
             },
             required: ['kind', 'parentId', 'index', 'flavour', 'params'],
           },
@@ -86,6 +78,7 @@ const resultSchema = {
               blockId: {type: 'string'},
               flavour: {type: 'string'},
               params: {type: 'string'},
+              clientRef: {type: ['string', 'null'], pattern: '^[A-Za-z][A-Za-z0-9._-]{0,63}$'},
             },
             required: ['kind', 'blockId', 'flavour', 'params'],
           },
@@ -128,6 +121,53 @@ const resultSchema = {
     },
   },
   required: ['summary', 'draft', 'operations'],
+}
+
+const turnSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    kind: {type: 'string', enum: ['result', 'tool-calls']},
+    result: {anyOf: [resultSchema, {type: 'null'}]},
+    calls: {
+      type: 'array',
+      maxItems: 8,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          id: {type: 'string', minLength: 1, maxLength: 128},
+          name: {type: 'string', minLength: 1, maxLength: 256},
+          arguments: {type: 'string', maxLength: 50_000},
+        },
+        required: ['id', 'name', 'arguments'],
+      },
+    },
+  },
+  required: ['kind', 'result', 'calls'],
+}
+
+const specialistNames = [
+  'document-analysis',
+  'content-writing',
+  'structure-planning',
+  'visual-reconstruction',
+  'host-workflow',
+  'quality-review',
+]
+
+const subAgentSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    specialist: {type: 'string', enum: specialistNames},
+    summary: {type: 'string'},
+    findings: {type: 'array', maxItems: 20, items: {type: 'string'}},
+    recommendations: {type: 'array', maxItems: 20, items: {type: 'string'}},
+    draft: {type: ['string', 'null']},
+    operations: resultSchema.properties.operations,
+  },
+  required: ['specialist', 'summary', 'findings', 'recommendations', 'draft', 'operations'],
 }
 
 function sendJson(response, status, payload) {
@@ -185,20 +225,50 @@ function normalizeAgentResult(result) {
       if (operation.kind === 'update-block-props') {
         return {...operation, props: parseJsonField(operation.props, 'props')}
       }
-      if (operation.kind === 'insert-blocks') {
-        return {...operation, snapshots: operation.snapshots.map(snapshot => parseJsonField(snapshot, 'snapshot'))}
-      }
       if (operation.kind === 'apply-text-delta') {
         return {...operation, delta: parseJsonField(operation.delta, 'delta')}
       }
       if (operation.kind === 'create-blocks') {
-        return {...operation, params: parseJsonField(operation.params, 'params')}
+        const normalized = {...operation, params: parseJsonField(operation.params, 'params')}
+        if (normalized.clientRef === null) delete normalized.clientRef
+        return normalized
       }
       if (operation.kind === 'replace-block') {
-        return {...operation, params: parseJsonField(operation.params, 'params')}
+        const normalized = {...operation, params: parseJsonField(operation.params, 'params')}
+        if (normalized.clientRef === null) delete normalized.clientRef
+        return normalized
       }
       return operation
     }),
+  }
+}
+
+function normalizeAgentTurn(turn) {
+  if (turn?.kind === 'result' && turn.result && turn.calls?.length === 0) {
+    return {kind: 'result', result: normalizeAgentResult(turn.result)}
+  }
+  if (turn?.kind === 'tool-calls' && turn.result === null && Array.isArray(turn.calls) && turn.calls.length) {
+    return {
+      kind: 'tool-calls',
+      calls: turn.calls.map(call => ({
+        ...call,
+        arguments: parseJsonField(call.arguments, `tool ${call.name || 'unknown'} arguments`),
+      })),
+    }
+  }
+  throw new Error('Agent 返回的 Master 回合类型无效')
+}
+
+function normalizeSubAgentResult(result, delegation) {
+  if (!result || result.specialist !== delegation.specialist) {
+    throw new Error('Agent 返回的 specialist 与委派请求不一致')
+  }
+  const normalized = normalizeAgentResult(result)
+  return {
+    ...normalized,
+    specialist: result.specialist,
+    findings: result.findings,
+    recommendations: result.recommendations,
   }
 }
 
@@ -276,7 +346,6 @@ function compactOperation(operation) {
       ? Object.keys(operation.props).slice(0, 20)
       : []
   }
-  if (operation.kind === 'insert-blocks') compact.snapshotCount = operation.snapshots?.length ?? 0
   if (operation.kind === 'apply-text-delta') compact.deltaCount = operation.delta?.length ?? 0
   if (operation.kind === 'create-blocks' || operation.kind === 'replace-block') {
     compact.paramsCount = operation.params?.length ?? 0
@@ -313,12 +382,13 @@ function rememberSessionTurn(session, request, result) {
   session.lastUsedAt = Date.now()
 }
 
-function createAgentPayload(request, session) {
+function createAgentPayload(request, session, orchestration) {
   const sessionMemory = getSessionMemory(session)
   return {
     task: request.task,
     instruction: request.instruction,
     context: request.context,
+    runtime: request.runtime,
     ...(sessionMemory ? {
       sessionMemory: {
         note: 'Bounded reference-only memory from earlier turns. The current context and instruction are authoritative; do not assume old operations were applied.',
@@ -326,12 +396,69 @@ function createAgentPayload(request, session) {
       },
     } : {}),
     attachments: (request.attachments ?? []).map(({dataUrl: _dataUrl, ...attachment}) => attachment),
+    ...(orchestration ? {
+      orchestration: {
+        version: orchestration.orchestrationVersion,
+        step: orchestration.step,
+        toolHistory: orchestration.toolHistory,
+      },
+    } : {}),
     editorAgentContract: [
-      'Validated operations include replace-text, update-block-props, insert-blocks, create-blocks, replace-block, apply-text-delta, delete-blocks, and move-blocks.',
+      'Validated operations include replace-text, update-block-props, create-blocks, replace-block, apply-text-delta, delete-blocks, and move-blocks. Raw Snapshot insertion is not an Agent operation.',
+      'Operation coordinates are sequential. create-blocks/replace-block may bind clientRef. Use $ref:<clientRef> only as create-blocks.parentId for nested content or move-blocks.targetId for existing content; do not replace, delete, or move a newly created block.',
       'An empty paragraph or list item is still a valid structural target. Use delete-blocks with its actual parentId, index, and count.',
       'Never claim that an empty block cannot be safely changed merely because it has no text.',
       'For Mermaid preview-only mode use update-block-props on the existing mermaid block with props {"mode":"graph"}; never manipulate DOM or data-mode.',
     ],
+  }
+}
+
+function parseOrchestration(body) {
+  if (body?.orchestrationVersion === undefined) return null
+  if (body.orchestrationVersion !== 1) {
+    throw new Error(`不支持的 Master Agent 协议版本：${body.orchestrationVersion}`)
+  }
+  if (!body.request || typeof body.request !== 'object' || Array.isArray(body.request)) {
+    throw new Error('Master Agent 请求缺少 request。')
+  }
+  if (!Number.isInteger(body.step) || body.step < 0 || body.step > 11) {
+    throw new Error('Master Agent step 无效。')
+  }
+  if (!Array.isArray(body.toolHistory) || body.toolHistory.length > maxToolHistoryItems) {
+    throw new Error('Master Agent 工具历史无效或过长。')
+  }
+  if (JSON.stringify(body.toolHistory).length > maxToolHistoryChars) {
+    throw new Error('Master Agent 工具历史过大。')
+  }
+  return {
+    orchestrationVersion: 1,
+    step: body.step,
+    toolHistory: body.toolHistory,
+  }
+}
+
+function parseDelegation(body) {
+  if (body?.delegationVersion === undefined) return null
+  if (body.delegationVersion !== 1) {
+    throw new Error(`不支持的 specialist 委派协议版本：${body.delegationVersion}`)
+  }
+  if (!body.request || typeof body.request !== 'object' || Array.isArray(body.request)) {
+    throw new Error('Specialist 委派请求缺少 request。')
+  }
+  if (!specialistNames.includes(body.specialist)) {
+    throw new Error(`不支持的 specialist：${body.specialist}`)
+  }
+  if (typeof body.objective !== 'string' || !body.objective.trim() || body.objective.length > 2_000) {
+    throw new Error('Specialist 委派 objective 无效或过长。')
+  }
+  if (body.input !== undefined && JSON.stringify(body.input).length > 16_000) {
+    throw new Error('Specialist 委派 input 过大。')
+  }
+  return {
+    delegationVersion: 1,
+    specialist: body.specialist,
+    objective: body.objective.trim(),
+    input: body.input,
   }
 }
 
@@ -340,6 +467,80 @@ function getSystemPrompt(request) {
     return request.systemPrompt
   }
   return createDocumentAgentSystemPrompt(request.task)
+}
+
+function getProviderInstructions(request, orchestration) {
+  const instructions = [getSystemPrompt(request)]
+  if (orchestration) {
+    instructions.push(
+      'You are the Master Agent in a bounded tool loop. Return one JSON turn envelope matching the supplied schema.',
+      'For a final answer return {"kind":"result","result":{...},"calls":[]}. For tool use return {"kind":"tool-calls","result":null,"calls":[...]}.',
+      'Return kind "tool-calls" only when a registered BlockCraft or host tool is needed. Each arguments field must be a valid JSON string such as "{}". Use prior orchestration.toolHistory results instead of repeating an answered call.',
+      'Built-in callable tools are blockcraft.get_editor_state, blockcraft.get_block, blockcraft.get_document_context, blockcraft.get_schema_capabilities, blockcraft.get_capability_directory, blockcraft.get_capability, blockcraft.delegate, blockcraft.search_document, blockcraft.preview_changes, and blockcraft.apply_changes.',
+      'Use blockcraft.delegate selectively for a genuinely useful independent specialist pass. Available specialists are document-analysis, content-writing, structure-planning, visual-reconstruction, host-workflow, and quality-review. Avoid delegation for trivial requests and do not repeat a completed delegation.',
+      'Custom tool names are discoverable through runtime.capabilityDirectory and blockcraft.get_capability. Never call an undeclared tool.',
+      'Document writes and external writes cannot execute in this loop: their tool result will request user confirmation. Return kind "result" with the proposed structured operations or a concise explanation once enough evidence is available.',
+    )
+  }
+  instructions.push(
+    'The transport schema encodes operation props, snapshots, delta, params, and tool arguments as JSON strings. Emit valid JSON strings for those nested values; the host decodes them before validation.',
+  )
+  return instructions.join('\n\n')
+}
+
+const specialistInstructions = {
+  'document-analysis': 'Answer document questions, summarize evidence, extract facts, requirements, decisions, risks and unresolved items. Preserve source meaning.',
+  'content-writing': 'Draft or revise clear document prose that satisfies the objective, current document voice and supplied constraints.',
+  'structure-planning': 'Map content into legal BlockCraft schemas, hierarchy and schema-native candidate operations. Prefer create-blocks and stable IDs.',
+  'visual-reconstruction': 'Inspect attached images and infer visual hierarchy, text, geometry and styling. Map them to available BlockCraft blocks such as paragraphs, tables, columns, text boxes, shapes and word art without inventing unavailable APIs.',
+  'host-workflow': 'Interpret runtime host context and declared custom capabilities. Propose safe host-aware reads, document changes and confirmation-gated business actions.',
+  'quality-review': 'Critically review the supplied draft or operation plan against the user instruction, live context, schema constraints, safety and visual fidelity. Identify concrete corrections.',
+}
+
+function getSubAgentInstructions(request, delegation) {
+  return [
+    getSystemPrompt(request),
+    `You are the read-only ${delegation.specialist} specialist.`,
+    specialistInstructions[delegation.specialist],
+    'Work independently on the delegated objective. Do not call tools, execute writes, claim changes were applied, or broaden the objective.',
+    'Return only the specialist JSON result matching the supplied schema. Candidate operations are advisory and will be checked again by the Master and host.',
+    'The transport schema encodes operation props, snapshots, delta, and params as JSON strings. Emit valid JSON strings for those nested values.',
+  ].join('\n\n')
+}
+
+function createSubAgentPayload(request, session, delegation) {
+  return {
+    ...createAgentPayload(request, session, null),
+    delegation: {
+      specialist: delegation.specialist,
+      objective: delegation.objective,
+      input: delegation.input,
+    },
+  }
+}
+
+async function writeLocalImageAttachments(workingDir, attachments = []) {
+  const paths = []
+  const extensions = {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+  }
+  for (const [index, attachment] of attachments.slice(0, 4).entries()) {
+    const extension = extensions[attachment?.mimeType]
+    const match = typeof attachment?.dataUrl === 'string'
+      ? attachment.dataUrl.match(/^data:(image\/(?:jpeg|png|webp));base64,([a-z0-9+/=\r\n]+)$/i)
+      : null
+    if (!extension || !match || match[1].toLowerCase() !== attachment.mimeType) {
+      throw new Error(`图片附件 ${index + 1} 的格式无效。`)
+    }
+    const data = Buffer.from(match[2], 'base64')
+    if (!data.length) throw new Error(`图片附件 ${index + 1} 为空。`)
+    const path = join(workingDir, `attachment-${index + 1}.${extension}`)
+    await writeFile(path, data)
+    paths.push(path)
+  }
+  return paths
 }
 
 function runProcess(command, args, input, timeoutMs = 120_000) {
@@ -373,38 +574,44 @@ function runProcess(command, args, input, timeoutMs = 120_000) {
   })
 }
 
-async function runLocalCodex(request, session) {
+async function runLocalCodex(request, session, orchestration, delegation) {
   const workingDir = await mkdtemp(join(tmpdir(), 'blockcraft-agent-'))
-  const schemaPath = join(workingDir, 'result.schema.json')
-  const outputPath = join(workingDir, 'result.json')
-  await writeFile(schemaPath, JSON.stringify(resultSchema), 'utf8')
-
-  const args = [
-    'exec',
-    '--ephemeral',
-    '--sandbox', 'read-only',
-    '--skip-git-repo-check',
-    '--cd', workingDir,
-    '--output-schema', schemaPath,
-    '--output-last-message', outputPath,
-    '--color', 'never',
-    '-',
-  ]
-  if (codexCliModel) args.splice(1, 0, '--model', codexCliModel)
-
-  const prompt = [
-    getSystemPrompt(request),
-    'Return only a JSON object matching the supplied output schema. Do not edit files or run commands.',
-    'The transport schema encodes props, snapshots, delta, and params as JSON strings. Emit valid JSON strings for those nested values; the host decodes them before validation.',
-    JSON.stringify({
-      ...createAgentPayload(request, session),
-      imageNote: request.attachments?.length
-        ? 'An image attachment exists, but this local Codex CLI smoke path should rely on the structured document context rather than claiming to see the image.'
-        : undefined,
-    }),
-  ].join('\n\n')
-
   try {
+    const schemaPath = join(workingDir, 'result.schema.json')
+    const outputPath = join(workingDir, 'result.json')
+    const outputSchema = delegation ? subAgentSchema : orchestration ? turnSchema : resultSchema
+    await writeFile(schemaPath, JSON.stringify(outputSchema), 'utf8')
+    const imagePaths = await writeLocalImageAttachments(workingDir, request.attachments)
+
+    const args = [
+      'exec',
+      '--ephemeral',
+      '--sandbox', 'read-only',
+      '--skip-git-repo-check',
+      '--cd', workingDir,
+      '--output-schema', schemaPath,
+      '--output-last-message', outputPath,
+      '--color', 'never',
+      '-',
+    ]
+    if (codexCliModel) args.splice(1, 0, '--model', codexCliModel)
+    if (imagePaths.length) args.splice(args.length - 1, 0, '--image', ...imagePaths)
+
+    const prompt = [
+      delegation
+        ? getSubAgentInstructions(request, delegation)
+        : getProviderInstructions(request, orchestration),
+      'Return only a JSON object matching the supplied output schema. Do not edit files or run commands.',
+      JSON.stringify({
+        ...(delegation
+          ? createSubAgentPayload(request, session, delegation)
+          : createAgentPayload(request, session, orchestration)),
+        imageNote: request.attachments?.length
+          ? `${imagePaths.length} image attachment(s) are available to inspect.`
+          : undefined,
+      }),
+    ].join('\n\n')
+
     await runProcess(process.env['CODEX_CLI_COMMAND'] ?? 'codex', args, prompt)
     let outputText
     try {
@@ -416,8 +623,14 @@ async function runLocalCodex(request, session) {
       )
     }
     try {
-      return normalizeAgentResult(JSON.parse(outputText))
-    } catch {
+      const parsed = JSON.parse(outputText)
+      return delegation
+        ? normalizeSubAgentResult(parsed, delegation)
+        : orchestration
+          ? normalizeAgentTurn(parsed)
+          : normalizeAgentResult(parsed)
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Agent 返回')) throw error
       const preview = outputText.trim().slice(0, 800)
       throw new Error(
         '本地 Codex 返回结果不是有效 JSON' +
@@ -429,9 +642,9 @@ async function runLocalCodex(request, session) {
   }
 }
 
-async function runAgent(request, session) {
+async function runAgent(request, session, orchestration, delegation) {
   if (provider === 'codex-cli') {
-    return runLocalCodex(request, session)
+    return runLocalCodex(request, session, orchestration, delegation)
   }
 
   if (provider !== 'openai') {
@@ -442,15 +655,19 @@ async function runAgent(request, session) {
     throw new Error('未配置 OPENAI_API_KEY。请先启动本地 Agent 服务并设置 API Key。')
   }
 
-  const instructions = [
-    getSystemPrompt(request),
-    'The transport schema encodes props, snapshots, delta, and params as JSON strings. Emit valid JSON strings for those nested values; the host decodes them before validation.',
-  ].join('\\n\\n')
+  const instructions = delegation
+    ? getSubAgentInstructions(request, delegation)
+    : getProviderInstructions(request, orchestration)
   const attachments = request.attachments ?? []
   const input = [{
     role: 'user',
     content: [
-      {type: 'input_text', text: JSON.stringify(createAgentPayload(request, session))},
+      {
+        type: 'input_text',
+        text: JSON.stringify(delegation
+          ? createSubAgentPayload(request, session, delegation)
+          : createAgentPayload(request, session, orchestration)),
+      },
       ...attachments.map(attachment => ({
         type: 'input_image',
         image_url: attachment.dataUrl,
@@ -473,9 +690,13 @@ async function runAgent(request, session) {
       text: {
         format: {
           type: 'json_schema',
-          name: 'document_agent_result',
+          name: delegation
+            ? 'document_agent_specialist_result'
+            : orchestration
+              ? 'document_agent_turn'
+              : 'document_agent_result',
           strict: true,
-          schema: resultSchema,
+          schema: delegation ? subAgentSchema : orchestration ? turnSchema : resultSchema,
         },
       },
     }),
@@ -491,8 +712,14 @@ async function runAgent(request, session) {
   if (!outputText) throw new Error('Codex 没有返回可解析的结构化结果')
 
   try {
-    return normalizeAgentResult(JSON.parse(outputText))
-  } catch {
+    const parsed = JSON.parse(outputText)
+    return delegation
+      ? normalizeSubAgentResult(parsed, delegation)
+      : orchestration
+        ? normalizeAgentTurn(parsed)
+        : normalizeAgentResult(parsed)
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('Agent 返回')) throw error
     throw new Error('Codex 返回结果不是有效 JSON')
   }
 }
@@ -515,10 +742,24 @@ const server = http.createServer(async (request, response) => {
 
   try {
     const body = await readJson(request)
-    const session = getSession(body.sessionId)
-    const result = await runAgent(body, session)
-    rememberSessionTurn(session, body, result)
-    sendJson(response, 200, {result})
+    const delegation = parseDelegation(body)
+    const orchestration = delegation ? null : parseOrchestration(body)
+    const agentRequest = delegation || orchestration ? body.request : body
+    const session = getSession(agentRequest.sessionId)
+    const output = await runAgent(agentRequest, session, orchestration, delegation)
+    if (delegation) {
+      sendJson(response, 200, {subAgent: output})
+      return
+    }
+    if (orchestration) {
+      if (output.kind === 'result') {
+        rememberSessionTurn(session, agentRequest, output.result)
+      }
+      sendJson(response, 200, {turn: output})
+      return
+    }
+    rememberSessionTurn(session, agentRequest, output)
+    sendJson(response, 200, {result: output})
   } catch (error) {
     const message = error instanceof Error ? error.message : '未知 Agent 错误'
     sendJson(response, 500, {error: message})

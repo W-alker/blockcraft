@@ -16,6 +16,8 @@ import {
   type DocumentAgentToolCall,
   type DocumentAgentToolHostResult,
 } from '../core/agent-tools'
+import {BLOCKCRAFT_BUILTIN_AGENT_EXTENSION} from '../core/builtin-block-capabilities'
+import {DocumentAgentExtensionRegistry} from '../core/host-extension'
 
 export class DocumentAgentToolExecutor {
   private activeContext: DocumentAgentContext | null
@@ -23,6 +25,9 @@ export class DocumentAgentToolExecutor {
   constructor(
     private readonly doc: BlockCraftDoc,
     initialContext: DocumentAgentContext | null = null,
+    private readonly extensions = new DocumentAgentExtensionRegistry([
+      BLOCKCRAFT_BUILTIN_AGENT_EXTENSION,
+    ]),
   ) {
     this.activeContext = initialContext
   }
@@ -51,7 +56,7 @@ export class DocumentAgentToolExecutor {
             selection: selection?.toSelectionJSON() ?? null,
             selectedText: selection ? this.doc.selection.getSelectedText() : '',
             structureRevision: this.doc.model.structureRevision,
-            capabilities: captureBlockCraftAgentSchemaCapabilities(this.doc),
+            capabilities: captureBlockCraftAgentSchemaCapabilities(this.doc, this.extensions),
           },
         }
       }
@@ -66,6 +71,34 @@ export class DocumentAgentToolExecutor {
           ok: true,
           tool: call.name,
           data: context?.capabilities ?? [],
+        }
+      }
+
+      if (call.name === 'blockcraft.get_capability_directory') {
+        return {
+          ok: true,
+          tool: call.name,
+          data: this.extensions.getCapabilityDirectory(this.manifestOptions()),
+        }
+      }
+
+      if (call.name === 'blockcraft.get_capability') {
+        const capabilityId = readStringArgument(call.arguments, 'capabilityId')
+        if (!capabilityId) {
+          return {ok: false, tool: call.name, error: '工具参数缺少 capabilityId。'}
+        }
+        const capability = this.extensions.getCapability(capabilityId, this.manifestOptions())
+        if (!capability) {
+          return {ok: false, tool: call.name, error: `Capability ${capabilityId} 不存在或当前宿主未启用。`}
+        }
+        return {ok: true, tool: call.name, data: capability}
+      }
+
+      if (call.name === 'blockcraft.delegate') {
+        return {
+          ok: false,
+          tool: call.name,
+          error: 'blockcraft.delegate 只能由 BlockCraftEditorAgent 的 Master 循环执行。',
         }
       }
 
@@ -87,7 +120,7 @@ export class DocumentAgentToolExecutor {
         summary: payload.summary ?? 'Agent 修改建议',
         operations: payload.operations,
       }
-      const applier = new DocumentAgentOperationApplier(this.doc)
+      const applier = new DocumentAgentOperationApplier(this.doc, this.extensions)
       applier.validate(context, result)
 
       if (call.name === 'blockcraft.preview_changes') {
@@ -115,7 +148,7 @@ export class DocumentAgentToolExecutor {
       }
 
       const applied = applier.apply(context, result)
-      this.activeContext = captureBlockCraftAgentContext(this.doc)
+      this.activeContext = captureBlockCraftAgentContext(this.doc, {extensions: this.extensions})
       return {ok: true, tool: call.name, data: applied}
     } catch (error) {
       return {
@@ -129,8 +162,14 @@ export class DocumentAgentToolExecutor {
   }
 
   private captureContext(): DocumentAgentContext | null {
-    this.activeContext = captureBlockCraftAgentContext(this.doc)
+    this.activeContext = captureBlockCraftAgentContext(this.doc, {extensions: this.extensions})
     return this.activeContext
+  }
+
+  private manifestOptions(): {registeredBlockFlavours: readonly string[]} {
+    return {
+      registeredBlockFlavours: this.doc.schemas.getSchemaList().map(schema => String(schema.flavour)),
+    }
   }
 
   private search(argumentsValue: unknown): {query: string; matches: unknown[]} {
@@ -149,7 +188,7 @@ export class DocumentAgentToolExecutor {
     const needle = query.toLocaleLowerCase()
     const matches = []
     for (const block of context.blocks) {
-      const text = blockText(block.textDeltas)
+      const text = block.text?.plain ?? ''
       const index = text.toLocaleLowerCase().indexOf(needle)
       if (index < 0) continue
       matches.push({
@@ -174,14 +213,27 @@ export class DocumentAgentToolExecutor {
     return {
       blockId,
       flavour: this.doc.model.getFlavour(blockId) ?? 'unknown',
+      nodeType: String(this.doc.model.getNodeType(blockId) ?? 'unknown'),
       parentId: this.doc.model.getParentId(blockId),
       index: this.doc.model.indexInParent(blockId),
       childIds: this.doc.model.getChildrenIds(blockId),
       props: this.doc.model.getProps(blockId) ?? {},
-      textDeltas: this.doc.model.getTextDeltas(blockId),
+      text: this.doc.model.getTextDeltas(blockId) === undefined
+        ? undefined
+        : {
+            plain: blockText(this.doc.model.getTextDeltas(blockId)),
+            delta: this.doc.model.getTextDeltas(blockId) ?? [],
+          },
+      readonly: this.doc.isBlockReadonly(blockId),
       snapshot: this.doc.model.toSnapshot(blockId),
     }
   }
+}
+
+function readStringArgument(argumentsValue: unknown, key: string): string {
+  if (!argumentsValue || typeof argumentsValue !== 'object') return ''
+  const value = (argumentsValue as Record<string, unknown>)[key]
+  return typeof value === 'string' ? value.trim() : ''
 }
 
 function blockText(deltas: readonly unknown[] | undefined): string {

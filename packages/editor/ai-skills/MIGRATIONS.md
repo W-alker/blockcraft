@@ -69,6 +69,58 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
+## Unreleased — 2026-08-27 — Scoped revision Diff writes
+
+**Severity**: minor
+
+**What changed**: `DocumentRevisionManager.runAsRevision()` can now attribute a
+synchronous programmatic mutation set to one actor and review group without
+enabling global revision tracking. Nested structural replacement grouping
+reuses the outer scoped group.
+
+**Why**: Document agents and other programmatic producers need to show changes
+as in-document Revision Diff first, then let users accept or reject them,
+without causing subsequent manual editing to enter track-changes mode.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-input.md`
+- `blockcraft-data.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `RevisionWriteScopeOptions`
+- `doc.revisions.runAsRevision(actor, callback, {groupId?})`
+
+### Migration Recipe
+
+No existing consumer changes are required. Programmatic writers that previously
+temporarily toggled global mode can use the scoped API:
+
+```typescript
+// before: changes global state observed by the editor UI and later input
+doc.revisions.setActor(agentActor)
+doc.revisions.setMode('track')
+applyAgentOperations()
+doc.revisions.setMode('off')
+
+// after: creates one visible review Diff and restores prior state
+doc.revisions.runAsRevision(agentActor, applyAgentOperations, {
+  groupId: agentRequestId,
+})
+```
+
+### Behavior Changes
+
+- `doc.revisions.isTracking` is also true inside `runAsRevision()` while
+  `mode$` and `mode` retain their previous values.
+- The callback is synchronous. Operations outside Revision v1 continue through
+  their normal Yjs/Undo path without creating a partial Diff; Agent callers may
+  preflight and reject those operations when a fully reviewable result is required.
+
 ## Unreleased — 2026-08-27 — Unified object format domain
 
 **Severity**: major

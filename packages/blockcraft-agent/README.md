@@ -6,7 +6,7 @@ BlockCraft Editor Agent 的编辑器适配包，覆盖文档写作、模型读�
 当前包提供：
 
 - `DocumentAgentPlugin`：监听 BlockCraft 选区并生成模型上下文；
-- `captureBlockCraftAgentContext()`：有明确选区时读取选区；没有选区时读取整篇文档、文档块和结构版本；
+- `captureBlockCraftAgentContext()`：生成紧凑的 v2 Agent Document IR；保留真实 `nodeType`，将容器 `childIds` 与 editable `text.{plain,delta}` 分离，并始终提供文档末尾插入锚点；
 - `DocumentAgentPanelComponent`：最小 Angular 请求面板；
 - `DocumentAgentTransport`：由宿主应用实现的后端调用接口；
 - `validateDocumentAgentResult()`：校验模型返回的结构化操作。
@@ -14,21 +14,37 @@ BlockCraft Editor Agent 的编辑器适配包，覆盖文档写作、模型读�
 - `BLOCKCRAFT_AGENT_API_REFERENCE`：面向模型的 Doc、Model、Schema、CRUD、Selection
   和内置设计块 API 参考；
 - `DocumentAgentRunner`：调用 Transport 并校验 LLM 结果；
-- `DocumentAgentOperationApplier`：校验版本、只读状态后通过 CRUD 应用操作。
+- `DocumentAgentTurnRequest`：Provider 无关的 Master 回合协议，可在最终结果前请求受控工具；
+- `DocumentAgentOperationApplier`：校验版本、只读状态后通过 CRUD 应用操作，或写成可审阅的 Revision Diff。
 - `DOCUMENT_AGENT_TOOL_DEFINITIONS`：供支持 function calling 的模型声明工具；
 - `DocumentAgentToolExecutor`：提供读取、搜索、预览和确认后写入的受控工具执行器。
 
-Agent 操作目前支持文本替换、富文本 Delta、Schema 驱动创建块、Schema 驱动替换块、插入已形成的
-Snapshot、块删除、块移动和受控的 `update-block-props`。属性更新只
-允许白名单中的文档/排版属性或请求上下文中已有的属性，并且必须经过版本校验
- 和用户确认后才会通过 `DocCRUD` 写入。
+Agent 操作目前支持文本替换、富文本 Delta、Schema 驱动创建/替换块、块删除、块移动和
+受控的 `update-block-props`。模型不再具有原始 Snapshot 插入协议；新块必须经过
+Capability 的 `createParameters` 校验并由 Schema 生成 ID/默认值。属性更新必须匹配
+对应 Block Capability 的 `writableProps` JSON Schema。
+
+`BlockCraftEditorAgent.stageRevisionDiff()` 会把支持的文本和块结构操作立即投影成
+一个文档内修订组，不改变 `doc.revisions.mode`，也不会让用户后续输入进入修订模式。
+用户直接在现有修订审阅 UI 中接收或拒绝 Diff。当前 Revision v1 不能表达已有块
+属性/格式修改、块移动、仅格式 Delta 和新增行内对象；这几类操作会在写入前
+fail-closed，不会夹带成普通修改。
 
 新块优先使用 `create-blocks`：模型只返回 flavour 和 Schema createSnapshot 参数，
 宿主负责调用 Schema、生成 block ID、应用默认值并验证父子关系，避免模型手写 ID
-和完整 Snapshot。
+和完整 Snapshot。追加内容直接使用 `context.document.append` 的 parentId/index，
+不先创建再通过 `move-blocks` 搬到末尾。
+
+同一结果中的 operation 使用顺序坐标：每一步的 offset/index 都基于前一步完成后的
+影子模型。宿主会先模拟整批文本长度、父子结构、Schema、只读和 Capability 约束，
+全部通过后才打开一个 Yjs transaction。`create-blocks` / `replace-block` 可声明唯一
+`clientRef`；后续可将 `$ref:<clientRef>` 用作嵌套创建的 `parentId`，或把已有内容
+移动进去时的 `targetId`。同一计划中不要再替换、删除或移动刚创建的块，而应直接
+生成最终结构与位置。新块初始文字和 props 必须放在 Schema params 中，不能通过
+新块引用补写。
 
 现有块的表示变换使用 `replace-block`，宿主通过
-`DocCRUD.replaceWithSnapshots()` 原子替换，适合链接视图、卡片视图、嵌入视图等
+`DocCRUD.replaceBlockSnapshots()` 原子替换，适合链接视图、卡片视图、嵌入视图等
 由编辑器 Schema 定义的变换。Mermaid 的文本/预览切换属于持久化 `props.mode`，
 使用 `update-block-props`；全屏、缩放和图片预览属于临时宿主 UI 状态，不是文档操作。
 
@@ -42,11 +58,121 @@ Snapshot、块删除、块移动和受控的 `update-block-props`。属性更新
 
 会话记忆由宿主服务端根据请求中的 `sessionId` 保存为有界的最近几轮指令、Agent 摘要和操作摘要；每次请求仍重新读取当前文档上下文，旧文档快照和图片不会进入记忆。当前本地服务的记忆只存在于内存，服务重启后清空；生产环境应替换为带 TTL、租户隔离和访问控制的存储。
 
+## Master 工具循环
+
+`BlockCraftEditorAgent.run()` 会优先使用 Transport 的 `runTurn()`，让 Master
+Agent 在生成最终 `DocumentAgentResult` 前按需调用 BlockCraft 或宿主工具。旧
+Transport 只实现 `run()` 仍可工作，并会直接返回最终结果。
+
+当前循环默认最多 6 个模型回合、每回合最多 8 个工具调用；回传给无状态模型的
+工具历史最多保留 24 条、约 32 KB，单个参数或结果超过约 12 KB 时只保留截断预览。
+每次用户请求最多执行 3 个 specialist 委派，避免图片分析或质量复核造成无界模型成本。
+这些边界可通过 `BlockCraftEditorAgentOptions.orchestration` 调低或在安全范围内调高。
+
+Master 循环只以 `allowWrite: false` 执行工具。读取工具会立即返回当前模型状态；
+`blockcraft.apply_changes`、宿主 `document-write` 和 `external-write` 只返回
+`requiresConfirmation`。Playground 不再通过“应用修改”按钮二次确认文档修改，
+而是在 Master 返回结果后调用 `stageRevisionDiff()`，让用户在可见 Diff 上决定
+接收或拒绝。外部系统写入仍由宿主确认后显式传入 `allowWrite: true`。未知工具
+直接失败，不会降级成 DOM 操作。
+
+### Specialist sub-agent
+
+Master 可以通过 `blockcraft.delegate` 启动一个独立、只读的 specialist 模型回合：
+
+- `document-analysis`：问答、总结、事实与需求提取；
+- `content-writing`：长短文案、改写和语气一致性；
+- `structure-planning`：Block 树、Schema 参数和候选 operations；
+- `visual-reconstruction`：读取上传图片，映射文本层级、几何和样式到文本框、形状、艺术字、表格等可用 Block；
+- `host-workflow`：结合任务、会议等宿主上下文和自定义 Capability；
+- `quality-review`：在最终返回前复核内容、结构、安全与视觉还原度。
+
+Specialist 不能调用工具或执行写入，只返回 findings、recommendations、draft 和
+候选 operations；Master 负责合并，最终结果仍走宿主校验与 Revision Diff 审阅。Transport
+未实现 `runSubAgent()` 时会明确失败，不会假装完成委派。
+
 Editor Agent 的读取工具包括编辑器状态和单块模型查询；写入工具还支持富文本
 Delta、连续块删除和跨容器移动。它们仍需经过版本校验、只读检查、Schema
-兼容性检查和宿主确认。
+兼容性检查；文档内可表达的操作进入 Revision Diff，外部写入仍需宿主确认。
 
 Playground 的本地服务支持两种模式：
 
 - 设置 `OPENAI_API_KEY` 时走 OpenAI Responses API；
 - 没有 API Key 时默认调用本机已通过 `codex login` 登录的 Codex CLI。该模式只适合本地开发，服务绑定 `127.0.0.1`，不应暴露给其他用户或部署到生产环境。
+
+本机 Codex CLI 模式会把浏览器上传并压缩后的 JPEG/PNG/WebP 写入单次请求的临时目录，
+通过 CLI `--image` 参数真实传给模型，并在请求结束后删除；不再只发送“存在图片”的文字说明。
+
+## 宿主扩展
+
+任务、会议等宿主模块可以通过 `BlockCraftEditorAgentOptions.extensions`
+向 Agent 声明自定义 Block、Plugin、Context、Skill 和语义工具。Block 能力声明
+使用 `createParameters` / `writableProps` JSON Schema、`semanticRoles`、`atomicProps`
+和 examples 描述生成边界；能力声明
+只描述模型可以理解的语义和参数，不会把宿主服务或组件实例暴露给模型：
+
+```typescript
+const taskExtension: DocumentAgentHostExtension = {
+  id: 'task.agent',
+  version: '1',
+  description: '任务模块的文档和业务能力',
+  capabilities: [
+    {
+      id: 'task.block.task-card',
+      kind: 'block',
+      flavour: 'task-card',
+      title: '任务卡片',
+      description: '绑定宿主任务并展示状态、负责人和截止时间',
+      domains: ['task'],
+      semanticRoles: ['task', 'action-item'],
+      createParameters: {
+        type: 'array',
+        prefixItems: [{type: 'string', description: '任务 ID'}],
+      },
+      writableProps: {
+        type: 'object',
+        properties: {displayMode: {enum: ['card', 'compact']}},
+      },
+    },
+    {
+      id: 'task.tool.create-items',
+      kind: 'tool',
+      name: 'task.create_items',
+      title: '创建任务',
+      description: '在任务模块创建经过用户确认的行动项',
+      domains: ['task'],
+      effect: 'external-write',
+      parameters: {
+        type: 'object',
+        properties: {items: {type: 'array'}},
+        required: ['items'],
+      },
+    },
+  ],
+  toolHandlers: {
+    'task.create_items': (args, context) => {
+      if (!context.allowWrite) throw new Error('需要用户确认')
+      return taskService.createItems(args)
+    },
+  },
+}
+
+const agent = new BlockCraftEditorAgent(doc, runner, {
+  extensions: [taskExtension],
+  resolveHostContext: () => ({
+    module: 'task',
+    entityId: currentTaskId,
+    userRole: currentUser.role,
+    locale: 'zh-CN',
+  }),
+})
+```
+
+`BlockCraftEditorAgent` 会过滤当前文档没有注册的自定义 Block flavour，
+并把有效能力目录附加到每次请求的 `runtime`。支持 function calling 的宿主
+还可以使用 `blockcraft.get_capability_directory` 和
+`blockcraft.get_capability` 按需读取能力详情。没有声明 Agent Capability 的
+自定义 Block 仍可通过通用模型上下文读取，但 Agent 不应猜测其创建参数或业务写入行为。
+宿主工具通过 `agent.executeHostTool()` 执行；`document-write` 和
+`external-write` 始终先返回确认要求，只有宿主再次传入 `allowWrite: true`
+才会调用对应 handler。后端仍需重新校验当前用户权限，不能把此客户端门禁当成安全边界。

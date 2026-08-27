@@ -16,15 +16,35 @@ children.
 The request context is authoritative. Its scope is either "selection" or
 "document". For document scope, all blocks supplied in the context represent
 the complete document. For selection scope, endpoints use anchor/head and text
-offsets. The optional capabilities list describes the schemas registered by
+offsets. Context protocol v2 keeps the existing nodeType field, separates
+container childIds from editable text {plain, delta}, and omits recursive
+Snapshots. The optional capabilities list describes the schemas registered by
 the current host. Never invent a blockId, offset or unavailable flavour.
+When context.document is present, its append parentId/index is the authoritative
+logical document-end insertion point and is available even in selection scope.
 
 If sessionMemory is present, treat it as bounded, reference-only memory from
 earlier turns. The current context and current instruction are authoritative;
 do not assume an earlier operation was applied unless the current context
 confirms it.
 
-Return JSON only with this shape:
+If runtime is present, its capabilityDirectory is the authoritative lightweight
+directory from the current host application. Use blockcraft.get_capability to
+read the selected custom block, plugin, context, skill or semantic tool detail.
+A custom capability that is not declared must not be invented or written
+speculatively.
+
+In Master turn mode, the transport may ask for either a final result or one or
+more registered tool calls. Use read tools only when the supplied context is
+insufficient, consume returned toolHistory instead of repeating a call, and
+stop once enough evidence exists. A write-effect tool only returns a pending
+confirmation; never claim it was executed.
+Use blockcraft.delegate only when an independent document-analysis,
+content-writing, structure-planning, visual-reconstruction, host-workflow or
+quality-review pass materially improves the answer. Specialists are read-only
+and their operations remain untrusted candidates for the Master to reconcile.
+
+The final result payload has this shape:
 {
   "summary": string,
   "draft": string | undefined,
@@ -39,21 +59,18 @@ Return JSON only with this shape:
     "blockId": string,
     "props": object
   } | {
-      "kind": "insert-blocks",
-      "parentId": string,
-      "index": number,
-      "snapshots": object[]
-  } | {
       "kind": "create-blocks",
       "parentId": string,
       "index": number,
       "flavour": string,
-      "params": unknown[]
+      "params": unknown[],
+      "clientRef": string | undefined
   } | {
       "kind": "replace-block",
       "blockId": string,
       "flavour": string,
-      "params": unknown[]
+      "params": unknown[],
+      "clientRef": string | undefined
   } | {
       "kind": "apply-text-delta",
       "blockId": string,
@@ -79,9 +96,21 @@ formatting properties already present in the context or listed by the host.
 Use create-blocks for new blocks so the host can call the registered Schema's
 createSnapshot and generate IDs safely. Prefer schema-native operations over
 inventing raw snapshots.
+Operations execute sequentially: every index and text offset is interpreted
+after all earlier operations in the same array. The host simulates the complete
+array before opening one Yjs transaction. A create-blocks or replace-block may
+declare a unique clientRef. Use "$ref:<clientRef>" as create-blocks.parentId to
+nest content in that generated container, or as move-blocks.targetId to move
+existing content into it. Do not replace, delete, or move a block created in
+the same plan; create its final form and location directly. New-block refs
+cannot be used for text/props updates, so include initial content and props in
+Schema params.
+For requests such as append, add a conclusion, or insert at the document end,
+use one create-blocks operation directly at context.document.append. Never
+create elsewhere and then emit move-blocks to reach the document end.
 To transform an existing block into another registered representation, use
 replace-block with the existing blockId, target flavour and Schema parameters;
-the host calls DocCRUD.replaceWithSnapshots atomically. Do not simulate a
+the host calls DocCRUD.replaceBlockSnapshots atomically. Do not simulate a
 replacement with DOM changes or delete/insert instructions when a Schema
 replacement is available.
 For Mermaid diagrams, create the outer 'mermaid' block with params
@@ -96,9 +125,12 @@ An empty paragraph, list item or container child is still a valid structural
 target. To remove it, use delete-blocks with its actual parentId, index and
 count; never claim that an empty block cannot be changed just because it has
 no text.
-Do not return HTML, JavaScript, DOM instructions, Yjs operations, or direct
-property mutations. The host will validate every operation and the user must
-confirm before it is applied.
+Do not return raw Snapshots, HTML, JavaScript, DOM instructions, Yjs operations,
+or direct property mutations. The host validates every operation and projects supported
+document edits into the document as a Revision Diff immediately; the user then
+accepts or rejects that visible Diff. Do not mix update-block-props, block moves,
+format-only retain deltas or inline-object insertion into a revision-diff result,
+because the current Revision domain cannot represent those effects safely.
 `
 
 export function createDocumentAgentSystemPrompt(task: DocumentAgentTask): string {

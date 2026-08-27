@@ -19,6 +19,48 @@ describe('DocumentRevisionManager', () => {
       .toThrowError(RevisionActorRequiredError)
   })
 
+  it('records a scoped revision Diff without enabling global tracking', () => {
+    const harness = createHarness('abc', '', false)
+    harness.manager.setActor({actorId: 'reviewer', displayName: 'Reviewer'})
+    const modeChanges: string[] = []
+    const subscription = harness.manager.mode$.subscribe(mode => modeChanges.push(mode))
+
+    harness.manager.runAsRevision(
+      {actorId: 'blockcraft-agent', displayName: 'BlockCraft AI'},
+      () => {
+        expect(harness.manager.isTracking).toBeTrue()
+        expect(harness.manager.currentActor?.actorId).toBe('blockcraft-agent')
+        harness.manager.runInGroup(() => {
+          harness.manager.replaceText(FIRST_ID, 1, 1, 'X')
+        })
+      },
+      {groupId: 'agent-diff'},
+    )
+
+    expect(harness.manager.mode).toBe('off')
+    expect(harness.manager.isTracking).toBeFalse()
+    expect(harness.manager.currentActor?.actorId).toBe('reviewer')
+    expect(modeChanges).toEqual(['off'])
+    expect(harness.manager.listGroup('agent-diff').map(item => item.actor.actorId))
+      .toEqual(['blockcraft-agent', 'blockcraft-agent'])
+    expect(snapshotText(harness.manager.projectFinalSnapshot(), FIRST_ID)).toBe('aXc')
+    subscription.unsubscribe()
+  })
+
+  it('restores scoped revision state when the mutation throws', () => {
+    const harness = createHarness('abc', '', false)
+    expect(() => harness.manager.runAsRevision(
+      {actorId: 'blockcraft-agent'},
+      () => {
+        throw new Error('boom')
+      },
+    )).toThrowError('boom')
+
+    expect(harness.manager.mode).toBe('off')
+    expect(harness.manager.isTracking).toBeFalse()
+    expect(harness.manager.currentActor).toBeNull()
+  })
+
   it('projects pending and decided inline revisions without mutating raw content', () => {
     const harness = createHarness('abc', '')
     const insertId = harness.manager.insertText(FIRST_ID, 1, 'X')!

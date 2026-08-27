@@ -4,15 +4,28 @@ import type {
   DocumentAgentContextBlock,
   DocumentAgentSchemaCapability,
 } from '../core/agent.types'
+import {BLOCKCRAFT_BUILTIN_AGENT_EXTENSION} from '../core/builtin-block-capabilities'
+import {DocumentAgentExtensionRegistry} from '../core/host-extension'
 import {fingerprintAgentBlocks} from './document-agent-revision'
+
+const DEFAULT_AGENT_EXTENSIONS = new DocumentAgentExtensionRegistry([
+  BLOCKCRAFT_BUILTIN_AGENT_EXTENSION,
+])
 
 export function captureBlockCraftAgentContext(
   doc: BlockCraftDoc,
-  options: {scope?: 'selection' | 'document'} = {},
+  options: {
+    scope?: 'selection' | 'document'
+    extensions?: DocumentAgentExtensionRegistry
+  } = {},
 ): DocumentAgentContext | null {
   if (!doc.isInitialized || !doc.model.exists(doc.rootId)) return null
 
-  const capabilities = captureBlockCraftAgentSchemaCapabilities(doc)
+  const capabilities = captureBlockCraftAgentSchemaCapabilities(
+    doc,
+    options.extensions ?? DEFAULT_AGENT_EXTENSIONS,
+  )
+  const document = captureBlockCraftAgentDocumentAnchor(doc)
 
   const selection = doc.selection.value
   const hasExplicitSelection = options.scope !== 'document' && !!selection &&
@@ -20,10 +33,12 @@ export function captureBlockCraftAgentContext(
   if (!hasExplicitSelection) {
     const documentContent = collectDocumentContent(doc, doc.rootId)
     return {
+      protocolVersion: 2,
       scope: 'document',
       selection: null,
       selectedText: documentContent.text,
       blocks: documentContent.blocks,
+      document,
       capabilities,
       baseRevision: {
         structureRevision: doc.model.structureRevision,
@@ -52,20 +67,25 @@ export function captureBlockCraftAgentContext(
     blocks.push({
       blockId,
       flavour: doc.model.getFlavour(blockId) ?? 'unknown',
+      nodeType: String(doc.model.getNodeType(blockId) ?? 'unknown'),
       parentId: doc.model.getParentId(blockId),
       index: doc.model.indexInParent(blockId),
       childIds: doc.model.getChildrenIds(blockId),
       props: doc.model.getProps(blockId) ?? {},
-      textDeltas: doc.model.getTextDeltas(blockId) ?? [],
-      snapshot: doc.model.toSnapshot(blockId),
+      ...(doc.model.getTextDeltas(blockId) === undefined
+        ? {}
+        : {text: toAgentText(doc.model.getTextDeltas(blockId) ?? [])}),
+      readonly: doc.isBlockReadonly(blockId),
     })
   }
 
   return {
+    protocolVersion: 2,
     scope: 'selection',
     selection: selection.toSelectionJSON(),
     selectedText: doc.selection.getSelectedText(),
     blocks,
+    document,
     capabilities,
     baseRevision: {
       structureRevision: doc.model.structureRevision,
@@ -81,19 +101,56 @@ export function captureBlockCraftAgentDocumentContext(
   return captureBlockCraftAgentContext(doc, {scope: 'document'})
 }
 
+export function captureBlockCraftAgentDocumentAnchor(
+  doc: BlockCraftDoc,
+): DocumentAgentContext['document'] {
+  const childIds = doc.model.getChildrenIds(doc.rootId)
+  let appendIndex = childIds.length
+  while (
+    appendIndex > 0 &&
+    doc.model.getFlavour(childIds[appendIndex - 1]) === 'placement-layout'
+  ) {
+    appendIndex--
+  }
+  return {
+    rootId: doc.rootId,
+    append: {
+      parentId: doc.rootId,
+      index: appendIndex,
+    },
+  }
+}
+
 export function captureBlockCraftAgentSchemaCapabilities(
   doc: BlockCraftDoc,
+  extensions: DocumentAgentExtensionRegistry = DEFAULT_AGENT_EXTENSIONS,
 ): readonly DocumentAgentSchemaCapability[] {
-  return doc.schemas.getSchemaList().map(schema => ({
-    flavour: String(schema.flavour),
-    nodeType: String(schema.nodeType),
-    label: schema.metadata.label,
-    description: schema.metadata.description,
-    includeChildren: schema.metadata.includeChildren,
-    excludeChildren: schema.metadata.excludeChildren,
-    placementModes: schema.metadata.placement?.modes,
-    plainTextOnly: schema.metadata.plainTextOnly,
-  }))
+  const registeredBlockFlavours = doc.schemas.getSchemaList().map(schema => String(schema.flavour))
+  return doc.schemas.getSchemaList().map(schema => {
+    const flavour = String(schema.flavour)
+    const capability = extensions.getBlockCapability(flavour, {registeredBlockFlavours})
+    const writableProperties = capability?.writableProps?.['properties']
+    return {
+      flavour,
+      nodeType: String(schema.nodeType),
+      label: schema.metadata.label,
+      description: schema.metadata.description,
+      schemaVersion: capability?.schemaVersion ?? schema.metadata.version,
+      includeChildren: schema.metadata.includeChildren,
+      excludeChildren: schema.metadata.excludeChildren,
+      placementModes: schema.metadata.placement?.modes,
+      plainTextOnly: schema.metadata.plainTextOnly,
+      ...(capability ? {
+        capabilityId: capability.id,
+        semanticRoles: capability.semanticRoles,
+        creatable: !!capability.createParameters,
+        writablePropKeys: isRecord(writableProperties)
+          ? Object.keys(writableProperties)
+          : [],
+        atomicProps: capability.atomicProps,
+      } : {creatable: false}),
+    }
+  })
 }
 
 function collectDocumentContent(
@@ -112,12 +169,13 @@ function collectDocumentContent(
     blocks.push({
       blockId,
       flavour: doc.model.getFlavour(blockId) ?? 'unknown',
+      nodeType: String(doc.model.getNodeType(blockId) ?? 'unknown'),
       parentId: doc.model.getParentId(blockId),
       index: doc.model.indexInParent(blockId),
       childIds: doc.model.getChildrenIds(blockId),
       props: doc.model.getProps(blockId) ?? {},
-      textDeltas: textDeltas ?? [],
-      snapshot: doc.model.toSnapshot(blockId),
+      ...(textDeltas === undefined ? {} : {text: toAgentText(textDeltas)}),
+      readonly: doc.isBlockReadonly(blockId),
     })
 
     if (textDeltas !== undefined) {
@@ -132,6 +190,10 @@ function collectDocumentContent(
   return {blocks, text: textParts.join('\n')}
 }
 
+function toAgentText(deltas: readonly unknown[]): NonNullable<DocumentAgentContextBlock['text']> {
+  return {plain: deltaToText(deltas), delta: deltas}
+}
+
 function deltaToText(deltas: readonly unknown[]): string {
   return deltas
     .map(delta => {
@@ -140,4 +202,8 @@ function deltaToText(deltas: readonly unknown[]): string {
       return typeof insert === 'string' ? insert : ''
     })
     .join('')
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
 }

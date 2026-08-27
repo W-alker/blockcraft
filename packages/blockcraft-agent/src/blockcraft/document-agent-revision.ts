@@ -7,8 +7,10 @@ export function fingerprintAgentBlocks(
   return JSON.stringify(
     blocks.map(block => ({
       blockId: block.blockId,
+      flavour: block.flavour,
+      nodeType: block.nodeType,
       props: block.props ?? {},
-      textDeltas: block.textDeltas ?? [],
+      textDelta: block.text?.delta ?? [],
     })),
   )
 }
@@ -21,8 +23,16 @@ export function fingerprintCurrentAgentBlocks(
     blocks.map(block => ({
       blockId: block.blockId,
       flavour: doc.model.getFlavour(block.blockId) ?? 'unknown',
+      nodeType: String(doc.model.getNodeType(block.blockId) ?? 'unknown'),
       props: doc.model.getProps(block.blockId) ?? {},
-      textDeltas: doc.model.getTextDeltas(block.blockId) ?? [],
+      ...(doc.model.getTextDeltas(block.blockId) === undefined
+        ? {}
+        : {
+            text: {
+              plain: '',
+              delta: doc.model.getTextDeltas(block.blockId) ?? [],
+            },
+          }),
     })),
   )
 }

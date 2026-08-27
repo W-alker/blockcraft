@@ -1141,10 +1141,29 @@ capabilities.revisionReviewPlugin.state$.subscribe(state => {
 })
 ```
 
-Existing-block props/formatting, format-only Delta, inline-object insertion,
-block movement, table-cell structure and cross-container structure are not
-represented as v1 revisions. They remain available through the normal Yjs/Undo
-mutation path and create no Diff; tracking mode is not a feature gate.
+Programmatic assistants can write one visible, reviewable Diff without turning
+on global tracking for later user input:
+
+```typescript
+doc.revisions.runAsRevision(
+  {actorId: 'blockcraft-agent', displayName: 'BlockCraft AI'},
+  () => {
+    doc.crud.replaceText(blockId, from, length, replacement)
+    doc.crud.insertBlockSnapshots(parentId, index, snapshots)
+  },
+  {groupId: agentRequestId},
+)
+```
+
+`runAsRevision()` is a synchronous scoped write boundary. Inside the callback,
+Revision-aware `DocCRUD` paths produce normal text/block revision records under
+one review group; after it returns (or throws), the previous actor, session and
+tracking state are restored. It does not emit a `mode$` change and does not set
+`mode` to `track`. Keep the editor in `viewMode: 'markup'` when the Diff should
+be visible. Existing-block props/formatting, format-only Delta, inline-object
+insertion, block movement, table-cell structure and cross-container structure
+are not represented as v1 revisions. They remain available through the normal
+Yjs/Undo mutation path and create no Diff; tracking mode is not a feature gate.
 
 Calling `setMode('track')` without a non-empty `actorId` throws
 `RevisionActorRequiredError`; the editor never creates anonymous revisions.
@@ -1227,6 +1246,42 @@ Yjs state vector. `compactResolved()` rejects pending/conflicted state, applies
 all decisions, clears revision history, and increments `revisionEpoch`. The
 host synchronization layer must reject older-epoch offline replicas and make
 them reload.
+
+### BlockCraft Agent adapter contract
+
+The separate `blockcraft-agent` package gives a model a compact, versioned
+projection of the document instead of exposing Yjs internals or asking the
+model to emit full Snapshots. Its v2 Document IR keeps the framework's existing
+`nodeType` value, stable `blockId`, `parentId`, sibling `index`, and `childIds`.
+Editable content is represented separately as `text: {plain, delta}`; ordinary
+context omits recursive Snapshots. A full Snapshot is available only through
+the guarded `blockcraft.get_block` read tool when a focused inspection needs it.
+
+Every model-creatable Block must have a registered Agent capability. The
+capability declares the Schema version, semantic roles, JSON Schema for
+`createSnapshot()` parameters, JSON Schema for Agent-writable props, atomic
+props, and examples. The model discovers capability IDs from context and reads
+the authoritative contract with `blockcraft.get_capability`. If the capability
+version no longer matches the registered Block Schema, creation fails closed.
+Unknown flavours, unlisted props, invalid parent-child combinations, and raw
+Snapshot insertion are rejected before document mutation.
+
+Agent results contain only the constrained semantic operations
+`replace-text`, `apply-text-delta`, `update-block-props`, `create-blocks`,
+`replace-block`, `delete-blocks`, and `move-blocks`. Coordinates are sequential:
+each offset or index is interpreted after earlier operations in the same
+result. The host first compiles the full result against a shadow block tree,
+including Schema, readonly, mutation-policy, Delta length, and cycle checks,
+then applies the prepared plan in one Yjs transaction.
+
+Because Schema-generated IDs are not known to the model, `create-blocks` and
+`replace-block` may bind a short `clientRef`. The generated root can then be
+used as `create-blocks.parentId` for nested content or `move-blocks.targetId`
+for existing content via `$ref:<clientRef>`. Initial text and props still belong
+in the Schema parameters; text or prop operations cannot target a newly created
+ref, and a plan cannot replace, delete, or move a block it just created. Nested
+creates are folded into the owning generated Snapshot before the Yjs write, so
+a new container and its contents remain one safe model-first insertion.
 
 ## Step 9 — Persistence
 

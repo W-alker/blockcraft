@@ -44,7 +44,6 @@ import {
   DocumentAgentRequest,
   DocumentAgentResult,
   DocumentAgentRunner,
-  DocumentAgentToolExecutor,
   BlockCraftEditorAgent,
   captureBlockCraftAgentDocumentContext,
 } from 'blockcraft-agent';
@@ -1574,8 +1573,6 @@ export class AppComponent implements AfterViewInit, OnDestroy {
   selectionMeta: DebugMetaItem[] = [];
   agentContext: DocumentAgentContext | null = null;
   agentResult: DocumentAgentResult | null = null;
-  private agentResultContext: DocumentAgentContext | null = null;
-  private agentApplyContext: DocumentAgentContext | null = null;
   agentError: string | null = null;
   agentBusy = false;
   agentDialogOpen = false;
@@ -2063,14 +2060,14 @@ graph TD
     if (!editor.doc.isInitialized) this.ensureEditorInitialized();
     this.ensureAgentPlugin(editor);
     const liveContext = this._editorAgent?.getContext() ?? this.agentContext;
-    const context = this.agentResultContext ?? liveContext;
+    const context = this._editorAgent?.getContext('document') ?? liveContext;
     if (!context) {
       this.agentError = '文档上下文还没有准备好，请稍后再试。';
       this.cdr.markForCheck();
       return;
     }
 
-    if (context) this.renderAgentFakeRange(editor, context);
+    if (liveContext?.scope === 'selection') this.renderAgentFakeRange(editor, liveContext);
     this._agentDialogClose$ = new Subject<void>();
     const {componentRef, overlayRef} = editor.doc.overlayService.createGlobalOverlay<DocumentAgentPanelComponent>({
       component: DocumentAgentPanelComponent,
@@ -2096,8 +2093,6 @@ graph TD
     this.syncAgentDialogState();
 
     componentRef.instance.request.subscribe(request => void this.runAgentRequest(request));
-    componentRef.instance.apply.subscribe(() => this.applyAgentResult());
-    componentRef.instance.discard.subscribe(() => this.discardAgentResult());
     componentRef.instance.close.subscribe(() => this.closeAgentDialog());
   }
 
@@ -2152,20 +2147,42 @@ graph TD
     this.agentBusy = true;
     this.agentError = null;
     this.agentResult = null;
-    this.agentResultContext = null;
-    this.agentApplyContext = this.editor
+    const applyContext = this.editor
       ? captureBlockCraftAgentDocumentContext(this.editor.doc)
       : null;
     this.syncAgentDialogState();
     this.cdr.markForCheck();
 
     try {
-      this.agentResult = await editorAgent.run({
+      const result = await editorAgent.run({
         ...request,
         context,
       });
-      this.agentResultContext = context;
-      this._agentDialogComponent?.instance.addAssistantResult(this.agentResult);
+      this._agentDialogComponent?.instance.addAssistantResult(result);
+
+      if (result.operations.length) {
+        const editor = this.editor;
+        if (!editor || !applyContext) {
+          throw new Error('文档上下文已失效，无法生成修订 Diff。');
+        }
+        const revisions = editor.doc.revisions;
+        if (!revisions.currentActor) {
+          revisions.setActor({
+            actorId: `playground-${editor.doc.yDoc.clientID}`,
+            displayName: 'Playground 调试用户',
+          });
+        }
+        revisions.setViewMode('markup');
+        const staged = editorAgent.stageRevisionDiff(applyContext, result);
+        this.ensureRevisionReviewUi(editor);
+        this.revisionPanelOpen = true;
+        if (staged.revisionIds.length) {
+          this.revisionReviewPlugin?.activateRevision(staged.revisionIds[0]);
+        }
+        this._agentDialogComponent?.instance.addAssistantNotice(
+          `已生成 ${staged.applied} 项修订 Diff，请在文档修订面板中选择接收或拒绝。`,
+        );
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Agent 请求失败';
       this.agentError = message;
@@ -2175,55 +2192,6 @@ graph TD
       this.syncAgentDialogState();
       this.cdr.markForCheck();
     }
-  }
-
-  applyAgentResult(): void {
-    const editor = this.editor;
-    const context = this.agentResultContext;
-    const applyContext = this.agentApplyContext ?? context;
-    const result = this.agentResult;
-    if (!editor || !context || !applyContext || !result) return;
-    if (!result.operations.length) {
-      this.agentError = '这次建议没有可应用的修改。请让 Agent 返回具体的文案或排版调整。';
-      this._agentDialogComponent?.instance.addAssistantError(this.agentError);
-      this.syncAgentDialogState();
-      this.cdr.markForCheck();
-      return;
-    }
-
-    const execution = this._editorAgent?.executeTool({
-      name: 'blockcraft.apply_changes',
-      arguments: result,
-    }, {allowWrite: true}, applyContext) ?? new DocumentAgentToolExecutor(editor.doc, applyContext).execute({
-      name: 'blockcraft.apply_changes',
-      arguments: result,
-    }, {allowWrite: true});
-    if (execution.ok) {
-      const appliedCount = typeof execution.data === 'object' && execution.data !== null &&
-        'applied' in execution.data && typeof execution.data.applied === 'number'
-        ? execution.data.applied
-        : result.operations.length;
-      this.agentResult = null;
-      this.agentResultContext = null;
-      this.agentApplyContext = null;
-      this.agentError = null;
-      this._agentDialogComponent?.instance.addAssistantNotice(`已应用 ${appliedCount} 项修改。`);
-      this.syncAgentDialogState();
-    } else {
-      this.agentError = execution.error || 'Agent 修改应用失败';
-      this._agentDialogComponent?.instance.addAssistantError(this.agentError);
-      this.syncAgentDialogState();
-    }
-    this.cdr.markForCheck();
-  }
-
-  discardAgentResult(): void {
-    this.agentResult = null;
-    this.agentResultContext = null;
-    this.agentApplyContext = null;
-    this.agentError = null;
-    this.syncAgentDialogState();
-    this.cdr.markForCheck();
   }
 
   private get markdownStreamRenderer() {

@@ -82,15 +82,11 @@ function createDocumentAgentSessionId(): string {
 
         @if (result(); as currentResult) {
           <div class="bc-document-agent-panel__result-card">
-            <div class="bc-document-agent-panel__result-label">修改建议已生成</div>
+            <div class="bc-document-agent-panel__result-label">正在生成修订 Diff</div>
             <strong>{{ currentResult.summary }}</strong>
             @if (currentResult.operations.length) {
-              <span class="bc-document-agent-panel__result-meta">{{ currentResult.operations.length }} 项修改等待确认</span>
+              <span class="bc-document-agent-panel__result-meta">{{ currentResult.operations.length }} 项修改将进入文档修订审阅</span>
             }
-            <div class="bc-document-agent-panel__actions">
-              <button type="button" class="bc-document-agent-panel__apply" (click)="apply.emit()">应用修改</button>
-              <button type="button" class="bc-document-agent-panel__discard" (click)="discard.emit()">暂不应用</button>
-            </div>
           </div>
         }
 
@@ -180,10 +176,6 @@ function createDocumentAgentSessionId(): string {
     .bc-document-agent-panel__result-label { color: #4166c0; font-size: 11px; font-weight: 700; }
     .bc-document-agent-panel__result-card strong { font-size: 13px; line-height: 1.5; }
     .bc-document-agent-panel__result-meta { color: #7b88a0; font-size: 11px; }
-    .bc-document-agent-panel__actions { display: flex; gap: 8px; margin-top: 4px; }
-    .bc-document-agent-panel__actions button { min-height: 30px; padding: 0 11px; border-radius: 7px; font-size: 12px; cursor: pointer; }
-    .bc-document-agent-panel__apply { border: 1px solid #426bd1; color: #fff; background: #426bd1; }
-    .bc-document-agent-panel__discard { border: 1px solid #d6ddea; color: #5f6d82; background: #fff; }
     .bc-document-agent-panel__composer { display: grid; gap: 8px; padding: 12px 14px 14px; border-top: 1px solid #e6eaf1; background: #fff; }
     .bc-document-agent-panel__file-input { display: none; }
     .bc-document-agent-panel__attachment { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 6px 8px; border: 1px solid #dce4f1; border-radius: 9px; background: #f7f9fc; }
@@ -218,11 +210,13 @@ export class DocumentAgentPanelComponent implements AfterViewInit {
   readonly result = input<DocumentAgentResult | null>(null)
   readonly imageAttachment = signal<DocumentAgentImageAttachment | null>(null)
   readonly imageBusy = signal(false)
-  readonly activeContext = computed(() => this.liveContext() ?? this.context())
+  readonly activeContext = computed(() => this.context() ?? this.liveContext())
   readonly canSubmit = computed(() => Boolean(this.activeContext() && this.instruction().trim() && !this.busy() && !this.imageBusy()))
   readonly request = output<DocumentAgentRequest>()
   readonly close = output<void>()
+  /** @deprecated Revision Diff is staged by the host immediately. */
   readonly apply = output<void>()
+  /** @deprecated Revision Diff is rejected from the Revision review UI. */
   readonly discard = output<void>()
   readonly instruction = signal('')
   readonly messages = signal<readonly DocumentAgentChatMessage[]>([

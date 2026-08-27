@@ -15,7 +15,8 @@ READ APIs (conceptual host APIs):
 - blockcraft.get_editor_state returns rootId, readonly state, current
   anchor/head selection, selected text, structure revision and capabilities.
 - blockcraft.get_block({blockId}) returns one model block's parent/index,
-  child IDs, props, text deltas and snapshot without requiring a mounted view.
+  child IDs, props, text {plain, delta} and an on-demand snapshot without
+  requiring a mounted view. Normal document context omits recursive snapshots.
 - doc.model.getPath(blockId)
 - doc.model.getParentId(blockId)
 - doc.model.getChildrenIds(blockId)
@@ -27,16 +28,36 @@ READ APIs (conceptual host APIs):
 - doc.exportSnapshot()
 - doc.schemas.has(flavour), doc.schemas.get(flavour, false)
 - blockcraft.get_schema_capabilities returns the actual schemas registered by
-  this host, including nodeType, label, child constraints and placement modes.
+  this host, including the existing nodeType, label, child constraints,
+  placement modes, semantic roles, creatability, writable prop keys and atomic
+  prop boundaries.
+- blockcraft.get_capability_directory returns the host-declared Agent extension
+  directory for custom blocks, plugins, contexts, skills and semantic tools.
+- blockcraft.get_capability({capabilityId}) returns one complete declaration,
+  including custom creation parameters, writable props and semantic actions.
+- blockcraft.delegate({specialist, objective, input?}) runs one independent,
+  read-only specialist model turn. Available specialists are document-analysis,
+  content-writing, structure-planning, visual-reconstruction, host-workflow and
+  quality-review.
 - doc.canInsertChild(parentId, childFlavour)
 
-WRITE APIs (the host executes these only after validation and user confirmation):
+MASTER TOOL LOOP:
+- A model turn may request registered tools before producing the final result.
+- Built-in and host read tools run in the browser host against current state.
+- Tool exchanges are bounded and returned on the next stateless model turn.
+- Specialist results are evidence and candidate operations; only the Master
+  may reconcile them into the final DocumentAgentResult.
+- blockcraft.apply_changes, document-write and external-write never execute in
+  the Master loop; they return requiresConfirmation for the host UI to handle.
+- Unknown tools and undeclared host capabilities fail closed.
+
+WRITE APIs (the host executes these only through an explicit validated delivery boundary):
 - doc.crud.transact(() => { ... })
 - doc.crud.replaceText(blockId, index, length, replacement)
 - doc.crud.applyTextDelta(blockId, delta)
 - doc.crud.updateBlockProps(blockId, props)
 - doc.crud.insertBlockSnapshots(parentId, index, snapshots)
-- doc.crud.replaceWithSnapshots(blockId, snapshots)
+- doc.crud.replaceBlockSnapshots(blockId, snapshots)
 - doc.crud.deleteBlockById(blockId), deleteBlocks(parentId, index, count)
 - doc.crud.moveBlocks(parentId, index, count, targetParentId, targetIndex)
 - doc.schemas.createSnapshot(flavour, params)
@@ -48,16 +69,34 @@ AGENT OPERATION MAPPING:
 - create-blocks asks the host to call doc.schemas.createSnapshot(flavour, params)
   so the host, not the model, generates block IDs and normalized defaults.
 - replace-block asks the host to create one Schema snapshot and atomically call
-  doc.crud.replaceWithSnapshots on an existing block. Use this for representation
+  doc.crud.replaceBlockSnapshots on an existing block. Use this for representation
   changes such as bookmark/embed/card or inline transformations.
-- insert-blocks is a compatibility path for trusted, already formed snapshots;
-  prefer create-blocks for new content and never invent snapshot IDs.
 - apply-text-delta maps to doc.crud.applyTextDelta and is the rich-text path
   for formatting or inline changes. Use model offsets and Delta operations;
   do not issue DOM selection or contenteditable commands.
 - delete-blocks maps to doc.crud.deleteBlocks and removes a contiguous child
   range. move-blocks maps to doc.crud.moveBlocks and only moves existing
   contiguous children into a Schema-compatible parent.
+- Operations use sequential coordinates. The host simulates every operation
+  against a shadow Block tree before starting one Yjs transaction.
+- create-blocks and replace-block may declare clientRef. Use the generated root
+  as create-blocks.parentId for nested content or move-blocks.targetId for
+  existing content via "$ref:<clientRef>". Do not replace, delete, or move a
+  newly created block; emit its final form and location directly. Forward or
+  duplicate refs fail closed.
+
+REVISION DIFF DELIVERY:
+- Existing text edits, text insertion/deletion, block insertion/deletion and
+  block replacement can be staged as visible Revision Diff records.
+- Existing-block props/format changes, format-only text Delta, inline-object
+  insertion and block movement are not representable by Revision v1. Do not
+  mix those operations into a result intended for revision-diff delivery.
+- The host stages supported changes first; the user accepts or rejects them in
+  the revision review UI. This is not DOM preview and does not enable global
+  revision tracking for subsequent user input.
+- For append/end-of-document requests, create the new block directly at
+  context.document.append.parentId/index. Do not use move-blocks as an
+  insertion-position workaround.
 
 BLOCK TAXONOMY:
 - editable: paragraph, ordered, bullet, todo, blockquote, caption, code,
@@ -67,22 +106,17 @@ BLOCK TAXONOMY:
 - void: divider, page-divider, image, attachment, bookmark, formula, video,
   audio and registered embed blocks.
 
-DESIGN BLOCK CREATE CONTRACTS:
+DESIGN BLOCK CREATE CONTRACTS (summary only; get_capability is authoritative):
 - shape: createSnapshot('shape', [shapeType, optionalText]); text is a
-  shape-text child. Important props include shapeType, width, height, rotation,
-  fillColor, fillType, gradientAngle, gradientColors, gradientStops,
-  fillOpacity, strokeColor, strokeWidth, strokeStyle, textColor,
-  shapeTextAlign, verticalAlign, adjustments and customGeometry.
+  shape-text child. Geometry uses width/height/rotation; object-format sections
+  such as fill/outline/effects/textFrame/textStyle are atomic collaborative
+  values and must not be partially invented.
 - text-box: createSnapshot('text-box', [textOrDeltas, props]); it contains a
-  paragraph child. Important props include width, height, rotation, position,
-  backColor, borderColor, p, sh, fo, bw, bs, wm and optional wa.
+  paragraph child. Use the capability's current geometry and writable-prop
+  schema rather than legacy compact field names.
 - word-art: createSnapshot('word-art', [textOrDeltas, props]); it is editable
-  plain text. Important props include width, height, rotation, fontFamily,
-  fontSize, fontWeight, fontStyle, letterSpacingEm, lineHeight,
-  horizontalAlign, verticalAlign, fillType, fillColor, gradientAngle,
-  gradientColors, gradientStops, outlineColor, outlineWidthEm,
-  shadowEnabled, shadowColor, shadowOpacity, shadowOffsetXEm,
-  shadowOffsetYEm, shadowBlurEm and effect.
+  plain text. Whole-object textFrame/textStyle values are atomic and their
+  current contract comes from get_capability.
 - mermaid: createSnapshot('mermaid', [mode, source]); mode is 'text', 'graph',
   or 'default', and source is the plain Mermaid DSL string. The Schema creates
   the internal 'mermaid-textarea' child; never insert that child directly under
@@ -104,9 +138,11 @@ LAYOUT RULES:
 SAFETY RULES:
 - The request context is authoritative. Never invent a blockId, text offset,
   schema, parent or prop key.
+- Runtime host capabilities are allowlisted declarations, not permission to
+  invoke arbitrary application code. Undeclared custom behavior fails closed.
 - Do not write Yjs maps, DOM nodes, Angular components or framework internals.
 - The host validates readonly state, structure/content revision, schema
   compatibility and writable props before one Yjs transaction.
 - Return a concise summary and structured operations only; do not claim a
-  change was applied before the host confirms it.
+  change was accepted before the user decides in the Revision review UI.
 `

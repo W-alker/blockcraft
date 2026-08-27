@@ -93,6 +93,12 @@ export interface RevisionConfig {
   mode?: RevisionMode
 }
 
+/** Options for one synchronous, explicitly attributed revision write scope. */
+export interface RevisionWriteScopeOptions {
+  /** Reuse this review-card group instead of generating one for the scope. */
+  groupId?: string
+}
+
 export interface RevisionSnapshotTextTarget {
   kind: 'text'
   blockId: string

@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-26
+> Last updated: 2026-08-27
 
 ## Test Setup
 
@@ -39,10 +39,31 @@ guidance, comment-marker coexistence and that the mounted Final document has
 suites before the editor build. Host-specific file envelopes and migrations are
 tested in their owning application, not in the editor package.
 
-For categories outside Revision v1, assert that tracking does not disable the
-underlying Yjs/Undo operation, no Revision records are created and compound
-operations never leave a partial Diff. Cover at least format-only/inline-object
-Delta, block props/movement, table-cell replacement and cross-container ranges.
+Also lock the non-gating contract: with tracking enabled, props/formatting,
+mixed format or inline-object Delta, block movement, table-cell structure and
+cross-container edits must complete through the normal Yjs/Undo path, create no
+Revision records and never leave a partial Diff when the operation is compound.
+
+For `RevisionReviewPlugin`, keep the unit harness headless: provide only a
+`doc.revisions` incremental `change$`/`listGroup()` seam plus mode streams and
+command spies. Assert initial group projection, affected-group refresh,
+semantic no-op suppression for target-only rewrites, model-only
+activation/navigation, keep/revert redecision mapping, pending-only batch
+defaults, conflict forwarding and destroy-time unsubscription. UI layout and
+permissions are separate host tests.
+
+Test the optional default UI separately. For the panel, create substantially
+more cards than fit in the viewport and assert that CDK mounts only the visible
+window, the viewport cannot scroll horizontally, and previous/next intents are
+emitted only by panel cards. Emit a model content change for one block and
+assert that only its cached exact `readContent()` fragments are recomputed.
+The compact popover must expose only actor identity and native disabled
+keep/revert buttons. For `RevisionReviewUiController`, assert that an
+offscreen activation calls `navigateToBlock(blockId)`, acquires exactly
+`acquireBlockViewLease([blockId])`, anchors to the exact revision marker and
+releases the lease on close/destroy. Do not use a full-document lease in the
+test harness. Final view and host `canReview=false` must produce native disabled
+decision buttons.
 
 ## Testing Blocks
 

@@ -574,6 +574,16 @@ their normal Yjs transaction and Undo path with no Revision record. Composite
 fallbacks bypass tracking for the whole transaction so they cannot leave a
 partial Diff beside an otherwise untracked mutation.
 
+Programmatic producers such as document agents can use
+`doc.revisions.runAsRevision(actor, callback, {groupId})` to create the same
+CRDT-owned Revision records without changing global `mode$`. The synchronous
+scope temporarily supplies its actor/session/group to Revision-aware CRUD,
+restores all prior state in `finally`, and lets `runWithoutTracking()` continue
+to suppress tracking for internal materialization. A nested `runInGroup()`
+reuses the outer forced group by default, so compound Schema replacement stays
+within the caller's review card. This is a write-attribution scope, not a
+separate DOM preview or shadow document.
+
 ## IBlockSnapshot Format
 
 ```typescript

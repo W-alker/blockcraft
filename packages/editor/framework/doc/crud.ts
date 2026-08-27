@@ -26,7 +26,6 @@ import {
 } from "./origins";
 import {BlockReadonlyOperation} from "./block-readonly.types";
 import {writeSnapshotsToYBlockMap} from './snapshot-yblock'
-import {generateId} from '../utils'
 export {
   ORIGIN_BLOCK_READONLY_CONTROL,
   ORIGIN_SKIP_SYNC,
@@ -1192,16 +1191,16 @@ export class DocCRUD {
     }
     this.transact(() => {
       if (this.doc.revisions?.isTracking) {
-        const groupId = generateId()
-        if (snapshots?.length) {
-          this._insertBySnapshots(parentYBlock, index + 1, snapshots)
-          this.doc.revisions.recordBlockInsertion(
-            snapshots.map(snapshot => snapshot.id),
-            parentId,
-            groupId,
-          )
-        }
-        this.doc.revisions.recordBlockDeletion([blockId], parentId, groupId)
+        this.doc.revisions.runInGroup(() => {
+          if (snapshots?.length) {
+            this._insertBySnapshots(parentYBlock, index + 1, snapshots)
+            this.doc.revisions.recordBlockInsertion(
+              snapshots.map(snapshot => snapshot.id),
+              parentId,
+            )
+          }
+          this.doc.revisions.recordBlockDeletion([blockId], parentId)
+        })
         return
       }
       this._delete(parentYBlock, index, 1)

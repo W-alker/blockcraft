@@ -169,6 +169,14 @@ doc.revisions.setActor({actorId: currentUser.id, displayName: currentUser.name})
 doc.revisions.setMode('track')
 doc.revisions.setViewMode('markup')
 
+// Project one programmatic change set as a visible Diff without enabling
+// tracking for subsequent user input. The callback must be synchronous.
+doc.revisions.runAsRevision(
+  {actorId: 'document-agent', displayName: 'Document AI'},
+  () => doc.crud.replaceText(blockId, from, length, replacement),
+  {groupId: requestId},
+)
+
 const pending = doc.revisions.list({status: 'pending'})
 doc.revisions.accept(pending[0].id)       // append-only decision
 doc.revisions.redecide(pending[0].id, 'reject')
