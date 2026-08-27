@@ -1,4 +1,5 @@
 import {BehaviorSubject, Subject} from 'rxjs'
+import {BlockNodeType} from '../../block-std'
 import {
   BlockReadonlyError,
   BlockReadonlyOperation,
@@ -47,13 +48,17 @@ function makeDeleteHarness(options: {
     getProps: (id: string) =>
       id === 'shape-1' ? {position: {x: 12, y: 24}} : {},
     indexInParent: (id: string) => id === 'shape-1' ? 0 : -1,
+    getYBlock: () => undefined,
   }
   const doc = {
     model,
     schemas: {
-      get: () => ({
-        metadata: {placement: {modes: ['relative', 'absolute']}},
+      get: (flavour: string) => ({
+        metadata: flavour === 'placement-layout'
+          ? {}
+          : {placement: {modes: ['relative', 'absolute']}},
       }),
+      isValidChildrenForInstance: () => true,
     },
     readonlyManager: {assertRemovable},
     selection: {value: selection, blur},
@@ -182,9 +187,9 @@ describe('BlockPlacementManager absolute object deletion hotkeys', () => {
 
     const manager = new BlockPlacementManager(h.doc)
 
-    expect(registrations.length).toBe(2)
+    expect(registrations.length).toBe(3)
     expect(registrations.map(item => item.binding['key']))
-      .toEqual(['Backspace', 'Delete'])
+      .toEqual(['Backspace', 'Delete', 'd'])
     expect(registrations.every(item =>
       item.options.flavour === 'placement-layout',
     )).toBeTrue()
@@ -199,6 +204,64 @@ describe('BlockPlacementManager absolute object deletion hotkeys', () => {
     expect(preventDefault).toHaveBeenCalledTimes(1)
     expect(h.deleteBlocks).toHaveBeenCalledOnceWith('layout', 0, 1, true)
     expect(h.blur).toHaveBeenCalledTimes(1)
+
+    manager.destroy()
+    readonlySwitch$.complete()
+    onDestroy$.complete()
+  })
+
+  it('binds Ctrl/Cmd+D above the global strikethrough shortcut', () => {
+    const h = makeDeleteHarness()
+    const readonlySwitch$ = new BehaviorSubject(false)
+    const onDestroy$ = new Subject<void>()
+    const registrations: Array<{
+      binding: Record<string, unknown>
+      handler: BlockCraft.EventHandler
+    }> = []
+    h.doc.event = {
+      bindHotkey: (
+        binding: Record<string, unknown>,
+        handler: BlockCraft.EventHandler,
+      ) => {
+        registrations.push({binding, handler})
+        return () => {}
+      },
+    }
+    h.doc.readonlySwitch$ = readonlySwitch$
+    h.doc.onDestroy$ = onDestroy$
+    h.doc.afterInit = () => {}
+    h.doc.onChildrenUpdate$ = undefined
+    h.doc.onPropsUpdate$ = undefined
+    h.doc.ngZone = {runOutsideAngular: (fn: () => void) => fn()}
+    h.doc.model.toSnapshot = () => ({
+      id: 'shape-1',
+      flavour: 'shape',
+      nodeType: BlockNodeType.block,
+      props: {position: {x: 12, y: 24}},
+      meta: {},
+      children: [],
+    })
+    h.doc.readonlyManager.assertInsertable = jasmine.createSpy('assertInsertable')
+    h.doc.crud.insertBlockSnapshots = jasmine.createSpy('insertBlockSnapshots')
+      .and.callFake((_parentId: string, _index: number, snapshots: any[]) =>
+        snapshots.map(snapshot => snapshot.id),
+      )
+    h.doc.selection.replay = jasmine.createSpy('replay')
+    h.doc.placement = {
+      isAbsoluteObjectSelection: () => true,
+    }
+
+    const manager = new BlockPlacementManager(h.doc)
+    const preventDefault = jasmine.createSpy('preventDefault')
+    const duplicate = registrations.find(item => item.binding['key'] === 'd')!
+
+    expect(duplicate.handler({
+      get: () => ({selection: h.selection}),
+      preventDefault,
+    } as any)).toBeTrue()
+    expect(preventDefault).toHaveBeenCalledTimes(1)
+    expect(h.doc.crud.insertBlockSnapshots).toHaveBeenCalled()
+    expect(h.doc.selection.replay).toHaveBeenCalled()
 
     manager.destroy()
     readonlySwitch$.complete()

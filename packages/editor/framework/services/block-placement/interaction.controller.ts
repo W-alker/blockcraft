@@ -2,6 +2,7 @@ import {BehaviorSubject, Observable, Subscription} from 'rxjs'
 import type {IBlockProps} from '../../block-std/types'
 import {BlockReadonlyError} from '../../doc/block-readonly.types'
 import {deleteAbsolutePlacementObjects} from './delete-command'
+import {duplicateAbsolutePlacementSelection} from './duplicate-command'
 import {resolvePlacementBox} from './geometry'
 import {BlockPlacementRuntime} from './runtime'
 import {finitePlacementNumber} from './state'
@@ -37,7 +38,7 @@ export class BlockPlacementInteractionController {
       patch: Partial<IBlockProps>,
     ) => boolean,
   ) {
-    this.bindDeleteHotkeys()
+    this.bindObjectHotkeys()
     this.subscriptions.add(this.doc.readonlySwitch$.subscribe(readonly => {
       if (readonly) this.cancelDrag()
     }))
@@ -328,7 +329,7 @@ export class BlockPlacementInteractionController {
    * global input handlers. Consume deletion here so DocCRUD never applies the
    * render-unit paragraph fallback to an empty layout.
    */
-  private bindDeleteHotkeys(): void {
+  private bindObjectHotkeys(): void {
     const bindHotkey = this.doc.event?.bindHotkey
     if (typeof bindHotkey !== 'function') return
 
@@ -373,6 +374,24 @@ export class BlockPlacementInteractionController {
         metaKey: false,
       },
       handleDelete,
+      options,
+    ))
+    this.subscriptions.add(bindHotkey(
+      {
+        key: 'd',
+        shortKey: true,
+      },
+      context => {
+        const selection = context.get('keyboardState').selection
+        if (!this.runtime.isAbsoluteObjectSelection(selection)) return
+        try {
+          duplicateAbsolutePlacementSelection(this.doc, selection, 'input')
+        } catch (error) {
+          if (!(error instanceof BlockReadonlyError)) throw error
+        }
+        context.preventDefault()
+        return true
+      },
       options,
     ))
   }

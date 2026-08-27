@@ -93,6 +93,19 @@ export class ClipboardControl {
   private _syncNativeSelectionAtClipboardBoundary(
     root: BlockCraft.IBlockComponents['root'],
   ): void {
+    const currentSelection = this._dispatcher.currentSelection
+    if (
+      currentSelection &&
+      this._dispatcher.doc?.placement?.isAbsoluteObjectSelection?.(
+        currentSelection,
+      )
+    ) {
+      // Absolute object selection is model-owned. Its whole-block DOM Range is
+      // only a visual projection and normalizing it can collapse the command
+      // target to the root/layout before copy or paste reads the selection.
+      return
+    }
+
     const ownerDocument = root.hostElement.ownerDocument
     const nativeSelection = ownerDocument.getSelection()
     if (!nativeSelection?.rangeCount) return

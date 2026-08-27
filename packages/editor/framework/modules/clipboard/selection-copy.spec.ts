@@ -1,6 +1,8 @@
 import {BlockNodeType, DeltaInsert, IBlockSnapshot} from "../../block-std";
 import {BlockSelection} from "../selection/blockSelection";
 import {ClipboardManager} from "./index";
+import {parseClipboardSnapshot} from './internal-clipboard';
+import {ClipboardDataType} from './types';
 
 describe("ClipboardManager selection copy", () => {
   const makeHarness = () => {
@@ -167,6 +169,47 @@ describe("ClipboardManager selection copy", () => {
     ]);
     expect(queryBlocksBetween).toHaveBeenCalledOnceWith(first, last);
     expect(middle.toSnapshot).toHaveBeenCalled();
+    rootHost.remove();
+  });
+
+  it("writes a selected absolute object synchronously before adapter work", async () => {
+    const {addBlock, manager, doc, makeSelection, rootHost} = makeHarness();
+    const shape = addBlock("shape-1", "", BlockNodeType.block, "shape");
+    shape.toSnapshot.and.returnValue({
+      id: shape.id,
+      flavour: 'shape',
+      nodeType: BlockNodeType.block,
+      props: {position: {x: 20, y: 30}},
+      meta: {lock: 'owner-1', lockKind: 'template'},
+      children: [],
+    });
+    const selection = makeSelection(
+      {blockId: shape.id, type: 'selected', block: shape},
+      {blockId: shape.id, type: 'selected', block: shape},
+    );
+    const values = new Map<string, string>();
+    const clipboardData = {
+      setData: (type: string, value: string) => values.set(type, value),
+    } as unknown as DataTransfer;
+    (doc as any).placement = {
+      isAbsoluteObjectSelection: () => true,
+    };
+    spyOn<any>(manager, '_writeRichClipboardAsync').and.resolveTo();
+
+    const copy = manager.copyFromSelection(selection, clipboardData);
+
+    const snapshot = parseClipboardSnapshot(
+      values.get(ClipboardDataType.BLOCKCRAFT_SNAPSHOT),
+    );
+    const copiedShape = snapshot?.children[0] as IBlockSnapshot;
+    expect(copiedShape.id).toBe(shape.id);
+    expect(copiedShape.props['position']).toEqual({x: 20, y: 30});
+    expect(copiedShape.meta['lock']).toBeUndefined();
+    expect(copiedShape.meta['lockKind']).toBeUndefined();
+    expect(values.get(ClipboardDataType.HTML)).toContain(
+      'data-bc-clipboard-format="blockcraft/snapshot"',
+    );
+    await copy;
     rootHost.remove();
   });
 

@@ -68,6 +68,11 @@ function buildClipboardMarker(snapshot: IBlockSnapshot) {
   return `<span class="${BLOCKCRAFT_CLIPBOARD_MARKER_CLASS}" ${BLOCKCRAFT_CLIPBOARD_FORMAT_ATTR}="${BLOCKCRAFT_CLIPBOARD_FORMAT}" ${BLOCKCRAFT_CLIPBOARD_VERSION_ATTR}="${BLOCKCRAFT_CLIPBOARD_VERSION}" ${BLOCKCRAFT_CLIPBOARD_PAYLOAD_ATTR}="${payload}"></span>`;
 }
 
+/** HTML fallback that can be written synchronously during a native copy event. */
+export function buildClipboardSnapshotMarkerHtml(snapshot: IBlockSnapshot) {
+  return buildClipboardMarker(snapshot);
+}
+
 export function decorateClipboardHtml(html: string, snapshot: IBlockSnapshot) {
   if (!html) return html;
   if (html.includes(`${BLOCKCRAFT_CLIPBOARD_FORMAT_ATTR}="${BLOCKCRAFT_CLIPBOARD_FORMAT}"`)) {

@@ -609,7 +609,12 @@ BlockCraft Snapshot clipboard payload also preserves `plh`; HTML/Markdown/plain
 retention remains adapter-dependent. `lock` is the deliberate copy exception:
 copy clones the source snapshot and recursively removes the lock owner before
 producing any clipboard payload, so a native BlockCraft paste keeps its
-placeholder but never recreates permission state.
+placeholder but never recreates permission state. When an absolute object
+selection owns the placement plane, only that native BlockCraft snapshot format
+is accepted for object paste; the inserted tree receives fresh IDs, each
+top-level object is offset by 12px on both axes, and plain text or general HTML
+is rejected instead of being promoted into positioned objects. Ctrl/Cmd+D uses
+the same clone pipeline without reading or writing the OS clipboard.
 
 ## Undo/Redo
 

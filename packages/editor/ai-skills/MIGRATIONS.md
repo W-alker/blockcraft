@@ -351,6 +351,7 @@ policy into the editor.
 - `blockcraft-app.md`
 - `blockcraft-input.md`
 - `blockcraft-inline.md`
+- `blockcraft-selection.md`
 - `blockcraft-data.md`
 - `blockcraft-test.md`
 - `blockcraft-theme.md`
@@ -395,6 +396,8 @@ policy into the editor.
 - `DocExportManager.exportToHtml()`; JSON/HTML/Markdown/PDF/print clean exports
   use `doc.revisions.projectFinalSnapshot()`
 - `--bc-revision-*` theme variables and `data-bc-revision-*` DOM hooks
+- Absolute object selections support native BlockCraft Ctrl/Cmd+C/V cloning
+  and clipboard-independent Ctrl/Cmd+D duplication.
 
 ### Migration Recipe
 
@@ -453,6 +456,10 @@ host has granted the action; BlockCraft validates revision state, not roles.
 - Root `placement-layout` nodes never receive whole-block revision attribution.
   The first absolute-object insert records and paints the actual object child,
   matching later inserts, replacements and deletions.
+- Pasting a native BlockCraft object snapshot or pressing Ctrl/Cmd+D while an
+  absolute object set is selected creates fresh unlocked IDs, offsets each
+  top-level copy by 12px on both axes and selects the inserted copies. Plain
+  text and general HTML remain isolated from the object-owned input path.
 
 
 ## v0.6.1 — 2026-08-25 — Mermaid child Schema validation

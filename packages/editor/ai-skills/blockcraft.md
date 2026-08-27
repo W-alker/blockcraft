@@ -655,11 +655,14 @@ The layout and absolute descendants have no gap-cursor eligibility. A root-flow
 `object-group` in top-bottom mode is the bounded exception: it exposes the same
 before/after gap cursor and keyboard selection anchor as other flow container
 blocks. Stale gaps on absolute objects degrade to whole-object selection, and
-normal gaps are restored when an object returns to relative flow. While one absolute object or
-a Shift-selected object interval owns Selection, ordinary typing, IME, Enter,
-Tab and paste are isolated from the document input path without clearing the
-selection; Delete/Backspace deletes the selected object set in one undo step,
-and object tools remain available.
+normal gaps are restored when an object returns to relative flow. While one
+absolute object or a Shift-selected object interval owns Selection, ordinary
+typing, IME, Enter, Tab and non-BlockCraft paste are isolated from the document
+input path without clearing the selection. Ctrl/Cmd+C then Ctrl/Cmd+V duplicates a native
+BlockCraft object snapshot with fresh IDs, stripped locks and a 12px diagonal
+offset; Ctrl/Cmd+D performs the same operation without the OS clipboard.
+Delete/Backspace deletes the selected object set in one undo step, and object
+tools remain available.
 Under-content blocks can be selected again from a narrow
 visible edge band through model selection. Placement containers use explicit
 background / under / flow / over tiers, so under blocks remain visible and

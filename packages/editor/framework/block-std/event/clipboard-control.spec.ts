@@ -155,6 +155,34 @@ describe('ClipboardControl', () => {
     expect(dispatcher.run).toHaveBeenCalledTimes(1);
   });
 
+  it('does not replace an absolute object selection from its DOM projection', () => {
+    const objectSelection = {
+      ...liveSelection(),
+      start: {blockId: 'shape-1', type: 'selected'},
+      end: {blockId: 'shape-1', type: 'selected'},
+      anchor: {blockId: 'shape-1', type: 'selected'},
+      head: {blockId: 'shape-1', type: 'selected'},
+      commonParent: 'shape-1',
+    };
+    dispatcher.currentSelection = objectSelection;
+    dispatcher.doc.placement = {
+      isAbsoluteObjectSelection: (selection: unknown) =>
+        selection === objectSelection,
+    };
+    rootHost.textContent = 'object projection';
+    rootHost.focus();
+    const nativeRange = document.createRange();
+    nativeRange.selectNodeContents(rootHost);
+    document.getSelection()!.removeAllRanges();
+    document.getSelection()!.addRange(nativeRange);
+
+    dispatchDocumentClipboardEvent('copy');
+
+    expect(dispatcher.doc.selection.recalculate).not.toHaveBeenCalled();
+    const context = dispatcher.run.calls.mostRecent().args[1];
+    expect(context.get('clipboardState').selection).toBe(objectSelection);
+  });
+
   it('prevents readonly document-level cut while the editor host is focused', () => {
     dispatcher.status.isReadOnly = true;
     rootHost.focus();

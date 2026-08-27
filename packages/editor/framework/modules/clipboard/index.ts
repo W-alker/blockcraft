@@ -40,6 +40,7 @@ import {copyBlocks} from "./copyBlocks";
 import {applyCopyFilters, resolveCopyFilters, stripBlockLockMetaDeep} from "./copy-filter";
 import {
   BLOCKCRAFT_WEB_SNAPSHOT_MIME,
+  buildClipboardSnapshotMarkerHtml,
   buildClipboardItems,
   parseClipboardSnapshot,
   parseClipboardSnapshotFromHtml,
@@ -61,6 +62,7 @@ import {
 } from "../../doc/block-readonly.types";
 import {focusEditingHostForBlock} from "../selection/focus-editing-host";
 import {getClipboardNavigator} from "./dom-context";
+import {insertAbsolutePlacementCopies} from '../../services/block-placement/duplicate-command'
 
 export * from './types'
 export * from './copy-filter'
@@ -182,6 +184,24 @@ export class ClipboardManager {
     }
     snapshot = stripBlockLockMetaDeep(snapshot)
 
+    const absoluteObjectSelection =
+      this.doc.placement?.isAbsoluteObjectSelection(selection) === true
+    if (absoluteObjectSelection) {
+      // ClipboardEvent.clipboardData is writable only during the synchronous
+      // copy event. Object selections have no native Range, so waiting for
+      // async adapters can leave the real browser clipboard empty even though
+      // a plain DataTransfer-based unit test succeeds. Persist both the native
+      // snapshot MIME and an HTML marker before the first await; the latter is
+      // the fallback for browsers that strip custom event MIME types.
+      this._setClipboardData(clipboardData, {
+        [ClipboardDataType.TEXT]: plainText,
+        [ClipboardDataType.HTML]: buildClipboardSnapshotMarkerHtml(snapshot),
+        [ClipboardDataType.BLOCKCRAFT_SNAPSHOT]: serializeClipboardSnapshot(snapshot),
+      })
+      await this._writeRichClipboardAsync(snapshot, plainText)
+      return
+    }
+
     if (selectionReadonly) {
       // 只读模式：contenteditable=false 时 Chromium（特别是 Windows）会在
       // 同步 copy 事件 handler 返回后立刻解绑 event.clipboardData，await 之后
@@ -231,6 +251,55 @@ export class ClipboardManager {
     try {
       this.doc.inputManger?.assertSelectionWritable(selection, operation, 'clipboard')
       return true
+    } catch (error) {
+      if (!(error instanceof BlockReadonlyError)) throw error
+      return false
+    }
+  }
+
+  private _readAbsoluteObjectClipboardSnapshot(
+    state: ClipboardEventState,
+  ): IBlockSnapshot | null {
+    if (state.dataTypes.includes(ClipboardDataType.BLOCKCRAFT_SNAPSHOT)) {
+      const snapshot = parseClipboardSnapshot(
+        state.getData(ClipboardDataType.BLOCKCRAFT_SNAPSHOT),
+      )
+      if (snapshot) return snapshot
+    }
+    if (state.dataTypes.includes(BLOCKCRAFT_WEB_SNAPSHOT_MIME)) {
+      const snapshot = parseClipboardSnapshot(
+        state.getData(BLOCKCRAFT_WEB_SNAPSHOT_MIME),
+      )
+      if (snapshot) return snapshot
+    }
+    if (state.dataTypes.includes(ClipboardDataType.HTML)) {
+      return parseClipboardSnapshotFromHtml(
+        state.getData(ClipboardDataType.HTML),
+      )
+    }
+    return null
+  }
+
+  private _applyAbsoluteObjectPaste(
+    selection: BlockCraft.Selection,
+    state: ClipboardEventState,
+  ): boolean {
+    const rootSnapshot = this._readAbsoluteObjectClipboardSnapshot(state)
+    if (
+      !rootSnapshot ||
+      rootSnapshot.nodeType !== BlockNodeType.root ||
+      !rootSnapshot.children.length
+    ) {
+      return false
+    }
+    try {
+      return !!insertAbsolutePlacementCopies(
+        this.doc,
+        selection,
+        rootSnapshot.children as IBlockSnapshot[],
+        BlockReadonlyOperation.Paste,
+        'clipboard',
+      )
     } catch (error) {
       if (!(error instanceof BlockReadonlyError)) throw error
       return false
@@ -986,6 +1055,9 @@ export class ClipboardManager {
     logPasteFormats(state.clipboardData)
 
     const selection = state.selection
+    if (this.doc.placement?.isAbsoluteObjectSelection(selection)) {
+      return this._applyAbsoluteObjectPaste(selection, state)
+    }
     if (!this._assertClipboardSelection(selection, BlockReadonlyOperation.Paste)) {
       return false
     }

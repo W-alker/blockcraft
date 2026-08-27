@@ -816,9 +816,16 @@ becomes a Gap cursor, whole-block toolbar target or BlockController target.
 Clicking an absolute object still creates a whole-block model selection for its
 object-specific toolbar and Delete/Backspace handling. A placement-layout
 boundary interval created by Shift-multi-select has the same object-owned input
-isolation: ordinary printable input, IME, Enter, Tab and paste are prevented
-without clearing the selection, while Delete/Backspace removes the selected
-object interval in one undo step. Object tools remain available. A nested
+isolation: ordinary printable input, IME, Enter, Tab and non-BlockCraft paste are prevented
+without clearing the selection. Native BlockCraft object clipboard payloads are
+the deliberate paste exception: Ctrl/Cmd+C then Ctrl/Cmd+V clones the selected
+absolute object set beside the current selection, recursively assigns fresh
+IDs, strips block locks, offsets each top-level object by 12px on both axes and
+selects the copies. Plain text and general HTML never create absolute objects.
+Ctrl/Cmd+D performs the same clone without using the OS clipboard and the
+placement-layout scoped binding takes precedence over the global rich-text
+strikethrough shortcut. Delete/Backspace removes the selected object interval
+in one undo step. Object tools remain available. A nested
 editable child such as `shape-text` keeps ordinary text-selection behavior.
 
 ## Backward Compatibility
