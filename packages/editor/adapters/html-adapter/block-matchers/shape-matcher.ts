@@ -1,13 +1,19 @@
 import type {Element} from 'hast'
 import {
   ShapeBlockSchema,
+  SHAPE_OBJECT_FORMAT_CAPABILITY,
   isShapeKind,
   normalizeShapeProps,
+  normalizeShapeSnapshotProps,
   type ShapeBlockProps,
 } from '../../../blocks'
 import type {DeltaInsert, IBlockSnapshot} from '../../../framework'
 import {HastUtils} from '../../utils'
 import type {BlockHtmlAdapterMatcher} from '../block-adapter'
+import {
+  objectFormatPropsFromHtml,
+  objectFormatPropsToHtml,
+} from './object-format-properties'
 
 const property = (
   node: Element,
@@ -71,33 +77,17 @@ export const shapeBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
         ? deltaConverter.astToDelta(textElement)
         : []
       const typeValue = stringProperty(o.node, 'dataShapeType')
+      const objectFormat = objectFormatPropsFromHtml(o.node)
+      const shapeType = isShapeKind(objectFormat.shape)
+        ? objectFormat.shape
+        : isShapeKind(typeValue) ? typeValue : undefined
       const snapshot = ShapeBlockSchema.createSnapshot(
-        isShapeKind(typeValue) ? typeValue : undefined,
+        shapeType,
         text,
       )
       const rawProps: Partial<ShapeBlockProps> = {
-        shapeType: isShapeKind(typeValue) ? typeValue : undefined,
-        width: numberProperty(o.node, 'dataShapeWidth'),
-        height: numberProperty(o.node, 'dataShapeHeight'),
-        rotation: numberProperty(o.node, 'dataShapeRotation'),
-        fillColor: stringProperty(o.node, 'dataShapeFill'),
-        fillType: stringProperty(o.node, 'dataShapeFillType') as
-          ShapeBlockProps['fillType'],
-        gradientAngle: numberProperty(o.node, 'dataShapeGradientAngle'),
-        gradientColors: jsonProperty(o.node, 'dataShapeGradientColors') as
-          ShapeBlockProps['gradientColors'],
-        gradientStops: jsonProperty(o.node, 'dataShapeGradientStops') as
-          ShapeBlockProps['gradientStops'],
-        fillOpacity: numberProperty(o.node, 'dataShapeFillOpacity'),
-        strokeColor: stringProperty(o.node, 'dataShapeStroke'),
-        strokeWidth: numberProperty(o.node, 'dataShapeStrokeWidth'),
-        strokeStyle: stringProperty(o.node, 'dataShapeStrokeStyle') as
-          ShapeBlockProps['strokeStyle'],
-        textColor: stringProperty(o.node, 'dataShapeTextColor'),
-        shapeTextAlign: stringProperty(o.node, 'dataShapeTextAlign') as
-          ShapeBlockProps['shapeTextAlign'],
-        verticalAlign: stringProperty(o.node, 'dataShapeVerticalAlign') as
-          ShapeBlockProps['verticalAlign'],
+        ...objectFormat,
+        shape: shapeType ?? 'rectangle',
         adjustments: jsonProperty(o.node, 'dataShapeAdjustments') as
           ShapeBlockProps['adjustments'],
         customGeometry: stringProperty(o.node, 'dataShapeGeometry') as
@@ -112,7 +102,7 @@ export const shapeBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
           rawProps.placementLayer = 'under'
         }
       }
-      snapshot.props = normalizeShapeProps(rawProps)
+      snapshot.props = normalizeShapeSnapshotProps(rawProps)
       walkerContext.openNode(snapshot).closeNode()
       walkerContext.skipAllChildren()
     },
@@ -133,24 +123,10 @@ export const shapeBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
         tagName: 'figure',
         properties: {
           dataBcBlock: 'shape',
-          dataShapeType: props.shapeType,
-          dataShapeWidth: props.width,
-          dataShapeHeight: props.height,
-          dataShapeRotation: props.rotation,
-          dataShapeFill: props.fillColor,
-          dataShapeFillType: props.fillType,
-          ...(props.gradientColors ? {
-            dataShapeGradientAngle: props.gradientAngle,
-            dataShapeGradientColors: JSON.stringify(props.gradientColors),
-            dataShapeGradientStops: JSON.stringify(props.gradientStops),
-          } : {}),
-          dataShapeFillOpacity: props.fillOpacity,
-          dataShapeStroke: props.strokeColor,
-          dataShapeStrokeWidth: props.strokeWidth,
-          dataShapeStrokeStyle: props.strokeStyle,
-          dataShapeTextColor: props.textColor,
-          dataShapeTextAlign: props.shapeTextAlign,
-          dataShapeVerticalAlign: props.verticalAlign,
+          ...objectFormatPropsToHtml(
+            o.node.props as Partial<ShapeBlockProps>,
+            SHAPE_OBJECT_FORMAT_CAPABILITY,
+          ),
           ...(props.adjustments ? {
             dataShapeAdjustments: JSON.stringify(props.adjustments),
           } : {}),

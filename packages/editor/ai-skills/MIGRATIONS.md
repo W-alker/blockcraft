@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-08-26 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-08-27 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -68,6 +68,150 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
+
+## Unreleased — 2026-08-27 — Unified object format domain
+
+**Severity**: major
+
+**What changed**: Shape, TextBox and WordArt now share atomic object-format
+sections, the model-only `doc.objectFormat` manager, Schema `objectFormat`
+capabilities and one `ObjectFormatToolbarPlugin`. HTML uses bounded
+`data-bc-object-*` metadata and Snapshot Viewer/inline/print paths consume the
+same normalized values.
+
+**Why**: The former blocks and four object toolbars encoded fill, outline,
+effects, text and frame geometry differently. Mixed selection, predictable
+Undo, shared rendering and Word-like customization could not be implemented
+without one domain contract.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-adapter.md`
+- `blockcraft-app.md`
+- `blockcraft-block.md`
+- `blockcraft-data.md`
+- `blockcraft-embed.md`
+- `blockcraft-plugin.md`
+- `blockcraft-plugins-ref.md`
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-toolbar.md`
+- `MIGRATIONS.md`
+
+### Breaking Changes
+
+- Removed public exports and bundled registration for `ShapeToolbarPlugin`,
+  `TextBoxToolbarPlugin`, `WordArtToolbarPlugin`, `ObjectGroupToolbarPlugin`
+  and their public Action/Component contracts.
+- Shape/TextBox/WordArt persist readable compact keys
+  `lockRatio/shape/fill/outline/effects/textFrame/textStyle`. Each structured section is one
+  primitive-only record value, not a JSON string or nested Y.Map. Old style
+  fields and old HTML attributes are not migrated; invalid/missing sections
+  resolve to Schema defaults without throwing.
+- HTML export/import now uses bounded semantic `data-bc-object-*` metadata.
+  TextBox catalog artwork is separate `data-bc-object-artwork`; it never
+  masquerades as a user picture fill.
+
+### New APIs / Features
+
+- `BlockObjectFormatProps`, `ObjectPaint`, `ObjectLine`, `ObjectEffects`,
+  `ObjectTextFrame`, `ObjectTextStyle`, `ObjectFormatPatch` and normalization/
+  compact storage helpers.
+- `IBlockSchemaOptions.metadata.objectFormat` and
+  `BlockObjectFormatCapability` declare geometry, Shape, picture fill, arrow,
+  text-frame and rich-default/uniform-text support.
+- `BlockCraftDoc.objectFormat: BlockObjectFormatManager` provides DOM-free
+  normalized reads, mixed values, capability intersections, stable selection
+  validation and single-transaction batch writes.
+- `ObjectFormatToolbarPlugin` owns single/mixed object selection while reusing
+  the established side-aware 42px quick rail and responsive 288px secondary card.
+- WordArt adds deterministic `arch-up`, `arch-down`, `circle` and `wave`
+  projections while retaining a real plain-text editor during editing.
+
+### Migration Recipe
+
+```typescript
+// before
+new ShapeToolbarPlugin();
+block.updateProps({ fillColor: "#4857E2", strokeWidth: 2 });
+
+// after: bundled capabilities already register this plugin
+new ObjectFormatToolbarPlugin();
+doc.objectFormat.updateSelection([block.id], {
+  shapeFill: { ...DEFAULT_OBJECT_PAINT, color: "#4857E2" },
+  shapeOutline: { ...DEFAULT_OBJECT_LINE, width: 2 },
+});
+```
+
+Custom object Schemas must opt in with `metadata.objectFormat`; store sections
+through the matching `storeObject*()` helpers. The resulting shallow records
+contain primitives only and are each assigned as one top-level Yjs prop.
+
+### Behavior Changes
+
+- Reset deletes one format section and falls back to that Schema's default;
+  explicit `none` fill/outline stays distinct from reset.
+- Mixed-selection writes revalidate stable IDs, skip locked targets with user
+  feedback and fail closed if selection/targets drift before the transaction.
+- Shape catalog `textInsets` establish the safe text region first; user
+  `textFrame.margins` are then added inward. External text-wrap distances and
+  Word tight/through contour wrapping are not introduced.
+- Object selection and text editing keep the established interaction contract:
+  Shape shell clicks select the whole object, text surfaces keep their native
+  editing path, explicit object handles select/move, and Escape returns from
+  object text to the whole object. Selection opens only the compact iconfont
+  rail; the established 288px secondary card opens after the user chooses a rail group.
+- The unified rail and panel use CSES UI Button, Tooltip, Select, Input,
+  InputNumber, ColorPicker, Slider and Switch controls. BlockCraft
+  retains only Overlay ownership, iconfont glyphs and editor-specific layout;
+  paint/outline sliders preview during movement and create one model write on
+  completion. Shadow/glow controls preview a complete local draft; only the
+  explicit Apply action writes the whole `effects` or `textStyle` record once, while Cancel
+  restores the current model projection without a Yjs write.
+- The responsive floating panel omits the size/properties rail entry. Layout,
+  page alignment and hierarchy remain available for one or multiple objects;
+  object alignment, distribution and grouping appear only for multi-selection.
+  Shape uses one CSES segmented tab strip for Fill/Outline/Change Shape/Effects;
+  Text uses one for Text Frame/Typography/Appearance, with only one content area
+  visible at a time. Font selection is a searchable CSES Select backed by the
+  shared font catalogs and persists the bounded CSS stack used by Shape,
+  TextBox and WordArt. Active tab content has no trailing divider and the UI
+  exposes no per-section Reset action. Shape and text fill reuse the established
+  `ShapeFillPanelComponent`; a CSES Select switches fill mode and reveals only
+  its matching tools. The preset grid, start/end color pickers and angle control
+  adapt to one atomic `ObjectPaint`, while picture details and opacity remain in
+  the owning unified card. Internal `bc:` preset artwork is never echoed as a
+  user URL; fit, position and picture opacity stay hidden until the user sets a
+  URL or uploads an image. The UI no longer exposes text-frame wrap-inside,
+  rotate-with-object or auto-grow toggles, while their normalized data fields
+  remain supported programmatically.
+- Secondary cards omit redundant title/description headers. Format cards remain
+  288px; the layout card is 228px and uses compact CSES actions with icons above
+  visible one- or two-line labels plus tooltips. A common current layout mode is visibly active, while mixed layout
+  selections show no false active state. Margin steppers use the CSES small
+  control with a locally reduced compact height.
+- The unified data/actions do not replace the prior two-level toolbar shell.
+  The shell retains center-first right/left connected positions, side flipping,
+  `--bc-float-toolbar-*` theme tokens, RAF geometry updates and toolbar/CSES
+  sub-overlay focus ownership, including the pointer-to-focus grace interval.
+- Focused inputs, sliders and steppers no longer close the object toolbar when
+  the browser temporarily detaches the editor Selection. The Plugin uses
+  `allowDetachedSelection` only after proving that focus belongs to its panel or
+  owned CSES child overlay; any different non-empty selection still fails closed.
+- The same toolbar-owned focus gap retains the object's existing selected
+  outline and resize handles. Closing the toolbar removes only chrome retained
+  by the toolbar and never steals focus from its input controls. Retention now
+  begins on the first owned pointerdown and reprojects after that synchronous
+  selection broadcast, so the first rail click does not flash the chrome away.
+- Fixed-toolbar TextBox and WordArt preset galleries now resolve canonical
+  `fill`/`outline`/`textFrame`/`textStyle` sections at their catalog
+  boundary. Their previews and inserted objects therefore share the same
+  normalized presentation instead of falling back to black or one default
+  WordArt style after removal of legacy style fields.
+- Shape/text effects, line options, text-frame fields, gradient stops, shared
+  font selection and Transform controls emit canonical section patches through
+  the same Manager path; WordArt presentation resolves the canonical shared
+  font stack instead of silently falling back to its old font id.
 
 ## Unreleased — 2026-08-26 — Resumable flow and paginated presentation
 

@@ -65,6 +65,24 @@
     overflow-wrap: anywhere;
   }
 
+  .word-art-block__projection {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+  }
+
+  .word-art-block__surface--nonlinear:not(:focus-within) {
+    .word-art-block__editor { opacity: 0; }
+  }
+
+  .word-art-block__surface--nonlinear:focus-within {
+    .word-art-block__projection { opacity: 0; }
+  }
+
   .word-art-block__editor::before {
     color: var(--bc-color-secondary);
     background: none;

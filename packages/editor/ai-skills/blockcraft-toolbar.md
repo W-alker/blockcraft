@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-20
+> Last updated: 2026-08-27
 
 ## Overlay Service
 
@@ -295,16 +295,40 @@ controls into `CsDropdownMenuComponent`; its menu semantics are for commands,
 not nested forms. A Word-style object toolbar should use one block-owned
 connected Overlay for the rail and secondary card, then click-switch local
 panel state without recreating the overlay or writing document data.
-`TextBoxToolbarComponent` and `WordArtToolbarComponent` are the bundled
-references for this two-level pattern; both keep a narrow left/right rail and
-emit a panel-only geometry signal so the owning Overlay can reposition on the
-next animation frame. Their generic form fields use the matching CSES controls
-(`CsSelect`, `CsSegmented`, `CsInputNumber`, `CsColorPicker`, `CsSlider` and
-`CsSwitch`) while editor-specific layout geometry stays BlockCraft-owned.
+`ObjectFormatToolbarComponent` is the bundled reference for this two-level
+pattern: it preserves the established side-aware 42px iconfont rail, 288px
+format card, compact 228px layout card, center-first connected positions and
+RAF panel repositioning. Secondary cards omit redundant title/description
+headers. Layout modes use compact CSES buttons with the icon above a visible
+one- or two-line label, plus tooltips and an active state; hierarchy remains available for one or multiple objects, while object
+alignment/distribution/grouping is multi-selection only. Shape and text format
+cards use one CSES segmented tab strip and render only the active content area;
+the active tab has no trailing section divider or reset action. The text font
+is a searchable CSES select backed by the shared font catalogs and writes the
+catalog's bounded CSS stack so Shape, TextBox and WordArt render the same choice.
+Shape fill and text fill both embed the established `ShapeFillPanelComponent`
+surface: one CSES Select chooses none/solid/gradient/picture and reveals only
+that mode's controls; the established preset swatches, start/end colors and
+angle controls adapt directly to one atomic `ObjectPaint` value. Keep picture
+details and whole-paint opacity in the owning format card instead of cloning
+another gradient editor. Internal `bc:` artwork references remain rendering
+details: the card never echoes them as user URLs and does not reveal fit,
+position or picture opacity controls until a user image URL/upload exists.
+Section labels remain only where they distinguish command groups.
+The rail/card continue to use `--bc-float-toolbar-*` and
+`--bc-fixed-toolbar-shadow` theme variables. Its commands,
+tooltips and generic form fields use CSES UI (`CsButton`, `CsTooltip`,
+`CsSelect`, `CsInput`, `CsInputNumber`, `CsColorPicker`, `CsSlider`,
+and `CsSwitch`); only editor-specific rail/panel layout geometry
+stays BlockCraft-owned.
 When a CSES control creates a sibling CDK pane, the
 owning Plugin must recognize that pane only while the corresponding control
 inside its own toolbar has an open state. Pointer/focus in unrelated CSES panes
 must still close stale toolbars.
+The first owned pointerdown must retain the already-selected object host before
+the native-input selection gap begins, then reapply its visual chrome after the
+same synchronous selection broadcast settles. This keeps the outline/resizer
+stable on the first rail click without replaying Selection or stealing focus.
 
 ## Overlay Lifecycle Management
 
@@ -335,11 +359,20 @@ this._close$.next();  // triggers all takeUntil subscriptions to complete
 
 ## Reference: Real Toolbar Plugins
 
-| Plugin | Pattern | Path |
-|--------|---------|------|
-| `FloatTextToolbarPlugin` | Selection-based text formatting | `plugins/float-text-toolbar/` |
-| `DividerExtensionPlugin` | Block-type toolbar | `plugins/divider-toolbar/` |
-| `ImgToolbarPlugin` | Block-type toolbar with resize | `plugins/img-toolbar/` |
-| `ObjectGroupToolbarPlugin` | Multi-object alignment, distribution and grouping | `plugins/object-group-toolbar/` |
-| `CalloutToolbarPlugin` | Block-type toolbar with color picker | `plugins/callout-toolbar/` |
-| `InlineLinkExtension` | Inline element popover | `plugins/inline-link-extension/` |
+`ObjectFormatToolbarPlugin` keeps effect editing local until confirmation.
+Shape shadow/glow changes preview through RAF without touching Yjs; **Apply**
+writes the whole compact `effects` record once and **Cancel** restores the current
+model projection. Text shadow/glow follow the same rule and write the whole
+`textStyle` record once. Other high-frequency paint/outline sliders keep their
+pointerup/keyboard/blur single-write behavior. All visible controls are CSES UI
+components; focus in an input, stepper, select or owned child overlay remains
+inside the existing toolbar ownership boundary.
+
+| Plugin                      | Pattern                                                                | Path                             |
+| --------------------------- | ---------------------------------------------------------------------- | -------------------------------- |
+| `FloatTextToolbarPlugin`    | Selection-based text formatting                                        | `plugins/float-text-toolbar/`    |
+| `DividerExtensionPlugin`    | Block-type toolbar                                                     | `plugins/divider-toolbar/`       |
+| `ImgToolbarPlugin`          | Block-type toolbar with resize                                         | `plugins/img-toolbar/`           |
+| `ObjectFormatToolbarPlugin` | Shape/TextBox/WordArt formatting plus mixed-object layout and grouping | `plugins/object-format-toolbar/` |
+| `CalloutToolbarPlugin`      | Block-type toolbar with color picker                                   | `plugins/callout-toolbar/`       |
+| `InlineLinkExtension`       | Inline element popover                                                 | `plugins/inline-link-extension/` |

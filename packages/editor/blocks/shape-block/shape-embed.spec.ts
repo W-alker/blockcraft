@@ -7,22 +7,39 @@ import {
   createDefaultEditableShapeGeometry,
   serializeCustomShapeGeometry,
 } from './shape-geometry'
+import {
+  normalizeBlockObjectFormat,
+  storeObjectLine,
+  storeObjectPaint,
+  storeObjectTextFrame,
+  storeObjectTextStyle,
+} from '../../framework'
+import {SHAPE_OBJECT_FORMAT_CAPABILITY} from './shape.types'
 
 describe('inline shape embed', () => {
   it('preserves shape props, text and wrap layout through the DOM converter', () => {
     const delta = createInlineShapeDelta({
-      shapeType: 'ellipse',
+      shape: 'ellipse',
       width: 210,
       height: 130,
       rotation: 25,
-      fillColor: '#93C5FD',
-      fillOpacity: 0.7,
-      strokeColor: '#2563EB',
-      strokeWidth: 3,
-      strokeStyle: 'dashed',
-      textColor: '#0F172A',
-      shapeTextAlign: 'right',
-      verticalAlign: 'bottom',
+      fill: storeObjectPaint({
+        type: 'solid', color: '#93C5FD', opacity: 0.7,
+      }),
+      outline: storeObjectLine({
+        ...SHAPE_OBJECT_FORMAT_CAPABILITY.defaults.shapeOutline!,
+        color: '#2563EB', width: 3, dash: 'dash',
+      }),
+      textFrame: storeObjectTextFrame({
+        ...SHAPE_OBJECT_FORMAT_CAPABILITY.defaults.textFrame!,
+        horizontalAlign: 'right', verticalAlign: 'bottom',
+      }),
+      textStyle: storeObjectTextStyle({
+        ...SHAPE_OBJECT_FORMAT_CAPABILITY.defaults.textStyle!,
+        fill: {
+          type: 'solid', color: '#0F172A', opacity: 1,
+        },
+      }),
       position: {x: 12, y: 40},
       placementLayer: 'under',
     }, [{insert: '流程图'}], {
@@ -37,13 +54,13 @@ describe('inline shape embed', () => {
     )).toBeTrue()
     expect(view.dataset['bcInlineFloatLayout']).toBe('wrap')
     expect(view.querySelector('path')?.getAttribute('stroke-dasharray'))
-      .toBe('10 7')
+      .toBe('12 9')
     expect(view.querySelector('.bc-inline-shape__text')?.textContent)
       .toBe('流程图')
 
     const roundTrip = inlineShapeEmbedConverter.toDelta(view)
     const data = readInlineShapeDelta(roundTrip)
-    expect(data.props.shapeType).toBe('ellipse')
+    expect(data.props.shape).toBe('ellipse')
     expect(data.props.rotation).toBe(25)
     expect(data.props['position']).toBeUndefined()
     expect(data.props['placementLayer']).toBeUndefined()
@@ -60,7 +77,7 @@ describe('inline shape embed', () => {
 
   it('drops legacy text-side metadata and always renders automatic wrapping', () => {
     const delta = createInlineShapeDelta(
-      {shapeType: 'ellipse'},
+      {shape: 'ellipse'},
       [{insert: '旧形状'}],
       {wrap: true, x: 0.2, gap: 12},
     )
@@ -77,9 +94,11 @@ describe('inline shape embed', () => {
 
   it('renders open lines without a fill or editable text surface', () => {
     const view = inlineShapeEmbedConverter.toView(createInlineShapeDelta({
-      shapeType: 'line-double-arrow',
-      strokeColor: '#2563EB',
-      strokeWidth: 3,
+      shape: 'line-double-arrow',
+      outline: storeObjectLine({
+        ...SHAPE_OBJECT_FORMAT_CAPABILITY.defaults.shapeOutline!,
+        color: '#2563EB', width: 3,
+      }),
     }, [{insert: '不会显示'}]))
     const path = view.querySelector('path')
     const text = view.querySelector<HTMLElement>('.bc-inline-shape__text')
@@ -93,7 +112,7 @@ describe('inline shape embed', () => {
       createDefaultEditableShapeGeometry('curved-connector'),
     )!
     const delta = createInlineShapeDelta({
-      shapeType: 'curved-connector',
+      shape: 'curved-connector',
       customGeometry,
     })
     const view = inlineShapeEmbedConverter.toView(delta)
@@ -107,7 +126,7 @@ describe('inline shape embed', () => {
 
   it('renders construction strokes separately from the filled geometry', () => {
     const view = inlineShapeEmbedConverter.toView(createInlineShapeDelta({
-      shapeType: 'cube',
+      shape: 'cube',
     }))
     const paths = view.querySelectorAll('path')
 
@@ -118,11 +137,16 @@ describe('inline shape embed', () => {
 
   it('renders a linear-gradient fill through an SVG gradient def', () => {
     const view = inlineShapeEmbedConverter.toView(createInlineShapeDelta({
-      shapeType: 'rectangle',
-      fillType: 'linear-gradient',
-      gradientAngle: 160,
-      gradientColors: ['#26405E', '#58402E'],
-      gradientStops: [0, 1],
+      shape: 'rectangle',
+      fill: storeObjectPaint({
+        type: 'linear-gradient',
+        opacity: 1,
+        angle: 160,
+        stops: [
+          {color: '#26405E', offset: 0, opacity: 1},
+          {color: '#58402E', offset: 1, opacity: 1},
+        ],
+      }),
     }))
 
     const gradient = view.querySelector('defs linearGradient')
@@ -137,7 +161,14 @@ describe('inline shape embed', () => {
 
     // round-trip 后渐变仍然生效
     const data = readInlineShapeDelta(inlineShapeEmbedConverter.toDelta(view))
-    expect(data.props.fillType).toBe('linear-gradient')
-    expect(data.props.gradientColors).toEqual(['#26405E', '#58402E'])
+    const format = normalizeBlockObjectFormat(
+      data.props,
+      SHAPE_OBJECT_FORMAT_CAPABILITY,
+    )
+    expect(format.shapeFill?.type).toBe('linear-gradient')
+    expect(format.shapeFill?.type).toBe('linear-gradient')
+    if (format.shapeFill?.type !== 'linear-gradient') return
+    expect(format.shapeFill.stops.map(stop => stop.color))
+      .toEqual(['#26405E', '#58402E'])
   })
 })

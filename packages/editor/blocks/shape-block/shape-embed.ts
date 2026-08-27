@@ -1,5 +1,15 @@
 import {
   generateId,
+  normalizeBlockObjectFormat,
+  objectEffectsFilter,
+  objectLineArrowPath,
+  objectLineDasharray,
+  objectPaintBackgroundPosition,
+  objectPaintBackgroundSize,
+  objectPaintCssBackground,
+  objectPaintTextColor,
+  objectPicturePreserveAspectRatio,
+  objectTextTransformCss,
   type DeltaInsert,
   type DeltaInsertEmbed,
   type EmbedConverter,
@@ -22,9 +32,11 @@ import {
 } from './shape-geometry'
 import {
   normalizeShapeProps,
+  normalizeShapeSnapshotProps,
   resolveShapeFillGradient,
   shapeGradientToSvgVector,
   type ShapeBlockProps,
+  SHAPE_OBJECT_FORMAT_CAPABILITY,
 } from './shape.types'
 
 export const INLINE_SHAPE_EMBED_KEY = 'shape'
@@ -50,7 +62,7 @@ const payloadFromUnknown = (value: unknown): InlineShapePayload => {
     props?: Partial<ShapeBlockProps>
     text?: DeltaInsert[]
   }>(value)
-  const props = normalizeShapeProps(raw?.props)
+  const props = normalizeShapeSnapshotProps(raw?.props)
   const {
     position: _position,
     placementLayer: _placementLayer,
@@ -69,7 +81,8 @@ export function createInlineShapeDelta(
   text: readonly DeltaInsert[] = [],
   wrap?: Partial<InlineShapeWrapOptions>,
 ): DeltaInsertEmbed {
-  const normalized = normalizeShapeProps(props)
+  const normalized = normalizeShapeSnapshotProps(props)
+  const dimensions = normalizeShapeProps(normalized)
   const {
     position: _position,
     placementLayer: _placementLayer,
@@ -80,8 +93,8 @@ export function createInlineShapeDelta(
     text: cloneInlineObjectDeltas(text),
   }
   const {side: _side, ...attributes} = createInlineObjectAttributes(
-    normalized.width,
-    normalized.height,
+    dimensions.width,
+    dimensions.height,
     wrap,
   )
   return {
@@ -125,6 +138,10 @@ export const createInlineShapeEmbedConverter = (): EmbedConverter => ({
       height: data.height,
     })
     const definition = getShapeDefinition(props.shapeType)
+    const format = normalizeBlockObjectFormat(
+      data.props,
+      SHAPE_OBJECT_FORMAT_CAPABILITY,
+    )
     const renderGeometry = resolveShapeRenderGeometry(
       props.shapeType,
       definition,
@@ -147,14 +164,16 @@ export const createInlineShapeEmbedConverter = (): EmbedConverter => ({
     svg.classList.add('bc-inline-shape__geometry')
 
     // 行内形状没有 block id，为本次渲染生成一次性的渐变 def id。
+    const fill = format.shapeFill!
+    const defs = document.createElementNS(
+      'http://www.w3.org/2000/svg',
+      'defs',
+    )
+    let hasDefs = false
     const gradient = resolveShapeFillGradient(props)
-    let fillPaint = props.fillColor
-    if (gradient) {
+    let fillPaint = fill.type === 'solid' ? fill.color : 'none'
+    if (fill.type === 'linear-gradient' && gradient) {
       const gradientId = `bc-shape-fill-e-${generateId()}`
-      const defs = document.createElementNS(
-        'http://www.w3.org/2000/svg',
-        'defs',
-      )
       const linearGradient = document.createElementNS(
         'http://www.w3.org/2000/svg',
         'linearGradient',
@@ -175,9 +194,51 @@ export const createInlineShapeEmbedConverter = (): EmbedConverter => ({
         linearGradient.appendChild(stop)
       })
       defs.appendChild(linearGradient)
-      svg.appendChild(defs)
+      hasDefs = true
       fillPaint = `url(#${gradientId})`
+    } else if (fill.type === 'picture' && fill.src) {
+      const pictureId = `bc-shape-picture-e-${generateId()}`
+      const pattern = document.createElementNS('http://www.w3.org/2000/svg', 'pattern')
+      pattern.id = pictureId
+      pattern.setAttribute('width', '1')
+      pattern.setAttribute('height', '1')
+      pattern.setAttribute('patternContentUnits', 'objectBoundingBox')
+      const image = document.createElementNS('http://www.w3.org/2000/svg', 'image')
+      image.setAttribute('href', fill.src)
+      image.setAttribute('width', '1')
+      image.setAttribute('height', '1')
+      image.setAttribute('preserveAspectRatio', objectPicturePreserveAspectRatio(fill))
+      pattern.append(image)
+      defs.append(pattern)
+      hasDefs = true
+      fillPaint = `url(#${pictureId})`
     }
+    const outline = format.shapeOutline!
+    const startMarkerId = outline.startArrow === 'none'
+      ? null
+      : `bc-shape-arrow-start-e-${generateId()}`
+    const endMarkerId = outline.endArrow === 'none'
+      ? null
+      : `bc-shape-arrow-end-e-${generateId()}`
+    if (startMarkerId) {
+      defs.append(createArrowMarker(
+        startMarkerId,
+        outline.startArrow,
+        outline.color,
+        'auto-start-reverse',
+      ))
+      hasDefs = true
+    }
+    if (endMarkerId) {
+      defs.append(createArrowMarker(
+        endMarkerId,
+        outline.endArrow,
+        outline.color,
+        'auto',
+      ))
+      hasDefs = true
+    }
+    if (hasDefs) svg.appendChild(defs)
 
     for (const item of renderGeometry.paths) {
       const path = document.createElementNS(
@@ -186,33 +247,81 @@ export const createInlineShapeEmbedConverter = (): EmbedConverter => ({
       )
       path.setAttribute('d', item.d)
       path.setAttribute('fill', item.fillable ? fillPaint : 'none')
-      path.setAttribute('fill-opacity', String(props.fillOpacity))
+      path.setAttribute(
+        'fill-opacity',
+        String(fill.type === 'none' ? 0 : fill.opacity),
+      )
       if (item.fillable && renderGeometry.fillRule) {
         path.setAttribute('fill-rule', renderGeometry.fillRule)
       }
-      path.setAttribute('stroke', props.strokeColor)
-      path.setAttribute('stroke-width', String(props.strokeWidth))
+      path.setAttribute('stroke', format.shapeOutline!.type === 'none'
+        ? 'none'
+        : format.shapeOutline!.color)
+      path.setAttribute('stroke-opacity', String(format.shapeOutline!.opacity))
+      path.setAttribute('stroke-width', String(format.shapeOutline!.width))
       path.setAttribute('vector-effect', 'non-scaling-stroke')
-      if (props.strokeStyle === 'dashed') {
-        path.setAttribute('stroke-dasharray', '10 7')
-      }
+      path.setAttribute('stroke-linecap', format.shapeOutline!.cap)
+      path.setAttribute('stroke-linejoin', format.shapeOutline!.join)
+      const dasharray = objectLineDasharray(format.shapeOutline!)
+      if (dasharray) path.setAttribute('stroke-dasharray', dasharray)
+      if (startMarkerId) path.setAttribute('marker-start', `url(#${startMarkerId})`)
+      if (endMarkerId) path.setAttribute('marker-end', `url(#${endMarkerId})`)
+      const filter = objectEffectsFilter(format.shapeEffects!)
+      if (filter) path.style.filter = filter
       svg.appendChild(path)
     }
 
     const text = document.createElement('span')
     text.classList.add('bc-inline-shape__text')
     text.textContent = inlineObjectPlainText(data.text)
-    text.style.inset = [
-      `${definition.textInsets.top * 100}%`,
-      `${definition.textInsets.right * 100}%`,
-      `${definition.textInsets.bottom * 100}%`,
-      `${definition.textInsets.left * 100}%`,
-    ].join(' ')
-    text.style.color = props.textColor
-    text.style.textAlign = props.shapeTextAlign
-    text.style.justifyContent = props.verticalAlign === 'top'
+    text.style.inset = (['top', 'right', 'bottom', 'left'] as const)
+      .map((side, index) =>
+        `calc(${definition.textInsets[side] * 100}% + ${format.textFrame!.margins[index]}px)`,
+      ).join(' ')
+    const textStyle = format.textStyle!
+    const textFrame = format.textFrame!
+    text.style.color = objectPaintTextColor(textStyle.fill)
+    text.style.webkitTextFillColor = objectPaintTextColor(textStyle.fill)
+    const textBackground = objectPaintCssBackground(textStyle.fill)
+    if (textBackground) {
+      text.style.backgroundImage = textBackground
+      if (textStyle.fill.type === 'picture') {
+        text.style.backgroundSize = objectPaintBackgroundSize(textStyle.fill)
+        text.style.backgroundPosition = objectPaintBackgroundPosition(textStyle.fill)
+      }
+      text.style.backgroundClip = 'text'
+      text.style.setProperty('-webkit-background-clip', 'text')
+    }
+    text.style.setProperty(
+      '-webkit-text-stroke',
+      textStyle.outline.type === 'none'
+        ? '0 transparent'
+        : `${textStyle.outline.width}px ${textStyle.outline.color}`,
+    )
+    text.style.filter = objectEffectsFilter(textStyle.effects)
+    text.style.fontFamily = format.textStyle!.fontFamily
+    text.style.fontSize = `${format.textStyle!.fontSize}px`
+    text.style.fontWeight = `${format.textStyle!.fontWeight}`
+    text.style.fontStyle = format.textStyle!.fontStyle
+    text.style.letterSpacing = `${format.textStyle!.letterSpacingEm}em`
+    text.style.lineHeight = `${format.textStyle!.lineHeight}`
+    text.style.textAlign = format.textFrame!.horizontalAlign
+    text.style.whiteSpace = format.textFrame!.wrap ? '' : 'nowrap'
+    text.style.writingMode = format.textFrame!.direction === 'vertical-rl'
+      ? 'vertical-rl'
+      : ''
+    const transforms: string[] = []
+    if (textFrame.direction === 'rotate-90') transforms.push('rotate(90deg)')
+    if (textFrame.direction === 'rotate-270') transforms.push('rotate(270deg)')
+    if (!textFrame.rotateWithShape && props.rotation) {
+      transforms.push(`rotate(${-props.rotation}deg)`)
+    }
+    const textTransform = objectTextTransformCss(textStyle.transform)
+    if (textTransform) transforms.push(textTransform)
+    text.style.transform = transforms.join(' ')
+    text.style.justifyContent = format.textFrame!.verticalAlign === 'top'
       ? 'flex-start'
-      : props.verticalAlign === 'bottom'
+      : format.textFrame!.verticalAlign === 'bottom'
         ? 'flex-end'
         : 'center'
     if (definition.supportsText === false) text.hidden = true
@@ -240,3 +349,25 @@ export const createInlineShapeEmbedConverter = (): EmbedConverter => ({
 })
 
 export const inlineShapeEmbedConverter = createInlineShapeEmbedConverter()
+
+function createArrowMarker(
+  id: string,
+  arrow: NonNullable<ReturnType<typeof normalizeBlockObjectFormat>['shapeOutline']>['startArrow'],
+  color: string,
+  orient: string,
+): SVGMarkerElement {
+  const ns = 'http://www.w3.org/2000/svg'
+  const marker = document.createElementNS(ns, 'marker')
+  marker.id = id
+  marker.setAttribute('viewBox', '0 0 10 10')
+  marker.setAttribute('refX', '9')
+  marker.setAttribute('refY', '5')
+  marker.setAttribute('markerWidth', '7')
+  marker.setAttribute('markerHeight', '7')
+  marker.setAttribute('orient', orient)
+  const path = document.createElementNS(ns, 'path')
+  path.setAttribute('d', objectLineArrowPath(arrow))
+  path.setAttribute('fill', color)
+  marker.append(path)
+  return marker
+}

@@ -160,7 +160,7 @@ describe('Shape block domain', () => {
     const snapshot = ShapeBlockSchema.createSnapshot('right-arrow')
 
     expect(snapshot.flavour).toBe('shape')
-    expect(snapshot.props.shapeType).toBe('right-arrow')
+    expect(snapshot.props.shape).toBe('right-arrow')
     expect(snapshot.props.width).toBe(180)
     expect(snapshot.props.height).toBe(100)
     expect(snapshot.props.rotation).toBe(0)
@@ -276,7 +276,8 @@ describe('Shape block domain', () => {
     expect(normalized.rotation).toBe(270)
     expect(normalized.fillColor).toBe('#93C5FD')
     expect(normalized.fillOpacity).toBe(1)
-    expect(normalized.strokeWidth).toBe(0)
+    // Legacy flat style fields are deliberately ignored by the unified format.
+    expect(normalized.strokeWidth).toBe(2)
     expect(normalized.shapeTextAlign).toBe('center')
     expect(normalized.verticalAlign).toBe('middle')
     expect(input.width).toBe(-20)
@@ -951,6 +952,7 @@ describe('Shape block domain', () => {
     const context = {
       isReadonly: false,
       shapeProps: {},
+      shapeFormat: {lockAspectRatio: false},
       doc: {placement: {updateObjectGeometry}},
       id: 'shape-1',
       _shapeShell: {nativeElement: shell},
@@ -984,6 +986,7 @@ describe('Shape block domain', () => {
     const context = {
       isReadonly: false,
       shapeProps: {},
+      shapeFormat: {lockAspectRatio: false},
       doc: {
         placement: {
           getState: () => ({

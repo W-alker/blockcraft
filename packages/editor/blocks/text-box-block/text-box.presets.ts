@@ -2,11 +2,41 @@ import {BUBBLE_R_TEXT_BOX_PRESETS} from './presets/bubble-r'
 import {OUTLINE_R_TEXT_BOX_PRESETS} from './presets/outline-r'
 import {RECT_R_TEXT_BOX_PRESETS} from './presets/rect-r'
 import {
+  TEXT_BOX_OBJECT_FORMAT_CAPABILITY,
   type TextBoxBlockProps,
   type TextBoxWritingMode,
 } from './text-box.types'
+import {
+  createObjectPaint,
+  storeObjectEffects,
+  storeObjectLine,
+  storeObjectPaint,
+  storeObjectTextFrame,
+  storeObjectTextStyle,
+  type ObjectPaint,
+  type ObjectPictureFit,
+  type ObjectTextFrame,
+} from '../../framework'
+import {TEXT_BOX_ARTWORK_SCHEME} from './presets/artwork'
+import type {ShapeKind} from '../shape-block/shape.types'
 
 export type TextBoxPresetPatch = Partial<TextBoxBlockProps>
+
+export interface TextBoxPresetAuthoringProps {
+  sh?: ShapeKind
+  p?: number | [number] | [number, number] |
+    [number, number, number] | [number, number, number, number]
+  backColor?: string
+  borderColor?: string
+  bw?: number
+  bs?: 'solid' | 'dashed'
+  fo?: number
+  bgi?: string
+  bgs?: ObjectPictureFit
+  bgo?: number
+  wm?: TextBoxWritingMode
+  wa?: null
+}
 
 /** Catalog grouping, mirroring Word's text-box shape tabs. */
 export const TEXT_BOX_PRESET_CATEGORIES = [
@@ -31,7 +61,112 @@ export interface TextBoxPresetDefinition {
    * has a fixed orientation (bubble tails) restrict themselves.
    */
   wm?: readonly TextBoxWritingMode[]
+  props: Readonly<TextBoxPresetAuthoringProps>
+}
+
+/** Resolved catalog entry written directly through DocCRUD/Yjs. */
+export interface ResolvedTextBoxPresetDefinition
+  extends Omit<TextBoxPresetDefinition, 'props'> {
   props: Readonly<TextBoxPresetPatch>
+}
+
+/**
+ * The catalog source files intentionally remain compact design data. Convert
+ * them at the catalog boundary so every newly inserted preset persists only
+ * the unified public object-format contract; this is not a legacy-document
+ * migration path.
+ */
+function canonicalizePreset<T extends TextBoxPresetDefinition>(
+  preset: T,
+): Omit<T, 'props'> & {props: Readonly<TextBoxPresetPatch>} {
+  const source = preset.props
+  const defaults = TEXT_BOX_OBJECT_FORMAT_CAPABILITY.defaults
+  const defaultFill = defaults.shapeFill ?? createObjectPaint('solid')
+  const defaultOutline = defaults.shapeOutline!
+  const opacity = typeof source['fo'] === 'number'
+    ? Math.min(1, Math.max(0, source['fo']))
+    : 1
+  const image = typeof source['bgi'] === 'string' ? source['bgi'].trim() : ''
+  const artwork = image.startsWith(TEXT_BOX_ARTWORK_SCHEME) ? image : ''
+  const color = typeof source['backColor'] === 'string'
+    ? source['backColor'].trim()
+    : defaultFill.type === 'solid'
+      ? defaultFill.color
+      : '#FFFFFF'
+  const shapeFill: ObjectPaint = image && !artwork
+    ? {
+        ...createObjectPaint('picture'),
+        src: image,
+        fit: normalizePictureFit(source['bgs']),
+        opacity: typeof source['bgo'] === 'number'
+          ? Math.min(1, Math.max(0, source['bgo']))
+          : opacity,
+      }
+    : {
+        ...(opacity === 0 || color === 'transparent'
+          ? {type: 'none' as const}
+          : {
+              type: 'solid' as const,
+              color,
+              opacity,
+            }),
+      }
+  const outlineWidth = typeof source['bw'] === 'number'
+    ? Math.max(0, source['bw'])
+    : defaultOutline.width
+  const outlineColor = typeof source['borderColor'] === 'string'
+    ? source['borderColor'].trim()
+    : defaultOutline.color
+  const textFrame: ObjectTextFrame = {
+    ...defaults.textFrame!,
+    margins: normalizeMargins(source['p'], defaults.textFrame!.margins),
+    direction: source['wm'] === 'v' ? 'vertical-rl' : 'horizontal',
+  }
+  return {
+    ...preset,
+    props: {
+      width: preset.defaultWidth,
+      height: preset.defaultHeight,
+      rotation: defaults.rotation,
+      lockRatio: defaults.lockAspectRatio,
+      shape: source.sh ?? 'rectangle',
+      fill: storeObjectPaint(shapeFill),
+      outline: storeObjectLine({
+        ...defaultOutline,
+        type: outlineWidth === 0 || outlineColor === 'transparent'
+          ? 'none'
+          : 'line',
+        color: outlineColor === 'transparent'
+          ? defaultOutline.color
+          : outlineColor,
+        width: outlineWidth,
+        dash: source['bs'] === 'dashed' ? 'dash' : 'solid',
+      }),
+      effects: storeObjectEffects(defaults.shapeEffects!),
+      textFrame: storeObjectTextFrame(textFrame),
+      textStyle: storeObjectTextStyle(defaults.textStyle!),
+      ...(artwork ? {artwork} : {}),
+    },
+  }
+}
+
+function normalizeMargins(
+  value: unknown,
+  fallback: ObjectTextFrame['margins'],
+): ObjectTextFrame['margins'] {
+  if (!Array.isArray(value) || (value.length !== 2 && value.length !== 4)) {
+    return [...fallback]
+  }
+  const numbers = value.map(item => typeof item === 'number' && Number.isFinite(item)
+    ? Math.min(200, Math.max(0, item))
+    : 0)
+  return value.length === 2
+    ? [numbers[0]!, numbers[1]!, numbers[0]!, numbers[1]!]
+    : [numbers[0]!, numbers[1]!, numbers[2]!, numbers[3]!]
+}
+
+function normalizePictureFit(value: unknown): ObjectPictureFit {
+  return value === 'contain' || value === 'stretch' ? value : 'cover'
 }
 
 /**
@@ -70,6 +205,10 @@ const CLASSIC_TEXT_BOX_PRESET = {
   props: {...CLASSIC_FRAME.props, fo: 1},
 } as const satisfies TextBoxPresetDefinition
 
+const CANONICAL_CLASSIC_TEXT_BOX_PRESET = canonicalizePreset(
+  CLASSIC_TEXT_BOX_PRESET,
+)
+
 const CURATED_TEXT_BOX_PRESETS = [
   {
     // The classic frame with its fill zeroed — `fo: 0` is the same value the
@@ -98,15 +237,15 @@ const CURATED_TEXT_BOX_PRESETS = [
  */
 export const TEXT_BOX_PRESETS = [
   // The curated pair leads the outline tab: 极简 first, 默认白框 second.
-  ...CURATED_TEXT_BOX_PRESETS,
+  ...CURATED_TEXT_BOX_PRESETS.map(canonicalizePreset),
   // One decorated set per shape tab, each entry replicating a specific cell of
   // a reference sheet rather than invented from scratch. Earlier drafts that
   // improvised their own ornament vocabulary were replaced wholesale: a catalog
   // reads as a set only when every entry answers to the same source.
-  ...OUTLINE_R_TEXT_BOX_PRESETS,
-  ...RECT_R_TEXT_BOX_PRESETS,
-  ...BUBBLE_R_TEXT_BOX_PRESETS,
-] as const satisfies readonly TextBoxPresetDefinition[]
+  ...OUTLINE_R_TEXT_BOX_PRESETS.map(canonicalizePreset),
+  ...RECT_R_TEXT_BOX_PRESETS.map(canonicalizePreset),
+  ...BUBBLE_R_TEXT_BOX_PRESETS.map(canonicalizePreset),
+] as const satisfies readonly ResolvedTextBoxPresetDefinition[]
 
 export type TextBoxPresetId = typeof TEXT_BOX_PRESETS[number]['id']
 
@@ -116,15 +255,18 @@ export type TextBoxPresetId = typeof TEXT_BOX_PRESETS[number]['id']
  * `as const` union, but callers that emit a pick still need the literal type.
  */
 export type TextBoxPresetEntry =
-  Omit<TextBoxPresetDefinition, 'id'> & {id: TextBoxPresetId}
+  Omit<ResolvedTextBoxPresetDefinition, 'id'> & {id: TextBoxPresetId}
 
-export function getTextBoxPreset(value: unknown): TextBoxPresetDefinition {
+export function getTextBoxPreset(
+  value: unknown,
+): ResolvedTextBoxPresetDefinition {
   // Unknown ids fall back to the classic white frame, not to whatever entry
   // happens to lead the catalog — the no-fill entry took the first slot, and
   // a stale id silently resolving to a fill-less frame would look like data
   // loss rather than a fallback. The default is the named constant itself, so
   // renaming or retiring the id breaks the build instead of a runtime lookup.
-  return TEXT_BOX_PRESETS.find(item => item.id === value) ?? CLASSIC_TEXT_BOX_PRESET
+  return TEXT_BOX_PRESETS.find(item => item.id === value) ??
+    CANONICAL_CLASSIC_TEXT_BOX_PRESET
 }
 
 /**

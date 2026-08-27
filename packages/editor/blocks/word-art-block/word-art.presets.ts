@@ -1,339 +1,443 @@
-import type {
-  WordArtBlockProps,
-} from './word-art.types'
+import {
+  storeObjectTextFrame,
+  storeObjectTextStyle,
+} from "../../framework";
+import {
+  WORD_ART_OBJECT_FORMAT_CAPABILITY,
+  type WordArtBlockProps,
+  type WordArtEffect,
+} from "./word-art.types";
 
-export const WORD_ART_PRESETS = [
+interface WordArtPresetAuthoringProps {
+  fillType: "solid" | "linear-gradient";
+  fillColor: string;
+  gradientAngle: number;
+  gradientColors: readonly string[];
+  gradientStops: readonly number[];
+  outlineColor: string;
+  outlineWidthEm: number;
+  shadowEnabled: boolean;
+  shadowColor: string;
+  shadowOpacity: number;
+  shadowOffsetXEm: number;
+  shadowOffsetYEm: number;
+  shadowBlurEm: number;
+  effect: WordArtEffect;
+}
+
+const WORD_ART_PRESET_SOURCES = [
   {
-    id: 'sunset',
-    label: '落日金',
+    id: "sunset",
+    label: "落日金",
     props: {
-      fillType: 'linear-gradient',
-      fillColor: '#F97316',
+      fillType: "linear-gradient",
+      fillColor: "#F97316",
       gradientAngle: 180,
-      gradientColors: ['#FDE047', '#F97316', '#DC2626'],
+      gradientColors: ["#FDE047", "#F97316", "#DC2626"],
       gradientStops: [0, 0.58, 1],
-      outlineColor: '#9A3412',
+      outlineColor: "#9A3412",
       outlineWidthEm: 0.03,
       shadowEnabled: true,
-      shadowColor: '#7C2D12',
+      shadowColor: "#7C2D12",
       shadowOpacity: 0.3,
       shadowOffsetXEm: 0.08,
       shadowOffsetYEm: 0.12,
       shadowBlurEm: 0.04,
-      effect: 'none',
+      effect: "none",
     },
   },
   {
-    id: 'ocean',
-    label: '深海蓝',
+    id: "ocean",
+    label: "深海蓝",
     props: {
-      fillType: 'linear-gradient',
-      fillColor: '#2563EB',
+      fillType: "linear-gradient",
+      fillColor: "#2563EB",
       gradientAngle: 90,
-      gradientColors: ['#67E8F9', '#4F46E5', '#C026D3'],
+      gradientColors: ["#67E8F9", "#4F46E5", "#C026D3"],
       gradientStops: [0, 0.55, 1],
-      outlineColor: '#312E81',
+      outlineColor: "#312E81",
       outlineWidthEm: 0.025,
       shadowEnabled: true,
-      shadowColor: '#312E81',
+      shadowColor: "#312E81",
       shadowOpacity: 0.32,
       shadowOffsetXEm: 0.04,
       shadowOffsetYEm: 0.14,
       shadowBlurEm: 0.08,
-      effect: 'perspective-left',
+      effect: "perspective-left",
     },
   },
   {
-    id: 'mint',
-    label: '薄荷青',
+    id: "mint",
+    label: "薄荷青",
     props: {
-      fillType: 'solid',
-      fillColor: '#14B8A6',
+      fillType: "solid",
+      fillColor: "#14B8A6",
       gradientAngle: 180,
-      gradientColors: ['#5EEAD4', '#0F766E'],
+      gradientColors: ["#5EEAD4", "#0F766E"],
       gradientStops: [0, 1],
-      outlineColor: '#134E4A',
+      outlineColor: "#134E4A",
       outlineWidthEm: 0.025,
       shadowEnabled: true,
-      shadowColor: '#0F766E',
+      shadowColor: "#0F766E",
       shadowOpacity: 0.24,
       shadowOffsetXEm: 0.06,
       shadowOffsetYEm: 0.1,
       shadowBlurEm: 0.08,
-      effect: 'none',
+      effect: "none",
     },
   },
   {
-    id: 'berry',
-    label: '莓果紫',
+    id: "berry",
+    label: "莓果紫",
     props: {
-      fillType: 'linear-gradient',
-      fillColor: '#9333EA',
+      fillType: "linear-gradient",
+      fillColor: "#9333EA",
       gradientAngle: 135,
-      gradientColors: ['#F0ABFC', '#9333EA', '#4C1D95'],
+      gradientColors: ["#F0ABFC", "#9333EA", "#4C1D95"],
       gradientStops: [0, 0.55, 1],
-      outlineColor: '#581C87',
+      outlineColor: "#581C87",
       outlineWidthEm: 0.035,
       shadowEnabled: true,
-      shadowColor: '#3B0764',
+      shadowColor: "#3B0764",
       shadowOpacity: 0.34,
       shadowOffsetXEm: 0.08,
       shadowOffsetYEm: 0.1,
       shadowBlurEm: 0.05,
-      effect: 'slant-right',
+      effect: "slant-right",
     },
   },
   {
-    id: 'mono',
-    label: '黑白经典',
+    id: "mono",
+    label: "黑白经典",
     props: {
-      fillType: 'solid',
-      fillColor: '#F8FAFC',
+      fillType: "solid",
+      fillColor: "#F8FAFC",
       gradientAngle: 180,
-      gradientColors: ['#F8FAFC', '#CBD5E1'],
+      gradientColors: ["#F8FAFC", "#CBD5E1"],
       gradientStops: [0, 1],
-      outlineColor: '#0F172A',
+      outlineColor: "#0F172A",
       outlineWidthEm: 0.045,
       shadowEnabled: true,
-      shadowColor: '#0F172A',
+      shadowColor: "#0F172A",
       shadowOpacity: 0.4,
       shadowOffsetXEm: 0.07,
       shadowOffsetYEm: 0.09,
       shadowBlurEm: 0,
-      effect: 'none',
+      effect: "none",
     },
   },
   {
-    id: 'silver',
-    label: '立体银',
+    id: "silver",
+    label: "立体银",
     props: {
-      fillType: 'linear-gradient',
-      fillColor: '#94A3B8',
+      fillType: "linear-gradient",
+      fillColor: "#94A3B8",
       gradientAngle: 180,
-      gradientColors: ['#FFFFFF', '#CBD5E1', '#64748B', '#F8FAFC'],
+      gradientColors: ["#FFFFFF", "#CBD5E1", "#64748B", "#F8FAFC"],
       gradientStops: [0, 0.32, 0.72, 1],
-      outlineColor: '#334155',
+      outlineColor: "#334155",
       outlineWidthEm: 0.03,
       shadowEnabled: true,
-      shadowColor: '#0F172A',
+      shadowColor: "#0F172A",
       shadowOpacity: 0.3,
       shadowOffsetXEm: 0.08,
       shadowOffsetYEm: 0.1,
       shadowBlurEm: 0.04,
-      effect: 'perspective-right',
+      effect: "perspective-right",
     },
   },
   {
-    id: 'ice',
-    label: '冰晶蓝',
+    id: "ice",
+    label: "冰晶蓝",
     props: {
-      fillType: 'linear-gradient',
-      fillColor: '#38BDF8',
+      fillType: "linear-gradient",
+      fillColor: "#38BDF8",
       gradientAngle: 180,
-      gradientColors: ['#ECFEFF', '#67E8F9', '#0284C7'],
+      gradientColors: ["#ECFEFF", "#67E8F9", "#0284C7"],
       gradientStops: [0, 0.48, 1],
-      outlineColor: '#075985',
+      outlineColor: "#075985",
       outlineWidthEm: 0.025,
       shadowEnabled: true,
-      shadowColor: '#0C4A6E',
+      shadowColor: "#0C4A6E",
       shadowOpacity: 0.26,
       shadowOffsetXEm: 0.04,
       shadowOffsetYEm: 0.12,
       shadowBlurEm: 0.08,
-      effect: 'tall',
+      effect: "tall",
     },
   },
   {
-    id: 'forest',
-    label: '森林绿',
+    id: "forest",
+    label: "森林绿",
     props: {
-      fillType: 'linear-gradient',
-      fillColor: '#16A34A',
+      fillType: "linear-gradient",
+      fillColor: "#16A34A",
       gradientAngle: 160,
-      gradientColors: ['#BEF264', '#22C55E', '#166534'],
+      gradientColors: ["#BEF264", "#22C55E", "#166534"],
       gradientStops: [0, 0.54, 1],
-      outlineColor: '#14532D',
+      outlineColor: "#14532D",
       outlineWidthEm: 0.03,
       shadowEnabled: true,
-      shadowColor: '#052E16',
+      shadowColor: "#052E16",
       shadowOpacity: 0.28,
       shadowOffsetXEm: 0.06,
       shadowOffsetYEm: 0.1,
       shadowBlurEm: 0.05,
-      effect: 'slant-up',
+      effect: "slant-up",
     },
   },
   {
-    id: 'cherry',
-    label: '樱桃红',
+    id: "cherry",
+    label: "樱桃红",
     props: {
-      fillType: 'linear-gradient',
-      fillColor: '#E11D48',
+      fillType: "linear-gradient",
+      fillColor: "#E11D48",
       gradientAngle: 180,
-      gradientColors: ['#FECDD3', '#F43F5E', '#9F1239'],
+      gradientColors: ["#FECDD3", "#F43F5E", "#9F1239"],
       gradientStops: [0, 0.5, 1],
-      outlineColor: '#881337',
+      outlineColor: "#881337",
       outlineWidthEm: 0.03,
       shadowEnabled: true,
-      shadowColor: '#4C0519',
+      shadowColor: "#4C0519",
       shadowOpacity: 0.3,
       shadowOffsetXEm: 0.06,
       shadowOffsetYEm: 0.12,
       shadowBlurEm: 0.05,
-      effect: 'wide',
+      effect: "wide",
     },
   },
   {
-    id: 'royal',
-    label: '皇家紫',
+    id: "royal",
+    label: "皇家紫",
     props: {
-      fillType: 'linear-gradient',
-      fillColor: '#7C3AED',
+      fillType: "linear-gradient",
+      fillColor: "#7C3AED",
       gradientAngle: 150,
-      gradientColors: ['#FDE68A', '#A855F7', '#4C1D95'],
+      gradientColors: ["#FDE68A", "#A855F7", "#4C1D95"],
       gradientStops: [0, 0.46, 1],
-      outlineColor: '#3B0764',
+      outlineColor: "#3B0764",
       outlineWidthEm: 0.035,
       shadowEnabled: true,
-      shadowColor: '#2E1065',
+      shadowColor: "#2E1065",
       shadowOpacity: 0.34,
       shadowOffsetXEm: 0.08,
       shadowOffsetYEm: 0.12,
       shadowBlurEm: 0.06,
-      effect: 'perspective-up',
+      effect: "perspective-up",
     },
   },
   {
-    id: 'neon',
-    label: '霓虹粉',
+    id: "neon",
+    label: "霓虹粉",
     props: {
-      fillType: 'solid',
-      fillColor: '#F0ABFC',
+      fillType: "solid",
+      fillColor: "#F0ABFC",
       gradientAngle: 180,
-      gradientColors: ['#F0ABFC', '#D946EF'],
+      gradientColors: ["#F0ABFC", "#D946EF"],
       gradientStops: [0, 1],
-      outlineColor: '#22D3EE',
+      outlineColor: "#22D3EE",
       outlineWidthEm: 0.04,
       shadowEnabled: true,
-      shadowColor: '#C026D3',
+      shadowColor: "#C026D3",
       shadowOpacity: 0.6,
       shadowOffsetXEm: 0,
       shadowOffsetYEm: 0,
       shadowBlurEm: 0.18,
-      effect: 'none',
+      effect: "none",
     },
   },
   {
-    id: 'copper',
-    label: '复古铜',
+    id: "copper",
+    label: "复古铜",
     props: {
-      fillType: 'linear-gradient',
-      fillColor: '#B45309',
+      fillType: "linear-gradient",
+      fillColor: "#B45309",
       gradientAngle: 180,
-      gradientColors: ['#FDE68A', '#D97706', '#78350F'],
+      gradientColors: ["#FDE68A", "#D97706", "#78350F"],
       gradientStops: [0, 0.5, 1],
-      outlineColor: '#451A03',
+      outlineColor: "#451A03",
       outlineWidthEm: 0.035,
       shadowEnabled: true,
-      shadowColor: '#451A03',
+      shadowColor: "#451A03",
       shadowOpacity: 0.35,
       shadowOffsetXEm: 0.08,
       shadowOffsetYEm: 0.1,
       shadowBlurEm: 0.02,
-      effect: 'slant-down',
+      effect: "slant-down",
     },
   },
   {
-    id: 'sky-outline',
-    label: '天空描边',
+    id: "sky-outline",
+    label: "天空描边",
     props: {
-      fillType: 'solid',
-      fillColor: '#FFFFFF',
+      fillType: "solid",
+      fillColor: "#FFFFFF",
       gradientAngle: 180,
-      gradientColors: ['#FFFFFF', '#DBEAFE'],
+      gradientColors: ["#FFFFFF", "#DBEAFE"],
       gradientStops: [0, 1],
-      outlineColor: '#2563EB',
+      outlineColor: "#2563EB",
       outlineWidthEm: 0.055,
       shadowEnabled: false,
-      shadowColor: '#1D4ED8',
+      shadowColor: "#1D4ED8",
       shadowOpacity: 0.2,
       shadowOffsetXEm: 0.04,
       shadowOffsetYEm: 0.06,
       shadowBlurEm: 0.04,
-      effect: 'narrow',
+      effect: "narrow",
     },
   },
   {
-    id: 'lime',
-    label: '活力青柠',
+    id: "lime",
+    label: "活力青柠",
     props: {
-      fillType: 'linear-gradient',
-      fillColor: '#84CC16',
+      fillType: "linear-gradient",
+      fillColor: "#84CC16",
       gradientAngle: 135,
-      gradientColors: ['#FEF08A', '#A3E635', '#16A34A'],
+      gradientColors: ["#FEF08A", "#A3E635", "#16A34A"],
       gradientStops: [0, 0.52, 1],
-      outlineColor: '#3F6212',
+      outlineColor: "#3F6212",
       outlineWidthEm: 0.025,
       shadowEnabled: true,
-      shadowColor: '#365314',
+      shadowColor: "#365314",
       shadowOpacity: 0.26,
       shadowOffsetXEm: 0.05,
       shadowOffsetYEm: 0.09,
       shadowBlurEm: 0.05,
-      effect: 'inflate',
+      effect: "inflate",
     },
   },
   {
-    id: 'ink-blue',
-    label: '墨水蓝',
+    id: "ink-blue",
+    label: "墨水蓝",
     props: {
-      fillType: 'solid',
-      fillColor: '#1E3A8A',
+      fillType: "solid",
+      fillColor: "#1E3A8A",
       gradientAngle: 180,
-      gradientColors: ['#3B82F6', '#1E3A8A'],
+      gradientColors: ["#3B82F6", "#1E3A8A"],
       gradientStops: [0, 1],
-      outlineColor: '#0F172A',
+      outlineColor: "#0F172A",
       outlineWidthEm: 0.025,
       shadowEnabled: true,
-      shadowColor: '#0F172A',
+      shadowColor: "#0F172A",
       shadowOpacity: 0.22,
       shadowOffsetXEm: 0.04,
       shadowOffsetYEm: 0.08,
       shadowBlurEm: 0.03,
-      effect: 'short',
+      effect: "short",
     },
   },
   {
-    id: 'rainbow',
-    label: '彩虹',
+    id: "rainbow",
+    label: "彩虹",
     props: {
-      fillType: 'linear-gradient',
-      fillColor: '#EF4444',
+      fillType: "linear-gradient",
+      fillColor: "#EF4444",
       gradientAngle: 90,
-      gradientColors: ['#EF4444', '#FACC15', '#22C55E', '#3B82F6'],
+      gradientColors: ["#EF4444", "#FACC15", "#22C55E", "#3B82F6"],
       gradientStops: [0, 0.33, 0.66, 1],
-      outlineColor: '#581C87',
+      outlineColor: "#581C87",
       outlineWidthEm: 0.02,
       shadowEnabled: true,
-      shadowColor: '#312E81',
+      shadowColor: "#312E81",
       shadowOpacity: 0.22,
       shadowOffsetXEm: 0.04,
       shadowOffsetYEm: 0.09,
       shadowBlurEm: 0.06,
-      effect: 'perspective-down',
+      effect: "perspective-down",
     },
   },
 ] as const satisfies ReadonlyArray<{
-  id: string
-  label: string
-  props: Partial<WordArtBlockProps>
-}>
+  id: string;
+  label: string;
+  props: WordArtPresetAuthoringProps;
+}>;
 
-export type WordArtPresetId = typeof WORD_ART_PRESETS[number]['id']
+/**
+ * Preset authoring data stays compact, but every consumer receives the same
+ * canonical object-format sections that new WordArt blocks persist. This is a
+ * catalog boundary conversion, not a legacy-document fallback.
+ */
+function canonicalizeWordArtPreset<
+  T extends (typeof WORD_ART_PRESET_SOURCES)[number],
+>(preset: T) {
+  const source = preset.props as Readonly<WordArtPresetAuthoringProps>;
+  const defaults = WORD_ART_OBJECT_FORMAT_CAPABILITY.defaults;
+  const baseStyle = defaults.textStyle!;
+  const fontSize = baseStyle.fontSize;
+  const colors = source.gradientColors?.slice(0, 4) ?? [source.fillColor!];
+  const stops =
+    source.gradientStops?.slice(0, colors.length) ??
+    colors.map((_, index) => index / Math.max(1, colors.length - 1));
+  const shadowX = (source.shadowOffsetXEm ?? 0) * fontSize;
+  const shadowY = (source.shadowOffsetYEm ?? 0) * fontSize;
+  const shadowAngle =
+    ((Math.atan2(shadowY, shadowX) * 180) / Math.PI + 360) % 360;
+  const outlineWidth = Math.max(0, source.outlineWidthEm ?? 0) * fontSize;
+  const textStyle = {
+    ...baseStyle,
+    fill: source.fillType === "solid"
+      ? {
+          type: "solid" as const,
+          color: source.fillColor,
+          opacity: 1,
+        }
+      : {
+          type: "linear-gradient" as const,
+          opacity: 1,
+          angle: source.gradientAngle,
+          stops: colors.map((color, index) => ({
+            color,
+            offset: stops[index] ?? index / Math.max(1, colors.length - 1),
+            opacity: 1,
+          })),
+        },
+    outline: outlineWidth > 0
+      ? {
+          type: "line" as const,
+          color: source.outlineColor,
+          width: outlineWidth,
+        }
+      : {type: "none" as const},
+    effects: {
+      ...baseStyle.effects,
+      shadow: {
+        ...baseStyle.effects.shadow,
+        enabled: source.shadowEnabled !== false,
+        color: source.shadowColor ?? baseStyle.effects.shadow.color,
+        opacity: source.shadowOpacity ?? baseStyle.effects.shadow.opacity,
+        blur: Math.max(0, source.shadowBlurEm ?? 0) * fontSize,
+        angle: shadowAngle,
+        distance: Math.hypot(shadowX, shadowY),
+      },
+      glow: { ...baseStyle.effects.glow },
+    },
+    transform: source.effect ?? baseStyle.transform,
+  };
+  return {
+    id: preset.id,
+    label: preset.label,
+    props: {
+      depth: 0,
+      width: defaults.width,
+      height: defaults.height,
+      rotation: defaults.rotation,
+      lockRatio: defaults.lockAspectRatio,
+      textFrame: storeObjectTextFrame(defaults.textFrame!),
+      textStyle: storeObjectTextStyle(textStyle),
+    } satisfies WordArtBlockProps,
+  } as const;
+}
+
+export const WORD_ART_PRESETS = WORD_ART_PRESET_SOURCES.map(
+  canonicalizeWordArtPreset,
+);
+
+export type WordArtPresetId = (typeof WORD_ART_PRESETS)[number]["id"];
 
 export function getWordArtPreset(
   value: unknown,
-): typeof WORD_ART_PRESETS[number] {
-  return WORD_ART_PRESETS.find(item => item.id === value) ??
-    WORD_ART_PRESETS[0]
+): (typeof WORD_ART_PRESETS)[number] {
+  return (
+    WORD_ART_PRESETS.find((item) => item.id === value) ?? WORD_ART_PRESETS[0]
+  );
 }

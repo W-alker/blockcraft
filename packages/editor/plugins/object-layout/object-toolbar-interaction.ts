@@ -1,7 +1,7 @@
 /**
  * 对象工具条（WordArt / Shape 等浮动工具条）的交互归属判定。
  *
- * 谁用：word-art-toolbar、shape-toolbar 等在 selectionChange 里决定
+ * 谁用：object-format-toolbar 在 selectionChange 里决定
  * 「选区暂时丢失时要不要保住工具条」的插件。
  * 为什么：工具条面板里的取色器、下拉、数字输入会抢走原生焦点/选区；
  * 若不识别这些点击属于工具条自身，插件会误把工具条整个关掉。

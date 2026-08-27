@@ -1,48 +1,22 @@
 import {
-  findTextBoxArtworkBySrc,
   normalizeTextBoxProps,
+  normalizeTextBoxSnapshotProps,
   ParagraphBlockSchema,
+  findTextBoxArtworkBySrc,
   resolveTextBoxArtworkSrc,
-  TextBoxBlockSchema,
   textBoxArtworkRef,
+  TEXT_BOX_OBJECT_FORMAT_CAPABILITY,
+  TextBoxBlockSchema,
   type TextBoxBlockProps,
 } from '../../../blocks'
 import type {BlockPosition, IBlockSnapshot} from '../../../framework'
 import {HastUtils} from '../../utils'
 import type {BlockHtmlAdapterMatcher} from '../block-adapter'
+import {numberProperty, stringProperty} from './block-surface-properties'
 import {
-  blockSurfacePropsFromHtml,
-  blockSurfacePropsToHtml,
-  numberProperty,
-  stringProperty,
-} from './block-surface-properties'
-
-/**
- * Exported HTML has to stand on its own in whatever opens it, so a `bc:`
- * reference is expanded back into the drawing it names. Nothing else is
- * touched: uploaded images are already URLs, and an unknown reference is
- * dropped rather than written out as an unloadable `src`.
- */
-function expandArtwork(
-  properties: NonNullable<ReturnType<typeof blockSurfacePropsToHtml>>,
-): typeof properties {
-  const src = properties['dataBcBgi']
-  if (typeof src !== 'string' || !src) return properties
-  return {...properties, dataBcBgi: resolveTextBoxArtworkSrc(src) ?? undefined}
-}
-
-/**
- * The inverse, on the way in. Without it a round trip through HTML would leave
- * the expanded copy sitting in the document — the very thing the reference
- * exists to keep out of snapshots. A drawing this build does not recognise
- * (someone else's image, or a newer catalog) stays as it arrived.
- */
-function collapseArtwork(
-  surface: ReturnType<typeof blockSurfacePropsFromHtml>,
-): typeof surface {
-  const artwork = findTextBoxArtworkBySrc(surface.bgi)
-  return artwork ? {...surface, bgi: textBoxArtworkRef(artwork.id)} : surface
-}
+  objectFormatPropsFromHtml,
+  objectFormatPropsToHtml,
+} from './object-format-properties'
 
 const TEXT_BOX_CHILD_FLAVOURS = new Set([
   'paragraph',
@@ -61,21 +35,11 @@ export const textBoxBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
   toBlockSnapshot: {
     enter: (o, context) => {
       if (!HastUtils.isElement(o.node)) return
-      const props: Partial<TextBoxBlockProps> = {
-        ...collapseArtwork(blockSurfacePropsFromHtml(o.node)),
-        width: numberProperty(o.node, 'dataTextBoxWidth'),
-        height: numberProperty(o.node, 'dataTextBoxHeight'),
-        rotation: numberProperty(o.node, 'dataTextBoxRotation'),
-        backColor: stringProperty(o.node, 'dataBcBackColor'),
-        borderColor: stringProperty(o.node, 'dataBcBorderColor'),
-        sh: stringProperty(o.node, 'dataBcSh') as TextBoxBlockProps['sh'],
-        fo: numberProperty(o.node, 'dataBcFo'),
-        bw: numberProperty(o.node, 'dataBcBw'),
-        bs: stringProperty(o.node, 'dataBcBs') as TextBoxBlockProps['bs'],
-        wm: stringProperty(o.node, 'dataBcWm') as TextBoxBlockProps['wm'],
-        wa: wordArtProperty(o.node),
+      const props = normalizeTextBoxSnapshotProps({
+        ...objectFormatPropsFromHtml(o.node),
         ...placementFromHtml(o.node),
-      }
+        ...artworkFromHtml(o.node),
+      } as Partial<TextBoxBlockProps>)
       const snapshot = TextBoxBlockSchema.createSnapshot('', props)
       snapshot.children = []
       context.walkerContext
@@ -108,19 +72,14 @@ export const textBoxBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
         tagName: 'figure',
         properties: {
           dataBcBlock: 'text-box',
-          dataTextBoxWidth: props.width,
-          dataTextBoxHeight: props.height,
-          dataTextBoxRotation: props.rotation,
-          dataBcBackColor: props.backColor,
-          dataBcBorderColor: props.borderColor,
-          dataBcSh: props.sh,
-          dataBcFo: props.fo,
-          dataBcBw: props.bw,
-          dataBcBs: props.bs,
-          dataBcWm: props.wm,
-          dataBcWa: props.wa,
+          ...objectFormatPropsToHtml(
+            o.node.props as Partial<TextBoxBlockProps>,
+            TEXT_BOX_OBJECT_FORMAT_CAPABILITY,
+          ),
+          ...(props.artwork && resolveTextBoxArtworkSrc(props.artwork)
+            ? {dataBcObjectArtwork: resolveTextBoxArtworkSrc(props.artwork)!}
+            : {}),
           ...placementToHtml(props.position, props.placementLayer),
-          ...expandArtwork(blockSurfacePropsToHtml(props)),
         },
         children: [],
       }, 'children')
@@ -131,12 +90,12 @@ export const textBoxBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
   },
 }
 
-function wordArtProperty(
+function artworkFromHtml(
   node: Parameters<typeof stringProperty>[0],
-): TextBoxBlockProps['wa'] | undefined {
-  const value = stringProperty(node, 'dataBcWa')
-  if (!value || value.length > 16_000) return undefined
-  return value
+): Pick<TextBoxBlockProps, 'artwork'> {
+  const source = stringProperty(node, 'dataBcObjectArtwork')
+  const artwork = findTextBoxArtworkBySrc(source)
+  return artwork ? {artwork: textBoxArtworkRef(artwork.id)} : {}
 }
 
 function placementFromHtml(

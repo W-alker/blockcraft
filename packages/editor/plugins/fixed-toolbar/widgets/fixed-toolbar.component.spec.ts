@@ -3,9 +3,7 @@ import { CsDropdownDirective } from "@cses/ui";
 import { BlockNodeType } from "../../../framework";
 import { BlockSelection } from "../../../framework/modules/selection/blockSelection";
 import { getWordArtPreset } from "../../../blocks/word-art-block";
-import {
-  getTextBoxPreset,
-} from "../../../blocks/text-box-block";
+import { getTextBoxPreset } from "../../../blocks/text-box-block";
 import {
   SHAPE_CATEGORIES,
   SHAPE_DEFINITIONS,
@@ -34,17 +32,9 @@ describe("FixedTextToolbarComponent responsive layout", () => {
 
     expect(
       (component as any).narrowInlineActions.map(
-        (item: {value: string}) => item.value,
+        (item: { value: string }) => item.value,
       ),
-    ).toEqual([
-      "bold",
-      "italic",
-      "underline",
-      "strike",
-      "code",
-      "sup",
-      "sub",
-    ]);
+    ).toEqual(["bold", "italic", "underline", "strike", "code", "sup", "sub"]);
     expect((component as any).isNarrowInlineAction("strike")).toBeTrue();
     expect((component as any).isNarrowInlineAction("sup")).toBeTrue();
     expect((component as any).isNarrowInlineAction("sub")).toBeTrue();
@@ -52,11 +42,11 @@ describe("FixedTextToolbarComponent responsive layout", () => {
 
   it("keeps superscript and subscript mutually exclusive from the narrow menu", () => {
     const component = makeComponent();
-    const trigger = {close: jasmine.createSpy("close")};
+    const trigger = { close: jasmine.createSpy("close") };
     const toggleScript = spyOn<any>(component, "toggleScriptAttr");
     const toggleInline = spyOn<any>(component, "toggleInlineAttr");
 
-    (component as any).onNarrowInlineItemClicked({value: "sup"}, trigger);
+    (component as any).onNarrowInlineItemClicked({ value: "sup" }, trigger);
 
     expect(trigger.close).toHaveBeenCalled();
     expect(toggleScript).toHaveBeenCalledOnceWith("sup");
@@ -74,17 +64,17 @@ describe("FixedTextToolbarComponent responsive layout", () => {
     host.style.paddingInline = "8px";
     host.style.columnGap = "4px";
     host.append(text, insert, dropdownTemplateHost);
-    Object.defineProperty(host, "clientWidth", {value: 500});
-    Object.defineProperty(text, "scrollWidth", {value: 200});
+    Object.defineProperty(host, "clientWidth", { value: 500 });
+    Object.defineProperty(text, "scrollWidth", { value: 200 });
     Object.defineProperty(insert, "scrollWidth", {
       configurable: true,
       value: 200,
     });
-    Object.defineProperty(dropdownTemplateHost, "scrollWidth", {value: 1000});
+    Object.defineProperty(dropdownTemplateHost, "scrollWidth", { value: 1000 });
 
     expect((component as any).hasVisibleToolbarOverflow(host)).toBeFalse();
 
-    Object.defineProperty(insert, "scrollWidth", {value: 320});
+    Object.defineProperty(insert, "scrollWidth", { value: 320 });
     expect((component as any).hasVisibleToolbarOverflow(host)).toBeTrue();
   });
 
@@ -102,10 +92,10 @@ describe("FixedTextToolbarComponent responsive layout", () => {
   it("keeps superscript and subscript in one mutually exclusive split action", () => {
     const component = makeComponent();
     const formatText = jasmine.createSpy("formatText");
-    component.utils = {formatText} as any;
+    component.utils = { formatText } as any;
     component.activeAttrs = new Map([["sup", true]]);
-    spyOn<any>(component, "runWithSelection").and.callFake(
-      (run: () => void) => run(),
+    spyOn<any>(component, "runWithSelection").and.callFake((run: () => void) =>
+      run(),
     );
 
     (component as any).toggleScriptAttr("sub");
@@ -271,8 +261,12 @@ describe("FixedTextToolbarComponent boundary selections", () => {
         blocks[a].hostElement.compareDocumentPosition(blocks[b].hostElement),
     );
 
-    expect((component as any).canTransformSelection(mixedTextRange)).toBeFalse();
-    expect((component as any).canFormatTextSelection(mixedTextRange)).toBeTrue();
+    expect(
+      (component as any).canTransformSelection(mixedTextRange),
+    ).toBeFalse();
+    expect(
+      (component as any).canFormatTextSelection(mixedTextRange),
+    ).toBeTrue();
     (component as any).syncToolbarState(mixedTextRange);
     expect(component.canTransformBlocks).toBeFalse();
     expect(component.allEditable).toBeTrue();
@@ -699,7 +693,6 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
       "",
       {
         ...getTextBoxPreset("classic").props,
-        wm: "h",
         width: 300,
         height: 180,
       },
@@ -721,7 +714,7 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
   });
 
   it("keeps catalog picks horizontal at the preset's own proportion", async () => {
-    const {component, rootHost, createSnapshot} = makeHarness();
+    const { component, rootHost, createSnapshot } = makeHarness();
     spyOn<any>(component, "syncToolbarState");
     let drawRequest: any;
     spyOn<any>(component, "armObjectDrawing").and.callFake((request: any) => {
@@ -749,7 +742,7 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
 
     expect(createSnapshot).toHaveBeenCalledOnceWith("text-box", [
       "",
-      {...preset.props, wm: "h", width: 280, height: 140},
+      { ...preset.props, width: 280, height: 140 },
     ]);
     rootHost.remove();
   });
@@ -793,13 +786,10 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
         ...preset.props,
         width: 420,
         height: 140,
-        gradientColors: [...preset.props.gradientColors],
-        gradientStops: [...preset.props.gradientStops],
       },
     ]);
     const insertedProps = createSnapshot.calls.mostRecent().args[1][1];
-    expect(insertedProps.gradientColors).not.toBe(preset.props.gradientColors);
-    expect(insertedProps.gradientStops).not.toBe(preset.props.gradientStops);
+    expect(insertedProps.textStyle).toBe(preset.props.textStyle);
     expect(insertAbsoluteSnapshot).toHaveBeenCalledOnceWith(
       wordArtSnapshot,
       jasmine.objectContaining({
@@ -1196,10 +1186,7 @@ describe("FixedTextToolbarComponent typography ownership", () => {
     );
 
     const close = jasmine.createSpy("close");
-    (component as any).onFontFamilyItemClicked(
-      { value: "kai" },
-      { close },
-    );
+    (component as any).onFontFamilyItemClicked({ value: "kai" }, { close });
 
     expect(close).toHaveBeenCalled();
     expect(formatText).toHaveBeenCalledOnceWith({
@@ -1220,7 +1207,7 @@ describe("FixedTextToolbarComponent typography ownership", () => {
     (component as any).onFontScaleItemClicked({ value: 1.25 }, { close });
 
     expect(close).toHaveBeenCalled();
-    expect(formatTypography).toHaveBeenCalledOnceWith({fontScale: 1.25});
+    expect(formatTypography).toHaveBeenCalledOnceWith({ fontScale: 1.25 });
   });
 
   it("shows letter spacing as the persisted em value", () => {

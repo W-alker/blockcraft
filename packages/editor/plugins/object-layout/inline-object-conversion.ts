@@ -5,6 +5,8 @@ import {
   WordArtBlockSchema,
   createInlineShapeDelta,
   createInlineWordArtDelta,
+  normalizeShapeSnapshotProps,
+  isShapeKind,
   readInlineShapeDelta,
   readInlineWordArtDelta,
   type InlineObjectKind,
@@ -113,14 +115,14 @@ export function inlineObjectSnapshotToBlockSnapshots(
     ? (() => {
         const data = readInlineShapeDelta(resolved.delta)
         const block = ShapeBlockSchema.createSnapshot(
-          data.props.shapeType,
+          isShapeKind(data.props['shape']) ? data.props['shape'] : undefined,
           data.text,
         )
-        block.props = {
+        block.props = normalizeShapeSnapshotProps({
           ...data.props,
           width: data.width,
           height: data.height,
-        }
+        })
         return block
       })()
     : (() => {

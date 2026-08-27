@@ -6,6 +6,7 @@ import {createMediaRenderers} from "./renderers/media-renderers";
 import {createStructuralRenderers} from "./renderers/structural-renderers";
 import {createTextRenderers} from "./renderers/text-renderers";
 import {createWordArtRenderers} from "./renderers/word-art-renderers";
+import {createShapeRenderers} from "./renderers/shape-renderers";
 import {SnapshotBlockRenderer, SnapshotRenderContext} from "./types";
 
 const DEFAULT_SNAPSHOT_BLOCK_RENDERER: SnapshotBlockRenderer = {
@@ -31,6 +32,7 @@ const DEFAULT_SNAPSHOT_BLOCK_RENDERER: SnapshotBlockRenderer = {
 export function createBuiltinRendererRegistry(): SnapshotBlockRenderer[] {
   return [
     ...createStructuralRenderers(),
+    ...createShapeRenderers(),
     ...createWordArtRenderers(),
     ...createTextRenderers(),
     ...createMediaRenderers(),

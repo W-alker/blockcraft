@@ -1,4 +1,24 @@
-import {resolveBlockPosition, type IBlockProps} from '../../framework'
+import {
+  DEFAULT_OBJECT_EFFECTS,
+  DEFAULT_OBJECT_LINE,
+  DEFAULT_OBJECT_PAINT,
+  DEFAULT_OBJECT_TEXT_FRAME,
+  DEFAULT_OBJECT_TEXT_STYLE,
+  normalizeBlockObjectFormat,
+  resolveBlockPosition,
+  storeObjectEffects,
+  storeObjectLine,
+  storeObjectPaint,
+  storeObjectTextFrame,
+  storeObjectTextStyle,
+  type BlockObjectFormatCapability,
+  type BlockObjectFormatProps,
+  type ObjectEffects,
+  type ObjectLine,
+  type ObjectPaint,
+  type ObjectTextFrame,
+  type ObjectTextStyle,
+} from '../../framework'
 import {
   normalizeCustomShapeGeometry,
   normalizeShapeAdjustments,
@@ -10,6 +30,7 @@ import {
   type ShapeFillType,
   type ShapeGradientFill,
 } from './shape-fill'
+import {getShapeDefinition} from './shape-definitions'
 
 export {SHAPE_GEOMETRY_VERSION} from './shape-geometry.constants'
 export * from './shape-fill'
@@ -198,15 +219,30 @@ export interface CustomShapeGeometry {
   paths: CustomShapePath[]
 }
 
-export interface ShapeBlockProps extends IBlockProps {
-  shapeType: ShapeKind
+export interface ShapeBlockProps extends BlockObjectFormatProps {
+  shape: ShapeKind
+  adjustments?: ShapeAdjustmentValues
+  /** Versioned, validated CustomShapeGeometry encoded as one atomic JSON value. */
+  customGeometry?: SerializedCustomShapeGeometry
+}
+
+export interface NormalizedShapeBlockProps {
   width: number
   height: number
-  rotation?: number
+  position?: NonNullable<ShapeBlockProps['position']>
+  placementLayer?: 'under'
+  adjustments?: ShapeAdjustmentValues
+  customGeometry?: SerializedCustomShapeGeometry
+  shapeType: ShapeKind
+  rotation: number
+  lockAspectRatio: boolean
+  shapeFill: ObjectPaint
+  shapeOutline: ObjectLine
+  shapeEffects: ObjectEffects
+  textFrame: ObjectTextFrame
+  textStyle: ObjectTextStyle
   fillColor: string
-  /** 缺省视为 'solid'，旧文档无需迁移。 */
-  fillType?: ShapeFillType
-  /** CSS 角度语义（0deg 朝上、顺时针）。仅 fillType 为渐变时参与渲染。 */
+  fillType: ShapeFillType
   gradientAngle?: number
   gradientColors?: string[]
   gradientStops?: number[]
@@ -217,21 +253,78 @@ export interface ShapeBlockProps extends IBlockProps {
   textColor: string
   shapeTextAlign: ShapeTextAlign
   verticalAlign: ShapeVerticalAlign
-  adjustments?: ShapeAdjustmentValues
-  /** Versioned, validated CustomShapeGeometry encoded as one atomic JSON value. */
-  customGeometry?: SerializedCustomShapeGeometry
 }
 
-export interface NormalizedShapeBlockProps extends ShapeBlockProps {
-  rotation: number
-  fillType: ShapeFillType
+const DEFAULT_SHAPE_FILL = {...DEFAULT_OBJECT_PAINT, color: '#93C5FD'}
+const DEFAULT_SHAPE_OUTLINE = {
+  ...DEFAULT_OBJECT_LINE,
+  color: '#2563EB',
+  width: 2,
+}
+const DEFAULT_SHAPE_TEXT_FRAME = {...DEFAULT_OBJECT_TEXT_FRAME}
+const DEFAULT_SHAPE_TEXT_STYLE = {
+  ...DEFAULT_OBJECT_TEXT_STYLE,
+  fill: {...DEFAULT_OBJECT_TEXT_STYLE.fill, color: '#0F172A'},
 }
 
-export const DEFAULT_SHAPE_PROPS: Readonly<NormalizedShapeBlockProps> = {
-  shapeType: 'rectangle',
+export const SHAPE_OBJECT_FORMAT_CAPABILITY: BlockObjectFormatCapability = {
+  kind: 'shape',
+  features: {
+    geometry: true,
+    shape: true,
+    pictureFill: true,
+    lineArrows: true,
+    textFrame: true,
+    textStyle: 'rich-default',
+  },
+  defaults: {
+    width: 180,
+    height: 100,
+    rotation: 0,
+    lockAspectRatio: false,
+    shapeType: 'rectangle',
+    shapeFill: DEFAULT_SHAPE_FILL,
+    shapeOutline: DEFAULT_SHAPE_OUTLINE,
+    shapeEffects: DEFAULT_OBJECT_EFFECTS,
+    textFrame: DEFAULT_SHAPE_TEXT_FRAME,
+    textStyle: DEFAULT_SHAPE_TEXT_STYLE,
+  },
+  shapeTypes: SHAPE_KINDS,
+  textlessShapeTypes: SHAPE_KINDS.filter(shapeType =>
+    getShapeDefinition(shapeType).supportsText === false,
+  ),
+  lineArrowShapeTypes: SHAPE_KINDS.filter(shapeType =>
+    getShapeDefinition(shapeType).supportsText === false,
+  ),
+}
+
+export const DEFAULT_SHAPE_BLOCK_PROPS: Readonly<ShapeBlockProps> = {
+  shape: 'rectangle',
   width: 180,
   height: 100,
   rotation: 0,
+  lockRatio: false,
+  fill: storeObjectPaint(DEFAULT_SHAPE_FILL),
+  outline: storeObjectLine(DEFAULT_SHAPE_OUTLINE),
+  effects: storeObjectEffects(DEFAULT_OBJECT_EFFECTS),
+  textFrame: storeObjectTextFrame(DEFAULT_SHAPE_TEXT_FRAME),
+  textStyle: storeObjectTextStyle(DEFAULT_SHAPE_TEXT_STYLE),
+}
+
+export const DEFAULT_SHAPE_PROPS: Readonly<NormalizedShapeBlockProps> = {
+  width: 180,
+  height: 100,
+  rotation: 0,
+  shapeType: 'rectangle',
+  lockAspectRatio: false,
+  shapeFill: {...DEFAULT_SHAPE_FILL},
+  shapeOutline: {...DEFAULT_SHAPE_OUTLINE},
+  shapeEffects: {
+    shadow: {...DEFAULT_OBJECT_EFFECTS.shadow},
+    glow: {...DEFAULT_OBJECT_EFFECTS.glow},
+  },
+  textFrame: {...DEFAULT_SHAPE_TEXT_FRAME},
+  textStyle: {...DEFAULT_SHAPE_TEXT_STYLE},
   fillColor: '#93C5FD',
   fillType: 'solid',
   fillOpacity: 1,
@@ -242,8 +335,6 @@ export const DEFAULT_SHAPE_PROPS: Readonly<NormalizedShapeBlockProps> = {
   shapeTextAlign: 'center',
   verticalAlign: 'middle',
 }
-
-const HEX_COLOR = /^#[\da-f]{3}(?:[\da-f]{3})?$/i
 
 export function isShapeKind(value: unknown): value is ShapeKind {
   return typeof value === 'string' &&
@@ -260,72 +351,58 @@ export function normalizeShapeRotation(value: unknown): number {
 export function normalizeShapeProps(
   props: Partial<ShapeBlockProps> | null | undefined,
 ): NormalizedShapeBlockProps {
-  const width = Number(props?.width)
-  const height = Number(props?.height)
-  const fillOpacity = Number(props?.fillOpacity)
-  const strokeWidth = Number(props?.strokeWidth)
+  const objectFormat = normalizeBlockObjectFormat(
+    props,
+    SHAPE_OBJECT_FORMAT_CAPABILITY,
+  )
+  const fill = objectFormat.shapeFill!
+  const outline = objectFormat.shapeOutline!
+  const textFrame = objectFormat.textFrame!
+  const textStyle = objectFormat.textStyle!
   const position = props?.position && typeof props.position === 'object'
     ? resolveBlockPosition(props.position)
     : null
   const adjustments = normalizeShapeAdjustments(props?.adjustments)
   const customGeometry = normalizeCustomShapeGeometry(props?.customGeometry)
-  const fillType: ShapeFillType = props?.fillType === 'linear-gradient'
+  const fillType: ShapeFillType = fill.type === 'linear-gradient'
     ? 'linear-gradient'
     : 'solid'
-  // 渐变值对象在两种情况下保留：正在使用渐变，或曾配置过渐变
-  // （切回纯色后再切回渐变时不丢用户配色）。
-  const gradient = fillType === 'linear-gradient' ||
-    Array.isArray(props?.gradientColors)
+  const gradient = fill.type === 'linear-gradient'
     ? normalizeShapeGradient(
-      props?.gradientAngle,
-      props?.gradientColors,
-      props?.gradientStops,
-    )
+        fill.angle,
+        fill.stops.map(stop => stop.color),
+        fill.stops.map(stop => stop.offset),
+      )
     : null
 
   return {
-    shapeType: isShapeKind(props?.shapeType)
-      ? props.shapeType
-      : DEFAULT_SHAPE_PROPS.shapeType,
-    width: Number.isFinite(width)
-      ? Math.max(48, width)
-      : DEFAULT_SHAPE_PROPS.width,
-    height: Number.isFinite(height)
-      ? Math.max(32, height)
-      : DEFAULT_SHAPE_PROPS.height,
-    rotation: normalizeShapeRotation(props?.rotation),
-    fillColor: HEX_COLOR.test(props?.fillColor ?? '')
-      ? props!.fillColor!
-      : DEFAULT_SHAPE_PROPS.fillColor,
+    ...props,
+    shapeType: objectFormat.shapeType as ShapeKind,
+    width: Math.max(48, objectFormat.width),
+    height: Math.max(32, objectFormat.height),
+    rotation: objectFormat.rotation,
+    lockAspectRatio: objectFormat.lockAspectRatio,
+    shapeFill: fill,
+    shapeOutline: outline,
+    shapeEffects: objectFormat.shapeEffects!,
+    textFrame,
+    textStyle,
+    fillColor: paintColor(fill),
     fillType,
     ...(gradient ? {
       gradientAngle: gradient.angle,
       gradientColors: gradient.colors,
       gradientStops: gradient.stops,
     } : {}),
-    fillOpacity: Number.isFinite(fillOpacity)
-      ? Math.min(1, Math.max(0, fillOpacity))
-      : DEFAULT_SHAPE_PROPS.fillOpacity,
-    strokeColor: HEX_COLOR.test(props?.strokeColor ?? '')
-      ? props!.strokeColor!
-      : DEFAULT_SHAPE_PROPS.strokeColor,
-    strokeWidth: Number.isFinite(strokeWidth)
-      ? Math.min(20, Math.max(0, strokeWidth))
-      : DEFAULT_SHAPE_PROPS.strokeWidth,
-    strokeStyle: props?.strokeStyle === 'dashed'
-      ? 'dashed'
-      : DEFAULT_SHAPE_PROPS.strokeStyle,
-    textColor: HEX_COLOR.test(props?.textColor ?? '')
-      ? props!.textColor!
-      : DEFAULT_SHAPE_PROPS.textColor,
-    shapeTextAlign:
-      props?.shapeTextAlign === 'left' || props?.shapeTextAlign === 'right'
-        ? props.shapeTextAlign
-        : DEFAULT_SHAPE_PROPS.shapeTextAlign,
-    verticalAlign:
-      props?.verticalAlign === 'top' || props?.verticalAlign === 'bottom'
-        ? props.verticalAlign
-        : DEFAULT_SHAPE_PROPS.verticalAlign,
+    fillOpacity: fill.type === 'none' ? 0 : fill.opacity,
+    strokeColor: outline.type === 'none' ? 'transparent' : outline.color,
+    strokeWidth: outline.type === 'none' ? 0 : outline.width,
+    strokeStyle: outline.dash === 'solid' ? 'solid' : 'dashed',
+    textColor: paintColor(textStyle.fill),
+    shapeTextAlign: textFrame.horizontalAlign === 'justify'
+      ? 'left'
+      : textFrame.horizontalAlign,
+    verticalAlign: textFrame.verticalAlign,
     ...(position ? {position} : {}),
     ...(props?.placementLayer === 'under' ? {placementLayer: 'under' as const} : {}),
     ...(adjustments ? {adjustments} : {}),
@@ -334,6 +411,40 @@ export function normalizeShapeProps(
         SerializedCustomShapeGeometry,
     } : {}),
   }
+}
+
+/** Canonical persisted Shape props; presentation aliases stay render-only. */
+export function normalizeShapeSnapshotProps(
+  value: Partial<ShapeBlockProps> | null | undefined,
+): ShapeBlockProps {
+  const normalized = normalizeShapeProps(value)
+  return {
+    shape: normalized.shapeType,
+    width: normalized.width,
+    height: normalized.height,
+    rotation: normalized.rotation,
+    lockRatio: normalized.lockAspectRatio,
+    fill: storeObjectPaint(normalized.shapeFill),
+    outline: storeObjectLine(normalized.shapeOutline),
+    effects: storeObjectEffects(normalized.shapeEffects),
+    textFrame: storeObjectTextFrame(normalized.textFrame),
+    textStyle: storeObjectTextStyle(normalized.textStyle),
+    ...(normalized.position ? {position: normalized.position} : {}),
+    ...(normalized.placementLayer === 'under'
+      ? {placementLayer: 'under' as const}
+      : {}),
+    ...(normalized.adjustments ? {adjustments: normalized.adjustments} : {}),
+    ...(normalized.customGeometry
+      ? {customGeometry: normalized.customGeometry}
+      : {}),
+  }
+}
+
+function paintColor(paint: ObjectPaint): string {
+  if (paint.type === 'none' || paint.type === 'picture') return 'transparent'
+  return paint.type === 'solid'
+    ? paint.color
+    : paint.stops[0]?.color ?? 'transparent'
 }
 
 /**

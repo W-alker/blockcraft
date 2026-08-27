@@ -9,9 +9,16 @@ import {
 import {fromEvent, takeUntil} from 'rxjs'
 import {
   EditableBlockComponent,
+  normalizeBlockObjectFormat,
+  objectEffectsFilter,
+  objectPaintBackgroundPosition,
+  objectPaintBackgroundSize,
+  objectPicturePreserveAspectRatio,
+  storeObjectTextStyle,
 } from '../../framework'
 import {
   ShapeResizerComponent,
+  preserveResizeAspectRatio,
   type ShapeResizeCommit,
   type ShapeRotateCommit,
 } from '../shape-block'
@@ -20,6 +27,8 @@ import {calculateWordArtResize} from './word-art-resize'
 import {
   normalizeWordArtProps,
   resolveWordArtPresentation,
+  resolveWordArtProjectionPath,
+  WORD_ART_OBJECT_FORMAT_CAPABILITY,
   type NormalizedWordArtBlockProps,
   type WordArtBlockProps,
   type WordArtPresentation,
@@ -37,6 +46,7 @@ const rotationTransform = (rotation: number): string =>
     <div
       #surface
       class="word-art-block__surface"
+      [class.word-art-block__surface--nonlinear]="isNonlinear"
       data-bc-print-visual-surface
       data-bc-object-surface
       data-bc-fake-range-overlay-host
@@ -63,6 +73,37 @@ const rotationTransform = (rotation: number): string =>
           <i class="bc_icon bc_yidong" aria-hidden="true"></i>
         </button>
       }
+      @if (isNonlinear) {
+        <svg class="word-art-block__projection" [attr.viewBox]="'0 0 ' + wordArtProps.width + ' ' + wordArtProps.height"
+          preserveAspectRatio="none" aria-hidden="true">
+          <defs>
+            <path [attr.id]="projectionPathId" [attr.d]="projectionPath"></path>
+            @if (wordArtFormat.textStyle?.fill?.type === 'linear-gradient') {
+              <linearGradient [attr.id]="projectionGradientId" x1="0" y1="0" x2="1" y2="0">
+                @for (stop of projectionGradientStops; track $index) {
+                  <stop [attr.offset]="stop.offset"
+                    [attr.stop-color]="stop.color"
+                    [attr.stop-opacity]="stop.opacity"></stop>
+                }
+              </linearGradient>
+            }
+            @if (wordArtFormat.textStyle?.fill?.type === 'picture') {
+              <pattern [attr.id]="projectionPictureId" width="1" height="1" patternContentUnits="objectBoundingBox">
+                <image width="1" height="1" [attr.href]="projectionPictureSrc"
+                  [attr.preserveAspectRatio]="projectionPictureAspectRatio"></image>
+              </pattern>
+            }
+          </defs>
+          <text text-anchor="middle" [attr.fill]="projectionFill"
+            [attr.fill-opacity]="projectionFillOpacity"
+            [attr.stroke]="projectionStroke" [attr.stroke-width]="projectionStrokeWidth"
+            [style.font-family]="presentation.fontFamily" [style.font-size.px]="wordArtProps.fontSize"
+            [style.font-weight]="wordArtProps.fontWeight" [style.font-style]="wordArtProps.fontStyle"
+            [style.letter-spacing.em]="wordArtProps.letterSpacingEm" [style.filter]="projectionFilter">
+            <textPath [attr.href]="'#' + projectionPathId" startOffset="50%">{{ textContent() }}</textPath>
+          </text>
+        </svg>
+      }
       <div
         class="word-art-block__editor edit-container"
         [attr.data-bc-word-art-print-props]="printProps"
@@ -77,11 +118,14 @@ const rotationTransform = (rotation: number): string =>
         [style.-webkit-text-fill-color]="presentation.textColor"
         [style.caret-color]="presentation.fallbackColor"
         [style.background-image]="presentation.backgroundImage"
+        [style.background-size]="textBackgroundSize"
+        [style.background-position]="textBackgroundPosition"
         [style.background-clip]="'text'"
         [style.-webkit-background-clip]="'text'"
         [style.-webkit-text-stroke]="presentation.textStroke"
         [style.text-shadow]="presentation.textShadow"
         [style.transform]="presentation.effectTransform"
+        [style.opacity]="presentation.textOpacity"
         [attr.data-bc-word-art-effect-transform]="presentation.effectTransform"
       ></div>
       @if (!isReadonly) {
@@ -120,6 +164,77 @@ export class WordArtBlockComponent extends EditableBlockComponent<WordArtBlockMo
 
   get wordArtProps(): NormalizedWordArtBlockProps {
     return normalizeWordArtProps(this.props)
+  }
+
+  get wordArtFormat() {
+    return normalizeBlockObjectFormat(this.props, WORD_ART_OBJECT_FORMAT_CAPABILITY)
+  }
+
+  get isNonlinear(): boolean {
+    return ['arch-up', 'arch-down', 'circle', 'wave']
+      .includes(this.wordArtFormat.textStyle!.transform)
+  }
+
+  get projectionPathId(): string { return `bc-word-art-path-${this.id}` }
+  get projectionGradientId(): string { return `bc-word-art-gradient-${this.id}` }
+  get projectionPictureId(): string { return `bc-word-art-picture-${this.id}` }
+  get projectionGradientStops() {
+    const fill = this.wordArtFormat.textStyle!.fill
+    return fill.type === 'linear-gradient' ? fill.stops : []
+  }
+  get projectionPictureSrc(): string | null {
+    const fill = this.wordArtFormat.textStyle!.fill
+    return fill.type === 'picture' ? fill.src : null
+  }
+  get projectionPath(): string {
+    const {width, height} = this.wordArtProps
+    return resolveWordArtProjectionPath(
+      this.wordArtFormat.textStyle!.transform,
+      width,
+      height,
+    ) ?? ''
+  }
+
+  get textBackgroundSize(): string {
+    const fill = this.wordArtFormat.textStyle!.fill
+    return fill.type === 'picture' ? objectPaintBackgroundSize(fill) : 'auto'
+  }
+
+  get textBackgroundPosition(): string {
+    const fill = this.wordArtFormat.textStyle!.fill
+    return fill.type === 'picture'
+      ? objectPaintBackgroundPosition(fill)
+      : '0% 0%'
+  }
+  get projectionFill(): string {
+    const fill = this.wordArtFormat.textStyle!.fill
+    if (fill.type === 'none') return 'none'
+    return fill.type === 'linear-gradient'
+      ? `url(#${this.projectionGradientId})`
+      : fill.type === 'picture'
+        ? `url(#${this.projectionPictureId})`
+      : fill.color
+  }
+  get projectionPictureAspectRatio(): string {
+    const fill = this.wordArtFormat.textStyle!.fill
+    return fill.type === 'picture'
+      ? objectPicturePreserveAspectRatio(fill)
+      : 'none'
+  }
+  get projectionFillOpacity(): number {
+    const fill = this.wordArtFormat.textStyle!.fill
+    return fill.type === 'none' ? 0 : fill.opacity
+  }
+  get projectionStroke(): string {
+    const line = this.wordArtFormat.textStyle!.outline
+    return line.type === 'none' ? 'none' : line.color
+  }
+  get projectionStrokeWidth(): number {
+    const line = this.wordArtFormat.textStyle!.outline
+    return line.type === 'none' ? 0 : line.width
+  }
+  get projectionFilter(): string | null {
+    return objectEffectsFilter(this.wordArtFormat.textStyle!.effects) || null
   }
 
   get presentation(): WordArtPresentation {
@@ -164,18 +279,15 @@ export class WordArtBlockComponent extends EditableBlockComponent<WordArtBlockMo
   commitResize(event: ShapeResizeCommit): void {
     if (this.isReadonly) return
     const current = this.wordArtProps
+    event = this.wordArtFormat.lockAspectRatio
+      ? preserveResizeAspectRatio(event, current.width, current.height)
+      : event
     const isCorner =
       (event.handle.includes('east') || event.handle.includes('west')) &&
       (event.handle.includes('north') || event.handle.includes('south'))
     const next: Partial<WordArtBlockProps> = {
       width: Math.round(event.width),
       height: Math.round(event.height),
-      ...(isCorner
-        ? {
-            fontSize:
-              (current.fontSize * event.width) / Math.max(1, current.width),
-          }
-        : {}),
     }
 
     const placement = this.doc.placement?.getState?.(this.id) ?? {
@@ -190,12 +302,26 @@ export class WordArtBlockComponent extends EditableBlockComponent<WordArtBlockMo
         y: placement.y + event.offsetY,
       }
     }
-    this.doc.placement.updateObjectGeometry(this, next)
+    const nextTextStyle = isCorner
+      ? {
+          ...this.wordArtFormat.textStyle!,
+          fontSize: this.wordArtFormat.textStyle!.fontSize *
+            event.width / Math.max(1, current.width),
+        }
+      : null
+    this.doc.crud.transact(() => {
+      this.doc.placement.updateObjectGeometry(this, next)
+      if (nextTextStyle) {
+        this.doc.crud.updateBlockProps(this.id, {
+          textStyle: storeObjectTextStyle(nextTextStyle),
+        })
+      }
+    }, this)
     const surface = this._surface?.nativeElement
     if (surface) {
       surface.style.transform = rotationTransform(current.rotation)
-      if (isCorner && next.fontSize != null) {
-        surface.style.fontSize = `${next.fontSize}px`
+      if (nextTextStyle) {
+        surface.style.fontSize = `${nextTextStyle.fontSize}px`
       }
     }
   }

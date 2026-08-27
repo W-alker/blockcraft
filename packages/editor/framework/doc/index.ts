@@ -43,6 +43,7 @@ import {
   BlockPlacementManager,
 } from '../services/block-placement.manager'
 import {BlockObjectSizingManager} from '../services/block-object-sizing.manager'
+import {BlockObjectFormatManager} from '../services/block-object-format.manager'
 import {DocumentViewScaleManager} from '../services/document-view-scale.manager'
 import {
   DocumentLayoutMetricsConfig,
@@ -151,6 +152,7 @@ export class BlockCraftDoc {
   public readonly dragController = new DocInternalDragController(this)
   public readonly placement = new BlockPlacementManager(this)
   public readonly objectSizing = new BlockObjectSizingManager(this)
+  public readonly objectFormat = new BlockObjectFormatManager(this)
 
   private _scrollContainer: HTMLElement | null = null
 

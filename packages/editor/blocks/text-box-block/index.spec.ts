@@ -3,6 +3,11 @@ import {TestBed} from '@angular/core/testing'
 import * as Y from 'yjs'
 import {
   BlockNodeType,
+  normalizeBlockObjectFormat,
+  normalizeObjectPaint,
+  storeObjectLine,
+  storeObjectPaint,
+  storeObjectTextFrame,
   type IBlockSnapshot,
   type YBlock,
 } from '../../framework'
@@ -12,9 +17,8 @@ import {
   getTextBoxPreset,
   TextBoxBlockComponent,
   TextBoxBlockSchema,
+  TEXT_BOX_OBJECT_FORMAT_CAPABILITY,
   normalizeTextBoxProps,
-  normalizeTextBoxWordArtStyle,
-  serializeTextBoxWordArtStyle,
   type TextBoxBlockProps,
 } from './index'
 import {ShapeResizerComponent} from '../shape-block'
@@ -265,7 +269,7 @@ class TextBoxPlaceholderHarness {}
 })
 class TextBoxArtworkFrameHarness {
   private readonly insets = getTextBoxArtwork(
-    (getTextBoxPreset('bubble-r-blob-halo').props as {bgi?: string}).bgi!,
+    getTextBoxPreset('bubble-r-blob-halo').props.artwork,
   )!.textInsets
 
   protected readonly insetStyle =
@@ -663,15 +667,30 @@ describe('TextBoxBlockSchema', () => {
   })
 
   it('normalizes geometry, surface and absolute placement props', () => {
+    const defaults = normalizeBlockObjectFormat(
+      {},
+      TEXT_BOX_OBJECT_FORMAT_CAPABILITY,
+    )
     const props = normalizeTextBoxProps({
       width: -10,
       height: 4_000,
       rotation: -15,
-      p: [8, 16, 8, 16],
-      bgi: ' /assets/paper.png ',
-      bgs: 'contain',
-      backColor: ' transparent ',
-      borderColor: ' #334155 ',
+      fill: storeObjectPaint({
+        type: 'picture',
+        opacity: 1,
+        src: '/assets/paper.png',
+        fit: 'contain',
+        positionX: 50,
+        positionY: 50,
+      }),
+      outline: storeObjectLine({
+        ...defaults.shapeOutline!,
+        color: '#334155',
+      }),
+      textFrame: storeObjectTextFrame({
+        ...defaults.textFrame!,
+        margins: [8, 16, 8, 16],
+      }),
       position: {
         x: 32,
         y: 48,
@@ -679,19 +698,16 @@ describe('TextBoxBlockSchema', () => {
       placementLayer: 'under',
     })
 
-    expect(props).toEqual({
-      p: [8, 16],
+    expect(props).toEqual(jasmine.objectContaining({
+      p: [8, 16, 8, 16],
       bgi: '/assets/paper.png',
       bgs: 'contain',
-      bgx: 50,
-      bgy: 50,
-      bgo: 1,
       width: 48,
       height: 2_000,
       rotation: 345,
       backColor: 'transparent',
       borderColor: '#334155',
-      sh: 'rectangle',
+      shapeType: 'rectangle',
       fo: 1,
       bw: 1,
       bs: 'solid',
@@ -701,13 +717,12 @@ describe('TextBoxBlockSchema', () => {
         y: 48,
       },
       placementLayer: 'under',
-    })
+    }))
   })
 
-  it('defaults the writing mode to horizontal and only accepts the vertical flag', () => {
+  it('defaults the writing mode to horizontal and ignores its removed flat alias', () => {
     expect(normalizeTextBoxProps({}).wm).toBe('h')
-    expect(normalizeTextBoxProps({wm: 'v'}).wm).toBe('v')
-    // Unknown values fall back rather than reaching the theme as a raw string.
+    expect(normalizeTextBoxProps({wm: 'v'}).wm).toBe('h')
     expect(normalizeTextBoxProps({wm: 'vertical-rl'} as never).wm).toBe('h')
     expect(normalizeTextBoxProps({wm: null} as never).wm).toBe('h')
   })
@@ -718,48 +733,33 @@ describe('TextBoxBlockSchema', () => {
       snapshot.props as Partial<TextBoxBlockProps>,
     )
 
-    expect(props.wm).toBe('v')
+    expect(props.wm).toBe('h')
     expect(props.borderColor).toBe('#000000')
-    expect(props.sh).toBe('rectangle')
+    expect(props.shapeType).toBe('rectangle')
   })
 
-  it('normalizes the shape shell and serialized WordArt value object', () => {
-    const wa = serializeTextBoxWordArtStyle({
-      fillType: 'linear-gradient',
-      gradientColors: ['#0EA5E9', '#8B5CF6'],
-      gradientStops: [0, 1],
-      outlineColor: '#0F172A',
-      shadowEnabled: true,
-    })
+  it('ignores removed shape-shell and WordArt aliases', () => {
     const props = normalizeTextBoxProps({
       sh: 'line',
       fo: 2,
       bw: -4,
       bs: 'dashed',
-      wa,
+      wa: '{"effect":"wide"}',
     })
 
-    expect(props.sh).toBe('rectangle')
+    expect(props.shapeType).toBe('rectangle')
     expect(props.fo).toBe(1)
-    expect(props.bw).toBe(0)
-    expect(props.bs).toBe('dashed')
-    expect(normalizeTextBoxWordArtStyle(props.wa)).toEqual(
-      jasmine.objectContaining({
-        fillType: 'linear-gradient',
-        gradientColors: ['#0EA5E9', '#8B5CF6'],
-        gradientStops: [0, 1],
-        outlineColor: '#0F172A',
-        shadowEnabled: true,
-      }),
-    )
+    expect(props.bw).toBe(1)
+    expect(props.bs).toBe('solid')
+    expect('wa' in props).toBeFalse()
   })
 
   it('falls back instead of coercing missing dimensions to minimums', () => {
-    expect(normalizeTextBoxProps({
+    expect(TextBoxBlockSchema.createSnapshot('', {
       width: null as unknown as number,
       height: Number.NaN,
       rotation: Number.POSITIVE_INFINITY,
-    })).toEqual(DEFAULT_TEXT_BOX_PROPS)
+    }).props).toEqual(DEFAULT_TEXT_BOX_PROPS)
   })
 
   it('owns a closed rich-text child contract and fixed model height', () => {

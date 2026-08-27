@@ -1,7 +1,18 @@
 import {createSnapshotRenderer} from "./index";
 import {BlockNodeType, IBlockSnapshot} from "../framework/block-std/types/block.type";
+import {
+  DEFAULT_OBJECT_EFFECTS,
+  DEFAULT_OBJECT_LINE,
+  DEFAULT_OBJECT_PAINT,
+  DEFAULT_OBJECT_TEXT_FRAME,
+  DEFAULT_OBJECT_TEXT_STYLE,
+  storeObjectEffects,
+  storeObjectLine,
+  storeObjectPaint,
+  storeObjectTextFrame,
+  storeObjectTextStyle,
+} from "../framework";
 import {createAllBlocksFixture} from "./testing/fixtures/all-blocks.fixture";
-import {serializeTextBoxWordArtStyle} from "../blocks/text-box-block";
 
 describe("SnapshotRenderEngine", () => {
   it("renders a root snapshot into a host container", () => {
@@ -184,24 +195,27 @@ describe("SnapshotRenderEngine", () => {
       width: 320,
       height: 160,
       rotation: 15,
-      backColor: "#fff7d6",
-      borderColor: "#dfab01",
-      sh: "rounded-speech-bubble",
-      fo: 0.9,
-      bw: 2,
-      bs: "dashed",
-      wa: serializeTextBoxWordArtStyle({
-        fillType: "solid",
-        fillColor: "#2563EB",
-        outlineColor: "#FFFFFF",
-        shadowEnabled: true,
+      shape: "rounded-speech-bubble",
+      fill: storeObjectPaint({
+        type: "picture",
+        src: "images/paper.png", fit: "stretch", positionX: 25,
+        positionY: 75, opacity: .45,
       }),
-      p: [8, 12, 16, 20],
-      bgi: "images/paper.png",
-      bgs: "stretch",
-      bgx: 25,
-      bgy: 75,
-      bgo: 0.45,
+      outline: storeObjectLine({
+        ...DEFAULT_OBJECT_LINE, color: "#dfab01", width: 2, dash: "dash",
+      }),
+      effects: storeObjectEffects(DEFAULT_OBJECT_EFFECTS),
+      textFrame: storeObjectTextFrame({
+        ...DEFAULT_OBJECT_TEXT_FRAME, margins: [8, 12, 16, 20],
+      }),
+      textStyle: storeObjectTextStyle({
+        ...DEFAULT_OBJECT_TEXT_STYLE,
+        fill: {...DEFAULT_OBJECT_PAINT, color: "#2563EB"},
+        outline: {type: "line", color: "#FFFFFF", width: 1},
+        effects: {...DEFAULT_OBJECT_EFFECTS, shadow: {
+          ...DEFAULT_OBJECT_EFFECTS.shadow, enabled: true,
+        }},
+      }),
       position: {
         x: 40,
         y: 60,
@@ -237,7 +251,7 @@ describe("SnapshotRenderEngine", () => {
     expect(surface.querySelector(".text-box-block__content")
       ?.classList.contains("text-box-block__content--word-art")).toBeTrue()
     expect(block.style.getPropertyValue("--bc-text-box-word-art-color"))
-      .toBe("#2563EB")
+      .toBe("rgba(37, 99, 235, 1)")
     expect(block.style.left).toBe("40px")
     expect(block.style.top).toBe("60px")
     expect(block.dataset["bcPlacementLayer"]).toBe("under")
@@ -253,7 +267,9 @@ describe("SnapshotRenderEngine", () => {
         width: 240,
         height: 120,
         rotation: 0,
-        p: 0,
+        textFrame: storeObjectTextFrame({
+          ...DEFAULT_OBJECT_TEXT_FRAME, margins: [0, 0, 0, 0],
+        }),
         position: {x: 40, y: 60},
       }),
     ])]))

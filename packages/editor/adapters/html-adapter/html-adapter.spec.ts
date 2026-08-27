@@ -1,10 +1,22 @@
-import {BlockNodeType, DocAttachmentInfo, DocFileService, IBlockSnapshot} from '../../framework';
 import {
-  normalizeTextBoxWordArtStyle,
-  serializeTextBoxWordArtStyle,
-  getTextBoxArtwork,
-  getTextBoxPreset,
-} from '../../blocks/text-box-block';
+  BlockNodeType,
+  DEFAULT_OBJECT_EFFECTS,
+  DEFAULT_OBJECT_LINE,
+  DEFAULT_OBJECT_PAINT,
+  DEFAULT_OBJECT_TEXT_FRAME,
+  DEFAULT_OBJECT_TEXT_STYLE,
+  DocAttachmentInfo,
+  DocFileService,
+  IBlockSnapshot,
+  normalizeObjectPaint,
+  normalizeObjectTextFrame,
+  normalizeObjectTextStyle,
+  storeObjectEffects,
+  storeObjectLine,
+  storeObjectPaint,
+  storeObjectTextFrame,
+  storeObjectTextStyle,
+} from '../../framework';
 import {HtmlAdapter} from './html-adapter';
 import {ORDERED_MARKER_STYLES} from '../../blocks/ordered-block';
 
@@ -253,25 +265,29 @@ describe('HtmlAdapter', () => {
         width: 320,
         height: 160,
         rotation: 15,
-        backColor: '#fff7d6',
-        borderColor: '#dfab01',
-        sh: 'rounded-speech-bubble',
-        fo: 0.9,
-        bw: 2,
-        bs: 'dashed',
-        wm: 'v',
-        wa: serializeTextBoxWordArtStyle({
-          fillType: 'solid',
-          fillColor: '#2563EB',
-          outlineColor: '#FFFFFF',
-          shadowEnabled: true,
+        shape: 'rounded-speech-bubble',
+        fill: storeObjectPaint({
+          type: 'picture',
+          opacity: .5, src: 'https://cdn.example.com/paper.png',
+          fit: 'contain', positionX: 30, positionY: 70,
         }),
-        p: [8, 12, 16, 20],
-        bgi: 'https://cdn.example.com/paper.png',
-        bgs: 'contain',
-        bgx: 30,
-        bgy: 70,
-        bgo: 0.5,
+        outline: storeObjectLine({
+          ...DEFAULT_OBJECT_LINE, color: '#dfab01', width: 2, dash: 'dash',
+        }),
+        effects: storeObjectEffects(DEFAULT_OBJECT_EFFECTS),
+        textFrame: storeObjectTextFrame({
+          ...DEFAULT_OBJECT_TEXT_FRAME,
+          margins: [8, 12, 16, 20],
+          direction: 'vertical-rl',
+        }),
+        textStyle: storeObjectTextStyle({
+          ...DEFAULT_OBJECT_TEXT_STYLE,
+          fill: {...DEFAULT_OBJECT_PAINT, color: '#2563EB'},
+          outline: {type: 'line', color: '#FFFFFF', width: 1},
+          effects: {...DEFAULT_OBJECT_EFFECTS, shadow: {
+            ...DEFAULT_OBJECT_EFFECTS.shadow, enabled: true,
+          }},
+        }),
         position: {
           x: 40,
           y: 60,
@@ -294,69 +310,61 @@ describe('HtmlAdapter', () => {
 
     const html = await adapter.toHtml(createRootSnapshot([textBox]));
     expect(html).toContain('<figure data-bc-block="text-box"');
-    expect(html).toContain('data-text-box-width="320"');
-    expect(html).toContain('data-text-box-height="160"');
-    expect(html).toContain('data-text-box-rotation="15"');
+    expect(html).toContain('data-bc-object-width="320"');
+    expect(html).toContain('data-bc-object-height="160"');
+    expect(html).toContain('data-bc-object-rotation="15"');
     expect(html).toContain('data-text-box-placement-mode="absolute"');
     expect(html).not.toContain('data-text-box-placement-unit');
-    expect(html).toContain('data-bc-sh="rounded-speech-bubble"');
-    expect(html).toContain('data-bc-fo="0.9"');
-    expect(html).toContain('data-bc-bw="2"');
-    expect(html).toContain('data-bc-bs="dashed"');
-    expect(html).toContain('data-bc-wm="v"');
-    expect(html).toContain('data-bc-wa=');
-    expect(html).toContain('data-bc-p="8 12 16 20"');
-    expect(html).toContain(
-      'data-bc-bgi="https://cdn.example.com/paper.png"',
-    );
+    expect(html).toContain('data-bc-object-shape="rounded-speech-bubble"');
+    expect(html).toContain('data-bc-object-fill=');
+    expect(html).toContain('data-bc-object-outline=');
+    expect(html).toContain('data-bc-object-text-frame=');
+    expect(html).toContain('data-bc-object-text-style=');
 
     const imported = await adapter.toBlockSnapshot(html);
     const importedTextBox = (imported.children as IBlockSnapshot[])[0]!;
     expect(importedTextBox.flavour).toBe('text-box');
-    expect(importedTextBox.props).toEqual(jasmine.objectContaining(
-      textBox.props,
-    ));
-    expect(normalizeTextBoxWordArtStyle(importedTextBox.props['wa']))
+    expect(normalizeObjectPaint(importedTextBox.props['fill']))
       .toEqual(jasmine.objectContaining({
-        fillColor: '#2563EB',
-        outlineColor: '#FFFFFF',
-        shadowEnabled: true,
+        type: 'picture', src: 'https://cdn.example.com/paper.png',
+        fit: 'contain', positionX: 30, positionY: 70,
       }));
+    expect(normalizeObjectTextFrame(importedTextBox.props['textFrame']))
+      .toEqual(jasmine.objectContaining({
+        margins: [8, 12, 16, 20], direction: 'vertical-rl',
+      }));
+    const importedFill = normalizeObjectTextStyle(
+      importedTextBox.props['textStyle'],
+    ).fill;
+    expect(importedFill.type).toBe('solid');
+    expect(importedFill.type === 'solid' ? importedFill.color : null)
+      .toBe('#2563EB');
     expect((importedTextBox.children as IBlockSnapshot[]).map(child =>
       child.flavour,
     )).toEqual(['paragraph', 'bullet']);
   });
 
-  it('expands a catalog drawing on export and collapses it back on import', async () => {
-    const preset = getTextBoxPreset('bubble-r-blob-halo');
-    const reference = (preset.props as {bgi?: string}).bgi!;
-    const artwork = getTextBoxArtwork(reference)!;
+  it('does not migrate removed text-box surface fields', async () => {
     const textBox: IBlockSnapshot = {
       id: 'text-box-artwork',
       flavour: 'text-box',
       nodeType: BlockNodeType.block,
-      props: {...preset.props, width: 360, height: 240},
+      props: {width: 360, height: 240, bgi: 'bc:bubble-r-blob-halo'},
       meta: {},
       children: [createParagraphSnapshot('text-box-art-p', 'framed')],
     };
 
     const html = await adapter.toHtml(createRootSnapshot([textBox]));
 
-    // Exported HTML has to stand on its own in whatever opens it, so the
-    // reference is expanded into the drawing it names.
-    expect(html).toContain('data:image/svg+xml');
-    expect(html).not.toContain(reference);
+    expect(html).not.toContain('data:image/svg+xml');
+    expect(html).not.toContain('bubble-r-blob-halo');
 
     const imported = await adapter.toBlockSnapshot(html);
     const importedTextBox = (imported.children as IBlockSnapshot[])[0]!;
 
-    // …and collapsed again on the way back, or a round trip would leave the
-    // expanded copy in the document — exactly what the reference exists to
-    // keep out of snapshots.
-    expect(importedTextBox.props['bgi']).toBe(reference);
-    expect(JSON.stringify(importedTextBox.props))
-      .not.toContain('data:image/svg+xml');
-    expect(artwork.src.length).toBeGreaterThan(reference.length * 10);
+    expect(importedTextBox.props['bgi']).toBeUndefined();
+    expect(normalizeObjectPaint(importedTextBox.props['fill']).type)
+      .toBe('solid');
   });
 
   it('keeps a default paragraph when no supported text-box children survive', async () => {

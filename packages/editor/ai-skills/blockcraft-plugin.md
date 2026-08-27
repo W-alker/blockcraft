@@ -319,8 +319,5 @@ The plugin owns all `ResizeObserver`, animation-frame, DOM-layer and print resou
 | Block transformation | `BlockTransformerPlugin` | `plugins/block-transformer/` |
 | Keyboard shortcuts | `FindReplacePlugin` | `plugins/findReplace/` |
 | Drag & hover | `BlockControllerPlugin` | `plugins/block-controller/` |
-| Object selection + connected toolbar | `ShapeToolbarPlugin` | `plugins/shape-toolbar/` |
-| Capture-ordered multi-object selection + container toolbar | `ObjectGroupToolbarPlugin` | `plugins/object-group-toolbar/` |
-| Container text/object dual-state + preset/Shape/WordArt controls | `TextBoxToolbarPlugin` | `plugins/text-box-toolbar/` |
-| Editable object/edit dual-state + in-block transform affordance | `WordArtToolbarPlugin` | `plugins/word-art-toolbar/` |
+| Model-first object selection + connected mixed format panel | `ObjectFormatToolbarPlugin` | `plugins/object-format-toolbar/` |
 | Reversible layout controller | `PaginationPlugin` | `plugins/pagination/` |

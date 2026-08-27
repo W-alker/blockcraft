@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-24
+> Last updated: 2026-08-27
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
@@ -196,7 +196,90 @@ new ImgToolbarPlugin({
 
 ---
 
-## ObjectGroupToolbarPlugin
+## ObjectFormatToolbarPlugin
+
+`ObjectFormatToolbarPlugin` is the only bundled toolbar owner for whole-object
+Shape, TextBox and WordArt selection. It also owns Shift-click mixed selection,
+alignment/distribution and grouping. Register it once; do not register any of
+the removed per-flavour object toolbars.
+
+```typescript
+import { ObjectFormatToolbarPlugin } from "@ccc/blockcraft";
+
+const plugins = [new ObjectFormatToolbarPlugin()];
+```
+
+The connected quick rail reuses the established TextBox/WordArt two-level
+shell: a side-aware 42px rail opens a responsive 288px format card or compact
+228px layout card, both viewport-clamped and without redundant panel-title
+descriptions. It keeps center-first right/left positioning, flips the rail
+when the Overlay changes side, and preserves toolbar/CSES sub-overlay focus
+ownership during pointer-to-focus handoff. The panel keeps one scroll owner and switches
+among layout, Shape and text sections without disposing its Overlay. The size
+and rotation fields remain in the object-format domain but currently have no
+rail entry. It reads
+`doc.objectFormat.readSelection()` and commits through
+`doc.objectFormat.updateSelection(stableIds, patch)`; direct component code
+must not write serialized sections independently.
+When a CSES input temporarily detaches the editor Selection, the Plugin may pass
+`allowDetachedSelection: true` only while its toolbar-focus ownership check is
+positive. During that owned focus gap it also retains the existing whole-object
+chrome (`selected` outline/resizer state) without moving browser focus back to
+the editor. Retention starts on the first owned pointerdown and is reapplied
+after the synchronous selection broadcast, so the first rail click cannot flash
+away the object chrome. A different object selection remains a hard fail-closed
+condition.
+
+All generic panel controls come from CSES UI: Button/Tooltip for the rail and
+commands, Select/Option, Input/InputNumber, ColorPicker, Slider,
+and Switch for values. BlockCraft owns only the connected Overlay,
+iconfont glyphs and panel layout. Slider movement is an RAF visual preview;
+pointer/keyboard completion or blur commits one Yjs patch for one Undo step.
+
+Layout, page alignment and hierarchy are available in the layout group for one
+or multiple objects; object alignment/distribution/grouping appears only when
+two or more blocks are selected. Layout modes and hierarchy are icon-only
+compact actions with tooltips, and the common current mode is visibly active; a
+mixed multi-selection has no false active mode. Shape format uses one CSES
+segmented tab strip for Fill, Outline, Change Shape and Effects. Text format
+uses one CSES segmented tab strip for Text Frame, Typography and Appearance;
+only the active tab content is displayed. The font family control is a
+searchable, virtualized CSES Select backed by the shared typography and WordArt
+font catalogs; it writes the shared bounded CSS stack so all three object
+renderers consume the selected family. Active tab content has no trailing
+divider and the panel does not expose per-section Reset actions. The Text Frame
+UI does not expose wrap-inside or
+rotate-text-with-object toggles; those normalized fields remain available to
+importers and programmatic callers. The Text Frame card also omits
+resize-shape/auto-grow because that behavior is not currently implemented;
+`autoFit` remains a normalized programmatic field.
+
+Shape Fill and Text Appearance reuse the established
+`ShapeFillPanelComponent` instead of maintaining another fill form. The same
+CSES Select switches none/solid/gradient/picture and renders only the selected
+mode's tools. The same preset grid, start/end color pickers and angle stepper
+emit one complete `ObjectPaint`; the owning card retains picture details and
+unified opacity handling. Built-in TextBox artwork may still persist as a
+`bc:` picture reference, but the card treats it as an internal rendering
+resource: it displays a blank user URL and only reveals fit, position and
+picture-opacity controls after a user URL or upload has been set.
+
+The panel exposes only the Schema capability intersection. Mixed values are
+blank/indeterminate until the user enters a replacement. Locked targets are
+skipped and reported; stale selection or deleted targets close the panel
+without a write. Shape change options are also intersected and textless line
+kinds are removed whenever an object already contains text.
+
+Picture fill uses `DOC_FILE_SERVICE_TOKEN.uploadImg()` or a normalized legal
+URL. `shapeFill`, `shapeOutline`, `shapeEffects`, `textFrame` and `textStyle`
+are atomic serialized values. Programmatic `null` deletes exactly one section,
+whereas `type: 'none'` is an explicit fill/outline state; the compact panel does
+not expose that reset operation.
+
+## Removed: ObjectGroupToolbarPlugin
+
+> Removed by the unified object format contract. This section is historical;
+> use `ObjectFormatToolbarPlugin` above.
 
 > `plugins/object-group-toolbar/` — Multi-object selection and fixed grouping.
 
@@ -262,7 +345,10 @@ groups.
 
 ---
 
-## ShapeToolbarPlugin
+## Removed: ShapeToolbarPlugin
+
+> Removed by the unified object format contract. This section is historical;
+> use `ObjectFormatToolbarPlugin` above.
 
 > `plugins/shape-toolbar/` — Word-like shape selection, styling and object layout.
 
@@ -398,7 +484,10 @@ another shape remains outside this visual shape contract.
 
 ---
 
-## TextBoxToolbarPlugin
+## Removed: TextBoxToolbarPlugin
+
+> Removed by the unified object format contract. This section is historical;
+> use `ObjectFormatToolbarPlugin` above.
 
 > `plugins/text-box-toolbar/` — Whole-frame toolbar, preset/shape/text-effect styling and
 > object placement for the fixed-size `text-box` container.
@@ -508,7 +597,10 @@ paragraph. Gesture cancellation never writes a temporary root-flow Block.
 
 ---
 
-## WordArtToolbarPlugin
+## Removed: WordArtToolbarPlugin
+
+> Removed by the unified object format contract. This section is historical;
+> use `ObjectFormatToolbarPlugin` above.
 
 > `plugins/word-art-toolbar/` — Editable WordArt styling, object placement and
 > transform affordances.

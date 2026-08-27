@@ -2,15 +2,28 @@ import {
   ChangeDetectionStrategy,
   Component,
   ElementRef,
+  inject,
+  NgZone,
   ViewChild,
 } from '@angular/core'
 import {
   BaseBlockComponent,
   blockSurfaceImageFitToObjectFit,
+  colorWithOpacity,
+  normalizeBlockObjectFormat,
+  objectEffectsFilter,
+  objectLineDasharray,
+  objectPaintBackgroundPosition,
+  objectPaintBackgroundSize,
+  objectTextTransformCss,
   resolveBlockSurface,
+  storeObjectTextFrame,
+  storeObjectTextStyle,
 } from '../../framework'
 import {
+  shapeGradientToSvgVector,
   ShapeResizerComponent,
+  preserveResizeAspectRatio,
   type ShapeResizeCommit,
   type ShapeRotateCommit,
 } from '../shape-block'
@@ -26,7 +39,7 @@ import {
 import type {TextBoxBlockModel} from './index'
 import {
   normalizeTextBoxProps,
-  normalizeTextBoxWordArtStyle,
+  TEXT_BOX_OBJECT_FORMAT_CAPABILITY,
   type NormalizedTextBoxBlockProps,
   type TextBoxBlockProps,
 } from './text-box.types'
@@ -51,6 +64,7 @@ const rotationTransform = (rotation: number): string =>
       "
       [style.width.px]="textBoxProps.width"
       [style.height.px]="textBoxProps.height"
+      [style.filter]="shapeEffectsFilter"
       [style.transform]="surfaceTransform">
       <svg
         class="text-box-block__geometry text-box-block__geometry--fill"
@@ -63,11 +77,22 @@ const rotationTransform = (rotation: number): string =>
             clipPathUnits="objectBoundingBox">
             <path [attr.d]="shapeDefinition.path" transform="scale(.001)"></path>
           </clipPath>
+          @if (textBoxFormat.shapeFill?.type === 'linear-gradient') {
+            <linearGradient [attr.id]="gradientId"
+              [attr.x1]="gradientVector.x1" [attr.y1]="gradientVector.y1"
+              [attr.x2]="gradientVector.x2" [attr.y2]="gradientVector.y2">
+              @for (stop of frameGradientStops; track $index) {
+                <stop [attr.offset]="stop.offset"
+                  [attr.stop-color]="stop.color"
+                  [attr.stop-opacity]="stop.opacity"></stop>
+              }
+            </linearGradient>
+          }
         </defs>
         <path
           [attr.d]="shapeDefinition.path"
-          [attr.fill]="textBoxProps.backColor"
-          [attr.fill-opacity]="textBoxProps.fo"
+          [attr.fill]="frameFill"
+          [attr.fill-opacity]="frameFillOpacity"
           [attr.fill-rule]="shapeDefinition.fillRule ?? null">
         </path>
       </svg>
@@ -81,6 +106,19 @@ const rotationTransform = (rotation: number): string =>
           [style.object-fit]="objectFit(image.fit)"
           [style.object-position]="image.positionX + '% ' + image.positionY + '%'"
           [style.opacity]="image.opacity"
+          alt=""
+          aria-hidden="true"
+          loading="eager"
+          decoding="async"
+          [draggable]="false">
+      }
+
+      @if (artworkImage; as artwork) {
+        <img
+          class="text-box-block__background-image text-box-block__background-image--artwork"
+          [src]="artwork"
+          [style.clip-path]="clipPathUrl"
+          [style.-webkit-clip-path]="clipPathUrl"
           alt=""
           aria-hidden="true"
           loading="eager"
@@ -103,8 +141,22 @@ const rotationTransform = (rotation: number): string =>
       }
 
       <div
+        #textContent
         class="text-box-block__content children-render-container"
-        [class.text-box-block__content--word-art]="wordArtPresentation"
+        [class.text-box-block__content--word-art]="usesUniformTextPaint"
+        [style.font-family]="textBoxFormat.textStyle?.fontFamily"
+        [style.font-size.px]="textBoxFormat.textStyle?.fontSize"
+        [style.font-weight]="textBoxFormat.textStyle?.fontWeight"
+        [style.font-style]="textBoxFormat.textStyle?.fontStyle"
+        [style.letter-spacing.em]="textBoxFormat.textStyle?.letterSpacingEm"
+        [style.line-height]="textBoxFormat.textStyle?.lineHeight"
+        [style.text-align]="textBoxFormat.textFrame?.horizontalAlign"
+        [style.justify-content]="textVerticalJustify"
+        [style.white-space]="textBoxFormat.textFrame?.wrap ? null : 'nowrap'"
+        [style.transform]="textFrameTransform"
+        [style.background-size]="textPaintBackgroundSize"
+        [style.background-position]="textPaintBackgroundPosition"
+        [style.opacity]="textPictureOpacity"
         [attr.contenteditable]="isReadonly ? 'false' : 'true'">
       </div>
 
@@ -125,17 +177,21 @@ const rotationTransform = (rotation: number): string =>
         <path
           [attr.d]="shapeDefinition.path"
           fill="none"
-          [attr.stroke]="textBoxProps.borderColor"
-          [attr.stroke-width]="textBoxProps.bw"
+          [attr.stroke]="frameStroke"
+          [attr.stroke-opacity]="textBoxFormat.shapeOutline?.opacity"
+          [attr.stroke-width]="textBoxFormat.shapeOutline?.width"
           [attr.stroke-dasharray]="strokeDasharray"
+          [attr.stroke-linecap]="textBoxFormat.shapeOutline?.cap"
+          [attr.stroke-linejoin]="textBoxFormat.shapeOutline?.join"
           vector-effect="non-scaling-stroke">
         </path>
         @if (shapeDefinition.detailPath) {
           <path
             [attr.d]="shapeDefinition.detailPath"
             fill="none"
-            [attr.stroke]="textBoxProps.borderColor"
-            [attr.stroke-width]="textBoxProps.bw"
+            [attr.stroke]="frameStroke"
+            [attr.stroke-opacity]="textBoxFormat.shapeOutline?.opacity"
+            [attr.stroke-width]="textBoxFormat.shapeOutline?.width"
             [attr.stroke-dasharray]="strokeDasharray"
             vector-effect="non-scaling-stroke">
           </path>
@@ -180,27 +236,61 @@ const rotationTransform = (rotation: number): string =>
     '[style.--bc-text-box-word-art-line-height]': 'wordArtPresentation?.props?.lineHeight ?? null',
     '[style.--bc-text-box-word-art-align]': 'wordArtPresentation?.props?.horizontalAlign ?? null',
     '[style.--bc-text-box-word-art-vertical]': 'wordArtVerticalAlign',
-    '[style.--bc-text-box-word-art-color]': 'wordArtPresentation?.textColor ?? null',
-    '[style.--bc-text-box-word-art-background]': 'wordArtPresentation?.backgroundImage ?? null',
+    '[style.--bc-text-box-word-art-color]': 'textPaintColor',
+    '[style.--bc-text-box-word-art-background]': 'textPaintBackground',
     '[style.--bc-text-box-word-art-stroke]': 'wordArtPresentation?.textStroke ?? null',
     '[style.--bc-text-box-word-art-shadow]': 'wordArtPresentation?.textShadow ?? null',
     '[style.--bc-text-box-word-art-transform]': 'wordArtTransform',
   },
 })
 export class TextBoxBlockComponent extends BaseBlockComponent<TextBoxBlockModel> {
+  private readonly _ngZone = inject(NgZone)
+
   @ViewChild('textBoxSurface', {read: ElementRef})
   private readonly _surface?: ElementRef<HTMLElement>
+  @ViewChild('textContent', {read: ElementRef})
+  private readonly _textContent?: ElementRef<HTMLElement>
+  private _autoFitObserver?: MutationObserver
+  private _autoFitFrame: number | null = null
+
+  override ngAfterViewInit(): void {
+    super.ngAfterViewInit()
+    const content = this._textContent?.nativeElement
+    const ownerWindow = content?.ownerDocument.defaultView
+    if (!content || !ownerWindow?.MutationObserver) return
+    this._ngZone.runOutsideAngular(() => {
+      this._autoFitObserver = new ownerWindow.MutationObserver(() =>
+        this._scheduleAutoFit(),
+      )
+      this._autoFitObserver.observe(content, {
+        childList: true,
+        characterData: true,
+        subtree: true,
+      })
+    })
+    this.onDestroy$.subscribe(() => {
+      this._autoFitObserver?.disconnect()
+      this._autoFitObserver = undefined
+      if (this._autoFitFrame !== null) ownerWindow.cancelAnimationFrame(this._autoFitFrame)
+      this._autoFitFrame = null
+    })
+    this._scheduleAutoFit()
+  }
 
   get textBoxProps(): NormalizedTextBoxBlockProps {
     return normalizeTextBoxProps(this.props)
   }
 
+  get textBoxFormat() {
+    return normalizeBlockObjectFormat(this.props, TEXT_BOX_OBJECT_FORMAT_CAPABILITY)
+  }
+
   get blockSurface() {
-    return resolveBlockSurface(this.textBoxProps)
+    return resolveBlockSurface(this.textBoxProps as never)
   }
 
   get shapeDefinition() {
-    return getShapeDefinition(this.textBoxProps.sh)
+    return getShapeDefinition(this.textBoxProps.shapeType)
   }
 
   get clipPathId(): string {
@@ -212,7 +302,35 @@ export class TextBoxBlockComponent extends BaseBlockComponent<TextBoxBlockModel>
   }
 
   get strokeDasharray(): string | null {
-    return this.textBoxProps.bs === 'dashed' ? '10 8' : null
+    return objectLineDasharray(this.textBoxFormat.shapeOutline!)
+  }
+
+  get gradientId(): string { return `bc-text-box-gradient-${this.id}` }
+  get frameGradientStops() {
+    const fill = this.textBoxFormat.shapeFill!
+    return fill.type === 'linear-gradient' ? fill.stops : []
+  }
+  get gradientVector() {
+    const fill = this.textBoxFormat.shapeFill!
+    return shapeGradientToSvgVector(
+      fill.type === 'linear-gradient' ? fill.angle : 0,
+    )
+  }
+  get frameFillOpacity(): number {
+    const fill = this.textBoxFormat.shapeFill!
+    return fill.type === 'none' ? 0 : fill.opacity
+  }
+  get frameFill(): string {
+    const fill = this.textBoxFormat.shapeFill!
+    if (fill.type === 'none' || fill.type === 'picture') return 'none'
+    return fill.type === 'linear-gradient' ? `url(#${this.gradientId})` : fill.color
+  }
+  get frameStroke(): string {
+    const line = this.textBoxFormat.shapeOutline!
+    return line.type === 'none' ? 'none' : line.color
+  }
+  get shapeEffectsFilter(): string | null {
+    return objectEffectsFilter(this.textBoxFormat.shapeEffects!) || null
   }
 
   /**
@@ -220,12 +338,81 @@ export class TextBoxBlockComponent extends BaseBlockComponent<TextBoxBlockModel>
    * the theme's `horizontal-tb` fallback keeps existing documents byte-identical.
    */
   get writingMode(): string | null {
-    return this.textBoxProps.wm === 'v' ? 'vertical-rl' : null
+    return this.textBoxFormat.textFrame!.direction === 'vertical-rl'
+      ? 'vertical-rl'
+      : null
+  }
+
+  get textFrameTransform(): string | null {
+    const frame = this.textBoxFormat.textFrame!
+    const transforms: string[] = []
+    if (frame.direction === 'rotate-90') transforms.push('rotate(90deg)')
+    if (frame.direction === 'rotate-270') transforms.push('rotate(270deg)')
+    if (!frame.rotateWithShape && this.textBoxProps.rotation) {
+      transforms.push(`rotate(${-this.textBoxProps.rotation}deg)`)
+    }
+    const textTransform = objectTextTransformCss(
+      this.textBoxFormat.textStyle!.transform,
+    )
+    if (textTransform) transforms.push(textTransform)
+    return transforms.join(' ') || null
+  }
+
+  get textVerticalJustify(): 'flex-start' | 'center' | 'flex-end' {
+    const value = this.textBoxFormat.textFrame!.verticalAlign
+    return value === 'top' ? 'flex-start' : value === 'bottom' ? 'flex-end' : 'center'
+  }
+
+  get usesUniformTextPaint(): boolean {
+    const style = this.textBoxFormat.textStyle!
+    return style.fill.type !== 'solid' || style.outline.type !== 'none' ||
+      style.effects.shadow.enabled || style.effects.glow.enabled ||
+      style.transform !== 'none'
+  }
+
+  get textPaintColor(): string | null {
+    const fill = this.textBoxFormat.textStyle!.fill
+    return fill.type === 'linear-gradient' || fill.type === 'picture'
+      ? 'transparent'
+      : fill.type === 'none'
+        ? 'transparent'
+        : colorWithOpacity(fill.color, fill.opacity)
+  }
+
+  get textPaintBackground(): string | null {
+    const fill = this.textBoxFormat.textStyle!.fill
+    if (fill.type === 'picture' && fill.src) {
+      return `url("${fill.src.replace(/["\\]/g, '\\$&')}")`
+    }
+    return this.wordArtPresentation?.backgroundImage ?? null
+  }
+
+  get textPictureOpacity(): number | null {
+    const fill = this.textBoxFormat.textStyle!.fill
+    return fill.type === 'picture' ? fill.opacity : null
+  }
+
+  get textPaintBackgroundSize(): string {
+    const fill = this.textBoxFormat.textStyle!.fill
+    return fill.type === 'picture' ? objectPaintBackgroundSize(fill) : 'auto'
+  }
+
+  get textPaintBackgroundPosition(): string {
+    const fill = this.textBoxFormat.textStyle!.fill
+    return fill.type === 'picture'
+      ? objectPaintBackgroundPosition(fill)
+      : '0% 0%'
   }
 
   get wordArtPresentation(): WordArtPresentation | null {
-    const style = normalizeTextBoxWordArtStyle(this.textBoxProps.wa)
-    return style ? resolveWordArtPresentation(style) : null
+    return resolveWordArtPresentation({
+      depth: 0,
+      width: this.textBoxProps.width,
+      height: this.textBoxProps.height,
+      rotation: 0,
+      textFrame: storeObjectTextFrame(this.textBoxProps.textFrame),
+      textStyle: storeObjectTextStyle(this.textBoxProps.textStyle),
+    })
   }
 
   get wordArtFontSize(): string | null {
@@ -253,17 +440,17 @@ export class TextBoxBlockComponent extends BaseBlockComponent<TextBoxBlockModel>
   }
 
   /**
-   * The paintable surface image. `bgi` holds a reference — `bc:<id>` for a
-   * catalog drawing, a host URL for an uploaded one — so the registry resolves
-   * it here rather than handing the raw value to `<img>`. An id this build does
-   * not know paints nothing, which leaves an ordinary framed box rather than a
-   * broken-image icon.
+   * User-selected picture fill. Catalog artwork has its own field and
+   * never appears in the picture controls.
    */
   get backgroundImage() {
-    const image = this.blockSurface.backgroundImage
-    if (!image) return null
-    const src = resolveTextBoxArtworkSrc(image.src)
-    return src ? {...image, src} : null
+    return this.blockSurface.backgroundImage
+  }
+
+  get artworkImage(): string | null {
+    return typeof this.textBoxProps.artwork === 'string'
+      ? resolveTextBoxArtworkSrc(this.textBoxProps.artwork)
+      : null
   }
 
   get shapeInsetTop(): string {
@@ -305,6 +492,9 @@ export class TextBoxBlockComponent extends BaseBlockComponent<TextBoxBlockModel>
   commitResize(event: ShapeResizeCommit): void {
     if (this.isReadonly) return
     const current = this.textBoxProps
+    event = this.textBoxFormat.lockAspectRatio
+      ? preserveResizeAspectRatio(event, current.width, current.height)
+      : event
     const next: Partial<TextBoxBlockProps> = {
       width: Math.round(event.width),
       height: Math.round(event.height),
@@ -346,9 +536,34 @@ export class TextBoxBlockComponent extends BaseBlockComponent<TextBoxBlockModel>
   private _shapeInset(
     side: 'top' | 'right' | 'bottom' | 'left',
   ): string {
-    const artwork = getTextBoxArtwork(this.textBoxProps.bgi)
+    const artwork = getTextBoxArtwork(this.textBoxProps.artwork)
     if (artwork) return `${artwork.textInsets[side] * 100}%`
-    if (this.textBoxProps.sh === 'rectangle') return '0%'
+    if (this.textBoxProps.shapeType === 'rectangle') return '0%'
     return `${this.shapeDefinition.textInsets[side] * 100}%`
+  }
+
+  private _scheduleAutoFit(): void {
+    if (this._autoFitFrame !== null || this.isReadonly) return
+    const content = this._textContent?.nativeElement
+    const ownerWindow = content?.ownerDocument.defaultView
+    if (!content || !ownerWindow) return
+    this._autoFitFrame = ownerWindow.requestAnimationFrame(() => {
+      this._autoFitFrame = null
+      if (this.textBoxFormat.textFrame!.autoFit !== 'resize-shape') return
+      const overflow = this.textBoxFormat.textFrame!.direction === 'vertical-rl'
+        ? content.scrollWidth - content.clientWidth
+        : content.scrollHeight - content.clientHeight
+      if (!Number.isFinite(overflow) || overflow <= .5) return
+      const current = this.textBoxProps
+      this.doc.placement.updateObjectGeometry(this, {
+        [this.textBoxFormat.textFrame!.direction === 'vertical-rl'
+          ? 'width'
+          : 'height']: Math.ceil(
+          (this.textBoxFormat.textFrame!.direction === 'vertical-rl'
+            ? current.width
+            : current.height) + overflow,
+        ),
+      })
+    })
   }
 }

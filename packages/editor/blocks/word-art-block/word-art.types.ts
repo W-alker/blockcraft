@@ -1,7 +1,24 @@
 import type {
-  IEditableBlockProps,
+  BlockObjectFormatCapability,
+  BlockObjectFormatProps,
+  ObjectTextFrame,
+  ObjectTextStyle,
 } from '../../framework'
-import {resolveBlockPosition} from '../../framework'
+import {
+  DEFAULT_OBJECT_EFFECTS,
+  DEFAULT_OBJECT_PAINT,
+  DEFAULT_OBJECT_TEXT_FRAME,
+  DEFAULT_OBJECT_TEXT_STYLE,
+  colorWithOpacity,
+  normalizeBlockObjectFormat,
+  objectPaintBackgroundPosition,
+  objectPaintBackgroundSize,
+  objectTextTransformCss,
+  resolveBlockPosition,
+  resolveTypographyFontFamily,
+  storeObjectTextFrame,
+  storeObjectTextStyle,
+} from '../../framework'
 
 export const WORD_ART_FONT_OPTIONS = [
   {
@@ -77,12 +94,25 @@ export type WordArtEffect =
   | 'short'
   | 'inflate'
   | 'deflate'
+  | 'arch-up'
+  | 'arch-down'
+  | 'circle'
+  | 'wave'
 
-export interface WordArtBlockProps extends IEditableBlockProps {
+export interface WordArtBlockProps extends BlockObjectFormatProps {
+  depth: number
+}
+
+export interface NormalizedWordArtBlockProps {
+  depth: number
   width: number
   height: number
   rotation: number
-
+  position?: NonNullable<WordArtBlockProps['position']>
+  placementLayer?: 'under'
+  lockAspectRatio: boolean
+  textFrame: ObjectTextFrame
+  textStyle: ObjectTextStyle
   fontFamily: WordArtFontId
   fontSize: number
   fontWeight: WordArtFontWeight
@@ -91,33 +121,91 @@ export interface WordArtBlockProps extends IEditableBlockProps {
   lineHeight: number
   horizontalAlign: WordArtHorizontalAlign
   verticalAlign: WordArtVerticalAlign
-
   fillType: WordArtFillType
   fillColor: string
   gradientAngle: number
   gradientColors: string[]
   gradientStops: number[]
-
   outlineColor: string
   outlineWidthEm: number
-
   shadowEnabled: boolean
   shadowColor: string
   shadowOpacity: number
   shadowOffsetXEm: number
   shadowOffsetYEm: number
   shadowBlurEm: number
-
   effect: WordArtEffect
 }
 
-export interface NormalizedWordArtBlockProps extends WordArtBlockProps {}
+type WordArtPresentationInput =
+  | Partial<WordArtBlockProps>
+  | NormalizedWordArtBlockProps
+
+const DEFAULT_WORD_ART_TEXT_FRAME = {
+  ...DEFAULT_OBJECT_TEXT_FRAME,
+  horizontalAlign: 'center' as const,
+  verticalAlign: 'middle' as const,
+}
+const DEFAULT_WORD_ART_TEXT_STYLE: ObjectTextStyle = {
+  ...DEFAULT_OBJECT_TEXT_STYLE,
+  fontFamily: 'display-sans',
+  fontSize: 48,
+  fontWeight: 900,
+  lineHeight: 1.1,
+  fill: {
+    type: 'linear-gradient',
+    opacity: 1,
+    angle: 180,
+    stops: [
+      {color: '#FDE047', offset: 0, opacity: 1},
+      {color: '#F97316', offset: 0.58, opacity: 1},
+      {color: '#DC2626', offset: 1, opacity: 1},
+    ],
+  },
+  outline: {type: 'line', color: '#9A3412', width: 1.44},
+  effects: {
+    ...DEFAULT_OBJECT_EFFECTS,
+    shadow: {
+      enabled: true,
+      color: '#7C2D12',
+      opacity: 0.3,
+      blur: 1.92,
+      angle: 56.31,
+      distance: 6.92,
+    },
+    glow: {...DEFAULT_OBJECT_EFFECTS.glow},
+  },
+  transform: 'none',
+}
+
+export const WORD_ART_OBJECT_FORMAT_CAPABILITY: BlockObjectFormatCapability = {
+  kind: 'word-art',
+  features: {
+    geometry: true,
+    shape: false,
+    pictureFill: true,
+    lineArrows: false,
+    textFrame: true,
+    textStyle: 'uniform',
+  },
+  defaults: {
+    width: 320,
+    height: 96,
+    rotation: 0,
+    lockAspectRatio: false,
+    textFrame: DEFAULT_WORD_ART_TEXT_FRAME,
+    textStyle: DEFAULT_WORD_ART_TEXT_STYLE,
+  },
+}
 
 export const DEFAULT_WORD_ART_PROPS: Readonly<NormalizedWordArtBlockProps> = {
   depth: 0,
   width: 320,
   height: 96,
   rotation: 0,
+  lockAspectRatio: false,
+  textFrame: {...DEFAULT_WORD_ART_TEXT_FRAME},
+  textStyle: {...DEFAULT_WORD_ART_TEXT_STYLE},
   fontFamily: 'display-sans',
   fontSize: 48,
   fontWeight: 900,
@@ -163,6 +251,10 @@ const EFFECTS = new Set<string>([
   'short',
   'inflate',
   'deflate',
+  'arch-up',
+  'arch-down',
+  'circle',
+  'wave',
 ])
 
 const finiteNumber = (
@@ -238,127 +330,102 @@ const normalizeGradient = (
 export function normalizeWordArtProps(
   value: Partial<WordArtBlockProps> | null | undefined,
 ): NormalizedWordArtBlockProps {
-  const gradient = normalizeGradient(
-    value?.gradientColors,
-    value?.gradientStops,
+  const objectFormat = normalizeBlockObjectFormat(
+    value,
+    WORD_ART_OBJECT_FORMAT_CAPABILITY,
   )
-  const fontWeight = Number(value?.fontWeight)
+  const style = objectFormat.textStyle!
+  const frame = objectFormat.textFrame!
+  const gradient = style.fill.type === 'linear-gradient'
+    ? normalizeGradient(
+        style.fill.stops.map(stop => stop.color),
+        style.fill.stops.map(stop => stop.offset),
+      )
+    : {
+        colors: [...DEFAULT_WORD_ART_PROPS.gradientColors],
+        stops: [...DEFAULT_WORD_ART_PROPS.gradientStops],
+      }
+  const fontWeight = Number(style.fontWeight)
   const position = normalizePosition(value?.position)
+  const shadow = style.effects.shadow
+  const radians = shadow.angle * Math.PI / 180
 
   return {
+    ...value,
     depth: 0,
-    width: finiteNumber(
-      value?.width,
-      DEFAULT_WORD_ART_PROPS.width,
-      48,
-      2_000,
-    ),
-    height: finiteNumber(
-      value?.height,
-      DEFAULT_WORD_ART_PROPS.height,
-      32,
-      2_000,
-    ),
-    rotation: normalizeWordArtRotation(value?.rotation),
+    width: Math.max(48, objectFormat.width),
+    height: Math.max(32, objectFormat.height),
+    rotation: objectFormat.rotation,
+    lockAspectRatio: objectFormat.lockAspectRatio,
+    textFrame: frame,
+    textStyle: style,
     ...(position ? {position} : {}),
     ...(value?.placementLayer === 'under'
       ? {placementLayer: 'under' as const}
       : {}),
     fontFamily:
-      typeof value?.fontFamily === 'string' &&
-      FONT_IDS.has(value.fontFamily)
-        ? value.fontFamily as WordArtFontId
+      typeof style.fontFamily === 'string' && FONT_IDS.has(style.fontFamily)
+        ? style.fontFamily as WordArtFontId
         : DEFAULT_WORD_ART_PROPS.fontFamily,
-    fontSize: finiteNumber(
-      value?.fontSize,
-      DEFAULT_WORD_ART_PROPS.fontSize,
-      8,
-      512,
-    ),
+    fontSize: style.fontSize,
     fontWeight: FONT_WEIGHTS.has(fontWeight)
       ? fontWeight as WordArtFontWeight
       : DEFAULT_WORD_ART_PROPS.fontWeight,
-    fontStyle: value?.fontStyle === 'italic' ? 'italic' : 'normal',
-    letterSpacingEm: finiteNumber(
-      value?.letterSpacingEm,
-      DEFAULT_WORD_ART_PROPS.letterSpacingEm,
-      -0.2,
-      1,
-    ),
-    lineHeight: finiteNumber(
-      value?.lineHeight,
-      DEFAULT_WORD_ART_PROPS.lineHeight,
-      0.8,
-      3,
-    ),
+    fontStyle: style.fontStyle,
+    letterSpacingEm: style.letterSpacingEm,
+    lineHeight: style.lineHeight,
     horizontalAlign:
-      value?.horizontalAlign === 'left' ||
-      value?.horizontalAlign === 'right'
-        ? value.horizontalAlign
+      frame.horizontalAlign === 'left' || frame.horizontalAlign === 'right'
+        ? frame.horizontalAlign
         : 'center',
     verticalAlign:
-      value?.verticalAlign === 'top' ||
-      value?.verticalAlign === 'bottom'
-        ? value.verticalAlign
+      frame.verticalAlign === 'top' || frame.verticalAlign === 'bottom'
+        ? frame.verticalAlign
         : 'middle',
-    fillType: value?.fillType === 'solid'
-      ? 'solid'
-      : 'linear-gradient',
-    fillColor: normalizeColor(
-      value?.fillColor,
-      DEFAULT_WORD_ART_PROPS.fillColor,
-    ),
-    gradientAngle: finiteNumber(
-      value?.gradientAngle,
-      DEFAULT_WORD_ART_PROPS.gradientAngle,
-      0,
-      360,
-    ),
+    fillType: style.fill.type === 'linear-gradient' ? 'linear-gradient' : 'solid',
+    fillColor: style.fill.type === 'solid'
+      ? style.fill.color
+      : style.fill.type === 'linear-gradient'
+        ? style.fill.stops[0]?.color ?? 'transparent'
+        : 'transparent',
+    gradientAngle: style.fill.type === 'linear-gradient'
+      ? style.fill.angle
+      : DEFAULT_WORD_ART_PROPS.gradientAngle,
     gradientColors: gradient.colors,
     gradientStops: gradient.stops,
-    outlineColor: normalizeColor(
-      value?.outlineColor,
-      DEFAULT_WORD_ART_PROPS.outlineColor,
-    ),
-    outlineWidthEm: finiteNumber(
-      value?.outlineWidthEm,
-      DEFAULT_WORD_ART_PROPS.outlineWidthEm,
-      0,
-      0.2,
-    ),
-    shadowEnabled: value?.shadowEnabled !== false,
-    shadowColor: normalizeColor(
-      value?.shadowColor,
-      DEFAULT_WORD_ART_PROPS.shadowColor,
-    ),
-    shadowOpacity: finiteNumber(
-      value?.shadowOpacity,
-      DEFAULT_WORD_ART_PROPS.shadowOpacity,
-      0,
-      1,
-    ),
-    shadowOffsetXEm: finiteNumber(
-      value?.shadowOffsetXEm,
-      DEFAULT_WORD_ART_PROPS.shadowOffsetXEm,
-      -1,
-      1,
-    ),
-    shadowOffsetYEm: finiteNumber(
-      value?.shadowOffsetYEm,
-      DEFAULT_WORD_ART_PROPS.shadowOffsetYEm,
-      -1,
-      1,
-    ),
-    shadowBlurEm: finiteNumber(
-      value?.shadowBlurEm,
-      DEFAULT_WORD_ART_PROPS.shadowBlurEm,
-      0,
-      1,
-    ),
-    effect:
-      typeof value?.effect === 'string' && EFFECTS.has(value.effect)
-        ? value.effect as WordArtEffect
-        : DEFAULT_WORD_ART_PROPS.effect,
+    outlineColor: style.outline.type === 'none' ? 'transparent' : style.outline.color,
+    outlineWidthEm: style.outline.type === 'none'
+      ? 0
+      : style.outline.width / Math.max(1, style.fontSize),
+    shadowEnabled: shadow.enabled,
+    shadowColor: shadow.color,
+    shadowOpacity: shadow.opacity,
+    shadowOffsetXEm: Math.cos(radians) * shadow.distance / Math.max(1, style.fontSize),
+    shadowOffsetYEm: Math.sin(radians) * shadow.distance / Math.max(1, style.fontSize),
+    shadowBlurEm: shadow.blur / Math.max(1, style.fontSize),
+    effect: EFFECTS.has(style.transform)
+      ? style.transform as WordArtEffect
+      : DEFAULT_WORD_ART_PROPS.effect,
+  }
+}
+
+/** Canonical persisted WordArt props; presentation aliases stay render-only. */
+export function normalizeWordArtSnapshotProps(
+  value: Partial<WordArtBlockProps> | null | undefined,
+): WordArtBlockProps {
+  const normalized = normalizeWordArtProps(value)
+  return {
+    depth: 0,
+    width: normalized.width,
+    height: normalized.height,
+    rotation: normalized.rotation,
+    lockRatio: normalized.lockAspectRatio,
+    textFrame: storeObjectTextFrame(normalized.textFrame),
+    textStyle: storeObjectTextStyle(normalized.textStyle),
+    ...(normalized.position ? {position: normalized.position} : {}),
+    ...(normalized.placementLayer === 'under'
+      ? {placementLayer: 'under' as const}
+      : {}),
   }
 }
 
@@ -371,11 +438,17 @@ export interface WordArtPresentation {
   textStroke: string
   textShadow: string
   effectTransform: string
+  textOpacity: number
 }
 
 export function getWordArtFontStack(fontId: WordArtFontId): string {
   return WORD_ART_FONT_OPTIONS.find(item => item.id === fontId)?.stack ??
     WORD_ART_FONT_OPTIONS[0].stack
+}
+
+function resolveObjectTextFontStack(value: string): string {
+  return WORD_ART_FONT_OPTIONS.find(item => item.id === value)?.stack ??
+    resolveTypographyFontFamily(value) ?? WORD_ART_FONT_OPTIONS[0].stack
 }
 
 const hexToRgba = (hex: string, opacity: number): string => {
@@ -390,44 +463,54 @@ const hexToRgba = (hex: string, opacity: number): string => {
   return `rgba(${red}, ${green}, ${blue}, ${opacity})`
 }
 
-const resolveEffectTransform = (effect: WordArtEffect): string => {
-  if (effect === 'slant-left') return 'skewX(-10deg)'
-  if (effect === 'slant-right') return 'skewX(10deg)'
-  if (effect === 'slant-up') return 'skewY(-8deg)'
-  if (effect === 'slant-down') return 'skewY(8deg)'
-  if (effect === 'perspective-left') {
-    return 'perspective(600px) rotateY(-12deg)'
+export function resolveWordArtProjectionPath(
+  effect: WordArtEffect,
+  width: number,
+  height: number,
+): string | null {
+  if (effect === 'arch-up') {
+    return `M 8 ${height * .78} Q ${width / 2} ${height * .05} ${width - 8} ${height * .78}`
   }
-  if (effect === 'perspective-right') {
-    return 'perspective(600px) rotateY(12deg)'
+  if (effect === 'arch-down') {
+    return `M 8 ${height * .22} Q ${width / 2} ${height * .95} ${width - 8} ${height * .22}`
   }
-  if (effect === 'perspective-up') {
-    return 'perspective(600px) rotateX(12deg)'
+  if (effect === 'circle') {
+    return `M ${width / 2} ${height * .08} A ${width * .42} ${height * .42} 0 1 1 ${width / 2 - .01} ${height * .08}`
   }
-  if (effect === 'perspective-down') {
-    return 'perspective(600px) rotateX(-12deg)'
+  if (effect === 'wave') {
+    return `M 8 ${height / 2} C ${width * .2} ${height * .08}, ${width * .3} ${height * .92}, ${width / 2} ${height / 2} S ${width * .8} ${height * .08}, ${width - 8} ${height / 2}`
   }
-  if (effect === 'wide') return 'scaleX(1.18)'
-  if (effect === 'narrow') return 'scaleX(0.82)'
-  if (effect === 'tall') return 'scaleY(1.18)'
-  if (effect === 'short') return 'scaleY(0.82)'
-  if (effect === 'inflate') return 'scale(1.08)'
-  if (effect === 'deflate') return 'scale(0.92)'
-  return ''
+  return null
 }
 
 export function resolveWordArtPresentation(
-  value: Partial<WordArtBlockProps> | null | undefined,
+  value: WordArtPresentationInput | null | undefined,
 ): WordArtPresentation {
-  const props = normalizeWordArtProps(value)
-  const gradientStops = props.gradientColors.map((color, index) =>
-    `${color} ${Math.round(props.gradientStops[index] * 10_000) / 100}%`
+  const canonical = value as Partial<WordArtBlockProps> | null | undefined
+  const props = normalizeWordArtProps(canonical)
+  const objectFormat = normalizeBlockObjectFormat(
+    canonical,
+    WORD_ART_OBJECT_FORMAT_CAPABILITY,
   )
-  const isGradient = props.fillType === 'linear-gradient'
-  const fallbackColor = isGradient
-    ? props.gradientColors[0]
-    : props.fillColor
-  const backgroundImage = isGradient
+  const textFill = objectFormat.textStyle!.fill
+  const gradientStops = textFill.type === 'linear-gradient'
+    ? textFill.stops.map(stop =>
+    `${colorWithOpacity(
+      stop.color,
+      stop.opacity * textFill.opacity,
+    )} ${Math.round(stop.offset * 10_000) / 100}%`
+      )
+    : []
+  const isGradient = textFill.type === 'linear-gradient'
+  const isPicture = textFill.type === 'picture' && Boolean(textFill.src)
+  const fillOpacity = textFill.type === 'none' ? 0 : textFill.opacity
+  const fallbackColor = colorWithOpacity(
+    isGradient ? props.gradientColors[0] : props.fillColor,
+    fillOpacity,
+  )
+  const backgroundImage = isPicture
+    ? `url("${textFill.src.replace(/["\\]/g, '\\$&')}")`
+    : isGradient
     ? `linear-gradient(${props.gradientAngle}deg, ${gradientStops.join(', ')})`
     : 'none'
   const textShadow = props.shadowEnabled
@@ -441,18 +524,24 @@ export function resolveWordArtPresentation(
 
   return {
     props,
-    fontFamily: getWordArtFontStack(props.fontFamily),
+    // Object text styles may persist a shared typography id or a bounded CSS
+    // font stack. Resolve that canonical field instead of falling back through
+    // the removed WordArt-only top-level alias.
+    fontFamily: resolveObjectTextFontStack(objectFormat.textStyle!.fontFamily),
     fallbackColor,
-    textColor: isGradient ? 'transparent' : props.fillColor,
+    textColor: isGradient || isPicture
+      ? 'transparent'
+      : colorWithOpacity(props.fillColor, fillOpacity),
     backgroundImage,
-    textStroke: `${props.outlineWidthEm}em ${props.outlineColor}`,
+    textStroke: `${Math.round(props.outlineWidthEm * 10_000) / 10_000}em ${props.outlineColor}`,
     textShadow,
-    effectTransform: resolveEffectTransform(props.effect),
+    effectTransform: objectTextTransformCss(props.effect),
+    textOpacity: isPicture ? fillOpacity : textFill.type === 'none' ? 0 : 1,
   }
 }
 
 export function wordArtPresentationToInlineStyle(
-  value: Partial<WordArtBlockProps> | null | undefined,
+  value: WordArtPresentationInput | null | undefined,
 ): string {
   const presentation = resolveWordArtPresentation(value)
   const props = presentation.props
@@ -470,11 +559,34 @@ export function wordArtPresentationToInlineStyle(
     `-webkit-text-fill-color:${presentation.textColor}`,
     `caret-color:${presentation.fallbackColor}`,
     `background-image:${presentation.backgroundImage}`,
+    `background-size:${resolveTextPaintBackgroundSize(value)}`,
+    `background-position:${resolveTextPaintBackgroundPosition(value)}`,
     'background-clip:text',
     '-webkit-background-clip:text',
     `-webkit-text-stroke:${presentation.textStroke}`,
     `text-shadow:${presentation.textShadow}`,
     `transform:${presentation.effectTransform || 'none'}`,
+    `opacity:${presentation.textOpacity}`,
     'white-space:pre-wrap',
   ].join(';')
+}
+
+function resolveTextPaintBackgroundSize(
+  value: WordArtPresentationInput | null | undefined,
+): string {
+  const fill = normalizeBlockObjectFormat(
+    value as Partial<WordArtBlockProps> | null | undefined,
+    WORD_ART_OBJECT_FORMAT_CAPABILITY,
+  ).textStyle!.fill
+  return fill.type === 'picture' ? objectPaintBackgroundSize(fill) : 'auto'
+}
+
+function resolveTextPaintBackgroundPosition(
+  value: WordArtPresentationInput | null | undefined,
+): string {
+  const fill = normalizeBlockObjectFormat(
+    value as Partial<WordArtBlockProps> | null | undefined,
+    WORD_ART_OBJECT_FORMAT_CAPABILITY,
+  ).textStyle!.fill
+  return fill.type === 'picture' ? objectPaintBackgroundPosition(fill) : '0% 0%'
 }

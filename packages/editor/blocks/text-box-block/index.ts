@@ -9,6 +9,8 @@ import {ParagraphBlockSchema} from '../paragraph-block'
 import {TextBoxBlockComponent} from './text-box.block'
 import {
   normalizeTextBoxProps,
+  normalizeTextBoxSnapshotProps,
+  TEXT_BOX_OBJECT_FORMAT_CAPABILITY,
   type TextBoxBlockProps,
 } from './text-box.types'
 
@@ -34,7 +36,7 @@ export const TextBoxBlockSchema: IBlockSchemaOptions<TextBoxBlockModel> = {
     id: generateId(),
     flavour: 'text-box',
     nodeType: BlockNodeType.block,
-    props: normalizeTextBoxProps(props),
+    props: normalizeTextBoxSnapshotProps(props),
     meta: {},
     children: [ParagraphBlockSchema.createSnapshot(text)],
   }),
@@ -61,6 +63,7 @@ export const TextBoxBlockSchema: IBlockSchemaOptions<TextBoxBlockModel> = {
       editingBoundary: 'absolute',
     },
     placement: {modes: ['relative', 'absolute']},
+    objectFormat: TEXT_BOX_OBJECT_FORMAT_CAPABILITY,
     virtualization: {
       estimateHeight: ({props}) => normalizeTextBoxProps(props).height,
     },

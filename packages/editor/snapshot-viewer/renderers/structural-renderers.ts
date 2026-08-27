@@ -10,7 +10,6 @@ import {
 } from "../../framework/block-std/block/block-surface";
 import {
   normalizeTextBoxProps,
-  normalizeTextBoxWordArtStyle,
   type TextBoxBlockProps,
 } from "../../blocks/text-box-block";
 import {getShapeDefinition} from "../../blocks/shape-block/shape-definitions";
@@ -22,9 +21,18 @@ import {
 } from "../../blocks/text-box-block";
 import {resolveWordArtPresentation} from "../../blocks/word-art-block";
 import {
+  normalizeBlockObjectFormat,
+  objectEffectsFilter,
+  objectLineDasharray,
+  objectPaintBackgroundPosition,
+  objectPaintBackgroundSize,
+  objectTextTransformCss,
+  storeObjectTextFrame,
+  storeObjectTextStyle,
   BLOCK_OBJECT_GROUP_PADDING,
   normalizeBlockObjectGroupProps,
 } from "../../framework";
+import {TEXT_BOX_OBJECT_FORMAT_CAPABILITY} from "../../blocks/text-box-block";
 import {createBlockShell} from "../dom/create-block-shell";
 import {SnapshotBlockRenderer, SnapshotRenderContext} from "../types";
 
@@ -254,7 +262,11 @@ function renderTextBox(
   const props = normalizeTextBoxProps(
     snapshot.props as Partial<TextBoxBlockProps>,
   )
-  const {padding, backgroundImage} = resolveBlockSurface(props)
+  const {padding, backgroundImage} = resolveBlockSurface(props as never)
+  const format = normalizeBlockObjectFormat(
+    snapshot.props as Partial<TextBoxBlockProps>,
+    TEXT_BOX_OBJECT_FORMAT_CAPABILITY,
+  )
   element.setAttribute("data-bc-text-box", "true")
   element.setAttribute("data-bc-text-box-wm", props.wm)
   // Same variable name as the live Block so one theme rule drives both paths.
@@ -274,13 +286,13 @@ function renderTextBox(
   element.style.setProperty("--bc-text-box-padding-right", `${padding.right}px`)
   element.style.setProperty("--bc-text-box-padding-bottom", `${padding.bottom}px`)
   element.style.setProperty("--bc-text-box-padding-left", `${padding.left}px`)
-  const definition = getShapeDefinition(props.sh)
+  const definition = getShapeDefinition(props.shapeType)
   // Same precedence as the live Block: a catalog drawing carries its own
   // text-safe frame, a plain rectangle has none, otherwise the shape's.
-  const artwork = getTextBoxArtwork(props.bgi)
+  const artwork = getTextBoxArtwork(props.artwork)
   const shapeInsets = artwork
     ? artwork.textInsets
-    : props.sh === "rectangle"
+    : props.shapeType === "rectangle"
       ? {top: 0, right: 0, bottom: 0, left: 0}
       : definition.textInsets
   element.style.setProperty(
@@ -308,19 +320,40 @@ function renderTextBox(
   surface.style.transform = props.rotation === 0
     ? ""
     : `rotate(${props.rotation}deg)`
+  surface.style.filter = objectEffectsFilter(format.shapeEffects!)
   const clipPathId = `bc-text-box-clip-${snapshot.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`
-  surface.append(createTextBoxFillGeometry(definition, props, clipPathId))
+  surface.append(createTextBoxFillGeometry(
+    definition,
+    format.shapeFill!,
+    clipPathId,
+  ))
 
-  // `bgi` is a reference; the drawing itself never travels in the snapshot.
-  const paintedSrc = backgroundImage
-    ? resolveTextBoxArtworkSrc(backgroundImage.src)
-    : null
-  if (backgroundImage && paintedSrc && ctx.options.resourcePolicy !== "off") {
+  if (backgroundImage && ctx.options.resourcePolicy !== "off") {
     const image = createSurfaceBackgroundImage(
       "text-box-block__background-image",
-      {...backgroundImage, src: paintedSrc},
+      backgroundImage,
       ctx,
     )
+    image.style.clipPath = `url(#${clipPathId})`
+    image.style.setProperty("-webkit-clip-path", `url(#${clipPathId})`)
+    surface.append(image)
+  }
+  const artworkSrc = typeof props.artwork === "string"
+    ? resolveTextBoxArtworkSrc(props.artwork)
+    : null
+  if (artworkSrc && ctx.options.resourcePolicy !== "off") {
+    const image = createSurfaceBackgroundImage(
+      "text-box-block__background-image",
+      {
+        src: artworkSrc,
+        fit: "stretch",
+        positionX: 50,
+        positionY: 50,
+        opacity: 1,
+      },
+      ctx,
+    )
+    image.classList.add("text-box-block__background-image--artwork")
     image.style.clipPath = `url(#${clipPathId})`
     image.style.setProperty("-webkit-clip-path", `url(#${clipPathId})`)
     surface.append(image)
@@ -328,11 +361,31 @@ function renderTextBox(
 
   const content = document.createElement("div")
   content.classList.add("children-render-container", "text-box-block__content")
-  if (props.wa) {
-    const wordArt = resolveWordArtPresentation(
-      normalizeTextBoxWordArtStyle(props.wa),
-    )
-    content.classList.add("text-box-block__content--word-art")
+  const textFrame = format.textFrame!
+  const textTransforms: string[] = []
+  if (textFrame.direction === "rotate-90") textTransforms.push("rotate(90deg)")
+  if (textFrame.direction === "rotate-270") textTransforms.push("rotate(270deg)")
+  if (!textFrame.rotateWithShape && props.rotation) {
+    textTransforms.push(`rotate(${-props.rotation}deg)`)
+  }
+  const textTransform = objectTextTransformCss(format.textStyle!.transform)
+  if (textTransform) textTransforms.push(textTransform)
+  content.style.transform = textTransforms.join(" ")
+  content.style.whiteSpace = textFrame.wrap ? "" : "nowrap"
+  {
+    const wordArt = resolveWordArtPresentation({
+      depth: 0,
+      width: props.width,
+      height: props.height,
+      rotation: 0,
+      textFrame: storeObjectTextFrame(props.textFrame),
+      textStyle: storeObjectTextStyle(props.textStyle),
+    })
+    const textStyle = format.textStyle!
+    const advancedPaint = textStyle.fill.type !== "solid" ||
+      textStyle.outline.type !== "none" || textStyle.effects.shadow.enabled ||
+      textStyle.effects.glow.enabled || textStyle.transform !== "none"
+    if (advancedPaint) content.classList.add("text-box-block__content--word-art")
     element.style.setProperty(
       "--bc-text-box-word-art-font-family",
       wordArt.fontFamily,
@@ -380,9 +433,19 @@ function renderTextBox(
       "--bc-text-box-word-art-transform",
       wordArt.effectTransform || "none",
     )
+    if (textStyle.fill.type === "picture") {
+      content.style.backgroundSize = objectPaintBackgroundSize(textStyle.fill)
+      content.style.backgroundPosition = objectPaintBackgroundPosition(textStyle.fill)
+    }
+    if (textStyle.fill.type === "picture") {
+      content.style.opacity = `${textStyle.fill.opacity}`
+    }
   }
   appendChildren(content, ctx, snapshot.children)
-  surface.append(content, createTextBoxOutlineGeometry(definition, props))
+  surface.append(content, createTextBoxOutlineGeometry(
+    definition,
+    format.shapeOutline!,
+  ))
   element.append(surface)
   return {element}
 }
@@ -391,7 +454,7 @@ const SVG_NS = "http://www.w3.org/2000/svg"
 
 function createTextBoxFillGeometry(
   definition: ReturnType<typeof getShapeDefinition>,
-  props: ReturnType<typeof normalizeTextBoxProps>,
+  paint: NonNullable<ReturnType<typeof normalizeBlockObjectFormat>["shapeFill"]>,
   clipPathId: string,
 ): SVGSVGElement {
   const svg = textBoxSvg("text-box-block__geometry--fill")
@@ -404,10 +467,33 @@ function createTextBoxFillGeometry(
   clipShape.setAttribute("transform", "scale(.001)")
   clipPath.append(clipShape)
   defs.append(clipPath)
+  if (paint.type === "linear-gradient") {
+    const gradient = document.createElementNS(SVG_NS, "linearGradient")
+    gradient.id = `${clipPathId}-gradient`
+    const radians = (paint.angle - 90) * Math.PI / 180
+    const x = Math.cos(radians)
+    const y = Math.sin(radians)
+    gradient.setAttribute("x1", `${0.5 - x / 2}`)
+    gradient.setAttribute("y1", `${0.5 - y / 2}`)
+    gradient.setAttribute("x2", `${0.5 + x / 2}`)
+    gradient.setAttribute("y2", `${0.5 + y / 2}`)
+    paint.stops.forEach(item => {
+      const stop = document.createElementNS(SVG_NS, "stop")
+      stop.setAttribute("offset", `${item.offset}`)
+      stop.setAttribute("stop-color", item.color)
+      stop.setAttribute("stop-opacity", `${item.opacity}`)
+      gradient.append(stop)
+    })
+    defs.append(gradient)
+  }
   const fill = document.createElementNS(SVG_NS, "path")
   fill.setAttribute("d", definition.path)
-  fill.setAttribute("fill", props.backColor)
-  fill.setAttribute("fill-opacity", `${props.fo}`)
+  fill.setAttribute("fill", paint.type === "none" || paint.type === "picture"
+    ? "none"
+    : paint.type === "linear-gradient"
+      ? `url(#${clipPathId}-gradient)`
+      : paint.color)
+  fill.setAttribute("fill-opacity", `${paint.type === "none" ? 0 : paint.opacity}`)
   if (definition.fillRule) fill.setAttribute("fill-rule", definition.fillRule)
   svg.append(defs, fill)
   return svg
@@ -415,7 +501,7 @@ function createTextBoxFillGeometry(
 
 function createTextBoxOutlineGeometry(
   definition: ReturnType<typeof getShapeDefinition>,
-  props: ReturnType<typeof normalizeTextBoxProps>,
+  outline: NonNullable<ReturnType<typeof normalizeBlockObjectFormat>["shapeOutline"]>,
 ): SVGSVGElement {
   const svg = textBoxSvg("text-box-block__geometry--outline")
   for (const pathValue of [definition.path, definition.detailPath]) {
@@ -423,10 +509,14 @@ function createTextBoxOutlineGeometry(
     const path = document.createElementNS(SVG_NS, "path")
     path.setAttribute("d", pathValue)
     path.setAttribute("fill", "none")
-    path.setAttribute("stroke", props.borderColor)
-    path.setAttribute("stroke-width", `${props.bw}`)
+    path.setAttribute("stroke", outline.type === "none" ? "none" : outline.color)
+    path.setAttribute("stroke-opacity", `${outline.opacity}`)
+    path.setAttribute("stroke-width", `${outline.width}`)
+    path.setAttribute("stroke-linecap", outline.cap)
+    path.setAttribute("stroke-linejoin", outline.join)
     path.setAttribute("vector-effect", "non-scaling-stroke")
-    if (props.bs === "dashed") path.setAttribute("stroke-dasharray", "10 8")
+    const dasharray = objectLineDasharray(outline)
+    if (dasharray) path.setAttribute("stroke-dasharray", dasharray)
     svg.append(path)
   }
   return svg

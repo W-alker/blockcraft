@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when working with the CRDT data layer.
 >
-> Last updated: 2026-08-26
+> Last updated: 2026-08-27
 
 ## Architecture Overview
 
@@ -86,6 +86,25 @@ and must not persist a second nested surface object.
 
 `null` passed to `updateProps()` or `updateBlockProps()` deletes that Y.Map key;
 omitted surface values resolve to defaults without a load-time migration.
+
+The object-format domain makes a second deliberate atomic-value choice. Its
+persisted keys are `lockRatio/shape/fill/outline/effects/textFrame/textStyle`.
+These names remove repeated domain prefixes without collapsing the public
+contract into opaque single letters. Each structured section is one shallow
+`Record<string, SimpleBasicType>` value, not a JSON string and not a nested Y.Map.
+Changing shadow and glow therefore replaces the single `effects` value;
+changing whole-object text effects replaces the single `textStyle` value. A
+mixed batch command still produces one transaction and one Undo step. Use `storeObjectPaint()`,
+`storeObjectLine()`, `storeObjectEffects()`, `storeObjectTextFrame()` and
+`storeObjectTextStyle()` at snapshot boundaries; never mutate a stored record
+in place. Missing or malformed values resolve to Schema
+`metadata.objectFormat.defaults` without a migration or exception. `null`
+deletes one section and restores its Schema default; a valid stored `t: 'n'`
+fill/outline remains explicit state.
+`BlockObjectFormatManager.updateSelection()` stays selection-guarded by
+default. Its `allowDetachedSelection` option accepts only a `null` selection
+gap and is intended for the object toolbar while browser focus is owned by its
+input or CSES child overlay; it never accepts a different non-empty selection.
 
 ## Data Flow: Write Path
 

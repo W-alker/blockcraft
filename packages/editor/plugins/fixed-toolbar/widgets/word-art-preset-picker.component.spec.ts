@@ -43,6 +43,17 @@ describe("WordArtPresetPickerComponent", () => {
         host.querySelector(".word-art-preset-picker__viewport")?.textContent,
       ).not.toContain(preset.label);
     }
+    const presentations = WORD_ART_PRESETS.map((preset) =>
+      resolveWordArtPresentation(preset.props),
+    );
+    expect(
+      new Set(
+        presentations.map(
+          (item) =>
+            `${item.textColor}|${item.backgroundImage}|${item.effectTransform}`,
+        ),
+      ).size,
+    ).toBe(WORD_ART_PRESETS.length);
   });
 
   it("uses the production presentation resolver for card styling", async () => {

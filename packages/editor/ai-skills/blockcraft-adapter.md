@@ -4,7 +4,7 @@
 >
 > Adapters handle HTML ↔ BlockSnapshot and Markdown ↔ BlockSnapshot conversion.
 >
-> Last updated: 2026-08-17
+> Last updated: 2026-08-27
 
 ## Architecture
 
@@ -303,21 +303,23 @@ reconstruct fixed group geometry.
 ## Text Box Mapping
 
 The built-in `text-box` matcher uses
-`<figure data-bc-block="text-box">` as a lossless HTML envelope. It reuses
-`data-bc-p/bgi/bgs/bgx/bgy/bgo` and the common shell-color attributes, while
-fixed geometry is stored in `data-text-box-width`, `data-text-box-height` and
-`data-text-box-rotation`. Absolute placement is serialized on the same element
-with the text-box placement mode/x/y/unit/layer attributes.
-Shape-shell values use `data-bc-sh/fo/bw/bs`; the optional canonical serialized
-WordArt value uses `data-bc-wa`; the text direction uses `data-bc-wm`. Preset
-IDs are catalog state and therefore never enter HTML or Snapshot data.
+`<figure data-bc-block="text-box">` as a lossless HTML envelope. Unified object
+format is carried by bounded semantic `data-bc-object-*` attributes for width,
+height, rotation, lock ratio, shape, fill, outline, effects, text frame and text style.
+attributes. Structured attributes contain the compact primitive record encoded
+as JSON only because HTML attributes are strings; importing them restores the
+record directly rather than writing a JSON string into Yjs. Built-in catalog
+artwork uses the separate `data-bc-object-artwork` attribute and is collapsed back to
+its `bc:<id>` reference. Absolute placement remains on the same element with
+the text-box placement mode/x/y/layer attributes. Preset IDs never enter HTML
+or Snapshot data.
 
 Ordinary paragraph/list/blockquote elements stay nested inside the figure.
 Import opens the text-box snapshot before walking those children and restores a
 default paragraph only when none survive. All external surface, geometry,
 Shape and WordArt values pass through the shared normalizers; unsupported
-line/connectors fall back to a rectangle and oversized/malformed WordArt JSON
-is discarded. Inline `background` CSS is not trusted as model data. Register
+line/connectors fall back to a rectangle and oversized/malformed object-format
+metadata is discarded. Inline `background` CSS is not trusted as model data. Register
 this matcher before the generic paragraph-like matchers.
 
 Standard Markdown intentionally emits only the readable child blocks. It drops

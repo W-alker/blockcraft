@@ -10,6 +10,7 @@ import {
 import { NativeBlockModel } from "../index";
 import { BlockCraftError, ErrorCode } from "../../../global";
 import { generateId } from "../../utils";
+import type {BlockObjectFormatCapability} from '../block/object-format'
 
 export type EditableBlockCreateSnapshotParams = [(InlineModel | string)?, IBlockProps?];
 
@@ -239,6 +240,12 @@ export interface IBlockSchemaOptions<T extends NativeBlockModel = NativeBlockMod
      * been materialized yet.
      */
     objectSizing?: BlockObjectSizingCapability
+    /**
+     * Opts a fixed-geometry visual object into the shared Shape/TextBox/
+     * WordArt format domain. Defaults are model-only and callbacks are
+     * deliberately avoided so selection-wide reads stay deterministic.
+     */
+    objectFormat?: BlockObjectFormatCapability
     /**
      * Opts this Schema into generic instance metadata capabilities.
      * Omitted capabilities keep persisted fields inert.

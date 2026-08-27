@@ -4,7 +4,7 @@
 >
 > For inline system internals, see L2: `blockcraft-inline.md`
 >
-> Last updated: 2026-08-17
+> Last updated: 2026-08-26
 
 ## What is an Inline Embed?
 
@@ -272,8 +272,8 @@ first, so a token's own output can never be re-matched by a later token.
 ## Bundled Shape and WordArt Embeds
 
 `createBundledEditorCapabilities()` registers fresh `shape` and `word-art`
-converters together with `ShapeToolbarPlugin` and `WordArtToolbarPlugin`.
-Manual host assembly must register the matching converter and Plugin:
+converters together with the unified `ObjectFormatToolbarPlugin`.
+Manual host assembly must register the matching converters and Plugin:
 
 ```typescript
 const doc = new BlockCraftDoc({
@@ -282,7 +282,7 @@ const doc = new BlockCraftDoc({
     ['shape', createInlineShapeEmbedConverter()],
     ['word-art', createInlineWordArtEmbedConverter()],
   ],
-  plugins: [new ShapeToolbarPlugin(), new WordArtToolbarPlugin()],
+  plugins: [new ObjectFormatToolbarPlugin()],
 })
 ```
 

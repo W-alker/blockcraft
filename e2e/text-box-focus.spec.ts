@@ -294,7 +294,7 @@ test('text-box keeps native focus, visible select-all, and layout-owned scope', 
       : null
   }, editorSelector)).toBe(inserted.paragraphId)
   await expect(textBox).not.toHaveClass(/\bselected\b/)
-  await expect(page.locator('[data-bc-text-box-toolbar]')).toBeVisible()
+  await expect(page.locator('[data-bc-object-format-toolbar]')).toBeHidden()
   await expect(paragraph).toHaveClass(/\bfocused\b/)
   await expect(textBox.locator('shape-resizer')).toBeHidden()
 
@@ -349,7 +349,7 @@ test('text-box keeps native focus, visible select-all, and layout-owned scope', 
   ).toHaveCount(0)
   await expect(textBox).not.toHaveClass(/\bselected\b/)
   await expect(textBox).not.toHaveClass(/\bfocused\b/)
-  await expect(page.locator('[data-bc-text-box-toolbar]')).toBeVisible()
+  await expect(page.locator('[data-bc-object-format-toolbar]')).toBeHidden()
   await expect(textBox).toHaveClass(/\btext-box-block--editing\b/)
 
   // A normal-flow container remains part of the document select-all ladder.
@@ -724,7 +724,7 @@ test('clicking an absolute text box replaces a document-wide native range', asyn
   expect(state.endInside).toBe(true)
   expect(state.selectedIds).toEqual([inserted.textBoxId])
   expect(state.focusedIds).toEqual([])
-  await expect(page.locator('[data-bc-text-box-toolbar]')).toBeVisible()
+  await expect(page.locator('[data-bc-object-format-toolbar]')).toBeVisible()
 
   // Recreate the intermittent mismatch directly: keep the canonical object
   // selection (and therefore its handles), but replace only the browser Range

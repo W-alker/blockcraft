@@ -3,6 +3,11 @@ import {
   inlineWordArtEmbedConverter,
   readInlineWordArtDelta,
 } from './word-art-embed'
+import {
+  normalizeBlockObjectFormat,
+  storeObjectTextStyle,
+} from '../../framework'
+import {WORD_ART_OBJECT_FORMAT_CAPABILITY} from './word-art.types'
 
 describe('inline WordArt embed', () => {
   it('preserves presentation, text and inline layout without placement props', () => {
@@ -10,10 +15,26 @@ describe('inline WordArt embed', () => {
       width: 280,
       height: 88,
       rotation: 12,
-      fontFamily: 'serif',
-      fontSize: 42,
-      fillType: 'solid',
-      fillColor: '#FF0000',
+      textStyle: storeObjectTextStyle({
+        ...WORD_ART_OBJECT_FORMAT_CAPABILITY.defaults.textStyle!,
+        fontFamily: 'serif',
+        fontSize: 42,
+        fill: {
+          type: 'solid', color: '#FF0000',
+          opacity: 1,
+        },
+        outline: {
+          ...WORD_ART_OBJECT_FORMAT_CAPABILITY.defaults.textStyle!.outline,
+          type: 'line', color: '#111111', width: 1.26,
+        },
+        effects: {
+          ...WORD_ART_OBJECT_FORMAT_CAPABILITY.defaults.textStyle!.effects,
+          shadow: {
+            ...WORD_ART_OBJECT_FORMAT_CAPABILITY.defaults.textStyle!.effects.shadow,
+            enabled: true, color: '#7C2D12', opacity: .3,
+          },
+        },
+      }),
       position: {x: 10, y: 30},
       placementLayer: 'under',
     }, [{insert: '发布会'}])
@@ -39,7 +60,10 @@ describe('inline WordArt embed', () => {
     const data = readInlineWordArtDelta(
       inlineWordArtEmbedConverter.toDelta(view),
     )
-    expect(data.props.fontFamily).toBe('serif')
+    expect(normalizeBlockObjectFormat(
+      data.props,
+      WORD_ART_OBJECT_FORMAT_CAPABILITY,
+    ).textStyle?.fontFamily).toBe('serif')
     expect(data.props.rotation).toBe(12)
     expect(data.props['position']).toBeUndefined()
     expect(data.props['placementLayer']).toBeUndefined()

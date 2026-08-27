@@ -11,6 +11,8 @@ import {ShapeBlockComponent} from './shape.block'
 import {ShapeTextBlockComponent} from './shape-text.block'
 import {
   DEFAULT_SHAPE_PROPS,
+  DEFAULT_SHAPE_BLOCK_PROPS,
+  SHAPE_OBJECT_FORMAT_CAPABILITY,
   normalizeShapeProps,
   type ShapeBlockProps,
   type ShapeKind,
@@ -73,8 +75,8 @@ export const ShapeBlockSchema: IBlockSchemaOptions<ShapeBlockModel> = {
     flavour: 'shape',
     nodeType: BlockNodeType.block,
     props: {
-      ...DEFAULT_SHAPE_PROPS,
-      shapeType,
+      ...DEFAULT_SHAPE_BLOCK_PROPS,
+      shape: shapeType,
     },
     meta: {},
     children: hasShapeTextContent(text)
@@ -89,6 +91,7 @@ export const ShapeBlockSchema: IBlockSchemaOptions<ShapeBlockModel> = {
     includeChildren: ['shape-text'],
     selectionScope: 'container',
     placement: {modes: ['relative', 'absolute']},
+    objectFormat: SHAPE_OBJECT_FORMAT_CAPABILITY,
     virtualization: {
       estimateHeight: ({props}) => normalizeShapeProps(props).height,
     },

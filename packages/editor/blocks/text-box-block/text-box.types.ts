@@ -1,47 +1,33 @@
 import {
-  normalizeBlockSurfaceProps,
+  DEFAULT_OBJECT_EFFECTS,
+  DEFAULT_OBJECT_LINE,
+  DEFAULT_OBJECT_PAINT,
+  DEFAULT_OBJECT_TEXT_FRAME,
+  DEFAULT_OBJECT_TEXT_STYLE,
+  normalizeBlockObjectFormat,
   resolveBlockPosition,
+  storeObjectEffects,
+  storeObjectLine,
+  storeObjectPaint,
+  storeObjectTextFrame,
+  storeObjectTextStyle,
+  type BlockObjectFormatCapability,
+  type BlockObjectFormatProps,
+  type ObjectEffects,
+  type ObjectLine,
+  type ObjectPaint,
+  type ObjectTextFrame,
+  type ObjectTextStyle,
   type BlockSurfacePadding,
   type BlockSurfaceProps,
 } from '../../framework'
 import {getShapeDefinition} from '../shape-block/shape-definitions'
 import {
+  SHAPE_KINDS,
   isShapeKind,
   type ShapeKind,
   type ShapeStrokeStyle,
 } from '../shape-block/shape.types'
-import {
-  normalizeWordArtProps,
-  type NormalizedWordArtBlockProps,
-  type WordArtBlockProps,
-} from '../word-art-block/word-art.types'
-
-export type TextBoxWordArtStyle = Pick<
-  NormalizedWordArtBlockProps,
-  | 'fontFamily'
-  | 'fontSize'
-  | 'fontWeight'
-  | 'fontStyle'
-  | 'letterSpacingEm'
-  | 'lineHeight'
-  | 'horizontalAlign'
-  | 'verticalAlign'
-  | 'fillType'
-  | 'fillColor'
-  | 'gradientAngle'
-  | 'gradientColors'
-  | 'gradientStops'
-  | 'outlineColor'
-  | 'outlineWidthEm'
-  | 'shadowEnabled'
-  | 'shadowColor'
-  | 'shadowOpacity'
-  | 'shadowOffsetXEm'
-  | 'shadowOffsetYEm'
-  | 'shadowBlurEm'
-  | 'effect'
->
-
 /**
  * Compact text flow direction. `h` keeps the document's normal
  * `horizontal-tb`; `v` switches the frame to Word-style vertical text.
@@ -51,52 +37,94 @@ export type TextBoxWordArtStyle = Pick<
  */
 export type TextBoxWritingMode = 'h' | 'v'
 
-export interface TextBoxBlockProps extends BlockSurfaceProps {
-  width: number
-  height: number
-  rotation: number
-  /** Compact shape-shell kind; geometry remains catalog-side. */
-  sh?: ShapeKind
-  /** Shape fill opacity. */
-  fo?: number
-  /** Shape outline width in layout px. */
-  bw?: number
-  /** Shape outline style. */
-  bs?: ShapeStrokeStyle
-  /** Compact text flow direction; omitted inherits horizontal. */
-  wm?: TextBoxWritingMode
-  /** Canonical serialized WordArt-compatible text effect value object. */
-  wa?: string | null
+export interface TextBoxBlockProps extends BlockObjectFormatProps {
+  /** Shape-shell kind; geometry remains catalog-side. */
+  shape?: ShapeKind | null
+  /** Built-in catalog decoration. Never reused as a user picture URL. */
+  artwork?: string | null
 }
 
-export interface NormalizedTextBoxBlockProps extends TextBoxBlockProps {
+export interface NormalizedTextBoxBlockProps {
   width: number
   height: number
   rotation: number
+  position?: NonNullable<TextBoxBlockProps['position']>
+  placementLayer?: 'under'
+  artwork?: string
+  lockAspectRatio: boolean
+  shapeType: ShapeKind
+  shapeFill: ObjectPaint
+  shapeOutline: ObjectLine
+  shapeEffects: ObjectEffects
+  textFrame: ObjectTextFrame
+  textStyle: ObjectTextStyle
   p: BlockSurfacePadding
+  bgi?: NonNullable<BlockSurfaceProps['bgi']>
+  bgs?: NonNullable<BlockSurfaceProps['bgs']>
+  bgx?: NonNullable<BlockSurfaceProps['bgx']>
+  bgy?: NonNullable<BlockSurfaceProps['bgy']>
+  bgo?: NonNullable<BlockSurfaceProps['bgo']>
   backColor: string
   borderColor: string
-  sh: ShapeKind
   fo: number
   bw: number
   bs: ShapeStrokeStyle
   wm: TextBoxWritingMode
-  wa?: string
 }
 
-export const DEFAULT_TEXT_BOX_PROPS:
-Readonly<NormalizedTextBoxBlockProps> = {
+export const TEXT_BOX_SHAPE_KINDS = SHAPE_KINDS.filter(shapeType =>
+  getShapeDefinition(shapeType).supportsText !== false,
+)
+
+const DEFAULT_TEXT_BOX_FILL = {...DEFAULT_OBJECT_PAINT, color: '#FFFFFF'}
+const DEFAULT_TEXT_BOX_OUTLINE = {...DEFAULT_OBJECT_LINE, color: '#000000'}
+const DEFAULT_TEXT_BOX_FRAME = {
+  ...DEFAULT_OBJECT_TEXT_FRAME,
+  margins: [8, 12, 8, 12] as [number, number, number, number],
+  horizontalAlign: 'left' as const,
+  verticalAlign: 'top' as const,
+}
+const DEFAULT_TEXT_BOX_STYLE = {
+  ...DEFAULT_OBJECT_TEXT_STYLE,
+  fontFamily: 'cjk-hei',
+}
+
+export const TEXT_BOX_OBJECT_FORMAT_CAPABILITY: BlockObjectFormatCapability = {
+  kind: 'text-box',
+  features: {
+    geometry: true,
+    shape: true,
+    pictureFill: true,
+    lineArrows: false,
+    textFrame: true,
+    textStyle: 'rich-default',
+  },
+  defaults: {
+    width: 240,
+    height: 120,
+    rotation: 0,
+    lockAspectRatio: false,
+    shapeType: 'rectangle',
+    shapeFill: DEFAULT_TEXT_BOX_FILL,
+    shapeOutline: DEFAULT_TEXT_BOX_OUTLINE,
+    shapeEffects: DEFAULT_OBJECT_EFFECTS,
+    textFrame: DEFAULT_TEXT_BOX_FRAME,
+    textStyle: DEFAULT_TEXT_BOX_STYLE,
+  },
+  shapeTypes: TEXT_BOX_SHAPE_KINDS,
+}
+
+export const DEFAULT_TEXT_BOX_PROPS: Readonly<TextBoxBlockProps> = {
   width: 240,
   height: 120,
   rotation: 0,
-  p: [8, 12],
-  backColor: '#FFFFFF',
-  borderColor: '#000000',
-  sh: 'rectangle',
-  fo: 1,
-  bw: 1,
-  bs: 'solid',
-  wm: 'h',
+  lockRatio: false,
+  shape: 'rectangle',
+  fill: storeObjectPaint(DEFAULT_TEXT_BOX_FILL),
+  outline: storeObjectLine(DEFAULT_TEXT_BOX_OUTLINE),
+  effects: storeObjectEffects(DEFAULT_OBJECT_EFFECTS),
+  textFrame: storeObjectTextFrame(DEFAULT_TEXT_BOX_FRAME),
+  textStyle: storeObjectTextStyle(DEFAULT_TEXT_BOX_STYLE),
 }
 
 /**
@@ -116,38 +144,44 @@ export function normalizeTextBoxProps(
   value: Readonly<Partial<TextBoxBlockProps>> | null | undefined,
 ): NormalizedTextBoxBlockProps {
   const input = value as Readonly<Record<string, unknown>> | null | undefined
-  const surface = normalizeBlockSurfaceProps(input)
+  const objectFormat = normalizeBlockObjectFormat(
+    value,
+    TEXT_BOX_OBJECT_FORMAT_CAPABILITY,
+  )
+  const fill = objectFormat.shapeFill!
+  const outline = objectFormat.shapeOutline!
+  const textFrame = objectFormat.textFrame!
   const position = normalizePosition(input?.['position'])
-  const wordArt = serializeTextBoxWordArtStyle(input?.['wa'])
+  const textStyle = objectFormat.textStyle!
 
   return {
-    ...surface,
-    width: boundedDimension(
-      input?.['width'],
-      DEFAULT_TEXT_BOX_PROPS.width,
-      MIN_WIDTH,
-    ),
-    height: boundedDimension(
-      input?.['height'],
-      DEFAULT_TEXT_BOX_PROPS.height,
-      MIN_HEIGHT,
-    ),
-    rotation: normalizeRotation(input?.['rotation']),
-    p: clonePadding(surface.p ?? DEFAULT_TEXT_BOX_PROPS.p),
-    backColor: normalizeColor(
-      input?.['backColor'],
-      DEFAULT_TEXT_BOX_PROPS.backColor,
-    ),
-    borderColor: normalizeColor(
-      input?.['borderColor'],
-      DEFAULT_TEXT_BOX_PROPS.borderColor,
-    ),
-    sh: normalizeTextBoxShape(input?.['sh']),
-    fo: boundedNumber(input?.['fo'], DEFAULT_TEXT_BOX_PROPS.fo, 0, 1),
-    bw: boundedNumber(input?.['bw'], DEFAULT_TEXT_BOX_PROPS.bw, 0, 20),
-    bs: input?.['bs'] === 'dashed' ? 'dashed' : 'solid',
-    wm: input?.['wm'] === 'v' ? 'v' : 'h',
-    ...(wordArt ? {wa: wordArt} : {}),
+    width: boundedDimension(objectFormat.width, DEFAULT_TEXT_BOX_PROPS.width, MIN_WIDTH),
+    height: boundedDimension(objectFormat.height, DEFAULT_TEXT_BOX_PROPS.height, MIN_HEIGHT),
+    rotation: objectFormat.rotation,
+    lockAspectRatio: objectFormat.lockAspectRatio,
+    shapeType: normalizeTextBoxShape(objectFormat.shapeType),
+    shapeFill: fill,
+    shapeOutline: outline,
+    shapeEffects: objectFormat.shapeEffects!,
+    textFrame,
+    textStyle,
+    p: clonePadding(textFrame.margins),
+    backColor: paintColor(fill),
+    borderColor: outline.type === 'none' ? 'transparent' : outline.color,
+    fo: fill.type === 'none' ? 0 : fill.opacity,
+    bw: outline.type === 'none' ? 0 : outline.width,
+    bs: outline.dash === 'solid' ? 'solid' : 'dashed',
+    wm: textFrame.direction === 'horizontal' ? 'h' : 'v',
+    ...(fill.type === 'picture' && fill.src ? {
+      bgi: fill.src,
+      bgs: fill.fit,
+      bgx: fill.positionX,
+      bgy: fill.positionY,
+      bgo: fill.opacity,
+    } : {}),
+    ...(typeof input?.['artwork'] === 'string'
+      ? {artwork: input['artwork']}
+      : {}),
     ...(position ? {position} : {}),
     ...(input?.['placementLayer'] === 'under'
       ? {placementLayer: 'under' as const}
@@ -155,51 +189,28 @@ export function normalizeTextBoxProps(
   }
 }
 
-export function normalizeTextBoxWordArtStyle(
-  value: unknown,
-): TextBoxWordArtStyle | undefined {
-  let source = value
-  if (typeof source === 'string') {
-    if (!source || source.length > 16_000) return undefined
-    try {
-      source = JSON.parse(source)
-    } catch {
-      return undefined
-    }
-  }
-  if (!source || typeof source !== 'object' || Array.isArray(source)) {
-    return undefined
-  }
-  const props = normalizeWordArtProps(source as Partial<WordArtBlockProps>)
+/** Canonical persisted TextBox props; legacy render aliases never enter Yjs. */
+export function normalizeTextBoxSnapshotProps(
+  value: Readonly<Partial<TextBoxBlockProps>> | null | undefined,
+): TextBoxBlockProps {
+  const normalized = normalizeTextBoxProps(value)
   return {
-    fontFamily: props.fontFamily,
-    fontSize: props.fontSize,
-    fontWeight: props.fontWeight,
-    fontStyle: props.fontStyle,
-    letterSpacingEm: props.letterSpacingEm,
-    lineHeight: props.lineHeight,
-    horizontalAlign: props.horizontalAlign,
-    verticalAlign: props.verticalAlign,
-    fillType: props.fillType,
-    fillColor: props.fillColor,
-    gradientAngle: props.gradientAngle,
-    gradientColors: [...props.gradientColors],
-    gradientStops: [...props.gradientStops],
-    outlineColor: props.outlineColor,
-    outlineWidthEm: props.outlineWidthEm,
-    shadowEnabled: props.shadowEnabled,
-    shadowColor: props.shadowColor,
-    shadowOpacity: props.shadowOpacity,
-    shadowOffsetXEm: props.shadowOffsetXEm,
-    shadowOffsetYEm: props.shadowOffsetYEm,
-    shadowBlurEm: props.shadowBlurEm,
-    effect: props.effect,
+    width: normalized.width,
+    height: normalized.height,
+    rotation: normalized.rotation,
+    lockRatio: normalized.lockAspectRatio,
+    shape: normalized.shapeType,
+    fill: storeObjectPaint(normalized.shapeFill),
+    outline: storeObjectLine(normalized.shapeOutline),
+    effects: storeObjectEffects(normalized.shapeEffects),
+    textFrame: storeObjectTextFrame(normalized.textFrame),
+    textStyle: storeObjectTextStyle(normalized.textStyle),
+    ...(normalized.artwork ? {artwork: normalized.artwork} : {}),
+    ...(normalized.position ? {position: normalized.position} : {}),
+    ...(normalized.placementLayer === 'under'
+      ? {placementLayer: 'under' as const}
+      : {}),
   }
-}
-
-export function serializeTextBoxWordArtStyle(value: unknown): string | undefined {
-  const style = normalizeTextBoxWordArtStyle(value)
-  return style ? JSON.stringify(style) : undefined
 }
 
 function boundedDimension(
@@ -211,27 +222,11 @@ function boundedDimension(
   return Math.min(MAX_DIMENSION, Math.max(minimum, value))
 }
 
-function boundedNumber(
-  value: unknown,
-  fallback: number,
-  minimum: number,
-  maximum: number,
-): number {
-  return typeof value === 'number' && Number.isFinite(value)
-    ? Math.min(maximum, Math.max(minimum, value))
-    : fallback
-}
-
-function normalizeRotation(value: unknown): number {
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed)) return DEFAULT_TEXT_BOX_PROPS.rotation
-  const normalized = ((parsed % 360) + 360) % 360
-  return Object.is(normalized, -0) ? 0 : normalized
-}
-
-function normalizeColor(value: unknown, fallback: string): string {
-  if (typeof value !== 'string') return fallback
-  return value.trim() || fallback
+function paintColor(paint: ObjectPaint): string {
+  if (paint.type === 'none' || paint.type === 'picture') return 'transparent'
+  return paint.type === 'solid'
+    ? paint.color
+    : paint.stops[0]?.color ?? 'transparent'
 }
 
 function clonePadding(value: BlockSurfacePadding): BlockSurfacePadding {
@@ -240,9 +235,9 @@ function clonePadding(value: BlockSurfacePadding): BlockSurfacePadding {
 }
 
 function normalizeTextBoxShape(value: unknown): ShapeKind {
-  if (!isShapeKind(value)) return DEFAULT_TEXT_BOX_PROPS.sh
+  if (!isShapeKind(value)) return 'rectangle'
   return getShapeDefinition(value).supportsText === false
-    ? DEFAULT_TEXT_BOX_PROPS.sh
+    ? 'rectangle'
     : value
 }
 

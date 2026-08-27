@@ -1,14 +1,25 @@
 import type {Element} from 'hast'
 import {
   WordArtBlockSchema,
+  WORD_ART_OBJECT_FORMAT_CAPABILITY,
   normalizeWordArtProps,
   resolveWordArtPresentation,
+  resolveWordArtProjectionPath,
   wordArtPresentationToInlineStyle,
   type WordArtBlockProps,
 } from '../../../blocks'
 import type {DeltaInsert} from '../../../framework'
+import {
+  normalizeBlockObjectFormat,
+  objectEffectsFilter,
+  objectPicturePreserveAspectRatio,
+} from '../../../framework'
 import {HastUtils} from '../../utils'
 import type {BlockHtmlAdapterMatcher} from '../block-adapter'
+import {
+  objectFormatPropsFromHtml,
+  objectFormatPropsToHtml,
+} from './object-format-properties'
 
 const property = (
   node: Element,
@@ -84,13 +95,16 @@ const sanitizePlainTextDelta = (value: DeltaInsert[]): DeltaInsert[] => {
   return result
 }
 
-const surfaceStyle = (props: WordArtBlockProps): string =>
+const surfaceStyle = (
+  props: {width: number; height: number; rotation: number},
+): string =>
   [
     `width:${props.width}px`,
     `height:${props.height}px`,
     `transform:${props.rotation === 0
       ? 'none'
       : `rotate(${props.rotation}deg)`}`,
+    'position:relative',
   ].join(';')
 
 export const wordArtBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
@@ -108,53 +122,8 @@ export const wordArtBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
         textElement ? deltaConverter.astToDelta(textElement) : [],
       )
       const rawProps: Partial<WordArtBlockProps> = {
-        width: numberProperty(o.node, 'dataWordArtWidth'),
-        height: numberProperty(o.node, 'dataWordArtHeight'),
-        rotation: numberProperty(o.node, 'dataWordArtRotation'),
-        fontFamily: stringProperty(o.node, 'dataWordArtFontFamily') as
-          WordArtBlockProps['fontFamily'],
-        fontSize: numberProperty(o.node, 'dataWordArtFontSize'),
-        fontWeight: numberProperty(o.node, 'dataWordArtFontWeight') as
-          WordArtBlockProps['fontWeight'],
-        fontStyle: stringProperty(o.node, 'dataWordArtFontStyle') as
-          WordArtBlockProps['fontStyle'],
-        letterSpacingEm: numberProperty(
-          o.node,
-          'dataWordArtLetterSpacing',
-        ),
-        lineHeight: numberProperty(o.node, 'dataWordArtLineHeight'),
-        horizontalAlign: stringProperty(
-          o.node,
-          'dataWordArtHorizontalAlign',
-        ) as WordArtBlockProps['horizontalAlign'],
-        verticalAlign: stringProperty(
-          o.node,
-          'dataWordArtVerticalAlign',
-        ) as WordArtBlockProps['verticalAlign'],
-        fillType: stringProperty(o.node, 'dataWordArtFillType') as
-          WordArtBlockProps['fillType'],
-        fillColor: stringProperty(o.node, 'dataWordArtFillColor'),
-        gradientAngle: numberProperty(o.node, 'dataWordArtGradientAngle'),
-        gradientColors: arrayProperty<string>(
-          o.node,
-          'dataWordArtGradientColors',
-          'string',
-        ),
-        gradientStops: arrayProperty<number>(
-          o.node,
-          'dataWordArtGradientStops',
-          'number',
-        ),
-        outlineColor: stringProperty(o.node, 'dataWordArtOutlineColor'),
-        outlineWidthEm: numberProperty(o.node, 'dataWordArtOutlineWidth'),
-        shadowEnabled: booleanProperty(o.node, 'dataWordArtShadowEnabled'),
-        shadowColor: stringProperty(o.node, 'dataWordArtShadowColor'),
-        shadowOpacity: numberProperty(o.node, 'dataWordArtShadowOpacity'),
-        shadowOffsetXEm: numberProperty(o.node, 'dataWordArtShadowOffsetX'),
-        shadowOffsetYEm: numberProperty(o.node, 'dataWordArtShadowOffsetY'),
-        shadowBlurEm: numberProperty(o.node, 'dataWordArtShadowBlur'),
-        effect: stringProperty(o.node, 'dataWordArtEffect') as
-          WordArtBlockProps['effect'],
+        depth: 0,
+        ...objectFormatPropsFromHtml(o.node),
       }
       if (
         stringProperty(o.node, 'dataWordArtPlacementMode') === 'absolute'
@@ -178,42 +147,42 @@ export const wordArtBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
       const props = normalizeWordArtProps(
         o.node.props as Partial<WordArtBlockProps>,
       )
-      const presentation = resolveWordArtPresentation(props)
+      const presentation = resolveWordArtPresentation(
+        o.node.props as Partial<WordArtBlockProps>,
+      )
+      const format = normalizeBlockObjectFormat(
+        o.node.props as Partial<WordArtBlockProps>,
+        WORD_ART_OBJECT_FORMAT_CAPABILITY,
+      )
       const position = props.position
       const delta = sanitizePlainTextDelta(
         o.node.children as DeltaInsert[],
       )
+      const projectionPath = resolveWordArtProjectionPath(
+        props.effect,
+        props.width,
+        props.height,
+      )
+      const projection = projectionPath
+        ? wordArtProjectionNode(
+            o.node.id,
+            projectionPath,
+            deltaPlainText(delta),
+            props,
+            format.textStyle!,
+            presentation.fontFamily,
+          )
+        : null
 
       walkerContext.openNode({
         type: 'element',
         tagName: 'figure',
         properties: {
           dataBcBlock: 'word-art',
-          dataWordArtWidth: props.width,
-          dataWordArtHeight: props.height,
-          dataWordArtRotation: props.rotation,
-          dataWordArtFontFamily: props.fontFamily,
-          dataWordArtFontSize: props.fontSize,
-          dataWordArtFontWeight: props.fontWeight,
-          dataWordArtFontStyle: props.fontStyle,
-          dataWordArtLetterSpacing: props.letterSpacingEm,
-          dataWordArtLineHeight: props.lineHeight,
-          dataWordArtHorizontalAlign: props.horizontalAlign,
-          dataWordArtVerticalAlign: props.verticalAlign,
-          dataWordArtFillType: props.fillType,
-          dataWordArtFillColor: props.fillColor,
-          dataWordArtGradientAngle: props.gradientAngle,
-          dataWordArtGradientColors: JSON.stringify(props.gradientColors),
-          dataWordArtGradientStops: JSON.stringify(props.gradientStops),
-          dataWordArtOutlineColor: props.outlineColor,
-          dataWordArtOutlineWidth: props.outlineWidthEm,
-          dataWordArtShadowEnabled: String(props.shadowEnabled),
-          dataWordArtShadowColor: props.shadowColor,
-          dataWordArtShadowOpacity: props.shadowOpacity,
-          dataWordArtShadowOffsetX: props.shadowOffsetXEm,
-          dataWordArtShadowOffsetY: props.shadowOffsetYEm,
-          dataWordArtShadowBlur: props.shadowBlurEm,
-          dataWordArtEffect: props.effect,
+          ...objectFormatPropsToHtml(
+            o.node.props as Partial<WordArtBlockProps>,
+            WORD_ART_OBJECT_FORMAT_CAPABILITY,
+          ),
           ...(position ? {
             dataWordArtPlacementMode: 'absolute',
             dataWordArtPlacementX: position.x,
@@ -223,23 +192,138 @@ export const wordArtBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
           } : {}),
           style: surfaceStyle(props),
         },
-        children: [{
+        children: [
+          ...(projection ? [projection] : []),
+          {
           type: 'element',
           tagName: 'div',
           properties: {
             dataBcWordArtText: true,
             style: wordArtPresentationToInlineStyle({
-              ...props,
+              ...(o.node.props as Partial<WordArtBlockProps>),
+              width: props.width,
+              height: props.height,
               rotation: 0,
-            }),
+            }) + (projection
+              ? ';position:absolute;inset:0;opacity:0;pointer-events:none'
+              : ''),
             title: presentation.props.effect === 'none'
               ? undefined
               : '艺术字',
           },
           children: deltaConverter.deltaToAST(delta),
-        }],
+          },
+        ],
       }, 'children').closeNode()
       walkerContext.skipAllChildren()
     },
   },
+}
+
+function deltaPlainText(delta: readonly DeltaInsert[]): string {
+  return delta.map(item => typeof item.insert === 'string'
+    ? item.insert
+    : item.insert?.['break'] ? '\n' : '').join('')
+}
+
+function wordArtProjectionNode(
+  blockId: string,
+  pathValue: string,
+  textValue: string,
+  props: {width: number; height: number},
+  style: NonNullable<ReturnType<typeof normalizeBlockObjectFormat>['textStyle']>,
+  fontFamily: string,
+): Element {
+  const token = blockId.replace(/[^a-zA-Z0-9_-]/g, '-')
+  const pathId = `bc-word-art-html-path-${token}`
+  const gradientId = `${pathId}-gradient`
+  const gradient = style.fill.type === 'linear-gradient'
+    ? [{
+        type: 'element' as const,
+        tagName: 'linearGradient',
+        properties: {id: gradientId},
+        children: style.fill.stops.map(stop => ({
+          type: 'element' as const,
+          tagName: 'stop',
+          properties: {
+            offset: `${stop.offset}`,
+            stopColor: stop.color,
+            stopOpacity: `${stop.opacity}`,
+          },
+          children: [],
+        })),
+      }]
+    : []
+  const picture = style.fill.type === 'picture' && style.fill.src
+    ? [{
+        type: 'element' as const,
+        tagName: 'pattern',
+        properties: {
+          id: `${pathId}-picture`, width: '1', height: '1',
+          patternContentUnits: 'objectBoundingBox',
+        },
+        children: [{
+          type: 'element' as const,
+          tagName: 'image',
+          properties: {
+            href: style.fill.src, width: '1', height: '1',
+            preserveAspectRatio: objectPicturePreserveAspectRatio(style.fill),
+          },
+          children: [],
+        }],
+      }]
+    : []
+  const fill = style.fill.type === 'none'
+    ? 'none'
+    : style.fill.type === 'linear-gradient'
+      ? `url(#${gradientId})`
+      : style.fill.type === 'picture' && style.fill.src
+        ? `url(#${pathId}-picture)`
+      : style.fill.type === 'solid' ? style.fill.color : 'none'
+  return {
+    type: 'element',
+    tagName: 'svg',
+    properties: {
+      dataBcWordArtProjection: true,
+      viewBox: `0 0 ${props.width} ${props.height}`,
+      preserveAspectRatio: 'none',
+      style: 'position:absolute;inset:0;width:100%;height:100%;overflow:visible',
+      ariaHidden: 'true',
+    },
+    children: [{
+      type: 'element',
+      tagName: 'defs',
+      properties: {},
+      children: [{
+        type: 'element',
+        tagName: 'path',
+        properties: {id: pathId, d: pathValue},
+        children: [],
+      }, ...gradient, ...picture],
+    }, {
+      type: 'element',
+      tagName: 'text',
+      properties: {
+        textAnchor: 'middle',
+        fill,
+        fillOpacity: `${style.fill.type === 'none' ? 0 : style.fill.opacity}`,
+        stroke: style.outline.type === 'none' ? 'none' : style.outline.color,
+        strokeWidth: `${style.outline.type === 'none' ? 0 : style.outline.width}`,
+        style: [
+          `font-family:${fontFamily}`,
+          `font-size:${style.fontSize}px`,
+          `font-weight:${style.fontWeight}`,
+          `font-style:${style.fontStyle}`,
+          `letter-spacing:${style.letterSpacingEm}em`,
+          `filter:${objectEffectsFilter(style.effects) || 'none'}`,
+        ].join(';'),
+      },
+      children: [{
+        type: 'element',
+        tagName: 'textPath',
+        properties: {href: `#${pathId}`, startOffset: '50%'},
+        children: [{type: 'text', value: textValue}],
+      }],
+    }],
+  }
 }

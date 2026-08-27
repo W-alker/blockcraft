@@ -32,6 +32,37 @@ export interface ShapeResizeCommit extends ShapeResizeBox {
   handle: ShapeResizeHandle
 }
 
+export function preserveResizeAspectRatio(
+  event: ShapeResizeCommit,
+  currentWidth: number,
+  currentHeight: number,
+): ShapeResizeCommit {
+  const horizontal = event.handle.includes('east') || event.handle.includes('west')
+  const vertical = event.handle.includes('north') || event.handle.includes('south')
+  const ratio = currentWidth / Math.max(1, currentHeight)
+  let width = event.width
+  let height = event.height
+  if (horizontal && vertical) {
+    const widthDelta = Math.abs(event.width / Math.max(1, currentWidth) - 1)
+    const heightDelta = Math.abs(event.height / Math.max(1, currentHeight) - 1)
+    if (widthDelta >= heightDelta) height = width / ratio
+    else width = height * ratio
+  } else if (horizontal) {
+    height = width / ratio
+  } else if (vertical) {
+    width = height * ratio
+  }
+  width = Math.max(48, width)
+  height = Math.max(32, height)
+  const offsetX = event.handle.includes('west')
+    ? currentWidth - width
+    : vertical && !horizontal ? (currentWidth - width) / 2 : event.offsetX
+  const offsetY = event.handle.includes('north')
+    ? currentHeight - height
+    : horizontal && !vertical ? (currentHeight - height) / 2 : event.offsetY
+  return {...event, width, height, offsetX, offsetY}
+}
+
 export interface ShapeRotateCommit {
   rotation: number
 }

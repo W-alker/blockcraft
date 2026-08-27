@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-08-25
+> Last updated: 2026-08-27
 
 ## Block Types
 
@@ -1001,7 +1001,62 @@ for `Blob/File` and falls back to temporary Object URL + `HTMLImageElement` for
 WebKit compatibility. Do not put that await in an interactive built-in image
 insertion path because it delays the upload-preview state.
 
+### Unified Object Format Capability
+
+Fixed visual objects opt in through Schema metadata. Capability defaults remain
+readable semantic objects, while snapshots persist compact atomic records:
+
+```typescript
+const schema: IBlockSchemaOptions<MyObjectModel> = {
+  // ...
+  metadata: {
+    objectFormat: {
+      kind: 'shape',
+      features: {
+        geometry: true,
+        shape: true,
+        pictureFill: true,
+        lineArrows: false,
+        textFrame: true,
+        textStyle: 'rich-default',
+      },
+      defaults: {
+        width: 240,
+        height: 120,
+        rotation: 0,
+        lockAspectRatio: false,
+        shapeType: 'rectangle',
+        shapeFill: DEFAULT_OBJECT_PAINT,
+        shapeOutline: DEFAULT_OBJECT_LINE,
+        shapeEffects: DEFAULT_OBJECT_EFFECTS,
+        textFrame: DEFAULT_OBJECT_TEXT_FRAME,
+        textStyle: DEFAULT_OBJECT_TEXT_STYLE,
+      },
+      shapeTypes: ['rectangle'],
+    },
+  },
+}
+```
+
+Use `BlockObjectFormatProps` for `width`, `height`, `rotation` and the concise
+semantic keys `lockRatio`, `shape`, `fill`, `outline`, `effects`, `textFrame`
+and `textStyle`. Use the matching `storeObject*()` helper when constructing a
+snapshot, and
+`normalizeBlockObjectFormat(props, capability)` in every live, Snapshot Viewer,
+inline and export projection. Missing/malformed values return defaults and do
+not throw. Do not reintroduce the removed Shape/TextBox/WordArt flat style
+fields.
+
+`ObjectTextFrame.margins` is `[top, right, bottom, left]` in layout pixels.
+Shape catalog `textInsets` establish the geometry-safe rectangle; add the user
+margins inward after those insets. This is internal padding, not external Word
+square/tight/through wrap distance.
+
 ### Built-in Word-like Text Box
+
+> The block and interaction model below remain relevant, but any flat style
+> props or `TextBoxToolbarPlugin` examples are historical. Use the unified
+> object-format capability and `ObjectFormatToolbarPlugin` above.
 
 The bundled `text-box` flavour is a fixed-size container whose text remains in
 ordinary paragraph/list/blockquote child Blocks. Register the Schema and its
@@ -1011,9 +1066,9 @@ schemas your document allows:
 ```typescript
 import {
   ParagraphBlockSchema,
+  ObjectFormatToolbarPlugin,
   PlacementLayoutBlockSchema,
   TextBoxBlockSchema,
-  TextBoxToolbarPlugin,
 } from '@ccc/blockcraft'
 
 const schemas = new SchemaManager([
@@ -1021,7 +1076,7 @@ const schemas = new SchemaManager([
   PlacementLayoutBlockSchema,
   TextBoxBlockSchema,
 ])
-const plugins = [new TextBoxToolbarPlugin()]
+const plugins = [new ObjectFormatToolbarPlugin()]
 ```
 
 `TextBoxBlockSchema.createSnapshot(text?, props?)` always starts with a normal
@@ -1030,85 +1085,61 @@ document prose. Its exact child allowlist is `paragraph`, `bullet`, `ordered`,
 `todo` and `blockquote`; nested media, tables and drawing objects are rejected.
 Deleting the last child restores the framework's normal fallback paragraph.
 
-`TextBoxBlockProps` extends `BlockSurfaceProps` with fixed `width`, `height` and
-`rotation`, plus a composable shape shell: `sh` (Shape catalog kind), `fo`
-(fill opacity), `bw` (outline width) and `bs` (outline style). Optional `wa` is
-a canonical serialized WordArt-compatible value object. Common `backColor`,
-`borderColor`, `position` and `placementLayer` remain inherited Block props.
-The latter two are present only while the text box is structurally absolute.
-Defaults are
-`240 × 120`, rectangle, rotation `0`, `p: [8, 12]`, a white fill and a gray
-outline.
+`TextBoxBlockProps` uses fixed `width`, `height`, `rotation` plus the unified
+`lockRatio/shape/fill/outline/effects/textFrame/textStyle` fields. The names
+stay concise by omitting redundant domain prefixes while remaining readable.
+The structured sections are primitive-only
+atomic records; old surface aliases such as `fo/bw/wm/wa/backColor/borderColor`
+must not be used for new snapshots. `position` and `placementLayer` remain
+independent and are present only while the text box is structurally absolute.
+Defaults are `240 × 120`, rectangle, rotation `0`,
+`textFrame.margins: [8, 12, 8, 12]`, a white fill and a black outline. Text
+direction is `textFrame.direction: 'horizontal' | 'vertical-rl' |
+'rotate-90' | 'rotate-270'`; the former compact `wm` field is not persisted.
 
-Compact `wm` (`'h'` | `'v'`, default `'h'`) selects the text direction. A
-vertical frame renders `writing-mode: vertical-rl` through
-`--bc-text-box-writing-mode`; horizontal frames omit the variable so the theme
-falls back to `horizontal-tb`. Direction is a frame flag, not a second set of
-properties: `text-align` and the `flex-direction: column` main axis are both
-logical, so alignment and child stacking flip on their own. Only the labels in
-the object rail change. `DEFAULT_VERTICAL_TEXT_BOX_SIZE` transposes the default
-geometry for callers that insert a vertical frame.
+`TEXT_BOX_PRESETS` remains grouped into `outline` / `rect` / `bubble` catalog
+tabs. The source modules use compact authoring data internally, but
+`TEXT_BOX_PRESETS` and `getTextBoxPreset()` expose only canonical
+`fill/outline/effects/textFrame/textStyle` sections. Preset IDs and catalog authoring keys never enter
+snapshots.
+`getTextBoxPreset()` falls back to 默认白框 for unknown ids, not to the
+catalog's first slot. Decorated entries store their artwork registry reference
+in the separate `artwork` prop because hand-drawn borders, ribbons and multi-color
+ornament are catalog decoration, not a user picture fill. Query the catalog with
+`getTextBoxPresetsFor()` / `getTextBoxPresetCategoriesFor()`.
 
-`TEXT_BOX_PRESETS` is grouped into three shape tabs through the optional `cat`
-field (`outline` / `rect` / `bubble`), and a preset may limit itself to one
-direction with `wm`. Two curated entries lead 线框 rather than occupying a
-separate 精选 tab: **极简** first — the classic frame with `fo: 0`, the same
-value the 无填充 button writes, so the border stays visible while the fill is
-gone — then **默认白框**. The picker marks the fill-less thumbnail with a
-transparency checkerboard, because on the picker's near-white panel it would
-otherwise be indistinguishable from the white-filled frame.
-`getTextBoxPreset()` falls back to 默认白框 for
-unknown ids, not to the catalog's first slot. Two
-kinds coexist in the catalog: geometry-only
-entries driven by `sh`, and decorated entries that set `sh: 'rectangle'` with
-`bw: 0` / `fo: 0` and name a drawing from the artwork registry in `bgi`. The second kind exists because the surface image is
-clipped to the shape path and a Shape shell paints only one fill and one
-stroke — hand-drawn borders, ribbons and multi-color ornament need the image.
-Query them with `getTextBoxPresetsFor()` / `getTextBoxPresetCategoriesFor()`.
-
-Those drawings live in a registry, not in the document. `bgi` holds a `bc:<id>`
-reference; `getTextBoxArtwork()` / `resolveTextBoxArtworkSrc()` turn it into the
-inline SVG at render time, and anything that is not a `bc:` reference — a URL the
-host's upload service returned — passes through untouched. The registry is the
-same idea as the Shape catalog: `sh` names geometry plus `textInsets`, `bgi`
-names a drawing plus its own `textInsets`. Two consequences follow. The drawing
+Those drawings live in a registry, not in the document. `artwork` holds the
+`bc:<id>` reference; `getTextBoxArtwork()` / `resolveTextBoxArtworkSrc()` turn it
+into inline SVG at render time. A URL returned by the host upload service lives
+only in the user picture `fill`. The registry is the same idea as the Shape
+catalog: `shape` names geometry plus `textInsets`, while `artwork` names a drawing plus
+its own `textInsets`. Two
+consequences follow. The drawing
 never travels in a snapshot, a Yjs sync, an undo entry or an export, which is
 worth 0.3–1.6 KB per frame. And the frame's text-safe area is a *fraction* of the
-frame, so it tracks whatever size the author drags — held as fixed px in `p` it
-was only correct at the size each entry was drawn for, and a stretched frame ran
-its text straight through the artwork.
+frame, so it tracks whatever size the author drags. Canonical
+`textFrame.margins` remain optical padding in layout px and stack inward from
+that proportional safe area.
 
-`_shapeInset()` resolves in that order: the artwork's insets when `bgi` names
-one, then nothing at all for `sh: 'rectangle'` (a plain rectangle has no artwork
-to dodge), then the shape's own. `p` remains optical padding in absolute px,
-stacked on top of whichever inset wins. That combination belongs to the chosen
-style, not to the text-box type as a whole: 默认白框 keeps ordinary `p`, while
-decorated frames and bubbles set `p` to zero and let their proportional
-`textInsets` define the actual editable safe area.
-
-Decorated entries split the work between the two layers: the frame is a real
-`bw` outline on the chosen shape — editable from the toolbar and a constant
-width at any frame size — while `bgi` carries ornament only. Bubbles are the
-exception and draw their own contour with `bw: 0`, because a balloon is not a
-rectangle wearing a badge.
+Decorated entries split work between catalog artwork and the editable
+`outline`. Bubbles are the exception and carry their own contour in the
+artwork with an explicit no-outline state.
 
 Two consequences are worth knowing before adding entries. The surface image is
 clipped to the shape and the outline paints above it, so ornament can neither
 bleed past the frame nor interrupt the border; picking a shape whose
 `detailPath` already breaks the outline (`folded-corner`) is the only way to get
 that reading. And a non-rectangular shape contributes its `textInsets`
-underneath `p`, so the two stack — `_shapeInset()` returns `0%` only for
-`rectangle`.
+underneath `textFrame.margins`, so the two stack; a plain rectangle contributes
+no catalog inset.
 
 Child spacing inside a frame uses `margin-block-end`, which resolves to the
 document's usual `margin-bottom` under `horizontal-tb`. A caret that leaves the
 fixed frame is **not** scrolled into view in either direction —
 `SelectionManager.scrollSelectionIntoView()` only scrolls the document-level
-container on its vertical axis. Use `normalizeTextBoxProps()` at creation/import boundaries and
-`normalizeTextBoxWordArtStyle()` / `serializeTextBoxWordArtStyle()` at the
-text-effect boundary. The shared compact surface keys remain `p`, `bgi`,
-`bgs`, `bgx`, `bgy` and `bgo`; there is no second text-box-specific padding or
-image record.
+container on its vertical axis. Use `normalizeTextBoxProps()` at render
+boundaries and `normalizeTextBoxSnapshotProps()` at creation/import boundaries;
+there is no second text-box-specific padding or image record.
 
 The live Block and Snapshot Viewer render the selected Shape geometry as SVG.
 A real decorative `<img>` is clipped by that geometry behind a padded child
@@ -1147,6 +1178,9 @@ the Schema before any client persists one.
 
 ### Built-in Word-like Shape Block
 
+> Flat Shape style props and `ShapeToolbarPlugin` examples in this historical
+> subsection were removed; use the unified object-format fields above.
+
 The built-in shape feature is a `shape` container block with zero or one
 collaborative `shape-text` editable child. Register both schemas together:
 
@@ -1154,7 +1188,7 @@ collaborative `shape-text` editable child. Register both schemas together:
 import {
   ShapeBlockSchema,
   ShapeTextBlockSchema,
-  ShapeToolbarPlugin,
+  ObjectFormatToolbarPlugin,
 } from "@ccc/blockcraft";
 
 const schemas = new SchemaManager([
@@ -1165,7 +1199,7 @@ const schemas = new SchemaManager([
 
 const plugins = [
   // ...
-  new ShapeToolbarPlugin(),
+  new ObjectFormatToolbarPlugin(),
 ];
 ```
 
@@ -1173,12 +1207,11 @@ const plugins = [
 exported `SHAPE_KINDS`. `SHAPE_CATEGORIES` groups the same canonical
 `SHAPE_DEFINITIONS` into the Word-like **矩形 / 基本形状 / 线条 / 箭头总汇 /
 公式形状 / 流程图 / 星与旗帜 / 标注** catalog. `ShapeBlockProps` persists
-width/height, `shapeType`, fill, outline, text color/alignment, optional
-`rotation` in degrees and optional absolute `position` / `placementLayer`.
-Fill supports solid and linear-gradient modes through the structured
-`fillType` / `gradientAngle` / `gradientColors` / `gradientStops` fields
-(compare WordArt); a missing `fillType` means solid, so legacy documents need
-no migration, and raw CSS gradient strings are never persisted. Gradients
+width/height, `shapeType`, the unified paint/line/effects/text sections,
+optional `rotation` in degrees and optional absolute `position` /
+`placementLayer`. Fill supports explicit none, solid, linear-gradient and
+picture modes through the serialized `fill` section; raw CSS gradient
+strings are never persisted. Gradients
 render as per-block SVG `<linearGradient>` defs in both the block component and
 the inline shape Embed; `SHAPE_FILL_GRADIENT_PRESETS` ships the Word-like
 built-in gallery and preset IDs are never persisted.
@@ -1200,8 +1233,8 @@ pointer movement previews outside Angular and pointerup stores one complete
 remain visual objects rather than auto-snapping semantic connectors.
 `ShapeIconComponent` renders the same main and detail
 geometry as the inserted object. The fixed **插入形状** action uses the shared
-categorized picker; the selected-shape toolbar does not expose a change-shape
-control. Its dense icon-only cells expose names through CSES Tooltip and
+categorized picker; the unified object panel also exposes a capability-filtered
+change-shape control. Its dense icon-only cells expose names through CSES Tooltip and
 `aria-label`; compact category headings keep the 103 entries navigable. Other
 toolbar/menu glyphs continue to use iconfont classes.
 
@@ -1268,13 +1301,17 @@ border, outline, shadow, background or block margin.
 
 ### Built-in Editable WordArt Block
 
+> Flat WordArt style props and `WordArtToolbarPlugin` examples in this
+> historical subsection were removed; use `textFrame`/`textStyle` and
+> `ObjectFormatToolbarPlugin`.
+
 The built-in `word-art` flavour is an `editable` block, not a container. Its
 text is stored directly in the block's Y.Text and participates in the normal
 Input/IME, collaboration and undo path; it never creates a `shape-text` child.
 Register the Schema and object toolbar together:
 
 ```typescript
-import { WordArtBlockSchema, WordArtToolbarPlugin } from "@ccc/blockcraft";
+import { ObjectFormatToolbarPlugin, WordArtBlockSchema } from "@ccc/blockcraft";
 
 const schemas = new SchemaManager([
   // ...
@@ -1284,20 +1321,17 @@ const schemas = new SchemaManager([
 
 const plugins = [
   // ...
-  new WordArtToolbarPlugin(),
+  new ObjectFormatToolbarPlugin(),
 ];
 ```
 
-`WordArtBlockSchema.createSnapshot(text?, props?)` defaults to `艺术字`. The
-exported flat `WordArtBlockProps` stores fixed width/height, rotation,
-typography, solid or linear-gradient fill, outline, shadow, alignment, a safe
-affine/perspective effect and optional absolute `position` / `placementLayer`.
-Gradient colors/stops use
-parallel primitive arrays so props remain valid BlockCraft `SimpleValue`
-records. `normalizeWordArtProps()` clamps external values and
+`WordArtBlockSchema.createSnapshot(text?, props?)` defaults to `艺术字`.
+`WordArtBlockProps` stores fixed geometry plus serialized `textFrame` and
+`textStyle`; the latter owns typography, fill, outline, effects and Transform.
+`normalizeWordArtProps()` clamps external values and
 `resolveWordArtPresentation()` resolves portable CSS without accepting raw CSS
 expressions. The bundled catalog contains 16 `WORD_ART_PRESETS`, 10 safe
-`WORD_ART_FONT_OPTIONS` and 15 allowlisted `WordArtEffect` transforms;
+`WORD_ART_FONT_OPTIONS` and 19 allowlisted `ObjectTextTransform` values;
 `getWordArtPreset()` and `wordArtPresentationToInlineStyle()` are public.
 
 The interaction is object/edit dual-state. Clicking text or blank space enters
@@ -1307,16 +1341,16 @@ and `escapeToFrame: 'always'`, so core Selection owns Enter into editing and
 Escape back to whole-object selection. The hover/focus-revealed
 `.word-art-block__object-handle` matches the text-box handle: it selects and
 moves the object without intercepting the editable text surface. Whole-object
-selection applies `.word-art-block--object-selected`, which alone exposes the
+selection applies the existing `.word-art-block--object-selected` chrome hook,
+which alone exposes the
 resizer and object toolbar; text editing shows neither. Object movement also
 remains available from the four invisible selected-border hit regions. The
 bundled fixed toolbar inserts an absolute `over` WordArt near the saved
 selection. Its **插入艺术字** control is a scrollable 16-card visual preset dropdown;
 choosing a card applies that preset while creating the default `艺术字`,
-navigates to its mounted view and selects all text. The object toolbar exposes
-classic presets, safe font families, solid/gradient fill, outline, shadow
-toggle, letter spacing, iconfont horizontal/vertical alignment submenus,
-effects, object layout, stack order and deletion. Its range controls
+navigates to its mounted view and selects all text. The unified object rail
+exposes layout, size, text fill/outline/effects, typography, Transform, stack
+order and deletion. Its range controls
 share the shape toolbar's track, thumb and keyboard-focus treatment.
 
 The eight handles and rotation control reuse `ShapeResizerComponent`. Corners

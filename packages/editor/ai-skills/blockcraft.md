@@ -39,6 +39,7 @@ A block-based rich text editor built on **Angular (standalone components)** + **
 | **Virtualization** | Optional model-first root-child windowing; nested subtrees stay atomic | `RootVirtualizationManager` in `framework/modules/virtualization/` |
 | **Object Layout** | Word-like inline/top-bottom/under/over states plus fixed-pixel object grouping, projected onto Schema-gated block placement | `BlockPlacementManager` in `framework/services/` |
 | **Object Sizing** | Placement-plane-relative `wr/ar` sizing with legacy pixel compatibility | `BlockObjectSizingManager` in `framework/services/` |
+| **Object Format** | DOM-free Shape/TextBox/WordArt geometry, paint, line, effects and text-frame normalization plus mixed batch writes | `BlockObjectFormatManager` at `doc.objectFormat` |
 | **Resource Placeholder** | Reusable image/video/iframe loading, failure, retry and intrinsic-size coordination | `BcResourcePlaceholderDirective` in `components/resource-placeholder/` |
 | **Block Navigation** | Mode-independent stable-ID reveal without changing selection or focus | `BlockCraftDoc.navigateToBlock()` |
 | **Pagination** | Pure page layout + reversible live view + print/PDF | `PaginationPlugin` + `framework/modules/pagination/` |
@@ -565,8 +566,8 @@ inside the same Yjs transaction. Pointer movement remains an O(1) transform
 preview. Each pass logs `[ObjectGroup][performance]` with elapsed milliseconds,
 member count, write count and reason through `doc.logger.info`.
 User-driven group resize, group rotation and nested groups are intentionally
-absent. The bundled `ObjectGroupToolbarPlugin` exposes Shift-click
-multi-selection, rotation-aware object alignment/distribution, 组合/取消组合,
+absent. The bundled `ObjectFormatToolbarPlugin` exposes Shift-click
+multi-selection, mixed object formatting, rotation-aware object alignment/distribution, 组合/取消组合,
 first-click-group/second-click-member interaction and a four-edge move band on
 the selected group. Two objects enable left/horizontal-center/right,
 top/vertical-center/bottom and combined center alignment. Horizontal and
@@ -994,7 +995,7 @@ inline image's current visual coordinates.
 ### Bundled Inline Shape and WordArt
 
 `createBundledEditorCapabilities()` includes fresh `shape` and `word-art`
-Embed converters. `ShapeToolbarPlugin` and `WordArtToolbarPlugin` expose
+Embed converters. `ObjectFormatToolbarPlugin` exposes
 **嵌入型 / 四周型环绕** in addition to their block layouts. The conversion
 stores normalized object props and text Delta in one primitive JSON Embed value
 and keeps compact layout attributes. Shape and WordArt use
@@ -1014,8 +1015,8 @@ the payload and wrap metadata, while Markdown degrades to readable text.
 The block shape catalog exposes 103 `SHAPE_KINDS` through eight
 `SHAPE_CATEGORIES`: rectangles, basic shapes, lines, block arrows, equation
 shapes, flowchart, stars/banners and callouts. The fixed insertion toolbar uses
-the categorized picker; the selected-shape toolbar does not expose a
-change-shape control. Line/connector appearances are visual, non-filled and
+the categorized picker; the unified object panel also exposes a
+capability-filtered change-shape control. Line/connector appearances are visual, non-filled and
 textless. Their endpoints, intermediate nodes and cubic handles use a safe
 versioned custom-path overlay that previews locally and commits one atomic Yjs
 value on pointerup; they deliberately do not claim semantic attachment to other
@@ -1027,7 +1028,7 @@ The other 87 catalogue definitions receive trusted edit-only path projections,
 so all 103 built-in Shape kinds expose yellow draggable nodes while untouched
 documents remain path-free.
 WordArt
-exposes 16 visual presets, 10 safe font families and 15 allowlisted whole-text
+exposes 16 visual presets, 10 safe font families and 19 allowlisted whole-text
 transforms without adding raw CSS to the model. Picking a shape or WordArt
 preset from the fixed toolbar now arms a one-shot document drawing surface
 instead of inserting immediately. This path does not require a focused block or
@@ -1036,16 +1037,14 @@ rectangle on pointer release; clicking without a drag uses the selected
 object's default dimensions. Cancel, blur, viewport movement, readonly and
 teardown paths leave Yjs unchanged.
 
-The selected WordArt block uses the same compact two-level toolbar structure as
-TextBox: a left/right vertical rail keeps **布局 / 艺术字格式 / 删除** visible,
-while layout and formatting open as one click-owned secondary card inside the
-same connected Overlay. Both secondary cards are 288px wide and size to their
-active content without an internal scrollbar; the format card groups the
-existing controls into 字体、填充与轮廓、效果 sections. Its generic form fields
-use CSES Select、Segmented、InputNumber、ColorPicker、Slider and Switch
-components. Opening or switching a card writes no model data; slider previews
-stay local, and only a concrete or completed control action emits the existing
-props update.
+Shape, TextBox and WordArt share one compact iconfont rail. Selecting an object
+shows only that rail; choosing **布局 / 形状 / 文本** opens one responsive
+288px format card or compact 228px layout card, with no redundant title block
+and one scroll owner inside the same viewport-clamped connected Overlay. Layout
+modes display the common current mode as active. The shell preserves the previous center-first
+right/left positions, side flip, theme tokens and focus ownership. The size fields remain in the domain but currently have
+no rail entry. Opening or switching a group writes no model data; high-frequency
+controls preview through RAF and commit one Yjs write on confirmation.
 
 ### DocChain (Fluent Mutations)
 
@@ -1357,10 +1356,7 @@ onBold(ctx: UIEventStateContext) { ... }
 | `CodeInlineEditorBinding` | `plugins/codeEditorBinding.ts` | Shiki syntax highlighting binding for code blocks |
 | `TableBlockBinding` | `plugins/tableBlockBinding.ts` | Table clipboard, model/explicit cell-range keyboard bindings, merge/split helpers |
 | `ImgToolbarPlugin` | `plugins/img-toolbar/` | Block/inline image resize, toolbar actions, and bidirectional conversion |
-| `ShapeToolbarPlugin` | `plugins/shape-toolbar/` | Shape block/inline selection, styling, inline/wrap conversion, placement, drag, resize and rotation |
-| `TextBoxToolbarPlugin` | `plugins/text-box-toolbar/` | Fixed text-box frame/text dual state, Word-style vertical rail and click-owned layout/style/Shape/WordArt settings cards; style-owned editable safe area, placement, drag and stack controls |
-| `WordArtToolbarPlugin` | `plugins/word-art-toolbar/` | WordArt block/inline selection, TextBox-style two-level styling toolbar, inline/wrap conversion, placement, drag, resize and rotation |
-| `ObjectGroupToolbarPlugin` | `plugins/object-group-toolbar/` | Shift-select contiguous root absolute objects, align/distribute or group them, and enter a selected group's members |
+| `ObjectFormatToolbarPlugin` | `plugins/object-format-toolbar/` | Unified Shape/TextBox/WordArt data actions inside the established side-aware 42px rail + responsive 288px secondary card; stable mixed selection, single/multi hierarchy, multi-only align/group commands, CSES segmented format tabs, paint, outline, effects, text frame and searchable font selection |
 | `CalloutToolbarPlugin` | `plugins/callout-toolbar/` | Callout and content-region appearance picker |
 | `DividerExtensionPlugin` | `plugins/divider-toolbar/` | Divider hover toolbar (line/tape/colorful edge style, custom line color, independent length/thickness/opacity, optional text label + typography/alignment/color) |
 | `AttachmentExtensionPlugin` | `plugins/attachment-extension/` | Attachment preview/download UI |

@@ -9,6 +9,8 @@ import {
 import {WordArtBlockComponent} from './word-art.block'
 import {
   normalizeWordArtProps,
+  normalizeWordArtSnapshotProps,
+  WORD_ART_OBJECT_FORMAT_CAPABILITY,
   type WordArtBlockProps,
 } from './word-art.types'
 
@@ -57,7 +59,7 @@ export const WordArtBlockSchema: IBlockSchemaOptions<WordArtBlockModel> = {
     id: generateId(),
     flavour: 'word-art',
     nodeType: BlockNodeType.editable,
-    props: normalizeWordArtProps(props),
+    props: normalizeWordArtSnapshotProps(props),
     meta: {},
     children: normalizeWordArtText(text),
   }),
@@ -74,6 +76,7 @@ export const WordArtBlockSchema: IBlockSchemaOptions<WordArtBlockModel> = {
       editingBoundary: 'always',
     },
     placement: {modes: ['relative', 'absolute']},
+    objectFormat: WORD_ART_OBJECT_FORMAT_CAPABILITY,
     virtualization: {
       estimateHeight: ({props}) => normalizeWordArtProps(props).height,
     },
