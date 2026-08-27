@@ -2,6 +2,8 @@ import {generateId, NoEditableBlockNative} from "../../framework";
 import {BlockNodeType, IBlockSchemaOptions} from "../../framework";
 import {PageDividerBlockComponent} from "./page-divider.block";
 
+export * from './agent'
+
 export interface PageDividerBlockModel extends NoEditableBlockNative {
   flavour: 'page-divider',
   nodeType: BlockNodeType.void,

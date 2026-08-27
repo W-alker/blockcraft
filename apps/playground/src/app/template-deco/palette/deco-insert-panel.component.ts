@@ -290,7 +290,7 @@ export class DecoInsertPanelComponent implements OnInit, OnDestroy {
     const at = sel.start.offset
     block.applyDeltaOperations([
       { retain: at },
-      { insert: { [m.name]: '' } },   // kind===Embed 已收窄，name 必有（无需 !）
+      m.createDelta(),
     ])
     // 光标移到刚插入的 embed 之后（embed 占 1 个位），方便继续打字
     ;(block as unknown as { setInlineRange?(index: number, length?: number): void }).setInlineRange?.(at + 1)

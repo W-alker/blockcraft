@@ -10,6 +10,8 @@ import {
 } from '../../framework'
 import {RenderUnitBlockComponent} from './render-unit.block'
 
+export * from './agent'
+
 export interface RenderUnitBlockProps extends BlockSurfaceProps {
   backColor?: string | null
   borderColor?: string | null

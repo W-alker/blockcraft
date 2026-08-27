@@ -76,10 +76,10 @@ export class TemplateEditSurfaceComponent implements AfterViewInit, OnDestroy {
   private readonly onYUpdate = (): void => this.scheduleSave()
 
   ngAfterViewInit(): void {
-    // 建 doc 的公共流程收进 createDecoDoc（对标 cses const.ts）；本页差异项：编辑字典 + 编辑 embeds（docRef 懒取，icon 改大小才用）
+    // 建 doc 的公共流程收进 createDecoDoc（对标 cses const.ts）；本页只追加模板域自有 Embed。
     const runtime = createDecoDoc({
       additionalSchemas: TEMPLATE_EDIT_SCHEMAS,       // 共享 bundled 块 + 装饰「编辑」组件
-      additionalEmbeds: TEMPLATE_EDIT_EMBEDS(() => this.doc),
+      additionalEmbeds: TEMPLATE_EDIT_EMBEDS(),
       injector: this.injector,
       hostEl: this.host.nativeElement,
       currentUserId: TEMPLATE_CREATOR_USER_ID,

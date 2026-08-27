@@ -3,6 +3,8 @@ import {BlockNodeType} from "../../framework";
 import {BookMarkBlockComponent} from "./book-mark.block";
 import {IBlockSchemaOptions} from "../../framework";
 
+export * from './agent'
+
 export interface BookmarkBlockModel extends NoEditableBlockNative {
   flavour: 'bookmark',
   nodeType: BlockNodeType.void,

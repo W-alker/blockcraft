@@ -3,8 +3,8 @@ import {Subject} from 'rxjs'
 import {
   createInlineShapeDelta,
   createInlineWordArtDelta,
-  type InlineObjectKind,
-} from '../../blocks'
+} from '../../embeds'
+import type {InlineObjectKind} from '../../blocks'
 import {InlineImageDragProxy} from '../img-toolbar/inline-image-drag'
 import {InlineObjectInteractionController} from './inline-object-interaction'
 

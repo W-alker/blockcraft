@@ -6,6 +6,14 @@ import {
 } from './bundled-capabilities'
 
 describe('bundled editor capabilities', () => {
+  const bundledEmbedOrder = [
+    'shape',
+    'word-art',
+    'date',
+    'mention',
+    'latex',
+  ]
+
   it('keeps schema and plugin identities unique', () => {
     const capabilities = createBundledEditorCapabilities()
     const flavours = capabilities.schemaDefinitions.map(schema => schema.flavour)
@@ -21,8 +29,10 @@ describe('bundled editor capabilities', () => {
     expect(pluginNames).not.toContain('word-art-toolbar')
     expect(pluginNames).not.toContain('text-box-toolbar')
     expect(pluginNames).not.toContain('object-group-toolbar')
-    expect(capabilities.embeds.map(([name]) => name)).toContain('shape')
-    expect(capabilities.embeds.map(([name]) => name)).toContain('word-art')
+    expect(capabilities.embeds.map(([name]) => name))
+      .toEqual(bundledEmbedOrder)
+    expect(new Set(capabilities.embeds.map(([, converter]) => converter)).size)
+      .toBe(capabilities.embeds.length)
   })
 
   it('creates fresh stateful instances for every document', () => {
@@ -34,8 +44,8 @@ describe('bundled editor capabilities', () => {
     expect(first.plugins.every((plugin, index) =>
       plugin !== second.plugins[index],
     )).toBeTrue()
-    expect(first.embeds.map(([name]) => name))
-      .toEqual(second.embeds.map(([name]) => name))
+    expect(first.embeds.map(([name]) => name)).toEqual(bundledEmbedOrder)
+    expect(second.embeds.map(([name]) => name)).toEqual(bundledEmbedOrder)
     expect(first.embeds.every(([, converter], index) =>
       converter !== second.embeds[index][1],
     )).toBeTrue()

@@ -7,6 +7,8 @@ import {
 } from "../../framework/block-std/schema/block-schema";
 import {BulletBlockComponent} from "./bullet.block";
 
+export * from './agent'
+
 export interface BulletBlockModel extends EditableBlockNative {
   flavour: 'bullet'
 }

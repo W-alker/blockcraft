@@ -7,6 +7,25 @@ import {
 import type {DocumentAgentContext, DocumentAgentOperation} from '../core/agent.types'
 import {validateDocumentAgentJsonSchema} from '../core/json-schema'
 import type {DocumentAgentExtensionRegistry} from '../core/host-extension'
+import {captureDocumentAgentManifestOptions} from './document-agent-capability-scope'
+
+const AGENT_TEXT_ATTRIBUTE_SCHEMAS:
+Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
+  'a:bold': {type: ['boolean', 'null']},
+  'a:italic': {type: ['boolean', 'null']},
+  'a:underline': {type: ['boolean', 'null']},
+  'a:strike': {type: ['boolean', 'null']},
+  'a:code': {type: ['boolean', 'null']},
+  'a:link': {type: ['string', 'null'], maxLength: 8_192},
+  't:ff': {type: ['string', 'null'], maxLength: 100},
+  't:fs': {type: ['number', 'null'], minimum: 0.1, maximum: 10},
+  't:ls': {type: ['number', 'null'], minimum: -1, maximum: 10},
+  's:color': {type: ['string', 'null'], maxLength: 256},
+  's:background': {type: ['string', 'null'], maxLength: 256},
+  's:fontSize': {type: ['string', 'null'], maxLength: 100},
+  's:fontFamily': {type: ['string', 'null'], maxLength: 256},
+  's:letterSpacing': {type: ['string', 'null'], maxLength: 100},
+}
 
 export const DOCUMENT_AGENT_CLIENT_REF_PREFIX = '$ref:'
 
@@ -50,7 +69,9 @@ export class DocumentAgentOperationCompiler {
   private readonly blocks = new Map<string, ShadowBlock>()
   private readonly clientRefs = new Map<string, string>()
   private readonly contextIds: Set<string>
-  private readonly registeredFlavours: readonly string[]
+  private readonly manifestOptions: ReturnType<
+    typeof captureDocumentAgentManifestOptions
+  >
 
   constructor(
     private readonly doc: BlockCraftDoc,
@@ -61,7 +82,7 @@ export class DocumentAgentOperationCompiler {
       ...context.blocks.map(block => block.blockId),
       ...(context.document ? [context.document.rootId, context.document.append.parentId] : []),
     ])
-    this.registeredFlavours = doc.schemas.getSchemaList().map(schema => String(schema.flavour))
+    this.manifestOptions = captureDocumentAgentManifestOptions(doc)
     this.captureDocument()
   }
 
@@ -96,6 +117,7 @@ export class DocumentAgentOperationCompiler {
       const block = this.requireBlock(blockId)
       this.assertTextWritable(block, BlockReadonlyOperation.Text)
       if (block.textLength === null) this.fail(`Block ${blockId} is not editable.`)
+      this.validateTextDeltaOperations(operation.delta)
       block.textLength = applyDeltaLength(block.textLength, operation.delta, message => this.fail(message))
       return {...operation, blockId}
     }
@@ -105,7 +127,7 @@ export class DocumentAgentOperationCompiler {
       const block = this.requireBlock(blockId)
       this.assertPropsWritable(block)
       const capability = this.extensions.getBlockCapability(block.flavour, {
-        registeredBlockFlavours: this.registeredFlavours,
+        ...this.manifestOptions,
       })
       if (!capability?.writableProps) {
         this.fail(`Schema ${block.flavour} does not declare Agent-writable props.`)
@@ -231,7 +253,7 @@ export class DocumentAgentOperationCompiler {
     if (!this.doc.schemas.has(flavour)) this.fail(`Schema ${flavour} is not registered.`)
     const schema = this.doc.schemas.get(flavour, false)
     const capability = this.extensions.getBlockCapability(flavour, {
-      registeredBlockFlavours: this.registeredFlavours,
+      ...this.manifestOptions,
     })
     if (!capability?.createParameters) {
       this.fail(`Schema ${flavour} does not declare Agent creation parameters.`)
@@ -276,6 +298,12 @@ export class DocumentAgentOperationCompiler {
       if (!snapshot.children.every(isDeltaInsertLike)) {
         this.fail(`Editable block ${snapshot.flavour} contains invalid inline Delta.`)
       }
+      snapshot.children.forEach((delta, index) => {
+        this.validateInlineInsert(
+          delta as unknown as Record<string, unknown>,
+          `Snapshot ${snapshot.flavour} inline Delta ${index}`,
+        )
+      })
       return
     }
     for (const child of snapshot.children) {
@@ -306,6 +334,133 @@ export class DocumentAgentOperationCompiler {
       snapshot,
     })
     childSnapshots.forEach(child => this.registerSnapshotTree(child, snapshot.id))
+  }
+
+  private validateTextDeltaOperations(delta: readonly unknown[]): void {
+    delta.forEach((raw, index) => {
+      const path = `Text Delta operation ${index}`
+      if (!isRecord(raw)) this.fail(`${path} is invalid.`)
+      const operationKeys = Object.keys(raw).filter(key => key !== 'attributes')
+      if (
+        operationKeys.length !== 1 ||
+        !['insert', 'delete', 'retain'].includes(operationKeys[0])
+      ) {
+        this.fail(`${path} must contain exactly one supported operation.`)
+      }
+
+      const operation = operationKeys[0]
+      const attributes = raw['attributes']
+      if (attributes !== undefined && !isPrimitiveRecord(attributes)) {
+        this.fail(`${path} attributes must contain primitive values.`)
+      }
+      if (operation === 'delete') {
+        if (attributes !== undefined) this.fail(`${path} delete cannot carry attributes.`)
+        if (!isPositiveInteger(raw['delete'])) this.fail(`${path} has an invalid delete length.`)
+        return
+      }
+      if (operation === 'retain') {
+        if (!isPositiveInteger(raw['retain'])) this.fail(`${path} has an invalid retain length.`)
+        this.validateTextFormattingAttributes(attributes, `${path} attributes`)
+        return
+      }
+
+      if (typeof raw['insert'] === 'string') {
+        this.validateTextFormattingAttributes(attributes, `${path} attributes`)
+        return
+      }
+      this.validateInlineInsert(raw, path)
+    })
+  }
+
+  private validateInlineInsert(
+    delta: Record<string, unknown>,
+    path: string,
+  ): void {
+    const deltaKeys = Object.keys(delta)
+    if (
+      !deltaKeys.includes('insert') ||
+      deltaKeys.some(key => key !== 'insert' && key !== 'attributes')
+    ) {
+      this.fail(`${path} must contain only insert and optional attributes.`)
+    }
+    const insert = delta['insert']
+    if (typeof insert === 'string') {
+      this.validateTextFormattingAttributes(delta['attributes'], `${path} attributes`)
+      return
+    }
+    if (!isPrimitiveRecord(insert)) {
+      this.fail(`${path} Embed insert must be a single-key primitive object.`)
+    }
+    const embedKeys = Object.keys(insert)
+    if (embedKeys.length !== 1 || !embedKeys[0].trim()) {
+      this.fail(`${path} Embed insert must contain exactly one non-empty key.`)
+    }
+    const embedKey = embedKeys[0]
+    const attributes = delta['attributes']
+    if (attributes !== undefined && !isPrimitiveRecord(attributes)) {
+      this.fail(`${path} Embed attributes must contain primitive values.`)
+    }
+
+    if (embedKey === 'break') {
+      if (insert[embedKey] !== '\n') {
+        this.fail(`${path} contains an invalid line break.`)
+      }
+      this.validateTextFormattingAttributes(attributes, `${path} attributes`)
+      return
+    }
+
+    if (!this.manifestOptions.registeredInlineEmbedKeys?.includes(embedKey)) {
+      this.fail(`Inline Embed converter ${embedKey} is not registered.`)
+    }
+    const capability = this.extensions.getInlineEmbedCapability(
+      embedKey,
+      this.manifestOptions,
+    )
+    if (!capability?.insert) {
+      this.fail(`Inline Embed ${embedKey} does not declare Agent insertion.`)
+    }
+    const valueErrors = validateDocumentAgentJsonSchema(
+      capability.insert.value,
+      insert[embedKey],
+      `${path}.insert.${embedKey}`,
+    )
+    if (valueErrors.length) this.fail(valueErrors.join(' '))
+
+    const attributeValue = attributes ?? {}
+    if (!capability.insert.attributes) {
+      if (Object.keys(attributeValue as Record<string, unknown>).length) {
+        this.fail(`Inline Embed ${embedKey} does not allow Agent-written attributes.`)
+      }
+      return
+    }
+    const attributeErrors = validateDocumentAgentJsonSchema(
+      capability.insert.attributes,
+      attributeValue,
+      `${path}.attributes`,
+    )
+    if (attributeErrors.length) this.fail(attributeErrors.join(' '))
+  }
+
+  private validateTextFormattingAttributes(
+    value: unknown,
+    path: string,
+  ): void {
+    if (value === undefined) return
+    if (!isPrimitiveRecord(value)) {
+      this.fail(`${path} must contain primitive values.`)
+    }
+    for (const [key, attributeValue] of Object.entries(value)) {
+      const schema = AGENT_TEXT_ATTRIBUTE_SCHEMAS[key]
+      if (!schema) {
+        this.fail(`${path}.${key} is not an Agent-writable text format.`)
+      }
+      const errors = validateDocumentAgentJsonSchema(
+        schema,
+        attributeValue,
+        `${path}.${key}`,
+      )
+      if (errors.length) this.fail(errors.join(' '))
+    }
   }
 
   private captureDocument(): void {
@@ -483,17 +638,22 @@ function applyDeltaLength(
   delta: readonly unknown[],
   fail: (message: string) => never,
 ): number {
-  let cursor = 0
+  let sourceCursor = 0
   let nextLength = currentLength
   for (const raw of delta) {
     if (!isRecord(raw)) return fail('Text Delta contains an invalid operation.')
     if (typeof raw['retain'] === 'number') {
-      cursor += raw['retain']
-      if (cursor > currentLength) return fail('Text Delta retains beyond the current text length.')
+      sourceCursor += raw['retain']
+      if (sourceCursor > currentLength) {
+        return fail('Text Delta retains beyond the current text length.')
+      }
       continue
     }
     if (typeof raw['delete'] === 'number') {
-      if (cursor + raw['delete'] > currentLength) return fail('Text Delta deletes beyond the current text length.')
+      sourceCursor += raw['delete']
+      if (sourceCursor > currentLength) {
+        return fail('Text Delta deletes beyond the current text length.')
+      }
       nextLength -= raw['delete']
       continue
     }
@@ -529,4 +689,18 @@ function isRecord(value: unknown): value is Record<string, any> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const prototype = Object.getPrototypeOf(value)
   return prototype === Object.prototype || prototype === null
+}
+
+function isPrimitiveRecord(value: unknown): value is Record<string, string | number | boolean | null> {
+  if (!isRecord(value)) return false
+  return Object.values(value).every(item =>
+    item === null ||
+    typeof item === 'string' ||
+    typeof item === 'boolean' ||
+    (typeof item === 'number' && Number.isFinite(item)),
+  )
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) > 0
 }

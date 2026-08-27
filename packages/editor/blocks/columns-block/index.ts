@@ -10,6 +10,8 @@ import {ColumnBlockComponent} from "./column.block";
 import {ColumnsBlockComponent} from "./columns.block";
 import {ParagraphBlockSchema} from "../paragraph-block";
 
+export * from './agent'
+
 /**
  * 单列块模型
  */

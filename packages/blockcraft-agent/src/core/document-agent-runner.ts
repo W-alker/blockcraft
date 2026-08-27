@@ -7,7 +7,10 @@ import type {
   DocumentAgentTurnRequest,
   DocumentAgentTurnResponse,
 } from './agent.types'
-import {validateDocumentAgentResult} from './operation-validator'
+import {
+  normalizeDocumentAgentResult,
+  validateDocumentAgentResult,
+} from './operation-validator'
 
 export class DocumentAgentResultError extends Error {
   constructor(readonly issues: readonly string[]) {
@@ -23,7 +26,9 @@ export class DocumentAgentRunner {
     request: DocumentAgentRequest,
     options?: {signal?: AbortSignal},
   ): Promise<DocumentAgentResult> {
-    const result = await this.transport.run(request, options)
+    const result = normalizeDocumentAgentResult(
+      await this.transport.run(request, options),
+    )
     const issues = validateDocumentAgentResult(result)
     if (issues.length) throw new DocumentAgentResultError(issues)
     return result
@@ -39,9 +44,10 @@ export class DocumentAgentRunner {
 
     const response = await this.transport.runTurn(turn, options)
     if (response.kind === 'result') {
-      const issues = validateDocumentAgentResult(response.result)
+      const result = normalizeDocumentAgentResult(response.result)
+      const issues = validateDocumentAgentResult(result)
       if (issues.length) throw new DocumentAgentResultError(issues)
-      return response
+      return {...response, result}
     }
     if (response.kind !== 'tool-calls' || !Array.isArray(response.calls)) {
       throw new DocumentAgentResultError(['Agent turn must contain a result or tool calls.'])
@@ -65,7 +71,9 @@ export class DocumentAgentRunner {
     if (!this.transport.runSubAgent) {
       throw new DocumentAgentResultError(['Transport does not support specialist delegation.'])
     }
-    const result = await this.transport.runSubAgent(delegation, options)
+    const result = normalizeDocumentAgentResult(
+      await this.transport.runSubAgent(delegation, options),
+    )
     const issues = validateDocumentAgentResult(result)
     if (result.specialist !== delegation.specialist) {
       issues.push('Specialist result does not match the delegation request.')

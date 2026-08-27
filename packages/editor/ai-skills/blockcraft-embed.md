@@ -4,7 +4,7 @@
 >
 > For inline system internals, see L2: `blockcraft-inline.md`
 >
-> Last updated: 2026-08-26
+> Last updated: 2026-08-28
 
 ## What is an Inline Embed?
 
@@ -23,7 +23,16 @@ An inline embed is a non-text element rendered inside an editable block's text f
 { insert: { latex: "E=mc^2" } }
 ```
 
-The key of the `insert` object (e.g. `"mention"`) must match the string key used when registering the converter.
+The `insert` object has exactly one non-empty key. Its value and every optional
+attribute are primitive JSON values. The key (for example, `"mention"`) must
+match the string key used when registering the converter, and the whole Embed
+still occupies exactly one model offset regardless of payload size.
+
+Treat that key as a canonical data contract, not just a renderer lookup. The
+value shape and semantic attributes belong to the key. A host may override a
+same-key converter to render the data differently, but the replacement must
+read and write the same value/attributes shape. Use a new Embed key (and a new
+Agent capability, when applicable) for a new data shape.
 
 ## EmbedConverter Interface
 
@@ -35,11 +44,38 @@ type EmbedConverter = {
 };
 ```
 
+## Source Layout and Public Exports
+
+Built-in Embed implementations live under one source boundary and are
+aggregated by `packages/editor/embeds/index.ts`:
+
+```text
+packages/editor/embeds/
+├── index.ts
+├── defaults.ts
+└── <embed-key>/
+    ├── index.ts
+    └── agent/index.ts      # optional: only when the document Agent needs semantics
+```
+
+The former scattered `framework/block-std/inline/*-embed.ts` and
+`blocks/*/*-embed.ts` source modules have been removed. Package consumers
+should import public converter, key, helper, and Agent declaration exports from
+the `@ccc/blockcraft` root entry; that entry re-exports the central `embeds`
+barrel. Do not deep-import the old source paths.
+
+An external Embed package should use the same ownership rule: keep the
+converter in `embeds/<embed-key>/index.ts`, optionally keep its Agent contract
+in `embeds/<embed-key>/agent/index.ts`, and export both from the package's
+public barrel.
+
 ## Template: Custom Inline Embed
 
 ```typescript
-// Define in editor setup or a dedicated file
-import { EmbedConverter } from "../../framework";
+// embeds/my-embed/index.ts
+import type {EmbedConverter} from '@ccc/blockcraft'
+
+export const MY_EMBED_KEY = 'myEmbed'
 
 export const myEmbedConverter: EmbedConverter = {
   toView: (delta) => {
@@ -47,7 +83,7 @@ export const myEmbedConverter: EmbedConverter = {
     // delta.attributes = { someAttr: "..." }
     const span = document.createElement('span');
     span.classList.add('inline-my-embed');
-    span.textContent = delta.insert['myEmbed'] as string;
+    span.textContent = delta.insert[MY_EMBED_KEY] as string;
     span.setAttribute('data-my-attr', delta.attributes?.['someAttr'] as string || '');
     // The element will be wrapped in <c-element><span ce="false">YOUR_ELEMENT</span>...</c-element>
     return span;
@@ -55,7 +91,7 @@ export const myEmbedConverter: EmbedConverter = {
 
   toDelta: (element) => {
     return {
-      insert: { myEmbed: element.textContent || '' },
+      insert: { [MY_EMBED_KEY]: element.textContent || '' },
       attributes: {
         someAttr: element.getAttribute('data-my-attr') || '',
       },
@@ -67,6 +103,90 @@ export const myEmbedConverter: EmbedConverter = {
   },
 };
 ```
+
+## Optional Inline Embed Agent Contract
+
+Converter registration controls rendering. It does **not** grant a document
+Agent permission to generate that Embed. Add `agent/index.ts` only when the
+Embed needs an authoritative AI semantic contract:
+
+```typescript
+// embeds/my-embed/agent/index.ts
+import {defineInlineEmbedAgentCapability} from '@ccc/blockcraft'
+import {MY_EMBED_KEY} from '..'
+
+export const MY_EMBED_AGENT_CAPABILITY =
+  defineInlineEmbedAgentCapability({
+    id: 'acme.inline-embed.my-embed',
+    kind: 'inline-embed',
+    embedKey: MY_EMBED_KEY,
+    title: 'My inline object',
+    description: 'A stable external entity reference.',
+    semanticRoles: ['entity-reference'],
+    insert: {
+      value: {type: 'string', minLength: 1, maxLength: 256},
+      attributes: {
+        type: 'object',
+        properties: {
+          label: {type: 'string', maxLength: 256},
+        },
+        additionalProperties: false,
+      },
+    },
+    examples: [{value: 'entity-123', attributes: {label: 'Example'}}],
+  })
+```
+
+The host must install both sides under the same canonical key:
+
+```typescript
+import {MY_EMBED_AGENT_CAPABILITY, myEmbedConverter} from '@acme/my-embed'
+import {BlockCraftDoc} from '@ccc/blockcraft'
+import {
+  BlockCraftEditorAgent,
+  type DocumentAgentHostExtension,
+} from 'blockcraft-agent'
+
+const doc = new BlockCraftDoc({
+  // schemas, plugins, ...
+  embeds: [['myEmbed', myEmbedConverter]],
+})
+
+const extension: DocumentAgentHostExtension = {
+  id: 'acme.embeds',
+  version: '1',
+  description: 'ACME Inline Embed contracts',
+  capabilities: [MY_EMBED_AGENT_CAPABILITY],
+}
+
+const agent = new BlockCraftEditorAgent(doc, runner, {
+  extensions: [extension],
+})
+```
+
+The Agent runtime exposes the capability only when its `embedKey` is also
+installed in `DocConfig.embeds`. Conversely, an installed converter without a
+registered capability can still render existing Delta and its raw Delta stays
+visible in Agent context, but the Agent cannot generate that Embed. Omitting
+`insert` creates an understanding-only declaration: the Agent can inspect its
+semantics but cannot insert or semantically rewrite it.
+
+Built-in `mention`, `shape`, and `word-art` capabilities are
+understanding-only by default. Mentions require host-side entity resolution;
+Shape and WordArt carry complex lossless payloads that the model must not
+invent. Generic range deletion may still remove any Embed, including an
+understanding-only one, just as a generic Block deletion can remove a Block
+without granting creation of that Block.
+
+For Agent-authored `apply-text-delta` operations:
+
+- each object insert must contain exactly one registered Embed key and pass the
+  capability's complete `insert.value` / `insert.attributes` JSON Schemas;
+- `retain + attributes` may apply only canonical general text-format keys; it
+  cannot mutate Embed-semantic attributes such as IDs, formats, dimensions, or
+  wrapping metadata;
+- a semantic Embed change is expressed as deletion of its one-offset range
+  followed by a separately validated insert.
 
 ## Built-in Embeds
 
@@ -84,6 +204,9 @@ and mirrors it to `data-icon` for DOM-to-Delta round-trips. BlockCraft exports
 `inlineIconEmbedConverter` and `INLINE_ICON_EMBED_KEY` for hosts that need to
 inspect or explicitly override the default representation. Registering an
 `icon` converter in `DocConfig.embeds` keeps the existing host-wins behavior.
+The built-in Agent schema validates only the `bc_icon bc_*` class-string shape;
+it cannot prove that a glyph exists in the host's installed catalog, so an
+Agent must select a class from host-provided evidence rather than invent one.
 
 Selection presentation is converter-independent. While a local selection fully
 covers any inline Embed's one model unit, `SelectionSelectedManager` adds
@@ -201,13 +324,13 @@ if (block && block instanceof EditableBlockComponent) {
 
 | Embed Key | Converter Location | Description |
 |-----------|-------------------|-------------|
-| `icon` | `framework/block-std/inline/icon-embed.ts` | Built-in iconfont class embed; custom same-key converter wins |
-| `image` | `framework/block-std/inline/image-embed.ts` | Built-in inline image; custom same-key converter wins |
-| `shape` | `blocks/shape-block/shape-embed.ts` | Bundled inline/wrapped shape with lossless props + nested text payload |
-| `word-art` | `blocks/word-art-block/word-art-embed.ts` | Bundled inline/wrapped WordArt with lossless presentation + text payload |
-| `date` | `framework/block-std/inline/date-embed.ts` | Bundled frozen date/time stamp with a selectable display format |
-| `mention` | `editor/editor.ts` (inline) | @mention with user ID |
-| `latex` | `editor/editor.ts` (inline) | KaTeX formula rendering |
+| `icon` | `embeds/icon/` | Built-in iconfont class embed; custom same-key renderer must preserve the class-string contract |
+| `image` | `embeds/image/` | Built-in inline image; custom same-key renderer must preserve URL + semantic attributes |
+| `shape` | `embeds/shape/` | Bundled inline/wrapped shape; Agent capability is understanding-only |
+| `word-art` | `embeds/word-art/` | Bundled inline/wrapped WordArt; Agent capability is understanding-only |
+| `date` | `embeds/date/` | Bundled frozen date/time stamp with a selectable display format |
+| `mention` | `embeds/mention/` | @mention with user ID; Agent capability is understanding-only |
+| `latex` | `embeds/latex/` | KaTeX formula rendering |
 
 ## Bundled Date Embed
 
@@ -315,6 +438,9 @@ emits only readable object text.
 - [ ] `toView` returns an `HTMLElement` (not a string)
 - [ ] `toDelta` correctly reconstructs the delta from the DOM element
 - [ ] Embed key in `insert` object matches the registration key
+- [ ] Same-key converter overrides preserve the canonical value/attributes contract
 - [ ] Custom converter registered in `DocConfig.embeds`; built-in `icon` and `image` need no registration
+- [ ] If AI may generate the Embed, add/export `agent/index.ts` and explicitly register the matching capability in the host
+- [ ] If AI must only understand the Embed, declare a capability without `insert`; if no AI semantics are needed, omit `agent/` entirely
 - [ ] CSS styles added for the embed element class
 - [ ] `onDestroy` implemented if the embed creates subscriptions or listeners

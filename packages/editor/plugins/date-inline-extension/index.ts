@@ -1,17 +1,19 @@
 import {ComponentRef} from '@angular/core'
 import {Subject, Subscription, takeUntil} from 'rxjs'
 import {
-  closestInlineDateElement,
   closetBlockId,
-  createInlineDateDelta,
   DocPlugin,
   EditableBlockComponent,
   EventListen,
   getPositionWithOffset,
   normalizeRange,
-  readInlineDateElement,
   UIEventStateContext,
 } from '../../framework'
+import {
+  closestInlineDateElement,
+  createInlineDateDelta,
+  readInlineDateElement,
+} from '../../embeds'
 import {InlineDateEditDialog} from './widgets/date-edit-dialog'
 
 /**

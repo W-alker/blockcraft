@@ -1,5 +1,20 @@
 import type {DocumentAgentResult} from './agent.types'
 
+/**
+ * Structured-output providers use `null` for optional required schema fields.
+ * Keep the public result contract canonical by removing that transport-only
+ * sentinel before validation or exposing the result to consumers.
+ */
+export function normalizeDocumentAgentResult<T extends DocumentAgentResult>(
+  result: T,
+): T {
+  const raw = result as T & {draft?: unknown}
+  if (!raw || typeof raw !== 'object' || raw.draft !== null) return result
+  const normalized = {...raw}
+  delete normalized.draft
+  return normalized as T
+}
+
 export function validateDocumentAgentResult(
   result: DocumentAgentResult,
 ): string[] {
@@ -144,7 +159,7 @@ function isTextDeltaOperation(value: unknown): boolean {
   if (keys[0] === 'insert') {
     if (
       typeof payload !== 'string' &&
-      !(isPlainRecord(payload) && Object.values(payload).every(isJsonValue))
+      !isSinglePrimitiveEmbed(payload)
     ) return false
   } else if (!Number.isInteger(payload) || (payload as number) < 1) {
     return false
@@ -152,7 +167,22 @@ function isTextDeltaOperation(value: unknown): boolean {
   if (keys[0] === 'delete' && operation['attributes'] !== undefined) return false
   return operation['attributes'] === undefined ||
     (isPlainRecord(operation['attributes']) &&
-      Object.values(operation['attributes']).every(isJsonValue))
+      Object.values(operation['attributes']).every(isPrimitiveJsonValue))
+}
+
+function isSinglePrimitiveEmbed(value: unknown): boolean {
+  if (!isPlainRecord(value)) return false
+  const entries = Object.entries(value)
+  return entries.length === 1 &&
+    !!entries[0][0].trim() &&
+    isPrimitiveJsonValue(entries[0][1])
+}
+
+function isPrimitiveJsonValue(value: unknown): boolean {
+  return value === null ||
+    typeof value === 'string' ||
+    typeof value === 'boolean' ||
+    (typeof value === 'number' && Number.isFinite(value))
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {

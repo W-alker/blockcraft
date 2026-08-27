@@ -6,6 +6,8 @@ import {
   EditableBlockCreateSnapshotParams
 } from "../../framework";
 import {OrderedBlockComponent} from "./ordered.block";
+
+export * from './agent'
 import {isOrderedMarkerStyleId, OrderedMarkerStyleId} from "./utils";
 export * from './utils'
 

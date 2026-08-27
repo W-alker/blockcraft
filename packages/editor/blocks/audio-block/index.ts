@@ -2,6 +2,8 @@ import {generateId, NoEditableBlockNative} from "../../framework";
 import {BlockNodeType, IBlockSchemaOptions} from "../../framework";
 import {AudioBlockComponent} from "./audio.block";
 
+export * from './agent'
+
 export interface AudioBlockModel extends NoEditableBlockNative {
   flavour: 'audio',
   nodeType: BlockNodeType.void,

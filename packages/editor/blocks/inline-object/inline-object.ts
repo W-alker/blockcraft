@@ -8,7 +8,7 @@ import {
   normalizeInlineImageWrapOptions,
   type InlineImageWrapOptions,
   type InlineImageWrapSide,
-} from '../../framework'
+} from '../../embeds/image'
 
 export const INLINE_OBJECT_FRAME_ATTRIBUTE = 'data-bc-inline-float-frame'
 

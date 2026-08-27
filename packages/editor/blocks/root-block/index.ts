@@ -3,6 +3,8 @@ import { RootBlockComponent } from "./root.block";
 import { BlockNodeType, IBlockSnapshot, NoEditableBlockNative } from "../../framework";
 import { ParagraphBlockSchema } from "../paragraph-block";
 
+export * from './agent'
+
 export interface RootBlockModel extends NoEditableBlockNative {
   flavour: "root",
   nodeType: BlockNodeType.root,

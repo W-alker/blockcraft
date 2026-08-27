@@ -15,6 +15,7 @@ import {
 } from './text-box.types'
 
 export * from './text-box.types'
+export * from './agent'
 export * from './text-box.presets'
 export * from './presets/artwork'
 export {TextBoxBlockComponent} from './text-box.block'

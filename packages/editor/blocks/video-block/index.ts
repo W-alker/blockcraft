@@ -6,6 +6,8 @@ import {
 } from "../../framework";
 import {VideoBlockComponent} from "./video.block";
 
+export * from './agent'
+
 export interface VideoBlockModel extends NoEditableBlockNative {
   flavour: 'video',
   nodeType: BlockNodeType.void,

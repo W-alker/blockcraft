@@ -14,9 +14,9 @@
 ## 1. 范围
 
 **MVP1 做**:
-- 装饰机制:`defineDeco`(block)+ `defineEmbed`(embed)两个工厂、registry、两个 surface 装配。
+- 装饰机制:`defineDeco`(block)+ `defineEmbed`(仅模板域自有 embed)两个工厂、registry、两个 surface 装配。
 - 基础装饰(block 形态):日期、人员、天气、logo、背景图。
-- 至少一个行内装饰(embed 形态)示例,验证两条路并存。
+- 至少一个模板域行内装饰(embed 形态)示例；通用 date/icon/image 直接复用 editor 内置 Embed。
 - 物料面板:**block 拖拽落点插入**(框架原生 `dragController`)/ **embed 光标插入**(`applyDeltaOperations`);模板编辑视图 + 文档(渲染)视图;mock 数据接缝。
 - **playground 自建编辑器宿主**(`new BlockCraftDoc(...)`),**不用** bundled `<block-craft-editor>`(理由见 §2.1)。
 
@@ -200,7 +200,6 @@ apps/playground/src/app/template-deco/
 ├── core/
 │   ├── deco.category.ts       DecoCategory 枚举
 │   ├── deco.types.ts          DecoDef + defineDeco
-│   ├── define-embed.ts        defineEmbed
 │   └── registry.ts            DECOS/EMBEDS → TEMPLATE_EDIT/TEMPLATE_RENDER 套 + MATERIALS
 ├── flavours.ts                block 装饰 declare global 集中
 ├── data/
@@ -209,7 +208,10 @@ apps/playground/src/app/template-deco/
 │   ├── <deco>.deco.ts             defineDeco 调用 + model + flavour 声明
 │   ├── <deco>.template-edit.component.ts     templateEdit 组件
 │   └── <deco>.template-render.component.ts   templateRender 组件
-├── embeds/<deco>.embed.ts     行内装饰(1 文件,defineEmbed 调用)
+├── embeds/                    行内装饰统一边界
+│   ├── index.ts               统一导出 avatar/shared
+│   ├── shared/index.ts        模板域 defineEmbed 工厂
+│   └── avatar/index.ts        模板域自有行内人员
 ├── host/
 │   └── create-deco-doc.ts     自建 doc 宿主:BASE_SCHEMAS/BASE_EMBEDS/plugins + DI providers + initBySnapshot
 ├── palette/                   物料面板(block 项 pointerdown→startDrag / embed 项 click→插光标)

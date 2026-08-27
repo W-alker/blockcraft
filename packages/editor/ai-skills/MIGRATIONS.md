@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-08-27 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-08-28 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -68,6 +68,187 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
+
+## Unreleased — 2026-08-28 — Central Inline Embed ownership and Agent contracts
+
+**Severity**: minor
+
+**What changed**: Built-in Inline Embed converters, keys, helpers, tests, and
+optional Agent declarations now live under one
+`packages/editor/embeds/<embed-key>/` ownership boundary and are aggregated by
+the central `embeds` barrel. The old scattered `*-embed.ts` source files were
+removed. The editor now exports a runtime-independent Inline Embed Agent
+capability contract, and `blockcraft-agent` exposes or accepts Embed generation
+only when the host has installed both a converter and a same-key capability
+with an explicit `insert` schema.
+
+**Why**: converter registration describes how existing Delta renders, but it
+does not tell a model what an Embed means or which values it may safely invent.
+Colocating an optional Agent declaration with the converter lets built-in and
+external Embed packages ship one canonical data contract without making the
+editor depend on `blockcraft-agent`.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-embed.md`
+- `blockcraft-inline.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `InlineEmbedAgentInsertDefinition`
+- `InlineEmbedAgentExample`
+- `InlineEmbedAgentCapabilityDefinition`
+- `defineInlineEmbedAgentCapability()`
+- `BLOCKCRAFT_BUILTIN_INLINE_AGENT_CAPABILITIES`
+- `BLOCKCRAFT_BUILTIN_AGENT_CAPABILITIES`
+- Built-in `INLINE_*_AGENT_CAPABILITY` declarations for `image`, `icon`,
+  `date`, `mention`, `latex`, `shape`, and `word-art`
+
+### Migration Recipe
+
+Public package consumers should import Embed APIs from the root entry, which
+re-exports `packages/editor/embeds/index.ts`. Source-deep imports into the old
+layout must be replaced:
+
+```typescript
+// before: removed source-deep modules
+import {inlineImageEmbedConverter} from './framework/block-std/inline/image-embed'
+import {createInlineShapeEmbedConverter} from './blocks/shape-block/shape-embed'
+
+// after: supported package public entry
+import {
+  createInlineShapeEmbedConverter,
+  inlineImageEmbedConverter,
+} from '@ccc/blockcraft'
+```
+
+For an external Embed that the Agent may create, colocate and export an
+optional declaration, then register both sides in the host:
+
+```typescript
+// @acme/my-embed: embeds/my-embed/agent/index.ts
+export const MY_EMBED_AGENT_CAPABILITY =
+  defineInlineEmbedAgentCapability({
+    id: 'acme.inline-embed.my-embed',
+    kind: 'inline-embed',
+    embedKey: 'myEmbed',
+    title: 'My Embed',
+    description: 'An ACME entity reference.',
+    insert: {value: {type: 'string', minLength: 1}},
+  })
+
+// host
+const doc = new BlockCraftDoc({
+  embeds: [['myEmbed', myEmbedConverter]],
+})
+const extension: DocumentAgentHostExtension = {
+  id: 'acme.embeds',
+  version: '1',
+  description: 'ACME Embed contracts',
+  capabilities: [MY_EMBED_AGENT_CAPABILITY],
+}
+const agent = new BlockCraftEditorAgent(doc, runner, {extensions: [extension]})
+```
+
+If an Embed needs no AI-specific semantics, do not add or register an Agent
+declaration. If it should be understandable but not generatable, declare the
+capability without `insert`.
+
+### Behavior Changes
+
+- `embedKey` is the canonical primitive value/attributes contract. A same-key
+  converter override is renderer-only and must preserve that data shape.
+- Agent object inserts require exactly one installed key and must validate the
+  capability's complete value/attributes schemas. An Embed consumes one model
+  offset.
+- Agent `retain + attributes` accepts canonical general text formatting only;
+  semantic Embed changes use delete-one plus a separately validated insert.
+- Built-in `mention`, `shape`, and `word-art` are understanding-only by
+  default. Generic range deletion can still remove them; the missing insert
+  grant prevents fabrication, not ordinary deletion.
+
+## Unreleased — 2026-08-27 — Block-owned Agent capability contracts
+
+**Severity**: minor
+
+**What changed**: Block Agent semantics are now an additive public editor
+contract. Built-in declarations moved from one `blockcraft-agent` table into
+the owning `blocks/<block>/agent/` directories and are exposed through one
+aggregation-only export. External Block packages can use the same declaration
+shape and let the host register it with `blockcraft-agent`.
+
+**Why**: Schema metadata explains rendering and tree validity, but it does not
+describe safe model generation parameters or Agent-writable props. Keeping the
+AI contract beside the Block makes those rules ship and evolve with external
+Block code without creating a reverse dependency from `@ccc/blockcraft` to
+`blockcraft-agent`.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-app.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `BlockAgentActionEffect`
+- `BlockAgentCapabilityAction`
+- `BlockAgentCapabilityDefinition`
+- `defineBlockAgentCapability()`
+- `BLOCKCRAFT_BUILTIN_BLOCK_AGENT_CAPABILITIES`
+- Built-in Block-owned `*_BLOCK_AGENT_CAPABILITY` exports
+
+### Migration Recipe
+
+Existing Blocks that do not need AI-specific understanding require no change.
+For an opt-in external Block, move its declaration beside the Block and export
+it; the host remains responsible for registration:
+
+```typescript
+// before: host-only inline declaration
+const extension = {
+  id: 'acme.blocks',
+  version: '1',
+  description: 'ACME Blocks',
+  capabilities: [{
+    id: 'acme.block.card',
+    kind: 'block',
+    flavour: 'acme-card',
+    title: 'Card',
+    description: 'ACME card',
+  }],
+}
+
+// after: blocks/acme-card/agent/index.ts
+export const ACME_CARD_AGENT_CAPABILITY = defineBlockAgentCapability({
+  id: 'acme.block.card',
+  kind: 'block',
+  flavour: 'acme-card',
+  schemaVersion: 1,
+  title: 'Card',
+  description: 'ACME card',
+})
+
+// host composition
+const extension = {
+  id: 'acme.blocks',
+  version: '1',
+  description: 'ACME Blocks',
+  capabilities: [ACME_CARD_AGENT_CAPABILITY],
+}
+```
+
+### Behavior Changes
+
+- Schema registration by itself still does not grant Agent creation or prop
+  writes. Missing `createParameters` and `writableProps` fail closed.
+- An external declaration is discoverable only after the host registers it.
+- Built-in runtime capability semantics are unchanged; their source of truth is
+  now the owning Block directory.
 
 ## Unreleased — 2026-08-27 — Scoped revision Diff writes
 

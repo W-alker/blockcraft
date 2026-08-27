@@ -18,6 +18,7 @@ import {
 } from '../core/agent-tools'
 import {BLOCKCRAFT_BUILTIN_AGENT_EXTENSION} from '../core/builtin-block-capabilities'
 import {DocumentAgentExtensionRegistry} from '../core/host-extension'
+import {captureDocumentAgentManifestOptions} from './document-agent-capability-scope'
 
 export class DocumentAgentToolExecutor {
   private activeContext: DocumentAgentContext | null
@@ -166,10 +167,8 @@ export class DocumentAgentToolExecutor {
     return this.activeContext
   }
 
-  private manifestOptions(): {registeredBlockFlavours: readonly string[]} {
-    return {
-      registeredBlockFlavours: this.doc.schemas.getSchemaList().map(schema => String(schema.flavour)),
-    }
+  private manifestOptions() {
+    return captureDocumentAgentManifestOptions(this.doc)
   }
 
   private search(argumentsValue: unknown): {query: string; matches: unknown[]} {

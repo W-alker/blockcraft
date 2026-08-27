@@ -1,13 +1,14 @@
 import {InlineDeltaToHtmlAdapterMatcher} from "../delta-converter";
 import {InlineHtmlAST} from "../../types";
-import {DeltaInsertEmbed, readInlineImageDelta} from "../../../framework";
+import {DeltaInsertEmbed} from "../../../framework";
 import {
+  readInlineImageDelta,
   INLINE_SHAPE_EMBED_KEY,
   INLINE_WORD_ART_EMBED_KEY,
-  inlineObjectPlainText,
   readInlineShapeDelta,
   readInlineWordArtDelta,
-} from '../../../blocks';
+} from '../../../embeds';
+import {inlineObjectPlainText} from '../../../blocks';
 import {inlineTypographyToHtmlProperties} from '../typography';
 
 

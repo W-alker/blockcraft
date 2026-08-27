@@ -2,6 +2,8 @@ import {DocAttachmentInfo, generateId, NoEditableBlockNative, BlockNodeType, IBl
 import {AttachmentBlockComponent} from "./attachment.block";
 import {getAttachmentIcon} from "./icons";
 
+export * from './agent'
+
 export interface AttachmentBlockModel extends NoEditableBlockNative {
   flavour: 'attachment',
   nodeType: BlockNodeType.void,

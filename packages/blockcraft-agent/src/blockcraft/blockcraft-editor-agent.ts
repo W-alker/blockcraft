@@ -22,6 +22,7 @@ import {
 } from '../core/host-extension'
 import {DocumentAgentRunner} from '../core/document-agent-runner'
 import {captureBlockCraftAgentContext} from './blockcraft-context-adapter'
+import {captureDocumentAgentManifestOptions} from './document-agent-capability-scope'
 import {
   DocumentAgentOperationApplier,
   type DocumentAgentRevisionApplyResult,
@@ -58,12 +59,10 @@ export class BlockCraftEditorAgent {
     })
   }
 
-  getRuntimeManifest(context?: DocumentAgentContext | null): DocumentAgentRuntimeManifest {
-    const registeredBlockFlavours = context?.capabilities?.map(capability => capability.flavour) ??
-      this.doc.schemas.getSchemaList().map(schema => String(schema.flavour))
+  getRuntimeManifest(_context?: DocumentAgentContext | null): DocumentAgentRuntimeManifest {
     return this.extensions.createRuntimeManifest(
       this.options.resolveHostContext?.() ?? null,
-      {registeredBlockFlavours},
+      captureDocumentAgentManifestOptions(this.doc),
     )
   }
 
@@ -142,8 +141,10 @@ export class BlockCraftEditorAgent {
   }
 
   /**
-   * Projects an Agent result into the live document as one reviewable Revision
-   * Diff. It does not enable the document's global revision tracking mode.
+   * Applies an Agent result immediately. Revision-capable operations are
+   * projected into one review group; operations outside Revision v1 still use
+   * their normal model/Yjs path and therefore have no Diff styling. This does
+   * not enable the document's global revision tracking mode.
    */
   stageRevisionDiff(
     context: DocumentAgentContext,

@@ -3,7 +3,7 @@ import {
   DEFAULT_INLINE_IMAGE_WIDTH,
   DEFAULT_INLINE_IMAGE_WRAP_GAP,
   InlineImageWrapSide,
-} from '../image-embed'
+} from '../../../../embeds/image'
 import {EmbedBlot, ScrollBlot} from '../blot'
 import {
   buildInlineFragmentPlan,

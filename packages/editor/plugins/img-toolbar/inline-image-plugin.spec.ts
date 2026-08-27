@@ -4,12 +4,12 @@ import {Subject} from 'rxjs';
 import {
   BlockNodeType,
   DOC_FILE_SERVICE_TOKEN,
-  inlineImageEmbedConverter,
   ORIGIN_NO_RECORD,
 } from '../../framework';
 import {
+  inlineImageEmbedConverter,
   INLINE_IMAGE_INTRINSIC_SIZE_EVENT,
-} from '../../framework/block-std/inline/image-embed-events';
+} from '../../embeds';
 import {ImgToolbarPlugin} from './index';
 import {InlineImageToolbar} from './widgets/inline-image.toolbar';
 

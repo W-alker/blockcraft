@@ -6,6 +6,8 @@ import { TableRowBlockComponent } from "./table-row.block";
 import { TableCellBlockComponent } from "./table-cell.block";
 import { ParagraphBlockSchema } from "../paragraph-block";
 
+export * from './agent'
+
 export interface TableBlockModel extends NoEditableBlockNative {
   flavour: 'table',
   props: {

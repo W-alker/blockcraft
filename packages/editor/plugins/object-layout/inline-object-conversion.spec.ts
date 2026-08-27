@@ -1,9 +1,11 @@
 import {
   ShapeBlockSchema,
   WordArtBlockSchema,
+} from '../../blocks'
+import {
   readInlineShapeDelta,
   readInlineWordArtDelta,
-} from '../../blocks'
+} from '../../embeds'
 import {BlockNodeType, type IBlockSnapshot} from '../../framework'
 import {
   inlineObjectSnapshotToBlockSnapshots,

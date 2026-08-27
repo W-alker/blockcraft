@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-08-27 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-08-28 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -46,6 +46,8 @@ A block-based rich text editor built on **Angular (standalone components)** + **
 | **Event** | Three-tier event dispatcher (block→flavour→global) | `UIEventDispatcher` in `framework/block-std/event/` |
 | **Chain** | Fluent builder for sequencing mutations | `DocChain` in `framework/chain/` |
 | **Schema** | Block registration: flavour, component, createSnapshot | `SchemaManager` in `framework/block-std/schema/` |
+| **Block Agent Contract** | Optional Block-owned AI semantics plus explicit create/write grants | `blocks/<block>/agent/` + `defineBlockAgentCapability()` |
+| **Inline Embed Agent Contract** | Optional Embed-owned AI semantics plus an explicit insert grant | `embeds/<embed-key>/agent/` + `defineInlineEmbedAgentCapability()` |
 | **Bundled Capabilities** | Fresh full-editor schemas, embeds, plugins and insert-material projection for each Doc/surface | `createBundledEditorCapabilities()` in `editor/bundled-capabilities.ts` |
 | **Adapter** | HTML/Markdown ↔ BlockSnapshot conversion | `adapters/html-adapter/`, `adapters/markdown-adapter/` |
 
@@ -80,6 +82,7 @@ packages/editor/
 ├── framework/              # Core engine
 │   ├── doc/                # BlockCraftDoc, BlockModelGraph, DocCRUD, DocVM, DocUndoManager
 │   ├── block-std/          # BaseBlockComponent, EditableBlockComponent
+│   │   ├── agent/          #   BlockAgentCapabilityDefinition + declaration helper
 │   │   ├── block/          #   component base classes
 │   │   ├── event/          #   UIEventDispatcher, @EventListen, @BindHotKey
 │   │   ├── inline/         #   InlineRuntime, Blot tree, EmbedConverter
@@ -89,7 +92,8 @@ packages/editor/
 │   ├── plugin/             # DocPlugin base class
 │   ├── chain/              # DocChain fluent builder
 │   └── services/           # DI tokens (file, message, blockCreator, etc.)
-├── blocks/                 # All block implementations (one dir per block)
+├── blocks/                 # All block implementations; optional per-Block agent/ contract
+├── embeds/                 # Canonical Inline Embed converters; optional per-Embed agent/ contract
 ├── plugins/                # All plugin implementations (one dir per plugin)
 ├── components/             # Reusable UI components (toolbar, pickers, optional revision review UI)
 ├── snapshot-viewer/        # Standalone display-only snapshot renderer
@@ -109,7 +113,9 @@ packages/editor/
 | Configure / use existing plugins | `blockcraft-plugins-ref.md` | L1 |
 | Create a new plugin | `blockcraft-plugin.md` | L1 |
 | Create a new block | `blockcraft-block.md` | L1 |
+| Make a custom/external Block understandable or writable by a document Agent | `blockcraft-block.md` + `blockcraft-app.md` | L1 |
 | Create an inline embed (mention, latex, …) | `blockcraft-embed.md` | L1 |
+| Make a custom/external Inline Embed understandable or generatable by a document Agent | `blockcraft-embed.md` + `blockcraft-app.md` | L1 |
 | Add HTML/Markdown import/export for a block | `blockcraft-adapter.md` | L1 |
 | Create/modify toolbars or overlay UI | `blockcraft-toolbar.md` | L1 |
 | Customize themes or block styles | `blockcraft-theme.md` | L1 |
@@ -926,6 +932,17 @@ Use this path when the source arrives as Markdown chunks or full-text rewrites r
 
 ### Default Inline Embeds
 
+Built-in Inline Embed source now has one ownership boundary under
+`packages/editor/embeds/<embed-key>/`, aggregated through
+`packages/editor/embeds/index.ts` and re-exported from the public
+`@ccc/blockcraft` root. The former scattered `*-embed.ts` source modules under
+`framework/block-std/inline/` and individual Block directories are removed;
+consumers must not deep-import those old paths.
+
+An Embed key names the canonical primitive value plus semantic-attributes data
+contract. `DocConfig.embeds` may override a same-key renderer, but that
+converter must preserve the contract; a new data shape needs a new key.
+
 Document-library icon deltas are available without explicit registration:
 
 ```typescript
@@ -969,6 +986,22 @@ const image = createInlineImageDelta(
 can override the renderer by registering its own same-key converter. Mixed
 HTML/Markdown images round-trip as inline embeds; standalone Markdown images
 and `<figure><img></figure>` retain image-block semantics.
+
+An optional `embeds/<embed-key>/agent/index.ts` declaration is a separate
+document-Agent boundary. Converter registration alone keeps an Embed
+renderable and exposes existing raw Delta in context, but does not let the
+Agent generate it. For external Embeds, the host must explicitly register a
+same-key `InlineEmbedAgentCapabilityDefinition`; its optional `insert`
+value/attributes schemas are the write grant. Omitting `insert` is
+understanding-only. Built-in `mention`, `shape`, and `word-art` use that mode,
+while the built-in `image`, `icon`, `date`, and `latex` declarations allow
+validated insertion.
+
+Every Embed consumes one model offset. Agent `retain + attributes` can change
+only canonical general text formatting, not Embed semantics; semantic changes
+use delete-one plus a separately validated insert. Generic range deletion can
+still remove an undeclared or understanding-only Embed. See
+`blockcraft-embed.md` for the external package/host registration template.
 
 The optional fourth argument enables square text wrapping for the existing
 one-length inline Embed. `side` is `'auto' | 'left' | 'right'`, `x` is the

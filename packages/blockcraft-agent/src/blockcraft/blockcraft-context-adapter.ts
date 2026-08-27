@@ -6,6 +6,7 @@ import type {
 } from '../core/agent.types'
 import {BLOCKCRAFT_BUILTIN_AGENT_EXTENSION} from '../core/builtin-block-capabilities'
 import {DocumentAgentExtensionRegistry} from '../core/host-extension'
+import {captureDocumentAgentManifestOptions} from './document-agent-capability-scope'
 import {fingerprintAgentBlocks} from './document-agent-revision'
 
 const DEFAULT_AGENT_EXTENSIONS = new DocumentAgentExtensionRegistry([
@@ -125,10 +126,10 @@ export function captureBlockCraftAgentSchemaCapabilities(
   doc: BlockCraftDoc,
   extensions: DocumentAgentExtensionRegistry = DEFAULT_AGENT_EXTENSIONS,
 ): readonly DocumentAgentSchemaCapability[] {
-  const registeredBlockFlavours = doc.schemas.getSchemaList().map(schema => String(schema.flavour))
+  const manifestOptions = captureDocumentAgentManifestOptions(doc)
   return doc.schemas.getSchemaList().map(schema => {
     const flavour = String(schema.flavour)
-    const capability = extensions.getBlockCapability(flavour, {registeredBlockFlavours})
+    const capability = extensions.getBlockCapability(flavour, manifestOptions)
     const writableProperties = capability?.writableProps?.['properties']
     return {
       flavour,

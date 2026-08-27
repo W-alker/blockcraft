@@ -6,6 +6,8 @@ import {
 } from "../../framework/block-std/schema/block-schema";
 import {BlockQuoteBlockComponent} from "./blockquote.block";
 
+export * from './agent'
+
 export interface BlockquoteBlockModel extends EditableBlockNative {
   flavour: 'blockquote',
   nodeType: BlockNodeType.editable

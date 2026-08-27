@@ -3,6 +3,8 @@ import {BlockNodeType, DeltaInsert} from "../../framework/block-std/types";
 import {EditableBlockNative} from "../../framework";
 import {CaptionBlockComponent} from "./caption.block";
 
+export * from './agent'
+
 export interface CaptionBlockModel extends EditableBlockNative {
   flavour: 'caption'
 }

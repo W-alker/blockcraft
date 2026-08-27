@@ -1,0 +1,39 @@
+import type {
+  BlockAgentCapabilityDefinition,
+  InlineEmbedAgentCapabilityDefinition,
+} from './framework'
+import {BLOCKCRAFT_BUILTIN_BLOCK_AGENT_CAPABILITIES} from './blocks/builtin-agent-capabilities'
+import {INLINE_DATE_AGENT_CAPABILITY} from './embeds/date/agent'
+import {INLINE_ICON_AGENT_CAPABILITY} from './embeds/icon/agent'
+import {INLINE_IMAGE_AGENT_CAPABILITY} from './embeds/image/agent'
+import {INLINE_LATEX_AGENT_CAPABILITY} from './embeds/latex/agent'
+import {INLINE_MENTION_AGENT_CAPABILITY} from './embeds/mention/agent'
+import {INLINE_SHAPE_AGENT_CAPABILITY} from './embeds/shape/agent'
+import {INLINE_WORD_ART_AGENT_CAPABILITY} from './embeds/word-art/agent'
+
+export {
+  INLINE_DATE_AGENT_CAPABILITY,
+  INLINE_ICON_AGENT_CAPABILITY,
+  INLINE_IMAGE_AGENT_CAPABILITY,
+  INLINE_LATEX_AGENT_CAPABILITY,
+  INLINE_MENTION_AGENT_CAPABILITY,
+  INLINE_SHAPE_AGENT_CAPABILITY,
+  INLINE_WORD_ART_AGENT_CAPABILITY,
+}
+
+export const BLOCKCRAFT_BUILTIN_INLINE_AGENT_CAPABILITIES:
+readonly InlineEmbedAgentCapabilityDefinition[] = [
+  INLINE_IMAGE_AGENT_CAPABILITY,
+  INLINE_ICON_AGENT_CAPABILITY,
+  INLINE_SHAPE_AGENT_CAPABILITY,
+  INLINE_WORD_ART_AGENT_CAPABILITY,
+  INLINE_DATE_AGENT_CAPABILITY,
+  INLINE_MENTION_AGENT_CAPABILITY,
+  INLINE_LATEX_AGENT_CAPABILITY,
+]
+
+export const BLOCKCRAFT_BUILTIN_AGENT_CAPABILITIES:
+readonly (BlockAgentCapabilityDefinition | InlineEmbedAgentCapabilityDefinition)[] = [
+  ...BLOCKCRAFT_BUILTIN_BLOCK_AGENT_CAPABILITIES,
+  ...BLOCKCRAFT_BUILTIN_INLINE_AGENT_CAPABILITIES,
+]

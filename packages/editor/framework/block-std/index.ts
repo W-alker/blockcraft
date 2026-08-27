@@ -1,4 +1,5 @@
 export * from './block'
+export * from './agent'
 export * from './event'
 export * from './reactive'
 export * from './schema'

@@ -8,6 +8,8 @@ import {MermaidTextareaBlockComponent} from "./mermaid-textarea.block";
 import {MermaidBlockComponent} from "./mermaid.block";
 import {MermaidViewMode} from "./types";
 
+export * from './agent'
+
 export interface MermaidBlockModel extends NoEditableBlockNative {
   flavour: 'mermaid',
   nodeType: BlockNodeType.block,

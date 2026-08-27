@@ -20,7 +20,7 @@ import {
   isInlineDateFormat,
   parseInlineDateValue,
   toInlineDateValue,
-} from '../../../framework'
+} from '../../../embeds'
 
 export interface InlineDateEditResult {
   value: string

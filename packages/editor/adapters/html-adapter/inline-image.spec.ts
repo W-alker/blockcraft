@@ -10,7 +10,7 @@ import {
   createInlineWordArtDelta,
   readInlineShapeDelta,
   readInlineWordArtDelta,
-} from '../../blocks';
+} from '../../embeds';
 
 class InlineImageTestFileService extends DocFileService {
   uploadImg(): Promise<string> { return Promise.resolve(''); }

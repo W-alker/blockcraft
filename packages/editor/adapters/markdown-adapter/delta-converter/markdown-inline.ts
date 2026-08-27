@@ -1,6 +1,6 @@
 import {MarkdownASTToDeltaMatcher} from "../delta-converter";
 import {isUrl} from "../../../global";
-import {createInlineImageDelta} from '../../../framework';
+import {createInlineImageDelta} from '../../../embeds';
 
 export const markdownTextToDeltaMatcher: MarkdownASTToDeltaMatcher = {
   name: 'text',

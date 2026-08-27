@@ -1,7 +1,7 @@
 import {
   createInlineImageDelta,
   withDefaultEmbedConverters,
-} from '../image-embed'
+} from '../../../../embeds'
 import type {EmbedConverter} from '../index'
 import {InlineRuntime} from './inline-runtime'
 import {INLINE_PAGINATION_GAP_ATTRIBUTE} from './inline-pagination-projection'
@@ -17,7 +17,7 @@ import {
 import {
   createInlineShapeDelta,
   createInlineShapeEmbedConverter,
-} from '../../../../blocks/shape-block/shape-embed'
+} from '../../../../embeds/shape'
 
 const TEST_IMAGE_URL =
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=='

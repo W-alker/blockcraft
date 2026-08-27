@@ -1,17 +1,19 @@
 import {
-  INLINE_SHAPE_EMBED_KEY,
-  INLINE_WORD_ART_EMBED_KEY,
   ShapeBlockSchema,
   WordArtBlockSchema,
-  createInlineShapeDelta,
-  createInlineWordArtDelta,
   normalizeShapeSnapshotProps,
   isShapeKind,
-  readInlineShapeDelta,
-  readInlineWordArtDelta,
   type InlineObjectKind,
   type InlineObjectWrapOptions,
 } from '../../blocks'
+import {
+  INLINE_SHAPE_EMBED_KEY,
+  INLINE_WORD_ART_EMBED_KEY,
+  createInlineShapeDelta,
+  createInlineWordArtDelta,
+  readInlineShapeDelta,
+  readInlineWordArtDelta,
+} from '../../embeds'
 import {ParagraphBlockSchema} from '../../blocks/paragraph-block'
 import {
   BlockNodeType,

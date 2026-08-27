@@ -5,6 +5,8 @@ import {
 } from "../../framework";
 import {TodoBlockComponent} from "./todo.block";
 
+export * from './agent'
+
 export interface TodoBlockModel extends EditableBlockNative {
   flavour: 'todo'
   props: {

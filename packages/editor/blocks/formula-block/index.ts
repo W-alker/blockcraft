@@ -2,6 +2,8 @@ import {generateId, NoEditableBlockNative} from "../../framework";
 import {BlockNodeType, IBlockSchemaOptions} from "../../framework";
 import {FormulaBlockComponent} from "./formula.block";
 
+export * from './agent'
+
 export interface FormulaBlockModel extends NoEditableBlockNative {
   flavour: 'formula',
   nodeType: BlockNodeType.void,

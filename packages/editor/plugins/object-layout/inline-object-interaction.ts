@@ -3,7 +3,6 @@ import {NgZone} from '@angular/core'
 import {fromEvent, Subject, Subscription, takeUntil} from 'rxjs'
 import type {InlineObjectKind} from '../../blocks'
 import {
-  DEFAULT_INLINE_IMAGE_WRAP_GAP,
   EditableBlockComponent,
   getPositionWithOffset,
   measureObjectPlacement,
@@ -11,6 +10,9 @@ import {
   type DeltaInsert,
   type IInlineNodeAttrs,
 } from '../../framework'
+import {
+  DEFAULT_INLINE_IMAGE_WRAP_GAP,
+} from '../../embeds'
 import {
   disableInlineImageWrap,
   enableInlineImageWrap,

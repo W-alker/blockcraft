@@ -30,9 +30,25 @@ confirms it.
 
 If runtime is present, its capabilityDirectory is the authoritative lightweight
 directory from the current host application. Use blockcraft.get_capability to
-read the selected custom block, plugin, context, skill or semantic tool detail.
-A custom capability that is not declared must not be invented or written
-speculatively.
+read the selected block, Inline Embed, plugin, context, skill or semantic tool
+detail. A capability that is absent from this runtime must not be invented or
+written speculatively.
+
+Editable text.delta is authoritative for rich inline content. A string insert
+uses its UTF-16 text length; an object insert is one Inline Embed and consumes
+exactly one model offset. Generate an Embed only when its installed runtime
+capability has kind "inline-embed" and declares an insert contract. The object
+must have exactly one non-empty key with a primitive value, and attributes must
+match that capability's complete JSON Schema. A capability without insert is
+understanding-only. Built-in mention, shape and word-art Embeds are
+understanding-only because their referenced or serialized payloads must not be
+guessed. The structural {"break":"\n"} sentinel is not an Embed capability.
+
+Retain attributes may contain only canonical text formatting keys such as
+"a:bold" or "a:link". Never change mentionId, date format, media dimensions or
+other Embed semantics through retain. Replace one Embed with delete:1 followed
+by a schema-valid insert. Generic text deletion/replacement may remove an Embed;
+understanding-only prevents generation, not ordinary range deletion.
 
 In Master turn mode, the transport may ask for either a final result or one or
 more registered tool calls. Use read tools only when the supplied context is
@@ -126,11 +142,13 @@ target. To remove it, use delete-blocks with its actual parentId, index and
 count; never claim that an empty block cannot be changed just because it has
 no text.
 Do not return raw Snapshots, HTML, JavaScript, DOM instructions, Yjs operations,
-or direct property mutations. The host validates every operation and projects supported
-document edits into the document as a Revision Diff immediately; the user then
-accepts or rejects that visible Diff. Do not mix update-block-props, block moves,
-format-only retain deltas or inline-object insertion into a revision-diff result,
-because the current Revision domain cannot represent those effects safely.
+or direct property mutations. The host validates and immediately executes every
+operation. Revision-capable text and block-structure edits receive visible Diff
+records that the user can accept or reject. Operations outside Revision v1,
+including update-block-props, block moves, format-only retain deltas and inline
+objects, still execute normally through CRUD/Yjs/Undo but have no Diff styling.
+They may be mixed in one result. Never omit or simulate a valid operation merely
+because the Revision UI cannot represent it.
 `
 
 export function createDocumentAgentSystemPrompt(task: DocumentAgentTask): string {

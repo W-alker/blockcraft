@@ -5,11 +5,11 @@ import { DocVM } from "./vm";
 import {
   IBlockSnapshot,
   EmbedConverter,
-  withDefaultEmbedConverters,
   UIEventDispatcher,
   EditableBlockComponent,
   YBlock
 } from "../block-std";
+import {withDefaultEmbedConverters} from '../../embeds/defaults'
 import {
   ClipboardManager,
   InputTransformer,

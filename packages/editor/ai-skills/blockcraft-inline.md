@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying the inline editing system.
 >
-> Last updated: 2026-08-26
+> Last updated: 2026-08-28
 
 ## Architecture Overview
 
@@ -19,6 +19,10 @@ Y.Text (Yjs, source of truth)
 | File | Purpose |
 |------|---------|
 | `framework/block-std/inline/index.ts` | `InlineManager` (static utils) + `EmbedConverter` type |
+| `embeds/index.ts` | Central public barrel for built-in Embed converters, keys, helpers, and Agent declarations |
+| `embeds/<embed-key>/index.ts` | One Embed's canonical converter/value contract; the old scattered `*-embed.ts` files are removed |
+| `embeds/<embed-key>/agent/index.ts` | Optional AI semantic contract and explicit insert grant for that Embed key |
+| `framework/block-std/agent/index.ts` | Runtime-independent Block and Inline Embed Agent capability types/helpers |
 | `framework/block-std/inline/runtime/` | `InlineRuntime` — per-block blot coordinator |
 | `framework/block-std/inline/runtime/inline-float-layout.ts` | Wrapped-image geometry, controller and single-side fallback |
 | `framework/block-std/inline/runtime/inline-fragment-layout.ts` | Range measurement, grapheme-safe planner and reversible dual-side projection |
@@ -122,6 +126,12 @@ class InlineRuntime {
 { delete: 2 }                          // Delete 2 characters
 ```
 
+An Embed insert object has exactly one non-empty key and primitive value;
+optional attributes are also primitive. Its Blot/model length is always one.
+The key names a canonical value/attributes contract, so replacing a converter
+under the same key may change rendering but must not change the persisted data
+shape.
+
 ## InlinePositionMapper
 
 Converts between character offsets (model space) and DOM nodes (DOM space):
@@ -146,6 +156,38 @@ The mapper walks the blot tree, accumulating lengths, to find the target positio
 | `applyDelta(ops)` | Incremental edits | O(delta) — patches existing DOM |
 
 After every `applyDelta`, the system performs a **consistency check**: it compares the blot tree against `yText.toDelta()`. If there's a mismatch, it falls back to full `render()`.
+
+## Inline Embed Agent Boundary
+
+The Inline runtime and document Agent have separate registration boundaries:
+
+- `DocConfig.embeds` registers a converter and makes existing Delta renderable.
+- `InlineEmbedAgentCapabilityDefinition` adds optional semantics for one
+  `embedKey`.
+- its optional `insert` member is the explicit Agent generation grant, with
+  complete JSON Schemas for the primitive value and attributes object.
+
+The runtime capability directory includes an Inline Embed declaration only
+when the host has also installed a converter with that key. An external Embed
+that needs AI support should own an optional
+`embeds/<embed-key>/agent/index.ts`, export its declaration, and require the
+host to compose it into a `DocumentAgentHostExtension`. Without that
+declaration, the Embed still renders and its raw Delta remains visible in Agent
+document context, but the Agent cannot generate it. A declaration without
+`insert` is understanding-only; built-in `mention`, `shape`, and `word-art`
+use this mode by default.
+
+Agent-authored `apply-text-delta` validates every object insert against both
+the installed key and its capability schemas. `retain + attributes` accepts
+only canonical general text formatting, never Embed-semantic attributes. To
+change Embed semantics, delete its exact one-offset range and insert a newly
+validated Embed. Generic range deletion may still remove an undeclared or
+understanding-only Embed; the absence of an insert grant does not make content
+undeletable.
+
+This boundary does not add an Agent dependency to `InlineRuntime`,
+`EmbedBlot`, or a converter. The declarations are data-only editor exports;
+`blockcraft-agent` consumes them at the host boundary.
 
 ## Embed Lifecycle and Default Inline Images
 

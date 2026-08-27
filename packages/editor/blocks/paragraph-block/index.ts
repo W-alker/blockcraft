@@ -6,6 +6,8 @@ import {
 } from "../../framework/block-std/schema/block-schema";
 import {ParagraphBlockComponent} from "./paragraph.block";
 
+export * from './agent'
+
 export interface ParagraphBlockModel extends EditableBlockNative {
   flavour: 'paragraph',
   nodeType: BlockNodeType.editable

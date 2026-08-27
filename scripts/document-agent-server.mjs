@@ -68,7 +68,7 @@ const resultSchema = {
               params: {type: 'string'},
               clientRef: {type: ['string', 'null'], pattern: '^[A-Za-z][A-Za-z0-9._-]{0,63}$'},
             },
-            required: ['kind', 'parentId', 'index', 'flavour', 'params'],
+            required: ['kind', 'parentId', 'index', 'flavour', 'params', 'clientRef'],
           },
           {
             type: 'object',
@@ -80,7 +80,7 @@ const resultSchema = {
               params: {type: 'string'},
               clientRef: {type: ['string', 'null'], pattern: '^[A-Za-z][A-Za-z0-9._-]{0,63}$'},
             },
-            required: ['kind', 'blockId', 'flavour', 'params'],
+            required: ['kind', 'blockId', 'flavour', 'params', 'clientRef'],
           },
           {
             type: 'object',
@@ -170,6 +170,37 @@ const subAgentSchema = {
   required: ['specialist', 'summary', 'findings', 'recommendations', 'draft', 'operations'],
 }
 
+assertStrictOutputSchema(resultSchema, 'resultSchema')
+assertStrictOutputSchema(turnSchema, 'turnSchema')
+assertStrictOutputSchema(subAgentSchema, 'subAgentSchema')
+
+function assertStrictOutputSchema(schema, path, visited = new Set()) {
+  if (!schema || typeof schema !== 'object' || visited.has(schema)) return
+  visited.add(schema)
+  if (schema.type === 'object' && schema.additionalProperties === false) {
+    const propertyNames = Object.keys(schema.properties ?? {})
+    const required = new Set(schema.required ?? [])
+    const missing = propertyNames.filter(name => !required.has(name))
+    if (missing.length) {
+      throw new Error(`${path} strict output schema is missing required keys: ${missing.join(', ')}`)
+    }
+  }
+  for (const [key, value] of Object.entries(schema)) {
+    if (key === 'properties') {
+      for (const [name, propertySchema] of Object.entries(value ?? {})) {
+        assertStrictOutputSchema(propertySchema, `${path}.properties.${name}`, visited)
+      }
+      continue
+    }
+    if (Array.isArray(value)) {
+      value.forEach((item, index) =>
+        assertStrictOutputSchema(item, `${path}.${key}[${index}]`, visited))
+    } else {
+      assertStrictOutputSchema(value, `${path}.${key}`, visited)
+    }
+  }
+}
+
 function sendJson(response, status, payload) {
   response.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
@@ -218,7 +249,7 @@ function extractOutputText(payload) {
 
 function normalizeAgentResult(result) {
   if (!result || !Array.isArray(result.operations)) return result
-  return {
+  const normalized = {
     ...result,
     operations: result.operations.map(operation => {
       if (!operation || typeof operation !== 'object') return operation
@@ -241,6 +272,8 @@ function normalizeAgentResult(result) {
       return operation
     }),
   }
+  if (normalized.draft === null) delete normalized.draft
+  return normalized
 }
 
 function normalizeAgentTurn(turn) {
@@ -406,6 +439,8 @@ function createAgentPayload(request, session, orchestration) {
     editorAgentContract: [
       'Validated operations include replace-text, update-block-props, create-blocks, replace-block, apply-text-delta, delete-blocks, and move-blocks. Raw Snapshot insertion is not an Agent operation.',
       'Operation coordinates are sequential. create-blocks/replace-block may bind clientRef. Use $ref:<clientRef> only as create-blocks.parentId for nested content or move-blocks.targetId for existing content; do not replace, delete, or move a newly created block.',
+      'Editable text.delta is authoritative. An Inline Embed object insert consumes one offset and must contain exactly one non-empty key with a primitive value. Generate it only when blockcraft.get_capability exposes the installed same-key inline-embed capability with an insert schema.',
+      'Retain attributes are only for canonical text formatting. Change Embed semantics by delete:1 plus a schema-valid replacement insert; understanding-only prevents generation but does not make ordinary range deletion illegal.',
       'An empty paragraph or list item is still a valid structural target. Use delete-blocks with its actual parentId, index, and count.',
       'Never claim that an empty block cannot be safely changed merely because it has no text.',
       'For Mermaid preview-only mode use update-block-props on the existing mermaid block with props {"mode":"graph"}; never manipulate DOM or data-mode.',
@@ -561,17 +596,45 @@ function runProcess(command, args, input, timeoutMs = 120_000) {
     })
     child.on('close', code => {
       clearTimeout(timeout)
+      const stdoutText = Buffer.concat(stdout).toString('utf8')
+      const stderrText = Buffer.concat(stderr).toString('utf8')
       if (code !== 0) {
-        const detail = Buffer.concat(stderr).toString('utf8').trim() ||
-          Buffer.concat(stdout).toString('utf8').trim()
-        reject(new Error(detail || `本地 Codex 退出异常（${code ?? 'unknown'}）`))
+        reject(new Error(extractCodexProcessError(stderrText, stdoutText, code)))
         return
       }
-      resolve({stdout: Buffer.concat(stdout).toString('utf8'), stderr: Buffer.concat(stderr).toString('utf8')})
+      resolve({stdout: stdoutText, stderr: stderrText})
     })
 
     child.stdin.end(input)
   })
+}
+
+function extractCodexProcessError(stderr, stdout, exitCode) {
+  const combined = stripAnsi(`${stderr}\n${stdout}`).trim()
+  const lastErrorIndex = combined.lastIndexOf('ERROR:')
+  const diagnostic = lastErrorIndex >= 0 ? combined.slice(lastErrorIndex) : combined
+  const encodedMessages = [...diagnostic.matchAll(/"message"\s*:\s*"((?:\\.|[^"\\])*)"/g)]
+  if (encodedMessages.length) {
+    const encoded = encodedMessages.at(-1)?.[1] ?? ''
+    try {
+      return `本地 Codex 请求失败：${JSON.parse(`"${encoded}"`)}`
+    } catch {
+      return `本地 Codex 请求失败：${encoded}`
+    }
+  }
+
+  const errorLines = diagnostic
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(line => /^(?:error|fatal)(?::|\b)/i.test(line))
+  if (errorLines.length) {
+    return `本地 Codex 请求失败：${errorLines.at(-1)}`
+  }
+  return `本地 Codex 退出异常（${exitCode ?? 'unknown'}）。请查看本地 Agent 服务日志。`
+}
+
+function stripAnsi(value) {
+  return value.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
 }
 
 async function runLocalCodex(request, session, orchestration, delegation) {

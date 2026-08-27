@@ -68,10 +68,10 @@ export class TemplateUseSurfaceComponent implements AfterViewInit, OnDestroy {
   get bgStyle(): string | null { return this.background ? `url("${this.background}")` : null }
 
   ngAfterViewInit(): void {
-    // 建 doc 的公共流程收进 createDecoDoc；本页差异项：渲染字典（真实值）+ 渲染 embeds（带 mock data 闭包）。readonly:false 在 createDecoDoc 内固定
+    // 建 doc 的公共流程收进 createDecoDoc；本页只为模板域自有 Embed 注入真实数据字典。
     const runtime = createDecoDoc({
       additionalSchemas: TEMPLATE_RENDER_SCHEMAS,     // 共享 bundled 块 + 装饰「渲染」组件
-      additionalEmbeds: TEMPLATE_RENDER_EMBEDS(this.data, () => this.doc),
+      additionalEmbeds: TEMPLATE_RENDER_EMBEDS(this.data),
       injector: this.injector,
       hostEl: this.host.nativeElement,
       currentUserId: TEMPLATE_CONSUMER_USER_ID,

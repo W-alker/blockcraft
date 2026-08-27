@@ -22,6 +22,28 @@ export interface DocumentAgentToolDefinition {
   parameters: Record<string, unknown>
 }
 
+const primitiveJsonSchema = {
+  anyOf: [
+    {type: 'string'},
+    {type: 'number'},
+    {type: 'boolean'},
+    {type: 'null'},
+  ],
+}
+
+const inlineEmbedInsertSchema = {
+  type: 'object',
+  minProperties: 1,
+  maxProperties: 1,
+  additionalProperties: primitiveJsonSchema,
+}
+
+const deltaAttributesSchema = {
+  type: 'object',
+  maxProperties: 32,
+  additionalProperties: primitiveJsonSchema,
+}
+
 const operationSchema = {
   type: 'array',
   description: '经过 BlockCraft 规则约束的结构化文档操作。',
@@ -57,7 +79,9 @@ const operationSchema = {
           items: {
             oneOf: [
               textDeltaVariant('retain', {type: 'integer', minimum: 1}, true),
-              textDeltaVariant('insert', {anyOf: [{type: 'string'}, {type: 'object'}]}, true),
+              textDeltaVariant('insert', {
+                anyOf: [{type: 'string'}, inlineEmbedInsertSchema],
+              }, true),
               textDeltaVariant('delete', {type: 'integer', minimum: 1}, false),
             ],
           },
@@ -90,7 +114,7 @@ function textDeltaVariant(
     additionalProperties: false,
     properties: {
       [operation]: valueSchema,
-      ...(allowsAttributes ? {attributes: {type: 'object'}} : {}),
+      ...(allowsAttributes ? {attributes: deltaAttributesSchema} : {}),
     },
     required: [operation],
   }
@@ -145,13 +169,13 @@ export const DOCUMENT_AGENT_TOOL_DEFINITIONS: readonly DocumentAgentToolDefiniti
   {
     type: 'function',
     name: 'blockcraft.get_capability_directory',
-    description: '读取当前宿主注册给 Agent 的自定义 Block、Plugin、Context、Skill 和语义工具目录。',
+    description: '读取当前宿主注册给 Agent 的 Block、Inline Embed、Plugin、Context、Skill 和语义工具目录。',
     parameters: {type: 'object', properties: {}, additionalProperties: false},
   },
   {
     type: 'function',
     name: 'blockcraft.get_capability',
-    description: '按能力 ID 读取宿主声明的完整 Agent Capability，包含创建参数和允许动作。',
+    description: '按能力 ID 读取完整 Agent Capability，包含 Block 创建参数、Inline Embed 插入契约和允许动作。',
     parameters: {
       type: 'object',
       properties: {capabilityId: {type: 'string'}},

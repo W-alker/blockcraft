@@ -215,7 +215,7 @@ Expected: 若仍 EXIT 0 最好;若因 app.component / 旧卡片仍 `import` 已�
 
 **Files:**
 - Create: `apps/playground/src/app/template-deco/core/deco.types.ts`
-- Create: `apps/playground/src/app/template-deco/core/define-embed.ts`
+- Create: `apps/playground/src/app/template-deco/embeds/shared/index.ts`
 
 **Interfaces:**
 - Consumes: `DecoCategory`(Task 2);`TemplateData`(Task 2)。
@@ -274,7 +274,7 @@ export function defineDeco<M extends NativeBlockModel>(d: DecoDef<M>): DecoRegis
 }
 ```
 
-- [ ] **Step 2: 写 `core/define-embed.ts`(embed 工厂)**
+- [ ] **Step 2: 写 `embeds/shared/index.ts`(embed 工厂与公共 helper)**
 
 ```ts
 import { Observable, Subscription } from 'rxjs'
@@ -820,31 +820,30 @@ Expected: EXIT 0(或仅余 Task 2 旧引用错误)。
 
 ---
 
-## Task 7: 行内 embed —— date-inline
+## Task 7: 行内 Embed —— 复用 editor 的 date / icon
 
 **Files:**
-- Create: `apps/playground/src/app/template-deco/embeds/date-inline.embed.ts`
+- Modify: `apps/playground/src/app/template-deco/core/registry.ts`
 
 **Interfaces:**
-- Consumes: `defineEmbed`(Task 3)、`DecoCategory`、`TemplateData.doc.date`。
-- Produces: `DateInlineEmbed: EmbedRegistration`(name `template-date-inline`)。
+- Consumes: editor 导出的 `createInlineDateDelta`、`INLINE_DATE_EMBED_KEY`、`INLINE_ICON_EMBED_KEY`。
+- Produces: 物料面板使用的标准 `date` / `icon` Delta；不向 `additionalEmbeds` 重复注册 converter。
 
-- [ ] **Step 1: 写 `embeds/date-inline.embed.ts`**
+- [ ] **Step 1: 在 registry 声明 editor 内置 Embed 物料**
 
 ```ts
-import { defineEmbed } from '../core/define-embed'
-import { DecoCategory } from '../core/deco.category'
-
-// 行内日期：编辑态显占位 {日期}；渲染态订阅 data.doc.date 显真实值。裸 DOM，无 NG5002 限制。
-export const DateInlineEmbed = defineEmbed<string>({
-  name: 'template-date-inline',
-  label: '日期(行内)',
-  icon: '',
-  category: DecoCategory.Basic,
-  fetch: (data, attrs) => data.doc.date((attrs['field'] as string) ?? 'createdAt'),
-  renderDom: (el, value) => { el.textContent = value; el.classList.add('tpl-inline') },
-  editDom: (el) => { el.textContent = '{日期}'; el.classList.add('tpl-inline', 'tpl-edit') },
-})
+const EDITOR_EMBED_MATERIALS = [
+  {
+    name: INLINE_DATE_EMBED_KEY,
+    createDelta: () => createInlineDateDelta(new Date())!,
+  },
+  {
+    name: INLINE_ICON_EMBED_KEY,
+    createDelta: () => ({
+      insert: {[INLINE_ICON_EMBED_KEY]: 'bc_icon bc_shoucang'},
+    }),
+  },
+]
 ```
 
 - [ ] **Step 2: 构建**
@@ -860,7 +859,7 @@ Expected: EXIT 0(或仅余 Task 2 旧引用错误)。
 - Create: `apps/playground/src/app/template-deco/core/registry.ts`
 
 **Interfaces:**
-- Consumes: 五个 `*Deco`、`DateInlineEmbed`、`./flavours`、`TemplateData`、`DecoCategory`。
+- Consumes: 模板域 `*Deco`、`AvatarInlineEmbed`、editor 内置 Embed key/Delta helper、`./flavours`、`TemplateData`。
 - Produces: `DECOS`、`EMBEDS`、`TEMPLATE_EDIT_SCHEMAS`、`TEMPLATE_RENDER_SCHEMAS`、`TEMPLATE_EDIT_EMBEDS()`、`TEMPLATE_RENDER_EMBEDS(data)`、`Material`、`MATERIALS`。
 
 - [ ] **Step 1: 写 `core/registry.ts`**
@@ -869,7 +868,7 @@ Expected: EXIT 0(或仅余 Task 2 旧引用错误)。
 import './flavours'                                   // 顶部 import 触发 declare global 增强
 import { IBlockSchemaOptions, EmbedConverter } from '@ccc/blockcraft'
 import { DecoRegistration } from './deco.types'
-import { EmbedRegistration } from './define-embed'
+import { type EmbedRegistration } from '../embeds'
 import { TemplateData } from '../data/template-data'
 import { DecoCategory } from './deco.category'
 import { WeatherDeco } from '../decos/weather/weather.deco'
@@ -877,11 +876,12 @@ import { AvatarDeco } from '../decos/avatar/avatar.deco'
 import { DateDeco } from '../decos/date/date.deco'
 import { LogoDeco } from '../decos/logo/logo.deco'
 import { BackgroundDeco } from '../decos/background/background.deco'
-import { DateInlineEmbed } from '../embeds/date-inline.embed'
+import { AvatarInlineEmbed } from '../embeds'
 
 /** 唯一清单：加装饰就往这两个数组加一行。 */
 export const DECOS: DecoRegistration[] = [WeatherDeco, AvatarDeco, DateDeco, LogoDeco, BackgroundDeco]
-export const EMBEDS: EmbedRegistration[] = [DateInlineEmbed]
+// 只有模板域自有 Embed 进入 additionalEmbeds；date/icon 由 editor bundled 能力提供。
+export const EMBEDS: EmbedRegistration[] = [AvatarInlineEmbed]
 
 /** block 两套 schema（喂给 surface 的 SchemaManager）。 */
 export const TEMPLATE_EDIT_SCHEMAS: IBlockSchemaOptions[] = DECOS.map(d => d.templateEditSchema)

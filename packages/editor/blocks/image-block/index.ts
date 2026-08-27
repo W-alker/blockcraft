@@ -6,6 +6,8 @@ import {
   IBlockSchemaOptions,
 } from "../../framework";
 import {ImageBlockComponent} from "./image.block";
+
+export * from './agent'
 import {CaptionBlockSchema} from "../caption-block";
 
 export interface ImageBlockCreateInput {

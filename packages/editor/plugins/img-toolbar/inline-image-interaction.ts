@@ -6,12 +6,14 @@ import {
   DeltaOperation,
   generateId,
   IBlockSnapshot,
-  InlineImageData,
-  InlineImageWrapOptions,
-  InlineImageWrapSide,
+} from '../../framework';
+import {
+  type InlineImageData,
+  type InlineImageWrapOptions,
+  type InlineImageWrapSide,
   normalizeInlineImageWrapOptions,
   readInlineImageDelta,
-} from '../../framework';
+} from '../../embeds';
 import {
   InlineFloatGeometry,
   resolveInlineFloatGeometry,

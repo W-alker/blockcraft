@@ -1,6 +1,8 @@
 import {generateId, NoEditableBlockNative, IBlockSchemaOptions, BlockNodeType} from "../../../framework";
 import {JuejinEmbedBlockComponent} from "./juejin-embed.block";
 
+export * from './agent'
+
 export interface JuejinEmbedBlockModel extends NoEditableBlockNative {
   flavour: 'juejin-embed',
   nodeType: BlockNodeType.void,

@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-08-27
+> Last updated: 2026-08-28
 
 ## Block Types
 
@@ -25,14 +25,74 @@
 
 ## File Structure
 
-Each block needs 2 files in its own directory under `blocks/`:
+Each block needs at least 2 files in its own directory under `blocks/`. Add the
+optional `agent/` directory only when a document Agent should understand this
+flavour's business meaning or receive explicit create/write permissions:
 
 ```
 blocks/
 └── my-block/
     ├── index.ts          # Model interface + Schema + global type declarations
-    └── my.block.ts       # Angular component
+    ├── my.block.ts       # Angular component
+    └── agent/            # Optional, declarative Agent contract
+        └── index.ts
 ```
+
+### Agent contract (optional, explicit opt-in)
+
+Schema registration alone never authorizes AI creation or writes. If an
+external Block should participate in `blockcraft-agent`, keep its declarative
+contract beside the Block and export it from the Block package:
+
+```typescript
+// blocks/my-block/agent/index.ts
+import {defineBlockAgentCapability} from '@ccc/blockcraft'
+
+export const MY_BLOCK_AGENT_CAPABILITY = defineBlockAgentCapability({
+  id: 'acme.block.my-block',
+  kind: 'block',
+  flavour: 'my-block',
+  schemaVersion: 1, // must match MyBlockSchema.metadata.version
+  title: 'My Block',
+  description: 'Displays one host-owned resource by URL.',
+  domains: ['document', 'acme'],
+  semanticRoles: ['resource-card'],
+  createParameters: {
+    type: 'array',
+    minItems: 1,
+    maxItems: 1,
+    prefixItems: [{type: 'string', minLength: 1}],
+    items: false,
+  },
+  writableProps: {
+    type: 'object',
+    properties: {caption: {type: ['string', 'null']}},
+    additionalProperties: false,
+  },
+  examples: [{flavour: 'my-block', params: ['https://example.com/item']}],
+})
+```
+
+```typescript
+// blocks/my-block/index.ts
+export * from './agent'
+```
+
+The host must then register that exported capability in a
+`DocumentAgentHostExtension`; see `blockcraft-app.md`. The fields are separate
+grants:
+
+- omit `createParameters` to make the Block non-creatable by the Agent;
+- omit `writableProps` to prohibit Agent property updates;
+- list structured values such as `position`, `fill`, or an application-owned
+  configuration record in `atomicProps` when they must be replaced as one Yjs
+  value;
+- keep `flavour`, the existing Schema `nodeType`, create parameters and
+  `schemaVersion` aligned with the actual Schema. Do not invent another Block
+  discriminator for the Agent;
+- do not provide or register an `agent/` contract when the Block needs no
+  AI-specific understanding. It remains visible as generic document data, but
+  the Agent must not guess how to create it or which props are writable.
 
 ---
 

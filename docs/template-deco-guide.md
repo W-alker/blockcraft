@@ -41,7 +41,6 @@ apps/playground/src/app/template-deco/
 ├── core/                         ★ L1 注册层（声明式 plumbing，别套 DDD）
 │   ├── deco.category.ts            装饰分类枚举：整页 / 卡片 / 随文
 │   ├── deco.types.ts               block 工厂 defineDeco：一份定义 → 两套 schema
-│   ├── define-embed.ts             inline 工厂 defineEmbed：一份定义 → 两个 converter
 │   └── registry.ts                 ★清单中枢：聚合所有装饰，产出两套字典 + 物料面板数据
 │
 ├── data/                         数据接缝 + 模板存储
@@ -67,11 +66,15 @@ apps/playground/src/app/template-deco/
 │       └── colorbox.render.component.ts   使用页：只读样式
 │
 ├── embeds/                       ★ L2 组件层（inline embed，随正文流）
-│   ├── inline-embed-kit.ts         公共：浮层、尺寸控件、写回 Y.Text
-│   ├── avatar-inline.embed.ts      随文人员（头像 + 姓名）
-│   ├── date-inline.embed.ts        随文日期
-│   ├── icon-inline.embed.ts        随文图标（点击弹浮层调图标 + 尺寸）
-│   └── image-inline.embed.ts       随文图片
+│   ├── index.ts                    统一导出所有本地 inline embed
+│   ├── shared/
+│   │   └── index.ts                inline 工厂 + 公共浮层、尺寸控件、Y.Text 写回
+│   ├── avatar/
+│   │   └── index.ts                随文人员（头像 + 姓名）
+│   ├── date/
+│   │   └── index.ts                随文日期
+│   └── icon/
+│       └── index.ts                随文图标（点击弹浮层调图标 + 尺寸）
 │
 ├── palette/
 │   └── deco-insert-panel.component.ts   右侧物料面板（block 拖 / embed 点 / 背景设置）
@@ -107,15 +110,15 @@ apps/playground/src/main.ts                  根 provider：{ provide: TEMPLATE_
 
 | | **block 装饰** | **inline embed** |
 |---|---|---|
-| 工厂 | `defineDeco`（`core/deco.types.ts`） | `defineEmbed`（`core/define-embed.ts`） |
+| 工厂 | `defineDeco`（`core/deco.types.ts`） | `defineEmbed`（`embeds/shared/index.ts`） |
 | 位置 | 独占一行 | 嵌句子里随正文流 |
 | 插入 | **拖拽**落点（框架 `dragController`） | **点击**光标处插入（`applyDeltaOperations`） |
 | 产物 | 两套 schema（Angular 组件） | 两个 converter（裸 DOM 函数） |
 | 取数 | 组件 `inject(TEMPLATE_DATA)` | surface 闭包传入 `data` |
 | 数据存哪 | block `props` | inline delta 的 `attributes` |
 | 退订 | `takeUntilDestroyed` 自动 | `onDestroy` 手动 `unsubscribe` |
-| 文件数 | 3（deco + 编辑组件 + 渲染组件） | 1（一个 .embed.ts 含两个画法） |
-| 现有 | 天气、Logo、彩色文本块 | 人员、日期、图标、随文图片 |
+| 文件数 | 3（deco + 编辑组件 + 渲染组件） | 1 个目录（`index.ts` 含两个画法） |
+| 现有 | 天气、Logo、彩色文本块 | 模板域人员；日期、图标、图片复用 editor 内置 Embed |
 | 选用 | **能独立成块就用它** | **必须行内**才用它 |
 
 ### 1.4 两个页面 / 两个 surface
@@ -197,7 +200,7 @@ export function defineDeco<M>(d: DecoDef<M>): DecoRegistration<M> {
 
 **`defineEmbed`（inline）核心逻辑**——产出「编辑」「渲染」两个 converter：
 ```ts
-// core/define-embed.ts
+// embeds/shared/index.ts
 return {
   templateEdit:   ()     => [name, { toView: 画占位, toDelta }],                         // 不取数
   templateRender: (data) => [name, { toView: 订阅 data 画真实值, toDelta, onDestroy: 退订 }],  // 闭包拿 data
@@ -267,7 +270,7 @@ export class WeatherTemplateRenderComponent extends BaseBlockComponent<WeatherMo
 1. `docs/template-deco-design.md` §0–§2 —— 先把「机制①」吃透（20 行）。
 2. `core/deco.category.ts` —— 最简单,看三个分类。
 3. `data/template-data.ts` —— 看数据接缝（token + Mock）。
-4. `core/deco.types.ts` + `core/define-embed.ts` —— 两个工厂,看「一份定义产两套」。
+4. `core/deco.types.ts` + `embeds/shared/index.ts` —— 两个工厂,看「一份定义产两套」。
 5. `decos/weather/`（三个文件）—— 一个完整 block 装饰的标准结构。
 6. `core/registry.ts` —— 看所有装饰怎么被串成两套字典。
 7. `host/create-deco-doc.ts` —— 看自建 doc 怎么把字典装进编辑器。
@@ -290,10 +293,11 @@ export class WeatherTemplateRenderComponent extends BaseBlockComponent<WeatherMo
 
 ### 3.3 配方 B：加一个行内 embed
 
-1. **建 1 个文件** `embeds/x-inline.embed.ts`：`defineEmbed<V>({ name, label, svgIcon, category, fetch, renderDom, editDom })`。
-2. **在 `core/registry.ts` 的 `EMBEDS` 数组加一行**。
-3. **构建**。
-> embed 不需要 `flavours.ts` 声明（不走 schema）。需要交互（如点击调大小）参考 `embeds/icon-inline.embed.ts` + `inline-embed-kit.ts`。
+1. 先检查 `@ccc/blockcraft` 是否已有相同数据语义的 Embed；已有时直接使用其 key、converter 和 Delta helper，不在宿主重复实现。
+2. 只有模板域确有独立数据语义时，才建目录入口 `embeds/x/index.ts`：`defineEmbed<V>({ name, label, svgIcon, fetch, renderDom, editDom })`。
+3. **在 `embeds/index.ts` 统一导出**，再在 `core/registry.ts` 从 `../embeds` 导入，并在 `EMBEDS` 数组加一行。
+4. **构建**。
+> Embed 不需要 `flavours.ts` 声明（不走 Schema）。当前宿主仅自带 `avatar`；`date` 与 `icon` 由 bundled editor 注册，物料面板只负责生成标准 Delta。
 
 ### 3.4 配方 C：把假数据换成真数据（移植 cses）
 

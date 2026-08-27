@@ -1,12 +1,10 @@
 import {
-  RevisionUnsupportedOperationError,
   type BlockCraftDoc,
   type IBlockProps,
   type RevisionActorSnapshot,
 } from '@ccc/blockcraft'
 import type {
   DocumentAgentContext,
-  DocumentAgentOperation,
   DocumentAgentResult,
 } from '../core/agent.types'
 import {BLOCKCRAFT_BUILTIN_AGENT_EXTENSION} from '../core/builtin-block-capabilities'
@@ -69,28 +67,13 @@ export class DocumentAgentOperationApplier {
     options: DocumentAgentRevisionApplyOptions,
   ): DocumentAgentRevisionApplyResult {
     const prepared = this.prepare(context, result)
-    this.validateRevisionDiffCompatibility(result.operations)
-
     const groupId = options.groupId?.trim() || createRevisionGroupId()
     let applied = 0
-    try {
-      this.doc.revisions.runAsRevision(options.actor, () => {
-        applied = this.applyOperations(prepared)
-      }, {groupId})
-    } catch (error) {
-      if (error instanceof RevisionUnsupportedOperationError) {
-        throw new DocumentAgentApplyError('unsupported', error.message)
-      }
-      throw error
-    }
+    this.doc.revisions.runAsRevision(options.actor, () => {
+      applied = this.applyOperations(prepared)
+    }, {groupId})
 
     const revisionIds = this.doc.revisions.listGroup(groupId).map(revision => revision.id)
-    if (applied > 0 && revisionIds.length === 0) {
-      throw new DocumentAgentApplyError(
-        'unsupported',
-        'Agent 修改没有生成可审阅的修订 Diff。',
-      )
-    }
     return {applied, groupId, revisionIds}
   }
 
@@ -141,47 +124,6 @@ export class DocumentAgentOperationApplier {
       }
     })
     return applied
-  }
-
-  private validateRevisionDiffCompatibility(
-    operations: readonly DocumentAgentOperation[],
-  ): void {
-    for (const operation of operations) {
-      if (operation.kind === 'update-block-props') {
-        throw new DocumentAgentApplyError(
-          'unsupported',
-          '当前修订 Diff 尚不能表达已有块的属性或格式变化。请改用文本/块结构修订，或先扩展 Revision 属性 Diff。',
-        )
-      }
-      if (operation.kind === 'move-blocks') {
-        throw new DocumentAgentApplyError(
-          'unsupported',
-          '当前修订 Diff 尚不能表达块移动。请改用可审阅的插入/删除结构修订，或先扩展 Revision 移动 Diff。',
-        )
-      }
-      if (operation.kind !== 'apply-text-delta') continue
-      for (const deltaOperation of operation.delta) {
-        if (!deltaOperation || typeof deltaOperation !== 'object' || Array.isArray(deltaOperation)) continue
-        const delta = deltaOperation as Record<string, unknown>
-        if (
-          typeof delta['retain'] === 'number' &&
-          delta['attributes'] &&
-          typeof delta['attributes'] === 'object' &&
-          Object.keys(delta['attributes'] as object).length
-        ) {
-          throw new DocumentAgentApplyError(
-            'unsupported',
-            '当前修订 Diff 尚不能表达已有文字的格式变化。',
-          )
-        }
-        if ('insert' in delta && typeof delta['insert'] !== 'string') {
-          throw new DocumentAgentApplyError(
-            'unsupported',
-            '当前修订 Diff 尚不能表达新增行内对象。',
-          )
-        }
-      }
-    }
   }
 
   private applyOperation(operation: PreparedDocumentAgentOperation): void {

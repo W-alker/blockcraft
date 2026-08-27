@@ -24,11 +24,11 @@ Agent 操作目前支持文本替换、富文本 Delta、Schema 驱动创建/替
 Capability 的 `createParameters` 校验并由 Schema 生成 ID/默认值。属性更新必须匹配
 对应 Block Capability 的 `writableProps` JSON Schema。
 
-`BlockCraftEditorAgent.stageRevisionDiff()` 会把支持的文本和块结构操作立即投影成
-一个文档内修订组，不改变 `doc.revisions.mode`，也不会让用户后续输入进入修订模式。
-用户直接在现有修订审阅 UI 中接收或拒绝 Diff。当前 Revision v1 不能表达已有块
-属性/格式修改、块移动、仅格式 Delta 和新增行内对象；这几类操作会在写入前
-fail-closed，不会夹带成普通修改。
+`BlockCraftEditorAgent.stageRevisionDiff()` 会立即执行完整的合法操作集：Revision v1
+支持的文本和块结构操作进入同一个文档内修订组，不改变 `doc.revisions.mode`，也不会
+让用户后续输入进入修订模式；已有块属性/格式修改、块移动、仅格式 Delta 和新增行内
+对象等暂不支持 Diff 的操作仍走正常 CRUD/Yjs/Undo 路径直接生效，只是不显示修订样式。
+混合结果允许同时包含两类操作；用户只能在现有修订审阅 UI 中接收或拒绝有 Diff 的部分。
 
 新块优先使用 `create-blocks`：模型只返回 flavour 和 Schema createSnapshot 参数，
 宿主负责调用 Schema、生成 block ID、应用默认值并验证父子关系，避免模型手写 ID
@@ -106,34 +106,68 @@ Playground 的本地服务支持两种模式：
 ## 宿主扩展
 
 任务、会议等宿主模块可以通过 `BlockCraftEditorAgentOptions.extensions`
-向 Agent 声明自定义 Block、Plugin、Context、Skill 和语义工具。Block 能力声明
+向 Agent 声明自定义 Block、Inline Embed、Plugin、Context、Skill 和语义工具。希望 Agent 理解
+或写入的外部 Block 应在自身目录中提供并导出 `agent/index.ts`；不需要 AI 参与的
+Block 不必提供，也不应注册。Inline Embed 同样在 `embeds/<key>/agent/index.ts`
+声明，并且必须同时安装同 key converter；只装 converter 只能渲染现有数据，不会授权
+Agent 生成。Block 能力声明
 使用 `createParameters` / `writableProps` JSON Schema、`semanticRoles`、`atomicProps`
 和 examples 描述生成边界；能力声明
 只描述模型可以理解的语义和参数，不会把宿主服务或组件实例暴露给模型：
 
 ```typescript
+// task-card/agent/index.ts
+import {
+  defineBlockAgentCapability,
+  defineInlineEmbedAgentCapability,
+} from '@ccc/blockcraft'
+import type {DocumentAgentHostExtension} from 'blockcraft-agent'
+
+export const TASK_CARD_AGENT_CAPABILITY = defineBlockAgentCapability({
+  id: 'task.block.task-card',
+  kind: 'block',
+  flavour: 'task-card',
+  schemaVersion: 1,
+  title: '任务卡片',
+  description: '绑定宿主任务并展示状态、负责人和截止时间',
+  domains: ['task'],
+  semanticRoles: ['task', 'action-item'],
+  createParameters: {
+    type: 'array',
+    prefixItems: [{type: 'string', description: '任务 ID'}],
+  },
+  writableProps: {
+    type: 'object',
+    properties: {displayMode: {enum: ['card', 'compact']}},
+  },
+})
+
+// embeds/task-reference/agent/index.ts
+export const TASK_REFERENCE_AGENT_CAPABILITY =
+  defineInlineEmbedAgentCapability({
+    id: 'task.inline-embed.task-reference',
+    kind: 'inline-embed',
+    embedKey: 'task-reference',
+    title: '任务引用',
+    description: '引用一个已解析的宿主任务 ID',
+    semanticRoles: ['task-reference'],
+    insert: {
+      value: {type: 'string', minLength: 1},
+      attributes: {
+        type: 'object',
+        properties: {status: {enum: ['open', 'done']}},
+        additionalProperties: false,
+      },
+    },
+  })
+
 const taskExtension: DocumentAgentHostExtension = {
   id: 'task.agent',
   version: '1',
   description: '任务模块的文档和业务能力',
   capabilities: [
-    {
-      id: 'task.block.task-card',
-      kind: 'block',
-      flavour: 'task-card',
-      title: '任务卡片',
-      description: '绑定宿主任务并展示状态、负责人和截止时间',
-      domains: ['task'],
-      semanticRoles: ['task', 'action-item'],
-      createParameters: {
-        type: 'array',
-        prefixItems: [{type: 'string', description: '任务 ID'}],
-      },
-      writableProps: {
-        type: 'object',
-        properties: {displayMode: {enum: ['card', 'compact']}},
-      },
-    },
+    TASK_CARD_AGENT_CAPABILITY,
+    TASK_REFERENCE_AGENT_CAPABILITY,
     {
       id: 'task.tool.create-items',
       kind: 'tool',
@@ -168,11 +202,20 @@ const agent = new BlockCraftEditorAgent(doc, runner, {
 })
 ```
 
-`BlockCraftEditorAgent` 会过滤当前文档没有注册的自定义 Block flavour，
+上例还要求文档配置中存在
+`embeds: [['task-reference', taskReferenceEmbedConverter]]`。如果只希望 Agent 理解
+这个 Embed 而不生成它，保留 capability 的描述但省略 `insert`；如果完全不需要 AI
+理解，则不写、不注册 `agent/` 即可。
+
+`BlockCraftEditorAgent` 会过滤当前文档没有注册的自定义 Block flavour 和 Inline
+Embed converter，
 并把有效能力目录附加到每次请求的 `runtime`。支持 function calling 的宿主
 还可以使用 `blockcraft.get_capability_directory` 和
 `blockcraft.get_capability` 按需读取能力详情。没有声明 Agent Capability 的
 自定义 Block 仍可通过通用模型上下文读取，但 Agent 不应猜测其创建参数或业务写入行为。
+Inline Embed 对模型 offset 恒为 1；object insert 必须是单 key primitive 值并匹配
+capability 的完整 value/attributes Schema。`retain` 只允许通用文字格式，修改 Embed
+语义必须 `delete: 1` 后插入完整新值。通用文本范围删除仍可删除只理解的 Embed。
 宿主工具通过 `agent.executeHostTool()` 执行；`document-write` 和
 `external-write` 始终先返回确认要求，只有宿主再次传入 `allowWrite: true`
 才会调用对应 handler。后端仍需重新校验当前用户权限，不能把此客户端门禁当成安全边界。

@@ -2,6 +2,8 @@ import {generateId, NoEditableBlockNative} from "../../framework";
 import {BlockNodeType, IBlockSchemaOptions} from "../../framework";
 import {DividerBlockComponent} from "./divider.block";
 
+export * from './agent'
+
 export type DividerLength = 'short' | 'medium' | 'long' | 'full';
 export type DividerThickness = 'thin' | 'regular' | 'thick';
 

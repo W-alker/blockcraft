@@ -1,11 +1,13 @@
 import {ParagraphBlockSchema} from '../../blocks/paragraph-block';
 import {
   BlockNodeType,
-  createInlineImageDelta,
   DeltaInsert,
   IBlockSnapshot,
-  InlineImageWrapOptions,
 } from '../../framework';
+import {
+  createInlineImageDelta,
+  type InlineImageWrapOptions,
+} from '../../embeds';
 
 const hasCaptionContent = (deltas: DeltaInsert[]) => deltas.some(delta =>
   typeof delta.insert === 'string'

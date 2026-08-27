@@ -6,9 +6,9 @@ import {
   normalizeParagraphSpacing,
   normalizeTypographyLineHeight,
   paragraphPointsToPixels,
-  readInlineImageDelta,
   resolveEditableBlockFontScale,
 } from '../../block-std'
+import {readInlineImageDelta} from '../../../embeds/image'
 import type {
   BlockModelHeightEstimateContext,
   BlockVirtualizationLayoutMode,

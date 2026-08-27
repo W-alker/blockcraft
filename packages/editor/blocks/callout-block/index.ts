@@ -4,6 +4,8 @@ import { IBlockSchemaOptions } from "../../framework/block-std/schema/block-sche
 import { CalloutBlockComponent } from "./callout.block";
 import { ParagraphBlockSchema } from "../paragraph-block";
 
+export * from './agent'
+
 export interface CalloutBlockModel extends NoEditableBlockNative {
   flavour: 'callout',
   nodeType: BlockNodeType.block,

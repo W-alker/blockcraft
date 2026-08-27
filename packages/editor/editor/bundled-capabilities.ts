@@ -1,4 +1,3 @@
-import katex from 'katex'
 import {
   AudioBlockSchema,
   AttachmentBlockSchema,
@@ -29,10 +28,6 @@ import {
   ShapeBlockSchema,
   ShapeTextBlockSchema,
   TextBoxBlockSchema,
-  INLINE_SHAPE_EMBED_KEY,
-  INLINE_WORD_ART_EMBED_KEY,
-  createInlineShapeEmbedConverter,
-  createInlineWordArtEmbedConverter,
   TableBlockSchema,
   TableCellBlockSchema,
   TableRowBlockSchema,
@@ -80,11 +75,20 @@ import {
   DocPlugin,
   EmbedConverter,
   IBlockSchemaOptions,
-  INLINE_DATE_EMBED_KEY,
-  InlineManager,
   SchemaManager,
-  createInlineDateEmbedConverter,
 } from '../framework'
+import {
+  INLINE_DATE_EMBED_KEY,
+  INLINE_LATEX_EMBED_KEY,
+  INLINE_MENTION_EMBED_KEY,
+  INLINE_SHAPE_EMBED_KEY,
+  INLINE_WORD_ART_EMBED_KEY,
+  createInlineDateEmbedConverter,
+  createInlineLatexEmbedConverter,
+  createInlineMentionEmbedConverter,
+  createInlineShapeEmbedConverter,
+  createInlineWordArtEmbedConverter,
+} from '../embeds'
 
 /**
  * bundled `<block-craft-editor>` 的唯一 Block Schema 基线。
@@ -256,61 +260,8 @@ function createBundledInlineEmbeds(): [string, EmbedConverter][] {
     [INLINE_SHAPE_EMBED_KEY, createInlineShapeEmbedConverter()],
     [INLINE_WORD_ART_EMBED_KEY, createInlineWordArtEmbedConverter()],
     [INLINE_DATE_EMBED_KEY, createInlineDateEmbedConverter()],
-    [
-      'mention',
-      {
-        toView: embed => {
-          const span = document.createElement('span')
-          span.textContent = embed.insert['mention'] as string
-          const attrs = embed.attributes ?? {}
-          span.setAttribute(
-            'data-mention-id',
-            String(attrs['mentionId'] ?? attrs['d:mentionId'] ?? ''),
-          )
-          span.setAttribute(
-            'data-mention-type',
-            String(attrs['mentionType'] ?? attrs['d:mentionType'] ?? ''),
-          )
-          return span
-        },
-        toDelta: element => ({
-          insert: {mention: element.textContent ?? ''},
-          attributes: {
-            mentionId: element.getAttribute('data-mention-id') ?? '',
-            mentionType: element.getAttribute('data-mention-type') ?? '',
-          },
-        }),
-      },
-    ],
-    [
-      'latex',
-      {
-        toView: embed => {
-          const span = document.createElement('span')
-          span.classList.add('inline-formula')
-          const latex = String(embed.insert['latex'] ?? '')
-          span.setAttribute('data-latex', latex)
-          try {
-            katex.render(latex, span, {
-              output: 'mathml',
-              throwOnError: false,
-            })
-          } catch {
-            span.textContent = latex
-          }
-          return span
-        },
-        toDelta: element => ({
-          insert: {
-            latex:
-              element.getAttribute('data-latex') ??
-              element.textContent ??
-              '',
-          },
-          attributes: InlineManager.getAttrs(element),
-        }),
-      },
-    ],
+    [INLINE_MENTION_EMBED_KEY, createInlineMentionEmbedConverter()],
+    [INLINE_LATEX_EMBED_KEY, createInlineLatexEmbedConverter()],
   ]
 }
 

@@ -8,6 +8,8 @@ import {
 } from "../../framework";
 import {CodeBlockLanguage} from "./const";
 
+export * from './agent'
+
 export interface CodeBlockModel extends EditableBlockNative {
   flavour: 'code',
   props: {

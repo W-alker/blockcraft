@@ -2,7 +2,6 @@ import {
   BindHotKey,
   BlockObjectLayout,
   closetBlockId,
-  DEFAULT_INLINE_IMAGE_WRAP_GAP,
   DOC_FILE_SERVICE_TOKEN,
   DocFileService,
   DocPlugin,
@@ -11,13 +10,14 @@ import {
   getPositionWithOffset,
   IBlockSnapshot,
   IInlineNodeAttrs,
-  InlineImageData,
   measureObjectPlacement,
   ORIGIN_NO_RECORD,
 } from "../../framework";
 import {
+  DEFAULT_INLINE_IMAGE_WRAP_GAP,
+  type InlineImageData,
   INLINE_IMAGE_INTRINSIC_SIZE_EVENT,
-} from '../../framework/block-std/inline/image-embed-events';
+} from '../../embeds';
 import { UIEventStateContext } from "../../framework";
 import { fromEvent, merge, Subject, Subscription, takeUntil } from "rxjs";
 import { IImageToolbarItem, ImageToolbar } from "./widgets/image.toolbar";

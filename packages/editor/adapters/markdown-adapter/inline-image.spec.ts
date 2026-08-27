@@ -8,7 +8,7 @@ import {MarkdownAdapter} from './markdown-adapter';
 import {
   createInlineShapeDelta,
   createInlineWordArtDelta,
-} from '../../blocks';
+} from '../../embeds';
 
 class InlineImageTestFileService extends DocFileService {
   uploadImg(): Promise<string> { return Promise.resolve('uploaded-image'); }

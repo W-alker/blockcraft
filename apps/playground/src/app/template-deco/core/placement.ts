@@ -2,9 +2,14 @@ import {
   BLOCK_PLACEMENT_LAYOUT_FLAVOUR,
   BlockCraftDoc,
   BlockPosition,
+  DEFAULT_INLINE_DATE_FORMAT,
   IBlockSnapshot,
+  INLINE_DATE_EMBED_KEY,
+  INLINE_DATE_FORMAT_ATTR,
+  INLINE_ICON_EMBED_KEY,
   generateId,
   resolveBlockPosition,
+  toInlineDateValue,
 } from '@ccc/blockcraft'
 import type { ActiveDecoService } from './active-deco.service'
 
@@ -103,10 +108,42 @@ const migrateInlineDelta = (value: unknown): unknown => {
     insert?: unknown
     attributes?: Record<string, unknown>
   }
+  if (!delta.insert || typeof delta.insert !== 'object') return value
+
+  const insert = delta.insert as Record<string, unknown>
+  if (Object.prototype.hasOwnProperty.call(insert, 'template-date-inline')) {
+    const attributes = {...(delta.attributes ?? {})}
+    delete attributes['field']
+    attributes[INLINE_DATE_FORMAT_ATTR] = DEFAULT_INLINE_DATE_FORMAT
+    return {
+      ...delta,
+      insert: {[INLINE_DATE_EMBED_KEY]: toInlineDateValue(new Date())},
+      attributes,
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(insert, 'template-icon-inline')) {
+    const attributes = {...(delta.attributes ?? {})}
+    const icon = typeof attributes['icon'] === 'string'
+      ? attributes['icon'].trim()
+      : ''
+    delete attributes['icon']
+    delete attributes['size']
+    const migrated: Record<string, unknown> = {
+      ...delta,
+      insert: {
+        [INLINE_ICON_EMBED_KEY]: icon.includes('bc_icon')
+          ? icon
+          : `bc_icon ${icon || 'bc_shoucang'}`,
+      },
+    }
+    if (Object.keys(attributes).length) migrated['attributes'] = attributes
+    else delete migrated['attributes']
+    return migrated
+  }
+
   if (
-    !delta.insert ||
-    typeof delta.insert !== 'object' ||
-    !Object.prototype.hasOwnProperty.call(delta.insert, 'template-image-inline')
+    !Object.prototype.hasOwnProperty.call(insert, 'template-image-inline')
   ) {
     return value
   }
@@ -251,7 +288,7 @@ const migrateSnapshot = (snapshot: IBlockSnapshot): IBlockSnapshot => {
  * - 合并旧/新 root layout；
  * - 所有 absolute root 子块归入标准 placement-layout；
  * - layout 中误存的 relative 子块回到正文流；
- * - 递归迁移旧动态物料属性、模板锁来源和 template-image-inline Delta。
+ * - 递归迁移旧动态物料属性、模板锁来源，以及旧 date/icon/image Inline Delta。
  */
 export function normalizeTemplateSnapshots(
   children: IBlockSnapshot[],

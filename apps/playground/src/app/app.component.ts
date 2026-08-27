@@ -2163,25 +2163,29 @@ graph TD
       if (result.operations.length) {
         const editor = this.editor;
         if (!editor || !applyContext) {
-          throw new Error('文档上下文已失效，无法生成修订 Diff。');
+          throw new Error('文档上下文已失效，无法应用 Agent 修改。');
         }
-        const revisions = editor.doc.revisions;
-        if (!revisions.currentActor) {
-          revisions.setActor({
-            actorId: `playground-${editor.doc.yDoc.clientID}`,
-            displayName: 'Playground 调试用户',
-          });
-        }
-        revisions.setViewMode('markup');
         const staged = editorAgent.stageRevisionDiff(applyContext, result);
-        this.ensureRevisionReviewUi(editor);
-        this.revisionPanelOpen = true;
         if (staged.revisionIds.length) {
+          const revisions = editor.doc.revisions;
+          if (!revisions.currentActor) {
+            revisions.setActor({
+              actorId: `playground-${editor.doc.yDoc.clientID}`,
+              displayName: 'Playground 调试用户',
+            });
+          }
+          revisions.setViewMode('markup');
+          this.ensureRevisionReviewUi(editor);
+          this.revisionPanelOpen = true;
           this.revisionReviewPlugin?.activateRevision(staged.revisionIds[0]);
+          this._agentDialogComponent?.instance.addAssistantNotice(
+            `已执行 ${staged.applied} 项修改，并生成 ${staged.revisionIds.length} 条可审阅 Diff。没有对应 Diff 的操作会按普通编辑直接生效。`,
+          );
+        } else {
+          this._agentDialogComponent?.instance.addAssistantNotice(
+            `已执行 ${staged.applied} 项修改。这些操作当前没有修订 Diff 样式，已按普通编辑直接生效。`,
+          );
         }
-        this._agentDialogComponent?.instance.addAssistantNotice(
-          `已生成 ${staged.applied} 项修订 Diff，请在文档修订面板中选择接收或拒绝。`,
-        );
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Agent 请求失败';

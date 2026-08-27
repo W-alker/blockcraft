@@ -2,19 +2,17 @@ import {HtmlASTToDeltaMatcher} from "../delta-converter";
 import {HtmlAST} from "../../types";
 import type { Element } from 'hast';
 import { collapseWhiteSpace } from 'collapse-white-space';
+import type {DeltaInsertEmbed} from '../../../framework';
 import {
   createInlineImageDelta,
-  type DeltaInsertEmbed,
-  InlineImageWrapSide,
-} from '../../../framework';
-import {
+  type InlineImageWrapSide,
   INLINE_SHAPE_EMBED_KEY,
   INLINE_WORD_ART_EMBED_KEY,
   createInlineShapeDelta,
   createInlineWordArtDelta,
   readInlineShapeDelta,
   readInlineWordArtDelta,
-} from '../../../blocks';
+} from '../../../embeds';
 import {inlineTypographyFromHtml} from '../typography';
 
 const isElement = (ast: HtmlAST): ast is Element => {

@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-27
+> Last updated: 2026-08-28
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -1266,6 +1266,90 @@ version no longer matches the registered Block Schema, creation fails closed.
 Unknown flavours, unlisted props, invalid parent-child combinations, and raw
 Snapshot insertion are rejected before document mutation.
 
+Inline Embeds use the same opt-in rule, independently from Block creation.
+`DocConfig.embeds` installs an `EmbedConverter` for rendering, while an
+`InlineEmbedAgentCapabilityDefinition` provides optional Agent semantics and
+an optional `insert` JSON Schema write grant. The Embed key is the canonical
+value/attributes data contract: a same-key renderer override must preserve that
+shape. A different data shape requires a different key and capability.
+
+Custom and externally packaged Blocks own this declaration in
+`blocks/<block>/agent/index.ts`, next to their Schema and component. The Block
+package exports the declaration; the host composes it into an extension:
+
+```typescript
+import {MY_BLOCK_AGENT_CAPABILITY} from '@acme/blockcraft-my-block'
+import {
+  BlockCraftEditorAgent,
+  type DocumentAgentHostExtension,
+} from 'blockcraft-agent'
+
+const acmeBlockExtension: DocumentAgentHostExtension = {
+  id: 'acme.blocks',
+  version: '1',
+  description: 'ACME document Block contracts',
+  capabilities: [MY_BLOCK_AGENT_CAPABILITY],
+}
+
+const agent = new BlockCraftEditorAgent(doc, runner, {
+  extensions: [acmeBlockExtension],
+})
+```
+
+External Embed packages should colocate the optional declaration with the
+converter in `embeds/<embed-key>/agent/index.ts`, export it, and let the host
+register it explicitly:
+
+```typescript
+import {
+  MY_EMBED_AGENT_CAPABILITY,
+  MY_EMBED_KEY,
+  myEmbedConverter,
+} from '@acme/blockcraft-my-embed'
+
+const doc = new BlockCraftDoc({
+  // schemas, plugins, ...
+  embeds: [[MY_EMBED_KEY, myEmbedConverter]],
+})
+
+const acmeEmbedExtension: DocumentAgentHostExtension = {
+  id: 'acme.embeds',
+  version: '1',
+  description: 'ACME Inline Embed contracts',
+  capabilities: [MY_EMBED_AGENT_CAPABILITY],
+}
+
+const agent = new BlockCraftEditorAgent(doc, runner, {
+  extensions: [acmeEmbedExtension],
+})
+```
+
+Both the converter and same-key capability are required before the runtime
+advertises Agent insertion. A converter without an Agent declaration remains
+fully renderable; existing raw Delta remains in document context, but the
+model cannot generate that Embed. A declaration without `insert` is
+understanding-only. The built-in `mention`, `shape`, and `word-art`
+declarations intentionally use that mode because their entity IDs or complex
+lossless payloads cannot be safely invented. `BlockCraftEditorAgent`
+automatically registers the built-in Block/Embed extension, then filters its
+directory to the Schemas and converters actually installed in this Doc.
+
+Both sides are required: an unregistered declaration is not discoverable at
+runtime, while a registered capability whose flavour or Schema version is not
+installed fails closed. If a Block needs no AI-specific understanding, omit
+both its `agent/` declaration and registration. Providing a semantic-only
+capability without `createParameters` and `writableProps` is also valid; the
+Agent can understand it but cannot create or mutate its props.
+
+An Inline Embed always consumes one model offset. Agent-authored object inserts
+must contain exactly one installed key and validate against that capability's
+complete value/attributes schemas. `retain + attributes` is restricted to
+canonical general text formatting; Embed-semantic mutation is a delete of the
+old one-offset range followed by a separately validated insert. A generic
+range deletion can still remove an understanding-only or undeclared Embed; the
+missing write grant prevents fabrication and semantic rewriting, not ordinary
+document deletion.
+
 Agent results contain only the constrained semantic operations
 `replace-text`, `apply-text-delta`, `update-block-props`, `create-blocks`,
 `replace-block`, `delete-blocks`, and `move-blocks`. Coordinates are sequential:
@@ -1273,6 +1357,13 @@ each offset or index is interpreted after earlier operations in the same
 result. The host first compiles the full result against a shadow block tree,
 including Schema, readonly, mutation-policy, Delta length, and cycle checks,
 then applies the prepared plan in one Yjs transaction.
+
+Revision coverage does not restrict this operation protocol. During scoped
+Agent delivery, text and supported block-structure operations create visible
+Revision records, while props/formatting, inline-object Delta and block movement
+continue through their normal CRUD/Yjs/Undo paths with no Diff styling. A mixed
+result executes as one validated plan; review decisions affect only the portion
+represented by Revision records.
 
 Because Schema-generated IDs are not known to the model, `create-blocks` and
 `replace-block` may bind a short `clientRef`. The generated root can then be

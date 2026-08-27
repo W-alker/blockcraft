@@ -1,16 +1,13 @@
-export type DocumentAgentToolEffect =
-  | 'read'
-  | 'document-preview'
-  | 'document-write'
-  | 'host-ui'
-  | 'external-write'
+import type {
+  BlockAgentActionEffect,
+  BlockAgentCapabilityAction,
+  BlockAgentCapabilityDefinition,
+  InlineEmbedAgentCapabilityDefinition,
+} from '@ccc/blockcraft'
 
-export interface DocumentAgentCapabilityAction {
-  id: string
-  title: string
-  description: string
-  effect?: DocumentAgentToolEffect
-}
+export type DocumentAgentToolEffect = BlockAgentActionEffect
+
+export type DocumentAgentCapabilityAction = BlockAgentCapabilityAction
 
 interface DocumentAgentCapabilityBase {
   id: string
@@ -19,20 +16,10 @@ interface DocumentAgentCapabilityBase {
   domains?: readonly string[]
 }
 
-export interface DocumentAgentBlockCapability extends DocumentAgentCapabilityBase {
-  kind: 'block'
-  flavour: string
-  schemaVersion?: number
-  semanticRoles?: readonly string[]
-  /** JSON Schema for the positional params passed to Schema.createSnapshot(). */
-  createParameters?: Readonly<Record<string, unknown>>
-  /** JSON Schema for a partial update-block-props payload. */
-  writableProps?: Readonly<Record<string, unknown>>
-  /** Structured props that are replaced as one collaborative value. */
-  atomicProps?: readonly string[]
-  actions?: readonly DocumentAgentCapabilityAction[]
-  examples?: readonly Readonly<Record<string, unknown>>[]
-}
+export type DocumentAgentBlockCapability = BlockAgentCapabilityDefinition
+
+export type DocumentAgentInlineEmbedCapability =
+  InlineEmbedAgentCapabilityDefinition
 
 export interface DocumentAgentPluginCapability extends DocumentAgentCapabilityBase {
   kind: 'plugin'
@@ -63,6 +50,7 @@ export interface DocumentAgentSkillCapability extends DocumentAgentCapabilityBas
 
 export type DocumentAgentCapability =
   | DocumentAgentBlockCapability
+  | DocumentAgentInlineEmbedCapability
   | DocumentAgentPluginCapability
   | DocumentAgentToolCapability
   | DocumentAgentContextCapability
@@ -122,6 +110,7 @@ export type DocumentAgentExtensionToolResult =
 
 export interface DocumentAgentManifestOptions {
   registeredBlockFlavours?: readonly string[]
+  registeredInlineEmbedKeys?: readonly string[]
 }
 
 type RegisteredCapability = {
@@ -158,6 +147,7 @@ export class DocumentAgentExtensionRegistry {
 
     const seen = new Set<string>()
     const declaredBlockFlavours = new Set<string>()
+    const declaredInlineEmbedKeys = new Set<string>()
     const declaredTools = new Map<string, DocumentAgentToolCapability>()
     for (const capability of extension.capabilities) {
       assertIdentifier(capability.id, 'Capability')
@@ -173,6 +163,18 @@ export class DocumentAgentExtensionRegistry {
           throw new Error(`Agent block capability for ${capability.flavour} is already registered.`)
         }
         declaredBlockFlavours.add(capability.flavour)
+      }
+      if (capability.kind === 'inline-embed') {
+        assertEmbedKey(capability.embedKey)
+        if (
+          declaredInlineEmbedKeys.has(capability.embedKey) ||
+          this.findRegisteredInlineEmbedCapability(capability.embedKey)
+        ) {
+          throw new Error(
+            `Agent inline Embed capability for ${capability.embedKey} is already registered.`,
+          )
+        }
+        declaredInlineEmbedKeys.add(capability.embedKey)
       }
       if (capability.kind === 'tool') {
         if (declaredTools.has(capability.name) || this.tools.has(capability.name)) {
@@ -252,9 +254,36 @@ export class DocumentAgentExtensionRegistry {
     return null
   }
 
+  getInlineEmbedCapability(
+    embedKey: string,
+    options: DocumentAgentManifestOptions = {},
+  ): DocumentAgentInlineEmbedCapability | null {
+    for (const {capability} of this.capabilities.values()) {
+      if (
+        capability.kind === 'inline-embed' &&
+        capability.embedKey === embedKey &&
+        isCapabilityVisible(capability, options)
+      ) {
+        return capability
+      }
+    }
+    return null
+  }
+
   private findRegisteredBlockCapability(flavour: string): DocumentAgentBlockCapability | null {
     for (const {capability} of this.capabilities.values()) {
       if (capability.kind === 'block' && capability.flavour === flavour) return capability
+    }
+    return null
+  }
+
+  private findRegisteredInlineEmbedCapability(
+    embedKey: string,
+  ): DocumentAgentInlineEmbedCapability | null {
+    for (const {capability} of this.capabilities.values()) {
+      if (capability.kind === 'inline-embed' && capability.embedKey === embedKey) {
+        return capability
+      }
     }
     return null
   }
@@ -338,12 +367,23 @@ function assertIdentifier(value: string, label: string): void {
   }
 }
 
+function assertEmbedKey(value: string): void {
+  if (!value.trim()) {
+    throw new Error('Inline Embed key must be non-empty.')
+  }
+}
+
 function isCapabilityVisible(
   capability: DocumentAgentCapability,
   options: DocumentAgentManifestOptions,
 ): boolean {
-  if (capability.kind !== 'block' || !options.registeredBlockFlavours) return true
-  return options.registeredBlockFlavours.includes(capability.flavour)
+  if (capability.kind === 'block' && options.registeredBlockFlavours) {
+    return options.registeredBlockFlavours.includes(capability.flavour)
+  }
+  if (capability.kind === 'inline-embed' && options.registeredInlineEmbedKeys) {
+    return options.registeredInlineEmbedKeys.includes(capability.embedKey)
+  }
+  return true
 }
 
 function toCapabilityDescriptor(
