@@ -38,6 +38,7 @@ const metadata = (label: string, icon: string) => ({
   label,
   icon,
   hideInInsertMenu: true,
+  selectionInteraction: {frame: 'selectable' as const},
   placement: {modes: ['relative', 'absolute'] as const},
 })
 

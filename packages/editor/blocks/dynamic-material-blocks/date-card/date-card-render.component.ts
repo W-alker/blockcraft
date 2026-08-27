@@ -103,6 +103,7 @@ export interface DateCardModel extends NoEditableBlockNative {
  */
 export const DATE_CARD_TEMPLATE = `
     <div class="tpl-date-card" #boxEl contenteditable="false"
+         data-bc-selection-interaction-frame
          [attr.data-style]="styleDef().id"
          [style.--dc-bg]="look().bg" [style.--dc-fg]="look().fg"
          [style.--dc-bw]="look().bw" [style.--dc-bs]="look().bs" [style.--dc-bc]="look().bc"

@@ -91,6 +91,7 @@ export const WEATHER_WATCHED_PROPS = ['fg', 'bw', 'bc', 'date', 'frozen'] as con
  */
 export const WEATHER_CHIP_TEMPLATE = `
     <span class="tpl-weather-chip" #boxEl contenteditable="false"
+          data-bc-selection-interaction-frame
           [style.--u]="scaleUnitCss"
           [style.--wt-fg]="look().fg" [style.--wt-bw]="look().bw"
           [style.--wt-bs]="look().bs" [style.--wt-bc]="look().bc"

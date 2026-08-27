@@ -140,6 +140,7 @@ export interface PersonCardModel extends NoEditableBlockNative {
  */
 export const PERSON_CARD_TEMPLATE = `
     <div class="tpl-person-card" #boxEl contenteditable="false"
+         data-bc-selection-interaction-frame
          [attr.data-style]="styleDef().id"
          [style.--pc-color]="color()" [style.--pc-avatar-radius]="avatarRadius()" [style.--pc-avatar-scale]="avatarScale()"
          [style.--pc-bw]="border().bw" [style.--pc-bs]="border().bs" [style.--pc-bc]="border().bc"

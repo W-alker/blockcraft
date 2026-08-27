@@ -35,7 +35,11 @@ import type { FixedResizeCommit } from './fixed-resize.util';
     // 所以手柄里的 stopPropagation 拦不住它——按住手柄会同时开始"拖动整块"。
     // 它的放行口是 `closest('block-resizer, [data-bc-nodrag]')`（object-drag.plugin.ts:58），
     // 框架自家的 resizer 靠元素名被认出来，我们这个只能靠属性。
-    host: { 'data-bc-nodrag': '' },
+    host: {
+        'data-bc-nodrag': '',
+        'data-bc-selection-interaction-ignore': '',
+        'data-bc-placement-pick-ignore': ''
+    },
     changeDetection: ChangeDetectionStrategy.OnPush,
     template: `
         <div class="mtl-scale__bar mtl-scale__bar--left" (pointerdown)="onDown($event, 'left')"><i></i></div>
