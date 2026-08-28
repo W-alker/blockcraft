@@ -69,6 +69,38 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
+## Unreleased — 2026-08-28 — Object layout capability filtering
+
+**Severity**: patch
+
+**What changed**: `ObjectFormatToolbarPlugin` now routes mixed absolute-object
+selections to the restored compact horizontal group-toolbar surface, while
+retaining one Plugin owner. Single-object layout choices are filtered to the
+`BlockPlacementManager.supportsObjectLayout()` capability and are checked again
+before mutation. The remaining layout choices fill their row with equal-width
+columns.
+
+**Why**: Layout and grouping belong to the placement domain, not the object
+paint domain. Requiring every selected block to expose `objectFormat` hid the
+grouping toolbar for valid mixed selections, while presenting every global
+layout mode incorrectly exposed inline layout for TextBox.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-toolbar.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Mixed absolute-object selections use the historical horizontal alignment,
+  distribution and grouping toolbar instead of the object-format rail.
+- Selected groups reuse that toolbar for layout, hierarchy and ungrouping.
+- Group focus again follows first-click whole-group selection and second-click
+  member entry; the group frame remains visible while a nested member is active.
+- TextBox and other blocks without an inline placement adapter no longer show
+  or accept the inline layout action.
+
 ## Unreleased — 2026-08-28 — Plain ordered-list interruption boundaries
 
 **Severity**: patch

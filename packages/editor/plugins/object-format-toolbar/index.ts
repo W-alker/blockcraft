@@ -13,12 +13,14 @@ import {
 import {
   closetBlockId,
   BindHotKey,
+  BLOCK_OBJECT_LAYOUT_OPTIONS,
   createObjectPaint,
   DOC_FILE_SERVICE_TOKEN,
   DocPlugin,
   getPositionWithOffset,
   objectEffectsFilter,
   objectPicturePreserveAspectRatio,
+  type BlockObjectBlockLayout,
   type BlockObjectLayout,
   type BlockObjectAlignment,
   type BlockObjectFormatSelectionState,
@@ -34,6 +36,11 @@ import {
   type ObjectFormatToolbarAction,
 } from "./object-format-toolbar.component";
 import {
+  ObjectGroupToolbarComponent,
+  type ObjectGroupToolbarAction,
+  type ObjectGroupToolbarMode,
+} from "./object-group-toolbar.component";
+import {
   hasOpenOwnedSubOverlay,
   isObjectToolbarOwnedTarget,
 } from "../object-layout/object-toolbar-interaction";
@@ -44,6 +51,30 @@ export * from "./object-format-toolbar.component";
 
 const TOOLBAR_GAP = 10;
 
+interface GroupToolbarState {
+  mode: ObjectGroupToolbarMode;
+  anchor: HTMLElement;
+  blockIds: string[];
+  canGroup: boolean;
+  canUngroup: boolean;
+  canDistribute: boolean;
+  objectLayout: BlockObjectBlockLayout;
+  canMoveForward: boolean;
+  canMoveBackward: boolean;
+}
+
+const GROUP_ALIGNMENT_ACTIONS = new Set<BlockObjectAlignment>([
+  "left",
+  "horizontal-center",
+  "right",
+  "top",
+  "vertical-center",
+  "bottom",
+  "center",
+  "horizontal-distribute",
+  "vertical-distribute",
+]);
+
 /** One object toolbar owner for Shape, TextBox, WordArt and mixed selection. */
 export class ObjectFormatToolbarPlugin extends DocPlugin {
   override name = "object-format-toolbar";
@@ -52,6 +83,8 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
   private readonly close$ = new Subject<void>();
   private overlayRef?: OverlayRef;
   private component?: ObjectFormatToolbarComponent;
+  private toolbarKind: "format" | "group" | null = null;
+  private toolbarKey = "";
   private activeIds: string[] = [];
   private toolbarPointerActive = false;
   private toolbarFocusActive = false;
@@ -59,6 +92,7 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
   private chromeRetentionEpoch = 0;
   private toolbarPositionFrame: number | null = null;
   private readonly retainedObjectChrome = new Map<string, HTMLElement>();
+  private selectionWithinGroupHosts = new Set<HTMLElement>();
   private inlineObjects: InlineObjectInteractionController[] = [];
   private previewFrame: number | null = null;
   private pendingPreview?: ObjectFormatPatch;
@@ -73,9 +107,10 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     ];
     this.inlineObjects.forEach((controller) => controller.init());
     this.subscription.add(
-      this.doc.selection.selectionChange$.subscribe((selection) =>
-        this.sync(selection),
-      ),
+      this.doc.selection.selectionChange$.subscribe((selection) => {
+        this.syncSelectionWithinGroupFrames(selection);
+        this.sync(selection);
+      }),
     );
     this.subscription.add(
       this.doc.subscribeReadonlyChange((readonly) => {
@@ -98,6 +133,7 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
             return;
           }
           if (this.extendAbsoluteSelection(event)) return;
+          if (this.handleObjectGroupPointerDown(event)) return;
           this.handleExistingObjectPointerDown(event);
         }),
     );
@@ -131,6 +167,7 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     this.inlineObjects = [];
     this.pendingShapeClickCleanup?.();
     this.close();
+    this.clearSelectionWithinGroupFrames();
     this.subscription.unsubscribe();
     this.close$.complete();
   }
@@ -150,6 +187,8 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     }
     this.overlayRef = undefined;
     this.component = undefined;
+    this.toolbarKind = null;
+    this.toolbarKey = "";
     this.activeIds = [];
     this.toolbarPointerActive = false;
     this.toolbarFocusActive = false;
@@ -175,18 +214,13 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
       this.close();
       return;
     }
+    const groupState = this.resolveGroupToolbarState(selection);
+    if (groupState) {
+      this.openGroupToolbar(groupState);
+      return;
+    }
     const state = this.doc.objectFormat.readSelection();
     if (!state) {
-      const groupIds =
-        this.doc.placement.getAbsoluteObjectSelectionIds(selection);
-      if (
-        groupIds?.length === 1 &&
-        this.doc.placement.isObjectGroup(groupIds[0]!)
-      ) {
-        this.open(layoutOnlyState(groupIds), true);
-        if (this.component) this.component.activePanel = "layout";
-        return;
-      }
       if (this.ownsInteraction()) {
         this.retainObjectChrome();
         this.scheduleRetainObjectChrome();
@@ -205,6 +239,7 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     const key = state.blockIds.join("\u0000");
     if (
       this.overlayRef &&
+      this.toolbarKind === "format" &&
       this.activeIds.join("\u0000") === key &&
       this.component?.groupSelection === groupSelection
     ) {
@@ -242,11 +277,17 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
       );
     this.overlayRef = toolbar.overlayRef;
     this.component = toolbar.componentRef.instance;
+    this.toolbarKind = "format";
+    this.toolbarKey = key;
     this.activeIds = [...state.blockIds];
     toolbar.componentRef.setInput("state", state);
     toolbar.componentRef.setInput(
       "activeLayout",
       this.resolveCommonObjectLayout(state.blockIds),
+    );
+    toolbar.componentRef.setInput(
+      "supportedLayouts",
+      this.resolveSupportedObjectLayouts(state.blockIds),
     );
     toolbar.componentRef.setInput("groupSelection", groupSelection);
     toolbar.componentRef.instance.action
@@ -274,11 +315,9 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
       const propsChange$ = block?.onPropsChange as
         | Observable<unknown>
         | undefined;
-      propsChange$?.pipe(takeUntil(this.close$)).subscribe(() => {
-        const next = this.doc.objectFormat.readSelection(this.activeIds);
-        if (!next) return this.close();
-        this.componentState(next);
-      });
+      propsChange$
+        ?.pipe(takeUntil(this.close$))
+        .subscribe(() => this.sync(this.doc.selection.value));
     }
   }
 
@@ -286,6 +325,9 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     if (!this.component) return;
     this.component.state = state;
     this.component.activeLayout = this.resolveCommonObjectLayout(
+      state.blockIds,
+    );
+    this.component.supportedLayouts = this.resolveSupportedObjectLayouts(
       state.blockIds,
     );
     this.component.cdr.markForCheck();
@@ -537,6 +579,11 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
       layout === "under" ||
       layout === "over"
     ) {
+      if (
+        !ids.every((id) => this.doc.placement.supportsObjectLayout(id, layout))
+      ) {
+        return;
+      }
       for (const id of ids) this.doc.placement.setObjectLayout(id, layout);
     }
   }
@@ -635,6 +682,172 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     return first && layouts.every((layout) => layout === first) ? first : null;
   }
 
+  private resolveSupportedObjectLayouts(
+    blockIds: readonly string[],
+  ): BlockObjectLayout[] {
+    return BLOCK_OBJECT_LAYOUT_OPTIONS.map((option) => option.value).filter(
+      (layout) =>
+        blockIds.every((id) =>
+          this.doc.placement.supportsObjectLayout(id, layout),
+        ),
+    );
+  }
+
+  private resolveGroupToolbarState(
+    selection: BlockCraft.Selection,
+  ): GroupToolbarState | null {
+    const blockIds =
+      this.doc.placement.getAbsoluteObjectSelectionIds(selection);
+    if (!blockIds?.length) return null;
+    const first = this.doc.vm.get(blockIds[0]!)?.instance;
+    if (!first?.hostElement.isConnected) return null;
+
+    if (
+      blockIds.length === 1 &&
+      this.doc.placement.isObjectGroup(blockIds[0]!)
+    ) {
+      const layout = this.doc.placement.getObjectLayout(blockIds[0]!);
+      return {
+        mode: "ungroup",
+        anchor: first.hostElement,
+        blockIds,
+        canGroup: false,
+        canUngroup: this.doc.placement.canUngroup(blockIds[0]!),
+        canDistribute: false,
+        objectLayout: layout,
+        canMoveForward: this.doc.placement.canMoveForward(blockIds[0]!),
+        canMoveBackward: this.doc.placement.canMoveBackward(blockIds[0]!),
+      };
+    }
+
+    if (blockIds.length < 2 || !this.doc.placement.canAlignObjects(blockIds)) {
+      return null;
+    }
+    return {
+      mode: "group",
+      anchor: first.hostElement,
+      blockIds,
+      canGroup: this.doc.placement.canGroup(blockIds),
+      canUngroup: false,
+      canDistribute: this.doc.placement.canAlignObjects(
+        blockIds,
+        "horizontal-distribute",
+      ),
+      objectLayout: "over",
+      canMoveForward: false,
+      canMoveBackward: false,
+    };
+  }
+
+  private openGroupToolbar(state: GroupToolbarState): void {
+    const key = [
+      state.mode,
+      state.blockIds.join("\u0000"),
+      state.canGroup,
+      state.canUngroup,
+      state.canDistribute,
+      state.objectLayout,
+      state.canMoveForward,
+      state.canMoveBackward,
+    ].join(":");
+    if (
+      this.overlayRef &&
+      this.toolbarKind === "group" &&
+      this.toolbarKey === key
+    ) {
+      this.overlayRef.updatePosition();
+      return;
+    }
+    this.close();
+    const toolbar =
+      this.doc.overlayService.createConnectedOverlay<ObjectGroupToolbarComponent>(
+        {
+          target: state.anchor,
+          component: ObjectGroupToolbarComponent,
+          positions: [
+            getPositionWithOffset("top-center", 0, 8),
+            getPositionWithOffset("bottom-center", 0, 8),
+          ],
+          clampTo: this.doc.scrollContainer ?? undefined,
+        },
+        this.close$,
+        this.close,
+      );
+    this.overlayRef = toolbar.overlayRef;
+    this.toolbarKind = "group";
+    this.toolbarKey = key;
+    this.activeIds = [...state.blockIds];
+    toolbar.componentRef.setInput("mode", state.mode);
+    toolbar.componentRef.setInput("canGroup", state.canGroup);
+    toolbar.componentRef.setInput("canUngroup", state.canUngroup);
+    toolbar.componentRef.setInput("canDistribute", state.canDistribute);
+    toolbar.componentRef.setInput("objectLayout", state.objectLayout);
+    toolbar.componentRef.setInput("canMoveForward", state.canMoveForward);
+    toolbar.componentRef.setInput("canMoveBackward", state.canMoveBackward);
+    toolbar.componentRef.instance.action
+      .pipe(takeUntil(this.close$))
+      .subscribe((action) => this.handleGroupAction(action, state.blockIds));
+  }
+
+  private handleGroupAction(
+    action: ObjectGroupToolbarAction,
+    blockIds: readonly string[],
+  ): void {
+    const selectedIds = this.doc.placement.getAbsoluteObjectSelectionIds();
+    const ownsDetachedSelection =
+      selectedIds === null && this.ownsInteraction();
+    if (!sameIds(selectedIds, blockIds) && !ownsDetachedSelection) {
+      this.close();
+      return;
+    }
+    this.close();
+    if (typeof action === "object") {
+      const groupId = blockIds[0];
+      if (!groupId) return;
+      this.doc.placement.setObjectLayout(groupId, action.value);
+      queueMicrotask(() => this.sync(this.doc.selection.value));
+      return;
+    }
+    if (GROUP_ALIGNMENT_ACTIONS.has(action as BlockObjectAlignment)) {
+      this.doc.placement.alignObjects(blockIds, action as BlockObjectAlignment);
+      queueMicrotask(() => this.sync(this.doc.selection.value));
+      return;
+    }
+    if (action === "move-forward" || action === "move-backward") {
+      const groupId = blockIds[0];
+      if (!groupId) return;
+      if (action === "move-forward") this.doc.placement.moveForward(groupId);
+      else this.doc.placement.moveBackward(groupId);
+      queueMicrotask(() => this.sync(this.doc.selection.value));
+      return;
+    }
+    if (action === "group") {
+      const groupId = this.doc.placement.group(blockIds);
+      if (groupId)
+        queueMicrotask(() => this.doc.selection.selectBlock(groupId));
+      return;
+    }
+    const groupId = blockIds[0];
+    if (!groupId) return;
+    const parentId = this.doc.model.getParentId(groupId);
+    const startIndex = parentId
+      ? this.doc.model.getChildrenIds(parentId).indexOf(groupId)
+      : -1;
+    const children = this.doc.placement.ungroup(groupId);
+    if (!parentId || startIndex < 0 || !children.length) return;
+    queueMicrotask(() =>
+      this.selectBoundary(parentId, startIndex, startIndex + children.length),
+    );
+  }
+
+  private selectBoundary(parentId: string, from: number, to: number): void {
+    this.doc.selection.replay({
+      anchor: { blockId: parentId, type: "boundary", index: from },
+      head: { blockId: parentId, type: "boundary", index: to },
+      commonParent: parentId,
+    });
+  }
+
   private releaseRetainedObjectChrome(): void {
     const currentIds = new Set(this.doc.objectFormat.getSelectionIds() ?? []);
     for (const [id, host] of this.retainedObjectChrome) {
@@ -659,8 +872,7 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     )
       return false;
     const targetId = this.resolveTopLevelObjectId(target);
-    if (!targetId || !this.doc.objectFormat.getCapabilityForBlock(targetId))
-      return false;
+    if (!targetId) return false;
     const parentId = this.doc.model.getParentId(targetId);
     if (!parentId || !this.doc.placement.isPlacementLayout(parentId))
       return false;
@@ -686,9 +898,6 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     if (anchorIndex < 0 || anchorIndex === targetIndex) return false;
     const from = Math.min(anchorIndex, targetIndex);
     const to = Math.max(anchorIndex, targetIndex) + 1;
-    const ids = siblings.slice(from, to);
-    if (ids.some((id) => !this.doc.objectFormat.getCapabilityForBlock(id)))
-      return false;
     event.preventDefault();
     event.stopImmediatePropagation();
     this.doc.selection.replay({
@@ -709,6 +918,120 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
       id = parentId;
     }
     return null;
+  }
+
+  /** Restore the established first-click group, second-click member contract. */
+  private handleObjectGroupPointerDown(event: PointerEvent): boolean {
+    if (event.button !== 0 || this.doc.isReadonly) return false;
+    const target = event.target;
+    if (
+      !(target instanceof Element) ||
+      !this.doc.root.hostElement.contains(target)
+    ) {
+      return false;
+    }
+    const groupElement = target.closest<HTMLElement>("[data-bc-object-group]");
+    if (!groupElement) return false;
+    const groupId = closetBlockId(groupElement);
+    if (!groupId || !this.doc.placement.isObjectGroup(groupId)) return false;
+
+    const selectionIsWithinGroup = this.selectionTouchesGroup(
+      this.doc.selection.value,
+      groupId,
+    );
+    const directChildId = this.resolveDirectGroupChildId(target, groupId);
+    const moveEdge = target.closest(".object-group-block__move-edge");
+    if (selectionIsWithinGroup && directChildId && !moveEdge) {
+      return false;
+    }
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    this.doc.selection.selectBlock(groupId);
+    const group = this.safeGetBlock(groupId);
+    if (moveEdge && group && !this.doc.readonlyManager.isReadonly(group)) {
+      this.doc.placement.startDrag(event, group);
+    }
+    return true;
+  }
+
+  private resolveDirectGroupChildId(
+    target: Element,
+    groupId: string,
+  ): string | null {
+    const closest = target.closest<HTMLElement>("[data-block-id]");
+    let id = closest ? closetBlockId(closest) : null;
+    while (id && id !== groupId) {
+      const parentId = this.doc.model.getParentId(id);
+      if (parentId === groupId) return id;
+      id = parentId;
+    }
+    return null;
+  }
+
+  private selectionTouchesGroup(
+    selection: BlockCraft.Selection | null,
+    groupId: string,
+  ): boolean {
+    if (!selection) return false;
+    return [selection.anchor.blockId, selection.head.blockId].some(
+      (id) => this.resolveOwningGroupId(id) === groupId,
+    );
+  }
+
+  private syncSelectionWithinGroupFrames(
+    selection: BlockCraft.Selection | null,
+  ): void {
+    const nextHosts = new Set<HTMLElement>();
+    if (selection) {
+      const endpointIds = new Set([
+        selection.anchor.blockId,
+        selection.head.blockId,
+      ]);
+      endpointIds.forEach((id) => {
+        const groupId = this.resolveOwningGroupId(id);
+        if (!groupId) return;
+        const group = this.safeGetBlock(groupId);
+        if (group?.hostElement.isConnected) nextHosts.add(group.hostElement);
+      });
+    }
+    this.selectionWithinGroupHosts.forEach((host) => {
+      if (!nextHosts.has(host)) {
+        host.classList.remove("bc-object-group--selection-within");
+      }
+    });
+    nextHosts.forEach((host) => {
+      if (!this.selectionWithinGroupHosts.has(host)) {
+        host.classList.add("bc-object-group--selection-within");
+      }
+    });
+    this.selectionWithinGroupHosts = nextHosts;
+  }
+
+  private clearSelectionWithinGroupFrames(): void {
+    this.selectionWithinGroupHosts.forEach((host) =>
+      host.classList.remove("bc-object-group--selection-within"),
+    );
+    this.selectionWithinGroupHosts.clear();
+  }
+
+  private resolveOwningGroupId(blockId: string): string | null {
+    let currentId: string | null = blockId;
+    const visited = new Set<string>();
+    while (currentId && !visited.has(currentId)) {
+      visited.add(currentId);
+      if (this.doc.placement.isObjectGroup(currentId)) return currentId;
+      currentId = this.doc.model.getParentId(currentId);
+    }
+    return null;
+  }
+
+  private safeGetBlock(id: string): BlockCraft.BlockComponent | null {
+    try {
+      return this.doc.getBlockById(id);
+    } catch {
+      return null;
+    }
   }
 
   /** Preserve the three blocks' established object/edit interaction contract. */
@@ -952,36 +1275,4 @@ function sameIds(
     actual?.length === expected.length &&
     actual.every((id, index) => id === expected[index])
   );
-}
-
-function layoutOnlyState(
-  blockIds: readonly string[],
-): BlockObjectFormatSelectionState {
-  const empty = { mixed: false, value: undefined };
-  return {
-    blockIds,
-    targets: [],
-    features: {
-      geometry: false,
-      shape: false,
-      pictureFill: false,
-      lineArrows: false,
-      textFrame: false,
-      textStyle: false,
-    },
-    shapeTypes: [],
-    values: {
-      width: empty,
-      height: empty,
-      rotation: empty,
-      lockAspectRatio: empty,
-      shapeType: empty,
-      shapeFill: empty,
-      shapeOutline: empty,
-      shapeEffects: empty,
-      textFrame: empty,
-      textStyle: empty,
-    },
-    readonlyCount: 0,
-  };
 }

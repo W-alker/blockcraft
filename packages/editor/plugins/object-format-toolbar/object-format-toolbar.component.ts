@@ -179,6 +179,9 @@ export type ObjectFormatToolbarAction =
               <section aria-label="布局与排列">
                 <div
                   class="object-format__icon-grid object-format__icon-grid--4"
+                  [style.grid-template-columns]="
+                    'repeat(' + layoutOptions.length + ', minmax(0, 1fr))'
+                  "
                 >
                   @for (item of layoutOptions; track item.value) {
                     <button
@@ -255,10 +258,7 @@ export type ObjectFormatToolbarAction =
                   </div>
                 </section>
               }
-              <section
-                data-object-format-section="hierarchy"
-                aria-label="层级"
-              >
+              <section data-object-format-section="hierarchy" aria-label="层级">
                 <div
                   class="object-format__icon-grid object-format__icon-grid--2"
                 >
@@ -363,7 +363,7 @@ export type ObjectFormatToolbarAction =
                     <span class="object-format__section-heading">填充</span>
                     <i class="bc_icon bc_xiajaintou" aria-hidden="true"></i>
                   </button>
-                  </div>
+                </div>
                 @if (isSectionOpen("shape-fill")) {
                   <div class="object-format__section-body">
                     <bc-shape-fill-panel
@@ -395,7 +395,9 @@ export type ObjectFormatToolbarAction =
                           })
                         "
                       >
-                        {{ hasUserPicture(shapeFill) ? "替换图片" : "上传图片" }}
+                        {{
+                          hasUserPicture(shapeFill) ? "替换图片" : "上传图片"
+                        }}
                       </button>
                       @if (hasUserPicture(shapeFill)) {
                         <div
@@ -432,9 +434,7 @@ export type ObjectFormatToolbarAction =
                                 commitSlider('shape-fill-position-x')
                               "
                               (keyup)="commitSlider('shape-fill-position-x')"
-                              (focusout)="
-                                commitSlider('shape-fill-position-x')
-                              "
+                              (focusout)="commitSlider('shape-fill-position-x')"
                               (csValueChange)="
                                 picturePositionValue(
                                   'shape',
@@ -455,9 +455,7 @@ export type ObjectFormatToolbarAction =
                                 commitSlider('shape-fill-position-y')
                               "
                               (keyup)="commitSlider('shape-fill-position-y')"
-                              (focusout)="
-                                commitSlider('shape-fill-position-y')
-                              "
+                              (focusout)="commitSlider('shape-fill-position-y')"
                               (csValueChange)="
                                 picturePositionValue(
                                   'shape',
@@ -1089,9 +1087,7 @@ export type ObjectFormatToolbarAction =
                                 (pointerup)="
                                   commitSlider('text-fill-position-x')
                                 "
-                                (keyup)="
-                                  commitSlider('text-fill-position-x')
-                                "
+                                (keyup)="commitSlider('text-fill-position-x')"
                                 (focusout)="
                                   commitSlider('text-fill-position-x')
                                 "
@@ -1114,9 +1110,7 @@ export type ObjectFormatToolbarAction =
                                 (pointerup)="
                                   commitSlider('text-fill-position-y')
                                 "
-                                (keyup)="
-                                  commitSlider('text-fill-position-y')
-                                "
+                                (keyup)="commitSlider('text-fill-position-y')"
                                 (focusout)="
                                   commitSlider('text-fill-position-y')
                                 "
@@ -1546,7 +1540,7 @@ export type ObjectFormatToolbarAction =
         grid-template-columns: repeat(2, 1fr);
       }
       .object-format__icon-grid--4 {
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: repeat(4, minmax(0, 1fr));
       }
       .object-format__icon-action {
         display: flex;
@@ -1659,6 +1653,8 @@ export class ObjectFormatToolbarComponent {
   @Input({ required: true }) state!: BlockObjectFormatSelectionState;
   @Input() side: "left" | "right" = "right";
   @Input() activeLayout: BlockObjectLayout | null = null;
+  @Input() supportedLayouts: readonly BlockObjectLayout[] =
+    BLOCK_OBJECT_LAYOUT_OPTIONS.map((item) => item.value);
   @Input() groupSelection = false;
   @Output() readonly action = new EventEmitter<ObjectFormatToolbarAction>();
   @Output() readonly panelChange = new EventEmitter<void>();
@@ -1671,10 +1667,14 @@ export class ObjectFormatToolbarComponent {
     { value: "shape" as const, label: "形状选项", icon: "bc_tuxing" },
     { value: "text" as const, label: "文本选项", icon: "bc_wenben" },
   ];
-  readonly layoutOptions = BLOCK_OBJECT_LAYOUT_OPTIONS.map((item) => ({
-    ...item,
-    action: item.value === "inline" ? "wrap" : item.value,
-  }));
+  get layoutOptions() {
+    return BLOCK_OBJECT_LAYOUT_OPTIONS.filter((item) =>
+      this.supportedLayouts.includes(item.value),
+    ).map((item) => ({
+      ...item,
+      action: item.value === "inline" ? "wrap" : item.value,
+    }));
+  }
   readonly planeAlignOptions = BLOCK_OBJECT_PLANE_ALIGNMENT_OPTIONS.map(
     (item) => ({
       ...item,
@@ -1893,7 +1893,10 @@ export class ObjectFormatToolbarComponent {
       value === "shape-type" ||
       value === "shape-effects"
     ) {
-      if (this.activeShapeSection() === "shape-effects" && value !== "shape-effects") {
+      if (
+        this.activeShapeSection() === "shape-effects" &&
+        value !== "shape-effects"
+      ) {
         this.cancelShapeEffects();
       }
       this.activeShapeSection.set(value);
@@ -1906,7 +1909,10 @@ export class ObjectFormatToolbarComponent {
       value === "text-typography" ||
       value === "text-effects"
     ) {
-      if (this.activeTextSection() === "text-effects" && value !== "text-effects") {
+      if (
+        this.activeTextSection() === "text-effects" &&
+        value !== "text-effects"
+      ) {
         this.cancelTextEffects();
       }
       this.activeTextSection.set(value);
@@ -1957,9 +1963,10 @@ export class ObjectFormatToolbarComponent {
     return paint.type === "none" ? 0 : paint.opacity;
   }
   pictureUrlChange(event: Event): void {
-    const fill = this.shapeFill.type === "picture"
-      ? this.shapeFill
-      : createObjectPaint("picture");
+    const fill =
+      this.shapeFill.type === "picture"
+        ? this.shapeFill
+        : createObjectPaint("picture");
     this.patch({ shapeFill: { ...fill, src: valueFrom(event) } });
   }
   pictureFitChangeValue(target: "shape" | "text", value: unknown): void {
@@ -2154,9 +2161,10 @@ export class ObjectFormatToolbarComponent {
     });
   }
   textPictureUrl(event: Event): void {
-    const fill = this.textStyle.fill.type === "picture"
-      ? this.textStyle.fill
-      : createObjectPaint("picture");
+    const fill =
+      this.textStyle.fill.type === "picture"
+        ? this.textStyle.fill
+        : createObjectPaint("picture");
     this.patch({
       textStyle: {
         ...this.textStyle,
@@ -2182,9 +2190,9 @@ export class ObjectFormatToolbarComponent {
         ...this.textStyle,
         outline: value
           ? this.textStyle.outline.type === "line"
-            ? {...this.textStyle.outline}
-            : {type: "line", color: "#000000", width: 1}
-          : {type: "none"},
+            ? { ...this.textStyle.outline }
+            : { type: "line", color: "#000000", width: 1 }
+          : { type: "none" },
       },
     });
   }
@@ -2196,9 +2204,10 @@ export class ObjectFormatToolbarComponent {
           outline: {
             type: "line",
             color: value,
-            width: this.textStyle.outline.type === "line"
-              ? this.textStyle.outline.width
-              : 1,
+            width:
+              this.textStyle.outline.type === "line"
+                ? this.textStyle.outline.width
+                : 1,
           },
         },
       });
@@ -2210,9 +2219,10 @@ export class ObjectFormatToolbarComponent {
           ...this.textStyle,
           outline: {
             type: "line",
-            color: this.textStyle.outline.type === "line"
-              ? this.textStyle.outline.color
-              : "#000000",
+            color:
+              this.textStyle.outline.type === "line"
+                ? this.textStyle.outline.color
+                : "#000000",
             width: value,
           },
         },
@@ -2249,10 +2259,7 @@ export class ObjectFormatToolbarComponent {
       });
   }
 
-  textEffectOpacityValue(
-    key: "shadow" | "glow",
-    value: CsSliderValue,
-  ): void {
+  textEffectOpacityValue(key: "shadow" | "glow", value: CsSliderValue): void {
     this.updateTextEffectsDraft({
       ...this.textStyle.effects,
       [key]: {

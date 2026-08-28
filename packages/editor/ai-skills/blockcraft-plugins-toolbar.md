@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-27
+> Last updated: 2026-08-28
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
@@ -236,11 +236,19 @@ and Switch for values. BlockCraft owns only the connected Overlay,
 iconfont glyphs and panel layout. Slider movement is an RAF visual preview;
 pointer/keyboard completion or blur commits one Yjs patch for one Undo step.
 
-Layout, page alignment and hierarchy are available in the layout group for one
-or multiple objects; object alignment/distribution/grouping appears only when
-two or more blocks are selected. Layout modes and hierarchy are icon-only
-compact actions with tooltips, and the common current mode is visibly active; a
-mixed multi-selection has no false active mode. Shape format uses one CSES
+Single-object layout, page alignment and hierarchy remain in the compact layout
+card. Mixed absolute-object selection is resolved by the placement domain rather
+than by `objectFormat`; it switches to the restored horizontal group toolbar for
+alignment, distribution and grouping instead of opening the object-format rail.
+A selected group uses the same historical surface for group layout, hierarchy
+and ungrouping. Group interaction keeps its established two-step contract: the
+first click anywhere in an inactive group selects the whole group, while a
+second click may enter the direct member; the ancestor group frame stays visible
+while a nested member owns Selection. Visible single-object layout modes are the capability
+intersection from `doc.placement.supportsObjectLayout()`: an object without an
+inline adapter, including TextBox, does not show or accept the inline layout
+action. The remaining layout choices use equal-width columns and fill the row.
+Shape format uses one CSES
 segmented tab strip for Fill, Outline, Change Shape and Effects. Text format
 uses one CSES segmented tab strip for Text Frame, Typography and Appearance;
 only the active tab content is displayed. The font family control is a

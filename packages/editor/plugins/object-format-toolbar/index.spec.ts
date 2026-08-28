@@ -240,4 +240,206 @@ describe("ObjectFormatToolbarPlugin object/edit interaction", () => {
       { allowDetachedSelection: true },
     );
   });
+
+  it("resolves mixed absolute object selections to the dedicated group toolbar", () => {
+    const plugin = new ObjectFormatToolbarPlugin();
+    const selection = {} as BlockCraft.Selection;
+    const host = document.createElement("div");
+    document.body.append(host);
+    (plugin as any).doc = {
+      vm: { get: () => ({ instance: { hostElement: host } }) },
+      placement: {
+        getAbsoluteObjectSelectionIds: () => ["image-1", "text-box-1"],
+        isObjectGroup: () => false,
+        canAlignObjects: (_ids: string[], action?: string) =>
+          action !== "horizontal-distribute",
+        canGroup: () => true,
+      },
+    };
+
+    const result = (plugin as any).resolveGroupToolbarState(selection);
+
+    expect(result.mode).toBe("group");
+    expect(result.blockIds).toEqual(["image-1", "text-box-1"]);
+    expect(result.canGroup).toBeTrue();
+    expect(result.canDistribute).toBeFalse();
+    host.remove();
+  });
+
+  it("uses the selected objects' layout capability intersection and rejects partial writes", () => {
+    const plugin = new ObjectFormatToolbarPlugin();
+    const supportsObjectLayout = jasmine
+      .createSpy("supportsObjectLayout")
+      .and.callFake(
+        (id: string, layout: string) =>
+          !(id === "text-box-1" && layout === "inline"),
+      );
+    const setObjectLayout = jasmine.createSpy("setObjectLayout");
+    (plugin as any).doc = {
+      placement: { supportsObjectLayout, setObjectLayout },
+    };
+    (plugin as any).activeIds = ["shape-1", "text-box-1"];
+
+    expect(
+      (plugin as any).resolveSupportedObjectLayouts((plugin as any).activeIds),
+    ).toEqual(["top-bottom", "under", "over"]);
+    (plugin as any).handleLayout("wrap");
+
+    expect(setObjectLayout).not.toHaveBeenCalled();
+  });
+
+  it("extends Shift selection across absolute objects without requiring format capability", () => {
+    const plugin = new ObjectFormatToolbarPlugin();
+    const root = document.createElement("div");
+    const target = document.createElement("div");
+    target.dataset["blockId"] = "image-1";
+    root.append(target);
+    document.body.append(root);
+    const replay = jasmine.createSpy("replay");
+    (plugin as any).doc = {
+      isReadonly: false,
+      root: { hostElement: root },
+      model: {
+        getParentId: (id: string) =>
+          id === "shape-1" || id === "image-1" ? "layout" : null,
+        getChildrenIds: () => ["shape-1", "image-1"],
+      },
+      placement: { isPlacementLayout: (id: string) => id === "layout" },
+      selection: {
+        value: {
+          anchor: { blockId: "shape-1", type: "selected" },
+          head: { blockId: "shape-1", type: "selected" },
+        },
+        replay,
+      },
+    };
+    const event = new PointerEvent("pointerdown", {
+      button: 0,
+      shiftKey: true,
+      cancelable: true,
+    });
+    Object.defineProperty(event, "target", { value: target });
+
+    expect((plugin as any).extendAbsoluteSelection(event)).toBeTrue();
+    expect(replay).toHaveBeenCalledOnceWith({
+      anchor: { blockId: "layout", type: "boundary", index: 0 },
+      head: { blockId: "layout", type: "boundary", index: 2 },
+      commonParent: "layout",
+    });
+    root.remove();
+  });
+
+  it("selects a group on first click and releases the second click to its member", () => {
+    const plugin = new ObjectFormatToolbarPlugin();
+    const root = document.createElement("div");
+    const groupHost = document.createElement("div");
+    groupHost.dataset["blockId"] = "group";
+    groupHost.setAttribute("data-bc-object-group", "");
+    const child = document.createElement("div");
+    child.dataset["blockId"] = "shape";
+    groupHost.append(child);
+    root.append(groupHost);
+    document.body.append(root);
+    const selectBlock = jasmine.createSpy("selectBlock");
+    const selection: { value: any } = { value: null };
+    (plugin as any).doc = {
+      isReadonly: false,
+      root: { hostElement: root },
+      model: {
+        getParentId: (id: string) =>
+          id === "shape" ? "group" : id === "group" ? "layout" : null,
+      },
+      placement: { isObjectGroup: (id: string) => id === "group" },
+      selection: {
+        get value() {
+          return selection.value;
+        },
+        selectBlock,
+      },
+      readonlyManager: { isReadonly: () => false },
+      getBlockById: () => ({ id: "group", hostElement: groupHost }),
+    };
+
+    const first = pointerEventOn(child);
+    expect((plugin as any).handleObjectGroupPointerDown(first)).toBeTrue();
+    expect(selectBlock).toHaveBeenCalledOnceWith("group");
+    expect(first.defaultPrevented).toBeTrue();
+
+    selection.value = {
+      anchor: { blockId: "group", type: "selected" },
+      head: { blockId: "group", type: "selected" },
+    };
+    const second = pointerEventOn(child);
+    expect((plugin as any).handleObjectGroupPointerDown(second)).toBeFalse();
+    expect(selectBlock).toHaveBeenCalledTimes(1);
+    expect(second.defaultPrevented).toBeFalse();
+    root.remove();
+  });
+
+  it("keeps the group frame visible while a nested member owns selection", () => {
+    const plugin = new ObjectFormatToolbarPlugin();
+    const groupHost = document.createElement("div");
+    document.body.append(groupHost);
+    const parents: Record<string, string> = {
+      "shape-text": "shape",
+      shape: "group",
+      group: "layout",
+      outside: "root",
+    };
+    (plugin as any).doc = {
+      model: { getParentId: (id: string) => parents[id] ?? null },
+      placement: { isObjectGroup: (id: string) => id === "group" },
+      getBlockById: (id: string) => {
+        if (id !== "group") throw new Error("missing block");
+        return { id, hostElement: groupHost };
+      },
+    };
+
+    (plugin as any).syncSelectionWithinGroupFrames({
+      anchor: { blockId: "shape-text", type: "text", offset: 0 },
+      head: { blockId: "shape-text", type: "text", offset: 2 },
+    });
+    expect(groupHost.classList).toContain("bc-object-group--selection-within");
+
+    (plugin as any).syncSelectionWithinGroupFrames({
+      anchor: { blockId: "outside", type: "selected" },
+      head: { blockId: "outside", type: "selected" },
+    });
+    expect(groupHost.classList).not.toContain(
+      "bc-object-group--selection-within",
+    );
+    groupHost.remove();
+  });
+
+  it("executes a group command through an owned toolbar focus gap", () => {
+    const plugin = new ObjectFormatToolbarPlugin();
+    const alignObjects = jasmine.createSpy("alignObjects");
+    (plugin as any).doc = {
+      placement: {
+        getAbsoluteObjectSelectionIds: () => null,
+        alignObjects,
+      },
+      selection: { value: null },
+    };
+    (plugin as any).toolbarPointerActive = true;
+    spyOn(plugin, "close");
+    spyOn<any>(plugin, "sync");
+
+    (plugin as any).handleGroupAction("left", ["shape-1", "image-1"]);
+
+    expect(alignObjects).toHaveBeenCalledOnceWith(
+      ["shape-1", "image-1"],
+      "left",
+    );
+  });
 });
+
+function pointerEventOn(target: HTMLElement): PointerEvent {
+  const event = new PointerEvent("pointerdown", {
+    button: 0,
+    bubbles: true,
+    cancelable: true,
+  });
+  Object.defineProperty(event, "target", { value: target });
+  return event;
+}

@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-27
+> Last updated: 2026-08-28
 
 ## Overlay Service
 
@@ -328,8 +328,18 @@ pattern: it preserves the established side-aware 42px iconfont rail, 288px
 format card, compact 228px layout card, center-first connected positions and
 RAF panel repositioning. Secondary cards omit redundant title/description
 headers. Layout modes use compact CSES buttons with the icon above a visible
-one- or two-line label, plus tooltips and an active state; hierarchy remains available for one or multiple objects, while object
-alignment/distribution/grouping is multi-selection only. Shape and text format
+one- or two-line label, plus tooltips and an active state. Their equal-width
+columns fill the available row after capability filtering. Mixed absolute-object
+selection bypasses this format rail and uses the restored compact horizontal
+group toolbar for alignment, distribution and grouping; a selected group reuses
+that surface for layout, hierarchy and ungrouping. Preserve the historical group
+focus handoff: first click selects the group, second click may enter a member,
+and member Selection retains the ancestor group frame. Resolve those commands from
+the absolute placement selection even when some targets have no `objectFormat`
+capability. Filter single-object layout buttons through the
+`doc.placement.supportsObjectLayout()` intersection and repeat that guard in the
+action layer, so TextBox and other blocks without an inline adapter never offer
+or partially apply inline layout. Shape and text format
 cards use one CSES segmented tab strip and render only the active content area;
 the active tab has no trailing section divider or reset action. The text font
 is a searchable CSES select backed by the shared font catalogs and writes the

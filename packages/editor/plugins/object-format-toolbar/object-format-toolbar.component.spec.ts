@@ -211,8 +211,10 @@ describe("ObjectFormatToolbarComponent", () => {
 
     const host = fixture.nativeElement as HTMLElement;
     const scroll = host.querySelector<HTMLElement>(".object-format__scroll")!;
-    const slider = sectionElement(fixture, "shape-outline")
-      .querySelector<HTMLElement>("cs-slider")!;
+    const slider = sectionElement(
+      fixture,
+      "shape-outline",
+    ).querySelector<HTMLElement>("cs-slider")!;
     const scrollStyle = getComputedStyle(scroll);
     const sliderStyle = getComputedStyle(slider);
 
@@ -240,8 +242,9 @@ describe("ObjectFormatToolbarComponent", () => {
     );
     expect(activeLayout.classList.contains("active")).toBeTrue();
     expect(activeLayout.getAttribute("aria-pressed")).toBe("true");
-    const activeLayoutLabel = (activeLayout as HTMLElement)
-      .querySelector<HTMLElement>("span")!;
+    const activeLayoutLabel = (
+      activeLayout as HTMLElement
+    ).querySelector<HTMLElement>("span")!;
     expect(activeLayoutLabel.textContent?.trim()).toBe("衬于文字下方");
     expect(getComputedStyle(activeLayout).flexDirection).toBe("column");
     expect(activeLayoutLabel.clientHeight).toBeGreaterThan(0);
@@ -275,6 +278,37 @@ describe("ObjectFormatToolbarComponent", () => {
         '[data-object-format-section="hierarchy"]',
       ),
     ).not.toBeNull();
+  });
+
+  it("fills the layout row while hiding unsupported inline layout", async () => {
+    await TestBed.configureTestingModule({
+      imports: [ObjectFormatToolbarComponent],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(ObjectFormatToolbarComponent);
+    fixture.componentRef.setInput("state", {
+      ...state,
+      blockIds: ["text-box-1"],
+    });
+    fixture.componentRef.setInput("supportedLayouts", [
+      "top-bottom",
+      "under",
+      "over",
+    ]);
+    fixture.componentInstance.activePanel = "layout";
+    fixture.detectChanges();
+
+    expect(
+      fixture.nativeElement.querySelector('[aria-label="嵌入型"]'),
+    ).toBeNull();
+    expect(
+      fixture.nativeElement.querySelector('[aria-label="上下型"]'),
+    ).not.toBeNull();
+    const layoutGrid = fixture.nativeElement.querySelector(
+      ".object-format__icon-grid--4",
+    );
+    expect(
+      getComputedStyle(layoutGrid).gridTemplateColumns.split(" ").length,
+    ).toBe(3);
   });
 
   it("emits preview while a CSES slider moves and one model patch on commit", async () => {
@@ -319,9 +353,9 @@ describe("ObjectFormatToolbarComponent", () => {
     fixture.componentInstance.transformChangeValue("arch-up");
 
     expect(patches.length).toBe(5);
-    expect(
-      (patches[0]["shapeFill"] as typeof gradient).stops[1]?.offset,
-    ).toBe(0.58);
+    expect((patches[0]["shapeFill"] as typeof gradient).stops[1]?.offset).toBe(
+      0.58,
+    );
     expect((patches[1]["shapeOutline"] as { dash: string }).dash).toBe(
       "dash-dot",
     );
@@ -347,14 +381,15 @@ describe("ObjectFormatToolbarComponent", () => {
     fixture.detectChanges();
 
     const fillSection = sectionElement(fixture, "shape-fill");
-    const urlInput = fillSection.querySelector<HTMLInputElement>(
-      'input[type="url"]',
-    );
+    const urlInput =
+      fillSection.querySelector<HTMLInputElement>('input[type="url"]');
     expect(urlInput?.value).toBe("");
     expect(
       fillSection.querySelector('[data-object-format-picture-config="shape"]'),
     ).toBeNull();
-    expect(fixture.componentInstance.showsPaintOpacity(emptyPicture)).toBeFalse();
+    expect(
+      fixture.componentInstance.showsPaintOpacity(emptyPicture),
+    ).toBeFalse();
 
     const userFill = {
       ...emptyPicture,
