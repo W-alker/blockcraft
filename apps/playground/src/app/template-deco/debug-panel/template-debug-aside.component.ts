@@ -21,11 +21,12 @@ const MAX_W = 600
       @if (open()) {
         <div class="tpl-panel__head">
           <span class="tpl-panel__title">调试</span>
-          <!-- 区块显隐开关：勾选=显示对应调试块（set=设置卡 / data=实时数据 / selection=实时选区） -->
+          <!-- 区块显隐开关：勾选=显示对应调试块。 -->
           <span class="tpl-panel__checks">
             <label class="tpl-panel__check"><input type="checkbox" [checked]="sections().set" (change)="toggleSection('set', $event)" />set</label>
             <label class="tpl-panel__check"><input type="checkbox" [checked]="sections().data" (change)="toggleSection('data', $event)" />data</label>
             <label class="tpl-panel__check"><input type="checkbox" [checked]="sections().selection" (change)="toggleSection('selection', $event)" />selection</label>
+            <label class="tpl-panel__check"><input type="checkbox" [checked]="sections().adapter" (change)="toggleSection('adapter', $event)" />adapter</label>
           </span>
           <button class="tpl-panel__toggle" type="button" title="收起" (click)="open.set(false)">
             <i class="bc_icon bc_daohangshouqi"></i>
@@ -48,8 +49,8 @@ export class TemplateDebugAsideComponent {
   protected readonly open = signal(true)
   protected readonly width = signal(320)
   protected readonly resizing = signal(false)
-  /** 三个调试区块的显隐（checkbox 在本组件标题行，状态也归它管；面板只读值渲染）。默认全显。 */
-  protected readonly sections = signal<DebugSections>({ set: true, data: true, selection: true })
+  /** 调试区块的显隐（checkbox 在本组件标题行，状态也归它管；面板只读值渲染）。默认全显。 */
+  protected readonly sections = signal<DebugSections>({ set: true, data: true, selection: true, adapter: true })
 
   toggleSection(key: keyof DebugSections, e: Event): void {
     const checked = (e.target as HTMLInputElement).checked

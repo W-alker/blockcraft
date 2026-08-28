@@ -3,6 +3,7 @@ import { PlaceableProps } from '../../core/placement'
 import { defineDeco } from '../../core/deco.types'
 import { LogoTemplateEditComponent } from './logo.template-edit.component'
 import { LogoTemplateRenderComponent } from './logo.template-render.component'
+import { logoBlockAdapters } from './adapter'
 
 export interface LogoModel extends NoEditableBlockNative {
   flavour: 'logo'
@@ -14,6 +15,7 @@ export interface LogoModel extends NoEditableBlockNative {
 export const LogoDeco = defineDeco<LogoModel>({
   flavour: 'logo',
   nodeType: BlockNodeType.void,
+  adapter: logoBlockAdapters,
   label: 'Logo',
   svgIcon: 'bc_tupian-color',                // 图片
   defaultProps: { src: '', wr: 16, ar: 1 },

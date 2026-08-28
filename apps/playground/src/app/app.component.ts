@@ -24,6 +24,7 @@ import {
   RevisionReviewUiController,
   SnapshotViewerComponent,
   createMarkdownStreamViewer,
+  downloadFile,
   generateId,
   replaceSnapshotsIdDeeply
 } from '@ccc/blockcraft';
@@ -109,6 +110,70 @@ interface DebugMetaItem {
 }
 
 const BLOCK_SNAPSHOT_NODE_TYPES = new Set(['root', 'block', 'void', 'editable']);
+const MARKDOWN_STREAM_TEST_MIN_CHUNK_SIZE = 4;
+const MARKDOWN_STREAM_TEST_MAX_CHUNKS = 240;
+
+const DEFAULT_MARKDOWN_STREAM_TEST_SOURCE = `# BlockCraft Markdown Stream Test
+
+这是第一段，模拟 AI 持续输出内容。
+
+## 列表
+- 第一项
+- 第二项
+- 第三项
+
+## 任务列表
+- [x] 已完成事项
+- [ ] 待处理事项
+
+## 嵌套列表
+1. 第一层
+   1. 第二层 A
+   2. 第二层 B
+2. 另一项
+
+## 代码块
+
+\`\`\`ts
+const message = "hello blockcraft";
+console.log(message);
+\`\`\`
+
+## 表格
+
+| 功能 | 状态 | 说明 |
+| --- | --- | --- |
+| Markdown 流 | 已接入 | 逐块写入 |
+| Diff 渲染 | 已接入 | 块级与文本级 |
+| 表格 | 测试中 | 覆盖 GFM table |
+
+## 引用
+> 差异渲染应该只更新变化的部分。
+
+---
+
+## 公式
+
+$$
+E = mc^2
+$$
+
+## Mermaid
+
+\`\`\`mermaid
+graph TD
+  Source[Markdown source] --> Adapter
+  Adapter --> Mermaid[Mermaid Block]
+\`\`\`
+
+## BlockCraft 专有块
+
+:::bc-callout
+这段内容使用 \`:::\` 容器指令，流式解析与文件导入应得到同一个 Callout Block。
+:::
+
+最后一段：**加粗**、\`inline code\`、以及普通文本。
+`;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -203,7 +268,7 @@ const ACTION_SECTIONS: DebugSection[] = [
       { id: 'importHtml', label: '导入 HTML' },
       { id: 'importMarkdown', label: '导入 Markdown' },
       { id: 'importBlockSnapshotTxt', label: '导入 TXT' },
-      { id: 'exportMarkdown', label: '导出 Markdown' },
+      { id: 'exportMarkdown', label: '导出 MD' },
       { id: 'exportPdf', label: '导出 PDF' }
     ]
   },
@@ -330,6 +395,48 @@ const ACTION_SECTIONS: DebugSection[] = [
               </div>
             }
           </nav>
+
+          <div class="markdown-stream-test-controls">
+            <div class="markdown-stream-test-controls__header">
+              <span class="nav-label">Markdown 流测试文本</span>
+              <span
+                class="status-pill"
+                [class.status-pill--active]="markdownStreamTestRunning"
+                [class.markdown-stream-test-controls__status--error]="!!markdownStreamTestError">
+                {{ markdownStreamTestStatusLabel }}
+              </span>
+            </div>
+            <textarea
+              class="markdown-stream-test-controls__input"
+              aria-label="Markdown 流测试文本"
+              spellcheck="false"
+              [value]="markdownStreamTestSource"
+              (input)="onMarkdownStreamTestSourceInput($event)"></textarea>
+            @if (markdownStreamTestError) {
+              <p class="markdown-stream-test-controls__error">{{ markdownStreamTestError }}</p>
+            }
+            <div class="markdown-stream-test-controls__actions">
+              <button
+                type="button"
+                class="nav-button nav-button--primary"
+                (click)="startMarkdownStreamTest()">
+                开始模拟
+              </button>
+              <button
+                type="button"
+                class="nav-button"
+                [disabled]="!markdownStreamTestRunning"
+                (click)="stopMarkdownStreamTest()">
+                停止
+              </button>
+              <button
+                type="button"
+                class="nav-button"
+                (click)="resetMarkdownStreamTestSource()">
+                恢复示例
+              </button>
+            </div>
+          </div>
 
           <div class="sim-controls">
             <span class="nav-label">模拟参数</span>
@@ -1447,6 +1554,67 @@ const ACTION_SECTIONS: DebugSection[] = [
       border-top: 1px solid var(--bc-border-color-light);
     }
 
+    .markdown-stream-test-controls {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding-top: 14px;
+      border-top: 1px solid var(--bc-border-color-light);
+    }
+
+    .markdown-stream-test-controls__header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .markdown-stream-test-controls__input {
+      width: 100%;
+      min-height: 180px;
+      padding: 10px 11px;
+      box-sizing: border-box;
+      resize: vertical;
+      border: 1px solid var(--bc-border-color-light);
+      border-radius: 12px;
+      outline: none;
+      background: var(--bc-bg-secondary);
+      color: var(--bc-color);
+      font: 11px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .markdown-stream-test-controls__input:focus {
+      border-color: var(--bc-active-color-light);
+      box-shadow: 0 0 0 3px var(--bc-active-color-lighter);
+    }
+
+    .markdown-stream-test-controls__actions {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .markdown-stream-test-controls__actions .nav-button:disabled {
+      cursor: not-allowed;
+      opacity: 0.5;
+      transform: none;
+    }
+
+    .markdown-stream-test-controls__error {
+      margin: 0;
+      color: #be123c;
+      font-size: 11px;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+
+    .markdown-stream-test-controls__status--error {
+      color: #be123c;
+      border-color: #f43f5e;
+      background: #fff1f2;
+    }
+
     .sim-row {
       display: flex;
       align-items: center;
@@ -1533,6 +1701,7 @@ export class AppComponent implements AfterViewInit, OnDestroy {
   private readonly zone = inject(NgZone);
   private _markdownStreamRenderer?: MarkdownStreamRenderer;
   private _markdownTestTimer: number | null = null;
+  private _markdownTestRunId = 0;
   private _autoInitTimer: number | null = null;
   private _demoController: PresentationController | null = null;
   private _collabInitHandler?: () => void;
@@ -1600,6 +1769,9 @@ graph TD
 | --- | --- |
 | stream | ready |
 `;
+  markdownStreamTestSource = DEFAULT_MARKDOWN_STREAM_TEST_SOURCE;
+  markdownStreamTestRunning = false;
+  markdownStreamTestError: string | null = null;
   markdownStreamChunkMode: 'paragraph' | 'random' = 'paragraph';
   markdownStreamChunks = this.buildMarkdownStreamChunks(this.markdownStreamSource);
   markdownStreamIndex = 0;
@@ -1735,6 +1907,16 @@ graph TD
 
   get markdownStreamStatusLabel() {
     return `${this.markdownStreamIndex}/${this.markdownStreamChunks.length} chunks${this._markdownStreamPlayTimer ? ' · 自动播放中' : ''}`;
+  }
+
+  get markdownStreamTestStatusLabel() {
+    if (this.markdownStreamTestError) {
+      return '解析失败';
+    }
+    if (this.markdownStreamTestRunning) {
+      return '流式写入中';
+    }
+    return `${Array.from(this.markdownStreamTestSource).length} 字符`;
   }
 
   getMarkdownChunkState(index: number) {
@@ -1913,7 +2095,12 @@ graph TD
         void this.importBlockSnapshotTxt();
         return;
       case 'exportMarkdown':
-        this.exportMarkdown();
+        void this.exportMarkdown().catch(error => {
+          const message = error instanceof Error ? error.message : '未知错误';
+          this.ensureEditorInitialized().doc.messageService.error(
+            `Markdown 导出失败：${message}`,
+          );
+        });
         return;
       case 'exportPdf':
         void this.exportPdf().catch(error => {
@@ -2202,7 +2389,7 @@ graph TD
     const editor = this.ensureEmptyEditorReady();
     const adapter = editor.doc.injector
       .get(DOC_ADAPTER_SERVICE_TOKEN)
-      .getAdapter(ClipboardDataType.RTF);
+      .getAdapter(ClipboardDataType.MARKDOWN);
 
     if (!adapter) {
       throw new Error('Markdown adapter is not registered.');
@@ -2589,6 +2776,9 @@ graph TD
   }
 
   async renderMarkdown(markdown: string) {
+    // Renderer is reserved for the debug stream preview. File import goes
+    // through ClipboardManager so editor mutations keep normal paste semantics.
+    this.stopMarkdownStreamTest();
     await this.markdownStreamRenderer.replace(markdown, {
       immediate: true
     });
@@ -2608,88 +2798,91 @@ graph TD
     });
   }
 
+  onMarkdownStreamTestSourceInput(event: Event) {
+    this.stopMarkdownStreamTest();
+    this.markdownStreamTestSource = (event.target as HTMLTextAreaElement).value;
+    this.markdownStreamTestError = null;
+  }
+
+  resetMarkdownStreamTestSource() {
+    this.stopMarkdownStreamTest();
+    this.markdownStreamTestSource = DEFAULT_MARKDOWN_STREAM_TEST_SOURCE;
+    this.markdownStreamTestError = null;
+  }
+
   startMarkdownStreamTest() {
     this.stopMarkdownStreamTest();
-    void this.clearMarkdownStream();
-
-    const markdown = `# BlockCraft Markdown Stream Test
-
-这是第一段，模拟 AI 持续输出内容。
-
-## 列表
-- 第一项
-- 第二项
-- 第三项
-
-## 任务列表
-- [x] 已完成事项
-- [ ] 待处理事项
-
-## 嵌套列表
-1. 第一层
-   1. 第二层 A
-   2. 第二层 B
-2. 另一项
-
-## 代码块
-
-\`\`\`ts
-const message = "hello blockcraft";
-console.log(message);
-\`\`\`
-
-## 表格
-
-| 功能 | 状态 | 说明 |
-| --- | --- | --- |
-| Markdown 流 | 已接入 | 逐块写入 |
-| Diff 渲染 | 已接入 | 块级与文本级 |
-| 表格 | 测试中 | 覆盖 GFM table |
-
-## 引用
-> 差异渲染应该只更新变化的部分。
-
----
-
-## 公式
-
-$$
-E = mc^2
-$$
-
-最后一段：**加粗**、\`inline code\`、以及普通文本。
-`;
-
-    const chunkSize = 4;
+    const runId = ++this._markdownTestRunId;
+    const markdown = this.markdownStreamTestSource;
     const chars = Array.from(markdown);
+    const chunkSize = Math.max(
+      MARKDOWN_STREAM_TEST_MIN_CHUNK_SIZE,
+      Math.ceil(chars.length / MARKDOWN_STREAM_TEST_MAX_CHUNKS),
+    );
     const chunks = Array.from(
       { length: Math.ceil(chars.length / chunkSize) },
       (_, index) => chars.slice(index * chunkSize, (index + 1) * chunkSize).join('')
     );
 
+    this.markdownStreamTestRunning = true;
+    this.markdownStreamTestError = null;
+
     let cursor = 0;
     const tick = () => {
+      if (runId !== this._markdownTestRunId) {
+        return;
+      }
       if (cursor >= chunks.length) {
         this._markdownTestTimer = null;
-        void this.flushMarkdownStream();
+        void Promise.resolve()
+          .then(() => this.flushMarkdownStream())
+          .then(() => {
+            if (runId === this._markdownTestRunId) {
+              this.markdownStreamTestRunning = false;
+              this.cdr.markForCheck();
+            }
+          })
+          .catch(error => this.handleMarkdownStreamTestError(runId, error));
         return;
       }
 
-      void this.appendMarkdownChunk(chunks[cursor]!);
+      const chunk = chunks[cursor]!;
       cursor += 1;
+      void Promise.resolve()
+        .then(() => this.appendMarkdownChunk(chunk))
+        .catch(error => this.handleMarkdownStreamTestError(runId, error));
       this._markdownTestTimer = window.setTimeout(tick, 90);
     };
 
-    tick();
+    void Promise.resolve()
+      .then(() => this.clearMarkdownStream())
+      .then(() => {
+        if (runId === this._markdownTestRunId) {
+          tick();
+        }
+      })
+      .catch(error => this.handleMarkdownStreamTestError(runId, error));
   }
 
-  private stopMarkdownStreamTest() {
-    if (this._markdownTestTimer === null) {
+  stopMarkdownStreamTest() {
+    this._markdownTestRunId += 1;
+    if (this._markdownTestTimer !== null) {
+      clearTimeout(this._markdownTestTimer);
+      this._markdownTestTimer = null;
+    }
+    this.markdownStreamTestRunning = false;
+    this.cdr.markForCheck();
+  }
+
+  private handleMarkdownStreamTestError(runId: number, error: unknown) {
+    if (runId !== this._markdownTestRunId) {
       return;
     }
-
-    clearTimeout(this._markdownTestTimer);
-    this._markdownTestTimer = null;
+    this.stopMarkdownStreamTest();
+    this.markdownStreamTestError = error instanceof Error
+      ? error.message
+      : `${error}`;
+    this.cdr.markForCheck();
   }
 
   async exportPdf() {
@@ -2712,12 +2905,60 @@ $$
     }
 
     const text = await files[0]!.text();
-    await this.renderMarkdown(text);
+    const adapter = editor.doc.injector
+      .get(DOC_ADAPTER_SERVICE_TOKEN)
+      .getAdapter(ClipboardDataType.MARKDOWN);
+    if (!adapter) {
+      editor.doc.messageService.warn('Markdown adapter 未注册');
+      return;
+    }
+
+    // 文件导入属于编辑操作，不属于流式预览。先停止模拟流，避免旧定时器
+    // 在 Paste 事务完成后继续写入；随后复用 ClipboardManager 的选区、
+    // readonly、事务、Undo 和选区恢复规则。
+    this.stopMarkdownStreamTest();
+    const snapshot = await adapter.toSnapshot(text);
+    if (!snapshot.children.length) {
+      editor.doc.messageService.warn('Markdown 中没有可导入的内容');
+      return;
+    }
+
+    let selection = editor.doc.selection.value;
+    if (!selection || selection.start.type !== 'text') {
+      editor.doc.selection.setCursorAtBlock(editor.doc.root, false, false);
+      selection = editor.doc.selection.value;
+    }
+    if (!selection || selection.start.type !== 'text') {
+      editor.doc.messageService.warn('请先在可编辑内容中放置光标');
+      return;
+    }
+
+    const result = await editor.doc.clipboard.applyPasteOption({
+      type: 'markdown',
+      label: 'Markdown',
+      payload: {kind: 'snapshot', snapshot},
+    }, selection);
+    if (!result) {
+      editor.doc.messageService.warn('当前位置无法导入 Markdown');
+    }
   }
 
-  exportMarkdown() {
+  async exportMarkdown() {
     const editor = this.ensureEditorInitialized();
-    new DocExportManager(editor.doc).exportToMarkdown('blockcraft-export-test.md');
+    const adapter = editor.doc.injector
+      .get(DOC_ADAPTER_SERVICE_TOKEN)
+      .getAdapter(ClipboardDataType.MARKDOWN);
+    if (!adapter) {
+      editor.doc.messageService.warn('Markdown Adapter 未注册');
+      return;
+    }
+    const markdown = await adapter.fromSnapshot(
+      editor.doc.revisions.projectFinalSnapshot(),
+    );
+    await downloadFile(
+      new Blob([markdown], {type: 'text/markdown'}),
+      'blockcraft-export-test.md',
+    );
   }
 
   async importHTML() {

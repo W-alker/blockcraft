@@ -2,17 +2,6 @@ import {HtmlASTToDeltaMatcher} from "../delta-converter";
 import {HtmlAST} from "../../types";
 import type { Element } from 'hast';
 import { collapseWhiteSpace } from 'collapse-white-space';
-import type {DeltaInsertEmbed} from '../../../framework';
-import {
-  createInlineImageDelta,
-  type InlineImageWrapSide,
-  INLINE_SHAPE_EMBED_KEY,
-  INLINE_WORD_ART_EMBED_KEY,
-  createInlineShapeDelta,
-  createInlineWordArtDelta,
-  readInlineShapeDelta,
-  readInlineWordArtDelta,
-} from '../../../embeds';
 import {inlineTypographyFromHtml} from '../typography';
 
 const isElement = (ast: HtmlAST): ast is Element => {
@@ -42,80 +31,6 @@ export const htmlTextToDeltaMatcher: HtmlASTToDeltaMatcher = {
       ? collapseWhiteSpace(ast.value, { trim: options.trim })
       : collapseWhiteSpace(ast.value);
     return value ? [{ insert: value , attributes: {}}] : [];
-  },
-};
-
-export const htmlImageToDeltaMatcher: HtmlASTToDeltaMatcher = {
-  name: 'inline-image',
-  match: ast => isElement(ast) && ast.tagName === 'img',
-  toDelta: ast => {
-    if (!isElement(ast)) return [];
-    const wrapSide = ast.properties?.['dataBcWrapSide'];
-    const delta = createInlineImageDelta(
-      ast.properties?.['src'],
-      ast.properties?.['width'] ?? ast.properties?.['dataWidth'],
-      ast.properties?.['height'] ?? ast.properties?.['dataHeight'],
-      ast.properties?.['dataBcWrap'] === 'square'
-        ? {
-            wrap: true,
-            side: typeof wrapSide === 'string'
-              ? wrapSide as InlineImageWrapSide
-              : undefined,
-            x: Number(ast.properties?.['dataBcWrapX']),
-            gap: Number(ast.properties?.['dataBcWrapGap']),
-          }
-        : undefined,
-    );
-    return delta ? [delta] : [];
-  },
-};
-
-export const htmlInlineObjectToDeltaMatcher: HtmlASTToDeltaMatcher = {
-  name: 'inline-object',
-  match: ast =>
-    isElement(ast) &&
-    ast.tagName === 'span' &&
-    (
-      ast.properties?.['dataBcInlineObject'] === 'shape' ||
-      ast.properties?.['dataBcInlineObject'] === 'word-art'
-    ),
-  toDelta: ast => {
-    if (!isElement(ast)) return []
-    const kind = ast.properties?.['dataBcInlineObject']
-    const payload = ast.properties?.['dataBcInlineObjectPayload']
-    if (
-      (kind !== 'shape' && kind !== 'word-art') ||
-      typeof payload !== 'string'
-    ) return []
-    const width = Number(ast.properties?.['dataBcInlineObjectWidth'])
-    const height = Number(ast.properties?.['dataBcInlineObjectHeight'])
-    const side = ast.properties?.['dataBcWrapSide']
-    const attributes = {
-      ...(Number.isFinite(width) && width > 0 ? {width} : {}),
-      ...(Number.isFinite(height) && height > 0 ? {height} : {}),
-      ...(ast.properties?.['dataBcWrap'] === 'square'
-        ? {
-            wrap: true as const,
-            side: typeof side === 'string'
-              ? side as InlineImageWrapSide
-              : undefined,
-            x: Number(ast.properties?.['dataBcWrapX']),
-            gap: Number(ast.properties?.['dataBcWrapGap']),
-          }
-        : {}),
-    }
-    if (kind === 'shape') {
-      const data = readInlineShapeDelta({
-        insert: {[INLINE_SHAPE_EMBED_KEY]: payload},
-        attributes,
-      } as DeltaInsertEmbed)
-      return [createInlineShapeDelta(data.props, data.text, data)]
-    }
-    const data = readInlineWordArtDelta({
-      insert: {[INLINE_WORD_ART_EMBED_KEY]: payload},
-      attributes,
-    } as DeltaInsertEmbed)
-    return [createInlineWordArtDelta(data.props, data.text, data)]
   },
 };
 
@@ -326,31 +241,7 @@ export const htmlBrElementToDeltaMatcher: HtmlASTToDeltaMatcher = {
   },
 };
 
-export const htmlMathInlineToDeltaMatcher: HtmlASTToDeltaMatcher = {
-  name: 'math-inline',
-  match: ast =>
-    isElement(ast) && (
-      (ast.tagName === 'code' && Array.isArray(ast.properties?.['className']) &&
-        (ast.properties['className'] as string[]).includes('math')) ||
-      (ast.tagName === 'span' && Array.isArray(ast.properties?.['className']) &&
-        (ast.properties['className'] as string[]).some(c => c === 'katex' || c === 'math-inline'))
-    ),
-  toDelta: (ast, context) => {
-    if (!isElement(ast)) return [];
-    const latex = (ast.properties?.['dataLatex'] as string) || '';
-    if (latex) {
-      return [{insert: {latex}}];
-    }
-    const text = ast.children.flatMap(child =>
-      context.toDelta(child, {trim: false})
-    ).map(d => d.insert as string).join('');
-    return text ? [{insert: {latex: text}}] : [];
-  },
-};
-
 export const htmlInlineToDeltaMatchers: HtmlASTToDeltaMatcher[] = [
-  htmlInlineObjectToDeltaMatcher,
-  htmlImageToDeltaMatcher,
   htmlTextToDeltaMatcher,
   htmlTypographyElementToDeltaMatcher,
   htmlTextLikeElementToDeltaMatcher,
@@ -362,5 +253,4 @@ export const htmlInlineToDeltaMatchers: HtmlASTToDeltaMatcher[] = [
   htmlLinkElementToDeltaMatcher,
   htmlMarkElementToDeltaMatcher,
   htmlBrElementToDeltaMatcher,
-  htmlMathInlineToDeltaMatcher,
 ];

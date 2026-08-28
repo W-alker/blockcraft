@@ -4,6 +4,49 @@ import {
   createBundledEditorCapabilities,
   projectBundledBlockMaterials,
 } from './bundled-capabilities'
+import {
+  BlockNodeType,
+  type EmbedConverter,
+  type IBlockSchemaOptions,
+  type IBlockSnapshot,
+} from '../framework'
+import {
+  createGenericBlockAdapterContribution,
+  createInlineDirectiveAdapterContribution,
+} from '../adapters/generic'
+
+const customSchema: IBlockSchemaOptions = {
+  ...BUNDLED_EDITOR_SCHEMAS.find(schema => schema.flavour === 'divider')!,
+  flavour: 'custom-card' as BlockCraft.BlockFlavour,
+  nodeType: BlockNodeType.void,
+  createSnapshot: () => ({
+    id: 'custom-card',
+    flavour: 'custom-card' as BlockCraft.BlockFlavour,
+    nodeType: BlockNodeType.void,
+    props: {},
+    meta: {},
+    children: [],
+  }) as IBlockSnapshot,
+}
+
+const customEmbed: [string, EmbedConverter] = [
+  'custom-chip',
+  {
+    toView: () => document.createElement('span'),
+    toDelta: () => ({insert: {'custom-chip': ''}}),
+  },
+]
+
+const customBlockAdapters = createGenericBlockAdapterContribution({
+  flavour: 'custom-card',
+  nodeType: BlockNodeType.void,
+  portableText: () => 'Custom card',
+})
+
+const customInlineEmbedAdapters = createInlineDirectiveAdapterContribution({
+  key: 'custom-chip',
+  displayText: () => 'Custom chip',
+})
 
 describe('bundled editor capabilities', () => {
   const bundledEmbedOrder = [
@@ -87,5 +130,61 @@ describe('bundled editor capabilities', () => {
         },
       ]],
     })).toThrowError(/Duplicate Embed name: mention/)
+  })
+
+  it('rejects custom schemas and Embeds without matching adapter ownership', () => {
+    expect(() => createBundledEditorCapabilities({
+      additionalSchemas: [customSchema],
+    })).toThrowError(/Missing Block adapter contribution: custom-card/)
+
+    expect(() => createBundledEditorCapabilities({
+      additionalEmbeds: [customEmbed],
+    })).toThrowError(/Missing Inline Embed adapter contribution: custom-chip/)
+  })
+
+  it('composes custom schemas, Embeds, and their adapters into one registry', () => {
+    const capabilities = createBundledEditorCapabilities({
+      additionalSchemas: [customSchema],
+      additionalEmbeds: [customEmbed],
+      additionalBlockAdapters: [customBlockAdapters],
+      additionalInlineEmbedAdapters: [customInlineEmbedAdapters],
+    })
+
+    expect(capabilities.schemaDefinitions).toContain(customSchema)
+    expect(capabilities.embeds).toContain(customEmbed)
+    expect(capabilities.adapterRegistry.blocks).toContain(customBlockAdapters)
+    expect(capabilities.adapterRegistry.inlineEmbeds)
+      .toContain(customInlineEmbedAdapters)
+    expect(capabilities.adapterRegistry.htmlMatchersForFlavour('custom-card'))
+      .toEqual(customBlockAdapters.html!)
+  })
+
+  it('derives an Embed converter from its adapter contribution factory', () => {
+    const converter: EmbedConverter = {
+      toView: () => document.createElement('span'),
+      toDelta: () => ({insert: {'derived-chip': ''}}),
+    }
+    const createDomConverter = jasmine.createSpy('createDomConverter')
+      .and.returnValue(converter)
+    const adapters = createInlineDirectiveAdapterContribution({
+      key: 'derived-chip',
+      createDomConverter,
+      displayText: () => 'Derived chip',
+    })
+
+    const capabilities = createBundledEditorCapabilities({
+      additionalInlineEmbedAdapters: [adapters],
+    })
+
+    expect(createDomConverter).toHaveBeenCalledTimes(1)
+    expect(capabilities.embeds.find(([key]) => key === 'derived-chip'))
+      .toEqual(['derived-chip', converter])
+    expect(capabilities.adapterRegistry.inlineEmbeds).toContain(adapters)
+  })
+
+  it('rejects adapter-only Embeds without a converter factory', () => {
+    expect(() => createBundledEditorCapabilities({
+      additionalInlineEmbedAdapters: [customInlineEmbedAdapters],
+    })).toThrowError(/Missing Inline Embed converter: custom-chip/)
   })
 })

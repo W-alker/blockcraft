@@ -49,7 +49,7 @@ A block-based rich text editor built on **Angular (standalone components)** + **
 | **Block Agent Contract** | Optional Block-owned AI semantics plus explicit create/write grants | `blocks/<block>/agent/` + `defineBlockAgentCapability()` |
 | **Inline Embed Agent Contract** | Optional Embed-owned AI semantics plus an explicit insert grant | `embeds/<embed-key>/agent/` + `defineInlineEmbedAgentCapability()` |
 | **Bundled Capabilities** | Fresh full-editor schemas, embeds, plugins and insert-material projection for each Doc/surface | `createBundledEditorCapabilities()` in `editor/bundled-capabilities.ts` |
-| **Adapter** | HTML/Markdown ↔ BlockSnapshot conversion | `adapters/html-adapter/`, `adapters/markdown-adapter/` |
+| **Adapter** | HTML/Markdown ↔ BlockSnapshot conversion with co-located Block/Embed contributions | `blocks/*/adapter/`, `embeds/*/adapter/`, `adapters/registry/` |
 
 ## Block Types Taxonomy
 
@@ -92,12 +92,13 @@ packages/editor/
 │   ├── plugin/             # DocPlugin base class
 │   ├── chain/              # DocChain fluent builder
 │   └── services/           # DI tokens (file, message, blockCreator, etc.)
-├── blocks/                 # All block implementations; optional per-Block agent/ contract
-├── embeds/                 # Canonical Inline Embed converters; optional per-Embed agent/ contract
+├── blocks/                 # Block implementations; optional adapter/ and agent/ contracts
+├── embeds/                 # Inline Embed converters; co-located adapter/ and optional agent/
 ├── plugins/                # All plugin implementations (one dir per plugin)
 ├── components/             # Reusable UI components (toolbar, pickers, optional revision review UI)
 ├── snapshot-viewer/        # Standalone display-only snapshot renderer
-├── adapters/               # HTML/Markdown import/export
+├── adapters/               # 仅核心：AST walker、matcher 契约、registry 与通用 codec
+├── editor/                 # 内置能力组合根（含 bundled-adapter-registry.ts）
 ├── themes/                 # CSS themes (base, light, dark, per-block styles)
 ├── tools/                  # Export utilities (PDF, print)
 └── global/                 # Logger, error codes, decorators, types, utils
@@ -652,7 +653,11 @@ the first successful preview dimensions to persist `ar` and a placement-plane-
 relative `wr` capped by the current parent content width. Remote and legacy images
 without stored responsive dimensions start from the Schema default and
 backfill complete `wr/ar` on the first successful mounted load without adding
-Undo history. Continuous virtualization and
+Undo history. HTML/Markdown image import follows the same loading-first
+boundary: its Adapter synchronously preserves the safe source URL and creates
+the snapshot, while the mounted renderer owns resource loading and state. It
+does not fetch or upload a remote image during AST traversal, so the Markdown
+Stream can render the frame without waiting for the resource. Continuous virtualization and
 sparse pagination share one DOM-free model estimator for `wr/ar` media and
 inline-object `width/height`. Wrapped inline images, shapes and WordArt
 additionally reserve their contained object-plus-gap height and estimate
@@ -921,6 +926,7 @@ import { createMarkdownStreamViewer } from '@ccc/blockcraft'
 
 const viewer = createMarkdownStreamViewer({
   container: hostEl,
+  onError: error => reportMarkdownStreamError(error),
   viewerOptions: {
     resourcePolicy: 'eager',
   },
@@ -933,6 +939,29 @@ viewer.destroy()
 ```
 
 Use this path when the source arrives as Markdown chunks or full-text rewrites rather than prebuilt snapshots.
+The incremental viewer sends the complete accumulated source through the same
+`MarkdownAdapter` and Adapter Registry as one-shot conversion once per
+coalesced render. It has no separate Markdown planner; Block/Embed recognition
+remains entirely in domain-owned adapter contributions.
+Failed parses keep the last successful view and are reported through the
+optional `onError` callback; later input retries from the complete source.
+The editable `MarkdownStreamRenderer` follows the same adapter boundary and
+drops stale in-flight parses before writing through DocCRUD.
+
+Markdown is an interoperable reading/exchange format, not the exact BlockCraft
+document persistence format. Both one-shot and streaming paths prefer native
+links, images, thematic breaks, tables and fenced code. Generic custom Block
+adapters emit a private directive only after explicitly setting
+`markdownDirective: true`. The default `hybrid` profile combines that selective
+custom syntax with a portable base; choose `portable` for standard-only output
+or `blockcraft` when private Inline Embed directives are also required. Use
+Snapshot/`.bcdoc` for exact layout and model recovery. Parameters for a custom
+Block directive live in leading YAML front matter delimited by `---`,
+not an opaque percent-encoded attribute. Container directives leave one blank
+line between each fence and their internal elements; nested containers use a
+longer outer colon fence. Built-in Mention uses a readable standard link with the stable
+`urn:blockcraft:mention:<type>:<id>` destination; the same Adapter reconstructs
+it in one-shot import, clipboard paste and Markdown Stream parsing.
 
 ### Default Inline Embeds
 
@@ -1090,21 +1119,25 @@ pointers; those gestures persist only flat numeric `adjustments`, not paths.
 The other 87 catalogue definitions receive trusted edit-only path projections,
 so all 103 built-in Shape kinds expose yellow draggable nodes while untouched
 documents remain path-free.
+The nested `shape-text` child remains manually formattable, while Schema
+`metadata.pastePlainTextOnly` makes clipboard ingestion consume only
+`text/plain`. This paste-only capability is independent from
+`metadata.plainTextOnly`, which disables rich formatting commands entirely.
 WordArt
 exposes 16 visual presets, 10 safe font families and 19 allowlisted whole-text
 transforms without adding raw CSS to the model. Picking a shape or WordArt
 preset from the fixed toolbar now arms a one-shot document drawing surface
 instead of inserting immediately. This path does not require a focused block or
 active Selection. Dragging previews and commits an exact scale-normalized
-rectangle on pointer release; clicking without a drag uses the selected
-object's default dimensions. Cancel, blur, viewport movement, readonly and
-teardown paths leave Yjs unchanged.
+rectangle within `doc.scrollContainer` on pointer release; clicking without a
+drag uses the selected object's default dimensions. Cancel, blur, viewport
+movement, readonly and teardown paths leave Yjs unchanged.
 
 Shape, TextBox and WordArt share one compact iconfont rail. Selecting an object
 shows only that rail; choosing **布局 / 形状 / 文本** opens one responsive
 288px format card or compact 228px layout card, with no redundant title block
 and one scroll owner inside the same viewport-clamped connected Overlay. Layout
-modes display the common current mode as active. The shell preserves the previous center-first
+modes are icon-only and display the common current mode as active. The shell preserves the previous center-first
 right/left positions, side flip, theme tokens and focus ownership. The size fields remain in the domain but currently have
 no rail entry. Opening or switching a group writes no model data; high-frequency
 controls preview through RAF and commit one Yjs write on confirmation.
@@ -1167,7 +1200,7 @@ Key services accessible on `doc.*` (see `blockcraft-app.md` for full API details
 | `doc.event`          | UIEventDispatcher | `framework/block-std/event/` |
 
 - 复制过滤：`DocConfig.copyFilter` / `doc.clipboard.registerCopyFilter()`（按 flavour/属性过滤 + transform 逃生舱；详见 blockcraft-app.md / blockcraft-plugin.md）
-- 粘贴优先级：internal snapshot → 有道云 `text/yne-json`（`adapters/yne-adapter/`）→ `text/html` → 纯文本。有道云内容走专用高保真路径，失败回退 HTML。
+- 粘贴优先级：internal snapshot → 有道云 `text/yne-json`（`framework/modules/clipboard/adapters/yne/`）→ YNE HTML fallback → 通用 `text/html` → 纯文本。有道云内容走 Clipboard 领域的专用高保真路径，失败回退通用 HTML。
 
 ### Block Property Updates
 
@@ -1318,8 +1351,11 @@ doc.selection.extendTo(editableBlock, offset)  // shift+click
 doc.selection.selectAllChildren(block)         // editable text range; container/root boundary range
 // Ctrl+A boundary: inside a resolved container scope (absolute text-box or
 // callout), the first press selects the container's complete child boundary
-// range. A relative text-box is transparent, so it starts by selecting the
-// active editable child like Mermaid and then follows the parent/root ladder.
+// range. A closed container whose only direct child is the active editable
+// block first selects that child's complete text, keeping Delete/Paste textual;
+// a repeated press may then promote to the container boundary. A relative
+// text-box is transparent, so it starts by selecting the active editable child
+// like Mermaid and then follows the parent/root ladder.
 doc.selection.blur()                           // clear
 
 // Optional virtual-renderer bridge. The disposer and AbortSignal cancel stale

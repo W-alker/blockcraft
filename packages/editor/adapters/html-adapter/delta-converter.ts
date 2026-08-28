@@ -1,7 +1,7 @@
 import {ASTToDeltaMatcher, DeltaASTConverter, DeltaASTConverterOptions, InlineDeltaMatcher} from "../types";
 import {DeltaInsert, IInlineNodeAttrs} from "../../framework";
 import {HtmlAST, InlineHtmlAST} from "../types";
-import {TextUtils} from "../utils";
+import {inlineInsertPlainText, TextUtils} from "../utils";
 
 export type InlineDeltaToHtmlAdapterMatcher = InlineDeltaMatcher<InlineHtmlAST>;
 
@@ -24,7 +24,7 @@ export class HtmlDeltaConverter extends DeltaASTConverter<
   ): InlineHtmlAST {
     let hast: InlineHtmlAST = {
       type: 'text',
-      value: delta.insert as string,
+      value: inlineInsertPlainText(delta.insert),
     };
 
     const context: {

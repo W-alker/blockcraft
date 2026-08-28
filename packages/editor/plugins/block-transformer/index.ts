@@ -20,8 +20,6 @@ import {
   BLOCK_CREATOR_SERVICE_TOKEN,
   BindHotKey,
   BlockNodeType,
-  createInlineDateDelta,
-  createInlineImageDelta,
   type DeltaInsert,
   DocPlugin,
   EditableBlockComponent,
@@ -30,6 +28,7 @@ import {
   OneShotCursorAnchor,
   OneShotRangeAnchor,
 } from "../../framework";
+import {createInlineDateDelta, createInlineImageDelta} from "../../embeds";
 import { UIEventStateContext } from "../../framework";
 import {nextTick, sliceDelta} from "../../global";
 import { BlockTransformContextMenu } from "./widget/contextmenu";

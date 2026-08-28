@@ -13,7 +13,12 @@ import {
   normalizeTemplateSnapshots,
   replaceRootChildren,
 } from '../core/placement'
-import { TEMPLATE_RENDER_EMBEDS, TEMPLATE_RENDER_SCHEMAS } from '../core/registry'
+import {
+  TEMPLATE_BLOCK_ADAPTERS,
+  TEMPLATE_INLINE_EMBED_ADAPTERS,
+  TEMPLATE_RENDER_EMBEDS,
+  TEMPLATE_RENDER_SCHEMAS,
+} from '../core/registry'
 import { TEMPLATE_DATA } from '../data/template-data'
 import {firstValueFrom} from 'rxjs'
 import { EditorViewState } from '../debug-panel/editor-view-state'
@@ -78,8 +83,10 @@ export class TemplateUseSurfaceComponent implements AfterViewInit, OnDestroy {
   ngAfterViewInit(): void {
     // 建 doc 的公共流程收进 createDecoDoc；本页只为模板域自有 Embed 注入真实数据字典。
     const runtime = createDecoDoc({
-      additionalSchemas: TEMPLATE_RENDER_SCHEMAS,     // 共享 bundled 块 + 装饰「渲染」组件
+      additionalSchemas: TEMPLATE_RENDER_SCHEMAS,     // bundled canonical 块 + Playground 自有装饰
       additionalEmbeds: TEMPLATE_RENDER_EMBEDS(),
+      additionalBlockAdapters: TEMPLATE_BLOCK_ADAPTERS,
+      additionalInlineEmbedAdapters: TEMPLATE_INLINE_EMBED_ADAPTERS,
       injector: this.injector,
       hostEl: this.host.nativeElement,
       currentUserId: TEMPLATE_CONSUMER_USER_ID,

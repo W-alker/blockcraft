@@ -1,11 +1,14 @@
 import * as Y from 'yjs'
 import { Injector } from '@angular/core'
 import {
+  type BlockAdapterContribution,
   ConsoleLogger, IBlockSchemaOptions, BlockCraftDoc, EmbedConverter, generateId,
   BLOCK_CREATOR_SERVICE_TOKEN, DOC_FILE_SERVICE_TOKEN, DOC_MESSAGE_SERVICE_TOKEN,
   DOC_ADAPTER_SERVICE_TOKEN, DOC_LINK_PREVIEWER_SERVICE_TOKEN, DocLinkPreviewerService,
   DOC_WEATHER_SERVICE_TOKEN,
   createBundledEditorCapabilities, PaginationPlugin,
+  EDITOR_ADAPTER_REGISTRY_TOKEN,
+  type InlineEmbedAdapterContribution,
   BlockLockKind, BlockMutationPolicy, BlockUnlockContext,
 } from '@ccc/blockcraft'
 // bundled 编辑器的 service 实现走 deep import（playground 已用 @ccc/blockcraft/editor/* 形态）
@@ -15,6 +18,7 @@ import { MyDocMessageService } from '@ccc/blockcraft/editor/services/doc-message
 import { AdapterService } from '@ccc/blockcraft/editor/services/adapter.service'
 import { MyCommentService } from '@ccc/blockcraft/editor/services/comment.service'
 import { MyDocTranslationService } from '@ccc/blockcraft/editor/services/doc-translation.service'
+import {TEMPLATE_ADAPTER_REGISTRY} from '../core/registry'
 import {MockDocWeatherService} from '../data/template-data'
 
 /**
@@ -45,6 +49,7 @@ export const DECO_DOC_PROVIDERS = [
   { provide: BLOCK_CREATOR_SERVICE_TOKEN, useClass: MyBlockCreatorService },
   { provide: DOC_LINK_PREVIEWER_SERVICE_TOKEN, useClass: DocLinkPreviewerService },
   { provide: DOC_WEATHER_SERVICE_TOKEN, useClass: MockDocWeatherService },
+  { provide: EDITOR_ADAPTER_REGISTRY_TOKEN, useValue: TEMPLATE_ADAPTER_REGISTRY },
   { provide: DOC_ADAPTER_SERVICE_TOKEN, useClass: AdapterService },
   ConsoleLogger,
   MyCommentService,
@@ -61,6 +66,8 @@ export const DECO_DOC_PROVIDERS = [
 export function createDecoDoc(opts: {
   additionalSchemas: readonly IBlockSchemaOptions[]
   additionalEmbeds: readonly [string, EmbedConverter][]
+  additionalBlockAdapters: readonly BlockAdapterContribution[]
+  additionalInlineEmbedAdapters: readonly InlineEmbedAdapterContribution[]
   injector: Injector
   hostEl: HTMLElement
   currentUserId: string
@@ -72,6 +79,8 @@ export function createDecoDoc(opts: {
   const capabilities = createBundledEditorCapabilities({
     additionalSchemas: opts.additionalSchemas,
     additionalEmbeds: opts.additionalEmbeds,
+    additionalBlockAdapters: opts.additionalBlockAdapters,
+    additionalInlineEmbedAdapters: opts.additionalInlineEmbedAdapters,
     placeholder: {
       overrides: {paragraph: '输入「/」唤起命令'},
     },

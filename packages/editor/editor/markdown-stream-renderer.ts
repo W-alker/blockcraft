@@ -133,10 +133,13 @@ const buildDeltaPatch = (current: DeltaInsert[], next: DeltaInsert[]): DeltaOper
 export class MarkdownStreamRenderer {
   private sourceMarkdown = '';
   private renderedMarkdown: string | null = null;
+  private sourceVersion = 0;
   private scheduledFrame: number | null = null;
   private scheduledRender: Promise<void> | null = null;
+  private resolveScheduledRender: (() => void) | null = null;
   private renderInFlight: Promise<void> = Promise.resolve();
   private rerenderRequested = false;
+  private destroyed = false;
 
   constructor(
     private readonly doc: BlockCraft.Doc,
@@ -148,69 +151,174 @@ export class MarkdownStreamRenderer {
   }
 
   replace(markdown: string, options: MarkdownRenderOptions = {}) {
-    this.sourceMarkdown = markdown;
+    if (this.destroyed) {
+      return Promise.resolve();
+    }
+
+    this.updateSource(markdown);
     return options.immediate ? this.flush() : this.schedule();
   }
 
   append(chunk: string, options: MarkdownRenderOptions = {}) {
+    if (this.destroyed) {
+      return Promise.resolve();
+    }
     if (!chunk) {
       return options.immediate ? this.flush() : this.schedule();
     }
 
-    this.sourceMarkdown += chunk;
+    this.updateSource(this.sourceMarkdown + chunk);
     return options.immediate ? this.flush() : this.schedule();
   }
 
   clear(options: MarkdownRenderOptions = {}) {
-    this.sourceMarkdown = '';
+    if (this.destroyed) {
+      return Promise.resolve();
+    }
+
+    this.updateSource('');
     return options.immediate ? this.flush() : this.schedule();
   }
 
   destroy() {
+    if (this.destroyed) {
+      return;
+    }
+
+    this.destroyed = true;
+    this.sourceVersion++;
+    this.rerenderRequested = false;
     if (this.scheduledFrame !== null) {
       cancelAnimationFrame(this.scheduledFrame);
       this.scheduledFrame = null;
     }
+    const resolveScheduledRender = this.resolveScheduledRender;
     this.scheduledRender = null;
+    this.resolveScheduledRender = null;
+    resolveScheduledRender?.();
   }
 
   schedule() {
+    if (this.destroyed) {
+      return Promise.resolve();
+    }
     if (this.scheduledRender) {
       return this.scheduledRender;
     }
 
     this.scheduledRender = new Promise<void>((resolve, reject) => {
-      this.scheduledFrame = requestAnimationFrame(() => {
+      this.resolveScheduledRender = resolve;
+      const runner = () => {
         this.scheduledFrame = null;
-        this.flush()
-          .then(resolve)
-          .catch(reject)
-          .finally(() => {
-            this.scheduledRender = null;
-          });
-      });
+        this.flushScheduledWork()
+          .then(() => this.settleScheduledRender(resolve, reject))
+          .catch((error: unknown) => this.settleScheduledRender(resolve, reject, error));
+      };
+
+      if (typeof requestAnimationFrame === 'function') {
+        this.scheduledFrame = requestAnimationFrame(runner);
+      } else {
+        runner();
+      }
     });
 
     return this.scheduledRender;
   }
 
   flush() {
+    if (this.destroyed) {
+      return Promise.resolve();
+    }
     if (this.sourceMarkdown === this.renderedMarkdown && !this.rerenderRequested) {
-      return this.renderInFlight;
+      return this.renderInFlight.catch(() => undefined);
     }
 
     this.rerenderRequested = true;
-    this.renderInFlight = this.renderInFlight.then(async () => {
-      while (this.rerenderRequested) {
+    this.renderInFlight = this.renderInFlight.catch(() => undefined).then(async () => {
+      while (this.rerenderRequested && !this.destroyed) {
         this.rerenderRequested = false;
         const markdown = this.sourceMarkdown;
-        const rootSnapshot = await this.markdownAdapter.toSnapshot(markdown);
+        const version = this.sourceVersion;
+        let rootSnapshot: IBlockSnapshot;
+        try {
+          rootSnapshot = await this.markdownAdapter.toSnapshot(markdown);
+        } catch (error) {
+          if (this.destroyed) {
+            return;
+          }
+          if (version !== this.sourceVersion) {
+            this.rerenderRequested = true;
+            continue;
+          }
+          throw error;
+        }
+
+        if (this.destroyed) {
+          return;
+        }
+        if (version !== this.sourceVersion) {
+          this.rerenderRequested = true;
+          continue;
+        }
+
         this.applyRootSnapshot(this.normalizeRootSnapshot(rootSnapshot));
         this.renderedMarkdown = markdown;
       }
     });
 
     return this.renderInFlight;
+  }
+
+  private updateSource(markdown: string) {
+    if (markdown === this.sourceMarkdown) {
+      return;
+    }
+
+    this.sourceMarkdown = markdown;
+    this.sourceVersion++;
+    this.rerenderRequested = true;
+  }
+
+  private async flushScheduledWork() {
+    while (!this.destroyed) {
+      try {
+        await this.flush();
+      } catch (error) {
+        if (!this.rerenderRequested || this.destroyed) {
+          throw error;
+        }
+      }
+
+      if (!this.rerenderRequested) {
+        return;
+      }
+    }
+  }
+
+  private settleScheduledRender(
+    resolve: () => void,
+    reject: (reason?: unknown) => void,
+    error?: unknown,
+  ) {
+    this.scheduledRender = null;
+    this.resolveScheduledRender = null;
+
+    if (this.destroyed) {
+      resolve();
+      return;
+    }
+
+    if (this.rerenderRequested) {
+      this.schedule().then(resolve, reject);
+      return;
+    }
+
+    if (error !== undefined) {
+      reject(error);
+      return;
+    }
+
+    resolve();
   }
 
   private normalizeRootSnapshot(snapshot: IBlockSnapshot) {

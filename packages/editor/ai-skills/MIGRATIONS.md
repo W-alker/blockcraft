@@ -101,6 +101,100 @@ layout mode incorrectly exposed inline layout for TextBox.
 - TextBox and other blocks without an inline placement adapter no longer show
   or accept the inline layout action.
 
+## Unreleased — 2026-08-28 — Interoperable Markdown and selective directives
+
+**Severity**: minor
+
+**What changed**: The normal Markdown import grammar now recognizes BlockCraft
+`remark-directive` records in the `portable`, `hybrid` and `blockcraft`
+profiles. Markdown export now treats interoperability and readable semantics
+as the primary contract. Native representations win in every profile: Image uses
+`![]()`, Divider uses a thematic break, Mermaid uses a fenced code block, and
+Video/Audio/Attachment/bookmark/iframe cards use ordinary links with a minimal
+`blockcraft:<type>` title hint. `remark-directive` remains available only for
+custom semantic structures without a useful CommonMark/GFM representation.
+Mention uses a readable Markdown link with a stable
+`urn:blockcraft:mention:<type>:<id>` destination. Import remains a compatibility
+superset for registered syntax names. Custom Block parameters now use a
+readable YAML front-matter section inside the directive instead of a
+percent-encoded directive attribute.
+
+**Why**: File import and clipboard paste use the registered Markdown MIME
+adapter, so recognized private syntax must still import correctly. Export has a
+different priority: Markdown should remain useful in GitHub, note applications,
+plain-text workflows and AI context. Exact BlockCraft model/layout persistence
+belongs to Snapshot/`.bcdoc`, not an opaque props payload in Markdown prose.
+
+**Affected ai-skills files**:
+
+- `blockcraft-adapter.md`
+- `blockcraft-app.md`
+- `blockcraft-embed.md`
+- `blockcraft.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `GenericBlockAdapterOptions.markdownDirective?: boolean` explicitly opts a
+  generic custom Block into private directive export. It defaults to `false`;
+  `markdownProfile` continues to control eligible private representations.
+- `MarkdownAdapterProfile` adds `hybrid`, and
+  `DEFAULT_MARKDOWN_ADAPTER_PROFILE` exports the framework default.
+- `createMarkdownPropsNode()`, `isMarkdownPropsNode()` and
+  `readMarkdownPropsNode()` define the bounded in-directive YAML front-matter
+  contract used by custom Block matchers.
+- Link-like Blocks preserve their URL, readable label and semantic type through
+  standard Markdown links. Presentation-only props may intentionally degrade.
+- Mention URN links preserve `mentionId` and `mentionType` without embedding an
+  opaque props payload in Markdown prose.
+
+### Migration Recipe
+
+No host code change is required. Producers should prefer a typed standard link
+for resources and external cards:
+
+```markdown
+<!-- before: still accepted on import -->
+::bc-attachment{props="..."}
+
+<!-- after: readable in ordinary Markdown tools -->
+[产品说明.pdf](https://example.com/product.pdf "blockcraft:attachment")
+```
+
+### Behavior Changes
+
+- Every Markdown profile imports recognized `::bc-*` and
+  `:::bc-*` directives through the active `AdapterRegistry`; unknown directives
+  continue to degrade safely through the Markdown AST.
+- The default export profile is now `hybrid`: ordinary content uses portable
+  Markdown, while Block adapters that explicitly set `markdownDirective: true`
+  retain their semantic container. Choose `portable` explicitly when no private
+  directives may be emitted; choose `blockcraft` when private Inline Embed
+  directives are also required.
+- Every profile uses native Markdown for image, divider, Mermaid and link-like
+  resource/card Blocks. Their presentation-only props are not embedded in text.
+- Every profile exports a Mention with an ID as
+  `[@label](urn:blockcraft:mention:<type>:<id> "blockcraft:mention")`; import
+  recognizes the URN even when another Markdown tool removes the optional title.
+  Missing-ID Mentions and inline Dates still degrade to readable text.
+- Generic Block adapters without `markdownDirective: true` use their portable
+  fallback even under the `hybrid` and `blockcraft` profiles.
+- When a private directive is necessary, inline/text uses `:`, bodyless leaf
+  uses `::`, and a container with nested content uses `:::`.
+- A custom Block with parameters uses `:::` and places a YAML mapping between
+  leading `---` delimiters. New export does not emit or
+  import the former percent-encoded `props="..."` attribute; HTML `data-bc-*`
+  envelopes are unchanged.
+- Nested custom containers use longer outer colon fences, and each container
+  reads only the leading YAML section in its own body. Canonical export leaves
+  exactly one blank line after the opening fence and before the closing fence;
+  import tolerates zero or more blank lines at both boundaries.
+- Existing documents written with the earlier private resource directives
+  remain readable and are rewritten to their interoperable representation on
+  their next export.
+- This entry does not change `packages/editor/package.json`; release versioning
+  remains a separate maintainer decision.
+
 ## Unreleased — 2026-08-28 — Revision-aware inline Embeds
 
 **Severity**: minor
@@ -162,6 +256,47 @@ block.formatText(offset, 1, { format: "expanded" });
 - This entry does not define or change `packages/editor/package.json` version;
   release versioning remains a separate maintainer decision.
 
+## Unreleased — 2026-08-28 — Loading-first adapter resources
+
+**Severity**: patch
+
+**What changed**: Built-in HTML and Markdown Image matchers now create an Image
+snapshot synchronously from a validated source instead of downloading the
+resource and waiting for `DocFileService.uploadImg()` during AST traversal.
+Snapshot Viewer resource activation now consistently follows its existing
+`eager | visible | off` policy for images, direct video, audio and video
+iframes, including cached enhancements and placeholder timeout state.
+
+**Why**: Parsing and resource acquisition are different lifecycle boundaries.
+Adapter-side network work delayed one-shot imports and the complete Markdown
+Stream render, silently dropped failed images, and could repeat uploads as
+source changed. Starting a `visible` iframe timeout before setting its `src`
+also produced false errors for offscreen resources.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-adapter.md`
+- `blockcraft-app.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Ordinary HTML/Markdown images retain safe relative, HTTP(S), Blob and image
+  Data URL sources immediately. Active-content and non-image Data URL schemes
+  are rejected. Imported responsive sizing, legacy `width/height`, caption and
+  placement metadata remain attached to the Image snapshot.
+- Image import no longer fetches a remote source, converts it to a `File`, or
+  calls `uploadImg()`. Hosts that require rehosting must schedule it after
+  insertion; the mounted Block or Snapshot Viewer owns loading/error/retry UI.
+- Markdown Stream can mount the Image frame on its first adapter flush without
+  waiting for the image resource, and later chunks do not re-ingest it.
+- Snapshot Viewer `visible` resources stay idle until observed; only then are
+  their placeholder subscriptions/timeouts and `src` activated. `off` leaves
+  sources unset and does not display a false loading state.
+- This patch does not define or require a package version; release versioning
+  remains a separate maintainer decision.
+
 ## Unreleased — 2026-08-28 — Plain ordered-list interruption boundaries
 
 **Severity**: patch
@@ -191,6 +326,215 @@ still need broad traversal across intervening content.
   behavior.
 - No package version was changed; release versioning remains a separate
   maintainer decision.
+
+## Unreleased — 2026-08-28 — Co-located Block and Inline Embed adapters
+
+**Severity**: major
+
+**What changed**: Every bundled Block flavour and all seven built-in Inline
+Embed keys now own an `adapter/` contribution beside their domain source.
+The concrete HTML/Markdown matcher implementations now physically live inside
+those domain directories; `packages/editor/adapters/` contains only the core
+walker, matcher contracts, registry, generic codecs, and HTML/Markdown engines.
+`AdapterRegistry` validates exclusive ownership, pre-indexes Block export
+matchers by flavour, and supplies both walkers. The bundled registry is composed
+in `editor/bundled-adapter-registry.ts`, while the YNE converter is owned by the
+Clipboard domain. The default hybrid Markdown profile adds selective,
+higher-fidelity Block directives for semantic structures that portable
+Markdown cannot usefully represent; the explicit BlockCraft profile also
+allows private Inline Embed directives. Native readable Markdown continues to
+win for resources and links. Custom capability composition is now closed over the same
+contract: the bundled capability factory accepts paired Block/Inline Embed
+adapter contributions, returns the composed registry, derives a runtime Embed
+converter from `createDomConverter` when available, and rejects unpaired custom
+types before document initialization. `AdapterService` resolves that registry
+through an overridable Angular token. The standalone Markdown stream viewer can
+now consume the same composed registry and select the portable or BlockCraft
+profile explicitly. The Stream no longer has an independent planner or parses
+source fragments as separate Markdown documents. Once per coalesced refresh it
+sends the complete accumulated source through the configured `MarkdownAdapter`
+and Adapter Registry.
+
+**Why**: Matcher arrays had grown into a central switchboard, making a Block or
+Embed incomplete unless unrelated global files were also edited. Co-location
+makes serialization part of the domain contract, while the registry provides a
+single composition root and keeps export routing independent of registry size.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-adapter.md`
+- `blockcraft-embed.md`
+- `blockcraft-app.md`
+- `blockcraft-debug.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `AdapterRegistry`
+- `BlockAdapterContribution`
+- `InlineEmbedAdapterContribution`
+- `BundledAdapterRegistryOptions`
+- `createBundledAdapterRegistry()`
+- `BUNDLED_ADAPTER_REGISTRY`
+- `BUNDLED_BLOCK_ADAPTER_CONTRIBUTIONS`
+- `BUNDLED_INLINE_EMBED_ADAPTER_CONTRIBUTIONS`
+- `EDITOR_ADAPTER_REGISTRY_TOKEN`
+- `BundledEditorCapabilityOptions.additionalBlockAdapters`
+- `BundledEditorCapabilityOptions.additionalInlineEmbedAdapters`
+- `BundledEditorCapabilities.adapterRegistry`
+- `MarkdownStreamViewerOptions.adapterRegistry`
+- `MarkdownStreamViewerOptions.markdownProfile`
+- `MarkdownStreamViewerOptions.onError`
+- `MarkdownAdapterProfile`
+- `MARKDOWN_ADAPTER_PROFILE_CONFIG`
+- Optional matcher `priority` and `consumes` fields
+
+### Behavior Changes
+
+- The standalone Markdown Stream no longer has Mermaid-, table-, list-, or
+  raw-text-specific conversion branches or a source-window planner.
+  Multiline/nested BlockCraft container directives, tilde fences, and long
+  backtick fences follow the same full-source grammar and matcher registry as
+  one-shot Markdown import.
+- Incomplete Mermaid fences are parsed by the Mermaid adapter immediately,
+  matching the editable `MarkdownStreamRenderer`; `finish()` flushes the latest
+  source without changing adapter semantics.
+- A failed standalone Stream refresh preserves the last successful snapshot,
+  reports through `onError` when supplied, and allows later input to retry from
+  the complete source instead of permanently rejecting its render queue.
+- The editable `MarkdownStreamRenderer` discards stale async parses when newer
+  source arrives, recovers its queue after a rejected parse/apply call, and
+  blocks in-flight DocCRUD writes after `destroy()`.
+
+### Breaking Changes
+
+- `HtmlAdapter` and `MarkdownAdapter` now require an explicit third constructor
+  argument: either an `AdapterRegistry` or a matcher array. They no longer pull
+  concrete bundled Block matchers into the core adapter layer implicitly.
+- The central `DEFAULT_BLOCK_MATCHERS`,
+  `defaultBlockMarkdownAdapterMatchers`, and concrete
+  `adapters/*/block-matchers/*` exports were removed. Import a domain-owned
+  contribution from `blocks/<block>/adapter` or use
+  `BUNDLED_ADAPTER_REGISTRY`.
+- Internal YNE files moved from `adapters/yne-adapter/` to
+  `framework/modules/clipboard/adapters/yne/`. These files were never exported
+  from the package root; unsupported deep imports must be updated or removed.
+- `AdapterService` no longer advertises Markdown as `text/rtf`. Request
+  `ClipboardDataType.MARKDOWN`; legacy incoming clipboard payload detection
+  still recognizes historical Markdown that was mislabeled as RTF.
+
+### Migration Recipe
+
+Existing explicit matcher-array construction remains valid. Construction that
+previously relied on the implicit bundled default must now pass the registry:
+
+```typescript
+// before
+const html = new HtmlAdapter(fileService, configs);
+const markdown = new MarkdownAdapter(fileService, configs);
+
+// after
+const html = new HtmlAdapter(fileService, configs, BUNDLED_ADAPTER_REGISTRY);
+const markdown = new MarkdownAdapter(
+  fileService,
+  configs,
+  BUNDLED_ADAPTER_REGISTRY,
+);
+```
+
+New Block and Embed domains should publish a co-located contribution and extend
+the bundled registry:
+
+```typescript
+// before
+const html = new HtmlAdapter(fileService, configs, [myBlockHtmlMatcher]);
+
+// after
+const registry = createBundledAdapterRegistry({
+  additionalBlocks: [myBlockAdapters],
+  additionalInlineEmbeds: [myInlineEmbedAdapters],
+});
+const html = new HtmlAdapter(fileService, configs, registry);
+const markdown = new MarkdownAdapter(fileService, configs, registry);
+```
+
+Hosts using `createBundledEditorCapabilities()` must pair every custom
+Schema/Embed with its co-located contribution and provide the same registry to
+the bundled `AdapterService`:
+
+```typescript
+// before: custom data rendered, but AdapterService silently stayed bundled-only
+const capabilities = createBundledEditorCapabilities({
+  additionalSchemas: [myBlockSchema],
+  additionalEmbeds: [['my-embed', myEmbedConverter]],
+})
+
+// after
+const blockAdapters = [myBlockAdapters] as const
+const inlineEmbedAdapters = [myEmbedAdapters] as const
+const registry = createBundledAdapterRegistry({
+  additionalBlocks: blockAdapters,
+  additionalInlineEmbeds: inlineEmbedAdapters,
+})
+const capabilities = createBundledEditorCapabilities({
+  additionalSchemas: [myBlockSchema],
+  additionalBlockAdapters: blockAdapters,
+  additionalEmbeds: [['my-embed', myEmbedConverter]],
+  additionalInlineEmbedAdapters: inlineEmbedAdapters,
+})
+
+// Angular provider at the same document-host boundary as AdapterService
+{provide: EDITOR_ADAPTER_REGISTRY_TOKEN, useValue: registry}
+```
+
+The default `hybrid` profile combines portable Markdown with opted-in semantic
+Block directives. Choose `portable` for standard-only exchange or `blockcraft`
+when the consumer also owns private Inline Embed syntax:
+
+```typescript
+const configs = new Map([[MARKDOWN_ADAPTER_PROFILE_CONFIG, "blockcraft"]]);
+```
+
+No package version was changed by this migration entry; release versioning
+remains a separate maintainer decision.
+
+### Behavior Changes
+
+- The editor service, offline desktop service, and Markdown stream viewer use
+  the bundled registry by default, so previously uncovered bundled flavours no
+  longer disappear during adapter export.
+- `hybrid` is the default Markdown behavior. Every profile imports registered
+  directives; `hybrid` and `blockcraft` export opted-in Block directives, while
+  only `blockcraft` exports private Inline Embed directives.
+- Duplicate contribution IDs, Block flavours, or Inline Embed keys now throw
+  during registry construction instead of relying on matcher order.
+- Separate sibling contributions may reference one shared grammar matcher;
+  the registry de-duplicates that matcher by identity for import while keeping
+  flavour-indexed export ownership separate.
+- `createBundledEditorCapabilities()` now throws when a custom Schema or Embed
+  has no matching adapter contribution, or when a factoryless custom Inline
+  Embed adapter has no explicit runtime converter. A contribution's
+  `createDomConverter` is consumed automatically when present.
+- Bookmark, Figma, and Juejin cards now have real HTML/Markdown import paths and
+  no longer disappear when their Schema omits an optional title.
+- Shape, ShapeText, WordArt, Divider, block Image, and inline Image use bounded
+  BlockCraft directives where their complete structure or presentation has no
+  portable Markdown equivalent. Portable output stays readable and standard.
+- Mermaid imports and exports the native fenced-code representation with the
+  `mermaid` language info string in both profiles; its internal textarea is not
+  emitted as a second Markdown node. Import also accepts the common `mermiad`
+  transposition and canonicalizes it to `mermaid` on export.
+- Image HTML keeps `<figcaption>` inside its `<figure>`, so a caption remains an
+  Image child after round-trip. The BlockCraft image directive preserves that
+  relationship plus responsive/placement properties.
+- HTML round-trip now recognizes todo checkboxes, preserves a Code Block's
+  language, and prevents Formula markup from also producing an empty paragraph.
+- An Inline Embed without a registered contribution now exports as readable
+  fallback text instead of disappearing from Markdown or aborting HTML export.
+  The fallback is intentionally not reconstructable as an Embed.
+- Markdown export and streaming request `text/markdown`; the old RTF-labelled
+  Markdown path remains only as compatibility for historical clipboard data.
 
 ## Unreleased — 2026-08-28 — Central Inline Embed ownership and Agent contracts
 

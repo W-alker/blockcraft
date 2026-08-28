@@ -55,6 +55,7 @@ packages/editor/embeds/
 ├── defaults.ts
 └── <embed-key>/
     ├── index.ts
+    ├── adapter/index.ts    # HTML + Markdown Delta/AST contribution
     └── agent/index.ts      # optional: only when the document Agent needs semantics
 ```
 
@@ -64,10 +65,22 @@ should import public converter, key, helper, and Agent declaration exports from
 the `@ccc/blockcraft` root entry; that entry re-exports the central `embeds`
 barrel. Do not deep-import the old source paths.
 
-An external Embed package should use the same ownership rule: keep the
-converter in `embeds/<embed-key>/index.ts`, optionally keep its Agent contract
-in `embeds/<embed-key>/agent/index.ts`, and export both from the package's
-public barrel.
+An external Embed package should use the same ownership rule: keep the DOM
+converter in `embeds/<embed-key>/index.ts`, HTML/Markdown serialization in
+`embeds/<embed-key>/adapter/index.ts`, optionally keep its Agent contract in
+`embeds/<embed-key>/agent/index.ts`, and export them from the package's public
+barrel. `InlineEmbedAdapterContribution.key` must equal the converter's
+canonical Delta key. The bundled registry rejects duplicate keys.
+
+All seven built-ins (`icon`, `image`, `date`, `mention`, `latex`, `shape`, and
+`word-art`) provide co-located adapter contributions. HTML uses specialized
+portable markup where one exists and a bounded `data-bc-inline-*` envelope for
+otherwise lossy payloads. The default Markdown profile is `hybrid`, but its
+Inline Embed output stays portable-first. Mention uses a standard Markdown link
+whose destination is a stable BlockCraft URN; other Embed types may use a
+private inline directive only in the explicit `blockcraft` profile when no
+interoperable representation exists. See
+`blockcraft-adapter.md` for registry composition and profile setup.
 
 ## Template: Custom Inline Embed
 
@@ -103,6 +116,30 @@ export const myEmbedConverter: EmbedConverter = {
   },
 };
 ```
+
+The same domain must publish its HTML/Markdown contribution. The generic
+directive factory provides a readable portable fallback and a bounded,
+lossless BlockCraft-profile directive; replace its HTML matchers only when the
+Embed has a real portable HTML element contract:
+
+```typescript
+// embeds/my-embed/adapter/index.ts
+import {createInlineDirectiveAdapterContribution} from '@ccc/blockcraft'
+import {MY_EMBED_KEY, myEmbedConverter} from '..'
+
+export const myEmbedAdapters = createInlineDirectiveAdapterContribution({
+  key: MY_EMBED_KEY,
+  createDomConverter: () => myEmbedConverter,
+  displayText: delta => String(delta.insert[MY_EMBED_KEY] ?? ''),
+})
+```
+
+With `createDomConverter`, one `additionalInlineEmbedAdapters` entry is enough
+for `createBundledEditorCapabilities()` to install both serialization and the
+runtime converter returned by that factory. Data-bound converters may omit the factory, but then
+the host must also pass an explicit same-key `additionalEmbeds` tuple. The
+factory rejects a converter without an adapter, an adapter without a converter,
+and duplicate keys before document initialization.
 
 ## Optional Inline Embed Agent Contract
 
@@ -293,6 +330,13 @@ BlockCraftDocBuilder.create()
   .build();
 ```
 
+Manual `BlockCraftDoc` / `BlockCraftDocBuilder` registration only installs the
+DOM converter. If that document also uses the bundled `AdapterService`, compose
+`myEmbedAdapters` into `createBundledAdapterRegistry()` and provide it through
+`EDITOR_ADAPTER_REGISTRY_TOKEN`; see `blockcraft-app.md`. Prefer
+`createBundledEditorCapabilities({additionalInlineEmbedAdapters: [...]})` when
+using the full bundled editor so the converter/adapter invariant is checked.
+
 ## Inserting an Embed Programmatically
 
 ```typescript
@@ -354,6 +398,28 @@ intrinsic dimensions explicitly bypass tracking.
 | `date` | `embeds/date/` | Bundled frozen date/time stamp with a selectable display format |
 | `mention` | `embeds/mention/` | @mention with user ID; Agent capability is understanding-only |
 | `latex` | `embeds/latex/` | KaTeX formula rendering |
+
+### Mention Markdown URN
+
+A Mention with a non-empty `mentionId` exports in every Markdown profile as a
+standard Markdown link:
+
+```markdown
+[@张三](urn:blockcraft:mention:user:u-1 "blockcraft:mention")
+```
+
+The destination contract is
+`urn:blockcraft:mention:<percent-encoded-type>:<percent-encoded-id>`. Import
+recognizes the URN with or without the optional `"blockcraft:mention"` title,
+removes one leading `@` from the readable label, and reconstructs
+`{insert:{mention:label}, attributes:{mentionId, mentionType}}`. An omitted
+`mentionType` on export defaults to `user`. Invalid, incomplete or oversized
+URNs remain readable link text and never fabricate an Embed. A Mention without
+an ID exports as plain `@label` text because it has no stable identity.
+
+The older `:bc-mention[...]` directive remains import-compatible, but new
+exports use the URN link. This keeps the label useful in ordinary Markdown and
+the identity legible to AI while avoiding an opaque payload in prose.
 
 ## Bundled Date Embed
 
@@ -463,6 +529,8 @@ emits only readable object text.
 - [ ] Embed key in `insert` object matches the registration key
 - [ ] Same-key converter overrides preserve the canonical value/attributes contract
 - [ ] Custom converter registered in `DocConfig.embeds`; built-in `icon` and `image` need no registration
+- [ ] HTML/Markdown contribution is colocated in `embeds/<key>/adapter/` and uses the same key
+- [ ] Bundled capability hosts pass the contribution in `additionalInlineEmbedAdapters` (and an explicit converter tuple only when it has no factory)
 - [ ] If AI may generate the Embed, add/export `agent/index.ts` and explicitly register the matching capability in the host
 - [ ] If AI must only understand the Embed, declare a capability without `insert`; if no AI semantics are needed, omit `agent/` entirely
 - [ ] CSS styles added for the embed element class

@@ -1,6 +1,5 @@
 import {MarkdownASTToDeltaMatcher} from "../delta-converter";
 import {isUrl} from "../../../global";
-import {createInlineImageDelta} from '../../../embeds';
 
 export const markdownTextToDeltaMatcher: MarkdownASTToDeltaMatcher = {
   name: 'text',
@@ -10,16 +9,6 @@ export const markdownTextToDeltaMatcher: MarkdownASTToDeltaMatcher = {
       return [];
     }
     return [{insert: ast.value}];
-  },
-};
-
-export const markdownImageToDeltaMatcher: MarkdownASTToDeltaMatcher = {
-  name: 'inline-image',
-  match: ast => ast.type === 'image',
-  toDelta: ast => {
-    if (!('url' in ast)) return [];
-    const delta = createInlineImageDelta(ast.url);
-    return delta ? [delta] : [];
   },
 };
 
@@ -112,26 +101,13 @@ export const markdownTableToDeltaMatcher: MarkdownASTToDeltaMatcher = {
   toDelta: () => [],
 };
 
-export const markdownInlineMathToDeltaMatcher: MarkdownASTToDeltaMatcher = {
-  name: 'inlineMath',
-  match: ast => ast.type === 'inlineMath',
-  toDelta: ast => {
-    if (!('value' in ast)) {
-      return [];
-    }
-    return [{insert: {latex: ast.value}}];
-  },
-};
-
 export const markdownInlineToDeltaMatchers: MarkdownASTToDeltaMatcher[] = [
-  markdownImageToDeltaMatcher,
   markdownTextToDeltaMatcher,
   markdownInlineCodeToDeltaMatcher,
   markdownStrongToDeltaMatcher,
   markdownEmphasisToDeltaMatcher,
   markdownDeleteToDeltaMatcher,
   markdownLinkToDeltaMatcher,
-  markdownInlineMathToDeltaMatcher,
   markdownListToDeltaMatcher,
   markdownTableToDeltaMatcher,
 ];

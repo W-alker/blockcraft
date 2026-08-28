@@ -1,9 +1,16 @@
 import {SnapshotViewerOptions} from "../types";
 import {IBlockSnapshot} from "../../framework/block-std/types/block.type";
+import type {
+  AdapterRegistry,
+  MarkdownAdapterProfile,
+} from "../../adapters";
 
 export interface MarkdownStreamViewerOptions {
   container?: HTMLElement
   viewerOptions?: SnapshotViewerOptions
+  adapterRegistry?: AdapterRegistry
+  markdownProfile?: MarkdownAdapterProfile
+  onError?: (error: unknown) => void
 }
 
 export interface MarkdownStreamViewer {
@@ -13,45 +20,10 @@ export interface MarkdownStreamViewer {
   destroy(): void
 }
 
-export type MarkdownPlannedBlockKind =
-  | "raw-text"
-  | "paragraph"
-  | "heading"
-  | "blockquote"
-  | "list"
-  | "divider"
-  | "code"
-  | "mermaid"
-  | "table"
-  | "unknown";
-
-export interface MarkdownPlannedRange {
-  state: "stable" | "provisional" | "pending"
-  kind: MarkdownPlannedBlockKind
-  start: number
-  end: number
-  text: string
-}
-
-export interface MarkdownStreamPlannerInput {
-  previousText: string
-  nextText: string
-  finalized: boolean
-}
-
-export interface MarkdownStreamPlannerResult {
-  changedOffset: number
-  reparseStart: number
-  readyRanges: MarkdownPlannedRange[]
-  provisionalRanges: MarkdownPlannedRange[]
-  pendingRanges: MarkdownPlannedRange[]
-}
-
-export interface MarkdownWindowParseInput {
+export interface MarkdownStreamParseInput {
   markdown: string
-  range?: MarkdownPlannedRange
 }
 
-export interface MarkdownWindowParseResult {
+export interface MarkdownStreamParseResult {
   blocks: IBlockSnapshot[]
 }

@@ -1,11 +1,37 @@
 import { ChangeDetectionStrategy, ChangeDetectorRef, Component, Input, NgZone, OnDestroy, OnInit, inject, signal } from '@angular/core'
-import { BlockCraftDoc } from '@ccc/blockcraft'
+import {
+  BlockCraftDoc,
+  DOC_FILE_SERVICE_TOKEN,
+  EDITOR_ADAPTER_REGISTRY_TOKEN,
+  MARKDOWN_ADAPTER_PROFILE_CONFIG,
+  MarkdownAdapter,
+  type IBlockSnapshot,
+  type MarkdownAdapterProfile,
+} from '@ccc/blockcraft'
 import { Subscription } from 'rxjs'
 import { EditorViewState } from './editor-view-state'
 
 /** JSON.stringify replacer：把过长字符串（data URL 等）截断，避免快照面板被 base64 撑爆。 */
 const truncate = (_k: string, v: unknown): unknown =>
   typeof v === 'string' && v.length > 120 ? `${v.slice(0, 80)}…(${v.length} chars)` : v
+
+/** Adapter 往返会重建 id/meta；调试时比较真正由格式契约承载的内容结构。 */
+const normalizeAdapterSnapshot = (snapshot: IBlockSnapshot): unknown => {
+  const normalizedChildren = Array.isArray(snapshot.children)
+    ? snapshot.children.map(child => (
+      child && typeof child === 'object' && 'flavour' in child
+        ? normalizeAdapterSnapshot(child as IBlockSnapshot)
+        : child
+    ))
+    : snapshot.children
+  if (snapshot.flavour === 'root') return {children: normalizedChildren}
+  return {
+    flavour: snapshot.flavour,
+    nodeType: snapshot.nodeType,
+    props: snapshot.props,
+    children: normalizedChildren,
+  }
+}
 
 /**
  * 调试面板三个区块的显隐开关（侧栏标题行的三个 checkbox，勾选=显示）。
@@ -16,6 +42,7 @@ export interface DebugSections {
   set: boolean
   data: boolean
   selection: boolean
+  adapter: boolean
 }
 
 /**
@@ -74,14 +101,41 @@ export interface DebugSections {
           }
         </section>
       }
+
+      @if (visible.adapter) {
+        <section class="dbg-card dbg-card--adapter">
+          <div class="dbg-card__head">
+            <span class="dbg-card__title">Adapter Lab · Markdown</span>
+            <select class="dbg-select" [value]="adapterProfile()" (change)="onAdapterProfileChange($event)">
+              <option value="portable">portable</option>
+              <option value="hybrid">hybrid（默认）</option>
+              <option value="blockcraft">blockcraft</option>
+            </select>
+          </div>
+          <div class="dbg-actions">
+            <button type="button" class="dbg-btn dbg-btn--primary" [disabled]="adapterBusy()" (click)="exportMarkdown()">导出当前文档</button>
+            <button type="button" class="dbg-btn" [disabled]="adapterBusy()" (click)="parseMarkdown()">解析源码</button>
+            <button type="button" class="dbg-btn" [disabled]="adapterBusy()" (click)="roundTripMarkdown()">往返校验</button>
+          </div>
+          <textarea class="dbg-source" spellcheck="false" aria-label="Markdown source"
+                    [value]="adapterSource()" (input)="adapterSource.set($any($event.target).value)"></textarea>
+          @if (adapterStatus()) {
+            <div class="dbg-adapter-status" [class.is-error]="adapterError()">{{ adapterStatus() }}</div>
+          }
+          @if (adapterResult()) {
+            <pre class="dbg-pre dbg-pre--adapter">{{ adapterResult() }}</pre>
+          }
+        </section>
+      }
     </div>
   `,
   styles: [`
     :host{ display:block; height:100%; min-height:0 }
-    .dbg{ box-sizing:border-box; height:100%; display:flex; flex-direction:column; gap:12px; padding:14px; background:#fff; overflow:hidden }
+    .dbg{ box-sizing:border-box; height:100%; display:flex; flex-direction:column; gap:12px; padding:14px; background:#fff; overflow:auto }
     .dbg-card{ display:flex; flex-direction:column; gap:10px; padding:12px; border:1px solid #eef0f6; border-radius:12px; background:#fafbff }
     .dbg-card--grow{ flex:1 1 auto; min-height:120px }
     .dbg-card--sel{ flex:none }
+    .dbg-card--adapter{ flex:none; min-height:0 }
     .dbg-card__head{ display:flex; align-items:center; justify-content:space-between; gap:8px }
     .dbg-head__right{ display:flex; align-items:center; gap:8px }
     .dbg-card__title{ margin:0; font-size:12px; font-weight:600; color:#4b5168 }
@@ -95,18 +149,25 @@ export interface DebugSections {
     .dbg-btn:hover{ border-color:#4857E2; color:#4857E2 }
     .dbg-btn--primary{ background:#4857E2; border-color:#4857E2; color:#fff }
     .dbg-btn--primary:hover{ color:#fff; opacity:.9 }
+    .dbg-btn:disabled{ cursor:wait; opacity:.55 }
     .dbg-font{ display:inline-flex; gap:4px }
     .dbg-iconbtn{ width:22px; height:22px; display:inline-flex; align-items:center; justify-content:center; border:1px solid #e6e8f0; border-radius:6px; background:#fff; color:#4b5168; font-size:13px; line-height:1; cursor:pointer }
     .dbg-iconbtn:hover{ border-color:#4857E2; color:#4857E2 }
     .dbg-pre{ margin:0; flex:1 1 auto; min-height:0; overflow:auto; padding:10px; border-radius:8px; background:#0f1424; color:#cdd6f4; line-height:1.5; white-space:pre-wrap; word-break:break-all; font-family:ui-monospace, SFMono-Regular, Menlo, monospace }
     .dbg-pre--sm{ flex:none; max-height:200px; background:#f3f4f8; color:#374151; font-size:11px }
+    .dbg-pre--adapter{ flex:none; max-height:180px; font-size:10px }
     .dbg-range{ width:100%; margin:0; accent-color:#4857E2; cursor:pointer }
+    .dbg-select{ padding:4px 7px; border:1px solid #e6e8f0; border-radius:7px; background:#fff; color:#4b5168; font-size:11px }
+    .dbg-source{ box-sizing:border-box; width:100%; min-height:100px; max-height:220px; resize:vertical; padding:9px; border:1px solid #e6e8f0; border-radius:8px; background:#fff; color:#374151; line-height:1.45; font:11px ui-monospace, SFMono-Regular, Menlo, monospace }
+    .dbg-source:focus{ outline:2px solid rgba(72,87,226,.22); border-color:#4857E2 }
+    .dbg-adapter-status{ padding:6px 8px; border-radius:7px; background:#edf7ef; color:#237a3b; font-size:11px }
+    .dbg-adapter-status.is-error{ background:#fff0f0; color:#b42318 }
   `],
 })
 export class TemplateDebugPanelComponent implements OnInit, OnDestroy {
   @Input({ required: true }) doc!: BlockCraftDoc
   /** 区块显隐（aside 标题行的 checkbox 状态透传；默认全显，保持无开关时的旧观感）。 */
-  @Input() visible: DebugSections = { set: true, data: true, selection: true }
+  @Input() visible: DebugSections = { set: true, data: true, selection: true, adapter: true }
   protected readonly snapshotJson = signal('')
   protected readonly selectionJson = signal('')
   protected readonly blockCount = signal(0)
@@ -114,6 +175,12 @@ export class TemplateDebugPanelComponent implements OnInit, OnDestroy {
   protected readonly readonly = signal(false)
   protected readonly fontSize = signal(11)              // snapshot 字号，- / + 调节
   protected readonly selOpen = signal(false)            // 实时 Selection 默认折叠，给 snapshot 让位
+  protected readonly adapterProfile = signal<MarkdownAdapterProfile>('hybrid')
+  protected readonly adapterSource = signal('')
+  protected readonly adapterResult = signal('')
+  protected readonly adapterStatus = signal('')
+  protected readonly adapterError = signal(false)
+  protected readonly adapterBusy = signal(false)
   /** 编辑器列宽（5–100%）共享状态：滑块写它，surface 读它缩放 .editor-container（同页 provide，见 template-page）。 */
   protected readonly view = inject(EditorViewState)
 
@@ -164,6 +231,89 @@ export class TemplateDebugPanelComponent implements OnInit, OnDestroy {
     const sel = this.doc.selection.value
     console.log('[template] snapshot', this.doc.exportSnapshot())
     console.log('[template] selection', sel ? sel.toJSON() : null)
+  }
+
+  onAdapterProfileChange(event: Event): void {
+    this.adapterProfile.set((event.target as HTMLSelectElement).value as MarkdownAdapterProfile)
+    this.adapterStatus.set('')
+    this.adapterResult.set('')
+  }
+
+  async exportMarkdown(): Promise<void> {
+    await this.runAdapterAction(async adapter => {
+      const markdown = await adapter.toMarkdown(this.currentSnapshot())
+      this.adapterSource.set(markdown)
+      this.adapterResult.set('')
+      this.adapterStatus.set(`已用 ${this.adapterProfile()} profile 导出当前文档。`)
+    })
+  }
+
+  async parseMarkdown(): Promise<void> {
+    await this.runAdapterAction(async adapter => {
+      const snapshot = this.requireAdapterSnapshot(
+        await adapter.toBlockSnapshot(this.adapterSource()),
+      )
+      this.adapterResult.set(JSON.stringify(snapshot, truncate, 2))
+      this.adapterStatus.set('解析成功；结果仅预览，不会覆盖当前文档。')
+    })
+  }
+
+  async roundTripMarkdown(): Promise<void> {
+    await this.runAdapterAction(async adapter => {
+      const original = this.currentSnapshot()
+      const markdown = await adapter.toMarkdown(original)
+      const restored = this.requireAdapterSnapshot(
+        await adapter.toBlockSnapshot(markdown),
+      )
+      const expected = JSON.stringify(normalizeAdapterSnapshot(original))
+      const actual = JSON.stringify(normalizeAdapterSnapshot(restored))
+      const exactRoundTrip = expected === actual
+      this.adapterSource.set(markdown)
+      this.adapterResult.set(JSON.stringify(restored, truncate, 2))
+      this.adapterError.set(false)
+      this.adapterStatus.set(exactRoundTrip
+        ? '往返通过：内容结构一致（忽略运行时 id/meta）。'
+        : '往返存在信息降级：Markdown 优先保留跨工具可读语义；完整保真请使用 Snapshot/.bcdoc。')
+    })
+  }
+
+  private createMarkdownAdapter(): MarkdownAdapter {
+    const fileService = this.doc.injector.get(DOC_FILE_SERVICE_TOKEN)
+    const registry = this.doc.injector.get(EDITOR_ADAPTER_REGISTRY_TOKEN)
+    return new MarkdownAdapter(
+      fileService,
+      new Map([[MARKDOWN_ADAPTER_PROFILE_CONFIG, this.adapterProfile()]]),
+      registry,
+    )
+  }
+
+  private currentSnapshot(): IBlockSnapshot {
+    const snapshot = this.doc.exportSnapshot()
+    if (!snapshot) throw new Error('文档尚未初始化，无法执行 Adapter。')
+    return snapshot
+  }
+
+  private requireAdapterSnapshot(
+    snapshot: IBlockSnapshot | undefined,
+  ): IBlockSnapshot {
+    if (!snapshot) throw new Error('Adapter 没有产生可用的 Snapshot。')
+    return snapshot
+  }
+
+  private async runAdapterAction(
+    action: (adapter: MarkdownAdapter) => Promise<void>,
+  ): Promise<void> {
+    this.adapterBusy.set(true)
+    this.adapterError.set(false)
+    try {
+      await action(this.createMarkdownAdapter())
+    } catch (error) {
+      this.adapterError.set(true)
+      this.adapterStatus.set(error instanceof Error ? error.message : String(error))
+    } finally {
+      this.adapterBusy.set(false)
+      this.cdr.markForCheck()
+    }
   }
 
   private scheduleSnapshot(): void {

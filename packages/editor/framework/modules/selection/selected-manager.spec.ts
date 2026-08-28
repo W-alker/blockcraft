@@ -1,8 +1,8 @@
 import {
   BlockNodeType,
   InlineRuntime,
-  withDefaultEmbedConverters,
 } from "../../block-std";
+import {withDefaultEmbedConverters} from "../../../embeds";
 import {BlockSelection} from "./blockSelection";
 import {SelectionSelectedManager} from "./selected-manager";
 

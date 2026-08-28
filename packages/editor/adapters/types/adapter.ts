@@ -10,7 +10,7 @@ export type AdapterContext<
   walker: ASTWalker<ONode, TNode>;
   walkerContext: ASTWalkerContext<TNode>;
   fileManager: DocFileService
-  // configs: Map<string, string>;
+  configs?: Map<string, string>;
   // job: Job;
   deltaConverter: TConverter;
   // textBuffer: TextBuffer;
@@ -51,6 +51,15 @@ export type BlockAdapterMatcher<
   TNode extends object = never,
   TConverter extends DeltaASTConverter = DeltaASTConverter,
 > = {
+  /** Higher-priority matchers are evaluated first within one registry. */
+  priority?: number;
+
+  /**
+   * Stop evaluating later Block matchers after this matcher handles a node.
+   * Existing matchers default to the historical non-consuming behaviour.
+   */
+  consumes?: boolean;
+
   /**
    * Function to check if a target node matches this adapter
    * @param o - The target node properties to check

@@ -381,12 +381,19 @@ describe("AttachmentExtensionPlugin file paste selection handling", () => {
     children: [],
   });
 
-  const makeHarness = (selection: any, docPatch: Record<string, any> = {}) => {
-    const file = new File(["hello"], "report.txt", {type: "text/plain"});
+  const makeHarness = (
+    selection: any,
+    docPatch: Record<string, any> = {},
+    files: File[] = [new File(["hello"], "report.txt", {type: "text/plain"})],
+    deferPaste = false,
+  ) => {
     const snapshots: any[] = [];
     const fileService = {
       isOverMaxSize: jasmine.createSpy("isOverMaxSize").and.returnValue(false),
-      createObjectURL: jasmine.createSpy("createObjectURL").and.returnValue("blob:report"),
+      createObjectURL: jasmine.createSpy("createObjectURL").and.callFake(
+        (file: File) => `blob:${file.name}`,
+      ),
+      removeObjectURL: jasmine.createSpy("removeObjectURL"),
     };
     const doc = {
       messageService: {
@@ -417,18 +424,19 @@ describe("AttachmentExtensionPlugin file paste selection handling", () => {
     (plugin as any).doc = doc;
     (plugin as any).fileService = fileService;
     const preventDefault = jasmine.createSpy("preventDefault");
-    const consumed = plugin.onPaste({
+    const paste = () => plugin.onPaste({
       preventDefault,
       get: (name: string) => {
         if (name !== "clipboardState") throw new Error(`Unexpected state ${name}`);
         return {
           dataTypes: [ClipboardDataType.FILES],
-          clipboardData: {files: [file]},
+          clipboardData: {files},
           selection,
         };
       },
     } as any);
-    return {plugin, doc, snapshots, fileService, preventDefault, consumed};
+    const consumed = deferPaste ? undefined : paste();
+    return {plugin, doc, snapshots, fileService, preventDefault, paste, consumed};
   };
 
   it("inserts pasted files at a gap-before cursor", () => {
@@ -498,6 +506,100 @@ describe("AttachmentExtensionPlugin file paste selection handling", () => {
     expect(snapshots[0].props.depth).toBe(3);
     expect(doc.clipboard.deleteContentFromSelection).toHaveBeenCalledOnceWith(selection);
     expect(doc.crud.insertBlocksAfter).toHaveBeenCalledOnceWith(textBlock, snapshots);
+  });
+
+  it("keeps every object URL after a successful batch insertion", () => {
+    const gapBlock = {
+      id: "paragraph-1",
+      props: {depth: 1},
+      parentId: "root",
+      getIndexOfParent: () => 0,
+    };
+    const selection = {
+      collapsed: true,
+      isAllSelected: false,
+      start: {type: "gap", side: "after", block: gapBlock},
+      end: {type: "gap", side: "after", block: gapBlock},
+      getTableCellSelection: () => null,
+    };
+    const files = [
+      new File(["image"], "screen.png", {type: "image/png"}),
+      new File(["attachment"], "report.txt", {type: "text/plain"}),
+    ];
+
+    const {doc, snapshots, fileService, consumed} = makeHarness(
+      selection,
+      {},
+      files,
+    );
+
+    expect(consumed).toBeTrue();
+    expect(doc.crud.insertBlocks).toHaveBeenCalledOnceWith("root", 1, snapshots);
+    expect(fileService.createObjectURL).toHaveBeenCalledTimes(2);
+    expect(fileService.removeObjectURL).not.toHaveBeenCalled();
+  });
+
+  it("releases every object URL when the prepared batch cannot be inserted", () => {
+    const gapBlock = {
+      id: "detached-block",
+      props: {depth: 0},
+      parentId: null,
+      getIndexOfParent: () => 0,
+    };
+    const selection = {
+      collapsed: true,
+      isAllSelected: false,
+      start: {type: "gap", side: "after", block: gapBlock},
+      end: {type: "gap", side: "after", block: gapBlock},
+      getTableCellSelection: () => null,
+    };
+    const files = [
+      new File(["image"], "screen.png", {type: "image/png"}),
+      new File(["attachment"], "report.txt", {type: "text/plain"}),
+    ];
+
+    const {doc, fileService, consumed} = makeHarness(selection, {}, files);
+
+    expect(consumed).toBeTrue();
+    expect(doc.crud.insertBlocks).not.toHaveBeenCalled();
+    expect(fileService.removeObjectURL.calls.allArgs()).toEqual([
+      ["blob:screen.png"],
+      ["blob:report.txt"],
+    ]);
+  });
+
+  it("releases every object URL and preserves the error when insertion throws", () => {
+    const gapBlock = {
+      id: "paragraph-1",
+      props: {depth: 0},
+      parentId: "root",
+      getIndexOfParent: () => 0,
+    };
+    const selection = {
+      collapsed: true,
+      isAllSelected: false,
+      start: {type: "gap", side: "after", block: gapBlock},
+      end: {type: "gap", side: "after", block: gapBlock},
+      getTableCellSelection: () => null,
+    };
+    const files = [
+      new File(["image"], "screen.png", {type: "image/png"}),
+      new File(["attachment"], "report.txt", {type: "text/plain"}),
+    ];
+    const insertError = new Error("insert failed");
+    const insertBlocks = jasmine.createSpy("insertBlocks").and.throwError(insertError);
+    const {fileService, paste} = makeHarness(
+      selection,
+      {crud: {insertBlocks}},
+      files,
+      true,
+    );
+
+    expect(paste).toThrowError("insert failed");
+    expect(fileService.removeObjectURL.calls.allArgs()).toEqual([
+      ["blob:screen.png"],
+      ["blob:report.txt"],
+    ]);
   });
 
   it("does not create object URLs for table-cell file paste", () => {

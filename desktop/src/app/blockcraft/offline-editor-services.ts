@@ -14,6 +14,7 @@ import {
   BlockCreatorService,
   DocAttachmentInfo,
   IBlockSchemaOptions,
+  BUNDLED_ADAPTER_REGISTRY,
 } from '@ccc/blockcraft';
 
 const LOCAL_PREFIX = '__blockcraft_desktop_local__:';
@@ -103,8 +104,8 @@ export class OfflineAdapterService extends DocAdapterService {
   constructor(private readonly injector: Injector) {
     super();
     const fileService = injector.get(DOC_FILE_SERVICE_TOKEN);
-    const html = new HtmlAdapter(fileService);
-    const markdown = new MarkdownAdapter(fileService);
+    const html = new HtmlAdapter(fileService, new Map(), BUNDLED_ADAPTER_REGISTRY);
+    const markdown = new MarkdownAdapter(fileService, new Map(), BUNDLED_ADAPTER_REGISTRY);
     this.supportedAdapters = [
       {type: ClipboardDataType.HTML, toSnapshot: value => html.toBlockSnapshot(value), fromSnapshot: snapshot => html.toHtml(snapshot)},
       {type: ClipboardDataType.MARKDOWN, toSnapshot: value => markdown.toBlockSnapshot(value), fromSnapshot: snapshot => markdown.toMarkdown(snapshot)},

@@ -8,19 +8,44 @@ import {BlockHtmlAdapterMatcher} from "./block-adapter";
 import {HtmlDeltaConverter} from "./delta-converter";
 import {inlineDeltaToHtmlAdapterMatchers} from "./delta-converter/inline-delta";
 import {htmlInlineToDeltaMatchers} from "./delta-converter/html-inline";
-import {DEFAULT_BLOCK_MATCHERS} from "./block-matchers";
-import {isYoudaoHtml, parseYoudaoHtml, ynedbg} from "../yne-adapter";
 import type {Root} from 'hast';
+import {AdapterRegistry} from '../registry';
 
 export class HtmlAdapter extends ASTWalker<HtmlAST, IBlockSnapshot> {
-  deltaConverter = new HtmlDeltaConverter(this.adapterConfigs, inlineDeltaToHtmlAdapterMatchers, htmlInlineToDeltaMatchers)
+  deltaConverter: HtmlDeltaConverter
+  readonly blockMatchers: readonly BlockHtmlAdapterMatcher[]
+  private readonly registry?: AdapterRegistry
 
   constructor(
     readonly fileService: DocFileService,
     readonly adapterConfigs = new Map<string, string>(),
-    readonly blockMatchers: BlockHtmlAdapterMatcher[] = DEFAULT_BLOCK_MATCHERS,
+    source: readonly BlockHtmlAdapterMatcher[] | AdapterRegistry,
   ) {
     super();
+    this.registry = source instanceof AdapterRegistry ? source : undefined
+    this.blockMatchers = [...(
+      this.registry?.htmlBlockMatchers
+      ?? source as readonly BlockHtmlAdapterMatcher[]
+    )].sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
+    this.deltaConverter = new HtmlDeltaConverter(
+      adapterConfigs,
+      [
+        ...(this.registry?.htmlInlineDeltaMatchers ?? []),
+        ...inlineDeltaToHtmlAdapterMatchers.filter(matcher =>
+          !this.registry?.htmlInlineDeltaMatchers.some(
+            owned => owned.name === matcher.name,
+          ),
+        ),
+      ],
+      [
+        ...(this.registry?.htmlInlineAstMatchers ?? []),
+        ...htmlInlineToDeltaMatchers.filter(matcher =>
+          !this.registry?.htmlInlineAstMatchers.some(
+            owned => owned.name === matcher.name,
+          ),
+        ),
+      ],
+    )
   }
 
   private _htmlToAst(html: string) {
@@ -52,13 +77,14 @@ export class HtmlAdapter extends ASTWalker<HtmlAST, IBlockSnapshot> {
             walker,
             walkerContext: context,
             fileManager: this.fileService,
-            // configs: this.configs,
+            configs: this.adapterConfigs,
             // job: this.job,
             deltaConverter: this.deltaConverter,
             // textBuffer: { content: '' },
             // assets,
           };
           await matcher.toBlockSnapshot.enter?.(o, adapterContext);
+          if (matcher.consumes) break
         }
       }
     });
@@ -73,13 +99,14 @@ export class HtmlAdapter extends ASTWalker<HtmlAST, IBlockSnapshot> {
             walker,
             walkerContext: context,
             fileManager: this.fileService,
-            // configs: this.configs,
+            configs: this.adapterConfigs,
             // job: this.job,
             deltaConverter: this.deltaConverter,
             // textBuffer: { content: '' },
             // assets,
           };
           await matcher.toBlockSnapshot.leave?.(o, adapterContext);
+          if (matcher.consumes) break
         }
       }
     });
@@ -95,7 +122,9 @@ export class HtmlAdapter extends ASTWalker<HtmlAST, IBlockSnapshot> {
       (node): node is IBlockSnapshot => typeof node === 'object' && node !== null && 'flavour' in node && 'id' in node
     );
     walker.setEnter((o, context) => {
-      for (const matcher of this.blockMatchers) {
+      const matchers = this.registry?.htmlMatchersForFlavour(o.node.flavour)
+        ?? this.blockMatchers
+      for (const matcher of matchers) {
         if (matcher.fromMatch(o)) {
           const adapterContext: AdapterContext<
             IBlockSnapshot,
@@ -105,7 +134,7 @@ export class HtmlAdapter extends ASTWalker<HtmlAST, IBlockSnapshot> {
             walker,
             walkerContext: context,
             fileManager: this.fileService,
-            // configs: this.configs,
+            configs: this.adapterConfigs,
             // job: this.job,
             deltaConverter: this.deltaConverter,
             // textBuffer: { content: '' },
@@ -115,11 +144,14 @@ export class HtmlAdapter extends ASTWalker<HtmlAST, IBlockSnapshot> {
             // },
           };
           matcher.fromBlockSnapshot.enter?.(o, adapterContext);
+          if (matcher.consumes) break
         }
       }
     });
     walker.setLeave(async (o, context) => {
-      for (const matcher of this.blockMatchers) {
+      const matchers = this.registry?.htmlMatchersForFlavour(o.node.flavour)
+        ?? this.blockMatchers
+      for (const matcher of matchers) {
         if (matcher.fromMatch(o)) {
           const adapterContext: AdapterContext<
             IBlockSnapshot,
@@ -129,13 +161,14 @@ export class HtmlAdapter extends ASTWalker<HtmlAST, IBlockSnapshot> {
             walker,
             walkerContext: context,
             fileManager: this.fileService,
-            // configs: this.configs,
+            configs: this.adapterConfigs,
             // job: this.job,
             deltaConverter: this.deltaConverter,
             // textBuffer: { content: '' },
             // assets,
           };
           matcher.fromBlockSnapshot.leave?.(o, adapterContext);
+          if (matcher.consumes) break
         }
       }
     });
@@ -143,16 +176,6 @@ export class HtmlAdapter extends ASTWalker<HtmlAST, IBlockSnapshot> {
   };
 
   toBlockSnapshot(html: string) {
-    // 有道云 HTML 短路：WKWebView/Tauri 等会剥离 text/yne-json 等自定义剪贴板
-    // MIME，只剩 text/html；但完整结构嵌在 <article data-content> 里、图片字节在
-    // 可见 <img data:base64> 中。命中即走高保真 bulb 解析，跳过通用（有损）HAST。
-    const youdaoMatch = isYoudaoHtml(html);
-    ynedbg('HtmlAdapter.toBlockSnapshot: isYoudaoHtml=', youdaoMatch, 'htmlLen=', html.length);
-    if (youdaoMatch) {
-      const youdao = parseYoudaoHtml(html, this.fileService);
-      if (youdao) return Promise.resolve(youdao);
-      // matched but parse returned null → parseYoudaoHtml already logged why; fall through to generic
-    }
     const blockSnapshotRoot: IBlockSnapshot = {
       id: generateId(),
       flavour: 'root',

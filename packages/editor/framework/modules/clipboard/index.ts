@@ -35,7 +35,7 @@ import {
   replaceSnapshotsIdDeeply,
   snapshots2Text,
 } from "../../utils";
-import {DOC_ADAPTER_SERVICE_TOKEN} from "../../services";
+import {DOC_ADAPTER_SERVICE_TOKEN, DOC_FILE_SERVICE_TOKEN} from "../../services";
 import {copyBlocks} from "./copyBlocks";
 import {applyCopyFilters, resolveCopyFilters, stripBlockLockMetaDeep} from "./copy-filter";
 import {
@@ -51,10 +51,12 @@ import {cloneSnapshot, getMarkdownClipboardText, looksLikeMarkdown} from "./past
 import {logPasteFormats} from "./paste-debug";
 import {
   collectAndStripRehostMarkers,
+  isYoudaoHtml,
+  parseYoudaoHtml,
   parseYneClipboard,
   rehostYneAttachments,
   YNE_JSON_MIME,
-} from "../../../adapters/yne-adapter";
+} from "./adapters/yne";
 import * as Y from "yjs";
 import {
   BlockReadonlyError,
@@ -862,6 +864,13 @@ export class ClipboardManager {
       if (htmlString) {
         rootSnapshot = parseClipboardSnapshotFromHtml(htmlString) || undefined
         exposeFormattedSnapshot = !!rootSnapshot
+        if (!rootSnapshot && isYoudaoHtml(htmlString)) {
+          rootSnapshot = parseYoudaoHtml(
+            htmlString,
+            this.doc.injector.get(DOC_FILE_SERVICE_TOKEN),
+          ) || undefined
+          exposeFormattedSnapshot = !!rootSnapshot
+        }
         if (!rootSnapshot) {
           const htmlAdapter = this.adapter?.getAdapter(ClipboardDataType.HTML)
           if (htmlAdapter) {
@@ -1107,18 +1116,24 @@ export class ClipboardManager {
     }
 
     // 有道云 text/yne-json —— 浏览器侧的高保真结构化格式（自定义 MIME，Tauri/WKWebView
-    // 会剥离，那种环境改由 HTML 分支的 htmlAdapter 内部识别 <article data-content>）。
+    // 会剥离，那种环境改由 HTML 分支的 Clipboard adapter 识别 <article data-content>）。
     // 解析失败/未知块返回 null，自然落到下方 HTML 分支（兜底）。
     if (!rootSnapshot && state.dataTypes.includes(YNE_JSON_MIME)) {
       const snap = parseYneClipboard(state, this.doc)
       if (snap && snap.children.length) rootSnapshot = snap
     }
 
-    // html（htmlAdapter.toSnapshot 内部已对有道云 <article data-content> 做高保真短路）
+    // html（先由 Clipboard 领域识别有道云，再进入通用 HtmlAdapter）
     if (!rootSnapshot && state.dataTypes.includes(ClipboardDataType.HTML)) {
       const htmlString = state.getData(ClipboardDataType.HTML)
       if (htmlString) {
         rootSnapshot = parseClipboardSnapshotFromHtml(htmlString) || undefined
+        if (!rootSnapshot && isYoudaoHtml(htmlString)) {
+          rootSnapshot = parseYoudaoHtml(
+            htmlString,
+            this.doc.injector.get(DOC_FILE_SERVICE_TOKEN),
+          ) || undefined
+        }
         if (!rootSnapshot) {
           const htmlAdapter = this.adapter?.getAdapter(ClipboardDataType.HTML)
           if (htmlAdapter) {

@@ -1,14 +1,5 @@
 import type { PhrasingContent } from 'mdast';
 import {InlineDeltaToMarkdownAdapterMatcher} from "../delta-converter";
-import {DeltaInsertEmbed} from '../../../framework';
-import {
-  readInlineImageDelta,
-  INLINE_SHAPE_EMBED_KEY,
-  INLINE_WORD_ART_EMBED_KEY,
-  readInlineShapeDelta,
-  readInlineWordArtDelta,
-} from '../../../embeds';
-import {inlineObjectPlainText} from '../../../blocks';
 
 export const boldDeltaToMarkdownAdapterMatcher: InlineDeltaToMarkdownAdapterMatcher =
   {
@@ -52,7 +43,8 @@ export const strikeDeltaToMarkdownAdapterMatcher: InlineDeltaToMarkdownAdapterMa
 export const inlineCodeDeltaToMarkdownAdapterMatcher: InlineDeltaToMarkdownAdapterMatcher =
   {
     name: 'inlineCode',
-    match: delta => !!delta.attributes?.['a:code'],
+    match: delta => typeof delta.insert === 'string'
+      && !!delta.attributes?.['a:code'],
     toAST: delta => ({
       type: 'inlineCode',
       value: delta.insert as string,
@@ -62,7 +54,8 @@ export const inlineCodeDeltaToMarkdownAdapterMatcher: InlineDeltaToMarkdownAdapt
 export const linkDeltaToMarkdownAdapterMatcher: InlineDeltaToMarkdownAdapterMatcher =
   {
     name: 'link',
-    match: delta => !!delta.attributes?.['a:link'],
+    match: delta => typeof delta.insert === 'string'
+      && !!delta.attributes?.['a:link'],
     toAST: (delta, context) => {
       const mdast: PhrasingContent = {
         type: 'text',
@@ -93,55 +86,8 @@ export const linkDeltaToMarkdownAdapterMatcher: InlineDeltaToMarkdownAdapterMatc
     },
   };
 
-export const latexDeltaToMarkdownAdapterMatcher: InlineDeltaToMarkdownAdapterMatcher =
-  {
-    name: 'inlineLatex',
-    // `typeof null === 'object'` 为 true，故必须先排除 null/undefined 再用 `in`，
-    // 否则历史/异常数据里 insert 为 null 的 op 会让 `'latex' in null` 抛错，整篇导出失败。
-    match: delta => !!delta.insert && typeof delta.insert === 'object' && 'latex' in delta.insert,
-    toAST: delta => ({
-      type: 'inlineMath',
-      value: (delta.insert as Record<string, unknown>)['latex'] as string,
-    }),
-  };
-
-export const imageDeltaToMarkdownAdapterMatcher: InlineDeltaToMarkdownAdapterMatcher = {
-  name: 'inline-image',
-  match: delta =>
-    !!delta.insert &&
-    typeof delta.insert === 'object' &&
-    'image' in delta.insert,
-  toAST: delta => ({
-    type: 'image',
-    url: readInlineImageDelta(delta as DeltaInsertEmbed).src,
-    alt: '',
-  }),
-};
-
-export const inlineObjectDeltaToMarkdownAdapterMatcher:
-  InlineDeltaToMarkdownAdapterMatcher = {
-    name: 'inline-object',
-    match: delta =>
-      !!delta.insert &&
-      typeof delta.insert === 'object' &&
-      (
-        INLINE_SHAPE_EMBED_KEY in delta.insert ||
-        INLINE_WORD_ART_EMBED_KEY in delta.insert
-      ),
-    toAST: delta => {
-      const embed = delta as DeltaInsertEmbed
-      const data = INLINE_SHAPE_EMBED_KEY in embed.insert
-        ? readInlineShapeDelta(embed)
-        : readInlineWordArtDelta(embed)
-      return {type: 'text', value: inlineObjectPlainText(data.text)}
-    },
-  };
-
 export const inlineDeltaToMarkdownAdapterMatchers: InlineDeltaToMarkdownAdapterMatcher[] =
   [
-    inlineObjectDeltaToMarkdownAdapterMatcher,
-    imageDeltaToMarkdownAdapterMatcher,
-    latexDeltaToMarkdownAdapterMatcher,
     linkDeltaToMarkdownAdapterMatcher,
     inlineCodeDeltaToMarkdownAdapterMatcher,
     boldDeltaToMarkdownAdapterMatcher,

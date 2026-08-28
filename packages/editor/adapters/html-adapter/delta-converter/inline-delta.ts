@@ -1,14 +1,5 @@
 import {InlineDeltaToHtmlAdapterMatcher} from "../delta-converter";
 import {InlineHtmlAST} from "../../types";
-import {DeltaInsertEmbed} from "../../../framework";
-import {
-  readInlineImageDelta,
-  INLINE_SHAPE_EMBED_KEY,
-  INLINE_WORD_ART_EMBED_KEY,
-  readInlineShapeDelta,
-  readInlineWordArtDelta,
-} from '../../../embeds';
-import {inlineObjectPlainText} from '../../../blocks';
 import {inlineTypographyToHtmlProperties} from '../typography';
 
 
@@ -56,7 +47,8 @@ export const strikeDeltaToHtmlAdapterMatcher: InlineDeltaToHtmlAdapterMatcher =
 export const inlineCodeDeltaToMarkdownAdapterMatcher: InlineDeltaToHtmlAdapterMatcher =
   {
     name: 'inlineCode',
-    match: delta => !!delta.attributes?.['a:code'],
+    match: delta => typeof delta.insert === 'string'
+      && !!delta.attributes?.['a:code'],
     toAST: (_, context) => {
       return {
         type: 'element',
@@ -120,7 +112,8 @@ export const underlineDeltaToHtmlAdapterMatcher: InlineDeltaToHtmlAdapterMatcher
 
 export const linkDeltaToHtmlAdapterMatcher: InlineDeltaToHtmlAdapterMatcher = {
   name: 'link',
-  match: delta => !!delta.attributes?.['a:link'],
+  match: delta => typeof delta.insert === 'string'
+    && !!delta.attributes?.['a:link'],
   toAST: (delta, _) => {
     const hast: InlineHtmlAST = {
       type: 'text',
@@ -141,132 +134,6 @@ export const linkDeltaToHtmlAdapterMatcher: InlineDeltaToHtmlAdapterMatcher = {
   },
 };
 
-export const mentionDeltaToHtmlAdapterMatcher: InlineDeltaToHtmlAdapterMatcher =
-  {
-    name: 'mention',
-    // @ts-expect-error
-    match: delta => typeof delta === 'object' && !!delta.insert?.['mention'],
-    toAST: (_, context) => {
-      return {
-        type: 'element',
-        tagName: 'span',
-        properties: {},
-        children: [],
-      };
-    },
-  };
-
-export const latexDeltaToHtmlAdapterMatcher: InlineDeltaToHtmlAdapterMatcher =
-  {
-    name: 'latex',
-    // `typeof null === 'object'` 为 true，故必须先排除 null/undefined 再用 `in`，
-    // 否则历史/异常数据里 insert 为 null 的 op 会让 `'latex' in null` 抛错，整篇导出失败。
-    match: delta => !!delta.insert && typeof delta.insert === 'object' && 'latex' in (delta.insert as object),
-    toAST: delta => {
-      const latex = (delta.insert as Record<string, unknown>)['latex'] as string;
-      return {
-        type: 'element',
-        tagName: 'code',
-        properties: {
-          className: ['math', 'math-inline'],
-          dataLatex: latex,
-        },
-        children: [
-          {
-            type: 'text',
-            value: latex,
-          },
-        ],
-      };
-    },
-  };
-
-export const imageDeltaToHtmlAdapterMatcher: InlineDeltaToHtmlAdapterMatcher = {
-  name: 'inline-image',
-  match: delta =>
-    !!delta.insert &&
-    typeof delta.insert === 'object' &&
-    'image' in delta.insert,
-  toAST: delta => {
-    const {
-      src,
-      width,
-      height,
-      wrap,
-      side,
-      x,
-      gap,
-    } = readInlineImageDelta(delta as DeltaInsertEmbed);
-    return {
-      type: 'element',
-      tagName: 'img',
-      properties: {
-        className: ['bc-inline-image'],
-        src,
-        alt: '',
-        ...(width === undefined ? {} : {width}),
-        ...(height === undefined ? {} : {height}),
-        ...(wrap
-          ? {
-              dataBcWrap: 'square',
-              dataBcWrapSide: side,
-              dataBcWrapX: x,
-              ...(gap === undefined ? {} : {dataBcWrapGap: gap}),
-            }
-          : {}),
-      },
-      children: [],
-    };
-  },
-};
-
-export const inlineObjectDeltaToHtmlAdapterMatcher:
-  InlineDeltaToHtmlAdapterMatcher = {
-    name: 'inline-object',
-    match: delta =>
-      !!delta.insert &&
-      typeof delta.insert === 'object' &&
-      (
-        INLINE_SHAPE_EMBED_KEY in delta.insert ||
-        INLINE_WORD_ART_EMBED_KEY in delta.insert
-      ),
-    toAST: delta => {
-      const embed = delta as DeltaInsertEmbed
-      const kind = INLINE_SHAPE_EMBED_KEY in embed.insert
-        ? 'shape'
-        : 'word-art'
-      const data = kind === 'shape'
-        ? readInlineShapeDelta(embed)
-        : readInlineWordArtDelta(embed)
-      const payload = String(embed.insert[
-        kind === 'shape'
-          ? INLINE_SHAPE_EMBED_KEY
-          : INLINE_WORD_ART_EMBED_KEY
-      ] ?? '')
-      return {
-        type: 'element',
-        tagName: 'span',
-        properties: {
-          className: ['bc-inline-object', `bc-inline-${kind}`],
-          dataBcInlineObject: kind,
-          dataBcInlineObjectPayload: payload,
-          dataBcInlineObjectWidth: data.width,
-          dataBcInlineObjectHeight: data.height,
-          ...(data.wrap
-            ? {
-                dataBcWrap: 'square',
-                dataBcWrapX: data.x,
-                ...(data.gap === undefined
-                  ? {}
-                  : {dataBcWrapGap: data.gap}),
-              }
-            : {}),
-        },
-        children: [{type: 'text', value: inlineObjectPlainText(data.text)}],
-      };
-    },
-  };
-
 export const typographyDeltaToHtmlAdapterMatcher: InlineDeltaToHtmlAdapterMatcher = {
   name: 'typography',
   match: delta =>
@@ -282,9 +149,6 @@ export const typographyDeltaToHtmlAdapterMatcher: InlineDeltaToHtmlAdapterMatche
 
 export const inlineDeltaToHtmlAdapterMatchers: InlineDeltaToHtmlAdapterMatcher[] =
   [
-    inlineObjectDeltaToHtmlAdapterMatcher,
-    imageDeltaToHtmlAdapterMatcher,
-    latexDeltaToHtmlAdapterMatcher,
     boldDeltaToHtmlAdapterMatcher,
     italicDeltaToHtmlAdapterMatcher,
     strikeDeltaToHtmlAdapterMatcher,
@@ -292,7 +156,6 @@ export const inlineDeltaToHtmlAdapterMatchers: InlineDeltaToHtmlAdapterMatcher[]
     inlineCodeDeltaToMarkdownAdapterMatcher,
     // referenceDeltaToHtmlAdapterMatcher,
     linkDeltaToHtmlAdapterMatcher,
-    mentionDeltaToHtmlAdapterMatcher,
     // Keep typography last: the legacy link matcher rebuilds its text node
     // instead of wrapping context.current, so an earlier typography span would
     // otherwise be discarded for a linked, styled run.

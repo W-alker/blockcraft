@@ -41,7 +41,7 @@ export class DocExportManager {
 
   async exportToMarkdown(name: string) {
     try {
-      const mdAdapter = this.doc.injector.get(DOC_ADAPTER_SERVICE_TOKEN)?.getAdapter(ClipboardDataType.RTF)
+      const mdAdapter = this.doc.injector.get(DOC_ADAPTER_SERVICE_TOKEN)?.getAdapter(ClipboardDataType.MARKDOWN)
       if (!mdAdapter) return
       const text = await mdAdapter.fromSnapshot(this._snapshot())
       const blob = new Blob([text], {type: 'text/markdown'})

@@ -2,5 +2,5 @@ export * from './html-adapter'
 export * from './markdown-adapter'
 export * from './types'
 export * from './utils'
-
-
+export * from './registry'
+export * from './generic'

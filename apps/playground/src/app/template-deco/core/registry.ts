@@ -1,9 +1,12 @@
 import '../flavours'                                  // 顶部 import 触发 declare global 增强（flavours.ts 在上一级）
 import {
+  type BlockAdapterContribution,
   createInlineDateDelta,
+  createBundledAdapterRegistry,
   DeltaInsertEmbed,
   EmbedConverter,
   IBlockSchemaOptions,
+  type InlineEmbedAdapterContribution,
   INLINE_DATE_EMBED_KEY,
   INLINE_ICON_EMBED_KEY,
   draftPropMetaKey,
@@ -18,6 +21,18 @@ export const DECOS: DecoRegistration[] = [LogoDeco]
 /** 只有 Playground 自有装饰需要 surface-specific schema。 */
 export const TEMPLATE_EDIT_SCHEMAS: IBlockSchemaOptions[] = DECOS.map(d => d.templateEditSchema)
 export const TEMPLATE_RENDER_SCHEMAS: IBlockSchemaOptions[] = DECOS.map(d => d.templateRenderSchema)
+
+/** Schema/Converter/Adapter 从同一领域注册记录收集，避免能力清单分叉。 */
+export const TEMPLATE_BLOCK_ADAPTERS: readonly BlockAdapterContribution[] =
+  DECOS.map(deco => deco.adapter)
+export const TEMPLATE_INLINE_EMBED_ADAPTERS:
+  readonly InlineEmbedAdapterContribution[] = []
+
+/** 注入两个模板 surface 的 editor-level AdapterService。 */
+export const TEMPLATE_ADAPTER_REGISTRY = createBundledAdapterRegistry({
+  additionalBlocks: TEMPLATE_BLOCK_ADAPTERS,
+  additionalInlineEmbeds: TEMPLATE_INLINE_EMBED_ADAPTERS,
+})
 
 /** 人员已统一为 person-card；模板域不再注册私有人员 Inline Embed。 */
 export const TEMPLATE_EDIT_EMBEDS = (): [string, EmbedConverter][] => []

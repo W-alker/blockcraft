@@ -365,29 +365,48 @@ export class AttachmentExtensionPlugin extends DocPlugin {
     // finished. Matches the drag-and-drop path in `DndService.onInsertFiles`.
     const depth = this._selectionDepth(state.selection);
     const snapshots: IBlockSnapshot[] = [];
-    for (const file of Array.from(files)) {
-      if (this.fileService.isOverMaxSize(file.size)) {
-        this.doc.messageService.warn(
-          file.type.startsWith('image/') ? '图片过大，最大支持 60MB' : '文件过大',
-        );
-        continue;
+    const objectUrls: string[] = [];
+    let inserted = false;
+    try {
+      for (const file of Array.from(files)) {
+        if (this.fileService.isOverMaxSize(file.size)) {
+          this.doc.messageService.warn(
+            file.type.startsWith('image/') ? '图片过大，最大支持 60MB' : '文件过大',
+          );
+          continue;
+        }
+        const url = this.fileService.createObjectURL(file);
+        objectUrls.push(url);
+        const snapshot = file.type.startsWith('image/')
+          ? this.doc.schemas.createSnapshot('image', [url])
+          : this.doc.schemas.createSnapshot('attachment', [{
+              name: file.name,
+              url,
+              type: file.type,
+              size: file.size,
+            }]);
+        snapshot.props.depth = depth;
+        snapshots.push(snapshot);
       }
-      const url = this.fileService.createObjectURL(file);
-      const snapshot = file.type.startsWith('image/')
-        ? this.doc.schemas.createSnapshot('image', [url])
-        : this.doc.schemas.createSnapshot('attachment', [{
-            name: file.name,
-            url,
-            type: file.type,
-            size: file.size,
-          }]);
-      snapshot.props.depth = depth;
-      snapshots.push(snapshot);
-    }
 
-    if (!snapshots.length) return true;
-    this._insertFileSnapshotsAtSelection(state.selection, snapshots);
-    return true;
+      if (!snapshots.length) return true;
+      inserted = this._insertFileSnapshotsAtSelection(state.selection, snapshots);
+      return true;
+    } finally {
+      if (!inserted) this._releaseObjectUrls(objectUrls);
+    }
+  }
+
+  private _releaseObjectUrls(urls: readonly string[]): void {
+    for (const url of urls) {
+      try {
+        this.fileService.removeObjectURL(url);
+      } catch (error) {
+        // Cleanup is best-effort and must not mask the original insertion error
+        // or prevent the remaining URLs in this paste batch from being released.
+        this.doc.logger.warn('attachment paste object URL cleanup failed', error);
+      }
+    }
   }
 
   private _selectionDepth(selection: BlockCraft.Selection): number {

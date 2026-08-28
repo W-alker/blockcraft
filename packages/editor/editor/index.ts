@@ -1,4 +1,6 @@
 export * from './editor'
 export * from './bundled-capabilities'
+export * from './bundled-adapter-registry'
 export * from './markdown-stream-renderer'
+export * from './services/adapter.service'
 export * from './awa'

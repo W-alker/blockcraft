@@ -1,8 +1,13 @@
-import {BlockNodeType, IBlockSnapshot} from "../../framework/block-std/types/block.type";
+import {
+  BlockNodeType,
+  IBlockSnapshot,
+  storeObjectTextFrame,
+  storeObjectTextStyle,
+} from "../../framework";
 import {shikiService} from "../../blocks/code-block/shiki-config";
 import {createSnapshotRenderer} from "../create-snapshot-renderer";
 import {createAllBlocksFixture} from "../testing/fixtures/all-blocks.fixture";
-import {WordArtBlockSchema} from "../../blocks";
+import {normalizeWordArtProps, WordArtBlockSchema} from "../../blocks";
 
 describe("snapshot-viewer renderers", () => {
   it("renders a callout prefix and nested paragraph children", () => {
@@ -86,17 +91,29 @@ describe("snapshot-viewer renderers", () => {
   })
 
   it("renders editable word art with CSS-owned presentation data", () => {
+    const defaults = normalizeWordArtProps(
+      WordArtBlockSchema.createSnapshot().props,
+    )
     const wordArt = WordArtBlockSchema.createSnapshot("新品发布", {
       width: 360,
       height: 110,
       rotation: 15,
-      fontSize: 54,
-      fillType: "linear-gradient",
-      gradientColors: ["#00FFFF", "#0000FF"],
-      gradientStops: [0, 1],
-      outlineColor: "#111111",
-      outlineWidthEm: 0.05,
-      effect: "slant-right",
+      textFrame: storeObjectTextFrame(defaults.textFrame),
+      textStyle: storeObjectTextStyle({
+        ...defaults.textStyle,
+        fontSize: 54,
+        fill: {
+          type: "linear-gradient",
+          opacity: 1,
+          angle: 180,
+          stops: [
+            {color: "#00FFFF", offset: 0, opacity: 1},
+            {color: "#0000FF", offset: 1, opacity: 1},
+          ],
+        },
+        outline: {type: "line", color: "#111111", width: 2.7},
+        transform: "slant-right",
+      }),
     })
     const host = renderFixture(wordArt)
     const surface = host.querySelector(
@@ -347,6 +364,154 @@ describe("snapshot-viewer renderers", () => {
     expect(nextFrame.querySelector(".bc-resource-placeholder")).toBeNull()
   })
 
+  it("keeps image, direct-video, audio, and iframe resources idle when resources are off", () => {
+    const fixture = createAllBlocksFixture()
+    const directVideo: IBlockSnapshot = {
+      ...fixture.video,
+      id: "video-off",
+      props: {
+        ...fixture.video.props,
+        poster: "https://cdn.example.com/poster.png",
+      },
+    }
+    const embedVideo: IBlockSnapshot = {
+      id: "video-iframe-off",
+      flavour: "video",
+      nodeType: BlockNodeType.void,
+      meta: {},
+      props: {
+        url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        sourceType: "link",
+      },
+      children: [],
+    }
+    const host = renderFixture([
+      fixture.image,
+      directVideo,
+      fixture.audio,
+      embedVideo,
+    ], {resourcePolicy: "off"})
+
+    const imageFrame = host.querySelector<HTMLElement>(".image-block .img-wrapper")!
+    const image = imageFrame.querySelector("img")!
+    const videoFrame = host.querySelector<HTMLElement>(
+      '[data-block-id="video-off"] .video-block__wrapper',
+    )!
+    const video = videoFrame.querySelector("video")!
+    const audio = host.querySelector(".audio-block audio")!
+
+    expect(image.hasAttribute("src")).toBeFalse()
+    expect(video.hasAttribute("src")).toBeFalse()
+    expect(video.hasAttribute("poster")).toBeFalse()
+    expect(audio.hasAttribute("src")).toBeFalse()
+    expect(imageFrame.dataset["bcResourceState"]).toBeUndefined()
+    expect(videoFrame.dataset["bcResourceState"]).toBeUndefined()
+    expect(imageFrame.querySelector(".bc-resource-placeholder")).toBeNull()
+    expect(videoFrame.querySelector(".bc-resource-placeholder")).toBeNull()
+    expect(host.querySelector(
+      '[data-block-id="video-iframe-off"] iframe',
+    )).toBeNull()
+  })
+
+  it("keeps resource controllers idle and starts sources only when visible", async () => {
+    const observerHarness = installIntersectionObserverHarness()
+    const host = document.createElement("div")
+    const renderer = createSnapshotRenderer({resourcePolicy: "visible"})
+    const fixture = createAllBlocksFixture()
+    const directVideo: IBlockSnapshot = {
+      ...fixture.video,
+      id: "video-visible",
+      props: {
+        ...fixture.video.props,
+        poster: "https://cdn.example.com/poster.png",
+      },
+    }
+    const embedVideo: IBlockSnapshot = {
+      id: "video-iframe-visible",
+      flavour: "video",
+      nodeType: BlockNodeType.void,
+      meta: {},
+      props: {
+        url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        sourceType: "link",
+      },
+      children: [],
+    }
+    const snapshots = [
+      fixture.image,
+      directVideo,
+      fixture.audio,
+      embedVideo,
+    ]
+
+    try {
+      renderer.render(host, snapshots)
+
+      const imageFrame = host.querySelector<HTMLElement>(".image-block .img-wrapper")!
+      const image = imageFrame.querySelector("img")!
+      const videoFrame = host.querySelector<HTMLElement>(
+        '[data-block-id="video-visible"] .video-block__wrapper',
+      )!
+      const video = videoFrame.querySelector("video")!
+      const audio = host.querySelector(".audio-block audio")!
+      const iframeFrame = host.querySelector<HTMLElement>(
+        '[data-block-id="video-iframe-visible"] .video-block__wrapper',
+      )!
+      const iframe = iframeFrame.querySelector("iframe")!
+
+      expect(observerHarness.observedCount()).toBe(4)
+      expect(image.hasAttribute("src")).toBeFalse()
+      expect(video.hasAttribute("src")).toBeFalse()
+      expect(video.hasAttribute("poster")).toBeFalse()
+      expect(audio.hasAttribute("src")).toBeFalse()
+      expect(iframe.hasAttribute("src")).toBeFalse()
+      expect(imageFrame.dataset["bcResourceState"]).toBe("idle")
+      expect(videoFrame.dataset["bcResourceState"]).toBe("idle")
+      expect(iframeFrame.dataset["bcResourceState"]).toBe("idle")
+      expect(imageFrame.hasAttribute("aria-busy")).toBeFalse()
+      expect(videoFrame.hasAttribute("aria-busy")).toBeFalse()
+      expect(iframeFrame.hasAttribute("aria-busy")).toBeFalse()
+
+      jasmine.clock().install()
+      try {
+        jasmine.clock().tick(10_001)
+      } finally {
+        jasmine.clock().uninstall()
+      }
+      expect(iframeFrame.dataset["bcResourceState"]).toBe("idle")
+
+      observerHarness.triggerAll()
+      await flushPromises()
+
+      expect(image.getAttribute("src")).toBe("https://cdn.example.com/image.png")
+      expect(video.getAttribute("src")).toBe("https://cdn.example.com/demo.mp4")
+      expect(video.getAttribute("poster")).toBe("https://cdn.example.com/poster.png")
+      expect(audio.getAttribute("src")).toBe("https://cdn.example.com/demo.ogg")
+      expect(iframe.getAttribute("src")).toContain("youtube.com/embed/")
+      expect(imageFrame.dataset["bcResourceState"]).toBe("loading")
+      expect(videoFrame.dataset["bcResourceState"]).toBe("loading")
+      expect(iframeFrame.dataset["bcResourceState"]).toBe("loading")
+      expect(audio.closest(".bc-resource-placeholder-frame")).toBeNull()
+
+      renderer.render(host, snapshots)
+      const cachedImageFrame = host.querySelector<HTMLElement>(
+        ".image-block .img-wrapper",
+      )!
+      const cachedImage = cachedImageFrame.querySelector("img")!
+      expect(cachedImage.hasAttribute("src")).toBeFalse()
+      expect(cachedImageFrame.dataset["bcResourceState"]).toBe("idle")
+      expect(cachedImageFrame.hasAttribute("aria-busy")).toBeFalse()
+
+      observerHarness.triggerAll()
+      expect(cachedImage.getAttribute("src"))
+        .toBe("https://cdn.example.com/image.png")
+      expect(cachedImageFrame.dataset["bcResourceState"]).toBe("loading")
+    } finally {
+      renderer.destroy()
+      observerHarness.restore()
+    }
+  })
+
   it("uses dedicated empty states for video/audio without playable resources", () => {
     const host = renderFixture([
       {
@@ -481,4 +646,76 @@ async function flushPromises() {
   await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
   await Promise.resolve()
   await Promise.resolve()
+}
+
+function installIntersectionObserverHarness() {
+  const original = globalThis.IntersectionObserver
+  const observers: Array<{
+    callback: IntersectionObserverCallback
+    observer: IntersectionObserver
+    targets: Set<Element>
+  }> = []
+
+  class TestIntersectionObserver {
+    readonly root = null
+    readonly rootMargin = ""
+    readonly thresholds = [0]
+    private readonly targets = new Set<Element>()
+
+    constructor(private readonly callback: IntersectionObserverCallback) {
+      observers.push({
+        callback,
+        observer: this as unknown as IntersectionObserver,
+        targets: this.targets,
+      })
+    }
+
+    observe(target: Element) {
+      this.targets.add(target)
+    }
+
+    unobserve(target: Element) {
+      this.targets.delete(target)
+    }
+
+    disconnect() {
+      this.targets.clear()
+    }
+
+    takeRecords(): IntersectionObserverEntry[] {
+      return []
+    }
+  }
+
+  Object.defineProperty(globalThis, "IntersectionObserver", {
+    configurable: true,
+    writable: true,
+    value: TestIntersectionObserver,
+  })
+
+  return {
+    observedCount: () => observers.reduce(
+      (count, observer) => count + observer.targets.size,
+      0,
+    ),
+    triggerAll: () => {
+      observers.forEach(({callback, observer, targets}) => {
+        const entries = Array.from(targets).map(target => ({
+          target,
+          isIntersecting: true,
+          intersectionRatio: 1,
+        })) as IntersectionObserverEntry[]
+        if (entries.length > 0) {
+          callback(entries, observer)
+        }
+      })
+    },
+    restore: () => {
+      Object.defineProperty(globalThis, "IntersectionObserver", {
+        configurable: true,
+        writable: true,
+        value: original,
+      })
+    },
+  }
 }

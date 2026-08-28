@@ -83,12 +83,16 @@ import {
   INLINE_MENTION_EMBED_KEY,
   INLINE_SHAPE_EMBED_KEY,
   INLINE_WORD_ART_EMBED_KEY,
-  createInlineDateEmbedConverter,
-  createInlineLatexEmbedConverter,
-  createInlineMentionEmbedConverter,
-  createInlineShapeEmbedConverter,
-  createInlineWordArtEmbedConverter,
 } from '../embeds'
+import type {
+  AdapterRegistry,
+  BlockAdapterContribution,
+  InlineEmbedAdapterContribution,
+} from '../adapters'
+import {
+  BUNDLED_INLINE_EMBED_ADAPTER_CONTRIBUTIONS,
+  createBundledAdapterRegistry,
+} from './bundled-adapter-registry'
 
 /**
  * bundled `<block-craft-editor>` 的唯一 Block Schema 基线。
@@ -213,6 +217,10 @@ export const BUNDLED_EDITOR_BLOCK_MATERIAL_GROUPS =
 export interface BundledEditorCapabilityOptions {
   additionalSchemas?: readonly IBlockSchemaOptions[]
   additionalEmbeds?: readonly [string, EmbedConverter][]
+  /** Adapter ownership paired with `additionalSchemas`. */
+  additionalBlockAdapters?: readonly BlockAdapterContribution[]
+  /** Adapter ownership paired with `additionalEmbeds`. */
+  additionalInlineEmbedAdapters?: readonly InlineEmbedAdapterContribution[]
   mention?: MentionPluginConfig
   translate?: TranslatePluginOptions
   blockController?: BlockControllerPluginOptions
@@ -225,6 +233,7 @@ export interface BundledEditorCapabilities {
   schemas: SchemaManager
   schemaDefinitions: readonly IBlockSchemaOptions[]
   embeds: readonly [string, EmbedConverter][]
+  adapterRegistry: AdapterRegistry
   plugins: readonly DocPlugin[]
   blockMaterials: readonly BundledBlockMaterialGroup[]
   paginationPlugin: PaginationPlugin
@@ -249,20 +258,55 @@ export function validateBundledEditorCapabilities(input: {
   schemas: readonly IBlockSchemaOptions[]
   embeds: readonly [string, EmbedConverter][]
   plugins: readonly DocPlugin[]
+  adapterRegistry?: AdapterRegistry
 }): void {
   assertUnique('Block flavour', input.schemas.map(schema => schema.flavour))
   assertUnique('Embed name', input.embeds.map(([name]) => name))
   assertUnique('Plugin name', input.plugins.map(plugin => plugin.name))
+
+  if (!input.adapterRegistry) return
+  const blockFlavours = new Set(
+    input.adapterRegistry.blocks.flatMap(contribution => contribution.flavours),
+  )
+  const inlineEmbedKeys = new Set(
+    input.adapterRegistry.inlineEmbeds.map(contribution => contribution.key),
+  )
+  const missingBlocks = input.schemas
+    .map(schema => schema.flavour)
+    .filter(flavour => !blockFlavours.has(flavour))
+  const missingEmbeds = input.embeds
+    .map(([name]) => name)
+    .filter(name => !inlineEmbedKeys.has(name))
+
+  if (missingBlocks.length) {
+    throw new Error(
+      `Missing Block adapter contribution: ${missingBlocks.join(', ')}`,
+    )
+  }
+  if (missingEmbeds.length) {
+    throw new Error(
+      `Missing Inline Embed adapter contribution: ${missingEmbeds.join(', ')}`,
+    )
+  }
 }
 
 function createBundledInlineEmbeds(): [string, EmbedConverter][] {
-  return [
-    [INLINE_SHAPE_EMBED_KEY, createInlineShapeEmbedConverter()],
-    [INLINE_WORD_ART_EMBED_KEY, createInlineWordArtEmbedConverter()],
-    [INLINE_DATE_EMBED_KEY, createInlineDateEmbedConverter()],
-    [INLINE_MENTION_EMBED_KEY, createInlineMentionEmbedConverter()],
-    [INLINE_LATEX_EMBED_KEY, createInlineLatexEmbedConverter()],
+  const orderedKeys = [
+    INLINE_SHAPE_EMBED_KEY,
+    INLINE_WORD_ART_EMBED_KEY,
+    INLINE_DATE_EMBED_KEY,
+    INLINE_MENTION_EMBED_KEY,
+    INLINE_LATEX_EMBED_KEY,
   ]
+  return orderedKeys.map(key => {
+    const contribution = BUNDLED_INLINE_EMBED_ADAPTER_CONTRIBUTIONS.find(
+      item => item.key === key,
+    )
+    if (!contribution?.createDomConverter) {
+      throw new Error(`Missing bundled Inline Embed converter factory: ${key}`)
+    }
+    return [key, contribution.createDomConverter()]
+  })
 }
 
 function createFallbackMentionConfig(): MentionPluginConfig {
@@ -293,10 +337,46 @@ export function createBundledEditorCapabilities(
     ...BUNDLED_EDITOR_SCHEMAS,
     ...(options.additionalSchemas ?? []),
   ]
+  const explicitAdditionalEmbeds = options.additionalEmbeds ?? []
+  const explicitAdditionalEmbedKeys = new Set(
+    explicitAdditionalEmbeds.map(([key]) => key),
+  )
+  const missingAdditionalEmbedConverters = (
+    options.additionalInlineEmbedAdapters ?? []
+  ).filter(contribution => (
+    !contribution.createDomConverter
+    && !explicitAdditionalEmbedKeys.has(contribution.key)
+  ))
+  if (missingAdditionalEmbedConverters.length) {
+    throw new Error(
+      `Missing Inline Embed converter: ${missingAdditionalEmbedConverters
+        .map(contribution => contribution.key)
+        .join(', ')}`,
+    )
+  }
+  const derivedAdditionalEmbeds = (
+    options.additionalInlineEmbedAdapters ?? []
+  ).flatMap(contribution => {
+    if (
+      explicitAdditionalEmbedKeys.has(contribution.key)
+      || !contribution.createDomConverter
+    ) {
+      return []
+    }
+    return [[
+      contribution.key,
+      contribution.createDomConverter(),
+    ] satisfies [string, EmbedConverter]]
+  })
   const embeds = [
     ...createBundledInlineEmbeds(),
-    ...(options.additionalEmbeds ?? []),
+    ...explicitAdditionalEmbeds,
+    ...derivedAdditionalEmbeds,
   ] as [string, EmbedConverter][]
+  const adapterRegistry = createBundledAdapterRegistry({
+    additionalBlocks: options.additionalBlockAdapters,
+    additionalInlineEmbeds: options.additionalInlineEmbedAdapters,
+  })
   const plugins: DocPlugin[] = [
     new OrderedBlockPlugin(),
     new CodeInlineEditorBinding(),
@@ -329,12 +409,14 @@ export function createBundledEditorCapabilities(
     schemas: schemaDefinitions,
     embeds,
     plugins,
+    adapterRegistry,
   })
 
   return {
     schemas: new SchemaManager(schemaDefinitions),
     schemaDefinitions,
     embeds,
+    adapterRegistry,
     plugins,
     blockMaterials: BUNDLED_EDITOR_BLOCK_MATERIAL_GROUPS,
     paginationPlugin,

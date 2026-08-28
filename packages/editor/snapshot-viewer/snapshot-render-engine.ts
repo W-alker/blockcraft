@@ -283,11 +283,6 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
     const queuedTasks = Array.from(new Map(tasks.map((task) => [task.key, task])).values())
 
     queuedTasks.forEach((task) => {
-      if (this.enhancementCache.has(task.key)) {
-        task.apply(this.enhancementCache.get(task.key))
-        return
-      }
-
       const policy = task.policy ?? defaultPolicy
       if (policy === "visible" && typeof IntersectionObserver !== "undefined") {
         const observer = new IntersectionObserver((entries) => {
@@ -297,7 +292,7 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
 
           observer.disconnect()
           this.enhancementCleanups.delete(cleanup)
-          this.runEnhancement(task)
+          this.activateEnhancement(task)
         }, {
           rootMargin: "300px 0px 300px 0px",
           threshold: 0,
@@ -309,8 +304,17 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
         return
       }
 
-      this.runEnhancement(task)
+      this.activateEnhancement(task)
     })
+  }
+
+  private activateEnhancement(task: SnapshotEnhancementTask) {
+    if (this.enhancementCache.has(task.key)) {
+      task.apply(this.enhancementCache.get(task.key))
+      return
+    }
+
+    this.runEnhancement(task)
   }
 
   private runEnhancement(task: SnapshotEnhancementTask) {

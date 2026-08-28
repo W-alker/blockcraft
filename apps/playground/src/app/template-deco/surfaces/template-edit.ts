@@ -9,7 +9,12 @@ import {
   EDITOR_SURFACE_STYLES,
 } from '../host/deco-doc-base'
 import { guardDecoDeletion, handleContainerBlankMousedown, replaceRootChildren } from '../core/placement'
-import { TEMPLATE_EDIT_EMBEDS, TEMPLATE_EDIT_SCHEMAS } from '../core/registry'
+import {
+  TEMPLATE_BLOCK_ADAPTERS,
+  TEMPLATE_EDIT_EMBEDS,
+  TEMPLATE_EDIT_SCHEMAS,
+  TEMPLATE_INLINE_EMBED_ADAPTERS,
+} from '../core/registry'
 import { TemplateStore } from '../data/template-store'
 import { EditorViewState } from '../debug-panel/editor-view-state'
 import { ActiveDecoService } from '../core/active-deco.service'
@@ -78,8 +83,10 @@ export class TemplateEditSurfaceComponent implements AfterViewInit, OnDestroy {
   ngAfterViewInit(): void {
     // 建 doc 的公共流程收进 createDecoDoc（对标 cses const.ts）；本页只追加模板域自有 Embed。
     const runtime = createDecoDoc({
-      additionalSchemas: TEMPLATE_EDIT_SCHEMAS,       // 共享 bundled 块 + 装饰「编辑」组件
+      additionalSchemas: TEMPLATE_EDIT_SCHEMAS,       // bundled canonical 块 + Playground 自有装饰
       additionalEmbeds: TEMPLATE_EDIT_EMBEDS(),
+      additionalBlockAdapters: TEMPLATE_BLOCK_ADAPTERS,
+      additionalInlineEmbedAdapters: TEMPLATE_INLINE_EMBED_ADAPTERS,
       injector: this.injector,
       hostEl: this.host.nativeElement,
       currentUserId: TEMPLATE_CREATOR_USER_ID,

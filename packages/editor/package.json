@@ -24,6 +24,7 @@
     "rehype": "^13.0.2",
     "rehype-parse": "^9.0.1",
     "rehype-stringify": "^10.0.1",
+    "remark-directive": "^4.0.0",
     "unified": "^11.0.5",
     "mdast-util-gfm-autolink-literal": "^2.0.1",
     "mdast-util-gfm-strikethrough": "^2.0.0",
@@ -44,6 +45,8 @@
     "y-websocket": "^2.1.0",
     "yjs": "^13.6.18"
   },
-  "devDependencies": {},
+  "devDependencies": {
+    "remark-directive": "^4.0.0"
+  },
   "sideEffects": false
 }

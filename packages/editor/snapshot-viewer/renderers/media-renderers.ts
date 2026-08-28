@@ -10,7 +10,11 @@ import {
   createMermaidEnhancementTask,
   createSnapshotIframeElement,
 } from "../enhancers";
-import {SnapshotBlockRenderer, SnapshotRenderContext} from "../types";
+import {
+  SnapshotBlockRenderer,
+  SnapshotEnhancementTask,
+  SnapshotRenderContext,
+} from "../types";
 import {
   BlockObjectSizeProps,
   normalizeObjectSize,
@@ -92,14 +96,14 @@ function renderImage(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
 
   const src = resolveUrl(`${props["src"] || ""}`, ctx.options.baseUrl)
   if (src) {
-    attachSnapshotResourcePlaceholder(
+    scheduleSnapshotResourceEnhancement(
       ctx,
+      createImageEnhancementTask(img, src, `image:${snapshot.id}:${src}`),
       wrapper,
       img,
       imageResourcePlaceholderAdapter,
       src,
     )
-    ctx.scheduleEnhancement(createImageEnhancementTask(img, src, `image:${snapshot.id}:${src}`))
   } else {
     const placeholder = document.createElement("div")
     placeholder.classList.add("upload-hint")
@@ -148,14 +152,18 @@ function renderVideo(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
     if (embedUrl && ctx.options.resourcePolicy !== "off") {
       const iframe = createSnapshotIframeElement()
       embed.append(iframe)
-      attachSnapshotResourcePlaceholder(
+      scheduleSnapshotResourceEnhancement(
         ctx,
+        createIframeEnhancementTask(
+          embed,
+          embedUrl,
+          `video-iframe:${snapshot.id}:${embedUrl}`,
+        ),
         wrapper,
         iframe,
         iframeResourcePlaceholderAdapter,
         embedUrl,
       )
-      ctx.scheduleEnhancement(createIframeEnhancementTask(embed, embedUrl, `video-iframe:${snapshot.id}:${embedUrl}`))
     }
   } else if (isDirectVideo(url, props["type"])) {
     const videoWrapper = document.createElement("div")
@@ -163,19 +171,25 @@ function renderVideo(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
     const video = document.createElement("video")
     video.controls = true
     video.preload = "metadata"
-    if (props["poster"]) {
-      video.poster = `${props["poster"]}`
-    }
     videoWrapper.append(video)
     container.append(videoWrapper)
-    attachSnapshotResourcePlaceholder(
+    scheduleSnapshotResourceEnhancement(
       ctx,
+      createMediaSourceEnhancementTask(
+        video,
+        url,
+        `video:${snapshot.id}:${url}`,
+      ),
       wrapper,
       video,
       videoResourcePlaceholderAdapter,
       url,
+      () => {
+        if (props["poster"]) {
+          video.poster = `${props["poster"]}`
+        }
+      },
     )
-    ctx.scheduleEnhancement(createMediaSourceEnhancementTask(video, url, `video:${snapshot.id}:${url}`))
   } else {
     const preview = document.createElement("div")
     preview.classList.add("video-link-preview")
@@ -188,19 +202,38 @@ function renderVideo(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   return {element}
 }
 
-function attachSnapshotResourcePlaceholder(
+function scheduleSnapshotResourceEnhancement(
   ctx: SnapshotRenderContext,
+  task: SnapshotEnhancementTask<string>,
   frame: HTMLElement,
   element: ResourcePlaceholderElement,
   adapter: ResourcePlaceholderAdapter,
   resourceKey: string,
+  beforeApply?: () => void,
 ): void {
+  if (ctx.options.resourcePolicy === "off") {
+    return
+  }
+
   const controller = new ResourcePlaceholderController(frame)
-  controller.bind({element, adapter, resourceKey})
   ctx.registerDisposable?.(
     frame,
     () => destroyResourcePlaceholder(frame),
   )
+  const apply = task.apply
+  const wrappedTask: SnapshotEnhancementTask<string> = {
+    ...task,
+    apply(value) {
+      controller.bind({
+        element,
+        adapter,
+        resourceKey,
+      })
+      beforeApply?.()
+      apply(value)
+    },
+  }
+  ctx.scheduleEnhancement(wrappedTask)
 }
 
 function applySnapshotObjectSizing(

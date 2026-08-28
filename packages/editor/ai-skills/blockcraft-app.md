@@ -135,7 +135,13 @@ Image/video resources use the same neutral loading skeleton and stable
 failure/retry frame as the editor. `renderer.update()` replaces resource frames
 atomically so live listeners are never cloned into inert markup, and
 `renderer.destroy()` disposes all block and inline-image resource controllers.
-`resourcePolicy: 'off'` continues to avoid mounting iframe resources.
+`resourcePolicy` controls both source activation and placeholder timing:
+`'eager'` starts image/video/audio/iframe resources after their stable frames
+mount; `'visible'` waits for the resource target to enter the observer margin
+before setting `src` and starting loading/error timeout state; `'off'` sets no
+resource source, creates no loading placeholder, and mounts no iframe. A cached
+enhancement still obeys the current visibility gate instead of applying while
+offscreen.
 
 Editable blocks carrying an always-on placeholder (`meta.plh` with
 `meta.plhMode: 'always'`) render the hint when their delta is empty, using the
@@ -224,10 +230,21 @@ Contract:
 When the host receives Markdown progressively, use the standalone Markdown stream viewer instead of building snapshots manually.
 
 ```typescript
-import { createMarkdownStreamViewer } from '@org/blockcraft-editor'
+import {
+  createMarkdownStreamViewer,
+  createBundledEditorCapabilities,
+} from '@org/blockcraft-editor'
+
+const capabilities = createBundledEditorCapabilities({
+  additionalSchemas: [weatherSchema],
+  additionalBlockAdapters: [weatherAdapters],
+})
 
 const streamViewer = createMarkdownStreamViewer({
   container: containerEl,
+  adapterRegistry: capabilities.adapterRegistry,
+  markdownProfile: 'blockcraft',
+  onError: error => reportMarkdownStreamError(error),
   viewerOptions: {
     baseUrl: 'https://cdn.example.com/',
     resourcePolicy: 'eager',
@@ -241,12 +258,32 @@ streamViewer.finish()
 streamViewer.destroy()
 ```
 
+`adapterRegistry` and `markdownProfile` are optional. They default to
+`BUNDLED_ADAPTER_REGISTRY` and `hybrid`. The default combines ordinary Markdown
+with directives from Block adapters that explicitly opt in. A host that streams
+its own directives must pass the same composed registry used by the editor;
+select `portable` to forbid private export syntax or `blockcraft` when private
+Inline Embed directives are also required. `viewerOptions` remains a separate rendering concern: add a
+custom block/Inline Embed renderer there when the parsed custom snapshot also
+needs a host-specific view.
+
+The Stream layer does not maintain a second Block grammar or split the source
+into independently parsed Markdown windows. Once per coalesced render it sends
+the complete accumulated source through the same `MarkdownAdapter` and supplied
+registry. Multiline or nested directives and fenced custom Blocks therefore
+follow the exact matcher priority/`consumes` rules of a one-shot Markdown
+import, while rapid chunks are collapsed to avoid redundant parses.
+
 Method semantics:
 
 - `append(chunk)` — append-only convenience for chunk streams
 - `replace(fullMarkdown)` — replace the current full Markdown text, useful when the producer rewrites prior content
-- `finish()` — flush pending complex blocks such as fenced code, tables, and mermaid blocks
+- `finish()` — mark the source finalized and flush the latest accumulated text; it does not change Markdown parsing semantics
 - `destroy()` — clear viewer resources
+
+If adapter parsing or snapshot rendering fails, the viewer keeps its last
+successfully rendered snapshot, calls `onError(error)` when supplied, and lets
+the next `append()` or `replace()` retry from the complete current source.
 
 Use the exported `MarkdownStreamRenderer` only when progressive Markdown must
 mutate an initialized, editable `BlockCraftDoc`. It preserves compatible block
@@ -255,6 +292,13 @@ through `DocCRUD` in an `ORIGIN_NO_RECORD` transaction. Root blocks that are
 offscreen under virtualization remain model-only; streaming does not acquire a
 full-document view lease or materialize their components. The standalone stream
 viewer above remains the preferred path for display-only output.
+
+`MarkdownStreamRenderer` also coalesces scheduled input around the injected
+Markdown adapter. If new source arrives while parsing, the stale Snapshot is
+discarded and the latest complete source is parsed before applying DocCRUD
+changes. A failed call rejects its returned Promise, but does not poison later
+`append()`/`replace()` calls; `destroy()` prevents in-flight work from mutating
+the document.
 
 ## Step 2 — Provide DI Services
 
@@ -353,7 +397,52 @@ Used by the bookmark block + inline link preview. The framework ships a default 
 
 #### `DocAdapterService` — HTML/Markdown round-trip
 
-Wraps the bundled `HtmlAdapter` and `MarkdownAdapter`. The host can subclass it to inject custom matchers (see `blockcraft-adapter.md`).
+Wraps `HtmlAdapter` and `MarkdownAdapter` with `BUNDLED_ADAPTER_REGISTRY`, which
+covers every bundled Block flavour and all seven Inline Embed keys. The host can
+subclass it and use `createBundledAdapterRegistry({additionalBlocks,
+additionalInlineEmbeds})` for external domains. New integrations should pass a
+registry rather than copying or mutating legacy matcher arrays; see
+`blockcraft-adapter.md`. Markdown uses the `hybrid` profile by default: native
+Markdown remains the base and explicitly opted custom Block adapters retain
+their container directives. Use `portable` for standard-only output and
+`blockcraft` when private Inline Embed directives are also needed. Both adapter constructors require this explicit registry (or an
+explicit matcher array); the core adapter layer has no implicit bundled
+defaults.
+
+Custom Block directive parameters use leading YAML front matter delimited by
+`---`. Hosts should compose a contribution and let
+`MarkdownAdapter` read/write that metadata; do not hand-build percent-encoded
+`props` attributes. Canonical container output leaves one blank line between
+the opening/closing directive fences and the body. Import accepts zero or more
+blank lines at those boundaries.
+
+The bundled `AdapterService` resolves its registry through
+`EDITOR_ADAPTER_REGISTRY_TOKEN`. No override is needed for bundled-only docs.
+When a host adds Block or Inline Embed domains, define the contribution arrays
+once and use them both for the provider and for the capability factory:
+
+```typescript
+const HOST_BLOCK_ADAPTERS = [myCustomBlockAdapters] as const
+const HOST_INLINE_EMBED_ADAPTERS = [myEmbedAdapters] as const
+const HOST_ADAPTER_REGISTRY = createBundledAdapterRegistry({
+  additionalBlocks: HOST_BLOCK_ADAPTERS,
+  additionalInlineEmbeds: HOST_INLINE_EMBED_ADAPTERS,
+})
+
+@Component({
+  // ...
+  providers: [
+    {provide: EDITOR_ADAPTER_REGISTRY_TOKEN, useValue: HOST_ADAPTER_REGISTRY},
+    {provide: DOC_ADAPTER_SERVICE_TOKEN, useClass: AdapterService},
+  ],
+})
+export class MyDocShellComponent {}
+```
+
+Provide both tokens in the same Angular injector boundary. Registering a
+custom Schema or converter only in `BlockCraftDoc` does not mutate the adapter
+service and is rejected by the bundled capability factory when the matching
+contribution is missing.
 
 ## Step 3 — Build a Schema Manager
 
@@ -379,7 +468,9 @@ const capabilities = createBundledEditorCapabilities({
   pagination: {enabled: false, pageSize: 'A4'},
   openLink: link => router.open(link),
   additionalSchemas: [MyCustomBlockSchema],
+  additionalBlockAdapters: HOST_BLOCK_ADAPTERS,
   additionalEmbeds: [['my-embed', myEmbedConverter]],
+  additionalInlineEmbedAdapters: HOST_INLINE_EMBED_ADAPTERS,
 })
 
 const doc = new BlockCraftDoc({
@@ -390,13 +481,17 @@ const doc = new BlockCraftDoc({
 })
 ```
 
-The result also exposes `schemaDefinitions`, `blockMaterials`,
+The result also exposes `schemaDefinitions`, `adapterRegistry`, `blockMaterials`,
 `paginationPlugin`, `revisionReviewPlugin` and `translatePlugin`. `blockMaterials` is the
 BlockController-aligned projection for insertion UIs; internal child schemas,
 root and infrastructure blocks (`placement-layout`, `object-group`) remain
 registered but hidden. The factory
-throws on duplicate block flavours, embed names or plugin names, including
-duplicates introduced through `additionalSchemas` / `additionalEmbeds`.
+throws on duplicate block flavours, embed names or plugin names; it also throws
+when a custom Schema/Embed has no same-flavour/key adapter contribution. An
+`InlineEmbedAdapterContribution` with `createDomConverter` can be passed without
+an `additionalEmbeds` tuple—the factory creates a fresh converter from it. If
+the converter is data-bound and the contribution has no factory, pass the
+explicit tuple as shown above.
 
 The bundled `embeds` list includes fresh `shape` and `word-art` converters, so
 the bundled Shape/WordArt toolbar Plugins can switch those blocks to inline or
