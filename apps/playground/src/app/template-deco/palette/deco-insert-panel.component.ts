@@ -223,7 +223,11 @@ export class DecoInsertPanelComponent implements OnInit, OnDestroy {
     if (evt.button !== 0 || this.doc.isReadonly) return
     this.doc.dragController.startDrag(
       evt,
-      { kind: 'new-block', flavour: m.flavour as BlockCraft.BlockFlavour },   // kind===Block 已收窄，flavour 必有（无需 !）
+      {
+        kind: 'new-block',
+        flavour: m.flavour as BlockCraft.BlockFlavour,
+        ...(m.initMeta ? {initMeta: m.initMeta} : {}),
+      },
       { ghostLabel: m.label },
     )
   }

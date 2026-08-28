@@ -1,5 +1,7 @@
 # 模板装饰系统 · 上手指南（基本结构 → 实现原理 → 快速上手）
 
+> **历史指南（已被替代）**：文中的 `template-weather`、人员 Inline Embed 和双 Schema 示例只用于追溯旧原型。现行实现请以 [`template-dynamic-material-lifecycle.md`](./template-dynamic-material-lifecycle.md) 为准。
+
 > 这份文档是「随身地图」：找不到文件、想不起原理、要加新装饰时,翻这一篇就够。
 > 配套文档：`docs/template-deco-design.md`(设计决策) · `docs/template-deco-plan.md`(逐任务实施计划)。
 > 代码全部在 `apps/playground/src/app/template-deco/`,**不改框架**(`packages/editor/**`)。

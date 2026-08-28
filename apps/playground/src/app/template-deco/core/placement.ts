@@ -7,6 +7,7 @@ import {
   INLINE_DATE_EMBED_KEY,
   INLINE_DATE_FORMAT_ATTR,
   INLINE_ICON_EMBED_KEY,
+  draftPropMetaKey,
   generateId,
   resolveBlockPosition,
   toInlineDateValue,
@@ -25,6 +26,18 @@ import type { ActiveDecoService } from './active-deco.service'
 export type PlacementMode = 'block' | 'float' | 'absolute'
 export const LAYOUT_FLAVOUR = BLOCK_PLACEMENT_LAYOUT_FLAVOUR
 export const LEGACY_LAYOUT_FLAVOUR = 'template-layout'
+
+const CANONICAL_TEMPLATE_DECO_FLAVOURS = new Set([
+  'weather',
+  'date-card',
+  'person-card',
+  'logo',
+])
+
+const LEGACY_BLOCK_FLAVOURS: Readonly<Record<string, string>> = {
+  'template-weather': 'weather',
+  'template-logo': 'logo',
+}
 
 export type PlaceableProps = {
   /** 旧模板 Logo 的列宽百分比；载入后迁为 wr。 */
@@ -74,8 +87,13 @@ const asBlock = (doc: BlockCraftDoc, id: string): PlaceableBlock | null => {
 
 export const isPlaceableDeco = (flavour?: string): boolean =>
   typeof flavour === 'string' &&
-  flavour.startsWith('template-') &&
-  flavour !== LEGACY_LAYOUT_FLAVOUR
+  (
+    CANONICAL_TEMPLATE_DECO_FLAVOURS.has(flavour)
+    || (
+      flavour.startsWith('template-')
+      && flavour !== LEGACY_LAYOUT_FLAVOUR
+    )
+  )
 
 export function flowPlacementModeFromProps(
   props?: Pick<PlaceableProps, 'float'>,
@@ -168,6 +186,11 @@ const migrateInlineDelta = (value: unknown): unknown => {
 }
 
 const migrateSnapshot = (snapshot: IBlockSnapshot): IBlockSnapshot => {
+  const sourceFlavour = String(snapshot.flavour)
+  const canonicalFlavour = LEGACY_BLOCK_FLAVOURS[sourceFlavour]
+    ?? (sourceFlavour === LEGACY_LAYOUT_FLAVOUR
+      ? LAYOUT_FLAVOUR
+      : snapshot.flavour)
   const props = {...(snapshot.props ?? {})} as Record<string, unknown>
   const meta = {...(snapshot.meta ?? {})} as Record<string, unknown>
   const legacyZ = finiteNumber(props['z'])
@@ -183,7 +206,7 @@ const migrateSnapshot = (snapshot: IBlockSnapshot): IBlockSnapshot => {
     meta['lockKind'] = 'template'
   }
 
-  if (isPlaceableDeco(snapshot.flavour)) {
+  if (isPlaceableDeco(String(canonicalFlavour))) {
     const current = canonicalPosition(props['position'])
     if (current) {
       props['position'] = current
@@ -204,13 +227,21 @@ const migrateSnapshot = (snapshot: IBlockSnapshot): IBlockSnapshot => {
   }
   delete props['placement']
 
-  if (String(snapshot.flavour) === 'template-logo') {
+  if (canonicalFlavour === 'logo') {
     const width = positiveNumber(props['width'])
     if (positiveNumber(props['wr']) === null && width !== null) {
       props['wr'] = width
     }
     if (positiveNumber(props['ar']) === null) props['ar'] = 1
     delete props['width']
+  }
+
+  if (sourceFlavour === 'template-weather') {
+    const dateDraftKey = draftPropMetaKey('date')
+    if (!Object.prototype.hasOwnProperty.call(meta, dateDraftKey)) {
+      meta[dateDraftKey] = 'createdTime'
+    }
+    delete props['field']
   }
 
   let children = Array.isArray(snapshot.children)
@@ -274,9 +305,7 @@ const migrateSnapshot = (snapshot: IBlockSnapshot): IBlockSnapshot => {
 
   return {
     ...snapshot,
-    flavour: String(snapshot.flavour) === LEGACY_LAYOUT_FLAVOUR
-      ? LAYOUT_FLAVOUR
-      : snapshot.flavour,
+    flavour: canonicalFlavour,
     props,
     meta,
     children,

@@ -5,14 +5,14 @@ import { LogoTemplateEditComponent } from './logo.template-edit.component'
 import { LogoTemplateRenderComponent } from './logo.template-render.component'
 
 export interface LogoModel extends NoEditableBlockNative {
-  flavour: 'template-logo'
+  flavour: 'logo'
   nodeType: BlockNodeType.void
   // src + 核心 objectSizing 的 wr/ar；三态排版字段来自 PlaceableProps。
   props: PlaceableProps & { src: string; wr: number; ar: number }
 }
 
 export const LogoDeco = defineDeco<LogoModel>({
-  flavour: 'template-logo',
+  flavour: 'logo',
   nodeType: BlockNodeType.void,
   label: 'Logo',
   svgIcon: 'bc_tupian-color',                // 图片

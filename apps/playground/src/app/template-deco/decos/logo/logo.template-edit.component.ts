@@ -12,7 +12,7 @@ import type { LogoModel } from './logo.deco'
 
 // 三态排版 host 绑定 + 选中/拖拽接线都继承自 PlaceableEditBase（void 物料默认可拖），这里只写 logo 自己的东西
 @Component({
-  selector: 'div.template-logo-edit-block',
+  selector: 'div.logo-template-edit-block',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [ResizeContainerComponent],

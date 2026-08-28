@@ -97,6 +97,7 @@ describe('template placement snapshot migration', () => {
       wr: 20,
       ar: 1,
     })
+    expect(migrated[1].flavour).toBe('logo')
 
     const layout = migrated[2]
     expect(layout.flavour).toBe(LAYOUT_FLAVOUR)
@@ -111,6 +112,10 @@ describe('template placement snapshot migration', () => {
       position: {x: 12.5, y: 40},
       placementLayer: 'under',
     })
+    expect((layout.children as IBlockSnapshot[])[1].flavour).toBe('logo')
+    expect((layout.children as IBlockSnapshot[])[2].flavour).toBe('weather')
+    expect((layout.children as IBlockSnapshot[])[2].meta['draft:date'])
+      .toBe('createdTime')
     expect((layout.children as IBlockSnapshot[])[2].props['position'])
       .toEqual({x: 5, y: 8})
   })

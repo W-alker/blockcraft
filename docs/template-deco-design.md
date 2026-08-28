@@ -1,5 +1,7 @@
 # 模板装饰系统设计（MVP1 · playground 原型）
 
+> **历史文档（已被替代）**：本文记录早期“双 Schema + `template-*` flavour + 人员 Inline Embed”原型，不能再作为现行实现依据。2026-08-28 起的唯一现行模型见 [`template-dynamic-material-lifecycle.md`](./template-dynamic-material-lifecycle.md)：动态块统一使用 `weather` / `date-card` / `person-card`，模板配置写入 `meta.draft:*`，建档时物化为真实 `props`。
+
 > 状态：设计已定，落地点 = blockcraft playground 原型（MVP1）。设计成可移植 cses-client（MVP2+）。
 > 本文是 100 天模板装饰路线（MVP1-9）的**地基设计**。MVP1 只造装饰机制 + 基础装饰；领域层/联动/真实数据留接缝。
 >

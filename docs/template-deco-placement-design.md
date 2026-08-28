@@ -1,5 +1,7 @@
 # 模板装饰 · 三态排版 + layout 悬浮层 设计
 
+> **历史设计**：`template-layout`、`template-weather` 等名称仅用于旧快照迁移。现行 placement 使用 bundled `placement-layout`，动态物料生命周期见 [`template-dynamic-material-lifecycle.md`](./template-dynamic-material-lifecycle.md)。
+
 > 状态：已定稿，按此实现（本轮仅 logo 验证）。
 > 边界：全部在 `apps/playground/`，不碰 `packages/editor` 框架，不写 MIGRATIONS、不 bump 版本。
 

@@ -7,16 +7,24 @@ import {
   createDecoDoc,
   EDITOR_SURFACE_STYLES,
 } from '../host/deco-doc-base'
-import { guardDecoDeletion, handleContainerBlankMousedown, replaceRootChildren } from '../core/placement'
+import {
+  guardDecoDeletion,
+  handleContainerBlankMousedown,
+  normalizeTemplateSnapshots,
+  replaceRootChildren,
+} from '../core/placement'
 import { TEMPLATE_RENDER_EMBEDS, TEMPLATE_RENDER_SCHEMAS } from '../core/registry'
 import { TEMPLATE_DATA } from '../data/template-data'
+import {firstValueFrom} from 'rxjs'
 import { EditorViewState } from '../debug-panel/editor-view-state'
 import { TemplateSvgSpriteComponent } from '../core/template-svg-sprite.component'
 import {createTemplateUseMutationPolicy} from '../core/template-region'
+import {materializeTemplateSnapshots} from '../core/materialize-template'
 
 /**
  * 「使用模版」surface：和编辑 surface 同款体验（toolbar + 居中白文档 + 全套编辑插件），
- * 但用 render 套字典（装饰显真实 mock 数据）且**可编辑**——用户在这页填正文、在彩色块里打字、装饰自动显真实值。
+ * canonical 动态块在建档时把 draft meta 投影成真实 props，随后按普通文档块渲染；
+ * Playground 自有装饰仍使用 render schema。页面整体保持可编辑。
  * 初始内容、整页背景和分页状态都由父页从 TemplateStore 读出后通过 @Input 透传。
  */
 @Component({
@@ -71,7 +79,7 @@ export class TemplateUseSurfaceComponent implements AfterViewInit, OnDestroy {
     // 建 doc 的公共流程收进 createDecoDoc；本页只为模板域自有 Embed 注入真实数据字典。
     const runtime = createDecoDoc({
       additionalSchemas: TEMPLATE_RENDER_SCHEMAS,     // 共享 bundled 块 + 装饰「渲染」组件
-      additionalEmbeds: TEMPLATE_RENDER_EMBEDS(this.data),
+      additionalEmbeds: TEMPLATE_RENDER_EMBEDS(),
       injector: this.injector,
       hostEl: this.host.nativeElement,
       currentUserId: TEMPLATE_CONSUMER_USER_ID,
@@ -79,7 +87,7 @@ export class TemplateUseSurfaceComponent implements AfterViewInit, OnDestroy {
     })
     this.doc = runtime.doc
     this.pagination = runtime.pagination
-    this.loadTemplate()                                 // 把模板快照的 children 灌入（同预览的 replace 逻辑）
+    void this.loadTemplate()
     if (this.paginationEnabled) this.pagination.enable()
     this.decoGuard = guardDecoDeletion(this.doc, this.host.nativeElement)
     this.cdr.markForCheck()                             // OnPush：doc 就绪后挂出 toolbar
@@ -90,10 +98,21 @@ export class TemplateUseSurfaceComponent implements AfterViewInit, OnDestroy {
     this.doc?.destroy()
   }
 
-  // 把存的模板内容替换进当前 doc（清掉默认空段落再插入保存的 children）。
-  // 插入前迁移旧 template-layout/x/y/z/行内图片，并归一到标准 placement-layout。
-  private loadTemplate(): void {
-    replaceRootChildren(this.doc, this.snapshot?.children)   // 快照级自愈 + 替换 root children（两页共用，见 placement）
+  // 先迁移旧快照，再把 draft meta 投影成真实文档 props，最后经 DocCRUD 写入。
+  private async loadTemplate(): Promise<void> {
+    const rawChildren = (this.snapshot?.children ?? []) as IBlockSnapshot[]
+    if (!rawChildren.length) return
+    const user = await firstValueFrom(this.data.user.current())
+    const normalized = normalizeTemplateSnapshots(rawChildren)
+    const children = materializeTemplateSnapshots(normalized, {
+      createdAt: new Date(),
+      creator: {
+        name: user.name,
+        avatar: user.avatarUrl,
+        description: user.deptName ?? user.orgName,
+      },
+    })
+    replaceRootChildren(this.doc, children)
   }
 
   // 点空白处 → 光标落到末段/补空段（逻辑收在 core/placement，两个 surface 共用）

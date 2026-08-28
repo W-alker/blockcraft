@@ -1,10 +1,11 @@
 import { InjectionToken, Injectable } from '@angular/core'
+import {
+  DocWeatherService,
+  type DocWeatherData,
+  type DocWeatherQuery,
+} from '@ccc/blockcraft'
 import { Observable, of } from 'rxjs'
 
-/** 天气视觉基调：驱动 weather-mark 画哪种图标（镜像 cses workbench-weather 的 tone）。 */
-export type WeatherTone = 'sunny' | 'cloudy' | 'rainy' | 'snowy' | 'stormy' | 'foggy'
-/** 天气数据契约（对齐 cses WorkbenchWeatherDay 的可视字段，去掉实时 API 相关）。 */
-export interface Weather { tone: WeatherTone; temp: number; condition: string; location: string; high: number; low: number }
 // 镜像 cses dl-user-profile 的 IDlUser：姓名 + 头像 + 部门/公司（desc 行）
 export interface User { name: string; avatarUrl: string; deptName?: string; orgName?: string }
 
@@ -17,16 +18,9 @@ export const DEFAULT_AVATAR = 'http://face.jinqidongli.com/default.jpg'
 export const avatarUrl = (userId: string): string =>
   userId ? `http://face.jinqidongli.com/${userId}/${userId}.jpg` : DEFAULT_AVATAR
 
-/** 格式化为「YYYY年MM月DD日」。用真实日期，避免写死年份（明年自动正确）。 */
-const pad2 = (n: number): string => String(n).padStart(2, '0')
-export const formatYMD = (d: Date): string => `${d.getFullYear()}年${pad2(d.getMonth() + 1)}月${pad2(d.getDate())}日`
-
-/** 数据契约：按域分格、方法返回 Observable。实现可换（Mock→Real），组件不改。 */
+/** 模板实例化所需的宿主数据；天气走独立 DocWeatherService 边界。 */
 export interface TemplateData {
-  weather: { get(): Observable<Weather> }     // 当前登录用户所在地（真实实现按 IP 定位），模板不传城市
   user: { current(): Observable<User> }
-  doc: { date(field: string): Observable<string> }
-  // task / meeting … 后续 MVP 加域
 }
 
 export const TEMPLATE_DATA = new InjectionToken<TemplateData>('TEMPLATE_DATA')
@@ -35,22 +29,25 @@ export const TEMPLATE_DATA = new InjectionToken<TemplateData>('TEMPLATE_DATA')
  * 当前位置天气（mock）。真实移植：按当前登录用户 IP 定位 + 天气接口取，模板设计期不设置城市。
  * 「创建时固定 vs 打开时实时」由数据层决定——建议留到真实移植再定（mock 数据不变，无影响）。
  */
-const CURRENT_WEATHER: Weather = { tone: 'sunny', temp: 28, condition: '晴', location: '北京', high: 30, low: 18 }
+export const CURRENT_WEATHER: DocWeatherData = { tone: 'sunny', temp: 28, condition: '晴', location: '北京', high: 30, low: 18 }
+
+/** Playground 的宿主天气适配器；真实业务宿主会替换为自己的定位与天气服务。 */
+@Injectable()
+export class MockDocWeatherService extends DocWeatherService {
+  override query = async (
+    _query?: DocWeatherQuery,
+    signal?: AbortSignal,
+  ): Promise<DocWeatherData> => {
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+    return CURRENT_WEATHER
+  }
+}
 
 /** MVP1 假数据：of(...) 即“冷流推一次”。移植时换 RealTemplateData（读 ctx.userInfo/docDetail/queryUsers/天气接口）。 */
 @Injectable()
 export class MockTemplateData implements TemplateData {
-  weather = { get: () => of(CURRENT_WEATHER) }
   // 头像：给了 MOCK_USER_ID 就走 face.jinqidongli.com/{id}/{id}.jpg；没给就是官方默认头像 default.jpg
   user = { current: () => of({ name: USER_NAME, avatarUrl: avatarUrl(MOCK_USER_ID) }) }
-  // 真实日期（非写死）：修改时间=今天，创建时间=示意为 3 天前，切换字段有可见差异。移植后改读 docDetail。
-  doc = {
-    date: (field: string) => {
-      const now = new Date()
-      const d = field === 'updatedAt' ? now : new Date(now.getTime() - 3 * 86400000)
-      return of(formatYMD(d))
-    },
-  }
 }
 
 /** 当前用户姓名 + 部门/公司（dl-user-profile 的 desc 行）。 */

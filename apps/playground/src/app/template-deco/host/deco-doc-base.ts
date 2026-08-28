@@ -4,6 +4,7 @@ import {
   ConsoleLogger, IBlockSchemaOptions, BlockCraftDoc, EmbedConverter, generateId,
   BLOCK_CREATOR_SERVICE_TOKEN, DOC_FILE_SERVICE_TOKEN, DOC_MESSAGE_SERVICE_TOKEN,
   DOC_ADAPTER_SERVICE_TOKEN, DOC_LINK_PREVIEWER_SERVICE_TOKEN, DocLinkPreviewerService,
+  DOC_WEATHER_SERVICE_TOKEN,
   createBundledEditorCapabilities, PaginationPlugin,
   BlockLockKind, BlockMutationPolicy, BlockUnlockContext,
 } from '@ccc/blockcraft'
@@ -14,6 +15,7 @@ import { MyDocMessageService } from '@ccc/blockcraft/editor/services/doc-message
 import { AdapterService } from '@ccc/blockcraft/editor/services/adapter.service'
 import { MyCommentService } from '@ccc/blockcraft/editor/services/comment.service'
 import { MyDocTranslationService } from '@ccc/blockcraft/editor/services/doc-translation.service'
+import {MockDocWeatherService} from '../data/template-data'
 
 /**
  * 模板装饰编辑器的共享宿主接线。普通编辑能力由
@@ -42,6 +44,7 @@ export const DECO_DOC_PROVIDERS = [
   { provide: DOC_MESSAGE_SERVICE_TOKEN, useClass: MyDocMessageService },
   { provide: BLOCK_CREATOR_SERVICE_TOKEN, useClass: MyBlockCreatorService },
   { provide: DOC_LINK_PREVIEWER_SERVICE_TOKEN, useClass: DocLinkPreviewerService },
+  { provide: DOC_WEATHER_SERVICE_TOKEN, useClass: MockDocWeatherService },
   { provide: DOC_ADAPTER_SERVICE_TOKEN, useClass: AdapterService },
   ConsoleLogger,
   MyCommentService,

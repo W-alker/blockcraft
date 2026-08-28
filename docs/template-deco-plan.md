@@ -1,5 +1,7 @@
 # 模板装饰 MVP1 实施计划（playground · 自建 doc）
 
+> **已归档计划**：这里保留最初原型的任务记录，不代表现行架构。`template-*` 动态块与人员 Inline Embed 已退出新建路径；当前模型见 [`template-dynamic-material-lifecycle.md`](./template-dynamic-material-lifecycle.md)。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 在 blockcraft playground 用「自建 BlockCraftDoc」搭出模板装饰机制 —— 两个 surface(模板编辑/文档)、两个工厂(`defineDeco`/`defineEmbed`)、5 个 block 装饰 + 1 个行内 embed,block 拖拽插入、embed 光标插入,数据走可替换的 `TEMPLATE_DATA`。
