@@ -14,6 +14,7 @@ import {
   MARKDOWN_ADAPTER_PROFILE_CONFIG,
   type BlockAdapterContribution,
   type MarkdownAdapterProfile,
+  type MarkdownSyntaxDescriptor,
 } from '../registry'
 import {HastUtils} from '../utils'
 import {
@@ -44,6 +45,11 @@ export interface GenericBlockAdapterOptions {
   readonly markdownDirective?: boolean
   readonly defaultProps?: Readonly<Record<string, unknown>>
   readonly portableText?: (snapshot: IBlockSnapshot) => string
+  /** Optional model/help wording for the generated private directive. */
+  readonly markdownSyntax?: Partial<Pick<
+    MarkdownSyntaxDescriptor,
+    'title' | 'description' | 'example'
+  >>
 }
 
 function property(
@@ -262,11 +268,34 @@ export function createGenericMarkdownBlockMatcher(
 export function createGenericBlockAdapterContribution(
   options: GenericBlockAdapterOptions,
 ): BlockAdapterContribution {
+  const syntax = createGenericMarkdownSyntaxDescriptor(options)
   return {
     id: options.id ?? options.flavour,
     flavours: [options.flavour],
     html: [createGenericHtmlBlockMatcher(options)],
     markdown: [createGenericMarkdownBlockMatcher(options)],
+    markdownSyntax: syntax ? [syntax] : [],
+  }
+}
+
+export function createGenericMarkdownSyntaxDescriptor(
+  options: GenericBlockAdapterOptions,
+): MarkdownSyntaxDescriptor | null {
+  if (options.markdownDirective !== true) return null
+  const directiveName = options.markdownName ?? `bc-${options.flavour}`
+  return {
+    id: `block:${options.flavour}`,
+    title: options.markdownSyntax?.title ?? `${options.flavour} block`,
+    description: options.markdownSyntax?.description
+      ?? `Use this registered BlockCraft directive only when the ${options.flavour} block semantics are required. Keep its readable body as ordinary Markdown.`,
+    kind: options.nodeType === BlockNodeType.void
+      ? 'leaf-directive'
+      : 'container-directive',
+    profiles: ['hybrid', 'blockcraft'],
+    example: options.markdownSyntax?.example
+      ?? (options.nodeType === BlockNodeType.void
+        ? `::${directiveName}`
+        : `:::${directiveName}\n\nReadable Markdown content.\n\n:::`),
   }
 }
 

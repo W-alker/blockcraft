@@ -3,6 +3,7 @@ import type {BlockAdapterContribution} from '../../../adapters/registry'
 import {
   createGenericHtmlBlockMatcher,
   createGenericMarkdownBlockMatcher,
+  createGenericMarkdownSyntaxDescriptor,
 } from '../../../adapters/generic'
 
 const columns = {
@@ -28,5 +29,9 @@ export const columnsBlockAdapters: BlockAdapterContribution = {
   markdown: [
     createGenericMarkdownBlockMatcher(columns),
     createGenericMarkdownBlockMatcher(column),
+  ],
+  markdownSyntax: [
+    createGenericMarkdownSyntaxDescriptor(columns)!,
+    createGenericMarkdownSyntaxDescriptor(column)!,
   ],
 }

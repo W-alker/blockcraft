@@ -32,4 +32,11 @@ export const attachmentBlockAdapters: BlockAdapterContribution = {
   flavours: ['attachment'],
   html: [attachmentBlockHtmlAdapterMatcher],
   markdown: [attachmentBlockMarkdownAdapterMatcher],
+  markdownSyntax: [{
+    id: 'block:attachment',
+    title: 'Attachment link',
+    description: 'Use a standard link with the attachment title hint. The label remains readable in other Markdown tools.',
+    kind: 'link',
+    example: '[Document.pdf](https://example.com/document.pdf "blockcraft:attachment")',
+  }],
 }

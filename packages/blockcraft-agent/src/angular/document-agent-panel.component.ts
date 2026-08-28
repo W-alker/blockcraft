@@ -4,6 +4,7 @@ import {
   Component,
   ElementRef,
   OnChanges,
+  OnDestroy,
   SimpleChanges,
   ViewChild,
   computed,
@@ -13,17 +14,28 @@ import {
 } from '@angular/core'
 import type {
   DocumentAgentContext,
+  DocumentAgentMarkdownRequest,
   DocumentAgentImageAttachment,
   DocumentAgentRequest,
   DocumentAgentTask,
   DocumentAgentResult,
 } from '../core/agent.types'
+import {
+  DocumentAgentMarkdownMessageComponent,
+  type DocumentAgentMarkdownViewerConfig,
+} from './document-agent-markdown-message.component'
 
 type DocumentAgentChatMessage = {
+  id: string
   role: 'user' | 'assistant'
   content: string
   tone?: 'normal' | 'error'
+  kind?: 'text' | 'markdown'
+  complete?: boolean
+  streamed?: boolean
 }
+
+export type DocumentAgentPanelMode = 'chat' | 'edit'
 
 export interface DocumentAgentReviewPrompt {
   readonly groupId: string
@@ -47,9 +59,10 @@ function createDocumentAgentSessionId(): string {
 @Component({
   selector: 'bc-document-agent-panel',
   standalone: true,
+  imports: [DocumentAgentMarkdownMessageComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <section class="bc-document-agent-panel" role="dialog" aria-label="Document agent">
+    <section class="bc-document-agent-panel" [class.bc-document-agent-panel--has-mode]="markdownChat()" role="dialog" aria-label="Document agent">
       <header class="bc-document-agent-panel__header">
         <div class="bc-document-agent-panel__identity">
           <div class="bc-document-agent-panel__avatar">AI</div>
@@ -60,6 +73,13 @@ function createDocumentAgentSessionId(): string {
         </div>
         <button type="button" class="bc-document-agent-panel__close" aria-label="关闭对话" (click)="close.emit()">×</button>
       </header>
+
+      @if (markdownChat()) {
+        <div class="bc-document-agent-panel__mode" role="tablist" aria-label="Agent 模式">
+          <button type="button" role="tab" [attr.aria-selected]="mode() === 'chat'" [class.active]="mode() === 'chat'" [disabled]="busy()" (click)="setMode('chat')">对话</button>
+          <button type="button" role="tab" [attr.aria-selected]="mode() === 'edit'" [class.active]="mode() === 'edit'" [disabled]="busy()" (click)="setMode('edit')">编辑</button>
+        </div>
+      }
 
       @if (activeContext(); as currentContext) {
         <div class="bc-document-agent-panel__context">
@@ -79,14 +99,25 @@ function createDocumentAgentSessionId(): string {
       }
 
       <div #messagesHost class="bc-document-agent-panel__messages" aria-live="polite">
-        @for (message of messages(); track $index) {
+        @for (message of messages(); track message.id) {
           <div class="bc-document-agent-panel__message" [class.bc-document-agent-panel__message--user]="message.role === 'user'" [class.bc-document-agent-panel__message--error]="message.tone === 'error'">
             <div class="bc-document-agent-panel__message-avatar">{{ message.role === 'user' ? '我' : 'AI' }}</div>
-            <div class="bc-document-agent-panel__bubble">{{ message.content }}</div>
+            <div class="bc-document-agent-panel__bubble" [class.bc-document-agent-panel__bubble--markdown]="message.kind === 'markdown'">
+              @if (message.role === 'assistant' && message.kind === 'markdown') {
+                <bc-document-agent-markdown-message
+                  [markdown]="message.content"
+                  [complete]="message.complete === true"
+                  [config]="markdownChat()"
+                  (insert)="insertMarkdown.emit($event)"
+                />
+              } @else {
+                {{ message.content }}
+              }
+            </div>
           </div>
         }
 
-        @if (busy()) {
+        @if (busy() && !hasPendingMarkdown()) {
           <div class="bc-document-agent-panel__message">
             <div class="bc-document-agent-panel__message-avatar">AI</div>
             <div class="bc-document-agent-panel__bubble bc-document-agent-panel__typing">
@@ -95,7 +126,7 @@ function createDocumentAgentSessionId(): string {
           </div>
         }
 
-        @if (result(); as currentResult) {
+        @if (mode() === 'edit' && result(); as currentResult) {
           <div class="bc-document-agent-panel__result-card">
             <div class="bc-document-agent-panel__result-label">正在生成修订 Diff</div>
             <strong>{{ currentResult.summary }}</strong>
@@ -105,7 +136,7 @@ function createDocumentAgentSessionId(): string {
           </div>
         }
 
-        @if (review(); as currentReview) {
+        @if (mode() === 'edit' && review(); as currentReview) {
           <section class="bc-document-agent-panel__review-card" aria-label="审阅本次 AI 修改">
             <div class="bc-document-agent-panel__review-heading">
               <span class="bc-document-agent-panel__review-icon">✓</span>
@@ -183,7 +214,7 @@ function createDocumentAgentSessionId(): string {
           (keydown)="onComposerKeydown($event)"
           (paste)="onComposerPaste($event)"
           [disabled]="busy()"
-          placeholder="告诉我你想怎么修改文档…"
+          [placeholder]="mode() === 'chat' ? '向 AI 提问，回复会以 Markdown 只读渲染…' : '告诉我你想怎么修改文档…'"
           rows="2"
           aria-label="发送给文档 Agent 的消息"
         ></textarea>
@@ -204,7 +235,7 @@ function createDocumentAgentSessionId(): string {
             [disabled]="!canSubmit()"
             (click)="submitRequest()"
           >
-            {{ busy() ? '思考中…' : '发送' }}
+            {{ busy() ? (mode() === 'chat' ? '生成中…' : '思考中…') : '发送' }}
           </button>
         </div>
       </footer>
@@ -213,7 +244,11 @@ function createDocumentAgentSessionId(): string {
   styles: [`
     :host { display: block; width: min(456px, calc(100vw - 32px)); }
     .bc-document-agent-panel { display: grid; grid-template-rows: auto auto minmax(260px, 1fr) auto; max-height: min(680px, calc(100vh - 104px)); overflow: hidden; background: #fff; border: 1px solid #dce3ed; border-radius: 16px; box-shadow: 0 18px 48px rgb(23 37 61 / 20%); }
+    .bc-document-agent-panel--has-mode { grid-template-rows: auto auto auto minmax(260px, 1fr) auto; }
     .bc-document-agent-panel__header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 18px 14px; border-bottom: 1px solid #edf0f5; }
+    .bc-document-agent-panel__mode { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; margin: 8px 14px 0; padding: 3px; border-radius: 9px; background: #eef2f8; }
+    .bc-document-agent-panel__mode button { min-height: 28px; border: 0; border-radius: 7px; color: #6f7d91; background: transparent; font-size: 11px; font-weight: 600; cursor: pointer; }
+    .bc-document-agent-panel__mode button.active { color: #315cc8; background: #fff; box-shadow: 0 1px 3px rgb(32 50 78 / 12%); }
     .bc-document-agent-panel__identity { display: flex; align-items: center; gap: 10px; }
     .bc-document-agent-panel__avatar { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 10px; color: #fff; background: linear-gradient(135deg, #376ee6, #7c5ce8); font-size: 11px; font-weight: 800; }
     h2 { margin: 0; color: #1b2638; font-size: 16px; line-height: 1.3; }
@@ -231,7 +266,8 @@ function createDocumentAgentSessionId(): string {
     .bc-document-agent-panel__message--user { flex-direction: row-reverse; justify-self: end; }
     .bc-document-agent-panel__message-avatar { display: grid; flex: 0 0 24px; width: 24px; height: 24px; place-items: center; margin-top: 2px; border-radius: 8px; color: #657287; background: #e7ecf5; font-size: 10px; font-weight: 700; }
     .bc-document-agent-panel__message--user .bc-document-agent-panel__message-avatar { color: #fff; background: #5e78b6; }
-    .bc-document-agent-panel__bubble { padding: 10px 12px; border: 1px solid #e3e8f0; border-radius: 4px 12px 12px 12px; color: #35445a; background: #fff; font-size: 13px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .bc-document-agent-panel__bubble { min-width: 0; padding: 10px 12px; border: 1px solid #e3e8f0; border-radius: 4px 12px 12px 12px; color: #35445a; background: #fff; font-size: 13px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .bc-document-agent-panel__bubble--markdown { width: min(360px, 72vw); white-space: normal; }
     .bc-document-agent-panel__message--user .bc-document-agent-panel__bubble { border-color: #d6e2ff; border-radius: 12px 4px 12px 12px; color: #fff; background: #4b72d5; }
     .bc-document-agent-panel__message--error .bc-document-agent-panel__bubble { border-color: #ffd6d1; color: #b42318; background: #fff5f3; }
     .bc-document-agent-panel__typing { display: flex; align-items: center; gap: 4px; min-width: 42px; padding: 13px 12px; }
@@ -279,7 +315,7 @@ function createDocumentAgentSessionId(): string {
     @keyframes bc-agent-bounce { 0%, 60%, 100% { transform: translateY(0); opacity: .5; } 30% { transform: translateY(-3px); opacity: 1; } }
   `],
 })
-export class DocumentAgentPanelComponent implements AfterViewInit, OnChanges {
+export class DocumentAgentPanelComponent implements AfterViewInit, OnChanges, OnDestroy {
   @ViewChild('composer') private composer?: ElementRef<HTMLTextAreaElement>
   @ViewChild('imageInput') private imageInput?: ElementRef<HTMLInputElement>
   @ViewChild('messagesHost') private messagesHost?: ElementRef<HTMLElement>
@@ -288,6 +324,7 @@ export class DocumentAgentPanelComponent implements AfterViewInit, OnChanges {
   readonly context = input<DocumentAgentContext | null>(null)
   readonly liveContext = input<DocumentAgentContext | null>(null)
   readonly task = input<DocumentAgentTask>('rewrite')
+  readonly markdownChat = input<DocumentAgentMarkdownViewerConfig | null>(null)
   readonly busy = input(false)
   readonly error = input<string | null>(null)
   readonly result = input<DocumentAgentResult | null>(null)
@@ -295,8 +332,15 @@ export class DocumentAgentPanelComponent implements AfterViewInit, OnChanges {
   readonly imageAttachment = signal<DocumentAgentImageAttachment | null>(null)
   readonly imageBusy = signal(false)
   readonly activeContext = computed(() => this.context() ?? this.liveContext())
+  readonly hasPendingMarkdown = computed(() => this.messages().some(
+    message => message.kind === 'markdown'
+      && message.complete !== true
+      && message.tone !== 'error',
+  ))
   readonly canSubmit = computed(() => Boolean(this.activeContext() && this.instruction().trim() && !this.busy() && !this.imageBusy()))
   readonly request = output<DocumentAgentRequest>()
+  readonly chatRequest = output<DocumentAgentMarkdownRequest>()
+  readonly insertMarkdown = output<string>()
   readonly reviewAction = output<DocumentAgentReviewAction>()
   readonly close = output<void>()
   /** @deprecated Revision Diff is staged by the host immediately. */
@@ -304,8 +348,13 @@ export class DocumentAgentPanelComponent implements AfterViewInit, OnChanges {
   /** @deprecated Revision Diff is rejected from the Revision review UI. */
   readonly discard = output<void>()
   readonly instruction = signal('')
+  readonly mode = signal<DocumentAgentPanelMode>('edit')
+  private modeTouched = false
+  private readonly pendingMarkdownDeltas = new Map<string, string>()
+  private markdownFrame: number | null = null
   readonly messages = signal<readonly DocumentAgentChatMessage[]>([
     {
+      id: 'welcome',
       role: 'assistant',
       content: '你好，我可以帮你改写、润色、扩写或整理这份文档。你想从哪里开始？',
     },
@@ -316,11 +365,26 @@ export class DocumentAgentPanelComponent implements AfterViewInit, OnChanges {
   }
 
   ngOnChanges(changes: SimpleChanges): void {
+    if (changes['markdownChat']?.currentValue && !this.modeTouched) {
+      this.mode.set('chat')
+    }
     if (!changes['review']?.currentValue) return
     queueMicrotask(() => {
       const messages = this.messagesHost?.nativeElement
       if (messages) messages.scrollTop = messages.scrollHeight
     })
+  }
+
+  ngOnDestroy(): void {
+    if (this.markdownFrame !== null) cancelAnimationFrame(this.markdownFrame)
+    this.markdownFrame = null
+    this.pendingMarkdownDeltas.clear()
+  }
+
+  setMode(mode: DocumentAgentPanelMode): void {
+    if (this.busy() || (mode === 'chat' && !this.markdownChat())) return
+    this.modeTouched = true
+    this.mode.set(mode)
   }
 
   onInstructionInput(event: Event): void {
@@ -409,18 +473,33 @@ export class DocumentAgentPanelComponent implements AfterViewInit, OnChanges {
 
     this.messages.update(messages => [
       ...messages,
-      {role: 'user', content: `${contextLabel ? `[${contextLabel}] ` : ''}${instruction}${this.imageAttachment() ? '\n[已附加图片]' : ''}`},
+      {
+        id: createDocumentAgentSessionId(),
+        role: 'user',
+        content: `${contextLabel ? `[${contextLabel}] ` : ''}${instruction}${this.imageAttachment() ? '\n[已附加图片]' : ''}`,
+      },
     ])
     const attachment = this.imageAttachment()
     this.instruction.set('')
     this.imageAttachment.set(null)
-    this.request.emit({
-      task: this.task(),
-      instruction,
-      context,
-      sessionId: this.sessionId,
-      attachments: attachment ? [attachment] : undefined,
-    })
+    if (this.mode() === 'chat' && this.markdownChat()) {
+      this.chatRequest.emit({
+        markdownStreamVersion: 1,
+        instruction,
+        context,
+        sessionId: this.sessionId,
+        attachments: attachment ? [attachment] : undefined,
+      })
+    } else {
+      this.request.emit({
+        task: this.task(),
+        instruction,
+        context,
+        sessionId: this.sessionId,
+        attachments: attachment ? [attachment] : undefined,
+      })
+    }
+    this.scrollToBottom()
   }
 
   private async createImageAttachment(file: File): Promise<DocumentAgentImageAttachment> {
@@ -463,22 +542,90 @@ export class DocumentAgentPanelComponent implements AfterViewInit, OnChanges {
     const draft = result.draft ? `\n\n${result.draft}` : ''
     this.messages.update(messages => [
       ...messages,
-      {role: 'assistant', content: `${result.summary}${draft}`},
+      {id: createDocumentAgentSessionId(), role: 'assistant', content: `${result.summary}${draft}`},
     ])
   }
 
   addAssistantError(message: string): void {
     this.messages.update(messages => [
       ...messages,
-      {role: 'assistant', tone: 'error', content: message},
+      {id: createDocumentAgentSessionId(), role: 'assistant', tone: 'error', content: message},
     ])
   }
 
   addAssistantNotice(message: string): void {
     this.messages.update(messages => [
       ...messages,
-      {role: 'assistant', content: message},
+      {id: createDocumentAgentSessionId(), role: 'assistant', content: message},
     ])
+  }
+
+  beginAssistantMarkdown(): string {
+    const id = createDocumentAgentSessionId()
+    this.messages.update(messages => [
+      ...messages,
+      {id, role: 'assistant', kind: 'markdown', content: '', complete: false},
+    ])
+    this.scrollToBottom()
+    return id
+  }
+
+  appendAssistantMarkdown(id: string, delta: string): void {
+    if (!delta) return
+    this.pendingMarkdownDeltas.set(
+      id,
+      (this.pendingMarkdownDeltas.get(id) ?? '') + delta,
+    )
+    if (this.markdownFrame !== null) return
+    this.markdownFrame = requestAnimationFrame(() => {
+      this.markdownFrame = null
+      this.flushMarkdownDeltas()
+    })
+  }
+
+  finishAssistantMarkdown(id: string, markdown: string, streamed: boolean): void {
+    this.flushMarkdownDeltas(id)
+    this.messages.update(messages => messages.map(message =>
+      message.id === id
+        ? {...message, content: markdown, complete: true, streamed}
+        : message,
+    ))
+    this.scrollToBottom()
+  }
+
+  failAssistantMarkdown(id: string, error: string): void {
+    this.flushMarkdownDeltas(id)
+    let hadContent = false
+    this.messages.update(messages => messages.map(message => {
+      if (message.id !== id) return message
+      hadContent = Boolean(message.content)
+      return hadContent
+        ? {...message, tone: 'error', complete: false}
+        : {...message, kind: 'text', tone: 'error', content: error, complete: true}
+    }))
+    if (hadContent) this.addAssistantError(error)
+    this.scrollToBottom()
+  }
+
+  private scrollToBottom(): void {
+    queueMicrotask(() => {
+      const messages = this.messagesHost?.nativeElement
+      if (messages) messages.scrollTop = messages.scrollHeight
+    })
+  }
+
+  private flushMarkdownDeltas(onlyId?: string): void {
+    const deltas = onlyId
+      ? new Map([[onlyId, this.pendingMarkdownDeltas.get(onlyId) ?? '']])
+      : new Map(this.pendingMarkdownDeltas)
+    if (onlyId) this.pendingMarkdownDeltas.delete(onlyId)
+    else this.pendingMarkdownDeltas.clear()
+    if (![...deltas.values()].some(Boolean)) return
+    this.messages.update(messages => messages.map(message => {
+      const delta = deltas.get(message.id)
+      return delta ? {...message, content: message.content + delta} : message
+    }))
+    this.scrollToBottom()
   }
 
   emitReviewAction(type: DocumentAgentReviewAction['type'], groupId: string): void {

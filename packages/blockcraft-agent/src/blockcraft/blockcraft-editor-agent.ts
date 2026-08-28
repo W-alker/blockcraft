@@ -1,6 +1,13 @@
-import type {BlockCraftDoc, RevisionActorSnapshot} from '@ccc/blockcraft'
+import type {
+  AdapterRegistry,
+  BlockCraftDoc,
+  MarkdownAdapterProfile,
+  RevisionActorSnapshot,
+} from '@ccc/blockcraft'
 import type {
   DocumentAgentContext,
+  DocumentAgentMarkdownRequest,
+  DocumentAgentMarkdownStreamEvent,
   DocumentAgentModelToolCall,
   DocumentAgentModelToolResult,
   DocumentAgentRequest,
@@ -61,10 +68,34 @@ export class BlockCraftEditorAgent {
   }
 
   getRuntimeManifest(_context?: DocumentAgentContext | null): DocumentAgentRuntimeManifest {
-    return this.extensions.createRuntimeManifest(
+    const manifest = this.extensions.createRuntimeManifest(
       this.options.resolveHostContext?.() ?? null,
       captureDocumentAgentManifestOptions(this.doc),
     )
+    const markdown = this.options.markdown
+    return markdown
+      ? {
+        ...manifest,
+        markdown: markdown.adapterRegistry.createMarkdownManifest(
+          markdown.profile ?? 'hybrid',
+        ),
+      }
+      : manifest
+  }
+
+  async *streamMarkdown(
+    request: DocumentAgentMarkdownRequest,
+    options?: {signal?: AbortSignal},
+  ): AsyncIterable<DocumentAgentMarkdownStreamEvent> {
+    const context = this.getContext(request.context.scope)
+    if (!context) throw new Error('BlockCraft 文档尚未初始化。')
+    const resolvedRequest: DocumentAgentMarkdownRequest = {
+      ...request,
+      markdownStreamVersion: 1,
+      context,
+      runtime: this.getRuntimeManifest(context),
+    }
+    yield* this.runner.streamMarkdown(resolvedRequest, options)
   }
 
   async run(
@@ -255,6 +286,11 @@ export class BlockCraftEditorAgent {
 export interface BlockCraftEditorAgentOptions {
   extensions?: readonly DocumentAgentHostExtension[]
   resolveHostContext?: () => DocumentAgentHostContext | null | undefined
+  markdown?: {
+    adapterRegistry: AdapterRegistry
+    /** Defaults to the editor's normal hybrid profile. */
+    profile?: MarkdownAdapterProfile
+  }
   /** Attribution stored on revision records created by `stageRevisionDiff()`. */
   revisionActor?: RevisionActorSnapshot
   orchestration?: {

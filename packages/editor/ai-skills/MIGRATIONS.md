@@ -94,6 +94,56 @@ editor even though the same Delta model was used.
 - Unknown inline Embed keys still use the generic fallback chip, and host
   `inlineEmbeds` overrides still win.
 
+## Unreleased — 2026-08-28 — Adapter-derived AI Markdown chat
+
+**Severity**: minor
+
+**What changed**: Block and Inline Embed Adapter contributions may now declare
+bounded `markdownSyntax` metadata. `AdapterRegistry.createMarkdownManifest()`
+projects the exact active grammar for a profile. `blockcraft-agent` adds a
+separate Markdown stream request/transport/facade contract and an opt-in panel
+mode that renders replies with the standalone Snapshot Viewer before an
+explicit Clipboard-based insertion.
+
+**Why**: AI-authored Markdown must follow the same host-composed Adapter
+registry as import, export, paste and stream rendering. Read-only chat must not
+share the structured Editor Agent's document-write path.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-adapter.md`
+- `blockcraft-app.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `BlockAdapterContribution.markdownSyntax`
+- `InlineEmbedAdapterContribution.markdownSyntax`
+- `AdapterRegistry.createMarkdownManifest(profile)`
+- `DocumentAgentTransport.streamMarkdown()` and
+  `BlockCraftEditorAgent.streamMarkdown()`
+- `DocumentAgentPanelComponent.markdownChat`, `chatRequest`, and
+  `insertMarkdown`
+
+### Migration Recipe
+
+Existing Adapter and Agent integrations need no change. Hosts opting into AI
+Markdown chat pass the same registry/profile used by their editor and Snapshot
+Viewer:
+
+```typescript
+new BlockCraftEditorAgent(doc, runner, {
+  markdown: {adapterRegistry: capabilities.adapterRegistry, profile: 'hybrid'},
+})
+```
+
+### Behavior Changes
+
+- The structured edit request/Revision path is unchanged.
+- Markdown chat never mutates a document automatically; insertion is an
+  explicit host Clipboard action using the original Markdown source.
+
 ## Unreleased — 2026-08-28 — Scope Revision markers to their edited content
 
 **Severity**: patch

@@ -301,6 +301,48 @@ changes. A failed call rejects its returned Promise, but does not poison later
 `append()`/`replace()` calls; `destroy()` prevents in-flight work from mutating
 the document.
 
+### Read-only AI Markdown responses
+
+`blockcraft-agent` can expose the active Markdown Adapter grammar to a model
+without granting document writes. Pass the same registry/profile used by the
+editor to `BlockCraftEditorAgent`; each chat request receives a fresh document
+context plus `runtime.markdown` from
+`adapterRegistry.createMarkdownManifest(profile)`:
+
+```typescript
+const agent = new BlockCraftEditorAgent(doc, runner, {
+  markdown: {
+    adapterRegistry: capabilities.adapterRegistry,
+    profile: 'hybrid',
+  },
+})
+
+const viewer = createMarkdownStreamViewer({
+  container: messageHost,
+  adapterRegistry: capabilities.adapterRegistry,
+  markdownProfile: 'hybrid',
+  viewerOptions: {resourcePolicy: 'visible'},
+})
+
+for await (const event of agent.streamMarkdown({
+  markdownStreamVersion: 1,
+  instruction: '根据当前文档给出一份提纲',
+  context: agent.getContext('document')!,
+})) {
+  if (event.type === 'delta') viewer.append(event.delta)
+  else viewer.finish()
+}
+```
+
+This path is display-only: it does not create operations, Revision records or a
+readonly `BlockCraftDoc`. `DocumentAgentPanelComponent` supports an opt-in
+`markdownChat` config and emits `chatRequest` separately from its existing
+structured edit `request`. A completed reply emits `insertMarkdown`; the host
+must parse that original Markdown with its active Adapter and insert the
+resulting Snapshot through `ClipboardManager.applyPasteOption()` at the
+click-time text Selection. Never scrape the rendered DOM or write through
+`MarkdownStreamRenderer` for a chat preview.
+
 ## Step 2 — Provide DI Services
 
 > Snapshot-viewer does **not** need the editor DI token graph. The DI section below applies only to `BlockCraftDoc` / full editor embedding.

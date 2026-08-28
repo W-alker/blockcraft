@@ -1,17 +1,23 @@
 import {BlockNodeType} from '../../../framework'
 import type {BlockAdapterContribution} from '../../../adapters/registry'
-import {createGenericMarkdownBlockMatcher} from '../../../adapters/generic'
+import {
+  createGenericMarkdownBlockMatcher,
+  createGenericMarkdownSyntaxDescriptor,
+} from '../../../adapters/generic'
 import {objectGroupBlockHtmlAdapterMatcher} from './html'
+
+const markdownOptions = {
+  flavour: 'object-group' as const,
+  nodeType: BlockNodeType.block,
+  markdownDirective: true,
+}
 
 export const objectGroupBlockAdapters: BlockAdapterContribution = {
   id: 'object-group',
   flavours: ['object-group'],
   html: [objectGroupBlockHtmlAdapterMatcher],
-  markdown: [createGenericMarkdownBlockMatcher({
-    flavour: 'object-group',
-    nodeType: BlockNodeType.block,
-    markdownDirective: true,
-  })],
+  markdown: [createGenericMarkdownBlockMatcher(markdownOptions)],
+  markdownSyntax: [createGenericMarkdownSyntaxDescriptor(markdownOptions)!],
 }
 
 export {objectGroupBlockHtmlAdapterMatcher}

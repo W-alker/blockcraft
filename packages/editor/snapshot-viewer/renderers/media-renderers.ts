@@ -132,6 +132,7 @@ function renderVideo(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
 
   const wrapper = document.createElement("div")
   wrapper.classList.add("video-block__wrapper", "resizable-container")
+  wrapper.setAttribute("contenteditable", "false")
   applySnapshotObjectSizing(
     wrapper,
     wrapper,
@@ -146,6 +147,9 @@ function renderVideo(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   if (isEmbedVideo(url, `${props["sourceType"] || ""}`)) {
     const embed = document.createElement("div")
     embed.classList.add("embed-container")
+    // This inline background is part of the live video block contract and is
+    // visible before/when an iframe is unavailable.
+    embed.style.background = "#1a1a1a"
     container.append(embed)
 
     const embedUrl = toVideoEmbedUrl(url)
@@ -308,6 +312,28 @@ function renderAudio(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
 function renderAttachment(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   const element = createBlockShell(snapshot)
   const props = snapshot.props as Record<string, unknown>
+  const url = `${props["url"] || ""}`
+
+  if (!url) {
+    const empty = document.createElement("div")
+    empty.classList.add("attachment-block__empty")
+    empty.setAttribute("contenteditable", "false")
+    const emptyIcon = document.createElement("i")
+    emptyIcon.className = "bc_icon bc_wenjian-color"
+    const emptyLabel = document.createElement("span")
+    emptyLabel.textContent = "上传文件"
+    empty.append(emptyIcon, emptyLabel)
+    element.append(empty)
+    return {element}
+  }
+
+  // Match the live attachment order: the small file marker is positioned by
+  // the theme, while the large type icon stays in the trailing wrapper.
+  const prefix = document.createElement("div")
+  prefix.classList.add("attachment-block__prefix")
+  const prefixIcon = document.createElement("i")
+  prefixIcon.className = "bc_icon bc_wenjian-color"
+  prefix.append(prefixIcon)
 
   const iconWrapper = document.createElement("div")
   iconWrapper.classList.add("attachment-block__icon-wrapper")
@@ -352,7 +378,7 @@ function renderAttachment(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) 
   size.textContent = formatFileSize(Number(props["size"] || 0))
 
   info.append(name, size)
-  element.append(iconWrapper, info)
+  element.append(prefix, info, iconWrapper)
   return {element}
 }
 
@@ -407,6 +433,40 @@ function renderMermaid(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   label.classList.add("btn")
   label.textContent = "Mermaid"
   head.append(label)
+
+  const downloadButton = document.createElement("div")
+  downloadButton.classList.add("download-btn", "btn", "icon-btn")
+  downloadButton.setAttribute("title", "导出 SVG")
+  const downloadIcon = document.createElement("i")
+  downloadIcon.className = "bc_icon bc_xiazai"
+  downloadButton.append(downloadIcon)
+  downloadButton.hidden = mode === "text"
+  head.append(downloadButton)
+
+  const controlButtons = document.createElement("div")
+  controlButtons.classList.add("control-btns")
+  controlButtons.hidden = mode === "text"
+  for (const iconName of ["bc_suoxiao", "bc_fangda"]) {
+    const button = document.createElement("span")
+    button.classList.add("btn", "icon-btn")
+    const icon = document.createElement("i")
+    icon.className = `bc_icon ${iconName}`
+    button.append(icon)
+    controlButtons.append(button)
+  }
+  head.append(controlButtons)
+
+  const fullscreenButton = document.createElement("button")
+  fullscreenButton.classList.add("fullscreen-btn", "btn", "icon-btn")
+  fullscreenButton.setAttribute("type", "button")
+  fullscreenButton.setAttribute("contenteditable", "false")
+  fullscreenButton.classList.toggle("only-fullscreen", mode === "text")
+  fullscreenButton.setAttribute("aria-label", "全屏")
+  fullscreenButton.setAttribute("title", "全屏")
+  const fullscreenIcon = document.createElement("i")
+  fullscreenIcon.className = "bc_icon bc_arrow-expand"
+  fullscreenButton.append(fullscreenIcon)
+  head.append(fullscreenButton)
 
   const content = document.createElement("div")
   content.classList.add("content")

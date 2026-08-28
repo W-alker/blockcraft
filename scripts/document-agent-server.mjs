@@ -6,6 +6,7 @@ import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {spawn} from 'node:child_process'
 import {
+  createDocumentAgentMarkdownSystemPrompt,
   createDocumentAgentSystemPrompt,
   DOCUMENT_AGENT_PROMPT_VERSION,
 } from './document-agent-prompt.mjs'
@@ -208,6 +209,22 @@ function sendJson(response, status, payload) {
     'Access-Control-Allow-Origin': '*',
   })
   response.end(JSON.stringify(payload))
+}
+
+function startSse(response) {
+  response.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-store, no-transform',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+    'X-Accel-Buffering': 'no',
+  })
+  response.flushHeaders?.()
+}
+
+function sendSse(response, payload) {
+  if (response.destroyed || response.writableEnded) return
+  response.write(`data: ${JSON.stringify(payload)}\n\n`)
 }
 
 function readJson(request) {
@@ -415,6 +432,19 @@ function rememberSessionTurn(session, request, result) {
   session.lastUsedAt = Date.now()
 }
 
+function rememberMarkdownSessionTurn(session, request, markdown) {
+  if (!session || typeof markdown !== 'string') return
+  session.turns = [
+    ...session.turns,
+    {
+      instruction: truncateText(request.instruction, 1_800),
+      assistantMarkdown: truncateText(markdown, 3_600),
+      operations: [],
+    },
+  ].slice(-maxSessionTurns)
+  session.lastUsedAt = Date.now()
+}
+
 function createAgentPayload(request, session, orchestration) {
   const sessionMemory = getSessionMemory(session)
   return {
@@ -447,6 +477,53 @@ function createAgentPayload(request, session, orchestration) {
       'For Mermaid preview-only mode use update-block-props on the existing mermaid block with props {"mode":"graph"}; never manipulate DOM or data-mode.',
     ],
   }
+}
+
+function createMarkdownPayload(request, session) {
+  const sessionMemory = getSessionMemory(session)
+  return {
+    mode: 'markdown-chat',
+    instruction: request.instruction,
+    context: request.context,
+    runtime: request.runtime,
+    ...(sessionMemory ? {
+      sessionMemory: {
+        note: 'Bounded reference-only memory. Current context and instruction are authoritative.',
+        ...sessionMemory,
+      },
+    } : {}),
+    attachments: (request.attachments ?? [])
+      .map(({dataUrl: _dataUrl, ...attachment}) => attachment),
+  }
+}
+
+function validateMarkdownRequest(request) {
+  if (request?.markdownStreamVersion !== 1) {
+    throw new Error('不支持的 Markdown 对话流协议。')
+  }
+  if (typeof request.instruction !== 'string' || !request.instruction.trim()) {
+    throw new Error('Markdown 对话缺少 instruction。')
+  }
+  if (request.instruction.length > 20_000) {
+    throw new Error('Markdown 对话 instruction 过长。')
+  }
+  if (!request.context || typeof request.context !== 'object') {
+    throw new Error('Markdown 对话缺少文档上下文。')
+  }
+  const manifest = request.runtime?.markdown
+  if (!manifest || manifest.version !== 1 || !Array.isArray(manifest.syntaxes)) {
+    throw new Error('当前宿主未提供 Markdown Adapter 能力清单。')
+  }
+  if (JSON.stringify(manifest).length > 96_000) {
+    throw new Error('Markdown Adapter 能力清单过大。')
+  }
+}
+
+function getMarkdownInstructions(request) {
+  if (allowPromptOverride && typeof request.systemPrompt === 'string' && request.systemPrompt.trim()) {
+    return request.systemPrompt
+  }
+  return createDocumentAgentMarkdownSystemPrompt()
 }
 
 function parseOrchestration(body) {
@@ -706,6 +783,232 @@ async function runLocalCodex(request, session, orchestration, delegation) {
   }
 }
 
+async function consumeOpenAiSse(body, onEvent) {
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  try {
+    while (true) {
+      const {done, value} = await reader.read()
+      buffer += decoder.decode(value, {stream: !done})
+      let match = /\r?\n\r?\n/.exec(buffer)
+      while (match) {
+        const frame = buffer.slice(0, match.index)
+        buffer = buffer.slice(match.index + match[0].length)
+        const data = frame
+          .split(/\r?\n/)
+          .filter(line => line.startsWith('data:'))
+          .map(line => line.slice(5).trimStart())
+          .join('\n')
+        if (data && data !== '[DONE]') onEvent(JSON.parse(data))
+        match = /\r?\n\r?\n/.exec(buffer)
+      }
+      if (done) break
+    }
+  } finally {
+    reader.releaseLock()
+  }
+}
+
+async function runOpenAiMarkdown(request, session, onDelta, signal) {
+  if (!apiKey) {
+    throw new Error('未配置 OPENAI_API_KEY。请先启动本地 Agent 服务并设置 API Key。')
+  }
+  const attachments = request.attachments ?? []
+  const input = [{
+    role: 'user',
+    content: [
+      {type: 'input_text', text: JSON.stringify(createMarkdownPayload(request, session))},
+      ...attachments.map(attachment => ({
+        type: 'input_image',
+        image_url: attachment.dataUrl,
+        detail: 'auto',
+      })),
+    ],
+  }]
+  const upstream = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      instructions: getMarkdownInstructions(request),
+      input,
+      store: false,
+      stream: true,
+    }),
+    signal,
+  })
+  if (!upstream.ok) {
+    const payload = await upstream.json().catch(() => null)
+    throw new Error(payload?.error?.message ?? `OpenAI 请求失败（HTTP ${upstream.status}）`)
+  }
+  if (!upstream.body) throw new Error('OpenAI 未返回 Markdown 流。')
+
+  let markdown = ''
+  let chunks = 0
+  await consumeOpenAiSse(upstream.body, event => {
+    if (event?.type === 'response.output_text.delta' && typeof event.delta === 'string') {
+      markdown += event.delta
+      chunks += 1
+      onDelta(event.delta)
+      return
+    }
+    if (event?.type === 'response.failed') {
+      throw new Error(event.response?.error?.message ?? 'OpenAI Markdown 响应失败。')
+    }
+  })
+  if (!markdown) throw new Error('OpenAI 没有返回 Markdown 内容。')
+  return {markdown, streamed: chunks > 0}
+}
+
+function runCodexJsonLines(command, args, input, onEvent, signal, timeoutMs = 120_000) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {stdio: ['pipe', 'pipe', 'pipe']})
+    let stdoutBuffer = ''
+    const stderr = []
+    let settled = false
+    const finish = (callback) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
+      signal?.removeEventListener('abort', abort)
+      callback()
+    }
+    const abort = () => {
+      child.kill('SIGTERM')
+      finish(() => reject(new Error('Markdown 对话已取消。')))
+    }
+    const timeout = setTimeout(() => {
+      child.kill('SIGTERM')
+      finish(() => reject(new Error('本地 Codex 请求超时')))
+    }, timeoutMs)
+    signal?.addEventListener('abort', abort, {once: true})
+    if (signal?.aborted) {
+      abort()
+      return
+    }
+
+    child.stdout.on('data', chunk => {
+      stdoutBuffer += chunk.toString('utf8')
+      let newline = stdoutBuffer.indexOf('\n')
+      while (newline >= 0) {
+        const line = stdoutBuffer.slice(0, newline).trim()
+        stdoutBuffer = stdoutBuffer.slice(newline + 1)
+        if (line) {
+          try {
+            onEvent(JSON.parse(line))
+          } catch (error) {
+            child.kill('SIGTERM')
+            finish(() => reject(new Error(
+              `本地 Codex JSONL 无效：${error instanceof Error ? error.message : 'unknown error'}`,
+            )))
+            return
+          }
+        }
+        newline = stdoutBuffer.indexOf('\n')
+      }
+    })
+    child.stderr.on('data', chunk => stderr.push(chunk))
+    child.on('error', error => finish(() => reject(
+      new Error(`无法启动本地 Codex：${error.message}`),
+    )))
+    child.on('close', code => {
+      if (settled) return
+      if (stdoutBuffer.trim()) {
+        try {
+          onEvent(JSON.parse(stdoutBuffer.trim()))
+        } catch (error) {
+          finish(() => reject(new Error(
+            `本地 Codex JSONL 无效：${error instanceof Error ? error.message : 'unknown error'}`,
+          )))
+          return
+        }
+      }
+      if (code !== 0) {
+        const diagnostic = Buffer.concat(stderr).toString('utf8')
+        finish(() => reject(new Error(extractCodexProcessError(diagnostic, '', code))))
+        return
+      }
+      finish(resolve)
+    })
+    child.stdin.end(input)
+  })
+}
+
+async function runLocalCodexMarkdown(request, session, onDelta, signal) {
+  const workingDir = await mkdtemp(join(tmpdir(), 'blockcraft-agent-markdown-'))
+  try {
+    const imagePaths = await writeLocalImageAttachments(workingDir, request.attachments)
+    const args = [
+      'exec',
+      '--json',
+      '--ephemeral',
+      '--sandbox', 'read-only',
+      '--skip-git-repo-check',
+      '--cd', workingDir,
+      '--color', 'never',
+      '-',
+    ]
+    if (codexCliModel) args.splice(1, 0, '--model', codexCliModel)
+    if (imagePaths.length) args.splice(args.length - 1, 0, '--image', ...imagePaths)
+    const prompt = [
+      getMarkdownInstructions(request),
+      'Return Markdown only. Do not edit files, run commands, or wrap the answer in a code fence.',
+      JSON.stringify({
+        ...createMarkdownPayload(request, session),
+        imageNote: request.attachments?.length
+          ? `${imagePaths.length} image attachment(s) are available to inspect.`
+          : undefined,
+      }),
+    ].join('\n\n')
+
+    const messages = []
+    let markdown = ''
+    await runCodexJsonLines(
+      process.env['CODEX_CLI_COMMAND'] ?? 'codex',
+      args,
+      prompt,
+      event => {
+        const item = event?.type === 'item.completed' ? event.item : null
+        if (item?.type !== 'agent_message' || typeof item.text !== 'string' || !item.text) return
+        messages.push(item.text)
+        // Hold the first completed message until process completion. A CLI
+        // that exposes only its final answer must produce one done event, not
+        // a synthetic typing delta. Once a second message exists, both are
+        // genuinely incremental and can be forwarded.
+        if (messages.length === 2) {
+          markdown = messages[0]
+          onDelta(markdown)
+        }
+        if (messages.length >= 2) {
+          const delta = `${markdown ? '\n\n' : ''}${item.text}`
+          markdown += delta
+          onDelta(delta)
+        }
+      },
+      signal,
+    )
+    if (messages.length === 1) markdown = messages[0]
+    if (!markdown) throw new Error('本地 Codex 没有返回 Markdown 内容。')
+    return {markdown, streamed: messages.length > 1}
+  } finally {
+    await rm(workingDir, {recursive: true, force: true})
+  }
+}
+
+async function runMarkdown(request, session, onDelta, signal) {
+  if (provider === 'codex-cli') {
+    return runLocalCodexMarkdown(request, session, onDelta, signal)
+  }
+  if (provider === 'openai') {
+    return runOpenAiMarkdown(request, session, onDelta, signal)
+  }
+  throw new Error(`不支持的 Agent provider：${provider}`)
+}
+
 async function runAgent(request, session, orchestration, delegation) {
   if (provider === 'codex-cli') {
     return runLocalCodex(request, session, orchestration, delegation)
@@ -799,13 +1102,44 @@ const server = http.createServer(async (request, response) => {
     return
   }
 
-  if (request.method !== 'POST' || request.url !== '/api/document-agent') {
+  const isMarkdownStream = request.method === 'POST'
+    && request.url === '/api/document-agent/markdown'
+  if (request.method !== 'POST' || (
+    request.url !== '/api/document-agent' && !isMarkdownStream
+  )) {
     sendJson(response, 404, {error: 'Not found'})
     return
   }
 
   try {
     const body = await readJson(request)
+    if (isMarkdownStream) {
+      validateMarkdownRequest(body)
+      const session = getSession(body.sessionId)
+      const abortController = new AbortController()
+      response.on('close', () => {
+        if (!response.writableEnded) abortController.abort()
+      })
+      startSse(response)
+      try {
+        const result = await runMarkdown(
+          body,
+          session,
+          delta => sendSse(response, {type: 'delta', delta}),
+          abortController.signal,
+        )
+        rememberMarkdownSessionTurn(session, body, result.markdown)
+        sendSse(response, {type: 'done', ...result})
+      } catch (error) {
+        sendSse(response, {
+          type: 'error',
+          error: error instanceof Error ? error.message : '未知 Markdown Agent 错误',
+        })
+      } finally {
+        if (!response.writableEnded) response.end()
+      }
+      return
+    }
     const delegation = parseDelegation(body)
     const orchestration = delegation ? null : parseOrchestration(body)
     const agentRequest = delegation || orchestration ? body.request : body

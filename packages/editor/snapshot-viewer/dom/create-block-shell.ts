@@ -18,6 +18,10 @@ export function createBlockShell(snapshot: IBlockSnapshot): HTMLElement {
 
   if (snapshot.nodeType === BlockNodeType.root) {
     element.setAttribute("data-blockcraft-root", "true")
+    // The snapshot tree is display-only. Keep the same root marker/class used
+    // by the live editor so the shared theme applies, while also preventing
+    // the browser from treating the rendered tree as an editable surface.
+    element.setAttribute("contenteditable", "false")
     element.classList.add("readonly")
   }
 

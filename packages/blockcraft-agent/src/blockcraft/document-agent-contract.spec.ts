@@ -1,5 +1,6 @@
 import {
   BlockNodeType,
+  AdapterRegistry,
   defineBlockAgentCapability,
   defineInlineEmbedAgentCapability,
   type IBlockSnapshot,
@@ -524,6 +525,48 @@ describe('BlockCraft Agent v2 contract', () => {
     expect(turns[1].toolHistory[0].result.ok).toBeFalse()
     expect((turns[1].toolHistory[0].result as {error: string}).error)
       .toContain('Inline Embed mention does not declare Agent insertion')
+  })
+
+  it('injects the active Adapter manifest into read-only Markdown requests', async () => {
+    const received: unknown[] = []
+    const runner = {
+      streamMarkdown: async function* (request: unknown) {
+        received.push(request)
+        yield {type: 'done' as const, markdown: '# Result', streamed: false}
+      },
+    }
+    const registry = new AdapterRegistry([{
+      id: 'custom-card',
+      flavours: ['custom-card'],
+      markdownSyntax: [{
+        id: 'block:custom-card',
+        title: 'Custom card',
+        description: 'Registered custom card.',
+        kind: 'container-directive',
+        profiles: ['hybrid'],
+        example: ':::bc-custom-card\n\nReadable content.\n\n:::',
+      }],
+    }])
+    const agent = new BlockCraftEditorAgent(createFakeDoc() as never, runner as never, {
+      markdown: {adapterRegistry: registry, profile: 'hybrid'},
+    })
+
+    const events = []
+    for await (const event of agent.streamMarkdown({
+      markdownStreamVersion: 1,
+      instruction: '生成卡片',
+      context: createDocumentContext(),
+    })) {
+      events.push(event)
+    }
+
+    expect(events).toEqual([{type: 'done', markdown: '# Result', streamed: false}])
+    expect((received[0] as any).runtime.markdown).toEqual(jasmine.objectContaining({
+      profile: 'hybrid',
+      standardFirst: true,
+    }))
+    expect((received[0] as any).runtime.markdown.syntaxes.map((item: any) => item.id))
+      .toContain('block:custom-card')
   })
 })
 

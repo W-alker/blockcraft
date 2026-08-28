@@ -9,6 +9,7 @@ BlockCraft Editor Agent 的编辑器适配包，覆盖文档写作、模型读�
 - `captureBlockCraftAgentContext()`：生成紧凑的 v2 Agent Document IR；保留真实 `nodeType`，将容器 `childIds` 与 editable `text.{plain,delta}` 分离，并始终提供文档末尾插入锚点；
 - `DocumentAgentPanelComponent`：最小 Angular 请求面板；
 - `DocumentAgentTransport`：由宿主应用实现的后端调用接口；
+- `DocumentAgentTransport.streamMarkdown()`：可选的只读 Markdown 流；与结构化编辑结果完全分离；
 - `validateDocumentAgentResult()`：校验模型返回的结构化操作。
 - `BLOCKCRAFT_AGENT_HANDBOOK`：运行时注入给 LLM 的 BlockCraft 规则；
 - `BLOCKCRAFT_AGENT_API_REFERENCE`：面向模型的 Doc、Model、Schema、CRUD、Selection
@@ -110,6 +111,23 @@ Playground 的本地服务支持两种模式：
 
 - 设置 `OPENAI_API_KEY` 时走 OpenAI Responses API；
 - 没有 API Key 时默认调用本机已通过 `codex login` 登录的 Codex CLI。该模式只适合本地开发，服务绑定 `127.0.0.1`，不应暴露给其他用户或部署到生产环境。
+
+## Markdown 对话与只读渲染
+
+`BlockCraftEditorAgentOptions.markdown` 接收当前编辑器实际使用的
+`AdapterRegistry` 和 profile。`streamMarkdown()` 每次重新捕获文档上下文，
+把 Registry 生成的 `runtime.markdown` 能力清单交给模型，并只返回
+`delta/done` Markdown 事件；它不生成 operations，也不执行任何文档写入。
+
+`DocumentAgentPanelComponent` 在配置 `markdownChat` 后提供“对话 / 编辑”切换：
+对话回复由 `createMarkdownStreamViewer()` 只读渲染，编辑继续使用原来的
+结构化 Agent 和 Revision Diff。完成的单条回复可通过 `insertMarkdown` 交给宿主；
+宿主必须在点击时读取当前文本选区，将原始 Markdown 用同一 Adapter 解析成
+Snapshot，再调用 Clipboard paste。无选区、只读或解析失败时不得部分写入。
+
+OpenAI Provider 转发 Responses API 的真实文本 delta。本地 Codex CLI 使用
+`codex exec --json` 的 `agent_message` 事件；如果 CLI 只暴露最终消息，客户端收到
+一次 `done` 且 `streamed:false`，不会伪造逐字动画。
 
 本机 Codex CLI 模式会把浏览器上传并压缩后的 JPEG/PNG/WebP 写入单次请求的临时目录，
 通过 CLI `--image` 参数真实传给模型，并在请求结束后删除；不再只发送“存在图片”的文字说明。

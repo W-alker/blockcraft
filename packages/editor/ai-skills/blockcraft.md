@@ -965,6 +965,13 @@ optional `onError` callback; later input retries from the complete source.
 The editable `MarkdownStreamRenderer` follows the same adapter boundary and
 drops stale in-flight parses before writing through DocCRUD.
 
+Model-facing Markdown production uses the same boundary. Adapter contributions
+may declare bounded `markdownSyntax` metadata, and
+`AdapterRegistry.createMarkdownManifest(profile)` produces the exact active
+grammar for `blockcraft-agent`. Chat output is rendered with the standalone
+Markdown Stream Viewer; it reaches the editable document only after an explicit
+host action reparses the original Markdown and uses Clipboard paste.
+
 Markdown is an interoperable reading/exchange format, not the exact BlockCraft
 document persistence format. Both one-shot and streaming paths prefer native
 links, images, thematic breaks, tables and fenced code. Generic custom Block

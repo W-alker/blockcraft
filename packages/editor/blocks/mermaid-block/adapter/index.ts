@@ -28,6 +28,13 @@ export const mermaidBlockAdapters: BlockAdapterContribution = {
     mermaidBlockMarkdownAdapterMatcher,
     createGenericMarkdownBlockMatcher(textarea),
   ],
+  markdownSyntax: [{
+    id: 'block:mermaid',
+    title: 'Mermaid diagram',
+    description: 'Use the standard Mermaid fenced-code form. The Adapter creates the Mermaid block and owns its source child.',
+    kind: 'fenced-code',
+    example: '```mermaid\ngraph TD\n  A --> B\n```',
+  }],
 }
 
 export {mermaidBlockMarkdownAdapterMatcher}

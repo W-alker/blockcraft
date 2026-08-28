@@ -4,6 +4,7 @@ import type {
   BlockAgentCapabilityDefinition,
   InlineEmbedAgentCapabilityDefinition,
 } from '@ccc/blockcraft'
+import type {MarkdownAdapterManifest} from '@ccc/blockcraft'
 
 export type DocumentAgentToolEffect = BlockAgentActionEffect
 
@@ -91,6 +92,8 @@ export interface DocumentAgentRuntimeManifest {
     description: string
   }[]
   capabilityDirectory: readonly DocumentAgentCapabilityDescriptor[]
+  /** Exact Markdown grammar exposed by the active host Adapter Registry. */
+  markdown?: MarkdownAdapterManifest
 }
 
 export interface DocumentAgentHostToolExecutionContext {

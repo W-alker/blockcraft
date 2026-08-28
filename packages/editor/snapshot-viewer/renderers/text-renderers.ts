@@ -129,6 +129,12 @@ function renderCode(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   head.classList.add("code-block__head")
   head.setAttribute("contenteditable", "false")
 
+  const collapseButton = document.createElement("span")
+  collapseButton.classList.add("head-btn", "btn-collapse")
+  const collapseIcon = document.createElement("i")
+  collapseIcon.className = "bc_icon bc_a-sanjiao-jinru6"
+  collapseButton.append(collapseIcon)
+
   const blockName = document.createElement("span")
   blockName.classList.add("block-name")
   blockName.textContent = `${props["blockName"] || "代码块"}`
@@ -141,8 +147,16 @@ function renderCode(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   lang.classList.add("lang")
   lang.textContent = `${props["lang"] || "PlainText"}`
   headButton.append(lang)
-  headGroup.append(headButton)
-  head.append(blockName, headGroup)
+
+  const copyButton = document.createElement("div")
+  copyButton.classList.add("head-btn")
+  copyButton.setAttribute("data-bc-print-exclude", "true")
+  const copyIcon = document.createElement("i")
+  copyIcon.className = "bc_icon bc_fuzhi"
+  copyButton.append(copyIcon, document.createTextNode(" 复制"))
+
+  headGroup.append(headButton, copyButton)
+  head.append(collapseButton, blockName, headGroup)
 
   const wrapper = document.createElement("div")
   wrapper.classList.add("edit-container-wrapper", "bc-scrollable-container")

@@ -33,4 +33,11 @@ export const juejinEmbedBlockAdapters: BlockAdapterContribution = {
   flavours: ['juejin-embed'],
   html: [embedJuejinBlockHtmlAdapterMatcher],
   markdown: [embedJuejinBlockMarkdownAdapterMatcher],
+  markdownSyntax: [{
+    id: 'block:juejin-embed',
+    title: 'Juejin post link',
+    description: 'Use a readable Juejin post URL link with the registered title hint.',
+    kind: 'link',
+    example: '[掘金文章](https://juejin.cn/post/123 "blockcraft:juejin-embed")',
+  }],
 }

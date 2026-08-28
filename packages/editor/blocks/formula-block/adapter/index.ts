@@ -7,6 +7,13 @@ export const formulaBlockAdapters: BlockAdapterContribution = {
   flavours: ['formula'],
   html: [formulaBlockHtmlAdapterMatcher],
   markdown: [formulaBlockMarkdownAdapterMatcher],
+  markdownSyntax: [{
+    id: 'block:formula',
+    title: 'Display formula',
+    description: 'Use standard display-math syntax for a standalone formula block.',
+    kind: 'standard',
+    example: '$$\nE = mc^2\n$$',
+  }],
 }
 
 export {formulaBlockHtmlAdapterMatcher, formulaBlockMarkdownAdapterMatcher}

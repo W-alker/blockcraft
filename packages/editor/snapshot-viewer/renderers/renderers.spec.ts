@@ -14,10 +14,42 @@ describe("snapshot-viewer renderers", () => {
     const host = renderFixture(createAllBlocksFixture().callout)
     const callout = host.querySelector<HTMLElement>(".callout-block")!
     expect(callout.querySelector(".callout-block-prefix")?.textContent).toContain("📢")
+    expect(callout.querySelector(":scope > .bc-block-content")).not.toBeNull()
+    expect(callout.querySelector(":scope > .bc-block-content > .callout-content.children-render-container")).not.toBeNull()
     expect(host.querySelector(".paragraph-block")).not.toBeNull()
     expect(callout.style.getPropertyValue("--bc-callout-background-color"))
       .toBe("#FFE6CD")
     expect(callout.style.backgroundColor).toBe("")
+  })
+
+  it("keeps readonly media and attachment shells aligned with live block DOM", () => {
+    const fixture = createAllBlocksFixture()
+    const host = renderFixture([fixture.video, fixture.audio, fixture.attachment])
+    const root = host.querySelector<HTMLElement>("[data-blockcraft-root='true']")!
+    const video = host.querySelector<HTMLElement>(".video-block")!
+    const attachment = host.querySelector<HTMLElement>(".attachment-block")!
+
+    expect(root.getAttribute("contenteditable")).toBe("false")
+    expect(video.querySelector(".video-block__wrapper")?.getAttribute("contenteditable"))
+      .toBe("false")
+    expect(attachment.querySelector(":scope > .attachment-block__prefix")).not.toBeNull()
+    expect(attachment.querySelector(":scope > .attachment-block__info")).not.toBeNull()
+    expect(attachment.querySelector(":scope > .attachment-block__icon-wrapper")).not.toBeNull()
+  })
+
+  it("keeps the bookmark title and fallback banner geometry", () => {
+    const host = renderFixture(createAllBlocksFixture().bookmark, {
+      enhancers: {
+        bookmark: {
+          load: async () => { throw new Error("offline") },
+        },
+      },
+    })
+    const bookmark = host.querySelector<HTMLElement>(".bookmark-block")!
+
+    expect(bookmark.querySelector(".bookmark-title > h3.title")).not.toBeNull()
+    expect(bookmark.querySelector(".bookmark-banner > svg"))
+      .not.toBeNull()
   })
 
   it("renders list-like text blocks with readonly prefixes", () => {
@@ -594,6 +626,8 @@ describe("snapshot-viewer renderers", () => {
 
     expect(host.querySelector(".formula-block .katex")).not.toBeNull()
     expect(host.querySelector('.mermaid-block .graph-con [data-rendered="true"]')).not.toBeNull()
+    expect(host.querySelector('.mermaid-block .download-btn')).not.toBeNull()
+    expect(host.querySelector('.mermaid-block .fullscreen-btn')).not.toBeNull()
   })
 
   it("applies async syntax highlighting to code and mermaid text blocks", async () => {
@@ -603,6 +637,8 @@ describe("snapshot-viewer renderers", () => {
     await flushPromises()
 
     expect(host.querySelector('.code-block .edit-container c-element[style*="color"]')).not.toBeNull()
+    expect(host.querySelector('.code-block .btn-collapse')).not.toBeNull()
+    expect(host.querySelector('.code-block [data-bc-print-exclude="true"]')).not.toBeNull()
     expect(host.querySelector('.mermaid-textarea.edit-container, .mermaid-textarea .edit-container')).not.toBeNull()
     expect(host.querySelector('.mermaid-textarea .edit-container c-element[style*="color"]')).not.toBeNull()
   })

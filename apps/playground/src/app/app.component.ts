@@ -8,6 +8,7 @@ import {
   ClipboardDataType,
   DOC_ADAPTER_SERVICE_TOKEN,
   DOC_FILE_SERVICE_TOKEN,
+  EDITOR_ADAPTER_REGISTRY_TOKEN,
   DocExportManager,
   DocUndoItemToken,
   EditableBlockComponent,
@@ -41,6 +42,8 @@ import { RouterLink } from '@angular/router';
 import { resolveCollaborationRoot } from './collaboration-root';
 import {
   DocumentAgentContext,
+  DocumentAgentMarkdownRequest,
+  DocumentAgentMarkdownViewerConfig,
   DocumentAgentPanelComponent,
   DocumentAgentPlugin,
   DocumentAgentRequest,
@@ -1720,6 +1723,7 @@ export class AppComponent implements AfterViewInit, OnDestroy {
   private _agentDialogClose$?: Subject<void>;
   private _agentFakeRange?: {destroy: () => void};
   private _agentReviewUndoToken: DocUndoItemToken | null = null;
+  private _agentChatAbort?: AbortController;
   private _revisionReviewUi?: RevisionReviewUiController;
   private _revisionReviewDoc = null as EditorComponent['doc'] | null;
   private readonly agentRunner = new DocumentAgentRunner(new PlaygroundDocumentAgentTransport());
@@ -2229,7 +2233,10 @@ graph TD
     const plugin = new DocumentAgentPlugin();
     plugin.register(editor.doc);
     this._agentPlugin = plugin;
-    this._editorAgent = new BlockCraftEditorAgent(editor.doc, this.agentRunner);
+    const adapterRegistry = editor.doc.injector.get(EDITOR_ADAPTER_REGISTRY_TOKEN);
+    this._editorAgent = new BlockCraftEditorAgent(editor.doc, this.agentRunner, {
+      markdown: {adapterRegistry, profile: 'hybrid'},
+    });
     this._agentContextSub = plugin.contextChange$.subscribe(context => {
       this.zone.run(() => {
         this.agentContext = context;
@@ -2267,6 +2274,7 @@ graph TD
       top: '72px',
       end: '24px',
     }, this._agentDialogClose$, () => {
+      this.cancelAgentChat();
       this._agentDialogClose$?.complete();
       this._agentDialogClose$ = undefined;
       this.destroyAgentFakeRange();
@@ -2282,14 +2290,22 @@ graph TD
     componentRef.setInput('context', context);
     componentRef.setInput('liveContext', liveContext);
     componentRef.setInput('task', 'rewrite');
+    componentRef.setInput('markdownChat', {
+      adapterRegistry: editor.doc.injector.get(EDITOR_ADAPTER_REGISTRY_TOKEN),
+      markdownProfile: 'hybrid',
+      viewerOptions: {resourcePolicy: 'visible'},
+    } satisfies DocumentAgentMarkdownViewerConfig);
     this.syncAgentDialogState();
 
     componentRef.instance.request.subscribe(request => void this.runAgentRequest(request));
+    componentRef.instance.chatRequest.subscribe(request => void this.runAgentChatRequest(request));
+    componentRef.instance.insertMarkdown.subscribe(markdown => void this.insertAgentMarkdown(markdown));
     componentRef.instance.reviewAction.subscribe(action => this.onAgentReviewAction(action));
     componentRef.instance.close.subscribe(() => this.closeAgentDialog());
   }
 
   closeAgentDialog(): void {
+    this.cancelAgentChat();
     const overlayRef = this._agentOverlayRef;
     const close$ = this._agentDialogClose$;
     this._agentDialogClose$ = undefined;
@@ -2303,6 +2319,14 @@ graph TD
     this.destroyAgentFakeRange();
     this.agentDialogOpen = false;
     this.cdr.markForCheck();
+  }
+
+  private cancelAgentChat(): void {
+    const abortController = this._agentChatAbort;
+    if (!abortController) return;
+    abortController.abort();
+    this._agentChatAbort = undefined;
+    this.agentBusy = false;
   }
 
   private renderAgentFakeRange(editor: EditorComponent, context: DocumentAgentContext): void {
@@ -2397,6 +2421,86 @@ graph TD
       this.agentBusy = false;
       this.syncAgentDialogState();
       this.cdr.markForCheck();
+    }
+  }
+
+  async runAgentChatRequest(request: DocumentAgentMarkdownRequest): Promise<void> {
+    const editorAgent = this._editorAgent;
+    const panel = this._agentDialogComponent?.instance;
+    if (!editorAgent || !panel || this.agentBusy) return;
+
+    this._agentChatAbort?.abort();
+    const abortController = new AbortController();
+    this._agentChatAbort = abortController;
+    const messageId = panel.beginAssistantMarkdown();
+    this.agentBusy = true;
+    this.agentError = null;
+    this.syncAgentDialogState();
+    this.cdr.markForCheck();
+
+    try {
+      for await (const event of editorAgent.streamMarkdown(request, {
+        signal: abortController.signal,
+      })) {
+        if (abortController.signal.aborted || this._agentChatAbort !== abortController) return;
+        if (event.type === 'delta') {
+          panel.appendAssistantMarkdown(messageId, event.delta);
+        } else {
+          panel.finishAssistantMarkdown(messageId, event.markdown, event.streamed);
+        }
+        this.cdr.markForCheck();
+      }
+    } catch (error) {
+      if (abortController.signal.aborted) return;
+      const message = error instanceof Error ? error.message : 'Agent Markdown 请求失败';
+      this.agentError = message;
+      panel.failAssistantMarkdown(messageId, message);
+    } finally {
+      if (this._agentChatAbort === abortController) {
+        this._agentChatAbort = undefined;
+        this.agentBusy = false;
+        this.syncAgentDialogState();
+        this.cdr.markForCheck();
+      }
+    }
+  }
+
+  async insertAgentMarkdown(markdown: string): Promise<void> {
+    const editor = this.editor;
+    if (!editor?.doc.isInitialized || !markdown.trim()) return;
+    if (editor.doc.isReadonly) {
+      editor.doc.messageService.warn('文档当前为只读状态，无法插入 AI 回复');
+      return;
+    }
+    const selection = editor.doc.selection.value;
+    if (!selection || selection.start.type !== 'text') {
+      editor.doc.messageService.warn('请先在可编辑内容中放置光标');
+      return;
+    }
+    const adapter = editor.doc.injector
+      .get(DOC_ADAPTER_SERVICE_TOKEN)
+      .getAdapter(ClipboardDataType.MARKDOWN);
+    if (!adapter) {
+      editor.doc.messageService.warn('Markdown Adapter 未注册');
+      return;
+    }
+
+    try {
+      const snapshot = await adapter.toSnapshot(markdown);
+      if (!snapshot.children.length) {
+        editor.doc.messageService.warn('AI 回复中没有可插入的 Markdown 内容');
+        return;
+      }
+      const result = await editor.doc.clipboard.applyPasteOption({
+        type: 'markdown',
+        label: 'AI Markdown',
+        payload: {kind: 'snapshot', snapshot},
+      }, selection);
+      if (!result) editor.doc.messageService.warn('当前位置无法插入 AI Markdown');
+    } catch (error) {
+      editor.doc.messageService.error(
+        error instanceof Error ? error.message : 'AI Markdown 插入失败',
+      );
     }
   }
 

@@ -1,5 +1,7 @@
 import type {
   DocumentAgentRequest,
+  DocumentAgentMarkdownRequest,
+  DocumentAgentMarkdownStreamEvent,
   DocumentAgentResult,
   DocumentAgentSubAgentRequest,
   DocumentAgentSubAgentResult,
@@ -92,5 +94,54 @@ export class DocumentAgentRunner {
     }
     if (issues.length) throw new DocumentAgentResultError(issues)
     return result
+  }
+
+  async *streamMarkdown(
+    request: DocumentAgentMarkdownRequest,
+    options?: {signal?: AbortSignal},
+  ): AsyncIterable<DocumentAgentMarkdownStreamEvent> {
+    if (!this.transport.streamMarkdown) {
+      throw new DocumentAgentResultError([
+        'Transport does not support Markdown response streaming.',
+      ])
+    }
+
+    let accumulated = ''
+    let completed = false
+    for await (const event of this.transport.streamMarkdown(request, options)) {
+      if (completed) {
+        throw new DocumentAgentResultError([
+          'Markdown transport emitted data after completion.',
+        ])
+      }
+      if (event.type === 'delta') {
+        if (typeof event.delta !== 'string' || !event.delta) continue
+        accumulated += event.delta
+        yield event
+        continue
+      }
+      if (event.type !== 'done' || typeof event.markdown !== 'string') {
+        throw new DocumentAgentResultError([
+          'Markdown transport emitted an invalid event.',
+        ])
+      }
+      if (event.markdown !== accumulated) {
+        // A final-only provider legitimately has no preceding deltas. Any
+        // other divergence would render a different document than was shown.
+        if (accumulated) {
+          throw new DocumentAgentResultError([
+            'Markdown final content does not match streamed deltas.',
+          ])
+        }
+        accumulated = event.markdown
+      }
+      completed = true
+      yield {...event, markdown: accumulated}
+    }
+    if (!completed) {
+      throw new DocumentAgentResultError([
+        'Markdown transport ended without a completion event.',
+      ])
+    }
   }
 }

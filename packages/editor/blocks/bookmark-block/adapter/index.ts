@@ -14,4 +14,11 @@ export const bookmarkBlockAdapters: BlockAdapterContribution = {
   flavours: ['bookmark'],
   html: [bookmarkBlockHtmlAdapterMatcher],
   markdown: [bookmarkBlockMarkdownAdapterMatcher],
+  markdownSyntax: [{
+    id: 'block:bookmark',
+    title: 'Bookmark link',
+    description: 'Use a standard link with the bookmark title hint when a bookmark card is intended.',
+    kind: 'link',
+    example: '[Reference](https://example.com "blockcraft:bookmark")',
+  }],
 }

@@ -262,8 +262,32 @@ export const myBlockAdapters: BlockAdapterContribution = {
   flavours: ['my-block'],
   html: [myBlockHtmlAdapterMatcher],
   markdown: [myBlockMarkdownAdapterMatcher],
+  markdownSyntax: [{
+    id: 'block:my-block',
+    title: 'My block',
+    description: 'Use only when the typed container semantics are required.',
+    kind: 'container-directive',
+    profiles: ['hybrid', 'blockcraft'],
+    example: ':::bc-my-block\\n\\nReadable content.\\n\\n:::',
+  }],
 }
 ```
+
+`markdownSyntax` is optional but should be supplied whenever an AI, help UI or
+other producer needs to author this grammar. It describes syntax the Adapter
+already imports; it does not register another matcher. `AdapterRegistry`
+validates IDs and bounded fields, then exposes the current profile through:
+
+```typescript
+const manifest = registry.createMarkdownManifest('hybrid')
+// {version: 1, profile: 'hybrid', standardFirst: true, syntaxes: [...]}
+```
+
+The manifest always starts with ordinary Markdown guidance and includes only
+registered contribution descriptors allowed by that profile. A host-defined
+Block therefore reaches model prompts and documentation from the same
+composition root as import/export. Do not maintain a parallel server-side
+directive list.
 
 Sibling domains still own separate contribution records even when one grammar
 matcher recognizes the whole family. For example, `ordered`, `bullet`, and
@@ -439,6 +463,9 @@ container directive because their text belongs to a typed visual object.
 `markdownDirective: true` option before the `hybrid` or `blockcraft` profile
 emits a directive; omission keeps the readable portable fallback in every
 profile.
+The contribution factory also derives a `markdownSyntax` descriptor for opted-in
+directives. Use its `markdownSyntax` option to improve the title, description or
+example without changing the grammar.
 Import accepts either leaf or container form for registered block-level
 directives where structurally valid. YAML properties use the bounded,
 prototype-safe codec; URL-like fields reject active-content schemes. Do not

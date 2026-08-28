@@ -135,6 +135,13 @@ const mentionUrnMarkdownAstMatcher: MarkdownASTToDeltaMatcher = {
 
 export const mentionEmbedAdapters = {
   ...baseMentionEmbedAdapters,
+  markdownSyntax: [{
+    id: 'inline:mention',
+    title: 'Mention link',
+    description: 'The visible label belongs in brackets and the stable entity type and ID belong in the BlockCraft mention URN. Never invent an ID.',
+    kind: 'link',
+    example: '[@张三](urn:blockcraft:mention:user:user-123 "blockcraft:mention")',
+  }] as const,
   markdown: {
     deltaToAst: [mentionMarkdownDeltaMatcher],
     astToDelta: [

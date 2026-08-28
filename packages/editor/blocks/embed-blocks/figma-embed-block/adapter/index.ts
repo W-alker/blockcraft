@@ -24,4 +24,11 @@ export const figmaEmbedBlockAdapters: BlockAdapterContribution = {
   flavours: ['figma-embed'],
   html: [embedFigmaBlockHtmlAdapterMatcher],
   markdown: [embedFigmaBlockMarkdownAdapterMatcher],
+  markdownSyntax: [{
+    id: 'block:figma-embed',
+    title: 'Figma link',
+    description: 'Use a readable Figma URL link with the registered title hint.',
+    kind: 'link',
+    example: '[Figma](https://www.figma.com/file/example "blockcraft:figma-embed")',
+  }],
 }

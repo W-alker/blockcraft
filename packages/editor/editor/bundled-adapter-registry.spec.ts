@@ -130,6 +130,47 @@ describe('bundled Adapter registry', () => {
     expect(Object.isFrozen(registry.htmlBlockMatchers)).toBeTrue()
   })
 
+  it('builds a profile-filtered Markdown manifest from active contributions', () => {
+    const portable = BUNDLED_ADAPTER_REGISTRY.createMarkdownManifest('portable')
+    const hybrid = BUNDLED_ADAPTER_REGISTRY.createMarkdownManifest('hybrid')
+
+    expect(portable.standardFirst).toBeTrue()
+    expect(portable.syntaxes.map(item => item.id)).toContain('block:mermaid')
+    expect(portable.syntaxes.map(item => item.id)).toContain('inline:mention')
+    expect(portable.syntaxes.map(item => item.id)).not.toContain('block:callout')
+    expect(hybrid.syntaxes.map(item => item.id)).toContain('block:callout')
+    expect(hybrid.syntaxes.map(item => item.id)).toContain('block:text-box')
+    expect(hybrid.syntaxes.find(item => item.id === 'block:mermaid')?.example)
+      .toContain('```mermaid')
+    expect(hybrid.syntaxes.find(item => item.id === 'inline:mention')?.example)
+      .toContain('urn:blockcraft:mention:user:user-123')
+    expect(hybrid.syntaxes.slice(0, 3).every(item => item.id.startsWith('standard:')))
+      .toBeTrue()
+    const customIds = hybrid.syntaxes.slice(3).map(item => item.id)
+    expect(customIds).toEqual([...customIds].sort())
+    expect(Object.isFrozen(hybrid.syntaxes)).toBeTrue()
+  })
+
+  it('rejects duplicate Markdown syntax contributions', () => {
+    const contribution = BUNDLED_BLOCK_ADAPTER_CONTRIBUTIONS[0]
+    expect(() => new AdapterRegistry([
+      {...contribution, id: 'syntax-a', markdownSyntax: [{
+        id: 'duplicate',
+        title: 'A',
+        description: 'A',
+        kind: 'standard',
+        example: 'A',
+      }]},
+      {...BUNDLED_BLOCK_ADAPTER_CONTRIBUTIONS[1], id: 'syntax-b', markdownSyntax: [{
+        id: 'duplicate',
+        title: 'B',
+        description: 'B',
+        kind: 'standard',
+        example: 'B',
+      }]},
+    ])).toThrowError(/Duplicate Markdown syntax id/)
+  })
+
   it('filters active-content URLs in generic adapter metadata', () => {
     const encoded = encodeAdapterProps({
       name: 'safe',

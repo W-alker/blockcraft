@@ -585,11 +585,17 @@ function renderCallout(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   prefix.setAttribute("contenteditable", "false")
   prefix.textContent = `${props["prefix"] ?? ""}`
 
+  // Keep the live component's .bc-block-content wrapper. The callout theme
+  // owns its row layout and padding on this element, not on the host.
+  const blockContent = document.createElement("div")
+  blockContent.classList.add("bc-block-content")
+
   const content = document.createElement("div")
-  content.classList.add("callout-content")
+  content.classList.add("callout-content", "children-render-container")
   appendChildren(content, ctx, snapshot.children)
 
-  element.append(prefix, content)
+  blockContent.append(prefix, content)
+  element.append(blockContent)
   return {element}
 }
 

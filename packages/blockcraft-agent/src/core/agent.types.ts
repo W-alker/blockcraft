@@ -106,6 +106,27 @@ export interface DocumentAgentRequest {
   systemPrompt?: string
 }
 
+/** Read-only Markdown response request. It never carries document operations. */
+export interface DocumentAgentMarkdownRequest {
+  markdownStreamVersion: 1
+  instruction: string
+  context: DocumentAgentContext
+  /** Runtime BlockCraft and Markdown Adapter capabilities populated by the host facade. */
+  runtime?: DocumentAgentRuntimeManifest
+  sessionId?: string
+  attachments?: readonly DocumentAgentImageAttachment[]
+  systemPrompt?: string
+}
+
+export type DocumentAgentMarkdownStreamEvent =
+  | {readonly type: 'delta'; readonly delta: string}
+  | {
+      readonly type: 'done'
+      readonly markdown: string
+      /** False when a provider only exposes its final answer. */
+      readonly streamed: boolean
+    }
+
 export type DocumentAgentOperation =
   | {
       kind: 'replace-text'
@@ -252,4 +273,9 @@ export interface DocumentAgentTransport {
     delegation: DocumentAgentSubAgentRequest,
     options?: {signal?: AbortSignal},
   ): Promise<DocumentAgentSubAgentResult>
+  /** Optional display-only Markdown response stream. */
+  streamMarkdown?(
+    request: DocumentAgentMarkdownRequest,
+    options?: {signal?: AbortSignal},
+  ): AsyncIterable<DocumentAgentMarkdownStreamEvent>
 }
