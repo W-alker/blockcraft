@@ -197,6 +197,13 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
   formatText(index: number, length: number, attributes: DeltaInsert['attributes']) {
     if (!length || !Object.keys(attributes ?? {}).length) return
     this.doc.readonlyManager.assertTextWritable(this, BlockReadonlyOperation.Format)
+    if (this.doc.revisions?.isTracking) {
+      const delta: DeltaOperation[] = []
+      if (index > 0) delta.push({retain: index})
+      delta.push({retain: length, attributes})
+      this.doc.revisions.applyDelta(this.id, delta)
+      return
+    }
     this.yText.format(index, length, attributes as any)
   }
 

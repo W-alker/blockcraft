@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when working with the CRDT data layer.
 >
-> Last updated: 2026-08-27
+> Last updated: 2026-08-28
 
 ## Architecture Overview
 
@@ -567,12 +567,15 @@ extended selection persists only the uncovered text segments or block IDs.
 Rejected records do not suppress a fresh proposal. Different actors still
 store independent overlapping deletion records and decision histories.
 
-Revision tracking is attribution, not a mutation capability gate. Operations
-outside the v1 record model—props/formatting, format or inline-object Delta,
-block movement, table-cell structure and cross-container structure—commit via
-their normal Yjs transaction and Undo path with no Revision record. Composite
-fallbacks bypass tracking for the whole transaction so they cannot leave a
-partial Diff beside an otherwise untracked mutation.
+Revision tracking is attribution, not a mutation capability gate. Object
+inserts in Y.Text are tracked as length-one ranges. Semantic Embed attribute
+updates are represented non-destructively as an old-object deletion and
+new-object insertion in one group; a same-author pending insertion is updated
+in place. Operations outside the v1 record model—props/general formatting,
+block or Embed movement, table-cell structure and cross-container
+structure—commit via their normal Yjs transaction and Undo path with no
+Revision record. Composite fallbacks bypass tracking for the whole transaction
+so they cannot leave a partial Diff beside an otherwise untracked mutation.
 
 Programmatic producers such as document agents can use
 `doc.revisions.runAsRevision(actor, callback, {groupId})` to create the same

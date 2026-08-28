@@ -946,7 +946,7 @@ export class ImgToolbarPlugin extends DocPlugin {
       this.closeInlineToolbar();
       try {
         if (plan.kind !== 'noop') {
-          this.doc.crud.transact(() => {
+          const applyMove = () => this.doc.crud.transact(() => {
             this.doc.crud.applyTextDelta(
               context.blockId,
               plan.sourceOperations,
@@ -958,6 +958,11 @@ export class ImgToolbarPlugin extends DocPlugin {
               );
             }
           });
+          if (this.doc.revisions?.isTracking) {
+            this.doc.revisions.runWithoutTracking(applyMove);
+          } else {
+            applyMove();
+          }
         }
       } finally {
         releaseDragResources();
@@ -1161,9 +1166,14 @@ export class ImgToolbarPlugin extends DocPlugin {
       ...(current.width == null ? {width} : {}),
       ...(current.height == null ? {height} : {}),
     }
-    this.doc.crud.transact(() => {
+    const applyIntrinsicSize = () => this.doc.crud.transact(() => {
       block.formatText(offset, 1, attributes)
     }, ORIGIN_NO_RECORD)
+    if (this.doc.revisions?.isTracking) {
+      this.doc.revisions.runWithoutTracking(applyIntrinsicSize)
+    } else {
+      applyIntrinsicSize()
+    }
   }
 
   private _convertInlineImageToBlock(

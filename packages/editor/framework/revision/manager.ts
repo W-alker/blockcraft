@@ -53,6 +53,15 @@ const GROUP_IDLE_MS = 10_000
 type TextRange = {start: number; end: number; revision: ResolvedRevision}
 type TextDependencyRange = {start: number; end: number; revisionId: string}
 type TextDeletionSegment = {start: number; end: number; dependsOn: string[]}
+type InlineInsertOptions = {
+  groupId: string
+  dependsOn: readonly string[]
+}
+type EmbedFormatPlan = {
+  index: number
+  delta: DeltaInsert
+  attributes: NonNullable<DeltaInsert['attributes']>
+}
 
 export interface RevisionBlockPresentation {
   revisionIds: string[]
@@ -359,43 +368,63 @@ export class DocumentRevisionManager {
     attributes?: DeltaInsert['attributes'],
     origin: unknown = null,
   ): string | null {
-    if (!text) return null
+    return this.insertInlineContent(
+      blockId,
+      index,
+      {insert: text, ...(attributes ? {attributes} : {})},
+      origin,
+    )
+  }
+
+  private insertInlineContent(
+    blockId: string,
+    index: number,
+    content: DeltaInsert,
+    origin: unknown,
+    options?: InlineInsertOptions,
+  ): string | null {
+    const length = deltaInsertLength(content)
+    if (length <= 0) return null
     const yText = this.getYText(blockId)
     if (!this.isTracking) {
-      this.doc.crud.transact(() => yText.insert(index, text, attributes), origin)
+      this.doc.crud.transact(() => insertDeltaAt(yText, index, content), origin)
       return null
     }
-    const ownInsertion = this.findMutableOwnInsertion(blockId, index, index)
+    const ownInsertion = options
+      ? null
+      : this.findMutableOwnInsertion(blockId, index, index)
     const ownRange = ownInsertion
       ? this.resolveTextRange(ownInsertion.target as RevisionTextTarget)
       : null
     if (ownInsertion && ownRange) {
       this.doc.crud.transact(() => {
-        yText.insert(index, text, attributes)
+        insertDeltaAt(yText, index, content)
         this.rewriteTextInsertionTarget(
           ownInsertion.id,
           blockId,
           ownRange.start,
-          ownRange.end + text.length,
+          ownRange.end + length,
         )
       }, origin)
       return ownInsertion.id
     }
     const actor = this.requireActor()
-    const dependsOn = this.findTextDependencies(blockId, index, index)
-    const groupId = this.resolveTextGroup('text-insert', blockId, index, index + text.length)
+    const dependsOn = options?.dependsOn ??
+      this.findTextDependencies(blockId, index, index)
+    const groupId = options?.groupId ??
+      this.resolveTextGroup('text-insert', blockId, index, index + length)
     const id = generateId()
     this.doc.crud.undoManager?.captureSelectionBeforeChange?.()
     this.doc.crud.transact(() => {
-      yText.insert(index, text, attributes)
+      insertDeltaAt(yText, index, content)
       const record: RevisionRecord = {
         id,
         groupId,
         kind: 'text-insert',
         actor,
         createdAt: new Date().toISOString(),
-        target: this.createTextTarget(blockId, index, index + text.length, 1, -1),
-        dependsOn,
+        target: this.createTextTarget(blockId, index, index + length, 1, -1),
+        dependsOn: [...dependsOn],
       }
       this.yRevisionMap.set(id, record)
     }, origin)
@@ -620,11 +649,10 @@ export class DocumentRevisionManager {
     }
     if (text) {
       const id = length > 0
-        ? this.insertReplacementText(
+        ? this.insertReplacementContent(
           blockId,
           index,
-          text,
-          attributes,
+          {insert: text, ...(attributes ? {attributes} : {})},
           replacementDependencies ?? [],
           groupId,
           origin,
@@ -653,7 +681,13 @@ export class DocumentRevisionManager {
       this.doc.crud.transact(() => yText.applyDelta([...delta]), origin)
       return []
     }
-    if (!canTrackTextDelta(delta)) {
+    // Avoid materializing the whole Y.Text for ordinary input/insert/delete.
+    // Only semantic format candidates need to inspect the retained model units.
+    const embedFormatPlan = hasAttributedRetain(delta)
+      ? planTrackedEmbedFormats(yText.toDelta() as DeltaInsert[], delta)
+      : undefined
+    if (embedFormatPlan === null ||
+      (embedFormatPlan === undefined && !canTrackInlineContentDelta(delta))) {
       this.doc.crud.transact(() => yText.applyDelta([...delta]), origin)
       return []
     }
@@ -666,6 +700,21 @@ export class DocumentRevisionManager {
     this.doc.crud.undoManager?.captureSelectionBeforeChange?.()
     try {
       this.doc.crud.transact(() => {
+        if (embedFormatPlan) {
+          for (const update of [...embedFormatPlan].sort((left, right) =>
+            right.index - left.index)) {
+            this.replaceInlineEmbedAttributes(
+              blockId,
+              update.index,
+              update.delta,
+              update.attributes,
+              origin,
+            ).forEach(id => {
+              if (!ids.includes(id)) ids.push(id)
+            })
+          }
+          return
+        }
         for (const operation of delta) {
           if (operation.retain) {
             cursor += operation.retain
@@ -682,16 +731,21 @@ export class DocumentRevisionManager {
             })
           }
           if (operation.insert !== undefined) {
-            if (typeof operation.insert !== 'string') continue
-            const id = this.insertText(
+            const id = this.insertInlineContent(
               blockId,
               cursor,
-              operation.insert,
-              operation.attributes,
+              {
+                insert: structuredClone(operation.insert),
+                ...(operation.attributes
+                  ? {attributes: structuredClone(operation.attributes)}
+                  : {}),
+              } as DeltaInsert,
               origin,
             )
             if (id && !ids.includes(id)) ids.push(id)
-            cursor += operation.insert.length
+            cursor += typeof operation.insert === 'string'
+              ? operation.insert.length
+              : 1
           }
         }
       }, origin)
@@ -700,6 +754,51 @@ export class DocumentRevisionManager {
     }
     this.lastGroup = null
     return ids
+  }
+
+  private replaceInlineEmbedAttributes(
+    blockId: string,
+    index: number,
+    current: DeltaInsert,
+    attributes: NonNullable<DeltaInsert['attributes']>,
+    origin: unknown,
+  ): string[] {
+    if (typeof current.insert === 'string') return []
+    const nextAttributes = applyAttributePatch(current.attributes, attributes)
+    if (sameAttributes(current.attributes, nextAttributes)) return []
+
+    const ownInsertion = this.findMutableOwnInsertion(blockId, index, index + 1)
+    const ownRange = ownInsertion
+      ? this.resolveTextRange(ownInsertion.target as RevisionTextTarget)
+      : null
+    if (ownInsertion && ownRange) {
+      const yText = this.getYText(blockId)
+      this.doc.crud.transact(() => {
+        yText.format(index, 1, attributes as Record<string, unknown>)
+      }, origin)
+      return [ownInsertion.id]
+    }
+
+    const dependencies = this.findTextDependenciesCoveringRange(
+      blockId,
+      index,
+      index + 1,
+    )
+    const groupId = this.forcedGroupId ?? generateId()
+    const ids = this.deleteTextRecords(blockId, index, 1, origin)
+    const insertionId = this.insertReplacementContent(
+      blockId,
+      index,
+      {
+        insert: structuredClone(current.insert),
+        ...(nextAttributes ? {attributes: nextAttributes} : {}),
+      },
+      dependencies,
+      groupId,
+      origin,
+    )
+    if (insertionId) ids.push(insertionId)
+    return [...new Set(ids)]
   }
 
   recordBlockInsertion(
@@ -1337,32 +1436,21 @@ export class DocumentRevisionManager {
       .sort()
   }
 
-  private insertReplacementText(
+  private insertReplacementContent(
     blockId: string,
     index: number,
-    text: string,
-    attributes: DeltaInsert['attributes'] | undefined,
+    content: DeltaInsert,
     dependsOn: readonly string[],
     groupId: string,
     origin: unknown,
   ): string {
-    const yText = this.getYText(blockId)
-    const id = generateId()
-    const actor = this.requireActor()
-    this.doc.crud.undoManager?.captureSelectionBeforeChange?.()
-    this.doc.crud.transact(() => {
-      yText.insert(index, text, attributes)
-      this.yRevisionMap.set(id, {
-        id,
-        groupId,
-        kind: 'text-insert',
-        actor,
-        createdAt: new Date().toISOString(),
-        target: this.createTextTarget(blockId, index, index + text.length, 1, -1),
-        dependsOn: [...dependsOn],
-      })
-    }, origin)
-    return id
+    return this.insertInlineContent(
+      blockId,
+      index,
+      content,
+      origin,
+      {dependsOn, groupId},
+    )!
   }
 
   private getTextDependencyRanges(blockId: string): TextDependencyRange[] {
@@ -1627,11 +1715,104 @@ export class DocumentRevisionManager {
   }
 }
 
-function canTrackTextDelta(delta: readonly DeltaOperation[]): boolean {
+function deltaInsertLength(delta: DeltaInsert): number {
+  return typeof delta.insert === 'string' ? delta.insert.length : 1
+}
+
+function insertDeltaAt(yText: Y.Text, index: number, delta: DeltaInsert): void {
+  if (typeof delta.insert === 'string') {
+    if (delta.insert) yText.insert(index, delta.insert, delta.attributes)
+    return
+  }
+  yText.insertEmbed(index, structuredClone(delta.insert), delta.attributes)
+}
+
+/**
+ * Returns:
+ * - undefined when the delta has no formatting and can use the normal tracked path;
+ * - null when formatting is present but must remain an untracked formatting operation;
+ * - a plan when every formatted unit is an inline Embed semantic update.
+ */
+function planTrackedEmbedFormats(
+  raw: readonly DeltaInsert[],
+  operations: readonly DeltaOperation[],
+): EmbedFormatPlan[] | null {
+  // Keep compound format/content deltas on the existing untracked path. Embed
+  // replacements generated by built-in plugins use a plain delete + insert and
+  // are handled by the normal tracked path instead.
+  if (operations.some(operation =>
+    !!operation.delete || operation.insert !== undefined)) return null
+
+  const plan: EmbedFormatPlan[] = []
+  let cursor = 0
+  for (const operation of operations) {
+    const length = operation.retain ?? 0
+    if (length <= 0) continue
+    const attributes = operation.attributes
+    if (attributes && Object.keys(attributes).length > 0) {
+      if (!isSemanticEmbedAttributePatch(attributes)) return null
+      const selected = sliceDeltas(raw, cursor, cursor + length)
+      if (
+        deltaLength(selected) !== length ||
+        selected.some(delta => typeof delta.insert === 'string')
+      ) return null
+      selected.forEach((delta, offset) => plan.push({
+        index: cursor + offset,
+        delta,
+        attributes: structuredClone(attributes),
+      }))
+    }
+    cursor += length
+  }
+  return plan
+}
+
+function hasAttributedRetain(delta: readonly DeltaOperation[]): boolean {
+  return delta.some(operation =>
+    !!operation.retain &&
+    !!operation.attributes &&
+    Object.keys(operation.attributes).length > 0)
+}
+
+function isSemanticEmbedAttributePatch(
+  attributes: NonNullable<DeltaInsert['attributes']>,
+): boolean {
+  const keys = Object.keys(attributes)
+  return keys.length > 0 && keys.every(key =>
+    !key.startsWith('a:') &&
+    !key.startsWith('d:') &&
+    !key.startsWith('s:') &&
+    !key.startsWith('t:'))
+}
+
+function applyAttributePatch(
+  current: DeltaInsert['attributes'] | undefined,
+  patch: NonNullable<DeltaInsert['attributes']>,
+): DeltaInsert['attributes'] | undefined {
+  const next = structuredClone(current ?? {})
+  Object.entries(patch).forEach(([key, value]) => {
+    if (value === null || value === undefined) delete next[key]
+    else next[key] = structuredClone(value)
+  })
+  return Object.keys(next).length ? next : undefined
+}
+
+function sameAttributes(
+  left: DeltaInsert['attributes'] | undefined,
+  right: DeltaInsert['attributes'] | undefined,
+): boolean {
+  const leftEntries = Object.entries(left ?? {})
+  const rightEntries = Object.entries(right ?? {})
+  if (leftEntries.length !== rightEntries.length) return false
+  return leftEntries.every(([key, value]) =>
+    Object.prototype.hasOwnProperty.call(right ?? {}, key) &&
+    Object.is(value, right?.[key]))
+}
+
+function canTrackInlineContentDelta(delta: readonly DeltaOperation[]): boolean {
   return delta.every(operation =>
     !(operation.retain && operation.attributes &&
-      Object.keys(operation.attributes).length > 0) &&
-    (operation.insert === undefined || typeof operation.insert === 'string'),
+      Object.keys(operation.attributes).length > 0),
   )
 }
 

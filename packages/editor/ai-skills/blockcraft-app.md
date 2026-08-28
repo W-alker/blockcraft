@@ -1176,14 +1176,16 @@ doc.revisions.runAsRevision(
 ```
 
 `runAsRevision()` is a synchronous scoped write boundary. Inside the callback,
-Revision-aware `DocCRUD` paths produce normal text/block revision records under
-one review group; after it returns (or throws), the previous actor, session and
-tracking state are restored. It does not emit a `mode$` change and does not set
-`mode` to `track`. Keep the editor in `viewMode: 'markup'` when the Diff should
-be visible. Existing-block props/formatting, format-only Delta, inline-object
-insertion, block movement, table-cell structure and cross-container structure
-are not represented as v1 revisions. They remain available through the normal
-Yjs/Undo mutation path and create no Diff; tracking mode is not a feature gate.
+Revision-aware `DocCRUD` paths produce normal text/block and inline Embed
+revision records under one review group; after it returns (or throws), the
+previous actor, session and tracking state are restored. It does not emit a
+`mode$` change and does not set `mode` to `track`. Keep the editor in
+`viewMode: 'markup'` when the Diff should be visible. Inline Embed insertion is
+one length-one insertion revision; a semantic Embed attribute update becomes
+an old/new replacement pair in one group. Existing-block props, general text
+formatting, block/Embed movement, table-cell structure and cross-container
+structure remain available through the normal Yjs/Undo mutation path and
+create no Diff; tracking mode is not a feature gate.
 
 Calling `setMode('track')` without a non-empty `actorId` throws
 `RevisionActorRequiredError`; the editor never creates anonymous revisions.

@@ -202,12 +202,15 @@ const finalRoot = doc.revisions.projectFinalSnapshot()
 const complete = doc.exportDocumentSnapshot()
 ```
 
-Revision v1 covers text insert/delete/replace, cross-block deletion,
-same-parent editable block split/merge, and whole-block insert/delete. Format
-changes, table row/column operations, object geometry/movement and
-cross-container structure are not represented as v1 revisions: they continue
-through the normal Yjs/Undo path without creating a Diff, and tracking mode
-does not disable those features. Original view remains unsupported. `final` is a
+Revision v1 covers text insert/delete/replace, inline Embed insert/delete and
+semantic replacement, cross-block deletion, same-parent editable block
+split/merge, and whole-block insert/delete. An existing Embed attribute update
+is normalized to an old-Embed deletion plus new-Embed insertion in one review
+group; changing the same author's pending insertion updates that insertion in
+place. General text formatting, table row/column operations, object movement
+and cross-container structure are not represented as v1 revisions: they
+continue through the normal Yjs/Undo path without creating a Diff, and tracking
+mode does not disable those features. Original view remains unsupported. `final` is a
 readonly projection; a host should mount `projectFinalSnapshot()` in an
 isolated readonly `BlockCraftDoc`. Permissions and synchronization admission
 remain host responsibilities; BlockCraft only validates the supplied actor and

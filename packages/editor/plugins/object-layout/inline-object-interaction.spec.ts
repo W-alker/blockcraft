@@ -176,6 +176,8 @@ describe('InlineObjectInteractionController', () => {
       const releaseLayoutFreeze = jasmine.createSpy('releaseLayoutFreeze')
       const releaseViewLease = jasmine.createSpy('releaseViewLease')
       const applyTextDelta = jasmine.createSpy('applyTextDelta')
+      const runWithoutTracking = jasmine.createSpy('runWithoutTracking')
+        .and.callFake((run: () => void) => run())
       const setInlineRange = jasmine.createSpy('setInlineRange')
       const block = {
         id: 'paragraph-1',
@@ -217,6 +219,7 @@ describe('InlineObjectInteractionController', () => {
           transact: (run: () => void) => run(),
           applyTextDelta,
         },
+        revisions: {isTracking: true, runWithoutTracking},
         overlayService: {
           createConnectedOverlay: () => ({
             overlayRef,
@@ -291,6 +294,7 @@ describe('InlineObjectInteractionController', () => {
       }))
 
       expect(setInlineRange).toHaveBeenCalledOnceWith(3, 1)
+      expect(runWithoutTracking).toHaveBeenCalledTimes(1)
       expect(applyTextDelta).toHaveBeenCalledTimes(1)
       const operations = applyTextDelta.calls.mostRecent().args[1]
       expect(operations[0]).toEqual({retain: 1})

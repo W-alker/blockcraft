@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-27
+> Last updated: 2026-08-28
 
 ## Test Setup
 
@@ -24,7 +24,8 @@ Revision tests need more than DOM snapshots. Cover three independent layers:
    pending insertion resizing, edits crossing existing revision boundaries,
    same-author repeated/extended deletion deduplication, rejected deletion
    reproposal, different-author overlap attribution, code-block highlighting
-   attribution, absolute-object marker geometry and Undo selection restoration.
+   attribution, inline Embed insertion/semantic replacement/pending-update
+   deduplication, absolute-object marker geometry and Undo selection restoration.
 2. **CRDT**: create at least two `Y.Doc` replicas, fork offline, apply updates in
    different and repeated orders, then compare resolved status/final snapshot.
    Include opposite decisions, late heads, nested dependencies, overlapping
@@ -39,10 +40,14 @@ guidance, comment-marker coexistence and that the mounted Final document has
 suites before the editor build. Host-specific file envelopes and migrations are
 tested in their owning application, not in the editor package.
 
-Also lock the non-gating contract: with tracking enabled, props/formatting,
-mixed format or inline-object Delta, block movement, table-cell structure and
-cross-container edits must complete through the normal Yjs/Undo path, create no
-Revision records and never leave a partial Diff when the operation is compound.
+For inline Embeds, assert the length-one insertion mark is present on the outer
+`c-element`, semantic `formatText()` changes create one old/new replacement
+group, accept/reject produce the right final object, and a same-author pending
+insertion updates without another Diff. Also lock the non-gating contract: with
+tracking enabled, props/general formatting, mixed unsupported format, block or
+Embed movement, table-cell structure and cross-container edits must complete
+through the normal Yjs/Undo path, create no Revision records and never leave a
+partial Diff when the operation is compound.
 
 For `RevisionReviewPlugin`, keep the unit harness headless: provide only a
 `doc.revisions` incremental `change$`/`listGroup()` seam plus mode streams and

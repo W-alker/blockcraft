@@ -57,6 +57,21 @@ describe("MentionPlugin async cursor restore", () => {
 });
 
 describe("MentionPlugin selection liveness", () => {
+  it("measures the trigger by model range across a Revision c-element boundary", () => {
+    const rect = new DOMRect(20, 30, 8, 18);
+    const modelRangeToClientRects = jasmine.createSpy("modelRangeToClientRects")
+      .and.returnValue([rect]);
+    const findBlotByOffset = jasmine.createSpy("findBlotByOffset");
+    const plugin = new MentionPlugin({panel: jasmine.createSpy("panel")});
+    const block = {
+      runtime: {modelRangeToClientRects, findBlotByOffset},
+    };
+
+    expect((plugin as any)._getCharRect(block, 4)).toBe(rect);
+    expect(modelRangeToClientRects).toHaveBeenCalledOnceWith(4, 5);
+    expect(findBlotByOffset).not.toHaveBeenCalled();
+  });
+
   it("opens after an atomic inline embed such as a date", () => {
     const block = {
       id: "p1",

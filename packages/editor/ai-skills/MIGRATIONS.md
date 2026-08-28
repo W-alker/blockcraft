@@ -101,6 +101,67 @@ layout mode incorrectly exposed inline layout for TextBox.
 - TextBox and other blocks without an inline placement adapter no longer show
   or accept the inline layout action.
 
+## Unreleased — 2026-08-28 — Revision-aware inline Embeds
+
+**Severity**: minor
+
+**What changed**: Revision tracking now attributes inline Embed insertion,
+deletion and semantic modification. An existing Embed semantic-attribute update
+is represented as a non-destructive deletion of the old object plus insertion
+of its replacement in one review group. The outer `c-element` receives the
+existing Revision presentation attributes; no Embed-specific frame API or CSS
+contract was added.
+
+**Why**: Inline objects previously committed normally while tracking was active,
+so inserted or resized/configured Embeds had no reviewable Diff and final
+projection could not accept or reject the object change.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-embed.md`
+- `blockcraft-inline.md`
+- `blockcraft-input.md`
+- `blockcraft-data.md`
+- `blockcraft-test.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- No new exported API. Existing `applyDeltaOperations()`,
+  `DocCRUD.applyTextDelta()` and `formatText()` entry points become
+  Revision-aware for inline Embed content.
+
+### Migration Recipe
+
+No host code change is required. Existing converter code keeps rendering the
+same one-unit Embed and the existing theme styles its outer `c-element`.
+
+```typescript
+// Existing insertion code now creates a reviewable length-one Diff in track mode.
+block.applyDeltaOperations([
+  { retain: offset },
+  { insert: { myEmbed: value }, attributes: { format: "compact" } },
+]);
+
+// Existing semantic updates now create one old/new replacement group.
+block.formatText(offset, 1, { format: "expanded" });
+```
+
+### Behavior Changes
+
+- Object inserts and delete-plus-object-insert replacements are no longer
+  treated as unsupported Delta while Revision tracking is active.
+- Unprefixed semantic attributes on an Embed-only retained range are tracked as
+  replacement. General `a:` / `d:` / `s:` / `t:` formatting remains untracked.
+- Repeated semantic changes to the same actor's pending Embed insertion update
+  that insertion in place and do not stack another Diff.
+- Embed anchor movement and system-owned image intrinsic-size backfill remain
+  operational without creating a Revision record.
+- This entry does not define or change `packages/editor/package.json` version;
+  release versioning remains a separate maintainer decision.
+
 ## Unreleased — 2026-08-28 — Plain ordered-list interruption boundaries
 
 **Severity**: patch

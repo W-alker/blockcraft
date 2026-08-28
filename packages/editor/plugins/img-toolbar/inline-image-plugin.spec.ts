@@ -687,6 +687,9 @@ describe('ImgToolbarPlugin inline-image interaction', () => {
 
   it('moves the embed anchor to another editable block in one transaction', () => {
     const h = makeHarness(false, true);
+    const runWithoutTracking = jasmine.createSpy('runWithoutTracking')
+      .and.callFake((run: () => void) => run());
+    h.doc.revisions = {isTracking: true, runWithoutTracking};
     const targetHost = document.createElement('div');
     targetHost.dataset['blockId'] = 'paragraph-2';
     targetHost.appendChild(document.createTextNode('目标段落'));
@@ -764,6 +767,7 @@ describe('ImgToolbarPlugin inline-image interaction', () => {
     }));
 
     expect(h.doc.crud.transact).toHaveBeenCalledTimes(1);
+    expect(runWithoutTracking).toHaveBeenCalledTimes(1);
     expect(h.doc.crud.applyTextDelta.calls.allArgs()).toEqual([
       ['paragraph-1', [{retain: 1}, {delete: 1}]],
       ['paragraph-2', [
@@ -876,6 +880,9 @@ describe('ImgToolbarPlugin inline-image interaction', () => {
 
   it('backfills missing intrinsic dimensions without adding undo history', () => {
     const h = makeHarness();
+    const runWithoutTracking = jasmine.createSpy('runWithoutTracking')
+      .and.callFake((run: () => void) => run());
+    h.doc.revisions = {isTracking: true, runWithoutTracking};
     h.paragraphBlock.textDeltas.and.returnValue([
       {insert: '前'},
       {insert: {image: 'https://cdn.example.com/a.png'}},
@@ -894,6 +901,7 @@ describe('ImgToolbarPlugin inline-image interaction', () => {
 
     expect(h.doc.crud.transact)
       .toHaveBeenCalledWith(jasmine.any(Function), ORIGIN_NO_RECORD);
+    expect(runWithoutTracking).toHaveBeenCalledTimes(1);
     expect(h.paragraphBlock.formatText).toHaveBeenCalledOnceWith(1, 1, {
       width: 640,
       height: 360,

@@ -152,7 +152,10 @@ describe("Block readonly API", () => {
 
   it("keeps unsupported props and text formatting available during revision tracking", () => {
     const h = createEditableHarness();
-    (h.doc as any).revisions = {isTracking: true};
+    const applyDelta = jasmine.createSpy("applyDelta").and.callFake(
+      (_blockId: string, delta: unknown[]) => (h.block as any).yText.applyDelta(delta),
+    );
+    (h.doc as any).revisions = {isTracking: true, applyDelta};
 
     h.block.updateProps({textAlign: "center"});
     h.block.formatText(0, 2, {"a:bold": true});
@@ -161,6 +164,9 @@ describe("Block readonly API", () => {
     expect(h.block.textDeltas()).toEqual([
       {insert: "or", attributes: {"a:bold": true}},
       {insert: "iginal"},
+    ]);
+    expect(applyDelta).toHaveBeenCalledOnceWith("p", [
+      {retain: 2, attributes: {"a:bold": true}},
     ]);
   });
 });

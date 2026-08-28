@@ -507,6 +507,30 @@ describe('DocCRUD', () => {
     )
   })
 
+  it('routes model-only formatting through Revision while tracking is active', () => {
+    const {crud, doc, store} = createDocHarness()
+    const yBlock = native2YBlock({
+      id: 'offscreen-revision-format',
+      flavour: 'paragraph',
+      nodeType: BlockNodeType.editable,
+      props: {depth: 0},
+      meta: {},
+      children: [{insert: 'abcd'}],
+    } as unknown as NativeBlockModel)
+    doc.yBlockMap.set('offscreen-revision-format', yBlock)
+    const applyDelta = jasmine.createSpy('applyDelta')
+    ;(doc as any).revisions = {isTracking: true, applyDelta}
+
+    crud.formatText('offscreen-revision-format', 1, 2, {width: 120})
+
+    expect(store.has('offscreen-revision-format')).toBeFalse()
+    expect(applyDelta).toHaveBeenCalledOnceWith('offscreen-revision-format', [
+      {retain: 1},
+      {retain: 2, attributes: {width: 120}},
+    ])
+    expect((yBlock.get('children') as unknown as Y.Text).toString()).toBe('abcd')
+  })
+
   it('emits meta changes by block id when no component is mounted', () => {
     const {crud, doc} = createDocHarness()
     const yBlock = native2YBlock({

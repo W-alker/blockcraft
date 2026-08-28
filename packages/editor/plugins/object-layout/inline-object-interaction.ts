@@ -459,7 +459,7 @@ export class InlineObjectInteractionController {
       this.close()
       try {
         if (plan.kind !== 'noop') {
-          this._doc.crud.transact(() => {
+          const applyMove = () => this._doc.crud.transact(() => {
             this._doc.crud.applyTextDelta(
               context.blockId,
               plan.sourceOperations,
@@ -471,6 +471,11 @@ export class InlineObjectInteractionController {
               )
             }
           })
+          if (this._doc.revisions?.isTracking) {
+            this._doc.revisions.runWithoutTracking(applyMove)
+          } else {
+            applyMove()
+          }
         }
       } finally {
         releaseDragResources()

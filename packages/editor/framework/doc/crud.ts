@@ -280,6 +280,13 @@ export class DocCRUD {
     if (!length || !Object.keys(attributes ?? {}).length) return
     const yText = this._getEditableYText(blockId)
     this.doc.readonlyManager.assertTextWritable(blockId, BlockReadonlyOperation.Format)
+    if (this.doc.revisions?.isTracking) {
+      const delta: DeltaOperation[] = []
+      if (index > 0) delta.push({retain: index})
+      delta.push({retain: length, attributes})
+      this.doc.revisions.applyDelta(blockId, delta)
+      return
+    }
     this.transact(() => yText.format(index, length, attributes as Record<string, unknown>))
   }
 

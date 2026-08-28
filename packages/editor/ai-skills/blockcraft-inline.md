@@ -47,6 +47,13 @@ current delta at active relative ranges and injects temporary
 all attribution IDs and can apply dependency-aware projection without last
 writer wins.
 
+The same projection covers object Deltas. An inline Embed has model length one,
+so its insertion/deletion range decorates the outer `c-element` rendered by
+`EmbedBlot`. A semantic attribute update is stored non-destructively as the old
+Embed plus a replacement Embed in one Revision group; final projection chooses
+the correct object from the group's decisions. No converter-specific Revision
+wrapper or shell style is required.
+
 Blocks with text revisions currently take the guarded full-render path so the
 temporary attribution stays exact after local or remote changes. Blocks without
 text revisions keep the normal incremental `InlineRuntime.applyDelta()` fast
@@ -293,7 +300,9 @@ model anchor, then performs one same-block or cross-block Yjs transaction.
 The exact one-length Embed payload and non-position attributes are preserved;
 no pixel `y` is serialized. Pointercancel, Escape, detach, editor-external drop
 and readonly transitions remove the proxy and restore model-derived geometry
-without mutation.
+without mutation. A resize/wrap change is a semantic Embed replacement while
+Revision tracking is active; anchor movement intentionally remains an
+untracked move rather than an insert/delete Diff.
 
 Bundled inline Shape/WordArt use the same frozen-layout Pointer Events gesture
 for both plain inline and wrapped modes. The inert

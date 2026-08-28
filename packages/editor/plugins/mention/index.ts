@@ -404,6 +404,19 @@ export class MentionPlugin extends DocPlugin {
 
   private _getCharRect(block: EditableBlockComponent, modelIndex: number): DOMRect | null {
     try {
+      // A Revision projection may split adjacent text into separate c-elements.
+      // Measuring the model range is boundary-safe: unlike findBlotByOffset(),
+      // it can start at the previous TextBlot's end and finish inside the next
+      // TextBlot without constructing an out-of-range local DOM offset.
+      const rects = block.runtime.modelRangeToClientRects(
+        modelIndex,
+        modelIndex + 1,
+      )
+      const rect = rects.find(item => item.width || item.height) ?? rects[0]
+      if (rect) return rect
+
+      // Keep a defensive fallback for zero-layout/test surfaces that expose a
+      // blot but no client rects.
       const result = block.runtime.findBlotByOffset(modelIndex)
       if (!result) return null
       const {blot, localOffset} = result
@@ -411,6 +424,7 @@ export class MentionPlugin extends DocPlugin {
         return (blot.domNode as HTMLElement).getBoundingClientRect()
       }
       const range = document.createRange()
+      if (localOffset < 0 || localOffset >= blot.length) return null
       range.setStart(blot.textNode, localOffset)
       range.setEnd(blot.textNode, localOffset + 1)
       return range.getClientRects()[0] || null

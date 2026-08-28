@@ -1,11 +1,19 @@
 import * as Y from 'yjs'
-import {BlockNodeType, IBlockSnapshot, NativeBlockModel, YBlock, native2YBlock} from '../block-std'
+import {
+  BlockNodeType,
+  DeltaInsert,
+  IBlockSnapshot,
+  NativeBlockModel,
+  YBlock,
+  native2YBlock,
+} from '../block-std'
 import {DocumentRevisionManager} from './manager'
 import {
   RevisionActorRequiredError,
   RevisionConflictError,
 } from './errors'
 import {setAttributes} from '../block-std/inline/setAttributes'
+import {EmbedBlot} from '../block-std/inline/blot'
 import {subscribeRevisionPresentationChange} from './presentation-change'
 
 const ROOT_ID = 'root'
@@ -103,19 +111,105 @@ describe('DocumentRevisionManager', () => {
     ])
   })
 
-  it('inserts an unsupported inline object normally without creating a Diff', () => {
+  it('tracks an inline Embed insertion and projects the mark onto its c-element', () => {
     const harness = createHarness('abc', '')
 
-    harness.manager.applyDelta(FIRST_ID, [
+    const ids = harness.manager.applyDelta(FIRST_ID, [
       {retain: 1},
       {insert: {mention: 'member-1'}},
     ])
 
-    expect(harness.manager.list()).toEqual([])
+    expect(ids).toHaveSize(1)
+    expect(harness.manager.list()).toEqual([
+      jasmine.objectContaining({id: ids[0], kind: 'text-insert'}),
+    ])
     expect(harness.yText(FIRST_ID).toDelta()).toEqual([
       {insert: 'a'},
       {insert: {mention: 'member-1'}},
       {insert: 'bc'},
+    ])
+    const projected = harness.manager.projectInlineDeltas(
+      FIRST_ID,
+      harness.yText(FIRST_ID).toDelta() as DeltaInsert[],
+    ).find(operation => typeof operation.insert !== 'string')
+    const revisionElement = new EmbedBlot(
+      document.createElement('span'),
+      projected?.attributes,
+    ).cElement
+    expect(revisionElement.getAttribute('data-bc-revision-kind')).toBe('insert')
+    expect(revisionElement.getAttribute('data-bc-revision-state')).toBe('pending')
+
+    harness.manager.reject(ids[0])
+    expect(snapshotText(
+      harness.manager.projectFinalSnapshot(),
+      FIRST_ID,
+    )).toBe('abc')
+  })
+
+  it('tracks an existing Embed semantic update as one replacement group', () => {
+    const harness = createHarness('', '')
+    harness.yDoc.transact(() => harness.yText(FIRST_ID).applyDelta([
+      {insert: 'a'},
+      {insert: {mention: 'member-1'}, attributes: {mentionId: 'old'}},
+      {insert: 'b'},
+    ]))
+
+    const ids = harness.manager.applyDelta(FIRST_ID, [
+      {retain: 1},
+      {retain: 1, attributes: {mentionId: 'new'}},
+    ])
+
+    const revisions = ids.map(id => harness.manager.get(id))
+    expect(revisions).toHaveSize(2)
+    expect(new Set(revisions.map(revision => revision.groupId)).size).toBe(1)
+    expect(revisions.map(revision => revision.kind).sort()).toEqual([
+      'text-delete',
+      'text-insert',
+    ])
+    const projectedEmbeds = harness.manager.projectInlineDeltas(
+      FIRST_ID,
+      harness.yText(FIRST_ID).toDelta() as DeltaInsert[],
+    ).filter(operation => typeof operation.insert !== 'string')
+    expect(projectedEmbeds).toHaveSize(2)
+    expect(projectedEmbeds.map(operation =>
+      operation.attributes?.['a:data-bc-revision-kind']).sort()).toEqual([
+      'delete',
+      'insert',
+    ])
+    expect(snapshotDeltas(
+      harness.manager.projectFinalSnapshot(),
+      FIRST_ID,
+    )).toEqual([
+      {insert: 'a'},
+      {insert: {mention: 'member-1'}, attributes: {mentionId: 'new'}},
+      {insert: 'b'},
+    ])
+
+    harness.manager.rejectGroup(revisions[0].groupId)
+    expect(snapshotDeltas(
+      harness.manager.projectFinalSnapshot(),
+      FIRST_ID,
+    )).toEqual([
+      {insert: 'a'},
+      {insert: {mention: 'member-1'}, attributes: {mentionId: 'old'}},
+      {insert: 'b'},
+    ])
+  })
+
+  it('updates an own pending Embed in place without stacking another Diff', () => {
+    const harness = createHarness('', '')
+    const [revisionId] = harness.manager.applyDelta(FIRST_ID, [
+      {insert: {mention: 'member-1'}, attributes: {mentionId: 'old'}},
+    ])
+
+    const ids = harness.manager.applyDelta(FIRST_ID, [
+      {retain: 1, attributes: {mentionId: 'new'}},
+    ])
+
+    expect(ids).toEqual([revisionId])
+    expect(harness.manager.list()).toHaveSize(1)
+    expect(harness.yText(FIRST_ID).toDelta()).toEqual([
+      {insert: {mention: 'member-1'}, attributes: {mentionId: 'new'}},
     ])
   })
 
@@ -643,6 +737,15 @@ function snapshotText(snapshot: IBlockSnapshot, blockId: string): string {
   if (!block || block.nodeType !== BlockNodeType.editable) return ''
   return block.children.map(delta =>
     typeof delta.insert === 'string' ? delta.insert : '\ufffc').join('')
+}
+
+function snapshotDeltas(snapshot: IBlockSnapshot, blockId: string): DeltaInsert[] {
+  if (snapshot.nodeType !== BlockNodeType.root && snapshot.nodeType !== BlockNodeType.block) {
+    return []
+  }
+  const block = snapshot.children.find(child => child.id === blockId)
+  if (!block || block.nodeType !== BlockNodeType.editable) return []
+  return structuredClone(block.children)
 }
 
 function exchange(left: Y.Doc, right: Y.Doc): void {

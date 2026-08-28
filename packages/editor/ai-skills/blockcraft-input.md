@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying text input behavior.
 >
-> Last updated: 2026-08-27
+> Last updated: 2026-08-28
 
 ## Architecture Overview
 
@@ -53,13 +53,14 @@ insert at the start/end is adjacent; an insert strictly inside is dependent.
 Only the original author may resize their own uncontested pending insertion,
 and that fast path rewrites the relative target after the Y.Text mutation.
 
-Revision v1 does not model format changes, inline-object insertion, table
-row/column or cell-structure edits, block movement, object geometry, or
-cross-container structure. Those valid editor operations stay enabled: execute
-the complete operation through its normal Yjs/Undo path while temporarily
-bypassing revision attribution, and create no Diff. This is a model fallback,
-never a fallback to native `contenteditable`. Invalid/stale edit plans still
-fail closed before browser DOM mutation.
+Inline Embed insertion/deletion goes through the same length-one Revision range
+path. A delete-plus-object-insert replacement shares one review group, while an
+unprefixed semantic `formatText(offset, 1, attrs)` is normalized to that same
+old/new replacement. General text format changes, table row/column or
+cell-structure edits, block/Embed movement and cross-container structure remain
+enabled through their normal Yjs/Undo path without a Diff. This is a model
+fallback, never a fallback to native `contenteditable`. Invalid/stale edit
+plans still fail closed before browser DOM mutation.
 
 `runAsRevision()` does not change `mode$` and must not span asynchronous user
 input. Its callback is for immediate programmatic CRUD only; after the callback
