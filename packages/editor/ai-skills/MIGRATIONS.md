@@ -69,6 +69,36 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 >
 
+## Unreleased — 2026-08-28 — Plain ordered-list interruption boundaries
+
+**Severity**: patch
+
+**What changed**: Automatic numbering for an ordered block without a positive
+`heading` now starts a fresh counter after a non-ordered sibling whose `depth`
+is equal to or greater than that ordered counter's depth. Ordered heading
+counters continue scanning across those siblings under the existing
+depth/heading pruning rules. Marker-style groups use the same boundary.
+
+**Why**: A same-level or more-indented ordinary block represents an interruption
+of a plain ordered sequence. Continuing its number after that interruption made
+independent plain lists appear to be one list, while heading-numbered structures
+still need broad traversal across intervening content.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-plugins-block.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Plain ordered counters and marker-style inheritance no longer cross a
+  same-or-deeper non-ordered sibling.
+- Ordered counters with a positive `heading` retain their previous traversal
+  behavior.
+- No package version was changed; release versioning remains a separate
+  maintainer decision.
+
 ## Unreleased — 2026-08-28 — Central Inline Embed ownership and Agent contracts
 
 **Severity**: minor

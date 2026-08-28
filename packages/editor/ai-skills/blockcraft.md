@@ -244,13 +244,14 @@ Preset IDs are stable two-character codes: `n1..n5`, `a1..a2`, `r1..r2`,
 Use `resolveOrderedMarker()` for live or custom rendering and
 `applyOrderedMarkerStyle()` for a model-first, one-transaction numbering-group
 update. A marker group follows the automatic counter's `depth + heading` and
-structural-pruning rules: same-level non-ordered siblings do not break it,
-while a shallower boundary, relevant heading boundary, or explicit positive
-`start` does. The fixed toolbar exposes a split ordered-list button, and the
+structural-pruning rules: a plain group stops at a same-or-deeper non-ordered
+sibling, while an ordered heading group keeps scanning across it whenever the
+existing heading/depth boundaries allow. A shallower boundary, relevant heading
+boundary, or explicit positive `start` also stops the group. The fixed toolbar exposes a split ordered-list button, and the
 live marker toolbar remains limited to continue / restart / recalculate.
 When a newly inserted ordered block joins an existing counter group and omits
-`ms`, it inherits the group's valid marker preset even across same-level
-non-ordered siblings. Explicit `start` begins a new group and does not inherit.
+`ms`, it inherits the group's valid marker preset across any sibling that does
+not prune that group. Explicit `start` begins a new group and does not inherit.
 
 The root block exposes optional document appearance props. `background` keeps
 the CSS shorthand as one string so color, image, position/size, repeat,

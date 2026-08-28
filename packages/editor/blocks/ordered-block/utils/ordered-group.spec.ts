@@ -31,7 +31,7 @@ const createHarness = (blocks: Array<[string, string, IBlockProps]>) => {
 }
 
 describe('ordered marker group', () => {
-  it('follows the automatic counter group across same-level paragraphs', () => {
+  it('stops plain groups at same-level non-ordered siblings', () => {
     const {doc} = createHarness([
       ['a', 'ordered', {depth: 0}],
       ['a-child', 'ordered', {depth: 1}],
@@ -40,9 +40,20 @@ describe('ordered marker group', () => {
       ['c', 'ordered', {depth: 0}],
     ])
 
-    expect(resolveOrderedMarkerGroupIds(doc, 'a')).toEqual(['a', 'b', 'c'])
+    expect(resolveOrderedMarkerGroupIds(doc, 'a')).toEqual(['a', 'b'])
     expect(resolveOrderedMarkerGroupIds(doc, 'a-child')).toEqual(['a-child'])
-    expect(resolveOrderedMarkerGroupIds(doc, 'c')).toEqual(['a', 'b', 'c'])
+    expect(resolveOrderedMarkerGroupIds(doc, 'c')).toEqual(['c'])
+  })
+
+  it('keeps heading groups across same-level non-ordered siblings', () => {
+    const {doc} = createHarness([
+      ['a', 'ordered', {depth: 0, heading: 1}],
+      ['paragraph', 'paragraph', {depth: 0}],
+      ['b', 'ordered', {depth: 0, heading: 1}],
+    ])
+
+    expect(resolveOrderedMarkerGroupIds(doc, 'a')).toEqual(['a', 'b'])
+    expect(resolveOrderedMarkerGroupIds(doc, 'b')).toEqual(['a', 'b'])
   })
 
   it('uses the same shallower-depth and heading pruning boundaries as counters', () => {

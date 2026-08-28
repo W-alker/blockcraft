@@ -28,7 +28,8 @@ export const getOrderedCounterStart = (block: OrderedCounterBlock) => {
 
 /**
  * Structural boundary used by the automatic numbering scan.
- * A normal paragraph at the same level deliberately does not prune a counter.
+ * Plain ordered counters stop at non-ordered siblings on the same or a deeper
+ * indentation level. Heading counters keep scanning across those siblings.
  */
 export const prunesOrderedCounter = (
   block: OrderedCounterBlock,
@@ -37,6 +38,14 @@ export const prunesOrderedCounter = (
 ) => {
   const depth = getOrderedCounterDepth(block)
   if (counterDepth > depth) return true
+
+  if (
+    counterHeading === 0 &&
+    block.flavour !== 'ordered' &&
+    depth >= counterDepth
+  ) {
+    return true
+  }
 
   const heading = getOrderedCounterHeading(block)
   return heading > 0 && (counterHeading === 0 || counterHeading > heading)

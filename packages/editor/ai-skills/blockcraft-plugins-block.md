@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-17
+> Last updated: 2026-08-28
 
 ## BlockControllerPlugin
 
@@ -476,6 +476,10 @@ new OrderedBlockPlugin()
   offscreen root children are renumbered without materializing their components
 - Recalculates the affected parent block as one sibling sequence after local child changes, or after ordered block `depth` / `heading` / `start` prop changes
 - Numbering is grouped by sibling `depth` + `heading`; changing one ordered block's `heading` renumbers following ordered siblings in the same parent
+- Plain ordered groups (`heading` omitted / zero) stop when a non-ordered sibling
+  at the same or a deeper `depth` is encountered; a later plain ordered block
+  starts a fresh counter. Ordered heading groups keep scanning across those
+  non-ordered siblings whenever the existing heading/depth boundaries allow it
 - Explicit `start` restarts the sequence from that number; following same-depth/same-heading ordered blocks continue from it
 - A `start`-only prop change uses a local recalculation range and stops at the next explicit `start` boundary for the same `depth` + `heading`
 - Returning from a nested depth to a shallower depth clears deeper counters, so nested ordered lists restart under the next parent item

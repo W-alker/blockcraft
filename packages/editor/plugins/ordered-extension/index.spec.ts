@@ -168,9 +168,9 @@ describe('OrderedBlockPlugin', () => {
   it('renumbers virtual root siblings from the model without traversing child components', async () => {
     const {onChildrenUpdate$, plugin, registerParent, updateBlockProps} = createPluginHarness()
     const blocks = [
-      createOrderedBlock('ordered-1', {order: 0}),
+      createOrderedBlock('ordered-1', {heading: 1, order: 0}),
       createBlock('offscreen-paragraph'),
-      createOrderedBlock('offscreen-ordered-2', {order: 9}),
+      createOrderedBlock('offscreen-ordered-2', {heading: 1, order: 9}),
     ]
     const parent = attachToParent(blocks)
     parent.getChildrenBlocks = jasmine.createSpy('getChildrenBlocks').and.throwError(
@@ -241,12 +241,49 @@ describe('OrderedBlockPlugin', () => {
     plugin.destroy()
   })
 
-  it('continues ordered numbering across non-ordered siblings at the same depth', async () => {
+  it('restarts plain ordered numbering after a same-depth non-ordered sibling', async () => {
     const {onChildrenUpdate$, plugin, registerParent} = createPluginHarness()
     const blocks = [
-      createOrderedBlock('ordered-1', {order: 0}),
+      createOrderedBlock('ordered-1', {order: 0, ms: 'a2'}),
       createBlock('paragraph-1'),
       createOrderedBlock('ordered-2', {order: 0})
+    ]
+    const parent = attachToParent(blocks)
+    registerParent(parent, blocks)
+
+    triggerInserted(onChildrenUpdate$, parent, blocks[2])
+
+    await waitForAutoOrder()
+
+    expect([blocks[0].props['order'], blocks[2].props['order']]).toEqual([0, 0])
+    expect(blocks[2].props['ms']).toBeUndefined()
+    plugin.destroy()
+  })
+
+  it('restarts plain ordered numbering after a deeper non-ordered sibling', async () => {
+    const {onChildrenUpdate$, plugin, registerParent} = createPluginHarness()
+    const blocks = [
+      createOrderedBlock('ordered-1', {depth: 1, order: 0}),
+      createBlock('paragraph-1', 'paragraph', {depth: 2}),
+      createOrderedBlock('ordered-2', {depth: 1, order: 8})
+    ]
+    const parent = attachToParent(blocks)
+    registerParent(parent, blocks)
+
+    triggerInserted(onChildrenUpdate$, parent, blocks[2])
+
+    await waitForAutoOrder()
+
+    expect([blocks[0].props['order'], blocks[2].props['order']]).toEqual([0, 0])
+    plugin.destroy()
+  })
+
+  it('continues heading ordered numbering across deeper non-ordered siblings', async () => {
+    const {onChildrenUpdate$, plugin, registerParent} = createPluginHarness()
+    const blocks = [
+      createOrderedBlock('ordered-1', {depth: 1, heading: 1, order: 0}),
+      createBlock('paragraph-1', 'paragraph', {depth: 2}),
+      createOrderedBlock('ordered-2', {depth: 1, heading: 1, order: 8})
     ]
     const parent = attachToParent(blocks)
     registerParent(parent, blocks)
@@ -259,12 +296,12 @@ describe('OrderedBlockPlugin', () => {
     plugin.destroy()
   })
 
-  it('inherits the numbered-group marker style when a non-contiguous ordered block is inserted', async () => {
+  it('inherits a heading numbered-group marker style across a non-ordered sibling', async () => {
     const {onChildrenUpdate$, plugin, registerParent, updateBlockProps} = createPluginHarness()
     const blocks = [
-      createOrderedBlock('ordered-1', {order: 0, ms: 'a2'}),
+      createOrderedBlock('ordered-1', {heading: 1, order: 0, ms: 'a2'}),
       createBlock('paragraph-1'),
-      createOrderedBlock('ordered-2', {order: 0}),
+      createOrderedBlock('ordered-2', {heading: 1, order: 0}),
     ]
     const parent = attachToParent(blocks)
     registerParent(parent, blocks)
@@ -299,12 +336,12 @@ describe('OrderedBlockPlugin', () => {
     plugin.destroy()
   })
 
-  it('preserves an explicitly supplied marker style on an inserted ordered block', async () => {
+  it('preserves an explicitly supplied marker style in a heading group', async () => {
     const {onChildrenUpdate$, plugin, registerParent} = createPluginHarness()
     const blocks = [
-      createOrderedBlock('ordered-1', {order: 0, ms: 'a2'}),
+      createOrderedBlock('ordered-1', {heading: 1, order: 0, ms: 'a2'}),
       createBlock('paragraph-1'),
-      createOrderedBlock('ordered-2', {order: 0, ms: 'r1'}),
+      createOrderedBlock('ordered-2', {heading: 1, order: 0, ms: 'r1'}),
     ]
     const parent = attachToParent(blocks)
     registerParent(parent, blocks)
@@ -396,6 +433,27 @@ describe('OrderedBlockPlugin', () => {
     expect(blocks[0].updateProps).not.toHaveBeenCalled()
     expect(blocks[3].updateProps).not.toHaveBeenCalled()
     expect(blocks[4].updateProps).not.toHaveBeenCalled()
+    plugin.destroy()
+  })
+
+  it('does not continue a start-only recalculation across a plain-list interruption', async () => {
+    const {onPropsUpdate$, plugin, registerParent} = createPluginHarness()
+    const blocks = [
+      createOrderedBlock('ordered-1', {order: 0}),
+      createBlock('paragraph-1'),
+      createOrderedBlock('ordered-2', {start: 5, order: 4}),
+      createOrderedBlock('ordered-3', {order: 5})
+    ]
+    const parent = attachToParent(blocks)
+    registerParent(parent, blocks)
+
+    delete blocks[2].props['start']
+    triggerPropsChanged(onPropsUpdate$, blocks[2], ['start'])
+
+    await waitForAutoOrder()
+
+    expect([blocks[0].props['order'], blocks[2].props['order'], blocks[3].props['order']])
+      .toEqual([0, 0, 1])
     plugin.destroy()
   })
 
