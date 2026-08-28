@@ -3,6 +3,8 @@ import {
   ChangeDetectionStrategy,
   Component,
   ElementRef,
+  OnChanges,
+  SimpleChanges,
   ViewChild,
   computed,
   input,
@@ -21,6 +23,19 @@ type DocumentAgentChatMessage = {
   role: 'user' | 'assistant'
   content: string
   tone?: 'normal' | 'error'
+}
+
+export interface DocumentAgentReviewPrompt {
+  readonly groupId: string
+  readonly summary: string
+  readonly operationCount: number
+  readonly revisionCount: number
+  readonly canRevertAll: boolean
+}
+
+export type DocumentAgentReviewAction = {
+  readonly type: 'accept-all' | 'revert-all' | 'review' | 'dismiss'
+  readonly groupId: string
 }
 
 function createDocumentAgentSessionId(): string {
@@ -63,7 +78,7 @@ function createDocumentAgentSessionId(): string {
         </div>
       }
 
-      <div class="bc-document-agent-panel__messages" aria-live="polite">
+      <div #messagesHost class="bc-document-agent-panel__messages" aria-live="polite">
         @for (message of messages(); track $index) {
           <div class="bc-document-agent-panel__message" [class.bc-document-agent-panel__message--user]="message.role === 'user'" [class.bc-document-agent-panel__message--error]="message.tone === 'error'">
             <div class="bc-document-agent-panel__message-avatar">{{ message.role === 'user' ? '我' : 'AI' }}</div>
@@ -88,6 +103,57 @@ function createDocumentAgentSessionId(): string {
               <span class="bc-document-agent-panel__result-meta">{{ currentResult.operations.length }} 项修改将进入文档修订审阅</span>
             }
           </div>
+        }
+
+        @if (review(); as currentReview) {
+          <section class="bc-document-agent-panel__review-card" aria-label="审阅本次 AI 修改">
+            <div class="bc-document-agent-panel__review-heading">
+              <span class="bc-document-agent-panel__review-icon">✓</span>
+              <div>
+                <strong>已完成本次修改</strong>
+                <span>{{ currentReview.operationCount }} 项操作 · {{ currentReview.revisionCount }} 条可视 Diff</span>
+              </div>
+            </div>
+            <p>{{ currentReview.summary }}</p>
+            <p class="bc-document-agent-panel__review-note">
+              撤回全部会撤销同一事务中的所有修改，包括没有 Diff 样式的操作。
+            </p>
+            @if (!currentReview.canRevertAll) {
+              <p class="bc-document-agent-panel__review-warning">
+                文档在此后已有本地编辑，已停止提供整批撤回，避免误撤销用户内容。
+              </p>
+            }
+            <div class="bc-document-agent-panel__review-actions">
+              <button
+                type="button"
+                class="bc-document-agent-panel__review-primary"
+                [disabled]="busy()"
+                (click)="emitReviewAction('accept-all', currentReview.groupId)">
+                接受全部
+              </button>
+              <button
+                type="button"
+                class="bc-document-agent-panel__review-danger"
+                [disabled]="busy() || !currentReview.canRevertAll"
+                (click)="emitReviewAction('revert-all', currentReview.groupId)">
+                撤回全部
+              </button>
+              @if (currentReview.revisionCount > 0) {
+                <button
+                  type="button"
+                  [disabled]="busy()"
+                  (click)="emitReviewAction('review', currentReview.groupId)">
+                  逐条审阅
+                </button>
+              }
+              <button
+                type="button"
+                [disabled]="busy()"
+                (click)="emitReviewAction('dismiss', currentReview.groupId)">
+                稍后
+              </button>
+            </div>
+          </section>
         }
 
       </div>
@@ -176,6 +242,22 @@ function createDocumentAgentSessionId(): string {
     .bc-document-agent-panel__result-label { color: #4166c0; font-size: 11px; font-weight: 700; }
     .bc-document-agent-panel__result-card strong { font-size: 13px; line-height: 1.5; }
     .bc-document-agent-panel__result-meta { color: #7b88a0; font-size: 11px; }
+    .bc-document-agent-panel__review-card { display: grid; gap: 10px; margin-left: 32px; padding: 13px; border: 1px solid #cbd9ff; border-radius: 13px; background: linear-gradient(145deg, #f7f9ff, #fff); color: #34425b; box-shadow: 0 8px 22px rgb(54 85 155 / 9%); }
+    .bc-document-agent-panel__review-heading { display: flex; align-items: center; gap: 9px; }
+    .bc-document-agent-panel__review-heading > div { display: grid; gap: 2px; }
+    .bc-document-agent-panel__review-heading strong { color: #263a67; font-size: 13px; }
+    .bc-document-agent-panel__review-heading span { color: #7b88a0; font-size: 10px; }
+    .bc-document-agent-panel__review-icon { display: grid; width: 27px; height: 27px; flex: 0 0 27px; place-items: center; border-radius: 9px; color: #fff !important; background: #4772db; font-size: 13px !important; font-weight: 800; }
+    .bc-document-agent-panel__review-card p { margin: 0; font-size: 12px; line-height: 1.55; }
+    .bc-document-agent-panel__review-note { color: #6f7e95; }
+    .bc-document-agent-panel__review-warning { padding: 7px 8px; border-radius: 8px; color: #9a5a13; background: #fff6e8; }
+    .bc-document-agent-panel__review-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+    .bc-document-agent-panel__review-actions button { min-height: 30px; padding: 0 10px; border: 1px solid #d5ddea; border-radius: 8px; color: #56647a; background: #fff; font-size: 11px; font-weight: 600; cursor: pointer; }
+    .bc-document-agent-panel__review-actions button:hover:not(:disabled) { border-color: #9bb0e7; background: #f5f8ff; }
+    .bc-document-agent-panel__review-actions button:disabled { opacity: .45; cursor: not-allowed; }
+    .bc-document-agent-panel__review-actions .bc-document-agent-panel__review-primary { border-color: #4772db; color: #fff; background: #4772db; }
+    .bc-document-agent-panel__review-actions .bc-document-agent-panel__review-primary:hover { border-color: #365fc2; background: #365fc2; }
+    .bc-document-agent-panel__review-actions .bc-document-agent-panel__review-danger { border-color: #f0c5c0; color: #b33a2d; }
     .bc-document-agent-panel__composer { display: grid; gap: 8px; padding: 12px 14px 14px; border-top: 1px solid #e6eaf1; background: #fff; }
     .bc-document-agent-panel__file-input { display: none; }
     .bc-document-agent-panel__attachment { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 6px 8px; border: 1px solid #dce4f1; border-radius: 9px; background: #f7f9fc; }
@@ -197,9 +279,10 @@ function createDocumentAgentSessionId(): string {
     @keyframes bc-agent-bounce { 0%, 60%, 100% { transform: translateY(0); opacity: .5; } 30% { transform: translateY(-3px); opacity: 1; } }
   `],
 })
-export class DocumentAgentPanelComponent implements AfterViewInit {
+export class DocumentAgentPanelComponent implements AfterViewInit, OnChanges {
   @ViewChild('composer') private composer?: ElementRef<HTMLTextAreaElement>
   @ViewChild('imageInput') private imageInput?: ElementRef<HTMLInputElement>
+  @ViewChild('messagesHost') private messagesHost?: ElementRef<HTMLElement>
 
   readonly sessionId = createDocumentAgentSessionId()
   readonly context = input<DocumentAgentContext | null>(null)
@@ -208,11 +291,13 @@ export class DocumentAgentPanelComponent implements AfterViewInit {
   readonly busy = input(false)
   readonly error = input<string | null>(null)
   readonly result = input<DocumentAgentResult | null>(null)
+  readonly review = input<DocumentAgentReviewPrompt | null>(null)
   readonly imageAttachment = signal<DocumentAgentImageAttachment | null>(null)
   readonly imageBusy = signal(false)
   readonly activeContext = computed(() => this.context() ?? this.liveContext())
   readonly canSubmit = computed(() => Boolean(this.activeContext() && this.instruction().trim() && !this.busy() && !this.imageBusy()))
   readonly request = output<DocumentAgentRequest>()
+  readonly reviewAction = output<DocumentAgentReviewAction>()
   readonly close = output<void>()
   /** @deprecated Revision Diff is staged by the host immediately. */
   readonly apply = output<void>()
@@ -228,6 +313,14 @@ export class DocumentAgentPanelComponent implements AfterViewInit {
 
   ngAfterViewInit(): void {
     queueMicrotask(() => this.composer?.nativeElement.focus())
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (!changes['review']?.currentValue) return
+    queueMicrotask(() => {
+      const messages = this.messagesHost?.nativeElement
+      if (messages) messages.scrollTop = messages.scrollHeight
+    })
   }
 
   onInstructionInput(event: Event): void {
@@ -386,5 +479,9 @@ export class DocumentAgentPanelComponent implements AfterViewInit {
       ...messages,
       {role: 'assistant', content: message},
     ])
+  }
+
+  emitReviewAction(type: DocumentAgentReviewAction['type'], groupId: string): void {
+    this.reviewAction.emit({type, groupId})
   }
 }

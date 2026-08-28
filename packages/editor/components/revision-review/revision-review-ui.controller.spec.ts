@@ -113,6 +113,7 @@ describe('RevisionReviewUiController', () => {
       navigateToBlock,
       releaseLease,
       review,
+      state$,
     }
   }
 
@@ -143,6 +144,26 @@ describe('RevisionReviewUiController', () => {
     expect(h.releaseLease).toHaveBeenCalledTimes(1)
     h.marker.click()
     expect(h.review.activate).toHaveBeenCalledTimes(1)
+    h.cleanup()
+  })
+
+  it('does not open an inline popover for a resolved review item', () => {
+    const h = createHarness()
+    expect(h.controller.attach()).toBeTrue()
+    const current = h.state$.value
+    const accepted = {...current.items[0], status: 'accepted' as const}
+    h.state$.next({
+      ...current,
+      items: [accepted],
+      activeItem: accepted,
+      pendingItemCount: 0,
+      pendingRevisionCount: 0,
+    })
+
+    h.marker.click()
+
+    expect(h.review.activate).not.toHaveBeenCalled()
+    expect(h.createConnectedOverlay).not.toHaveBeenCalled()
     h.cleanup()
   })
 

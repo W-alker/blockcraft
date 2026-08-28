@@ -646,8 +646,9 @@ With an enabled plugin and no explicit `options.pagination`, `exportToPdf()` cap
 
 JSON, HTML, Markdown, print and PDF are clean exports. They obtain content from
 `doc.revisions.projectFinalSnapshot()`: pending revisions are projected as
-accepted, rejected revisions are reversed, and any active decision or structure
-conflict throws `RevisionConflictError`. When revision records remain, PDF does
+accepted; imported legacy rejected revisions are reversed; and any legacy
+decision or structure conflict throws `RevisionConflictError`. When pending
+revision records remain, PDF does
 not reuse markup-view geometry and performs a readonly final-projection reflow.
 
 `prepareDocument` runs after that readonly copy is initialized and receives only
@@ -1286,8 +1287,9 @@ Calling `setMode('track')` without a non-empty `actorId` throws
 `RevisionActorRequiredError`; the editor never creates anonymous revisions.
 `RevisionReviewPlugin` is the optional headless review layer. It groups atomic
 records by `groupId`, exposes model-only active/next/previous state and maps
-`keep()` / `revert()` to append-only group decisions. It creates no component,
-DOM or Overlay and does not move Selection. Any host UI may bind to
+`keep()` / `revert()` to immediate group materialization. The chosen content
+and consumed records change in one normal Undo transaction. It creates no
+component, DOM or Overlay and does not move Selection. Any host UI may bind to
 `revisionReviewPlugin.state$` and obtain exact atomic type/text fragments with
 `revisionReviewPlugin.readContent(itemId)`; the Plugin never decides whether the current
 user may review. The host decides whether to render controls and whether to
@@ -1358,11 +1360,19 @@ reverse-projected. Any opposite review heads or structural overlap causes
 `RevisionConflictError`, which also blocks clean HTML/Markdown/PDF export paths
 that first request the final snapshot.
 
-For destructive compaction, the host must provide both the current epoch and
-Yjs state vector. `compactResolved()` rejects pending/conflicted state, applies
-all decisions, clears revision history, and increments `revisionEpoch`. The
-host synchronization layer must reject older-epoch offline replicas and make
-them reload.
+New review decisions no longer require a later compaction: accepting/rejecting
+immediately materializes canonical content and removes the consumed records.
+Undo restores that decision's content and pending records. `compactResolved()`
+remains only for loading and migrating legacy snapshots that still contain
+accepted/rejected records plus append-only decisions; it requires the current
+epoch and exact Yjs state vector, then clears that legacy history and increments
+`revisionEpoch`.
+
+Immediate materialization intentionally makes review an online, serialized
+host action. A collaboration provider must reject stale/offline review commands
+or route them through an authoritative review service; unlike the legacy
+append-only decision graph, two disconnected clients cannot safely make
+opposite decisions and merge them later.
 
 ### BlockCraft Agent adapter contract
 
@@ -1481,6 +1491,12 @@ Revision records, while props/formatting, inline-object Delta and block movement
 continue through their normal CRUD/Yjs/Undo paths with no Diff styling. A mixed
 result executes as one validated plan; review decisions affect only the portion
 represented by Revision records.
+
+For ordinary tracked typing, `groupId` follows semantic continuity rather than
+an idle timer. Adjacent same-actor edits in the same block and operation kind
+remain one review batch even after a long pause. `setActor()`, a mode/session
+reset, a different block/kind, a non-adjacent edit, or explicit `runInGroup()`
+starts a new boundary.
 
 Because Schema-generated IDs are not known to the model, `create-blocks` and
 `replace-block` may bind a short `clientRef`. The generated root can then be

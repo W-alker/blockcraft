@@ -56,6 +56,11 @@ export interface RevisionRecord {
   dependsOn: string[]
 }
 
+/**
+ * Legacy persisted decision node and compatibility receipt shape.
+ * New accept/reject calls return this shape but consume the Revision record
+ * without appending the receipt to `bc:revision-decisions`.
+ */
 export interface RevisionDecision {
   id: string
   revisionId: string

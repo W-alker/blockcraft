@@ -48,7 +48,6 @@ export const Y_REVISION_DECISION_MAP_NAME = 'bc:revision-decisions'
 export const Y_REVISION_META_MAP_NAME = 'bc:revision-meta'
 
 const REVISION_EPOCH_KEY = 'epoch'
-const GROUP_IDLE_MS = 10_000
 
 type TextRange = {start: number; end: number; revision: ResolvedRevision}
 type TextDependencyRange = {start: number; end: number; revisionId: string}
@@ -56,6 +55,15 @@ type TextDeletionSegment = {start: number; end: number; dependsOn: string[]}
 type InlineInsertOptions = {
   groupId: string
   dependsOn: readonly string[]
+}
+type RevisionFinalizeEntry = {
+  revision: ResolvedRevision
+  action: RevisionDecisionAction
+}
+type TextRevisionMigration = {
+  revisionId: string
+  start: number
+  end: number
 }
 type EmbedFormatPlan = {
   index: number
@@ -108,7 +116,6 @@ export class DocumentRevisionManager {
     blockId: string
     start: number
     end: number
-    at: number
   } | null = null
   private readonly revisionsByBlock = new Map<string, Set<string>>()
   private readonly revisionsByGroup = new Map<string, Set<string>>()
@@ -323,31 +330,35 @@ export class DocumentRevisionManager {
   }
 
   accept(revisionId: string): RevisionDecision {
-    return this.appendDecision(revisionId, 'accept')
+    return this.finalizeMany([this.get(revisionId)], 'accept')[0]
   }
 
   reject(revisionId: string): RevisionDecision {
-    return this.appendDecision(revisionId, 'reject')
+    return this.finalizeMany([this.get(revisionId)], 'reject')[0]
   }
 
+  /**
+   * @deprecated New decisions consume their records. Use normal Undo to restore
+   * a pending record; this method remains for imported legacy decided records.
+   */
   redecide(revisionId: string, action: RevisionDecisionAction): RevisionDecision {
-    return this.appendDecision(revisionId, action)
+    return this.finalizeMany([this.get(revisionId)], action)[0]
   }
 
   acceptAll(query: RevisionListQuery = {}): RevisionDecision[] {
-    return this.decideMany(this.list(query), 'accept')
+    return this.finalizeMany(this.list(query), 'accept')
   }
 
   rejectAll(query: RevisionListQuery = {}): RevisionDecision[] {
-    return this.decideMany(this.list(query), 'reject')
+    return this.finalizeMany(this.list(query), 'reject')
   }
 
   acceptGroup(groupId: string): RevisionDecision[] {
-    return this.decideMany(this.listGroup(groupId), 'accept')
+    return this.finalizeMany(this.listGroup(groupId), 'accept')
   }
 
   rejectGroup(groupId: string): RevisionDecision[] {
-    return this.decideMany(this.listGroup(groupId), 'reject')
+    return this.finalizeMany(this.listGroup(groupId), 'reject')
   }
 
   resolveOverlap(conflictId: string, keepRevisionIds: readonly string[]): RevisionDecision[] {
@@ -357,8 +368,10 @@ export class DocumentRevisionManager {
     if ([...keep].some(id => !conflict.revisionIds.includes(id))) {
       throw new RevisionOverlapError('保留列表包含不属于该冲突组的修订')
     }
-    return conflict.revisionIds.map(id =>
-      this.appendDecision(id, keep.has(id) ? 'accept' : 'reject'))
+    return this.finalizePlan(conflict.revisionIds.map(id => ({
+      revision: this.get(id),
+      action: keep.has(id) ? 'accept' as const : 'reject' as const,
+    })))
   }
 
   insertText(
@@ -392,7 +405,9 @@ export class DocumentRevisionManager {
     }
     const ownInsertion = options
       ? null
-      : this.findMutableOwnInsertion(blockId, index, index)
+      : this.findMutableOwnInsertion(blockId, index, index, {
+        allowCoveringDependencies: true,
+      })
     const ownRange = ownInsertion
       ? this.resolveTextRange(ownInsertion.target as RevisionTextTarget)
       : null
@@ -977,6 +992,9 @@ export class DocumentRevisionManager {
       .map(id => this.yRevisionMap.get(id))
       .filter((record): record is RevisionRecord => !!record)
       .map(record => this.resolveRecord(record))
+    const marked = records.filter(record =>
+      record.status === 'pending' || record.status === 'conflict')
+    const markedIds = new Set(marked.map(record => record.id))
     let hidden = false
     let kind: RevisionBlockPresentation['kind'] = null
     let state: RevisionStatus | null = null
@@ -984,13 +1002,15 @@ export class DocumentRevisionManager {
     for (const record of records) {
       if (record.target.kind === 'block') {
         if (record.kind === 'block-insert') {
-          kind = 'insert'
           hidden ||= record.status === 'rejected'
         } else if (record.kind === 'block-delete') {
-          kind = 'delete'
           hidden ||= record.status === 'accepted' ||
             (this.viewMode === 'final' && record.status === 'pending')
         }
+      }
+      if (!markedIds.has(record.id)) continue
+      if (record.target.kind === 'block') {
+        kind = record.kind === 'block-insert' ? 'insert' : 'delete'
         state = mergeStatus(state, record.status)
       } else if (
         record.target.kind === 'boundary' &&
@@ -1002,7 +1022,7 @@ export class DocumentRevisionManager {
       }
     }
     return {
-      revisionIds: records.map(record => record.id).sort(),
+      revisionIds: marked.map(record => record.id).sort(),
       kind,
       state,
       hidden,
@@ -1125,6 +1145,7 @@ export class DocumentRevisionManager {
     })
   }
 
+  /** Materializes imported legacy decided records at a synchronized checkpoint. */
   compactResolved(checkpoint: RevisionCheckpoint): BlockCraftDocumentSnapshot {
     if (checkpoint.epoch !== this.epoch) {
       throw new RevisionCheckpointError(
@@ -1320,31 +1341,111 @@ export class DocumentRevisionManager {
     this.queueStateEmit()
   }
 
-  private appendDecision(revisionId: string, action: RevisionDecisionAction): RevisionDecision {
-    const actor = this.requireActor()
-    const record = this.yRevisionMap.get(revisionId)
-    if (!record) throw new RevisionNotFoundError(`修订不存在：${revisionId}`)
-    const active = this.activeDecisions(revisionId)
-    if (active.length === 1 && active[0].action === action) return cloneDecision(active[0])
-    const decision: RevisionDecision = {
-      id: generateId(),
-      revisionId,
-      action,
-      actor,
-      createdAt: new Date().toISOString(),
-      supersedes: active.map(item => item.id).sort(),
-    }
-    this.doc.crud.transact(() => this.yDecisionMap.set(decision.id, decision), ORIGIN_NO_RECORD)
-    return cloneDecision(decision)
-  }
-
-  private decideMany(
+  private finalizeMany(
     revisions: readonly ResolvedRevision[],
     action: RevisionDecisionAction,
   ): RevisionDecision[] {
-    const decisions: RevisionDecision[] = []
-    revisions.forEach(revision => decisions.push(this.appendDecision(revision.id, action)))
-    return decisions
+    return this.finalizePlan(revisions.map(revision => ({revision, action})))
+  }
+
+  /**
+   * Materializes one review action immediately and removes the consumed
+   * Revision records in the same tracked Yjs transaction. Undo therefore
+   * restores both canonical content and the pending review records together.
+   */
+  private finalizePlan(entries: readonly RevisionFinalizeEntry[]): RevisionDecision[] {
+    if (!entries.length) return []
+    const actor = this.requireActor()
+    const byRevisionId = new Map<string, RevisionFinalizeEntry>()
+    entries.forEach(entry => {
+      const current = this.yRevisionMap.get(entry.revision.id)
+      if (!current) throw new RevisionNotFoundError(`修订不存在：${entry.revision.id}`)
+      byRevisionId.set(entry.revision.id, {
+        revision: this.resolveRecord(current),
+        action: entry.action,
+      })
+    })
+    const plan = [...byRevisionId.values()]
+    const plannedIds = new Set(byRevisionId.keys())
+    for (const conflict of this.getOverlapConflicts()) {
+      const acceptsConflictSide = conflict.revisionIds.some(id =>
+        byRevisionId.get(id)?.action === 'accept')
+      if (
+        acceptsConflictSide &&
+        conflict.revisionIds.some(id => !plannedIds.has(id))
+      ) {
+        throw new RevisionOverlapError(
+          `修订存在结构冲突，必须通过 resolveOverlap() 在一个事务中完成裁决：${conflict.id}`,
+        )
+      }
+    }
+
+    const decisions = plan.map(({revision, action}) => ({
+      id: generateId(),
+      revisionId: revision.id,
+      action,
+      actor: cloneActor(actor),
+      createdAt: new Date().toISOString(),
+      supersedes: [...revision.activeDecisionIds],
+    } satisfies RevisionDecision))
+    const textDeletes = new Map<string, Array<{start: number; end: number}>>()
+    const boundaryMerges: RevisionBoundaryTarget[] = []
+    const blockDeletes = new Set<string>()
+
+    plan.forEach(({revision, action}) => {
+      if (revision.target.kind === 'text') {
+        const removesContent =
+          (revision.kind === 'text-insert' && action === 'reject') ||
+          (revision.kind === 'text-delete' && action === 'accept')
+        const range = removesContent ? this.resolveTextRange(revision.target) : null
+        if (range) {
+          const ranges = textDeletes.get(revision.target.blockId) ?? []
+          ranges.push(range)
+          textDeletes.set(revision.target.blockId, ranges)
+        }
+        return
+      }
+      if (revision.target.kind === 'boundary') {
+        const merges =
+          (revision.kind === 'block-split' && action === 'reject') ||
+          (revision.kind === 'block-merge' && action === 'accept')
+        if (merges) boundaryMerges.push(revision.target)
+        return
+      }
+      const removesBlocks =
+        (revision.kind === 'block-insert' && action === 'reject') ||
+        (revision.kind === 'block-delete' && action === 'accept')
+      if (removesBlocks) revision.target.blockIds.forEach(id => blockDeletes.add(id))
+    })
+
+    const undoManager = this.doc.crud.undoManager
+    undoManager?.captureSelectionBeforeChange?.()
+    undoManager?.stopCapturing?.()
+    try {
+      this.runWithoutTracking(() => {
+        this.doc.crud.transact(() => {
+          for (const [blockId, ranges] of textDeletes) {
+            const yText = this.tryGetYText(blockId)
+            if (!yText) continue
+            for (const range of mergeRanges(ranges).sort((left, right) =>
+              right.start - left.start)) {
+              yText.delete(range.start, range.end - range.start)
+            }
+          }
+          boundaryMerges.forEach(target =>
+            this.materializeBoundaryMergePreservingTextRevisions(target, plannedIds))
+          for (const blockId of blockDeletes) {
+            if (this.doc.model.exists(blockId)) this.doc.crud.deleteBlockById(blockId)
+          }
+          this.removeRevisionsAndDecisions(plannedIds)
+          this.pruneConsumedRevisionReferences()
+        })
+      })
+    } finally {
+      undoManager?.stopCapturing?.()
+    }
+    this.startTrackingSession()
+    return decisions.map(cloneDecision)
   }
 
   private resolveRecord(record: RevisionRecord): ResolvedRevision {
@@ -1534,6 +1635,7 @@ export class DocumentRevisionManager {
     blockId: string,
     start: number,
     end: number,
+    options: {allowCoveringDependencies?: boolean} = {},
   ): ResolvedRevision | null {
     const actorId = this.requireActor().actorId
     const candidates = [...(this.revisionsByBlock.get(blockId) ?? [])]
@@ -1547,8 +1649,12 @@ export class DocumentRevisionManager {
       })
     if (candidates.length !== 1) return null
     const candidate = candidates[0]
+    const coveringDependencies = options.allowCoveringDependencies
+      ? new Set(candidate.dependsOn)
+      : null
     const competingRevision = this.getTextDependencyRanges(blockId).some(range =>
-      range.revisionId !== candidate.id && (
+      range.revisionId !== candidate.id &&
+      !coveringDependencies?.has(range.revisionId) && (
         start === end
           ? range.start <= start && range.end >= start
           : range.start < end && range.end > start
@@ -1564,7 +1670,6 @@ export class DocumentRevisionManager {
   ): string {
     if (this.forcedGroupId) return this.forcedGroupId
     const actorId = this.requireActor().actorId
-    const now = Date.now()
     const last = this.lastGroup
     const adjacent = last && (
       kind === 'text-insert'
@@ -1576,8 +1681,7 @@ export class DocumentRevisionManager {
       last.sessionId === this.sessionId &&
       last.kind === kind &&
       last.blockId === blockId &&
-      adjacent &&
-      now - last.at <= GROUP_IDLE_MS
+      adjacent
       ? last.groupId
       : generateId()
     this.lastGroup = {
@@ -1588,15 +1692,18 @@ export class DocumentRevisionManager {
       blockId,
       start: last?.groupId === groupId ? Math.min(last.start, start) : start,
       end: last?.groupId === groupId ? Math.max(last.end, end) : end,
-      at: now,
     }
     return groupId
   }
 
   private removeRevisionAndDecisions(revisionId: string): void {
-    this.yRevisionMap.delete(revisionId)
+    this.removeRevisionsAndDecisions(new Set([revisionId]))
+  }
+
+  private removeRevisionsAndDecisions(revisionIds: ReadonlySet<string>): void {
+    revisionIds.forEach(id => this.yRevisionMap.delete(id))
     for (const [id, decision] of this.yDecisionMap.entries()) {
-      if (decision.revisionId === revisionId) this.yDecisionMap.delete(id)
+      if (revisionIds.has(decision.revisionId)) this.yDecisionMap.delete(id)
     }
   }
 
@@ -1627,6 +1734,89 @@ export class DocumentRevisionManager {
     const append = right.toDelta() as DeltaInsert[]
     left.applyDelta([{retain: left.length}, ...append])
     this.doc.crud.deleteBlockById(target.rightBlockId)
+  }
+
+  private materializeBoundaryMergePreservingTextRevisions(
+    target: RevisionBoundaryTarget,
+    consumedRevisionIds: ReadonlySet<string>,
+  ): void {
+    const left = this.tryGetYText(target.leftBlockId)
+    const right = this.tryGetYText(target.rightBlockId)
+    if (!left || !right || !this.doc.model.exists(target.rightBlockId)) return
+    const leftLength = left.length
+    const migrations: TextRevisionMigration[] = []
+    for (const record of this.yRevisionMap.values()) {
+      if (
+        consumedRevisionIds.has(record.id) ||
+        record.target.kind !== 'text' ||
+        record.target.blockId !== target.rightBlockId
+      ) continue
+      const range = this.resolveTextRange(record.target)
+      if (range) migrations.push({revisionId: record.id, ...range})
+    }
+
+    const append = right.toDelta() as DeltaInsert[]
+    left.applyDelta([{retain: leftLength}, ...append])
+    migrations.forEach(migration => {
+      const record = this.yRevisionMap.get(migration.revisionId)
+      if (!record || record.target.kind !== 'text') return
+      this.yRevisionMap.set(record.id, {
+        ...record,
+        target: this.createTextTarget(
+          target.leftBlockId,
+          leftLength + migration.start,
+          leftLength + migration.end,
+          1,
+          -1,
+        ),
+      })
+    })
+    this.doc.crud.deleteBlockById(target.rightBlockId)
+  }
+
+  /**
+   * Removes proposals whose canonical target disappeared during materialization
+   * and detaches surviving proposals from consumed dependency records.
+   */
+  private pruneConsumedRevisionReferences(): void {
+    const stale = new Set<string>()
+    const blockTargetRewrites = new Map<string, RevisionBlockTarget>()
+    for (const record of this.yRevisionMap.values()) {
+      if (record.target.kind === 'text') {
+        const range = this.resolveTextRange(record.target)
+        if (!range || range.end <= range.start) stale.add(record.id)
+        continue
+      }
+      if (record.target.kind === 'boundary') {
+        if (
+          !this.doc.model.exists(record.target.leftBlockId) ||
+          !this.doc.model.exists(record.target.rightBlockId)
+        ) stale.add(record.id)
+        continue
+      }
+      if (!this.doc.model.exists(record.target.parentId)) {
+        stale.add(record.id)
+        continue
+      }
+      const blockIds = record.target.blockIds.filter(id => this.doc.model.exists(id))
+      if (!blockIds.length) stale.add(record.id)
+      else if (!sameStringArray(blockIds, record.target.blockIds)) {
+        blockTargetRewrites.set(record.id, {...record.target, blockIds})
+      }
+    }
+
+    this.removeRevisionsAndDecisions(stale)
+    const survivingIds = new Set(this.yRevisionMap.keys())
+    for (const record of this.yRevisionMap.values()) {
+      const dependencies = record.dependsOn.filter(id => survivingIds.has(id))
+      const target = blockTargetRewrites.get(record.id) ?? record.target
+      if (
+        target !== record.target ||
+        !sameStringArray(dependencies, record.dependsOn)
+      ) {
+        this.yRevisionMap.set(record.id, {...record, target, dependsOn: dependencies})
+      }
+    }
   }
 
   private serializeTarget(target: RevisionTarget): RevisionSnapshotTarget | null {
@@ -1917,20 +2107,21 @@ function resolveInlinePresentation(
       record.status === 'accepted' ||
       (viewMode === 'final' && record.status === 'pending')
     )))
-  const state = revisions.some(record => record.status === 'conflict')
-    ? 'conflict'
-    : revisions.some(record => record.status === 'pending')
-      ? 'pending'
-      : revisions.every(record => record.status === 'accepted')
-        ? 'accepted'
-        : 'rejected'
   const marked = revisions.filter(record =>
     record.status === 'pending' || record.status === 'conflict')
-  const kindSource = marked.length ? marked : revisions
-  const kind = kindSource.some(record => record.kind === 'text-delete')
-    ? 'delete'
-    : 'insert'
-  return {ids: revisions.map(record => record.id).sort(), kind, state, hidden}
+  if (!marked.length) {
+    return {ids: [], kind: null, state: null, hidden}
+  }
+  const state = marked.some(record => record.status === 'conflict')
+    ? 'conflict'
+    : 'pending'
+  // A newly inserted segment can sit inside an outer deletion range. The
+  // segment itself must remain visibly insert-marked; deletion styling still
+  // applies to the surrounding original content that has no insertion owner.
+  const kind = marked.some(record => record.kind === 'text-insert')
+    ? 'insert'
+    : 'delete'
+  return {ids: marked.map(record => record.id).sort(), kind, state, hidden}
 }
 
 function hasRejectedInsertionAncestor(

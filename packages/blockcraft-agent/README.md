@@ -24,11 +24,20 @@ Agent 操作目前支持文本替换、富文本 Delta、Schema 驱动创建/替
 Capability 的 `createParameters` 校验并由 Schema 生成 ID/默认值。属性更新必须匹配
 对应 Block Capability 的 `writableProps` JSON Schema。
 
+Master 返回最终结果后，宿主会先按当前文档、Schema 和 Inline Embed Capability 做一次
+完整语义预检。若结果结构合法但违反实际能力契约，支持 `runTurn()` 的 Transport 会在
+有界循环内收到失败原因并重新生成，页面不会直接接收到第一次无效计划。冻结日期/时间
+使用已安装的 `blockcraft.inline-embed.date`；能力不可用时退化为普通文本，不会借用
+`mention` 或其他语义不相干的 Embed。
+
 `BlockCraftEditorAgent.stageRevisionDiff()` 会立即执行完整的合法操作集：Revision v1
 支持的文本和块结构操作进入同一个文档内修订组，不改变 `doc.revisions.mode`，也不会
 让用户后续输入进入修订模式；已有块属性/格式修改、块移动、仅格式 Delta 和新增行内
 对象等暂不支持 Diff 的操作仍走正常 CRUD/Yjs/Undo 路径直接生效，只是不显示修订样式。
-混合结果允许同时包含两类操作；用户只能在现有修订审阅 UI 中接收或拒绝有 Diff 的部分。
+混合结果允许同时包含两类操作，并全部落在一个外层 Yjs transaction 和独立 Undo Item
+中。返回结果的 `undoItemToken` 允许宿主在它仍是最新本地编辑时撤回整批修改；一旦用户
+继续编辑，定向撤回会安全失败而不会退化成普通 Undo。接收修订组表示保留有 Diff 的
+提议和同一批普通修改；逐条审阅仍只裁决 Revision 能表达的部分。
 
 新块优先使用 `create-blocks`：模型只返回 flavour 和 Schema createSnapshot 参数，
 宿主负责调用 Schema、生成 block ID、应用默认值并验证父子关系，避免模型手写 ID
@@ -73,7 +82,9 @@ Master 循环只以 `allowWrite: false` 执行工具。读取工具会立即返�
 `blockcraft.apply_changes`、宿主 `document-write` 和 `external-write` 只返回
 `requiresConfirmation`。Playground 不再通过“应用修改”按钮二次确认文档修改，
 而是在 Master 返回结果后调用 `stageRevisionDiff()`，让用户在可见 Diff 上决定
-接收或拒绝。外部系统写入仍由宿主确认后显式传入 `allowWrite: true`。未知工具
+接收或拒绝。接收会通过 Revision 的正常决定事务物化内容并清除该组记录；撤回
+使用 Agent 批次的精确 Undo token。外部系统写入仍由宿主确认后显式传入
+`allowWrite: true`。未知工具
 直接失败，不会降级成 DOM 操作。
 
 ### Specialist sub-agent

@@ -145,7 +145,7 @@ export class RevisionReviewUiController {
     const marker = target.closest<HTMLElement>(REVISION_MARK_SELECTOR)
     if (!marker || !this.container?.contains(marker)) return
     const item = findMarkerItem(marker, this.review.state$.value)
-    if (!item) return
+    if (!item || (item.status !== 'pending' && item.status !== 'conflict')) return
     this.review.activate(item.id)
     const blockId = marker.closest<HTMLElement>('[data-block-id]')
       ?.getAttribute('data-block-id')
@@ -229,7 +229,10 @@ export class RevisionReviewUiController {
     const componentRef = this.componentRef
     if (!componentRef) return
     const index = state.items.findIndex(item => item.id === itemId)
-    if (index < 0) {
+    if (
+      index < 0 ||
+      (state.items[index].status !== 'pending' && state.items[index].status !== 'conflict')
+    ) {
       this.close()
       return
     }

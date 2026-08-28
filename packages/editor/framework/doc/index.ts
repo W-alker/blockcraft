@@ -772,6 +772,7 @@ export * from './model-graph'
 export * from './block-readonly.types'
 export * from './block-readonly-manager'
 export * from './block-mutation-policy'
+export * from './undoManger'
 
 declare global {
   namespace BlockCraft {

@@ -212,6 +212,57 @@ describe('DocUndoManger – undoRedoing flag never sticks', () => {
     expect(yBlockMap.has('b')).toBeFalse();
   });
 
+  it('captures one transaction as an independently undoable item', () => {
+    change('before');
+
+    const captured = mgr.captureUndoItem(() => {
+      ydoc.transact(() => {
+        yBlockMap.set('agent-a', new Y.Map());
+        yBlockMap.set('agent-b', new Y.Map());
+      }, null);
+      return 'applied';
+    });
+
+    expect(captured.result).toBe('applied');
+    expect(captured.token).not.toBeNull();
+    expect(mgr.canUndoCapturedItem(captured.token!)).toBeTrue();
+    expect(mgr.undoCapturedItem(captured.token!)).toBeTrue();
+    expect(yBlockMap.has('agent-a')).toBeFalse();
+    expect(yBlockMap.has('agent-b')).toBeFalse();
+    expect(yBlockMap.has('before')).toBeTrue();
+  });
+
+  it('refuses to undo a captured item after a later local edit', () => {
+    const captured = mgr.captureUndoItem(() => change('agent'));
+    expect(captured.token).not.toBeNull();
+
+    change('user');
+
+    expect(mgr.canUndoCapturedItem(captured.token!)).toBeFalse();
+    expect(mgr.undoCapturedItem(captured.token!)).toBeFalse();
+    expect(yBlockMap.has('agent')).toBeTrue();
+    expect(yBlockMap.has('user')).toBeTrue();
+  });
+
+  it('returns no token when the captured action makes no tracked change', () => {
+    const captured = mgr.captureUndoItem(() => 42);
+
+    expect(captured).toEqual({result: 42, token: null});
+    expect(mgr.isCanUndo()).toBeFalse();
+  });
+
+  it('returns no atomic token when a callback creates several undo items', () => {
+    const captured = mgr.captureUndoItem(() => {
+      change('first');
+      mgr.stopCapturing();
+      change('second');
+    });
+
+    expect(captured.token).toBeNull();
+    expect(yBlockMap.has('first')).toBeTrue();
+    expect(yBlockMap.has('second')).toBeTrue();
+  });
+
   it('clears the flag after redo()', () => {
     change('a');
     mgr.undo();

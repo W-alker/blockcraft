@@ -13,7 +13,9 @@ import {
 import type {
   DocumentAgentContext,
   DocumentAgentResult,
+  DocumentAgentTurnRequest,
 } from '../core/agent.types'
+import {BlockCraftEditorAgent} from './blockcraft-editor-agent'
 import {captureBlockCraftAgentContext} from './blockcraft-context-adapter'
 import {
   DocumentAgentOperationCompileError,
@@ -281,6 +283,18 @@ describe('BlockCraft Agent v2 contract', () => {
 
     expect(prepared.length).toBe(2)
 
+    expect(() => compiler.compile([{
+      kind: 'apply-text-delta',
+      blockId: 'p1',
+      delta: [
+        {
+          insert: {date: '2026-08-28T12:00'},
+          attributes: {format: 'YYYY-MM-DD HH:mm'},
+        },
+        {insert: ' '},
+      ],
+    }])).not.toThrow()
+
     expect(() => new DocumentAgentOperationCompiler(
       createFakeDoc() as never,
       createDocumentContext(),
@@ -426,6 +440,8 @@ describe('BlockCraft Agent v2 contract', () => {
 
     expect(applied.applied).toBe(1)
     expect(applied.revisionIds).toEqual([])
+    expect(applied.undoItemToken).toBe(doc['undoItemToken'])
+    expect(doc['transactionCount']).toBe(1)
     expect(calls).toEqual(['props:p1'])
   })
 
@@ -449,7 +465,65 @@ describe('BlockCraft Agent v2 contract', () => {
     expect(applied.applied).toBe(2)
     expect(applied.groupId).toBe('agent-group')
     expect(applied.revisionIds).toEqual(['revision-1'])
+    expect(applied.undoItemToken).toBe(doc['undoItemToken'])
+    expect(doc['transactionCount']).toBe(1)
     expect(calls).toEqual(['text:p1', 'props:p1'])
+  })
+
+  it('returns final semantic validation failures to the Master for correction', async () => {
+    const turns: DocumentAgentTurnRequest[] = []
+    const runner = {
+      supportsTurnProtocol: true,
+      runTurn: async (turn: DocumentAgentTurnRequest) => {
+        turns.push(turn)
+        if (turns.length === 1) {
+          return {
+            kind: 'result' as const,
+            result: {
+              summary: 'insert time',
+              operations: [{
+                kind: 'apply-text-delta' as const,
+                blockId: 'p1',
+                delta: [{insert: {mention: '2026-08-28T12:00'}}],
+              }],
+            },
+          }
+        }
+        return {
+          kind: 'result' as const,
+          result: {
+            summary: 'insert frozen time',
+            operations: [{
+              kind: 'apply-text-delta' as const,
+              blockId: 'p1',
+              delta: [
+                {
+                  insert: {date: '2026-08-28T12:00'},
+                  attributes: {format: 'YYYY-MM-DD HH:mm'},
+                },
+                {insert: ' '},
+              ],
+            }],
+          },
+        }
+      },
+    }
+    const agent = new BlockCraftEditorAgent(createFakeDoc() as never, runner as never, {
+      orchestration: {maxTurns: 3},
+    })
+
+    const result = await agent.run({
+      task: 'continue',
+      instruction: '帮我在第一段插入时间，今天12点',
+      context: createDocumentContext(),
+    })
+
+    expect(result.summary).toBe('insert frozen time')
+    expect(turns.length).toBe(2)
+    expect(turns[1].toolHistory[0].call.name).toBe('blockcraft.preview_changes')
+    expect(turns[1].toolHistory[0].result.ok).toBeFalse()
+    expect((turns[1].toolHistory[0].result as {error: string}).error)
+      .toContain('Inline Embed mention does not declare Agent insertion')
   })
 })
 
@@ -573,8 +647,19 @@ function createFakeDoc(): Record<string, any> {
 
 function createApplyDoc(calls: string[], revisionIds: readonly string[]): Record<string, any> {
   const doc = createFakeDoc()
+  const undoItemToken = Object.freeze({})
+  doc['transactionCount'] = 0
   doc['crud'] = {
-    transact: (callback: () => void) => callback(),
+    transact: (callback: () => void) => {
+      doc['transactionCount'] += 1
+      return callback()
+    },
+    undoManager: {
+      captureUndoItem: <T>(callback: () => T) => ({
+        result: callback(),
+        token: undoItemToken,
+      }),
+    },
     replaceText: (blockId: string) => calls.push(`text:${blockId}`),
     updateBlockProps: (blockId: string) => calls.push(`props:${blockId}`),
   }
@@ -586,5 +671,6 @@ function createApplyDoc(calls: string[], revisionIds: readonly string[]): Record
     ) => callback(),
     listGroup: () => revisionIds.map(id => ({id})),
   }
+  doc['undoItemToken'] = undoItemToken
   return doc
 }

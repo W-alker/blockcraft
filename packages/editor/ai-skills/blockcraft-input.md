@@ -38,15 +38,27 @@ pending or decided text revisions: Input keeps the user gesture in one group,
 splits destructive ranges wherever the active dependency set changes, and
 stacks each segment through `dependsOn`. This prevents rejecting an outer
 insertion from also discarding adjacent original text. Normal Undo/Redo tracks
-content and revision records together, but append-only review decisions are
-excluded; review reversal uses `redecide()`.
+content and revision records together. Accept/reject materializes the chosen
+content and consumes those records as a separate Undo item; undoing that item
+restores the pending revision instead of creating a second decision.
 
-Repeated deletion is effect-idempotent per author. If a same-author pending or
-accepted `text-delete` / `block-delete` already covers the requested content,
-the manager reuses that record and produces no new Yjs mutation. Extending the
-gesture creates records only for uncovered ranges or block IDs. Rejected
-proposals may be proposed again, while another author receives an independent
-record so attribution and approval remain separate.
+Repeated deletion is effect-idempotent per author while the proposal is
+pending. The manager reuses that `text-delete` / `block-delete` record and an
+extended gesture creates records only for uncovered ranges or block IDs. Once
+accepted/rejected, the record is consumed; surviving content may receive a new
+proposal, while another author receives an independent pending record.
+
+Continuous tracked typing has no wall-clock idle cutoff. Adjacent same-actor
+insert/delete records in the same block and tracking session retain one
+`groupId` even after a long pause. Semantic discontinuity—not elapsed time—ends
+the batch: a session/actor/mode reset, target block or operation-kind change,
+non-adjacent edit, or explicit grouping scope.
+If new text is inserted inside a pending deletion range, the overlapping Delta
+segment renders with insertion styling; the deletion style remains on the
+surrounding original text. Continuous typing there extends one insertion
+record even though the outer deletion remains an explicit dependency. A truly
+unrelated nested revision still ends that fast path and stays independently
+reviewable.
 
 Pending insertion ranges use tight relative boundaries. A different author's
 insert at the start/end is adjacent; an insert strictly inside is dependent.

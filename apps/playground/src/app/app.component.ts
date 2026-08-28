@@ -9,6 +9,7 @@ import {
   DOC_ADAPTER_SERVICE_TOKEN,
   DOC_FILE_SERVICE_TOKEN,
   DocExportManager,
+  DocUndoItemToken,
   EditableBlockComponent,
   EditorComponent,
   FixedTextToolbarComponent,
@@ -43,6 +44,8 @@ import {
   DocumentAgentPanelComponent,
   DocumentAgentPlugin,
   DocumentAgentRequest,
+  DocumentAgentReviewAction,
+  DocumentAgentReviewPrompt,
   DocumentAgentResult,
   DocumentAgentRunner,
   BlockCraftEditorAgent,
@@ -1716,6 +1719,7 @@ export class AppComponent implements AfterViewInit, OnDestroy {
   private _agentDialogComponent?: ComponentRef<DocumentAgentPanelComponent>;
   private _agentDialogClose$?: Subject<void>;
   private _agentFakeRange?: {destroy: () => void};
+  private _agentReviewUndoToken: DocUndoItemToken | null = null;
   private _revisionReviewUi?: RevisionReviewUiController;
   private _revisionReviewDoc = null as EditorComponent['doc'] | null;
   private readonly agentRunner = new DocumentAgentRunner(new PlaygroundDocumentAgentTransport());
@@ -1742,6 +1746,7 @@ export class AppComponent implements AfterViewInit, OnDestroy {
   selectionMeta: DebugMetaItem[] = [];
   agentContext: DocumentAgentContext | null = null;
   agentResult: DocumentAgentResult | null = null;
+  agentReview: DocumentAgentReviewPrompt | null = null;
   agentError: string | null = null;
   agentBusy = false;
   agentDialogOpen = false;
@@ -2280,6 +2285,7 @@ graph TD
     this.syncAgentDialogState();
 
     componentRef.instance.request.subscribe(request => void this.runAgentRequest(request));
+    componentRef.instance.reviewAction.subscribe(action => this.onAgentReviewAction(action));
     componentRef.instance.close.subscribe(() => this.closeAgentDialog());
   }
 
@@ -2324,6 +2330,14 @@ graph TD
     componentRef.setInput('busy', this.agentBusy);
     componentRef.setInput('error', this.agentError);
     componentRef.setInput('result', this.agentResult);
+    if (this.agentReview) {
+      this.agentReview = {
+        ...this.agentReview,
+        canRevertAll: !!this._agentReviewUndoToken &&
+          this.editor?.doc.crud.undoManager.canUndoCapturedItem(this._agentReviewUndoToken) === true,
+      };
+    }
+    componentRef.setInput('review', this.agentReview);
   }
 
   async runAgentRequest(request: DocumentAgentRequest): Promise<void> {
@@ -2353,6 +2367,14 @@ graph TD
           throw new Error('文档上下文已失效，无法应用 Agent 修改。');
         }
         const staged = editorAgent.stageRevisionDiff(applyContext, result);
+        this._agentReviewUndoToken = staged.undoItemToken;
+        this.agentReview = {
+          groupId: staged.groupId,
+          summary: result.summary,
+          operationCount: staged.applied,
+          revisionCount: staged.revisionIds.length,
+          canRevertAll: !!staged.undoItemToken,
+        };
         if (staged.revisionIds.length) {
           const revisions = editor.doc.revisions;
           if (!revisions.currentActor) {
@@ -2363,16 +2385,9 @@ graph TD
           }
           revisions.setViewMode('markup');
           this.ensureRevisionReviewUi(editor);
-          this.revisionPanelOpen = true;
           this.revisionReviewPlugin?.activateRevision(staged.revisionIds[0]);
-          this._agentDialogComponent?.instance.addAssistantNotice(
-            `已执行 ${staged.applied} 项修改，并生成 ${staged.revisionIds.length} 条可审阅 Diff。没有对应 Diff 的操作会按普通编辑直接生效。`,
-          );
-        } else {
-          this._agentDialogComponent?.instance.addAssistantNotice(
-            `已执行 ${staged.applied} 项修改。这些操作当前没有修订 Diff 样式，已按普通编辑直接生效。`,
-          );
         }
+        this.syncAgentDialogState();
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Agent 请求失败';
@@ -2382,6 +2397,66 @@ graph TD
       this.agentBusy = false;
       this.syncAgentDialogState();
       this.cdr.markForCheck();
+    }
+  }
+
+  private onAgentReviewAction(action: DocumentAgentReviewAction): void {
+    const reviewPrompt = this.agentReview;
+    const editor = this.editor;
+    if (!reviewPrompt || reviewPrompt.groupId !== action.groupId || !editor) return;
+
+    if (action.type === 'dismiss') {
+      this.closeAgentDialog();
+      return;
+    }
+
+    try {
+      if (action.type === 'review') {
+        if (!reviewPrompt.revisionCount) return;
+        editor.doc.revisions.setViewMode('markup');
+        this.ensureRevisionReviewUi(editor);
+        this.revisionReviewPlugin?.activate(reviewPrompt.groupId);
+        this.revisionPanelOpen = true;
+        this.cdr.markForCheck();
+        return;
+      }
+
+      if (action.type === 'accept-all') {
+        if (reviewPrompt.revisionCount) {
+          this.ensureRevisionReviewUi(editor);
+          this.revisionReviewPlugin?.keep(reviewPrompt.groupId);
+          this.revisionReviewPlugin?.activate(null);
+          this._revisionReviewUi?.close();
+          this.revisionPanelOpen = false;
+        }
+        this._agentReviewUndoToken = null;
+        this.agentReview = null;
+        this._agentDialogComponent?.instance.addAssistantNotice('已接受本次 AI 修改。');
+        this.syncAgentDialogState();
+        this.cdr.markForCheck();
+        return;
+      }
+
+      const undoToken = this._agentReviewUndoToken;
+      if (!undoToken || !editor.doc.crud.undoManager.undoCapturedItem(undoToken)) {
+        this.agentReview = {...reviewPrompt, canRevertAll: false};
+        this._agentDialogComponent?.instance.addAssistantError(
+          '文档在 AI 修改后已有新的本地编辑，无法安全撤回整批修改。你仍可逐条审阅有 Diff 的修订。',
+        );
+        this.syncAgentDialogState();
+        return;
+      }
+
+      this._agentReviewUndoToken = null;
+      this.agentReview = null;
+      this._agentDialogComponent?.instance.addAssistantNotice('已撤回本次 AI 的全部修改。');
+      this.syncAgentDialogState();
+      this.cdr.markForCheck();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '处理 AI 修改失败';
+      this.agentError = message;
+      this._agentDialogComponent?.instance.addAssistantError(message);
+      this.syncAgentDialogState();
     }
   }
 

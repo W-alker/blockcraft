@@ -22,6 +22,11 @@ export class DocumentAgentResultError extends Error {
 export class DocumentAgentRunner {
   constructor(private readonly transport: DocumentAgentTransport) {}
 
+  /** Whether the transport can receive bounded tool/validation feedback. */
+  get supportsTurnProtocol(): boolean {
+    return typeof this.transport.runTurn === 'function'
+  }
+
   async run(
     request: DocumentAgentRequest,
     options?: {signal?: AbortSignal},

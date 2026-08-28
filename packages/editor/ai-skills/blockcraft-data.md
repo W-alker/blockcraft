@@ -22,7 +22,7 @@ BlockCraftDoc
                  ├── children: Y.Array<string>  (child block IDs)
                  └── text?: Y.Text              (inline content, editable blocks only)
        ├── Y.Map<RevisionRecord>               key = "bc:revisions"
-       ├── Y.Map<RevisionDecision>             key = "bc:revision-decisions"
+       ├── Y.Map<RevisionDecision>             key = "bc:revision-decisions" (legacy import)
        └── Y.Map<unknown>                      key = "bc:revision-meta"
 ```
 
@@ -38,7 +38,7 @@ BlockCraftDoc
 | `framework/doc/sync-lifecycle.ts` | Internal remote transaction before/after view-sync lifecycle |
 | `framework/doc/vm.ts` | `DocVM` — Angular component creation/lookup |
 | `framework/doc/undoManger.ts` | `DocUndoManager` — undo/redo with selection (note: filename is "Manger") |
-| `framework/revision/` | Revision records, append-only decisions, projection, conflict detection and checkpoint compaction |
+| `framework/revision/` | Non-destructive proposals, undoable decision materialization, projection and legacy checkpoint compaction |
 | `framework/modules/selection/relative-bookmark.ts` | Shared Yjs-relative selection bookmark codec |
 | `framework/modules/selection/live-bookmark-tracker.ts` | Revisioned current-selection bookmark used by remote sync |
 | `framework/modules/selection/remote-selection-reconciler.ts` | Selection-owned remote bookmark reconciliation |
@@ -486,13 +486,21 @@ excluded from `BlockModelGraph.contentChange$`.
 
 ## Revision CRDT and Complete Snapshot
 
-Canonical content remains in the existing block/Y.Text tree until a validated
-checkpoint. `bc:revisions` stores non-destructive range/block/boundary records;
-`bc:revision-decisions` stores append-only decision nodes with `supersedes`;
-`bc:revision-meta` stores the current epoch. Active decision heads converge by
-set semantics: both accept and reject means `conflict`, and a redecision must
-supersede every head visible at that moment. A late offline head can therefore
-reopen conflict instead of being silently discarded.
+While a proposal is pending, canonical content remains in the existing
+block/Y.Text tree and `bc:revisions` stores its non-destructive
+range/block/boundary attribution. Accept/reject immediately materializes the
+chosen canonical content and deletes the consumed records in one tracked Yjs
+transaction. Undo therefore restores both the pre-decision content and pending
+records. `bc:revision-decisions` is retained only to import legacy append-only
+snapshots; new decisions return compatibility receipts but do not persist them.
+`bc:revision-meta` keeps the legacy compaction epoch.
+
+Decision materialization is an online, serialized host boundary. The Yjs
+content transaction converges normally once admitted, but a host must not let
+two disconnected reviewers accept/reject the same pending record independently:
+after the active record is consumed there is no append-only decision graph to
+reopen that disagreement. Collaboration servers should reject stale review
+commands or execute them authoritatively against the latest document state.
 
 Text targets use encoded `Y.RelativePosition` values in the live CRDT. Complete
 JSON export converts them to current absolute start/end offsets and recreates
@@ -504,6 +512,17 @@ original author can still grow or shrink their own pending insertion because
 that mutation explicitly rewrites the target to its new range. Destructive
 gestures crossing active ranges are split at dependency boundaries while their
 records retain one shared review `groupId`.
+
+An insertion nested in an existing deletion or insertion may keep extending
+its one pending record across its declared ancestor dependencies. Those
+ancestors do not split continuous typing into one record per input event;
+an unrelated nested revision still blocks target resizing so another actor's
+content is never absorbed.
+
+That `groupId` has no idle timeout. Adjacent same-actor text records stay in one
+tracking-session batch across pauses; actor/session, block/kind or adjacency
+changes provide the deterministic boundaries and avoid timer-dependent CRDT
+grouping.
 
 ```typescript
 interface BlockCraftDocumentSnapshot {
@@ -519,11 +538,12 @@ doc.initByDocumentSnapshot(complete, container)
 ```
 
 `exportSnapshot()` / `initBySnapshot()` remain content-only compatibility APIs.
-Undo scopes include `bc:revisions` with the block map so an edit and its
-revision attribution undo atomically; `bc:revision-decisions` is deliberately
-outside content history. `compactResolved({epoch, stateVector})` is the only
-materialization path and requires no pending/conflicted revisions plus an exact
-state-vector match.
+Undo scopes include `bc:revisions` with the block map, so both proposal creation
+and later decision materialization undo atomically. A decision is an independent
+Undo item: undoing it restores pending markup; undoing the preceding edit then
+removes the original proposal. `compactResolved({epoch, stateVector})` is now a
+legacy migration path for imported accepted/rejected records and still requires
+no pending/conflicted revisions plus an exact state-vector match.
 
 Overlapping line edits are dependency-aware rather than rejected wholesale.
 For a non-destructive deletion that crosses existing revision boundaries, the
@@ -561,11 +581,23 @@ and return only that range; whole-block targets serialize only their targeted
 subtrees; split/merge boundaries return an empty string because the boundary
 owns no paragraph text. The query never mounts a Block view.
 
+Markup projection decorates only pending/conflicted records. Accepting or
+rejecting materializes accepted deletions/rejected insertions as real content
+deletions, consumes the records, and removes all `data-bc-revision-*` marker
+attributes and review cards in the same transaction. Undo recreates the pending
+records and markup. The “已处理” filter is compatibility-only for imported
+legacy decision snapshots.
+For an overlapping pending insertion inside a pending deletion, the inserted
+Delta segment takes `insert` presentation priority while the surrounding
+baseline segments remain `delete`; this is presentation precedence only and
+does not rewrite either dependency record.
+
 Active deletion effects are idempotent for the same actor. Repeating a pending
 or accepted text/whole-block deletion reuses the existing record, and an
 extended selection persists only the uncovered text segments or block IDs.
-Rejected records do not suppress a fresh proposal. Different actors still
-store independent overlapping deletion records and decision histories.
+After a rejected proposal is consumed, the same content can receive a fresh
+proposal. Different actors still store independent overlapping pending
+deletions until one materialized result makes another target moot.
 
 Revision tracking is attribution, not a mutation capability gate. Object
 inserts in Y.Text are tracked as length-one ranges. Semantic Embed attribute
@@ -632,6 +664,28 @@ doc.crud.undoManager.redo()
 doc.crud.undoManager.canUndo()
 doc.crud.undoManager.canRedo()
 ```
+
+Synchronous batch producers that need a targeted rollback can isolate one
+outer transaction as an independent Undo item:
+
+```typescript
+const {result, token} = doc.crud.undoManager.captureUndoItem(() =>
+  doc.crud.transact(() => applyWholeBatch()))
+
+if (token && doc.crud.undoManager.canUndoCapturedItem(token)) {
+  doc.crud.undoManager.undoCapturedItem(token)
+}
+```
+
+`DocUndoItemToken` is an opaque, in-memory stack identity. The callback must
+complete synchronously and create exactly one Undo item; otherwise the token is
+`null`. Capture boundaries on
+both sides prevent Yjs `captureTimeout` from merging the batch with adjacent
+edits. `undoCapturedItem()` never falls back to a generic Undo: it returns
+`false` once a later local edit, Undo/Redo, history clear or write policy makes
+the token unsafe. This is the correct primitive for an immediately applied
+Agent batch that may combine Revision-aware and ordinary operations in one
+`DocCRUD.transact()`.
 
 Selection state is saved on the content stack item itself using the shared Relative Selection Bookmark codec (`Y.RelativePosition` for text/boundary points, structural IDs for selected/gap/table-cell points). A merged item keeps its earliest pre-change bookmark. Undo captures the current selection for the redo `StackItem` Yjs creates, and redo performs the symmetric capture for the replacement undo item. This follows Yjs stack identity through merge, clear, truncation and undo/redo without parallel array indexes.
 

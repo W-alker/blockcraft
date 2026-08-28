@@ -440,6 +440,7 @@ function createAgentPayload(request, session, orchestration) {
       'Validated operations include replace-text, update-block-props, create-blocks, replace-block, apply-text-delta, delete-blocks, and move-blocks. Raw Snapshot insertion is not an Agent operation.',
       'Operation coordinates are sequential. create-blocks/replace-block may bind clientRef. Use $ref:<clientRef> only as create-blocks.parentId for nested content or move-blocks.targetId for existing content; do not replace, delete, or move a newly created block.',
       'Editable text.delta is authoritative. An Inline Embed object insert consumes one offset and must contain exactly one non-empty key with a primitive value. Generate it only when blockcraft.get_capability exposes the installed same-key inline-embed capability with an insert schema.',
+      'For frozen date/time requests use the installed blockcraft.inline-embed.date capability with a date value such as 2026-08-28T12:00 and an allowed format; never use mention. If date insertion is unavailable, insert plain text and add a following space before existing text.',
       'Retain attributes are only for canonical text formatting. Change Embed semantics by delete:1 plus a schema-valid replacement insert; understanding-only prevents generation but does not make ordinary range deletion illegal.',
       'An empty paragraph or list item is still a valid structural target. Use delete-blocks with its actual parentId, index, and count.',
       'Never claim that an empty block cannot be safely changed merely because it has no text.',

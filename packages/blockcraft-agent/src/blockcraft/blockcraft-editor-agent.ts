@@ -24,6 +24,7 @@ import {DocumentAgentRunner} from '../core/document-agent-runner'
 import {captureBlockCraftAgentContext} from './blockcraft-context-adapter'
 import {captureDocumentAgentManifestOptions} from './document-agent-capability-scope'
 import {
+  DocumentAgentApplyError,
   DocumentAgentOperationApplier,
   type DocumentAgentRevisionApplyResult,
 } from './document-agent-operation-applier'
@@ -92,6 +93,7 @@ export class BlockCraftEditorAgent {
       6,
     )
     let delegationCount = 0
+    let finalValidationError: string | null = null
 
     for (let step = 0; step < maxTurns; step++) {
       const turn = await this.runner.runTurn({
@@ -100,7 +102,26 @@ export class BlockCraftEditorAgent {
         step,
         toolHistory,
       }, options)
-      if (turn.kind === 'result') return turn.result
+      if (turn.kind === 'result') {
+        try {
+          new DocumentAgentOperationApplier(this.doc, this.extensions)
+            .validate(context, turn.result)
+          return turn.result
+        } catch (error) {
+          if (!(error instanceof DocumentAgentApplyError) ||
+              error.code !== 'invalid' ||
+              !this.runner.supportsTurnProtocol) {
+            throw error
+          }
+          appendBoundedExchange(toolHistory, createFinalValidationExchange(
+            step,
+            turn.result,
+            error.message,
+          ))
+          finalValidationError = error.message
+          continue
+        }
+      }
       if (!turn.calls.length) throw new Error('Master Agent 返回了空工具调用。')
       if (turn.calls.length > maxToolCallsPerTurn) {
         throw new Error(`Master Agent 单轮工具调用超过 ${maxToolCallsPerTurn} 个。`)
@@ -128,7 +149,9 @@ export class BlockCraftEditorAgent {
       }
     }
 
-    throw new Error(`Master Agent 在 ${maxTurns} 轮内未生成最终结果。`)
+    throw new Error(finalValidationError
+      ? `Master Agent 在 ${maxTurns} 轮内未生成可执行结果：${finalValidationError}`
+      : `Master Agent 在 ${maxTurns} 轮内未生成最终结果。`)
   }
 
   executeTool(
@@ -257,6 +280,33 @@ export const DEFAULT_AGENT_REVISION_ACTOR: RevisionActorSnapshot = {
 const MAX_TOOL_HISTORY_ITEMS = 24
 const MAX_TOOL_HISTORY_CHARS = 32_000
 const MAX_TOOL_VALUE_CHARS = 12_000
+
+function createFinalValidationExchange(
+  step: number,
+  result: DocumentAgentResult,
+  error: string,
+): DocumentAgentToolExchange {
+  const callId = `host-final-validation-${step + 1}`
+  return {
+    call: {
+      id: callId,
+      name: 'blockcraft.preview_changes',
+      arguments: {
+        summary: result.summary,
+        operations: result.operations,
+      },
+    },
+    result: {
+      callId,
+      name: 'blockcraft.preview_changes',
+      ok: false,
+      error: `Final result failed host semantic validation: ${error} ` +
+        'Return a corrected final result and do not repeat the invalid operation. ' +
+        'Inspect the installed capability when an Embed or Block contract is uncertain; ' +
+        'fall back to plain text when no writable capability exists.',
+    },
+  }
+}
 
 function clampInteger(value: number | undefined, fallback: number, min: number, max: number): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return fallback

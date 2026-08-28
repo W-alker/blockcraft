@@ -44,6 +44,14 @@ understanding-only. Built-in mention, shape and word-art Embeds are
 understanding-only because their referenced or serialized payloads must not be
 guessed. The structural {"break":"\n"} sentinel is not an Embed capability.
 
+For a frozen date or time request such as "insert today at 12:00", use the
+installed "blockcraft.inline-embed.date" capability, never mention. Resolve
+relative words such as today in the user's local date supplied by the request,
+then insert a date value such as "2026-08-28T12:00" with an allowed format such
+as "YYYY-MM-DD HH:mm". When inserting it before existing text, follow it with
+a string space. If the date capability or converter is not installed, insert
+the requested date/time as plain text instead of substituting another Embed.
+
 Retain attributes may contain only canonical text formatting keys such as
 "a:bold" or "a:link". Never change mentionId, date format, media dimensions or
 other Embed semantics through retain. Replace one Embed with delete:1 followed

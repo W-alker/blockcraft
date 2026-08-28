@@ -80,8 +80,8 @@ const EMPTY_STATE: RevisionReviewState = {
  *
  * It owns no Angular component, DOM, Overlay, role or permission policy.
  * Hosts may bind any UI to `state$`, activate an item, then call `keep()` or
- * `revert()`. Review decisions remain append-only and CRDT-owned by the
- * document Revision domain.
+ * `revert()`. A decision immediately materializes canonical content and
+ * consumes the review records in one undoable Yjs transaction.
  */
 export class RevisionReviewPlugin extends DocPlugin {
   override name = 'revision-review'
@@ -211,14 +211,14 @@ export class RevisionReviewPlugin extends DocPlugin {
     return this._move(-1, options)
   }
 
-  /** Keep the proposed change. Maps to an accept/redecide decision. */
+  /** Keep and materialize the proposed change, consuming its review group. */
   keep(itemId?: string): RevisionDecision[] {
     const item = this._requireItem(itemId)
     this._assertNoStructuralOverlap(item)
     return this.doc.revisions.acceptGroup(item.id)
   }
 
-  /** Revert the proposed change. Maps to a reject/redecide decision. */
+  /** Revert and materialize the proposed change, consuming its review group. */
   revert(itemId?: string): RevisionDecision[] {
     const item = this._requireItem(itemId)
     return this.doc.revisions.rejectGroup(item.id)

@@ -11,12 +11,31 @@ import {BlockMutationPolicyError} from "./block-mutation-policy";
 
 type UndoManagerEventName = 'stack-item-added' | 'stack-item-updated' | 'stack-item-popped' | 'stack-cleared'
 
+declare const DOC_UNDO_ITEM_TOKEN: unique symbol
+
+/**
+ * Opaque identity for one independently captured local undo item.
+ *
+ * The token is intentionally not serializable. It is only valid while its
+ * captured item is still the latest local undo item in the same document.
+ */
+export interface DocUndoItemToken {
+  readonly [DOC_UNDO_ITEM_TOKEN]: true
+}
+
+export interface CapturedDocUndoItem<T> {
+  readonly result: T
+  /** Null when the callback did not produce exactly one tracked undo item. */
+  readonly token: DocUndoItemToken | null
+}
+
 const BLOCK_READONLY_AFFECTED_IDS = Symbol('block-readonly-affected-ids')
 const SELECTION_BOOKMARK = Symbol('selection-bookmark')
 
 export class DocUndoManger {
   private _yUndoManager!: Y.UndoManager
   private _trackedOrigins = new Set<any>([ORIGIN_SKIP_SYNC, null])
+  private readonly _capturedUndoItems = new WeakMap<DocUndoItemToken, StackItem>()
 
   private _captureGroupDepth = 0
   private _captureTimeoutBeforeGroup: number | null = null
@@ -97,6 +116,70 @@ export class DocUndoManger {
    */
   stopCapturing() {
     this._yUndoManager.stopCapturing()
+  }
+
+  /**
+   * Runs one synchronous logical action behind fresh undo boundaries and
+   * returns an opaque token for the single undo item it produced.
+   *
+   * A null token means the callback did not produce exactly one tracked item.
+   * Callers must wrap all writes in one Yjs transaction; several undo items
+   * cannot be exposed as one atomic rollback token.
+   */
+  captureUndoItem<T>(callback: () => T): CapturedDocUndoItem<T> {
+    if (this._captureGroupDepth > 0) {
+      throw new Error('Cannot capture an independent undo item inside a capture group.')
+    }
+    if (this.undoRedoing$.value) {
+      throw new Error('Cannot capture an undo item while undo or redo is running.')
+    }
+
+    const captured: StackItem[] = []
+    const onStackItemAdded = (event: StackItemEvent) => {
+      if (event.type === 'undo') captured.push(event.stackItem)
+    }
+
+    this.captureSelectionBeforeChange()
+    this.stopCapturing()
+    this.on('stack-item-added', onStackItemAdded)
+    let result: T
+    try {
+      result = callback()
+    } finally {
+      this.off('stack-item-added', onStackItemAdded)
+      this.stopCapturing()
+      if (!captured.length) this._pendingUndoSnapshot = undefined
+    }
+
+    if (captured.length !== 1) return {result, token: null}
+    const stackItem = captured[0]
+
+    const token = Object.freeze({}) as DocUndoItemToken
+    this._capturedUndoItems.set(token, stackItem)
+    return {result, token}
+  }
+
+  /** True only while the captured item is still the latest local edit. */
+  canUndoCapturedItem(token: DocUndoItemToken): boolean {
+    const stackItem = this._capturedUndoItems.get(token)
+    return !!stackItem &&
+      !this.undoRedoing$.value &&
+      this._yUndoManager.undoStack.at(-1) === stackItem
+  }
+
+  /**
+   * Safely undoes the captured action without ever falling back to a generic
+   * undo. Returns false after any later local edit, undo, redo, or history clear.
+   */
+  undoCapturedItem(token: DocUndoItemToken): boolean {
+    if (!this.canUndoCapturedItem(token) || !this._isHistoryItemWritable('undo')) {
+      return false
+    }
+    const stackItem = this._capturedUndoItems.get(token)
+    this.undo()
+    if (this._yUndoManager.undoStack.at(-1) === stackItem) return false
+    this._capturedUndoItems.delete(token)
+    return true
   }
 
   /**

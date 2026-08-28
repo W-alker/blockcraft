@@ -29,7 +29,7 @@ A block-based rich text editor built on **Angular (standalone components)** + **
 | **Model Graph** | DOM-free, read-only Yjs tree queries for mounted or unmounted blocks | `BlockModelGraph` in `framework/doc/model-graph.ts` |
 | **Block Readonly** | Owner-aware, inherited write protection resolved from `meta.lock` against the model graph | `BlockReadonlyManager` in `framework/doc/block-readonly-manager.ts` |
 | **Mutation Policy** | Optional host-defined guard for structural, instance-meta and undo/redo mutations | `BlockMutationPolicyManager` in `framework/doc/block-mutation-policy.ts` |
-| **Revision** | Track-changes domain for non-destructive edits, append-only review decisions, conflict projection and checkpoints | `DocumentRevisionManager` at `doc.revisions` |
+| **Revision** | Track-changes domain for non-destructive proposals and undoable decision materialization | `DocumentRevisionManager` at `doc.revisions` |
 | **Block** | A node in the document tree; has flavour, nodeType, props | `BaseBlockComponent` / `EditableBlockComponent` |
 | **Plugin** | Extends editor behavior; event handlers + hotkeys | `DocPlugin` in `framework/plugin/` |
 | **Inline** | Rich text within editable blocks; Blot tree on Y.Text | `InlineRuntime` in `framework/block-std/inline/` |
@@ -184,9 +184,14 @@ doc.revisions.runAsRevision(
   {groupId: requestId},
 )
 
+// One AI request = one transaction + one independently addressable Undo item.
+const {token} = doc.crud.undoManager.captureUndoItem(() =>
+  doc.crud.transact(() => applyAgentBatch()))
+if (token) doc.crud.undoManager.undoCapturedItem(token)
+
 const pending = doc.revisions.list({status: 'pending'})
-doc.revisions.accept(pending[0].id)       // append-only decision
-doc.revisions.redecide(pending[0].id, 'reject')
+doc.revisions.accept(pending[0].id)       // materialize + consume record
+doc.crud.undoManager.undo()               // restore pending revision + content
 
 // Incremental headless projections can refresh only the affected groups.
 doc.revisions.change$.subscribe(change => {
@@ -196,8 +201,8 @@ doc.revisions.change$.subscribe(change => {
 
 // Optional headless review command/state layer (registered as a DocPlugin).
 revisionReview.activateRevision(pending[0].id)
-revisionReview.keep()                     // accept or redecide the whole group
-revisionReview.revert()                   // reject or redecide the whole group
+revisionReview.keep()                     // materialize + consume the whole group
+revisionReview.revert()                   // reverse proposal + consume the group
 
 const finalRoot = doc.revisions.projectFinalSnapshot()
 const complete = doc.exportDocumentSnapshot()
@@ -219,9 +224,17 @@ revision state. A line edit crossing existing inline revisions is split at
 their relative-range boundaries and stacked through `dependsOn` while keeping
 one review-card group. Destructive structural overlaps still form an explicit
 conflict instead of choosing a winner. Repeating a text or whole-block deletion
-already proposed by the same author reuses its active pending/accepted record;
-an extended gesture records only the uncovered remainder. Another author keeps
-an independent deletion record and review decision.
+already proposed by the same author reuses its active pending record; an
+extended gesture records only the uncovered remainder. Another author keeps an
+independent deletion proposal until a materialized decision makes overlapping
+work moot.
+Adjacent same-actor text input in the same tracking session keeps one `groupId`
+regardless of wall-clock pauses. A new batch begins only at a semantic boundary:
+actor/mode/session reset, target block or operation-kind change, non-adjacent
+edit, or an explicit `runInGroup()` scope.
+When a pending insertion is nested inside a pending deletion range, projection
+marks the inserted segment as `insert`; only surrounding baseline content keeps
+the `delete` style.
 
 Typography ownership is layered and compact: root `ff/fs/lh` defines document
 defaults; editable block `pfs/lh/psb/psa` defines paragraph base scale, line
@@ -1487,10 +1500,12 @@ The default panel obtains exact type/text fragments through headless
 compact comment-style cards only for revision anchors currently mounted by the
 document virtualization window. Those cards follow `doc.scrollContainer`; their
 previous/next and “接收修订 / 拒绝修订” controls are iconfont buttons with tooltips. The
-default “待处理” queue contains pending and conflicted items only, so accepting
-or rejecting a revision removes its card from the current projection as soon as
-headless state updates. Accepted/rejected items remain model-side and appear
-only when the user explicitly opens “已处理” for history or redecision. The
+default “待处理” queue contains pending and conflicted items only. Accepting or
+rejecting materializes the chosen canonical content and removes the consumed
+records in one undoable Yjs transaction, so the card, document marker and
+connected popover disappear together. Undo restores both the content and its
+pending review records. The legacy “已处理” filter can still display imported
+append-only decision snapshots, but new decisions do not accumulate there. The
 panel presents one structural overlap at a time and identifies both choices by
 actor, revision type, time and exact `readContent()` fragment instead of the
 ambiguous “former/latter” wording; “接收此项” emits `resolve-overlap` and the

@@ -67,7 +67,125 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > - `major` (e.g. 0.1.37 → 1.0.0): breaking — removed APIs, renamed exports, signature changes, behavior reversals
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
->
+
+## Unreleased — 2026-08-28 — Revision decisions materialize immediately
+
+**Severity**: major
+
+**What changed**: `DocumentRevisionManager.accept*()` / `reject*()` and the
+headless `RevisionReviewPlugin.keep*()` / `revert*()` commands now materialize
+the chosen canonical content and remove the consumed Revision records in one
+normal Undo transaction. New decisions no longer accumulate accepted/rejected
+records or append-only decision nodes. Undo restores the pending records and
+their Diff presentation.
+
+**Why**: Once a reviewer decides, the document should immediately become
+ordinary editable content without stale marks, floating cards or a growing
+resolved-history list. The decision itself is a document mutation and belongs
+in the same Yjs/Undo model as other editor actions.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-data.md`
+- `blockcraft-input.md`
+- `MIGRATIONS.md`
+
+### Breaking Changes
+
+- A successful accept/reject consumes the target record. Calling `get()`,
+  `redecide()` or another decision method with that revision ID now throws
+  `RevisionNotFoundError` unless Undo first restores it.
+- New accepted/rejected items do not remain available through the “已处理”
+  filter. That filter is compatibility-only for imported legacy snapshots.
+- Review decisions are now online serialized host actions. Collaboration hosts
+  must reject stale/offline review commands instead of merging opposite
+  disconnected decisions later.
+
+### Migration Recipe
+
+```typescript
+// before: reverse a persisted decision
+doc.revisions.accept(revisionId)
+doc.revisions.redecide(revisionId, 'reject')
+
+// after: reverse the materialized decision through normal document history
+doc.revisions.accept(revisionId)
+doc.crud.undoManager.undo()
+// the restored pending revision can now be rejected if desired
+doc.revisions.reject(revisionId)
+```
+
+### Behavior Changes
+
+- Text/block insertion, deletion and split/merge decisions are materialized
+  before their records are removed; dependency references are pruned and
+  surviving right-side text revisions migrate across a materialized merge.
+- One group decision creates one isolated Undo item. Undo restores canonical
+  content and pending Revision records together.
+- `compactResolved()` remains for imported legacy accepted/rejected records;
+  new decisions do not require a later checkpoint compaction.
+- Document markers, connected popovers and review cards disappear from the
+  same record-removal event.
+- Adjacent same-actor text edits no longer split into new review groups after a
+  10-second pause; batching now ends only at a semantic edit/session boundary.
+- A pending insertion nested inside a pending deletion now renders as an
+  insertion on that Delta segment instead of inheriting deletion styling.
+  Continuous typing inside that deletion extends one insertion record instead
+  of creating a separate marked segment for every input event; unrelated
+  nested revisions still prevent target resizing.
+
+## Unreleased — 2026-08-28 — Captured atomic Undo items
+
+**Severity**: minor
+
+**What changed**: `DocUndoManger` now exports `captureUndoItem()`,
+`canUndoCapturedItem()` and `undoCapturedItem()` together with the opaque
+`DocUndoItemToken` type. A synchronous producer can isolate one Yjs transaction
+from the normal capture timeout, retain its exact stack identity and later
+revert it only while it is still the latest local Undo item.
+
+**Why**: Document agents and other programmatic batch producers need immediate
+application plus a safe “revert this batch” action. Calling generic `undo()`
+could remove a later user edit, while relying only on Revision decisions cannot
+cover operations that have no Revision Diff representation.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-data.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `DocUndoManger.captureUndoItem(callback)` returns the callback result and an
+  opaque token for the one independently captured Undo item, or `null` when the
+  callback did not produce exactly one tracked item.
+- `canUndoCapturedItem(token)` checks stack identity without changing history.
+- `undoCapturedItem(token)` performs no generic fallback and returns `false`
+  after a later local edit, Undo/Redo, history clear or readonly-policy denial.
+
+### Migration Recipe
+
+No existing integration must change. Batch producers that need a targeted
+rollback can opt in:
+
+```typescript
+const captured = doc.crud.undoManager.captureUndoItem(() =>
+  doc.crud.transact(() => applyWholeBatch()))
+
+if (captured.token) {
+  doc.crud.undoManager.undoCapturedItem(captured.token)
+}
+```
+
+### Behavior Changes
+
+- The callback must be synchronous and must produce exactly one Undo item for a
+  token to be returned. Put all writes in one outer `DocCRUD.transact()`.
+- Fresh capture boundaries are installed before and after the callback, so the
+  batch never time-merges with an adjacent user action.
 
 ## Unreleased — 2026-08-28 — Object layout capability filtering
 

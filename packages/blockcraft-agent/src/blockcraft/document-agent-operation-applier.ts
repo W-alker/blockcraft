@@ -1,5 +1,6 @@
 import {
   type BlockCraftDoc,
+  type DocUndoItemToken,
   type IBlockProps,
   type RevisionActorSnapshot,
 } from '@ccc/blockcraft'
@@ -24,6 +25,8 @@ export type DocumentAgentApplyResult = {
 export type DocumentAgentRevisionApplyResult = DocumentAgentApplyResult & {
   groupId: string
   revisionIds: readonly string[]
+  /** Safely reverts this whole Agent transaction while it remains the latest local edit. */
+  undoItemToken: DocUndoItemToken | null
 }
 
 export interface DocumentAgentRevisionApplyOptions {
@@ -68,13 +71,22 @@ export class DocumentAgentOperationApplier {
   ): DocumentAgentRevisionApplyResult {
     const prepared = this.prepare(context, result)
     const groupId = options.groupId?.trim() || createRevisionGroupId()
-    let applied = 0
-    this.doc.revisions.runAsRevision(options.actor, () => {
-      applied = this.applyOperations(prepared)
-    }, {groupId})
+    const captured = this.doc.crud.undoManager.captureUndoItem(() => {
+      let applied = 0
+      this.doc.crud.transact(() => {
+        applied = this.doc.revisions.runAsRevision(options.actor, () =>
+          this.executeOperations(prepared), {groupId})
+      })
+      return applied
+    })
 
     const revisionIds = this.doc.revisions.listGroup(groupId).map(revision => revision.id)
-    return {applied, groupId, revisionIds}
+    return {
+      applied: captured.result,
+      groupId,
+      revisionIds,
+      undoItemToken: captured.token,
+    }
   }
 
   private prepare(
@@ -117,13 +129,13 @@ export class DocumentAgentOperationApplier {
 
   private applyOperations(operations: readonly PreparedDocumentAgentOperation[]): number {
     let applied = 0
-    this.doc.crud.transact(() => {
-      for (const operation of operations) {
-        this.applyOperation(operation)
-        applied++
-      }
-    })
+    this.doc.crud.transact(() => applied = this.executeOperations(operations))
     return applied
+  }
+
+  private executeOperations(operations: readonly PreparedDocumentAgentOperation[]): number {
+    for (const operation of operations) this.applyOperation(operation)
+    return operations.length
   }
 
   private applyOperation(operation: PreparedDocumentAgentOperation): void {
