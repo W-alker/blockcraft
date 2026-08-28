@@ -128,7 +128,14 @@
     &[data-node-type="editable"] {
       border-radius: 4px;
       line-height: var(--bc-block-lh, var(--bc-lh));
-      padding-block-start: var(--bc-block-leading-sb, 0pt);
+      // A container's first editable block has no previous sibling on which
+      // to realize its paragraph-before spacing. Keep it in this host's
+      // border-box for stable pagination, while allowing a block theme to
+      // contribute its own intrinsic top inset without competing in cascade.
+      padding-block-start: calc(
+        var(--bc-block-leading-sb, 0pt)
+        + var(--_bc-block-padding-block-start, 0px)
+      );
     }
 
     &.selected {

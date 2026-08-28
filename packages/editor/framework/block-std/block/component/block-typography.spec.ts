@@ -53,6 +53,13 @@ import {BlockNodeType} from '../../types'
       <p data-block-id="paragraph-spacing-next" data-node-type="editable">
         next
       </p>
+      <blockquote
+        data-block-id="blockquote-spacing"
+        data-node-type="editable"
+        class="blockquote-block"
+        style="--bc-block-leading-sb: 6pt">
+        quoted spacing
+      </blockquote>
       <div class="paragraph-spacing-boundary">
         <p
           data-block-id="paragraph-spacing-boundary"
@@ -182,6 +189,14 @@ describe('BaseBlockComponent typography projection', () => {
       .toBeCloseTo(16, 3)
     expect(Number.parseFloat(getComputedStyle(spacing).paddingBlockStart))
       .toBeCloseTo(16 / 3, 3)
+
+    const blockquote = host.querySelector<HTMLElement>(
+      '[data-block-id="blockquote-spacing"]',
+    )!
+    expect(Number.parseFloat(getComputedStyle(blockquote).paddingBlockStart))
+      .toBeCloseTo(18, 3)
+    expect(Number.parseFloat(getComputedStyle(blockquote).paddingBlockEnd))
+      .toBeCloseTo(10, 3)
 
     const boundary = host.querySelector<HTMLElement>(
       '[data-block-id="paragraph-spacing-boundary"]',

@@ -1,7 +1,8 @@
 [data-blockcraft-root="true"] {
   .blockquote-block {
     position: relative;
-    padding-block: calc(10px + var(--bc-block-leading-sb, 0pt)) 10px;
+    --_bc-block-padding-block-start: 10px;
+    padding-block-end: 10px;
     padding-inline: 10px 0;
 
     &::before {
