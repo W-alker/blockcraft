@@ -212,7 +212,7 @@ class TextBoxVerticalListHarness {}
           class="text-box-block__surface"
           style="width: 180px; height: 100px"
         >
-          <div class="text-box-block__content">
+          <div class="text-box-block__content" style="color: #fff">
             <p
               id="horizontal-placeholder"
               class="paragraph-block edit-container bc-placeholder-empty bc-placeholder-target"
@@ -460,6 +460,9 @@ describe("TextBoxBlockSchema", () => {
         document.elementFromPoint(x, y) === element;
 
       expect(getComputedStyle(horizontal).writingMode).toBe("horizontal-tb");
+      expect(getComputedStyle(horizontal, "::before").color).toBe(
+        "rgb(255, 255, 255)",
+      );
       expect(
         hitsPlaceholderAt(
           horizontal,
@@ -602,7 +605,8 @@ describe("TextBoxBlockSchema", () => {
     }).compileComponents();
 
     let readonly = false;
-    const snapshot = TextBoxBlockSchema.createSnapshot();
+    const preset = getTextBoxPreset("quote-inverted");
+    const snapshot = TextBoxBlockSchema.createSnapshot("", preset.props);
     const yDoc = new Y.Doc();
     const yBlock = new Y.Map<unknown>() as YBlock;
     const yProps = new Y.Map<unknown>();
@@ -652,6 +656,10 @@ describe("TextBoxBlockSchema", () => {
       expect(surface.getAttribute("contenteditable")).toBe("false");
       expect(surface.getAttribute("data-bc-resize-preview-anchor")).toBeNull();
       expect(content.getAttribute("contenteditable")).toBe("true");
+      expect(content.style.color).toBe("rgb(255, 255, 255)");
+      expect(content.style.fontSize).toBe("27px");
+      expect(content.style.fontWeight).toBe("400");
+      expect(content.style.textAlign).toBe("left");
       expect(
         fixture.nativeElement.querySelectorAll("[data-bc-print-visual-surface]")
           .length,

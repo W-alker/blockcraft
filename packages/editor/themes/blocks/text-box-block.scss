@@ -166,6 +166,16 @@
       // still honoring an explicitly authored paragraph-after value.
       margin-block-end: var(--bc-block-sa, 0pt);
     }
+
+    // An empty TextBox initially shows the shared paragraph placeholder. The
+    // global placeholder rule uses the document placeholder color, which makes
+    // a white-text preset appear black immediately after insertion. Inside a
+    // TextBox the hint is part of the frame preview, so it follows the frame's
+    // base text paint while retaining the shared placeholder opacity.
+    .bc-placeholder-empty.bc-placeholder-target::before,
+    .bc-placeholder-empty .bc-placeholder-target::before {
+      color: inherit;
+    }
   }
 
   &[data-bc-text-box-wm='v'] {

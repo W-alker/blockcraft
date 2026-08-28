@@ -397,6 +397,24 @@ function renderTextBox(
       textStyle: storeObjectTextStyle(props.textStyle),
     })
     const textStyle = format.textStyle!
+    // Match the live TextBox projection for ordinary rich text. The WordArt
+    // class below only owns non-solid paint/effects; typography and a solid
+    // base color must still survive a preset when no advanced effect is used.
+    content.style.fontFamily = textStyle.fontFamily
+    content.style.fontSize = `${textStyle.fontSize}px`
+    content.style.fontWeight = `${textStyle.fontWeight}`
+    content.style.fontStyle = textStyle.fontStyle
+    content.style.letterSpacing = `${textStyle.letterSpacingEm}em`
+    content.style.lineHeight = `${textStyle.lineHeight}`
+    content.style.textAlign = textFrame.horizontalAlign
+    content.style.justifyContent = textFrame.verticalAlign === "top"
+      ? "flex-start"
+      : textFrame.verticalAlign === "bottom"
+        ? "flex-end"
+        : "center"
+    if (textStyle.fill.type === "solid") {
+      content.style.color = wordArt.textColor
+    }
     const advancedPaint = textStyle.fill.type !== "solid" ||
       textStyle.outline.type !== "none" || textStyle.effects.shadow.enabled ||
       textStyle.effects.glow.enabled || textStyle.transform !== "none"

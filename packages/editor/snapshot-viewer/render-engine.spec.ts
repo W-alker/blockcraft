@@ -301,6 +301,46 @@ describe("SnapshotRenderEngine", () => {
     expect(host.querySelector(".text-box-block__background-image")).toBeNull()
   })
 
+  it("projects ordinary text-box typography and solid text color", () => {
+    const host = document.createElement("div")
+    const renderer = createSnapshotRenderer()
+    const textBox = createTextBoxFixture("text-box-typography", {
+      textFrame: storeObjectTextFrame({
+        ...DEFAULT_OBJECT_TEXT_FRAME,
+        horizontalAlign: "right",
+        verticalAlign: "bottom",
+      }),
+      textStyle: storeObjectTextStyle({
+        ...DEFAULT_OBJECT_TEXT_STYLE,
+        fontFamily: "Georgia, serif",
+        fontSize: 29,
+        fontWeight: 800,
+        fontStyle: "italic",
+        letterSpacingEm: 0.08,
+        lineHeight: 1.4,
+        fill: {...DEFAULT_OBJECT_PAINT, color: "#19324A", opacity: 0.8},
+      }),
+    })
+
+    renderer.render(host, wrapRoot([textBox]))
+
+    const content = host.querySelector<HTMLElement>(
+      ".text-box-block__content",
+    )!
+    expect(content.classList).not.toContain(
+      "text-box-block__content--word-art",
+    )
+    expect(content.style.fontFamily).toBe("Georgia, serif")
+    expect(content.style.fontSize).toBe("29px")
+    expect(content.style.fontWeight).toBe("800")
+    expect(content.style.fontStyle).toBe("italic")
+    expect(content.style.letterSpacing).toBe("0.08em")
+    expect(content.style.lineHeight).toBe("1.4")
+    expect(content.style.textAlign).toBe("right")
+    expect(content.style.justifyContent).toBe("flex-end")
+    expect(content.style.color).toBe("rgba(25, 50, 74, 0.8)")
+  })
+
   it("projects compact document and editable-block typography", () => {
     const host = document.createElement("div")
     const renderer = createSnapshotRenderer()

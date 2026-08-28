@@ -154,6 +154,7 @@ const rotationTransform = (rotation: number): string =>
         [style.font-style]="textBoxFormat.textStyle?.fontStyle"
         [style.letter-spacing.em]="textBoxFormat.textStyle?.letterSpacingEm"
         [style.line-height]="textBoxFormat.textStyle?.lineHeight"
+        [style.color]="textPaintColor"
         [style.text-align]="textBoxFormat.textFrame?.horizontalAlign"
         [style.justify-content]="textVerticalJustify"
         [style.white-space]="textBoxFormat.textFrame?.wrap ? null : 'nowrap'"
