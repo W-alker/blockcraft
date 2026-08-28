@@ -19,8 +19,12 @@ export function findMarkerItem(
   const revisionIds = new Set(readRevisionIds(marker))
   if (!revisionIds.size) return null
   const active = state.activeItem
-  if (active?.revisionIds.some(id => revisionIds.has(id))) return active
+  if (
+    active?.revisionIds.some(id => revisionIds.has(id)) &&
+    markerCanRepresentItem(marker, active)
+  ) return active
   return state.items.find(item =>
+    markerCanRepresentItem(marker, item) &&
     item.revisionIds.some(id => revisionIds.has(id))) ?? null
 }
 
@@ -36,5 +40,14 @@ export function findItemMarker(
   ]
   const revisionIds = new Set(item.revisionIds)
   return candidates.find(candidate =>
+    markerCanRepresentItem(candidate, item) &&
     readRevisionIds(candidate).some(id => revisionIds.has(id))) ?? null
+}
+
+function markerCanRepresentItem(
+  marker: HTMLElement,
+  item: RevisionReviewItem,
+): boolean {
+  if (!marker.matches('[data-block-id]')) return true
+  return item.kinds.some(kind => kind.startsWith('block-'))
 }

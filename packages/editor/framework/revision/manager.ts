@@ -995,6 +995,7 @@ export class DocumentRevisionManager {
     const marked = records.filter(record =>
       record.status === 'pending' || record.status === 'conflict')
     const markedIds = new Set(marked.map(record => record.id))
+    const blockMarkers: ResolvedRevision[] = []
     let hidden = false
     let kind: RevisionBlockPresentation['kind'] = null
     let state: RevisionStatus | null = null
@@ -1010,19 +1011,24 @@ export class DocumentRevisionManager {
       }
       if (!markedIds.has(record.id)) continue
       if (record.target.kind === 'block') {
+        blockMarkers.push(record)
         kind = record.kind === 'block-insert' ? 'insert' : 'delete'
         state = mergeStatus(state, record.status)
       } else if (
         record.target.kind === 'boundary' &&
         record.target.rightBlockId === blockId
       ) {
+        blockMarkers.push(record)
         const pendingKind = record.kind === 'block-split' ? 'insert' : 'delete'
         boundaryBefore = record.status === 'conflict' ? 'conflict' : pendingKind
         state = mergeStatus(state, record.status)
       }
     }
     return {
-      revisionIds: marked.map(record => record.id).sort(),
+      // Text Revision IDs belong only to the exact projected inline Delta
+      // ranges. Putting them on the block host makes every click in the
+      // paragraph look like a click on the changed text.
+      revisionIds: blockMarkers.map(record => record.id).sort(),
       kind,
       state,
       hidden,

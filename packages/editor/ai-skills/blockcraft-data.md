@@ -587,6 +587,11 @@ deletions, consumes the records, and removes all `data-bc-revision-*` marker
 attributes and review cards in the same transaction. Undo recreates the pending
 records and markup. The “已处理” filter is compatibility-only for imported
 legacy decision snapshots.
+Inline Revision presentation is range-owned: text IDs and
+`data-bc-revision-kind/state` attributes decorate only their exact projected
+`c-element` segments. `getBlockPresentation()` exposes host `revisionIds` only
+for whole-block and right-side split/merge boundary records, never merely
+because the paragraph contains text revisions.
 For an overlapping pending insertion inside a pending deletion, the inserted
 Delta segment takes `insert` presentation priority while the surrounding
 baseline segments remain `delete`; this is presentation precedence only and

@@ -68,6 +68,33 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## Unreleased — 2026-08-28 — Scope Revision markers to their edited content
+
+**Severity**: patch
+
+**What changed**: `DocumentRevisionManager.getBlockPresentation()` no longer
+returns paragraph-host `revisionIds` for text-only revisions. Inline Revision
+IDs remain on the exact projected `c-element` ranges; block insert/delete and
+split/merge boundary revisions continue to mark their block host. The default
+review popover also rejects a paragraph-host marker for a text-only review item.
+
+**Why**: Aggregating every text Revision ID onto an editable block made any
+click in that paragraph look like a click on changed text and exposed unrelated
+inline Revision attributes on the whole paragraph.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-data.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Clicking or focusing an unchanged part of a paragraph does not open a
+  text-Revision popover; the exact inserted/deleted marker must be targeted.
+- Whole-block and paragraph-boundary Revision popovers remain block-anchored.
+
 ## Unreleased — 2026-08-28 — Revision decisions materialize immediately
 
 **Severity**: major

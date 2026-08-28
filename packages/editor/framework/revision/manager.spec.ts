@@ -118,10 +118,31 @@ describe('DocumentRevisionManager', () => {
     const harness = createHarness('first', 'second')
     const deletionId = harness.manager.recordBlockDeletion([FIRST_ID], ROOT_ID)!
 
+    expect(harness.manager.getBlockPresentation(FIRST_ID)).toEqual({
+      revisionIds: [deletionId],
+      kind: 'delete',
+      state: 'pending',
+      hidden: false,
+      boundaryBefore: null,
+    })
+
     harness.manager.accept(deletionId)
 
     expect(harness.manager.list()).toEqual([])
     expect(snapshotText(harness.manager.projectFinalSnapshot(), FIRST_ID)).toBe('')
+    expect(harness.manager.getBlockPresentation(FIRST_ID)).toEqual({
+      revisionIds: [],
+      kind: null,
+      state: null,
+      hidden: false,
+      boundaryBefore: null,
+    })
+  })
+
+  it('keeps inline revision markers off the editable block host', () => {
+    const harness = createHarness('abc', '')
+    harness.manager.deleteText(FIRST_ID, 1, 1)
+
     expect(harness.manager.getBlockPresentation(FIRST_ID)).toEqual({
       revisionIds: [],
       kind: null,

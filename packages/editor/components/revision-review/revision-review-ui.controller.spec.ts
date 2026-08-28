@@ -12,10 +12,14 @@ describe('RevisionReviewUiController', () => {
   function createHarness() {
     const scrollContainer = document.createElement('div')
     const blockHost = document.createElement('div')
+    const plainText = document.createElement('c-element')
     const marker = document.createElement('c-element')
     blockHost.dataset['blockId'] = 'block-1'
+    // Simulate a stale/legacy paragraph host carrying an inline Revision ID.
+    // The controller must still prefer and require the exact inline marker.
+    blockHost.setAttribute('data-bc-revision-ids', 'revision-1')
     marker.setAttribute('data-bc-revision-ids', 'revision-1')
-    blockHost.append(marker)
+    blockHost.append(plainText, marker)
     scrollContainer.append(blockHost)
     document.body.append(scrollContainer)
 
@@ -111,6 +115,7 @@ describe('RevisionReviewUiController', () => {
       destroy: () => destroyCallback(),
       marker,
       navigateToBlock,
+      plainText,
       releaseLease,
       review,
       state$,
@@ -144,6 +149,40 @@ describe('RevisionReviewUiController', () => {
     expect(h.releaseLease).toHaveBeenCalledTimes(1)
     h.marker.click()
     expect(h.review.activate).toHaveBeenCalledTimes(1)
+    h.cleanup()
+  })
+
+  it('does not open a text Revision popover from an unmodified paragraph area', () => {
+    const h = createHarness()
+    expect(h.controller.attach()).toBeTrue()
+
+    h.plainText.click()
+
+    expect(h.review.activate).not.toHaveBeenCalled()
+    expect(h.createConnectedOverlay).not.toHaveBeenCalled()
+    h.cleanup()
+  })
+
+  it('still opens a block Revision popover from its block host', () => {
+    const h = createHarness()
+    expect(h.controller.attach()).toBeTrue()
+    const current = h.state$.value
+    const blockItem = {
+      ...current.items[0],
+      kinds: ['block-delete'] as const,
+    }
+    h.state$.next({
+      ...current,
+      items: [blockItem],
+      activeItem: blockItem,
+    })
+
+    h.blockHost.click()
+
+    expect(h.review.activate).toHaveBeenCalledOnceWith('group-1')
+    expect(h.createConnectedOverlay).toHaveBeenCalled()
+    expect(h.createConnectedOverlay.calls.mostRecent().args[0].target)
+      .toBe(h.blockHost)
     h.cleanup()
   })
 

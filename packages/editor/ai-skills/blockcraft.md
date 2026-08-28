@@ -234,7 +234,10 @@ actor/mode/session reset, target block or operation-kind change, non-adjacent
 edit, or an explicit `runInGroup()` scope.
 When a pending insertion is nested inside a pending deletion range, projection
 marks the inserted segment as `insert`; only surrounding baseline content keeps
-the `delete` style.
+the `delete` style. Text Revision IDs and presentation attributes exist only on
+those exact inline ranges. An editable block host carries Revision IDs only for
+whole-block or paragraph-boundary revisions, so clicking unchanged text in the
+same paragraph cannot activate an inline review popover.
 
 Typography ownership is layered and compact: root `ff/fs/lh` defines document
 defaults; editable block `pfs/lh/psb/psa` defines paragraph base scale, line

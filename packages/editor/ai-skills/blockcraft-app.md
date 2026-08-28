@@ -1333,7 +1333,10 @@ onReviewIntent(intent: RevisionReviewIntent) {
 ```
 
 Attaching the controller also enables the default connected popover when a
-rendered `data-bc-revision-ids` marker is clicked. Offscreen panel navigation
+rendered `data-bc-revision-ids` marker is clicked. Text-only items require the
+exact inline marker; their IDs are not copied to the editable block host, and
+the controller defensively rejects a paragraph-host match. Whole-block and
+split/merge boundary items remain block-anchored. Offscreen panel navigation
 uses the document's stable block navigation and a single-block view lease; the
 review panel must not acquire a full-document lease. Destroy the controller
 with the host if the Doc is not destroyed at the same time. Give the panel the
