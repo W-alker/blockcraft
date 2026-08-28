@@ -12,7 +12,8 @@ import {
   viewOf,
 } from './person-card/person-card-view.util'
 import {PERSON_CARD_STYLES} from './person-card/person-card.styles'
-import {readFrozenWeather} from './weather/weather-anchor.const'
+import {LIVE_ANCHOR, readFrozenWeather} from './weather/weather-anchor.const'
+import {DocWeatherService, type DocWeatherQuery} from '../../framework'
 
 describe('dynamic material presentation primitives', () => {
   it('keeps style registries as the source of their config options and default size', () => {
@@ -58,5 +59,23 @@ describe('dynamic material presentation primitives', () => {
       tone: 'sunny', temp: 30, condition: '晴', location: '', high: 30, low: 30,
     })
     expect(readFrozenWeather({temp: '30', condition: '晴'})).toBeNull()
+  })
+
+  it('keeps live and fixed weather queries explicit at the host service boundary', async () => {
+    class WeatherService extends DocWeatherService {
+      override query = async (request?: DocWeatherQuery) => ({
+        tone: 'sunny' as const,
+        temp: 20,
+        condition: request?.date ?? 'live',
+        location: 'Hangzhou',
+        high: 24,
+        low: 16,
+      })
+    }
+    const service = new WeatherService()
+    await expectAsync(service.query({date: '2026-08-28'})).toBeResolvedTo(
+      jasmine.objectContaining({condition: '2026-08-28'})
+    )
+    expect(LIVE_ANCHOR).toBe('live')
   })
 })

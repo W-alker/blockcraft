@@ -1511,7 +1511,7 @@ Canonical dynamic blocks are exported as `WeatherBlockSchema`,
 `date-card`, and `person-card`. Reusable-template authoring is a host state, not
 a second schema family: unresolved values use `draft:*` meta and are projected
 only for display. See `blockcraft-block.md` for the materialization boundary and
-`DYNAMIC_MATERIAL_DATA` host port.
+the Doc-injected `DOC_WEATHER_SERVICE_TOKEN` host boundary.
 
 The skill pack and the framework are versioned together. Whenever the framework refactors or adds public API, three things move in lock-step in the same PR:
 

@@ -1,6 +1,5 @@
 import { ChangeDetectorRef, DestroyRef, afterNextRender, inject, signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { DYNAMIC_MATERIAL_DATA, WeatherData, WeatherTone } from '../dynamic-material-data';
+import type { DocWeatherData, DocWeatherQuery, DocWeatherTone } from '../../../framework';
 import { FrozenWeather } from './weather-anchor.const';
 
 /**
@@ -9,7 +8,7 @@ import { FrozenWeather } from './weather-anchor.const';
  * 还是失败了、还是本就不该有值。对齐 kr-list 块的 `isLoading()/hasError()` 分支口径。
  */
 export type WeatherChipStatus =
-    /** 本就不取数（编辑态占位、未 provide TEMPLATE_DATA） */
+    /** 本就不取数（模板编辑态占位） */
     | 'idle'
     /** 正在拉 */
     | 'loading'
@@ -21,8 +20,8 @@ export type WeatherChipStatus =
 /** chip 模板要用的读取口。两态组件各接一行，模板只认这一份契约。 */
 export interface WeatherChip {
     /** 生效天气：定格值优先，没有才用现拉值；都没有为 null（模板画占位）。 */
-    view: () => FrozenWeather | WeatherData | null;
-    tone: () => WeatherTone;
+    view: () => FrozenWeather | DocWeatherData | null;
+    tone: () => DocWeatherTone;
     location: () => string;
     status: () => WeatherChipStatus;
     /**
@@ -31,6 +30,17 @@ export interface WeatherChip {
      * 已有值时是空操作，不会重复打接口。
      */
     reload: () => void;
+}
+
+export interface WeatherChipSource {
+    frozen: () => FrozenWeather | null;
+    /** 编辑态返回 false；正常文档返回 true。 */
+    enabled: () => boolean;
+    /** undefined 表示实时天气；ISO 日期表示文档创建日天气。 */
+    request: () => DocWeatherQuery | undefined;
+    query: (request: DocWeatherQuery | undefined, signal: AbortSignal) => Promise<DocWeatherData>;
+    /** 固定日期取数成功后的持久化钩子；实时档不会调用。 */
+    freeze?: (weather: DocWeatherData, request: DocWeatherQuery) => void;
 }
 
 /**
@@ -42,47 +52,60 @@ export interface WeatherChip {
  * 不发逐帧回调**（`widthChange` 只在松手时发一次，见 resize-container.ts:277/320）。
  * 于是 JS 永远慢一拍，表现为「拖动时外框在变、里面纹丝不动」。图片块就是纯 CSS（`width:100%`）才天生跟手。
  *
- * 必须在注入上下文调用（字段初始化器）。TEMPLATE_DATA 可选注入：
- * 导出/版本回放等未 provide 的 surface 里 chip 画占位而非炸。
+ * 必须在注入上下文调用（字段初始化器）。宿主查询由调用组件从 Doc injector 取服务后传入。
  */
-export function wireWeatherChip(src: {
-    frozen: () => FrozenWeather | null;
-    /**
-     * 要不要现拉实时天气。**必须与 frozen 分开表达**——两者不是一回事：
-     * 渲染态没有定格值时该现拉（活值档/建档降级），编辑态没有定格值时**不该**现拉。
-     * 早先用「frozen 为空」一个条件兼表两意，导致模板里直接画出作者当地的真实天气
-     * （同「模板态即使已带真值也不画真人」那条口径，模板里也不该出现某地的天气）。
-     */
-    live: () => boolean;
-}): WeatherChip {
-    const live = signal<WeatherData | null>(null);
-    const status = signal<WeatherChipStatus>('idle');
-    const data = inject(DYNAMIC_MATERIAL_DATA, { optional: true });
+export function wireWeatherChip(src: WeatherChipSource): WeatherChip {
+    const resolved = signal<{ key: string; weather: DocWeatherData } | null>(null);
+    const status = signal<{ key: string; value: WeatherChipStatus }>({ key: '', value: 'idle' });
     const cdr = inject(ChangeDetectorRef);
     const destroyRef = inject(DestroyRef);
+    let pendingKey: string | null = null;
+    let abort: AbortController | null = null;
+
+    const requestState = (): { key: string; request?: DocWeatherQuery } => {
+        const request = src.request();
+        return request?.date ? { key: `date:${request.date}`, request } : { key: 'live' };
+    };
 
     const load = (): void => {
-        if (!data || !src.live()) return;       // 编辑态 / 未 provide：恒占位，一次网络都不发
-        if (src.frozen() || live()) return;   // 已有值：不重复打接口（reload 的幂等闸）
-        status.set('loading');
-        let got = false;
-        data.weather.get().pipe(takeUntilDestroyed(destroyRef)).subscribe({
-            // OnPush 下这些回调在变更检测之外落地，不 markForCheck 就渲染不出来
-            next: w => { got = true; live.set(w); status.set('ready'); cdr.markForCheck(); },
-            /**
-             * 失败**不走 error 回调**：取数出错在 `CsesTemplateData.weather.get` 那层
-             * 已被 catchError 吞成 EMPTY（口径是「不发值」而不是「编个晴天」）。
-             * 所以失败的唯一信号是「流正常结束了，却一个值都没来过」。
-             */
-            complete: () => { if (!got) { status.set('error'); cdr.markForCheck(); } }
-        });
+        if (!src.enabled()) return;   // 编辑态：恒占位，一次网络都不发
+        const state = requestState();
+        if (src.frozen() || resolved()?.key === state.key || pendingKey === state.key) return;
+        abort?.abort();
+        const controller = new AbortController();
+        abort = controller;
+        pendingKey = state.key;
+        status.set({ key: state.key, value: 'loading' });
+        Promise.resolve().then(() => src.query(state.request, controller.signal)).then(weather => {
+                if (requestState().key !== state.key || !src.enabled()) return;
+                resolved.set({ key: state.key, weather });
+                status.set({ key: state.key, value: 'ready' });
+                if (state.request?.date) src.freeze?.(weather, state.request);
+                cdr.markForCheck();
+            })
+            .catch(() => {
+                if (requestState().key !== state.key || controller.signal.aborted) return;
+                status.set({ key: state.key, value: 'error' });
+                cdr.markForCheck();
+            })
+            .finally(() => {
+                if (pendingKey === state.key) pendingKey = null;
+                if (abort === controller) abort = null;
+            });
     };
+
+    destroyRef.onDestroy(() => abort?.abort());
 
     // 推到 afterNextRender：①字段初始化那刻 this.props 还没就绪，读不到定格值；
     // ②定格态本就一次网络都不该发——判定必须晚于 props 就绪。
     afterNextRender(() => load());
 
-    const view = (): FrozenWeather | WeatherData | null => src.frozen() ?? live();
+    const liveView = (): DocWeatherData | null => {
+        const state = requestState();
+        const value = resolved();
+        return value?.key === state.key ? value.weather : null;
+    };
+    const view = (): FrozenWeather | DocWeatherData | null => src.frozen() ?? liveView();
     return {
         view,
         // 地名一律来自数据源：定格态读烤进去的 frozen.location，活值态读现拉到的定位
@@ -90,7 +113,11 @@ export function wireWeatherChip(src: {
         location: () => view()?.location || '城市',
         tone: () => view()?.tone ?? 'sunny',
         // 定格态一挂载就有值、根本不进 load，status 信号还停在 idle——所以有值一律算 ready
-        status: () => (view() ? 'ready' : status()),
+        status: () => {
+            if (view()) return 'ready';
+            const state = status();
+            return state.key === requestState().key ? state.value : 'idle';
+        },
         reload: load
     };
 }

@@ -272,11 +272,31 @@ The framework reads several services from Angular's injector via `InjectionToken
     { provide: BLOCK_CREATOR_SERVICE_TOKEN, useClass: MyBlockCreatorService },
     { provide: DOC_LINK_PREVIEWER_SERVICE_TOKEN, useClass: DocLinkPreviewerService },
     { provide: DOC_ADAPTER_SERVICE_TOKEN, useClass: MyAdapterService },
+    { provide: DOC_WEATHER_SERVICE_TOKEN, useClass: MyDocWeatherService },
   ],
   standalone: true,
 })
 export class MyDocShellComponent { /* ... */ }
 ```
+
+`DOC_WEATHER_SERVICE_TOKEN` belongs to the host component injector, not to
+`DocConfig`, and follows the same Doc-injected service pattern as
+`DOC_LINK_PREVIEWER_SERVICE_TOKEN`. `query()` receives no date for live weather
+and an ISO `date` for a fixed document-day value:
+
+```typescript
+class MyDocWeatherService extends DocWeatherService {
+  override query = (request?: DocWeatherQuery, signal?: AbortSignal) =>
+    request?.date
+      ? this.weather.history(request.date, signal)
+      : this.weather.current(signal)
+}
+```
+
+The weather block never fetches while projected as a template draft. In a
+normal document it fetches after mount; fixed-date results are persisted to
+`props.frozen` through Yjs when the block is writable, while live results remain
+runtime-only.
 
 ### Required Service Contracts
 

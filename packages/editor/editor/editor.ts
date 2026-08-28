@@ -6,7 +6,9 @@ import {
   DOC_FILE_SERVICE_TOKEN,
   DOC_LINK_PREVIEWER_SERVICE_TOKEN,
   DOC_MESSAGE_SERVICE_TOKEN,
+  DOC_WEATHER_SERVICE_TOKEN,
   DocLinkPreviewerService,
+  DocWeatherService,
   generateId,
   PaginationDocumentHeaderOptions
 } from "../framework";
@@ -135,6 +137,10 @@ const mentionRequest = async (keyword: string, _type?: string) => {
     {
       provide: DOC_LINK_PREVIEWER_SERVICE_TOKEN,
       useClass: DocLinkPreviewerService,
+    },
+    {
+      provide: DOC_WEATHER_SERVICE_TOKEN,
+      useClass: DocWeatherService,
     },
     { provide: DOC_ADAPTER_SERVICE_TOKEN, useClass: AdapterService },
     ConsoleLogger,

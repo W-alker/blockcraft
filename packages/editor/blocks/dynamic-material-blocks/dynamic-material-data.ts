@@ -1,28 +1,24 @@
 import {InjectionToken} from '@angular/core'
 import type {Observable} from 'rxjs'
+import type {
+  DocWeatherData,
+  DocWeatherQuery,
+  DocWeatherTone,
+} from '../../framework/services/weather.service'
 
-export type WeatherTone =
-  | 'sunny'
-  | 'cloudy'
-  | 'rainy'
-  | 'snowy'
-  | 'stormy'
-  | 'foggy'
+/** @deprecated Use DocWeatherTone from the dedicated weather service. */
+export type WeatherTone = DocWeatherTone
+/** @deprecated Use DocWeatherData from the dedicated weather service. */
+export type WeatherData = DocWeatherData
+/** @deprecated Use DocWeatherQuery from the dedicated weather service. */
+export type WeatherDataRequest = DocWeatherQuery
 
-export interface WeatherData {
-  tone: WeatherTone
-  temp: number
-  condition: string
-  location: string
-  high: number
-  low: number
-}
-
-/** Host adapter boundary. BlockCraft never imports application auth or weather clients. */
+/** @deprecated Provide DOC_WEATHER_SERVICE_TOKEN instead. */
 export interface DynamicMaterialDataPort {
-  weather: {get(): Observable<WeatherData>}
+  weather: {get(request?: WeatherDataRequest): Observable<WeatherData>}
 }
 
+/** @deprecated Provide DOC_WEATHER_SERVICE_TOKEN instead. */
 export const DYNAMIC_MATERIAL_DATA =
   new InjectionToken<DynamicMaterialDataPort>('DYNAMIC_MATERIAL_DATA')
 

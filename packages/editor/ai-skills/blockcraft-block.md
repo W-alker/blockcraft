@@ -1504,10 +1504,13 @@ real prop, and remove the consumed `draft:*` meta. Geometry and placement remain
 real props in both states. Normal documents should never retain template draft
 meta.
 
-Use `DYNAMIC_MATERIAL_DATA` to provide host data for dynamic blocks without
-coupling BlockCraft to authentication or business services. The person-card
-payload is a neutral display snapshot; weather access implements
-`DynamicMaterialDataPort`.
+Use `DOC_WEATHER_SERVICE_TOKEN` to provide a host `DocWeatherService` without
+coupling BlockCraft to application weather clients. The block resolves this
+service from `doc.injector`, matching the bookmark block's link-preview service
+boundary. `query()` receives no argument for the live anchor and
+`{ date: 'YYYY-MM-DD' }` for a fixed document-day anchor. Fixed-date results are
+asynchronously written to `props.frozen` through a no-Undo Yjs transaction when
+the block is writable; live results are never persisted.
 
 `DocChain` is the fluent transaction builder. Each method enqueues a step; `run()` commits everything in a single Yjs transaction. Async tasks can be interleaved with `.task()`.
 

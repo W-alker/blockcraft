@@ -3,7 +3,12 @@ import { BaseBlockComponent, NoEditableBlockNative } from '../../../framework';
 import type { SimpleBasicType } from '../../../global';
 import type { BlockObjectSizeProps } from '../../../framework';
 import { WeatherMarkComponent } from './weather-mark.component';
-import { readFrozenWeather } from './weather-anchor.const';
+import { LIVE_ANCHOR, readFrozenWeather } from './weather-anchor.const';
+import {
+    DOC_WEATHER_SERVICE_TOKEN,
+    type DocWeatherData,
+    type DocWeatherQuery
+} from '../../../framework';
 import { wireWeatherChip } from './weather-chip.util';
 import {
     WEATHER_CHIP_BOX_STYLE,
@@ -122,8 +127,8 @@ declare global {
 }
 
 /**
- * 渲染态（文档侧）：定格类物料——建档一刻把当时的天气烤进 props.frozen，此后零网络、永不变。
- * 只有时间锚配成「始终显示当天」（props.date === 'live'）或建档时降级没拿到值，才回落现拉。
+ * 渲染态（文档侧）：ISO 日期档首次挂载后经 DocWeatherService 查当天历史天气，成功后延迟写入
+ * props.frozen；后续只读定格值。`props.date === 'live'` 始终请求实时天气且永不写 frozen。
  */
 @Component({
     selector: 'div.weather-block',
@@ -133,10 +138,16 @@ declare global {
     template: WEATHER_CHIP_TEMPLATE
 })
 export class WeatherBlockComponent extends ObjectBlockComponent<WeatherModel> {
-    // live: true —— 文档态没有定格值就该现拉（时间锚配了「始终显示当天」，或建档没写定格值）
     protected readonly chip = wireWeatherChip({
-        frozen: () => readFrozenWeather(this.presentationProps?.frozen),
-        live: () => !this.isDraftProjection
+        frozen: () => this.weatherRequest()?.date
+            ? readFrozenWeather(this.presentationProps?.frozen)
+            : null,
+        enabled: () => !this.isDraftProjection,
+        request: () => this.weatherRequest(),
+        query: (request, signal) => this.doc.injector
+            .get(DOC_WEATHER_SERVICE_TOKEN)
+            .query(request, signal),
+        freeze: (weather, request) => this.freezeWeather(weather, request)
     });
 
     // 初值只是占位：字段初始化那刻 this.props 还没就绪，真值在基类 ngOnInit 的首次 repaint 里补。
@@ -148,6 +159,20 @@ export class WeatherBlockComponent extends ObjectBlockComponent<WeatherModel> {
     /** 三条显示配置装在一个 look signal 里（同日期卡的理由：两态接线一模一样，加配置两处都不用改）。 */
     protected override repaint(): void {
         this.look.set(readWeatherLook(this.presentationProps));
+        this.chip.reload();
+    }
+
+    private weatherRequest(): DocWeatherQuery | undefined {
+        const date = this.presentationProps?.date;
+        return typeof date === 'string' && date !== LIVE_ANCHOR && /^\d{4}-\d{2}-\d{2}$/.test(date)
+            ? { date }
+            : undefined;
+    }
+
+    private freezeWeather(weather: DocWeatherData, request: DocWeatherQuery): void {
+        if (!request.date || this._isGone() || this.doc.readonlyManager.isReadonly(this)) return;
+        if (this.weatherRequest()?.date !== request.date || readFrozenWeather(this.presentationProps?.frozen)) return;
+        this.setInitProps({ frozen: { ...weather } });
     }
 
     /**

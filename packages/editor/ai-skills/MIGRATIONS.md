@@ -170,6 +170,62 @@ capability without `insert`.
   default. Generic range deletion can still remove them; the missing insert
   grant prevents fabrication, not ordinary deletion.
 
+## Unreleased — 2026-08-28 — Weather anchor materialization
+
+**Severity**: minor
+
+**What changed**: BlockCraft now exports `DocWeatherService`,
+`DOC_WEATHER_SERVICE_TOKEN`, `DocWeatherQuery`, and `DocWeatherData`. Weather
+blocks resolve the service from `doc.injector`, request current data for the
+`live` anchor, request the configured ISO date for fixed anchors, and persist a
+successful fixed result to `props.frozen` through Yjs when writable. The generic
+`DYNAMIC_MATERIAL_DATA` weather port remains as a deprecated compatibility API
+but is no longer consumed by the built-in weather block.
+
+**Why**: fixed and live weather previously rendered the same current value and
+fixed results existed only in component memory, so reopening a document could
+change a supposedly creation-day card.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-block.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `DocWeatherService`
+- `DOC_WEATHER_SERVICE_TOKEN`
+- `DocWeatherQuery` with optional `date`
+- `DocWeatherData` and `DocWeatherTone`
+
+### Migration Recipe
+
+Replace the generic dynamic-material weather port with a Doc-injected service:
+
+```typescript
+// before
+{ provide: DYNAMIC_MATERIAL_DATA, useClass: MyDynamicMaterialData }
+
+// after
+{ provide: DOC_WEATHER_SERVICE_TOKEN, useClass: MyDocWeatherService }
+
+class MyDocWeatherService extends DocWeatherService {
+  override query = (request?: DocWeatherQuery, signal?: AbortSignal) =>
+    request?.date
+      ? history(request.date, signal)
+      : current(signal)
+}
+```
+
+### Behavior Changes
+
+- Template draft projections still perform no weather request.
+- Fixed ISO-date weather is persisted only when the block is writable; readonly
+  views render the requested value without mutating the document.
+- Live weather remains runtime-only and ignores legacy `props.frozen`.
+
 ## Unreleased — 2026-08-27 — Block-owned Agent capability contracts
 
 **Severity**: minor
