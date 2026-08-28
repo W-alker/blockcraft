@@ -278,6 +278,11 @@ Ctrl+A is model-first and climbs by content coverage, not by DOM highlight shape
   -> `selectAllChildren(container)` creates one boundary range over all of that
   container's children. This applies to callout/highlight containers and to a
   text box while it is in absolute placement.
+- Singleton closed containers are the bounded exception: when their only direct
+  child is the active editable text block, the first Ctrl/Cmd+A selects that
+  child's complete text range. Delete and paste therefore stay on the normal
+  text pipeline. A repeated Ctrl/Cmd+A may then promote to the container
+  boundary. Built-in Shape uses this path for `shape-text`.
 - Partial/collapsed editable text outside a `container` scope ->
   `selectAllChildren(editable)` creates a full text range and shows the hint. A
   relative-flow text box is transparent, so it follows this Mermaid-like path.

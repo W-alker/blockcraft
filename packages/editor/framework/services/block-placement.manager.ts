@@ -161,6 +161,16 @@ export class BlockPlacementManager {
     return this.runtime.isAbsoluteObjectSelection(selection)
   }
 
+  /**
+   * Resolve stable IDs owned by an absolute-object selection without reading
+   * mounted views. Consumers must re-resolve before applying a command.
+   */
+  getAbsoluteObjectSelectionIds(
+    selection: BlockCraft.Selection | null | undefined = this.doc.selection.value,
+  ): string[] | null {
+    return this.runtime.getAbsoluteObjectSelectionIds(selection)
+  }
+
   isPlacementLayout(blockOrId: string | BlockCraft.BlockComponent): boolean {
     return this.runtime.isPlacementLayout(blockOrId)
   }

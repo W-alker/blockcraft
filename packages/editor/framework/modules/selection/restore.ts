@@ -8,6 +8,11 @@ export function focusBlockSelectionEdge(
   atStart: boolean,
 ): boolean {
   try {
+    // The root placement plane is internal absolute-object infrastructure. It
+    // is intentionally excluded from ordinary sibling navigation and cannot
+    // provide a text/gap caret for continued document input.
+    if (block.flavour === "placement-layout") return false;
+
     if (doc.isEditable(block)) {
       const offset = atStart ? 0 : (block as EditableBlockComponent).textLength;
       doc.selection.replay({

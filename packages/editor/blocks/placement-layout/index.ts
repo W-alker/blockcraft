@@ -8,6 +8,7 @@ import {generateId} from '../../framework'
 import {BLOCK_PLACEMENT_LAYOUT_FLAVOUR} from '../../framework/services/block-placement.manager'
 import {PlacementLayoutBlockComponent} from './placement-layout.block'
 
+
 export {PlacementLayoutBlockComponent} from './placement-layout.block'
 
 export interface PlacementLayoutBlockModel extends NoEditableBlockNative {

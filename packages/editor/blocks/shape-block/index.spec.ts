@@ -6,6 +6,7 @@ import {
   ShapeBlockSchema,
   ShapeIconComponent,
   ShapeResizerComponent,
+  ShapeTextBlockSchema,
   calculateShapeRotation,
   calculateShapeResize,
   createDefaultEditableShapeGeometry,
@@ -174,6 +175,28 @@ describe('Shape block domain', () => {
     const text = snapshot.children[0] as IBlockSnapshot
     expect(text.flavour).toBe('shape-text')
     expect(text.children).toEqual([{insert: '下一步'}])
+    expect(ShapeTextBlockSchema.metadata.plainTextOnly).not.toBeTrue()
+    expect(ShapeTextBlockSchema.metadata.pastePlainTextOnly).toBeTrue()
+  })
+
+  it('keeps text formatting but rejects non-text embeds at creation time', () => {
+    const richText = [
+      {insert: '纯', attributes: {'a:bold': true}},
+      {insert: {mention: '成员'}},
+      {insert: {break: '\n'}},
+      {insert: '文本', attributes: {'a:link': 'https://example.com'}},
+    ]
+    const snapshot = ShapeBlockSchema.createSnapshot('rectangle', richText)
+    const directText = ShapeTextBlockSchema.createSnapshot(richText)
+
+    const text = snapshot.children[0] as IBlockSnapshot
+    const expected = [
+      {insert: '纯', attributes: {'a:bold': true}},
+      {insert: {break: '\n'}},
+      {insert: '文本', attributes: {'a:link': 'https://example.com'}},
+    ]
+    expect(text.children).toEqual(expected)
+    expect(directText.children).toEqual(expected)
   })
 
   it('does not create shape-text for empty strings or empty deltas', () => {

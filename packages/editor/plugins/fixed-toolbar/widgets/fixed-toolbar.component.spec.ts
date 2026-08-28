@@ -678,11 +678,11 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
       "CsDropdownDirective",
       ["close"],
     );
-    (component as any).insertTextBox("classic", trigger);
+    (component as any).insertTextBox("office-simple", trigger);
 
     expect(trigger.close).toHaveBeenCalledTimes(1);
-    expect(drawRequest.defaultWidth).toBe(260);
-    expect(drawRequest.defaultHeight).toBe(132);
+    expect(drawRequest.defaultWidth).toBe(390);
+    expect(drawRequest.defaultHeight).toBe(178);
     expect(createSnapshot).not.toHaveBeenCalled();
     expect(textBoxEnterEditing).not.toHaveBeenCalled();
 
@@ -692,7 +692,7 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
     expect(createSnapshot).toHaveBeenCalledOnceWith("text-box", [
       "",
       {
-        ...getTextBoxPreset("classic").props,
+        ...getTextBoxPreset("office-simple").props,
         width: 300,
         height: 180,
       },
@@ -726,11 +726,11 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
       ["close"],
     );
 
-    (component as any).insertTextBox("classic", trigger);
+    (component as any).insertTextBox("office-simple", trigger);
 
     // Fixed-toolbar catalog insertion keeps the chosen style's own horizontal
     // proportion; text direction can be changed after insertion.
-    const preset = getTextBoxPreset("classic");
+    const preset = getTextBoxPreset("office-simple");
     expect(drawRequest.defaultWidth).toBe(preset.defaultWidth);
     expect(drawRequest.defaultHeight).toBe(preset.defaultHeight);
 

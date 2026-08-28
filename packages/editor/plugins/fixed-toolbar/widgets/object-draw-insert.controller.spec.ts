@@ -4,15 +4,22 @@ import {
 } from "./object-draw-insert.controller";
 
 describe("ObjectDrawInsertController", () => {
-  const makeHarness = (options: { padding?: string } = {}) => {
+  const makeHarness = (
+    options: { padding?: string; scrollRect?: DOMRect } = {},
+  ) => {
+    const scrollContainer = document.createElement("div");
+    scrollContainer.dataset["bcObjectDrawTestScrollContainer"] = "true";
     const root = document.createElement("div");
     const surface = document.createElement("div");
     if (options.padding) surface.style.padding = options.padding;
     root.appendChild(surface);
-    document.body.appendChild(root);
+    scrollContainer.appendChild(root);
+    document.body.appendChild(scrollContainer);
 
-    spyOn(root, "getBoundingClientRect").and.returnValue(
-      new DOMRect(100, 50, 800, 600),
+    const rootRect = new DOMRect(100, 50, 800, 600);
+    spyOn(root, "getBoundingClientRect").and.returnValue(rootRect);
+    spyOn(scrollContainer, "getBoundingClientRect").and.returnValue(
+      options.scrollRect ?? rootRect,
     );
     spyOn(surface, "getBoundingClientRect").and.returnValue(
       new DOMRect(100, 50, 800, 600),
@@ -29,6 +36,7 @@ describe("ObjectDrawInsertController", () => {
         hostElement: root,
         childrenRenderRef: { containerElement: surface },
       },
+      scrollContainer,
       logger: { warn: jasmine.createSpy("warn") },
     } as any;
     const controller = new ObjectDrawInsertController(doc);
@@ -43,12 +51,15 @@ describe("ObjectDrawInsertController", () => {
         '[data-bc-object-draw-layer="true"]',
       )!;
 
-    return { root, commit, controller, arm, layer };
+    return { root, scrollContainer, commit, controller, arm, layer };
   };
 
   afterEach(() => {
     document
       .querySelectorAll('[data-bc-object-draw-layer="true"]')
+      .forEach((element) => element.remove());
+    document
+      .querySelectorAll('[data-bc-object-draw-test-scroll-container="true"]')
       .forEach((element) => element.remove());
   });
 
@@ -229,7 +240,7 @@ describe("ObjectDrawInsertController", () => {
     root.remove();
   });
 
-  it("still stops at the editor edge, not at the content edge", () => {
+  it("still stops at the scroll container edge, not at the content edge", () => {
     const { root, commit, controller, arm, layer } = makeHarness({
       padding: "40px 24px",
     });
@@ -259,7 +270,7 @@ describe("ObjectDrawInsertController", () => {
 
     const geometry = commit.calls.mostRecent()
       .args[0] as ObjectDrawInsertGeometry;
-    // The root's own padding-box corner: the object never leaves the editor.
+    // The scroll container corner: the object never leaves the drawing viewport.
     expect(geometry.anchorRect.left).toBe(100);
     expect(geometry.anchorRect.top).toBe(50);
 
@@ -267,11 +278,54 @@ describe("ObjectDrawInsertController", () => {
     root.remove();
   });
 
+  it("uses the scroll container instead of root as the drawing boundary", () => {
+    const { root, scrollContainer, commit, controller, arm, layer } =
+      makeHarness({ scrollRect: new DOMRect(40, 20, 1000, 720) });
+    expect(arm()).toBeTrue();
+    expect(layer().style.left).toBe("40px");
+    expect(layer().style.top).toBe("20px");
+    expect(layer().style.width).toBe("1000px");
+    expect(layer().style.height).toBe("720px");
+
+    layer().dispatchEvent(
+      new PointerEvent("pointerdown", {
+        pointerId: 7,
+        button: 0,
+        isPrimary: true,
+        clientX: 950,
+        clientY: 700,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    layer().dispatchEvent(
+      new PointerEvent("pointerup", {
+        pointerId: 7,
+        button: 0,
+        clientX: 950,
+        clientY: 700,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+
+    const geometry = commit.calls.mostRecent()
+      .args[0] as ObjectDrawInsertGeometry;
+    expect(geometry.anchorRect.left).toBe(680);
+    expect(geometry.anchorRect.top).toBe(540);
+    expect(geometry.anchorRect.right).toBe(1040);
+    expect(geometry.anchorRect.bottom).toBe(740);
+
+    controller.destroy();
+    scrollContainer.remove();
+    root.remove();
+  });
+
   it("cancels when the editor drawing surface scrolls", () => {
-    const { root, commit, controller, arm } = makeHarness();
+    const { root, scrollContainer, commit, controller, arm } = makeHarness();
     expect(arm()).toBeTrue();
 
-    root.dispatchEvent(new Event("scroll"));
+    scrollContainer.dispatchEvent(new Event("scroll"));
 
     expect(
       document.querySelector('[data-bc-object-draw-layer="true"]'),

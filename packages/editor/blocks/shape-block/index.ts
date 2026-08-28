@@ -4,7 +4,6 @@ import {
   type DeltaInsert,
   type IBlockSchemaOptions,
   NoEditableBlockNative,
-  editableBlockCreateSnapShotFn,
   generateId,
 } from '../../framework'
 import {ShapeBlockComponent} from './shape.block'
@@ -31,19 +30,49 @@ export interface ShapeTextBlockModel extends EditableBlockNative {
   flavour: 'shape-text'
 }
 
+const normalizeShapeText = (
+  value: string | DeltaInsert[] | undefined,
+): DeltaInsert[] => {
+  if (typeof value === 'string') return value ? [{insert: value}] : []
+  if (!value) return []
+
+  const result: DeltaInsert[] = []
+  for (const delta of value) {
+    if (typeof delta.insert === 'string') {
+      if (delta.insert) {
+        result.push(delta.attributes
+          ? {insert: delta.insert, attributes: {...delta.attributes}}
+          : {insert: delta.insert})
+      }
+      continue
+    }
+    if (delta.insert?.['break']) {
+      result.push({insert: {break: '\n'}})
+    }
+  }
+  return result
+}
+
 export const ShapeTextBlockSchema:
   IBlockSchemaOptions<ShapeTextBlockModel> = {
     flavour: 'shape-text',
     nodeType: BlockNodeType.editable,
     component: ShapeTextBlockComponent,
-    createSnapshot:
-      editableBlockCreateSnapShotFn<ShapeTextBlockModel>('shape-text'),
+    createSnapshot: (text?: string | DeltaInsert[]) => ({
+      id: generateId(),
+      flavour: 'shape-text',
+      nodeType: BlockNodeType.editable,
+      props: {depth: 0},
+      meta: {},
+      children: normalizeShapeText(text),
+    }),
     metadata: {
       version: 1,
       label: '形状文字',
       description: '编辑形状内部的文字内容',
       isLeaf: true,
       hideInInsertMenu: true,
+      pastePlainTextOnly: true,
     },
   }
 
@@ -53,16 +82,6 @@ export interface ShapeBlockModel extends NoEditableBlockNative {
   props: ShapeBlockProps
 }
 
-const hasShapeTextContent = (
-  text?: string | DeltaInsert[],
-): text is string | DeltaInsert[] => {
-  if (typeof text === 'string') return text.length > 0
-  return Array.isArray(text) && text.some(delta => {
-    if (typeof delta.insert === 'string') return delta.insert.length > 0
-    return delta.insert != null
-  })
-}
-
 export const ShapeBlockSchema: IBlockSchemaOptions<ShapeBlockModel> = {
   flavour: 'shape',
   nodeType: BlockNodeType.block,
@@ -70,19 +89,22 @@ export const ShapeBlockSchema: IBlockSchemaOptions<ShapeBlockModel> = {
   createSnapshot: (
     shapeType: ShapeKind = DEFAULT_SHAPE_PROPS.shapeType,
     text?: string | DeltaInsert[],
-  ) => ({
-    id: generateId(),
-    flavour: 'shape',
-    nodeType: BlockNodeType.block,
-    props: {
-      ...DEFAULT_SHAPE_BLOCK_PROPS,
-      shape: shapeType,
-    },
-    meta: {},
-    children: hasShapeTextContent(text)
-      ? [ShapeTextBlockSchema.createSnapshot(text)]
-      : [],
-  }),
+  ) => {
+    const normalizedText = normalizeShapeText(text)
+    return {
+      id: generateId(),
+      flavour: 'shape',
+      nodeType: BlockNodeType.block,
+      props: {
+        ...DEFAULT_SHAPE_BLOCK_PROPS,
+        shape: shapeType,
+      },
+      meta: {},
+      children: normalizedText.length > 0
+        ? [ShapeTextBlockSchema.createSnapshot(normalizedText)]
+        : [],
+    }
+  },
   metadata: {
     version: 1,
     label: '形状',

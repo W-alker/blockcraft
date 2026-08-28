@@ -514,12 +514,12 @@ projection applies them only to editable blocks:
 
 ```typescript
 block.updateProps({
-  backColor: '#FBF3DB',
-  borderColor: '#DFAB01',
-})
+  backColor: "#FBF3DB",
+  borderColor: "#DFAB01",
+});
 
 // `null` deletes the persisted override.
-block.updateProps({backColor: null, borderColor: null})
+block.updateProps({ backColor: null, borderColor: null });
 ```
 
 `BaseBlockComponent` binds the opaque values to
@@ -552,13 +552,18 @@ Do not infer padding or background-image semantics from `IBlockProps` or
 interface BlockSurfaceProps extends IBlockProps {
   // CSS arity in layout px: all | vertical/horizontal | top/horizontal/bottom
   // | top/right/bottom/left
-  p?: number | [number] | [number, number] |
-    [number, number, number] | [number, number, number, number] | null
-  bgi?: string | null // background image source
-  bgs?: 'cover' | 'contain' | 'stretch' | null // background size/fit
-  bgx?: number | null // background-position-x, percent 0..100
-  bgy?: number | null // background-position-y, percent 0..100
-  bgo?: number | null // background layer opacity, 0..1
+  p?:
+    | number
+    | [number]
+    | [number, number]
+    | [number, number, number]
+    | [number, number, number, number]
+    | null;
+  bgi?: string | null; // background image source
+  bgs?: "cover" | "contain" | "stretch" | null; // background size/fit
+  bgx?: number | null; // background-position-x, percent 0..100
+  bgy?: number | null; // background-position-y, percent 0..100
+  bgo?: number | null; // background layer opacity, 0..1
 }
 ```
 
@@ -903,9 +908,9 @@ omit both representation/layout and independent stack controls. Nested groups
 are rejected.
 
 ```typescript
-const groupId = doc.placement.group(['image-id', 'shape-id'])
+const groupId = doc.placement.group(["image-id", "shape-id"]);
 if (groupId) {
-  const memberIds = doc.placement.ungroup(groupId)
+  const memberIds = doc.placement.ungroup(groupId);
 }
 ```
 
@@ -937,9 +942,9 @@ padding never changes a responsive member's resolved pixel size.
 Root absolute objects can be aligned without first creating a group:
 
 ```typescript
-doc.placement.alignObjects(ids, 'left')
-doc.placement.alignObjects(ids, 'center')
-doc.placement.alignObjects(ids, 'horizontal-distribute')
+doc.placement.alignObjects(ids, "left");
+doc.placement.alignObjects(ids, "center");
+doc.placement.alignObjects(ids, "horizontal-distribute");
 ```
 
 `BlockObjectAlignment` contains the six single-axis edge/center commands,
@@ -958,7 +963,7 @@ doc.placement.updateObjectGeometry(block, {
   width: nextWidth,
   height: nextHeight,
   position: nextLocalPosition,
-})
+});
 ```
 
 For a grouped member, this applies the requested patch and recomputes the
@@ -1071,31 +1076,31 @@ const schema: IBlockSchemaOptions<MyObjectModel> = {
   // ...
   metadata: {
     objectFormat: {
-      kind: 'shape',
+      kind: "shape",
       features: {
         geometry: true,
         shape: true,
         pictureFill: true,
         lineArrows: false,
         textFrame: true,
-        textStyle: 'rich-default',
+        textStyle: "rich-default",
       },
       defaults: {
         width: 240,
         height: 120,
         rotation: 0,
         lockAspectRatio: false,
-        shapeType: 'rectangle',
+        shapeType: "rectangle",
         shapeFill: DEFAULT_OBJECT_PAINT,
         shapeOutline: DEFAULT_OBJECT_LINE,
         shapeEffects: DEFAULT_OBJECT_EFFECTS,
         textFrame: DEFAULT_OBJECT_TEXT_FRAME,
         textStyle: DEFAULT_OBJECT_TEXT_STYLE,
       },
-      shapeTypes: ['rectangle'],
+      shapeTypes: ["rectangle"],
     },
   },
-}
+};
 ```
 
 Use `BlockObjectFormatProps` for `width`, `height`, `rotation` and the concise
@@ -1129,14 +1134,14 @@ import {
   ObjectFormatToolbarPlugin,
   PlacementLayoutBlockSchema,
   TextBoxBlockSchema,
-} from '@ccc/blockcraft'
+} from "@ccc/blockcraft";
 
 const schemas = new SchemaManager([
   ParagraphBlockSchema,
   PlacementLayoutBlockSchema,
   TextBoxBlockSchema,
-])
-const plugins = [new ObjectFormatToolbarPlugin()]
+]);
+const plugins = [new ObjectFormatToolbarPlugin()];
 ```
 
 `TextBoxBlockSchema.createSnapshot(text?, props?)` always starts with a normal
@@ -1182,7 +1187,7 @@ catalog: `shape` names geometry plus `textInsets`, while `artwork` names a drawi
 its own `textInsets`. Two
 consequences follow. The drawing
 never travels in a snapshot, a Yjs sync, an undo entry or an export, which is
-worth 0.3–1.6 KB per frame. And the frame's text-safe area is a *fraction* of the
+worth 0.3–1.6 KB per frame. And the frame's text-safe area is a _fraction_ of the
 frame, so it tracks whatever size the author drags. Canonical
 `textFrame.margins` remain optical padding in layout px and stack inward from
 that proportional safe area.
@@ -1325,8 +1330,12 @@ snaps to 15° while Shift is held, and commits one `updateProps()` write on
 pointerup. Rotated resize deltas are converted into the shape's local axes and
 west/north compensation is converted back to page coordinates before absolute
 placement is updated. Shape text remains a normal Y.Text editing surface and
-therefore participates in collaboration, undo/redo and inline formatting while
-rotating visually with its parent shape.
+therefore participates in collaboration and undo/redo while rotating visually
+with its parent shape. Users can apply the normal inline font, size, color and
+other character formatting. Its separate `pastePlainTextOnly` capability keeps
+clipboard input textual: shape creation/import retains formatting attributes on
+text inserts but drops non-break inline embeds, and paste consumes `text/plain`
+before HTML, Markdown, internal-snapshot or file parsing.
 
 The exported `CustomShapeGeometry` format owns a separate finite `width/height`
 coordinate space and one to eight safe paths. A path accepts only `move`,
@@ -1635,14 +1644,14 @@ Supported values:
 
 Built-in declarations:
 
-| Flavour                        | `selectionScope`                                  |
-| ------------------------------ | ------------------------------------------------- |
-| `root`                         | `document`                                        |
-| `table`                        | `table`                                           |
-| `columns`                      | `columns`                                         |
-| `callout`                      | `container`                                       |
-| `text-box`                     | relative `transparent`; absolute `container`      |
-| `mermaid` / `mermaid-textarea` | `transparent`                                     |
+| Flavour                        | `selectionScope`                             |
+| ------------------------------ | -------------------------------------------- |
+| `root`                         | `document`                                   |
+| `table`                        | `table`                                      |
+| `columns`                      | `columns`                                    |
+| `callout`                      | `container`                                  |
+| `text-box`                     | relative `transparent`; absolute `container` |
+| `mermaid` / `mermaid-textarea` | `transparent`                                |
 
 `SelectionManager` reads this field through the registered schema. Do not add
 flavour-specific checks in input, toolbar, or selection-class code; derive
@@ -1728,14 +1737,28 @@ The component property governs mounted rendering. The optional
 writes use readonly-guarded `doc.crud.formatText(blockId, index, length, attrs)`;
 do not resolve a ComponentRef solely to mutate an offscreen `Y.Text`.
 
+When a block should remain manually formattable but paste must never import
+HTML, Markdown, internal snapshots, files or their inline attributes, declare
+the independent Schema capability:
+
+```typescript
+metadata: {
+  pastePlainTextOnly: true,
+}
+```
+
+`pastePlainTextOnly` affects only clipboard ingestion. It does not make the
+block `plainTextOnly`, so fixed/floating formatting commands remain available.
+The built-in `shape-text` block uses this split contract.
+
 Editable rich-text blocks also accept compact paragraph typography props:
 
-| Prop | Unit / range | Meaning |
-|------|--------------|---------|
-| `pfs` | ratio, `0.5..3` | Paragraph base font scale; missing/`null` inherits `1` |
-| `lh` | unitless, `1..3` | Paragraph line-height ratio; missing inherits the root |
-| `psb` | pt, `0..120` | Space before |
-| `psa` | pt, `0..120` | Space after; missing inherits `--bc-segments-gap` |
+| Prop  | Unit / range     | Meaning                                                |
+| ----- | ---------------- | ------------------------------------------------------ |
+| `pfs` | ratio, `0.5..3`  | Paragraph base font scale; missing/`null` inherits `1` |
+| `lh`  | unitless, `1..3` | Paragraph line-height ratio; missing inherits the root |
+| `psb` | pt, `0..120`     | Space before                                           |
+| `psa` | pt, `0..120`     | Space after; missing inherits `--bc-segments-gap`      |
 
 Adjacent paragraph spacing is one physical gap: `max(previous.psa,
 next.psb)`. The first child's `psb` becomes leading block padding and the last
@@ -1766,10 +1789,10 @@ The built-in `ordered` block separates counter state from marker presentation:
 ```typescript
 interface OrderedBlockModel {
   props: {
-    order: number
-    start?: number | null
-    ms?: OrderedMarkerStyleId | null
-  } & IEditableBlockProps
+    order: number;
+    start?: number | null;
+    ms?: OrderedMarkerStyleId | null;
+  } & IEditableBlockProps;
 }
 ```
 

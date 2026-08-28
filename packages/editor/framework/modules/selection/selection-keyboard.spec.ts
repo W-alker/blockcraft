@@ -1307,6 +1307,37 @@ describe('SelectionKeyboard – Ctrl+A container layout boundary', () => {
     expect(doc.messageService.info).not.toHaveBeenCalled();
   });
 
+  it('keeps first Ctrl+A text-shaped for a singleton shape-text scope', () => {
+    const {keyboard, doc, textBox: shape, paragraph: shapeText} =
+      createContainerCtrlAHarness(true);
+    shape.flavour = 'shape';
+    shape.childrenIds = [shapeText.id];
+    shape.childrenLength = 1;
+    shapeText.flavour = 'shape-text';
+    doc.schemas.get.and.callFake((flavour: string) => ({
+      metadata: {
+        selectionScope: flavour === 'shape'
+          ? 'container'
+          : flavour === 'root'
+            ? 'document'
+            : undefined,
+      },
+    }));
+    const point = textPoint(shapeText, 2);
+    const ctx = ctrlACtxFor({
+      commonParent: shapeText.id,
+      anchor: point,
+      head: point,
+      start: point,
+      end: point,
+      isInSameBlock: true,
+    });
+
+    expect(keyboard.handleCtrlA(ctx)).toBeTrue();
+    expect(doc.selection.selectAllChildren).toHaveBeenCalledOnceWith(shapeText);
+    expect(doc.selection.selectAllChildren).not.toHaveBeenCalledWith(shape);
+  });
+
   it('keeps repeated Ctrl+A capped at an absolute text box', () => {
     const {keyboard, doc, root, textBox} = createContainerCtrlAHarness(true);
     const start = {

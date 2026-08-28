@@ -271,6 +271,46 @@ describe("PresentationController", () => {
     expect(target.style.getPropertyValue("--bc-segments-gap")).toBe("12px");
   });
 
+  it("projects document appearance onto the flow presentation root", () => {
+    const root = document.createElement("div");
+    const container = document.createElement("div");
+    const controller = new PresentationController({} as BlockCraft.Doc, {});
+    (controller as any)._demoDoc = {root: {hostElement: root}};
+    (controller as any).presentationContainer = container;
+    (controller as any).layoutMode = "flow";
+
+    (controller as any).applyDocumentAppearance({
+      background: 'rgb(247, 247, 247) url("paper.png") center / cover no-repeat',
+      color: "#182230",
+    });
+
+    expect(root.style.background).toContain("paper.png");
+    expect(root.style.background).toContain("rgb(247, 247, 247)");
+    expect(root.style.color).toBe("rgb(24, 34, 48)");
+    expect(root.style.getPropertyValue("--bc-color")).toBe("#182230");
+    expect(container.style.getPropertyValue("--bc-page-sheet-bg")).toBe("");
+  });
+
+  it("projects document background onto paginated paper sheets", () => {
+    const root = document.createElement("div");
+    root.style.background = "red";
+    const container = document.createElement("div");
+    const controller = new PresentationController({} as BlockCraft.Doc, {});
+    (controller as any)._demoDoc = {root: {hostElement: root}};
+    (controller as any).presentationContainer = container;
+    (controller as any).layoutMode = "paginated";
+
+    (controller as any).applyDocumentAppearance({
+      background: "linear-gradient(white, #f0f0f0)",
+      color: "#223344",
+    });
+
+    expect(root.style.background).toBe("");
+    expect(container.style.getPropertyValue("--bc-page-sheet-bg"))
+      .toBe("linear-gradient(white, #f0f0f0)");
+    expect(root.style.getPropertyValue("--bc-color")).toBe("#223344");
+  });
+
   it("keeps explicit legacy spacing scales as opt-in compatibility corrections", () => {
     const target = document.createElement("div");
     target.style.setProperty("--bc-lh", "1.5");

@@ -1097,7 +1097,8 @@ export class DocCRUD {
     // list, while the mounted parent/Y.Array has already advanced to the next
     // step. Reading the stale model index here can re-check an id deleted by the
     // preceding step and raise `Block not found` halfway through the operation.
-    const removableIds = children.toArray().slice(index, index + count)
+    const childIds = children.toArray()
+    const removableIds = childIds.slice(index, index + count)
     this.doc.mutationPolicy?.assert({
       operation: 'delete',
       blockIds: removableIds,
@@ -1111,6 +1112,28 @@ export class DocCRUD {
         this.doc.revisions.recordBlockDeletion(removableIds, parent)
       })
       return [{index, length: removableIds.length}]
+    }
+
+    // `placement-layout` is root-owned infrastructure for absolute objects,
+    // not a flow editing surface. Deleting the last ordinary root child used
+    // to leave `[placement-layout]`: the document was structurally non-empty,
+    // so the fallback below did not run, but the user had no text caret or
+    // gap where typing could resume. Keep one paragraph before the placement
+    // plane whenever this deletion would leave only that infrastructure.
+    const needsRootFlowLanding = parentYBlock.get('flavour') === 'root' &&
+      !force &&
+      childIds.length > count &&
+      !childIds.some((childId, childIndex) =>
+        (childIndex < index || childIndex >= index + count) &&
+        this.getYBlock(childId)?.get('flavour') !== 'placement-layout',
+      )
+    if (needsRootFlowLanding) {
+      const p = this.doc.schemas.createSnapshot('paragraph', [])
+      this.transact(() => {
+        this._delete(parentYBlock, index, count)
+        this._insertBySnapshots(parentYBlock, 0, [p])
+      })
+      return [{index, length: count}]
     }
 
     if (index === 0 && count >= children.length && !force) {

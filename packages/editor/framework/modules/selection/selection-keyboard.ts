@@ -272,6 +272,32 @@ export class SelectionKeyboard {
   }
 
   /**
+   * A closed object container with one editable child still owns an isolated
+   * selection scope, but its first Ctrl/Cmd+A must remain text-shaped. This
+   * lets the normal text Delete/Paste pipeline consume the selection before a
+   * repeated shortcut promotes it to the container boundary.
+   */
+  private _singleEditableChildForTextSelection(
+    selection: BlockCraft.Selection,
+    container: BlockCraft.BlockComponent,
+  ): EditableBlockComponent | null {
+    if (
+      this._childrenLength(container) !== 1 ||
+      selection.start.type !== 'text' ||
+      selection.end.type !== 'text' ||
+      selection.start.blockId !== selection.end.blockId
+    ) {
+      return null
+    }
+    const child = this._childAt(container, 0)
+    return child &&
+      child.id === selection.start.blockId &&
+      this.doc.isEditable(child)
+      ? child as EditableBlockComponent
+      : null
+  }
+
+  /**
    * Select-all is capped only by an absolute object boundary. A normal-flow
    * container remains part of the document ladder, even though its semantic
    * selection scope still guards pointer/input ranges from crossing outside.
@@ -932,6 +958,18 @@ export class SelectionKeyboard {
 
     const containerScope = this._containerScopeForSelection(sel)
     if (containerScope) {
+      const singletonText = this._singleEditableChildForTextSelection(
+        sel,
+        containerScope,
+      )
+      if (
+        singletonText &&
+        (singletonText.textLength === 0 ||
+          !this._isFullTextSelection(sel, singletonText))
+      ) {
+        this.doc.selection.selectAllChildren(singletonText)
+        return true
+      }
       // The first press treats a multi-paragraph container as one editing
       // surface. A repeated press is capped only when that surface belongs to
       // an absolute object; normal-flow callouts/highlights continue to root.

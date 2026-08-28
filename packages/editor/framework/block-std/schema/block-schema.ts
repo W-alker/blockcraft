@@ -205,6 +205,11 @@ export interface IBlockSchemaOptions<T extends NativeBlockModel = NativeBlockMod
      * virtualized.
      */
     plainTextOnly?: boolean
+    /**
+     * Forces clipboard paste to consume only `text/plain` without disabling
+     * formatting commands that the user applies inside the editable block.
+     */
+    pastePlainTextOnly?: boolean
     /** Block-owned root-virtualization lifecycle and model-only geometry. */
     virtualization?: BlockVirtualizationCapability<T>
     /**

@@ -89,6 +89,41 @@ describe("selection restore helpers", () => {
     })
   })
 
+  it("skips the absolute placement plane and restores to the fallback paragraph", () => {
+    const layout = {
+      id: "placement-layout-1",
+      flavour: "placement-layout",
+      nodeType: BlockNodeType.block,
+    }
+    const fallback = {
+      id: "fallback-p",
+      flavour: "paragraph",
+      nodeType: BlockNodeType.editable,
+      textLength: 0,
+    }
+    const parent = {
+      id: "root",
+      childrenLength: 2,
+      childrenIds: [fallback.id, layout.id],
+    }
+    const doc = makeDoc({[fallback.id]: fallback, [layout.id]: layout})
+
+    restoreSelectionAfterBlockDelete(
+      doc as any,
+      parent as any,
+      0,
+      null,
+      layout as any,
+    )
+
+    expect(doc.selection.setGapCursor).not.toHaveBeenCalled()
+    expect(doc.selection.replay).toHaveBeenCalledWith({
+      anchor: {blockId: fallback.id, type: "text", offset: 0},
+      head: {blockId: fallback.id, type: "text", offset: 0},
+      commonParent: fallback.id,
+    })
+  })
+
   it("moves an outer gap caret to the adjacent block edge without deleting anything", () => {
     const gapBlock = {id: "table-1", nodeType: BlockNodeType.block}
     const prevBlock = {id: "prev-p", nodeType: BlockNodeType.editable, textLength: 4}

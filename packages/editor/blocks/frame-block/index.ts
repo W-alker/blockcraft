@@ -4,6 +4,7 @@ import {BlockSchemaOptions} from "../../framework/block-std/schema/block-schema"
 import {nanoid} from "nanoid";
 import {FrameBlockComponent} from "./frame.block";
 
+
 export interface FrameBlockModel extends NoEditableBlockNative {
   flavour: 'frame',
   nodeType: BlockNodeType.block

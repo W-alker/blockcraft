@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-20
+> Last updated: 2026-08-27
 
 ## FloatTextToolbarPlugin
 
@@ -16,10 +16,10 @@ Shows a formatting toolbar 350ms after user makes a non-collapsed text selection
 new FloatTextToolbarPlugin(options?: FloatTextToolbarPluginOptions)
 ```
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `extraItems` | `IToolbarMenuItem[]` | `[]` | Extra buttons appended to toolbar |
-| `onExtraItemClick` | `(item, doc) => boolean` | — | Handler for custom button clicks |
+| Option             | Type                     | Default | Description                       |
+| ------------------ | ------------------------ | ------- | --------------------------------- |
+| `extraItems`       | `IToolbarMenuItem[]`     | `[]`    | Extra buttons appended to toolbar |
+| `onExtraItemClick` | `(item, doc) => boolean` | —       | Handler for custom button clicks  |
 
 Each `IToolbarMenuItem` supports an optional `visible` predicate:
 
@@ -34,21 +34,21 @@ interface IToolbarMenuItem {
 
 ### Built-in Hotkeys
 
-| Shortcut | Action |
-|----------|--------|
-| `Cmd/Ctrl+B` | Bold |
-| `Cmd/Ctrl+I` | Italic |
-| `Cmd/Ctrl+U` | Underline |
+| Shortcut     | Action        |
+| ------------ | ------------- |
+| `Cmd/Ctrl+B` | Bold          |
+| `Cmd/Ctrl+I` | Italic        |
+| `Cmd/Ctrl+U` | Underline     |
 | `Cmd/Ctrl+D` | Strikethrough |
-| `Cmd/Ctrl+E` | Inline Code |
+| `Cmd/Ctrl+E` | Inline Code   |
 
 ### Public API
 
-| Method | Description |
-|--------|-------------|
-| `openToolbar()` | Programmatically open the toolbar at current selection |
-| `closeToolbar()` | Dismiss the toolbar |
-| `toggleFormatAttr(ctx, attrName)` | Toggle an inline format attribute |
+| Method                            | Description                                            |
+| --------------------------------- | ------------------------------------------------------ |
+| `openToolbar()`                   | Programmatically open the toolbar at current selection |
+| `closeToolbar()`                  | Dismiss the toolbar                                    |
+| `toggleFormatAttr(ctx, attrName)` | Toggle an inline format attribute                      |
 
 ### Usage Example
 
@@ -56,21 +56,21 @@ interface IToolbarMenuItem {
 new FloatTextToolbarPlugin({
   extraItems: [
     {
-      name: 'ai-rewrite',
-      icon: 'bc_icon bc_ai',
-      label: 'AI 改写',
+      name: "ai-rewrite",
+      icon: "bc_icon bc_ai",
+      label: "AI 改写",
       visible: (sel) => sel.isInSameBlock && !sel.collapsed,
     },
   ],
   onExtraItemClick: (item, doc) => {
-    if (item.name === 'ai-rewrite') {
+    if (item.name === "ai-rewrite") {
       const text = doc.selection.getSelectedText();
       // call AI service...
       return true;
     }
     return false;
   },
-})
+});
 ```
 
 ---
@@ -87,22 +87,22 @@ A simpler read-only-friendly toolbar shown after text selection on specified blo
 new TextMarkerPlugin(markTextBlockFlavours: BlockCraft.BlockFlavour[])
 ```
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
+| Parameter               | Type             | Description                                             |
+| ----------------------- | ---------------- | ------------------------------------------------------- |
 | `markTextBlockFlavours` | `BlockFlavour[]` | **Required.** Block flavours that activate this toolbar |
 
 ### Public API
 
-| Method | Description |
-|--------|-------------|
-| `openToolbar()` | Open the marker toolbar |
-| `closeToolbar()` | Dismiss the toolbar |
+| Method           | Description             |
+| ---------------- | ----------------------- |
+| `openToolbar()`  | Open the marker toolbar |
+| `closeToolbar()` | Dismiss the toolbar     |
 
 ### Usage Example
 
 ```typescript
 // Show marker toolbar only for paragraph and blockquote blocks
-new TextMarkerPlugin(['paragraph', 'blockquote'])
+new TextMarkerPlugin(["paragraph", "blockquote"]);
 ```
 
 ---
@@ -222,14 +222,15 @@ new TextMarkerPlugin(['paragraph', 'blockquote'])
   main/detail geometry through `ShapeIconComponent` and exposes its label by
   Tooltip plus `aria-label` instead of visible per-cell text.
 - When the document registers `TextBoxBlockSchema`, **插入文本框** opens the
-  58-style catalog directly. Its `cs-tabs` categories are 办公经典 / 引言 /
-  侧边栏 / 杂志 / 异形 / 气泡 / 纸张 / 文化风格 / 材质效果 / 竖排. Only the
-  tab strip scrolls horizontally; the card content expands and is not placed
-  in a nested vertical scroller. Vertical presets carry their own
-  `vertical-rl` frame direction.
-- Picking a shape, WordArt or text-box preset arms a one-shot drawing surface over the
-  document without requiring a focused block, active Selection or saved
-  selection snapshot; it does not write Yjs or create a block yet. A
+  58-style Word-inspired catalog directly. Its `cs-tabs` categories are 办公
+  经典 / 引言 / 侧边栏 / 杂志 / 异形 / 气泡 / 纸张 / 文化风格 / 材质效果 /
+  竖排. Only the tab strip scrolls horizontally; the card content expands and
+  is not placed in a nested vertical scroller. Vertical presets carry their
+  own `vertical-rl` frame direction.
+- Picking a shape, WordArt or text-box preset arms a one-shot drawing surface
+  bounded by `doc.scrollContainer` rather than the root block, without requiring
+  a focused block, active Selection or saved selection snapshot; it does not
+  write Yjs or create a block yet. A
   primary-pointer drag shows a theme-colored rectangle preview and commits that
   rectangle's scale-normalized width, height and absolute position only on
   pointer release. A press/release without a drag commits the selected type at
@@ -275,7 +276,7 @@ and forwards it to the target Schema snapshot. This lets one command transform
 the block flavour and initialize semantic props atomically:
 
 ```typescript
-helper.transformBlocks('ordered', selection, {ms: 'r2'})
+helper.transformBlocks("ordered", selection, { ms: "r2" });
 ```
 
 For font scale, use `TextToolbarHelper.formatTypography()` instead of writing
@@ -285,19 +286,19 @@ targets; it does not read DOM geometry or install observers.
 
 ### Component Inputs
 
-| Input | Type | Default | Description |
-|-------|------|---------|-------------|
-| `doc` | `BlockCraft.Doc` | **required** | Document instance |
-| `utils` | `TextToolbarHelper` | — | Optional external toolbar helper |
-| `readonly` | `boolean` | `false` | Disable toolbar in readonly mode |
-| `stickyTop` | `number` | `0` | Top offset for sticky positioning (px) |
-| `visible` | `boolean` | `true` | Show/hide the toolbar |
-| `extensionActions` | `IFixedToolbarExtensionAction[]` | `[]` | Custom action buttons |
+| Input              | Type                             | Default      | Description                            |
+| ------------------ | -------------------------------- | ------------ | -------------------------------------- |
+| `doc`              | `BlockCraft.Doc`                 | **required** | Document instance                      |
+| `utils`            | `TextToolbarHelper`              | —            | Optional external toolbar helper       |
+| `readonly`         | `boolean`                        | `false`      | Disable toolbar in readonly mode       |
+| `stickyTop`        | `number`                         | `0`          | Top offset for sticky positioning (px) |
+| `visible`          | `boolean`                        | `true`       | Show/hide the toolbar                  |
+| `extensionActions` | `IFixedToolbarExtensionAction[]` | `[]`         | Custom action buttons                  |
 
 ### Component Outputs
 
-| Output | Type | Description |
-|--------|------|-------------|
+| Output            | Type                                                | Description                           |
+| ----------------- | --------------------------------------------------- | ------------------------------------- |
 | `extensionAction` | `EventEmitter<IFixedToolbarExtensionActionContext>` | Fired when a custom action is clicked |
 
 ### Extension Action Interface
@@ -320,7 +321,8 @@ interface IFixedToolbarExtensionAction {
   [doc]="doc"
   [stickyTop]="48"
   [extensionActions]="customActions"
-  (extensionAction)="onExtensionAction($event)">
+  (extensionAction)="onExtensionAction($event)"
+>
 </bc-fixed-toolbar>
 ```
 

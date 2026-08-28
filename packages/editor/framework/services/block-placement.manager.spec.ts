@@ -116,7 +116,10 @@ function makeHarness() {
     onPropsChange,
     onReattach$,
     onDetach$,
-    changeDetectorRef: {markForCheck: jasmine.createSpy('markForCheck')},
+    changeDetectorRef: {
+      markForCheck: jasmine.createSpy('markForCheck'),
+      detectChanges: jasmine.createSpy('detectChanges'),
+    },
   }
   const readonlySwitch$ = new BehaviorSubject(false)
   const onDestroy$ = new Subject<void>()
@@ -804,6 +807,9 @@ describe('BlockPlacementManager', () => {
           ? [layout.id]
           : snapshots.map(snapshot => snapshot.id)
       })
+    const recordBlockInsertion = jasmine.createSpy('recordBlockInsertion')
+    const runWithoutTracking = jasmine.createSpy('runWithoutTracking')
+      .and.callFake((callback: () => unknown) => callback())
     const doc = {
       isReadonly: false,
       isInitialized: false,
@@ -859,6 +865,11 @@ describe('BlockPlacementManager', () => {
         ),
       },
       logger: {warn: jasmine.createSpy('warn')},
+      revisions: {
+        isTracking: true,
+        runWithoutTracking,
+        recordBlockInsertion,
+      },
     }
     const manager = new BlockPlacementManager(doc as any)
     const insertedPosition = () =>
@@ -874,6 +885,8 @@ describe('BlockPlacementManager', () => {
       insertBlockSnapshots,
       insertDepths,
       insertedPosition,
+      recordBlockInsertion,
+      runWithoutTracking,
     }
   }
 
@@ -886,6 +899,8 @@ describe('BlockPlacementManager', () => {
       manager,
       insertBlockSnapshots,
       insertDepths,
+      recordBlockInsertion,
+      runWithoutTracking,
     } = makeInsertionHarness({selectionRect: new DOMRect(350, 210, 0, 48)})
 
     const insertedId = manager.insertAbsoluteSnapshot(shape)
@@ -915,6 +930,11 @@ describe('BlockPlacementManager', () => {
       }],
     ])
     expect(insertDepths.every(depth => depth > 0)).toBeTrue()
+    expect(runWithoutTracking).toHaveBeenCalledTimes(1)
+    expect(recordBlockInsertion).toHaveBeenCalledOnceWith(
+      [shape.id],
+      layout.id,
+    )
 
     manager.destroy()
     rootHost.remove()
@@ -1558,6 +1578,10 @@ describe('BlockPlacementManager', () => {
     expect(manager.state).toBe('dragging')
     expect(doc.selection.blur).toHaveBeenCalledTimes(1)
     expect(host.style.transform).toContain('translate3d(50px, 25px, 0px)')
+    block.changeDetectorRef.detectChanges.and.callFake(() => {
+      expect(props['position']).toEqual({x: 70, y: 55})
+      expect(host.style.transform).toContain('translate3d(50px, 25px, 0px)')
+    })
 
     window.dispatchEvent(pointer('pointerup', {clientX: 250, clientY: 125}))
 
@@ -1568,6 +1592,7 @@ describe('BlockPlacementManager', () => {
     expect(releaseLease).toHaveBeenCalledTimes(1)
     expect(doc.selection.setSuppressRecalculate).toHaveBeenCalledWith(false)
     expect(block.updateProps).toHaveBeenCalledTimes(1)
+    expect(block.changeDetectorRef.detectChanges).toHaveBeenCalledTimes(1)
 
     manager.destroy()
     container.remove()
@@ -1656,16 +1681,18 @@ describe('BlockPlacementManager', () => {
     setAbsolute()
     const edge = document.createElement('span')
     host.appendChild(edge)
-    const setPointerCapture = spyOn(edge, 'setPointerCapture')
-    spyOn(edge, 'hasPointerCapture').and.returnValue(false)
-    const releasePointerCapture = spyOn(edge, 'releasePointerCapture')
+    const setPointerCapture = spyOn(host, 'setPointerCapture')
+    spyOn(host, 'hasPointerCapture').and.returnValue(false)
+    const releasePointerCapture = spyOn(host, 'releasePointerCapture')
+    const edgeSetPointerCapture = spyOn(edge, 'setPointerCapture')
     const down = pointer('pointerdown', {clientX: 200, clientY: 100})
     Object.defineProperty(down, 'target', {value: edge})
 
     expect(manager.startDrag(down, block as any)).toBeTrue()
     expect(setPointerCapture).toHaveBeenCalledOnceWith(7)
+    expect(edgeSetPointerCapture).not.toHaveBeenCalled()
 
-    edge.dispatchEvent(pointer('lostpointercapture'))
+    host.dispatchEvent(pointer('lostpointercapture'))
 
     expect(manager.state).toBe('idle')
     expect(doc.selection.setSuppressRecalculate.calls.allArgs()).toEqual([
@@ -1673,6 +1700,35 @@ describe('BlockPlacementManager', () => {
       [false],
     ])
     expect(releasePointerCapture).not.toHaveBeenCalled()
+
+    manager.destroy()
+    container.remove()
+  })
+
+  it('commits a moved absolute drag after pointer capture is lost', () => {
+    const {container, host, props, block, manager, doc, setAbsolute} = makeHarness()
+    setAbsolute()
+    spyOn(host, 'setPointerCapture')
+    spyOn(host, 'hasPointerCapture').and.returnValue(false)
+    const edge = document.createElement('span')
+    host.appendChild(edge)
+    const down = pointer('pointerdown', {clientX: 200, clientY: 100})
+    Object.defineProperty(down, 'target', {value: edge})
+
+    expect(manager.startDrag(down, block as any)).toBeTrue()
+    window.dispatchEvent(pointer('pointermove', {clientX: 250, clientY: 125}))
+    expect(manager.state).toBe('dragging')
+
+    host.dispatchEvent(pointer('lostpointercapture'))
+
+    expect(manager.state).toBe('dragging')
+    expect(doc.selection.setSuppressRecalculate).not.toHaveBeenCalledWith(false)
+
+    window.dispatchEvent(pointer('pointerup', {clientX: 250, clientY: 125}))
+
+    expect(manager.state).toBe('idle')
+    expect(props['position']).toEqual({x: 70, y: 55})
+    expect(block.updateProps).toHaveBeenCalledTimes(1)
 
     manager.destroy()
     container.remove()

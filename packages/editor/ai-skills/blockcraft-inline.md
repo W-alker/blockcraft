@@ -122,12 +122,12 @@ class InlineRuntime {
 ```typescript
 // DeltaInsert (from Y.Text.toDelta())
 { insert: "text" }                                    // Plain text
-{ insert: "text", attributes: { bold: true } }       // Formatted text
+{ insert: "text", attributes: { "a:bold": true } }   // Formatted text
 { insert: { mention: "Alice" }, attributes: { ... } } // Embed
 
 // DeltaOperation (for applyDelta)
 { retain: 5 }                          // Skip 5 characters
-{ retain: 3, attributes: { bold: true } } // Format 3 chars
+{ retain: 3, attributes: { "a:bold": true } } // Format 3 chars
 { insert: "new" }                      // Insert text
 { insert: { embed: "val" } }           // Insert embed
 { delete: 2 }                          // Delete 2 characters

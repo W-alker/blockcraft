@@ -1087,8 +1087,11 @@ export class ClipboardManager {
       : editableBlock.textLength - fromIndex
     const {isInSameBlock, collapsed} = selection
 
-    // 纯文本块
-    if (editableBlock.plainTextOnly) {
+    // 纯文本块，或只要求粘贴降级为纯文本的可格式化块。
+    const pastePlainTextOnly = editableBlock.plainTextOnly ||
+      this.doc.schemas?.get?.(editableBlock.flavour, false)
+        ?.metadata.pastePlainTextOnly === true
+    if (pastePlainTextOnly) {
       const text = state.clipboardData?.getData(ClipboardDataType.TEXT)
       if (!text) return false
       editableBlock.replaceText(fromIndex, fromLength, text)

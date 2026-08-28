@@ -157,10 +157,10 @@ export class BlockPlacementInteractionController {
     const pointerId = event.pointerId
     const ownerDocument = host.ownerDocument
     const ownerWindow = ownerDocument.defaultView ?? window
-    const pointerCaptureTarget = event.target instanceof Element &&
-      event.target.ownerDocument === host.ownerDocument
-      ? event.target
-      : null
+    // Selection blur can hide transient resize edges / object handles while a
+    // drag is active. Capture on the stable block host so that removing the
+    // initiating chrome cannot turn a valid drag into lostpointercapture.
+    const pointerCaptureTarget = host
     const pointerStartX = event.clientX
     const pointerStartY = event.clientY
     const start = this.runtime.getState(block)
@@ -250,23 +250,38 @@ export class BlockPlacementInteractionController {
         isLiveWritable() &&
         this.runtime.isAbsoluteObjectSelection(this.doc.selection.value) &&
         this.doc.selection.value?.anchor.blockId === block.id
+      if (shouldCommit) {
+        try {
+          if (this.updateAbsolute(block, {
+            x: placementStartX + dx / box.visualScale,
+            y: start.y + dy / box.visualScale,
+          })) {
+            // Keep the transform preview in place until the committed left/top
+            // bindings have reached the DOM. Otherwise pointerup briefly paints
+            // the object's old position and looks like a rejected drop.
+            try {
+              block.changeDetectorRef.detectChanges()
+            } catch {}
+          }
+        } finally {
+          cleanup()
+        }
+        return
+      }
+
       cleanup()
       // `armed` suppresses native selectionchange while compatibility mouse
       // events finish. Reproject the still-current object selection only after
       // that guard is released, so a click cannot leave an older document Range
       // painted behind the selected absolute object.
       if (shouldReassertSelection) this.doc.selection.selectBlock(block)
-      if (!shouldCommit) return
-      this.updateAbsolute(block, {
-        x: placementStartX + dx / box.visualScale,
-        y: start.y + dy / box.visualScale,
-      })
     }
     const onPointerCancel = (cancelEvent: PointerEvent) => {
       if (cancelEvent.pointerId === pointerId) cleanup()
     }
     const onLostPointerCapture = (lostEvent: Event) => {
-      if ((lostEvent as PointerEvent).pointerId === pointerId) cleanup()
+      if ((lostEvent as PointerEvent).pointerId !== pointerId || moved) return
+      cleanup()
     }
     const onKeydown = (keyEvent: KeyboardEvent) => {
       if (keyEvent.key === 'Escape') cleanup()

@@ -1708,6 +1708,32 @@ describe('DocCRUD', () => {
     expect(rootRef.instance.childrenIds).toEqual(['paragraph-auto-1'])
   })
 
+  it('keeps a flow paragraph when deleting the last ordinary root child beside absolute objects', () => {
+    const {crud, rootRef, createdParagraphs} = createDocHarness()
+    const layout: IBlockSnapshot = {
+      id: 'placement-layout-1',
+      flavour: 'placement-layout',
+      nodeType: BlockNodeType.block,
+      props: {},
+      meta: {},
+      children: [],
+    }
+    crud.insertBlocks(rootRef.instance.id, 0, [
+      createEditableSnapshot('only-flow-paragraph'),
+      layout,
+    ])
+
+    crud.deleteBlockById('only-flow-paragraph')
+
+    expect(createdParagraphs.map(snapshot => snapshot.id)).toEqual([
+      'paragraph-auto-1',
+    ])
+    expect(rootRef.instance.childrenIds).toEqual([
+      'paragraph-auto-1',
+      layout.id,
+    ])
+  })
+
   it('preserves an allow-empty container after deleting its last child', () => {
     const {crud, doc, rootRef, createdParagraphs} = createDocHarness()
     ;(doc.schemas.get as jasmine.Spy).and.callFake((flavour: string) => ({

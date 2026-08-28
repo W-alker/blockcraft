@@ -3634,6 +3634,91 @@ describe('InputTransformer text boundary adjacent non-editable blocks', () => {
     expect(doc.selection.setGapCursor).toHaveBeenCalledOnceWith(nextBlock, 'before')
     expect(doc.selection.selectBlock).not.toHaveBeenCalled()
   })
+
+  it('Backspace on the last empty root paragraph beside absolute objects restores the fallback text caret', () => {
+    const parent = {
+      id: 'root',
+      nodeType: BlockNodeType.root,
+      childrenIds: ['p1', 'placement-layout-1'],
+      get childrenLength() {
+        return this.childrenIds.length
+      },
+      getChildrenByIndex(index: number) {
+        return blocks[this.childrenIds[index]]
+      },
+    }
+    const paragraph = {
+      id: 'p1',
+      flavour: 'paragraph',
+      nodeType: BlockNodeType.editable,
+      textLength: 0,
+      props: {},
+      parentBlock: parent,
+    }
+    const layout = {
+      id: 'placement-layout-1',
+      flavour: 'placement-layout',
+      nodeType: BlockNodeType.block,
+      parentBlock: parent,
+    }
+    const fallback = {
+      id: 'fallback-p',
+      flavour: 'paragraph',
+      nodeType: BlockNodeType.editable,
+      textLength: 0,
+      props: {},
+      parentBlock: parent,
+    }
+    const blocks: Record<string, any> = {
+      [paragraph.id]: paragraph,
+      [layout.id]: layout,
+      [fallback.id]: fallback,
+    }
+    const selection = new BlockSelection(
+      {blockId: paragraph.id, type: 'text', offset: 0, block: paragraph} as any,
+      {blockId: paragraph.id, type: 'text', offset: 0, block: paragraph} as any,
+      paragraph.id,
+      id => blocks[id],
+      () => 0,
+    )
+    const doc = {
+      event: eventStub(),
+      isReadonly: false,
+      isEditable: (block: any) => block?.nodeType === BlockNodeType.editable,
+      getBlockById: (id: string) => blocks[id],
+      prevSibling: jasmine.createSpy('prevSibling').and.returnValue(null),
+      selection: {
+        replay: jasmine.createSpy('replay'),
+        setGapCursor: jasmine.createSpy('setGapCursor'),
+        selectBlock: jasmine.createSpy('selectBlock'),
+        selectOrSetCursorAtBlock: jasmine.createSpy('selectOrSetCursorAtBlock'),
+        blur: jasmine.createSpy('blur'),
+      },
+      crud: {
+        deleteBlockById: jasmine.createSpy('deleteBlockById').and.callFake(() => {
+          parent.childrenIds = [fallback.id, layout.id]
+        }),
+      },
+    }
+    const preventDefault = jasmine.createSpy('preventDefault')
+    const transformer = new InputTransformer(doc as any) as any
+
+    const result = transformer['_handleBackspace']({
+      preventDefault,
+      get: () => ({selection}),
+    })
+
+    expect(result).toBeTrue()
+    expect(preventDefault).toHaveBeenCalled()
+    expect(doc.crud.deleteBlockById).toHaveBeenCalledOnceWith(paragraph.id)
+    expect(doc.selection.selectOrSetCursorAtBlock).not.toHaveBeenCalled()
+    expect(doc.selection.setGapCursor).not.toHaveBeenCalled()
+    expect(doc.selection.replay).toHaveBeenCalledWith({
+      anchor: {blockId: fallback.id, type: 'text', offset: 0},
+      head: {blockId: fallback.id, type: 'text', offset: 0},
+      commonParent: fallback.id,
+    })
+  })
 })
 
 describe('InputTransformer gap deletion', () => {

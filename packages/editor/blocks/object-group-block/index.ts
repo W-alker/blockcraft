@@ -10,6 +10,7 @@ import {
 } from '../../framework'
 import {ObjectGroupBlockComponent} from './object-group.block'
 
+
 export {ObjectGroupBlockComponent} from './object-group.block'
 
 export interface ObjectGroupBlockModel extends NoEditableBlockNative {

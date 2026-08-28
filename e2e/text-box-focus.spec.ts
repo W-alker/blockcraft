@@ -14,6 +14,69 @@ async function initialize(page: Page): Promise<void> {
   }, editorSelector)
 }
 
+test('deleting the last root paragraph beside an absolute object keeps a text caret', async ({
+  page,
+}) => {
+  await initialize(page)
+  const originalParagraphId = await page.evaluate(async selector => {
+    const editor = document.querySelector(selector)!
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor).doc
+    const rootChildren = [...doc.model.getChildrenIds(doc.rootId)]
+    if (rootChildren.length) {
+      doc.crud.deleteBlocks(doc.rootId, 0, rootChildren.length, true)
+    }
+    const paragraph = doc.schemas.createSnapshot('paragraph', [])
+    doc.crud.insertBlockSnapshots(doc.rootId, 0, [paragraph])
+    const textBox = doc.schemas.createSnapshot('text-box', [
+      '绝对定位文本框',
+      {width: 320, height: 160},
+    ])
+    const absoluteId = doc.placement.insertAbsoluteSnapshot(textBox)
+    if (!absoluteId) throw new Error('failed to create absolute text box')
+    await new Promise<void>(resolve =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    )
+    doc.root.hostElement.focus({preventScroll: true})
+    doc.selection.setCursorAtBlock(paragraph.id, true, false)
+    return paragraph.id as string
+  }, editorSelector)
+
+  await page.keyboard.press('Backspace')
+
+  await expect.poll(() => page.evaluate(({selector, originalParagraphId}) => {
+    const editor = document.querySelector(selector)!
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const doc = debug.getComponent(editor).doc
+    const selection = doc.selection.value?.toJSON?.()
+    const rootIds = [...doc.model.getChildrenIds(doc.rootId)] as string[]
+    return {
+      rootFlavours: rootIds.map(id => doc.model.getFlavour(id)),
+      caret: selection?.anchor?.type === 'text' && selection?.head?.type === 'text'
+        ? {
+          blockId: selection.anchor.blockId,
+          offset: selection.anchor.offset,
+          collapsed: selection.anchor.blockId === selection.head.blockId &&
+            selection.anchor.offset === selection.head.offset,
+          replaced: selection.anchor.blockId !== originalParagraphId,
+          }
+        : null,
+    }
+  }, {selector: editorSelector, originalParagraphId})).toEqual({
+    rootFlavours: ['paragraph', 'placement-layout'],
+    caret: {
+      blockId: expect.any(String),
+      offset: 0,
+      collapsed: true,
+      replaced: true,
+    },
+  })
+})
+
 test('flow text-box object handle and Escape select the whole frame', async ({
   page,
 }) => {

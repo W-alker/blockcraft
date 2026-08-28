@@ -255,8 +255,45 @@ export class PresentationController {
     );
     document.body.appendChild(presentationContainer);
     this._demoDoc.initBySnapshot(rootSnapshot, runtimeSurface.mountContainer);
+    this.applyDocumentAppearance(rootSnapshot.props);
     if (this.layoutMode === 'paginated') {
       this.markPaginatedRootAsPresentationSurface();
+    }
+  }
+
+  /**
+   * Root appearance is host-surface owned: flow paints the transient Root,
+   * while pagination paints each paper sheet and keeps its continuous Root
+   * transparent so page gaps are not filled.
+   */
+  private applyDocumentAppearance(props: IBlockSnapshot['props']): void {
+    const root = this._demoDoc?.root?.hostElement;
+    const container = this.presentationContainer;
+    if (!root || !container) return;
+
+    const background = typeof props?.['background'] === 'string'
+      ? props['background'].trim()
+      : '';
+    const color = typeof props?.['color'] === 'string'
+      ? props['color'].trim()
+      : '';
+
+    if (this.layoutMode === 'paginated') {
+      if (background) container.style.setProperty('--bc-page-sheet-bg', background);
+      else container.style.removeProperty('--bc-page-sheet-bg');
+      root.style.removeProperty('background');
+    } else {
+      if (background) root.style.setProperty('background', background);
+      else root.style.removeProperty('background');
+      container.style.removeProperty('--bc-page-sheet-bg');
+    }
+
+    if (color) {
+      root.style.setProperty('color', color);
+      root.style.setProperty('--bc-color', color);
+    } else {
+      root.style.removeProperty('color');
+      root.style.removeProperty('--bc-color');
     }
   }
 

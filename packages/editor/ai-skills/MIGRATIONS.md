@@ -727,14 +727,14 @@ layout must be replaced:
 
 ```typescript
 // before: removed source-deep modules
-import {inlineImageEmbedConverter} from './framework/block-std/inline/image-embed'
-import {createInlineShapeEmbedConverter} from './blocks/shape-block/shape-embed'
+import { inlineImageEmbedConverter } from "./framework/block-std/inline/image-embed";
+import { createInlineShapeEmbedConverter } from "./blocks/shape-block/shape-embed";
 
 // after: supported package public entry
 import {
   createInlineShapeEmbedConverter,
   inlineImageEmbedConverter,
-} from '@ccc/blockcraft'
+} from "@ccc/blockcraft";
 ```
 
 For an external Embed that the Agent may create, colocate and export an
@@ -742,27 +742,28 @@ optional declaration, then register both sides in the host:
 
 ```typescript
 // @acme/my-embed: embeds/my-embed/agent/index.ts
-export const MY_EMBED_AGENT_CAPABILITY =
-  defineInlineEmbedAgentCapability({
-    id: 'acme.inline-embed.my-embed',
-    kind: 'inline-embed',
-    embedKey: 'myEmbed',
-    title: 'My Embed',
-    description: 'An ACME entity reference.',
-    insert: {value: {type: 'string', minLength: 1}},
-  })
+export const MY_EMBED_AGENT_CAPABILITY = defineInlineEmbedAgentCapability({
+  id: "acme.inline-embed.my-embed",
+  kind: "inline-embed",
+  embedKey: "myEmbed",
+  title: "My Embed",
+  description: "An ACME entity reference.",
+  insert: { value: { type: "string", minLength: 1 } },
+});
 
 // host
 const doc = new BlockCraftDoc({
-  embeds: [['myEmbed', myEmbedConverter]],
-})
+  embeds: [["myEmbed", myEmbedConverter]],
+});
 const extension: DocumentAgentHostExtension = {
-  id: 'acme.embeds',
-  version: '1',
-  description: 'ACME Embed contracts',
+  id: "acme.embeds",
+  version: "1",
+  description: "ACME Embed contracts",
   capabilities: [MY_EMBED_AGENT_CAPABILITY],
-}
-const agent = new BlockCraftEditorAgent(doc, runner, {extensions: [extension]})
+};
+const agent = new BlockCraftEditorAgent(doc, runner, {
+  extensions: [extension],
+});
 ```
 
 If an Embed needs no AI-specific semantics, do not add or register an Agent
@@ -879,35 +880,37 @@ it; the host remains responsible for registration:
 ```typescript
 // before: host-only inline declaration
 const extension = {
-  id: 'acme.blocks',
-  version: '1',
-  description: 'ACME Blocks',
-  capabilities: [{
-    id: 'acme.block.card',
-    kind: 'block',
-    flavour: 'acme-card',
-    title: 'Card',
-    description: 'ACME card',
-  }],
-}
+  id: "acme.blocks",
+  version: "1",
+  description: "ACME Blocks",
+  capabilities: [
+    {
+      id: "acme.block.card",
+      kind: "block",
+      flavour: "acme-card",
+      title: "Card",
+      description: "ACME card",
+    },
+  ],
+};
 
 // after: blocks/acme-card/agent/index.ts
 export const ACME_CARD_AGENT_CAPABILITY = defineBlockAgentCapability({
-  id: 'acme.block.card',
-  kind: 'block',
-  flavour: 'acme-card',
+  id: "acme.block.card",
+  kind: "block",
+  flavour: "acme-card",
   schemaVersion: 1,
-  title: 'Card',
-  description: 'ACME card',
-})
+  title: "Card",
+  description: "ACME card",
+});
 
 // host composition
 const extension = {
-  id: 'acme.blocks',
-  version: '1',
-  description: 'ACME Blocks',
+  id: "acme.blocks",
+  version: "1",
+  description: "ACME Blocks",
   capabilities: [ACME_CARD_AGENT_CAPABILITY],
-}
+};
 ```
 
 ### Behavior Changes
@@ -950,13 +953,13 @@ prototype-only strings:
 
 ```typescript
 // before: ignored by the TextBox normalizer
-const prototypePreset = {shape: 'wedge-round-callout', tail: 'top-left'}
+const prototypePreset = { shape: "wedge-round-callout", tail: "top-left" };
 
 // after: persisted and rendered by every TextBox projection
-const snapshot = TextBoxBlockSchema.createSnapshot('正文', {
-  shape: 'wedge-round-callout',
-  adjustments: {tailX: 170, tailY: 0},
-})
+const snapshot = TextBoxBlockSchema.createSnapshot("正文", {
+  shape: "wedge-round-callout",
+  adjustments: { tailX: 170, tailY: 0 },
+});
 ```
 
 ### Behavior Changes
@@ -1042,15 +1045,15 @@ temporarily toggled global mode can use the scoped API:
 
 ```typescript
 // before: changes global state observed by the editor UI and later input
-doc.revisions.setActor(agentActor)
-doc.revisions.setMode('track')
-applyAgentOperations()
-doc.revisions.setMode('off')
+doc.revisions.setActor(agentActor);
+doc.revisions.setMode("track");
+applyAgentOperations();
+doc.revisions.setMode("off");
 
 // after: creates one visible review Diff and restores prior state
 doc.revisions.runAsRevision(agentActor, applyAgentOperations, {
   groupId: agentRequestId,
-})
+});
 ```
 
 ### Behavior Changes
@@ -1058,8 +1061,10 @@ doc.revisions.runAsRevision(agentActor, applyAgentOperations, {
 - `doc.revisions.isTracking` is also true inside `runAsRevision()` while
   `mode$` and `mode` retain their previous values.
 - The callback is synchronous. Operations outside Revision v1 continue through
-  their normal Yjs/Undo path without creating a partial Diff; Agent callers may
-  preflight and reject those operations when a fully reviewable result is required.
+  their normal Yjs/Undo path without creating a partial Diff. Agent delivery
+  must not reject or omit those operations merely because they have no Diff
+  styling; mixed results execute completely, and review decisions apply only to
+  the represented revision records.
 
 ## Unreleased — 2026-08-27 — Unified object format domain
 
@@ -1085,8 +1090,12 @@ without one domain contract.
 - `blockcraft-data.md`
 - `blockcraft-embed.md`
 - `blockcraft-plugin.md`
+- `blockcraft-plugins-formatting.md`
 - `blockcraft-plugins-ref.md`
 - `blockcraft-plugins-toolbar.md`
+- `blockcraft-plugins-util.md`
+- `blockcraft-selection.md`
+- `blockcraft-test.md`
 - `blockcraft-toolbar.md`
 - `MIGRATIONS.md`
 
@@ -1234,11 +1243,11 @@ Hosts should stop inspecting or invoking private controller members:
 
 ```typescript
 // before: flow-only and unsupported
-const pages = (controller as any).pages
-if (pages?.length) (controller as any).renderPage(savedIndex)
+const pages = (controller as any).pages;
+if (pages?.length) (controller as any).renderPage(savedIndex);
 
 // after: works for flow and pagination
-if (controller.canResume) controller.resume()
+if (controller.canResume) controller.resume();
 ```
 
 ### Behavior Changes
@@ -1247,7 +1256,7 @@ if (controller.canResume) controller.resume()
   progress. Explicit `destroy()` remains the final cleanup boundary and resets
   the saved page.
 
-## v0.7.1 — 2026-08-25 — Root-flow object-group gap cursor
+## v0.7.2 — 2026-08-25 — Root-flow object-group gap cursor
 
 **Severity**: patch
 
@@ -1270,6 +1279,45 @@ but did not support gap cursors or the normal selected-block keyboard path.
 - Root-flow top-bottom object groups accept before/after gap cursors and selected-
   block keyboard events. Absolute object groups and every member inside an
   object group remain ineligible for gap cursors.
+
+## v0.7.1 — 2026-08-25 — Shape text paste is plain text only
+
+**Severity**: patch
+
+**What changed**: Schema metadata adds `pastePlainTextOnly?: boolean`. The
+built-in `shape-text` child enables it without enabling `plainTextOnly`.
+Shape creation and HTML import retain formatting attributes on text inserts but
+drop non-break inline embeds; paste reads `text/plain` before attempting any
+rich clipboard parser.
+
+**Why**: Shape labels must not import structured clipboard content, but users
+still need to apply font, size, color and other character formatting manually.
+Paste policy and formatting capability are separate concerns.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-plugins-toolbar.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `IBlockSchemaOptions.metadata.pastePlainTextOnly?: boolean` opts a
+  formattable editable block into text-only clipboard ingestion.
+
+### Behavior Changes
+
+- Formatting commands continue to apply to `shape-text`; pasted formatting and
+  inline embeds do not.
+- The first Ctrl/Cmd+A inside a closed container with one direct editable child
+  now selects that child's full text range. Shape-text Delete and paste remain
+  text operations; a repeated shortcut can still promote to the container.
+- Pasting HTML, Markdown, internal BlockCraft snapshots or files into active
+  shape text inserts only the clipboard's `text/plain` value.
+- `ShapeBlockSchema.createSnapshot()` and `ShapeTextBlockSchema.createSnapshot()`
+  keep string content, text formatting attributes and line breaks but discard
+  non-break embeds from supplied Delta input.
 
 ## v0.7.0 — 2026-08-25 — Revision / track-changes domain
 
@@ -1318,16 +1366,18 @@ policy into the editor.
   `RevisionReviewIntent` / `RevisionReviewPopoverIntent` UI contracts. The
   overall panel shows content-sized comment-style cards (exact fragments clamp
   to two lines) for mounted document revision anchors, follows the document
-  scroller, clips horizontal overflow and owns card-local iconfont
-  navigation/decision controls with tooltips. Its default “待处理” queue drops
-  accepted/rejected cards immediately after the headless state update; those
-  records remain available only under the explicit “已处理” history filter for
-  redecision. Structural overlaps are focused one at a time and identify both
-  choices by actor, revision type, time and exact fragment before emitting
-  `resolve-overlap`, instead of exposing ambiguous “former/latter” actions. The
-  compact popover shows actor identity, revision time and “接收修订 / 拒绝修订”
-  icon actions (emitting `keep` / `revert` intents); the controller reveals
-  offscreen targets with a stable block ID and one targeted block view lease
+  scroller, clips horizontal overflow and owns
+  card-local iconfont navigation/decision controls with tooltips. Its default
+  “待处理” queue drops accepted/rejected cards immediately after the headless
+  state update; those records remain available only under the explicit
+  “已处理” history filter for redecision. Structural
+  overlaps are focused one at a time and identify both choices by actor,
+  revision type, time and exact fragment before emitting `resolve-overlap`,
+  instead of exposing ambiguous “former/latter” actions. The compact
+  popover shows actor identity, revision time and “接收修订 / 拒绝修订” icon
+  actions (emitting `keep` / `revert` intents); the
+  controller reveals offscreen targets with a stable block ID and one targeted
+  block view lease
 - `RevisionReviewPlugin`, `RevisionReviewState`, `RevisionReviewItem` and
   related query/navigation/content contracts, including `readContent()`. The
   bundled capability factory returns its fresh instance as
@@ -1344,8 +1394,8 @@ policy into the editor.
 Existing consumers require no change. Content-only persistence remains valid:
 
 ```typescript
-const content = doc.exportSnapshot()
-doc.initBySnapshot(content!, container)
+const content = doc.exportSnapshot();
+doc.initBySnapshot(content!, container);
 ```
 
 Hosts that enable revisions must persist the complete document instead:
@@ -1353,11 +1403,11 @@ Hosts that enable revisions must persist the complete document instead:
 ```typescript
 const doc = new BlockCraftDoc({
   ...config,
-  revision: {actor: {actorId: currentUser.id}, mode: 'off'},
-})
+  revision: { actor: { actorId: currentUser.id }, mode: "off" },
+});
 
-doc.initByDocumentSnapshot(await loadCompleteDocument(), container)
-await saveCompleteDocument(doc.exportDocumentSnapshot())
+doc.initByDocumentSnapshot(await loadCompleteDocument(), container);
+await saveCompleteDocument(doc.exportDocumentSnapshot());
 ```
 
 Authorization still belongs to the host. Only call review commands after the
@@ -1370,11 +1420,11 @@ host has granted the action; BlockCraft validates revision state, not roles.
 - Final projection and clean export throw `RevisionConflictError` while an
   opposite decision head or structural overlap is active.
 - Content Undo/Redo includes revision records but not review decisions.
-- Revision mode v1 no longer disables valid operations it cannot represent.
-  Format/props, inline-object Delta, table-cell structure, block movement and
-  cross-container composites continue through their normal Yjs/Undo paths and
-  create no Diff; a composite bypasses tracking as one operation, so it cannot
-  leave a partial revision record.
+- Revision mode v1 does not attribute format revisions, inline-object Delta,
+  table row/column or cell-structure edits, block/object movement, object
+  geometry or cross-container structure. Those operations remain enabled and
+  use their normal Yjs/Undo path without creating a Diff; composite fallbacks
+  bypass tracking for the entire mutation so no partial revision is left.
 - Later inline edits may cross existing text revisions. Destructive ranges are
   split by active dependency boundaries and kept in one review group, so an
   outer insertion decision cannot absorb adjacent original text. Insert ranges
@@ -1382,9 +1432,9 @@ host has granted the action; BlockCraft validates revision state, not roles.
   targets. Repeating a same-author pending/accepted text or whole-block deletion
   reuses the active record, while an extension records only uncovered content;
   rejected proposals can be made again and different authors retain independent
-  attribution/decisions. Code-block syntax highlighting preserves the same
-  temporary revision attribution and yields foreground/background painting to
-  revision theme colors while a token is visibly pending or conflicted.
+  attribution/decisions. Code-block syntax highlighting preserves the same temporary
+  revision attribution and yields foreground/background painting to revision
+  theme colors while a token is visibly pending or conflicted.
 - Revision-only presentation changes invalidate affected pagination roots, and
   bundled asynchronous Inline renderers replay any page-gap projection they
   revoke. Hidden resolved blocks contribute neither border-box height nor
@@ -1401,24 +1451,28 @@ host has granted the action; BlockCraft validates revision state, not roles.
   top-level copy by 12px on both axes and selects the inserted copies. Plain
   text and general HTML remain isolated from the object-owned input path.
 
-
-## v0.6.1 — 2026-08-25 — Mermaid child Schema validation
+## v0.6.1 — 2026-08-25 — Mermaid validation and object drawing boundary
 
 **Severity**: patch
 
 **What changed**: The built-in `mermaid` Schema now declares its generated
 `mermaid-textarea` child through `metadata.includeChildren`. The BlockCraft
 model-first child validator can therefore validate Mermaid snapshots produced
-by `MermaidBlockSchema.createSnapshot(mode, source)`.
+by `MermaidBlockSchema.createSnapshot(mode, source)`. Shape, TextBox and WordArt
+drag creation now uses the configured `doc.scrollContainer` viewport as its
+drawing and clamping boundary instead of the root block box.
 
 **Why**: Mermaid already creates an editable source child internally, but its
 Schema metadata omitted that relationship. Agent-created Mermaid snapshots were
-valid at runtime yet were rejected before insertion as invalid snapshots.
+valid at runtime yet were rejected before insertion as invalid snapshots. The
+root box also prevented users from drawing objects across the editor's complete
+scroll viewport.
 
 **Affected ai-skills files**:
 
 - `blockcraft.md`
 - `blockcraft-block.md`
+- `blockcraft-plugins-formatting.md`
 - `MIGRATIONS.md`
 
 ### Behavior Changes
@@ -1426,6 +1480,9 @@ valid at runtime yet were rejected before insertion as invalid snapshots.
 - `doc.canInsertChild()` and model-first snapshot validation now recognize
   `mermaid-textarea` as the valid child of a `mermaid` block. Hosts should still
   create the outer `mermaid` block and let its Schema generate the source child.
+- The fixed toolbar's one-shot Shape, TextBox and WordArt drawing layer and
+  committed rectangle are constrained to `doc.scrollContainer`. Hosts with a
+  custom scroll viewport should ensure it is the intended object-creation area.
 
 ## v0.6.0 — 2026-08-24 — Canonical dynamic blocks and template draft projection
 
@@ -1463,12 +1520,12 @@ template, store unresolved choices in block meta and pass them during drag:
 
 ```typescript
 dragController.startDrag(event, {
-  kind: 'new-block',
-  flavour: 'date-card',
+  kind: "new-block",
+  flavour: "date-card",
   initMeta: {
-    [draftPropMetaKey('style')]: 'calendar',
+    [draftPropMetaKey("style")]: "calendar",
   },
-})
+});
 ```
 
 When creating a normal document, resolve each `draft:*` entry into its matching
@@ -1715,11 +1772,11 @@ No call-site change is required. Keep the source pagination plugin enabled when
 entering demo mode to present paper pages; disable it to use flow-slide analysis:
 
 ```typescript
-pagination.enable()
-doc.enterDemoMode() // real paginated sheets
+pagination.enable();
+doc.enterDemoMode(); // real paginated sheets
 
-pagination.disable()
-doc.enterDemoMode({cover}) // existing flow-slide mode
+pagination.disable();
+doc.enterDemoMode({ cover }); // existing flow-slide mode
 ```
 
 ### Behavior Changes
@@ -1788,10 +1845,10 @@ presentation controls at screen size.
 
 ```typescript
 // before: enlarged only typography and selected spacing/table dimensions
-doc.enterDemoMode({fontScale: 1.5})
+doc.enterDemoMode({ fontScale: 1.5 });
 
 // after: enlarges the complete page through one normalized geometry scale
-doc.enterDemoMode({viewScale: 1.5})
+doc.enterDemoMode({ viewScale: 1.5 });
 ```
 
 Existing `fontScale` calls continue to work as an alias. Remove explicit
@@ -1858,10 +1915,10 @@ page from host code:
 
 ```typescript
 // before: only mutual multi-object alignment existed
-doc.placement.alignObjects([aId, bId], 'left') // needs ≥ 2 objects
+doc.placement.alignObjects([aId, bId], "left"); // needs ≥ 2 objects
 
 // after: one object aligns against the plane itself
-doc.placement.alignObjectsToPlane([blockId], 'horizontal-center')
+doc.placement.alignObjectsToPlane([blockId], "horizontal-center");
 ```
 
 ## Unreleased — 2026-08-21 — Shape 填充支持线性渐变；形状工具条改为类目式面板
@@ -1924,14 +1981,14 @@ fired when a panel with form controls mounts) no longer closes it.
 ```typescript
 // 写入渐变填充（一次事务）
 block.updateProps({
-  fillType: 'linear-gradient',
+  fillType: "linear-gradient",
   gradientAngle: 160,
-  gradientColors: ['#26405E', '#58402E'],
+  gradientColors: ["#26405E", "#58402E"],
   gradientStops: [0, 1],
-})
+});
 
 // 回到纯色
-block.updateProps({fillType: 'solid', fillColor: '#93C5FD'})
+block.updateProps({ fillType: "solid", fillColor: "#93C5FD" });
 ```
 
 ### Behavior Changes
@@ -1995,14 +2052,14 @@ builtin registry is unchanged. To render custom materials in previews:
 
 ```typescript
 // before: custom flavours fall through to the generic empty shell
-const renderer = createSnapshotRenderer({baseUrl})
+const renderer = createSnapshotRenderer({ baseUrl });
 
 // after: hosts inject their own renderers per viewer instance
 const renderer = createSnapshotRenderer({
   baseUrl,
   blockRenderers: [weatherRenderer],
-  inlineEmbeds: {person: personEmbedConverter.toView},
-})
+  inlineEmbeds: { person: personEmbedConverter.toView },
+});
 ```
 
 ### Behavior Changes
@@ -2060,7 +2117,7 @@ unknown ids; the fallback is pinned to 默认白框 (`'classic'`).
 
 **Why**: a text box without a fill was only reachable by picking 默认白框 and
 then clearing the fill by hand in the shape panel. A fully invisible variant
-(no fill *and* no border) was considered and rejected: it renders an empty
+(no fill _and_ no border) was considered and rejected: it renders an empty
 swatch in the picker and an invisible object on the canvas.
 
 **Affected ai-skills files**:
@@ -2205,11 +2262,11 @@ instead of hard-coding the content box:
 
 ```typescript
 // before
-const x = Math.min(box.width - objectWidth, Math.max(0, localX))
+const x = Math.min(box.width - objectWidth, Math.max(0, localX));
 
 // after
-const bounds = resolvePlacementPlaneBounds(box)
-const x = Math.min(bounds.maxX - objectWidth, Math.max(bounds.minX, localX))
+const bounds = resolvePlacementPlaneBounds(box);
+const x = Math.min(bounds.maxX - objectWidth, Math.max(bounds.minX, localX));
 ```
 
 Anyone constructing a `PlacementBox` literal (test doubles included) must supply
@@ -2221,8 +2278,11 @@ mark its sizing surface instead:
 ```html
 <!-- before: component CSS carried max-width: 100% (+ absolute overrides) -->
 <!-- after: one attribute, base.scss owns the rest -->
-<div class="my-object__surface" data-bc-object-surface
-  [style.width.px]="props.width"></div>
+<div
+  class="my-object__surface"
+  data-bc-object-surface
+  [style.width.px]="props.width"
+></div>
 ```
 
 ### Behavior Changes
@@ -2304,24 +2364,26 @@ const encoded = serializeCustomShapeGeometry({
   version: 1,
   width: 1000,
   height: 1000,
-  paths: [{
-    fill: false,
-    commands: [
-      {type: 'move', x: 0, y: 500},
-      {
-        type: 'cubic',
-        control1X: 250,
-        control1Y: 0,
-        control2X: 750,
-        control2Y: 1000,
-        x: 1000,
-        y: 500,
-      },
-    ],
-  }],
-})
+  paths: [
+    {
+      fill: false,
+      commands: [
+        { type: "move", x: 0, y: 500 },
+        {
+          type: "cubic",
+          control1X: 250,
+          control1Y: 0,
+          control2X: 750,
+          control2Y: 1000,
+          x: 1000,
+          y: 500,
+        },
+      ],
+    },
+  ],
+});
 
-if (encoded) doc.crud.updateBlockProps(shapeId, {customGeometry: encoded})
+if (encoded) doc.crud.updateBlockProps(shapeId, { customGeometry: encoded });
 ```
 
 ### Behavior Changes
@@ -2551,10 +2613,10 @@ font scaling should use the paragraph-aware command:
 
 ```typescript
 // before: always inline, marker siblings do not resize
-helper.formatText(createInlineTypographyPatch('fs', 1.5), selection)
+helper.formatText(createInlineTypographyPatch("fs", 1.5), selection);
 
 // after: complete blocks use pfs; partial ranges and carets use t:fs
-helper.formatTypography({fontScale: 1.5}, selection)
+helper.formatTypography({ fontScale: 1.5 }, selection);
 ```
 
 Existing documents are not rewritten or inferred. Historical whole-block
@@ -2615,8 +2677,8 @@ that creates `WordArtToolbarComponent` directly may optionally consume the new
 panel geometry output:
 
 ```typescript
-componentRef.setInput('side', 'right')
-componentRef.instance.panelChange.subscribe(() => overlayRef.updatePosition())
+componentRef.setInput("side", "right");
+componentRef.instance.panelChange.subscribe(() => overlayRef.updatePosition());
 ```
 
 ### Behavior Changes
@@ -2675,23 +2737,23 @@ Remove `side` from programmatic Shape and WordArt creation:
 // before
 createInlineShapeDelta(props, text, {
   wrap: true,
-  side: 'left',
+  side: "left",
   x: 0.32,
   gap: 12,
-})
+});
 
 createInlineWordArtDelta(props, text, {
   wrap: true,
   x: 0.32,
   gap: 12,
-})
+});
 
 // after
 createInlineShapeDelta(props, text, {
   wrap: true,
   x: 0.32,
   gap: 12,
-})
+});
 ```
 
 ### Behavior Changes
@@ -2777,13 +2839,13 @@ inline DOM margins:
 
 ```typescript
 // before: view-only and not collaborative
-paragraphElement.style.marginBottom = '12pt'
+paragraphElement.style.marginBottom = "12pt";
 
 // after: collaborative, undoable and pagination-aware
 doc.crud.updateBlockProps(paragraphId, {
   psb: 6,
   psa: 12,
-})
+});
 ```
 
 ### Behavior Changes
@@ -2901,14 +2963,10 @@ Hosts that render ordered prefixes themselves should use the shared resolver:
 
 ```typescript
 // before
-const marker = `${getNumberPrefix(props.order, props.depth)}.`
+const marker = `${getNumberPrefix(props.order, props.depth)}.`;
 
 // after
-const marker = resolveOrderedMarker(
-  props.order,
-  props.depth,
-  props.ms,
-).text
+const marker = resolveOrderedMarker(props.order, props.depth, props.ms).text;
 ```
 
 ### Behavior Changes
@@ -3082,7 +3140,7 @@ carries the drawing **and its text-safe frame**. New exports from
 **Why**: two separate faults, one cause — a drawing was being treated as
 document content instead of as an asset.
 
-*Weight.* `bgi` is a reference field: the shape panel's own image flow uploads
+_Weight._ `bgi` is a reference field: the shape panel's own image flow uploads
 through `DOC_FILE_SERVICE_TOKEN` and stores the URL the host returns. Inlining a
 `data:` URI put 0.3–1.6 KB of SVG into every decorated frame — 903 bytes median,
 1.4 KB serialized for a whole text box against 161 bytes for one of the original
@@ -3090,7 +3148,7 @@ shape-built presets. That rode along in every Yjs sync, undo entry and export;
 twenty framed text boxes cost ~18 KB of document. References cost 25 bytes, a
 97% reduction, and the drawings ship with the package.
 
-*Geometry.* The text-safe frame was held in `p`, which is absolute px, while the
+_Geometry._ The text-safe frame was held in `p`, which is absolute px, while the
 drawing stretches with the frame (`preserveAspectRatio="none"` plus
 `bgs: 'stretch'`). It was therefore only correct at the size each entry was
 drawn for, and frames are dragged to arbitrary sizes. Measured live: a
@@ -3130,7 +3188,7 @@ entries could not be fixed by choosing a different `sh`.
 - An unrecognised `bc:` reference paints nothing rather than handing `<img>` a
   source it cannot load, leaving an ordinary framed text box.
 - The shape panel's 选择图片 / 替换图片 / 移除 controls now key off
-  *uploaded* images only. They share the `bgi` field with catalog drawings, so
+  _uploaded_ images only. They share the `bgi` field with catalog drawings, so
   before this a single click on a decorated frame replaced or erased the
   preset's artwork.
 - Documents written before this keep their inline `data:` URI and render exactly
@@ -3298,6 +3356,7 @@ fixed pixels. Freezing every object to pixels would destroy responsive image
 semantics; keeping every child root-relative would deform a composition when
 the root width changed. A fixed group plane lets each child retain its native
 model while the composition remains stable.
+
 ## Unreleased — 2026-08-14 — add the bundled `date` inline embed
 
 **Severity**: minor
@@ -3360,23 +3419,23 @@ const schemas = new SchemaManager([
   ObjectGroupBlockSchema,
   ImageBlockSchema,
   ShapeBlockSchema,
-])
+]);
 
 const plugins = [
   new ObjectGroupToolbarPlugin(),
   new ImgToolbarPlugin(),
   new ShapeToolbarPlugin(),
-]
+];
 ```
 
 Live ratio-sized block components should use the block-aware resolver:
 
 ```typescript
 // before: always root-relative
-doc.objectSizing.resolve(block.flavour, block.props)
+doc.objectSizing.resolve(block.flavour, block.props);
 
 // after: root-relative normally, group-relative for direct group members
-doc.objectSizing.resolveForBlock(block.id, block.flavour, block.props)
+doc.objectSizing.resolveForBlock(block.id, block.flavour, block.props);
 ```
 
 ### Behavior Changes
@@ -3421,6 +3480,7 @@ flow block from its normalized persisted `props.height` through
 **Why**: These objects already persist an authoritative fixed pixel frame.
 Using a generic per-flavour fallback made tall offscreen objects reserve the
 wrong height until their DOM mounted and was measured.
+
 - `blockcraft-embed.md`
 - `blockcraft-plugins-ref.md`
 - `blockcraft-plugins-inline.md`
@@ -3513,19 +3573,19 @@ group-local absolute layout.
 // before
 const props = {
   placement: {
-    mode: 'absolute' as const,
+    mode: "absolute" as const,
     x: 120,
     y: 240,
-    unit: 'px' as const,
-    layer: 'under' as const,
+    unit: "px" as const,
+    layer: "under" as const,
   },
-}
+};
 
 // after: insert/move this block under placement-layout
 const props = {
-  position: {x: 120, y: 240},
-  placementLayer: 'under' as const,
-}
+  position: { x: 120, y: 240 },
+  placementLayer: "under" as const,
+};
 ```
 
 For relative flow, keep the block as a direct root child and omit both fields.
@@ -3704,13 +3764,13 @@ Existing documents require no migration — an absent `wm` normalizes to `'h'`
 and renders exactly as before.
 
 ```typescript
-const snapshot = TextBoxBlockSchema.createSnapshot('正文', {
+const snapshot = TextBoxBlockSchema.createSnapshot("正文", {
   width: 120,
   height: 240,
-  wm: 'v',
-})
+  wm: "v",
+});
 
-doc.crud.updateBlockProps(textBoxId, {wm: 'h'})
+doc.crud.updateBlockProps(textBoxId, { wm: "h" });
 ```
 
 ### Behavior Changes
@@ -3802,17 +3862,17 @@ const schemas = new SchemaManager([
   ParagraphBlockSchema,
   PlacementLayoutBlockSchema,
   TextBoxBlockSchema,
-])
+]);
 
-const plugins = [new TextBoxToolbarPlugin()]
+const plugins = [new TextBoxToolbarPlugin()];
 
-const snapshot = TextBoxBlockSchema.createSnapshot('正文', {
+const snapshot = TextBoxBlockSchema.createSnapshot("正文", {
   width: 320,
   height: 160,
-  sh: 'rounded-speech-bubble',
+  sh: "rounded-speech-bubble",
   p: [12, 20],
-  bgi: 'https://cdn.example.com/paper.png',
-})
+  bgi: "https://cdn.example.com/paper.png",
+});
 ```
 
 Preset IDs are catalog/UI state and are not persisted. Applying a preset writes
@@ -3886,12 +3946,12 @@ Existing `s:fontFamily`, `s:fontSize` and `s:letterSpacing` content remains
 read-compatible. New writes should use semantic patches:
 
 ```typescript
-toolbar.formatText(createInlineTypographyPatch('ff', 'kai'))
-toolbar.formatText(createInlineTypographyPatch('fs', 1.25))
-toolbar.updateBlockProps({lh: 1.5})
+toolbar.formatText(createInlineTypographyPatch("ff", "kai"));
+toolbar.formatText(createInlineTypographyPatch("fs", 1.25));
+toolbar.updateBlockProps({ lh: 1.5 });
 
 // A host-owned document settings surface may update root defaults.
-doc.crud.updateBlockProps(doc.rootId, {ff: 'serif', fs: 18, lh: 1.6})
+doc.crud.updateBlockProps(doc.rootId, { ff: "serif", fs: 18, lh: 1.6 });
 ```
 
 Use `null` to remove a field. Neutral inline scale `1` and letter spacing `0`
@@ -3958,14 +4018,17 @@ text-box object.
 No existing document migration is required. Hosts can opt a content region in:
 
 ```typescript
-const region = RenderUnitBlockSchema.createSnapshot({}, {
-  p: [16, 24],
-  bgi: 'https://cdn.example.com/paper.png',
-  bgs: 'cover',
-})
+const region = RenderUnitBlockSchema.createSnapshot(
+  {},
+  {
+    p: [16, 24],
+    bgi: "https://cdn.example.com/paper.png",
+    bgs: "cover",
+  },
+);
 
-doc.crud.updateBlockProps(regionId, {p: [16, 32]})
-doc.crud.updateBlockProps(regionId, {bgi: null})
+doc.crud.updateBlockProps(regionId, { p: [16, 32] });
+doc.crud.updateBlockProps(regionId, { bgi: null });
 ```
 
 ### Behavior Changes
@@ -4221,29 +4284,34 @@ only when adding commands:
 
 ```typescript
 // before: still valid
-new BlockTransformerPlugin(blockTransforms)
+new BlockTransformerPlugin(blockTransforms);
 
 // after: additive host command
 const transformer = new BlockTransformerPlugin({
   transformList: blockTransforms,
-  commands: [{
-    id: 'inline:date',
-    label: '日期',
-    group: 'inline',
-    run: async context => {
-      const date = await chooseDate()
-      if (date) context.replace([{insert: date.label, attributes: {'d:date': date.iso}}])
+  commands: [
+    {
+      id: "inline:date",
+      label: "日期",
+      group: "inline",
+      run: async (context) => {
+        const date = await chooseDate();
+        if (date)
+          context.replace([
+            { insert: date.label, attributes: { "d:date": date.iso } },
+          ]);
+      },
     },
-  }],
-})
+  ],
+});
 
 // Runtime extension; call the returned disposer when the feature unloads.
 const dispose = transformer.registerCommand({
-  id: 'host:approval',
-  label: '快捷审批',
-  keywords: ['workflow'],
-  run: context => context.replace([{insert: '审批'}]),
-})
+  id: "host:approval",
+  label: "快捷审批",
+  keywords: ["workflow"],
+  run: (context) => context.replace([{ insert: "审批" }]),
+});
 ```
 
 ### Behavior Changes
@@ -4341,10 +4409,10 @@ combined size write with explicit appearance props:
 
 ```typescript
 // before: still read for compatibility
-divider.updateProps({size: 'large'})
+divider.updateProps({ size: "large" });
 
 // after
-divider.updateProps({length: 'full', thickness: 'thick', opacity: .8})
+divider.updateProps({ length: "full", thickness: "thick", opacity: 0.8 });
 ```
 
 Legacy sizes normalize as `thin` → short/thin, `small` → medium/thin,
@@ -4417,15 +4485,15 @@ fallback or handle the new catalog values:
 ```typescript
 // before
 function shapeGroup(kind: ShapeKind) {
-  if (kind === 'rectangle') return 'basic'
-  if (kind === 'ellipse') return 'basic'
-  return 'legacy-other'
+  if (kind === "rectangle") return "basic";
+  if (kind === "ellipse") return "basic";
+  return "legacy-other";
 }
 
 // after: prefer the framework-owned category projection
-const category = SHAPE_CATEGORIES.find(group =>
-  group.definitions.some(definition => definition.type === kind),
-)
+const category = SHAPE_CATEGORIES.find((group) =>
+  group.definitions.some((definition) => definition.type === kind),
+);
 ```
 
 Existing snapshots and HTML need no migration. `shapeType` and WordArt props
@@ -4484,14 +4552,14 @@ of a second, smaller implementation inside BlockCraft.
 
 ```typescript
 // before
-import { EmojiPickerComponent } from '@ccc/blockcraft'
-componentRef.instance.emojiSelected.subscribe(emoji => updatePrefix(emoji))
+import { EmojiPickerComponent } from "@ccc/blockcraft";
+componentRef.instance.emojiSelected.subscribe((emoji) => updatePrefix(emoji));
 
 // after
-import { CsEmojiPickerComponent } from '@cses/ui'
-componentRef.instance.csEmojiSelect.subscribe(({emoji}) =>
+import { CsEmojiPickerComponent } from "@cses/ui";
+componentRef.instance.csEmojiSelect.subscribe(({ emoji }) =>
   updatePrefix(emoji.native),
-)
+);
 ```
 
 When a host already owns positioning and dismissal, render the CSES picker in
@@ -4626,14 +4694,14 @@ after upgrading to the release that contains this change:
 // before
 new BlockCraftDoc({
   // ...
-  embeds: [['icon', localIconEmbedConverter]],
-})
+  embeds: [["icon", localIconEmbedConverter]],
+});
 
 // after
 new BlockCraftDoc({
   // ...
   // icon is built in; keep only host-specific embeds
-})
+});
 ```
 
 Replacement Callout components should hand the persisted color to the shared
@@ -4800,9 +4868,9 @@ still do whole-document work or visibly move its scrollbar while scrolling.
 
 ```scss
 // global styles, before BlockCraft entries
-@use '@cses/ui/styles/cses-ui';
-@use '@ccc/blockcraft/themes/base';
-@use '@ccc/blockcraft/themes/light';
+@use "@cses/ui/styles/cses-ui";
+@use "@ccc/blockcraft/themes/base";
+@use "@ccc/blockcraft/themes/light";
 ```
 
 ### Behavior Changes
@@ -5245,8 +5313,8 @@ No existing document needs migration. Set or clear the inherited text color
 through normal root props mutations:
 
 ```typescript
-doc.crud.updateBlockProps(doc.rootId, {color: '#182230'})
-doc.crud.updateBlockProps(doc.rootId, {color: null})
+doc.crud.updateBlockProps(doc.rootId, { color: "#182230" });
+doc.crud.updateBlockProps(doc.rootId, { color: null });
 ```
 
 #### Behavior Changes
@@ -5285,8 +5353,9 @@ props mutation and project the value onto their own view surface:
 
 ```typescript
 doc.crud.updateBlockProps(doc.rootId, {
-  background: '#fff url("https://cdn.example.com/bg.png") center / cover no-repeat',
-})
+  background:
+    '#fff url("https://cdn.example.com/bg.png") center / cover no-repeat',
+});
 ```
 
 Use `{background: null}` to remove the field. Do not persist view-specific DOM
@@ -5364,12 +5433,12 @@ Hosts with their own panel can register the headless presentation mode and
 delegate all operations to the plugin-owned helper:
 
 ```typescript
-const findReplace = new FindReplacePlugin({defaultDialog: false})
-plugins.push(findReplace)
+const findReplace = new FindReplacePlugin({ defaultDialog: false });
+plugins.push(findReplace);
 
-findReplace.helper.findAll(query)
-findReplace.helper.findNext()
-findReplace.helper.replaceOne(replacement)
+findReplace.helper.findAll(query);
+findReplace.helper.findNext();
+findReplace.helper.replaceOne(replacement);
 ```
 
 #### Behavior Changes
@@ -5412,7 +5481,7 @@ selection, scrolling and lifecycle behavior.
 Hosts with a custom viewing state can delegate cursor projection to BlockCraft:
 
 ```typescript
-cursorAwareness.setLocalCursorEnabled(presenceStatus === 'editing')
+cursorAwareness.setLocalCursorEnabled(presenceStatus === "editing");
 ```
 
 #### Behavior Changes
@@ -5598,12 +5667,12 @@ that view, its images, fonts or dimensions are still changing.
 Existing exports require no change. Hosts with async business blocks can opt in:
 
 ```typescript
-await pagination.exportToPdf('document.pdf', {
-  prepareDocument: async ({doc, root, signal}) => {
-    await businessExportCoordinator.reloadAndWait(doc, {root, signal})
+await pagination.exportToPdf("document.pdf", {
+  prepareDocument: async ({ doc, root, signal }) => {
+    await businessExportCoordinator.reloadAndWait(doc, { root, signal });
   },
-  stability: {quietFrames: 2, timeoutMs: 10000},
-})
+  stability: { quietFrames: 2, timeoutMs: 10000 },
+});
 ```
 
 The hook must operate on the supplied readonly `doc`; it must not read or mutate
@@ -5730,12 +5799,12 @@ Existing hosts require no change; root typography is measured once at init.
 Hosts that mutate typography after init must make the invalidation explicit:
 
 ```typescript
-root.style.setProperty('--bc-fs', '18px')
-root.style.setProperty('--bc-lh', '1.5')
-doc.refreshLayoutMetrics()
+root.style.setProperty("--bc-fs", "18px");
+root.style.setProperty("--bc-lh", "1.5");
+doc.refreshLayoutMetrics();
 
 // Or let BlockCraft update both metrics and CSS variables:
-doc.updateLayoutMetrics({baseFontSize: 18, lineHeight: 27})
+doc.updateLayoutMetrics({ baseFontSize: 18, lineHeight: 27 });
 ```
 
 #### Behavior Changes
@@ -5871,13 +5940,13 @@ previous margin-plus-chrome-height layout. To opt in to Word-like page chrome:
 
 ```typescript
 pagination.updateConfig({
-  margins: {top: 72, right: 72, bottom: 72, left: 72},
-  header: {center: '{page:roman-upper}', distance: 48},
+  margins: { top: 72, right: 72, bottom: 72, left: 72 },
+  header: { center: "{page:roman-upper}", distance: 48 },
   footer: {
-    right: '第 {page:chinese} 页 共 {total:chinese} 页',
+    right: "第 {page:chinese} 页 共 {total:chinese} 页",
     distance: 48,
   },
-})
+});
 ```
 
 #### Behavior Changes
@@ -5925,16 +5994,16 @@ with live sheets while preserving ordinary page margins.
 No migration is required. To opt in:
 
 ```typescript
-doc.viewScale.attach(documentPageElement, {wheel: true})
-doc.viewScale.setScale(1.25)
+doc.viewScale.attach(documentPageElement, { wheel: true });
+doc.viewScale.setScale(1.25);
 
 const pagination = new PaginationPlugin({
   documentHeader: {
     element: documentHeaderElement,
-    placement: 'top-margin',
+    placement: "top-margin",
     topInset: 20,
   },
-})
+});
 ```
 
 #### Behavior Changes
@@ -6119,21 +6188,21 @@ new BlockCraftDoc({
   // ...
   virtualization: {
     enabled: true,
-    estimatedHeights: {'task-list': 600},
+    estimatedHeights: { "task-list": 600 },
   },
-})
+});
 
 // after
 const TaskListSchema: IBlockSchemaOptions<TaskListModel> = {
   // ...
   metadata: {
     version: 1,
-    label: 'Task list',
+    label: "Task list",
     virtualization: {
-      estimateHeight: ({props}) => props.height ?? 600,
+      estimateHeight: ({ props }) => props.height ?? 600,
     },
   },
-}
+};
 ```
 
 The callback must not read DOM or request external data. Persist a compact
@@ -6607,16 +6676,16 @@ presentation, persist an explicit side instead of `auto`:
 // before: auto selected the wider single side
 createInlineImageDelta(url, 320, 180, {
   wrap: true,
-  side: 'auto',
+  side: "auto",
   x: 0.3,
-})
+});
 
 // after: explicit side preserves single-sided wrapping
 createInlineImageDelta(url, 320, 180, {
   wrap: true,
-  side: 'right',
+  side: "right",
   x: 0.3,
-})
+});
 ```
 
 #### Behavior Changes
@@ -6668,17 +6737,17 @@ that copied the old built-in pre-read pattern can insert immediately:
 
 ```typescript
 // before: delays insertion until metadata decoding finishes
-const size = await readImageIntrinsicSize(file)
+const size = await readImageIntrinsicSize(file);
 const snapshot = ImageBlockSchema.createSnapshot({
   src: fileService.createObjectURL(file),
   wr: 100,
-  ...(size ? {ar: size.ar} : {}),
-})
+  ...(size ? { ar: size.ar } : {}),
+});
 
 // after: the mounted built-in image preview initializes wr/ar
 const snapshot = ImageBlockSchema.createSnapshot({
   src: fileService.createObjectURL(file),
-})
+});
 ```
 
 `readImageIntrinsicSize()` remains available for model-only workflows that
@@ -6741,15 +6810,15 @@ migration. To opt in:
 
 ```typescript
 // before: ordinary inline image
-createInlineImageDelta(url, 320, 180)
+createInlineImageDelta(url, 320, 180);
 
 // after: square wrapping, image starts at 24% of the editable width
 createInlineImageDelta(url, 320, 180, {
   wrap: true,
-  side: 'auto',
+  side: "auto",
   x: 0.24,
   gap: 12,
-})
+});
 ```
 
 #### Behavior Changes
@@ -6807,6 +6876,7 @@ business lifecycle of authoring a template and later using its snapshots in
 other editors. Lock intent must travel with the block data.
 
 **Affected ai-skills files**:
+
 - `blockcraft.md`
 - `blockcraft-app.md`
 - `blockcraft-theme.md`
@@ -6835,23 +6905,23 @@ locks and explicitly authorize template unlocks:
 const doc = new BlockCraftDoc({
   // before
   currentUserId: session.userId,
-})
+});
 
-doc.setBlockReadonly(regionId, true)
+doc.setBlockReadonly(regionId, true);
 ```
 
 ```typescript
 const doc = new BlockCraftDoc({
   // after
   currentUserId: session.userId,
-  defaultBlockLockKind: 'template',
-  canUnlockBlock: ({lockKind, currentUserId, lockUserId}) =>
-    lockKind === 'template'
-    && permissions.canEditTemplate(currentUserId)
-    && currentUserId === lockUserId,
-})
+  defaultBlockLockKind: "template",
+  canUnlockBlock: ({ lockKind, currentUserId, lockUserId }) =>
+    lockKind === "template" &&
+    permissions.canEditTemplate(currentUserId) &&
+    currentUserId === lockUserId,
+});
 
-doc.setBlockReadonly(regionId, true) // generic controls now create template locks
+doc.setBlockReadonly(regionId, true); // generic controls now create template locks
 // or: doc.setBlockReadonly(regionId, true, {kind: 'template'})
 ```
 

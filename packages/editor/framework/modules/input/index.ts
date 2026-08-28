@@ -2134,11 +2134,20 @@ export class InputTransformer {
 
         // 如果是第一个空白的文本块，直接删除
         if (!block.textLength && parent.childrenLength > 1) {
-          this.doc.selection.selectOrSetCursorAtBlock(
-            parent.getChildrenByIndex(1),
-            true,
-          );
+          const nextBlock = parent.getChildrenByIndex(1);
+          if (nextBlock.flavour !== "placement-layout") {
+            this.doc.selection.selectOrSetCursorAtBlock(nextBlock, true);
+          }
           this.doc.crud.deleteBlockById(block.id);
+          if (nextBlock.flavour === "placement-layout") {
+            restoreSelectionAfterBlockDelete(
+              this.doc,
+              parent,
+              0,
+              null,
+              nextBlock,
+            );
+          }
           return true;
         }
 

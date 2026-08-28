@@ -11,25 +11,33 @@ All floating UI in BlockCraft uses Angular CDK Overlay via `doc.overlayService`.
 ### 1. Connected Overlay (Anchored to Element or Block)
 
 ```typescript
-const { componentRef, overlayRef } = this.doc.overlayService.createConnectedOverlay<MyComponent>({
-  target: anchorElement,         // HTMLElement to position against
-  component: MyComponent,       // Angular standalone component
-  positions: [                   // Try these positions in order
-    getPositionWithOffset("top-left", 0, 8),
-    getPositionWithOffset("bottom-left", 0, 8),
-  ],
-  backdrop: false,               // Optional: add a click-outside backdrop
-  clampTo: fullscreenHost,       // Optional authoritative clamp rectangle
-}, closeSubject$, closeCallback);
+const { componentRef, overlayRef } =
+  this.doc.overlayService.createConnectedOverlay<MyComponent>(
+    {
+      target: anchorElement, // HTMLElement to position against
+      component: MyComponent, // Angular standalone component
+      positions: [
+        // Try these positions in order
+        getPositionWithOffset("top-left", 0, 8),
+        getPositionWithOffset("bottom-left", 0, 8),
+      ],
+      backdrop: false, // Optional: add a click-outside backdrop
+      clampTo: fullscreenHost, // Optional authoritative clamp rectangle
+    },
+    closeSubject$,
+    closeCallback,
+  );
 
 // Pass data to component
-componentRef.setInput('doc', this.doc);
-componentRef.setInput('myData', someData);
+componentRef.setInput("doc", this.doc);
+componentRef.setInput("myData", someData);
 
 // Listen to component outputs
 componentRef.instance.myEvent
   .pipe(takeUntil(closeSubject$))
-  .subscribe(value => { /* handle */ });
+  .subscribe((value) => {
+    /* handle */
+  });
 ```
 
 Connected overlays use exact dimensions by default
@@ -64,11 +72,12 @@ OverlayRef directly.
 ### 2. Global Overlay (Centered/Custom Position)
 
 ```typescript
-const { componentRef, overlayRef } = this.doc.overlayService.createGlobalOverlay<MyDialog>({
-  component: MyDialog,
-  backdrop: true,
-  panelClass: 'my-dialog-panel',
-});
+const { componentRef, overlayRef } =
+  this.doc.overlayService.createGlobalOverlay<MyDialog>({
+    component: MyDialog,
+    backdrop: true,
+    panelClass: "my-dialog-panel",
+  });
 ```
 
 ## Position Helpers
@@ -77,12 +86,12 @@ const { componentRef, overlayRef } = this.doc.overlayService.createGlobalOverlay
 import { getPositionWithOffset } from "../../framework";
 
 // Predefined positions with offset
-getPositionWithOffset("top-left", xOffset, yOffset)
-getPositionWithOffset("top-right", xOffset, yOffset)
-getPositionWithOffset("bottom-left", xOffset, yOffset)
-getPositionWithOffset("bottom-right", xOffset, yOffset)
-getPositionWithOffset("top-center", xOffset, yOffset)
-getPositionWithOffset("bottom-center", xOffset, yOffset)
+getPositionWithOffset("top-left", xOffset, yOffset);
+getPositionWithOffset("top-right", xOffset, yOffset);
+getPositionWithOffset("bottom-left", xOffset, yOffset);
+getPositionWithOffset("bottom-right", xOffset, yOffset);
+getPositionWithOffset("top-center", xOffset, yOffset);
+getPositionWithOffset("bottom-center", xOffset, yOffset);
 ```
 
 ## Template: Block-Specific Toolbar Plugin
@@ -98,34 +107,44 @@ export class MyBlockToolbarPlugin extends DocPlugin {
   private _sub?: Subscription;
   private _overlayRef?: OverlayRef;
   private _close$ = new Subject<void>();
-  private _activeBlock: BlockCraft.IBlockComponents['my-block'] | null = null;
+  private _activeBlock: BlockCraft.IBlockComponents["my-block"] | null = null;
 
   init() {
-    this._sub = this.doc.selection.selectionChange$.subscribe(selection => {
+    this._sub = this.doc.selection.selectionChange$.subscribe((selection) => {
       // Show toolbar when a specific block type is selected
-      if (!selection || !selection.isInSameBlock || selection.firstBlock?.flavour !== 'my-block') {
+      if (
+        !selection ||
+        !selection.isInSameBlock ||
+        selection.firstBlock?.flavour !== "my-block"
+      ) {
         this._overlayRef && this.closeToolbar();
         return;
       }
 
-      const block = selection.firstBlock as BlockCraft.IBlockComponents['my-block'];
+      const block =
+        selection.firstBlock as BlockCraft.IBlockComponents["my-block"];
       if (this._activeBlock === block) return;
 
       this.closeToolbar();
       this._activeBlock = block;
 
-      const { componentRef, overlayRef } = this.doc.overlayService.createConnectedOverlay<MyToolbarComponent>({
-        target: block, // Block-owned: keeps its virtualized root unit mounted
-        component: MyToolbarComponent,
-        positions: [
-          getPositionWithOffset("top-left", 0, 8),
-          getPositionWithOffset("bottom-left", 0, 8),
-        ],
-      }, this._close$, this.closeToolbar);
+      const { componentRef, overlayRef } =
+        this.doc.overlayService.createConnectedOverlay<MyToolbarComponent>(
+          {
+            target: block, // Block-owned: keeps its virtualized root unit mounted
+            component: MyToolbarComponent,
+            positions: [
+              getPositionWithOffset("top-left", 0, 8),
+              getPositionWithOffset("bottom-left", 0, 8),
+            ],
+          },
+          this._close$,
+          this.closeToolbar,
+        );
 
       this._overlayRef = overlayRef;
-      componentRef.setInput('block', block);
-      componentRef.setInput('doc', this.doc);
+      componentRef.setInput("block", block);
+      componentRef.setInput("doc", this.doc);
     });
   }
 
@@ -133,7 +152,7 @@ export class MyBlockToolbarPlugin extends DocPlugin {
     this._close$.next();
     this._activeBlock = null;
     this._overlayRef = undefined;
-  }
+  };
 
   destroy() {
     this.closeToolbar();
@@ -145,10 +164,15 @@ export class MyBlockToolbarPlugin extends DocPlugin {
 ## Template: Toolbar Angular Component
 
 ```typescript
-import { ChangeDetectionStrategy, Component, input, output } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  input,
+  output,
+} from "@angular/core";
 
 @Component({
-  selector: 'my-toolbar',
+  selector: "my-toolbar",
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -181,7 +205,7 @@ export class MyToolbarComponent {
     const block = this.block();
 
     switch (action) {
-      case 'delete':
+      case "delete":
         doc.chain().deleteById(block.model.id).run();
         break;
       // ...
@@ -192,19 +216,19 @@ export class MyToolbarComponent {
 
 ## Existing Reusable Components
 
-| Component | Import From | Description |
-|-----------|-------------|-------------|
-| `FloatToolbarComponent` | `components/` | Base floating toolbar shell |
-| `ColorPickerComponent` | `components/` | Color selection grid |
-| `BlockResizerComponent` | `components/` | Block resize handles |
-| `TableSizePickerComponent` | `components/` | Table row/column picker |
-| `ColumnCountPickerComponent` | `components/` | Column count selector |
-| `MediaCreatorComponent` | `components/` | Media upload/URL input |
-| `ShapePickerComponent` | `components/` | Categorized Shape catalog; `supportsTextOnly` removes non-text geometries and `embedded` removes popup chrome inside a settings card |
-| `TextBoxPresetPickerComponent` | `components/` | 58-style text-box gallery in 10 `CsTabsComponent` categories; only the tab strip scrolls horizontally, and `embedded` removes standalone popup chrome |
-| `RevisionReviewPopoverComponent` | `components/revision-review/` | Minimal connected quick-review UI with actor identity, revision time and iconfont “接收修订 / 拒绝修订” actions with tooltips |
-| `RevisionReviewPanelComponent` | `components/revision-review/` | Content-sized comment-card-style review panel whose default queue contains only pending/conflicted cards; accepted/rejected history is explicit, cards follow mounted document anchors, and structural overlaps show one focused conflict with exact choices |
-| `RevisionReviewUiController` | `components/revision-review/` | Optional marker/Overlay/navigation adapter over the headless review Plugin |
+| Component                        | Import From                   | Description                                                                                                                                                                                                                                                  |
+| -------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `FloatToolbarComponent`          | `components/`                 | Base floating toolbar shell                                                                                                                                                                                                                                  |
+| `ColorPickerComponent`           | `components/`                 | Color selection grid                                                                                                                                                                                                                                         |
+| `BlockResizerComponent`          | `components/`                 | Block resize handles                                                                                                                                                                                                                                         |
+| `TableSizePickerComponent`       | `components/`                 | Table row/column picker                                                                                                                                                                                                                                      |
+| `ColumnCountPickerComponent`     | `components/`                 | Column count selector                                                                                                                                                                                                                                        |
+| `MediaCreatorComponent`          | `components/`                 | Media upload/URL input                                                                                                                                                                                                                                       |
+| `ShapePickerComponent`           | `components/`                 | Categorized Shape catalog; `supportsTextOnly` removes non-text geometries and `embedded` removes popup chrome inside a settings card                                                                                                                         |
+| `TextBoxPresetPickerComponent`   | `components/`                 | 58-style Word-inspired text-box gallery in 10 `CsTabsComponent` categories; only the tab strip scrolls horizontally, and `embedded` removes standalone popup chrome                                                                                          |
+| `RevisionReviewPopoverComponent` | `components/revision-review/` | Minimal connected quick-review UI with actor identity, revision time and iconfont “接收修订 / 拒绝修订” actions with tooltips                                                                                                                                |
+| `RevisionReviewPanelComponent`   | `components/revision-review/` | Content-sized comment-card-style review panel whose default queue contains only pending/conflicted cards; accepted/rejected history is explicit, cards follow mounted document anchors, and structural overlaps show one focused conflict with exact choices |
+| `RevisionReviewUiController`     | `components/revision-review/` | Optional marker/Overlay/navigation adapter over the headless review Plugin                                                                                                                                                                                   |
 
 Column-oriented `BcFloatToolbarComponent` menus use border-box items constrained
 to the menu width. Long labels are clipped inside the item and the menu must not

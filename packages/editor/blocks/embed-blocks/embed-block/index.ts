@@ -1,6 +1,7 @@
 import {generateId, NoEditableBlockNative, IBlockSchemaOptions, BlockNodeType} from "../../../framework";
 import {EmbedBlockComponent} from "./embed.block";
 
+
 export interface EmbedBlockModel extends NoEditableBlockNative {
   flavour: 'embed',
   nodeType: BlockNodeType.void,

@@ -1,7 +1,4 @@
-import {
-  resolvePlacementContainerBox,
-  resolvePlacementPlaneBounds,
-} from "../../../framework/services/block-placement/geometry";
+import { resolvePlacementContainerBox } from "../../../framework/services/block-placement/geometry";
 
 const DRAG_THRESHOLD_PX = 4;
 const MIN_OBJECT_WIDTH = 48;
@@ -23,7 +20,7 @@ interface DrawSurfaceBox {
   originX: number;
   originY: number;
   visualScale: number;
-  /** 可放置区边界，placement 内容原点坐标；左/上为负即压在编辑器内边距上。 */
+  /** scrollContainer 视口边界，换算为 placement 内容原点坐标。 */
   minX: number;
   maxX: number;
   minY: number;
@@ -41,6 +38,7 @@ export class ObjectDrawInsertController {
   private request: ObjectDrawInsertRequest | null = null;
   private root: HTMLElement | null = null;
   private surface: HTMLElement | null = null;
+  private constraint: HTMLElement | null = null;
   private layer: HTMLDivElement | null = null;
   private preview: HTMLDivElement | null = null;
   private view: Window | null = null;
@@ -66,7 +64,13 @@ export class ObjectDrawInsertController {
 
     const root = this.doc.root?.hostElement;
     const surface = this.doc.root?.childrenRenderRef?.containerElement ?? root;
-    if (this.doc.isReadonly || !root?.isConnected || !surface?.isConnected) {
+    const constraint = this.doc.scrollContainer ?? root;
+    if (
+      this.doc.isReadonly ||
+      !root?.isConnected ||
+      !surface?.isConnected ||
+      !constraint?.isConnected
+    ) {
       return false;
     }
 
@@ -74,8 +78,8 @@ export class ObjectDrawInsertController {
     const view = ownerDocument.defaultView;
     if (!view || !ownerDocument.body) return false;
 
-    const rootRect = root.getBoundingClientRect();
-    if (rootRect.width <= 0 || rootRect.height <= 0) return false;
+    const constraintRect = constraint.getBoundingClientRect();
+    if (constraintRect.width <= 0 || constraintRect.height <= 0) return false;
 
     const layer = ownerDocument.createElement("div");
     layer.dataset["bcObjectDrawLayer"] = "true";
@@ -83,10 +87,10 @@ export class ObjectDrawInsertController {
     layer.setAttribute("contenteditable", "false");
     Object.assign(layer.style, {
       position: "fixed",
-      left: `${rootRect.left}px`,
-      top: `${rootRect.top}px`,
-      width: `${rootRect.width}px`,
-      height: `${rootRect.height}px`,
+      left: `${constraintRect.left}px`,
+      top: `${constraintRect.top}px`,
+      width: `${constraintRect.width}px`,
+      height: `${constraintRect.height}px`,
       zIndex: "2147483645",
       cursor: "crosshair",
       touchAction: "none",
@@ -114,12 +118,13 @@ export class ObjectDrawInsertController {
     this.request = request;
     this.root = root;
     this.surface = surface;
+    this.constraint = constraint;
     this.layer = layer;
     this.preview = preview;
     this.view = view;
     this.ownerDocument = ownerDocument;
-    this.layerOriginX = rootRect.left;
-    this.layerOriginY = rootRect.top;
+    this.layerOriginX = constraintRect.left;
+    this.layerOriginY = constraintRect.top;
 
     layer.addEventListener("pointerdown", this.onPointerDown, true);
     ownerDocument.addEventListener(
@@ -163,6 +168,7 @@ export class ObjectDrawInsertController {
     this.request = null;
     this.root = null;
     this.surface = null;
+    this.constraint = null;
     this.layer = null;
     this.preview = null;
     this.view = null;
@@ -298,14 +304,23 @@ export class ObjectDrawInsertController {
    * drawing tool.
    */
   private isDrawingSurfaceScrollTarget(target: EventTarget | null): boolean {
-    if (!(target instanceof Node) || !this.root || !this.surface) return false;
+    if (
+      !(target instanceof Node) ||
+      !this.root ||
+      !this.surface ||
+      !this.constraint
+    )
+      return false;
     return (
       target === this.root ||
       target === this.surface ||
+      target === this.constraint ||
       target.contains(this.root) ||
       target.contains(this.surface) ||
+      target.contains(this.constraint) ||
       this.root.contains(target) ||
-      this.surface.contains(target)
+      this.surface.contains(target) ||
+      this.constraint.contains(target)
     );
   }
 
@@ -348,13 +363,17 @@ export class ObjectDrawInsertController {
     let top: number;
 
     const planeWidth = Math.max(MIN_OBJECT_WIDTH, box.maxX - box.minX);
+    const planeHeight = Math.max(MIN_OBJECT_HEIGHT, box.maxY - box.minY);
 
     if (dragged) {
       width = Math.min(
         planeWidth,
         Math.max(MIN_OBJECT_WIDTH, Math.abs(endX - this.startLocalX)),
       );
-      height = Math.max(MIN_OBJECT_HEIGHT, Math.abs(endY - this.startLocalY));
+      height = Math.min(
+        planeHeight,
+        Math.max(MIN_OBJECT_HEIGHT, Math.abs(endY - this.startLocalY)),
+      );
       left =
         endX < this.startLocalX ? this.startLocalX - width : this.startLocalX;
       top =
@@ -364,7 +383,10 @@ export class ObjectDrawInsertController {
         planeWidth,
         Math.max(MIN_OBJECT_WIDTH, request.defaultWidth),
       );
-      height = Math.max(MIN_OBJECT_HEIGHT, request.defaultHeight);
+      height = Math.min(
+        planeHeight,
+        Math.max(MIN_OBJECT_HEIGHT, request.defaultHeight),
+      );
       left = this.startLocalX;
       top = this.startLocalY;
     }
@@ -375,7 +397,10 @@ export class ObjectDrawInsertController {
       Math.max(box.minX, box.maxX - width),
       Math.max(box.minX, left),
     );
-    top = Math.max(box.minY, top);
+    top = Math.min(
+      Math.max(box.minY, box.maxY - height),
+      Math.max(box.minY, top),
+    );
 
     return {
       anchorRect: new DOMRect(
@@ -390,21 +415,25 @@ export class ObjectDrawInsertController {
   }
 
   private measureSurface(): DrawSurfaceBox | null {
-    if (!this.surface || !this.root) return null;
+    if (!this.surface || !this.constraint) return null;
     const placement = resolvePlacementContainerBox(this.surface);
-    const bounds = resolvePlacementPlaneBounds(placement);
-    const rootRect = this.root.getBoundingClientRect();
+    const constraintRect = this.constraint.getBoundingClientRect();
+    const minX =
+      (constraintRect.left - placement.originX) / placement.visualScale;
+    const maxX =
+      (constraintRect.right - placement.originX) / placement.visualScale;
+    const minY =
+      (constraintRect.top - placement.originY) / placement.visualScale;
+    const maxY =
+      (constraintRect.bottom - placement.originY) / placement.visualScale;
     return {
       originX: placement.originX,
       originY: placement.originY,
       visualScale: placement.visualScale,
-      minX: bounds.minX,
-      maxX: bounds.maxX,
-      minY: bounds.minY,
-      maxY: Math.max(
-        bounds.minY,
-        (rootRect.bottom - placement.originY) / placement.visualScale,
-      ),
+      minX,
+      maxX: Math.max(minX, maxX),
+      minY,
+      maxY: Math.max(minY, maxY),
     };
   }
 

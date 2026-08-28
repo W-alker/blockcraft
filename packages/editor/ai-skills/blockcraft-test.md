@@ -48,6 +48,10 @@ tracking enabled, props/general formatting, mixed unsupported format, block or
 Embed movement, table-cell structure and cross-container edits must complete
 through the normal Yjs/Undo path, create no Revision records and never leave a
 partial Diff when the operation is compound.
+At the `blockcraft-agent` delivery boundary, separately assert that a result
+containing only those operations succeeds with an empty `revisionIds` list and
+that a mixed result executes both its reviewable and direct operations. Diff
+coverage must not filter, reject or rewrite the validated Agent plan.
 
 For `RevisionReviewPlugin`, keep the unit harness headless: provide only a
 `doc.revisions` incremental `change$`/`listGroup()` seam plus mode streams and

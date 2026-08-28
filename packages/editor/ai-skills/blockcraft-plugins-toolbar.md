@@ -120,7 +120,7 @@ new ImgToolbarPlugin(options?: ImgToolbarPluginOptions)
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | `align`                     | Set image alignment (left/center/right)                                                                           |
 | `object-layout: inline`     | Convert to **嵌入型** near the current visual flow anchor                                                         |
-| `object-layout: wrap`       | On an absolute image, insert **四周型环绕** into covered text; otherwise create it near the visual flow anchor   |
+| `object-layout: wrap`       | On an absolute image, insert **四周型环绕** into covered text; otherwise create it near the visual flow anchor    |
 | `object-layout: top-bottom` | Use **上下型** and automatically return to relative flow                                                          |
 | `object-layout: under`      | Use **衬于文字下方** and automatically enter absolute placement                                                   |
 | `object-layout: over`       | Use **浮于文字上方** and automatically enter absolute placement                                                   |
@@ -342,7 +342,7 @@ The frame reserves 8 layout pixels on each side between its outline and the
 local member plane, so an edge-aligned member does not overlap group chrome.
 
 ```typescript
-new ObjectGroupToolbarPlugin()
+new ObjectGroupToolbarPlugin();
 ```
 
 Selection remains one contiguous range of root absolute objects. Alignment can
@@ -365,7 +365,9 @@ Registers pointer selection and connected-toolbar behavior for the built-in
 outline color/width/style, deletion, and the complete object-layout set.
 Shape type is chosen only from the fixed toolbar's **插入形状** picker. Text
 color and horizontal/vertical alignment remain compatible block properties but
-are not shown in the default object toolbar. A root absolute shape additionally
+are not shown in the default object toolbar. While editing `shape-text`, normal
+inline font, size, color and character-format commands remain available; paste
+still consumes only `text/plain`. A root absolute shape additionally
 shows **上移一层 / 下移一层** with `bc_cengji-shangyi` and
 `bc_cengji-xiayi`; the same document placement APIs and total-stack boundary
 rules used by images determine whether each control is enabled. Its 布局 panel
@@ -411,15 +413,15 @@ new ShapeToolbarPlugin();
 
 The layout actions are:
 
-| Action          | Behavior                                                                                        |
-| --------------- | ----------------------------------------------------------------------------------------------- |
-| `inline`        | **嵌入型**; serializes shape props plus its `shape-text` Delta into one `shape` Embed           |
-| `wrap`          | **四周型环绕**; creates the same Embed with `wrap/x/gap`; an overlapping absolute shape enters the covered text line directly      |
-| `top-bottom`    | **上下型**; clears absolute coordinates and reanchors to relative flow                          |
-| `under`         | **衬于文字下方**; enters absolute placement below ordinary content                              |
-| `over`          | **浮于文字上方**; enters absolute placement above ordinary content                              |
-| `move-forward`  | Move an absolute shape one step toward the foreground, including crossing ordinary flow content |
-| `move-backward` | Move an absolute shape one step toward the background, including crossing ordinary flow content |
+| Action          | Behavior                                                                                                                              |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `inline`        | **嵌入型**; serializes shape props plus its `shape-text` Delta into one `shape` Embed                                                 |
+| `wrap`          | **四周型环绕**; creates the same Embed with `wrap/x/gap`; an overlapping absolute shape enters the covered text line directly         |
+| `top-bottom`    | **上下型**; clears absolute coordinates and reanchors to relative flow                                                                |
+| `under`         | **衬于文字下方**; enters absolute placement below ordinary content                                                                    |
+| `over`          | **浮于文字上方**; enters absolute placement above ordinary content                                                                    |
+| `move-forward`  | Move an absolute shape one step toward the foreground, including crossing ordinary flow content                                       |
+| `move-backward` | Move an absolute shape one step toward the background, including crossing ordinary flow content                                       |
 | `plane-align`   | Snap an absolute shape's visual bounds to the placement plane's left edge / horizontal center / right edge; only `position.x` changes |
 
 Clicking an inline shape selects its one-character Embed in both
@@ -559,7 +561,7 @@ background URL is exposed as a validated `http(s)` picture-fill link alongside
 选择图片 / 替换图片 / 移除, fit, horizontal/vertical percentage position and
 opacity. Position controls write `bgx/bgy` once after slider interaction and
 stay hidden for `stretch`, where `object-position` has no visible effect. These
-controls key off *custom* images, meaning a `bgi` that is not a `bc:` artwork
+controls key off _custom_ images, meaning a `bgi` that is not a `bc:` artwork
 reference. A catalog drawing shares the same field but belongs to the chosen
 style, so offering to replace or remove it means one click wipes the preset's
 artwork and leaves an empty frame. Slider movement stays local and commits once on pointer/key
@@ -740,7 +742,7 @@ new CalloutToolbarPlugin();
 
 | Method                        | Description                                                    |
 | ----------------------------- | -------------------------------------------------------------- |
-| `openToolbar(containerBlock)` | Open for a mounted `callout` or `render-unit` block             |
+| `openToolbar(containerBlock)` | Open for a mounted `callout` or `render-unit` block            |
 | `closeToolbar()`              | Dismiss the toolbar and disconnect its block-owned observation |
 
 ---
