@@ -5,7 +5,10 @@ import {patchChildren, resolveChildContainer} from "./dom/patch-children";
 import {projectParagraphSiblingSpacing} from "./dom/create-block-shell";
 import {alwaysPlaceholderVisible} from "./dom/always-placeholder";
 import {normalizeSnapshot} from "./dom/normalize-snapshot";
-import {renderInline} from "./inline/render-inline";
+import {
+  createBuiltinInlineEmbedRenderers,
+  renderInline,
+} from "./inline/render-inline";
 import {createBuiltinRendererRegistry} from "./registry";
 import {
   MountedSnapshotNode,
@@ -28,6 +31,7 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
   private readonly activeEnhancements = new Map<string, AbortController>()
   private readonly enhancementCleanups = new Set<() => void>()
   private readonly renderDisposables = new Map<Element, () => void>()
+  private readonly inlineEmbeds: SnapshotViewerOptions["inlineEmbeds"]
   private mountedRoot: MountedSnapshotNode | null = null
 
   constructor(options: SnapshotViewerOptions = {}) {
@@ -35,6 +39,10 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
     // Host renderers go first so they can claim custom flavours (and override
     // builtins when they choose to); the generic fallback stays last.
     this.renderers = [...(options.blockRenderers ?? []), ...createBuiltinRendererRegistry()]
+    this.inlineEmbeds = {
+      ...createBuiltinInlineEmbedRenderers(),
+      ...(options.inlineEmbeds ?? {}),
+    }
   }
 
   render(container: HTMLElement, snapshot: IBlockSnapshot | IBlockSnapshot[]): void {
@@ -149,7 +157,7 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
     const renderContext: SnapshotRenderContext = {
       renderBlock: (snapshot) => this.renderBlock(snapshot, renderContext),
       createInlineContent: (model: InlineModel) => {
-        const fragment = renderInline(model, this.options.inlineEmbeds)
+        const fragment = renderInline(model, this.inlineEmbeds)
         fragment
           .querySelectorAll<HTMLElement>('.bc-resource-placeholder-frame')
           .forEach(frame => {
@@ -399,13 +407,13 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
     // 1) Pure-append fast path — works even when the container has been restructured
     //    (e.g. shiki tokenized a code block into many <c-element>s). We only need to
     //    locate the trailing text node and appendData the new tail.
-    if (tryAppendOnlyDelta(editContainer, oldDelta, newDelta, this.options.inlineEmbeds)) {
+    if (tryAppendOnlyDelta(editContainer, oldDelta, newDelta, this.inlineEmbeds)) {
       return true
     }
     // 2) Structural c-element-level diff — requires the container children still map
     //    1:1 to the old delta.
     if (editContainer.childNodes.length === oldDelta.length) {
-      return applyInlineDelta(editContainer, oldDelta, newDelta, this.options.inlineEmbeds)
+      return applyInlineDelta(editContainer, oldDelta, newDelta, this.inlineEmbeds)
     }
     return false
   }

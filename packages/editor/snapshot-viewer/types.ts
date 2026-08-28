@@ -25,8 +25,8 @@ export interface SnapshotViewerOptions {
   blockRenderers?: SnapshotBlockRenderer[]
   /**
    * Custom inline embed views keyed by embed name (the single key of the
-   * delta's `insert` object). Matched before the builtin latex/mention
-   * views; a renderer that throws falls back to the generic embed chip.
+   * delta's `insert` object). Matched before the bundled inline Embed
+   * converters; a renderer that throws falls back to the generic embed chip.
    * Applied on first render and on incremental `update()` patches alike.
    */
   inlineEmbeds?: Record<string, SnapshotInlineEmbedRenderer>

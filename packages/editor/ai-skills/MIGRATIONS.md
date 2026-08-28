@@ -68,6 +68,32 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## Unreleased — 2026-08-28 — Snapshot Viewer inline Embed converter parity
+
+**Severity**: patch
+
+**What changed**: Snapshot Viewer now uses the bundled live DOM converters for
+`icon`, `image`, `date`, `mention`, `latex`, `shape`, and `word-art` inline
+Embeds by default. The existing `inlineEmbeds` option remains an explicit host
+override and still takes precedence over bundled converters.
+
+**Why**: Read-only inline Embeds were previously rendered as generic chips for
+most bundled keys, so their presentation DOM and styles diverged from the live
+editor even though the same Delta model was used.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Bundled inline Embeds now render their converter-owned presentation in the
+  Snapshot Viewer without requiring host configuration.
+- Unknown inline Embed keys still use the generic fallback chip, and host
+  `inlineEmbeds` overrides still win.
+
 ## Unreleased — 2026-08-28 — Scope Revision markers to their edited content
 
 **Severity**: patch

@@ -216,11 +216,12 @@ Contract:
   marker also works when overriding a builtin container flavour. A marker
   inside a nested block never leaks to an unmarked ancestor.
 - **`inlineEmbeds`** maps an embed key (the single key of the delta's `insert`
-  object) to a view factory. It is consulted before the builtin `latex` /
-  `mention` views; a factory that **throws falls back to the generic embed
-  chip** instead of breaking the document. The editor-side `EmbedConverter`
-  contract is DOM-compatible, so an existing readonly converter usually plugs
-  in directly: `{person: personConverter.toView}`.
+  object) to a view factory. It is consulted before the bundled inline Embed
+  converters (`icon`, `image`, `date`, `mention`, `latex`, `shape`, and
+  `word-art`); a factory that **throws falls back to the generic embed chip**
+  instead of breaking the document. The editor-side `EmbedConverter` contract
+  is DOM-compatible, so an existing readonly converter usually plugs in
+  directly: `{person: personConverter.toView}`.
 - Async work (fetching preview data, heavy rendering) belongs in
   `ctx.scheduleEnhancement(task)` — namespace `task.key` with your flavour to
   avoid cache collisions with builtin tasks.

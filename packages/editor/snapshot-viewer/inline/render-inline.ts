@@ -2,9 +2,58 @@ import {InlineModel, IInlineNodeAttrs} from "../../framework/block-std/types/inl
 import {DeltaInsertEmbed, DeltaInsertText} from "../../framework/block-std/types/delta.type";
 import {applyInlineTypographyAttribute} from "../../framework/block-std/typography";
 import {SnapshotInlineEmbedRenderer} from "../types";
-import katex from "katex";
+import {
+  INLINE_ICON_EMBED_KEY,
+  inlineIconEmbedConverter,
+} from "../../embeds/icon";
+import {
+  INLINE_IMAGE_EMBED_KEY,
+  inlineImageEmbedConverter,
+} from "../../embeds/image";
+import {
+  INLINE_DATE_EMBED_KEY,
+  createInlineDateEmbedConverter,
+} from "../../embeds/date";
+import {
+  INLINE_LATEX_EMBED_KEY,
+  createInlineLatexEmbedConverter,
+} from "../../embeds/latex";
+import {
+  INLINE_MENTION_EMBED_KEY,
+  createInlineMentionEmbedConverter,
+} from "../../embeds/mention";
+import {
+  INLINE_SHAPE_EMBED_KEY,
+  createInlineShapeEmbedConverter,
+} from "../../embeds/shape";
+import {
+  INLINE_WORD_ART_EMBED_KEY,
+  createInlineWordArtEmbedConverter,
+} from "../../embeds/word-art";
 
 const INLINE_ELEMENT_TAG = "c-element";
+
+/**
+ * Reuse the live DOM converters so readonly inline embeds keep the same
+ * presentation DOM and model normalization. Host renderers still override
+ * these entries in `createInlineEmbedView` below.
+ */
+export function createBuiltinInlineEmbedRenderers(): Record<
+  string,
+  SnapshotInlineEmbedRenderer
+> {
+  return {
+    [INLINE_ICON_EMBED_KEY]: inlineIconEmbedConverter.toView,
+    [INLINE_IMAGE_EMBED_KEY]: inlineImageEmbedConverter.toView,
+    [INLINE_DATE_EMBED_KEY]: createInlineDateEmbedConverter().toView,
+    [INLINE_MENTION_EMBED_KEY]: createInlineMentionEmbedConverter().toView,
+    [INLINE_LATEX_EMBED_KEY]: createInlineLatexEmbedConverter().toView,
+    [INLINE_SHAPE_EMBED_KEY]: createInlineShapeEmbedConverter().toView,
+    [INLINE_WORD_ART_EMBED_KEY]: createInlineWordArtEmbedConverter().toView,
+  };
+}
+
+const BUILTIN_INLINE_EMBED_RENDERERS = createBuiltinInlineEmbedRenderers();
 
 export function renderInline(
   model: InlineModel,
@@ -64,61 +113,24 @@ function createInlineEmbedView(
   embedKey: string,
   inlineEmbeds?: Record<string, SnapshotInlineEmbedRenderer>,
 ): HTMLElement {
-  const custom = inlineEmbeds?.[embedKey]
-  if (custom) {
+  const renderer =
+    inlineEmbeds?.[embedKey] ?? BUILTIN_INLINE_EMBED_RENDERERS[embedKey];
+  if (renderer) {
     // A broken host renderer must not take the whole document preview down —
     // degrade to the generic chip, same contract as failed enhancement tasks.
     // That covers bad RETURN VALUES too, not just throws: append(null) would
     // stringify to a literal "null" in the document.
     try {
-      const view = custom(item)
+      const view = renderer(item);
       if (view instanceof HTMLElement) {
-        return view
+        return view;
       }
     } catch {
       // fall through to the generic chip
     }
-    return createGenericEmbedElement(item, embedKey)
+    return createGenericEmbedElement(item, embedKey);
   }
-
-  switch (embedKey) {
-    case "latex":
-      return createInlineFormulaElement(`${item.insert[embedKey] || ""}`)
-    case "mention":
-      return createMentionElement(item)
-    default:
-      return createGenericEmbedElement(item, embedKey)
-  }
-}
-
-function createInlineFormulaElement(latex: string): HTMLElement {
-  const formula = document.createElement("span")
-  formula.classList.add("inline-formula")
-  formula.setAttribute("data-latex", latex)
-
-  try {
-    katex.render(latex, formula, {output: "mathml", throwOnError: false})
-  } catch {
-    formula.textContent = latex
-  }
-
-  return formula
-}
-
-function createMentionElement(item: DeltaInsertEmbed): HTMLElement {
-  const mention = document.createElement("span")
-  mention.textContent = `${item.insert["mention"] || ""}`
-
-  const mentionId = item.attributes?.["mentionId"] || item.attributes?.["d:mentionId"]
-  const mentionType = item.attributes?.["mentionType"] || item.attributes?.["d:mentionType"]
-  if (mentionId) {
-    mention.setAttribute("data-mention-id", `${mentionId}`)
-  }
-  if (mentionType) {
-    mention.setAttribute("data-mention-type", `${mentionType}`)
-  }
-
-  return mention
+  return createGenericEmbedElement(item, embedKey);
 }
 
 function createGenericEmbedElement(item: DeltaInsertEmbed, embedKey: string): HTMLElement {

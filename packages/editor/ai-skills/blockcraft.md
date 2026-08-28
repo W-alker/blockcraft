@@ -920,7 +920,8 @@ import { createSnapshotRenderer, SnapshotBlockRenderer } from '@ccc/blockcraft'
 const renderer = createSnapshotRenderer({
   resourcePolicy: 'eager',
   // Host extensions (optional): custom block renderers are matched BEFORE the
-  // builtin registry; inlineEmbeds maps an embed insert key to a DOM factory.
+  // builtin registry; bundled inline Embeds use their live DOM converters by
+  // default, while inlineEmbeds maps an embed insert key to an override factory.
   // Full contract: blockcraft-app.md § Extending the snapshot viewer.
   blockRenderers: [myMaterialRenderer satisfies SnapshotBlockRenderer],
   inlineEmbeds: { person: personConverter.toView },

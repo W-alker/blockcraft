@@ -1,5 +1,6 @@
 import {createSnapshotRenderer} from "./index";
 import {BlockNodeType, IBlockSnapshot} from "../framework/block-std/types/block.type";
+import {InlineModel} from "../framework/block-std/types/inline.type";
 import {
   DEFAULT_OBJECT_EFFECTS,
   DEFAULT_OBJECT_LINE,
@@ -39,6 +40,30 @@ describe("SnapshotRenderEngine", () => {
 
     expect(newNode).toBe(oldNode)
     expect(host.textContent).toContain("after")
+  })
+
+  it("uses the bundled inline converter through the Snapshot Viewer", () => {
+    const host = document.createElement("div")
+    const renderer = createSnapshotRenderer()
+    const first = createParagraphWithInlineFixture("inline-paragraph", [{
+      insert: {date: "2026-08-14T15:54"},
+      attributes: {format: "YYYY-MM-DD"},
+    }])
+    const second = createParagraphWithInlineFixture("inline-paragraph", [{
+      insert: {date: "2026-08-15T15:54"},
+      attributes: {format: "YYYY-MM-DD"},
+    }])
+
+    renderer.render(host, wrapRoot([first]))
+    expect(host.querySelector(".bc-inline-date .bc-inline-date__value")?.textContent)
+      .toBe("2026-08-14")
+    expect(host.querySelector(".bc-snapshot-inline-embed")).toBeNull()
+
+    renderer.update(wrapRoot([second]))
+    expect(host.querySelector(".bc-inline-date .bc-inline-date__value")?.textContent)
+      .toBe("2026-08-15")
+    expect(host.querySelector(".bc-snapshot-inline-embed")).toBeNull()
+    renderer.destroy()
   })
 
   it("projects, updates, and clears common block appearance props", () => {
@@ -729,6 +754,22 @@ function createParagraphFixture(id: string, text: string): IBlockSnapshot {
       depth: 0,
     },
     children: [{insert: text}],
+  }
+}
+
+function createParagraphWithInlineFixture(
+  id: string,
+  children: InlineModel,
+): IBlockSnapshot {
+  return {
+    id,
+    flavour: "paragraph",
+    nodeType: BlockNodeType.editable,
+    meta: {},
+    props: {
+      depth: 0,
+    },
+    children,
   }
 }
 
