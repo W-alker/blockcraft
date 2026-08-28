@@ -321,6 +321,8 @@ layout mode incorrectly exposed inline layout for TextBox.
   member entry; the group frame remains visible while a nested member is active.
 - TextBox and other blocks without an inline placement adapter no longer show
   or accept the inline layout action.
+- Inline and top-bottom objects hide and reject page alignment, object
+  arrangement and hierarchy commands until they return to under/over layout.
 
 ## Unreleased — 2026-08-28 — Interoperable Markdown and selective directives
 

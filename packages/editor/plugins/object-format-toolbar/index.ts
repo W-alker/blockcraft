@@ -555,15 +555,18 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     }
     const alignment = ALIGNMENTS[value];
     if (alignment) {
+      if (!this.hasAbsoluteLayout(ids)) return;
       this.doc.placement.alignObjects(ids, alignment);
       return;
     }
     const planeAlignment = PLANE_ALIGNMENTS[value];
     if (planeAlignment) {
+      if (!this.hasAbsoluteLayout(ids)) return;
       this.doc.placement.alignObjectsToPlane(ids, planeAlignment);
       return;
     }
     if (value === "forward" || value === "backward") {
+      if (!this.hasAbsoluteLayout(ids)) return;
       for (const id of ids) {
         value === "forward"
           ? this.doc.placement.moveForward(id)
@@ -586,6 +589,13 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
       }
       for (const id of ids) this.doc.placement.setObjectLayout(id, layout);
     }
+  }
+
+  private hasAbsoluteLayout(blockIds: readonly string[]): boolean {
+    return blockIds.every((id) => {
+      const layout = this.doc.placement.getObjectLayout(id);
+      return layout === "under" || layout === "over";
+    });
   }
 
   private deleteTargets(): void {

@@ -288,6 +288,35 @@ describe("ObjectFormatToolbarPlugin object/edit interaction", () => {
     expect(setObjectLayout).not.toHaveBeenCalled();
   });
 
+  it("rejects absolute-only arrangement commands while the object is in flow", () => {
+    const plugin = new ObjectFormatToolbarPlugin();
+    const alignObjectsToPlane = jasmine.createSpy("alignObjectsToPlane");
+    const moveForward = jasmine.createSpy("moveForward");
+    const moveBackward = jasmine.createSpy("moveBackward");
+    const getObjectLayout = jasmine.createSpy("getObjectLayout");
+    (plugin as any).doc = {
+      placement: {
+        getObjectLayout,
+        alignObjectsToPlane,
+        moveForward,
+        moveBackward,
+      },
+    };
+    (plugin as any).activeIds = ["shape-1"];
+
+    getObjectLayout.and.returnValue("top-bottom");
+    (plugin as any).handleLayout("page-left");
+    (plugin as any).handleLayout("forward");
+    expect(alignObjectsToPlane).not.toHaveBeenCalled();
+    expect(moveForward).not.toHaveBeenCalled();
+
+    getObjectLayout.and.returnValue("over");
+    (plugin as any).handleLayout("page-left");
+    (plugin as any).handleLayout("backward");
+    expect(alignObjectsToPlane).toHaveBeenCalledOnceWith(["shape-1"], "left");
+    expect(moveBackward).toHaveBeenCalledOnceWith("shape-1");
+  });
+
   it("extends Shift selection across absolute objects without requiring format capability", () => {
     const plugin = new ObjectFormatToolbarPlugin();
     const root = document.createElement("div");

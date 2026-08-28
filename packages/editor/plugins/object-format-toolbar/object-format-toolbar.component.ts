@@ -205,31 +205,36 @@ export type ObjectFormatToolbarAction =
                   }
                 </div>
               </section>
-              <section aria-label="页面对齐">
-                <div
-                  class="object-format__icon-grid object-format__icon-grid--3"
-                >
-                  @for (item of planeAlignOptions; track item.value) {
-                    <button
-                      cs-button
-                      csType="text"
-                      csSize="sm"
-                      type="button"
-                      class="object-format__icon-action"
-                      [attr.aria-label]="item.label"
-                      [csTooltip]="item.label"
-                      (click)="layout(item.action)"
-                    >
-                      <i
-                        [class]="'bc_icon ' + item.icon"
-                        aria-hidden="true"
-                      ></i>
-                      <span>{{ item.label }}</span>
-                    </button>
-                  }
-                </div>
-              </section>
-              @if (isMultiSelection || isGroupSelection) {
+              @if (showsAbsoluteLayoutTools) {
+                <section aria-label="页面对齐">
+                  <div
+                    class="object-format__icon-grid object-format__icon-grid--3"
+                  >
+                    @for (item of planeAlignOptions; track item.value) {
+                      <button
+                        cs-button
+                        csType="text"
+                        csSize="sm"
+                        type="button"
+                        class="object-format__icon-action"
+                        [attr.aria-label]="item.label"
+                        [csTooltip]="item.label"
+                        (click)="layout(item.action)"
+                      >
+                        <i
+                          [class]="'bc_icon ' + item.icon"
+                          aria-hidden="true"
+                        ></i>
+                        <span>{{ item.label }}</span>
+                      </button>
+                    }
+                  </div>
+                </section>
+              }
+              @if (
+                showsAbsoluteLayoutTools &&
+                (isMultiSelection || isGroupSelection)
+              ) {
                 <section
                   data-object-format-section="multi-object"
                   aria-label="对象与排列"
@@ -258,38 +263,43 @@ export type ObjectFormatToolbarAction =
                   </div>
                 </section>
               }
-              <section data-object-format-section="hierarchy" aria-label="层级">
-                <div
-                  class="object-format__icon-grid object-format__icon-grid--2"
+              @if (showsAbsoluteLayoutTools) {
+                <section
+                  data-object-format-section="hierarchy"
+                  aria-label="层级"
                 >
-                  <button
-                    cs-button
-                    csType="text"
-                    csSize="sm"
-                    type="button"
-                    class="object-format__icon-action"
-                    aria-label="上移一层"
-                    csTooltip="上移一层"
-                    (click)="layout('forward')"
+                  <div
+                    class="object-format__icon-grid object-format__icon-grid--2"
                   >
-                    <i class="bc_icon bc_cengji-shangyi"></i>
-                    <span>上移一层</span>
-                  </button>
-                  <button
-                    cs-button
-                    csType="text"
-                    csSize="sm"
-                    type="button"
-                    class="object-format__icon-action"
-                    aria-label="下移一层"
-                    csTooltip="下移一层"
-                    (click)="layout('backward')"
-                  >
-                    <i class="bc_icon bc_cengji-xiayi"></i>
-                    <span>下移一层</span>
-                  </button>
-                </div>
-              </section>
+                    <button
+                      cs-button
+                      csType="text"
+                      csSize="sm"
+                      type="button"
+                      class="object-format__icon-action"
+                      aria-label="上移一层"
+                      csTooltip="上移一层"
+                      (click)="layout('forward')"
+                    >
+                      <i class="bc_icon bc_cengji-shangyi"></i>
+                      <span>上移一层</span>
+                    </button>
+                    <button
+                      cs-button
+                      csType="text"
+                      csSize="sm"
+                      type="button"
+                      class="object-format__icon-action"
+                      aria-label="下移一层"
+                      csTooltip="下移一层"
+                      (click)="layout('backward')"
+                    >
+                      <i class="bc_icon bc_cengji-xiayi"></i>
+                      <span>下移一层</span>
+                    </button>
+                  </div>
+                </section>
+              }
             }
 
             @if (panel === "shape" && state.features.shape) {
@@ -1777,6 +1787,9 @@ export class ObjectFormatToolbarComponent {
   }
   get isGroupSelection(): boolean {
     return this.groupSelection;
+  }
+  get showsAbsoluteLayoutTools(): boolean {
+    return this.activeLayout === "under" || this.activeLayout === "over";
   }
   get textTabOptions(): CsSegmentedOptions {
     return [

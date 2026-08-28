@@ -363,8 +363,12 @@ the absolute placement selection even when some targets have no `objectFormat`
 capability. Filter single-object layout buttons through the
 `doc.placement.supportsObjectLayout()` intersection and repeat that guard in the
 action layer, so TextBox and other blocks without an inline adapter never offer
-or partially apply inline layout. Shape and text format
-cards use one CSES segmented tab strip and render only the active content area;
+or partially apply inline layout.
+For inline and top-bottom objects, render only the layout-mode choices: page
+alignment, object arrangement and hierarchy are absolute-only and must stay
+hidden until the object uses under/over layout. Reject those commands again in
+the Plugin action layer to cover stale Overlay events.
+Shape and text format cards use one CSES segmented tab strip and render only the active content area;
 the active tab has no trailing section divider or reset action. The text font
 is a searchable CSES select backed by the shared font catalogs and writes the
 catalog's bounded CSS stack so Shape, TextBox and WordArt render the same choice.

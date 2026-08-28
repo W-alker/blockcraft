@@ -280,6 +280,39 @@ describe("ObjectFormatToolbarComponent", () => {
     ).not.toBeNull();
   });
 
+  it("hides absolute-only arrangement tools for inline and top-bottom layout", async () => {
+    await TestBed.configureTestingModule({
+      imports: [ObjectFormatToolbarComponent],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(ObjectFormatToolbarComponent);
+    fixture.componentRef.setInput("state", { ...state, blockIds: ["shape-1"] });
+    fixture.componentInstance.activePanel = "layout";
+
+    for (const layout of ["inline", "top-bottom"] as const) {
+      fixture.componentRef.setInput("activeLayout", layout);
+      fixture.detectChanges();
+      expect(
+        fixture.nativeElement.querySelector('section[aria-label="页面对齐"]'),
+      ).toBeNull();
+      expect(
+        fixture.nativeElement.querySelector(
+          '[data-object-format-section="hierarchy"]',
+        ),
+      ).toBeNull();
+    }
+
+    fixture.componentRef.setInput("activeLayout", "over");
+    fixture.detectChanges();
+    expect(
+      fixture.nativeElement.querySelector('section[aria-label="页面对齐"]'),
+    ).not.toBeNull();
+    expect(
+      fixture.nativeElement.querySelector(
+        '[data-object-format-section="hierarchy"]',
+      ),
+    ).not.toBeNull();
+  });
+
   it("fills the layout row while hiding unsupported inline layout", async () => {
     await TestBed.configureTestingModule({
       imports: [ObjectFormatToolbarComponent],

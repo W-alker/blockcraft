@@ -248,6 +248,10 @@ while a nested member owns Selection. Visible single-object layout modes are the
 intersection from `doc.placement.supportsObjectLayout()`: an object without an
 inline adapter, including TextBox, does not show or accept the inline layout
 action. The remaining layout choices use equal-width columns and fill the row.
+While the active mode is inline or top-bottom, the card hides page alignment,
+multi-object arrangement and hierarchy because those commands have no flow-layout
+semantics; they return only for under/over absolute layout. The action layer
+repeats the same guard before mutation.
 Shape format uses one CSES
 segmented tab strip for Fill, Outline, Change Shape and Effects. Text format
 uses one CSES segmented tab strip for Text Frame, Typography and Appearance;
