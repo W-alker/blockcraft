@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-08-28 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-08-30 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -67,6 +67,142 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > - `major` (e.g. 0.1.37 → 1.0.0): breaking — removed APIs, renamed exports, signature changes, behavior reversals
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
+
+## Unreleased — 2026-08-30 — Automatic Editor Agent quality and visual gate
+
+**Severity**: minor
+
+**What changed**: `blockcraft-agent` adds a structured quality-review contract
+and an optional host-owned gate after semantic operation validation. Complex
+edit candidates can now receive an independent `pass | revise` verdict; a
+`revise` result is returned to the Master for a bounded correction and the
+repaired candidate is reviewed again before delivery. A host can also attach a
+candidate Preview Adapter: validated operations are projected onto an isolated
+Snapshot and the rendered candidate is sent to the reviewer beside user
+reference images without mutating the live document.
+
+**Why**: Schema-valid operations can still be incomplete, inconsistent with the
+document voice, visually inaccurate, or semantically weaker than the user's
+request. A separate review turn catches these quality failures without giving a
+specialist tool or write access, and without adding latency to trivial edits.
+Operation JSON alone is insufficient for judging geometry, styling, custom
+Block rendering and image reconstruction; the optional preview closes that
+evidence gap while keeping raster capture host-owned.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `DocumentAgentQualityReview` and `DocumentAgentQualityReviewIssue`
+- `DocumentAgentSubAgentResult.review`
+- `DocumentAgentRunner.supportsSubAgents`
+- `BlockCraftEditorAgentOptions.orchestration.qualityReview`
+- `DocumentAgentQualityReviewError`
+- `DocumentAgentImageAttachment.purpose`
+- `DocumentAgentCandidatePreviewAdapter` and candidate preview request/result
+  contracts
+- `BlockCraftEditorAgentQualityReviewOptions.candidatePreview`
+- `DocumentAgentCandidatePreviewError`
+- `createSnapshotViewerCandidatePreviewAdapter()` browser fallback
+
+### Migration Recipe
+
+Existing transports require no change in the default `auto` mode. To require
+the gate, implement both `runTurn()` and `runSubAgent()` and opt into `always`:
+
+```typescript
+new BlockCraftEditorAgent(doc, runner, {
+  orchestration: {
+    qualityReview: {
+      mode: 'always',
+      maxRepairs: 1,
+      candidatePreview: {
+        adapter: createSnapshotViewerCandidatePreviewAdapter({
+          viewerOptions: {blockRenderers, inlineEmbeds},
+        }),
+        failureMode: 'throw',
+      },
+    },
+  },
+})
+```
+
+When a custom Transport implements `runSubAgent()`, its `quality-review` result
+must include a non-null structured `review`; other specialists omit it from the
+public result (strict JSON transports may send `null`, which the runner
+normalizes away).
+
+### Behavior Changes
+
+- `auto` reviews image-backed, multi-operation, structural, rich-text and other
+  non-trivial candidates only when both turn and specialist protocols exist.
+- A second `revise` after the configured repair budget fails closed; no
+  candidate reaches Revision staging.
+- Automatic reviews have their own `maxRepairs + 1` bound and do not consume
+  the Master's `maxDelegations` budget.
+- A configured Preview Adapter runs only after semantic preflight and receives
+  an isolated projected Snapshot. It never stages Yjs or Revision mutations.
+- Reviewer attachments label rendered output as `candidate-preview` and source
+  images as `user-reference`; the rendered image is ordered first.
+- Preview failure defaults to semantic fallback. Hosts can select `throw` to
+  fail closed before Revision staging.
+
+## Unreleased — 2026-08-29 — Progressive Editor Agent document context
+
+**Severity**: minor
+
+**What changed**: `blockcraft-agent` now separates its complete host validation
+baseline from structured Master requests. When `runTurn()` is available,
+oversized document scope becomes a bounded outline page with explicit
+`context.coverage`; document context reads accept optional `offset/maxBlocks`,
+and `search_document` traverses the current complete model instead of only the
+active request context. The revision content fingerprint is now a fixed-size
+opaque digest rather than the serialized block payload itself.
+
+**Why**: Full props, rich-text Delta and duplicated plain text were previously
+resent on every Master turn. Large documents therefore grew request cost and
+latency, while context-bound search could miss content outside a selected or
+compacted request.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `DocumentAgentContext.coverage` and outline block metadata
+- `DocumentAgentModelContextOptions`
+- `BlockCraftEditorAgentOptions.modelContext`
+- Fixed-size opaque `baseRevision.contentFingerprint`
+- Optional `offset` / `maxBlocks` parameters on
+  `blockcraft.get_document_context`
+
+### Migration Recipe
+
+No change is required for existing hosts. To retain the previous full model
+payload because the provider already manages document retrieval:
+
+```typescript
+new BlockCraftEditorAgent(doc, runner, {
+  modelContext: {strategy: 'full'},
+})
+```
+
+### Behavior Changes
+
+- Small documents, explicit selection scope, legacy `run()` transports and the
+  current Markdown stream remain lossless.
+- Large document scope sends an outline page to the model, while final writes
+  continue to validate against the complete context captured at request start.
+- `get_document_context({offset, maxBlocks})` omits repeated capability data and
+  returns an outline page; calling it without those arguments remains backward
+  compatible and returns the complete context.
 
 ## Unreleased — 2026-08-28 — Snapshot Viewer inline Embed converter parity
 

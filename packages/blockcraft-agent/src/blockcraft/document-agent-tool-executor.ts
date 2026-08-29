@@ -19,6 +19,7 @@ import {
 import {BLOCKCRAFT_BUILTIN_AGENT_EXTENSION} from '../core/builtin-block-capabilities'
 import {DocumentAgentExtensionRegistry} from '../core/host-extension'
 import {captureDocumentAgentManifestOptions} from './document-agent-capability-scope'
+import {createDocumentAgentContextOutlinePage} from './document-agent-context-projection'
 
 export class DocumentAgentToolExecutor {
   private activeContext: DocumentAgentContext | null
@@ -39,8 +40,20 @@ export class DocumentAgentToolExecutor {
   ): DocumentAgentToolHostResult {
     try {
       if (call.name === 'blockcraft.get_document_context') {
-        const context = this.captureContext()
-        return {ok: true, tool: call.name, data: context}
+        const context = this.captureContext('document')
+        const page = readDocumentContextPageArguments(call.arguments)
+        return {
+          ok: true,
+          tool: call.name,
+          data: context && page
+            ? createDocumentAgentContextOutlinePage(context, {
+              ...page,
+              maxChars: 10_000,
+              previewCharsPerBlock: 320,
+              includeCapabilities: false,
+            })
+            : context,
+        }
       }
 
       if (call.name === 'blockcraft.get_editor_state') {
@@ -112,7 +125,7 @@ export class DocumentAgentToolExecutor {
         return {ok: false, tool: call.name, error: '工具参数缺少 operations 数组。'}
       }
 
-      const context = this.activeContext ?? this.captureContext()
+      const context = this.activeContext ?? this.captureContext('document')
       if (!context) {
         return {ok: false, tool: call.name, error: '文档尚未初始化，无法执行 Agent 操作。'}
       }
@@ -149,7 +162,10 @@ export class DocumentAgentToolExecutor {
       }
 
       const applied = applier.apply(context, result)
-      this.activeContext = captureBlockCraftAgentContext(this.doc, {extensions: this.extensions})
+      this.activeContext = captureBlockCraftAgentContext(this.doc, {
+        scope: 'document',
+        extensions: this.extensions,
+      })
       return {ok: true, tool: call.name, data: applied}
     } catch (error) {
       return {
@@ -162,8 +178,11 @@ export class DocumentAgentToolExecutor {
     }
   }
 
-  private captureContext(): DocumentAgentContext | null {
-    this.activeContext = captureBlockCraftAgentContext(this.doc, {extensions: this.extensions})
+  private captureContext(scope: DocumentAgentContext['scope'] = 'document'): DocumentAgentContext | null {
+    this.activeContext = captureBlockCraftAgentContext(this.doc, {
+      scope,
+      extensions: this.extensions,
+    })
     return this.activeContext
   }
 
@@ -178,25 +197,31 @@ export class DocumentAgentToolExecutor {
     const query = typeof args['query'] === 'string' ? args['query'].trim() : ''
     if (!query) return {query: '', matches: []}
 
-    const context = this.activeContext ?? this.captureContext()
-    if (!context) return {query, matches: []}
-
     const maxResults = typeof args['maxResults'] === 'number'
       ? Math.min(50, Math.max(1, Math.floor(args['maxResults'])))
       : 20
     const needle = query.toLocaleLowerCase()
     const matches = []
-    for (const block of context.blocks) {
-      const text = block.text?.plain ?? ''
+    const visited = new Set<string>()
+    const pending = [this.doc.rootId]
+    while (pending.length && matches.length < maxResults) {
+      const blockId = pending.pop()!
+      if (visited.has(blockId) || !this.doc.model.exists(blockId)) continue
+      visited.add(blockId)
+      const text = blockText(this.doc.model.getTextDeltas(blockId))
       const index = text.toLocaleLowerCase().indexOf(needle)
-      if (index < 0) continue
-      matches.push({
-        blockId: block.blockId,
-        flavour: block.flavour,
-        index,
-        excerpt: text.slice(Math.max(0, index - 80), index + query.length + 120),
-      })
-      if (matches.length >= maxResults) break
+      if (index >= 0) {
+        matches.push({
+          blockId,
+          flavour: this.doc.model.getFlavour(blockId) ?? 'unknown',
+          index,
+          excerpt: text.slice(Math.max(0, index - 80), index + query.length + 120),
+        })
+      }
+      const childIds = this.doc.model.getChildrenIds(blockId)
+      for (let childIndex = childIds.length - 1; childIndex >= 0; childIndex--) {
+        pending.push(childIds[childIndex])
+      }
     }
     return {query, matches}
   }
@@ -227,6 +252,27 @@ export class DocumentAgentToolExecutor {
       snapshot: this.doc.model.toSnapshot(blockId),
     }
   }
+}
+
+function readDocumentContextPageArguments(
+  argumentsValue: unknown,
+): {offset: number; maxBlocks: number} | null {
+  if (!argumentsValue || typeof argumentsValue !== 'object' || Array.isArray(argumentsValue)) {
+    return null
+  }
+  const args = argumentsValue as Record<string, unknown>
+  if (args['offset'] === undefined && args['maxBlocks'] === undefined) return null
+
+  const offset = args['offset'] ?? 0
+  const maxBlocks = args['maxBlocks'] ?? 40
+  if (typeof offset !== 'number' || !Number.isInteger(offset) || offset < 0) {
+    throw new Error('offset 必须是非负整数。')
+  }
+  if (typeof maxBlocks !== 'number' || !Number.isInteger(maxBlocks) ||
+      maxBlocks < 1 || maxBlocks > 50) {
+    throw new Error('maxBlocks 必须是 1..50 的整数。')
+  }
+  return {offset, maxBlocks}
 }
 
 function readStringArgument(argumentsValue: unknown, key: string): string {

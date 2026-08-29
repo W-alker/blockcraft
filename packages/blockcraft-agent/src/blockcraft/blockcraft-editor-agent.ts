@@ -1,18 +1,24 @@
 import type {
   AdapterRegistry,
   BlockCraftDoc,
+  IBlockSnapshot,
   MarkdownAdapterProfile,
   RevisionActorSnapshot,
 } from '@ccc/blockcraft'
 import type {
   DocumentAgentContext,
+  DocumentAgentImageAttachment,
   DocumentAgentMarkdownRequest,
   DocumentAgentMarkdownStreamEvent,
+  DocumentAgentModelContextOptions,
   DocumentAgentModelToolCall,
   DocumentAgentModelToolResult,
+  DocumentAgentOperation,
+  DocumentAgentQualityReview,
   DocumentAgentRequest,
   DocumentAgentResult,
   DocumentAgentSpecialist,
+  DocumentAgentSubAgentResult,
   DocumentAgentToolExchange,
 } from '../core/agent.types'
 import type {
@@ -30,11 +36,17 @@ import {
 import {DocumentAgentRunner} from '../core/document-agent-runner'
 import {captureBlockCraftAgentContext} from './blockcraft-context-adapter'
 import {captureDocumentAgentManifestOptions} from './document-agent-capability-scope'
+import {projectDocumentAgentContextForModel} from './document-agent-context-projection'
+import {
+  projectDocumentAgentCandidate,
+  type DocumentAgentCandidateOperationTarget,
+} from './document-agent-candidate-projector'
 import {
   DocumentAgentApplyError,
   DocumentAgentOperationApplier,
   type DocumentAgentRevisionApplyResult,
 } from './document-agent-operation-applier'
+import {DocumentAgentOperationCompiler} from './document-agent-operation-compiler'
 import {DocumentAgentToolExecutor} from './document-agent-tool-executor'
 
 /**
@@ -87,13 +99,13 @@ export class BlockCraftEditorAgent {
     request: DocumentAgentMarkdownRequest,
     options?: {signal?: AbortSignal},
   ): AsyncIterable<DocumentAgentMarkdownStreamEvent> {
-    const context = this.getContext(request.context.scope)
-    if (!context) throw new Error('BlockCraft 文档尚未初始化。')
+    const baselineContext = this.getContext(request.context.scope)
+    if (!baselineContext) throw new Error('BlockCraft 文档尚未初始化。')
     const resolvedRequest: DocumentAgentMarkdownRequest = {
       ...request,
       markdownStreamVersion: 1,
-      context,
-      runtime: this.getRuntimeManifest(context),
+      context: baselineContext,
+      runtime: this.getRuntimeManifest(baselineContext),
     }
     yield* this.runner.streamMarkdown(resolvedRequest, options)
   }
@@ -102,12 +114,15 @@ export class BlockCraftEditorAgent {
     request: DocumentAgentRequest,
     options?: {signal?: AbortSignal},
   ): Promise<DocumentAgentResult> {
-    const context = this.getContext(request.context.scope)
-    if (!context) throw new Error('BlockCraft 文档尚未初始化。')
+    const baselineContext = this.getContext(request.context.scope)
+    if (!baselineContext) throw new Error('BlockCraft 文档尚未初始化。')
+    const modelContext = this.runner.supportsTurnProtocol
+      ? projectDocumentAgentContextForModel(baselineContext, this.options.modelContext)
+      : baselineContext
     const resolvedRequest: DocumentAgentRequest = {
       ...request,
-      context,
-      runtime: this.getRuntimeManifest(context),
+      context: modelContext,
+      runtime: this.getRuntimeManifest(modelContext),
     }
     const toolHistory: DocumentAgentToolExchange[] = []
     const maxTurns = clampInteger(this.options.orchestration?.maxTurns, 6, 1, 12)
@@ -123,7 +138,17 @@ export class BlockCraftEditorAgent {
       0,
       6,
     )
+    const qualityReviewMode = this.options.orchestration?.qualityReview?.mode ?? 'auto'
+    const maxQualityRepairs = clampInteger(
+      this.options.orchestration?.qualityReview?.maxRepairs,
+      1,
+      0,
+      2,
+    )
     let delegationCount = 0
+    let qualityReviewCount = 0
+    let qualityRepairCount = 0
+    let qualityReviewActive = false
     let finalValidationError: string | null = null
 
     for (let step = 0; step < maxTurns; step++) {
@@ -136,8 +161,7 @@ export class BlockCraftEditorAgent {
       if (turn.kind === 'result') {
         try {
           new DocumentAgentOperationApplier(this.doc, this.extensions)
-            .validate(context, turn.result)
-          return turn.result
+            .validate(baselineContext, turn.result)
         } catch (error) {
           if (!(error instanceof DocumentAgentApplyError) ||
               error.code !== 'invalid' ||
@@ -152,6 +176,54 @@ export class BlockCraftEditorAgent {
           finalValidationError = error.message
           continue
         }
+
+        const requiresQualityReview = qualityReviewActive || shouldRunQualityReview(
+          resolvedRequest,
+          turn.result,
+          toolHistory,
+          qualityReviewMode,
+        )
+        if (!requiresQualityReview) return turn.result
+
+        const supportsAutomaticQualityReview =
+          this.runner.supportsTurnProtocol && this.runner.supportsSubAgents
+        if (!supportsAutomaticQualityReview) {
+          if (qualityReviewMode === 'always') {
+            throw new Error(
+              '自动质量复核需要同时实现 runTurn() 与 runSubAgent() 的 Transport。',
+            )
+          }
+          return turn.result
+        }
+
+        qualityReviewActive = true
+        const reviewResult = await this.runAutomaticQualityReview(
+          resolvedRequest,
+          baselineContext,
+          turn.result,
+          toolHistory,
+          ++qualityReviewCount,
+          options,
+        )
+        const review = reviewResult.review!
+        assertReviewOperationIndexes(review, turn.result.operations.length, reviewResult)
+        if (review.verdict === 'pass') return turn.result
+        if (qualityRepairCount >= maxQualityRepairs) {
+          throw new DocumentAgentQualityReviewError(
+            reviewResult,
+            `自动质量复核在 ${qualityRepairCount} 次修正后仍未通过。`,
+          )
+        }
+
+        appendBoundedExchange(toolHistory, createQualityReviewExchange(
+          step,
+          qualityReviewCount,
+          turn.result,
+          reviewResult,
+        ))
+        qualityRepairCount++
+        finalValidationError = createQualityReviewFeedback(review)
+        continue
       }
       if (!turn.calls.length) throw new Error('Master Agent 返回了空工具调用。')
       if (turn.calls.length > maxToolCallsPerTurn) {
@@ -169,7 +241,12 @@ export class BlockCraftEditorAgent {
           }
         } else {
           if (call.name === 'blockcraft.delegate') delegationCount++
-          result = await this.executeModelToolCall(call, resolvedRequest, context, options)
+          result = await this.executeModelToolCall(
+            call,
+            resolvedRequest,
+            baselineContext,
+            options,
+          )
         }
         appendBoundedExchange(toolHistory, {
           call: {...call, arguments: boundStructuredValue(call.arguments)},
@@ -281,6 +358,114 @@ export class BlockCraftEditorAgent {
       ? {callId: call.id, name: call.name, ok: true, data: result.data}
       : {callId: call.id, name: call.name, ok: false, error: result.error}
   }
+
+  private async runAutomaticQualityReview(
+    request: DocumentAgentRequest,
+    baselineContext: DocumentAgentContext,
+    candidate: DocumentAgentResult,
+    toolHistory: readonly DocumentAgentToolExchange[],
+    attempt: number,
+    options?: {signal?: AbortSignal},
+  ): Promise<DocumentAgentSubAgentResult> {
+    const preview = await this.createCandidatePreview(
+      request,
+      baselineContext,
+      candidate,
+      attempt,
+      options,
+    )
+    return this.runner.runSubAgent({
+      delegationVersion: 1,
+      specialist: 'quality-review',
+      objective:
+        '独立复核候选结果是否准确满足用户指令，并检查内容完整性、结构合理性、' +
+        'BlockCraft 能力使用、安全性及图片还原度。通过才返回 pass；存在必须修正的问题返回 revise。',
+      request: preview.request,
+      input: boundStructuredValue(createQualityReviewInput(
+        baselineContext,
+        candidate,
+        toolHistory,
+        attempt,
+        preview.evidence,
+      )),
+    }, options)
+  }
+
+  private async createCandidatePreview(
+    request: DocumentAgentRequest,
+    baselineContext: DocumentAgentContext,
+    candidate: DocumentAgentResult,
+    attempt: number,
+    options?: {signal?: AbortSignal},
+  ): Promise<{
+    request: DocumentAgentRequest
+    evidence: DocumentAgentQualityReviewPreviewEvidence
+  }> {
+    const config = this.options.orchestration?.qualityReview?.candidatePreview
+    if (!config) {
+      return {request, evidence: {status: 'not-configured'}}
+    }
+
+    try {
+      const prepared = new DocumentAgentOperationCompiler(
+        this.doc,
+        baselineContext,
+        this.extensions,
+      ).compile(candidate.operations)
+      const projection = projectDocumentAgentCandidate(this.doc, prepared)
+      const rawPreview = await config.adapter.render({
+        candidatePreviewVersion: 1,
+        snapshot: projection.snapshot,
+        affectedBlockIds: projection.affectedBlockIds,
+        operationTargets: projection.operationTargets,
+        candidate,
+        attempt,
+      }, options)
+      const normalized = normalizeCandidatePreview(rawPreview)
+      const previewImage: DocumentAgentImageAttachment = {
+        ...normalized.image,
+        purpose: 'candidate-preview',
+      }
+      const userAttachments = (request.attachments ?? []).map(attachment => ({
+        ...attachment,
+        purpose: attachment.purpose ?? 'user-reference' as const,
+      }))
+      return {
+        request: {
+          ...request,
+          // Keep the rendered candidate first so transports with a bounded image
+          // count never discard the evidence owned by this review pass.
+          attachments: [previewImage, ...userAttachments],
+        },
+        evidence: {
+          status: 'available',
+          rendererId: normalized.rendererId,
+          attachmentName: previewImage.name,
+          width: previewImage.width,
+          height: previewImage.height,
+          capturedBlockIds: normalized.capturedBlockIds,
+          operationTargets: projection.operationTargets.slice(0, 100).map(target => ({
+            operationIndex: target.operationIndex,
+            blockIds: target.blockIds.slice(0, 20),
+          })),
+          warnings: normalized.warnings,
+        },
+      }
+    } catch (error) {
+      if (options?.signal?.aborted || isAbortError(error)) throw error
+      const message = error instanceof Error ? error.message : 'Candidate preview failed.'
+      if ((config.failureMode ?? 'fallback') === 'throw') {
+        throw new DocumentAgentCandidatePreviewError(message, {cause: error})
+      }
+      return {
+        request,
+        evidence: {
+          status: 'unavailable',
+          reason: truncateText(message, 1_000),
+        },
+      }
+    }
+  }
 }
 
 export interface BlockCraftEditorAgentOptions {
@@ -293,6 +478,8 @@ export interface BlockCraftEditorAgentOptions {
   }
   /** Attribution stored on revision records created by `stageRevisionDiff()`. */
   revisionActor?: RevisionActorSnapshot
+  /** Controls the model-facing projection; host validation always keeps a full baseline. */
+  modelContext?: DocumentAgentModelContextOptions
   orchestration?: {
     /** Defaults to 6 and is clamped to 1..12. */
     maxTurns?: number
@@ -300,7 +487,49 @@ export interface BlockCraftEditorAgentOptions {
     maxToolCallsPerTurn?: number
     /** Defaults to 3 and is clamped to 0..6. */
     maxDelegations?: number
+    /** Optional independent review gate for non-trivial candidate edits. */
+    qualityReview?: BlockCraftEditorAgentQualityReviewOptions
   }
+}
+
+export interface BlockCraftEditorAgentQualityReviewOptions {
+  /** auto reviews complex edits, always reviews every non-empty edit, off disables it. */
+  mode?: 'auto' | 'always' | 'off'
+  /** Master correction attempts after a revise verdict. Defaults to 1, clamped to 0..2. */
+  maxRepairs?: number
+  /** Optional host-owned isolated Snapshot renderer used by the reviewer. */
+  candidatePreview?: BlockCraftEditorAgentCandidatePreviewOptions
+}
+
+export interface BlockCraftEditorAgentCandidatePreviewOptions {
+  adapter: DocumentAgentCandidatePreviewAdapter
+  /** fallback keeps semantic review; throw fails the Agent turn. Defaults to fallback. */
+  failureMode?: 'fallback' | 'throw'
+}
+
+export interface DocumentAgentCandidatePreviewRequest {
+  candidatePreviewVersion: 1
+  /** Isolated projected document state. It is not connected to the live Yjs document. */
+  snapshot: IBlockSnapshot
+  affectedBlockIds: readonly string[]
+  operationTargets: readonly DocumentAgentCandidateOperationTarget[]
+  candidate: DocumentAgentResult
+  attempt: number
+}
+
+export interface DocumentAgentCandidatePreview {
+  candidatePreviewVersion: 1
+  image: DocumentAgentImageAttachment
+  rendererId?: string
+  capturedBlockIds?: readonly string[]
+  warnings?: readonly string[]
+}
+
+export interface DocumentAgentCandidatePreviewAdapter {
+  render(
+    request: DocumentAgentCandidatePreviewRequest,
+    options?: {signal?: AbortSignal},
+  ): Promise<DocumentAgentCandidatePreview>
 }
 
 export interface BlockCraftEditorAgentRevisionOptions {
@@ -311,6 +540,25 @@ export interface BlockCraftEditorAgentRevisionOptions {
 export const DEFAULT_AGENT_REVISION_ACTOR: RevisionActorSnapshot = {
   actorId: 'blockcraft-agent',
   displayName: 'BlockCraft AI',
+}
+
+export class DocumentAgentQualityReviewError extends Error {
+  constructor(
+    readonly reviewResult: DocumentAgentSubAgentResult,
+    prefix = '自动质量复核未通过。',
+  ) {
+    super(`${prefix} ${reviewResult.review
+      ? createQualityReviewFeedback(reviewResult.review)
+      : '质量复核结果缺少结构化 verdict。'}`)
+    this.name = 'DocumentAgentQualityReviewError'
+  }
+}
+
+export class DocumentAgentCandidatePreviewError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(`候选文档预览失败：${message}`, options)
+    this.name = 'DocumentAgentCandidatePreviewError'
+  }
 }
 
 const MAX_TOOL_HISTORY_ITEMS = 24
@@ -342,6 +590,240 @@ function createFinalValidationExchange(
         'fall back to plain text when no writable capability exists.',
     },
   }
+}
+
+function createQualityReviewExchange(
+  step: number,
+  reviewAttempt: number,
+  candidate: DocumentAgentResult,
+  reviewResult: DocumentAgentSubAgentResult,
+): DocumentAgentToolExchange {
+  const callId = `host-quality-review-${step + 1}-${reviewAttempt}`
+  return {
+    call: {
+      id: callId,
+      name: 'blockcraft.delegate',
+      arguments: boundStructuredValue({
+        automatic: true,
+        specialist: 'quality-review',
+        candidate,
+      }),
+    },
+    result: {
+      callId,
+      name: 'blockcraft.delegate',
+      ok: true,
+      data: boundStructuredValue(reviewResult),
+    },
+  }
+}
+
+function createQualityReviewInput(
+  baselineContext: DocumentAgentContext,
+  candidate: DocumentAgentResult,
+  toolHistory: readonly DocumentAgentToolExchange[],
+  attempt: number,
+  candidatePreview: DocumentAgentQualityReviewPreviewEvidence,
+): unknown {
+  const targetIds = collectCandidateTargetIds(candidate.operations, baselineContext)
+  const targetBlocks = baselineContext.blocks
+    .filter(block => targetIds.has(block.blockId))
+    .slice(0, 24)
+    .map(block => ({
+      blockId: block.blockId,
+      flavour: block.flavour,
+      nodeType: block.nodeType,
+      parentId: block.parentId,
+      index: block.index,
+      childIds: block.childIds?.slice(0, 50),
+      readonly: block.readonly,
+      props: block.props,
+      ...(block.text ? {
+        text: {
+          plain: truncateText(block.text.plain, 4_000),
+          length: block.text.plain.length,
+          truncated: block.text.plain.length > 4_000,
+        },
+      } : {}),
+    }))
+  return {
+    automaticQualityReviewVersion: 2,
+    attempt,
+    candidate,
+    candidatePreview,
+    targetCoverage: {
+      requested: targetIds.size,
+      returned: targetBlocks.length,
+      truncated: targetBlocks.length < targetIds.size,
+    },
+    targetBlocks,
+    recentToolHistory: toolHistory.slice(-8),
+  }
+}
+
+type DocumentAgentQualityReviewPreviewEvidence =
+  | {status: 'not-configured'}
+  | {status: 'unavailable'; reason: string}
+  | {
+      status: 'available'
+      rendererId?: string
+      attachmentName: string
+      width: number
+      height: number
+      capturedBlockIds: readonly string[]
+      operationTargets: readonly DocumentAgentCandidateOperationTarget[]
+      warnings: readonly string[]
+    }
+
+function normalizeCandidatePreview(
+  preview: DocumentAgentCandidatePreview,
+): Required<Pick<DocumentAgentCandidatePreview, 'candidatePreviewVersion' | 'image'>> & {
+  rendererId?: string
+  capturedBlockIds: readonly string[]
+  warnings: readonly string[]
+} {
+  if (preview?.candidatePreviewVersion !== 1 || !preview.image) {
+    throw new Error('Preview Adapter returned an unsupported payload.')
+  }
+  const image = preview.image
+  if (
+    image.type !== 'image' ||
+    !['image/jpeg', 'image/png', 'image/webp'].includes(image.mimeType) ||
+    typeof image.name !== 'string' || !image.name.trim() ||
+    typeof image.dataUrl !== 'string' ||
+    !image.dataUrl.startsWith(`data:${image.mimeType};base64,`) ||
+    !Number.isInteger(image.width) || image.width < 1 || image.width > 8_192 ||
+    !Number.isInteger(image.height) || image.height < 1 || image.height > 8_192
+  ) {
+    throw new Error('Preview Adapter returned an invalid image attachment.')
+  }
+  if (image.dataUrl.length > 16_000_000) {
+    throw new Error('Preview Adapter image exceeds the 16 MB data URL limit.')
+  }
+  return {
+    candidatePreviewVersion: 1,
+    image: {...image, name: image.name.trim().slice(0, 200)},
+    ...(preview.rendererId?.trim()
+      ? {rendererId: preview.rendererId.trim().slice(0, 200)}
+      : {}),
+    capturedBlockIds: [...new Set(preview.capturedBlockIds ?? [])]
+      .filter(value => typeof value === 'string' && value)
+      .slice(0, 200),
+    warnings: (preview.warnings ?? [])
+      .filter(value => typeof value === 'string' && value.trim())
+      .slice(0, 20)
+      .map(value => value.trim().slice(0, 500)),
+  }
+}
+
+function isAbortError(error: unknown): boolean {
+  return (typeof DOMException !== 'undefined' && error instanceof DOMException)
+    ? error.name === 'AbortError'
+    : error instanceof Error && error.name === 'AbortError'
+}
+
+function collectCandidateTargetIds(
+  operations: readonly DocumentAgentOperation[],
+  context: DocumentAgentContext,
+): Set<string> {
+  const ids = new Set<string>()
+  const blocksById = new Map(context.blocks.map(block => [block.blockId, block]))
+  const addId = (value: string | undefined): void => {
+    if (value && !value.startsWith('$ref:')) ids.add(value)
+  }
+  const addStructuralNeighbours = (parentId: string, index: number, count = 0): void => {
+    addId(parentId)
+    const children = blocksById.get(parentId)?.childIds ?? []
+    const from = Math.max(0, index - 1)
+    const to = Math.min(children.length, index + Math.max(1, count) + 1)
+    for (let cursor = from; cursor < to; cursor++) addId(children[cursor])
+  }
+
+  for (const operation of operations) {
+    if (operation.kind === 'replace-text' ||
+        operation.kind === 'apply-text-delta' ||
+        operation.kind === 'update-block-props' ||
+        operation.kind === 'replace-block') {
+      addId(operation.blockId)
+      continue
+    }
+    if (operation.kind === 'create-blocks') {
+      addStructuralNeighbours(operation.parentId, operation.index)
+      continue
+    }
+    if (operation.kind === 'delete-blocks') {
+      addStructuralNeighbours(operation.parentId, operation.index, operation.count)
+      continue
+    }
+    addStructuralNeighbours(operation.parentId, operation.index, operation.count)
+    addStructuralNeighbours(operation.targetId, operation.targetIndex)
+  }
+  return ids
+}
+
+function shouldRunQualityReview(
+  request: DocumentAgentRequest,
+  result: DocumentAgentResult,
+  toolHistory: readonly DocumentAgentToolExchange[],
+  mode: NonNullable<BlockCraftEditorAgentQualityReviewOptions['mode']>,
+): boolean {
+  if (mode === 'off' || !result.operations.length) return false
+  if (mode === 'always') return true
+  if (request.attachments?.length) return true
+  if (result.operations.length > 1) return true
+  if (toolHistory.some(exchange => isComplexSpecialistDelegation(exchange.call))) return true
+
+  const operation = result.operations[0]
+  if (operation.kind === 'apply-text-delta' ||
+      operation.kind === 'create-blocks' ||
+      operation.kind === 'replace-block' ||
+      operation.kind === 'delete-blocks' ||
+      operation.kind === 'move-blocks') {
+    return true
+  }
+  if (operation.kind === 'update-block-props') {
+    const values = Object.values(operation.props)
+    return values.length > 2 || values.some(value => value !== null && typeof value === 'object')
+  }
+  const changedLength = Math.max(operation.to - operation.from, operation.replacement.length)
+  return changedLength > 500 || operation.replacement.split(/\r?\n/).length > 3
+}
+
+function isComplexSpecialistDelegation(call: DocumentAgentModelToolCall): boolean {
+  if (call.name !== 'blockcraft.delegate' ||
+      !call.arguments ||
+      typeof call.arguments !== 'object' ||
+      Array.isArray(call.arguments)) return false
+  const specialist = (call.arguments as Record<string, unknown>)['specialist']
+  return specialist === 'structure-planning' ||
+    specialist === 'visual-reconstruction' ||
+    specialist === 'host-workflow'
+}
+
+function assertReviewOperationIndexes(
+  review: DocumentAgentQualityReview,
+  operationCount: number,
+  reviewResult: DocumentAgentSubAgentResult,
+): void {
+  const invalid = review.issues.flatMap(issue => issue.operationIndexes)
+    .find(index => index >= operationCount)
+  if (invalid === undefined) return
+  throw new DocumentAgentQualityReviewError(
+    reviewResult,
+    `自动质量复核返回了不存在的候选操作索引 ${invalid}。`,
+  )
+}
+
+function createQualityReviewFeedback(review: DocumentAgentQualityReview): string {
+  const errors = review.issues.filter(issue => issue.severity === 'error')
+  return errors.length
+    ? errors.map(issue => `${issue.code}: ${issue.message}` +
+      (issue.recommendation ? ` 建议：${issue.recommendation}` : '')).join('；')
+    : '质量复核要求修正候选结果。'
+}
+
+function truncateText(value: string, maxChars: number): string {
+  return value.length <= maxChars ? value : `${value.slice(0, maxChars)}…`
 }
 
 function clampInteger(value: number | undefined, fallback: number, min: number, max: number): number {

@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-28
+> Last updated: 2026-08-30
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -1429,6 +1429,100 @@ model to emit full Snapshots. Its v2 Document IR keeps the framework's existing
 Editable content is represented separately as `text: {plain, delta}`; ordinary
 context omits recursive Snapshots. A full Snapshot is available only through
 the guarded `blockcraft.get_block` read tool when a focused inspection needs it.
+
+For structured requests with a `runTurn()` transport, `BlockCraftEditorAgent`
+keeps small document contexts lossless. Once document scope exceeds its
+model-context budget, it sends a DFS-ordered outline page
+instead: every included block has `detail: 'outline'` plus bounded text,
+property-key and child-count metadata, while `context.coverage` declares the
+total range and `nextOffset`. Omitted blocks still belong to the whole-document
+scope. The Master pages with `blockcraft.get_document_context({offset,
+maxBlocks})`, searches the complete live model with `search_document`, and uses
+`get_block` before an exact edit. The host separately retains the complete v2
+context for content-fingerprint, structure, readonly, Schema and operation-plan
+validation, so model payload compaction never weakens the write boundary.
+`baseRevision.contentFingerprint` is an opaque fixed-size validation digest;
+consumers must not parse it or treat it as document content.
+
+After a candidate passes the complete host semantic preflight,
+`BlockCraftEditorAgent` defaults to an independent quality gate for non-trivial
+edits. Image-backed requests, multiple operations, structural edits, rich-text
+Delta, large replacements and complex object props trigger the read-only
+`quality-review` specialist. It returns a structured `review.verdict` plus
+issues whose `operationIndexes` refer to the candidate. `pass` releases the
+candidate; `revise` is appended to the bounded Master history as mandatory
+feedback. The corrected candidate then passes semantic validation and quality
+review again. By default the Master gets one repair attempt; another `revise`
+fails closed without staging document changes. Simple single text replacements
+and scalar prop updates avoid the extra model call.
+
+Automatic review requires both `DocumentAgentTransport.runTurn()` and
+`runSubAgent()`. In default `auto` mode, legacy transports retain their previous
+behavior when either protocol is absent. `always` requires both protocols and
+reviews every result containing operations; `off` disables this host gate:
+
+```typescript
+const agent = new BlockCraftEditorAgent(doc, runner, {
+  orchestration: {
+    qualityReview: {
+      mode: 'auto',       // 'auto' | 'always' | 'off'
+      maxRepairs: 1,      // clamped to 0..2
+      candidatePreview: {
+        adapter: createSnapshotViewerCandidatePreviewAdapter({
+          viewerOptions: {
+            resourcePolicy: 'eager',
+            blockRenderers: hostSnapshotRenderers,
+            inlineEmbeds: hostInlineEmbedRenderers,
+          },
+        }),
+        failureMode: 'throw', // 'fallback' | 'throw'
+      },
+    },
+  },
+})
+```
+
+Candidate preview is a host adapter boundary, not a temporary write. After the
+candidate passes semantic validation, `blockcraft-agent` compiles the same
+sequential operations and projects them onto a deep-cloned root Snapshot. The
+projection does not mutate Yjs, create Revision records, consume Undo history,
+move selection, or clone the live editor DOM. The adapter receives the complete
+projected Snapshot plus affected block IDs and per-operation target IDs.
+
+`createSnapshotViewerCandidatePreviewAdapter()` is the optional browser
+fallback. It mounts the standalone Snapshot Viewer offscreen, waits for async
+Mermaid/image work, crops the affected block union, copies resolved styles and
+rasterizes a bounded PNG. Unsafe cross-origin media is replaced with a
+placeholder and reported in `warnings`; DOM and output dimensions are bounded.
+Pass the active host `SnapshotViewerOptions`, including custom
+`blockRenderers`, `inlineEmbeds` and enhancers, or custom business blocks will
+fall back to generic rendering. Native Tauri/WebView hosts may implement
+`DocumentAgentCandidatePreviewAdapter` with their platform screenshot API
+instead.
+
+The quality-review request puts the rendered image first with
+`purpose: 'candidate-preview'`; uploaded source images are labeled
+`purpose: 'user-reference'`. The structured review input contains only bounded
+preview metadata, never the PNG data URL. Without `candidatePreview`, behavior
+remains semantic-only. `failureMode: 'fallback'` records an unavailable reason
+and continues semantic review; `'throw'` raises
+`DocumentAgentCandidatePreviewError` and prevents delivery. Use `'throw'` when
+visual comparison is required rather than optional evidence.
+
+The automatic gate does not consume `maxDelegations`, which remains the
+Master's manual specialist budget. Its own model-call bound is
+`maxRepairs + 1` reviews. A quality specialist is still advisory and read-only:
+it cannot execute tools or mutations, and only the Master may emit a repaired
+`DocumentAgentResult`.
+
+The default switch target is about 24 KB with at most 80 initial outline blocks
+and 480 text characters per block. Hosts can tune these limits through
+`BlockCraftEditorAgentOptions.modelContext`; `strategy: 'full'` restores the
+legacy model payload for providers that already implement equivalent context
+management. Calling `get_document_context` without pagination arguments remains
+the complete-context compatibility path. Legacy `run()` transports and the
+current Markdown stream have no read-tool loop, so they continue to receive a
+complete context.
 
 Every model-creatable Block must have a registered Agent capability. The
 capability declares the Schema version, semantic roles, JSON Schema for

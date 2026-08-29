@@ -167,8 +167,58 @@ const subAgentSchema = {
     recommendations: {type: 'array', maxItems: 20, items: {type: 'string'}},
     draft: {type: ['string', 'null']},
     operations: resultSchema.properties.operations,
+    review: {
+      anyOf: [
+        {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            verdict: {type: 'string', enum: ['pass', 'revise']},
+            issues: {
+              type: 'array',
+              maxItems: 20,
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  severity: {type: 'string', enum: ['error', 'warning']},
+                  code: {
+                    type: 'string',
+                    pattern: '^[a-z][a-z0-9-]{0,63}$',
+                  },
+                  message: {type: 'string'},
+                  operationIndexes: {
+                    type: 'array',
+                    maxItems: 100,
+                    items: {type: 'integer', minimum: 0},
+                  },
+                  recommendation: {type: ['string', 'null']},
+                },
+                required: [
+                  'severity',
+                  'code',
+                  'message',
+                  'operationIndexes',
+                  'recommendation',
+                ],
+              },
+            },
+          },
+          required: ['verdict', 'issues'],
+        },
+        {type: 'null'},
+      ],
+    },
   },
-  required: ['specialist', 'summary', 'findings', 'recommendations', 'draft', 'operations'],
+  required: [
+    'specialist',
+    'summary',
+    'findings',
+    'recommendations',
+    'draft',
+    'operations',
+    'review',
+  ],
 }
 
 assertStrictOutputSchema(resultSchema, 'resultSchema')
@@ -314,11 +364,26 @@ function normalizeSubAgentResult(result, delegation) {
     throw new Error('Agent 返回的 specialist 与委派请求不一致')
   }
   const normalized = normalizeAgentResult(result)
+  const {review: _transportReview, ...normalizedWithoutReview} = normalized
+  const normalizedReview = result.review && typeof result.review === 'object'
+    ? {
+      ...result.review,
+      issues: Array.isArray(result.review.issues)
+        ? result.review.issues.map(issue => {
+          if (!issue || typeof issue !== 'object' || issue.recommendation !== null) return issue
+          const normalizedIssue = {...issue}
+          delete normalizedIssue.recommendation
+          return normalizedIssue
+        })
+        : result.review.issues,
+    }
+    : undefined
   return {
-    ...normalized,
+    ...normalizedWithoutReview,
     specialist: result.specialist,
     findings: result.findings,
     recommendations: result.recommendations,
+    ...(normalizedReview ? {review: normalizedReview} : {}),
   }
 }
 
@@ -475,6 +540,7 @@ function createAgentPayload(request, session, orchestration) {
       'An empty paragraph or list item is still a valid structural target. Use delete-blocks with its actual parentId, index, and count.',
       'Never claim that an empty block cannot be safely changed merely because it has no text.',
       'For Mermaid preview-only mode use update-block-props on the existing mermaid block with props {"mode":"graph"}; never manipulate DOM or data-mode.',
+      'Image attachment metadata may include purpose. user-reference is source evidence; candidate-preview is the host-rendered isolated candidate and must never be treated as source content.',
     ],
   }
 }
@@ -591,6 +657,7 @@ function getProviderInstructions(request, orchestration) {
       'Return kind "tool-calls" only when a registered BlockCraft or host tool is needed. Each arguments field must be a valid JSON string such as "{}". Use prior orchestration.toolHistory results instead of repeating an answered call.',
       'Built-in callable tools are blockcraft.get_editor_state, blockcraft.get_block, blockcraft.get_document_context, blockcraft.get_schema_capabilities, blockcraft.get_capability_directory, blockcraft.get_capability, blockcraft.delegate, blockcraft.search_document, blockcraft.preview_changes, and blockcraft.apply_changes.',
       'Use blockcraft.delegate selectively for a genuinely useful independent specialist pass. Available specialists are document-analysis, content-writing, structure-planning, visual-reconstruction, host-workflow, and quality-review. Avoid delegation for trivial requests and do not repeat a completed delegation.',
+      'When orchestration.toolHistory contains an automatic quality-review with verdict revise, treat every error issue as mandatory correction feedback. Return a corrected final result; do not repeat the rejected candidate or delegate the same review again.',
       'Custom tool names are discoverable through runtime.capabilityDirectory and blockcraft.get_capability. Never call an undeclared tool.',
       'Document writes and external writes cannot execute in this loop: their tool result will request user confirmation. Return kind "result" with the proposed structured operations or a concise explanation once enough evidence is available.',
     )
@@ -607,7 +674,7 @@ const specialistInstructions = {
   'structure-planning': 'Map content into legal BlockCraft schemas, hierarchy and schema-native candidate operations. Prefer create-blocks and stable IDs.',
   'visual-reconstruction': 'Inspect attached images and infer visual hierarchy, text, geometry and styling. Map them to available BlockCraft blocks such as paragraphs, tables, columns, text boxes, shapes and word art without inventing unavailable APIs.',
   'host-workflow': 'Interpret runtime host context and declared custom capabilities. Propose safe host-aware reads, document changes and confirmation-gated business actions.',
-  'quality-review': 'Critically review the supplied draft or operation plan against the user instruction, live context, schema constraints, safety and visual fidelity. Identify concrete corrections.',
+  'quality-review': 'Critically review the supplied candidate against the user instruction, current evidence, schema constraints, safety and visual fidelity. When delegation.input.candidatePreview.status is available, compare the candidate-preview image with user-reference images and use its capturedBlockIds and warnings as evidence. Never confuse the rendered candidate with a source image or claim rendered verification when the preview is unavailable. Set review.verdict to pass only when no mandatory correction remains. Otherwise set revise and include at least one error issue with a stable kebab-case code, concrete message, affected candidate operation indexes (or [] for result-wide issues), and an actionable recommendation.',
 }
 
 function getSubAgentInstructions(request, delegation) {
@@ -617,6 +684,9 @@ function getSubAgentInstructions(request, delegation) {
     specialistInstructions[delegation.specialist],
     'Work independently on the delegated objective. Do not call tools, execute writes, claim changes were applied, or broaden the objective.',
     'Return only the specialist JSON result matching the supplied schema. Candidate operations are advisory and will be checked again by the Master and host.',
+    delegation.specialist === 'quality-review'
+      ? 'review must be a non-null structured verdict. Do not silently rewrite the candidate; explain every mandatory correction in review.issues.'
+      : 'review must be null because this specialist does not own the quality gate.',
     'The transport schema encodes operation props, snapshots, delta, and params as JSON strings. Emit valid JSON strings for those nested values.',
   ].join('\n\n')
 }

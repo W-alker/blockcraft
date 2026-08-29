@@ -7,6 +7,7 @@ BlockCraft Editor Agent 的编辑器适配包，覆盖文档写作、模型读�
 
 - `DocumentAgentPlugin`：监听 BlockCraft 选区并生成模型上下文；
 - `captureBlockCraftAgentContext()`：生成紧凑的 v2 Agent Document IR；保留真实 `nodeType`，将容器 `childIds` 与 editable `text.{plain,delta}` 分离，并始终提供文档末尾插入锚点；
+- `BlockCraftEditorAgent.run()`：支持 Master 工具协议时，小文档发送完整 IR，大文档默认发送有界 outline 页；宿主侧始终保留完整基线用于指纹、写入校验和复杂候选的独立质量复核；
 - `DocumentAgentPanelComponent`：最小 Angular 请求面板；
 - `DocumentAgentTransport`：由宿主应用实现的后端调用接口；
 - `DocumentAgentTransport.streamMarkdown()`：可选的只读 Markdown 流；与结构化编辑结果完全分离；
@@ -19,6 +20,8 @@ BlockCraft Editor Agent 的编辑器适配包，覆盖文档写作、模型读�
 - `DocumentAgentOperationApplier`：校验版本、只读状态后通过 CRUD 应用操作，或写成可审阅的 Revision Diff。
 - `DOCUMENT_AGENT_TOOL_DEFINITIONS`：供支持 function calling 的模型声明工具；
 - `DocumentAgentToolExecutor`：提供读取、搜索、预览和确认后写入的受控工具执行器。
+- `createSnapshotViewerCandidatePreviewAdapter()`：可选的 Web 宿主候选预览适配器；
+  将隔离 Snapshot 的受影响区域栅格化为有界 PNG，供独立质量复核使用。
 
 Agent 操作目前支持文本替换、富文本 Delta、Schema 驱动创建/替换块、块删除、块移动和
 受控的 `update-block-props`。模型不再具有原始 Snapshot 插入协议；新块必须经过
@@ -30,6 +33,18 @@ Master 返回最终结果后，宿主会先按当前文档、Schema 和 Inline E
 有界循环内收到失败原因并重新生成，页面不会直接接收到第一次无效计划。冻结日期/时间
 使用已安装的 `blockcraft.inline-embed.date`；能力不可用时退化为普通文本，不会借用
 `mention` 或其他语义不相干的 Embed。
+
+语义预检通过后，默认 `qualityReview.mode: 'auto'` 会复核图片请求、多 operation、
+结构操作、富文本 Delta、大段文本和复杂对象属性等非平凡候选。`quality-review`
+返回结构化 `pass | revise`；`revise` 的 error issues 会作为强制修正反馈回到 Master，
+修正结果再经过语义预检和质量复核。默认最多修正一次，仍未通过则不向页面交付候选。
+简单的单点文本替换和基础属性修改不会增加模型调用。
+
+质量门可选接入候选视觉证据。Agent 会把已编译 operations 投影到当前文档的深拷贝
+Snapshot；这个过程不写 Yjs、不创建 Revision、不进入 Undo，也不接触 live editor DOM。
+宿主的 `DocumentAgentCandidatePreviewAdapter` 只负责渲染该 Snapshot。成功后，复核请求
+中的图片会按 `purpose` 区分：`candidate-preview` 是候选渲染图，`user-reference` 是用户
+上传的参考图，reviewer 可以直接比较两者，而不是仅审查 operation JSON。
 
 `BlockCraftEditorAgent.stageRevisionDiff()` 会立即执行完整的合法操作集：Revision v1
 支持的文本和块结构操作进入同一个文档内修订组，不改变 `doc.revisions.mode`，也不会
@@ -76,10 +91,62 @@ Transport 只实现 `run()` 仍可工作，并会直接返回最终结果。
 
 当前循环默认最多 6 个模型回合、每回合最多 8 个工具调用；回传给无状态模型的
 工具历史最多保留 24 条、约 32 KB，单个参数或结果超过约 12 KB 时只保留截断预览。
-每次用户请求最多执行 3 个 specialist 委派，避免图片分析或质量复核造成无界模型成本。
-这些边界可通过 `BlockCraftEditorAgentOptions.orchestration` 调低或在安全范围内调高。
+每次用户请求最多执行 3 个 Master 主动发起的 specialist 委派。宿主自动质量门独立计数，
+默认至多两次 review（初审 + 一次修正后的复审），避免把 Master 的分析预算挤占掉。
+这些边界可通过 `BlockCraftEditorAgentOptions.orchestration` 调低或在安全范围内调高：
+
+```ts
+new BlockCraftEditorAgent(doc, runner, {
+  orchestration: {
+    qualityReview: {
+      mode: 'auto',
+      maxRepairs: 1,
+      candidatePreview: {
+        adapter: createSnapshotViewerCandidatePreviewAdapter({
+          viewerOptions: {
+            resourcePolicy: 'eager',
+            blockRenderers: hostSnapshotRenderers,
+            inlineEmbeds: hostInlineEmbedRenderers,
+          },
+        }),
+        failureMode: 'throw',
+      },
+    },
+  },
+})
+```
+
+`auto` 只有在 Transport 同时实现 `runTurn()` 与 `runSubAgent()` 时启用；旧 Transport
+保持原行为。`always` 要求这两个协议存在，并复核每个含 operation 的结果；`off`
+显式关闭自动质量门。
+
+`candidatePreview` 未配置时仍是原有语义复核。配置后，每个进入质量门的候选都会先
+生成隔离 Snapshot 并调用 adapter。`failureMode: 'fallback'`（默认）在捕获失败时把
+`candidatePreview.status: 'unavailable'` 交给 reviewer；`'throw'` 会抛出
+`DocumentAgentCandidatePreviewError` 并阻止候选交付，适合强调图片复原准确度的宿主。
+内置 Web adapter 复用 Snapshot Viewer、只裁剪受影响块、限制 DOM/像素预算，并将
+不安全的跨域媒体替换为占位区域和 warning。它是浏览器 fallback；Tauri/WebView 或
+要求像素级一致性的宿主应实现同一接口，使用原生页面截图能力。自定义 Block/Embed
+必须把对应 `blockRenderers` / `inlineEmbeds` 一并传给 adapter，不能假设内置 renderer
+理解宿主业务块。
+
+支持 `runTurn()` 的结构化编辑请求中，文档 scope 的完整 IR 序列化超过约 24 KB
+时，模型首轮上下文默认切换为渐进式
+outline：保留稳定 blockId、flavour、父级、顺序、文本预览、文本长度、属性键和子块数，
+但不重复上传完整 props、Delta 和 `selectedText`。`context.coverage` 明确总块数、当前
+offset 和 `nextOffset`，因此“无选区 = 整篇文档”仍是任务语义，不会把未内联的块误当成
+不存在。Master 可用带 `offset/maxBlocks` 的 `blockcraft.get_document_context` 继续翻页，
+用 `search_document` 搜索完整实时模型，并在精确修改前用 `get_block` 获取权威 Delta。
+
+渐进式投影只影响发给模型的 payload。`BlockCraftEditorAgent` 在同一次请求中另存完整
+基线，最终结果仍对完整内容指纹、结构版本、Schema、只读和 mutation policy 做校验。
+`baseRevision.contentFingerprint` 是固定长度的宿主校验摘要，不再内嵌整篇序列化内容。
+可通过 `BlockCraftEditorAgentOptions.modelContext` 调整首屏字符/块/预览预算；只有已经
+自行提供等价上下文管理的 Provider 才应设置 `strategy: 'full'`。旧式仅实现 `run()`
+的 Transport 与当前 Markdown 流没有读取工具循环，因此继续接收完整上下文。
 
 Master 循环只以 `allowWrite: false` 执行工具。读取工具会立即返回当前模型状态；
+`search_document` 不依赖首轮 outline 范围，分页 document context 也从实时模型重建；
 `blockcraft.apply_changes`、宿主 `document-write` 和 `external-write` 只返回
 `requiresConfirmation`。Playground 不再通过“应用修改”按钮二次确认文档修改，
 而是在 Master 返回结果后调用 `stageRevisionDiff()`，让用户在可见 Diff 上决定
@@ -97,10 +164,12 @@ Master 可以通过 `blockcraft.delegate` 启动一个独立、只读的 special
 - `structure-planning`：Block 树、Schema 参数和候选 operations；
 - `visual-reconstruction`：读取上传图片，映射文本层级、几何和样式到文本框、形状、艺术字、表格等可用 Block；
 - `host-workflow`：结合任务、会议等宿主上下文和自定义 Capability；
-- `quality-review`：在最终返回前复核内容、结构、安全与视觉还原度。
+- `quality-review`：在最终返回前复核内容、结构、安全与视觉还原度，并返回结构化
+  `review.verdict` 与定位到候选 operation 的 issues。
 
 Specialist 不能调用工具或执行写入，只返回 findings、recommendations、draft 和
-候选 operations；Master 负责合并，最终结果仍走宿主校验与 Revision Diff 审阅。Transport
+候选 operations；只有 `quality-review` 额外返回非空 `review`，其他 specialist 的
+传输字段为 `null` 并在客户端规范化为省略。Master 负责合并，最终结果仍走宿主校验与 Revision Diff 审阅。Transport
 未实现 `runSubAgent()` 时会明确失败，不会假装完成委派。
 
 Editor Agent 的读取工具包括编辑器状态和单块模型查询；写入工具还支持富文本

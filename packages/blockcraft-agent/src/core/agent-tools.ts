@@ -163,8 +163,15 @@ export const DOCUMENT_AGENT_TOOL_DEFINITIONS: readonly DocumentAgentToolDefiniti
   {
     type: 'function',
     name: 'blockcraft.get_document_context',
-    description: '读取当前 BlockCraft 文档的完整模型上下文和版本指纹。',
-    parameters: {type: 'object', properties: {}, additionalProperties: false},
+    description: '读取当前 BlockCraft 文档。传 offset/maxBlocks 时返回有界 outline 页；精确编辑前再用 get_block 读取完整 Delta/Snapshot。省略分页参数保留完整上下文兼容行为。',
+    parameters: {
+      type: 'object',
+      properties: {
+        offset: {type: 'integer', minimum: 0},
+        maxBlocks: {type: 'integer', minimum: 1, maximum: 50},
+      },
+      additionalProperties: false,
+    },
   },
   {
     type: 'function',
@@ -211,7 +218,7 @@ export const DOCUMENT_AGENT_TOOL_DEFINITIONS: readonly DocumentAgentToolDefiniti
   {
     type: 'function',
     name: 'blockcraft.search_document',
-    description: '在当前 BlockCraft 文档的模型文本中搜索关键词，返回稳定 blockId。',
+    description: '直接在当前完整 BlockCraft 模型文本中搜索关键词，返回实时稳定 blockId；不受初始 outline 页范围限制。',
     parameters: {
       type: 'object',
       properties: {

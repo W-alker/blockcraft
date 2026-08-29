@@ -1,4 +1,5 @@
 import type {
+  DocumentAgentRequest,
   DocumentAgentMarkdownRequest,
   DocumentAgentMarkdownStreamEvent,
   DocumentAgentTransport,
@@ -16,6 +17,12 @@ const request: DocumentAgentMarkdownRequest = {
     blocks: [],
     baseRevision: {structureRevision: 0, contentFingerprint: ''},
   },
+}
+
+const editRequest: DocumentAgentRequest = {
+  task: 'rewrite',
+  instruction: '改写文档',
+  context: request.context,
 }
 
 describe('DocumentAgentRunner Markdown stream', () => {
@@ -54,6 +61,102 @@ describe('DocumentAgentRunner Markdown stream', () => {
     })
     await expectAsync(collect(new DocumentAgentRunner(transport).streamMarkdown(request)))
       .toBeRejectedWithError(DocumentAgentResultError, /does not match streamed deltas/)
+  })
+})
+
+describe('DocumentAgentRunner specialist validation', () => {
+  it('normalizes strict-schema null fields for a non-review specialist', async () => {
+    const transport: DocumentAgentTransport = {
+      run: async () => ({summary: '', operations: []}),
+      runSubAgent: async () => ({
+        specialist: 'document-analysis',
+        summary: 'analysis complete',
+        findings: ['fact'],
+        recommendations: [],
+        draft: null,
+        operations: [],
+        review: null,
+      } as never),
+    }
+
+    const result = await new DocumentAgentRunner(transport).runSubAgent({
+      delegationVersion: 1,
+      specialist: 'document-analysis',
+      objective: 'analyze document',
+      request: editRequest,
+    })
+
+    expect(result.draft).toBeUndefined()
+    expect(result.review).toBeUndefined()
+  })
+
+  it('accepts and normalizes a structured quality-review verdict', async () => {
+    const transport: DocumentAgentTransport = {
+      run: async () => ({summary: '', operations: []}),
+      runSubAgent: async () => ({
+        specialist: 'quality-review',
+        summary: 'passed with a minor warning',
+        findings: [],
+        recommendations: [],
+        draft: null,
+        operations: [],
+        review: {
+          verdict: 'pass',
+          issues: [{
+            severity: 'warning',
+            code: 'minor-style',
+            message: 'A non-blocking style difference remains.',
+            operationIndexes: [],
+            recommendation: null,
+          }],
+        },
+      } as never),
+    }
+    const runner = new DocumentAgentRunner(transport)
+
+    const result = await runner.runSubAgent({
+      delegationVersion: 1,
+      specialist: 'quality-review',
+      objective: 'review candidate',
+      request: editRequest,
+    })
+
+    expect(runner.supportsSubAgents).toBeTrue()
+    expect(result.draft).toBeUndefined()
+    expect(result.review?.verdict).toBe('pass')
+    expect(result.review?.issues[0].recommendation).toBeUndefined()
+  })
+
+  it('rejects a revise verdict without a mandatory error issue', async () => {
+    const transport: DocumentAgentTransport = {
+      run: async () => ({summary: '', operations: []}),
+      runSubAgent: async () => ({
+        specialist: 'quality-review',
+        summary: 'inconsistent verdict',
+        findings: [],
+        recommendations: [],
+        operations: [],
+        review: {
+          verdict: 'revise',
+          issues: [{
+            severity: 'warning',
+            code: 'minor-style',
+            message: 'Only a warning.',
+            operationIndexes: [],
+          }],
+        },
+      }),
+    }
+
+    await expectAsync(new DocumentAgentRunner(transport).runSubAgent({
+      delegationVersion: 1,
+      specialist: 'quality-review',
+      objective: 'review candidate',
+      request: editRequest,
+    })).toBeRejectedWithError(
+      DocumentAgentResultError,
+      /must contain at least one error issue/,
+    )
   })
 })
 

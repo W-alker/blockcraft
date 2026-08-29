@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-08-28 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-08-30 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -971,6 +971,24 @@ may declare bounded `markdownSyntax` metadata, and
 grammar for `blockcraft-agent`. Chat output is rendered with the standalone
 Markdown Stream Viewer; it reaches the editable document only after an explicit
 host action reparses the original Markdown and uses Clipboard paste.
+
+For structured Editor Agent turns, large document scope uses progressive
+context disclosure: the initial request contains a bounded ordered outline and
+`context.coverage`, document-wide search reads the live model, and exact edits
+must retrieve the target block. The host still validates against a separate
+complete context baseline. See `blockcraft-app.md` for the Agent adapter and
+`BlockCraftEditorAgentOptions.modelContext` contract.
+
+After semantic preflight, `blockcraft-agent` can also run an independent,
+read-only quality gate for non-trivial edit candidates. A structured `revise`
+verdict is returned to the Master for one bounded correction by default, and
+the repaired candidate is validated and reviewed again before delivery. Simple
+single text edits stay on the direct path. Hosts may additionally supply a
+candidate Preview Adapter: operations are projected onto an isolated Snapshot,
+rendered outside the live Yjs/Revision/Undo path, and attached to the reviewer
+as `candidate-preview` beside `user-reference` images. See
+`blockcraft-app.md` for `orchestration.qualityReview`, renderer extension and
+Transport requirements.
 
 Markdown is an interoperable reading/exchange format, not the exact BlockCraft
 document persistence format. Both one-shot and streaming paths prefer native

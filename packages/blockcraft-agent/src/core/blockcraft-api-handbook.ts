@@ -17,6 +17,11 @@ READ APIs (conceptual host APIs):
 - blockcraft.get_block({blockId}) returns one model block's parent/index,
   child IDs, props, text {plain, delta} and an on-demand snapshot without
   requiring a mounted view. Normal document context omits recursive snapshots.
+- blockcraft.get_document_context({offset,maxBlocks}) returns a bounded live
+  outline page with coverage.nextOffset. Omit both arguments only when the
+  complete compatibility payload is explicitly required.
+- blockcraft.search_document({query,maxResults?}) searches the complete live
+  model text even when the request context is paged.
 - doc.model.getPath(blockId)
 - doc.model.getParentId(blockId)
 - doc.model.getChildrenIds(blockId)
@@ -49,6 +54,9 @@ MASTER TOOL LOOP:
 - Tool exchanges are bounded and returned on the next stateless model turn.
 - Specialist results are evidence and candidate operations; only the Master
   may reconcile them into the final DocumentAgentResult.
+- After host semantic validation, complex edits may enter an independent
+  quality-review gate. A revise verdict is mandatory correction feedback; the
+  repaired result is validated and reviewed again before delivery.
 - blockcraft.apply_changes, document-write and external-write never execute in
   the Master loop; they return requiresConfirmation for the host UI to handle.
 - Unknown tools and undeclared host capabilities fail closed.

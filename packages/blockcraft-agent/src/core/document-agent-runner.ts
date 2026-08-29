@@ -2,6 +2,7 @@ import type {
   DocumentAgentRequest,
   DocumentAgentMarkdownRequest,
   DocumentAgentMarkdownStreamEvent,
+  DocumentAgentQualityReview,
   DocumentAgentResult,
   DocumentAgentSubAgentRequest,
   DocumentAgentSubAgentResult,
@@ -27,6 +28,11 @@ export class DocumentAgentRunner {
   /** Whether the transport can receive bounded tool/validation feedback. */
   get supportsTurnProtocol(): boolean {
     return typeof this.transport.runTurn === 'function'
+  }
+
+  /** Whether the transport can run an independent read-only specialist turn. */
+  get supportsSubAgents(): boolean {
+    return typeof this.transport.runSubAgent === 'function'
   }
 
   async run(
@@ -78,10 +84,35 @@ export class DocumentAgentRunner {
     if (!this.transport.runSubAgent) {
       throw new DocumentAgentResultError(['Transport does not support specialist delegation.'])
     }
-    const result = normalizeDocumentAgentResult(
+    const result = normalizeSubAgentResult(
       await this.transport.runSubAgent(delegation, options),
     )
-    const issues = validateDocumentAgentResult(result)
+    const issues = validateDocumentAgentResult({
+      summary: result?.summary,
+      ...(result?.draft === undefined ? {} : {draft: result.draft}),
+      operations: result?.operations,
+    } as DocumentAgentResult)
+    if (!result || typeof result !== 'object') {
+      throw new DocumentAgentResultError([
+        ...issues,
+        'Specialist result must be an object.',
+      ])
+    }
+    if (result && typeof result === 'object') {
+      const allowed = new Set([
+        'specialist',
+        'summary',
+        'findings',
+        'recommendations',
+        'draft',
+        'operations',
+        'review',
+      ])
+      const unexpected = Object.keys(result).filter(key => !allowed.has(key))
+      if (unexpected.length) {
+        issues.push(`Specialist result contains unsupported fields: ${unexpected.join(', ')}.`)
+      }
+    }
     if (result.specialist !== delegation.specialist) {
       issues.push('Specialist result does not match the delegation request.')
     }
@@ -92,6 +123,7 @@ export class DocumentAgentRunner {
         result.recommendations.some(value => typeof value !== 'string')) {
       issues.push('Specialist result must contain string recommendations.')
     }
+    validateQualityReview(result.review, delegation.specialist, issues)
     if (issues.length) throw new DocumentAgentResultError(issues)
     return result
   }
@@ -144,4 +176,114 @@ export class DocumentAgentRunner {
       ])
     }
   }
+}
+
+function normalizeSubAgentResult(
+  result: DocumentAgentSubAgentResult,
+): DocumentAgentSubAgentResult {
+  if (!result || typeof result !== 'object') return result
+  const raw = result as DocumentAgentSubAgentResult & {
+    draft?: unknown
+    review?: unknown
+  }
+  let changed = false
+  const normalized = {...raw} as DocumentAgentSubAgentResult & {
+    draft?: unknown
+    review?: unknown
+  }
+  if (raw.draft === null) {
+    delete normalized.draft
+    changed = true
+  }
+  if (raw.review === null) {
+    delete normalized.review
+    changed = true
+  } else if (isPlainRecord(raw.review) && Array.isArray(raw.review['issues'])) {
+    const normalizedIssues = raw.review['issues'].map(issue => {
+      if (!isPlainRecord(issue) || issue['recommendation'] !== null) return issue
+      const normalizedIssue = {...issue}
+      delete normalizedIssue['recommendation']
+      changed = true
+      return normalizedIssue
+    })
+    if (changed) {
+      normalized.review = {...raw.review, issues: normalizedIssues}
+    }
+  }
+  return changed ? normalized as DocumentAgentSubAgentResult : result
+}
+
+function validateQualityReview(
+  review: DocumentAgentQualityReview | undefined,
+  specialist: DocumentAgentSubAgentRequest['specialist'],
+  issues: string[],
+): void {
+  if (specialist !== 'quality-review') {
+    if (review !== undefined) {
+      issues.push('Only the quality-review specialist may return a review verdict.')
+    }
+    return
+  }
+  if (!isPlainRecord(review)) {
+    issues.push('Quality-review specialist must return a structured review verdict.')
+    return
+  }
+  const unexpected = Object.keys(review).filter(key => !['verdict', 'issues'].includes(key))
+  if (unexpected.length) {
+    issues.push(`Quality review contains unsupported fields: ${unexpected.join(', ')}.`)
+  }
+  if (review.verdict !== 'pass' && review.verdict !== 'revise') {
+    issues.push('Quality review verdict must be pass or revise.')
+  }
+  if (!Array.isArray(review.issues)) {
+    issues.push('Quality review must contain an issues array.')
+    return
+  }
+  if (review.issues.length > 20) {
+    issues.push('Quality review contains more than 20 issues.')
+  }
+  let errorCount = 0
+  review.issues.forEach((issue, index) => {
+    if (!isPlainRecord(issue)) {
+      issues.push(`Quality review issue ${index} must be an object.`)
+      return
+    }
+    const issueUnexpected = Object.keys(issue).filter(key =>
+      !['severity', 'code', 'message', 'operationIndexes', 'recommendation'].includes(key))
+    if (issueUnexpected.length) {
+      issues.push(`Quality review issue ${index} contains unsupported fields: ${issueUnexpected.join(', ')}.`)
+    }
+    if (issue['severity'] !== 'error' && issue['severity'] !== 'warning') {
+      issues.push(`Quality review issue ${index} has an invalid severity.`)
+    } else if (issue['severity'] === 'error') {
+      errorCount++
+    }
+    if (typeof issue['code'] !== 'string' ||
+        !/^[a-z][a-z0-9-]{0,63}$/.test(issue['code'])) {
+      issues.push(`Quality review issue ${index} has an invalid code.`)
+    }
+    if (typeof issue['message'] !== 'string' || !issue['message'].trim()) {
+      issues.push(`Quality review issue ${index} must contain a message.`)
+    }
+    if (!Array.isArray(issue['operationIndexes']) ||
+        issue['operationIndexes'].some(value => !Number.isInteger(value) || value < 0)) {
+      issues.push(`Quality review issue ${index} has invalid operation indexes.`)
+    }
+    if (issue['recommendation'] !== undefined &&
+        typeof issue['recommendation'] !== 'string') {
+      issues.push(`Quality review issue ${index} has an invalid recommendation.`)
+    }
+  })
+  if (review.verdict === 'pass' && errorCount) {
+    issues.push('A passing quality review cannot contain error issues.')
+  }
+  if (review.verdict === 'revise' && !errorCount) {
+    issues.push('A revise quality review must contain at least one error issue.')
+  }
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const prototype = Object.getPrototypeOf(value)
+  return prototype === Object.prototype || prototype === null
 }

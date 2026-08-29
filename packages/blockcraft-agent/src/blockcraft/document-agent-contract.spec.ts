@@ -14,15 +14,21 @@ import {
 import type {
   DocumentAgentContext,
   DocumentAgentResult,
+  DocumentAgentSubAgentRequest,
   DocumentAgentTurnRequest,
 } from '../core/agent.types'
-import {BlockCraftEditorAgent} from './blockcraft-editor-agent'
+import {
+  BlockCraftEditorAgent,
+  DocumentAgentCandidatePreviewError,
+  DocumentAgentQualityReviewError,
+} from './blockcraft-editor-agent'
 import {captureBlockCraftAgentContext} from './blockcraft-context-adapter'
 import {
   DocumentAgentOperationCompileError,
   DocumentAgentOperationCompiler,
 } from './document-agent-operation-compiler'
 import {DocumentAgentOperationApplier} from './document-agent-operation-applier'
+import {projectDocumentAgentCandidate} from './document-agent-candidate-projector'
 
 describe('BlockCraft Agent v2 contract', () => {
   it('normalizes a structured-output null draft before validation', () => {
@@ -46,6 +52,7 @@ describe('BlockCraft Agent v2 contract', () => {
       plain: 'Hello',
       delta: [{insert: 'Hello'}],
     })
+    expect(context?.baseRevision.contentFingerprint.length).toBeLessThan(80)
     expect('snapshot' in (context?.blocks[0] ?? {})).toBeFalse()
     expect(context?.capabilities?.find(capability => capability.flavour === 'paragraph')).toEqual(
       jasmine.objectContaining({
@@ -148,6 +155,108 @@ describe('BlockCraft Agent v2 contract', () => {
     expect(first.snapshot.children).toEqual([
       jasmine.objectContaining({flavour: 'paragraph'}),
     ])
+  })
+
+  it('projects sequential operations into an isolated renderable Snapshot', () => {
+    const doc = createFakeDoc()
+    const prepared = new DocumentAgentOperationCompiler(
+      doc as never,
+      createDocumentContext(),
+      createExtensions(),
+    ).compile([
+      {
+        kind: 'apply-text-delta',
+        blockId: 'p1',
+        delta: [
+          {retain: 1, attributes: {'a:bold': true}},
+          {delete: 2},
+          {insert: 'i'},
+        ],
+      },
+      {kind: 'update-block-props', blockId: 'p1', props: {heading: 2}},
+      {
+        kind: 'create-blocks',
+        parentId: 'root',
+        index: 1,
+        flavour: 'callout',
+        params: [],
+        clientRef: 'summary',
+      },
+      {
+        kind: 'create-blocks',
+        parentId: '$ref:summary',
+        index: 0,
+        flavour: 'paragraph',
+        params: ['Summary'],
+      },
+    ])
+
+    const projection = projectDocumentAgentCandidate(doc as never, prepared)
+    const paragraph = projection.snapshot.children[0] as IBlockSnapshot
+    const callout = projection.snapshot.children[1] as IBlockSnapshot
+
+    expect(paragraph.children).toEqual([
+      {insert: 'H', attributes: {'a:bold': true}},
+      {insert: 'ilo'},
+    ])
+    expect(paragraph.props['heading']).toBe(2)
+    expect(callout.flavour).toBe('callout')
+    expect(callout.children).toEqual([
+      jasmine.objectContaining({flavour: 'paragraph', children: [{insert: 'Summary'}]}),
+    ])
+    expect(projection.affectedBlockIds).toContain('p1')
+    expect(projection.affectedBlockIds).toContain(callout.id)
+    expect(doc['model'].getTextDeltas('p1')).toEqual([{insert: 'Hello'}])
+  })
+
+  it('projects replace, move, and delete with post-operation structural indexes', () => {
+    const doc = createFakeDoc(['First', 'Second', 'Third'])
+    const context = captureBlockCraftAgentContext(doc as never)
+    if (!context) throw new Error('Expected document context')
+    const prepared = new DocumentAgentOperationCompiler(
+      doc as never,
+      context,
+      createExtensions(),
+    ).compile([
+      {
+        kind: 'replace-block',
+        blockId: 'p2',
+        flavour: 'paragraph',
+        params: ['Replacement'],
+      },
+      {
+        kind: 'move-blocks',
+        parentId: 'root',
+        index: 2,
+        count: 1,
+        targetId: 'root',
+        targetIndex: 0,
+      },
+      {
+        kind: 'delete-blocks',
+        parentId: 'root',
+        index: 1,
+        count: 1,
+      },
+    ])
+
+    const projection = projectDocumentAgentCandidate(doc as never, prepared)
+    const projectedChildren = projection.snapshot.children as IBlockSnapshot[]
+
+    expect(projectedChildren.map(child => child.id)).toEqual([
+      'p3',
+      'generated-paragraph-1',
+    ])
+    expect(projectedChildren.map(child => child.children)).toEqual([
+      [{insert: 'Third'}],
+      [{insert: 'Replacement'}],
+    ])
+    expect(projection.operationTargets).toEqual([
+      {operationIndex: 0, blockIds: ['generated-paragraph-1']},
+      {operationIndex: 1, blockIds: ['p3', 'p1', 'generated-paragraph-1']},
+      {operationIndex: 2, blockIds: ['p3', 'generated-paragraph-1']},
+    ])
+    expect(doc['model'].getChildrenIds('root')).toEqual(['p1', 'p2', 'p3'])
   })
 
   it('validates prop types from the selected Block capability', () => {
@@ -527,6 +636,398 @@ describe('BlockCraft Agent v2 contract', () => {
       .toContain('Inline Embed mention does not declare Agent insertion')
   })
 
+  it('keeps a simple single-text edit off the automatic quality-review path', async () => {
+    let qualityReviews = 0
+    const runner = {
+      supportsTurnProtocol: true,
+      supportsSubAgents: true,
+      runTurn: async () => ({
+        kind: 'result' as const,
+        result: {
+          summary: 'fix one character',
+          operations: [{
+            kind: 'replace-text' as const,
+            blockId: 'p1',
+            from: 0,
+            to: 1,
+            replacement: 'H',
+          }],
+        },
+      }),
+      runSubAgent: async () => {
+        qualityReviews++
+        throw new Error('should not review a trivial edit')
+      },
+    }
+    const agent = new BlockCraftEditorAgent(createFakeDoc() as never, runner as never)
+
+    const result = await agent.run({
+      task: 'proofread',
+      instruction: '修正第一个字符',
+      context: createDocumentContext(),
+    })
+
+    expect(result.operations.length).toBe(1)
+    expect(qualityReviews).toBe(0)
+  })
+
+  it('automatically reviews a non-trivial candidate before returning it', async () => {
+    let qualityReviews = 0
+    const runner = {
+      supportsTurnProtocol: true,
+      supportsSubAgents: true,
+      runTurn: async () => ({
+        kind: 'result' as const,
+        result: {
+          summary: 'append formatted content',
+          operations: [{
+            kind: 'apply-text-delta' as const,
+            blockId: 'p1',
+            delta: [{retain: 5}, {insert: '!'}],
+          }],
+        },
+      }),
+      runSubAgent: async () => {
+        qualityReviews++
+        return createQualityReviewResult('pass')
+      },
+    }
+    const agent = new BlockCraftEditorAgent(createFakeDoc() as never, runner as never)
+
+    const result = await agent.run({
+      task: 'continue',
+      instruction: '在第一段末尾补充强调内容',
+      context: createDocumentContext(),
+    })
+
+    expect(result.summary).toBe('append formatted content')
+    expect(qualityReviews).toBe(1)
+  })
+
+  it('renders an isolated candidate and labels it for the quality-review specialist', async () => {
+    let reviewRequest: DocumentAgentSubAgentRequest | null = null
+    let renderedText = ''
+    const runner = {
+      supportsTurnProtocol: true,
+      supportsSubAgents: true,
+      runTurn: async () => ({
+        kind: 'result' as const,
+        result: {
+          summary: 'append formatted content',
+          operations: [{
+            kind: 'apply-text-delta' as const,
+            blockId: 'p1',
+            delta: [{retain: 5}, {insert: '!'}],
+          }],
+        },
+      }),
+      runSubAgent: async (request: DocumentAgentSubAgentRequest) => {
+        reviewRequest = request
+        return createQualityReviewResult('pass')
+      },
+    }
+    const agent = new BlockCraftEditorAgent(createFakeDoc() as never, runner as never, {
+      orchestration: {
+        qualityReview: {
+          candidatePreview: {
+            failureMode: 'throw',
+            adapter: {
+              render: async request => {
+                const paragraph = request.snapshot.children[0] as IBlockSnapshot
+                renderedText = (paragraph.children as Array<{insert: string}>)
+                  .map(item => item.insert)
+                  .join('')
+                return {
+                  candidatePreviewVersion: 1 as const,
+                  image: {
+                    type: 'image' as const,
+                    mimeType: 'image/png' as const,
+                    name: 'candidate.png',
+                    dataUrl: 'data:image/png;base64,AA==',
+                    width: 1,
+                    height: 1,
+                  },
+                  rendererId: 'test-renderer',
+                  capturedBlockIds: request.affectedBlockIds,
+                }
+              },
+            },
+          },
+        },
+      },
+    })
+
+    await agent.run({
+      task: 'continue',
+      instruction: '参考图片补充结尾',
+      context: createDocumentContext(),
+      attachments: [{
+        type: 'image',
+        mimeType: 'image/png',
+        name: 'reference.png',
+        dataUrl: 'data:image/png;base64,AA==',
+        width: 1,
+        height: 1,
+      }],
+    })
+
+    const delegated = reviewRequest as unknown as DocumentAgentSubAgentRequest
+    expect(renderedText).toBe('Hello!')
+    expect(delegated.request.attachments?.map(item => item.purpose)).toEqual([
+      'candidate-preview',
+      'user-reference',
+    ])
+    expect(delegated.input).toEqual(jasmine.objectContaining({
+      automaticQualityReviewVersion: 2,
+      candidatePreview: jasmine.objectContaining({
+        status: 'available',
+        rendererId: 'test-renderer',
+        capturedBlockIds: ['p1'],
+        operationTargets: [{operationIndex: 0, blockIds: ['p1']}],
+      }),
+    }))
+  })
+
+  it('fails closed when a required candidate renderer cannot capture the preview', async () => {
+    const runner = {
+      supportsTurnProtocol: true,
+      supportsSubAgents: true,
+      runTurn: async () => ({
+        kind: 'result' as const,
+        result: {
+          summary: 'append content',
+          operations: [{
+            kind: 'apply-text-delta' as const,
+            blockId: 'p1',
+            delta: [{retain: 5}, {insert: '!'}],
+          }],
+        },
+      }),
+      runSubAgent: async () => createQualityReviewResult('pass'),
+    }
+    const agent = new BlockCraftEditorAgent(createFakeDoc() as never, runner as never, {
+      orchestration: {
+        qualityReview: {
+          candidatePreview: {
+            failureMode: 'throw',
+            adapter: {render: async () => { throw new Error('capture unavailable') }},
+          },
+        },
+      },
+    })
+
+    await expectAsync(agent.run({
+      task: 'continue',
+      instruction: '补充结尾',
+      context: createDocumentContext(),
+    })).toBeRejectedWithError(DocumentAgentCandidatePreviewError, /capture unavailable/)
+  })
+
+  it('returns a revise verdict to the Master once and reviews the repaired candidate again', async () => {
+    const turns: DocumentAgentTurnRequest[] = []
+    let qualityReviews = 0
+    const runner = {
+      supportsTurnProtocol: true,
+      supportsSubAgents: true,
+      runTurn: async (turn: DocumentAgentTurnRequest) => {
+        turns.push(turn)
+        if (turns.length === 1) {
+          return {
+            kind: 'result' as const,
+            result: {
+              summary: 'append weak punctuation',
+              operations: [{
+                kind: 'apply-text-delta' as const,
+                blockId: 'p1',
+                delta: [{retain: 5}, {insert: '!'}],
+              }],
+            },
+          }
+        }
+        return {
+          kind: 'result' as const,
+          result: {
+            summary: 'use document tone',
+            operations: [{
+              kind: 'replace-text' as const,
+              blockId: 'p1',
+              from: 4,
+              to: 5,
+              replacement: '。',
+            }],
+          },
+        }
+      },
+      runSubAgent: async () => {
+        qualityReviews++
+        return qualityReviews === 1
+          ? createQualityReviewResult('revise')
+          : createQualityReviewResult('pass')
+      },
+    }
+    const agent = new BlockCraftEditorAgent(createFakeDoc() as never, runner as never, {
+      orchestration: {maxTurns: 3},
+    })
+
+    const result = await agent.run({
+      task: 'continue',
+      instruction: '按当前文档语气补充结尾',
+      context: createDocumentContext(),
+    })
+
+    expect(result.summary).toBe('use document tone')
+    expect(turns.length).toBe(2)
+    expect(qualityReviews).toBe(2)
+    expect(turns[1].toolHistory[0].call.name).toBe('blockcraft.delegate')
+    expect((turns[1].toolHistory[0].result as {ok: true; data: {review: {verdict: string}}})
+      .data.review.verdict).toBe('revise')
+  })
+
+  it('fails closed when the quality gate still requests revision after its repair budget', async () => {
+    const runner = {
+      supportsTurnProtocol: true,
+      supportsSubAgents: true,
+      runTurn: async () => ({
+        kind: 'result' as const,
+        result: {
+          summary: 'append content',
+          operations: [{
+            kind: 'apply-text-delta' as const,
+            blockId: 'p1',
+            delta: [{retain: 5}, {insert: '!'}],
+          }],
+        },
+      }),
+      runSubAgent: async () => createQualityReviewResult('revise'),
+    }
+    const agent = new BlockCraftEditorAgent(createFakeDoc() as never, runner as never, {
+      orchestration: {qualityReview: {mode: 'always', maxRepairs: 0}},
+    })
+
+    await expectAsync(agent.run({
+      task: 'continue',
+      instruction: '补充结尾',
+      context: createDocumentContext(),
+    })).toBeRejectedWithError(DocumentAgentQualityReviewError, /仍未通过/)
+  })
+
+  it('requires both turn and specialist protocols when quality review is always on', async () => {
+    const runner = {
+      supportsTurnProtocol: true,
+      supportsSubAgents: false,
+      runTurn: async () => ({
+        kind: 'result' as const,
+        result: {
+          summary: 'append content',
+          operations: [{
+            kind: 'apply-text-delta' as const,
+            blockId: 'p1',
+            delta: [{retain: 5}, {insert: '!'}],
+          }],
+        },
+      }),
+    }
+    const agent = new BlockCraftEditorAgent(createFakeDoc() as never, runner as never, {
+      orchestration: {qualityReview: {mode: 'always'}},
+    })
+
+    await expectAsync(agent.run({
+      task: 'continue',
+      instruction: '补充结尾',
+      context: createDocumentContext(),
+    })).toBeRejectedWithError(/需要同时实现 runTurn\(\) 与 runSubAgent\(\)/)
+  })
+
+  it('sends a paged outline to the model while validating omitted-block edits against the full baseline', async () => {
+    const paragraphTexts = Array.from(
+      {length: 120},
+      (_, index) => `Section ${index + 1} ${'x'.repeat(600)}`,
+    )
+    const doc = createFakeDoc(paragraphTexts)
+    let receivedTurn: DocumentAgentTurnRequest | null = null
+    const runner = {
+      supportsTurnProtocol: true,
+      runTurn: async (turn: DocumentAgentTurnRequest) => {
+        receivedTurn = turn
+        return {
+          kind: 'result' as const,
+          result: {
+            summary: 'edit an omitted block',
+            operations: [{
+              kind: 'replace-text' as const,
+              blockId: 'p90',
+              from: 0,
+              to: 7,
+              replacement: 'Chapter',
+            }],
+          },
+        }
+      },
+    }
+    const agent = new BlockCraftEditorAgent(doc as never, runner as never, {
+      modelContext: {
+        maxInitialChars: 8_000,
+        maxInitialBlocks: 10,
+        previewCharsPerBlock: 80,
+      },
+      orchestration: {maxTurns: 1},
+    })
+
+    const result = await agent.run({
+      task: 'rewrite',
+      instruction: '修改第 90 段开头',
+      context: createDocumentContext(),
+    })
+
+    const modelContext = (receivedTurn as unknown as DocumentAgentTurnRequest).request.context
+    expect(result.operations[0]).toEqual(jasmine.objectContaining({blockId: 'p90'}))
+    expect(modelContext.coverage).toEqual(jasmine.objectContaining({
+      mode: 'paged',
+      totalBlocks: 121,
+      offset: 0,
+    }))
+    expect(modelContext.blocks.length).toBeLessThanOrEqual(10)
+    expect(modelContext.blocks.every(block => block.detail === 'outline')).toBeTrue()
+    expect(modelContext.blocks.some(block => block.blockId === 'p90')).toBeFalse()
+    expect(modelContext.selectedText).toBe('')
+  })
+
+  it('pages document outlines and searches live text outside the active context', () => {
+    const paragraphTexts = Array.from(
+      {length: 100},
+      (_, index) => index === 94 ? 'Needle in the live document' : `Paragraph ${index + 1}`,
+    )
+    const doc = createFakeDoc(paragraphTexts)
+    const context = captureBlockCraftAgentContext(doc as never, {scope: 'document'})!
+    const agent = new BlockCraftEditorAgent(doc as never, {} as never)
+
+    const pageResult = agent.executeTool({
+      name: 'blockcraft.get_document_context',
+      arguments: {offset: 90, maxBlocks: 5},
+    }, {}, context)
+    expect(pageResult.ok).toBeTrue()
+    const page = (pageResult as {ok: true; data: DocumentAgentContext}).data
+    expect(page.coverage).toEqual(jasmine.objectContaining({
+      mode: 'paged',
+      offset: 90,
+      returnedBlocks: 5,
+      nextOffset: 95,
+    }))
+    expect(page.capabilities).toBeUndefined()
+    expect(page.blocks.every(block => block.detail === 'outline' && !block.text)).toBeTrue()
+
+    const searchResult = agent.executeTool({
+      name: 'blockcraft.search_document',
+      arguments: {query: 'needle'},
+    }, {}, {
+      ...context,
+      blocks: context.blocks.slice(0, 2),
+    })
+    expect(searchResult.ok).toBeTrue()
+    expect((searchResult as {ok: true; data: {matches: Array<{blockId: string}>}})
+      .data.matches.map(match => match.blockId)).toEqual(['p95'])
+  })
+
   it('injects the active Adapter manifest into read-only Markdown requests', async () => {
     const received: unknown[] = []
     const runner = {
@@ -570,6 +1071,26 @@ describe('BlockCraft Agent v2 contract', () => {
   })
 })
 
+function createQualityReviewResult(verdict: 'pass' | 'revise') {
+  return {
+    specialist: 'quality-review' as const,
+    summary: verdict === 'pass' ? 'candidate passed' : 'candidate needs revision',
+    findings: [],
+    recommendations: verdict === 'pass' ? [] : ['Use the document tone.'],
+    operations: [],
+    review: {
+      verdict,
+      issues: verdict === 'pass' ? [] : [{
+        severity: 'error' as const,
+        code: 'tone-mismatch',
+        message: 'The candidate does not match the document tone.',
+        operationIndexes: [0],
+        recommendation: 'Use the document tone.',
+      }],
+    },
+  }
+}
+
 function createExtensions(): DocumentAgentExtensionRegistry {
   return new DocumentAgentExtensionRegistry([BLOCKCRAFT_BUILTIN_AGENT_EXTENSION])
 }
@@ -589,8 +1110,9 @@ function createDocumentContext(): DocumentAgentContext {
   }
 }
 
-function createFakeDoc(): Record<string, any> {
+function createFakeDoc(paragraphTexts: readonly string[] = ['Hello']): Record<string, any> {
   let sequence = 0
+  const paragraphIds = paragraphTexts.map((_, index) => `p${index + 1}`)
   const blocks = new Map<string, {
     flavour: string
     nodeType: BlockNodeType
@@ -599,10 +1121,26 @@ function createFakeDoc(): Record<string, any> {
     props: Record<string, unknown>
     meta: Record<string, unknown>
     delta?: unknown[]
-  }>([
-    ['root', {flavour: 'root', nodeType: BlockNodeType.root, parentId: null, children: ['p1'], props: {}, meta: {}}],
-    ['p1', {flavour: 'paragraph', nodeType: BlockNodeType.editable, parentId: 'root', children: [], props: {depth: 0}, meta: {}, delta: [{insert: 'Hello'}]}],
-  ])
+  }>()
+  blocks.set('root', {
+    flavour: 'root',
+    nodeType: BlockNodeType.root,
+    parentId: null,
+    children: paragraphIds,
+    props: {},
+    meta: {},
+  })
+  for (let index = 0; index < paragraphTexts.length; index++) {
+    blocks.set(paragraphIds[index], {
+      flavour: 'paragraph',
+      nodeType: BlockNodeType.editable,
+      parentId: 'root',
+      children: [],
+      props: {depth: 0},
+      meta: {},
+      delta: [{insert: paragraphTexts[index]}],
+    })
+  }
   const schemas = new Map<string, Record<string, any>>([
     ['root', {flavour: 'root', nodeType: BlockNodeType.root, metadata: {version: 1, label: 'Root', includeChildren: ['paragraph', 'callout']}}],
     ['paragraph', {flavour: 'paragraph', nodeType: BlockNodeType.editable, metadata: {version: 1, label: '段落'}}],
@@ -683,6 +1221,22 @@ function createFakeDoc(): Record<string, any> {
         (length, delta: any) => length + String(delta.insert ?? '').length,
         0,
       ),
+      toSnapshot: function toSnapshot(id: string): IBlockSnapshot | null {
+        const block = blocks.get(id)
+        if (!block) return null
+        return {
+          id,
+          flavour: block.flavour,
+          nodeType: block.nodeType,
+          props: JSON.parse(JSON.stringify(block.props)),
+          meta: JSON.parse(JSON.stringify(block.meta)),
+          children: block.nodeType === BlockNodeType.editable
+            ? JSON.parse(JSON.stringify(block.delta ?? []))
+            : block.children
+              .map(childId => toSnapshot(childId))
+              .filter((child): child is IBlockSnapshot => child !== null),
+        } as IBlockSnapshot
+      },
       getYBlock: (id: string) => ({get: (key: string) => key === 'meta' ? {toJSON: () => blocks.get(id)?.meta ?? {}} : undefined}),
     },
   }

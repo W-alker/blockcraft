@@ -23,6 +23,17 @@ export interface DocumentAgentContextBlock {
     delta: readonly unknown[]
   }
   readonly?: boolean
+  /** Omitted means the block carries its normal full model detail. */
+  detail?: 'full' | 'outline'
+  /** Bounded model-facing preview used by progressive document context pages. */
+  outline?: {
+    textPreview?: string
+    textLength?: number
+    textTruncated?: boolean
+    propKeys?: readonly string[]
+    propKeysTruncated?: boolean
+    childCount?: number
+  }
 }
 
 export interface DocumentAgentEditorState {
@@ -53,6 +64,34 @@ export interface DocumentAgentSchemaCapability {
 
 export type DocumentAgentContextScope = 'selection' | 'document'
 
+export interface DocumentAgentContextCoverage {
+  /** A page is a document-wide outline slice, not the complete model baseline. */
+  mode: 'paged'
+  detail: 'outline'
+  totalBlocks: number
+  offset: number
+  returnedBlocks: number
+  nextOffset: number | null
+  totalTextChars: number
+  includedTextChars: number
+  detailTools: readonly [
+    'blockcraft.get_document_context',
+    'blockcraft.get_block',
+    'blockcraft.search_document',
+  ]
+}
+
+export interface DocumentAgentModelContextOptions {
+  /** Progressive by default. Use full only for a provider with its own context management. */
+  strategy?: 'progressive' | 'full'
+  /** Target serialized size before document scope switches to a paged outline. Default 24000. */
+  maxInitialChars?: number
+  /** Maximum outline blocks in the initial page. Default 80. */
+  maxInitialBlocks?: number
+  /** Maximum plain-text preview per outline block. Default 480. */
+  previewCharsPerBlock?: number
+}
+
 export interface DocumentAgentDocumentAnchor {
   rootId: string
   append: {
@@ -75,6 +114,8 @@ export interface DocumentAgentContext {
   selection: ISelectionJSON | null
   selectedText: string
   blocks: readonly DocumentAgentContextBlock[]
+  /** Present only when blocks is a bounded page rather than the complete baseline. */
+  coverage?: DocumentAgentContextCoverage
   /** Stable model-first insertion positions that remain available in selection scope. */
   document?: DocumentAgentDocumentAnchor
   capabilities?: readonly DocumentAgentSchemaCapability[]
@@ -91,6 +132,8 @@ export interface DocumentAgentImageAttachment {
   dataUrl: string
   width: number
   height: number
+  /** Distinguishes user evidence from a host-rendered candidate during review. */
+  purpose?: 'user-reference' | 'candidate-preview'
 }
 
 export interface DocumentAgentRequest {
@@ -226,6 +269,24 @@ export interface DocumentAgentSubAgentRequest {
   input?: unknown
 }
 
+export type DocumentAgentQualityReviewVerdict = 'pass' | 'revise'
+
+export interface DocumentAgentQualityReviewIssue {
+  severity: 'error' | 'warning'
+  /** Stable, provider-defined machine-readable category such as missing-evidence. */
+  code: string
+  message: string
+  /** Candidate operation indexes affected by this issue; empty means result-wide. */
+  operationIndexes: readonly number[]
+  recommendation?: string
+}
+
+/** Structured decision returned only by the quality-review specialist. */
+export interface DocumentAgentQualityReview {
+  verdict: DocumentAgentQualityReviewVerdict
+  issues: readonly DocumentAgentQualityReviewIssue[]
+}
+
 export interface DocumentAgentSubAgentResult {
   specialist: DocumentAgentSpecialist
   summary: string
@@ -234,6 +295,8 @@ export interface DocumentAgentSubAgentResult {
   draft?: string
   /** Candidate operations only; the Master and host still validate them. */
   operations: readonly DocumentAgentOperation[]
+  /** Required when specialist is quality-review; omitted for other specialists. */
+  review?: DocumentAgentQualityReview
 }
 
 /**
