@@ -20,8 +20,6 @@ BlockCraft Editor Agent 的编辑器适配包，覆盖文档写作、模型读�
 - `DocumentAgentOperationApplier`：校验版本、只读状态后通过 CRUD 应用操作，或写成可审阅的 Revision Diff。
 - `DOCUMENT_AGENT_TOOL_DEFINITIONS`：供支持 function calling 的模型声明工具；
 - `DocumentAgentToolExecutor`：提供读取、搜索、预览和确认后写入的受控工具执行器。
-- `createSnapshotViewerCandidatePreviewAdapter()`：可选的 Web 宿主候选预览适配器；
-  将隔离 Snapshot 的受影响区域栅格化为有界 PNG，供独立质量复核使用。
 
 Agent 操作目前支持文本替换、富文本 Delta、Schema 驱动创建/替换块、块删除、块移动和
 受控的 `update-block-props`。模型不再具有原始 Snapshot 插入协议；新块必须经过
@@ -34,17 +32,16 @@ Master 返回最终结果后，宿主会先按当前文档、Schema 和 Inline E
 使用已安装的 `blockcraft.inline-embed.date`；能力不可用时退化为普通文本，不会借用
 `mention` 或其他语义不相干的 Embed。
 
-语义预检通过后，默认 `qualityReview.mode: 'auto'` 会复核图片请求、多 operation、
+语义预检通过后，默认 `qualityReview.mode: 'auto'` 会复核图片参与的编辑请求、多 operation、
 结构操作、富文本 Delta、大段文本和复杂对象属性等非平凡候选。`quality-review`
 返回结构化 `pass | revise`；`revise` 的 error issues 会作为强制修正反馈回到 Master，
 修正结果再经过语义预检和质量复核。默认最多修正一次，仍未通过则不向页面交付候选。
 简单的单点文本替换和基础属性修改不会增加模型调用。
 
-质量门可选接入候选视觉证据。Agent 会把已编译 operations 投影到当前文档的深拷贝
-Snapshot；这个过程不写 Yjs、不创建 Revision、不进入 Undo，也不接触 live editor DOM。
-宿主的 `DocumentAgentCandidatePreviewAdapter` 只负责渲染该 Snapshot。成功后，复核请求
-中的图片会按 `purpose` 区分：`candidate-preview` 是候选渲染图，`user-reference` 是用户
-上传的参考图，reviewer 可以直接比较两者，而不是仅审查 operation JSON。
+图片上传和粘贴仍可用于问答、文字/事实提取、总结，以及作为普通内容参考；也可以把
+提取或总结后的语义内容写入文档。Agent 不再提供“按图片复原文档视觉布局”的能力，
+不会根据图片几何推断文本框、形状、艺术字、表格或其他 Block 布局，也不会生成候选
+截图。用户对修改效果的审阅统一由文档内 Revision Diff 和批次接受/撤回完成。
 
 `BlockCraftEditorAgent.stageRevisionDiff()` 会立即执行完整的合法操作集：Revision v1
 支持的文本和块结构操作进入同一个文档内修订组，不改变 `doc.revisions.mode`，也不会
@@ -101,16 +98,6 @@ new BlockCraftEditorAgent(doc, runner, {
     qualityReview: {
       mode: 'auto',
       maxRepairs: 1,
-      candidatePreview: {
-        adapter: createSnapshotViewerCandidatePreviewAdapter({
-          viewerOptions: {
-            resourcePolicy: 'eager',
-            blockRenderers: hostSnapshotRenderers,
-            inlineEmbeds: hostInlineEmbedRenderers,
-          },
-        }),
-        failureMode: 'throw',
-      },
     },
   },
 })
@@ -119,16 +106,6 @@ new BlockCraftEditorAgent(doc, runner, {
 `auto` 只有在 Transport 同时实现 `runTurn()` 与 `runSubAgent()` 时启用；旧 Transport
 保持原行为。`always` 要求这两个协议存在，并复核每个含 operation 的结果；`off`
 显式关闭自动质量门。
-
-`candidatePreview` 未配置时仍是原有语义复核。配置后，每个进入质量门的候选都会先
-生成隔离 Snapshot 并调用 adapter。`failureMode: 'fallback'`（默认）在捕获失败时把
-`candidatePreview.status: 'unavailable'` 交给 reviewer；`'throw'` 会抛出
-`DocumentAgentCandidatePreviewError` 并阻止候选交付，适合强调图片复原准确度的宿主。
-内置 Web adapter 复用 Snapshot Viewer、只裁剪受影响块、限制 DOM/像素预算，并将
-不安全的跨域媒体替换为占位区域和 warning。它是浏览器 fallback；Tauri/WebView 或
-要求像素级一致性的宿主应实现同一接口，使用原生页面截图能力。自定义 Block/Embed
-必须把对应 `blockRenderers` / `inlineEmbeds` 一并传给 adapter，不能假设内置 renderer
-理解宿主业务块。
 
 支持 `runTurn()` 的结构化编辑请求中，文档 scope 的完整 IR 序列化超过约 24 KB
 时，模型首轮上下文默认切换为渐进式
@@ -162,9 +139,8 @@ Master 可以通过 `blockcraft.delegate` 启动一个独立、只读的 special
 - `document-analysis`：问答、总结、事实与需求提取；
 - `content-writing`：长短文案、改写和语气一致性；
 - `structure-planning`：Block 树、Schema 参数和候选 operations；
-- `visual-reconstruction`：读取上传图片，映射文本层级、几何和样式到文本框、形状、艺术字、表格等可用 Block；
 - `host-workflow`：结合任务、会议等宿主上下文和自定义 Capability；
-- `quality-review`：在最终返回前复核内容、结构、安全与视觉还原度，并返回结构化
+- `quality-review`：在最终返回前复核内容、结构与安全，并返回结构化
   `review.verdict` 与定位到候选 operation 的 issues。
 
 Specialist 不能调用工具或执行写入，只返回 findings、recommendations、draft 和

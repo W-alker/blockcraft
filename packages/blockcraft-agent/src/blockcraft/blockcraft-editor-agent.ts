@@ -1,13 +1,11 @@
 import type {
   AdapterRegistry,
   BlockCraftDoc,
-  IBlockSnapshot,
   MarkdownAdapterProfile,
   RevisionActorSnapshot,
 } from '@ccc/blockcraft'
 import type {
   DocumentAgentContext,
-  DocumentAgentImageAttachment,
   DocumentAgentMarkdownRequest,
   DocumentAgentMarkdownStreamEvent,
   DocumentAgentModelContextOptions,
@@ -38,15 +36,10 @@ import {captureBlockCraftAgentContext} from './blockcraft-context-adapter'
 import {captureDocumentAgentManifestOptions} from './document-agent-capability-scope'
 import {projectDocumentAgentContextForModel} from './document-agent-context-projection'
 import {
-  projectDocumentAgentCandidate,
-  type DocumentAgentCandidateOperationTarget,
-} from './document-agent-candidate-projector'
-import {
   DocumentAgentApplyError,
   DocumentAgentOperationApplier,
   type DocumentAgentRevisionApplyResult,
 } from './document-agent-operation-applier'
-import {DocumentAgentOperationCompiler} from './document-agent-operation-compiler'
 import {DocumentAgentToolExecutor} from './document-agent-tool-executor'
 
 /**
@@ -367,104 +360,21 @@ export class BlockCraftEditorAgent {
     attempt: number,
     options?: {signal?: AbortSignal},
   ): Promise<DocumentAgentSubAgentResult> {
-    const preview = await this.createCandidatePreview(
-      request,
-      baselineContext,
-      candidate,
-      attempt,
-      options,
-    )
     return this.runner.runSubAgent({
       delegationVersion: 1,
       specialist: 'quality-review',
       objective:
         '独立复核候选结果是否准确满足用户指令，并检查内容完整性、结构合理性、' +
-        'BlockCraft 能力使用、安全性及图片还原度。通过才返回 pass；存在必须修正的问题返回 revise。',
-      request: preview.request,
+        'BlockCraft 能力使用与安全性。附件图片只能作为内容证据，不评估或要求视觉复原。' +
+        '通过才返回 pass；存在必须修正的问题返回 revise。',
+      request,
       input: boundStructuredValue(createQualityReviewInput(
         baselineContext,
         candidate,
         toolHistory,
         attempt,
-        preview.evidence,
       )),
     }, options)
-  }
-
-  private async createCandidatePreview(
-    request: DocumentAgentRequest,
-    baselineContext: DocumentAgentContext,
-    candidate: DocumentAgentResult,
-    attempt: number,
-    options?: {signal?: AbortSignal},
-  ): Promise<{
-    request: DocumentAgentRequest
-    evidence: DocumentAgentQualityReviewPreviewEvidence
-  }> {
-    const config = this.options.orchestration?.qualityReview?.candidatePreview
-    if (!config) {
-      return {request, evidence: {status: 'not-configured'}}
-    }
-
-    try {
-      const prepared = new DocumentAgentOperationCompiler(
-        this.doc,
-        baselineContext,
-        this.extensions,
-      ).compile(candidate.operations)
-      const projection = projectDocumentAgentCandidate(this.doc, prepared)
-      const rawPreview = await config.adapter.render({
-        candidatePreviewVersion: 1,
-        snapshot: projection.snapshot,
-        affectedBlockIds: projection.affectedBlockIds,
-        operationTargets: projection.operationTargets,
-        candidate,
-        attempt,
-      }, options)
-      const normalized = normalizeCandidatePreview(rawPreview)
-      const previewImage: DocumentAgentImageAttachment = {
-        ...normalized.image,
-        purpose: 'candidate-preview',
-      }
-      const userAttachments = (request.attachments ?? []).map(attachment => ({
-        ...attachment,
-        purpose: attachment.purpose ?? 'user-reference' as const,
-      }))
-      return {
-        request: {
-          ...request,
-          // Keep the rendered candidate first so transports with a bounded image
-          // count never discard the evidence owned by this review pass.
-          attachments: [previewImage, ...userAttachments],
-        },
-        evidence: {
-          status: 'available',
-          rendererId: normalized.rendererId,
-          attachmentName: previewImage.name,
-          width: previewImage.width,
-          height: previewImage.height,
-          capturedBlockIds: normalized.capturedBlockIds,
-          operationTargets: projection.operationTargets.slice(0, 100).map(target => ({
-            operationIndex: target.operationIndex,
-            blockIds: target.blockIds.slice(0, 20),
-          })),
-          warnings: normalized.warnings,
-        },
-      }
-    } catch (error) {
-      if (options?.signal?.aborted || isAbortError(error)) throw error
-      const message = error instanceof Error ? error.message : 'Candidate preview failed.'
-      if ((config.failureMode ?? 'fallback') === 'throw') {
-        throw new DocumentAgentCandidatePreviewError(message, {cause: error})
-      }
-      return {
-        request,
-        evidence: {
-          status: 'unavailable',
-          reason: truncateText(message, 1_000),
-        },
-      }
-    }
   }
 }
 
@@ -497,39 +407,6 @@ export interface BlockCraftEditorAgentQualityReviewOptions {
   mode?: 'auto' | 'always' | 'off'
   /** Master correction attempts after a revise verdict. Defaults to 1, clamped to 0..2. */
   maxRepairs?: number
-  /** Optional host-owned isolated Snapshot renderer used by the reviewer. */
-  candidatePreview?: BlockCraftEditorAgentCandidatePreviewOptions
-}
-
-export interface BlockCraftEditorAgentCandidatePreviewOptions {
-  adapter: DocumentAgentCandidatePreviewAdapter
-  /** fallback keeps semantic review; throw fails the Agent turn. Defaults to fallback. */
-  failureMode?: 'fallback' | 'throw'
-}
-
-export interface DocumentAgentCandidatePreviewRequest {
-  candidatePreviewVersion: 1
-  /** Isolated projected document state. It is not connected to the live Yjs document. */
-  snapshot: IBlockSnapshot
-  affectedBlockIds: readonly string[]
-  operationTargets: readonly DocumentAgentCandidateOperationTarget[]
-  candidate: DocumentAgentResult
-  attempt: number
-}
-
-export interface DocumentAgentCandidatePreview {
-  candidatePreviewVersion: 1
-  image: DocumentAgentImageAttachment
-  rendererId?: string
-  capturedBlockIds?: readonly string[]
-  warnings?: readonly string[]
-}
-
-export interface DocumentAgentCandidatePreviewAdapter {
-  render(
-    request: DocumentAgentCandidatePreviewRequest,
-    options?: {signal?: AbortSignal},
-  ): Promise<DocumentAgentCandidatePreview>
 }
 
 export interface BlockCraftEditorAgentRevisionOptions {
@@ -551,13 +428,6 @@ export class DocumentAgentQualityReviewError extends Error {
       ? createQualityReviewFeedback(reviewResult.review)
       : '质量复核结果缺少结构化 verdict。'}`)
     this.name = 'DocumentAgentQualityReviewError'
-  }
-}
-
-export class DocumentAgentCandidatePreviewError extends Error {
-  constructor(message: string, options?: ErrorOptions) {
-    super(`候选文档预览失败：${message}`, options)
-    this.name = 'DocumentAgentCandidatePreviewError'
   }
 }
 
@@ -623,7 +493,6 @@ function createQualityReviewInput(
   candidate: DocumentAgentResult,
   toolHistory: readonly DocumentAgentToolExchange[],
   attempt: number,
-  candidatePreview: DocumentAgentQualityReviewPreviewEvidence,
 ): unknown {
   const targetIds = collectCandidateTargetIds(candidate.operations, baselineContext)
   const targetBlocks = baselineContext.blocks
@@ -647,10 +516,9 @@ function createQualityReviewInput(
       } : {}),
     }))
   return {
-    automaticQualityReviewVersion: 2,
+    automaticQualityReviewVersion: 1,
     attempt,
     candidate,
-    candidatePreview,
     targetCoverage: {
       requested: targetIds.size,
       returned: targetBlocks.length,
@@ -659,67 +527,6 @@ function createQualityReviewInput(
     targetBlocks,
     recentToolHistory: toolHistory.slice(-8),
   }
-}
-
-type DocumentAgentQualityReviewPreviewEvidence =
-  | {status: 'not-configured'}
-  | {status: 'unavailable'; reason: string}
-  | {
-      status: 'available'
-      rendererId?: string
-      attachmentName: string
-      width: number
-      height: number
-      capturedBlockIds: readonly string[]
-      operationTargets: readonly DocumentAgentCandidateOperationTarget[]
-      warnings: readonly string[]
-    }
-
-function normalizeCandidatePreview(
-  preview: DocumentAgentCandidatePreview,
-): Required<Pick<DocumentAgentCandidatePreview, 'candidatePreviewVersion' | 'image'>> & {
-  rendererId?: string
-  capturedBlockIds: readonly string[]
-  warnings: readonly string[]
-} {
-  if (preview?.candidatePreviewVersion !== 1 || !preview.image) {
-    throw new Error('Preview Adapter returned an unsupported payload.')
-  }
-  const image = preview.image
-  if (
-    image.type !== 'image' ||
-    !['image/jpeg', 'image/png', 'image/webp'].includes(image.mimeType) ||
-    typeof image.name !== 'string' || !image.name.trim() ||
-    typeof image.dataUrl !== 'string' ||
-    !image.dataUrl.startsWith(`data:${image.mimeType};base64,`) ||
-    !Number.isInteger(image.width) || image.width < 1 || image.width > 8_192 ||
-    !Number.isInteger(image.height) || image.height < 1 || image.height > 8_192
-  ) {
-    throw new Error('Preview Adapter returned an invalid image attachment.')
-  }
-  if (image.dataUrl.length > 16_000_000) {
-    throw new Error('Preview Adapter image exceeds the 16 MB data URL limit.')
-  }
-  return {
-    candidatePreviewVersion: 1,
-    image: {...image, name: image.name.trim().slice(0, 200)},
-    ...(preview.rendererId?.trim()
-      ? {rendererId: preview.rendererId.trim().slice(0, 200)}
-      : {}),
-    capturedBlockIds: [...new Set(preview.capturedBlockIds ?? [])]
-      .filter(value => typeof value === 'string' && value)
-      .slice(0, 200),
-    warnings: (preview.warnings ?? [])
-      .filter(value => typeof value === 'string' && value.trim())
-      .slice(0, 20)
-      .map(value => value.trim().slice(0, 500)),
-  }
-}
-
-function isAbortError(error: unknown): boolean {
-  return (typeof DOMException !== 'undefined' && error instanceof DOMException)
-    ? error.name === 'AbortError'
-    : error instanceof Error && error.name === 'AbortError'
 }
 
 function collectCandidateTargetIds(
@@ -796,7 +603,6 @@ function isComplexSpecialistDelegation(call: DocumentAgentModelToolCall): boolea
       Array.isArray(call.arguments)) return false
   const specialist = (call.arguments as Record<string, unknown>)['specialist']
   return specialist === 'structure-planning' ||
-    specialist === 'visual-reconstruction' ||
     specialist === 'host-workflow'
 }
 
@@ -868,7 +674,6 @@ const SPECIALISTS = new Set<DocumentAgentSpecialist>([
   'document-analysis',
   'content-writing',
   'structure-planning',
-  'visual-reconstruction',
   'host-workflow',
   'quality-review',
 ])

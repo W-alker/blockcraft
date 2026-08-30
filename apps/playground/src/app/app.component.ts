@@ -53,7 +53,6 @@ import {
   DocumentAgentRunner,
   BlockCraftEditorAgent,
   captureBlockCraftAgentDocumentContext,
-  createSnapshotViewerCandidatePreviewAdapter,
 } from 'blockcraft-agent';
 import { PlaygroundDocumentAgentTransport } from './document-agent-transport';
 import {
@@ -2237,16 +2236,6 @@ graph TD
     const adapterRegistry = editor.doc.injector.get(EDITOR_ADAPTER_REGISTRY_TOKEN);
     this._editorAgent = new BlockCraftEditorAgent(editor.doc, this.agentRunner, {
       markdown: {adapterRegistry, profile: 'hybrid'},
-      orchestration: {
-        qualityReview: {
-          candidatePreview: {
-            adapter: createSnapshotViewerCandidatePreviewAdapter({
-              viewerOptions: this.snapshotViewerOptions,
-            }),
-            failureMode: 'throw',
-          },
-        },
-      },
     });
     this._agentContextSub = plugin.contextChange$.subscribe(context => {
       this.zone.run(() => {

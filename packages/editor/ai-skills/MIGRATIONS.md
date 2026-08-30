@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-08-30 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-08-31 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -67,6 +67,91 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > - `major` (e.g. 0.1.37 → 1.0.0): breaking — removed APIs, renamed exports, signature changes, behavior reversals
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
+
+## Unreleased — 2026-08-31 — Remove Agent visual reconstruction and candidate preview
+
+**Severity**: major
+
+**What changed**: `blockcraft-agent` keeps image upload/paste and multimodal
+understanding, but removes the dedicated image-to-document visual reconstruction
+specialist and the candidate Snapshot screenshot pipeline. Images are now source
+material for questions, extraction, summarization, fact checking and ordinary
+semantic edits. Candidate results are delivered through the existing Revision
+Diff and batch accept/revert workflow.
+
+**Why**: Rendering a second candidate surface duplicated the document's review
+UX, added DOM/raster budgets and latency, and could fail independently of an
+otherwise valid structured edit. Revision Diff is the canonical user review
+surface. Image understanding remains useful without promising visual layout or
+geometry reproduction.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `MIGRATIONS.md`
+
+### Breaking Changes
+
+- Removed `visual-reconstruction` from `DocumentAgentSpecialist` and the
+  `blockcraft.delegate` specialist enum.
+- Removed `BlockCraftEditorAgentQualityReviewOptions.candidatePreview`.
+- Removed `BlockCraftEditorAgentCandidatePreviewOptions`,
+  `DocumentAgentCandidatePreviewRequest`, `DocumentAgentCandidatePreview`,
+  `DocumentAgentCandidatePreviewAdapter`, and
+  `DocumentAgentCandidatePreviewError`.
+- Removed `createSnapshotViewerCandidatePreviewAdapter()` and its browser
+  implementation.
+- Removed `DocumentAgentImageAttachment.purpose`; every request attachment is
+  now a user-supplied source image.
+
+### Migration Recipe
+
+Remove candidate-preview configuration and keep the semantic quality gate:
+
+```typescript
+// before
+new BlockCraftEditorAgent(doc, runner, {
+  orchestration: {
+    qualityReview: {
+      mode: 'auto',
+      candidatePreview: {
+        adapter: createSnapshotViewerCandidatePreviewAdapter(),
+        failureMode: 'throw',
+      },
+    },
+  },
+})
+
+// after
+new BlockCraftEditorAgent(doc, runner, {
+  orchestration: {
+    qualityReview: {mode: 'auto', maxRepairs: 1},
+  },
+})
+```
+
+Replace a `visual-reconstruction` delegation with normal image-aware analysis
+or content writing. Do not map image geometry to layout blocks:
+
+```typescript
+// before
+{specialist: 'visual-reconstruction', objective: '复原这张设计图'}
+
+// after: extract semantic content only
+{specialist: 'document-analysis', objective: '提取图片中的文字与事实并给出结构化提纲'}
+```
+
+### Behavior Changes
+
+- Uploaded/pasted JPEG, PNG and WebP attachments are still passed to supported
+  model transports, but the Agent must not reproduce their visual hierarchy,
+  geometry or styling as document blocks.
+- Automatic quality review remains bounded and semantic. It receives the
+  original image attachments when relevant, but no rendered candidate image or
+  `candidatePreview` metadata.
+- Structured operation validation, one-transaction application, Revision Diff,
+  and batch accept/revert behavior are unchanged.
 
 ## Unreleased — 2026-08-30 — Automatic Editor Agent quality and visual gate
 

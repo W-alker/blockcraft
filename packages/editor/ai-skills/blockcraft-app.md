@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-30
+> Last updated: 2026-08-31
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -1446,7 +1446,7 @@ consumers must not parse it or treat it as document content.
 
 After a candidate passes the complete host semantic preflight,
 `BlockCraftEditorAgent` defaults to an independent quality gate for non-trivial
-edits. Image-backed requests, multiple operations, structural edits, rich-text
+edits. Image-informed requests, multiple operations, structural edits, rich-text
 Delta, large replacements and complex object props trigger the read-only
 `quality-review` specialist. It returns a structured `review.verdict` plus
 issues whose `operationIndexes` refer to the candidate. `pass` releases the
@@ -1467,47 +1467,18 @@ const agent = new BlockCraftEditorAgent(doc, runner, {
     qualityReview: {
       mode: 'auto',       // 'auto' | 'always' | 'off'
       maxRepairs: 1,      // clamped to 0..2
-      candidatePreview: {
-        adapter: createSnapshotViewerCandidatePreviewAdapter({
-          viewerOptions: {
-            resourcePolicy: 'eager',
-            blockRenderers: hostSnapshotRenderers,
-            inlineEmbeds: hostInlineEmbedRenderers,
-          },
-        }),
-        failureMode: 'throw', // 'fallback' | 'throw'
-      },
     },
   },
 })
 ```
 
-Candidate preview is a host adapter boundary, not a temporary write. After the
-candidate passes semantic validation, `blockcraft-agent` compiles the same
-sequential operations and projects them onto a deep-cloned root Snapshot. The
-projection does not mutate Yjs, create Revision records, consume Undo history,
-move selection, or clone the live editor DOM. The adapter receives the complete
-projected Snapshot plus affected block IDs and per-operation target IDs.
-
-`createSnapshotViewerCandidatePreviewAdapter()` is the optional browser
-fallback. It mounts the standalone Snapshot Viewer offscreen, waits for async
-Mermaid/image work, crops the affected block union, copies resolved styles and
-rasterizes a bounded PNG. Unsafe cross-origin media is replaced with a
-placeholder and reported in `warnings`; DOM and output dimensions are bounded.
-Pass the active host `SnapshotViewerOptions`, including custom
-`blockRenderers`, `inlineEmbeds` and enhancers, or custom business blocks will
-fall back to generic rendering. Native Tauri/WebView hosts may implement
-`DocumentAgentCandidatePreviewAdapter` with their platform screenshot API
-instead.
-
-The quality-review request puts the rendered image first with
-`purpose: 'candidate-preview'`; uploaded source images are labeled
-`purpose: 'user-reference'`. The structured review input contains only bounded
-preview metadata, never the PNG data URL. Without `candidatePreview`, behavior
-remains semantic-only. `failureMode: 'fallback'` records an unavailable reason
-and continues semantic review; `'throw'` raises
-`DocumentAgentCandidatePreviewError` and prevents delivery. Use `'throw'` when
-visual comparison is required rather than optional evidence.
+Uploaded and pasted images remain available to the Master, Markdown chat and
+quality reviewer as source material for questions, text/fact extraction,
+summarization and ordinary semantic edits. The Agent deliberately does not
+reconstruct an image's visual layout, geometry or styling as BlockCraft shapes,
+text boxes, WordArt, tables or other blocks. There is no candidate renderer or
+screenshot step. A host should present the applied proposal through the normal
+Revision Diff and batch accept/revert UI instead.
 
 The automatic gate does not consume `maxDelegations`, which remains the
 Master's manual specialist budget. Its own model-call bound is

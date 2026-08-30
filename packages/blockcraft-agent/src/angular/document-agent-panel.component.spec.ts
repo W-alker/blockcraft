@@ -4,6 +4,7 @@ import {
   type DocumentAgentReviewAction,
 } from './document-agent-panel.component'
 import {AdapterRegistry} from '@ccc/blockcraft'
+import type {DocumentAgentRequest} from '../core/agent.types'
 
 describe('DocumentAgentPanelComponent review prompt', () => {
   beforeEach(async () => {
@@ -100,5 +101,35 @@ describe('DocumentAgentPanelComponent review prompt', () => {
       task: 'rewrite',
       instruction: '改写正文',
     })])
+  })
+
+  it('keeps an uploaded reference image on the structured request', () => {
+    const fixture = TestBed.createComponent(DocumentAgentPanelComponent)
+    const requests: DocumentAgentRequest[] = []
+    fixture.componentInstance.request.subscribe(request => requests.push(request))
+    fixture.componentRef.setInput('context', {
+      protocolVersion: 2,
+      scope: 'document',
+      selection: null,
+      selectedText: '',
+      blocks: [],
+      baseRevision: {structureRevision: 0, contentFingerprint: ''},
+    })
+    fixture.detectChanges()
+    fixture.componentInstance.imageAttachment.set({
+      type: 'image',
+      mimeType: 'image/png',
+      name: 'reference.png',
+      dataUrl: 'data:image/png;base64,AA==',
+      width: 1,
+      height: 1,
+    })
+    fixture.componentInstance.instruction.set('提取图片中的要点')
+    fixture.componentInstance.submitRequest()
+
+    expect(requests[0].attachments).toEqual([
+      jasmine.objectContaining({name: 'reference.png'}),
+    ])
+    expect(fixture.nativeElement.textContent).toContain('上传参考图')
   })
 })

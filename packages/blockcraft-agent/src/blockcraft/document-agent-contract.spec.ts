@@ -6,6 +6,8 @@ import {
   type IBlockSnapshot,
 } from '@ccc/blockcraft'
 import {BLOCKCRAFT_BUILTIN_AGENT_EXTENSION} from '../core/builtin-block-capabilities'
+import {BLOCKCRAFT_AGENT_HANDBOOK} from '../core/agent-handbook'
+import {DOCUMENT_AGENT_TOOL_DEFINITIONS} from '../core/agent-tools'
 import {DocumentAgentExtensionRegistry} from '../core/host-extension'
 import {
   normalizeDocumentAgentResult,
@@ -19,7 +21,6 @@ import type {
 } from '../core/agent.types'
 import {
   BlockCraftEditorAgent,
-  DocumentAgentCandidatePreviewError,
   DocumentAgentQualityReviewError,
 } from './blockcraft-editor-agent'
 import {captureBlockCraftAgentContext} from './blockcraft-context-adapter'
@@ -28,9 +29,21 @@ import {
   DocumentAgentOperationCompiler,
 } from './document-agent-operation-compiler'
 import {DocumentAgentOperationApplier} from './document-agent-operation-applier'
-import {projectDocumentAgentCandidate} from './document-agent-candidate-projector'
 
 describe('BlockCraft Agent v2 contract', () => {
+  it('treats images as references without advertising visual reconstruction', () => {
+    const delegate = DOCUMENT_AGENT_TOOL_DEFINITIONS.find(
+      definition => definition.name === 'blockcraft.delegate',
+    )
+    const specialists = (delegate?.parameters as {
+      properties?: {specialist?: {enum?: readonly string[]}}
+    }).properties?.specialist?.enum ?? []
+
+    expect(specialists).not.toContain('visual-reconstruction')
+    expect(BLOCKCRAFT_AGENT_HANDBOOK).toContain('Attached images are reference material only.')
+    expect(BLOCKCRAFT_AGENT_HANDBOOK).toContain("Do not reconstruct an image's visual layout")
+  })
+
   it('normalizes a structured-output null draft before validation', () => {
     const normalized = normalizeDocumentAgentResult({
       summary: '已完成',
@@ -155,108 +168,6 @@ describe('BlockCraft Agent v2 contract', () => {
     expect(first.snapshot.children).toEqual([
       jasmine.objectContaining({flavour: 'paragraph'}),
     ])
-  })
-
-  it('projects sequential operations into an isolated renderable Snapshot', () => {
-    const doc = createFakeDoc()
-    const prepared = new DocumentAgentOperationCompiler(
-      doc as never,
-      createDocumentContext(),
-      createExtensions(),
-    ).compile([
-      {
-        kind: 'apply-text-delta',
-        blockId: 'p1',
-        delta: [
-          {retain: 1, attributes: {'a:bold': true}},
-          {delete: 2},
-          {insert: 'i'},
-        ],
-      },
-      {kind: 'update-block-props', blockId: 'p1', props: {heading: 2}},
-      {
-        kind: 'create-blocks',
-        parentId: 'root',
-        index: 1,
-        flavour: 'callout',
-        params: [],
-        clientRef: 'summary',
-      },
-      {
-        kind: 'create-blocks',
-        parentId: '$ref:summary',
-        index: 0,
-        flavour: 'paragraph',
-        params: ['Summary'],
-      },
-    ])
-
-    const projection = projectDocumentAgentCandidate(doc as never, prepared)
-    const paragraph = projection.snapshot.children[0] as IBlockSnapshot
-    const callout = projection.snapshot.children[1] as IBlockSnapshot
-
-    expect(paragraph.children).toEqual([
-      {insert: 'H', attributes: {'a:bold': true}},
-      {insert: 'ilo'},
-    ])
-    expect(paragraph.props['heading']).toBe(2)
-    expect(callout.flavour).toBe('callout')
-    expect(callout.children).toEqual([
-      jasmine.objectContaining({flavour: 'paragraph', children: [{insert: 'Summary'}]}),
-    ])
-    expect(projection.affectedBlockIds).toContain('p1')
-    expect(projection.affectedBlockIds).toContain(callout.id)
-    expect(doc['model'].getTextDeltas('p1')).toEqual([{insert: 'Hello'}])
-  })
-
-  it('projects replace, move, and delete with post-operation structural indexes', () => {
-    const doc = createFakeDoc(['First', 'Second', 'Third'])
-    const context = captureBlockCraftAgentContext(doc as never)
-    if (!context) throw new Error('Expected document context')
-    const prepared = new DocumentAgentOperationCompiler(
-      doc as never,
-      context,
-      createExtensions(),
-    ).compile([
-      {
-        kind: 'replace-block',
-        blockId: 'p2',
-        flavour: 'paragraph',
-        params: ['Replacement'],
-      },
-      {
-        kind: 'move-blocks',
-        parentId: 'root',
-        index: 2,
-        count: 1,
-        targetId: 'root',
-        targetIndex: 0,
-      },
-      {
-        kind: 'delete-blocks',
-        parentId: 'root',
-        index: 1,
-        count: 1,
-      },
-    ])
-
-    const projection = projectDocumentAgentCandidate(doc as never, prepared)
-    const projectedChildren = projection.snapshot.children as IBlockSnapshot[]
-
-    expect(projectedChildren.map(child => child.id)).toEqual([
-      'p3',
-      'generated-paragraph-1',
-    ])
-    expect(projectedChildren.map(child => child.children)).toEqual([
-      [{insert: 'Third'}],
-      [{insert: 'Replacement'}],
-    ])
-    expect(projection.operationTargets).toEqual([
-      {operationIndex: 0, blockIds: ['generated-paragraph-1']},
-      {operationIndex: 1, blockIds: ['p3', 'p1', 'generated-paragraph-1']},
-      {operationIndex: 2, blockIds: ['p3', 'generated-paragraph-1']},
-    ])
-    expect(doc['model'].getChildrenIds('root')).toEqual(['p1', 'p2', 'p3'])
   })
 
   it('validates prop types from the selected Block capability', () => {
@@ -704,9 +615,8 @@ describe('BlockCraft Agent v2 contract', () => {
     expect(qualityReviews).toBe(1)
   })
 
-  it('renders an isolated candidate and labels it for the quality-review specialist', async () => {
+  it('keeps uploaded images as source evidence without generating a candidate preview', async () => {
     let reviewRequest: DocumentAgentSubAgentRequest | null = null
-    let renderedText = ''
     const runner = {
       supportsTurnProtocol: true,
       supportsSubAgents: true,
@@ -726,36 +636,7 @@ describe('BlockCraft Agent v2 contract', () => {
         return createQualityReviewResult('pass')
       },
     }
-    const agent = new BlockCraftEditorAgent(createFakeDoc() as never, runner as never, {
-      orchestration: {
-        qualityReview: {
-          candidatePreview: {
-            failureMode: 'throw',
-            adapter: {
-              render: async request => {
-                const paragraph = request.snapshot.children[0] as IBlockSnapshot
-                renderedText = (paragraph.children as Array<{insert: string}>)
-                  .map(item => item.insert)
-                  .join('')
-                return {
-                  candidatePreviewVersion: 1 as const,
-                  image: {
-                    type: 'image' as const,
-                    mimeType: 'image/png' as const,
-                    name: 'candidate.png',
-                    dataUrl: 'data:image/png;base64,AA==',
-                    width: 1,
-                    height: 1,
-                  },
-                  rendererId: 'test-renderer',
-                  capturedBlockIds: request.affectedBlockIds,
-                }
-              },
-            },
-          },
-        },
-      },
-    })
+    const agent = new BlockCraftEditorAgent(createFakeDoc() as never, runner as never)
 
     await agent.run({
       task: 'continue',
@@ -772,55 +653,13 @@ describe('BlockCraft Agent v2 contract', () => {
     })
 
     const delegated = reviewRequest as unknown as DocumentAgentSubAgentRequest
-    expect(renderedText).toBe('Hello!')
-    expect(delegated.request.attachments?.map(item => item.purpose)).toEqual([
-      'candidate-preview',
-      'user-reference',
+    expect(delegated.request.attachments).toEqual([
+      jasmine.objectContaining({name: 'reference.png'}),
     ])
     expect(delegated.input).toEqual(jasmine.objectContaining({
-      automaticQualityReviewVersion: 2,
-      candidatePreview: jasmine.objectContaining({
-        status: 'available',
-        rendererId: 'test-renderer',
-        capturedBlockIds: ['p1'],
-        operationTargets: [{operationIndex: 0, blockIds: ['p1']}],
-      }),
+      automaticQualityReviewVersion: 1,
     }))
-  })
-
-  it('fails closed when a required candidate renderer cannot capture the preview', async () => {
-    const runner = {
-      supportsTurnProtocol: true,
-      supportsSubAgents: true,
-      runTurn: async () => ({
-        kind: 'result' as const,
-        result: {
-          summary: 'append content',
-          operations: [{
-            kind: 'apply-text-delta' as const,
-            blockId: 'p1',
-            delta: [{retain: 5}, {insert: '!'}],
-          }],
-        },
-      }),
-      runSubAgent: async () => createQualityReviewResult('pass'),
-    }
-    const agent = new BlockCraftEditorAgent(createFakeDoc() as never, runner as never, {
-      orchestration: {
-        qualityReview: {
-          candidatePreview: {
-            failureMode: 'throw',
-            adapter: {render: async () => { throw new Error('capture unavailable') }},
-          },
-        },
-      },
-    })
-
-    await expectAsync(agent.run({
-      task: 'continue',
-      instruction: '补充结尾',
-      context: createDocumentContext(),
-    })).toBeRejectedWithError(DocumentAgentCandidatePreviewError, /capture unavailable/)
+    expect((delegated.input as Record<string, unknown>)['candidatePreview']).toBeUndefined()
   })
 
   it('returns a revise verdict to the Master once and reviews the repaired candidate again', async () => {

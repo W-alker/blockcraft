@@ -223,9 +223,10 @@ function createDocumentAgentSessionId(): string {
             <button
               type="button"
               class="bc-document-agent-panel__upload"
+              title="用于问答、提取、总结或普通内容参考，不复原图片布局"
               [disabled]="busy() || imageBusy()"
               (click)="openImagePicker()">
-              {{ imageBusy() ? '读取中…' : '上传图片' }}
+              {{ imageBusy() ? '读取中…' : '上传参考图' }}
             </button>
             <span>Enter 发送 · Shift + Enter 换行</span>
           </div>
@@ -476,7 +477,7 @@ export class DocumentAgentPanelComponent implements AfterViewInit, OnChanges, On
       {
         id: createDocumentAgentSessionId(),
         role: 'user',
-        content: `${contextLabel ? `[${contextLabel}] ` : ''}${instruction}${this.imageAttachment() ? '\n[已附加图片]' : ''}`,
+        content: `${contextLabel ? `[${contextLabel}] ` : ''}${instruction}${this.imageAttachment() ? '\n[已附加参考图片]' : ''}`,
       },
     ])
     const attachment = this.imageAttachment()

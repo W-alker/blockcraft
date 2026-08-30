@@ -193,7 +193,7 @@ export const DOCUMENT_AGENT_TOOL_DEFINITIONS: readonly DocumentAgentToolDefiniti
   {
     type: 'function',
     name: 'blockcraft.delegate',
-    description: '把只读分析、写作、结构规划、图片复原、宿主工作流或质量复核任务委派给独立 specialist 模型回合。',
+    description: '把只读分析、写作、结构规划、宿主工作流或质量复核任务委派给独立 specialist 模型回合。',
     parameters: {
       type: 'object',
       properties: {
@@ -203,7 +203,6 @@ export const DOCUMENT_AGENT_TOOL_DEFINITIONS: readonly DocumentAgentToolDefiniti
             'document-analysis',
             'content-writing',
             'structure-planning',
-            'visual-reconstruction',
             'host-workflow',
             'quality-review',
           ],

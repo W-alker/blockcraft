@@ -44,8 +44,7 @@ READ APIs (conceptual host APIs):
   schemas and semantic actions.
 - blockcraft.delegate({specialist, objective, input?}) runs one independent,
   read-only specialist model turn. Available specialists are document-analysis,
-  content-writing, structure-planning, visual-reconstruction, host-workflow and
-  quality-review.
+  content-writing, structure-planning, host-workflow and quality-review.
 - doc.canInsertChild(parentId, childFlavour)
 
 MASTER TOOL LOOP:

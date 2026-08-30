@@ -132,8 +132,6 @@ export interface DocumentAgentImageAttachment {
   dataUrl: string
   width: number
   height: number
-  /** Distinguishes user evidence from a host-rendered candidate during review. */
-  purpose?: 'user-reference' | 'candidate-preview'
 }
 
 export interface DocumentAgentRequest {
@@ -256,7 +254,6 @@ export type DocumentAgentSpecialist =
   | 'document-analysis'
   | 'content-writing'
   | 'structure-planning'
-  | 'visual-reconstruction'
   | 'host-workflow'
   | 'quality-review'
 

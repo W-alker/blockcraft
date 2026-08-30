@@ -152,7 +152,6 @@ const specialistNames = [
   'document-analysis',
   'content-writing',
   'structure-planning',
-  'visual-reconstruction',
   'host-workflow',
   'quality-review',
 ]
@@ -540,7 +539,7 @@ function createAgentPayload(request, session, orchestration) {
       'An empty paragraph or list item is still a valid structural target. Use delete-blocks with its actual parentId, index, and count.',
       'Never claim that an empty block cannot be safely changed merely because it has no text.',
       'For Mermaid preview-only mode use update-block-props on the existing mermaid block with props {"mode":"graph"}; never manipulate DOM or data-mode.',
-      'Image attachment metadata may include purpose. user-reference is source evidence; candidate-preview is the host-rendered isolated candidate and must never be treated as source content.',
+      'Image attachments are reference material for questions, extraction, summarization and fact checking. Do not reconstruct their visual layout, geometry or styling as a BlockCraft document.',
     ],
   }
 }
@@ -656,7 +655,7 @@ function getProviderInstructions(request, orchestration) {
       'For a final answer return {"kind":"result","result":{...},"calls":[]}. For tool use return {"kind":"tool-calls","result":null,"calls":[...]}.',
       'Return kind "tool-calls" only when a registered BlockCraft or host tool is needed. Each arguments field must be a valid JSON string such as "{}". Use prior orchestration.toolHistory results instead of repeating an answered call.',
       'Built-in callable tools are blockcraft.get_editor_state, blockcraft.get_block, blockcraft.get_document_context, blockcraft.get_schema_capabilities, blockcraft.get_capability_directory, blockcraft.get_capability, blockcraft.delegate, blockcraft.search_document, blockcraft.preview_changes, and blockcraft.apply_changes.',
-      'Use blockcraft.delegate selectively for a genuinely useful independent specialist pass. Available specialists are document-analysis, content-writing, structure-planning, visual-reconstruction, host-workflow, and quality-review. Avoid delegation for trivial requests and do not repeat a completed delegation.',
+      'Use blockcraft.delegate selectively for a genuinely useful independent specialist pass. Available specialists are document-analysis, content-writing, structure-planning, host-workflow, and quality-review. Avoid delegation for trivial requests and do not repeat a completed delegation.',
       'When orchestration.toolHistory contains an automatic quality-review with verdict revise, treat every error issue as mandatory correction feedback. Return a corrected final result; do not repeat the rejected candidate or delegate the same review again.',
       'Custom tool names are discoverable through runtime.capabilityDirectory and blockcraft.get_capability. Never call an undeclared tool.',
       'Document writes and external writes cannot execute in this loop: their tool result will request user confirmation. Return kind "result" with the proposed structured operations or a concise explanation once enough evidence is available.',
@@ -672,9 +671,8 @@ const specialistInstructions = {
   'document-analysis': 'Answer document questions, summarize evidence, extract facts, requirements, decisions, risks and unresolved items. Preserve source meaning.',
   'content-writing': 'Draft or revise clear document prose that satisfies the objective, current document voice and supplied constraints.',
   'structure-planning': 'Map content into legal BlockCraft schemas, hierarchy and schema-native candidate operations. Prefer create-blocks and stable IDs.',
-  'visual-reconstruction': 'Inspect attached images and infer visual hierarchy, text, geometry and styling. Map them to available BlockCraft blocks such as paragraphs, tables, columns, text boxes, shapes and word art without inventing unavailable APIs.',
   'host-workflow': 'Interpret runtime host context and declared custom capabilities. Propose safe host-aware reads, document changes and confirmation-gated business actions.',
-  'quality-review': 'Critically review the supplied candidate against the user instruction, current evidence, schema constraints, safety and visual fidelity. When delegation.input.candidatePreview.status is available, compare the candidate-preview image with user-reference images and use its capturedBlockIds and warnings as evidence. Never confuse the rendered candidate with a source image or claim rendered verification when the preview is unavailable. Set review.verdict to pass only when no mandatory correction remains. Otherwise set revise and include at least one error issue with a stable kebab-case code, concrete message, affected candidate operation indexes (or [] for result-wide issues), and an actionable recommendation.',
+  'quality-review': 'Critically review the supplied candidate against the user instruction, current evidence, schema constraints and safety. Attached images may support source-content accuracy, but visual layout reconstruction is outside scope and there is no rendered candidate preview. Set review.verdict to pass only when no mandatory correction remains. Otherwise set revise and include at least one error issue with a stable kebab-case code, concrete message, affected candidate operation indexes (or [] for result-wide issues), and an actionable recommendation.',
 }
 
 function getSubAgentInstructions(request, delegation) {
