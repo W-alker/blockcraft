@@ -167,4 +167,39 @@ describe('HeightObserver', () => {
       [['a', 34.6]],
     ])
   })
+
+  it('explicitly acknowledges an equal retained-host stride on an idle frame', () => {
+    const container = document.createElement('div')
+    const a = document.createElement('div')
+    const b = document.createElement('div')
+    container.append(a, b)
+    spyOn(a, 'getBoundingClientRect').and.returnValue({top: 10, height: 24} as DOMRect)
+    spyOn(b, 'getBoundingClientRect').and.returnValue({top: 44, height: 24} as DOMRect)
+    let callback!: ResizeObserverCallback
+    const observer = {
+      observe: jasmine.createSpy('observe'),
+      unobserve: jasmine.createSpy('unobserve'),
+      disconnect: jasmine.createSpy('disconnect'),
+    } as unknown as ResizeObserver
+    const measurements: Array<readonly [string, number]>[] = []
+    const heightObserver = new HeightObserver(
+      values => measurements.push(values),
+      cb => {
+        callback = cb
+        return observer
+      },
+    )
+
+    heightObserver.sync(['a', 'b'], id => ({a, b})[id])
+    callback(
+      [{target: a, borderBoxSize: [{blockSize: 24}]}] as unknown as ResizeObserverEntry[],
+      observer,
+    )
+    expect(heightObserver.measureNow('a', a)).toBeTrue()
+
+    expect(measurements).toEqual([
+      [['a', 34]],
+      [['a', 34]],
+    ])
+  })
 })

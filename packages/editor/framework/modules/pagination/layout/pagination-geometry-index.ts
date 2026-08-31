@@ -607,6 +607,14 @@ export class PaginationGeometryIndex {
     measurements: readonly PaginationGeometryMeasurement[],
     measurementEpoch = 0,
   ): boolean {
+    return this.applyMeasuredWithChanges(measurements, measurementEpoch).length > 0
+  }
+
+  /** @internal Apply one atomic batch and return the roots whose geometry changed. */
+  applyMeasuredWithChanges(
+    measurements: readonly PaginationGeometryMeasurement[],
+    measurementEpoch = 0,
+  ): readonly string[] {
     assertNonNegativeFinite(measurementEpoch, 'measurementEpoch')
     const measurementIds = new Set<string>()
     for (const measurement of measurements) {
@@ -675,13 +683,13 @@ export class PaginationGeometryIndex {
       this.entries.set(blockId, entry)
       this.measuredGeometryIds.add(blockId)
     })
-    if (!updates.size) return false
+    if (!updates.size) return []
     updates.forEach((entry, blockId) => {
       this.entries.set(blockId, entry)
       this.measuredGeometryIds.add(blockId)
     })
     this.revisionValue++
-    return true
+    return [...updates.keys()]
   }
 
   entriesFor(rootIds: readonly string[]): readonly PaginationGeometryEntry[] {

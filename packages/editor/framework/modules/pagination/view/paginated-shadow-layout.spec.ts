@@ -1307,7 +1307,11 @@ describe("PaginatedViewController shadow layout", () => {
       ) => delegate.updateMeasureContext(context),
       setRequiredMeasurementEpoch: (epoch: number) =>
         delegate.setRequiredMeasurementEpoch(epoch),
-      applyMeasured: () => ({accepted: false, changed: false}),
+      applyMeasured: () => ({
+        accepted: false,
+        changed: false,
+        changedRootIds: [],
+      }),
       compute,
       dispose: () => delegate.dispose(),
     } as unknown as PaginationLayoutCoordinator;

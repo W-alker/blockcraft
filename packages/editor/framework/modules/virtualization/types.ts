@@ -17,6 +17,8 @@ export type BlockViewRetentionResolver = (
 
 export interface VirtualizationConfig {
   enabled?: boolean
+  /** Prefetch explicitly safe, unrendered root block views during browser idle time. */
+  idlePrefetch?: boolean
   /** Viewport heights kept mounted above and below the visible viewport. */
   overscanViewports?: number
   /** Unmounted indices tolerated between two segments before they are merged. */
@@ -31,6 +33,7 @@ export interface VirtualizationConfig {
 
 export interface ResolvedVirtualizationConfig {
   enabled: boolean
+  idlePrefetch: boolean
   overscanViewports: number
   segmentMergeGap: number
   retainedViewLimit: number
@@ -41,6 +44,7 @@ export interface ResolvedVirtualizationConfig {
 export const DEFAULT_VIRTUALIZATION_CONFIG: Readonly<ResolvedVirtualizationConfig> =
   Object.freeze({
     enabled: false,
+    idlePrefetch: false,
     overscanViewports: 1,
     segmentMergeGap: 2,
     retainedViewLimit: 12,
@@ -53,6 +57,7 @@ export function resolveVirtualizationConfig(
 ): ResolvedVirtualizationConfig {
   return {
     enabled: config?.enabled ?? DEFAULT_VIRTUALIZATION_CONFIG.enabled,
+    idlePrefetch: config?.idlePrefetch ?? DEFAULT_VIRTUALIZATION_CONFIG.idlePrefetch,
     overscanViewports: resolveNonNegativeNumber(
       config?.overscanViewports,
       DEFAULT_VIRTUALIZATION_CONFIG.overscanViewports,

@@ -124,6 +124,15 @@ export interface BlockVirtualizationCapability<
   T extends NativeBlockModel = NativeBlockModel,
 > {
   /**
+   * Explicitly permits the framework to materialize this view before it is
+   * visible. `safe` guarantees that first mount starts no network/upload work
+   * or media decoding/playback, performs no Yjs/model writes or notifications,
+   * and registers no global listener or other side effect that normal
+   * detach/destroy cannot fully release. Speculative mount may be cancelled
+   * immediately, so it must be repeatable and reversible.
+   */
+  speculativeMount?: 'safe'
+  /**
    * Controls whether this block's root render unit may unmount after its view
    * first materializes. Omitted / "virtual" keeps the normal windowed policy;
    * "keep-alive" preserves DOM-owned state until deletion or document disposal.

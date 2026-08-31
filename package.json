@@ -19,7 +19,8 @@
     "dev:docs": "pnpm --filter @blockcraft/docs docs:dev",
     "build": "pnpm build:editor && pnpm build:playground && pnpm build:docs",
     "test": "ng test",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:idle-prefetch:visual": "node scripts/run-idle-prefetch-visual.mjs"
   },
   "dependencies": {
     "@angular/animations": "^20.3.16",

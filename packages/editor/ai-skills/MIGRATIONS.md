@@ -68,6 +68,89 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## Unreleased — 2026-08-31 — Opt-in idle prefetch for safe text roots
+
+**Severity**: minor
+
+**What changed**: Root virtualization adds the optional
+`VirtualizationConfig.idlePrefetch?: boolean` host switch and the Schema-owned
+`BlockVirtualizationCapability.speculativeMount?: 'safe'` declaration. When both
+are enabled, BlockCraft can use idle time to materialize and measure eligible
+direct-root text views before they enter the mounted window.
+
+**Why**: Model-only estimates keep large documents sparse, but browser line
+wrapping can still correct a text root's height when it first becomes visible.
+Bounded speculative warm-up reduces that first-visit correction without making
+media, tables or stateful views part of an uncontrolled background mount.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-block.md`
+- `blockcraft-perf.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `VirtualizationConfig.idlePrefetch?: boolean` enables the scheduler and
+  defaults to `false`.
+- `BlockVirtualizationCapability.speculativeMount?: 'safe'` lets an eligible
+  text Schema promise that offscreen construction starts no network/upload work
+  or media decoding/playback, writes no Yjs/model state, emits no notification,
+  and registers no global listener or other side effect that normal
+  detach/destroy cannot fully release. The mount must be cancellable, repeatable
+  and reversible.
+- The scheduler prioritizes eligible roots within one projected viewport of the
+  mounted window, then sweeps farther eligible roots during later idle slices.
+  It uses `requestIdleCallback` with a cancellable short-budget timer fallback.
+- The audited built-in safe text roots are `paragraph`, `ordered`, `bullet`,
+  `todo`, `blockquote`, and `caption`.
+
+### Migration Recipe
+
+Existing hosts need no change. To opt a virtualized document and a custom safe
+text Block into idle prefetch:
+
+```typescript
+// before: unchanged behavior; idle prefetch is disabled
+virtualization: {
+  enabled: true,
+}
+
+// after: opt in at both the document and Schema boundaries
+virtualization: {
+  enabled: true,
+  idlePrefetch: true,
+}
+
+const PlainNoteSchema = {
+  // flavour, nodeType, component, createSnapshot, ...
+  metadata: {
+    version: 1,
+    virtualization: {
+      speculativeMount: 'safe',
+    },
+  },
+}
+```
+
+Do not add `speculativeMount: 'safe'` to a table, media/iframe/resource Block,
+asynchronous widget, `keep-alive` view or container render unit in this release.
+
+### Behavior Changes
+
+- The default remains unchanged because `idlePrefetch` is `false` when omitted.
+- When enabled, nearby eligible text roots warm first; distant eligible roots
+  are processed only as later idle budgets allow.
+- Continuous-flow measurements and sparse-pagination measurements stay isolated;
+  pagination gaps or split/height-lock state never enter the continuous
+  `HeightMap`.
+- Ordinary live pagination already uses an exact full-document view lease and
+  receives no additional prefetch pass or benefit. Experimental sparse
+  pagination may use the warmed paginated geometry, while non-exact print/PDF
+  still performs complete readonly reflow.
+
 ## Unreleased — 2026-08-31 — Remove Agent visual reconstruction and candidate preview
 
 **Severity**: major

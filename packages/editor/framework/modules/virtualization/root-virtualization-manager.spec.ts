@@ -5,11 +5,58 @@ import {ContinuousLayoutProjection} from './layout-projection'
 import type {VerticalLayoutProjection} from './layout-projection'
 import {
   registerRootLayoutProjection,
+  reportRootIdlePrefetchMeasurements,
   RootVirtualizationManager,
+  subscribeRootIdlePrefetchHandoffs,
 } from './root-virtualization-manager'
 import type {VirtualizationConfig} from './types'
+import {calculateProjectedViewportRange} from './viewport-range'
 
 describe('RootVirtualizationManager', () => {
+  type CapturedIdlePrefetchTraceEvent = {
+    sequence: number
+    timestamp: number
+    phase: string
+    kind: string
+    lane?: string
+    rootId?: string
+    flavour?: string
+    durationMs?: number
+    projectedHeight?: number
+    viewportHeight?: number
+    estimatedHeight?: number
+    measuredHeight?: number
+    reason?: string
+    epoch?: number
+    count?: number
+  }
+
+  type CapturedVirtualDocumentRoot = {
+    id: string
+    index: number
+    flavour: string
+    offset: number
+    height: number
+    heightState: 'estimated' | 'measured' | 'stale'
+    viewState:
+      | 'unmounted'
+      | 'retained'
+      | 'mounted'
+      | 'near'
+      | 'sweep'
+      | 'viewport'
+  }
+
+  type CapturedVirtualDocument = {
+    revision: number
+    projectionKind: 'continuous' | 'custom'
+    projectionRevision: number
+    totalHeight: number
+    viewportTop: number
+    viewportHeight: number
+    roots: CapturedVirtualDocumentRoot[]
+  }
+
   function createHarness(
     retainedViewLimit = 12,
     rootBlockCount = 20,
@@ -94,7 +141,10 @@ describe('RootVirtualizationManager', () => {
     }
     const doc = {
       rootId: 'root',
-      root: {childrenRenderRef: {containerElement: rootContainer}},
+      root: {
+        hostElement: rootContainer,
+        childrenRenderRef: {containerElement: rootContainer},
+      },
       model: {
         get structureRevision() {
           return structureRevision
@@ -198,6 +248,836 @@ describe('RootVirtualizationManager', () => {
     })
     return {contentChange$, emitContentChange, estimateHeight, estimates}
   }
+
+  function configureIdlePrefetchHarness(
+    h: ReturnType<typeof createHarness>,
+  ) {
+    const flavours = new Map(h.ids.map(id => [id, 'paragraph']))
+    const nodeTypes = new Map<string, BlockNodeType>(
+      h.ids.map(id => [id, BlockNodeType.editable]),
+    )
+    const children = new Map(h.ids.map(id => [id, [] as string[]]))
+    const deltas = new Map<string, Array<{insert: unknown}>>(
+      h.ids.map(id => [id, [{insert: `idle prefetch ${id}`}]]),
+    )
+    const schemas = new Map<string, any>([
+      ['paragraph', {
+        metadata: {virtualization: {speculativeMount: 'safe'}},
+      }],
+    ])
+
+    ;(h.doc.model as any).getChildrenIds = (blockId: string) =>
+      blockId === 'root' ? [...h.ids] : [...(children.get(blockId) ?? [])]
+    ;(h.doc.model as any).getFlavour = (blockId: string) =>
+      flavours.get(blockId)
+    ;(h.doc.model as any).getNodeType = (blockId: string) =>
+      nodeTypes.get(blockId)
+    ;(h.doc.model as any).getTextDeltas = (blockId: string) =>
+      deltas.get(blockId)
+    ;(h.doc.model as any).getProps = () => ({})
+    ;(h.doc as any).schemas = {
+      get: (flavour: string) => schemas.get(flavour),
+    }
+
+    return {children, deltas, flavours, nodeTypes, schemas}
+  }
+
+  function captureIdlePrefetchTrace(
+    h: ReturnType<typeof createHarness>,
+  ): CapturedIdlePrefetchTraceEvent[] {
+    return (
+      h.manager.captureIdlePrefetchDiagnostics() as unknown as {
+        trace: CapturedIdlePrefetchTraceEvent[]
+      }
+    ).trace
+  }
+
+  function captureVirtualDocument(
+    h: ReturnType<typeof createHarness>,
+  ): CapturedVirtualDocument {
+    return (
+      h.manager.captureIdlePrefetchDiagnostics() as unknown as {
+        virtualDocument: CapturedVirtualDocument
+      }
+    ).virtualDocument
+  }
+
+  it('captures virtual document geometry and ordered view/height ownership without DOM reads', () => {
+    const h = createHarness(12, 20, {idlePrefetch: true})
+    configureIdlePrefetchHarness(h)
+    h.manager.init(h.scrollContainer)
+    const manager = h.manager as any
+    manager.reconcileFrame()
+
+    manager.idlePrefetchNearRootIds.add('b0')
+    manager.idlePrefetchNearRootIds.add('b10')
+    manager.idlePrefetchNearRootIds.add('b11')
+    manager.idlePrefetchEvictRootIds.add('b11')
+    h.mountRootChild('b10')
+    h.mountRootChild('b11')
+    h.mountRootChild('b12')
+    h.ensureRef('b13')
+    manager.idlePrefetchMeasurementEpoch = 3
+    manager.idlePrefetchMeasuredEpochByRoot.set('b10', 3)
+    manager.idlePrefetchMeasuredEpochByRoot.set('b11', 2)
+    manager.continuousHeightProvenance.set('b12', {
+      previousModelDriven: false,
+      hasMeasuredHeight: true,
+      measurementFresh: true,
+    })
+    manager.continuousHeightProvenance.set('b13', {
+      previousModelDriven: false,
+      hasMeasuredHeight: true,
+      measurementFresh: false,
+    })
+
+    const rootRect = h.doc.root.childrenRenderRef.containerElement
+      .getBoundingClientRect as jasmine.Spy
+    const viewportRect = h.scrollContainer.getBoundingClientRect as jasmine.Spy
+    rootRect.calls.reset()
+    viewportRect.calls.reset()
+
+    const snapshot = captureVirtualDocument(h)
+    const roots = new Map(snapshot.roots.map(root => [root.id, root]))
+    expect(snapshot).toEqual(jasmine.objectContaining({
+      revision: 1,
+      projectionKind: 'continuous',
+      projectionRevision: manager.layoutProjection.revision,
+      totalHeight: 20 * 48,
+      viewportTop: 0,
+      viewportHeight: 96,
+    }))
+    expect(snapshot.roots.length).toBe(h.ids.length)
+    expect(roots.get('b0')?.viewState).toBe('viewport')
+    expect(roots.get('b2')?.viewState).toBe('mounted')
+    expect(roots.get('b10')).toEqual(jasmine.objectContaining({
+      index: 10,
+      flavour: 'paragraph',
+      offset: 10 * 48,
+      height: 48,
+      heightState: 'measured',
+      viewState: 'near',
+    }))
+    expect(roots.get('b11')).toEqual(jasmine.objectContaining({
+      heightState: 'stale',
+      viewState: 'sweep',
+    }))
+    expect(roots.get('b12')).toEqual(jasmine.objectContaining({
+      heightState: 'measured',
+      viewState: 'mounted',
+    }))
+    expect(roots.get('b13')).toEqual(jasmine.objectContaining({
+      heightState: 'stale',
+      viewState: 'retained',
+    }))
+    expect(roots.get('b14')).toEqual(jasmine.objectContaining({
+      heightState: 'estimated',
+      viewState: 'unmounted',
+    }))
+    expect(rootRect).not.toHaveBeenCalled()
+    expect(viewportRect).not.toHaveBeenCalled()
+    expect(captureVirtualDocument(h).revision).toBe(snapshot.revision)
+
+    manager.heights.update(14, 49)
+    const heightChanged = captureVirtualDocument(h)
+    expect(heightChanged.revision).toBeGreaterThan(snapshot.revision)
+    expect(heightChanged.roots.find(root => root.id === 'b14')?.height).toBe(49)
+
+    manager.continuousHeightProvenance.set('b14', {
+      previousModelDriven: false,
+      hasMeasuredHeight: true,
+      measurementFresh: true,
+    })
+    const stateChanged = captureVirtualDocument(h)
+    expect(stateChanged.revision).toBeGreaterThan(heightChanged.revision)
+    expect(stateChanged.roots.find(root => root.id === 'b14')?.heightState)
+      .toBe('measured')
+    expect(rootRect).not.toHaveBeenCalled()
+    expect(viewportRect).not.toHaveBeenCalled()
+    h.manager.dispose()
+  })
+
+  it('updates cached layout viewport coordinates when a stable DOM window is skipped', () => {
+    const h = createHarness(12, 20)
+    h.manager.init(h.scrollContainer)
+    const manager = h.manager as any
+    manager.reconcileFrame()
+    const before = captureVirtualDocument(h)
+    h.vm.mountRootChild.calls.reset()
+
+    h.scrollContainer.scrollTop = 10
+    manager.reconcileFrame()
+
+    const after = captureVirtualDocument(h)
+    expect(after.viewportTop).toBe(10)
+    expect(after.viewportHeight).toBe(96)
+    expect(after.projectionRevision).toBe(before.projectionRevision)
+    expect(after.revision).toBeGreaterThan(before.revision)
+    expect(captureVirtualDocument(h).revision).toBe(after.revision)
+    expect(h.vm.mountRootChild).not.toHaveBeenCalled()
+    h.manager.dispose()
+  })
+
+  it('does not invent measured provenance for a custom projection', () => {
+    const h = createHarness(12, 6, {idlePrefetch: true})
+    configureIdlePrefetchHarness(h)
+    h.manager.init(h.scrollContainer)
+    const manager = h.manager as any
+    const heights = new HeightMap()
+    heights.bulkInit(h.ids.map(() => 60))
+    const projection = new ContinuousLayoutProjection(heights)
+    manager.layoutProjection = projection
+    manager.cacheVirtualDocumentViewport(120, 96)
+    manager.idlePrefetchMeasurementEpoch = 4
+    manager.idlePrefetchMeasuredEpochByRoot.set('b2', 4)
+    manager.idlePrefetchMeasuredEpochByRoot.set('b3', 3)
+    manager.idlePrefetchInvalidatedRootIds.add('b4')
+    manager.continuousHeightProvenance.set('b5', {
+      previousModelDriven: false,
+      hasMeasuredHeight: true,
+      measurementFresh: true,
+    })
+
+    const snapshot = captureVirtualDocument(h)
+    const roots = new Map(snapshot.roots.map(root => [root.id, root]))
+    expect(snapshot).toEqual(jasmine.objectContaining({
+      projectionKind: 'custom',
+      projectionRevision: projection.revision,
+      totalHeight: 6 * 60,
+      viewportTop: 120,
+      viewportHeight: 96,
+    }))
+    expect(roots.get('b2')?.heightState).toBe('measured')
+    expect(roots.get('b3')?.heightState).toBe('stale')
+    expect(roots.get('b4')?.heightState).toBe('stale')
+    expect(roots.get('b5')?.heightState).toBe('estimated')
+    h.manager.dispose()
+    projection.dispose()
+  })
+
+  it('keeps idle prefetch inactive by default and when explicitly disabled', () => {
+    for (const config of [{}, {idlePrefetch: false}]) {
+      const h = createHarness(12, 8, config)
+      configureIdlePrefetchHarness(h)
+      h.manager.init(h.scrollContainer)
+
+      ;(h.manager as any).armIdlePrefetch()
+
+      expect((h.manager as any).idlePrefetchScheduler).toBeNull()
+      expect(h.manager.captureIdlePrefetchDiagnostics().enabled).toBeFalse()
+      expect(h.vm.mountRootChild).not.toHaveBeenCalled()
+      h.manager.dispose()
+    }
+  })
+
+  it('prefetches only safe direct editable leaves with string-only deltas', () => {
+    const h = createHarness(12, 6, {idlePrefetch: true})
+    const idle = configureIdlePrefetchHarness(h)
+    idle.flavours.set('b1', 'keep-alive-safe')
+    idle.schemas.set('keep-alive-safe', {
+      metadata: {
+        virtualization: {
+          speculativeMount: 'safe',
+          viewRetention: 'keep-alive',
+        },
+      },
+    })
+    idle.children.set('b2', ['nested'])
+    idle.deltas.set('b3', [{insert: {mention: 'u1'}}])
+    idle.flavours.set('b4', 'not-marked-safe')
+    idle.schemas.set('not-marked-safe', {
+      metadata: {virtualization: {}},
+    })
+    idle.nodeTypes.set('b5', BlockNodeType.void)
+    h.manager.init(h.scrollContainer)
+
+    const isCandidate = (index: number) =>
+      (h.manager as any).isIdlePrefetchCandidate(index)
+    expect(h.ids.map((_, index) => isCandidate(index))).toEqual([
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+    ])
+    h.manager.dispose()
+  })
+
+  it('lets the host retention resolver veto an otherwise safe schema', () => {
+    const h = createHarness(12, 4, {
+      idlePrefetch: true,
+      resolveViewRetention: () => 'keep-alive',
+    })
+    configureIdlePrefetchHarness(h)
+    h.manager.init(h.scrollContainer)
+
+    expect((h.manager as any).isIdlePrefetchCandidate(0)).toBeFalse()
+    h.manager.dispose()
+  })
+
+  it('pins at most one projected viewport of near roots in scroll direction', () => {
+    const h = createHarness(12, 30, {idlePrefetch: true})
+    configureIdlePrefetchHarness(h)
+    h.scrollContainer.scrollTop = 480
+    h.manager.init(h.scrollContainer)
+    const manager = h.manager as any
+    const viewportHeight = h.scrollContainer.clientHeight
+    const viewport = calculateProjectedViewportRange(
+      manager.layoutProjection,
+      manager.getViewportTop(),
+      viewportHeight,
+      1,
+    )
+
+    manager.idlePrefetchDirection = 1
+    const forward = manager.resolveIdlePrefetchNearIndices() as number[]
+    expect(forward.length).toBeGreaterThan(0)
+    expect(forward.every(index => index > viewport[1])).toBeTrue()
+    expect(forward).toEqual([...forward].sort((left, right) => left - right))
+    expect(forward.reduce(
+      (height, index) => height + manager.layoutProjection.extentAt(index),
+      0,
+    )).toBeLessThanOrEqual(viewportHeight)
+    manager.replaceIdlePrefetchNearPin(forward.map(index => h.ids[index]))
+    expect([...manager.pins.snapshot()]).toEqual([...forward].sort((a, b) => a - b))
+
+    manager.idlePrefetchDirection = -1
+    const backward = manager.resolveIdlePrefetchNearIndices() as number[]
+    expect(backward.length).toBeGreaterThan(0)
+    expect(backward.every(index => index < viewport[0])).toBeTrue()
+    expect(backward).toEqual([...backward].sort((left, right) => right - left))
+    expect(backward.reduce(
+      (height, index) => height + manager.layoutProjection.extentAt(index),
+      0,
+    )).toBeLessThanOrEqual(viewportHeight)
+    manager.replaceIdlePrefetchNearPin(backward.map(index => h.ids[index]))
+    expect([...manager.pins.snapshot()]).toEqual([...backward].sort((a, b) => a - b))
+    h.manager.dispose()
+  })
+
+  it('releases the previous directional near pin immediately on scroll', () => {
+    const h = createHarness(12, 30, {idlePrefetch: true})
+    configureIdlePrefetchHarness(h)
+    h.manager.init(h.scrollContainer)
+    const manager = h.manager as any
+    const nearIndices = [10, 11]
+    manager.replaceIdlePrefetchNearPin(nearIndices.map(index => h.ids[index]))
+    expect(manager.idlePrefetchNearRootIds.size).toBe(2)
+    expect(nearIndices.every(index => manager.pins.snapshot().has(index))).toBeTrue()
+
+    h.scrollContainer.scrollTop = 48
+    h.scrollContainer.dispatchEvent(new Event('scroll'))
+
+    expect(manager.idlePrefetchNearRootIds.size).toBe(0)
+    expect(nearIndices.every(index => !manager.pins.snapshot().has(index))).toBeTrue()
+    h.manager.dispose()
+  })
+
+  it('orders the far sweep by projected pixel distance with direction as the tie-breaker', () => {
+    const h = createHarness(12, 20, {idlePrefetch: true})
+    configureIdlePrefetchHarness(h)
+    h.scrollContainer.scrollTop = 480
+    h.manager.init(h.scrollContainer)
+    const manager = h.manager as any
+    const changes = new Subject<any>()
+    const offsets = Array.from({length: h.ids.length}, (_, index) => index * 50)
+    offsets[6] = 0
+    offsets[7] = 350
+    offsets[8] = 400
+    offsets[12] = 600
+    offsets[13] = 650
+    offsets[14] = 700
+    offsets[15] = 750
+    const projection: VerticalLayoutProjection = {
+      revision: 0,
+      length: h.ids.length,
+      totalHeight: 1000,
+      change$: changes,
+      offsetAt: index => offsets[index],
+      contentOffsetAt: index => offsets[index],
+      extentAt: index => index === 6 ? 100 : 50,
+      rangeHeight: (start, end) => (end - start + 1) * 50,
+      indexAtOffset: offset => offset < 600 ? 8 : 12,
+    }
+    manager.layoutProjection = projection
+    manager.idlePrefetchDirection = 1
+    const deadline = {
+      didTimeout: false,
+      timeRemaining: () => 4,
+    } as IdleDeadline
+    const order: number[] = []
+
+    for (let count = 0; count < 4; count++) {
+      const index = manager.resolveNextIdlePrefetchSweepIndex(deadline)
+      expect(index).not.toBeNull()
+      expect(index).not.toBeUndefined()
+      order.push(index)
+      manager.idlePrefetchAttemptedRootIds.add(h.ids[index])
+    }
+
+    expect(order).toEqual([13, 7, 14, 15])
+    changes.complete()
+    h.manager.dispose()
+  })
+
+  it('yields a far-candidate scan when the idle deadline is exhausted', () => {
+    const h = createHarness(12, 50, {idlePrefetch: true})
+    const idle = configureIdlePrefetchHarness(h)
+    h.ids.forEach(id => idle.deltas.set(id, [{insert: {mention: id}}]))
+    h.manager.init(h.scrollContainer)
+    const manager = h.manager as any
+    let budgetChecks = 0
+
+    const result = manager.resolveNextIdlePrefetchSweepIndex({
+      didTimeout: false,
+      timeRemaining: () => ++budgetChecks <= 2 ? 1 : 0,
+    } as IdleDeadline)
+
+    expect(result).toBeNull()
+    expect(budgetChecks).toBe(3)
+    expect(manager.idlePrefetchSweepCursor.forwardIndex).toBeLessThan(h.ids.length)
+    h.manager.dispose()
+  })
+
+  it('starts at most one root per idle slice', () => {
+    const h = createHarness(12, 20, {idlePrefetch: true})
+    configureIdlePrefetchHarness(h)
+    h.manager.init(h.scrollContainer)
+    const manager = h.manager as any
+    const scheduleContinuation = spyOn(
+      manager.idlePrefetchScheduler,
+      'scheduleContinuation',
+    )
+    manager.idlePrefetchEpisodeActive = true
+    h.vm.mountRootChild.calls.reset()
+
+    manager.runIdlePrefetchSlice({
+      didTimeout: false,
+      timeRemaining: () => 4,
+    } as IdleDeadline)
+
+    expect(h.vm.mountRootChild).toHaveBeenCalledTimes(1)
+    expect(h.mounted.size).toBe(1)
+    expect(scheduleContinuation).toHaveBeenCalledTimes(1)
+    expect(h.manager.captureIdlePrefetchDiagnostics().nearMounts).toBe(1)
+    h.manager.dispose()
+  })
+
+  it('captures the ordered near-prefetch lifecycle with bounded key fields', () => {
+    const h = createHarness(12, 20, {idlePrefetch: true})
+    configureIdlePrefetchHarness(h)
+    h.manager.init(h.scrollContainer)
+    const manager = h.manager as any
+    spyOn(manager.idlePrefetchScheduler, 'schedule')
+    spyOn(manager.idlePrefetchScheduler, 'scheduleContinuation')
+
+    manager.armIdlePrefetch()
+    manager.runIdlePrefetchSlice({
+      didTimeout: false,
+      timeRemaining: () => 4,
+    } as IdleDeadline)
+    const [rootId] = manager.idlePrefetchNearRootIds as Set<string>
+    expect(rootId).toBeDefined()
+    expect(reportRootIdlePrefetchMeasurements(h.manager, [rootId])).toBeTrue()
+    const index = manager.indexById.get(rootId) as number
+    manager.handoffIdlePrefetchToViewport([index, index])
+
+    const trace = captureIdlePrefetchTrace(h)
+    expect(trace.map(event => event.kind)).toEqual([
+      'episode-start',
+      'slice-start',
+      'near-window-calculated',
+      'candidate-selected',
+      'prefetch-mount-start',
+      'component-created',
+      'mount-complete',
+      'measurement-accepted',
+      'viewport-handoff',
+    ])
+    expect(trace.map(event => event.sequence)).toEqual(
+      trace.map((_, traceIndex) => traceIndex + 1),
+    )
+    expect(trace.every((event, traceIndex) =>
+      traceIndex === 0 || event.timestamp >= trace[traceIndex - 1].timestamp,
+    )).toBeTrue()
+    expect(trace.find(event => event.kind === 'near-window-calculated'))
+      .toEqual(jasmine.objectContaining({
+        phase: 'calculation',
+        lane: 'near',
+        count: 2,
+        projectedHeight: 96,
+        viewportHeight: 96,
+        epoch: 0,
+      }))
+    expect(trace.find(event => event.kind === 'candidate-selected'))
+      .toEqual(jasmine.objectContaining({
+        lane: 'near',
+        rootId,
+        flavour: 'paragraph',
+        estimatedHeight: 48,
+      }))
+    expect(trace.find(event => event.kind === 'mount-complete'))
+      .toEqual(jasmine.objectContaining({
+        lane: 'near',
+        rootId,
+        flavour: 'paragraph',
+        durationMs: jasmine.any(Number),
+      }))
+    expect(trace.find(event => event.kind === 'measurement-accepted'))
+      .toEqual(jasmine.objectContaining({
+        lane: 'near',
+        rootId,
+        measuredHeight: 48,
+        epoch: 0,
+      }))
+    expect(trace.at(-1)).toEqual(jasmine.objectContaining({
+      kind: 'viewport-handoff',
+      lane: 'near',
+      rootId,
+    }))
+    h.manager.dispose()
+  })
+
+  it('keeps only the newest 256 idle-prefetch trace events', () => {
+    const h = createHarness(12, 20, {idlePrefetch: true})
+    const manager = h.manager as any
+
+    for (let index = 0; index < 300; index++) {
+      manager.recordIdlePrefetchTrace({
+        phase: 'slice',
+        kind: 'slice-start',
+        reason: `synthetic-${index}`,
+      })
+    }
+
+    const trace = captureIdlePrefetchTrace(h)
+    expect(trace.length).toBe(256)
+    expect(trace[0]).toEqual(jasmine.objectContaining({
+      sequence: 45,
+      reason: 'synthetic-44',
+    }))
+    expect(trace.at(-1)).toEqual(jasmine.objectContaining({
+      sequence: 300,
+      reason: 'synthetic-299',
+    }))
+    expect(trace.every((event, index) =>
+      index === 0 || event.sequence === trace[index - 1].sequence + 1,
+    )).toBeTrue()
+    h.manager.dispose()
+  })
+
+  it('continues after a recoverable slice exception', () => {
+    const h = createHarness(12, 20, {idlePrefetch: true})
+    configureIdlePrefetchHarness(h)
+    h.manager.init(h.scrollContainer)
+    const manager = h.manager as any
+    manager.idlePrefetchEpisodeActive = true
+    spyOn(manager, 'mountNextIdlePrefetchNearRoot').and.throwError('candidate failure')
+    const continuation = spyOn(
+      manager.idlePrefetchScheduler,
+      'scheduleContinuation',
+    )
+
+    manager.runIdlePrefetchSlice({
+      didTimeout: false,
+      timeRemaining: () => 4,
+    } as IdleDeadline)
+
+    expect(h.manager.captureIdlePrefetchDiagnostics().failures).toBe(1)
+    expect(continuation).toHaveBeenCalledTimes(1)
+    h.manager.dispose()
+  })
+
+  it('recovers pointer gating after window blur and focus', () => {
+    const h = createHarness(12, 20, {idlePrefetch: true})
+    configureIdlePrefetchHarness(h)
+    h.manager.init(h.scrollContainer)
+    const manager = h.manager as any
+    manager.idlePrefetchEpisodeActive = false
+    const schedule = spyOn(manager.idlePrefetchScheduler, 'schedule')
+
+    manager.onIdlePrefetchInteractionStart(new Event('pointerdown'))
+    expect(manager.idlePrefetchPointerActive).toBeTrue()
+    manager.onIdlePrefetchWindowBlur()
+    expect(manager.idlePrefetchPointerActive).toBeFalse()
+    manager.onIdlePrefetchWindowFocus()
+
+    expect(manager.idlePrefetchEpisodeActive).toBeTrue()
+    expect(schedule).toHaveBeenCalledTimes(1)
+    h.manager.dispose()
+  })
+
+  it('invalidates the measured-root epoch without discarding cached geometry', () => {
+    const h = createHarness(12, 20, {idlePrefetch: true})
+    configureIdlePrefetchHarness(h)
+    h.manager.init(h.scrollContainer)
+    const manager = h.manager as any
+    const rootId = h.ids[15]
+
+    expect(manager.reportIdlePrefetchMeasurements([rootId])).toBeFalse()
+    const previousEpoch = manager.idlePrefetchMeasurementEpoch
+    expect(manager.idlePrefetchMeasuredEpochByRoot.get(rootId)).toBe(previousEpoch)
+
+    manager.idlePrefetchAttemptedRootIds.add(rootId)
+    manager.idlePrefetchEpisodeActive = true
+    manager.invalidateIdlePrefetch('theme', true)
+
+    expect(manager.idlePrefetchMeasurementEpoch).toBe(previousEpoch + 1)
+    expect(manager.idlePrefetchMeasuredEpochByRoot.get(rootId)).toBe(previousEpoch)
+    expect(manager.idlePrefetchAttemptedRootIds.has(rootId)).toBeFalse()
+    expect(captureIdlePrefetchTrace(h).map(event => event.kind)).toEqual([
+      'episode-start',
+      'cancelled',
+      'invalidated',
+    ])
+    expect(captureIdlePrefetchTrace(h).at(-1)).toEqual(
+      jasmine.objectContaining({
+        kind: 'invalidated',
+        reason: 'theme',
+        epoch: previousEpoch + 1,
+      }),
+    )
+    h.manager.dispose()
+  })
+
+  it('resumes mounted-root revalidation after a same-root selection update', () => {
+    const h = createHarness(12, 20, {idlePrefetch: true})
+    configureIdlePrefetchHarness(h)
+    const manager = h.manager as any
+    const callbacks = new Map<number, FrameRequestCallback>()
+    let nextFrameId = 0
+    spyOn(manager, 'requestFrame').and.callFake((callback: FrameRequestCallback) => {
+      const frameId = ++nextFrameId
+      callbacks.set(frameId, callback)
+      return frameId
+    })
+    spyOn(manager, 'cancelFrame').and.callFake((frameId: number) => {
+      callbacks.delete(frameId)
+    })
+    const flushFrame = () => {
+      const pending = [...callbacks.values()]
+      callbacks.clear()
+      pending.forEach(callback => callback(performance.now()))
+    }
+
+    h.manager.init(h.scrollContainer)
+    flushFrame()
+    const rootId = h.ids[0]
+    expect(h.vm.isMounted(rootId)).toBeTrue()
+
+    manager.idlePrefetchInvalidatedRootIds.add(rootId)
+    manager.scheduleIdlePrefetchRevalidation([rootId])
+    expect(callbacks.size).toBe(1)
+
+    // BehaviorSubject emits even though the serialized selection/pin owner is
+    // still null. The selection pause cancels the queued measurement, then the
+    // explicit recovery schedule must recreate it through reconciliation.
+    h.selection$.next(null)
+    expect(callbacks.size).toBe(1)
+    flushFrame()
+    expect(callbacks.size).toBe(1)
+    flushFrame()
+
+    expect(manager.idlePrefetchInvalidatedRootIds.has(rootId)).toBeFalse()
+    expect(callbacks.size).toBe(0)
+    h.manager.dispose()
+  })
+
+  it('hands a warmed near root to the viewport and publishes ownership', () => {
+    const h = createHarness(12, 20, {idlePrefetch: true})
+    configureIdlePrefetchHarness(h)
+    h.manager.init(h.scrollContainer)
+    const manager = h.manager as any
+    const rootId = h.ids[10]
+    manager.replaceIdlePrefetchNearPin([rootId])
+    h.mountRootChild(rootId)
+    const handoffs: (readonly string[])[] = []
+    const unsubscribe = subscribeRootIdlePrefetchHandoffs(
+      h.manager,
+      rootIds => handoffs.push(rootIds),
+    )
+
+    manager.handoffIdlePrefetchToViewport([10, 10])
+
+    expect(manager.idlePrefetchNearRootIds.has(rootId)).toBeFalse()
+    expect(manager.pins.snapshot().has(10)).toBeFalse()
+    expect(h.manager.captureIdlePrefetchDiagnostics().hits).toBe(1)
+    expect(handoffs.at(-1)).toEqual([rootId])
+    unsubscribe()
+    h.manager.dispose()
+  })
+
+  it('evicts a measured sweep root without adding it to the retained LRU', () => {
+    const h = createHarness(12, 20, {idlePrefetch: true})
+    configureIdlePrefetchHarness(h)
+    spyOn<any>(h.manager as any, 'requestFrame').and.returnValue(1)
+    spyOn<any>(h.manager as any, 'cancelFrame')
+    h.manager.init(h.scrollContainer)
+    const manager = h.manager as any
+
+    expect(manager.startNextIdlePrefetchSweep()).toBe('started')
+    const task = manager.idlePrefetchActiveSweep
+    expect(task).not.toBeNull()
+    expect(reportRootIdlePrefetchMeasurements(h.manager, [task.blockId])).toBeTrue()
+
+    expect(h.vm.retainRootChild).toHaveBeenCalledWith(task.blockId)
+    expect(h.vm.destroyRetainedRootChild).toHaveBeenCalledWith(task.blockId)
+    expect(manager.retainedRootIds.has(task.blockId)).toBeFalse()
+    expect(h.refs.has(task.blockId)).toBeFalse()
+    const trace = captureIdlePrefetchTrace(h).filter(
+      event => event.rootId === task.blockId,
+    )
+    expect(trace.map(event => event.kind)).toEqual([
+      'candidate-selected',
+      'prefetch-mount-start',
+      'component-created',
+      'mount-complete',
+      'measurement-accepted',
+      'lease-released',
+      'component-destroyed',
+    ])
+    expect(trace.find(event => event.kind === 'candidate-selected'))
+      .toEqual(jasmine.objectContaining({
+        lane: 'sweep',
+        flavour: 'paragraph',
+        estimatedHeight: 48,
+        epoch: 0,
+      }))
+    expect(trace.find(event => event.kind === 'lease-released'))
+      .toEqual(jasmine.objectContaining({
+        lane: 'sweep',
+        rootId: task.blockId,
+      }))
+    expect(trace.at(-1)).toEqual(jasmine.objectContaining({
+      kind: 'component-destroyed',
+      lane: 'sweep',
+      rootId: task.blockId,
+    }))
+    h.manager.dispose()
+  })
+
+  it('keeps a measured sweep root while another targeted lease still owns it', () => {
+    const h = createHarness(12, 20, {idlePrefetch: true})
+    configureIdlePrefetchHarness(h)
+    spyOn<any>(h.manager as any, 'requestFrame').and.returnValue(1)
+    spyOn<any>(h.manager as any, 'cancelFrame')
+    h.manager.init(h.scrollContainer)
+    const manager = h.manager as any
+
+    expect(manager.startNextIdlePrefetchSweep()).toBe('started')
+    const task = manager.idlePrefetchActiveSweep
+    const releaseOwner = h.manager.acquireBlockViewLease([task.blockId])
+
+    expect(reportRootIdlePrefetchMeasurements(h.manager, [task.blockId])).toBeTrue()
+    expect(h.refs.has(task.blockId)).toBeTrue()
+    expect(h.vm.destroyRetainedRootChild).not.toHaveBeenCalledWith(task.blockId)
+    expect(captureIdlePrefetchTrace(h)).toContain(
+      jasmine.objectContaining({
+        kind: 'release-deferred',
+        lane: 'sweep',
+        rootId: task.blockId,
+        reason: 'owned-pin',
+      }),
+    )
+
+    releaseOwner()
+    manager.reconcileFrame()
+    expect(h.vm.destroyRetainedRootChild).toHaveBeenCalledWith(task.blockId)
+    expect(h.refs.has(task.blockId)).toBeFalse()
+    h.manager.dispose()
+  })
+
+  it('acknowledges a near measurement without requiring an active sweep', () => {
+    const h = createHarness(12, 20, {idlePrefetch: true})
+    configureIdlePrefetchHarness(h)
+    h.manager.init(h.scrollContainer)
+    const manager = h.manager as any
+    manager.idlePrefetchEpisodeActive = true
+
+    expect(manager.mountNextIdlePrefetchNearRoot()).toBeTrue()
+    const [nearId] = manager.idlePrefetchNearRootIds as Set<string>
+    expect(nearId).toBeDefined()
+    expect(reportRootIdlePrefetchMeasurements(h.manager, [nearId])).toBeTrue()
+    expect(manager.idlePrefetchPendingMeasurementRootIds.has(nearId)).toBeFalse()
+    h.manager.dispose()
+  })
+
+  it('rejects a measurement report from an expired idle-prefetch ticket', () => {
+    const h = createHarness(12, 20, {idlePrefetch: true})
+    configureIdlePrefetchHarness(h)
+    spyOn<any>(h.manager as any, 'requestFrame').and.returnValue(1)
+    spyOn<any>(h.manager as any, 'cancelFrame')
+    h.manager.init(h.scrollContainer)
+    const manager = h.manager as any
+
+    expect(manager.startNextIdlePrefetchSweep()).toBe('started')
+    const task = manager.idlePrefetchActiveSweep
+    manager.idlePrefetchTicket++
+
+    expect(reportRootIdlePrefetchMeasurements(h.manager, [task.blockId])).toBeFalse()
+    expect(manager.idlePrefetchActiveSweep).toBe(task)
+    expect(captureIdlePrefetchTrace(h).at(-1)).toEqual(
+      jasmine.objectContaining({
+        kind: 'measurement-stale',
+        lane: 'sweep',
+        rootId: task.blockId,
+        flavour: 'paragraph',
+        reason: 'expired-ticket',
+        epoch: 0,
+      }),
+    )
+    h.manager.dispose()
+  })
+
+  it('trips only the idle-prefetch circuit after three consecutive failures', () => {
+    const h = createHarness(12, 20, {idlePrefetch: true})
+    configureIdlePrefetchHarness(h)
+    h.manager.init(h.scrollContainer)
+    const manager = h.manager as any
+
+    manager.handleIdlePrefetchFailure('measurement-timeout')
+    manager.handleIdlePrefetchFailure('mount', new Error('mount failed'), 'paragraph')
+    manager.handleIdlePrefetchFailure('measurement-timeout')
+
+    const diagnostics = h.manager.captureIdlePrefetchDiagnostics()
+    expect(diagnostics.disabled).toBeTrue()
+    expect(diagnostics.failures).toBe(3)
+    expect(diagnostics.failureReasons['measurement-timeout']).toBe(2)
+    expect(diagnostics.failureReasons['mount']).toBe(1)
+    expect(manager.fullMountFallback).toBeFalse()
+    expect(manager.reconcileFailureCount).toBe(0)
+    expect(h.doc.messageService.warn).not.toHaveBeenCalled()
+    expect(h.doc.logger.warn).toHaveBeenCalledWith(
+      'virtualizationIdlePrefetchDisabled: ',
+      {failures: 3},
+    )
+    const trace = captureIdlePrefetchTrace(h)
+    expect(trace.map(event => event.kind)).toEqual([
+      'episode-start',
+      'failure',
+      'failure',
+      'failure',
+      'disabled',
+      'cancelled',
+    ])
+    expect(trace.filter(event => event.kind === 'failure').map(event => ({
+      reason: event.reason,
+      count: event.count,
+    }))).toEqual([
+      {reason: 'measurement-timeout', count: 1},
+      {reason: 'mount', count: 2},
+      {reason: 'measurement-timeout', count: 3},
+    ])
+    expect(trace.find(event => event.kind === 'disabled'))
+      .toEqual(jasmine.objectContaining({
+        kind: 'disabled',
+        reason: 'circuit-breaker',
+        count: 3,
+        epoch: 0,
+      }))
+    h.manager.dispose()
+  })
 
   it('refreshes offscreen object estimates when root content width changes', () => {
     const h = createHarness(12, 3)

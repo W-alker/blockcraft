@@ -47,6 +47,9 @@ export const OrderedBlockSchema: IBlockSchemaOptions<OrderedBlockModel> = {
     icon: 'bc_icon bc_youxuliebiao-color',
     svgIcon: 'bc_youxuliebiao-color',
     placeholder: '列表项',
+    virtualization: {
+      speculativeMount: 'safe',
+    },
   }
 }
 

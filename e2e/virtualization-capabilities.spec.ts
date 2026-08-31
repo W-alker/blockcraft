@@ -359,6 +359,301 @@ test('experimental pagination keeps root mounting sparse across scroll and confi
   expect(fatal).toEqual([])
 })
 
+test('idle prefetch warms safe text roots without observable side effects', async ({page}) => {
+  test.setTimeout(90_000)
+  const fatal = observeFatalDiagnostics(page)
+  const idleNetworkRequests: string[] = []
+  let observeIdleNetwork = false
+  page.on('console', message => {
+    const detail = message.text()
+    const source = message.location().url
+    if (!externalResourcePattern.test(`${source} ${detail}`) && fatalConsolePattern.test(detail)) {
+      fatal.push(detail)
+    }
+  })
+  page.on('request', request => {
+    if (observeIdleNetwork) idleNetworkRequests.push(request.url())
+  })
+  await page.addInitScript(() => {
+    const target = window as unknown as {
+      __bcIdlePrefetchMediaPlayCount?: number
+    }
+    target.__bcIdlePrefetchMediaPlayCount = 0
+    const originalPlay = HTMLMediaElement.prototype.play
+    HTMLMediaElement.prototype.play = function (...args): Promise<void> {
+      target.__bcIdlePrefetchMediaPlayCount = (target.__bcIdlePrefetchMediaPlayCount ?? 0) + 1
+      return originalPlay.apply(this, args)
+    }
+  })
+
+  await page.goto('/')
+  await page.waitForFunction(selector => {
+    const editor = document.querySelector(selector)
+    const debug = (
+      window as unknown as {
+        ng?: {getComponent: (target: Element) => {doc?: any}}
+      }
+    ).ng
+    return !!editor && !!debug?.getComponent(editor)?.doc
+  }, editorSelector)
+
+  // Test-only opt-in: mutate the already resolved manager config before init so
+  // production keeps the public default (`idlePrefetch: false`).
+  await page.evaluate(selector => {
+    const editor = document.querySelector(selector)
+    const debug = (
+      window as unknown as {
+        ng: {getComponent: (target: Element) => {doc: any}}
+      }
+    ).ng
+    const doc = debug.getComponent(editor!).doc
+    ;(doc.virtualization as any).config.idlePrefetch = true
+  }, editorSelector)
+
+  await page.getByRole('button', {name: '初始化', exact: true}).click()
+  await waitForEditor(page)
+
+  const baseline = await page.evaluate(async selector => {
+    const editor = document.querySelector(selector)
+    const debug = (
+      window as unknown as {
+        ng: {getComponent: (target: Element) => {doc: any}}
+      }
+    ).ng
+    const doc = debug.getComponent(editor!).doc
+    const manager = doc.virtualization as any
+    const scrollContainer = doc.scrollContainer as HTMLElement
+
+    // Hold interaction active while the large batch and the normal viewport
+    // reconciliation settle; otherwise an idle callback could race the baseline.
+    scrollContainer.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true}))
+    const existingRootIds = doc.model.getChildrenIds(doc.rootId) as string[]
+    const unsafeRootCount = existingRootIds.filter(id => {
+      const schema = doc.schemas.get(doc.model.getFlavour(id), false)
+      return schema?.metadata?.virtualization?.speculativeMount !== 'safe'
+    }).length
+    const snapshots = Array.from({length: 1000}, (_, index) =>
+      doc.schemas.createSnapshot('paragraph', [
+        [
+          {
+            insert: `idle prefetch filler ${index}`,
+          },
+        ],
+      ]),
+    )
+    const insertedIds = doc.crud.insertBlockSnapshots(doc.rootId, existingRootIds.length, snapshots) as string[]
+    if (insertedIds.length !== snapshots.length) {
+      throw new Error(`Expected 1000 idle-prefetch roots, received ${insertedIds.length}`)
+    }
+
+    // Move the normal window past the mixed demo roots so the directional near
+    // lane starts on a contiguous run of explicitly safe paragraph roots.
+    await doc.virtualization.scrollToBlock(insertedIds[120])
+    await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+
+    doc.crud.undoManager.clearHistory()
+    const effects = {
+      yUpdates: 0,
+      awarenessUpdates: 0,
+    }
+    doc.yDoc.on('update', () => effects.yUpdates++)
+    const appRoot = document.querySelector('app-root')
+    const app = appRoot ? (debug.getComponent(appRoot) as any) : null
+    if (!app?.enterRoom) throw new Error('Playground collaboration host is unavailable')
+    app.enterRoom()
+    const awareness = app.provider?.awareness
+    if (!awareness?.on) throw new Error('Provider Awareness is unavailable')
+    // `update` includes the protocol's periodic same-state heartbeat. `change`
+    // isolates observable Awareness state mutations caused by editor work.
+    awareness.on('change', () => effects.awarenessUpdates++)
+    ;(
+      window as unknown as {
+        __bcIdlePrefetchEffects?: typeof effects
+        __bcIdlePrefetchMediaPlayCount?: number
+      }
+    ).__bcIdlePrefetchEffects = effects
+    ;(
+      window as unknown as {
+        __bcIdlePrefetchMediaPlayCount?: number
+      }
+    ).__bcIdlePrefetchMediaPlayCount = 0
+
+    const yUndoManager = (doc.crud.undoManager as any)._yUndoManager
+    const mountedCount = (doc.vm.getMountedRootChildIds() as string[]).length
+    scrollContainer.dispatchEvent(new PointerEvent('pointerup', {bubbles: true}))
+    return {
+      mountedCount,
+      unsafeRootCount,
+      totalRootCount: (doc.model.getChildrenIds(doc.rootId) as string[]).length,
+      undoDepth: yUndoManager.undoStack.length,
+      redoDepth: yUndoManager.redoStack.length,
+      diagnostics: manager.captureIdlePrefetchDiagnostics(),
+    }
+  }, editorSelector)
+  observeIdleNetwork = true
+
+  expect(baseline.totalRootCount).toBeGreaterThanOrEqual(1000)
+  expect(baseline.unsafeRootCount).toBeGreaterThan(0)
+  expect(baseline.diagnostics).toMatchObject({
+    enabled: true,
+    disabled: false,
+  })
+
+  const readIdleState = () =>
+    page.evaluate(selector => {
+      const editor = document.querySelector(selector)
+      const debug = (
+        window as unknown as {
+          ng: {getComponent: (target: Element) => {doc: any}}
+        }
+      ).ng
+      const doc = debug.getComponent(editor!).doc
+      const manager = doc.virtualization as any
+      const nearIds = [...manager.idlePrefetchNearRootIds] as string[]
+      const projection = manager.layoutProjection
+      const nearProjectedHeight = nearIds.reduce((height, id) => {
+        const index = manager.indexById.get(id)
+        return index === undefined ? height : height + projection.extentAt(index)
+      }, 0)
+      const effects = (
+        window as unknown as {
+          __bcIdlePrefetchEffects?: {
+            yUpdates: number
+            awarenessUpdates: number
+          }
+          __bcIdlePrefetchMediaPlayCount?: number
+        }
+      ).__bcIdlePrefetchEffects
+      const yUndoManager = (doc.crud.undoManager as any)._yUndoManager
+      return {
+        diagnostics: manager.captureIdlePrefetchDiagnostics(),
+        mountedCount: (doc.vm.getMountedRootChildIds() as string[]).length,
+        nearCount: nearIds.length,
+        nearIds,
+        nearProjectedHeight,
+        viewportHeight: doc.scrollContainer.clientHeight,
+        activeSweepCount: manager.idlePrefetchActiveSweep ? 1 : 0,
+        nearIsSafe: nearIds.every(id => {
+          const schema = doc.schemas.get(doc.model.getFlavour(id), false)
+          return schema?.metadata?.virtualization?.speculativeMount === 'safe'
+        }),
+        yUpdates: effects?.yUpdates ?? -1,
+        awarenessUpdates: effects?.awarenessUpdates ?? -1,
+        mediaPlays:
+          (
+            window as unknown as {
+              __bcIdlePrefetchMediaPlayCount?: number
+            }
+          ).__bcIdlePrefetchMediaPlayCount ?? -1,
+        undoDepth: yUndoManager.undoStack.length,
+        redoDepth: yUndoManager.redoStack.length,
+        fullMountFallback: manager.fullMountFallback === true,
+      }
+    }, editorSelector)
+
+  await expect
+    .poll(
+      async () => {
+        const state = await readIdleState()
+        return {
+          nearMounted: state.diagnostics.nearMounts > 0,
+          sweepMounted: state.diagnostics.sweepMounts > 0,
+        }
+      },
+      {timeout: 20_000},
+    )
+    .toEqual({nearMounted: true, sweepMounted: true})
+
+  const warmed = await readIdleState()
+  expect(warmed.nearIsSafe).toBe(true)
+  expect(warmed.nearProjectedHeight).toBeLessThanOrEqual(warmed.viewportHeight)
+  expect(warmed.mountedCount).toBeLessThanOrEqual(baseline.mountedCount + warmed.nearCount + warmed.activeSweepCount)
+  expect(warmed).toMatchObject({
+    yUpdates: 0,
+    awarenessUpdates: 0,
+    mediaPlays: 0,
+    undoDepth: baseline.undoDepth,
+    redoDepth: baseline.redoDepth,
+    fullMountFallback: false,
+  })
+  expect(idleNetworkRequests).toEqual([])
+
+  const warmedTarget = warmed.nearIds[0]
+  expect(warmedTarget).toBeTruthy()
+  const hitsBeforeHandoff = warmed.diagnostics.hits
+  await page.evaluate(({selector, blockId}) => {
+    const editor = document.querySelector(selector)
+    const debug = (
+      window as unknown as {
+        ng: {getComponent: (target: Element) => {doc: any}}
+      }
+    ).ng
+    const doc = debug.getComponent(editor!).doc
+    const manager = doc.virtualization as any
+    const index = manager.indexById.get(blockId)
+    if (index === undefined) throw new Error(`Unknown warmed root: ${blockId}`)
+    const container = doc.scrollContainer as HTMLElement
+    container.scrollTop = manager._layoutToVisual(
+      manager.layoutProjection.contentOffsetAt(index),
+    )
+    container.dispatchEvent(new Event('scroll'))
+  }, {selector: editorSelector, blockId: warmedTarget})
+  await expect.poll(
+    async () => (await readIdleState()).diagnostics.hits,
+    {timeout: 10_000},
+  ).toBeGreaterThan(hitsBeforeHandoff)
+
+  const beforeInvalidation = (await readIdleState()).diagnostics
+  await page.evaluate(selector => {
+    const editor = document.querySelector(selector)
+    const debug = (
+      window as unknown as {
+        ng: {getComponent: (target: Element) => {doc: any}}
+      }
+    ).ng
+    const doc = debug.getComponent(editor!).doc
+    const container = doc.scrollContainer as HTMLElement
+    container.scrollTop = Math.min(
+      container.scrollHeight - container.clientHeight,
+      container.scrollTop + container.clientHeight * 3,
+    )
+    container.dispatchEvent(new Event('scroll'))
+    container.style.width = `${Math.max(480, container.clientWidth - 80)}px`
+  }, editorSelector)
+
+  await expect
+    .poll(
+      async () => {
+        const state = await readIdleState()
+        return {
+          cancelled: state.diagnostics.cancellations > beforeInvalidation.cancellations,
+          remeasured: state.diagnostics.sweepMounts > beforeInvalidation.sweepMounts,
+          disabled: state.diagnostics.disabled,
+          fallback: state.fullMountFallback,
+        }
+      },
+      {timeout: 20_000},
+    )
+    .toEqual({
+      cancelled: true,
+      remeasured: true,
+      disabled: false,
+      fallback: false,
+    })
+
+  const invalidated = await readIdleState()
+  expect(invalidated).toMatchObject({
+    yUpdates: 0,
+    awarenessUpdates: 0,
+    mediaPlays: 0,
+    undoDepth: baseline.undoDepth,
+    redoDepth: baseline.redoDepth,
+    fullMountFallback: false,
+  })
+  expect(idleNetworkRequests).toEqual([])
+  expect(fatal).toEqual([])
+})
+
 test('sparse pagination survives mounted heading switches and an offscreen heading mount', async ({page}) => {
   test.setTimeout(60_000)
   const fatal = observeFatalDiagnostics(page)

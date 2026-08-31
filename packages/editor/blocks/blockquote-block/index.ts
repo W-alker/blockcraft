@@ -23,6 +23,9 @@ export const BlockquoteBlockSchema: IBlockSchemaOptions<BlockquoteBlockModel> = 
     label: "空引用",
     description: "引用并强调一段内容",
     icon: "bc_icon bc_blockquote",
+    virtualization: {
+      speculativeMount: 'safe',
+    },
   }
 }
 

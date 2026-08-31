@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-18
+> Last updated: 2026-08-31
 
 ## Core Performance Principles
 
@@ -61,6 +61,7 @@ Large documents can opt into model-first root virtualization through
 ```typescript
 virtualization: {
   enabled: true,
+  idlePrefetch: true, // default false; eligible safe text roots only
   overscanViewports: 1,
   segmentMergeGap: 2,
   retainedViewLimit: 12,
@@ -89,6 +90,53 @@ drift is at most `0.5px`; replacement elements and larger changes still publish.
 After projected range lookup, an otherwise identical scroll window also skips
 mount/retain, observer, spacer and `viewChange$` reconciliation. Nested subtrees
 are atomic in this phase.
+
+#### Idle speculative prefetch
+
+`VirtualizationConfig.idlePrefetch?: boolean` is an opt-in idle geometry warm-up
+and defaults to `false`. When enabled, only direct-root text Schemas declaring
+`metadata.virtualization.speculativeMount: 'safe'` are eligible. The scheduler
+first spends idle budget on eligible roots within one projected viewport before
+the mounted window in the latest scroll direction, then uses later idle slices
+to sweep the remaining eligible roots by nearest projected-pixel distance,
+breaking equal-distance ties toward the latest scroll direction. It uses
+`requestIdleCallback` where available and a cancellable
+short-budget timer fallback in browsers or WebViews that do not provide it.
+
+This path must remain cheaper than scrolling into the same roots. Work is
+limited to one newly started Root per idle slice, avoids Angular-zone churn,
+coalesces paginated geometry publication, and yields or cancels when foreground
+reconciliation invalidates its work. A quiet episode attempts at most 32 Roots
+or 100ms of cumulative synchronous mount time. A flavour whose mount exceeds
+8ms is denied for the rest of the session; three consecutive failures disable
+only this document's idle prefetch. Nearby views remain under normal ownership,
+but a far-sweep view is destroyed after its targeted lease has no viewport,
+Selection, or other owner, so it never consumes the retained-view LRU.
+Scroll, input/IME, pointer/drag, navigation, projection changes, hidden windows,
+and active font loading pause the scheduler. Content/structure, width,
+pagination, font, theme, scale, or layout-metric changes invalidate the current
+measurement epoch before any later result is accepted.
+
+The first release deliberately excludes tables, media/iframe/resource Blocks,
+async widgets, `keep-alive` views and container render units. Those views may
+load resources, preserve DOM-owned state or require table/split geometry that a
+text-only speculative pass cannot safely reproduce. Prefer model-only
+`estimateHeight()` for them.
+The audited built-ins are `paragraph`, `ordered`, `bullet`, `todo`,
+`blockquote`, and `caption`.
+Their first mount starts no network/upload work or media decoding/playback,
+writes no Yjs/model state, emits no notification, and registers no global
+listener or other side effect that normal detach/destroy cannot fully release;
+the work is safe to cancel, repeat and reverse.
+
+Flow and sparse pagination are separate measurement domains. A flow warm-up may
+update only the continuous layout stride/`HeightMap`; a sparse-pagination
+warm-up may update only pagination geometry. Page gaps, table flow, split plans,
+height locks and fitted media state never cross into continuous coordinates.
+Default live pagination already holds an exact full-document view lease, so it
+does not run another idle prefetch pass. The optimization is useful for ordinary
+virtualized flow and experimental sparse pagination; it does not change the rule
+that non-exact sparse layouts use complete readonly print/PDF reflow.
 
 Custom blocks can provide a model-driven estimate through
 `schema.metadata.virtualization.estimateHeight(context)`. It runs before

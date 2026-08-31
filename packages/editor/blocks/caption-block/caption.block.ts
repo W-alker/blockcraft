@@ -1,4 +1,4 @@
-import {Component} from "@angular/core";
+import {ChangeDetectionStrategy, Component} from "@angular/core";
 import {EditableBlockComponent} from "../../framework";
 import {CaptionBlockModel} from "./index";
 
@@ -9,6 +9,7 @@ import {CaptionBlockModel} from "./index";
   host: {
     '[class.edit-container]': 'true'
   },
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CaptionBlockComponent extends EditableBlockComponent<CaptionBlockModel> {
 }

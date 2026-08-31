@@ -32,6 +32,7 @@ import {
 } from '@ccc/blockcraft';
 import {PaginationSettingsComponent} from './pagination-settings.component';
 import {DocumentScaleSettingsComponent} from './document-scale-settings.component';
+import {IdlePrefetchDebugConsoleComponent} from './idle-prefetch-debug-console.component';
 import { debugTableMerge, fixTable } from '@ccc/blockcraft/blocks/table-block/callback';
 import { BlockCraftAwareness } from '@ccc/blockcraft/editor/awa';
 import { Subject, Subscription } from 'rxjs';
@@ -316,6 +317,7 @@ const ACTION_SECTIONS: DebugSection[] = [
     SnapshotViewerComponent,
     PaginationSettingsComponent,
     DocumentScaleSettingsComponent,
+    IdlePrefetchDebugConsoleComponent,
     RevisionReviewPanelComponent,
     RouterLink,
   ],
@@ -371,6 +373,8 @@ const ACTION_SECTIONS: DebugSection[] = [
             </div>
           </div>
         </section>
+
+        <playground-idle-prefetch-debug-console [doc]="editorDoc" />
 
         <section class="sidebar-card sidebar-card--grow">
           <span class="section-title">调试操作</span>
@@ -860,6 +864,7 @@ const ACTION_SECTIONS: DebugSection[] = [
       backdrop-filter: blur(16px);
       overflow-y: auto;
       overflow-x: hidden;
+      scroll-padding-top: 76px;
       box-sizing: border-box;
     }
 
@@ -1814,6 +1819,7 @@ graph TD
   }
 
   ngAfterViewInit(): void {
+    this.enablePlaygroundIdlePrefetch(this.editor);
     // 外置工具栏依赖子编辑器在 ngOnInit 中创建的 Doc；ViewChild 就绪后补一轮
     // 检测，让工具栏从首屏开始位于 .editor-stage 外，而不是等首次用户操作。
     this.cdr.detectChanges();
@@ -2194,8 +2200,21 @@ graph TD
     return JSON.parse(JSON.stringify(demoJSON)) as IBlockSnapshot;
   }
 
+  /**
+   * Playground 明确开启实验性空闲预热。编辑器公共输入保持不变，且必须在
+   * BlockCraftDoc 初始化前写入 manager 已解析的配置，才能让 init() 创建调度器。
+   */
+  private enablePlaygroundIdlePrefetch(editor: EditorComponent | undefined): void {
+    if (!editor) return;
+    const manager = editor.doc.virtualization as unknown as {
+      config?: {idlePrefetch?: boolean};
+    };
+    if (manager.config) manager.config.idlePrefetch = true;
+  }
+
   private ensureEditorInitialized(snapshot: IBlockSnapshot = this.createDemoSnapshot()) {
     const editor = this.requireEditor();
+    this.enablePlaygroundIdlePrefetch(editor);
     this.ensureAgentPlugin(editor);
     if (!editor.doc.isInitialized) {
       editor.doc.initBySnapshot(snapshot, this.editorDocumentSurface);
@@ -2208,6 +2227,7 @@ graph TD
 
   private ensureEmptyEditorReady() {
     const editor = this.requireEditor();
+    this.enablePlaygroundIdlePrefetch(editor);
     this.ensureAgentPlugin(editor);
     if (!editor.doc.isInitialized) {
       const rootSnapshot = editor.doc.schemas.createSnapshot('root', [
@@ -3244,6 +3264,7 @@ graph TD
     if (this.provider) this.quitRoom();
 
     const editor = this.requireEditor();
+    this.enablePlaygroundIdlePrefetch(editor);
     this._collabAmbiguousRootLogged = false;
 
     const provider = this.provider = new WebsocketProvider(

@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-08-28
+> Last updated: 2026-08-31
 
 ## Block Types
 
@@ -679,6 +679,47 @@ where the same model node acts as a manual break.
 view lifecycle, while the latter owns model-only geometry before or between
 materializations. Document-wide windowing, LRU limits and host overrides remain
 under `DocConfig.virtualization`.
+
+### Idle Speculative Mount Safety
+
+A direct-root text Schema can explicitly declare that its view is safe to
+construct during idle prefetch:
+
+```typescript
+metadata: {
+  version: 1,
+  label: 'Plain note',
+  virtualization: {
+    speculativeMount: 'safe',
+  },
+}
+```
+
+`speculativeMount?: 'safe'` is a safety capability, not a request to mount the
+Block. It is considered only when the host also sets
+`DocConfig.virtualization.idlePrefetch: true`; the document option defaults to
+`false`. The first release accepts safe text Blocks only when they are direct
+root render units. It warms eligible roots within one projected viewport of the
+current window before sweeping farther roots during later idle slices.
+The audited built-ins are `paragraph`, `ordered`, `bullet`, `todo`,
+`blockquote`, and `caption`.
+
+Declaring `'safe'` promises that speculative construction is deterministic and
+idempotent. Component initialization must not start network/upload work or media
+decoding/playback, write Yjs/model state, emit notifications, change focus, or
+register a global listener or other side effect that normal detach/destroy cannot
+fully release. The speculative mount may be cancelled immediately, so
+construction must be repeatable and reversible. Do not declare it for
+tables, media/iframe/resource Blocks, asynchronous widgets, `keep-alive` views,
+or container render units in this release. Those Blocks continue to use
+model-only `estimateHeight()` until ordinary mounting supplies authoritative DOM
+geometry.
+
+Use `estimateHeight()` whenever model facts can provide a useful answer; reserve
+`speculativeMount: 'safe'` for text layout whose final browser wrapping is worth
+warming. The runtime keeps continuous-flow and sparse-pagination measurements
+separate, and normal pagination already mounts the complete document through its
+full-document lease.
 
 ### Object Layout and Placement
 

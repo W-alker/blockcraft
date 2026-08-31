@@ -27,6 +27,9 @@ export const ParagraphBlockSchema: IBlockSchemaOptions<ParagraphBlockModel> = {
       default: '输入"/"呼出菜单',
       heading: { 1: '一级标题', 2: '二级标题', 3: '三级标题' },
     },
+    virtualization: {
+      speculativeMount: 'safe',
+    },
   }
 }
 

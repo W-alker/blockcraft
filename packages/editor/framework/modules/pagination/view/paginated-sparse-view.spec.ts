@@ -351,6 +351,306 @@ describe('PaginatedViewController sparse view', () => {
     }
   })
 
+  it('publishes one full sparse layout after four idle-prefetch measurements', () => {
+    jasmine.clock().install()
+    const harness = createWarmWindowHarness([
+      ['a', 160],
+      ['b', 170],
+      ['c', 180],
+      ['d', 190],
+      ['e', 200],
+    ])
+    const frames = installFrameQueue()
+    const compute = spyOn(harness.coordinator, 'compute').and.callThrough()
+    const applyLayout = spyOn(
+      harness.controller as unknown as {
+        _applyLayoutView(...args: unknown[]): ReadonlySet<string>
+      },
+      '_applyLayoutView',
+    ).and.callThrough()
+
+    try {
+      harness.controller.enable()
+      harness.controller.captureStableLayout()
+      compute.calls.reset()
+      applyLayout.calls.reset()
+      harness.reportIdlePrefetchMeasurements.calls.reset()
+
+      for (const id of ['b', 'c', 'd', 'e']) {
+        harness.mount(id, {idlePrefetch: true})
+        frames.flush()
+      }
+
+      expect(harness.reportIdlePrefetchMeasurements).toHaveBeenCalledTimes(4)
+      expect(compute).not.toHaveBeenCalled()
+      expect(applyLayout).not.toHaveBeenCalled()
+      expect(frames.pendingCount).toBe(1)
+
+      frames.flush()
+      expect(compute).toHaveBeenCalledTimes(1)
+      expect(applyLayout).toHaveBeenCalledTimes(1)
+
+      jasmine.clock().tick(50)
+      frames.flush()
+      expect(compute).toHaveBeenCalledTimes(1)
+      expect(applyLayout).toHaveBeenCalledTimes(1)
+    } finally {
+      harness.destroy()
+      jasmine.clock().uninstall()
+    }
+  })
+
+  it('counts four idle roots in one measurement pass as one complete batch', () => {
+    const harness = createWarmWindowHarness([
+      ['a', 160],
+      ['b', 170],
+      ['c', 180],
+      ['d', 190],
+      ['e', 200],
+    ])
+    const frames = installFrameQueue()
+    const compute = spyOn(harness.coordinator, 'compute').and.callThrough()
+
+    try {
+      harness.controller.enable()
+      harness.controller.captureStableLayout()
+      compute.calls.reset()
+      harness.reportIdlePrefetchMeasurements.calls.reset()
+
+      harness.mountWindow(['b', 'c', 'd', 'e'], ['b', 'c', 'd', 'e'])
+      frames.flush()
+
+      expect(harness.reportIdlePrefetchMeasurements).toHaveBeenCalledOnceWith([
+        'b',
+        'c',
+        'd',
+        'e',
+      ])
+      expect(compute).not.toHaveBeenCalled()
+      expect(frames.pendingCount).toBe(1)
+
+      frames.flush()
+      expect(compute).toHaveBeenCalledTimes(1)
+    } finally {
+      harness.destroy()
+    }
+  })
+
+  it('publishes one full sparse layout when an idle-prefetch batch reaches 50ms', () => {
+    jasmine.clock().install()
+    const harness = createWarmWindowHarness([
+      ['a', 160],
+      ['b', 180],
+    ])
+    const frames = installFrameQueue()
+    const compute = spyOn(harness.coordinator, 'compute').and.callThrough()
+    const applyLayout = spyOn(
+      harness.controller as unknown as {
+        _applyLayoutView(...args: unknown[]): ReadonlySet<string>
+      },
+      '_applyLayoutView',
+    ).and.callThrough()
+
+    try {
+      harness.controller.enable()
+      harness.controller.captureStableLayout()
+      compute.calls.reset()
+      applyLayout.calls.reset()
+
+      harness.mount('b', {idlePrefetch: true})
+      frames.flush()
+      expect(compute).not.toHaveBeenCalled()
+      expect(applyLayout).not.toHaveBeenCalled()
+      expect(frames.pendingCount).toBe(0)
+
+      jasmine.clock().tick(49)
+      expect(frames.pendingCount).toBe(0)
+      jasmine.clock().tick(1)
+      expect(frames.pendingCount).toBe(1)
+
+      frames.flush()
+      expect(compute).toHaveBeenCalledTimes(1)
+      expect(applyLayout).toHaveBeenCalledTimes(1)
+
+      jasmine.clock().tick(50)
+      frames.flush()
+      expect(compute).toHaveBeenCalledTimes(1)
+      expect(applyLayout).toHaveBeenCalledTimes(1)
+    } finally {
+      harness.destroy()
+      jasmine.clock().uninstall()
+    }
+  })
+
+  it('flushes a pending idle batch when a warmed near root enters the viewport', () => {
+    jasmine.clock().install()
+    const harness = createWarmWindowHarness([
+      ['a', 160],
+      ['b', 180],
+    ])
+    const frames = installFrameQueue()
+    const compute = spyOn(harness.coordinator, 'compute').and.callThrough()
+
+    try {
+      harness.controller.enable()
+      harness.controller.captureStableLayout()
+      compute.calls.reset()
+
+      harness.mount('b', {idlePrefetch: true})
+      frames.flush()
+      expect(compute).not.toHaveBeenCalled()
+
+      harness.handoff('b')
+      expect(frames.pendingCount).toBe(1)
+      frames.flush()
+
+      expect(compute).toHaveBeenCalledTimes(1)
+      jasmine.clock().tick(50)
+      frames.flush()
+      expect(compute).toHaveBeenCalledTimes(1)
+    } finally {
+      harness.destroy()
+      jasmine.clock().uninstall()
+    }
+  })
+
+  it('forces an ACK pass for an idle-prefetch retained host with reusable geometry', () => {
+    const harness = createWarmWindowHarness([
+      ['a', 160],
+      ['b', 180],
+    ])
+    const frames = installFrameQueue()
+    const compute = spyOn(harness.coordinator, 'compute').and.callThrough()
+
+    try {
+      harness.controller.enable()
+      harness.controller.captureStableLayout()
+      harness.mount('b')
+      frames.flush()
+      harness.mount('a')
+      frames.flush()
+      compute.calls.reset()
+      harness.reportIdlePrefetchMeasurements.calls.reset()
+
+      harness.mount('b', {idlePrefetch: true})
+      expect(frames.pendingCount).toBe(1)
+      frames.flush()
+
+      expect(harness.reportIdlePrefetchMeasurements).toHaveBeenCalledWith(['b'])
+      expect(compute).not.toHaveBeenCalled()
+    } finally {
+      harness.destroy()
+    }
+  })
+
+  it('publishes immediately when one measurement pass mixes foreground and idle changes', () => {
+    const harness = createWarmWindowHarness([
+      ['a', 160],
+      ['b', 180],
+    ])
+    const frames = installFrameQueue()
+    const compute = spyOn(harness.coordinator, 'compute').and.callThrough()
+
+    try {
+      harness.controller.enable()
+      harness.controller.captureStableLayout()
+      compute.calls.reset()
+      harness.replaceHost('a', blockHost('a', 220))
+
+      harness.mountWindow(['a', 'b'], ['b'])
+      frames.flush()
+
+      expect(harness.reportIdlePrefetchMeasurements).toHaveBeenCalledWith(['a', 'b'])
+      expect(compute).toHaveBeenCalledTimes(1)
+      expect((harness.controller as any)._pendingSparseIdlePrefetchMeasurements).toBe(0)
+    } finally {
+      harness.destroy()
+    }
+  })
+
+  it('publishes an ordinary viewport measurement and absorbs an idle batch', () => {
+    jasmine.clock().install()
+    const harness = createWarmWindowHarness([
+      ['a', 160],
+      ['b', 180],
+      ['c', 190],
+    ])
+    const frames = installFrameQueue()
+    const compute = spyOn(harness.coordinator, 'compute').and.callThrough()
+    const applyLayout = spyOn(
+      harness.controller as unknown as {
+        _applyLayoutView(...args: unknown[]): ReadonlySet<string>
+      },
+      '_applyLayoutView',
+    ).and.callThrough()
+
+    try {
+      harness.controller.enable()
+      harness.controller.captureStableLayout()
+      compute.calls.reset()
+      applyLayout.calls.reset()
+      harness.reportIdlePrefetchMeasurements.calls.reset()
+
+      harness.mount('b', {idlePrefetch: true})
+      frames.flush()
+      expect(compute).not.toHaveBeenCalled()
+      expect(applyLayout).not.toHaveBeenCalled()
+
+      harness.mount('c')
+      frames.flush()
+
+      expect(harness.reportIdlePrefetchMeasurements).toHaveBeenCalledWith(['b'])
+      expect(harness.reportIdlePrefetchMeasurements).toHaveBeenCalledWith(['c'])
+      expect(compute).toHaveBeenCalledTimes(1)
+      expect(applyLayout).toHaveBeenCalledTimes(1)
+      expect(frames.pendingCount).toBe(0)
+
+      jasmine.clock().tick(50)
+      frames.flush()
+      expect(compute).toHaveBeenCalledTimes(1)
+      expect(applyLayout).toHaveBeenCalledTimes(1)
+    } finally {
+      harness.destroy()
+      jasmine.clock().uninstall()
+    }
+  })
+
+  it('clears a pending idle-prefetch publish timer when disabled', () => {
+    jasmine.clock().install()
+    const harness = createWarmWindowHarness([
+      ['a', 160],
+      ['b', 180],
+    ])
+    const frames = installFrameQueue()
+    const compute = spyOn(harness.coordinator, 'compute').and.callThrough()
+    const internals = harness.controller as unknown as {
+      _pendingSparseIdlePrefetchMeasurements: number
+      _sparseIdlePrefetchBatchTimer: number | null
+    }
+
+    try {
+      harness.controller.enable()
+      harness.controller.captureStableLayout()
+      compute.calls.reset()
+
+      harness.mount('b', {idlePrefetch: true})
+      frames.flush()
+      expect(internals._pendingSparseIdlePrefetchMeasurements).toBe(1)
+      expect(internals._sparseIdlePrefetchBatchTimer).not.toBeNull()
+
+      harness.controller.disable()
+      expect(internals._pendingSparseIdlePrefetchMeasurements).toBe(0)
+      expect(internals._sparseIdlePrefetchBatchTimer).toBeNull()
+
+      jasmine.clock().tick(50)
+      frames.flush()
+      expect(compute).not.toHaveBeenCalled()
+    } finally {
+      harness.destroy()
+      jasmine.clock().uninstall()
+    }
+  })
+
   it('defers structure validation until the matching sparse projection publishes', () => {
     const harness = createWarmWindowHarness()
 
@@ -462,29 +762,73 @@ function gapBefore(host: HTMLElement): HTMLElement | null {
   return previous?.dataset['bcPageGapSpacer'] ? previous : null
 }
 
-function createWarmWindowHarness() {
+function installFrameQueue() {
+  const callbacks = new Map<number, FrameRequestCallback>()
+  let nextFrameId = 0
+  spyOn(window, 'requestAnimationFrame').and.callFake(callback => {
+    const frameId = ++nextFrameId
+    callbacks.set(frameId, callback)
+    return frameId
+  })
+  spyOn(window, 'cancelAnimationFrame').and.callFake(frameId => {
+    callbacks.delete(frameId)
+  })
+
+  return {
+    flush() {
+      const pending = [...callbacks.values()]
+      callbacks.clear()
+      pending.forEach(callback => callback(performance.now()))
+    },
+    get pendingCount() {
+      return callbacks.size
+    },
+  }
+}
+
+function createWarmWindowHarness(
+  rootHeights: readonly (readonly [id: string, height: number])[] = [
+    ['a', 160],
+    ['b', 160],
+  ],
+) {
   const scrollContainer = document.createElement('div')
   const rootHost = document.createElement('div')
-  const hosts = new Map([
-    ['a', blockHost('a', 160)],
-    ['b', blockHost('b', 160)],
-  ])
+  const rootIds = rootHeights.map(([id]) => id)
+  const initialRootId = rootIds[0]
+  if (!initialRootId) throw new Error('Warm-window harness requires a root')
+  const hosts = new Map(rootHeights.map(
+    ([id, height]) => [id, blockHost(id, height)] as const,
+  ))
   rootHost.setAttribute('data-blockcraft-root', 'true')
-  rootHost.append(hosts.get('a')!)
+  rootHost.append(hosts.get(initialRootId)!)
   scrollContainer.append(rootHost)
   document.body.append(scrollContainer)
 
-  let mountedIds = ['a']
+  let mountedIds = [initialRootId]
   let projection: any = null
   let registrationHooks: any = null
   let projectionReleaseError: Error | null = null
+  const pendingIdlePrefetchIds = new Set<string>()
   const viewChange$ = new Subject<{mountedRootIds: readonly string[]}>()
+  const idlePrefetchHandoffListeners = new Set<
+    (rootIds: readonly string[]) => void
+  >()
   const contentChange$ = new Subject<IBlockModelContentChange>()
   const structureChange$ = new Subject<IBlockModelStructureChange>()
   const themeChange$ = new Subject<string>()
   const childrenChange$ = new Subject<void>()
   const releaseProjection = jasmine.createSpy('releaseProjection')
   const onSparseViewFailure = jasmine.createSpy('onSparseViewFailure')
+  const reportIdlePrefetchMeasurements = jasmine.createSpy(
+    'reportIdlePrefetchMeasurements',
+  ).and.callFake((measuredRootIds: readonly string[]) => {
+    let reported = false
+    for (const id of measuredRootIds) {
+      if (pendingIdlePrefetchIds.delete(id)) reported = true
+    }
+    return reported
+  })
   const config = {
     scrollContainer,
     theme: 'light',
@@ -496,13 +840,13 @@ function createWarmWindowHarness() {
   const doc = {
     rootId: 'root',
     root: {
-      childrenIds: ['a', 'b'],
+      childrenIds: rootIds,
       hostElement: rootHost,
     },
     model: {
       contentChange$,
       structureChange$,
-      getChildrenIds: (id: string) => (id === 'root' ? ['a', 'b'] : []),
+      getChildrenIds: (id: string) => (id === 'root' ? rootIds : []),
       getPath: (id: string) => ['root', id],
       getFlavour: () => 'paragraph',
       getNodeType: () => BlockNodeType.editable,
@@ -544,6 +888,17 @@ function createWarmWindowHarness() {
           if (projectionReleaseError) throw projectionReleaseError
         }
       },
+      reportIdlePrefetchMeasurements,
+      hasPendingIdlePrefetchMeasurements: (rootIds: readonly string[]) =>
+        rootIds.some(id => pendingIdlePrefetchIds.has(id)),
+      pendingIdlePrefetchMeasurementIds: (rootIds: readonly string[]) =>
+        rootIds.filter(id => pendingIdlePrefetchIds.has(id)),
+      subscribeIdlePrefetchHandoffs: (
+        listener: (rootIds: readonly string[]) => void,
+      ) => {
+        idlePrefetchHandoffListeners.add(listener)
+        return () => idlePrefetchHandoffListeners.delete(listener)
+      },
     },
     inputManger: {compositionSession: {isIdle: true}},
     event: {status: {isComposing: false}},
@@ -571,6 +926,7 @@ function createWarmWindowHarness() {
     logger: doc.logger,
     releaseProjection,
     onSparseViewFailure,
+    reportIdlePrefetchMeasurements,
     get projection() {
       if (!projection) throw new Error('Sparse projection is not registered')
       return projection
@@ -584,12 +940,28 @@ function createWarmWindowHarness() {
     setProjectionReleaseError(error: Error | null) {
       projectionReleaseError = error
     },
-    mount(id: 'a' | 'b') {
+    mount(id: string, options: {idlePrefetch?: boolean} = {}) {
+      const host = hosts.get(id)
+      if (!host) throw new Error(`Unknown harness root: ${id}`)
+      if (options.idlePrefetch) pendingIdlePrefetchIds.add(id)
       mountedIds = [id]
-      rootHost.replaceChildren(hosts.get(id)!)
+      rootHost.replaceChildren(host)
       viewChange$.next({mountedRootIds: [...mountedIds]})
     },
-    replaceHost(id: 'a' | 'b', host: HTMLElement) {
+    mountWindow(ids: readonly string[], idlePrefetchIds: readonly string[] = []) {
+      ids.forEach(id => {
+        if (!hosts.has(id)) throw new Error(`Unknown harness root: ${id}`)
+      })
+      idlePrefetchIds.forEach(id => pendingIdlePrefetchIds.add(id))
+      mountedIds = [...ids]
+      rootHost.replaceChildren(...ids.map(id => hosts.get(id)!))
+      viewChange$.next({mountedRootIds: [...mountedIds]})
+    },
+    handoff(id: string) {
+      idlePrefetchHandoffListeners.forEach(listener => listener([id]))
+    },
+    replaceHost(id: string, host: HTMLElement) {
+      if (!hosts.has(id)) throw new Error(`Unknown harness root: ${id}`)
       hosts.set(id, host)
     },
     destroy() {

@@ -25,6 +25,9 @@ export const BulletBlockSchema: IBlockSchemaOptions<BulletBlockModel> = {
     icon: 'bc_icon bc_wuxuliebiao-color',
     svgIcon: 'bc_wuxuliebiao-color',
     placeholder: '列表项',
+    virtualization: {
+      speculativeMount: 'safe',
+    },
   }
 }
 

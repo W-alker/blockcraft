@@ -852,6 +852,7 @@ doc = new BlockCraftDoc({
   scrollContainer: undefined, // optional — auto-detected if not given
   virtualization: {           // optional — disabled by default
     enabled: true,
+    idlePrefetch: true,        // optional — default false; safe text roots only
     overscanViewports: 1,
     segmentMergeGap: 2,
     retainedViewLimit: 12,
@@ -976,6 +977,11 @@ remain disabled/false respectively.
   reconciliation frame; a later mount rebuilds it from current Yjs state.
 - `estimatedHeights` supplies per-flavour heights until `ResizeObserver`
   measures a mounted block. Missing flavours use 48px.
+- `idlePrefetch` defaults to `false`. When enabled, BlockCraft uses idle slices
+  to speculatively materialize and measure only direct-root text Schemas whose
+  `metadata.virtualization.speculativeMount` is `'safe'`. It first warms the
+  eligible range within one projected viewport of the mounted window, then
+  sweeps more distant eligible roots as later idle budgets allow.
 - A custom Schema can take precedence with
   `metadata.virtualization.estimateHeight(context)`. The callback receives
   readonly model props, direct child IDs, `estimateChildHeight()`, cached root
@@ -1037,6 +1043,24 @@ virtualization: {
 Every materialized keep-alive block permanently increases mounted DOM and
 Angular view cost until deletion. Use the policy for genuinely stateful blocks,
 not as a general remount optimization.
+
+Idle prefetch uses `requestIdleCallback` when the browser provides it and a
+cancellable short-budget timer fallback otherwise. It is deliberately narrower than
+ordinary mounting: the first release excludes tables, media, iframe/resource
+views, asynchronous widgets and container render units even if they are
+offscreen. A custom Schema must declare `'safe'` only when constructing its text
+view is deterministic and idempotent, writes no Yjs/model state, emits no
+notification, starts no network/upload work or media decoding/playback, and
+registers no global listener or other side effect that detach/destroy cannot
+fully release; see `blockcraft-block.md`.
+The audited built-ins are `paragraph`, `ordered`, `bullet`, `todo`,
+`blockquote`, and `caption`.
+
+The prefetcher never shares measured coordinates between layout modes. Flow
+measurements update only continuous virtualization, while sparse-pagination
+measurements update only its paginated geometry. Default live pagination already
+holds the full-document view lease and therefore receives no additional benefit
+or second full-document pass from `idlePrefetch`.
 
 The coordinator performs only constant-time revision/length checks on ordinary
 reconciliation frames. A detected model/index/height mismatch triggers one cold

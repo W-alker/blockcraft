@@ -27,6 +27,9 @@ export const TodoBlockSchema: IBlockSchemaOptions<TodoBlockModel> = {
     icon: 'bc_icon bc_gongzuoshixiang-color',
     svgIcon: 'bc_gongzuoshixiang-color',
     placeholder: '待办事项',
+    virtualization: {
+      speculativeMount: 'safe',
+    },
   }
 }
 

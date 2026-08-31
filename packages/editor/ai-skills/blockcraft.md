@@ -418,6 +418,7 @@ const doc = new BlockCraftDoc({
   // ...required config
   virtualization: {
     enabled: true,
+    idlePrefetch: true, // default false; warm only safe text roots during idle time
     overscanViewports: 1,
     segmentMergeGap: 2,
     retainedViewLimit: 12,
@@ -493,6 +494,28 @@ persisted `props.height` is the O(1) offscreen estimate, so a custom host does
 not need a per-flavour fallback merely to preserve their fixed object frame.
 Mounted DOM measurement remains the exact correction for surrounding layout
 stride and browser projection.
+
+Hosts can opt into idle geometry warm-up with
+`DocConfig.virtualization.idlePrefetch: true` (default `false`). The first
+release speculatively materializes only direct-root text Schemas that declare
+`metadata.virtualization.speculativeMount: 'safe'`: it warms eligible roots
+within one projected viewport of the mounted window first, then sweeps more
+distant eligible roots across later idle slices. Scheduling uses
+`requestIdleCallback` where available and a cancellable compatibility fallback
+elsewhere. Tables, media/iframe blocks, asynchronous or stateful views, and
+nested container render units are not admitted in this release.
+The audited built-ins are `paragraph`, `ordered`, `bullet`, `todo`,
+`blockquote`, and `caption`.
+The `'safe'` declaration forbids first-mount network/upload work, media
+decoding/playback, Yjs/model writes, notifications, and global listeners or
+other side effects that normal detach/destroy cannot fully release.
+
+Prefetched geometry remains coordinate-system specific. Continuous flow may
+update only its normal layout-stride cache, while experimental sparse pagination
+may update only paginated geometry; page gaps, split plans and height locks never
+feed the continuous `HeightMap`. Ordinary pagination already holds the exact
+full-document view lease, so idle prefetch adds no second warm-up pass there.
+Non-exact sparse layouts continue to use complete readonly reflow for print/PDF.
 
 This is opt-in and disabled by default. Direct root children are windowed;
 their nested tables/columns/callouts remain complete atomic subtrees. Selection

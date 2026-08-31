@@ -987,7 +987,7 @@ describe("PaginationLayoutCoordinator", () => {
     coordinator.applyContentChange(contentChange(["a"]));
     expect(
       coordinator.applyMeasured([measurement("a", 40)], contentTicket, 0),
-    ).toEqual({accepted: false, changed: false});
+    ).toEqual({accepted: false, changed: false, changedRootIds: []});
     expect(coordinator.compute(config(), geometry()).exact).toBeFalse();
 
     expect(
@@ -996,7 +996,7 @@ describe("PaginationLayoutCoordinator", () => {
         coordinator.geometryRevision,
         0,
       ),
-    ).toEqual({accepted: true, changed: true});
+    ).toEqual({accepted: true, changed: true, changedRootIds: ['a']});
     expect(coordinator.compute(config(), geometry()).exact).toBeTrue();
 
     const contextTicket = coordinator.geometryRevision;
@@ -1010,7 +1010,7 @@ describe("PaginationLayoutCoordinator", () => {
     });
     expect(
       coordinator.applyMeasured([measurement("a", 50)], contextTicket, 0),
-    ).toEqual({accepted: false, changed: false});
+    ).toEqual({accepted: false, changed: false, changedRootIds: []});
     expect(coordinator.compute(config(), geometry()).exact).toBeFalse();
 
     expect(
@@ -1019,7 +1019,7 @@ describe("PaginationLayoutCoordinator", () => {
         coordinator.geometryRevision,
         0,
       ),
-    ).toEqual({accepted: true, changed: true});
+    ).toEqual({accepted: true, changed: true, changedRootIds: ['a']});
     const refreshed = coordinator.compute(config(), geometry());
     expect(refreshed.exact).toBeTrue();
     expect(refreshed.entries[0].naturalHeight).toBe(50);
@@ -1038,7 +1038,7 @@ describe("PaginationLayoutCoordinator", () => {
         coordinator.geometryRevision,
         1,
       ),
-    ).toEqual({accepted: true, changed: true});
+    ).toEqual({accepted: true, changed: true, changedRootIds: ['a']});
     const measuredRevision = coordinator.geometryRevision;
 
     coordinator.setRequiredMeasurementEpoch(2);
@@ -1050,7 +1050,7 @@ describe("PaginationLayoutCoordinator", () => {
         coordinator.geometryRevision,
         1,
       ),
-    ).toEqual({accepted: false, changed: false});
+    ).toEqual({accepted: false, changed: false, changedRootIds: []});
 
     expect(
       coordinator.applyMeasured(
@@ -1058,7 +1058,7 @@ describe("PaginationLayoutCoordinator", () => {
         coordinator.geometryRevision,
         2,
       ),
-    ).toEqual({accepted: true, changed: false});
+    ).toEqual({accepted: true, changed: false, changedRootIds: []});
     expect(coordinator.geometryRevision).toBe(measuredRevision);
     expect(coordinator.compute(config(), geometry()).exact).toBeTrue();
   });

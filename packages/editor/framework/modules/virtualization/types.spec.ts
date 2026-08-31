@@ -10,6 +10,7 @@ describe('resolveVirtualizationConfig', () => {
 
     expect(first).toEqual(DEFAULT_VIRTUALIZATION_CONFIG)
     expect(first.enabled).toBeFalse()
+    expect(first.idlePrefetch).toBeFalse()
     expect(first).not.toBe(DEFAULT_VIRTUALIZATION_CONFIG)
     expect(second).not.toBe(first)
     expect(second.estimatedHeights).not.toBe(first.estimatedHeights)
@@ -18,12 +19,18 @@ describe('resolveVirtualizationConfig', () => {
   it('preserves enabled and fills omitted fields from defaults', () => {
     expect(resolveVirtualizationConfig({enabled: true})).toEqual({
       enabled: true,
+      idlePrefetch: false,
       overscanViewports: 1,
       segmentMergeGap: 2,
       retainedViewLimit: 12,
       estimatedHeights: {},
       resolveViewRetention: undefined,
     })
+  })
+
+  it('preserves an explicit idle-prefetch opt-in', () => {
+    expect(resolveVirtualizationConfig({idlePrefetch: true}).idlePrefetch)
+      .toBeTrue()
   })
 
   it('normalizes numeric fields while preserving fractional viewport overscan', () => {

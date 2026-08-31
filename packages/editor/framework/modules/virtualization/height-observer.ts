@@ -50,6 +50,25 @@ export class HeightObserver {
     this.idsByElement.clear()
   }
 
+  /**
+   * Read one already-mounted host on an idle animation frame. This is the
+   * acknowledgement fallback for a retained Element whose mandatory initial
+   * ResizeObserver delivery may be coalesced with its previous equal stride.
+   *
+   * @internal RootVirtualizationManager is the only production caller.
+   */
+  measureNow(blockId: string, element: Element): boolean {
+    const rects = new Map<Element, DOMRect>()
+    const stride = this.getLayoutStride(element, rects)
+    const height = stride ?? element.getBoundingClientRect().height / this.visualScale()
+    if (!Number.isFinite(height) || height <= 0) return false
+    if (stride !== undefined) {
+      this.lastLayoutStrideByElement.set(element, stride)
+    }
+    this.onMeasurements([[blockId, height]])
+    return true
+  }
+
   private handleEntries(entries: readonly ResizeObserverEntry[]): void {
     const values = new Map<string, number>()
     const rects = new Map<Element, DOMRect>()
@@ -95,12 +114,14 @@ export class HeightObserver {
       return rect
     }
     const stride = readRect(next).top - readRect(target).top
-    const visualScale = this.readVisualScale()
-    const layoutStride = stride / (
-      Number.isFinite(visualScale) && visualScale > 0 ? visualScale : 1
-    )
+    const layoutStride = stride / this.visualScale()
     return Number.isFinite(layoutStride) && layoutStride > 0
       ? layoutStride
       : undefined
+  }
+
+  private visualScale(): number {
+    const scale = this.readVisualScale()
+    return Number.isFinite(scale) && scale > 0 ? scale : 1
   }
 }

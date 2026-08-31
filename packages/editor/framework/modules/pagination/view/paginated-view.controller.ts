@@ -30,7 +30,14 @@ import {GapApplier} from "./gap-applier";
 import {TableBreakApplier} from "./table-break-applier";
 import {HeightLockApplier} from "./height-lock-applier";
 import {createStablePaginationLayout, StablePaginationLayout} from "./stable-pagination-layout";
-import {registerRootLayoutProjection} from "../../virtualization/root-virtualization-manager";
+import {
+  hasPendingRootIdlePrefetchMeasurements,
+  invalidateRootIdlePrefetch,
+  pendingRootIdlePrefetchMeasurementIds,
+  registerRootLayoutProjection,
+  reportRootIdlePrefetchMeasurements,
+  subscribeRootIdlePrefetchHandoffs,
+} from "../../virtualization/root-virtualization-manager";
 import {DocumentHeaderLayer} from './document-header-layer';
 import {InlineBreakApplier} from './inline-break-applier';
 import {cloneInlinePaginationBreakPlan} from './inline-break-plan';
@@ -40,6 +47,9 @@ interface FontLoadingEventTarget {
   addEventListener(type: "loadingdone", listener: EventListener): void;
   removeEventListener(type: "loadingdone", listener: EventListener): void;
 }
+
+const SPARSE_IDLE_PREFETCH_MEASUREMENT_BATCH_SIZE = 4;
+const SPARSE_IDLE_PREFETCH_MEASUREMENT_BATCH_DELAY_MS = 50;
 
 /** @internal Phase C rollout controls; PaginationPlugin owns the public flag. */
 export interface PaginatedViewControllerOptions {
@@ -65,6 +75,8 @@ export class PaginatedViewController {
   private _pendingRecomputeKind: 'none' | 'mounted-measurement' | 'full' = 'none';
   private _compositionRecomputePending = false;
   private _sparseProjectionUpdateDeferred = false;
+  private _pendingSparseIdlePrefetchMeasurements = 0;
+  private _sparseIdlePrefetchBatchTimer: number | null = null;
   private _enabled = false;
   private _destroyed = false;
   private _layoutRevision = 0;
@@ -140,6 +152,10 @@ export class PaginatedViewController {
    * margins / header / footer 为浅合并：传入对象整体替换该字段。
    */
   updateConfig(partial: Partial<PaginationConfig>): void {
+    invalidateRootIdlePrefetch(
+      this.doc.virtualization,
+      'pagination-config',
+    );
     this._config = {
       ...this._config,
       ...partial,
@@ -248,6 +264,10 @@ export class PaginatedViewController {
         subscribeRevisionPresentationChange(revisionManager, change => {
           const rootIds = this._rootIdsForChangedBlocks(change.blockIds);
           if (!rootIds.length) return;
+          invalidateRootIdlePrefetch(
+            this.doc.virtualization,
+            'pagination-revision-presentation',
+          );
           this._heightSource.invalidateMeasurements(rootIds);
           this._inlineBreaks.invalidate(rootIds);
           this._shadowLayout = null;
@@ -306,6 +326,16 @@ export class PaginatedViewController {
             }
           }),
         );
+      }
+      if (this.options.sparseView) {
+        this._subs.add(subscribeRootIdlePrefetchHandoffs(
+          this.doc.virtualization,
+          () => {
+            if (this._pendingSparseIdlePrefetchMeasurements) {
+              this.scheduleRecompute();
+            }
+          },
+        ));
       }
       this._containerRO = new ResizeObserver(() => this.scheduleRecompute());
       this._containerRO.observe(this.scrollContainer);
@@ -415,6 +445,7 @@ export class PaginatedViewController {
   private _queueRecompute(kind: 'mounted-measurement' | 'full'): void {
     if (!this._enabled) return;
     if (kind === 'full') {
+      this._clearSparseIdlePrefetchMeasurementBatch();
       this._pendingRecomputeKind = 'full';
       this._stableLayoutReusableForExport = false;
       this._shadowLayout = null;
@@ -443,9 +474,50 @@ export class PaginatedViewController {
     });
   }
 
+  private _deferSparseIdlePrefetchMeasurementPublish(rootCount: number): void {
+    this._pendingSparseIdlePrefetchMeasurements += rootCount;
+    this._stableLayoutReusableForExport = false;
+    if (
+      this._pendingSparseIdlePrefetchMeasurements
+      >= SPARSE_IDLE_PREFETCH_MEASUREMENT_BATCH_SIZE
+    ) {
+      this._flushSparseIdlePrefetchMeasurementBatch();
+      return;
+    }
+    if (this._sparseIdlePrefetchBatchTimer !== null) return;
+    const ownerWindow = this.scrollContainer.ownerDocument.defaultView ?? window;
+    this._sparseIdlePrefetchBatchTimer = ownerWindow.setTimeout(() => {
+      this._sparseIdlePrefetchBatchTimer = null;
+      if (!this._enabled || !this._pendingSparseIdlePrefetchMeasurements) {
+        this._pendingSparseIdlePrefetchMeasurements = 0;
+        return;
+      }
+      this._pendingSparseIdlePrefetchMeasurements = 0;
+      this.scheduleRecompute();
+    }, SPARSE_IDLE_PREFETCH_MEASUREMENT_BATCH_DELAY_MS);
+  }
+
+  private _flushSparseIdlePrefetchMeasurementBatch(): void {
+    if (!this._pendingSparseIdlePrefetchMeasurements) return;
+    this._clearSparseIdlePrefetchMeasurementBatch();
+    this.scheduleRecompute();
+  }
+
+  private _clearSparseIdlePrefetchMeasurementBatch(): void {
+    const timer = this._sparseIdlePrefetchBatchTimer;
+    this._sparseIdlePrefetchBatchTimer = null;
+    this._pendingSparseIdlePrefetchMeasurements = 0;
+    if (timer === null) return;
+    const ownerWindow = this.scrollContainer.ownerDocument.defaultView ?? window;
+    ownerWindow.clearTimeout(timer);
+  }
+
   @performanceTest('pagination view recompute', 16)
   private _recompute(mountedMeasurementOnly = false): StablePaginationLayout | null {
     if (!this._enabled) return null;
+    if (!mountedMeasurementOnly) {
+      this._clearSparseIdlePrefetchMeasurementBatch();
+    }
     // IME 组合期间 DOM 含浏览器管理的临时文本节点；此时重建分页投影会破坏组合范围。
     // 表格选区实体化可能替换 compositionstart 的宿主，使原生状态提前复位；
     // 模型会话覆盖 active/committing 全周期，必须同时作为分页重排的权威门禁。
@@ -677,6 +749,12 @@ export class PaginatedViewController {
           `Mounted pagination hosts are not measurable yet: ${missingMountedIds.join(', ')}`,
         );
       }
+      const pendingIdlePrefetchIds = new Set(
+        pendingRootIdlePrefetchMeasurementIds(
+          this.doc.virtualization,
+          mountedIds,
+        ),
+      );
       const applied = this.layoutCoordinator.applyMeasured(
         measurements,
         measurementRevision,
@@ -686,10 +764,18 @@ export class PaginatedViewController {
         this.scheduleRecompute();
         return null;
       }
+      const idlePrefetchMeasurement = reportRootIdlePrefetchMeasurements(
+        this.doc.virtualization!,
+        mountedIds,
+      );
       if (
         mountedMeasurementOnly
         && !applied.changed
         && !this._sparseProjectionUpdateDeferred
+        && (
+          idlePrefetchMeasurement
+          || !this._pendingSparseIdlePrefetchMeasurements
+        )
       ) {
         // Retained/recreated DOM confirmed the geometry already stored in the
         // index. The surrounding inline transaction rolls back its temporary
@@ -698,6 +784,23 @@ export class PaginatedViewController {
         this._sparseFailureCount = 0;
         return null;
       }
+      if (
+        mountedMeasurementOnly
+        && idlePrefetchMeasurement
+        && applied.changed
+        && applied.changedRootIds.every(id => pendingIdlePrefetchIds.has(id))
+        && !this._sparseProjectionUpdateDeferred
+      ) {
+        this._sparseFailureCount = 0;
+        this._deferSparseIdlePrefetchMeasurementPublish(
+          applied.changedRootIds.length,
+        );
+        return null;
+      }
+
+      // A foreground window correction or a deferred projection completion
+      // publishes every geometry-index change accumulated by an idle batch.
+      this._clearSparseIdlePrefetchMeasurementBatch();
 
       const state = this.layoutCoordinator.compute(this._config, this._geom, {
         // A structure-changing IME can return the model to geometry equal to
@@ -994,11 +1097,16 @@ export class PaginatedViewController {
   }
 
   private _syncMountedViews(mountedRootIds: readonly string[]): boolean {
-    const needsMeasurement = !!this.options.sparseView
-      && this._heightSource.hasUnmeasuredMountedRoots(
+    const needsMeasurement = !!this.options.sparseView && (
+      hasPendingRootIdlePrefetchMeasurements(
+        this.doc.virtualization,
+        mountedRootIds,
+      )
+      || this._heightSource.hasUnmeasuredMountedRoots(
         mountedRootIds,
         this._measureOptions(),
-      );
+      )
+    );
     this._heightSource.syncObserved(mountedRootIds);
     this._gapApplier.syncMounted(mountedRootIds);
     const inlineFailures = this._inlineBreaks.syncMounted(mountedRootIds);
@@ -1149,6 +1257,10 @@ export class PaginatedViewController {
 
   private _onDocumentHeaderHeightChange(height: number): void {
     if (Math.abs(height - this._documentHeaderHeight) < 0.5) return;
+    invalidateRootIdlePrefetch(
+      this.doc.virtualization,
+      'pagination-document-header',
+    );
     this._documentHeaderHeight = height;
     this._refreshGeometry();
     if (!this._enabled) return;
@@ -1268,6 +1380,7 @@ export class PaginatedViewController {
   }
 
   disable(): void {
+    this._clearSparseIdlePrefetchMeasurementBatch();
     if (!this._enabled) return;
     this._enabled = false;
     try {

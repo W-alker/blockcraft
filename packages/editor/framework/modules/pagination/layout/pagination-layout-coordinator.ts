@@ -59,6 +59,8 @@ export interface PaginationMeasurementApplyResult {
   readonly accepted: boolean;
   /** True only when the accepted batch changed stored pagination geometry. */
   readonly changed: boolean;
+  /** Root IDs whose accepted natural geometry changed in this batch. */
+  readonly changedRootIds: readonly string[];
 }
 
 interface RootSnapshot {
@@ -70,6 +72,12 @@ type PaginationGeometrySemantics = Omit<
   PaginationGeometrySeed,
   'estimatedHeight' | 'modelDriven'
 >;
+
+interface PaginationRootFacts {
+  readonly flavour: string;
+  readonly nodeType: BlockNodeType;
+  readonly props?: Record<string, unknown>;
+}
 
 function entryToMeta(entry: PaginationGeometryEntry): BlockMeta {
   // 只有完整 DOM 测量能确认流式图片/视频的媒体主体；稀疏布局不得从
@@ -178,14 +186,19 @@ export class PaginationLayoutCoordinator {
     }
     const affectedRootIds = [...rootIds];
     this.geometryIndex.markContentDirty(affectedRootIds);
+    const knownFacts = new Map<string, PaginationRootFacts>();
     if (semanticRootIds.size) {
       this.geometryIndex.syncRootSemantics(
-        [...semanticRootIds].map(blockId => this.semanticsFromModel(blockId)),
+        [...semanticRootIds].map(blockId => {
+          const facts = this.readRootFacts(blockId);
+          knownFacts.set(blockId, facts);
+          return this.semanticsFromFacts(blockId, facts);
+        }),
       );
     }
     this.refreshObjectSizingEstimates(affectedRootIds.filter(blockId =>
       modelHeightEstimateAffectedByContentChange(this.doc, blockId, change),
-    ));
+    ), knownFacts);
   }
 
   /** @internal Revision-only DOM projection invalidation. */
@@ -244,7 +257,10 @@ export class PaginationLayoutCoordinator {
     this.requiredMeasurementEpoch = epoch;
   }
 
-  refreshObjectSizingEstimates(rootIds?: readonly string[]): void {
+  refreshObjectSizingEstimates(
+    rootIds?: readonly string[],
+    knownFacts: ReadonlyMap<string, PaginationRootFacts> = new Map(),
+  ): void {
     if (this.disposed) return;
     const candidates =
       rootIds ?? this.doc.model.getChildrenIds(this.doc.rootId);
@@ -254,6 +270,7 @@ export class PaginationLayoutCoordinator {
           this.doc.config.virtualization?.estimatedHeights ?? {},
         defaultHeight: DEFAULT_ESTIMATED_HEIGHT,
         layoutMode: 'paginated',
+        rootFacts: knownFacts.get(blockId),
       });
       return {
         blockId,
@@ -274,11 +291,16 @@ export class PaginationLayoutCoordinator {
       expectedGeometryRevision !== this.geometryIndex.revision ||
       measurementEpoch !== this.requiredMeasurementEpoch
     ) {
-      return {accepted: false, changed: false};
+      return {accepted: false, changed: false, changedRootIds: []};
     }
+    const changedRootIds = this.geometryIndex.applyMeasuredWithChanges(
+      measurements,
+      measurementEpoch,
+    );
     return {
       accepted: true,
-      changed: this.geometryIndex.applyMeasured(measurements, measurementEpoch),
+      changed: changedRootIds.length > 0,
+      changedRootIds,
     };
   }
 
@@ -362,9 +384,7 @@ export class PaginationLayoutCoordinator {
   }
 
   private seedFromModel(blockId: string): PaginationGeometrySeed {
-    const flavour = this.doc.model.getFlavour(blockId) ?? "unknown";
-    const nodeType = this.doc.model.getNodeType(blockId) ?? BlockNodeType.void;
-    const props = this.doc.model.getProps(blockId);
+    const {flavour, nodeType, props} = this.readRootFacts(blockId);
     const estimate = this.estimateHeight(blockId, {
       flavour,
       nodeType,
@@ -381,16 +401,33 @@ export class PaginationLayoutCoordinator {
   }
 
   private semanticsFromModel(blockId: string): PaginationGeometrySemantics {
-    const flavour = this.doc.model.getFlavour(blockId) ?? "unknown";
-    const nodeType = this.doc.model.getNodeType(blockId) ?? BlockNodeType.void;
+    return this.semanticsFromFacts(blockId, this.readRootFacts(blockId));
+  }
+
+  private semanticsFromFacts(
+    blockId: string,
+    facts: PaginationRootFacts,
+  ): PaginationGeometrySemantics {
+    const {flavour, nodeType, props} = facts;
     const heading = nodeType === BlockNodeType.editable
-      ? this.doc.model.getProps(blockId)?.["heading"]
+      ? props?.["heading"]
       : undefined;
     return {
       blockId,
       flavour,
       nodeType,
       isHeading: this.isHeading(flavour, nodeType, heading),
+    };
+  }
+
+  private readRootFacts(blockId: string): PaginationRootFacts {
+    const flavour = this.doc.model.getFlavour(blockId) ?? "unknown";
+    const nodeType = this.doc.model.getNodeType(blockId) ?? BlockNodeType.void;
+    const props = this.doc.model.getProps(blockId);
+    return {
+      flavour,
+      nodeType,
+      props,
     };
   }
 
