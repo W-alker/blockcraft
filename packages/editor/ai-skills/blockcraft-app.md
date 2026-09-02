@@ -1544,7 +1544,7 @@ import {MY_BLOCK_AGENT_CAPABILITY} from '@acme/blockcraft-my-block'
 import {
   BlockCraftEditorAgent,
   type DocumentAgentHostExtension,
-} from 'blockcraft-agent'
+} from '@ccc/blockcraft-agent'
 
 const acmeBlockExtension: DocumentAgentHostExtension = {
   id: 'acme.blocks',

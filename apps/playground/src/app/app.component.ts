@@ -54,7 +54,7 @@ import {
   DocumentAgentRunner,
   BlockCraftEditorAgent,
   captureBlockCraftAgentDocumentContext,
-} from 'blockcraft-agent';
+} from '@ccc/blockcraft-agent';
 import { PlaygroundDocumentAgentTransport } from './document-agent-transport';
 import {
   IME_SCENARIO_LABELS,

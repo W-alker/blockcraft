@@ -1,4 +1,4 @@
-# blockcraft-agent
+# @ccc/blockcraft-agent
 
 BlockCraft Editor Agent 的编辑器适配包，覆盖文档写作、模型读取、Schema 感知和
 受控编辑操作。
@@ -197,7 +197,7 @@ import {
   defineBlockAgentCapability,
   defineInlineEmbedAgentCapability,
 } from '@ccc/blockcraft'
-import type {DocumentAgentHostExtension} from 'blockcraft-agent'
+import type {DocumentAgentHostExtension} from '@ccc/blockcraft-agent'
 
 export const TASK_CARD_AGENT_CAPABILITY = defineBlockAgentCapability({
   id: 'task.block.task-card',

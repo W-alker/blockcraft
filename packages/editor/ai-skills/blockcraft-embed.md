@@ -182,7 +182,7 @@ import {BlockCraftDoc} from '@ccc/blockcraft'
 import {
   BlockCraftEditorAgent,
   type DocumentAgentHostExtension,
-} from 'blockcraft-agent'
+} from '@ccc/blockcraft-agent'
 
 const doc = new BlockCraftDoc({
   // schemas, plugins, ...

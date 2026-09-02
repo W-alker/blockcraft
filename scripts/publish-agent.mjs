@@ -27,12 +27,12 @@ function run(command, args, options = {}) {
 
 run(pnpm, ['build:agent'])
 const manifest = JSON.parse(readFileSync(join(dist, 'package.json'), 'utf8'))
-if (manifest.name !== 'blockcraft-agent' || manifest.version !== '0.1.0') {
+if (manifest.name !== '@ccc/blockcraft-agent' || manifest.version !== '0.1.0') {
   throw new Error(`Refusing to publish unexpected package ${manifest.name}@${manifest.version}`)
 }
 
 const registry = run(npm, ['config', 'get', 'registry'], {capture: true})
-const packDir = mkdtempSync(join(tmpdir(), 'blockcraft-agent-pack-'))
+const packDir = mkdtempSync(join(tmpdir(), 'ccc-blockcraft-agent-pack-'))
 const pack = JSON.parse(run(npm, ['pack', dist, '--json', '--pack-destination', packDir], {capture: true}))[0]
 const packageId = `${manifest.name}@${manifest.version}`
 

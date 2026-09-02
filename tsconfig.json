@@ -11,11 +11,11 @@
         "./packages/editor/*",
         "./dist/editor/*"
       ],
-      "blockcraft-agent": [
+      "@ccc/blockcraft-agent": [
         "./packages/blockcraft-agent/src/public-api.ts",
         "./dist/blockcraft-agent"
       ],
-      "blockcraft-agent/*": [
+      "@ccc/blockcraft-agent/*": [
         "./packages/blockcraft-agent/src/*",
         "./dist/blockcraft-agent/*"
       ]

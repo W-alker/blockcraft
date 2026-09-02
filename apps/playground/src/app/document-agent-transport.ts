@@ -8,7 +8,7 @@ import type {
   DocumentAgentTransport,
   DocumentAgentTurnRequest,
   DocumentAgentTurnResponse,
-} from 'blockcraft-agent'
+} from '@ccc/blockcraft-agent'
 
 export class PlaygroundDocumentAgentTransport implements DocumentAgentTransport {
   async run(

@@ -1,5 +1,5 @@
 {
-  "name": "blockcraft-agent",
+  "name": "@ccc/blockcraft-agent",
   "version": "0.1.0",
   "peerDependencies": {
     "@angular/common": "^20.0.0",
