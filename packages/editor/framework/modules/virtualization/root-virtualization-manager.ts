@@ -333,9 +333,11 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
   private scrollContainer: HTMLElement | null = null
   private ownerWindow: Window | null = null
   private viewportResizeObserver: ResizeObserver | null = null
+  private usesWindowResizeFallback = false
   private frame: number | null = null
   private disposed = false
   private selectionSnapshot: SelectionPinSnapshot | null = null
+  private idlePrefetchSelectionInitialized = false
   private projectionBlockIds: string[] = []
   private retainedRootIds = new Map<string, true>()
   private pendingStructureAnchor: ScrollAnchorSnapshot | null = null
@@ -433,6 +435,12 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     if (!this.fullMountFallback) this.schedule()
   }
   private readonly onIdlePrefetchInteractionStart = (event: Event) => {
+    if (
+      event.type === 'pointerdown' &&
+      !this.isIdlePrefetchOwnedPointerEvent(event)
+    ) {
+      return
+    }
     if (event.type === 'pointerdown' || event.type === 'dragstart') {
       this.idlePrefetchPointerActive = true
     }
@@ -461,7 +469,11 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     }
   }
   private readonly onIdlePrefetchInteractionEnd = (event: Event) => {
-    if (event.type === 'pointerup' || event.type === 'pointercancel' || event.type === 'dragend') {
+    const isPointerEnd = event.type === 'pointerup' || event.type === 'pointercancel'
+    // pointerup/pointercancel stay on Window so an editor-owned gesture can end
+    // outside the root. Ignore unrelated window gestures that never began here.
+    if (isPointerEnd && !this.idlePrefetchPointerActive) return
+    if (isPointerEnd || event.type === 'dragend') {
       this.idlePrefetchPointerActive = false
     }
     this.pauseIdlePrefetch(
@@ -473,6 +485,12 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
       this.schedule()
     }
     this.armIdlePrefetch()
+  }
+  private isIdlePrefetchOwnedPointerEvent(event: Event): boolean {
+    const rootElement = this.doc.root.hostElement
+    if (event.composedPath().includes(rootElement)) return true
+    const target = event.target as (EventTarget & {nodeType?: number}) | null
+    return target?.nodeType !== undefined && rootElement.contains(target as Node)
   }
   private readonly onIdlePrefetchVisibilityChange = () => {
     if (this.scrollContainer?.ownerDocument.hidden) {
@@ -649,10 +667,17 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     }
     this.subscriptions.add(
       this.doc.selection.changeObserve().subscribe((selection) => {
+        const nextSelectionSnapshot = selection?.toJSON() ?? null
+        const unchanged = this.idlePrefetchSelectionInitialized &&
+          selectionPinSnapshotsEqual(this.selectionSnapshot, nextSelectionSnapshot)
+        this.idlePrefetchSelectionInitialized = true
+        if (unchanged && !this.idlePrefetchInvalidatedRootIds.size) {
+          return
+        }
         this.pauseIdlePrefetch('selection', true)
         this.projectionBlockIds = []
         this.pins.unpin('projection')
-        this.selectionSnapshot = selection?.toJSON() ?? null
+        this.selectionSnapshot = nextSelectionSnapshot
         this.syncSelectionPins()
         // A programmatic caret move within the same root leaves the flattened
         // pin set unchanged. It must still resume any mounted-root geometry
@@ -665,7 +690,10 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     )
     this.doc.ngZone.runOutsideAngular(() => {
       scrollContainer.addEventListener('scroll', this.onScroll, {passive: true})
-      this.ownerWindow?.addEventListener('resize', this.onResize, {passive: true})
+      if (!this.viewportResizeObserver) {
+        this.usesWindowResizeFallback = true
+        this.ownerWindow?.addEventListener('resize', this.onResize, {passive: true})
+      }
       if (this.config.idlePrefetch) {
         const rootElement = this.doc.root.hostElement
         rootElement.addEventListener('beforeinput', this.onIdlePrefetchInteractionStart)
@@ -716,7 +744,10 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     this.cancelBlockNavigation()
     this.disposeIdlePrefetch()
     this.scrollContainer?.removeEventListener('scroll', this.onScroll)
-    this.ownerWindow?.removeEventListener('resize', this.onResize)
+    if (this.usesWindowResizeFallback) {
+      this.ownerWindow?.removeEventListener('resize', this.onResize)
+      this.usesWindowResizeFallback = false
+    }
     if (this.scrollContainer && this.config.idlePrefetch) {
       const rootElement = this.doc.root.hostElement
       rootElement.removeEventListener('beforeinput', this.onIdlePrefetchInteractionStart)
@@ -3938,6 +3969,28 @@ function pushBoundedSample(values: number[], value: number): void {
   if (!Number.isFinite(value)) return
   values.push(value)
   if (values.length > IDLE_PREFETCH_DIAGNOSTIC_SAMPLE_LIMIT) values.shift()
+}
+
+function selectionPinSnapshotsEqual(
+  left: SelectionPinSnapshot | null,
+  right: SelectionPinSnapshot | null,
+): boolean {
+  if (left === right) return true
+  if (!left || !right) return false
+  return selectionPinPointsEqual(left.anchor, right.anchor) &&
+    selectionPinPointsEqual(left.head, right.head)
+}
+
+function selectionPinPointsEqual(
+  left: SelectionPinSnapshot['anchor'],
+  right: SelectionPinSnapshot['anchor'],
+): boolean {
+  return left.blockId === right.blockId &&
+    left.type === right.type &&
+    left.offset === right.offset &&
+    left.side === right.side &&
+    left.index === right.index &&
+    left.tableId === right.tableId
 }
 
 function mixVirtualDocumentInteger(hash: number, value: number): number {

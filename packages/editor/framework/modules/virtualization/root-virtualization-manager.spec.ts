@@ -797,12 +797,87 @@ describe('RootVirtualizationManager', () => {
     manager.idlePrefetchEpisodeActive = false
     const schedule = spyOn(manager.idlePrefetchScheduler, 'schedule')
 
-    manager.onIdlePrefetchInteractionStart(new Event('pointerdown'))
+    h.doc.root.hostElement.dispatchEvent(new Event('pointerdown', {bubbles: true}))
     expect(manager.idlePrefetchPointerActive).toBeTrue()
     manager.onIdlePrefetchWindowBlur()
     expect(manager.idlePrefetchPointerActive).toBeFalse()
     manager.onIdlePrefetchWindowFocus()
 
+    expect(manager.idlePrefetchEpisodeActive).toBeTrue()
+    expect(schedule).toHaveBeenCalledTimes(1)
+    h.manager.dispose()
+  })
+
+  it('ignores pointer gestures that start outside the editor root', () => {
+    const h = createHarness(12, 20, {idlePrefetch: true})
+    configureIdlePrefetchHarness(h)
+    h.manager.init(h.scrollContainer)
+    const manager = h.manager as any
+    manager.idlePrefetchEpisodeActive = false
+    const schedule = spyOn(manager.idlePrefetchScheduler, 'schedule')
+    const externalInScroller = document.createElement('button')
+    h.scrollContainer.append(externalInScroller)
+    const externalInWindow = document.createElement('button')
+    document.body.append(externalInWindow)
+
+    for (const external of [externalInScroller, externalInWindow]) {
+      external.dispatchEvent(new Event('pointerdown', {bubbles: true}))
+      window.dispatchEvent(new Event('pointerup'))
+    }
+
+    expect(manager.idlePrefetchPointerActive).toBeFalse()
+    expect(manager.idlePrefetchEpisodeActive).toBeFalse()
+    expect(schedule).not.toHaveBeenCalled()
+    externalInWindow.remove()
+    h.manager.dispose()
+  })
+
+  it('resumes after an editor-owned pointer gesture ends on window', () => {
+    const h = createHarness(12, 20, {idlePrefetch: true})
+    configureIdlePrefetchHarness(h)
+    h.manager.init(h.scrollContainer)
+    const manager = h.manager as any
+    manager.idlePrefetchEpisodeActive = false
+    const schedule = spyOn(manager.idlePrefetchScheduler, 'schedule')
+
+    h.doc.root.hostElement.dispatchEvent(new Event('pointerdown', {bubbles: true}))
+    expect(manager.idlePrefetchPointerActive).toBeTrue()
+    window.dispatchEvent(new Event('pointerup'))
+
+    expect(manager.idlePrefetchPointerActive).toBeFalse()
+    expect(manager.idlePrefetchEpisodeActive).toBeTrue()
+    expect(schedule).toHaveBeenCalledTimes(1)
+    h.manager.dispose()
+  })
+
+  it('does not restart idle prefetch for unchanged external selection emissions', () => {
+    const h = createHarness(12, 20, {idlePrefetch: true})
+    configureIdlePrefetchHarness(h)
+    h.manager.init(h.scrollContainer)
+    const manager = h.manager as any
+    manager.idlePrefetchEpisodeActive = false
+    const schedule = spyOn(manager.idlePrefetchScheduler, 'schedule')
+
+    h.selection$.next(null)
+    expect(manager.idlePrefetchEpisodeActive).toBeFalse()
+    expect(schedule).not.toHaveBeenCalled()
+
+    const selectionAt = (offset: number) => ({
+      toJSON: () => ({
+        anchor: {blockId: 'b0', type: 'text', offset},
+        head: {blockId: 'b0', type: 'text', offset},
+        commonParent: 'b0',
+      }),
+    })
+    h.selection$.next(selectionAt(0))
+    manager.idlePrefetchEpisodeActive = false
+    schedule.calls.reset()
+
+    h.selection$.next(selectionAt(0))
+    expect(manager.idlePrefetchEpisodeActive).toBeFalse()
+    expect(schedule).not.toHaveBeenCalled()
+
+    h.selection$.next(selectionAt(1))
     expect(manager.idlePrefetchEpisodeActive).toBeTrue()
     expect(schedule).toHaveBeenCalledTimes(1)
     h.manager.dispose()
@@ -2602,7 +2677,7 @@ describe('RootVirtualizationManager', () => {
     h.manager.dispose()
   })
 
-  it('binds frame and resize lifecycle to the scroll container window', () => {
+  it('uses the scroll container ResizeObserver without a duplicate window listener', () => {
     const iframe = document.createElement('iframe')
     document.body.append(iframe)
     const ownerDocument = iframe.contentDocument!
@@ -2614,11 +2689,45 @@ describe('RootVirtualizationManager', () => {
     h.manager.init(h.scrollContainer)
     const viewportObserver = (h.manager as any).viewportResizeObserver as ResizeObserver
     const disconnect = spyOn(viewportObserver, 'disconnect').and.callThrough()
-    expect(addListener).toHaveBeenCalledWith('resize', jasmine.any(Function), {passive: true})
+    expect(addListener).not.toHaveBeenCalledWith('resize', jasmine.any(Function), {passive: true})
     h.manager.dispose()
-    expect(removeListener).toHaveBeenCalledWith('resize', jasmine.any(Function))
+    expect(removeListener).not.toHaveBeenCalledWith('resize', jasmine.any(Function))
     expect(disconnect).toHaveBeenCalled()
     iframe.remove()
+  })
+
+  it('falls back to the scroll container window when ResizeObserver is unavailable', () => {
+    const iframe = document.createElement('iframe')
+    document.body.append(iframe)
+    const ownerDocument = iframe.contentDocument!
+    const ownerWindow = iframe.contentWindow!
+    const resizeObserver = Object.getOwnPropertyDescriptor(ownerWindow, 'ResizeObserver')
+    Object.defineProperty(ownerWindow, 'ResizeObserver', {
+      configurable: true,
+      value: undefined,
+    })
+    const addListener = spyOn(ownerWindow, 'addEventListener').and.callThrough()
+    const removeListener = spyOn(ownerWindow, 'removeEventListener').and.callThrough()
+    const h = createHarness(12, 20, {}, ownerDocument)
+
+    try {
+      h.manager.init(h.scrollContainer)
+      expect((h.manager as any).viewportResizeObserver).toBeNull()
+      expect(addListener).toHaveBeenCalledWith(
+        'resize',
+        jasmine.any(Function),
+        {passive: true},
+      )
+      h.manager.dispose()
+      expect(removeListener).toHaveBeenCalledWith('resize', jasmine.any(Function))
+    } finally {
+      if (resizeObserver) {
+        Object.defineProperty(ownerWindow, 'ResizeObserver', resizeObserver)
+      } else {
+        delete (ownerWindow as unknown as {ResizeObserver?: typeof ResizeObserver}).ResizeObserver
+      }
+      iframe.remove()
+    }
   })
 
   it('repairs local height and index drift before reconciling the next frame', async () => {
