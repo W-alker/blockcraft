@@ -9,6 +9,7 @@
     "build:playground": "ng build playground",
     "build:editor": "ng build editor",
     "build:agent": "pnpm build:editor && ng build blockcraft-agent",
+    "publish:agent": "node ./scripts/publish-agent.mjs",
     "agent:server": "node ./scripts/document-agent-server.mjs",
     "publish:editor": "node ./scripts/publish-editor.mjs",
     "publish:editor:minor": "node ./scripts/publish-editor.mjs minor",
