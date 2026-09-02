@@ -10,18 +10,31 @@ import {
   createDocumentAgentSystemPrompt,
   DOCUMENT_AGENT_PROMPT_VERSION,
 } from './document-agent-prompt.mjs'
+import {
+  getSessionMemory,
+  rememberMarkdownSessionTurn,
+  rememberSessionTurn,
+} from './document-agent-session-memory.mjs'
+import {
+  normalizeAgentResult,
+  normalizeAgentTurn,
+  normalizeSubAgentResult,
+} from './document-agent-response.mjs'
+import {
+  createOpenAiTools,
+  createProviderCapabilities,
+} from './document-agent-provider-capabilities.mjs'
 
 const port = Number(process.env['DOCUMENT_AGENT_PORT'] ?? 8787)
-const model = process.env['OPENAI_CODEX_MODEL'] ?? 'gpt-5-codex'
+const model = process.env['OPENAI_CODEX_MODEL'] ?? 'gpt-5.6-luna'
 const apiKey = process.env['OPENAI_API_KEY']
 const provider = process.env['DOCUMENT_AGENT_PROVIDER'] ?? (apiKey ? 'openai' : 'codex-cli')
 const codexCliModel = process.env['CODEX_CLI_MODEL']
 const allowPromptOverride = process.env['DOCUMENT_AGENT_ALLOW_PROMPT_OVERRIDE'] === 'true'
+const webSearchEnabled = process.env['DOCUMENT_AGENT_WEB_SEARCH'] !== 'false'
 const maxBodyBytes = 2 * 1024 * 1024
 const sessionTtlMs = 2 * 60 * 60 * 1000
 const maxSessionCount = 100
-const maxSessionTurns = 6
-const maxSessionMemoryChars = 8_000
 const maxToolHistoryItems = 24
 const maxToolHistoryChars = 64_000
 const sessions = new Map()
@@ -313,93 +326,6 @@ function extractOutputText(payload) {
   return null
 }
 
-function normalizeAgentResult(result) {
-  if (!result || !Array.isArray(result.operations)) return result
-  const normalized = {
-    ...result,
-    operations: result.operations.map(operation => {
-      if (!operation || typeof operation !== 'object') return operation
-      if (operation.kind === 'update-block-props') {
-        return {...operation, props: parseJsonField(operation.props, 'props')}
-      }
-      if (operation.kind === 'apply-text-delta') {
-        return {...operation, delta: parseJsonField(operation.delta, 'delta')}
-      }
-      if (operation.kind === 'create-blocks') {
-        const normalized = {...operation, params: parseJsonField(operation.params, 'params')}
-        if (normalized.clientRef === null) delete normalized.clientRef
-        return normalized
-      }
-      if (operation.kind === 'replace-block') {
-        const normalized = {...operation, params: parseJsonField(operation.params, 'params')}
-        if (normalized.clientRef === null) delete normalized.clientRef
-        return normalized
-      }
-      return operation
-    }),
-  }
-  if (normalized.draft === null) delete normalized.draft
-  return normalized
-}
-
-function normalizeAgentTurn(turn) {
-  if (turn?.kind === 'result' && turn.result && turn.calls?.length === 0) {
-    return {kind: 'result', result: normalizeAgentResult(turn.result)}
-  }
-  if (turn?.kind === 'tool-calls' && turn.result === null && Array.isArray(turn.calls) && turn.calls.length) {
-    return {
-      kind: 'tool-calls',
-      calls: turn.calls.map(call => ({
-        ...call,
-        arguments: parseJsonField(call.arguments, `tool ${call.name || 'unknown'} arguments`),
-      })),
-    }
-  }
-  throw new Error('Agent 返回的 Master 回合类型无效')
-}
-
-function normalizeSubAgentResult(result, delegation) {
-  if (!result || result.specialist !== delegation.specialist) {
-    throw new Error('Agent 返回的 specialist 与委派请求不一致')
-  }
-  const normalized = normalizeAgentResult(result)
-  const {review: _transportReview, ...normalizedWithoutReview} = normalized
-  const normalizedReview = result.review && typeof result.review === 'object'
-    ? {
-      ...result.review,
-      issues: Array.isArray(result.review.issues)
-        ? result.review.issues.map(issue => {
-          if (!issue || typeof issue !== 'object' || issue.recommendation !== null) return issue
-          const normalizedIssue = {...issue}
-          delete normalizedIssue.recommendation
-          return normalizedIssue
-        })
-        : result.review.issues,
-    }
-    : undefined
-  return {
-    ...normalizedWithoutReview,
-    specialist: result.specialist,
-    findings: result.findings,
-    recommendations: result.recommendations,
-    ...(normalizedReview ? {review: normalizedReview} : {}),
-  }
-}
-
-function parseJsonField(value, fieldName) {
-  if (typeof value !== 'string') return value
-  try {
-    return JSON.parse(value)
-  } catch {
-    throw new Error('Agent 返回的 ' + fieldName + ' 不是有效 JSON')
-  }
-}
-
-function truncateText(value, maxChars) {
-  if (typeof value !== 'string') return ''
-  return value.length <= maxChars ? value : value.slice(0, maxChars) + '…'
-}
-
 function normalizeSessionId(value) {
   if (typeof value !== 'string') return null
   const sessionId = value.trim()
@@ -443,82 +369,20 @@ function getSession(sessionId) {
   return session
 }
 
-function compactOperation(operation) {
-  if (!operation || typeof operation !== 'object') return {kind: 'unknown'}
-
-  const compact = {kind: operation.kind}
-  for (const field of ['blockId', 'parentId', 'index', 'count', 'flavour', 'targetId', 'targetIndex', 'from', 'to']) {
-    if (operation[field] !== undefined) compact[field] = operation[field]
-  }
-  if (operation.kind === 'replace-text') {
-    compact.replacementLength = typeof operation.replacement === 'string'
-      ? operation.replacement.length
-      : 0
-  }
-  if (operation.kind === 'update-block-props') {
-    compact.propKeys = operation.props && typeof operation.props === 'object'
-      ? Object.keys(operation.props).slice(0, 20)
-      : []
-  }
-  if (operation.kind === 'apply-text-delta') compact.deltaCount = operation.delta?.length ?? 0
-  if (operation.kind === 'create-blocks' || operation.kind === 'replace-block') {
-    compact.paramsCount = operation.params?.length ?? 0
-  }
-  return compact
-}
-
-function getSessionMemory(session) {
-  if (!session?.turns.length) return null
-
-  const turns = session.turns.slice(-maxSessionTurns)
-  while (turns.length > 1 && JSON.stringify(turns).length > maxSessionMemoryChars) {
-    turns.shift()
-  }
-  return {
-    turnCount: session.turns.length,
-    previousTurns: turns,
-  }
-}
-
-function rememberSessionTurn(session, request, result) {
-  if (!session || !result || typeof result !== 'object') return
-  session.turns = [
-    ...session.turns,
-    {
-      instruction: truncateText(request.instruction, 1_800),
-      assistantSummary: truncateText(result.summary, 1_800),
-      draft: truncateText(result.draft, 1_200) || undefined,
-      operations: Array.isArray(result.operations)
-        ? result.operations.slice(0, 8).map(compactOperation)
-        : [],
-    },
-  ].slice(-maxSessionTurns)
-  session.lastUsedAt = Date.now()
-}
-
-function rememberMarkdownSessionTurn(session, request, markdown) {
-  if (!session || typeof markdown !== 'string') return
-  session.turns = [
-    ...session.turns,
-    {
-      instruction: truncateText(request.instruction, 1_800),
-      assistantMarkdown: truncateText(markdown, 3_600),
-      operations: [],
-    },
-  ].slice(-maxSessionTurns)
-  session.lastUsedAt = Date.now()
-}
-
-function createAgentPayload(request, session, orchestration) {
+function createAgentPayload(request, session, orchestration, options = {}) {
   const sessionMemory = getSessionMemory(session)
   return {
     task: request.task,
     instruction: request.instruction,
     context: request.context,
     runtime: request.runtime,
+    providerCapabilities: createProviderCapabilities({
+      webSearchEnabled,
+      allowTools: options.allowProviderTools !== false,
+    }),
     ...(sessionMemory ? {
       sessionMemory: {
-        note: 'Bounded reference-only memory from earlier turns. The current context and instruction are authoritative; do not assume old operations were applied.',
+        note: 'Bounded conversation memory from earlier turns. Resolve references against the latest compatible turn, then verify delivery state from current context; do not assume old operations were applied.',
         ...sessionMemory,
       },
     } : {}),
@@ -551,9 +415,10 @@ function createMarkdownPayload(request, session) {
     instruction: request.instruction,
     context: request.context,
     runtime: request.runtime,
+    providerCapabilities: createProviderCapabilities({webSearchEnabled}),
     ...(sessionMemory ? {
       sessionMemory: {
-        note: 'Bounded reference-only memory. Current context and instruction are authoritative.',
+        note: 'Bounded conversation memory. Resolve references against the latest compatible turn; current context and instruction remain authoritative.',
         ...sessionMemory,
       },
     } : {}),
@@ -691,7 +556,7 @@ function getSubAgentInstructions(request, delegation) {
 
 function createSubAgentPayload(request, session, delegation) {
   return {
-    ...createAgentPayload(request, session, null),
+    ...createAgentPayload(request, session, null, {allowProviderTools: false}),
     delegation: {
       specialist: delegation.specialist,
       objective: delegation.objective,
@@ -894,6 +759,7 @@ async function runOpenAiMarkdown(request, session, onDelta, signal) {
       })),
     ],
   }]
+  const tools = createOpenAiTools({webSearchEnabled})
   const upstream = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: {
@@ -906,6 +772,7 @@ async function runOpenAiMarkdown(request, session, onDelta, signal) {
       input,
       store: false,
       stream: true,
+      ...(tools.length ? {tools} : {}),
     }),
     signal,
   })
@@ -1110,6 +977,10 @@ async function runAgent(request, session, orchestration, delegation) {
       })),
     ],
   }]
+  const tools = createOpenAiTools({
+    webSearchEnabled,
+    allowTools: !delegation,
+  })
 
   const upstream = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
@@ -1122,6 +993,7 @@ async function runAgent(request, session, orchestration, delegation) {
       instructions,
       input,
       store: false,
+      ...(tools.length ? {tools} : {}),
       text: {
         format: {
           type: 'json_schema',
@@ -1236,5 +1108,6 @@ server.listen(port, '127.0.0.1', () => {
   console.log(`[document-agent] listening on http://127.0.0.1:${port}`)
   console.log(`[document-agent] provider: ${provider}`)
   console.log(`[document-agent] model: ${provider === 'codex-cli' ? (codexCliModel ?? 'Codex CLI default') : model}`)
+  console.log(`[document-agent] web search: ${webSearchEnabled ? 'enabled' : 'disabled'}`)
   console.log(`[document-agent] prompt: ${DOCUMENT_AGENT_PROMPT_VERSION}${allowPromptOverride ? ' (override enabled)' : ''}`)
 })

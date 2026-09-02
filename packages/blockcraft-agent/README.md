@@ -78,7 +78,9 @@ Master 返回最终结果后，宿主会先按当前文档、Schema 和 Inline E
 模型 API、用户权限、文档脱敏和服务端写入策略由宿主应用负责。本包不绑定具体模型供应商，也不在浏览器内保存模型密钥。
 它理解的是 BlockCraft 的模型/API 契约，不会直接执行任意 Angular、DOM、Yjs 或文件系统代码。
 
-会话记忆由宿主服务端根据请求中的 `sessionId` 保存为有界的最近几轮指令、Agent 摘要和操作摘要；每次请求仍重新读取当前文档上下文，旧文档快照和图片不会进入记忆。当前本地服务的记忆只存在于内存，服务重启后清空；生产环境应替换为带 TTL、租户隔离和访问控制的存储。
+会话记忆由宿主服务端根据请求中的 `sessionId` 保存为有界的最近几轮指令、Agent 摘要和近期操作的语义载荷，用于解析“放到最前面”“改成红色”等后续指令。每次请求仍重新读取当前文档上下文来判断上一轮修改是否已经写入，旧文档快照和图片不会进入记忆。当前本地服务的记忆只存在于内存，服务重启后清空；生产环境应替换为带 TTL、租户隔离和访问控制的存储。
+
+`blockcraft.search_document` 只搜索当前文档，不是互联网搜索。外部文章、事实和 URL 必须由宿主扩展注册只读工具，或由模型 Provider 提供可验证的原生搜索能力；能力缺失时 Agent 会继续完成相互独立的文档内修改并说明未完成部分，不会编造外链。Playground 本地服务默认启用 Provider 原生搜索：Codex CLI 使用本机登录态提供的 `web_search`，OpenAI Provider 在 Responses API 请求中声明 `web_search` 工具。可通过 `DOCUMENT_AGENT_WEB_SEARCH=false` 显式关闭；服务会把配置后的可用状态放入 `providerCapabilities.webSearch`，模型不得自行猜测。
 
 ## Master 工具循环
 
@@ -154,8 +156,8 @@ Delta、连续块删除和跨容器移动。它们仍需经过版本校验、只
 
 Playground 的本地服务支持两种模式：
 
-- 设置 `OPENAI_API_KEY` 时走 OpenAI Responses API；
-- 没有 API Key 时默认调用本机已通过 `codex login` 登录的 Codex CLI。该模式只适合本地开发，服务绑定 `127.0.0.1`，不应暴露给其他用户或部署到生产环境。
+- 设置 `OPENAI_API_KEY` 时走 OpenAI Responses API，并按需使用其只读 `web_search` 工具；默认模型是同时支持 Structured Outputs 与 Web Search 的 `gpt-5.6-luna`，可通过 `OPENAI_CODEX_MODEL` 覆盖；
+- 没有 API Key 时默认调用本机已通过 `codex login` 登录的 Codex CLI，并使用 CLI 的原生网页搜索。该模式只适合本地开发，服务绑定 `127.0.0.1`，不应暴露给其他用户或部署到生产环境。
 
 ## Markdown 对话与只读渲染
 
