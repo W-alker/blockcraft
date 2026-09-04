@@ -1,7 +1,5 @@
 import { AfterViewInit, ChangeDetectorRef, Component, ComponentRef, ElementRef, NgZone, OnDestroy, ViewChild, inject } from '@angular/core';
 import { OverlayRef } from '@angular/cdk/overlay';
-import { DomSanitizer } from '@angular/platform-browser';
-import { MatIconRegistry } from '@angular/material/icon';
 import {
   BlockSelection,
   BlockNodeType,
@@ -1706,8 +1704,6 @@ export class AppComponent implements AfterViewInit, OnDestroy {
 
   readonly actionSections = ACTION_SECTIONS;
 
-  private readonly iconRegistry = inject(MatIconRegistry);
-  private readonly sanitizer = inject(DomSanitizer);
   private readonly cdr = inject(ChangeDetectorRef);
   private readonly zone = inject(NgZone);
   private _markdownStreamRenderer?: MarkdownStreamRenderer;
@@ -1811,13 +1807,6 @@ graph TD
   private _simTimer: ReturnType<typeof setInterval> | null = null;
   private _shadowSession: ShadowCollaborationSession | null = null;
   private _imeScenarioRunner: ImeCollaborationScenarioRunner | null = null;
-
-  constructor() {
-    this.iconRegistry.addSvgIconSet(
-      this.sanitizer.bypassSecurityTrustResourceUrl('https://at.alicdn.com/t/c/font_4682833_9f8nqslb5uf.js')
-    );
-  }
-
   ngAfterViewInit(): void {
     this.enablePlaygroundIdlePrefetch(this.editor);
     // 外置工具栏依赖子编辑器在 ngOnInit 中创建的 Doc；ViewChild 就绪后补一轮

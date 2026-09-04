@@ -1,4 +1,6 @@
 import {Component, ElementRef, Injector, Input, OnDestroy, OnInit, ViewChild} from "@angular/core";
+import {MatIconRegistry} from "@angular/material/icon";
+import {DomSanitizer} from "@angular/platform-browser";
 import {
   BLOCK_CREATOR_SERVICE_TOKEN,
   BlockCraftDoc,
@@ -24,6 +26,8 @@ import * as Y from 'yjs'
 import {MyDocTranslationService} from "./services/doc-translation.service";
 import {BlockLinkNavigator} from "./block-link-navigator";
 import {createBundledEditorCapabilities} from './bundled-capabilities'
+
+const bundledSvgIconRegistries = new WeakSet<MatIconRegistry>();
 
 const mentionRequest = async (keyword: string, _type?: string) => {
   if (keyword === 'a') {
@@ -161,13 +165,33 @@ export class EditorComponent implements OnInit, OnDestroy {
   constructor(
     private injector: Injector,
     private logger: ConsoleLogger,
-  ) {}
+    private iconRegistry: MatIconRegistry,
+    private sanitizer: DomSanitizer,
+  ) {
+    this.registerBundledSvgIcons();
+  }
 
   docId = "111";
   rootId = "111";
 
   doc!: BlockCraftDoc;
   private blockLinkNavigator: BlockLinkNavigator | null = null;
+
+  private registerBundledSvgIcons(): void {
+    if (bundledSvgIconRegistries.has(this.iconRegistry)) {
+      return;
+    }
+
+    const iconSet = document.getElementById('bc_yinpin')?.closest('svg');
+    if (!iconSet) {
+      return;
+    }
+
+    this.iconRegistry.addSvgIconSetLiteral(
+      this.sanitizer.bypassSecurityTrustHtml(iconSet.outerHTML),
+    );
+    bundledSvgIconRegistries.add(this.iconRegistry);
+  }
 
   private createDoc(): BlockCraftDoc {
     const capabilities = createBundledEditorCapabilities({

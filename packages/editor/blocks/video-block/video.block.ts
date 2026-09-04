@@ -31,7 +31,7 @@ import {takeUntil} from 'rxjs';
     } @else {
       <div class="video-block__wrapper resizable-container" contenteditable="false"
            bcResourcePlaceholder
-           [resourceKey]="props.url"
+           [resourceKey]="resourcePreviewUrl"
            (resourceIntrinsicSize)="onResourceIntrinsicSize($event)"
            [style.width.px]="renderedWidth"
            [style.aspect-ratio]="renderedAspectRatio"
@@ -50,7 +50,7 @@ import {takeUntil} from 'rxjs';
             </div>
           } @else if (isDirectVideoUrl) {
             <div class="video-wrapper">
-              <video [src]="props.url"
+              <video [src]="resourcePreviewUrl"
                      controls
                      [poster]="posterUrl"
                      preload="metadata">
@@ -117,6 +117,13 @@ export class VideoBlockComponent extends BaseBlockComponent<VideoBlockModel> {
   get isPeerUploading(): boolean {
     const url = this.props.url;
     return !!url && this.fileService.isLocalObjectURL(url) && !this.fileService.getFileByObjectURL(url);
+  }
+
+  protected get resourcePreviewUrl(): string {
+    const url = this.props.url;
+    return url && this.fileService.isLocalObjectURL(url)
+      ? this.fileService.getFilePreviewURLByObjectURL(url)
+      : url;
   }
 
   get objectDimensions() {
