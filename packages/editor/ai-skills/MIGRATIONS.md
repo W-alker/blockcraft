@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-08-31 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-09-09 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -67,6 +67,31 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > - `major` (e.g. 0.1.37 → 1.0.0): breaking — removed APIs, renamed exports, signature changes, behavior reversals
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
+
+## v0.7.4 — 2026-09-09 — Mermaid 全屏双向编辑
+
+**Severity**: minor
+
+**What changed**: Mermaid 可写全屏视图增加 Visimer 图形编辑，图形操作实时写回原源码块。普通模式仍使用 SVG 预览。
+
+**Why**: 将可视化编辑的加载和交互成本限制在单个全屏块。
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+
+### New APIs / Features
+
+- 全屏图形编辑与源码共享文档撤销；未新增公开 TypeScript API。
+
+### Migration Recipe
+
+宿主增加 `@visimer/core@1.1.2`、`@visimer/dom@1.1.2` peer dependencies。无需迁移文档数据。本次按维护者指定的 patch 版本 `0.7.4` 发布。
+
+### Behavior Changes
+
+- 可写全屏自动激活图形编辑；普通模式及只读模式保持静态预览。
+- 外部源码变化结束旧图形编辑会话；退出全屏提交当前标签并释放实例。
 
 ## Unreleased — 2026-08-31 — Opt-in idle prefetch for safe text roots
 

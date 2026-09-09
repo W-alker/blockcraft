@@ -46,6 +46,8 @@
     "@types/mdast": "^4.0.4",
     "@types/prettier": "^3.0.0",
     "@types/prismjs": "^1.26.5",
+    "@visimer/core": "1.1.2",
+    "@visimer/dom": "1.1.2",
     "babel-plugin-module-resolver": "^5.0.2",
     "collapse-white-space": "^2.1.0",
     "dompurify": "^3.2.5",

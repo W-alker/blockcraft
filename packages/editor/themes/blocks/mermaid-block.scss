@@ -202,3 +202,30 @@
     @include code-highlight-theme;
   }
 }
+
+[data-blockcraft-root="true"] .mermaid-block {
+  .graph-container { position: relative; }
+  .visual-con.visual-pending {
+    position: absolute;
+    inset: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .visual-con {
+    --mw-chrome-bg: var(--bc-bg-primary);
+    --mw-chrome-fg: var(--bc-color);
+    --mw-chrome-border: var(--bc-border-color);
+    --mw-chrome-hover: var(--bc-bg-hover);
+    --mw-editor-bg: var(--bc-bg-primary);
+    height: 100%;
+    min-height: 240px;
+  }
+  .mermaid-visual-surface { height: 100%; min-height: 240px; }
+  .mw-zoom-controls { display: none; }
+  .visual-status {
+    padding: var(--bc-padding-md);
+    color: var(--bc-color-light);
+    background: var(--bc-bg-muted);
+    border: 0;
+  }
+}

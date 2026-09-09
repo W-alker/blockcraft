@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-08-31
+> Last updated: 2026-09-09
 
 ## Block Types
 
@@ -2022,3 +2022,16 @@ the host or a sibling.
 - [ ] Schema added to `SchemaManager` constructor
 - [ ] Visual blocks that need free positioning extend `IBlockProps` and declare `metadata.placement`
 - [ ] Styles added in `themes/blocks/` if needed
+
+## Mermaid 全屏双向编辑
+
+Mermaid 保持 `mermaid` 容器与 `mermaid-textarea` 子块结构。源码仍是唯一持久数据；普通模式使用现有 SVG 预览，全屏可写模式才动态加载 `@visimer/core` / `@visimer/dom` 1.1.2。
+
+- `mermaid-visual-session.ts` 是块内部适配层，不是公开包 API。图形操作按文本区间增量修改，通过 `replaceText` 与同一个 DocCRUD 事务写入；撤销/重做归 DocUndoManager。
+- 退出全屏前提交未到防抖时间的标签输入，并销毁交互实例。只读、销毁或源码外部更新不回写过期输入；外部更新会取消旧的图形标签会话。
+- 原源码编辑器、快照结构和 Markdown 导入导出保持原样。可视化编辑能力取决于上游支持的图表类型；不支持的语法仍可从源码编辑。
+- 适配层使用文档已有 Mermaid 配置，禁止画布重新初始化全局 Mermaid 配置。普通预览与全屏画布不能同时负责渲染。
+
+全屏交接保留上一次成功 SVG：普通渲染不向 Mermaid 提供可见容器，只有成功且源码仍匹配时才替换。全屏画布首次成功前保留普通预览；退出先转移原始 SVG，再释放实例。可见性恢复即重新检查预览，不依赖显示模式变化。
+
+协同边界：没有节点锁，同一标签同时修改按 Yjs 文本合并；远端更新到来时取消旧的未提交标签输入并提示。销毁后的异步渲染结果必须按 mount 代次拒绝，避免上游重新创建 Observer。

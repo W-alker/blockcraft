@@ -1,6 +1,6 @@
 {
   "name": "@ccc/blockcraft",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "publishConfig": {
     "registry": "http://npm.runtongqiuben.com"
   },
@@ -43,7 +43,9 @@
     "xlsx": "^0.18.5",
     "y-protocols": "^1.0.6",
     "y-websocket": "^2.1.0",
-    "yjs": "^13.6.18"
+    "yjs": "^13.6.18",
+    "@visimer/core": "1.1.2",
+    "@visimer/dom": "1.1.2"
   },
   "devDependencies": {
     "remark-directive": "^4.0.0"

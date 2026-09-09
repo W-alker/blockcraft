@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, ChangeDetectorRef, Component, inject } from "@angular/core";
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, inject, NgZone } from "@angular/core";
 import {
   BaseBlockComponent, DOC_FILE_SERVICE_TOKEN,
   generateId,
@@ -9,12 +9,13 @@ import mermaid from "mermaid";
 import { Subject, takeUntil } from "rxjs";
 import { MermaidTypeListComponent } from "./widgets/mermaid-type-list.component";
 import { IMermaidType, MermaidViewMode } from "./types";
-import { debounce, nextTick } from "../../global";
+import { nextTick } from "../../global";
 import { MermaidViewSwitchComponent } from "./widgets/mermaid-view-switch.component";
 import { isFormatOnlyDelta } from "../code-block/color-merge";
 import { BlockFullscreenController } from "../../framework/services/block-fullscreen-controller";
 
-// import {ScaleRatioPipe} from "./ratio.pipe";
+import type {MermaidVisualSession} from './mermaid-visual-session';
+import type {TextEdit} from '@visimer/core';
 
 @Component({
   selector: 'div.mermaid-block',
@@ -67,7 +68,12 @@ import { BlockFullscreenController } from "../../framework/services/block-fullsc
       </div>
 
       <div class="graph-container" (mousedown)="onFocus($event)">
-        <div class="graph-con" (mousedown)="onPreviewGraph($event)"></div>
+        @if (visualLoading || (visualSession && !visualReady && !visualRenderFailed)) { <div class="visual-status" role="status">正在加载图形编辑器…</div> }
+        @if (visualError) { <button type="button" class="visual-status" (click)="startVisualEditor()">图形编辑器加载失败，点击重试</button> }
+        @if (visualRenderFailed && !visualReady) { <div class="visual-status" role="status">图表暂时无法渲染，请检查源码</div> }
+        <div class="graph-con" [hidden]="visualReady" (mousedown)="onPreviewGraph($event)"></div>
+        <div class="visual-con" [class.visual-pending]="!visualReady" [hidden]="!visualSession" contenteditable="false" data-bc-native-input
+             (mousedown)="$event.stopPropagation()"></div>
       </div>
 
     </div>
@@ -76,6 +82,17 @@ import { BlockFullscreenController } from "../../framework/services/block-fullsc
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel> {
+  protected visualSession?: MermaidVisualSession
+  protected visualRenderFailed = false
+  protected visualReady = false
+  protected visualLoading = false
+  protected visualError = false
+  private visualGeneration = 0
+  private previewGeneration = 0
+  private textObserverFrame: number | null = null
+  private previewTimer: ReturnType<typeof setTimeout> | null = null
+  private destroyed = false
+  private readonly zone = inject(NgZone)
   private fullscreenController?: BlockFullscreenController
   private releaseFullscreenViewLease: () => void = () => undefined
   private readonly cdr = inject(ChangeDetectorRef)
@@ -87,9 +104,7 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
   protected isIntersecting = false
   protected intersectionObserver = new IntersectionObserver(([entry]) => {
     this.isIntersecting = entry.isIntersecting
-    if (this.isIntersecting && this.props.mode !== this._viewMode) {
-      this.setView(this.props.mode)
-    }
+    if (this.isIntersecting) this.setView(this.props.mode)
   }, {
     threshold: [0, 1]
   })
@@ -112,6 +127,8 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
         this.releaseFullscreenViewLease = isFullscreen
           ? this.doc.virtualization.acquireBlockViewLease([this.id])
           : () => undefined
+        if (isFullscreen) void this.startVisualEditor()
+        else this.stopVisualEditor()
         this.cdr.markForCheck()
       })
 
@@ -125,23 +142,117 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
       }
     })
 
-    requestAnimationFrame(() => {
+    this.textObserverFrame = requestAnimationFrame(() => {
+      this.textObserverFrame = null
+      if (this.destroyed) return
       const textarea = this.firstChildren as BlockCraft.IBlockComponents['mermaid-textarea']
       textarea.onTextChange.pipe(takeUntil(this.onDestroy$)).subscribe(e => {
         // 纯格式变更（如染色）不改变 mermaid 文本，图无需重渲，跳过预览调度
         if (isFormatOnlyDelta(e.op)) return
-        this._onPreviewObserver()
+        if (this.visualSession) {
+          const cancelled = this.zone.runOutsideAngular(() => this.visualSession?.sync())
+          if (cancelled && !e.tr.local) this.doc.messageService.warn('图表已被其他协作者更新，未提交的标签输入已取消，请重新编辑')
+        } else this._onPreviewObserver()
       })
     })
 
   }
 
   override ngOnDestroy() {
+    this.destroyed = true
+    if (this.textObserverFrame !== null) cancelAnimationFrame(this.textObserverFrame)
+    if (this.previewTimer !== null) clearTimeout(this.previewTimer)
+    this.textObserverFrame = null
+    this.previewTimer = null
+    this.stopVisualEditor()
     this.fullscreenController?.destroy()
     this.releaseFullscreenViewLease()
     this.releaseFullscreenViewLease = () => undefined
     this.intersectionObserver.disconnect()
     super.ngOnDestroy();
+  }
+
+  override applyReadonlyViewState(): void {
+    super.applyReadonlyViewState()
+    if (this.isReadonly) this.stopVisualEditor()
+    else if (this.isFullscreen) void this.startVisualEditor()
+  }
+
+  protected async startVisualEditor(): Promise<void> {
+    if (this.destroyed || !this.isFullscreen || this.isReadonly || this.visualSession || this.visualLoading) return
+    const generation = ++this.visualGeneration
+    this.visualLoading = true
+    this.visualError = false
+    this.cdr.markForCheck()
+    try {
+      const {MermaidVisualSession} = await import('./mermaid-visual-session')
+      if (generation !== this.visualGeneration || this.destroyed || !this.isFullscreen || this.isReadonly) return
+      const container = this.hostElement.querySelector<HTMLElement>('.visual-con')!
+      this.visualSession = this.zone.runOutsideAngular(() => new MermaidVisualSession(container, {
+        // 使用文档已有的 Mermaid 配置，避免第三方 initialize 改写全局配置。
+        initialize: () => undefined,
+        render: (id, code) => mermaid.render(id, code),
+        parse: (code) => mermaid.parse(code),
+      }, {
+        read: () => this.getGraphDefinition(),
+        write: (base, edits) => this.applyVisualEdits(base, edits),
+        undo: () => { if (!this.isReadonly) this.doc.crud.undoManager.undo() },
+        redo: () => { if (!this.isReadonly) this.doc.crud.undoManager.redo() },
+        canUndo: () => this.doc.crud.undoManager.isCanUndo(),
+        canRedo: () => this.doc.crud.undoManager.isCanRedo(),
+      }, ok => {
+        if (generation !== this.visualGeneration || this.destroyed) return
+        this.visualRenderFailed = !ok
+        if (ok) this.visualReady = true
+        this.cdr.markForCheck()
+      }))
+    } catch (error) {
+      if (generation === this.visualGeneration) this.visualError = true
+      this.doc.logger?.warn('mermaidVisualEditorLoadError', error)
+    } finally {
+      if (generation === this.visualGeneration) {
+        this.visualLoading = false
+        this.cdr.markForCheck()
+      }
+    }
+  }
+
+  private applyVisualEdits(base: string, edits: readonly TextEdit[]): boolean {
+    const textarea = this.firstChildren as BlockCraft.IBlockComponents['mermaid-textarea']
+    if (this.destroyed || !this.visualSession || this.isReadonly || textarea.isReadonly || textarea.textContent() !== base) return false
+    const sorted = [...edits].sort((a, b) => a.start - b.start)
+    let end = 0
+    for (const edit of sorted) {
+      if (!Number.isInteger(edit.start) || !Number.isInteger(edit.end) || edit.start < end || edit.end < edit.start || edit.end > base.length) return false
+      end = edit.end
+    }
+    const history = this.doc.crud.undoManager
+    history.captureSelectionBeforeChange()
+    history.stopCapturing()
+    try {
+      this.doc.crud.transact(() => {
+        for (const edit of sorted.reverse()) textarea.replaceText(edit.start, edit.end - edit.start, edit.text)
+      })
+    } finally { history.stopCapturing() }
+    return true
+  }
+
+  private stopVisualEditor(): void {
+    ++this.visualGeneration
+    this.visualLoading = false
+    this.visualError = false
+    const session = this.visualSession
+    if (session && !this.destroyed && !this.isReadonly) session.flush()
+    // 将最后一次成功渲染的原始 SVG 交给普通预览，再卸载交互 DOM。
+    // 最新文本仍在渲染或语法暂时无效时，保留这个可见结果。
+    const preview = session?.snapshot()
+    if (preview && !this.destroyed) this.commitPreview(preview.svg, preview.code)
+    this.visualReady = false
+    this.visualRenderFailed = false
+    this.visualSession = undefined
+    session?.destroy()
+    if (!this.destroyed && this.graphContainer && this.props.mode !== 'text') void this.renderGraph(true)
+    this.cdr.markForCheck()
   }
 
   protected get isFullscreen(): boolean {
@@ -155,7 +266,7 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
   override _init() {
     super._init()
     nextTick().then(() => {
-      this.intersectionObserver.observe(this.hostElement)
+      if (!this.destroyed) this.intersectionObserver.observe(this.hostElement)
     })
   }
 
@@ -164,11 +275,13 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     this.isIntersecting = false
   }
 
-  private _onPreviewObserver = debounce(() => {
-    nextTick().then(() => {
-      this.renderGraph()
-    })
-  }, 500)
+  private _onPreviewObserver(): void {
+    if (this.previewTimer !== null) clearTimeout(this.previewTimer)
+    this.previewTimer = setTimeout(() => {
+      this.previewTimer = null
+      void this.renderGraph()
+    }, 500)
+  }
 
   private _renderedTextContent = ''
 
@@ -178,32 +291,41 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     this.doc.selection.selectBlock(this.id)
   }
 
-  async renderGraph() {
-    if (!this.isIntersecting) return
-    const textarea = this.firstChildren as BlockCraft.IBlockComponents['mermaid-textarea']
-    if (!textarea.textLength) return
-    const graphDefinition = textarea.textContent();
-    if (graphDefinition === this._renderedTextContent && this.graphContainer.childElementCount) return
-    try {
-      const { svg } = await mermaid.render('graph' + generateId(11), graphDefinition, this.graphContainer);
-      this.graphContainer.innerHTML = svg
-      this._renderedTextContent = graphDefinition
-      this.graphMaxWidth = parseInt((this.graphContainer.firstElementChild! as SVGAElement).style.maxWidth)
-      this.setGraphWidth(this.graphScale)
-    } catch (err) {
+  async renderGraph(force = false) {
+    if (this.destroyed || this.visualSession || !this.graphContainer || this.props.mode === 'text') return
+    if (!force && !this.isIntersecting) return
+    const graphDefinition = this.getGraphDefinition()
+    const generation = ++this.previewGeneration
+    if (!graphDefinition.trim()) {
+      this.graphContainer.replaceChildren()
       this._renderedTextContent = ''
-      // this.graphContainer.innerHTML = `<div style="color: var(--bc-error-color);">${err}</div>`
+      return
+    }
+    if (graphDefinition === this._renderedTextContent && this.graphContainer.querySelector('svg')) return
+    try {
+      // 不把可见预览容器交给 Mermaid：render 会先清空容器，失败时造成空白。
+      const {svg} = await mermaid.render('graph' + generateId(11), graphDefinition)
+      if (this.destroyed || this.visualSession || generation !== this.previewGeneration ||
+          graphDefinition !== this.getGraphDefinition()) return
+      this.commitPreview(svg, graphDefinition)
+    } catch {
+      // 语法输入中或渲染失败时保留上一次成功的预览。
     }
   }
 
+  private commitPreview(svg: string, code: string): void {
+    this.graphContainer.innerHTML = svg
+    this._renderedTextContent = code
+    const element = this.graphContainer.querySelector('svg')
+    const width = parseFloat(element?.style.maxWidth ?? '')
+    this.graphMaxWidth = Number.isFinite(width) && width > 0 ? width : 0
+    this.setGraphWidth(this.graphScale)
+  }
+
   setView(view: MermaidViewMode) {
-    if (!this.isIntersecting || this._viewMode === view) return
     this.hostElement.setAttribute('data-mode', this._viewMode = view)
-    if (view !== 'text') {
-      !this.graphContainer.childElementCount && this.renderGraph()
-    } else {
-      this.graphContainer.childElementCount && this.graphContainer.replaceChildren()
-    }
+    if (view !== 'text') void this.renderGraph()
+    // 文本模式只隐藏预览，不销毁最后一次成功的 SVG，便于无空白交接。
   }
 
   onSwitchView($event: MouseEvent) {
@@ -287,6 +409,10 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
   }
 
   scaleGraph(number: number) {
+    if (this.visualSession) {
+      this.visualSession.zoomBy(number > 0 ? 1.25 : 0.8)
+      return
+    }
     let ratio = this.graphScale + number
     if (number < 0) {
       ratio = Math.max(0.5, ratio)
@@ -302,7 +428,7 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
   private setGraphWidth(ratio: number) {
     const svg = this.graphContainer.firstElementChild! as SVGElement
     if (!svg) return;
-    svg.style.maxWidth = this.graphMaxWidth * ratio + 'px'
+    if (this.graphMaxWidth > 0) svg.style.maxWidth = this.graphMaxWidth * ratio + 'px'
   }
 
   private createPreviewSvg(svg: SVGElement) {
