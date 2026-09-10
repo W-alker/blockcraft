@@ -16,6 +16,8 @@ export interface OrderedBlockModel extends EditableBlockNative {
   props: {
     order: number
     start?: number | null
+    /** Continue the nearest preceding compatible list across non-ordered siblings. */
+    continuePrevious?: boolean
     /** Word-like marker preset. Missing/null keeps the historical depth cycle. */
     ms?: OrderedMarkerStyleId | null
   } & IEditableBlockProps

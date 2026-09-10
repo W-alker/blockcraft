@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-08-31 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-09-10 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -1647,3 +1647,12 @@ This skill pack is **bundled with `@ccc/blockcraft`** so any project that depend
 3. **Human developers** — read the files directly from `node_modules/@ccc/blockcraft/ai-skills/` or browse the source repository.
 
 Full installation options (symlink vs copy, custom paths, uninstall) are in `README.md`.
+
+## 有序列表的显式跨段续号
+
+`OrderedBlockModel.props.continuePrevious?: boolean` 表示接续同父容器、同缩进和标题级别的最近前段列表。
+由 `OrderedBlockPlugin` 按模型顺序重算，可跨非有序块，但不跨更浅缩进或相关标题边界。
+正数 `start` 优先；缺省/false 保持普通列表默认断组规则。菜单“继续编号”同时写入
+`{start: 0, continuePrevious: true}`，“重新编号”写入 `{start: 1, continuePrevious: false}`。
+该字段随原生文档 props 持久化；`createSnapshot` 新建后继项不继承计数状态。
+HTML/Markdown 使用输出编号表达结果，不承诺保留动态跨段接续意图。

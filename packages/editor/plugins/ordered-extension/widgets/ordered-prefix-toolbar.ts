@@ -69,7 +69,8 @@ export class OrderedPrefixToolbar implements OnDestroy {
 
   checkMode() {
     if (!this.orderedBlock || !this.isBlockAlive(this.orderedBlock)) return
-    this.activeMode = this.orderedBlock.props.start ? 'reset' : 'continue'
+    this.activeMode = this.orderedBlock.props.start ? 'reset'
+      : this.orderedBlock.props.continuePrevious === true ? 'continue' : ''
     this.cdr.markForCheck()
   }
 
@@ -82,12 +83,14 @@ export class OrderedPrefixToolbar implements OnDestroy {
       case 'reset':
         this.orderedBlock.updateProps({
           start: 1,
+          continuePrevious: false,
           order: 0
         })
         break
       case 'continue':
         this.orderedBlock.updateProps({
-          start: 0
+          start: 0,
+          continuePrevious: true
         })
         break
     }

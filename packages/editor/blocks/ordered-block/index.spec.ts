@@ -7,6 +7,7 @@ describe('OrderedBlockSchema', () => {
       ms: 'r2',
       order: 12,
       start: 13,
+      continuePrevious: true,
     })
 
     expect(snapshot.props).toEqual(jasmine.objectContaining({
@@ -15,6 +16,7 @@ describe('OrderedBlockSchema', () => {
       ms: 'r2',
     }))
     expect(snapshot.props['start']).toBeUndefined()
+    expect(snapshot.props['continuePrevious']).toBeUndefined()
   })
 
   it('drops unknown marker style ids', () => {

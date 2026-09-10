@@ -102,6 +102,10 @@ export class OrderedBlockPlugin extends DocPlugin {
         if (event.isUndoRedo) return;
         event.transactions.forEach(tr => {
           const affectsOrderBoundary = tr.changes.has('depth') || tr.changes.has('heading')
+          if (tr.block.flavour === 'ordered' && tr.changes.has('continuePrevious')) {
+            this._scheduleParentOf(tr.block as unknown as OrderableBlock)
+            return
+          }
           const affectsOrderedStart = tr.block.flavour === 'ordered' && tr.changes.has('start')
           if (affectsOrderBoundary) {
             this._scheduleParentOf(tr.block as unknown as OrderableBlock)
@@ -228,13 +232,23 @@ const updateOrdersInParent = (
   doc: BlockCraft.Doc,
   parentId: string,
   insertedBlockIds: ReadonlySet<string>,
+  parentChildren = getOrderableChildren(doc, parentId),
 ) => {
-  const parentChildren = getOrderableChildren(doc, parentId)
 
   const counters = new Map<string, OrderCounter>()
+  // Retain compatible counters across prose for explicitly continued segments only.
+  const precedingCounters = new Map<string, OrderCounter>()
 
   for (const block of parentChildren) {
     pruneCounters(counters, block)
+    const boundaryDepth = getOrderedCounterDepth(block)
+    const boundaryHeading = getOrderedCounterHeading(block)
+    precedingCounters.forEach((counter, key) => {
+      if (counter.depth > boundaryDepth ||
+        (boundaryHeading > 0 && (counter.heading === 0 || counter.heading > boundaryHeading))) {
+        precedingCounters.delete(key)
+      }
+    })
     if (block.flavour !== 'ordered') continue
 
     const orderedBlock = block
@@ -242,7 +256,9 @@ const updateOrdersInParent = (
     const heading = getOrderedCounterHeading(orderedBlock)
     const startOrder = getOrderedCounterStart(orderedBlock)
     const key = getOrderedCounterKey(depth, heading)
-    const previousCounter = startOrder === null ? counters.get(key) : undefined
+    const previousCounter = startOrder === null
+      ? counters.get(key) ?? (orderedBlock.props['continuePrevious'] === true ? precedingCounters.get(key) : undefined)
+      : undefined
     const order = startOrder ?? previousCounter?.nextOrder ?? 0
     const markerStyle = resolveMarkerStyleForCounter(orderedBlock, previousCounter)
     const patch: Partial<IBlockProps> = {}
@@ -264,12 +280,14 @@ const updateOrdersInParent = (
       doc.crud.updateBlockProps(orderedBlock.id, patch)
     }
 
-    counters.set(key, {
+    const counter: OrderCounter = {
       depth,
       heading,
       nextOrder: order + 1,
       markerStyle,
-    })
+    }
+    counters.set(key, counter)
+    precedingCounters.set(key, counter)
   }
 }
 
@@ -293,6 +311,11 @@ const updateOrdersFromStartBlock = (doc: BlockCraft.Doc, blockId: string) => {
   if (!parentId) return
 
   const parentChildren = getOrderableChildren(doc, parentId)
+  // A changed start can affect later explicitly linked segments across gaps.
+  if (parentChildren.some(child => child.flavour === 'ordered' && child.props['continuePrevious'] === true)) {
+    updateOrdersInParent(doc, parentId, new Set(), parentChildren)
+    return
+  }
   const startIndex = parentChildren.findIndex(current => current.id === blockId)
   if (startIndex === -1) return
 

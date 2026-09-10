@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-28
+> Last updated: 2026-09-10
 
 ## BlockControllerPlugin
 
@@ -480,8 +480,10 @@ new OrderedBlockPlugin()
   at the same or a deeper `depth` is encountered; a later plain ordered block
   starts a fresh counter. Ordered heading groups keep scanning across those
   non-ordered siblings whenever the existing heading/depth boundaries allow it
+- 普通列表的手动“继续编号”写入 `continuePrevious: true` 并清除 `start`，接续同父容器、同 depth/heading 下最近的前段列表，可跨普通段落。回到更浅层或相关标题边界仍会截断；找不到前段时从 1 开始。该意图保存在块 props，前段增删或起始值变化会重算后段。“重新编号”清除该意图。旧文档未设置该字段时行为不变。
+- `start` 变更在存在显式接续块时重算父容器，以更新跨段依赖；否则保留局部重算。编号样式分组仍以原结构边界为准。
 - Explicit `start` restarts the sequence from that number; following same-depth/same-heading ordered blocks continue from it
-- A `start`-only prop change uses a local recalculation range and stops at the next explicit `start` boundary for the same `depth` + `heading`
+- Without explicit continuation in the parent, a `start`-only prop change uses a local recalculation range and stops at the next explicit `start` boundary for the same `depth` + `heading`
 - Returning from a nested depth to a shallower depth clears deeper counters, so nested ordered lists restart under the next parent item
 - Shows `OrderedPrefixToolbar` when the list prefix button is clicked
 - The fixed-toolbar split button uses `BcOrderedMarkerPickerComponent`, which

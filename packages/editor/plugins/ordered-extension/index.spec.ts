@@ -165,6 +165,78 @@ const createPrefixMouseDownContext = (blockId: string) => {
 }
 
 describe('OrderedBlockPlugin', () => {
+  it('continues across prose and follows insertions, deletions and upstream start changes', async () => {
+    const {onChildrenUpdate$, onPropsUpdate$, plugin, registerParent} = createPluginHarness()
+    const blocks = [createOrderedBlock('a'), createOrderedBlock('b'), createBlock('gap'),
+      createOrderedBlock('c', {continuePrevious: true}), createOrderedBlock('d')]
+    const parent = attachToParent(blocks)
+    const recalculate = async () => {
+      registerParent(parent, blocks)
+      triggerInserted(onChildrenUpdate$, parent, blocks[0])
+      await waitForAutoOrder()
+    }
+    const orders = () => blocks.filter(b => b.flavour === 'ordered').map(b => b.props['order'])
+    await recalculate()
+    expect(orders()).toEqual([0, 1, 2, 3])
+    blocks.splice(1, 0, createOrderedBlock('inserted'))
+    await recalculate()
+    expect(orders()).toEqual([0, 1, 2, 3, 4])
+    blocks.splice(1, 1)
+    await recalculate()
+    expect(orders()).toEqual([0, 1, 2, 3])
+    blocks[0].props['start'] = 5
+    triggerPropsChanged(onPropsUpdate$, blocks[0], ['start'])
+    await waitForAutoOrder()
+    expect(orders()).toEqual([4, 5, 6, 7])
+    blocks[3].props['start'] = 1
+    blocks[3].props['continuePrevious'] = false
+    triggerPropsChanged(onPropsUpdate$, blocks[3], ['start', 'continuePrevious'])
+    await waitForAutoOrder()
+    expect(orders()).toEqual([4, 5, 0, 1])
+    plugin.destroy()
+  })
+
+  it('reacts to an explicit continuation prop change without a toolbar callback', async () => {
+    const {onPropsUpdate$, plugin, registerParent} = createPluginHarness()
+    const blocks = [createOrderedBlock('a'), createBlock('gap'), createOrderedBlock('b')]
+    registerParent(attachToParent(blocks), blocks)
+    blocks[2].props['continuePrevious'] = true
+    triggerPropsChanged(onPropsUpdate$, blocks[2], ['continuePrevious'])
+    await waitForAutoOrder()
+    expect(blocks[2].props['order']).toBe(1)
+    plugin.destroy()
+  })
+
+  for (const boundary of [createBlock('shallower', 'paragraph', {depth: 0}),
+    createBlock('heading', 'paragraph', {depth: 1, heading: 1})]) {
+    it(`does not continue across the ${boundary.id} boundary`, async () => {
+      const {onChildrenUpdate$, plugin, registerParent} = createPluginHarness()
+      const blocks = [createOrderedBlock('a', {depth: 1}), boundary,
+        createOrderedBlock('b', {depth: 1, continuePrevious: true})]
+      const parent = attachToParent(blocks)
+      registerParent(parent, blocks)
+      triggerInserted(onChildrenUpdate$, parent, blocks[2])
+      await waitForAutoOrder()
+      expect(blocks[2].props['order']).toBe(0)
+      plugin.destroy()
+    })
+  }
+
+  it('uses the nearest preceding segment and gives explicit start precedence', async () => {
+    const {onChildrenUpdate$, plugin, registerParent} = createPluginHarness()
+    const blocks = [createOrderedBlock('a', {start: 8}), createBlock('gap1'),
+      createOrderedBlock('b'), createBlock('gap2'),
+      createOrderedBlock('c', {continuePrevious: true}), createBlock('gap3'),
+      createOrderedBlock('d', {continuePrevious: true, start: 10})]
+    const parent = attachToParent(blocks)
+    registerParent(parent, blocks)
+    triggerInserted(onChildrenUpdate$, parent, blocks[0])
+    await waitForAutoOrder()
+    expect([blocks[0], blocks[2], blocks[4], blocks[6]].map(b => b.props['order']))
+      .toEqual([7, 0, 1, 9])
+    plugin.destroy()
+  })
+
   it('renumbers virtual root siblings from the model without traversing child components', async () => {
     const {onChildrenUpdate$, plugin, registerParent, updateBlockProps} = createPluginHarness()
     const blocks = [

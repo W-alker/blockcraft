@@ -68,6 +68,30 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## Unreleased — 2026-09-10 — 普通有序列表手动跨段续号
+
+**Severity**: minor
+
+**What changed**: 新增可选 `OrderedBlockModel.props.continuePrevious`，使“继续编号”可显式接续被普通段落隔开的前段列表。前段增删和起始值变化会同步重算后段。
+
+**Why**: 原操作只清除 `start`，自动编号扫描仍被非有序块截断，且缺省状态会禁用继续按钮。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-block.md`。
+
+### New APIs / Features
+
+- `continuePrevious?: boolean`：同父容器、同 depth/heading 的最近前段续号意图；不跨更浅缩进或相关标题边界。正数 `start` 优先，无前段则从 1 开始。
+
+### Migration Recipe
+
+旧文档无需迁移；要显式续号，通过块 `updateProps({start: 0, continuePrevious: true})` 写入。重新编号使用 `updateProps({start: 1, continuePrevious: false})`。新建后继项不继承该状态。
+
+### Behavior Changes
+
+缺省仍断组；手动接续随原生 props 持久化，HTML/Markdown 仅保留输出编号。含接续块的父容器在 `start` 变更时完整重算，否则仍局部重算；不挂载离屏组件。样式分组边界不变。
+
+**Version**: 尚未发布，包版本保持不变。
+
 ## Unreleased — 2026-09-09 — 绝对对象的文档范围与分页边界
 
 **Severity**: patch

@@ -2049,3 +2049,12 @@ Mermaid 保持 `mermaid` 容器与 `mermaid-textarea` 子块结构。源码仍�
 全屏交接保留上一次成功 SVG：普通渲染不向 Mermaid 提供可见容器，只有成功且源码仍匹配时才替换。全屏画布首次成功前保留普通预览；退出先转移原始 SVG，再释放实例。可见性恢复即重新检查预览，不依赖显示模式变化。
 
 协同边界：没有节点锁，同一标签同时修改按 Yjs 文本合并；远端更新到来时取消旧的未提交标签输入并提示。销毁后的异步渲染结果必须按 mount 代次拒绝，避免上游重新创建 Observer。
+
+## 有序列表的显式跨段续号
+
+`OrderedBlockModel.props.continuePrevious?: boolean` 表示接续同父容器、同缩进和标题级别的最近前段列表。
+由 `OrderedBlockPlugin` 按模型顺序重算，可跨非有序块，但不跨更浅缩进或相关标题边界。
+正数 `start` 优先；缺省/false 保持普通列表默认断组规则。菜单“继续编号”同时写入
+`{start: 0, continuePrevious: true}`，“重新编号”写入 `{start: 1, continuePrevious: false}`。
+该字段随原生文档 props 持久化；`createSnapshot` 新建后继项不继承计数状态。
+HTML/Markdown 使用输出编号表达结果，不承诺保留动态跨段接续意图。
