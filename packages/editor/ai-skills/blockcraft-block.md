@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-09-09
+> Last updated: 2026-09-10
 
 ## Block Types
 
@@ -762,6 +762,20 @@ root
       ├─ image           # absolute, group-local position and wr basis
       └─ shape           # absolute, group-local position
 ```
+
+绝对定位层仍然保持零高度，不参与正文断行。`BlockPlacementManager.surface`
+是内部视图协调器：用模型尺寸、旋转后的包围盒和绝对对象可见范围索引计算文档
+下沿；流式根容器取正文自然高度与对象下沿加 padding 的较大值，移动或删除后可收缩。
+
+对象保持 scrollContainer 内自由拖动，不限制到正文内容区，也不吸附纸张边缘或页缝。
+Host 的 `left/top` 始终使用原始 `position`；切换视图不改变坐标。根级组合按外框估算范围，
+成员保持组内坐标。分页屏幕和打印都把对象所需的额外页面纳入页数，不插入正文占位块。
+拖动预览使用原始位移，只有松手时写入一次坐标事务；拖到新增页面时扩展预览纸面，
+取消则撤销预览。打印保留对象坐标，纸张外的部分遵循现有分页裁切规则，不自动搬移对象。
+
+尺寸和范围按模型/结构/宽度/修订可见性事件失效；已挂载根级对象使用单个共享
+ResizeObserver 校正完整块的宽高（含 Caption），按内部 surface revision 更新可见范围。
+调用方不应读取 `surface` 的内部状态作为持久数据或自行修改 root 的高度。
 
 The renderer uses explicit non-negative tiers: background, `under` (`0`),
 ordinary flow children (`1`), then `over` (`2`). This keeps an under block above

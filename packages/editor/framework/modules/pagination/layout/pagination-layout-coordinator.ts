@@ -38,6 +38,8 @@ import {
   type ModelHeightEstimate,
 } from "../../virtualization/model-height-estimator";
 
+import {includePlacementPages} from '../../../services/block-placement/page-surface';
+
 const DEFAULT_ESTIMATED_HEIGHT = 48;
 
 export interface PaginationLayoutState {
@@ -328,7 +330,8 @@ export class PaginationLayoutCoordinator {
     }
 
     const items = buildPaginationItems(entries.map(entryToMeta));
-    const result = paginate(items, geometry.geometry);
+    const result = includePlacementPages(paginate(items, geometry.geometry),
+      this.doc.placement?.surface?.bottom ?? 0, geometry);
     const placements = buildProjectedBlockPlacements(
       rootIds,
       entries,

@@ -31,6 +31,8 @@ const positiveNumber = (value: unknown): number | null =>
  */
 export class AbsolutePlacementVisibilityIndex {
   private layouts: readonly LayoutBands[] = []
+  private rootIds: readonly string[] = []
+  private surfaceRevision = 0
 
   constructor(
     private readonly doc: BlockCraft.Doc,
@@ -39,15 +41,20 @@ export class AbsolutePlacementVisibilityIndex {
   ) {}
 
   rebuild(rootIds: readonly string[]): void {
-    this.layouts = rootIds
-      .filter(id =>
-        this.doc.model.getFlavour(id) === PLACEMENT_LAYOUT_FLAVOUR,
-      )
+    this.rootIds = rootIds.filter(id =>
+      this.doc.model.getFlavour(id) === PLACEMENT_LAYOUT_FLAVOUR)
+    this.layouts = this.rootIds
       .map(layoutId => ({
         layoutId,
         bands: this.buildLayoutBands(layoutId),
       }))
       .filter(layout => layout.bands.length > 0)
+    this.surfaceRevision = this.doc.placement?.surface?.revision ?? 0
+  }
+
+  get bottom(): number {
+    return this.layouts.reduce((bottom, layout) =>
+      Math.max(bottom, layout.bands[layout.bands.length - 1]?.bottom ?? 0), 0)
   }
 
   /**
@@ -59,6 +66,12 @@ export class AbsolutePlacementVisibilityIndex {
     viewportHeight: number,
     overscanPx: number,
   ): string[] {
+    // A mounted caption measurement/page projection can change an object's
+    // band without a model edit. Refresh once per surface revision, never scan
+    // the document on an unchanged scroll frame.
+    if (this.surfaceRevision !== (this.doc.placement?.surface?.revision ?? 0)) {
+      this.rebuild(this.rootIds)
+    }
     const height = Math.max(0, finiteNumber(viewportHeight))
     const overscan = Math.max(0, finiteNumber(overscanPx))
     const top = finiteNumber(viewportTop)
@@ -91,6 +104,7 @@ export class AbsolutePlacementVisibilityIndex {
   }
 
   private resolveBlockBand(blockId: string): VerticalBand | null {
+    if (this.doc.revisions?.getBlockPresentation(blockId).hidden) return null
     const props = this.doc.model.getProps(blockId) ?? {}
     const position = props['position']
     if (
@@ -101,6 +115,7 @@ export class AbsolutePlacementVisibilityIndex {
     }
 
     const y = finiteNumber((position as {y?: unknown}).y)
+
     const flavour = this.doc.model.getFlavour(blockId)
     const dimensions = flavour
       ? this.doc.objectSizing?.resolve(flavour, props)
@@ -119,10 +134,11 @@ export class AbsolutePlacementVisibilityIndex {
     const height = Math.max(
       1,
       explicitHeight ?? 0,
-      estimatedHeight ?? DEFAULT_ABSOLUTE_HEIGHT,
+      this.doc.placement?.surface?.measuredHeight(blockId) ?? estimatedHeight ?? DEFAULT_ABSOLUTE_HEIGHT,
     )
 
     const width =
+      positiveNumber(this.doc.placement?.surface?.measuredWidth(blockId)) ??
       positiveNumber(dimensions?.width) ??
       positiveNumber(props['width'])
     const rotation = finiteNumber(props['rotation'])

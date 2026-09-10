@@ -650,6 +650,23 @@ describe("buildPrintPages - 超大块按行拆分（PDF 防分割）", () => {
     }
   });
 
+  it('adds object-only tail pages without clamping free coordinates or mutating the source', async () => {
+    const render = createPlacementRenderRoot({left: 600, top: 470, width: 40, height: 20});
+    const snapshot = root([paragraph('p1', 'short text'), placementLayout('placement', [absoluteShape('shape', 470)])]);
+    const pages = await buildPaginatedPrintSurface(snapshot, SMALL_PAGE, {
+      render: async () => ({root: render.root, dispose: () => render.root.remove()}),
+    });
+    try {
+      expect(pages.pageCount).toBe(3);
+      expect(render.block.style.top).toBe('470px');
+      expect(render.block.style.left).toBe('600px');
+      const third = pages.pages[2]!;
+      const object = third.querySelector<HTMLElement>('[data-block-id="shape"]')!;
+      expect(object.style.left).toBe('600px');
+      expect((snapshot.children as IBlockSnapshot[])[1].children).toEqual([absoluteShape('shape', 470)]);
+    } finally { pages.dispose(); }
+  });
+
   it('projects the tail placement layout through every page instead of moving it to the last slot page', async () => {
     const pageGap = 24;
     const pageStride = 220 + pageGap;

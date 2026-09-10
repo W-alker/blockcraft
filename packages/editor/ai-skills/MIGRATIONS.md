@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-09-09 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-09-10 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -67,6 +67,23 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > - `major` (e.g. 0.1.37 → 1.0.0): breaking — removed APIs, renamed exports, signature changes, behavior reversals
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
+
+## Unreleased — 2026-09-09 — 绝对对象的文档范围与分页边界
+
+**Severity**: patch
+
+**What changed**: 流式文档的最小高度包含根级绝对对象范围；分页和打印补齐对象所需尾页。
+保持 scrollContainer 内自由拖动，不限制在正文内容区、不吸附纸张或页缝；
+松手写入一次定位事务。组合成员的局部坐标保持不变，超页对象不自动缩放。
+
+**Why**: 零高度定位层不应使正文结束后的图片悬浮在白底或末页之外。
+
+**Behavior Changes**: 打开旧文档或切换视图保持对象原始坐标，不迁移或改写 `position`。
+移动/删除对象后文档范围可以收缩。打印独立重排保留自由坐标；页数含对象专用尾页。
+无需修改持久化格式。`BlockPlacementManager.surface` 仅供框架内部布局协作使用。
+
+**Affected ai-skills files**: `blockcraft-block.md`。
+**Version**: 尚未发布，包版本保持不变。
 
 ## v0.7.4 — 2026-09-09 — Mermaid 全屏双向编辑
 

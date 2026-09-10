@@ -4,6 +4,7 @@ import {BlockReadonlyError} from '../../doc/block-readonly.types'
 import {deleteAbsolutePlacementObjects} from './delete-command'
 import {duplicateAbsolutePlacementSelection} from './duplicate-command'
 import {resolvePlacementBox} from './geometry'
+import {resolvePlacementObjectGeometry, resolvePlacementObjectVisualBounds} from './object-geometry'
 import {BlockPlacementRuntime} from './runtime'
 import {finitePlacementNumber} from './state'
 import {
@@ -165,6 +166,15 @@ export class BlockPlacementInteractionController {
     const pointerStartY = event.clientY
     const start = this.runtime.getState(block)
     const placementStartX = start.x
+    const placementStartY = start.y
+    const object = this.doc.objectSizing
+      ? resolvePlacementObjectGeometry(this.doc, block.id, {includeContent: true}) : null
+    const bounds = object ? resolvePlacementObjectVisualBounds({...object,
+      width: this.doc.placement?.surface?.measuredWidth(block.id) ?? object.width,
+      height: this.doc.placement?.surface?.measuredHeight(block.id) ?? object.height,
+    }) : null
+    const isRootObject = !this.runtime.isInObjectGroup(block)
+    let target = {x: placementStartX, y: placementStartY}
     const threshold = options.movementThreshold ??
       (
         (event.pointerType || 'mouse') === 'touch'
@@ -205,6 +215,7 @@ export class BlockPlacementInteractionController {
         }
       } catch {}
       restorePreview()
+      this.doc.placement?.surface?.preview(0)
       try {
         releaseLease()
       } finally {
@@ -237,8 +248,12 @@ export class BlockPlacementInteractionController {
       // placement plane's measured scale instead of the configured view scale:
       // browser zoom and host transforms can make the latter differ from the
       // geometry that actually produced the pointer coordinates.
-      const layoutDx = dx / box.visualScale
-      const layoutDy = dy / box.visualScale
+      target = {x: placementStartX + dx / box.visualScale, y: placementStartY + dy / box.visualScale}
+      const layoutDx = target.x - placementStartX
+      const layoutDy = target.y - placementStartY
+      if (isRootObject && bounds) {
+        this.doc.placement?.surface?.preview(bounds.bottom + target.y - start.y)
+      }
       host.style.transform =
         `translate3d(${layoutDx}px, ${layoutDy}px, 0)` +
         `${originalTransform ? ` ${originalTransform}` : ''}`
@@ -252,10 +267,7 @@ export class BlockPlacementInteractionController {
         this.doc.selection.value?.anchor.blockId === block.id
       if (shouldCommit) {
         try {
-          if (this.updateAbsolute(block, {
-            x: placementStartX + dx / box.visualScale,
-            y: start.y + dy / box.visualScale,
-          })) {
+          if (this.updateAbsolute(block, target)) {
             // Keep the transform preview in place until the committed left/top
             // bindings have reached the DOM. Otherwise pointerup briefly paints
             // the object's old position and looks like a rejected drop.

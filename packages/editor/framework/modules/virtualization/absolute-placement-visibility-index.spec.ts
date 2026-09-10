@@ -28,6 +28,7 @@ describe('AbsolutePlacementVisibilityIndex', () => {
 
     index.rebuild(['layout'])
 
+    expect(index.bottom).toBeGreaterThan(0)
     expect(index.visibleLayoutIds(0, 100, 100)).toEqual([])
     expect(index.visibleLayoutIds(450, 100, 100)).toEqual(['layout'])
     expect(index.visibleLayoutIds(801, 100, 0)).toEqual([])
@@ -66,6 +67,7 @@ describe('AbsolutePlacementVisibilityIndex', () => {
     })
     const index = new AbsolutePlacementVisibilityIndex(doc as any)
     index.rebuild(['layout'])
+    expect(index.bottom).toBeGreaterThan(0)
     expect(index.visibleLayoutIds(0, 100, 100)).toEqual([])
 
     imageProps.position = {x: 0, y: 20}
@@ -73,6 +75,40 @@ describe('AbsolutePlacementVisibilityIndex', () => {
 
     expect(index.visibleLayoutIds(0, 100, 100)).toEqual(['layout'])
   })
+  it('includes freely positioned objects and drops the extent when the last object is removed', () => {
+    const layout = block('placement-layout', ['image'])
+    const doc = createDoc({
+      root: block('root', ['layout']), layout,
+      image: block('image', [], {position: {x: 0, y: 800}, height: 120}),
+    })
+    ;(doc as any).placement = {surface: {measuredWidth: () => undefined, measuredHeight: () => undefined}}
+    const index = new AbsolutePlacementVisibilityIndex(doc as any)
+    index.rebuild(['layout'])
+    expect(index.bottom).toBe(920)
+    expect(index.visibleLayoutIds(910, 1, 0)).toEqual(['layout'])
+    layout.children = []
+    index.rebuild(['layout'])
+    expect(index.bottom).toBe(0)
+  })
+
+  it('refreshes a measured band once without another model edit', () => {
+    const doc = createDoc({
+      root: block('root', ['layout']), layout: block('placement-layout', ['image']),
+      image: block('image', [], {position: {x: 0, y: 800}, height: 120}),
+    })
+    const surface = {revision: 0, measuredWidth: () => undefined, measuredHeight: () => 150}
+    ;(doc as any).placement = {surface}
+    const index = new AbsolutePlacementVisibilityIndex(doc as any)
+    index.rebuild(['layout'])
+    expect(index.visibleLayoutIds(1000, 1, 0)).toEqual([])
+    surface.measuredHeight = () => 350
+    surface.revision++
+    expect(index.visibleLayoutIds(1000, 1, 0)).toEqual(['layout'])
+    const getProps = spyOn(doc.model, 'getProps').and.callThrough()
+    index.visibleLayoutIds(1010, 1, 0)
+    expect(getProps).not.toHaveBeenCalled()
+  })
+
 })
 
 function block(

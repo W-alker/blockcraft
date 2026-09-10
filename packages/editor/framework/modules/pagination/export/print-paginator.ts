@@ -1,4 +1,5 @@
 // packages/editor/framework/modules/pagination/export/print-paginator.ts
+import {includePlacementPages} from '../../../services/block-placement/page-surface';
 import {createSnapshotRenderer} from "../../../../snapshot-viewer";
 import {IBlockSnapshot} from "../../../block-std/types/block.type";
 import {
@@ -407,7 +408,11 @@ export async function buildPaginatedPrintSurface(
   }
 
   // 3) 分页
-  const result = override?.layout?.result ?? paginate([...items], geom.geometry);
+  // Preserve free object coordinates; only extend the page list to their extent.
+  const placementBottom = placementPlanes.reduce((bottom, plane) =>
+    (plane.blocks ?? captureStablePrintPlacementPlane(plane.element).blocks).reduce((value, block) => Math.max(value, block.top + block.height), bottom), 0);
+  const result = includePlacementPages(
+    override?.layout?.result ?? paginate([...items], geom.geometry), placementBottom, geom);
 
   if (override?.layout) {
     try {

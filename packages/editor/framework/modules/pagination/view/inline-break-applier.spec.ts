@@ -415,4 +415,81 @@ describe('InlineBreakApplier', () => {
       release()
     }
   })
+  it('scans page slots once instead of once per ordinary block', () => {
+    let slotReads = 0
+    let pageReads = 0
+    const metas: BlockMeta[] = []
+    const pages = Array.from({length: 64}, (_,pageIndex) => {
+      const slots = Array.from({length: 16}, (_,slotIndex) => {
+        const id = `plain-${pageIndex}-${slotIndex}`
+        metas.push({...meta(), id, height: 20, splitOffsets: undefined,
+          inlineBreakPlan: slotIndex % 2 ? {points: []} : undefined})
+        return {get id() { slotReads++; return id }}
+      })
+      return {index: pageIndex, usedHeight: 320,
+        get slots() { pageReads++; return slots }}
+    })
+    const getBlockById = jasmine.createSpy('getBlockById')
+    const applier = new InlineBreakApplier({getBlockById} as unknown as BlockCraft.Doc)
+    try {
+      expect(applier.apply(metas, {pages, byBlock: new Map()}, 400, 20).size).toBe(0)
+      // A deterministic complexity guard: independent of machine speed and JIT.
+      expect(pageReads).toBeLessThanOrEqual(pages.length * 3)
+      expect(slotReads).toBeLessThanOrEqual(metas.length * 3)
+      expect(getBlockById).not.toHaveBeenCalled()
+    } finally { applier.destroy() }
+  })
+
+  it('recognizes non-leading stale fragments without treating tables as inline text', () => {
+    const applier = new InlineBreakApplier({getBlockById: () => null} as unknown as BlockCraft.Doc)
+    const stale = {...meta(), inlineBreakPlan: undefined}
+    const withNonLeading: PaginationResult = {
+      pages: [{index: 0, usedHeight: 80, slots: [
+        {id: 'whole'}, {id: 'text', fragment: {fromOffset: 0, toOffset: 80}},
+        {id: 'table', fragment: {fromOffset: 0, toOffset: 80}},
+      ]}], byBlock: new Map(),
+    }
+    try {
+      expect(applier.apply([stale, {...stale, id: 'table', flavour: 'table'}], withNonLeading, 100, 20))
+        .toEqual(new Set(['text']))
+      expect(applier.apply([stale], {pages: [], byBlock: new Map()}, 100, 20).size).toBe(0)
+      expect(applier.syncMounted(['text']).size).toBe(0)
+    } finally { applier.destroy() }
+  })
+
+  it('indexes continuations separately for each block and excludes non-leading fragments', () => {
+    const runtimes = new Map([['text', {}], ['other', {}]])
+    const applies = new Map([...runtimes].map(([id]) => [id, jasmine.createSpy(id).and.returnValue(true)]))
+    const releases = [...runtimes].map(([id, runtime]) => registerInlinePaginationAccess(runtime, {
+      apply: applies.get(id)!, clear: () => undefined, measureLineStarts: () => [],
+    }))
+    const applier = new InlineBreakApplier({
+      getBlockById: (id: string) => ({runtime: runtimes.get(id)}),
+    } as unknown as BlockCraft.Doc)
+    const mixed: PaginationResult = {
+      pages: [
+        {index: 0, usedHeight: 80, slots: [{id: 'text', fragment: {fromOffset: 0, toOffset: 80}}]},
+        {index: 1, usedHeight: 90, slots: [
+          {id: 'text', fragment: {fromOffset: 80, toOffset: 150}},
+          {id: 'other', fragment: {fromOffset: 0, toOffset: 80}},
+        ]},
+        {index: 2, usedHeight: 70, slots: [
+          {id: 'other', fragment: {fromOffset: 80, toOffset: 150}},
+        ]},
+      ], byBlock: new Map(),
+    }
+    try {
+      expect(applier.apply([meta(), {...meta(), id: 'other'}], mixed, 100, 20, 10).size).toBe(0)
+      expect(applies.get('text')!.calls.mostRecent().args[0])
+        .toEqual(computeInlinePaginationGaps('text', plan, mixed, 100, 20, 10))
+      expect(applies.get('other')!.calls.mostRecent().args[0])
+        .toEqual(computeInlinePaginationGaps('other', plan, mixed, 100, 20, 10))
+      expect(applies.get('text')!.calls.mostRecent().args[0][0].height).toBe(40)
+      expect(applies.get('other')!.calls.mostRecent().args[0][0].height).toBe(30)
+    } finally {
+      applier.destroy()
+      releases.forEach(release => release())
+    }
+  })
+
 })

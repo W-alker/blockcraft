@@ -33,15 +33,70 @@ export function computeInlinePaginationGaps(
   pageGap: number,
   contentTop = 0,
 ): InlinePaginationGap[] {
-  const gaps: InlinePaginationGap[] = []
+  // The standalone helper keeps its page-only scan; the live applier shares
+  // one fragment index across all blocks in a publication.
+  const continuations: InlineContinuation[] = []
   for (let pageIndex = 1; pageIndex < result.pages.length; pageIndex++) {
     const first = result.pages[pageIndex].slots[0]
     const fragment = first?.id === blockId ? first.fragment : undefined
-    if (!fragment || fragment.fromOffset <= 0) continue
+    if (fragment && fragment.fromOffset > 0) {
+      continuations.push({
+        fromOffset: fragment.fromOffset,
+        previousUsedHeight: result.pages[pageIndex - 1].usedHeight,
+      })
+    }
+  }
+  return gapsForContinuations(plan, continuations, sheetHeightPx, pageGap, contentTop)
+}
 
-    const point = inlineBreakPointAtLayoutOffset(plan, fragment.fromOffset)
+interface InlineContinuation {
+  readonly fromOffset: number
+  readonly previousUsedHeight: number
+}
+
+/** Per-publication data only: no stale anchors or results survive an apply. */
+function indexInlineFragments(result: PaginationResult): {
+  fragmentIds: ReadonlySet<string>
+  continuations: ReadonlyMap<string, readonly InlineContinuation[]>
+} {
+  const fragmentIds = new Set<string>()
+  const continuations = new Map<string, InlineContinuation[]>()
+  for (let pageIndex = 0; pageIndex < result.pages.length; pageIndex++) {
+    const page = result.pages[pageIndex]
+    const slots = page.slots
+    for (let slotIndex = 0; slotIndex < slots.length; slotIndex++) {
+      const slot = slots[slotIndex]
+      const fragment = slot.fragment
+      if (!fragment) continue
+      fragmentIds.add(slot.id)
+      // Only a positive-offset fragment at the head of a later page creates
+      // an inline gap. Other fragments still require materialized anchors.
+      if (pageIndex === 0 || slotIndex !== 0 || !(fragment.fromOffset > 0)) continue
+      let blockContinuations = continuations.get(slot.id)
+      if (!blockContinuations) {
+        blockContinuations = []
+        continuations.set(slot.id, blockContinuations)
+      }
+      blockContinuations.push({
+        fromOffset: fragment.fromOffset,
+        previousUsedHeight: result.pages[pageIndex - 1].usedHeight,
+      })
+    }
+  }
+  return {fragmentIds, continuations}
+}
+
+function gapsForContinuations(
+  plan: InlinePaginationBreakPlan,
+  continuations: readonly InlineContinuation[],
+  sheetHeightPx: number,
+  pageGap: number,
+  contentTop: number,
+): InlinePaginationGap[] {
+  const gaps: InlinePaginationGap[] = []
+  for (const {fromOffset, previousUsedHeight} of continuations) {
+    const point = inlineBreakPointAtLayoutOffset(plan, fromOffset)
     if (!point) continue
-    const previousUsedHeight = result.pages[pageIndex - 1].usedHeight
     const height = sheetHeightPx + pageGap - previousUsedHeight
     if (!Number.isFinite(height) || height <= 0) continue
     gaps.push({
@@ -133,14 +188,15 @@ export class InlineBreakApplier {
     const next = new Map<string, InlinePaginationGap[]>()
     const unmaterialized = new Set<string>()
     const failed = new Set<string>()
+    const {fragmentIds, continuations} = indexInlineFragments(result)
     for (const meta of metas) {
-      const continuationCount = countInlineContinuations(meta.id, result)
+      const blockContinuations = continuations.get(meta.id) ?? []
       if (!meta.inlineBreakPlan) {
         // Sparse estimated geometry may temporarily retain old fragments without
         // current text anchors. That is valid for offscreen extent only; once the
         // root is mounted it cannot be published as a materialized live layout.
         if (
-          hasInlineFragment(meta.id, result)
+          fragmentIds.has(meta.id)
           && meta.flavour !== 'table'
           && !meta.tableRows
         ) {
@@ -149,15 +205,14 @@ export class InlineBreakApplier {
         }
         continue
       }
-      const gaps = computeInlinePaginationGaps(
-        meta.id,
+      const gaps = gapsForContinuations(
         meta.inlineBreakPlan,
-        result,
+        blockContinuations,
         sheetHeightPx,
         pageGap,
         contentTop,
       )
-      if (gaps.length !== continuationCount) {
+      if (gaps.length !== blockContinuations.length) {
         failed.add(meta.id)
         continue
       }
@@ -391,31 +446,4 @@ function cloneGapMap(
     id,
     gaps.map(gap => ({...gap})),
   ]))
-}
-
-function countInlineContinuations(
-  blockId: string,
-  result: PaginationResult,
-): number {
-  let count = 0
-  for (let pageIndex = 1; pageIndex < result.pages.length; pageIndex++) {
-    const first = result.pages[pageIndex].slots[0]
-    if (
-      first?.id === blockId
-      && first.fragment
-      && first.fragment.fromOffset > 0
-    ) {
-      count++
-    }
-  }
-  return count
-}
-
-function hasInlineFragment(
-  blockId: string,
-  result: PaginationResult,
-): boolean {
-  return result.pages.some(page => page.slots.some(slot =>
-    slot.id === blockId && !!slot.fragment,
-  ))
 }

@@ -1,4 +1,5 @@
 import {Observable, Subscription} from 'rxjs'
+import {BlockPlacementSurfaceController} from './block-placement/surface.controller'
 import type {
   BlockPlacementLayer,
   BlockPlacementMode,
@@ -75,6 +76,8 @@ export type {
  * through DocCRUD or BlockComponent.updateProps().
  */
 export class BlockPlacementManager {
+  /** @internal View-only extent; never persisted. */
+  readonly surface = new BlockPlacementSurfaceController(this.doc)
   private readonly runtime = new BlockPlacementRuntime(this.doc)
   private readonly alignment = new BlockPlacementAlignmentCoordinator(
     this.doc,
@@ -127,7 +130,9 @@ export class BlockPlacementManager {
    * picking. BaseBlockComponent owns the returned lifecycle disposer.
    */
   registerBlockView(block: BlockCraft.BlockComponent): () => void {
-    return this.interaction.registerBlockView(block)
+    const unregister = this.interaction.registerBlockView(block)
+    const unregisterSurface = this.surface.register(block)
+    return () => { unregister(); unregisterSurface() }
   }
 
   getState(blockOrId: string | BlockCraft.BlockComponent): ResolvedBlockPosition {
@@ -481,6 +486,7 @@ export class BlockPlacementManager {
   }
 
   destroy(): void {
+    this.surface.destroy()
     this.interaction.destroy()
     this.groupCoordinator.destroy()
     this.rootLayout.destroy()

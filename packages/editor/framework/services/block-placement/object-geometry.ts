@@ -1,3 +1,4 @@
+import {estimateModelBlockHeight} from '../../modules/virtualization/model-height-estimator'
 import {resolveObjectDimensions} from '../block-object-sizing.manager'
 import {resolveBlockPosition} from './state'
 
@@ -26,6 +27,8 @@ export interface PlacementObjectVisualBounds {
 interface ResolvePlacementObjectGeometryOptions {
   props?: Record<string, unknown>
   referenceWidth?: number
+  /** Include caption/content extent for paper containment, not group frame reflow. */
+  includeContent?: boolean
 }
 
 const finiteNumber = (value: unknown, fallback = 0): number =>
@@ -75,7 +78,8 @@ export function resolvePlacementObjectGeometry(
     props,
     ...position,
     width,
-    height,
+    height: options.includeContent
+      ? Math.max(height, estimateModelBlockHeight(doc, blockId)) : height,
     rotation: finiteNumber(props['rotation']),
   }
 }

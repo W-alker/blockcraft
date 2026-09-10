@@ -1,5 +1,6 @@
 // packages/editor/framework/modules/pagination/view/paginated-view.controller.ts
 import {fromEvent, skip, Subscription} from "rxjs";
+import {includePlacementPages} from "../../../services/block-placement/page-surface";
 import {performanceTest} from "../../../../global";
 import {isNativeInputTarget} from "../../../utils";
 import {paginate, PaginationItem} from "../engine";
@@ -203,6 +204,9 @@ export class PaginatedViewController {
           // 恰好造成跨页单元格删除后的二次重排与可见抖动。
           .subscribe(() => this.scheduleRecompute()),
       );
+      if (this.doc.placement?.surface) {
+        this._subs.add(this.doc.placement.surface.change$.subscribe(() => this.scheduleRecompute()));
+      }
       const objectSizing = this.doc.objectSizing;
       if (objectSizing?.widthChange$) {
         this._subs.add(
@@ -573,7 +577,8 @@ export class PaginatedViewController {
       // 同时保留浏览器原生 overflow-anchor 对视口上方内容变化的滚动补偿（实测能稳住编辑滚动）。
       const metas = this._heightSource.measure(this._measureOptions());
       const items = buildPaginationItems(metas);
-      const result = paginate(items, this._geom.geometry);
+      const result = includePlacementPages(paginate(items, this._geom.geometry),
+        this.doc.placement?.surface?.bottom ?? 0, this._geom);
       const initialLayout = createStablePaginationLayout(
         ++this._layoutRevision,
         this._config,
@@ -966,7 +971,8 @@ export class PaginatedViewController {
             }
           : item,
       );
-      const fallbackResult = paginate(fallbackItems, this._geom.geometry);
+      const fallbackResult = includePlacementPages(paginate(fallbackItems, this._geom.geometry),
+        this.doc.placement?.surface?.bottom ?? 0, this._geom);
       publishedLayout = createStablePaginationLayout(
         ++this._layoutRevision,
         this._config,
@@ -1368,11 +1374,13 @@ export class PaginatedViewController {
     root.style.setProperty('--bc-page-margin-left', `${margins.left}px`);
     this.scrollContainer.classList.add('bc-paginated-scroll');
     this._layoutDocumentHeader();
+    this.doc.placement?.surface?.configure(this._geom);
   }
 
   private _removeContainerStyles(): void {
     const root = this.doc.root.hostElement;
     root.classList.remove('bc-paginated');
+    this.doc.placement?.surface?.configure(null);
     ['--bc-page-width', '--bc-page-content-height', '--bc-page-root-offset-top', '--bc-page-margin-top', '--bc-page-margin-right', '--bc-page-margin-bottom', '--bc-page-margin-left', '--bc-placement-content-origin-y']
       .forEach(p => root.style.removeProperty(p));
     this._layoutSurface.style.removeProperty('--bc-page-width');
