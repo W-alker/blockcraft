@@ -33,7 +33,6 @@ import {
 const MEDIA_FLAVOURS = new Set([
   "image",
   "video",
-  "audio",
   "attachment",
   "formula",
   "mermaid",
@@ -49,6 +48,27 @@ const VIDEO_OBJECT_SIZING: BlockObjectSizingCapability = {
 
 export function createMediaRenderers(): SnapshotBlockRenderer[] {
   return [{
+    canRender: snapshot => snapshot.flavour === "audio",
+    render: (ctx, snapshot) => renderAudio(snapshot, ctx),
+    patch(ctx, current, next) {
+      // Stateful controls must keep their listeners on the mounted DOM.
+      const keepPlayer = current.snapshot.props['url'] === next.props['url'] && current.element.querySelector('audio')
+      const fresh = keepPlayer ? createBlockShell(next) : renderAudio(next, ctx).element
+      for (const name of current.element.getAttributeNames()) current.element.removeAttribute(name)
+      for (const name of fresh.getAttributeNames()) current.element.setAttribute(name, fresh.getAttribute(name)!)
+      if (keepPlayer) {
+        const name = current.element.querySelector<HTMLElement>('.audio-name')!
+        name.textContent = name.title = `${next.props['name'] || "音频"}`
+        const audio = current.element.querySelector("audio")!
+        if (!audio.hasAttribute("src")) {
+          const url = resolveUrl(`${next.props['url'] || ""}`, ctx.options.baseUrl)
+          ctx.scheduleEnhancement(createMediaSourceEnhancementTask(audio, url, `audio:${next.id}:${url}`))
+        }
+      } else {
+        current.element.replaceChildren(...Array.from(fresh.childNodes))
+      }
+    },
+  }, {
     canRender: (snapshot) => MEDIA_FLAVOURS.has(snapshot.flavour),
     render(ctx, snapshot) {
       switch (snapshot.flavour) {
@@ -56,8 +76,6 @@ export function createMediaRenderers(): SnapshotBlockRenderer[] {
           return renderImage(snapshot, ctx)
         case "video":
           return renderVideo(snapshot, ctx)
-        case "audio":
-          return renderAudio(snapshot, ctx)
         case "attachment":
           return renderAttachment(snapshot, ctx)
         case "formula":
@@ -278,31 +296,100 @@ function renderAudio(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   const props = snapshot.props as Record<string, unknown>
   const url = resolveUrl(`${props["url"] || ""}`, ctx.options.baseUrl)
   if (!url) {
-    element.append(createEmptyMediaState("audio"))
+    const hint = document.createElement("div")
+    hint.className = "upload-hint"
+    hint.contentEditable = "false"
+    hint.innerHTML = '<i class="bc_icon bc_yinpin" aria-hidden="true"></i><span>点击插入音频</span>'
+    element.append(hint)
     return {element}
   }
 
   const wrapper = document.createElement("div")
-  wrapper.classList.add("audio-block__wrapper")
-
-  const player = document.createElement("div")
-  player.classList.add("audio-player")
-
-  const info = document.createElement("div")
-  info.classList.add("audio-info")
-  if (props["name"]) {
-    const name = document.createElement("div")
-    name.classList.add("audio-name")
-    name.textContent = `${props["name"]}`
-    info.append(name)
+  wrapper.className = "audio-block__wrapper"
+  wrapper.contentEditable = "false"
+  // Static markup only; user-provided names are assigned through textContent.
+  wrapper.innerHTML = `
+    <div class="audio-heading">
+      <i class="audio-heading__icon bc_icon bc_yinpin" aria-hidden="true"></i>
+      <span class="audio-name"></span><span class="audio-status">0:00</span>
+    </div>
+    <div class="audio-player">
+      <button type="button" class="audio-player__button audio-player__button--primary cs-btn cs-btn-primary cs-btn-sm cs-btn-shape-circle cs-btn-icon-only">
+        <span class="cs-icon cs-btn-icon" aria-hidden="true"><i class="csicon csicon-play-bold"></i></span>
+      </button>
+      <span class="audio-player__time audio-player__time--current">0:00</span>
+      <input class="audio-player__seek" type="range" min="0" max="0" step="0.01" value="0" aria-label="音频播放进度">
+      <span class="audio-player__time">0:00</span>
+      <button type="button" class="audio-player__button audio-player__button--volume cs-btn cs-btn-text cs-btn-sm cs-btn-shape-circle cs-btn-icon-only">
+        <span class="cs-icon cs-btn-icon" aria-hidden="true"><i class="csicon csicon-volume"></i></span>
+      </button>
+      <audio preload="metadata"></audio>
+    </div>`
+  const name = wrapper.querySelector<HTMLElement>(".audio-name")!
+  name.textContent = name.title = `${props["name"] || "音频"}`
+  const audio = wrapper.querySelector("audio")!
+  const play = wrapper.querySelector<HTMLButtonElement>(".audio-player__button--primary")!
+  const mute = wrapper.querySelector<HTMLButtonElement>(".audio-player__button--volume")!
+  const seek = wrapper.querySelector<HTMLInputElement>("input")!
+  const times = wrapper.querySelectorAll<HTMLElement>(".audio-player__time")
+  const status = wrapper.querySelector<HTMLElement>(".audio-status")!
+  let failed = false
+  let disposed = false
+  const formatTime = (seconds: number) => {
+    const value = Number.isFinite(seconds) && seconds > 0 ? seconds : 0
+    return `${Math.floor(value / 60)}:${Math.floor(value % 60).toString().padStart(2, "0")}`
   }
-
-  const audio = document.createElement("audio")
-  audio.controls = true
-  audio.preload = "metadata"
-  info.append(audio)
-  player.append(info)
-  wrapper.append(player)
+  const sync = () => {
+    if (disposed) return
+    const duration = Number.isFinite(audio.duration) ? Math.max(0, audio.duration) : 0
+    const playing = !audio.paused && !audio.ended
+    play.disabled = mute.disabled = failed || ctx.options.resourcePolicy === "off"
+    seek.disabled = play.disabled || duration <= 0
+    play.setAttribute("aria-label", playing ? "暂停音频" : "播放音频")
+    play.title = playing ? "暂停" : "播放"
+    play.querySelector("i")!.className = `csicon csicon-${playing ? "pause-bold" : "play-bold"}`
+    mute.setAttribute("aria-label", audio.muted ? "取消静音" : "静音")
+    mute.title = audio.muted ? "取消静音" : "静音"
+    mute.querySelector("i")!.className = `csicon csicon-${audio.muted ? "volume-off" : "volume"}`
+    times[0]!.textContent = formatTime(audio.currentTime)
+    times[1]!.textContent = formatTime(duration)
+    status.textContent = failed ? "无法播放" : formatTime(duration)
+    status.classList.toggle("audio-status--error", failed)
+    seek.max = `${duration}`
+    seek.value = `${audio.currentTime || 0}`
+    seek.style.setProperty("--audio-progress", `${duration ? Math.min(100, Math.max(0, audio.currentTime / duration * 100)) : 0}%`)
+  }
+  const cleanups: (() => void)[] = []
+  const listen = (target: EventTarget, event: string, callback: EventListener) => {
+    target.addEventListener(event, callback)
+    cleanups.push(() => target.removeEventListener(event, callback))
+  }
+  listen(play, "click", event => {
+    event.stopPropagation()
+    if (play.disabled) return
+    if (!audio.paused) audio.pause()
+    else void audio.play().catch(sync)
+  })
+  listen(mute, "click", event => {
+    event.stopPropagation()
+    if (!mute.disabled) audio.muted = !audio.muted
+  })
+  listen(seek, "input", () => {
+    if (seek.disabled || !Number.isFinite(seek.valueAsNumber)) return
+    audio.currentTime = Math.min(audio.duration, Math.max(0, seek.valueAsNumber))
+    sync()
+  })
+  for (const event of ["durationchange", "timeupdate", "play", "pause", "ended", "volumechange"]) listen(audio, event, sync)
+  listen(audio, "loadedmetadata", () => { failed = false; sync() })
+  listen(audio, "error", () => { failed = true; sync() })
+  ctx.registerDisposable?.(wrapper, () => {
+    disposed = true
+    cleanups.forEach(cleanup => cleanup())
+    audio.pause()
+    audio.removeAttribute("src")
+    audio.load()
+  })
+  sync()
   element.append(wrapper)
 
   ctx.scheduleEnhancement(createMediaSourceEnhancementTask(audio, url, `audio:${snapshot.id}:${url}`))

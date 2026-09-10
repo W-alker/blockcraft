@@ -10,6 +10,54 @@ import {createAllBlocksFixture} from "../testing/fixtures/all-blocks.fixture";
 import {normalizeWordArtProps, WordArtBlockSchema} from "../../blocks";
 
 describe("snapshot-viewer renderers", () => {
+  it("supports readonly audio playback, seeking, errors and disposal across updates", async () => {
+    const snapshot = createAllBlocksFixture().audio
+    const host = document.createElement("div")
+    const renderer = createSnapshotRenderer()
+    renderer.render(host, snapshot)
+    const audio = host.querySelector("audio")!
+    const play = host.querySelector<HTMLButtonElement>(".audio-player__button--primary")!
+    const mute = host.querySelector<HTMLButtonElement>(".audio-player__button--volume")!
+    const seek = host.querySelector<HTMLInputElement>("input")!
+    const pause = spyOn(audio, "pause")
+    spyOn(audio, "load")
+    const start = spyOn(audio, "play").and.returnValue(Promise.resolve())
+    Object.defineProperty(audio, "duration", {configurable: true, value: 120})
+    expect(audio.controls).toBeFalse()
+    audio.dispatchEvent(new Event("loadedmetadata"))
+    play.click()
+    expect(start).toHaveBeenCalledTimes(1)
+    seek.value = "30"
+    seek.dispatchEvent(new Event("input"))
+    expect(audio.currentTime).toBe(30)
+    expect(seek.style.getPropertyValue("--audio-progress")).toBe("25%")
+    mute.click()
+    audio.dispatchEvent(new Event("volumechange"))
+    expect(audio.muted).toBeTrue()
+    expect(mute.getAttribute("aria-label")).toBe("取消静音")
+    renderer.update({...snapshot, props: {...snapshot.props, name: "更名音频"}})
+    expect(host.querySelector("audio")).toBe(audio)
+    expect(host.querySelector(".audio-name")!.textContent).toBe("更名音频")
+    expect(audio.currentTime).toBe(30)
+    audio.dispatchEvent(new Event("error"))
+    expect(play.disabled).toBeTrue()
+    expect(host.querySelector(".audio-status")!.textContent).toBe("无法播放")
+    audio.dispatchEvent(new Event("loadedmetadata"))
+    expect(play.disabled).toBeFalse()
+    renderer.update({...snapshot, props: {...snapshot.props, url: "https://example.com/new.ogg"}})
+    expect(host.querySelector("audio")).not.toBe(audio)
+    expect(pause).toHaveBeenCalledTimes(1)
+    play.click()
+    expect(start).toHaveBeenCalledTimes(1)
+    const nextAudio = host.querySelector("audio")!
+    const nextPause = spyOn(nextAudio, "pause")
+    spyOn(nextAudio, "load")
+    renderer.destroy()
+    expect(nextPause).toHaveBeenCalledTimes(1)
+    await Promise.resolve()
+    expect(host.childElementCount).toBe(0)
+  })
+
   it("renders a callout prefix and nested paragraph children", () => {
     const host = renderFixture(createAllBlocksFixture().callout)
     const callout = host.querySelector<HTMLElement>(".callout-block")!
@@ -544,7 +592,7 @@ describe("snapshot-viewer renderers", () => {
     }
   })
 
-  it("uses dedicated empty states for video/audio without playable resources", () => {
+  it("keeps the video empty state and matches the live audio placeholder", () => {
     const host = renderFixture([
       {
         id: "video-empty",
@@ -571,7 +619,16 @@ describe("snapshot-viewer renderers", () => {
     ])
 
     expect(host.querySelector('.bc-snapshot-empty-state--video')).not.toBeNull()
-    expect(host.querySelector('.bc-snapshot-empty-state--audio')).not.toBeNull()
+    const audio = host.querySelector('.audio-block')!
+    const hint = audio.querySelector<HTMLElement>('.upload-hint')!
+    expect(hint).not.toBeNull()
+    expect(hint.textContent).toBe('点击插入音频')
+    expect(hint.contentEditable).toBe('false')
+    expect(hint.querySelector('.bc_icon.bc_yinpin')).not.toBeNull()
+    expect(audio.querySelector('.bc-snapshot-empty-state')).toBeNull()
+    hint.click()
+    expect(audio.querySelector('input[type="file"]')).toBeNull()
+    expect(audio.querySelector('audio')).toBeNull()
   })
 
   it("keeps bookmark shell visible when preview enhancement rejects", async () => {
