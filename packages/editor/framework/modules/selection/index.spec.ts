@@ -1035,6 +1035,45 @@ describe('SelectionManager DOM selection normalization', () => {
     expect(rootHost.scrollTop).toBe(128);
   });
 
+  for (const offscreen of [true, false]) {
+    it(`keeps a new empty paragraph visible when it is ${offscreen ? 'below' : 'inside'} the viewport`, () => {
+      const {manager, block, blockHost, rootHost, doc} = createManager();
+      rootHost.style.cssText = 'height: 100px; overflow-y: auto; width: 300px;';
+      const spacer = document.createElement('div');
+      spacer.style.height = offscreen ? '200px' : '20px';
+      rootHost.insertBefore(spacer, blockHost);
+      blockHost.style.cssText = 'height: 24px; line-height: 24px;';
+      const content = document.createElement('span');
+      content.style.display = 'block';
+      content.appendChild(document.createElement('br'));
+      blockHost.appendChild(content);
+      Object.assign(block, {
+        nodeType: BlockNodeType.editable,
+        textLength: 0,
+        containerElement: content,
+        runtime: {mapper: {modelPointToDomPoint: () => ({node: content, offset: 0})}},
+      });
+      (doc as any).isEditable = (value: any) => value.nodeType === BlockNodeType.editable;
+      (doc as any).scrollContainer = rootHost;
+
+      try {
+        manager.setCursorAt(block as any, 0);
+        rootHost.scrollTop = 0;
+        // A BR-only paragraph has a line box, but its collapsed element Range does not.
+        expect(manager.getSelectionRect()?.height).toBe(0);
+        manager.scrollSelectionIntoView();
+
+        expect(content.getBoundingClientRect().bottom)
+          .toBeLessThanOrEqual(rootHost.getBoundingClientRect().bottom);
+        expect(rootHost.scrollTop > 0).toBe(offscreen);
+        expect(manager.value?.head.blockId).toBe(block.id);
+      } finally {
+        doc.onDestroy$.next();
+        rootHost.remove();
+      }
+    });
+  }
+
   it('does not report block text for a collapsed gap cursor', () => {
     const {manager} = createManager();
     const gapSelection = manager.createSelection({
@@ -3009,6 +3048,35 @@ describe('SelectionManager projection mount coordination', () => {
     document.getSelection()?.removeAllRanges();
     document.querySelectorAll('[data-projection-mount-test]').forEach(element => element.remove());
   });
+
+  for (const reveal of [true, false]) {
+    it(`preserves reveal=${reveal} when a new paragraph DOM projection is delayed`, () => {
+      const {manager, mountEditable, doc, frames, onDestroy$} = createProjectionMountManager();
+      const block = mountEditable('virtual-p1');
+      (doc as any).isEditable = () => true;
+      const mapper = block.runtime.mapper;
+      const original = mapper.modelPointToDomPoint;
+      let ready = false;
+      spyOn(mapper, 'modelPointToDomPoint').and.callFake((container, offset) => {
+        if (!ready) throw new Error('inline view is not ready');
+        return original(container, offset);
+      });
+      const scroll = spyOn(manager, 'scrollSelectionIntoView');
+      try {
+        manager.setCursorAtBlock(block as any, true, reveal);
+        expect(scroll).not.toHaveBeenCalled();
+        expect(manager.value?.head.blockId).toBe(block.id);
+        ready = true;
+        const pending = [...frames.values()];
+        frames.clear();
+        pending.forEach(callback => callback(0));
+        expect(document.getSelection()?.rangeCount).toBe(1);
+        expect(scroll.calls.count()).toBe(reveal ? 1 : 0);
+      } finally {
+        onDestroy$.next();
+      }
+    });
+  }
 
   it('mounts the endpoint neighborhood before broadcasting an offscreen boundary selection', () => {
     const {manager, mountEditable, mountedTextNodes} = createProjectionMountManager();

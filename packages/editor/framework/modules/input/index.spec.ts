@@ -3147,6 +3147,7 @@ describe('InputTransformer._insertParagraphAtGap', () => {
         value: null,
         blur: jasmine.createSpy('blur'),
         setCursorAt: jasmine.createSpy('setCursorAt'),
+        setCursorAtBlock: jasmine.createSpy('setCursorAtBlock'),
       },
       getBlockById: jasmine.createSpy('getBlockById').and.callFake((id: string) => {
         if (id === mockVoidBlock.id) return mockVoidBlock
@@ -3209,6 +3210,28 @@ describe('InputTransformer._insertParagraphAtGap', () => {
       0,
     )
   })
+
+  for (const side of ['before', 'after'] as const) {
+    it(`reveals the new paragraph on Enter at the ${side} gap`, async () => {
+      const {doc, mockVoidBlock, mockNewParagraph} = createTestDoc(1)
+      const gap = makeGap(side, mockVoidBlock)
+      const selection = new BlockSelection(gap as any, gap as any, mockVoidBlock.id,
+        () => mockVoidBlock as any, () => 0)
+      const transformer = new InputTransformer(doc as any) as any
+      const preventDefault = jasmine.createSpy('preventDefault')
+
+      await transformer['_handlerEnter']({
+        preventDefault,
+        get: () => ({selection, raw: {}}),
+      })
+
+      expect(preventDefault).toHaveBeenCalled()
+      expect(doc.crud.insertNewParagraph).toHaveBeenCalledWith('parent-1', side === 'after' ? 2 : 1, [])
+      expect(doc.selection.setCursorAtBlock).toHaveBeenCalledWith(mockNewParagraph, false)
+      expect(doc.selection.setCursorAt).not.toHaveBeenCalled()
+      expect(doc.crud.deleteBlockById).not.toHaveBeenCalled()
+    })
+  }
 
   it('keeps the original void block — never calls deleteBlockById', () => {
     const {doc, mockVoidBlock} = createTestDoc(1)

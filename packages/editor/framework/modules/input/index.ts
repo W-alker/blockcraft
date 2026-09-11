@@ -504,6 +504,7 @@ export class InputTransformer {
   private _insertParagraphAtGap(
     gap: IGapSelectionPoint | GapEditPlan,
     text: string,
+    reveal = false,
   ): EditableBlockComponent | null {
     const block = "kind" in gap
       ? this._getLiveBlockById(gap.blockId)
@@ -518,7 +519,11 @@ export class InputTransformer {
       index,
       text ? [{ insert: text }] : [],
     );
-    this.doc.selection.setCursorAt(newParagraph as any, text.length);
+    if (reveal) {
+      this.doc.selection.setCursorAtBlock(newParagraph, false);
+    } else {
+      this.doc.selection.setCursorAt(newParagraph as any, text.length);
+    }
     return newParagraph as EditableBlockComponent;
   }
 
@@ -2371,7 +2376,7 @@ export class InputTransformer {
     // Handle gap-cursor Enter: insert a new empty paragraph at the gap, keep the
     // void/container block, and move the caret into the new paragraph.
     if (plan.kind === "gap") {
-      if (!this._insertParagraphAtGap(plan, "")) this.doc.selection.blur();
+      if (!this._insertParagraphAtGap(plan, "", true)) this.doc.selection.blur();
       return true;
     }
 

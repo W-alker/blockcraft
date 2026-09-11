@@ -2082,7 +2082,12 @@ export class SelectionManager {
   setCursorAtBlock(block: string | BlockCraft.BlockComponent, atStart: boolean, scrollIntoView = true) {
     block = this._resolveBlockView(block)
     if (this.doc.isEditable(block)) {
-      this.setCursorAt(block, atStart ? 0 : block.textLength)
+      const point = this._pointFromJSON({
+        blockId: block.id, type: 'text', offset: atStart ? 0 : block.textLength,
+      })
+      // Keep the reveal intent attached to projection retries when DOM is not ready.
+      this._commitSelection(this._createBlockSelection(point, point, block.id), {scrollIntoView})
+      return
     } else if (block.nodeType === BlockNodeType.void) {
       this.selectBlock(block)
     } else {
@@ -2432,7 +2437,15 @@ export class SelectionManager {
     try {
       const legacyPoint = pointToLegacy(point as ISelectionPoint)
       const range = this._buildDomRange(legacyPoint, legacyPoint)
-      return this._surface.getRangeRect(range)
+      const rect = this._surface.getRangeRect(range)
+      // An empty paragraph can project to an element boundary (before its BR),
+      // whose collapsed Range has no geometry even though the line is visible.
+      // Use that empty line's content box so Enter can reveal the new paragraph.
+      if (rect.height === 0 && point.type === 'text' &&
+        this.doc.isEditable(block) && block.textLength === 0) {
+        return this._surface.getElementRect(block.containerElement)
+      }
+      return rect
     } catch {
       return null
     }
