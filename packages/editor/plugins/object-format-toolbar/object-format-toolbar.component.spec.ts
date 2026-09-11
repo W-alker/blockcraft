@@ -96,6 +96,45 @@ const state: BlockObjectFormatSelectionState = {
 };
 
 describe("ObjectFormatToolbarComponent", () => {
+  it("fits gradient controls to the available width with and without vertical scrolling", async () => {
+    await TestBed.configureTestingModule({
+      imports: [ObjectFormatToolbarComponent],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(ObjectFormatToolbarComponent);
+    const textStyle = {
+      ...format.textStyle,
+      fill: createObjectPaint("linear-gradient"),
+    };
+    fixture.componentRef.setInput("state", {
+      ...state,
+      values: {...state.values, textStyle: {mixed: false, value: textStyle}},
+    });
+    fixture.componentInstance.activePanel = "text";
+    fixture.componentInstance.selectTextSection("text-effects");
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const panel: HTMLElement = fixture.nativeElement.querySelector(".object-format__panel");
+    const scroll: HTMLElement = panel.querySelector(".object-format__scroll")!;
+    panel.style.maxHeight = "none";
+    for (const height of ["280px", "2000px"]) {
+      panel.style.height = height;
+      expect(scroll.scrollHeight > scroll.clientHeight).toBe(height === "280px");
+      expect(scroll.scrollWidth).toBeLessThanOrEqual(scroll.clientWidth);
+      const edge = scroll.getBoundingClientRect().left + scroll.clientWidth;
+      const controls = Array.from(scroll.querySelectorAll<HTMLElement>(
+        "cs-switch button, cs-slider, cs-input-number, .shape-fill-panel__presets",
+      )).filter(control => control.getBoundingClientRect().width > 0);
+      expect(controls.length).toBeGreaterThanOrEqual(3);
+      for (const control of controls) {
+        expect(control.getBoundingClientRect().right)
+          .withContext(`${height}: ${control.tagName}`)
+          .toBeLessThanOrEqual(edge + 0.5);
+      }
+      const presets = scroll.querySelector<HTMLElement>(".shape-fill-panel__presets")!;
+      expect(Math.abs(presets.getBoundingClientRect().right - edge)).toBeLessThan(1);
+    }
+  });
+
   it("keeps one panel shell and one scroll owner while switching Word-style groups", async () => {
     await TestBed.configureTestingModule({
       imports: [ObjectFormatToolbarComponent],

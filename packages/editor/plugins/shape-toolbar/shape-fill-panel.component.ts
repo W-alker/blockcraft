@@ -118,6 +118,7 @@ import {
         <label class="shape-fill-panel__row">
           <span class="shape-fill-panel__label">渐变角度</span>
           <cs-input-number
+            class="shape-fill-panel__control"
             csSize="sm"
             [csMin]="0"
             [csMax]="360"

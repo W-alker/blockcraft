@@ -1467,6 +1467,7 @@ export type ObjectFormatToolbarAction =
         padding: 10px 0;
         border-bottom: 1px solid var(--bc-float-toolbar-divider-color, #e2e8f0);
         display: grid;
+        grid-template-columns: minmax(0, 1fr);
         gap: 10px;
       }
       section:first-child {
@@ -1624,6 +1625,7 @@ export type ObjectFormatToolbarAction =
       }
       .object-format__section-body {
         display: grid;
+        grid-template-columns: minmax(0, 1fr);
         gap: 10px;
         min-width: 0;
       }
