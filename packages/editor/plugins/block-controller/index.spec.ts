@@ -1,10 +1,74 @@
 import {fakeAsync, tick} from "@angular/core/testing";
-import {Subject} from "rxjs";
+import {BehaviorSubject, Subject} from "rxjs";
 import {BlockNodeType} from "../../framework";
 import {BlockSelection} from "../../framework/modules/selection/blockSelection";
 import {BlockControllerPlugin} from "./index";
 
 describe("BlockControllerPlugin selection range handling", () => {
+  const makeDragHarness = () => {
+    const plugin = new BlockControllerPlugin();
+    const host = document.createElement("button");
+    const block = {id: "p1", isReadonly: false};
+    const state$ = new BehaviorSubject<string>("idle");
+    const trigger = {
+      menuDisabled: false,
+      cdr: {detectChanges: jasmine.createSpy("detectChanges")},
+    };
+    const dragController = {
+      get state() { return state$.value; },
+      state$,
+      startDrag: jasmine.createSpy("startDrag").and.callFake(() => state$.next("armed")),
+    };
+    (plugin as any).doc = {
+      onDestroy$: new Subject<void>(),
+      getBlockById: () => block,
+      selection: {value: null},
+      dragController,
+    };
+    (plugin as any)._activeBlock = block;
+    (plugin as any)._cpr = {location: {nativeElement: host}, instance: trigger};
+    plugin.addDraggable();
+    return {plugin, host, trigger, state$, dragController};
+  };
+
+  it("keeps the hovered menu enabled for a press and release without dragging", () => {
+    const {plugin, host, trigger, state$} = makeDragHarness();
+    host.dispatchEvent(new PointerEvent("pointerdown", {button: 0}));
+    expect(state$.value).toBe("armed");
+    expect(trigger.menuDisabled).toBeFalse();
+    state$.next("idle");
+    host.dispatchEvent(new MouseEvent("click"));
+    expect(trigger.menuDisabled).toBeFalse();
+    expect(trigger.cdr.detectChanges).not.toHaveBeenCalled();
+    (plugin as any)._sub.unsubscribe();
+  });
+
+  it("disables the menu only during a real drag and restores it on cancel", () => {
+    const {plugin, host, trigger, state$} = makeDragHarness();
+    host.dispatchEvent(new PointerEvent("pointerdown", {button: 0}));
+    state$.next("dragging");
+    expect(trigger.menuDisabled).toBeTrue();
+    state$.next("dropping");
+    expect(trigger.cdr.detectChanges).toHaveBeenCalledTimes(1);
+    state$.next("idle");
+    expect(trigger.menuDisabled).toBeFalse();
+    expect(trigger.cdr.detectChanges).toHaveBeenCalledTimes(2);
+    state$.next("dragging");
+    expect(trigger.menuDisabled).toBeFalse();
+    (plugin as any)._sub.unsubscribe();
+  });
+
+  it("does not disable the menu or retain a subscription when drag start is rejected", () => {
+    const {plugin, host, trigger, state$, dragController} = makeDragHarness();
+    dragController.startDrag.and.stub();
+    host.dispatchEvent(new PointerEvent("pointerdown", {button: 0}));
+    expect(dragController.startDrag).toHaveBeenCalledTimes(1);
+    expect(trigger.menuDisabled).toBeFalse();
+    state$.next("dragging");
+    expect(trigger.menuDisabled).toBeFalse();
+    (plugin as any)._sub.unsubscribe();
+  });
+
   it("adds the built-in appearance section only for an editable non-leaf block", () => {
     const plugin = new BlockControllerPlugin();
     const block = {id: "p1", flavour: "paragraph", nodeType: BlockNodeType.editable};

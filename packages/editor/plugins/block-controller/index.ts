@@ -1,4 +1,4 @@
-import {fromEvent, Subscription, takeUntil} from "rxjs";
+import {fromEvent, Subscription, takeUntil, takeWhile} from "rxjs";
 import {ComponentRef, ViewContainerRef} from "@angular/core";
 import {TriggerBtn} from "./widgets/trigger-btn";
 import {
@@ -264,30 +264,24 @@ export class BlockControllerPlugin extends DocPlugin {
           }
           if (this.isBlockProtected(activeBlock)) return
 
-          this._cpr.instance.menuDisabled = true
-          this._cpr.instance.cdr.detectChanges()
+          const dragController = this.doc.dragController
+          const initialState = dragController.state
+          if (initialState !== 'idle') return
+          dragController.startDrag(evt, this.resolveDragData(activeBlock))
+          if (dragController.state !== 'armed') return
 
-          const dragState$ = this.doc.dragController.state$
-          const started =
-            (this.doc.dragController.startDrag(
-              evt,
-              this.resolveDragData(activeBlock),
-            ), true)
-
-          if (!started) {
-            this._cpr.instance.menuDisabled = false
-            this._cpr.instance.cdr.markForCheck()
-            return
-          }
-
-          // Re-enable menu after drag ends (success or cancel)
-          const sub = dragState$
-            .pipe(takeUntil(this.doc.onDestroy$))
+          // A press only arms the gesture. Keep the hovered menu open until
+          // movement crosses the drag threshold, then restore it on teardown.
+          const sub = dragController.state$
+            .pipe(
+              takeWhile(state => state !== 'idle', true),
+              takeUntil(this.doc.onDestroy$),
+            )
             .subscribe(state => {
-              if (state === 'idle') {
-                this._cpr.instance.menuDisabled = false
-                sub.unsubscribe()
-              }
+              const disabled = state === 'dragging' || state === 'dropping'
+              if (this._cpr.instance.menuDisabled === disabled) return
+              this._cpr.instance.menuDisabled = disabled
+              this._cpr.instance.cdr.detectChanges()
             })
           this._sub.add(sub)
         })
