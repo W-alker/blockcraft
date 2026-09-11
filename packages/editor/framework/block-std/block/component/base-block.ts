@@ -139,7 +139,8 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     return placement.layer === 'under' ? 0 : 2
   }
 
-  @HostBinding('style.margin')
+  // Keep this value readable for consumers, but leave the absolute-only reset
+  // to base.scss. A shared margin binding also clears ordinary block spacing.
   get placementMargin(): string | null {
     return this.resolvedPlacement.mode === 'absolute' ? '0' : null
   }
