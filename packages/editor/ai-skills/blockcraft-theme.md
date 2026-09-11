@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-26
+> Last updated: 2026-09-11
 
 ## Theme Structure
 
@@ -22,6 +22,14 @@ themes/
 └── plugins/            # Per-plugin styles loaded after ordinary block styles
     └── pagination.scss # Live/print pagination layout and block overrides
 ```
+
+## 样式目录与发布边界
+
+- 需要随包发布、由多个渲染入口共享的 SCSS 统一放在 `packages/editor/themes/`，按 `blocks/`、`components/`、`plugins/` 的职责分类。
+- Angular 组件私有的 `:host`、上传态等样式可留在组件目录；组件可以引用 `themes/` 中的共享 partial，主题不得反向导入组件源码目录。
+- 音频播放器的共享规则位于 `themes/blocks/_audio-player.scss`，音频组件和 Snapshot Viewer 引用同一份规则，保留各自的样式作用域。
+- 打包继续统一使用 `themes/**/*`，不要为主题依赖追加单文件资源白名单，也不要复制一份共享样式到组件目录。
+- `pnpm build:editor` 会自动执行主题回归检查：仅复制产物的 `themes/` 到临时目录，独立编译 base、light、dark。也可运行 `pnpm test:editor:package-styles` 单独检查已有产物。
 
 ## Theme Switching
 

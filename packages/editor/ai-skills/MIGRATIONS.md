@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-09-10 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-09-11 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -108,6 +108,20 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 **Affected ai-skills files**: `blockcraft-block.md`。
 **Version**: 尚未发布，包版本保持不变。
+
+## v0.7.6 — 2026-09-11
+
+**Severity**: patch
+
+**What changed**: 共享 SCSS 统一由 `themes/` 承载；音频播放器 partial 移至 `themes/blocks/_audio-player.scss`，组件与 Snapshot Viewer 引用同一文件。构建新增 themes 目录独立编译门禁。
+
+**Why**: 0.7.5 的 Snapshot Viewer 主题引用了未随包发布的组件目录文件，导致消费者 Sass 编译失败。沿用 `themes/**/*` 发布规则，避免逐文件补打包白名单。
+
+**Affected ai-skills files**:
+
+- `blockcraft-theme.md`
+
+**Migration**: 消费者继续导入 `@ccc/blockcraft/themes/base.scss`，无需修改入口。CSS 选择器、变量和渲染行为保持不变。
 
 ## v0.7.4 — 2026-09-09 — Mermaid 全屏双向编辑
 

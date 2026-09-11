@@ -120,7 +120,7 @@
     margin: 6px 0;
     max-width: 520px;
 
-    @include meta.load-css("../../blocks/audio-block/audio-player");
+    @include meta.load-css("../blocks/audio-player");
 
     // Snapshot DOM does not instantiate CsButtonComponent, whose base styles
     // are normally injected by Angular. Keep the same token-based primitives.
