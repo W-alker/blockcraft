@@ -39,6 +39,7 @@ IBlockSchemaOptions<ObjectGroupBlockModel> = {
     version: 1,
     label: '组合',
     description: '固定像素的局部绝对定位组合',
+    icon: 'bc_icon bc_combination',
     hideInInsertMenu: true,
     renderUnit: true,
     includeChildren: ['*'],
