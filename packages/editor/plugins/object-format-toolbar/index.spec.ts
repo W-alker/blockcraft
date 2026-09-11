@@ -1,6 +1,53 @@
 import { ObjectFormatToolbarPlugin } from "./index";
 
 describe("ObjectFormatToolbarPlugin object/edit interaction", () => {
+  it("focuses existing text from blank space but never creates text on a single press", () => {
+    const plugin = new ObjectFormatToolbarPlugin();
+    const root = document.createElement("div");
+    const shell = document.createElement("div");
+    shell.className = "shape-block__shell";
+    const frame = document.createElement("div");
+    frame.className = "shape-block__text-frame";
+    shell.appendChild(frame);
+    root.appendChild(shell);
+    document.body.appendChild(root);
+    const onEditText = jasmine.createSpy("onEditText");
+    const block = {
+      id: "shape-1", flavour: "shape", hostElement: shell, onEditText,
+      firstChildren: null as {id: string; flavour: string} | null,
+    };
+    const selection = {value: null as any, selectBlock: jasmine.createSpy("selectBlock")};
+    const startDrag = jasmine.createSpy("startDrag");
+    const readonlyManager = {isReadonly: () => false};
+    (plugin as any).doc = {
+      root: {hostElement: root}, selection, readonlyManager,
+      placement: {getState: () => ({mode: "absolute"}), startDrag},
+    };
+    spyOn<any>(plugin, "resolveBlockFromSurface").and.returnValue(block);
+    spyOn<any>(plugin, "confirmShapeClickSelection");
+    const event = new PointerEvent("pointerdown", {button: 0, cancelable: true});
+    Object.defineProperty(event, "target", {value: frame});
+
+    (plugin as any).handleExistingObjectPointerDown(event);
+    expect(onEditText).not.toHaveBeenCalled();
+    expect(startDrag).toHaveBeenCalledTimes(1);
+
+    selection.value = {isInSameBlock: true, anchor: {blockId: block.id}};
+    (plugin as any).handleExistingObjectPointerDown(event);
+    expect(onEditText).not.toHaveBeenCalled();
+    expect(startDrag).toHaveBeenCalledTimes(2);
+
+    block.firstChildren = {id: "shape-text-1", flavour: "shape-text"};
+    (plugin as any).handleExistingObjectPointerDown(event);
+    expect(onEditText).toHaveBeenCalledOnceWith(event);
+    expect(startDrag).toHaveBeenCalledTimes(2);
+
+    readonlyManager.isReadonly = () => true;
+    (plugin as any).handleExistingObjectPointerDown(event);
+    expect(onEditText).toHaveBeenCalledTimes(1);
+    root.remove();
+  });
+
   it("keeps the established Shape shell click as a whole-object selection", () => {
     const plugin = new ObjectFormatToolbarPlugin();
     const root = document.createElement("div");

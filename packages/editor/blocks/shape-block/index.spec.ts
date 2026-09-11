@@ -279,6 +279,22 @@ describe('Shape block domain', () => {
     expect(chain).not.toHaveBeenCalled()
   })
 
+  it('preserves native word selection when double-clicking existing shape text', () => {
+    const text = document.createElement('div')
+    text.className = 'shape-text-block'
+    const span = document.createElement('span')
+    text.appendChild(span)
+    const event = new MouseEvent('dblclick', {cancelable: true})
+    Object.defineProperty(event, 'target', {value: span})
+    const setInlineRange = jasmine.createSpy('setInlineRange')
+    ShapeBlockComponent.prototype.onEditText.call({
+      isReadonly: false,
+      firstChildren: {setInlineRange},
+    } as unknown as ShapeBlockComponent, event)
+    expect(setInlineRange).not.toHaveBeenCalled()
+    expect(event.defaultPrevented).toBeFalse()
+  })
+
   it('normalizes malformed external props without mutating the input', () => {
     const input: any = {
       shapeType: 'unknown',
@@ -784,6 +800,17 @@ describe('Shape block domain', () => {
       ).toBeTrue()
       // 浮动状态下拉伸不设上限。
       expect(fixture.componentInstance.objectMaxWidthResolver()).toBeNull()
+
+      // Absolute drag capture retargets native dblclick to the outer host.
+      // Both that target and ordinary shell bubbling must enter editing once.
+      const editText = spyOn(fixture.componentInstance, 'onEditText')
+      const hostDoubleClick = new MouseEvent('dblclick', {bubbles: true})
+      host.dispatchEvent(hostDoubleClick)
+      expect(editText).toHaveBeenCalledOnceWith(hostDoubleClick)
+      editText.calls.reset()
+      const shellDoubleClick = new MouseEvent('dblclick', {bubbles: true})
+      host.querySelector('.shape-block__shell')!.dispatchEvent(shellDoubleClick)
+      expect(editText).toHaveBeenCalledOnceWith(shellDoubleClick)
     } finally {
       fixture.nativeElement.remove()
       fixture.destroy()

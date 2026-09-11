@@ -1065,6 +1065,23 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
         return;
       const block = this.resolveBlockFromSurface(shapeShell, "shape");
       if (!block) return;
+      const selection = this.doc.selection.value;
+      const textFrame = target.closest(".shape-block__text-frame");
+      const textBlock = block.firstChildren;
+      if (
+        textFrame &&
+        textBlock?.flavour === "shape-text" &&
+        selection?.isInSameBlock &&
+        (selection.anchor.blockId === block.id ||
+          selection.anchor.blockId === textBlock?.id) &&
+        !this.doc.readonlyManager.isReadonly(block)
+      ) {
+        // The text frame includes blank space above/below its actual line.
+        // Once selected, an existing text block can be focused from that space.
+        // Empty shapes keep text creation exclusively on double-click.
+        (block as BlockCraft.IBlockComponents["shape"]).onEditText(event);
+        return;
+      }
       this.doc.selection.selectBlock(block);
       this.confirmShapeClickSelection(event, block);
       if (this.doc.readonlyManager.isReadonly(block)) return;

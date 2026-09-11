@@ -66,6 +66,11 @@ const shapeRotationTransform = (rotation: unknown): string => {
     ShapeResizerComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: {
+    // Pointer capture during absolute-object drag preparation retargets click
+    // and dblclick to the block host, outside the inner visual shell.
+    '(dblclick)': 'onEditText($event)',
+  },
   template: `
     <div
       #shapeShell
@@ -75,8 +80,7 @@ const shapeRotationTransform = (rotation: unknown): string => {
       contenteditable="false"
       [style.width.px]="shapeProps.width"
       [style.height.px]="shapeProps.height"
-      [style.transform]="rotationTransform"
-      (dblclick)="onEditText($event)">
+      [style.transform]="rotationTransform">
       <svg
         #shapeGeometry
         class="shape-block__geometry"
@@ -563,6 +567,9 @@ export class ShapeBlockComponent extends BaseBlockComponent<ShapeBlockModel> {
 
   onEditText(event: MouseEvent): void {
     if (this.isReadonly || this.definition?.supportsText === false) return
+    if (event.target instanceof Element && event.target.closest(
+      '.shape-text-block, shape-resizer, shape-geometry-editor, shape-adjustment-editor',
+    )) return
     event.preventDefault()
     event.stopPropagation()
     const textBlock = this.firstChildren as
