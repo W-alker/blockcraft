@@ -341,6 +341,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
   private projectionBlockIds: string[] = []
   private retainedRootIds = new Map<string, true>()
   private pendingStructureAnchor: ScrollAnchorSnapshot | null = null
+  private structureAnchorScrollTop = 0
   private fullDocumentViewLeaseCount = 0
   private blockViewLeaseSequence = 0
   private blockViewLeases = new Map<number, readonly string[]>()
@@ -417,17 +418,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
       this.idlePrefetchLastScrollTop = scrollTop
     }
     this.pauseIdlePrefetch('scroll', true)
-    if (
-      this.pendingStructureAnchor &&
-      !this.blockNavigationTask &&
-      !this.customProjectionHandoffInProgress
-    ) {
-      // A projection/structure update may capture an anchor one frame before
-      // reconciliation. If the viewport moves in that interval, the newer
-      // viewport position owns restoration; replaying the stale anchor would
-      // snap a user scroll back to its previous location.
-      this.pendingStructureAnchor = this.captureCurrentStructureAnchor()
-    }
+    this.refreshStructureAnchorAfterScroll()
     if (!this.fullMountFallback) this.schedule(false)
   }
   private readonly onResize = () => {
@@ -1074,7 +1065,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
         else this.rebuildModel(nextBlockIds)
       }
       this.validateProjection(projection)
-      this.customProjectionHandoffInProgress = false
+      this.finishCustomProjectionHandoff()
     } catch (error) {
       try {
         hooks.beforeDeactivate?.()
@@ -1087,7 +1078,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
         this.doc.logger.warn('continuousEstimateReplayError: ', replayError)
       } finally {
         this.continuousEstimateJournalSuspended = false
-        this.customProjectionHandoffInProgress = false
+        this.finishCustomProjectionHandoff()
         if (this.scrollContainer && !this.fullMountFallback) {
           this.syncHeightObserver()
         }
@@ -2462,6 +2453,9 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
         return
       }
     }
+    // Caret reveal can write scrollTop in this same frame, before the browser
+    // delivers its scroll event. Rebase before choosing the mounted window.
+    this.refreshStructureAnchorAfterScroll()
     const settledSparseRoot = this.sparseRootReconcilePending
     if (settledSparseRoot) {
       this.doc.vm._reconcileSparseRootChildren(this.blockIds)
@@ -3420,6 +3414,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
 
   private captureCurrentStructureAnchor(): ScrollAnchorSnapshot | null {
     if (!this.scrollContainer) return null
+    this.structureAnchorScrollTop = this.scrollContainer.scrollTop
     const snapshot = captureProjectedScrollAnchor(
       this.blockIds,
       this.layoutProjection,
@@ -3431,6 +3426,25 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     if (!host) return snapshot
     const relativeOffset = host.getBoundingClientRect().top - this.scrollContainer.getBoundingClientRect().top
     return Number.isFinite(relativeOffset) ? {...snapshot, relativeOffset} : snapshot
+  }
+
+  private refreshStructureAnchorAfterScroll(): void {
+    if (
+      this.pendingStructureAnchor &&
+      this.scrollContainer &&
+      !this.blockNavigationTask &&
+      !this.customProjectionHandoffInProgress &&
+      Math.abs(this.scrollContainer.scrollTop - this.structureAnchorScrollTop) > 0.5
+    ) {
+      this.pendingStructureAnchor = this.captureCurrentStructureAnchor()
+    }
+  }
+
+  private finishCustomProjectionHandoff(): void {
+    // Projection hooks can shrink the DOM and clamp scrollTop themselves.
+    // Preserve their old-coordinate anchor; only later viewport movement wins.
+    this.structureAnchorScrollTop = this.scrollContainer?.scrollTop ?? 0
+    this.customProjectionHandoffInProgress = false
   }
 
   private restorePendingStructureAnchor(
@@ -3587,21 +3601,21 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     ) {
       return
     }
-    const restored = restoreProjectedScrollAnchor(
-      anchor,
-      (id) => this.indexById.get(id) ?? -1,
-      this.continuousLayoutProjection,
-      viewportTop,
-      this._visualToLayout(this.scrollContainer.clientHeight),
-    )
-    if (!restored || Math.abs(restored.correctionPx) < 0.5) return
+    const index = this.indexById.get(anchor.blockId)
+    if (index === undefined) return
+    // Compensate only the anchor's movement. The HeightMap excludes root and
+    // host padding, so its total height is not the DOM's scroll limit. Let the
+    // scroll container clamp the final write to its actual bounds instead.
+    const correction = this.continuousLayoutProjection.contentOffsetAt(index) -
+      anchor.relativeOffset - viewportTop
+    if (!Number.isFinite(correction) || Math.abs(correction) < 0.5) return
     if (this.config.idlePrefetch) {
       pushBoundedSample(
         this.idlePrefetchAnchorCorrections,
-        Math.abs(restored.correctionPx),
+        Math.abs(correction),
       )
     }
-    this.scrollContainer.scrollTop += this._layoutToVisual(restored.correctionPx)
+    this.scrollContainer.scrollTop += this._layoutToVisual(correction)
   }
 
   private getViewportTop(): number {
@@ -3689,7 +3703,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
         this.customProjectionFailureCount = 0
         this.layoutProjection = this.continuousLayoutProjection
         this.continuousEstimateJournalSuspended = false
-        this.customProjectionHandoffInProgress = false
+        this.finishCustomProjectionHandoff()
         if (this.scrollContainer && !this.fullMountFallback) {
           this.syncHeightObserver()
         }

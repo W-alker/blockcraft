@@ -11,6 +11,7 @@ import {
 } from './root-virtualization-manager'
 import type {VirtualizationConfig} from './types'
 import {calculateProjectedViewportRange} from './viewport-range'
+import {SelectionManager} from '../selection'
 
 describe('RootVirtualizationManager', () => {
   type CapturedIdlePrefetchTraceEvent = {
@@ -62,6 +63,7 @@ describe('RootVirtualizationManager', () => {
     rootBlockCount = 20,
     config: VirtualizationConfig = {},
     ownerDocument: Document = document,
+    realLayout = false,
   ) {
     const ids = Array.from({length: rootBlockCount}, (_, index) => `b${index}`)
     let layoutIds = [...ids]
@@ -70,22 +72,27 @@ describe('RootVirtualizationManager', () => {
     const rootContainer = ownerDocument.createElement('div')
     const scrollContainer = ownerDocument.createElement('div')
     scrollContainer.append(rootContainer)
-    Object.defineProperty(scrollContainer, 'clientHeight', {value: 96})
-    Object.defineProperty(scrollContainer, 'scrollTop', {value: 0, writable: true})
-    spyOn(rootContainer, 'getBoundingClientRect').and.callFake(() =>
-      createRect(-scrollContainer.scrollTop, layoutIds.length * 48),
-    )
-    spyOn(scrollContainer, 'getBoundingClientRect').and.returnValue({
-      top: 0,
-      bottom: 96,
-      left: 0,
-      right: 100,
-      width: 100,
-      height: 96,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    } as DOMRect)
+    if (realLayout) {
+      scrollContainer.style.cssText = 'position:fixed;top:100px;left:100px;height:96px;width:300px;overflow:auto;overflow-anchor:none'
+      ownerDocument.body.appendChild(scrollContainer)
+    } else {
+      Object.defineProperty(scrollContainer, 'clientHeight', {value: 96})
+      Object.defineProperty(scrollContainer, 'scrollTop', {value: 0, writable: true})
+      spyOn(rootContainer, 'getBoundingClientRect').and.callFake(() =>
+        createRect(-scrollContainer.scrollTop, layoutIds.length * 48),
+      )
+      spyOn(scrollContainer, 'getBoundingClientRect').and.returnValue({
+        top: 0,
+        bottom: 96,
+        left: 0,
+        right: 100,
+        width: 100,
+        height: 96,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      } as DOMRect)
+    }
     const structureChange$ = new Subject<any>()
     const selection$ = new BehaviorSubject<any>(null)
     const compositionSession = {isIdle: true}
@@ -98,7 +105,8 @@ describe('RootVirtualizationManager', () => {
       if (ref) return ref
       const hostElement = ownerDocument.createElement('div')
       hostElement.dataset['blockId'] = id
-      spyOn(hostElement, 'getBoundingClientRect').and.callFake(() =>
+      if (realLayout) hostElement.style.cssText = 'height:48px;box-sizing:border-box'
+      else spyOn(hostElement, 'getBoundingClientRect').and.callFake(() =>
         createRect(layoutIds.indexOf(id) * 48 - scrollContainer.scrollTop, 48),
       )
       ref = {instance: {id, hostElement}}
@@ -2415,6 +2423,29 @@ describe('RootVirtualizationManager', () => {
     willChange$.complete()
   })
 
+  it('rebases a pending custom projection anchor before a delayed scroll event', async () => {
+    const h = createHarness()
+    h.manager.init(h.scrollContainer)
+    await nextAnimationFrame()
+    const heights = new HeightMap()
+    heights.bulkInit(h.ids.map(() => 48))
+    const projection = customProjection(h.ids, heights)
+    const willChange$ = new Subject<{revision: number}>()
+    Object.defineProperty(projection, 'willChange$', {value: willChange$.asObservable()})
+    const release = registerRootLayoutProjection(h.manager, projection)
+    await nextAnimationFrame()
+    willChange$.next({revision: projection.revision + 1})
+    projection.notifyChange()
+    h.scrollContainer.scrollTop = 480
+    await nextAnimationFrame()
+    expect(h.scrollContainer.scrollTop).toBe(480)
+    expect((h.manager as any).pendingStructureAnchor).toBeNull()
+    release()
+    h.manager.dispose()
+    projection.dispose()
+    willChange$.complete()
+  })
+
   it('keeps a 1000-root custom projection mounted window bounded while scrolling', async () => {
     const h = createHarness(4, 1000, {overscanViewports: 1})
     h.manager.init(h.scrollContainer)
@@ -2463,6 +2494,70 @@ describe('RootVirtualizationManager', () => {
     h.manager.dispose()
     projection.dispose()
   })
+
+  it('keeps a revealed caret visible when the scroll event arrives after reconciliation', async () => {
+    const h = createHarness(12, 20, {overscanViewports: 30}, document, true)
+    h.manager.init(h.scrollContainer)
+    try {
+      await nextAnimationFrames(2)
+      h.scrollContainer.scrollTop = 864
+      await nextAnimationFrames(2)
+      let revealed = 0
+      // Selection reveal and reconciliation share a frame. Native scroll events
+      // can be delivered on the following frame (including in Safari).
+      requestAnimationFrame(() => {
+        SelectionManager.prototype.scrollSelectionIntoView.call({
+          doc: {scrollContainer: h.scrollContainer},
+          _surface: {getElementRect: (element: Element) => element.getBoundingClientRect()},
+          _getSelectionHeadRect: () => h.ensureRef('new').instance.hostElement.getBoundingClientRect(),
+        } as any)
+        revealed = h.scrollContainer.scrollTop
+      })
+      h.replaceRootIds([...h.ids, 'new'], ['new'], ['root'])
+      h.mountRootChild('new')
+      await nextAnimationFrames(2)
+      expect(revealed).toBeGreaterThan(864)
+      expect(h.scrollContainer.scrollTop).toBe(revealed)
+      expect(h.ensureRef('new').instance.hostElement.getBoundingClientRect().bottom)
+        .toBeLessThanOrEqual(h.scrollContainer.getBoundingClientRect().bottom)
+    } finally {
+      h.manager.dispose()
+      h.scrollContainer.remove()
+    }
+  })
+
+  for (const scale of [1, 1.25]) {
+    it(`does not clamp a tail viewport to model height during measurement at scale ${scale}`, async () => {
+      const h = createHarness(12, 20, {overscanViewports: 30}, document, true)
+      const root = h.doc.root.hostElement
+      root.style.paddingBottom = '64px'
+      root.style.zoom = String(scale)
+      ;(h.doc as any).viewScale = {
+        geometryScale: scale,
+        visualToLayout: (value: number) => value / scale,
+        layoutToVisual: (value: number) => value * scale,
+      }
+      h.manager.init(h.scrollContainer)
+      try {
+        await nextAnimationFrames(3)
+        h.scrollContainer.scrollTop = h.scrollContainer.scrollHeight
+        await nextAnimationFrames(2)
+        const before = h.scrollContainer.scrollTop
+        // Typing grows the last paragraph below the viewport anchor. The root
+        // padding remains part of the DOM scroll range, outside the HeightMap.
+        h.ensureRef('b19').instance.hostElement.style.height = '72px'
+        await nextAnimationFrames(3)
+        expect(h.scrollContainer.scrollTop).toBeCloseTo(before, 1)
+        // A measured change above the anchor must still preserve its position.
+        h.ensureRef('b0').instance.hostElement.style.height = '64px'
+        await nextAnimationFrames(3)
+        expect(h.scrollContainer.scrollTop).toBeCloseTo(before + 16 * scale, 1)
+      } finally {
+        h.manager.dispose()
+        h.scrollContainer.remove()
+      }
+    })
+  }
 
   it('publishes one continuous-layout revision for a measurement batch', async () => {
     const h = createHarness()
