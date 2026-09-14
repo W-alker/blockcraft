@@ -410,13 +410,17 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
         ? this.props.ar
         : derived.ar
     const placement = this.doc.placement.getState(this)
+    // Group reflow needs the requested pixels before it can establish the new
+    // ratio basis. Deriving wr against the old plane first caps growth at 100%.
+    const size = this.doc.placement.isInObjectGroup(this.id)
+      ? {wr: null, ar: currentAr, width: event.width, height: event.width / currentAr}
+      : {wr: derived.wr, ar: currentAr, width: null, height: null}
     this._awaitingLocalPreviewSize = false
     this._pendingIntrinsicSize = null
-    this.doc.placement.updateObjectGeometry(this, {
-      wr: derived.wr,
-      ar: currentAr,
-      width: null,
-      height: null,
+    // The user transaction includes both the resize and group normalization in
+    // one Undo item; only the final normalized wr/ar reaches observers.
+    this.doc.crud.transact(() => this.doc.placement.updateObjectGeometry(this, {
+      ...size,
       ...(placement.mode === 'absolute' && event.offsetX !== 0
         ? {
             position: {
@@ -425,7 +429,7 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
             },
           }
         : {}),
-    });
+    }));
     this.changeDetectorRef.markForCheck();
   }
 
