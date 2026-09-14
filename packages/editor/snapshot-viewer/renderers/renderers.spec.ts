@@ -212,7 +212,7 @@ describe("snapshot-viewer renderers", () => {
     expect(content.style.backgroundClip).toBe("text")
     expect(content.style.getPropertyValue("-webkit-background-clip")).toBe("text")
     expect(content.style.getPropertyValue("-webkit-text-stroke"))
-      .toContain("0.05em")
+      .toContain("0.0509em") // 2.75px / 54px，快照与 live 使用同一写入精度。
     expect(content.style.transform).toBe("skewX(10deg)")
     expect(content.dataset["bcWordArtPrintProps"]).toContain("linear-gradient")
     expect(content.dataset["bcWordArtEffectTransform"]).toBe("skewX(10deg)")

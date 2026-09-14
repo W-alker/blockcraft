@@ -96,6 +96,98 @@ const state: BlockObjectFormatSelectionState = {
 };
 
 describe("ObjectFormatToolbarComponent", () => {
+  it("shows compact numeric values without writing on focus and blur", async () => {
+    await TestBed.configureTestingModule({
+      imports: [ObjectFormatToolbarComponent],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(ObjectFormatToolbarComponent);
+    const effects = {
+      shadow: {
+        ...format.shapeEffects.shadow,
+        enabled: true,
+        blur: 2.4000000000000004,
+        angle: 60.94539590092286,
+        distance: 4.94190246763776,
+      },
+      glow: { ...format.shapeEffects.glow, enabled: true, radius: 3.3333333333333 },
+    };
+    const fill = { ...createObjectPaint("linear-gradient"), angle: 135.123456789 };
+    const textStyle = {
+      ...format.textStyle,
+      fontSize: 48.00000000000001,
+      letterSpacingEm: -0.123456789,
+      lineHeight: 1.2000000000000002,
+      fill,
+      outline: { type: "line" as const, color: "#000000", width: 1.2000000000000002 },
+      effects,
+    };
+    const testState = {
+      ...state,
+      values: {
+        ...state.values,
+        shapeFill: { mixed: false, value: fill },
+        shapeOutline: { mixed: false, value: { ...format.shapeOutline, width: 1.2000000000000002 } },
+        shapeEffects: { mixed: false, value: effects },
+        textFrame: { mixed: false, value: { ...format.textFrame, margins: [8.123456789, 0, 10, 8.5] } },
+        textStyle: { mixed: false, value: textStyle },
+      },
+    };
+    const original = JSON.stringify(testState);
+    fixture.componentRef.setInput("state", testState);
+    const action = spyOn(fixture.componentInstance.action, "emit");
+    const valuesIn = (section: string) => Array.from(
+      sectionElement(fixture, section).querySelectorAll<HTMLInputElement>("cs-input-number input"),
+    );
+
+    for (const panel of ["shape", "text"] as const) {
+      fixture.componentInstance.open(panel);
+      fixture.componentInstance.cdr.markForCheck();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      const expected = panel === "shape"
+        ? { "shape-fill": ["135"], "shape-outline": ["1.25"], "shape-effects": ["2", "61", "5", "3"] }
+        : { "text-frame": ["8", "0", "10", "9"], "text-typography": ["48", "-0.12", "1.2"], "text-effects": ["135", "1.25", "2", "61", "5", "3"] };
+      for (const [section, values] of Object.entries(expected)) {
+        const inputs = valuesIn(section);
+        expect(inputs.map(input => input.value)).withContext(section).toEqual(values);
+        for (const input of inputs) {
+          input.dispatchEvent(new FocusEvent("focus"));
+          input.dispatchEvent(new FocusEvent("blur"));
+        }
+      }
+      fixture.detectChanges();
+      expect(action).not.toHaveBeenCalled();
+      expect(JSON.stringify(testState)).toBe(original);
+    }
+
+    const outline = valuesIn("text-effects")[1];
+    outline.value = "1.3";
+    outline.dispatchEvent(new Event("input", { bubbles: true }));
+    fixture.detectChanges();
+    outline.dispatchEvent(new FocusEvent("blur"));
+    fixture.detectChanges();
+    expect(outline.value).toBe("1.25");
+    expect(action).not.toHaveBeenCalled();
+    outline.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
+    fixture.detectChanges();
+    expect(outline.value).toBe("1.5");
+    expect(action).toHaveBeenCalledOnceWith({
+      name: "patch",
+      patch: { textStyle: { ...textStyle, outline: { ...textStyle.outline, width: 1.5 } } },
+    });
+    action.calls.reset();
+    const angle = valuesIn("text-effects")[3];
+    angle.value = "-25.4";
+    angle.dispatchEvent(new Event("input", { bubbles: true }));
+    angle.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    fixture.detectChanges();
+    expect(angle.value).toBe("-25");
+    const changedStyle = { ...textStyle, effects: { shadow: { ...effects.shadow, angle: -25, blur: 2, distance: 5 }, glow: { ...effects.glow, radius: 3 } } };
+    expect(action).toHaveBeenCalledOnceWith({ name: "preview", patch: { textStyle: changedStyle } });
+    fixture.componentInstance.applyTextEffects();
+    expect(action.calls.mostRecent().args[0]).toEqual({ name: "patch", patch: { textStyle: changedStyle } });
+  });
+
   it("fits gradient controls to the available width with and without vertical scrolling", async () => {
     await TestBed.configureTestingModule({
       imports: [ObjectFormatToolbarComponent],

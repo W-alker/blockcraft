@@ -17,6 +17,17 @@ import {
 import {SHAPE_OBJECT_FORMAT_CAPABILITY} from '../../blocks/shape-block/shape.types'
 
 describe('inline shape embed', () => {
+  it('keeps old fractional outlines on read and rounds only when creating a delta', () => {
+    const props = {shape: 'rectangle' as const, width: 210, height: 130, rotation: 25,
+      outline: {...storeObjectLine(SHAPE_OBJECT_FORMAT_CAPABILITY.defaults.shapeOutline!), w: 1.2},
+    }
+    const delta = {insert: {shape: JSON.stringify({props, text: []})}}
+    expect(readInlineShapeDelta(delta).props.outline!.w).toBe(1.2)
+    const path = inlineShapeEmbedConverter.toView(delta).querySelector('path')!
+    expect(path.getAttribute('stroke-width')).toBe('1.2')
+    expect(readInlineShapeDelta(createInlineShapeDelta(props)).props.outline!.w).toBe(1.25)
+  })
+
   it('preserves shape props, text and wrap layout through the DOM converter', () => {
     const delta = createInlineShapeDelta({
       shape: 'ellipse',

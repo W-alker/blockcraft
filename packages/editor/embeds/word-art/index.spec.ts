@@ -10,6 +10,21 @@ import {
 import {WORD_ART_OBJECT_FORMAT_CAPABILITY} from '../../blocks/word-art-block/word-art.types'
 
 describe('inline WordArt embed', () => {
+  it('preserves legacy numeric precision on read but compacts a newly written delta', () => {
+    const props = {width: 280, height: 88, rotation: 12, depth: 0,
+      textStyle: {...storeObjectTextStyle(WORD_ART_OBJECT_FORMAT_CAPABILITY.defaults.textStyle!),
+        z: 42, ow: 1.26, sb: 2.4, sa: 60.9453959, sd: 4.9419024},
+    }
+    const delta = {insert: {'word-art': JSON.stringify({props, text: [{insert: '旧艺术字'}]})}}
+    expect(readInlineWordArtDelta(delta).props.textStyle).toEqual(props.textStyle)
+    const text = inlineWordArtEmbedConverter.toView(delta)
+      .querySelector<HTMLElement>('.bc-inline-word-art__text')!
+    expect(text.style.getPropertyValue('-webkit-text-stroke')).toContain('0.03em')
+    const written = readInlineWordArtDelta(createInlineWordArtDelta(props))
+    expect(written.props.textStyle).toEqual(jasmine.objectContaining({ow: 1.25, sb: 2, sa: 61, sd: 5}))
+    expect(JSON.parse(delta.insert['word-art']).props.textStyle.ow).toBe(1.26)
+  })
+
   it('preserves presentation, text and inline layout without placement props', () => {
     const delta = createInlineWordArtDelta({
       width: 280,
@@ -52,7 +67,7 @@ describe('inline WordArt embed', () => {
     expect(text.style.backgroundClip).toBe('text')
     expect(text.style.getPropertyValue('-webkit-background-clip')).toBe('text')
     expect(text.style.getPropertyValue('-webkit-text-stroke'))
-      .toContain('0.03em')
+      .toContain('0.0298em') // 1.25px / 42px，按 0.25px 写入后投影到 em。
     expect(text.style.textShadow).toContain('rgba(124, 45, 18, 0.3)')
     expect(text.style.transform).toBe('')
     expect(view.querySelector('svg')).toBeNull()

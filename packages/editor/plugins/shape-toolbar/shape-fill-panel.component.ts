@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from "@angular/core";
+import { ObjectFormatNumberPipe } from "../object-format-toolbar/object-format-number.pipe";
 import {
   CsColorPickerComponent,
   CsInputNumberComponent,
@@ -30,6 +31,7 @@ import {
   imports: [
     CsColorPickerComponent,
     CsInputNumberComponent,
+    ObjectFormatNumberPipe,
     CsOptionComponent,
     CsSelectComponent,
     CsTooltipDirective,
@@ -123,7 +125,8 @@ import {
             [csMin]="0"
             [csMax]="360"
             [csStep]="15"
-            [csValue]="gradient.angle"
+            [csPrecision]="0"
+            [csValue]="gradient.angle | objectFormatNumber: 1"
             (csValueChange)="setGradientAngle($event)"
           />
           <span class="shape-fill-panel__unit">°</span>

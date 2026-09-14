@@ -7,6 +7,12 @@ import {
   normalizeBlockObjectFormat,
   normalizeObjectLine,
   normalizeObjectPaint,
+  normalizeObjectEffects,
+  normalizeObjectTextStyle,
+  normalizeObjectTextFrame,
+  storeObjectEffects,
+  storeObjectTextStyle,
+  storeObjectTextFrame,
   storeObjectLine,
   storeObjectPaint,
   type BlockObjectFormatCapability,
@@ -28,6 +34,55 @@ const capability: BlockObjectFormatCapability = {
 }
 
 describe('object format domain', () => {
+  it('quantizes stored sections while leaving legacy reads and source objects unchanged', () => {
+    const effects = {
+      shadow: {...DEFAULT_OBJECT_EFFECTS.shadow, enabled: true,
+        blur: 2.4000000000000004, angle: 60.94539590092286,
+        distance: 4.94190246763776, opacity: 0.2700000000000001},
+      glow: {...DEFAULT_OBJECT_EFFECTS.glow, radius: 3.6},
+    }
+    const style = {...DEFAULT_OBJECT_TEXT_STYLE, effects,
+      fontSize: 48.00000000000001, letterSpacingEm: -0.123456789,
+      lineHeight: 1.2000000000000002,
+      outline: {type: 'line' as const, color: '#000000', width: 1.2000000000000002},
+      fill: {type: 'linear-gradient' as const, opacity: 0.8000000000000002,
+        angle: 135.123456789,
+        stops: [{color: '#000000', offset: 0.3333333333333333, opacity: 0.5},
+          {color: '#FFFFFF', offset: 1, opacity: 1}]},
+    }
+    const source = JSON.stringify(style)
+    expect(normalizeObjectTextStyle(style)).toEqual(style)
+    const stored = storeObjectTextStyle(style)
+    expect(stored).toEqual(jasmine.objectContaining({
+      z: 48, s: -0.12, l: 1.2, ow: 1.25, pa: 135, po: 0.8, pp0: 0.33,
+      sb: 2, sa: 61, sd: 5, so: 0.27, gr: 4,
+    }))
+    expect(JSON.stringify(stored).length).toBeLessThan(
+      JSON.stringify({...stored, sb: effects.shadow.blur, sa: effects.shadow.angle,
+        sd: effects.shadow.distance, ow: style.outline.width}).length,
+    )
+    expect(storeObjectTextStyle(normalizeObjectTextStyle(stored))).toEqual(stored)
+    expect(storeObjectEffects(normalizeObjectEffects(storeObjectEffects(effects))))
+      .toEqual(storeObjectEffects(effects))
+    expect(JSON.stringify(style)).toBe(source)
+
+    const frame = {...DEFAULT_OBJECT_TEXT_FRAME, margins: [8.1, 8.8, 0, 1000] as [number, number, number, number]}
+    expect(normalizeObjectTextFrame(frame).margins).toEqual([8.1, 8.8, 0, 1000])
+    expect(storeObjectTextFrame(frame)).toEqual(jasmine.objectContaining({mt: 8, mr: 9, mb: 0, ml: 1000}))
+    expect(storeObjectLine({...DEFAULT_OBJECT_LINE, width: 1.2}).w).toBe(1.25)
+    expect(storeObjectLine({...DEFAULT_OBJECT_LINE, width: 0.25}).w).toBe(0.25)
+  })
+
+  it('bounds invalid values before quantizing and retains no-outline states', () => {
+    const stored = storeObjectEffects({
+      shadow: {...DEFAULT_OBJECT_EFFECTS.shadow, blur: NaN, angle: -400, distance: Infinity},
+      glow: {...DEFAULT_OBJECT_EFFECTS.glow, radius: 200, opacity: -1},
+    })
+    expect(stored).toEqual(jasmine.objectContaining({sb: 4, sa: -360, sd: 2, gr: 100, go: 0}))
+    expect(storeObjectLine({...DEFAULT_OBJECT_LINE, width: -3}).w).toBe(0)
+    expect(storeObjectLine({...DEFAULT_OBJECT_LINE, type: 'none', width: 0.3})).toEqual({t: 'n'})
+  })
+
   it('normalizes malformed or oversized sections without throwing', () => {
     expect(() => normalizeBlockObjectFormat({
       width: Number.NaN,

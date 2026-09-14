@@ -76,6 +76,24 @@ function makeHarness() {
 }
 
 describe("BlockObjectFormatManager", () => {
+  it("quantizes written effects in one transaction without migrating untouched or locked props", () => {
+    const { manager, props, transact } = makeHarness();
+    const legacyEffects = {...storeObjectEffects(DEFAULT_OBJECT_EFFECTS), sb: 2.4, sa: 60.9453959, sd: 4.9419024};
+    props.get("a")!["effects"] = legacyEffects;
+    props.get("b")!["effects"] = legacyEffects;
+    const oldTextStyle = {z: 16, s: 0.123456789};
+    props.get("a")!["textStyle"] = oldTextStyle;
+    const read = manager.readSelection(["a", "b"])!;
+    expect(read.values.shapeEffects.value!.shadow.angle).toBe(60.9453959);
+    expect(transact).not.toHaveBeenCalled();
+    manager.updateSelection(["a", "b"], {shapeEffects: read.values.shapeEffects.value});
+    expect(transact).toHaveBeenCalledTimes(1);
+    expect(props.get("a")!["effects"]).toEqual(jasmine.objectContaining({sb: 2, sa: 61, sd: 5}));
+    expect(props.get("a")!["textStyle"]).toBe(oldTextStyle);
+    expect(props.get("b")!["effects"]).toBe(legacyEffects);
+    expect(legacyEffects.sa).toBe(60.9453959);
+  });
+
   it("reports mixed values and capability intersection model-first", () => {
     const { manager } = makeHarness();
     const state = manager.readSelection(["a", "b"])!;

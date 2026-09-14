@@ -64,7 +64,7 @@ const payloadFromUnknown = (value: unknown): InlineShapePayload => {
     props?: Partial<ShapeBlockProps>
     text?: DeltaInsert[]
   }>(value)
-  const props = normalizeShapeSnapshotProps(raw?.props)
+  const props = normalizeShapeSnapshotProps(raw?.props, {preservePrecision: true})
   const {
     position: _position,
     placementLayer: _placementLayer,

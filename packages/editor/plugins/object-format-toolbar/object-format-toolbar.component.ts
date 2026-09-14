@@ -47,6 +47,9 @@ import {
 import { getShapeDefinition, type ShapeKind } from "../../blocks/shape-block";
 import { WORD_ART_FONT_OPTIONS } from "../../blocks/word-art-block";
 import { ShapeFillPanelComponent } from "../shape-toolbar/shape-fill-panel.component";
+import { ObjectFormatNumberPipe } from "./object-format-number.pipe";
+import { quantizeObjectFormatNumber } from "../../framework/block-std/block/object-format-number";
+import { normalizeObjectEffects, storeObjectEffects } from "../../framework";
 
 export type ObjectFormatPanel = "layout" | "shape" | "text";
 
@@ -116,6 +119,7 @@ export type ObjectFormatToolbarAction =
     CsSwitchComponent,
     CsTooltipDirective,
     ShapeFillPanelComponent,
+    ObjectFormatNumberPipe,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -548,7 +552,8 @@ export type ObjectFormatToolbarAction =
                           [csMax]="100"
                           [csStep]="0.25"
                           [csPrecision]="2"
-                          [csValue]="shapeOutline.width"
+                          [csValue]="shapeOutline.width | objectFormatNumber: 0.25"
+                          [csParser]="parseOutlineWidth"
                           (csValueChange)="
                             outlineNumberChangeValue('width', $event)
                           "
@@ -708,7 +713,8 @@ export type ObjectFormatToolbarAction =
                           csSize="sm"
                           [csMin]="0"
                           [csMax]="100"
-                          [csValue]="shapeEffects.shadow.blur"
+                          [csPrecision]="0"
+                          [csValue]="shapeEffects.shadow.blur | objectFormatNumber: 1"
                           (csValueChange)="shadowNumberValue('blur', $event)"
                       /></label>
                       <label
@@ -717,7 +723,8 @@ export type ObjectFormatToolbarAction =
                           csSize="sm"
                           [csMin]="-360"
                           [csMax]="360"
-                          [csValue]="shapeEffects.shadow.angle"
+                          [csPrecision]="0"
+                          [csValue]="shapeEffects.shadow.angle | objectFormatNumber: 1"
                           (csValueChange)="shadowNumberValue('angle', $event)"
                       /></label>
                       <label
@@ -726,7 +733,8 @@ export type ObjectFormatToolbarAction =
                           csSize="sm"
                           [csMin]="0"
                           [csMax]="200"
-                          [csValue]="shapeEffects.shadow.distance"
+                          [csPrecision]="0"
+                          [csValue]="shapeEffects.shadow.distance | objectFormatNumber: 1"
                           (csValueChange)="
                             shadowNumberValue('distance', $event)
                           "
@@ -769,7 +777,8 @@ export type ObjectFormatToolbarAction =
                           csSize="sm"
                           [csMin]="0"
                           [csMax]="100"
-                          [csValue]="shapeEffects.glow.radius"
+                          [csPrecision]="0"
+                          [csValue]="shapeEffects.glow.radius | objectFormatNumber: 1"
                           (csValueChange)="glowNumberValue($event)"
                       /></label>
                     }
@@ -847,7 +856,8 @@ export type ObjectFormatToolbarAction =
                               csSize="sm"
                               [csMin]="0"
                               [csMax]="1000"
-                              [csValue]="textFrame.margins[i]"
+                              [csPrecision]="0"
+                              [csValue]="textFrame.margins[i] | objectFormatNumber: 1"
                               (csValueChange)="marginChangeValue(i, $event)"
                             />
                           </label>
@@ -952,7 +962,8 @@ export type ObjectFormatToolbarAction =
                           csSize="sm"
                           [csMin]="4"
                           [csMax]="512"
-                          [csValue]="textStyle.fontSize"
+                          [csPrecision]="2"
+                          [csValue]="textStyle.fontSize | objectFormatNumber"
                           (csValueChange)="textNumberValue('fontSize', $event)"
                       /></label>
                       <label
@@ -963,7 +974,7 @@ export type ObjectFormatToolbarAction =
                           [csMax]="5"
                           [csStep]="0.01"
                           [csPrecision]="2"
-                          [csValue]="textStyle.letterSpacingEm"
+                          [csValue]="textStyle.letterSpacingEm | objectFormatNumber"
                           (csValueChange)="
                             textNumberValue('letterSpacingEm', $event)
                           "
@@ -976,7 +987,7 @@ export type ObjectFormatToolbarAction =
                           [csMax]="5"
                           [csStep]="0.05"
                           [csPrecision]="2"
-                          [csValue]="textStyle.lineHeight"
+                          [csValue]="textStyle.lineHeight | objectFormatNumber"
                           (csValueChange)="
                             textNumberValue('lineHeight', $event)
                           "
@@ -1179,7 +1190,8 @@ export type ObjectFormatToolbarAction =
                             [csMax]="100"
                             [csStep]="0.25"
                             [csPrecision]="2"
-                            [csValue]="textStyle.outline.width"
+                            [csValue]="textStyle.outline.width | objectFormatNumber: 0.25"
+                            [csParser]="parseOutlineWidth"
                             (csValueChange)="textOutlineWidthValue($event)"
                         /></label>
                       }
@@ -1224,7 +1236,8 @@ export type ObjectFormatToolbarAction =
                             csSize="sm"
                             [csMin]="0"
                             [csMax]="100"
-                            [csValue]="textStyle.effects.shadow.blur"
+                            [csPrecision]="0"
+                            [csValue]="textStyle.effects.shadow.blur | objectFormatNumber: 1"
                             (csValueChange)="
                               textShadowNumberValue('blur', $event)
                             "
@@ -1235,7 +1248,8 @@ export type ObjectFormatToolbarAction =
                             csSize="sm"
                             [csMin]="-360"
                             [csMax]="360"
-                            [csValue]="textStyle.effects.shadow.angle"
+                            [csPrecision]="0"
+                            [csValue]="textStyle.effects.shadow.angle | objectFormatNumber: 1"
                             (csValueChange)="
                               textShadowNumberValue('angle', $event)
                             "
@@ -1246,7 +1260,8 @@ export type ObjectFormatToolbarAction =
                             csSize="sm"
                             [csMin]="0"
                             [csMax]="200"
-                            [csValue]="textStyle.effects.shadow.distance"
+                            [csPrecision]="0"
+                            [csValue]="textStyle.effects.shadow.distance | objectFormatNumber: 1"
                             (csValueChange)="
                               textShadowNumberValue('distance', $event)
                             "
@@ -1293,7 +1308,8 @@ export type ObjectFormatToolbarAction =
                             csSize="sm"
                             [csMin]="0"
                             [csMax]="100"
-                            [csValue]="textStyle.effects.glow.radius"
+                            [csPrecision]="0"
+                            [csValue]="textStyle.effects.glow.radius | objectFormatNumber: 1"
                             (csValueChange)="textGlowRadiusValue($event)"
                         /></label>
                       }
@@ -1784,6 +1800,13 @@ export class ObjectFormatToolbarComponent {
 
   constructor(readonly cdr: ChangeDetectorRef) {}
 
+  protected readonly parseOutlineWidth = (text: string): number | null => {
+    const value = Number(text);
+    return text.trim() && Number.isFinite(value)
+      ? quantizeObjectFormatNumber(value, 0.25)
+      : null;
+  };
+
   get isMultiSelection(): boolean {
     return this.state.blockIds.length > 1;
   }
@@ -2036,7 +2059,7 @@ export class ObjectFormatToolbarComponent {
   }
   outlineNumberChangeValue(key: "width", value: number | null): void {
     if (value !== null)
-      this.patch({ shapeOutline: { ...this.shapeOutline, [key]: value } });
+      this.patch({ shapeOutline: { ...this.shapeOutline, [key]: quantizeObjectFormatNumber(value, 0.25) } });
   }
   outlineOpacityValue(value: CsSliderValue): void {
     this.stageSlider("shape-outline-opacity", {
@@ -2238,7 +2261,7 @@ export class ObjectFormatToolbarComponent {
               this.textStyle.outline.type === "line"
                 ? this.textStyle.outline.color
                 : "#000000",
-            width: value,
+            width: quantizeObjectFormatNumber(value, 0.25),
           },
         },
       });
@@ -2333,15 +2356,15 @@ export class ObjectFormatToolbarComponent {
       this.commitSlider(key);
   }
   private updateShapeEffectsDraft(effects: ObjectEffects): void {
-    this.shapeEffectsDraft = effects;
-    this.preview({ shapeEffects: effects });
+    this.shapeEffectsDraft = normalizeObjectEffects(storeObjectEffects(effects));
+    this.preview({ shapeEffects: this.shapeEffectsDraft });
   }
   private updateTextEffectsDraft(effects: ObjectEffects): void {
-    this.textEffectsDraft = effects;
+    this.textEffectsDraft = normalizeObjectEffects(storeObjectEffects(effects));
     const style =
       this.state.values.textStyle.value ??
       this.state.targets[0].format.textStyle!;
-    this.preview({ textStyle: { ...style, effects } });
+    this.preview({ textStyle: { ...style, effects: this.textEffectsDraft } });
   }
   private cancelEffectDrafts(): void {
     if (!this.shapeEffectsDraft && !this.textEffectsDraft) return;

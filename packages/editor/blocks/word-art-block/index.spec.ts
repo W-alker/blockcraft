@@ -135,6 +135,21 @@ class WordArtCssInheritanceHarness {}
 class WordArtWidthContractHarness {}
 
 describe("Word art block domain", () => {
+  it("stores compact preset effects and quarter-pixel outlines before insertion", () => {
+    for (const preset of WORD_ART_PRESETS) {
+      const style = preset.props.textStyle;
+      for (const field of ["sb", "sa", "sd", "gr"] as const) {
+        expect(Number.isInteger(style[field])).withContext(`${preset.id}: ${field}`).toBeTrue();
+      }
+      if (style.ow !== undefined) {
+        expect(Number.isInteger(style.ow * 4)).withContext(preset.id).toBeTrue();
+      }
+      expect(style.l).toBeGreaterThan(0);
+      expect(style.so).toBeGreaterThan(0);
+      expect(style.so).toBeLessThanOrEqual(1);
+    }
+  });
+
   it("estimates an unmounted flow block from its normalized model height", () => {
     const estimateHeight =
       WordArtBlockSchema.metadata.virtualization?.estimateHeight;
@@ -272,7 +287,7 @@ describe("Word art block domain", () => {
         "text",
       );
       expect(editor.style.getPropertyValue("-webkit-text-stroke")).toContain(
-        "0.03em",
+        "0.0313em", // 1.5px / 48px，轮廓写入按 0.25px 收敛。
       );
       expect(editor.style.textShadow).toContain("rgba(124, 45, 18, 0.3)");
       expect(editor.style.transform).toBe("");
@@ -448,7 +463,7 @@ describe("Word art block domain", () => {
     expect(presentation.backgroundImage).toBe(
       "linear-gradient(90deg, rgba(0, 255, 255, 1) 0%, rgba(0, 0, 255, 1) 100%)",
     );
-    expect(presentation.textStroke).toBe("0.05em #111111");
+    expect(presentation.textStroke).toBe("0.0521em #111111"); // 2.5px / 48px
     expect(presentation.textShadow).toContain("rgba(0, 0, 0, 0.4)");
     expect(presentation.effectTransform).toBe(
       "perspective(600px) rotateY(-12deg)",

@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-09-10 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-09-14 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -52,6 +52,10 @@ A block-based rich text editor built on **Angular (standalone components)** + **
 | **Adapter** | HTML/Markdown ↔ BlockSnapshot conversion with co-located Block/Embed contributions | `blocks/*/adapter/`, `embeds/*/adapter/`, `adapters/registry/` |
 
 ## Block Types Taxonomy
+
+对象格式写入精度由 `storeObject*()` 统一收敛：效果/渐变角度和效果尺寸、
+内边距取整，轮廓宽度按 `0.25px`，比例等字段最多两位小数；旧值读取不迁移。
+范围与调用约定见 `blockcraft-block.md` 的 Unified Object Format Capability。
 
 Three `nodeType` categories:
 

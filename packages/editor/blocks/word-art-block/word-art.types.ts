@@ -412,6 +412,7 @@ export function normalizeWordArtProps(
 /** Canonical persisted WordArt props; presentation aliases stay render-only. */
 export function normalizeWordArtSnapshotProps(
   value: Partial<WordArtBlockProps> | null | undefined,
+  options: Readonly<{preservePrecision?: boolean}> = {},
 ): WordArtBlockProps {
   const normalized = normalizeWordArtProps(value)
   return {
@@ -420,8 +421,8 @@ export function normalizeWordArtSnapshotProps(
     height: normalized.height,
     rotation: normalized.rotation,
     lockRatio: normalized.lockAspectRatio,
-    textFrame: storeObjectTextFrame(normalized.textFrame),
-    textStyle: storeObjectTextStyle(normalized.textStyle),
+    textFrame: storeObjectTextFrame(normalized.textFrame, options),
+    textStyle: storeObjectTextStyle(normalized.textStyle, options),
     ...(normalized.position ? {position: normalized.position} : {}),
     ...(normalized.placementLayer === 'under'
       ? {placementLayer: 'under' as const}

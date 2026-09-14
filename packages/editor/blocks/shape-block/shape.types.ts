@@ -416,6 +416,7 @@ export function normalizeShapeProps(
 /** Canonical persisted Shape props; presentation aliases stay render-only. */
 export function normalizeShapeSnapshotProps(
   value: Partial<ShapeBlockProps> | null | undefined,
+  options: Readonly<{preservePrecision?: boolean}> = {},
 ): ShapeBlockProps {
   const normalized = normalizeShapeProps(value)
   return {
@@ -424,11 +425,11 @@ export function normalizeShapeSnapshotProps(
     height: normalized.height,
     rotation: normalized.rotation,
     lockRatio: normalized.lockAspectRatio,
-    fill: storeObjectPaint(normalized.shapeFill),
-    outline: storeObjectLine(normalized.shapeOutline),
-    effects: storeObjectEffects(normalized.shapeEffects),
-    textFrame: storeObjectTextFrame(normalized.textFrame),
-    textStyle: storeObjectTextStyle(normalized.textStyle),
+    fill: storeObjectPaint(normalized.shapeFill, options),
+    outline: storeObjectLine(normalized.shapeOutline, options),
+    effects: storeObjectEffects(normalized.shapeEffects, options),
+    textFrame: storeObjectTextFrame(normalized.textFrame, options),
+    textStyle: storeObjectTextStyle(normalized.textStyle, options),
     ...(normalized.position ? {position: normalized.position} : {}),
     ...(normalized.placementLayer === 'under'
       ? {placementLayer: 'under' as const}

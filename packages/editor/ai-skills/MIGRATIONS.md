@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-09-11 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-09-14 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -67,6 +67,29 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > - `major` (e.g. 0.1.37 → 1.0.0): breaking — removed APIs, renamed exports, signature changes, behavior reversals
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
+
+## Unreleased — 2026-09-14 — 对象格式写入精度收敛
+
+**Severity**: patch
+
+**What changed**: Shape/TextBox/WordArt 共用的 `storeObject*()` 在写入时收敛计算长尾；工具栏按相同规则显示和输入，效果草稿预览与确认保持一致。
+
+**Why**: 仅限制输入框显示仍会让浮点长尾进入预设、文档和序列化结果。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-toolbar.md`。
+
+### Behavior Changes
+
+- 渐变和阴影角度、阴影模糊/距离、发光半径、内边距取最近整数；形状/文字轮廓宽度取最近 `0.25px`。
+- 字号、字距、行高、透明度、渐变停点与图片位置最多两位小数；不改变宽高、对象旋转、定位和宽高比精度。
+- 读取 helper 保留合法旧值；新建或序列化以及写入某个原子格式 section 时应用新规则。不在打开文档或聚焦输入框时批量改写旧文档。
+- `storeObject*()`、`normalizeShapeSnapshotProps()` 和 `normalizeWordArtSnapshotProps()` 增加可选 `{preservePrecision: true}` 参数，仅用于行内旧 payload 的只读解码。行内新建及导出仍使用缺省收敛规则。
+
+### Migration Recipe
+
+继续通过 `storeObject*()` 构造持久化格式，并通过 `doc.objectFormat.updateSelection()` 提交面板编辑；不要依赖序列化后保留任意小数精度。例如阴影角度 `60.9453959` 写为 `61`，距离 `4.9419024` 写为 `5`，轮廓 `1.2` 写为 `1.25`。原子 section 内未单独编辑的数值也会在该 section 写入时一起收敛。
+
+**Version**: 尚未发布，包版本保持不变。
 
 ## Unreleased — 2026-09-10 — 普通有序列表手动跨段续号
 

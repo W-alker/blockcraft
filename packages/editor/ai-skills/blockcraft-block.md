@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-09-10
+> Last updated: 2026-09-14
 
 ## Block Types
 
@@ -1166,6 +1166,19 @@ snapshot, and
 inline and export projection. Missing/malformed values return defaults and do
 not throw. Do not reintroduce the removed Shape/TextBox/WordArt flat style
 fields.
+
+对象格式的 `storeObject*()` 写入边界统一收敛数值：渐变/阴影角度、阴影
+模糊与距离、发光半径和文本框内边距取整；形状与文字轮廓宽度按 `0.25px`
+取最近值；字距、行高、透明度、渐变停点、图片位置和字号最多两位小数。
+预设生成、快照创建、格式面板写入和调用这些 helper 的序列化路径共用此规则。
+`normalizeObject*()` 读取仍保留合法旧值，不在打开文档时批量迁移或写入；
+编辑一个原子格式 section 时，该 section 的数值一同收敛。宽高、对象旋转角、
+定位坐标及宽高比不在本规则范围内。运行时派生的三角函数结果不再反写为格式数据。
+
+`storeObject*()` 及 `normalizeShapeSnapshotProps()` /
+`normalizeWordArtSnapshotProps()` 支持可选第二参数 `{preservePrecision: true}`，
+仅供旧行内 payload 的只读解码复用字段校验与映射；该模式不收敛合法数值。
+新建、编辑、导出或 block/inline 转换应省略此选项，使用缺省写入精度。
 
 `ObjectTextFrame.margins` is `[top, right, bottom, left]` in layout pixels.
 Shape catalog `textInsets` establish the geometry-safe rectangle; add the user

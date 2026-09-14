@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-28
+> Last updated: 2026-09-14
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
@@ -235,6 +235,11 @@ commands, Select/Option, Input/InputNumber, ColorPicker, Slider,
 and Switch for values. BlockCraft owns only the connected Overlay,
 iconfont glyphs and panel layout. Slider movement is an RAF visual preview;
 pointer/keyboard completion or blur commits one Yjs patch for one Undo step.
+
+数值面板使用与 `storeObject*()` 一致的精度：渐变/阴影角度、模糊、距离、
+发光半径、内边距为整数；轮廓宽度按 `0.25px` 步进和解析；字号、字距、
+行高最多两位小数。打开面板或未编辑的聚焦/失焦不触发旧数据回写。
+阴影/发光草稿在预览前经过写入精度收敛，确认与预览使用相同效果值，取消不持久化。
 
 Single-object layout, page alignment and hierarchy remain in the compact layout
 card. Mixed absolute-object selection is resolved by the placement domain rather

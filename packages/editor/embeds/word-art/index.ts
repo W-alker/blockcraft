@@ -66,7 +66,7 @@ const payloadFromUnknown = (value: unknown): InlineWordArtPayload => {
     props?: Partial<WordArtBlockProps>
     text?: DeltaInsert[]
   }>(value)
-  const props = normalizeWordArtSnapshotProps(raw?.props)
+  const props = normalizeWordArtSnapshotProps(raw?.props, {preservePrecision: true})
   const {
     position: _position,
     placementLayer: _placementLayer,

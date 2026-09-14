@@ -1,5 +1,9 @@
+import {quantizeObjectFormatNumber} from './object-format-number'
 import type {SimpleBasicType} from '../../../global'
 import type {IBlockProps} from '../types'
+
+/** 仅解码旧快照时保留精度；持久化构造使用缺省值。 */
+type ObjectFormatStorageOptions = Readonly<{preservePrecision?: boolean}>
 
 export type ObjectPaintType = 'none' | 'solid' | 'linear-gradient' | 'picture'
 export type ObjectPictureFit = 'cover' | 'contain' | 'stretch'
@@ -515,33 +519,33 @@ export function createObjectPaint(
   return {...DEFAULT_OBJECT_PICTURE_PAINT}
 }
 
-export function storeObjectPaint(value: Readonly<ObjectPaint>): StoredObjectPaint {
+export function storeObjectPaint(value: Readonly<ObjectPaint>, options: ObjectFormatStorageOptions = {}): StoredObjectPaint {
   const paint = normalizeObjectPaint(value)
   if (paint.type === 'none') return {t: 'n'}
   if (paint.type === 'solid') {
-    return {t: 's', c: paint.color, o: paint.opacity}
+    return {t: 's', c: paint.color, o: quantizeObjectFormatNumber(paint.opacity, 0.01, options.preservePrecision)}
   }
   if (paint.type === 'linear-gradient') {
     const stored: StoredObjectPaint = {
       t: 'g',
-      o: paint.opacity,
-      a: paint.angle,
+      o: quantizeObjectFormatNumber(paint.opacity, 0.01, options.preservePrecision),
+      a: quantizeObjectFormatNumber(paint.angle, 1, options.preservePrecision),
       n: paint.stops.length,
     }
     paint.stops.forEach((stop, index) => {
       stored[`c${index}` as keyof StoredObjectPaint] = stop.color as never
-      stored[`p${index}` as keyof StoredObjectPaint] = stop.offset as never
-      stored[`q${index}` as keyof StoredObjectPaint] = stop.opacity as never
+      stored[`p${index}` as keyof StoredObjectPaint] = quantizeObjectFormatNumber(stop.offset, 0.01, options.preservePrecision) as never
+      stored[`q${index}` as keyof StoredObjectPaint] = quantizeObjectFormatNumber(stop.opacity, 0.01, options.preservePrecision) as never
     })
     return stored
   }
   return {
     t: 'p',
-    o: paint.opacity,
+    o: quantizeObjectFormatNumber(paint.opacity, 0.01, options.preservePrecision),
     u: paint.src,
     f: paint.fit,
-    x: paint.positionX,
-    y: paint.positionY,
+    x: quantizeObjectFormatNumber(paint.positionX, 0.01, options.preservePrecision),
+    y: quantizeObjectFormatNumber(paint.positionY, 0.01, options.preservePrecision),
   }
 }
 
@@ -579,14 +583,14 @@ export function normalizeObjectLine(
   }
 }
 
-export function storeObjectLine(value: Readonly<ObjectLine>): StoredObjectLine {
+export function storeObjectLine(value: Readonly<ObjectLine>, options: ObjectFormatStorageOptions = {}): StoredObjectLine {
   const line = normalizeObjectLine(value)
   if (line.type === 'none') return {t: 'n'}
   return {
     t: 'l',
     c: line.color,
-    o: line.opacity,
-    w: line.width,
+    o: quantizeObjectFormatNumber(line.opacity, 0.01, options.preservePrecision),
+    w: quantizeObjectFormatNumber(line.width, 0.25, options.preservePrecision),
     d: line.dash,
     p: line.cap,
     j: line.join,
@@ -652,19 +656,20 @@ export function normalizeObjectEffects(
 
 export function storeObjectEffects(
   value: Readonly<ObjectEffects>,
+  options: ObjectFormatStorageOptions = {},
 ): StoredObjectEffects {
   const effects = normalizeObjectEffects(value)
   return {
     se: effects.shadow.enabled,
     sc: effects.shadow.color,
-    so: effects.shadow.opacity,
-    sb: effects.shadow.blur,
-    sa: effects.shadow.angle,
-    sd: effects.shadow.distance,
+    so: quantizeObjectFormatNumber(effects.shadow.opacity, 0.01, options.preservePrecision),
+    sb: quantizeObjectFormatNumber(effects.shadow.blur, 1, options.preservePrecision),
+    sa: quantizeObjectFormatNumber(effects.shadow.angle, 1, options.preservePrecision),
+    sd: quantizeObjectFormatNumber(effects.shadow.distance, 1, options.preservePrecision),
     ge: effects.glow.enabled,
     gc: effects.glow.color,
-    go: effects.glow.opacity,
-    gr: effects.glow.radius,
+    go: quantizeObjectFormatNumber(effects.glow.opacity, 0.01, options.preservePrecision),
+    gr: quantizeObjectFormatNumber(effects.glow.radius, 1, options.preservePrecision),
   }
 }
 
@@ -716,13 +721,14 @@ export function normalizeObjectTextFrame(
 
 export function storeObjectTextFrame(
   value: Readonly<ObjectTextFrame>,
+  options: ObjectFormatStorageOptions = {},
 ): StoredObjectTextFrame {
   const frame = normalizeObjectTextFrame(value)
   return {
-    mt: frame.margins[0],
-    mr: frame.margins[1],
-    mb: frame.margins[2],
-    ml: frame.margins[3],
+    mt: quantizeObjectFormatNumber(frame.margins[0], 1, options.preservePrecision),
+    mr: quantizeObjectFormatNumber(frame.margins[1], 1, options.preservePrecision),
+    mb: quantizeObjectFormatNumber(frame.margins[2], 1, options.preservePrecision),
+    ml: quantizeObjectFormatNumber(frame.margins[3], 1, options.preservePrecision),
     d: frame.direction,
     h: frame.horizontalAlign,
     v: frame.verticalAlign,
@@ -785,18 +791,19 @@ export function normalizeObjectTextStyle(
 
 export function storeObjectTextStyle(
   value: Readonly<ObjectTextStyle>,
+  options: ObjectFormatStorageOptions = {},
 ): StoredObjectTextStyle {
   const style = normalizeObjectTextStyle(value)
-  const paint = storeObjectPaint(style.fill)
-  const outline = storeObjectTextOutline(style.outline)
-  const effects = storeObjectEffects(style.effects)
+  const paint = storeObjectPaint(style.fill, options)
+  const outline = storeObjectTextOutline(style.outline, options)
+  const effects = storeObjectEffects(style.effects, options)
   const stored: StoredObjectTextStyle = {
     f: style.fontFamily,
-    z: style.fontSize,
+    z: quantizeObjectFormatNumber(style.fontSize, 0.01, options.preservePrecision),
     w: style.fontWeight,
     i: style.fontStyle === 'italic',
-    s: style.letterSpacingEm,
-    l: style.lineHeight,
+    s: quantizeObjectFormatNumber(style.letterSpacingEm, 0.01, options.preservePrecision),
+    l: quantizeObjectFormatNumber(style.lineHeight, 0.01, options.preservePrecision),
     pt: paint.t,
     ot: outline.t,
     ...effects,
@@ -833,11 +840,12 @@ export function normalizeObjectTextOutline(
 
 export function storeObjectTextOutline(
   value: Readonly<ObjectTextOutline>,
+  options: ObjectFormatStorageOptions = {},
 ): StoredObjectTextOutline {
   const outline = normalizeObjectTextOutline(value)
   return outline.type === 'none'
     ? {t: 'n'}
-    : {t: 'l', c: outline.color, w: outline.width}
+    : {t: 'l', c: outline.color, w: quantizeObjectFormatNumber(outline.width, 0.25, options.preservePrecision)}
 }
 
 export function normalizeBlockObjectFormat(
