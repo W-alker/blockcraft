@@ -249,7 +249,7 @@
     // Explicit document-content tier. Absolute placement uses under=0 and
     // over=2, so flow blocks stay between them regardless of DOM order or
     // media elements establishing their own compositing layers.
-    > [data-block-id]:not([data-bc-placement='absolute']):not([data-bc-placement-layer-bridge]) {
+    > [data-block-id]:not([data-bc-placement='absolute']):not([data-bc-placement-layer-bridge]):not(.is-fullscreen) {
       z-index: 1;
     }
   }

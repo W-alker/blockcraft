@@ -915,6 +915,14 @@ body.bc-table-fullscreen-lock {
     visibility: visible !important;
   }
 
+  // Safari 的祖先层叠上下文可能继续裁剪 fixed 后代的合成层。
+  // 控制器已隔离路径两侧的分支，此处仅解除祖先层级，保留活动块和 overlay 层级。
+  // 不改 overflow：保留后台滚动锁；纸面等宿主自己的裁剪由宿主样式按此祖先标记解除。
+  .bc-table-fullscreen-isolation-container {
+    isolation: auto !important;
+    z-index: auto !important;
+  }
+
   // CDK overlays created by table controls must remain usable above the table.
   > .cdk-overlay-container {
     visibility: visible !important;
