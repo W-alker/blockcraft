@@ -39,7 +39,7 @@ export const ORDERED_MARKER_STYLES: readonly OrderedMarkerStyleDescriptor[] =
   Object.freeze([
     {id: 'n1', label: '数字加句点', preview: ['1.', '2.', '3.'], enclosure: null},
     {id: 'n2', label: '数字加右括号', preview: ['1)', '2)', '3)'], enclosure: null},
-    {id: 'n3', label: '括号数字', preview: ['(1)', '(2)', '(3)'], enclosure: null},
+    {id: 'n3', label: '括号数字', preview: ['（1）', '（2）', '（3）'], enclosure: null},
     {id: 'n4', label: '数字加顿号', preview: ['1、', '2、', '3、'], enclosure: null},
     {id: 'n5', label: '补零数字', preview: ['01.', '02.', '03.'], enclosure: null},
     {id: 'a1', label: '小写字母', preview: ['a.', 'b.', 'c.'], enclosure: null},
@@ -151,7 +151,7 @@ export const formatOrderedMarker = (
     case 'n2':
       return `${value})`
     case 'n3':
-      return `(${value})`
+      return `（${value}）`
     case 'n4':
       return `${value}、`
     case 'n5':

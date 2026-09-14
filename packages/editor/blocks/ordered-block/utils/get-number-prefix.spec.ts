@@ -27,7 +27,7 @@ describe('ordered marker formatting', () => {
   it('formats Arabic punctuation and leading-zero presets', () => {
     expect(formatOrderedMarker(0, 'n1')).toBe('1.')
     expect(formatOrderedMarker(9, 'n2')).toBe('10)')
-    expect(formatOrderedMarker(19, 'n3')).toBe('(20)')
+    expect(formatOrderedMarker(19, 'n3')).toBe('（20）')
     expect(formatOrderedMarker(20, 'n4')).toBe('21、')
     expect(formatOrderedMarker(0, 'n5')).toBe('01.')
     expect(formatOrderedMarker(99, 'n5')).toBe('100.')
