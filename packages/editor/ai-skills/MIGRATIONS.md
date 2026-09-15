@@ -68,6 +68,23 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## v0.7.10 — 2026-09-15 — 取消表格和填写区块的 root 限制
+
+**Severity**: patch
+
+**What changed**: 移除 `TableBlockSchema` 和 `RenderUnitBlockSchema` 的 `rootOnly` 声明，恢复填写区块插入命令的原有回退逻辑；保留分页符的 root 直属子级限制。
+
+**Why**: 撤回 0.7.9 中对表格和填写区块扩大施加的限制。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`。
+
+### Behavior Changes
+
+- 表格和填写区块按原有父级 Schema 和实例约束插入、移动；内容区域内可插入表格。
+- 表格单元格禁止嵌套表格等既有规则保持不变；无需迁移数据。
+
+**Version**: `0.7.10`。
+
 ## v0.7.9 — 2026-09-15 — 分页符、表格和填写区块仅限 root 直属子级
 
 **Severity**: minor

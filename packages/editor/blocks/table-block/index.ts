@@ -59,7 +59,6 @@ export const TableBlockSchema: IBlockSchemaOptions<TableBlockModel> = {
   metadata: {
     version: 1.0,
     label: '表格',
-    rootOnly: true,
     description: '使用行列结构整理数据',
     includeChildren: ['table-row'],
     icon: "bc_icn bc_column-vertical",

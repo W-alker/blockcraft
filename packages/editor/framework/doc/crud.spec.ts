@@ -405,7 +405,7 @@ const createBoundarySelection = (doc: any, blockId: string, index: number) => {
 }
 
 describe('DocCRUD', () => {
-  for (const schema of [PageDividerBlockSchema, TableBlockSchema, RenderUnitBlockSchema]) {
+  for (const schema of [PageDividerBlockSchema]) {
   it(`${schema.flavour} 只允许写入 root，拒绝嵌套快照和移动且不产生残留数据`, () => {
     const {crud, doc, destroy} = createDocHarness()
     const schemas = new SchemaManager([PageDividerBlockSchema, TableBlockSchema, TableRowBlockSchema, TableCellBlockSchema, RenderUnitBlockSchema, RootBlockSchema, CalloutBlockSchema, ParagraphBlockSchema])
@@ -429,6 +429,26 @@ describe('DocCRUD', () => {
     destroy()
   })
   }
+
+  it('恢复内容区域内的表格写入、嵌套快照和移动，保留表格单元格原有规则', () => {
+    const {crud, doc, destroy} = createDocHarness()
+    ;(doc as any).schemas = new SchemaManager([PageDividerBlockSchema, TableBlockSchema, TableRowBlockSchema, TableCellBlockSchema, RenderUnitBlockSchema, RootBlockSchema, ParagraphBlockSchema])
+    const region = RenderUnitBlockSchema.createSnapshot()
+    const table = TableBlockSchema.createSnapshot(1, 1)
+    region.children = [table]
+    expect(crud.insertBlockSnapshots('root', 0, [region])).toEqual([region.id])
+    const table2 = TableBlockSchema.createSnapshot(1, 1)
+    expect(crud.insertBlockSnapshots(region.id, 1, [table2])).toEqual([table2.id])
+    crud.moveBlocks(region.id, 1, 1, 'root', 1)
+    crud.moveBlocks('root', 1, 1, region.id, 1)
+    expect(doc.model.getChildrenIds(region.id)).toEqual([table.id, table2.id])
+    const rowId = doc.model.getChildrenIds(table.id)[0]
+    const cellId = doc.model.getChildrenIds(rowId)[0]
+    const nestedRegion = RenderUnitBlockSchema.createSnapshot()
+    expect(crud.insertBlockSnapshots(cellId, 0, [nestedRegion])).toEqual([nestedRegion.id])
+    expect(() => crud.insertBlockSnapshots(cellId, 0, [TableBlockSchema.createSnapshot(1, 1)])).toThrow()
+    destroy()
+  })
 
   it('scopes readonly-view projection transactions without affecting normal transactions', () => {
     const {crud, doc} = createDocHarness()

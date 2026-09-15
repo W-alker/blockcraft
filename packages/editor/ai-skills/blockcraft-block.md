@@ -18,12 +18,11 @@
 ## 仅限 root 直属子级的块
 
 `IBlockSchemaOptions.metadata.rootOnly?: boolean` 由子块声明父级限制，省略时保持原行为。
-`PageDividerBlockSchema`、`TableBlockSchema` 和 `RenderUnitBlockSchema` 设置 `rootOnly: true`，
-分页符、表格和填写区块（内容区域）只允许作为 `root` 的直属子级。
-内容区域内也不能再插入表格；表格的行、单元格及内容区域中的普通内容保持各自子级规则。
+`PageDividerBlockSchema` 设置 `rootOnly: true`，分页符只允许作为 `root` 的直属子级。
+表格和填写区块（内容区域）不启用此限制，继续按父容器 Schema 和实例约束决定能否插入。
 该限制优先于父容器的通配白名单和实例 `meta.incl`；root 自身的排除规则仍然生效。
 插入菜单、转换、移动与 CRUD 使用同一 Schema 校验；插入的嵌套快照也会检查此限制。
-固定工具栏和模板物料面板在嵌套块上不得向上寻找 root 插入这些块。旧文档加载不自动迁移或删除已有节点。
+固定工具栏和模板物料面板在嵌套块上不得向上寻找 root 插入分页符。旧文档加载不自动迁移或删除已有节点。
 
 ## Choosing Between Editable Text and Native Inputs
 

@@ -24,21 +24,25 @@ describe('模板物料顶层插入限制', () => {
     return {doc, selection, root, region, paragraph, insertBlocks}
   }
 
-  it('分页符、表格和填写区块不能从嵌套选区回退到 root', () => {
+  it('仅分页符禁止回退，表格和填写区块恢复原有落点', () => {
     const {doc, selection, region, paragraph} = harness()
-    for (const flavour of ['page-divider', 'table', 'render-unit'] as const) {
+    for (const flavour of ['page-divider'] as const) {
       expect(resolveContentInsertionTarget(doc, flavour)).toBeNull()
       selection.value = {head: {blockId: 'region'}}
       expect(resolveContentInsertionTarget(doc, flavour)).toBe(region as any)
       selection.value = {head: {blockId: 'paragraph'}}
     }
     expect(resolveContentInsertionTarget(doc, 'paragraph')).toBe(paragraph as any)
+    expect(resolveContentInsertionTarget(doc, 'table')).toBe(paragraph as any)
+    expect(resolveContentInsertionTarget(doc, 'render-unit')).toBe(region as any)
   })
 
-  it('填写区块命令拒绝嵌套位置并保留无选区/空 root 插入', () => {
+  it('填写区块命令恢复嵌套选区回退并保留无选区/空 root 插入', () => {
     const {doc, selection, root, insertBlocks} = harness()
     insertTemplateRegion(doc)
-    expect(insertBlocks).not.toHaveBeenCalled()
+    expect(insertBlocks).toHaveBeenCalledTimes(1)
+    expect(insertBlocks.calls.mostRecent().args.slice(0, 2)).toEqual(['root', 1])
+    insertBlocks.calls.reset()
     selection.value = null
     root.childrenIds = []
     root.childrenLength = 0

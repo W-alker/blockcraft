@@ -54,7 +54,6 @@ export const RenderUnitBlockSchema: IBlockSchemaOptions<RenderUnitBlockModel> = 
   metadata: {
     version: 1,
     label: '内容区域',
-    rootOnly: true,
     description: '可配置提示语和允许添加的内容块',
     icon: 'bc_icon bc_erjidaohang_caogaoxiang',
     hideInInsertMenu: true,

@@ -195,7 +195,7 @@ describe('顶层块父级限制', () => {
     {...parent('divider'), nodeType: BlockNodeType.void},
   ])
 
-  for (const child of ['page-divider', 'table', 'render-unit'] as const) {
+  for (const child of ['page-divider'] as const) {
     it(`${child} 只允许 root 直属位置且实例白名单不能扩大权限`, () => {
       expect(manager.isValidChildren(child, 'root')).toBeTrue()
       for (const flavour of ['callout', 'column', 'table-cell', 'text-box', 'render-unit'] as const) {
@@ -205,4 +205,13 @@ describe('顶层块父级限制', () => {
       expect(manager.isValidChildrenForInstance(child, 'render-unit', {incl: ['*']})).toBeFalse()
     })
   }
+  it('表格和填写区块恢复父容器规则，实例限制仍生效', () => {
+    expect(TableBlockSchema.metadata.rootOnly).toBeUndefined()
+    expect(RenderUnitBlockSchema.metadata.rootOnly).toBeUndefined()
+    expect(manager.isValidChildren('table', 'render-unit')).toBeTrue()
+    expect(manager.isValidChildren('render-unit', 'column')).toBeTrue()
+    expect(manager.isValidChildrenForInstance('table', 'render-unit', {incl: ['paragraph']})).toBeFalse()
+    expect(manager.isValidChildren('table', 'text-box')).toBeFalse()
+  })
+
 })

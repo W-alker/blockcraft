@@ -568,16 +568,18 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
     const {component, rootHost, root, paragraph, columnParagraph} = makeHarness();
     (component.doc as any).rootId = root.id;
     (component.doc.schemas.get as jasmine.Spy).and.callFake((flavour: string) => ({
-      metadata: {rootOnly: ["page-divider", "table", "render-unit"].includes(flavour)},
+      metadata: {rootOnly: flavour === "page-divider"},
     }));
     (component.doc.canInsertChild as jasmine.Spy).and.callFake((parentId: string) => parentId === root.id);
     const resolve = (block: unknown, flavour = "page-divider") =>
       (component as any).resolveBlockInsertPlacement(flavour, block, "after");
-    for (const flavour of ["page-divider", "table", "render-unit"]) {
+    for (const flavour of ["page-divider"]) {
       expect(resolve(columnParagraph, flavour)).toBeNull();
       expect(resolve(paragraph, flavour)).toEqual({kind: "after", anchor: paragraph});
     }
-    expect(resolve(columnParagraph, "image").anchor.parentBlock).toBe(root);
+    for (const flavour of ["image", "table", "render-unit"]) {
+      expect(resolve(columnParagraph, flavour).anchor.parentBlock).toBe(root);
+    }
     rootHost.remove();
   });
 

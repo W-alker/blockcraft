@@ -68,7 +68,7 @@ Three `nodeType` categories:
 
 > **Heading is a prop, not a flavour.** H1/H2/H3 styles live in `props.heading` on `paragraph` blocks. There is no `heading-block` flavour.
 
-分页符 `page-divider`、表格 `table` 和填写区块 `render-unit` 声明 `metadata.rootOnly: true`，只能插入为 root 直属子级；
+仅分页符 `page-divider` 声明 `metadata.rootOnly: true`，只能插入为 root 直属子级；
 嵌套位置不提供插入或向 root 回退。相关 Schema 契约见 `blockcraft-block.md`。
 
 ### Currently Registered Block Schemas (from `editor/bundled-capabilities.ts`)

@@ -64,12 +64,6 @@ export function resolveContentInsertionTarget(
 export function insertTemplateRegion(doc: BlockCraftDoc): void {
   if (doc.isReadonly) return
   const target = resolveContentInsertionTarget(doc, 'render-unit')
-  // A live nested selection must not become an insertion at the end of root.
-  const selected = getInsertionSelectionBlock(doc)
-  if (!target && selected && selected.id !== doc.rootId && selected.parentId !== doc.rootId) {
-    doc.messageService.warn('当前没有可插入内容区域的位置')
-    return
-  }
   let parentId = target?.parentId ?? null
   let index = target ? target.getIndexOfParent() + 1 : -1
   if (!parentId && doc.canInsertChild(doc.rootId, 'render-unit')) {
