@@ -111,6 +111,9 @@ export class DocCRUD {
 
   // 远端 CRDT 合并可能让同一 block ID 重复出现（同父两次 / 跨父两处），仅远端事务触发检测
   private _childrenRepairer!: ChildrenRepairer
+  // The canonical graph can release deferred edges in parents whose Y.Array
+  // did not change. Carry those model invalidations into the same view batch.
+  private readonly _pendingModelParentIds = new Set<string>()
 
   get yDoc() {
     return this.doc.yDoc
@@ -142,6 +145,14 @@ export class DocCRUD {
       // 注：children 完整性修复已前移到 initByYBlock 构建组件树【之前】执行
       // （见 repairChildRefsOnLoad）。afterInit 在构建之后，此处再修会让删除的
       // 模型下标 splice 到已错位的 _compRefs，故不在这里做。
+
+      const modelStructureSubscription = this.doc.model.structureChange$.subscribe(change => {
+        change.affectedParentIds.forEach(id => this._pendingModelParentIds.add(id))
+      })
+      this.doc.onDestroy(() => {
+        modelStructureSubscription.unsubscribe()
+        this._pendingModelParentIds.clear()
+      })
 
       this._yObserverHandler = (evt, tr) => {
         this.doc.ngZone.run(() => {
@@ -320,6 +331,8 @@ export class DocCRUD {
   }
 
   private _syncYEvent = (events: Y.YEvent<any>[], tr: Y.Transaction) => {
+    const modelParentIds = [...this._pendingModelParentIds]
+    this._pendingModelParentIds.clear()
     // local change with skip
     const isUndoRedo = tr.origin instanceof Y.UndoManager
 
@@ -415,7 +428,10 @@ export class DocCRUD {
 
       if (keyProp === "children") {
         if (isYArray(target)) {
-          const previousIds = [...bm.instance.childrenIds]
+          // Yjs already contains the new sequence here. Public childrenIds is
+          // a live query, so delta projection must use the last synced snapshot.
+          // @ts-expect-error internal view snapshot maintained by DocCRUD
+          const previousIds: readonly string[] = [...bm.instance._childrenIds]
           const desiredIds = (!tr.local || isUndoRedo || tr.origin === ORIGIN_SYSTEM_REPAIR)
             ? this.doc.model.getChildrenIds(blockId)
             : target.toArray()
@@ -562,6 +578,24 @@ export class DocCRUD {
       this.doc.inputManger?.compositionSession?.handleBlocksDeleted(deleted)
     }
 
+    if (tr.origin !== ORIGIN_SKIP_SYNC) {
+      // Direct Y.Array changes already have their delta above. Add only mounted
+      // model projections with no direct event; an empty delta routes a changed
+      // projection through the existing batched recovery and notification path.
+      for (const parentId of modelParentIds) {
+        if (changedChildrenParentIds.has(parentId)) continue
+        const parent = this.vm.get(parentId)
+        if (!parent?.instance.childrenRenderRef || !this.doc.model.exists(parentId)) continue
+        // @ts-expect-error internal synchronized view snapshot
+        const previousIds: readonly string[] = parent.instance._childrenIds
+        const desiredIds = this.doc.model.getChildrenIds(parentId)
+        const sparseRoot = this.vm.usesSparseRoot && parentId === this.doc.rootId
+        if (this._sameIds(previousIds, desiredIds) &&
+          (sparseRoot || this._sameIds(parent.instance.childrenRenderRef.ids, desiredIds))) continue
+        delay_childrenEvent_handlers.push({parent, deltas: [], previousIds, desiredIds})
+      }
+    }
+
     if (delay_childrenEvent_handlers.length) {
       this._syncYBlockChildrenUpdate(
         added,
@@ -663,7 +697,12 @@ export class DocCRUD {
       }
 
       const current = renderRef.splice(0, renderRef.length)
-      current.forEach(component => component.instance.hostElement.remove())
+      current.forEach(component => {
+        const host = component.instance.hostElement
+        // A destination processed earlier in this transaction may already own
+        // this DOM node. Only detach hosts still inside this parent's renderer.
+        if (host.parentElement === renderRef.containerElement) host.remove()
+      })
       // @ts-expect-error internal model projection maintained by DocCRUD
       parent.instance._childrenIds = [...desiredIds]
       parents.push({ref: parent, desiredIds})
@@ -731,34 +770,31 @@ export class DocCRUD {
       origin: tr.origin,
       transactions: [],
     }
-    events.forEach(({parent: bm, deltas, previousIds, desiredIds}) => {
-      const parentId = bm.instance.id
-      // The top-level delete pass runs before these delayed child deltas. Undo
-      // can delete a temporary container while moving its children back to a
-      // surviving parent in the same transaction, leaving this event with a
-      // destroyed ComponentRef. The canonical destination event owns the view.
-      if (
-        deleted.has(parentId) ||
-        !this.doc.model.exists(parentId) ||
-        this.vm.get(parentId) !== bm
-      ) return
+    // Top-level deletion may destroy a temporary parent while undo moves its
+    // children into a surviving parent. Only the surviving projection owns work.
+    const updates = events.filter(({parent}) => {
+      const id = parent.instance.id
+      return !deleted.has(id) && this.doc.model.exists(id) && this.vm.get(id) === parent
+    })
+    const recoveryParentIds = new Set<string>()
+    updates.forEach(({parent, deltas, previousIds, desiredIds}) => {
+      const isSparseRoot = this.vm.usesSparseRoot && parent.instance.id === this.doc.rootId
+      const viewMatchesPrevious = isSparseRoot ||
+        this._sameIds(parent.instance.childrenRenderRef?.ids ?? [], previousIds)
+      // A repaired/missing edge or an already-materialized view cannot consume
+      // this raw delta. Collect all such parents before any view adopts children.
+      if (!viewMatchesPrevious || !this._sameIds(this._projectChildrenIds(previousIds, deltas), desiredIds)) {
+        recoveryParentIds.add(parent.instance.id)
+      }
+    })
+    if (recoveryParentIds.size) this._reconcileParentViewsFromModel(recoveryParentIds)
 
+    updates.forEach(({parent: bm, deltas, previousIds, desiredIds}) => {
       const _delay_inserts: [number, BlockCraft.BlockComponentRef[]][] = []
       const deletedMap: { index: number, length: number }[] = []
       const isSparseRootEvent = this.vm.usesSparseRoot && bm.instance.id === this.doc.rootId
-      const projectedIds = this._projectChildrenIds(previousIds, deltas)
-      const denseViewMatchesPrevious = isSparseRootEvent ||
-        this._sameIds(bm.instance.childrenRenderRef?.ids ?? [], previousIds)
 
-      // Raw Yjs can temporarily contain a duplicate/missing edge that the model
-      // graph deliberately rejected. Applying that raw delta to the component
-      // list would create an unreachable component or splice the wrong sibling.
-      if (!denseViewMatchesPrevious || !this._sameIds(projectedIds, desiredIds)) {
-        if (isSparseRootEvent) {
-          this.vm._reconcileSparseRootChildren(desiredIds)
-        } else {
-          this._reconcileParentViewsFromModel([bm.instance.id])
-        }
+      if (recoveryParentIds.has(bm.instance.id)) {
         bm.instance.onChildrenChange?.(deltas)
         emitEvents.transactions.push({block: bm.instance})
         return

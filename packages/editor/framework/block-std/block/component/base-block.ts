@@ -718,7 +718,8 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   }
 
   /**
-   * 这个childrenIds带缓存
+   * 上次已同步到视图的子块快照，由初始化和文档同步维护。
+   * 实时 childrenIds 查询不得覆盖它，否则下一次 Yjs delta 会失去旧状态。
    * @protected
    */
   protected _childrenIds: string[] = []
@@ -727,7 +728,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     if (this.nodeType === BlockNodeType.editable) {
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `${this.id} block has no children`)
     }
-    return this._childrenIds = (this.yBlock.get('children') as Y.Array<string>).toArray()
+    return (this.yBlock.get('children') as Y.Array<string>).toArray()
   }
 
   getChildrenBlocks() {

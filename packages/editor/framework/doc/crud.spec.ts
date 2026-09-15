@@ -1,3 +1,4 @@
+import {BaseBlockComponent} from '../block-std/block/component/base-block'
 import {TableBlockSchema, TableRowBlockSchema, TableCellBlockSchema, RenderUnitBlockSchema, PageDividerBlockSchema, RootBlockSchema, CalloutBlockSchema, ParagraphBlockSchema} from "../../blocks"
 import {SchemaManager} from "../block-std/schema"
 import * as Y from 'yjs'
@@ -6,6 +7,7 @@ import { BlockNodeType, IBlockSnapshot, NativeBlockModel, YBlock, native2YBlock 
 import {BlockSelection} from '../modules/selection/blockSelection'
 import {lazyBoundaryPoint, lazyPoint} from '../modules/selection/normalize'
 import { DocCRUD } from "./crud"
+import {BlockModelGraph} from "./model-graph"
 import {RemoteSelectionReconciler} from '../modules/selection/remote-selection-reconciler'
 import {DOMSelectionSurfaceAdapter} from '../modules/selection/surface-adapter'
 import {BlockReadonlyError, BlockReadonlyOperation} from "./block-readonly.types"
@@ -76,7 +78,7 @@ class MockBlockInstance {
   }
 
   get childrenIds() {
-    return this._childrenIds
+    return Object.getOwnPropertyDescriptor(BaseBlockComponent.prototype, 'childrenIds')!.get!.call(this) as string[]
   }
 
   get childrenLength() {
@@ -143,7 +145,7 @@ const createBlockRef = (
   return ref
 }
 
-const createDocHarness = () => {
+const createDocHarness = (realModel = false) => {
   const yDoc = new Y.Doc()
   const yBlockMap = yDoc.getMap<YBlock>('blocks')
   const rootSnapshot = createRootSnapshot('root')
@@ -261,6 +263,7 @@ const createDocHarness = () => {
     yBlockMap,
     readonlyManager,
     model: {
+      structureChange$: new Subject<{affectedParentIds: string[]}>(),
       exists: (id: string) => yBlockMap.has(id),
       synchronizeParentBeforeView: jasmine.createSpy('synchronizeParentBeforeView'),
       getYBlock: (id: string) => yBlockMap.get(id),
@@ -339,6 +342,13 @@ const createDocHarness = () => {
     isEditable: (block: { nodeType: BlockNodeType }) => block.nodeType === BlockNodeType.editable,
     onDestroy$: new Subject<void>(),
     onDestroy: (fn: () => void) => destroyCallbacks.push(fn)
+  }
+
+  if (realModel) {
+    const graph = new BlockModelGraph(doc as unknown as BlockCraft.Doc)
+    doc.model = graph as unknown as typeof doc.model
+    graph.build(doc.rootId)
+    destroyCallbacks.push(() => graph.destroy())
   }
 
   store.forEach(ref => ref.instance.doc = doc)
@@ -2026,4 +2036,173 @@ describe('DocCRUD', () => {
     expect(selection.replay).not.toHaveBeenCalled()
     expect(selection.recalculate).not.toHaveBeenCalled()
   })
+})
+
+describe('DocCRUD dense parent reconciliation DOM ownership', () => {
+  for (const flavour of ['render-unit', 'callout'] as const) {
+    for (const sourceAfterContainer of [false, true]) {
+      it(`keeps ${flavour} cross-parent moves visible through undo-redo (source after: ${sourceAfterContainer})`, () => {
+        const {crud, doc, rootRef, rootHost, store, destroy} = createDocHarness()
+        document.body.append(rootHost)
+        try {
+          const region: IBlockSnapshot = {
+            id: 'region', flavour, nodeType: BlockNodeType.block,
+            props: {}, meta: {}, children: [],
+          }
+          const moving = createEditableSnapshot('moving', 'move sentinel')
+          crud.insertBlockSnapshots('root', 0, [
+            ...(sourceAfterContainer ? [region, moving] : [moving, region]),
+            createEditableSnapshot('after', 'untouched sentinel'),
+          ])
+          crud.insertBlockSnapshots('region', 0, [createEditableSnapshot('inside', 'inside sentinel')])
+          crud.undoManager.clearHistory()
+          const recovery = spyOn<any>(crud, '_reconcileParentViewsFromModel').and.callThrough()
+          const mutations = new MutationObserver(() => {})
+          mutations.observe(rootHost, {childList: true, subtree: true})
+          const originalRootOrder = doc.model.getChildrenIds('root')
+          const movingRef = store.get('moving')!
+          const assertOwner = (parentId: string) => {
+            expect(doc.model.getParentId('moving')).toBe(parentId)
+            expect(store.get('moving')).toBe(movingRef)
+            expect(movingRef.instance.parentId).toBe(parentId)
+            expect(movingRef.instance.hostElement.isConnected).toBeTrue()
+            expect(movingRef.instance.hostElement.parentElement)
+              .toBe(store.get(parentId)!.instance.childrenRenderRef.containerElement)
+            expect(movingRef.instance.yText.toString()).toBe('move sentinel')
+            expect(store.get('inside')!.instance.hostElement.isConnected).toBeTrue()
+            expect(store.get('after')!.instance.hostElement.isConnected).toBeTrue()
+            expect(recovery).not.toHaveBeenCalled()
+            const removed = mutations.takeRecords().flatMap(record => Array.from(record.removedNodes))
+            expect(removed.some(node => node === store.get('inside')!.instance.hostElement)).toBeFalse()
+            expect(removed.some(node => node === store.get('after')!.instance.hostElement)).toBeFalse()
+          }
+          crud.moveBlocks('root', sourceAfterContainer ? 1 : 0, 1, 'region', 1)
+          assertOwner('region')
+          for (let cycle = 0; cycle < 3; cycle++) {
+            crud.undoManager.undo()
+            assertOwner('root')
+            expect(rootRef.instance.childrenRenderRef.ids).toEqual(originalRootOrder)
+            expect(store.get('region')!.instance.childrenRenderRef.ids).toEqual(['inside'])
+            crud.undoManager.redo()
+            assertOwner('region')
+            expect(store.get('region')!.instance.childrenRenderRef.ids).toEqual(['inside', 'moving'])
+          }
+          mutations.disconnect()
+        } finally {
+          destroy()
+        }
+      })
+    }
+  }
+})
+
+describe('DocCRUD synchronized children snapshots', () => {
+  for (const sparse of [false, true]) {
+    it(`keeps the previous snapshot when live children are read inside a transaction (sparse: ${sparse})`, () => {
+      const {crud, doc, rootRef, destroy} = createDocHarness()
+      try {
+        crud.insertBlockSnapshots('root', 0, [createEditableSnapshot('a'), createEditableSnapshot('b')])
+        doc.vm.usesSparseRoot = sparse
+        const recovery = spyOn<any>(crud, '_reconcileParentViewsFromModel').and.callThrough()
+        crud.transact(() => {
+          crud.moveBlocks('root', 0, 1, 'root', 1)
+          expect(rootRef.instance.childrenIds).toEqual(['b', 'a'])
+          expect(rootRef.instance._childrenIds).toEqual(['a', 'b'])
+        })
+        expect(rootRef.instance._childrenIds).toEqual(['b', 'a'])
+        expect(recovery).not.toHaveBeenCalled()
+        if (sparse) expect(doc.vm.applySparseRootChildrenDelta).toHaveBeenCalled()
+        else expect(rootRef.instance.childrenRenderRef.ids).toEqual(['b', 'a'])
+      } finally {
+        destroy()
+      }
+    })
+  }
+
+  for (const destinationFirst of [false, true]) {
+    it(`settles all damaged parent projections before notifying children observers (destination first: ${destinationFirst})`, () => {
+      const {crud, doc, rootRef, rootHost, store, destroy} = createDocHarness()
+      document.body.append(rootHost)
+      try {
+        crud.insertBlockSnapshots('root', 0, [createEditableSnapshot('moving'), {
+          id: 'region', flavour: 'render-unit', nodeType: BlockNodeType.block,
+          props: {}, meta: {}, children: [],
+        }])
+        const region = store.get('region')!
+        // Simulate stale view snapshots so both parents require canonical recovery.
+        rootRef.instance._childrenIds = ['stale-root']
+        region.instance._childrenIds = ['stale-region']
+        let notifications = 0
+        const assertSettled = () => {
+          notifications++
+          expect(rootRef.instance.childrenRenderRef.ids).toEqual(['region'])
+          expect(region.instance.childrenRenderRef.ids).toEqual(['moving'])
+          expect(store.get('moving')!.instance.hostElement.parentElement).toBe(region.instance.hostElement)
+          expect(store.get('moving')!.instance.hostElement.isConnected).toBeTrue()
+        }
+        rootRef.instance.onChildrenChange.and.callFake(assertSettled)
+        region.instance.onChildrenChange.and.callFake(assertSettled)
+        crud.transact(() => {
+          const source = rootRef.instance.yBlock.get('children') as Y.Array<string>
+          const target = region.instance.yBlock.get('children') as Y.Array<string>
+          if (destinationFirst) {
+            target.insert(0, ['moving'])
+            source.delete(0, 1)
+          } else {
+            source.delete(0, 1)
+            target.insert(0, ['moving'])
+          }
+        })
+        expect(notifications).toBe(2)
+        expect(doc.model.getParentId('moving')).toBe('region')
+      } finally {
+        destroy()
+      }
+    })
+  }
+})
+
+describe('DocCRUD deferred canonical ownership', () => {
+  for (const flavour of ['render-unit', 'callout']) {
+    it(`mounts a deferred ${flavour} edge when only the old parent receives a remote deletion`, () => {
+      const {crud, doc, rootRef, rootHost, store, yDoc, destroy} = createDocHarness(true)
+      document.body.append(rootHost)
+      try {
+        crud.insertBlockSnapshots('root', 0, [createEditableSnapshot('moving'), {
+          id: 'region', flavour, nodeType: BlockNodeType.block,
+          props: {}, meta: {}, children: [],
+        } as IBlockSnapshot])
+        const region = store.get('region')!
+        const moving = store.get('moving')!
+        applyRemoteUpdate(yDoc, blocks => {
+          ;(blocks.get('region')!.get('children') as Y.Array<string>).insert(0, ['moving'])
+        })
+        // Real BlockModelGraph defers this duplicate edge while root owns it.
+        expect(doc.model.getChildrenIds('region')).toEqual([])
+        expect(region.instance.childrenRenderRef.ids).toEqual([])
+        const targetYEvents = jasmine.createSpy('targetYEvents')
+        ;(region.instance.yBlock.get('children') as Y.Array<string>).observe(targetYEvents)
+        const notify = jasmine.createSpy('childrenUpdate')
+        crud.onChildrenUpdate$.subscribe(notify)
+
+        // No microtask repair is needed: removing the old edge makes the graph
+        // re-project region even though region has no Y.Array event this time.
+        applyRemoteUpdate(yDoc, blocks => {
+          ;(blocks.get('root')!.get('children') as Y.Array<string>).delete(0, 1)
+        })
+        expect(targetYEvents).not.toHaveBeenCalled()
+        expect(doc.model.getParentId('moving')).toBe('region')
+        expect(rootRef.instance.childrenRenderRef.ids).toEqual(['region'])
+        expect(region.instance.childrenRenderRef.ids).toEqual(['moving'])
+        expect(store.get('moving')).toBe(moving)
+        expect(moving.instance.hostElement.parentElement).toBe(region.instance.hostElement)
+        expect(moving.instance.hostElement.isConnected).toBeTrue()
+        expect(notify.calls.mostRecent().args[0].transactions.map((entry: any) => entry.block.id))
+          .toEqual(['root', 'region'])
+      } finally {
+        destroy()
+      }
+      expect(doc.model.structureChange$.observed).toBeFalse()
+    })
+  }
 })
