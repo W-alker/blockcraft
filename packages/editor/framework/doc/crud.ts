@@ -926,9 +926,8 @@ export class DocCRUD {
   }
 
   /**
-   * Validate opt-in instance constraints inside a detached snapshot tree.
-   * Existing Schema-only trees retain their historical compatibility; only
-   * containers that explicitly opt into instance constraints are inspected.
+   * Validate root-only and opt-in instance constraints inside a detached snapshot tree.
+   * Other Schema-only trees retain their historical compatibility.
    */
   private _isSnapshotInstanceTreeValid(snapshot: IBlockSnapshot): boolean {
     if (
@@ -953,6 +952,7 @@ export class DocCRUD {
     }
 
     return snapshot.children.every(child =>
+      !(this.doc.schemas.get(child.flavour, false)?.metadata.rootOnly && snapshot.flavour !== 'root') &&
       this._isSnapshotInstanceTreeValid(child),
     )
   }

@@ -16,22 +16,26 @@ function getLiveBlock(
   }
 }
 
+function getInsertionSelectionBlock(doc: BlockCraftDoc): BlockCraft.BlockComponent | null {
+  const selection = doc.selection.value
+  return getLiveBlock(doc, selection?.head.blockId ?? selection?.lastBlockId ?? selection?.firstBlockId)
+}
+
 /**
  * 从当前 model selection 向外找第一个可容纳目标 flavour 的兄弟落点。
  * 模板页关闭虚拟化，返回的 BlockComponent 与 stable id 一致；找不到时回退
- * 到 root 最后一个普通流内块，明确跳过 placement-layout。
+ * 到 root 最后一个普通流内块，明确跳过 placement-layout。rootOnly 块在嵌套选区中不回退。
  */
 export function resolveContentInsertionTarget(
   doc: BlockCraftDoc,
   flavour: BlockCraft.BlockFlavour,
 ): BlockCraft.BlockComponent | null {
-  const selection = doc.selection.value
-  let block = getLiveBlock(
-    doc,
-    selection?.head.blockId ??
-      selection?.lastBlockId ??
-      selection?.firstBlockId,
-  )
+  let block = getInsertionSelectionBlock(doc)
+
+  if (
+    doc.schemas.get(flavour, false)?.metadata.rootOnly &&
+    block && block.id !== doc.rootId && block.parentId !== doc.rootId
+  ) return null
 
   while (block?.parentBlock) {
     if (doc.canInsertChild(block.parentBlock.id, flavour)) {
@@ -60,6 +64,12 @@ export function resolveContentInsertionTarget(
 export function insertTemplateRegion(doc: BlockCraftDoc): void {
   if (doc.isReadonly) return
   const target = resolveContentInsertionTarget(doc, 'render-unit')
+  // A live nested selection must not become an insertion at the end of root.
+  const selected = getInsertionSelectionBlock(doc)
+  if (!target && selected && selected.id !== doc.rootId && selected.parentId !== doc.rootId) {
+    doc.messageService.warn('当前没有可插入内容区域的位置')
+    return
+  }
   let parentId = target?.parentId ?? null
   let index = target ? target.getIndexOfParent() + 1 : -1
   if (!parentId && doc.canInsertChild(doc.rootId, 'render-unit')) {

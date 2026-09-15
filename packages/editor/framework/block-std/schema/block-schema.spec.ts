@@ -1,3 +1,6 @@
+import {TableBlockSchema} from "../../../blocks/table-block"
+import {RenderUnitBlockSchema} from "../../../blocks/render-unit-block"
+import {PageDividerBlockSchema} from "../../../blocks/page-divider-block"
 import { resolvePlaceholderText } from "./block-schema"
 import type { BlockPlaceholderConfig } from "./block-schema"
 import {
@@ -176,4 +179,30 @@ describe('SchemaManager instance child constraints', () => {
       {incl: [], excl: ['paragraph']},
     )).toBeTrue()
   })
+})
+
+
+describe('顶层块父级限制', () => {
+  const parent = (flavour: BlockCraft.BlockFlavour, metadata = {}): IBlockSchemaOptions => ({
+    flavour, nodeType: BlockNodeType.block, component: class {} as never,
+    createSnapshot: (() => ({})) as never,
+    metadata: {version: 1, label: flavour, includeChildren: ['*'], ...metadata},
+  })
+  const manager = new SchemaManager([
+    PageDividerBlockSchema, TableBlockSchema, RenderUnitBlockSchema,
+    parent('root'), parent('callout'), parent('column'), parent('table-cell'),
+    parent('text-box', {excludeChildren: ['table'], instanceMeta: {childConstraints: true}}),
+    {...parent('divider'), nodeType: BlockNodeType.void},
+  ])
+
+  for (const child of ['page-divider', 'table', 'render-unit'] as const) {
+    it(`${child} 只允许 root 直属位置且实例白名单不能扩大权限`, () => {
+      expect(manager.isValidChildren(child, 'root')).toBeTrue()
+      for (const flavour of ['callout', 'column', 'table-cell', 'text-box', 'render-unit'] as const) {
+        expect(manager.isValidChildren(child, flavour)).toBeFalse()
+        expect(manager.isValidChildren('divider', flavour)).toBeTrue()
+      }
+      expect(manager.isValidChildrenForInstance(child, 'render-unit', {incl: ['*']})).toBeFalse()
+    })
+  }
 })

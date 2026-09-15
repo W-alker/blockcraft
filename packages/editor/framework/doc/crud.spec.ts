@@ -1,4 +1,5 @@
-import "../../blocks"
+import {TableBlockSchema, TableRowBlockSchema, TableCellBlockSchema, RenderUnitBlockSchema, PageDividerBlockSchema, RootBlockSchema, CalloutBlockSchema, ParagraphBlockSchema} from "../../blocks"
+import {SchemaManager} from "../block-std/schema"
 import * as Y from 'yjs'
 import {BehaviorSubject, Subject} from 'rxjs'
 import { BlockNodeType, IBlockSnapshot, NativeBlockModel, YBlock, native2YBlock } from "../block-std"
@@ -404,6 +405,31 @@ const createBoundarySelection = (doc: any, blockId: string, index: number) => {
 }
 
 describe('DocCRUD', () => {
+  for (const schema of [PageDividerBlockSchema, TableBlockSchema, RenderUnitBlockSchema]) {
+  it(`${schema.flavour} 只允许写入 root，拒绝嵌套快照和移动且不产生残留数据`, () => {
+    const {crud, doc, destroy} = createDocHarness()
+    const schemas = new SchemaManager([PageDividerBlockSchema, TableBlockSchema, TableRowBlockSchema, TableCellBlockSchema, RenderUnitBlockSchema, RootBlockSchema, CalloutBlockSchema, ParagraphBlockSchema])
+    ;(doc as any).schemas = schemas
+    const container: IBlockSnapshot = {
+      id: 'container', flavour: 'callout', nodeType: BlockNodeType.block,
+      props: {}, meta: {}, children: [],
+    }
+    crud.insertBlockSnapshots('root', 0, [container])
+    const divider = schema.createSnapshot()
+    expect(() => crud.insertBlockSnapshots('container', 0, [divider])).toThrow()
+    expect(doc.yBlockMap.has(divider.id)).toBeFalse()
+    const nested = {...container, id: 'nested', children: [divider]}
+    expect(() => crud.insertBlockSnapshots('root', 0, [nested])).toThrow()
+    expect(doc.yBlockMap.has('nested')).toBeFalse()
+    expect(doc.yBlockMap.has(divider.id)).toBeFalse()
+    expect(crud.insertBlockSnapshots('root', 1, [divider])).toEqual([divider.id])
+    expect(() => crud.moveBlocks('root', 1, 1, 'container', 0)).toThrow()
+    expect(doc.model.getChildrenIds('root')).toEqual(['container', divider.id])
+    expect(crud.insertBlockSnapshots('container', 0, [createEditableSnapshot('ordinary')])).toEqual(['ordinary'])
+    destroy()
+  })
+  }
+
   it('scopes readonly-view projection transactions without affecting normal transactions', () => {
     const {crud, doc} = createDocHarness()
     const calls: string[] = []

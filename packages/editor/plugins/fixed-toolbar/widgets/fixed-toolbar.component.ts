@@ -3186,6 +3186,10 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     side: "before" | "after",
   ): InsertPlacement | null {
     let anchor: BlockCraft.BlockComponent | null = block;
+    if (
+      this.doc.schemas.get(flavour)?.metadata.rootOnly &&
+      block.parentId !== this.doc.rootId
+    ) return null;
     while (
       anchor?.parentBlock &&
       !this.doc.canInsertChild(anchor.parentBlock.id, flavour)

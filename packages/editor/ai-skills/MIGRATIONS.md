@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-09-14 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-09-15 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -67,6 +67,31 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > - `major` (e.g. 0.1.37 → 1.0.0): breaking — removed APIs, renamed exports, signature changes, behavior reversals
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
+
+## v0.7.9 — 2026-09-15 — 分页符、表格和填写区块仅限 root 直属子级
+
+**Severity**: minor
+
+**What changed**: Schema 新增可选 `metadata.rootOnly`；分页符、表格和填写区块（`render-unit`）启用该限制，插入、转换、移动与嵌套快照写入统一拒绝非 root 父级。固定工具栏和模板物料面板不再从嵌套位置向上回退插入这些块。
+
+**Why**: 分页符、表格和填写区块统一归属文档顶层，避免在表格、分栏或内容区域中重复嵌套。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`。
+
+### New APIs / Features
+
+- `IBlockSchemaOptions.metadata.rootOnly?: boolean`：子块可声明只允许 root 直属父级。缺省不改变其他块行为。
+
+### Behavior Changes
+
+- 分页符、表格和填写区块不能插入或移入嵌套容器；包含这些非法嵌套块的待插入子树被拒绝，沿用现有 CRUD 过滤/错误处理。
+- 父级通配白名单和实例约束不能扩大此权限；不自动修改已加载的历史文档。
+
+### Migration Recipe
+
+宿主插入上述块前通过 `doc.canInsertChild(parentId, flavour)` 判断，选择 root 直属位置再插入。自定义 Schema 若需要同样限制可设置 `metadata.rootOnly: true`；其他 Schema 无需修改。
+
+**Version**: `0.7.9`（按用户小版本发布指令；上述 severity 描述新增可选契约的变更级别）。
 
 ## Unreleased — 2026-09-14 — 对象格式写入精度收敛
 

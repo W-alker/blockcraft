@@ -27,6 +27,7 @@ export const PageDividerBlockSchema: IBlockSchemaOptions<PageDividerBlockModel> 
   metadata: {
     version: 1,
     label: "分页符",
+    rootOnly: true,
     description: "从当前位置开始新的一页",
     icon: "bc_icon bc_fenyefu",
     virtualization: {
