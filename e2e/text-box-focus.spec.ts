@@ -732,7 +732,7 @@ test('clicking an absolute text box replaces a document-wide native range', asyn
     rootId: inserted.rootId,
   })
 
-  await surface.click({position: {x: 4, y: 4}})
+  await surface.click({position: "4 4"})
 
   await expect.poll(() => page.evaluate(({selector, textBoxId}) => {
     const editor = document.querySelector(selector)!

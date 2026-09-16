@@ -1,4 +1,4 @@
-import {defineBlockAgentCapability} from '../../../framework'
+import {defineBlockAgentCapability, OBJECT_FORMAT_SECTION_KEYS} from '../../../framework'
 import {
   BLOCK_AGENT_OBJECT_GEOMETRY_PROPERTIES,
   BLOCK_AGENT_TEXT_OR_DELTA_SCHEMA,
@@ -7,7 +7,7 @@ import {
 import {SHAPE_KINDS} from '../shape.types'
 
 export const SHAPE_BLOCK_AGENT_CAPABILITY = defineBlockAgentCapability({
-  id: 'blockcraft.block.shape', kind: 'block', flavour: 'shape', schemaVersion: 1,
+  id: 'blockcraft.block.shape', kind: 'block', flavour: 'shape', schemaVersion: 2,
   title: '形状', description: '可放置、缩放和旋转的目录形状。',
   domains: ['document', 'diagram'], semanticRoles: ['shape', 'diagram-object'],
   createParameters: {
@@ -19,8 +19,12 @@ export const SHAPE_BLOCK_AGENT_CAPABILITY = defineBlockAgentCapability({
     adjustments: {type: ['object', 'null'], additionalProperties: {type: 'number'}},
   }),
   atomicProps: [
-    'position', 'adjustments', 'customGeometry', 'fill', 'outline',
-    'effects', 'textFrame', 'textStyle',
+    'position', 'adjustments', 'customGeometry',
+    ...OBJECT_FORMAT_SECTION_KEYS.shapeFill,
+    ...OBJECT_FORMAT_SECTION_KEYS.shapeOutline,
+    ...OBJECT_FORMAT_SECTION_KEYS.shapeEffects,
+    ...OBJECT_FORMAT_SECTION_KEYS.textFrame,
+    ...OBJECT_FORMAT_SECTION_KEYS.textStyle,
   ],
   examples: [{flavour: 'shape', params: ['rectangle', '说明']}],
 })

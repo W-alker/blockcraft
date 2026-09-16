@@ -59,7 +59,8 @@ export type BlockPlacementMode = 'relative' | 'absolute'
 export type BlockPlacementLayer = 'under' | 'over'
 
 /**
- * Atomic absolute position in the nearest placement-plane layout pixels.
+ * Runtime coordinates in the nearest placement-plane layout pixels.
+ * Persisted IBlockProps.position uses a compact string.
  *
  * Layout mode is structural: a direct child of `placement-layout` or
  * `object-group` is absolute; an ordinary root child remains in normal flow.
@@ -80,8 +81,8 @@ export type ResolvedBlockPosition = {
 export interface IBlockProps {
   textAlign?: 'center' | 'right'
   depth?: number
-  /** Used only while the block is a direct child of an absolute placement plane. */
-  position?: BlockPosition
+  /** Atomic "x y" in layout px, at most two decimals; used in absolute planes. */
+  position?: string
   /** Omitted means the default `over` layer. */
   placementLayer?: 'under'
   /** Persisted editable-block fill color. `null` removes the override. */

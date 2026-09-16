@@ -1,3 +1,4 @@
+import {parseBlockPosition, storeBlockPosition} from '../../../../../../packages/editor/framework/services/block-placement/state'
 import {
   BLOCK_PLACEMENT_LAYOUT_FLAVOUR,
   BlockCraftDoc,
@@ -46,7 +47,7 @@ export type PlaceableProps = {
   wr?: number
   /** 宽高比 width / height。 */
   ar?: number
-  position?: BlockPosition
+  position?: string
   placementLayer?: 'under'
   /** 流内上边距；absolute 的 top 使用 position.y。 */
   y?: number
@@ -69,7 +70,7 @@ export interface PlaceableBlock {
   childrenIds?: string[]
   updateProps(
     props: Omit<Partial<PlaceableProps>, 'position' | 'float' | 'deg'> & {
-      position?: BlockPosition | null
+      position?: string | null
       placementLayer?: 'under' | null
       float?: 'left' | 'right' | null
       deg?: number | null
@@ -115,9 +116,9 @@ const positiveNumber = (value: unknown): number | null => {
 
 const canonicalPosition = (
   value: unknown,
-): BlockPosition | null => {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-  return resolveBlockPosition(value)
+): string | null => {
+  const position = parseBlockPosition(value)
+  return position ? storeBlockPosition(position) : null
 }
 
 const migrateInlineDelta = (value: unknown): unknown => {
@@ -211,10 +212,10 @@ const migrateSnapshot = (snapshot: IBlockSnapshot): IBlockSnapshot => {
     if (current) {
       props['position'] = current
     } else if (legacyX !== null) {
-      props['position'] = {
+      props['position'] = storeBlockPosition({
         x: legacyX,
         y: finiteNumber(props['y']) ?? 0,
-      }
+      })
     }
     if (legacyZ !== null && legacyZ < 0) props['placementLayer'] = 'under'
     else if (props['placementLayer'] !== 'under') delete props['placementLayer']
@@ -330,7 +331,7 @@ export function normalizeTemplateSnapshots(
   const absolute: IBlockSnapshot[] = []
   const partition = (child: IBlockSnapshot): void => {
     const position = (child.props as PlaceableProps | undefined)?.position
-    ;(position && typeof position === 'object' ? absolute : flow).push(child)
+    ;(parseBlockPosition(position) ? absolute : flow).push(child)
   }
 
   for (const child of migrated) {

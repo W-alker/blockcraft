@@ -6,18 +6,19 @@ import {
   TEXT_BOX_ARTWORK_SCHEME,
   TEXT_BOX_PRESETS,
   TextBoxBlockSchema,
+  TEXT_BOX_OBJECT_FORMAT_CAPABILITY,
   textBoxArtworkRef,
 } from "../index";
 import {
   normalizeObjectPaint,
-  normalizeObjectTextFrame,
+  normalizeBlockObjectFormat,
 } from "../../../framework";
 
 /** Every catalog entry that ships a drawing rather than plain shape geometry. */
 const presetArtwork = (preset: (typeof TEXT_BOX_PRESETS)[number]) =>
   typeof preset.props.artwork === "string" ? preset.props.artwork : "";
 const presetMargins = (preset: (typeof TEXT_BOX_PRESETS)[number]) =>
-  normalizeObjectTextFrame(preset.props.textFrame).margins;
+  normalizeBlockObjectFormat(preset.props, TEXT_BOX_OBJECT_FORMAT_CAPABILITY).textFrame!.margins;
 const decorated = TEXT_BOX_PRESETS.filter((preset) =>
   presetArtwork(preset).startsWith(TEXT_BOX_ARTWORK_SCHEME),
 );
@@ -115,12 +116,12 @@ describe("text-box artwork registry", () => {
     const plain = getTextBoxPreset("office-simple");
     const decoratedOffice = getTextBoxPreset("office-banded");
 
-    expect(normalizeObjectTextFrame(plain.props.textFrame).margins).toEqual([
+    expect(normalizeBlockObjectFormat(plain.props, TEXT_BOX_OBJECT_FORMAT_CAPABILITY).textFrame!.margins).toEqual([
       18, 22, 18, 22,
     ]);
     expect(normalizeObjectPaint(plain.props.fill).type).toBe("solid");
     expect(
-      normalizeObjectTextFrame(decoratedOffice.props.textFrame).margins,
+      normalizeBlockObjectFormat(decoratedOffice.props, TEXT_BOX_OBJECT_FORMAT_CAPABILITY).textFrame!.margins,
     ).toEqual([24, 28, 24, 28]);
     expect(getTextBoxArtwork(decoratedOffice.props.artwork)).not.toBeNull();
   });

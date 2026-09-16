@@ -1,3 +1,4 @@
+import {parseBlockPosition} from './state'
 import type {
   BlockPlacementMode,
   ResolvedBlockPosition,
@@ -204,7 +205,7 @@ export class BlockPlacementRuntime {
       this.doc.schemas?.get?.(flavour, false)?.metadata.placement
     if (!capability?.modes.includes('absolute')) return false
     const position = this.doc.model?.getProps?.(blockId)?.['position']
-    return !!position && typeof position === 'object' && !Array.isArray(position)
+    return parseBlockPosition(position) !== null
   }
 
   hasValidAbsolutePlacement(blockId: string): boolean {

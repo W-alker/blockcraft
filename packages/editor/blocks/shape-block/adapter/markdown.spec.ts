@@ -54,7 +54,7 @@ describe('Shape Markdown adapter', () => {
       width: 280,
       height: 96,
       rotation: 18,
-      position: {x: 32, y: 144},
+      position: "32 144",
       placementLayer: 'under',
       adjustments: {headWidth: 0.42},
     }
@@ -77,7 +77,7 @@ describe('Shape Markdown adapter', () => {
       width: 280,
       height: 96,
       rotation: 18,
-      position: {x: 32, y: 144},
+      position: "32 144",
       placementLayer: 'under',
       adjustments: {headWidth: 0.42},
     }))

@@ -1,3 +1,4 @@
+import {storeBlockPosition} from './state'
 import type {BlockPlacementLayer} from '../../block-std/types'
 import {measureBlockPlacement} from './geometry'
 import {RootPlacementLayoutCoordinator} from './root-layout.coordinator'
@@ -199,10 +200,10 @@ export class BlockPlacementFlowCoordinator {
         targetIndex,
       )
       block.updateProps({
-        position: {
+        position: storeBlockPosition({
           x: measured.x,
           y: measured.y,
-        },
+        }),
         placementLayer: layer === 'under' ? 'under' : null,
       } as any)
     })

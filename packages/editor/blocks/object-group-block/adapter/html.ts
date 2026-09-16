@@ -1,3 +1,4 @@
+import {parseBlockPosition, storeBlockPosition} from '../../../framework/services/block-placement/state'
 import {
   ObjectGroupBlockSchema,
 } from '..'
@@ -48,7 +49,7 @@ export const objectGroupBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
       const props = normalizeBlockObjectGroupProps(
         o.node.props as Partial<BlockObjectGroupProps>,
       )
-      const position = o.node.props['position'] as BlockPosition | undefined
+      const position = o.node.props['position'] as string | undefined
       context.walkerContext.openNode({
         type: 'element',
         tagName: 'figure',
@@ -78,10 +79,10 @@ function placementFromHtml(
     return {}
   }
   return {
-    position: {
+    position: storeBlockPosition({
       x: numberProperty(node, 'dataObjectGroupPlacementX') ?? 0,
       y: numberProperty(node, 'dataObjectGroupPlacementY') ?? 0,
-    },
+    }),
     ...(stringProperty(node, 'dataObjectGroupPlacementLayer') === 'under'
       ? {placementLayer: 'under' as const}
       : {}),
@@ -89,9 +90,10 @@ function placementFromHtml(
 }
 
 function placementToHtml(
-  position: BlockPosition | undefined,
+  storedPosition: string | undefined,
   layer: 'under' | undefined,
 ) {
+  const position = parseBlockPosition(storedPosition)
   if (!position) return {}
   return {
     dataObjectGroupPlacementMode: 'absolute',

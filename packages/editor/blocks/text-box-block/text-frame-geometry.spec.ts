@@ -49,7 +49,7 @@ describe('shape text rectangles and user margins', () => {
           const props = {
             shape: item.shape, adjustments: item.adjustments,
             width: 300, height: 200,
-            textFrame: storeObjectTextFrame({...DEFAULT_OBJECT_TEXT_FRAME, margins: userMargins}),
+            ...storeObjectTextFrame({...DEFAULT_OBJECT_TEXT_FRAME, margins: userMargins}),
           }
           const textBox = TextBoxBlockSchema.createSnapshot('文字', props)
           const shape = ShapeBlockSchema.createSnapshot(item.shape, '文字')
@@ -111,7 +111,7 @@ describe('shape text rectangles and user margins', () => {
       const snapshot = TextBoxBlockSchema.createSnapshot('文字', {
         shape: 'rounded-rectangle', width: 300, height: 200,
         adjustments: {radius: 0},
-        textFrame: storeObjectTextFrame({...DEFAULT_OBJECT_TEXT_FRAME, margins: [3, 7, 11, 17]}),
+        ...storeObjectTextFrame({...DEFAULT_OBJECT_TEXT_FRAME, margins: [3, 7, 11, 17]}),
       })
       const root = {id: 'root', flavour: 'root', nodeType: BlockNodeType.root, props: {}, meta: {}, children: [snapshot]} as IBlockSnapshot
       renderer.render(viewer, root)
@@ -133,7 +133,7 @@ describe('shape text rectangles and user margins', () => {
     try {
       const snapshot = TextBoxBlockSchema.createSnapshot('文字', {
         ...preset.props, width: 300, height: 200,
-        textFrame: storeObjectTextFrame({...DEFAULT_OBJECT_TEXT_FRAME, margins: [0, 0, 0, 0], direction: 'vertical-rl'}),
+        ...storeObjectTextFrame({...DEFAULT_OBJECT_TEXT_FRAME, margins: [0, 0, 0, 0], direction: 'vertical-rl'}),
       })
       renderer.render(viewer, {id: 'root', flavour: 'root', nodeType: BlockNodeType.root, props: {}, meta: {}, children: [snapshot]} as IBlockSnapshot)
       expectInsets(viewer, '.text-box-block__surface', '.text-box-block__content', [0, 0, 0, 0], 'decorated vertical')

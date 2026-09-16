@@ -1,3 +1,4 @@
+import {storeBlockPosition} from '../../framework/services/block-placement/state'
 import {
   BindHotKey,
   BlockObjectLayout,
@@ -1238,7 +1239,7 @@ export class ImgToolbarPlugin extends DocPlugin {
       );
       result.image.props = {
         ...result.image.props,
-        position: {x: measured.x, y: measured.y},
+        position: storeBlockPosition({x: measured.x, y: measured.y}),
         ...(layout === 'under' ? {placementLayer: 'under'} : {}),
       };
     }

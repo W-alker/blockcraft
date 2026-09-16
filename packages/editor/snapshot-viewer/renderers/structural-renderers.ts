@@ -1,3 +1,4 @@
+import {resolveBlockPosition} from '../../framework/services/block-placement/state'
 import {IBlockSnapshot} from "../../framework/block-std/types/block.type";
 import {
   normalizeDocumentFontSize,
@@ -185,12 +186,7 @@ export function projectAbsolutePlaneChildren(
   for (const [index, child] of Array.from(content.children).entries()) {
     if (!(child instanceof HTMLElement)) continue
     const props = snapshots[index]?.props as Record<string, unknown> | undefined
-    const position = props?.["position"]
-    const state = position && typeof position === "object"
-      ? position as Record<string, unknown>
-      : {}
-    const x = Number(state["x"] ?? 0)
-    const y = Number(state["y"] ?? 0)
+    const {x, y} = resolveBlockPosition(props?.["position"])
     const layer = snapshot.flavour === "placement-layout" &&
       props?.["placementLayer"] === "under"
       ? "under"
@@ -404,8 +400,8 @@ function renderTextBox(
       width: props.width,
       height: props.height,
       rotation: 0,
-      textFrame: storeObjectTextFrame(props.textFrame),
-      textStyle: storeObjectTextStyle(props.textStyle),
+      ...storeObjectTextFrame(props.textFrame),
+      ...storeObjectTextStyle(props.textStyle),
     })
     const textStyle = format.textStyle!
     // Match the live TextBox projection for ordinary rich text. The WordArt

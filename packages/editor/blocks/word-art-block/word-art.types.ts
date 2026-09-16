@@ -1,3 +1,4 @@
+import {parseBlockPosition, storeBlockPosition} from '../../framework/services/block-placement/state'
 import type {
   BlockObjectFormatCapability,
   BlockObjectFormatProps,
@@ -11,13 +12,12 @@ import {
   DEFAULT_OBJECT_TEXT_STYLE,
   colorWithOpacity,
   normalizeBlockObjectFormat,
+  storeBlockObjectFormat,
   objectPaintBackgroundPosition,
   objectPaintBackgroundSize,
   objectTextTransformCss,
   resolveBlockPosition,
   resolveTypographyFontFamily,
-  storeObjectTextFrame,
-  storeObjectTextStyle,
 } from '../../framework'
 
 export const WORD_ART_FONT_OPTIONS = [
@@ -162,7 +162,7 @@ const DEFAULT_WORD_ART_TEXT_STYLE: ObjectTextStyle = {
       {color: '#DC2626', offset: 1, opacity: 1},
     ],
   },
-  outline: {type: 'line', color: '#9A3412', width: 1.44},
+  outline: {type: 'line', color: '#9A3412', width: 1},
   effects: {
     ...DEFAULT_OBJECT_EFFECTS,
     shadow: {
@@ -220,7 +220,7 @@ export const DEFAULT_WORD_ART_PROPS: Readonly<NormalizedWordArtBlockProps> = {
   gradientColors: ['#FDE047', '#F97316', '#DC2626'],
   gradientStops: [0, 0.58, 1],
   outlineColor: '#9A3412',
-  outlineWidthEm: 0.03,
+  outlineWidthEm: 1 / 48,
   shadowEnabled: true,
   shadowColor: '#7C2D12',
   shadowOpacity: 0.3,
@@ -285,10 +285,10 @@ export function normalizeWordArtRotation(value: unknown): number {
   return Object.is(normalized, -0) ? 0 : normalized
 }
 
-const normalizePosition = (value: unknown) =>
-  value && typeof value === 'object' && !Array.isArray(value)
-    ? resolveBlockPosition(value)
-    : undefined
+const normalizePosition = (value: unknown) => {
+  const position = parseBlockPosition(value)
+  return position ? storeBlockPosition(position) : undefined
+}
 
 const normalizeGradient = (
   colorsValue: unknown,
@@ -359,7 +359,7 @@ export function normalizeWordArtProps(
     lockAspectRatio: objectFormat.lockAspectRatio,
     textFrame: frame,
     textStyle: style,
-    ...(position ? {position} : {}),
+    position,
     ...(value?.placementLayer === 'under'
       ? {placementLayer: 'under' as const}
       : {}),
@@ -417,12 +417,7 @@ export function normalizeWordArtSnapshotProps(
   const normalized = normalizeWordArtProps(value)
   return {
     depth: 0,
-    width: normalized.width,
-    height: normalized.height,
-    rotation: normalized.rotation,
-    lockRatio: normalized.lockAspectRatio,
-    textFrame: storeObjectTextFrame(normalized.textFrame, options),
-    textStyle: storeObjectTextStyle(normalized.textStyle, options),
+    ...storeBlockObjectFormat(normalized, WORD_ART_OBJECT_FORMAT_CAPABILITY, options),
     ...(normalized.position ? {position: normalized.position} : {}),
     ...(normalized.placementLayer === 'under'
       ? {placementLayer: 'under' as const}

@@ -1,3 +1,4 @@
+import {resolveBlockPosition} from '../packages/editor/framework/services/block-placement/state'
 import {expect, test, type Page} from '@playwright/test'
 
 async function mountFixture(page: Page, snapshot?: any, groupInteraction = false) {
@@ -41,7 +42,7 @@ async function mountFixture(page: Page, snapshot?: any, groupInteraction = false
     const insertImage = (width: number, x: number, y: number) => {
       const image = doc.schemas.createSnapshot('image', [{src, wr: width / doc.objectSizing.rootContentWidth * 100, ar: 2}])
       const id = doc.placement.insertAbsoluteSnapshot(image, {anchorRect: null})
-      doc.crud.updateBlockProps(id, {position: {x, y}})
+      doc.crud.updateBlockProps(id, {position: `${x} ${y}`})
       return id
     }
     const imageId = insertImage(400, 140, 80)
@@ -167,7 +168,7 @@ for (const flow of [true, false]) {
     }, {id: ids.groupId, flow})
     const group = page.locator(`#image-resize-fixture [data-block-id="${ids.groupId}"]`)
     // Between the first image's bottom (200) and the second image's top (250).
-    await group.locator(':scope > .object-group-block__children').click({position: {x: 60, y: 225}})
+    await group.locator(':scope > .object-group-block__children').click({position: "60 225"})
     await expect(group).toHaveClass(/selected/)
     const toolbar = page.locator('bc-object-group-toolbar')
     await expect(toolbar).toBeVisible()
@@ -182,14 +183,14 @@ for (const flow of [true, false]) {
     }
     await page.evaluate(id => (window as any).__imageResizeDoc.selection.selectBlock(id), ids.imageId)
     await expect(toolbar).toHaveCount(0)
-    await group.locator(':scope > .object-group-block__children').click({position: {x: 60, y: 225}})
+    await group.locator(':scope > .object-group-block__children').click({position: "60 225"})
     await expect(toolbar).toBeVisible()
     await toolbar.getByRole('button', {name: flow ? '浮于文字上方' : '上下型', exact: true}).click()
     await expect.poll(() => page.evaluate(id =>
       (window as any).__imageResizeDoc.placement.getObjectLayout(id), ids.groupId,
     )).toBe(flow ? 'over' : 'top-bottom')
     // Layout commands close the current toolbar; another blank click reopens it.
-    await group.locator(':scope > .object-group-block__children').click({position: {x: 60, y: 225}})
+    await group.locator(':scope > .object-group-block__children').click({position: "60 225"})
     await expect(toolbar).toBeVisible()
     await expect(toolbar.getByRole('button', {name: '上下型', exact: true}))
       .toHaveAttribute('aria-pressed', `${!flow}`)
@@ -202,8 +203,8 @@ test('group frame stays outside the full-width content plane in absolute and flo
     const doc = (window as any).__imageResizeDoc
     doc.placement.ungroup(ids.groupId)
     const width = doc.objectSizing.rootContentWidth
-    doc.crud.updateBlockProps(ids.imageId, {wr: 100, ar: 2, position: {x: 0, y: 0}})
-    doc.crud.updateBlockProps(ids.siblingId, {position: {x: 20, y: 20}})
+    doc.crud.updateBlockProps(ids.imageId, {wr: 100, ar: 2, position: "0 0"})
+    doc.crud.updateBlockProps(ids.siblingId, {position: "20 20"})
     return width
   }, ids)
   await expect.poll(async () => (await page.locator(
@@ -334,8 +335,8 @@ test('external group frame drags all members and ungroup preserves their visual 
   await page.mouse.down()
   await page.mouse.move(rect.x + rect.width / 2 + 40, rect.y + rect.height / 2 + 30, {steps: 8})
   await page.mouse.up()
-  await expect.poll(async () => (await readGeometry(page, ids)).group.position.x)
-    .toBeCloseTo(before.group.position.x + 40, 1)
+  await expect.poll(async () => resolveBlockPosition((await readGeometry(page, ids)).group.position).x)
+    .toBeCloseTo(resolveBlockPosition(before.group.position).x + 40, 1)
   const moved = await readGeometry(page, ids)
   expect(moved.width).toBeCloseTo(before.width, 1)
   expect(moved.sibling.x).toBeCloseTo(before.sibling.x + 40, 1)

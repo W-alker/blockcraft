@@ -14,7 +14,7 @@ describe('ClipboardManager absolute-object paste', () => {
       id: 'shape-source',
       flavour: 'shape',
       nodeType: BlockNodeType.block,
-      props: {position: {x: 40, y: 50}},
+      props: {position: "40 50"},
       meta: {},
       children: [],
     }
@@ -95,7 +95,7 @@ describe('ClipboardManager absolute-object paste', () => {
     )
     const inserted = insertBlockSnapshots.calls.mostRecent().args[2]
     expect(inserted[0].id).not.toBe(source.id)
-    expect(inserted[0].props['position']).toEqual({x: 52, y: 62})
+    expect(inserted[0].props['position']).toEqual("52 62")
     expect(replay).toHaveBeenCalledWith({
       anchor: {blockId: inserted[0].id, type: 'selected'},
       head: {blockId: inserted[0].id, type: 'selected'},
@@ -108,7 +108,7 @@ describe('ClipboardManager absolute-object paste', () => {
       id: 'shape-source',
       flavour: 'shape',
       nodeType: BlockNodeType.block,
-      props: {position: {x: 5, y: 8}},
+      props: {position: "5 8"},
       meta: {},
       children: [],
     }

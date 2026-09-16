@@ -3,6 +3,7 @@ import {
   storeObjectTextStyle,
 } from "../../framework";
 import {
+  normalizeWordArtSnapshotProps,
   WORD_ART_OBJECT_FORMAT_CAPABILITY,
   type WordArtBlockProps,
   type WordArtEffect,
@@ -416,15 +417,15 @@ function canonicalizeWordArtPreset<
   return {
     id: preset.id,
     label: preset.label,
-    props: {
+    props: normalizeWordArtSnapshotProps({
       depth: 0,
       width: defaults.width,
       height: defaults.height,
       rotation: defaults.rotation,
       lockRatio: defaults.lockAspectRatio,
-      textFrame: storeObjectTextFrame(defaults.textFrame!),
-      textStyle: storeObjectTextStyle(textStyle),
-    } satisfies WordArtBlockProps,
+      ...storeObjectTextFrame(defaults.textFrame!),
+      ...storeObjectTextStyle(textStyle),
+    }) satisfies WordArtBlockProps,
   } as const;
 }
 

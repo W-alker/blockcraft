@@ -1,3 +1,4 @@
+import {MARKDOWN_ADAPTER_PROFILE_CONFIG} from '../../../adapters/registry'
 import {
   BlockNodeType,
   DocAttachmentInfo,
@@ -5,6 +6,7 @@ import {
   IBlockSnapshot,
   storeObjectLine,
   storeObjectPaint,
+  storeObjectFormatSection,
   storeObjectTextFrame,
   storeObjectTextStyle,
 } from '../../../framework'
@@ -63,23 +65,23 @@ describe('Shape adapters', () => {
       width: 260,
       height: 120,
       rotation: 37.5,
-      fill: storeObjectPaint({
+      ...storeObjectFormatSection('shapeFill', {
         type: 'solid',
         color: '#A7F3D0',
         opacity: 0.7,
       }),
-      outline: storeObjectLine({
+      ...storeObjectLine({
         ...defaults.shapeOutline,
         color: '#047857',
         width: 4,
         dash: 'dash',
       }),
-      textFrame: storeObjectTextFrame({
+      ...storeObjectTextFrame({
         ...defaults.textFrame,
         horizontalAlign: 'right',
         verticalAlign: 'bottom',
       }),
-      textStyle: storeObjectTextStyle({
+      ...storeObjectTextStyle({
         ...defaults.textStyle,
         fill: {
           type: 'solid',
@@ -87,7 +89,7 @@ describe('Shape adapters', () => {
           opacity: 1,
         },
       }),
-      position: {x: 25, y: 120},
+      position: "25 120",
       placementLayer: 'under',
       adjustments: {bend: 420},
       customGeometry: serializeCustomShapeGeometry(
@@ -104,7 +106,7 @@ describe('Shape adapters', () => {
     expect(element?.getAttribute('data-bc-object-rotation')).toBe('37.5')
     expect(element?.getAttribute('data-shape-placement-layer')).toBe('under')
     expect(element?.getAttribute('data-shape-adjustments')).toContain('bend')
-    expect(element?.getAttribute('data-shape-geometry')).toContain('paths')
+    expect(element?.getAttribute('data-shape-geometry')).toContain('v1|')
     expect(element?.querySelector('[data-bc-shape-text]')?.textContent)
       .toBe('下一步')
 
@@ -113,10 +115,10 @@ describe('Shape adapters', () => {
     expect(imported.flavour).toBe('shape')
     expect(imported.props).toEqual(jasmine.objectContaining({
       shape: 'flow-decision',
-      position: {x: 25, y: 120},
+      position: "25 120",
       placementLayer: 'under',
       adjustments: {bend: 420},
-      customGeometry: jasmine.stringMatching('"version":1'),
+      customGeometry: jasmine.stringMatching('^v1\\|'),
     }))
     expect(normalizeShapeProps(imported.props as Partial<ShapeBlockProps>))
       .toEqual(jasmine.objectContaining({
@@ -141,7 +143,7 @@ describe('Shape adapters', () => {
     const shape = ShapeBlockSchema.createSnapshot('rectangle')
     shape.props = {
       ...shape.props,
-      fill: storeObjectPaint({
+      ...storeObjectFormatSection('shapeFill', {
         type: 'linear-gradient',
         opacity: 1,
         angle: 160,
@@ -155,15 +157,8 @@ describe('Shape adapters', () => {
     const html = await htmlAdapter.toHtml(rootSnapshot([shape]))
     const element = new DOMParser().parseFromString(html, 'text/html')
       .querySelector('figure[data-bc-block="shape"]')
-    const storedFill = JSON.parse(
-      element?.getAttribute('data-bc-object-fill') ?? '{}',
-    )
-    expect(storedFill).toEqual(jasmine.objectContaining({
-      t: 'g',
-      a: 160,
-      c0: '#26405E',
-      c1: '#58402E',
-    }))
+    expect(element?.getAttribute('data-bc-object-fill'))
+      .toBe('linear-gradient(160deg, #26405E 0%, #58402E 100%)')
 
     const importedRoot = await htmlAdapter.toBlockSnapshot(html)
     const imported = importedRoot.children[0] as IBlockSnapshot
@@ -184,7 +179,7 @@ describe('Shape adapters', () => {
     )
     image.props = {
       ...image.props,
-      position: {x: 12.5, y: 240},
+      position: "12.5 240",
       placementLayer: 'under',
     }
 
@@ -239,11 +234,24 @@ describe('Shape adapters', () => {
 
   it('degrades a shape to readable Markdown text', async () => {
     const shape = ShapeBlockSchema.createSnapshot('speech-bubble', '讨论结论')
+    markdownAdapter.adapterConfigs.set(MARKDOWN_ADAPTER_PROFILE_CONFIG, 'portable')
     const markdown = await markdownAdapter.toMarkdown(rootSnapshot([shape]))
 
     expect(markdown.trim()).toBe('讨论结论')
     const imported = await markdownAdapter.toBlockSnapshot(markdown)
     expect((imported.children[0] as IBlockSnapshot).flavour).toBe('paragraph')
+  })
+
+  it('round-trips compact groups in the blockcraft Markdown profile', async () => {
+    markdownAdapter.adapterConfigs.set(MARKDOWN_ADAPTER_PROFILE_CONFIG, 'blockcraft')
+    const snapshot = ShapeBlockSchema.createSnapshot('rectangle', '格式往返')
+    snapshot.props = {...snapshot.props, textFont: '24px 700 italic', textShadow: 'none', textPadding: '18 22'}
+    const markdown = await markdownAdapter.toMarkdown(rootSnapshot([snapshot]))
+    const imported = (await markdownAdapter.toBlockSnapshot(markdown)).children[0] as IBlockSnapshot
+    expect(imported.props['textFont']).toBe('24px 700 italic')
+    expect(imported.props['textPadding']).toBe('18 22')
+    expect(imported.props['textStyle']).toBeUndefined()
+    expect(imported.props['textFrame']).toBeUndefined()
   })
 
 })

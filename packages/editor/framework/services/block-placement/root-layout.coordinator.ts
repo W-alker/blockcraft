@@ -1,3 +1,4 @@
+import {storeBlockPosition} from './state'
 import {Subscription} from 'rxjs'
 import type {
   BlockPlacementLayer,
@@ -111,10 +112,10 @@ export class RootPlacementLayoutCoordinator {
       ...snapshot,
       props: {
         ...snapshot.props,
-        position: {
+        position: storeBlockPosition({
           x: placement.x,
           y: placement.y,
-        },
+        }),
         ...(layer === 'under' ? {placementLayer: layer} : {}),
       },
     }

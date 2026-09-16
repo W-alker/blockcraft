@@ -1,5 +1,6 @@
 import { GALLERY_TEXT_BOX_PRESETS } from "./presets/gallery";
 import {
+  normalizeTextBoxSnapshotProps,
   TEXT_BOX_OBJECT_FORMAT_CAPABILITY,
   type TextBoxBlockProps,
   type TextBoxWritingMode,
@@ -8,7 +9,7 @@ import {
   createObjectPaint,
   storeObjectEffects,
   storeObjectLine,
-  storeObjectPaint,
+  storeObjectFormatSection,
   storeObjectTextFrame,
   storeObjectTextStyle,
   type ObjectPaint,
@@ -199,17 +200,17 @@ function canonicalizePreset<T extends TextBoxPresetDefinition>(
   };
   return {
     ...preset,
-    props: {
+    props: normalizeTextBoxSnapshotProps({
       width: preset.defaultWidth,
       height: preset.defaultHeight,
       rotation: defaults.rotation,
       lockRatio: defaults.lockAspectRatio,
-      shape: source.sh ?? "rectangle",
       ...(source.adjustments
         ? { adjustments: { ...source.adjustments } }
         : {}),
-      fill: storeObjectPaint(shapeFill),
-      outline: storeObjectLine({
+      ...storeObjectFormatSection("shapeFill", shapeFill),
+      shape: source.sh ?? "rectangle",
+      ...storeObjectLine({
         ...defaultOutline,
         type:
           outlineWidth === 0 || outlineColor === "transparent"
@@ -220,11 +221,11 @@ function canonicalizePreset<T extends TextBoxPresetDefinition>(
         width: outlineWidth,
         dash: source["bs"] === "dashed" ? "dash" : "solid",
       }),
-      effects: storeObjectEffects(shapeEffects),
-      textFrame: storeObjectTextFrame(textFrame),
-      textStyle: storeObjectTextStyle(textStyle),
+      ...storeObjectEffects(shapeEffects),
+      ...storeObjectTextFrame(textFrame),
+      ...storeObjectTextStyle(textStyle),
       ...(artwork ? { artwork } : {}),
-    },
+    }),
   };
 }
 

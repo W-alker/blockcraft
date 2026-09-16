@@ -1,3 +1,4 @@
+import {normalizeShapeSnapshotProps} from "./shape.types";
 import {
   SHAPE_CATEGORIES,
   SHAPE_DEFINITIONS,
@@ -20,6 +21,15 @@ import * as Y from 'yjs'
 import type {IBlockSnapshot} from '../../framework'
 
 describe('Shape block domain', () => {
+
+  it("stores rounded coordinates and drops invalid position values", () => {
+    expect(normalizeShapeSnapshotProps({position: "12.345 -0.001"} as any).position)
+      .toBe("12.35 0");
+    for (const position of [{x: 12, y: 34}, "12 invalid", "Infinity 0"]) {
+      const props = normalizeShapeSnapshotProps({position} as any);
+      expect(Object.prototype.hasOwnProperty.call(props, "position")).toBeFalse();
+    }
+  });
   it('estimates an unmounted flow block from its normalized model height', () => {
     const estimateHeight =
       ShapeBlockSchema.metadata.virtualization?.estimateHeight
@@ -358,7 +368,7 @@ describe('Shape block domain', () => {
     expect(normalized.fillColor).toBe('#93C5FD')
     expect(normalized.fillOpacity).toBe(1)
     // Legacy flat style fields are deliberately ignored by the unified format.
-    expect(normalized.strokeWidth).toBe(2)
+    expect(normalized.strokeWidth).toBe(1)
     expect(normalized.shapeTextAlign).toBe('center')
     expect(normalized.verticalAlign).toBe('middle')
     expect(input.width).toBe(-20)
@@ -1108,7 +1118,7 @@ describe('Shape block domain', () => {
     expect(updateObjectGeometry).toHaveBeenCalledOnceWith(context, {
       width: 120,
       height: 80,
-      position: {x: 30, y: 25},
+      position: "30 25",
     })
   })
 
@@ -1143,6 +1153,8 @@ describe('Shape block domain', () => {
       doc: {placement: {updateObjectGeometry}},
       _shapeGeometry: {nativeElement: svg},
     } as unknown as ShapeBlockComponent
+    Object.defineProperty(context, 'props', {value: {shape: 'rectangle'}})
+    Object.defineProperty(context, 'shapeProps', {get: () => normalizeShapeProps(context.props)})
     const geometry = createDefaultEditableShapeGeometry('curved-connector')!
 
     ShapeBlockComponent.prototype.onGeometryCommit.call(context, geometry)

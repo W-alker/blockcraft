@@ -42,7 +42,7 @@ export const TextBoxBlockSchema: IBlockSchemaOptions<TextBoxBlockModel> = {
     children: [ParagraphBlockSchema.createSnapshot(text)],
   }),
   metadata: {
-    version: 1,
+    version: 2,
     label: '文本框',
     description: '插入可自由放置、缩放和旋转的富文本框',
     icon: 'bc_icon bc_wenbenkuang',

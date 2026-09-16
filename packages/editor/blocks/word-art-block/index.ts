@@ -64,7 +64,7 @@ export const WordArtBlockSchema: IBlockSchemaOptions<WordArtBlockModel> = {
     children: normalizeWordArtText(text),
   }),
   metadata: {
-    version: 1,
+    version: 2,
     label: '艺术字',
     description: '可编辑、可缩放和自由放置的艺术文字',
     icon: 'bc_icon bc_yishuzishengcheng',

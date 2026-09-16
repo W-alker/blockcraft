@@ -10,19 +10,20 @@ import {
 import {WORD_ART_OBJECT_FORMAT_CAPABILITY} from '../../blocks/word-art-block/word-art.types'
 
 describe('inline WordArt embed', () => {
-  it('preserves legacy numeric precision on read but compacts a newly written delta', () => {
+  it('preserves precise grouped strings on read and quantizes new writes', () => {
     const props = {width: 280, height: 88, rotation: 12, depth: 0,
-      textStyle: {...storeObjectTextStyle(WORD_ART_OBJECT_FORMAT_CAPABILITY.defaults.textStyle!),
-        z: 42, ow: 1.26, sb: 2.4, sa: 60.9453959, sd: 4.9419024},
+      textFont: '42px 700 normal', textOutline: '1.26px #000000',
+      textShadow: '60.9453959deg 4.9419024px 2.4px #000000 / 0.25',
     }
-    const delta = {insert: {'word-art': JSON.stringify({props, text: [{insert: '旧艺术字'}]})}}
-    expect(readInlineWordArtDelta(delta).props.textStyle).toEqual(props.textStyle)
+    const delta = {insert: {'word-art': JSON.stringify({props, text: [{insert: '艺术字'}]})}}
+    expect(readInlineWordArtDelta(delta).props.textOutline).toBe(props.textOutline)
     const text = inlineWordArtEmbedConverter.toView(delta)
       .querySelector<HTMLElement>('.bc-inline-word-art__text')!
     expect(text.style.getPropertyValue('-webkit-text-stroke')).toContain('0.03em')
     const written = readInlineWordArtDelta(createInlineWordArtDelta(props))
-    expect(written.props.textStyle).toEqual(jasmine.objectContaining({ow: 1.25, sb: 2, sa: 61, sd: 5}))
-    expect(JSON.parse(delta.insert['word-art']).props.textStyle.ow).toBe(1.26)
+    expect(written.props.textOutline).toBe('1.25px #000000')
+    expect(written.props.textShadow).toBe('61deg 5px 2px #000000 / 0.25')
+    expect(JSON.parse(delta.insert['word-art']).props.textOutline).toBe('1.26px #000000')
   })
 
   it('preserves presentation, text and inline layout without placement props', () => {
@@ -30,7 +31,7 @@ describe('inline WordArt embed', () => {
       width: 280,
       height: 88,
       rotation: 12,
-      textStyle: storeObjectTextStyle({
+      ...storeObjectTextStyle({
         ...WORD_ART_OBJECT_FORMAT_CAPABILITY.defaults.textStyle!,
         fontFamily: 'serif',
         fontSize: 42,
@@ -50,7 +51,7 @@ describe('inline WordArt embed', () => {
           },
         },
       }),
-      position: {x: 10, y: 30},
+      position: "10 30",
       placementLayer: 'under',
     }, [{insert: '发布会'}])
 

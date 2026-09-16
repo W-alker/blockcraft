@@ -1,3 +1,4 @@
+import * as Y from "yjs";
 import {
   DEFAULT_OBJECT_EFFECTS,
   DEFAULT_OBJECT_LINE,
@@ -6,6 +7,7 @@ import {
   DEFAULT_OBJECT_TEXT_STYLE,
   storeObjectEffects,
   storeObjectPaint,
+  storeObjectFormatSection,
   type BlockObjectFormatCapability,
 } from "../block-std/block/object-format";
 import { BlockObjectFormatManager } from "./block-object-format.manager";
@@ -49,7 +51,10 @@ function makeHarness() {
   const updateBlockProps = jasmine
     .createSpy("updateBlockProps")
     .and.callFake((id: string, patch: Record<string, unknown>) => {
-      Object.assign(props.get(id)!, patch);
+      for (const [key, value] of Object.entries(patch)) {
+        if (value === null) delete props.get(id)![key];
+        else props.get(id)![key] = value;
+      }
     });
   const doc = {
     schemas: { get: () => ({ metadata: { objectFormat: capability } }) },
@@ -76,22 +81,20 @@ function makeHarness() {
 }
 
 describe("BlockObjectFormatManager", () => {
-  it("quantizes written effects in one transaction without migrating untouched or locked props", () => {
-    const { manager, props, transact } = makeHarness();
-    const legacyEffects = {...storeObjectEffects(DEFAULT_OBJECT_EFFECTS), sb: 2.4, sa: 60.9453959, sd: 4.9419024};
-    props.get("a")!["effects"] = legacyEffects;
-    props.get("b")!["effects"] = legacyEffects;
-    const oldTextStyle = {z: 16, s: 0.123456789};
-    props.get("a")!["textStyle"] = oldTextStyle;
+  it("quantizes only the requested groups and skips locked targets", () => {
+    const {manager, props, transact} = makeHarness();
+    const shadow = "60.9453959deg 4.9419024px 2.4px #000000 / 0.25";
+    props.get("a")!["shadow"] = shadow;
+    props.get("b")!["shadow"] = shadow;
+    props.get("a")!["textSpacing"] = "0.123456789em 1.2";
     const read = manager.readSelection(["a", "b"])!;
     expect(read.values.shapeEffects.value!.shadow.angle).toBe(60.9453959);
     expect(transact).not.toHaveBeenCalled();
     manager.updateSelection(["a", "b"], {shapeEffects: read.values.shapeEffects.value});
     expect(transact).toHaveBeenCalledTimes(1);
-    expect(props.get("a")!["effects"]).toEqual(jasmine.objectContaining({sb: 2, sa: 61, sd: 5}));
-    expect(props.get("a")!["textStyle"]).toBe(oldTextStyle);
-    expect(props.get("b")!["effects"]).toBe(legacyEffects);
-    expect(legacyEffects.sa).toBe(60.9453959);
+    expect(props.get("a")!["shadow"]).toBe("61deg 5px 2px #000000 / 0.25");
+    expect(props.get("a")!["textSpacing"]).toBe("0.123456789em 1.2");
+    expect(props.get("b")!["shadow"]).toBe(shadow);
   });
 
   it("reports mixed values and capability intersection model-first", () => {
@@ -110,11 +113,11 @@ describe("BlockObjectFormatManager", () => {
     expect(result.skippedReadonlyIds).toEqual(["b"]);
     expect(transact).toHaveBeenCalledTimes(1);
     expect(updateBlockProps).toHaveBeenCalledOnceWith("a", {
-      fill: storeObjectPaint(fill),
+      ...storeObjectFormatSection('shapeFill', fill),
     });
   });
 
-  it("writes shadow and glow together through one effects prop", () => {
+  it("writes independent shadow and glow groups in one transaction", () => {
     const { manager, transact, updateBlockProps } = makeHarness();
     const effects = {
       shadow: {
@@ -132,11 +135,9 @@ describe("BlockObjectFormatManager", () => {
     manager.updateSelection(["a", "b"], { shapeEffects: effects });
     expect(transact).toHaveBeenCalledTimes(1);
     expect(updateBlockProps).toHaveBeenCalledOnceWith("a", {
-      effects: storeObjectEffects(effects),
+      ...storeObjectEffects(effects),
     });
-    expect(typeof updateBlockProps.calls.mostRecent().args[1]["effects"]).toBe(
-      "object",
-    );
+    expect(typeof updateBlockProps.calls.mostRecent().args[1]["shadow"]).toBe("string");
   });
 
   it("couples one edited dimension when aspect ratio is locked", () => {
@@ -192,9 +193,75 @@ describe("BlockObjectFormatManager", () => {
   });
 
   it("emits null to delete a section when reset is requested", () => {
-    const { manager, setSelection, updateBlockProps } = makeHarness();
+    const { manager, props, setSelection, updateBlockProps } = makeHarness();
+    props.get("a")!["fill"] = "#FF0000";
     setSelection(["a"]);
     manager.updateSelection(["a"], { shapeFill: null });
     expect(updateBlockProps).toHaveBeenCalledOnceWith("a", { fill: null });
+  });
+  it("deletes disabled groups and defaults without rewriting unrelated text settings", () => {
+    const {manager, props, updateBlockProps} = makeHarness();
+    props.get('a')!['shadow'] = '45deg 2px 4px #000000 / 0.25';
+    props.get('a')!['textFamily'] = 'serif';
+    manager.updateSelection(['a', 'b'], {shapeEffects: DEFAULT_OBJECT_EFFECTS});
+    expect(updateBlockProps).toHaveBeenCalledOnceWith('a', {shadow: null});
+    expect(props.get('a')!['shadow']).toBeUndefined();
+    updateBlockProps.calls.reset();
+    manager.updateSelection(['a', 'b'], {textStyle: {...DEFAULT_OBJECT_TEXT_STYLE, fontFamily: 'serif', fontSize: 24}});
+    expect(updateBlockProps).toHaveBeenCalledOnceWith('a', {textFont: '24px 400 normal'});
+    updateBlockProps.calls.reset();
+    manager.updateSelection(['a', 'b'], {textStyle: {...DEFAULT_OBJECT_TEXT_STYLE, fontFamily: 'serif'}});
+    expect(updateBlockProps).toHaveBeenCalledOnceWith('a', {textFont: null});
+    expect(props.get('a')!['textFamily']).toBe('serif');
+  });
+
+});
+
+
+describe('grouped object-format collaboration', () => {
+  const makeReplica = (ydoc: Y.Doc) => {
+    const props = ydoc.getMap<unknown>('object-props');
+    const doc = {
+      schemas: {get: () => ({metadata: {objectFormat: capability}})},
+      model: {getFlavour: () => 'shape', getProps: () => props.toJSON(), getChildrenIds: () => []},
+      readonlyManager: {isReadonly: () => false}, selection: {value: {}},
+      placement: {getAbsoluteObjectSelectionIds: () => ['a']},
+      crud: {
+        transact: (fn: () => void, origin: unknown) => ydoc.transact(fn, origin),
+        updateBlockProps: (_id: string, patch: Record<string, unknown>) => {
+          for (const [key, value] of Object.entries(patch)) {
+            if (value === null) props.delete(key); else props.set(key, value);
+          }
+        },
+      },
+    };
+    return {props, manager: new BlockObjectFormatManager(doc as never)};
+  };
+
+  it('merges offline font and shadow edits and supports undo/redo of group deletion', () => {
+    const a = new Y.Doc(), b = new Y.Doc();
+    const left = makeReplica(a), right = makeReplica(b);
+    Y.applyUpdate(b, Y.encodeStateAsUpdate(a));
+    const undo = new Y.UndoManager(left.props, {trackedOrigins: new Set([left.manager])});
+    left.manager.updateSelection(['a'], {textStyle: {...DEFAULT_OBJECT_TEXT_STYLE, fontSize: 24}});
+    right.manager.updateSelection(['a'], {textStyle: {...DEFAULT_OBJECT_TEXT_STYLE, effects: {
+      ...DEFAULT_OBJECT_EFFECTS, shadow: {...DEFAULT_OBJECT_EFFECTS.shadow, enabled: true},
+    }}});
+    const fromA = Y.encodeStateAsUpdate(a), fromB = Y.encodeStateAsUpdate(b);
+    Y.applyUpdate(a, fromB); Y.applyUpdate(b, fromA);
+    expect(left.props.toJSON()).toEqual(right.props.toJSON());
+    expect(left.props.get('textFont')).toBe('24px 400 normal');
+    expect(left.props.get('textShadow')).toBe('45deg 2px 4px #000000 / 0.25');
+    undo.stopCapturing();
+    left.manager.updateSelection(['a'], {textStyle: {...left.manager.resolve('a')!.textStyle!, effects: DEFAULT_OBJECT_EFFECTS}});
+    expect(left.props.has('textShadow')).toBeFalse();
+    undo.undo();
+    expect(left.props.get('textShadow')).toBe('45deg 2px 4px #000000 / 0.25');
+    expect(left.props.get('textFont')).toBe('24px 400 normal');
+    undo.redo();
+    expect(left.props.has('textShadow')).toBeFalse();
+    Y.applyUpdate(b, Y.encodeStateAsUpdate(a));
+    expect(left.props.toJSON()).toEqual(right.props.toJSON());
+    undo.destroy(); a.destroy(); b.destroy();
   });
 });

@@ -1,7 +1,7 @@
 import {Subscription} from 'rxjs'
 import type {IBlockProps, IBlockSnapshot} from '../../block-std/types'
 import {deriveObjectSizeFromPixels} from '../block-object-sizing.manager'
-import {resolveBlockPosition, resolvePlacementLayer} from './state'
+import {parseBlockPosition, resolveBlockPosition, resolvePlacementLayer, storeBlockPosition} from './state'
 import {
   BLOCK_OBJECT_GROUP_FLAVOUR,
   type BlockObjectGroupProps,
@@ -61,9 +61,7 @@ const samePosition = (
   current: unknown,
   next: {x: number; y: number},
 ): boolean => {
-  const resolved = resolveBlockPosition(current)
-  return sameGeometryNumber(resolved.x, next.x) &&
-    sameGeometryNumber(resolved.y, next.y)
+  return current === storeBlockPosition(next)
 }
 
 /**
@@ -157,10 +155,10 @@ export class BlockPlacementGroupCoordinator {
     ) as IBlockSnapshot
     snapshot.props = {
       ...snapshot.props,
-      position: {
-        x: roundPlacementGeometry(bounds.left),
-        y: roundPlacementGeometry(bounds.top),
-      },
+      position: storeBlockPosition({
+        x: bounds.left,
+        y: bounds.top,
+      }),
       ...(candidate.layer === 'under' ? {placementLayer: 'under'} : {}),
     }
 
@@ -175,10 +173,10 @@ export class BlockPlacementGroupCoordinator {
 
       candidate.objects.forEach(object => {
         const patch: Record<string, any> = {
-          position: {
-            x: roundPlacementGeometry(object.x - bounds.left),
-            y: roundPlacementGeometry(object.y - bounds.top),
-          },
+          position: storeBlockPosition({
+            x: object.x - bounds.left,
+            y: object.y - bounds.top,
+          }),
           placementLayer: null,
         }
         if (this.doc.objectSizing.getCapability(object.flavour)) {
@@ -225,14 +223,10 @@ export class BlockPlacementGroupCoordinator {
       const props = this.doc.model.getProps(id) as Record<string, unknown>
       const local = resolveBlockPosition(props['position'])
       const patch: Record<string, any> = {
-        position: {
-          x: roundPlacementGeometry(
-            source.position.x + local.x,
-          ),
-          y: roundPlacementGeometry(
-            source.position.y + local.y,
-          ),
-        },
+        position: storeBlockPosition({
+          x: source.position.x + local.x,
+          y: source.position.y + local.y,
+        }),
         placementLayer: source.layer === 'under' ? 'under' : null,
       }
       if (flavour && this.doc.objectSizing.getCapability(flavour)) {
@@ -288,6 +282,11 @@ export class BlockPlacementGroupCoordinator {
     patch: Partial<IBlockProps>,
   ): boolean {
     if (this.runtime.isReadonly(block)) return false
+    if (patch.position != null) {
+      const position = parseBlockPosition(patch.position)
+      if (!position) return false
+      patch = {...patch, position: storeBlockPosition(position)}
+    }
     const groupId = this.resolveOwningGroupId(block.id)
     if (!groupId) {
       block.updateProps(patch as any)
@@ -427,8 +426,8 @@ export class BlockPlacementGroupCoordinator {
     const groupIsAbsolute =
       this.runtime.getPersistedState(groupId).mode === 'absolute'
     const nextGroupPosition = {
-      x: roundPlacementGeometry(groupPosition.x + bounds.left),
-      y: roundPlacementGeometry(groupPosition.y + bounds.top),
+      x: groupPosition.x + bounds.left,
+      y: groupPosition.y + bounds.top,
     }
     let writes = 0
 
@@ -439,7 +438,7 @@ export class BlockPlacementGroupCoordinator {
       groupIsAbsolute &&
       !samePosition(groupProps['position'], nextGroupPosition)
     ) {
-      groupPatch['position'] = nextGroupPosition
+      groupPatch['position'] = storeBlockPosition(nextGroupPosition)
     }
     if (Object.keys(groupPatch).length) {
       this.doc.crud.updateBlockProps(groupId, groupPatch)
@@ -449,11 +448,11 @@ export class BlockPlacementGroupCoordinator {
     resolvedObjects.forEach(object => {
       const patch: Record<string, any> = {}
       const position = {
-        x: roundPlacementGeometry(object.x - bounds.left),
-        y: roundPlacementGeometry(object.y - bounds.top),
+        x: object.x - bounds.left,
+        y: object.y - bounds.top,
       }
       if (!samePosition(object.props['position'], position)) {
-        patch['position'] = position
+        patch['position'] = storeBlockPosition(position)
       }
       if (this.doc.objectSizing.getCapability(object.flavour)) {
         const derived = deriveObjectSizeFromPixels(

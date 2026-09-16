@@ -10,6 +10,7 @@ import {
   storeObjectEffects,
   storeObjectLine,
   storeObjectPaint,
+  storeObjectFormatSection,
   storeObjectTextFrame,
   storeObjectTextStyle,
 } from "../framework";
@@ -167,10 +168,8 @@ describe("SnapshotRenderEngine", () => {
     })
     const region = createRenderUnitFixture("region-surface", {
       p: [8, 12, 16, 20],
-      bgi: "images/paper.png",
-      bgs: "stretch",
-      bgx: 25,
-      bgy: 75,
+      bgi: "url(\"images/paper.png\") 25% 75% / 100% 100% no-repeat",
+
       bgo: 0.45,
     })
 
@@ -218,7 +217,7 @@ describe("SnapshotRenderEngine", () => {
 
     renderer.render(host, wrapRoot([
       createRenderUnitFixture("region-off", {
-        bgi: "https://cdn.example.com/paper.png",
+        bgi: "url(\"https://cdn.example.com/paper.png\") 50% 50% / cover no-repeat",
       }),
     ]))
 
@@ -235,19 +234,19 @@ describe("SnapshotRenderEngine", () => {
       height: 160,
       rotation: 15,
       shape: "rounded-speech-bubble",
-      fill: storeObjectPaint({
+      ...storeObjectFormatSection('shapeFill', {
         type: "picture",
         src: "images/paper.png", fit: "stretch", positionX: 25,
         positionY: 75, opacity: .45,
       }),
-      outline: storeObjectLine({
+      ...storeObjectLine({
         ...DEFAULT_OBJECT_LINE, color: "#dfab01", width: 2, dash: "dash",
       }),
-      effects: storeObjectEffects(DEFAULT_OBJECT_EFFECTS),
-      textFrame: storeObjectTextFrame({
+      ...storeObjectEffects(DEFAULT_OBJECT_EFFECTS),
+      ...storeObjectTextFrame({
         ...DEFAULT_OBJECT_TEXT_FRAME, margins: [8, 12, 16, 20],
       }),
-      textStyle: storeObjectTextStyle({
+      ...storeObjectTextStyle({
         ...DEFAULT_OBJECT_TEXT_STYLE,
         fill: {...DEFAULT_OBJECT_PAINT, color: "#2563EB"},
         outline: {type: "line", color: "#FFFFFF", width: 1},
@@ -255,10 +254,7 @@ describe("SnapshotRenderEngine", () => {
           ...DEFAULT_OBJECT_EFFECTS.shadow, enabled: true,
         }},
       }),
-      position: {
-        x: 40,
-        y: 60,
-      },
+      position: "40 60",
       placementLayer: "under",
     })
 
@@ -306,10 +302,10 @@ describe("SnapshotRenderEngine", () => {
         width: 240,
         height: 120,
         rotation: 0,
-        textFrame: storeObjectTextFrame({
+        ...storeObjectTextFrame({
           ...DEFAULT_OBJECT_TEXT_FRAME, margins: [0, 0, 0, 0],
         }),
-        position: {x: 40, y: 60},
+        position: "40 60",
       }),
     ])]))
 
@@ -333,7 +329,7 @@ describe("SnapshotRenderEngine", () => {
       createTextBoxFixture("text-box-off", {
         width: 240,
         height: 120,
-        bgi: "https://cdn.example.com/paper.png",
+        bgi: "url(\"https://cdn.example.com/paper.png\") 50% 50% / cover no-repeat",
       }),
     ]))
 
@@ -344,12 +340,12 @@ describe("SnapshotRenderEngine", () => {
     const host = document.createElement("div")
     const renderer = createSnapshotRenderer()
     const textBox = createTextBoxFixture("text-box-typography", {
-      textFrame: storeObjectTextFrame({
+      ...storeObjectTextFrame({
         ...DEFAULT_OBJECT_TEXT_FRAME,
         horizontalAlign: "right",
         verticalAlign: "bottom",
       }),
-      textStyle: storeObjectTextStyle({
+      ...storeObjectTextStyle({
         ...DEFAULT_OBJECT_TEXT_STYLE,
         fontFamily: "Georgia, serif",
         fontSize: 29,

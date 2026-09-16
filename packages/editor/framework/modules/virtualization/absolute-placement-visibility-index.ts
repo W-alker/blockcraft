@@ -1,3 +1,4 @@
+import {parseBlockPosition} from '../../services/block-placement/state'
 import {estimateModelBlockHeight} from './model-height-estimator'
 
 const PLACEMENT_LAYOUT_FLAVOUR = 'placement-layout'
@@ -106,15 +107,9 @@ export class AbsolutePlacementVisibilityIndex {
   private resolveBlockBand(blockId: string): VerticalBand | null {
     if (this.doc.revisions?.getBlockPresentation(blockId).hidden) return null
     const props = this.doc.model.getProps(blockId) ?? {}
-    const position = props['position']
-    if (
-      !position ||
-      typeof position !== 'object'
-    ) {
-      return null
-    }
-
-    const y = finiteNumber((position as {y?: unknown}).y)
+    const position = parseBlockPosition(props['position'])
+    if (!position) return null
+    const y = position.y
 
     const flavour = this.doc.model.getFlavour(blockId)
     const dimensions = flavour

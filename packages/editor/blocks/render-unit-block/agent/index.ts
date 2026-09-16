@@ -32,10 +32,7 @@ export const RENDER_UNIT_BLOCK_AGENT_CAPABILITY = defineBlockAgentCapability({
     borderColor: BLOCK_AGENT_NULLABLE_STRING_SCHEMA,
     p: {type: ['array', 'null'], minItems: 1, maxItems: 4, items: {type: 'number', minimum: 0}},
     bgi: BLOCK_AGENT_NULLABLE_STRING_SCHEMA,
-    bgs: BLOCK_AGENT_NULLABLE_STRING_SCHEMA,
-    bgx: BLOCK_AGENT_NULLABLE_NUMBER_SCHEMA,
-    bgy: BLOCK_AGENT_NULLABLE_NUMBER_SCHEMA,
     bgo: BLOCK_AGENT_NULLABLE_NUMBER_SCHEMA,
   }),
-  atomicProps: ['p'], examples: [{flavour: 'render-unit', params: [{}, {p: [16, 24]}]}],
+  atomicProps: ['p', 'bgi'], examples: [{flavour: 'render-unit', params: [{}, {p: [16, 24]}]}],
 })

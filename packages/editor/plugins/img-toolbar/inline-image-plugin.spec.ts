@@ -943,7 +943,7 @@ describe('ImgToolbarPlugin inline-image interaction', () => {
 
     const snapshots = h.replaceWithSnapshots.calls.mostRecent().args[1];
     const image = snapshots[1];
-    expect(image.props.position).toEqual({x: 125, y: 40});
+    expect(image.props.position).toEqual("125 40");
     expect(image.props.placementLayer).toBe('under');
     expect(h.selectOrSetCursorAtBlock).toHaveBeenCalledOnceWith(image.id, true);
     expect(h.run).toHaveBeenCalledTimes(1);

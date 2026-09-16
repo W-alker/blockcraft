@@ -4,16 +4,13 @@ import type {
   NormalizedBlockObjectFormat,
   ObjectFormatFeatureSet,
   ObjectFormatPatch,
-  ObjectLine,
   ObjectPaint,
 } from "../block-std/block/object-format";
 import {
   normalizeBlockObjectFormat,
-  storeObjectEffects,
-  storeObjectLine,
-  storeObjectPaint,
-  storeObjectTextFrame,
-  storeObjectTextStyle,
+  OBJECT_FORMAT_SECTION_KEYS,
+  storeBlockObjectFormat,
+  storeObjectFormatSection,
 } from "../block-std/block/object-format";
 import type { IBlockProps } from "../block-std/types";
 
@@ -29,19 +26,6 @@ const FORMAT_KEYS = [
   "textFrame",
   "textStyle",
 ] as const;
-
-const PERSISTED_FORMAT_KEYS = {
-  width: "width",
-  height: "height",
-  rotation: "rotation",
-  lockAspectRatio: "lockRatio",
-  shapeType: "shape",
-  shapeFill: "fill",
-  shapeOutline: "outline",
-  shapeEffects: "effects",
-  textFrame: "textFrame",
-  textStyle: "textStyle",
-} as const satisfies Record<ObjectFormatKey, keyof BlockObjectFormatProps>;
 
 export type ObjectFormatKey = (typeof FORMAT_KEYS)[number];
 
@@ -83,8 +67,8 @@ export interface BlockObjectFormatUpdateResult {
 
 /**
  * Model-only object-format facade shared by toolbars, exporters and hosts.
- * Every section is persisted under one compact top-level prop so Yjs observes
- * one atomic value and independent sections cannot overwrite each other.
+ * Each changed functional group is persisted independently in one transaction.
+ * Default groups are deleted; unrelated groups are never rewritten.
  */
 export class BlockObjectFormatManager {
   constructor(private readonly doc: BlockCraft.Doc) {}
@@ -237,13 +221,11 @@ function buildPersistentPatch(
     if (!Object.prototype.hasOwnProperty.call(patch, key)) continue;
     const value = patch[key];
     if (!supportsKey(capability, allowedShapeTypes, key, value)) continue;
-    const persistedKey = PERSISTED_FORMAT_KEYS[key];
-    if (value === null) {
-      delete candidate[persistedKey];
-    } else if (value !== undefined) {
-      candidate[persistedKey] = storeFormatValue(key, value);
-    }
+    if (value === undefined) continue;
+    for (const group of OBJECT_FORMAT_SECTION_KEYS[key]) delete candidate[group];
+    if (value !== null) Object.assign(candidate, storeObjectFormatSection(key, value, {preservePrecision: true}));
   }
+
   const nextLock =
     patch.lockAspectRatio === null
       ? capability.defaults.lockAspectRatio
@@ -263,33 +245,25 @@ function buildPersistentPatch(
     candidate as Partial<BlockObjectFormatProps>,
     capability,
   );
+  const stored = storeBlockObjectFormat(normalized, capability);
   const persistent: Partial<IBlockProps> = {};
   for (const key of FORMAT_KEYS) {
-    if (!Object.prototype.hasOwnProperty.call(patch, key)) continue;
+    if (!Object.prototype.hasOwnProperty.call(patch, key) || patch[key] === undefined) continue;
     if (!supportsKey(capability, allowedShapeTypes, key, patch[key])) continue;
-    const persistedKey = PERSISTED_FORMAT_KEYS[key];
-    if (patch[key] === null) {
-      persistent[persistedKey] = null;
-      continue;
+    for (const group of OBJECT_FORMAT_SECTION_KEYS[key]) {
+      const value = patch[key] === null ? undefined : stored[group];
+      if (value === undefined) {
+        if (current[group] !== undefined) persistent[group] = null;
+      } else if (!deepEqual(value, current[group])) {
+        persistent[group] = value as never;
+      }
     }
-    const value = normalized[key];
-    if (value === undefined) continue;
-    persistent[persistedKey] = storeFormatValue(key, value) as never;
   }
   if (nextLock && changesWidth !== changesHeight) {
     const coupledKey = changesWidth ? "height" : "width";
     persistent[coupledKey] = normalized[coupledKey];
   }
   return persistent;
-}
-
-function storeFormatValue(key: ObjectFormatKey, value: unknown): unknown {
-  if (key === "shapeFill") return storeObjectPaint(value as ObjectPaint);
-  if (key === "shapeOutline") return storeObjectLine(value as ObjectLine);
-  if (key === "shapeEffects") return storeObjectEffects(value as never);
-  if (key === "textFrame") return storeObjectTextFrame(value as never);
-  if (key === "textStyle") return storeObjectTextStyle(value as never);
-  return value;
 }
 
 function supportsKey(

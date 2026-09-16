@@ -173,7 +173,7 @@ test('undoing top-bottom layout restores a visible absolute object with virtuali
     }
   }, {selector: editorSelector, id: imageId}), {timeout: 10_000}).toEqual({
     parentFlavour: 'placement-layout',
-    position: {x: expect.any(Number), y: expect.any(Number)},
+    position: expect.stringMatching(/^-?\d+(?:\.\d{1,2})? -?\d+(?:\.\d{1,2})?$/),
     layoutMounted: true,
     connected: true,
     visible: true,

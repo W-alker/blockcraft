@@ -1,3 +1,4 @@
+import {storeBlockPosition} from '../../framework/services/block-placement/state'
 import {
   ChangeDetectionStrategy,
   Component,
@@ -14,7 +15,7 @@ import {
   objectPaintBackgroundPosition,
   objectPaintBackgroundSize,
   objectPicturePreserveAspectRatio,
-  storeObjectTextStyle,
+  storeBlockObjectFormat,
 } from '../../framework'
 import {
   ShapeResizerComponent,
@@ -297,10 +298,10 @@ export class WordArtBlockComponent extends EditableBlockComponent<WordArtBlockMo
       layer: 'over' as const,
     }
     if (placement.mode === 'absolute') {
-      next.position = {
+      next.position = storeBlockPosition({
         x: placement.x + event.offsetX,
         y: placement.y + event.offsetY,
-      }
+      })
     }
     const nextTextStyle = isCorner
       ? {
@@ -313,7 +314,10 @@ export class WordArtBlockComponent extends EditableBlockComponent<WordArtBlockMo
       this.doc.placement.updateObjectGeometry(this, next)
       if (nextTextStyle) {
         this.doc.crud.updateBlockProps(this.id, {
-          textStyle: storeObjectTextStyle(nextTextStyle),
+          textFont: storeBlockObjectFormat(
+            {...this.wordArtFormat, textStyle: nextTextStyle},
+            WORD_ART_OBJECT_FORMAT_CAPABILITY,
+          ).textFont ?? null,
         })
       }
     }, this)

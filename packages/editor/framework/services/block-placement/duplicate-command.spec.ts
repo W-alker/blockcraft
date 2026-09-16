@@ -1,3 +1,4 @@
+import {storeBlockPosition} from './state'
 import {BlockNodeType, type IBlockSnapshot} from '../../block-std'
 import {BlockReadonlyOperation} from '../../doc/block-readonly.types'
 import {
@@ -9,7 +10,7 @@ const shapeSnapshot = (id: string, x = 20, y = 30): IBlockSnapshot => ({
   id,
   flavour: 'shape',
   nodeType: BlockNodeType.block,
-  props: {position: {x, y}, placementLayer: 'under'},
+  props: {position: storeBlockPosition({x, y}), placementLayer: 'under'},
   meta: {lock: 'owner-1', lockKind: 'template'},
   children: [{
     id: `${id}-text`,
@@ -101,7 +102,7 @@ describe('absolute placement duplication', () => {
     const copiedChild = copies[0].children[0] as IBlockSnapshot
     const sourceChild = h.source.children[0] as IBlockSnapshot
     expect(copiedChild.id).not.toBe(sourceChild.id)
-    expect(copies[0].props['position']).toEqual({x: 32, y: 42})
+    expect(copies[0].props['position']).toEqual("32 42")
     expect(copies[0].props['placementLayer']).toBe('under')
     expect(copies[0].meta['lock']).toBeUndefined()
     expect(copiedChild.meta['lock']).toBeUndefined()

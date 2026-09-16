@@ -1,3 +1,4 @@
+import {storeBlockPosition} from './state'
 import {BehaviorSubject, Observable, Subscription} from 'rxjs'
 import type {IBlockProps} from '../../block-std/types'
 import {BlockReadonlyError} from '../../doc/block-readonly.types'
@@ -128,7 +129,7 @@ export class BlockPlacementInteractionController {
       x: finitePlacementNumber(patch.x, current.x),
       y: finitePlacementNumber(patch.y, current.y),
     }
-    if (!this.commitObjectGeometry(block, {position: next})) return false
+    if (!this.commitObjectGeometry(block, {position: storeBlockPosition(next)})) return false
     block.changeDetectorRef.markForCheck()
     return true
   }

@@ -812,7 +812,7 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
       },
     ]);
     const insertedProps = createSnapshot.calls.mostRecent().args[1][1];
-    expect(insertedProps.textStyle).toBe(preset.props.textStyle);
+    expect(insertedProps.textFill).toEqual(preset.props.textFill);
     expect(insertAbsoluteSnapshot).toHaveBeenCalledOnceWith(
       wordArtSnapshot,
       jasmine.objectContaining({

@@ -248,7 +248,9 @@ describe("TextBoxPresetPickerComponent", () => {
     expect(
       normalizeTextBoxProps(getTextBoxPreset("office-simple").props).shapeType,
     ).toBe("rectangle");
-    expect(getTextBoxPreset("office-simple").props.fill).toBeTruthy();
+    expect(getTextBoxPreset("office-simple").props.fill).toBeUndefined();
+    expect(normalizeTextBoxProps(getTextBoxPreset("office-simple").props).shapeFill)
+      .toEqual({type: 'solid', color: '#FFFFFF', opacity: 1});
     expect(getTextBoxPreset("office-simple").props).not.toEqual(
       jasmine.objectContaining({ preset: "office-simple" }),
     );

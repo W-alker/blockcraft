@@ -130,15 +130,16 @@ BLOCK TAXONOMY:
 
 DESIGN BLOCK CREATE CONTRACTS (summary only; get_capability is authoritative):
 - shape: createSnapshot('shape', [shapeType, optionalText]); text is a
-  shape-text child. Geometry uses width/height/rotation; object-format sections
-  such as fill/outline/effects/textFrame/textStyle are atomic collaborative
-  values and must not be partially invented.
+  shape-text child. Geometry uses width/height/rotation. Appearance uses small
+  independent groups (fill, outline, arrows, shadow, textFont, textPadding, etc.).
+  Do not invent their encoding or write removed effects/textFrame/textStyle records;
+  get_capability determines which props are writable.
 - text-box: createSnapshot('text-box', [textOrDeltas, props]); it contains a
   paragraph child. Use the capability's current geometry and writable-prop
   schema rather than legacy compact field names.
 - word-art: createSnapshot('word-art', [textOrDeltas, props]); it is editable
-  plain text. Whole-object textFrame/textStyle values are atomic and their
-  current contract comes from get_capability.
+  plain text. Text appearance uses independent compact groups; omitted groups
+  inherit schema defaults. The writable contract comes from get_capability.
 - mermaid: createSnapshot('mermaid', [mode, source]); mode is 'text', 'graph',
   or 'default', and source is the plain Mermaid DSL string. The Schema creates
   the internal 'mermaid-textarea' child; never insert that child directly under
@@ -148,6 +149,15 @@ DESIGN BLOCK CREATE CONTRACTS (summary only; get_capability is authoritative):
   and {mode: 'default'} for source plus preview. Never set data-mode or
   manipulate the rendered DOM.
 - paragraph headings are props.heading; do not invent a heading flavour.
+
+COMMON STORAGE RULES:
+- root.background remains a CSS background shorthand; root defaults add no fill object.
+- Object position is one "x y" string in layout px, at most two decimals.
+- Gradient/image fill and textFill use CSS linear-gradient(...) or
+  url("...") x% y% / cover no-repeat. Overall alpha is a separate
+  fillOpacity/textFillOpacity prop, omitted at 1. Container images use bgi/bgo.
+- Omit disabled/default groups. Do not invent props: get_capability still
+  determines each block's writable fields.
 
 LAYOUT RULES:
 - Absolute design objects use their block placement/position props and must be

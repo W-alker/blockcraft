@@ -203,6 +203,10 @@ Shape, TextBox and WordArt selection. It also owns Shift-click mixed selection,
 alignment/distribution and grouping. Register it once; do not register any of
 the removed per-flavour object toolbars.
 
+形状块的“形状选项”只显示“填充 / 轮廓 / 效果”，不提供切换形状的 tab。
+文本框保留“形状”tab；混合选区包含形状块时隐藏该入口。面板从文本框切换到
+形状选区后，若此前停留在“形状”tab，则显示“填充”，避免留下空白页。
+
 ```typescript
 import { ObjectFormatToolbarPlugin } from "@ccc/blockcraft";
 
@@ -289,9 +293,11 @@ kinds are removed whenever an object already contains text.
 
 Picture fill uses `DOC_FILE_SERVICE_TOKEN.uploadImg()` or a normalized legal
 URL. `shapeFill`, `shapeOutline`, `shapeEffects`, `textFrame` and `textStyle`
-are atomic serialized values. Programmatic `null` deletes exactly one section,
-whereas `type: 'none'` is an explicit fill/outline state; the compact panel does
-not expose that reset operation.
+保留为结构化操作参数；持久化由 manager 分解为独立的紧凑小组，
+只写变化的组、删除默认组。`null` 清除该操作所拥有的全部小组；
+`type: 'none'` 是明确关闭，必要时编码为 `none`，不会恢复 Schema 的默认效果。
+对象效果和文字效果的阴影/发光分别保存，轮廓基础/端点/箭头分别保存。
+默认轮廓宽度为 `1px`，最大允许值 `100px` 不作为默认值。
 
 ## Removed: ObjectGroupToolbarPlugin
 
@@ -467,7 +473,9 @@ keeps clearance for the rotation handle; pointerdown inside `shape-resizer` or
 and scribble shapes additionally expose endpoint/node handles; cubic shapes
 expose their two control handles and guide lines. The gesture updates only the
 SVG preview until pointerup, then writes one validated atomic `customGeometry`
-value so collaboration and Undo never observe partial curves.
+compact path string so collaboration and Undo never observe partial curves.
+No-motion clicks and gestures returning to their start do not commit; restoring
+the catalogue geometry deletes the override through the same Undo transaction.
 Common catalogue shapes use the same gesture boundary with yellow round
 adjustment handles. Rounded rectangles, triangle, parallelogram, trapezoid,
 cardinal/bidirectional block arrows and rectangular/rounded callouts persist
@@ -477,7 +485,7 @@ All other catalogue shapes project their trusted static path into yellow
 editable nodes on selection. Quadratic/smooth segments expose equivalent blue
 cubic controls; catalogue arcs are split into cubic segments so their nodes and
 controls remain usable. The projection becomes atomic `customGeometry` only
-after the first completed gesture.
+after the first gesture that changes geometry.
 
 Register `PlacementLayoutBlockSchema`, `ShapeBlockSchema`,
 `ShapeTextBlockSchema`, `ShapeToolbarPlugin`, and a fresh
@@ -548,32 +556,30 @@ Shape catalog except line/connectors that cannot own a text frame, and exposes
 CSES color/slider/number controls for shape fill, picture fill, opacity,
 outline and stroke style. Picture fill accepts either an `http(s)` image link
 or a local image uploaded through the host `DocFileService`; both persist the
-resolved URL in `bgi`.
+resolved URL inside the CSS `fill` string.
 **文字** combines WordArt presets with font, size, alignment, solid/gradient
 fill, outline, shadow and transform controls. Applying a whole-style preset
 preserves the text box's current font size (or its neutral inherited 16px size)
 instead of importing the standalone WordArt preset's display size. Preset IDs
-are never persisted, and detailed `wa` edits remain one canonical serialized
-value-object write.
+are never persisted. Detailed text edits use independent `textFont`, `textFill`,
+`textOutline`, `textShadow` and other text groups.
 The **布局** rail entry uses the semantic `bc_buju` icon.
 
-**文字** also owns the **文字方向** switch, which writes the frame's `wm` prop
-rather than a WordArt style. Because `text-align` and the flex main axis are
+**文字** also owns the **文字方向** switch, which writes the independent
+`textDirection` prop. Because `text-align` and the flex main axis are
 logical, a vertical frame flips what each alignment control does on screen, so
 the two alignment rows swap their displayed labels and options while the
 underlying `horizontalAlign` / `verticalAlign` fields stay put. No stored value
 is rewritten when the direction changes.
 
-Compact `p/bgi/bgs/bgx/bgy/bgo` remains available to Schema/CRUD callers as a
-low-level surface capability. Raw padding is not shown in the toolbar; the
+Generic containers expose `p/bgi/bgo` at Schema/CRUD boundaries. Object blocks
+use the shared object-format fill groups. Raw padding is not shown in the toolbar; the
 background URL is exposed as a validated `http(s)` picture-fill link alongside
 选择图片 / 替换图片 / 移除, fit, horizontal/vertical percentage position and
-opacity. Position controls write `bgx/bgy` once after slider interaction and
-stay hidden for `stretch`, where `object-position` has no visible effect. These
-controls key off _custom_ images, meaning a `bgi` that is not a `bc:` artwork
-reference. A catalog drawing shares the same field but belongs to the chosen
-style, so offering to replace or remove it means one click wipes the preset's
-artwork and leaves an empty frame. Slider movement stays local and commits once on pointer/key
+opacity. Position controls rebuild the CSS picture string once after slider
+interaction and stay hidden for `stretch`, where `object-position` has no visible
+effect. Custom pictures use `fill`; catalog drawings use the independent
+`artwork` reference, so image replacement does not rewrite catalog SVG data. Slider movement stays local and commits once on pointer/key
 completion to avoid Yjs/Undo flooding. The outer rail and all secondary cards
 remain in one block-owned connected Overlay; CSES ColorPicker/Select sibling
 panes are treated as owned interactions only while their originating control is
@@ -885,3 +891,11 @@ new TextMarkerPlugin(
 ### Render-unit 外观入口
 
 `CalloutToolbarPlugin` 对 `render-unit` 仅提供背景和边框颜色入口，不显示宽高输入。通过内容区域顶部抓手聚焦按钮整块选中后，尺寸由八向手柄或块的 `setSize()` 调整，继续采用与图片一致的 `wr/ar` 持久化。
+
+### 通用紧凑存储（2026-09-16）
+
+对象工具栏仍发送结构化 `ObjectFormatPatch`。持久化由共用 codec 负责：坐标
+`"x y"`（最多两位小数），渐变 `linear-gradient(...)`，图片
+`url("...") x% y% / cover|contain|100% 100% no-repeat`；整体透明度独立保存且默认省略。
+切换填充类型会清除不再适用的透明度项。root 的 CSS background 与容器图片背景同样遵守
+不保存空/默认配置的规则。不要在各面板增加自定义序列化，也不要直接写 Y.Map。

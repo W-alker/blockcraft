@@ -21,12 +21,12 @@ describe('BlockPlacement group commands', () => {
     const props = new Map<string, Record<string, any>>([
       ['root', {}],
       ['layout', {}],
-      ['image', {wr: 50, ar: 2, position: {x: 100, y: 100}}],
+      ['image', {wr: 50, ar: 2, position: "100 100"}],
       ['shape', {
         width: 100,
         height: 40,
         rotation: 90,
-        position: {x: 520, y: 100},
+        position: "520 100",
       }],
     ])
     const parentOf = (id: string): string | null => {
@@ -201,6 +201,21 @@ describe('BlockPlacement group commands', () => {
     }
   }
 
+  it('settles rotated fractional group positions without repeated coordinate writes', () => {
+    const h = makeHarness()
+    h.props.get('shape')!['rotation'] = 33.3
+    h.props.get('shape')!['position'] = '520.12 100.98'
+    expect(h.manager.group(['image', 'shape'])).toBe('group')
+    h.manager.updateObjectGeometry('shape', {rotation: 37.7})
+    const before = JSON.stringify([...h.props])
+    for (let i = 0; i < 5; i++) h.manager.updateObjectGeometry('shape', {rotation: 37.7})
+    expect(JSON.stringify([...h.props])).toBe(before)
+    for (const id of ['group', 'image', 'shape']) {
+      expect(h.props.get(id)!['position']).toMatch(/^-?\d+(?:\.\d{1,2})? -?\d+(?:\.\d{1,2})?$/)
+    }
+    h.manager.destroy()
+  })
+
   it('groups fixed and ratio-sized objects into one fixed local plane', () => {
     const h = makeHarness()
 
@@ -212,14 +227,14 @@ describe('BlockPlacement group commands', () => {
     expect(h.props.get('group')).toEqual({
       width: 490,
       height: 230,
-      position: {x: 100, y: 70},
+      position: "100 70",
     })
     expect(h.props.get('image')).toEqual(jasmine.objectContaining({
       wr: 81.6327,
       ar: 2,
-      position: {x: 0, y: 30},
+      position: "0 30",
     }))
-    expect(h.props.get('shape')!['position']).toEqual({x: 420, y: 30})
+    expect(h.props.get('shape')!['position']).toEqual("420 30")
     expect(h.manager.isInObjectGroup('image')).toBeTrue()
     expect(h.manager.getState('image').mode).toBe('absolute')
     expect(h.manager.supports('image', 'relative')).toBeFalse()
@@ -241,9 +256,9 @@ describe('BlockPlacement group commands', () => {
     expect(h.props.get('image')).toEqual(jasmine.objectContaining({
       wr: 50,
       ar: 2,
-      position: {x: 100, y: 100},
+      position: "100 100",
     }))
-    expect(h.props.get('shape')!['position']).toEqual({x: 520, y: 100})
+    expect(h.props.get('shape')!['position']).toEqual("520 100")
   })
 
   it('rebases surviving rotated members after deletion without resolving component views', () => {
@@ -260,13 +275,13 @@ describe('BlockPlacement group commands', () => {
     expect(h.props.get('group')).toEqual({
       width: 40,
       height: 100,
-      position: {x: 550, y: 70},
+      position: "550 70",
     })
     expect(h.props.get('shape')).toEqual({
       width: 100,
       height: 40,
       rotation: 90,
-      position: {x: -30, y: 30},
+      position: "-30 30",
     })
     expect(h.doc.getBlockById).not.toHaveBeenCalled()
   })
@@ -302,7 +317,7 @@ describe('BlockPlacement group commands', () => {
     expect(h.children.get('layout')).toEqual([])
     expect(h.props.get('group')!['position']).toBeUndefined()
     expect(h.manager.getObjectLayout('group')).toBe('top-bottom')
-    expect(h.props.get('image')!['position']).toEqual({x: 0, y: 30})
+    expect(h.props.get('image')!['position']).toEqual("0 30")
   })
 
   it('rejects mixed layers and non-contiguous ranges', () => {
@@ -313,7 +328,7 @@ describe('BlockPlacement group commands', () => {
     h.props.get('shape')!['placementLayer'] = undefined
     h.children.get('layout')!.splice(1, 0, 'gap')
     h.flavours.set('gap', 'shape')
-    h.props.set('gap', {width: 10, height: 10, position: {x: 0, y: 0}})
+    h.props.set('gap', {width: 10, height: 10, position: "0 0"})
     h.children.set('gap', [])
     expect(h.manager.canGroup(['image', 'shape'])).toBeFalse()
   })
@@ -337,14 +352,14 @@ describe('BlockPlacement group commands', () => {
     expect(h.props.get('group')).toEqual({
       width: 670,
       height: 230,
-      position: {x: 100, y: 70},
+      position: "100 70",
     })
     expect(h.props.get('image')).toEqual(jasmine.objectContaining({
       wr: 59.7015,
       ar: 2,
-      position: {x: 0, y: 30},
+      position: "0 30",
     }))
-    expect(h.props.get('shape')!['position']).toEqual({x: 600, y: 30})
+    expect(h.props.get('shape')!['position']).toEqual("600 30")
 
     const [message, metrics] = h.logger.info.calls.mostRecent().args
     expect(message).toMatch(/^\[ObjectGroup\]\[performance\] reflow \d+\.\d{3}ms$/)
@@ -365,12 +380,12 @@ describe('BlockPlacement group commands', () => {
     expect(h.props.get('group')).toEqual({
       width: 540,
       height: 230,
-      position: {x: 50, y: 70},
+      position: "50 70",
     })
     expect(h.props.get('image')).toEqual(jasmine.objectContaining({
       wr: 74.0741,
-      position: {x: 0, y: 30},
+      position: "0 30",
     }))
-    expect(h.props.get('shape')!['position']).toEqual({x: 470, y: 30})
+    expect(h.props.get('shape')!['position']).toEqual("470 30")
   })
 })

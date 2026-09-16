@@ -1,3 +1,4 @@
+import {normalizeTextBoxSnapshotProps} from "./text-box.types";
 import { Component } from "@angular/core";
 import { TestBed } from "@angular/core/testing";
 import * as Y from "yjs";
@@ -7,6 +8,7 @@ import {
   normalizeObjectPaint,
   storeObjectLine,
   storeObjectPaint,
+  storeObjectFormatSection,
   storeObjectTextFrame,
   type IBlockSnapshot,
   type YBlock,
@@ -318,6 +320,15 @@ class TextBoxArtworkFrameHarness {
 }
 
 describe("TextBoxBlockSchema", () => {
+
+  it("stores rounded coordinates and drops invalid position values", () => {
+    expect(normalizeTextBoxSnapshotProps({position: "12.345 -0.001"} as any).position)
+      .toBe("12.35 0");
+    for (const position of [{x: 12, y: 34}, "12 invalid", "Infinity 0"]) {
+      const props = normalizeTextBoxSnapshotProps({position} as any);
+      expect(Object.prototype.hasOwnProperty.call(props, "position")).toBeFalse();
+    }
+  });
   it("clips focused overflow without making the content area scrollable", async () => {
     await TestBed.configureTestingModule({
       imports: [TextBoxFocusStyleHarness],
@@ -720,7 +731,7 @@ describe("TextBoxBlockSchema", () => {
       width: -10,
       height: 4_000,
       rotation: -15,
-      fill: storeObjectPaint({
+      ...storeObjectFormatSection('shapeFill', {
         type: "picture",
         opacity: 1,
         src: "/assets/paper.png",
@@ -728,26 +739,23 @@ describe("TextBoxBlockSchema", () => {
         positionX: 50,
         positionY: 50,
       }),
-      outline: storeObjectLine({
+      ...storeObjectLine({
         ...defaults.shapeOutline!,
         color: "#334155",
       }),
-      textFrame: storeObjectTextFrame({
+      ...storeObjectTextFrame({
         ...defaults.textFrame!,
         margins: [8, 16, 8, 16],
       }),
-      position: {
-        x: 32,
-        y: 48,
-      },
+      position: "32 48",
       placementLayer: "under",
     });
 
     expect(props).toEqual(
       jasmine.objectContaining({
         p: [8, 16, 8, 16],
-        bgi: "/assets/paper.png",
-        bgs: "contain",
+        bgi: "url(\"/assets/paper.png\") 50% 50% / contain no-repeat",
+
         width: 48,
         height: 2_000,
         rotation: 345,
@@ -758,10 +766,7 @@ describe("TextBoxBlockSchema", () => {
         bw: 1,
         bs: "solid",
         wm: "h",
-        position: {
-          x: 32,
-          y: 48,
-        },
+        position: "32 48",
         placementLayer: "under",
       }),
     );

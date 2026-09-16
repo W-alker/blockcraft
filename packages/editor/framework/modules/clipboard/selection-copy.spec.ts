@@ -179,7 +179,7 @@ describe("ClipboardManager selection copy", () => {
       id: shape.id,
       flavour: 'shape',
       nodeType: BlockNodeType.block,
-      props: {position: {x: 20, y: 30}},
+      props: {position: "20 30"},
       meta: {lock: 'owner-1', lockKind: 'template'},
       children: [],
     });
@@ -203,7 +203,7 @@ describe("ClipboardManager selection copy", () => {
     );
     const copiedShape = snapshot?.children[0] as IBlockSnapshot;
     expect(copiedShape.id).toBe(shape.id);
-    expect(copiedShape.props['position']).toEqual({x: 20, y: 30});
+    expect(copiedShape.props['position']).toEqual("20 30");
     expect(copiedShape.meta['lock']).toBeUndefined();
     expect(copiedShape.meta['lockKind']).toBeUndefined();
     expect(values.get(ClipboardDataType.HTML)).toContain(

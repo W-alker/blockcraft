@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when working with the CRDT data layer.
 >
-> Last updated: 2026-08-28
+> Last updated: 2026-09-16
 
 ## Architecture Overview
 
@@ -76,31 +76,37 @@ Y.Map. A nested `SimpleRecord` is legal snapshot data, but updating that one
 top-level key replaces the record as one collaborative value. Prefer flat
 primitive fields when users may edit parts independently.
 
-The exported `BlockSurfaceProps` makes one deliberate shorthand exception:
-padding is stored as the single `p` entry with CSS-like 1–4 numeric values.
-Changing one side therefore replaces the complete padding shorthand value.
-Background-image options (`bgi/bgs/bgx/bgy/bgo`) remain separate entries, so
-for example `bgs` and `bgo` can still merge independently. Runtime code expands
-the shorthand through `normalizeBlockSurfaceProps()` / `resolveBlockSurface()`
-and must not persist a second nested surface object.
+通用存储规则适用于 root、容器和可定位对象，而非某几个块的特例：
 
-`null` passed to `updateProps()` or `updateBlockProps()` deletes that Y.Map key;
-omitted surface values resolve to defaults without a load-time migration.
+- 运行时继续使用结构化领域值，持久化只保存实际覆盖的配置。
+- 未启用的效果不保留参数；等于所属 Schema 默认值的小组省略。缺省继承，
+  显式 `none` 用于覆盖默认启用的功能；通过 CRUD 的 `null` 删除 Y.Map 属性。
+- 相关且应整体编辑的值使用有界字符串；独立功能使用独立顶层键。
+  不把整个配置打包为 JSON，也不全局改写未知业务 props。
+- `position` 是布局 px 的 `"x y"`，写入最多两位小数；内部计算使用数值。
+  x/y 仍作为一个协同原子值更新，Undo/Redo 一起恢复。
+- `fill/textFill` 支持颜色、`linear-gradient(...)`、
+  `url("...") 50% 50% / cover no-repeat`；渐变/图片整体透明度使用
+  `fillOpacity/textFillOpacity`，默认 1 省略。色标透明度保留在 CSS `color-mix()` 中。
+- 通用容器图片背景使用同一图片 codec，存为 `bgi` CSS shorthand + 可选 `bgo`；
+  不再保存 `bgs/bgx/bgy`。root 的 `background` 本来就是 CSS shorthand，
+  默认 root 快照为 `{}`，不为它增加空填充对象；它现有的多层背景字符串保持有效。
 
-The object-format domain makes a second deliberate atomic-value choice. Its
-persisted keys are `lockRatio/shape/fill/outline/effects/textFrame/textStyle`.
-These names remove repeated domain prefixes without collapsing the public
-contract into opaque single letters. Each structured section is one shallow
-`Record<string, SimpleBasicType>` value, not a JSON string and not a nested Y.Map.
-Changing shadow and glow therefore replaces the single `effects` value;
-changing whole-object text effects replaces the single `textStyle` value. A
-mixed batch command still produces one transaction and one Undo step. Use `storeObjectPaint()`,
-`storeObjectLine()`, `storeObjectEffects()`, `storeObjectTextFrame()` and
-`storeObjectTextStyle()` at snapshot boundaries; never mutate a stored record
-in place. Missing or malformed values resolve to Schema
-`metadata.objectFormat.defaults` without a migration or exception. `null`
-deletes one section and restores its Schema default; a valid stored `t: 'n'`
-fill/outline remains explicit state.
+`BlockSurfaceProps.p` 仍是有界数值 shorthand；它与文字框运行时边距类型共用，
+不要将所有数组/对象盲目字符串化。样式按领域 codec 处理，文档树、富文本、资源元数据
+和业务对象保持各自结构。渲染、远程协同与 Undo 使用同一读取路径，不在读取时写回 Yjs。
+
+对象外观按 `OBJECT_FORMAT_SECTION_KEYS` 的独立小组持久化，旧
+`effects/textFrame/textStyle` 与填充 records 不兼容。用
+`storeBlockObjectFormat()` 或块的 `normalize*SnapshotProps()` 构造最终快照；
+手工填充操作展开 `storeObjectFormatSection("shapeFill", paint)`，以同时保存整体透明度。
+`storeObjectPaint()` 只生成 paint token，不能独自代替完整填充组。
+多组更新仍通过一笔 Yjs transaction 形成一次 Undo。
+
+形状 `customGeometry` 使用 `v1|width height|fill-rule|f:path|s:path` 紧凑路径字符串，
+仍是单个原子 Y.Map 值。运行时节点对象不直接持久化，旧 JSON 字符串不再兼容。
+无变化不写入；恢复预设时通过事务删除覆盖，Undo/Redo 恢复或删除完整路径。
+
 `BlockObjectFormatManager.updateSelection()` stays selection-guarded by
 default. Its `allowDetachedSelection` option accepts only a `null` selection
 gap and is intended for the object toolbar while browser focus is owned by its

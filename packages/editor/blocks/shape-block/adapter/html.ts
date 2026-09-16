@@ -1,3 +1,4 @@
+import {parseBlockPosition, storeBlockPosition} from '../../../framework/services/block-placement/state'
 import type {Element} from 'hast'
 import {
   ShapeBlockSchema,
@@ -94,10 +95,10 @@ export const shapeBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
           ShapeBlockProps['customGeometry'],
       }
       if (stringProperty(o.node, 'dataShapePlacementMode') === 'absolute') {
-        rawProps.position = {
+        rawProps.position = storeBlockPosition({
           x: numberProperty(o.node, 'dataShapePlacementX') ?? 0,
           y: numberProperty(o.node, 'dataShapePlacementY') ?? 0,
-        }
+        })
         if (stringProperty(o.node, 'dataShapePlacementLayer') === 'under') {
           rawProps.placementLayer = 'under'
         }
@@ -116,7 +117,7 @@ export const shapeBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
       const delta = textSnapshot?.flavour === 'shape-text'
         ? textSnapshot.children as DeltaInsert[]
         : []
-      const position = props.position
+      const position = parseBlockPosition(props.position)
 
       walkerContext.openNode({
         type: 'element',

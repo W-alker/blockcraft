@@ -1,3 +1,4 @@
+import {normalizeWordArtSnapshotProps} from "./word-art.types";
 import { Component, CUSTOM_ELEMENTS_SCHEMA } from "@angular/core";
 import { TestBed } from "@angular/core/testing";
 import * as Y from "yjs";
@@ -135,18 +136,29 @@ class WordArtCssInheritanceHarness {}
 class WordArtWidthContractHarness {}
 
 describe("Word art block domain", () => {
+
+  it("stores rounded coordinates and drops invalid position values", () => {
+    expect(normalizeWordArtSnapshotProps({position: "12.345 -0.001"} as any).position)
+      .toBe("12.35 0");
+    for (const position of [{x: 12, y: 34}, "12 invalid", "Infinity 0"]) {
+      const props = normalizeWordArtSnapshotProps({position} as any);
+      expect(Object.prototype.hasOwnProperty.call(props, "position")).toBeFalse();
+    }
+  });
   it("stores compact preset effects and quarter-pixel outlines before insertion", () => {
     for (const preset of WORD_ART_PRESETS) {
-      const style = preset.props.textStyle;
-      for (const field of ["sb", "sa", "sd", "gr"] as const) {
-        expect(Number.isInteger(style[field])).withContext(`${preset.id}: ${field}`).toBeTrue();
+      const style = normalizeBlockObjectFormat(preset.props, WORD_ART_OBJECT_FORMAT_CAPABILITY).textStyle!;
+      if (preset.props.textShadow && preset.props.textShadow !== 'none') {
+        for (const value of [style.effects.shadow.blur, style.effects.shadow.angle, style.effects.shadow.distance]) {
+          expect(Number.isInteger(value)).withContext(preset.id).toBeTrue();
+        }
       }
-      if (style.ow !== undefined) {
-        expect(Number.isInteger(style.ow * 4)).withContext(preset.id).toBeTrue();
+      if (preset.props.textOutline && style.outline.type === 'line') {
+        expect(Number.isInteger(style.outline.width * 4)).withContext(preset.id).toBeTrue();
       }
-      expect(style.l).toBeGreaterThan(0);
-      expect(style.so).toBeGreaterThan(0);
-      expect(style.so).toBeLessThanOrEqual(1);
+      expect(preset.props['textStyle']).toBeUndefined();
+      expect(style.lineHeight).toBeGreaterThan(0);
+
     }
   });
 
@@ -287,7 +299,7 @@ describe("Word art block domain", () => {
         "text",
       );
       expect(editor.style.getPropertyValue("-webkit-text-stroke")).toContain(
-        "0.0313em", // 1.5px / 48px，轮廓写入按 0.25px 收敛。
+        "0.0208em", // 默认 1px / 48px。
       );
       expect(editor.style.textShadow).toContain("rgba(124, 45, 18, 0.3)");
       expect(editor.style.transform).toBe("");
@@ -430,7 +442,7 @@ describe("Word art block domain", () => {
       WORD_ART_OBJECT_FORMAT_CAPABILITY,
     );
     const presentation = resolveWordArtPresentation({
-      textStyle: storeObjectTextStyle({
+      ...storeObjectTextStyle({
         ...defaults.textStyle!,
         fill: {
           type: "linear-gradient",
@@ -483,7 +495,7 @@ describe("Word art block domain", () => {
       WORD_ART_OBJECT_FORMAT_CAPABILITY,
     );
     const withTransform = (transform: "perspective-up" | "wide") => ({
-      textStyle: storeObjectTextStyle({
+      ...storeObjectTextStyle({
         ...defaults.textStyle!,
         transform,
       }),
@@ -500,7 +512,7 @@ describe("Word art block domain", () => {
       'Georgia, "Songti SC", SimSun, serif';
     expect(
       resolveWordArtPresentation({
-        textStyle: storeObjectTextStyle({
+        ...storeObjectTextStyle({
           ...defaults.textStyle!,
           fontFamily: sharedFontStack,
         }),

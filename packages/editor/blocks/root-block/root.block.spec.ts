@@ -1,3 +1,4 @@
+import {RootBlockSchema} from './index'
 import {TestBed} from "@angular/core/testing";
 import {BlockNodeType} from "../../framework";
 import {RootBlockComponent} from "./root.block";
@@ -188,3 +189,10 @@ function rootNative(props: Record<string, unknown>) {
     children: [],
   } as any;
 }
+
+
+describe('root compact appearance contract', () => {
+  it('creates a root without redundant appearance defaults', () => {
+    expect(RootBlockSchema.createSnapshot('root-compact', []).props).toEqual({})
+  })
+})

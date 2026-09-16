@@ -178,8 +178,8 @@ describe("snapshot-viewer renderers", () => {
       width: 360,
       height: 110,
       rotation: 15,
-      textFrame: storeObjectTextFrame(defaults.textFrame),
-      textStyle: storeObjectTextStyle({
+      ...storeObjectTextFrame(defaults.textFrame),
+      ...storeObjectTextStyle({
         ...defaults.textStyle,
         fontSize: 54,
         fill: {
@@ -266,7 +266,7 @@ describe("snapshot-viewer renderers", () => {
           src: "https://cdn.example.com/group.png",
           wr: 50,
           ar: 2,
-          position: {x: 30, y: 40},
+          position: "30 40",
         },
         children: [],
       }],
@@ -293,7 +293,7 @@ describe("snapshot-viewer renderers", () => {
     expect(figure.style.width).toBe("50%")
 
     const next = structuredClone(group)
-    ;(next.children[0] as IBlockSnapshot).props['position'] = {x: 80, y: 90}
+    ;(next.children[0] as IBlockSnapshot).props['position'] = "80 90"
     renderer.update(next)
     expect(image.style.left).toBe("80px")
     expect(image.style.top).toBe("90px")

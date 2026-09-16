@@ -45,7 +45,7 @@ const snapshot: IBlockSnapshot = {
       src: 'https://cdn.example.com/logo.png',
       wr: 18,
       ar: 2,
-      position: {x: 12, y: 24},
+      position: "12 24",
     },
     meta: {},
     children: [],

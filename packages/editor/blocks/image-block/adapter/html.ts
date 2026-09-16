@@ -1,3 +1,4 @@
+import {parseBlockPosition, storeBlockPosition} from '../../../framework/services/block-placement/state'
 import {BlockHtmlAdapterMatcher} from "../../../adapters/html-adapter/block-adapter";
 import {HastUtils} from "../../../adapters/utils";
 import {ImageBlockSchema} from "..";
@@ -118,10 +119,10 @@ export const imageBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
         };
         snapshot.props = {
           ...snapshot.props,
-          position: {
+          position: storeBlockPosition({
             x: toFinite(placementSource.properties['dataImagePlacementX']),
             y: toFinite(placementSource.properties['dataImagePlacementY']),
-          },
+          }),
           ...(placementSource.properties['dataImagePlacementLayer'] === 'under'
             ? {placementLayer: 'under' as const}
             : {}),
@@ -165,10 +166,7 @@ export const imageBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
             ...(width !== undefined ? {width} : {}),
             ...(height !== undefined ? {height} : {}),
           };
-      const position = o.node.props['position'] &&
-          typeof o.node.props['position'] === 'object'
-        ? o.node.props['position'] as {x?: number; y?: number}
-        : null
+      const position = parseBlockPosition(o.node.props['position'])
 
       walkerContext
         .openNode(

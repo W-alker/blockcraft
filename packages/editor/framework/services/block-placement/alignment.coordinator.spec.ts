@@ -16,9 +16,9 @@ describe('BlockPlacementAlignmentCoordinator', () => {
     )).toBeTrue()
     expect(transact).toHaveBeenCalledTimes(1)
     expect(updateBlockProps).toHaveBeenCalledTimes(2)
-    expect(propsById.get('shape-a')!['position']).toEqual({x: 10, y: 20})
-    expect(propsById.get('image-b')!['position']).toEqual({x: 10, y: 40})
-    expect(propsById.get('shape-c')!['position']).toEqual({x: 5, y: 80})
+    expect(propsById.get('shape-a')!['position']).toEqual("10 20")
+    expect(propsById.get('image-b')!['position']).toEqual("10 40")
+    expect(propsById.get('shape-c')!['position']).toEqual("5 80")
     expect(propsById.get('image-b')!['wr']).toBe(20)
     expect(propsById.get('image-b')!['ar']).toBe(2)
     expect(propsById.get('shape-c')!['width']).toBe(20)
@@ -35,8 +35,8 @@ describe('BlockPlacementAlignmentCoordinator', () => {
     const {coordinator, propsById} = makeAlignmentHarness()
 
     expect(coordinator.alignObjects(['shape-a', 'image-b'], 'center')).toBeTrue()
-    expect(propsById.get('shape-a')!['position']).toEqual({x: 35, y: 32.5})
-    expect(propsById.get('image-b')!['position']).toEqual({x: 25, y: 27.5})
+    expect(propsById.get('shape-a')!['position']).toEqual("35 32.5")
+    expect(propsById.get('image-b')!['position']).toEqual("25 27.5")
   })
 
   it('supports independent horizontal and vertical center alignment', () => {
@@ -46,9 +46,9 @@ describe('BlockPlacementAlignmentCoordinator', () => {
       'horizontal-center',
     )).toBeTrue()
     expect(horizontal.propsById.get('shape-a')!['position'])
-      .toEqual({x: 35, y: 20})
+      .toEqual("35 20")
     expect(horizontal.propsById.get('image-b')!['position'])
-      .toEqual({x: 25, y: 40})
+      .toEqual("25 40")
 
     const vertical = makeAlignmentHarness()
     expect(vertical.coordinator.alignObjects(
@@ -56,9 +56,9 @@ describe('BlockPlacementAlignmentCoordinator', () => {
       'vertical-center',
     )).toBeTrue()
     expect(vertical.propsById.get('shape-a')!['position'])
-      .toEqual({x: 10, y: 32.5})
+      .toEqual("10 32.5")
     expect(vertical.propsById.get('image-b')!['position'])
-      .toEqual({x: 50, y: 27.5})
+      .toEqual("50 27.5")
   })
 
   it('requires three objects for distribution and keeps endpoint centers fixed', () => {
@@ -76,9 +76,9 @@ describe('BlockPlacementAlignmentCoordinator', () => {
       ['shape-a', 'image-b', 'shape-c'],
       'horizontal-distribute',
     )).toBeTrue()
-    expect(propsById.get('shape-a')!['position']).toEqual({x: 10, y: 20})
-    expect(propsById.get('image-b')!['position']).toEqual({x: 45, y: 40})
-    expect(propsById.get('shape-c')!['position']).toEqual({x: 100, y: 80})
+    expect(propsById.get('shape-a')!['position']).toEqual("10 20")
+    expect(propsById.get('image-b')!['position']).toEqual("45 40")
+    expect(propsById.get('shape-c')!['position']).toEqual("100 80")
   })
 
   it('distributes vertical centers without changing the endpoints', () => {
@@ -88,9 +88,9 @@ describe('BlockPlacementAlignmentCoordinator', () => {
       ['shape-a', 'image-b', 'shape-c'],
       'vertical-distribute',
     )).toBeTrue()
-    expect(propsById.get('shape-a')!['position']).toEqual({x: 10, y: 20})
-    expect(propsById.get('image-b')!['position']).toEqual({x: 50, y: 45})
-    expect(propsById.get('shape-c')!['position']).toEqual({x: 100, y: 80})
+    expect(propsById.get('shape-a')!['position']).toEqual("10 20")
+    expect(propsById.get('image-b')!['position']).toEqual("50 45")
+    expect(propsById.get('shape-c')!['position']).toEqual("100 80")
   })
 
   it('allows mixed layers and an existing group as alignment objects', () => {
@@ -101,8 +101,8 @@ describe('BlockPlacementAlignmentCoordinator', () => {
       ['shape-a', 'object-group'],
       'bottom',
     )).toBeTrue()
-    expect(propsById.get('shape-a')!['position']).toEqual({x: 10, y: 50})
-    expect(propsById.get('object-group')!['position']).toEqual({x: 150, y: 20})
+    expect(propsById.get('shape-a')!['position']).toEqual("10 50")
+    expect(propsById.get('object-group')!['position']).toEqual("150 20")
   })
 
   it('rejects the whole command when any selected object is readonly', () => {
@@ -117,18 +117,18 @@ describe('BlockPlacementAlignmentCoordinator', () => {
     const left = makeAlignmentHarness()
     expect(left.coordinator.canAlignObjectsToPlane(['image-b'])).toBeTrue()
     expect(left.coordinator.alignObjectsToPlane(['image-b'], 'left')).toBeTrue()
-    expect(left.propsById.get('image-b')!['position']).toEqual({x: 0, y: 40})
+    expect(left.propsById.get('image-b')!['position']).toEqual("0 40")
 
     const center = makeAlignmentHarness()
     expect(center.coordinator.alignObjectsToPlane(
       ['shape-a'],
       'horizontal-center',
     )).toBeTrue()
-    expect(center.propsById.get('shape-a')!['position']).toEqual({x: 90, y: 20})
+    expect(center.propsById.get('shape-a')!['position']).toEqual("90 20")
 
     const right = makeAlignmentHarness()
     expect(right.coordinator.alignObjectsToPlane(['image-b'], 'right')).toBeTrue()
-    expect(right.propsById.get('image-b')!['position']).toEqual({x: 160, y: 40})
+    expect(right.propsById.get('image-b')!['position']).toEqual("160 40")
   })
 
   it('plane-aligns rotated objects by their visual bounds', () => {
@@ -136,7 +136,7 @@ describe('BlockPlacementAlignmentCoordinator', () => {
 
     // shape-c is 20x10 rotated 90°: its visual band is 10 wide around x+5.
     expect(coordinator.alignObjectsToPlane(['shape-c'], 'right')).toBeTrue()
-    expect(propsById.get('shape-c')!['position']).toEqual({x: 185, y: 80})
+    expect(propsById.get('shape-c')!['position']).toEqual("185 80")
 
     const geometry = resolvePlacementObjectGeometry(doc as any, 'shape-c')!
     expect(resolvePlacementObjectVisualBounds(geometry).right).toBe(200)
@@ -152,8 +152,8 @@ describe('BlockPlacementAlignmentCoordinator', () => {
     )).toBeTrue()
     expect(transact).toHaveBeenCalledTimes(1)
     expect(updateBlockProps).toHaveBeenCalledTimes(2)
-    expect(propsById.get('shape-a')!['position']).toEqual({x: 0, y: 20})
-    expect(propsById.get('image-b')!['position']).toEqual({x: 0, y: 40})
+    expect(propsById.get('shape-a')!['position']).toEqual("0 20")
+    expect(propsById.get('image-b')!['position']).toEqual("0 40")
   })
 
   it('treats an already plane-aligned object as a successful no-op', () => {
@@ -188,24 +188,24 @@ describe('BlockPlacementAlignmentCoordinator', () => {
 function makeAlignmentHarness() {
   const propsById = new Map<string, Record<string, unknown>>([
     ['shape-a', {
-      position: {x: 10, y: 20},
+      position: "10 20",
       placementLayer: 'under',
       width: 20,
       height: 10,
     }],
     ['image-b', {
-      position: {x: 50, y: 40},
+      position: "50 40",
       wr: 20,
       ar: 2,
     }],
     ['shape-c', {
-      position: {x: 100, y: 80},
+      position: "100 80",
       width: 20,
       height: 10,
       rotation: 90,
     }],
     ['object-group', {
-      position: {x: 150, y: 20},
+      position: "150 20",
       width: 50,
       height: 40,
     }],

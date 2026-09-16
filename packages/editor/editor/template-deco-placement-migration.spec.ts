@@ -54,13 +54,13 @@ describe('template placement snapshot migration', () => {
       'core-image',
       'image',
       BlockNodeType.block,
-      {position: {x: 50, y: 100}},
+      {position: "50 100"},
     )
     const weather = snapshot(
       'weather',
       'template-weather',
       BlockNodeType.void,
-      {position: {x: 5, y: 8}},
+      {position: "5 8"},
     )
     const children = [
       text,
@@ -104,12 +104,12 @@ describe('template placement snapshot migration', () => {
     expect((layout.children as IBlockSnapshot[]).map(child => child.id))
       .toEqual(['core-image', 'legacy-logo', 'weather'])
     expect((layout.children as IBlockSnapshot[])[0].props['position'])
-      .toEqual({x: 50, y: 100})
+      .toEqual("50 100")
     expect((layout.children as IBlockSnapshot[])[1].props).toEqual({
       src: 'absolute',
       wr: 30,
       ar: 1,
-      position: {x: 12.5, y: 40},
+      position: "12.5 40",
       placementLayer: 'under',
     })
     expect((layout.children as IBlockSnapshot[])[1].flavour).toBe('logo')
@@ -117,7 +117,7 @@ describe('template placement snapshot migration', () => {
     expect((layout.children as IBlockSnapshot[])[2].meta['draft:date'])
       .toBe('createdTime')
     expect((layout.children as IBlockSnapshot[])[2].props['position'])
-      .toEqual({x: 5, y: 8})
+      .toEqual("5 8")
   })
 
   it('is idempotent after the first migration', () => {

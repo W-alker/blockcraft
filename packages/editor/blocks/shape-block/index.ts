@@ -106,7 +106,7 @@ export const ShapeBlockSchema: IBlockSchemaOptions<ShapeBlockModel> = {
     }
   },
   metadata: {
-    version: 1,
+    version: 2,
     label: '形状',
     description: '插入可编辑和自由放置的形状',
     icon: 'bc_icon bc_tuxing',

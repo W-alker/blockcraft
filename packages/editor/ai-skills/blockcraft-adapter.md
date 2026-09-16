@@ -4,7 +4,7 @@
 >
 > Adapters handle HTML ↔ BlockSnapshot and Markdown ↔ BlockSnapshot conversion.
 >
-> Last updated: 2026-08-28
+> Last updated: 2026-09-16
 
 ## Architecture
 
@@ -548,12 +548,13 @@ children remain ordinary nested block elements. Optional shell colors use
 that map one-to-one to persisted props:
 
 - `data-bc-p`, containing one to four space-separated numeric values;
-- `data-bc-bgi` and `data-bc-bgs`. A text-box `bgi` holding a `bc:<id>` artwork
-  reference is **expanded** into its inline SVG on export so the HTML stands on
-  its own in whatever opens it, and **collapsed** back to the reference on
-  import — otherwise a round trip would leave the expanded copy in the document,
-  which is exactly what the reference exists to keep out of snapshots;
-- `data-bc-bgx/bgy/bgo`.
+- `data-bc-bgi`，保存 `url("...") 50% 50% / cover no-repeat` 形式的图片 CSS 字符串；
+- 可选 `data-bc-bgo`，保存独立图片透明度，默认 1 省略。
+
+对象的 `fill/textFill` 同样以 CSS 渐变或图片字符串导出，不再 JSON 编码填充记录；
+整体透明度分别由 `fillOpacity/textFillOpacity` 的数据属性保存。文字框目录装饰使用
+独立 `artwork` 引用，由专属适配器展开/收回装饰图形。定位的 HTML x/y 数据属性仍为
+数值，导入时通过 `storeBlockPosition()` 合并为最多两位小数的 `"x y"` 属性。
 
 Import passes all fields through `normalizeRenderUnitBlockProps()`, which also
 applies the shared bounded surface normalizer and rejects active script URL
@@ -756,3 +757,11 @@ WKWebView（Tauri）及部分浏览器会从 `paste` 事件里**剥离自定义�
 - **代码 / 图表**：bulb `code`/`diagram` 把每行包成 `code-line` 子块（`type:'block'`，文本在其子节点里），转换时下钻 `code-line` 并以 `\n` 连接；语言经 `mapLang` 大小写不敏感解析到 `CodeBlockLanguage`，无匹配（如 PlantUML/Mermaid）回退 `PlainText`。`diagram` 无原生对应，按代码块保留源码。
 - **未知块容错**：单个不认识的 bulb 块**不会**中断整篇解析——降级为保留其文本的段落（无文本则丢弃），而非抛错。整篇回退到有损 HTML 仅用于真正无法解析的 payload（无 `<article>` / JSON 损坏）。
 - **附件重传（关键拆分）**：附件的异步 fetch 重传是**插入后、协同敏感**的副作用，不在 adapter 里做。两条有道云路径都用 `buildAttachmentSnapshot` 在 attachment snapshot 的 `meta` 上打**临时重传标记**；`clipboard.ts` 在插入/克隆前用 `collectAndStripRehostMarkers` 统一**收集并剥离**标记（绝不写进 Yjs、不同步给协同端），插入后再 `rehostYneAttachments` 异步重传（只有本地粘贴者做）。
+
+### 形状自定义几何编码
+
+`data-shape-geometry` 以及行内形状 payload 中的 `customGeometry` 使用
+`v1|width height|nonzero或evenodd|f:path|s:path` 字符串。HTML 属性仍通过 AST
+序列化转义；导入使用同一有界解析器，完整消费每个路径字符。Markdown 的可往返
+封装保留该字符串，portable 输出继续使用既有展示策略。禁止重新 JSON 编码节点
+对象；预设等价的覆盖由 `normalizeShapeSnapshotProps()` 省略。

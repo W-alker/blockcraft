@@ -1,3 +1,4 @@
+import {storeBlockPosition} from '../../../../../../../packages/editor/framework/services/block-placement/state'
 import { ChangeDetectionStrategy, Component, NgZone, inject } from '@angular/core'
 import {
   BlockResizeCommit,
@@ -94,10 +95,10 @@ export class LogoTemplateEditComponent extends PlaceableEditBase<LogoModel> {
       width: null,
       ...(placement.mode === 'absolute' && event.offsetX !== 0
         ? {
-            position: {
+            position: storeBlockPosition({
               x: placement.x + event.offsetX,
               y: placement.y,
-            },
+            }),
           }
         : {}),
     })

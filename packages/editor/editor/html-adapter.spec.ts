@@ -14,6 +14,7 @@ import {
   storeObjectEffects,
   storeObjectLine,
   storeObjectPaint,
+  storeObjectFormatSection,
   storeObjectTextFrame,
   storeObjectTextStyle,
 } from '../framework';
@@ -175,7 +176,7 @@ describe('HtmlAdapter', () => {
       props: {
         width: 420,
         height: 240,
-        position: {x: 100, y: 80},
+        position: "100 80",
         placementLayer: 'under',
       },
       meta: {},
@@ -188,7 +189,7 @@ describe('HtmlAdapter', () => {
           width: 160,
           height: 80,
           rotation: 0,
-          position: {x: 30, y: 40},
+          position: "30 40",
         },
         meta: {},
         children: [],
@@ -205,12 +206,12 @@ describe('HtmlAdapter', () => {
     expect(importedGroup.props).toEqual(jasmine.objectContaining({
       width: 420,
       height: 240,
-      position: {x: 100, y: 80},
+      position: "100 80",
       placementLayer: 'under',
     }))
     const importedShape = (importedGroup.children as IBlockSnapshot[])[0]!
     expect(importedShape.flavour).toBe('shape')
-    expect(importedShape.props['position']).toEqual({x: 30, y: 40})
+    expect(importedShape.props['position']).toEqual("30 40")
   });
 
   it('round-trips render-unit padding and background image props', async () => {
@@ -224,10 +225,8 @@ describe('HtmlAdapter', () => {
         backColor: '#fff7d6',
         borderColor: '#dfab01',
         p: [8, 12, 16, 20],
-        bgi: 'https://cdn.example.com/paper.png',
-        bgs: 'contain',
-        bgx: 30,
-        bgy: 70,
+        bgi: "url(\"https://cdn.example.com/paper.png\") 30% 70% / contain no-repeat",
+
         bgo: 0.5,
       },
       meta: {},
@@ -239,9 +238,9 @@ describe('HtmlAdapter', () => {
     expect(html).toContain('data-bc-p="8 12 16 20"');
     expect(html).toContain('data-bc-wr="50"');
     expect(html).toContain('data-bc-ar="2"');
-    expect(html).toContain(
-      'data-bc-bgi="https://cdn.example.com/paper.png"',
-    );
+    expect(new DOMParser().parseFromString(html, 'text/html')
+      .querySelector('[data-bc-block="render-unit"]')?.getAttribute('data-bc-bgi'))
+      .toBe(region.props['bgi'] as string);
 
     const imported = await adapter.toBlockSnapshot(html);
     const importedRegion = (imported.children as IBlockSnapshot[])[0]!;
@@ -275,21 +274,21 @@ describe('HtmlAdapter', () => {
         height: 160,
         rotation: 15,
         shape: 'rounded-speech-bubble',
-        fill: storeObjectPaint({
+        ...storeObjectFormatSection('shapeFill', {
           type: 'picture',
           opacity: .5, src: 'https://cdn.example.com/paper.png',
           fit: 'contain', positionX: 30, positionY: 70,
         }),
-        outline: storeObjectLine({
+        ...storeObjectLine({
           ...DEFAULT_OBJECT_LINE, color: '#dfab01', width: 2, dash: 'dash',
         }),
-        effects: storeObjectEffects(DEFAULT_OBJECT_EFFECTS),
-        textFrame: storeObjectTextFrame({
+        ...storeObjectEffects(DEFAULT_OBJECT_EFFECTS),
+        ...storeObjectTextFrame({
           ...DEFAULT_OBJECT_TEXT_FRAME,
           margins: [8, 12, 16, 20],
           direction: 'vertical-rl',
         }),
-        textStyle: storeObjectTextStyle({
+        ...storeObjectTextStyle({
           ...DEFAULT_OBJECT_TEXT_STYLE,
           fill: {...DEFAULT_OBJECT_PAINT, color: '#2563EB'},
           outline: {type: 'line', color: '#FFFFFF', width: 1},
@@ -297,10 +296,7 @@ describe('HtmlAdapter', () => {
             ...DEFAULT_OBJECT_EFFECTS.shadow, enabled: true,
           }},
         }),
-        position: {
-          x: 40,
-          y: 60,
-        },
+        position: "40 60",
         placementLayer: 'under',
       },
       meta: {},
@@ -327,8 +323,8 @@ describe('HtmlAdapter', () => {
     expect(html).toContain('data-bc-object-shape="rounded-speech-bubble"');
     expect(html).toContain('data-bc-object-fill=');
     expect(html).toContain('data-bc-object-outline=');
-    expect(html).toContain('data-bc-object-text-frame=');
-    expect(html).toContain('data-bc-object-text-style=');
+    expect(html).toContain('data-bc-object-text-padding=');
+    expect(html).toContain('data-bc-object-text-fill=');
 
     const imported = await adapter.toBlockSnapshot(html);
     const importedTextBox = (imported.children as IBlockSnapshot[])[0]!;
@@ -338,12 +334,12 @@ describe('HtmlAdapter', () => {
         type: 'picture', src: 'https://cdn.example.com/paper.png',
         fit: 'contain', positionX: 30, positionY: 70,
       }));
-    expect(normalizeObjectTextFrame(importedTextBox.props['textFrame']))
+    expect(normalizeObjectTextFrame(importedTextBox.props))
       .toEqual(jasmine.objectContaining({
         margins: [8, 12, 16, 20], direction: 'vertical-rl',
       }));
     const importedFill = normalizeObjectTextStyle(
-      importedTextBox.props['textStyle'],
+      importedTextBox.props,
     ).fill;
     expect(importedFill.type).toBe('solid');
     expect(importedFill.type === 'solid' ? importedFill.color : null)

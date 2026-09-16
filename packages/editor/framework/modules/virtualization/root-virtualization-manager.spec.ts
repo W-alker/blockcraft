@@ -1,3 +1,4 @@
+import {storeBlockPosition} from '../../services/block-placement/state'
 import {BehaviorSubject, Subject} from 'rxjs'
 import {BlockNodeType} from '../../block-std/types'
 import {HeightMap} from './height-map'
@@ -1313,7 +1314,7 @@ describe('RootVirtualizationManager', () => {
     ;(h.doc.model as any).getProps = (blockId: string) =>
       blockId === 'image'
         ? {
-            position: {x: 10, y: imageY},
+            position: storeBlockPosition({x: 10, y: imageY}),
             wr: 50,
             ar: 2,
           }
@@ -1387,7 +1388,7 @@ describe('RootVirtualizationManager', () => {
     ;(h.doc.model as any).getProps = (blockId: string) =>
       blockId === 'shape'
         ? {
-            position: {x: 10, y: 600},
+            position: "10 600",
             width: 180,
             height: 100,
           }

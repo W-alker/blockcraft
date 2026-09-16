@@ -312,57 +312,59 @@ export type ObjectFormatToolbarAction =
                 csSize="small"
                 [csBlock]="true"
                 [csOptions]="shapeTabOptions"
-                [ngModel]="activeShapeSection()"
+                [ngModel]="selectedShapeSection"
                 (ngModelChange)="selectShapeSection($event)"
                 csAriaLabel="形状格式分类"
               />
-              <section
-                class="object-format__tab-section"
-                data-object-format-section="shape-type"
-                [hidden]="activeShapeSection() !== 'shape-type'"
-              >
-                <button
-                  cs-button
-                  csType="text"
-                  csSize="sm"
-                  type="button"
-                  class="object-format__section-toggle"
-                  [attr.aria-expanded]="isSectionOpen('shape-type')"
-                  (click)="toggleSection('shape-type')"
+              @if (canChangeShapeType) {
+                <section
+                  class="object-format__tab-section"
+                  data-object-format-section="shape-type"
+                  [hidden]="selectedShapeSection !== 'shape-type'"
                 >
-                  <span class="object-format__section-heading">更改形状</span>
-                  <i class="bc_icon bc_xiajaintou" aria-hidden="true"></i>
-                </button>
-                @if (isSectionOpen("shape-type")) {
-                  <div class="object-format__section-body">
-                    <label
-                      >形状
-                      <cs-select
-                        csSize="sm"
-                        csVariant="outlined"
-                        [csValue]="stringValue('shapeType') || null"
-                        [csPlaceholder]="
-                          state.values.shapeType.mixed ? '多种形状' : '选择形状'
-                        "
-                        [csShowSearch]="true"
-                        [csVirtualScroll]="true"
-                        (csValueChange)="shapeTypeChangeValue($event)"
-                      >
-                        @for (shapeType of state.shapeTypes; track shapeType) {
-                          <cs-option
-                            [csValue]="shapeType"
-                            [csLabel]="shapeLabel(shapeType)"
-                          />
-                        }
-                      </cs-select>
-                    </label>
-                  </div>
-                }
-              </section>
+                  <button
+                    cs-button
+                    csType="text"
+                    csSize="sm"
+                    type="button"
+                    class="object-format__section-toggle"
+                    [attr.aria-expanded]="isSectionOpen('shape-type')"
+                    (click)="toggleSection('shape-type')"
+                  >
+                    <span class="object-format__section-heading">更改形状</span>
+                    <i class="bc_icon bc_xiajaintou" aria-hidden="true"></i>
+                  </button>
+                  @if (isSectionOpen("shape-type")) {
+                    <div class="object-format__section-body">
+                      <label
+                        >形状
+                        <cs-select
+                          csSize="sm"
+                          csVariant="outlined"
+                          [csValue]="stringValue('shapeType') || null"
+                          [csPlaceholder]="
+                            state.values.shapeType.mixed ? '多种形状' : '选择形状'
+                          "
+                          [csShowSearch]="true"
+                          [csVirtualScroll]="true"
+                          (csValueChange)="shapeTypeChangeValue($event)"
+                        >
+                          @for (shapeType of state.shapeTypes; track shapeType) {
+                            <cs-option
+                              [csValue]="shapeType"
+                              [csLabel]="shapeLabel(shapeType)"
+                            />
+                          }
+                        </cs-select>
+                      </label>
+                    </div>
+                  }
+                </section>
+              }
               <section
                 class="object-format__tab-section"
                 data-object-format-section="shape-fill"
-                [hidden]="activeShapeSection() !== 'shape-fill'"
+                [hidden]="selectedShapeSection !== 'shape-fill'"
               >
                 <div class="object-format__section-title">
                   <button
@@ -504,7 +506,7 @@ export type ObjectFormatToolbarAction =
               <section
                 class="object-format__tab-section"
                 data-object-format-section="shape-outline"
-                [hidden]="activeShapeSection() !== 'shape-outline'"
+                [hidden]="selectedShapeSection !== 'shape-outline'"
               >
                 <div class="object-format__section-title">
                   <button
@@ -656,7 +658,7 @@ export type ObjectFormatToolbarAction =
               <section
                 class="object-format__tab-section"
                 data-object-format-section="shape-effects"
-                [hidden]="activeShapeSection() !== 'shape-effects'"
+                [hidden]="selectedShapeSection !== 'shape-effects'"
               >
                 <button
                   cs-button
@@ -1724,12 +1726,25 @@ export class ObjectFormatToolbarComponent {
     { action: "group", label: "组合", icon: "bc_combination" },
     { action: "ungroup", label: "取消组合", icon: "bc_quxiaozuhe" },
   ] as const;
-  readonly shapeTabOptions: CsSegmentedOptions = [
-    { value: "shape-fill", label: "填充" },
-    { value: "shape-outline", label: "轮廓" },
-    { value: "shape-type", label: "形状" },
-    { value: "shape-effects", label: "效果" },
-  ];
+  protected get canChangeShapeType(): boolean {
+    return this.state.targets.length > 0 && this.state.targets.every(
+      (target) => target.capability.kind !== "shape",
+    );
+  }
+  get shapeTabOptions(): CsSegmentedOptions {
+    return [
+      { value: "shape-fill", label: "填充" },
+      { value: "shape-outline", label: "轮廓" },
+      ...(this.canChangeShapeType ? [{ value: "shape-type", label: "形状" }] : []),
+      { value: "shape-effects", label: "效果" },
+    ];
+  }
+  protected get selectedShapeSection(): ObjectFormatSection {
+    const selected = this.activeShapeSection();
+    return selected === "shape-type" && !this.canChangeShapeType
+      ? "shape-fill"
+      : selected;
+  }
   readonly fontOptions = OBJECT_TEXT_FONT_OPTIONS;
   readonly fontWeights = [
     { value: 400, label: "常规 400" },
@@ -1925,6 +1940,7 @@ export class ObjectFormatToolbarComponent {
     this.panelChange.emit();
   }
   selectShapeSection(value: string | number): void {
+    if (value === "shape-type" && !this.canChangeShapeType) return;
     if (
       value === "shape-fill" ||
       value === "shape-outline" ||
@@ -1974,7 +1990,9 @@ export class ObjectFormatToolbarComponent {
   }
 
   shapeTypeChangeValue(value: unknown): void {
-    if (typeof value === "string" && value) this.patch({ shapeType: value });
+    if (this.canChangeShapeType && typeof value === "string" && value) {
+      this.patch({ shapeType: value });
+    }
   }
   paintChangeValue(target: "shape" | "text", paint: ObjectPaint): void {
     if (target === "shape") {

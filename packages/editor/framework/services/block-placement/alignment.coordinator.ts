@@ -1,3 +1,4 @@
+import {storeBlockPosition} from './state'
 import type {
   BlockObjectAlignment,
   BlockObjectPlaneAlignment,
@@ -8,7 +9,6 @@ import {
   type PlacementObjectVisualBounds,
   resolvePlacementObjectGeometry,
   resolvePlacementObjectVisualBounds,
-  roundPlacementGeometry,
 } from './object-geometry'
 
 interface AlignmentCandidate {
@@ -45,9 +45,6 @@ const PLANE_ALIGNMENTS = new Set<BlockObjectPlaneAlignment>([
   'right',
 ])
 
-const sameGeometryNumber = (current: number, next: number): boolean =>
-  Math.abs(current - next) < 0.0001
-
 /**
  * Model-only alignment inside one root placement plane: multi-object mutual
  * alignment/distribution, plus plane-relative (page) horizontal alignment.
@@ -79,12 +76,9 @@ export class BlockPlacementAlignmentCoordinator {
     const patches = items.flatMap(({object}) => {
       const offset = offsets.get(object.id)
       if (!offset) return []
-      const x = roundPlacementGeometry(object.x + offset.x)
-      const y = roundPlacementGeometry(object.y + offset.y)
-      if (
-        sameGeometryNumber(object.x, x) &&
-        sameGeometryNumber(object.y, y)
-      ) return []
+      const x = object.x + offset.x
+      const y = object.y + offset.y
+      if (storeBlockPosition(object) === storeBlockPosition({x, y})) return []
       return [{id: object.id, position: {x, y}}]
     })
     return this.commitPositions(patches)
@@ -116,8 +110,8 @@ export class BlockPlacementAlignmentCoordinator {
         : alignment === 'horizontal-center'
           ? planeWidth / 2 - bounds.centerX
           : planeWidth - bounds.right
-      const x = roundPlacementGeometry(object.x + offset)
-      if (sameGeometryNumber(object.x, x)) return []
+      const x = object.x + offset
+      if (storeBlockPosition(object) === storeBlockPosition({x, y: object.y})) return []
       return [{id: object.id, position: {x, y: object.y}}]
     })
     return this.commitPositions(patches)
@@ -128,7 +122,7 @@ export class BlockPlacementAlignmentCoordinator {
 
     this.doc.crud.transact(() => {
       patches.forEach(({id, position}) => {
-        this.doc.crud.updateBlockProps(id, {position})
+        this.doc.crud.updateBlockProps(id, {position: storeBlockPosition(position)})
       })
     })
     return true

@@ -1,3 +1,4 @@
+import {decodeCompactShapeGeometry} from './shape-geometry-codec'
 import type {ShapeDefinition} from './shape-definitions'
 import {resolveShapeAdjustmentProjection} from './shape-adjustments'
 import {SHAPE_GEOMETRY_VERSION} from './shape-geometry.constants'
@@ -134,11 +135,7 @@ export function normalizeCustomShapeGeometry(
 ): CustomShapeGeometry | undefined {
   if (typeof value === 'string') {
     if (value.length > MAX_SERIALIZED_GEOMETRY_LENGTH) return undefined
-    try {
-      value = JSON.parse(value)
-    } catch {
-      return undefined
-    }
+    value = decodeCompactShapeGeometry(value, MAX_PATHS, MAX_PATH_COMMANDS)
   }
   if (!isRecord(value) || value['version'] !== SHAPE_GEOMETRY_VERSION) {
     return undefined
@@ -181,7 +178,14 @@ export function serializeCustomShapeGeometry(
 ): SerializedCustomShapeGeometry | undefined {
   const normalized = normalizeCustomShapeGeometry(value)
   return normalized
-    ? JSON.stringify(normalized) as SerializedCustomShapeGeometry
+    ? [
+        `v${normalized.version}`,
+        `${normalized.width} ${normalized.height}`,
+        normalized.fillRule ?? 'nonzero',
+        ...normalized.paths.map(path =>
+          `${path.fill ? 'f' : 's'}:${shapePathCommandsToSvgData(path.commands)}`,
+        ),
+      ].join('|') as SerializedCustomShapeGeometry
     : undefined
 }
 

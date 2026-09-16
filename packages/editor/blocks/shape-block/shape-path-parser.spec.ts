@@ -24,6 +24,18 @@ describe('Trusted catalogue path projection', () => {
     }
   })
 
+  it('reduces catalogue geometry bytes without reducing node precision', () => {
+    let original = 0, compact = 0
+    for (const definition of SHAPE_DEFINITIONS) {
+      const geometry = createEditableShapeGeometryFromDefinition(definition)!
+      const encoded = serializeCustomShapeGeometry(geometry)!
+      original += JSON.stringify(geometry).length
+      compact += encoded.length
+      expect(normalizeCustomShapeGeometry(encoded)).withContext(definition.type).toEqual(geometry)
+    }
+    expect(compact).toBeLessThan(original * 0.4)
+  })
+
   it('keeps every projected catalogue path visually aligned in SVG', () => {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
     document.body.appendChild(svg)

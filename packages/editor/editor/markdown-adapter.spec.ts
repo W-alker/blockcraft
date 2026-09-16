@@ -803,7 +803,7 @@ describe('MarkdownAdapter', () => {
         width: 320,
         height: 160,
         p: [8, 12],
-        bgi: 'https://cdn.example.com/paper.png',
+        bgi: "url(\"https://cdn.example.com/paper.png\") 50% 50% / cover no-repeat",
       },
       meta: {},
       children: [
@@ -860,7 +860,7 @@ describe('MarkdownAdapter', () => {
         '---',
         'width: 360',
         'height: 180',
-        'position: {"x":12,"y":24}',
+        'position: "12 24"',
         '---',
         '',
         'YAML metadata stays separate from **content**.',
@@ -875,7 +875,7 @@ describe('MarkdownAdapter', () => {
       expect(textBox.props).toEqual(jasmine.objectContaining({
         width: 360,
         height: 180,
-        position: {x: 12, y: 24},
+        position: "12 24",
       }));
       expect((textBox.children as IBlockSnapshot[]).map(child => child.flavour))
         .toEqual(['paragraph']);

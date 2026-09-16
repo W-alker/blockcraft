@@ -46,7 +46,7 @@ function makeDeleteHarness(options: {
         ? 'object-group'
         : 'shape',
     getProps: (id: string) =>
-      id === 'shape-1' ? {position: {x: 12, y: 24}} : {},
+      id === 'shape-1' ? {position: "12 24"} : {},
     indexInParent: (id: string) => id === 'shape-1' ? 0 : -1,
     getYBlock: () => undefined,
   }
@@ -237,7 +237,7 @@ describe('BlockPlacementManager absolute object deletion hotkeys', () => {
       id: 'shape-1',
       flavour: 'shape',
       nodeType: BlockNodeType.block,
-      props: {position: {x: 12, y: 24}},
+      props: {position: "12 24"},
       meta: {},
       children: [],
     })

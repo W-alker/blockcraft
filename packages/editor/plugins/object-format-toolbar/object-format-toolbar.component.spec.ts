@@ -96,6 +96,59 @@ const state: BlockObjectFormatSelectionState = {
 };
 
 describe("ObjectFormatToolbarComponent", () => {
+  it("keeps shape switching for text boxes and removes it when selection includes shapes", async () => {
+    await TestBed.configureTestingModule({
+      imports: [ObjectFormatToolbarComponent],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(ObjectFormatToolbarComponent);
+    const textBoxTarget = {
+      ...state.targets[0],
+      blockId: "text-box-1",
+      flavour: "text-box",
+      capability: { ...state.targets[0].capability, kind: "text-box" as const },
+    };
+    const textBoxState = { ...state, blockIds: [textBoxTarget.blockId], targets: [textBoxTarget] };
+    const action = spyOn(fixture.componentInstance.action, "emit");
+    fixture.componentRef.setInput("state", textBoxState);
+    fixture.componentInstance.open("shape");
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const tabs = () => fixture.nativeElement.querySelector("cs-segmented").textContent.replace(/\s/g, "");
+    expect(tabs()).toBe("填充轮廓形状效果");
+    fixture.componentInstance.selectShapeSection("shape-type");
+    fixture.detectChanges();
+    expect(sectionElement(fixture, "shape-type").hidden).toBeFalse();
+    fixture.componentInstance.shapeTypeChangeValue("ellipse");
+    expect(action).toHaveBeenCalledWith({name: "patch", patch: {shapeType: "ellipse"}});
+
+    for (const targets of [state.targets, [...state.targets, textBoxTarget]]) {
+      action.calls.reset();
+      fixture.componentRef.setInput("state", {
+        ...state, targets, blockIds: targets.map(target => target.blockId),
+      });
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(tabs()).toBe("填充轮廓效果");
+      expect(sectionElement(fixture, "shape-type")).toBeNull();
+      expect(sectionElement(fixture, "shape-fill").hidden).toBeFalse();
+      fixture.componentInstance.selectShapeSection("shape-type");
+      fixture.componentInstance.shapeTypeChangeValue("rectangle");
+      expect(action).not.toHaveBeenCalled();
+    }
+  });
+
+  it("shows the default 1px outline in the actual numeric input", async () => {
+    await TestBed.configureTestingModule({imports: [ObjectFormatToolbarComponent]}).compileComponents();
+    const fixture = TestBed.createComponent(ObjectFormatToolbarComponent);
+    fixture.componentRef.setInput('state', state);
+    fixture.componentInstance.open('shape');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const input = sectionElement(fixture, 'shape-outline').querySelector<HTMLInputElement>('cs-input-number input')!;
+    expect(input.value).toBe('1');
+    expect(fixture.componentInstance.shapeOutline.width).toBe(1);
+  });
+
   it("shows compact numeric values without writing on focus and blur", async () => {
     await TestBed.configureTestingModule({
       imports: [ObjectFormatToolbarComponent],
@@ -260,8 +313,8 @@ describe("ObjectFormatToolbarComponent", () => {
       fixture.nativeElement.querySelectorAll(".object-format__scroll").length,
     ).toBe(1);
     expect(fixture.nativeElement.textContent).toContain("1 个锁定对象会被跳过");
-    expect(fixture.nativeElement.textContent).toContain("更改形状");
-    expect(sectionElement(fixture, "shape-type").hidden).toBeTrue();
+    expect(fixture.nativeElement.textContent).not.toContain("更改形状");
+    expect(sectionElement(fixture, "shape-type")).toBeNull();
     expect(sectionElement(fixture, "shape-fill").hidden).toBeFalse();
     expect(sectionElement(fixture, "shape-outline").hidden).toBeTrue();
     expect(sectionElement(fixture, "shape-effects").hidden).toBeTrue();
@@ -287,9 +340,9 @@ describe("ObjectFormatToolbarComponent", () => {
       fixture.nativeElement.querySelector("button[cs-button]"),
     ).not.toBeNull();
 
-    fixture.componentInstance.selectShapeSection("shape-type");
+    fixture.componentInstance.selectShapeSection("shape-outline");
     fixture.detectChanges();
-    expect(sectionElement(fixture, "shape-type").hidden).toBeFalse();
+    expect(sectionElement(fixture, "shape-outline").hidden).toBeFalse();
     expect(sectionElement(fixture, "shape-fill").hidden).toBeTrue();
 
     fixture.componentInstance.open("text");

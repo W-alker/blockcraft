@@ -425,8 +425,8 @@ export class TextBoxPresetPickerComponent {
             width: props.width,
             height: props.height,
             rotation: 0,
-            textFrame: storeObjectTextFrame(props.textFrame),
-            textStyle: storeObjectTextStyle(props.textStyle),
+            ...storeObjectTextFrame(props.textFrame),
+            ...storeObjectTextStyle(props.textStyle),
           }),
         };
       }),

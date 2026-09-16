@@ -1,3 +1,5 @@
+import {compactShapeGeometryOverride} from './shape-geometry-storage'
+import {parseBlockPosition, storeBlockPosition} from '../../framework/services/block-placement/state'
 import {
   DEFAULT_OBJECT_EFFECTS,
   DEFAULT_OBJECT_LINE,
@@ -5,12 +7,8 @@ import {
   DEFAULT_OBJECT_TEXT_FRAME,
   DEFAULT_OBJECT_TEXT_STYLE,
   normalizeBlockObjectFormat,
+  storeBlockObjectFormat,
   resolveBlockPosition,
-  storeObjectEffects,
-  storeObjectLine,
-  storeObjectPaint,
-  storeObjectTextFrame,
-  storeObjectTextStyle,
   type BlockObjectFormatCapability,
   type BlockObjectFormatProps,
   type ObjectEffects,
@@ -20,7 +18,7 @@ import {
   type ObjectTextStyle,
 } from '../../framework'
 import {
-  normalizeCustomShapeGeometry,
+  serializeCustomShapeGeometry,
   normalizeShapeAdjustments,
 } from './shape-geometry'
 import {SHAPE_GEOMETRY_VERSION} from './shape-geometry.constants'
@@ -222,7 +220,7 @@ export interface CustomShapeGeometry {
 export interface ShapeBlockProps extends BlockObjectFormatProps {
   shape: ShapeKind
   adjustments?: ShapeAdjustmentValues
-  /** Versioned, validated CustomShapeGeometry encoded as one atomic JSON value. */
+  /** Versioned, validated CustomShapeGeometry encoded as one atomic compact path string. */
   customGeometry?: SerializedCustomShapeGeometry
 }
 
@@ -259,7 +257,7 @@ const DEFAULT_SHAPE_FILL = {...DEFAULT_OBJECT_PAINT, color: '#93C5FD'}
 const DEFAULT_SHAPE_OUTLINE = {
   ...DEFAULT_OBJECT_LINE,
   color: '#2563EB',
-  width: 2,
+  width: 1,
 }
 const DEFAULT_SHAPE_TEXT_FRAME = {...DEFAULT_OBJECT_TEXT_FRAME}
 const DEFAULT_SHAPE_TEXT_STYLE = {
@@ -304,11 +302,6 @@ export const DEFAULT_SHAPE_BLOCK_PROPS: Readonly<ShapeBlockProps> = {
   height: 100,
   rotation: 0,
   lockRatio: false,
-  fill: storeObjectPaint(DEFAULT_SHAPE_FILL),
-  outline: storeObjectLine(DEFAULT_SHAPE_OUTLINE),
-  effects: storeObjectEffects(DEFAULT_OBJECT_EFFECTS),
-  textFrame: storeObjectTextFrame(DEFAULT_SHAPE_TEXT_FRAME),
-  textStyle: storeObjectTextStyle(DEFAULT_SHAPE_TEXT_STYLE),
 }
 
 export const DEFAULT_SHAPE_PROPS: Readonly<NormalizedShapeBlockProps> = {
@@ -359,11 +352,10 @@ export function normalizeShapeProps(
   const outline = objectFormat.shapeOutline!
   const textFrame = objectFormat.textFrame!
   const textStyle = objectFormat.textStyle!
-  const position = props?.position && typeof props.position === 'object'
-    ? resolveBlockPosition(props.position)
-    : null
+  const parsedPosition = parseBlockPosition(props?.position)
+  const position = parsedPosition ? storeBlockPosition(parsedPosition) : undefined
   const adjustments = normalizeShapeAdjustments(props?.adjustments)
-  const customGeometry = normalizeCustomShapeGeometry(props?.customGeometry)
+  const customGeometry = serializeCustomShapeGeometry(props?.customGeometry)
   const fillType: ShapeFillType = fill.type === 'linear-gradient'
     ? 'linear-gradient'
     : 'solid'
@@ -403,13 +395,10 @@ export function normalizeShapeProps(
       ? 'left'
       : textFrame.horizontalAlign,
     verticalAlign: textFrame.verticalAlign,
-    ...(position ? {position} : {}),
+    position,
     ...(props?.placementLayer === 'under' ? {placementLayer: 'under' as const} : {}),
     ...(adjustments ? {adjustments} : {}),
-    ...(customGeometry ? {
-      customGeometry: JSON.stringify(customGeometry) as
-        SerializedCustomShapeGeometry,
-    } : {}),
+    customGeometry,
   }
 }
 
@@ -419,25 +408,18 @@ export function normalizeShapeSnapshotProps(
   options: Readonly<{preservePrecision?: boolean}> = {},
 ): ShapeBlockProps {
   const normalized = normalizeShapeProps(value)
+  const customGeometry = compactShapeGeometryOverride(
+    normalized.customGeometry, normalized.shapeType, normalized.adjustments,
+  )
   return {
+    ...storeBlockObjectFormat(normalized, SHAPE_OBJECT_FORMAT_CAPABILITY, options),
     shape: normalized.shapeType,
-    width: normalized.width,
-    height: normalized.height,
-    rotation: normalized.rotation,
-    lockRatio: normalized.lockAspectRatio,
-    fill: storeObjectPaint(normalized.shapeFill, options),
-    outline: storeObjectLine(normalized.shapeOutline, options),
-    effects: storeObjectEffects(normalized.shapeEffects, options),
-    textFrame: storeObjectTextFrame(normalized.textFrame, options),
-    textStyle: storeObjectTextStyle(normalized.textStyle, options),
     ...(normalized.position ? {position: normalized.position} : {}),
     ...(normalized.placementLayer === 'under'
       ? {placementLayer: 'under' as const}
       : {}),
     ...(normalized.adjustments ? {adjustments: normalized.adjustments} : {}),
-    ...(normalized.customGeometry
-      ? {customGeometry: normalized.customGeometry}
-      : {}),
+    ...(customGeometry ? {customGeometry} : {}),
   }
 }
 

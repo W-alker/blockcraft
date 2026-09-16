@@ -91,11 +91,7 @@ describe('shape props fill normalization', () => {
 
   it('normalizes gradient props and resolves a renderable gradient', () => {
     const props = normalizeShapeProps({
-      fillColor: '#123456',
-      fillType: 'linear-gradient',
-      gradientAngle: 160,
-      gradientColors: ['#26405e', '#58402e'],
-      gradientStops: [0, 1],
+      fill: 'linear-gradient(160deg, #26405e 0%, #58402e 100%)',
     })
     expect(props.fillType).toBe('linear-gradient')
     expect(props.gradientColors).toEqual(['#26405E', '#58402E'])
@@ -106,16 +102,10 @@ describe('shape props fill normalization', () => {
     })
   })
 
-  it('repairs a gradient fill with malformed values instead of dropping it', () => {
-    const props = normalizeShapeProps({
-      fillType: 'linear-gradient',
-      gradientAngle: Number.NaN,
-      gradientColors: ['not-a-color'],
-      gradientStops: 'bad' as unknown as number[],
-    })
-    expect(props.fillType).toBe('linear-gradient')
-    expect(props.gradientColors).toEqual([...DEFAULT_SHAPE_GRADIENT.colors])
-    expect(props.gradientAngle).toBe(DEFAULT_SHAPE_GRADIENT.angle)
+  it('falls back for malformed CSS gradients', () => {
+    const props = normalizeShapeProps({fill: 'linear-gradient(NaNdeg, #fff -1%, broken)'})
+    expect(props.fillType).toBe('solid')
+    expect(props.gradientColors).toBeUndefined()
   })
 
   it('keeps stored gradient colors while fillType is solid', () => {

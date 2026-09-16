@@ -11,21 +11,22 @@ import {
   normalizeBlockObjectFormat,
   storeObjectLine,
   storeObjectPaint,
+  storeObjectFormatSection,
   storeObjectTextFrame,
   storeObjectTextStyle,
 } from '../../framework'
 import {SHAPE_OBJECT_FORMAT_CAPABILITY} from '../../blocks/shape-block/shape.types'
 
 describe('inline shape embed', () => {
-  it('keeps old fractional outlines on read and rounds only when creating a delta', () => {
+  it('keeps fractional outline strings on read and rounds only when creating a delta', () => {
     const props = {shape: 'rectangle' as const, width: 210, height: 130, rotation: 25,
-      outline: {...storeObjectLine(SHAPE_OBJECT_FORMAT_CAPABILITY.defaults.shapeOutline!), w: 1.2},
+      outline: '1.2px solid #000000',
     }
     const delta = {insert: {shape: JSON.stringify({props, text: []})}}
-    expect(readInlineShapeDelta(delta).props.outline!.w).toBe(1.2)
+    expect(readInlineShapeDelta(delta).props.outline).toBe('1.2px solid #000000')
     const path = inlineShapeEmbedConverter.toView(delta).querySelector('path')!
     expect(path.getAttribute('stroke-width')).toBe('1.2')
-    expect(readInlineShapeDelta(createInlineShapeDelta(props)).props.outline!.w).toBe(1.25)
+    expect(readInlineShapeDelta(createInlineShapeDelta(props)).props.outline).toBe('1.25px solid #000000')
   })
 
   it('preserves shape props, text and wrap layout through the DOM converter', () => {
@@ -34,24 +35,24 @@ describe('inline shape embed', () => {
       width: 210,
       height: 130,
       rotation: 25,
-      fill: storeObjectPaint({
+      ...storeObjectFormatSection('shapeFill', {
         type: 'solid', color: '#93C5FD', opacity: 0.7,
       }),
-      outline: storeObjectLine({
+      ...storeObjectLine({
         ...SHAPE_OBJECT_FORMAT_CAPABILITY.defaults.shapeOutline!,
         color: '#2563EB', width: 3, dash: 'dash',
       }),
-      textFrame: storeObjectTextFrame({
+      ...storeObjectTextFrame({
         ...SHAPE_OBJECT_FORMAT_CAPABILITY.defaults.textFrame!,
         horizontalAlign: 'right', verticalAlign: 'bottom',
       }),
-      textStyle: storeObjectTextStyle({
+      ...storeObjectTextStyle({
         ...SHAPE_OBJECT_FORMAT_CAPABILITY.defaults.textStyle!,
         fill: {
           type: 'solid', color: '#0F172A', opacity: 1,
         },
       }),
-      position: {x: 12, y: 40},
+      position: "12 40",
       placementLayer: 'under',
     }, [{insert: '流程图'}], {
       wrap: true,
@@ -106,7 +107,7 @@ describe('inline shape embed', () => {
   it('renders open lines without a fill or editable text surface', () => {
     const view = inlineShapeEmbedConverter.toView(createInlineShapeDelta({
       shape: 'line-double-arrow',
-      outline: storeObjectLine({
+      ...storeObjectLine({
         ...SHAPE_OBJECT_FORMAT_CAPABILITY.defaults.shapeOutline!,
         color: '#2563EB', width: 3,
       }),
@@ -119,9 +120,9 @@ describe('inline shape embed', () => {
   })
 
   it('renders and preserves validated custom curve geometry', () => {
-    const customGeometry = serializeCustomShapeGeometry(
-      createDefaultEditableShapeGeometry('curved-connector'),
-    )!
+    const geometry = createDefaultEditableShapeGeometry('curved-connector')!
+    geometry.width = 1200
+    const customGeometry = serializeCustomShapeGeometry(geometry)!
     const delta = createInlineShapeDelta({
       shape: 'curved-connector',
       customGeometry,
@@ -149,7 +150,7 @@ describe('inline shape embed', () => {
   it('renders a linear-gradient fill through an SVG gradient def', () => {
     const view = inlineShapeEmbedConverter.toView(createInlineShapeDelta({
       shape: 'rectangle',
-      fill: storeObjectPaint({
+      ...storeObjectFormatSection('shapeFill', {
         type: 'linear-gradient',
         opacity: 1,
         angle: 160,

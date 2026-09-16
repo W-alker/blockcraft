@@ -1,3 +1,4 @@
+import {parseBlockPosition, storeBlockPosition} from '../../../framework/services/block-placement/state'
 import {
   normalizeTextBoxProps,
   normalizeTextBoxSnapshotProps,
@@ -104,10 +105,10 @@ function placementFromHtml(
   const mode = stringProperty(node, 'dataTextBoxPlacementMode')
   if (mode !== 'absolute') return {}
   return {
-    position: {
+    position: storeBlockPosition({
       x: numberProperty(node, 'dataTextBoxPlacementX') ?? 0,
       y: numberProperty(node, 'dataTextBoxPlacementY') ?? 0,
-    },
+    }),
     ...(stringProperty(node, 'dataTextBoxPlacementLayer') === 'under'
       ? {placementLayer: 'under' as const}
       : {}),
@@ -115,9 +116,10 @@ function placementFromHtml(
 }
 
 function placementToHtml(
-  position: BlockPosition | null | undefined,
+  storedPosition: string | null | undefined,
   layer: TextBoxBlockProps['placementLayer'],
 ) {
+  const position = parseBlockPosition(storedPosition)
   if (!position) return {}
   return {
     dataTextBoxPlacementMode: 'absolute',

@@ -568,25 +568,17 @@ interface BlockSurfaceProps extends IBlockProps {
     | [number, number, number]
     | [number, number, number, number]
     | null;
-  bgi?: string | null; // background image source
-  bgs?: "cover" | "contain" | "stretch" | null; // background size/fit
-  bgx?: number | null; // background-position-x, percent 0..100
-  bgy?: number | null; // background-position-y, percent 0..100
+  bgi?: string | null; // url("paper.png") 50% 50% / cover no-repeat
   bgo?: number | null; // background layer opacity, 0..1
 }
 ```
 
-Keep background options as flat top-level props. Padding deliberately uses one
-`p` Y.Map entry with the same 1–4 value expansion as CSS: `12`, `[12, 24]`,
-`[8, 16, 12]`, or `[8, 12, 16, 20]`. The normalizer compresses redundant
-values back to the shortest arity. A padding edit therefore replaces the whole
-shorthand value, while background options still merge independently. Use
-`normalizeBlockSurfaceProps()` at creation/import boundaries and
-`resolveBlockSurface()` in model/render paths. Values remain numeric rather
-than arbitrary CSS strings; padding is bounded to `0..1000` layout pixels.
-Once `bgi` is valid, omitted image options resolve to `cover`, `50% 50%` and
-opacity `1`; active script schemes are rejected. `null` remains the normal
-`updateProps()`/`updateBlockProps()` delete operation.
+背景图片以一个 CSS shorthand 原子值保存：`bgi: 'url("paper.png") 50% 50% / cover no-repeat'`。
+`stretch` 编码为 `/ 100% 100%`。不再保存 `bgs/bgx/bgy`；`bgo` 是独立透明度，
+默认 1 时省略，缺少有效图片时也省略。旧裸 URL 和旧分散参数不兼容。
+`normalizeBlockSurfaceProps()` 负责创建/导入时的校验与裁剪，`resolveBlockSurface()`
+解码给渲染器；图片位置和透明度保留最多两位小数。`p` 仍是有界的运行时数值 shorthand，
+与文字框边距模型一致，不把尺寸约束改成任意 CSS。`null` 表示通过 CRUD 删除属性。
 
 The surface image is presentation-only, sits behind children and must be an
 actual non-interactive `<img>` rather than raw `background: url(...)`. That
@@ -752,7 +744,12 @@ metadata: {
 The Schema metadata declares capability only. Layout mode is structural: a
 direct root child is relative flow, and a direct child of `placement-layout` or
 `object-group` is absolute. An absolute child persists one atomic
-`position: {x, y}` object in its parent plane's layout pixels. Its optional
+`position: "x y"` string in its parent plane's layout pixels.
+`storeBlockPosition({x, y})` quantizes coordinates to at most two decimals,
+removes trailing zeros and negative zero; `resolveBlockPosition(value)` returns
+runtime numeric coordinates and `parseBlockPosition(value)` returns null for
+malformed/retired values. Drag previews retain full precision; commit, resize,
+alignment, grouping, duplicate and HTML paths share the codec. Its optional
 `placementLayer: 'under'` is stored
 separately; omission means `over`. A relative child persists neither field.
 There is no persisted `mode` or `unit`. The base block host applies
@@ -1150,7 +1147,7 @@ insertion path because it delays the upload-preview state.
 ### Unified Object Format Capability
 
 Fixed visual objects opt in through Schema metadata. Capability defaults remain
-readable semantic objects, while snapshots persist compact atomic records:
+readable semantic objects, while snapshots persist compact independent groups:
 
 ```typescript
 const schema: IBlockSchemaOptions<MyObjectModel> = {
@@ -1184,27 +1181,45 @@ const schema: IBlockSchemaOptions<MyObjectModel> = {
 };
 ```
 
-Use `BlockObjectFormatProps` for `width`, `height`, `rotation` and the concise
-semantic keys `lockRatio`, `shape`, `fill`, `outline`, `effects`, `textFrame`
-and `textStyle`. Use the matching `storeObject*()` helper when constructing a
-snapshot, and
-`normalizeBlockObjectFormat(props, capability)` in every live, Snapshot Viewer,
-inline and export projection. Missing/malformed values return defaults and do
-not throw. Do not reintroduce the removed Shape/TextBox/WordArt flat style
-fields.
+`BlockObjectFormatProps` 保留数值几何 `width/height/rotation`、`lockRatio`、`shape`，
+外观按独立功能保存为顶层小组，不再保存 `effects/textFrame/textStyle` 大对象：
 
-对象格式的 `storeObject*()` 写入边界统一收敛数值：渐变/阴影角度、阴影
-模糊与距离、发光半径和文本框内边距取整；形状与文字轮廓宽度按 `0.25px`
-取最近值；字距、行高、透明度、渐变停点、图片位置和字号最多两位小数。
-预设生成、快照创建、格式面板写入和调用这些 helper 的序列化路径共用此规则。
-`normalizeObject*()` 读取仍保留合法旧值，不在打开文档时批量迁移或写入；
-编辑一个原子格式 section 时，该 section 的数值一同收敛。宽高、对象旋转角、
-定位坐标及宽高比不在本规则范围内。运行时派生的三角函数结果不再反写为格式数据。
+| 属性 | 编码示例 |
+| --- | --- |
+| `fill` / `textFill` | `"#FFFFFF"`、`"#FFFFFF / 0.5"` 或 `"none"`；渐变为 `linear-gradient(135deg, #fff 0%, #000 100%)`；图片为 `url("paper.png") 50% 50% / cover no-repeat` |
+| `fillOpacity` / `textFillOpacity` | 渐变/图片整体透明度；默认 1 时省略，单个色标透明度使用 CSS `color-mix()` 保留独立控制 |
+| `outline` | `"1px solid #333333 / 0.8"` 或 `"none"` |
+| `lineEnds` / `arrows` | `"round bevel"` / `"none triangle"` |
+| `shadow` / `textShadow` | `"45deg 2px 6px #000000 / 0.25"`，依次为角度、距离、模糊、颜色、透明度 |
+| `glow` / `textGlow` | `"4px #4857E2 / 0.35"` |
+| `textPadding` | `"18 22"`，布局 px，支持 CSS 顺序的一到四个值 |
+| `textAlignment` | `"left top"`；不与段落 `textAlign` 混用 |
+| `textDirection/textWrap/textAutoFit/textRotate` | 独立枚举/布尔值 |
+| `textFamily` | 独立字体 ID/安全字体栈，不拼入位置字符串 |
+| `textFont` / `textSpacing` | `"24px 700 italic"` / `"0.1em 1.5"` |
+| `textOutline` / `textTransform` | `"1px #000000"` 或 `"none"` / 独立变形枚举 |
 
-`storeObject*()` 及 `normalizeShapeSnapshotProps()` /
-`normalizeWordArtSnapshotProps()` 支持可选第二参数 `{preservePrecision: true}`，
-仅供旧行内 payload 的只读解码复用字段校验与映射；该模式不收敛合法数值。
-新建、编辑、导出或 block/inline 转换应省略此选项，使用缺省写入精度。
+运行时 `ObjectFormatPatch`、`ObjectTextStyle`、`ObjectTextFrame` 等仍使用结构化参数。
+`storeObjectLine/Effects/TextFrame/TextStyle()` 返回可展开到 props 的小组片段，
+`storeObjectPaint()` 仅返回 CSS paint token；渐变/图片整体透明度由同组属性保存，
+手工构造 props 必须展开 `storeObjectFormatSection("shapeFill", paint)`。最终持久化必须使用
+`storeBlockObjectFormat(format, capability)`，或各块的 `normalize*SnapshotProps()`，
+以所属块 Schema 的默认值裁剪小组。不要直接将完整 helper 结果作为最终快照。
+
+未启用效果不保存颜色、模糊等参数；等于 Schema 默认值的小组省略。缺省表示继承，
+`none` 表示明确关闭（例如 WordArt 默认启用阴影，关闭时必须保存 `textShadow: "none"`）。
+关闭轮廓同时清除其端点与箭头组。Shape、TextBox 默认轮廓及 WordArt 默认文字轮廓宽度
+统一为 `1px`；显式样式/预设宽度仍有效，允许范围仍为 `0..100px`。
+
+所有实时、Snapshot Viewer、行内和导出投影统一用
+`normalizeBlockObjectFormat(props, capability)` 解码。HTML 小组直接保存字符串，不再 JSON 编码填充。旧 `effects/textFrame/textStyle` record 不迁移、不兼容。
+缺失或不合法的小组安全回落至所属块默认值，不写回文档。
+
+数值写入精度不变：渐变/阴影角度、阴影模糊与距离、发光半径及内边距取整；
+轮廓宽度按 `0.25px` 收敛；字号、字距、行高、透明度、停点及图片位置保留两位。
+定位使用 `storeBlockPosition()` 保留两位；宽高、旋转及比例保持原精度。只读行内解码可用 `{preservePrecision: true}`，
+它保留新格式中的合法精度，不是旧格式兼容开关。`OBJECT_FORMAT_SECTION_KEYS` 描述
+每项结构化操作拥有的小组；manager 只写变化的小组，并用 `null` 删除默认组。
 
 `ObjectTextFrame.margins` is `[top, right, bottom, left]` in layout pixels.
 文字区域采用 Word/DrawingML 的两层模型：先由形状几何确定文字矩形，再向内
@@ -1254,14 +1269,13 @@ document prose. Its exact child allowlist is `paragraph`, `bullet`, `ordered`,
 Deleting the last child restores the framework's normal fallback paragraph.
 
 `TextBoxBlockProps` uses fixed `width`, `height`, `rotation` plus the unified
-`lockRatio/shape/fill/outline/effects/textFrame/textStyle` fields. It also
+`lockRatio/shape` 以及上述独立外观和文字小组。 It also
 accepts the same optional flat numeric `adjustments` record as catalog Shape
 geometry. Callout presets use `tailX` / `tailY` in the normalized `0..1000`
 shape coordinate plane; the nearest frame edge determines whether the tail is
 top, right, bottom or left. The names
 stay concise by omitting redundant domain prefixes while remaining readable.
-The structured sections are primitive-only
-atomic records; old surface aliases such as `fo/bw/wm/wa/backColor/borderColor`
+每个小组为独立原子值； old surface aliases such as `fo/bw/wm/wa/backColor/borderColor`
 must not be used for new snapshots. `position` and `placementLayer` remain
 independent and are present only while the text box is structurally absolute.
 Defaults are `240 × 120`, rectangle, rotation `0`,
@@ -1273,7 +1287,7 @@ direction is `textFrame.direction: 'horizontal' | 'vertical-rl' |
 `sidebar`, `editorial`, `shape`, `bubble`, `note`, `culture`, `material` and
 `vertical`. The source module uses compact authoring data internally, but
 `TEXT_BOX_PRESETS` and `getTextBoxPreset()` expose only canonical
-`fill/outline/effects/textFrame/textStyle` sections. Preset IDs and catalog authoring keys never enter
+上述经过默认值裁剪的独立小组。 Preset IDs and catalog authoring keys never enter
 snapshots.
 `getTextBoxPreset()` falls back to `office-simple` for unknown ids. The former
 `classic`, `no-fill`, `outline-r-*`, `rect-r-*` and `bubble-r-*` IDs are not
@@ -1390,15 +1404,14 @@ exported `SHAPE_KINDS`. `SHAPE_CATEGORIES` groups the same canonical
 width/height, `shapeType`, the unified paint/line/effects/text sections,
 optional `rotation` in degrees and optional absolute `position` /
 `placementLayer`. Fill supports explicit none, solid, linear-gradient and
-picture modes through the serialized `fill` section; raw CSS gradient
-strings are never persisted. Gradients
+picture modes through the CSS `fill` string and optional `fillOpacity`. Gradients
 render as per-block SVG `<linearGradient>` defs in both the block component and
 the inline shape Embed; `SHAPE_FILL_GRADIENT_PRESETS` ships the Word-like
 built-in gallery and preset IDs are never persisted.
 Catalogue SVG paths and categories are never written into Yjs or snapshots.
 Parameterised catalogue shapes may additionally persist one flat numeric
 `adjustments` record. Editable line/freeform geometry persists as one validated,
-versioned JSON string in `customGeometry`; it is an atomic top-level Yjs prop,
+versioned compact path string in `customGeometry`; it is an atomic top-level Yjs prop,
 not arbitrary SVG markup or a nested node-level CRDT. `normalizeShapeProps()`
 validates these optional values and returns a finite rotation normalized into
 `[0, 360)`.
@@ -1413,8 +1426,8 @@ pointer movement previews outside Angular and pointerup stores one complete
 remain visual objects rather than auto-snapping semantic connectors.
 `ShapeIconComponent` renders the same main and detail
 geometry as the inserted object. The fixed **插入形状** action uses the shared
-categorized picker; the unified object panel also exposes a capability-filtered
-change-shape control. Its dense icon-only cells expose names through CSES Tooltip and
+categorized picker; shape blocks expose fill/outline/effects in the unified
+object panel, while text boxes retain the change-shape control. Its dense icon-only cells expose names through CSES Tooltip and
 `aria-label`; compact category headings keep the 103 entries navigable. Other
 toolbar/menu glyphs continue to use iconfont classes.
 
@@ -1440,6 +1453,17 @@ clipboard input textual: shape creation/import retains formatting attributes on
 text inserts but drops non-break inline embeds, and paste consumes `text/plain`
 before HTML, Markdown, internal-snapshot or file parsing.
 
+持久化语法：`v1|width height|nonzero或evenodd|f:M…L…C…A…Z|s:M…L…`。
+`f:` 表示填充路径，`s:` 表示只描边；每条路径必须显式以 `M` 开始，只接受绝对
+`M/L/C/A/Z` 命令。它是经过验证的路径数据，不接受 SVG/XML 元素。运行时
+`CustomShapeGeometry` 仍为节点对象，坐标继续保留最多三位小数；圆弧不会因存储而
+转成贝塞尔近似。旧 JSON 字符串不再读取，也不做自动迁移。
+
+无位移点击或拖回起点不提交，避免生成无效 Undo。`onGeometryCommit()` 与
+`normalizeShapeSnapshotProps()` 会省略和当前预设（含 adjustments）一致的覆盖；
+恢复预设时通过原有 placement/CRUD 事务写 `customGeometry: null` 删除属性，
+撤销可恢复完整路径。预设比较只发生在提交/快照边界，不进入 pointermove。
+
 The exported `CustomShapeGeometry` format owns a separate finite `width/height`
 coordinate space and one to eight safe paths. A path accepts only `move`,
 `line`, `cubic`, `arc` and `close`, with at most 512 commands and a 64 KiB serialized
@@ -1447,7 +1471,7 @@ ceiling. Use `serializeCustomShapeGeometry()` before writing and
 `normalizeCustomShapeGeometry()` when reading external data. Built-in line,
 elbow, curved-connector and scribble definitions use
 `createDefaultEditableShapeGeometry()` only as an edit projection; old
-snapshots stay catalogue-only until the first completed handle gesture.
+snapshots stay catalogue-only until a handle gesture actually changes geometry.
 
 The built-in adjustment projection currently covers rounded/single-rounded/
 same-side-rounded rectangles, triangle, parallelogram, trapezoid, four
@@ -1462,7 +1486,7 @@ from its trusted catalogue path. The internal converter accepts only the
 catalogue's absolute `M/L/H/V/C/S/Q/T/A/Z` subset, converts quadratic and
 smooth commands and catalogue arcs to explicit cubic controls, and retains
 `evenodd` compound-path fill. The projection is not persisted until the first
-completed yellow-node gesture, so untouched snapshots remain path-free. Across
+changed yellow-node gesture, so untouched snapshots remain path-free. Across
 the parameter and path modes, all 103 built-in Shape kinds are editable.
 
 `ShapeRotateCommit`, `calculateShapeRotation()`, `rotateShapeVector()` and
@@ -1510,8 +1534,7 @@ const plugins = [
 ```
 
 `WordArtBlockSchema.createSnapshot(text?, props?)` defaults to `艺术字`.
-`WordArtBlockProps` stores fixed geometry plus serialized `textFrame` and
-`textStyle`; the latter owns typography, fill, outline, effects and Transform.
+`WordArtBlockProps` 保存固定几何及上述独立文字小组；不持久化结构化 `textFrame/textStyle`。
 `normalizeWordArtProps()` clamps external values and
 `resolveWordArtPresentation()` resolves portable CSS without accepting raw CSS
 expressions. The bundled catalog contains 16 `WORD_ART_PRESETS`, 10 safe

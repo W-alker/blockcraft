@@ -49,7 +49,7 @@ const imageSnapshot = (src: string): IBlockSnapshot => ({
     wr: 62.5,
     ar: 16 / 9,
     align: 'right',
-    position: {x: 24, y: 36},
+    position: "24 36",
     placementLayer: 'under',
   },
   meta: {},
@@ -208,7 +208,7 @@ describe('Image Block adapters', () => {
     const markdown = await adapter.toMarkdown(
       rootSnapshot([imageSnapshot(TINY_PNG)]),
     )
-    expect(markdown).toContain(`![](${TINY_PNG}`)
+    expect(markdown.replaceAll("\\:", ":")).toContain(`![](${TINY_PNG}`)
     expect(markdown).not.toContain('bc-image')
     expect(markdown).toContain('图片说明')
 
@@ -293,7 +293,7 @@ describe('Image Block adapters', () => {
       src,
       wr: 62.5,
       ar: 1.7777777778,
-      position: {x: 24, y: 36},
+      position: "24 36",
       placementLayer: 'under',
     }))
     expect(caption.flavour).toBe('caption')

@@ -30,9 +30,6 @@ export function blockSurfacePropsFromHtml(
   return normalizeBlockSurfaceProps({
     p: paddingProperty(node),
     bgi: stringProperty(node, 'dataBcBgi'),
-    bgs: stringProperty(node, 'dataBcBgs'),
-    bgx: numberProperty(node, 'dataBcBgx'),
-    bgy: numberProperty(node, 'dataBcBgy'),
     bgo: numberProperty(node, 'dataBcBgo'),
   })
 }
@@ -44,9 +41,6 @@ export function blockSurfacePropsToHtml(
   return {
     dataBcP: serializePadding(props.p),
     dataBcBgi: props.bgi,
-    dataBcBgs: props.bgs,
-    dataBcBgx: props.bgx,
-    dataBcBgy: props.bgy,
     dataBcBgo: props.bgo,
   }
 }

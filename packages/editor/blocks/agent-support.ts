@@ -51,15 +51,10 @@ export const BLOCK_AGENT_OBJECT_GEOMETRY_PROPERTIES = {
   rotation: {type: ['number', 'null'], minimum: -3600, maximum: 3600},
   lockRatio: {type: ['boolean', 'null']},
   position: {
-    anyOf: [
-      {type: 'null'},
-      {
-        type: 'object',
-        properties: {x: {type: 'number'}, y: {type: 'number'}},
-        required: ['x', 'y'],
-        additionalProperties: false,
-      },
-    ],
+    type: ['string', 'null'],
+    description: '布局 px 坐标 "x y"，每个坐标最多两位小数。',
+    pattern: '^-?\\d+(?:\\.\\d{1,2})? -?\\d+(?:\\.\\d{1,2})?$',
+    maxLength: 128,
   },
   placementLayer: {enum: ['under', null]},
 } as const

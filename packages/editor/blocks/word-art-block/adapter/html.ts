@@ -1,3 +1,4 @@
+import {parseBlockPosition, storeBlockPosition} from '../../../framework/services/block-placement/state'
 import type {Element} from 'hast'
 import {
   WordArtBlockSchema,
@@ -128,10 +129,10 @@ export const wordArtBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
       if (
         stringProperty(o.node, 'dataWordArtPlacementMode') === 'absolute'
       ) {
-        rawProps.position = {
+        rawProps.position = storeBlockPosition({
           x: numberProperty(o.node, 'dataWordArtPlacementX') ?? 0,
           y: numberProperty(o.node, 'dataWordArtPlacementY') ?? 0,
-        }
+        })
         if (stringProperty(o.node, 'dataWordArtPlacementLayer') === 'under') {
           rawProps.placementLayer = 'under'
         }
@@ -154,7 +155,7 @@ export const wordArtBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
         o.node.props as Partial<WordArtBlockProps>,
         WORD_ART_OBJECT_FORMAT_CAPABILITY,
       )
-      const position = props.position
+      const position = parseBlockPosition(props.position)
       const delta = sanitizePlainTextDelta(
         o.node.children as DeltaInsert[],
       )

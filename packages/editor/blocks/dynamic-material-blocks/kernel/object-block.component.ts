@@ -1,3 +1,4 @@
+import {parseBlockPosition, storeBlockPosition} from '../../../framework/services/block-placement/state'
 import { Component, HostBinding, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { BaseBlockComponent } from '../../../framework';
@@ -179,7 +180,7 @@ export abstract class ObjectBlockComponent<M extends NativeBlockModel = NativeBl
      */
     protected onScaled(size: FixedResizeCommit): void {
         if (this.isReadonly) return;
-        const position = this.props?.position;
+        const position = parseBlockPosition(this.props?.position);
         const patch: Partial<BlockObjectSizeProps> = {
             width: size.width,
             height: size.height,
@@ -191,10 +192,10 @@ export abstract class ObjectBlockComponent<M extends NativeBlockModel = NativeBl
             this.isFloating && size.positionDeltaX !== 0 &&
             position && Number.isFinite(position.x) && Number.isFinite(position.y)
         ) {
-            patch['position'] = {
-                x: Math.round((position.x + size.positionDeltaX) * 1000) / 1000,
+            patch['position'] = storeBlockPosition({
+                x: position.x + size.positionDeltaX,
                 y: position.y
-            };
+            });
         }
         this.doc.placement.updateObjectGeometry(this.id, patch);
     }

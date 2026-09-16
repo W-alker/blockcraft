@@ -1,3 +1,4 @@
+import {storeBlockPosition} from '../../framework/services/block-placement/state'
 import {
   ChangeDetectionStrategy,
   Component,
@@ -432,8 +433,8 @@ export class TextBoxBlockComponent extends BaseBlockComponent<TextBoxBlockModel>
       width: this.textBoxProps.width,
       height: this.textBoxProps.height,
       rotation: 0,
-      textFrame: storeObjectTextFrame(this.textBoxProps.textFrame),
-      textStyle: storeObjectTextStyle(this.textBoxProps.textStyle),
+      ...storeObjectTextFrame(this.textBoxProps.textFrame),
+      ...storeObjectTextStyle(this.textBoxProps.textStyle),
     })
   }
 
@@ -529,10 +530,10 @@ export class TextBoxBlockComponent extends BaseBlockComponent<TextBoxBlockModel>
       layer: 'over' as const,
     }
     if (placement.mode === 'absolute') {
-      next.position = {
+      next.position = storeBlockPosition({
         x: placement.x + event.offsetX,
         y: placement.y + event.offsetY,
-      }
+      })
     }
 
     this.doc.placement.updateObjectGeometry(this, next)

@@ -8,17 +8,13 @@ describe('block surface', () => {
   it('normalizes CSS-like padding shorthand and compact background fields', () => {
     expect(normalizeBlockSurfaceProps({
       p: [-12, 24, 1200, 48],
-      bgi: ' https://cdn.example.com/paper.png ',
-      bgs: 'stretch',
-      bgx: -4,
-      bgy: 120,
+      bgi: "url(\"https://cdn.example.com/paper.png\") -4% 120% / 100% 100% no-repeat",
+
       bgo: 0.35,
     })).toEqual({
       p: [0, 24, 1000, 48],
-      bgi: 'https://cdn.example.com/paper.png',
-      bgs: 'stretch',
-      bgx: 0,
-      bgy: 100,
+      bgi: "url(\"https://cdn.example.com/paper.png\") 0% 100% / 100% 100% no-repeat",
+
       bgo: 0.35,
     })
   })
@@ -35,13 +31,10 @@ describe('block surface', () => {
 
   it('uses stable image defaults and ignores orphan image options', () => {
     expect(normalizeBlockSurfaceProps({
-      bgi: '/assets/note.png',
+      bgi: "url(\"/assets/note.png\") 50% 50% / cover no-repeat",
     })).toEqual({
-      bgi: '/assets/note.png',
-      bgs: 'cover',
-      bgx: 50,
-      bgy: 50,
-      bgo: 1,
+      bgi: "url(\"/assets/note.png\") 50% 50% / cover no-repeat",
+
     })
 
     expect(normalizeBlockSurfaceProps({

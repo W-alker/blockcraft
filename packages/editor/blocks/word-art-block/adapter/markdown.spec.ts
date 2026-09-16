@@ -54,7 +54,7 @@ describe('WordArt Markdown adapter', () => {
       gradientColors: ['#F97316', '#DB2777'],
       gradientStops: [0, 1],
       effect: 'wave',
-      position: {x: 48, y: 156},
+      position: "48 156",
       placementLayer: 'under',
     })
 

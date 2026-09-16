@@ -15,6 +15,7 @@ import {
   cloneCustomShapeGeometry,
   getShapeGeometryHandles,
   normalizeCustomShapeGeometry,
+  serializeCustomShapeGeometry,
   resolveShapeRenderGeometry,
   updateShapeGeometryHandle,
   type ShapeGeometryControlLine,
@@ -156,12 +157,15 @@ export class ShapeGeometryEditorComponent implements OnDestroy {
     return `0 0 ${this.geometryWidth} ${this.geometryHeight}`
   }
 
+  private startPointer: {x: number; y: number} | null = null
+
   onPointerDown(event: PointerEvent, handle: ShapeGeometryHandle): void {
     if (event.button !== 0 || this._activePointerId !== null) return
     event.preventDefault()
     event.stopPropagation()
     this._activePointerId = event.pointerId
     this._activeHandle = handle
+    this.startPointer = {x: event.clientX, y: event.clientY}
     this._working = cloneCustomShapeGeometry(this._geometry)
     this._originalPathData = Array.from(
       this.targetSvg.querySelectorAll<SVGPathElement>(
@@ -200,8 +204,10 @@ export class ShapeGeometryEditorComponent implements OnDestroy {
     event.preventDefault()
     this._applyPointer(event)
     const committed = normalizeCustomShapeGeometry(this._working)
-    this._cancel(true)
-    if (!committed) return
+    const changed = committed && serializeCustomShapeGeometry(committed) !==
+      serializeCustomShapeGeometry(this._geometry)
+    this._cancel(!!changed)
+    if (!committed || !changed) return
     this._geometry = cloneCustomShapeGeometry(committed)
     this._working = cloneCustomShapeGeometry(committed)
     this._refreshProjection()
@@ -223,6 +229,12 @@ export class ShapeGeometryEditorComponent implements OnDestroy {
 
   private _applyPointer(event: PointerEvent): void {
     if (!this._activeHandle || !this.overlay) return
+    if (event.clientX === this.startPointer?.x && event.clientY === this.startPointer?.y) {
+      this._working = cloneCustomShapeGeometry(this._geometry)
+      this._renderTargetPreview()
+      this._updateOverlayDom()
+      return
+    }
     const matrix = this.overlay.nativeElement.getScreenCTM()
     if (!matrix) return
     const point = this.overlay.nativeElement.createSVGPoint()
@@ -320,6 +332,7 @@ export class ShapeGeometryEditorComponent implements OnDestroy {
     }
     this._activePointerId = null
     this._activeHandle = null
+    this.startPointer = null
     this._originalPathData = []
   }
 }

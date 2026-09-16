@@ -1,3 +1,5 @@
+import {compactShapeGeometryOverride} from './shape-geometry-storage'
+import {storeBlockPosition} from '../../framework/services/block-placement/state'
 import {
   ChangeDetectionStrategy,
   Component,
@@ -612,10 +614,10 @@ export class ShapeBlockComponent extends BaseBlockComponent<ShapeBlockModel> {
       layer: 'over' as const,
     }
     if (placement.mode === 'absolute') {
-      next.position = {
+      next.position = storeBlockPosition({
         x: placement.x + event.offsetX,
         y: placement.y + event.offsetY,
-      }
+      })
     }
     this.doc.placement.updateObjectGeometry(this, next)
     const shell = this._shapeShell?.nativeElement
@@ -637,7 +639,12 @@ export class ShapeBlockComponent extends BaseBlockComponent<ShapeBlockModel> {
     if (this.isReadonly) return
     const serialized = serializeCustomShapeGeometry(geometry)
     if (!serialized) return
-    this.doc.placement.updateObjectGeometry(this, {customGeometry: serialized})
+    const props = this.shapeProps
+    const customGeometry = compactShapeGeometryOverride(serialized, props.shapeType, props.adjustments)
+    if (customGeometry
+      ? customGeometry === serializeCustomShapeGeometry(props.customGeometry)
+      : this.props.customGeometry == null) return
+    if (this.doc.placement.updateObjectGeometry(this, {customGeometry: customGeometry ?? null}) === false) return
     const svg = this._shapeGeometry?.nativeElement
     if (svg) svg.setAttribute('viewBox', `0 0 ${geometry.width} ${geometry.height}`)
   }

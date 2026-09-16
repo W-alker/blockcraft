@@ -346,14 +346,14 @@ the same 82% solid-surface composition in the live editor and Snapshot Viewer.
 `render-unit` also implements the opt-in `BlockSurfaceProps` contract. Its
 persisted keys follow compact CSS-style abbreviations: `p` is a numeric CSS
 padding shorthand with one to four layout-pixel values;
-`bgi/bgs/bgx/bgy/bgo` are background image, size/fit, x/y position and opacity.
+`bgi` stores image source, size/fit and position in one CSS background string;
+optional `bgo` stores opacity (omitted at 1).
 Create or update the region through normal Schema/CRUD boundaries:
 
 ```typescript
 const region = RenderUnitBlockSchema.createSnapshot({}, {
   p: [16, 24], // vertical, horizontal
-  bgi: 'https://cdn.example.com/paper.png',
-  bgs: 'cover',
+  bgi: 'url("https://cdn.example.com/paper.png") 50% 50% / cover no-repeat',
 })
 
 doc.crud.updateBlockProps(regionId, {p: [16, 32]})
@@ -575,7 +575,7 @@ Schemas can independently opt into free block positioning with
 declaration, not persisted layout state. Placement mode is structural: an
 ordinary direct root child is relative flow, while a direct child of the root
 `placement-layout` or `object-group` is absolute. Absolute objects persist one atomic
-`props.position: {x, y}` value in their parent plane's layout pixels and an independent
+`props.position: "x y"` string in their parent plane's layout pixels (at most two decimal places) and an independent
 optional `props.placementLayer: 'under'`; omission means `over`. Relative
 objects persist neither field. Root padding is never part of either coordinate.
 `doc.placement.setMode()` preserves the current visual position when switching
@@ -1183,8 +1183,8 @@ the payload and wrap metadata, while Markdown degrades to readable text.
 The block shape catalog exposes 103 `SHAPE_KINDS` through eight
 `SHAPE_CATEGORIES`: rectangles, basic shapes, lines, block arrows, equation
 shapes, flowchart, stars/banners and callouts. The fixed insertion toolbar uses
-the categorized picker; the unified object panel also exposes a
-capability-filtered change-shape control. Line/connector appearances are visual, non-filled and
+the categorized picker; shape blocks keep fill/outline/effects in the unified
+object panel, while text boxes retain the change-shape control. Line/connector appearances are visual, non-filled and
 textless. Their endpoints, intermediate nodes and cubic handles use a safe
 versioned custom-path overlay that previews locally and commits one atomic Yjs
 value on pointerup; they deliberately do not claim semantic attachment to other
@@ -1194,7 +1194,10 @@ parameter handles for corners, vertices, skew, arrow proportions or callout
 pointers; those gestures persist only flat numeric `adjustments`, not paths.
 The other 87 catalogue definitions receive trusted edit-only path projections,
 so all 103 built-in Shape kinds expose yellow draggable nodes while untouched
-documents remain path-free.
+documents remain path-free. `customGeometry` stores a validated
+`v1|width height|fill-rule|f:path|s:path` string; runtime nodes remain structured.
+No-change gestures do not write, and restoring preset geometry deletes the
+override. See `blockcraft-block.md` for encoding and migration boundaries.
 The nested `shape-text` child remains manually formattable, while Schema
 `metadata.pastePlainTextOnly` makes clipboard ingestion consume only
 `text/plain`. This paste-only capability is independent from
@@ -1577,6 +1580,19 @@ connected popover is deliberately limited to actor identity, revision time and
 the same two decision icons. Root `placement-layout` nodes are infrastructure and
 never receive whole-block revision presentation; a first absolute-object insert
 targets the actual object child.
+
+### 对象格式持久化小组
+
+Shape、TextBox、WordArt 保留结构化运行时格式 API；持久化改用独立紧凑小组。
+使用 `storeBlockObjectFormat(format, capability)` 裁剪默认值，使用
+`normalizeBlockObjectFormat(props, capability)` 解码。`storeObjectLine/Effects/TextFrame/TextStyle`
+返回可展开的 props 片段，禁止再包进 `effects/textFrame/textStyle` 大对象。
+关闭默认未启用的效果会删除属性；默认启用的效果用 `none` 明确覆盖。
+旧大对象不兼容。默认轮廓宽度为 `1px`。完整编码表见 `blockcraft-block.md`。
+上述按需存储、独立小组和字符串 shorthand 是 root、容器与对象共同遵守的规则，详见
+`blockcraft-data.md`。`position` 存为两位精度 `"x y"`；所有对象渐变/图片填充使用 CSS
+字符串及可选整体透明度。通用容器 `bgi` 合并图片位置和 fit；root 已有 `background`
+CSS shorthand 保持，不增加空对象。
 
 ## Architecture Docs (Background Reading)
 

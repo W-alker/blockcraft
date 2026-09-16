@@ -1,4 +1,4 @@
-import {defineBlockAgentCapability} from '../../../framework'
+import {defineBlockAgentCapability, OBJECT_FORMAT_SECTION_KEYS} from '../../../framework'
 import {
   BLOCK_AGENT_OBJECT_GEOMETRY_PROPERTIES,
   BLOCK_AGENT_TEXT_OR_DELTA_SCHEMA,
@@ -11,7 +11,7 @@ const WORD_ART_PROPERTIES = {
 } as const
 
 export const WORD_ART_BLOCK_AGENT_CAPABILITY = defineBlockAgentCapability({
-  id: 'blockcraft.block.word-art', kind: 'block', flavour: 'word-art', schemaVersion: 1,
+  id: 'blockcraft.block.word-art', kind: 'block', flavour: 'word-art', schemaVersion: 2,
   title: '艺术字', description: '统一样式、可放置的艺术文字。',
   domains: ['document', 'layout'], semanticRoles: ['word-art', 'decorative-text'],
   createParameters: {
@@ -22,6 +22,10 @@ export const WORD_ART_BLOCK_AGENT_CAPABILITY = defineBlockAgentCapability({
     ],
   },
   writableProps: blockAgentWritableProps(WORD_ART_PROPERTIES),
-  atomicProps: ['position', 'textFrame', 'textStyle'],
+  atomicProps: [
+    'position',
+    ...OBJECT_FORMAT_SECTION_KEYS.textFrame,
+    ...OBJECT_FORMAT_SECTION_KEYS.textStyle,
+  ],
   examples: [{flavour: 'word-art', params: ['新品发布', {width: 320, height: 96}]}],
 })

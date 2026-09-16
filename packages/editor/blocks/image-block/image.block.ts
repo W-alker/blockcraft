@@ -1,3 +1,4 @@
+import {storeBlockPosition} from '../../framework/services/block-placement/state'
 import {ChangeDetectionStrategy, Component, ElementRef, ViewChild} from '@angular/core';
 import {
   BaseBlockComponent,
@@ -423,10 +424,10 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
       ...size,
       ...(placement.mode === 'absolute' && event.offsetX !== 0
         ? {
-            position: {
+            position: storeBlockPosition({
               x: placement.x + event.offsetX,
               y: placement.y,
-            },
+            }),
           }
         : {}),
     }));

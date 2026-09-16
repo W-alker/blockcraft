@@ -27,8 +27,8 @@ describe('RenderUnitBlockSchema', () => {
       {incl: ['paragraph']},
       {
         p: [12, 18],
-        bgi: ' /assets/paper.png ',
-        bgs: 'contain',
+        bgi: "url(\"/assets/paper.png\") 50% 50% / contain no-repeat",
+
         bgo: 0.4,
         backColor: ' #fff7d6 ',
       },
@@ -37,10 +37,8 @@ describe('RenderUnitBlockSchema', () => {
     expect(snapshot.meta).toEqual({incl: ['paragraph']})
     expect(snapshot.props).toEqual({
       p: [12, 18],
-      bgi: '/assets/paper.png',
-      bgs: 'contain',
-      bgx: 50,
-      bgy: 50,
+      bgi: "url(\"/assets/paper.png\") 50% 50% / contain no-repeat",
+
       bgo: 0.4,
       backColor: '#fff7d6',
     })

@@ -40,7 +40,7 @@ export { readDateCardLook } from './date-card-look.util';
  * 必须写成内联匿名对象类型、不许提成具名 interface——具名 interface 拿不到隐式索引签名，
  * 过不了框架 IBlockProps 的 `[key: string]: SimpleValue`（这坑只在 ng-packagr 工具链下才炸）。
  *
- * **浮于文字的持久位这里一个字都不声明**：blockcraft 0.5.0 起 `position`（`{x,y}`）与
+ * **浮于文字的持久位这里一个字都不声明**：blockcraft 0.5.0 起 `position`（`"x y"`）与
  * `placementLayer`（省略=over）已是框架 `IBlockProps` 的自有字段，`BlockObjectSizeProps`
  * 继承它、我们又 `&` 在它上面，数据位天生就有。排版态（relative/absolute）更是**彻底离开了 props**——
  * 由结构决定（父级是不是 placement-layout / object-group），要读就读 `placementPosition`

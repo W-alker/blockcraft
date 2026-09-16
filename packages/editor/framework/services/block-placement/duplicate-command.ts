@@ -1,3 +1,4 @@
+import {resolveBlockPosition, storeBlockPosition} from './state'
 import {BlockNodeType} from '../../block-std/types'
 import type {DeltaInsert, IBlockSnapshot} from '../../block-std/types'
 import {
@@ -62,14 +63,8 @@ function cloneForAbsoluteInsert(
 
   const props = {...snapshot.props}
   if (topLevel) {
-    const position = props['position'] as {x?: unknown; y?: unknown} | undefined
-    const x = typeof position?.x === 'number' && Number.isFinite(position.x)
-      ? position.x
-      : 0
-    const y = typeof position?.y === 'number' && Number.isFinite(position.y)
-      ? position.y
-      : 0
-    props['position'] = {x: x + offset, y: y + offset}
+    const {x, y} = resolveBlockPosition(props['position'])
+    props['position'] = storeBlockPosition({x: x + offset, y: y + offset})
   }
 
   const children = snapshot.nodeType === 'block' || snapshot.nodeType === 'root'

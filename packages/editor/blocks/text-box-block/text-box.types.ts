@@ -1,3 +1,5 @@
+import {encodeCssPicture} from '../../framework/block-std/block/object-picture'
+import {parseBlockPosition, storeBlockPosition} from '../../framework/services/block-placement/state'
 import {
   DEFAULT_OBJECT_EFFECTS,
   DEFAULT_OBJECT_LINE,
@@ -5,12 +7,8 @@ import {
   DEFAULT_OBJECT_TEXT_FRAME,
   DEFAULT_OBJECT_TEXT_STYLE,
   normalizeBlockObjectFormat,
+  storeBlockObjectFormat,
   resolveBlockPosition,
-  storeObjectEffects,
-  storeObjectLine,
-  storeObjectPaint,
-  storeObjectTextFrame,
-  storeObjectTextStyle,
   type BlockObjectFormatCapability,
   type BlockObjectFormatProps,
   type ObjectEffects,
@@ -65,9 +63,6 @@ export interface NormalizedTextBoxBlockProps {
   textStyle: ObjectTextStyle
   p: BlockSurfacePadding
   bgi?: NonNullable<BlockSurfaceProps['bgi']>
-  bgs?: NonNullable<BlockSurfaceProps['bgs']>
-  bgx?: NonNullable<BlockSurfaceProps['bgx']>
-  bgy?: NonNullable<BlockSurfaceProps['bgy']>
   bgo?: NonNullable<BlockSurfaceProps['bgo']>
   backColor: string
   borderColor: string
@@ -125,11 +120,6 @@ export const DEFAULT_TEXT_BOX_PROPS: Readonly<TextBoxBlockProps> = {
   rotation: 0,
   lockRatio: false,
   shape: 'rectangle',
-  fill: storeObjectPaint(DEFAULT_TEXT_BOX_FILL),
-  outline: storeObjectLine(DEFAULT_TEXT_BOX_OUTLINE),
-  effects: storeObjectEffects(DEFAULT_OBJECT_EFFECTS),
-  textFrame: storeObjectTextFrame(DEFAULT_TEXT_BOX_FRAME),
-  textStyle: storeObjectTextStyle(DEFAULT_TEXT_BOX_STYLE),
 }
 
 /**
@@ -179,10 +169,7 @@ export function normalizeTextBoxProps(
     bs: outline.dash === 'solid' ? 'solid' : 'dashed',
     wm: textFrame.direction === 'horizontal' ? 'h' : 'v',
     ...(fill.type === 'picture' && fill.src ? {
-      bgi: fill.src,
-      bgs: fill.fit,
-      bgx: fill.positionX,
-      bgy: fill.positionY,
+      bgi: encodeCssPicture(fill),
       bgo: fill.opacity,
     } : {}),
     ...(typeof input?.['artwork'] === 'string'
@@ -202,16 +189,8 @@ export function normalizeTextBoxSnapshotProps(
 ): TextBoxBlockProps {
   const normalized = normalizeTextBoxProps(value)
   return {
-    width: normalized.width,
-    height: normalized.height,
-    rotation: normalized.rotation,
-    lockRatio: normalized.lockAspectRatio,
+    ...storeBlockObjectFormat(normalized, TEXT_BOX_OBJECT_FORMAT_CAPABILITY),
     shape: normalized.shapeType,
-    fill: storeObjectPaint(normalized.shapeFill),
-    outline: storeObjectLine(normalized.shapeOutline),
-    effects: storeObjectEffects(normalized.shapeEffects),
-    textFrame: storeObjectTextFrame(normalized.textFrame),
-    textStyle: storeObjectTextStyle(normalized.textStyle),
     ...(normalized.artwork ? {artwork: normalized.artwork} : {}),
     ...(normalized.adjustments ? {adjustments: normalized.adjustments} : {}),
     ...(normalized.position ? {position: normalized.position} : {}),
@@ -250,8 +229,6 @@ function normalizeTextBoxShape(value: unknown): ShapeKind {
 }
 
 function normalizePosition(value: unknown) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return undefined
-  }
-  return resolveBlockPosition(value)
+  const position = parseBlockPosition(value)
+  return position ? storeBlockPosition(position) : undefined
 }

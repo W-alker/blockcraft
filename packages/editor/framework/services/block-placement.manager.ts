@@ -38,8 +38,10 @@ export {
   resolvePlacementPlaneBounds,
 } from './block-placement/geometry'
 export {
+  parseBlockPosition,
   resolveBlockPosition,
   resolvePlacementLayer,
+  storeBlockPosition,
 } from './block-placement/state'
 export {
   BLOCK_OBJECT_GROUP_PADDING,

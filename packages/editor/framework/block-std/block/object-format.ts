@@ -1,8 +1,9 @@
+import {decodeCssPicture, encodeCssPicture} from './object-picture'
+import {decodeObjectGradient, encodeObjectGradient} from './object-gradient'
 import {quantizeObjectFormatNumber} from './object-format-number'
-import type {SimpleBasicType} from '../../../global'
 import type {IBlockProps} from '../types'
 
-/** 仅解码旧快照时保留精度；持久化构造使用缺省值。 */
+/** 只读行内解码时保留合法精度；持久化构造使用缺省精度。 */
 type ObjectFormatStorageOptions = Readonly<{preservePrecision?: boolean}>
 
 export type ObjectPaintType = 'none' | 'solid' | 'linear-gradient' | 'picture'
@@ -149,130 +150,67 @@ export interface ObjectTextStyle {
   transform: ObjectTextTransform
 }
 
-export interface StoredObjectPaint extends Record<string, SimpleBasicType> {
-  t: 'n' | 's' | 'g' | 'p'
-  c?: string
-  o?: number
-  a?: number
-  n?: number
-  c0?: string
-  p0?: number
-  q0?: number
-  c1?: string
-  p1?: number
-  q1?: number
-  c2?: string
-  p2?: number
-  q2?: number
-  c3?: string
-  p3?: number
-  q3?: number
-  u?: string
-  f?: ObjectPictureFit
-  x?: number
-  y?: number
+/** CSS paint token. Overall gradient/image alpha is stored by the owning props group. */
+export type StoredObjectPaint = string
+export interface StoredObjectLine {
+  outline: string
+  lineEnds?: string
+  arrows?: string
+}
+export interface StoredObjectEffects {
+  shadow: string
+  glow: string
+}
+export interface StoredObjectTextFrame {
+  textPadding: string
+  textAlignment: string
+  textDirection: ObjectTextDirection
+  textWrap: boolean
+  textAutoFit: ObjectTextAutoFit
+  textRotate: boolean
+}
+export type StoredObjectTextOutline = string
+export interface StoredObjectTextStyle {
+  textFamily: string
+  textFont: string
+  textSpacing: string
+  textFill: StoredObjectPaint
+  textFillOpacity?: number
+  textOutline: string
+  textShadow: string
+  textGlow: string
+  textTransform: ObjectTextTransform
 }
 
-export interface StoredObjectLine extends Record<string, SimpleBasicType> {
-  t: 'n' | 'l'
-  c?: string
-  o?: number
-  w?: number
-  d?: ObjectLineDash
-  p?: ObjectLineCap
-  j?: ObjectLineJoin
-  s?: ObjectLineArrow
-  e?: ObjectLineArrow
-}
-
-export interface StoredObjectEffects extends Record<string, SimpleBasicType> {
-  se: boolean
-  sc: string
-  so: number
-  sb: number
-  sa: number
-  sd: number
-  ge: boolean
-  gc: string
-  go: number
-  gr: number
-}
-
-export interface StoredObjectTextFrame extends Record<string, SimpleBasicType> {
-  mt: number
-  mr: number
-  mb: number
-  ml: number
-  d: ObjectTextDirection
-  h: ObjectTextHorizontalAlign
-  v: ObjectTextVerticalAlign
-  w: boolean
-  a: ObjectTextAutoFit
-  r: boolean
-}
-
-export interface StoredObjectTextOutline extends Record<string, SimpleBasicType> {
-  t: 'n' | 'l'
-  c?: string
-  w?: number
-}
-
-export interface StoredObjectTextStyle extends Record<string, SimpleBasicType> {
-  f: string
-  z: number
-  w: ObjectTextStyle['fontWeight']
-  i: boolean
-  s: number
-  l: number
-  pt: StoredObjectPaint['t']
-  pc?: string
-  po?: number
-  pa?: number
-  pn?: number
-  pc0?: string
-  pp0?: number
-  pq0?: number
-  pc1?: string
-  pp1?: number
-  pq1?: number
-  pc2?: string
-  pp2?: number
-  pq2?: number
-  pc3?: string
-  pp3?: number
-  pq3?: number
-  pu?: string
-  pf?: ObjectPictureFit
-  px?: number
-  py?: number
-  ot: StoredObjectTextOutline['t']
-  oc?: string
-  ow?: number
-  se: boolean
-  sc: string
-  so: number
-  sb: number
-  sa: number
-  sd: number
-  ge: boolean
-  gc: string
-  go: number
-  gr: number
-  t: ObjectTextTransform
-}
-
+/** Each independent group is one atomic collaborative prop. */
 export interface BlockObjectFormatProps extends IBlockProps {
   width: number
   height: number
   rotation: number
   lockRatio?: boolean | null
   shape?: string | null
-  /** Each section is one atomic collaborative value. */
   fill?: StoredObjectPaint | null
-  outline?: StoredObjectLine | null
-  effects?: StoredObjectEffects | null
-  textFrame?: StoredObjectTextFrame | null
-  textStyle?: StoredObjectTextStyle | null
+  fillOpacity?: number | null
+  outline?: string | null
+  lineEnds?: string | null
+  arrows?: string | null
+  shadow?: string | null
+  glow?: string | null
+  textPadding?: string | null
+  textAlignment?: string | null
+  textDirection?: ObjectTextDirection | null
+  textWrap?: boolean | null
+  textAutoFit?: ObjectTextAutoFit | null
+  textRotate?: boolean | null
+  textFamily?: string | null
+  textFont?: string | null
+  textSpacing?: string | null
+  textFill?: StoredObjectPaint | null
+  textFillOpacity?: number | null
+  textOutline?: string | null
+  textShadow?: string | null
+  textGlow?: string | null
+  textTransform?: ObjectTextTransform | null
 }
 
 export interface NormalizedBlockObjectFormat {
@@ -435,9 +373,9 @@ export function normalizeObjectPaint(
   fallback: Readonly<ObjectPaint> | undefined = DEFAULT_OBJECT_PAINT,
 ): ObjectPaint {
   fallback ??= DEFAULT_OBJECT_PAINT
-  const source = parseSection(value)
-  const type = normalizeStoredPaintType(
-    source?.['type'] ?? source?.['t'],
+  const source = typeof value === 'string' ? readPaintString(value) : parseSection(value)
+  const type = normalizePaintType(
+    source?.['type'],
     fallback.type,
   )
   if (type === 'none') return {type: 'none'}
@@ -445,8 +383,8 @@ export function normalizeObjectPaint(
     const defaults = fallback.type === 'solid' ? fallback : DEFAULT_OBJECT_PAINT
     return {
       type,
-      color: normalizeColor(source?.['color'] ?? source?.['c'], defaults.color),
-      opacity: bounded(source?.['opacity'] ?? source?.['o'], defaults.opacity, 0, 1),
+      color: normalizeColor(source?.['color'], defaults.color),
+      opacity: bounded(source?.['opacity'], defaults.opacity, 0, 1),
     }
   }
   if (type === 'linear-gradient') {
@@ -455,10 +393,10 @@ export function normalizeObjectPaint(
       : DEFAULT_OBJECT_GRADIENT_PAINT
     return {
       type,
-      opacity: bounded(source?.['opacity'] ?? source?.['o'], defaults.opacity, 0, 1),
-      angle: bounded(source?.['angle'] ?? source?.['a'], defaults.angle, -360, 360),
+      opacity: bounded(source?.['opacity'], defaults.opacity, 0, 1),
+      angle: bounded(source?.['angle'], defaults.angle, -360, 360),
       stops: normalizeGradientStops(
-        source?.['stops'] ?? readStoredGradientStops(source),
+        source?.['stops'],
         defaults.stops,
       ),
     }
@@ -468,19 +406,19 @@ export function normalizeObjectPaint(
     : DEFAULT_OBJECT_PICTURE_PAINT
   return {
     type,
-    opacity: bounded(source?.['opacity'] ?? source?.['o'], defaults.opacity, 0, 1),
-    src: normalizeImageSource(source?.['src'] ?? source?.['u'], defaults.src),
-    fit: isInSet(source?.['fit'] ?? source?.['f'], PICTURE_FITS)
-      ? (source?.['fit'] ?? source?.['f']) as ObjectPictureFit
+    opacity: bounded(source?.['opacity'], defaults.opacity, 0, 1),
+    src: normalizeImageSource(source?.['src'], defaults.src),
+    fit: isInSet(source?.['fit'], PICTURE_FITS)
+      ? (source?.['fit']) as ObjectPictureFit
       : defaults.fit,
     positionX: bounded(
-      source?.['positionX'] ?? source?.['x'],
+      source?.['positionX'],
       defaults.positionX,
       0,
       100,
     ),
     positionY: bounded(
-      source?.['positionY'] ?? source?.['y'],
+      source?.['positionY'],
       defaults.positionY,
       0,
       100,
@@ -521,32 +459,21 @@ export function createObjectPaint(
 
 export function storeObjectPaint(value: Readonly<ObjectPaint>, options: ObjectFormatStorageOptions = {}): StoredObjectPaint {
   const paint = normalizeObjectPaint(value)
-  if (paint.type === 'none') return {t: 'n'}
+  if (paint.type === 'none') return 'none'
   if (paint.type === 'solid') {
-    return {t: 's', c: paint.color, o: quantizeObjectFormatNumber(paint.opacity, 0.01, options.preservePrecision)}
+    return colorToken(paint.color, quantizeObjectFormatNumber(paint.opacity, 0.01, options.preservePrecision))
   }
   if (paint.type === 'linear-gradient') {
-    const stored: StoredObjectPaint = {
-      t: 'g',
-      o: quantizeObjectFormatNumber(paint.opacity, 0.01, options.preservePrecision),
-      a: quantizeObjectFormatNumber(paint.angle, 1, options.preservePrecision),
-      n: paint.stops.length,
-    }
-    paint.stops.forEach((stop, index) => {
-      stored[`c${index}` as keyof StoredObjectPaint] = stop.color as never
-      stored[`p${index}` as keyof StoredObjectPaint] = quantizeObjectFormatNumber(stop.offset, 0.01, options.preservePrecision) as never
-      stored[`q${index}` as keyof StoredObjectPaint] = quantizeObjectFormatNumber(stop.opacity, 0.01, options.preservePrecision) as never
+    const q = (number: number, step: number) => quantizeObjectFormatNumber(number, step, options.preservePrecision)
+    return encodeObjectGradient({...paint,
+      angle: q(paint.angle, 1),
+      stops: paint.stops.map(stop => ({...stop, offset: q(stop.offset, 0.01), opacity: q(stop.opacity, 0.01)})),
     })
-    return stored
   }
-  return {
-    t: 'p',
-    o: quantizeObjectFormatNumber(paint.opacity, 0.01, options.preservePrecision),
-    u: paint.src,
-    f: paint.fit,
-    x: quantizeObjectFormatNumber(paint.positionX, 0.01, options.preservePrecision),
-    y: quantizeObjectFormatNumber(paint.positionY, 0.01, options.preservePrecision),
-  }
+  return encodeCssPicture({...paint,
+    positionX: quantizeObjectFormatNumber(paint.positionX, 0.01, options.preservePrecision),
+    positionY: quantizeObjectFormatNumber(paint.positionY, 0.01, options.preservePrecision),
+  })
 }
 
 export function normalizeObjectLine(
@@ -554,8 +481,9 @@ export function normalizeObjectLine(
   fallback: Readonly<ObjectLine> | undefined = DEFAULT_OBJECT_LINE,
 ): ObjectLine {
   fallback ??= DEFAULT_OBJECT_LINE
-  const source = parseSection(value)
-  const rawType = source?.['type'] ?? source?.['t']
+  const input = parseSection(value)
+  const source = input && ['outline', 'lineEnds', 'arrows'].some(key => key in input) ? readLineGroups(input) : input
+  const rawType = source?.['type']
   return {
     type: rawType === 'none' || rawType === 'n'
       ? 'none'
@@ -585,17 +513,11 @@ export function normalizeObjectLine(
 
 export function storeObjectLine(value: Readonly<ObjectLine>, options: ObjectFormatStorageOptions = {}): StoredObjectLine {
   const line = normalizeObjectLine(value)
-  if (line.type === 'none') return {t: 'n'}
+  if (line.type === 'none') return {outline: 'none'}
   return {
-    t: 'l',
-    c: line.color,
-    o: quantizeObjectFormatNumber(line.opacity, 0.01, options.preservePrecision),
-    w: quantizeObjectFormatNumber(line.width, 0.25, options.preservePrecision),
-    d: line.dash,
-    p: line.cap,
-    j: line.join,
-    s: line.startArrow,
-    e: line.endArrow,
+    outline: `${quantizeObjectFormatNumber(line.width, 0.25, options.preservePrecision)}px ${line.dash} ${colorToken(line.color, quantizeObjectFormatNumber(line.opacity, 0.01, options.preservePrecision))}`,
+    lineEnds: `${line.cap} ${line.join}`,
+    arrows: `${line.startArrow} ${line.endArrow}`,
   }
 }
 
@@ -605,33 +527,35 @@ export function normalizeObjectEffects(
 ): ObjectEffects {
   fallback ??= DEFAULT_OBJECT_EFFECTS
   const source = parseSection(value)
-  const shadow = record(source?.['shadow']) ?? source
-  const glow = record(source?.['glow']) ?? source
+  const shadow = typeof source?.['shadow'] === 'string'
+    ? readEffectString(source['shadow'], true) : record(source?.['shadow'])
+  const glow = typeof source?.['glow'] === 'string'
+    ? readEffectString(source['glow'], false) : record(source?.['glow'])
   return {
     shadow: {
       enabled: booleanValue(
-        shadow?.['enabled'] ?? shadow?.['se'],
+        shadow?.['enabled'],
         fallback.shadow.enabled,
       ),
       color: normalizeColor(
-        shadow?.['color'] ?? shadow?.['sc'],
+        shadow?.['color'],
         fallback.shadow.color,
       ),
       opacity: bounded(
-        shadow?.['opacity'] ?? shadow?.['so'],
+        shadow?.['opacity'],
         fallback.shadow.opacity,
         0,
         1,
       ),
-      blur: bounded(shadow?.['blur'] ?? shadow?.['sb'], fallback.shadow.blur, 0, 100),
+      blur: bounded(shadow?.['blur'], fallback.shadow.blur, 0, 100),
       angle: bounded(
-        shadow?.['angle'] ?? shadow?.['sa'],
+        shadow?.['angle'],
         fallback.shadow.angle,
         -360,
         360,
       ),
       distance: bounded(
-        shadow?.['distance'] ?? shadow?.['sd'],
+        shadow?.['distance'],
         fallback.shadow.distance,
         0,
         200,
@@ -639,17 +563,17 @@ export function normalizeObjectEffects(
     },
     glow: {
       enabled: booleanValue(
-        glow?.['enabled'] ?? glow?.['ge'],
+        glow?.['enabled'],
         fallback.glow.enabled,
       ),
-      color: normalizeColor(glow?.['color'] ?? glow?.['gc'], fallback.glow.color),
+      color: normalizeColor(glow?.['color'], fallback.glow.color),
       opacity: bounded(
-        glow?.['opacity'] ?? glow?.['go'],
+        glow?.['opacity'],
         fallback.glow.opacity,
         0,
         1,
       ),
-      radius: bounded(glow?.['radius'] ?? glow?.['gr'], fallback.glow.radius, 0, 100),
+      radius: bounded(glow?.['radius'], fallback.glow.radius, 0, 100),
     },
   }
 }
@@ -658,18 +582,12 @@ export function storeObjectEffects(
   value: Readonly<ObjectEffects>,
   options: ObjectFormatStorageOptions = {},
 ): StoredObjectEffects {
-  const effects = normalizeObjectEffects(value)
+  const {shadow, glow} = normalizeObjectEffects(value)
+  const q = (n: number, step = 1) => quantizeObjectFormatNumber(n, step, options.preservePrecision)
   return {
-    se: effects.shadow.enabled,
-    sc: effects.shadow.color,
-    so: quantizeObjectFormatNumber(effects.shadow.opacity, 0.01, options.preservePrecision),
-    sb: quantizeObjectFormatNumber(effects.shadow.blur, 1, options.preservePrecision),
-    sa: quantizeObjectFormatNumber(effects.shadow.angle, 1, options.preservePrecision),
-    sd: quantizeObjectFormatNumber(effects.shadow.distance, 1, options.preservePrecision),
-    ge: effects.glow.enabled,
-    gc: effects.glow.color,
-    go: quantizeObjectFormatNumber(effects.glow.opacity, 0.01, options.preservePrecision),
-    gr: quantizeObjectFormatNumber(effects.glow.radius, 1, options.preservePrecision),
+    shadow: shadow.enabled
+      ? `${q(shadow.angle)}deg ${q(shadow.distance)}px ${q(shadow.blur)}px ${colorToken(shadow.color, q(shadow.opacity, 0.01))}` : 'none',
+    glow: glow.enabled ? `${q(glow.radius)}px ${colorToken(glow.color, q(glow.opacity, 0.01))}` : 'none',
   }
 }
 
@@ -678,12 +596,14 @@ export function normalizeObjectTextFrame(
   fallback: Readonly<ObjectTextFrame> | undefined = DEFAULT_OBJECT_TEXT_FRAME,
 ): ObjectTextFrame {
   fallback ??= DEFAULT_OBJECT_TEXT_FRAME
-  const source = parseSection(value)
-  const rawMargins = source?.['margins'] ?? (
-    source && ['mt', 'mr', 'mb', 'ml'].some(key => key in source)
-      ? [source['mt'], source['mr'], source['mb'], source['ml']]
-      : undefined
-  )
+  const input = parseSection(value)
+  const alignment = tokens(input?.['textAlignment'])
+  const source = input && Object.keys(input).some(key => key.startsWith('text'))
+    ? {margins: readPadding(input?.['textPadding']), direction: input?.['textDirection'],
+       horizontalAlign: alignment[0], verticalAlign: alignment[1], wrap: input?.['textWrap'],
+       autoFit: input?.['textAutoFit'], rotateWithShape: input?.['textRotate']}
+    : input
+  const rawMargins = source?.['margins']
   const margins = Array.isArray(rawMargins)
     ? rawMargins as unknown[]
     : []
@@ -691,50 +611,44 @@ export function normalizeObjectTextFrame(
     margins: [0, 1, 2, 3].map(index =>
       bounded(margins[index], fallback.margins[index]!, 0, 1_000),
     ) as [number, number, number, number],
-    direction: isInSet(source?.['direction'] ?? source?.['d'], TEXT_DIRECTIONS)
-      ? (source?.['direction'] ?? source?.['d']) as ObjectTextDirection
+    direction: isInSet(source?.['direction'], TEXT_DIRECTIONS)
+      ? (source?.['direction']) as ObjectTextDirection
       : fallback.direction,
     horizontalAlign: isInSet(
-      source?.['horizontalAlign'] ?? source?.['h'],
+      source?.['horizontalAlign'],
       HORIZONTAL_ALIGNS,
     )
-      ? (source?.['horizontalAlign'] ?? source?.['h']) as ObjectTextHorizontalAlign
+      ? (source?.['horizontalAlign']) as ObjectTextHorizontalAlign
       : fallback.horizontalAlign,
     verticalAlign: isInSet(
-      source?.['verticalAlign'] ?? source?.['v'],
+      source?.['verticalAlign'],
       VERTICAL_ALIGNS,
     )
-      ? (source?.['verticalAlign'] ?? source?.['v']) as ObjectTextVerticalAlign
+      ? (source?.['verticalAlign']) as ObjectTextVerticalAlign
       : fallback.verticalAlign,
-    wrap: booleanValue(source?.['wrap'] ?? source?.['w'], fallback.wrap),
-    autoFit: (source?.['autoFit'] ?? source?.['a']) === 'resize-shape'
+    wrap: booleanValue(source?.['wrap'], fallback.wrap),
+    autoFit: (source?.['autoFit']) === 'resize-shape'
       ? 'resize-shape'
-      : (source?.['autoFit'] ?? source?.['a']) === 'none'
+      : (source?.['autoFit']) === 'none'
         ? 'none'
         : fallback.autoFit,
     rotateWithShape: booleanValue(
-      source?.['rotateWithShape'] ?? source?.['r'],
+      source?.['rotateWithShape'],
       fallback.rotateWithShape,
     ),
   }
 }
 
 export function storeObjectTextFrame(
-  value: Readonly<ObjectTextFrame>,
-  options: ObjectFormatStorageOptions = {},
+  value: Readonly<ObjectTextFrame>, options: ObjectFormatStorageOptions = {},
 ): StoredObjectTextFrame {
   const frame = normalizeObjectTextFrame(value)
+  const [t, r, b, l] = frame.margins.map(n => quantizeObjectFormatNumber(n, 1, options.preservePrecision))
   return {
-    mt: quantizeObjectFormatNumber(frame.margins[0], 1, options.preservePrecision),
-    mr: quantizeObjectFormatNumber(frame.margins[1], 1, options.preservePrecision),
-    mb: quantizeObjectFormatNumber(frame.margins[2], 1, options.preservePrecision),
-    ml: quantizeObjectFormatNumber(frame.margins[3], 1, options.preservePrecision),
-    d: frame.direction,
-    h: frame.horizontalAlign,
-    v: frame.verticalAlign,
-    w: frame.wrap,
-    a: frame.autoFit,
-    r: frame.rotateWithShape,
+    textPadding: (t === b && r === l ? t === r ? [t] : [t, r] : r === l ? [t, r, b] : [t, r, b, l]).join(' '),
+    textAlignment: `${frame.horizontalAlign} ${frame.verticalAlign}`,
+    textDirection: frame.direction, textWrap: frame.wrap,
+    textAutoFit: frame.autoFit, textRotate: frame.rotateWithShape,
   }
 }
 
@@ -743,22 +657,24 @@ export function normalizeObjectTextStyle(
   fallback: Readonly<ObjectTextStyle> | undefined = DEFAULT_OBJECT_TEXT_STYLE,
 ): ObjectTextStyle {
   fallback ??= DEFAULT_OBJECT_TEXT_STYLE
-  const source = parseSection(value)
-  const rawWeight = Number(source?.['fontWeight'] ?? source?.['w'])
-  const storedPaint = readPrefixedStoredPaint(source)
-  const storedOutline = readStoredTextOutline(source)
-  const storedEffects = readStoredTextEffects(source)
-  const rawFontStyle = source?.['fontStyle'] ?? (
-    typeof source?.['i'] === 'boolean'
-      ? source['i'] ? 'italic' : 'normal'
-      : undefined
-  )
+  const input = parseSection(value)
+  const font = tokens(input?.['textFont'])
+  const spacing = tokens(input?.['textSpacing'])
+  const source = input && Object.keys(input).some(key => key.startsWith('text'))
+    ? {fontFamily: input['textFamily'], fontSize: tokenNumber(font[0], 'px'),
+       fontWeight: tokenNumber(font[1]), fontStyle: font[2],
+       letterSpacingEm: tokenNumber(spacing[0], 'em'), lineHeight: tokenNumber(spacing[1]),
+       fill: readStoredPaint(input['textFill'], input['textFillOpacity'], fallback.fill), outline: input['textOutline'],
+       effects: {shadow: input['textShadow'], glow: input['textGlow']}, transform: input['textTransform']}
+    : input
+  const rawWeight = Number(source?.['fontWeight'])
+  const rawFontStyle = source?.['fontStyle']
   return {
     fontFamily: normalizeFontFamily(
-      source?.['fontFamily'] ?? source?.['f'],
+      source?.['fontFamily'],
       fallback.fontFamily,
     ),
-    fontSize: bounded(source?.['fontSize'] ?? source?.['z'], fallback.fontSize, 4, 512),
+    fontSize: bounded(source?.['fontSize'], fallback.fontSize, 4, 512),
     fontWeight: FONT_WEIGHTS.has(rawWeight)
       ? rawWeight as ObjectTextStyle['fontWeight']
       : fallback.fontWeight,
@@ -768,51 +684,42 @@ export function normalizeObjectTextStyle(
         ? 'normal'
         : fallback.fontStyle,
     letterSpacingEm: bounded(
-      source?.['letterSpacingEm'] ?? source?.['s'],
+      source?.['letterSpacingEm'],
       fallback.letterSpacingEm,
       -1,
       5,
     ),
-    lineHeight: bounded(source?.['lineHeight'] ?? source?.['l'], fallback.lineHeight, 0.5, 5),
-    fill: normalizeObjectPaint(source?.['fill'] ?? storedPaint, fallback.fill),
+    lineHeight: bounded(source?.['lineHeight'], fallback.lineHeight, 0.5, 5),
+    fill: normalizeObjectPaint(source?.['fill'], fallback.fill),
     outline: normalizeObjectTextOutline(
-      source?.['outline'] ?? storedOutline,
+      source?.['outline'],
       fallback.outline,
     ),
     effects: normalizeObjectEffects(
-      source?.['effects'] ?? storedEffects,
+      source?.['effects'],
       fallback.effects,
     ),
-    transform: isInSet(source?.['transform'] ?? source?.['t'], TEXT_TRANSFORMS)
-      ? (source?.['transform'] ?? source?.['t']) as ObjectTextTransform
+    transform: isInSet(source?.['transform'], TEXT_TRANSFORMS)
+      ? (source?.['transform']) as ObjectTextTransform
       : fallback.transform,
   }
 }
 
 export function storeObjectTextStyle(
-  value: Readonly<ObjectTextStyle>,
-  options: ObjectFormatStorageOptions = {},
+  value: Readonly<ObjectTextStyle>, options: ObjectFormatStorageOptions = {},
 ): StoredObjectTextStyle {
   const style = normalizeObjectTextStyle(value)
-  const paint = storeObjectPaint(style.fill, options)
-  const outline = storeObjectTextOutline(style.outline, options)
   const effects = storeObjectEffects(style.effects, options)
-  const stored: StoredObjectTextStyle = {
-    f: style.fontFamily,
-    z: quantizeObjectFormatNumber(style.fontSize, 0.01, options.preservePrecision),
-    w: style.fontWeight,
-    i: style.fontStyle === 'italic',
-    s: quantizeObjectFormatNumber(style.letterSpacingEm, 0.01, options.preservePrecision),
-    l: quantizeObjectFormatNumber(style.lineHeight, 0.01, options.preservePrecision),
-    pt: paint.t,
-    ot: outline.t,
-    ...effects,
-    t: style.transform,
+  const q = (n: number) => quantizeObjectFormatNumber(n, 0.01, options.preservePrecision)
+  return {
+    textFamily: style.fontFamily,
+    textFont: `${q(style.fontSize)}px ${style.fontWeight} ${style.fontStyle}`,
+    textSpacing: `${q(style.letterSpacingEm)}em ${q(style.lineHeight)}`,
+    textFill: storeObjectPaint(style.fill, options),
+    ...((style.fill.type === 'linear-gradient' || style.fill.type === 'picture') ? {textFillOpacity: q(style.fill.opacity)} : {}),
+    textOutline: storeObjectTextOutline(style.outline, options),
+    textShadow: effects.shadow, textGlow: effects.glow, textTransform: style.transform,
   }
-  copyStoredPaint(stored, paint)
-  if (outline.c !== undefined) stored.oc = outline.c
-  if (outline.w !== undefined) stored.ow = outline.w
-  return stored
 }
 
 export function normalizeObjectTextOutline(
@@ -820,7 +727,7 @@ export function normalizeObjectTextOutline(
   fallback: Readonly<ObjectTextOutline> | undefined = {type: 'none'},
 ): ObjectTextOutline {
   fallback ??= {type: 'none'}
-  const source = parseSection(value)
+  const source = typeof value === 'string' ? readOutlineString(value) : parseSection(value)
   const rawType = source?.['type'] ?? source?.['t']
   const type = rawType === 'line' || rawType === 'l'
     ? 'line'
@@ -844,8 +751,8 @@ export function storeObjectTextOutline(
 ): StoredObjectTextOutline {
   const outline = normalizeObjectTextOutline(value)
   return outline.type === 'none'
-    ? {t: 'n'}
-    : {t: 'l', c: outline.color, w: quantizeObjectFormatNumber(outline.width, 0.25, options.preservePrecision)}
+    ? 'none'
+    : `${quantizeObjectFormatNumber(outline.width, 0.25, options.preservePrecision)}px ${outline.color}`
 }
 
 export function normalizeBlockObjectFormat(
@@ -869,21 +776,21 @@ export function normalizeBlockObjectFormat(
     ),
     ...(shapeType ? {shapeType} : {}),
     ...(capability.features.shape ? {
-      shapeFill: normalizeObjectPaint(props?.fill, defaults.shapeFill),
+      shapeFill: readStoredPaint(props?.fill, props?.fillOpacity, defaults.shapeFill),
       shapeOutline: normalizeObjectLine(
-        props?.outline,
+        pickFormatGroups(props, 'shapeOutline'),
         defaults.shapeOutline,
       ),
       shapeEffects: normalizeObjectEffects(
-        props?.effects,
+        props,
         defaults.shapeEffects,
       ),
     } : {}),
     ...(capability.features.textFrame ? {
-      textFrame: normalizeObjectTextFrame(props?.textFrame, defaults.textFrame),
+      textFrame: normalizeObjectTextFrame(pickFormatGroups(props, 'textFrame'), defaults.textFrame),
     } : {}),
     ...(capability.features.textStyle ? {
-      textStyle: normalizeObjectTextStyle(props?.textStyle, defaults.textStyle),
+      textStyle: normalizeObjectTextStyle(pickFormatGroups(props, 'textStyle'), defaults.textStyle),
     } : {}),
   }
 }
@@ -993,7 +900,7 @@ export function colorWithOpacity(color: string, opacity: number): string {
   const normalized = normalizeColor(color, '#000000')
   const alpha = bounded(opacity, 1, 0, 1)
   const hex = /^#([\da-f]{6})$/i.exec(normalized)
-  if (!hex) return normalized
+  if (!hex) return alpha === 1 ? normalized : `color-mix(in srgb, ${normalized} ${round(alpha * 100)}%, transparent)`
   const value = hex[1]!
   return `rgba(${parseInt(value.slice(0, 2), 16)}, ` +
     `${parseInt(value.slice(2, 4), 16)}, ` +
@@ -1083,99 +990,11 @@ function normalizeGradientStops(
   return result
 }
 
-function readStoredGradientStops(
-  source: Record<string, unknown> | null,
-): Array<{c: unknown; p: unknown; o: unknown}> | undefined {
-  if (!source || source['t'] !== 'g') return undefined
-  const count = Math.round(bounded(source['n'], 0, 0, 4))
-  if (count < 2) return undefined
-  return Array.from({length: count}, (_, index) => ({
-    c: source[`c${index}`],
-    p: source[`p${index}`],
-    o: source[`q${index}`],
-  }))
-}
-
-function readPrefixedStoredPaint(
-  source: Record<string, unknown> | null,
-): StoredObjectPaint | null {
-  if (!source || !['n', 's', 'g', 'p'].includes(String(source['pt']))) {
-    return null
-  }
-  const paint: StoredObjectPaint = {t: source['pt'] as StoredObjectPaint['t']}
-  const mappings = [
-    ['pc', 'c'], ['po', 'o'], ['pa', 'a'], ['pn', 'n'],
-    ['pc0', 'c0'], ['pp0', 'p0'], ['pq0', 'q0'],
-    ['pc1', 'c1'], ['pp1', 'p1'], ['pq1', 'q1'],
-    ['pc2', 'c2'], ['pp2', 'p2'], ['pq2', 'q2'],
-    ['pc3', 'c3'], ['pp3', 'p3'], ['pq3', 'q3'],
-    ['pu', 'u'], ['pf', 'f'], ['px', 'x'], ['py', 'y'],
-  ] as const
-  const target = paint as unknown as Record<string, unknown>
-  for (const [from, to] of mappings) {
-    if (source[from] !== undefined) target[to] = source[from]
-  }
-  return paint
-}
-
-function copyStoredPaint(
-  target: StoredObjectTextStyle,
-  paint: StoredObjectPaint,
-): void {
-  const source = paint as unknown as Record<string, unknown>
-  const output = target as unknown as Record<string, unknown>
-  const mappings = [
-    ['c', 'pc'], ['o', 'po'], ['a', 'pa'], ['n', 'pn'],
-    ['c0', 'pc0'], ['p0', 'pp0'], ['q0', 'pq0'],
-    ['c1', 'pc1'], ['p1', 'pp1'], ['q1', 'pq1'],
-    ['c2', 'pc2'], ['p2', 'pp2'], ['q2', 'pq2'],
-    ['c3', 'pc3'], ['p3', 'pp3'], ['q3', 'pq3'],
-    ['u', 'pu'], ['f', 'pf'], ['x', 'px'], ['y', 'py'],
-  ] as const
-  for (const [from, to] of mappings) {
-    if (source[from] !== undefined) output[to] = source[from]
-  }
-}
-
-function readStoredTextOutline(
-  source: Record<string, unknown> | null,
-): StoredObjectTextOutline | null {
-  if (!source || (source['ot'] !== 'n' && source['ot'] !== 'l')) return null
-  return {
-    t: source['ot'],
-    ...(typeof source['oc'] === 'string' ? {c: source['oc']} : {}),
-    ...(typeof source['ow'] === 'number' ? {w: source['ow']} : {}),
-  }
-}
-
-function readStoredTextEffects(
-  source: Record<string, unknown> | null,
-): StoredObjectEffects | null {
-  if (!source || typeof source['se'] !== 'boolean' ||
-    typeof source['ge'] !== 'boolean') return null
-  return {
-    se: source['se'],
-    sc: String(source['sc'] ?? ''),
-    so: Number(source['so']),
-    sb: Number(source['sb']),
-    sa: Number(source['sa']),
-    sd: Number(source['sd']),
-    ge: source['ge'],
-    gc: String(source['gc'] ?? ''),
-    go: Number(source['go']),
-    gr: Number(source['gr']),
-  }
-}
-
-function normalizeStoredPaintType(
+function normalizePaintType(
   value: unknown,
   fallback: ObjectPaintType,
 ): ObjectPaintType {
   if (isInSet(value, PAINT_TYPES)) return value as ObjectPaintType
-  if (value === 'n') return 'none'
-  if (value === 's') return 'solid'
-  if (value === 'g') return 'linear-gradient'
-  if (value === 'p') return 'picture'
   return fallback
 }
 
@@ -1201,4 +1020,168 @@ function clonePaint(value: Readonly<ObjectPaint>): ObjectPaint {
 
 function round(value: number): number {
   return Math.round(value * 100) / 100
+}
+
+/** Persisted groups owned by each public structured formatting operation. */
+export const OBJECT_FORMAT_SECTION_KEYS = {
+  width: ['width'], height: ['height'], rotation: ['rotation'],
+  lockAspectRatio: ['lockRatio'], shapeType: ['shape'], shapeFill: ['fill', 'fillOpacity'],
+  shapeOutline: ['outline', 'lineEnds', 'arrows'], shapeEffects: ['shadow', 'glow'],
+  textFrame: ['textPadding', 'textAlignment', 'textDirection', 'textWrap', 'textAutoFit', 'textRotate'],
+  textStyle: ['textFamily', 'textFont', 'textSpacing', 'textFill', 'textFillOpacity', 'textOutline', 'textShadow', 'textGlow', 'textTransform'],
+} as const
+
+/** Encode a structured operation; callers spread this fragment into props. */
+export function storeObjectFormatSection(
+  key: 'shapeFill', value: Readonly<ObjectPaint>, options?: ObjectFormatStorageOptions,
+): Pick<BlockObjectFormatProps, 'fill' | 'fillOpacity'>
+export function storeObjectFormatSection(
+  key: keyof typeof OBJECT_FORMAT_SECTION_KEYS, value: unknown,
+  options?: ObjectFormatStorageOptions,
+): Partial<BlockObjectFormatProps>
+export function storeObjectFormatSection(
+  key: keyof typeof OBJECT_FORMAT_SECTION_KEYS, value: unknown,
+  options: ObjectFormatStorageOptions = {},
+): Partial<BlockObjectFormatProps> {
+  if (key === 'shapeFill') {
+    const paint = normalizeObjectPaint(value)
+    return {fill: storeObjectPaint(paint, options),
+      ...((paint.type === 'linear-gradient' || paint.type === 'picture') ? {fillOpacity: quantizeObjectFormatNumber(paint.opacity, 0.01, options.preservePrecision)} : {})}
+  }
+  if (key === 'shapeOutline') return {...storeObjectLine(value as ObjectLine, options)}
+  if (key === 'shapeEffects') return {...storeObjectEffects(value as ObjectEffects, options)}
+  if (key === 'textFrame') return {...storeObjectTextFrame(value as ObjectTextFrame, options)}
+  if (key === 'textStyle') return {...storeObjectTextStyle(value as ObjectTextStyle, options)}
+  return {[OBJECT_FORMAT_SECTION_KEYS[key][0]]: value} as Partial<BlockObjectFormatProps>
+}
+
+/** Canonical snapshot encoding. Missing groups inherit this block's schema defaults. */
+export function storeBlockObjectFormat(
+  format: Readonly<NormalizedBlockObjectFormat>,
+  capability: Readonly<BlockObjectFormatCapability>,
+  options: ObjectFormatStorageOptions = {},
+): BlockObjectFormatProps {
+  const result: Record<string, unknown> = {}
+  for (const key of Object.keys(OBJECT_FORMAT_SECTION_KEYS) as Array<keyof typeof OBJECT_FORMAT_SECTION_KEYS>) {
+    const value = format[key]
+    if (value === undefined) continue
+    const encoded = storeObjectFormatSection(key, value, options)
+    if (key === 'width' || key === 'height' || key === 'rotation' || key === 'shapeType' || key === 'lockAspectRatio') {
+      Object.assign(result, encoded)
+      continue
+    }
+    const precise = storeObjectFormatSection(key, value, {preservePrecision: true})
+    const fallback = capability.defaults[key]
+    const defaults = fallback === undefined ? {} : storeObjectFormatSection(key, fallback, {preservePrecision: true})
+    for (const group of OBJECT_FORMAT_SECTION_KEYS[key]) {
+      if (encoded[group] === undefined) continue
+      const defaultValue = JSON.stringify((group === 'fillOpacity' || group === 'textFillOpacity') ? defaults[group] ?? 1 : defaults[group])
+      if (JSON.stringify(precise[group]) !== defaultValue && JSON.stringify(encoded[group]) !== defaultValue) {
+        result[group] = encoded[group]
+      }
+    }
+  }
+  return result as unknown as BlockObjectFormatProps
+}
+
+function tokens(value: unknown): string[] {
+  return typeof value === 'string' && value.length <= 512 ? value.trim().split(/\s+/) : []
+}
+
+function tokenNumber(value: string | undefined, unit = ''): number | undefined {
+  if (value === undefined) return undefined
+  const raw = unit && value.endsWith(unit) ? value.slice(0, -unit.length) : value
+  if (!/^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(raw)) return undefined
+  const number = Number(raw)
+  return Number.isFinite(number) ? number : undefined
+}
+
+function colorToken(color: string, opacity: number): string {
+  return opacity === 1 ? color : `${color} / ${opacity}`
+}
+
+function readPaintString(value: string): Record<string, unknown> | null {
+  if (/^linear-gradient\(/i.test(value.trim())) return decodeObjectGradient(value) as unknown as Record<string, unknown> | null
+  if (/^url\(/i.test(value.trim())) {
+    const picture = decodeCssPicture(value)
+    return picture ? {type: 'picture', opacity: 1, ...picture} : null
+  }
+  if (value.length > 512) return null
+  if (value === 'none') return {type: 'none'}
+  let depth = 0, separator = -1
+  for (let index = 0; index < value.length; index++) {
+    const char = value[index]
+    if (char === '(') depth++
+    else if (char === ')') depth--
+    else if (char === '/' && depth === 0) separator = index
+    if (depth < 0) return null
+  }
+  if (depth !== 0) return null
+  const color = (separator < 0 ? value : value.slice(0, separator)).trim()
+  const opacity = separator < 0 ? 1 : tokenNumber(value.slice(separator + 1).trim())
+  if (!normalizeColor(color, '') || opacity === undefined) return null
+  return {type: 'solid', color, opacity}
+
+}
+
+function readLineGroups(input: Record<string, unknown>): Record<string, unknown> {
+  const value = input['outline']
+  const match = typeof value === 'string' && value.length <= 512
+    ? /^(\S+)\s+(\S+)\s+(.+)$/.exec(value) : null
+  const paint = match ? readPaintString(match[3]!) : null
+  const ends = tokens(input['lineEnds'])
+  const arrows = tokens(input['arrows'])
+  return {
+    type: value === 'none' ? 'none' : match && paint ? 'line' : undefined,
+    width: match ? tokenNumber(match[1], 'px') : undefined,
+    dash: match?.[2], color: paint?.['color'], opacity: paint?.['opacity'],
+    cap: ends[0], join: ends[1], startArrow: arrows[0], endArrow: arrows[1],
+  }
+}
+
+function readOutlineString(value: string): Record<string, unknown> | null {
+  if (value === 'none') return {type: 'none'}
+  const match = value.length <= 512 ? /^(\S+)\s+(.+)$/.exec(value) : null
+  return match ? {type: 'line', width: tokenNumber(match[1], 'px'), color: match[2]} : null
+}
+
+function readEffectString(value: string, shadow: boolean): Record<string, unknown> | null {
+  if (value === 'none') return {enabled: false}
+  const match = value.length <= 512
+    ? (shadow ? /^(\S+)\s+(\S+)\s+(\S+)\s+(.+)$/ : /^(\S+)\s+(.+)$/).exec(value) : null
+  if (!match) return null
+  const paint = readPaintString(match[shadow ? 4 : 2]!)
+  if (!paint || paint['type'] !== 'solid') return null
+  const first = tokenNumber(match[1], shadow ? 'deg' : 'px')
+  const distance = shadow ? tokenNumber(match[2], 'px') : undefined
+  const blur = shadow ? tokenNumber(match[3], 'px') : undefined
+  if (first === undefined || shadow && (distance === undefined || blur === undefined)) return null
+  return {enabled: true, color: paint['color'], opacity: paint['opacity'],
+    ...(shadow ? {angle: first, distance, blur} : {radius: first})}
+}
+
+function readPadding(value: unknown): number[] | undefined {
+  const parts = tokens(value)
+  if (!parts.length || parts.length > 4) return undefined
+  const numbers = parts.map(part => tokenNumber(part, 'px'))
+  if (numbers.some(n => n === undefined)) return undefined
+  const [t, r = t, b = t, l = r] = numbers as number[]
+  return [t!, r!, b!, l!]
+}
+
+/** Never pass geometry or retired aliases into a section's runtime normalizer. */
+function pickFormatGroups(
+  props: Readonly<Partial<BlockObjectFormatProps>> | null | undefined,
+  section: keyof typeof OBJECT_FORMAT_SECTION_KEYS,
+): Record<string, unknown> {
+  return Object.fromEntries(OBJECT_FORMAT_SECTION_KEYS[section].map(key => [key, props?.[key]]))
+}
+
+/** CSS paint contains image options/stop alphas; the sibling owns overall alpha. */
+function readStoredPaint(value: unknown, opacity: unknown, fallback?: Readonly<ObjectPaint>): ObjectPaint {
+  const paint = normalizeObjectPaint(value, fallback)
+  if (paint.type !== 'linear-gradient' && paint.type !== 'picture') return paint
+  const defaultOpacity = fallback?.type === 'linear-gradient' || fallback?.type === 'picture'
+    ? fallback.opacity : 1
+  return {...paint, opacity: bounded(opacity, defaultOpacity, 0, 1)}
 }

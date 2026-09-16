@@ -22,7 +22,7 @@ async function setup(page: Page) {
     const shape = doc.schemas.createSnapshot('shape', ['rectangle'])
     shape.props = {...shape.props, width: 140, height: 100}
     const id = doc.placement.insertAbsoluteSnapshot(shape, {anchorRect: null})
-    doc.crud.updateBlockProps(id, {position: {x: 80, y: 2400}})
+    doc.crud.updateBlockProps(id, {position: "80 2400"})
     const paragraph = doc.schemas.createSnapshot('paragraph', [[{insert: '对象应当被纸面承载，正文保持在原位。'}]])
     doc.crud.insertBlockSnapshots(doc.rootId, 0, [paragraph])
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
@@ -76,7 +76,7 @@ test('flow extent grows and shrinks without moving text or rewriting object coor
   }, {id, paragraphId})
   await expect.poll(async () => (await state()).contained).toBe(true)
   const initial = await state()
-  await page.evaluate(id => (window as any).__placementDoc.crud.updateBlockProps(id, {position: {x: 80, y: 100}}), id)
+  await page.evaluate(id => (window as any).__placementDoc.crud.updateBlockProps(id, {position: "80 100"}), id)
   await expect.poll(async () => (await state()).height).toBeLessThan(initial.height - 1000)
   expect((await state()).textY).toBeCloseTo(initial.textY, 0)
 })
@@ -92,19 +92,19 @@ for (const sparse of [false, true]) {
     }, id)
     await expect.poll(() => coveredByExtent(page, id)).toBe(true)
     const {gapY} = await pageGap(page)
-    await page.evaluate(({id, gapY}) => (window as any).__placementDoc.crud.updateBlockProps(id, {position: {x: 80, y: gapY}}), {id, gapY})
+    await page.evaluate(({id, gapY}) => (window as any).__placementDoc.crud.updateBlockProps(id, {position: `80 ${gapY}`}), {id, gapY})
     await page.evaluate(id => (window as any).__placementDoc.navigateToBlock(id), id)
     await expect.poll(() => coveredByExtent(page, id)).toBe(true)
-    expect(await page.evaluate(id => (window as any).__placementDoc.model.getProps(id).position.y, id)).toBe(gapY)
+    expect(await page.evaluate(id => (window as any).__placementDoc.placement.getState(id).y, id)).toBe(gapY)
     await page.evaluate(() => (window as any).__placementPagination.disable())
     await expect.poll(() => page.evaluate(id => (window as any).__placementDoc.getBlockById(id).placementTop, id)).toBe(gapY)
-    expect(await page.evaluate(id => (window as any).__placementDoc.model.getProps(id).position.y, id)).toBe(gapY)
+    expect(await page.evaluate(id => (window as any).__placementDoc.placement.getState(id).y, id)).toBe(gapY)
   })
 }
 
 test('drag preview and drop preserve free page-gap coordinates; undo restores the position', async ({page}) => {
   const {id} = await setup(page)
-  await page.evaluate(id => (window as any).__placementDoc.crud.updateBlockProps(id, {position: {x: 80, y: 100}}), id)
+  await page.evaluate(id => (window as any).__placementDoc.crud.updateBlockProps(id, {position: "80 100"}), id)
   await paginate(page, false)
   await page.evaluate(id => (window as any).__placementDoc.navigateToBlock(id), id)
   const block = page.locator(`[data-block-id="${id}"]`)
@@ -124,21 +124,21 @@ test('drag preview and drop preserve free page-gap coordinates; undo restores th
   }, {id, gapY})
   await expect.poll(() => coveredByExtent(page, id)).toBe(true)
   await page.evaluate(() => window.dispatchEvent(new PointerEvent('pointerup', {pointerId: 71})))
-  await expect.poll(() => page.evaluate(id => (window as any).__placementDoc.model.getProps(id).position.y, id)).toBe(gapY)
+  await expect.poll(() => page.evaluate(id => (window as any).__placementDoc.placement.getState(id).y, id)).toBe(gapY)
   await expect.poll(() => coveredByExtent(page, id)).toBe(true)
   await page.evaluate(() => (window as any).__placementDoc.crud.undoManager.undo())
-  await expect.poll(() => page.evaluate(id => (window as any).__placementDoc.model.getProps(id).position.y, id)).toBe(100)
+  await expect.poll(() => page.evaluate(id => (window as any).__placementDoc.placement.getState(id).y, id)).toBe(100)
 })
 
 test('rotated groups retain coordinates and document extent at 75% and 150% scale', async ({page}) => {
   const {id} = await setup(page)
   const groupId = await page.evaluate(id => {
     const doc = (window as any).__placementDoc
-    doc.crud.updateBlockProps(id, {position: {x: 40, y: 100}})
+    doc.crud.updateBlockProps(id, {position: "40 100"})
     const second = doc.schemas.createSnapshot('shape', ['rectangle'])
     second.props = {...second.props, width: 100, height: 80}
     const secondId = doc.placement.insertAbsoluteSnapshot(second, {anchorRect: null})
-    doc.crud.updateBlockProps(secondId, {position: {x: 200, y: 100}})
+    doc.crud.updateBlockProps(secondId, {position: "200 100"})
     const groupId = doc.placement.group([id, secondId])
     if (!groupId) throw new Error('group creation failed')
     doc.crud.updateBlockProps(groupId, {rotation: 90})
@@ -159,7 +159,7 @@ test('rotated groups retain coordinates and document extent at 75% and 150% scal
     }, {groupId, scale})
     await expect.poll(() => coveredByExtent(page, groupId)).toBe(true)
   }
-  expect(await page.evaluate(groupId => (window as any).__placementDoc.model.getProps(groupId).position.y, groupId)).toBe(gapY)
+  expect(await page.evaluate(groupId => (window as any).__placementDoc.placement.getState(groupId).y, groupId)).toBe(gapY)
 })
 
 test('image and caption extend the document without snapping; flow follows responsive width', async ({page}) => {
@@ -171,14 +171,14 @@ test('image and caption extend the document without snapping; flow follows respo
       wr: 30, ar: 1,
     }, undefined, undefined, '图片说明也必须完整留在纸面内'])
     const id = doc.placement.insertAbsoluteSnapshot(image, {anchorRect: null})
-    doc.crud.updateBlockProps(id, {position: {x: 40, y: 2300}})
+    doc.crud.updateBlockProps(id, {position: "40 2300"})
     return id
   })
   await paginate(page, true)
   const {gapY} = await pageGap(page)
   await page.evaluate(({imageId, gapY}) => {
     const doc = (window as any).__placementDoc
-    doc.crud.updateBlockProps(imageId, {position: {x: 40, y: gapY - 130}})
+    doc.crud.updateBlockProps(imageId, {position: `40 ${gapY - 130}`})
     return doc.navigateToBlock(imageId)
   }, {imageId, gapY})
   await expect.poll(() => coveredByExtent(page, imageId)).toBe(true)
@@ -194,7 +194,7 @@ test('image and caption extend the document without snapping; flow follows respo
 
 test('cancelling a drag removes preview-only pages and keeps the model position', async ({page}) => {
   const {id} = await setup(page)
-  await page.evaluate(id => (window as any).__placementDoc.crud.updateBlockProps(id, {position: {x: 80, y: 50}}), id)
+  await page.evaluate(id => (window as any).__placementDoc.crud.updateBlockProps(id, {position: "80 50"}), id)
   await paginate(page, false)
   await expect.poll(() => page.locator('.bc-page-sheet').count()).toBe(1)
   await page.evaluate(id => {
@@ -211,14 +211,14 @@ test('cancelling a drag removes preview-only pages and keeps the model position'
   await expect.poll(() => page.locator('.bc-page-sheet').count()).toBeGreaterThan(1)
   await page.evaluate(() => window.dispatchEvent(new PointerEvent('pointercancel', {pointerId: 72})))
   await expect.poll(() => page.locator('.bc-page-sheet').count()).toBe(1)
-  expect(await page.evaluate(id => (window as any).__placementDoc.model.getProps(id).position.y, id)).toBe(50)
+  expect(await page.evaluate(id => (window as any).__placementDoc.placement.getState(id).y, id)).toBe(50)
 })
 
 for (const mode of ['flow', 'full', 'sparse'] as const) {
   test(`free dragging can cross content and paper edges in the scroll container (${mode})`, async ({page}) => {
     await page.setViewportSize({width: 1440, height: 1000})
     const {id} = await setup(page)
-    await page.evaluate(id => (window as any).__placementDoc.crud.updateBlockProps(id, {position: {x: 80, y: 100}}), id)
+    await page.evaluate(id => (window as any).__placementDoc.crud.updateBlockProps(id, {position: "80 100"}), id)
     if (mode !== 'flow') await paginate(page, mode === 'sparse')
     for (const scale of [0.75, 1.5]) {
       await page.evaluate(({id, scale}) => {
@@ -245,10 +245,10 @@ for (const mode of ['flow', 'full', 'sparse'] as const) {
           const previewRect = block.hostElement.getBoundingClientRect()
           const preview = previewRect.left
           window.dispatchEvent(new PointerEvent('pointerup', {pointerId: 73}))
-          return {actual: doc.model.getProps(id).position.x,
+          return {actual: doc.placement.getState(id).x,
             expected: original.x + (targetX - startX) / scale,
             preview, expectedPreview: rect.left + targetX - startX,
-            rendered: block.placementLeft, actualY: doc.model.getProps(id).position.y,
+            rendered: block.placementLeft, actualY: doc.placement.getState(id).y,
             expectedY: original.y + (targetY - rect.top - 10) / scale,
             renderedY: block.placementTop, previewY: previewRect.top, expectedPreviewY: targetY - 10}
         }, {id, scale, edge})

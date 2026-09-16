@@ -1,3 +1,4 @@
+import {MARKDOWN_ADAPTER_PROFILE_CONFIG} from '../../../adapters/registry'
 import {
   BlockNodeType,
   DocAttachmentInfo,
@@ -56,8 +57,8 @@ describe('Word art adapters', () => {
       width: 360,
       height: 110,
       rotation: 25,
-      textFrame: storeObjectTextFrame(defaults.textFrame),
-      textStyle: storeObjectTextStyle({
+      ...storeObjectTextFrame(defaults.textFrame),
+      ...storeObjectTextStyle({
         ...defaults.textStyle,
         fontFamily: 'slab-serif',
         fontSize: 56,
@@ -81,7 +82,7 @@ describe('Word art adapters', () => {
         },
         transform: 'perspective-up',
       }),
-      position: {x: 22.5, y: 140},
+      position: "22.5 140",
       placementLayer: 'under',
     })
     const html = await htmlAdapter.toHtml(rootSnapshot([
@@ -107,9 +108,9 @@ describe('Word art adapters', () => {
     expect(imported.nodeType).toBe(BlockNodeType.editable)
     expect(imported.children).toEqual([{insert: '新品发布'}])
     expect(imported.props).toEqual(jasmine.objectContaining({
-      textFrame: jasmine.any(Object),
-      textStyle: jasmine.any(Object),
-      position: {x: 22.5, y: 140},
+      textFont: jasmine.any(String),
+      textShadow: "none",
+      position: "22.5 140",
       placementLayer: 'under',
     }))
     expect(normalizeWordArtProps(
@@ -126,7 +127,7 @@ describe('Word art adapters', () => {
       gradientStops: [0, 1],
       shadowEnabled: false,
       effect: 'perspective-up',
-      position: {x: 22.5, y: 140},
+      position: "22.5 140",
       placementLayer: 'under',
     }))
     expect((imported.props as Record<string, unknown>)['fontFamily'])
@@ -140,13 +141,9 @@ describe('Word art adapters', () => {
       <figure
         data-bc-block="word-art"
         data-bc-object-width="-10"
-        data-bc-object-text-style='{
-          "f":"url(javascript:bad)",
-          "pt":"g","pn":2,
-          "pc0":"red","pp0":0,"pq0":1,
-          "pc1":"#0af","pp1":1,"pq1":1,
-          "t":"rotate(999deg)"
-        }'>
+        data-bc-object-text-family="url(javascript:bad)"
+        data-bc-object-text-transform="rotate(999deg)"
+        data-bc-object-text-fill='linear-gradient(180deg, red 0%, #0af 100%)'>
         <div data-bc-word-art-text><strong>安全</strong><img src="x"></div>
       </figure>
     `)
@@ -171,11 +168,24 @@ describe('Word art adapters', () => {
 
   it('degrades to readable Markdown and imports as a paragraph', async () => {
     const wordArt = WordArtBlockSchema.createSnapshot('年度总结')
+    markdownAdapter.adapterConfigs.set(MARKDOWN_ADAPTER_PROFILE_CONFIG, 'portable')
     const markdown = await markdownAdapter.toMarkdown(rootSnapshot([wordArt]))
 
     expect(markdown.trim()).toBe('年度总结')
     const imported = await markdownAdapter.toBlockSnapshot(markdown)
     expect((imported.children[0] as IBlockSnapshot).flavour).toBe('paragraph')
+  })
+
+  it('round-trips compact groups in the blockcraft Markdown profile', async () => {
+    markdownAdapter.adapterConfigs.set(MARKDOWN_ADAPTER_PROFILE_CONFIG, 'blockcraft')
+    const snapshot = WordArtBlockSchema.createSnapshot('格式往返')
+    snapshot.props = {...snapshot.props, textFont: '24px 700 italic', textShadow: 'none', textPadding: '18 22'}
+    const markdown = await markdownAdapter.toMarkdown(rootSnapshot([snapshot]))
+    const imported = (await markdownAdapter.toBlockSnapshot(markdown)).children[0] as IBlockSnapshot
+    expect(imported.props['textFont']).toBe('24px 700 italic')
+    expect(imported.props['textPadding']).toBe('18 22')
+    expect(imported.props['textStyle']).toBeUndefined()
+    expect(imported.props['textFrame']).toBeUndefined()
   })
 
 })

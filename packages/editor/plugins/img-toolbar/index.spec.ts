@@ -692,7 +692,7 @@ describe("ImgToolbarPlugin lifecycle", () => {
       nodeType: BlockNodeType.block,
       props: {
         src: "https://example.com/a.png",
-        position: {x: 24, y: 32},
+        position: "24 32",
       },
       meta: {},
       children: [],
@@ -826,7 +826,7 @@ describe("ImgToolbarPlugin lifecycle", () => {
       nodeType: BlockNodeType.block,
       props: {
         src: "https://example.com/a.png",
-        position: {x: 24, y: 32},
+        position: "24 32",
       },
       meta: {},
       children: [],

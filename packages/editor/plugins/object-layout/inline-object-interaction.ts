@@ -1,3 +1,4 @@
+import {storeBlockPosition} from '../../framework/services/block-placement/state'
 import {OverlayRef} from '@angular/cdk/overlay'
 import {NgZone} from '@angular/core'
 import {fromEvent, Subject, Subscription, takeUntil} from 'rxjs'
@@ -592,7 +593,7 @@ export class InlineObjectInteractionController {
       const measured = measureObjectPlacement(context.frame, container, layout)
       result.object.props = {
         ...result.object.props,
-        position: {x: measured.x, y: measured.y},
+        position: storeBlockPosition({x: measured.x, y: measured.y}),
         ...(layout === 'under' ? {placementLayer: 'under'} : {}),
       }
     }
