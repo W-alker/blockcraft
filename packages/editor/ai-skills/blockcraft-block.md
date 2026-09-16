@@ -1043,6 +1043,11 @@ per-group observer participates. Every recomputation emits an info-level
 `[ObjectGroup][performance]` timing record containing `members`, `writes`,
 `changed` and `reason`.
 
+组合成员删除由 `DocCRUD.deleteBlocks()` 在原删除事务内调用内部的
+`reflowAfterMemberDeletion()`，同时记录组合尺寸、原点、剩余成员局部坐标及
+图片 `wr/ar` 的调整。键盘、工具栏及模型删除入口因此共享一次 Undo/Redo；
+删除最后一个成员仍保留空组合。该内部桥接不要求宿主额外调用，也不依赖组件挂载。
+
 V1 deliberately has no user-driven group resize, group rotation or nested
 group contract. Automatic tight-frame maintenance is part of member geometry,
 not a group resize gesture.

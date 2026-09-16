@@ -191,6 +191,7 @@ describe('BlockPlacement group commands', () => {
     manager = new BlockPlacementManager(doc)
     doc.placement = manager
     return {
+      doc,
       manager,
       children,
       props,
@@ -243,6 +244,31 @@ describe('BlockPlacement group commands', () => {
       position: {x: 100, y: 100},
     }))
     expect(h.props.get('shape')!['position']).toEqual({x: 520, y: 100})
+  })
+
+  it('rebases surviving rotated members after deletion without resolving component views', () => {
+    const h = makeHarness()
+    h.manager.group(['image', 'shape'])
+    h.children.set('group', ['shape'])
+    h.children.delete('image')
+    h.props.delete('image')
+    h.flavours.delete('image')
+    spyOn(h.doc, 'getBlockById').and.throwError('No mounted views')
+
+    h.manager.reflowAfterMemberDeletion('group')
+
+    expect(h.props.get('group')).toEqual({
+      width: 40,
+      height: 100,
+      position: {x: 550, y: 70},
+    })
+    expect(h.props.get('shape')).toEqual({
+      width: 100,
+      height: 40,
+      rotation: 90,
+      position: {x: -30, y: 30},
+    })
+    expect(h.doc.getBlockById).not.toHaveBeenCalled()
   })
 
   it('moves the whole group to top-bottom flow without changing local members', () => {

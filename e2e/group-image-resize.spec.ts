@@ -89,6 +89,73 @@ async function dragImage(page: Page, id: string, side: 'left' | 'right', delta: 
 
 test.use({viewport: {width: 1400, height: 1000}})
 
+for (const {flow, count, keyboard} of [
+  {flow: false, count: 1, keyboard: false},
+  {flow: true, count: 1, keyboard: false},
+  {flow: false, count: 1, keyboard: true},
+  {flow: true, count: 1, keyboard: true},
+  {flow: false, count: 2, keyboard: false},
+  {flow: true, count: 2, keyboard: false},
+]) {
+  test(`${flow ? 'flow' : 'absolute'} group member deletion (${keyboard ? 'keyboard' : `API ${count}`}) restores geometry in one undo and redo`, async ({page}) => {
+    const errors: string[] = []
+    page.on('pageerror', error => errors.push(error.message))
+    const ids = (await mountFixture(page))!
+    await page.evaluate(async ({ids, flow}) => {
+      const doc = (window as any).__imageResizeDoc
+      if (flow) doc.placement.setMode(ids.groupId, 'relative')
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      doc.crud.undoManager.clearHistory()
+    }, {ids, flow})
+    await expect.poll(async () => (await readGeometry(page, ids)).width).toBeCloseTo(400, 1)
+    const capture = () => page.evaluate(ids => {
+      const doc = (window as any).__imageResizeDoc
+      return [ids.groupId, ids.imageId, ids.siblingId, ids.outsideId].map(id => {
+        if (!doc.model.exists(id)) return null
+        const block = doc.getBlockById(id)
+        if (!block) return null
+        const element = block.imgWrapper?.nativeElement ?? block.hostElement
+        const rect = element.getBoundingClientRect()
+        const style = getComputedStyle(element)
+        return {
+          id,
+          props: doc.model.getProps(id),
+          rect: {x: rect.x, y: rect.y, width: rect.width, height: rect.height},
+          size: {width: style.width, height: style.height},
+        }
+      })
+    }, ids)
+    const before = await capture()
+    await page.evaluate(({ids, count, keyboard}) => {
+      const doc = (window as any).__imageResizeDoc
+      if (keyboard) {
+        doc.root.hostElement.focus()
+        doc.selection.selectBlock(ids.imageId)
+      } else {
+        doc.crud.deleteBlocks(ids.groupId, 0, count, true)
+      }
+      doc.crud.undoManager.stopCapturing()
+    }, {ids, count, keyboard})
+    if (keyboard) await page.keyboard.press('Delete')
+    await expect.poll(async () => (await capture())[1]).toBeNull()
+    await expect.poll(async () => (await capture())[0]?.rect.width).toBeCloseTo(count === 1 ? 100 : 400, 1)
+    const deleted = await capture()
+    expect(deleted[1]).toBeNull()
+    if (count === 1) expect(deleted[2]?.rect.width).toBeCloseTo(before[2]!.rect.width, 1)
+    else expect(deleted[2]).toBeNull()
+    expect(deleted[3]).toEqual(before[3])
+    await page.evaluate(() => (window as any).__imageResizeDoc.crud.undoManager.undo())
+    await expect.poll(capture).toEqual(before)
+    if (keyboard) {
+      expect(await page.evaluate(() => (window as any).__imageResizeDoc.selection.value?.anchor.blockId)).toBe(ids.imageId)
+    }
+    expect(await page.evaluate(() => (window as any).__imageResizeDoc.crud.undoManager.isCanUndo())).toBe(false)
+    await page.evaluate(() => (window as any).__imageResizeDoc.crud.undoManager.redo())
+    await expect.poll(capture).toEqual(deleted)
+    expect(errors).toEqual([])
+  })
+}
+
 for (const flow of [true, false]) {
   test(`${flow ? 'flow' : 'absolute'} group whitespace opens its toolbar and preserves layout actions`, async ({page}) => {
     const ids = (await mountFixture(page, undefined, true))!

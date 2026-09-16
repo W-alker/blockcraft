@@ -1178,6 +1178,9 @@ export class DocCRUD {
         const deletedLength = children.length
         this.transact(() => {
           this._delete(parentYBlock, index, deletedLength)
+          if (parentYBlock.get('flavour') === 'object-group') {
+            this.doc.placement?.reflowAfterMemberDeletion(parent)
+          }
         })
         return [{index, length: deletedLength}]
       }
@@ -1197,6 +1200,12 @@ export class DocCRUD {
 
     this.transact(() => {
       this._delete(parentYBlock, index, count)
+      // Rebase the surviving members before closing this transaction. An
+      // observer/microtask repair uses an untracked origin and cannot restore
+      // the old local coordinates or responsive-size reference on Undo.
+      if (parentYBlock.get('flavour') === 'object-group') {
+        this.doc.placement?.reflowAfterMemberDeletion(parent)
+      }
     })
     return [{index, length: count}]
   }

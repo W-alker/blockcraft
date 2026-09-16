@@ -262,6 +262,11 @@ export class BlockPlacementManager {
     return this.groupCoordinator.ungroup(groupId)
   }
 
+  /** @internal Keep deletion and its group geometry in the same undo item. */
+  reflowAfterMemberDeletion(groupId: string): void {
+    this.groupCoordinator.reflowAfterMemberDeletion(groupId)
+  }
+
   /**
    * Persist object geometry and keep a containing object-group tightly fitted.
    * Built-in object blocks use this instead of writing size/rotation directly.

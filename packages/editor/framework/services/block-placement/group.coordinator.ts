@@ -132,6 +132,11 @@ export class BlockPlacementGroupCoordinator {
     return this.resolveCandidate(blockIds) !== null
   }
 
+  /** Package-internal: called inside the owning DocCRUD deletion transaction. */
+  reflowAfterMemberDeletion(groupId: string): void {
+    this.reflowGroup(groupId, 'structure-change')
+  }
+
   group(blockIds: readonly string[]): string | null {
     const candidate = this.resolveCandidate(blockIds)
     if (!candidate) return null

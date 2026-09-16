@@ -68,6 +68,20 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## Unreleased — 2026-09-16 — 组合成员删除与几何恢复
+
+**Severity**: patch（内部修复，无外部适配要求；版本号未修改）
+
+**What changed**: 组合成员删除与组合尺寸、原点和剩余成员几何重算进入同一 Yjs 事务；一次 Undo/Redo 同时恢复成员和布局。
+
+**Why**: 原异步重算不进入删除历史，撤销后会混用旧成员数据与删除后的组合坐标和图片比例基准。
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+
+**内部实现**: `reflowAfterMemberDeletion()` 仅作为 DocCRUD 到组合几何协调器的内部桥接；普通容器、组合外对象及空组合语义不变，宿主无需调用或迁移数据。
+
 ## Unreleased — 2026-09-16 — 组合外框不再占用内容区
 
 **Severity**: major（已有组合尺寸字段的行为语义调整；版本号未修改）
