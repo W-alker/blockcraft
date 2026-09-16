@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-09-14
+> Last updated: 2026-09-16
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
@@ -761,6 +761,8 @@ new CalloutToolbarPlugin();
 > `plugins/divider-toolbar/` — Style selector for divider blocks.
 
 Shows a `DividerStylePopupComponent` when a divider block is selected, allowing users to change the divider's line, tape or decorative-edge style, monochrome line color, independent length / thickness / opacity, and an optional **text label** with typography and alignment.
+
+未配置的分割线默认使用普通实线（`solid`）、通栏（`full`，100%）和细线（`thin`，实线为 1px）。编辑器、快照阅读器和设置面板保持一致；显式 `length` / `thickness` 优先，已有旧版 `size` 映射保持不变。旧快照缺省这些字段时也采用新默认值，不写回文档数据。
 
 The popup has four text-only style tabs — `线型` (line), `贴纸胶带` (tape), `花边` (decorative edge), and `文字装订` (text label) — plus shared appearance controls. It uses CSES `Segmented`, `Slider`, `ColorPicker`, `Button` and `Input` controls; the color fields expose only the ColorPicker's built-in theme and standard palettes, without a custom preset list or the advanced “更多颜色” entry. Alignment segments project the BlockCraft `bc_zuoduiqi`, `bc_juzhongduiqi` and `bc_youduiqi` font icons so they are not interpreted as CSES icon identifiers. Pointer and mouse events are isolated inside the popup to preserve the selected divider while its controls remain natively operable. `length` uses `short` / `medium` / `long` / `full` at 25% / 50% / 75% / 100%; `thickness` uses `thin` / `regular` / `thick`; and `opacity` is stored as 0.1–1 and exposed as a 10–100% range. The deprecated `size` prop is still read for old snapshots, but the toolbar writes only the split props. The two-column line catalog contains the original `solid`, `dashed`, `dotted` and `double` values plus six additive `DividerBlockModel.props.style` values: `fade`, `wave`, `zigzag`, `sketch`, `triple-dot` and `diamond`. The line tab writes its independent `lineColor` prop through the built-in CSES palette. Wave, zigzag and sketch use theme-colored SVG masks; all six decorative line patterns share the same renderer between the popup, a plain divider and the two segments around a text label. `lineColor` does not recolor tape textures or multicolor SVG artwork; overall `opacity` applies to every style. The `花边` tab provides six low-saturation multicolor SVG styles: `edge-grass`, `edge-flower`, `edge-vine`, `edge-daisy`, `edge-stars` and `edge-berries`.
 

@@ -67,7 +67,7 @@ function resolveLength(props: DividerProps): DividerLength {
     case "large":
       return "full"
     default:
-      return "long"
+      return props.size == null ? "full" : "long"
   }
 }
 
@@ -80,5 +80,5 @@ function resolveThickness(props: DividerProps): DividerThickness {
   if (props.size === "thin" || props.size === "small") {
     return "thin"
   }
-  return props.size === "large" ? "thick" : "regular"
+  return props.size == null ? "thin" : props.size === "large" ? "thick" : "regular"
 }

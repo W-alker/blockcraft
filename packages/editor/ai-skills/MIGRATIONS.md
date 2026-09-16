@@ -86,6 +86,22 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 - `textFrame.margins` 仍以 px 存储，0 只移除用户追加的内边距。原文档的可用文字区域可能增减并产生重新换行；外轮廓、尺寸、默认圆角和文档数据格式不变，无需数据迁移。
 - 本次未修改包版本号；不宣称与 Word 的全部预设形状及缩放结果逐像素一致。
 
+## Unreleased — 2026-09-16 — 分割线默认通栏细实线
+
+**Severity**: patch
+
+**What changed**: 分割线未配置长度、粗细且没有旧版 `size` 时，默认从 `long` / `regular` 改为 `full` / `thin`；线型继续默认 `solid`。编辑器、快照阅读器和设置面板使用一致的默认值。
+
+**Why**: 默认插入效果应为普通实线、通栏、细线。
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-toolbar.md`
+
+### Behavior Changes
+
+旧快照中缺省的外观也采用新默认值，不进行数据迁移。显式属性和已有旧版 `size` 映射不变；如需维持过去的缺省外观，可显式设置 `{length: 'long', thickness: 'regular'}`。版本号未调整。
+
 ## Unreleased — 2026-09-15 — 对象工具栏选中样式统一对账
 
 **Severity**: patch

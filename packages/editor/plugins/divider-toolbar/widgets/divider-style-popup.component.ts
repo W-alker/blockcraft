@@ -36,8 +36,8 @@ export class DividerStylePopupComponent {
   dividerBlock!: BlockCraft.IBlockComponents['divider']
 
   activeTab = 'line';
-  activeLength: DividerLength = 'long';
-  activeThickness: DividerThickness = 'regular';
+  activeLength: DividerLength = 'full';
+  activeThickness: DividerThickness = 'thin';
   activeOpacity = 100;
 
   styleTabs = [
@@ -251,7 +251,7 @@ export class DividerStylePopupComponent {
       case 'large':
         return 'full';
       default:
-        return 'long';
+        return legacySize == null ? 'full' : 'long';
     }
   }
 
@@ -262,7 +262,7 @@ export class DividerStylePopupComponent {
     if (legacySize === 'thin' || legacySize === 'small') {
       return 'thin';
     }
-    return legacySize === 'large' ? 'thick' : 'regular';
+    return legacySize == null ? 'thin' : legacySize === 'large' ? 'thick' : 'regular';
   }
 
   closePopup() {
