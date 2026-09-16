@@ -558,13 +558,13 @@ export class TextBoxBlockComponent extends BaseBlockComponent<TextBoxBlockModel>
   private _shapeInset(
     side: 'top' | 'right' | 'bottom' | 'left',
   ): string {
-    const artwork = getTextBoxArtwork(this.textBoxProps.artwork)
+    const props = this.textBoxProps
+    const artwork = getTextBoxArtwork(props.artwork)
     if (artwork) return `${artwork.textInsets[side] * 100}%`
-    if (this.textBoxProps.shapeType === 'rectangle') return '0%'
     return `${resolveAdjustedShapeTextInsets(
-      this.textBoxProps.shapeType,
-      this.textBoxProps.adjustments,
-      this.shapeDefinition.textInsets,
+      props.shapeType,
+      props.adjustments,
+      getShapeDefinition(props.shapeType).textInsets,
     )[side] * 100}%`
   }
 

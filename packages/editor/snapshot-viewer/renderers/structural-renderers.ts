@@ -299,17 +299,15 @@ function renderTextBox(
     ? {...definition, path: adjustmentProjection.path, detailPath: undefined}
     : definition
   // Same precedence as the live Block: a catalog drawing carries its own
-  // text-safe frame, a plain rectangle has none, otherwise the shape's.
+  // text-safe frame; ordinary shapes resolve their geometry before margins.
   const artwork = getTextBoxArtwork(props.artwork)
   const shapeInsets = artwork
     ? artwork.textInsets
-    : props.shapeType === "rectangle"
-      ? {top: 0, right: 0, bottom: 0, left: 0}
-      : resolveAdjustedShapeTextInsets(
-          props.shapeType,
-          props.adjustments,
-          definition.textInsets,
-        )
+    : resolveAdjustedShapeTextInsets(
+        props.shapeType,
+        props.adjustments,
+        definition.textInsets,
+      )
   element.style.setProperty(
     "--bc-text-box-shape-inset-top",
     `${shapeInsets.top * 100}%`,

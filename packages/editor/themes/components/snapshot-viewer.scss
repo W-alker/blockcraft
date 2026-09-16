@@ -112,6 +112,49 @@
     min-width: 0;
   }
 
+  // Shape's live layout is component-scoped. The snapshot DOM needs the same
+  // positioning for its geometry-derived text rectangle and user margins.
+  .shape-block {
+    display: block;
+    width: fit-content;
+    background: transparent;
+  }
+
+  .shape-block__shell {
+    position: relative;
+    box-sizing: border-box;
+    transform-origin: center center;
+  }
+
+  .shape-block__geometry {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+  }
+
+  .shape-block__text-frame {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+
+    > .shape-text-block {
+      width: 100%;
+      max-height: 100%;
+      margin: 0;
+      border: 0;
+      overflow: hidden;
+      background: transparent;
+      color: inherit;
+      text-align: inherit;
+    }
+  }
+
   // Audio and video keep their component styles in the live editor's
   // encapsulated stylesheets. Snapshot Viewer creates the same DOM by hand,
   // so project the presentation rules here as well.

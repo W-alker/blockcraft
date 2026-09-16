@@ -19,7 +19,7 @@ import {
   objectPicturePreserveAspectRatio,
 } from '../../framework'
 import {getShapeDefinition} from './shape-definitions'
-import {resolveShapeAdjustmentProjection} from './shape-adjustments'
+import {resolveAdjustedShapeTextInsets, resolveShapeAdjustmentProjection} from './shape-adjustments'
 import {
   createDefaultEditableShapeGeometry,
   normalizeCustomShapeGeometry,
@@ -529,8 +529,16 @@ export class ShapeBlockComponent extends BaseBlockComponent<ShapeBlockModel> {
 
   textInset(side: 'top' | 'right' | 'bottom' | 'left'): string {
     const index = {top: 0, right: 1, bottom: 2, left: 3}[side]
-    const inherent = this.definition.textInsets[side] * 100
-    const margin = this.shapeFormat.textFrame!.margins[index]
+    const props = this.shapeProps
+    const definition = getShapeDefinition(props.shapeType)
+    const inherent = (normalizeCustomShapeGeometry(props.customGeometry)
+      ? definition.textInsets
+      : resolveAdjustedShapeTextInsets(
+          props.shapeType,
+          props.adjustments,
+          definition.textInsets,
+        ))[side] * 100
+    const margin = props.textFrame.margins[index]
     return `calc(${inherent}% + ${margin}px)`
   }
 

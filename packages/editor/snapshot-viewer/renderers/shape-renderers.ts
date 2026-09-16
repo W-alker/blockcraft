@@ -7,6 +7,7 @@ import {
   shapeGradientToSvgVector,
   type ShapeBlockProps,
 } from '../../blocks/shape-block'
+import {resolveAdjustedShapeTextInsets} from '../../blocks/shape-block/shape-adjustments'
 import {
   type IBlockSnapshot,
   normalizeBlockObjectFormat,
@@ -36,10 +37,14 @@ export function createShapeRenderers(): SnapshotBlockRenderer[] {
         SHAPE_OBJECT_FORMAT_CAPABILITY,
       )
       const definition = getShapeDefinition(props.shapeType)
+      const customGeometry = normalizeCustomShapeGeometry(props.customGeometry)
+      const textInsets = customGeometry ? definition.textInsets : resolveAdjustedShapeTextInsets(
+        props.shapeType, props.adjustments, definition.textInsets,
+      )
       const geometry = resolveShapeRenderGeometry(
         props.shapeType,
         definition,
-        normalizeCustomShapeGeometry(props.customGeometry),
+        customGeometry,
         props.adjustments,
       )
       const shell = document.createElement('div')
@@ -134,7 +139,7 @@ export function createShapeRenderers(): SnapshotBlockRenderer[] {
       text.classList.add('shape-block__text-frame', 'children-render-container')
       text.setAttribute('data-bc-snapshot-children', '')
       ;(['top', 'right', 'bottom', 'left'] as const).forEach((side, index) => {
-        text.style[side] = `calc(${definition.textInsets[side] * 100}% + ${format.textFrame!.margins[index]}px)`
+        text.style[side] = `calc(${textInsets[side] * 100}% + ${format.textFrame!.margins[index]}px)`
       })
       const textStyle = format.textStyle!
       const textFrame = format.textFrame!

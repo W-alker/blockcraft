@@ -177,27 +177,95 @@ const calloutProjection = (
   }
 }
 
-/** Keeps the editable text area on the body side of an adjusted callout. */
+/**
+ * DrawingML-style shape text rectangle, before user text-frame margins.
+ * The roundRect inset is radius * 29289 / 100000; triangle/trapezoid/arrow
+ * rectangles follow the corresponding presetShapeDefinitions.xml guides.
+ * Adapted to our existing 1000-unit paths (including their orientation and
+ * callout body). Do not apply Office's default radius or short-side scaling:
+ * that would change the geometry of existing documents.
+ * Source: https://raw.githubusercontent.com/LibreOffice/core/master/oox/source/drawingml/customshapes/presetShapeDefinitions.xml
+ */
 export function resolveAdjustedShapeTextInsets(
   shapeType: ShapeKind,
   values: ShapeAdjustmentValues | undefined,
   fallback: ShapeTextInsets,
 ): ShapeTextInsets {
+  const adjustments = values ?? {}
+  if (shapeType === 'rectangle') return {top: 0, right: 0, bottom: 0, left: 0}
+  if (
+    shapeType === 'rounded-rectangle' ||
+    shapeType === 'single-rounded-rectangle' ||
+    shapeType === 'same-side-rounded-rectangle'
+  ) {
+    const inset = clamp(adjustments['radius'], 0, 500, 120) * .29289 / 1000
+    if (shapeType === 'single-rounded-rectangle') {
+      // Our single rounded corner is top-left (Office round1Rect is top-right).
+      return {top: 0, right: 0, bottom: 0, left: inset}
+    }
+    return {
+      top: inset,
+      right: shapeType === 'same-side-rounded-rectangle' ? 0 : inset,
+      bottom: inset,
+      left: inset,
+    }
+  }
+  if (shapeType === 'snipped-rectangle') {
+    return {top: .07, right: 0, bottom: 0, left: .07}
+  }
+  if (shapeType === 'snipped-and-rounded-rectangle') {
+    return {top: .12 * .29289, right: .12 * .29289, bottom: 0, left: .07}
+  }
+  if (shapeType === 'ellipse') {
+    const inset = (1 - Math.SQRT1_2) / 2
+    return {top: inset, right: inset, bottom: inset, left: inset}
+  }
+  if (shapeType === 'triangle') {
+    const left = clamp(adjustments['apexX'], 0, 1000, 500) / 2000
+    return {top: .5, right: .5 - left, bottom: 0, left}
+  }
+  if (shapeType === 'parallelogram') {
+    const inset = (1 + 5 * clamp(adjustments['inset'], 0, 500, 200) / 1000) / 12
+    return {top: inset, right: inset, bottom: inset, left: inset}
+  }
+  if (shapeType === 'trapezoid') {
+    const inset = clamp(adjustments['inset'], 0, 500, 200) / 1500
+    return {top: inset, right: inset, bottom: 0, left: inset}
+  }
+  if (
+    shapeType === 'right-arrow' || shapeType === 'left-arrow' ||
+    shapeType === 'up-arrow' || shapeType === 'down-arrow' ||
+    shapeType === 'left-right-arrow' || shapeType === 'up-down-arrow'
+  ) {
+    const bidirectional = shapeType === 'left-right-arrow' || shapeType === 'up-down-arrow'
+    const head = clamp(adjustments['headLength'], 100, bidirectional ? 420 : 650, bidirectional ? 260 : 380)
+    const shaft = clamp(adjustments['shaftThickness'], 160, 900, 500)
+    const edge = (1000 - shaft) / 2000
+    const tip = head * shaft / 1_000_000
+    if (shapeType === 'up-down-arrow') return {top: tip, right: edge, bottom: tip, left: edge}
+    if (shapeType === 'up-arrow') return {top: tip, right: edge, bottom: 0, left: edge}
+    if (shapeType === 'down-arrow') return {top: 0, right: edge, bottom: tip, left: edge}
+    return {
+      top: edge,
+      right: shapeType === 'left-arrow' ? 0 : tip,
+      bottom: edge,
+      left: bidirectional || shapeType === 'left-arrow' ? tip : 0,
+    }
+  }
   if (
     shapeType !== 'speech-bubble' &&
     shapeType !== 'rounded-speech-bubble' &&
     shapeType !== 'wedge-rect-callout' &&
     shapeType !== 'wedge-round-callout'
   ) return fallback
-  const projection = calloutProjection(shapeType, values ?? {})
   const side = calloutSide(
-    projection.adjustments['tailX']!,
-    projection.adjustments['tailY']!,
+    clamp(adjustments['tailX'], 0, 1000, 130),
+    clamp(adjustments['tailY'], 0, 1000, 1000),
   )
-  const bodyInset = Math.max(
-    fallback.top, fallback.right, fallback.bottom, fallback.left,
-  )
-  const edgeInset = Math.min(fallback.top, fallback.right, fallback.left)
+  const rounded = shapeType === 'rounded-speech-bubble' || shapeType === 'wedge-round-callout'
+  const edgeInset = rounded ? .12 * .29289 : 0
+  // Our callout path reserves 240/1000 on the pointer side for its tail.
+  const bodyInset = .24 + edgeInset
   return {
     top: side === 'top' ? bodyInset : edgeInset,
     right: side === 'right' ? bodyInset : edgeInset,

@@ -28,6 +28,7 @@ import {
   type InlineObjectWrapOptions,
 } from '../../blocks/inline-object'
 import {getShapeDefinition} from '../../blocks/shape-block/shape-definitions'
+import {resolveAdjustedShapeTextInsets} from '../../blocks/shape-block/shape-adjustments'
 import {
   normalizeCustomShapeGeometry,
   resolveShapeRenderGeometry,
@@ -144,10 +145,11 @@ export const createInlineShapeEmbedConverter = (): EmbedConverter => ({
       data.props,
       SHAPE_OBJECT_FORMAT_CAPABILITY,
     )
+    const customGeometry = normalizeCustomShapeGeometry(props.customGeometry)
     const renderGeometry = resolveShapeRenderGeometry(
       props.shapeType,
       definition,
-      normalizeCustomShapeGeometry(props.customGeometry),
+      customGeometry,
       props.adjustments,
     )
     const {shell, frame} = createInlineObjectShell('shape', data)
@@ -276,9 +278,12 @@ export const createInlineShapeEmbedConverter = (): EmbedConverter => ({
     const text = document.createElement('span')
     text.classList.add('bc-inline-shape__text')
     text.textContent = inlineObjectPlainText(data.text)
+    const textInsets = customGeometry
+      ? definition.textInsets
+      : resolveAdjustedShapeTextInsets(props.shapeType, props.adjustments, definition.textInsets)
     text.style.inset = (['top', 'right', 'bottom', 'left'] as const)
       .map((side, index) =>
-        `calc(${definition.textInsets[side] * 100}% + ${format.textFrame!.margins[index]}px)`,
+        `calc(${textInsets[side] * 100}% + ${format.textFrame!.margins[index]}px)`,
       ).join(' ')
     const textStyle = format.textStyle!
     const textFrame = format.textFrame!

@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-09-15 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-09-16 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -67,6 +67,24 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > - `major` (e.g. 0.1.37 → 1.0.0): breaking — removed APIs, renamed exports, signature changes, behavior reversals
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
+
+## Unreleased — 2026-09-16 — 按形状几何计算文字区域
+
+**Severity**: patch
+
+**What changed**: 文本框、普通形状及行内形状统一按“形状文字矩形 + 用户四边内边距”计算内容区域。矩形取消目录默认内缩，圆角和可调形状的文字矩形随几何参数变化；阅读器补齐普通形状的文字定位与裁剪样式。
+
+**Why**: 固定的目录边距导致用户将内边距设为 0 后仍出现大块空白，同一形状在不同渲染入口的边界也不一致。文字区域采用 Word/DrawingML 的分层语义，并适配当前轮廓。
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+
+### Behavior Changes
+
+- 矩形、圆角/剪角矩形、椭圆、三角形、平行四边形、梯形、单向/双向箭头及矩形/圆角气泡使用几何派生的文字矩形；其他目录形状、自定义路径及 artwork 继续使用原有文字矩形定义。
+- `textFrame.margins` 仍以 px 存储，0 只移除用户追加的内边距。原文档的可用文字区域可能增减并产生重新换行；外轮廓、尺寸、默认圆角和文档数据格式不变，无需数据迁移。
+- 本次未修改包版本号；不宣称与 Word 的全部预设形状及缩放结果逐像素一致。
 
 ## v0.7.10 — 2026-09-15 — 取消表格和填写区块的 root 限制
 

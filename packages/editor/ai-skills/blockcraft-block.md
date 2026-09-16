@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-09-15
+> Last updated: 2026-09-16
 
 ## Block Types
 
@@ -1190,9 +1190,18 @@ fields.
 新建、编辑、导出或 block/inline 转换应省略此选项，使用缺省写入精度。
 
 `ObjectTextFrame.margins` is `[top, right, bottom, left]` in layout pixels.
-Shape catalog `textInsets` establish the geometry-safe rectangle; add the user
-margins inward after those insets. This is internal padding, not external Word
-square/tight/through wrap distance.
+文字区域采用 Word/DrawingML 的两层模型：先由形状几何确定文字矩形，再向内
+叠加用户四边 margins。`0` 表示不增加用户边距，不表示取消形状文字矩形；
+它与外部文字环绕距离无关。
+
+普通目录形状通过 `resolveAdjustedShapeTextInsets(shapeType, adjustments,
+definition.textInsets)` 计算比例边界：矩形为零；圆角随 `radius` 变化；
+椭圆、剪角矩形、三角形、平行四边形、梯形、单向/双向箭头和矩形/圆角气泡
+使用对应的文字矩形。气泡按尾部方向避开尾部。其余目录形状回退到已有
+`definition.textInsets`；自定义路径保留原有目录文字矩形，装饰文本框优先使用
+artwork 登记的文字矩形。Live TextBox/Shape、Snapshot Viewer 和 Inline Shape
+使用同一计算规则。公式适配现有 1000 单位路径，不改变已有形状轮廓、默认圆角
+或尺寸缩放规则，不等同于 Word 的完整预设几何实现。
 
 ### Built-in Word-like Text Box
 
@@ -1283,9 +1292,9 @@ Two consequences are worth knowing before adding entries. The surface image is
 clipped to the shape and the outline paints above it, so ornament can neither
 bleed past the frame nor interrupt the border; picking a shape whose
 `detailPath` already breaks the outline (`folded-corner`) is the only way to get
-that reading. And a non-rectangular shape contributes its `textInsets`
-underneath `textFrame.margins`, so the two stack; a plain rectangle contributes
-no catalog inset.
+that reading. 非矩形形状先按几何及 adjustments 求得文字矩形，再叠加
+`textFrame.margins`；不要直接把目录默认 `textInsets` 当作最终边距。
+普通矩形的形状内缩为零。
 
 Child spacing inside a frame uses `margin-block-end`, which resolves to the
 document's usual `margin-bottom` under `horizontal-tb`. A caret that leaves the
@@ -1297,8 +1306,8 @@ there is no second text-box-specific padding or image record.
 
 The live Block and Snapshot Viewer render the selected Shape geometry as SVG.
 A real decorative `<img>` is clipped by that geometry behind a padded child
-viewport; non-rectangular definitions also contribute their catalog text-safe
-insets. Optional WordArt values style the ordinary child text without changing
+viewport; non-rectangular shapes also contribute their resolved text rectangle.
+Optional WordArt values style the ordinary child text without changing
 its Y.Text ownership. The frame stays fixed-size: editing may scroll overflowing
 content, while readonly/print output clips it. Eight resize
 handles and the rotation handle reuse `ShapeResizerComponent`; preview runs in
