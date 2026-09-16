@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-09-15 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-09-16 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -175,6 +175,10 @@ doc.crud.moveBlocks(parentId, index, count, targetParentId, targetIndex)
 // Rendering-mode-independent reveal; preserves model/native selection + focus.
 const revealed = await doc.navigateToBlock(blockId)
 ```
+
+### Selection presentation
+
+通用 `.selected` / `.focused` 由 `SelectionSelectedManager` 统一对账。内置对象工具栏的焦点交接使用内部暂存机制，新的文本或 gap 选区立即使旧暂存失效；插件不可直接写通用选中类。详见 `blockcraft-selection.md`。
 
 ### Revision / Track Changes
 

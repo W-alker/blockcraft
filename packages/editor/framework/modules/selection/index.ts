@@ -314,6 +314,11 @@ export class SelectionManager {
     return null
   }
 
+  /** @internal Retain toolbar presentation without retaining or rewriting model selection. */
+  retainPresentation(): () => void {
+    return this.selectedManager.retainPresentation(this.value)
+  }
+
   blur() {
     this._applyState(null)
     this._surface.clearNativeSelection()

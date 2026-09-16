@@ -113,6 +113,48 @@ describe('Shape block domain', () => {
     TestBed.resetTestingModule()
   })
 
+  it('contains all chrome in its paint bounds while preserving the object frame and hit targets', async () => {
+    await TestBed.configureTestingModule({imports: [ShapeResizerComponent]}).compileComponents()
+    const fixture = TestBed.createComponent(ShapeResizerComponent)
+    const target = document.createElement('div')
+    target.style.cssText = 'position:fixed;left:100px;top:100px;width:190px;height:120px'
+    document.body.appendChild(target)
+    const host = fixture.nativeElement as HTMLElement
+    target.appendChild(host)
+    fixture.componentRef.setInput('target', target)
+    fixture.componentRef.setInput('borderDraggable', true)
+    fixture.detectChanges()
+    host.style.display = 'block'
+    try {
+      const bounds = host.getBoundingClientRect()
+      const object = target.getBoundingClientRect()
+      const frame = (host.querySelector<HTMLElement>('.shape-resizer__frame') ?? host).getBoundingClientRect()
+      expect([frame.left, frame.top, frame.width, frame.height]).toEqual([
+        object.left, object.top, object.width, object.height,
+      ])
+      const controls = Array.from(host.querySelectorAll<HTMLElement>('button, .shape-resizer__rotation-stem, .shape-resizer__move-edge'))
+      for (const control of controls) {
+        const rect = control.getBoundingClientRect()
+        expect(rect.left).withContext(control.className).toBeGreaterThanOrEqual(bounds.left)
+        expect(rect.top).withContext(control.className).toBeGreaterThanOrEqual(bounds.top)
+        expect(rect.right).withContext(control.className).toBeLessThanOrEqual(bounds.right)
+        expect(rect.bottom).withContext(control.className).toBeLessThanOrEqual(bounds.bottom)
+      }
+      for (const button of Array.from(host.querySelectorAll<HTMLButtonElement>('button'))) {
+        const rect = button.getBoundingClientRect()
+        expect(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)).toBe(button)
+      }
+      expect(document.elementFromPoint(object.x + object.width / 2, object.y + object.height / 2)).toBe(target)
+      host.style.display = 'none'
+      expect(host.getClientRects().length).toBe(0)
+      expect(controls.every(control => control.getClientRects().length === 0)).toBeTrue()
+    } finally {
+      fixture.destroy()
+      target.remove()
+      TestBed.resetTestingModule()
+    }
+  })
+
   it('defines a categorized Word-like catalog with unique normalized shapes', () => {
     expect(SHAPE_DEFINITIONS.length).toBe(SHAPE_KINDS.length)
     expect(SHAPE_DEFINITIONS.length).toBeGreaterThan(90)

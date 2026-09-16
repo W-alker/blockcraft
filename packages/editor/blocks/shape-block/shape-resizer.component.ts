@@ -148,44 +148,54 @@ export function calculateShapeResize(
     'data-bc-placement-pick-ignore': '',
   },
   template: `
-    @if (borderDraggable) {
-      @for (edge of moveEdges; track edge) {
-        <span
-          class="shape-resizer__move-edge"
-          [attr.data-move-edge]="edge"
-          contenteditable="false"
-          aria-hidden="true"
-        >
-        </span>
+    <div class="shape-resizer__frame">
+      @if (borderDraggable) {
+        @for (edge of moveEdges; track edge) {
+          <span
+            class="shape-resizer__move-edge"
+            [attr.data-move-edge]="edge"
+            contenteditable="false"
+            aria-hidden="true"
+          >
+          </span>
+        }
       }
-    }
-    @for (handle of handles; track handle) {
+      @for (handle of handles; track handle) {
+        <button
+          type="button"
+          class="shape-resizer__handle"
+          [attr.data-handle]="handle"
+          [attr.aria-label]="handle"
+          contenteditable="false"
+          (pointerdown)="onPointerDown($event, handle)"
+        ></button>
+      }
+      <span class="shape-resizer__rotation-stem" aria-hidden="true"></span>
       <button
         type="button"
-        class="shape-resizer__handle"
-        [attr.data-handle]="handle"
-        [attr.aria-label]="handle"
+        class="shape-resizer__rotate"
+        [attr.aria-label]="rotationLabel"
         contenteditable="false"
-        (pointerdown)="onPointerDown($event, handle)"
+        (pointerdown)="onRotatePointerDown($event)"
       ></button>
-    }
-    <span class="shape-resizer__rotation-stem" aria-hidden="true"></span>
-    <button
-      type="button"
-      class="shape-resizer__rotate"
-      [attr.aria-label]="rotationLabel"
-      contenteditable="false"
-      (pointerdown)="onRotatePointerDown($event)"
-    ></button>
+    </div>
   `,
   styles: [
     `
       :host {
         position: absolute;
-        inset: 0;
+        /* The paint box includes the handles and rotation control outside the
+           object frame, so hiding it invalidates the complete chrome bounds. */
+        inset: -48px -12px -12px;
         z-index: 4;
         display: none;
         pointer-events: none;
+        contain: paint;
+      }
+
+      .shape-resizer__frame {
+        position: absolute;
+        inset: 48px 12px 12px;
         outline: 2px solid var(--bc-active-color, #4857e2);
         outline-offset: 2px;
       }

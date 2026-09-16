@@ -89,9 +89,8 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
   private toolbarPointerActive = false;
   private toolbarFocusActive = false;
   private toolbarPointerGraceUntil = 0;
-  private chromeRetentionEpoch = 0;
   private toolbarPositionFrame: number | null = null;
-  private readonly retainedObjectChrome = new Map<string, HTMLElement>();
+  private releaseObjectPresentation?: () => void;
   private selectionWithinGroupHosts = new Set<HTMLElement>();
   private inlineObjects: InlineObjectInteractionController[] = [];
   private previewFrame: number | null = null;
@@ -129,9 +128,11 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
             this.toolbarFocusActive = true;
             this.toolbarPointerGraceUntil = 0;
             this.retainObjectChrome();
-            this.scheduleRetainObjectChrome();
             return;
           }
+          this.toolbarPointerActive = false;
+          this.toolbarFocusActive = false;
+          this.toolbarPointerGraceUntil = 0;
           if (this.extendAbsoluteSelection(event)) return;
           if (this.handleObjectGroupPointerDown(event)) return;
           this.handleExistingObjectPointerDown(event);
@@ -141,8 +142,8 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
       fromEvent<PointerEvent>(document, "pointerup", { capture: true })
         .pipe(takeUntil(this.doc.onDestroy$))
         .subscribe((event) => {
+          this.toolbarPointerGraceUntil = this.toolbarPointerActive ? Date.now() + 100 : 0;
           this.toolbarPointerActive = false;
-          this.toolbarPointerGraceUntil = Date.now() + 100;
           this.finishTextBoxResizerGesture(event.pointerId);
         }),
     );
@@ -173,7 +174,6 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
   }
 
   close = (): void => {
-    this.chromeRetentionEpoch++;
     this.activeWordArtHost?.classList.remove("word-art-block--object-selected");
     this.activeWordArtHost = undefined;
     this.restorePreview();
@@ -204,7 +204,6 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     if (!selection) {
       if (this.ownsInteraction()) {
         this.retainObjectChrome();
-        this.scheduleRetainObjectChrome();
         return;
       }
       this.close();
@@ -217,19 +216,17 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     const groupState = this.resolveGroupToolbarState(selection);
     if (groupState) {
       this.openGroupToolbar(groupState);
+      this.retainObjectChrome(true);
       return;
     }
     const state = this.doc.objectFormat.readSelection();
     if (!state) {
-      if (this.ownsInteraction()) {
-        this.retainObjectChrome();
-        this.scheduleRetainObjectChrome();
-        return;
-      }
+      // A live text/gap selection supersedes toolbar focus and pointer grace.
       this.close();
       return;
     }
     this.open(state, false);
+    this.retainObjectChrome(true);
   }
 
   private open(
@@ -629,7 +626,11 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     if (isObjectToolbarOwnedTarget(this.overlayRef.overlayElement, target)) {
       this.toolbarFocusActive = true;
       this.retainObjectChrome();
-      this.scheduleRetainObjectChrome();
+      // The browser may collapse a whole-object Range to an empty container
+      // boundary when a toolbar button takes focus. That is toolbar blur,
+      // not new editor intent. Retain presentation before clearing the native
+      // range; formatting already uses activeIds while the toolbar owns focus.
+      this.doc.selection.blur();
       return;
     }
     this.toolbarFocusActive = false;
@@ -660,26 +661,10 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     });
   }
 
-  private retainObjectChrome(): void {
-    for (const id of this.activeIds) {
-      const host = this.doc.vm.get(id)?.instance?.hostElement;
-      if (!host?.isConnected) continue;
-      this.retainedObjectChrome.set(id, host);
-      host.classList.add("selected");
+  private retainObjectChrome(refresh = false): void {
+    if (refresh || !this.releaseObjectPresentation) {
+      this.releaseObjectPresentation = this.doc.selection.retainPresentation();
     }
-  }
-
-  private scheduleRetainObjectChrome(): void {
-    const epoch = ++this.chromeRetentionEpoch;
-    Promise.resolve().then(() => {
-      if (
-        epoch !== this.chromeRetentionEpoch ||
-        !this.overlayRef ||
-        !this.ownsInteraction()
-      )
-        return;
-      this.retainObjectChrome();
-    });
   }
 
   private resolveCommonObjectLayout(
@@ -859,11 +844,8 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
   }
 
   private releaseRetainedObjectChrome(): void {
-    const currentIds = new Set(this.doc.objectFormat.getSelectionIds() ?? []);
-    for (const [id, host] of this.retainedObjectChrome) {
-      if (!currentIds.has(id)) host.classList.remove("selected");
-    }
-    this.retainedObjectChrome.clear();
+    this.releaseObjectPresentation?.();
+    this.releaseObjectPresentation = undefined;
   }
 
   private resolveElement(target: EventTarget | null): Element | null {

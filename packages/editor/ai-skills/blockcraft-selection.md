@@ -2,7 +2,13 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying selection behavior or when the L1 quick reference in `blockcraft.md` isn't enough.
 >
-> Last updated: 2026-08-25 | Source of truth: `framework/modules/selection/`
+> Last updated: 2026-09-16 | Source of truth: `framework/modules/selection/`
+
+## 选中样式的归属
+
+`.selected` / `.focused` 由 `SelectionSelectedManager` 对账。对象工具栏不得直接添加、删除或通过微任务补回这些类。
+
+内置工具栏通过内部 `SelectionManager.retainPresentation()` 在原生焦点切换期间暂存样式投影；返回的释放函数必须在关闭时调用。暂存不恢复模型选区、不改 DOM Range；任何新的非空模型选区（包括文本光标和 gap 光标）都使旧暂存失效。虚拟化仍只投影已挂载视图。艺术字的对象控制框专属类由对象工具栏生命周期控制，不属于通用 `.selected`。工具栏及其所属子弹层获得焦点时，先暂存样式，再调用 `selection.blur()` 清空原生 Range 和活动模型选区，避免浏览器把整块投影折叠成 boundary/text 并误判为正文意图。工具栏用已有对象 ID 提交格式；回到正文产生的新选区仍立即清除旧投影。
 
 ## Architecture Overview
 

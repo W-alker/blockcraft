@@ -15,6 +15,21 @@ export class SelectionSelectedManager {
   constructor(private doc: BlockCraft.Doc) {
   }
 
+  private _selection: BlockCraft.Selection | null = null
+  private _mountedRootIds?: readonly string[]
+  private _retainedSelection: BlockCraft.Selection | null = null
+
+  /** Preserve toolbar presentation across native blur, never across new model intent. */
+  retainPresentation(selection: BlockCraft.Selection | null): () => void {
+    if (!selection) return () => {}
+    this._retainedSelection = selection
+    return () => {
+      if (this._retainedSelection !== selection) return
+      this._retainedSelection = null
+      this.setSelected(this._selection, this._mountedRootIds)
+    }
+  }
+
   private _selectedSet = new Set<BaseBlockComponent<any>>()
   private _focusedSet = new Set<EditableBlockComponent<any>>()
   private _selectedEmbedSet = new Set<HTMLElement>()
@@ -99,6 +114,12 @@ export class SelectionSelectedManager {
     selection: BlockCraft.Selection | null,
     mountedRootIds?: readonly string[],
   ) {
+    this._selection = selection
+    this._mountedRootIds = mountedRootIds
+    if (selection && selection !== this._retainedSelection) {
+      this._retainedSelection = null
+    }
+    selection = selection ?? this._retainedSelection
     const nextSelected = new Set<BaseBlockComponent<any>>()
     const nextFocused = new Set<EditableBlockComponent<any>>()
     const nextEmbedCandidates = new Set<EditableBlockComponent<any>>()

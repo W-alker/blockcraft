@@ -86,6 +86,23 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 - `textFrame.margins` 仍以 px 存储，0 只移除用户追加的内边距。原文档的可用文字区域可能增减并产生重新换行；外轮廓、尺寸、默认圆角和文档数据格式不变，无需数据迁移。
 - 本次未修改包版本号；不宣称与 Word 的全部预设形状及缩放结果逐像素一致。
 
+## Unreleased — 2026-09-15 — 对象工具栏选中样式统一对账
+
+**Severity**: patch
+
+**What changed**: 对象工具栏不再直接增删通用 `.selected`，改由 `SelectionSelectedManager` 对账临时保留的选区投影。新增内部 `SelectionManager.retainPresentation()` 交接方法，返回关闭时调用的释放函数，不作为宿主扩展 API。
+
+**Why**: 工具栏的异步补色可在折叠选区或进入文本后留下管理器未记录的选中类。
+
+**Affected ai-skills files**:
+
+- `blockcraft-selection.md`
+- `blockcraft.md`
+
+### Behavior Changes
+
+操作工具栏导致的原生选区清空仍保留对象样式；新的非空模型选区立即使暂存失效。取消工具栏关闭后的微任务补色。模型选区、数据格式、快捷键和宿主调用方式不变，无需迁移。版本号未调整。
+
 ## v0.7.10 — 2026-09-15 — 取消表格和填写区块的 root 限制
 
 **Severity**: patch

@@ -1,3 +1,5 @@
+import { SelectionSelectedManager } from "../../framework/modules/selection/selected-manager";
+import { BlockNodeType } from "../../framework/block-std";
 import { ObjectFormatToolbarPlugin } from "./index";
 
 describe("ObjectFormatToolbarPlugin object/edit interaction", () => {
@@ -212,6 +214,10 @@ describe("ObjectFormatToolbarPlugin object/edit interaction", () => {
       root: { hostElement: root },
       vm: { get: () => ({ instance: { hostElement: host } }) },
       objectFormat: { getSelectionIds: () => ["shape-1"] },
+      selection: {
+        retainPresentation: jasmine.createSpy("retainPresentation").and.returnValue(() => {}),
+        blur: jasmine.createSpy("blur"),
+      },
     };
     (plugin as any).activeIds = ["shape-1"];
     (plugin as any).overlayRef = { overlayElement: overlay };
@@ -219,7 +225,9 @@ describe("ObjectFormatToolbarPlugin object/edit interaction", () => {
 
     (plugin as any).handleFocusIn({ target: input } as unknown as FocusEvent);
     expect((plugin as any).toolbarFocusActive).toBeTrue();
-    expect(host.classList.contains("selected")).toBeTrue();
+    expect((plugin as any).doc.selection.retainPresentation).toHaveBeenCalledTimes(1);
+    expect((plugin as any).doc.selection.blur).toHaveBeenCalledTimes(1);
+    expect(host.classList.contains("selected")).toBeFalse();
     expect(close).not.toHaveBeenCalled();
 
     (plugin as any).handleFocusIn({ target: root } as unknown as FocusEvent);
@@ -231,33 +239,123 @@ describe("ObjectFormatToolbarPlugin object/edit interaction", () => {
     outside.remove();
   });
 
-  it("repaints whole-object chrome after the first rail click clears native selection", async () => {
-    const plugin = new ObjectFormatToolbarPlugin();
-    const root = document.createElement("div");
-    const host = document.createElement("div");
-    const overlay = document.createElement("div");
-    host.classList.add("selected");
-    root.appendChild(host);
-    document.body.append(root, overlay);
-    (plugin as any).doc = {
-      root: { hostElement: root },
-      vm: { get: () => ({ instance: { hostElement: host } }) },
-      objectFormat: { getSelectionIds: () => null },
-    };
-    (plugin as any).activeIds = ["shape-1"];
-    (plugin as any).overlayRef = { overlayElement: overlay };
-    (plugin as any).toolbarPointerActive = true;
+  for (const flavour of ["shape", "text-box", "word-art"]) {
+    for (const destination of ["gap", "text"]) {
+      it(`clears ${flavour} object presentation on ${destination} intent during toolbar focus`, async () => {
+        const plugin = new ObjectFormatToolbarPlugin();
+        const root = document.createElement("div");
+        const host = document.createElement("div");
+        const textHost = document.createElement("p");
+        const overlay = document.createElement("div");
+        host.append(textHost);
+        root.append(host);
+        document.body.append(root, overlay);
+        const block = {id: "object", flavour, hostElement: host,
+          nodeType: flavour === "word-art" ? BlockNodeType.editable : BlockNodeType.block};
+        const text = {id: "text", nodeType: BlockNodeType.editable, hostElement: textHost};
+        let current: any = {start: {blockId: "object", type: "selected"},
+          end: {blockId: "object", type: "selected"}, collapsed: false,
+          getBoundarySelectedChildIds: () => ["object"]};
+        const doc: any = {
+          root: {hostElement: root},
+          getBlockById: (id: string) => id === "object" ? block : text,
+          vm: {get: () => ({instance: block})},
+          objectFormat: {readSelection: () => null, getSelectionIds: () => current?.collapsed === false ? ["object"] : null},
+        };
+        const manager = new SelectionSelectedManager(doc);
+        doc.selection = {retainPresentation: () => manager.retainPresentation(current)};
+        (plugin as any).doc = doc;
+        (plugin as any).overlayRef = {overlayElement: overlay, dispose: () => overlay.remove()};
+        (plugin as any).activeIds = ["object"];
+        (plugin as any).toolbarFocusActive = true;
+        (plugin as any).toolbarPointerGraceUntil = Date.now() + 100;
+        spyOn<any>(plugin, "resolveGroupToolbarState").and.returnValue(null);
+        spyOn<any>(plugin, "restorePreview");
+        manager.setSelected(current);
+        (plugin as any).retainObjectChrome();
+        if (flavour === "word-art") {
+          host.classList.add("word-art-block--object-selected");
+          (plugin as any).activeWordArtHost = host;
+        }
+        // Real publication order: toolbar subscriber first, manager reconciliation second.
+        current = null;
+        (plugin as any).sync(current);
+        manager.setSelected(current);
+        await Promise.resolve();
+        expect(host.classList.contains(flavour === "word-art" ? "focused" : "selected")).toBeTrue();
+        const textId = flavour === "word-art" ? "object" : "text";
+        current = {start: {blockId: textId, type: destination, offset: 0},
+          end: {blockId: textId, type: destination, offset: 0}, collapsed: true,
+          getBoundarySelectedChildIds: () => destination === "text" ? [textId] : []};
+        (plugin as any).sync(current);
+        manager.setSelected(current);
+        await Promise.resolve();
+        expect(host.classList.contains("selected")).toBeFalse();
+        expect(host.classList.contains("focused")).toBe(flavour === "word-art" && destination === "text");
+        expect(host.classList.contains("word-art-block--object-selected")).toBeFalse();
+        expect(textHost.classList.contains("focused")).toBe(flavour !== "word-art" && destination === "text");
+        expect((plugin as any).overlayRef).toBeUndefined();
+        root.remove();
+        overlay.remove();
+      });
+    }
+  }
 
-    (plugin as any).retainObjectChrome();
-    (plugin as any).scheduleRetainObjectChrome();
-    host.classList.remove("selected");
-    await Promise.resolve();
+  for (const tag of ["button", "input"]) {
+    it(`clears the native object range on toolbar ${tag} focus without clearing manager presentation`, () => {
+      const plugin = new ObjectFormatToolbarPlugin();
+      const root = document.createElement("div");
+      root.contentEditable = "true";
+      const host = document.createElement("div");
+      host.contentEditable = "false";
+      const overlay = document.createElement("div");
+      const control = document.createElement(tag);
+      root.append(host);
+      overlay.append(control);
+      document.body.append(root, overlay);
+      const block = {id: "object", nodeType: BlockNodeType.block, hostElement: host};
+      let current: any = {
+        start: {blockId: "object", type: "selected"},
+        end: {blockId: "object", type: "selected"},
+        collapsed: false, getBoundarySelectedChildIds: () => ["object"],
+      };
+      const doc: any = {
+        root: {hostElement: root},
+        getBlockById: () => block,
+        objectFormat: {readSelection: () => null},
+      };
+      const manager = new SelectionSelectedManager(doc);
+      doc.selection = {
+        retainPresentation: () => manager.retainPresentation(current),
+        blur: () => {
+          current = null;
+          (plugin as any).sync(null);
+          manager.setSelected(null);
+          document.getSelection()!.removeAllRanges();
+        },
+      };
+      (plugin as any).doc = doc;
+      (plugin as any).overlayRef = {overlayElement: overlay};
+      (plugin as any).activeIds = ["object"];
+      const close = spyOn(plugin, "close");
+      manager.setSelected(current);
+      const range = document.createRange();
+      range.selectNode(host);
+      document.getSelection()!.removeAllRanges();
+      document.getSelection()!.addRange(range);
+      control.focus();
 
-    expect(host.classList.contains("selected")).toBeTrue();
-    expect((plugin as any).retainedObjectChrome.get("shape-1")).toBe(host);
-    root.remove();
-    overlay.remove();
-  });
+      (plugin as any).handleFocusIn({target: control} as unknown as FocusEvent);
+
+      expect(current).toBeNull();
+      expect(document.getSelection()!.rangeCount).toBe(0);
+      expect(document.activeElement).toBe(control);
+      expect(host.classList.contains("selected")).toBeTrue();
+      expect(close).not.toHaveBeenCalled();
+      root.remove();
+      overlay.remove();
+    });
+  }
 
   it("commits a focused CSES input without treating its selection gap as drift", () => {
     const plugin = new ObjectFormatToolbarPlugin();

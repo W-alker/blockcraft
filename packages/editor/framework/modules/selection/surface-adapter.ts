@@ -48,7 +48,22 @@ export class DOMSelectionSurfaceAdapter implements SelectionSurfaceAdapter {
   }
 
   focusRoot(): void {
-    this.root.focus({preventScroll: true})
+    const root = this.root
+    if (this.getActiveElement() === root) return
+
+    // WebKit can reveal its previous native selection while refocusing an
+    // editing host, even with preventScroll, after a selected object moves
+    // between the absolute layer and normal flow. Keep that synchronous
+    // focus side effect separate from SelectionManager's explicit reveal.
+    const positions: {element: HTMLElement; left: number; top: number}[] = []
+    for (let element: HTMLElement | null = root; element; element = element.parentElement) {
+      positions.push({element, left: element.scrollLeft, top: element.scrollTop})
+    }
+    root.focus({preventScroll: true})
+    for (const {element, left, top} of positions) {
+      if (element.scrollLeft !== left) element.scrollLeft = left
+      if (element.scrollTop !== top) element.scrollTop = top
+    }
   }
 
   focusEditingHost(blockId?: string): void {

@@ -7,6 +7,40 @@ import {BlockSelection} from "./blockSelection";
 import {SelectionSelectedManager} from "./selected-manager";
 
 describe("SelectionSelectedManager", () => {
+  it("retains native-blur presentation and releases it without rewriting selection", () => {
+    const hostElement = document.createElement("div");
+    const manager = new SelectionSelectedManager({getBlockById: () => ({
+      id: "shape", nodeType: BlockNodeType.block, hostElement,
+    })} as any);
+    const selection = {getBoundarySelectedChildIds: () => ["shape"]} as any;
+    manager.setSelected(selection);
+    const release = manager.retainPresentation(selection);
+    manager.setSelected(null);
+    expect(hostElement.classList.contains("selected")).toBeTrue();
+    release();
+    expect(hostElement.classList.contains("selected")).toBeFalse();
+    release();
+    expect(hostElement.classList.contains("selected")).toBeFalse();
+  });
+
+  it("new editor intent invalidates retained presentation even before its owner releases", () => {
+    const hostElement = document.createElement("div");
+    const manager = new SelectionSelectedManager({getBlockById: () => ({
+      id: "shape", nodeType: BlockNodeType.block, hostElement,
+    })} as any);
+    const whole = {getBoundarySelectedChildIds: () => ["shape"]} as any;
+    manager.setSelected(whole);
+    const release = manager.retainPresentation(whole);
+    manager.setSelected(null);
+    manager.setSelected({getBoundarySelectedChildIds: () => []} as any);
+    expect(hostElement.classList.contains("selected")).toBeFalse();
+    manager.setSelected(null);
+    expect(hostElement.classList.contains("selected")).toBeFalse();
+    manager.setSelected(whole);
+    release();
+    expect(hostElement.classList.contains("selected")).toBeTrue();
+  });
+
   it("reconciles stable selection classes without toggling unchanged blocks", () => {
     const tableClassList = {
       add: jasmine.createSpy("table.add"),
@@ -344,6 +378,18 @@ describe("SelectionSelectedManager", () => {
     expect(classLists["p0"].remove).toHaveBeenCalledOnceWith("focused");
     expect(classLists["p1"].add).toHaveBeenCalledOnceWith("focused");
     expect(classLists["p2"].add).toHaveBeenCalledTimes(1);
+
+    const release = manager.retainPresentation(selection);
+    mounted.delete("p1");
+    mounted.add("p0");
+    manager.setSelected(null, ["p0", "p2"]);
+    expect(classLists["p1"].remove).toHaveBeenCalledOnceWith("focused");
+    expect(classLists["p0"].add).toHaveBeenCalledTimes(2);
+    expect(classLists["p2"].add).toHaveBeenCalledTimes(1);
+    expect(doc.queryBlocksBetween).not.toHaveBeenCalled();
+    release();
+    expect(classLists["p0"].remove).toHaveBeenCalledTimes(2);
+    expect(classLists["p2"].remove).toHaveBeenCalledOnceWith("focused");
   });
 
   it("keeps focus chrome for a placement-layout object boundary selection", () => {
