@@ -881,3 +881,7 @@ new TextMarkerPlugin(
 - The bundled `<editor>` component (from `packages/editor/editor/editor.ts`) registers `new TextMarkerPlugin([], ['code', 'mermaid-textarea'])` alongside `FloatTextToolbarPlugin`. Rich-text blocks continue to be served by `FloatTextToolbarPlugin`; code blocks and the mermaid source block (both `plainTextOnly`, sharing `CodeInlineRuntime`) get a color-only overlay. Consumers assembling their own editor must opt in manually.
 - Color selections (`s:color` / `s:background`) on code blocks persist in the native Yjs document, survive collaboration and undo, but are not exported to HTML or Markdown — external clipboard output remains plain text.
 - A flavour listed in both `markTextBlockFlavours` and `colorOnlyFlavours` is treated as rich-text only (the color-only registration is silently skipped).
+
+### Render-unit 外观入口
+
+`CalloutToolbarPlugin` 对 `render-unit` 仅提供背景和边框颜色入口，不显示宽高输入。通过内容区域顶部抓手聚焦按钮整块选中后，尺寸由八向手柄或块的 `setSize()` 调整，继续采用与图片一致的 `wr/ar` 持久化。

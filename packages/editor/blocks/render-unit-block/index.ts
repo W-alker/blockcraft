@@ -7,14 +7,31 @@ import {
   NoEditableBlockNative,
   normalizeBlockSurfaceProps,
   resolveBlockSurface,
+  BlockObjectSizeProps,
+  normalizeObjectSize,
+  resolveObjectDimensions,
 } from '../../framework'
 import {RenderUnitBlockComponent} from './render-unit.block'
 
 export * from './agent'
 
-export interface RenderUnitBlockProps extends BlockSurfaceProps {
+export interface RenderUnitBlockProps extends BlockSurfaceProps, BlockObjectSizeProps {
   backColor?: string | null
   borderColor?: string | null
+}
+
+export const RENDER_UNIT_OBJECT_SIZING = {defaultWr: 100, defaultAr: 1} as const
+
+/** 未设置完整尺寸的旧容器继续由内容撑高，不套用对象的默认正方形。 */
+export function resolveRenderUnitDimensions(
+  props: Readonly<Record<string, unknown>>,
+  referenceWidth: number,
+) {
+  const positive = (value: unknown): value is number =>
+    typeof value === 'number' && Number.isFinite(value) && value > 0
+  if (!(positive(props['wr']) && positive(props['ar'])) &&
+      !(positive(props['width']) && positive(props['height']))) return null
+  return resolveObjectDimensions(props, referenceWidth, RENDER_UNIT_OBJECT_SIZING)
 }
 
 export interface RenderUnitBlockModel extends NoEditableBlockNative {
@@ -33,6 +50,15 @@ export function normalizeRenderUnitBlockProps(
   if (backColor) normalized.backColor = backColor
   const borderColor = normalizeColor(input['borderColor'])
   if (borderColor) normalized.borderColor = borderColor
+  const dimensions = resolveRenderUnitDimensions(input, 100)
+  if (dimensions?.source === 'ratio') {
+    const size = normalizeObjectSize(input, RENDER_UNIT_OBJECT_SIZING)
+    normalized.wr = size.wr
+    normalized.ar = size.ar
+  } else if (dimensions?.source === 'legacy') {
+    normalized.width = dimensions.width
+    normalized.height = dimensions.height
+  }
   return normalized
 }
 
@@ -69,8 +95,11 @@ export const RenderUnitBlockSchema: IBlockSchemaOptions<RenderUnitBlockModel> = 
       'mermaid-textarea',
     ],
     selectionScope: 'container',
+    objectSizing: RENDER_UNIT_OBJECT_SIZING,
     virtualization: {
       estimateHeight: context => {
+        const dimensions = resolveRenderUnitDimensions(context.props, context.rootContentWidth)
+        if (dimensions) return dimensions.height
         const {padding} = resolveBlockSurface(context.props)
         const childrenHeight = context.childIds.reduce(
           (height, childId) => height + context.estimateChildHeight(childId),

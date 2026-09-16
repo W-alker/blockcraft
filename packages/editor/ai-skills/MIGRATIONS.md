@@ -68,6 +68,41 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## 0.8.5 — 2026-09-16：填写区改用抓手聚焦按钮
+
+**Severity**: patch（按指定版本 0.8.5 发布）
+
+**What changed**: 移除 render-unit 浮动工具栏中的宽高输入及对应尺寸订阅，保留原有颜色入口；复用文本框的顶部抓手样式，新增整块选中按钮以唤起八向手柄。
+
+**Why**: 填写区通过整块选中的八向手柄调整尺寸，不在浮层中提供数字输入。
+
+**Affected ai-skills files**: blockcraft-block.md、blockcraft-plugins-toolbar.md。
+
+**Behavior Changes**: 悬停、内部聚焦及触屏环境显示顶部抓手按钮，支持主指针和键盘激活；整块选中或只读时隐藏。不进入打印/快照。`setSize()`、`wr/ar`、尺寸拖拽和序列化不变。无需数据迁移。
+
+## 0.8.4 — 2026-09-16：Render-unit 响应式尺寸
+
+**Severity**: patch（按指定版本 0.8.4 发布，新增向后兼容的尺寸能力）
+
+**What changed**: render-unit 原生提供 wr/ar、布局像素 setSize、八向手柄、宽高输入及 HTML/Markdown 尺寸保留，虚拟估高与显示尺寸一致。
+
+**Why**: 宿主填写区需要复用流式图片的尺寸口径，不能在业务仓维护替代容器和另一套缩放计算。
+
+**Affected ai-skills files**: blockcraft-block.md、blockcraft-plugins-toolbar.md。
+
+### New APIs / Features
+
+- `RenderUnitBlockProps` 支持 `BlockObjectSizeProps`，`resolveRenderUnitDimensions()` 保留未设尺寸时的自然布局。
+- `RenderUnitBlockComponent.setSize(width, height)` 与 `objectDimensions`。
+
+### Behavior Changes
+
+旧容器不自动迁移尺寸，背景和边框仍默认透明。整块选中可缩放，显式尺寸内的溢出内容可滚动；只读容器不显示手柄。宿主可用 `backColor: '#ffffff'` 设置业务默认白底。
+
+### Migration Recipe
+
+宿主继续注册原有 `RenderUnitBlockSchema` 与 `CalloutToolbarPlugin`，无需替换组件。直接创建比例尺寸可传 `createSnapshot({}, {wr: 50, ar: 2})`；现有块用 `setSize(400, 200)` 换算后通过 Yjs 保存。
+
 ## Unreleased — 2026-09-16 — 组合成员删除与几何恢复
 
 **Severity**: patch（内部修复，无外部适配要求；版本号未修改）

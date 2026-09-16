@@ -1,3 +1,4 @@
+import {TestBed} from '@angular/core/testing'
 import {CalloutBlockToolbar} from './callout.toolbar'
 
 describe('CalloutBlockToolbar container appearance', () => {
@@ -53,4 +54,16 @@ function makeBlock(
     props,
     updateProps: jasmine.createSpy('updateProps'),
   }
+}
+
+for (const flavour of ['render-unit', 'callout'] as const) {
+  it(`renders only the color entry for ${flavour}, without dimension inputs`, () => {
+    const fixture = TestBed.createComponent(CalloutBlockToolbar)
+    fixture.componentRef.setInput('containerBlock', makeBlock(flavour, {}))
+    fixture.detectChanges()
+    const element: HTMLElement = fixture.nativeElement
+    expect(element.querySelector('bc-float-toolbar-item')).not.toBeNull()
+    expect(element.querySelector('input, cs-input-number, .region-size-field')).toBeNull()
+    fixture.destroy()
+  })
 }

@@ -16,6 +16,20 @@ import {
 import {createAllBlocksFixture} from "./testing/fixtures/all-blocks.fixture";
 
 describe("SnapshotRenderEngine", () => {
+  it('preserves render-unit responsive sizing and clears it when returning to natural layout', () => {
+    const host = document.createElement('div')
+    const renderer = createSnapshotRenderer()
+    renderer.render(host, wrapRoot([createRenderUnitFixture('region-sized', {wr: 50, ar: 2})]))
+    const block = host.querySelector<HTMLElement>('[data-block-id="region-sized"]')!
+    expect(block.style.width).toBe('50%')
+    expect(block.style.aspectRatio).toMatch(/^2(?:\s*\/\s*1)?$/)
+    expect(block.classList.contains('render-unit-sized')).toBeTrue()
+    renderer.update(wrapRoot([createRenderUnitFixture('region-sized', {})]))
+    expect(block.style.width).toBe('')
+    expect(block.style.aspectRatio).toBe('')
+    expect(block.classList.contains('render-unit-sized')).toBeFalse()
+    renderer.destroy()
+  })
   it("renders a root snapshot into a host container", () => {
     const host = document.createElement("div")
     const renderer = createSnapshotRenderer()

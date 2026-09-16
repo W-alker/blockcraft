@@ -219,6 +219,8 @@ describe('HtmlAdapter', () => {
       flavour: 'render-unit',
       nodeType: BlockNodeType.block,
       props: {
+        wr: 50,
+        ar: 2,
         backColor: '#fff7d6',
         borderColor: '#dfab01',
         p: [8, 12, 16, 20],
@@ -235,6 +237,8 @@ describe('HtmlAdapter', () => {
     const html = await adapter.toHtml(createRootSnapshot([region]));
     expect(html).toContain('<section data-bc-block="render-unit"');
     expect(html).toContain('data-bc-p="8 12 16 20"');
+    expect(html).toContain('data-bc-wr="50"');
+    expect(html).toContain('data-bc-ar="2"');
     expect(html).toContain(
       'data-bc-bgi="https://cdn.example.com/paper.png"',
     );

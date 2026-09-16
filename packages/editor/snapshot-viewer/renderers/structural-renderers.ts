@@ -39,6 +39,7 @@ import {
 import {TEXT_BOX_OBJECT_FORMAT_CAPABILITY} from "../../blocks/text-box-block";
 import {createBlockShell} from "../dom/create-block-shell";
 import {SnapshotBlockRenderer, SnapshotRenderContext} from "../types";
+import {resolveRenderUnitDimensions} from '../../blocks/render-unit-block';
 
 const STRUCTURAL_FLAVOURS = new Set([
   "root",
@@ -239,6 +240,13 @@ function renderRenderUnit(
   ctx: SnapshotRenderContext,
 ) {
   const element = createBlockShell(snapshot)
+  const dimensions = resolveRenderUnitDimensions(snapshot.props as Record<string, unknown>, 100)
+  if (dimensions) {
+    element.classList.add('render-unit-sized')
+    element.style.width = dimensions.source === 'legacy' ? `${dimensions.width}px` : `${dimensions.wr}%`
+    element.style.aspectRatio = `${dimensions.ar}`
+    if (dimensions.source === 'legacy') element.style.height = `${dimensions.height}px`
+  }
   const {backgroundImage} = resolveBlockSurface(
     snapshot.props as Record<string, unknown>,
   )
@@ -253,6 +261,11 @@ function renderRenderUnit(
 
   const content = document.createElement("div")
   content.classList.add("children-render-container", "render-unit-content")
+  if (dimensions) {
+    // 固定比例的容器不再由子内容撑高，超出内容沿用编辑器的滚动容器。
+    content.style.position = 'absolute'
+    content.style.inset = '0'
+  }
   appendChildren(content, ctx, snapshot.children)
   element.append(content)
   return {element}

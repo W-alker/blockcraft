@@ -1,3 +1,5 @@
+@use "object-focus-handle" as *;
+
 [data-blockcraft-root="true"] {
   .render-unit-block {
     --bc-render-unit-background-color: transparent;
@@ -19,6 +21,36 @@
     );
     outline: 1px solid var(--bc-render-unit-border-color);
     outline-offset: -1px;
+
+    > .render-unit-block__object-handle {
+      @include object-focus-handle;
+    }
+    &:hover > .render-unit-block__object-handle,
+    &:focus-within > .render-unit-block__object-handle {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    @media (hover: none) {
+      > .render-unit-block__object-handle {
+        opacity: 1;
+        pointer-events: auto;
+      }
+    }
+    &.selected > .render-unit-block__object-handle { display: none; }
+
+    // 与文本框相同：只在整块选中时显示八向手柄，正文光标不描默认框。
+    &.selected > shape-resizer { display: block; }
+    > shape-resizer {
+      .shape-resizer__rotate, .shape-resizer__rotation-stem { display: none; }
+    }
+    &.render-unit-sized {
+      min-height: 0;
+      > .render-unit-content {
+        height: 100%;
+        min-height: 0;
+        overflow: auto;
+      }
+    }
   }
 
   .render-unit-background-image {
