@@ -3461,9 +3461,11 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
         const placeholder = this.doc.schemas.createSnapshot("paragraph", []);
         this.doc.crud.insertBlocks(parentId, insertAt, [placeholder]);
         firstContentId = placeholder.id;
+        insertAt += 1;
       }
-      // 各栏已清空，删除整个分栏块
-      this.doc.crud.deleteBlockById(columnsBlock.id);
+      // 同一事务内 ModelGraph 仍保留搬移前的索引；使用累加后的实时位置，
+      // 避免 deleteBlockById 按旧索引删除刚搬出的第一个内容块。
+      this.doc.crud.deleteBlocks(parentId, insertAt, 1);
     });
 
     if (firstContentId) {
@@ -3501,32 +3503,9 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     count: number,
     selection: BlockCraft.Selection,
   ) {
-    const columnSchema = this.doc.schemas.get("column");
-    if (!columnSchema) return null;
-
-    const betweenIds = this.getSelectedBlockIds(selection);
-    if (betweenIds.length < 1) return null;
-
-    const blocks = betweenIds
-      .map((id) => this.doc.getBlockById(id))
-      .filter((b) => !!b);
-    if (blocks.length < 1) return null;
-
-    const parent = blocks[0].parentBlock;
-    if (!parent) return null;
-
-    // 必须同父、可作为列内容、父块允许放置 columns，否则不转换
-    const sameParent = blocks.every((b) => b.parentId === parent.id);
-    const allValidChildren = blocks.every((b) =>
-      this.doc.schemas.isValidChildren(b.flavour, columnSchema),
-    );
-    if (
-      !sameParent ||
-      !allValidChildren ||
-      !this.doc.canInsertChild(parent.id, "columns")
-    ) {
-      return null;
-    }
+    const targets = this.resolveColumnConversionTargets(selection);
+    if (!targets) return null;
+    const { blocks, parent } = targets;
 
     // 计算每栏分得的块数（连续均分，余数分给靠前的栏）
     const total = blocks.length;
@@ -3675,10 +3654,39 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
 
   private canUseColumnPicker(selection: BlockCraft.Selection | null) {
     if (!this.isLiveSelection(selection)) return false;
+    if (this.isReadonlySelection(selection)) return false;
     if (selection.getTableCellSelection?.()) return false;
     if (selection.collapsed && selection.start.type !== "text") return false;
     if (this.findColumnsAncestor(selection.firstBlock)) return true;
-    return this.canTransformSelection(selection);
+    return this.resolveColumnConversionTargets(selection) !== null;
+  }
+
+  /** 分栏搬移完整块，不应复用标题/列表转换的纯文本限制。 */
+  private resolveColumnConversionTargets(selection: BlockCraft.Selection) {
+    const columnSchema = this.doc.schemas.get("column", false);
+    if (!columnSchema || this.isReadonlySelection(selection)) return null;
+
+    const ids = this.getSelectedBlockIds(selection);
+    if (!ids.length) return null;
+    const blocks = ids.map((id) => this.doc.getBlockById(id));
+    const parent = blocks[0]?.parentBlock;
+    if (!parent || !this.doc.canInsertChild(parent.id, "columns")) return null;
+
+    // 只读取一次同级列表，避免逐块 getIndexOfParent 重复复制和扫描父级。
+    const siblings = parent.childrenIds;
+    const firstIndex = siblings.indexOf(blocks[0].id);
+    // 搬移算法按连续区间操作，缺失视图或跨父级时不能仅转换部分选区。
+    if (
+      firstIndex < 0 ||
+      !blocks.every((block, index) =>
+        block &&
+        block.parentId === parent.id &&
+        siblings[firstIndex + index] === block.id &&
+        this.doc.schemas.isValidChildren(block.flavour, columnSchema),
+      )
+    ) return null;
+
+    return { blocks, parent };
   }
 
   private getSelectedBlockIds(selection: BlockCraft.Selection) {

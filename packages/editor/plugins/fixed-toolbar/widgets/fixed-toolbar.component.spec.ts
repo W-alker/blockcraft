@@ -167,6 +167,7 @@ describe("FixedTextToolbarComponent boundary selections", () => {
     const getBlockById = (id: string) => blocks[id];
     const doc = {
       getBlockById,
+      schemas: { get: () => null },
       isEditable: (block: { nodeType: BlockNodeType }) =>
         block.nodeType === BlockNodeType.editable,
       queryBlocksBetween,
@@ -484,8 +485,10 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
         isValidChildren: jasmine
           .createSpy("isValidChildren")
           .and.callFake(
-            (_flavour: string, parentFlavour: string) =>
-              parentFlavour === "root",
+            (flavour: string, parent: string | { flavour: string }) =>
+              parent === "root" ||
+              (typeof parent === "object" && parent.flavour === "column" &&
+                ["paragraph", "text-box"].includes(flavour)),
           ),
         createSnapshot,
       },
@@ -542,6 +545,7 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
 
     return {
       component,
+      blocks,
       rootHost,
       root,
       paragraph,
@@ -932,6 +936,101 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
 
     expect((component as any).canUseColumnPicker(textCursor)).toBeTrue();
     rootHost.remove();
+  });
+
+  const makeTextBoxRange = (boundary = false) => {
+    const harness = makeHarness();
+    const { root, rootHost, blocks, selection } = harness;
+    const boxes = [0, 1].map((index) => {
+      const hostElement = document.createElement("div");
+      rootHost.appendChild(hostElement);
+      const block = {
+        id: `text-box-${index}`,
+        flavour: "text-box",
+        nodeType: BlockNodeType.block,
+        parentId: root.id,
+        parentBlock: root,
+        hostElement,
+        getIndexOfParent: () => root.childrenIds.indexOf(block.id),
+      };
+      blocks[block.id] = block;
+      return block;
+    });
+    root.childrenIds = boxes.map((block) => block.id);
+    root.childrenLength = 2;
+    const range = boundary
+      ? selection(
+          { blockId: root.id, type: "boundary", index: 0, block: root } as any,
+          { blockId: root.id, type: "boundary", index: 2, block: root } as any,
+        )
+      : selection(
+          { blockId: boxes[0].id, type: "selected", block: boxes[0] } as any,
+          { blockId: boxes[1].id, type: "selected", block: boxes[1] } as any,
+        );
+    return { ...harness, boxes, range };
+  };
+
+  for (const boundary of [false, true]) {
+    it(`enables columns for two flow text boxes selected by ${boundary ? "boundaries" : "frames"} without enabling text transforms`, () => {
+      const { component, rootHost, range } = makeTextBoxRange(boundary);
+      try {
+        (component as any).syncToolbarState(range);
+        expect((component as any).canUseColumns).toBeTrue();
+        expect((component as any).canTransformBlocks).toBeFalse();
+      } finally {
+        rootHost.remove();
+      }
+    });
+  }
+
+  it("keeps readonly text boxes and schema-rejected column contents disabled", () => {
+    const { component, rootHost, range } = makeTextBoxRange();
+    try {
+      const readonly = jasmine.createSpy("isSelectionReadonly").and.returnValue(true);
+      (component.doc as any).readonlyManager = { isSelectionReadonly: readonly };
+      expect((component as any).canUseColumnPicker(range)).toBeFalse();
+      readonly.and.returnValue(false);
+      (component.doc.schemas.isValidChildren as jasmine.Spy).and.returnValue(false);
+      expect((component as any).canUseColumnPicker(range)).toBeFalse();
+      expect((component as any).convertSelectedBlocksToColumns(2, range)).toBeNull();
+    } finally {
+      rootHost.remove();
+    }
+  });
+
+  it("requires a common parent that accepts columns for text-box conversion", () => {
+    const { component, rootHost, range, boxes } = makeTextBoxRange();
+    try {
+      (component.doc.canInsertChild as jasmine.Spy).and.returnValue(false);
+      expect((component as any).canUseColumnPicker(range)).toBeFalse();
+      (component.doc.canInsertChild as jasmine.Spy).and.returnValue(true);
+      boxes[1].parentId = "other-parent";
+      expect((component as any).canUseColumnPicker(range)).toBeFalse();
+      expect((component as any).convertSelectedBlocksToColumns(2, range)).toBeNull();
+    } finally {
+      rootHost.remove();
+    }
+  });
+
+  it("deletes the shifted empty columns container after adding a landing paragraph", () => {
+    const { component, root, rootHost, columns, columnParagraph } = makeHarness();
+    root.childrenIds = [columns.id];
+    root.childrenLength = 1;
+    columns.getIndexOfParent = () => 0;
+    columnParagraph.textLength = 0;
+    const deleteBlocks = jasmine.createSpy("deleteBlocks");
+    (component.doc as any).crud = {
+      transact: (run: () => void) => run(),
+      insertBlocks: jasmine.createSpy("insertBlocks"),
+      deleteBlocks,
+    };
+    try {
+      (component as any).dissolveColumns(columns);
+      expect(deleteBlocks).toHaveBeenCalledOnceWith(root.id, 1, 1);
+      expect(component.doc.crud.insertBlocks).toHaveBeenCalled();
+    } finally {
+      rootHost.remove();
+    }
   });
 });
 
