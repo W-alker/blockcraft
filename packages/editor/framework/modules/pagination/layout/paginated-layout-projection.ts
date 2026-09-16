@@ -1,4 +1,5 @@
 import { Subject } from "rxjs";
+import {BLOCK_PLACEMENT_LAYOUT_FLAVOUR} from "../../../services/block-placement/types";
 import { HeightMap } from "../../virtualization/height-map";
 import {
   VerticalLayoutChange,
@@ -202,7 +203,10 @@ export function buildProjectedBlockPlacements(
   for (const rootId of rootIds) {
     if (!entryById.has(rootId))
       throw new Error(`Missing pagination geometry for ${rootId}`);
-    if (!itemById.has(rootId))
+    if (
+      entryById.get(rootId)!.flavour !== BLOCK_PLACEMENT_LAYOUT_FLAVOUR
+      && !itemById.has(rootId)
+    )
       throw new Error(`Missing pagination item for ${rootId}`);
   }
 
@@ -299,6 +303,19 @@ export function buildProjectedBlockPlacements(
   const placements: ProjectedBlockPlacement[] = [];
   for (const rootId of rootIds) {
     const entry = entryById.get(rootId)!;
+    // 虚拟化投影与 rootIds 保持一一对应；定位平面仍需挂载以显示绝对对象，
+    // 但它没有正文页归属、页间距或流式占高，不能使用其 DOM border box。
+    if (entry.flavour === BLOCK_PLACEMENT_LAYOUT_FLAVOUR) {
+      placements.push({
+        blockId: rootId,
+        firstPageIndex: -1,
+        beforeGap: 0,
+        projectedHostHeight: 0,
+        internalPageGap: 0,
+        fragments: [],
+      });
+      continue;
+    }
     const item = itemById.get(rootId)!;
     const isManualBreak =
       item.manualBreak === true || entry.flavour === "page-divider";

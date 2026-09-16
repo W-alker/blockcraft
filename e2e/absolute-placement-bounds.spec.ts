@@ -262,3 +262,100 @@ for (const mode of ['flow', 'full', 'sparse'] as const) {
     }
   })
 }
+
+for (const sparse of [false, true]) {
+  test(`near-full pagination excludes the placement plane but preserves real content (${sparse ? 'sparse' : 'full'})`, async ({page}) => {
+    // Playground's initial sample requests an unrelated remote link preview.
+    await page.route('**/affine-worker.toeverything.workers.dev/api/worker/link-preview**', route =>
+      route.fulfill({json: {title: 'fixture preview', description: '', icon: ''}}))
+    const {id, paragraphId} = await setup(page)
+    await page.evaluate(({id, paragraphId}) => {
+      const doc = (window as any).__placementDoc
+      // setup starts from an empty editor, whose normalizer creates a paragraph.
+      // Keep only this case's authored body and the real absolute-object plane.
+      for (const rootId of [...doc.model.getChildrenIds(doc.rootId)]) {
+        if (rootId === paragraphId || doc.model.getFlavour(rootId) === 'placement-layout') continue
+        const index = doc.model.getChildrenIds(doc.rootId).indexOf(rootId)
+        doc.crud.deleteBlocks(doc.rootId, index, 1)
+      }
+      doc.crud.updateBlockProps(id, {position: '80 80'})
+    }, {id, paragraphId})
+    await paginate(page, sparse)
+    await page.evaluate(paragraphId => {
+      const doc = (window as any).__placementDoc
+      const plugin = (window as any).__placementPagination
+      const geometry = plugin.captureStableLayout().geometry
+      // Deliberately leave less than the inherited plane padding: real DOM
+      // measurement must still see that padding without treating it as flow.
+      const host = doc.getBlockById(paragraphId).hostElement
+      host.style.height = `${(geometry.geometry.firstPageContentHeight ?? geometry.geometry.contentHeight) - 8}px`
+      host.style.marginBottom = '0'
+      plugin.captureStableLayout()
+    }, paragraphId)
+    await expect.poll(() => page.locator('.bc-page-sheet').count()).toBe(1)
+    const readLayout = () => page.evaluate(({id, paragraphId}) => {
+      const doc = (window as any).__placementDoc
+      const plugin = (window as any).__placementPagination
+      const layout = plugin.captureStableLayout()
+      // Sparse structural changes publish on the next frame; poll the stable
+      // layout rather than dereferencing a deliberately unavailable snapshot.
+      if (!layout) return {pageCount: null}
+      const planeId = doc.model.getParentId(id)
+      const plane = doc.getBlockById(planeId).hostElement
+      return {
+        pageCount: layout.result.pages.length,
+        planeHeight: plane.offsetHeight,
+        planeIsItem: layout.items.some((item: any) => item.id === planeId),
+        planeHasSlot: layout.result.pages.some((page: any) => page.slots.some((slot: any) => slot.id === planeId)),
+        planeHasSpacer: !!doc.root.hostElement.querySelector(`[data-bc-page-gap-spacer="${planeId}"]`),
+        bodyPage: layout.result.byBlock.get(paragraphId)?.pageIndex,
+        sparseActive: !!plugin._controller._releaseLayoutProjection,
+      }
+    }, {id, paragraphId})
+    const initial = await readLayout()
+    expect(initial.planeHeight).toBeGreaterThan(8)
+    expect(initial.planeIsItem).toBe(false)
+    expect(initial.planeHasSlot).toBe(false)
+    expect(initial.planeHasSpacer).toBe(false)
+    expect(initial.bodyPage).toBe(0)
+    if (sparse) expect(initial.sparseActive).toBe(true)
+    expect(await coveredByExtent(page, id)).toBe(true)
+
+    const dividerId = await page.evaluate(() => {
+      const doc = (window as any).__placementDoc
+      const divider = doc.schemas.createSnapshot('page-divider', [])
+      const planeIndex = doc.model.getChildrenIds(doc.rootId).findIndex((id: string) => doc.model.getFlavour(id) === 'placement-layout')
+      doc.crud.insertBlockSnapshots(doc.rootId, planeIndex, [divider])
+      return divider.id
+    })
+    await expect.poll(async () => (await readLayout()).pageCount).toBe(1)
+    const emptyId = await page.evaluate(() => {
+      const doc = (window as any).__placementDoc
+      const empty = doc.schemas.createSnapshot('paragraph', [[]])
+      const planeIndex = doc.model.getChildrenIds(doc.rootId).findIndex((id: string) => doc.model.getFlavour(id) === 'placement-layout')
+      doc.crud.insertBlockSnapshots(doc.rootId, planeIndex, [empty])
+      return empty.id
+    })
+    await expect.poll(async () => (await readLayout()).pageCount).toBe(2)
+    expect(await page.evaluate(emptyId => (window as any).__placementPagination.captureStableLayout().result.byBlock.get(emptyId)?.pageIndex, emptyId)).toBe(1)
+    await page.evaluate(ids => {
+      const doc = (window as any).__placementDoc
+      for (const id of ids) {
+        const index = doc.model.getChildrenIds(doc.rootId).indexOf(id)
+        doc.crud.deleteBlocks(doc.rootId, index, 1)
+      }
+    }, [dividerId, emptyId])
+    await expect.poll(async () => (await readLayout()).pageCount).toBe(1)
+
+    await page.evaluate(id => (window as any).__placementDoc.crud.updateBlockProps(id, {position: '80 450'}), id)
+    await expect.poll(async () => (await readLayout()).pageCount).toBe(2)
+    expect(await coveredByExtent(page, id)).toBe(true)
+    await page.evaluate(id => (window as any).__placementDoc.crud.updateBlockProps(id, {position: '80 80'}), id)
+    await expect.poll(async () => (await readLayout()).pageCount).toBe(1)
+    for (const scale of [0.75, 1.5]) {
+      await page.evaluate(scale => (window as any).__placementDoc.viewScale.setScale(scale), scale)
+      await expect.poll(async () => (await readLayout()).pageCount).toBe(1)
+      expect(await coveredByExtent(page, id)).toBe(true)
+    }
+  })
+}

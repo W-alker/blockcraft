@@ -186,6 +186,50 @@ function geometry(
 }
 
 describe("PaginationLayoutCoordinator", () => {
+  it("keeps a measured placement plane structural without creating a trailing page or spacer", () => {
+    const rootIds = ['body', 'divider', 'plane'];
+    const facts = new Map<string, ModelFact>([
+      ['body', fact('body')],
+      ['divider', fact('divider', {flavour: 'page-divider', nodeType: BlockNodeType.void})],
+      ['plane', fact('plane', {flavour: 'placement-layout', nodeType: BlockNodeType.block})],
+    ]);
+    const {doc} = createHarness(rootIds, facts, {paragraph: 95});
+    let objectBottom = 80;
+    Object.defineProperty(doc, 'placement', {value: {surface: {get bottom() {return objectBottom;}}}});
+    const coordinator = new PaginationLayoutCoordinator(doc);
+    try {
+      const estimated = coordinator.compute(config(), geometry());
+      expect(estimated.result.pages.length).toBe(1);
+      coordinator.applyMeasured([
+        measurement('body', 95),
+        measurement('divider', 0, {flavour: 'page-divider', nodeType: BlockNodeType.void}),
+        measurement('plane', 72, {flavour: 'placement-layout', nodeType: BlockNodeType.block}),
+      ], coordinator.geometryRevision, 0);
+      const measured = coordinator.compute(config(), geometry());
+      expect(measured.exact).toBeTrue();
+      expect(measured.rootIds).toEqual(rootIds);
+      expect(measured.items.map(item => item.id)).toEqual(['body', 'divider']);
+      expect(measured.result.pages.length).toBe(1);
+      expect(measured.result.byBlock.has('plane')).toBeFalse();
+      expect(measured.placements[2]).toEqual({
+        blockId: 'plane', firstPageIndex: -1, beforeGap: 0,
+        projectedHostHeight: 0, internalPageGap: 0, fragments: [],
+      });
+      expect(measured.projection.blockIds).toEqual(rootIds);
+      expect(measured.projection.totalHeight).toBe(95);
+      expect(measured.projection.extentAt(2)).toBe(0);
+
+      objectBottom = 350;
+      const extended = coordinator.compute(config(), geometry());
+      expect(extended.result.pages.length).toBe(3);
+      expect(extended.projection.totalHeight).toBe(95);
+      objectBottom = 80;
+      expect(coordinator.compute(config(), geometry()).result.pages.length).toBe(1);
+    } finally {
+      coordinator.dispose();
+    }
+  });
+
   it("keeps sparse width-only fit pagination identical to the legacy measured path", () => {
     const facts = new Map<string, ModelFact>([
       ["wide", fact("wide", {

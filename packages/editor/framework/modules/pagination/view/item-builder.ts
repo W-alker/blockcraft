@@ -1,5 +1,6 @@
 // packages/editor/framework/modules/pagination/view/item-builder.ts
 import {BlockNodeType} from "../../../block-std/types/block.type";
+import {BLOCK_PLACEMENT_LAYOUT_FLAVOUR} from "../../../services/block-placement/types";
 import {isManualBreak, PaginationItem, resolveBlockPolicy} from "../engine";
 import {
   getTableCellFlowPlan,
@@ -49,7 +50,9 @@ export interface BlockMeta {
 
 /** 块元数据 → 引擎 PaginationItem[]（套 P0 策略 + 手动分页符识别 + 屏幕拆分切点）。 */
 export function buildPaginationItems(metas: BlockMeta[]): PaginationItem[] {
-  return metas.map(m => {
+  // 定位平面是 root 结构节点，不是正文。其 DOM border box 可以包含继承的
+  // padding，但不能成为分页 slot；对象跨页范围由 includePlacementPages 负责。
+  return metas.filter(m => m.flavour !== BLOCK_PLACEMENT_LAYOUT_FLAVOUR).map(m => {
     // 只取引擎需要的 breakable / keepWithNext；capHeight 是策略层信号（高度源据此算 lockHeight），不进 item。
     const {breakable, keepWithNext} = resolveBlockPolicy({flavour: m.flavour, nodeType: m.nodeType, isHeading: m.isHeading});
     const item: PaginationItem = {
