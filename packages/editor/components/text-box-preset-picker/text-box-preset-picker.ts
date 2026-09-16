@@ -115,7 +115,6 @@ import { storeObjectTextFrame, storeObjectTextStyle } from "../../framework";
                       <img
                         class="text-box-preset-picker__bg"
                         [src]="item.artworkSrc"
-                        [style.object-fit]="item.backgroundFit"
                         alt=""
                         loading="eager"
                         decoding="async"
@@ -205,7 +204,8 @@ import { storeObjectTextFrame, storeObjectTextStyle } from "../../framework";
 
       .text-box-preset-picker {
         box-sizing: border-box;
-        width: min(430px, calc(100vw - 16px));
+        width: min(430px, calc(100vw - 24px));
+        max-width: 100%;
         padding: 8px;
         overflow: visible;
         border: 1px solid var(--bc-float-toolbar-divider-color);
@@ -316,6 +316,9 @@ import { storeObjectTextFrame, storeObjectTextStyle } from "../../framework";
         width: 100%;
         height: 100%;
         display: block;
+        /* Catalog artwork is a complete frame, as in the live TextBox.
+         * Photo-style cover cropping would cut off its decorative edges. */
+        object-fit: fill;
       }
 
       .text-box-preset-picker__sample {
@@ -402,17 +405,11 @@ export class TextBoxPresetPickerComponent {
           // so the
           // thumbnail resolves it the same way the Block does — handing the raw
           // value to `<img>` renders every decorated entry as a broken image.
+          // Decorated presets can zero `bw` / `fo`, so a shape-only thumbnail
+          // would render blank.
           artworkSrc: props.artwork
             ? resolveTextBoxArtworkSrc(props.artwork)
             : null,
-          // Decorated presets carry their whole appearance in the surface image
-          // and set `bw: 0` / `fo: 0`, so a shape-only thumbnail renders blank.
-          backgroundFit:
-            props.bgs === "stretch"
-              ? "fill"
-              : props.bgs === "contain"
-                ? "contain"
-                : "cover",
           // Fill-less and undecorated: nothing would distinguish this thumbnail
           // from a white-filled one on the picker's near-white panel, so the
           // preview marks the transparent surface with a checkerboard. Decorated

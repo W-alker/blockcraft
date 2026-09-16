@@ -118,6 +118,14 @@ describe("TextBoxPresetPickerComponent", () => {
     expect(nav.scrollWidth).toBeGreaterThan(nav.clientWidth);
     expect(nav.scrollLeft).toBeGreaterThan(before);
     expect(wheel.defaultPrevented).toBeTrue();
+
+    // A constrained dropdown host must also constrain the inner panel/grid.
+    host.style.width = "260px";
+    expect(picker.getBoundingClientRect().width).toBeLessThanOrEqual(260);
+    const lastItem = host.querySelectorAll<HTMLElement>("[data-preset-id]")[3];
+    expect(lastItem.getBoundingClientRect().right).toBeLessThanOrEqual(
+      host.getBoundingClientRect().right,
+    );
   });
 
   it("uses the new Word classic style as the unknown-id fallback", () => {
@@ -185,7 +193,7 @@ describe("TextBoxPresetPickerComponent", () => {
     ).toBeTrue();
   });
 
-  it("renders the surface image for decorated entries", async () => {
+  it("fits the complete artwork into decorated previews without cover cropping", async () => {
     await TestBed.configureTestingModule({
       imports: [TextBoxPresetPickerComponent],
     }).compileComponents();
@@ -213,6 +221,13 @@ describe("TextBoxPresetPickerComponent", () => {
         img.src.startsWith("data:image/svg+xml"),
       ),
     ).toBeTrue();
+    for (const image of Array.from(images)) {
+      expect(getComputedStyle(image).objectFit).toBe("fill");
+      const frame = image.parentElement!.getBoundingClientRect();
+      const artwork = image.getBoundingClientRect();
+      expect(artwork.width).toBeCloseTo(frame.width, 1);
+      expect(artwork.height).toBeCloseTo(frame.height, 1);
+    }
   });
 
   it("emits only the catalog id while the preset stores concrete props", async () => {
