@@ -45,7 +45,7 @@ import {takeUntil} from 'rxjs'
         title="选中内容区域并调整大小"
         (pointerdown)="focusResizeHandles($event)"
         (click)="focusResizeHandles($event)">
-        <i class="bc_icon bc_caijian" aria-hidden="true"></i>
+        <i class="bc_icon bc_yidong" aria-hidden="true"></i>
       </button>
       <shape-resizer
         data-bc-print-exclude="true"
