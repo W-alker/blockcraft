@@ -68,6 +68,30 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## Unreleased — 2026-09-16 — 组合外框不再占用内容区
+
+**Severity**: major（已有组合尺寸字段的行为语义调整；版本号未修改）
+
+**What changed**: 组合 `width/height` 直接表示内容区尺寸。`BLOCK_OBJECT_GROUP_PADDING` 和 `--bc-object-group-padding` 调整为 4px 的外侧选中框/拖动区域偏移，不再参与内容区、比例尺寸、组合坐标或分页高度计算。编辑器和快照阅读器统一取消组合内边距。
+
+**Why**: 组合是对象的几何集合，交互外框不应挤占内部对象的可用宽高。
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-theme.md`
+
+### Breaking Changes / Behavior Changes
+
+- 创建和重算组合直接取对象视觉边界并集；取消组合直接叠加组合与成员坐标，不再加减 8px。
+- 比例尺寸以完整组合宽度为基准；流式组合成员的分页上限不再扣除 16px。
+- 按本次明确决策，旧组合直接使用新语义，接受其显示尺寸/位置变化；不增加布局版本字段，不自动转换旧数据。
+
+### Migration Recipe
+
+外部调用方若曾使用 `group.width - 16` 计算内容宽度，应改为 `group.width`；组合坐标即内容原点。需要保留历史视觉效果的宿主应在自身历史数据导入层另行处理旧数据，不应继续依赖外框参与内容布局。
+
 ## Unreleased — 2026-09-16 — 按形状几何计算文字区域
 
 **Severity**: patch

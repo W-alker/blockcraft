@@ -4,7 +4,6 @@ import {deriveObjectSizeFromPixels} from '../block-object-sizing.manager'
 import {resolveBlockPosition, resolvePlacementLayer} from './state'
 import {
   BLOCK_OBJECT_GROUP_FLAVOUR,
-  BLOCK_OBJECT_GROUP_PADDING,
   type BlockObjectGroupProps,
 } from './types'
 import {BlockPlacementRuntime} from './runtime'
@@ -142,12 +141,8 @@ export class BlockPlacementGroupCoordinator {
     const contentWidth = roundPlacementGeometry(bounds.right - bounds.left)
     const contentHeight = roundPlacementGeometry(bounds.bottom - bounds.top)
     const groupProps: BlockObjectGroupProps = {
-      width: roundPlacementGeometry(
-        contentWidth + BLOCK_OBJECT_GROUP_PADDING * 2,
-      ),
-      height: roundPlacementGeometry(
-        contentHeight + BLOCK_OBJECT_GROUP_PADDING * 2,
-      ),
+      width: contentWidth,
+      height: contentHeight,
     }
     if (groupProps.width <= 0 || groupProps.height <= 0) return null
 
@@ -158,8 +153,8 @@ export class BlockPlacementGroupCoordinator {
     snapshot.props = {
       ...snapshot.props,
       position: {
-        x: roundPlacementGeometry(bounds.left - BLOCK_OBJECT_GROUP_PADDING),
-        y: roundPlacementGeometry(bounds.top - BLOCK_OBJECT_GROUP_PADDING),
+        x: roundPlacementGeometry(bounds.left),
+        y: roundPlacementGeometry(bounds.top),
       },
       ...(candidate.layer === 'under' ? {placementLayer: 'under'} : {}),
     }
@@ -227,10 +222,10 @@ export class BlockPlacementGroupCoordinator {
       const patch: Record<string, any> = {
         position: {
           x: roundPlacementGeometry(
-            source.position.x + BLOCK_OBJECT_GROUP_PADDING + local.x,
+            source.position.x + local.x,
           ),
           y: roundPlacementGeometry(
-            source.position.y + BLOCK_OBJECT_GROUP_PADDING + local.y,
+            source.position.y + local.y,
           ),
         },
         placementLayer: source.layer === 'under' ? 'under' : null,
@@ -401,8 +396,7 @@ export class BlockPlacementGroupCoordinator {
     if (!groupProps) return null
     const oldGroupWidth = finitePositive(groupProps['width'])
     if (oldGroupWidth === null) return null
-    const oldContentWidth = oldGroupWidth - BLOCK_OBJECT_GROUP_PADDING * 2
-    if (oldContentWidth <= 0) return null
+    const oldContentWidth = oldGroupWidth
 
     const childIds = this.runtime.getLiveChildrenIds(groupId)
     if (!childIds.length) {
@@ -422,12 +416,8 @@ export class BlockPlacementGroupCoordinator {
     const contentWidth = roundPlacementGeometry(bounds.right - bounds.left)
     const contentHeight = roundPlacementGeometry(bounds.bottom - bounds.top)
     if (contentWidth <= 0 || contentHeight <= 0) return null
-    const width = roundPlacementGeometry(
-      contentWidth + BLOCK_OBJECT_GROUP_PADDING * 2,
-    )
-    const height = roundPlacementGeometry(
-      contentHeight + BLOCK_OBJECT_GROUP_PADDING * 2,
-    )
+    const width = contentWidth
+    const height = contentHeight
     const groupPosition = resolveBlockPosition(groupProps['position'])
     const groupIsAbsolute =
       this.runtime.getPersistedState(groupId).mode === 'absolute'

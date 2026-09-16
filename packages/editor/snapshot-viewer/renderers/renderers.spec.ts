@@ -282,9 +282,9 @@ describe("snapshot-viewer renderers", () => {
     const figure = image.querySelector<HTMLElement>(".image-block__container")!
     expect(shell.style.width).toBe("400px")
     expect(shell.style.height).toBe("220px")
-    expect(shell.style.padding).toBe("8px")
+    expect(shell.style.padding).toBe("0px")
     expect(shell.style.getPropertyValue("--bc-object-group-padding"))
-      .toBe("8px")
+      .toBe("4px")
     expect(shell.querySelector<HTMLElement>(
       ":scope > .object-group-block__children",
     )?.style.width).toBe("100%")

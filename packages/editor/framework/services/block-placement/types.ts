@@ -6,17 +6,17 @@ import type {
 
 export const BLOCK_PLACEMENT_LAYOUT_FLAVOUR = 'placement-layout' as const
 export const BLOCK_OBJECT_GROUP_FLAVOUR = 'object-group' as const
-/** Fixed layout-pixel inset between a group frame and its local object plane. */
-export const BLOCK_OBJECT_GROUP_PADDING = 8
+/** Visual-only outset of the group selection frame; never part of its content plane. */
+export const BLOCK_OBJECT_GROUP_PADDING = 4
 
 export interface BlockObjectGroupProps extends IBlockProps {
+  /** Content-plane dimensions, excluding the external selection frame. */
   width: number
   height: number
 }
 
 const MIN_OBJECT_GROUP_CONTENT_SIZE = 1
-const DEFAULT_OBJECT_GROUP_SIZE =
-  BLOCK_OBJECT_GROUP_PADDING * 2 + MIN_OBJECT_GROUP_CONTENT_SIZE
+const DEFAULT_OBJECT_GROUP_SIZE = MIN_OBJECT_GROUP_CONTENT_SIZE
 
 const normalizeGroupLength = (value: unknown): number =>
   typeof value === 'number' && Number.isFinite(value) && value > 0

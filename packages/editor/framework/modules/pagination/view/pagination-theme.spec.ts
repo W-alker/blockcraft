@@ -78,8 +78,8 @@ import {LiveHeightSource} from './live-height-source';
         <span data-zero-space="true" data-block-zero-space="true" data-block-gap-side="after">&#8203;</span>
       </div>
       <div class="object-group-block root-flow-fixed-object"
-           style="height: 600px; padding: 8px; box-sizing: border-box;
-                  overflow: visible; --bc-object-group-padding: 8px">
+           style="height: 600px; padding: 0; box-sizing: border-box;
+                  overflow: visible; --bc-object-group-padding: 4px">
         <div class="object-group-block__children" style="height: 100%">
           <div class="image-block nested-flow-group-member"
                data-bc-placement="absolute" style="overflow: visible">
@@ -322,13 +322,13 @@ describe('pagination theme block constraints', () => {
         .toBeLessThan(surface.getBoundingClientRect().top);
     }
     expect(groupedMembers.map(element => getComputedStyle(element).maxHeight))
-      .toEqual(['184px', '184px', '184px', '184px']);
+      .toEqual(['200px', '200px', '200px', '200px']);
     expect(groupedMembers.map(element => getComputedStyle(element).overflow))
       .toEqual(['visible', 'visible', 'visible', 'visible']);
     expect(groupedSurfaces.map(element => getComputedStyle(element).maxHeight))
-      .toEqual(['184px', '184px', '184px', '184px']);
+      .toEqual(['200px', '200px', '200px', '200px']);
     expect(groupedSurfaces.map(element => element.getBoundingClientRect().height))
-      .toEqual([184, 184, 184, 184]);
+      .toEqual([200, 200, 200, 200]);
     for (const surface of groupedSurfaces) {
       const probe = surface.querySelector<HTMLElement>('.object-control-probe')!;
       expect(probe.getBoundingClientRect().top)

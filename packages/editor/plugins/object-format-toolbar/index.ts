@@ -643,7 +643,11 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
       return;
     if (
       target === this.doc.root.hostElement &&
-      sameIds(this.doc.objectFormat.getSelectionIds(), this.activeIds)
+      (sameIds(this.doc.objectFormat.getSelectionIds(), this.activeIds) ||
+        sameIds(
+          this.resolveGroupToolbarSelectionIds(this.doc.selection.value),
+          this.activeIds,
+        ))
     )
       return;
     this.close();
@@ -688,11 +692,28 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     );
   }
 
+  private resolveGroupToolbarSelectionIds(
+    selection: BlockCraft.Selection | null,
+  ): string[] | null {
+    // A whole group owns its toolbar in both flow and absolute layouts.
+    // Keep the placement-domain absolute-selection gate unchanged: flow groups
+    // still participate in ordinary keyboard, gap cursor and clipboard paths.
+    if (
+      selection?.isInSameBlock &&
+      selection.anchor.type === "selected" &&
+      selection.head.type === "selected" &&
+      selection.anchor.blockId === selection.head.blockId &&
+      this.doc.placement.isObjectGroup(selection.anchor.blockId)
+    ) {
+      return [selection.anchor.blockId];
+    }
+    return this.doc.placement.getAbsoluteObjectSelectionIds(selection);
+  }
+
   private resolveGroupToolbarState(
     selection: BlockCraft.Selection,
   ): GroupToolbarState | null {
-    const blockIds =
-      this.doc.placement.getAbsoluteObjectSelectionIds(selection);
+    const blockIds = this.resolveGroupToolbarSelectionIds(selection);
     if (!blockIds?.length) return null;
     const first = this.doc.vm.get(blockIds[0]!)?.instance;
     if (!first?.hostElement.isConnected) return null;
@@ -788,9 +809,10 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     action: ObjectGroupToolbarAction,
     blockIds: readonly string[],
   ): void {
-    const selectedIds = this.doc.placement.getAbsoluteObjectSelectionIds();
+    const selection = this.doc.selection.value;
+    const selectedIds = this.resolveGroupToolbarSelectionIds(selection);
     const ownsDetachedSelection =
-      selectedIds === null && this.ownsInteraction();
+      selection === null && this.ownsInteraction();
     if (!sameIds(selectedIds, blockIds) && !ownsDetachedSelection) {
       this.close();
       return;

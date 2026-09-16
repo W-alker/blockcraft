@@ -934,8 +934,8 @@ const PreviewSchema: IBlockSchemaOptions<PreviewModel> = {
 
 `wr` is the percentage of the nearest sizing plane width; `ar` is
 `width / height`. The plane is normally the root children content box. For a
-direct `object-group` child it is the group's fixed outer `props.width` minus
-the two `BLOCK_OBJECT_GROUP_PADDING` horizontal insets. Resolve live block
+direct `object-group` child it is the group's full `props.width`; the external
+selection frame does not reduce this sizing plane. Resolve live block
 dimensions through the document-owned manager:
 
 ```typescript
@@ -963,9 +963,10 @@ detection.
 `ObjectGroupBlockSchema` is an internal fixed-size container with persisted
 pixel `width` and `height`. The complete group can be a relative root-flow
 object or an absolute root under/over object. Those dimensions describe the
-outer frame, which reserves the fixed `BLOCK_OBJECT_GROUP_PADDING` inset (8
-layout pixels) on every side. The inset content box is always the member
-placement plane. Direct members keep content-plane-local absolute `position`
+content plane. `BLOCK_OBJECT_GROUP_PADDING` (4 layout pixels) is only the
+outward offset of the selection outline and drag edges, with zero host padding.
+The full content box is always the member placement plane. Direct members keep
+content-plane-local absolute `position`
 and no independent under/over tier in either outer layout. `setLayer()`,
 `moveForward()` and `moveBackward()` reject members, and their object toolbars
 omit both representation/layout and independent stack controls. Nested groups
@@ -989,8 +990,8 @@ Paginated live/print themes cap a top-bottom group frame, text box, WordArt or
 Shape at `--bc-page-content-height` with a direct-root CSS selector. When the
 outer group is top-bottom, the same cap applies to its local image, text-box,
 WordArt and Shape member frames even though those members remain locally
-absolute. Their available cap subtracts the outer frame's block-start and
-block-end `BLOCK_OBJECT_GROUP_PADDING`; root absolute placement objects remain
+absolute. Their available cap is the full page content height; the external
+selection frame consumes no page space. Root absolute placement objects remain
 unaffected.
 
 `canGroup(ids)` requires at least two contiguous direct children of the root
@@ -1000,8 +1001,10 @@ rebases every member into local coordinates and moves the existing block IDs;
 it does not clone content. Ratio-sized images preserve their resolved pixel
 frame by converting `wr` from root width to group width. `ungroup()` performs
 the inverse conversion and restores root coordinates in one transaction. Here
-"group width" means outer `width - 2 * BLOCK_OBJECT_GROUP_PADDING`; the visual
-padding never changes a responsive member's resolved pixel size.
+"group width" means the full persisted `width`; the visual frame never changes
+a responsive member's resolved pixel size. Existing snapshots use this same
+semantics without a version marker or automatic legacy conversion, so old
+groups may change their member size/position when rendered or reflowed.
 
 Root absolute objects can be aligned without first creating a group:
 

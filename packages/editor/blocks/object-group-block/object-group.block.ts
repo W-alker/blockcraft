@@ -16,7 +16,7 @@ import type {ObjectGroupBlockModel} from './index'
     '[style.width.px]': 'groupProps.width',
     '[style.height.px]': 'groupProps.height',
     '[style.box-sizing]': "'border-box'",
-    '[style.padding.px]': 'groupPadding',
+    '[style.padding.px]': '0',
     '[style.--bc-object-group-padding.px]': 'groupPadding',
     '[style.overflow]': "'visible'",
   },
@@ -52,9 +52,11 @@ import type {ObjectGroupBlockModel} from './index'
     :host(.bc-object-group--selection-within) {
       background: transparent !important;
       outline: 2px solid var(--bc-active-color, #4857e2);
-      outline-offset: 2px;
+      outline-offset: var(--bc-object-group-padding);
     }
 
+    /* Keep drag hit areas outside the content plane so member resize handles
+       at its boundary remain reachable with the 4px frame outset. */
     .object-group-block__move-edge {
       position: absolute;
       z-index: 5;
@@ -65,36 +67,38 @@ import type {ObjectGroupBlockModel} from './index'
     }
 
     :host([data-bc-placement='absolute'].selected) >
-      .object-group-block__move-edge {
+      /* Keep drag hit areas outside the content plane so member resize handles
+       at its boundary remain reachable with the 4px frame outset. */
+    .object-group-block__move-edge {
       display: block;
     }
 
     .object-group-block__move-edge[data-move-edge='north'] {
-      top: -5px;
-      right: -5px;
-      left: -5px;
-      height: 10px;
+      top: calc(-3px - var(--bc-object-group-padding));
+      right: calc(-3px - var(--bc-object-group-padding));
+      left: calc(-3px - var(--bc-object-group-padding));
+      height: 6px;
     }
 
     .object-group-block__move-edge[data-move-edge='east'] {
-      top: -5px;
-      right: -5px;
-      bottom: -5px;
-      width: 10px;
+      top: calc(-3px - var(--bc-object-group-padding));
+      right: calc(-3px - var(--bc-object-group-padding));
+      bottom: calc(-3px - var(--bc-object-group-padding));
+      width: 6px;
     }
 
     .object-group-block__move-edge[data-move-edge='south'] {
-      right: -5px;
-      bottom: -5px;
-      left: -5px;
-      height: 10px;
+      right: calc(-3px - var(--bc-object-group-padding));
+      bottom: calc(-3px - var(--bc-object-group-padding));
+      left: calc(-3px - var(--bc-object-group-padding));
+      height: 6px;
     }
 
     .object-group-block__move-edge[data-move-edge='west'] {
-      top: -5px;
-      bottom: -5px;
-      left: -5px;
-      width: 10px;
+      top: calc(-3px - var(--bc-object-group-padding));
+      bottom: calc(-3px - var(--bc-object-group-padding));
+      left: calc(-3px - var(--bc-object-group-padding));
+      width: 6px;
     }
   `],
 })

@@ -1,7 +1,6 @@
 import {BehaviorSubject, distinctUntilChanged} from 'rxjs'
 import type {BlockObjectSizingCapability} from '../block-std/schema/block-schema'
 import type {IBlockProps} from '../block-std/types/block.type'
-import {BLOCK_OBJECT_GROUP_PADDING} from './block-placement/types'
 
 const MIN_WR = 1
 const MAX_WR = 100
@@ -223,7 +222,7 @@ export class BlockObjectSizingManager {
   }
 
   /**
-   * Ratio-sized children of an object group use its inset content-plane width;
+   * Ratio-sized children of an object group use its full content-plane width;
    * every other object keeps the document root content width as its basis.
    */
   getReferenceWidth(blockId: string): number {
@@ -231,7 +230,7 @@ export class BlockObjectSizingManager {
     if (parentId && this.doc.placement?.isObjectGroup?.(parentId)) {
       const width = this.doc.model?.getProps?.(parentId)?.['width']
       if (typeof width === 'number' && Number.isFinite(width) && width > 0) {
-        return Math.max(1, width - BLOCK_OBJECT_GROUP_PADDING * 2)
+        return Math.max(1, width)
       }
     }
     return this.rootContentWidth

@@ -158,11 +158,7 @@ body.bc-table-fullscreen-lock
     > .text-box-block,
     > .word-art-block,
     > .shape-block {
-      max-block-size: calc(
-        var(--bc-page-content-height)
-        - var(--bc-object-group-padding, 8px)
-        - var(--bc-object-group-padding, 8px)
-      );
+      max-block-size: var(--bc-page-content-height);
       overflow: visible !important;
     }
 
@@ -170,11 +166,7 @@ body.bc-table-fullscreen-lock
     > .text-box-block > .text-box-block__surface,
     > .word-art-block > .word-art-block__surface,
     > .shape-block > .shape-block__shell {
-      max-block-size: calc(
-        var(--bc-page-content-height)
-        - var(--bc-object-group-padding, 8px)
-        - var(--bc-object-group-padding, 8px)
-      );
+      max-block-size: var(--bc-page-content-height);
     }
   }
 

@@ -85,8 +85,8 @@ describe('block object sizing', () => {
     }
     const manager = new BlockObjectSizingManager(doc as any)
 
-    expect(manager.getReferenceWidth('image')).toBe(360)
+    expect(manager.getReferenceWidth('image')).toBe(376)
     expect(manager.resolveForBlock('image', 'image', {wr: 50, ar: 2}))
-      .toEqual(jasmine.objectContaining({width: 180, height: 90}))
+      .toEqual(jasmine.objectContaining({width: 188, height: 94}))
   })
 })

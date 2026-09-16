@@ -411,6 +411,112 @@ describe("ObjectFormatToolbarPlugin object/edit interaction", () => {
     host.remove();
   });
 
+  it("shows the whole flow group's toolbar without treating it as an absolute selection", () => {
+    const plugin = new ObjectFormatToolbarPlugin();
+    const host = document.createElement("div");
+    document.body.append(host);
+    const getAbsoluteObjectSelectionIds = jasmine.createSpy().and.returnValue(null);
+    const selection = {
+      isInSameBlock: true,
+      anchor: { blockId: "group", type: "selected" },
+      head: { blockId: "group", type: "selected" },
+    };
+    (plugin as any).doc = {
+      vm: { get: () => ({ instance: { hostElement: host } }) },
+      placement: {
+        getAbsoluteObjectSelectionIds,
+        isObjectGroup: (id: string) => id === "group",
+        getObjectLayout: () => "top-bottom",
+        canUngroup: () => false,
+        canMoveForward: () => false,
+        canMoveBackward: () => false,
+      },
+    };
+    try {
+      expect((plugin as any).resolveGroupToolbarState(selection)).toEqual({
+        mode: "ungroup", anchor: host, blockIds: ["group"],
+        objectLayout: "top-bottom", canGroup: false, canUngroup: false,
+        canDistribute: false, canMoveForward: false, canMoveBackward: false,
+      });
+      expect(getAbsoluteObjectSelectionIds).not.toHaveBeenCalled();
+      for (const type of ["gap", "text"]) {
+        expect((plugin as any).resolveGroupToolbarState({
+          ...selection,
+          anchor: { blockId: "group", type },
+          head: { blockId: "group", type },
+        })).toBeNull();
+      }
+      expect((plugin as any).resolveGroupToolbarState({
+        ...selection,
+        anchor: { blockId: "paragraph", type: "selected" },
+        head: { blockId: "paragraph", type: "selected" },
+      })).toBeNull();
+    } finally {
+      host.remove();
+    }
+  });
+
+  it("retains the group toolbar on root focus only while the same group remains selected", () => {
+    const plugin = new ObjectFormatToolbarPlugin();
+    const root = document.createElement("div");
+    const host = document.createElement("div");
+    root.append(host);
+    const selection = { value: {
+      isInSameBlock: true,
+      anchor: { blockId: "group", type: "selected" },
+      head: { blockId: "group", type: "selected" },
+    } };
+    (plugin as any).doc = {
+      root: {hostElement: root}, selection,
+      vm: {get: () => ({instance: {hostElement: host}})},
+      objectFormat: {getSelectionIds: () => null},
+      placement: {
+        getAbsoluteObjectSelectionIds: () => null,
+        isObjectGroup: (id: string) => id === "group",
+      },
+    };
+    (plugin as any).overlayRef = {overlayElement: document.createElement("div")};
+    (plugin as any).activeIds = ["group"];
+    spyOn(plugin, "close");
+    const event = new FocusEvent("focusin");
+    Object.defineProperty(event, "target", {value: root});
+    (plugin as any).handleFocusIn(event);
+    expect(plugin.close).not.toHaveBeenCalled();
+    selection.value.anchor.type = "gap";
+    selection.value.head.type = "gap";
+    (plugin as any).handleFocusIn(event);
+    expect(plugin.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("validates flow-group layout actions against the current whole-group selection", async () => {
+    const plugin = new ObjectFormatToolbarPlugin();
+    const setObjectLayout = jasmine.createSpy("setObjectLayout");
+    const selection = { value: {
+      isInSameBlock: true,
+      anchor: { blockId: "group", type: "selected" },
+      head: { blockId: "group", type: "selected" },
+    } };
+    (plugin as any).doc = {
+      selection,
+      placement: {
+        getAbsoluteObjectSelectionIds: () => null,
+        isObjectGroup: (id: string) => id === "group",
+        setObjectLayout,
+      },
+    };
+    spyOn(plugin, "close");
+    spyOn<any>(plugin, "sync");
+    (plugin as any).handleGroupAction({name: "object-layout", value: "over"}, ["group"]);
+    expect(setObjectLayout).toHaveBeenCalledOnceWith("group", "over");
+    setObjectLayout.calls.reset();
+    (plugin as any).toolbarPointerActive = true;
+    selection.value.anchor.type = "gap";
+    selection.value.head.type = "gap";
+    (plugin as any).handleGroupAction({name: "object-layout", value: "over"}, ["group"]);
+    expect(setObjectLayout).not.toHaveBeenCalled();
+    await Promise.resolve();
+  });
+
   it("uses the selected objects' layout capability intersection and rejects partial writes", () => {
     const plugin = new ObjectFormatToolbarPlugin();
     const supportsObjectLayout = jasmine
@@ -585,7 +691,7 @@ describe("ObjectFormatToolbarPlugin object/edit interaction", () => {
     groupHost.remove();
   });
 
-  it("executes a group command through an owned toolbar focus gap", () => {
+  it("executes a group command through an owned toolbar focus gap", async () => {
     const plugin = new ObjectFormatToolbarPlugin();
     const alignObjects = jasmine.createSpy("alignObjects");
     (plugin as any).doc = {
@@ -605,6 +711,7 @@ describe("ObjectFormatToolbarPlugin object/edit interaction", () => {
       ["shape-1", "image-1"],
       "left",
     );
+    await Promise.resolve();
   });
 });
 

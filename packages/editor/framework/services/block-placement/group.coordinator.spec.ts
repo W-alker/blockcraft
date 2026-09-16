@@ -1,6 +1,5 @@
 import {resolveObjectDimensions} from '../block-object-sizing.manager'
 import {
-  BLOCK_OBJECT_GROUP_PADDING,
   BlockPlacementManager,
 } from '../block-placement.manager'
 import {BehaviorSubject} from 'rxjs'
@@ -172,7 +171,7 @@ describe('BlockPlacement group commands', () => {
       getReferenceWidth: (id: string) => {
         const parentId = parentOf(id)
         return parentId === 'group'
-          ? props.get('group')!['width'] - BLOCK_OBJECT_GROUP_PADDING * 2
+          ? props.get('group')!['width']
           : 800
       },
       resolveForBlock: (
@@ -183,7 +182,7 @@ describe('BlockPlacement group commands', () => {
         ? resolveObjectDimensions(
             value,
             parentOf(id) === 'group'
-              ? props.get('group')!['width'] - BLOCK_OBJECT_GROUP_PADDING * 2
+              ? props.get('group')!['width']
               : 800,
             imageCapability,
           )
@@ -210,9 +209,9 @@ describe('BlockPlacement group commands', () => {
     expect(h.children.get('layout')).toEqual(['group'])
     expect(h.children.get('group')).toEqual(['image', 'shape'])
     expect(h.props.get('group')).toEqual({
-      width: 506,
-      height: 246,
-      position: {x: 92, y: 62},
+      width: 490,
+      height: 230,
+      position: {x: 100, y: 70},
     })
     expect(h.props.get('image')).toEqual(jasmine.objectContaining({
       wr: 81.6327,
@@ -310,9 +309,9 @@ describe('BlockPlacement group commands', () => {
     expect(h.manager.updateAbsolute('shape', {x: 600, y: 30})).toBeTrue()
 
     expect(h.props.get('group')).toEqual({
-      width: 686,
-      height: 246,
-      position: {x: 92, y: 62},
+      width: 670,
+      height: 230,
+      position: {x: 100, y: 70},
     })
     expect(h.props.get('image')).toEqual(jasmine.objectContaining({
       wr: 59.7015,
@@ -338,9 +337,9 @@ describe('BlockPlacement group commands', () => {
     expect(h.manager.updateAbsolute('image', {x: -50, y: 30})).toBeTrue()
 
     expect(h.props.get('group')).toEqual({
-      width: 556,
-      height: 246,
-      position: {x: 42, y: 62},
+      width: 540,
+      height: 230,
+      position: {x: 50, y: 70},
     })
     expect(h.props.get('image')).toEqual(jasmine.objectContaining({
       wr: 74.0741,

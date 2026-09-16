@@ -139,7 +139,7 @@ function renderObjectGroup(
     width: `${props.width}px`,
     height: `${props.height}px`,
     boxSizing: "border-box",
-    padding: `${BLOCK_OBJECT_GROUP_PADDING}px`,
+    padding: "0",
     overflow: "visible",
   })
   element.style.setProperty(

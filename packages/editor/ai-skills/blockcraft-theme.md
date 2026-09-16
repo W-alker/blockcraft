@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-09-11
+> Last updated: 2026-09-16
 
 ## Theme Structure
 
@@ -509,7 +509,7 @@ the class or persist it in document content.
 | `--bc-page-chrome-color` | `#9b9b97` | Header/footer text color |
 | `--bc-page-chrome-fs` | `12px` | Header/footer font size |
 | `--bc-page-content-height` | runtime page content height | Maximum height inherited by oversized atomic/code blocks and direct-root fixed flow objects in live and print pagination |
-| `--bc-object-group-padding` | `8px` | Object-group frame inset projected by live and Snapshot renderers; nested pagination caps subtract both block-axis sides |
+| `--bc-object-group-padding` | `4px` | Visual-only outward group selection-frame offset; does not reduce content sizing or pagination caps |
 
 Runtime classes are `.bc-paginated` on the document root,
 `.bc-paginated-scroll` on the actual scroll container,
@@ -557,9 +557,9 @@ are not clipped; each object's existing inner content layer remains responsible
 for content overflow. The selector is deliberately owned by root flow:
 absolute objects below `placement-layout` remain uncapped, while members of a
 top-bottom `object-group` inherit the same frame cap from that outer flow unit.
-The member cap subtracts the group's block-start and block-end padding through
-`--bc-object-group-padding`; local placement geometry and visible interaction
-chrome remain intact.
+The member cap uses the full page content height. `--bc-object-group-padding`
+only controls the outward selection frame and drag edges; host padding is zero
+and local placement geometry is independent of interaction chrome.
 
 Pagination overrides live in `themes/plugins/pagination.scss`, imported at the
 end of `base.scss` so they can safely override ordinary block styles. The cap

@@ -593,9 +593,9 @@ and root under/over placement; individual members still cannot switch to
 relative/inline layout until the group is dissolved.
 In paginated live/print views, a direct-root top-bottom `object-group`,
 `text-box`, `word-art` or `shape` is CSS-capped to
-`--bc-page-content-height` and clipped. Absolute objects and local group
-members are outside that direct-root flow selector and keep their placement
-geometry.
+`--bc-page-content-height`, with interaction chrome allowed to overflow. Local
+members of a top-bottom group share the full page-height cap, without subtracting
+the external frame offset. Root absolute objects remain uncapped.
 When returning an absolute block to relative flow, the manager uses the
 block's current visual center to find the nearest mounted ordinary flow sibling
 and inserts before/after that sibling's midpoint instead of jumping back to the
@@ -637,9 +637,10 @@ duplicate per-object leases.
 `doc.placement.group(ids)` groups two or more contiguous, same-layer root
 absolute objects in one Yjs transaction; `ungroup(groupId)` restores their root
 coordinates. The group frame is the rotation-aware union of the members' visual
-bounds plus a fixed 8-layout-pixel inset on every side. Persisted group
-`width/height` describe this outer frame; member coordinates and ratio sizing
-use the inset content plane. A ratio-sized image changes `wr` once when crossing
+bounds. Persisted group `width/height` describe the full content plane; the
+selection outline and drag edges sit 4 layout pixels outside it and consume
+no content width or height. Existing groups use the same semantics without
+legacy conversion. A ratio-sized image changes `wr` once when crossing
 the boundary, so its pixel size stays stable while its new percentage basis
 becomes the fixed group content width. Built-in member move/resize/rotation commits use
 `doc.placement.updateObjectGeometry()`: one model-only O(n) pass tightens the
@@ -684,8 +685,7 @@ Schemas can independently opt into responsive object sizing with
 `metadata.objectSizing: {defaultWr, defaultAr}`. Such blocks persist `props.wr`
 as a percentage of the nearest sizing plane width and `props.ar` as
 width/height. The normal plane is the root children content width; a direct
-`object-group` child uses its fixed outer `props.width` minus the two 8px
-horizontal insets. `doc.objectSizing`
+`object-group` child uses its full fixed `props.width`. `doc.objectSizing`
 owns the single root `ResizeObserver`, resolves
 live dimensions for mounted blocks, and supplies model-only height estimates to
 virtualization and sparse pagination. Built-in image and video blocks opt in;
