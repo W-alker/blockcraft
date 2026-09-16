@@ -48,8 +48,8 @@ export const WEATHER_CHIP_BOX_STYLE =
     'line-height:1.2;max-width:100%;vertical-align:middle;';
 /** 天气图标（weather-mark 宿主）：1em = 图标边长，设计稿 33.6px。 */
 export const WEATHER_CHIP_MARK_STYLE = 'font-size:calc(33.6 * var(--u, 1px));';
-/** 温度与地点的竖排列。 */
-export const WEATHER_CHIP_COL_STYLE = 'display:flex;flex-direction:column;min-width:0;';
+/** 温度与地点的竖排列：占满图标后的剩余宽度，地点只在整列用满后省略。 */
+export const WEATHER_CHIP_COL_STYLE = 'display:flex;flex:1;flex-direction:column;min-width:0;';
 /** 温度行：吃 --wt-fg 原色。 */
 export const WEATHER_CHIP_TEMP_STYLE =
     'font-size:calc(16 * var(--u, 1px));font-weight:600;color:var(--wt-fg, #1f2329);';
