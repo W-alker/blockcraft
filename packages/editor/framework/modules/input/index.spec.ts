@@ -3618,6 +3618,38 @@ describe('InputTransformer text boundary adjacent non-editable blocks', () => {
     }
   }
 
+  for (const textLength of [0, 3]) {
+    it(`consumes Delete at root flow end with text length ${textLength}`, () => {
+      const {transformer, context, doc, preventDefault} = createTransformer({
+        textLength,
+        offset: textLength,
+      })
+
+      expect(transformer['_handleDelete'](context)).toBeTrue()
+      expect(preventDefault).toHaveBeenCalled()
+      expect(doc.crud.deleteBlockById).not.toHaveBeenCalled()
+      expect(doc.selection.selectBlock).not.toHaveBeenCalled()
+      expect(doc.selection.recalculate).not.toHaveBeenCalled()
+    })
+  }
+
+  it('leaves Delete inside paragraph text to beforeinput', () => {
+    const {transformer, context, preventDefault} = createTransformer({offset: 1})
+
+    expect(transformer['_handleDelete'](context)).toBeFalse()
+    expect(preventDefault).not.toHaveBeenCalled()
+  })
+
+  it('Delete at nested container end still selects the parent', () => {
+    const {transformer, context, paragraph, doc, preventDefault} = createTransformer({offset: 3})
+    paragraph.parentBlock.nodeType = BlockNodeType.block
+
+    expect(transformer['_handleDelete'](context)).toBeTrue()
+    expect(preventDefault).toHaveBeenCalled()
+    expect(doc.selection.selectBlock).toHaveBeenCalledOnceWith(paragraph.parentBlock)
+    expect(doc.crud.deleteBlockById).not.toHaveBeenCalled()
+  })
+
   it('Backspace at text start moves to the previous non-editable trailing gap', () => {
     const prevBlock = {id: 'prev-table', nodeType: BlockNodeType.block}
     const {transformer, context, doc, preventDefault} = createTransformer({prevBlock})

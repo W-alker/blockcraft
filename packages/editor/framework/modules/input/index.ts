@@ -2305,7 +2305,11 @@ export class InputTransformer {
       context.preventDefault();
       return true;
     }
-    return false;
+    // Navigation already excludes placement-layout. At the root flow end,
+    // native Delete can still target text in that detached layer via DOM order.
+    // Consume the boundary key so beforeinput cannot merge it into body text.
+    context.preventDefault();
+    return true;
   }
 
   @BindHotKey({ key: "Tab", shiftKey: null })
