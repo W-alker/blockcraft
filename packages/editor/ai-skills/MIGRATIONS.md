@@ -68,9 +68,19 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
-## 未发布 — 2026-09-16：自定义形状紧凑路径
+## 0.9.0 — 2026-09-16：紧凑对象属性与自定义几何
 
-**Severity**: major（几何存储契约变化；不修改发布版本号）
+**Severity**: major（包含破坏性存储契约变更，按用户指定的 0.x 版本 0.9.0 发布）
+
+**What changed**: 对象外观按独立小组存储，省略默认及未启用配置；坐标、渐变、图片填充和自定义几何统一采用紧凑字符串。形状块及包含形状的混合选区工具栏不再显示切换形状的 tab，文本框保留该入口。
+
+**Why**: 减少快照与协同数据的冗余，统一编辑器、适配器及快照阅读器的读写规则。
+
+**Affected ai-skills files**: blockcraft.md、blockcraft-block.md、blockcraft-data.md、blockcraft-adapter.md、blockcraft-plugins-toolbar.md。
+
+**升级约定**: 不兼容下列旧存储格式，也不提供自动迁移；宿主应使用框架的序列化与格式操作 API。
+
+### 自定义形状紧凑路径
 
 **What changed**: `customGeometry` 从节点 JSON 字符串改为有界的版本化路径字符串。
 运行时 `CustomShapeGeometry` 接口保持不变，现有 serializer/normalizer 统一处理。
@@ -79,15 +89,15 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 **Affected ai-skills files**: blockcraft.md、blockcraft-block.md、blockcraft-data.md、blockcraft-adapter.md、blockcraft-plugins-toolbar.md。
 
-### Breaking Changes
+#### Breaking Changes
 
 旧 JSON 字符串不再解析，不提供自动迁移。不要直接 `JSON.stringify/parse` 几何属性。
 
-### New APIs / Features
+#### New APIs / Features
 
 无新增公共 API；继续使用 `serializeCustomShapeGeometry()` / `normalizeCustomShapeGeometry()`。
 
-### Migration Recipe
+#### Migration Recipe
 
 ```typescript
 // before
@@ -98,15 +108,13 @@ const customGeometry = serializeCustomShapeGeometry(geometry)
 const runtime = normalizeCustomShapeGeometry(customGeometry)
 ```
 
-### Behavior Changes
+#### Behavior Changes
 
 保留三位坐标精度、坐标范围、多路径、填充规则和圆弧。点击无位移、拖回起点、
 重复提交不写入。提交或生成快照时省略预设等价的几何；恢复预设走 CRUD 删除属性，
 保持原有协同原子值及 Undo/Redo 语义。
 
-## 未发布 — 2026-09-16：通用坐标和填充字符串
-
-**Severity**: major（存储契约变更；发布版本由用户决定）
+### 通用坐标和填充字符串
 
 **What changed**: `IBlockProps.position` 改为 `"x y"`；所有对象渐变和图片填充改为
 CSS 字符串。容器 `bgi` 也改用图片 CSS shorthand，移除 `bgs/bgx/bgy`。
@@ -115,7 +123,7 @@ CSS 字符串。容器 `bgi` 也改用图片 CSS shorthand，移除 `bgs/bgx/bgy
 
 **Affected ai-skills files**: blockcraft.md、blockcraft-block.md、blockcraft-data.md、blockcraft-adapter.md、blockcraft-plugins-toolbar.md。
 
-### Breaking Changes
+#### Breaking Changes
 
 - 旧坐标对象、渐变/图片 fill records、容器裸 URL 和分散图片参数不兼容，不自动迁移。
 - `StoredObjectPaint` 只含字符串，删除 `StoredComplexObjectPaint`。
@@ -123,13 +131,13 @@ CSS 字符串。容器 `bgi` 也改用图片 CSS shorthand，移除 `bgs/bgx/bgy
   `fillOpacity/textFillOpacity` 保存。构造完整 props 必须使用 section/snapshot helper。
 - 通用容器整体透明度仍为 `bgo`，缺省 1；root 原有 `background` CSS shorthand 保持。
 
-### New APIs / Features
+#### New APIs / Features
 
 - `storeBlockPosition({x, y})`、`parseBlockPosition(value)`；现有 `resolveBlockPosition()`
   读取字符串后返回数值坐标。
 - 渐变保留 2–4 色标、颜色函数及各自 alpha；图片保留 source、位置、fit 与整体 alpha。
 
-### Migration Recipe
+#### Migration Recipe
 
 ```typescript
 // before: {position: {x: 123.45678, y: 78.9}}
@@ -140,15 +148,13 @@ const fillProps = storeObjectFormatSection('shapeFill', paint)
 const surface = {bgi: 'url("paper.png") 50% 50% / cover no-repeat'}
 ```
 
-### Behavior Changes
+#### Behavior Changes
 
 定位在提交时保留最多两位小数，拖动预览仍使用完整计算精度。组合、对齐、复制、缩放、
 适配器、虚拟化与 Snapshot Viewer 共用读取规则。默认透明度不保存；禁用图片后无孤立参数。
 样式解码不查询 DOM、不在滚动路径写入 Yjs。根快照默认无外观覆盖。
 
-## 未发布 — 2026-09-16：对象格式改为独立紧凑小组
-
-**Severity**: major（破坏性存储契约变更；实际发布版本由用户决定，本次不修改 package.json）
+### 对象格式改为独立紧凑小组
 
 **What changed**: Shape/TextBox/WordArt 的外观和文字属性改用独立小组，简单小组采用字符串；
 关闭项清除参数，默认组省略。默认对象轮廓和 WordArt 文字轮廓宽度统一为 1px。
@@ -157,19 +163,19 @@ const surface = {bgi: 'url("paper.png") 50% 50% / cover no-repeat'}
 
 **Affected ai-skills files**: blockcraft.md、blockcraft-block.md、blockcraft-plugins-toolbar.md。
 
-### Breaking Changes
+#### Breaking Changes
 
 - 不再保存/读取旧 `effects/textFrame/textStyle` 大对象；不提供旧数据迁移。
 - 简单 `fill`、`outline` 使用字符串；`storeObjectLine/Effects/TextFrame/TextStyle` 返回 props 片段。
 - HTML 使用对应独立 `data-bc-object-*` 属性；旧大对象 HTML 不兼容。
 - 三类对象的 Schema `metadata.version` 及 Agent capability `schemaVersion` 更新为 2，原子属性列表同步，writableProps 权限不扩大。
 
-### New APIs
+#### New APIs
 
 - `storeBlockObjectFormat(format, capability)`：按所属 Schema 默认值裁剪最终快照。
 - `OBJECT_FORMAT_SECTION_KEYS`、`storeObjectFormatSection()`：结构化操作与持久化小组映射。
 
-### Migration Recipe
+#### Migration Recipe
 
 ```typescript
 // before: props.textStyle = storeObjectTextStyle(style)
@@ -179,7 +185,7 @@ const props = storeBlockObjectFormat({...capability.defaults, textStyle: style},
 doc.objectFormat.updateSelection(ids, {textStyle: style})
 ```
 
-### Behavior Changes
+#### Behavior Changes
 
 未启用效果不记忆已关闭参数；重新开启使用默认参数。缺省继承 Schema，明确关闭默认效果用
 `none`；重置用 `null` 删除该操作的小组。默认轮廓宽度为 1px，显式预设和用户宽度仍保留，
