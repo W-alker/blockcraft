@@ -215,7 +215,12 @@
       display: flex;
       flex-direction: column;
       transition: background 0.12s ease;
-      overflow: hidden;
+      // 暂时移除 overflow: hidden（2026-09-16），避免裁剪子块阴影、选中轮廓和交互手柄。
+      // 栏宽仍由 columns-layout 的 min-width / width / max-width 约束，溢出内容由具体子块处理。
+      // TODO(分栏溢出回归)：窄栏及拖拽调宽时检查长文本、超宽图片/代码/公式是否侵入相邻栏；
+      // 检查阴影、选中轮廓、拖拽手柄的显示与命中，以及底部内容和滚动范围。
+      // 覆盖编辑态、只读 Snapshot Viewer、分页/打印及 Chromium / Firefox / WebKit；
+      // 若需恢复裁剪，先定位具体子块，避免直接重新裁剪整栏。
     }
 
     &.selected {
