@@ -407,7 +407,7 @@ function renderTextBox(
     // Match the live TextBox projection for ordinary rich text. The WordArt
     // class below only owns non-solid paint/effects; typography and a solid
     // base color must still survive a preset when no advanced effect is used.
-    content.style.fontFamily = textStyle.fontFamily
+    content.style.fontFamily = wordArt.fontFamily
     content.style.fontSize = `${textStyle.fontSize}px`
     content.style.fontWeight = `${textStyle.fontWeight}`
     content.style.fontStyle = textStyle.fontStyle

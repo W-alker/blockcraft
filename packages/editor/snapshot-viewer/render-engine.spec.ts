@@ -376,6 +376,33 @@ describe("SnapshotRenderEngine", () => {
     expect(content.style.color).toBe("rgba(25, 50, 74, 0.8)")
   })
 
+  it("resolves text-box font ids on render and update without rewriting stored fonts", () => {
+    const host = document.createElement("div")
+    const renderer = createSnapshotRenderer()
+    const families = [
+      ["cjk-hei", '"PingFang SC", "Microsoft YaHei", SimHei, sans-serif'],
+      ["cjk-kai", "Kaiti SC, KaiTi, STKaiti, serif"],
+      ["arial", 'Arial, Helvetica, "PingFang SC", "Microsoft YaHei", sans-serif'],
+      ["Georgia, serif", "Georgia, serif"],
+    ]
+    let content: HTMLElement | null = null
+    try {
+      for (const [family, stack] of families) {
+        const snapshot = wrapRoot([createTextBoxFixture("text-box-font", {textFamily: family})])
+        const before = JSON.stringify(snapshot)
+        if (content) renderer.update(snapshot)
+        else renderer.render(host, snapshot)
+        const next = host.querySelector<HTMLElement>(".text-box-block__content")!
+        if (content) expect(next).toBe(content)
+        content = next
+        const reference = document.createElement("span")
+        reference.style.fontFamily = stack!
+        expect(content.style.fontFamily).toBe(reference.style.fontFamily)
+        expect(JSON.stringify(snapshot)).toBe(before)
+      }
+    } finally { renderer.destroy() }
+  })
+
   it("projects compact document and editable-block typography", () => {
     const host = document.createElement("div")
     const renderer = createSnapshotRenderer()

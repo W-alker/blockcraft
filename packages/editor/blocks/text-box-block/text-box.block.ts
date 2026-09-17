@@ -149,7 +149,7 @@ const rotationTransform = (rotation: number): string =>
         #textContent
         class="text-box-block__content children-render-container"
         [class.text-box-block__content--word-art]="usesUniformTextPaint"
-        [style.font-family]="textBoxFormat.textStyle?.fontFamily"
+        style="font-family: var(--bc-text-box-word-art-font-family)"
         [style.font-size.px]="textBoxFormat.textStyle?.fontSize"
         [style.font-weight]="textBoxFormat.textStyle?.fontWeight"
         [style.font-style]="textBoxFormat.textStyle?.fontStyle"
