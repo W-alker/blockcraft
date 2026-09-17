@@ -603,6 +603,43 @@ describe('SelectionManager DOM selection normalization', () => {
     void manager;
   });
 
+  for (const eventType of ['pointerdown', 'mousedown']) {
+    it(`preserves object projection on ignored chrome ${eventType} but still yields to a text pointer`, () => {
+      const {manager, rootHost, block, blockHost, dispatchSelectionChange, doc} = createManager({bindEvents: true});
+      const chrome = document.createElement('div');
+      chrome.setAttribute('data-bc-selection-interaction-ignore', '');
+      const handle = document.createElement('button');
+      chrome.append(handle);
+      blockHost.append(createBlockGapSpace('before'), chrome, createBlockGapSpace('after'));
+      const recalculate = spyOn(manager, 'recalculate').and.callThrough();
+      const down = () => eventType === 'pointerdown'
+        ? new PointerEvent(eventType, {bubbles: true, button: 0, isPrimary: true})
+        : new MouseEvent(eventType, {bubbles: true, button: 0});
+
+      manager.selectBlock(block as any);
+      const selected = manager.value;
+      handle.dispatchEvent(down());
+      dispatchSelectionChange();
+      expect(recalculate).not.toHaveBeenCalled();
+      expect(manager.value).toBe(selected);
+      expect(blockHost.classList.contains('selected')).toBeTrue();
+
+      // Ignored controls must also leave an outstanding projection intact.
+      (manager as any)._suppressProgrammaticSelectionChangeUntil = 0;
+      (manager as any)._projectionFrame = 987654;
+      handle.dispatchEvent(down());
+      dispatchSelectionChange();
+      expect((manager as any)._projectionFrame).toBe(987654);
+      expect(recalculate).not.toHaveBeenCalled();
+
+      rootHost.dispatchEvent(down());
+      dispatchSelectionChange();
+      expect((manager as any)._projectionFrame).toBeNull();
+      expect(recalculate).toHaveBeenCalledTimes(1);
+      doc.onDestroy$.next();
+    });
+  }
+
   it('keeps a pending DOM projection authoritative until a new pointer intent cancels it', () => {
     const {manager, rootHost, block, blockHost, dispatchSelectionChange} = createManager({bindEvents: true});
     const leading = createBlockGapSpace('before');

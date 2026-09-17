@@ -787,6 +787,14 @@ export class SelectionManager {
   }
 
   private _beginPrimaryPointerIntent(target?: EventTarget | null): void {
+    const element = target instanceof Element
+      ? target
+      : target instanceof Node ? target.parentElement : null
+    // Object chrome owns its gesture, not a new native text selection. A
+    // document capture listener may already have reprojected the object Range;
+    // cancelling its protection here lets selectionchange reinterpret a closed
+    // container as a content boundary and hide the active resize handles.
+    if (element?.closest('[data-bc-selection-interaction-ignore]')) return
     this._clearNavigationFence()
     this._primaryPointerDown = true
     this._suppressProgrammaticSelectionChangeUntil = 0
