@@ -60,7 +60,7 @@ export const DateCardBlockSchema: IBlockSchemaOptions<DateCardModel> = {
   createSnapshot: () => snapshot('date-card', {
     ...DATE_CARD_STYLES.defaultSize,
   }),
-  metadata: metadata('日期卡片', 'bc_icon bc_rili'),
+  metadata: metadata('日期卡片', 'bc_icon bc_calendar-minus'),
 }
 
 export const PersonCardBlockSchema: IBlockSchemaOptions<PersonCardModel> = {
