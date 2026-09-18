@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-09-16
+> Last updated: 2026-09-18
 
 ## Block Types
 
@@ -1495,7 +1495,7 @@ Pointer cancel, Escape, window blur and component destruction restore the
 pre-gesture transform without writing props.
 
 `ShapeResizerComponent` also accepts optional `resizeCalculator`,
-`previewMirror`, `rotationLabel` and `borderDraggable` inputs. The defaults
+`previewMirror`, `rotationLabel`, `borderDraggable` and `scaleVariable` inputs. The defaults
 preserve shape behavior. Fixed-size editable objects such as WordArt can reuse
 the same handles while supplying their own resize policy; enabling
 `borderDraggable` adds four invisible edge hit regions without covering the
@@ -1506,6 +1506,63 @@ The bundled fixed toolbar creates a shape through
 the root `placement-layout` with the default `over` tier. The nested
 `shape-text` editing surface is visually part of the shape: it has no separate
 border, outline, shadow, background or block margin.
+
+`scaleVariable` 缺省为 `null`，原有形状/文本框/艺术字路径不变。显式传入无单位 CSS
+倍率变量名（如 `--pc-scale`）时，手势开始读取一次基值；角手柄预览按宽度比更新倍率，
+边手柄不改变倍率；取消、Escape、失焦和销毁恢复原内联值。调用方负责在
+`resizeCommit` 中将尺度与几何写入同一事务。它不代替 `resizeCalculator` 的比例约束。
+
+### 人员块：排版空间与内容尺度
+
+`person-card` 使用形状块同款八向手柄。边手柄独立调整 `width/height`，字号、头像和
+间距不变；四角通过 `calculatePersonCardResize` 保持宽高比，并同步修改整体倍率。
+几何在 `doc.crud.transact()` 用户事务内交给 `doc.placement.updateObjectGeometry()`，
+浮动位置、组合边界和 Undo 跟随同一操作。
+天气、日期卡继续使用原有缩放，不继承人员块的排版策略。
+
+`PersonCardModel.props` 新增紧凑的 `PersonCardTypographyProps`：
+
+| 字段 | 含义 | 默认 |
+| --- | --- | --- |
+| `sc` | 无单位整体倍率，最多两位小数 | 新快照显式存 `1`；缺省代表旧版按宽度推导 |
+| `fsr` | 横排字号：`"姓名 部门"` | `15 12` |
+| `fsp` | 横排拼音字号：`"姓名 拼音 部门"` | `15 9.5 11` |
+| `fsc` | 竖排字号：`"姓名 部门"` | `14 11` |
+
+字号 shorthand 只保留非默认值，`-` 表示该位置使用默认，省略尾部默认项；例如 `fsr:"20"`
+只覆盖姓名，`fsr:"- 14"` 只覆盖部门。全部默认时不存该字段，恢复默认通过 `null` 删除。
+不存空对象或三种样式完整的默认配置。设计字号最多两位小数；实际字号为设计字号乘 `sc`。
+宽高提交取整；面板字号最多一位小数，缩放百分比取整。内部手势保留浮点计算，松手才归一化。
+
+`personCardFonts(style, props)` 返回当前样式的分组字段名、文字角色、默认值和生效值；
+`storePersonCardFont(style, props, role, size)` 返回经过默认裁剪与精度收敛的字号更新。
+`personCardContentScale(props, legacyScale)` 处理旧数据回退，
+`PersonCardRenderComponent.contentScale` 提供当前生效倍率（只读 getter，非持久字段）。
+
+三种样式的姓名、拼音和部门分行，长文本自然换行，长英文必要时断词。高度由用户设置。
+卡片不显示溢出提示。切换样式保留倍率与各样式字号覆盖，恢复该样式默认外框（乘倍率并取整）。
+恢复字号只删除当前样式的覆盖字段，不重置倍率。
+
+`width/height` 是最终外框尺寸；除以 `sc` 可得缩放前的排版空间。新卡片不再从宽度反推
+字号；旧快照缺少 `sc` 时仍按原宽度推导，首次通过手柄或配置面板编辑时固定倍率，不在读取时
+批量迁移。新快照的 `sc:1` 具有格式标记含义，不能当冗余默认值删除。
+
+宿主字号控件显示最终字号，写回时除以当前倍率：
+
+```ts
+const scale = block.contentScale;
+block.updateProps({
+  sc: Math.round(scale * 100) / 100,
+  ...storePersonCardFont(block.props.style, block.props, 'name', displayedFontSize / scale),
+});
+// 恢复当前样式字号；不清除其他样式
+const key = personCardFonts(block.props.style, block.props)[0].key;
+block.updateProps({[key]: null});
+```
+
+调试台左侧“人员块排版”提供真实块示例及宽高、倍率、头像、分角色字号控件，直接操作 Yjs
+文档。人员样式共用 SCSS 仅用于此块；正文由 `--pc-layout-width:100%` 接收外框宽度，
+缩略图未设置此变量时仍使用设计宽度。
 
 ### Built-in Editable WordArt Block
 

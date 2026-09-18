@@ -343,6 +343,8 @@ export class ShapeResizerComponent implements OnDestroy {
   @Input() rotationLabel = '旋转形状'
   @Input() borderDraggable = false
   @Input() resizeCalculator: ShapeResizeCalculator = calculateShapeResize
+  /** 可选的无单位内容倍率 CSS 变量；只随角手柄缩放，边手柄保持原值。 */
+  @Input() scaleVariable: string | null = null
   @Output() resizeCommit = new EventEmitter<ShapeResizeCommit>()
   @Output() rotateCommit = new EventEmitter<ShapeRotateCommit>()
 
@@ -391,6 +393,7 @@ export class ShapeResizerComponent implements OnDestroy {
   } | null = null
   private _raf = 0
   private _pendingPointer: PointerEvent | null = null
+  private _startContentScale: {property: string; inline: string; value: number} | null = null
 
   constructor(private readonly ngZone: NgZone) {}
 
@@ -458,6 +461,13 @@ export class ShapeResizerComponent implements OnDestroy {
       transform: this.target.style.transform,
       fontSize: this.target.style.fontSize,
     }
+    const scaleProperty = this.scaleVariable
+    const contentScale = scaleProperty
+      ? Number.parseFloat(getComputedStyle(this.target).getPropertyValue(scaleProperty))
+      : NaN
+    this._startContentScale = scaleProperty && Number.isFinite(contentScale) && contentScale > 0
+      ? {property: scaleProperty, inline: this.target.style.getPropertyValue(scaleProperty), value: contentScale}
+      : null
     const previewMirror = this.previewMirror
     this._startMirrorInlineStyle = previewMirror
       ? {
@@ -558,6 +568,11 @@ export class ShapeResizerComponent implements OnDestroy {
         this.target.style.width = this._startInlineStyle.width
         this.target.style.height = this._startInlineStyle.height
         this.target.style.fontSize = this._startInlineStyle.fontSize
+        if (this._startContentScale) {
+          const {property, inline} = this._startContentScale
+          if (inline) this.target.style.setProperty(property, inline)
+          else this.target.style.removeProperty(property)
+        }
       }
       this.target.style.transform = this._startInlineStyle.transform
     }
@@ -576,6 +591,7 @@ export class ShapeResizerComponent implements OnDestroy {
     this._previewBox = null
     this._previewRotation = null
     this._startInlineStyle = null
+    this._startContentScale = null
     this._startMirrorInlineStyle = null
     this._gestureVisualScale = 1
     this._gestureMaxWidth = Number.POSITIVE_INFINITY
@@ -608,6 +624,14 @@ export class ShapeResizerComponent implements OnDestroy {
       transform,
     )
     this._applyScalableFontPreview(box)
+    if (this._startContentScale && this._startBox && this._activeGesture?.kind === 'resize') {
+      const handle = this._activeGesture.handle
+      const corner = (handle.includes('east') || handle.includes('west')) &&
+        (handle.includes('north') || handle.includes('south'))
+      this.target.style.setProperty(this._startContentScale.property, String(
+        this._startContentScale.value * (corner ? box.width / this._startBox.width : 1),
+      ))
+    }
   }
 
   private _applyScalableFontPreview(box: ShapeResizeBox): void {

@@ -1,0 +1,51 @@
+// 所有长度共享 --u；正文宽度由外框提供，缩略图回落到设计宽度。
+@mixin layout($width, $avatar, $name, $desc, $gap) {
+  :host {
+    display: block;
+    width: var(--pc-layout-width, calc(#{$width} * var(--u, 1px)));
+    box-sizing: border-box;
+  }
+  .card {
+    display: flex;
+    align-items: center;
+    justify-content: var(--mtl-align, flex-start);
+    gap: calc(#{$gap} * var(--u, 1px));
+    min-width: 0;
+  }
+  .card__avatar {
+    flex: none;
+    box-sizing: border-box;
+    width: calc(#{$avatar} * var(--pc-avatar-scale, 1) * var(--u, 1px));
+    height: calc(#{$avatar} * var(--pc-avatar-scale, 1) * var(--u, 1px));
+    border: calc(2 * var(--u, 1px)) solid var(--bc-bg-primary, #fff);
+    border-radius: var(--pc-avatar-radius, 50%);
+    background: var(--bc-bg-secondary, #f1f2f4);
+  }
+  .card__col {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    gap: calc(2 * var(--u, 1px));
+  }
+  .card__name, .card__desc, .card__pinyin {
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.4;
+  }
+  .card__name {
+    color: var(--pc-color, var(--bc-color, #1f2329));
+    font-size: calc(var(--pc-name-size, #{$name}) * var(--u, 1px));
+  }
+  .card__desc {
+    color: var(--bc-color-secondary, #8a919f);
+    font-size: calc(var(--pc-desc-size, #{$desc}) * var(--u, 1px));
+  }
+  .card__pinyin {
+    color: color-mix(in srgb, var(--pc-color, var(--bc-color, #1f2329)) 62%, transparent);
+    font-size: calc(var(--pc-pinyin-size, 9.5) * var(--u, 1px));
+    letter-spacing: 0.18em;
+    line-height: 1.35;
+  }
+}

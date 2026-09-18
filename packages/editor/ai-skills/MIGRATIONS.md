@@ -68,6 +68,48 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## 0.9.7 — 2026-09-18：人员块排版与整体缩放
+
+**Severity**: patch（兼容旧数据，按本次小版本发布决策纳入 0.9.7）。
+
+**What changed**: 人员块采用八向手柄：边调整排版空间，角等比缩放外框与全部内容。
+新增 `sc` 和三种样式的紧凑字号 shorthand（`fsr/fsp/fsc`）；姓名、拼音、部门分行并允许换行。
+调试台提供真实块示例及独立字号、宽高、倍率控件。
+
+**Why**: 原先宽度和字号一起变化，拉宽也无法显示更多文字；同时保留一手拖角整体缩放的便捷操作。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`。
+
+### New APIs / Features
+
+- `PersonCardTypographyProps`、`PersonCardFontRole`、`PersonCardFontKey`、`personCardFonts()`、
+  `personCardContentScale()`、`storePersonCardFont()`、`calculatePersonCardResize()`、`isPersonCardCorner()`；
+  `PersonCardRenderComponent.contentScale`。
+- `ShapeResizerComponent.scaleVariable`：可选无单位内容倍率 CSS 变量；缺省关闭，原调用方行为不变。
+
+### Migration Recipe
+
+无需批量迁移旧文档。新建请走 `PersonCardBlockSchema.createSnapshot()`（包含 `sc:1`）。
+旧快照缺少 `sc` 时保留按宽度推导字号的兼容路径，首次交互再将倍率写入。
+宿主若自带字号控件，应显示“设计字号 × 当前倍率”，写回时除以倍率；恢复默认只删除当前
+样式的字号覆盖字段。不要把新卡片的 `sc:1` 当作冗余默认值删除。
+
+```ts
+// before：改变 width 同时改变字号
+block.updateProps({width: 360});
+// after：先固定旧文档的倍率，再独立改变排版空间
+block.doc.crud.transact(() => block.doc.placement.updateObjectGeometry(block.id, {
+  width: 360, sc: Math.round(block.contentScale * 100) / 100,
+}));
+```
+
+### Behavior Changes
+
+- 人员块长文本换行，部门移至独立行；固定外框保持用户设定，不显示溢出提示。
+- 宽高取整、倍率和设计字号最多两位小数；字号 shorthand 裁剪默认值。
+- 切样式保留总体倍率与各样式字号覆盖，重设该样式默认外框；角缩放同步头像和间距。
+- 天气/日期卡以及未启用 `scaleVariable` 的形状/文本框/艺术字保持原有缩放策略。
+
 ## 0.9.6 — 2026-09-18：发布依赖清理
 
 **Severity**: patch

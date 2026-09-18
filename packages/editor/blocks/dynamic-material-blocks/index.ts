@@ -22,3 +22,5 @@ export * from './date-card/date-card.styles'
 export * from './person-card/person-card-render.component'
 export * from './person-card/person-card-view.util'
 export * from './person-card/person-card.styles'
+
+export * from './person-card/person-card-layout'

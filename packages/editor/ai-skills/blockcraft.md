@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-09-16 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-09-18 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -70,6 +70,10 @@ Three `nodeType` categories:
 
 仅分页符 `page-divider` 声明 `metadata.rootOnly: true`，只能插入为 root 直属子级；
 嵌套位置不提供插入或向 root 回退。相关 Schema 契约见 `blockcraft-block.md`。
+
+人员块 `person-card` 支持边手柄重排与角手柄整体缩放，`sc` 与分样式的
+姓名/拼音/部门字号覆盖相互独立。新快照显式存倍率 `1`；缺省倍率的旧文档沿用旧尺寸
+推导。详情及宿主字号控件写法见 `blockcraft-block.md` → 人员块：排版空间与内容尺度。
 
 ### Currently Registered Block Schemas (from `editor/bundled-capabilities.ts`)
 

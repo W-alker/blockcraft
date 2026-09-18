@@ -1,0 +1,20 @@
+[data-blockcraft-root="true"] .person-card-block,
+.bc-snapshot-viewer .person-card-block {
+  &[data-block-id].selected { background: transparent; }
+  &[data-bc-placement="absolute"] { max-width: none !important; }
+
+  .person-card__viewport {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    padding: calc(4 * var(--u, 1px));
+    box-sizing: border-box;
+    border: calc(var(--pc-border-size, 0) * var(--u, 1px)) var(--pc-bs, solid) var(--pc-bc, transparent);
+    border-radius: calc(6 * var(--u, 1px));
+  }
+  &.selected > .tpl-person-card > shape-resizer { display: block; }
+  > .tpl-person-card > shape-resizer {
+    .shape-resizer__rotate, .shape-resizer__rotation-stem { display: none; }
+  }
+  @media print { shape-resizer { display: none !important; } }
+}

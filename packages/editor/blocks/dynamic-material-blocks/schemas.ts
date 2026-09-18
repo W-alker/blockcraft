@@ -68,7 +68,9 @@ export const PersonCardBlockSchema: IBlockSchemaOptions<PersonCardModel> = {
   nodeType: BlockNodeType.void,
   component: PersonCardRenderComponent,
   createSnapshot: () => snapshot('person-card', {
-    ...PERSON_CARD_STYLES.defaultSize,
+    width: Math.round(PERSON_CARD_STYLES.defaultSize.width),
+    height: Math.round(PERSON_CARD_STYLES.defaultSize.height),
+    sc: 1,
   }),
   metadata: metadata('人员卡片', 'bc_icon bc_renwukapian'),
 }

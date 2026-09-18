@@ -19,8 +19,7 @@ const DEFAULT_AVATAR =
  * 边框画在外壳、4px 内边距（乘 --u）当气口的缘由见 person-card-render.component.ts 的注释。
  */
 export const PERSON_CARD_BOX_STYLE =
-    'position:relative;display:inline-block;width:100%;height:100%;overflow:hidden;max-width:100%;vertical-align:middle;padding:calc(4 * var(--u, 1px));' +
-    'box-sizing:border-box;border:var(--pc-bw, 0px) var(--pc-bs, solid) var(--pc-bc, transparent);border-radius:calc(6 * var(--u, 1px));';
+    'position:relative;display:block;width:100%;height:100%;box-sizing:border-box;--u:calc(var(--pc-scale, 1) * 1px);--pc-layout-width:100%;';
 
 export interface PersonCardView {
     /** 头像地址。真值态按 id 现算，占位态是官方默认头像。 */

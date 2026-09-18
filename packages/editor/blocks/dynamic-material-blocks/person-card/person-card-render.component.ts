@@ -1,6 +1,8 @@
-import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, HostBinding, signal } from '@angular/core';
 import { NgComponentOutlet } from '@angular/common';
-import { ScaleResizerComponent } from '../kernel/scale-resizer.component';
+import {ShapeResizerComponent, type ShapeResizeCommit} from '../../shape-block/shape-resizer.component';
+import {storeBlockPosition} from '../../../framework/services/block-placement/state';
+import {calculatePersonCardResize, isPersonCardCorner, personCardContentScale, personCardFonts, type PersonCardTypographyProps} from './person-card-layout';
 import type { BaseBlockComponent, BlockObjectSizeProps, NoEditableBlockNative } from '../../../framework';
 import { splitBorder } from '../kernel/material-border.util';
 import { DEFAULT_MATERIAL_COLOR } from '../kernel/material-color.util';
@@ -23,7 +25,7 @@ import { PERSON_CARD_STYLES } from './person-card.styles';
  * 加在外壳而不是样式组件里：卡面档的底色画在内层 `.card` 上，这一圈留白就落在卡面**之外**，
  * 描边与卡面之间有气口，卡面本身的形状一点没变。
  */
-export const PERSON_CARD_WATCHED_PROPS = ['style', 'avatar', 'avatarSize', 'dept', 'color', 'bw', 'bc', 'person'] as const;
+export const PERSON_CARD_WATCHED_PROPS = ['style', 'avatar', 'avatarSize', 'dept', 'color', 'bw', 'bc', 'person', 'sc', 'fsr', 'fsp', 'fsc'] as const;
 
 /** 一次读出「长什么样」的这几件事。两态组件各自把它灌进自己的 signal。 */
 export interface PersonCardLook {
@@ -35,7 +37,7 @@ export interface PersonCardLook {
     /** 头像大小倍率，落成 `--pc-avatar-scale`（小 0.75 / 中 1 / 大 1.25），乘在各格式档自己的基数上。 */
     avatarScale: string;
     /**
-     * 边框的粗细/线型/颜色，分别落成 `--pc-bw` / `--pc-bs` / `--pc-bc`（配置项「边框」，
+     * 边框的粗细/线型/颜色，分别落成 `--pc-border-size` / `--pc-bs` / `--pc-bc`（配置项「边框」，
      * props 里存一个档位值 `'2px dashed'`，到这一层由 splitBorder 拆开）。
      * bc 缺席直接落近黑、不走 null——作者选了线型就该看得见框（defineBorderConfigs 的口径，
      * 同日期卡 DateCardLook.bc 那条）。
@@ -75,7 +77,7 @@ export function readPersonCardLook(
 
 /**
  * props：person（定格串）、source（configs 的意向落点）、style / avatar / dept / color（显示配置）、
- * wr / ar（缩放）。
+ * width / height（外框）、sc（内容倍率）与 fsr / fsp / fsc（字号）。
  *
  * 必须写成内联匿名对象类型、不许提成具名 interface——具名 interface 拿不到隐式索引签名，
  * 过不了框架 IBlockProps 的 `[key: string]: SimpleValue`（这坑只在 ng-packagr 工具链下才炸）。
@@ -89,7 +91,7 @@ export function readPersonCardLook(
  */
 export interface PersonCardModel extends NoEditableBlockNative {
     flavour: 'person-card';
-    props: BlockObjectSizeProps & {
+    props: BlockObjectSizeProps & PersonCardTypographyProps & {
         /**
          * 定格真值：与行内人员同款的 JSON 串（共用 `freezePerson` / `readFrozenPerson`）。
          * 模板态恒空，桥在建档一刻由 `instantiate` 钩子写入。空串 = 未定格 → 画占位。
@@ -103,7 +105,7 @@ export interface PersonCardModel extends NoEditableBlockNative {
         avatar?: string;
         /** 头像大小（small / medium / large）。同为 displayConfigs 的键，落成倍率 `--pc-avatar-scale`。 */
         avatarSize?: string;
-        /** 部门职务开关（off / on）。同为 displayConfigs 的键，开时部门跟在姓名后、同一行。 */
+        /** 部门职务开关（off / on）。同为 displayConfigs 的键，开时部门在独立行显示，允许换行。 */
         dept?: string;
         /** 主色（CSS 颜色串）。同为 displayConfigs 的键，三档都只把它当字色用。 */
         color?: string;
@@ -113,45 +115,22 @@ export interface PersonCardModel extends NoEditableBlockNative {
     };
 }
 
-/**
- * 卡片模板：编辑态与渲染态共用一份（编辑态 import 本常量）。
- * 必须提成常量而不是靠继承——@Component 的 template 元数据不随类继承传递。
- *
- * **画的是内壳 `.tpl-person-card`，绝不画 hostElement**：host 上已经挂着框架的块类、
- * `data-block-id`/`data-node-type`、`data-bc-readonly`（只读视觉）、以及 placement 的
- * position/left/top/z-index 行内样式。往 host 上写 class 或尺寸就等于把锁定视觉和浮动定位一起覆盖掉。
- *
- * **尺寸模型：模型固定 `width/height`，渲染内部用 `--u` 等比绘制。**
- * ① 基类把固定宽高绑到宿主，按当前宽度相对样式默认宽度推导 `[style.--u]`；内壳是手柄 target；
- * ② 样式组件内部每个长度都是 `calc(设计px * var(--u, 1px))`——数字直接就是设计稿上的值；
- * ③ 盒子占满固定框，选中、组合、对齐和虚拟估算都读取同一组模型宽高；
- * ④ 拖动中手柄在 pointermove 里同步直写宽高与 `--u`，松手只提交 `width/height`。
- *
- * 两态各自要提供的口（模板只认这份契约）：`styleDef()` / `view()` / `color()` / `avatarRadius()`
- * / `border()`——后四个来自本文件的 `PersonCardLook`；固定几何、`resizeMaxWidth`
- * / `isFloating` / `onScaled()` 全在 `ObjectBlockComponent` 基类里，
- * 两态一行都不用写。这几个都是 **signal** 而不是 getter：getter 每轮变更检测都会重造对象，
- * `ComponentRef.setInput` 按 `Object.is` 比对，新引用等于每轮往样式组件回灌一次 input，OnPush 白省。
- *
- * 边框画在外壳上（三档都没有卡面，外壳就是唯一的盒），4px 内边距正好是框与墨迹之间的气口。
- * **粗细恒绝对 px、不乘 --u**（边框是「一条线」，跟着卡片放大会变成黑杠，全家族同一条规矩）；
- * 圆角乘 --u（那是形状，该跟着缩）。box-sizing 必须显式写：div 默认 content-box，
- * 边框会加在 max-width:100% 之外、贴右缘时溢出正文列。
- */
+/** 外框负责几何与手柄，内层负责裁剪；内容尺度与外框宽高独立。 */
 export const PERSON_CARD_TEMPLATE = `
-    <div class="tpl-person-card" #boxEl contenteditable="false"
-         data-bc-selection-interaction-frame
+    <div class="tpl-person-card" contenteditable="false" data-bc-selection-interaction-frame
          [attr.data-style]="styleDef().id"
          [style.--pc-color]="color()" [style.--pc-avatar-radius]="avatarRadius()" [style.--pc-avatar-scale]="avatarScale()"
-         [style.--pc-bw]="border().bw" [style.--pc-bs]="border().bs" [style.--pc-bc]="border().bc"
-         [style.--u]="scaleUnitCss"
-         style="${PERSON_CARD_BOX_STYLE}">
-        <ng-container *ngComponentOutlet="styleDef().component; inputs: { view: view() }"></ng-container>
+         [style.--pc-border-size]="borderSize()" [style.--pc-bs]="border().bs" [style.--pc-bc]="border().bc"
+         [style.--pc-name-size]="fontSizes().name" [style.--pc-pinyin-size]="fontSizes().pinyin"
+         [style.--pc-desc-size]="fontSizes().desc" style="${PERSON_CARD_BOX_STYLE}">
+        <div class="person-card__viewport">
+            <ng-container *ngComponentOutlet="styleDef().component; inputs: { view: view() }"></ng-container>
+        </div>
         @if (!isReadonly) {
-            <mtl-scale-resizer [target]="boxEl" [maxWidthContainer]="resizeMaxWidth"
-                               [geometryScale]="viewGeometryScale"
-                               [preserveRightEdge]="isFloating"
-                               (scaleCommit)="onScaled($event)"></mtl-scale-resizer>
+            <shape-resizer data-bc-selection-interaction-ignore data-bc-print-exclude="true"
+                [target]="hostElement" [maxWidthContainer]="resizeMaxWidth" [maxWidthResolver]="personMaxWidthResolver"
+                [resizeCalculator]="resizeCalculator" scaleVariable="--pc-scale"
+                (resizeCommit)="onPersonResize($event)"></shape-resizer>
         }
     </div>
 `;
@@ -163,26 +142,48 @@ declare global {
     }
 }
 
-/**
- * 渲染态（文档侧）：定格类物料——建档一刻把「文档创建人」烤进 props.person，此后永不变。
- * 半年后再打开，画的还是建档那天的那个人；本人调岗、改名、离职都不影响这份文档。
- *
- * 一次网络都不发（头像那个 `<img>` 除外）：人从定格串里读，不查任何数据源。
- * 建档时降级留下空 person（没登录上下文 / 超时）时回落画占位，而不是画个没有名字的空头像。
- *
- * `extends ObjectBlockComponent`：固定几何、缩放提交与样式表订阅全在基类，
- * 本类只覆写 `styles` / `watchedProps` / `repaint` 三个口。
- */
+/** 人员内容来自文档定格数据；字号、排版和手势在人员块领域内处理。 */
 @Component({
     selector: 'div.person-card-block',
     standalone: true,
     changeDetection: ChangeDetectionStrategy.OnPush,
-    imports: [NgComponentOutlet, ScaleResizerComponent],
+    imports: [NgComponentOutlet, ShapeResizerComponent],
     template: PERSON_CARD_TEMPLATE
 })
 export class PersonCardRenderComponent extends ObjectBlockComponent<PersonCardModel> {
+    protected readonly fontSizes = signal({name: 15, pinyin: 9.5, desc: 12});
+    protected readonly resizeCalculator = calculatePersonCardResize;
+    protected readonly personMaxWidthResolver = () => this.isFloating ? null : this.resizeMaxWidth.clientWidth;
+
+    @HostBinding('style.--pc-scale')
+    get contentScale(): number {
+        return personCardContentScale(this.props ?? {}, super.scaleUnit);
+    }
+
+    @HostBinding('attr.data-bc-resize-preview-anchor')
+    protected get resizeAnchor(): string | null { return this.isFloating ? null : 'layout'; }
+
+    protected onPersonResize(event: ShapeResizeCommit): void {
+        if (this.isReadonly) return;
+        const scale = this.contentScale * (isPersonCardCorner(event.handle) ? event.width / this.renderedWidth : 1);
+        const patch: Partial<PersonCardModel['props']> = {
+            width: Math.round(event.width),
+            height: Math.round(event.height),
+            sc: Math.round(scale * 100) / 100,
+            u: null, wr: null, ar: null,
+        };
+        const placement = this.doc.placement.getState(this.id);
+        if (placement.mode === 'absolute') {
+            patch['position'] = storeBlockPosition({x: placement.x + event.offsetX, y: placement.y + event.offsetY});
+        }
+        this.doc.crud.undoManager.stopCapturing();
+        this.doc.crud.transact(() => this.doc.placement.updateObjectGeometry(this.id, patch));
+        this.doc.crud.undoManager.stopCapturing();
+    }
+
     // 初值只是占位：字段初始化那刻 this.props 还没就绪（_props 要到 ngOnInit → _init 才建代理），
     // 真值在基类 ngOnInit 的首次 repaint() 里补。给的初值就是「默认色 + 圆形 + 无框 + 占位人」，与最终回落口径一致。
+    protected readonly borderSize = signal(0);
     protected readonly color = signal<string>(DEFAULT_MATERIAL_COLOR);
     protected readonly avatarRadius = signal<string>(avatarRadiusOf());
     protected readonly avatarScale = signal<string>(avatarScaleOf());
@@ -205,7 +206,11 @@ export class PersonCardRenderComponent extends ObjectBlockComponent<PersonCardMo
         this.color.set(look.color);
         this.avatarRadius.set(look.avatarRadius);
         this.avatarScale.set(look.avatarScale);
+        this.borderSize.set(Number.parseFloat(look.bw) || 0);
         this.border.set({ bw: look.bw, bs: look.bs, bc: look.bc });
         this.view.set(look.view);
+        const sizes = {name: 15, pinyin: 9.5, desc: 12};
+        for (const font of personCardFonts(look.style.id, props)) sizes[font.role] = font.size;
+        this.fontSizes.set(sizes);
     }
 }
