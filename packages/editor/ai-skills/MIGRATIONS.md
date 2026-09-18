@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-09-16 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-09-18 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -67,6 +67,22 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > - `major` (e.g. 0.1.37 → 1.0.0): breaking — removed APIs, renamed exports, signature changes, behavior reversals
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
+
+## 0.9.6 — 2026-09-18：发布依赖清理
+
+**Severity**: patch
+
+**What changed**: 移除 editor 未使用的 `hast`、`rehype`、`y-websocket`、`@angular/animations` peer；显式声明公开类型所需的 `@types/hast`、`@types/mdast`，以及运行时直接引用的 `collapse-white-space`、`lib0`。构建新增发布产物依赖检查。
+
+**Why**: 减少宿主安装的无用依赖，避免公开类型和运行时依赖仅在 monorepo 中偶然可解析。
+
+**Affected ai-skills files**: `blockcraft-app.md`。
+
+### Migration Recipe
+
+仅为 editor 安装的 `hast`、`mdast`、`rehype` 可以删除。宿主若直接使用
+`y-websocket` 或调用 `provideAnimations()`，须在自己的 `package.json` 中保留相应依赖。
+不要删除仍被宿主自身引用的包。公开编辑器 API、文档数据格式和编辑行为不变。
 
 ## 0.9.0 — 2026-09-16：紧凑对象属性与自定义几何
 

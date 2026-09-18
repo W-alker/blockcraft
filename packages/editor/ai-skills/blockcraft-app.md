@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-31
+> Last updated: 2026-09-18
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -19,16 +19,27 @@ Host Angular component
 
 ## Step 1 — Install & Import
 
-The editor lives in `packages/editor`. Inside this monorepo it's published as `@org/blockcraft-editor` (consult the `package.json`). External consumers import from the package barrel `index.ts` which re-exports framework, blocks, plugins, services and types.
+The editor lives in `packages/editor` and is published as `@ccc/blockcraft`. External consumers import from the package barrel `index.ts` which re-exports framework, blocks, plugins, services and types.
 
 BlockCraft's built-in editor chrome consumes the exact peer
-`@cses/ui@4.26.1`. Install that version beside `@ccc/blockcraft`; do not add
+`@cses/ui@4.29.0`. Install that version beside `@ccc/blockcraft`; do not add
 `ng-zorro-antd` for BlockCraft. Angular Material remains a peer only for the
 existing SVG/brand-icon path.
 
 ```bash
-pnpm add @ccc/blockcraft @cses/ui@4.26.1
+pnpm add @ccc/blockcraft @cses/ui@4.29.0
 ```
+
+发布依赖以 `packages/editor/package.json` 及构建产物为准：
+
+- `hast`、`rehype`、`y-websocket` 不再是 editor 的 peer。HTML 适配器使用
+  `unified`、`rehype-parse`、`rehype-stringify`；需要 WebSocket 协同的宿主自行声明 `y-websocket`。
+- editor 不强制安装 `@angular/animations`。宿主若调用 `provideAnimations()` 或使用其他动画组件，仍须自行安装匹配 Angular 版本的动画包。
+- `@types/hast`、`@types/mdast` 随普通依赖安装，供公开 `.d.ts` 使用；不需要安装同名空壳包 `hast` / `mdast`。
+- `collapse-white-space`、`lib0` 是产物直接引用的内部运行时依赖，由 editor 自行声明。
+- `@angular/router` 仍是 `@cses/ui` 所需的 peer。Mermaid、Shiki、KaTeX、Konva 等仍被完整编辑器实际引用，不能仅为缩短依赖列表而移除。
+
+`pnpm build:editor` 会检查所有 FESM 分块和公开类型的外部导入，拦截漏声明的依赖及冗余 peer；不依赖 monorepo 根目录碰巧安装的包补齐发布契约。
 
 ```typescript
 import {
