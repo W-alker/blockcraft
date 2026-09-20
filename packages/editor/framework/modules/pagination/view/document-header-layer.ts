@@ -67,7 +67,10 @@ export class DocumentHeaderLayer {
     element.style.width = `${Math.max(1, layout.width)}px`;
     element.style.margin = '0';
     element.style.transform = 'translateX(-50%)';
-    element.style.zIndex = '2';
+    // Header and root share the content tier. mount() places the header before
+    // the root, so objects/handles extending above the body keep their flow-view
+    // paint and hit-test order instead of being trapped below the cover.
+    element.style.zIndex = '1';
     element.style.boxSizing = 'border-box';
   }
 
