@@ -55,6 +55,7 @@ export class DocInternalDragController {
 
   private _activePointerId: number | null = null
   private _data: InternalDragData | null = null
+  private readonly _sourceIds = new Set<string>()
   private _options: InternalDragOptions = {}
   private _startX = 0
   private _startY = 0
@@ -154,6 +155,11 @@ export class DocInternalDragController {
     // selected 状态）。selection 的清除推迟到真正进 dragging 的 _enterDragging。
     this._activePointerId = evt.pointerId
     this._data = normalized
+    this._sourceIds.clear()
+    if (normalized.kind === 'origin-block') this._sourceIds.add(normalized.blockId)
+    if (normalized.kind === 'origin-blocks') {
+      normalized.blockIds.forEach(id => this._sourceIds.add(id))
+    }
     this._options = { ...options }
     this._startX = evt.clientX
     this._startY = evt.clientY
@@ -299,6 +305,7 @@ export class DocInternalDragController {
     this._lastHitY = -9999
     this._activePointerId = null
     this._data = null
+    this._sourceIds.clear()
     this._options = {}
     this._pointerType = 'mouse'
     this._detachGlobalListeners()
@@ -390,6 +397,7 @@ export class DocInternalDragController {
   private _commitDrop(_evt: PointerEvent): void {
     this._state$.next('dropping')
     if (!this._data || !this._prevBlock || this._prevDragPosition === 'none') return
+    if (this._isSourceSubtree(this._prevBlock)) return
 
     if (this._data.kind === 'origin-block') {
       const source = this._safeGetBlockById(this._data.blockId)
@@ -500,6 +508,7 @@ export class DocInternalDragController {
     el.style.cssText = [
       'z-index: 10',
       'position: absolute',
+      'display: none',
       'top: 0',
       'left: 0',
       'height: 2px',
@@ -528,6 +537,11 @@ export class DocInternalDragController {
 
   private _moveDropLine(host: HTMLElement, position: DragPosition, hostRect = host.getBoundingClientRect()): void {
     if (!this._dropLine) return
+    if (this._prevBlock && this._isSourceSubtree(this._prevBlock)) {
+      this._clearDropTarget()
+      return
+    }
+    this._dropLine.style.display = ''
     const rootRect = this._cachedRootRect ?? this._refreshRootRect()
     const rect = calcDragLineRect(rootRect, hostRect, position)
     const prev = this._lastDropLineRect
@@ -553,9 +567,30 @@ export class DocInternalDragController {
     return calcPositionByRect(point, hostRect, allowColumnDrop)
   }
 
+  private _isSourceSubtree(block: BlockCraft.BlockComponent): boolean {
+    if (!this._sourceIds.size) return false
+    let cursor: BlockCraft.BlockComponent | null = block
+    while (cursor) {
+      if (this._sourceIds.has(cursor.id)) return true
+      cursor = cursor.parentBlock ?? null
+    }
+    return false
+  }
+
+  private _clearDropTarget(): void {
+    this._prevBlock = null
+    this._prevDragPosition = 'none'
+    this._prevTargetEl = null
+    this._inBlock = null
+    this._lastDropLineRect = null
+    if (this._dropLine) this._dropLine.style.display = 'none'
+    this._updateDragOverChain(null)
+  }
+
   private _hitTest(x: number, y: number): void {
-    // 4px movement threshold: reuse last result when delta is small
-    if (Math.abs(x - this._lastHitX) < 4 && Math.abs(y - this._lastHitY) < 4) {
+    const evtTarget = (document.elementFromPoint(x, y) ?? null) as Node | null
+    // 小位移也可能跨入源容器，只有命中元素不变时才能复用落点。
+    if (evtTarget === this._prevTargetEl && Math.abs(x - this._lastHitX) < 4 && Math.abs(y - this._lastHitY) < 4) {
       if (!this._prevBlock?.hostElement?.isConnected) return
       const hostRect = this._prevBlock.hostElement.getBoundingClientRect()
       const position = this._resolveDropPosition({ clientX: x, clientY: y }, hostRect)
@@ -567,7 +602,6 @@ export class DocInternalDragController {
     this._lastHitX = x
     this._lastHitY = y
 
-    const evtTarget = (document.elementFromPoint(x, y) ?? null) as Node | null
     const validTarget = evtTarget && evtTarget !== this.doc.root.hostElement
     const blockId = validTarget
       ? (evtTarget === this._prevTargetEl ? this._prevBlock?.id : closetBlockId(evtTarget))
@@ -580,6 +614,10 @@ export class DocInternalDragController {
     }
 
     if (active) {
+      if (this._isSourceSubtree(active)) {
+        this._clearDropTarget()
+        return
+      }
       this._prevTargetEl = evtTarget
       if (this._prevBlock !== active && active !== this._inBlock) {
         const schema = this.doc.schemas.get(active.flavour)

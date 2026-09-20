@@ -1,4 +1,4 @@
-import { DocInternalDragController, InternalDragState } from "./internal-drag.controller"
+import { DocInternalDragController, InternalDragState, InternalDragData } from "./internal-drag.controller"
 import { BlockReadonlyError, BlockReadonlyOperation } from "../doc"
 
 function makeMockDoc(): any {
@@ -38,6 +38,128 @@ function makePointerEvent(type: string, opts: Partial<PointerEventInit> = {}): P
 function makeBlock(id: string, host: HTMLElement): any {
   return { id, hostElement: host, flavour: 'paragraph' }
 }
+
+describe('DocInternalDragController source subtree exclusion', () => {
+  let doc: ReturnType<typeof makeMockDoc>
+  let ctrl: DocInternalDragController
+  let source: any
+  let child: any
+  let nested: any
+  let sibling: any
+  let hit: jasmine.Spy
+
+  beforeEach(() => {
+    doc = makeMockDoc()
+    document.body.appendChild(doc.root.hostElement)
+    const add = (id: string, parent?: any, renderUnit = false) => {
+      const host = document.createElement('div')
+      host.setAttribute('data-block-id', id)
+      spyOn(host, 'getBoundingClientRect').and.returnValue(new DOMRect(0, 0, 100, 20))
+      ;(parent?.hostElement ?? doc.root.hostElement).appendChild(host)
+      return {...makeBlock(id, host), parentBlock: parent, flavour: renderUnit ? 'callout' : 'paragraph'}
+    }
+    source = add('source', undefined, true)
+    child = add('child', source, true)
+    nested = add('nested', child)
+    sibling = add('sibling')
+    source.firstChildren = source.lastChildren = child
+    child.firstChildren = child.lastChildren = nested
+    const blocks = [source, child, nested, sibling]
+    doc.getBlockById = (id: string) => blocks.find(block => block.id === id)
+    doc.schemas.get = (flavour: string) => ({metadata: {renderUnit: flavour === 'callout'}})
+    hit = spyOn(document, 'elementFromPoint').and.returnValue(sibling.hostElement)
+    ctrl = new DocInternalDragController(doc)
+  })
+
+  afterEach(() => {
+    ctrl.destroy()
+    doc.root.hostElement.remove()
+  })
+
+  function start(data: InternalDragData = {kind: 'origin-block', blockId: 'source'}) {
+    const evt = makePointerEvent('pointerdown')
+    Object.defineProperty(evt, 'target', {value: source.hostElement})
+    ctrl.startDrag(evt, data)
+    move(sibling, 20)
+  }
+
+  function move(block: any, x: number) {
+    hit.and.returnValue(block.hostElement)
+    window.dispatchEvent(makePointerEvent('pointermove', {clientX: x, clientY: 20}))
+  }
+
+  for (const targetName of ['source', 'child', 'nested']) {
+    it(`clears the line and stale drop when entering ${targetName}, even within 4px`, () => {
+      start()
+      const line = (ctrl as any)._dropLine as HTMLElement
+      expect(getComputedStyle(line).display).not.toBe('none')
+      expect(sibling.hostElement.classList.contains('drag-over')).toBeTrue()
+
+      move({source, child, nested}[targetName], 21)
+
+      expect(getComputedStyle(line).display).toBe('none')
+      expect(doc.root.hostElement.querySelector('.drag-over')).toBeNull()
+      window.dispatchEvent(makePointerEvent('pointerup'))
+      expect(doc.dndService.onSortBlock).not.toHaveBeenCalled()
+    })
+  }
+
+  it('restores a valid sibling drop after leaving the source subtree', () => {
+    start()
+    move(nested, 21)
+    move(sibling, 22)
+    expect(getComputedStyle((ctrl as any)._dropLine).display).not.toBe('none')
+    window.dispatchEvent(makePointerEvent('pointerup'))
+    expect(doc.dndService.onSortBlock).toHaveBeenCalledWith(source, sibling, 'after')
+  })
+
+  it('excludes descendants of every source in a multi-block drag', () => {
+    start({kind: 'origin-blocks', blockIds: ['sibling', 'source']})
+    move(nested, 30)
+    expect(getComputedStyle((ctrl as any)._dropLine).display).toBe('none')
+    window.dispatchEvent(makePointerEvent('pointerup'))
+    expect(doc.dndService.onSortBlocks).not.toHaveBeenCalled()
+  })
+
+  it('preserves dragging an outside block into another render unit', () => {
+    start({kind: 'origin-block', blockId: 'sibling'})
+    move(child, 30)
+    expect(getComputedStyle((ctrl as any)._dropLine).display).not.toBe('none')
+    window.dispatchEvent(makePointerEvent('pointerup'))
+    expect(doc.dndService.onSortBlock).toHaveBeenCalledWith(sibling, nested, 'after')
+  })
+
+  it('preserves new-block insertion into containers', () => {
+    start({kind: 'new-block', flavour: 'paragraph'})
+    move(child, 30)
+    window.dispatchEvent(makePointerEvent('pointerup'))
+    expect(doc.dndService.onInsertNewBlock).toHaveBeenCalledWith('paragraph', {}, nested, 'after', {})
+  })
+
+  it('rejects render-unit padding when its resolved child is the drag source', () => {
+    start({kind: 'origin-block', blockId: 'nested'})
+    move(child, 30)
+    expect(getComputedStyle((ctrl as any)._dropLine).display).toBe('none')
+    expect(doc.root.hostElement.querySelector('.drag-over')).toBeNull()
+    window.dispatchEvent(makePointerEvent('pointerup'))
+    expect(doc.dndService.onSortBlock).not.toHaveBeenCalled()
+  })
+
+  it('clears a cached preview after its target is reparented into the source', () => {
+    start()
+    sibling.parentBlock = child
+    move(sibling, 21)
+    expect(getComputedStyle((ctrl as any)._dropLine).display).toBe('none')
+    expect(doc.root.hostElement.querySelector('.drag-over')).toBeNull()
+  })
+
+  it('rejects a cached target reparented into the source before pointerup', () => {
+    start()
+    sibling.parentBlock = child
+    window.dispatchEvent(makePointerEvent('pointerup'))
+    expect(doc.dndService.onSortBlock).not.toHaveBeenCalled()
+  })
+})
 
 describe('DocInternalDragController state machine', () => {
   let ctrl: DocInternalDragController
