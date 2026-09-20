@@ -174,6 +174,93 @@ describe('SelectionKeyboard surface boundary', () => {
   });
 });
 
+describe('SelectionKeyboard – closed-container visual line movement', () => {
+  let host: HTMLElement;
+
+  afterEach(() => {
+    document.getSelection()?.removeAllRanges();
+    host?.remove();
+  });
+
+  function setup(key = 'ArrowUp') {
+    const doc = createMockDoc() as any;
+    host = document.createElement('div');
+    host.contentEditable = 'true';
+    const ownerHost = document.createElement('div');
+    const paragraph = document.createElement('p');
+    const inside = document.createTextNode('inside text');
+    const outside = document.createTextNode('outside text');
+    paragraph.appendChild(inside);
+    ownerHost.appendChild(paragraph);
+    host.append(ownerHost, outside);
+    document.body.appendChild(host);
+    const owner = {id: 'owner', flavour: 'custom-container', doc, hostElement: ownerHost};
+    const block = {id: 'p', nodeType: BlockNodeType.editable, parentBlock: owner, hostElement: paragraph};
+    doc.getBlockById.and.callFake((id: string) => id === owner.id ? owner : block);
+    doc.schemas.get.and.returnValue({metadata: {selectionScope: 'container'}});
+    doc.placement = {isInAbsoluteLayout: () => true};
+    doc.selection.recalculate = jasmine.createSpy('recalculate');
+    const point = {blockId: block.id, block, type: 'text', offset: 3};
+    const selection = {collapsed: true, isAllSelected: false, firstBlock: block, start: point, anchor: point, head: point};
+    const state = {selection, raw: {key}, composing: false};
+    const ctx = {preventDefault: jasmine.createSpy('preventDefault'), get: () => state};
+    const native = document.getSelection()!;
+    native.collapse(inside, 3);
+    const modify = spyOn(native, 'modify').and.stub();
+    const surface = {
+      ownerDocument: document,
+      getNativeSelection: () => native,
+      focusEditingHost: jasmine.createSpy('focusEditingHost'),
+    };
+    const keyboard = new SelectionKeyboard(doc, surface as any) as any;
+    return {doc, ctx, state, native, modify, inside, outside, keyboard, surface, paragraph};
+  }
+
+  for (const key of ['ArrowUp', 'ArrowDown']) {
+    it(`rejects an escaped ${key} target before requesting any scroll`, () => {
+      const h = setup(key);
+      h.modify.and.callFake(() => h.native.collapse(h.outside, 2));
+
+      expect(h.keyboard._handlerUpOrDown(h.ctx)).toBeTrue();
+
+      expect(h.ctx.preventDefault).toHaveBeenCalled();
+      expect(h.modify).toHaveBeenCalledOnceWith('move', key === 'ArrowUp' ? 'backward' : 'forward', 'line');
+      expect(h.native.focusNode).toBe(h.inside);
+      expect(h.native.focusOffset).toBe(3);
+      expect(h.doc.selection.recalculate).not.toHaveBeenCalled();
+      expect(h.doc.selection.scrollSelectionIntoView).not.toHaveBeenCalled();
+      expect(h.surface.focusEditingHost).toHaveBeenCalledOnceWith('p');
+    });
+  }
+
+  it('publishes an accepted native line target before revealing it', () => {
+    const h = setup();
+    h.modify.and.callFake(() => h.native.collapse(h.inside, 1));
+
+    expect(h.keyboard._handlerUpOrDown(h.ctx)).toBeTrue();
+
+    expect(h.native.focusOffset).toBe(1);
+    expect(h.doc.selection.recalculate).toHaveBeenCalledBefore(h.doc.selection.scrollSelectionIntoView);
+    expect(h.surface.focusEditingHost).not.toHaveBeenCalled();
+  });
+
+  for (const reason of ['flow', 'composing', 'modified', 'vertical']) {
+    it(`preserves existing native navigation for ${reason} input`, () => {
+      const h = setup();
+      if (reason === 'flow') h.doc.placement.isInAbsoluteLayout = () => false;
+      if (reason === 'composing') h.state.composing = true;
+      if (reason === 'modified') (h.state.raw as any).altKey = true;
+      if (reason === 'vertical') h.paragraph.style.writingMode = 'vertical-rl';
+
+      expect(h.keyboard._handlerUpOrDown(h.ctx)).toBeUndefined();
+
+      expect(h.ctx.preventDefault).not.toHaveBeenCalled();
+      expect(h.modify).not.toHaveBeenCalled();
+      expect(h.doc.selection.recalculate).not.toHaveBeenCalled();
+    });
+  }
+});
+
 describe('SelectionKeyboard – Left/Right gap navigation', () => {
   let doc: MockDoc;
   let keyboard: any;

@@ -587,6 +587,9 @@ export class SelectionKeyboard {
         this._stepOutOfGap(sel.firstBlock, sel.start.side, isBack)
         return true
       }
+      if (collapsed && sel.start.type === 'text') {
+        return this._moveLineWithinAbsoluteContainer(ctx, isBack)
+      }
       return
     }
     ctx.preventDefault()
@@ -618,6 +621,43 @@ export class SelectionKeyboard {
         this.doc.selection.setCursorAtBlock(focusBlock, isBack)
       }
     }
+    return true
+  }
+
+  private _moveLineWithinAbsoluteContainer(ctx: UIEventStateContext, isBack: boolean): true | undefined {
+    const state = ctx.get('keyboardState')
+    const event = state.raw
+    if (state.composing || event.isComposing || event.keyCode === 229 ||
+      event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+
+    const selection = state.selection
+    const owner = this._containerScopeForSelection(selection)
+    if (!owner || !this._isInsideAbsoluteObject(owner)) return
+    const native = this.surface.getNativeSelection()
+    if (!native?.rangeCount || !native.isCollapsed || typeof native.modify !== 'function') return
+    const source = native.getRangeAt(0).cloneRange()
+    if (!owner.hostElement.contains(source.commonAncestorContainer)) return
+
+    // Up/Down traverse visual lines in horizontal writing. Vertical writing
+    // uses character movement on this axis and keeps its native key semantics.
+    const view = this.surface.ownerDocument.defaultView
+    if (view?.getComputedStyle(selection.firstBlock.hostElement).writingMode !== 'horizontal-tb') return
+
+    // A native key default reveals its target before selectionchange can reject
+    // an escape. Resolve the visual line synchronously, validate its scope, then
+    // reveal only an accepted caret through Selection's nested viewport path.
+    ctx.preventDefault()
+    native.modify('move', isBack ? 'backward' : 'forward', 'line')
+    if (!native.rangeCount || !native.anchorNode || !native.focusNode ||
+      !owner.hostElement.contains(native.anchorNode) || !owner.hostElement.contains(native.focusNode)) {
+      native.removeAllRanges()
+      native.addRange(source)
+      this.surface.focusEditingHost(selection.start.blockId)
+      return true
+    }
+
+    this.doc.selection.recalculate()
+    this.doc.selection.scrollSelectionIntoView()
     return true
   }
 

@@ -963,6 +963,7 @@ export class ClipboardManager {
       } else {
         this.doc.selection.setCursorAt(block, index)
       }
+      this.doc.selection.scrollSelectionIntoView?.()
       return true
     } catch (e) {
       this.doc.logger.warn('setInlineRange after paste failed', e)
@@ -993,6 +994,7 @@ export class ClipboardManager {
         type: 'selected',
         block: endBlock,
       }) as any)
+      this.doc.selection.scrollSelectionIntoView?.()
     } catch (e) {
       this.doc.logger.warn('setCrossBlockRange after paste failed', e)
     }
@@ -1008,6 +1010,7 @@ export class ClipboardManager {
       } else if (!focusBlockSelectionEdge(this.doc, block, !atEnd)) {
         this.doc.selection.setCursorAtBlock(block, !atEnd, false)
       }
+      this.doc.selection.scrollSelectionIntoView?.()
     } catch (e) {
       this.doc.logger.warn('setCursor after paste failed', e)
     }

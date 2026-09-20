@@ -1,5 +1,5 @@
 import {fromEvent, takeUntil} from "rxjs";
-import {IS_MAC, IS_SAFARI} from "../../../../global";
+import {IS_MAC} from "../../../../global";
 import {EventScopeSourceType, EventSourceState, KeyboardEventState} from "../state";
 import {UIEventState, UIEventStateContext} from "../base";
 import {EventOptions} from "../dispatcher";
@@ -52,8 +52,10 @@ export class KeyboardControl {
   }
 
   private _shouldTrigger = (event: KeyboardEvent) => {
-    // evt.isComposing is false when pressing Enter/Backspace when composing in Safari
-    if (event.isComposing || (IS_SAFARI && event.keyCode === 229 && (event.key === 'Enter' || event.key === 'Backspace'))) return false;
+    // IME opening/confirmation keys can arrive outside compositionstart/end,
+    // with isComposing=false but keyCode=229 (including Chrome). Leave both
+    // keydown and keyup to IME before resolving a transient model selection.
+    if (event.isComposing || event.keyCode === 229) return false;
     if (isNativeInputTarget(event.target)) return false
     const mod = IS_MAC ? event.metaKey : event.ctrlKey;
     return !(['c', 'v', 'x'].includes(event.key) &&

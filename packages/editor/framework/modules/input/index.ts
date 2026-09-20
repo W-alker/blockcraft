@@ -540,6 +540,7 @@ export class InputTransformer {
     }
     try {
       this.doc.selection.setCursorAt(block as EditableBlockComponent, offset);
+      this.doc.selection.scrollSelectionIntoView?.();
       return true;
     } catch {
       return false;
@@ -589,6 +590,8 @@ export class InputTransformer {
     const safeIndex = Math.max(0, Math.min(index, block.textLength ?? index));
     if (!this._setCompositionTextCursor(block, safeIndex)) {
       this.doc.selection.blur();
+    } else {
+      this.doc.selection.scrollSelectionIntoView?.();
     }
   }
 
@@ -1283,10 +1286,18 @@ export class InputTransformer {
       return true;
     }
     this._resetOrphanedCompositionSession(ev);
+    // Chrome can send the terminal insertText with isComposing=false before
+    // compositionend. Its DOM range still includes uncommitted IME text, so
+    // the accepted session must retain ownership until compositionend commits.
+    const isCompositionInput = ev.isComposing || (
+      ev.inputType === "insertText" &&
+      this.doc.event.status.isComposing &&
+      this.compositionSession.isActive
+    );
     // compositionStart captures the accepted model/materialized target. During
     // IME updates, browser target ranges can be transient or stale; do not let
     // them retarget the commit anchor.
-    if (!ev.isComposing) {
+    if (!isCompositionInput) {
       this.compositionSession.updateAnchorFromInputEvent(ev, {
         isComposing: true,
       });
@@ -1306,8 +1317,8 @@ export class InputTransformer {
       return;
     }
 
-    if (ev.isComposing || ev.defaultPrevented) {
-      if (ev.isComposing && !this.compositionSession.isActive) {
+    if (isCompositionInput || ev.defaultPrevented) {
+      if (isCompositionInput && !this.compositionSession.isActive) {
         ev.preventDefault();
       }
       return;
@@ -1520,6 +1531,7 @@ export class InputTransformer {
       );
       editableBlock.rerender();
       editableBlock.setInlineRange(plan.offset + text.length);
+      this.doc.selection.scrollSelectionIntoView?.();
     } else {
       // Normal input: controlled rendering — preventDefault lets observer sync blot tree
       ev.preventDefault();
@@ -2440,6 +2452,7 @@ export class InputTransformer {
     if (state.raw.shiftKey) {
       block.insertText(offset, STR_LINE_BREAK);
       block.setInlineRange(offset + 1);
+      this.doc.selection.scrollSelectionIntoView?.();
       return true;
     }
 

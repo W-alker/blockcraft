@@ -1111,6 +1111,33 @@ describe('SelectionManager DOM selection normalization', () => {
     });
   }
 
+  it('measures an adjacent glyph when the browser gives a nonempty caret no geometry', () => {
+    const {manager, block, blockHost, rootHost, doc} = createManager();
+    const text = document.createTextNode('abc');
+    blockHost.append(text);
+    Object.assign(block, {
+      nodeType: BlockNodeType.editable,
+      textLength: 3,
+      containerElement: blockHost,
+      runtime: {mapper: {modelPointToDomPoint: (_container: HTMLElement, offset: number) => ({node: text, offset})}},
+    });
+    (doc as any).isEditable = (value: any) => value.nodeType === BlockNodeType.editable;
+    spyOn((manager as any)._surface, 'getRangeRect').and.callFake((range: any) =>
+      range.collapsed ? new DOMRect() : range.getBoundingClientRect());
+    try {
+      manager.setCursorAt(block as any, 0);
+      const rect = (manager as any)._getSelectionHeadRect();
+      expect(rect.width).toBeGreaterThan(0);
+      expect(rect.height).toBeGreaterThan(0);
+      expect(blockHost.textContent).toBe('abc');
+      expect(document.getSelection()?.isCollapsed).toBeTrue();
+      expect(document.getSelection()?.anchorOffset).toBe(0);
+    } finally {
+      doc.onDestroy$.next();
+      rootHost.remove();
+    }
+  });
+
   it('does not report block text for a collapsed gap cursor', () => {
     const {manager} = createManager();
     const gapSelection = manager.createSelection({

@@ -114,7 +114,7 @@ for (const paginated of [false, true]) {
         rootCount: doc.model.getChildrenIds(doc.rootId).length,
         caretBottom: caret?.bottom,
         viewportBottom: viewport.getBoundingClientRect().bottom,
-        lastText: doc.getBlockById(doc.model.getChildrenIds(doc.rootId).at(-1)).hostElement.textContent.replace(/\u200b/g, ''),
+        lastText: doc.getBlockById(doc.model.getChildrenIds(doc.rootId).at(-1)).hostElement.textContent.replace(/[\u200b\u200c]/g, ''),
       }
     })
     expect(result.reverseWrites).toEqual([])

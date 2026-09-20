@@ -117,6 +117,43 @@ describe('KeyboardControl stale selection guard', () => {
     expect(context.get('keyboardState').selection).toBe(dispatcher.currentSelection);
   });
 
+  for (const key of ['Enter', ' ', 'Backspace', 'a']) {
+    for (const type of ['keydown', 'keyup']) {
+      it(`leaves IME boundary ${type} ${JSON.stringify(key)} to the input method`, () => {
+        for (const selection of [null, staleSelection(), liveSelection()]) {
+          dispatcher.currentSelection = selection;
+          const event = new KeyboardEvent(type, {
+            key, keyCode: 229, isComposing: false, bubbles: true, cancelable: true,
+          });
+          host.dispatchEvent(event);
+
+          expect(event.defaultPrevented).toBeFalse();
+          expect(dispatcher.doc.selection.blur).not.toHaveBeenCalled();
+          expect(dispatcher.run).not.toHaveBeenCalled();
+        }
+      });
+    }
+  }
+
+  it('leaves an active native composition key to the input method', () => {
+    const event = dispatchKeyDown('Enter', {isComposing: true});
+
+    expect(event.defaultPrevented).toBeFalse();
+    expect(dispatcher.doc.selection.blur).not.toHaveBeenCalled();
+    expect(dispatcher.run).not.toHaveBeenCalled();
+  });
+
+  for (const key of ['Enter', ' ', 'Backspace']) {
+    it(`dispatches ordinary ${JSON.stringify(key)} after composition ends`, () => {
+      dispatcher.currentSelection = liveSelection();
+
+      dispatchKeyDown(key);
+
+      expect(dispatcher.run).toHaveBeenCalledTimes(1);
+      expect(dispatcher.doc.selection.blur).not.toHaveBeenCalled();
+    });
+  }
+
   it('runs a matching root hotkey while the model selection is temporarily missing', () => {
     dispatcher.currentSelection = null;
     const handler = jasmine.createSpy('undo').and.callFake(context => {

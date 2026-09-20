@@ -56,6 +56,7 @@ import {
   hasClosedContainerEditingBoundary,
   hasSelectableBlockFrame,
 } from './interaction-policy';
+import {isVisibleInSelectionViewports, revealInSelectionViewports, selectionScrollViewports} from './scroll-viewport';
 
 const DOM_PROJECTION_RETRY_LIMIT = 8
 
@@ -144,6 +145,8 @@ export class SelectionManager {
       ensureViewMounted: blockIds => this._ensureViewMounted(blockIds),
       scrollToBlock: blockId => {
         if (!this.doc.virtualization?.enabled) return false
+        // A mounted nested editor needs caret reveal, not root-block centering.
+        if (this._selectionScrollViewports({blockId}).length) return false
         void this.doc.virtualization.scrollToBlock(blockId)
         return true
       },
@@ -2401,10 +2404,12 @@ export class SelectionManager {
   }
 
   scrollSelectionIntoView() {
-    const rect = this._getSelectionHeadRect() ?? this.getSelectionRect()
-    if (!rect || rect.height === 0) return
+    let rect = this._getSelectionHeadRect() ?? this.getSelectionRect()
+    if (!rect || (!rect.width && !rect.height)) return
 
     const container = this.doc.scrollContainer!
+    if (!container) return
+    rect = revealInSelectionViewports(rect, this._selectionScrollViewports(this.value?.head))
     const cRect = this._surface.getElementRect(container)
     const padding = 24
 
@@ -2422,7 +2427,15 @@ export class SelectionManager {
     if (!rect || (!rect.width && !rect.height)) return false
 
     const viewport = this._surface.getElementRect(container)
-    return rect.top >= viewport.top && rect.bottom <= viewport.bottom
+    return rect.top >= viewport.top && rect.bottom <= viewport.bottom &&
+      isVisibleInSelectionViewports(rect, this._selectionScrollViewports(selection.head))
+  }
+
+  private _selectionScrollViewports(point: {blockId: string} | undefined): HTMLElement[] {
+    const container = this.doc.scrollContainer
+    if (!point || !container) return []
+    const block = this._readBlock(point.blockId)
+    return selectionScrollViewports(block?.hostElement, container)
   }
 
   private _getSelectionHeadRect(): DOMRect | null {
@@ -2454,9 +2467,17 @@ export class SelectionManager {
       // An empty paragraph can project to an element boundary (before its BR),
       // whose collapsed Range has no geometry even though the line is visible.
       // Use that empty line's content box so Enter can reveal the new paragraph.
-      if (rect.height === 0 && point.type === 'text' &&
-        this.doc.isEditable(block) && block.textLength === 0) {
-        return this._surface.getElementRect(block.containerElement)
+      if (!rect.width && !rect.height && point.type === 'text' && this.doc.isEditable(block)) {
+        if (block.textLength === 0) return this._surface.getElementRect(block.containerElement)
+        // Firefox can report a zero-size caret at the start of vertical text.
+        // Measure the adjacent model character without touching native selection
+        // or inserting a DOM marker; its box includes the missing caret edge.
+        const index = Math.min(point.offset!, block.textLength - 1)
+        const adjacent = this._buildDomRange(
+          pointToLegacy({...point, offset: index} as ISelectionPoint),
+          pointToLegacy({...point, offset: index + 1} as ISelectionPoint),
+        )
+        return this._surface.getRangeRect(adjacent)
       }
       return rect
     } catch {

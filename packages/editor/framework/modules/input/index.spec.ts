@@ -884,6 +884,60 @@ describe('InputTransformer beforeInput range resolution', () => {
     expect(preventDefault).not.toHaveBeenCalled()
   })
 
+  it('keeps an unflagged terminal insertText in the active composition session', () => {
+    const event = {
+      target: null,
+      inputType: 'insertText',
+      data: 'd',
+      isComposing: false,
+      defaultPrevented: false,
+      getTargetRanges: jasmine.createSpy('getTargetRanges').and.returnValue([{}]),
+      preventDefault: jasmine.createSpy('preventDefault'),
+    }
+    const doc = {
+      event: {...eventStub(), status: {isComposing: true}},
+      logger: {warn: jasmine.createSpy('warn')},
+      selection: {
+        value: null,
+        normalizeRange: jasmine.createSpy('normalizeRange').and.throwError('transient IME range'),
+        blur: jasmine.createSpy('blur'),
+      },
+    }
+    const transformer = new InputTransformer(doc as any) as any
+    spyOnProperty(transformer.compositionSession, 'isActive', 'get').and.returnValue(true)
+    spyOn(transformer.compositionSession, 'updateAnchorFromInputEvent')
+
+    transformer['_handleBeforeInput']({get: () => ({event})} as any)
+
+    expect(event.preventDefault).not.toHaveBeenCalled()
+    expect(doc.selection.blur).not.toHaveBeenCalled()
+    expect(event.getTargetRanges).not.toHaveBeenCalled()
+    expect(transformer.compositionSession.updateAnchorFromInputEvent).not.toHaveBeenCalled()
+  })
+
+  it('still rejects unowned insertText while the event layer reports composing', () => {
+    const event = {
+      target: null,
+      inputType: 'insertText',
+      data: 'd',
+      isComposing: false,
+      defaultPrevented: false,
+      getTargetRanges: () => [],
+      preventDefault: jasmine.createSpy('preventDefault'),
+    }
+    const doc = {
+      event: {...eventStub(), status: {isComposing: true}},
+      selection: {value: null, blur: jasmine.createSpy('blur')},
+    }
+    const transformer = new InputTransformer(doc as any) as any
+    spyOn(transformer.compositionSession, 'updateAnchorFromInputEvent')
+
+    transformer['_handleBeforeInput']({get: () => ({event})} as any)
+
+    expect(event.preventDefault).toHaveBeenCalled()
+    expect(doc.selection.blur).toHaveBeenCalled()
+  })
+
   it('replaces a model boundary selection from beforeInput', () => {
     const preventDefault = jasmine.createSpy('preventDefault')
     const {doc, transformer, selection, paragraph} = createBoundaryEditingHarness()
