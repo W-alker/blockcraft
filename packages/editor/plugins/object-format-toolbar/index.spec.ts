@@ -3,6 +3,84 @@ import { BlockNodeType } from "../../framework/block-std";
 import { ObjectFormatToolbarPlugin } from "./index";
 
 describe("ObjectFormatToolbarPlugin object/edit interaction", () => {
+  for (const [flavour, surfaceClass, handle] of [
+    ["shape", "shape-block__shell", '<shape-resizer><span class="shape-resizer__move-edge"></span></shape-resizer>'],
+    ["text-box", "text-box-block__surface", '<shape-resizer><span class="shape-resizer__move-edge"></span></shape-resizer>'],
+    ["word-art", "word-art-block__surface", '<shape-resizer><span class="shape-resizer__move-edge"></span></shape-resizer>'],
+    ["text-box", "text-box-block__surface", '<span class="text-box-block__object-handle"></span>'],
+    ["word-art", "word-art-block__surface", '<span class="word-art-block__object-handle"></span>'],
+  ]) {
+    for (const mode of ["absolute", "relative"]) {
+      for (const readonly of [false, true]) {
+        it(`routes ${flavour} ${handle} through ${mode} dragging (readonly=${readonly})`, () => {
+          const plugin = new ObjectFormatToolbarPlugin();
+          const root = document.createElement("div");
+          root.innerHTML = `<div class="${surfaceClass}">${handle}</div>`;
+          document.body.appendChild(root);
+          try {
+            const shell = root.firstElementChild!;
+            const block = {id: "object-1", flavour, hostElement: shell,
+              shapeProps: {shapeType: "diamond"}};
+            const selectBlock = jasmine.createSpy("selectBlock");
+            const placementDrag = jasmine.createSpy("placementDrag");
+            const flowDrag = jasmine.createSpy("flowDrag");
+            (plugin as any).doc = {
+              root: {hostElement: root}, selection: {selectBlock},
+              readonlyManager: {isReadonly: () => readonly},
+              placement: {getState: () => ({mode}), startDrag: placementDrag},
+              dragController: {state: "idle", startDrag: flowDrag},
+            };
+            spyOn<any>(plugin, "resolveBlockFromSurface").and.returnValue(block);
+            spyOn<any>(plugin, "confirmShapeClickSelection");
+            const event = new PointerEvent("pointerdown", {button: 0, cancelable: true});
+            Object.defineProperty(event, "target", {value: shell.querySelector("span")});
+            (plugin as any).handleExistingObjectPointerDown(event);
+
+            expect(selectBlock).toHaveBeenCalledOnceWith(block);
+            expect(event.defaultPrevented).toBeTrue();
+            expect(placementDrag).toHaveBeenCalledTimes(!readonly && mode === "absolute" ? 1 : 0);
+            expect(flowDrag).toHaveBeenCalledTimes(!readonly && mode === "relative" ? 1 : 0);
+            if (!readonly && mode === "absolute") {
+              expect(placementDrag).toHaveBeenCalledWith(event, block);
+            }
+            if (!readonly && mode === "relative") {
+              expect(flowDrag).toHaveBeenCalledWith(event,
+                {kind: "origin-block", blockId: block.id}, {ghostLabel: jasmine.any(String)});
+            }
+          } finally {
+            root.remove();
+          }
+        });
+      }
+    }
+  }
+
+  for (const control of [
+    '<shape-resizer><button class="shape-resizer__handle"></button></shape-resizer>',
+    '<shape-resizer><button class="shape-resizer__rotate"></button></shape-resizer>',
+    '<shape-geometry-editor><button></button></shape-geometry-editor>',
+    '<shape-adjustment-editor><button></button></shape-adjustment-editor>',
+  ]) {
+    it(`leaves Shape controls on their own gesture path: ${control}`, () => {
+      const plugin = new ObjectFormatToolbarPlugin();
+      const root = document.createElement("div");
+      root.innerHTML = `<div class="shape-block__shell">${control}</div>`;
+      document.body.appendChild(root);
+      try {
+        const selectBlock = jasmine.createSpy("selectBlock");
+        (plugin as any).doc = {root: {hostElement: root}, selection: {selectBlock}};
+        spyOn<any>(plugin, "resolveBlockFromSurface").and.returnValue({id: "shape-1"});
+        const event = new PointerEvent("pointerdown", {button: 0, cancelable: true});
+        Object.defineProperty(event, "target", {value: root.querySelector("button")});
+        (plugin as any).handleExistingObjectPointerDown(event);
+        expect(selectBlock).not.toHaveBeenCalled();
+        expect(event.defaultPrevented).toBeFalse();
+      } finally {
+        root.remove();
+      }
+    });
+  }
+
   it("focuses existing text from blank space but never creates text on a single press", () => {
     const plugin = new ObjectFormatToolbarPlugin();
     const root = document.createElement("div");

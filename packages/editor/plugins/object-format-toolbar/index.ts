@@ -1059,16 +1059,49 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
       return;
     }
 
-    const shapeShell = target.closest<HTMLElement>(".shape-block__shell");
-    if (shapeShell) {
+    const surface = target.closest<HTMLElement>(
+      ".shape-block__shell, .text-box-block__surface, .word-art-block__surface",
+    );
+    if (!surface) return;
+    const flavour = surface.classList.contains("shape-block__shell")
+      ? "shape"
+      : surface.classList.contains("text-box-block__surface")
+        ? "text-box"
+        : "word-art";
+    const block = this.resolveBlockFromSurface(surface, flavour);
+    if (!block) return;
+
+    // 三类对象的边框和对象手柄共用选中、只读检查与拖拽入口。
+    if (target.closest(
+      ".shape-resizer__move-edge, .text-box-block__object-handle, .word-art-block__object-handle",
+    )) {
+      event.preventDefault();
+      event.stopPropagation();
+      this.doc.selection.selectBlock(block);
+      if (!this.doc.readonlyManager.isReadonly(block)) {
+        this.startObjectDrag(event, block);
+      }
+      return;
+    }
+
+    if (target.closest("shape-resizer")) {
+      if (flavour === "text-box") {
+        this.textBoxResizerGesture = {
+          blockId: block.id,
+          pointerId: event.pointerId,
+        };
+        this.queueObjectSelection(block.id);
+      }
+      return;
+    }
+
+    if (flavour === "shape") {
       if (
         target.closest(
-          "shape-resizer, shape-geometry-editor, shape-adjustment-editor, .shape-text-block",
+          "shape-geometry-editor, shape-adjustment-editor, .shape-text-block",
         )
       )
         return;
-      const block = this.resolveBlockFromSurface(shapeShell, "shape");
-      if (!block) return;
       const selection = this.doc.selection.value;
       const textFrame = target.closest(".shape-block__text-frame");
       const textBlock = block.firstChildren;
@@ -1088,73 +1121,14 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
       }
       this.doc.selection.selectBlock(block);
       this.confirmShapeClickSelection(event, block);
-      if (this.doc.readonlyManager.isReadonly(block)) return;
-      if (this.doc.placement.getState(block).mode === "absolute") {
-        this.doc.placement.startDrag(event, block);
-      } else if (this.doc.dragController.state === "idle") {
-        this.doc.dragController.startDrag(
-          event,
-          { kind: "origin-block", blockId: block.id },
-          {
-            ghostLabel: getShapeDefinition(
-              (block as BlockCraft.IBlockComponents["shape"]).shapeProps
-                .shapeType,
-            ).label,
-          },
-        );
+      if (!this.doc.readonlyManager.isReadonly(block)) {
+        this.startObjectDrag(event, block);
       }
       return;
     }
 
-    const textBoxSurface = target.closest<HTMLElement>(
-      ".text-box-block__surface",
-    );
-    if (textBoxSurface) {
-      const block = this.resolveBlockFromSurface(textBoxSurface, "text-box");
-      if (!block) return;
-      const resizer = target.closest("shape-resizer");
-      const moveEdge = target.closest(".shape-resizer__move-edge");
-      const objectHandle = target.closest(".text-box-block__object-handle");
-      if (resizer && !moveEdge) {
-        this.textBoxResizerGesture = {
-          blockId: block.id,
-          pointerId: event.pointerId,
-        };
-        this.queueObjectSelection(block.id);
-        return;
-      }
-      // The selectable-frame Schema contract continues to own ordinary frame
-      // clicks; the toolbar only claims the established move handles.
-      if (!moveEdge && !objectHandle) return;
-      event.preventDefault();
-      event.stopPropagation();
-      this.doc.selection.selectBlock(block);
-      if (!this.doc.readonlyManager.isReadonly(block)) {
-        this.startObjectDrag(event, block, "文本框");
-      }
-      return;
-    }
-
-    const wordArtSurface = target.closest<HTMLElement>(
-      ".word-art-block__surface",
-    );
-    if (!wordArtSurface) return;
-    const block = this.resolveBlockFromSurface(wordArtSurface, "word-art") as
-      | BlockCraft.IBlockComponents["word-art"]
-      | null;
-    if (!block) return;
-    const moveEdge = target.closest(".shape-resizer__move-edge");
-    const objectHandle = target.closest(".word-art-block__object-handle");
-    if (target.closest("shape-resizer") && !moveEdge) return;
-    if (moveEdge || objectHandle) {
-      event.preventDefault();
-      event.stopPropagation();
-      this.doc.selection.selectBlock(block);
-      if (!this.doc.readonlyManager.isReadonly(block)) {
-        this.startObjectDrag(event, block, "艺术字");
-      }
-      return;
-    }
+    // 文本框的普通边框点击仍由 Schema 选区契约处理。
+    if (flavour === "text-box") return;
     if (this.doc.readonlyManager.isReadonly(block)) {
       event.preventDefault();
       event.stopPropagation();
@@ -1168,7 +1142,7 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
       event.preventDefault();
       event.stopPropagation();
     }
-    block.enterEditing();
+    (block as BlockCraft.IBlockComponents["word-art"]).enterEditing();
   }
 
   private resolveBlockFromSurface(
@@ -1190,13 +1164,17 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
   private startObjectDrag(
     event: PointerEvent,
     block: BlockCraft.BlockComponent,
-    ghostLabel: string,
   ): void {
     if (this.doc.placement.getState(block).mode === "absolute") {
       this.doc.placement.startDrag(event, block);
       return;
     }
     if (this.doc.dragController.state !== "idle") return;
+    const ghostLabel = block.flavour === "shape"
+      ? getShapeDefinition(
+          (block as BlockCraft.IBlockComponents["shape"]).shapeProps.shapeType,
+        ).label
+      : block.flavour === "text-box" ? "文本框" : "艺术字";
     this.doc.dragController.startDrag(
       event,
       { kind: "origin-block", blockId: block.id },

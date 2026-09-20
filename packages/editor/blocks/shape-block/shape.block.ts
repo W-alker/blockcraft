@@ -196,6 +196,7 @@ const shapeRotationTransform = (rotation: unknown): string => {
           [maxWidthContainer]="placementContainer"
           [maxWidthResolver]="objectMaxWidthResolver"
           [rotation]="shapeProps.rotation"
+          [borderDraggable]="true"
           (resizeCommit)="onResizeCommit($event)"
           (rotateCommit)="onRotateCommit($event)">
         </shape-resizer>
