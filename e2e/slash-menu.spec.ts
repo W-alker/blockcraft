@@ -47,6 +47,44 @@ async function editorSelectionSnapshot(page: Page) {
   });
 }
 
+test('slash local inline image loads and survives snapshot reconstruction', async ({page}) => {
+  await initialize(page);
+  const blockId = await createEmptyParagraphWithCaret(page);
+  await page.keyboard.type('/');
+  await page.locator('block-transformer-contextmenu')
+    .getByRole('option', {name: /^行内图片/}).click();
+  const picker = page.locator('media-creator');
+  await picker.getByRole('button', {name: '本地上传'}).click();
+  await picker.locator('input[type=file]').setInputFiles({
+    name: 'inline-image.svg',
+    mimeType: 'image/svg+xml',
+    buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="32"><rect width="64" height="32" fill="red"/></svg>'),
+  });
+  await picker.getByRole('button', {name: '确定', exact: true}).click();
+  const image = page.locator(`[data-block-id="${blockId}"] img.bc-inline-image`);
+  await expect(image).toBeVisible();
+  await expect.poll(() => image.evaluate((element: HTMLImageElement) =>
+    element.complete && element.naturalWidth === 64,
+  )).toBe(true);
+  await expect(image).not.toHaveAttribute('src', /__blockcraft_local__:/);
+
+  const copyId = await page.evaluate(({selector, id}) => {
+    const doc = (window as any).ng.getComponent(document.querySelector(selector)).doc;
+    const original = doc.getBlockById(id).toSnapshot(true);
+    const imageDelta = original.children.find((delta: any) => delta.insert?.image);
+    if (!imageDelta || imageDelta.insert.image.startsWith('__blockcraft_local__:')) {
+      throw new Error('Snapshot still contains an unuploaded image');
+    }
+    const copy = doc.schemas.createSnapshot('paragraph', [original.children]);
+    doc.crud.insertBlockSnapshots(doc.rootId, 0, [copy]);
+    return copy.id as string;
+  }, {selector: editorSelector, id: blockId});
+  const restored = page.locator(`[data-block-id="${copyId}"] img.bc-inline-image`);
+  await expect.poll(() => restored.evaluate((element: HTMLImageElement) =>
+    element.complete && element.naturalWidth === 64,
+  )).toBe(true);
+});
+
 test("slash menu supports arrow navigation and Chinese pinyin-initial search", async ({page}) => {
   await initialize(page);
   const blockId = await createEmptyParagraphWithCaret(page);

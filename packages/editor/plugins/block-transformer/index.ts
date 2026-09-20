@@ -21,6 +21,7 @@ import {
   BindHotKey,
   BlockNodeType,
   type DeltaInsert,
+  DOC_FILE_SERVICE_TOKEN,
   DocPlugin,
   EditableBlockComponent,
   EventListen,
@@ -1338,10 +1339,23 @@ export class BlockTransformerPlugin extends DocPlugin {
     const params = await creator.getParamsByScheme(schema);
     if (!params) return;
     const source = (params as any[])[0];
-    const src = typeof source === "string" ? source : source?.src ?? source?.url;
-    const delta = createInlineImageDelta(src, source?.width, source?.height);
-    if (!delta) return;
-    context.replace([delta]);
+    let src = typeof source === "string" ? source : source?.src ?? source?.url;
+    if (typeof src !== "string" || !src.trim()) return;
+    const fileService = this.doc.injector.get(DOC_FILE_SERVICE_TOKEN);
+    const localUrl = fileService.isLocalObjectURL(src) ? src : undefined;
+    try {
+      // Image blocks own their upload lifecycle; inline embeds render src
+      // directly, so resolve the creator's temporary file before insertion.
+      if (localUrl) {
+        const file = fileService.getFileByObjectURL(localUrl);
+        if (!file) throw new Error("本地图片已失效，请重新选择");
+        src = await fileService.uploadImg(file);
+      }
+      const delta = createInlineImageDelta(src, source?.width, source?.height);
+      if (delta) context.replace([delta]);
+    } finally {
+      if (localUrl) fileService.removeObjectURL(localUrl);
+    }
   }
 
   private openMention(context: SlashCommandContext) {
