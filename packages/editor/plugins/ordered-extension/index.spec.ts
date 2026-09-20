@@ -208,7 +208,7 @@ describe('OrderedBlockPlugin', () => {
   })
 
   for (const boundary of [createBlock('shallower', 'paragraph', {depth: 0}),
-    createBlock('heading', 'paragraph', {depth: 1, heading: 1})]) {
+    createOrderedBlock('heading', {depth: 1, heading: 1})]) {
     it(`does not continue across the ${boundary.id} boundary`, async () => {
       const {onChildrenUpdate$, plugin, registerParent} = createPluginHarness()
       const blocks = [createOrderedBlock('a', {depth: 1}), boundary,
@@ -221,6 +221,53 @@ describe('OrderedBlockPlugin', () => {
       plugin.destroy()
     })
   }
+
+  it('continues explicitly across non-ordered headings', async () => {
+    const {onChildrenUpdate$, plugin, registerParent} = createPluginHarness()
+    const blocks = [createOrderedBlock('a', {depth: 1}),
+      createBlock('heading', 'paragraph', {depth: 1, heading: 1}),
+      createOrderedBlock('b', {depth: 1, continuePrevious: true})]
+    const parent = attachToParent(blocks)
+    registerParent(parent, blocks)
+    triggerInserted(onChildrenUpdate$, parent, blocks[2])
+    await waitForAutoOrder()
+    expect(blocks[2].props['order']).toBe(1)
+    plugin.destroy()
+  })
+
+  it('keeps ordered headings and marker inheritance across non-ordered headings', async () => {
+    const {onChildrenUpdate$, plugin, registerParent} = createPluginHarness()
+    const blocks = [createOrderedBlock('a', {heading: 2, ms: 'a2'}),
+      createBlock('heading', 'paragraph', {heading: 1}),
+      createOrderedBlock('b', {heading: 2}),
+      createOrderedBlock('boundary', {heading: 1}),
+      createOrderedBlock('c', {heading: 2, order: 9})]
+    const parent = attachToParent(blocks)
+    registerParent(parent, blocks)
+    triggerInserted(onChildrenUpdate$, parent, blocks[2])
+    await waitForAutoOrder()
+    expect([blocks[0], blocks[2], blocks[4]].map(block => block.props['order'])).toEqual([0, 1, 0])
+    expect(blocks[2].props['ms']).toBe('a2')
+    plugin.destroy()
+  })
+
+  it('scans past non-ordered headings in both directions for start-only changes', async () => {
+    const {onPropsUpdate$, plugin, registerParent} = createPluginHarness()
+    const blocks = [createOrderedBlock('a', {heading: 2, order: 0}),
+      createBlock('heading-before', 'paragraph', {heading: 1}),
+      createOrderedBlock('b', {heading: 2, order: 4}),
+      createBlock('heading-after', 'paragraph', {heading: 1}),
+      createOrderedBlock('c', {heading: 2, order: 5}),
+      createOrderedBlock('boundary', {heading: 1}),
+      createOrderedBlock('d', {heading: 2, order: 0})]
+    registerParent(attachToParent(blocks), blocks)
+    triggerPropsChanged(onPropsUpdate$, blocks[2], ['start'])
+    await waitForAutoOrder()
+    expect([blocks[0], blocks[2], blocks[4], blocks[6]].map(block => block.props['order']))
+      .toEqual([0, 1, 2, 0])
+    expect(blocks[6].updateProps).not.toHaveBeenCalled()
+    plugin.destroy()
+  })
 
   it('uses the nearest preceding segment and gives explicit start precedence', async () => {
     const {onChildrenUpdate$, plugin, registerParent} = createPluginHarness()

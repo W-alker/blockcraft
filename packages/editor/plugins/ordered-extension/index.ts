@@ -242,7 +242,7 @@ const updateOrdersInParent = (
   for (const block of parentChildren) {
     pruneCounters(counters, block)
     const boundaryDepth = getOrderedCounterDepth(block)
-    const boundaryHeading = getOrderedCounterHeading(block)
+    const boundaryHeading = block.flavour === 'ordered' ? getOrderedCounterHeading(block) : 0
     precedingCounters.forEach((counter, key) => {
       if (counter.depth > boundaryDepth ||
         (boundaryHeading > 0 && (counter.heading === 0 || counter.heading > boundaryHeading))) {
@@ -357,9 +357,6 @@ const resolveOrderAtStart = (
 }
 
 const pruneCounters = (counters: Map<string, OrderCounter>, block: OrderableBlock) => {
-  const depth = getOrderedCounterDepth(block)
-  const heading = getOrderedCounterHeading(block)
-
   counters.forEach((counter, key) => {
     if (prunesOrderedCounter(block, counter.depth, counter.heading)) {
       counters.delete(key)

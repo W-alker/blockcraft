@@ -70,6 +70,20 @@ describe('ordered marker group', () => {
     expect(resolveOrderedMarkerGroupIds(doc, 'child-next')).toEqual(['child-next'])
   })
 
+  it('keeps heading groups across plain headings but stops at ordered heading boundaries', () => {
+    const {doc} = createHarness([
+      ['a', 'ordered', {heading: 2}],
+      ['plain-heading', 'paragraph', {heading: 1}],
+      ['b', 'ordered', {heading: 2}],
+      ['ordered-heading', 'ordered', {heading: 1}],
+      ['c', 'ordered', {heading: 2}],
+    ])
+
+    expect(resolveOrderedMarkerGroupIds(doc, 'a')).toEqual(['a', 'b'])
+    expect(resolveOrderedMarkerGroupIds(doc, 'b')).toEqual(['a', 'b'])
+    expect(resolveOrderedMarkerGroupIds(doc, 'c')).toEqual(['c'])
+  })
+
   it('treats an explicit restart as a numbered-group boundary', () => {
     const {doc} = createHarness([
       ['a', 'ordered', {depth: 0}],
