@@ -2,6 +2,7 @@ import {focusEditingHostForBlock} from './focus-editing-host';
 
 export interface SelectionSurfaceAdapter {
   readonly ownerDocument: Document
+  readonly needsVirtualSelectionPaintReset?: boolean
   getActiveElement(): Element | null
   getNativeSelection(): globalThis.Selection | null
   clearNativeSelection(): void
@@ -29,6 +30,10 @@ export class DOMSelectionSurfaceAdapter implements SelectionSurfaceAdapter {
 
   get ownerDocument(): Document {
     return this.root.ownerDocument
+  }
+
+  get needsVirtualSelectionPaintReset(): boolean {
+    return /Apple Computer/.test(this.ownerDocument.defaultView?.navigator.vendor ?? '')
   }
 
   getActiveElement(): Element | null {

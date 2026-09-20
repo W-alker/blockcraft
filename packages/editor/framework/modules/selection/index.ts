@@ -110,6 +110,7 @@ export class SelectionManager {
   private _navigationFenceExpiryTimer: ReturnType<typeof setTimeout> | null = null
   private _projectionVersion = 0
   private _projectionFrame: number | null = null
+  private _virtualPaintRestore: (() => void) | null = null
   private _projectionMountAdapter: SelectionProjectionMountAdapter | null = null
   private _projectionMountRegistrationVersion = 0
   private _projectionMountRequest: ProjectionMountRequest | null = null
@@ -414,7 +415,15 @@ export class SelectionManager {
 
     fromEvent<KeyboardEvent>(root.hostElement, 'keydown', {capture: true})
       .pipe(takeUntil(this.doc.onDestroy$))
-      .subscribe(event => this._armNavigationFence(event))
+      .subscribe(event => {
+        this._flushVirtualPaintRestore()
+        this._armNavigationFence(event)
+      })
+    for (const eventName of ['beforeinput', 'compositionstart']) {
+      fromEvent(root.hostElement, eventName, {capture: true})
+        .pipe(takeUntil(this.doc.onDestroy$))
+        .subscribe(() => this._flushVirtualPaintRestore())
+    }
     fromEvent<KeyboardEvent>(root.hostElement, 'keyup', {capture: true})
       .pipe(takeUntil(this.doc.onDestroy$))
       .subscribe(event => {
@@ -790,6 +799,7 @@ export class SelectionManager {
   }
 
   private _beginPrimaryPointerIntent(target?: EventTarget | null): void {
+    this._flushVirtualPaintRestore()
     const element = target instanceof Element
       ? target
       : target instanceof Node ? target.parentElement : null
@@ -1108,6 +1118,7 @@ export class SelectionManager {
   }
 
   private _cancelProjectionFrame(): void {
+    this._virtualPaintRestore = null
     if (this._projectionFrame === null) return
     this._surface.cancelFrame(this._projectionFrame)
     this._projectionFrame = null
@@ -1341,11 +1352,69 @@ export class SelectionManager {
     const expected = selection.toJSON()
     const projectionVersion = this._projectionVersion
     try {
-      this._applyDomRangeForSelection(selection, false, projectionVersion, false)
+      const range = this._applyDomRangeForSelection(selection, false, projectionVersion, false)
+      if (range && this._surface.needsVirtualSelectionPaintReset) {
+        this._resetVirtualSelectionPaint(selection, projectionVersion)
+      }
     } catch {
       this._surface.clearNativeSelection()
       this._recoverDomProjection(expected, projectionVersion)
     }
+  }
+
+  private _resetVirtualSelectionPaint(selection: BlockSelection, projectionVersion: number): void {
+    const expected = selection.toJSON()
+    let cleared = false
+    let activeBeforeClear: Element | null = null
+    const canRestore = () => this._projectionVersion === projectionVersion &&
+      !!this.value && sameSelectionJSON(this.value.toJSON(), expected) &&
+      this._surface.isRootConnected() &&
+      !this._suppressRecalculate && !this.doc.event.status.isComposing &&
+      !this._primaryPointerDown &&
+      (cleared
+        ? this._surface.getActiveElement() === activeBeforeClear &&
+          !this._surface.getNativeSelection()?.rangeCount
+        : this._surface.hasEditorFocus() || this._surface.ownsNativeSelection())
+    const restore = () => {
+      if (!canRestore()) return
+      try {
+        this._applyDomRangeForSelection(selection, false, projectionVersion, false)
+      } catch {
+        this._recoverDomProjection(expected, projectionVersion)
+      }
+    }
+
+    // WebKit retains the painted selection of detached renderers when both
+    // endpoints stay pinned. Clearing and adding the same Range in one frame
+    // is coalesced and leaves newly mounted middle paragraphs unhighlighted.
+    // Let one paint observe the clear, then project the unchanged model range.
+    // Use the existing cancellable projection queue, not a scroll listener or
+    // full-range mount lease. New model/pointer intent cancels stale work.
+    this._scheduleProjectionFrame(() => {
+      this._virtualPaintRestore = null
+      if (!canRestore()) return
+      // Readonly roots need not be focusable. Preserve their selection without
+      // stealing focus, but never overwrite a new focus/native selection.
+      activeBeforeClear = this._surface.getActiveElement()
+      this._surface.clearNativeSelection()
+      cleared = true
+      this._scheduleProjectionFrame(() => {
+        this._virtualPaintRestore = null
+        restore()
+      })
+      this._virtualPaintRestore = restore
+    })
+    this._virtualPaintRestore = restore
+  }
+
+  private _flushVirtualPaintRestore(): void {
+    const restore = this._virtualPaintRestore
+    if (!restore) return
+    this._cancelProjectionFrame()
+    // Keyboard/IME/shift-click must see the original native anchor even when
+    // they arrive in the one-frame paint reset window.
+    restore()
+    this._suppressProgrammaticSelectionChangeUntil = 0
   }
 
   private _selectionCrossesRootRenderUnits(selection: BlockSelection): boolean {

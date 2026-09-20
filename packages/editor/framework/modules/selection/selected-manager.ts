@@ -160,6 +160,16 @@ export class SelectionSelectedManager {
       return
     }
 
+    // The absolute placement plane is infrastructure, not a selectable object.
+    // A range covering it still presents its mounted objects individually.
+    if (this.doc.placement?.isPlacementLayout?.(blockId)) {
+      for (const childId of block.childrenIds) {
+        if (this.doc.vm && !this.doc.vm.isMounted(childId)) continue
+        this._collectPresentationBlocks(childId, selected, focused, embedCandidates)
+      }
+      return
+    }
+
     if (block.nodeType === BlockNodeType.editable) {
       const editable = block as EditableBlockComponent<any>
       embedCandidates.add(editable)

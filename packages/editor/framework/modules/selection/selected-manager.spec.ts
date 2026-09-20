@@ -537,8 +537,8 @@ describe("SelectionSelectedManager", () => {
     expect(hosts["nested-divider-a"].classList.contains("selected")).toBeFalse();
     expect(hosts["paragraph-a"].classList.contains("focused")).toBeTrue();
     expect(hosts["divider-a"].classList.contains("selected")).toBeTrue();
-    expect(hosts["placement-layout"].classList.contains("selected")).toBeTrue();
-    expect(hosts["absolute-object"].classList.contains("selected")).toBeFalse();
+    expect(hosts["placement-layout"].classList.contains("selected")).toBeFalse();
+    expect(hosts["absolute-object"].classList.contains("selected")).toBeTrue();
 
     mounted.clear();
     mounted.add("callout-b");
@@ -559,8 +559,8 @@ describe("SelectionSelectedManager", () => {
     expect(hosts["nested-divider-b"].classList.contains("selected")).toBeFalse();
     expect(hosts["paragraph-b"].classList.contains("focused")).toBeTrue();
     expect(hosts["divider-b"].classList.contains("selected")).toBeTrue();
-    expect(hosts["placement-layout"].classList.contains("selected")).toBeTrue();
-    expect(hosts["absolute-object"].classList.contains("selected")).toBeFalse();
+    expect(hosts["placement-layout"].classList.contains("selected")).toBeFalse();
+    expect(hosts["absolute-object"].classList.contains("selected")).toBeTrue();
 
     manager.setSelected({
       start: {blockId: "callout-b", type: "selected"},
@@ -575,6 +575,7 @@ describe("SelectionSelectedManager", () => {
     expect(hosts["callout-b"].classList.contains("selected")).toBeTrue();
     expect(hosts["paragraph-b"].classList.contains("focused")).toBeFalse();
     expect(hosts["divider-b"].classList.contains("selected")).toBeFalse();
+    expect(hosts["absolute-object"].classList.contains("selected")).toBeFalse();
   });
 
   it("does not mark column containers selected for cross-column text selections", () => {

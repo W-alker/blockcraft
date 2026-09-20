@@ -2944,7 +2944,7 @@ describe('SelectionManager projection mount coordination', () => {
     return {promise, resolve, reject};
   }
 
-  function createProjectionMountManager() {
+  function createProjectionMountManager(needsVirtualSelectionPaintReset = false) {
     document.getSelection()?.removeAllRanges();
 
     const rootHost = document.createElement('div');
@@ -2982,8 +2982,9 @@ describe('SelectionManager projection mount coordination', () => {
     const frames = new Map<number, FrameRequestCallback>();
     let nextFrame = 0;
     const surface = {
+      needsVirtualSelectionPaintReset,
       ownerDocument: document,
-      getActiveElement: () => rootHost,
+      getActiveElement: (): Element | null => rootHost,
       getNativeSelection: () => document.getSelection(),
       clearNativeSelection: () => document.getSelection()?.removeAllRanges(),
       createRange: () => document.createRange(),
@@ -3265,6 +3266,150 @@ describe('SelectionManager projection mount coordination', () => {
     expect(repaired.endOffset).toBe(lastText.length);
     expect(manager.value?.toJSON()).toEqual(fullSelection);
     doc.onDestroy$.next();
+  });
+
+  function createVirtualPaintManager(backward = false) {
+    const fixture = createProjectionMountManager(true);
+    const {manager, doc, frames, mountEditable} = fixture;
+    const viewChange$ = new Subject<{mountedRootIds: readonly string[]}>();
+    mountEditable('virtual-p0');
+    mountEditable('virtual-p2');
+    (doc as any).virtualization = {
+      enabled: true, ensureViewMounted() {}, viewChange$,
+    };
+    (manager as any)._bindEvents(doc.root);
+    const start = {blockId: 'virtual-p0', type: 'text' as const, offset: 2};
+    const end = {blockId: 'virtual-p2', type: 'text' as const, offset: 7};
+    const selection = {
+      anchor: backward ? end : start,
+      head: backward ? start : end,
+      commonParent: 'virtual-root',
+    };
+    manager.replay(selection);
+    const changeView = () => viewChange$.next({mountedRootIds: ['virtual-p0', 'virtual-p2']});
+    const paint = () => {
+      const callbacks = [...frames.values()];
+      frames.clear();
+      callbacks.forEach(callback => callback(performance.now()));
+    };
+    return {...fixture, selection, changeView, paint};
+  }
+
+  for (const backward of [false, true]) {
+    it(`refreshes virtual native paint without publishing or reversing the ${backward ? 'backward' : 'forward'} model range`, () => {
+      const {manager, doc, frames, selection, changeView, paint, dispatchSelectionChange, mountedTextNodes} = createVirtualPaintManager(backward);
+      const publish = spyOn(manager.selectionChange$, 'next').and.callThrough();
+      changeView();
+      changeView();
+      expect(frames.size).toBe(1);
+      paint();
+      expect(document.getSelection()!.rangeCount).toBe(0);
+      (manager as any)._suppressProgrammaticSelectionChangeUntil = 0;
+      dispatchSelectionChange();
+      expect(manager.value!.toJSON()).toEqual(selection);
+      paint();
+      const native = document.getSelection()!;
+      expect(native.anchorNode).toBe(mountedTextNodes.get(selection.anchor.blockId)!);
+      expect(native.anchorOffset).toBe(selection.anchor.offset);
+      expect(native.focusNode).toBe(mountedTextNodes.get(selection.head.blockId)!);
+      expect(native.focusOffset).toBe(selection.head.offset);
+      expect(publish).not.toHaveBeenCalled();
+      expect(frames.size).toBe(0);
+      doc.onDestroy$.next();
+    });
+  }
+
+  it('cancels the old paint repair when a new caret replaces the model range', () => {
+    const {manager, doc, frames, changeView, paint, mountedTextNodes} = createVirtualPaintManager();
+    changeView();
+    paint();
+    manager.replay({
+      anchor: {blockId: 'virtual-p0', type: 'text', offset: 1},
+      head: {blockId: 'virtual-p0', type: 'text', offset: 1},
+      commonParent: 'virtual-p0',
+    });
+    paint();
+    expect(frames.size).toBe(0);
+    expect(document.getSelection()!.isCollapsed).toBeTrue();
+    expect(document.getSelection()!.anchorNode).toBe(mountedTextNodes.get('virtual-p0')!);
+    expect(document.getSelection()!.anchorOffset).toBe(1);
+    changeView();
+    expect(frames.size).toBe(0);
+    doc.onDestroy$.next();
+  });
+
+  for (const eventName of ['keydown', 'beforeinput', 'compositionstart', 'mousedown']) {
+    for (const alreadyCleared of [false, true]) {
+      it(`restores native endpoints before ${eventName} (cleared=${alreadyCleared})`, () => {
+        const {doc, manager, rootHost, frames, selection, changeView, paint} = createVirtualPaintManager();
+        changeView();
+        if (alreadyCleared) paint();
+        expect(document.getSelection()!.rangeCount).toBe(alreadyCleared ? 0 : 1);
+        const event = eventName === 'mousedown'
+          ? new MouseEvent(eventName, {bubbles: true, button: 0})
+          : new Event(eventName, {bubbles: true});
+        rootHost.dispatchEvent(event);
+        expect(document.getSelection()!.rangeCount).toBe(1);
+        expect(manager.value!.toJSON()).toEqual(selection);
+        expect(frames.size).toBe(0);
+        doc.onDestroy$.next();
+      });
+    }
+  }
+
+  it('does not reset paint during composition or restore over external focus', () => {
+    const {doc, surface, frames, changeView, paint} = createVirtualPaintManager();
+    doc.event.status.isComposing = true;
+    changeView();
+    expect(frames.size).toBe(0);
+    doc.event.status.isComposing = false;
+    changeView();
+    paint();
+    surface.hasEditorFocus = () => false;
+    surface.getActiveElement = () => document.body;
+    paint();
+    expect(document.getSelection()!.rangeCount).toBe(0);
+    expect(frames.size).toBe(0);
+    doc.onDestroy$.next();
+  });
+
+  it('restores readonly native selection while the unfocusable root keeps focus on body', () => {
+    const {doc, surface, selection, manager, changeView, paint} = createVirtualPaintManager();
+    surface.getActiveElement = () => document.body;
+    surface.hasEditorFocus = () => false;
+    surface.ownsNativeSelection = () => !!document.getSelection()?.rangeCount;
+    changeView();
+    paint();
+    expect(document.getSelection()!.rangeCount).toBe(0);
+    paint();
+    expect(document.getSelection()!.rangeCount).toBe(1);
+    expect(manager.value!.toJSON()).toEqual(selection);
+    doc.onDestroy$.next();
+  });
+
+  it('does not overwrite a new native selection even if focus has not changed', () => {
+    const {doc, changeView, paint, mountedTextNodes} = createVirtualPaintManager();
+    changeView();
+    paint();
+    const native = document.getSelection()!;
+    const range = document.createRange();
+    range.setStart(mountedTextNodes.get('virtual-p0')!, 1);
+    range.collapse(true);
+    native.addRange(range);
+    paint();
+    expect(native.isCollapsed).toBeTrue();
+    expect(native.anchorOffset).toBe(1);
+    doc.onDestroy$.next();
+  });
+
+  it('cancels pending virtual paint work on destruction', () => {
+    const {doc, frames, changeView, paint} = createVirtualPaintManager();
+    changeView();
+    paint();
+    doc.onDestroy$.next();
+    expect(frames.size).toBe(0);
+    paint();
+    expect(document.getSelection()!.rangeCount).toBe(0);
   });
 
   it('retries when Chrome silently rejects a range during virtual reprojection', () => {
