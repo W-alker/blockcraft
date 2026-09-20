@@ -68,6 +68,37 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## Unreleased — 2026-09-20：轻量公共工具入口
+
+**Severity**: minor（新增兼容入口；实际发布版本由维护者决定，本条不修改包版本）。
+
+**What changed**: 将 `global/utils` 的全部导出统一提供为独立构建入口
+`@ccc/blockcraft/global/utils`；主入口转导出该入口，保持同一份运行时实现。
+
+**Why**: 宿主只使用通用工具时，不必加载完整编辑器模块及其依赖。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-app.md`。
+
+### New APIs / Features
+
+新增 `@ccc/blockcraft/global/utils` 子路径，包含文件/MIME、函数控制、Delta、URL、fetch、
+DOM、颜色、文本、比较、对象、图片尺寸工具及其既有导出类型。独立入口无第三方运行时依赖。
+
+### Migration Recipe
+
+```typescript
+// before（继续兼容）
+import { extMimeMap } from '@ccc/blockcraft';
+// after（只加载公共工具）
+import { extMimeMap, debounce, sliceDelta } from '@ccc/blockcraft/global/utils';
+```
+
+### Behavior Changes
+
+工具签名、映射数据和处理规则不变。两个入口共享 Map 实例；导入无需 DOM，
+浏览器工具仍需原宿主 API。Delta 类型使用纯类型叶子，文本分行不再反向加载 Inline
+常量模块。类型索引约束保持不变。整包 peerDependencies 不变。
+
 ## Unreleased — 2026-09-20：本地视频可选封面
 
 **What changed**: 视频 Schema 保留创建参数 `poster`，组件直接显示持久化封面。

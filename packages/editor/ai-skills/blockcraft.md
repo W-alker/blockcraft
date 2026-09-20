@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-09-18 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-09-20 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -21,6 +21,10 @@ A block-based rich text editor built on **Angular (standalone components)** + **
 - HTML and Markdown import/export via AST walkers
 
 ## Core Concepts
+
+仅需 `global/utils` 中的文件、函数、Delta、URL、DOM、颜色、文本、比较或图片工具时，
+使用独立公共入口 `@ccc/blockcraft/global/utils`，避免加载编辑器主入口。该入口没有第三方运行时依赖，
+原主入口继续转导出同一份实现；完整 API 和环境要求见 `blockcraft-app.md`。
 
 | Concept | Description | Key Class/File |
 |---------|-------------|----------------|

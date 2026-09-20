@@ -65,6 +65,39 @@ import {
 } from '@org/blockcraft-editor/blocks'
 ```
 
+## 轻量公共工具入口
+
+`global/utils` 的全部导出统一提供独立构建入口，涵盖文件/MIME、函数控制、Delta、
+URL、fetch、DOM、颜色、文本、比较、对象和图片尺寸工具，以及 `IPoint`、`ImageIntrinsicSize` 类型：
+
+```typescript
+import {
+  extMimeMap,
+  mimeExtMap,
+  getSafeFileName,
+  getFilenameFromContentDisposition,
+  getImageExt,
+  downloadFile,
+  debounce,
+  sliceDelta,
+  getLinesByRange,
+  type IPoint,
+} from '@ccc/blockcraft/global/utils';
+
+extMimeMap.get('pdf'); // application/pdf
+mimeExtMap.get('image/jpeg'); // jpeg
+```
+
+该入口无 Angular、Yjs 或其他第三方运行时依赖，导入时不访问 DOM；文件映射、
+字符串和 Delta 等纯工具可在 Node/SSR 中使用。需要宿主能力的工具保持原要求：
+`downloadFile()`、`nextTick()`、滚动容器/计算样式工具及带代理的 `FetchUtils.fetchImage()`
+仍需浏览器 API；图片尺寸读取沿用原有 `Image`/`createImageBitmap` 检测和失败返回值。
+它仍属于同一个 npm 包，不改变整包安装时的 peerDependencies。
+
+原来的 `@ccc/blockcraft` 导入继续可用，主入口和独立入口共享同一组 Map 实例。
+映射仍区分大小写、不接收点前缀，未知项返回 `undefined`；重复扩展名保持后项覆盖
+（例如 `xml → text/xml`、`3gp → video/3gpp`）。不新增别名或 MIME 猜测规则。
+
 ## Snapshot Viewer (Display-Only Path)
 
 When the host only needs to display a block snapshot, use the standalone snapshot-viewer path instead of constructing `BlockCraftDoc`.

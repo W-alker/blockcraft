@@ -1,5 +1,5 @@
-import {SimpleBasicType} from "../../../global";
-import {DeltaInsert} from "./delta.type";
+import type {SimpleBasicType} from "../../../global/types";
+import type {DeltaInsert} from "./delta.type";
 import type {TypographyFontFamilyId} from '../typography'
 
 /**
@@ -54,12 +54,12 @@ export interface ITextStyles {
   's:fontSize'?: string | null;
   's:fontFamily'?: string | null;
   's:letterSpacing'?: string | null;
-  [key: InlineStyleKey]: string | null | undefined
+  // 直接声明索引模式，确保独立入口的类型打包保留约束。
+  [key: `s:${string}`]: string | null | undefined
 }
 
 export interface IExpandedAttrs {
-  [key: InlineAttrKey | InlineDataKey | InlineCustomKey]: SimpleBasicType | null
+  [key: string]: SimpleBasicType | null
 }
 
 export type InlineModel = DeltaInsert[]
-

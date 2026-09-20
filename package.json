@@ -7,7 +7,7 @@
     "ng": "ng",
     "playground": "ng serve playground --configuration development --port 8081 --host 0.0.0.0",
     "build:playground": "ng build playground",
-    "build:editor": "ng build editor && node ./scripts/check-editor-package-styles.mjs && node ./scripts/check-editor-package-dependencies.mjs",
+    "build:editor": "ng build editor && node ./scripts/check-editor-package-styles.mjs && node ./scripts/check-editor-package-dependencies.mjs && node ./scripts/check-editor-utils.mjs",
     "build:agent": "pnpm build:editor && ng build blockcraft-agent",
     "publish:agent": "node ./scripts/publish-agent.mjs",
     "agent:server": "node ./scripts/document-agent-server.mjs",

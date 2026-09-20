@@ -1,5 +1,6 @@
-// 纯类型用 `import type`：编译期擦除，避免 global → framework barrel 的运行时成环边。
-import type {DeltaInsert, IInlineNodeAttrs} from "../../framework";
+// 只依赖纯类型叶子，避免独立工具入口反向加载 framework。
+import type {DeltaInsert} from "../../framework/block-std/types/delta.type";
+import type {IInlineNodeAttrs} from "../../framework/block-std/types/inline.type";
 
 // 将DeltaInsert[]根据其中的\n拆分成多个DeltaInsert[]
 export const splitDeltaByLineBreak = (delta: DeltaInsert[], str_break = '\n'): DeltaInsert[][] => {

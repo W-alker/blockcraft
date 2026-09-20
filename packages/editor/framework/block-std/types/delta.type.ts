@@ -1,5 +1,5 @@
-import {SimpleBasicType} from "../../../global";
-import {IInlineNodeAttrs} from "./inline.type";
+import type {SimpleBasicType} from "../../../global/types";
+import type {IInlineNodeAttrs} from "./inline.type";
 
 export type DeltaInsert = {
   insert: DeltaInsertText["insert"] | DeltaInsertEmbed["insert"]
