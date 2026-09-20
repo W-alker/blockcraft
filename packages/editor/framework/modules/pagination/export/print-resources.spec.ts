@@ -1,4 +1,3 @@
-import {PaginationExportError} from './pdf-export.types'
 import {preparePrintResources} from './print-resources'
 
 describe('preparePrintResources', () => {
@@ -104,5 +103,45 @@ describe('preparePrintResources', () => {
     await preparePrintResources(root, {timeoutMs: 10})
 
     expect(img.loading).toBe('eager')
+  })
+
+  it('does not treat an empty poster URL getter as an image resource', async () => {
+    const root = document.createElement('div')
+    root.innerHTML = '<div data-block-id="video-1"><video poster=""></video></div>'
+
+    const prepared = await preparePrintResources(root, {timeoutMs: 10})
+
+    expect(prepared.warnings).toEqual([jasmine.objectContaining({
+      code: 'unsupported-resource',
+      message: jasmine.stringMatching('视频未设置封面'),
+      blockId: 'video-1',
+    })])
+    expect(root.querySelector('.bc-print-resource-placeholder')?.textContent).toBe('视频（无可用封面）')
+    expect(root.querySelector('img')).toBeNull()
+  })
+
+  it('preserves video provenance when a prepared poster clone fails later', async () => {
+    const root = document.createElement('div')
+    root.innerHTML = '<div data-block-id="video-1"><img data-bc-print-video-image="poster"></div>'
+    const img = root.querySelector('img')!
+    spyOnProperty(img, 'complete', 'get').and.returnValue(true)
+    spyOnProperty(img, 'naturalWidth', 'get').and.returnValue(0)
+    spyOnProperty(img, 'currentSrc', 'get').and.returnValue('https://example.com/poster.jpg')
+
+    const prepared = await preparePrintResources(root, {timeoutMs: 10})
+
+    expect(prepared.warnings).toEqual([jasmine.objectContaining({message: '视频封面加载失败'})])
+    expect(root.querySelector('img')).toBeNull()
+    expect(root.querySelector('.bc-print-resource-placeholder')?.textContent).toBe('视频（无可用封面）')
+  })
+
+  it('keeps audio and attachment content unchanged during video preparation', async () => {
+    const root = document.createElement('div')
+    root.innerHTML = '<div class="audio-block"><audio></audio></div><div class="attachment-block">附件</div>'
+    const content = root.innerHTML
+
+    await preparePrintResources(root, {timeoutMs: 10})
+
+    expect(root.innerHTML).toBe(content)
   })
 })

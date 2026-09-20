@@ -18,7 +18,7 @@ export interface PreparedPrintResources {
 const DEFAULT_RESOURCE_TIMEOUT = 10000
 
 /**
- * 等待打印 DOM 的稳定资源，并把 canvas/video 等瞬态表面固化为普通图片。
+ * 等待打印 DOM 的稳定资源，并把 canvas/video 等瞬态表面固化为普通图片或占位。
  * 该函数只接收离屏打印副本，绝不能传入 live 编辑器根。
  */
 export async function preparePrintResources(
@@ -49,13 +49,18 @@ export async function preparePrintResources(
 
   for (const video of Array.from(root.querySelectorAll('video'))) {
     throwIfPaginationExportAborted(signal)
-    if (!video.poster) {
-      handleUnsupported(video, '动态视频没有 poster，无法确定性导出', policy, warnings)
+    const img = document.createElement('img')
+    // 空 poster 属性的 URL getter 会解析为当前页面地址，不能用 video.poster 判空。
+    const poster = video.getAttribute('poster')?.trim()
+    if (poster) {
+      img.src = video.poster
+      img.setAttribute('data-bc-print-video-image', 'poster')
+    } else {
+      handleUnsupported(video, '视频未设置封面，已保留视频占位', 'best-effort', warnings)
       continue
     }
-    const img = document.createElement('img')
-    img.src = video.poster
     img.style.cssText = video.style.cssText
+    img.className = video.className
     img.width = video.clientWidth
     img.height = video.clientHeight
     video.replaceWith(img)
@@ -133,25 +138,26 @@ async function waitForImages(
   signal?: AbortSignal,
 ): Promise<void> {
   await Promise.all(Array.from(root.querySelectorAll('img')).map(async img => {
+    const videoImage = img.getAttribute('data-bc-print-video-image')
+    const label = videoImage ? '视频封面' : '图片'
+    // 视频本体并未导出，封面只是可选视觉信息，不能成为 strict PDF 的失败条件。
+    const reportFailure = (message: string, cause?: unknown) => {
+      if (videoImage) handleUnsupported(img, message, 'best-effort', warnings, cause)
+      else handleResourceFailure(img, message, policy, warnings, img.currentSrc || img.src, cause)
+    }
     // 离屏打印树永远不会进入视口；保留 lazy 会让部分浏览器/WebView 永不发起请求。
     img.loading = 'eager'
     if (img.complete) {
       if (img.naturalWidth === 0 && img.currentSrc) {
-        handleResourceFailure(img, '图片加载失败', policy, warnings, img.currentSrc)
+        reportFailure(`${label}加载失败`)
+        return
       }
     } else {
       try {
         await waitForImage(img, timeoutMs, signal)
       } catch (error) {
         if (error instanceof PaginationExportError) throw error
-        handleResourceFailure(
-          img,
-          '图片资源等待超时或加载失败',
-          policy,
-          warnings,
-          img.currentSrc || img.src,
-          error,
-        )
+        reportFailure(`${label}资源等待超时或加载失败`, error)
         return
       }
     }
@@ -162,14 +168,7 @@ async function waitForImages(
       if (error instanceof PaginationExportError && error.code === 'aborted') {
         throw error
       }
-      handleResourceFailure(
-        img,
-        '图片资源解码失败或超时',
-        policy,
-        warnings,
-        img.currentSrc || img.src,
-        error,
-      )
+      reportFailure(`${label}资源解码失败或超时`, error)
     }
   }))
 }
@@ -286,7 +285,8 @@ function handleUnsupported(
   warnings.push({code: 'unsupported-resource', message, ...context})
   const placeholder = document.createElement('div')
   placeholder.className = 'bc-print-resource-placeholder'
-  placeholder.textContent = '此内容无法在当前环境中导出'
+  const isVideo = node instanceof HTMLVideoElement || node.hasAttribute('data-bc-print-video-image')
+  placeholder.textContent = isVideo ? '视频（无可用封面）' : '此内容无法在当前环境中导出'
   if (node instanceof HTMLElement) {
     placeholder.style.width = `${node.clientWidth}px`
     placeholder.style.height = `${node.clientHeight}px`

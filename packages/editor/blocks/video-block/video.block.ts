@@ -1,4 +1,4 @@
-import {ChangeDetectionStrategy, Component, ElementRef, ViewChild} from '@angular/core';
+import {ChangeDetectionStrategy, Component, inject} from '@angular/core';
 import {DomSanitizer, SafeHtml, SafeResourceUrl} from '@angular/platform-browser';
 import {
   BaseBlockComponent,
@@ -14,6 +14,7 @@ import {
   ResizeContainerComponent,
 } from '../../components';
 import {takeUntil} from 'rxjs';
+import {getLocalVideoUpload} from './local-video-upload';
 
 @Component({
   selector: 'div.video-block',
@@ -52,7 +53,7 @@ import {takeUntil} from 'rxjs';
             <div class="video-wrapper">
               <video [src]="resourcePreviewUrl"
                      controls
-                     [poster]="posterUrl"
+                     [attr.poster]="props.poster || null"
                      preload="metadata">
                 您的浏览器不支持视频播放
               </video>
@@ -102,13 +103,11 @@ export class VideoBlockComponent extends BaseBlockComponent<VideoBlockModel> {
   protected embedUrl: SafeResourceUrl = '';
   protected isEmbedPlatformUrl = false;
   protected isDirectVideoUrl = false;
-  protected posterUrl = '';
+  private _uploadAttempt?: {url: string};
 
   private _fileService?: DocFileService;
 
-  constructor(private sanitizer: DomSanitizer) {
-    super();
-  }
+  private readonly sanitizer = inject(DomSanitizer);
 
   private get fileService() {
     return this._fileService ??= this.doc.injector.get<DocFileService>(DOC_FILE_SERVICE_TOKEN);
@@ -158,7 +157,7 @@ export class VideoBlockComponent extends BaseBlockComponent<VideoBlockModel> {
     super.ngOnInit();
     this.processEmbedContent();
 
-    if (this.props.url && this.props.sourceType === 'local') {
+    if (!this.isReadonly && this.props.url && this.props.sourceType === 'local') {
       if (!this.props.url.startsWith('http')) {
         this.uploadFile(this.props.url);
       }
@@ -395,6 +394,7 @@ export class VideoBlockComponent extends BaseBlockComponent<VideoBlockModel> {
         size: file.size,
         type: file.type,
         sourceType: 'local',
+        poster: undefined,
         url
       });
       this.uploadFile(url);
@@ -403,40 +403,74 @@ export class VideoBlockComponent extends BaseBlockComponent<VideoBlockModel> {
     }
   };
 
-  uploadFile(url: string) {
-    if (!this.fileService.isLocalObjectURL(url)) return;
-
+  async uploadFile(url: string) {
+    if (this.isReadonly || this._isGone() || !this.fileService.isLocalObjectURL(url)) return;
+    if (this._uploadAttempt?.url === url) return;
     const file = this.fileService.getFileByObjectURL(url);
-    if (!file) return; // 协同端上传，不处理
+    if (!file) return; // 协同端没有本地 File，不提帧、不上传
 
-    this.uploadProgress = 0;
-    this.changeDetectorRef.markForCheck();
-
-    this.fileService.uploadVideo(file, (p) => {
-      // 上传期间块可能被本地/远端删除：detectChanges on destroyed view 会抛错
-      if (this._isGone() || this.isReadonly) return;
-      this.uploadProgress = p;
-      this.changeDetectorRef.detectChanges();
-    }).then(info => {
-      this.fileService.removeObjectURL(url);
-      // 块已删：跳过 setInitProps（否则写入 detached Y.Map，undo 时复活孤儿块）
-      if (this._isGone() || this.isReadonly) return;
-      this.setInitProps({
-        url: info.url,
-        name: info.name,
-        size: info.size,
-        type: info.type,
-      });
+    const attempt = this._uploadAttempt = {url};
+    const initialPoster = this.props.poster;
+    let expectedUrl = url;
+    let sourceChanged = false;
+    let posterChanged = false;
+    let writingVideo = false;
+    const canApplyVideo = () => !this._isGone() && !this.isReadonly &&
+      this._uploadAttempt === attempt && !sourceChanged && this.props.url === expectedUrl;
+    const canApplyPoster = () => canApplyVideo() && !posterChanged &&
+      this.props.poster === initialPoster && !initialPoster;
+    const changes = this.onPropsChange.subscribe(keys => {
+      if (keys.has('url') && !writingVideo && this.props.url !== expectedUrl) sourceChanged = true;
+      if (keys.has('poster') && this.props.poster !== initialPoster) posterChanged = true;
+    });
+    const task = getLocalVideoUpload(this.fileService, file);
+    // 可选任务与视频上传并行；已指定封面的文件不再提帧。
+    const posterFile = initialPoster ? Promise.resolve(undefined) : task.preparePoster();
+    const unsubscribeProgress = task.subscribeProgress(progress => {
+      if (!canApplyVideo()) return;
+      this.uploadProgress = progress;
+      this.changeDetectorRef.markForCheck();
+    });
+    const destroy = this.onDestroy$.subscribe(() => {
+      unsubscribeProgress();
+      changes.unsubscribe();
+    });
+    try {
+      let info;
+      try {
+        info = await task.video;
+      } catch {
+        if (canApplyVideo()) {
+          this.doc.messageService.warn('视频上传失败');
+          this.setInitProps({url: '', name: '', size: 0, type: ''});
+          this.uploadProgress = 100;
+          this.changeDetectorRef.markForCheck();
+        }
+        return;
+      } finally {
+        this.fileService.removeObjectURL(url);
+        unsubscribeProgress();
+      }
+      if (!canApplyVideo()) return;
+      writingVideo = true;
+      this.setInitProps({url: info.url, name: info.name, size: info.size, type: info.type});
+      expectedUrl = info.url;
+      writingVideo = false;
       this.uploadProgress = 100;
       this.processEmbedContent();
       this.changeDetectorRef.markForCheck();
-    }).catch(() => {
-      this.fileService.removeObjectURL(url);
-      this.doc.messageService.warn('视频上传失败');
-      if (this._isGone() || this.isReadonly) return;
-      this.setInitProps({url: '', name: '', size: 0, type: ''});
-      this.uploadProgress = 100;
+
+      const poster = await posterFile;
+      if (!poster || !canApplyPoster()) return;
+      const posterUrl = await task.uploadPoster(poster);
+      if (!posterUrl || !canApplyPoster()) return;
+      this.setInitProps({poster: posterUrl});
       this.changeDetectorRef.markForCheck();
-    });
+    } finally {
+      changes.unsubscribe();
+      destroy.unsubscribe();
+      unsubscribeProgress();
+      if (this._uploadAttempt === attempt) this._uploadAttempt = undefined;
+    }
   }
 }

@@ -36,6 +36,7 @@ export const VideoBlockSchema: IBlockSchemaOptions<VideoBlockModel> = {
         url: params.url || '',
         sourceType: params.sourceType || 'link',
         type: params.type || '',
+        ...(params.poster?.trim() ? {poster: params.poster.trim()} : {}),
         ...(hasLegacyWidth ? {width: params.width} : {wr: params.wr ?? 100}),
         ...(Number.isFinite(params.ar) && Number(params.ar) > 0
           ? {ar: params.ar}

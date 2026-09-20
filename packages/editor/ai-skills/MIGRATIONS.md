@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-09-18 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-09-20 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -67,6 +67,36 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > - `major` (e.g. 0.1.37 → 1.0.0): breaking — removed APIs, renamed exports, signature changes, behavior reversals
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
+
+## Unreleased — 2026-09-20：本地视频可选封面
+
+**What changed**: 视频 Schema 保留创建参数 `poster`，组件直接显示持久化封面。
+本地文件上传时异步提取一张限尺寸 JPEG，并复用 `DocFileService.uploadImg()` 保存，
+成功后无新增撤回步骤地回填 `poster`。同一宿主/File 的上传与提帧只执行一次。
+
+**Behavior Changes**: 视频上传不等待封面；已有封面不重新生成，封面失败不影响视频。
+只读、协同端无本地 File、远端链接和历史文档不自动提帧。异步回填不覆盖替换后的
+视频或用户已修改的封面，不写入已删除的块。无需宿主 API 或历史数据迁移。
+
+**Affected ai-skills files**: `blockcraft-app.md`。未发布，包版本由维护者决定。
+
+## Unreleased — 2026-09-20：分页导出的视频空封面与错误归属
+
+**Severity**: patch；版本由维护者决定，本条不修改包版本。
+
+**What changed**: `preparePrintResources()` 从原始属性判断视频封面；无封面或封面失败时
+保留等尺寸视频占位，不额外加载视频或提帧。封面转成图片后仍保留视频错误归属。
+
+**Why**: 空 `poster=""` 的 URL getter 会返回导出页面地址，旧代码把 HTML 页面当图片加载，
+导致可播放视频的导出误报“图片资源加载失败”。
+
+**Affected ai-skills files**: `blockcraft-app.md`。
+
+### Behavior Changes
+
+视频封面成为可选资源：缺失、加载/解码失败或超时在 strict / best-effort 下均不阻塞导出，
+输出视频占位与 warning；显式取消仍中止。普通图片、字体、音频、附件行为不变。
+调用方无需修改 API、快照或持久化数据。
 
 ## 0.9.7 — 2026-09-18：人员块排版与整体缩放
 

@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-09-18
+> Last updated: 2026-09-20
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -668,7 +668,24 @@ Fit-width and fit-page are intentionally not framework modes because available
 space belongs to the host chrome. Persist the mode in the host, observe its
 viewport, recompute the ratio, and pass it to `setScale()`.
 
+### 本地视频封面
+
+视频创建参数 `poster` 会保存到快照，并直接绑定到视频元素；重新打开、复制和协同更新均复用该字段。
+仅持有本地 `File` 的可编辑视频上传流程异步提取一张 JPEG（最长边 640px，最多等待 6 秒），
+不播放视频。提帧与视频上传并行，视频成功后立即可用，封面随后通过宿主 `uploadImg()` 保存。
+同一宿主和 `File` 复用上传/提帧任务，视图挂载不是远端或历史视频自动提帧的触发器。
+已有封面不重新提取；封面失败不改变视频上传结果。写回前检查块存在、权限、视频 URL 和封面是否改变。
+临时 blob URL 不写入 `poster`；最终 URL 的持久化能力由宿主图片上传服务保证。
+此行为无需修改 `DocFileService` 契约；外链与历史无封面视频不会在打开文档时自动下载或补图。
+
 ### Paginated PDF and Printing
+
+分页资源准备只操作导出副本：视频有非空 `poster` 时保留封面；缺省、空字符串或纯空白
+封面时保留等尺寸的视频占位，不额外加载视频或提帧。
+不能用 `video.poster` 判空：`poster=""` 的 URL getter 会解析为当前文档地址。
+视频封面是可选资源；加载、解码或超时失败在 strict / best-effort 下均输出占位与 warning，
+不中断导出。显式取消仍中止任务，普通图片与字体继续遵守原有资源策略。
+封面加载/解码错误标明“视频封面”，不会误报普通图片。API 和文档模型不变，宿主升级后生效。
 
 ```typescript
 const exports = new DocExportManager(doc)
