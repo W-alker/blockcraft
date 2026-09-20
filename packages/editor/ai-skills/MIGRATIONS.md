@@ -68,6 +68,44 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## Unreleased — 2026-09-20：补齐 global 独立入口
+
+**Severity**: minor（新增兼容子入口；发布版本由维护者决定，不修改包版本）。
+
+**What changed**: 新增 `@ccc/blockcraft/global/env`、`logger`、`exceptions`、
+`decorators`、`types`、`resource-placeholder` 子入口，与既有 `global/utils`
+遵循同一目录命名；另提供 `@ccc/blockcraft/global` 聚合全部七个子入口。
+编辑器主入口继续转导出 global；资源控制器调用方统一引用资源子入口。
+
+**Why**: 平台检测、日志、异常处理和资源占位等独立用途无需引入编辑器及 Angular/Yjs。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-app.md`。
+
+### New APIs / Features
+
+六个独立构建入口均无第三方运行时依赖。`global/types` 仅包含原有类型。
+资源子入口提供 `ResourcePlaceholderController`、`destroyResourcePlaceholder`，
+这两个符号也通过 global 聚合入口和编辑器主入口导出。
+
+### Migration Recipe
+
+```typescript
+// before（继续兼容）
+import {IS_MAC, BlockCraftError} from '@ccc/blockcraft';
+// after（按需导入）
+import {IS_MAC} from '@ccc/blockcraft/global/env';
+import {BlockCraftError} from '@ccc/blockcraft/global/exceptions';
+// 多类能力也可从轻量聚合入口导入
+import {IS_MAC, BlockCraftError} from '@ccc/blockcraft/global';
+```
+
+### Behavior Changes
+
+平台检测、错误码、异常行为、日志和资源状态机规则不变。异常类与资源适配器保持
+跨入口身份一致；资源控制器及 iframe 适配器的内部缓存不重复创建。
+DOM/计时工具保持原宿主 API 要求；资源占位样式、主题变量和 iconfont 仍由宿主加载。
+整包 peerDependencies 不变，无文档数据迁移。
+
 ## Unreleased — 2026-09-20：轻量公共工具入口
 
 **Severity**: minor（新增兼容入口；实际发布版本由维护者决定，本条不修改包版本）。

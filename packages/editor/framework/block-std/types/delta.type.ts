@@ -1,4 +1,4 @@
-import type {SimpleBasicType} from "../../../global/types";
+import type {SimpleBasicType} from '@ccc/blockcraft/global/types';
 import type {IInlineNodeAttrs} from "./inline.type";
 
 export type DeltaInsert = {

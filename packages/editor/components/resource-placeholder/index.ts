@@ -1,3 +1,14 @@
 export * from './resource-placeholder.directive'
-export * from '../../global/resource-placeholder/resource-placeholder.types'
-export * from '../../global/resource-placeholder/adapters'
+export type {
+  ResourcePlaceholderState,
+  ResourceIntrinsicSize,
+  ResourcePlaceholderElement,
+  ResourcePlaceholderAdapter,
+  ResourcePlaceholderBinding,
+  ResourcePlaceholderControllerOptions,
+} from '@ccc/blockcraft/global/resource-placeholder'
+export {
+  imageResourcePlaceholderAdapter,
+  videoResourcePlaceholderAdapter,
+  iframeResourcePlaceholderAdapter,
+} from '@ccc/blockcraft/global/resource-placeholder'

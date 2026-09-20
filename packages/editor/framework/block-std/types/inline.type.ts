@@ -1,4 +1,4 @@
-import type {SimpleBasicType} from "../../../global/types";
+import type {SimpleBasicType} from '@ccc/blockcraft/global/types';
 import type {DeltaInsert} from "./delta.type";
 import type {TypographyFontFamilyId} from '../typography'
 

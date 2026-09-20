@@ -28,7 +28,7 @@ import {
   ResourcePlaceholderController,
   ResourcePlaceholderElement,
   videoResourcePlaceholderAdapter,
-} from "../../global/resource-placeholder";
+} from '@ccc/blockcraft/global/resource-placeholder';
 
 const MEDIA_FLAVOURS = new Set([
   "image",

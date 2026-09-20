@@ -17,7 +17,7 @@ import {
   ResourcePlaceholderElement,
   ResourcePlaceholderState,
   videoResourcePlaceholderAdapter,
-} from '../../global/resource-placeholder'
+} from '@ccc/blockcraft/global/resource-placeholder'
 
 function defaultAdapter(
   element: ResourcePlaceholderElement,

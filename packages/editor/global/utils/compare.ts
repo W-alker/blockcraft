@@ -1,4 +1,4 @@
-import {SimpleBasicType, SimpleValue} from "../types";
+import type {SimpleBasicType, SimpleValue} from '@ccc/blockcraft/global/types';
 
 export const isSimpleTypeEqual = (a: SimpleBasicType, b: SimpleBasicType): boolean => {
   if ((!a || a === '0') && (!b || b === '0')) {

@@ -25,6 +25,11 @@ A block-based rich text editor built on **Angular (standalone components)** + **
 仅需 `global/utils` 中的文件、函数、Delta、URL、DOM、颜色、文本、比较或图片工具时，
 使用独立公共入口 `@ccc/blockcraft/global/utils`，避免加载编辑器主入口。该入口没有第三方运行时依赖，
 原主入口继续转导出同一份实现；完整 API 和环境要求见 `blockcraft-app.md`。
+`global/env`、`global/logger`、`global/exceptions`、`global/decorators`、
+`global/types`、`global/resource-placeholder` 同样提供独立子入口，无第三方运行时依赖。
+资源占位器在创建时需要浏览器 DOM 和配套样式；这些子入口不包含 Angular 指令。
+需要组合使用多类工具时可从 `@ccc/blockcraft/global` 聚合入口导入；该入口仅转导出
+上述七个子入口，同样不加载编辑器或第三方运行时。
 
 | Concept | Description | Key Class/File |
 |---------|-------------|----------------|

@@ -20,7 +20,7 @@ import {
 } from "./types";
 import {
   destroyResourcePlaceholder,
-} from "../global/resource-placeholder";
+} from '@ccc/blockcraft/global/resource-placeholder';
 import {projectAbsolutePlaneChildren} from "./renderers/structural-renderers";
 
 export class SnapshotRenderEngine implements SnapshotRenderer {

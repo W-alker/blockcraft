@@ -98,6 +98,54 @@ mimeExtMap.get('image/jpeg'); // jpeg
 映射仍区分大小写、不接收点前缀，未知项返回 `undefined`；重复扩展名保持后项覆盖
 （例如 `xml → text/xml`、`3gp → video/3gpp`）。不新增别名或 MIME 猜测规则。
 
+### 其他 global 独立入口
+
+以下入口均使用 `@ccc/blockcraft/global/<目录>`，与源码目录层级一致。
+它们可以在没有 Angular/Yjs 的环境中导入，仍属于同一个 npm 包；安装依赖声明不变。
+
+`@ccc/blockcraft/global` 是这七个子入口（包含 `utils`）的统一聚合入口：
+
+```typescript
+import {
+  extMimeMap, debounce, IS_MAC, ConsoleLogger, BlockCraftError,
+  ResourcePlaceholderController,
+  type SimpleRecord,
+} from '@ccc/blockcraft/global';
+```
+
+聚合入口仅转导出子入口，未使用 DOM 或加载编辑器。单独使用一类能力时仍可选择
+对应子入口以缩小模块依赖范围；聚合入口、子入口和编辑器主入口共享同一份实现。
+
+| 子路径 | 导出内容 | 调用环境 |
+|--------|----------|----------|
+| `global/env` | `IS_WEB`、`IS_MAC`、`IS_SAFARI` 等既有平台标志 | 导入时读取当前环境，保持原检测规则 |
+| `global/logger` | `ConsoleLogger`、`NoopLogger`、`Logger` 类型 | `ConsoleLogger` 使用宿主 `console` |
+| `global/exceptions` | `BlockCraftError`、`ErrorCode`、`handleError` | 保持原有异常类型、错误码和抛出行为 |
+| `global/decorators` | `performanceTest` | 使用宿主 `performance.now()` 和 `console` |
+| `global/types` | `SimpleBasicType`、`SimpleValue`、`SimpleRecord` 等既有类型 | 使用 `import type`，无运行时代码 |
+| `global/resource-placeholder` | 控制器、销毁函数、图片/视频/iframe 适配器及相关类型 | 导入无需 DOM，实例化及资源操作需要浏览器 |
+
+```typescript
+import {IS_MAC} from '@ccc/blockcraft/global/env';
+import {ConsoleLogger, type Logger} from '@ccc/blockcraft/global/logger';
+import {BlockCraftError, ErrorCode} from '@ccc/blockcraft/global/exceptions';
+import type {SimpleRecord} from '@ccc/blockcraft/global/types';
+import {
+  ResourcePlaceholderController,
+  imageResourcePlaceholderAdapter,
+} from '@ccc/blockcraft/global/resource-placeholder';
+```
+
+既有主入口导出保持兼容，同一个异常类支持跨入口 `instanceof`，资源适配器和编辑器
+内部使用同一份控制器缓存。`ResourcePlaceholderController` 和
+`destroyResourcePlaceholder` 可从资源子入口、global 聚合入口或编辑器主入口导入；
+主入口原有的资源适配器及类型导出不变。
+`BcResourcePlaceholderDirective` 仍从编辑器主入口导入。
+
+直接使用资源占位器时，须保留 `themes/base.scss`（包含
+`themes/components/resource-placeholder.scss`）、所选主题变量及 iconfont 样式/字体；
+JS 子入口不会自动注入这些样式。`env/iframe-sandbox` 仍为包内实现，不新增公共导出。
+
 ## Snapshot Viewer (Display-Only Path)
 
 When the host only needs to display a block snapshot, use the standalone snapshot-viewer path instead of constructing `BlockCraftDoc`.

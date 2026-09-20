@@ -3,7 +3,7 @@ import type {DeltaInsertEmbed} from '../../framework/block-std/types'
 import {
   imageResourcePlaceholderAdapter,
   ResourcePlaceholderController,
-} from '../../global/resource-placeholder'
+} from '@ccc/blockcraft/global/resource-placeholder'
 import {INLINE_IMAGE_INTRINSIC_SIZE_EVENT} from './events'
 
 export const INLINE_IMAGE_EMBED_KEY = 'image'
