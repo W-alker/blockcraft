@@ -467,6 +467,7 @@ export class ImgToolbarPlugin extends DocPlugin {
                 componentRef.instance.cdr.markForCheck();
                 break;
               case "caption":
+                if (this.doc.placement.getState(imgBlock).mode === 'absolute') break;
                 if (imgBlock.childrenLength) {
                   this.doc.crud.deleteBlocks(imgBlock.id, 0, 1, true);
                 } else {

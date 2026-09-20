@@ -37,15 +37,16 @@ const ALIGN_LIST = [
   selector: 'bc-image-toolbar',
   template: `
     <bc-float-toolbar (onItemClick)="onItemClicked.emit($event)">
-      <bc-float-toolbar-item
-        icon="bc_tianjiamiaoshu"
-        name="caption"
-        [csTooltip]="imgBlock.childrenLength > 0 ? '取消图片标题' : '添加图片标题'"
-        [attr.aria-label]="imgBlock.childrenLength > 0 ? '取消图片标题' : '添加图片标题'"
-        [active]="imgBlock.childrenLength > 0">
-      </bc-float-toolbar-item>
-
-      <span class="bc-float-toolbar__divider"></span>
+      @if (!isAbsolute) {
+        <bc-float-toolbar-item
+          icon="bc_tianjiamiaoshu"
+          name="caption"
+          [csTooltip]="imgBlock.childrenLength > 0 ? '取消图片标题' : '添加图片标题'"
+          [attr.aria-label]="imgBlock.childrenLength > 0 ? '取消图片标题' : '添加图片标题'"
+          [active]="imgBlock.childrenLength > 0">
+        </bc-float-toolbar-item>
+        <span class="bc-float-toolbar__divider"></span>
+      }
 
       @for (item of ALIGN_LIST; track item.value) {
         <bc-float-toolbar-item [name]="item.name" [icon]="item.icon" [value]="item.value"

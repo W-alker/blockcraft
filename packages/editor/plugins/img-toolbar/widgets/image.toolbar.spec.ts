@@ -95,7 +95,6 @@ describe('ImageToolbar', () => {
         debugElement.injector.get(CsTooltipDirective).csTooltip(),
       )
     const expectedTitles = [
-      '添加图片标题',
       '左对齐',
       '居中',
       '右对齐',
@@ -126,6 +125,36 @@ describe('ImageToolbar', () => {
     expect(host.querySelector(
       'bc-float-toolbar-item[name="object-layout"]',
     )).toBeNull()
+
+    fixture.destroy()
+    TestBed.resetTestingModule()
+  })
+
+  it('offers captions only in flow, including after layout changes', async () => {
+    await TestBed.configureTestingModule({imports: [ImageToolbar]}).compileComponents()
+    const fixture = TestBed.createComponent(ImageToolbar)
+    const caption = () => fixture.nativeElement.querySelector(
+      'bc-float-toolbar-item[name="caption"]',
+    ) as HTMLElement | null
+
+    fixture.componentRef.setInput('imgBlock', makeBlock('relative'))
+    fixture.detectChanges()
+    expect(caption()?.getAttribute('aria-label')).toBe('添加图片标题')
+
+    for (const grouped of [false, true]) {
+      const block = makeBlock('absolute', grouped)
+      block.childrenLength = 1
+      fixture.componentRef.setInput('imgBlock', block)
+      fixture.detectChanges()
+      expect(caption()).toBeNull()
+      expect(block.childrenLength).toBe(1)
+    }
+
+    const flowBlock = makeBlock('relative')
+    flowBlock.childrenLength = 1
+    fixture.componentRef.setInput('imgBlock', flowBlock)
+    fixture.detectChanges()
+    expect(caption()?.getAttribute('aria-label')).toBe('取消图片标题')
 
     fixture.destroy()
     TestBed.resetTestingModule()

@@ -251,6 +251,40 @@ describe("ImgToolbarPlugin lifecycle", () => {
     rootHost.remove();
   });
 
+  it("rechecks placement before caption changes and keeps flow captions working", fakeAsync(() => {
+    const h = makeHarness();
+    const title = {id: 'caption-new'};
+    h.doc.schemas = {createSnapshot: jasmine.createSpy('createSnapshot').and.returnValue(title)};
+    const chain = h.doc.chain();
+    chain.insertSnapshots = jasmine.createSpy('insertSnapshots').and.returnValue(chain);
+    h.plugin.init();
+    h.selectionValue.current = h.imageSelection;
+    h.selection$.next(h.imageSelection);
+    tick(250);
+
+    // A toolbar opened in flow can receive a stale action after layout changes.
+    h.placementMode.current = 'absolute';
+    h.toolbarClicks.next({name: 'caption'});
+    expect(h.doc.schemas.createSnapshot).not.toHaveBeenCalled();
+    expect(chain.insertSnapshots).not.toHaveBeenCalled();
+    h.imageBlock.childrenLength = 1;
+    h.toolbarClicks.next({name: 'caption'});
+    expect(h.deleteBlocks).not.toHaveBeenCalled();
+
+    h.placementMode.current = 'relative';
+    h.toolbarClicks.next({name: 'caption'});
+    expect(h.deleteBlocks).toHaveBeenCalledOnceWith('img-1', 0, 1, true);
+    h.imageBlock.childrenLength = 0;
+    h.toolbarClicks.next({name: 'caption'});
+    expect(chain.insertSnapshots).toHaveBeenCalledOnceWith('img-1', 0, [title]);
+    expect(h.selectOrSetCursorAtBlock).toHaveBeenCalledOnceWith(title.id, true);
+    expect(h.run).toHaveBeenCalledTimes(1);
+
+    tick();
+    h.plugin.destroy();
+    h.rootHost.remove();
+  }));
+
   it("opens preview when an editable selected image receives the double click", () => {
     const {
       plugin,
