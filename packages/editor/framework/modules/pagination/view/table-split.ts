@@ -8,7 +8,7 @@
 
 import {
   PaginationResult,
-} from "../engine";
+} from "@ccc/blockcraft/framework/modules/pagination/engine";
 import {
   TableCellFlowAnchor,
   TableCellFlowPlan,

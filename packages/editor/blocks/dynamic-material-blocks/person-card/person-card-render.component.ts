@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, HostBinding, signal } from '@angular/core';
 import { NgComponentOutlet } from '@angular/common';
 import {ShapeResizerComponent, type ShapeResizeCommit} from '../../shape-block/shape-resizer.component';
-import {storeBlockPosition} from '../../../framework/services/block-placement/state';
+import {storeBlockPosition} from '../../../framework/modules/object/block-placement/state';
 import {calculatePersonCardResize, isPersonCardCorner, personCardContentScale, personCardFonts, type PersonCardTypographyProps} from './person-card-layout';
 import type { BaseBlockComponent, BlockObjectSizeProps, NoEditableBlockNative } from '../../../framework';
 import { splitBorder } from '../kernel/material-border.util';

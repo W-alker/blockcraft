@@ -1,4 +1,4 @@
-import {storeBlockPosition} from '../../framework/services/block-placement/state'
+import {storeBlockPosition} from '../../framework/modules/object/block-placement/state'
 import {OverlayRef} from '@angular/cdk/overlay'
 import {NgZone} from '@angular/core'
 import {fromEvent, Subject, Subscription, takeUntil} from 'rxjs'

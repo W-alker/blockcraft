@@ -1,11 +1,11 @@
 import { Subject } from "rxjs";
-import {BLOCK_PLACEMENT_LAYOUT_FLAVOUR} from "../../../services/block-placement/types";
+import {BLOCK_PLACEMENT_LAYOUT_FLAVOUR} from "../../object/block-placement/types";
 import { HeightMap } from "../../virtualization/height-map";
 import {
   VerticalLayoutChange,
   VerticalLayoutProjection,
 } from "../../virtualization/layout-projection";
-import { PageSlotFragment, PaginationItem, PaginationResult } from "../engine";
+import { PageSlotFragment, PaginationItem, PaginationResult } from "@ccc/blockcraft/framework/modules/pagination/engine";
 import { ResolvedPaginationGeometry } from "../pagination.types";
 import { computeBlockGaps } from "../view/sheet-layout";
 import { PaginationGeometryEntry } from "./pagination-geometry-index";

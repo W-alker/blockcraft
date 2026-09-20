@@ -1,6 +1,7 @@
 export * from './editor'
 export * from './bundled-capabilities'
 export * from './bundled-adapter-registry'
+export * from './clipboard-source-adapters'
 export * from './markdown-stream-renderer'
 export * from './services/adapter.service'
 export * from './awa'

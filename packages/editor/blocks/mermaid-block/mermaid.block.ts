@@ -12,7 +12,7 @@ import { IMermaidType, MermaidViewMode } from "./types";
 import { nextTick } from "../../global";
 import { MermaidViewSwitchComponent } from "./widgets/mermaid-view-switch.component";
 import { isFormatOnlyDelta } from "../code-block/color-merge";
-import { BlockFullscreenController } from "../../framework/services/block-fullscreen-controller";
+import { BlockFullscreenController } from "../../framework/doc/view/block-fullscreen-controller";
 
 import type {MermaidVisualSession} from './mermaid-visual-session';
 import type {TextEdit} from '@visimer/core';

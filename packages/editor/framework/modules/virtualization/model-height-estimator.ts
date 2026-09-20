@@ -8,7 +8,7 @@ import {
   paragraphPointsToPixels,
   resolveEditableBlockFontScale,
 } from '../../block-std'
-import {readInlineImageDelta} from '../../../embeds/image'
+import {readInlineImageDelta} from '../../block-std/inline/image-data'
 import type {
   BlockModelHeightEstimateContext,
   BlockVirtualizationLayoutMode,

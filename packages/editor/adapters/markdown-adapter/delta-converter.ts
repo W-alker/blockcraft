@@ -4,7 +4,7 @@ import {
   type ASTToDeltaMatcher,
   DeltaASTConverter, InlineDeltaMatcher,
 } from '../types';
-import {DeltaInsert, IInlineNodeAttrs} from "../../framework";
+import {DeltaInsert, IInlineNodeAttrs} from '@ccc/blockcraft/framework/model';
 import {inlineInsertPlainText} from '../utils';
 
 export type InlineDeltaToMarkdownAdapterMatcher =

@@ -1,6 +1,6 @@
 import {EventEmitter} from '@angular/core'
 import {Subject} from 'rxjs'
-import type {DocAttachmentInfo} from '../../framework/services/file.service'
+import type {DocAttachmentInfo} from '../../framework/host/file.service'
 import {LocalVideoUpload} from './local-video-upload'
 import {VideoBlockSchema} from './index'
 import {VideoBlockComponent} from './video.block'

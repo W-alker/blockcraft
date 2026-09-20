@@ -1,4 +1,4 @@
-import {parseBlockPosition, storeBlockPosition} from '../../../framework/services/block-placement/state'
+import {parseBlockPosition, storeBlockPosition} from '../../../framework/modules/object/block-placement/state'
 import type {Element} from 'hast'
 import {
   WordArtBlockSchema,

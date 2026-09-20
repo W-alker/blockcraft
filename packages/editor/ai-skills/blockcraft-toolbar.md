@@ -2,9 +2,13 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-28
+> Last updated: 2026-09-20
 
 ## Overlay Service
+
+`DocOverlayService` 的实现归属 `framework/angular/overlay.service.ts`，旧 services 路径转导出
+同一个类；`doc.overlayService` 与主入口导入方式不变。Overlay 是 Angular/CDK 接入能力，
+不放入纯宿主 ports，也不为它单独增加 npm 入口。
 
 All floating UI in BlockCraft uses Angular CDK Overlay via `doc.overlayService`. Two main patterns:
 

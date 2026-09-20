@@ -1,20 +1,6 @@
 import type {Element, Properties} from 'hast'
-import {
-  INLINE_TYPOGRAPHY_ATTRS,
-  IBlockProps,
-  IEditableBlockProps,
-  IInlineNodeAttrs,
-  isTypographyFontFamilyId,
-  matchTypographyFontFamily,
-  normalizeDocumentFontSize,
-  normalizeInlineFontScale,
-  normalizeInlineLetterSpacing,
-  normalizeParagraphFontScale,
-  normalizeParagraphSpacing,
-  normalizeTypographyLineHeight,
-  paragraphPointsToCss,
-  resolveTypographyFontFamily,
-} from '../../framework'
+import {INLINE_TYPOGRAPHY_ATTRS, IBlockProps, IEditableBlockProps, IInlineNodeAttrs} from '@ccc/blockcraft/framework/model';
+import {isTypographyFontFamilyId, matchTypographyFontFamily, normalizeDocumentFontSize, normalizeInlineFontScale, normalizeInlineLetterSpacing, normalizeParagraphFontScale, normalizeParagraphSpacing, normalizeTypographyLineHeight, paragraphPointsToCss, resolveTypographyFontFamily} from '@ccc/blockcraft/framework/block-std/typography';
 
 type StyleMap = ReadonlyMap<string, string>
 

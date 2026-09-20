@@ -1,9 +1,5 @@
 import type {Element} from 'hast'
-import {
-  type BlockSurfacePadding,
-  type BlockSurfaceProps,
-  normalizeBlockSurfaceProps,
-} from '../../..'
+import {type BlockSurfacePadding, type BlockSurfaceProps, normalizeBlockSurfaceProps} from '../block-surface';
 
 export const stringProperty = (
   node: Element,

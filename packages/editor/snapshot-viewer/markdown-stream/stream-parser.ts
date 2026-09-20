@@ -5,7 +5,7 @@ import {
 } from "../../adapters";
 import {BUNDLED_ADAPTER_REGISTRY} from '../../editor/bundled-adapter-registry'
 import {BlockNodeType} from "../../framework/block-std/types/block.type";
-import {DocAttachmentInfo, DocFileService} from "../../framework/services/file.service";
+import {DocAttachmentInfo, DocFileService} from "../../framework/host/file.service";
 import {IBlockSnapshot} from "../../framework/block-std/types/block.type";
 import {
   MarkdownStreamViewerOptions,

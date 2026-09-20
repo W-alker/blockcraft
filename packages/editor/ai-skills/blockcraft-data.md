@@ -2,9 +2,18 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when working with the CRDT data layer.
 >
-> Last updated: 2026-09-16
+> Last updated: 2026-09-20
 
 ## Architecture Overview
+
+基础内容数据契约归属 `framework/model/`，可聚合导入 `@ccc/blockcraft/framework/model`。
+它是 Block/Inline/Delta、元数据、通用快照及持久化格式标识的共享模型，不包含 Yjs、Angular 或 DOM，
+也不负责数据写入。`BlockModelGraph`、`NativeBlockModel`、Yjs 代理与事务仍属于文档编辑运行时。
+旧 block-std 类型路径继续兼容。独立读取或交换数据可使用 `BlockSnapshot<P, M, F>`，
+默认 `F = string`，不要求组件注册；它只是数据描述，不负责运行时验证。
+文档编辑与 `doc.exportSnapshot()` 继续使用注册表约束的 `IBlockSnapshot<P, M>`，
+其递归后代也受同一注册表约束。父节点 props/meta 泛型不传播给子块。
+`BaseBlockDesc` 保留 interface 形式及类型增强能力，并复用通用 `BlockDescriptor` 的基础字段。
 
 ```
 BlockCraftDoc

@@ -1,5 +1,5 @@
 import {compactShapeGeometryOverride} from './shape-geometry-storage'
-import {parseBlockPosition, storeBlockPosition} from '../../framework/services/block-placement/state'
+import {parseBlockPosition, storeBlockPosition} from '../../framework/modules/object/block-placement/state'
 import {
   DEFAULT_OBJECT_EFFECTS,
   DEFAULT_OBJECT_LINE,

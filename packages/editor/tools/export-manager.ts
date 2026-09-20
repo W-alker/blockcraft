@@ -1,14 +1,12 @@
 import {downloadFile} from "../global";
-import {
-  ClipboardDataType,
-  DOC_ADAPTER_SERVICE_TOKEN,
-  RevisionConflictError,
-} from "../framework";
+import {ClipboardDataType} from '../framework/modules/clipboard/types';
+import {DOC_ADAPTER_SERVICE_TOKEN} from '../framework/angular/host-service-tokens';
+import {RevisionConflictError} from '../framework/revision/errors';
 import {
   exportDocumentToPdf,
   PaginationPdfOptions,
   PaginationPdfResult,
-} from "../framework/modules/pagination/export";
+} from "./export";
 import {PaginationConfig} from "../framework/modules/pagination/pagination.types";
 import {PaginationPlugin} from "../plugins/pagination";
 

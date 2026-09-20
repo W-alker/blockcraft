@@ -5,7 +5,7 @@ import {
   type NoEditableBlockNative,
 } from '../../framework'
 import {generateId} from '../../framework'
-import {BLOCK_PLACEMENT_LAYOUT_FLAVOUR} from '../../framework/services/block-placement.manager'
+import {BLOCK_PLACEMENT_LAYOUT_FLAVOUR} from '../../framework/modules/object/block-placement.manager'
 import {PlacementLayoutBlockComponent} from './placement-layout.block'
 
 

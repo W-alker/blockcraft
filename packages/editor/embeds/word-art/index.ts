@@ -9,7 +9,7 @@ import {
   objectPaintBackgroundPosition,
   objectPaintBackgroundSize,
   objectPicturePreserveAspectRatio,
-} from '../../framework/block-std/block/object-format'
+} from '@ccc/blockcraft/framework/block-std/block/object-format'
 import {
   cloneInlineObjectDeltas,
   createInlineObjectAttributes,

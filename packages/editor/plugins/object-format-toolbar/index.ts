@@ -30,7 +30,7 @@ import {
   type UIEventStateContext,
 } from "../../framework";
 import { isSelectionAlive } from "../../framework/modules/selection/liveness";
-import { deleteAbsolutePlacementObject } from "../../framework/services/block-placement/delete-command";
+import { deleteAbsolutePlacementObject } from "../../framework/modules/object/block-placement/delete-command";
 import {
   ObjectFormatToolbarComponent,
   type ObjectFormatToolbarAction,

@@ -1,6 +1,7 @@
 import type {Element} from 'hast'
 import type {PhrasingContent} from 'mdast'
-import type {DeltaInsert, DeltaInsertEmbed, EmbedConverter} from '../../framework'
+import type {DeltaInsert, DeltaInsertEmbed} from '@ccc/blockcraft/framework/model';
+import type {EmbedConverter} from '../../framework/block-std/inline';
 import type {HtmlAST} from '../types'
 import {
   MARKDOWN_ADAPTER_PROFILE_CONFIG,

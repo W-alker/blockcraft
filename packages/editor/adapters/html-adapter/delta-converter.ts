@@ -1,5 +1,5 @@
 import {ASTToDeltaMatcher, DeltaASTConverter, DeltaASTConverterOptions, InlineDeltaMatcher} from "../types";
-import {DeltaInsert, IInlineNodeAttrs} from "../../framework";
+import {DeltaInsert, IInlineNodeAttrs} from '@ccc/blockcraft/framework/model';
 import {HtmlAST, InlineHtmlAST} from "../types";
 import {inlineInsertPlainText, TextUtils} from "../utils";
 

@@ -6,7 +6,7 @@ import {
   ReplaySubject,
   take,
 } from 'rxjs'
-import type {BlockCraftDoc} from './index'
+import type {BlockCraftDoc} from './document';
 
 interface BlockNavigationRequest {
   readonly blockId: string

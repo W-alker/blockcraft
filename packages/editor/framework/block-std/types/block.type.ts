@@ -1,59 +1,10 @@
-import {SimpleBasicType, SimpleRecord, SimpleValue, UnknownRecord} from "../../../global";
-import {InlineModel} from "./inline.type";
-
-/**
- * root = 'root',
- * block: 普通的块级节点，一般这代表它有children\
- * void: 无children的block节点，且不可编辑，类似html的 \<img /> 闭合标签类型 \
- * editable: 可编辑的文本块节点，和void一样，是最底层的block节点\
- */
-export enum BlockNodeType {
-  root = 'root',
-  block = 'block',
-  void = 'void',
-  editable = 'editable'
-}
-
-export type BlockPlaceholderMode = 'focused' | 'always'
-
-export interface IBaseMetadata {
-  folded?: boolean
-  selected?: boolean
-  /**
-   * Per-block placeholder override for editable blocks.
-   * An empty string explicitly disables the placeholder for this block.
-   */
-  plh?: string
-  /**
-   * Placeholder visibility for this block.
-   * Omitted is equivalent to the legacy focused-only behavior.
-   */
-  plhMode?: BlockPlaceholderMode
-  /**
-   * Instance-level direct-child allow patterns.
-   * Only interpreted by Schemas that opt into instance child constraints.
-   */
-  incl?: string[]
-  /**
-   * Instance-level direct-child deny patterns. Deny wins over `incl`.
-   * Only interpreted by Schemas that opt into instance child constraints.
-   */
-  excl?: string[]
-  /** Non-empty user id of the block's explicit lock owner. */
-  lock?: string
-  /**
-   * Business origin of the explicit lock. Omitted/invalid values are treated
-   * as a normal user lock; only template locks need a persisted marker.
-   */
-  lockKind?: 'template'
-  createdTime?: number
-  lastModified?: {
-    time: number
-    [key: string]: SimpleBasicType
-  }
-}
-
-export type IMetadata = IBaseMetadata & SimpleRecord
+import type {SimpleRecord, UnknownRecord} from '@ccc/blockcraft/global/types';
+import {BlockNodeType, type BlockDescriptor, type InlineModel} from '@ccc/blockcraft/framework/model';
+export {
+  BlockNodeType, type IBlockProps, type IEditableBlockProps,
+  type BlockPlaceholderMode, type IBaseMetadata, type IMetadata,
+  type BlockDescriptor, type BlockSnapshot,
+} from '@ccc/blockcraft/framework/model';
 
 export type BlockPlacementMode = 'relative' | 'absolute'
 export type BlockPlacementLayer = 'under' | 'over'
@@ -78,41 +29,9 @@ export type ResolvedBlockPosition = {
   layer: BlockPlacementLayer
 }
 
-export interface IBlockProps {
-  textAlign?: 'center' | 'right'
-  depth?: number
-  /** Atomic "x y" in layout px, at most two decimals; used in absolute planes. */
-  position?: string
-  /** Omitted means the default `over` layer. */
-  placementLayer?: 'under'
-  /** Persisted editable-block fill color. `null` removes the override. */
-  backColor?: string | null
-  /** Persisted editable-block outline color. `null` removes the override. */
-  borderColor?: string | null
-
-  [key: string]: SimpleValue
-}
-
-export interface IEditableBlockProps extends IBlockProps {
-  depth: number
-  heading?: number
-  /** Paragraph base font scale; omitted/null inherits the document base size. */
-  pfs?: number | null
-  /** Compact unitless line-height ratio; omitted inherits the document root. */
-  lh?: number | null
-  /** Paragraph space before, in typographic points. */
-  psb?: number | null
-  /** Paragraph space after, in typographic points; omitted inherits the theme gap. */
-  psa?: number | null
-}
-
-export interface BaseBlockDesc<P extends SimpleRecord = SimpleRecord, M extends SimpleRecord = SimpleRecord> {
-  id: string
-  flavour: BlockCraft.BlockFlavour
-  nodeType: BlockNodeType | `${BlockNodeType}`
-  meta: IMetadata & M
-  props: IBlockProps & P
-}
+/** 编辑器描述继续受注册表约束；通用数据描述使用模型入口的 BlockDescriptor。 */
+export interface BaseBlockDesc<P extends SimpleRecord = SimpleRecord, M extends SimpleRecord = SimpleRecord>
+  extends BlockDescriptor<P, M, BlockCraft.BlockFlavour> {}
 
 export type IBlockSnapshot<P extends SimpleRecord = SimpleRecord, M extends SimpleRecord = SimpleRecord> =
   UnknownRecord

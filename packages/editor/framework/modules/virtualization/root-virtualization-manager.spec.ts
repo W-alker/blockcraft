@@ -1,4 +1,4 @@
-import {storeBlockPosition} from '../../services/block-placement/state'
+import {storeBlockPosition} from '../object/block-placement/state'
 import {BehaviorSubject, Subject} from 'rxjs'
 import {BlockNodeType} from '../../block-std/types'
 import {HeightMap} from './height-map'

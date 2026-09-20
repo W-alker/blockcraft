@@ -1,4 +1,4 @@
-import {parseBlockPosition, storeBlockPosition} from '../../../../../../packages/editor/framework/services/block-placement/state'
+import {parseBlockPosition, storeBlockPosition} from '../../../../../../packages/editor/framework/modules/object/block-placement/state'
 import {
   BLOCK_PLACEMENT_LAYOUT_FLAVOUR,
   BlockCraftDoc,

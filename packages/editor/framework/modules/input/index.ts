@@ -1,4 +1,4 @@
-import { ORIGIN_SKIP_SYNC } from "../../doc";
+import {ORIGIN_SKIP_SYNC} from '../../doc/origins';
 import {
   BindHotKey,
   BlockNodeType,

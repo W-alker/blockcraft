@@ -20,7 +20,7 @@ import {
   exportDocumentToPdf,
   printPagesInPage,
   readonlyDocRenderProvider,
-} from '../../framework/modules/pagination/export'
+} from '../../tools/export'
 
 export interface PaginationPluginOptions extends PaginationConfig {
   enabled?: boolean

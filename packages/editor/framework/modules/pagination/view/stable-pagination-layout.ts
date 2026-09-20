@@ -1,4 +1,4 @@
-import {PaginationItem, PaginationResult} from '../engine'
+import {PaginationItem, PaginationResult} from '@ccc/blockcraft/framework/modules/pagination/engine'
 import {cloneTableCellFlowPlan} from '../engine/table-cell-flow'
 import {copyTableCellFlowPlan} from '../engine/table-cell-flow-metadata'
 import {PageChrome, PageChromeInlineContent, PaginationConfig, ResolvedPaginationGeometry} from '../pagination.types'

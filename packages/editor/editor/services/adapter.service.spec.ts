@@ -16,6 +16,7 @@ import {
   AdapterService,
   EDITOR_ADAPTER_REGISTRY_TOKEN,
 } from './adapter.service'
+import {BUNDLED_CLIPBOARD_SOURCE_ADAPTERS} from '../clipboard-source-adapters'
 
 class TestFileService extends DocFileService {
   uploadImg(): Promise<string> { return Promise.resolve('') }
@@ -49,6 +50,7 @@ describe('AdapterService registry composition', () => {
     const service = TestBed.inject(AdapterService)
 
     expect(service.registry).toBe(BUNDLED_ADAPTER_REGISTRY)
+    expect(service.clipboardSourceAdapters).toBe(BUNDLED_CLIPBOARD_SOURCE_ADAPTERS)
     expect(service.getSupportedTypes()).toEqual([
       ClipboardDataType.HTML,
       ClipboardDataType.MARKDOWN,

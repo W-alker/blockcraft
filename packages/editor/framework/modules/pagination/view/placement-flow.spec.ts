@@ -4,7 +4,7 @@ import {buildPaginationItems} from './item-builder'
 import {paginate} from '../engine'
 import {resolveScreenGeometry} from './pagination-geometry'
 import {createStablePaginationLayout} from './stable-pagination-layout'
-import {buildPrintPages} from '../export/print-paginator'
+import {buildPrintPages} from '../../../../tools/export/print-paginator'
 
 // 真实浏览器布局回归：height:0 + border-box 并不消除继承的 padding。
 // 测量仍如实返回物理尺寸；正文分页项边界负责排除定位基础设施。

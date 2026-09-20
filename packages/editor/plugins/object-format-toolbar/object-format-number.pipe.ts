@@ -1,5 +1,5 @@
 import { Pipe, type PipeTransform } from "@angular/core";
-import { quantizeObjectFormatNumber } from "../../framework/block-std/block/object-format-number";
+import { quantizeObjectFormatNumber } from "../../framework/block-std/block/object-format/object-format-number";
 
 /** 仅投影工具栏读数；浏览旧值时不触发文档回写。 */
 @Pipe({ name: "objectFormatNumber", standalone: true })

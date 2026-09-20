@@ -1,4 +1,4 @@
-import {parseBlockPosition, storeBlockPosition} from '../../../framework/services/block-placement/state'
+import {parseBlockPosition, storeBlockPosition} from '../../../framework/modules/object/block-placement/state'
 import { Component, HostBinding, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { BaseBlockComponent } from '../../../framework';

@@ -1,4 +1,4 @@
-import { PaginationResult } from "../engine";
+import { PaginationResult } from "@ccc/blockcraft/framework/modules/pagination/engine";
 import {TableCellFlowPlan} from "../engine/table-cell-flow";
 import {getTableCellFlowPlan} from "../engine/table-cell-flow-metadata";
 import { computeBlockGaps } from "../view/sheet-layout";

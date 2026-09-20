@@ -8,6 +8,11 @@
 - `packages/editor/ai-skills`：**AI 技能包** —— 渐进式披露文档，用于 AI agent 与外部应用快速上手 BlockCraft（创建 plugin/block/embed/集成等），随 npm 包发布
 - `apps/playground`：Angular 20 playground
 - `apps/docs`：文档站
+- `apps/desktop`：离线桌面应用（Angular + Tauri，独立 Angular 配置）
+
+编辑器内部以领域所有权组织，目录和 npm 子入口不要求一一对应。当前边界与兼容策略见
+[`packages/editor/ARCHITECTURE.md`](packages/editor/ARCHITECTURE.md)；迁移计划与验证记录见
+[`docs/plans/2026-09-20-ddd-boundaries-and-entrypoints.md`](docs/plans/2026-09-20-ddd-boundaries-and-entrypoints.md)。
 
 ## AI 技能包
 
@@ -24,7 +29,7 @@ node node_modules/@ccc/blockcraft/ai-skills/install.mjs --target codex  # 安装
 ```
 详情见 `packages/editor/ai-skills/README.md`。
 
-> ⚠️ **贡献者注意**：任何对 `packages/editor/framework/`、`blocks/`、`plugins/` 等的架构性修改都**必须**在同一个 PR 中同步更新 ai-skills 文档并追加 `MIGRATIONS.md` 条目，同时按 severity 调整 `packages/editor/package.json` 的版本号。完整规则见 `CLAUDE.md` "文档同步规则" 章节。
+> **贡献者注意**：架构性修改必须在同一个 PR 中同步相关 ai-skills 文档与 `MIGRATIONS.md`。包版本由用户决定，不随重构自动调整。完整规则见 `CLAUDE.md` "文档同步规则" 章节。
 
 ## 启动
 
@@ -39,7 +44,13 @@ pnpm playground
 pnpm build:editor
 pnpm build:playground
 pnpm build:docs
+pnpm build:desktop
 ```
+
+桌面开发使用 `pnpm dev:desktop`，单元测试使用 `pnpm test:desktop`；原生窗口使用
+`pnpm --dir apps/desktop tauri:dev`。从旧位置迁移后，若 Cargo 缓存记录旧绝对路径，
+可用 `CARGO_TARGET_DIR=/tmp/blockcraft-desktop-check cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --locked`
+在独立目录重新验证，无需改动 Rust 源码或包标识。
 
 ## 编辑器发版
 

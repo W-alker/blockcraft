@@ -37,7 +37,7 @@ import {
   normalizeParagraphSpacing,
   normalizeTypographyLineHeight,
   paragraphPointsToCss,
-} from "../../typography";
+} from "@ccc/blockcraft/framework/block-std/typography";
 
 export type BlockViewState = 'mounted' | 'retained' | 'destroyed'
 

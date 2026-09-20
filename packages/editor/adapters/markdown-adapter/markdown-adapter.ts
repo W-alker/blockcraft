@@ -1,6 +1,9 @@
+import type {DocFilePort} from '@ccc/blockcraft/framework/ports';
 import {ASTWalker} from "../base/ast-walker";
 import {Markdown, MarkdownAST} from "./type";
-import {BlockNodeType, DocFileService, generateId, IBlockSnapshot} from "../../framework";
+import {BlockNodeType} from '@ccc/blockcraft/framework/model';
+import {generateId} from '../../framework/utils/id';
+import {IBlockSnapshot} from '../../framework/block-std/types/block.type';
 import type {Root} from 'mdast';
 import {BlockMarkdownAdapterMatcher} from "./block-adapter";
 import {AdapterContext} from "../types";
@@ -21,7 +24,7 @@ export class MarkdownAdapter extends ASTWalker<MarkdownAST, IBlockSnapshot> {
   private readonly registry?: AdapterRegistry;
 
   constructor(
-    readonly fileService: DocFileService,
+    readonly fileService: DocFilePort,
     readonly adapterConfigs = new Map<string, string>(),
     source: readonly BlockMarkdownAdapterMatcher[] | AdapterRegistry,
   ) {

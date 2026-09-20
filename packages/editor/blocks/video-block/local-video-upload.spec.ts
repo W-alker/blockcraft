@@ -1,4 +1,4 @@
-import type {DocFileService} from '../../framework/services/file.service'
+import type {DocFileService} from '../../framework/host/file.service'
 import {getLocalVideoUpload, LocalVideoUpload} from './local-video-upload'
 
 describe('LocalVideoUpload', () => {

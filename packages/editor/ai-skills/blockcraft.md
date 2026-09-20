@@ -22,6 +22,21 @@ A block-based rich text editor built on **Angular (standalone components)** + **
 
 ## Core Concepts
 
+基础内容契约统一归属 `framework/model/`（DDD Shared Kernel），聚合入口为
+`@ccc/blockcraft/framework/model`：包含 Block/Inline 节点类型、基础属性、Delta、
+行内属性、持久化排版标识、元数据和通用 `BlockDescriptor` / `BlockSnapshot`，
+无 DOM、Angular、Yjs 或编辑器全局注册表依赖。
+排版算法、运行时服务、Schema 与 UI 不属于共享模型；编辑器 `IBlockSnapshot` 仍依赖
+`BlockCraft.BlockFlavour`，并保留原递归和接口增强语义。已有主入口与旧类型路径继续兼容。
+通用快照缺省接受字符串 flavour，可由泛型限定整个子树；它不表示已通过编辑器 Schema 校验。
+输入、选区、块和行内运行时是文档编辑上下文的内部模块，不要求每个目录对应独立 npm 入口。
+
+文件、消息、链接预览、天气属于宿主能力契约，统一从
+`@ccc/blockcraft/framework/ports` 导入 `DocFilePort`、`DocMessagePort`、
+`DocLinkPreviewPort`、`DocWeatherPort` 及相关数据类型。该入口只有类型，不带入 Angular、
+DI Token 或默认实现；文件和取消操作仍使用 `File` / `FileList` / `AbortSignal` 浏览器类型。
+原服务类与 Token 从主入口导入的方式不变；默认实现和继承兼容说明见 `blockcraft-app.md`。
+
 仅需 `global/utils` 中的文件、函数、Delta、URL、DOM、颜色、文本、比较或图片工具时，
 使用独立公共入口 `@ccc/blockcraft/global/utils`，避免加载编辑器主入口。该入口没有第三方运行时依赖，
 原主入口继续转导出同一份实现；完整 API 和环境要求见 `blockcraft-app.md`。
@@ -30,6 +45,15 @@ A block-based rich text editor built on **Angular (standalone components)** + **
 资源占位器在创建时需要浏览器 DOM 和配套样式；这些子入口不包含 Angular 指令。
 需要组合使用多类工具时可从 `@ccc/blockcraft/global` 聚合入口导入；该入口仅转导出
 上述七个子入口，同样不加载编辑器或第三方运行时。
+
+轻量排版、对象格式和分页计算也有按源码路径命名的独立入口：
+`@ccc/blockcraft/framework/block-std/typography`、
+`@ccc/blockcraft/framework/block-std/block/object-format`、
+`@ccc/blockcraft/framework/modules/pagination/engine`。
+基础 `BlockNodeType` / `IBlockProps` 优先从 `@ccc/blockcraft/framework/model` 导入；
+`@ccc/blockcraft/framework/block-std/types/block-base` 保留为兼容入口。
+这些入口的运行时及类型声明均无需 Angular、Yjs 或编辑器主入口，原主入口继续兼容；
+具体用途和 DOM 边界见 `blockcraft-app.md` 的“轻量领域能力与基础类型入口”。
 
 | Concept | Description | Key Class/File |
 |---------|-------------|----------------|
@@ -46,8 +70,8 @@ A block-based rich text editor built on **Angular (standalone components)** + **
 | **Input** | Intercepts `beforeInput`, writes to Y.Text directly | `InputTransformer` in `framework/modules/input/` |
 | **Table Model** | DOM-free table coordinates, merged-cell closure and stable-ID rectangle targets | package-internal `framework/modules/table/` |
 | **Virtualization** | Optional model-first root-child windowing; nested subtrees stay atomic | `RootVirtualizationManager` in `framework/modules/virtualization/` |
-| **Object Layout** | Word-like inline/top-bottom/under/over states plus fixed-pixel object grouping, projected onto Schema-gated block placement | `BlockPlacementManager` in `framework/services/` |
-| **Object Sizing** | Placement-plane-relative `wr/ar` sizing with legacy pixel compatibility | `BlockObjectSizingManager` in `framework/services/` |
+| **Object Layout** | Word-like inline/top-bottom/under/over states plus fixed-pixel object grouping, projected onto Schema-gated block placement | `BlockPlacementManager` in `framework/modules/object/` |
+| **Object Sizing** | Placement-plane-relative `wr/ar` sizing with legacy pixel compatibility | `BlockObjectSizingManager` in `framework/modules/object/` |
 | **Object Format** | DOM-free Shape/TextBox/WordArt geometry, paint, line, effects and text-frame normalization plus mixed batch writes | `BlockObjectFormatManager` at `doc.objectFormat` |
 | **Resource Placeholder** | Reusable image/video/iframe loading, failure, retry and intrinsic-size coordination | `BcResourcePlaceholderDirective` in `components/resource-placeholder/` |
 | **Block Navigation** | Mode-independent stable-ID reveal without changing selection or focus | `BlockCraftDoc.navigateToBlock()` |
@@ -100,7 +124,11 @@ factory result across multiple documents.
 ```
 packages/editor/
 ├── framework/              # Core engine
-│   ├── doc/                # BlockCraftDoc, BlockModelGraph, DocCRUD, DocVM, DocUndoManager
+│   ├── model/              # 共享内容契约：Block、Inline、Delta、持久化排版标识
+│   ├── ports/              # 文件、消息、链接预览、天气的宿主契约（聚合类型入口）
+│   ├── host/               # 文件/消息默认基类、转换与块创建契约；保留注册表和继承语义
+│   ├── angular/            # 宿主 DI Token 的唯一定义、CDK Overlay
+│   ├── doc/                # 文档核心；view/ 管理缩放、排版事实、全屏状态
 │   ├── block-std/          # BaseBlockComponent, EditableBlockComponent
 │   │   ├── agent/          #   BlockAgentCapabilityDefinition + declaration helper
 │   │   ├── block/          #   component base classes
@@ -108,21 +136,31 @@ packages/editor/
 │   │   ├── inline/         #   InlineRuntime, Blot tree, EmbedConverter
 │   │   ├── schema/         #   SchemaManager, IBlockSchemaOptions
 │   │   └── reactive/       #   proxyMap, YBlock, NativeBlockModel
-│   ├── modules/            # Selection, Input, Clipboard, Pagination, Virtualization
+│   ├── modules/            # selection/input/clipboard/pagination/virtualization/object/drag-drop
 │   ├── plugin/             # DocPlugin base class
 │   ├── chain/              # DocChain fluent builder
-│   └── services/           # DI tokens (file, message, blockCreator, etc.)
+│   └── services/           # 仅旧路径转导出，不再放实现
 ├── blocks/                 # Block implementations; optional adapter/ and agent/ contracts
 ├── embeds/                 # Inline Embed converters; co-located adapter/ and optional agent/
 ├── plugins/                # All plugin implementations (one dir per plugin)
 ├── components/             # Reusable UI components (toolbar, pickers, optional revision review UI)
 ├── snapshot-viewer/        # Standalone display-only snapshot renderer
-├── adapters/               # 仅核心：AST walker、matcher 契约、registry 与通用 codec
-├── editor/                 # 内置能力组合根（含 bundled-adapter-registry.ts）
+├── adapters/               # AST walker、matcher 契约、registry 与通用 codec；sources/ 为来源集成
+├── editor/                 # 公共 Doc/Clipboard/Builder 默认装配、内置能力与默认宿主实现
 ├── themes/                 # CSS themes (base, light, dark, per-block styles)
-├── tools/                  # Export utilities (PDF, print)
+├── tools/                  # DocExportManager；export/ 持有 PDF/打印与资源准备流程
 └── global/                 # Logger, error codes, decorators, types, utils
 ```
+
+应用统一位于仓库 `apps/`：`playground`、`docs`、`desktop`；Desktop 保留自己的 Angular/Tauri 工程。
+领域核心为 `framework/doc/document.ts` 与 `framework/modules/clipboard/clipboard-manager.ts`，
+从构造参数接收内部运行时依赖；公共 `BlockCraftDoc` / `ClipboardManager` 仍从主入口和原路径导出，
+在 `editor` 中装配默认 Embed / YNE。不要从领域实现导入兼容聚合入口，避免重新带回产品默认能力。
+`block-std` 和 `modules` 是同一编辑上下文的内部组织，不逐目录发布 npm 入口。
+
+转换、只读展示、导出继续使用主入口：转换声明依赖已注册 `IBlockSnapshot`；Markdown 流式展示还依赖
+内置 adapter registry；PDF 导出依赖 Doc 生命周期和分页插件。它们有独立职责目录，但不满足当前独立
+发布的契约条件。已有轻量入口继续保留；运行时和类型边界由 `build:editor` 检查。
 
 ## Task Routing Table
 
@@ -1282,17 +1320,17 @@ Key services accessible on `doc.*` (see `blockcraft-app.md` for full API details
 
 | Service | Description | Source file |
 |---------|-------------|-------------|
-| `doc.dragController` | 内部 block 拖拽（PointerEvents） | `framework/services/internal-drag.controller.ts` |
-| `doc.dndService`     | 外部文件拖入 + commit 类方法分发  | `framework/services/dnd.service.ts` |
-| `doc.objectSizing`   | root 相对对象尺寸解析与宽度观测 | `framework/services/block-object-sizing.manager.ts` |
-| `doc.viewScale`      | 文档视觉缩放、快捷滚轮与布局/视觉坐标换算 | `framework/services/document-view-scale.manager.ts` |
-| `doc.overlayService` | CDK Overlay wrapper | `framework/services/overlay.service.ts` |
+| `doc.dragController` | 内部 block 拖拽（PointerEvents） | `framework/modules/drag-drop/internal-drag.controller.ts` |
+| `doc.dndService`     | 外部文件拖入 + commit 类方法分发  | `framework/modules/drag-drop/dnd.service.ts` |
+| `doc.objectSizing`   | root 相对对象尺寸解析与宽度观测 | `framework/modules/object/block-object-sizing.manager.ts` |
+| `doc.viewScale`      | 文档视觉缩放、快捷滚轮与布局/视觉坐标换算 | `framework/doc/view/document-view-scale.manager.ts` |
+| `doc.overlayService` | CDK Overlay wrapper | `framework/angular/overlay.service.ts` |
 | `doc.clipboard`      | ClipboardManager | `framework/modules/clipboard/` |
 | `doc.selection`      | SelectionManager (anchor/head model) | `framework/modules/selection/` |
 | `doc.event`          | UIEventDispatcher | `framework/block-std/event/` |
 
 - 复制过滤：`DocConfig.copyFilter` / `doc.clipboard.registerCopyFilter()`（按 flavour/属性过滤 + transform 逃生舱；详见 blockcraft-app.md / blockcraft-plugin.md）
-- 粘贴优先级：internal snapshot → 有道云 `text/yne-json`（`framework/modules/clipboard/adapters/yne/`）→ YNE HTML fallback → 通用 `text/html` → 纯文本。有道云内容走 Clipboard 领域的专用高保真路径，失败回退通用 HTML。
+- 粘贴优先级：internal / web snapshot → 来源私有格式 → HTML 内部 marker → 来源 HTML → 通用 HTML → 纯文本。来源接口为 `ClipboardSourceAdapter`；默认 YNE 实现归属 `adapters/sources/yne/`，由 `editor/clipboard-source-adapters.ts` 组合。旧构造入口通过 `editor/clipboard-manager.ts` 保持缺省行为，细节见 `blockcraft-adapter.md`。
 
 ### Block Property Updates
 

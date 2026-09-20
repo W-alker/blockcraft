@@ -1,5 +1,5 @@
 import {compactShapeGeometryOverride} from './shape-geometry-storage'
-import {storeBlockPosition} from '../../framework/services/block-placement/state'
+import {storeBlockPosition} from '../../framework/modules/object/block-placement/state'
 import {
   ChangeDetectionStrategy,
   Component,

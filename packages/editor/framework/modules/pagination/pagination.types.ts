@@ -1,5 +1,5 @@
 // packages/editor/framework/modules/pagination/pagination.types.ts
-import {PageGeometry, PageMargins, PageSizeName} from "./engine";
+import {PageGeometry, PageMargins, PageSizeName} from "@ccc/blockcraft/framework/modules/pagination/engine";
 
 /**
  * 页眉/页脚的三段文本。

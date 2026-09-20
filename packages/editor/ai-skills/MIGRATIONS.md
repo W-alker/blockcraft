@@ -68,6 +68,237 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## Unreleased — 2026-09-20：DDD 目录归位与默认装配收敛
+
+**Severity**: patch（架构和源码归属整理，原公开签名与默认行为不变；不修改包版本）。
+
+**What changed**: 宿主基类/注册契约归入 `framework/host`，Token 和 Overlay 归入
+`framework/angular`，文档视图归入 `framework/doc/view`，对象操作与拖放归入
+`framework/modules/object` / `drag-drop`。打印导出从分页核心迁入 `tools/export`。
+旧服务、导出、YNE 路径保留同一实现的转导出。Doc / Clipboard / Builder 的默认装配归属
+`editor`，核心使用显式运行时依赖，第四阶段过渡性的 legacy-defaults 桥已移除。
+图片数据规则与 DOM converter 分离；领域实现和通用 codec 禁止经兼容 barrel 回流产品层。
+仓库桌面应用迁入 `apps/desktop`。
+
+**Why**: 让目录体现领域职责、平台接入和产品组合的所有权，并以源码检查约束依赖方向。
+保留旧构造器、Token 身份、宿主自定义服务的 YNE 缺省能力、Embed 覆盖规则和事件注册次数。
+此次入口审计不新增 adapters/viewer/export npm 子入口：注册快照、内置 registry、Doc/分页插件
+依赖仍是当前契约的一部分，不能通过扩大 flavour 或复制默认类来隐藏。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-app.md`、`blockcraft-adapter.md`、
+`blockcraft-inline.md`、`blockcraft-embed.md`、`blockcraft-toolbar.md`。
+
+### Migration Recipe
+
+外部 npm 调用方无需修改；继续从 `@ccc/blockcraft` 导入 `BlockCraftDoc`、`ClipboardManager`、
+服务类、Token、转换/展示/导出 API，或使用已有轻量子入口。`DocumentRuntime` 是内部装配接口，
+不属于新的 npm 入口，也不是 DocConfig 的配置项。没有新增 deprecated API。
+
+仓库内贡献者应从领域实现路径导入，旧 services 等目录只维护兼容转导出；应用命令更新为
+`pnpm dev:desktop` / `pnpm build:desktop` / `pnpm test:desktop`，原生开发为
+`pnpm --dir apps/desktop tauri:dev`。
+
+### Behavior Changes
+
+无预期用户行为变化。Yjs 数据、快照格式、Schema/注册表约束、剪贴板优先级、资源回传、
+Undo/Redo、打印后端和桌面文件关联均保持原语义。六个 DI Token 的描述和泛型保持不变；
+链接/天气 Token 保留 type-only 的具体类兼容引用，因此不宣称整个 framework 已可独立发布。
+
+## Unreleased — 2026-09-20：剪贴板来源适配第四阶段
+
+**Severity**: minor（新增可选扩展契约；不修改包版本，不新增 npm 子入口）。
+
+**What changed**: 有道云 JSON / HTML 转换与资源处理迁入 `adapters/sources/yne/`，原源码路径保留
+同一实现的转导出。ClipboardManager 改为调用来源接口；默认编辑器显式组合来源列表，
+旧宿主缺省行为由一个兼容装配入口保留。通用 HTML/Markdown codec 不引用来源集成。
+
+**Why**: 将特定应用格式、剪贴板编排和默认组合分开，同时保持已有自定义 DocAdapterService
+的隐式 YNE 支持。兼容桥仍有物理反向依赖，本轮不宣称整个 framework 已彻底解耦。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-app.md`、`blockcraft-adapter.md`。
+
+### New APIs / Features
+
+- 主入口新增 `ClipboardSourceAdapter`、`ClipboardSourceData` 类型和只读
+  `BUNDLED_CLIPBOARD_SOURCE_ADAPTERS` 默认组合。
+- `DocAdapterService.clipboardSourceAdapters` 为可选列表；缺省使用原默认来源，显式列表完整替代默认值。
+- 来源解析同步；`prepareSnapshot` 在克隆/改写 ID 前清理临时数据，可返回下一 tick 的资源收尾闭包。
+  接口涉及文档生命周期与注册快照，不属于纯 `framework/ports`。无新增 deprecation。
+
+### Migration Recipe
+
+旧服务、provider、剪贴板调用无需迁移。在现有服务子类中按需增加：
+
+```typescript
+import {BUNDLED_CLIPBOARD_SOURCE_ADAPTERS} from '@ccc/blockcraft';
+// 使用自己的 mySource 优先解析，继续保留默认来源：
+// override clipboardSourceAdapters = [mySource, ...BUNDLED_CLIPBOARD_SOURCE_ADAPTERS];
+// 显式关闭来源识别（普通 HTML / 纯文本仍保留）：
+// override clipboardSourceAdapters = [];
+```
+
+### Behavior Changes
+
+现有默认行为不变：内部快照、YNE JSON、HTML marker、YNE HTML、普通 HTML/文本优先级，
+文本/gap 插入、格式选择和异步 HTML 的协作选区重定位保留。附件标记在插入前剥离，使用最终 ID
+异步重传；目标删除、CORS/鉴权失败、非 http(s) 上传结果继续按原规则处理。无需文档数据迁移。
+
+## Unreleased — 2026-09-20：宿主能力端口与 Angular 接入第三阶段
+
+**Severity**: minor（新增聚合类型入口；不修改包版本）。
+
+**What changed**: 新增 `@ccc/blockcraft/framework/ports`，聚合文件、消息、链接预览、
+天气的宿主契约。四个原 DI Token 归入 `framework/angular`；链接预览与天气默认实现
+归入 `editor/services`。原服务模块继续转导出同一 Token / 类，文件与消息基类保留。
+HTML/Markdown Adapter 及其上下文改为仅类型依赖结构等价的 `DocFilePort`。
+
+**Why**: 分开编辑器对宿主的能力需求、Angular 注入与默认实现，独立消费契约时
+不加载完整编辑器；按宿主边界提供一个聚合入口，避免按服务细分 npm 子路径。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-app.md`、`blockcraft-adapter.md`。
+
+### New APIs / Features
+
+`DocFilePort`、`DocMessagePort`、`DocLinkPreviewPort`、`DocWeatherPort` 从 ports 及主入口导出。
+既有 `DocAttachmentInfo`、`UploadProgressCallback`、`LinkPreviewData`、`DocWeatherTone`、
+`DocWeatherData`、`DocWeatherQuery` 也可从 ports 独立导入。无新增 deprecation。
+Port 只有类型；文件与取消契约仍需要 `File` / `FileList` / `AbortSignal` 浏览器类型库。
+
+### Migration Recipe
+
+```typescript
+// 原有继承和 Angular provider 继续使用，无需迁移。
+import {DocFileService, DOC_FILE_SERVICE_TOKEN} from '@ccc/blockcraft';
+// 仅描述宿主文件能力时，可独立引用契约。
+import type {DocFilePort} from '@ccc/blockcraft/framework/ports';
+function useHostFiles(files: DocFilePort) {
+  return files.inputFiles('image/*', false);
+}
+```
+
+仅实现 Port 不会继承基类的默认方法；原 `extends DocFileService` 继续获得下载与文件选择实现。
+Token 保留原泛型，包括链接服务类的 private/protected 类型边界，不强制改写现有注入结果类型。
+
+### Behavior Changes
+
+无行为或数据格式变化：原方法、默认实现、Token 身份及描述、provider 方式均保留。
+文件内部映射 URL 与浏览器预览 URL 的区别、清理方式、链接 endpoint / abort / 错误处理、
+天气未配置错误保持不变。无需迁移文档数据。
+
+## Unreleased — 2026-09-20：通用快照与注册表边界第二阶段
+
+**Severity**: minor（新增类型 API；不修改包版本或新增 npm 子入口）。
+
+**What changed**: 现有 `framework/model` 入口新增 `BlockDescriptor<P, M, F>` 与
+`BlockSnapshot<P, M, F>`，并接收基础元数据契约。通用快照不依赖组件注册表；
+编辑器 `BaseBlockDesc` 复用通用描述字段，`IBlockSnapshot` 保留注册表、递归和接口增强关系。
+
+**Why**: 将数据交换契约与编辑器组件注册约束分开，独立消费模型时不加载 Angular 或编辑器声明，
+同时保持现有 Schema、文档编辑、转换和展示 API 的类型约束。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-app.md`、`blockcraft-block.md`、`blockcraft-data.md`。
+
+### New APIs / Features
+
+`BlockDescriptor`、`BlockSnapshot` 通过模型聚合入口和原主入口导出。
+`IBaseMetadata`、`IMetadata`、`BlockPlaceholderMode` 在模型入口独立可用，旧路径继续转导出。
+`F` 缺省为 `string`，指定 flavour 集合时约束整个子树；父节点的 `P` / `M` 不传播给子块。
+无新增 deprecation。
+
+### Migration Recipe
+
+```typescript
+// 编辑器创建/编辑流程：原契约继续使用
+import type {IBlockSnapshot} from '@ccc/blockcraft';
+// 独立数据交换：无需全局注册表，不自动获得编辑器 Schema 资格
+import type {BlockSnapshot} from '@ccc/blockcraft/framework/model';
+type PortableTree = BlockSnapshot;
+type KnownTree = BlockSnapshot<{}, {}, 'root' | 'paragraph'>;
+```
+
+### Behavior Changes
+
+无运行时或存储格式变化。编辑器 flavour、children、props/meta 泛型、空 void children、
+editable Delta 及 BaseBlockDesc 类型增强语义保持兼容；通用快照不是运行时校验器。
+Schema 注册、Yjs 事务、doc.exportSnapshot 和写入路径不变，无文档数据迁移。
+
+## Unreleased — 2026-09-20：共享内容模型与 DDD 边界第一阶段
+
+**Severity**: minor（新增兼容聚合入口；不修改包版本）。
+
+**What changed**: 将基础 Block 属性、Inline/Delta 契约和持久化排版标识归入
+`framework/model/`，提供一个 `@ccc/blockcraft/framework/model` 聚合入口。
+原主入口、旧类型路径及 `block-base` / typography 子入口继续转导出同一份契约和运行时符号。
+`global/utils` 改为仅类型依赖共享模型，移除对排版实现层的声明引用及此前的包根入口绕行文件。
+
+**Why**: 以共享内容模型作为编辑、转换与展示的稳定契约，明确依赖方向，
+不按文件数量扩张 npm 入口。字体 ID 与格式键属于数据契约，字体目录、算法和 DOM 应用属于排版能力。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-app.md`、`blockcraft-data.md`、`blockcraft-inline.md`。
+
+### New APIs / Features
+
+新增聚合入口 `@ccc/blockcraft/framework/model`，包含 `BlockNodeType`、`InlineNodeType`、
+`INLINE_TYPOGRAPHY_ATTRS`、基础块属性、Delta/行内类型与字体 ID 类型。
+无第三方运行时依赖，可在无 DOM 类型库和编辑器全局声明的 Node 环境中使用。
+无新增 deprecation。
+
+### Migration Recipe
+
+```typescript
+// before（继续兼容）
+import {BlockNodeType, type DeltaInsert} from '@ccc/blockcraft';
+// after（独立使用基础内容契约）
+import {BlockNodeType, type DeltaInsert} from '@ccc/blockcraft/framework/model';
+```
+
+### Behavior Changes
+
+字段、枚举值、格式键、字体 ID、类型索引约束与 `null` 清除语义不变；无数据迁移。
+`IBlockSnapshot` / `BaseBlockDesc` 仍依赖原块注册表，未搬入新入口，也未放宽其类型约束。
+DocCRUD / DocChain、Yjs 事务、选区与撤回路径不变。整包 peerDependencies 不变。
+
+## Unreleased — 2026-09-20：轻量领域能力与基础块类型入口
+
+**Severity**: minor（新增兼容入口；发布版本由维护者决定，不修改包版本）。
+
+**What changed**: 新增 typography、object-format、pagination/engine 和 block-base
+四个独立构建入口，保留源码目录层级，统一以能力目录中的 `index.ts` 作为构建入口。
+排版计算与 DOM 应用代码在能力目录内分开，对象格式的 helper 归入同一能力目录。
+`BlockNodeType` 与 `IBlockProps` 提取到纯基础
+类型模块，原 `block.type.ts` 和主入口继续转导出；编辑器内部调用统一引用子入口。
+
+**Why**: 独立使用排版、对象格式转换或分页算法时，无需加载 Angular/Yjs、编辑器运行时，
+也无需引入编辑器快照声明或 `BlockCraft` 全局类型命名空间。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-app.md`。
+
+### New APIs / Features
+
+新增 `@ccc/blockcraft/framework/block-std/typography`、
+`@ccc/blockcraft/framework/block-std/block/object-format`、
+`@ccc/blockcraft/framework/modules/pagination/engine`、
+`@ccc/blockcraft/framework/block-std/types/block-base`。
+分页引擎同时提供同一份 `BlockNodeType`，便于构造策略输入。
+
+### Migration Recipe
+
+```typescript
+// before（继续兼容）
+import {normalizeInlineFontScale, storeObjectPaint, paginate, BlockNodeType} from '@ccc/blockcraft';
+// after（按需导入）
+import {normalizeInlineFontScale} from '@ccc/blockcraft/framework/block-std/typography';
+import {storeObjectPaint} from '@ccc/blockcraft/framework/block-std/block/object-format';
+import {paginate, BlockNodeType} from '@ccc/blockcraft/framework/modules/pagination/engine';
+import type {IBlockProps} from '@ccc/blockcraft/framework/block-std/types/block-base';
+```
+
+### Behavior Changes
+
+既有字段、计算规则、格式存储、分页规则和枚举值不变，无文档数据迁移。
+排版中的 DOM 应用函数仍需 HTMLElement；分页入口只负责计算，不包含视图和打印流程。
+`global/utils` 仅在类型层引用共享内容模型（见上方 DDD 第一阶段条目）；整包 peerDependencies 保持不变。
+
 ## Unreleased — 2026-09-20：补齐 global 独立入口
 
 **Severity**: minor（新增兼容子入口；发布版本由维护者决定，不修改包版本）。

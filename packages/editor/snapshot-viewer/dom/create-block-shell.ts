@@ -6,7 +6,7 @@ import {
   normalizeTypographyLineHeight,
   paragraphPointsToCss,
   resolveEditableBlockFontScale,
-} from "../../framework/block-std/typography";
+} from "@ccc/blockcraft/framework/block-std/typography";
 
 export function createBlockShell(snapshot: IBlockSnapshot): HTMLElement {
   const element = document.createElement(getTagName(snapshot))

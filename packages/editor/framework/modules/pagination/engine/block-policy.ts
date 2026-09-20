@@ -1,5 +1,5 @@
 // packages/editor/framework/modules/pagination/engine/block-policy.ts
-import {BlockNodeType} from "../../../block-std/types/block.type";
+import {BlockNodeType} from '@ccc/blockcraft/framework/model';
 
 /** 手动分页符 flavour（复用 demo-presentation 的 page-divider 语义）。 */
 export const MANUAL_BREAK_FLAVOUR = 'page-divider';

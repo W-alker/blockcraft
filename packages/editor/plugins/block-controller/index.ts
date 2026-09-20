@@ -10,7 +10,7 @@ import {
 } from "../../framework";
 import {getSelectionCoveredBlockIds} from "../../framework/modules/selection/covered-blocks";
 import {isSelectionAlive} from "../../framework/modules/selection/liveness";
-import type {InternalDragData} from "../../framework/services/internal-drag.controller";
+import type {InternalDragData} from "../../framework/modules/drag-drop/internal-drag.controller";
 import {
   BlockControllerPluginOptions,
   BlockControllerPositionResolver,

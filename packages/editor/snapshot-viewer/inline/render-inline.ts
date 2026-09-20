@@ -1,6 +1,6 @@
 import {InlineModel, IInlineNodeAttrs} from "../../framework/block-std/types/inline.type";
 import {DeltaInsertEmbed, DeltaInsertText} from "../../framework/block-std/types/delta.type";
-import {applyInlineTypographyAttribute} from "../../framework/block-std/typography";
+import {applyInlineTypographyAttribute} from "@ccc/blockcraft/framework/block-std/typography";
 import {SnapshotInlineEmbedRenderer} from "../types";
 import {
   INLINE_ICON_EMBED_KEY,

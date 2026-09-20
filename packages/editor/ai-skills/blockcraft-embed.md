@@ -4,7 +4,7 @@
 >
 > For inline system internals, see L2: `blockcraft-inline.md`
 >
-> Last updated: 2026-08-28
+> Last updated: 2026-09-20
 
 ## What is an Inline Embed?
 
@@ -45,6 +45,11 @@ type EmbedConverter = {
 ```
 
 ## Source Layout and Public Exports
+
+默认 Embed 组合由 `editor/document.ts` 在公共文档构造时调用 `embeds/defaults.ts` 完成，
+保留 image/icon 默认项及宿主同名覆盖优先级。领域文档不直接引用具体 converter。
+图片数据读取/创建/归一化归属 `framework/block-std/inline/image-data.ts`，`embeds/image/index.ts`
+继续转导出同一组函数与类型；DOM 渲染、资源占位器及销毁逻辑仍由 converter 持有。
 
 Built-in Embed implementations live under one source boundary and are
 aggregated by `packages/editor/embeds/index.ts`:

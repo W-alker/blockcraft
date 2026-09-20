@@ -1,10 +1,10 @@
-import {resolveBlockPosition} from '../../framework/services/block-placement/state'
+import {resolveBlockPosition} from '../../framework/modules/object/block-placement/state'
 import {IBlockSnapshot} from "../../framework/block-std/types/block.type";
 import {
   normalizeDocumentFontSize,
   normalizeTypographyLineHeight,
   resolveTypographyFontFamily,
-} from "../../framework/block-std/typography";
+} from "@ccc/blockcraft/framework/block-std/typography";
 import {
   blockSurfaceImageFitToObjectFit,
   resolveBlockSurface,

@@ -1,5 +1,5 @@
 // packages/editor/framework/modules/pagination/view/sheet-layout.ts
-import {PaginationResult} from "../engine";
+import {PaginationResult} from "@ccc/blockcraft/framework/modules/pagination/engine";
 
 export interface SheetRect {
   top: number;

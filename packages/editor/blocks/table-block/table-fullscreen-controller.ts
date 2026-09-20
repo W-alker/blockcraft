@@ -1,4 +1,4 @@
 export {
   BlockFullscreenController,
   BlockFullscreenController as TableFullscreenController,
-} from '../../framework/services/block-fullscreen-controller'
+} from '../../framework/doc/view/block-fullscreen-controller'

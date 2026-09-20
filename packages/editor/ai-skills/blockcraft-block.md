@@ -5,7 +5,13 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-09-18
+> Last updated: 2026-09-20
+
+通用数据描述和快照位于 `@ccc/blockcraft/framework/model`，类型为
+`BlockDescriptor<P, M, F>` / `BlockSnapshot<P, M, F>`，默认不依赖组件注册表。
+创建编辑器 Block 时仍使用原 `BaseBlockDesc`、`IBlockSnapshot` 与 Schema API；
+`declare global { namespace BlockCraft { interface IBlockComponents { ... } } }`
+继续限定编辑器快照的 flavour 和后代节点。新增通用快照类型不替代组件注册或 Schema 校验。
 
 ## Block Types
 

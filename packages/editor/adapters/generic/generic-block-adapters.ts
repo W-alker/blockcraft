@@ -1,11 +1,8 @@
 import type {Element} from 'hast'
 import type {Paragraph, Text} from 'mdast'
-import {
-  BlockNodeType,
-  generateId,
-  type DeltaInsert,
-  type IBlockSnapshot,
-} from '../../framework'
+import {BlockNodeType, type DeltaInsert} from '@ccc/blockcraft/framework/model';
+import {generateId} from '../../framework/utils/id';
+import {type IBlockSnapshot} from '../../framework/block-std/types/block.type';
 import type {BlockHtmlAdapterMatcher} from '../html-adapter/block-adapter'
 import type {BlockMarkdownAdapterMatcher} from '../markdown-adapter/block-adapter'
 import type {MarkdownAST} from '../markdown-adapter/type'

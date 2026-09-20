@@ -5,7 +5,7 @@ import {
   normalizeInlineFontScale,
   normalizeInlineLetterSpacing,
   isTypographyFontFamilyId,
-} from '../typography'
+} from '@ccc/blockcraft/framework/block-std/typography'
 
 const COMPACT_DATA_ATTRIBUTES = new Set(['data-bc-ff', 'data-bc-fs', 'data-bc-ls'])
 

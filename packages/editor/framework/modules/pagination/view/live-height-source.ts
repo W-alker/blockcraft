@@ -1,7 +1,7 @@
 // packages/editor/framework/modules/pagination/view/live-height-source.ts
 import {Subject} from "rxjs";
 import {BlockNodeType} from "../../../block-std/types/block.type";
-import {resolveBlockPolicy} from "../engine";
+import {resolveBlockPolicy} from "@ccc/blockcraft/framework/modules/pagination/engine";
 import {
   cloneTableCellFlowPlan,
   TableCellFlowPlan,
@@ -80,7 +80,7 @@ const INLINE_LINE_SAMPLES_PER_PAGE = 8
 const MAX_INLINE_LINE_SAMPLES = 2048
 
 /**
- * 自有 ResizeObserver（BlockActiveTracker 的 heightMap 是 private 不可复用）。
+ * 使用独立的 ResizeObserver 维护分页所需的实时高度测量。
  * 观测 root 顶层块 host，测量「offsetHeight + 上下外边距」作为块高度，
  * 并从块组件读 flavour/nodeType/heading 装配 BlockMeta[]。
  *

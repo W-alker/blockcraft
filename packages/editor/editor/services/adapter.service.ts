@@ -6,6 +6,7 @@ import {
 import {BUNDLED_ADAPTER_REGISTRY} from '../bundled-adapter-registry'
 import {AdapterRegistry} from '../../adapters/registry'
 import {inject, Injectable, InjectionToken} from "@angular/core";
+import {BUNDLED_CLIPBOARD_SOURCE_ADAPTERS} from '../clipboard-source-adapters';
 
 /**
  * Registry used by the editor-level HTML/Markdown service.
@@ -21,6 +22,8 @@ export const EDITOR_ADAPTER_REGISTRY_TOKEN =
 
 @Injectable()
 export class AdapterService extends DocAdapterService {
+  override readonly clipboardSourceAdapters = BUNDLED_CLIPBOARD_SOURCE_ADAPTERS
+
   fileService = inject(DOC_FILE_SERVICE_TOKEN)
   registry = inject(EDITOR_ADAPTER_REGISTRY_TOKEN)
   htmlAdapter = new HtmlAdapter(

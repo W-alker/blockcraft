@@ -1,7 +1,7 @@
 // packages/editor/framework/modules/pagination/view/item-builder.ts
 import {BlockNodeType} from "../../../block-std/types/block.type";
-import {BLOCK_PLACEMENT_LAYOUT_FLAVOUR} from "../../../services/block-placement/types";
-import {isManualBreak, PaginationItem, resolveBlockPolicy} from "../engine";
+import {BLOCK_PLACEMENT_LAYOUT_FLAVOUR} from "../../object/block-placement/types";
+import {isManualBreak, PaginationItem, resolveBlockPolicy} from "@ccc/blockcraft/framework/modules/pagination/engine";
 import {
   getTableCellFlowPlan,
   setTableCellFlowPlan,

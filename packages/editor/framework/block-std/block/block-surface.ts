@@ -1,4 +1,4 @@
-import {decodeCssPicture, encodeCssPicture} from './object-picture'
+import {decodeCssPicture, encodeCssPicture} from './object-format/object-picture'
 import type {IBlockProps} from '../types'
 
 export type BlockSurfaceImageFit = 'cover' | 'contain' | 'stretch'

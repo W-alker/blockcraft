@@ -1,9 +1,12 @@
+import type {DocFilePort} from '@ccc/blockcraft/framework/ports';
 import rehypeParse from 'rehype-parse';
 import rehypeStringify from 'rehype-stringify';
 import {unified} from 'unified';
 import {HtmlAST, AdapterContext} from "../types";
 import {ASTWalker} from "../base/ast-walker";
-import {BlockNodeType, IBlockSnapshot, generateId, DocFileService} from "../../framework";
+import {BlockNodeType} from '@ccc/blockcraft/framework/model';
+import {IBlockSnapshot} from '../../framework/block-std/types/block.type';
+import {generateId} from '../../framework/utils/id';
 import {BlockHtmlAdapterMatcher} from "./block-adapter";
 import {HtmlDeltaConverter} from "./delta-converter";
 import {inlineDeltaToHtmlAdapterMatchers} from "./delta-converter/inline-delta";
@@ -17,7 +20,7 @@ export class HtmlAdapter extends ASTWalker<HtmlAST, IBlockSnapshot> {
   private readonly registry?: AdapterRegistry
 
   constructor(
-    readonly fileService: DocFileService,
+    readonly fileService: DocFilePort,
     readonly adapterConfigs = new Map<string, string>(),
     source: readonly BlockHtmlAdapterMatcher[] | AdapterRegistry,
   ) {

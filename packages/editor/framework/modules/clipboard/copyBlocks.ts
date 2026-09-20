@@ -1,5 +1,6 @@
 import {IBlockSnapshot} from "../../block-std";
-import {ClipboardDataType, ClipboardManager} from "./index";
+import {ClipboardDataType} from './types';
+import {ClipboardManager} from './clipboard-manager';
 import {snapshots2Text} from "../../utils";
 import {
   BLOCKCRAFT_WEB_SNAPSHOT_MIME,

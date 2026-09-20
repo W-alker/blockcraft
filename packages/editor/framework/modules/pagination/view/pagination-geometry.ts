@@ -1,5 +1,5 @@
 // packages/editor/framework/modules/pagination/view/pagination-geometry.ts
-import {ptToPx, resolveGeometry, resolvePageDimensions, PageMargins} from "../engine";
+import {ptToPx, resolveGeometry, resolvePageDimensions, PageMargins} from "@ccc/blockcraft/framework/modules/pagination/engine";
 import {PaginationConfig, ResolvedPaginationGeometry} from "../pagination.types";
 import {chromeHeight} from "./chrome-tokens";
 

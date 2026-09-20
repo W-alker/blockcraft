@@ -1,7 +1,7 @@
 // packages/editor/framework/modules/pagination/view/page-frame-layer.ts
 import {SheetRect} from "./sheet-layout";
 import {PageChrome} from "../pagination.types";
-import {PageMargins} from "../engine";
+import {PageMargins} from "@ccc/blockcraft/framework/modules/pagination/engine";
 import {resolveChromeInlineContent, resolveChromeSegments} from "./chrome-tokens";
 import {applyChromeAppearance, createChromeSegmentElement} from "./chrome-content";
 

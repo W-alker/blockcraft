@@ -1,5 +1,5 @@
-import {encodeCssPicture} from '../../framework/block-std/block/object-picture'
-import {parseBlockPosition, storeBlockPosition} from '../../framework/services/block-placement/state'
+import {encodeCssPicture} from '../../framework/block-std/block/object-format/object-picture'
+import {parseBlockPosition, storeBlockPosition} from '../../framework/modules/object/block-placement/state'
 import {
   DEFAULT_OBJECT_EFFECTS,
   DEFAULT_OBJECT_LINE,

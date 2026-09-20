@@ -6,7 +6,7 @@ import {
   whenInlinePaginationProjectionWritable,
 } from '../../../block-std/inline/runtime/inline-pagination-access'
 import type {InlinePaginationGap} from '../../../block-std/inline/runtime/inline-pagination-projection'
-import type {PaginationResult} from '../engine'
+import type {PaginationResult} from '@ccc/blockcraft/framework/modules/pagination/engine'
 import {
   inlineBreakPointAtLayoutOffset,
   type InlinePaginationBreakPlan,

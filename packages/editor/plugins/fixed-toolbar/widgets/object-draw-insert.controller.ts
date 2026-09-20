@@ -1,4 +1,4 @@
-import { resolvePlacementContainerBox } from "../../../framework/services/block-placement/geometry";
+import { resolvePlacementContainerBox } from "../../../framework/modules/object/block-placement/geometry";
 
 const DRAG_THRESHOLD_PX = 4;
 const MIN_OBJECT_WIDTH = 48;

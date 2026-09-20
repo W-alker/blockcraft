@@ -1,13 +1,2 @@
-import {InjectionToken} from "@angular/core";
-import {IBlockSchemaOptions} from "../block-std/schema/block-schema";
-
-/**
- * {@link DocFileService}
- */
-export const BLOCK_CREATOR_SERVICE_TOKEN = new InjectionToken<BlockCreatorService>('block-creator');
-
-export abstract class BlockCreatorService {
-
-  abstract getParamsByScheme<T extends IBlockSchemaOptions>(flavour: T): Promise<BlockCraft.BlockCreateParameters<T['flavour']> | null>
-
-}
+// 兼容旧源码路径；实现归属对应领域。
+export * from '../host/block-creator.service'

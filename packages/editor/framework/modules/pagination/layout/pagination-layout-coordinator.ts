@@ -7,7 +7,7 @@ import {
   paginate,
   PaginationItem,
   PaginationResult,
-} from "../engine";
+} from "@ccc/blockcraft/framework/modules/pagination/engine";
 import {cloneTableCellFlowPlan} from "../engine/table-cell-flow";
 import {
   copyTableCellFlowPlan,
@@ -38,7 +38,7 @@ import {
   type ModelHeightEstimate,
 } from "../../virtualization/model-height-estimator";
 
-import {includePlacementPages} from '../../../services/block-placement/page-surface';
+import {includePlacementPages} from '../../object/block-placement/page-surface';
 
 const DEFAULT_ESTIMATED_HEIGHT = 48;
 

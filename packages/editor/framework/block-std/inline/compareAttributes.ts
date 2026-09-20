@@ -6,7 +6,7 @@ import {
   normalizeInlineFontScale,
   normalizeInlineLetterSpacing,
   resolveTypographyFontFamily,
-} from '../typography'
+} from '@ccc/blockcraft/framework/block-std/typography'
 import {getAttributesFrom} from './getAttributes'
 
 export const compareAttributesWithEle = (ele: HTMLElement, attrs?: IInlineNodeAttrs): boolean => {

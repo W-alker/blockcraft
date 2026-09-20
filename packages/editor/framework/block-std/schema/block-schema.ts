@@ -10,7 +10,7 @@ import {
 import { NativeBlockModel } from "../index";
 import { BlockCraftError, ErrorCode } from "../../../global";
 import { generateId } from "../../utils";
-import type {BlockObjectFormatCapability} from '../block/object-format'
+import type {BlockObjectFormatCapability} from '@ccc/blockcraft/framework/block-std/block/object-format'
 
 export type EditableBlockCreateSnapshotParams = [(InlineModel | string)?, IBlockProps?];
 

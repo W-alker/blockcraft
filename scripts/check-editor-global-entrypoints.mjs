@@ -7,6 +7,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
+import {checkEntrypointDependencies} from './lib/check-editor-entrypoint-dependencies.mjs';
 
 const workspaceRoot = fileURLToPath(new URL('../', import.meta.url));
 const packageRoot = path.resolve(workspaceRoot, process.argv[2] ?? 'dist/editor');
@@ -32,6 +33,14 @@ const entryExports = {
   'global/resource-placeholder': ['ResourcePlaceholderController', 'destroyResourcePlaceholder', 'iframeResourcePlaceholderAdapter', 'imageResourcePlaceholderAdapter', 'videoResourcePlaceholderAdapter'],
 };
 entryExports.global = [...new Set(Object.values(entryExports).flat())];
+await checkEntrypointDependencies(packageRoot, manifest, {
+  ...Object.fromEntries(Object.keys(entryExports).map(name => [name, {}])),
+  'global/utils': {types: ['global/types', 'framework/model']},
+  global: {
+    runtime: Object.keys(entryExports).filter(name => name !== 'global' && name !== 'global/types'),
+    types: Object.keys(entryExports).filter(name => name !== 'global'),
+  },
+});
 const entries = Object.fromEntries(Object.keys(entryExports).map(name => {
   const entry = manifest.exports?.['./' + name];
   assert.ok(entry?.types && entry?.default, `发布包缺少 ${name} 的运行时或类型导出`);
@@ -71,7 +80,10 @@ try {
   const isolatedPackage = path.join(temporaryRoot, 'node_modules/@ccc/blockcraft');
   await mkdir(isolatedPackage, { recursive: true });
   await writeFile(path.join(isolatedPackage, 'package.json'), JSON.stringify(manifest));
-  for (const target of Object.values(entries).flatMap(entry => [entry.default, entry.types])) {
+  // utils 只需 model 声明，不提供模型运行时、排版实现或编辑器主入口。
+  const model = manifest.exports['./framework/model'];
+  assert.ok(model?.types, '缺少共享内容模型类型入口');
+  for (const target of [...Object.values(entries).flatMap(entry => [entry.default, entry.types]), model.types]) {
     const destination = path.join(isolatedPackage, target);
     await mkdir(path.dirname(destination), { recursive: true });
     await copyFile(path.join(packageRoot, target), destination);

@@ -1,4 +1,4 @@
-import type {DocAttachmentInfo, DocFileService, UploadProgressCallback} from '../../framework/services/file.service'
+import type {DocAttachmentInfo, DocFileService, UploadProgressCallback} from '../../framework/host/file.service'
 import {extractVideoPoster} from './video-poster'
 
 /** 上传任务属于本地文件，视图重新挂载复用同一任务。协同端没有 File，不会进入此路径。 */

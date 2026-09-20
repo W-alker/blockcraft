@@ -1,5 +1,5 @@
 import {IInlineNodeAttrs} from "../types";
-import {applyInlineTypographyAttribute, INLINE_TYPOGRAPHY_ATTRS} from '../typography'
+import {applyInlineTypographyAttribute, INLINE_TYPOGRAPHY_ATTRS} from '@ccc/blockcraft/framework/block-std/typography'
 
 export const setAttributes = (element: HTMLElement, attributes: IInlineNodeAttrs) => {
   const hasCompactFontFamily = INLINE_TYPOGRAPHY_ATTRS.fontFamily in attributes

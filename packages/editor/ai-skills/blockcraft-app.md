@@ -146,6 +146,77 @@ import {
 `themes/components/resource-placeholder.scss`）、所选主题变量及 iconfont 样式/字体；
 JS 子入口不会自动注入这些样式。`env/iframe-sandbox` 仍为包内实现，不新增公共导出。
 
+## 轻量领域能力与基础类型入口
+
+共享内容契约统一使用 `@ccc/blockcraft/framework/model`，不为每种数据类型创建子入口：
+
+```typescript
+import {
+  BlockNodeType, InlineNodeType, INLINE_TYPOGRAPHY_ATTRS,
+  type IBlockProps, type IEditableBlockProps, type InlineModel,
+  type DeltaInsert, type DeltaOperation, type IInlineNodeAttrs,
+  type TypographyFontFamilyId, type BlockDescriptor, type BlockSnapshot, type IMetadata,
+} from '@ccc/blockcraft/framework/model';
+```
+
+这是 DDD 的共享内容模型（Shared Kernel），只包含数据契约与持久化标识；
+字体标签、CSS 字体栈、格式计算和 DOM 应用仍归属各自能力。该入口在无 DOM 类型库、
+Angular、Yjs 和 `BlockCraft` 全局注册表声明的环境中也可使用。
+通用快照使用 `BlockSnapshot<P, M, F>`，通用描述使用 `BlockDescriptor<P, M, F>`：
+`P` / `M` 是当前节点的专有 props / metadata，`F` 缺省为 `string`，也可指定有限 flavour 集合。
+容器子块沿用 `F`，其 `P` / `M` 回到缺省数据类型，不继承父块专有字段；void 子块数组必须为空，
+editable 内容必须为 Delta。`IBaseMetadata` / `IMetadata` 和 placeholder 模式同样归属模型。
+
+`IBlockSnapshot` / `BaseBlockDesc` 仍从原主入口取得，保持注册表约束与接口增强语义：
+编辑器快照可作为通用快照读取，任意通用快照并不自动成为已注册的编辑器快照。
+进入编辑器仍需宿主按既有 Schema 和事务流程处理；不要用类型断言替代数据校验。
+这里不新增 npm 子入口，也不放宽已有 adapters、snapshot-viewer 或 Agent API 的参数约束。
+
+以下路径均以 `@ccc/blockcraft/` 为前缀，与源码层级一致；已有主入口导出继续可用，
+并转导出同一份运行时实现。独立入口的 JavaScript 和类型声明均不需要 Angular、
+Yjs、编辑器主入口或 `BlockCraft` 全局类型命名空间。
+
+| 子路径 | 用途 | 使用边界 |
+|--------|------|----------|
+| `framework/block-std/typography` | 字体目录、字号/字距规范化、段落单位换算、行内排版补丁 | 导入及计算无需 DOM；`applyInlineTypographyAttribute` 需要传入真实 HTMLElement |
+| `framework/block-std/block/object-format` | 对象填充、轮廓、效果、文本框/文字样式的规范化、紧凑存储和 CSS 值计算 | 不包含 Angular 组件、格式管理服务或文档写入 |
+| `framework/modules/pagination/engine` | 页尺寸、分页策略、纯分页算法及其输入/输出类型 | 输入为已测量的尺寸，不包含 DOM 测量、分页视图或打印导出；同时转导出 `BlockNodeType` |
+| `framework/block-std/types/block-base` | `BlockNodeType` 枚举、`IBlockProps` 基础属性类型的兼容入口 | 转导出共享内容模型；新调用方优先使用 `framework/model` |
+
+```typescript
+import {normalizeInlineFontScale} from '@ccc/blockcraft/framework/block-std/typography';
+import {storeObjectPaint} from '@ccc/blockcraft/framework/block-std/block/object-format';
+import {paginate, resolveBlockPolicy, BlockNodeType} from '@ccc/blockcraft/framework/modules/pagination/engine';
+import type {IBlockProps} from '@ccc/blockcraft/framework/block-std/types/block-base';
+
+const scale = normalizeInlineFontScale(1.25);
+const fill = storeObjectPaint({type: 'none'});
+const policy = resolveBlockPolicy({flavour: 'paragraph', nodeType: BlockNodeType.editable});
+const pages = paginate([{id: 'p1', height: 100, ...policy}], {contentHeight: 800});
+```
+
+对象格式入口仅以类型依赖共享模型；分页引擎共享模型中的枚举，保持跨入口身份一致。
+排版入口共享模型中的紧凑排版键和字体 ID；`global/utils` 只在类型层引用模型，不依赖 typography。
+整包 peerDependencies 不变，以上结论仅说明这些子入口的导入边界，不代表实测启动耗时收益。
+
+### 入口组织与依赖约束
+
+每项能力统一使用“能力目录 + `index.ts` + 实现 + `ng-package.json`”组织，
+公开路径与既有符号不变。对象格式的编解码、精度 helper 归入 `object-format/`，
+仍属于包内实现，不新增公共子入口。基础块类型实现归属 `framework/model/block.ts`，
+`types/block-base/` 只保留兼容转导出。
+`typography/core.ts` 负责不依赖 DOM 的排版计算，`typography/dom.ts` 单向调用计算层，
+两者由同一 `typography/index.ts` 导出；这个入口整体属于轻量排版能力。
+
+`global/utils` 保留通用工具与 Delta 工具的兼容聚合，因此不是严格的框架无关基础层。
+其 Delta 工具只依赖共享模型类型，不复制字体类型，也不允许加载排版或模型运行时。
+`build:editor` 分别检查发布产物的运行时和声明依赖范围，并验证排版计算层在不包含
+DOM 类型库时可编译。共享模型只允许类型依赖 `global/types`；基础 Block/Inline/Delta
+契约已归位；通用快照与编辑器注册表约束分别表达，使用者按自己的数据边界选择类型。
+
+主入口的显式转导出用于避免声明打包时外部通配导出的歧义；固定导出名单用于验证兼容性，
+新增公共 API 时须同步维护。不要用从当次产物生成的名单替代这一兼容性检查。
+
 ## Snapshot Viewer (Display-Only Path)
 
 When the host only needs to display a block snapshot, use the standalone snapshot-viewer path instead of constructing `BlockCraftDoc`.
@@ -479,6 +550,42 @@ runtime-only.
 
 ### Required Service Contracts
 
+需要独立定义宿主能力时使用一个聚合类型入口：
+
+```typescript
+import type {
+  DocFilePort, DocAttachmentInfo, UploadProgressCallback,
+  DocMessagePort, DocLinkPreviewPort, LinkPreviewData,
+  DocWeatherPort, DocWeatherData, DocWeatherQuery, DocWeatherTone,
+} from '@ccc/blockcraft/framework/ports';
+```
+
+该入口只有契约，无 Angular、Yjs、默认实现或运行时副作用；声明需要浏览器类型库，
+因为保留原来的 `File`、`FileList`、`AbortSignal` 参数。上述类型也从原主入口导出。
+`HtmlAdapter`、`MarkdownAdapter` 与 `AdapterContext.fileManager` 使用 `DocFilePort`，
+其公开结构与原 `DocFileService` 等价，现有文件服务可直接传入。
+
+原类与 Token 继续从 `@ccc/blockcraft` 导入，provider 写法和注入结果类型不变：
+
+- `DocFileService` / `DocMessageService` 实现位于 `framework/host/`，实现对应 Port，保留原抽象方法要求。
+  文件基类仍提供下载与文件选择默认方法；只实现 `DocFilePort` 的宿主需要自行提供全部能力。
+- 文件、消息、链接、天气、Adapter、块创建器六个 Token 的唯一定义位于 `framework/angular/host-service-tokens.ts`，旧服务文件转导出同一实例。
+  原服务类泛型保留为 type-only 兼容引用；不为 Angular 接入层或单个服务新增 npm 子入口。
+- `DocLinkPreviewerService` / `DocWeatherService` 的实现归入 `editor/services/`；旧路径转导出同一个类。
+  链接服务的供应商响应 `LinkPreviewResponseData` 与 `isAbortError` 继续由原主入口提供，
+  不放入 ports；天气默认实现仍明确抛出未配置错误。
+
+`DocAdapterService`、`BlockCreatorService` 也归属 `framework/host/`；它们依赖编辑器注册表，
+不加入纯 ports。Overlay 归属 `framework/angular/`；对象操作、拖放、文档视图分别归属
+`framework/modules/object/`、`framework/modules/drag-drop/`、`framework/doc/view/`。
+`framework/services` 仅作旧路径转导出，所有类与 Token 共用同一份实现。
+
+公共 `BlockCraftDoc(config)` 与 Builder 的默认装配位于 `editor/document.ts` / `editor/doc-builder.ts`。
+公共 ClipboardManager 位于 `editor/clipboard-manager.ts`，缺省仍支持内置来源；无需修改现有宿主。
+领域实现接收内部 `DocumentRuntime`，它不属于 DocConfig，也不是新的 npm API；不要把默认来源、
+Embed 注册写成全局可变初始化。旧 Token 的两个具体服务类类型引用仍为兼容保留，
+因此没有新增宣称整个 framework 可独立发布的入口。
+
 #### `DocFileService` — file uploads, previews, ObjectURLs
 
 ```typescript
@@ -495,7 +602,9 @@ abstract class DocFileService {
   abstract removeObjectURL(url: string): void
   abstract isLocalObjectURL(url: string): boolean
   abstract isOverMaxSize(size: number): boolean
-  // (Provided base impl) inputFiles(accept, multiple): Promise<FileList>
+  // 基类提供的默认实现；DocFilePort 中仍为必需方法。
+  downloadAttachment(options: Pick<DocAttachmentInfo, 'url' | 'name'>): Promise<void>
+  inputFiles(accept?: string, multiple?: boolean): Promise<FileList>
 }
 
 interface DocAttachmentInfo { name: string; type: string; url: string; size: number }
@@ -531,6 +640,12 @@ Return `null` if the user cancels, otherwise the tuple matching the schema's `IB
 Used by the bookmark block + inline link preview. The framework ships a default `DocLinkPreviewerService` you can extend or replace.
 
 #### `DocAdapterService` — HTML/Markdown round-trip
+
+剪贴板来源通过可选的 `clipboardSourceAdapters` 列表装配，与双向 MIME `supportedAdapters`
+分开。默认 `AdapterService` 使用 `BUNDLED_CLIPBOARD_SOURCE_ADAPTERS`；旧自定义服务不声明该字段
+时仍获得原有有道云支持。宿主可显式设置 `[]` 关闭来源适配，或设置
+`[mySource, ...BUNDLED_CLIPBOARD_SOURCE_ADAPTERS]` 扩展。来源 hook 与资源收尾要求见
+`blockcraft-adapter.md` 的“剪贴板来源装配契约”；无需新增 provider 或 npm 子入口。
 
 Wraps `HtmlAdapter` and `MarkdownAdapter` with `BUNDLED_ADAPTER_REGISTRY`, which
 covers every bundled Block flavour and all seven Inline Embed keys. The host can

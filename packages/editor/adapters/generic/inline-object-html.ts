@@ -1,4 +1,4 @@
-import type {DeltaInsert, DeltaInsertEmbed} from '../../framework'
+import type {DeltaInsert, DeltaInsertEmbed} from '@ccc/blockcraft/framework/model';
 import type {
   HtmlASTToDeltaMatcher,
   InlineDeltaToHtmlAdapterMatcher,

@@ -1,5 +1,5 @@
 import {IBlockSnapshot} from "../../block-std";
-import {IAdapter} from "../../services";
+import {IAdapter} from '../../host/adapter.service';
 import {ClipboardDataType} from "./types";
 
 export const BLOCKCRAFT_WEB_SNAPSHOT_MIME = `web ${ClipboardDataType.BLOCKCRAFT_SNAPSHOT}`;

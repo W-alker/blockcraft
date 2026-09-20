@@ -2,9 +2,19 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying the inline editing system.
 >
-> Last updated: 2026-08-28
+> Last updated: 2026-09-20
+
+行内图片数据协议及归一化位于 `framework/block-std/inline/image-data.ts`，数值辅助实现位于
+`image-numbers.ts`。浮动排版和虚拟化只依赖数据规则；DOM converter 与资源控制器仍在
+`embeds/image/`，原导出转发同一份数据函数，不再由行内核心反向加载 converter。
 
 ## Architecture Overview
+
+`InlineModel`、Delta 操作、行内属性、`InlineNodeType` 和持久化排版标识统一归属
+`framework/model/`，公共入口为 `@ccc/blockcraft/framework/model`。
+`block-std/types/inline.type.ts`、`delta.type.ts` 继续兼容转导出。模型不依赖排版实现；
+字体目录、格式规范化和 DOM 应用由 typography 能力提供，行内运行时继续负责渲染与编辑。
+模板样式索引、字体 ID 集合和 `null` 清除格式语义不变。
 
 ```
 Y.Text (Yjs, source of truth)

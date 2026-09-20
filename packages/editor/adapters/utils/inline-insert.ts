@@ -1,4 +1,4 @@
-import type {DeltaInsert} from '../../framework'
+import type {DeltaInsert} from '@ccc/blockcraft/framework/model';
 
 /**
  * Readable, non-throwing fallback for an Inline Embed whose domain adapter is

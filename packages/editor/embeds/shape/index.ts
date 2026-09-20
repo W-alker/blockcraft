@@ -9,7 +9,7 @@ import {
   objectPaintTextColor,
   objectPicturePreserveAspectRatio,
   objectTextTransformCss,
-} from '../../framework/block-std/block/object-format'
+} from '@ccc/blockcraft/framework/block-std/block/object-format'
 import type {EmbedConverter} from '../../framework/block-std/inline'
 import type {
   DeltaInsert,

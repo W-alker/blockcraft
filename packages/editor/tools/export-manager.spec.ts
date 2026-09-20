@@ -1,4 +1,4 @@
-import {PaginationPdfResult} from '../framework/modules/pagination/export'
+import {PaginationPdfResult} from './export'
 import {RevisionConflictError} from '../framework'
 import {PaginationPlugin} from '../plugins/pagination'
 import {DocExportManager} from './export-manager'

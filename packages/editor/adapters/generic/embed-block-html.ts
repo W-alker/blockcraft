@@ -1,9 +1,7 @@
 import type {Element, ElementContent} from 'hast'
-import {
-  BlockNodeType,
-  generateId,
-  type IBlockSnapshot,
-} from '../../framework'
+import {BlockNodeType} from '@ccc/blockcraft/framework/model';
+import {generateId} from '../../framework/utils/id';
+import {type IBlockSnapshot} from '../../framework/block-std/types/block.type';
 import type {BlockHtmlAdapterMatcher} from '../html-adapter/block-adapter'
 import {HastUtils} from '../utils'
 import {

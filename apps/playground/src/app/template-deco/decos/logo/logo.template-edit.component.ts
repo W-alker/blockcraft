@@ -1,4 +1,4 @@
-import {storeBlockPosition} from '../../../../../../../packages/editor/framework/services/block-placement/state'
+import {storeBlockPosition} from '../../../../../../../packages/editor/framework/modules/object/block-placement/state'
 import { ChangeDetectionStrategy, Component, NgZone, inject } from '@angular/core'
 import {
   BlockResizeCommit,

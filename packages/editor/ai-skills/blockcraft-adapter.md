@@ -4,7 +4,7 @@
 >
 > Adapters handle HTML ↔ BlockSnapshot and Markdown ↔ BlockSnapshot conversion.
 >
-> Last updated: 2026-09-16
+> Last updated: 2026-09-20
 
 ## Architecture
 
@@ -41,12 +41,12 @@ embeds/my-embed/
     └── index.ts            # HTML + Markdown Delta/AST matchers
 ```
 
-`packages/editor/adapters/` is the core anti-corruption layer only. It may
-define walkers, matcher interfaces, registry/indexing, generic factories,
-bounded metadata codecs, and the HTML/Markdown engines, but it must not import
-from `blocks/`, `embeds/`, `editor/`, or a source-application adapter. The
-built-in application assembles concrete contributions in
-`editor/bundled-adapter-registry.ts`.
+`packages/editor/adapters/` 的通用转换核心包含 walker、matcher 接口、registry、
+通用工厂、元数据 codec 和 HTML/Markdown 引擎。核心不能依赖 `blocks/`、`embeds/`、
+`editor/` 或具体来源适配。`adapters/sources/` 单独承载来源集成，可调用内置 Schema，
+但不经 adapters 核心 barrel 导出；依赖方向不能倒置。
+内置块/Embed 贡献由 `editor/bundled-adapter-registry.ts` 组合；剪贴板来源由
+`editor/clipboard-source-adapters.ts` 组合。这两类扩展职责不同，来源适配不伪装成可双向导出的 MIME codec。
 
 Built-in ownership is exposed through
 `BUNDLED_BLOCK_ADAPTER_CONTRIBUTIONS`,
@@ -320,6 +320,12 @@ const registry = createBundledAdapterRegistry({
 const html = new HtmlAdapter(fileService, new Map(), registry)
 const markdown = new MarkdownAdapter(fileService, new Map(), registry)
 ```
+
+两个构造函数的 `fileService` 与 `AdapterContext.fileManager` 使用
+`DocFilePort`（`import type {DocFilePort} from '@ccc/blockcraft/framework/ports'`）。
+该端口与原 `DocFileService` 的公开结构等价；已有实例及子类可直接使用。
+转换核心只引用契约，宿主负责上传、下载与本地预览实现；本轮不改变 matcher、registry、
+快照参数或文件 URL 的含义，也不表示整个 adapters 已具备独立 npm 入口。
 
 When the host uses the bundled capability factory, pass the same contribution
 arrays with its custom Schemas and Embed converters. The factory validates the
@@ -736,11 +742,11 @@ embedded shape/WordArt text as ordinary inline text.
 
 ## 有道云笔记 `text/yne-json` 剪贴板适配器
 
-有道云笔记复制时在剪贴板写入高保真私有格式 `text/yne-json`（结构化块数组）+ `text/yne-image-json`（图片 URL→base64）。`framework/modules/clipboard/adapters/yne/` 把它直接翻译成 `BlockSnapshot`，绕过有损的 HTML。
+有道云笔记复制时在剪贴板写入高保真私有格式 `text/yne-json`（结构化块数组）+ `text/yne-image-json`（图片 URL→base64）。`adapters/sources/yne/` 把它直接翻译成 `IBlockSnapshot`，绕过有损的 HTML。旧 `framework/modules/clipboard/adapters/yne/` 文件仅保留转导出兼容。
 
-- **入口**：`parseYneClipboard(state, doc): IBlockSnapshot | null`（`framework/modules/clipboard/adapters/yne/index.ts`）。
+- **入口**：`parseYneClipboard(state, doc): IBlockSnapshot | null`（`adapters/sources/yne/index.ts`）。
 - **优先级**：`ClipboardManager.onPaste` 中位于 internal snapshot 之后、`text/html` 之前；解析失败/未知块返回 `null` → 回退 HTML。
-- **与 html/markdown adapter 的区别**：yne-json 是纯 JSON，不走 unified/rehype/remark + `ASTWalker`，因此独立成模块，不接入 `doc.adapter` 统一管线。
+- **与 html/markdown adapter 的区别**：yne-json 不走 unified/rehype/remark + `ASTWalker`，通过 `DocAdapterService.clipboardSourceAdapters` 单独装配，不加入可双向转换的 `supportedAdapters`。
 - **图片**：base64 → `File` → `fileService.createObjectURL` → image block 自动上传。
 - **附件**：先用有道云 URL 建块，插入后 `rehostYneAttachments` 异步 fetch 重传（best-effort，CORS/鉴权失败则保留原 URL）。
 - **样式映射**：`bold/italic/strike → a:*`，`color/back-color/font-size → s:color/s:background/s:fontSize`；标题丢弃冗余 font-size。
@@ -749,14 +755,47 @@ embedded shape/WordArt text as ordinary inline text.
 
 WKWebView（Tauri）及部分浏览器会从 `paste` 事件里**剥离自定义剪贴板 MIME**（`text/yne-json` / `text/yne-image-json`），只留 `text/html`——此时上面的 `text/yne-json` 分支拿不到数据，会回退到有损 HTML（附件变图片、行内 CSS 样式丢失）。但完整高保真结构仍嵌在 HTML 里的 `<article data-content="…bulb JSON…">`（HTML 属性，不会被剥离），图片字节也在可见 `<img data-media-type="image" src="data:…">` 中。
 
-- **入口**：`parseYoudaoHtml(html, fileService): IBlockSnapshot | null`（`framework/modules/clipboard/adapters/yne/youdao-html.ts`）；用 `isYoudaoHtml(html)` 先做 marker 预判。
-- **位置（关键）**：解析由 **`ClipboardManager` 在通用 `HtmlAdapter` 之前短路**。YNE 是剪贴板来源格式而不是通用 HTML 方言，因此其识别、资源重传和回退顺序都留在 Clipboard 边界；普通 `HtmlAdapter` 不依赖任何外部应用格式。
+- **入口**：`parseYoudaoHtml(html, fileService): IBlockSnapshot | null`（`adapters/sources/yne/youdao-html.ts`）；用 `isYoudaoHtml(html)` 先做 marker 预判，文件能力类型为 `DocFilePort`。
+- **位置（关键）**：`ClipboardManager` 在通用 HTML codec 之前调用来源接口；YNE 的识别和资源逻辑封装在 `YNE_CLIPBOARD_SOURCE_ADAPTER` 中。普通 `HtmlAdapter` 不依赖外部应用格式；插入、事务、只读检查和选区恢复仍由剪贴板负责。
 - **格式**：bulb 格式（`{name, data, nodes:[{type:'text', leaves:[{text, marks}]}]}`），见 `bulb-converter.ts`。marks 映射：`bold/italic/delete/underline → a:*`，`color/backgroundColor → s:color/s:background`，`fontSize → s:fontSize`。
 - **表格**：bulb 表格是嵌套（table>row>cell，省略被合并格），转换时按 colSpan/rowSpan 重建网格并补 `display:'none'` 占位格。
 - **图片**：从可见 `<img data:base64>` 按文档顺序取字节（`text/yne-image-json` 被剥离时的唯一字节来源）→ `fileService.createObjectURL` → image block 自动上传。
 - **代码 / 图表**：bulb `code`/`diagram` 把每行包成 `code-line` 子块（`type:'block'`，文本在其子节点里），转换时下钻 `code-line` 并以 `\n` 连接；语言经 `mapLang` 大小写不敏感解析到 `CodeBlockLanguage`，无匹配（如 PlantUML/Mermaid）回退 `PlainText`。`diagram` 无原生对应，按代码块保留源码。
 - **未知块容错**：单个不认识的 bulb 块**不会**中断整篇解析——降级为保留其文本的段落（无文本则丢弃），而非抛错。整篇回退到有损 HTML 仅用于真正无法解析的 payload（无 `<article>` / JSON 损坏）。
-- **附件重传（关键拆分）**：附件的异步 fetch 重传是**插入后、协同敏感**的副作用，不在 adapter 里做。两条有道云路径都用 `buildAttachmentSnapshot` 在 attachment snapshot 的 `meta` 上打**临时重传标记**；`clipboard.ts` 在插入/克隆前用 `collectAndStripRehostMarkers` 统一**收集并剥离**标记（绝不写进 Yjs、不同步给协同端），插入后再 `rehostYneAttachments` 异步重传（只有本地粘贴者做）。
+- **附件重传（关键拆分）**：转换阶段只生成快照。两条路径都用 `buildAttachmentSnapshot` 在 `meta` 写临时标记；来源接口的 `prepareSnapshot` 在插入/克隆前收集并剥离标记，不写进 Yjs。它返回收尾闭包，由剪贴板安排到下一 tick；闭包保留 snapshot 引用以读取最终 ID，重传前后检查目标存活。重传仍走原文件服务与无撤回的初始化属性更新，失败或非 http(s) 结果保留原 URL。
+
+### 剪贴板来源装配契约
+
+```typescript
+import {
+  DocAdapterService, BUNDLED_CLIPBOARD_SOURCE_ADAPTERS,
+  type ClipboardSourceAdapter, type ClipboardSourceData,
+} from '@ccc/blockcraft';
+
+// 在现有 DocAdapterService 子类中提供完整的来源列表：
+// override clipboardSourceAdapters = [mySource, ...BUNDLED_CLIPBOARD_SOURCE_ADAPTERS];
+```
+
+`ClipboardSourceAdapter` 位于 `framework/modules/clipboard/source-adapter.ts`，有三个可选 hook：
+
+- `parseStructured(data, doc)`：同步读取私有格式；返回 null 或空 children 时继续下一个来源。
+- `parseHtml(html, doc)`：内部 HTML marker 之后、通用 HTML codec 之前同步调用；null 表示未匹配。
+- `prepareSnapshot(snapshot, doc)`：在克隆/改写 ID/插入前清理瞬态数据，可返回 `() => Promise<void>`
+  供下一 tick 收尾。它会处理当前所选来源列表上的所有准备 hook，包括内部快照输入；收尾必须检查目标
+  是否插入成功且仍存活，并自行处理预期失败。不要在解析 hook 中写文档。
+
+两个解析 hook 同步运行，不新增协作竞态间隙。旧通用 HTML 解析的 RelativePosition 重定位继续保留。
+此接口依赖编辑器文档和注册快照，属于剪贴板应用层扩展，不放入纯 `framework/ports`，不新增 npm 子入口。
+
+默认 `AdapterService` 显式使用只读 `BUNDLED_CLIPBOARD_SOURCE_ADAPTERS`。旧宿主不声明该字段时，
+公共 ClipboardManager 在 `editor/clipboard-manager.ts` 构造时传入默认列表，保持原有 YNE 支持；
+显式 `[]` 可关闭来源适配，普通 HTML / 纯文本仍可粘贴。核心位于
+`framework/modules/clipboard/clipboard-manager.ts`，不引用任何默认来源；过渡的 legacy-defaults
+桥已移除。公共 Doc 的默认装配创建同一个公共 ClipboardManager，事件仍只注册一次。
+`build:editor` 同时检查领域实现不得引用旧兼容 barrel，来源实现不得回流剪贴板核心或通用转换核心。
+
+通用 codecs 继续从 `@ccc/blockcraft` 导入。其公开声明仍约束已注册 `IBlockSnapshot`，
+没有把 flavour 放宽为任意字符串；`adapters/sources` 也不经 codecs 聚合入口导出。
 
 ### 形状自定义几何编码
 

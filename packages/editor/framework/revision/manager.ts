@@ -1,6 +1,6 @@
 import * as Y from 'yjs'
 import {BehaviorSubject, Subject} from 'rxjs'
-import type {BlockCraftDoc} from '../doc'
+import type {BlockCraftDoc} from '../doc/document';
 import {ORIGIN_NO_RECORD} from '../doc/origins'
 import {BlockNodeType, DeltaInsert, DeltaOperation, IBlockSnapshot} from '../block-std'
 import {generateId, snapshots2Text} from '../utils'

@@ -1,4 +1,4 @@
-import {parseBlockPosition, storeBlockPosition} from '../../../framework/services/block-placement/state'
+import {parseBlockPosition, storeBlockPosition} from '../../../framework/modules/object/block-placement/state'
 import {BlockHtmlAdapterMatcher} from "../../../adapters/html-adapter/block-adapter";
 import {HastUtils} from "../../../adapters/utils";
 import {ImageBlockSchema} from "..";

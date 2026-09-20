@@ -1,5 +1,5 @@
 // packages/editor/framework/modules/pagination/view/table-break-applier.ts
-import {PaginationResult} from "../engine";
+import {PaginationResult} from "@ccc/blockcraft/framework/modules/pagination/engine";
 import {getTableCellFlowPlan} from "../engine/table-cell-flow-metadata";
 import {BlockMeta} from "./item-builder";
 import {computeTableBreaks, TableBreak} from "./table-split";

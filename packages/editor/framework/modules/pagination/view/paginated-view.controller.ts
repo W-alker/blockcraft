@@ -1,9 +1,9 @@
 // packages/editor/framework/modules/pagination/view/paginated-view.controller.ts
 import {fromEvent, skip, Subscription} from "rxjs";
-import {includePlacementPages} from "../../../services/block-placement/page-surface";
+import {includePlacementPages} from "../../object/block-placement/page-surface";
 import {performanceTest} from "../../../../global";
 import {isNativeInputTarget} from "../../../utils";
-import {paginate, PaginationItem} from "../engine";
+import {paginate, PaginationItem} from "@ccc/blockcraft/framework/modules/pagination/engine";
 import {cloneTableCellFlowPlan} from "../engine/table-cell-flow";
 import {
   getTableCellFlowPlan,

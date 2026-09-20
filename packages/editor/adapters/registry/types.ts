@@ -1,4 +1,4 @@
-import type {EmbedConverter} from '../../framework'
+import type {EmbedConverter} from '../../framework/block-std/inline';
 import type {
   HtmlASTToDeltaMatcher,
   InlineDeltaToHtmlAdapterMatcher,

@@ -1,4 +1,4 @@
-import {parseBlockPosition} from '../../services/block-placement/state'
+import {parseBlockPosition} from '../object/block-placement/state'
 import {estimateModelBlockHeight} from './model-height-estimator'
 
 const PLACEMENT_LAYOUT_FLAVOUR = 'placement-layout'

@@ -48,7 +48,7 @@ import { getShapeDefinition, type ShapeKind } from "../../blocks/shape-block";
 import { WORD_ART_FONT_OPTIONS } from "../../blocks/word-art-block";
 import { ShapeFillPanelComponent } from "../shape-toolbar/shape-fill-panel.component";
 import { ObjectFormatNumberPipe } from "./object-format-number.pipe";
-import { quantizeObjectFormatNumber } from "../../framework/block-std/block/object-format-number";
+import { quantizeObjectFormatNumber } from "../../framework/block-std/block/object-format/object-format-number";
 import { normalizeObjectEffects, storeObjectEffects } from "../../framework";
 
 export type ObjectFormatPanel = "layout" | "shape" | "text";

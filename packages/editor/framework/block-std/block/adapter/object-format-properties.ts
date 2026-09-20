@@ -1,8 +1,5 @@
 import type {Element} from 'hast'
-import {
-  normalizeBlockObjectFormat, storeBlockObjectFormat, OBJECT_FORMAT_SECTION_KEYS,
-  type BlockObjectFormatCapability, type BlockObjectFormatProps,
-} from '../../..'
+import {normalizeBlockObjectFormat, storeBlockObjectFormat, OBJECT_FORMAT_SECTION_KEYS, type BlockObjectFormatCapability, type BlockObjectFormatProps} from '@ccc/blockcraft/framework/block-std/block/object-format';
 
 const GROUPS = [...new Set(Object.values(OBJECT_FORMAT_SECTION_KEYS).flat())]
 const propertyName = (key: string): string =>
