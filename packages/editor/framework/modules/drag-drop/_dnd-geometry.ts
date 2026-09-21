@@ -18,16 +18,23 @@ export function calcPositionByRect(
 export function calcDragLineRect(
   rootRect: Pick<DOMRect, 'top' | 'left'>,
   rect: Pick<DOMRect, 'top' | 'left' | 'right' | 'bottom' | 'width' | 'height'>,
-  position: DragPosition
+  position: DragPosition,
+  geometryScale = 1
 ): DragLineRect {
+  // BCR 是视口像素；蓝线位于缩放面内，偏移和长度必须还原为布局像素。
+  // 线宽和边缘间隙仍为原有的 2px / 1px，随文档一起缩放。
+  const top = (rect.top - rootRect.top) / geometryScale
+  const left = (rect.left - rootRect.left) / geometryScale
+  const width = rect.width / geometryScale
+  const height = rect.height / geometryScale
   switch (position) {
     case 'left':
-      return { top: rect.top - rootRect.top, left: rect.left - rootRect.left - 1, width: 2, height: rect.height }
+      return { top, left: left - 1, width: 2, height }
     case 'right':
-      return { top: rect.top - rootRect.top, left: rect.right - rootRect.left + 1, width: 2, height: rect.height }
+      return { top, left: (rect.right - rootRect.left) / geometryScale + 1, width: 2, height }
     case 'after':
-      return { top: rect.bottom - rootRect.top + 1, left: rect.left - rootRect.left, width: rect.width, height: 2 }
+      return { top: (rect.bottom - rootRect.top) / geometryScale + 1, left, width, height: 2 }
     default:
-      return { top: rect.top - rootRect.top - 1, left: rect.left - rootRect.left, width: rect.width, height: 2 }
+      return { top: top - 1, left, width, height: 2 }
   }
 }

@@ -456,22 +456,13 @@ export class TriggerBtn {
   private calcPos() {
     const rootRect = this.doc.root.hostElement.getBoundingClientRect()
     const wrapRect = this.activeBlock!.hostElement.getBoundingClientRect()
+    const scale = this.doc.viewScale.geometryScale
 
-    const left = wrapRect.left - rootRect.left
-
-    if (this.doc.isEditable(this.activeBlock!) && this.activeBlock.containerElement === this.activeBlock.hostElement) {
-      const container = this.activeBlock.containerElement
-      const rect = container.getBoundingClientRect()
-      return {
-        top: rect.top - rootRect.top
-          + this.doc.root.hostElement.scrollTop,
-        left,
-      }
-    }
-
+    // 抓手与 root 同处缩放面内；先还原布局坐标，再应用原有抓手偏移。
+    // scrollTop 已经是布局像素，不能再次除以缩放比例。
     return {
-      top: wrapRect.top - rootRect.top + this.doc.root.hostElement.scrollTop,
-      left
+      top: (wrapRect.top - rootRect.top) / scale + this.doc.root.hostElement.scrollTop,
+      left: (wrapRect.left - rootRect.left) / scale
     }
   }
 

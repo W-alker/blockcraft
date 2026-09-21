@@ -22,6 +22,7 @@ function makeMockDoc(blocks: Record<string, any>): any {
     event: { add: () => {}, bindHotkey: () => {} },
     root: { hostElement: document.createElement('div') },
     isReadonly: false,
+    viewScale: {geometryScale: 1},
     schemas: {
       isValidChildren: jasmine.createSpy('isValidChildren').and.returnValue(true),
       has: () => false,

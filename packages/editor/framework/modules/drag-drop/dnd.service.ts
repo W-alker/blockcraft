@@ -62,7 +62,7 @@ export class DocDndService {
   // 两条路径不会同时活跃，所以分开持有 DOM 元素也不会冲突）。
   private _fileDropLine: HTMLElement | null = null
   private _lastFileDropLineRect: DragLineRect | null = null
-  private _cachedFileRootRect: { top: number, left: number } | null = null
+  private _cachedFileRootRect: { top: number, left: number, scale: number } | null = null
   // drag-over chain：祖先 block 接收 .drag-over class 用于 SCSS 高亮反馈。
   // 跟 dragController 内部那份逻辑一致，外部文件路径独立维护。
   private _fileDragOverChain: HTMLElement[] = []
@@ -223,8 +223,9 @@ export class DocDndService {
   private _moveFileDropLine(host: HTMLElement, position: DragPosition, hostRect = host.getBoundingClientRect()): void {
     if (!this._fileDropLine) return
     if (position === 'none') return
-    const rootRect = this._cachedFileRootRect ?? this._refreshFileRootRect()
-    const rect = calcDragLineRect(rootRect, hostRect, position)
+    const scale = this.doc.viewScale.geometryScale
+    const rootRect = this._cachedFileRootRect?.scale === scale ? this._cachedFileRootRect : this._refreshFileRootRect()
+    const rect = calcDragLineRect(rootRect, hostRect, position, scale)
     const prev = this._lastFileDropLineRect
     if (!prev || prev.left !== rect.left || prev.top !== rect.top) {
       this._fileDropLine.style.transform = `translate3d(${rect.left}px, ${rect.top}px, 0)`
@@ -238,9 +239,9 @@ export class DocDndService {
     this._lastFileDropLineRect = rect
   }
 
-  private _refreshFileRootRect(): { top: number, left: number } {
+  private _refreshFileRootRect(): { top: number, left: number, scale: number } {
     const r = this.doc.root.hostElement.getBoundingClientRect()
-    this._cachedFileRootRect = { top: r.top, left: r.left }
+    this._cachedFileRootRect = { top: r.top, left: r.left, scale: this.doc.viewScale.geometryScale }
     return this._cachedFileRootRect
   }
 

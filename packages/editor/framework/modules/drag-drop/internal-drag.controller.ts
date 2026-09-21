@@ -70,7 +70,7 @@ export class DocInternalDragController {
   private _inBlock: BlockCraft.BlockComponent | null = null
   private _lastHitX = -9999
   private _lastHitY = -9999
-  private _cachedRootRect: { top: number, left: number } | null = null
+  private _cachedRootRect: { top: number, left: number, scale: number } | null = null
   private _scrollFrame: number | null = null
   private _lastX = 0
   private _lastY = 0
@@ -529,9 +529,9 @@ export class DocInternalDragController {
     this._lastDropLineRect = null
   }
 
-  private _refreshRootRect(): { top: number, left: number } {
+  private _refreshRootRect(): { top: number, left: number, scale: number } {
     const r = this.doc.root.hostElement.getBoundingClientRect()
-    this._cachedRootRect = { top: r.top, left: r.left }
+    this._cachedRootRect = { top: r.top, left: r.left, scale: this.doc.viewScale.geometryScale }
     return this._cachedRootRect
   }
 
@@ -542,8 +542,9 @@ export class DocInternalDragController {
       return
     }
     this._dropLine.style.display = ''
-    const rootRect = this._cachedRootRect ?? this._refreshRootRect()
-    const rect = calcDragLineRect(rootRect, hostRect, position)
+    const scale = this.doc.viewScale.geometryScale
+    const rootRect = this._cachedRootRect?.scale === scale ? this._cachedRootRect : this._refreshRootRect()
+    const rect = calcDragLineRect(rootRect, hostRect, position, scale)
     const prev = this._lastDropLineRect
     if (!prev || prev.left !== rect.left || prev.top !== rect.top) {
       this._dropLine.style.transform = `translate3d(${rect.left}px, ${rect.top}px, 0)`

@@ -5,6 +5,7 @@ function makeMockDoc(): any {
   const releaseBlockViewLease = jasmine.createSpy('releaseBlockViewLease')
   return {
     isReadonly: false,
+    viewScale: {geometryScale: 1},
     onDestroy$: { subscribe: () => ({ unsubscribe: () => {} }) },
     root: { hostElement: document.createElement('div') },
     getBlockById: () => null,
