@@ -143,7 +143,8 @@ export class InlineDateEditDialog {
   )
 
   protected readonly formatOptions = computed(() => {
-    const value = this.draftValue()
+    // 与时间选择器使用同一预览值；空值模板仍保留原始值，不能因预览而固定时间。
+    const value = toInlineDateValue(this.draftDate())
     return INLINE_DATE_FORMATS.map(format => ({
       format,
       sample: formatInlineDateValue(value, format),
