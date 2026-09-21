@@ -61,7 +61,7 @@
 .card__day {
     flex: none;
     color: var(--dc-fg, #1f2329);
-    font-size: calc(45 * var(--u, 1px)); // 45px
+    font-size: calc(var(--dc-font-day, 45) * var(--u, 1px)); // 45px
     font-weight: 200;
     letter-spacing: -0.02em;
     line-height: 1;
@@ -89,7 +89,7 @@
 // 大写是**显示层**的事（TS 里存的仍是 'Aug'），所以用 text-transform 而不是 .toUpperCase()
 .card__mon {
     color: #d98515;
-    font-size: calc(12 * var(--u, 1px)); // 12px
+    font-size: calc(var(--dc-font-primary, 12) * var(--u, 1px)); // 12px
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.45em;
@@ -102,7 +102,7 @@
 .card__sub {
     display: flex;
     color: color-mix(in srgb, var(--dc-fg, #1f2329) 68%, transparent);
-    font-size: calc(12.7 * var(--u, 1px)); // 12.7px
+    font-size: calc(var(--dc-font-secondary, 12.7) * var(--u, 1px)); // 12.7px
 
     & span + span::before {
         content: '·';

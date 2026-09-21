@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-09-20
+> Last updated: 2026-09-21
 
 通用数据描述和快照位于 `@ccc/blockcraft/framework/model`，类型为
 `BlockDescriptor<P, M, F>` / `BlockSnapshot<P, M, F>`，默认不依赖组件注册表。
@@ -2192,3 +2192,26 @@ Mermaid 保持 `mermaid` 容器与 `mermaid-textarea` 子块结构。源码仍�
 `{start: 0, continuePrevious: true}`，“重新编号”写入 `{start: 1, continuePrevious: false}`。
 该字段随原生文档 props 持久化；`createSnapshot` 新建后继项不继承计数状态。
 HTML/Markdown 使用输出编号表达结果，不承诺保留动态跨段接续意图。
+
+
+## 日期卡片：字体与分样式字号
+
+`DateCardModel.props.ff` 使用公共 `TYPOGRAPHY_FONT_FAMILIES` 的字体 ID；缺省跟随文档。
+`DateCardTypographyProps` 的七个可选字段 `fsCalendar/fsSquare/fsBanner/fsMinibar/fsTicket/fsStamp/fsFlip`
+分别保存对应样式的三个字号，顺序为日号、主行、副行。单位是未缩放的设计像素；
+`DateCardRenderComponent.contentScale` 用于显示字号与设计字号之间的换算。
+
+- `dateCardFonts(style, props, format?)` 返回 `role/key/label/size/fallback/visible`。
+  `visible` 仅用于面板显隐，格式切换不删除隐藏行设置。
+- `storeDateCardFont(style, props, role, size)` 生成 `updateProps()` 补丁；默认值用 `-` 占位，
+  删除尾部默认值，整档恢复默认返回 `{[key]: null}`。不跨样式覆写。
+- `DATE_CARD_FONT_KEYS` 列出七个字段，宿主的模板配置目录应声明为内部、可省略默认值的配置。
+- 普通文档通过 transaction + `updateProps()` 写入；模板宿主写 `draft:ff` / `draft:<字号字段>`，
+  建档时转为正式 props。若已有正式字号，恢复模板默认须写空字符串覆盖，避免移除 draft 后重新继承旧值。
+- 日期卡模板负责将字体和 `--dc-font-day/primary/secondary` 投影到内壳；七种样式复用原 `--u`
+  等比缩放。未设置的文档保持原字号、字重、几何与颜色。
+
+```ts
+const patch = storeDateCardFont(block.props.style, block.props, 'day', displaySize / block.contentScale)
+doc.crud.transact(() => block.updateProps(patch))
+```

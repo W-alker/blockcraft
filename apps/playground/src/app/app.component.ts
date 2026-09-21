@@ -31,6 +31,7 @@ import {
 import {PaginationSettingsComponent} from './pagination-settings.component';
 import {DocumentScaleSettingsComponent} from './document-scale-settings.component';
 import {PersonCardDebugComponent} from './person-card-debug.component';
+import {DateCardDebugComponent} from './date-card-debug.component';
 import {IdlePrefetchDebugConsoleComponent} from './idle-prefetch-debug-console.component';
 import { debugTableMerge, fixTable } from '@ccc/blockcraft/blocks/table-block/callback';
 import { BlockCraftAwareness } from '@ccc/blockcraft/editor/awa';
@@ -318,6 +319,7 @@ const ACTION_SECTIONS: DebugSection[] = [
     DocumentScaleSettingsComponent,
     IdlePrefetchDebugConsoleComponent,
     PersonCardDebugComponent,
+    DateCardDebugComponent,
     RevisionReviewPanelComponent,
     RouterLink,
   ],
@@ -373,6 +375,8 @@ const ACTION_SECTIONS: DebugSection[] = [
             </div>
           </div>
         </section>
+
+        <playground-date-card-debug [doc]="editorDoc" (prepare)="initializeEditor()" />
 
         <playground-person-card-debug [doc]="editorDoc" (prepare)="initializeEditor()" />
 

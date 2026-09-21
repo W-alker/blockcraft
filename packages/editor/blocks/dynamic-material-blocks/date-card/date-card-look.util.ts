@@ -1,3 +1,5 @@
+import {resolveTypographyFontFamily} from '../../../framework/block-std/typography/core';
+import {dateCardFonts, type DateCardTypographyProps, type DateCardFontRole} from './date-card-typography';
 import { splitBorder } from '../kernel/material-border.util';
 import { DEFAULT_MATERIAL_COLOR } from '../kernel/material-color.util';
 import type { MaterialStyle } from '../kernel/material-styles.util';
@@ -18,6 +20,8 @@ import { DATE_CARD_STYLES } from './date-card.styles';
  * 各抄五行 set（正是当初把五个尺寸口提进 ObjectBlockComponent 的那个理由）。
  */
 export interface DateCardLook {
+    fontFamily: string | null;
+    fontSizes: Record<DateCardFontRole, number>;
     style: MaterialStyle;
     /** 格式档（哪几段出现），透传给样式组件的 `format` input。 */
     format: string;
@@ -60,9 +64,12 @@ export interface DateCardLook {
  * bc 不折 null、缺席直接落近黑，理由见 DateCardLook.bc。
  */
 export function readDateCardLook(
-    props?: { style?: string; format?: string; bg?: string; fg?: string; bw?: string; bc?: string } | null
+    props?: { style?: string; format?: string; bg?: string; fg?: string; bw?: string; bc?: string } & DateCardTypographyProps | null
 ): DateCardLook {
+    const fonts = dateCardFonts(props?.style, props ?? {});
     return {
+        fontFamily: resolveTypographyFontFamily(props?.ff),
+        fontSizes: {day: fonts[0].size, primary: fonts[1].size, secondary: fonts[2].size},
         style: DATE_CARD_STYLES.resolve(props?.style),
         format: props?.format || DATE_FORMATS.Full,
         bg: props?.bg || null,

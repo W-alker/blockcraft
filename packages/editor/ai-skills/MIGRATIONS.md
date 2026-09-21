@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-09-20 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-09-21 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -67,6 +67,32 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > - `major` (e.g. 0.1.37 → 1.0.0): breaking — removed APIs, renamed exports, signature changes, behavior reversals
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
+
+## Unreleased — 2026-09-21：日期卡片字体与字号
+
+**Severity**: minor（新增可选能力，不修改包版本）。
+
+**What changed**: 日期卡片支持 `ff` 字体与按七种样式分别保存的字号覆盖；新增
+`DateCardTypographyProps`、`DateCardFontKey/Role`、`DATE_CARD_FONT_KEYS`、`dateCardFonts()`、
+`storeDateCardFont()` 及 `DateCardRenderComponent.contentScale`。`DateCardLook` 新增字体与字号投影。
+
+**Why**: 模板作者需要修改日期卡片的字体及各文字层级大小，同时保留整卡缩放和原有样式默认值。
+
+**Affected ai-skills files**:
+- `blockcraft-block.md`
+
+### New APIs / Features
+
+字体使用公共字体目录；字号覆盖按样式存为稀疏字符串。模板 draft 和正式 props 共用渲染路径。
+
+### Migration Recipe
+
+旧文档无需迁移。宿主读取 `dateCardFonts()`，以 `contentScale` 换算控件显示字号；
+通过 `storeDateCardFont()` 构造事务补丁，模板域将相同字段声明到配置目录并写入 draft meta。
+
+### Behavior Changes
+
+无字体/字号覆盖时保留原设计。显式覆盖只改变日期卡片文字；卡片原缩放、格式和颜色路径继续生效。
 
 ## Unreleased — 2026-09-20：DDD 目录归位与默认装配收敛
 

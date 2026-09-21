@@ -27,7 +27,7 @@
 .card__ym {
     padding: calc(9.52 * var(--u, 1px)) calc(5.44 * var(--u, 1px)) calc(4.08 * var(--u, 1px));
     color: color-mix(in srgb, var(--dc-fg, #fff) 72%, transparent);
-    font-size: calc(12.2 * var(--u, 1px));           // 12.2px
+    font-size: calc(var(--dc-font-primary, 12.2) * var(--u, 1px));           // 12.2px
     letter-spacing: 0.1em;
     line-height: 1.2;
 }
@@ -35,7 +35,7 @@
 .card__day {
     padding: 0 0 calc(9.52 * var(--u, 1px));
     color: var(--dc-fg, #fff);
-    font-size: calc(51.7 * var(--u, 1px));          // 51.7px
+    font-size: calc(var(--dc-font-day, 51.7) * var(--u, 1px));          // 51.7px
     font-weight: 600;
     letter-spacing: -0.04em;
     line-height: 0.9;
@@ -56,7 +56,7 @@
     padding: calc(4.76 * var(--u, 1px)) 0 calc(5.44 * var(--u, 1px));
     background: color-mix(in srgb, var(--dc-fg, #fff) 12%, transparent);
     color: color-mix(in srgb, var(--dc-fg, #fff) 88%, transparent);
-    font-size: calc(11.6 * var(--u, 1px));         // 11.6px
+    font-size: calc(var(--dc-font-secondary, 11.6) * var(--u, 1px));         // 11.6px
     letter-spacing: 0.14em;
     line-height: 1.2;
 }

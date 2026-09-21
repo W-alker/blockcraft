@@ -46,7 +46,7 @@
 // 只有 45% 不透明度：它是标签不是内容，越退后，下面那个数字越站得住。
 .card__ym {
     color: color-mix(in srgb, var(--dc-fg, #1f2329) 45%, transparent);
-    font-size: calc(15.4 * var(--u, 1px)); // 15.4px
+    font-size: calc(var(--dc-font-primary, 15.4) * var(--u, 1px)); // 15.4px
     letter-spacing: 0.08em;
     line-height: 1.2;
 }
@@ -55,7 +55,7 @@
 // 做成一上一下的一对标签，而不是给它单独设计一档字阶，正方形才不会头重脚轻。
 .card__week {
     color: color-mix(in srgb, var(--dc-fg, #1f2329) 45%, transparent);
-    font-size: calc(15.4 * var(--u, 1px)); // 15.4px
+    font-size: calc(var(--dc-font-secondary, 15.4) * var(--u, 1px)); // 15.4px
     letter-spacing: 0.08em;
     line-height: 1.2;
 }
@@ -64,7 +64,7 @@
 // line-height .88 削掉数字上方的空铅，让它真的贴着底边而不是浮在中间。
 .card__day {
     color: var(--dc-fg, #1f2329);
-    font-size: calc(47.6 * var(--u, 1px)); // 47.6px
+    font-size: calc(var(--dc-font-day, 47.6) * var(--u, 1px)); // 47.6px
     font-weight: 700;
     letter-spacing: -0.04em;
     line-height: 0.88;

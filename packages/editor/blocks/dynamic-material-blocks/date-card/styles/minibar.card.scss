@@ -55,7 +55,7 @@
 .card__day {
     flex: none;
     color: var(--dc-fg, #1f2329);
-    font-size: calc(27 * var(--u, 1px)); // 27px
+    font-size: calc(var(--dc-font-day, 27) * var(--u, 1px)); // 27px
     font-weight: 300;
     letter-spacing: -0.02em;
     line-height: 1;
@@ -77,7 +77,7 @@
     display: flex;
     gap: 0.3em; // 月份与年份之间。不写空格：0.22em 字距会把一个空格顶成两个字宽的裂口
     color: var(--dc-fg, #1f2329);
-    font-size: calc(11 * var(--u, 1px)); // 11px
+    font-size: calc(var(--dc-font-primary, 11) * var(--u, 1px)); // 11px
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.22em;
@@ -88,5 +88,5 @@
 // 星期。从字色兑白而不是写死灰色——换成蓝色字色时，灰字会显脏，兑出来的浅色才跟它是一家。
 .card__week {
     color: color-mix(in srgb, var(--dc-fg, #1f2329) 62%, transparent);
-    font-size: calc(11 * var(--u, 1px)); // 11px
+    font-size: calc(var(--dc-font-secondary, 11) * var(--u, 1px)); // 11px
 }

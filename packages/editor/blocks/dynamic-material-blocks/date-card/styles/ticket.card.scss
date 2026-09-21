@@ -41,7 +41,7 @@
     min-width: calc(32.3 * var(--u, 1px));
     white-space: nowrap;
     color: var(--dc-fg, #1f2329);
-    font-size: calc(43.7 * var(--u, 1px));          // 43.7px
+    font-size: calc(var(--dc-font-day, 43.7) * var(--u, 1px));          // 43.7px
     font-weight: 600;
     letter-spacing: -0.03em;
     line-height: 0.95;
@@ -68,7 +68,7 @@
     display: flex;
     gap: 0.45em;
     color: var(--dc-fg, #1f2329);
-    font-size: calc(17.1 * var(--u, 1px));           // 17.1px
+    font-size: calc(var(--dc-font-primary, 17.1) * var(--u, 1px));           // 17.1px
     font-weight: 600;
     letter-spacing: 0.1em;
     line-height: 1.2;
@@ -77,6 +77,6 @@
 
 .card__week {
     color: color-mix(in srgb, var(--dc-fg, #1f2329) 55%, transparent);
-    font-size: calc(14.3 * var(--u, 1px));         // 14.3px
+    font-size: calc(var(--dc-font-secondary, 14.3) * var(--u, 1px));         // 14.3px
     line-height: 1.25;
 }

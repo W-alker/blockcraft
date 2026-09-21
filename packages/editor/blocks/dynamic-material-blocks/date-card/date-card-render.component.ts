@@ -10,6 +10,8 @@ import { DATE_CARD_BOX_STYLE, readDateCardLook } from './date-card-look.util';
 import type { DateCardLook } from './date-card-look.util';
 import type { MaterialStyleSet } from '../kernel/material-styles.util';
 import { DATE_CARD_STYLES } from './date-card.styles';
+import {DATE_CARD_FONT_KEYS} from './date-card-typography';
+import type {DateCardTypographyProps} from './date-card-typography';
 
 /**
  * 触发重画的 props 键。**两态共用这一份**——漏一个键就是「改了配置画布不动」，
@@ -23,7 +25,7 @@ import { DATE_CARD_STYLES } from './date-card.styles';
  * 加在外壳而不是样式组件里：卡面档的底色画在内层 `.card` 上，这一圈留白就落在卡面**之外**，
  * 描边与卡面之间有气口，卡面本身的形状一点没变。
  */
-export const DATE_CARD_WATCHED_PROPS = ['style', 'format', 'bg', 'fg', 'bw', 'bc', 'date'] as const;
+export const DATE_CARD_WATCHED_PROPS = ['style', 'format', 'bg', 'fg', 'bw', 'bc', 'date', 'ff', ...DATE_CARD_FONT_KEYS] as const;
 
 /**
  * 「长什么样」的形状与读法住 `date-card-look.util`（不含组件、不 import 框架），这里只转发。
@@ -49,7 +51,7 @@ export { readDateCardLook } from './date-card-look.util';
  */
 export interface DateCardModel extends NoEditableBlockNative {
     flavour: 'date-card';
-    props: BlockObjectSizeProps & {
+    props: BlockObjectSizeProps & DateCardTypographyProps & {
         /** 定格真值（configs 的 `date` 项 resolve 出来的）。模板态恒空，桥在建档一刻才写。 */
         date?: string;
         /** 样式档 id。**displayConfigs 的键**，住 props、桥不碰，作者随时换、老文档换档也不丢定格。 */
@@ -108,6 +110,10 @@ export const DATE_CARD_TEMPLATE = `
          [style.--dc-bg]="look().bg" [style.--dc-fg]="look().fg"
          [style.--dc-bw]="look().bw" [style.--dc-bs]="look().bs" [style.--dc-bc]="look().bc"
          [style.--u]="scaleUnitCss"
+         [style.font-family]="look().fontFamily"
+         [style.--dc-font-day]="look().fontSizes.day"
+         [style.--dc-font-primary]="look().fontSizes.primary"
+         [style.--dc-font-secondary]="look().fontSizes.secondary"
          style="${DATE_CARD_BOX_STYLE}">
         <ng-container *ngComponentOutlet="styleDef().component; inputs: { parts: parts(), format: look().format }"></ng-container>
         @if (!isReadonly) {
@@ -145,6 +151,9 @@ export class DateCardRenderComponent extends ObjectBlockComponent<DateCardModel>
     //（styleDef 的同款占位在基类里，初值同样是默认档）。
     protected readonly parts = signal<DateParts>(todayParts());
     protected readonly look = signal<DateCardLook>(readDateCardLook(null));
+
+    /** 当前卡片的整体倍率；设置面板用它将显示字号换算为设计字号。 */
+    get contentScale(): number { return this.scaleUnit; }
 
     /** 基类的样式表口。必须是 getter：写成字段的话基类初始化 styleDef 那刻读到 undefined。 */
     protected override get styles(): MaterialStyleSet { return DATE_CARD_STYLES; }
