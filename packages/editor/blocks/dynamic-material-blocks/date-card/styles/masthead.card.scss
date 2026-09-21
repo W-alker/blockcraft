@@ -1,0 +1,11 @@
+@use 'editorial';
+@include editorial.frame(206, 136);
+@include editorial.type(65, 16, 11);
+.card { display: flex; flex-direction: column; justify-content: center; }
+.card__top { display: flex; justify-content: space-between; align-items: baseline; letter-spacing: .13em; padding-bottom: calc(9 * var(--u, 1px)); border-bottom: calc(2 * var(--u, 1px)) solid currentColor; }
+.card__top.card__secondary, .card__footer.card__secondary { font-size: calc(var(--dc-font-secondary, 11) * .81818 * var(--u, 1px)); }
+.card__month-name { margin-left: auto; }
+.card__main { display: flex; align-items: center; gap: calc(15 * var(--u, 1px)); padding: calc(12 * var(--u, 1px)) 0; }
+.card__side { display: flex; flex-direction: column; gap: calc(8 * var(--u, 1px)); }
+.card__primary { font-weight: 550; letter-spacing: .125em; }
+.card__footer { border-top: calc(1 * var(--u, 1px)) solid currentColor; padding-top: calc(7 * var(--u, 1px)); letter-spacing: .3em; opacity: .7; }

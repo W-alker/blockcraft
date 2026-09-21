@@ -7,9 +7,14 @@ import { MinibarCardComponent } from './styles/minibar.card';
 import { SquareCardComponent } from './styles/square.card';
 import { StampCardComponent } from './styles/stamp.card';
 import { TicketCardComponent } from './styles/ticket.card';
+import { MastheadCardComponent } from './styles/masthead.card';
+import { BookmarkCardComponent } from './styles/bookmark.card';
+import { SplitCardComponent } from './styles/split.card';
+import { PillCardComponent } from './styles/pill.card';
+import { RailCardComponent } from './styles/rail.card';
 
 /**
- * 日期卡片的七种长相。**本文件只做声明**——派生面板选项、查表回落、换档重置尺寸
+ * 日期卡片的十二种长相。**本文件只做声明**——派生面板选项、查表回落、换档重置尺寸
  * 全在 kernel 的 `defineMaterialStyles` 里（那是物料家族的公共能力，不该每个物料抄一遍）。
  *
  * 加一种长相 = 在 styles/ 下加一个组件 + 这个数组加一项。物料声明、两态组件、配置面板一个字不动。
@@ -80,5 +85,12 @@ export const DATE_CARD_STYLES = defineMaterialStyles('style', '样式', [
         id: 'flip', label: '翻页牌', component: FlipCardComponent,
         defaultWidth: 136, defaultAr: 1.25,
         arByVariant: { [DATE_FORMATS.NoWeek]: 1.61, [DATE_FORMATS.Min]: 1.61 }
-    }
+    },
+    // HTML 形式探索 01–05。固定轮廓与内部文字分离，三种格式均保留该轮廓。
+    // 设计宽高对应样式 .card；浏览器矩阵验证实际框与文本边界。
+    { id: 'masthead', label: '报头', component: MastheadCardComponent, defaultWidth: 206, defaultAr: 206 / 136 },
+    { id: 'bookmark', label: '页边签', component: BookmarkCardComponent, defaultWidth: 81, defaultAr: 81 / 157 },
+    { id: 'split', label: '对开日期', component: SplitCardComponent, defaultWidth: 210, defaultAr: 210 / 128 },
+    { id: 'pill', label: '胶囊', component: PillCardComponent, defaultWidth: 214, defaultAr: 214 / 74 },
+    { id: 'rail', label: '双轨', component: RailCardComponent, defaultWidth: 221, defaultAr: 221 / 96 }
 ]);

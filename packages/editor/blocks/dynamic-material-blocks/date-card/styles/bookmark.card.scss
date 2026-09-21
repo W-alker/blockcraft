@@ -1,0 +1,8 @@
+@use 'editorial';
+@include editorial.frame(81, 157);
+@include editorial.type(47, 10, 10);
+.card { background: transparent; }
+.card__paper { box-sizing: border-box; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: calc(15 * var(--u, 1px)) calc(9 * var(--u, 1px)) calc(23 * var(--u, 1px)); background: var(--dc-bg, #416d57); color: var(--dc-fg, #fffefa); clip-path: polygon(0 0,100% 0,100% 100%,50% calc(100% - 13 * var(--u, 1px)),0 100%); }
+.card__primary { letter-spacing: .13em; }
+.card__day { margin: calc(13 * var(--u, 1px)) 0 calc(10 * var(--u, 1px)); }
+.card__week { padding-top: calc(9 * var(--u, 1px)); border-top: calc(1 * var(--u, 1px)) solid color-mix(in srgb, currentColor 32%, transparent); width: 100%; text-align: center; }

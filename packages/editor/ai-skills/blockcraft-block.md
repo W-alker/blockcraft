@@ -2232,7 +2232,8 @@ HTML/Markdown 使用输出编号表达结果，不承诺保留动态跨段接续
 ## 日期卡片：字体与分样式字号
 
 `DateCardModel.props.ff` 使用公共 `TYPOGRAPHY_FONT_FAMILIES` 的字体 ID；缺省跟随文档。
-`DateCardTypographyProps` 的七个可选字段 `fsCalendar/fsSquare/fsBanner/fsMinibar/fsTicket/fsStamp/fsFlip`
+`DateCardTypographyProps` 的可选字段 `fsCalendar/fsSquare/fsBanner/fsMinibar/fsTicket/fsStamp/fsFlip`
+与 `fsMasthead/fsBookmark/fsSplit/fsPill/fsRail`
 分别保存对应样式的三个字号，顺序为日号、主行、副行。单位是未缩放的设计像素；
 `DateCardRenderComponent.contentScale` 用于显示字号与设计字号之间的换算。
 
@@ -2240,16 +2241,24 @@ HTML/Markdown 使用输出编号表达结果，不承诺保留动态跨段接续
   `visible` 仅用于面板显隐，格式切换不删除隐藏行设置。
 - `storeDateCardFont(style, props, role, size)` 生成 `updateProps()` 补丁；默认值用 `-` 占位，
   删除尾部默认值，整档恢复默认返回 `{[key]: null}`。不跨样式覆写。
-- `DATE_CARD_FONT_KEYS` 列出七个字段，宿主的模板配置目录应声明为内部、可省略默认值的配置。
+- `DATE_CARD_FONT_KEYS` 列出全部字段，宿主的模板配置目录应声明为内部、可省略默认值的配置。
 - 普通文档通过 transaction + `updateProps()` 写入；模板宿主写 `draft:ff` / `draft:<字号字段>`，
   建档时转为正式 props。若已有正式字号，恢复模板默认须写空字符串覆盖，避免移除 draft 后重新继承旧值。
-- 日期卡模板负责将字体和 `--dc-font-day/primary/secondary` 投影到内壳；七种样式复用原 `--u`
+- 日期卡模板负责将字体和 `--dc-font-day/primary/secondary` 投影到内壳；全部样式复用原 `--u`
   等比缩放。未设置的文档保持原字号、字重、几何与颜色。
 
 ```ts
 const patch = storeDateCardFont(block.props.style, block.props, 'day', displaySize / block.contentScale)
 doc.crud.transact(() => block.updateProps(patch))
 ```
+
+`DATE_CARD_STYLES` 在原七种之后追加 `masthead`（报头）、`bookmark`（页边签）、
+`split`（对开日期）、`pill`（胶囊）、`rail`（双轨）。样式顺序及默认 `calendar` 不变。
+新增五档保留固定轮廓，`full/noWeek/min` 控制文字显隐，不改变轮廓尺寸；尺寸分别为
+206×136、81×157、210×128、214×74、221×96 设计像素（不含公共外壳内边距）。
+对开日期的 primary 是大月份；报头、对开的 secondary 同时控制固定辅助标签，极简时仍显示字号控件。
+页边签的自定义边框位于外框，内部色纸保留 V 形切口。胶囊的日号圆底与字色同源，圆内数字取背景色。
+宿主应直接消费 `DATE_CARD_STYLES.config` 与 `DATE_CARD_FONT_KEYS`，无需维护第二份样式目录。
 
 
 ### 日期卡片独立设置（无需宿主侧栏）

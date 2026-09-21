@@ -1,7 +1,7 @@
 import {expect, test, type Page} from '@playwright/test'
 
 test.use({viewport: {width: 1600, height: 1100}})
-const styles = ['calendar', 'square', 'banner', 'minibar', 'ticket', 'stamp', 'flip']
+const styles = ['calendar', 'square', 'banner', 'minibar', 'ticket', 'stamp', 'flip', 'masthead', 'bookmark', 'split', 'pill', 'rail']
 async function setup(page: Page, style = 'calendar') {
   await page.routeWebSocket('**', socket => socket.close())
   await page.goto('/')
@@ -35,6 +35,7 @@ async function size(page: Page, value: number) {
 for (const style of styles) {
   test(`${style}: 字体、分层字号、默认恢复和只读渲染`, async ({page}, info) => {
     const id = await setup(page, style)
+    await expect(page.getByLabel('日期排版样式')).toHaveValue(style)
     const before = await read(page, id)
     await page.getByLabel('日期字体', {exact: true}).selectOption('serif')
     await expect.poll(async () => (await read(page, id)).family).toContain('Songti SC')
@@ -47,7 +48,8 @@ for (const style of styles) {
     await page.getByTestId('date-card-debug').getByRole('button', {name: '恢复当前样式字号'}).click()
     await expect.poll(async () => (await read(page, id)).size).toBeCloseTo(before.size, 1)
     await size(page, 24)
-    await page.getByRole('button', {name: '只读', exact: true}).click()
+    // 左栏虚拟预热日志会异步改变滚动位置；键盘激活明确的按钮，避免滚动中误点相邻调试动作。
+    await page.getByRole('button', {name: '只读', exact: true}).press('Enter')
     await expect(page.getByTestId('date-font-day').locator('input')).toBeDisabled()
     await expect(page.getByLabel('日期字体', {exact: true})).toBeDisabled()
     const preview = await read(page, id)
@@ -110,3 +112,65 @@ test('模板 draft 字体/字号投影与撤销，不修改定格值和固定框
   await expect.poll(async () => (await read(page, id)).size).toBeCloseTo(before.size, 1)
   expect((await read(page, id)).family).toBe(before.family)
 })
+
+for (const style of ['masthead', 'bookmark', 'split', 'pill', 'rail']) {
+  test(`${style}: 实测月份、格式、字体矩阵及颜色边框`, async ({page}) => {
+    test.setTimeout(90000)
+    const id = await setup(page, style)
+    const measured = await page.evaluate(async ({id, style}) => {
+      const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+      const block = doc.getBlockById(id)
+      const frame = document.querySelector(`[data-block-id="${id}"] .tpl-date-card`)!
+      const failures: unknown[] = []
+      const dimensions = new Set<string>()
+      const weekdays = new Set<string>()
+      let cases = 0
+      const paint = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+      for (const ff of ['', 'serif', 'kai', 'mono']) {
+        for (const format of ['full', 'noWeek', 'min']) {
+          for (let month = 1; month <= 12; month++) {
+            for (const day of [1, 28]) {
+              const date = `2026-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T10:00`
+              doc.crud.transact(() => block.updateProps({date, format, ff}))
+              await paint(); await paint()
+              const bounds = frame.getBoundingClientRect()
+              const card = frame.querySelector('.card')!
+              const rect = card.getBoundingClientRect()
+              dimensions.add(`${Math.round(rect.width)}×${Math.round(rect.height)}`)
+              const walker = document.createTreeWalker(card, NodeFilter.SHOW_TEXT)
+              for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+                if (!node.textContent?.trim()) continue
+                const range = document.createRange(); range.selectNodeContents(node)
+                const text = range.getBoundingClientRect()
+                if ((text.left < bounds.left - 1 || text.right > bounds.right + 1 || text.top < bounds.top - 1 || text.bottom > bounds.bottom + 1) && failures.length < 15) {
+                  failures.push({date, format, ff, content: node.textContent, text: text.toJSON(), bounds: bounds.toJSON()})
+                }
+              }
+              const week = card.querySelector('.card__week')
+              if (week) weekdays.add(week.textContent!.trim())
+              if (!!week !== (format === 'full') && failures.length < 15) failures.push({date, format, reason: '星期显隐'})
+              if (card.textContent!.includes('2026') !== (format !== 'min') && failures.length < 15) failures.push({date, format, reason: '年份显隐'})
+              cases++
+            }
+          }
+        }
+      }
+      doc.crud.transact(() => block.updateProps({format: 'full', ff: '', bg: '#eaf0f8', fg: '#234567', bw: '2px dashed', bc: '#765432'}))
+      await paint(); await paint()
+      const card = frame.querySelector('.card')!
+      const painted = frame.querySelector(style === 'bookmark' ? '.card__paper' : '.card')!
+      return {cases, failures, dimensions: [...dimensions], weekdays: weekdays.size,
+        background: getComputedStyle(painted).backgroundColor, color: getComputedStyle(painted).color,
+        border: getComputedStyle(card).borderTopStyle, borderColor: getComputedStyle(card).borderTopColor}
+    }, {id, style})
+    expect(measured.failures).toEqual([])
+    expect(measured.cases).toBe(288)
+    expect(measured.weekdays).toBe(7)
+    const dimensions: Record<string, string> = {masthead: '206×136', bookmark: '81×157', split: '210×128', pill: '214×74', rail: '221×96'}
+    expect(measured.dimensions).toEqual([dimensions[style]])
+    expect(measured.background).toBe('rgb(234, 240, 248)')
+    expect(measured.color).toBe('rgb(35, 69, 103)')
+    expect(measured.border).toBe('dashed')
+    expect(measured.borderColor).toBe('rgb(118, 84, 50)')
+  })
+}

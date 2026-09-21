@@ -1,0 +1,16 @@
+// 仅供新增的五种排版复用，不改变既有样式。长度跟随 --u；配置边框保持原物料契约。
+@mixin frame($width, $height) {
+  :host { display: block; width: calc(#{$width} * var(--u, 1px)); }
+  .card {
+    box-sizing: border-box; width: 100%; height: calc(#{$height} * var(--u, 1px));
+    color: var(--dc-fg, #416d57); background: var(--dc-bg, transparent);
+    border: var(--dc-bw, 0px) var(--dc-bs, solid) var(--dc-bc, transparent);
+    font-variant-numeric: tabular-nums; line-height: 1.2; white-space: nowrap;
+  }
+  .card__day { font-weight: 500; line-height: .95; letter-spacing: -.045em; flex: none; }
+}
+@mixin type($day, $primary, $secondary) {
+  .card__day { font-size: calc(var(--dc-font-day, #{$day}) * var(--u, 1px)); }
+  .card__primary { font-size: calc(var(--dc-font-primary, #{$primary}) * var(--u, 1px)); }
+  .card__secondary { font-size: calc(var(--dc-font-secondary, #{$secondary}) * var(--u, 1px)); }
+}

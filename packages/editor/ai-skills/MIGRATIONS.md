@@ -125,6 +125,32 @@ CSES 取色器与下拉子浮层保持当前天气操作目标；关闭或切换
 日期定格值不在设置范围内，既有侧栏继续使用相同字段。
 
 
+## Unreleased — 2026-09-21：日期卡片新增五种形式
+
+**Severity**: minor（新增可选样式，不修改包版本）。
+
+**What changed**: `DATE_CARD_STYLES` 追加报头、页边签、对开日期、胶囊、双轨；
+`DATE_CARD_FONT_KEYS` / `DateCardTypographyProps` 对应追加五个独立字号字段。
+
+**Why**: 将已选定的 HTML 形式 01–05 落为可编辑、可保存的日期卡片样式。
+
+**Affected ai-skills files**: `blockcraft-block.md`。
+
+### New APIs / Features
+
+新增 style ID `masthead/bookmark/split/pill/rail` 与字号字段
+`fsMasthead/fsBookmark/fsSplit/fsPill/fsRail`，支持已有字体、颜色、边框和格式设置。
+
+### Migration Recipe
+
+旧文档无需迁移；默认样式和既有七档尺寸不变。模板宿主直接消费公开目录，
+更新 BlockCraft 依赖后会派生新缩略图选项和字号存储字段，不需额外注册物料。
+
+### Behavior Changes
+
+新样式三种格式保留固定轮廓，只切换年份与星期显隐。它们与已有样式沿用相同的
+Yjs、draft 投影、撤销重做和缩放路径；不会改变日期来源或定格规则。
+
 ## Unreleased — 2026-09-21：日期卡片字体与字号
 
 **Severity**: minor（新增可选能力，不修改包版本）。

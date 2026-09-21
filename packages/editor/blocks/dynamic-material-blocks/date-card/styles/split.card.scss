@@ -1,0 +1,10 @@
+@use 'editorial';
+@include editorial.frame(210, 128);
+@include editorial.type(49, 49, 10);
+.card { display: flex; flex-direction: column; justify-content: center; }
+.card__numbers { display: flex; align-items: center; justify-content: center; gap: calc(25 * var(--u, 1px)); position: relative; padding: calc(14 * var(--u, 1px)) 0; }
+.card__column { display: flex; flex-direction: column; align-items: center; gap: calc(12 * var(--u, 1px)); }
+.card__label.card__secondary { font-size: calc(var(--dc-font-secondary, 10) * .8 * var(--u, 1px)); letter-spacing: .25em; opacity: .65; }
+.card__primary { line-height: .95; font-weight: 500; letter-spacing: -.045em; }
+.card__slash { position: absolute; left: 50%; width: calc(1 * var(--u, 1px)); height: calc(77 * var(--u, 1px)); background: currentColor; transform: rotate(24deg); opacity: .4; }
+.card__footer { display: flex; justify-content: center; gap: calc(12 * var(--u, 1px)); padding-top: calc(12 * var(--u, 1px)); border-top: calc(1 * var(--u, 1px)) solid color-mix(in srgb, currentColor 20%, transparent); letter-spacing: .1em; }

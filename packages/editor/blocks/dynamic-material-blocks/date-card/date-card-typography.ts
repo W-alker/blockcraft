@@ -1,6 +1,7 @@
 import {showsWeek, showsYear} from './date-card-format.util'
 
-export const DATE_CARD_FONT_KEYS = ['fsCalendar', 'fsSquare', 'fsBanner', 'fsMinibar', 'fsTicket', 'fsStamp', 'fsFlip'] as const
+export const DATE_CARD_FONT_KEYS = ['fsCalendar', 'fsSquare', 'fsBanner', 'fsMinibar', 'fsTicket', 'fsStamp', 'fsFlip',
+  'fsMasthead', 'fsBookmark', 'fsSplit', 'fsPill', 'fsRail'] as const
 export type DateCardFontKey = typeof DATE_CARD_FONT_KEYS[number]
 export type DateCardFontRole = 'day' | 'primary' | 'secondary'
 export type DateCardTypographyProps = Partial<Record<DateCardFontKey, string | null>> & {ff?: string | null}
@@ -14,6 +15,11 @@ const DEFINITIONS: Record<string, {key: DateCardFontKey; sizes: readonly number[
   ticket: {key: 'fsTicket', sizes: [43.7, 17.1, 14.3], labels: ['日期', '年月', '星期']},
   stamp: {key: 'fsStamp', sizes: [39.6, 12.5, 10.6], labels: ['日期', '年月', '星期']},
   flip: {key: 'fsFlip', sizes: [51.7, 12.2, 11.6], labels: ['日期', '年月', '星期']},
+  masthead: {key: 'fsMasthead', sizes: [65, 16, 11], labels: ['日期', '月份', '辅助信息']},
+  bookmark: {key: 'fsBookmark', sizes: [47, 10, 10], labels: ['日期', '年月', '星期']},
+  split: {key: 'fsSplit', sizes: [49, 49, 10], labels: ['日期', '月份', '辅助信息']},
+  pill: {key: 'fsPill', sizes: [30, 11, 10], labels: ['日期', '年月', '星期']},
+  rail: {key: 'fsRail', sizes: [37, 11, 10], labels: ['日期', '月份', '年份/星期']},
 }
 const ROLES: readonly DateCardFontRole[] = ['day', 'primary', 'secondary']
 // 面板限制的是缩放后的显示字号，设计字号可能在缩小卡片时超过该上限。
@@ -28,8 +34,8 @@ export function dateCardFonts(style: string | undefined, props: DateCardTypograp
   return ROLES.map((role, index) => {
     const value = Number(values[index])
     const fallback = definition.sizes[index]
-    const visible = role !== 'secondary' || (id === 'calendar' ? showsYear(format)
-      : id === 'banner' ? showsYear(format) || showsWeek(format) : showsWeek(format))
+    const visible = role !== 'secondary' || id === 'masthead' || id === 'split' || (id === 'calendar' ? showsYear(format)
+      : id === 'banner' || id === 'rail' ? showsYear(format) || showsWeek(format) : showsWeek(format))
     return {role, key: definition.key, label: definition.labels[index], size: validSize(value) ? value : fallback, fallback, visible}
   })
 }

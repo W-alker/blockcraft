@@ -12,19 +12,20 @@ import {BlockCraftDoc, DATE_CARD_STYLES, DATE_FORMATS, TYPOGRAPHY_FONT_FAMILIES,
   template: `
     <section class="date-debug" data-testid="date-card-debug">
       <h3>日期块排版</h3>
+      <button type="button" (click)="insertExamples(true)" [disabled]="doc?.isInitialized && doc?.isReadonly">插入新增 5 种样式</button>
       <button type="button" (click)="insertExamples()" [disabled]="doc?.isInitialized && doc?.isReadonly">插入日期块示例</button>
       <p>字体跟随文档或单独设置，字号随整卡缩放。</p>
       @if (selected; as block) {
         <fieldset [disabled]="block.isReadonly">
           <label>排版样式
             <select aria-label="日期排版样式" [value]="block.props.style || 'calendar'" (change)="setStyle($event)">
-              @for (style of styles; track style.id) { <option [value]="style.id">{{style.label}}</option> }
+              @for (style of styles; track style.id) { <option [value]="style.id" [selected]="style.id === (block.props.style || 'calendar')">{{style.label}}</option> }
             </select>
           </label>
           <label>字体
             <select aria-label="日期字体" [value]="block.props.ff || ''" (change)="setFamily($event)">
-              <option value="">跟随文档</option>
-              @for (font of families; track font.id) { <option [value]="font.id">{{font.label}}</option> }
+              <option value="" [selected]="!block.props.ff">跟随文档</option>
+              @for (font of families; track font.id) { <option [value]="font.id" [selected]="font.id === block.props.ff">{{font.label}}</option> }
             </select>
           </label>
           <label>日期格式
@@ -93,11 +94,12 @@ export class DateCardDebugComponent implements OnChanges, OnDestroy {
 
   ngOnDestroy(): void { this.subscriptions.unsubscribe() }
 
-  async insertExamples(): Promise<void> {
+  async insertExamples(newOnly = false): Promise<void> {
     this.prepare.emit()
     const doc = this.doc
     if (!doc?.isInitialized || doc.isReadonly) return
-    const examples = this.styles.map(style => ({
+    const styles = newOnly ? this.styles.filter(style => ['masthead', 'bookmark', 'split', 'pill', 'rail'].includes(style.id)) : this.styles
+    const examples = styles.map(style => ({
       ...doc.schemas.createSnapshot('date-card', []),
       props: {style: style.id, date: '2026-09-21T10:00'},
     }))
