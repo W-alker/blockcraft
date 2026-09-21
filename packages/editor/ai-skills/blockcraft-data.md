@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when working with the CRDT data layer.
 >
-> Last updated: 2026-09-20
+> Last updated: 2026-09-21
 
 ## Architecture Overview
 
@@ -672,6 +672,17 @@ is rejected instead of being promoted into positioned objects. Ctrl/Cmd+D uses
 the same clone pipeline without reading or writing the OS clipboard.
 
 ## Undo/Redo
+
+本地 CRUD 减栏后的结构收尾归属 `framework/modules/columns/column-structure.ts`。
+`moveBlocks()` / `deleteBlocks()` 记录受影响分栏，外层 `DocCRUD.transact()` 回调
+执行完毕、通知模型与视图观察者之前，才检查最终栏数。二栏及以上减为一栏时，
+将剩余栏内容按序搬回父级并删除空布局容器，共用原事务与同一 Undo 项。
+中间态先删再补栏不触发展开；父级类型限制或只读锁不允许展开时保留容器。
+同组重排的栏宽跟随子栏 ID，增减栏后的等分宽度与结构一起进入历史。
+纯文本、普通容器与未变更分栏不做子树遍历或额外写入。
+Undo/Redo、远端同步直接消费已有事务结果，不从视图回调再次触发展开；
+初始加载不迁移历史单栏快照。系统修复或其他不记录历史的 origin，包括其嵌套
+CRUD 调用，不执行这项本地收尾，也不预先捕获撤销选区。
 
 `DocUndoManager` wraps `Y.UndoManager` and stores selection bookmarks on each owning Yjs `StackItem.meta`. It lives on `doc.crud.undoManager`:
 

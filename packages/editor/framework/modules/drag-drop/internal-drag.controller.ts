@@ -3,6 +3,7 @@ import { IBlockProps } from "../../block-std"
 import { calcDragLineRect, calcPositionByRect, type DragLineRect, type DragPosition } from "./_dnd-geometry"
 import { closetBlockId } from "../../utils"
 import { BlockReadonlyError, BlockReadonlyOperation } from "../../doc/block-readonly.types"
+import { ColumnDragPreview } from '../columns/column-drag-preview'
 
 export type InternalDragState = 'idle' | 'armed' | 'dragging' | 'dropping'
 
@@ -53,6 +54,12 @@ function isViewportScroller(container: HTMLElement): boolean {
 export class DocInternalDragController {
   private readonly _state$ = new BehaviorSubject<InternalDragState>('idle')
 
+  private _columnDragId: string | null = null
+  private _columnGroupId: string | null = null
+  private _columnPreview: ColumnDragPreview | null = null
+  private _columnFrame: number | null = null
+  private _columnLandingId: string | null = null
+  private _columnSelection: ReturnType<BlockCraft.Selection['toJSON']> | null = null
   private _activePointerId: number | null = null
   private _data: InternalDragData | null = null
   private readonly _sourceIds = new Set<string>()
@@ -153,6 +160,11 @@ export class DocInternalDragController {
     // armed 阶段不清 selection：清得太早会破坏"单击不拖"场景下 framework 通过 native
     // selection / selectionchange 推导出 block selection 的链路（比如点击图片想让它进入
     // selected 状态）。selection 的清除推迟到真正进 dragging 的 _enterDragging。
+    this._columnDragId = normalized.kind === 'origin-block' && this._safeGetBlockById(normalized.blockId)?.flavour === 'column'
+      ? normalized.blockId : null
+    this._columnSelection = this._columnDragId ? this.doc.selection.value?.toJSON() ?? null : null
+    this._columnLandingId = this._columnDragId ? this._safeGetBlockById(this._columnDragId)?.firstChildren?.id ?? null : null
+    this._columnGroupId = this._columnDragId ? this._safeGetBlockById(this._columnDragId)?.parentId ?? null : null
     this._activePointerId = evt.pointerId
     this._data = normalized
     this._sourceIds.clear()
@@ -260,6 +272,7 @@ export class DocInternalDragController {
     requestAnimationFrame(() => {
       this._scrollRedrawScheduled = false
       if (this._state$.value !== 'dragging') return
+      if (this._columnDragId) return this._hitTestColumn(this._lastHitX, this._lastHitY)
       if (!this._prevBlock?.hostElement?.isConnected) return
       this._moveDropLine(this._prevBlock.hostElement, this._prevDragPosition)
     })
@@ -283,6 +296,17 @@ export class DocInternalDragController {
   }
 
   private _teardown(): void {
+    const columnId = this._columnDragId
+    const landingId = this._columnLandingId
+    const selection = this._columnSelection
+    this._columnDragId = null
+    this._columnGroupId = null
+    this._columnPreview?.destroy()
+    this._columnPreview = null
+    if (this._columnFrame !== null) cancelAnimationFrame(this._columnFrame)
+    this._columnFrame = null
+    this._columnLandingId = null
+    this._columnSelection = null
     this._releaseSourceViewLeaseSafely()
     this._removeGhost()
     this._removeDropLine()
@@ -310,6 +334,14 @@ export class DocInternalDragController {
     this._pointerType = 'mouse'
     this._detachGlobalListeners()
     this._state$.next('idle')
+    if (columnId) {
+      this.doc.crud.undoManager.stopCapturing()
+      if (selection && this.doc.model.exists(selection.anchor.blockId) && this.doc.model.exists(selection.head.blockId)) {
+        this.doc.selection.replay(selection)
+      } else if (landingId && this.doc.model.exists(landingId)) {
+        this.doc.selection.setCursorAtBlock(landingId, true)
+      }
+    }
   }
 
   private _onWindowPointerMove = (evt: PointerEvent): void => {
@@ -327,6 +359,15 @@ export class DocInternalDragController {
     }
 
     // dragging
+    if (this._columnDragId) {
+      this._lastHitX = evt.clientX
+      this._lastHitY = evt.clientY
+      if (this._columnFrame === null) this._columnFrame = requestAnimationFrame(() => {
+        this._columnFrame = null
+        this._hitTestColumn(this._lastHitX, this._lastHitY)
+      })
+      return
+    }
     this._moveGhost(evt.clientX, evt.clientY)
     this._hitTest(evt.clientX, evt.clientY)
     this._queueAutoScroll(evt.clientX, evt.clientY)
@@ -379,11 +420,14 @@ export class DocInternalDragController {
       // divider 等）上的 .selected 视觉就会一直挂着直到下一次真实的 selectionchange。
       // _applyState 不走 suppress 通道，所以 blur() 直接生效。
       try { this.doc.selection.blur() } catch {}
-      this._createGhost()
-      this._updateGhostLabel()
-      this._moveGhost(evt.clientX, evt.clientY)
-      this._createDropLine()
-      this._refreshRootRect()
+      if (this._columnDragId) this._columnPreview = new ColumnDragPreview(this.doc)
+      else {
+        this._createGhost()
+        this._updateGhostLabel()
+        this._moveGhost(evt.clientX, evt.clientY)
+        this._createDropLine()
+        this._refreshRootRect()
+      }
       this._applySourceMarker()
       this._state$.next('dragging')
       this.doc.dndService.dragStatus$.next('moving' as any)
@@ -395,6 +439,7 @@ export class DocInternalDragController {
   }
 
   private _commitDrop(_evt: PointerEvent): void {
+    if (this._columnDragId) this._hitTestColumn(_evt.clientX, _evt.clientY)
     this._state$.next('dropping')
     if (!this._data || !this._prevBlock || this._prevDragPosition === 'none') return
     if (this._isSourceSubtree(this._prevBlock)) return
@@ -402,7 +447,12 @@ export class DocInternalDragController {
     if (this._data.kind === 'origin-block') {
       const source = this._safeGetBlockById(this._data.blockId)
       if (source && source !== this._prevBlock) {
-        this.doc.dndService.onSortBlock(source, this._prevBlock, this._prevDragPosition)
+        if (this._columnDragId) {
+          // 到有效落点才捕获历史；取消拖拽不会遗留一份污染后续输入的 pending bookmark。
+          if (this._columnSelection) this.doc.selection.replay(this._columnSelection)
+          this.doc.crud.undoManager.captureUndoItem(() =>
+            this.doc.dndService.onSortBlock(source, this._prevBlock!, this._prevDragPosition))
+        } else this.doc.dndService.onSortBlock(source, this._prevBlock, this._prevDragPosition)
       }
       return
     }
@@ -579,6 +629,7 @@ export class DocInternalDragController {
   }
 
   private _clearDropTarget(): void {
+    this._columnPreview?.hide()
     this._prevBlock = null
     this._prevDragPosition = 'none'
     this._prevTargetEl = null
@@ -589,6 +640,10 @@ export class DocInternalDragController {
   }
 
   private _hitTest(x: number, y: number): void {
+    if (this._columnDragId) {
+      this._hitTestColumn(x, y)
+      return
+    }
     const evtTarget = (document.elementFromPoint(x, y) ?? null) as Node | null
     // 小位移也可能跨入源容器，只有命中元素不变时才能复用落点。
     if (evtTarget === this._prevTargetEl && Math.abs(x - this._lastHitX) < 4 && Math.abs(y - this._lastHitY) < 4) {
@@ -650,6 +705,37 @@ export class DocInternalDragController {
     this._prevDragPosition = position
     this._moveDropLine(this._prevBlock.hostElement, position, hostRect)
     this._updateDragOverChain(this._prevBlock)
+  }
+
+  private _hitTestColumn(x: number, y: number): void {
+    this._lastHitX = x
+    this._lastHitY = y
+    const source = this._safeGetBlockById(this._columnDragId)
+    const group = source?.parentBlock
+    if (!source || !group || group.id !== this._columnGroupId || group.flavour !== 'columns' || !group.hostElement.isConnected) {
+      return this._clearDropTarget()
+    }
+    const element = document.elementFromPoint(x, y)
+    const bounds = group.hostElement.getBoundingClientRect()
+    if (!element || !group.hostElement.contains(element) || x < bounds.left || x > bounds.right || y < bounds.top || y > bounds.bottom) {
+      return this._clearDropTarget()
+    }
+    const columns = group.getChildrenBlocks().map(block => ({block, rect: block.hostElement.getBoundingClientRect()}))
+    const from = columns.findIndex(item => item.block.id === source.id)
+    const target = columns.find(item => x < item.rect.right) ?? columns.at(-1)
+    if (from < 0 || !target) return this._clearDropTarget()
+    const position = x < target.rect.left + target.rect.width / 2 ? 'left' : 'right'
+    const boundary = columns.indexOf(target) + (position === 'right' ? 1 : 0)
+    const index = boundary > from ? boundary - 1 : boundary
+    if (index === from) {
+      this._clearDropTarget()
+      this._columnPreview?.update(bounds, columns[from].rect, x)
+      return
+    }
+    this._prevBlock = target.block
+    this._prevDragPosition = position
+    this._columnPreview?.update(bounds, columns[from].rect, x, position === 'left' ? target.rect.left : target.rect.right)
+    this._updateDragOverChain(target.block)
   }
 
   // 维护 drag-over class 的祖先链：进来的 block + 所有 block 类型祖先（不含 root）。

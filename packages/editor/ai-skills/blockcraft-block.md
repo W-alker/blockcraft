@@ -13,6 +13,14 @@
 `declare global { namespace BlockCraft { interface IBlockComponents { ... } } }`
 继续限定编辑器快照的 flavour 和后代节点。新增通用快照类型不替代组件注册或 Schema 校验。
 
+## 子栏抓手与单栏退化
+
+分栏子栏在编辑态悬停时显示顶部 mini 抓手，使用既有内部拖拽控制器移动整栏。
+仅允许在当前分栏组内换位，栏宽跟随子栏；组外正文和其他分栏组不响应落点。
+拖动使用与表格相近的半透明整栏预览和插入线。`columns.removeColumn()` 可删除任意有效子栏索引。
+本地 CRUD 减栏后只剩一栏时，在外层事务尾部自动展开。不要在 `onChildrenChange`
+或定时器里补做删除；时序与历史规则见 `blockcraft-data.md` 的 Undo/Redo 小节。
+
 ## 段落边缘装饰与内容区域边框（未发布）
 
 段落的 `props.decoration` 是显示属性，文字仍由原生 InlineRuntime / Y.Text 编辑。此能力仅绘制段前、段后、两侧、上方、下方的边缘线，不包含笔记横格或文本下划线。

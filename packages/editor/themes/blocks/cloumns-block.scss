@@ -2,6 +2,15 @@
   .columns-block {
     padding: 8px 0;
 
+    // 分栏两侧保留光标入口，但不让占位点扩张填写区的滚动范围。
+    > [data-block-zero-space="true"][data-block-gap-side="before"] {
+      left: 1px;
+    }
+
+    > [data-block-zero-space="true"][data-block-gap-side="after"] {
+      right: 1px;
+    }
+
     /* 包装容器，用于放置分割线 */
     .columns-wrapper {
       position: relative;
@@ -73,13 +82,9 @@
       }
     }
 
-    /* 拖拽期间：分栏线让出 hit-test，并隐藏 + 号，避免遮挡 drop target / 视觉干扰 */
+    /* 拖拽期间：分栏线让出 hit-test，避免遮挡 drop target */
     &.drag-over .column-divider {
       pointer-events: none;
-
-      .add-point {
-        display: none;
-      }
     }
 
     &.selected {
@@ -94,7 +99,6 @@
 
     /* 列之间的可拖拽分割线 - Notion 风格 */
     .column-divider {
-      z-index: 101;
       position: absolute;
       top: 0;
       bottom: 0;
@@ -152,48 +156,10 @@
 
       .divider-line {
         width: 2px;
-        transform: translateY(8px);
-        height: calc(100% - 8px);
+        height: 100%;
         background: var(--bc-columns-divider-hover-color);
         transition: all 0.12s ease;
         pointer-events: none;
-      }
-
-      .add-point {
-        position: absolute;
-        top: -10px;
-        left: -2px;
-        width: 16px;
-        height: 16px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: var(--bc-columns-handle-color);
-        font-size: 10px;
-
-        &:hover {
-          background: var(--bc-active-color);
-          cursor: pointer;
-          border-radius: 50%;
-
-          &::before {
-            display: none;
-          }
-
-          &::after {
-            content: '+';
-          }
-
-        }
-
-        &::before {
-          display: block;
-          content: '';
-          height: 6px;
-          width: 6px;
-          background: var(--bc-columns-handle-bg);
-          border-radius: 50%;
-        }
       }
     }
   }
@@ -201,10 +167,42 @@
 
   // 列块
   .column-block {
+    position: relative;
     display: block;
     flex: 1;
     padding: 0 8px;
     margin-bottom: 0 !important;
+
+    .column-drag-handle {
+      position: absolute;
+      top: -8px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 26px;
+      height: 14px;
+      padding: 0;
+      border: 0;
+      border-radius: var(--bc-radius-sm);
+      background: var(--bc-float-toolbar-bg);
+      color: var(--bc-color-light);
+      cursor: grab;
+      touch-action: none;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 11;
+
+      i { font-size: var(--bc-fs-sm); transform: rotate(90deg); }
+      &:active { cursor: grabbing; }
+      &:hover, &:focus-visible { color: var(--bc-active-color); background: var(--bc-float-toolbar-item-active-bg); }
+    }
+
+    &:hover > .column-drag-handle, > .column-drag-handle:focus-visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
 
     .column-content {
       width: 100%;

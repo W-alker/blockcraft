@@ -2898,7 +2898,7 @@ describe('InputTransformer whole-table block selection editing', () => {
     expect(result).toBeTrue()
     expect(preventDefault).toHaveBeenCalled()
     expect(doc.crud.undoManager.captureSelectionBeforeChange).toHaveBeenCalled()
-    expect(doc.yDoc.transact).toHaveBeenCalled()
+    expect(doc.crud.transact).toHaveBeenCalled()
     expect(doc.crud.deleteBlockById).toHaveBeenCalledWith(table.id)
     expect(doc.crud.insertBlocksAfter).not.toHaveBeenCalled()
     expect(doc.selection.normalizeRange).not.toHaveBeenCalled()
@@ -3571,6 +3571,7 @@ describe('InputTransformer whole-block selection delete restore', () => {
         transact: jasmine.createSpy('transact').and.callFake((cb: () => void) => cb()),
       },
       crud: {
+        transact: jasmine.createSpy('crud.transact').and.callFake((cb: () => void) => cb()),
         undoManager: {
           captureSelectionBeforeChange: jasmine.createSpy('captureSelectionBeforeChange'),
         },
@@ -3604,7 +3605,7 @@ describe('InputTransformer whole-block selection delete restore', () => {
 
     expect(result).toBeTrue()
     expect(doc.crud.undoManager.captureSelectionBeforeChange).toHaveBeenCalled()
-    expect(doc.yDoc.transact).toHaveBeenCalled()
+    expect(doc.crud.transact).toHaveBeenCalled()
     expect(doc.crud.deleteBlockById).toHaveBeenCalledOnceWith(selectedBlock.id)
     expect(parent.childrenIds).toEqual(['prev-table', 'next-p'])
     expect(doc.selection.setGapCursor).toHaveBeenCalledOnceWith(prevBlock, 'after')

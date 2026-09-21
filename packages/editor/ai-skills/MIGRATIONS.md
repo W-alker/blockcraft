@@ -68,6 +68,45 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## Unreleased — 2026-09-21：子栏 mini 抓手与事务内单栏展开
+
+**Severity**: minor
+
+**What changed**: 子栏顶部新增悬停抓手，仅支持当前分栏组内重排，提供半透明整栏预览和插入线；本地 CRUD 减栏后的单栏容器在原事务内自动展开。
+
+**Why**: 子栏需要直接拖动；单栏收尾必须与原操作共享 Undo 项，避免视图回调或延时清理破坏重做和焦点。
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+- `blockcraft-toolbar.md`
+- `blockcraft-data.md`
+
+### Behavior Changes
+
+- `columns.removeColumn()` 接受任意有效子栏索引；减到一栏时保留内容并展开为上下布局。
+- `DocCRUD.transact()` 在本地外层回调结束前收尾受影响分栏；中途减栏再补栏不会误展开。Undo/Redo、远端同步和初始加载不另行触发清理。
+- 同组重排的栏宽跟随子栏 ID；增减栏后的宽度与结构同时记录进历史。只读后代或父级不允许内容类型时保留单栏容器。
+- 抓手使用 `.column-drag-handle`，不需要额外注册 Plugin，无快照格式迁移。
+
+## Unreleased — 2026-09-21：分栏改用跟随子栏焦点的悬浮操作条
+
+**Severity**: patch
+
+**What changed**: 分栏结构控件移到跟随子栏焦点的 CDK connected Overlay，提供左右插入和取消分栏，保留栏间拖动线。
+
+**Why**: 避免控件撑大填写区的横向滚动范围、被裁剪或占据正文空间。
+
+**Affected ai-skills files**:
+
+- `blockcraft-toolbar.md`
+
+### Behavior Changes
+
+- 根据模型选区显示当前子栏的操作条，支持左右插入；取消分栏按从左到右的顺序保留内容，可撤销恢复。
+- 不再渲染 `.column-divider .add-point` 或末尾添加专用 divider；宿主针对这些内部节点的样式或自动化定位需调整。
+- 快照结构、列宽、列数上限、添加列命令与填写区滚动语义不变，无数据迁移。
+
 ## Unreleased — 2026-09-21：填写区域限制单页高度
 
 **Severity**: patch

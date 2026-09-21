@@ -12,6 +12,7 @@ import {BlockCraftError, ErrorCode} from "../../global";
 import {Subject} from "rxjs";
 import {isYArray, isYText} from "../utils/yAbstractType";
 import {DocUndoManger} from "./undoManger";
+import {ColumnStructureNormalizer} from '../modules/columns/column-structure';
 import {ChildrenRepairer} from "./children-repair";
 import {IRemoteDocSyncLifecycleEvent} from "./sync-lifecycle";
 
@@ -96,6 +97,10 @@ type DeferredChildrenUpdate = {
 }
 
 export class DocCRUD {
+
+  private readonly _columnStructure = new ColumnStructureNormalizer(this.doc)
+  private _mutationDepth = 0
+  private _columnNormalizationSuppressed = 0
 
   undoManager!: DocUndoManger
   readonly onChildrenUpdate$ = new Subject<IChildrenChangeEvent>()
@@ -216,10 +221,49 @@ export class DocCRUD {
     ) {
       return runInternalMutation.call(
         this.doc.readonlyManager,
-        () => this.yDoc.transact(fn, origin),
+        () => this._transactWithoutColumnNormalization(fn, origin),
       )
     }
-    return this.yDoc.transact(fn, origin)
+    if (origin !== null && origin !== ORIGIN_SKIP_SYNC) return this._transactWithoutColumnNormalization(fn, origin)
+    if (this._columnNormalizationSuppressed) return this.yDoc.transact(fn, origin)
+    const outer = this._mutationDepth === 0
+    let landing: string | undefined
+    const recovery: {selection: ReturnType<BlockCraft.Selection['toJSON']> | null} = {selection: null}
+    try {
+      return this.yDoc.transact(() => {
+        this._mutationDepth++
+        try {
+          fn()
+          if (outer) {
+            landing = this._columnStructure.flush()
+            recovery.selection = this._columnStructure.selection
+            this._columnStructure.clear()
+          }
+        } finally {
+          this._mutationDepth--
+        }
+      }, origin)
+    } finally {
+      if (outer) {
+        const {selection} = recovery
+        this._columnStructure.clear()
+        // 视图已同步后再恢复端点；Undo/Redo 直接回放历史，不进入此本地收尾路径。
+        if (landing && selection) {
+          if (this.doc.model.exists(selection.anchor.blockId) && this.doc.model.exists(selection.head.blockId)) {
+            this.doc.selection.replay(selection)
+          } else this.doc.selection.selectOrSetCursorAtBlock(landing, true)
+        }
+      }
+    }
+  }
+
+  private _transactWithoutColumnNormalization(fn: () => void, origin: unknown) {
+    this._columnNormalizationSuppressed++
+    try {
+      return this.yDoc.transact(fn, origin)
+    } finally {
+      this._columnNormalizationSuppressed--
+    }
   }
 
   updateBlockProps(blockId: string, props: Partial<IBlockProps>): void {
@@ -1097,6 +1141,7 @@ export class DocCRUD {
         `Block ${parentYBlock.get('id')} cannot contain block children`,
       )
     }
+    if (this._mutationDepth > 0 && !this._columnNormalizationSuppressed) this._columnStructure.track(parentYBlock.get('id'))
     const sliceIds = children.toArray().slice(index, index + count)
     const flatIds = this.getFlatIds(sliceIds)
     flatIds.forEach(id => {
@@ -1387,6 +1432,11 @@ export class DocCRUD {
 
     this.transact(() => {
       const sliceIds = sourceChildren.toArray().slice(index, index + count)
+      if (!this._columnNormalizationSuppressed) {
+        this._columnStructure.track(parentId)
+        this._columnStructure.track(targetId)
+        this._columnStructure.moved(sliceIds, targetId)
+      }
       sourceChildren.delete(index, count)
       targetChildren.insert(targetIndex, sliceIds)
     })

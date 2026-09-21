@@ -17,6 +17,7 @@ import {
   BlockSelection,
   IGapSelectionPoint,
   INormalizedEndpoints,
+  searchEditableDescendant,
 } from "../selection";
 import { isSelectionAlive } from "../selection/liveness";
 import { normalizeRange as normalizeSelectionRange } from "../selection/normalize";
@@ -1942,8 +1943,16 @@ export class InputTransformer {
     const deletedIndex = this._blockIndexInParent(target.start, parent);
     const prevBlock = this.doc.prevSibling(target.start);
     const nextBlock = this.doc.nextSibling(target.end);
+    // 子栏自身没有可见的 gap 光标。先保存相邻栏的内容身份；减为单栏时，
+    // columns/column 容器会在事务尾部销毁，不能在删除后再沿旧组件取落点。
+    const adjacentColumn = parent?.flavour === 'columns' ? prevBlock ?? nextBlock : null;
+    const columnLandingAtStart = !prevBlock;
+    const columnLandingId = adjacentColumn
+      ? (searchEditableDescendant(adjacentColumn, columnLandingAtStart) ??
+        (columnLandingAtStart ? adjacentColumn.firstChildren : adjacentColumn.lastChildren))?.id
+      : undefined;
     this._runRevisionGroup(() => {
-      this.doc.yDoc.transact(() => {
+      this.doc.crud.transact(() => {
         if (target.start.id === target.end.id) {
           this.doc.crud.deleteBlockById(target.start.id);
           return;
@@ -1965,6 +1974,8 @@ export class InputTransformer {
         this.doc.crud.deleteBlockById(target.end.id);
       });
     });
+    const columnLanding = columnLandingId && this._getLiveBlockById(columnLandingId);
+    if (columnLanding && focusBlockSelectionEdge(this.doc, columnLanding, columnLandingAtStart)) return true;
     restoreSelectionAfterBlockDelete(this.doc, parent, deletedIndex, prevBlock, nextBlock, "previous");
     return true;
   }

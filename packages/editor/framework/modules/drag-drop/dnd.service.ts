@@ -343,6 +343,10 @@ export class DocDndService {
 
   onSortBlock(block: BlockCraft.BlockComponent, targetBlock: BlockCraft.BlockComponent, position: DragPosition) {
     if (!block || position === 'none' || targetBlock === block) return
+    if (block.flavour === 'column') {
+      this._onSortColumn(block, targetBlock, position)
+      return
+    }
     const isDepthEqual = block.props['depth'] === targetBlock.props['depth']
     if (position === 'left' || position === 'right') {
       this.onSetColumn(block, targetBlock, position)
@@ -391,6 +395,21 @@ export class DocDndService {
 
       this._handleSourceParentAfterMove(sourceParentId)
     })
+  }
+
+  /** 子栏抓手只在所属分栏组内重排；命令层也拒绝组外落点。 */
+  private _onSortColumn(source: BlockCraft.BlockComponent, target: BlockCraft.BlockComponent, position: DragPosition) {
+    const parent = source.parentBlock
+    if (parent?.flavour !== 'columns' || target.flavour !== 'column' || target.parentId !== parent.id) return
+    if (position !== 'left' && position !== 'right') return
+    if (!this._tryAssertMovable([source.id], parent.id)) return
+    const sourceIndex = parent.childrenIds.indexOf(source.id)
+    const targetIndex = parent.childrenIds.indexOf(target.id)
+    if (sourceIndex < 0 || targetIndex < 0) return
+    let index = targetIndex + (position === 'right' ? 1 : 0)
+    if (sourceIndex < index) index--
+    if (sourceIndex === index) return
+    this.doc.crud.moveBlocks(parent.id, sourceIndex, 1, parent.id, index)
   }
 
   /**
