@@ -937,6 +937,7 @@ through the content above it.
 `render-unit` 原生支持可选 `wr/ar`：宽度是正文内容区宽度的百分比，高度为宽度除以宽高比，与流式图片共用 `deriveObjectSizeFromPixels()`。
 `RenderUnitBlockComponent.setSize(width, height)` 接收布局像素，在一个事务内换算比例并清理旧 `width/height`；`objectDimensions` 提供当前显示尺寸。
 未设置完整有效尺寸时仍由内容自然撑高；不自动把旧容器变成固定尺寸。显式尺寸包含内边距，超出内容可滚动。
+分页和打印中的内容区域（含嵌套区域）最多占一页正文高度，边框与内边距计入上限；超出内容在内层滚动，外层保留选区与缩放控件。自然高度不会写回 props，删除内容后自动缩回；用户手动设置的尺寸保留，关闭分页后恢复原有显示尺寸。
 悬停或内部编辑时显示文本框同款顶部抓手聚焦按钮（`bc_caijian` 图标），点击或键盘激活后整块选中并显示八向手柄（无旋转）；整块选中后隐藏聚焦按钮，只读时不创建该按钮。CalloutToolbarPlugin 仅提供颜色入口，不显示宽高输入。
 HTML 通过 `data-bc-wr/ar`（以及旧 `data-bc-width/height`）保留尺寸；私有 Markdown 保留 props。只读、协同、撤销和虚拟估高沿用框架路径。
 背景默认仍透明，业务填写区的白底由宿主传入 `backColor`；框架不识别 `tplRegion` 等业务标记。

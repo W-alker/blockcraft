@@ -23,6 +23,14 @@ describe('block-policy', () => {
       .toEqual({breakable: true, keepWithNext: false, capHeight: false});
   });
 
+  it('内容区域整体占位且最多一页，不改变相邻容器策略', () => {
+    expect(resolveBlockPolicy({flavour: 'render-unit', nodeType: BlockNodeType.block}))
+      .toEqual({breakable: false, keepWithNext: false, capHeight: true});
+    for (const flavour of ['callout', 'columns', 'column', 'table-cell']) {
+      expect(resolveBlockPolicy({flavour, nodeType: BlockNodeType.block}).capHeight).toBeFalse();
+    }
+  });
+
   it('标题段落也独立分页，不默认 keepWithNext', () => {
     expect(resolveBlockPolicy({flavour: 'paragraph', nodeType: BlockNodeType.editable, isHeading: true}))
       .toEqual({breakable: true, keepWithNext: false, capHeight: false});

@@ -68,6 +68,24 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## Unreleased — 2026-09-21：填写区域限制单页高度
+
+**Severity**: patch
+
+**What changed**: `render-unit` 在分页和打印模式下最多占一页正文高度（含边框、内边距），超出内容由内层滚动承载，保留外层选区和缩放控件；嵌套区域同样受限。
+
+**Why**: 内容区域此前没有单页高度约束，长内容会溢出纸张正文。
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+
+### Behavior Changes
+
+- 未设置尺寸的区域继续随内容增长或收缩，不把分页上限写成固定高度。
+- 手动设置的比例或旧像素尺寸仍保留；分页仅限制显示高度，关闭分页恢复原有尺寸。
+- 不修改快照格式、嵌套规则或其他容器的分页策略；宿主无需迁移数据。
+
 ## 0.10.5 — 2026-09-21：通用对象拖拽插件归入框架
 
 **Severity**: patch（按本次发布要求；新增通用插件，修复宿主拖拽能力不一致）。

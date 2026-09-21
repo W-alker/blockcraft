@@ -54,6 +54,8 @@ export function resolveBlockPolicy(input: BlockPolicyInput): BlockPolicy {
     case 'blockquote':
     case 'caption':
       return {breakable: true, keepWithNext: false, capHeight: false};
+    case 'render-unit':
+      // 内容区域保持整体，超出一页时由内层滚动承载，不能无限撑开分页占位。
     case 'code':
       // 代码块超高时锁定最大高度到一页内（不按行拆）——与图片等原子块同策略。
       return {breakable: false, keepWithNext: false, capHeight: true};

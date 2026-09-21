@@ -170,6 +170,25 @@ body.bc-table-fullscreen-lock
     }
   }
 
+  // 区域可嵌套；用自然 flex 高度增长到页高，收缩时也能恢复内容高度。
+  // 上限是整个 border-box，内边距/边框由 flex 布局扣除，控件留在滚动层外。
+  .render-unit-block {
+    display: flex;
+    flex-direction: column;
+    max-height: var(--bc-page-content-height);
+    min-height: 0;
+
+    > .render-unit-content {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: auto;
+    }
+  }
+
+  > .bc-page-height-locked.render-unit-block {
+    overflow: visible;
+  }
+
   > .bc-page-height-locked {
     max-height: var(--bc-page-content-height);
     overflow: hidden;
