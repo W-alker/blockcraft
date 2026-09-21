@@ -18,7 +18,8 @@ import {
   CsTooltipDirective,
 } from '@cses/ui'
 import { Subscription } from 'rxjs'
-import { ColorGroup, ColorPickerComponent } from '../../../components'
+import { ColorPickerComponent } from '../../../components/color-picker/color-picker'
+import type { ColorGroup } from '../../../components/color-picker/color-picker'
 import { nextTick } from '../../../global'
 import { TableCellBlockModel } from '../index'
 import { mergeTableCells, unMergeTableCell } from '../callback'

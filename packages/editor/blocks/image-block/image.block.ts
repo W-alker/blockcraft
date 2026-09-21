@@ -7,12 +7,11 @@ import {
   DocFileService,
 } from '../../framework';
 import {ImageBlockModel} from './index';
-import {
-  BcResourcePlaceholderDirective,
-  BlockResizeCommit,
-  ResourceIntrinsicSize,
-  ResizeContainerComponent,
-} from '../../components';
+// Avoid the components barrel: snapshot-viewer imports the block registry back.
+import {ResizeContainerComponent} from '../../components/block-resizer/resize-container';
+import type {BlockResizeCommit} from '../../components/block-resizer/resize-container';
+import {BcResourcePlaceholderDirective} from '../../components/resource-placeholder/resource-placeholder.directive';
+import type {ResourceIntrinsicSize} from '@ccc/blockcraft/global/resource-placeholder';
 import {takeUntil} from 'rxjs';
 
 export function deriveInitialImageObjectSize(

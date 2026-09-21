@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from "@angular/core";
-import { BcFloatToolbarComponent, BcFloatToolbarItemComponent } from "../../../components";
+import { BcFloatToolbarComponent } from '../../../components/float-toolbar/float-toolbar';
+import { BcFloatToolbarItemComponent } from '../../../components/float-toolbar/float-toolbar-item';
 import { IMermaidType, MermaidViewMode } from "../types";
 
 @Component({
