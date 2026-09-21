@@ -1607,6 +1607,7 @@ describe('BlockPlacementManager', () => {
     expect(doc.selection.setSuppressRecalculate).toHaveBeenCalledWith(false)
     expect(block.updateProps).toHaveBeenCalledTimes(1)
     expect(block.changeDetectorRef.detectChanges).toHaveBeenCalledTimes(1)
+    expect(doc.crud.transact).toHaveBeenCalledWith(jasmine.any(Function))
 
     manager.destroy()
     container.remove()

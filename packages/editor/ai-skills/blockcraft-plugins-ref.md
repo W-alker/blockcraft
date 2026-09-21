@@ -13,7 +13,7 @@ This index covers the built-in plugins. Pick the category file that matches your
 | Category | File | Plugins |
 |----------|------|---------|
 | Text Formatting | `blockcraft-plugins-formatting.md` | FloatTextToolbarPlugin, TextMarkerPlugin, FixedTextToolbarComponent |
-| Block Management | `blockcraft-plugins-block.md` | BlockControllerPlugin, BlockGapCreatorPlugin, BlockTransformerPlugin, OrderedBlockPlugin |
+| Block Management | `blockcraft-plugins-block.md` | BlockControllerPlugin, BlockGapCreatorPlugin, BlockTransformerPlugin, OrderedBlockPlugin, ObjectDragPlugin |
 | Block Toolbars | `blockcraft-plugins-toolbar.md` | AttachmentExtensionPlugin, ImgToolbarPlugin, ObjectFormatToolbarPlugin, BookmarkBlockExtensionPlugin, CalloutToolbarPlugin, WeatherToolbarPlugin, DividerExtensionPlugin, EmbedFrameExtensionPlugin, FormulaBlockExtensionPlugin |
 | Inline & Keyboard | `blockcraft-plugins-inline.md` | InlineLinkExtension, MentionPlugin, DateInlineExtensionPlugin, CodeInlineEditorBinding, TableBlockBinding |
 | Utilities | `blockcraft-plugins-util.md` | PlaceholderPlugin, FindReplacePlugin, PasteFormatSelectorPlugin, DemoPresentationPlugin, RevisionReviewPlugin, TranslatePlugin, PaginationPlugin |
@@ -25,6 +25,7 @@ This index covers the built-in plugins. Pick the category file that matches your
 | `FloatTextToolbarPlugin` | `formatting` | `extraItems`, `onExtraItemClick` |
 | `TextMarkerPlugin` | `formatting` | `markTextBlockFlavours` (required) |
 | `FixedTextToolbarComponent` | `formatting` | Angular component inputs |
+| `ObjectDragPlugin` | `block` | none (zero-config) |
 | `BlockControllerPlugin` | `block` | `blockMenuResolver`, `blockMenuActionHandler`, `positionResolver` |
 | `BlockGapCreatorPlugin` | `block` | none (zero-config) |
 | `BlockTransformerPlugin` | `block` | `transformList` array, `{ transformList, commands }`, or runtime `registerCommand(s)` |

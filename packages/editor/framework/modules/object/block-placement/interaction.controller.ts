@@ -268,7 +268,13 @@ export class BlockPlacementInteractionController {
         this.doc.selection.value?.anchor.blockId === block.id
       if (shouldCommit) {
         try {
-          if (this.updateAbsolute(block, target)) {
+          // 用户拖拽必须进入普通 Undo 事务；组合内部的派生边界重算使用
+          // 非历史 origin，直接调用会让整个成员移动都被当作自动修复忽略。
+          let committed = false
+          this.doc.crud.transact(() => {
+            committed = this.updateAbsolute(block, target)
+          })
+          if (committed) {
             // Keep the transform preview in place until the committed left/top
             // bindings have reached the DOM. Otherwise pointerup briefly paints
             // the object's old position and looks like a rejected drop.

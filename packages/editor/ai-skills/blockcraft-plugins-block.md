@@ -4,6 +4,34 @@
 >
 > Last updated: 2026-09-21
 
+## ObjectDragPlugin
+
+> `plugins/object-drag/` — 通用对象本体选择与浮动移动，零配置。
+
+`createBundledEditorCapabilities()` 已包含一个实例。手动装配时，每个文档创建一个新实例，
+放在 `ObjectFormatToolbarPlugin` 和 `ImgToolbarPlugin` 之后：
+
+```typescript
+import {ObjectDragPlugin, ObjectFormatToolbarPlugin, ImgToolbarPlugin} from '@ccc/blockcraft';
+const plugins = [
+  new ObjectFormatToolbarPlugin(),
+  new ImgToolbarPlugin(),
+  new ObjectDragPlugin(),
+];
+```
+
+插件根据 `doc.placement.supports(block, 'absolute')` 拾取对象，不依赖宿主物料列表。
+点击本体会显式选择对象；仅在当前为 absolute 且可写时调用 `placement.startDrag()`。
+组合成员使用局部 absolute 坐标；正文流对象的排序仍由 BlockController 手柄负责。
+图像、形状、文本框、艺术字和组合外框继续交给已有专属入口。
+
+`block-resizer`、`data-bc-placement-pick-ignore`、`data-bc-nodrag` 和
+`data-block-zero-space="true"` 的后代不会触发本体选择或移动。
+自定义控件应使用相应忽略标记保留自己的交互；已消费的事件和已有拖拽也会被避让。
+监听限定在所属文档的 DOM 内，并在插件卸载或文档销毁时清理。
+
+宿主升级时应删除自有 `ObjectDragPlugin` 实现及重复注册；使用 bundled 装配时无需额外添加。
+
 ## BlockControllerPlugin
 
 > `plugins/block-controller/` — Drag handle, context menu, and block-level operations.

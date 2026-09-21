@@ -68,6 +68,45 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## 0.10.5 — 2026-09-21：通用对象拖拽插件归入框架
+
+**Severity**: patch（按本次发布要求；新增通用插件，修复宿主拖拽能力不一致）。
+
+**What changed**: 框架导出零配置 `ObjectDragPlugin`，默认 bundled 装配在对象格式和图片插件之后注册。
+对象移动按 placement 能力判断，保留专属交互、只读、锁定、缩放控件与 gap 的边界。
+组合成员拖动以普通用户事务提交，位置和派生组合边界一起进入撤销历史。
+
+**Why**: 对象拖拽属于编辑器能力；宿主只在模板页装载临时实现会导致普通文档中的人员等浮动块无法移动。
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-plugin.md`
+- `blockcraft-plugins-ref.md`
+- `blockcraft-plugins-block.md`
+
+### New APIs / Features
+
+- `ObjectDragPlugin`，运行时插件名 `ObjectDrag`，无构造选项。
+
+### Migration Recipe
+
+```typescript
+// before: 宿主维护自己的实现
+import {ObjectDragPlugin} from './materials/plugins/object-drag.plugin';
+// after: 手动装配仍创建一个实例，顺序在对象格式与图片插件之后
+import {ObjectDragPlugin} from '@ccc/blockcraft';
+```
+
+使用 `createBundledEditorCapabilities()` 的宿主直接使用返回的插件列表，删除自行追加的拖拽实例。
+删除宿主重复实现；客户端需要升级到包含该导出的框架产物后才能使用新 import。
+
+### Behavior Changes
+
+- 默认装配中的人员、日期、天气及自定义 placement 对象可从本体启动浮动移动。
+- 正文流排序、组合首击选择和其他专属对象的编辑手势保持原路径。
+- 手动装配且不添加此插件的宿主行为不变。
+
 ## Unreleased — 2026-09-21：天气块布局与色调
 
 **Severity**: minor（新增可选展示能力，不修改包版本）。

@@ -19,6 +19,14 @@ DocConfig.plugins[] → doc._initPlugins() → plugin.register(doc) → register
 2. Framework calls `init()` — your setup code runs
 3. On doc destruction, framework calls `destroy()` — your cleanup code runs
 
+## 通用对象移动的装配顺序
+
+对象本体移动使用框架 `ObjectDragPlugin`，无需宿主复制实现。
+手动装配顺序为 `ObjectFormatToolbarPlugin` → `ImgToolbarPlugin` → `ObjectDragPlugin`，
+让组合首击、Shift 多选和专属对象交互先处理。默认 bundled 装配已按此顺序注册，
+不要重复追加；每个文档仍必须使用独立实例。能力与控件避让契约见
+`blockcraft-plugins-block.md` 的 ObjectDragPlugin 节。
+
 ## Template: Minimal Plugin
 
 ```typescript
