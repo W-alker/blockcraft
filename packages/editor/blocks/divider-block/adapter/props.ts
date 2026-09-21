@@ -6,15 +6,11 @@ type DividerProps = DividerBlockModel['props']
 const STRING_FIELDS = [
   'style',
   'size',
-  'text',
-  'color',
   'lineColor',
 ] as const satisfies readonly (keyof DividerProps)[]
 
 const NUMBER_FIELDS = [
   'opacity',
-  'fontSize',
-  'letterSpacing',
 ] as const satisfies readonly (keyof DividerProps)[]
 
 function oneOf<T extends string>(
@@ -29,8 +25,11 @@ export function applyDividerAdapterProps(
   target: DividerProps,
   encoded: unknown,
 ): void {
-  const source = decodeAdapterProps(encoded)
-  const output = target as Record<string, unknown>
+  Object.assign(target, dividerAdapterProps(decodeAdapterProps(encoded)))
+}
+
+export function dividerAdapterProps(source: Record<string, unknown>): DividerProps {
+  const output: Record<string, unknown> = {}
 
   for (const key of STRING_FIELDS) {
     if (typeof source[key] === 'string') output[key] = source[key]
@@ -44,13 +43,5 @@ export function applyDividerAdapterProps(
   if (oneOf(source['thickness'], ['thin', 'regular', 'thick'])) {
     output['thickness'] = source['thickness']
   }
-  if (oneOf(source['align'], ['left', 'center', 'right'])) {
-    output['align'] = source['align']
-  }
-  if (oneOf(source['fontWeight'], ['normal', 'bold'])) {
-    output['fontWeight'] = source['fontWeight']
-  }
-  if (oneOf(source['fontStyle'], ['normal', 'italic'])) {
-    output['fontStyle'] = source['fontStyle']
-  }
+  return output as DividerProps
 }

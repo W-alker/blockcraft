@@ -1,8 +1,7 @@
 <div class="bc-paragraph-layout">
   <div class="bc-paragraph-form">
     <section class="bc-settings-section">
-      <h3>常规</h3>
-      <div class="bc-settings-field" data-setting-field="paragraph-align">
+      <div class="bc-settings-field bc-settings-field--row" data-setting-field="paragraph-align">
         <span>对齐方式</span>
         <cs-segmented csSize="small" [csBlock]="true"
           [ngModel]="align()"
@@ -27,8 +26,7 @@
     </section>
 
     <section class="bc-settings-section">
-      <h3>间距</h3>
-      <div class="bc-settings-grid bc-settings-grid--two">
+      <div class="bc-settings-grid bc-settings-grid--spacing">
         <label class="bc-settings-field">
           <span>段前</span>
           <div class="bc-number-field">
@@ -47,7 +45,7 @@
             <span>pt</span>
           </div>
         </label>
-        <label class="bc-settings-field bc-settings-field--wide" data-setting-field="line-height">
+        <label class="bc-settings-field" data-setting-field="line-height">
           <span>行距</span>
           <cs-select csSize="sm" csVariant="outlined"
             [csValue]="lineHeightSelectValue" [csPlaceholder]="lineHeightPlaceholder"
@@ -60,23 +58,78 @@
         </label>
       </div>
       <p class="bc-spacing-note">
-        段间距由上一段“段后”和下一段“段前”取较大值，文档不重复存第三个间距值。
+        相邻段落的间距取“段后”和“段前”的较大值。
       </p>
     </section>
+
+    @if (allowDecoration) {
+      <section class="bc-settings-section bc-decoration-section" aria-label="段落装饰线">
+        <div class="bc-settings-field bc-settings-field--row">
+          <span>装饰线</span>
+          <cs-select csSize="sm" csVariant="outlined" csAriaLabel="装饰线位置" [csValue]="decoration()?.position ?? 'none'" (csValueChange)="setDecoration('position', $event)">
+            @for (p of positions; track p.value) { <cs-option [csValue]="p.value" [csLabel]="p.label" /> }
+          </cs-select>
+        </div>
+        @if (decoration(); as d) {
+          <div class="bc-settings-grid bc-settings-grid--two bc-decoration-basics">
+            <label class="bc-settings-field"><span>线型</span><cs-select csSize="sm" csVariant="outlined" [csValue]="d.style" (csValueChange)="setDecoration('style', $event)">
+              @for (s of lineStyles; track s; let i = $index) { <cs-option [csValue]="s" [csLabel]="lineLabels[i]" /> }
+            </cs-select></label>
+            <div class="bc-settings-field"><span>颜色</span><div class="bc-color-field">
+              <cs-color-picker csSize="sm" [csValue]="d.color === 'currentColor' ? null : (d.color ?? null)" [csAllowClear]="true" (csValueChange)="setDecoration('color', $event ?? 'currentColor')" />
+              <span>{{ d.color === 'currentColor' ? '跟随文字' : d.color }}</span>
+            </div></div>
+            <label class="bc-settings-field"><span>粗细 <small>px</small></span><cs-input-number csSize="sm" [csMin]="0.5" [csMax]="12" [csValue]="d.width ?? null" (csValueChange)="setDecoration('width', $event)" /></label>
+            <label class="bc-settings-field"><span>距文字 <small>px</small></span><cs-input-number csSize="sm" [csMin]="0" [csMax]="120" [csValue]="d.gap ?? null" (csValueChange)="setDecoration('gap', $event)" /></label>
+          </div>
+          <details class="bc-decoration-options">
+            <summary><span>更多选项</span><span class="bc-decoration-options__hint">长度、对齐与适配</span><span class="bc-disclosure-chevron" aria-hidden="true"></span></summary>
+            <div class="bc-settings-grid bc-settings-grid--two">
+              <label class="bc-settings-field"><span>不透明度</span><cs-input-number csSize="sm" [csMin]="0" [csMax]="1" [csStep]="0.1" [csValue]="d.opacity ?? null" (csValueChange)="setDecoration('opacity', $event)" /></label>
+              @if (d.position === 'before' || d.position === 'after' || d.position === 'both') {
+                <label class="bc-settings-field"><span>垂直对齐</span><cs-select csSize="sm" csVariant="outlined" [csValue]="d.align" (csValueChange)="setDecoration('align', $event)">
+                  <cs-option csValue="first" csLabel="首行"/><cs-option csValue="center" csLabel="整体居中"/><cs-option csValue="last" csLabel="末行"/>
+                </cs-select></label>
+                @for (side of sides; track side.key) {
+                  @if (d.position === 'both' || d.position === side.key) {
+                    <div class="bc-settings-field bc-settings-field--wide"><span>{{side.label}}长度</span>
+                      <div class="bc-length-field" [class.bc-length-field--auto]="lengthMode(d[side.key]) === 'auto'">
+                        <cs-select csSize="sm" csVariant="outlined" [csValue]="lengthMode(d[side.key])" (csValueChange)="setDecorationLength(side.key, 'mode', $event)">
+                          <cs-option csValue="auto" csLabel="填满剩余空间"/><cs-option csValue="px" csLabel="固定长度（px）"/><cs-option csValue="percent" csLabel="段落宽度（%）"/>
+                        </cs-select>
+                        @if (lengthMode(d[side.key]) !== 'auto') { <cs-input-number csSize="sm" [csMin]="0" [csMax]="lengthMode(d[side.key]) === 'percent' ? 100 : 2000" [csValue]="lengthValue(d[side.key])" (csValueChange)="setDecorationLength(side.key, 'value', $event)" /> }
+                      </div>
+                    </div>
+                  }
+                }
+              } @else {
+                <label class="bc-settings-field"><span>上下线宽度</span><cs-select csSize="sm" csVariant="outlined" [csValue]="d.span" (csValueChange)="setDecoration('span', $event)"><cs-option csValue="paragraph" csLabel="铺满段落"/><cs-option csValue="text" csLabel="跟随文字"/></cs-select></label>
+              }
+              <label class="bc-settings-field"><span>窄栏显示</span><cs-select csSize="sm" csVariant="outlined" [csValue]="d.overflow" (csValueChange)="setDecoration('overflow', $event)"><cs-option csValue="shrink" csLabel="收短线条"/><cs-option csValue="hide" csLabel="隐藏线条"/></cs-select></label>
+            </div>
+          </details>
+        }
+      </section>
+    }
   </div>
 
   <aside class="bc-paragraph-preview" aria-label="段落设置预览">
     <span>预览</span>
-    <div class="bc-mini-paper">
-      <p>这是上一段文字，用于观察段前间距。</p>
-      <p class="bc-focus-paragraph"
+    <div class="bc-mini-paper" data-blockcraft-root="true">
+      <p>上一段文字</p>
+      <p class="bc-focus-paragraph paragraph-block"
+        [attr.data-bc-deco-position]="decoration()?.position ?? null"
+        [attr.data-bc-deco-align]="decoration()?.align ?? null"
+        [attr.data-bc-deco-span]="decoration()?.span ?? null"
+        [attr.data-bc-deco-overflow]="decoration()?.overflow ?? null"
+        [ngStyle]="decorationStyle()"
         [style.margin-top]="previewSpaceBefore"
         [style.margin-bottom]="previewSpaceAfter"
         [style.line-height]="previewLineHeight"
         [style.text-align]="previewTextAlign">
-        这是当前段落。调整行距、段前和段后时，预览会即时更新，但不会写入文档。
+        <span class="bc-paragraph-text">此刻的思考，值得被记录。</span>
       </p>
-      <p>这是下一段文字，用于观察段后间距。</p>
+      <p>下一段文字</p>
     </div>
   </aside>
 </div>

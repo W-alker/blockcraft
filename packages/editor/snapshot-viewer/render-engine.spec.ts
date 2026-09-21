@@ -17,6 +17,26 @@ import {
 import {createAllBlocksFixture} from "./testing/fixtures/all-blocks.fixture";
 
 describe("SnapshotRenderEngine", () => {
+  it('projects and removes paragraph decorations and region borders in preview', () => {
+    const host = document.createElement('div')
+    const renderer = createSnapshotRenderer()
+    const paragraph = createParagraphFixture('deco', '可编辑正文')
+    paragraph.props['decoration'] = {position: 'after', width: 2, color: '#D4C2A7'}
+    const region = createRenderUnitFixture('border-region', {borders: {top: '2px solid #9A7654'}})
+    region.children = [paragraph]
+    renderer.render(host, wrapRoot([region]))
+    const p = host.querySelector<HTMLElement>('[data-block-id="deco"]')!
+    const r = host.querySelector<HTMLElement>('[data-block-id="border-region"]')!
+    expect(p.getAttribute('data-bc-deco-position')).toBe('after')
+    expect(p.querySelector('.bc-paragraph-text')!.textContent).toBe('可编辑正文')
+    expect(r.style.getPropertyValue('--bc-region-border-top')).toBe('2px solid #9A7654')
+    const cleared = createRenderUnitFixture('border-region', {})
+    cleared.children = [createParagraphFixture('deco', '可编辑正文')]
+    renderer.update(wrapRoot([cleared]))
+    expect(host.querySelector('[data-block-id="deco"]')!.hasAttribute('data-bc-deco-position')).toBeFalse()
+    expect(host.querySelector('[data-block-id="border-region"]')!.hasAttribute('data-bc-region-borders')).toBeFalse()
+    renderer.destroy()
+  })
   it('preserves render-unit responsive sizing and clears it when returning to natural layout', () => {
     const host = document.createElement('div')
     const renderer = createSnapshotRenderer()
@@ -442,7 +462,7 @@ describe("SnapshotRenderEngine", () => {
   })
 
   describe("divider parity with DividerBlockComponent", () => {
-    it("renders the text variant with segments, label styling and align attribute", () => {
+    it("ignores obsolete divider label fields and renders a pure line", () => {
       const host = document.createElement("div")
       const renderer = createSnapshotRenderer()
       const divider: IBlockSnapshot = {
@@ -458,15 +478,12 @@ describe("SnapshotRenderEngine", () => {
 
       const content = host.querySelector<HTMLElement>('[data-block-id="divider-text"] > .bc-block-content')!
       expect(content).not.toBeNull()
-      const line = content.querySelector<HTMLElement>(".divide-line-text")!
+      const line = content.querySelector<HTMLElement>(".divide-line")!
       expect(line).not.toBeNull()
       expect(line.dataset["length"]).toBe("full")
       expect(line.dataset["thickness"]).toBe("thin")
-      expect(line.dataset["align"]).toBe("left")
-      expect(line.querySelectorAll(".divide-seg").length).toBe(2)
-      const label = line.querySelector<HTMLElement>(".divide-label")!
-      expect(label.textContent).toBe("记录下来")
-      expect(label.style.color).toBe("rgb(223, 171, 1)")
+      expect(content.querySelector('.divide-label')).toBeNull()
+      expect(content.textContent).toBe('')
     })
 
     it("maps the deprecated size prop through the shared resolver", () => {

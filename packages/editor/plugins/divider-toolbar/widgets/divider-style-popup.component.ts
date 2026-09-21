@@ -43,8 +43,7 @@ export class DividerStylePopupComponent {
   styleTabs = [
     { key: 'line', label: '线型' },
     { key: 'tape', label: '贴纸胶带' },
-    { key: 'edge', label: '花边' },
-    { key: 'text', label: '文字装订' }
+    { key: 'edge', label: '花边' }
   ];
   styleTabOptions: CsSegmentedOptions = this.styleTabs.map(({ key, label }) => ({
     value: key,
@@ -93,23 +92,7 @@ export class DividerStylePopupComponent {
     { key: 'diamond', label: '菱形' },
   ];
 
-  activeAlign: 'left' | 'center' | 'right' = 'center';
-  labelText = '';
-  activeColor = '';
   activeLineColor = '';
-  activeFontSize = 14;
-  activeFontWeight: 'normal' | 'bold' = 'normal';
-  activeFontStyle: 'normal' | 'italic' = 'normal';
-  activeLetterSpacing = 0;
-
-  fontSizeList = [10, 12, 14, 16, 18, 20, 24, 28, 32];
-  letterSpacingList = [0, 0.5, 1, 1.5, 2, 3, 4, 6, 8];
-
-  alignList: { key: 'left' | 'center' | 'right'; icon: string; label: string }[] = [
-    { key: 'left', icon: 'bc_zuoduiqi', label: '左对齐' },
-    { key: 'center', icon: 'bc_juzhongduiqi', label: '居中' },
-    { key: 'right', icon: 'bc_youduiqi', label: '右对齐' }
-  ];
 
   ngOnInit() {
     this.activeLength = this.resolveLength(
@@ -122,14 +105,7 @@ export class DividerStylePopupComponent {
     );
     this.activeOpacity = this.normalizeOpacityPercent(this.dividerBlock.props.opacity);
     this.selectedStyle = this.dividerBlock.props.style ?? 'solid';
-    this.activeAlign = this.dividerBlock.props.align ?? 'center';
-    this.labelText = this.dividerBlock.props.text ?? '';
-    this.activeColor = this.dividerBlock.props.color ?? '';
     this.activeLineColor = this.dividerBlock.props.lineColor ?? '';
-    this.activeFontSize = this.normalizeFontSize(this.dividerBlock.props.fontSize);
-    this.activeFontWeight = this.dividerBlock.props.fontWeight === 'bold' ? 'bold' : 'normal';
-    this.activeFontStyle = this.dividerBlock.props.fontStyle === 'italic' ? 'italic' : 'normal';
-    this.activeLetterSpacing = this.normalizeLetterSpacing(this.dividerBlock.props.letterSpacing);
     if (this.selectedStyle.startsWith('tape')) {
       this.activeTab = 'tape';
     } else if (this.selectedStyle.startsWith('edge')) {
@@ -181,55 +157,9 @@ export class DividerStylePopupComponent {
     this.dividerBlock.updateProps({ opacity: this.activeOpacity / 100 })
   }
 
-  setText(value: string) {
-    this.labelText = value;
-    this.dividerBlock.updateProps({ text: value })
-  }
-
-  setAlign(align: string | number) {
-    if (align !== 'left' && align !== 'center' && align !== 'right') return;
-    this.activeAlign = align;
-    this.dividerBlock.updateProps({ align })
-  }
-
-  setColor(color: string | null) {
-    this.activeColor = color ?? '';
-    this.dividerBlock.updateProps({ color: this.activeColor })
-  }
-
   setLineColor(lineColor: string | null) {
     this.activeLineColor = lineColor ?? '';
     this.dividerBlock.updateProps({ lineColor: this.activeLineColor })
-  }
-
-  setFontSize(fontSize: number) {
-    this.activeFontSize = this.normalizeFontSize(fontSize);
-    this.dividerBlock.updateProps({ fontSize: this.activeFontSize })
-  }
-
-  toggleFontWeight() {
-    this.activeFontWeight = this.activeFontWeight === 'bold' ? 'normal' : 'bold';
-    this.dividerBlock.updateProps({ fontWeight: this.activeFontWeight })
-  }
-
-  toggleFontStyle() {
-    this.activeFontStyle = this.activeFontStyle === 'italic' ? 'normal' : 'italic';
-    this.dividerBlock.updateProps({ fontStyle: this.activeFontStyle })
-  }
-
-  setLetterSpacing(letterSpacing: number) {
-    this.activeLetterSpacing = this.normalizeLetterSpacing(letterSpacing);
-    this.dividerBlock.updateProps({ letterSpacing: this.activeLetterSpacing })
-  }
-
-  private normalizeFontSize(value: unknown): number {
-    const fontSize = Number(value);
-    return Number.isFinite(fontSize) ? Math.min(32, Math.max(10, fontSize)) : 14;
-  }
-
-  private normalizeLetterSpacing(value: unknown): number {
-    const letterSpacing = Number(value);
-    return Number.isFinite(letterSpacing) ? Math.min(8, Math.max(0, letterSpacing)) : 0;
   }
 
   private normalizeOpacityPercent(value: unknown): number {

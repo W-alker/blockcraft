@@ -18,13 +18,20 @@ export interface DividerBlockModel extends NoEditableBlockNative {
     thickness?: DividerThickness
     /** Overall divider opacity, normalized to the 0.1–1 range when rendered. */
     opacity?: number
+    /** @deprecated Ignored. Use paragraph decoration with editable text. */
     text?: string
+    /** @deprecated Ignored. Use paragraph decoration with editable text. */
     align?: 'left' | 'center' | 'right'
+    /** @deprecated Ignored. Use paragraph decoration with editable text. */
     color?: string
     lineColor?: string
+    /** @deprecated Ignored. Use paragraph decoration with editable text. */
     fontSize?: number
+    /** @deprecated Ignored. Use paragraph decoration with editable text. */
     fontWeight?: 'normal' | 'bold'
+    /** @deprecated Ignored. Use paragraph decoration with editable text. */
     fontStyle?: 'normal' | 'italic'
+    /** @deprecated Ignored. Use paragraph decoration with editable text. */
     letterSpacing?: number
   }
 }

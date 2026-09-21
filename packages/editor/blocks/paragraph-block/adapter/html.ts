@@ -1,3 +1,6 @@
+import type {Element} from 'hast'
+import {encodeAdapterProps, decodeAdapterProps} from '../../../adapters/generic'
+import {normalizeParagraphDecoration} from '../decoration'
 import {BlockHtmlAdapterMatcher} from "../../../adapters/html-adapter/block-adapter";
 import {HastUtils} from "../../../adapters";
 import {ParagraphBlockSchema} from "..";
@@ -7,6 +10,19 @@ import {
   editableTypographyFromHtml,
   editableTypographyToHtmlProperties,
 } from '../../../adapters/html-adapter/typography';
+
+function paragraphPropsFromHtml(node: Element) {
+  const decoration = normalizeParagraphDecoration(decodeAdapterProps(node.properties?.['dataBcDecoration']))
+  return {...editableTypographyFromHtml(node), ...(decoration ? {decoration} : {})}
+}
+
+function paragraphPropsToHtml(props: Parameters<typeof editableTypographyToHtmlProperties>[0]) {
+  const decoration = normalizeParagraphDecoration(props['decoration'])
+  return {
+    ...editableTypographyToHtmlProperties(props),
+    ...(decoration ? {dataBcDecoration: encodeAdapterProps(decoration)} : {}),
+  }
+}
 
 const paragraphBlockMatchTags = [
   'p',
@@ -74,7 +90,7 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
             // paragraph created for direct body text should inherit it rather
             // than persisting the same line-height as a block override.
             if (o.node.tagName !== 'body') {
-              Object.assign(p.props, editableTypographyFromHtml(o.node))
+              Object.assign(p.props, paragraphPropsFromHtml(o.node))
             }
             walkerContext.openNode(p, 'children')
             if (HastUtils.hasTextContent(o.node)) {
@@ -88,12 +104,12 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
         case 'p': {
           if (hasInlineContent(o.node)) {
             const paragraph = ParagraphBlockSchema.createSnapshot(deltaConverter.astToDelta(o.node))
-            Object.assign(paragraph.props, editableTypographyFromHtml(o.node))
+            Object.assign(paragraph.props, paragraphPropsFromHtml(o.node))
             walkerContext.openNode(paragraph, 'children').closeNode()
             walkerContext.skipAllChildren()
           } else {
             const paragraph = ParagraphBlockSchema.createSnapshot()
-            Object.assign(paragraph.props, editableTypographyFromHtml(o.node))
+            Object.assign(paragraph.props, paragraphPropsFromHtml(o.node))
             walkerContext.openNode(paragraph, 'children')
           }
           break;
@@ -136,7 +152,7 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
                 flavour: 'paragraph',
                 props: {
                   heading: headingBlockMatchTagsMap[o.node.tagName],
-                  ...editableTypographyFromHtml(o.node),
+                  ...paragraphPropsFromHtml(o.node),
                 },
                 meta: {},
                 children: deltaConverter.astToDelta(o.node),
@@ -198,7 +214,7 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
               .openNode({
                 type: 'element',
                 tagName: 'h' + o.node.props['heading'],
-                properties: editableTypographyToHtmlProperties(o.node.props),
+                properties: paragraphPropsToHtml(o.node.props),
                 children: deltaConverter.deltaToAST(delta),
               }, 'children')
               .closeNode()
@@ -208,7 +224,7 @@ export const paragraphBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
                 {
                   type: 'element',
                   tagName: 'p',
-                  properties: editableTypographyToHtmlProperties(o.node.props),
+                  properties: paragraphPropsToHtml(o.node.props),
                   children: deltaConverter.deltaToAST(delta),
                 },
                 'children'

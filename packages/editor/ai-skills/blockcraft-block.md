@@ -13,6 +13,27 @@
 `declare global { namespace BlockCraft { interface IBlockComponents { ... } } }`
 继续限定编辑器快照的 flavour 和后代节点。新增通用快照类型不替代组件注册或 Schema 校验。
 
+## 段落边缘装饰与内容区域边框（未发布）
+
+段落的 `props.decoration` 是显示属性，文字仍由原生 InlineRuntime / Y.Text 编辑。此能力仅绘制段前、段后、两侧、上方、下方的边缘线，不包含笔记横格或文本下划线。
+
+```typescript
+const title = ParagraphBlockSchema.createSnapshot('感悟', {
+  decoration: {position: 'after', color: '#D4C2A7', width: 1, gap: 12},
+});
+const region = RenderUnitBlockSchema.createSnapshot({}, {
+  borders: {top: '2px solid #9A7654', left: 'none'},
+});
+```
+
+`ParagraphDecoration` 配置：`position` 必填；`style` 为 solid/dashed/dotted/double；`color` 默认 currentColor；`width` 为 0.5–12 px，`opacity` 为 0–1，`gap` 为 0–120 px。左右线的 `before` / `after` 分别支持 auto、像素字符串和百分比字符串；`align` 为 first/center/last。上下线 `span` 为 text/paragraph。`overflow: hide` 在段落可用宽度不超过 240 px 时隐藏线条，默认 shrink 优先收短线条。设置为 null 关闭装饰。
+
+段落 DOM 现在稳定使用 `p.paragraph-block > span.bc-paragraph-text.edit-container`；不要假设文本直接挂在段落宿主上。装饰是宿主伪元素，不参与选区、复制或富文本长度。预览使用同一装饰投影；HTML adapter 用 `data-bc-decoration` 保存配置。
+
+`RegionBorders` 是 top/right/bottom/left 到 CSS 边框简写的稀疏映射，支持 none 或 `0..24px solid|dashed|dotted|double 色值`。有效 `borders` 存在时，未配置的边为 none，并优先于旧 `borderColor` 统一轮廓；`borders: null` 恢复原外观。HTML adapter 用 `data-bc-borders` 保留配置。该能力属于所有 render-unit，不要求模板填写区 meta 标记。
+
+分割线仅呈现纯线条、胶带或花边。旧 text/align/color/fontSize/fontWeight/fontStyle/letterSpacing 字段忽略，HTML 导出也不再携带这些字段，不进行旧数据转换。要制作带文字的分隔标题，使用可编辑段落及 decoration。
+
 ## Block Types
 
 | nodeType   | Base Class               | Has Inline Text? | Has Children? | Template Pattern                                |

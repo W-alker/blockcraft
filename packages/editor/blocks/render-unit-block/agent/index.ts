@@ -28,11 +28,12 @@ export const RENDER_UNIT_BLOCK_AGENT_CAPABILITY = defineBlockAgentCapability({
   writableProps: blockAgentWritableProps({
     wr: {type: ['number', 'null'], minimum: 1, maximum: 100},
     ar: {type: ['number', 'null'], exclusiveMinimum: 0},
+    borders: {type: ['object', 'null'], properties: {top: {type: 'string'}, right: {type: 'string'}, bottom: {type: 'string'}, left: {type: 'string'}}, additionalProperties: false},
     backColor: BLOCK_AGENT_NULLABLE_STRING_SCHEMA,
     borderColor: BLOCK_AGENT_NULLABLE_STRING_SCHEMA,
     p: {type: ['array', 'null'], minItems: 1, maxItems: 4, items: {type: 'number', minimum: 0}},
     bgi: BLOCK_AGENT_NULLABLE_STRING_SCHEMA,
     bgo: BLOCK_AGENT_NULLABLE_NUMBER_SCHEMA,
   }),
-  atomicProps: ['p', 'bgi'], examples: [{flavour: 'render-unit', params: [{}, {p: [16, 24]}]}],
+  atomicProps: ['p', 'bgi', 'borders'], examples: [{flavour: 'render-unit', params: [{}, {p: [16, 24]}]}],
 })

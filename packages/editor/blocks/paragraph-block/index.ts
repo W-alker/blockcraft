@@ -1,3 +1,4 @@
+import {normalizeParagraphDecoration, type ParagraphDecoration} from './decoration'
 import {EditableBlockNative, BlockNodeType} from "../../framework";
 import {
   IBlockSchemaOptions,
@@ -7,17 +8,24 @@ import {
 import {ParagraphBlockComponent} from "./paragraph.block";
 
 export * from './agent'
+export * from './decoration'
 
 export interface ParagraphBlockModel extends EditableBlockNative {
   flavour: 'paragraph',
   nodeType: BlockNodeType.editable
+  props: EditableBlockNative['props'] & {decoration?: ParagraphDecoration | null}
 }
 
 export const ParagraphBlockSchema: IBlockSchemaOptions<ParagraphBlockModel> = {
   flavour: 'paragraph',
   nodeType: BlockNodeType.editable,
   component: ParagraphBlockComponent,
-  createSnapshot: editableBlockCreateSnapShotFn<ParagraphBlockModel>('paragraph'),
+  createSnapshot: (...args) => {
+    const snapshot = editableBlockCreateSnapShotFn<ParagraphBlockModel>('paragraph')(...args)
+    const decoration = normalizeParagraphDecoration((args[1] as Record<string, unknown> | undefined)?.['decoration'])
+    if (decoration) snapshot.props['decoration'] = decoration
+    return snapshot
+  },
   metadata: {
     version: 1,
     label: "基础段落",

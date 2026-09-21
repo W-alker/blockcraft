@@ -15,45 +15,11 @@ import {DividerPresentation, resolveDividerPresentation} from "./divider-present
     @let v = view;
     <div class="bc-block-content"
          [style.--bc-divider-line-color]="props.lineColor || null">
-      @if (v.text) {
-        @if (v.isTape) {
-          <div [class]="['divide-line', 'divide-tape', v.style]"
-               [attr.data-length]="v.length"
-               [attr.data-thickness]="v.thickness"
-               [attr.data-align]="v.align"
-               [style.opacity]="v.opacity"
-               contenteditable="false">
-            <span class="divide-label"
-                  [style.color]="props.color || null"
-                  [style.font-size.px]="v.label.fontSize"
-                  [style.font-weight]="v.label.fontWeight"
-                  [style.font-style]="v.label.fontStyle"
-                  [style.letter-spacing.px]="v.label.letterSpacing">{{ v.text }}</span>
-          </div>
-        } @else {
-          <div class="divide-line-text"
-               [attr.data-length]="v.length"
-               [attr.data-thickness]="v.thickness"
-               [attr.data-align]="v.align"
-               [style.opacity]="v.opacity"
-               contenteditable="false">
-            <span [class]="['divide-seg', v.style]"></span>
-            <span class="divide-label"
-                  [style.color]="props.color || null"
-                  [style.font-size.px]="v.label.fontSize"
-                  [style.font-weight]="v.label.fontWeight"
-                  [style.font-style]="v.label.fontStyle"
-                  [style.letter-spacing.px]="v.label.letterSpacing">{{ v.text }}</span>
-            <span [class]="['divide-seg', v.style]"></span>
-          </div>
-        }
-      } @else {
-        <div [class]="['divide-line', v.style]"
-             [attr.data-length]="v.length"
-             [attr.data-thickness]="v.thickness"
-             [style.opacity]="v.opacity"
-             contenteditable="false"></div>
-      }
+      <div [class]="['divide-line', v.style]"
+           [attr.data-length]="v.length"
+           [attr.data-thickness]="v.thickness"
+           [style.opacity]="v.opacity"
+           contenteditable="false"></div>
     </div>
   `,
   standalone: true,

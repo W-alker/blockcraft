@@ -1,3 +1,4 @@
+import {applyParagraphDecoration} from '../../blocks/paragraph-block/decoration';
 import {IBlockSnapshot} from "../../framework/block-std/types/block.type";
 import {InlineModel} from "../../framework/block-std/types/inline.type";
 import {
@@ -49,7 +50,12 @@ export function createTextRenderers(): SnapshotBlockRenderer[] {
 function renderSimpleEditable(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   const element = createBlockShell(snapshot)
   applyEditableProps(element, snapshot)
-  element.append(createEditableContainer(ctx, snapshot, {host: element}))
+  const content = createEditableContainer(ctx, snapshot, {host: element})
+  if (snapshot.flavour === 'paragraph') {
+    content.classList.add('bc-paragraph-text')
+    applyParagraphDecoration(element, snapshot.props['decoration'], snapshot.props['textAlign'])
+  }
+  element.append(content)
   return {element}
 }
 

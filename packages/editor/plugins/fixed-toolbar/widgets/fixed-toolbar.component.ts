@@ -1,3 +1,4 @@
+import {normalizeParagraphDecoration} from '../../../blocks/paragraph-block/decoration';
 import {
   ChangeDetectionStrategy,
   ChangeDetectorRef,
@@ -2450,7 +2451,11 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     if (!savedSelection) return;
 
     this._settingsModalRef?.close();
+    const paragraphIds = this.doc.selection.value ? this.getSelectedBlockIds(this.doc.selection.value) : [];
+    const allowDecoration = paragraphIds.length > 0 && paragraphIds.every(id => this.doc.model.getFlavour(id) === 'paragraph');
     const data: ParagraphSettingsDialogData = {
+      allowDecoration,
+      decoration: allowDecoration ? normalizeParagraphDecoration(this.doc.model.getProps(paragraphIds[0])?.['decoration']) : null,
       target,
       align:
         this.activeProps.textAlign === "center" ||
@@ -2483,7 +2488,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       data,
       title: "段落",
       ariaLabel: "段落高级设置",
-      width: "min(700px, calc(100vw - 24px))",
+      width: "min(480px, calc(100vw - 24px))",
       centered: true,
       mask: true,
       maskClosable: false,

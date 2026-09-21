@@ -1,0 +1,34 @@
+// 装饰伪元素不进入 inline runtime，不接收光标和点击。
+[data-blockcraft-root="true"] .paragraph-block {
+  > .bc-paragraph-text { display: block; min-width: 0; }
+  &[data-bc-deco-position] {
+    position: relative;
+    &::before, &::after {
+      content: ''; display: none; pointer-events: none; user-select: none;
+      border-top: var(--bc-deco-width) var(--bc-deco-style) var(--bc-deco-color);
+      opacity: var(--bc-deco-opacity); box-sizing: border-box;
+    }
+  }
+  &[data-bc-deco-position='before'], &[data-bc-deco-position='after'], &[data-bc-deco-position='both'] {
+    display: flex; align-items: center; justify-content: var(--bc-deco-justify); gap: var(--bc-deco-gap);
+    > .bc-paragraph-text { flex: 0 1 auto; max-width: 100%; overflow-wrap: anywhere; }
+    &::before { flex: var(--bc-deco-before-grow) 999 var(--bc-deco-before); }
+    &::after { flex: var(--bc-deco-after-grow) 999 var(--bc-deco-after); }
+    &[data-bc-deco-align='first'] { align-items: flex-start; &::before, &::after { margin-top: .75em; margin-top: calc(.5lh - var(--bc-deco-width) / 2); } }
+    &[data-bc-deco-align='last'] { align-items: flex-end; &::before, &::after { margin-bottom: .75em; margin-bottom: calc(.5lh - var(--bc-deco-width) / 2); } }
+  }
+  &[data-bc-deco-position='before']::before, &[data-bc-deco-position='both']::before,
+  &[data-bc-deco-position='after']::after, &[data-bc-deco-position='both']::after { display: block; }
+  &[data-bc-deco-position='above'], &[data-bc-deco-position='below'] {
+    display: grid;
+    &[data-bc-deco-span='text'] { grid-template-columns: fit-content(100%); justify-content: var(--bc-deco-justify); }
+  }
+  &[data-bc-deco-position='above']::before { display: block; margin-bottom: var(--bc-deco-gap); }
+  &[data-bc-deco-position='below']::after { display: block; margin-top: var(--bc-deco-gap); }
+  // 在窄排版内隐藏装饰，保留全文。阈值使用段落容器而非视口。
+  &[data-bc-deco-overflow='hide'] { container-type: inline-size; }
+}
+@container (max-width: 240px) {
+  [data-blockcraft-root="true"] .paragraph-block[data-bc-deco-overflow='hide']::before,
+  [data-blockcraft-root="true"] .paragraph-block[data-bc-deco-overflow='hide']::after { display: none; }
+}

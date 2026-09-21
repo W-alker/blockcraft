@@ -1,3 +1,5 @@
+import {encodeAdapterProps, decodeAdapterProps} from '../../../adapters/generic'
+import {normalizeRegionBorders} from '../borders'
 import {
   normalizeRenderUnitBlockProps,
   RenderUnitBlockSchema,
@@ -24,6 +26,7 @@ export const renderUnitBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
       if (!HastUtils.isElement(o.node)) return
       const rawProps: Partial<RenderUnitBlockProps> = {
         ...blockSurfacePropsFromHtml(o.node),
+        borders: normalizeRegionBorders(decodeAdapterProps(o.node.properties?.['dataBcBorders'])),
         backColor: stringProperty(o.node, 'dataBcBackColor'),
         borderColor: stringProperty(o.node, 'dataBcBorderColor'),
         wr: numberProperty(o.node, 'dataBcWr'),
@@ -50,6 +53,7 @@ export const renderUnitBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
         tagName: 'section',
         properties: {
           dataBcBlock: 'render-unit',
+          dataBcBorders: props.borders ? encodeAdapterProps(props.borders) : undefined,
           dataBcBackColor: props.backColor,
           dataBcBorderColor: props.borderColor,
           dataBcWr: props.wr,

@@ -1,3 +1,4 @@
+import type {ParagraphDecoration} from '../../../blocks/paragraph-block/decoration'
 import type {
   IInlineNodeAttrs,
   TypographyFontFamilyId,
@@ -34,6 +35,8 @@ export interface FontSettingsDialogResult {
 }
 
 export interface ParagraphSettingsDialogData {
+  decoration?: ParagraphDecoration | null;
+  allowDecoration?: boolean;
   target: ParagraphSettingsTarget;
   align: "left" | "center" | "right" | undefined;
   defaults: {
@@ -51,6 +54,7 @@ export interface ParagraphSettingsDialogData {
 
 export interface ParagraphSettingsDialogResult {
   patch: {
+    decoration?: ParagraphDecoration | null;
     textAlign?: "center" | "right" | null;
     lh?: number | null;
     psb?: number | null;

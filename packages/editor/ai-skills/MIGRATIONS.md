@@ -124,6 +124,36 @@ CSES 取色器与下拉子浮层保持当前天气操作目标；关闭或切换
 只读/锁定块没有入口；设置期间转只读、删除块或卸载视图会关闭浮层。取消与 Esc 不修改文档。
 日期定格值不在设置范围内，既有侧栏继续使用相同字段。
 
+## Unreleased — 2026-09-21：段落装饰与区域边框
+
+**Severity**: major（包含已确认的分割线文字行为移除；发布版本由用户决定，本次不修改版本号）。
+
+**What changed**: 新增 ParagraphDecoration 和 RegionBorders；段落设置提供边缘装饰线，render-unit 支持四边独立边框。编辑器与快照预览共享投影，HTML adapter 保留新增配置。
+
+**Why**: 模板标题需要可编辑文字与延伸线；内容区域需要独立上边框，避免叠加填写区或将文字封装成不可编辑的分割线标签。
+
+**Affected ai-skills files**: blockcraft-block.md、blockcraft-plugins-toolbar.md。
+
+### Breaking Changes
+
+- divider 旧 text、align、color、fontSize、fontWeight、fontStyle、letterSpacing 不再渲染，HTML adapter 不再输出或恢复；不迁移旧数据。纯线条、胶带、花边及尺寸回落保留。
+- paragraph 的文本容器从宿主移动到稳定内层 `.bc-paragraph-text.edit-container`。自定义 DOM 代码应使用块的原生编辑容器 API，不依赖宿主直接文本子节点。
+
+### New APIs / Features
+
+- paragraph.props.decoration：before/after/both/above/below，线型、线色、透明度、粗细、间距、独立长度、对齐、上下线范围与窄栏处理。null 关闭。不提供横格背景。
+- render-unit.props.borders：四边稀疏 CSS 边框简写；有显式边框时未声明边为 none，覆盖旧 borderColor；null 恢复旧外观。
+
+### Migration Recipe
+
+已有 divider 文字字段允许留存但被忽略。新建可编辑分隔标题时使用：
+
+```typescript
+ParagraphBlockSchema.createSnapshot('感悟', {
+  decoration: {position: 'after', color: '#D4C2A7', width: 1, gap: 12},
+});
+```
+
 
 ## Unreleased — 2026-09-21：日期卡片新增五种形式
 

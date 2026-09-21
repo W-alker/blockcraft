@@ -2,22 +2,12 @@ import type {DividerBlockModel, DividerLength, DividerThickness} from "./index";
 
 type DividerProps = DividerBlockModel["props"];
 
-export interface DividerLabelPresentation {
-  fontSize: number
-  fontWeight: "400" | "700"
-  fontStyle: "normal" | "italic"
-  letterSpacing: number
-}
-
 export interface DividerPresentation {
   style: string
   isTape: boolean
-  align: string
   length: DividerLength
   thickness: DividerThickness
   opacity: number
-  text: string
-  label: DividerLabelPresentation
 }
 
 /**
@@ -29,27 +19,14 @@ export interface DividerPresentation {
 export function resolveDividerPresentation(props: DividerProps): DividerPresentation {
   const style = props.style || "solid"
   const opacity = Number(props.opacity)
-  const fontSize = Number(props.fontSize)
-  const letterSpacing = Number(props.letterSpacing)
 
   return {
     style,
     isTape: style.startsWith("tape"),
-    align: props.align ?? "center",
     length: resolveLength(props),
     thickness: resolveThickness(props),
     opacity: Number.isFinite(opacity) ? Math.min(1, Math.max(0.1, opacity)) : 1,
-    // Template-string coercion, not a string-only filter: a host-written
-    // snapshot with a numeric `text` must pick the SAME (labelled) variant on
-    // both surfaces — a type filter here while the editor tested raw
-    // truthiness was exactly the kind of drift this module exists to prevent.
-    text: props.text === null || props.text === undefined ? "" : `${props.text}`,
-    label: {
-      fontSize: Number.isFinite(fontSize) ? Math.min(32, Math.max(10, fontSize)) : 14,
-      fontWeight: props.fontWeight === "bold" ? "700" : "400",
-      fontStyle: props.fontStyle === "italic" ? "italic" : "normal",
-      letterSpacing: Number.isFinite(letterSpacing) ? Math.min(8, Math.max(0, letterSpacing)) : 0,
-    },
+
   }
 }
 

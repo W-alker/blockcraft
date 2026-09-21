@@ -2,7 +2,7 @@ import {BlockHtmlAdapterMatcher} from "../../../adapters/html-adapter/block-adap
 import {encodeAdapterProps} from "../../../adapters/generic";
 import {HastUtils} from "../../../adapters/utils";
 import {DividerBlockSchema} from "..";
-import {applyDividerAdapterProps} from './props';
+import {applyDividerAdapterProps, dividerAdapterProps} from './props';
 
 const encodedProps = (properties: Record<string, unknown> | undefined) =>
   properties?.['dataBcProps'] ?? properties?.['data-bc-props'];
@@ -32,7 +32,7 @@ export const dividerBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
   fromBlockSnapshot: {
     enter: (o, context) => {
       const { walkerContext } = context;
-      const props = encodeAdapterProps(o.node.props);
+      const props = encodeAdapterProps(dividerAdapterProps(o.node.props));
       walkerContext
         .openNode(
           {

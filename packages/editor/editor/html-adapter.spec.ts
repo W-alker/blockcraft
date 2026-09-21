@@ -539,7 +539,7 @@ describe('HtmlAdapter', () => {
       expect(children[0].props['latex']).toBe('E = mc^2')
     })
 
-    it('round-trips Divider props through a bounded hr envelope', async () => {
+    it('round-trips pure Divider props and drops ignored legacy text fields', async () => {
       const props = {
         style: 'double',
         size: 'legacy-large',
@@ -563,7 +563,7 @@ describe('HtmlAdapter', () => {
 
       expect(html).toContain('<hr data-bc-props=')
       expect(restored.flavour).toBe('divider')
-      expect(restored.props).toEqual(props)
+      expect(restored.props).toEqual({style: 'double', size: 'legacy-large', length: 'long', thickness: 'thick', opacity: .65, lineColor: '#94a3b8'})
     })
 
     it('keeps an ordinary external hr as a default Divider', async () => {
@@ -573,6 +573,23 @@ describe('HtmlAdapter', () => {
 
       expect(divider.props).toEqual({})
     })
+  })
+
+  it('round-trips decorated rich paragraphs and independent region borders', async () => {
+    const paragraph: IBlockSnapshot = {id: 'decorated', flavour: 'paragraph', nodeType: BlockNodeType.editable,
+      props: {heading: 1, decoration: {position: 'after', after: '25%', color: '#D4C2A7'}}, meta: {},
+      children: [{insert: '感悟', attributes: {'s:color': '#724D36'}}]}
+    const region: IBlockSnapshot = {id: 'region', flavour: 'render-unit', nodeType: BlockNodeType.block,
+      props: {borders: {top: '2px solid #9A7654', left: 'none'}}, meta: {}, children: [paragraph]}
+    const html = await adapter.toHtml(createRootSnapshot([region]))
+    expect(html).toContain('data-bc-decoration=')
+    expect(html).toContain('data-bc-borders=')
+    const restored = (await adapter.toBlockSnapshot(html)).children[0] as IBlockSnapshot
+    expect(restored.props['borders']).toEqual(region.props['borders'])
+    const child = restored.children[0] as IBlockSnapshot
+    expect(child.props['heading']).toBe(1)
+    expect(child.props['decoration']).toEqual(jasmine.objectContaining({position: 'after', after: '25%', color: '#D4C2A7'}))
+    expect(child.children[0]).toEqual(jasmine.objectContaining({insert: '感悟'}))
   })
 
   describe('typography', () => {

@@ -1,3 +1,4 @@
+import {applyRegionBorders} from '../../blocks/render-unit-block/borders'
 import {resolveBlockPosition} from '../../framework/modules/object/block-placement/state'
 import {IBlockSnapshot} from "../../framework/block-std/types/block.type";
 import {
@@ -236,6 +237,7 @@ function renderRenderUnit(
   ctx: SnapshotRenderContext,
 ) {
   const element = createBlockShell(snapshot)
+  applyRegionBorders(element, snapshot.props["borders"])
   const dimensions = resolveRenderUnitDimensions(snapshot.props as Record<string, unknown>, 100)
   if (dimensions) {
     element.classList.add('render-unit-sized')
@@ -610,7 +612,7 @@ function renderDivider(snapshot: IBlockSnapshot) {
   const element = createBlockShell(snapshot)
   const props = snapshot.props as DividerBlockModel["props"]
   // Same resolver as DividerBlockComponent (length/thickness with the deprecated
-  // `size` fallback, opacity/label clamps) and the same DOM contract: the theme's
+  // `size` fallback, opacity clamps) and the same DOM contract: the theme's
   // divider rules key off `.divider-block > .bc-block-content` and the
   // data-length / data-thickness / data-align attributes.
   const view = resolveDividerPresentation(props)
@@ -621,52 +623,17 @@ function renderDivider(snapshot: IBlockSnapshot) {
     content.style.setProperty("--bc-divider-line-color", `${props.lineColor}`)
   }
 
-  const applyLineAttrs = (line: HTMLElement, withAlign: boolean) => {
+  const applyLineAttrs = (line: HTMLElement) => {
     line.dataset["length"] = view.length
     line.dataset["thickness"] = view.thickness
-    if (withAlign) {
-      line.dataset["align"] = view.align
-    }
     if (view.opacity !== 1) {
       line.style.opacity = `${view.opacity}`
     }
   }
-  const createLabel = () => {
-    const label = document.createElement("span")
-    label.classList.add("divide-label")
-    if (props.color) {
-      label.style.color = `${props.color}`
-    }
-    label.style.fontSize = `${view.label.fontSize}px`
-    label.style.fontWeight = view.label.fontWeight
-    label.style.fontStyle = view.label.fontStyle
-    label.style.letterSpacing = `${view.label.letterSpacing}px`
-    label.textContent = view.text
-    return label
-  }
-
-  if (view.text && view.isTape) {
-    const line = document.createElement("div")
-    line.classList.add("divide-line", "divide-tape", view.style)
-    applyLineAttrs(line, true)
-    line.append(createLabel())
-    content.append(line)
-  } else if (view.text) {
-    const line = document.createElement("div")
-    line.classList.add("divide-line-text")
-    applyLineAttrs(line, true)
-    const leadingSegment = document.createElement("span")
-    leadingSegment.classList.add("divide-seg", view.style)
-    const trailingSegment = document.createElement("span")
-    trailingSegment.classList.add("divide-seg", view.style)
-    line.append(leadingSegment, createLabel(), trailingSegment)
-    content.append(line)
-  } else {
-    const line = document.createElement("div")
-    line.classList.add("divide-line", view.style)
-    applyLineAttrs(line, false)
-    content.append(line)
-  }
+  const line = document.createElement('div')
+  line.classList.add('divide-line', view.style)
+  applyLineAttrs(line)
+  content.append(line)
 
   element.append(content)
   return {element}

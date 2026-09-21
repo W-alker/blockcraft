@@ -1,3 +1,4 @@
+import {applyRegionBorders} from './borders'
 import {ChangeDetectionStrategy, Component} from '@angular/core'
 import {
   BaseBlockComponent,
@@ -81,6 +82,10 @@ export class RenderUnitBlockComponent extends BaseBlockComponent<RenderUnitBlock
 
   override ngAfterViewInit() {
     super.ngAfterViewInit()
+    applyRegionBorders(this.hostElement, this.props.borders)
+    this.onPropsChange.pipe(takeUntil(this.onDestroy$)).subscribe(changes => {
+      if (changes.has('borders')) applyRegionBorders(this.hostElement, this.props.borders)
+    })
     this.doc.objectSizing.widthChange$.pipe(takeUntil(this.onDestroy$)).subscribe(() => {
       this.changeDetectorRef.markForCheck()
     })

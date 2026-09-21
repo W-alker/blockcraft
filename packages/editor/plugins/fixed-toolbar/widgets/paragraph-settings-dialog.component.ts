@@ -1,3 +1,5 @@
+import {NgStyle} from '@angular/common';
+import {normalizeParagraphDecoration, paragraphDecorationStyles, ParagraphDecoration, decorationLengthMode, decorationLengthValue} from '../../../blocks/paragraph-block/decoration';
 import {FormsModule} from "@angular/forms";
 import {
   ChangeDetectionStrategy,
@@ -5,9 +7,11 @@ import {
   ElementRef,
   inject,
   signal,
+  computed,
 } from "@angular/core";
 import {
   CS_MODAL_DATA,
+  CsColorPickerComponent,
   CsInputNumberComponent,
   CsOptionComponent,
   CsSegmentedComponent,
@@ -32,6 +36,8 @@ const DEFAULT_LINE_HEIGHT_VALUE = "__bc_document_default__" as const;
   standalone: true,
   imports: [
     FormsModule,
+    NgStyle,
+    CsColorPickerComponent,
     CsInputNumberComponent,
     CsOptionComponent,
     CsSegmentedComponent,
@@ -47,6 +53,31 @@ export class ParagraphSettingsDialogComponent {
   private readonly data = inject(CS_MODAL_DATA) as ParagraphSettingsDialogData;
   private readonly host = inject(ElementRef) as ElementRef<HTMLElement>;
   private readonly dirty = new Set<string>();
+  protected readonly lengthMode = decorationLengthMode;
+  protected readonly lengthValue = decorationLengthValue;
+  protected readonly allowDecoration = this.data.allowDecoration ?? false;
+  protected readonly decoration = signal(normalizeParagraphDecoration(this.data.decoration));
+  protected readonly decorationStyle = computed(() => paragraphDecorationStyles(this.decoration(), this.align()));
+  protected readonly positions = [
+    {value: 'none', label: '无装饰'}, {value: 'after', label: '右侧横线'},
+    {value: 'before', label: '左侧横线'}, {value: 'both', label: '两侧横线'},
+    {value: 'above', label: '上方横线'}, {value: 'below', label: '下方横线'},
+  ];
+  protected readonly lineStyles = ['solid', 'dashed', 'dotted', 'double'];
+  protected readonly lineLabels = ['实线', '虚线', '点线', '双线'];
+  protected readonly sides = [{key: 'before' as const, label: '前侧'}, {key: 'after' as const, label: '后侧'}];
+  protected setDecoration(key: keyof ParagraphDecoration, value: unknown): void {
+    this.decoration.set(value === 'none' ? null : normalizeParagraphDecoration({
+      ...(this.decoration() ?? {position: 'after'}), [key]: value,
+    }));
+    this.dirty.add('decoration');
+  }
+  protected setDecorationLength(side: 'before' | 'after', key: 'mode' | 'value', value: unknown): void {
+    const current = this.decoration()?.[side];
+    const mode = key === 'mode' ? value : decorationLengthMode(current);
+    const amount = key === 'value' ? Number(value) : decorationLengthValue(current);
+    this.setDecoration(side, mode === 'auto' ? 'auto' : `${amount}${mode === 'px' ? 'px' : '%'}`);
+  }
 
   protected readonly lineHeights = PARAGRAPH_LINE_HEIGHT_PRESETS;
   protected readonly defaultLineHeightValue = DEFAULT_LINE_HEIGHT_VALUE;
@@ -158,6 +189,7 @@ export class ParagraphSettingsDialogComponent {
       patch.psb = this.spaceBefore() === 0 ? null : this.spaceBefore();
     }
     if (this.dirty.has("psa")) patch.psa = this.spaceAfter();
+    if (this.allowDecoration && this.dirty.has('decoration')) patch.decoration = this.decoration();
     return {patch};
   }
 }

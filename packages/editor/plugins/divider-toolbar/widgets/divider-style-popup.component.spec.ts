@@ -17,9 +17,9 @@ describe('DividerStylePopupComponent', () => {
     return fixture
   }
 
-  it('exposes a 文字 tab', () => {
+  it('does not expose the removed text tab', () => {
     const fixture = create()
-    expect(fixture.componentInstance.styleTabs.some(t => t.key === 'text')).toBe(true)
+    expect(fixture.componentInstance.styleTabs.some(t => t.key === 'text')).toBe(false)
   })
 
   it('keeps the top style tabs text-only', () => {
@@ -29,14 +29,6 @@ describe('DividerStylePopupComponent', () => {
     )).toBe(true)
   })
 
-  it('uses BlockCraft text-alignment icons in projected CSES segments', () => {
-    const fixture = create()
-    expect(fixture.componentInstance.alignList).toEqual([
-      { key: 'left', icon: 'bc_zuoduiqi', label: '左对齐' },
-      { key: 'center', icon: 'bc_juzhongduiqi', label: '居中' },
-      { key: 'right', icon: 'bc_youduiqi', label: '右对齐' },
-    ])
-  })
 
   it('exposes the complete classic and decorative line catalog', () => {
     const fixture = create()
@@ -130,49 +122,12 @@ describe('DividerStylePopupComponent', () => {
     expect(fixture.componentInstance.activeOpacity).toBe(100)
   })
 
-  it('ngOnInit reads text and align from props', () => {
-    const f = create({ text: 'Hello', align: 'left' })
-    expect(f.componentInstance.labelText).toBe('Hello')
-    expect(f.componentInstance.activeAlign).toBe('left')
-  })
 
-  it('ngOnInit defaults align to center and text to empty', () => {
-    const f = create({})
-    expect(f.componentInstance.labelText).toBe('')
-    expect(f.componentInstance.activeAlign).toBe('center')
-  })
 
-  it('setText writes the text prop and updates local state', () => {
-    const fixture = create()
-    fixture.componentInstance.setText('Chapter 1')
-    expect(fixture.componentInstance.dividerBlock.updateProps)
-      .toHaveBeenCalledWith({ text: 'Chapter 1' })
-    expect(fixture.componentInstance.labelText).toBe('Chapter 1')
-  })
 
-  it('setAlign writes the align prop and updates active state', () => {
-    const fixture = create()
-    fixture.componentInstance.setAlign('right')
-    expect(fixture.componentInstance.dividerBlock.updateProps)
-      .toHaveBeenCalledWith({ align: 'right' })
-    expect(fixture.componentInstance.activeAlign).toBe('right')
-  })
 
-  it('setColor writes the color prop and updates active state', () => {
-    const fixture = create()
-    fixture.componentInstance.setColor('#F44336')
-    expect(fixture.componentInstance.dividerBlock.updateProps)
-      .toHaveBeenCalledWith({ color: '#F44336' })
-    expect(fixture.componentInstance.activeColor).toBe('#F44336')
-  })
 
-  it('ngOnInit reads color from props', () => {
-    expect(create({ color: '#42A5F5' }).componentInstance.activeColor).toBe('#42A5F5')
-  })
 
-  it('ngOnInit defaults color to empty', () => {
-    expect(create({}).componentInstance.activeColor).toBe('')
-  })
 
   it('reads and updates an independent line color', () => {
     const fixture = create({ lineColor: '#42A5F5' })
@@ -184,58 +139,10 @@ describe('DividerStylePopupComponent', () => {
       .toHaveBeenCalledWith({ lineColor: '#EC407A' })
   })
 
-  it('reads and updates the label font size', () => {
-    const fixture = create({ fontSize: 18 })
-    expect(fixture.componentInstance.activeFontSize).toBe(18)
 
-    fixture.componentInstance.setFontSize(24)
-    expect(fixture.componentInstance.activeFontSize).toBe(24)
-    expect(fixture.componentInstance.dividerBlock.updateProps)
-      .toHaveBeenCalledWith({ fontSize: 24 })
-  })
 
-  it('offers the complete label font-size and letter-spacing preset ranges', () => {
-    const fixture = create()
-    expect(fixture.componentInstance.fontSizeList).toEqual([10, 12, 14, 16, 18, 20, 24, 28, 32])
-    expect(fixture.componentInstance.letterSpacingList).toEqual([0, 0.5, 1, 1.5, 2, 3, 4, 6, 8])
-  })
 
-  it('normalizes invalid label font sizes', () => {
-    const fixture = create({ fontSize: 4 })
-    expect(fixture.componentInstance.activeFontSize).toBe(10)
 
-    fixture.componentInstance.dividerBlock = mockBlock({ fontSize: 80 })
-    fixture.componentInstance.ngOnInit()
-    expect(fixture.componentInstance.activeFontSize).toBe(32)
-
-    fixture.componentInstance.dividerBlock = mockBlock({ fontSize: 'invalid' })
-    fixture.componentInstance.ngOnInit()
-    expect(fixture.componentInstance.activeFontSize).toBe(14)
-  })
-
-  it('toggles label emphasis and updates letter spacing', () => {
-    const fixture = create({ fontWeight: 'bold', fontStyle: 'italic', letterSpacing: 2 })
-    expect(fixture.componentInstance.activeFontWeight).toBe('bold')
-    expect(fixture.componentInstance.activeFontStyle).toBe('italic')
-    expect(fixture.componentInstance.activeLetterSpacing).toBe(2)
-
-    fixture.componentInstance.toggleFontWeight()
-    fixture.componentInstance.toggleFontStyle()
-    fixture.componentInstance.setLetterSpacing(4)
-
-    expect(fixture.componentInstance.dividerBlock.updateProps).toHaveBeenCalledWith({ fontWeight: 'normal' })
-    expect(fixture.componentInstance.dividerBlock.updateProps).toHaveBeenCalledWith({ fontStyle: 'normal' })
-    expect(fixture.componentInstance.dividerBlock.updateProps).toHaveBeenCalledWith({ letterSpacing: 4 })
-  })
-
-  it('normalizes imported letter spacing', () => {
-    const fixture = create({ letterSpacing: 20 })
-    expect(fixture.componentInstance.activeLetterSpacing).toBe(8)
-
-    fixture.componentInstance.dividerBlock = mockBlock({ letterSpacing: 'invalid' })
-    fixture.componentInstance.ngOnInit()
-    expect(fixture.componentInstance.activeLetterSpacing).toBe(0)
-  })
 
   it('preserves native interaction for CSES controls while isolating editor events', () => {
     const fixture = create()

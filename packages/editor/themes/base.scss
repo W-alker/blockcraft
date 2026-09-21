@@ -689,5 +689,7 @@
   @include bc_scrollbar;
 }
 
+@import "blocks/paragraph-decoration";
+
 // 分页样式必须最后载入，以覆盖普通块样式且不污染基础主题职责。
 @import "plugins/pagination";

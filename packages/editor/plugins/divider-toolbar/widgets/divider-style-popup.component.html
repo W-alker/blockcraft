@@ -66,68 +66,6 @@
     </div>
   </div>
 
-  <!-- Text Label options -->
-  <div class="text-options" *ngIf="activeTab === 'text'">
-    <input cs-input csSize="sm" class="text-input" type="text"
-           [value]="labelText"
-           placeholder="输入文字…"
-           (input)="setText($any($event.target).value)" />
-    <div class="font-size-row" aria-label="文字字号">
-      <span class="option-label">字号</span>
-      <cs-segmented class="segmented-control dense-segmented"
-                    csSize="small"
-                    [csBlock]="true"
-                    [csOptions]="fontSizeList"
-                    [ngModel]="activeFontSize"
-                    (ngModelChange)="setFontSize($any($event))"
-                    csAriaLabel="文字字号" />
-    </div>
-    <div class="text-style-row" aria-label="文字样式">
-      <span class="option-label">字形</span>
-      <button cs-button csType="secondary" csSize="sm" type="button" class="font-weight-button"
-              [class.active]="activeFontWeight === 'bold'"
-              (click)="toggleFontWeight()" title="粗体">B</button>
-      <button cs-button csType="secondary" csSize="sm" type="button" class="font-style-button"
-              [class.active]="activeFontStyle === 'italic'"
-              (click)="toggleFontStyle()" title="斜体">I</button>
-    </div>
-    <div class="letter-spacing-row" aria-label="文字字距">
-      <span class="option-label">字距</span>
-      <cs-segmented class="segmented-control dense-segmented letter-spacing-control"
-                    csSize="small"
-                    [csBlock]="true"
-                    [csOptions]="letterSpacingList"
-                    [ngModel]="activeLetterSpacing"
-                    (ngModelChange)="setLetterSpacing($any($event))"
-                    csAriaLabel="文字字距" />
-    </div>
-    <div class="align-row">
-      <cs-segmented class="segmented-control"
-                    csSize="small"
-                    [csBlock]="true"
-                    [ngModel]="activeAlign"
-                    (ngModelChange)="setAlign($event)"
-                    csAriaLabel="文字对齐">
-        <label cs-segmented-item
-               *ngFor="let align of alignList"
-               [csValue]="align.key"
-               [title]="align.label">
-          <i class="bc_icon" [ngClass]="align.icon" aria-hidden="true"></i>
-          <span>{{ align.label }}</span>
-        </label>
-      </cs-segmented>
-    </div>
-    <div class="color-row">
-      <span class="option-label">文字颜色</span>
-      <cs-color-picker csMode="palette" csSize="sm"
-                       [csValue]="activeColor || null"
-                       [csAllowClear]="true"
-                       [csShowText]="true"
-                       [csShowAlpha]="false"
-                       (csValueChange)="setColor($event)" />
-    </div>
-  </div>
-
   <div class="appearance-controls" aria-label="分割线外观">
     <div class="appearance-row">
       <span class="option-label">长度</span>

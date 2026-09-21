@@ -76,3 +76,11 @@
       var(--bc-render-unit-padding-left);
   }
 }
+
+[data-blockcraft-root="true"] .render-unit-block[data-bc-region-borders] {
+  outline: none;
+  border-top: var(--bc-region-border-top, none);
+  border-right: var(--bc-region-border-right, none);
+  border-bottom: var(--bc-region-border-bottom, none);
+  border-left: var(--bc-region-border-left, none);
+}

@@ -129,4 +129,28 @@ describe("typography settings dialogs", () => {
       patch: {lh: 1.75, psb: 12, psa: 0},
     });
   });
+  it('keeps decoration untouched until edited and shows controls for the selected edge', async () => {
+    await TestBed.configureTestingModule({
+      imports: [NoopAnimationsModule, ParagraphSettingsDialogComponent],
+      providers: [{provide: CS_MODAL_DATA, useValue: {
+        target: 'paragraph-align', align: 'left', allowDecoration: true,
+        defaults: {lineHeight: 1.5, spaceAfter: 7.5}, paragraph: {},
+        decoration: {position: 'after', after: '40px'},
+      }}],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(ParagraphSettingsDialogComponent);
+    fixture.detectChanges();
+    const component = fixture.componentInstance as any;
+    expect(component.buildResult()).toEqual({patch: {}});
+    expect(fixture.nativeElement.textContent).toContain('后侧长度');
+    expect(fixture.nativeElement.textContent).not.toContain('前侧长度');
+    expect(fixture.nativeElement.textContent).not.toContain('上下线宽度');
+    component.setDecoration('position', 'above');
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('上下线宽度');
+    expect(fixture.nativeElement.textContent).not.toContain('垂直对齐');
+    component.setDecoration('position', 'none');
+    expect(component.buildResult()).toEqual({patch: {decoration: null}});
+  });
+
 });
