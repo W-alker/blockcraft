@@ -129,7 +129,10 @@ export function formatInlineDateValue(value: string, format: string): string {
     D: String(parts.day),
     H: String(parts.hour),
   }
-  return format.replace(
+  // 仅分隔日期、星期和时间；英文日期内部的空格保持原样。
+  // 存储的 format 不变，旧文档和格式菜单共用同一显示规则。
+  const displayFormat = format.replace(/ +(?=dddd|HH:mm)/g, ' · ')
+  return displayFormat.replace(
     /YYYY|MMM|dddd|ddd|MM|DD|HH|mm|M|D|H/g,
     token => table[token] ?? token,
   )
@@ -223,7 +226,7 @@ export function createInlineDateEmbedConverter(): EmbedConverter {
       span.className = INLINE_DATE_CLASS
       span.dataset['bcDateValue'] = value
       span.dataset['bcDateFormat'] = format
-      icon.className = 'csicon csicon-date-time'
+      icon.className = 'bc_icon bc_calendar-minus'
       icon.setAttribute('aria-hidden', 'true')
       text.className = INLINE_DATE_VALUE_CLASS
       text.textContent = formatInlineDateValue(value, format)

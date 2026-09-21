@@ -4,7 +4,7 @@
 >
 > For inline system internals, see L2: `blockcraft-inline.md`
 >
-> Last updated: 2026-09-20
+> Last updated: 2026-09-21
 
 ## What is an Inline Embed?
 
@@ -428,6 +428,11 @@ the identity legible to AI while avoiding an opaque payload in prose.
 
 ## Bundled Date Embed
 
+显示时，日期、星期和时间之间以 ` · ` 分隔，例如
+`2026-08-14 · 星期五 · 15:54`；英文日期内部仍保留 `Aug 14, 2026`。
+`formatInlineDateValue()` 统一提供正文、格式菜单、只读预览和导出显示文本，
+已有 `attributes.format` 标识与冻结时间值不变，无需迁移数据。
+
 `createBundledEditorCapabilities()` registers a fresh `date` converter per
 document. The `/日期` slash command inserts one stamped with the current local
 time; `DateInlineExtensionPlugin` owns click-to-edit (see
@@ -448,10 +453,10 @@ Two rules the shape encodes:
 - **The format lives in `attributes`, not in the value.** Switching format is a
   presentation change and must never risk rewriting the frozen value.
 
-`toView` renders a theme-aware date chip with the `@cses/ui`
-`csicon csicon-date-time` icon followed by the formatted text. The chip occupies
-exactly one inherited line-height while its icon and value remain slightly
-smaller and quieter than surrounding text. It mirrors both fields onto
+`toView` renders a theme-aware date chip with the bundled
+`bc_icon bc_calendar-minus` icon followed by the formatted text. The chip follows
+the surrounding text baseline using natural inline layout, while its icon and
+value remain slightly smaller than surrounding text. It mirrors both fields onto
 `data-bc-date-value` / `data-bc-date-format` so `toDelta` can rebuild the delta
 from DOM alone (copy/paste, HTML import). The text node is derived output and
 is never read back.

@@ -94,6 +94,21 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 无字体/字号覆盖时保留原设计。显式覆盖只改变日期卡片文字；卡片原缩放、格式和颜色路径继续生效。
 
+## Unreleased — 2026-09-21：行内时间显示分隔符
+
+**Severity**: patch（不修改包版本）。
+
+**What changed**: `formatInlineDateValue()` 将内置格式中日期、星期和时间之间的空格显示为 ` · `，英文日期内部空格保持不变。
+
+**Why**: 让行内时间的各部分边界更清晰。
+
+**Affected ai-skills files**: `blockcraft-embed.md`。
+
+### Behavior Changes
+
+正文、格式菜单、只读预览与导出文本统一显示为例如 `2026-08-14 · 15:54`。
+冻结时间值、格式标识及 HTML 往返数据不变，无需数据迁移；依赖显示文本的断言需同步调整。
+
 ## Unreleased — 2026-09-20：DDD 目录归位与默认装配收敛
 
 **Severity**: patch（架构和源码归属整理，原公开签名与默认行为不变；不修改包版本）。

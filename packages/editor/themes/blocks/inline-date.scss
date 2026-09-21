@@ -1,37 +1,41 @@
 @use '../function' as *;
 
 [data-blockcraft-root="true"] {
+  // 默认色放在格式属性所在的节点，显式 s:color 可直接覆盖。
+  c-element:has(> span[contenteditable="false"] > .bc-inline-date) {
+    color: var(--bc-active-color);
+  }
+
   // 日期是随文对象：不设自己的字号/行高，跟着所在段落走，
   // 否则基准字号缩放时它会脱队（第一原则规则 4）。
   .bc-inline-date {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3em;
-    box-sizing: border-box;
-    height: 1lh;
-    border: 1px solid var(--bc-border-color-light);
+    display: inline;
+    border: 1px solid transparent;
     border-radius: var(--bc-radius-md);
     padding: 0 0.4em;
-    background: var(--bc-bg-secondary);
-    color: var(--bc-color-light);
+    background: transparent;
+    color: inherit;
     cursor: pointer;
     // 「2026-08-14 15:54」不该在中间断行。
     white-space: nowrap;
-    vertical-align: top;
+    vertical-align: baseline;
     font-variant-numeric: tabular-nums;
     transition:
       background-color var(--bc-transition-fast),
       border-color var(--bc-transition-fast),
       box-shadow var(--bc-transition-fast);
 
-    > .csicon {
-      flex: none;
-      color: var(--bc-color-lighter);
+    > .bc_icon {
+      display: inline-block;
+      // 图标字体的基线不同于正文字体，按所在行的字面中线对齐。
+      vertical-align: middle;
+      color: inherit;
       font-size: 0.88em;
       line-height: 1;
     }
 
     > .bc-inline-date__value {
+      margin-inline-start: 0.3em;
       font-size: 0.92em;
       line-height: 1;
     }
@@ -47,7 +51,7 @@
     border-color: var(--bc-active-color);
     box-shadow: 0 0 0 1px var(--bc-active-color);
 
-    > .csicon {
+    > .bc_icon {
       color: var(--bc-active-color);
     }
   }
