@@ -53,7 +53,7 @@ const snapshot: IBlockSnapshot = {
     id: 'weather',
     flavour: 'weather',
     nodeType: BlockNodeType.void,
-    props: {date: 'live', align: 'right'},
+    props: {date: 'live', align: 'right', style: 'ledger', palette: 'blue', bg: 'transparent', fg: '#234567', accent: '#42769d', line: '#b6c6d5', iconMode: 'mono', range: 'off'},
     meta: {},
     children: [],
   }, {
@@ -92,7 +92,7 @@ describe('template-deco Adapter registry', () => {
     const imported = await adapter.toBlockSnapshot(html)
     expect((imported.children[0] as IBlockSnapshot).props['src'])
       .toBe('https://cdn.example.com/logo.png')
-    expect((imported.children[1] as IBlockSnapshot).props['date']).toBe('live')
+    expect((imported.children[1] as IBlockSnapshot).props).toEqual((snapshot.children[1] as IBlockSnapshot).props)
   })
 
   it('combines portable resources with custom semantic materials', async () => {

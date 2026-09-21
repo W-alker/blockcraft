@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-09-10
+> Last updated: 2026-09-21
 
 ## BlockControllerPlugin
 
@@ -69,6 +69,7 @@ new BlockControllerPlugin({
 ```
 
 ### Notes
+
 
 - The built-in **颜色** second-level menu appears for an eligible editable flow
   block and whenever a multi-block range contains at least one eligible,
