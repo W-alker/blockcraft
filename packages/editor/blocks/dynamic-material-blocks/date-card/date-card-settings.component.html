@@ -1,0 +1,76 @@
+<section class="settings-panel" role="dialog" aria-label="日期设置" aria-modal="true" cdkTrapFocus [cdkTrapFocusAutoCapture]="true">
+    <header>
+        <strong>日期设置</strong>
+        <button cs-button csType="text" csSize="sm" type="button" aria-label="关闭日期设置" (click)="cancel.emit()">×</button>
+    </header>
+    <div class="settings-body">
+        <div class="overview">
+            <div class="preview">
+                <div class="preview-fit" [style.width.px]="previewFit().width" [style.height.px]="previewFit().height">
+                    <div class="preview-card" [style.transform]="'scale(' + previewFit().scale + ')'"
+                         [style.width.px]="previewSize().width" [style.height.px]="previewSize().height"
+                         style="--u:1px" [style.font-family]="look().fontFamily"
+                         [style.--dc-bg]="look().bg" [style.--dc-fg]="look().fg"
+                         [style.--dc-bc]="look().bc" [style.--dc-bw]="look().bw" [style.--dc-bs]="look().bs"
+                         [style.--dc-font-day]="look().fontSizes.day" [style.--dc-font-primary]="look().fontSizes.primary"
+                         [style.--dc-font-secondary]="look().fontSizes.secondary">
+                        <ng-container *ngComponentOutlet="look().style.component; inputs: {parts: parts(), format: look().format}"></ng-container>
+                    </div>
+                </div>
+            </div>
+            <div class="layout-fields">
+                <label>样式
+                    <cs-select csSize="sm" csVariant="outlined" aria-label="卡片样式" [csValue]="look().style.id" (csValueChange)="set('style', $event)">
+                        @for (style of styles; track style.id) {<cs-option [csValue]="style.id" [csLabel]="style.label" />}
+                    </cs-select>
+                </label>
+                <label>显示内容
+                    <cs-select csSize="sm" csVariant="outlined" aria-label="显示内容" [csValue]="look().format" (csValueChange)="set('format', $event)">
+                        <cs-option csValue="full" csLabel="完整日期与星期" />
+                        <cs-option csValue="noWeek" csLabel="不含星期" />
+                        <cs-option csValue="min" csLabel="仅月日" />
+                    </cs-select>
+                </label>
+            </div>
+        </div>
+        <div class="section-title">
+            文字<button cs-button csType="text" csSize="sm" type="button" aria-label="恢复当前样式字号" (click)="resetFonts()">恢复字号</button>
+        </div>
+        <label class="inline-field">字体
+            <cs-select csSize="sm" csVariant="outlined" aria-label="卡片字体" [csValue]="value().ff || ''" (csValueChange)="set('ff', $event)">
+                <cs-option csValue="" csLabel="跟随文档" />
+                @for (family of families; track family.id) {<cs-option [csValue]="family.id" [csLabel]="family.label" />}
+            </cs-select>
+        </label>
+        <div class="font-grid">
+            @for (font of fonts(); track font.role) {
+                <label>{{font.label}}字号
+                    <cs-input-number csSize="sm" [csMin]="4" [csMax]="512" [csStep]="0.1" [csPrecision]="1"
+                        [csValue]="displaySize(font.size)" (csValueChange)="setSize(font.role, $event)" />
+                </label>
+            }
+        </div>
+        <div class="section-title">
+            颜色<button cs-button csType="text" csSize="sm" type="button" (click)="resetColors()">恢复默认颜色</button>
+        </div>
+        <div class="color-grid">
+            @for (color of colors; track color.key) {
+                <div class="color-row"><span>{{color.label}}</span>
+                    <cs-color-picker csSize="sm" csLocale="zh-CN" [attr.aria-label]="color.label"
+                        [csShowText]="false" [csAllowClear]="true" csClearText="恢复默认"
+                        [csValue]="$any(value()[color.key]) || null" (csValueChange)="set(color.key, $event)" />
+                </div>
+            }
+        </div>
+        <label class="inline-field">边框
+            <cs-select csSize="sm" csVariant="outlined" aria-label="卡片边框" [csValue]="value().bw || '0px solid'" (csValueChange)="set('bw', $event)">
+                @for (border of borders; track border.value) {<cs-option [csValue]="border.value" [csLabel]="border.label" />}
+            </cs-select>
+        </label>
+        <p>清空颜色恢复样式默认；透明度设为 0 可使用透明背景。</p>
+    </div>
+    <footer>
+        <button cs-button csType="secondary" csSize="sm" type="button" (click)="cancel.emit()">取消</button>
+        <button cs-button csSize="sm" csType="primary" type="button" (click)="confirm()">应用</button>
+    </footer>
+</section>

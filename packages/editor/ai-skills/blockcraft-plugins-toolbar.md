@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-09-16
+> Last updated: 2026-09-21
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
@@ -899,3 +899,26 @@ new TextMarkerPlugin(
 `url("...") x% y% / cover|contain|100% 100% no-repeat`；整体透明度独立保存且默认省略。
 切换填充类型会清除不再适用的透明度项。root 的 CSS background 与容器图片背景同样遵守
 不保存空/默认配置的规则。不要在各面板增加自定义序列化，也不要直接写 Y.Map。
+
+
+## WeatherToolbarPlugin
+
+> `plugins/weather-toolbar/` — 天气块专属浮动样式菜单，默认 bundled editor 已装配。
+
+```typescript
+new WeatherToolbarPlugin(); // 自定义 Doc 的 plugins 按需注册；不要与 bundled 实例重复注册
+```
+
+仅在单个、可写 `weather` 块整块选中时于右上角显示 28px 齿轮图标按钮（右边距 12px、顶部 4px），点击展开
+`WeatherSettingsComponent`。面板沿用日期设置的 320px 配置卡：顶部预览与样式/色调下拉，
+显示、颜色、边框分区，底部取消/应用；使用同款 CSES Select、ColorPicker、Button。
+七款布局、色调与颜色覆盖、透明背景、图标及高低温均先在本地预览，应用时只提交改过的字段。
+不在左侧面板或 BlockController 菜单重复提供入口。
+
+Plugin 只负责选区、浮层与生命周期；配置写入仍由设置组件通过 Yjs 事务完成，
+普通块写 props，模板投影写 `draft:*`（清空颜色写空串覆盖正式值）。一次应用对应一个撤销步骤，
+取消/关闭不写文档。连接浮层以块为 target，沿用虚拟视图租约、
+滚动定位与可视区约束；尺寸变化通过 RAF 合并定位。输入控件取焦时保留当前操作目标
+及选中外观；同一组件打开的 CSES Select/ColorPicker 子浮层属于当前交互。
+具体的新选区优先。外部点击/焦点、Esc、只读、块销毁或插件销毁关闭浮层并丢弃未应用编辑，
+释放观察器、监听、选中外观及视图租约。没有新的天气请求或持久化字段。

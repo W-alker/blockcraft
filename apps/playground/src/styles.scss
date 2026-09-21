@@ -253,7 +253,7 @@ bc-pagination-settings.pagination-settings-float {
 .tpl-size__num{ width:52px; padding:3px 6px; border:1px solid #e6e8f0; border-radius:6px; font-size:12px; color:#4b5168; text-align:center }
 
 /* 天气 chip（cses 风格）：weather-mark + 温度 + 城市·天气；内部定死 px，整体 zoom 跟列宽自适应 */
-.tpl-weather-chip{ position:relative; display:inline-flex; align-items:center; gap:8px; padding:5px 9px; border-radius:12px; background:#fff; box-shadow:inset 0 0 0 1px rgba(72,87,226,.1), 0 6px 18px rgba(31,43,92,.06); vertical-align:middle }
+.tpl-weather-chip{ position:relative; display:inline-flex; align-items:center; gap:8px; padding:5px 9px; border-radius:12px; background:#fff; vertical-align:middle }
 .tpl-weather-chip__copy{ display:flex; flex-direction:column; align-items:flex-start; gap:1px; min-width:0 }
 .tpl-weather-chip__temp{ font-size:16px; line-height:18px; font-weight:760; color:#202637; font-variant-numeric:tabular-nums }
 .tpl-weather-chip__meta{ max-width:120px; font-size:11px; line-height:14px; color:#7c8298; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }

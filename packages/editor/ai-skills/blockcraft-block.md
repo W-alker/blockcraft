@@ -1710,6 +1710,41 @@ boundary. `query()` receives no argument for the live anchor and
 asynchronously written to `props.frozen` through a no-Undo Yjs transaction when
 the block is writable; live results are never persisted.
 
+### 天气布局与色调
+
+`WeatherModel.props` 新增可选展示属性，`date/frozen` 和宿主天气查询契约保持不变。
+旧数据省略 `style/palette` 时仍显示 160×42 的经典紧凑样式及原近黑字色。
+`WEATHER_STYLES` 通过现有 `MaterialStyleSet` 注册 `classic / inline / ruled / sidebar / card / stack / ledger`；
+新布局默认跟随文档字色、透明底色，换布局会重置为该档固定宽高，等比缩放仍只写几何属性。
+
+| 属性 | 值与语义 |
+|---|---|
+| `style` | `classic`（默认）、`inline` 行内组合、`ruled` 双线横栏、`sidebar` 侧线标记、`card` 基础信息卡、`stack` 纵向组合、`ledger` 气象分栏 |
+| `palette` | `document / ink / blue / green / clay / dark`；省略保留旧经典配色，新布局跟随文档 |
+| `fg / accent / line / bg` | 文字、强调、线条、背景 CSS 色；显式值覆盖色调，`null` 清除覆盖，`transparent` 是有效背景值 |
+| `iconMode` | `original`（默认）/ `mono`（随强调色）；保留原有天气图形 |
+| `range` | `on`（默认）/ `off`；经典紧凑始终不显示高低温，其他布局隐藏时保持固定框 |
+| `bw / bc` | 既有外框线型与颜色，保持原契约；`line` 控制新增布局内部线条 |
+
+渲染变量在 `.tpl-weather-chip` 及其内层使用 `--wt-fg / --wt-accent / --wt-line / --wt-bg`；
+`--u` 仍由固定宽度推导。天气展示组件没有请求与模型写入；色调、高低温或图标变化不重设尺寸。
+默认编辑器通过 `WeatherToolbarPlugin` 在天气块选中时提供浮动设置；自定义 Doc 可按需注册。
+宿主可复用 `WEATHER_DISPLAY_CONFIGS` 作为物料 `displayConfigs`，或嵌入
+`WeatherSettingsComponent` 并传入 `block`。面板先本地预览，点应用时把改过的字段作为一次事务提交，
+模板态写入 `draft:*`（清空使用空串覆盖），普通文档写 props；取消不写入。组件发出 `apply/cancel`
+供浮层宿主关闭，并在提交前检查只读和块存活状态。使用 `weatherPalettePatch(id)` 可在同一事务中
+切换色调并清除 `fg/accent/line/bg` 覆盖；随后可单独设置透明底色。只改 `palette` 则保留显式覆盖。
+
+```typescript
+// 原有天气块无需迁移。主动启用新样式：
+block.doc.crud.transact(() => block.updateProps({style: 'ledger', ...weatherPalettePatch('blue')}));
+// 宿主面板原来的 fg/bw/bc 配置可替换成完整清单：
+displayConfigs: WEATHER_DISPLAY_CONFIGS
+```
+
+模型快照与私有 HTML/Markdown 适配继续保留展示 props；通用可移植导出仍遵循原有天气文本占位契约。
+导出完整视觉时使用已渲染的只读文档/打印路径。宿主升级包与接入其专属物料面板是独立步骤。
+
 `DocChain` is the fluent transaction builder. Each method enqueues a step; `run()` commits everything in a single Yjs transaction. Async tasks can be interleaved with `.task()`.
 
 ```typescript
@@ -2215,3 +2250,16 @@ HTML/Markdown 使用输出编号表达结果，不承诺保留动态跨段接续
 const patch = storeDateCardFont(block.props.style, block.props, 'day', displaySize / block.contentScale)
 doc.crud.transact(() => block.updateProps(patch))
 ```
+
+
+### 日期卡片独立设置（无需宿主侧栏）
+
+`DateCardRenderComponent` 自带右上角 28px 齿轮图标按钮（右边距 12px、顶部 4px，悬停/选中/键盘聚焦显示），保留“日期设置”无障碍名称，也可双击卡片打开 CDK 浮层。
+支持样式、显示内容、字体、分层字号、文字/主色 `fg`、背景 `bg`、边框色 `bc` 和线型 `bw`。
+取色器支持预设、自定义色和透明度；清空颜色恢复样式默认（与显式透明不同）。
+浮层先本地预览，点击应用以单个 Yjs 事务提交修改字段；取消/Esc 不写模型。
+
+普通文档写 props；已处于 draft 投影的模板写对应 `draft:*`，恢复默认时按原始 props 决定删除或用空字符串覆盖。
+不更改 `date` 和日期来源，颜色/字体修改不重置固定宽高；切换样式/显示内容沿用既有几何规则。
+浮层只在打开期间订阅只读状态，关闭时解除；删除、卸载或转只读立即关闭。打印/只读渲染没有设置按钮。
+宿主已有面板可继续使用原字段，不需要注册新插件。

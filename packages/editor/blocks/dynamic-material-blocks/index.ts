@@ -25,3 +25,8 @@ export * from './person-card/person-card-view.util'
 export * from './person-card/person-card.styles'
 
 export * from './person-card/person-card-layout'
+
+export * from './weather/weather-presentation'
+export * from './weather/weather.styles'
+export * from './weather/weather-config'
+export * from './weather/weather-settings.component'

@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-09-20 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-09-21 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -1587,6 +1587,7 @@ onBold(ctx: UIEventStateContext) { ... }
 | `ImgToolbarPlugin` | `plugins/img-toolbar/` | Block/inline image resize, toolbar actions, and bidirectional conversion |
 | `ObjectFormatToolbarPlugin` | `plugins/object-format-toolbar/` | Unified Shape/TextBox/WordArt data actions inside the established side-aware 42px rail + responsive 288px secondary card; stable mixed selection, single/multi hierarchy, multi-only align/group commands, CSES segmented format tabs, paint, outline, effects, text frame and searchable font selection |
 | `CalloutToolbarPlugin` | `plugins/callout-toolbar/` | Callout and content-region appearance picker |
+| `WeatherToolbarPlugin` | `plugins/weather-toolbar/` | 天气块选中后的浮动布局与配色菜单 |
 | `DividerExtensionPlugin` | `plugins/divider-toolbar/` | Divider hover toolbar (line/tape/colorful edge style, custom line color, independent length/thickness/opacity, optional text label + typography/alignment/color) |
 | `AttachmentExtensionPlugin` | `plugins/attachment-extension/` | Attachment preview/download UI |
 | `EmbedFrameExtensionPlugin` | `plugins/embed-frame-extension/` | Resize/replace iframe embeds |

@@ -1,38 +1,37 @@
 import { splitBorder } from '../kernel/material-border.util';
 import { DEFAULT_MATERIAL_COLOR } from '../kernel/material-color.util';
 
-/**
- * 天气 chip「长什么样」的唯一形状：三条显示配置读出来的结果，两态组件共用的那**一个** signal。
- *
- * 与 `date-card-look.util.ts` 同位——**物料的数据面，不含任何组件**。单独成文件的理由同那边：
- * 组件文件 `import type … from '@ccc/blockcraft'`，纯逻辑单测一 import 就把框架类型拖进模块图，
- * 框架版本一动测试就在无关处加载失败（0.5.0 撤 `BlockPositionState` 那次实测栽过）。
- *
- * 没有 bg/fg 那套 `null` = 「跟随样式档」的语义：天气只有一种长相、没有样式档可跟随，
- * 三个口全部**恒有值**、缺席直接落默认（同人员卡 `color` 的口径）——
- * 面板里显示的默认色与画布上实际的颜色因此天然一致，不会出现「卡片有色、面板显示空」的错位。
- */
+import {WEATHER_PALETTES, resolveWeatherLayout, type WeatherLayout, type WeatherPresentationProps} from './weather-presentation';
+
+/** 同一投影供画布、面板和只读渲染使用；显式颜色覆盖预设，透明不等于未设置。 */
 export interface WeatherLook {
-    /** 文字颜色，落成 `--wt-fg`。温度吃原色，地点行由模板兑半透明（层级靠 alpha，不靠第二个色）。 */
+    style: WeatherLayout;
     fg: string;
-    /**
-     * 边框的粗细与线型，分别落成 `--wt-bw` / `--wt-bs`。
-     * props 里存的是**一个**档位值（`'2px dashed'`，见 BORDER_LOOKS），到这一层才拆成两个。
-     */
+    accent: string;
+    line: string;
+    bg: string;
     bw: string;
     bs: string;
-    /** 边框色，落成 `--wt-bc`。缺席落近黑——作者选了线型就该看得见框（defineBorderConfigs 的口径）。 */
     bc: string;
+    iconMode: 'original' | 'mono';
+    showRange: boolean;
 }
 
-/** 从 props 读出这些；缺席一律回落默认，不开天窗。两态共用。 */
-export function readWeatherLook(
-    props?: { fg?: string; bw?: string; bc?: string } | null
-): WeatherLook {
+export function readWeatherLook(props?: WeatherPresentationProps | null): WeatherLook {
+    const style = resolveWeatherLayout(props?.style).id;
+    const palette = WEATHER_PALETTES.find(p => p.id === props?.palette) ?? WEATHER_PALETTES[0];
+    // 没有新增配置的旧文档仍使用原来的近黑色；新布局默认跟随文档。
+    const legacy = style === 'classic' && !props?.palette;
+    const fg = props?.fg || (legacy ? DEFAULT_MATERIAL_COLOR : palette.fg);
     return {
-        fg: props?.fg || DEFAULT_MATERIAL_COLOR,
-        bc: props?.bc || DEFAULT_MATERIAL_COLOR,
-        ...splitBorder(props?.bw)
+        style, fg,
+        accent: props?.accent || palette.accent,
+        line: props?.line || palette.line,
+        bg: props?.bg || palette.bg,
+        bc: props?.bc || (legacy ? DEFAULT_MATERIAL_COLOR : 'currentColor'),
+        ...splitBorder(props?.bw),
+        iconMode: props?.iconMode === 'mono' ? 'mono' : 'original',
+        showRange: props?.range !== 'off',
     };
 }
 

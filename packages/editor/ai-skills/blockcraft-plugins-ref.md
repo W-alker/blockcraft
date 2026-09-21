@@ -4,7 +4,7 @@
 >
 > For creating new plugins, see `blockcraft-plugin.md`.
 >
-> Last updated: 2026-08-27
+> Last updated: 2026-09-21
 
 This index covers the built-in plugins. Pick the category file that matches your task — don't read all files at once.
 
@@ -14,7 +14,7 @@ This index covers the built-in plugins. Pick the category file that matches your
 |----------|------|---------|
 | Text Formatting | `blockcraft-plugins-formatting.md` | FloatTextToolbarPlugin, TextMarkerPlugin, FixedTextToolbarComponent |
 | Block Management | `blockcraft-plugins-block.md` | BlockControllerPlugin, BlockGapCreatorPlugin, BlockTransformerPlugin, OrderedBlockPlugin |
-| Block Toolbars | `blockcraft-plugins-toolbar.md` | AttachmentExtensionPlugin, ImgToolbarPlugin, ObjectFormatToolbarPlugin, BookmarkBlockExtensionPlugin, CalloutToolbarPlugin, DividerExtensionPlugin, EmbedFrameExtensionPlugin, FormulaBlockExtensionPlugin |
+| Block Toolbars | `blockcraft-plugins-toolbar.md` | AttachmentExtensionPlugin, ImgToolbarPlugin, ObjectFormatToolbarPlugin, BookmarkBlockExtensionPlugin, CalloutToolbarPlugin, WeatherToolbarPlugin, DividerExtensionPlugin, EmbedFrameExtensionPlugin, FormulaBlockExtensionPlugin |
 | Inline & Keyboard | `blockcraft-plugins-inline.md` | InlineLinkExtension, MentionPlugin, DateInlineExtensionPlugin, CodeInlineEditorBinding, TableBlockBinding |
 | Utilities | `blockcraft-plugins-util.md` | PlaceholderPlugin, FindReplacePlugin, PasteFormatSelectorPlugin, DemoPresentationPlugin, RevisionReviewPlugin, TranslatePlugin, PaginationPlugin |
 
@@ -34,6 +34,7 @@ This index covers the built-in plugins. Pick the category file that matches your
 | `ObjectFormatToolbarPlugin` | `toolbar` | none (zero-config) |
 | `BookmarkBlockExtensionPlugin` | `toolbar` | none (zero-config) |
 | `CalloutToolbarPlugin` | `toolbar` | none; handles Callout and `render-unit` appearance |
+| `WeatherToolbarPlugin` | `toolbar` | none; 天气块选中后的浮动布局与配色菜单 |
 | `DividerExtensionPlugin` | `toolbar` | none (zero-config) |
 | `EmbedFrameExtensionPlugin` | `toolbar` | none (zero-config) |
 | `FormulaBlockExtensionPlugin` | `toolbar` | none (zero-config) |

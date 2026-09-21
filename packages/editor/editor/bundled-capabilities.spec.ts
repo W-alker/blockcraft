@@ -68,6 +68,7 @@ describe('bundled editor capabilities', () => {
     expect(pluginNames).toContain('EmbedFrameExtensionPlugin')
     expect(pluginNames).toContain('bookmark-block-extension')
     expect(pluginNames).toContain('object-format-toolbar')
+    expect(pluginNames).toContain('weather-toolbar')
     expect(pluginNames).toContain('revision-review')
     expect(pluginNames).not.toContain('word-art-toolbar')
     expect(pluginNames).not.toContain('text-box-toolbar')

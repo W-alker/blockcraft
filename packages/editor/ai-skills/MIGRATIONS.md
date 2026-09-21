@@ -68,6 +68,63 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## Unreleased — 2026-09-21：天气块布局与色调
+
+**Severity**: minor（新增可选展示能力，不修改包版本）。
+
+**What changed**: 天气新增六种通用布局，保留经典紧凑默认；新增独立色调、颜色覆盖、
+透明背景、随强调色图标和高低温开关。`WeatherToolbarPlugin` 提供天气专属浮动设置，配置入口位于块右上角。
+
+**Why**: 支持不同文档排版和主题，避免把固定装饰风格与天气数据绑定。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-plugin.md`、`blockcraft-block.md`、
+`blockcraft-plugins-ref.md`、`blockcraft-plugins-toolbar.md`。
+
+### New APIs / Features
+
+`WEATHER_LAYOUTS`、`WEATHER_STYLES`、`WEATHER_PALETTES`、`WEATHER_DISPLAY_CONFIGS`、
+`WeatherPresentationProps`、`WeatherLayout`、`WeatherPalette`、`resolveWeatherLayout`、
+`weatherPalettePatch`、`WeatherSettingsComponent`、`WeatherToolbarPlugin`；`WeatherLook` 增加布局和色调投影字段。
+
+### Migration Recipe
+
+旧快照不需要改动；`WeatherBlockSchema.createSnapshot()` 仍创建 160×42 默认块。
+宿主物料面板可把旧 `fg/bw/bc` 配置替换成 `WEATHER_DISPLAY_CONFIGS`。
+默认 bundled editor 已装配浮动插件；自定义 Doc 可注册 `new WeatherToolbarPlugin()`。
+主动启用新款时写入 `{style: 'ledger', ...weatherPalettePatch('blue')}`。
+
+### Behavior Changes
+
+仅主动选用新选项时生效。换布局重置为该档尺寸；颜色/图标/高低温不重置尺寸。
+天气配置面板与日期设置一致：本地预览、取消/应用，应用仅写改过的字段并作为一个撤销步骤。
+CSES 取色器与下拉子浮层保持当前天气操作目标；关闭或切换块丢弃未应用修改。
+保留时间锚、宿主定位/查询、定格数据、选区、模板投影、只读保护和旧外框语义。
+
+## Unreleased — 2026-09-21：日期卡片独立设置入口
+
+**Severity**: minor（新增交互，不修改包版本）。
+
+**What changed**: 可编辑日期卡片在悬停、选中或键盘聚焦时显示右上角齿轮图标按钮，并支持双击卡片打开 CDK 设置浮层。
+浮层统一配置样式、显示内容、字体、分层字号、文字/主色、背景色、边框色和线型；无需宿主侧栏或额外插件。
+
+**Why**: 普通文档没有模板设置面板，也需要完整配置日期块。
+
+**Affected ai-skills files**: `blockcraft-block.md`。
+
+### New APIs / Features
+
+配置沿用既有 `style/format/ff/fs*/fg/bg/bc/bw` 字段；浮层内预览，应用时只提交修改字段并形成一个撤销步骤。
+
+### Migration Recipe
+
+无数据迁移或注册变更。普通文档写 props；已有 draft 投影的模板写同名 draft meta，清空覆盖值沿用空字符串语义。
+
+### Behavior Changes
+
+只读/锁定块没有入口；设置期间转只读、删除块或卸载视图会关闭浮层。取消与 Esc 不修改文档。
+日期定格值不在设置范围内，既有侧栏继续使用相同字段。
+
+
 ## Unreleased — 2026-09-21：日期卡片字体与字号
 
 **Severity**: minor（新增可选能力，不修改包版本）。

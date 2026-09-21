@@ -32,6 +32,7 @@ import {PaginationSettingsComponent} from './pagination-settings.component';
 import {DocumentScaleSettingsComponent} from './document-scale-settings.component';
 import {PersonCardDebugComponent} from './person-card-debug.component';
 import {DateCardDebugComponent} from './date-card-debug.component';
+import {WeatherDebugComponent} from './weather-debug.component';
 import {IdlePrefetchDebugConsoleComponent} from './idle-prefetch-debug-console.component';
 import { debugTableMerge, fixTable } from '@ccc/blockcraft/blocks/table-block/callback';
 import { BlockCraftAwareness } from '@ccc/blockcraft/editor/awa';
@@ -320,6 +321,7 @@ const ACTION_SECTIONS: DebugSection[] = [
     IdlePrefetchDebugConsoleComponent,
     PersonCardDebugComponent,
     DateCardDebugComponent,
+    WeatherDebugComponent,
     RevisionReviewPanelComponent,
     RouterLink,
   ],
@@ -567,6 +569,7 @@ const ACTION_SECTIONS: DebugSection[] = [
             <p>左侧面板负责调试控制，右侧可在完整编辑器与 snapshot-viewer demo 间切换。</p>
           </div>
           <div class="editor-header__actions">
+            <playground-weather-debug [doc]="editorDoc" (prepare)="initializeEditor()" />
             @if (activeMainTab === 'editor') {
               <div class="main-tabs" role="group" aria-label="编辑器布局切换">
                 <button

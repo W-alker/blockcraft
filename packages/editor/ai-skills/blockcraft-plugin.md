@@ -5,7 +5,7 @@
 > For configuring existing built-in plugins, see `blockcraft-plugins-ref.md`.
 > For event system internals, see L2: `blockcraft-event.md`.
 >
-> Last updated: 2026-08-27
+> Last updated: 2026-09-21
 
 ## Plugin Lifecycle
 
@@ -363,3 +363,8 @@ The plugin owns all `ResizeObserver`, animation-frame, DOM-layer and print resou
 | Model-first object selection + connected mixed format panel | `ObjectFormatToolbarPlugin` | `plugins/object-format-toolbar/` |
 | Reversible layout controller | `PaginationPlugin` | `plugins/pagination/` |
 | Headless domain command/state layer | `RevisionReviewPlugin` | `plugins/revision-review/` |
+
+
+`WeatherToolbarPlugin` 是按块类型订阅选区并打开连接浮层的实现示例，见
+`blockcraft-plugins-toolbar.md`。其原生输入取焦不会重新写入选区；插件保留操作目标与
+选中外观，关闭时释放，配置修改仍由块设置组件负责。

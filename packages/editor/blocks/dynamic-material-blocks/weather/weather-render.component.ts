@@ -2,7 +2,6 @@ import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import { BaseBlockComponent, NoEditableBlockNative } from '../../../framework';
 import type { SimpleBasicType } from '../../../global';
 import type { BlockObjectSizeProps } from '../../../framework';
-import { WeatherMarkComponent } from './weather-mark.component';
 import { LIVE_ANCHOR, readFrozenWeather } from './weather-anchor.const';
 import {
     DOC_WEATHER_SERVICE_TOKEN,
@@ -10,20 +9,17 @@ import {
     type DocWeatherQuery
 } from '../../../framework';
 import { wireWeatherChip } from './weather-chip.util';
-import {
-    WEATHER_CHIP_BOX_STYLE,
-    WEATHER_CHIP_COL_STYLE,
-    WEATHER_CHIP_MARK_STYLE,
-    WEATHER_CHIP_SUB_STYLE,
-    WEATHER_CHIP_TEMP_STYLE,
-    readWeatherLook
-} from './weather-look.util';
-import type { WeatherLook } from './weather-look.util';
+import {readWeatherLook} from './weather-look.util';
+import type {WeatherLook} from './weather-look.util';
+import {WeatherCardComponent} from './weather-card.component';
+import {WEATHER_STYLES} from './weather.styles';
+import type {WeatherPresentationProps} from './weather-presentation';
 import { ObjectBlockComponent } from '../kernel/object-block.component';
 import { ScaleResizerComponent } from '../kernel/scale-resizer.component';
 
 /**
- * props 两键：date（时间锚真值：ISO 串=定格 / 'live'=活值）、frozen（定格天气，一层对象；地点在 frozen.location）。
+ * 数据 props：date（时间锚真值：ISO 串=定格 / 'live'=活值）、frozen（定格天气，一层对象；地点在 frozen.location）。
+ * 外观字段由 WeatherPresentationProps 定义，与取数配置分离。
  * 必须写成内联匿名对象类型、不许提成具名 interface——具名 interface 拿不到隐式索引签名，
  * 过不了框架 IBlockProps 的 `[key: string]: SimpleValue`（这坑只在 ng-packagr 工具链下才炸）。
  *
@@ -39,81 +35,33 @@ import { ScaleResizerComponent } from '../kernel/scale-resizer.component';
  */
 export interface WeatherModel extends NoEditableBlockNative {
     flavour: 'weather';
-    props: BlockObjectSizeProps & {
+    props: BlockObjectSizeProps & WeatherPresentationProps & {
         /** @deprecated 仅用于打开旧模板时迁移；新数据以 `width/height` 为权威几何。 */
         u?: number;
         date?: string;
         frozen?: Record<string, SimpleBasicType>;
-        /**
-         * 文字颜色 / 边框长相（值形如 `2px dashed`）/ 边框色，全是 displayConfigs 的键。
-         * 桥不碰、缺席回落默认（近黑字、无框），读法收在 `readWeatherLook` 一处。
-         */
-        fg?: string;
-        bw?: string;
-        bc?: string;
     };
 }
 
 /**
  * 触发重画的 props 键。**两态共用这一份**——漏一个键就是「改了配置画布不动」，
- * 多一个（尤其 position / width / height）就是「拖拽或缩放途中反复重建」。三条显示配置两态同源，
- * date/frozen 不进来：它们由 wireWeatherChip 的闭包现读，不走 repaint 这条线。
+ * 几何字段 position / width / height 由对象基类处理；date/frozen 变化通过幂等 reload 更新天气。
  */
-export const WEATHER_WATCHED_PROPS = ['fg', 'bw', 'bc', 'date', 'frozen'] as const;
+export const WEATHER_WATCHED_PROPS = ['style', 'palette', 'fg', 'accent', 'line', 'bg', 'bw', 'bc', 'iconMode', 'range', 'date', 'frozen'] as const;
 
-/**
- * chip 模板：编辑态与渲染态共用一份（编辑态 import 本常量）。
- * 必须提成常量而不是靠继承——@Component 的 template 元数据不随类继承传递。
- *
- * **尺寸模型：模型固定 `width/height`，渲染内部用 `--u` 等比绘制。**
- * ① `.tpl-weather-chip` 是唯一带 `--u` 的元素；基类按固定宽度相对默认 160px 推导它，
- *    resizer 拖动时同步预览宽高与 `--u`，松手只提交固定像素框；
- * ② 内部长度一律 `calc(设计px * var(--u, 1px))`：图标 33.6、间距 8、温度 16、地点 11.04，
- *    数字直接就是设计稿（设计宽 160）上的值，不用换算；
- * ③ 盒子占满固定框，选中、组合、对齐和虚拟估算都读取同一组模型宽高。
- *
- * 为什么不是 cqw（换掉的原因）：`container-type: inline-size` 的定义是「算自己宽度时当我没有内容」，
- * 所以带容器查询的盒子**永远贴不住内容**（实测 fit-content/auto 直接塌成 0×0，min-width 也撑不开）。
- * 墨迹恒为框宽的一个固定比例（天气实测 62%），差值就是选中时看到的那片空白，且与缩放无关。
- *
- * 为什么不是 CSS `zoom`：拖动中框架的 `block-resizer` 不发逐帧回调，内部绘制会慢一拍。
- * 本模型由手柄在同一次 pointermove 里直写宽高与 `--u`
- * （实测跟手 0.04px；换成 ResizeObserver 转译是 6.04px，慢整整一帧）。
- *
- * 为什么不用 em：日期卡有几处在同一个元素上既设字号又设内边距，em 的基准是该元素自己的字号，
- * 一复合就错；px 变量在任何嵌套层级都是同一个值。
- *
- * **外壳统一 4px 内边距（乘 --u）**：物料原本零内边距，贴合内容之后一切都压在字上——
- * 选中描边（2px + 1px offset）、边框配置那圈线、缩放手柄，三样各压一次。
- *
- * 三条显示配置的落法（读法收在 readWeatherLook，两态共用）：
- * - 文字颜色 `--wt-fg`：温度吃原色；地点行不再写死 #8a919f，改从 fg 兑 52% 透明——
- *   52% 正是让默认近黑兑出来 ≈ 原来那个灰（实测 #8a8c8f vs #8a919f，肉眼无差），
- *   而作者换任何颜色层级都自动成立（同台历第三行「压 alpha 不换灰色」的口径）。
- * - 边框 `--wt-bw/--wt-bs/--wt-bc`：**粗细恒绝对 px、不乘 --u**（边框是「一条线」，
- *   跟着 chip 放大会变成黑杠，全家族同一条规矩）；圆角乘 --u（那是形状，该跟着缩）。
- *   画在外壳上而不是另包一层：外壳那 4px 内边距正好是框与墨迹之间的气口。
- */
+/** 外壳保持选区与缩放契约；展示组件独立于取数。所有尺寸仍由固定框和 --u 等比绘制。 */
 export const WEATHER_CHIP_TEMPLATE = `
-    <span class="tpl-weather-chip" #boxEl contenteditable="false"
-          data-bc-selection-interaction-frame
-          [style.--u]="scaleUnitCss"
-          [style.--wt-fg]="look().fg" [style.--wt-bw]="look().bw"
-          [style.--wt-bs]="look().bs" [style.--wt-bc]="look().bc"
-          style="${WEATHER_CHIP_BOX_STYLE}">
-        <weather-mark [tone]="chip.tone()" style="${WEATHER_CHIP_MARK_STYLE}"></weather-mark>
-        <span style="${WEATHER_CHIP_COL_STYLE}">
-            <span style="${WEATHER_CHIP_TEMP_STYLE}">{{ chip.view()?.temp ?? '--' }}°</span>
-            <span style="${WEATHER_CHIP_SUB_STYLE}">@switch (chip.status()) {
-                @case ('loading') { 获取天气中… }
-                @case ('error') { 天气获取失败 }
-                @default { {{ chip.location() }} · {{ chip.view()?.condition ?? '天气' }} }
-            }</span>
-        </span>
+    <span class="tpl-weather-chip" #boxEl contenteditable="false" data-bc-selection-interaction-frame
+          [attr.data-style]="look().style" [style.--u]="scaleUnitCss"
+          [style.--wt-fg]="look().fg" [style.--wt-accent]="look().accent" [style.--wt-line]="look().line"
+          [style.--wt-bg]="look().bg" [style.color]="look().fg"
+          [style.border-width]="look().bw" [style.border-style]="look().bs" [style.border-color]="look().bc"
+          style="position:relative;display:block;width:100%;height:100%;box-sizing:border-box;padding:calc(4 * var(--u,1px));border-radius:calc(6 * var(--u,1px));max-width:100%;line-height:1.2;">
+        <bc-weather-card [layout]="look().style" [weather]="chip.view()" [status]="chip.status()"
+                         [showRange]="look().showRange" [iconMode]="look().iconMode" />
         @if (!isReadonly) {
             <mtl-scale-resizer [target]="boxEl" [maxWidthContainer]="resizeMaxWidth"
-                               [geometryScale]="viewGeometryScale"
-                               [preserveRightEdge]="isFloating"
+                               [geometryScale]="viewGeometryScale" [preserveRightEdge]="isFloating"
                                (scaleCommit)="onScaled($event)"></mtl-scale-resizer>
         }
     </span>
@@ -134,7 +82,7 @@ declare global {
     selector: 'div.weather-block',
     standalone: true,
     changeDetection: ChangeDetectionStrategy.OnPush,
-    imports: [WeatherMarkComponent, ScaleResizerComponent],
+    imports: [WeatherCardComponent, ScaleResizerComponent],
     template: WEATHER_CHIP_TEMPLATE
 })
 export class WeatherBlockComponent extends ObjectBlockComponent<WeatherModel> {
@@ -154,11 +102,15 @@ export class WeatherBlockComponent extends ObjectBlockComponent<WeatherModel> {
     protected readonly look = signal<WeatherLook>(readWeatherLook(null));
 
     /** 监听键与编辑态同源（见 WEATHER_WATCHED_PROPS）；订阅与按键过滤全在基类。 */
+    protected override get styles() { return WEATHER_STYLES; }
+
     protected override get watchedProps(): readonly string[] { return WEATHER_WATCHED_PROPS; }
 
-    /** 三条显示配置装在一个 look signal 里（同日期卡的理由：两态接线一模一样，加配置两处都不用改）。 */
+    /** 外观统一投影到 look；样式尺寸由对象基类管理。 */
     protected override repaint(): void {
-        this.look.set(readWeatherLook(this.presentationProps));
+        const look = readWeatherLook(this.presentationProps);
+        this.styleDef.set(WEATHER_STYLES.resolve(look.style));
+        this.look.set(look);
         this.chip.reload();
     }
 
