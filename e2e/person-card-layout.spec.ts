@@ -148,31 +148,47 @@ for (const zoom of [.5, 1.5]) {
   })
 }
 
-test('组合内人员块缩放与组合边界一起撤销', async ({page}) => {
-  const id = await setup(page, 'row', true)
-  const groupId = await page.evaluate(async id => {
-    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
-    const sibling = doc.schemas.createSnapshot('person-card', [])
-    sibling.props = {...sibling.props, width: 100, height: 60}
-    const siblingId = doc.placement.insertAbsoluteSnapshot(sibling, {anchorRect: null})
-    doc.crud.updateBlockProps(id, {position: '10 10'})
-    doc.crud.updateBlockProps(siblingId, {position: '10 220'})
-    const groupId = doc.placement.group([id, siblingId])
-    if (!groupId) throw new Error('组合失败')
-    await doc.navigateToBlock(groupId)
-    doc.selection.selectBlock(doc.getBlockById(id))
-    doc.crud.undoManager.clearHistory()
-    return groupId
-  }, id)
-  const group = () => page.evaluate(groupId => {
-    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
-    return JSON.parse(JSON.stringify(doc.model.getProps(groupId)))
-  }, groupId)
-  const before = await read(page, id)
-  const groupBefore = await group()
-  await drag(page, id, 'east', 70, 0)
-  expect((await group()).width).toBeGreaterThan(groupBefore.width)
-  await page.evaluate(() => (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc.crud.undoManager.undo())
-  await expect.poll(group).toEqual(groupBefore)
-  await expect.poll(async () => (await read(page, id)).props).toEqual(before.props)
-})
+for (const flow of [false, true]) {
+  test(`${flow ? '正文流' : '浮动'}组合内人员块缩放与组合边界一起撤销`, async ({page, browserName}) => {
+    // 独立基线缺陷：Chromium 在正文流组合中把成员的原生 Range 折叠到旁边段落，
+    // 按下前便丢失 selected 和手柄；不加载宿主 ObjectDragPlugin 也能复现。
+    // 保留预期失败，后续修复 Selection 投影时必须去掉此标记。
+    test.fail(flow && browserName === 'chromium', '正文流组合成员原生选区在 Chromium 中提前丢失')
+    const id = await setup(page, 'row', true)
+    const groupId = await page.evaluate(async ({id, flow}) => {
+      const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+      const sibling = doc.schemas.createSnapshot('person-card', [])
+      sibling.props = {...sibling.props, width: 100, height: 60}
+      const siblingId = doc.placement.insertAbsoluteSnapshot(sibling, {anchorRect: null})
+      doc.crud.updateBlockProps(id, {position: '10 10'})
+      doc.crud.updateBlockProps(siblingId, {position: '10 220'})
+      const groupId = doc.placement.group([id, siblingId])
+      if (!groupId) throw new Error('组合失败')
+      if (flow) doc.placement.setMode(groupId, 'relative')
+      await doc.navigateToBlock(groupId)
+      doc.selection.selectBlock(doc.getBlockById(id))
+      doc.crud.undoManager.clearHistory()
+      return groupId
+    }, {id, flow})
+    const group = () => page.evaluate(groupId => {
+      const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+      return JSON.parse(JSON.stringify(doc.model.getProps(groupId)))
+    }, groupId)
+    const before = await read(page, id)
+    const groupBefore = await group()
+    await drag(page, id, 'east', 70, 0)
+    const resized = await read(page, id)
+    expect(resized.width).toBeCloseTo(before.width + 70, 0)
+    expect(resized.height).toBeCloseTo(before.height, 0)
+    expect(resized.x).toBeCloseTo(before.x, 0)
+    expect(resized.y).toBeCloseTo(before.y, 0)
+    expect((await group()).width).toBeGreaterThan(groupBefore.width)
+    const groupAfter = await group()
+    await page.evaluate(() => (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc.crud.undoManager.undo())
+    await expect.poll(group).toEqual(groupBefore)
+    await expect.poll(async () => (await read(page, id)).props).toEqual(before.props)
+    await page.evaluate(() => (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc.crud.undoManager.redo())
+    await expect.poll(group).toEqual(groupAfter)
+    await expect.poll(async () => (await read(page, id)).props).toEqual(resized.props)
+  })
+}
