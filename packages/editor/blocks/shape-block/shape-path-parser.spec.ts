@@ -11,7 +11,7 @@ import {
 
 describe('Trusted catalogue path projection', () => {
   it('projects every built-in Shape definition into validated editable geometry', () => {
-    expect(SHAPE_DEFINITIONS).toHaveSize(103)
+    expect(SHAPE_DEFINITIONS).toHaveSize(111)
 
     for (const definition of SHAPE_DEFINITIONS) {
       const geometry = createEditableShapeGeometryFromDefinition(definition)

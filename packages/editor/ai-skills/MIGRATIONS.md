@@ -68,6 +68,32 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## Unreleased — 2026-09-22：补齐缎带及模板装饰形状
+
+**Severity**: minor
+
+**What changed**: `ShapeKind` / `SHAPE_KINDS` / `SHAPE_DEFINITIONS` 新增 8 种形状，目录从 103 扩展至 111 项。
+
+**Why**: 花间来信的平直双端内凹标题缎带无法由原上凸 / 下凸弯带准确表达，同时补充常用模板装饰轮廓。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`。
+
+### New APIs
+
+新增种类：`ribbon-notched`、`ribbon-notched-left`、`ribbon-notched-right`、`bookmark`、`ticket`、`arch`、`flower-6`、`scalloped-seal`。
+使用方式：`ShapeBlockSchema.createSnapshot('ribbon-notched', '每日感悟')`；选择器自动显示新种类。
+
+### Migration Recipe
+
+现有数据无需迁移，原 `ribbon` / `ribbon-2` 轮廓不变。需要平直内凹缎带时显式选用 `ribbon-notched`。
+宿主须升级至包含这些种类的编辑器后再创建相关模板；旧版本不识别新 ID，不能保证还原。
+版本号及发布由维护者决定，此条目不代表已经发布。
+
+### Behavior Changes
+
+新增几何共用既有文字编辑、描边、填充、效果、几何节点编辑及快照渲染路径，不改变原形状默认行为。
+HTML 与 BlockCraft Markdown 保留新形状 ID；portable Markdown 仍降级为文字。
+
 ## Unreleased — 2026-09-22：Connected Overlay 按实际可视边界切换候选位置
 
 **Severity**: patch

@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-09-21
+> Last updated: 2026-09-22
 
 通用数据描述和快照位于 `@ccc/blockcraft/framework/model`，类型为
 `BlockDescriptor<P, M, F>` / `BlockSnapshot<P, M, F>`，默认不依赖组件注册表。
@@ -1433,7 +1433,7 @@ const plugins = [
 ];
 ```
 
-`ShapeBlockSchema.createSnapshot(shapeType?, text?)` accepts one of the 103
+`ShapeBlockSchema.createSnapshot(shapeType?, text?)` accepts one of the 111
 exported `SHAPE_KINDS`. `SHAPE_CATEGORIES` groups the same canonical
 `SHAPE_DEFINITIONS` into the Word-like **矩形 / 基本形状 / 线条 / 箭头总汇 /
 公式形状 / 流程图 / 星与旗帜 / 标注** catalog. `ShapeBlockProps` persists
@@ -1444,6 +1444,14 @@ picture modes through the CSS `fill` string and optional `fillOpacity`. Gradient
 render as per-block SVG `<linearGradient>` defs in both the block component and
 the inline shape Embed; `SHAPE_FILL_GRADIENT_PRESETS` ships the Word-like
 built-in gallery and preset IDs are never persisted.
+新增模板装饰形状：`ribbon-notched`（双端内凹缎带）、
+`ribbon-notched-left` / `ribbon-notched-right`（单侧内凹缎带）、
+`flower-6`（六瓣花）、`scalloped-seal`（波边徽章）位于“星与旗帜”；
+`bookmark`（书签形状，与 bookmark 块不同）、`ticket`（票券）、`arch`（拱形）
+位于“基本形状”。平直标题缎带应选 `ribbon-notched`，原 `ribbon` / `ribbon-2`
+仍是上凸 / 下凸弯带。新形状复用形状块、文本框形状、行内形状、快照渲染及
+HTML / BlockCraft Markdown 往返能力；文字内缩避开缺口及花瓣边缘。
+
 Catalogue SVG paths and categories are never written into Yjs or snapshots.
 Parameterised catalogue shapes may additionally persist one flat numeric
 `adjustments` record. Editable line/freeform geometry persists as one validated,
@@ -1464,7 +1472,7 @@ remain visual objects rather than auto-snapping semantic connectors.
 geometry as the inserted object. The fixed **插入形状** action uses the shared
 categorized picker; shape blocks expose fill/outline/effects in the unified
 object panel, while text boxes retain the change-shape control. Its dense icon-only cells expose names through CSES Tooltip and
-`aria-label`; compact category headings keep the 103 entries navigable. Other
+`aria-label`; compact category headings keep the 111 entries navigable. Other
 toolbar/menu glyphs continue to use iconfont classes.
 
 An empty shape snapshot has no child block. Passing non-empty text or deltas
@@ -1523,7 +1531,7 @@ catalogue's absolute `M/L/H/V/C/S/Q/T/A/Z` subset, converts quadratic and
 smooth commands and catalogue arcs to explicit cubic controls, and retains
 `evenodd` compound-path fill. The projection is not persisted until the first
 changed yellow-node gesture, so untouched snapshots remain path-free. Across
-the parameter and path modes, all 103 built-in Shape kinds are editable.
+the parameter and path modes, all 111 built-in Shape kinds are editable.
 
 `ShapeRotateCommit`, `calculateShapeRotation()`, `rotateShapeVector()` and
 `normalizeShapeRotation()` are exported for custom shape UI and testing.

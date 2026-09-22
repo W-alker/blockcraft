@@ -54,7 +54,7 @@ describe('ShapePickerComponent', () => {
     fixture.componentInstance.pick.subscribe(value => picked.push(value))
     fixture.detectChanges()
     const button = (fixture.nativeElement as HTMLElement)
-      .querySelector<HTMLButtonElement>('[data-shape-type="star-8"]')!
+      .querySelector<HTMLButtonElement>('[data-shape-type="ribbon-notched"]')!
     const mouseDown = new MouseEvent('mousedown', {
       bubbles: true,
       cancelable: true,
@@ -64,7 +64,7 @@ describe('ShapePickerComponent', () => {
     button.click()
 
     expect(mouseDown.defaultPrevented).toBeTrue()
-    expect(picked).toEqual(['star-8'])
+    expect(picked).toEqual(['ribbon-notched'])
   })
 
   it('can restrict the catalog to shapes that support a text frame', async () => {

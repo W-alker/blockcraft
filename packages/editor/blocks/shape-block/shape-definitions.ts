@@ -83,6 +83,19 @@ const starPath = (
   ] as const
 }))
 
+/** Rounded lobes share one closed contour, including the final valley. */
+const lobedPath = (lobes: number, valleyRadius: number, controlRadius: number): string => {
+  const point = (angle: number, radius: number): string => {
+    const radians = angle * Math.PI / 180
+    return [500 + Math.cos(radians) * radius, 500 + Math.sin(radians) * radius]
+      .map(value => Math.round(value * 100) / 100).join(' ')
+  }
+  const start = -90 - 180 / lobes
+  return `M${point(start, valleyRadius)}` + Array.from({length: lobes}, (_, index) =>
+    `Q${point(-90 + index * 360 / lobes, controlRadius)} ${point(start + (index + 1) * 360 / lobes, valleyRadius)}`,
+  ).join('') + 'Z'
+}
+
 const define = (
   type: ShapeKind,
   label: string,
@@ -124,6 +137,19 @@ const RECTANGLES: readonly ShapeDefinition[] = [
 ]
 
 const BASIC_SHAPES: readonly ShapeDefinition[] = [
+  define(
+    'bookmark', '书签', 'M0 0H1000V1000L500 760L0 1000Z',
+    {top: 0.1, right: 0.12, bottom: 0.28, left: 0.12},
+  ),
+  define(
+    'ticket', '票券',
+    'M0 0H1000V350C800 350 800 650 1000 650V1000H0V650C200 650 200 350 0 350Z',
+    {top: 0.12, right: 0.2, bottom: 0.12, left: 0.2},
+  ),
+  define(
+    'arch', '拱形', 'M0 1000V500A500 500 0 0 1 1000 500V1000Z',
+    {top: 0.32, right: 0.12, bottom: 0.1, left: 0.12},
+  ),
   define(
     'ellipse',
     '椭圆',
@@ -608,6 +634,26 @@ const STARS_AND_BANNERS: readonly ShapeDefinition[] = [
   define('star-16', '十六角星', starPath(16, 330)),
   define('star-24', '二十四角星', starPath(24, 350)),
   define('explosion', '爆炸形', starPath(12, 210, 500)),
+  define(
+    'ribbon-notched', '双端内凹缎带', 'M0 0H1000L900 500L1000 1000H0L100 500Z',
+    {top: 0.12, right: 0.14, bottom: 0.12, left: 0.14},
+  ),
+  define(
+    'ribbon-notched-left', '左端内凹缎带', 'M0 0H1000V1000H0L100 500Z',
+    {top: 0.12, right: 0.08, bottom: 0.12, left: 0.14},
+  ),
+  define(
+    'ribbon-notched-right', '右端内凹缎带', 'M0 0H1000L900 500L1000 1000H0Z',
+    {top: 0.12, right: 0.14, bottom: 0.12, left: 0.08},
+  ),
+  define(
+    'flower-6', '六瓣花', lobedPath(6, 280, 750),
+    {top: 0.3, right: 0.3, bottom: 0.3, left: 0.3},
+  ),
+  define(
+    'scalloped-seal', '波边徽章', lobedPath(12, 430, 550),
+    {top: 0.21, right: 0.21, bottom: 0.21, left: 0.21},
+  ),
   define(
     'ribbon',
     '上凸弯带',

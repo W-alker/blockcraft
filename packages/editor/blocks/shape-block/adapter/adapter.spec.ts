@@ -18,6 +18,7 @@ import {
   normalizeShapeProps,
   serializeCustomShapeGeometry,
   type ShapeBlockProps,
+  type ShapeKind,
 } from '../../../blocks'
 import {HtmlAdapter} from '../../../adapters/html-adapter/html-adapter'
 import {MarkdownAdapter} from '../../../adapters/markdown-adapter/markdown-adapter'
@@ -54,6 +55,28 @@ describe('Shape adapters', () => {
   const fileService = new ShapeAdapterFileService()
   const htmlAdapter = new HtmlAdapter(fileService, new Map(), BUNDLED_ADAPTER_REGISTRY)
   const markdownAdapter = new MarkdownAdapter(fileService, new Map(), BUNDLED_ADAPTER_REGISTRY)
+
+  it('preserves new decoration kinds and editable text through HTML and BlockCraft Markdown', async () => {
+    const kinds: ShapeKind[] = [
+      'ribbon-notched', 'ribbon-notched-left', 'ribbon-notched-right',
+      'bookmark', 'ticket', 'arch', 'flower-6', 'scalloped-seal',
+    ]
+    markdownAdapter.adapterConfigs.set(MARKDOWN_ADAPTER_PROFILE_CONFIG, 'blockcraft')
+    for (const kind of kinds) {
+      const snapshot = rootSnapshot([ShapeBlockSchema.createSnapshot(kind, '每日感悟')])
+      const html = await htmlAdapter.toHtml(snapshot)
+      const markdown = await markdownAdapter.toMarkdown(snapshot)
+      for (const restored of [
+        await htmlAdapter.toBlockSnapshot(html),
+        await markdownAdapter.toBlockSnapshot(markdown),
+      ]) {
+        const shape = restored.children[0] as IBlockSnapshot
+        expect(normalizeShapeProps(shape.props).shapeType).withContext(kind).toBe(kind)
+        expect((shape.children[0] as IBlockSnapshot).children).withContext(kind)
+          .toEqual([jasmine.objectContaining({insert: '每日感悟'})])
+      }
+    }
+  })
 
   it('round-trips shape geometry, style, placement and rich text through HTML', async () => {
     const shape = ShapeBlockSchema.createSnapshot('flow-decision', [

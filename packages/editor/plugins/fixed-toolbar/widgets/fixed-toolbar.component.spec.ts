@@ -831,7 +831,7 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
   });
 
   it("delegates the complete catalog to the shared categorized picker", () => {
-    expect(SHAPE_DEFINITIONS.length).toBe(103);
+    expect(SHAPE_DEFINITIONS.length).toBe(111);
     expect(
       SHAPE_CATEGORIES.flatMap((category) => category.definitions),
     ).toEqual(SHAPE_DEFINITIONS);

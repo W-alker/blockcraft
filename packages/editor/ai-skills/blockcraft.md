@@ -112,6 +112,10 @@ Three `nodeType` categories:
 
 `paragraph, ordered, bullet, todo, callout, code, divider, page-divider, image, table, table-row, table-cell, attachment, bookmark, figmaEmbed, juejinEmbed, caption, root, mermaid-textarea, mermaid, blockquote, columns, column, formula, video, audio, shape, shape-text, text-box, word-art, object-group, placement-layout, render-unit, weather, date-card, person-card`
 
+形状目录提供 111 种原生几何，包含平直双端内凹缎带 `ribbon-notched`、单侧缎带、
+书签、票券、拱形、六瓣花和波边徽章。它们是 `shape` 的种类，不是新 block flavour；
+对应 ID、分类与文字区域见 `blockcraft-block.md` 的 Shape 章节。
+
 A host application can register a subset or extend this list — see `blockcraft-app.md`.
 Hosts that need the complete reference-editor surface should call
 `createBundledEditorCapabilities()` instead of copying this list. The factory
