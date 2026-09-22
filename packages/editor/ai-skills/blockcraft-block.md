@@ -1611,7 +1611,17 @@ border, outline, shadow, background or block margin.
 `personCardContentScale(props, legacyScale)` 处理旧数据回退，
 `PersonCardRenderComponent.contentScale` 提供当前生效倍率（只读 getter，非持久字段）。
 
-三种样式的姓名、拼音和部门分行，长文本自然换行，长英文必要时断词。高度由用户设置。
+`PersonCardModel.props.dept` 同时控制部门/职务显隐和相对姓名与拼音的位置：
+`off` 关闭、`on` 跟随排版（横排及横排拼音默认右侧，竖排默认下方），
+`below/right/above` 明确选择下方/右侧/上方。缺省或未知值关闭；没有新增独立位置属性。
+旧 `on` 现在按样式使用新默认，需固定原下方外观时显式设置 `below`。没有部门时不留空行。
+姓名和拼音始终作为一组；右侧模式空间不足时部门整组移到下一行，长文本自然换行，
+长英文必要时断词。三种样式及占位预览共用此规则，不自动改变外框尺寸或字号。
+`DEPT_DISPLAY` 新增 `Below` / `Right` / `Above`；`showsDept()` 识别自动及三种明确位置。
+`viewOf(person, display?, style?)` 接受 dept 字符串与样式，兼容旧 boolean 参数（true 仍下方，false 关闭），
+返回可选 `PersonCardView.dept` 解析后的展示方式。未提供该字段的旧 view 仍将已有 desc 放在下方。
+宿主模板配置继续使用 `draft:dept`，建档时物化为同名 props；关闭后不单独保存之前的位置。
+高度由用户设置。
 卡片不显示溢出提示。切换样式保留倍率与各样式字号覆盖，恢复该样式默认外框（乘倍率并取整）。
 恢复字号只删除当前样式的覆盖字段，不重置倍率。
 

@@ -30,6 +30,8 @@ export interface PersonCardView {
     pinyin: string;
     /** 部门/职务。**「部门职务」开关关掉时恒为空串**——空串 = 整段不出现，不留空壳。 */
     desc: string;
+    /** 从 dept 投影的展示方式；旧 view 缺省时 desc 仍放在下方。 */
+    dept?: 'off' | 'below' | 'right' | 'above';
     /** 是不是占位（尚未定格）。样式组件据此加虚线：**只改装饰、不改排版**，两态宽高必须一致。 */
     placeholder: boolean;
 }
@@ -86,13 +88,14 @@ export const avatarScaleOf = (size?: string | null): string =>
     AVATAR_SCALE[size ?? ''] ?? AVATAR_SCALE[AVATAR_SIZES.Medium];
 
 /**
- * 「部门职务」开关的两档取值。**默认是不显示**——多数场景只要一张脸加一个名字，
+ * 「部门职务」显示方式。**默认是不显示**——多数场景只要一张脸加一个名字，
  * 部门那截是最长也最容易顶破版的一段（见下面 desc 的注释）。
  */
-export const DEPT_DISPLAY = { Off: 'off', On: 'on' } as const;
+export const DEPT_DISPLAY = { Off: 'off', On: 'on', Below: 'below', Right: 'right', Above: 'above' } as const;
 
-/** 只有显式配成 `on` 才画部门：缺席（没配过）与任何脏值一律按不显示处理。 */
-export const showsDept = (value?: string | null): boolean => value === DEPT_DISPLAY.On;
+/** 自动和三种明确位置；缺席或未知值沿用原有不显示语义。 */
+export const showsDept = (value?: string | null): boolean =>
+    value === DEPT_DISPLAY.On || value === DEPT_DISPLAY.Below || value === DEPT_DISPLAY.Right || value === DEPT_DISPLAY.Above;
 
 // ───── 占位口径 ─────
 
@@ -135,13 +138,19 @@ const PLACEHOLDER_DEPT = '部门/职务';
  * 占位态照样吃 `withDept`：作者在模板里把开关打开却什么都不变，配置就形同虚设
  * （行内人员的 `paintPerson` 同一条口径，那边有断言盯着）。
  */
-export function viewOf(person: FrozenPersonCardData | null, withDept: boolean): PersonCardView {
+export function viewOf(person: FrozenPersonCardData | null, display?: boolean | string | null, style?: string): PersonCardView {
+    // 旧 boolean helper 调用保持下方；持久化 on 表示按样式决定默认位置。
+    const dept = display === true || display === DEPT_DISPLAY.Below ? DEPT_DISPLAY.Below :
+        display === DEPT_DISPLAY.On ? (style === 'column' ? DEPT_DISPLAY.Below : DEPT_DISPLAY.Right) :
+        display === DEPT_DISPLAY.Right || display === DEPT_DISPLAY.Above ? display : DEPT_DISPLAY.Off;
+    const withDept = showsDept(dept);
     if (!person) {
         return {
             avatar: DEFAULT_AVATAR,
             name: PLACEHOLDER_NAME,
             pinyin: PLACEHOLDER_PINYIN,
             desc: withDept ? PLACEHOLDER_DEPT : '',
+            dept,
             placeholder: true
         };
     }
@@ -153,6 +162,7 @@ export function viewOf(person: FrozenPersonCardData | null, withDept: boolean): 
         pinyin: person.pinyin || '',
         // 没部门的人：descOf 给空串 → 整段不出现（与 dl-user-profile 同口径），不画个空壳
         desc: withDept ? person.description || '' : '',
+        dept,
         placeholder: false
     };
 }

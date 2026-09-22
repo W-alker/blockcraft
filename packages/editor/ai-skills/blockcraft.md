@@ -105,7 +105,10 @@ Three `nodeType` categories:
 嵌套位置不提供插入或向 root 回退。相关 Schema 契约见 `blockcraft-block.md`。
 
 人员块 `person-card` 支持边手柄重排与角手柄整体缩放，`sc` 与分样式的
-姓名/拼音/部门字号覆盖相互独立。新快照显式存倍率 `1`；缺省倍率的旧文档沿用旧尺寸
+姓名/拼音/部门字号覆盖相互独立。`dept` 统一控制部门/职务显隐和位置：
+`off` 关闭，`on` 跟随样式（横排及横排拼音默认右侧，竖排默认下方），
+`below/right/above` 为明确位置；缺省关闭。姓名和拼音始终成组，右侧宽度不足时换行。
+新快照显式存倍率 `1`；缺省倍率的旧文档沿用旧尺寸
 推导。详情及宿主字号控件写法见 `blockcraft-block.md` → 人员块：排版空间与内容尺度。
 
 ### Currently Registered Block Schemas (from `editor/bundled-capabilities.ts`)

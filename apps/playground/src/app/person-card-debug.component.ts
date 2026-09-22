@@ -1,7 +1,7 @@
 import {ChangeDetectionStrategy, ChangeDetectorRef, Component, EventEmitter, Input, NgZone, OnChanges, OnDestroy, Output, inject} from '@angular/core'
 import {CsInputNumberComponent} from '@cses/ui'
 import {Subscription} from 'rxjs'
-import {BlockCraftDoc, PERSON_CARD_STYLES, personCardFonts, storePersonCardFont, type PersonCardRenderComponent, type PersonCardFontRole} from '@ccc/blockcraft'
+import {BlockCraftDoc, PERSON_CARD_STYLES, showsDept, personCardFonts, storePersonCardFont, type PersonCardRenderComponent, type PersonCardFontRole} from '@ccc/blockcraft'
 
 /** 调试台直接操作真实人员块；不维护与文档脱节的预览模型。 */
 @Component({
@@ -40,11 +40,15 @@ import {BlockCraftDoc, PERSON_CARD_STYLES, personCardFonts, storePersonCardFont,
               <option value="small">小</option><option value="medium">中</option><option value="large">大</option>
             </select>
           </label>
-          <label class="person-debug__check"><input type="checkbox" aria-label="显示部门职务"
-            [checked]="block.props.dept === 'on'" (change)="setDepartment($event)" />显示部门/职务</label>
+          <label>部门/职务
+            <select aria-label="部门职务" [value]="block.props.dept || 'off'" (change)="setDepartment($event)">
+              <option value="off">不显示</option><option value="on">跟随排版</option><option value="below">名称下方</option>
+              <option value="right">名称右侧</option><option value="above">名称上方</option>
+            </select>
+          </label>
           <div class="person-debug__grid">
             @for (font of fonts; track font.role) {
-              @if (font.role !== 'desc' || block.props.dept === 'on') {
+              @if (font.role !== 'desc' || showsDept(block.props.dept)) {
                 <label>{{labels[font.role]}}字号
                   <cs-input-number [attr.data-testid]="'person-font-' + font.role" csSize="sm"
                     [csMin]="4" [csMax]="512" [csPrecision]="1" [csDisabled]="block.isReadonly"
@@ -66,7 +70,6 @@ import {BlockCraftDoc, PERSON_CARD_STYLES, personCardFonts, storePersonCardFont,
     fieldset { border:0; padding:0; margin:0; min-width:0; display:grid; gap:12px; }
     label { display:grid; gap:6px; font-size:12px; min-width:0; }
     .person-debug__grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-    .person-debug__check { display:flex; align-items:center; }
     select, button { color:inherit; font:inherit; background:var(--bc-bg-primary, #fff); border:1px solid var(--bc-border-color, #dce0e6); border-radius:6px; padding:6px 8px; }
     button { cursor:pointer; font-size:12px; } cs-input-number { width:100%; }
   `],
@@ -76,6 +79,7 @@ export class PersonCardDebugComponent implements OnChanges, OnDestroy {
   @Output() prepare = new EventEmitter<void>()
   selected: PersonCardRenderComponent | null = null
   readonly styles = PERSON_CARD_STYLES.all
+  readonly showsDept = showsDept
   readonly labels = {name: '姓名', pinyin: '拼音', desc: '部门/职务'}
   private subscriptions = new Subscription()
   private readonly zone = inject(NgZone)
@@ -139,7 +143,7 @@ export class PersonCardDebugComponent implements OnChanges, OnDestroy {
   fontDisplay(size: number, scale: number): number { return Math.round(size * scale * 10) / 10 }
   setStyle(event: Event): void { this.patch({style: (event.target as HTMLSelectElement).value}) }
   setAvatar(event: Event): void { this.patch({avatarSize: (event.target as HTMLSelectElement).value}) }
-  setDepartment(event: Event): void { this.patch({dept: (event.target as HTMLInputElement).checked ? 'on' : 'off'}) }
+  setDepartment(event: Event): void { this.patch({dept: (event.target as HTMLSelectElement).value}) }
   setDimension(key: 'width' | 'height', value: number | null): void {
     if (value != null && Number.isFinite(value) && value >= (key === 'width' ? 48 : 32)) this.patch({[key]: Math.round(value)}, true)
   }

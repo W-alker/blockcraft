@@ -25,7 +25,10 @@ async function read(page: Page, id: string) {
     const rect = el.getBoundingClientRect()
     const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
     const block = doc.getBlockById(el.dataset['blockId'])
-    const font = (selector: string) => Number.parseFloat(getComputedStyle(el.querySelector(selector)!).fontSize)
+    const font = (selector: string) => {
+      const node = el.querySelector(selector)
+      return node ? Number.parseFloat(getComputedStyle(node).fontSize) : 0
+    }
     return {width: rect.width, height: rect.height, x: rect.x, y: rect.y, name: font('.card__name'), desc: font('.card__desc'),
       avatar: el.querySelector('.card__avatar')!.getBoundingClientRect().width, scale: block.contentScale,
       props: JSON.parse(JSON.stringify(block.props)), selected: el.classList.contains('selected')}
@@ -192,3 +195,106 @@ for (const flow of [false, true]) {
     await expect.poll(async () => (await read(page, id)).props).toEqual(resized.props)
   })
 }
+
+async function personLayout(page: Page, id: string) {
+  return page.locator(`[data-block-id="${id}"]`).evaluate(el => {
+    const box = (selector: string) => {
+      const node = el.querySelector(selector)
+      if (!node) return null
+      const r = node.getBoundingClientRect()
+      return {x: r.x, y: r.y, right: r.right, bottom: r.bottom, width: r.width, height: r.height}
+    }
+    return {name: box('.card__name')!, identity: box('.card__identity')!, desc: box('.card__desc'),
+      pinyin: box('.card__pinyin'), col: box('.card__col')!}
+  })
+}
+
+for (const style of ['row', 'rowPinyin', 'column']) {
+  test(`${style}: 部门位置、窄宽度换行与撤销重做`, async ({page}) => {
+    const id = await setup(page, style)
+    await page.evaluate(id => {
+      const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+      doc.crud.updateBlockProps(id, {person: JSON.stringify({name: '张三', pinyin: 'ZHANG SAN', description: '产品部 / 产品经理'})})
+      doc.crud.undoManager.clearHistory()
+    }, id)
+    const position = page.getByLabel('部门职务', {exact: true})
+    const initial = await personLayout(page, id)
+    if (style === 'column') expect(initial.desc!.y).toBeGreaterThanOrEqual(initial.identity.bottom)
+    else expect(initial.desc!.x).toBeGreaterThanOrEqual(initial.identity.right)
+    await position.selectOption('right')
+    await expect.poll(async () => (await personLayout(page, id)).desc!.x).toBeGreaterThan(initial.identity.x)
+    const right = await personLayout(page, id)
+    expect(right.desc!.x).toBeGreaterThanOrEqual(right.identity.right)
+    expect(right.desc!.y).toBeLessThan(right.identity.bottom)
+    expect(right.desc!.right).toBeLessThanOrEqual(right.col.right + 1)
+    if (style === 'rowPinyin') {
+      expect(right.pinyin!.y).toBeGreaterThanOrEqual(right.name.bottom)
+      expect(right.pinyin!.x).toBeCloseTo(right.name.x, 0)
+    }
+    await page.evaluate(() => (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc.crud.undoManager.undo())
+    await expect.poll(async () => (await read(page, id)).props.dept).toBe('on')
+    expect(await personLayout(page, id)).toEqual(initial)
+    await page.evaluate(() => (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc.crud.undoManager.redo())
+    await expect.poll(async () => (await read(page, id)).props.dept).toBe('right')
+    await position.selectOption('above')
+    const above = await personLayout(page, id)
+    expect(above.desc!.bottom).toBeLessThanOrEqual(above.identity.y)
+    await position.selectOption('below')
+    const below = await personLayout(page, id)
+    expect(below.desc!.y).toBeGreaterThanOrEqual(below.identity.bottom)
+    await position.selectOption('on')
+    await expect.poll(async () => (await read(page, id)).props.dept).toBe('on')
+    expect(await personLayout(page, id)).toEqual(initial)
+    await position.selectOption('right')
+    const width = page.getByTestId('person-width').locator('input')
+    await width.fill('100')
+    await width.press('Enter')
+    await expect.poll(async () => (await read(page, id)).props.width).toBe(100)
+    const narrow = await personLayout(page, id)
+    expect(narrow.desc!.y).toBeGreaterThanOrEqual(narrow.identity.bottom)
+    expect(narrow.desc!.right).toBeLessThanOrEqual(narrow.col.right + 1)
+    await position.selectOption('off')
+    expect((await personLayout(page, id)).desc).toBeNull()
+    expect((await read(page, id)).props.dept).toBe('off')
+    await position.selectOption('right')
+    expect((await personLayout(page, id)).desc).not.toBeNull()
+  })
+}
+
+test('部门位置兼容旧值，模板投影与快照重开保持位置', async ({page}, testInfo) => {
+  const id = await setup(page, 'rowPinyin')
+  const reopened = await page.evaluate(async id => {
+    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+    const block = doc.getBlockById(id)
+    block.updateProps({dept: 'on', person: JSON.stringify({name: '张三', pinyin: 'ZHANG SAN', description: '产品部'})})
+    const snap = doc.schemas.createSnapshot('person-card', [])
+    snap.props = {...JSON.parse(JSON.stringify(block.props)), person: '', dept: 'right', width: 380}
+    snap.meta = {'draft:dept': 'above'}
+    doc.crud.insertBlockSnapshots(doc.rootId, 0, [snap])
+    await doc.navigateToBlock(snap.id)
+    return snap.id
+  }, id)
+  const old = await personLayout(page, id)
+  expect(old.desc!.x).toBeGreaterThanOrEqual(old.identity.right)
+  const draft = await personLayout(page, reopened)
+  expect(draft.desc!.bottom).toBeLessThanOrEqual(draft.identity.y)
+  await page.evaluate(id => {
+    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+    doc.getBlockById(id).updateMeta({'draft:dept': null})
+  }, reopened)
+  await expect.poll(async () => (await personLayout(page, reopened)).desc!.x).toBeGreaterThan(draft.identity.x)
+  const restored = await personLayout(page, reopened)
+  expect(restored.desc!.x).toBeGreaterThanOrEqual(restored.identity.right)
+  await page.locator(`[data-block-id="${reopened}"]`).screenshot({path: testInfo.outputPath('person-card-right.png')})
+  await page.evaluate(id => {
+    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+    doc.getBlockById(id).updateProps({person: JSON.stringify({name: '无部门人员'})})
+  }, reopened)
+  expect((await personLayout(page, reopened)).desc).toBeNull()
+  await page.evaluate(id => {
+    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+    const block = doc.getBlockById(id)
+    block.updateProps({dept: null})
+  }, id)
+  expect((await personLayout(page, id)).desc).toBeNull()
+})

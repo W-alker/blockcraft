@@ -10,10 +10,13 @@ import {PLACEHOLDER_VIEW, fallbackAvatar, type PersonCardView} from '../person-c
     template: `
         <div class="card">
             <img class="card__avatar" [src]="view.avatar" alt="" (error)="fallbackAvatar($event)" />
-            <span class="card__col">
-                <span class="card__name">{{ view.name }}</span>
-                @if (view.pinyin) { <span class="card__pinyin">{{ view.pinyin }}</span> }
-                @if (view.desc) { <span class="card__desc">{{ view.desc }}</span> }
+            <span class="card__col" [attr.data-dept-position]="view.dept">
+                @if (view.desc && view.dept === 'above') { <span class="card__desc">{{ view.desc }}</span> }
+                <span class="card__identity">
+                    <span class="card__name">{{ view.name }}</span>
+                    @if (view.pinyin) { <span class="card__pinyin">{{ view.pinyin }}</span> }
+                </span>
+                @if (view.desc && view.dept !== 'above') { <span class="card__desc">{{ view.desc }}</span> }
             </span>
         </div>
     `

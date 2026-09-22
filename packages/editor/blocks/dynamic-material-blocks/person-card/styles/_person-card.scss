@@ -28,6 +28,20 @@
     min-width: 0;
     gap: calc(2 * var(--u, 1px));
   }
+  .card__identity {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    max-width: 100%;
+    gap: calc(2 * var(--u, 1px));
+  }
+  .card__col[data-dept-position='right'] {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: calc(8 * var(--u, 1px));
+    > .card__desc { max-width: 100%; }
+  }
   .card__name, .card__desc, .card__pinyin {
     min-width: 0;
     white-space: normal;

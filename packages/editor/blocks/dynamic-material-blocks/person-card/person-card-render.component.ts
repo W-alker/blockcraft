@@ -9,7 +9,7 @@ import { DEFAULT_MATERIAL_COLOR } from '../kernel/material-color.util';
 import { ObjectBlockComponent } from '../kernel/object-block.component';
 import type { MaterialStyle, MaterialStyleSet } from '../kernel/material-styles.util';
 import { readFrozenPersonCardData } from '../dynamic-material-data';
-import { PERSON_CARD_BOX_STYLE, PLACEHOLDER_VIEW, avatarRadiusOf, avatarScaleOf, showsDept, viewOf } from './person-card-view.util';
+import { PERSON_CARD_BOX_STYLE, PLACEHOLDER_VIEW, avatarRadiusOf, avatarScaleOf, viewOf } from './person-card-view.util';
 import type { PersonCardView } from './person-card-view.util';
 import { PERSON_CARD_STYLES } from './person-card.styles';
 
@@ -71,7 +71,7 @@ export function readPersonCardLook(
         avatarScale: avatarScaleOf(props?.avatarSize),
         bc: props?.bc || DEFAULT_MATERIAL_COLOR,
         ...splitBorder(props?.bw),
-        view: viewOf(person, showsDept(props?.dept))
+        view: viewOf(person, props?.dept, props?.style)
     };
 }
 
@@ -105,7 +105,7 @@ export interface PersonCardModel extends NoEditableBlockNative {
         avatar?: string;
         /** 头像大小（small / medium / large）。同为 displayConfigs 的键，落成倍率 `--pc-avatar-scale`。 */
         avatarSize?: string;
-        /** 部门职务开关（off / on）。同为 displayConfigs 的键，开时部门在独立行显示，允许换行。 */
+        /** 部门职务：off 关闭，on 跟随样式（横排右侧、竖排下方），below/right/above 明确位置；缺省关闭。 */
         dept?: string;
         /** 主色（CSS 颜色串）。同为 displayConfigs 的键，三档都只把它当字色用。 */
         color?: string;

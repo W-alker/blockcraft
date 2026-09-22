@@ -93,6 +93,41 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 - 自动修复只写 `order`，新插入项可继承同组 `ms`，不因普通段落写入 `start`。
 - 仅修改起始值时沿同组局部重算，跨普通段落传播并止于下一个显式起始值；不再维护跨段专用的第二份计数缓存。
 
+## Unreleased — 2026-09-22：人员卡部门/职务位置
+
+**Severity**: minor
+
+**What changed**: 人员卡复用 `dept` 表达显隐与位置：`off` 关闭、`on` 跟随样式、`below/right/above` 明确位置。
+
+**Why**: 页眉与署名需要紧凑同行排版，身份介绍也可能需要先展示部门职务；单字段避免开关与位置的冗余组合。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`。
+
+### New APIs / Features
+
+- `DEPT_DISPLAY` 新增 `Below` / `Right` / `Above`，`showsDept()` 识别 `on / below / right / above`。
+- `viewOf(person, display?, style?)` 支持 dept 字符串与样式，兼容原 boolean 调用（true 保持下方）。
+  `PersonCardView.dept` 为可选展示方式，旧 view 的已有描述继续排在下方。
+
+### Deprecations
+
+无。
+
+### Migration Recipe
+
+已有数据无需批量迁移。`dept: 'on'` 按样式取默认：横排及横排拼音为右侧，竖排为下方。
+需要固定原下方外观时显式使用 `{dept: 'below'}`；右侧使用 `{dept: 'right'}`，上方使用 `{dept: 'above'}`。
+关闭使用 `{dept: 'off'}` 或删除属性。
+模板宿主继续写 `draft:dept`，建档转为同名 props；不增加独立位置字段。
+宿主原先用 `dept === 'on'` 判断开启的地方需改为 `showsDept(dept)` 或识别自动及三种明确位置。
+CSES 配置入口需要搭配包含本能力的 BlockCraft 版本。版本号及发布由维护者决定。
+
+### Behavior Changes
+
+缺省/未知值保持关闭；旧 `on` 在横排样式下从下方变成默认右侧，竖排保持下方。
+显式 `below/right/above` 不随样式切换。姓名和拼音始终作为一组，右侧空间不足时部门换到下一行；
+切换显示方式不修改字号、缩放或外框几何。部门为空时不留占位，关闭后不另存之前位置。
+
 ## Unreleased — 2026-09-22：图片八向抓手与旋转
 
 **Severity**: minor

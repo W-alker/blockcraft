@@ -2,3 +2,4 @@
 @include card.layout(70, 56, 14, 11, 8);
 .card { flex-direction: column; text-align: center; }
 .card__col { flex: none; width: 100%; }
+.card__col[data-dept-position='right'] { justify-content: center; }
