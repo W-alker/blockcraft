@@ -395,7 +395,7 @@ $divider-color-large: var(--bc-divider-line-color, var(--bc-divider-color-large)
           @include bc-divider-line-pattern(diamond, $divider-color, 6px);
         }
 
-        // 文字装订 + 花边：左右两段各自平铺图案条（小草 - 文字 - 小草）。
+        // 文字装订 + 花边：左右两段复用同一套花边画法。
         &.edge-grass {
           height: 16px;
           @include bc-divider-edge(grass, 16px);
@@ -573,10 +573,6 @@ $divider-color-large: var(--bc-divider-line-color, var(--bc-divider-color-large)
   .divide-line.edge-berries {
     --bc-divider-edge-size: 21px;
 
-    &::before {
-      background-size: auto var(--bc-divider-edge-size);
-    }
-
     &[data-thickness="thin"] {
       --bc-divider-edge-size: 14px;
       height: 16px;
@@ -736,10 +732,6 @@ $divider-color-large: var(--bc-divider-line-color, var(--bc-divider-color-large)
     &[data-thickness="thick"] .divide-seg[class*="edge-"] {
       --bc-divider-edge-size: 24px;
       height: 25px;
-    }
-
-    .divide-seg[class*="edge-"]::before {
-      background-size: auto var(--bc-divider-edge-size);
     }
   }
 }

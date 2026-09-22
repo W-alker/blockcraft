@@ -1,5 +1,5 @@
 <!-- divider-style-popup.component.html -->
-<div class="popup">
+<div class="popup" [style.--bc-divider-line-color]="activeLineColor || null">
   <cs-segmented class="style-tabs"
                 csSize="small"
                 [csBlock]="true"
@@ -23,15 +23,6 @@
               [attr.data-tab-thickness]="activeThickness"
               [style.opacity]="activeOpacity / 100"></span>
       </button>
-    </div>
-    <div class="line-color-options" aria-label="线条颜色">
-      <span class="option-label">线色</span>
-      <cs-color-picker csMode="palette" csSize="sm"
-                       [csValue]="activeLineColor || null"
-                       [csAllowClear]="true"
-                       [csShowText]="true"
-                       [csShowAlpha]="false"
-                       (csValueChange)="setLineColor($event)" />
     </div>
   </div>
 
@@ -64,6 +55,16 @@
               (click)="selectStyle(p.key)">
       </button>
     </div>
+  </div>
+
+  <div *ngIf="activeTab !== 'tape'" class="line-color-options" aria-label="线条颜色">
+    <span class="option-label">线色</span>
+    <cs-color-picker csMode="palette" csSize="sm"
+                     [csValue]="activeLineColor || null"
+                     [csAllowClear]="true"
+                     [csShowText]="true"
+                     [csShowAlpha]="false"
+                     (csValueChange)="setLineColor($event)" />
   </div>
 
   <div class="appearance-controls" aria-label="分割线外观">

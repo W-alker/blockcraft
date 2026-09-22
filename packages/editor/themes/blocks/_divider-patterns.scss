@@ -1,11 +1,11 @@
-// 分割线「花边」图案的单一真源。三个消费方（正文整条 / 正文文字两侧 / 样式弹窗预览）只传自己的高度。
-// 使用低饱和彩色 SVG：图案在浅色和深色页面上都有辨识度，又不会像高饱和贴纸那样抢正文。
-$_grass: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='84' height='24' viewBox='0 0 84 24'%3E%3Cpath d='M0 14c12-3 18 2 28-1s17-4 28 0 18 3 28 0' fill='none' stroke='%238FA39B' stroke-width='1.25' stroke-linecap='round'/%3E%3Cpath d='M25 13c-1-4-3-7-6-9M29 12c2-4 5-6 9-7M58 13c-1-4-4-7-7-8M62 14c2-4 5-6 9-6' fill='none' stroke='%237B9F8A' stroke-width='1.1' stroke-linecap='round'/%3E%3Cellipse cx='18' cy='5' rx='4.6' ry='2.2' fill='%238EB79D' transform='rotate(35 18 5)'/%3E%3Cellipse cx='38' cy='5' rx='4.8' ry='2.25' fill='%23B7CDB8' transform='rotate(-27 38 5)'/%3E%3Cellipse cx='50' cy='5' rx='4.2' ry='2.1' fill='%239DBDA6' transform='rotate(30 50 5)'/%3E%3Cellipse cx='71' cy='8' rx='4.5' ry='2.2' fill='%2386AD98' transform='rotate(-24 71 8)'/%3E%3Ccircle cx='56' cy='7.5' r='1.45' fill='%23D6A07E'/%3E%3Ccircle cx='59.5' cy='6.2' r='1.15' fill='%23C98E75'/%3E%3C/svg%3E");
-$_flower: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='112' height='24' viewBox='0 0 112 24'%3E%3Cpath d='M0 13h35m42 0h35' fill='none' stroke='%23B8AAA3' stroke-width='1.15' stroke-linecap='round'/%3E%3Cpath d='M39 13c4-5 8-7 13-7M73 13c-3-5-7-7-12-7' fill='none' stroke='%238CA88F' stroke-width='1.05' stroke-linecap='round'/%3E%3Cellipse cx='43' cy='9' rx='4.2' ry='2' fill='%239EBBA2' transform='rotate(-32 43 9)'/%3E%3Cellipse cx='70' cy='9' rx='4.2' ry='2' fill='%238FB39A' transform='rotate(30 70 9)'/%3E%3Cg fill='%23D98FA3'%3E%3Ccircle cx='52' cy='6.5' r='2.35'/%3E%3Ccircle cx='55.5' cy='9.1' r='2.35'/%3E%3Ccircle cx='54.2' cy='13.2' r='2.35'/%3E%3Ccircle cx='49.8' cy='13.2' r='2.35'/%3E%3Ccircle cx='48.5' cy='9.1' r='2.35'/%3E%3C/g%3E%3Ccircle cx='52' cy='10.1' r='1.45' fill='%23E8BE68'/%3E%3Cg fill='%23A99AC8'%3E%3Ccircle cx='64' cy='6.8' r='2.1'/%3E%3Ccircle cx='67.1' cy='9.1' r='2.1'/%3E%3Ccircle cx='65.9' cy='12.8' r='2.1'/%3E%3Ccircle cx='62.1' cy='12.8' r='2.1'/%3E%3Ccircle cx='60.9' cy='9.1' r='2.1'/%3E%3C/g%3E%3Ccircle cx='64' cy='10' r='1.25' fill='%23F0CD76'/%3E%3C/svg%3E");
-$_vine: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='104' height='24' viewBox='0 0 104 24'%3E%3Cpath d='M0 13c14-7 24 7 38 0s24-7 38 0 19 4 28-1' fill='none' stroke='%237E9C91' stroke-width='1.2' stroke-linecap='round'/%3E%3Cpath d='M19 11c-2-4-5-6-8-7m11 9c3-4 6-5 10-5m29 3c-2-4-5-6-9-7m12 9c3-4 7-5 11-4' fill='none' stroke='%2388A695' stroke-width='1' stroke-linecap='round'/%3E%3Cellipse cx='10' cy='4.5' rx='4.5' ry='2.1' fill='%238FC7B2' transform='rotate(29 10 4.5)'/%3E%3Cellipse cx='32' cy='8' rx='4.4' ry='2' fill='%23A8BFD5' transform='rotate(-24 32 8)'/%3E%3Cellipse cx='51' cy='4.5' rx='4.3' ry='2' fill='%23C3B2D5' transform='rotate(26 51 4.5)'/%3E%3Cellipse cx='76' cy='9' rx='4.6' ry='2.1' fill='%23D4B887' transform='rotate(-23 76 9)'/%3E%3Ccircle cx='39' cy='14' r='1.4' fill='%23D9988F'/%3E%3Ccircle cx='87' cy='13.5' r='1.35' fill='%23A69BC8'/%3E%3C/svg%3E");
-$_daisy: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='112' height='24' viewBox='0 0 112 24'%3E%3Cpath d='M0 13h32m48 0h32' fill='none' stroke='%23B4A89F' stroke-width='1.1' stroke-linecap='round'/%3E%3Cpath d='M38 14c2-4 4-7 8-9m28 9c-2-4-4-7-8-9' fill='none' stroke='%238EA38F' stroke-width='1' stroke-linecap='round'/%3E%3Cg fill='%23F5E8DC'%3E%3Cellipse cx='49' cy='6.2' rx='2' ry='4'/%3E%3Cellipse cx='49' cy='13.8' rx='2' ry='4'/%3E%3Cellipse cx='45.2' cy='10' rx='4' ry='2'/%3E%3Cellipse cx='52.8' cy='10' rx='4' ry='2'/%3E%3C/g%3E%3Ccircle cx='49' cy='10' r='2' fill='%23E5B75E'/%3E%3Cg fill='%23D6DDF0'%3E%3Cellipse cx='64' cy='6.2' rx='2' ry='4'/%3E%3Cellipse cx='64' cy='13.8' rx='2' ry='4'/%3E%3Cellipse cx='60.2' cy='10' rx='4' ry='2'/%3E%3Cellipse cx='67.8' cy='10' rx='4' ry='2'/%3E%3C/g%3E%3Ccircle cx='64' cy='10' r='2' fill='%23D59C7D'/%3E%3Cellipse cx='38' cy='7' rx='4.2' ry='2' fill='%239CB8A0' transform='rotate(-28 38 7)'/%3E%3Cellipse cx='75' cy='7' rx='4.2' ry='2' fill='%2395B2A0' transform='rotate(28 75 7)'/%3E%3C/svg%3E");
-$_stars: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='104' height='24' viewBox='0 0 104 24'%3E%3Cpath d='M0 13h30m44 0h30' fill='none' stroke='%23B6AFA8' stroke-width='1.05' stroke-linecap='round'/%3E%3Cpath d='m41 4 2.1 4.2 4.7.7-3.4 3.3.8 4.7-4.2-2.2-4.2 2.2.8-4.7-3.4-3.3 4.7-.7z' fill='%23E9B86B'/%3E%3Cpath d='m62 5 1.7 3.5 3.9.6-2.8 2.7.6 3.9-3.4-1.8-3.5 1.8.7-3.9-2.8-2.7 3.9-.6z' fill='%23B3A3D2'/%3E%3Cpath d='M51 3v4m-2-2h4M76 7v5m-2.5-2.5h5' fill='none' stroke='%238FBBC2' stroke-width='1.2' stroke-linecap='round'/%3E%3Ccircle cx='29' cy='9' r='1.4' fill='%23D99BAA'/%3E%3Ccircle cx='84' cy='14' r='1.3' fill='%239DB9A4'/%3E%3C/svg%3E");
-$_berries: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='104' height='24' viewBox='0 0 104 24'%3E%3Cpath d='M0 13c13-3 22 3 35 0s22-4 34 0 23 3 35-1' fill='none' stroke='%23869D8D' stroke-width='1.15' stroke-linecap='round'/%3E%3Cpath d='M27 12c1-4 3-7 7-9m38 9c-1-4-4-7-8-9' fill='none' stroke='%23869D8D' stroke-width='1' stroke-linecap='round'/%3E%3Cellipse cx='35' cy='4' rx='4.2' ry='2' fill='%2397B89C' transform='rotate(-30 35 4)'/%3E%3Cellipse cx='63' cy='4' rx='4.2' ry='2' fill='%23A7C0A6' transform='rotate(28 63 4)'/%3E%3Cg fill='%23C77F8D'%3E%3Ccircle cx='43' cy='9' r='2.2'/%3E%3Ccircle cx='47' cy='11.5' r='2.2'/%3E%3Ccircle cx='42.5' cy='14' r='2.2'/%3E%3C/g%3E%3Cg fill='%239384B3'%3E%3Ccircle cx='58' cy='8.5' r='2.1'/%3E%3Ccircle cx='61.8' cy='11' r='2.1'/%3E%3Ccircle cx='57.5' cy='13.6' r='2.1'/%3E%3C/g%3E%3Ccircle cx='21' cy='12' r='1.35' fill='%23D79C73'/%3E%3Ccircle cx='82' cy='10' r='1.35' fill='%23C88A91'/%3E%3C/svg%3E");
+// 花边图案由正文、历史文字分段和样式面板共享。
+// SVG 仅提供 alpha 遮罩；颜色复用已有线色与主题色，单饰居中，藤蔓无缝平铺。
+$_grass: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27112%27%20height%3D%2732%27%20viewBox%3D%270%200%20112%2032%27%3E%3Cg%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%271.4%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cg%20transform%3D%22translate(8%200)%22%3E%3Cpath%20d%3D%22M32%2021C40%2018%2050%2013%2063%2010M42%2017C34%2018%2030%2015%2028%2010C35%209%2039%2012%2042%2017ZM51%2013C44%2010%2043%206%2045%202C51%204%2054%208%2051%2013ZM54%2012C60%205%2066%205%2071%207C67%2012%2062%2014%2054%2012ZM37%2019C33%2022%2029%2024%2024%2022%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+$_flower: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27112%27%20height%3D%2732%27%20viewBox%3D%270%200%20112%2032%27%3E%3Cg%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%271.4%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20opacity%3D%22.6%22%20d%3D%22M20%2019Q31%2019%2038%2013M72%2020Q83%2016%2091%2019%22%2F%3E%3Cg%20transform%3D%22translate(48%2016)%20scale(0.85)%22%3E%3Cpath%20d%3D%22M0-3C-8-12%205-15%203-5C12-12%2016%200%205%200C15%208%205%2014%201%205C0%2015-11%2010-4%202C-15%203-13-10-3-5Z%22%2F%3E%3Ccircle%20r%3D%221.6%22%20fill%3D%22black%22%20stroke%3D%22none%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate(68%2012)%20scale(0.55)%22%3E%3Cpath%20d%3D%22M0-3C-8-12%205-15%203-5C12-12%2016%200%205%200C15%208%205%2014%201%205C0%2015-11%2010-4%202C-15%203-13-10-3-5Z%22%2F%3E%3Ccircle%20r%3D%221.6%22%20fill%3D%22black%22%20stroke%3D%22none%22%2F%3E%3C%2Fg%3E%3Cpath%20d%3D%22M34%2016Q28%208%2024%2011Q25%2018%2034%2016M77%2018Q82%2010%2087%2012Q86%2018%2077%2018%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+$_vine: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27112%27%20height%3D%2732%27%20viewBox%3D%270%200%20112%2032%27%3E%3Cg%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%271.4%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%22M0%2016C24%204%2032%2028%2056%2016S88%204%20112%2016%22%2F%3E%3Cpath%20d%3D%22M29%2015Q21%2013%2022%207Q30%208%2029%2015ZM52%2016Q51%2025%2043%2024Q43%2017%2052%2016ZM82%2012Q79%205%2086%203Q91%208%2082%2012Z%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+$_daisy: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27112%27%20height%3D%2732%27%20viewBox%3D%270%200%20112%2032%27%3E%3Cg%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%271.4%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cg%20transform%3D%22translate(56%2016)%22%3E%3Cellipse%20cx%3D%220%22%20cy%3D%22-7%22%20rx%3D%222.3%22%20ry%3D%224.1%22%20transform%3D%22rotate(0)%22%2F%3E%3Cellipse%20cx%3D%220%22%20cy%3D%22-7%22%20rx%3D%222.3%22%20ry%3D%224.1%22%20transform%3D%22rotate(45)%22%2F%3E%3Cellipse%20cx%3D%220%22%20cy%3D%22-7%22%20rx%3D%222.3%22%20ry%3D%224.1%22%20transform%3D%22rotate(90)%22%2F%3E%3Cellipse%20cx%3D%220%22%20cy%3D%22-7%22%20rx%3D%222.3%22%20ry%3D%224.1%22%20transform%3D%22rotate(135)%22%2F%3E%3Cellipse%20cx%3D%220%22%20cy%3D%22-7%22%20rx%3D%222.3%22%20ry%3D%224.1%22%20transform%3D%22rotate(180)%22%2F%3E%3Cellipse%20cx%3D%220%22%20cy%3D%22-7%22%20rx%3D%222.3%22%20ry%3D%224.1%22%20transform%3D%22rotate(225)%22%2F%3E%3Cellipse%20cx%3D%220%22%20cy%3D%22-7%22%20rx%3D%222.3%22%20ry%3D%224.1%22%20transform%3D%22rotate(270)%22%2F%3E%3Cellipse%20cx%3D%220%22%20cy%3D%22-7%22%20rx%3D%222.3%22%20ry%3D%224.1%22%20transform%3D%22rotate(315)%22%2F%3E%3Ccircle%20r%3D%222.3%22%20fill%3D%22black%22%20stroke%3D%22none%22%2F%3E%3C%2Fg%3E%3Cpath%20opacity%3D%22.5%22%20d%3D%22M31%2016h5m40%200h5%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+$_stars: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27112%27%20height%3D%2732%27%20viewBox%3D%270%200%20112%2032%27%3E%3Cg%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%271.4%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%22M56%205Q56%2016%2064%2016Q56%2016%2056%2027Q56%2016%2048%2016Q56%2016%2056%205Z%22%2F%3E%3Cpath%20opacity%3D%22.65%22%20d%3D%22M34%2010v8m-4-4h8m42%203v6m-3-3h6%22%2F%3E%3Ccircle%20cx%3D%2220%22%20cy%3D%2219%22%20r%3D%221%22%20fill%3D%22black%22%20stroke%3D%22none%22%2F%3E%3Ccircle%20cx%3D%2294%22%20cy%3D%2211%22%20r%3D%221%22%20fill%3D%22black%22%20stroke%3D%22none%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+$_berries: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27112%27%20height%3D%2732%27%20viewBox%3D%270%200%20112%2032%27%3E%3Cg%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%271.4%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%22M24%2021Q48%2021%2072%209M44%2019%2045%2010M62%2014%2069%2020M53%2016Q50%206%2056%204Q62%2010%2053%2016Z%22%2F%3E%3Cg%20fill%3D%22black%22%20stroke%3D%22none%22%3E%3Ccircle%20cx%3D%2243%22%20cy%3D%227%22%20r%3D%222.8%22%2F%3E%3Ccircle%20cx%3D%2248%22%20cy%3D%228%22%20r%3D%222.2%22%20opacity%3D%22.55%22%2F%3E%3Ccircle%20cx%3D%2270%22%20cy%3D%2222%22%20r%3D%222.8%22%2F%3E%3Ccircle%20cx%3D%2275%22%20cy%3D%2218%22%20r%3D%222.3%22%20opacity%3D%22.55%22%2F%3E%3C%2Fg%3E%3Cpath%20opacity%3D%22.5%22%20d%3D%22M80%2016Q84%2017%2088%2014%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
 
 // 线型 SVG 只提供 alpha 遮罩，颜色由消费方的主题 token 提供。
 // 三个遮罩都是横向无缝 tile，适用正文整条、文字两侧分段和弹窗缩略图。
@@ -91,8 +91,17 @@ $_sketch: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' widt
   }
 }
 
-// $pattern: grass | flower | vine | daisy | stars | berries，$size: 图案条渲染高度（宽度按原比例平铺）。
+// $size 保留各消费方的基础尺寸；已有尺寸 token 负责长度/粗细档位。
 @mixin bc-divider-edge($pattern, $size) {
+  $height: var(--bc-divider-edge-preview-size, var(--bc-divider-edge-size, #{$size}));
+  $color: var(--bc-divider-line-color, var(--bc-color-light));
+  $image: $_grass;
+  @if $pattern == flower { $image: $_flower; }
+  @else if $pattern == vine { $image: $_vine; }
+  @else if $pattern == daisy { $image: $_daisy; }
+  @else if $pattern == stars { $image: $_stars; }
+  @else if $pattern == berries { $image: $_berries; }
+
   position: relative;
   background-color: transparent;
   background-image: none;
@@ -101,23 +110,40 @@ $_sketch: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' widt
     content: "";
     position: absolute;
     inset: 0;
-    background-repeat: repeat-x;
-    background-size: auto $size;
-    background-position: left center;
+    background-color: $color;
     pointer-events: none;
+    -webkit-mask-image: $image;
+    mask-image: $image;
+    -webkit-mask-position: center;
+    mask-position: center;
 
-    @if $pattern == grass {
-      background-image: $_grass;
-    } @else if $pattern == flower {
-      background-image: $_flower;
-    } @else if $pattern == vine {
-      background-image: $_vine;
-    } @else if $pattern == daisy {
-      background-image: $_daisy;
-    } @else if $pattern == stars {
-      background-image: $_stars;
-    } @else if $pattern == berries {
-      background-image: $_berries;
+    @if $pattern == vine {
+      -webkit-mask-repeat: repeat-x;
+      mask-repeat: repeat-x;
+      -webkit-mask-size: auto $height;
+      mask-size: auto $height;
+    } @else {
+      -webkit-mask-repeat: no-repeat;
+      mask-repeat: no-repeat;
+      // 窄栏/短线缩小整幅单饰，避免从两侧裁掉花瓣或枝叶。
+      -webkit-mask-size: min(100%, calc(#{$height} * 3.5)) auto;
+      mask-size: min(100%, calc(#{$height} * 3.5)) auto;
+    }
+  }
+
+  @if $pattern != vine {
+    &::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: .36;
+      background-image: linear-gradient(to right, transparent, $color),
+        linear-gradient(to left, transparent, $color);
+      background-repeat: no-repeat;
+      background-position: left center, right center;
+      // 留出单饰和呼吸间距；容器太窄时细线自然收至零。
+      background-size: max(0px, calc(50% - #{$height} * 1.75 - 8px)) 1px;
     }
   }
 }

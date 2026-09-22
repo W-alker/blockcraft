@@ -104,7 +104,7 @@ $divider-preview-color: var(--bc-divider-preview-color, var(--bc-border-color));
   border-color: #2196f3;
 }
 
-// 花边 swatch：无撕边/旋转，透明底平铺图案，宽度档位与胶带一致。
+// 花边 swatch：无撕边/旋转，透明底单饰（藤蔓连续），宽度档位与胶带一致。
 .edge-box {
   display: block;
   padding: 0;
@@ -177,6 +177,7 @@ $divider-preview-color: var(--bc-divider-preview-color, var(--bc-border-color));
 }
 
 .line-color-options {
+  margin-bottom: 12px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -516,10 +517,6 @@ $divider-preview-color: var(--bc-divider-preview-color, var(--bc-border-color));
 
 .edge-box {
   --bc-divider-edge-preview-size: 20px;
-
-  &::before {
-    background-size: auto var(--bc-divider-edge-preview-size);
-  }
 
   &[data-tab-thickness="thin"] {
     --bc-divider-edge-preview-size: 14px;
