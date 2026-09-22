@@ -299,10 +299,13 @@ export class BlockPlacementGroupCoordinator {
     const startedAt = performanceNow()
     this.mutating = true
     try {
+      // Capture the user edit and all dependent group geometry together.
+      // The untracked reflow origin is only for background repairs; using it
+      // here also hides nested updateProps transactions from UndoManager.
       this.doc.crud.transact(() => {
         block.updateProps(patch as any)
         result = this.reflowInTransaction(groupId)
-      }, OBJECT_GROUP_REFLOW_ORIGIN)
+      })
     } finally {
       this.mutating = false
     }

@@ -168,7 +168,7 @@ for (const flow of [true, false]) {
     }, {id: ids.groupId, flow})
     const group = page.locator(`#image-resize-fixture [data-block-id="${ids.groupId}"]`)
     // Between the first image's bottom (200) and the second image's top (250).
-    await group.locator(':scope > .object-group-block__children').click({position: "60 225"})
+    await group.locator(':scope > .object-group-block__children').click({position: {x: 60, y: 225}})
     await expect(group).toHaveClass(/selected/)
     const toolbar = page.locator('bc-object-group-toolbar')
     await expect(toolbar).toBeVisible()
@@ -183,14 +183,14 @@ for (const flow of [true, false]) {
     }
     await page.evaluate(id => (window as any).__imageResizeDoc.selection.selectBlock(id), ids.imageId)
     await expect(toolbar).toHaveCount(0)
-    await group.locator(':scope > .object-group-block__children').click({position: "60 225"})
+    await group.locator(':scope > .object-group-block__children').click({position: {x: 60, y: 225}})
     await expect(toolbar).toBeVisible()
     await toolbar.getByRole('button', {name: flow ? '浮于文字上方' : '上下型', exact: true}).click()
     await expect.poll(() => page.evaluate(id =>
       (window as any).__imageResizeDoc.placement.getObjectLayout(id), ids.groupId,
     )).toBe(flow ? 'over' : 'top-bottom')
     // Layout commands close the current toolbar; another blank click reopens it.
-    await group.locator(':scope > .object-group-block__children').click({position: "60 225"})
+    await group.locator(':scope > .object-group-block__children').click({position: {x: 60, y: 225}})
     await expect(toolbar).toBeVisible()
     await expect(toolbar.getByRole('button', {name: '上下型', exact: true}))
       .toHaveAttribute('aria-pressed', `${!flow}`)

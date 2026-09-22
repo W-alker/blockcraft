@@ -33,6 +33,77 @@ async function expectObjectSelection(page: Page, id: string): Promise<void> {
   }, id)).toBe(true)
 }
 
+for (const flow of [false, true]) {
+  for (const gesture of ['rotation', 'resize']) {
+    test(`${flow ? 'flow commit' : 'absolute pointer'} group text-box ${gesture} restores full geometry in one undo/redo`, async ({page}) => {
+      const id = await createTextBox(page, true)
+      const ids = await page.evaluate(async ({id, flow}) => {
+        const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+        doc.crud.updateBlockProps(id, {position: '100 100'})
+        const sibling = doc.schemas.createSnapshot('shape', ['rectangle'])
+        sibling.props = {...sibling.props, width: 80, height: 60}
+        const siblingId = doc.placement.insertAbsoluteSnapshot(sibling, {anchorRect: null})
+        doc.crud.updateBlockProps(siblingId, {position: '520 300'})
+        const groupId = doc.placement.group([id, siblingId])
+        if (!groupId) throw new Error('Missing text-box group')
+        if (flow) doc.placement.setMode(groupId, 'relative')
+        await doc.navigateToBlock(groupId)
+        doc.selection.selectBlock(doc.getBlockById(id))
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+        doc.crud.undoManager.clearHistory()
+        return [id, siblingId, groupId]
+      }, {id, flow})
+      const read = () => page.evaluate(ids => {
+        const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+        return ids.map(id => {
+          const block = doc.getBlockById(id)
+          const surface = block.hostElement.querySelector('.text-box-block__surface') ?? block.hostElement
+          return {
+            props: {...doc.model.getProps(id)},
+            connected: surface.isConnected,
+            transform: getComputedStyle(surface).transform,
+          }
+        })
+      }, ids)
+      await expectObjectSelection(page, id)
+      const before = await read()
+      if (flow) {
+        // Exercise the same component commit with real model/DOM. Root-flow
+        // handles can overlap neighbouring demo content in this fixture.
+        await page.evaluate(({id, gesture}) => {
+          const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+          const block = doc.getBlockById(id)
+          if (gesture === 'rotation') block.commitRotation({rotation: 30})
+          else block.commitResize({width: 295, height: 180, offsetX: 65, offsetY: 0, handle: 'west'})
+        }, {id, gesture})
+      } else {
+        const block = page.locator(`.text-box-block[data-block-id="${id}"]`)
+        const handle = block.locator(gesture === 'rotation' ? '.shape-resizer__rotate' : '[data-handle="west"]')
+        await handle.hover()
+        const rect = (await handle.boundingBox())!
+        const x = rect.x + rect.width / 2, y = rect.y + rect.height / 2
+        await page.mouse.move(x, y)
+        await page.mouse.down()
+        await page.mouse.move(x + 65, y + (gesture === 'rotation' ? 30 : 0), {steps: 8})
+        // Pointer preview must not write Yjs or create an undo item.
+        expect((await read()).map(item => item.props)).toEqual(before.map(item => item.props))
+        expect(await page.evaluate(() => (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc.crud.undoManager.isCanUndo())).toBe(false)
+        await page.mouse.up()
+      }
+      await expect.poll(async () => (await read())[0].props[gesture === 'rotation' ? 'rotation' : 'width'])
+        .not.toBe(before[0].props[gesture === 'rotation' ? 'rotation' : 'width'])
+      const after = await read()
+      expect(after[2].props).not.toEqual(before[2].props)
+      await page.evaluate(() => (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc.crud.undoManager.undo())
+      await expect.poll(read).toEqual(before)
+      await expectObjectSelection(page, id)
+      expect(await page.evaluate(() => (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc.crud.undoManager.isCanUndo())).toBe(false)
+      await page.evaluate(() => (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc.crud.undoManager.redo())
+      await expect.poll(read).toEqual(after)
+    })
+  }
+}
+
 for (const absolute of [false, true]) {
   const mode = absolute ? 'absolute' : 'flow'
 
