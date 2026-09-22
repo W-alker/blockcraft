@@ -383,3 +383,10 @@ The plugin owns all `ResizeObserver`, animation-frame, DOM-layer and print resou
 由 bundled factory 每个 Doc 新建。它只提供行内天气格式配置；取数归宿主模板实例化。
 自组装时与 `weather` converter/adapter 一起注册。只读或锁定块不能打开/应用配置，
 关闭和 destroy 清理 overlay 订阅。详见 `blockcraft-plugins-inline.md`。
+
+## 行内人员插件装配
+
+`PersonInlineExtensionPlugin`（`person-inline-extension`）由 bundled factory 每个 Doc 新建。
+自组装时与 `person` converter / `personEmbedAdapters` 一起注册。仅编辑显示格式，
+建档时的数据投影由宿主调用 `materializeInlinePersonSnapshots(snapshots, creator)`；
+不触及现有 MentionPlugin 或人员卡片的行为。详见 `blockcraft-embed.md`。

@@ -32,6 +32,7 @@ import {videoBlockAdapters} from '../blocks/video-block/adapter'
 import {audioBlockAdapters} from '../blocks/audio-block/adapter'
 import {wordArtBlockAdapters} from '../blocks/word-art-block/adapter'
 import {demoCoverBlockAdapters} from '../plugins/demo-presentation/blocks/demo-cover/adapter'
+import {personEmbedAdapters} from '../embeds/person/adapter'
 import {weatherEmbedAdapters} from '../embeds/weather/adapter'
 import {dateEmbedAdapters} from '../embeds/date/adapter'
 import {iconEmbedAdapters} from '../embeds/icon/adapter'
@@ -88,6 +89,7 @@ export const BUNDLED_INLINE_EMBED_ADAPTER_CONTRIBUTIONS = [
   imageEmbedAdapters,
   dateEmbedAdapters,
   weatherEmbedAdapters,
+  personEmbedAdapters,
   mentionEmbedAdapters,
   latexEmbedAdapters,
   shapeEmbedAdapters,

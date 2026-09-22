@@ -6,7 +6,7 @@ import {
   type IBlockSnapshot,
 } from '../framework'
 import {BUNDLED_EDITOR_SCHEMAS} from './bundled-capabilities'
-import {createInlineWeatherDelta, createInlineWordArtDelta} from '../embeds'
+import {createInlinePersonDelta, createInlineWeatherDelta, createInlineWordArtDelta} from '../embeds'
 import {
   BUNDLED_ADAPTER_REGISTRY,
   BUNDLED_BLOCK_ADAPTER_CONTRIBUTIONS,
@@ -116,9 +116,27 @@ describe('bundled Adapter registry', () => {
     expect((markdownResult.children[0] as IBlockSnapshot).children).toEqual([delta])
   })
 
+  it('round-trips inline person data and format through HTML and BlockCraft Markdown', async () => {
+    const delta = createInlinePersonDelta({name: '张三', avatar: 'https://example.com/avatar.png', description: '产品部'}, 'avatar-name-description')
+    const snapshot = root([{
+      id: 'person-text', flavour: 'paragraph', nodeType: BlockNodeType.editable,
+      props: {}, meta: {}, children: [delta],
+    }])
+    const htmlAdapter = new HtmlAdapter(fileService, new Map(), BUNDLED_ADAPTER_REGISTRY)
+    const html = await htmlAdapter.toHtml(snapshot)
+    expect(html).toContain('张三')
+    const htmlResult = await htmlAdapter.toBlockSnapshot(html)
+    expect((htmlResult.children[0] as IBlockSnapshot).children).toEqual([delta])
+    const markdownAdapter = new MarkdownAdapter(fileService,
+      new Map([[MARKDOWN_ADAPTER_PROFILE_CONFIG, 'blockcraft']]), BUNDLED_ADAPTER_REGISTRY)
+    const markdown = await markdownAdapter.toMarkdown(snapshot)
+    const markdownResult = await markdownAdapter.toBlockSnapshot(markdown)
+    expect((markdownResult.children[0] as IBlockSnapshot).children).toEqual([delta])
+  })
+
   it('covers every bundled inline Embed exactly once', () => {
     expect(BUNDLED_INLINE_EMBED_ADAPTER_CONTRIBUTIONS.map(item => item.key))
-      .toEqual(['icon', 'image', 'date', 'weather', 'mention', 'latex', 'shape', 'word-art'])
+      .toEqual(['icon', 'image', 'date', 'weather', 'person', 'mention', 'latex', 'shape', 'word-art'])
     for (const contribution of BUNDLED_INLINE_EMBED_ADAPTER_CONTRIBUTIONS) {
       expect(contribution.html.deltaToAst.length).toBeGreaterThan(0)
       expect(contribution.html.astToDelta.length).toBeGreaterThan(0)

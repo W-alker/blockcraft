@@ -77,7 +77,7 @@ converter in `embeds/<embed-key>/index.ts`, HTML/Markdown serialization in
 barrel. `InlineEmbedAdapterContribution.key` must equal the converter's
 canonical Delta key. The bundled registry rejects duplicate keys.
 
-All eight built-ins (`icon`, `image`, `date`, `weather`, `mention`, `latex`, `shape`, and
+All nine built-ins (`icon`, `image`, `date`, `weather`, `person`, `mention`, `latex`, `shape`, and
 `word-art`) provide co-located adapter contributions. HTML uses specialized
 portable markup where one exists and a bounded `data-bc-inline-*` envelope for
 otherwise lossy payloads. The default Markdown profile is `hybrid`, but its
@@ -569,3 +569,21 @@ CSS `.bc-inline-weather` 跟随正文字号，默认使用 `--bc-active-color` �
 显式文字颜色可以覆盖默认色；模板字体图标随文字色，真实天气图标复用内置多色 SVG。
 自组装宿主需配对 `weatherEmbedAdapters` 与 converter，并安装
 `WeatherInlineExtensionPlugin` 才提供点击配置。
+
+## 行内人员
+
+原生 Embed key 为 `person`，展示契约复用 `FrozenPersonCardData`（姓名、可选头像、拼音和部门职务描述）。
+`createInlinePersonDelta(person?, format?)` 默认仅姓名；未传 person 时生成空值加 `personSource: 'creator'`。
+`personFormat` 支持 `name`、`avatar-name`、`name-description`、`avatar-name-description`。公共格式目录为
+`INLINE_PERSON_FORMATS` / `INLINE_PERSON_FORMAT_LABELS`，缺失或未知格式回落姓名。
+
+`materializeInlinePersonSnapshots(snapshots, creator)` 在宿主建档时递归填入创建人，
+删除来源意向并保留段落文字格式；已有真值、其他来源及输入模板不变。
+宿主取不到创建人可传 `null`，结果显示“人员暂不可用”，不会在重开文档时换成当前查看者。
+数据来源由宿主负责，converter 不查询账号、不联网获取人员、不发送 mention 通知。
+人员卡片仍适合独立展示；行内人员参与段落流式排版，继承字体和字号，默认蓝色，悬停显示同色下划线；显式文字颜色可覆盖默认色。
+
+`createInlinePersonEmbedConverter()`、Snapshot Viewer 和 `personEmbedAdapters` 共用显示规则。
+HTML 与 BlockCraft Markdown 保留完整 Delta；portable Markdown 输出可读人员文字。
+头像只接受 HTTP(S) URL；加载失败保留姓名。模板配置不会使用当前登录人冒充定格值。
+`PersonInlineExtensionPlugin` 提供点击切换格式，bundled factory 默认注册。

@@ -1,0 +1,34 @@
+[data-blockcraft-root="true"] c-element:has(> span[contenteditable="false"] > .bc-inline-person) {
+  color: var(--bc-active-color);
+}
+
+[data-blockcraft-root="true"] .bc-inline-person {
+  display: inline;
+  vertical-align: baseline;
+  font: inherit;
+  color: inherit;
+  overflow-wrap: anywhere;
+  border-radius: var(--bc-radius-md);
+  cursor: pointer;
+
+  > .bc-inline-person__avatar {
+    display: inline-block;
+    width: 1.2em;
+    height: 1.2em;
+    border-radius: 50%;
+    object-fit: cover;
+    vertical-align: -0.2em;
+    margin-inline-end: 0.25em;
+  }
+  > .bc_icon { margin-inline-end: 0.25em; }
+  &:hover > span, &.editing > span {
+    text-decoration: underline;
+    text-decoration-color: currentColor;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.18em;
+  }
+}
+
+[data-blockcraft-root="true"] c-element.bc-inline-embed--selected .bc-inline-person {
+  background: var(--bc-select-background-color);
+}

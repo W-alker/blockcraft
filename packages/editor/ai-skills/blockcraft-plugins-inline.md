@@ -266,3 +266,11 @@ new TableBlockBinding()
 取消不修改；确定通过 Block 公开 Delta API 替换一个位置，保留天气快照与模板来源，支持 Undo/Redo。
 只读文档/冻结块禁止修改，转只读时关闭弹层，协同删除或重渲染使原锚点失效后放弃提交。
 `createBundledEditorCapabilities()` 默认包含此插件。
+
+### PersonInlineExtensionPlugin
+
+`plugins/person-inline-extension/`，运行时 ID `person-inline-extension`，零配置。
+点击 `person` 原生行内素材打开“行内人员格式”：仅姓名、头像＋姓名、姓名＋部门/职务、头像＋姓名＋部门/职务。
+不改变已定格人员或模板来源，字号继承段落；默认蓝色，悬停加同色下划线，显式文字颜色可覆盖。原生 Delta 替换支持撤销重做。
+文档/块只读、协同删除及锚点失效时禁止写入；进入只读关闭配置，销毁释放监听。
+创建人由宿主建档时传给 `materializeInlinePersonSnapshots()`，插件不访问业务人员服务。

@@ -1600,6 +1600,7 @@ onBold(ctx: UIEventStateContext) { ... }
 | `FormulaBlockExtensionPlugin` | `plugins/formula-extension/` | KaTeX edit panel for formula blocks |
 | `InlineLinkExtension` | `plugins/inline-link-extension/` | Link hover card + open behavior |
 | `MentionPlugin` | `plugins/mention/` | `@`-trigger with pluggable panel factory |
+| `PersonInlineExtensionPlugin` | `plugins/person-inline-extension/` | 行内人员显示格式；人员数据在建档时由宿主固定 |
 | `WeatherInlineExtensionPlugin` | `plugins/weather-inline-extension/` | 行内天气显示格式弹窗，保留天气快照与模板意向 |
 | `DateInlineExtensionPlugin` | `plugins/date-inline-extension/` | Click-to-edit dialog for the calendar-icon `date` inline chip |
 | `FindReplacePlugin` | `plugins/findReplace/` | Cmd+F find & replace |

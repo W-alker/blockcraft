@@ -10,6 +10,8 @@ import {
   INLINE_DATE_EMBED_KEY,
   INLINE_WEATHER_EMBED_KEY,
   createInlineWeatherDelta,
+  createInlinePersonDelta,
+  INLINE_PERSON_EMBED_KEY,
   INLINE_ICON_EMBED_KEY,
   draftPropMetaKey,
 } from '@ccc/blockcraft'
@@ -36,7 +38,7 @@ export const TEMPLATE_ADAPTER_REGISTRY = createBundledAdapterRegistry({
   additionalInlineEmbeds: TEMPLATE_INLINE_EMBED_ADAPTERS,
 })
 
-/** 人员已统一为 person-card；模板域不再注册私有人员 Inline Embed。 */
+/** 人员块与行内人员均复用框架原生能力。 */
 export const TEMPLATE_EDIT_EMBEDS = (): [string, EmbedConverter][] => []
 export const TEMPLATE_RENDER_EMBEDS = (): [string, EmbedConverter][] => []
 
@@ -64,6 +66,10 @@ export type Material =
     }
 
 const EDITOR_EMBED_MATERIALS: Material[] = [
+  {
+    kind: MaterialKind.Embed, name: INLINE_PERSON_EMBED_KEY, label: '人员(行内)',
+    svgIcon: 'bc_renwukapian', createDelta: () => createInlinePersonDelta(),
+  },
   {
     kind: MaterialKind.Embed,
     name: INLINE_WEATHER_EMBED_KEY,

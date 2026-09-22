@@ -68,6 +68,38 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## Unreleased — 2026-09-22：原生行内人员
+
+**Severity**: minor
+
+**What changed**: 新增 `person` Embed、`PersonInlineExtensionPlugin`、显示格式及创建人实例化 API。
+
+**Why**: 记录人等短信息应能与日期、天气、正文同段排版，避免为姓名放置固定尺寸人员卡片。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-embed.md`、`blockcraft-plugin.md`、`blockcraft-plugins-ref.md`、`blockcraft-plugins-inline.md`。
+
+### New APIs
+
+- `createInlinePersonDelta(person?, format?)`、`readInlinePersonDelta`、`formatInlinePersonDelta`、`createInlinePersonEmbedConverter`。
+- `INLINE_PERSON_EMBED_KEY`、`INLINE_PERSON_CLASS`、`INLINE_PERSON_FORMATS`、`INLINE_PERSON_FORMAT_LABELS`、`InlinePersonFormat`、`isInlinePersonFormat`。
+- `personEmbedAdapters`、`materializeInlinePersonSnapshots(snapshots, creator)`、`PersonInlineExtensionPlugin`。
+
+### Migration Recipe
+
+```typescript
+const intent = createInlinePersonDelta(); // 文档创建人占位，默认仅姓名
+// 在建档边界调用；creator 复用 FrozenPersonCardData，缺失时传 null。
+const children = materializeInlinePersonSnapshots(template.children, creator);
+```
+
+bundled editor、adapter 和 Snapshot Viewer 自动注册；自组装宿主需注册同 key converter / adapter 及格式插件。
+原人员卡片、mention 与现有数据不变，无自动转换。CSES 模板面板接入及依赖升级独立进行，本条目不代表发布。
+
+### Behavior Changes
+
+显示格式可选姓名、头像＋姓名、姓名＋部门/职务、头像＋姓名＋部门/职务，字号继承段落；默认蓝色，悬停加同色下划线，显式文字颜色可覆盖。建档后不依赖查看者身份；
+已有真值不重写，缺失来源显示不可用。只读及已失效锚点不写入。HTML/BlockCraft Markdown 保真，portable Markdown 输出文字。
+
 ## Unreleased — 2026-09-22：补齐缎带及模板装饰形状
 
 **Severity**: minor

@@ -1,5 +1,6 @@
 import {
   DRAFT_PROP_META_PREFIX,
+  materializeInlinePersonSnapshots,
   type FrozenPersonCardData,
   type IBlockSnapshot,
 } from '@ccc/blockcraft'
@@ -88,5 +89,5 @@ export function materializeTemplateSnapshots(
     } as IBlockSnapshot
   }
 
-  return snapshots.map(materializeSnapshot)
+  return materializeInlinePersonSnapshots(snapshots.map(materializeSnapshot), context.creator)
 }

@@ -54,6 +54,7 @@ describe('bundled editor capabilities', () => {
     'word-art',
     'date',
     'weather',
+    'person',
     'mention',
     'latex',
   ]
