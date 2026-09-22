@@ -68,6 +68,31 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## Unreleased — 2026-09-22：有序列表默认连续编号
+
+**Severity**: major（默认断组行为变更；不在本次修改包版本号）
+
+**What changed**: 同父容器、同缩进和标题级别的有序列表默认跨非有序块连续编号；编号样式分组与新项样式继承沿用同一边界。
+
+**Why**: 普通段落用于穿插说明，不应使后续列表自动从 1 开始。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-block.md`。
+
+### Breaking Changes
+
+- 未设置正数 `start` 的旧列表，触发编号重算时会跨同层或更深的非有序块续号；`continuePrevious: false` 不表示显式重启。
+
+### Migration Recipe
+
+需要保留旧断组效果时，为后段首项设置 `{start: 1}`；需要连续时省略 `start` 或设为 `0`。
+已有正数起始值保持不变，不执行批量数据迁移。`continuePrevious` 字段及菜单写入保持兼容。
+
+### Behavior Changes
+
+- 普通标题不截断；更浅缩进、相关有序标题边界、不同父容器与正数 `start` 仍划分计数。
+- 自动修复只写 `order`，新插入项可继承同组 `ms`，不因普通段落写入 `start`。
+- 仅修改起始值时沿同组局部重算，跨普通段落传播并止于下一个显式起始值；不再维护跨段专用的第二份计数缓存。
+
 ## Unreleased — 2026-09-22：原生行内人员
 
 **Severity**: minor

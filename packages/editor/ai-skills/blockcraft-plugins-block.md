@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-09-21
+> Last updated: 2026-09-22
 
 ## ObjectDragPlugin
 
@@ -505,14 +505,10 @@ new OrderedBlockPlugin()
   offscreen root children are renumbered without materializing their components
 - Recalculates the affected parent block as one sibling sequence after local child changes, or after ordered block `depth` / `heading` / `start` prop changes
 - Numbering is grouped by sibling `depth` + `heading`; changing one ordered block's `heading` renumbers following ordered siblings in the same parent
-- Plain ordered groups (`heading` omitted / zero) stop when a non-ordered sibling
-  at the same or a deeper `depth` is encountered; a later plain ordered block
-  starts a fresh counter. Ordered heading groups keep scanning across those
-  non-ordered siblings whenever the existing heading/depth boundaries allow it
-- 普通列表的手动“继续编号”写入 `continuePrevious: true` 并清除 `start`，接续同父容器、同 depth/heading 下最近的前段列表，可跨普通段落。回到更浅层或相关标题边界仍会截断；找不到前段时从 1 开始。该意图保存在块 props，前段增删或起始值变化会重算后段。“重新编号”清除该意图。旧文档未设置该字段时行为不变。
-- `start` 变更在存在显式接续块时重算父容器，以更新跨段依赖；否则保留局部重算。编号样式分组仍以原结构边界为准。
-- Explicit `start` restarts the sequence from that number; following same-depth/same-heading ordered blocks continue from it
-- Without explicit continuation in the parent, a `start`-only prop change uses a local recalculation range and stops at the next explicit `start` boundary for the same `depth` + `heading`
+- 普通有序列表与有序标题都默认连续：同父容器、同 `depth` + `heading` 的有序块可跨同层或更深的非有序块续号，普通标题也不截断。不同父容器独立计数。
+- 只有回到更浅缩进、遇到相关有序标题边界或显式正数 `start` 才截断对应编号。普通段落不会自动写入 `start`。
+- `continuePrevious` 保留存储与菜单兼容性，但缺省、false、true 均不再决定跨段能力；跨段续号已是默认策略。“继续编号”仍写入 `{start: 0, continuePrevious: true}` 以清除显式重启，“重新编号”仍写入 `{start: 1, continuePrevious: false}`。
+- 正数 `start` 优先：当前块从指定值开始，后续同组块继续递增。仅修改 `start` 时按同一边界规则局部重算，可跨非有序块，遇到下一个同组显式 `start` 停止，无需因 `continuePrevious` 扫描重算整个父容器。
 - Returning from a nested depth to a shallower depth clears deeper counters, so nested ordered lists restart under the next parent item
 - Shows `OrderedPrefixToolbar` when the list prefix button is clicked
 - The fixed-toolbar split button uses `BcOrderedMarkerPickerComponent`, which

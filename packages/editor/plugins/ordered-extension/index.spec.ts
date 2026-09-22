@@ -165,10 +165,10 @@ const createPrefixMouseDownContext = (blockId: string) => {
 }
 
 describe('OrderedBlockPlugin', () => {
-  it('continues across prose and follows insertions, deletions and upstream start changes', async () => {
+  it('continues by default across prose and follows insertions, deletions and upstream start changes', async () => {
     const {onChildrenUpdate$, onPropsUpdate$, plugin, registerParent} = createPluginHarness()
     const blocks = [createOrderedBlock('a'), createOrderedBlock('b'), createBlock('gap'),
-      createOrderedBlock('c', {continuePrevious: true}), createOrderedBlock('d')]
+      createOrderedBlock('c'), createOrderedBlock('d')]
     const parent = attachToParent(blocks)
     const recalculate = async () => {
       registerParent(parent, blocks)
@@ -280,7 +280,7 @@ describe('OrderedBlockPlugin', () => {
     triggerInserted(onChildrenUpdate$, parent, blocks[0])
     await waitForAutoOrder()
     expect([blocks[0], blocks[2], blocks[4], blocks[6]].map(b => b.props['order']))
-      .toEqual([7, 0, 1, 9])
+      .toEqual([7, 8, 9, 9])
     plugin.destroy()
   })
 
@@ -360,7 +360,7 @@ describe('OrderedBlockPlugin', () => {
     plugin.destroy()
   })
 
-  it('restarts plain ordered numbering after a same-depth non-ordered sibling', async () => {
+  it('continues plain numbering and marker inheritance across a same-depth non-ordered sibling', async () => {
     const {onChildrenUpdate$, plugin, registerParent} = createPluginHarness()
     const blocks = [
       createOrderedBlock('ordered-1', {order: 0, ms: 'a2'}),
@@ -374,12 +374,12 @@ describe('OrderedBlockPlugin', () => {
 
     await waitForAutoOrder()
 
-    expect([blocks[0].props['order'], blocks[2].props['order']]).toEqual([0, 0])
-    expect(blocks[2].props['ms']).toBeUndefined()
+    expect([blocks[0].props['order'], blocks[2].props['order']]).toEqual([0, 1])
+    expect(blocks[2].props['ms']).toBe('a2')
     plugin.destroy()
   })
 
-  it('restarts plain ordered numbering after a deeper non-ordered sibling', async () => {
+  it('continues plain ordered numbering across a deeper non-ordered sibling', async () => {
     const {onChildrenUpdate$, plugin, registerParent} = createPluginHarness()
     const blocks = [
       createOrderedBlock('ordered-1', {depth: 1, order: 0}),
@@ -393,7 +393,7 @@ describe('OrderedBlockPlugin', () => {
 
     await waitForAutoOrder()
 
-    expect([blocks[0].props['order'], blocks[2].props['order']]).toEqual([0, 0])
+    expect([blocks[0].props['order'], blocks[2].props['order']]).toEqual([0, 1])
     plugin.destroy()
   })
 
@@ -555,7 +555,7 @@ describe('OrderedBlockPlugin', () => {
     plugin.destroy()
   })
 
-  it('does not continue a start-only recalculation across a plain-list interruption', async () => {
+  it('continues a start-only recalculation across non-ordered siblings', async () => {
     const {onPropsUpdate$, plugin, registerParent} = createPluginHarness()
     const blocks = [
       createOrderedBlock('ordered-1', {order: 0}),
@@ -572,7 +572,7 @@ describe('OrderedBlockPlugin', () => {
     await waitForAutoOrder()
 
     expect([blocks[0].props['order'], blocks[2].props['order'], blocks[3].props['order']])
-      .toEqual([0, 0, 1])
+      .toEqual([0, 1, 2])
     plugin.destroy()
   })
 

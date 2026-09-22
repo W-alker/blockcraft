@@ -31,7 +31,7 @@ const createHarness = (blocks: Array<[string, string, IBlockProps]>) => {
 }
 
 describe('ordered marker group', () => {
-  it('stops plain groups at same-level non-ordered siblings', () => {
+  it('keeps plain groups across same-level non-ordered siblings', () => {
     const {doc} = createHarness([
       ['a', 'ordered', {depth: 0}],
       ['a-child', 'ordered', {depth: 1}],
@@ -40,9 +40,9 @@ describe('ordered marker group', () => {
       ['c', 'ordered', {depth: 0}],
     ])
 
-    expect(resolveOrderedMarkerGroupIds(doc, 'a')).toEqual(['a', 'b'])
+    expect(resolveOrderedMarkerGroupIds(doc, 'a')).toEqual(['a', 'b', 'c'])
     expect(resolveOrderedMarkerGroupIds(doc, 'a-child')).toEqual(['a-child'])
-    expect(resolveOrderedMarkerGroupIds(doc, 'c')).toEqual(['c'])
+    expect(resolveOrderedMarkerGroupIds(doc, 'c')).toEqual(['a', 'b', 'c'])
   })
 
   it('keeps heading groups across same-level non-ordered siblings', () => {
@@ -103,7 +103,7 @@ describe('ordered marker group', () => {
       ['a', 'ordered', {depth: 0}],
       ['b', 'ordered', {depth: 0}],
       ['break', 'paragraph', {depth: 0}],
-      ['c', 'ordered', {depth: 0}],
+      ['c', 'ordered', {depth: 0, start: 1}],
     ])
     readonlyIds.add('b')
 

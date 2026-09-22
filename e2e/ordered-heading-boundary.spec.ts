@@ -26,15 +26,19 @@ test('plain headings preserve continuation while ordered headings reset lower-le
   await expect(marker(0)).toHaveText('1.');
   await expect(marker(2)).toHaveText('2.');
   await expect(marker(4)).toHaveText('1.');
+  await expect(marker(8)).toHaveText('2.');
+  const chooseNumberingMode = async (name: string) => {
+    await marker(8).click();
+    const item = page.getByText(name, {exact: true});
+    await expect(item).toBeVisible();
+    // Click the visible popup without scrolling its virtualized editor anchor.
+    const bounds = await item.boundingBox();
+    expect(bounds).not.toBeNull();
+    await page.mouse.click(bounds!.x + bounds!.width / 2, bounds!.y + bounds!.height / 2);
+  };
+  await chooseNumberingMode('重新编号');
   await expect(marker(8)).toHaveText('1.');
-
-  await marker(8).click();
-  const continueItem = page.getByText('继续编号', {exact: true});
-  await expect(continueItem).toBeVisible();
-  // The popup is already in view; avoid scrolling the virtualized editor's anchor.
-  const bounds = await continueItem.boundingBox();
-  expect(bounds).not.toBeNull();
-  await page.mouse.click(bounds!.x + bounds!.width / 2, bounds!.y + bounds!.height / 2);
+  await chooseNumberingMode('继续编号');
   await expect(marker(8)).toHaveText('2.');
 
   await page.locator('block-craft-editor').evaluate((editor, id) => {

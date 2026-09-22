@@ -1734,11 +1734,12 @@ This skill pack is **bundled with `@ccc/blockcraft`** so any project that depend
 
 Full installation options (symlink vs copy, custom paths, uninstall) are in `README.md`.
 
-## 有序列表的显式跨段续号
+## 有序列表默认跨段续号
 
-`OrderedBlockModel.props.continuePrevious?: boolean` 表示接续同父容器、同缩进和标题级别的最近前段列表。
-由 `OrderedBlockPlugin` 按模型顺序重算，可跨非有序块，但不跨更浅缩进或相关标题边界。
-正数 `start` 优先；缺省/false 保持普通列表默认断组规则。菜单“继续编号”同时写入
-`{start: 0, continuePrevious: true}`，“重新编号”写入 `{start: 1, continuePrevious: false}`。
-该字段随原生文档 props 持久化；`createSnapshot` 新建后继项不继承计数状态。
-HTML/Markdown 使用输出编号表达结果，不承诺保留动态跨段接续意图。
+`OrderedBlockPlugin` 默认接续同父容器、同缩进和标题级别的前段列表，可跨同层或更深的非有序块。
+普通标题不截断；更浅缩进、相关有序标题边界和显式正数 `start` 仍会重启对应计数。
+`continuePrevious?: boolean` 保留数据兼容性，缺省/false/true 均采用默认连续策略；
+菜单“继续编号”写入 `{start: 0, continuePrevious: true}` 以清除重启值，
+“重新编号”写入 `{start: 1, continuePrevious: false}`。要保留某一段从 1 开始，显式设置 `start: 1`。
+编号与样式分组使用相同结构边界；新建后继项不继承计数状态。
+HTML/Markdown 使用输出编号表达结果，不承诺保留动态接续意图。
