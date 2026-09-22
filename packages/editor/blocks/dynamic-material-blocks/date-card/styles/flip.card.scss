@@ -1,3 +1,7 @@
+@use './fixed-frame';
+
+@include fixed-frame.constrain-height;
+
 // 「翻页牌」档。尺寸一律 `calc(设计px * var(--u, 1px))`，唯一的裸 px 是配置项「边框」那一圈。
 //
 // 边框走 `--dc-bw / --dc-bs / --dc-bc`；底色与字色走 `--dc-bg / --dc-fg`，
@@ -25,7 +29,9 @@
 }
 
 .card__ym {
-    padding: calc(9.52 * var(--u, 1px)) calc(5.44 * var(--u, 1px)) calc(4.08 * var(--u, 1px));
+    // 边框优先占用顶行周围的留白，保留大数字下方的字形空间和星期带高度。
+    padding: max(0px, calc(9.52 * var(--u, 1px) - var(--dc-bw, 0px)))
+        calc(5.44 * var(--u, 1px)) max(0px, calc(4.08 * var(--u, 1px) - var(--dc-bw, 0px)));
     color: color-mix(in srgb, var(--dc-fg, #fff) 72%, transparent);
     font-size: calc(var(--dc-font-primary, 12.2) * var(--u, 1px));           // 12.2px
     letter-spacing: 0.1em;

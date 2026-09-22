@@ -16,6 +16,8 @@
 .card {
     box-sizing: border-box;
     aspect-ratio: 1;
+    // 明确正圆的 border-box 高度，避免 WebKit 将内圈的 100% 高度与外边框重复相加。
+    height: calc(132 * var(--u, 1px));
     border: var(--dc-bw, 0px) var(--dc-bs, solid) var(--dc-bc, transparent);
     border-radius: 50%;
     background: var(--dc-bg, transparent);

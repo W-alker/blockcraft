@@ -1,3 +1,7 @@
+@use './fixed-frame';
+
+@include fixed-frame.constrain-height;
+
 // ① calendar — 竖版日历卡。设计宽 160px；下面每个数字就是设计稿 px，乘 `var(--u, 1px)` 缩放（`--u: 1px` = 原尺寸）。
 // 从 232px 收下来的：四张里只有它是竖版，再宽就在正文里成了一个巨物（② 方块才 140px）。
 // 收尺寸只需改 `--u` 一个数——内部长度全是它的倍数，整张卡等比跟着缩，一行别的都不用动。
@@ -64,7 +68,9 @@
 }
 
 .card__body {
-    padding: calc(9.6 * var(--u, 1px)) calc(6.4 * var(--u, 1px)) calc(12.8 * var(--u, 1px));
+    // 边框从上下留白中取空间，避免内卡被固定框裁掉。
+    padding: max(0px, calc(9.6 * var(--u, 1px) - var(--dc-bw, 0px)))
+        calc(6.4 * var(--u, 1px)) max(0px, calc(12.8 * var(--u, 1px) - var(--dc-bw, 0px)));
     text-align: center;
 }
 

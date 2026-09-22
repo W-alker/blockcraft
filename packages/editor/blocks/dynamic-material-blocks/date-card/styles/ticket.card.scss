@@ -1,3 +1,7 @@
+@use './fixed-frame';
+
+@include fixed-frame.constrain-height;
+
 // 「票根」档。尺寸一律 `calc(设计px * var(--u, 1px))`，卡片被拖大拖小时整张等比缩放——
 // 全表唯一允许出现 px 的地方是边框，理由见下。
 //
@@ -19,7 +23,8 @@
     display: flex;
     align-items: center;
     gap: calc(9.5 * var(--u, 1px));
-    padding: calc(11.4 * var(--u, 1px)) calc(13.3 * var(--u, 1px));
+    // 边框占用既有留白，内容与固定高度保持不变。
+    padding: max(0px, calc(11.4 * var(--u, 1px) - var(--dc-bw, 0px))) calc(13.3 * var(--u, 1px));
     border: var(--dc-bw, 0px) var(--dc-bs, solid) var(--dc-bc, transparent);
     border-radius: calc(7.6 * var(--u, 1px));
     background: var(--dc-bg, color-mix(in srgb, var(--dc-fg, #1f2329) 7%, transparent));

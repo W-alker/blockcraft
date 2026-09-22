@@ -1,3 +1,7 @@
+@use './fixed-frame';
+
+@include fixed-frame.constrain-height;
+
 // ③ banner —— 横幅日期。固定内容宽 184px；下面每个数字统一乘 `var(--u, 1px)` 等比缩放。
 // 全表不出现 px（:host 的 --mtl-w 兜底值除外）：缩略图把宽度压到 72px，px 写死的部分不会跟着缩。
 // 不写 [blockcraft-theme="dark"] 分支——本版不做深色主题，将来补是纯增。
@@ -38,10 +42,7 @@
 // **默认全是空的**——这一档的设定就是「没有卡面」，兜底值保持原样（transparent / 0），
 // 于是不配任何东西时这张卡与加这三个变量之前一字不差，defaultAr 也不用重量。
 //
-// 垂直内边距**由边框粗细算出来**（`--dc-bw` × 2），不是写死一个常数：
-// 写死的话默认态（绝大多数）会凭空高出十几个 px，那全是看不见的空——这一档没有卡面，
-// 高出来的部分只会让块在正文里多占位置。跟着边框走则是「有框才留呼吸」，
-// 无框时 padding 恒等于 0，高度回到原设计。
+// 卡面使用外壳给定的高度，边框占用框内空间，不再叠加会撑高卡面的内边距。
 // 边框粗细是全表唯一的 px，刻意如此：线跟着卡片等比放大会变成一道黑杠。
 .card {
     display: flex;
@@ -50,7 +51,6 @@
     // 内容靠左会贴在框的一角、和框的实际范围对不上（面板宫格里尤其明显）。
     justify-content: center;
     box-sizing: border-box;
-    padding: calc(var(--dc-bw, 0px) * 2) 0;
     border: var(--dc-bw, 0px) var(--dc-bs, solid) var(--dc-bc, transparent);
     border-radius: calc(6.07 * var(--u, 1px));
     background: var(--dc-bg, transparent);
