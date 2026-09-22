@@ -30,6 +30,20 @@ describe('行内人员', () => {
     }
   })
 
+  it('模板头像格式保留头像槽位，不请求示例头像或改变创建人意向', () => {
+    const converter = createInlinePersonEmbedConverter()
+    for (const format of ['avatar-name', 'avatar-name-description'] as const) {
+      const delta = createInlinePersonDelta(undefined, format)
+      const view = converter.toView(delta)
+      expect(view.querySelector('.bc-inline-person__avatar')).not.toBeNull()
+      expect(view.querySelector('img')).toBeNull()
+      expect(view.textContent).toBe('文档创建人')
+      expect(converter.toDelta(view)).toEqual(delta)
+      expect(renderInline([delta]).querySelector('.bc-inline-person__avatar')).not.toBeNull()
+    }
+    expect(converter.toView(createInlinePersonDelta()).querySelector('.bc-inline-person__avatar')).toBeNull()
+  })
+
   it('缺失部门不留下分隔符，未知格式回落姓名，未实例化与不可用各有占位', () => {
     expect(formatInlinePersonDelta(createInlinePersonDelta({name: '张三'}, 'name-description'))).toBe('张三')
     const withoutDescription = createInlinePersonEmbedConverter().toView(

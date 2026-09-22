@@ -20,7 +20,11 @@
     vertical-align: -0.2em;
     margin-inline-end: 0.25em;
   }
-  > .bc_icon { margin-inline-end: 0.25em; }
+  > i.bc-inline-person__avatar {
+    line-height: 1.2em;
+    text-align: center;
+    background: var(--bc-active-color-lighter);
+  }
   &:hover > span, &.editing > span {
     text-decoration: underline;
     text-decoration-color: currentColor;

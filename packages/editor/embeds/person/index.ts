@@ -57,7 +57,7 @@ export function createInlinePersonEmbedConverter(): EmbedConverter {
           host.append(avatar)
         } else if (!person) {
           const icon = document.createElement('i')
-          icon.className = 'bc_icon bc_renwukapian'
+          icon.className = `${INLINE_PERSON_CLASS}__avatar bc_icon bc_user-profile-01`
           icon.setAttribute('aria-hidden', 'true')
           host.append(icon)
         }
