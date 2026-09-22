@@ -67,6 +67,7 @@ export function resolvePlacementObjectGeometry(
         props,
         options.referenceWidth ?? doc.objectSizing.rootContentWidth,
         objectSizing,
+        doc.placement?.isInObjectGroup?.(blockId) ?? false,
       )
     : null
   const width = dimensions?.width ?? finitePositive(props['width'])

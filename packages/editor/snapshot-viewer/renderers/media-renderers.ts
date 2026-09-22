@@ -1,3 +1,4 @@
+import {normalizeShapeRotation} from '../../blocks/shape-block/shape.types';
 import {IBlockSnapshot} from "../../framework/block-std/types/block.type";
 import {InlineModel} from "../../framework/block-std/types/inline.type";
 import katex from "katex";
@@ -99,6 +100,8 @@ function renderImage(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
 
   const wrapper = document.createElement("div")
   wrapper.classList.add("img-wrapper")
+  const rotation = normalizeShapeRotation(props["rotation"])
+  if (rotation) wrapper.style.transform = `rotate(${rotation}deg)`
   wrapper.setAttribute("data-bc-print-visual-surface", "")
 
   const img = document.createElement("img")
@@ -111,6 +114,7 @@ function renderImage(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
     IMAGE_OBJECT_SIZING,
   )
   wrapper.append(img)
+  if (props['fit'] === 'fill') img.style.objectFit = 'fill'
 
   const src = resolveUrl(`${props["src"] || ""}`, ctx.options.baseUrl)
   if (src) {

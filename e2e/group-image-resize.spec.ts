@@ -2,6 +2,13 @@ import {resolveBlockPosition} from '../packages/editor/framework/services/block-
 import {expect, test, type Page} from '@playwright/test'
 
 async function mountFixture(page: Page, snapshot?: any, groupInteraction = false) {
+  await page.routeWebSocket('**', socket => socket.close())
+  await page.route('**/api/worker/link-preview**', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    headers: {'access-control-allow-origin': '*'},
+    body: JSON.stringify({title: 'Fixture link', description: '', image: ''}),
+  }))
   await page.goto('/')
   await page.getByRole('button', {name: '初始化', exact: true}).click()
   await page.waitForFunction(() => {
@@ -75,9 +82,10 @@ async function readGeometry(page: Page, ids: {imageId: string; siblingId: string
 }
 
 async function dragImage(page: Page, id: string, side: 'left' | 'right', delta: number) {
+  await page.evaluate(id => (window as any).__imageResizeDoc.selection.selectBlock(id), id)
   const image = page.locator(`#image-resize-fixture [data-block-id="${id}"] .img-wrapper`)
   await image.hover()
-  const handle = image.locator(`.block-resizer__bar--${side}`)
+  const handle = image.locator(`[data-handle="south-${side === 'left' ? 'west' : 'east'}"]`)
   const rect = await handle.boundingBox()
   if (!rect) throw new Error('Missing image resize handle')
   const x = rect.x + rect.width / 2
@@ -359,3 +367,364 @@ test('external group frame drags all members and ungroup preserves their visual 
     ))
   }).toBeLessThan(0.05) // CSS subpixels and persisted ratio rounding.
 })
+
+for (const absolute of [false, true]) {
+  for (const scale of [0.75, 1, 1.5]) {
+    test(`eight image handles preserve responsive sizing (${absolute ? 'absolute' : 'flow'}, scale ${scale})`, async ({page}) => {
+      test.setTimeout(60_000)
+      const ids = (await mountFixture(page))!
+      const id = ids.outsideId
+      await page.evaluate(async ({id, groupId, absolute, scale}) => {
+        const doc = (window as any).__imageResizeDoc
+        const group = doc.getBlockById(groupId)
+        doc.crud.deleteBlocks(group.parentId, group.getIndexOfParent(), 1)
+        doc.root.hostElement.parentElement.style.padding = '60px'
+        doc.viewScale.attach(doc.root.hostElement.parentElement)
+        doc.viewScale.setScale(scale)
+        if (!absolute) doc.placement.setMode(id, 'relative')
+        doc.crud.updateBlockProps(id, {position: absolute ? '100 80' : null})
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+        doc.selection.selectBlock(id)
+      }, {id, groupId: ids.groupId, absolute, scale})
+      const image = page.locator(`#image-resize-fixture [data-block-id="${id}"] .img-wrapper`)
+      await expect(image.locator('.shape-resizer__handle:visible')).toHaveCount(8)
+      await expect(image.locator('.shape-resizer__rotate')).toHaveCount(absolute ? 1 : 0)
+      const read = () => page.evaluate(id => {
+        const doc = (window as any).__imageResizeDoc
+        const block = doc.getBlockById(id)
+        const el = block.imgWrapper.nativeElement as HTMLElement
+        const rect = el.getBoundingClientRect()
+        return {
+          props: {...doc.model.getProps(id)}, width: rect.width, height: rect.height,
+          x: rect.x, y: rect.y, inlineHeight: el.style.height, inlineWidth: el.style.width,
+          selected: doc.selection.value?.anchor.blockId === id,
+          basis: block.referenceWidth,
+        }
+      }, id)
+      for (const direction of ['north-west', 'north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west']) {
+        await page.evaluate(id => {
+          const doc = (window as any).__imageResizeDoc
+          doc.crud.undoManager.clearHistory()
+          doc.selection.selectBlock(id)
+        }, id)
+        const before = await read()
+        const handle = image.locator(`[data-handle="${direction}"]`)
+        const box = (await handle.boundingBox())!
+        const x = box.x + box.width / 2
+        const y = box.y + box.height / 2
+        const dx = direction.includes('west') ? -40 : direction.includes('east') ? 40 : 0
+        const dy = direction.includes('north') ? -20 : direction.includes('south') ? 20 : 0
+        await page.mouse.move(x, y)
+        await page.mouse.down()
+        await page.mouse.move(x + dx * scale, y + dy * scale, {steps: 5})
+        expect((await read()).selected).toBe(true)
+        await page.mouse.up()
+        const horizontal = direction.includes('west') || direction.includes('east')
+        const vertical = direction.includes('north') || direction.includes('south')
+        const expectedWidth = before.width + (horizontal ? 40 * scale : 0)
+        const expectedHeight = before.height + (vertical ? 20 * scale : 0)
+        await expect.poll(async () => (await read()).width, {message: direction + ' before=' + JSON.stringify({...before, props: {...before.props, src: undefined}})}).toBeCloseTo(expectedWidth, 0)
+        await expect.poll(async () => (await read()).height).toBeCloseTo(expectedHeight, 0)
+        const resized = await read()
+        expect(resized.width / resized.height).toBeCloseTo(expectedWidth / expectedHeight, 2)
+        expect(resized.props.ar).toBeCloseTo(expectedWidth / expectedHeight, 2)
+        if (!(horizontal && vertical)) {
+          expect(resized.props.fit).toBe('fill')
+          await expect(image.locator('img')).toHaveCSS('object-fit', 'fill')
+        }
+        expect(resized.props.width).toBeUndefined()
+        expect(resized.props.height).toBeUndefined()
+        expect(resized.inlineHeight).toBe('')
+        if (absolute && direction.includes('west')) expect(resized.x + resized.width).toBeCloseTo(before.x + before.width, 0)
+        if (absolute && direction.includes('north')) expect(resized.y + resized.height).toBeCloseTo(before.y + before.height, 0)
+        if (!absolute) {
+          expect(resized.x).toBeCloseTo(before.x, 0)
+          expect(resized.y).toBeCloseTo(before.y, 0)
+        }
+        await page.evaluate(() => (window as any).__imageResizeDoc.crud.undoManager.undo())
+        await expect.poll(async () => (await read()).width).toBeCloseTo(before.width, 0)
+        expect((await read()).props).toEqual(before.props)
+        expect(await page.evaluate(() => (window as any).__imageResizeDoc.crud.undoManager.isCanUndo())).toBe(false)
+        await page.evaluate(() => (window as any).__imageResizeDoc.crud.undoManager.redo())
+        await expect.poll(async () => (await read()).width).toBeCloseTo(resized.width, 0)
+        await page.evaluate(() => (window as any).__imageResizeDoc.crud.undoManager.undo())
+        await expect.poll(async () => (await read()).width).toBeCloseTo(before.width, 0)
+      }
+      // Commit once, then resize the actual containing document without touching props.
+      await dragImage(page, id, 'right', 40 * scale)
+      const committed = await read()
+      await page.evaluate(() => document.getElementById('image-resize-fixture')!.style.width = '700px')
+      await expect.poll(async () => (await read()).basis).toBeLessThan(committed.basis)
+      const narrower = await read()
+      expect(narrower.props).toEqual(committed.props)
+      expect(narrower.width).toBeCloseTo(committed.width * narrower.basis / committed.basis, 0)
+      expect(narrower.width / narrower.height).toBeCloseTo(2, 2)
+      expect(narrower.inlineHeight).toBe('')
+    })
+  }
+}
+
+test('image resize cancels cleanly and readonly removes handles', async ({page}) => {
+  const ids = (await mountFixture(page))!
+  const id = ids.outsideId
+  await page.evaluate(id => (window as any).__imageResizeDoc.selection.selectBlock(id), id)
+  const image = page.locator(`#image-resize-fixture [data-block-id="${id}"] .img-wrapper`)
+  const before = await image.boundingBox()
+  const props = await page.evaluate(id => ({...(window as any).__imageResizeDoc.model.getProps(id)}), id)
+  await image.hover()
+  await image.locator('[data-handle="north"]').click()
+  expect(await page.evaluate(id => ({...(window as any).__imageResizeDoc.model.getProps(id)}), id)).toEqual(props)
+  const box = (await image.locator('[data-handle="east"]').boundingBox())!
+  await page.mouse.move(box.x + 5, box.y + 5)
+  await page.mouse.down()
+  await page.mouse.move(box.x - 40, box.y - 20, {steps: 4})
+  await expect(image.locator('img')).toHaveCSS('object-fit', 'fill')
+  await page.keyboard.press('Escape')
+  await expect(image.locator('img')).toHaveCSS('object-fit', 'contain')
+  await page.mouse.up()
+  expect(await image.boundingBox()).toEqual(before)
+  expect(await page.evaluate(id => ({...(window as any).__imageResizeDoc.model.getProps(id)}), id)).toEqual(props)
+  await page.evaluate(() => (window as any).__imageResizeDoc.toggleReadonly(true))
+  await expect(image.locator('shape-resizer')).toHaveCount(0)
+})
+
+for (const flow of [false, true]) {
+  test(`group image edge stretch persists and replays (${flow ? 'flow' : 'absolute'})`, async ({page}, testInfo) => {
+    const ids = (await mountFixture(page))!
+    await page.evaluate(async ({ids, flow}) => {
+      const doc = (window as any).__imageResizeDoc
+      if (flow) doc.placement.setMode(ids.groupId, 'relative')
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      const source = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+      const ImagePlugin = source.plugins.find((plugin: any) => plugin.name === 'img-toolbar').constructor
+      const plugin = new ImagePlugin()
+      plugin.register(doc)
+      ;(window as any).__imageResizePlugin = plugin
+      doc.selection.selectBlock(ids.imageId)
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      doc.crud.undoManager.clearHistory()
+    }, {ids, flow})
+    const image = page.locator(`#image-resize-fixture [data-block-id="${ids.imageId}"] .img-wrapper`)
+    await expect(image.locator('.shape-resizer__handle:visible')).toHaveCount(8)
+    const before = await readGeometry(page, ids)
+    await image.hover()
+    await image.locator('[data-handle="east"]').hover()
+    const edge = (await image.locator('[data-handle="east"]').boundingBox())!
+    const x = edge.x + edge.width / 2
+    const y = edge.y + edge.height / 2
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x + 80, y, {steps: 5})
+    await expect(image.locator('img')).toHaveCSS('object-fit', 'fill')
+    await page.mouse.up()
+    await expect.poll(async () => (await readGeometry(page, ids)).width).toBeCloseTo(480, 1)
+    const stretched = await readGeometry(page, ids)
+    expect(stretched.height).toBeCloseTo(200, 1)
+    expect(stretched.props.ar).toBe(2.4)
+    expect(stretched.props.fit).toBe('fill')
+    if (!flow && testInfo.project.name === 'chromium') {
+      await page.screenshot({path: testInfo.outputPath('image-eight-handles.png')})
+    }
+    for (const key of ['x', 'y', 'width', 'height'] as const) {
+      expect(stretched.sibling[key]).toBeCloseTo(before.sibling[key], 1)
+    }
+    expect(await page.evaluate(() => (window as any).__imageResizeDoc.dragController.state)).toBe('idle')
+    await page.evaluate(() => (window as any).__imageResizeDoc.crud.undoManager.undo())
+    await expect.poll(async () => (await readGeometry(page, ids)).width).toBeCloseTo(before.width, 1)
+    expect((await readGeometry(page, ids)).props).toEqual(before.props)
+    await page.evaluate(() => (window as any).__imageResizeDoc.crud.undoManager.redo())
+    await expect.poll(async () => (await readGeometry(page, ids)).width).toBeCloseTo(stretched.width, 1)
+    const snapshot = await page.evaluate(() => {
+      const doc = (window as any).__imageResizeDoc
+      return doc.model.toSnapshot(doc.rootId)
+    })
+    await mountFixture(page, snapshot)
+    await expect.poll(async () => (await readGeometry(page, ids)).height).toBeCloseTo(200, 1)
+    await expect(image.locator('img')).toHaveCSS('object-fit', 'fill')
+    expect((await readGeometry(page, ids)).props).toEqual(stretched.props)
+  })
+}
+
+for (const grouped of [false, true]) {
+  test(`image rotation persists and preserves dimensions (${grouped ? 'group' : 'absolute'})`, async ({page}) => {
+    const ids = (await mountFixture(page))!
+    const id = grouped ? ids.imageId : ids.outsideId
+    await page.evaluate(id => {
+      const doc = (window as any).__imageResizeDoc
+      doc.selection.selectBlock(id)
+      doc.crud.undoManager.clearHistory()
+    }, id)
+    const surface = page.locator(`#image-resize-fixture [data-block-id="${id}"] .img-wrapper`)
+    const read = () => page.evaluate(id => {
+      const doc = (window as any).__imageResizeDoc
+      const el = doc.getBlockById(id).imgWrapper.nativeElement as HTMLElement
+      const r = el.getBoundingClientRect()
+      return {props: {...doc.model.getProps(id)}, w: parseFloat(getComputedStyle(el).width), h: parseFloat(getComputedStyle(el).height), transform: el.style.transform, x: r.x, y: r.y, width: r.width, height: r.height}
+    }, id)
+    const before = await read()
+    const groupBefore = await readGeometry(page, ids)
+    await surface.hover()
+    const knob = surface.getByRole('button', {name: '旋转图片', exact: true})
+    await knob.hover()
+    const k = (await knob.boundingBox())!
+    const r = (await surface.boundingBox())!
+    const cx = r.x + r.width / 2, cy = r.y + r.height / 2
+    const radius = cy - (k.y + k.height / 2)
+    await page.mouse.move(k.x + k.width / 2, k.y + k.height / 2)
+    await page.mouse.down()
+    await page.keyboard.down('Shift')
+    await page.mouse.move(cx + radius, cy, {steps: 12})
+    await page.mouse.up()
+    await page.keyboard.up('Shift')
+    await expect.poll(async () => (await read()).props.rotation).toBe(90)
+    const rotated = await read()
+    expect(rotated.w).toBeCloseTo(before.w, 1)
+    expect(rotated.h).toBeCloseTo(before.h, 1)
+    expect(rotated.width).toBeCloseTo(before.height, 1)
+    expect(rotated.height).toBeCloseTo(before.width, 1)
+    expect(rotated.transform).toBe('rotate(90deg)')
+    expect(rotated.props.width).toBeUndefined()
+    expect(rotated.props.height).toBeUndefined()
+    if (grouped) expect((await readGeometry(page, ids)).sibling).toEqual(groupBefore.sibling)
+    else {
+      expect(rotated.props.wr).toBe(before.props.wr)
+      expect(rotated.props.ar).toBe(before.props.ar)
+    }
+    await page.evaluate(() => (window as any).__imageResizeDoc.crud.undoManager.undo())
+    await expect.poll(async () => (await read()).props).toEqual(before.props)
+    expect(await page.evaluate(() => (window as any).__imageResizeDoc.crud.undoManager.isCanUndo())).toBe(false)
+    await page.evaluate(() => (window as any).__imageResizeDoc.crud.undoManager.redo())
+    await expect.poll(async () => (await read()).props).toEqual(rotated.props)
+    const snapshot = await page.evaluate(() => {
+      const doc = (window as any).__imageResizeDoc
+      return doc.model.toSnapshot(doc.rootId)
+    })
+    await mountFixture(page, snapshot)
+    await expect.poll(async () => (await read()).w).toBeCloseTo(before.w, 1)
+    expect((await read()).transform).toBe('rotate(90deg)')
+  })
+}
+
+test('rotated image side resize keeps its opposite anchor and dynamic sizing', async ({page}) => {
+  const ids = (await mountFixture(page))!, id = ids.outsideId
+  await page.evaluate(({id, groupId}) => {
+    const doc = (window as any).__imageResizeDoc
+    const group = doc.getBlockById(groupId)
+    doc.crud.deleteBlocks(group.parentId, group.getIndexOfParent(), 1)
+    doc.placement.updateObjectGeometry(id, {position: '160 160', rotation: 90})
+    doc.selection.selectBlock(id)
+  }, {id, groupId: ids.groupId})
+  const surface = page.locator(`#image-resize-fixture [data-block-id="${id}"] .img-wrapper`)
+  await expect(surface).toHaveCSS('transform', 'matrix(0, 1, -1, 0, 0, 0)')
+  const before = (await surface.boundingBox())!
+  await surface.hover()
+  const east = surface.locator('[data-handle="east"]')
+  await east.hover()
+  const handle = (await east.boundingBox())!
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2 + 60, {steps: 10})
+  await page.mouse.up()
+  await expect.poll(async () => (await surface.boundingBox())!.height).toBeCloseTo(before.height + 60, 1)
+  const after = (await surface.boundingBox())!
+  expect(after.y).toBeCloseTo(before.y, 1)
+  expect(after.x).toBeCloseTo(before.x, 1)
+  expect(after.width).toBeCloseTo(before.width, 1)
+  const props = await page.evaluate(id => ({...(window as any).__imageResizeDoc.model.getProps(id)}), id)
+  expect(props.rotation).toBe(90)
+  expect(props.fit).toBe('fill')
+  await page.evaluate(() => {document.getElementById('image-resize-fixture')!.style.width = '700px'})
+  await expect.poll(async () => (await surface.boundingBox())!.height).toBeLessThan(after.height - 10)
+  expect(await page.evaluate(id => ({...(window as any).__imageResizeDoc.model.getProps(id)}), id)).toEqual(props)
+  await page.evaluate(id => {
+    const doc = (window as any).__imageResizeDoc
+    doc.selection.selectBlock(id)
+  }, id)
+  await surface.hover()
+  const knob = surface.getByRole('button', {name: '旋转图片', exact: true})
+  await knob.hover()
+  const k = (await knob.boundingBox())!
+  await page.mouse.move(k.x + k.width / 2, k.y + k.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(k.x - 50, k.y + 80, {steps: 8})
+  await page.keyboard.press('Escape')
+  await page.mouse.up()
+  await expect(surface).toHaveCSS('transform', 'matrix(0, 1, -1, 0, 0, 0)')
+  expect(await page.evaluate(id => (window as any).__imageResizeDoc.model.getProps(id).rotation, id)).toBe(90)
+  await page.evaluate(id => (window as any).__imageResizeDoc.setBlockReadonly(id, true), id)
+  await expect(surface.locator('shape-resizer')).toHaveCount(0)
+})
+
+test('flow image hides rotation controls while retaining rotation and eight resize handles', async ({page}) => {
+  const ids = (await mountFixture(page))!, id = ids.outsideId
+  await page.evaluate(async id => {
+    const doc = (window as any).__imageResizeDoc
+    doc.placement.updateObjectGeometry(id, {rotation: 30})
+    doc.placement.setMode(id, 'relative')
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    doc.selection.selectBlock(id)
+  }, id)
+  const surface = page.locator(`#image-resize-fixture [data-block-id="${id}"] .img-wrapper`)
+  await expect(surface.locator('.shape-resizer__handle:visible')).toHaveCount(8)
+  await expect(surface.locator('.shape-resizer__rotate')).toHaveCount(0)
+  await expect(surface.locator('.shape-resizer__rotation-stem')).toHaveCount(0)
+  expect(await surface.evaluate(el => el.style.transform)).toBe('rotate(30deg)')
+  await page.evaluate(id => (window as any).__imageResizeDoc.placement.setMode(id, 'absolute'), id)
+  await surface.hover()
+  await expect(surface.getByRole('button', {name: '旋转图片', exact: true})).toBeVisible()
+  expect(await page.evaluate(id => (window as any).__imageResizeDoc.model.getProps(id).rotation, id)).toBe(30)
+  await page.evaluate(id => (window as any).__imageResizeDoc.placement.setMode(id, 'relative'), id)
+  await expect(surface.locator('.shape-resizer__rotate')).toHaveCount(0)
+  await expect(surface.locator('.shape-resizer__handle:visible')).toHaveCount(8)
+})
+
+for (const [rotation, scale] of [[0, 1], [30, 0.75], [0, 1.5]]) {
+  test(`unselected absolute image keeps handles while hovering toward rotation (${rotation}deg, scale ${scale})`, async ({page}) => {
+    const ids = (await mountFixture(page))!, id = ids.outsideId
+    await page.evaluate(async ({id, siblingId, rotation, scale}) => {
+      const doc = (window as any).__imageResizeDoc
+      doc.placement.updateObjectGeometry(id, {position: '140 220', rotation})
+      doc.viewScale.attach(doc.root.hostElement.parentElement)
+      doc.viewScale.setScale(scale)
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      doc.selection.selectBlock(siblingId)
+    }, {id, siblingId: ids.siblingId, rotation, scale})
+    const host = page.locator(`#image-resize-fixture [data-block-id="${id}"]`)
+    const surface = host.locator('.img-wrapper')
+    const handles = surface.locator('.shape-resizer__handle:visible')
+    await expect(host).not.toHaveClass(/\bselected\b/)
+    await page.mouse.move(920, 680)
+    await expect(handles).toHaveCount(0)
+    const before = await page.evaluate(id => ({...(window as any).__imageResizeDoc.model.getProps(id)}), id)
+    await surface.hover()
+    await expect(handles).toHaveCount(8)
+    const r = (await surface.boundingBox())!
+    const knob = surface.getByRole('button', {name: '旋转图片', exact: true})
+    const k = (await knob.boundingBox())!
+    const cx = r.x + r.width / 2, cy = r.y + r.height / 2
+    const kx = k.x + k.width / 2, ky = k.y + k.height / 2
+    // Each small move must preserve hover, including the gap between frame and knob.
+    for (let step = 1; step <= 24; step++) {
+      await page.mouse.move(cx + (kx - cx) * step / 24, cy + (ky - cy) * step / 24)
+      await expect(handles).toHaveCount(8, {timeout: 500})
+    }
+    await expect(knob).toBeVisible()
+    await expect(host).not.toHaveClass(/\bselected\b/)
+    expect(await page.evaluate(id => ({...(window as any).__imageResizeDoc.model.getProps(id)}), id)).toEqual(before)
+    expect(await knob.evaluate(button => {
+      const rect = button.getBoundingClientRect()
+      return document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2) === button
+    })).toBe(true)
+    await page.mouse.down()
+    await page.keyboard.down('Shift')
+    await page.mouse.move(cx - (ky - cy), cy + (kx - cx), {steps: 12})
+    await page.mouse.up()
+    await page.keyboard.up('Shift')
+    await expect.poll(() => page.evaluate(id => (window as any).__imageResizeDoc.model.getProps(id).rotation, id)).toBe(rotation + 90)
+    const after = await page.evaluate(id => ({...(window as any).__imageResizeDoc.model.getProps(id)}), id)
+    expect(after.wr).toBe(before.wr)
+    expect(after.ar).toBe(before.ar)
+    await page.mouse.move(920, 680)
+    await expect(handles).toHaveCount(0)
+  })
+}

@@ -7,6 +7,26 @@
 
   div.image-block {
 
+    &.selected > .image-block__container > .img-wrapper > shape-resizer,
+    .img-wrapper:hover > shape-resizer,
+    .img-wrapper > shape-resizer:focus-within {
+      display: block;
+    }
+
+    // Images expose handles on hover, unlike selection-only object controls.
+    // Keep a narrow, continuous hit area from the frame to the rotation knob.
+    // It only exists while the resizer and its rotation stem are rendered.
+    .img-wrapper > shape-resizer .shape-resizer__rotation-stem::before {
+      content: '';
+      position: absolute;
+      inset: -2px -11px -10px;
+      pointer-events: auto;
+    }
+
+    .img-wrapper[data-bc-image-resize-stretch] > img {
+      object-fit: fill !important;
+    }
+
     &.selected {
       background: unset;
 

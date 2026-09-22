@@ -170,14 +170,16 @@ export function calculateShapeResize(
           (pointerdown)="onPointerDown($event, handle)"
         ></button>
       }
-      <span class="shape-resizer__rotation-stem" aria-hidden="true"></span>
-      <button
-        type="button"
-        class="shape-resizer__rotate"
-        [attr.aria-label]="rotationLabel"
-        contenteditable="false"
-        (pointerdown)="onRotatePointerDown($event)"
-      ></button>
+      @if (rotatable) {
+        <span class="shape-resizer__rotation-stem" aria-hidden="true"></span>
+        <button
+          type="button"
+          class="shape-resizer__rotate"
+          [attr.aria-label]="rotationLabel"
+          contenteditable="false"
+          (pointerdown)="onRotatePointerDown($event)"
+        ></button>
+      }
     </div>
   `,
   styles: [
@@ -340,11 +342,14 @@ export class ShapeResizerComponent implements OnDestroy {
    */
   @Input() maxWidthResolver?: () => number | null
   @Input() rotation = 0
+  @Input() rotatable = true
   @Input() rotationLabel = '旋转形状'
   @Input() borderDraggable = false
   @Input() resizeCalculator: ShapeResizeCalculator = calculateShapeResize
   /** 可选的无单位内容倍率 CSS 变量；只随角手柄缩放，边手柄保持原值。 */
   @Input() scaleVariable: string | null = null
+  @Output() resizeStart = new EventEmitter<ShapeResizeHandle>()
+  @Output() resizeEnd = new EventEmitter<void>()
   @Output() resizeCommit = new EventEmitter<ShapeResizeCommit>()
   @Output() rotateCommit = new EventEmitter<ShapeRotateCommit>()
 
@@ -479,6 +484,7 @@ export class ShapeResizerComponent implements OnDestroy {
 
     const handleElement = event.currentTarget as HTMLElement
     handleElement.setPointerCapture?.(event.pointerId)
+    if (gesture.kind === 'resize') this.resizeStart.emit(gesture.handle)
 
     this.ngZone.runOutsideAngular(() => {
       window.addEventListener('pointermove', this._onPointerMove, true)
@@ -554,6 +560,7 @@ export class ShapeResizerComponent implements OnDestroy {
   }
 
   private _cancel(keepResizePreview: boolean): void {
+    const wasResizing = this._activeGesture?.kind === 'resize'
     window.removeEventListener('pointermove', this._onPointerMove, true)
     window.removeEventListener('pointerup', this._onPointerUp, true)
     window.removeEventListener('pointercancel', this._onPointerCancel, true)
@@ -595,6 +602,7 @@ export class ShapeResizerComponent implements OnDestroy {
     this._startMirrorInlineStyle = null
     this._gestureVisualScale = 1
     this._gestureMaxWidth = Number.POSITIVE_INFINITY
+    if (wasResizing && this.resizeEnd.observed) this.ngZone.run(() => this.resizeEnd.emit())
   }
 
   private _applyPointerPreview(event: PointerEvent): void {

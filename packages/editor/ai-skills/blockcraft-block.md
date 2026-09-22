@@ -995,8 +995,12 @@ that operate on root objects rather than one known block ID.
 
 The exported pure helpers `normalizeObjectSize()`,
 `resolveObjectDimensions()` and `deriveObjectSizeFromPixels()` are available to
-model-only renderers and adapters. They clamp `wr` to `[1, 100]`, reject invalid
+model-only renderers and adapters. Their optional final `allowOverflow` argument defaults to `false`.
+They normally clamp `wr` to `[1, 100]`, reject invalid
 ratios and report whether dimensions came from `ratio`, `legacy` or `default`.
+组合内的换算与 `resolveForBlock()` 使用 `allowOverflow: true`，允许 `wr > 100`：
+宽图旋转后，其未旋转宽度可能大于组合的可见包围盒宽度。该比例仍随组合宽度变化；
+普通流式/浮动对象保留原有上限。读取组合成员几何的模型投影也必须使用同一策略。
 Do not add a `ResizeObserver` per block or read root geometry during change
 detection.
 
@@ -1114,6 +1118,25 @@ resize writes `wr/ar` once and clears the old fields in the same
 `updateProps()` transaction. The gesture captures the root-width basis for
 persistence but uses the current parent content width as its visual maximum, so
 a concurrent container resize cannot change the committed ratio.
+
+### 图片八向抓手、旋转与动态尺寸
+
+图片块使用 `ShapeResizerComponent` 的八向抓手：四角保持当前宽高比，四边仅调整对应轴。
+浮动图片显示顶部旋转抓手，围绕图片中心旋转，Shift 按 15° 吸附，Escape 取消；
+流式（上下型）图片隐藏旋转抓手，八向缩放和已有旋转角度保留；只读时不创建抓手。
+图片工具栏保持原有定位方式。
+`ImageBlockModel.props.rotation` 与 `ImageBlockCreateInput.rotation` 是可选顺时针角度（度），
+缺省为 0，创建与显示时归一化到 `[0, 360)`。例如 `createSnapshot({src, wr: 50, ar: 2, rotation: 30})`。
+旋转经 `placement.updateObjectGeometry()` 保存，组合重算与角度写入属于同一次撤销。
+仅图片视觉面旋转，说明文字保持排版方向；尺寸继续表达旋转前的宽高。
+HTML 用 `data-bc-image-rotation` 保留角度，快照预览同步旋转；标准 Markdown 不保存旋转布局。
+流式图片保持排版锚点；浮动图片从北侧/西侧调整时，在同一事务里提交位置与尺寸。
+继续以 `wr/ar` 保存动态尺寸，组合内先提交请求像素再由组合事务归一化；松手清除
+临时像素高度，避免破坏容器宽度变化后的响应式高度。拖动开始捕获参考宽度。
+四边实际改变比例时追加图片专属 `props.fit: 'fill'`，使图像本身随框拉伸；缺省仍为
+原有 contain，旧文档无需迁移。快照与 HTML 保留此意图（HTML 使用 `data-bc-image-fit`）；
+标准 Markdown 继续只表达图片内容，不保留拉伸布局。原 `onResized(BlockResizeCommit)`
+入口仍按等比规则处理；八向 UI 由图片组件内部适配，不改变视频或行内图片。
 
 ### Visual Resource Placeholder Extension
 
@@ -1539,11 +1562,16 @@ Pointer cancel, Escape, window blur and component destruction restore the
 pre-gesture transform without writing props.
 
 `ShapeResizerComponent` also accepts optional `resizeCalculator`,
-`previewMirror`, `rotationLabel`, `borderDraggable` and `scaleVariable` inputs. The defaults
+`previewMirror`, `rotationLabel`, `rotatable`, `borderDraggable` and `scaleVariable` inputs. The defaults
 preserve shape behavior. Fixed-size editable objects such as WordArt can reuse
 the same handles while supplying their own resize policy; enabling
 `borderDraggable` adds four invisible edge hit regions without covering the
 object's editable interior.
+
+`rotatable` 默认 `true`；图片按 `isAbsolute` 绑定，流式布局仅显示八向缩放。
+形状、文本框与艺术字的旋转抓手不变。
+`resizeStart` 输出本次 `ShapeResizeHandle`，`resizeEnd` 在缩放提交前或取消/销毁时输出一次，
+供宿主清理临时外观；两者不覆盖旋转手势，原有 `resizeCommit` 数据不变。
 
 The bundled fixed toolbar creates a shape through
 `insertAbsoluteSnapshot()`, so the first persisted state is a direct child of

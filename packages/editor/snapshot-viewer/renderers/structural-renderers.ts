@@ -200,6 +200,15 @@ export function projectAbsolutePlaneChildren(
     child.style.zIndex = layer === "under" ? "0" : "2"
     child.style.margin = "0"
     child.style.pointerEvents = "auto"
+    // A rotated image's unrotated width can exceed its group's visual bounds.
+    // Preserve the stored group-relative ratio after the standalone renderer's cap.
+    if (snapshot.flavour === 'object-group' && snapshots[index]?.flavour === 'image') {
+      const wr = props?.['wr']
+      const figure = child.querySelector<HTMLElement>(':scope > .image-block__container')
+      if (figure && typeof wr === 'number' && Number.isFinite(wr) && wr > 100) {
+        figure.style.width = `${wr}%`
+      }
+    }
   }
 }
 

@@ -8,8 +8,10 @@ import {
 } from '../../framework';
 import {ImageBlockModel} from './index';
 // Avoid the components barrel: snapshot-viewer imports the block registry back.
-import {ResizeContainerComponent} from '../../components/block-resizer/resize-container';
+import {ShapeResizerComponent, type ShapeResizeBox, type ShapeResizeCalculator, type ShapeResizeCommit, type ShapeResizeHandle, type ShapeRotateCommit} from '../shape-block/shape-resizer.component';
 import type {BlockResizeCommit} from '../../components/block-resizer/resize-container';
+import {normalizeShapeRotation} from '../shape-block/shape.types';
+import {calculateImageResize} from './image-resize';
 import {BcResourcePlaceholderDirective} from '../../components/resource-placeholder/resource-placeholder.directive';
 import type {ResourceIntrinsicSize} from '@ccc/blockcraft/global/resource-placeholder';
 import {takeUntil} from 'rxjs';
@@ -56,6 +58,8 @@ export function deriveInitialImageObjectSize(
         (resourceIntrinsicSize)="onImageIntrinsicSize($event)"
         [style.width.px]="renderedWidth"
         [style.aspect-ratio]="renderedAspectRatio"
+        [style.transform]="rotationTransform"
+        [attr.data-bc-resize-preview-anchor]="isAbsolute ? null : 'layout'"
         [attr.data-bc-object-sizing]="usesRatioSizing ? '' : null">
         @if (!props.src) {
           <div class="upload-hint" contenteditable="false" (click)="!isReadonly && inputLocalFile()">
@@ -69,16 +73,24 @@ export function deriveInitialImageObjectSize(
           </div>
         } @else {
           <img [src]="_previewUri || props.src"
+               [style.object-fit]="props.fit === 'fill' ? 'fill' : 'contain'"
                loading="lazy"
                contenteditable="false"
                draggable="false"/>
           @if (!isReadonly) {
-            <block-resizer
-              [container]="imgWrapper"
+            <shape-resizer
+              data-bc-selection-interaction-ignore
+              [target]="imgWrapper"
               [maxWidthContainer]="resizeMaxWidthContainer"
-              [referenceWidth]="referenceWidth || undefined"
-              [preserveRightEdge]="isAbsolute"
-              (resizeCommit)="onResized($event)"/>
+              [maxWidthResolver]="resizeMaxWidth"
+              [rotation]="rotation"
+              [rotatable]="isAbsolute"
+              rotationLabel="旋转图片"
+              (rotateCommit)="onRotated($event)"
+              [resizeCalculator]="resizeCalculator"
+              (resizeStart)="onResizeStart($event)"
+              (resizeEnd)="onResizeEnd()"
+              (resizeCommit)="onShapeResized($event)"/>
           }
         }
         @if (uploadProgress !== 100) {
@@ -95,9 +107,10 @@ export function deriveInitialImageObjectSize(
   `,
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ResizeContainerComponent, BcResourcePlaceholderDirective],
+  imports: [ShapeResizerComponent, BcResourcePlaceholderDirective],
   host: {
-    '[attr.data-align]': 'props.align'
+    '[attr.data-align]': 'props.align',
+    '[attr.data-bc-image-group-member]': "isGrouped ? '' : null"
   },
   styles: [`
     :host {
@@ -108,6 +121,11 @@ export function deriveInitialImageObjectSize(
 
     .img-wrapper {
       max-width: 100%;
+    }
+
+    :host([data-bc-image-group-member]) .image-block__container,
+    :host([data-bc-image-group-member]) .img-wrapper {
+      max-width: none;
     }
 
     .image-block__container {
@@ -213,6 +231,25 @@ export function deriveInitialImageObjectSize(
   `]
 })
 export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
+  private _resizeStartBox: ShapeResizeBox | null = null
+  protected readonly resizeCalculator: ShapeResizeCalculator = (handle, start, dx, dy, maxWidth) =>
+    calculateImageResize(handle, this._resizeStartBox ?? start, dx, dy, maxWidth, this.rotation)
+  private _resizeBasisWidth = 0
+  protected readonly resizeMaxWidth = () => {
+    this._resizeBasisWidth = this.referenceWidth
+    // Read once per gesture: offsetHeight rounds fractional responsive sizes,
+    // while inline width may exceed a narrow parent's CSS max-width.
+    const style = getComputedStyle(this.imgWrapper.nativeElement)
+    const width = Number.parseFloat(style.width)
+    const height = Number.parseFloat(style.height)
+    this._resizeStartBox = width > 0 && height > 0
+      ? {width, height, offsetX: 0, offsetY: 0}
+      : null
+    return this.doc.placement.isInObjectGroup(this.id)
+      ? this.rootContentWidth
+      : Math.min(this._resizeBasisWidth, this.resizeMaxWidthContainer.clientWidth)
+  }
+
   @ViewChild('imgWrapper')
   imgWrapper!: ElementRef<HTMLElement>;
 
@@ -239,6 +276,7 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
   get renderedWidth(): number | null {
     const width = this.objectDimensions?.width
     if (width == null) return null
+    if (this.isGrouped) return width
     const referenceWidth = this.referenceWidth
     return Number.isFinite(referenceWidth) && referenceWidth > 0
       ? Math.min(width, referenceWidth)
@@ -263,6 +301,10 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
 
   get referenceWidth(): number {
     return this.doc.objectSizing.getReferenceWidth(this.id)
+  }
+
+  protected get isGrouped(): boolean {
+    return this.doc.placement?.isInObjectGroup?.(this.id) ?? false
   }
 
   get isAbsolute(): boolean {
@@ -395,7 +437,50 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
     });
   }
 
+  protected get rotation(): number {
+    return normalizeShapeRotation(this.props.rotation)
+  }
+
+  protected get rotationTransform(): string {
+    return this.rotation ? `rotate(${this.rotation}deg)` : ''
+  }
+
+  protected onRotated(event: ShapeRotateCommit): void {
+    if (this.isReadonly) return
+    const rotation = normalizeShapeRotation(event.rotation)
+    if (rotation === this.rotation) return
+    this.doc.placement.updateObjectGeometry(this, {rotation})
+    this.imgWrapper.nativeElement.style.transform = this.rotationTransform
+  }
+
+  protected onShapeResized(event: ShapeResizeCommit) {
+    // The shared resizer previews a pixel height. Remove it on commit so CSS
+    // aspect-ratio remains authoritative when the document width later changes.
+    this.imgWrapper.nativeElement.style.height = ''
+    const start = this._resizeStartBox
+    if (start && Math.abs(event.width - start.width) < 0.01 && Math.abs(event.height - start.height) < 0.01) {
+      // A click on a handle must not turn legacy contain images into fill images
+      // merely because CSS layout rounded their fractional height.
+      this.imgWrapper.nativeElement.style.width = `${this.renderedWidth}px`
+      return
+    }
+    this.commitResize({...event, basisWidth: this._resizeBasisWidth || this.referenceWidth},
+      event.handle.includes('-'))
+  }
+
+  protected onResizeStart(handle: ShapeResizeHandle) {
+    this.imgWrapper.nativeElement.toggleAttribute('data-bc-image-resize-stretch', !handle.includes('-'))
+  }
+
+  protected onResizeEnd() {
+    this.imgWrapper.nativeElement.removeAttribute('data-bc-image-resize-stretch')
+  }
+
   onResized(event: BlockResizeCommit) {
+    this.commitResize(event, true)
+  }
+
+  private commitResize(event: BlockResizeCommit & {offsetY?: number}, preserveAspect: boolean) {
     if (this.isReadonly) return
     const derived = deriveObjectSizeFromPixels(
       event.width,
@@ -403,8 +488,10 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
       event.basisWidth,
     )
     if (!derived) return
+    const changesAspect = !preserveAspect &&
+      Math.abs(derived.ar - (this.objectDimensions?.ar ?? derived.ar)) > 0.000001
     const currentAr =
-      typeof this.props.ar === 'number' &&
+      preserveAspect && typeof this.props.ar === 'number' &&
       Number.isFinite(this.props.ar) &&
       this.props.ar > 0
         ? this.props.ar
@@ -421,11 +508,12 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
     // one Undo item; only the final normalized wr/ar reaches observers.
     this.doc.crud.transact(() => this.doc.placement.updateObjectGeometry(this, {
       ...size,
-      ...(placement.mode === 'absolute' && event.offsetX !== 0
+      ...(changesAspect ? {fit: 'fill' as const} : {}),
+      ...(placement.mode === 'absolute' && (event.offsetX !== 0 || event.offsetY)
         ? {
             position: storeBlockPosition({
               x: placement.x + event.offsetX,
-              y: placement.y,
+              y: placement.y + (event.offsetY ?? 0),
             }),
           }
         : {}),

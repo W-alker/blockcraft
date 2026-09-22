@@ -11,6 +11,15 @@ const imageCapability = {
 }
 
 describe('block object sizing', () => {
+  it('retains ratios beyond visual group width only when overflow is enabled', () => {
+    const ratio = deriveObjectSizeFromPixels(400, 200, 250, true)!
+    expect(ratio).toEqual({wr: 160, ar: 2})
+    expect(resolveObjectDimensions(ratio, 250, imageCapability, true)?.width).toBe(400)
+    expect(resolveObjectDimensions(ratio, 500, imageCapability, true)?.width).toBe(800)
+    expect(resolveObjectDimensions(ratio, 250, imageCapability)?.width).toBe(250)
+    expect(deriveObjectSizeFromPixels(400, 200, 250)?.wr).toBe(100)
+  })
+
   it('resolves wr/ar against the current root content width', () => {
     const result = resolveObjectDimensions(
       {wr: 50, ar: 2},

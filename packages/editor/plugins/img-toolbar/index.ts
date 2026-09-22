@@ -166,7 +166,7 @@ export class ImgToolbarPlugin extends DocPlugin {
       !target ||
       !(target instanceof Element) ||
       target.closest(
-        "block-resizer, .upload-hint, .bc-resource-placeholder",
+        "block-resizer, shape-resizer, .upload-hint, .bc-resource-placeholder",
       )
     ) {
       return;
@@ -289,7 +289,7 @@ export class ImgToolbarPlugin extends DocPlugin {
           if (!this.doc.root.hostElement.contains(target)) return
           // 排除调宽度的 resize 句柄、占位插图按钮等
           if (target.closest(
-            'block-resizer, [data-bc-inline-image-resizer]',
+            'block-resizer, shape-resizer, [data-bc-inline-image-resizer]',
           )) return
           if (target.closest('.upload-hint')) return
           const imageContent = target.closest('.img-wrapper')

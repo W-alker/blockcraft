@@ -5,6 +5,7 @@ import {
   DeltaInsert,
   IBlockSchemaOptions,
 } from "../../framework";
+import {normalizeShapeRotation} from '../shape-block/shape.types';
 import {ImageBlockComponent} from "./image.block";
 
 export * from './agent'
@@ -14,12 +15,17 @@ export interface ImageBlockCreateInput {
   src: string
   wr?: number
   ar?: number
+  /** 顺时针旋转角度，单位度；缺省为 0。 */
+  rotation?: number
 }
 
 export interface ImageBlockModel extends NoEditableBlockNative {
   flavour: 'image',
   props: BlockObjectSizeProps & {
     src: string;
+    rotation?: number;
+    /** 四边拉伸后的填充意图；缺省保留原图 contain 显示。 */
+    fit?: 'fill';
     align?: 'center' | 'right'
   }
 }
@@ -47,6 +53,7 @@ export const ImageBlockSchema: IBlockSchemaOptions<ImageBlockModel> = {
       meta: {},
       props: {
         src: input.src,
+        ...(normalizeShapeRotation(input.rotation) ? {rotation: normalizeShapeRotation(input.rotation)} : {}),
         ...(hasLegacyWidth
           ? {
               width: w,

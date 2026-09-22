@@ -1,3 +1,4 @@
+import {ImageBlockSchema} from './index'
 import {
   deriveInitialImageObjectSize,
   ImageBlockComponent,
@@ -205,5 +206,15 @@ describe('ImageBlockComponent rendered width', () => {
 
   it('keeps narrower image widths unchanged', () => {
     expect(createComponent(480, 800).renderedWidth).toBe(480)
+  })
+})
+
+
+describe('image rotation property', () => {
+  it('normalizes creation angles while leaving old snapshots sparse', () => {
+    expect(ImageBlockSchema.createSnapshot({src: 'image.png', wr: 50, ar: 2, rotation: -90}).props)
+      .toEqual({src: 'image.png', wr: 50, ar: 2, rotation: 270})
+    expect(ImageBlockSchema.createSnapshot('image.png').props.rotation).toBeUndefined()
+    expect(ImageBlockSchema.createSnapshot({src: 'image.png', rotation: NaN}).props.rotation).toBeUndefined()
   })
 })

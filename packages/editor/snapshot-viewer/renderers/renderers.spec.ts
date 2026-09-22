@@ -10,6 +10,44 @@ import {createAllBlocksFixture} from "../testing/fixtures/all-blocks.fixture";
 import {normalizeWordArtProps, WordArtBlockSchema} from "../../blocks";
 
 describe("snapshot-viewer renderers", () => {
+  it('preserves a rotated image wider than its visual group on render and update', () => {
+    const image = createAllBlocksFixture().image
+    image.props = {...image.props, wr: 160, ar: 2, rotation: 90, position: '-100 100'}
+    const group: IBlockSnapshot = {
+      id: 'rotated-image-group', flavour: 'object-group', nodeType: BlockNodeType.block,
+      props: {width: 250, height: 400}, meta: {}, children: [image],
+    }
+    const host = document.createElement('div')
+    const renderer = createSnapshotRenderer({resourcePolicy: 'off'})
+    renderer.render(host, group)
+    expect(host.querySelector<HTMLElement>('.image-block__container')!.style.width).toBe('160%')
+    expect(host.querySelector<HTMLElement>('.img-wrapper')!.style.transform).toBe('rotate(90deg)')
+    const next = structuredClone(group)
+    ;(next.children[0] as IBlockSnapshot).props['wr'] = 80
+    renderer.update(next)
+    expect(host.querySelector<HTMLElement>('.image-block__container')!.style.width).toBe('80%')
+    renderer.destroy()
+  })
+
+  it('preserves image stretch intent while retaining legacy contain behavior', () => {
+    const image = createAllBlocksFixture().image
+    image.props = {...image.props, wr: 50, ar: 3, fit: 'fill', rotation: -90}
+    const host = document.createElement('div')
+    const renderer = createSnapshotRenderer({resourcePolicy: 'off'})
+    renderer.render(host, image)
+    expect(host.querySelector('img')!.style.objectFit).toBe('fill')
+    expect(host.querySelector<HTMLElement>('.img-wrapper')!.style.aspectRatio).toBe('3 / 1')
+    expect(host.querySelector<HTMLElement>('.img-wrapper')!.style.transform).toBe('rotate(270deg)')
+    expect(host.querySelector<HTMLElement>('figure')!.style.transform).toBe('')
+    const legacy = structuredClone(image)
+    delete legacy.props['fit']
+    delete legacy.props['rotation']
+    renderer.update(legacy)
+    expect(host.querySelector('img')!.style.objectFit).toBe('')
+    expect(host.querySelector<HTMLElement>('.img-wrapper')!.style.transform).toBe('')
+    renderer.destroy()
+  })
+
   it("supports readonly audio playback, seeking, errors and disposal across updates", async () => {
     const snapshot = createAllBlocksFixture().audio
     const host = document.createElement("div")

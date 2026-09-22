@@ -66,6 +66,34 @@ const imageSnapshot = (src: string): IBlockSnapshot => ({
 describe('Image Block adapters', () => {
   const fileService = new ImageAdapterFileService()
 
+  it('round trips rotation with ratio sizing and stretch without rotating captions', async () => {
+    const adapter = new HtmlAdapter(fileService, new Map(), BUNDLED_ADAPTER_REGISTRY)
+    const source = imageSnapshot(TINY_PNG)
+    source.props = {...source.props, rotation: -90, fit: 'fill'}
+    const html = await adapter.toHtml(rootSnapshot([source]))
+    const dom = new DOMParser().parseFromString(html, 'text/html')
+    expect(dom.querySelector('img')!.style.transform).toBe('rotate(270deg)')
+    expect(dom.querySelector('img')!.style.objectFit).toBe('fill')
+    expect(dom.querySelector('figure')!.style.transform).toBe('')
+    const imported = (await adapter.toBlockSnapshot(html)).children[0] as IBlockSnapshot
+    expect(imported.props).toEqual(jasmine.objectContaining({wr: 62.5, rotation: 270, fit: 'fill'}))
+    expect(imported.children.length).toBe(1)
+    expect(await adapter.toHtml(rootSnapshot([imageSnapshot(TINY_PNG)]))).not.toContain('data-bc-image-rotation')
+  })
+
+  it('preserves edge-stretched image sizing through HTML without changing legacy fit', async () => {
+    const adapter = new HtmlAdapter(fileService, new Map(), BUNDLED_ADAPTER_REGISTRY)
+    const source = imageSnapshot(TINY_PNG)
+    source.props = {...source.props, ar: 3, fit: 'fill'}
+    const html = await adapter.toHtml(rootSnapshot([source]))
+    const image = new DOMParser().parseFromString(html, 'text/html').querySelector('img')!
+    expect(image.style.objectFit).toBe('fill')
+    const imported = (await adapter.toBlockSnapshot(html)).children[0] as IBlockSnapshot
+    expect(imported.props).toEqual(jasmine.objectContaining({wr: 62.5, ar: 3, fit: 'fill'}))
+    const legacy = await adapter.toHtml(rootSnapshot([imageSnapshot(TINY_PNG)]))
+    expect(legacy).not.toContain('data-bc-image-fit')
+  })
+
   it('imports an ordinary Markdown image from its original URL without resource ingestion', async () => {
     const adapter = new MarkdownAdapter(
       fileService,

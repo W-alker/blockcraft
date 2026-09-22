@@ -88,6 +88,12 @@ describe('Shape block domain', () => {
         ?.getAttribute('aria-label'),
     ).toBe('旋转形状')
 
+    fixture.componentRef.setInput('rotatable', false)
+    fixture.detectChanges()
+    expect(host.querySelectorAll('.shape-resizer__handle').length).toBe(8)
+    expect(host.querySelector('.shape-resizer__rotate')).toBeNull()
+    expect(host.querySelector('.shape-resizer__rotation-stem')).toBeNull()
+
     fixture.destroy()
     TestBed.resetTestingModule()
   })
@@ -483,7 +489,12 @@ describe('Shape block domain', () => {
       clientY: 100,
     })
     Object.defineProperty(down, 'currentTarget', {value: handle})
+    const started: string[] = []
+    const ended = jasmine.createSpy('resizeEnd')
+    resizer.resizeStart.subscribe(handle => started.push(handle))
+    resizer.resizeEnd.subscribe(ended)
     resizer.onPointerDown(down, 'west')
+    expect(started).toEqual(['west'])
 
     target.style.width = '48px'
     target.style.height = '32px'
@@ -499,6 +510,9 @@ describe('Shape block domain', () => {
     expect(target.style.height).toBe('100px')
     expect(target.style.transform).toBe('translate(2px, 3px)')
     expect(target.style.fontSize).toBe('48px')
+    expect(ended).toHaveBeenCalledTimes(1)
+    resizer.ngOnDestroy()
+    expect(ended).toHaveBeenCalledTimes(1)
   })
 
   it('previews scalable content font size with a corner resize', () => {

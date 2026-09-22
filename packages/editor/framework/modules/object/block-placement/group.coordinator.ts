@@ -184,6 +184,7 @@ export class BlockPlacementGroupCoordinator {
             object.width,
             object.height,
             contentWidth,
+            true,
           )
           if (derived) {
             patch['wr'] = derived.wr
@@ -462,6 +463,7 @@ export class BlockPlacementGroupCoordinator {
           object.width,
           object.height,
           contentWidth,
+          true,
         )
         if (derived) {
           if (!sameGeometryNumber(object.props['wr'], derived.wr)) {

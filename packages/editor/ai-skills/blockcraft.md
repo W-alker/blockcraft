@@ -110,6 +110,9 @@ Three `nodeType` categories:
 
 ### Currently Registered Block Schemas (from `editor/bundled-capabilities.ts`)
 
+图片八向抓手支持四角等比、四边独立调宽高，继续使用动态 `wr/ar`；四边拉伸通过
+图片专属 `fit: 'fill'` 保留，浮动布局的旋转抓手写入可选 `rotation` 角度属性（流式隐藏抓手），旧图片缺省外观不变，详见 `blockcraft-block.md`。
+
 `paragraph, ordered, bullet, todo, callout, code, divider, page-divider, image, table, table-row, table-cell, attachment, bookmark, figmaEmbed, juejinEmbed, caption, root, mermaid-textarea, mermaid, blockquote, columns, column, formula, video, audio, shape, shape-text, text-box, word-art, object-group, placement-layout, render-unit, weather, date-card, person-card`
 
 形状目录提供 111 种原生几何，包含平直双端内凹缎带 `ribbon-notched`、单侧缎带、

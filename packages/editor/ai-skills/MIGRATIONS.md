@@ -93,6 +93,40 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 - 自动修复只写 `order`，新插入项可继承同组 `ms`，不因普通段落写入 `start`。
 - 仅修改起始值时沿同组局部重算，跨普通段落传播并止于下一个显式起始值；不再维护跨段专用的第二份计数缓存。
 
+## Unreleased — 2026-09-22：图片八向抓手与旋转
+
+**Severity**: minor
+
+**What changed**: 图片复用公共八向抓手及旋转抓手，四角等比缩放、四边独立调整宽高，新增可选 `rotation` 属性，保留动态 `wr/ar` 和组合尺寸归一化。
+
+**Why**: 统一图片与艺术字的缩放操作，同时保留容器响应式尺寸与旧图片外观。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`。
+
+### New APIs / Features
+
+- `ShapeResizerComponent.rotatable` 默认 `true`，可关闭旋转按钮。图片仅在浮动布局显示旋转抓手。
+- `ImageBlockModel.props.rotation` 与 `ImageBlockCreateInput.rotation` 为可选顺时针角度，缺省 0；旋转抓手支持 Shift 15° 吸附和 Escape 取消。
+- `normalizeObjectSize()`、`resolveObjectDimensions()`、`deriveObjectSizeFromPixels()` 新增可选末参数 `allowOverflow = false`；组合内换算启用它，避免宽图旋转后受 100% 上限影响而缩小。
+- 可选订阅 `resizeStart`（手柄方向）和 `resizeEnd`（提交前或取消时），用于临时外观清理。
+- 图片可选 `props.fit: 'fill'` 表示四边拉伸意图；未设置时仍为 contain。
+
+### Behavior Changes
+
+- 图片原左右等比条替换为八向抓手，四边现在独立调整对应轴；四角保持当前比例。
+- 浮动图片北/西向缩放同步回写位置，组合重排与尺寸写入仍在同一个 Undo 事务内。
+- 抓手不触发整图移动或双击预览；视频和行内图片的抓手不变。
+- 图片工具栏保持原定位；流式（上下型）图片隐藏旋转抓手，八向缩放与已有 `rotation` 属性不变。
+- 旋转图片的视觉面保持与模型角度一致；说明文字不旋转。旋转后的八向缩放补偿中心变化，保持对边/对角锚点。
+- 组合内图片允许宽度比例大于 100%，以表达未旋转宽度超出旋转后包围盒的情况；普通对象的比例上限保持不变。
+
+### Migration Recipe
+
+无需迁移已有文档。自定义图片抓手样式应从图片内的 `block-resizer` 调整到
+`shape-resizer` / `.shape-resizer__handle`。HTML 保存 `data-bc-image-fit="fill"` 和 `data-bc-image-rotation`；
+自定义组合模型投影计算比例时需传入 `allowOverflow: true`（普通对象仍使用默认值）；
+标准 Markdown 继续降级为内容图片。此条目不调整包版本号。
+
 ## Unreleased — 2026-09-22：原生行内人员
 
 **Severity**: minor

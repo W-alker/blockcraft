@@ -327,13 +327,14 @@ describe("ImgToolbarPlugin lifecycle", () => {
   it("does not preview from resize and resource action controls", () => {
     const {plugin, fileService, rootHost, wrapper} = makeHarness();
     const resizer = document.createElement("block-resizer");
+    const shapeResizer = document.createElement("shape-resizer");
     const resourcePlaceholder = document.createElement("div");
     const retry = document.createElement("button");
     resourcePlaceholder.className = "bc-resource-placeholder";
     resourcePlaceholder.append(retry);
-    wrapper.append(resizer, resourcePlaceholder);
+    wrapper.append(resizer, shapeResizer, resourcePlaceholder);
 
-    for (const target of [resizer, retry]) {
+    for (const target of [resizer, shapeResizer, retry]) {
       const event = new MouseEvent("dblclick", {bubbles: true});
       Object.defineProperty(event, "target", {value: target});
       expect(plugin.onImageMouseDown({
@@ -374,6 +375,21 @@ describe("ImgToolbarPlugin lifecycle", () => {
       imageBlock as any,
     );
     expect(doc.dragController.startDrag).not.toHaveBeenCalled();
+    plugin.destroy();
+    rootHost.remove();
+  });
+
+  it("does not start image dragging or replace selection from eight-way handles", () => {
+    const {plugin, doc, rootHost, wrapper} = makeHarness();
+    const resizer = document.createElement('shape-resizer');
+    const handle = document.createElement('button');
+    resizer.append(handle);
+    wrapper.append(resizer);
+    plugin.init();
+    handle.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true, button: 0}));
+    expect(doc.selection.selectBlock).not.toHaveBeenCalled();
+    expect(doc.dragController.startDrag).not.toHaveBeenCalled();
+    expect(doc.placement.startDrag).not.toHaveBeenCalled();
     plugin.destroy();
     rootHost.remove();
   });

@@ -1,3 +1,4 @@
+import {normalizeShapeRotation} from '../../shape-block/shape.types';
 import {parseBlockPosition, storeBlockPosition} from '../../../framework/modules/object/block-placement/state'
 import {BlockHtmlAdapterMatcher} from "../../../adapters/html-adapter/block-adapter";
 import {HastUtils} from "../../../adapters/utils";
@@ -109,9 +110,14 @@ export const imageBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
           ...(ar !== undefined ? {ar} : {}),
         };
       }
+      const rotation = normalizeShapeRotation(image.properties['dataBcImageRotation'] ?? image.properties['data-bc-image-rotation']);
+      if (rotation) snapshot.props = {...snapshot.props, rotation};
       const placementSource = figure?.properties?.['dataImagePlacementMode']
         ? figure
         : image;
+      if (image.properties['dataBcImageFit'] === 'fill') {
+        snapshot.props = {...snapshot.props, fit: 'fill'};
+      }
       if (placementSource.properties?.['dataImagePlacementMode'] === 'absolute') {
         const toFinite = (value: unknown): number => {
           const parsed = typeof value === 'number' ? value : Number(value);
@@ -166,6 +172,8 @@ export const imageBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
             ...(width !== undefined ? {width} : {}),
             ...(height !== undefined ? {height} : {}),
           };
+      const rotation = normalizeShapeRotation(o.node.props['rotation']);
+      const imageStyle = `${'style' in sizeProperties ? sizeProperties.style : ''}${o.node.props['fit'] === 'fill' ? 'object-fit:fill;' : ''}${rotation ? `transform:rotate(${rotation}deg);` : ''}`;
       const position = parseBlockPosition(o.node.props['position'])
 
       walkerContext
@@ -189,6 +197,11 @@ export const imageBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
               properties: {
                 src: o.node.props['src'] as string,
                 ...sizeProperties,
+                ...(o.node.props['fit'] === 'fill' ? {
+                  dataBcImageFit: 'fill',
+                } : {}),
+                ...(rotation ? {dataBcImageRotation: rotation} : {}),
+                ...(imageStyle ? {style: imageStyle} : {}),
               },
               children: [],
             }],

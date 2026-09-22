@@ -56,13 +56,14 @@ const normalizeCapability = (
 export function normalizeObjectSize(
   props: ObjectSizeInput | null | undefined,
   capability: BlockObjectSizingCapability,
+  allowOverflow = false,
 ): NormalizedObjectSize {
   const defaults = normalizeCapability(capability)
   const wr = finitePositive(props?.['wr'])
   const ar = finitePositive(props?.['ar'])
   if (wr !== null) {
     return {
-      wr: clampWr(wr),
+      wr: allowOverflow ? Math.max(MIN_WR, wr) : clampWr(wr),
       ar: ar ?? defaults.defaultAr,
       source: 'ratio',
       exact: ar !== null,
@@ -94,8 +95,9 @@ export function resolveObjectDimensions(
   props: ObjectSizeInput | null | undefined,
   rootContentWidth: number,
   capability: BlockObjectSizingCapability,
+  allowOverflow = false,
 ): ResolvedObjectDimensions | null {
-  const normalized = normalizeObjectSize(props, capability)
+  const normalized = normalizeObjectSize(props, capability, allowOverflow)
   const legacyWidth = finitePositive(props?.['width'])
   const legacyHeight = finitePositive(props?.['height'])
 
@@ -120,6 +122,7 @@ export function deriveObjectSizeFromPixels(
   width: number,
   height: number,
   rootContentWidth: number,
+  allowOverflow = false,
 ): Pick<NormalizedObjectSize, 'wr' | 'ar'> | null {
   const normalizedWidth = finitePositive(width)
   const normalizedHeight = finitePositive(height)
@@ -132,7 +135,9 @@ export function deriveObjectSizeFromPixels(
     return null
   }
   return {
-    wr: roundTo(clampWr(normalizedWidth / normalizedRootWidth * 100), PRECISION_WR),
+    wr: roundTo(allowOverflow
+      ? Math.max(MIN_WR, normalizedWidth / normalizedRootWidth * 100)
+      : clampWr(normalizedWidth / normalizedRootWidth * 100), PRECISION_WR),
     ar: roundTo(normalizedWidth / normalizedHeight, PRECISION_AR),
   }
 }
@@ -218,6 +223,7 @@ export class BlockObjectSizingManager {
       props,
       this.getReferenceWidth(blockId),
       capability,
+      this.doc.placement?.isInObjectGroup?.(blockId) ?? false,
     )
   }
 
