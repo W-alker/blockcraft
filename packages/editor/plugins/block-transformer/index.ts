@@ -593,8 +593,9 @@ export class BlockTransformerPlugin extends DocPlugin {
   private resolveCommandContext(
     block: EditableBlockComponent,
     triggerIndex: number,
+    queryEnd = Infinity,
   ): SlashCommandContext | null {
-    const state = this.resolveSlashQueryState(block, triggerIndex);
+    const state = this.resolveSlashQueryState(block, triggerIndex, queryEnd);
     if (!state) return null;
     const {query, triggerLength} = state;
     const range = this.createCommandRange({
@@ -618,6 +619,7 @@ export class BlockTransformerPlugin extends DocPlugin {
   private resolveSlashQueryState(
     block: EditableBlockComponent,
     triggerIndex: number,
+    queryEnd = Infinity,
   ): {query: string; triggerLength: number} | null {
     const selection = this.getCurrentSelection();
     if (
@@ -630,7 +632,10 @@ export class BlockTransformerPlugin extends DocPlugin {
       !this.isBlockAlive(block) ||
       this.isReadonly(block)
     ) return null;
-    const state = resolveSlashQueryRange(block.textDeltas(), triggerIndex);
+    const state = resolveSlashQueryRange(
+      sliceDelta(block.textDeltas(), 0, queryEnd),
+      triggerIndex,
+    );
     if (!state || !isSlashQueryCursorOwned(
       triggerIndex,
       state.triggerLength,
@@ -1383,6 +1388,12 @@ export class BlockTransformerPlugin extends DocPlugin {
     this.closePickerSession();
     this.closeContextMenu();
 
+    // Anchor the newly typed trigger, before the pre-existing suffix. The end
+    // follows subsequent query input even when selection projection lags Y.Text.
+    const queryRange = new OneShotRangeAnchor(this.doc);
+    queryRange.capture(block, triggerIndex, 1);
+    this.closeMenu$.pipe(take(1)).subscribe(() => queryRange.reset());
+
     const { componentRef: cpr } =
       this.doc.overlayService.createConnectedOverlay<BlockTransformContextMenu>(
         {
@@ -1399,13 +1410,16 @@ export class BlockTransformerPlugin extends DocPlugin {
     cpr.setInput("activeBlock", block);
     cpr.setInput("doc", this.doc);
     cpr.setInput("triggerIndex", triggerIndex);
+    cpr.setInput("queryRange", queryRange);
     cpr.setInput("items", this.buildMenuItems(block, triggerIndex > 0));
     this.activeMenu = cpr.instance;
 
     cpr.instance.commandSelected
       .pipe(takeUntil(this.closeMenu$))
       .subscribe(item => {
-        const context = this.resolveCommandContext(block, triggerIndex);
+        const range = queryRange.resolve();
+        if (!range || range.block !== block) return;
+        const context = this.resolveCommandContext(block, range.index, range.index + range.length);
         if (!context) return;
         void this.executeMenuItem(item, context).catch(error => {
           this.doc.logger.warn("slashCommandExecutionError: ", error);

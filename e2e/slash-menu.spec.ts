@@ -47,6 +47,63 @@ async function editorSelectionSnapshot(page: Page) {
   });
 }
 
+for (const command of ['icon', 'emoji', 'date'] as const) {
+  for (const query of ['', command]) {
+    test(`slash ${command} preserves adjacent paragraph text with query ${query || '(empty)'}`, async ({page}) => {
+      await initialize(page);
+      const blockId = await createEmptyParagraphWithCaret(page);
+      await page.evaluate(({selector, id}) => {
+        const doc = (window as any).ng.getComponent(document.querySelector(selector)).doc;
+        const block = doc.getBlockById(id);
+        block.insertText(0, '原有正文withoutSpaces', {bold: true});
+        doc.selection.setCursorAt(block, 0);
+      }, {selector: editorSelector, id: blockId});
+      await page.keyboard.type('/');
+      const menu = page.locator('block-transformer-contextmenu');
+      await expect(menu).toBeVisible();
+      if (query) await page.keyboard.type(query);
+      await page.evaluate(selector => {
+        (window as any).ng.getComponent(document.querySelector(selector)).doc.crud.undoManager.stopCapturing();
+      }, editorSelector);
+      await menu.getByRole('option', {
+        name: command === 'date' ? /^日期/ : new RegExp(`^${command}`, 'i'),
+      }).click();
+      if (command !== 'date') {
+        await page.locator(`.cs-${command}-picker__option`).first().click();
+        await expect(page.locator(`.cs-${command}-picker__panel`)).toHaveCount(0);
+      }
+      const paragraph = page.locator(`[data-block-id="${blockId}"]`);
+      await expect(paragraph).toContainText('原有正文withoutSpaces');
+      const deltas = await page.evaluate(({selector, id}) => {
+        const doc = (window as any).ng.getComponent(document.querySelector(selector)).doc;
+        return doc.getBlockById(id).textDeltas();
+      }, {selector: editorSelector, id: blockId});
+      expect(deltas.at(-1)).toMatchObject({insert: '原有正文withoutSpaces', attributes: {bold: true}});
+      expect(deltas.some((delta: any) => typeof delta.insert === 'string' && delta.insert.includes('/'))).toBe(false);
+      if (command !== 'emoji') expect(deltas[0].insert).toHaveProperty(command);
+      await page.evaluate(selector => {
+        (window as any).ng.getComponent(document.querySelector(selector)).doc.crud.undoManager.undo();
+      }, editorSelector);
+      // WebKit renders a zero-width cursor placeholder after restoring selection.
+      await expect.poll(() => paragraph.textContent().then(text =>
+        text?.replace(/[\u200B\u200C\uFEFF]/g, ''),
+      )).toBe(`/${query}原有正文withoutSpaces`);
+      expect(await page.evaluate(({selector, id}) => {
+        const doc = (window as any).ng.getComponent(document.querySelector(selector)).doc;
+        return doc.getBlockById(id).yText.toString();
+      }, {selector: editorSelector, id: blockId})).toBe(`/${query}原有正文withoutSpaces`);
+      await page.evaluate(selector => {
+        (window as any).ng.getComponent(document.querySelector(selector)).doc.crud.undoManager.redo();
+      }, editorSelector);
+      await expect(paragraph).toContainText('原有正文withoutSpaces');
+      await expect.poll(() => page.evaluate(({selector, id}) => {
+        const doc = (window as any).ng.getComponent(document.querySelector(selector)).doc;
+        return doc.getBlockById(id).textDeltas();
+      }, {selector: editorSelector, id: blockId})).toEqual(deltas);
+    });
+  }
+}
+
 test('slash local inline image loads and survives snapshot reconstruction', async ({page}) => {
   await initialize(page);
   const blockId = await createEmptyParagraphWithCaret(page);

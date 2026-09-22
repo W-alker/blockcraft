@@ -1,4 +1,6 @@
 import { ElementRef } from "@angular/core";
+import * as Y from "yjs";
+import {OneShotRangeAnchor} from "../../../framework";
 import { BlockTransformContextMenu } from "./contextmenu";
 
 describe("BlockTransformContextMenu keyboard navigation", () => {
@@ -410,6 +412,44 @@ describe("BlockTransformContextMenu keyboard navigation", () => {
     component.activeBlock.textDeltas = () => [{insert: "/icon"}];
 
     expect(component.currentQuery()).toBe("icon");
+  });
+
+  it("tracks query input and collaborative prefix edits without consuming the existing suffix", () => {
+    const selection = {
+      collapsed: true,
+      start: {type: "text", offset: 1},
+      firstBlock: {id: "block-1"},
+    };
+    const {component} = createComponent(selection);
+    const yDoc = new Y.Doc();
+    const yText = yDoc.getText("paragraph");
+    yText.insert(0, "/原有正文");
+    const block = component.activeBlock;
+    Object.defineProperty(block, "textLength", {get: () => yText.length});
+    (block as any).yText = yText;
+    block.textDeltas = () => yText.toDelta();
+    const doc = component.doc as any;
+    doc.yDoc = yDoc;
+    doc.getBlockById = () => block;
+    doc.isEditable = (candidate: unknown) => candidate === block;
+    const range = new OneShotRangeAnchor(doc);
+    range.capture(block, 0, 1);
+    component.queryRange = range;
+
+    expect(component.currentQuery()).toBe("");
+    yText.insert(1, "icon");
+    // Query updates must not depend on selection projection catching up.
+    expect(component.currentQuery()).toBe("icon");
+    yText.insert(0, "前文");
+    selection.start.offset = 7;
+    expect(component.currentQuery()).toBe("icon");
+    selection.start.offset = 8;
+    expect(component.currentQuery()).toBeNull();
+    selection.start.offset = 7;
+    yText.delete(2, 1);
+    expect(component.currentQuery()).toBeNull();
+    range.reset();
+    yDoc.destroy();
   });
 
   it("reads only the slash query in the middle of existing paragraph text", () => {

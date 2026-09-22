@@ -11,8 +11,8 @@ import {
 import { NgForOf } from "@angular/common";
 import { MatIcon } from "@angular/material/icon";
 import { CsIconComponent } from "@cses/ui";
-import { EditableBlockComponent } from "../../../framework";
-import { debounce } from "../../../global";
+import { EditableBlockComponent, OneShotRangeAnchor } from "../../../framework";
+import { debounce, sliceDelta } from "../../../global";
 import {isSelectionAlive} from "../../../framework/modules/selection/liveness";
 import type {SlashMenuItem} from "../command";
 import {createSlashSearchIndex, matchesSlashSearch} from "../search";
@@ -118,6 +118,7 @@ export class BlockTransformContextMenu {
   @Input() doc!: BlockCraft.Doc;
   @Input() activeBlock!: EditableBlockComponent;
   @Input() triggerIndex = 0;
+  @Input() queryRange?: OneShotRangeAnchor;
   @Input() items: readonly SlashMenuItem[] = [];
 
   @Output() close$ = new EventEmitter<boolean>();
@@ -219,12 +220,15 @@ export class BlockTransformContextMenu {
       selection.firstBlock?.id !== this.activeBlock.id ||
       this.activeBlock.textLength <= 0
     ) return null;
+    const range = this.queryRange?.resolve();
+    if (this.queryRange && (!range || range.block !== this.activeBlock)) return null;
+    const triggerIndex = range?.index ?? this.triggerIndex;
     const state = resolveSlashQueryRange(
-      this.activeBlock.textDeltas(),
-      this.triggerIndex,
+      sliceDelta(this.activeBlock.textDeltas(), 0, range ? range.index + range.length : Infinity),
+      triggerIndex,
     );
     if (!state || !isSlashQueryCursorOwned(
-      this.triggerIndex,
+      triggerIndex,
       state.triggerLength,
       selection.start.offset,
     )) return null;
