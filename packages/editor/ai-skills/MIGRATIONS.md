@@ -68,6 +68,25 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## Unreleased — 2026-09-22：Connected Overlay 按实际可视边界切换候选位置
+
+**Severity**: patch
+
+**What changed**: `DocOverlayService` 在平移越界浮层之前，先按 `doc.scrollContainer` 或显式 `clampTo` 与浏览器视口的可用空间选择已有候选位置。Connected Overlay 同时跟随锚点祖先的独立滚动。
+
+**Why**: CDK 仅按浏览器窗口判断上下空间，编辑器视口更小时，顶部放不下的工具栏会被直接推回目标块上。内层填写区滚动也需要重新检查边界。
+
+**Affected ai-skills files**:
+
+- `blockcraft-toolbar.md`
+
+### Behavior Changes
+
+- 上方空间不足且下方可容纳时，使用调用方提供的下方候选；左右候选同样遵守实际边界。
+- 保留调用方的候选顺序与偏移，滚回后可恢复首选位置；都放不下时仍沿用尺寸限制和平移兜底。
+- `clampTo` 仍优先于文档滚动容器，全屏浮层不会受背景编辑器边界限制；global overlay 行为不变。
+- API 签名与数据格式不变，宿主无需迁移。
+
 ## Unreleased — 2026-09-22：行内天气模板素材与显示格式
 
 **Severity**: minor

@@ -62,13 +62,17 @@ export class ColumnsBlockComponent extends BaseBlockComponent<ColumnsBlockModel>
       this.closeColumnToolbar();
       return;
     }
-    if (this.toolbar && this.activeColumnId === column.id) {
+    if (this.toolbar) {
+      if (this.activeColumnId !== column.id) {
+        this.activeColumnId = column.id;
+        this.updateToolbarInputs();
+      }
       return;
     }
     this.closeColumnToolbar();
     this.activeColumnId = column.id;
     const toolbar = this.doc.overlayService.createConnectedOverlay<ColumnsToolbarComponent>({
-      target: column,
+      target: this,
       component: ColumnsToolbarComponent,
       positions: [getPositionWithOffset('top-center', 0, 8), getPositionWithOffset('bottom-center', 0, 8)],
       flexibleDimensions: false,
@@ -98,8 +102,6 @@ export class ColumnsBlockComponent extends BaseBlockComponent<ColumnsBlockModel>
       const target = event.target as Node;
       if (!this.hostElement.contains(target) && !toolbar.overlayRef.overlayElement.contains(target)) this.closeColumnToolbar();
     });
-    // 内层填写区也可能独立滚动；关闭离开可视位置的操作条。
-    fromEvent(owner, 'scroll', {capture: true}).pipe(takeUntil(this.toolbarClose$)).subscribe(() => this.closeColumnToolbar());
   }
 
   private updateToolbarInputs() {

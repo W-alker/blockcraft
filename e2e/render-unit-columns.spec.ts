@@ -152,7 +152,7 @@ for (const count of [2, 3]) {
   }
 }
 
-test('工具栏跟随聚焦子栏，遵守八栏上限，且随只读和块销毁清理', async ({page}) => {
+test('工具栏固定在分栏中间，操作跟随聚焦子栏，且随只读和块销毁清理', async ({page}) => {
   const ids = await setup(page, 'fixed')
   const columns = page.locator(`[data-block-id="${ids.columns}"]`)
   const toolbar = page.getByRole('toolbar', {name: '分栏操作'})
@@ -161,15 +161,19 @@ test('工具栏跟随聚焦子栏，遵守八栏上限，且随只读和块销�
   await columns.locator('.paragraph-block').first().click()
   await expect(toolbar).toContainText('第 1 栏')
   const firstBox = (await toolbar.boundingBox())!
+  const columnsBox = (await columns.boundingBox())!
+  expect(Math.abs(firstBox.x + firstBox.width / 2 - columnsBox.x - columnsBox.width / 2)).toBeLessThan(2)
   await columns.locator('.paragraph-block').nth(1).click()
   await expect(toolbar).toContainText('第 2 栏')
   const secondBox = (await toolbar.boundingBox())!
-  expect(secondBox.x).toBeGreaterThan(firstBox.x + 50)
+  expect(Math.abs(secondBox.x - firstBox.x)).toBeLessThan(2)
   await page.mouse.move(5, 5)
   await expect(toolbar).toBeVisible()
   await toolbar.getByRole('button', {name: '在左侧插入栏'}).click()
   await expect(columns.locator('.column-block')).toHaveCount(3)
   await expect(toolbar).toContainText('第 3 栏')
+  const insertedBox = (await toolbar.boundingBox())!
+  expect(Math.abs(insertedBox.x - firstBox.x)).toBeLessThan(2)
   for (let count = 4; count <= 8; count++) {
     await toolbar.getByRole('button', {name: '在右侧插入栏'}).click()
     await expect(columns.locator('.column-block')).toHaveCount(count)
@@ -186,6 +190,106 @@ test('工具栏跟随聚焦子栏，遵守八栏上限，且随只读和块销�
   await page.evaluate(id => (window as any).columnsFixture.crud.deleteBlockById(id), ids.columns)
   await expect(toolbar).toHaveCount(0)
 })
+
+for (const scrollOwner of ['document', 'region'] as const) {
+  test(`${scrollOwner}: 顶部空间不足时浮层翻到分栏下方，滚回后恢复上方`, async ({page}) => {
+    const ids = await setup(page, 'fixed')
+    await page.evaluate(({ids, scrollOwner}) => {
+      const doc = (window as any).columnsFixture
+      const parent = scrollOwner === 'document' ? doc.root : doc.getBlockById(ids.region)
+      doc.crud.transact(() => {
+        doc.crud.insertBlockSnapshots(parent.id, 0, Array.from({length: 4}, () => doc.schemas.createSnapshot('paragraph', [])))
+        doc.crud.insertBlockSnapshots(parent.id, parent.childrenLength, Array.from({length: 30}, () => doc.schemas.createSnapshot('paragraph', [])))
+      })
+    }, {ids, scrollOwner})
+    const columns = page.locator(`[data-block-id="${ids.columns}"]`)
+    const toolbar = page.getByRole('toolbar', {name: '分栏操作'})
+    await columns.locator('.paragraph-block').first().click()
+    const expectSide = async (below: boolean) => {
+      await expect(toolbar).toBeVisible()
+      await expect.poll(async () => {
+        const bar = await toolbar.boundingBox()
+        const block = (await columns.boundingBox())!
+        return bar ? Math.abs(below ? bar.y - block.y - block.height - 8 : block.y - bar.y - bar.height - 8) : Infinity
+      }).toBeLessThan(2)
+      const bar = (await toolbar.boundingBox())!
+      const block = (await columns.boundingBox())!
+      expect(Math.abs(bar.x + bar.width / 2 - block.x - block.width / 2)).toBeLessThan(2)
+    }
+    await expectSide(false)
+    await page.evaluate(({ids, scrollOwner}) => {
+      const doc = (window as any).columnsFixture
+      const scroller = scrollOwner === 'document' ? doc.scrollContainer :
+        doc.getBlockById(ids.region).hostElement.querySelector('.render-unit-content')
+      scroller.scrollTop += doc.getBlockById(ids.columns).hostElement.getBoundingClientRect().top -
+        doc.scrollContainer.getBoundingClientRect().top - 16
+    }, {ids, scrollOwner})
+    await expectSide(true)
+    await page.keyboard.press('Escape')
+    // 顶部空间不足时重新打开，也应直接使用下方候选位置。
+    await columns.locator('.paragraph-block').first().dispatchEvent('click')
+    await expectSide(true)
+    await page.evaluate(({ids, scrollOwner}) => {
+      const doc = (window as any).columnsFixture
+      const scroller = scrollOwner === 'document' ? doc.scrollContainer :
+        doc.getBlockById(ids.region).hostElement.querySelector('.render-unit-content')
+      scroller.scrollTop = 0
+    }, {ids, scrollOwner})
+    await expectSide(false)
+  })
+
+  test(`${scrollOwner}: 滚动时分栏浮层保持显示并跟随定位，无关面板滚动不关闭`, async ({page}) => {
+    const ids = await setup(page, 'fixed')
+    await page.evaluate(({ids, scrollOwner}) => {
+      const doc = (window as any).columnsFixture
+      const parent = scrollOwner === 'document' ? doc.root : doc.getBlockById(ids.region)
+      doc.crud.transact(() => {
+        doc.crud.insertBlockSnapshots(parent.id, 0, Array.from({length: 4}, () => doc.schemas.createSnapshot('paragraph', [])))
+        doc.crud.insertBlockSnapshots(parent.id, parent.childrenLength, Array.from({length: 30}, () => doc.schemas.createSnapshot('paragraph', [])))
+      })
+    }, {ids, scrollOwner})
+    const columns = page.locator(`[data-block-id="${ids.columns}"]`)
+    await columns.locator('.paragraph-block').first().click()
+    const toolbar = page.getByRole('toolbar', {name: '分栏操作'})
+    await expect(toolbar).toBeVisible()
+    const before = (await toolbar.boundingBox())!
+    const selected = (await columnState(page, ids.columns)).head
+    const scrollBy = 32
+    await page.evaluate(({ids, scrollOwner, scrollBy}) => {
+      const doc = (window as any).columnsFixture
+      const scroller = scrollOwner === 'document' ? doc.scrollContainer :
+        doc.getBlockById(ids.region).hostElement.querySelector('.render-unit-content')
+      scroller.scrollTop += scrollBy
+    }, {ids, scrollOwner, scrollBy})
+    await expect(toolbar).toBeVisible()
+    await expect.poll(async () => {
+      const after = await toolbar.boundingBox()
+      return after ? Math.abs(after.y - before.y + scrollBy) : Infinity
+    }).toBeLessThan(2)
+    const after = (await toolbar.boundingBox())!
+    expect(Math.abs(after.x - before.x)).toBeLessThan(2)
+    expect((await columnState(page, ids.columns)).head).toEqual(selected)
+
+    await page.evaluate(async () => {
+      const panel = document.createElement('div')
+      panel.style.cssText = 'position:fixed;right:0;bottom:0;width:20px;height:20px;overflow:auto'
+      const content = document.createElement('div')
+      content.style.height = '200px'
+      panel.appendChild(content)
+      document.body.appendChild(panel)
+      await new Promise<void>(resolve => {
+        panel.addEventListener('scroll', () => { panel.remove(); resolve() }, {once: true})
+        panel.scrollTop = 50
+      })
+    })
+    await expect(toolbar).toBeVisible()
+    const unchanged = (await toolbar.boundingBox())!
+    expect(Math.abs(unchanged.x - after.x)).toBeLessThan(2)
+    expect(Math.abs(unchanged.y - after.y)).toBeLessThan(2)
+    await toolbar.getByRole('button', {name: '在右侧插入栏'}).click()
+    await expect(columns.locator('.column-block')).toHaveCount(3)
+  })
+}
 
 for (const mode of ['fixed', 'paginated', 'root'] as const) {
   test(`${mode}: 取消分栏保留内容顺序、块身份和选区，撤销恢复结构与栏宽`, async ({page}) => {

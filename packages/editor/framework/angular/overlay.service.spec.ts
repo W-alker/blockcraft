@@ -1,4 +1,5 @@
-import {DocOverlayService} from './overlay.service'
+import {DocOverlayService, getPositionWithOffset, type OverlayPosition} from './overlay.service'
+import type {ConnectedPosition} from '@angular/cdk/overlay'
 import {Subject} from 'rxjs'
 
 class TestOverlayComponent {}
@@ -20,14 +21,19 @@ describe('DocOverlayService', () => {
     overlayHost.appendChild(overlayElement)
 
     const order: string[] = []
+    let positions: ConnectedPosition[] = []
     const releaseBlockViewLease = jasmine.createSpy('releaseBlockViewLease')
     const flexiblePosition = {
+      get positions() { return positions },
       positionChanges,
       withFlexibleDimensions: jasmine.createSpy('withFlexibleDimensions').and.callFake(() => flexiblePosition),
       withGrowAfterOpen: jasmine.createSpy('withGrowAfterOpen').and.callFake(() => flexiblePosition),
       withPush: jasmine.createSpy('withPush').and.callFake(() => flexiblePosition),
       withViewportMargin: jasmine.createSpy('withViewportMargin').and.callFake(() => flexiblePosition),
-      withPositions: jasmine.createSpy('withPositions').and.callFake(() => flexiblePosition),
+      withPositions: jasmine.createSpy('withPositions').and.callFake(value => {
+        positions = value
+        return flexiblePosition
+      }),
     }
     const globalPosition = {
       centerHorizontally: jasmine.createSpy('centerHorizontally').and.callFake(() => globalPosition),
@@ -46,6 +52,7 @@ describe('DocOverlayService', () => {
       backdropClick: () => backdropClick$.asObservable(),
       detachments: () => detachments$.asObservable(),
       updatePosition: jasmine.createSpy('updatePosition'),
+      getDirection: jasmine.createSpy('getDirection').and.returnValue('ltr'),
       updateSize: jasmine.createSpy('updateSize'),
       overlayElement,
       hostElement: overlayHost,
@@ -272,6 +279,59 @@ describe('DocOverlayService', () => {
     expect(overlayRef.updateSize).not.toHaveBeenCalled()
 
     scrollContainer.remove()
+  })
+
+  for (const scenario of [
+    {name: '上方不足时切到下方', positions: ['top-center', 'bottom-center'],
+      origin: [250, 110, 40, 30], before: [170, 62, 200, 40], after: [170, 148, 200, 40]},
+    {name: '下方不足时切到上方', positions: ['bottom-center', 'top-center'],
+      origin: [250, 360, 40, 30], before: [170, 398, 200, 40], after: [170, 312, 200, 40]},
+    {name: '右侧不足时切到左侧', positions: ['right-center', 'left-center'],
+      origin: [450, 220, 40, 30], before: [498, 215, 140, 40], after: [302, 215, 140, 40]},
+    {name: 'RTL 仍按逻辑起止边选择候选', positions: ['top-left', 'bottom-right'], rtl: true,
+      origin: [250, 110, 40, 30], before: [90, 62, 200, 40], after: [250, 148, 200, 40]},
+  ]) {
+    it(`按编辑器边界${scenario.name}，并保留调用方的原始候选顺序`, () => {
+      const h = createOverlayHarness()
+      const preferred = scenario.positions.map(name => getPositionWithOffset(name as OverlayPosition,
+        name.includes('center') && (name.startsWith('left') || name.startsWith('right')) ? 8 : 0,
+        name.startsWith('top') || name.startsWith('bottom') ? 8 : 0))
+      h.flexiblePosition.withPositions(preferred)
+      h.flexiblePosition.withPositions.calls.reset()
+      h.overlayRef.getDirection.and.returnValue(scenario.rtl ? 'rtl' : 'ltr')
+      const toRect = ([x, y, width, height]: number[]) => new DOMRect(x, y, width, height)
+      spyOn(h.scrollContainer, 'getBoundingClientRect').and.returnValue(new DOMRect(100, 100, 400, 300))
+      spyOn(h.targetElement, 'getBoundingClientRect').and.returnValue(toRect(scenario.origin))
+      let rect = toRect(scenario.before)
+      spyOn(h.overlayElement, 'getBoundingClientRect').and.callFake(() => rect)
+      h.overlayRef.updatePosition.and.callFake(() => { rect = toRect(scenario.after) })
+
+      ;(h.service as any)._clampConnectedOverlay(h.overlayRef, undefined,
+        {origin: h.targetElement, strategy: h.flexiblePosition})
+
+      expect(h.flexiblePosition.withPositions.calls.first().args[0]).toEqual([preferred[1]])
+      expect(h.flexiblePosition.positions).toEqual(preferred)
+      expect(h.overlayRef.updatePosition).toHaveBeenCalledTimes(1)
+      expect(h.overlayHost.style.transform).toBe('')
+      h.cleanup()
+    })
+  }
+
+  it('所有候选均放不下时保留平移兜底，不反复重定位', () => {
+    const h = createOverlayHarness()
+    const preferred = ['top-center', 'bottom-center'].map(name => getPositionWithOffset(name as OverlayPosition, 0, 8))
+    h.flexiblePosition.withPositions(preferred)
+    spyOn(h.scrollContainer, 'getBoundingClientRect').and.returnValue(new DOMRect(100, 100, 400, 100))
+    spyOn(h.targetElement, 'getBoundingClientRect').and.returnValue(new DOMRect(250, 110, 40, 80))
+    spyOn(h.overlayElement, 'getBoundingClientRect').and.returnValue(new DOMRect(170, 62, 200, 40))
+
+    ;(h.service as any)._clampConnectedOverlay(h.overlayRef, undefined,
+      {origin: h.targetElement, strategy: h.flexiblePosition})
+
+    expect(h.overlayRef.updatePosition).not.toHaveBeenCalled()
+    expect(h.flexiblePosition.positions).toEqual(preferred)
+    expect(h.overlayHost.style.transform).toBe('translate(0px, 46px)')
+    h.cleanup()
   })
 
   it('treats an explicit clamp owner as authoritative over the document scroller', () => {

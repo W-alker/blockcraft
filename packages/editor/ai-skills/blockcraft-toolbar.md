@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-09-21
+> Last updated: 2026-09-22
 
 ## Overlay Service
 
@@ -54,8 +54,13 @@ Connected overlays normally clamp their final pane to `doc.scrollContainer`.
 Pass `clampTo` when the interaction owns a different visible coordinate space,
 such as an in-place fullscreen block. An explicit `clampTo` element is the
 authoritative boundary; it is not intersected with the hidden or locked
-document scroller. CDK still chooses among `positions` and pushes within the
-viewport before BlockCraft performs this final clamp.
+document scroller. Before translating a pane back into that boundary, the service
+tries the first configured position that fits both the boundary and browser
+viewport. This lets an above/below toolbar flip sides instead of covering its
+anchor. The caller's position order is preserved for subsequent updates; if no
+candidate fits, the existing size limits and final clamp remain the fallback.
+Connected overlays follow scrolls from the document and their anchor's ancestors,
+including independently scrolling template regions; unrelated panels are ignored.
 
 Choose the target by ownership, not only by geometry:
 
@@ -220,13 +225,13 @@ export class MyToolbarComponent {
 
 ## Existing Reusable Components
 
-分栏使用直属子栏所属的 connected Overlay，跟随模型选区的 head 所在子栏，优先在
-该栏上方居中显示，空间不足时回落到下方。工具栏参考表格结构工具栏，提供当前栏左侧
+分栏的 connected Overlay 固定在整组分栏上方居中，空间不足时回落到下方。
+切换子栏时复用浮层，操作对象跟随模型选区的 head 所在子栏，横向位置保持不变。工具栏提供当前栏左侧
 插入、右侧插入和取消分栏；插入时按稳定子栏 ID 重查索引，避免协同修改后错位。
 取消分栏在单次事务中将各栏内容按从左到右的顺序搬回父级，保留块身份和可恢复的选区，
 撤销可恢复分栏结构和栏宽；存在只读后代或父级不允许的内容类型时禁用。
 栏内只保留列宽拖动线，不再渲染 `.column-divider .add-point` 或末尾的添加专用 divider。
-浮层不进入填写区的滚动层，选区离开、外部点击、Escape、滚动、只读或销毁时关闭。
+浮层不进入填写区的滚动层，文档或填写区滚动时跟随定位；选区离开、外部点击、Escape、只读或销毁时关闭。
 此组件是分栏内部 UI，不需要宿主额外注册 Plugin，`columnWidths` 与 `addColumn()` 契约不变。
 子栏悬停时显示顶部居中的 mini 抓手（`column-drag-handle`），接入既有
 `doc.dragController`，仅在当前分栏组内移动整栏；UI 命中与执行命令都拒绝组外落点。

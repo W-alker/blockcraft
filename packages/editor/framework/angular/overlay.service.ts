@@ -245,6 +245,7 @@ export class DocOverlayService {
   private _clampConnectedOverlay(
     overlayRef: OverlayRef,
     clampTo?: HTMLElement,
+    connection?: {origin: HTMLElement; strategy: FlexibleConnectedPositionStrategy; position?: ConnectedPosition},
   ) {
     const scrollContainer = this.doc.scrollContainer;
     if (!scrollContainer?.isConnected || !overlayRef.hasAttached()) return;
@@ -286,11 +287,47 @@ export class DocOverlayService {
 
     hostElement.style.transform = '';
 
-    const overlayRect = overlayElement.getBoundingClientRect();
+    let overlayRect = overlayElement.getBoundingClientRect();
     const minLeft = containerRect.left + CONNECTED_OVERLAY_MARGIN;
     const maxRight = containerRect.right - CONNECTED_OVERLAY_MARGIN;
     const minTop = containerRect.top + CONNECTED_OVERLAY_MARGIN;
     const maxBottom = containerRect.bottom - CONNECTED_OVERLAY_MARGIN;
+
+    // CDK 按浏览器视口选择候选位置；编辑器可视区可能更小。先尝试能完整
+    // 放入该边界的候选，再做平移兜底，避免把上方工具条直接压回目标块上。
+    const origin = connection?.origin;
+    if (connection && origin?.isConnected && (overlayRect.left < minLeft || overlayRect.right > maxRight ||
+      overlayRect.top < minTop || overlayRect.bottom > maxBottom)) {
+      const strategy = connection.strategy;
+      const positions = strategy.positions;
+      const targetRect = origin.getBoundingClientRect();
+      const viewport = origin.ownerDocument.documentElement;
+      const rtl = overlayRef.getDirection() === 'rtl';
+      const xRatio = (alignment: 'start' | 'center' | 'end') =>
+        alignment === 'center' ? 0.5 : (alignment === 'start') === rtl ? 1 : 0;
+      const yRatio = (alignment: 'top' | 'center' | 'bottom') =>
+        alignment === 'center' ? 0.5 : alignment === 'top' ? 0 : 1;
+      const fitting = positions.find(position => {
+        const left = targetRect.left + targetRect.width * xRatio(position.originX) -
+          overlayRect.width * xRatio(position.overlayX) + (position.offsetX ?? 0);
+        const top = targetRect.top + targetRect.height * yRatio(position.originY) -
+          overlayRect.height * yRatio(position.overlayY) + (position.offsetY ?? 0);
+        return left >= Math.max(minLeft, CONNECTED_OVERLAY_MARGIN) &&
+          left + overlayRect.width <= Math.min(maxRight, viewport.clientWidth - CONNECTED_OVERLAY_MARGIN) &&
+          top >= Math.max(minTop, CONNECTED_OVERLAY_MARGIN) &&
+          top + overlayRect.height <= Math.min(maxBottom, viewport.clientHeight - CONNECTED_OVERLAY_MARGIN);
+      });
+      if (fitting && fitting !== connection.position) {
+        try {
+          strategy.withPositions([fitting]);
+          overlayRef.updatePosition();
+        } finally {
+          // 保留调用方的优先顺序，滚回或再次更新时仍可恢复首选位置。
+          strategy.withPositions([...positions]);
+        }
+        overlayRect = overlayElement.getBoundingClientRect();
+      }
+    }
 
     let translateX = 0;
     let translateY = 0;
@@ -393,7 +430,12 @@ export class DocOverlayService {
       releaseTargetView();
     });
 
-    if ('target' in params) {
+    const connection = 'target' in params ? {
+      origin: params.target instanceof HTMLElement ? params.target : params.target.hostElement,
+      strategy: positionStrategy as FlexibleConnectedPositionStrategy,
+      position: undefined as ConnectedPosition | undefined,
+    } : undefined;
+    if (connection) {
       let clampFrame: number | null = null;
       const scheduleClamp = () => {
         if (clampFrame !== null || !overlayRef.hasAttached()) return;
@@ -402,13 +444,17 @@ export class DocOverlayService {
           this._clampConnectedOverlay(
             overlayRef,
             'target' in params ? params.clampTo : undefined,
+            connection,
           );
         });
       };
 
-      (positionStrategy as FlexibleConnectedPositionStrategy).positionChanges
+      connection.strategy.positionChanges
         .pipe(takeUntil(close$))
-        .subscribe(scheduleClamp);
+        .subscribe(change => {
+          connection.position = change.connectionPair;
+          scheduleClamp();
+        });
 
       let resizeObserver: ResizeObserver | undefined;
       if (typeof ResizeObserver !== 'undefined' && this.doc.scrollContainer) {
@@ -436,14 +482,17 @@ export class DocOverlayService {
           close$.next(true);
         });
 
-    fromEvent(this.doc.scrollContainer!, 'scroll')
-      .pipe(takeUntil(close$))
+    // Connected overlay 同时跟随文档和内层祖先滚动。CDK 在候选位置未变时
+    // 不一定发 positionChanges，因此每次滚动定位后仍需校验实际可视边界。
+    fromEvent(connection?.origin.ownerDocument ?? this.doc.scrollContainer!, 'scroll', {capture: true})
+      .pipe(filter(event => event.target === this.doc.scrollContainer ||
+        !!connection && event.target instanceof Node && event.target.contains(connection.origin)), takeUntil(close$))
       .subscribe(
         throttle(() => {
           if (!overlayRef.hasAttached()) return;
           overlayRef.updatePosition();
           'target' in params &&
-            this._clampConnectedOverlay(overlayRef, params.clampTo);
+            this._clampConnectedOverlay(overlayRef, params.clampTo, connection);
         }, 200),
       );
 
