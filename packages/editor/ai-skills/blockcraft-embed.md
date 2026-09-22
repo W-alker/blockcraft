@@ -4,7 +4,7 @@
 >
 > For inline system internals, see L2: `blockcraft-inline.md`
 >
-> Last updated: 2026-09-21
+> Last updated: 2026-09-22
 
 ## What is an Inline Embed?
 
@@ -455,8 +455,9 @@ Two rules the shape encodes:
 
 `toView` renders a theme-aware date chip with the bundled
 `bc_icon bc_calendar-minus` icon followed by the formatted text. The chip follows
-the surrounding text baseline using natural inline layout, while its icon and
-value remain slightly smaller than surrounding text. It mirrors both fields onto
+the surrounding text baseline using natural inline layout. Its value inherits
+the surrounding font size; only the icon remains slightly smaller. Hover
+underlines the value without adding a background or border color. It mirrors both fields onto
 `data-bc-date-value` / `data-bc-date-format` so `toDelta` can rebuild the delta
 from DOM alone (copy/paste, HTML import). The text node is derived output and
 is never read back.
