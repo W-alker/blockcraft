@@ -1,5 +1,5 @@
 import { AfterViewInit, ChangeDetectionStrategy, ChangeDetectorRef, Component, ElementRef, EventEmitter, Injector, Input, OnDestroy, Output, ViewChild, inject } from '@angular/core'
-import { BlockCraftDoc, IBlockSnapshot } from '@ccc/blockcraft'
+import { BlockCraftDoc, IBlockSnapshot, DOC_WEATHER_SERVICE_TOKEN, materializeInlineWeatherSnapshots } from '@ccc/blockcraft'
 import { FixedTextToolbarComponent } from '@ccc/blockcraft/plugins/fixed-toolbar'
 import {
   TEMPLATE_CONSUMER_USER_ID,
@@ -73,6 +73,7 @@ export class TemplateUseSurfaceComponent implements AfterViewInit, OnDestroy {
   private readonly data = inject(TEMPLATE_DATA)        // render embed 需要真实(mock)数据闭包
   /** 调试用：编辑器列宽缩放（滑块在调试面板）。 */
   protected readonly view = inject(EditorViewState)
+  private readonly loadAbort = new AbortController()
   doc!: BlockCraftDoc
   private pagination!: ReturnType<typeof createDecoDoc>['pagination']
   /** 物料保全卫兵的订阅（使用页同样可编辑：全选删除只清普通内容，动态物料保持原布局）。 */
@@ -94,13 +95,19 @@ export class TemplateUseSurfaceComponent implements AfterViewInit, OnDestroy {
     })
     this.doc = runtime.doc
     this.pagination = runtime.pagination
-    void this.loadTemplate()
+    void this.loadTemplate().catch(error => {
+      if (!this.loadAbort.signal.aborted) {
+        this.doc.messageService.warn('模板加载失败')
+        console.error(error)
+      }
+    })
     if (this.paginationEnabled) this.pagination.enable()
     this.decoGuard = guardDecoDeletion(this.doc, this.host.nativeElement)
     this.cdr.markForCheck()                             // OnPush：doc 就绪后挂出 toolbar
     this.ready.emit(this.doc)
   }
   ngOnDestroy(): void {
+    this.loadAbort.abort()
     this.decoGuard?.unsubscribe()
     this.doc?.destroy()
   }
@@ -110,16 +117,24 @@ export class TemplateUseSurfaceComponent implements AfterViewInit, OnDestroy {
     const rawChildren = (this.snapshot?.children ?? []) as IBlockSnapshot[]
     if (!rawChildren.length) return
     const user = await firstValueFrom(this.data.user.current())
+    this.loadAbort.signal.throwIfAborted()
+    const createdAt = new Date()
     const normalized = normalizeTemplateSnapshots(rawChildren)
     const children = materializeTemplateSnapshots(normalized, {
-      createdAt: new Date(),
+      createdAt,
       creator: {
         name: user.name,
         avatar: user.avatarUrl,
         description: user.deptName ?? user.orgName,
       },
     })
-    replaceRootChildren(this.doc, children)
+    const resolved = await materializeInlineWeatherSnapshots(children, {
+      createdAt,
+      weather: this.doc.injector.get(DOC_WEATHER_SERVICE_TOKEN),
+      signal: this.loadAbort.signal,
+    })
+    this.loadAbort.signal.throwIfAborted()
+    replaceRootChildren(this.doc, resolved)
   }
 
   // 点空白处 → 光标落到末段/补空段（逻辑收在 core/placement，两个 surface 共用）

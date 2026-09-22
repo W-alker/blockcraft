@@ -31,6 +31,8 @@ import {
   createInlineWordArtEmbedConverter,
 } from "../../embeds/word-art";
 
+import {INLINE_WEATHER_EMBED_KEY, createInlineWeatherEmbedConverter} from "../../embeds/weather";
+
 const INLINE_ELEMENT_TAG = "c-element";
 
 /**
@@ -46,6 +48,7 @@ export function createBuiltinInlineEmbedRenderers(): Record<
     [INLINE_ICON_EMBED_KEY]: inlineIconEmbedConverter.toView,
     [INLINE_IMAGE_EMBED_KEY]: inlineImageEmbedConverter.toView,
     [INLINE_DATE_EMBED_KEY]: createInlineDateEmbedConverter().toView,
+    [INLINE_WEATHER_EMBED_KEY]: createInlineWeatherEmbedConverter().toView,
     [INLINE_MENTION_EMBED_KEY]: createInlineMentionEmbedConverter().toView,
     [INLINE_LATEX_EMBED_KEY]: createInlineLatexEmbedConverter().toView,
     [INLINE_SHAPE_EMBED_KEY]: createInlineShapeEmbedConverter().toView,

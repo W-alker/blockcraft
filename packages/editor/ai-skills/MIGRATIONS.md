@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-09-21 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-09-22 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -67,6 +67,41 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > - `major` (e.g. 0.1.37 → 1.0.0): breaking — removed APIs, renamed exports, signature changes, behavior reversals
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
+
+## Unreleased — 2026-09-22：行内天气模板素材与显示格式
+
+**Severity**: minor
+
+**What changed**: 新增 `weather` Inline Embed、模板实例化 helper 和零配置 `WeatherInlineExtensionPlugin`。模板面板新增天气随文素材，支持四种显示组合。
+
+**Why**: 天气需要与日期一样嵌入段落，并独立配置格式，不能用独立卡片外观代替文本流对象。
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-embed.md`
+- `blockcraft-app.md`
+- `blockcraft-plugin.md`
+- `blockcraft-plugins-inline.md`
+- `blockcraft-plugins-ref.md`
+
+### New APIs / Features
+
+`INLINE_WEATHER_EMBED_KEY`、`INLINE_WEATHER_CLASS`、`INLINE_WEATHER_FORMATS`、`InlineWeatherFormat`、
+`isInlineWeatherFormat`、`createInlineWeatherDelta`、`readInlineWeatherDelta`、`formatInlineWeatherDelta`、
+`createInlineWeatherEmbedConverter`、`weatherEmbedAdapters`、`materializeInlineWeatherSnapshots`、`WeatherInlineExtensionPlugin`。
+
+### Migration Recipe
+
+旧天气卡片无需迁移。bundled 编辑器与只读快照展示自动识别新 Embed；
+自组装宿主注册 converter、adapter 和格式插件，模板创建流程调用
+`materializeInlineWeatherSnapshots` 并传入现有天气服务（示例见 `blockcraft-app.md`）。
+
+### Behavior Changes
+
+仅新增行内天气，默认使用主题蓝色，允许显式文字色覆盖。格式独立存储，不改变定格天气；模板编辑不查询天气，
+创建文档时一次求值并保存。普通服务失败显示不可用；取消不会返回供写入的快照。
+既有天气块/行内日期不变。包版本由用户决定，本条为未发布记录。
 
 ## Unreleased — 2026-09-21：子栏 mini 抓手与事务内单栏展开
 

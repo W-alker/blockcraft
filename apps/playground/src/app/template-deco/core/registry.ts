@@ -8,6 +8,8 @@ import {
   IBlockSchemaOptions,
   type InlineEmbedAdapterContribution,
   INLINE_DATE_EMBED_KEY,
+  INLINE_WEATHER_EMBED_KEY,
+  createInlineWeatherDelta,
   INLINE_ICON_EMBED_KEY,
   draftPropMetaKey,
 } from '@ccc/blockcraft'
@@ -62,6 +64,13 @@ export type Material =
     }
 
 const EDITOR_EMBED_MATERIALS: Material[] = [
+  {
+    kind: MaterialKind.Embed,
+    name: INLINE_WEATHER_EMBED_KEY,
+    label: '天气(行内)',
+    svgIcon: 'tpl-weather',
+    createDelta: () => createInlineWeatherDelta(),
+  },
   {
     kind: MaterialKind.Embed,
     name: INLINE_DATE_EMBED_KEY,

@@ -6,7 +6,7 @@ import {
   type IBlockSnapshot,
 } from '../framework'
 import {BUNDLED_EDITOR_SCHEMAS} from './bundled-capabilities'
-import {createInlineWordArtDelta} from '../embeds'
+import {createInlineWeatherDelta, createInlineWordArtDelta} from '../embeds'
 import {
   BUNDLED_ADAPTER_REGISTRY,
   BUNDLED_BLOCK_ADAPTER_CONTRIBUTIONS,
@@ -98,9 +98,27 @@ describe('bundled Adapter registry', () => {
     }
   })
 
+  it('round-trips inline weather data and format through HTML and BlockCraft Markdown', async () => {
+    const delta = createInlineWeatherDelta({tone: 'cloudy', temp: 25, high: 28, low: 20, condition: '多云', location: '杭州'}, 'temp')
+    const snapshot = root([{
+      id: 'weather-text', flavour: 'paragraph', nodeType: BlockNodeType.editable,
+      props: {}, meta: {}, children: [delta],
+    }])
+    const htmlAdapter = new HtmlAdapter(fileService, new Map(), BUNDLED_ADAPTER_REGISTRY)
+    const html = await htmlAdapter.toHtml(snapshot)
+    expect(html).toContain('25°C')
+    const htmlResult = await htmlAdapter.toBlockSnapshot(html)
+    expect((htmlResult.children[0] as IBlockSnapshot).children).toEqual([delta])
+    const markdownAdapter = new MarkdownAdapter(fileService,
+      new Map([[MARKDOWN_ADAPTER_PROFILE_CONFIG, 'blockcraft']]), BUNDLED_ADAPTER_REGISTRY)
+    const markdown = await markdownAdapter.toMarkdown(snapshot)
+    const markdownResult = await markdownAdapter.toBlockSnapshot(markdown)
+    expect((markdownResult.children[0] as IBlockSnapshot).children).toEqual([delta])
+  })
+
   it('covers every bundled inline Embed exactly once', () => {
     expect(BUNDLED_INLINE_EMBED_ADAPTER_CONTRIBUTIONS.map(item => item.key))
-      .toEqual(['icon', 'image', 'date', 'mention', 'latex', 'shape', 'word-art'])
+      .toEqual(['icon', 'image', 'date', 'weather', 'mention', 'latex', 'shape', 'word-art'])
     for (const contribution of BUNDLED_INLINE_EMBED_ADAPTER_CONTRIBUTIONS) {
       expect(contribution.html.deltaToAst.length).toBeGreaterThan(0)
       expect(contribution.html.astToDelta.length).toBeGreaterThan(0)

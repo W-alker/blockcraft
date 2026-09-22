@@ -77,7 +77,7 @@ converter in `embeds/<embed-key>/index.ts`, HTML/Markdown serialization in
 barrel. `InlineEmbedAdapterContribution.key` must equal the converter's
 canonical Delta key. The bundled registry rejects duplicate keys.
 
-All seven built-ins (`icon`, `image`, `date`, `mention`, `latex`, `shape`, and
+All eight built-ins (`icon`, `image`, `date`, `weather`, `mention`, `latex`, `shape`, and
 `word-art`) provide co-located adapter contributions. HTML uses specialized
 portable markup where one exists and a bounded `data-bc-inline-*` envelope for
 otherwise lossy payloads. The default Markdown profile is `hybrid`, but its
@@ -546,3 +546,26 @@ emits only readable object text.
 - [ ] If AI must only understand the Embed, declare a capability without `insert`; if no AI semantics are needed, omit `agent/` entirely
 - [ ] CSS styles added for the embed element class
 - [ ] `onDestroy` implemented if the embed creates subscriptions or listeners
+
+## 行内天气（weather）
+
+`createInlineWeatherDelta(weather?, format?)` 创建长度为 1 的随文对象。
+`insert.weather` 为 `DocWeatherData` 的 JSON 字符串；模板空值配合
+`attributes.weatherSource = 'createdTime'` 表示使用模板时求值。
+`attributes.weatherFormat` 独立保存显示格式：`full`（默认，图标/温度/天气/城市）、
+`weather-temp`（图标/温度/天气）、`temp`（图标/温度）、`condition`（图标/天气）。
+未知格式回落完整显示，不覆盖原值。格式切换不修改定格天气或模板来源。
+
+`createInlineWeatherEmbedConverter()` 只渲染，不定位、不联网、不写 Yjs。
+`materializeInlineWeatherSnapshots(snapshots, {createdAt, weather, signal?})`
+由宿主在模板创建文档、写入 DocCRUD 前调用：递归求值，一次调用共享一次宿主天气查询，
+保存天气及 `weatherDate`，移除 `weatherSource`，保留格式和文字属性。
+普通取数失败产生「天气暂不可用」，取消则拒绝 Promise；不会伪造天气。
+已有定格值不再查询。模板编辑阶段不调用此函数。
+
+完整 bundled 编辑器与 SnapshotViewer 均已注册。HTML 和 `blockcraft` Markdown
+保存完整数据及格式；portable/hybrid Markdown 输出所选格式的可读文本。
+CSS `.bc-inline-weather` 跟随正文字号，默认使用 `--bc-active-color` 主题蓝色，
+显式文字颜色可以覆盖默认色；模板字体图标随文字色，真实天气图标复用内置多色 SVG。
+自组装宿主需配对 `weatherEmbedAdapters` 与 converter，并安装
+`WeatherInlineExtensionPlugin` 才提供点击配置。

@@ -1,7 +1,7 @@
 import { WeatherTone } from '../dynamic-material-data';
 
 /**
- * 六种天气基调的图标素材。**唯一消费方是 `weather-mark.component`**，它按 `tone` 查这张表拿一段 SVG 塞进 DOM。
+ * 六种天气基调的图标素材。由 `weather-mark.component` 与行内天气 converter 共用，按 `tone` 读取内置多色 SVG。
  *
  * ## 为什么是「代码里的常量表」而不是「数据库里的配置表」
  *

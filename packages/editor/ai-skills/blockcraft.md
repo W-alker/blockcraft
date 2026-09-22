@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-09-21 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-09-22 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -1596,6 +1596,7 @@ onBold(ctx: UIEventStateContext) { ... }
 | `FormulaBlockExtensionPlugin` | `plugins/formula-extension/` | KaTeX edit panel for formula blocks |
 | `InlineLinkExtension` | `plugins/inline-link-extension/` | Link hover card + open behavior |
 | `MentionPlugin` | `plugins/mention/` | `@`-trigger with pluggable panel factory |
+| `WeatherInlineExtensionPlugin` | `plugins/weather-inline-extension/` | 行内天气显示格式弹窗，保留天气快照与模板意向 |
 | `DateInlineExtensionPlugin` | `plugins/date-inline-extension/` | Click-to-edit dialog for the calendar-icon `date` inline chip |
 | `FindReplacePlugin` | `plugins/findReplace/` | Cmd+F find & replace |
 | `TranslatePlugin` | `plugins/translate/` | Block translation via DI service |

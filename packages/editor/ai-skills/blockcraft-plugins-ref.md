@@ -4,7 +4,7 @@
 >
 > For creating new plugins, see `blockcraft-plugin.md`.
 >
-> Last updated: 2026-09-21
+> Last updated: 2026-09-22
 
 This index covers the built-in plugins. Pick the category file that matches your task — don't read all files at once.
 
@@ -15,7 +15,7 @@ This index covers the built-in plugins. Pick the category file that matches your
 | Text Formatting | `blockcraft-plugins-formatting.md` | FloatTextToolbarPlugin, TextMarkerPlugin, FixedTextToolbarComponent |
 | Block Management | `blockcraft-plugins-block.md` | BlockControllerPlugin, BlockGapCreatorPlugin, BlockTransformerPlugin, OrderedBlockPlugin, ObjectDragPlugin |
 | Block Toolbars | `blockcraft-plugins-toolbar.md` | AttachmentExtensionPlugin, ImgToolbarPlugin, ObjectFormatToolbarPlugin, BookmarkBlockExtensionPlugin, CalloutToolbarPlugin, WeatherToolbarPlugin, DividerExtensionPlugin, EmbedFrameExtensionPlugin, FormulaBlockExtensionPlugin |
-| Inline & Keyboard | `blockcraft-plugins-inline.md` | InlineLinkExtension, MentionPlugin, DateInlineExtensionPlugin, CodeInlineEditorBinding, TableBlockBinding |
+| Inline & Keyboard | `blockcraft-plugins-inline.md` | InlineLinkExtension, MentionPlugin, DateInlineExtensionPlugin, WeatherInlineExtensionPlugin, CodeInlineEditorBinding, TableBlockBinding |
 | Utilities | `blockcraft-plugins-util.md` | PlaceholderPlugin, FindReplacePlugin, PasteFormatSelectorPlugin, DemoPresentationPlugin, RevisionReviewPlugin, TranslatePlugin, PaginationPlugin |
 
 ## Quick Lookup
@@ -42,6 +42,7 @@ This index covers the built-in plugins. Pick the category file that matches your
 | `InlineLinkExtension` | `inline` | `openLink` callback |
 | `MentionPlugin` | `inline` | `panel` (required), `trigger`, `onMentionClick` |
 | `DateInlineExtensionPlugin` | `inline` | none (zero-config) |
+| `WeatherInlineExtensionPlugin` | `inline` | none; 行内天气格式 |
 | `CodeInlineEditorBinding` | `inline` | none (zero-config) |
 | `TableBlockBinding` | `inline` | none (zero-config) |
 | `PlaceholderPlugin` | `util` | `overrides`; supports instance `plh` / `plhMode` on editable blocks |

@@ -46,6 +46,7 @@ import {
   CalloutToolbarPlugin,
   CodeInlineEditorBinding,
   DateInlineExtensionPlugin,
+  WeatherInlineExtensionPlugin,
   DividerExtensionPlugin,
   WeatherToolbarPlugin,
   EmbedFrameExtensionPlugin,
@@ -81,6 +82,7 @@ import {
 } from '../framework'
 import {
   INLINE_DATE_EMBED_KEY,
+  INLINE_WEATHER_EMBED_KEY,
   INLINE_LATEX_EMBED_KEY,
   INLINE_MENTION_EMBED_KEY,
   INLINE_SHAPE_EMBED_KEY,
@@ -297,6 +299,7 @@ function createBundledInlineEmbeds(): [string, EmbedConverter][] {
     INLINE_SHAPE_EMBED_KEY,
     INLINE_WORD_ART_EMBED_KEY,
     INLINE_DATE_EMBED_KEY,
+    INLINE_WEATHER_EMBED_KEY,
     INLINE_MENTION_EMBED_KEY,
     INLINE_LATEX_EMBED_KEY,
   ]
@@ -398,6 +401,7 @@ export function createBundledEditorCapabilities(
     new BookmarkBlockExtensionPlugin(),
     new FormulaBlockExtensionPlugin(),
     new DateInlineExtensionPlugin(),
+    new WeatherInlineExtensionPlugin(),
     new InlineLinkExtension(options.openLink),
     new MentionPlugin(options.mention ?? createFallbackMentionConfig()),
     new DividerExtensionPlugin(),

@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-09-20
+> Last updated: 2026-09-22
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -2277,3 +2277,22 @@ component consumes it. Together they show:
 - The full plugin stack
 - A custom block-controller `customTools` extension (`copyBlockLink`)
 - Mouse-down at the empty bottom area to append a paragraph
+
+## 模板行内天气的宿主接入
+
+行内天气与天气卡片共用 `DOC_WEATHER_SERVICE_TOKEN`，不在编辑器内引入定位/天气 API。
+`createBundledEditorCapabilities()` 已带 converter、adapter 和格式编辑插件。
+自建模板流程在写入新文档前调用：
+
+```typescript
+const children = await materializeInlineWeatherSnapshots(templateChildren, {
+  createdAt: documentCreatedAt,
+  weather: doc.injector.get(DOC_WEATHER_SERVICE_TOKEN),
+  signal: creationAbort.signal,
+})
+// 确认创建操作仍有效后，用宿主已有 DocCRUD 初始化流程写入 children。
+```
+
+宿主负责取消已关闭的创建页面；勿在文档展示或格式切换时重复实例化。
+Playground 模板面板提供「天气(行内)」，演示宿主使用 Mock 天气，真实应用继续提供业务天气服务。
+显示格式/数据契约见 `blockcraft-embed.md` 的行内天气节。

@@ -1,0 +1,43 @@
+[data-blockcraft-root="true"] c-element:has(> span[contenteditable="false"] > .bc-inline-weather) {
+  // 默认色与行内日期一致；显式文字颜色仍由 c-element 的行内样式覆盖。
+  color: var(--bc-active-color);
+}
+
+[data-blockcraft-root="true"] .bc-inline-weather {
+  display: inline;
+  white-space: nowrap;
+  vertical-align: baseline;
+  font: inherit;
+  color: inherit;
+  border-radius: var(--bc-radius-md);
+  padding-inline: 0.2em;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+
+  > .bc-inline-weather__icon, > .bc_icon {
+    display: inline-block;
+    margin-inline-end: 0.25em;
+  }
+
+  // 字体图标按字面中线对齐；不能沿用 SVG 的盒高与基线下移规则。
+  > .bc_icon {
+    line-height: 1;
+    vertical-align: middle;
+  }
+
+  > .bc-inline-weather__icon {
+    width: 1.2em;
+    height: 1.2em;
+    vertical-align: -0.2em;
+    > svg { display: block; width: 100%; height: 100%; }
+  }
+}
+
+[data-blockcraft-root="true"] .bc-inline-weather:hover,
+[data-blockcraft-root="true"] .bc-inline-weather.editing {
+  background: var(--bc-bg-hover);
+}
+
+[data-blockcraft-root="true"] c-element.bc-inline-embed--selected .bc-inline-weather {
+  background: var(--bc-select-background-color);
+}

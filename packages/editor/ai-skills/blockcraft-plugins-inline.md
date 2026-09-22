@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-14
+> Last updated: 2026-09-22
 
 ## Inline Extensions
 
@@ -257,3 +257,12 @@ new TableBlockBinding()
 |--------|-------------|
 | `table.getExplicitSelectedCoordinates()` | Return the active cell/row/column rectangle only. Unlike `getSelectedCoordinates()`, it never falls back to the current selection's first cell |
 | `doc.selection.setTableCellSelection(table, anchorCell, headCell?)` | Store a model-owned rectangular table-cell selection. The browser native Range is cleared and the table component paints the selected rectangle |
+
+### WeatherInlineExtensionPlugin
+
+`plugins/weather-inline-extension/`，运行时 ID `weather-inline-extension`，零配置。
+点击行内天气（含 SVG 图标）打开显示格式选择：完整、温度+天气、仅温度、仅天气，均带图标。
+已有天气在菜单中显示实际结果；模板显示字段组合，不写入模拟天气。
+取消不修改；确定通过 Block 公开 Delta API 替换一个位置，保留天气快照与模板来源，支持 Undo/Redo。
+只读文档/冻结块禁止修改，转只读时关闭弹层，协同删除或重渲染使原锚点失效后放弃提交。
+`createBundledEditorCapabilities()` 默认包含此插件。

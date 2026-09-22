@@ -5,7 +5,7 @@
 > For configuring existing built-in plugins, see `blockcraft-plugins-ref.md`.
 > For event system internals, see L2: `blockcraft-event.md`.
 >
-> Last updated: 2026-09-21
+> Last updated: 2026-09-22
 
 ## Plugin Lifecycle
 
@@ -376,3 +376,10 @@ The plugin owns all `ResizeObserver`, animation-frame, DOM-layer and print resou
 `WeatherToolbarPlugin` 是按块类型订阅选区并打开连接浮层的实现示例，见
 `blockcraft-plugins-toolbar.md`。其原生输入取焦不会重新写入选区；插件保留操作目标与
 选中外观，关闭时释放，配置修改仍由块设置组件负责。
+
+## 行内天气插件装配
+
+`WeatherInlineExtensionPlugin`（`weather-inline-extension`）是零配置插件，
+由 bundled factory 每个 Doc 新建。它只提供行内天气格式配置；取数归宿主模板实例化。
+自组装时与 `weather` converter/adapter 一起注册。只读或锁定块不能打开/应用配置，
+关闭和 destroy 清理 overlay 订阅。详见 `blockcraft-plugins-inline.md`。

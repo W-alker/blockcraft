@@ -17,6 +17,7 @@ export * from './findReplace'
 export * from './demo-presentation'
 export * from './formula-extension'
 export * from './date-inline-extension'
+export * from './weather-inline-extension'
 export * from './mention'
 export * from './translate'
 export * from "./block-gap-creator";
