@@ -16,8 +16,8 @@
     background: transparent;
     color: inherit;
     cursor: pointer;
-    // 「2026-08-14 15:54」不该在中间断行。
-    white-space: nowrap;
+    // 随行宽在日期、星期和时间之间自然换行。
+    white-space: normal;
     vertical-align: baseline;
     font-variant-numeric: tabular-nums;
     transition:
