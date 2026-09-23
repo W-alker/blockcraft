@@ -1,5 +1,5 @@
 import {BindHotKey, BlockNodeType, DocPlugin, EventListen, UIEventStateContext} from "../../framework";
-import {debounceTime, Subject, Subscription, takeUntil} from "rxjs";
+import {debounceTime, fromEvent, Subject, Subscription, takeUntil} from "rxjs";
 import {ComponentRef, Type} from "@angular/core";
 import {FloatTextToolbarComponent, IToolbarMenuItem} from "./widgets/toolbar.component";
 import {ConnectedPosition, OverlayRef} from "@angular/cdk/overlay";
@@ -9,6 +9,7 @@ import {BcFloatToolbarItemComponent} from "../../components";
 import {calcFloatToolbarPosition} from "./toolbar-position";
 import {isFloatTextToolbarSelection} from "./selection";
 import {isSelectionAlive} from "../../framework/modules/selection/liveness";
+import {isExternalModalOpen} from "./external-modal";
 
 export interface FloatTextToolbarPluginOptions {
   /**
@@ -49,6 +50,10 @@ export class FloatTextToolbarPlugin extends DocPlugin {
   init() {
     this.utils = new TextToolbarUtils(this.doc);
 
+    this._sub.add(fromEvent(this.doc.scrollContainer?.ownerDocument ?? document, 'focusin').subscribe(() => {
+      if (this.toolbarOvr && isExternalModalOpen(this.doc)) this.closeToolbar();
+    }));
+
     this._sub.add(
       this.doc.subscribeReadonlyChange(() => {
         this.toolbarOvr && this.closeToolbar();
@@ -58,6 +63,7 @@ export class FloatTextToolbarPlugin extends DocPlugin {
     this._sub.add(
       this.doc.selection.changeObserve().subscribe(debounce(sel => {
         if (this.doc.isReadonly
+          || isExternalModalOpen(this.doc)
           || !isFloatTextToolbarSelection(sel)
           || !isSelectionAlive(sel as any, this.doc)
           || this._isSelectionReadonly(sel)) {
@@ -101,6 +107,7 @@ export class FloatTextToolbarPlugin extends DocPlugin {
   // }
 
   openToolbar() {
+    if (isExternalModalOpen(this.doc)) return;
     const sel = this.doc.selection.value;
     if (!isFloatTextToolbarSelection(sel) || !isSelectionAlive(sel as any, this.doc)) return;
     if (this._isSelectionReadonly(sel)) return;

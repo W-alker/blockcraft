@@ -1,5 +1,5 @@
 import {DocPlugin} from "../../framework";
-import {Subject, Subscription} from "rxjs";
+import {fromEvent, Subject, Subscription} from "rxjs";
 import {ComponentRef} from "@angular/core";
 import {OverlayRef} from "@angular/cdk/overlay";
 import {ITextCommonAttrs, TextToolbarUtils} from "./utils";
@@ -7,6 +7,7 @@ import {TextMarkerComponent} from "./widgets/marker.component";
 import {calcFloatToolbarPosition} from "./toolbar-position";
 import {isFloatTextToolbarSelection} from "./selection";
 import {isSelectionAlive} from "../../framework/modules/selection/liveness";
+import {isExternalModalOpen} from "./external-modal";
 
 export class TextMarkerPlugin extends DocPlugin {
   override name = "text-marker-toolbar";
@@ -40,6 +41,10 @@ export class TextMarkerPlugin extends DocPlugin {
   init() {
     this.utils = new TextToolbarUtils(this.doc)
 
+    this._sub.add(fromEvent(this.doc.scrollContainer?.ownerDocument ?? document, 'focusin').subscribe(() => {
+      if (this.toolbarOvr && isExternalModalOpen(this.doc)) this.closeToolbar()
+    }))
+
     this.markTextBlockFlavours.forEach(flavour => {
       this._sub.add(this.doc.event.add('selectEnd', this.onSelectEnd, {flavour}))
     })
@@ -68,7 +73,7 @@ export class TextMarkerPlugin extends DocPlugin {
 
   onSelectEnd = () => {
     const sel = this.doc.selection.value!
-    if (this.doc.isReadonly || !isFloatTextToolbarSelection(sel) || !sel.isInSameBlock || !isSelectionAlive(sel as any, this.doc)
+    if (this.doc.isReadonly || isExternalModalOpen(this.doc) || !isFloatTextToolbarSelection(sel) || !sel.isInSameBlock || !isSelectionAlive(sel as any, this.doc)
       || this._isSelectionReadonly(sel)
       // || this.doc.event.status.isSelecting
     ) {
@@ -80,6 +85,7 @@ export class TextMarkerPlugin extends DocPlugin {
   }
 
   openToolbar() {
+    if (isExternalModalOpen(this.doc)) return
     const sel = this.doc.selection.value
     if (!isFloatTextToolbarSelection(sel) || !sel.isInSameBlock || !isSelectionAlive(sel as any, this.doc)) return
     if (this._isSelectionReadonly(sel)) return
