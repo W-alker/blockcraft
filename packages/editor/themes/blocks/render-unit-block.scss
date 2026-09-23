@@ -12,7 +12,6 @@
     isolation: isolate;
     min-height: calc(var(--bc-lh) * var(--bc-fs));
     box-sizing: border-box;
-    border-radius: 4px;
     background-color: var(--bc-render-unit-background-color);
     background-color: color-mix(
       in srgb,
