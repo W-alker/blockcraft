@@ -20,7 +20,7 @@ import {
       }
     </cs-select>
     <div class="actions">
-      <button cs-button csSize="sm" (click)="close.emit()">取消</button>
+      <button cs-button csType="secondary" csSize="sm" (click)="close.emit()">取消</button>
       <button cs-button csSize="sm" csType="primary" (click)="update.emit(format())">确定</button>
     </div>
   `,

@@ -2,6 +2,8 @@ import {Subject, Subscription, takeUntil} from 'rxjs'
 import {
   closetBlockId,
   DocPlugin,
+  DOC_WEATHER_SERVICE_TOKEN,
+  type DocWeatherData,
   EditableBlockComponent,
   EventListen,
   getPositionWithOffset,
@@ -12,15 +14,17 @@ import {
   INLINE_WEATHER_CLASS,
   createInlineWeatherEmbedConverter,
   isInlineWeatherFormat,
+  readInlineWeatherDelta,
 } from '../../embeds/weather'
 import {InlineWeatherFormatDialog} from './weather-format-dialog'
 
-/** 行内天气仅编辑显示格式；天气快照和模板来源保持不变。 */
+/** 行内天气格式设置与主动刷新；沿用快照日期。 */
 export class WeatherInlineExtensionPlugin extends DocPlugin {
   override name = 'weather-inline-extension'
 
   private readonly _closeDialog$ = new Subject<void>()
   private readonly _sub = new Subscription()
+  private _refreshAbort: AbortController | null = null
   private _activeBlock: BlockCraft.BlockComponent | null = null
   private _activeWeatherEl: HTMLElement | null = null
 
@@ -93,6 +97,34 @@ export class WeatherInlineExtensionPlugin extends DocPlugin {
         this.closeDialog()
       })
 
+    componentRef.instance.refresh.pipe(takeUntil(this._closeDialog$)).subscribe(async format => {
+      if (this._refreshAbort || !this._isBlockAlive(block) || this._isReadonly(block) || !weatherEl.isConnected) return
+      const current = createInlineWeatherEmbedConverter().toDelta(weatherEl)
+      if (current.attributes?.['weatherSource'] === 'createdTime') return
+      const date = current.attributes?.['weatherDate']
+      const controller = new AbortController()
+      this._refreshAbort = controller
+      componentRef.setInput('loading', true)
+      try {
+        const weather = await this.doc.injector.get(DOC_WEATHER_SERVICE_TOKEN).query({
+          ...(typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) ? {date} : {}), refresh: true,
+        }, controller.signal)
+        if (controller.signal.aborted) return
+        if (!readInlineWeatherDelta({insert: {weather: JSON.stringify(weather)}})) throw new Error('Invalid weather')
+        if (this._applyUpdate(block, weatherEl, format, weather)) this.doc.messageService.success('天气已刷新')
+        this.closeDialog()
+      } catch {
+        if (!controller.signal.aborted && this._isBlockAlive(block) && !this._isReadonly(block) && weatherEl.isConnected) {
+          this.doc.messageService.error('天气刷新失败，请重试')
+        }
+      } finally {
+        if (this._refreshAbort === controller) {
+          this._refreshAbort = null
+          componentRef.setInput('loading', false)
+        }
+      }
+    })
+
     return true
   }
 
@@ -104,29 +136,35 @@ export class WeatherInlineExtensionPlugin extends DocPlugin {
     block: EditableBlockComponent,
     weatherEl: HTMLElement,
     format: string,
-  ): void {
-    if (!this._isBlockAlive(block) || this._isReadonly(block)) return
+    weather?: DocWeatherData,
+  ): boolean {
+    if (!this._isBlockAlive(block) || this._isReadonly(block)) return false
 
-    if (!isInlineWeatherFormat(format) || !weatherEl.isConnected) return
+    if (!isInlineWeatherFormat(format) || !weatherEl.isConnected) return false
     const delta = createInlineWeatherEmbedConverter().toDelta(weatherEl)
+    if (weather) delta.insert = {weather: JSON.stringify(weather)}
     delta.attributes = {...delta.attributes, weatherFormat: format}
 
     const range = this._tryGetEmbedRange(weatherEl)
     if (!range || range.start.type !== 'text' || range.start.blockId !== block.id) {
-      return
+      return false
     }
 
     const embedIndex = range.start.offset
+    if (weather) this.doc.crud.undoManager.stopCapturing()
     block.applyDeltaOperations([
       {retain: embedIndex},
       {delete: 1},
       {insert: delta.insert, attributes: delta.attributes},
     ])
 
+    if (weather) this.doc.crud.undoManager.stopCapturing()
+
     requestAnimationFrame(() => {
       if (!this._isBlockAlive(block)) return
       this.doc.selection.setCursorAt(block, embedIndex + 1)
     })
+    return true
   }
 
   private _tryGetEmbedRange(target: HTMLElement) {
@@ -164,6 +202,8 @@ export class WeatherInlineExtensionPlugin extends DocPlugin {
   }
 
   closeDialog = () => {
+    this._refreshAbort?.abort()
+    this._refreshAbort = null
     this._activeWeatherEl?.classList.remove('editing')
     this._closeDialog$.next()
     this._activeBlock = null

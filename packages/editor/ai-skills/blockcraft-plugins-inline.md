@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-09-22
+> Last updated: 2026-09-23
 
 ## Inline Extensions
 
@@ -274,3 +274,9 @@ new TableBlockBinding()
 不改变已定格人员或模板来源，字号继承段落；默认蓝色，悬停加同色下划线，显式文字颜色可覆盖。原生 Delta 替换支持撤销重做。
 文档/块只读、协同删除及锚点失效时禁止写入；进入只读关闭配置，销毁释放监听。
 创建人由宿主建档时传给 `materializeInlinePersonSnapshots()`，插件不访问业务人员服务。
+
+### 天气手动刷新
+
+行内天气弹窗右上角提供“刷新天气”单图标按钮（悬停提示，加载时显示单个转圈图标），沿用 `weatherDate`，旧快照无日期时查实时值；模板创建意向不提供刷新入口。成功通过公开 Delta API 替换快照并保留其他属性及当前显示格式、支持撤销，随后关闭；失败保留旧值并允许重试。取消或销毁弹窗中止等待，协同锚点失效及只读时不写入。
+
+主动刷新成功/失败通过 `doc.messageService`（`DocMessageService`）提示，弹窗不额外渲染结果文案；取消或失效请求不提示。

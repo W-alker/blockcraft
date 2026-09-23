@@ -18,6 +18,8 @@ export interface DocWeatherData {
 /** Omit date for live weather; pass an ISO date for a fixed document-day value. */
 export interface DocWeatherQuery {
   date?: string
+  /** Explicit user refresh: hosts should bypass cached results. */
+  refresh?: boolean
 }
 
 export interface DocWeatherPort {

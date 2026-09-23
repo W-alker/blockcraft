@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-09-22
+> Last updated: 2026-09-23
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -2308,3 +2308,7 @@ authorizeStructureTransform: ({purpose}) =>
 ```
 
 异步加载、资源实例化和确认应在调用前完成；确认期间任何文档更新都应使预览失效。内核在同步提交和撤销/重做前拒绝只读、用户锁、活动输入法组合及未处理修订。业务 mutation policy 可识别 `context.structureTransform`，仅豁免已授权目的所需的区域保护。
+
+### 天气手动刷新
+
+天气主动刷新会传 `DocWeatherQuery.refresh: true`，宿主应绕过结果缓存（不要取消其他消费者的共享请求）。日期存在时仍查询该日期；缺省查询实时天气。普通挂载不传 refresh。

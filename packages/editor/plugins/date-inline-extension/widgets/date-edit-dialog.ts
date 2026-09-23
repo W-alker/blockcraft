@@ -70,7 +70,7 @@ export interface InlineDateEditResult {
       </cs-select>
     </div>
     <div class="bd-footer">
-      <button cs-button csSize="sm" (click)="close.emit()">取消</button>
+      <button cs-button csType="secondary" csSize="sm" (click)="close.emit()">取消</button>
       <button cs-button csType="primary" csSize="sm" (click)="onConfirm()">确定</button>
     </div>
   `,

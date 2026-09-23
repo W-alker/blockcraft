@@ -95,7 +95,12 @@ export class WeatherBlockComponent extends ObjectBlockComponent<WeatherModel> {
         query: (request, signal) => this.doc.injector
             .get(DOC_WEATHER_SERVICE_TOKEN)
             .query(request, signal),
-        freeze: (weather, request) => this.freezeWeather(weather, request)
+        freeze: (weather, request) => this.freezeWeather(weather, request),
+        onRefreshResult: result => {
+            if (!this.canRefreshWeather) return;
+            if (result === 'success') this.doc.messageService.success('天气已刷新');
+            else this.doc.messageService.error('天气刷新失败，请重试');
+        }
     });
 
     // 初值只是占位：字段初始化那刻 this.props 还没就绪，真值在基类 ngOnInit 的首次 repaint 里补。
@@ -114,6 +119,10 @@ export class WeatherBlockComponent extends ObjectBlockComponent<WeatherModel> {
         this.chip.reload();
     }
 
+    get canRefreshWeather(): boolean { return !this.isDraftProjection && !this.isReadonly && !this._isGone(); }
+    get weatherStatus() { return this.chip.status(); }
+    refreshWeather(): void { if (this.canRefreshWeather) this.chip.refresh(); }
+
     private weatherRequest(): DocWeatherQuery | undefined {
         const date = this.presentationProps?.date;
         return typeof date === 'string' && date !== LIVE_ANCHOR && /^\d{4}-\d{2}-\d{2}$/.test(date)
@@ -123,8 +132,13 @@ export class WeatherBlockComponent extends ObjectBlockComponent<WeatherModel> {
 
     private freezeWeather(weather: DocWeatherData, request: DocWeatherQuery): void {
         if (!request.date || this._isGone() || this.doc.readonlyManager.isReadonly(this)) return;
-        if (this.weatherRequest()?.date !== request.date || readFrozenWeather(this.presentationProps?.frozen)) return;
-        this.setInitProps({ frozen: { ...weather } });
+        if (this.isDraftProjection || this.weatherRequest()?.date !== request.date) return;
+        if (request.refresh) {
+            this.doc.crud.undoManager.stopCapturing();
+            this.updateProps({ frozen: { ...weather } });
+            this.doc.crud.undoManager.stopCapturing();
+        }
+        else if (!readFrozenWeather(this.presentationProps?.frozen)) this.setInitProps({ frozen: { ...weather } });
     }
 
     /**

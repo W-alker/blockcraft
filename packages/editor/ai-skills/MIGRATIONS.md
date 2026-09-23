@@ -68,6 +68,29 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## Unreleased — 2026-09-23：天气手动刷新
+
+**Severity**: minor
+
+**What changed**: 天气块与行内天气工具弹窗增加刷新。`DocWeatherQuery.refresh?: boolean` 为宿主提供绕过缓存的明确意图。
+
+**Why**: 用户可以主动重试失败请求或重新获取天气，而无需重新挂载。
+
+**Affected ai-skills files**: `blockcraft-app.md`、`blockcraft-block.md`、`blockcraft-plugins-toolbar.md`、`blockcraft-plugins-inline.md`。
+
+### New APIs / Features
+
+- `WeatherBlockComponent.refreshWeather()`、`canRefreshWeather`、`weatherStatus`；内部 chip 增加 `refresh()`，原 `reload()` 幂等语义不变。
+- 宿主 `query({date, refresh: true}, signal)` 应绕过结果缓存；未传 refresh 的查询不变。
+
+### Behavior Changes
+
+手动刷新保留原日期和外观；成功后替换固定天气（可撤销），失败保留旧值。主动刷新结果统一通过 `DocMessageService` 提示，取消或失效请求保持静默。行内天气无日期的旧快照按实时查询。模板意向仍不联网；关闭行内弹窗取消本次等待，失效锚点或只读状态不提交。
+
+### Migration Recipe
+
+宿主若缓存天气，读取 `request?.refresh`，为 true 时跳过缓存读取并重新查询后更新缓存。旧实现仍兼容，但忽略该字段时可能返回缓存。版本号由发布时确定。
+
 ## Unreleased — 2026-09-23：段落两端与分散对齐
 
 **Severity**: minor（可选能力新增；版本由用户决定）

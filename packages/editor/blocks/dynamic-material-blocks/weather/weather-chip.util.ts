@@ -30,6 +30,8 @@ export interface WeatherChip {
      * 已有值时是空操作，不会重复打接口。
      */
     reload: () => void;
+    /** 用户主动刷新；保留旧值，成功后才替换。 */
+    refresh: () => void;
 }
 
 export interface WeatherChipSource {
@@ -41,6 +43,8 @@ export interface WeatherChipSource {
     query: (request: DocWeatherQuery | undefined, signal: AbortSignal) => Promise<DocWeatherData>;
     /** 固定日期取数成功后的持久化钩子；实时档不会调用。 */
     freeze?: (weather: DocWeatherData, request: DocWeatherQuery) => void;
+    /** 仅主动刷新完成时通知；自动加载、取消和过期响应保持静默。 */
+    onRefreshResult?: (result: 'success' | 'error') => void;
 }
 
 /**
@@ -67,30 +71,32 @@ export function wireWeatherChip(src: WeatherChipSource): WeatherChip {
         return request?.date ? { key: `date:${request.date}`, request } : { key: 'live' };
     };
 
-    const load = (): void => {
+    const load = (refresh = false): void => {
         if (!src.enabled()) return;   // 编辑态：恒占位，一次网络都不发
         const state = requestState();
-        if (src.frozen() || resolved()?.key === state.key || pendingKey === state.key) return;
+        if (pendingKey === state.key || (!refresh && (src.frozen() || resolved()?.key === state.key))) return;
+        const request = refresh ? {...state.request, refresh: true} : state.request;
         abort?.abort();
         const controller = new AbortController();
         abort = controller;
         pendingKey = state.key;
         status.set({ key: state.key, value: 'loading' });
-        Promise.resolve().then(() => src.query(state.request, controller.signal)).then(weather => {
-                if (requestState().key !== state.key || !src.enabled()) return;
+        Promise.resolve().then(() => src.query(request, controller.signal)).then(weather => {
+                if (controller.signal.aborted || requestState().key !== state.key || !src.enabled()) return;
                 resolved.set({ key: state.key, weather });
                 status.set({ key: state.key, value: 'ready' });
-                if (state.request?.date) src.freeze?.(weather, state.request);
+                if (request?.date) src.freeze?.(weather, request);
                 cdr.markForCheck();
+                if (refresh) src.onRefreshResult?.('success');
             })
             .catch(() => {
-                if (requestState().key !== state.key || controller.signal.aborted) return;
+                if (requestState().key !== state.key || controller.signal.aborted || !src.enabled()) return;
                 status.set({ key: state.key, value: 'error' });
                 cdr.markForCheck();
+                if (refresh) src.onRefreshResult?.('error');
             })
             .finally(() => {
-                if (pendingKey === state.key) pendingKey = null;
-                if (abort === controller) abort = null;
+                if (abort === controller) { pendingKey = null; abort = null; }
             });
     };
 
@@ -112,12 +118,14 @@ export function wireWeatherChip(src: WeatherChipSource): WeatherChip {
         // 无值时给「城市」这种形状占位，而不是「当前位置」——占位要看得出将来长什么样、占多宽
         location: () => view()?.location || '城市',
         tone: () => view()?.tone ?? 'sunny',
-        // 定格态一挂载就有值、根本不进 load，status 信号还停在 idle——所以有值一律算 ready
+        // 主动刷新时优先显示请求状态；初次挂载的定格值直接 ready。
         status: () => {
-            if (view()) return 'ready';
             const state = status();
+            if (state.key === requestState().key && (state.value === 'loading' || state.value === 'error')) return state.value;
+            if (view()) return 'ready';
             return state.key === requestState().key ? state.value : 'idle';
         },
-        reload: load
+        reload: () => load(),
+        refresh: () => load(true)
     };
 }

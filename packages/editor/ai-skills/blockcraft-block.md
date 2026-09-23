@@ -2358,3 +2358,9 @@ doc.crud.transact(() => block.updateProps(patch))
 不更改 `date` 和日期来源，颜色/字体修改不重置固定宽高；切换样式/显示内容沿用既有几何规则。
 浮层只在打开期间订阅只读状态，关闭时解除；删除、卸载或转只读立即关闭。打印/只读渲染没有设置按钮。
 宿主已有面板可继续使用原字段，不需要注册新插件。
+
+### 天气手动刷新
+
+天气块支持 `refreshWeather()`、`canRefreshWeather` 与 `weatherStatus`。手动刷新保留日期及旧值，请求成功后实时值仅更新显示，固定值经 `updateProps` 写入并支持撤销；自动初始化仍使用无 Undo 写入。模板投影和只读块不能手动刷新。内部 `WeatherChip.refresh()` 强制重查，`reload()` 仍为幂等挂载重试。
+
+`WeatherChipSource.onRefreshResult` 仅报告主动刷新的成功/失败，天气块经 `doc.messageService` 展示结果；自动加载、取消及过期响应不弹消息。
