@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-09-22
+> Last updated: 2026-09-23
 
 ## Overlay Service
 
@@ -233,7 +233,7 @@ export class MyToolbarComponent {
 栏内只保留列宽拖动线，不再渲染 `.column-divider .add-point` 或末尾的添加专用 divider。
 浮层不进入填写区的滚动层，文档或填写区滚动时跟随定位；选区离开、外部点击、Escape、只读或销毁时关闭。
 此组件是分栏内部 UI，不需要宿主额外注册 Plugin，`columnWidths` 与 `addColumn()` 契约不变。
-子栏悬停时显示顶部居中的 mini 抓手（`column-drag-handle`），接入既有
+子栏悬停时显示底部居中的 mini 抓手（`column-drag-handle`），背景透明、图标继承正文颜色，接入既有
 `doc.dragController`，仅在当前分栏组内移动整栏；UI 命中与执行命令都拒绝组外落点。
 拖动时通过 CDK Overlay 显示半透明整栏预览和主题色插入线，离开分栏范围立即隐藏。
 预览按视口坐标绘制，避免填写区裁剪；高频移动按动画帧合并，结束或取消时销毁。

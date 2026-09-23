@@ -175,7 +175,7 @@
 
     .column-drag-handle {
       position: absolute;
-      top: -8px;
+      bottom: -8px;
       left: 50%;
       transform: translateX(-50%);
       display: flex;
@@ -185,9 +185,8 @@
       height: 14px;
       padding: 0;
       border: 0;
-      border-radius: var(--bc-radius-sm);
-      background: var(--bc-float-toolbar-bg);
-      color: var(--bc-color-light);
+      background: transparent;
+      color: inherit;
       cursor: grab;
       touch-action: none;
       opacity: 0;
@@ -196,7 +195,6 @@
 
       i { font-size: var(--bc-fs-sm); transform: rotate(90deg); }
       &:active { cursor: grabbing; }
-      &:hover, &:focus-visible { color: var(--bc-active-color); background: var(--bc-float-toolbar-item-active-bg); }
     }
 
     &:hover > .column-drag-handle, > .column-drag-handle:focus-visible {
