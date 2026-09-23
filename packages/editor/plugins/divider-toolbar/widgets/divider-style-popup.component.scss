@@ -674,9 +674,3 @@ $divider-preview-color: var(--bc-divider-preview-color, var(--bc-border-color));
     }
   }
 }
-
-// CSES ColorPicker 的 palette 模式固定附带高级取色入口；分割线只使用
-// 内置主题色和标准色。通过弹窗存在性限定作用域，不影响其他业务色板。
-::ng-deep .cdk-overlay-container:has(app-divider-style-popup) .cs-color-picker-more {
-  display: none;
-}
