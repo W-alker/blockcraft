@@ -6,6 +6,55 @@
   "description": "文档库2.0",
   "glyphs": [
     {
+      "icon_id": "12550416",
+      "name": "两端对齐，末行左对齐",
+      "font_class": "liangduanduiqi",
+      "unicode": "e662",
+      "unicode_decimal": 58978
+    },
+    {
+      "icon_id": "39363323",
+      "name": "04bj_分散对齐_scatter-alignment",
+      "font_class": "fensanduiqi",
+      "unicode": "e8a9",
+      "unicode_decimal": 59561
+    },
+    {
+      "icon_id": "11305046",
+      "name": "贴纸",
+      "font_class": "tiezhi",
+      "unicode": "e65d",
+      "unicode_decimal": 58973
+    },
+    {
+      "icon_id": "25929612",
+      "name": "模板设计",
+      "font_class": "mobansheji",
+      "unicode": "e6a4",
+      "unicode_decimal": 59044
+    },
+    {
+      "icon_id": "40076943",
+      "name": "场景",
+      "font_class": "changjing",
+      "unicode": "e65e",
+      "unicode_decimal": 58974
+    },
+    {
+      "icon_id": "38321781",
+      "name": "音量-L",
+      "font_class": "yinliang-L",
+      "unicode": "e65a",
+      "unicode_decimal": 58970
+    },
+    {
+      "icon_id": "38321782",
+      "name": "静音-L",
+      "font_class": "jingyin-L",
+      "unicode": "e65c",
+      "unicode_decimal": 58972
+    },
+    {
       "icon_id": "44594292",
       "name": "字间距",
       "font_class": "zijianju",

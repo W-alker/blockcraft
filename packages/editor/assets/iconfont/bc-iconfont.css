@@ -1,9 +1,9 @@
 @font-face {
   font-family: "bc_icon"; /* Project id 4682833 */
-  src: url('bc-iconfont.woff2?t=1786955090565') format('woff2'),
-       url('bc-iconfont.woff?t=1786955090565') format('woff'),
-       url('bc-iconfont.ttf?t=1786955090565') format('truetype'),
-       url('bc-iconfont.svg?t=1786955090565#bc_icon') format('svg');
+  src: url('bc-iconfont.woff2?t=1790140816107') format('woff2'),
+       url('bc-iconfont.woff?t=1790140816107') format('woff'),
+       url('bc-iconfont.ttf?t=1790140816107') format('truetype'),
+       url('bc-iconfont.svg?t=1790140816107#bc_icon') format('svg');
 }
 
 .bc_icon {
@@ -12,6 +12,34 @@
   font-style: normal;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.bc_liangduanduiqi:before {
+  content: "\e662";
+}
+
+.bc_fensanduiqi:before {
+  content: "\e8a9";
+}
+
+.bc_tiezhi:before {
+  content: "\e65d";
+}
+
+.bc_mobansheji:before {
+  content: "\e6a4";
+}
+
+.bc_changjing:before {
+  content: "\e65e";
+}
+
+.bc_yinliang-L:before {
+  content: "\e65a";
+}
+
+.bc_jingyin-L:before {
+  content: "\e65c";
 }
 
 .bc_zijianju:before {
