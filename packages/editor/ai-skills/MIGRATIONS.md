@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-09-22 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-09-23 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -67,6 +67,44 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > - `major` (e.g. 0.1.37 → 1.0.0): breaking — removed APIs, renamed exports, signature changes, behavior reversals
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
+
+## Unreleased — 2026-09-23：填写提示段落转换
+
+**Severity**: patch
+
+**What changed**: BlockTransformer 的快捷键、Markdown 和 slash 块转换保留 `plh` / `plhMode`，只传给首个可编辑结果；纯非文本结果追加可填写段落。锁、区域身份与其他 meta 不继承。
+
+**Why**: 转换填写段落后继续显示模板提示，撤销／重做保持提示与内容一致。
+
+**Affected ai-skills files**: `blockcraft-plugins-block.md`。
+
+**Migration**: 无新增公共 API；宿主若禁止所有提示段落 replace 操作，需在自己的模板域策略中允许区域内正文替换，保留用户锁和 Schema 校验。
+
+## Unreleased — 2026-09-22：授权结构变换
+
+**Severity**: minor（新增可选 API；版本由用户决定）
+
+**What changed**: Document 域新增 `applyDocumentStructurePlan`、`DocumentStructurePlan`、保留子树映射和 `DocConfig.authorizeStructureTransform`。
+
+**Why**: 模板切换需要保留富文本身份，并把新结构和版式作为一个可撤销事务提交。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-app.md`、`blockcraft-data.md`。
+
+### New APIs / Features
+
+目标树先在隔离 CRDT 中准备，再一次提交；映射区域保留 Y.Text、块 ID 和相对锚点。历史回放重新核验权限。
+
+### Deprecations
+
+无。
+
+### Migration Recipe
+
+原有宿主无需修改。需要此能力的宿主增加实时授权回调，加载和确认完毕后传入目标树、空承接容器映射和 root 补丁。不要把快照整体重新导入当作保留身份。详见 `blockcraft-app.md` 和 `blockcraft-data.md`。
+
+### Behavior Changes
+
+仅显式授权的结构操作可处理模板锁；用户锁、只读、输入法组合、未处理修订继续阻止操作。普通 CRUD 和普通历史规则不变。
 
 ## Unreleased — 2026-09-22：有序列表默认连续编号
 

@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-09-22
+> Last updated: 2026-09-23
 
 ## ObjectDragPlugin
 
@@ -269,6 +269,8 @@ new BlockGapCreatorPlugin()
 ---
 
 ## BlockTransformerPlugin
+
+块转换保留源填写段落的 `plh` / `plhMode`，仅传给第一个可编辑结果；纯非文本结果保留一个后续提示段落。不会复制源块的锁或区域身份。Markdown、快捷键和 slash 菜单均通过同一提示继承逻辑，仍使用常规 CRUD 权限及 Schema 校验。
 
 > `plugins/block-transformer/` — Slash menu, block-type conversion, and Markdown shortcuts.
 

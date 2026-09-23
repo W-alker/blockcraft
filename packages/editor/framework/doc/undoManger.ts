@@ -8,6 +8,7 @@ import {
 } from "../modules/selection/relative-bookmark";
 import {BlockReadonlyError, BlockReadonlyOperation} from "./block-readonly.types";
 import {BlockMutationPolicyError} from "./block-mutation-policy";
+import {assertDocumentStructureTransformAllowed} from './structure-transform'
 
 type UndoManagerEventName = 'stack-item-added' | 'stack-item-updated' | 'stack-item-popped' | 'stack-cleared'
 
@@ -31,8 +32,10 @@ export interface CapturedDocUndoItem<T> {
 
 const BLOCK_READONLY_AFFECTED_IDS = Symbol('block-readonly-affected-ids')
 const SELECTION_BOOKMARK = Symbol('selection-bookmark')
+const STRUCTURE_TRANSFORM_PURPOSE = Symbol('structure-transform-purpose')
 
 export class DocUndoManger {
+  private _structureTransformPurpose: string | undefined
   private _yUndoManager!: Y.UndoManager
   private _trackedOrigins = new Set<any>([ORIGIN_SKIP_SYNC, null])
   private readonly _capturedUndoItems = new WeakMap<DocUndoItemToken, StackItem>()
@@ -62,6 +65,7 @@ export class DocUndoManger {
     })
 
     this.on('stack-item-added', (evt) => {
+      if (this._structureTransformPurpose) evt.stackItem.meta.set(STRUCTURE_TRANSFORM_PURPOSE, this._structureTransformPurpose)
       this._mergeAffectedBlockIds(evt)
       const pending = evt.type === 'undo'
         ? this._pendingUndoSnapshot
@@ -159,6 +163,18 @@ export class DocUndoManger {
     return {result, token}
   }
 
+  /** Isolated structural history; authorization is checked again on replay. */
+  captureStructureTransform<T>(purpose: string, callback: () => T): T {
+    assertDocumentStructureTransformAllowed(this.doc, purpose)
+    const previous = this._structureTransformPurpose
+    this._structureTransformPurpose = purpose
+    try {
+      return this.captureUndoItem(callback).result
+    } finally {
+      this._structureTransformPurpose = previous
+    }
+  }
+
   /** True only while the captured item is still the latest local edit. */
   canUndoCapturedItem(token: DocUndoItemToken): boolean {
     const stackItem = this._capturedUndoItems.get(token)
@@ -233,6 +249,7 @@ export class DocUndoManger {
   undo() {
     if (!this.isCanUndo() || this.undoRedoing$.value) return
     if (!this._isHistoryItemWritable('undo')) return
+    this._structureTransformPurpose = this._yUndoManager.undoStack.at(-1)?.meta.get(STRUCTURE_TRANSFORM_PURPOSE)
     this.undoRedoing$.next(true)
     try {
       const fallbackBookmark = this._captureSelectionSnapshot()
@@ -247,6 +264,7 @@ export class DocUndoManger {
         ))
       }
     } finally {
+      this._structureTransformPurpose = undefined
       this._pendingRedoSnapshot = undefined
       // The flag is normally cleared inside crud._syncYEvent during the undo
       // transaction. But if that observer throws before reaching the reset (e.g. a
@@ -259,6 +277,7 @@ export class DocUndoManger {
   redo() {
     if (!this.isCanRedo() || this.undoRedoing$.value) return
     if (!this._isHistoryItemWritable('redo')) return
+    this._structureTransformPurpose = this._yUndoManager.redoStack.at(-1)?.meta.get(STRUCTURE_TRANSFORM_PURPOSE)
     this.undoRedoing$.next(true)
     try {
       const fallbackBookmark = this._captureSelectionSnapshot()
@@ -273,6 +292,7 @@ export class DocUndoManger {
         ))
       }
     } finally {
+      this._structureTransformPurpose = undefined
       this._pendingUndoSnapshot = undefined
       this.undoRedoing$.next(false)
     }
@@ -297,6 +317,11 @@ export class DocUndoManger {
     const affectedIds = stackItem.meta.get(BLOCK_READONLY_AFFECTED_IDS) as Set<string> | undefined
     const reachableIds = [...(affectedIds ?? [])].filter(blockId => this.doc.model.exists(blockId))
     try {
+      const purpose = stackItem.meta.get(STRUCTURE_TRANSFORM_PURPOSE)
+      if (typeof purpose === 'string') {
+        assertDocumentStructureTransformAllowed(this.doc, purpose, type)
+        return true
+      }
       this.doc.mutationPolicy?.assert({
         operation: type,
         blockIds: reachableIds,

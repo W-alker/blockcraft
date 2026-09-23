@@ -1749,3 +1749,7 @@ Full installation options (symlink vs copy, custom paths, uninstall) are in `REA
 “重新编号”写入 `{start: 1, continuePrevious: false}`。要保留某一段从 1 开始，显式设置 `start: 1`。
 编号与样式分组使用相同结构边界；新建后继项不继承计数状态。
 HTML/Markdown 使用输出编号表达结果，不承诺保留动态接续意图。
+
+## 受宿主授权的文档结构变换
+
+`applyDocumentStructurePlan(doc, plan)` 属于 Document 域，接收目标树、保留子树映射和 root 补丁。通过 `DocConfig.authorizeStructureTransform` 显式授权；详见 `blockcraft-app.md` 与 `blockcraft-data.md`。模板字段名称和匹配规则由宿主管理，内核不解释模板名称。

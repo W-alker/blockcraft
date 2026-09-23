@@ -1,3 +1,4 @@
+import {preserveTransformPlaceholder} from './placeholder';
 import {EditableBlockComponent, HotKeyTrigger, IBlockProps} from "../../framework";
 import {sliceDelta} from "../../global";
 
@@ -78,8 +79,10 @@ export const blockTransforms: IBlockTransformConfig[] = [
         o.props['order'] = parsedNum - 1
         // o.props['start'] = parsedNum
       }
+      const replacements = [o]
+      preserveTransformPlaceholder(doc, from, replacements)
       void doc.chain()
-        .replaceWithSnapshots(from.id, [o])
+        .replaceWithSnapshots(from.id, replacements)
         .nextTick()
         .selectOrSetCursorAtBlock(o.id, true)
         .recalculateSelection()
@@ -103,8 +106,10 @@ export const blockTransforms: IBlockTransformConfig[] = [
       const callout = doc.schemas.createSnapshot('callout', [])
       const p = doc.schemas.createSnapshot('paragraph', [sliceDelta(from.textDeltas(), matchedString.length), from.props])
       callout.children = [p]
+      const replacements = [callout]
+      preserveTransformPlaceholder(doc, from, replacements)
       void doc.chain()
-        .replaceWithSnapshots(from.id, [callout])
+        .replaceWithSnapshots(from.id, replacements)
         .nextTick()
         .selectOrSetCursorAtBlock(p.id, true)
         .recalculateSelection()

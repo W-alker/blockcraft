@@ -1,3 +1,4 @@
+import {preserveTransformPlaceholder} from './placeholder';
 import {
   filter,
   merge,
@@ -168,9 +169,11 @@ export class BlockTransformerPlugin extends DocPlugin {
   ) => {
     const deltas = from.textDeltas();
     const newBlock = doc.schemas.createSnapshot(to, [deltas, from.props]);
+    const replacements = [newBlock];
+    preserveTransformPlaceholder(doc, from, replacements);
     void doc
       .chain()
-      .replaceWithSnapshots(from.id, [newBlock])
+      .replaceWithSnapshots(from.id, replacements)
       .nextTick()
       .selectOrSetCursorAtBlock(newBlock.id, true)
       .recalculateSelection()
@@ -357,6 +360,7 @@ export class BlockTransformerPlugin extends DocPlugin {
         this.doc.schemas.createSnapshot("paragraph", [[], block.props]),
       );
     }
+    preserveTransformPlaceholder(this.doc, block, appendBlocks);
     const parentId = block.parentId;
     if (
       !parentId ||
@@ -704,6 +708,7 @@ export class BlockTransformerPlugin extends DocPlugin {
     if (after.length) {
       snapshots.push(this.doc.schemas.createSnapshot(block.flavour, [after, block.props]));
     }
+    preserveTransformPlaceholder(this.doc, block, snapshots);
     if (snapshots.some(snapshot => !this.doc.canInsertChild(parentId, snapshot.flavour))) return;
 
     await this.doc.chain()

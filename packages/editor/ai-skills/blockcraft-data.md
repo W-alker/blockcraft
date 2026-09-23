@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when working with the CRDT data layer.
 >
-> Last updated: 2026-09-21
+> Last updated: 2026-09-22
 
 ## Architecture Overview
 
@@ -792,3 +792,17 @@ Both paths converge at Y.Events, so the same update logic handles local and remo
 - **Working with Y.Text directly**: Read `EditableBlockComponent`, `InlineRuntime`
 - **Transaction handling**: Read `DocCRUD.transact()`
 - **Full architecture**: Read `packages/editor/ARCHITECTURE.md`
+
+## 原子结构变换（2026-09-22）
+
+公开 `DocumentStructurePlan` 与 `applyDocumentStructurePlan(doc, plan)`：
+
+- `children`：新 root 子树；新块必须使用新 ID。
+- `retainedChildren`：`{sourceId, targetId}[]`，把原容器的所有子树承接到目标空容器，保持块 ID、Y.Text 及相对评论锚点。
+- `rootProps` / `rootMeta`：只更新指定字段；null/undefined 删除字段。
+- `retainedMetaPatches`：保留后代的元数据补丁，禁止变更 lock/lockKind。
+- `purpose`：宿主授权和历史权限重验的业务目的。
+
+先校验引用、Schema、incl/excl、权限和映射，在隔离 Y.Doc 中准备完整差量，再通过一次 `doc.crud.transact` 应用。正式文档不经历逐项 CRUD 中间态；序列化失败不写正式文档。Yjs transaction 没有自动回滚能力，不能在正式事务内开始异步加载或依靠抛异常恢复。
+
+`captureStructureTransform` 为该内核操作设置独立历史边界和 purpose；撤销/重做仍实时验证宿主授权、用户锁与文档可写状态。默认编辑历史路径保持原规则。不要用此能力代替普通编辑或系统修复接口。

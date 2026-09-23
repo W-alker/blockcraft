@@ -2296,3 +2296,15 @@ const children = await materializeInlineWeatherSnapshots(templateChildren, {
 宿主负责取消已关闭的创建页面；勿在文档展示或格式切换时重复实例化。
 Playground 模板面板提供「天气(行内)」，演示宿主使用 Mock 天气，真实应用继续提供业务天气服务。
 显示格式/数据契约见 `blockcraft-embed.md` 的行内天气节。
+
+## 结构变换授权（2026-09-22）
+
+新增可选 `DocConfig.authorizeStructureTransform({purpose, operation}) => boolean`，默认拒绝；`operation` 为 `replace | undo | redo`。宿主应实时验证文档身份、所有者权限和业务资格。授权只用于 `applyDocumentStructurePlan` 及其历史回放，不改变普通编辑和用户锁行为。
+
+```ts
+// 原有宿主无需改动；需要结构切换时显式接入。
+authorizeStructureTransform: ({purpose}) =>
+  purpose === 'docs:switch-template' && isCurrentDocumentOwner()
+```
+
+异步加载、资源实例化和确认应在调用前完成；确认期间任何文档更新都应使预览失效。内核在同步提交和撤销/重做前拒绝只读、用户锁、活动输入法组合及未处理修订。业务 mutation policy 可识别 `context.structureTransform`，仅豁免已授权目的所需的区域保护。

@@ -58,6 +58,8 @@ import {
 } from '../revision'
 
 export interface DocConfig {
+  /** Explicit host grant for structural replacement and its undo/redo. Default deny. */
+  authorizeStructureTransform?: (context: import('./structure-transform').DocumentStructureTransformContext) => boolean
   docId: string
   schemas: BlockCraft.SchemaManager
   logger: Logger

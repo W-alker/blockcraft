@@ -1,3 +1,5 @@
+import {applyDocumentStructurePlan} from './structure-transform'
+import {BlockMutationPolicyManager} from './block-mutation-policy'
 import {BaseBlockComponent} from '../block-std/block/component/base-block'
 import {TableBlockSchema, TableRowBlockSchema, TableCellBlockSchema, RenderUnitBlockSchema, PageDividerBlockSchema, RootBlockSchema, CalloutBlockSchema, ParagraphBlockSchema} from "../../blocks"
 import {SchemaManager} from "../block-std/schema"
@@ -415,6 +417,85 @@ const createBoundarySelection = (doc: any, blockId: string, index: number) => {
 }
 
 describe('DocCRUD', () => {
+  it('原子结构变换经真实 CRUD 观察器更新保留子树的 DOM 父级，并单步撤销重做', async () => {
+    const h = createDocHarness(true)
+    const doc = h.doc as any
+    doc.schemas = new SchemaManager([RootBlockSchema, ParagraphBlockSchema, RenderUnitBlockSchema])
+    doc.config = {authorizeStructureTransform: () => true}
+    doc.mutationPolicy = new BlockMutationPolicyManager(doc)
+    doc.exportSnapshot = () => doc.model.toSnapshot(doc.rootId)
+    // 这个轻量 VM 的默认桩只创建扁平节点；本例补齐真实 DocVM 的递归挂载合同。
+    const create = doc.vm.createComponentByYBlocks
+    doc.vm.createComponentByYBlocks = (blocks: Record<string, YBlock>) => {
+      const refs = create(blocks)
+      const mount = (ref: MockBlockRef) => {
+        if (ref.instance.nodeType === BlockNodeType.editable) return
+        const children = doc.model.getChildrenIds(ref.instance.id).map((id: string) => {
+          const existing = h.store.get(id)
+          const child = existing ?? create({[id]: doc.yBlockMap.get(id)})[id]
+          if (!existing) mount(child)
+          return child
+        })
+        if (children.length && !ref.instance.childrenRenderRef.length) doc.vm.insert(ref, 0, children)
+      }
+      Object.values(refs).forEach(ref => mount(ref as MockBlockRef))
+      return refs
+    }
+    const old = RenderUnitBlockSchema.createSnapshot()
+    old.children = [ParagraphBlockSchema.createSnapshot('保留')]
+    const next = RenderUnitBlockSchema.createSnapshot()
+    h.crud.insertBlockSnapshots(doc.rootId, 0, [old])
+    await nextFrame()
+    h.crud.undoManager.clearHistory()
+    const childId = old.children[0].id
+    const yText = doc.yBlockMap.get(childId).get('children')
+    const updates = jasmine.createSpy('updates')
+    h.yDoc.on('update', updates)
+    applyDocumentStructurePlan(doc, {purpose: 'test', children: [next], retainedChildren: [{sourceId: old.id, targetId: next.id}]})
+    await nextFrame()
+    expect(updates).toHaveBeenCalledTimes(1)
+    expect(doc.yBlockMap.get(childId).get('children')).toBe(yText)
+    expect(h.store.get(childId)?.instance.parentId).toBe(next.id)
+    expect(h.store.get(next.id)?.instance.hostElement.contains(h.store.get(childId)!.instance.hostElement)).toBeTrue()
+    h.crud.undoManager.undo()
+    await nextFrame()
+    expect(h.store.get(childId)?.instance.parentId).toBe(old.id)
+    h.crud.undoManager.redo()
+    await nextFrame()
+    expect(h.store.get(childId)?.instance.parentId).toBe(next.id)
+    h.destroy()
+  })
+
+  it('填写区段落转换是单个事务，撤销和重做恢复提示与富文本', async () => {
+    const h = createDocHarness()
+    const region = RenderUnitBlockSchema.createSnapshot()
+    region.meta['tplRegion'] = true
+    const paragraph = createEditableSnapshot('placeholder-source', '保留内容')
+    paragraph.meta = {plh: '请填写', plhMode: 'always'}
+    h.crud.insertBlockSnapshots('root', 0, [region])
+    h.crud.insertBlockSnapshots(region.id, 0, [paragraph])
+    await nextFrame()
+    h.crud.undoManager.clearHistory()
+    const updates = jasmine.createSpy('updates')
+    h.yDoc.on('update', updates)
+    const replacement = {...createEditableSnapshot('converted-bullet', '保留内容'), flavour: 'bullet' as const,
+      meta: {plh: '请填写', plhMode: 'always' as const}}
+    h.crud.replaceWithSnapshots(paragraph.id, [replacement])
+    expect(updates).toHaveBeenCalledTimes(1)
+    await nextFrame()
+    expect(h.doc.model.getChildrenIds(region.id)).toEqual([replacement.id])
+    h.crud.undoManager.undo()
+    await nextFrame()
+    expect(h.doc.model.getChildrenIds(region.id)).toEqual([paragraph.id])
+    expect(h.doc.model.getYBlock(paragraph.id)!.get('meta').get('plh')).toBe('请填写')
+    h.crud.undoManager.redo()
+    await nextFrame()
+    expect(h.doc.model.getChildrenIds(region.id)).toEqual([replacement.id])
+    expect(h.doc.model.getYBlock(replacement.id)!.get('meta').get('plhMode')).toBe('always')
+    expect((h.doc.model.getYBlock(replacement.id)!.get('children') as unknown as Y.Text).toString()).toBe('保留内容')
+    h.destroy()
+  })
+
   for (const schema of [PageDividerBlockSchema]) {
   it(`${schema.flavour} 只允许写入 root，拒绝嵌套快照和移动且不产生残留数据`, () => {
     const {crud, doc, destroy} = createDocHarness()

@@ -9,6 +9,8 @@ export type BlockMutationOperation =
   | 'redo'
 
 export interface BlockMutationContext {
+  /** Present only on an explicitly host-authorized structural command/history item. */
+  structureTransform?: string
   operation: BlockMutationOperation
   /** Blocks directly targeted by the operation. */
   blockIds: readonly string[]
