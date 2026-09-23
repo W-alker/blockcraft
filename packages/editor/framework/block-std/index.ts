@@ -22,6 +22,7 @@ export {
   normalizeDocumentFontSize,
   normalizeTypographyLineHeight,
   normalizeParagraphSpacing,
+  paragraphAlignmentStyles,
   paragraphPointsToCss,
   paragraphPointsToPixels,
   createInlineTypographyPatch,

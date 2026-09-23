@@ -1,3 +1,4 @@
+import {createParagraphAlignmentExamples} from './paragraph-alignment.examples';
 import { AfterViewInit, ChangeDetectorRef, Component, ComponentRef, ElementRef, NgZone, OnDestroy, ViewChild, inject } from '@angular/core';
 import { OverlayRef } from '@angular/cdk/overlay';
 import {
@@ -83,6 +84,7 @@ type DebugActionId =
   | 'logSelection'
   | 'listenUpdate'
   | 'test'
+  | 'paragraphAlignment'
   | 'markdownStream'
   | 'logTable'
   | 'fixTable'
@@ -283,6 +285,7 @@ const ACTION_SECTIONS: DebugSection[] = [
   {
     title: '调试',
     actions: [
+      { id: 'paragraphAlignment', label: '段落对齐案例' },
       { id: 'log', label: '打印数据' },
       { id: 'logSelection', label: '打印选区' },
       { id: 'listenUpdate', label: '监听更新' },
@@ -2049,6 +2052,9 @@ graph TD
       case 'init':
         this.initializeEditor();
         return;
+      case 'paragraphAlignment':
+        void this.insertParagraphAlignmentExamples();
+        return;
       case 'theme':
         this.toggleTheme();
         return;
@@ -2617,6 +2623,19 @@ graph TD
     const tableElement = editor.doc.selection.value?.firstBlock.hostElement.closest('.table-block');
     const id = tableElement?.getAttribute('data-block-id');
     return id ? editor.doc.getBlockById(id) : null;
+  }
+
+  async insertParagraphAlignmentExamples(): Promise<void> {
+    const editor = this.ensureEmptyEditorReady();
+    const doc = editor.doc;
+    if (doc.isReadonly) return;
+    const examples = createParagraphAlignmentExamples(doc);
+    doc.crud.undoManager.stopCapturing();
+    doc.crud.insertBlockSnapshots(doc.rootId, 0, examples);
+    doc.crud.undoManager.stopCapturing();
+    this.editorInitialized = true;
+    this.cdr.detectChanges();
+    await doc.navigateToBlock(examples[0].id);
   }
 
   initializeEditor() {

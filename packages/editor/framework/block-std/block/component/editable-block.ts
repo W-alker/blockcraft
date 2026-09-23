@@ -6,6 +6,7 @@ import { DeltaInsert, DeltaOperation } from "../../types";
 import { INLINE_CONTAINER_CLASS, TextBlot, BlotType } from "../../inline";
 import { InlineRuntime } from "../../inline/runtime/inline-runtime";
 import { Subject } from "rxjs";
+import {paragraphAlignmentStyles} from '../../typography';
 import {BlockReadonlyOperation} from "../../../doc/block-readonly.types";
 
 @Component({
@@ -129,7 +130,25 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
 
   @HostBinding('style.text-align')
   get textAlign() {
-    return this._native.props['textAlign']
+    const align = this.props.textAlign
+    if (this.plainTextOnly) return align === 'justify' || align === 'distributed' ? '' : align
+    return paragraphAlignmentStyles(align).textAlign
+  }
+
+  @HostBinding('style.text-align-last')
+  get textAlignLast() {
+    return paragraphAlignmentStyles(this.plainTextOnly ? undefined : this.props.textAlign).textAlignLast
+  }
+
+  @HostBinding('style.text-justify')
+  get textJustify() {
+    return paragraphAlignmentStyles(this.plainTextOnly ? undefined : this.props.textAlign).textJustify
+  }
+
+  @HostBinding('attr.data-bc-text-align')
+  get justifiedTextAlignment() {
+    const align = this.plainTextOnly ? undefined : this.props.textAlign
+    return align === 'justify' || align === 'distributed' ? align : null
   }
 
   @HostBinding('attr.data-heading')

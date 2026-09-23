@@ -1,3 +1,4 @@
+import {PARAGRAPH_ALIGNMENT_OPTIONS} from '../../paragraph-alignment-options';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -97,26 +98,9 @@ export const LIST_LIST: IToolbarMenuItem[] = [
   }
 ]
 
-const ALIGN_LIST: IToolbarMenuItem[] = [
-  {
-    name: "align",
-    icon: "bc_zuoduiqi",
-    intro: "左对齐",
-    value: 'left',
-  },
-  {
-    name: "align",
-    value: "center",
-    icon: "bc_juzhongduiqi",
-    intro: "居中",
-  },
-  {
-    name: "align",
-    value: "right",
-    icon: "bc_youduiqi",
-    intro: "右对齐",
-  }
-]
+const ALIGN_LIST: IToolbarMenuItem[] = PARAGRAPH_ALIGNMENT_OPTIONS.map(item => ({
+  name: 'align', value: item.value, icon: item.icon, intro: item.title,
+}));
 
 const DEFAULT_MENU_LIST: IToolbarMenuItem[] = [
   // ...ALIGN_LIST,

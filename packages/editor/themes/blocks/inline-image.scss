@@ -184,3 +184,25 @@
     white-space: pre-wrap;
   }
 }
+
+// Dual-side rows reserve a fixed image exclusion band. Justify each text
+// interval independently, otherwise spacing would move glyphs into the image.
+[data-blockcraft-root="true"] [data-bc-text-align] {
+  --_bc-fragment-display: inline-block;
+
+  [data-bc-inline-fragment-row] {
+    text-align: start;
+    text-align-last: auto;
+  }
+  [data-bc-inline-fragment-side] {
+    text-align: justify;
+    text-align-last: justify;
+    vertical-align: top;
+  }
+  [data-bc-inline-fragment-side='right'] {
+    --_bc-fragment-gap: var(--_bc-fragment-exclusion-gap);
+  }
+  &[data-bc-text-align='justify'] [data-bc-inline-fragment-terminal] {
+    text-align-last: auto;
+  }
+}

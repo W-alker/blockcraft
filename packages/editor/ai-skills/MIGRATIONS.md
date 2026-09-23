@@ -68,6 +68,30 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## Unreleased — 2026-09-23：段落两端与分散对齐
+
+**Severity**: minor（可选能力新增；版本由用户决定）
+
+**What changed**: `IBlockProps.textAlign` 新增 `justify` / `distributed`，工具栏、块菜单、段落设置、只读快照和 HTML 对齐映射同步支持；新增纯函数 `paragraphAlignmentStyles()`。
+
+**Why**: 支持段落铺满可用行宽，并区分自然末行与撑满末行；兼容行内嵌入和单侧／双侧图片环绕。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-formatting.md`、`blockcraft-adapter.md`、`blockcraft-inline.md`。
+
+### New APIs / Features
+
+- `textAlign: 'justify'`：两端对齐，末行与软换行前的行自然结束。
+- `textAlign: 'distributed'`：末行也拉伸，浏览器支持时按字符分配间距。
+- `paragraphAlignmentStyles(value)`：共享 CSS 投影，返回只读的 `textAlign/textAlignLast/textJustify`。
+
+### Migration Recipe
+
+旧数据无需迁移。自定义对齐白名单和 UI 增加两个可选值即可；操作仍走 `block.updateProps({textAlign: 'justify'})` 或 `DocCRUD`，不要直接写 DOM。
+
+### Behavior Changes
+
+默认左／中／右对齐不变。新模式下列表文字区占满剩余宽度，双侧环绕按图片两边的可用区间分别对齐；原子嵌入内容不继承段落末行拉伸。HTML 导入导出保留对齐；Portable Markdown 不承诺保留。英文逐字符分散依赖浏览器 `text-justify` 支持，不模拟 Word 的排版引擎。
+
 ## Unreleased — 2026-09-23：填写提示段落转换
 
 **Severity**: patch

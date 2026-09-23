@@ -30,8 +30,9 @@ import {BulletBlockModel} from "./index";
 })
 export class BulletBlockComponent extends EditableBlockComponent<BulletBlockModel> {
   @HostBinding('style.justify-content')
-  override get textAlign() {
-    return this._native.props['textAlign']
+  get listJustifyContent() {
+    const align = this.props.textAlign
+    return align === 'center' || align === 'right' ? align : undefined
   }
 
   get bulletType() {

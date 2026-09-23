@@ -1,3 +1,5 @@
+import {PARAGRAPH_ALIGNMENT_OPTIONS} from '../../paragraph-alignment-options';
+import {paragraphAlignmentStyles} from '../../../framework/block-std/typography';
 import {NgStyle} from '@angular/common';
 import {normalizeParagraphDecoration, paragraphDecorationStyles, ParagraphDecoration, decorationLengthMode, decorationLengthValue} from '../../../blocks/paragraph-block/decoration';
 import {FormsModule} from "@angular/forms";
@@ -14,8 +16,6 @@ import {
   CsColorPickerComponent,
   CsInputNumberComponent,
   CsOptionComponent,
-  CsSegmentedComponent,
-  CsSegmentedItemComponent,
   CsSelectComponent,
 } from "@cses/ui";
 import {
@@ -28,7 +28,7 @@ import type {
   ParagraphSettingsDialogResult,
 } from "./typography-settings-dialog.types";
 
-type ParagraphAlign = "left" | "center" | "right";
+type ParagraphAlign = NonNullable<ParagraphSettingsDialogData["align"]>;
 const DEFAULT_LINE_HEIGHT_VALUE = "__bc_document_default__" as const;
 
 @Component({
@@ -40,8 +40,6 @@ const DEFAULT_LINE_HEIGHT_VALUE = "__bc_document_default__" as const;
     CsColorPickerComponent,
     CsInputNumberComponent,
     CsOptionComponent,
-    CsSegmentedComponent,
-    CsSegmentedItemComponent,
     CsSelectComponent,
   ],
   templateUrl: "./paragraph-settings-dialog.component.html",
@@ -79,6 +77,7 @@ export class ParagraphSettingsDialogComponent {
     this.setDecoration(side, mode === 'auto' ? 'auto' : `${amount}${mode === 'px' ? 'px' : '%'}`);
   }
 
+  protected readonly alignOptions = PARAGRAPH_ALIGNMENT_OPTIONS;
   protected readonly lineHeights = PARAGRAPH_LINE_HEIGHT_PRESETS;
   protected readonly defaultLineHeightValue = DEFAULT_LINE_HEIGHT_VALUE;
   protected readonly align = signal<ParagraphAlign>(this.data.align ?? "left");
@@ -125,8 +124,8 @@ export class ParagraphSettingsDialogComponent {
     return "多种值";
   }
 
-  protected get previewTextAlign(): string {
-    return this.align();
+  protected get previewAlignment() {
+    return paragraphAlignmentStyles(this.align());
   }
 
   protected get previewLineHeight(): string {
@@ -142,8 +141,9 @@ export class ParagraphSettingsDialogComponent {
   }
 
   protected setAlign(value: unknown): void {
-    if (value !== "left" && value !== "center" && value !== "right") return;
-    this.align.set(value);
+    const option = this.alignOptions.find(item => item.value === value);
+    if (!option) return;
+    this.align.set(option.value);
     this.dirty.add("textAlign");
   }
 

@@ -14,7 +14,7 @@ export enum BlockNodeType {
 }
 
 export interface IBlockProps {
-  textAlign?: 'center' | 'right'
+  textAlign?: 'center' | 'right' | 'justify' | 'distributed'
   depth?: number
   /** Atomic "x y" in layout px, at most two decimals; used in absolute planes. */
   position?: string

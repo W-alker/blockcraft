@@ -61,7 +61,7 @@ export const BLOCK_AGENT_OBJECT_GEOMETRY_PROPERTIES = {
 
 const EDITABLE_PROPERTIES = {
   depth: {type: ['integer', 'null'], minimum: 0},
-  textAlign: {enum: ['left', 'center', 'right', 'justify', null]},
+  textAlign: {enum: ['left', 'center', 'right', 'justify', 'distributed', null]},
   backColor: BLOCK_AGENT_NULLABLE_STRING_SCHEMA,
   borderColor: BLOCK_AGENT_NULLABLE_STRING_SCHEMA,
   pfs: {type: ['number', 'null'], minimum: 0.25, maximum: 8},
@@ -80,7 +80,7 @@ const EDITABLE_CREATE_PARAMETERS = {
       type: 'object',
       properties: {
         depth: {type: 'integer', minimum: 0},
-        textAlign: {enum: ['left', 'center', 'right', 'justify']},
+        textAlign: {enum: ['left', 'center', 'right', 'justify', 'distributed']},
         heading: {enum: [1, 2, 3]},
         ms: {type: 'string'},
       },

@@ -1,6 +1,7 @@
 import type {ParagraphDecoration} from '../../../blocks/paragraph-block/decoration'
 import type {
   IInlineNodeAttrs,
+  IBlockProps,
   TypographyFontFamilyId,
 } from "../../../framework";
 
@@ -38,7 +39,7 @@ export interface ParagraphSettingsDialogData {
   decoration?: ParagraphDecoration | null;
   allowDecoration?: boolean;
   target: ParagraphSettingsTarget;
-  align: "left" | "center" | "right" | undefined;
+  align: IBlockProps["textAlign"] | "left";
   defaults: {
     /** Resolved document line-height ratio. Display-only until changed. */
     lineHeight: number;
@@ -55,7 +56,7 @@ export interface ParagraphSettingsDialogData {
 export interface ParagraphSettingsDialogResult {
   patch: {
     decoration?: ParagraphDecoration | null;
-    textAlign?: "center" | "right" | null;
+    textAlign?: IBlockProps["textAlign"] | null;
     lh?: number | null;
     psb?: number | null;
     psa?: number | null;

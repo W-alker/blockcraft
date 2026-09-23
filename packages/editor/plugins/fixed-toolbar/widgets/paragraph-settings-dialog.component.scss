@@ -10,8 +10,6 @@
 .bc-paragraph-layout, .bc-paragraph-form { display: grid; gap: 10px; }
 .bc-paragraph-layout { grid-template-columns: minmax(0, 1fr); }
 .bc-settings-section { min-width: 0; }
-.bc-segmented-option { display: inline-flex; align-items: center; gap: 6px; }
-.bc-segmented-option > .bc_icon { width: 14px; flex: 0 0 14px; text-align: center; }
 .bc-settings-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; border-radius: 4px; }
 .bc-settings-field > span, .bc-paragraph-preview > span {
   color: var(--cs-color-text-secondary, var(--bc-color-light)); font-size: 12px; line-height: 18px;
@@ -63,7 +61,6 @@
   .bc-settings-grid--spacing { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   [data-setting-field='line-height'] { grid-column: 1 / -1; }
   .bc-settings-field--row { grid-template-columns: 52px minmax(0, 1fr); gap: 8px; }
-  .bc-segmented-option { gap: 3px; }
   .bc-length-field { grid-template-columns: minmax(0, 1fr) 80px; }
   .bc-decoration-basics .bc-settings-field { display: flex; }
 }

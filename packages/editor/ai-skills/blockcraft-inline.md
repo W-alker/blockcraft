@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying the inline editing system.
 >
-> Last updated: 2026-09-20
+> Last updated: 2026-09-23
 
 行内图片数据协议及归一化位于 `framework/block-std/inline/image-data.ts`，数值辅助实现位于
 `image-numbers.ts`。浮动排版和虚拟化只依赖数据规则；DOM converter 与资源控制器仍在
@@ -244,7 +244,11 @@ the contained CSS-float fallback. Dual mode measures browser Range geometry,
 splits TextBlots only at grapheme-safe model offsets, and moves the real Blot
 nodes into local inline row spans in left-then-right model order. The right
 fragment uses a measured `margin-inline-start` so both sides share one browser
-line box without relying on CSS Grid. Layout wrappers have zero model length
+line box without relying on CSS Grid. 对齐新模式下，两侧片段分别使用既有几何区间的固定宽度和
+`inline-block`，间隔取图片排除区；各片段单独撑满，避免字距把文字推入图片。
+段末／软换行前的末片段在 `justify` 下不拉伸，`distributed` 下继续拉伸。
+CSS 内部变量在普通左／中／右模式回退为原来的 inline + measured margin；
+不会增加对齐专用逐字 DOM 或额外布局测量。Layout wrappers have zero model length
 and never serialize. Multiple anchors are processed in Delta order; block-flow
 fragment groups push a later overlapping exclusion band below the previous one.
 

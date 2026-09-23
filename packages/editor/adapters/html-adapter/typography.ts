@@ -1,6 +1,6 @@
 import type {Element, Properties} from 'hast'
 import {INLINE_TYPOGRAPHY_ATTRS, IBlockProps, IEditableBlockProps, IInlineNodeAttrs} from '@ccc/blockcraft/framework/model';
-import {isTypographyFontFamilyId, matchTypographyFontFamily, normalizeDocumentFontSize, normalizeInlineFontScale, normalizeInlineLetterSpacing, normalizeParagraphFontScale, normalizeParagraphSpacing, normalizeTypographyLineHeight, paragraphPointsToCss, resolveTypographyFontFamily} from '@ccc/blockcraft/framework/block-std/typography';
+import {paragraphAlignmentStyles, isTypographyFontFamilyId, matchTypographyFontFamily, normalizeDocumentFontSize, normalizeInlineFontScale, normalizeInlineLetterSpacing, normalizeParagraphFontScale, normalizeParagraphSpacing, normalizeTypographyLineHeight, paragraphPointsToCss, resolveTypographyFontFamily} from '@ccc/blockcraft/framework/block-std/typography';
 
 type StyleMap = ReadonlyMap<string, string>
 
@@ -158,6 +158,15 @@ export const editableTypographyToHtmlProperties = (
   const psa = normalizeParagraphSpacing(props['psa'])
   const declarations: string[] = []
   const properties: Properties = {}
+  if (props.textAlign) {
+    const alignment = paragraphAlignmentStyles(props.textAlign)
+    if (alignment.textAlign) {
+      declarations.push(`text-align: ${alignment.textAlign}`)
+      if (props.textAlign === 'justify' || props.textAlign === 'distributed') {
+        declarations.push(`text-align-last: ${alignment.textAlignLast}`, `text-justify: ${alignment.textJustify}`)
+      }
+    }
+  }
   if (pfs !== null) {
     properties['dataBcPfs'] = pfs
     declarations.push(`font-size: ${pfs * 100}%`)
@@ -195,7 +204,12 @@ export const editableTypographyFromHtml = (
     propertyValue(element.properties, 'dataBcSa') ?? style.get('margin-bottom'),
     normalizeParagraphSpacing,
   )
+  const align = (style.get('text-align') ?? `${element.properties?.['align'] ?? ''}`).toLowerCase()
+  const textAlign = align === 'justify'
+    ? (style.get('text-align-last')?.toLowerCase() === 'justify' ? 'distributed' : 'justify')
+    : align === 'center' || align === 'right' ? align : undefined
   return {
+    ...(textAlign ? {textAlign} : {}),
     ...(pfs === null ? {} : {pfs}),
     ...(lh === null ? {} : {lh}),
     ...(psb === null ? {} : {psb}),

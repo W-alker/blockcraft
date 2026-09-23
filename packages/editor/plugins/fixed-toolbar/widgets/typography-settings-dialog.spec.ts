@@ -113,7 +113,7 @@ describe("typography settings dialogs", () => {
       .toBeLessThanOrEqual(640);
     expect(fixture.nativeElement.textContent).not.toContain("应用到：");
     expect(fixture.nativeElement.textContent).not.toContain("定位：");
-    expect(fixture.nativeElement.querySelector(".bc_zuoduiqi")).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-setting-field="paragraph-align"] cs-select')).not.toBeNull();
     expect(component.spaceBeforeValue).toBe(0);
     expect(component.spaceAfterValue).toBe(7.5);
     expect(component.lineHeightSelectValue).toBe(component.defaultLineHeightValue);
@@ -129,6 +129,29 @@ describe("typography settings dialogs", () => {
       patch: {lh: 1.75, psb: 12, psa: 0},
     });
   });
+  it('previews both justified modes and clears last-line expansion when switching back', async () => {
+    await TestBed.configureTestingModule({
+      imports: [NoopAnimationsModule, ParagraphSettingsDialogComponent],
+      providers: [{provide: CS_MODAL_DATA, useValue: {
+        target: 'paragraph-align', align: 'distributed', paragraph: {},
+        defaults: {lineHeight: 1.5, spaceAfter: 0},
+      }}],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(ParagraphSettingsDialogComponent);
+    const component = fixture.componentInstance as any;
+    fixture.detectChanges();
+    const preview = fixture.nativeElement.querySelector('.bc-focus-paragraph') as HTMLElement;
+    expect(preview.style.textAlignLast).toBe('justify');
+    expect(component.buildResult()).toEqual({patch: {}});
+    component.setAlign('justify'); fixture.detectChanges();
+    expect(preview.style.textAlignLast).toBe('auto');
+    expect(component.buildResult()).toEqual({patch: {textAlign: 'justify'}});
+    component.setAlign('left'); fixture.detectChanges();
+    expect(preview.style.textAlign).toBe('left');
+    expect(preview.style.textAlignLast).toBe('auto');
+    expect(component.buildResult()).toEqual({patch: {textAlign: null}});
+  });
+
   it('keeps decoration untouched until edited and shows controls for the selected edge', async () => {
     await TestBed.configureTestingModule({
       imports: [NoopAnimationsModule, ParagraphSettingsDialogComponent],

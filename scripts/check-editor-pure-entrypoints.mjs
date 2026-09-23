@@ -25,7 +25,7 @@ await checkEntrypointDependencies(packageRoot, manifest, {
   },
 });
 // 排版计算层在不加载 DOM lib 的条件下也必须成立；DOM 实现只能向它单向依赖。
-const coreProgram = ts.createProgram([path.join(workspaceRoot, 'packages/editor/framework/block-std/typography/core.ts')], {
+const coreProgram = ts.createProgram(['core.ts', 'paragraph-alignment.ts'].map(file => path.join(workspaceRoot, 'packages/editor/framework/block-std/typography', file)), {
   noEmit: true, strict: true, types: [], target: ts.ScriptTarget.ES2022, lib: ['lib.es2022.d.ts'],
   moduleResolution: ts.ModuleResolutionKind.Node10, baseUrl: workspaceRoot,
   paths: {
@@ -158,6 +158,7 @@ assert.equal(typography.INLINE_TYPOGRAPHY_ATTRS, model.INLINE_TYPOGRAPHY_ATTRS);
 assert.equal(typography.normalizeInlineFontScale(1.23456), 1.235);
 assert.equal(typography.resolveTypographyFontFamily('url(javascript:bad)'), null);
 assert.equal(typography.paragraphPointsToPixels(12), 16);
+assert.deepEqual(typography.paragraphAlignmentStyles('distributed'), {textAlign: 'justify', textAlignLast: 'justify', textJustify: 'inter-character'});
 assert.equal(format.storeObjectPaint({type: 'none'}), 'none');
 assert.equal(format.normalizeObjectPaint('none').type, 'none');
 assert.deepEqual(engine.resolveBlockPolicy({flavour: 'paragraph', nodeType: base.BlockNodeType.editable}),

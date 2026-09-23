@@ -799,20 +799,28 @@ export class InlineFragmentProjection {
       row.style.lineHeight = `${plan.lineHeight}px`
       row.style.whiteSpace = 'pre'
       for (const fragment of [left, right]) {
-        fragment.style.display = 'inline'
+        fragment.style.display = 'var(--_bc-fragment-display, inline)'
         fragment.style.minWidth = '0'
         fragment.style.whiteSpace = 'pre'
       }
+      left.style.width = `${plan.geometry.leftTextWidth}px`
+      right.style.width = `${plan.geometry.rightTextWidth}px`
       const rightStart = Math.max(
         0,
         plan.geometry.containerWidth - plan.geometry.rightTextWidth,
       )
-      right.style.marginInlineStart = `${Math.max(
+      right.style.setProperty('--_bc-fragment-exclusion-gap', `${rightStart - plan.geometry.leftTextWidth}px`)
+      right.style.marginInlineStart = `var(--_bc-fragment-gap, ${Math.max(
         0,
         rightStart - rowPlan.leftAdvance,
-      )}px`
+      )}px)`
       this._moveRange(entries, rowPlan.left, left, moved)
       this._moveRange(entries, rowPlan.right, right, moved)
+      for (const [fragment, range] of [[left, rowPlan.left], [right, rowPlan.right]] as const) {
+        if (range.end >= this._scroll.textLength || /[\r\n]$/.test(fragment.textContent ?? '') || fragment.lastElementChild?.querySelector('br')) {
+          fragment.setAttribute('data-bc-inline-fragment-terminal', '')
+        }
+      }
       row.append(left, right)
       group.appendChild(row)
     }

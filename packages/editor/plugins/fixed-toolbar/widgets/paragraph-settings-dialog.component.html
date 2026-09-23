@@ -3,25 +3,12 @@
     <section class="bc-settings-section">
       <div class="bc-settings-field bc-settings-field--row" data-setting-field="paragraph-align">
         <span>对齐方式</span>
-        <cs-segmented csSize="small" [csBlock]="true"
-          [ngModel]="align()"
+        <cs-select csSize="sm" [ngModel]="align()"
           (ngModelChange)="setAlign($event)" csAriaLabel="段落对齐方式">
-          <label cs-segmented-item csValue="left">
-            <span class="bc-segmented-option">
-              <i class="bc_icon bc_zuoduiqi" aria-hidden="true"></i>左对齐
-            </span>
-          </label>
-          <label cs-segmented-item csValue="center">
-            <span class="bc-segmented-option">
-              <i class="bc_icon bc_juzhongduiqi" aria-hidden="true"></i>居中
-            </span>
-          </label>
-          <label cs-segmented-item csValue="right">
-            <span class="bc-segmented-option">
-              <i class="bc_icon bc_youduiqi" aria-hidden="true"></i>右对齐
-            </span>
-          </label>
-        </cs-segmented>
+          @for (item of alignOptions; track item.value) {
+            <cs-option [csValue]="item.value" [csLabel]="item.title" />
+          }
+        </cs-select>
       </div>
     </section>
 
@@ -126,7 +113,9 @@
         [style.margin-top]="previewSpaceBefore"
         [style.margin-bottom]="previewSpaceAfter"
         [style.line-height]="previewLineHeight"
-        [style.text-align]="previewTextAlign">
+        [style.text-align]="previewAlignment.textAlign"
+        [style.text-align-last]="previewAlignment.textAlignLast"
+        [style.text-justify]="previewAlignment.textJustify">
         <span class="bc-paragraph-text">此刻的思考，值得被记录。</span>
       </p>
       <p>下一段文字</p>

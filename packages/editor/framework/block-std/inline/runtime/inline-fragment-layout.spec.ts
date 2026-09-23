@@ -415,12 +415,14 @@ describe('inline fragment layout', () => {
     )!
     expect(firstRow.style.display).toBe('block')
     expect(firstRow.style.gridTemplateColumns).toBe('')
-    expect(left.style.display).toBe('inline')
-    expect(right.style.display).toBe('inline')
-    expect(Number.parseFloat(right.style.marginInlineStart)).toBeCloseTo(
+    document.body.appendChild(container)
+    expect(getComputedStyle(left).display).toBe('inline')
+    expect(getComputedStyle(right).display).toBe('inline')
+    expect(Number.parseFloat(getComputedStyle(right).marginInlineStart)).toBeCloseTo(
       geometry.containerWidth - geometry.rightTextWidth - 20,
     )
 
+    container.remove()
     projection.revoke()
 
     expect(projection.active).toBeFalse()

@@ -1,3 +1,4 @@
+import {paragraphAlignmentStyles} from '../../framework/block-std/typography';
 import {applyParagraphDecoration} from '../../blocks/paragraph-block/decoration';
 import {IBlockSnapshot} from "../../framework/block-std/types/block.type";
 import {InlineModel} from "../../framework/block-std/types/inline.type";
@@ -234,7 +235,7 @@ function applyEditableProps(element: HTMLElement, snapshot: IBlockSnapshot) {
     element.dataset["heading"] = `${props["heading"]}`
   }
   if (props["textAlign"]) {
-    element.style.textAlign = `${props["textAlign"]}`
+    Object.assign(element.style, paragraphAlignmentStyles(snapshot.props.textAlign))
   }
 }
 

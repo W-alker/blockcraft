@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-09-22 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-09-23 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -19,6 +19,12 @@ A block-based rich text editor built on **Angular (standalone components)** + **
 - Plugin system for extensibility
 - Inline editing with a custom Blot tree (not Quill/ProseMirror)
 - HTML and Markdown import/export via AST walkers
+
+## 段落对齐速查
+
+`textAlign: 'justify'` 为两端对齐；`textAlign: 'distributed'` 为包括末行的分散对齐。
+沿用块属性事务与 Undo，默认左对齐不变。支持范围、CSS 映射和浏览器边界见
+`blockcraft-block.md`，工具栏见 `blockcraft-plugins-formatting.md`，HTML 映射见 `blockcraft-adapter.md`。
 
 ## Core Concepts
 

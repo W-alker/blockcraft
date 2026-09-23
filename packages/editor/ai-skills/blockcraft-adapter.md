@@ -4,7 +4,7 @@
 >
 > Adapters handle HTML ↔ BlockSnapshot and Markdown ↔ BlockSnapshot conversion.
 >
-> Last updated: 2026-09-20
+> Last updated: 2026-09-23
 
 ## Architecture
 
@@ -623,6 +623,12 @@ guesses a text box from ordinary prose. Internal Snapshot and HTML paths remain
 lossless.
 
 ## Typography Mapping
+
+HTML 段落对齐导出标准 `text-align`：`distributed` 映射为
+`text-align: justify; text-align-last: justify; text-justify: inter-character`；
+`justify` 导出 `text-align-last: auto`。导入用 `text-align` 与 `text-align-last`
+还原两种模式，也接受标准的 `center/right` 和 HTML `align` 属性。
+Portable Markdown 没有段落对齐语义，不承诺保留；内部 Snapshot/JSON 保留 `textAlign`。
 
 HTML round-trips document root `ff/fs/lh`, editable paragraph
 `pfs/lh/psb/psa`, and inline `t:ff/t:fs/t:ls` through bounded

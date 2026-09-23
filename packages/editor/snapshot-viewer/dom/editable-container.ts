@@ -1,3 +1,4 @@
+import {paragraphAlignmentStyles} from '../../framework/block-std/typography';
 import {IBlockSnapshot} from "../../framework/block-std/types/block.type";
 import {InlineModel} from "../../framework/block-std/types/inline.type";
 import {SnapshotRenderContext} from "../types";
@@ -18,8 +19,11 @@ export function createEditableContainer(
 ): HTMLElement {
   const content = document.createElement(options.tag ?? "div")
   content.classList.add("edit-container")
-  if (snapshot.flavour !== "code" && snapshot.props.textAlign) {
-    content.style.textAlign = `${snapshot.props.textAlign}`
+  if (!['code', 'mermaid-textarea', 'word-art'].includes(snapshot.flavour)) {
+    Object.assign(content.style, paragraphAlignmentStyles(snapshot.props.textAlign))
+    if (options.host && (snapshot.props.textAlign === 'justify' || snapshot.props.textAlign === 'distributed')) {
+      options.host.dataset['bcTextAlign'] = snapshot.props.textAlign
+    }
   }
   content.append(ctx.createInlineContent(snapshot.children as InlineModel))
   if (options.host) {

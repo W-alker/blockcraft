@@ -419,6 +419,18 @@
     position: relative;
   }
 
+  :is(.bullet-block, .ordered-block, .todo-block)[data-bc-text-align] > .edit-container {
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
+  }
+
+  [data-bc-text-align] c-element > span[contenteditable='false'] {
+    text-align: start;
+    text-align-last: auto;
+    text-justify: auto;
+  }
+
   .edit-container {
     white-space: break-spaces;
     user-select: text;

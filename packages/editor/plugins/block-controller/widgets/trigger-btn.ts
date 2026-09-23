@@ -1,3 +1,4 @@
+import {PARAGRAPH_ALIGNMENT_OPTIONS} from '../../paragraph-alignment-options';
 import {
   ChangeDetectionStrategy,
   ChangeDetectorRef,
@@ -14,6 +15,7 @@ import { BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerD
 import {
   BlockLockError,
   BlockNodeType,
+  type EditableBlockComponent,
   IBlockSchemaOptions,
   IBlockSnapshot,
 } from "../../../framework";
@@ -36,29 +38,9 @@ import { CsTooltipDirective } from "@cses/ui";
 import { MatIcon } from "@angular/material/icon";
 import { BlockMenuComponent } from "./block-menu";
 
-const ALIGN_LIST: IContextMenuItem[] = [
-  {
-    name: "align",
-    icon: "bc_zuoduiqi",
-    label: "左对齐",
-    value: 'left',
-    type: 'tool'
-  },
-  {
-    name: "align",
-    value: "center",
-    icon: "bc_juzhongduiqi",
-    label: "居中",
-    type: 'tool'
-  },
-  {
-    name: "align",
-    value: "right",
-    icon: "bc_youduiqi",
-    label: "右对齐",
-    type: 'tool'
-  }
-]
+const ALIGN_LIST: IContextMenuItem[] = PARAGRAPH_ALIGNMENT_OPTIONS.map(item => ({
+  name: 'align', value: item.value, icon: item.icon, label: item.title, type: 'tool',
+}));
 
 const NORMAL_PARAGRAPH_ITEM: IContextMenuItem = {
   name: "heading",
@@ -743,7 +725,8 @@ export class TriggerBtn {
         name: 'align-menu',
         icon: 'bc_zuoduiqi',
         label: '对齐方式',
-        items: ALIGN_LIST.map(item => ({
+        items: ALIGN_LIST.filter(item => !(this.activeBlock as EditableBlockComponent).plainTextOnly ||
+          (item.value !== 'justify' && item.value !== 'distributed')).map(item => ({
           type: 'simple',
           name: item.name,
           label: item.label,

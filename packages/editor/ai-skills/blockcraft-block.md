@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-09-22
+> Last updated: 2026-09-23
 
 通用数据描述和快照位于 `@ccc/blockcraft/framework/model`，类型为
 `BlockDescriptor<P, M, F>` / `BlockSnapshot<P, M, F>`，默认不依赖组件注册表。
@@ -2050,6 +2050,15 @@ metadata: {
 `pastePlainTextOnly` affects only clipboard ingestion. It does not make the
 block `plainTextOnly`, so fixed/floating formatting commands remain available.
 The built-in `shape-text` block uses this split contract.
+
+富文本段落对齐持久化为 `textAlign?: 'center' | 'right' | 'justify' | 'distributed'`；缺省保持原有左对齐。
+`justify` 两端对齐，段末及软换行前的行不拉伸；`distributed` 包括末行也拉伸。
+`paragraphAlignmentStyles()` 从 `framework/block-std/typography` 导出，统一映射
+`textAlign/textAlignLast/textJustify`；不要把 `distributed` 直接写为 CSS `text-align`。
+EditableBlockComponent 通过 `data-bc-text-align` 标记两种新模式；列表只在新模式下让文字区占满剩余宽度。
+行内嵌入节点保持原子内容和尺寸，代码／Mermaid／WordArt 的专属排版不启用段落新模式。
+分散对齐以原生 CSS 实现：不支持 `text-justify: inter-character` 的引擎仍撑满末行，
+但英文可能按词而不是逐字符分配空隙。普通左／中／右对齐不变。
 
 Editable rich-text blocks also accept compact paragraph typography props:
 

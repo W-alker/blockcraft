@@ -2,7 +2,14 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-08-27
+> Last updated: 2026-09-23
+
+## 段落对齐
+
+固定工具栏、浮动文字工具栏、块菜单和段落设置均提供左／中／右／两端／分散对齐。
+持久化新值为 `justify` 和 `distributed`，通过既有 Block/DocCRUD 写入，保持协同、撤销与只读保护。
+段落设置使用下拉框容纳五种选项，预览同时投影末行与字符分配规则。
+外部工具栏若维护对齐白名单，应接受这两个新值；无需迁移旧文档。
 
 ## FloatTextToolbarPlugin
 

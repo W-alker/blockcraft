@@ -1,3 +1,4 @@
+import {PARAGRAPH_ALIGNMENT_OPTIONS} from '../../paragraph-alignment-options';
 import {normalizeParagraphDecoration} from '../../../blocks/paragraph-block/decoration';
 import {
   ChangeDetectionStrategy,
@@ -102,7 +103,7 @@ type TInlineToggle =
   | "sup"
   | "sub";
 type TScriptToggle = Extract<TInlineToggle, "sup" | "sub">;
-type TAlignValue = "left" | "center" | "right";
+type TAlignValue = NonNullable<IEditableBlockProps["textAlign"]> | "left";
 type TListFlavour = "ordered" | "bullet" | "todo";
 interface IStyleMenuItem {
   name: string;
@@ -220,11 +221,7 @@ const FIXED_TOOLBAR_LETTER_SPACING_PRESETS = [
   -0.05, -0.025, 0.025, 0.05, 0.1,
 ] as const;
 
-const ALIGN_ACTIONS: IToolbarIconAction<TAlignValue>[] = [
-  { value: "left", icon: "bc_zuoduiqi", title: "左对齐" },
-  { value: "center", icon: "bc_juzhongduiqi", title: "居中" },
-  { value: "right", icon: "bc_youduiqi", title: "右对齐" },
-];
+const ALIGN_ACTIONS: IToolbarIconAction<TAlignValue>[] = PARAGRAPH_ALIGNMENT_OPTIONS;
 
 const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
   {
@@ -2241,7 +2238,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   protected setAlign(align: TAlignValue) {
     this.runWithSelection(() => {
       this.toolbarHelper.updateBlockProps({
-        textAlign: align === "left" ? undefined : (align as any),
+        textAlign: align === "left" ? undefined : align,
       });
     });
   }
@@ -2459,7 +2456,9 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       target,
       align:
         this.activeProps.textAlign === "center" ||
-        this.activeProps.textAlign === "right"
+        this.activeProps.textAlign === "right" ||
+        this.activeProps.textAlign === "justify" ||
+        this.activeProps.textAlign === "distributed"
           ? this.activeProps.textAlign
           : "left",
       defaults: {
