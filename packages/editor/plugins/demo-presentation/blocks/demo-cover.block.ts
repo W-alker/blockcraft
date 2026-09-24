@@ -51,7 +51,7 @@ export interface DemoCoverBlockModel extends NoEditableBlockNative {
       display: flex;
       flex-direction: column;
       justify-content: center;
-      height: 80vh;
+      height: calc(80vh / var(--demo-view-scale, 1));
       width: 100%;
       position: relative;
       background: white;
@@ -65,10 +65,10 @@ export interface DemoCoverBlockModel extends NoEditableBlockNative {
       }
 
       .banner {
-        margin: -10vh 0 0 -10vw;
-        max-height: 100vh;
+        margin: calc(-10vh / var(--demo-view-scale, 1)) 0 0 calc(-10vw / var(--demo-view-scale, 1));
+        max-height: calc(100vh / var(--demo-view-scale, 1));
         overflow: hidden;
-        width: calc(100% + 20vw);
+        width: calc(100% + 20vw / var(--demo-view-scale, 1));
         background-size: cover;
         background-position: center;
         background-repeat: no-repeat;

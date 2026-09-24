@@ -843,7 +843,10 @@ export class PresentationController {
       return;
     }
     // 先设值再 attach，避免根节点先以 1x 投影后再跳变。
-    demoDoc.viewScale.setScale(this.getViewScale());
+    const scale = this.getViewScale();
+    // 封面的视口尺寸属于舞台坐标，需换算为缩放前的布局尺寸。
+    demoDoc.root.hostElement.style.setProperty('--demo-view-scale', String(scale));
+    demoDoc.viewScale.setScale(scale);
     demoDoc.viewScale.attach(demoDoc.root.hostElement);
   }
 
