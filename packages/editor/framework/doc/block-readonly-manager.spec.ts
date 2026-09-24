@@ -291,6 +291,27 @@ describe("BlockReadonlyManager", () => {
     expect(manager.isSelectionReadonly(selection)).toBeTrue();
   });
 
+  it("resolves mixed boundary and text ranges to their covered siblings", () => {
+    const {manager} = createReadonlyHarness();
+    const forward = {
+      isInSameBlock: false,
+      start: {blockId: "root", type: "boundary", index: 0},
+      end: {blockId: "offscreen-p", type: "text", offset: 1},
+    } as unknown as BlockCraft.Selection;
+    const backward = {
+      isInSameBlock: false,
+      start: {blockId: "p-in", type: "text", offset: 0},
+      end: {blockId: "root", type: "boundary", index: 2},
+    } as unknown as BlockCraft.Selection;
+
+    expect(manager.isSelectionReadonly(forward)).toBeFalse();
+    expect(manager.isSelectionReadonly(backward)).toBeFalse();
+
+    manager.set("root-b", true);
+    expect(manager.isSelectionReadonly(forward)).toBeTrue();
+    expect(manager.isSelectionReadonly(backward)).toBeTrue();
+  });
+
   it("keeps 10,000-block permission queries model-only and cache bounded", () => {
     const {doc, manager, moveLastBranchUnderFirst} = createLargeReadonlyHarness();
     const pathSpy = spyOn(doc.model, "getPath").and.callThrough();

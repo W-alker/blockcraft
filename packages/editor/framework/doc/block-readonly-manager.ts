@@ -212,7 +212,17 @@ export class BlockReadonlyManager {
       } else if (selection.isInSameBlock) {
         blockIds = [start.blockId];
       } else {
-        blockIds = this.doc.model.queryBetween(start.blockId, end.blockId, true);
+        // A mixed boundary/text range starts or ends at a child boundary. The
+        // boundary owner is a container, not a selected block: querying from
+        // that owner to the text endpoint yields no sibling range.
+        const startId = start.type === "boundary"
+          ? this.doc.model.getChildrenIds(start.blockId)[start.index]
+          : start.blockId;
+        const endId = end.type === "boundary"
+          ? this.doc.model.getChildrenIds(end.blockId)[end.index - 1]
+          : end.blockId;
+        if (!startId || !endId) return true;
+        blockIds = this.doc.model.queryBetween(startId, endId, true);
         if (!blockIds.length) return true;
       }
 
