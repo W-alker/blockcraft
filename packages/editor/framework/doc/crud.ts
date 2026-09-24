@@ -1259,8 +1259,13 @@ export class DocCRUD {
     if (!this.doc.model.exists(blockId)) {
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `Block not found: ${blockId}`)
     }
-    const parentId = this.doc.model.getParentId(blockId)
-    const index = this.doc.model.indexInParent(blockId)
+    // Earlier structural writes in the same transaction have already changed
+    // Y.Array, while ModelGraph still exposes the pre-transaction indexes.
+    // Resolve the live location, as replaceBlockSnapshots does, so deleting by
+    // id cannot leave the target behind or consume an unrelated sibling.
+    const parentId = this.resolveLiveParentId(blockId)
+    const children = parentId ? this.getYBlock(parentId)?.get('children') : null
+    const index = children instanceof Y.Array ? children.toArray().indexOf(blockId) : -1
     if (!parentId || index < 0) {
       throw new BlockCraftError(ErrorCode.ModelCRUDError, `Cannot delete root or orphan block: ${blockId}`)
     }

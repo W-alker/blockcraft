@@ -992,6 +992,38 @@ describe('DocCRUD', () => {
     expect(doc.yBlockMap.has('paragraph-auto-1')).toBeTrue()
   })
 
+  for (const sparse of [false, true]) {
+    it(`deletes the requested id after sibling deletion in one transaction (sparse: ${sparse})`, () => {
+      const {crud, doc, rootRef, destroy} = createDocHarness(true)
+      try {
+        const ids = ['start', 'middle', 'end', 'after']
+        crud.insertBlockSnapshots('root', 0, ids.map(id => createEditableSnapshot(id)))
+        doc.vm.usesSparseRoot = sparse
+        crud.undoManager.clearHistory()
+        doc.readonlyManager.assertRemovable.calls.reset()
+
+        crud.transact(() => {
+          crud.deleteBlocks('root', 1, 1)
+          crud.deleteBlockById('end')
+        })
+
+        expect(rootRef.instance.childrenIds).toEqual(['start', 'after'])
+        expect(doc.readonlyManager.assertRemovable.calls.allArgs()).toEqual([
+          [['middle'], BlockReadonlyOperation.Delete],
+          [['end'], BlockReadonlyOperation.Delete],
+        ])
+        expect(doc.yBlockMap.has('end')).toBeFalse()
+        expect(doc.yBlockMap.has('after')).toBeTrue()
+        crud.undoManager.undo()
+        expect(rootRef.instance.childrenIds).toEqual(ids)
+        crud.undoManager.redo()
+        expect(rootRef.instance.childrenIds).toEqual(['start', 'after'])
+      } finally {
+        destroy()
+      }
+    })
+  }
+
   it('moves blocks between unmounted model parents', () => {
     const {crud, doc, rootRef, store} = createDocHarness()
     doc.vm.usesSparseRoot = true
