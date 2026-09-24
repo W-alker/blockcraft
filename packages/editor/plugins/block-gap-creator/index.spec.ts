@@ -140,6 +140,57 @@ describe("BlockGapCreatorPlugin", () => {
     expect(selection.setCursorAtBlock).not.toHaveBeenCalled()
   })
 
+  for (const flavour of ['column', 'callout', 'render-unit', 'table-cell']) {
+    it(`resolves blank space beside a flow child to its gap within ${flavour}`, () => {
+      const {plugin, doc, host, mountedBlocks, selection} = createHarness()
+      const columnHost = document.createElement('div')
+      columnHost.setAttribute('data-block-id', 'column-1')
+      columnHost.setAttribute('data-node-type', BlockNodeType.block)
+      const content = document.createElement('div')
+      content.className = 'children-render-container'
+      content.getBoundingClientRect = () => rect(400, 100, 740, 300)
+      const stickerHost = document.createElement('div')
+      stickerHost.setAttribute('data-block-id', 'sticker-1')
+      stickerHost.setAttribute('data-node-type', BlockNodeType.void)
+      stickerHost.getBoundingClientRect = () => rect(410, 120, 570, 280)
+      content.appendChild(stickerHost)
+      columnHost.appendChild(content)
+      host.appendChild(columnHost)
+
+      const column = {
+        id: 'column-1', flavour, nodeType: BlockNodeType.block,
+        hostElement: columnHost,
+        childrenIds: [...Array.from({length: 2000}, (_, index) => `virtual-${index}`), 'sticker-1'],
+        childrenRenderRef: {containerElement: content},
+      }
+      const sticker = {
+        id: 'sticker-1', flavour: flavour === 'callout' ? 'divider' : 'sticker', nodeType: BlockNodeType.void,
+        hostElement: stickerHost, parentBlock: column,
+      }
+      mountedBlocks.set(sticker.id, sticker)
+      const originalGetBlockById = doc.getBlockById
+      spyOn(doc, 'getBlockById').and.callFake((id: string) =>
+        id === column.id ? column : id === sticker.id ? sticker : originalGetBlockById(id))
+      const getMounted = spyOn(doc.vm, 'get').and.callThrough()
+      spyOn(document, 'elementFromPoint').and.returnValue(content)
+
+      const shouldResolve = plugin._shouldResolveOnMouseDown({
+        button: 0, detail: 1, clientX: 650, clientY: 200, target: content,
+      } as unknown as MouseEvent)
+      const handled = plugin._resolveBlankAreaSelection(650, 200)
+
+      expect(shouldResolve).toBeTrue()
+      expect(handled).toBeTrue()
+      expect(selection.setGapCursor).toHaveBeenCalledOnceWith(sticker, 'after')
+      expect(getMounted).toHaveBeenCalledOnceWith(sticker.id)
+
+      doc.placement.allowsGapCursor.and.callFake((block: {id: string}) => block.id !== sticker.id)
+      expect(plugin._shouldResolveOnMouseDown({
+        button: 0, detail: 1, clientX: 650, clientY: 200, target: content,
+      } as unknown as MouseEvent)).toBeFalse()
+    })
+  }
+
   it("does not create a gap cursor for an absolute object", () => {
     const {plugin, doc, voidBlock, selection} = createHarness()
     doc.placement.allowsGapCursor.and.callFake(

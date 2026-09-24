@@ -28,6 +28,7 @@ export class BlockGapCreatorPlugin extends DocPlugin {
   private _isMouseDown = false
   private _downX = 0
   private _downY = 0
+  private _pendingContainerGutter: {x: number; y: number; block: BlockCraft.BlockComponent; side: 'before' | 'after'} | null = null
 
   private static readonly _MOVE_THRESHOLD = 5
 
@@ -102,6 +103,7 @@ export class BlockGapCreatorPlugin extends DocPlugin {
     this._downOnGap = false
     this._downHandled = false
     this._isMouseDown = false
+    this._pendingContainerGutter = null
   }
 
   private _isDragLike(x: number, y: number): boolean {
@@ -111,6 +113,7 @@ export class BlockGapCreatorPlugin extends DocPlugin {
   }
 
   private _shouldResolveOnMouseDown(evt: MouseEvent): boolean {
+    this._pendingContainerGutter = null
     if (!this._isPlainMouseDown(evt)) return false
     if (isNativeInputTarget(evt.target)) return false
 
@@ -118,6 +121,13 @@ export class BlockGapCreatorPlugin extends DocPlugin {
     if (!(target instanceof Node)) return false
     if (target === this.doc.root.hostElement) return true
     if (this._isInBlockGapAnchor(target)) return true
+    const containerGutter = this._resolveContainerGutter(target, evt.clientX, evt.clientY)
+    if (containerGutter && (
+      this._isGapEligible(containerGutter.block) || this.doc.isEditable(containerGutter.block)
+    )) {
+      this._pendingContainerGutter = {x: evt.clientX, y: evt.clientY, ...containerGutter}
+      return true
+    }
 
     const blockId = closetBlockId(target)
     const block = blockId ? this._safeGetBlock(blockId) : null
@@ -165,6 +175,22 @@ export class BlockGapCreatorPlugin extends DocPlugin {
       const block = blockId ? this._safeGetBlock(blockId) : null
       if (block && this._isGapEligible(block)) {
         this.doc.selection.setGapCursor(block, clickedGapSide)
+        return true
+      }
+    }
+
+    const pending = this._pendingContainerGutter
+    const containerGutter = pending?.x === x && pending.y === y
+      ? pending
+      : clickedElement ? this._resolveContainerGutter(clickedElement, x, y) : null
+    if (containerGutter) {
+      const {block, side} = containerGutter
+      if (this._isGapEligible(block)) {
+        this.doc.selection.setGapCursor(block, side)
+        return true
+      }
+      if (this.doc.isEditable(block)) {
+        this.doc.selection.setCursorAtBlock(block, side === 'before', false)
         return true
       }
     }
@@ -296,6 +322,33 @@ export class BlockGapCreatorPlugin extends DocPlugin {
    */
   private _resolveSideFromClickRect(block: BlockCraft.BlockComponent, x: number, y: number): 'before' | 'after' | null {
     return resolveGapSideFromRect(this._getBlockContentRect(block), x, y)
+  }
+
+  /** Resolve unused width beside a mounted flow child inside its owning container. */
+  private _resolveContainerGutter(target: Node, x: number, y: number): {block: BlockCraft.BlockComponent; side: 'before' | 'after'} | null {
+    const containerId = closetBlockId(target)
+    const container = containerId ? this._safeGetBlock(containerId) : null
+    if (!container || container.nodeType === BlockNodeType.root || !container.childrenIds?.length) return null
+    const content = container.childrenRenderRef?.containerElement ??
+      container.hostElement.querySelector('.children-render-container')
+    if (!(content instanceof HTMLElement) || !content.contains(target)) return null
+    const bounds = content.getBoundingClientRect()
+    if (x < bounds.left || x > bounds.right || y < bounds.top || y > bounds.bottom) return null
+
+    // BlockChildrenRenderRef mounts direct hosts here; model children may be virtualized.
+    const mountedChildren = content.children
+    for (let index = 0, length = mountedChildren.length; index < length; index++) {
+      const childHost = mountedChildren.item(index)
+      if (!childHost) continue
+      const childId = childHost.getAttribute('data-block-id')
+      const child = childId ? this.doc.vm.get(childId)?.instance : null
+      if (!child || child.hostElement !== childHost || child.parentBlock?.id !== container.id) continue
+      const rect = child.hostElement.getBoundingClientRect()
+      if (y < rect.top || y > rect.bottom) continue
+      const side = resolveGapSideFromRect(rect, x, y)
+      if (side) return {block: child, side}
+    }
+    return null
   }
 
   private _getBlockContentRect(block: BlockCraft.BlockComponent): { top: number; bottom: number; left: number; right: number } {
