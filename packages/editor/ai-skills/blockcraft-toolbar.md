@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-09-23
+> Last updated: 2026-09-24
 
 ## Overlay Service
 
@@ -61,6 +61,12 @@ anchor. The caller's position order is preserved for subsequent updates; if no
 candidate fits, the existing size limits and final clamp remain the fallback.
 Connected overlays follow scrolls from the document and their anchor's ancestors,
 including independently scrolling template regions; unrelated panels are ignored.
+
+`origin?: HTMLElement` 可单独指定视觉定位参照（例如八向抓手的完整外框）。
+CDK 定位、边界回退和祖先滚动跟随都使用 origin；省略时仍使用 target 的元素。
+`target` 继续负责原有的生命周期和虚拟化租约，不因改用视觉参照而改变。
+创建结果的 `updatePosition()` 同时执行 CDK 定位和编辑区边界校验；对象几何提交后优先调用它，
+避免连接方向未变时 CDK 不发事件而漏掉边界回退。关闭后调用无操作。
 
 Choose the target by ownership, not only by geometry:
 

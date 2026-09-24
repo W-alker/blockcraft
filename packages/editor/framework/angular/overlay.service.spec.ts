@@ -63,12 +63,13 @@ describe('DocOverlayService', () => {
         detachments$.complete()
       }),
     }
+    const flexibleConnectedTo = jasmine.createSpy('flexibleConnectedTo').and.callFake(() => {
+      order.push('position')
+      return flexiblePosition
+    })
     const overlay = {
       position: () => ({
-        flexibleConnectedTo: jasmine.createSpy('flexibleConnectedTo').and.callFake(() => {
-          order.push('position')
-          return flexiblePosition
-        }),
+        flexibleConnectedTo,
         global: jasmine.createSpy('global').and.returnValue(globalPosition),
       }),
       create: jasmine.createSpy('create').and.returnValue(overlayRef),
@@ -123,6 +124,7 @@ describe('DocOverlayService', () => {
       overlayHost,
       overlayRef,
       flexiblePosition,
+      flexibleConnectedTo,
       releaseBlockViewLease,
       service,
       scrollContainer,
@@ -147,6 +149,41 @@ describe('DocOverlayService', () => {
 
     expect(h.releaseBlockViewLease).toHaveBeenCalledTimes(1)
     expect(h.overlayRef.dispose).toHaveBeenCalledTimes(1)
+    h.cleanup()
+  })
+
+  it('positions against visual chrome while retaining the block owner lease and cleanup', () => {
+    const h = createOverlayHarness()
+    const chrome = document.createElement('shape-resizer')
+    h.targetElement.appendChild(chrome)
+    h.service.createConnectedOverlay({
+      target: h.block as any,
+      origin: chrome,
+      component: TestOverlayComponent,
+    }, h.close$)
+    expect(h.flexibleConnectedTo).toHaveBeenCalledOnceWith(chrome)
+    expect(h.virtualization.acquireBlockViewLease).toHaveBeenCalledOnceWith(['block-1'])
+    h.close$.next()
+    expect(h.releaseBlockViewLease).toHaveBeenCalledTimes(1)
+    expect(h.overlayRef.dispose).toHaveBeenCalledTimes(1)
+    h.cleanup()
+  })
+
+  it('rechecks the visual origin boundary on explicit updates without a CDK position change', () => {
+    const h = createOverlayHarness()
+    const chrome = document.createElement('shape-resizer')
+    h.targetElement.appendChild(chrome)
+    const clamp = spyOn(h.service as any, '_clampConnectedOverlay')
+    const toolbar = h.service.createConnectedOverlay({
+      target: h.block as any, origin: chrome, component: TestOverlayComponent,
+    }, h.close$)
+    toolbar.updatePosition()
+    expect(h.overlayRef.updatePosition).toHaveBeenCalledTimes(1)
+    expect(clamp).toHaveBeenCalledOnceWith(h.overlayRef, undefined,
+      jasmine.objectContaining({origin: chrome, strategy: h.flexiblePosition}))
+    h.close$.next()
+    toolbar.updatePosition()
+    expect(h.overlayRef.updatePosition).toHaveBeenCalledTimes(1)
     h.cleanup()
   })
 

@@ -188,6 +188,7 @@ describe("ImgToolbarPlugin lifecycle", () => {
       },
       overlayService: {
         createConnectedOverlay: jasmine.createSpy("createConnectedOverlay").and.returnValue({
+          updatePosition: jasmine.createSpy("updatePositionAndClamp"),
           componentRef: {
             setInput: jasmine.createSpy("setInput"),
             instance: {
@@ -564,6 +565,21 @@ describe("ImgToolbarPlugin lifecycle", () => {
     expect(doc.overlayService.createConnectedOverlay).toHaveBeenCalled();
     plugin.destroy();
     rootHost.remove();
+  }));
+
+  it("anchors the toolbar to the resize chrome instead of the image body", fakeAsync(() => {
+    const h = makeHarness();
+    const chrome = document.createElement("shape-resizer");
+    h.wrapper.appendChild(chrome);
+    h.plugin.init();
+    h.selectionValue.current = h.imageSelection;
+    h.selection$.next(h.imageSelection);
+    tick(250);
+    const options = h.doc.overlayService.createConnectedOverlay.calls.mostRecent().args[0];
+    expect(options.origin).toBe(chrome);
+    expect(options.target).toBe(h.wrapper.querySelector("img"));
+    h.plugin.destroy();
+    h.rootHost.remove();
   }));
 
   it("rebinds the toolbar and actions when another image is selected", fakeAsync(() => {

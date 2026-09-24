@@ -346,3 +346,144 @@ for (const container of ['root', 'column', 'render-unit']) {
       items.map(item => item.getAttribute('aria-label')))).toEqual(expected)
   })
 }
+
+test('贴纸加载、实际缩放和旋转提交保留两位小数并可撤销', async ({page}) => {
+  const {sourceId} = await setup(page, false)
+  const id = await page.locator(`[data-block-id="${sourceId}"]`).evaluate(element => {
+    const doc = (window as any).ng.getComponent(element).doc
+    const sticker = doc.schemas.createSnapshot('sticker', ['leaf-label'])
+    sticker.props = {...sticker.props, width: 163.45678, height: 108.901234, rotation: 12.345678}
+    doc.crud.insertBlockSnapshots(doc.rootId, 0, [sticker])
+    return sticker.id
+  })
+  const source = page.locator(`[data-block-id="${id}"]`)
+  const geometry = () => source.evaluate(element => {
+    const props = (window as any).ng.getComponent(element).props
+    return {width: props.width, height: props.height, rotation: props.rotation}
+  })
+  await expect.poll(geometry).toEqual({width: 163.46, height: 108.9, rotation: 12.35})
+  await source.evaluate(element => {
+    const block = (window as any).ng.getComponent(element)
+    block.doc.placement.setObjectLayout(block, 'over')
+    block.doc.placement.updateAbsolute(block, {x: 200, y: 160})
+    block.doc.selection.selectBlock(block)
+    block.doc.crud.undoManager.clearHistory()
+  })
+  const initial = await geometry()
+  const handle = source.locator('[data-handle="south-east"]')
+  await expect(handle).toBeVisible()
+  const start = (await handle.boundingBox())!
+  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(start.x + start.width / 2 + 43.27, start.y + start.height / 2 + 19.68, {steps: 8})
+  await page.mouse.up()
+  await expect.poll(async () => (await geometry()).width).not.toBe(initial.width)
+  const resized = await geometry()
+  for (const value of Object.values(resized)) expect(value).toBe(Number(value.toFixed(2)))
+  await source.evaluate(element => {
+    const doc = (window as any).ng.getComponent(element).doc
+    doc.crud.undoManager.stopCapturing()
+  })
+  const rotate = source.locator('.shape-resizer__rotate')
+  await source.locator('[data-bc-object-drag-surface]').hover()
+  await rotate.hover()
+  await expect(rotate).toBeVisible()
+  const knob = (await rotate.boundingBox())!
+  const frame = (await source.locator('[data-bc-object-drag-surface]').boundingBox())!
+  await page.mouse.move(knob.x + knob.width / 2, knob.y + knob.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(frame.x + frame.width + 23.71, frame.y + frame.height / 2 + 17.32, {steps: 8})
+  await page.mouse.up()
+  await expect.poll(async () => (await geometry()).rotation).not.toBe(resized.rotation)
+  for (const value of Object.values(await geometry())) expect(value).toBe(Number(value.toFixed(2)))
+  await source.evaluate(element => (window as any).ng.getComponent(element).doc.crud.undoManager.undo())
+  await expect.poll(geometry).toEqual(resized)
+  await source.evaluate(element => (window as any).ng.getComponent(element).doc.crud.undoManager.undo())
+  await expect.poll(geometry).toEqual(initial)
+})
+
+for (const flavour of ['image', 'sticker']) {
+  for (const scale of [0.75, 1.5]) {
+    test(`${flavour} 工具栏避开完整抓手外框，旋转与边界回退 ${scale}x`, async ({page}) => {
+      const {sourceId} = await setup(page, false, flavour)
+      const source = page.locator(`[data-block-id="${sourceId}"]`)
+      await source.evaluate((element, scale) => {
+        const block = (window as any).ng.getComponent(element)
+        const doc = block.doc
+        doc.viewScale.attach(doc.root.hostElement.parentElement)
+        doc.viewScale.setScale(scale)
+        doc.placement.setObjectLayout(block, 'over')
+        doc.placement.updateAbsolute(block, {x: 220, y: 190})
+      }, scale)
+      const surface = source.locator('[data-bc-object-drag-surface]')
+      await surface.click()
+      const toolbar = page.locator(flavour === 'image' ? 'bc-image-toolbar' : 'bc-inline-object-toolbar')
+      const chrome = source.locator('shape-resizer')
+      const knob = source.locator('.shape-resizer__rotate')
+      await expect(toolbar).toBeVisible()
+      const clearOfChrome = async () => {
+        const a = (await toolbar.boundingBox())!
+        const b = (await chrome.boundingBox())!
+        return a.y + a.height <= b.y - 6 || a.y >= b.y + b.height + 6
+      }
+      await expect.poll(clearOfChrome).toBe(true)
+      await knob.hover()
+      for (const rotation of [45, 180]) {
+        await source.evaluate((element, rotation) => {
+          (window as any).ng.getComponent(element).updateProps({rotation})
+        }, rotation)
+        await expect.poll(clearOfChrome).toBe(true)
+        await knob.hover()
+        const hit = await knob.evaluate(element => {
+          const rect = element.getBoundingClientRect()
+          return element.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2))
+        })
+        expect(hit).toBe(true)
+      }
+      // 顶部空间不足时，下方回退同样以抓手外框为边界。
+      await source.evaluate(element => {
+        const block = (window as any).ng.getComponent(element)
+        block.updateProps({rotation: 0})
+        block.doc.placement.updateAbsolute(block, {x: 220, y: 0})
+      })
+      await expect(surface).toHaveCSS('transform', 'none')
+      await source.evaluate(element => {
+        const doc = (window as any).ng.getComponent(element).doc
+        const chrome = element.querySelector('shape-resizer')!.getBoundingClientRect()
+        const viewport = doc.scrollContainer.getBoundingClientRect()
+        doc.scrollContainer.scrollTop += chrome.top - viewport.top - 20
+      })
+      await expect.poll(clearOfChrome).toBe(true)
+      await expect.poll(async () => {
+        const a = (await toolbar.boundingBox())!
+        const b = (await chrome.boundingBox())!
+        return a.y >= b.y + b.height + 6
+      }).toBe(true)
+    })
+  }
+}
+
+for (const flavour of ['image', 'sticker']) {
+  for (const inColumn of [false, true]) {
+    test(`${flavour} ${inColumn ? '分栏' : '正文'}工具栏贴近八向抓手，不预留隐藏旋转空间`, async ({page}) => {
+      const {sourceId} = await setup(page, inColumn, flavour)
+      const source = page.locator(`[data-block-id="${sourceId}"]`)
+      const surface = source.locator('[data-bc-object-drag-surface]')
+      await surface.click()
+      const toolbar = page.locator(flavour === 'image' ? 'bc-image-toolbar' : 'bc-inline-object-toolbar')
+      await expect(toolbar).toBeVisible()
+      await expect(source.locator('.shape-resizer__rotate')).toHaveCount(0)
+      const measureGap = async () => {
+        const bar = (await toolbar.boundingBox())!
+        const top = (await source.locator('[data-handle="north"]').boundingBox())!
+        const bottom = (await source.locator('[data-handle="south"]').boundingBox())!
+        const gap = bar.y + bar.height <= top.y
+          ? top.y - bar.y - bar.height : bar.y - bottom.y - bottom.height
+        return gap
+      }
+      await expect.poll(measureGap).toBeGreaterThanOrEqual(6)
+      await expect.poll(measureGap).toBeLessThanOrEqual(16)
+      await source.locator('[data-handle="north"]').hover()
+    })
+  }
+}

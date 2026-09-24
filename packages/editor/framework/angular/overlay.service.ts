@@ -127,6 +127,8 @@ export interface IConnectOverlayCreateOptions {
    * HTMLElement targets keep close-on-disconnect behavior and acquire no lease.
    */
   target: HTMLElement | BlockCraft.BlockComponent;
+  /** Optional visual positioning origin; target still owns lifetime and view leases. */
+  origin?: HTMLElement;
   component: ComponentType<any>;
   positions?: ConnectedPosition[];
   backdrop?: boolean;
@@ -196,10 +198,8 @@ export class DocOverlayService {
     params: IGlobalOverlayCreateOptions | IConnectOverlayCreateOptions,
   ): PositionStrategy {
     if ('target' in params) {
-      const el =
-        params.target instanceof HTMLElement
-          ? params.target
-          : params.target.hostElement;
+      const el = params.origin ?? (params.target instanceof HTMLElement
+        ? params.target : params.target.hostElement);
       return this.overlay
         .position()
         .flexibleConnectedTo(el)
@@ -431,7 +431,7 @@ export class DocOverlayService {
     });
 
     const connection = 'target' in params ? {
-      origin: params.target instanceof HTMLElement ? params.target : params.target.hostElement,
+      origin: params.origin ?? (params.target instanceof HTMLElement ? params.target : params.target.hostElement),
       strategy: positionStrategy as FlexibleConnectedPositionStrategy,
       position: undefined as ConnectedPosition | undefined,
     } : undefined;
@@ -482,18 +482,23 @@ export class DocOverlayService {
           close$.next(true);
         });
 
+    // CDK may keep the same connection pair without emitting positionChanges.
+    // Geometry commits must still re-check the editor's visible boundary.
+    const updatePosition = () => {
+      if (!overlayRef.hasAttached()) return;
+      overlayRef.updatePosition();
+      if (connection) {
+        this._clampConnectedOverlay(overlayRef, 'target' in params ? params.clampTo : undefined, connection);
+      }
+    };
+
     // Connected overlay 同时跟随文档和内层祖先滚动。CDK 在候选位置未变时
     // 不一定发 positionChanges，因此每次滚动定位后仍需校验实际可视边界。
     fromEvent(connection?.origin.ownerDocument ?? this.doc.scrollContainer!, 'scroll', {capture: true})
       .pipe(filter(event => event.target === this.doc.scrollContainer ||
         !!connection && event.target instanceof Node && event.target.contains(connection.origin)), takeUntil(close$))
       .subscribe(
-        throttle(() => {
-          if (!overlayRef.hasAttached()) return;
-          overlayRef.updatePosition();
-          'target' in params &&
-            this._clampConnectedOverlay(overlayRef, params.clampTo, connection);
-        }, 200),
+        throttle(updatePosition, 200),
       );
 
     merge(this.doc.readonlySwitch$.pipe(filter((v) => v)), this.doc.onDestroy$)
@@ -525,6 +530,7 @@ export class DocOverlayService {
     return {
       overlayRef,
       componentRef,
+      updatePosition,
     };
   }
 }

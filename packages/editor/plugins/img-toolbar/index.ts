@@ -315,13 +315,18 @@ export class ImgToolbarPlugin extends DocPlugin {
 
         const imgEle = imgBlock.hostElement.querySelector("img");
         if (!imgEle || !imgEle.isConnected) return;
-        const { overlayRef, componentRef } =
+        const { overlayRef, componentRef, updatePosition } =
           this.doc.overlayService.createConnectedOverlay<ImageToolbar>(
             {
               target: imgEle,
+              origin: imgBlock.hostElement.querySelector<HTMLElement>("shape-resizer") ?? imgEle,
               positions: [
                 getPositionWithOffset("top-center", 0, 8),
+                getPositionWithOffset("top-left", 0, 8),
+                getPositionWithOffset("top-right", 0, 8),
                 getPositionWithOffset("bottom-center", 0, 8),
+                getPositionWithOffset("bottom-left", 0, 8),
+                getPositionWithOffset("bottom-right", 0, 8),
               ],
               component: ImageToolbar,
             },
@@ -351,7 +356,7 @@ export class ImgToolbarPlugin extends DocPlugin {
           .subscribe((v) => {
             componentRef?.instance.cdr.markForCheck();
             nextTick().then(() => {
-              overlayRef?.updatePosition();
+              if (this._toolbarRef === overlayRef) updatePosition();
             });
           });
 

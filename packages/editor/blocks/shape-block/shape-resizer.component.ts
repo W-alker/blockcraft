@@ -146,9 +146,10 @@ export function calculateShapeResize(
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     'data-bc-placement-pick-ignore': '',
+    '[style.top.px]': 'rotatable ? -48 : -12',
   },
   template: `
-    <div class="shape-resizer__frame">
+    <div class="shape-resizer__frame" [style.top.px]="rotatable ? 48 : 12">
       @if (borderDraggable) {
         @for (edge of moveEdges; track edge) {
           <span
@@ -189,7 +190,8 @@ export function calculateShapeResize(
         position: absolute;
         /* The paint box includes the handles and rotation control outside the
            object frame, so hiding it invalidates the complete chrome bounds. */
-        inset: -48px -12px -12px;
+        /* Reserve the taller top paint area only for a visible rotation knob. */
+        inset: -12px;
         z-index: 4;
         display: none;
         pointer-events: none;
@@ -198,7 +200,7 @@ export function calculateShapeResize(
 
       .shape-resizer__frame {
         position: absolute;
-        inset: 48px 12px 12px;
+        inset: 12px;
         outline: 2px solid var(--bc-active-color, #4857e2);
         outline-offset: 2px;
       }

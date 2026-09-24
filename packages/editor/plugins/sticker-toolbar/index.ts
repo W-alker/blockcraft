@@ -1,5 +1,5 @@
 import {fromEvent, Subject, Subscription, takeUntil, type Observable} from 'rxjs'
-import {DocPlugin} from '../../framework'
+import {DocPlugin, getPositionWithOffset} from '../../framework'
 import {nextTick} from '../../global'
 import {isSelectionAlive} from '../../framework/modules/selection/liveness'
 import {isObjectToolbarOwnedTarget} from '../object-layout/object-toolbar-interaction'
@@ -69,14 +69,23 @@ export class StickerToolbarPlugin extends DocPlugin {
     this.inlineObject?.close()
     this.close()
     this.active = block
-    const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay<InlineObjectToolbarComponent>({
+    const {componentRef, overlayRef, updatePosition: reposition} = this.doc.overlayService.createConnectedOverlay<InlineObjectToolbarComponent>({
       target: block,
+      origin: block.hostElement.querySelector<HTMLElement>('shape-resizer') ?? block.hostElement,
+      positions: [
+        getPositionWithOffset('top-center', 0, 8),
+        getPositionWithOffset('top-left', 0, 8),
+        getPositionWithOffset('top-right', 0, 8),
+        getPositionWithOffset('bottom-center', 0, 8),
+        getPositionWithOffset('bottom-left', 0, 8),
+        getPositionWithOffset('bottom-right', 0, 8),
+      ],
       component: InlineObjectToolbarComponent,
     }, this.close$, this.close)
     this.overlay = overlayRef
     const updatePosition = () => {
       void nextTick().then(() => {
-        if (this.overlay === overlayRef) overlayRef.updatePosition()
+        if (this.overlay === overlayRef) reposition()
       })
     }
     const propsChange$: Observable<unknown> = block.onPropsChange

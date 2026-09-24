@@ -68,6 +68,18 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## Unreleased — 2026-09-24：浮动工具栏视觉定位参照
+
+**Severity**: minor（可选参数，无需宿主迁移）
+
+**What changed**: Connected Overlay 增加 `origin?: HTMLElement`，将视觉定位参照与 `target` 生命周期所有者分开。图片和贴纸块工具栏以八向抓手完整外框定位，避开旋转抓手。
+
+**Why**: 对象本体不包含向外伸出的旋转控件，工具栏不能仅按本体尺寸定位。
+
+**Affected ai-skills files**: `blockcraft-toolbar.md`, `blockcraft-plugins-toolbar.md`。
+
+**New APIs / Migration Recipe**: 需要独立视觉参照时传入 `{target: block, origin: resizeChrome, component: Toolbar}`；既有调用无需修改。定位、边界回退与祖先滚动采用 origin，target 的销毁处理和虚拟化租约保持原义。创建结果新增 `updatePosition()`，供几何提交后同时重定位并校验编辑区边界；已关闭时无操作。
+
 ## Unreleased — 2026-09-24：统一对象移动入口
 
 **Severity**: major（手动插件装配依赖变化；版本由用户决定）

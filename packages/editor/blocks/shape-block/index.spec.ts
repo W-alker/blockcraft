@@ -142,28 +142,34 @@ describe('Shape block domain', () => {
     fixture.detectChanges()
     host.style.display = 'block'
     try {
-      const bounds = host.getBoundingClientRect()
-      const object = target.getBoundingClientRect()
-      const frame = (host.querySelector<HTMLElement>('.shape-resizer__frame') ?? host).getBoundingClientRect()
-      expect([frame.left, frame.top, frame.width, frame.height]).toEqual([
-        object.left, object.top, object.width, object.height,
-      ])
-      const controls = Array.from(host.querySelectorAll<HTMLElement>('button, .shape-resizer__rotation-stem, .shape-resizer__move-edge'))
-      for (const control of controls) {
-        const rect = control.getBoundingClientRect()
-        expect(rect.left).withContext(control.className).toBeGreaterThanOrEqual(bounds.left)
-        expect(rect.top).withContext(control.className).toBeGreaterThanOrEqual(bounds.top)
-        expect(rect.right).withContext(control.className).toBeLessThanOrEqual(bounds.right)
-        expect(rect.bottom).withContext(control.className).toBeLessThanOrEqual(bounds.bottom)
+      for (const rotatable of [true, false, true]) {
+        fixture.componentRef.setInput('rotatable', rotatable)
+        fixture.detectChanges()
+        const bounds = host.getBoundingClientRect()
+        const object = target.getBoundingClientRect()
+        expect(object.top - bounds.top).toBe(rotatable ? 48 : 12)
+        const frame = (host.querySelector<HTMLElement>('.shape-resizer__frame') ?? host).getBoundingClientRect()
+        expect([frame.left, frame.top, frame.width, frame.height]).toEqual([
+          object.left, object.top, object.width, object.height,
+        ])
+        const controls = Array.from(host.querySelectorAll<HTMLElement>('button, .shape-resizer__rotation-stem, .shape-resizer__move-edge'))
+        for (const control of controls) {
+          const rect = control.getBoundingClientRect()
+          expect(rect.left).withContext(control.className).toBeGreaterThanOrEqual(bounds.left)
+          expect(rect.top).withContext(control.className).toBeGreaterThanOrEqual(bounds.top)
+          expect(rect.right).withContext(control.className).toBeLessThanOrEqual(bounds.right)
+          expect(rect.bottom).withContext(control.className).toBeLessThanOrEqual(bounds.bottom)
+        }
+        for (const button of Array.from(host.querySelectorAll<HTMLButtonElement>('button'))) {
+          const rect = button.getBoundingClientRect()
+          expect(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)).toBe(button)
+        }
+        expect(document.elementFromPoint(object.x + object.width / 2, object.y + object.height / 2)).toBe(target)
+        host.style.display = 'none'
+        expect(host.getClientRects().length).toBe(0)
+        expect(controls.every(control => control.getClientRects().length === 0)).toBeTrue()
+        host.style.display = 'block'
       }
-      for (const button of Array.from(host.querySelectorAll<HTMLButtonElement>('button'))) {
-        const rect = button.getBoundingClientRect()
-        expect(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)).toBe(button)
-      }
-      expect(document.elementFromPoint(object.x + object.width / 2, object.y + object.height / 2)).toBe(target)
-      host.style.display = 'none'
-      expect(host.getClientRects().length).toBe(0)
-      expect(controls.every(control => control.getClientRects().length === 0)).toBeTrue()
     } finally {
       fixture.destroy()
       target.remove()
