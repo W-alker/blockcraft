@@ -2,11 +2,11 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-09-23
+> Last updated: 2026-09-24
 
 ## ObjectDragPlugin
 
-> `plugins/object-drag/` — 通用对象本体选择与浮动移动，零配置。
+> `plugins/object-drag/` — 通用对象本体选择、浮动移动与可选的正文排序，零构造参数。
 
 `createBundledEditorCapabilities()` 已包含一个实例。手动装配时，每个文档创建一个新实例，
 放在 `ObjectFormatToolbarPlugin` 和 `ImgToolbarPlugin` 之后：
@@ -20,17 +20,56 @@ const plugins = [
 ];
 ```
 
-插件根据 `doc.placement.supports(block, 'absolute')` 拾取对象，不依赖宿主物料列表。
-点击本体会显式选择对象；仅在当前为 absolute 且可写时调用 `placement.startDrag()`。
-组合成员使用局部 absolute 坐标；正文流对象的排序仍由 BlockController 手柄负责。
-图像、形状、文本框、艺术字和组合外框继续交给已有专属入口。
+插件读取 Schema 的 `metadata.objectDrag` 声明，不维护块类型名单：
 
-`block-resizer`、`data-bc-placement-pick-ignore`、`data-bc-nodrag` 和
-`data-block-zero-space="true"` 的后代不会触发本体选择或移动。
-自定义控件应使用相应忽略标记保留自己的交互；已消费的事件和已有拖拽也会被避让。
-监听限定在所属文档的 DOM 内，并在插件卸载或文档销毁时清理。
+| 值 | 本体交互 |
+|---|---|
+| 省略 / `'placement'` | 默认拾取支持 absolute 的对象，只移动当前 absolute 对象；正文排序使用原有手柄 |
+| `'body'` | 仅拾取标记的可视表面或移动手柄，按当前位置启动正文排序或浮动移动 |
+| `'handles'` | 仅拾取标记的移动手柄，保留本体的文字编辑 |
+| `'custom'` | 通用插件完全避让，供宿主自定义交互使用 |
 
-宿主升级时应删除自有 `ObjectDragPlugin` 实现及重复注册；使用 bundled 装配时无需额外添加。
+图片、贴纸、形状使用 `'body'`；文本框、艺术字、组合块使用 `'handles'`。
+`ImgToolbarPlugin` 不再监听块态图片的本体拖拽；`ObjectFormatToolbarPlugin` 保留
+文字编辑、Shift 多选和首次选组/再次选成员的层级判断，移动由本插件统一执行。
+组/成员拾取插件必须先注册，消费的事件不会继续进入公共拖拽入口。
+
+每种移动仍须通过 `doc.placement.supports(block, mode)`，不会突破容器的定位限制。
+文档只读时不拾取；块锁定时可选择但不可拖拽。正文与绝对定位继续使用既有
+`dragController` / `placement`，组合成员保留局部 absolute 坐标及原事务语义。
+
+### 自定义块的命中区域
+
+```typescript
+metadata: {
+  version: 1,
+  label: '自定义卡片',
+  objectDrag: 'body',
+  placement: {modes: ['relative', 'absolute']},
+}
+```
+
+```html
+<div data-bc-object-drag-surface>
+  <!-- 可视本体；外围留白不加标记，继续用于普通选区或 gap cursor -->
+  <button data-bc-placement-pick-ignore>独立操作</button>
+</div>
+<button data-bc-object-drag-handle>移动</button>
+```
+
+- `data-bc-object-drag-surface`：`'body'` 模式的可视命中区。
+- `data-bc-object-drag-handle`：显式移动手柄，`'body'` / `'handles'` 均支持。
+- `data-bc-object-drag-label`：可选的实例级拖拽提示（如具体形状名称）；省略则取 Schema label。
+- 命中标记必须属于同一个最近 Block，嵌套文本/对象不会借用外层标记。
+- `block-resizer` 与 `data-bc-placement-pick-ignore` 避让独立控件；其中显式标记的移动
+  边框可接管该区域，未标记的缩放/旋转手柄继续由控件处理。
+- `data-bc-nodrag` 和 `data-block-zero-space="true"` 始终禁止移动拾取。
+
+每个文档只有一个公共 pointerdown 入口；命中后才建立一次临时点击确认会话。
+它抑制原生鼠标选区覆盖，纯点击释放后确认对象选择，真实拖拽后不重置落点选区；
+取消、Escape、窗口失焦、插件卸载和文档销毁均清理监听。无逐块监听、DOM 遍历或尺寸观察器。
+
+宿主升级应删除自有重复入口；bundled 装配已经包含本插件，无需再次注册。
 
 ## BlockControllerPlugin
 

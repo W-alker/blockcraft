@@ -109,7 +109,6 @@ export class ImgToolbarPlugin extends DocPlugin {
   private _toolbarRef?: OverlayRef;
   private _activeImageBlock?: BlockCraft.IBlockComponents["image"];
   private _openToolbarTimer?: number;
-  private _pendingImageClickCleanup?: () => void;
 
   private _closeToolbar$ = new Subject<void>();
   private _inlineClose$ = new Subject<void>();
@@ -268,74 +267,6 @@ export class ImgToolbarPlugin extends DocPlugin {
         .subscribe(event => this._backfillInlineImageSize(event)),
     );
 
-    // Image block drag via pointerdown (replaces former HTML5 dragstart path)
-    // 重点：
-    // 1. image-block.scss 给 <img> 设了 pointer-events: none（仅 .selected 状态 unset），
-    //    所以点击图片时 evt.target 多半是 .img-wrapper 而不是 HTMLImageElement。
-    //    只命中 .img-wrapper：图片块周围留白应继续走普通 selection/gap 流程。
-    // 2. 监听 document capture phase（而不是 root.hostElement）—— 比 root 更外层一层，
-    //    任何 root 内部 element 上的 stopPropagation(capture) 都不会拦掉我们。
-    // 3. 不再做 isInSameBlock 检查 —— 老 dragstart 路径里那条 guard 在 mousedown 之后触发，
-    //    selection 已是最新；PointerEvents 路径里 pointerdown 早于 mousedown，selection
-    //    还是旧的，那条 guard 会误拦掉对图片的拖拽。
-    this._sub.add(
-      fromEvent<PointerEvent>(document, 'pointerdown', { capture: true })
-        .pipe(takeUntil(this.doc.onDestroy$))
-        .subscribe(evt => {
-          if (this.doc.isReadonly) return
-          if (evt.button !== 0) return
-          const target = evt.target
-          if (!(target instanceof Element)) return
-          if (!this.doc.root.hostElement.contains(target)) return
-          // 排除调宽度的 resize 句柄、占位插图按钮等
-          if (target.closest(
-            'block-resizer, shape-resizer, [data-bc-inline-image-resizer]',
-          )) return
-          if (target.closest('.upload-hint')) return
-          const imageContent = target.closest('.img-wrapper')
-          if (!imageContent || !this.doc.root.hostElement.contains(imageContent)) return
-
-          const blockId = closetBlockId(imageContent)
-          if (!blockId) return
-          let block: BlockCraft.BlockComponent | null = null
-          try { block = this.doc.getBlockById(blockId) } catch { return }
-          if (!block || block.flavour !== 'image' || !this._isBlockAlive(block)) return
-          if (this.doc.dragController.state !== 'idle') return
-
-          // 工具栏在布局迁移时会主动关闭，但 model selection 可能仍然是同一
-          // image。此时重复 selectBlock 会被等值去重，必须先清掉旧选择，让
-          // pointerdown 可以重新发布对象选择并挂回图片专用工具栏。
-          const currentSelection = this.doc.selection.value
-          if (
-            !this._toolbarRef &&
-            currentSelection?.isInSameBlock &&
-            currentSelection.firstBlockId === block.id &&
-            currentSelection.anchor.type === 'selected' &&
-            currentSelection.head.type === 'selected'
-          ) {
-            this.doc.selection.blur()
-          }
-
-          // 显式选中 image block。不依赖 native selection → selectionchange → recalculate
-          // 这条间接链路（pointerdown 触发 startDrag 后会 attach 一堆 listener，
-          // 经验上对 native selection 链路有干扰，导致单击图片不显示 selected 工具栏）。
-          this.doc.selection.selectBlock(block)
-          this._confirmImageClickSelection(evt, block as BlockCraft.IBlockComponents["image"])
-
-          if (!this.doc.readonlyManager.isReadonly(block)) {
-            if (this.doc.placement.getState(block).mode === 'absolute') {
-              this.doc.placement.startDrag(evt, block)
-            } else {
-              this.doc.dragController.startDrag(
-                evt,
-                { kind: 'origin-block', blockId },
-                { ghostLabel: '图片' },
-              )
-            }
-          }
-        })
-    );
-
     this._sub.add(this.doc.selection.selectionChange$.subscribe((selection) => {
       if (
         this.doc.isReadonly ||
@@ -443,6 +374,7 @@ export class ImgToolbarPlugin extends DocPlugin {
                 });
                 break;
               case "object-layout":
+                if (!this.doc.placement.supportsObjectLayout(imgBlock, v.value === 'wrap' ? 'inline' : v.value)) break;
                 if (v.value === 'wrap') {
                   this._convertImageBlockToInline(
                     imgBlock as BlockCraft.IBlockComponents['image'],
@@ -1422,61 +1354,9 @@ export class ImgToolbarPlugin extends DocPlugin {
     }
   }
 
-  private _confirmImageClickSelection(
-    startEvent: PointerEvent,
-    block: BlockCraft.IBlockComponents["image"],
-  ) {
-    this._pendingImageClickCleanup?.();
-
-    let didDrag =
-      this.doc.dragController.isDragging ||
-      this.doc.placement.isDragging;
-    const stateSub = merge(
-      this.doc.dragController.state$,
-      this.doc.placement.state$,
-    )
-      .pipe(takeUntil(this.doc.onDestroy$))
-      .subscribe(state => {
-        if (state === 'dragging' || state === 'dropping') {
-          didDrag = true;
-        }
-      });
-
-    let cleaned = false;
-    const cleanup = () => {
-      if (cleaned) return;
-      cleaned = true;
-      window.removeEventListener('pointerup', onPointerEnd, true);
-      window.removeEventListener('pointercancel', onPointerCancel, true);
-      window.removeEventListener('blur', onPointerCancel, true);
-      stateSub.unsubscribe();
-      if (this._pendingImageClickCleanup === cleanup) {
-        this._pendingImageClickCleanup = undefined;
-      }
-    };
-    const onPointerEnd = (event: PointerEvent) => {
-      if (event.pointerId !== startEvent.pointerId) return;
-      const shouldConfirm = !didDrag;
-      cleanup();
-      if (!shouldConfirm) return;
-      try {
-        if (this._isBlockAlive(block)) {
-          this.doc.selection.selectBlock(block);
-        }
-      } catch {}
-    };
-    const onPointerCancel = () => cleanup();
-
-    window.addEventListener('pointerup', onPointerEnd, true);
-    window.addEventListener('pointercancel', onPointerCancel, true);
-    window.addEventListener('blur', onPointerCancel, true);
-    this._pendingImageClickCleanup = cleanup;
-  }
-
   destroy() {
     this.closeToolbar();
     this.closeInlineToolbar();
-    this._pendingImageClickCleanup?.();
     this._sub.unsubscribe();
   }
 }

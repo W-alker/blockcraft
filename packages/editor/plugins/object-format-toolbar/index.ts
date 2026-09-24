@@ -4,7 +4,6 @@ import {
 } from "@angular/cdk/overlay";
 import {
   fromEvent,
-  merge,
   type Observable,
   Subject,
   Subscription,
@@ -45,7 +44,6 @@ import {
   isObjectToolbarOwnedTarget,
 } from "../object-layout/object-toolbar-interaction";
 import { InlineObjectInteractionController } from "../object-layout/inline-object-interaction";
-import { getShapeDefinition } from "../../blocks/shape-block";
 
 export * from "./object-format-toolbar.component";
 
@@ -96,7 +94,6 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
   private previewFrame: number | null = null;
   private pendingPreview?: ObjectFormatPatch;
   private activeWordArtHost?: HTMLElement;
-  private pendingShapeClickCleanup?: () => void;
   private textBoxResizerGesture?: { blockId: string; pointerId: number };
 
   init(): void {
@@ -166,7 +163,6 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
   destroy(): void {
     this.inlineObjects.forEach((controller) => controller.destroy());
     this.inlineObjects = [];
-    this.pendingShapeClickCleanup?.();
     this.close();
     this.clearSelectionWithinGroupFrames();
     this.subscription.unsubscribe();
@@ -954,18 +950,15 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
       groupId,
     );
     const directChildId = this.resolveDirectGroupChildId(target, groupId);
-    const moveEdge = target.closest(".object-group-block__move-edge");
-    if (selectionIsWithinGroup && directChildId && !moveEdge) {
+    // 组合外框移动交给公共入口；本插件只处理组/成员的拾取层级。
+    if (target.closest(".object-group-block__move-edge")) return false;
+    if (selectionIsWithinGroup && directChildId) {
       return false;
     }
 
     event.preventDefault();
     event.stopImmediatePropagation();
     this.doc.selection.selectBlock(groupId);
-    const group = this.safeGetBlock(groupId);
-    if (moveEdge && group && !this.doc.readonlyManager.isReadonly(group)) {
-      this.doc.placement.startDrag(event, group);
-    }
     return true;
   }
 
@@ -1071,18 +1064,8 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     const block = this.resolveBlockFromSurface(surface, flavour);
     if (!block) return;
 
-    // 三类对象的边框和对象手柄共用选中、只读检查与拖拽入口。
-    if (target.closest(
-      ".shape-resizer__move-edge, .text-box-block__object-handle, .word-art-block__object-handle",
-    )) {
-      event.preventDefault();
-      event.stopPropagation();
-      this.doc.selection.selectBlock(block);
-      if (!this.doc.readonlyManager.isReadonly(block)) {
-        this.startObjectDrag(event, block);
-      }
-      return;
-    }
+    // 移动区域由 ObjectDragPlugin 统一选中和拖拽，不能落入文字编辑分支。
+    if (target.closest("[data-bc-object-drag-handle]")) return;
 
     if (target.closest("shape-resizer")) {
       if (flavour === "text-box") {
@@ -1118,11 +1101,6 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
         // Empty shapes keep text creation exclusively on double-click.
         (block as BlockCraft.IBlockComponents["shape"]).onEditText(event);
         return;
-      }
-      this.doc.selection.selectBlock(block);
-      this.confirmShapeClickSelection(event, block);
-      if (!this.doc.readonlyManager.isReadonly(block)) {
-        this.startObjectDrag(event, block);
       }
       return;
     }
@@ -1161,27 +1139,6 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     }
   }
 
-  private startObjectDrag(
-    event: PointerEvent,
-    block: BlockCraft.BlockComponent,
-  ): void {
-    if (this.doc.placement.getState(block).mode === "absolute") {
-      this.doc.placement.startDrag(event, block);
-      return;
-    }
-    if (this.doc.dragController.state !== "idle") return;
-    const ghostLabel = block.flavour === "shape"
-      ? getShapeDefinition(
-          (block as BlockCraft.IBlockComponents["shape"]).shapeProps.shapeType,
-        ).label
-      : block.flavour === "text-box" ? "文本框" : "艺术字";
-    this.doc.dragController.startDrag(
-      event,
-      { kind: "origin-block", blockId: block.id },
-      { ghostLabel },
-    );
-  }
-
   private finishTextBoxResizerGesture(pointerId: number): void {
     const gesture = this.textBoxResizerGesture;
     if (!gesture || gesture.pointerId !== pointerId) return;
@@ -1205,47 +1162,6 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
       selection.anchor.type === "text" &&
       selection.head.type === "text",
     );
-  }
-
-  private confirmShapeClickSelection(
-    startEvent: PointerEvent,
-    block: BlockCraft.BlockComponent,
-  ): void {
-    this.pendingShapeClickCleanup?.();
-    let didDrag =
-      this.doc.dragController.isDragging || this.doc.placement.isDragging;
-    const stateSub = merge(
-      this.doc.dragController.state$,
-      this.doc.placement.state$,
-    )
-      .pipe(takeUntil(this.doc.onDestroy$))
-      .subscribe((state) => {
-        if (state === "dragging" || state === "dropping") didDrag = true;
-      });
-    let cleaned = false;
-    const cleanup = () => {
-      if (cleaned) return;
-      cleaned = true;
-      window.removeEventListener("pointerup", onPointerEnd, true);
-      window.removeEventListener("pointercancel", onPointerCancel, true);
-      window.removeEventListener("blur", onPointerCancel, true);
-      stateSub.unsubscribe();
-      if (this.pendingShapeClickCleanup === cleanup) {
-        this.pendingShapeClickCleanup = undefined;
-      }
-    };
-    const onPointerEnd = (endEvent: PointerEvent) => {
-      if (endEvent.pointerId !== startEvent.pointerId) return;
-      const shouldConfirm = !didDrag;
-      cleanup();
-      if (!shouldConfirm || !block.hostElement.isConnected) return;
-      this.doc.selection.selectBlock(block);
-    };
-    const onPointerCancel = () => cleanup();
-    window.addEventListener("pointerup", onPointerEnd, true);
-    window.addEventListener("pointercancel", onPointerCancel, true);
-    window.addEventListener("blur", onPointerCancel, true);
-    this.pendingShapeClickCleanup = cleanup;
   }
 
   @BindHotKey({ key: "Escape" }, { flavour: "shape-text" })

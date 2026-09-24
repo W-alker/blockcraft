@@ -1,5 +1,6 @@
 import {
   ShapeBlockSchema,
+  StickerBlockSchema,
   WordArtBlockSchema,
   normalizeShapeSnapshotProps,
   isShapeKind,
@@ -10,8 +11,11 @@ import {
   INLINE_SHAPE_EMBED_KEY,
   INLINE_WORD_ART_EMBED_KEY,
   createInlineShapeDelta,
+  createInlineStickerDelta,
   createInlineWordArtDelta,
   readInlineShapeDelta,
+  readInlineStickerDelta,
+  INLINE_STICKER_EMBED_KEY,
   readInlineWordArtDelta,
 } from '../../embeds'
 import {ParagraphBlockSchema} from '../../blocks/paragraph-block'
@@ -70,6 +74,8 @@ export function objectBlockSnapshotToInlineParagraph(
       snapshot.children as DeltaInsert[],
       wrap,
     )
+  } else if (snapshot.flavour === 'sticker' && snapshot.nodeType === BlockNodeType.void) {
+    delta = createInlineStickerDelta(snapshot.props, undefined, wrap)
   }
   return delta ? ParagraphBlockSchema.createSnapshot([delta]) : null
 }
@@ -85,6 +91,8 @@ export function resolveInlineObjectDeltaAtOffset(
     if (currentOffset === offset && typeof delta.insert === 'object') {
       const resolvedKind = INLINE_SHAPE_EMBED_KEY in delta.insert
         ? 'shape'
+        : INLINE_STICKER_EMBED_KEY in delta.insert
+          ? 'sticker'
         : INLINE_WORD_ART_EMBED_KEY in delta.insert
           ? 'word-art'
           : null
@@ -127,6 +135,13 @@ export function inlineObjectSnapshotToBlockSnapshots(
         })
         return block
       })()
+    : resolved.kind === 'sticker'
+      ? (() => {
+          const data = readInlineStickerDelta(resolved.delta)
+          const block = StickerBlockSchema.createSnapshot(data.props.presetId, data.props.colors, data.props.presetVersion)
+          block.props = {...data.props, width: data.width, height: data.height}
+          return block
+        })()
     : (() => {
         const data = readInlineWordArtDelta(resolved.delta)
         return WordArtBlockSchema.createSnapshot(data.text, {

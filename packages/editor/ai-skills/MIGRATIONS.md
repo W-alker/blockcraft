@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-09-23 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-09-24 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -67,6 +67,62 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > - `major` (e.g. 0.1.37 → 1.0.0): breaking — removed APIs, renamed exports, signature changes, behavior reversals
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
+
+## Unreleased — 2026-09-24：统一对象移动入口
+
+**Severity**: major（手动插件装配依赖变化；版本由用户决定）
+
+**What changed**: 图片、贴纸、形状本体及文本框、艺术字、组合块的移动手柄统一由
+`ObjectDragPlugin` 处理选中、点击确认和拖拽分派。移除图片/格式工具栏里的重复移动路径。
+
+**Why**: 拖拽入口不应依赖对象类型或工具栏，新增对象通过声明命中区域复用公共交互。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-embed.md`、`blockcraft-plugins-ref.md`、`blockcraft-plugins-block.md`、`blockcraft-plugins-toolbar.md`。
+
+### New APIs / Features
+
+`metadata.objectDrag?: 'placement' | 'body' | 'handles' | 'custom'`。默认卡片行为不变；
+`body` 接入标记表面/手柄，`handles` 仅接入标记手柄，`custom` 供宿主专属交互避让。
+视图标记为 `data-bc-object-drag-surface`、`data-bc-object-drag-handle`，可选
+`data-bc-object-drag-label` 提供实例级拖拽提示。标记不写入文档快照。
+
+### Breaking Changes / Migration Recipe
+
+仅手动注册 `ImgToolbarPlugin` / `ObjectFormatToolbarPlugin` 的宿主必须加上公共插件：
+
+```typescript
+// before
+const plugins = [new ObjectFormatToolbarPlugin(), new ImgToolbarPlugin()]
+// after：优先完成组/成员拾取和文字编辑判断，再进入公共移动入口
+const plugins = [new ObjectFormatToolbarPlugin(), new ImgToolbarPlugin(), new ObjectDragPlugin()]
+```
+
+bundled 装配已包含一个实例，无需重复注册。完全重建内置 Schema/视图的宿主须同步
+相应的 objectDrag 声明与区域标记。自定义对象可用 body/handles 接入；现有 custom
+声明继续有效，内置对象已不再使用它。
+
+### Behavior Changes
+
+移动仍调用现有正文排序及 placement 控制器；选组/选成员、Shift 多选、文字编辑、
+缩放/旋转职责保留。点击确认会话按手势建立，取消/销毁时清理。旧快照无需迁移。
+
+### Deprecations
+
+无公开方法删除；工具栏不再隐式提供块态拖拽入口。
+
+## Unreleased — 2026-09-24：内置 SVG 贴纸块
+
+**Severity**: minor（新增块；版本由用户决定）
+
+**What changed**: 新增 `sticker` 块及 `STICKER_PRESETS`、`getStickerPreset`、`normalizeStickerColors`、`setStickerColor`、`renderStickerDataUrl`。bundled editor 和 HTML/Markdown adapter 已注册；playground `/template` 有插入与改色演示。`StickerToolbarPlugin` 统一管理块态/行内贴纸交互，块态菜单可直接转换为四周型环绕。
+
+**Why**: 保留贴纸图形可编辑、分部改色的同时，避免在每个文档实例中重复保存 SVG 和默认配置。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-adapter.md`。
+
+**Migration Recipe**: 宿主若使用自定义 Schema/Adapter 清单，按需加入 `StickerBlockSchema` 和 `stickerBlockAdapters`；bundled editor 无需宿主迁移。新预设 ID/版本须随客户端发布并保持旧版本可用。
+
+**Behavior Changes**: 贴纸使用固定 `width/height`，不再随正文宽度缩放；新实例取预设宽高，手动缩放及块级/行内转换保留实际尺寸；提交、导入导出及初始化的宽高/旋转最多保留两位小数。未发布的 `wr/ar` 试验字段不提供兼容，不读取或导出；缺少有效固定宽高时使用预设尺寸。图片等其他对象的尺寸规则不变。贴纸数据只接受内置预设版本和已声明的十六进制色槽；未知版本显示占位提示。
 
 ## Unreleased — 2026-09-23：天气手动刷新
 

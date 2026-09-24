@@ -2,9 +2,13 @@ import {fakeAsync, tick} from "@angular/core/testing";
 import {Subject} from "rxjs";
 import {BlockNodeType} from "../../framework";
 import {ImgToolbarPlugin} from "./index";
+import {ObjectDragPlugin} from "../object-drag";
+import {ImageBlockSchema} from "../../blocks/image-block";
 
 describe("ImgToolbarPlugin lifecycle", () => {
-  const makeHarness = () => {
+  const sharedPlugins: ObjectDragPlugin[] = [];
+  afterEach(() => sharedPlugins.splice(0).forEach(plugin => plugin.destroy()));
+  const makeHarness = (withSharedDrag = false) => {
     const rootHost = document.createElement("div");
     const imageHost = document.createElement("div");
     const wrapper = document.createElement("div");
@@ -12,6 +16,7 @@ describe("ImgToolbarPlugin lifecycle", () => {
     imageHost.setAttribute("data-block-id", "img-1");
     imageHost.className = "image-block";
     wrapper.className = "img-wrapper";
+    wrapper.setAttribute("data-bc-object-drag-surface", "");
     wrapper.appendChild(img);
     imageHost.appendChild(wrapper);
     rootHost.appendChild(imageHost);
@@ -90,6 +95,7 @@ describe("ImgToolbarPlugin lifecycle", () => {
     setSelection.and.returnValue(chain);
     doc = {
       isReadonly: false,
+      schemas: {get: () => ImageBlockSchema},
       onDestroy$,
       root: {hostElement: rootHost},
       messageService: {
@@ -133,6 +139,8 @@ describe("ImgToolbarPlugin lifecycle", () => {
         startDrag: jasmine.createSpy("startDrag"),
       },
       placement: {
+        supports: () => true,
+        supportsObjectLayout: jasmine.createSpy('supportsObjectLayout').and.returnValue(true),
         state$: placementState$,
         get state() {
           return placementDragState.current;
@@ -204,6 +212,12 @@ describe("ImgToolbarPlugin lifecycle", () => {
     };
     const plugin = new ImgToolbarPlugin();
     (plugin as any).doc = doc;
+    if (withSharedDrag) {
+      const shared = new ObjectDragPlugin();
+      (shared as any).doc = doc;
+      shared.init();
+      sharedPlugins.push(shared);
+    }
 
     return {
       plugin,
@@ -346,8 +360,18 @@ describe("ImgToolbarPlugin lifecycle", () => {
     rootHost.remove();
   });
 
-  it("selects an image from its own pointerdown path", () => {
-    const {plugin, doc, rootHost, wrapper, imageBlock} = makeHarness();
+  it("toolbar plugin alone does not take ownership of block body gestures", () => {
+    const {plugin, doc, rootHost, wrapper} = makeHarness();
+    plugin.init();
+    wrapper.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true, button: 0}));
+    expect(doc.selection.selectBlock).not.toHaveBeenCalled();
+    expect(doc.dragController.startDrag).not.toHaveBeenCalled();
+    plugin.destroy();
+    rootHost.remove();
+  });
+
+  it("selects an image through the shared object pointerdown path", () => {
+    const {plugin, doc, rootHost, wrapper, imageBlock} = makeHarness(true);
     plugin.init();
 
     wrapper.dispatchEvent(new PointerEvent("pointerdown", {bubbles: true, button: 0}));
@@ -363,7 +387,7 @@ describe("ImgToolbarPlugin lifecycle", () => {
   });
 
   it("free-drags an absolute image instead of reordering it", () => {
-    const {plugin, doc, rootHost, wrapper, imageBlock, placementMode} = makeHarness();
+    const {plugin, doc, rootHost, wrapper, imageBlock, placementMode} = makeHarness(true);
     placementMode.current = "absolute";
     plugin.init();
 
@@ -380,8 +404,9 @@ describe("ImgToolbarPlugin lifecycle", () => {
   });
 
   it("does not start image dragging or replace selection from eight-way handles", () => {
-    const {plugin, doc, rootHost, wrapper} = makeHarness();
+    const {plugin, doc, rootHost, wrapper} = makeHarness(true);
     const resizer = document.createElement('shape-resizer');
+    resizer.setAttribute('data-bc-placement-pick-ignore', '');
     const handle = document.createElement('button');
     resizer.append(handle);
     wrapper.append(resizer);
@@ -404,7 +429,7 @@ describe("ImgToolbarPlugin lifecycle", () => {
       imageSelection,
       selectionValue,
       placementMode,
-    } = makeHarness();
+    } = makeHarness(true);
     placementMode.current = "absolute";
     selectionValue.current = imageSelection;
     plugin.init();
@@ -421,7 +446,7 @@ describe("ImgToolbarPlugin lifecycle", () => {
   });
 
   it("ignores image block whitespace so gap selection can handle it", () => {
-    const {plugin, doc, rootHost, imageHost} = makeHarness();
+    const {plugin, doc, rootHost, imageHost} = makeHarness(true);
     plugin.init();
 
     imageHost.dispatchEvent(new PointerEvent("pointerdown", {bubbles: true, button: 0, pointerId: 1}));
@@ -433,7 +458,7 @@ describe("ImgToolbarPlugin lifecycle", () => {
   });
 
   it("confirms image selection after a click that never enters dragging", () => {
-    const {plugin, doc, rootHost, wrapper, imageBlock} = makeHarness();
+    const {plugin, doc, rootHost, wrapper, imageBlock} = makeHarness(true);
     plugin.init();
 
     wrapper.dispatchEvent(new PointerEvent("pointerdown", {bubbles: true, button: 0, pointerId: 1}));
@@ -446,7 +471,7 @@ describe("ImgToolbarPlugin lifecycle", () => {
   });
 
   it("does not confirm image selection after a real image drag", () => {
-    const {plugin, doc, rootHost, wrapper, dragState$, dragState} = makeHarness();
+    const {plugin, doc, rootHost, wrapper, dragState$, dragState} = makeHarness(true);
     plugin.init();
 
     wrapper.dispatchEvent(new PointerEvent("pointerdown", {bubbles: true, button: 0, pointerId: 1}));
@@ -460,7 +485,7 @@ describe("ImgToolbarPlugin lifecycle", () => {
   });
 
   it("confirms an absolute image selection when the pointer never starts dragging", () => {
-    const {plugin, doc, rootHost, wrapper, imageBlock, placementMode} = makeHarness();
+    const {plugin, doc, rootHost, wrapper, imageBlock, placementMode} = makeHarness(true);
     placementMode.current = "absolute";
     plugin.init();
 
@@ -482,7 +507,7 @@ describe("ImgToolbarPlugin lifecycle", () => {
       placementMode,
       placementDragState,
       placementState$,
-    } = makeHarness();
+    } = makeHarness(true);
     placementMode.current = "absolute";
     plugin.init();
 
@@ -495,6 +520,22 @@ describe("ImgToolbarPlugin lifecycle", () => {
     plugin.destroy();
     rootHost.remove();
   });
+
+  for (const layout of ['over', 'under', 'inline', 'wrap', 'top-bottom']) {
+    it(`rechecks layout capability before executing ${layout}`, fakeAsync(() => {
+      const {plugin, doc, rootHost, selection$, selectionValue, imageSelection, toolbarClicks} = makeHarness();
+      plugin.init();
+      selectionValue.current = imageSelection;
+      selection$.next(imageSelection);
+      tick(250);
+      doc.placement.supportsObjectLayout.and.returnValue(false);
+      toolbarClicks.next({name: 'object-layout', value: layout});
+      expect(doc.placement.setObjectLayout).not.toHaveBeenCalled();
+      expect(doc.crud.replaceWithSnapshots).not.toHaveBeenCalled();
+      plugin.destroy();
+      rootHost.remove();
+    }));
+  }
 
   it("cancels delayed toolbar open when image selection is cleared", fakeAsync(() => {
     const {plugin, doc, rootHost, selection$, selectionValue, imageSelection} = makeHarness();

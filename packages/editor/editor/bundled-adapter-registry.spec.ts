@@ -6,7 +6,7 @@ import {
   type IBlockSnapshot,
 } from '../framework'
 import {BUNDLED_EDITOR_SCHEMAS} from './bundled-capabilities'
-import {createInlinePersonDelta, createInlineWeatherDelta, createInlineWordArtDelta} from '../embeds'
+import {createInlinePersonDelta, createInlineStickerDelta, createInlineWeatherDelta, createInlineWordArtDelta} from '../embeds'
 import {
   BUNDLED_ADAPTER_REGISTRY,
   BUNDLED_BLOCK_ADAPTER_CONTRIBUTIONS,
@@ -17,6 +17,7 @@ import {HtmlAdapter} from '../adapters/html-adapter'
 import {MarkdownAdapter} from '../adapters/markdown-adapter'
 import {MARKDOWN_ADAPTER_PROFILE_CONFIG} from '../adapters/registry'
 import {AdapterRegistry} from '../adapters/registry'
+import {StickerBlockSchema} from '../blocks/sticker-block'
 
 class TestFileService extends DocFileService {
   uploadImg(): Promise<string> {
@@ -57,7 +58,7 @@ describe('bundled Adapter registry', () => {
     const flavours = new Set(
       BUNDLED_BLOCK_ADAPTER_CONTRIBUTIONS.flatMap(item => item.flavours),
     )
-    expect(flavours.size).toBe(39)
+    expect(flavours.size).toBe(40)
     for (const schema of BUNDLED_EDITOR_SCHEMAS) {
       expect(flavourCovered(flavours, schema.flavour)).toBeTrue()
     }
@@ -116,6 +117,81 @@ describe('bundled Adapter registry', () => {
     expect((markdownResult.children[0] as IBlockSnapshot).children).toEqual([delta])
   })
 
+  it('round-trips a recolored sticker without embedding SVG in its model', async () => {
+    const sticker = StickerBlockSchema.createSnapshot('sunburst', {sun: '#102030'})
+    sticker.props = {...sticker.props, width: 233, height: 107}
+    const snapshot = root([sticker])
+    const htmlAdapter = new HtmlAdapter(fileService, new Map(), BUNDLED_ADAPTER_REGISTRY)
+    const html = await htmlAdapter.toHtml(snapshot)
+    expect(html).toContain('data-bc-block="sticker"')
+    expect(html).toContain('data:image/svg+xml')
+    const imported = await htmlAdapter.toBlockSnapshot(html)
+    const htmlSticker = imported.children[0] as IBlockSnapshot
+    expect(htmlSticker.flavour).toBe('sticker')
+    expect(htmlSticker.props).toEqual(jasmine.objectContaining({colors: {sun: '#102030'}, width: 233, height: 107}))
+    expect(JSON.stringify(htmlSticker)).not.toContain('<svg')
+
+    const markdownAdapter = new MarkdownAdapter(fileService,
+      new Map([[MARKDOWN_ADAPTER_PROFILE_CONFIG, 'blockcraft']]), BUNDLED_ADAPTER_REGISTRY)
+    const markdown = await markdownAdapter.toMarkdown(snapshot)
+    const markdownResult = await markdownAdapter.toBlockSnapshot(markdown)
+    expect((markdownResult.children[0] as IBlockSnapshot).props).toEqual(jasmine.objectContaining({colors: {sun: '#102030'}, width: 233, height: 107}))
+    const legacy = await htmlAdapter.toBlockSnapshot('<figure data-bc-block="sticker" data-sticker-id="sunburst" data-sticker-version="1" data-sticker-wr="20" data-sticker-ar="2"></figure>')
+    expect((legacy.children[0] as IBlockSnapshot).props).toEqual({presetId: 'sunburst', presetVersion: 1, width: 160, height: 160})
+
+    const unavailable = await htmlAdapter.toBlockSnapshot(
+      '<figure data-bc-block="sticker" data-sticker-id="sunburst" data-sticker-version="2"><img src="https://example.com/ignored.svg"></figure>',
+    )
+    expect((unavailable.children[0] as IBlockSnapshot).flavour).toBe('sticker')
+    expect((unavailable.children[0] as IBlockSnapshot).props['presetVersion']).toBe(2)
+  })
+
+  it('quantizes sticker geometry through HTML and Markdown with only fixed dimensions', async () => {
+    const sticker = StickerBlockSchema.createSnapshot('sunburst')
+    sticker.props = {...sticker.props, width: 123.45678, height: 78.901234, rotation: 12.345678}
+    Object.assign(sticker.props, {wr: 20, ar: 2})
+    const snapshot = root([sticker])
+    const html = new HtmlAdapter(fileService, new Map(), BUNDLED_ADAPTER_REGISTRY)
+    const markdown = new MarkdownAdapter(fileService,
+      new Map([[MARKDOWN_ADAPTER_PROFILE_CONFIG, 'blockcraft']]), BUNDLED_ADAPTER_REGISTRY)
+    const htmlText = await html.toHtml(snapshot)
+    const markdownText = await markdown.toMarkdown(snapshot)
+    expect(htmlText).not.toContain('data-sticker-wr')
+    expect(htmlText).not.toContain('data-sticker-ar')
+    expect(markdownText).not.toMatch(/"(?:wr|ar)"\s*:/)
+    for (const restored of [
+      await html.toBlockSnapshot(htmlText),
+      await markdown.toBlockSnapshot(markdownText),
+    ]) {
+      expect((restored.children[0] as IBlockSnapshot).props).toEqual(jasmine.objectContaining({
+        width: 123.46, height: 78.9, rotation: 12.35,
+      }))
+    }
+    const legacy = await html.toBlockSnapshot('<figure data-bc-block="sticker" data-sticker-id="sunburst" data-sticker-version="1" data-sticker-wr="20.12345" data-sticker-ar="1.23456"></figure>')
+    expect((legacy.children[0] as IBlockSnapshot).props).toEqual({presetId: 'sunburst', presetVersion: 1, width: 160, height: 160})
+  })
+
+  it('round-trips an inline sticker through HTML and BlockCraft Markdown', async () => {
+    const delta = createInlineStickerDelta(
+      StickerBlockSchema.createSnapshot('leaf-label', {leaf: '#123456'}).props,
+      {width: 180, height: 120},
+    )
+    const snapshot = root([{
+      id: 'sticker-text', flavour: 'paragraph', nodeType: BlockNodeType.editable,
+      props: {}, meta: {}, children: [delta],
+    }])
+    const htmlAdapter = new HtmlAdapter(fileService, new Map(), BUNDLED_ADAPTER_REGISTRY)
+    const html = await htmlAdapter.toHtml(snapshot)
+    const htmlResult = await htmlAdapter.toBlockSnapshot(html)
+    expect((htmlResult.children[0] as IBlockSnapshot).children).toEqual([delta])
+    const markdownAdapter = new MarkdownAdapter(fileService,
+      new Map([[MARKDOWN_ADAPTER_PROFILE_CONFIG, 'blockcraft']]), BUNDLED_ADAPTER_REGISTRY)
+    const markdown = await markdownAdapter.toMarkdown(snapshot)
+    const markdownResult = await markdownAdapter.toBlockSnapshot(markdown)
+    expect((markdownResult.children[0] as IBlockSnapshot).children).toEqual([delta])
+    expect(JSON.stringify(delta)).not.toContain('<svg')
+  })
+
   it('round-trips inline person data and format through HTML and BlockCraft Markdown', async () => {
     const delta = createInlinePersonDelta({name: '张三', avatar: 'https://example.com/avatar.png', description: '产品部'}, 'avatar-name-description')
     const snapshot = root([{
@@ -136,7 +212,7 @@ describe('bundled Adapter registry', () => {
 
   it('covers every bundled inline Embed exactly once', () => {
     expect(BUNDLED_INLINE_EMBED_ADAPTER_CONTRIBUTIONS.map(item => item.key))
-      .toEqual(['icon', 'image', 'date', 'weather', 'person', 'mention', 'latex', 'shape', 'word-art'])
+      .toEqual(['icon', 'image', 'date', 'weather', 'person', 'mention', 'latex', 'shape', 'sticker', 'word-art'])
     for (const contribution of BUNDLED_INLINE_EMBED_ADAPTER_CONTRIBUTIONS) {
       expect(contribution.html.deltaToAst.length).toBeGreaterThan(0)
       expect(contribution.html.astToDelta.length).toBeGreaterThan(0)

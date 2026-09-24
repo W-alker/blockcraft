@@ -65,9 +65,9 @@ const rotationTransform = (rotation: number): string =>
         <button
           type="button"
           class="word-art-block__object-handle"
+          data-bc-object-drag-handle
           data-bc-print-exclude="true"
           data-bc-selection-interaction-ignore
-          data-bc-placement-pick-ignore
           contenteditable="false"
           aria-label="选中艺术字并拖动"
           title="选中艺术字并拖动">

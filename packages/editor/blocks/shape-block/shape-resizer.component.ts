@@ -153,6 +153,7 @@ export function calculateShapeResize(
         @for (edge of moveEdges; track edge) {
           <span
             class="shape-resizer__move-edge"
+            data-bc-object-drag-handle
             [attr.data-move-edge]="edge"
             contenteditable="false"
             aria-hidden="true"

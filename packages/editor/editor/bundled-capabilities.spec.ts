@@ -51,6 +51,7 @@ const customInlineEmbedAdapters = createInlineDirectiveAdapterContribution({
 describe('bundled editor capabilities', () => {
   const bundledEmbedOrder = [
     'shape',
+    'sticker',
     'word-art',
     'date',
     'weather',
@@ -74,6 +75,7 @@ describe('bundled editor capabilities', () => {
     expect(pluginNames.indexOf('ObjectDrag')).toBeGreaterThan(pluginNames.indexOf('object-format-toolbar'))
     expect(capabilities.plugins[pluginNames.indexOf('ObjectDrag') - 1]!.constructor.name).toBe('ImgToolbarPlugin')
     expect(pluginNames).toContain('weather-toolbar')
+    expect(pluginNames).toContain('sticker-toolbar')
     expect(pluginNames).toContain('revision-review')
     expect(pluginNames).not.toContain('word-art-toolbar')
     expect(pluginNames).not.toContain('text-box-toolbar')

@@ -10,6 +10,7 @@ import { DecoLayoutPanelComponent } from './palette/deco-layout-panel.component'
 import { TemplateDebugAsideComponent } from './debug-panel/template-debug-aside.component'
 import { EditorViewState } from './debug-panel/editor-view-state'
 import {TemplateRegionInspectorComponent} from './palette/template-region-inspector.component'
+import {StickerDemoPanelComponent} from './palette/sticker-demo-panel.component'
 
 /**
  * /template 设计页：左「调试面板」+ 中「模板编辑」+ 右「装饰插入面板」+ 顶部「使用模版」。
@@ -21,7 +22,7 @@ import {TemplateRegionInspectorComponent} from './palette/template-region-inspec
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   providers: [EditorViewState],                       // 本页内：调试面板的宽度滑块与编辑 surface 共享同一实例
-  imports: [TemplateEditSurfaceComponent, DecoInsertPanelComponent, DecoLayoutPanelComponent, TemplateRegionInspectorComponent, TemplateDebugAsideComponent, RouterLink],
+  imports: [TemplateEditSurfaceComponent, DecoInsertPanelComponent, DecoLayoutPanelComponent, TemplateRegionInspectorComponent, StickerDemoPanelComponent, TemplateDebugAsideComponent, RouterLink],
   template: `
     <div class="tpl-page">
       <header class="tpl-page__bar">
@@ -46,6 +47,7 @@ import {TemplateRegionInspectorComponent} from './palette/template-region-inspec
               </button>
             </div>
             @if (editDoc(); as d) {
+              <sticker-demo-panel [doc]="d"></sticker-demo-panel>
               <template-region-inspector [doc]="d"></template-region-inspector>
               <deco-layout-panel [doc]="d"></deco-layout-panel>
               <deco-insert-panel

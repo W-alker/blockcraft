@@ -77,6 +77,8 @@ const shapeRotationTransform = (rotation: unknown): string => {
     <div
       #shapeShell
       class="shape-block__shell"
+      data-bc-object-drag-surface
+      [attr.data-bc-object-drag-label]="definition.label"
       data-bc-print-visual-surface
       data-bc-object-surface
       contenteditable="false"
@@ -202,6 +204,7 @@ const shapeRotationTransform = (rotation: unknown): string => {
         </shape-resizer>
         @if (editableGeometry) {
           <shape-geometry-editor
+            data-bc-placement-pick-ignore
             [targetSvg]="shapeGeometry"
             [shapeType]="shapeProps.shapeType"
             [geometry]="editableGeometry"
@@ -210,6 +213,7 @@ const shapeRotationTransform = (rotation: unknown): string => {
         }
         @if (hasAdjustmentEditor) {
           <shape-adjustment-editor
+            data-bc-placement-pick-ignore
             [targetSvg]="shapeGeometry"
             [shapeType]="shapeProps.shapeType"
             [adjustments]="shapeProps.adjustments"

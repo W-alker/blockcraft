@@ -27,6 +27,7 @@ import type {ObjectGroupBlockModel} from './index'
       @for (edge of moveEdges; track edge) {
         <span
           class="object-group-block__move-edge"
+          data-bc-object-drag-handle
           [attr.data-move-edge]="edge"
           contenteditable="false"
           aria-hidden="true">

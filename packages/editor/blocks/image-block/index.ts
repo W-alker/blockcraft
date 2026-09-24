@@ -78,6 +78,7 @@ export const ImageBlockSchema: IBlockSchemaOptions<ImageBlockModel> = {
       defaultWr: 100,
       defaultAr: 4 / 3,
     },
+    objectDrag: 'body',
     placement: {modes: ['relative', 'absolute']}
   }
 }

@@ -249,6 +249,14 @@ export interface IBlockSchemaOptions<T extends NativeBlockModel = NativeBlockMod
      */
     placement?: BlockPlacementCapability
     /**
+     * Body pointer ownership for ObjectDragPlugin, independent of placement support.
+     * Omitted / 'placement': select placement objects and move absolute objects only.
+     * 'body': pick marked surfaces/handles and allow relative flow sorting.
+     * 'handles': only pick marked drag handles, leaving body editing untouched.
+     * 'custom': leave picking and dragging to the block's dedicated interaction plugin.
+     */
+    objectDrag?: 'placement' | 'body' | 'handles' | 'custom'
+    /**
      * Opts this flavour into root-relative object sizing.
      *
      * Sized blocks persist `props.wr` (root width percentage) and `props.ar`

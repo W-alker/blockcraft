@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-09-23 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-09-24 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -25,6 +25,16 @@ A block-based rich text editor built on **Angular (standalone components)** + **
 `textAlign: 'justify'` 为两端对齐；`textAlign: 'distributed'` 为包括末行的分散对齐。
 沿用块属性事务与 Undo，默认左对齐不变。支持范围、CSS 映射和浏览器边界见
 `blockcraft-block.md`，工具栏见 `blockcraft-plugins-formatting.md`，HTML 映射见 `blockcraft-adapter.md`。
+
+## 贴纸块速查（未发布）
+
+`sticker` 是内置 SVG 预设的独立对象块。快照只存 `presetId`、`presetVersion`、固定 `width/height`、可选的稀疏 `colors` 和定位/旋转；SVG 源码及默认颜色仅在 `STICKER_PRESETS` 中。用 `StickerBlockSchema.createSnapshot('sunburst')` 创建，改色使用 `setStickerColor(preset, props.colors, slot, hex)` 后通过 DocCRUD 写入；恢复默认时把 `colors` 设为 null 删除属性。详细契约见 `blockcraft-block.md`，导入导出见 `blockcraft-adapter.md`。
+
+## 对象交互装配速查
+
+`ObjectDragPlugin` 统一块态图片、贴纸、形状本体及文本框/艺术字/组合块移动手柄的选中和拖拽。
+手动装配放在 `ObjectFormatToolbarPlugin`、`ImgToolbarPlugin` 之后；bundled 装配已包含。
+Schema 的 `objectDrag` 和视图区域标记见 `blockcraft-plugins-block.md`；工具栏保留专属编辑职责。
 
 ## Core Concepts
 

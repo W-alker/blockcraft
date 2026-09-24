@@ -10,14 +10,14 @@ import {
   BcFloatToolbarComponent,
   BcFloatToolbarItemComponent,
 } from '../../components'
-import {BLOCK_OBJECT_LAYOUT_OPTIONS} from '../../framework'
+import {BLOCK_OBJECT_LAYOUT_OPTIONS, type BlockObjectLayout} from '../../framework'
 export const INLINE_OBJECT_WRAP_LAYOUT_OPTION = {
   value: 'wrap',
   label: '四周型环绕',
   icon: 'bc_tuwenraopai',
 } as const
 
-const INLINE_OBJECT_LAYOUT_OPTIONS = [
+export const INLINE_OBJECT_LAYOUT_OPTIONS = [
   BLOCK_OBJECT_LAYOUT_OPTIONS[0],
   INLINE_OBJECT_WRAP_LAYOUT_OPTION,
   ...BLOCK_OBJECT_LAYOUT_OPTIONS.slice(1),
@@ -34,8 +34,10 @@ const INLINE_OBJECT_LAYOUT_OPTIONS = [
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <bc-float-toolbar (onItemClick)="onItemClicked.emit($event)">
-      <span class="bc-inline-object-toolbar__type">{{label}}</span>
-      <span class="bc-float-toolbar__divider"></span>
+      @if (label) {
+        <span class="bc-inline-object-toolbar__type">{{label}}</span>
+        <span class="bc-float-toolbar__divider"></span>
+      }
       @for (item of layoutOptions; track item.value) {
         <bc-float-toolbar-item
           [icon]="item.icon"
@@ -60,10 +62,10 @@ const INLINE_OBJECT_LAYOUT_OPTIONS = [
 })
 export class InlineObjectToolbarComponent {
   @Input() label = '对象'
-  @Input() layout: 'inline' | 'wrap' = 'inline'
+  @Input() layout: BlockObjectLayout | 'wrap' = 'inline'
 
   @Output()
   readonly onItemClicked = new EventEmitter<BcFloatToolbarItemComponent>()
 
-  protected readonly layoutOptions = INLINE_OBJECT_LAYOUT_OPTIONS
+  @Input() layoutOptions: readonly (typeof INLINE_OBJECT_LAYOUT_OPTIONS)[number][] = INLINE_OBJECT_LAYOUT_OPTIONS
 }

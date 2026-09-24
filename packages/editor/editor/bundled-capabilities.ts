@@ -14,6 +14,7 @@ import {
   FigmaEmbedBlockSchema,
   FormulaBlockSchema,
   ImageBlockSchema,
+  StickerBlockSchema,
   PersonCardBlockSchema,
   JuejinEmbedBlockSchema,
   MermaidBlockSchema,
@@ -50,6 +51,7 @@ import {
   PersonInlineExtensionPlugin,
   DividerExtensionPlugin,
   WeatherToolbarPlugin,
+  StickerToolbarPlugin,
   EmbedFrameExtensionPlugin,
   FindReplacePlugin,
   FloatTextToolbarPlugin,
@@ -88,6 +90,7 @@ import {
   INLINE_LATEX_EMBED_KEY,
   INLINE_MENTION_EMBED_KEY,
   INLINE_SHAPE_EMBED_KEY,
+  INLINE_STICKER_EMBED_KEY,
   INLINE_WORD_ART_EMBED_KEY,
 } from '../embeds'
 import type {
@@ -116,6 +119,7 @@ export const BUNDLED_EDITOR_SCHEMAS: readonly IBlockSchemaOptions[] = [
   DividerBlockSchema,
   PageDividerBlockSchema,
   ImageBlockSchema,
+  StickerBlockSchema,
   TableBlockSchema,
   TableRowBlockSchema,
   TableCellBlockSchema,
@@ -299,6 +303,7 @@ export function validateBundledEditorCapabilities(input: {
 function createBundledInlineEmbeds(): [string, EmbedConverter][] {
   const orderedKeys = [
     INLINE_SHAPE_EMBED_KEY,
+    INLINE_STICKER_EMBED_KEY,
     INLINE_WORD_ART_EMBED_KEY,
     INLINE_DATE_EMBED_KEY,
     INLINE_WEATHER_EMBED_KEY,
@@ -398,6 +403,7 @@ export function createBundledEditorCapabilities(
     new ObjectFormatToolbarPlugin(),
     new ImgToolbarPlugin(),
     new ObjectDragPlugin(),
+    new StickerToolbarPlugin(),
     new CalloutToolbarPlugin(),
     new AttachmentExtensionPlugin(),
     new EmbedFrameExtensionPlugin(),

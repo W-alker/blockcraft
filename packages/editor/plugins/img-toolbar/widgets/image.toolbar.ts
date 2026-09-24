@@ -56,17 +56,15 @@ const ALIGN_LIST = [
 
       @if (!isGrouped) {
         <span class="bc-float-toolbar__divider"></span>
-        @for (item of LAYOUT_OPTIONS; track item.value) {
-          @if (item.value !== 'wrap' || isAbsolute) {
-            <bc-float-toolbar-item
-              [icon]="item.icon"
-              name="object-layout"
-              [value]="item.value"
-              [csTooltip]="item.label"
-              [attr.aria-label]="item.label"
-              [active]="objectLayout === item.value">
-            </bc-float-toolbar-item>
-          }
+        @for (item of layoutOptions; track item.value) {
+          <bc-float-toolbar-item
+            [icon]="item.icon"
+            name="object-layout"
+            [value]="item.value"
+            [csTooltip]="item.label"
+            [attr.aria-label]="item.label"
+            [active]="objectLayout === item.value">
+          </bc-float-toolbar-item>
         }
       }
 
@@ -147,6 +145,12 @@ export class ImageToolbar {
 
   get isGrouped(): boolean {
     return this._imgBlock?.doc.placement.isInObjectGroup?.(this._imgBlock) ?? false
+  }
+
+  get layoutOptions() {
+    return this.LAYOUT_OPTIONS.filter(({value}) =>
+      (value !== 'wrap' || this.isAbsolute) &&
+      this.imgBlock.doc.placement.supportsObjectLayout(this.imgBlock, value === 'wrap' ? 'inline' : value))
   }
 
   get canMoveForward(): boolean {

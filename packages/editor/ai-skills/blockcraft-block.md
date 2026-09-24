@@ -5,13 +5,21 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-09-23
+> Last updated: 2026-09-24
 
 通用数据描述和快照位于 `@ccc/blockcraft/framework/model`，类型为
 `BlockDescriptor<P, M, F>` / `BlockSnapshot<P, M, F>`，默认不依赖组件注册表。
 创建编辑器 Block 时仍使用原 `BaseBlockDesc`、`IBlockSnapshot` 与 Schema API；
 `declare global { namespace BlockCraft { interface IBlockComponents { ... } } }`
 继续限定编辑器快照的 flavour 和后代节点。新增通用快照类型不替代组件注册或 Schema 校验。
+
+## 内置 SVG 贴纸（未发布）
+
+`StickerBlockSchema` 注册 flavour `sticker`；`STICKER_PRESETS` 提供不可变的内置预设。每个预设由 `id/version` 固定几何、色槽默认值和 SVG 生成函数。实例使用 `presetId`、`presetVersion`、固定 `width/height`、可选 `colors`、`position`、`rotation`。`StickerBlockSchema.createSnapshot(id, colors?, version?)` 可指定预设版本，省略版本用 1。`normalizeStickerColors` 只接受已定义的槽位和六位十六进制色，默认值不存；`setStickerColor` 返回新的稀疏覆盖值。`renderStickerDataUrl` 以受控预设生成并缓存 `<img>` 的 SVG data URL，不把 SVG 字符串、绘制节点或预览图写入快照。缺失版本显示不可用提示，不默默采用其他版本。贴纸采用固定宽高，初始值取预设；正文宽度或聚焦变化不改变模型尺寸。缩放提交写入 `width/height`，宽高及 `rotation` 最多保留两位小数；拖拽预览保留计算精度，位置继续复用两位小数坐标编码。HTML/Markdown、行内转换及尺寸初始化遵循同一精度，组合内编辑复用固定对象几何。贴纸不支持 `wr/ar`，缺少有效固定宽高时使用预设尺寸。新贴纸不订阅正文宽度变化。
+
+新预设须提供新的版本并保留既有版本，才能保证旧文档重开后外观稳定。当前能力仅承载内置预设；用户上传的任意 SVG 不进入该目录，也不直接插入 DOM。文字、日期等动态内容仍作为原生块与贴纸组合。playground `/template` 的「可编辑贴纸 · 演示」可插入、改色和查看实例数据；贴纸复用对象尺寸、相对/绝对定位、组合及旋转链路。
+流式贴纸块的外框按图形宽度收缩，图标使用 `bc_tiezhi`；固定宽高不随正文伸缩，空间不足时仅由容器的 CSS 限宽约束显示，不回写模型尺寸。
+`StickerToolbarPlugin` 同时拥有块态布局菜单和贴纸的行内交互控制器；块态可直接选择四周型环绕，复用一次事务的块转行内转换。贴纸工具栏只显示布局图标与提示，不显示类型文案。
 
 ## 子栏抓手与单栏退化
 
@@ -776,6 +784,14 @@ metadata: {
 }
 ```
 
+本体拖拽通过可选的 `metadata.objectDrag` 声明职责：省略或 `'placement'` 保留默认
+浮动拾取/移动；`'body'` 接入标记表面和手柄的移动；`'handles'` 仅接入标记手柄；
+`'custom'` 交给宿主专属交互。`'body'` / `'handles'` 均支持按当前位置进行正文排序或浮动移动。
+它独立于 `placement`，不授予任何定位权限，也不写入快照。自定义对象可按需要声明，
+需要在视图中标记 `data-bc-object-drag-surface` / `data-bc-object-drag-handle`，
+无需修改 `ObjectDragPlugin` 的类型判断。完整交互与忽略标记见
+`blockcraft-plugins-block.md` 的 ObjectDragPlugin。
+
 The Schema metadata declares capability only. Layout mode is structural: a
 direct root child is relative flow, and a direct child of `placement-layout` or
 `object-group` is absolute. An absolute child persists one atomic
@@ -1309,6 +1325,7 @@ schemas your document allows:
 import {
   ParagraphBlockSchema,
   ObjectFormatToolbarPlugin,
+  ObjectDragPlugin,
   PlacementLayoutBlockSchema,
   TextBoxBlockSchema,
 } from "@ccc/blockcraft";
@@ -1318,7 +1335,7 @@ const schemas = new SchemaManager([
   PlacementLayoutBlockSchema,
   TextBoxBlockSchema,
 ]);
-const plugins = [new ObjectFormatToolbarPlugin()];
+const plugins = [new ObjectFormatToolbarPlugin(), new ObjectDragPlugin()];
 ```
 
 `TextBoxBlockSchema.createSnapshot(text?, props?)` always starts with a normal
@@ -1442,6 +1459,7 @@ import {
   ShapeBlockSchema,
   ShapeTextBlockSchema,
   ObjectFormatToolbarPlugin,
+  ObjectDragPlugin,
 } from "@ccc/blockcraft";
 
 const schemas = new SchemaManager([
@@ -1453,6 +1471,7 @@ const schemas = new SchemaManager([
 const plugins = [
   // ...
   new ObjectFormatToolbarPlugin(),
+  new ObjectDragPlugin(),
 ];
 ```
 
@@ -1669,6 +1688,7 @@ const schemas = new SchemaManager([
 const plugins = [
   // ...
   new ObjectFormatToolbarPlugin(),
+  new ObjectDragPlugin(),
 ];
 ```
 

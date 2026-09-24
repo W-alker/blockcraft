@@ -50,6 +50,7 @@ IBlockSchemaOptions<ObjectGroupBlockModel> = {
     ],
     allowEmptyChildren: true,
     selectionScope: 'container',
+    objectDrag: 'handles',
     placement: {modes: ['relative', 'absolute']},
     virtualization: {
       estimateHeight: ({props}) => normalizeBlockObjectGroupProps(props).height,

@@ -4,15 +4,15 @@ import { ObjectFormatToolbarPlugin } from "./index";
 
 describe("ObjectFormatToolbarPlugin object/edit interaction", () => {
   for (const [flavour, surfaceClass, handle] of [
-    ["shape", "shape-block__shell", '<shape-resizer><span class="shape-resizer__move-edge"></span></shape-resizer>'],
-    ["text-box", "text-box-block__surface", '<shape-resizer><span class="shape-resizer__move-edge"></span></shape-resizer>'],
-    ["word-art", "word-art-block__surface", '<shape-resizer><span class="shape-resizer__move-edge"></span></shape-resizer>'],
-    ["text-box", "text-box-block__surface", '<span class="text-box-block__object-handle"></span>'],
-    ["word-art", "word-art-block__surface", '<span class="word-art-block__object-handle"></span>'],
+    ["shape", "shape-block__shell", '<shape-resizer><span class="shape-resizer__move-edge" data-bc-object-drag-handle></span></shape-resizer>'],
+    ["text-box", "text-box-block__surface", '<shape-resizer><span class="shape-resizer__move-edge" data-bc-object-drag-handle></span></shape-resizer>'],
+    ["word-art", "word-art-block__surface", '<shape-resizer><span class="shape-resizer__move-edge" data-bc-object-drag-handle></span></shape-resizer>'],
+    ["text-box", "text-box-block__surface", '<span class="text-box-block__object-handle" data-bc-object-drag-handle></span>'],
+    ["word-art", "word-art-block__surface", '<span class="word-art-block__object-handle" data-bc-object-drag-handle></span>'],
   ]) {
     for (const mode of ["absolute", "relative"]) {
       for (const readonly of [false, true]) {
-        it(`routes ${flavour} ${handle} through ${mode} dragging (readonly=${readonly})`, () => {
+        it(`delegates ${flavour} ${handle} to shared dragging (${mode}, readonly=${readonly})`, () => {
           const plugin = new ObjectFormatToolbarPlugin();
           const root = document.createElement("div");
           root.innerHTML = `<div class="${surfaceClass}">${handle}</div>`;
@@ -31,22 +31,14 @@ describe("ObjectFormatToolbarPlugin object/edit interaction", () => {
               dragController: {state: "idle", startDrag: flowDrag},
             };
             spyOn<any>(plugin, "resolveBlockFromSurface").and.returnValue(block);
-            spyOn<any>(plugin, "confirmShapeClickSelection");
             const event = new PointerEvent("pointerdown", {button: 0, cancelable: true});
             Object.defineProperty(event, "target", {value: shell.querySelector("span")});
             (plugin as any).handleExistingObjectPointerDown(event);
 
-            expect(selectBlock).toHaveBeenCalledOnceWith(block);
-            expect(event.defaultPrevented).toBeTrue();
-            expect(placementDrag).toHaveBeenCalledTimes(!readonly && mode === "absolute" ? 1 : 0);
-            expect(flowDrag).toHaveBeenCalledTimes(!readonly && mode === "relative" ? 1 : 0);
-            if (!readonly && mode === "absolute") {
-              expect(placementDrag).toHaveBeenCalledWith(event, block);
-            }
-            if (!readonly && mode === "relative") {
-              expect(flowDrag).toHaveBeenCalledWith(event,
-                {kind: "origin-block", blockId: block.id}, {ghostLabel: jasmine.any(String)});
-            }
+            expect(selectBlock).not.toHaveBeenCalled();
+            expect(event.defaultPrevented).toBeFalse();
+            expect(placementDrag).not.toHaveBeenCalled();
+            expect(flowDrag).not.toHaveBeenCalled();
           } finally {
             root.remove();
           }
@@ -104,23 +96,22 @@ describe("ObjectFormatToolbarPlugin object/edit interaction", () => {
       placement: {getState: () => ({mode: "absolute"}), startDrag},
     };
     spyOn<any>(plugin, "resolveBlockFromSurface").and.returnValue(block);
-    spyOn<any>(plugin, "confirmShapeClickSelection");
     const event = new PointerEvent("pointerdown", {button: 0, cancelable: true});
     Object.defineProperty(event, "target", {value: frame});
 
     (plugin as any).handleExistingObjectPointerDown(event);
     expect(onEditText).not.toHaveBeenCalled();
-    expect(startDrag).toHaveBeenCalledTimes(1);
+    expect(startDrag).not.toHaveBeenCalled();
 
     selection.value = {isInSameBlock: true, anchor: {blockId: block.id}};
     (plugin as any).handleExistingObjectPointerDown(event);
     expect(onEditText).not.toHaveBeenCalled();
-    expect(startDrag).toHaveBeenCalledTimes(2);
+    expect(startDrag).not.toHaveBeenCalled();
 
     block.firstChildren = {id: "shape-text-1", flavour: "shape-text"};
     (plugin as any).handleExistingObjectPointerDown(event);
     expect(onEditText).toHaveBeenCalledOnceWith(event);
-    expect(startDrag).toHaveBeenCalledTimes(2);
+    expect(startDrag).not.toHaveBeenCalled();
 
     readonlyManager.isReadonly = () => true;
     (plugin as any).handleExistingObjectPointerDown(event);
@@ -128,7 +119,7 @@ describe("ObjectFormatToolbarPlugin object/edit interaction", () => {
     root.remove();
   });
 
-  it("keeps the established Shape shell click as a whole-object selection", () => {
+  it("delegates Shape shell selection to the shared object plugin", () => {
     const plugin = new ObjectFormatToolbarPlugin();
     const root = document.createElement("div");
     const host = document.createElement("div");
@@ -147,7 +138,6 @@ describe("ObjectFormatToolbarPlugin object/edit interaction", () => {
       placement: { getState: () => ({ mode: "absolute" }), startDrag },
     };
     spyOn<any>(plugin, "resolveBlockFromSurface").and.returnValue(block);
-    spyOn<any>(plugin, "confirmShapeClickSelection");
     const event = new PointerEvent("pointerdown", {
       button: 0,
       pointerId: 7,
@@ -156,8 +146,8 @@ describe("ObjectFormatToolbarPlugin object/edit interaction", () => {
     Object.defineProperty(event, "target", { value: shell });
     (plugin as any).handleExistingObjectPointerDown(event);
 
-    expect(selectBlock).toHaveBeenCalledOnceWith(block);
-    expect(startDrag).toHaveBeenCalledOnceWith(event, block);
+    expect(selectBlock).not.toHaveBeenCalled();
+    expect(startDrag).not.toHaveBeenCalled();
     host.remove();
     root.remove();
   });

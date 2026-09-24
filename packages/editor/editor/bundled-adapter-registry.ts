@@ -19,6 +19,7 @@ import {juejinEmbedBlockAdapters} from '../blocks/embed-blocks/juejin-embed-bloc
 import {formulaBlockAdapters} from '../blocks/formula-block/adapter'
 import {frameBlockAdapters} from '../blocks/frame-block/adapter'
 import {imageBlockAdapters} from '../blocks/image-block/adapter'
+import {stickerBlockAdapters} from '../blocks/sticker-block/adapter'
 import {mermaidBlockAdapters} from '../blocks/mermaid-block/adapter'
 import {objectGroupBlockAdapters} from '../blocks/object-group-block/adapter'
 import {pageDividerBlockAdapters} from '../blocks/page-divider-block/adapter'
@@ -40,6 +41,7 @@ import {imageEmbedAdapters} from '../embeds/image/adapter'
 import {latexEmbedAdapters} from '../embeds/latex/adapter'
 import {mentionEmbedAdapters} from '../embeds/mention/adapter'
 import {shapeEmbedAdapters} from '../embeds/shape/adapter'
+import {stickerEmbedAdapters} from '../embeds/sticker/adapter'
 import {wordArtEmbedAdapters} from '../embeds/word-art/adapter'
 import {AdapterRegistry} from '../adapters/registry'
 import type {
@@ -59,6 +61,7 @@ export const BUNDLED_BLOCK_ADAPTER_CONTRIBUTIONS = [
   dividerBlockAdapters,
   pageDividerBlockAdapters,
   imageBlockAdapters,
+  stickerBlockAdapters,
   tableBlockAdapters,
   attachmentBlockAdapters,
   bookmarkBlockAdapters,
@@ -93,6 +96,7 @@ export const BUNDLED_INLINE_EMBED_ADAPTER_CONTRIBUTIONS = [
   mentionEmbedAdapters,
   latexEmbedAdapters,
   shapeEmbedAdapters,
+  stickerEmbedAdapters,
   wordArtEmbedAdapters,
 ] as const
 

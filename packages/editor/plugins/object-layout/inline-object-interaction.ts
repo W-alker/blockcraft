@@ -104,7 +104,7 @@ export class InlineObjectInteractionController {
     }
     if (!this._hasConverter()) {
       this._doc.messageService.warn(
-        `${this.kind === 'shape' ? '形状' : '艺术字'}行内渲染器未注册`,
+        `${this._label()}行内渲染器未注册`,
       )
       return false
     }
@@ -238,7 +238,7 @@ export class InlineObjectInteractionController {
         component: InlineObjectToolbarComponent,
       }, this._close$, this.close)
     this._toolbarRef = overlayRef
-    componentRef.setInput('label', this.kind === 'shape' ? '形状' : '艺术字')
+    componentRef.setInput('label', this.kind === 'sticker' ? '' : this._label())
     componentRef.setInput('layout', wrap ? 'wrap' : 'inline')
     componentRef.instance.onItemClicked
       .pipe(takeUntil(this._close$))
@@ -626,6 +626,10 @@ export class InlineObjectInteractionController {
 
   private _hasConverter(): boolean {
     return this._doc.config.embeds?.some(([name]) => name === this.kind) ?? false
+  }
+
+  private _label(): string {
+    return this.kind === 'shape' ? '形状' : this.kind === 'sticker' ? '贴纸' : '艺术字'
   }
 
   private _getLiveBlock(id: string): BlockCraft.BlockComponent | null {

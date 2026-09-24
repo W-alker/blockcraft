@@ -12,7 +12,7 @@ import {
 
 export const INLINE_OBJECT_FRAME_ATTRIBUTE = 'data-bc-inline-float-frame'
 
-export type InlineObjectKind = 'shape' | 'word-art'
+export type InlineObjectKind = 'shape' | 'word-art' | 'sticker'
 export type InlineObjectWrapSide = InlineImageWrapSide
 export type InlineObjectWrapOptions = InlineImageWrapOptions
 

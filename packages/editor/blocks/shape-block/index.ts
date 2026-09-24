@@ -112,6 +112,7 @@ export const ShapeBlockSchema: IBlockSchemaOptions<ShapeBlockModel> = {
     icon: 'bc_icon bc_tuxing',
     includeChildren: ['shape-text'],
     selectionScope: 'container',
+    objectDrag: 'body',
     placement: {modes: ['relative', 'absolute']},
     objectFormat: SHAPE_OBJECT_FORMAT_CAPABILITY,
     virtualization: {

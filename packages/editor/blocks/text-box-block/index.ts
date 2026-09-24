@@ -63,6 +63,7 @@ export const TextBoxBlockSchema: IBlockSchemaOptions<TextBoxBlockModel> = {
       escapeToFrame: 'always',
       editingBoundary: 'absolute',
     },
+    objectDrag: 'handles',
     placement: {modes: ['relative', 'absolute']},
     objectFormat: TEXT_BOX_OBJECT_FORMAT_CAPABILITY,
     virtualization: {

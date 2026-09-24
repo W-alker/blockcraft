@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-09-23
+> Last updated: 2026-09-24
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
@@ -62,7 +62,12 @@ new AttachmentExtensionPlugin({
 
 > `plugins/img-toolbar/` — Image block toolbar and interactions.
 
-Handles image drag, Enter key behavior, double-click preview (readonly mode),
+块态图片的点击选择和拖拽由 `ObjectDragPlugin` 统一处理；本插件通过 selection 变化
+显示工具栏，保留上传/预览/布局转换及行内图片交互。手动装配必须同时注册
+`ObjectDragPlugin`，bundled 装配无需改动。布局按钮及操作入口都查询
+`supportsObjectLayout()`；分栏、填写区等不允许浮动定位的容器内不显示衬于文字下方/浮于文字上方。
+
+Handles Enter key behavior, double-click preview (readonly mode),
 and shows a connected toolbar with align/object-layout/caption/download/
 copy-url actions. The shared object layouts are **嵌入型 / 上下型 /
 衬于文字下方 / 浮于文字上方** with the same iconfont glyphs used by
@@ -198,6 +203,9 @@ new ImgToolbarPlugin({
 
 ## ObjectFormatToolbarPlugin
 
+对象移动由 `ObjectDragPlugin` 按视图标记统一接入。本插件保留文字编辑、组合层级拾取、
+Shift 多选与格式工具栏；不再自行启动块态移动或维护点击确认会话。
+
 `ObjectFormatToolbarPlugin` is the only bundled toolbar owner for whole-object
 Shape, TextBox and WordArt selection. It also owns Shift-click mixed selection,
 alignment/distribution and grouping. Register it once; do not register any of
@@ -208,9 +216,9 @@ the removed per-flavour object toolbars.
 形状选区后，若此前停留在“形状”tab，则显示“填充”，避免留下空白页。
 
 ```typescript
-import { ObjectFormatToolbarPlugin } from "@ccc/blockcraft";
+import { ObjectFormatToolbarPlugin, ObjectDragPlugin } from "@ccc/blockcraft";
 
-const plugins = [new ObjectFormatToolbarPlugin()];
+const plugins = [new ObjectFormatToolbarPlugin(), new ObjectDragPlugin()];
 ```
 
 The connected quick rail reuses the established TextBox/WordArt two-level

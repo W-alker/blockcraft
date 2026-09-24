@@ -8,12 +8,15 @@ describe('ImageToolbar', () => {
   function makeBlock(
     mode: 'relative' | 'absolute',
     grouped = false,
+    absoluteAllowed = true,
   ) {
     return {
       childrenLength: 0,
       props: {},
       doc: {
         placement: {
+          supportsObjectLayout: (_block: unknown, layout: string) => !grouped &&
+            (layout === 'inline' || layout === 'top-bottom' || absoluteAllowed),
           getObjectLayout: () => mode === 'absolute' ? 'over' : 'top-bottom',
           getState: () => ({
             mode,
@@ -59,6 +62,22 @@ describe('ImageToolbar', () => {
     fixture.detectChanges()
     expect(fixture.nativeElement.querySelector('.bc_tuwenraopai')).not.toBeNull()
 
+    fixture.destroy()
+    TestBed.resetTestingModule()
+  })
+
+  it('filters container layouts by placement capability and restores root options', async () => {
+    await TestBed.configureTestingModule({imports: [ImageToolbar]}).compileComponents()
+    const fixture = TestBed.createComponent(ImageToolbar)
+    const labels = () => Array.from(fixture.nativeElement.querySelectorAll(
+      'bc-float-toolbar-item[name="object-layout"]',
+    ) as NodeListOf<HTMLElement>).map(item => item.getAttribute('aria-label'))
+    fixture.componentRef.setInput('imgBlock', makeBlock('relative', false, false))
+    fixture.detectChanges()
+    expect(labels()).toEqual(['嵌入型', '上下型'])
+    fixture.componentRef.setInput('imgBlock', makeBlock('relative'))
+    fixture.detectChanges()
+    expect(labels()).toEqual(['嵌入型', '上下型', '衬于文字下方', '浮于文字上方'])
     fixture.destroy()
     TestBed.resetTestingModule()
   })

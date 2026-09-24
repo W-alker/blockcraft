@@ -4,7 +4,7 @@
 >
 > For creating new plugins, see `blockcraft-plugin.md`.
 >
-> Last updated: 2026-09-22
+> Last updated: 2026-09-24
 
 This index covers the built-in plugins. Pick the category file that matches your task — don't read all files at once.
 
@@ -72,6 +72,7 @@ const plugins = [
   new AttachmentExtensionPlugin({ onPreview: handlePreview }),
   new ImgToolbarPlugin(),
   new ObjectFormatToolbarPlugin(),
+  new ObjectDragPlugin(),
   new BookmarkBlockExtensionPlugin(),
   new CalloutToolbarPlugin(),
   new DividerExtensionPlugin(),

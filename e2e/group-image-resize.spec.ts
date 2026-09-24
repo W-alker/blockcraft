@@ -28,7 +28,8 @@ async function mountFixture(page: Page, snapshot?: any, groupInteraction = false
       ...source.config,
       yDoc: new source.yDoc.constructor(),
       plugins: groupInteraction
-        ? [new (source.plugins.find((plugin: any) => plugin.name === 'object-format-toolbar').constructor)()]
+        ? ['object-format-toolbar', 'ObjectDrag'].map(name =>
+          new (source.plugins.find((plugin: any) => plugin.name === name).constructor)())
         : [],
       scrollContainer: viewport,
       readonly: false,
@@ -338,6 +339,7 @@ test('external group frame drags all members and ungroup preserves their visual 
   await page.evaluate(id => (window as any).__imageResizeDoc.selection.selectBlock(id), ids.groupId)
   const before = await readGeometry(page, ids)
   const edge = page.locator(`#image-resize-fixture [data-block-id="${ids.groupId}"] [data-move-edge="east"]`)
+  await expect(edge).toBeVisible()
   const rect = (await edge.boundingBox())!
   await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2)
   await page.mouse.down()

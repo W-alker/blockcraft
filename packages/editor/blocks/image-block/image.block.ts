@@ -51,6 +51,7 @@ export function deriveInitialImageObjectSize(
     <figure class="image-block__container" [attr.data-align]="props.align">
       <div
         class="img-wrapper"
+        data-bc-object-drag-surface
         data-bc-print-visual-surface
         #imgWrapper
         bcResourcePlaceholder
@@ -62,7 +63,7 @@ export function deriveInitialImageObjectSize(
         [attr.data-bc-resize-preview-anchor]="isAbsolute ? null : 'layout'"
         [attr.data-bc-object-sizing]="usesRatioSizing ? '' : null">
         @if (!props.src) {
-          <div class="upload-hint" contenteditable="false" (click)="!isReadonly && inputLocalFile()">
+          <div class="upload-hint" data-bc-placement-pick-ignore contenteditable="false" (click)="!isReadonly && inputLocalFile()">
             <i class="bc_icon bc_tianjiatupian"></i>
             <span>点击插入图片</span>
           </div>

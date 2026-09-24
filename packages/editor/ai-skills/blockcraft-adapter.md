@@ -4,7 +4,13 @@
 >
 > Adapters handle HTML ↔ BlockSnapshot and Markdown ↔ BlockSnapshot conversion.
 >
-> Last updated: 2026-09-23
+> Last updated: 2026-09-24
+
+## 内置贴纸的导入导出（未发布）
+
+`sticker` HTML 使用 `<figure data-bc-block="sticker">`，另存预设 ID/版本、稀疏色槽和对象几何；子级 `<img>` 仅用于独立 HTML 的可视呈现。导入优先匹配贴纸 figure，未知预设版本保留为不可用占位，不转成普通图片。BlockCraft Markdown 使用 `bc-sticker` 指令保留块属性并重新规范化色槽；Portable Markdown 仅保留“贴纸”文本提示，不承诺可编辑性。贴纸预设源码和默认色不进入块快照，导入后的渲染仍从本地版本化目录生成。
+
+贴纸固定几何：HTML 的 `data-sticker-width/height`、Markdown props 的 `width/height` 保存实际布局像素；行内尺寸继续存于 delta attributes，块级与行内转换保留宽高。不读取或导出 `wr/ar`，缺少有效固定宽高时使用预设尺寸。
 
 ## Architecture
 

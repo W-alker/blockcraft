@@ -75,6 +75,7 @@ export const WordArtBlockSchema: IBlockSchemaOptions<WordArtBlockModel> = {
       escapeToFrame: 'always',
       editingBoundary: 'always',
     },
+    objectDrag: 'handles',
     placement: {modes: ['relative', 'absolute']},
     objectFormat: WORD_ART_OBJECT_FORMAT_CAPABILITY,
     virtualization: {
