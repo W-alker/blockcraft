@@ -5,7 +5,8 @@
     padding-block-end: 10px;
     padding-inline: 10px 0;
 
-    &::before {
+    // The editable host also owns the placeholder's ::before.
+    &::after {
       content: '';
       position: absolute;
       top: 0;
@@ -13,23 +14,11 @@
       width: 4px;
       height: 100%;
       background: var(--bc-border-color);
+      pointer-events: none;
     }
 
-    &[data-bc-block-border]::before {
+    &[data-bc-block-border]::after {
       background: var(--bc-block-border-color);
     }
-    //
-    //&:has(+ .blockquote-block) {
-    //  padding-bottom: 0;
-    //}
-    //
-    //+.blockquote-block {
-    //  padding-top: 0;
-    //
-    //  &::before {
-    //    top: calc(-1 * var(--bc-segments-gap));
-    //    height: calc(100% + var(--bc-segments-gap));
-    //  }
-    //}
   }
 }

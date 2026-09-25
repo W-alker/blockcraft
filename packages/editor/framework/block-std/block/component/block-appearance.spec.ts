@@ -41,6 +41,13 @@ import {BlockNodeType} from '../../types'
         style="--bc-block-border-color: rgb(223, 171, 1)">
         selected
       </blockquote>
+      <blockquote
+        data-block-id="quote-placeholder"
+        data-node-type="editable"
+        data-placeholder="请输入引用"
+        class="blockquote-block edit-container empty bc-placeholder-empty bc-placeholder-target">
+        <br>
+      </blockquote>
       <div
         data-block-id="formula-selected"
         data-node-type="void"
@@ -143,12 +150,32 @@ describe('BaseBlockComponent block appearance projection', () => {
     expect(quotes.length).toBe(2)
     for (const quote of Array.from(quotes)) {
       const hostStyle = getComputedStyle(quote)
-      const barStyle = getComputedStyle(quote, '::before')
+      const barStyle = getComputedStyle(quote, '::after')
       expect(hostStyle.borderStyle).toBe('none')
       expect(hostStyle.borderRadius).toBe('4px')
       expect(barStyle.backgroundColor).toBe('rgb(223, 171, 1)')
-      expect(barStyle.width).toBe('1px')
+      expect(barStyle.width).toBe('4px')
     }
+
+    fixture.destroy()
+    TestBed.resetTestingModule()
+  })
+
+  it('renders a blockquote placeholder and its left accent bar together', async () => {
+    await TestBed.configureTestingModule({
+      imports: [BlockAppearanceThemeHarness],
+    }).compileComponents()
+    const fixture = TestBed.createComponent(BlockAppearanceThemeHarness)
+    fixture.detectChanges()
+
+    const quote = (fixture.nativeElement as HTMLElement)
+      .querySelector<HTMLElement>('[data-block-id="quote-placeholder"]')!
+    const placeholder = getComputedStyle(quote, '::before')
+    const bar = getComputedStyle(quote, '::after')
+    expect(placeholder.content).not.toBe('none')
+    expect(placeholder.content).not.toBe('normal')
+    expect(bar.content).toBe('""')
+    expect(bar.width).toBe('4px')
 
     fixture.destroy()
     TestBed.resetTestingModule()

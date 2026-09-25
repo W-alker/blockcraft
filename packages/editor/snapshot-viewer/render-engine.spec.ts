@@ -533,6 +533,24 @@ describe("SnapshotRenderEngine", () => {
       expect(content.querySelector("br")).not.toBeNull()
     })
 
+    it("projects meta.plh on an empty blockquote", () => {
+      const host = document.createElement("div")
+      const renderer = createSnapshotRenderer()
+      const quote: IBlockSnapshot = {
+        ...placeholderParagraph(""),
+        id: "plh-blockquote",
+        flavour: "blockquote",
+      }
+
+      renderer.render(host, wrapRoot([quote]))
+
+      const block = host.querySelector<HTMLElement>('[data-block-id="plh-blockquote"]')!
+      const content = block.querySelector<HTMLElement>(".edit-container")!
+      expect(block.classList.contains("bc-placeholder-empty")).toBeTrue()
+      expect(content.getAttribute("data-placeholder")).toBe("请在此填写内容")
+      expect(content.classList.contains("bc-placeholder-target")).toBeTrue()
+    })
+
     it("clears the placeholder through incremental updates once content arrives", () => {
       const host = document.createElement("div")
       const renderer = createSnapshotRenderer()

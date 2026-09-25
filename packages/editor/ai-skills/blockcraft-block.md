@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-09-24
+> Last updated: 2026-09-25
 
 通用数据描述和快照位于 `@ccc/blockcraft/framework/model`，类型为
 `BlockDescriptor<P, M, F>` / `BlockSnapshot<P, M, F>`，默认不依赖组件注册表。
@@ -2285,7 +2285,7 @@ empty, including in readonly mode.
 | `paragraph`          | `{ default: '输入"/"呼出菜单', heading: { 1: '一级标题', 2: '二级标题', 3: '三级标题' } }` |
 | `bullet` / `ordered` | `'列表项'`                                                                                 |
 | `todo`               | `'待办事项'`                                                                               |
-| `blockquote`         | _none_ (uses its own `::before` for the left quote rule)                                   |
+| `blockquote`         | _none_ by default; an instance `meta.plh` can show a placeholder alongside its left rule   |
 
 `PlaceholderPlugin` targets `.bc-placeholder-target::before` on editable
 blocks. Do not claim `::before` on the same target; place decorative chrome on
