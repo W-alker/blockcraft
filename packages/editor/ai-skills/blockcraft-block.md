@@ -2110,6 +2110,15 @@ model-owned covered block IDs in one Yjs transaction, including unmounted
 middle blocks; plain-text-only/non-editable blocks are skipped. Changes to a
 following paragraph's `psb` also invalidate the preceding mounted sibling,
 because that sibling owns the effective physical gap.
+When a container is selected as a whole block, `TextToolbarHelper` expands its
+nested children before applying text and paragraph formatting. Only eligible
+editable descendants receive heading, alignment, line-height, paragraph
+spacing, typography and inline style changes; the container's own props are
+left intact. Non-text descendants do not receive text styles. Font scale on a
+complete editable descendant writes its paragraph `pfs`.
+Table-cell rectangle selections use the table model's visible master cells as
+format roots, so merged cells are handled once and unselected/hidden cells do
+not receive formatting.
 
 ## Ordered Block Marker Library
 

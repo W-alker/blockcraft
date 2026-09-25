@@ -929,6 +929,23 @@ export class SelectionManager {
       return {value: null, next: execNext ? undefined : next}
     }
 
+    // A model-only table rectangle has no native Range. Hovering a toolbar
+    // dropdown can make the browser revive the table's old gap caret and emit
+    // selectionchange. Keep the rectangle until a pointer gesture in the
+    // editor explicitly starts a new selection.
+    const tableCellSelection = this.value?.getTableCellSelection()
+    if (tableCellSelection && !this._primaryPointerDown &&
+        this._shouldKeepModelOnlySelection() && range.collapsed) {
+      const startElement = range.startContainer instanceof Element
+        ? range.startContainer
+        : range.startContainer.parentElement
+      const gap = startElement?.closest('[data-block-gap-side][data-block-zero-space]')
+      if (gap?.closest('[data-block-id]')?.getAttribute('data-block-id') === tableCellSelection.tableId) {
+        this._surface.clearNativeSelection()
+        return {value: this.value}
+      }
+    }
+
     // Boundary selections deliberately project to descendant text/gap points.
     // Besides keeping virtual-root endpoints stable, this is required for a
     // nested contenteditable (for example a text box): Chromium retains a

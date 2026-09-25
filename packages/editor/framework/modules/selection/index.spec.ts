@@ -2178,7 +2178,7 @@ describe('SelectionManager DOM selection normalization', () => {
       logger: {warn: jasmine.createSpy('warn')},
     };
     const manager = new SelectionManager(doc as any);
-    return {manager, table, c1, c4, c1Host, rootHost, doc};
+    return {manager, table, c1, c4, c1Host, rootHost, tableHost, doc};
   }
 
   it('sets a model-only table-cell selection synchronously', () => {
@@ -2216,6 +2216,29 @@ describe('SelectionManager DOM selection normalization', () => {
       headCellId: 'cell-4',
     });
     expect(manager.value?.getTableCellSelection()?.headCellId).toBe('cell-4');
+  });
+
+  it('keeps a table rectangle when toolbar hover revives its stale gap caret', () => {
+    const {manager, table, c1, c4, tableHost} = createTableManager();
+    const gap = document.createElement('span');
+    gap.setAttribute('data-block-gap-side', 'before');
+    gap.setAttribute('data-block-zero-space', 'true');
+    gap.textContent = '\u200b';
+    tableHost.prepend(gap);
+    manager.setTableCellSelection(table, c1, c4);
+
+    const nativeSelection = document.getSelection()!;
+    const range = document.createRange();
+    range.setStart(gap.firstChild!, 1);
+    range.collapse(true);
+    nativeSelection.addRange(range);
+
+    expect(manager.recalculate().value?.getTableCellSelection()?.headCellId).toBe('cell-4');
+    expect(nativeSelection.rangeCount).toBe(0);
+
+    nativeSelection.addRange(range);
+    (manager as any)._primaryPointerDown = true;
+    expect(manager.recalculate().value?.getTableCellSelection()).toBeNull();
   });
 
   it('keeps a model-only table-cell selection when Safari leaks a range outside root', () => {

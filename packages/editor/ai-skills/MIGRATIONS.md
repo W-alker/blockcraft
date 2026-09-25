@@ -68,6 +68,20 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## Unreleased — 2026-09-25：整体选中容器后批量设置文字与段落
+
+**Severity**: minor
+
+**What changed**: 固定格式工具栏和 `TextToolbarHelper` 在整体选中容器块或表格单元格区域时取得内部可编辑块，支持字体样式、字号、标题、对齐、行距和段落设置；列表转换也作用于符合条件的子块。
+
+**Why**: 容器或表格单元格区域被选中后，格式命令原本因目标不是可编辑叶块而禁用，无法一次调整内部文字。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-formatting.md`、`blockcraft-selection.md`。
+
+**New APIs / Features**: 现有工具栏命令与 `TextToolbarHelper` 方法接受整体容器和模型表格单元格区域选区；无新增调用签名。
+
+**Behavior Changes**: 文字类命令按模型树顺序处理嵌套的可编辑子块，跳过非文本及 `plainTextOnly` 子块；表格区域通过模型网格解析选中的可见主单元格，合并单元格只处理一次，畸形网格不执行。工具栏悬停意外恢复表格原生 gap 光标时，选区重算保留模型表格区域；编辑区内新的主指针手势仍可改变选区。段落设置应用到合格的内部可编辑块；混合状态从实际目标读取。普通整体叶块和折叠块间光标保持原有行为。含锁定目标时，固定工具栏禁用整批命令。无需迁移已有文档数据。
+
 ## Unreleased — 2026-09-25：快照展示补齐内置物料
 
 **Severity**: patch

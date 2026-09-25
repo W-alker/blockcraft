@@ -56,6 +56,7 @@ import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
 import { LinkInputPad } from "../../float-text-toolbar/widgets/link-input-pad";
 import { getSelectionCoveredBlockIds } from "../../../framework/modules/selection/covered-blocks";
 import { isSelectionAlive } from "../../../framework/modules/selection/liveness";
+import { getSelectionFormatBlockIds, getSelectionFormatRootIds, isSelectedContainer } from "../../../framework/utils/selection-format-blocks";
 import {
   applyOrderedMarkerStyle,
   isOrderedMarkerStyleId,
@@ -2448,11 +2449,11 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     if (!savedSelection) return;
 
     this._settingsModalRef?.close();
-    const paragraphIds = this.doc.selection.value ? this.getSelectedBlockIds(this.doc.selection.value) : [];
-    const allowDecoration = paragraphIds.length > 0 && paragraphIds.every(id => this.doc.model.getFlavour(id) === 'paragraph');
+    const formatIds = this.doc.selection.value ? this.getFormatBlockIds(this.doc.selection.value) : [];
+    const allowDecoration = formatIds.length > 0 && formatIds.every(id => this.doc.model.getFlavour(id) === 'paragraph');
     const data: ParagraphSettingsDialogData = {
       allowDecoration,
-      decoration: allowDecoration ? normalizeParagraphDecoration(this.doc.model.getProps(paragraphIds[0])?.['decoration']) : null,
+      decoration: allowDecoration ? normalizeParagraphDecoration(this.doc.model.getProps(formatIds[0])?.['decoration']) : null,
       target,
       align:
         this.activeProps.textAlign === "center" ||
@@ -3642,17 +3643,25 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   }
 
   private canTransformSelection(selection: BlockCraft.Selection | null) {
-    if (!this.isLiveSelection(selection) || selection.isAllSelected)
+    if (!this.isLiveSelection(selection) ||
+        (selection.isAllSelected && !isSelectedContainer(selection, this.doc)))
       return false;
-    if (this.isReadonlySelection(selection)) return false;
+    if (this.isReadonlyFormatSelection(selection)) return false;
 
     let between: string[];
+    let formatIds: string[];
     try {
-      between = this.getSelectedBlockIds(selection);
+      between = getSelectionFormatRootIds(selection, this.doc);
+      formatIds = this.getFormatBlockIds(selection);
     } catch {
       return false;
     }
-    if (!between.length) return false;
+    if (!between.length || !formatIds.length) return false;
+    if (between.some(id => this.doc.model?.exists(id)
+      ? this.doc.model.getNodeType(id) === BlockNodeType.block
+      : this.doc.getBlockById(id)?.nodeType === BlockNodeType.block)) {
+      return formatIds.some(id => this.isEditableTextBlockId(id));
+    }
     return between.every((id) => this.isEditableTextBlockId(id));
   }
 
@@ -3697,25 +3706,31 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     return getSelectionCoveredBlockIds(selection, this.doc);
   }
 
+  private getFormatBlockIds(selection: BlockCraft.Selection) {
+    return getSelectionFormatBlockIds(selection, this.doc);
+  }
+
   private canFormatTextSelection(selection: BlockCraft.Selection | null) {
-    if (!this.isLiveSelection(selection) || selection.isAllSelected)
+    if (!this.isLiveSelection(selection) ||
+        (selection.isAllSelected && !isSelectedContainer(selection, this.doc)))
       return false;
-    if (this.isReadonlySelection(selection)) return false;
-    if (selection.collapsed && selection.start.type !== "text") return false;
+    if (this.isReadonlyFormatSelection(selection)) return false;
+    if (selection.collapsed && selection.start.type !== "text" && !selection.getTableCellSelection?.()) return false;
     return this.hasEditableTextTarget(selection);
   }
 
   private canSetLineHeightForSelection(selection: BlockCraft.Selection | null) {
-    if (!this.isLiveSelection(selection) || selection.isAllSelected)
+    if (!this.isLiveSelection(selection) ||
+        (selection.isAllSelected && !isSelectedContainer(selection, this.doc)))
       return false;
-    if (this.isReadonlySelection(selection)) return false;
+    if (this.isReadonlyFormatSelection(selection)) return false;
 
     return this.hasEditableTextTarget(selection);
   }
 
   private hasEditableTextTarget(selection: BlockCraft.Selection) {
     try {
-      return this.getSelectedBlockIds(selection).some((id) =>
+      return this.getFormatBlockIds(selection).some((id) =>
         this.isEditableTextBlockId(id),
       );
     } catch {
@@ -3724,9 +3739,10 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   }
 
   private canSetFontScaleForSelection(selection: BlockCraft.Selection | null) {
-    if (!this.isLiveSelection(selection) || selection.isAllSelected)
+    if (!this.isLiveSelection(selection) ||
+        (selection.isAllSelected && !isSelectedContainer(selection, this.doc)))
       return false;
-    if (this.isReadonlySelection(selection)) return false;
+    if (this.isReadonlyFormatSelection(selection)) return false;
     return this.toolbarHelper.canFormatFontScale(selection);
   }
 
@@ -3759,6 +3775,13 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       this.doc.readonlyManager?.isSelectionReadonly(selection) ??
       this.doc.isReadonly
     );
+  }
+
+  private isReadonlyFormatSelection(selection: BlockCraft.Selection) {
+    if (this.isReadonlySelection(selection)) return true;
+    const readonlyManager = this.doc.readonlyManager;
+    return !!readonlyManager?.containsReadonly &&
+      getSelectionFormatRootIds(selection, this.doc).some(id => readonlyManager.containsReadonly(id));
   }
 
   private get toolbarHelper() {

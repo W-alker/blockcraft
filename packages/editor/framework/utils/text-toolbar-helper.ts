@@ -16,8 +16,8 @@ import {
   type TypographyFontFamilyId,
 } from "../block-std";
 import {getCommonAttributesFromDeltas, sliceDelta} from "../../global";
-import {getSelectionCoveredBlockIds} from "../modules/selection/covered-blocks";
 import {isSelectionAlive} from "../modules/selection/liveness";
+import {getSelectionFormatBlockIds, isSelectedContainer} from './selection-format-blocks';
 
 export interface ITextCommonAttrs {
   attrs: Map<string, any>
@@ -276,11 +276,12 @@ export class TextToolbarHelper {
   getFontScaleTargets(
     selection: BlockCraft.Selection | null = this.doc.selection.value,
   ): IFontScaleTarget[] {
-    if (!selection || !this.isSelectionAlive(selection) || selection.isAllSelected) return []
+    if (!selection || !this.isSelectionAlive(selection) ||
+        (selection.isAllSelected && !isSelectedContainer(selection, this.doc))) return []
 
     let coveredIds: string[]
     try {
-      coveredIds = getSelectionCoveredBlockIds(selection, this.doc)
+      coveredIds = getSelectionFormatBlockIds(selection, this.doc)
     } catch {
       return []
     }
@@ -343,16 +344,18 @@ export class TextToolbarHelper {
   getCurrentCommonAttrs(selection: BlockCraft.Selection): ITextCommonAttrs {
     if (!this.isSelectionAlive(selection)) return this.emptyCommonAttrs()
 
-    const firstId = this.firstBlockId(selection)
-    const lastId = this.lastBlockId(selection)
+    const between = getSelectionFormatBlockIds(selection, this.doc)
+    const editableIds = between.filter(id =>
+      this.blockNodeType(id) === BlockNodeType.editable && !this.isPlainTextBlock(id))
+    if (!editableIds.length) return this.emptyCommonAttrs()
+
+    const firstId = editableIds[0]
     const attrs = new Map<string, any>()
     let colors: Record<string, string | null>
     let props: Partial<IEditableBlockProps> = JSON.parse(JSON.stringify(this.blockProps(firstId)))
     let flavour: BlockCraft.BlockFlavour | undefined = this.blockFlavour(firstId)
-    let allEditable = this.blockNodeType(firstId) === BlockNodeType.editable && !this.isPlainTextBlock(firstId)
+    const allEditable = editableIds.length === between.length
     const paragraphStates = [this.paragraphTypographyFromProps(props)]
-
-    const between = getSelectionCoveredBlockIds(selection, this.doc)
 
     const allDeltas: DeltaInsert[] = []
     if (selection.start.type === 'text' && selection.collapsed) {
@@ -379,48 +382,32 @@ export class TextToolbarHelper {
       }
     }
 
-    if (selection.start.type === 'text') {
-      const startOffset = selection.start.offset
-      const endOffset = selection.isInSameBlock && selection.end.type === 'text'
-        ? selection.end.offset
-        : this.blockTextLength(firstId)
-      allDeltas.push(...sliceDelta(this.blockDeltas(firstId), startOffset, endOffset))
-    } else if (
-      between.includes(firstId) &&
-      this.blockNodeType(firstId) === BlockNodeType.editable &&
-      !this.isPlainTextBlock(firstId)
-    ) {
-      allDeltas.push(...this.blockDeltas(firstId))
-    }
-
-    between.filter(id => id !== firstId).forEach(blockId => {
-      if (this.blockNodeType(blockId) !== BlockNodeType.editable || this.isPlainTextBlock(blockId)) {
-        allEditable = false
-        return
+    editableIds.forEach((blockId, index) => {
+      if (index > 0) {
+        const blockProps = this.blockProps(blockId)
+        paragraphStates.push(this.paragraphTypographyFromProps(blockProps))
+        const blockFlavour = this.blockFlavour(blockId)
+        if (props.textAlign !== null && blockProps.textAlign !== props.textAlign) {
+          props.textAlign = undefined
+        }
+        if (props.heading !== null && blockProps.heading !== props.heading) {
+          props.heading = undefined
+        }
+        if (blockProps.lh !== props.lh) {
+          props.lh = undefined
+        }
+        for (const key of ['psb', 'psa'] as const) {
+          if (blockProps[key] !== props[key]) props[key] = undefined
+        }
+        if (blockFlavour !== flavour) {
+          flavour = undefined
+        }
       }
-      const blockProps = this.blockProps(blockId)
-      paragraphStates.push(this.paragraphTypographyFromProps(blockProps))
-      const blockFlavour = this.blockFlavour(blockId)
-      if (props.textAlign !== null && blockProps.textAlign !== props.textAlign) {
-        props.textAlign = undefined
-      }
-      if (props.heading !== null && blockProps.heading !== props.heading) {
-        props.heading = undefined
-      }
-      if (blockProps.lh !== props.lh) {
-        props.lh = undefined
-      }
-      for (const key of ['psb', 'psa'] as const) {
-        if (blockProps[key] !== props[key]) props[key] = undefined
-      }
-      if (blockFlavour !== flavour) {
-        flavour = undefined
-      }
-      if (blockId === lastId && !selection.isInSameBlock && selection.end.type === 'text') {
-        allDeltas.push(...sliceDelta(this.blockDeltas(blockId), 0, selection.end.offset))
-      } else {
-        allDeltas.push(...this.blockDeltas(blockId))
-      }
+      const start = selection.start.type === 'text' && blockId === selection.start.blockId
+        ? selection.start.offset : 0
+      const end = selection.end.type === 'text' && blockId === selection.end.blockId
+        ? selection.end.offset : this.blockTextLength(blockId)
+      allDeltas.push(...sliceDelta(this.blockDeltas(blockId), start, end))
     })
 
     const commonAttrs = getCommonAttributesFromDeltas(allDeltas)
@@ -523,7 +510,6 @@ export class TextToolbarHelper {
 
     const s = selection.start, e = selection.end
     const startId = this.firstBlockId(selection)
-    const endId = this.lastBlockId(selection)
 
     if (selection.collapsed && s.type === 'text') {
       const nextAttrs: Record<string, any> = {
@@ -542,41 +528,19 @@ export class TextToolbarHelper {
       })
     }
 
-    const coveredIds = getSelectionCoveredBlockIds(selection, this.doc)
+    const targets = this.getFontScaleTargets(selection)
     this.doc.crud.transact(() => {
-      if (
-        s.type === 'text' &&
-        this.blockNodeType(startId) === BlockNodeType.editable &&
-        !this.isPlainTextBlock(startId)
-      ) {
-        const len = selection.isInSameBlock && e.type === 'text'
-          ? e.offset - s.offset
-          : this.blockTextLength(startId) - s.offset
-        this.formatBlockText(startId, s.offset, len, attrs)
+      if (selection.collapsed && s.type === 'text') {
+        this.formatBlockText(startId, s.offset, 0, attrs)
       }
-
-      if (!selection.isInSameBlock && e.type === 'text') {
-        if (
-          this.blockNodeType(endId) === BlockNodeType.editable &&
-          !this.isPlainTextBlock(endId) &&
-          e.offset > 0
-        ) {
-          this.formatBlockText(endId, 0, e.offset, attrs)
-        }
-      }
-
-      if (!selection.isInSameBlock) {
-        for (const blockId of coveredIds) {
-          if (blockId === startId || blockId === endId) continue
-          if (this.blockNodeType(blockId) !== BlockNodeType.editable) continue
-          if (this.isPlainTextBlock(blockId)) continue
-          this.formatBlockText(blockId, 0, this.blockTextLength(blockId), attrs)
-        }
+      for (const target of targets) {
+        if (target.length <= 0) continue
+        this.formatBlockText(target.blockId, target.start, target.length, attrs)
       }
     })
 
     // Restore selection after DOM restructuring from format
-    if (!selection.collapsed) {
+    if (!selection.collapsed || selection.getTableCellSelection?.()) {
       this.doc.selection.setSelection(s, e)
     }
   }
@@ -588,7 +552,7 @@ export class TextToolbarHelper {
     this.doc.crud.transact(() => {
       let between: string[] = []
       try {
-        between = getSelectionCoveredBlockIds(selection, this.doc)
+        between = getSelectionFormatBlockIds(selection, this.doc)
       } catch {
         return
       }
@@ -610,7 +574,7 @@ export class TextToolbarHelper {
 
     let between: string[]
     try {
-      between = getSelectionCoveredBlockIds(selection, this.doc)
+      between = getSelectionFormatBlockIds(selection, this.doc)
     } catch {
       return
     }

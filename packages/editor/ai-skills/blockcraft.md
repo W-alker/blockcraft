@@ -26,6 +26,12 @@ A block-based rich text editor built on **Angular (standalone components)** + **
 沿用块属性事务与 Undo，默认左对齐不变。支持范围、CSS 映射和浏览器边界见
 `blockcraft-block.md`，工具栏见 `blockcraft-plugins-formatting.md`，HTML 映射见 `blockcraft-adapter.md`。
 
+整体选中容器块时，固定格式工具栏将字体、段落与标题操作应用到内部可编辑文本叶块；
+嵌套容器会递归展开，图片和 `plainTextOnly` 叶块跳过。目标与只读限制见
+`blockcraft-plugins-formatting.md`。
+表格单元格区域选区同样作用于选中可见单元格内的文本块；合并单元格只处理一次。
+工具栏悬停导致浏览器恢复表格旧 gap 光标时，模型区域选区保持；编辑区内的新点击仍改变选区。
+
 ## 贴纸块速查（未发布）
 
 `sticker` 是内置 SVG 预设的独立对象块。快照只存 `presetId`、`presetVersion`、固定 `width/height`、可选的稀疏 `colors` 和定位/旋转；SVG 源码及默认颜色仅在 `STICKER_PRESETS` 中。用 `StickerBlockSchema.createSnapshot('sunburst')` 创建，改色使用 `setStickerColor(preset, props.colors, slot, hex)` 后通过 DocCRUD 写入；恢复默认时把 `colors` 设为 null 删除属性。详细契约见 `blockcraft-block.md`，导入导出见 `blockcraft-adapter.md`。

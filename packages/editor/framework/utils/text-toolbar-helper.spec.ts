@@ -235,8 +235,8 @@ describe("TextToolbarHelper boundary selections", () => {
 
     expect((doc.crud as any).formatText.calls.allArgs()).toEqual([
       ["p1", 1, 2, {"a:bold": true}],
-      ["outside", 0, 2, {"a:bold": true}],
       ["p2", 0, 3, {"a:bold": true}],
+      ["outside", 0, 2, {"a:bold": true}],
     ]);
     expect(p2.formatText).not.toHaveBeenCalled();
     void root;
@@ -481,4 +481,201 @@ describe("TextToolbarHelper boundary selections", () => {
     expect(doc.selection.replay).toHaveBeenCalledTimes(1);
     rootHost.remove();
   }));
+});
+
+describe('TextToolbarHelper selected containers', () => {
+  const makeHarness = () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const nodes: Record<string, {type: BlockNodeType; children: string[]; parent: string | null; flavour: string; props: any; text: string}> = {
+      root: {type: BlockNodeType.root, children: ['before', 'group', 'after'], parent: null, flavour: 'root', props: {}, text: ''},
+      before: {type: BlockNodeType.editable, children: [], parent: 'root', flavour: 'paragraph', props: {depth: 0}, text: 'before'},
+      group: {type: BlockNodeType.block, children: ['p1', 'nested', 'image', 'code'], parent: 'root', flavour: 'object-group', props: {}, text: ''},
+      p1: {type: BlockNodeType.editable, children: [], parent: 'group', flavour: 'paragraph', props: {depth: 0, heading: 1}, text: 'one'},
+      nested: {type: BlockNodeType.block, children: ['p2'], parent: 'group', flavour: 'callout', props: {}, text: ''},
+      p2: {type: BlockNodeType.editable, children: [], parent: 'nested', flavour: 'paragraph', props: {depth: 0, heading: 2}, text: 'two'},
+      image: {type: BlockNodeType.void, children: [], parent: 'group', flavour: 'image', props: {}, text: ''},
+      code: {type: BlockNodeType.editable, children: [], parent: 'group', flavour: 'code', props: {depth: 0}, text: 'raw'},
+      after: {type: BlockNodeType.editable, children: [], parent: 'root', flavour: 'paragraph', props: {depth: 0}, text: 'after'},
+    };
+    const getPath = (id: string): string[] => nodes[id].parent ? [...getPath(nodes[id].parent!), id] : [id];
+    const doc: any = {
+      model: {
+        exists: (id: string) => !!nodes[id],
+        getNodeType: (id: string) => nodes[id].type,
+        getFlavour: (id: string) => nodes[id].flavour,
+        getProps: (id: string) => nodes[id].props,
+        getTextDeltas: (id: string) => [{insert: nodes[id].text}],
+        getTextLength: (id: string) => nodes[id].text.length,
+        getChildrenIds: (id: string) => nodes[id].children,
+        getParentId: (id: string) => nodes[id].parent,
+        getPath,
+        indexInParent: (id: string) => nodes[nodes[id].parent!].children.indexOf(id),
+      },
+      getBlockById: (id: string) => ({id, nodeType: nodes[id].type, flavour: nodes[id].flavour, hostElement: host}),
+      isPlainTextBlock: (id: string) => id === 'code',
+      crud: {
+        transact: (fn: () => void) => fn(),
+        formatText: jasmine.createSpy('formatText'),
+        updateBlockProps: jasmine.createSpy('updateBlockProps'),
+        replaceWithSnapshots: jasmine.createSpy('replaceWithSnapshots'),
+      },
+      selection: {
+        setSelection: jasmine.createSpy('setSelection'),
+        setSuppressRecalculate: jasmine.createSpy('setSuppressRecalculate'),
+        replay: jasmine.createSpy('replay'),
+      },
+      inputManger: {peekNextInsertAttrs: () => null},
+      schemas: {createSnapshot: jasmine.createSpy('createSnapshot').and.callFake((flavour: string, [deltas, props]: any[]) => ({id: `new-${deltas[0].insert}`, flavour, props}))},
+    };
+    const group = doc.getBlockById('group');
+    const selection = new BlockSelection(
+      {blockId: 'group', type: 'selected', block: group} as any,
+      {blockId: 'group', type: 'selected', block: group} as any,
+      'root',
+      doc.getBlockById,
+      () => 0,
+    );
+    doc.selection.value = selection;
+    return {host, doc, nodes, selection, helper: new TextToolbarHelper(doc)};
+  };
+
+  it('applies font and paragraph settings to nested editable descendants only', () => {
+    const {host, doc, selection, helper} = makeHarness();
+    expect(helper.getFontScaleTargets(selection as any).map(target => target.blockId)).toEqual(['p1', 'p2']);
+    expect(helper.getCurrentCommonAttrs(selection as any).props.heading).toBeUndefined();
+
+    helper.formatTypography({attrs: {'a:bold': true}, fontScale: 1.5}, selection as any);
+    helper.updateBlockProps({heading: 3, lh: 1.75}, selection as any);
+
+    expect(doc.crud.formatText.calls.allArgs()).toEqual([
+      ['p1', 0, 3, {'a:bold': true}],
+      ['p1', 0, 3, {'t:fs': null, 's:fontSize': null}],
+      ['p2', 0, 3, {'a:bold': true}],
+      ['p2', 0, 3, {'t:fs': null, 's:fontSize': null}],
+    ]);
+    expect(doc.crud.updateBlockProps.calls.allArgs()).toEqual([
+      ['p1', {pfs: 1.5}], ['p2', {pfs: 1.5}],
+      ['p1', {heading: 3, lh: 1.75}], ['p2', {heading: 3, lh: 1.75}],
+    ]);
+    expect(doc.selection.setSelection).toHaveBeenCalledWith(selection.start, selection.end);
+    host.remove();
+  });
+
+  it('formats inline attributes inside a selected container', () => {
+    const {host, doc, selection, helper} = makeHarness();
+    helper.formatText({'s:color': '#123456'}, selection as any);
+    expect(doc.crud.formatText.calls.allArgs()).toEqual([
+      ['p1', 0, 3, {'s:color': '#123456'}],
+      ['p2', 0, 3, {'s:color': '#123456'}],
+    ]);
+    host.remove();
+  });
+
+  it('converts only editable descendants when a selected container becomes a list', fakeAsync(() => {
+    const {host, doc, selection, helper} = makeHarness();
+    const chain: any = {};
+    chain.transact = (run: () => void) => { run(); return chain; };
+    chain.run = () => Promise.resolve();
+    doc.chain = () => chain;
+    const rafSpy = (window.requestAnimationFrame as any).and
+      ? window.requestAnimationFrame as jasmine.Spy
+      : spyOn(window, 'requestAnimationFrame');
+    rafSpy.and.callFake(callback => { callback(0); return 1; });
+
+    helper.transformBlocks('bullet', selection as any);
+    flushMicrotasks();
+
+    expect(doc.crud.replaceWithSnapshots.calls.allArgs()).toEqual([
+      ['p1', [jasmine.objectContaining({id: 'new-one', flavour: 'bullet'})]],
+      ['p2', [jasmine.objectContaining({id: 'new-two', flavour: 'bullet'})]],
+    ]);
+    expect(doc.selection.replay).toHaveBeenCalledOnceWith(selection.toJSON());
+    host.remove();
+  }));
+
+  it('keeps whole selected leaf blocks outside this formatting behavior', () => {
+    const {host, doc, helper} = makeHarness();
+    const paragraph = doc.getBlockById('before');
+    const selection = new BlockSelection(
+      {blockId: 'before', type: 'selected', block: paragraph} as any,
+      {blockId: 'before', type: 'selected', block: paragraph} as any,
+      'root', doc.getBlockById, () => 0,
+    );
+    expect(helper.getFontScaleTargets(selection as any)).toEqual([]);
+    helper.formatText({'a:bold': true}, selection as any);
+    expect(doc.crud.formatText).not.toHaveBeenCalled();
+    host.remove();
+  });
+});
+
+describe('TextToolbarHelper table cell selections', () => {
+  const makeHarness = () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const facts: Record<string, any> = {
+      table: {type: BlockNodeType.block, flavour: 'table', props: {colWidths: [100, 100]}, children: ['r0', 'r1']},
+      r0: {type: BlockNodeType.block, flavour: 'table-row', props: {}, children: ['c00', 'c01']},
+      r1: {type: BlockNodeType.block, flavour: 'table-row', props: {}, children: ['c10', 'c11']},
+      c00: {type: BlockNodeType.block, flavour: 'table-cell', props: {colspan: 2}, children: ['p00']},
+      c01: {type: BlockNodeType.block, flavour: 'table-cell', props: {display: 'none'}, children: ['p01']},
+      c10: {type: BlockNodeType.block, flavour: 'table-cell', props: {}, children: ['p10']},
+      c11: {type: BlockNodeType.block, flavour: 'table-cell', props: {}, children: ['p11']},
+    };
+    for (const id of ['p00', 'p01', 'p10', 'p11']) {
+      facts[id] = {type: BlockNodeType.editable, flavour: 'paragraph', props: {depth: 0}, children: [], text: id};
+    }
+    const doc: any = {
+      model: {
+        exists: (id: string) => !!facts[id],
+        getNodeType: (id: string) => facts[id].type,
+        getFlavour: (id: string) => facts[id].flavour,
+        getProps: (id: string) => facts[id].props,
+        getChildrenIds: (id: string) => facts[id].children,
+        getTextDeltas: (id: string) => [{insert: facts[id].text ?? ''}],
+        getTextLength: (id: string) => facts[id].text?.length ?? 0,
+      },
+      getBlockById: (id: string) => ({id, nodeType: facts[id].type, flavour: facts[id].flavour, hostElement: host}),
+      isPlainTextBlock: () => false,
+      crud: {
+        transact: (run: () => void) => run(),
+        formatText: jasmine.createSpy('formatText'),
+        updateBlockProps: jasmine.createSpy('updateBlockProps'),
+      },
+      selection: {setSelection: jasmine.createSpy('setSelection')},
+    };
+    const selection = new BlockSelection(
+      {blockId: 'c01', type: 'table-cell', tableId: 'table'} as any,
+      {blockId: 'c10', type: 'table-cell', tableId: 'table'} as any,
+      'table', doc.getBlockById, () => 0,
+    );
+    doc.selection.value = selection;
+    return {host, facts, doc, selection, helper: new TextToolbarHelper(doc)};
+  };
+
+  it('formats the visible merged-cell rectangle once and leaves hidden cells untouched', () => {
+    const {host, doc, selection, helper} = makeHarness();
+    expect(helper.getFontScaleTargets(selection as any).map(target => target.blockId)).toEqual(['p00', 'p10', 'p11']);
+    helper.formatText({'a:bold': true}, selection as any);
+    helper.updateBlockProps({heading: 2}, selection as any);
+    expect(doc.crud.formatText.calls.allArgs()).toEqual([
+      ['p00', 0, 3, {'a:bold': true}],
+      ['p10', 0, 3, {'a:bold': true}],
+      ['p11', 0, 3, {'a:bold': true}],
+    ]);
+    expect(doc.selection.setSelection).toHaveBeenCalledOnceWith(selection.start, selection.end);
+    expect(doc.crud.updateBlockProps.calls.allArgs()).toEqual([
+      ['p00', {heading: 2}], ['p10', {heading: 2}], ['p11', {heading: 2}],
+    ]);
+    host.remove();
+  });
+
+  it('does not format a malformed table rectangle', () => {
+    const {host, facts, doc, selection, helper} = makeHarness();
+    facts['r1'].children.pop();
+    expect(helper.getFontScaleTargets(selection as any)).toEqual([]);
+    helper.updateBlockProps({heading: 2}, selection as any);
+    expect(doc.crud.updateBlockProps).not.toHaveBeenCalled();
+    host.remove();
+  });
 });
