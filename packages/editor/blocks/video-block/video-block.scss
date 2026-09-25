@@ -96,6 +96,17 @@
   }
 }
 
+.video-block__placeholder-frame {
+  > .upload-hint,
+  > .peer-uploading {
+    position: absolute;
+    inset: 0;
+    box-sizing: border-box;
+    max-width: none;
+    padding: 8px;
+  }
+}
+
 .video-block__container {
   position: relative;
   overflow: hidden;

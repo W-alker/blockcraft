@@ -18,15 +18,21 @@ import {getLocalVideoUpload} from './local-video-upload';
 @Component({
   selector: 'div.video-block',
   template: `
-    @if (!props.url) {
-      <div class="upload-hint" contenteditable="false" (click)="!isReadonly && inputLocalFile()">
-        <i class="bc_icon bc_shipin"></i>
-        <span>点击插入视频</span>
-      </div>
-    } @else if (isPeerUploading) {
-      <div class="peer-uploading" contenteditable="false">
-        <div class="peer-uploading__spinner"></div>
-        <span>同步中...</span>
+    @if (!props.url || isPeerUploading) {
+      <div class="video-block__wrapper resizable-container video-block__placeholder-frame"
+           [style.width.px]="renderedWidth"
+           [style.aspect-ratio]="objectDimensions?.ar ?? 16 / 9">
+        @if (!props.url) {
+          <div class="upload-hint" contenteditable="false" (click)="!isReadonly && inputLocalFile()">
+            <i class="bc_icon bc_shipin"></i>
+            <span>点击插入视频</span>
+          </div>
+        } @else {
+          <div class="peer-uploading" contenteditable="false">
+            <div class="peer-uploading__spinner"></div>
+            <span>同步中...</span>
+          </div>
+        }
       </div>
     } @else {
       <div class="video-block__wrapper resizable-container" contenteditable="false"

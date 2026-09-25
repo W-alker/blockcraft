@@ -157,6 +157,15 @@ export function deriveInitialImageObjectSize(
       background: var(--bc-bg-secondary, #fafafa);
     }
 
+    /* The empty states occupy the same responsive frame as a loaded image. */
+    .img-wrapper[data-bc-object-sizing] > .upload-hint,
+    .img-wrapper[data-bc-object-sizing] > .peer-uploading {
+      position: absolute;
+      inset: 0;
+      box-sizing: border-box;
+      min-height: 0;
+    }
+
     .upload-hint {
       cursor: pointer;
 
