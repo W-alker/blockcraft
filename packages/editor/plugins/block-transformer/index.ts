@@ -760,7 +760,7 @@ export class BlockTransformerPlugin extends DocPlugin {
       context.triggerIndex,
     );
     const expectedText =
-      trigger === "/" || trigger === "、" ? `${trigger}${context.query}` : null;
+      trigger === "/" ? `${trigger}${context.query}` : null;
     const yText = context.block.yText;
     const textObserver = () => {
       const resolved = range.resolve();
@@ -1466,7 +1466,6 @@ export class BlockTransformerPlugin extends DocPlugin {
     if (
       inputText !== " " &&
       inputText !== "\/" &&
-      inputText !== "、" &&
       inputText !== ":"
     )
       return;
@@ -1482,7 +1481,7 @@ export class BlockTransformerPlugin extends DocPlugin {
     });
   }
 
-  private tryOpenInputTrigger(inputText: "/" | "、" | ":") {
+  private tryOpenInputTrigger(inputText: "/" | ":") {
     const selection = this.getCurrentSelection();
     if (
       !selection ||
@@ -1504,7 +1503,7 @@ export class BlockTransformerPlugin extends DocPlugin {
       this.openResolvedInputTrigger(block, inputText, triggerIndex);
       return;
     }
-    // 兜底：IME 输入 `、` 时 beforeInput 在 compositionEnd 之前触发，
+    // 兜底：输入法提交触发符时 beforeInput 可能在 compositionEnd 之前触发，
     // 但 Yjs yText 要等 compositionEnd 才落地。nextTick 时 textContent
     // 还不匹配，这里挂一次性 yText observer 等内容落地后重试。
     const yText = block.yText;
@@ -1546,7 +1545,7 @@ export class BlockTransformerPlugin extends DocPlugin {
 
   private findTriggerIndex(
     block: EditableBlockComponent,
-    trigger: "/" | "、" | ":",
+    trigger: "/" | ":",
     cursorOffset: number,
   ): number | null {
     for (const index of [cursorOffset - 1, cursorOffset]) {
@@ -1558,7 +1557,7 @@ export class BlockTransformerPlugin extends DocPlugin {
 
   private openResolvedInputTrigger(
     block: EditableBlockComponent,
-    trigger: "/" | "、" | ":",
+    trigger: "/" | ":",
     triggerIndex: number,
   ) {
     if (trigger === ":") {

@@ -313,7 +313,9 @@ new BlockGapCreatorPlugin()
 
 > `plugins/block-transformer/` — Slash menu, block-type conversion, and Markdown shortcuts.
 
-Enables slash-command (`/` or `、`) to open one grouped insertion surface,
+仅 `/` 触发插入菜单；顿号 `、` 和逗号 `，` / `,` 作为普通文本输入。
+
+Enables slash-command (`/`) to open one grouped insertion surface,
 Markdown shortcuts (e.g., `# ` for heading, `- ` for bullet), and
 `Cmd/Ctrl+0–4` to set heading levels. At the start of a paragraph the menu keeps
 the complete block + inline catalog. Inside existing paragraph text it opens an
@@ -332,7 +334,7 @@ editor-owned Y.Text and controls EmojiPicker `csQuery`; choosing a result
 atomically replaces the full `:query` range. Deleting the trigger, entering
 whitespace, moving the caret outside the range, destroying the block, or
 pressing `Escape` closes the panel. This does not change the slash catalogs:
-paragraph-start `/` / `、` keeps the complete catalog, while an in-text trigger
+paragraph-start `/` keeps the complete catalog, while an in-text trigger
 uses the inline-only catalog. The `/emoji` slash command remains available and
 keeps the picker's ordinary search input. Any arrow key
 activates the Emoji grid's virtual selection and is consumed before the

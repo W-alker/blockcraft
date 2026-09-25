@@ -6,13 +6,13 @@ export interface SlashQueryRange {
   triggerLength: number
 }
 
-/** Reads one contiguous `/query` or `、query` token from model Delta data. */
+/** Reads one contiguous `/query` token from model Delta data. */
 export function resolveSlashQueryRange(
   deltas: DeltaInsert[],
   triggerIndex: number,
 ): SlashQueryRange | null {
   const tail = deltaToString(sliceDelta(deltas, triggerIndex), '\uFFFC')
-  if (!tail || (tail[0] !== '/' && tail[0] !== '、')) return null
+  if (!tail || tail[0] !== '/') return null
   const boundary = tail.slice(1).search(/[\s\uFFFC]/)
   const query = boundary < 0 ? tail.slice(1) : tail.slice(1, boundary + 1)
   return {query, triggerLength: query.length + 1}

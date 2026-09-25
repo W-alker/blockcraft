@@ -68,6 +68,18 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## Unreleased — 2026-09-24：移除顿号触发插入菜单
+
+**Severity**: patch
+
+**What changed**: BlockTransformer 插入菜单仅由 `/` 触发，不再接受顿号 `、`。
+
+**Why**: 避免普通标点输入意外打开菜单。
+
+**Affected ai-skills files**: `blockcraft-plugins-block.md`。
+
+**Behavior Changes**: 段首及行内的 `、` 均作为普通文本；中英文逗号仍为普通文本。`/` 的段首完整菜单、行内菜单、`:` 表情入口和 Markdown 快捷转换保持原有行为。习惯使用顿号的用户改用 `/`，宿主无需改代码。
+
 ## Unreleased — 2026-09-24：浮动工具栏视觉定位参照
 
 **Severity**: minor（可选参数，无需宿主迁移）
