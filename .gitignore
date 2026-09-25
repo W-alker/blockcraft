@@ -7,7 +7,7 @@
 /bazel-out
 
 # Node
-/node_modules
+node_modules/
 npm-debug.log
 yarn-error.log
 
@@ -60,7 +60,3 @@ pnpm-lock.yaml
 .superpowers/
 /.codegraph
 /.pnpm-store
-/packages/blockcraft-agent/node_modules
-/packages/editor/node_modules/.bin/xlsx
-/packages/editor/node_modules/remark-directive
-/packages/editor/node_modules/xlsx
