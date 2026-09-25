@@ -30,6 +30,10 @@ import {
   INLINE_WORD_ART_EMBED_KEY,
   createInlineWordArtEmbedConverter,
 } from "../../embeds/word-art";
+import {
+  INLINE_STICKER_EMBED_KEY,
+  createInlineStickerEmbedConverter,
+} from "../../embeds/sticker";
 
 import {INLINE_WEATHER_EMBED_KEY, createInlineWeatherEmbedConverter} from "../../embeds/weather";
 
@@ -56,6 +60,7 @@ export function createBuiltinInlineEmbedRenderers(): Record<
     [INLINE_LATEX_EMBED_KEY]: createInlineLatexEmbedConverter().toView,
     [INLINE_SHAPE_EMBED_KEY]: createInlineShapeEmbedConverter().toView,
     [INLINE_WORD_ART_EMBED_KEY]: createInlineWordArtEmbedConverter().toView,
+    [INLINE_STICKER_EMBED_KEY]: createInlineStickerEmbedConverter().toView,
   };
 }
 
@@ -83,18 +88,21 @@ function createTextElement(item: DeltaInsertText): HTMLElement {
   const element = document.createElement(INLINE_ELEMENT_TAG)
   applyAttributes(element, item.attributes)
 
+  const text = document.createElement('c-text')
+  text.textContent = item.insert
+
   const link = item.attributes?.["a:link"]
   if (link) {
     const anchor = document.createElement("a")
     anchor.setAttribute("href", `${link}`)
     anchor.setAttribute("target", "_blank")
     anchor.setAttribute("rel", "noopener noreferrer")
-    anchor.textContent = item.insert
+    anchor.append(text)
     element.append(anchor)
     return element
   }
 
-  element.textContent = item.insert
+  element.append(text)
   return element
 }
 

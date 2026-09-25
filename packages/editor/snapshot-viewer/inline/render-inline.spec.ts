@@ -2,6 +2,7 @@ import {renderInline} from "./render-inline";
 import {inlineImageEmbedConverter} from "../../embeds/image";
 import {createInlineShapeDelta} from "../../embeds/shape";
 import {createInlineWordArtDelta} from "../../embeds/word-art";
+import {createInlineStickerDelta} from "../../embeds/sticker";
 
 describe("renderInline", () => {
   it("renders bold and link attributes into readonly inline elements", () => {
@@ -12,6 +13,7 @@ describe("renderInline", () => {
 
     expect(fragment.textContent).toBe("Hello world")
     expect(fragment.querySelector('[bold="true"]')).not.toBeNull()
+    expect(fragment.querySelectorAll('c-element c-text').length).toBe(2)
 
     const anchor = fragment.querySelector("a")
     expect(anchor).not.toBeNull()
@@ -75,6 +77,10 @@ describe("renderInline", () => {
       {width: 120, height: 48},
       [{insert: "Art"}],
     )
+    const sticker = createInlineStickerDelta(
+      {presetId: 'sunburst', presetVersion: 1},
+      {width: 80, height: 80},
+    )
 
     const fragment = renderInline([
       {insert: {icon: "bc_icon bc_document"}},
@@ -85,6 +91,7 @@ describe("renderInline", () => {
       },
       shape,
       wordArt,
+      sticker,
     ])
 
     try {
@@ -98,6 +105,8 @@ describe("renderInline", () => {
         .not.toBeNull()
       expect(fragment.querySelector(".bc-inline-word-art-shell .bc-inline-word-art__text")?.textContent)
         .toBe("Art")
+      expect(fragment.querySelector<HTMLImageElement>('.bc-inline-sticker-shell img')?.src)
+        .toContain('data:image/svg+xml')
       expect(fragment.querySelector(".bc-snapshot-inline-embed"))
         .toBeNull()
     } finally {

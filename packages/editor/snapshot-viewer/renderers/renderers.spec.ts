@@ -735,7 +735,7 @@ describe("snapshot-viewer renderers", () => {
     expect(host.querySelector('.code-block .btn-collapse')).not.toBeNull()
     expect(host.querySelector('.code-block [data-bc-print-exclude="true"]')).not.toBeNull()
     expect(host.querySelector('.mermaid-textarea.edit-container, .mermaid-textarea .edit-container')).not.toBeNull()
-    expect(host.querySelector('.mermaid-textarea .edit-container c-element[style*="color"]')).not.toBeNull()
+    expect(host.querySelector('.mermaid-textarea.edit-container c-element[style*="color"]')).not.toBeNull()
   })
 
   it("mounts iframe-style embeds only when resource loading is enabled", async () => {

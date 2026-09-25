@@ -25,6 +25,7 @@ import {projectAbsolutePlaneChildren} from "./renderers/structural-renderers";
 
 export class SnapshotRenderEngine implements SnapshotRenderer {
   private container: HTMLElement | null = null
+  private addedViewerClass = false
   private options: SnapshotViewerOptions
   private readonly renderers: SnapshotBlockRenderer[]
   private readonly enhancementCache = new Map<string, unknown>()
@@ -46,7 +47,13 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
   }
 
   render(container: HTMLElement, snapshot: IBlockSnapshot | IBlockSnapshot[]): void {
+    const alreadyOwnedViewerClass = this.container === container && this.addedViewerClass
+    if (this.container && this.container !== container && this.addedViewerClass) {
+      this.container.classList.remove('bc-snapshot-viewer')
+    }
     this.container = container
+    this.addedViewerClass = alreadyOwnedViewerClass || !container.classList.contains('bc-snapshot-viewer')
+    container.classList.add('bc-snapshot-viewer')
     this.commitRender(snapshot)
   }
 
@@ -62,8 +69,12 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
     this.disposeAllRenderedResources()
     if (this.container) {
       this.container.replaceChildren()
+      if (this.addedViewerClass) {
+        this.container.classList.remove('bc-snapshot-viewer')
+      }
     }
     this.container = null
+    this.addedViewerClass = false
     this.mountedRoot = null
   }
 
@@ -191,10 +202,8 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
     }
 
     // A renderer that implements `patch` owns its whole subtree: the engine
-    // hands over the mounted node and stops tracking children (builtin
-    // renderers define no `patch`, so this is reachable only through
-    // options.blockRenderers). Without this dispatch the documented hook would
-    // be dead API and stateful custom DOM would be clobbered by syncElement.
+    // hands over the mounted node and stops tracking children. This keeps
+    // stateful renderer DOM from being clobbered by syncElement.
     const patchingRenderer = this.renderers.find(candidate => candidate.canRender(next))
     if (patchingRenderer?.patch) {
       patchingRenderer.patch(renderContext, current, next)

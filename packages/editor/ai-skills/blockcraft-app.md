@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-09-23
+> Last updated: 2026-09-25
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -290,6 +290,8 @@ The snapshot viewer is:
 - independent from `BlockCraftDoc`, plugins, Yjs, selection, and input modules
 - optimized for snapshot-first rendering, not editing
 
+内置块的只读视觉沿用普通模式的格式投影；贴纸复用预设 SVG，日期卡、人员卡和天气卡复用原展示组件与样式档，分页符也显示同款标记。展示组件仅在对应卡片出现时挂载，更新或销毁时释放，不会建立 `BlockCraftDoc` 或 Yjs 文档。定格天气从 `props.frozen` 显示；实时天气或缺少定格数据时仍显示普通组件的占位视觉，快照本身不包含可供查询的实时天气服务。直接调用 `createSnapshotRenderer()` 时，渲染容器会自动获得主题类 `bc-snapshot-viewer`，`destroy()` 会移除由渲染器添加的类。
+
 Snapshot Viewer recognizes responsive image/video `props.wr/ar`. It applies
 the width relative to its own root content container and uses CSS
 `aspect-ratio`; legacy pixel `width/height` snapshots keep their previous
@@ -380,8 +382,8 @@ Contract:
   inside a nested block never leaks to an unmarked ancestor.
 - **`inlineEmbeds`** maps an embed key (the single key of the delta's `insert`
   object) to a view factory. It is consulted before the bundled inline Embed
-  converters (`icon`, `image`, `date`, `mention`, `latex`, `shape`, and
-  `word-art`); a factory that **throws falls back to the generic embed chip**
+  converters (`icon`, `image`, `date`, `weather`, `person`, `mention`, `latex`,
+  `shape`, `word-art`, and `sticker`); a factory that **throws falls back to the generic embed chip**
   instead of breaking the document. The editor-side `EmbedConverter` contract
   is DOM-compatible, so an existing readonly converter usually plugs in
   directly: `{person: personConverter.toView}`.

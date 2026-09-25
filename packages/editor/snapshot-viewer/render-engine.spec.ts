@@ -17,6 +17,130 @@ import {
 import {createAllBlocksFixture} from "./testing/fixtures/all-blocks.fixture";
 
 describe("SnapshotRenderEngine", () => {
+  it('applies the viewer theme scope to standalone hosts and restores their class on destroy', () => {
+    const host = document.createElement('div')
+    const renderer = createSnapshotRenderer()
+    const snapshot = wrapRoot([createParagraphFixture('scope', 'Theme scope')])
+    renderer.render(host, snapshot)
+    expect(host.classList.contains('bc-snapshot-viewer')).toBeTrue()
+    renderer.render(host, snapshot)
+    renderer.destroy()
+    expect(host.classList.contains('bc-snapshot-viewer')).toBeFalse()
+
+    const wrapped = document.createElement('div')
+    wrapped.classList.add('bc-snapshot-viewer')
+    renderer.render(wrapped, snapshot)
+    renderer.destroy()
+    expect(wrapped.classList.contains('bc-snapshot-viewer')).toBeTrue()
+  })
+
+  it('renders bundled sticker geometry and refreshes its artwork on update', () => {
+    const host = document.createElement('div')
+    const renderer = createSnapshotRenderer()
+    const sticker = (props: IBlockSnapshot['props']): IBlockSnapshot => ({
+      id: 'sticker-1', flavour: 'sticker', nodeType: BlockNodeType.void,
+      meta: {}, props, children: [],
+    })
+
+    renderer.render(host, wrapRoot([sticker({
+      presetId: 'sunburst', presetVersion: 1, width: 200, height: 100,
+      rotation: 30, colors: {ink: '#123456'},
+    })]))
+    const block = host.querySelector<HTMLElement>('[data-block-id="sticker-1"]')!
+    const surface = block.querySelector<HTMLElement>('.sticker-block__surface')!
+    const image = surface.querySelector<HTMLImageElement>('img')!
+    expect(surface.style.width).toBe('200px')
+    expect(surface.style.aspectRatio).toMatch(/^2(?:\s*\/\s*1)?$/)
+    expect(surface.style.transform).toBe('rotate(30deg)')
+    expect(decodeURIComponent(image.src)).toContain('#123456')
+
+    renderer.update(wrapRoot([sticker({
+      presetId: 'missing', presetVersion: 1, width: 120, height: 80,
+    })]))
+    expect(host.querySelector('[data-block-id="sticker-1"]')).toBe(block)
+    expect(block.querySelector('img')).toBeNull()
+    expect(block.querySelector('.sticker-block__missing')?.textContent).toBe('贴纸预设不可用')
+    expect(block.querySelector<HTMLElement>('.sticker-block__surface')!.style.width).toBe('120px')
+    renderer.destroy()
+  })
+
+  it('renders date cards with their bundled style component and updates frozen content', () => {
+    const host = document.createElement('div')
+    const renderer = createSnapshotRenderer()
+    const card = (date: string): IBlockSnapshot => ({
+      id: 'date-1', flavour: 'date-card', nodeType: BlockNodeType.void,
+      meta: {}, props: {style: 'square', date, width: 148, height: 148}, children: [],
+    })
+    renderer.render(host, wrapRoot([card('2026-09-24T10:00')]))
+    const block = host.querySelector<HTMLElement>('[data-block-id="date-1"]')!
+    expect(block.querySelector('.tpl-date-card .card__day')?.textContent?.trim()).toBe('24')
+    expect(block.style.width).toBe('148px')
+    renderer.update(wrapRoot([card('2026-09-26T10:00')]))
+    expect(host.querySelector('[data-block-id="date-1"]')).toBe(block)
+    expect(block.querySelector('.tpl-date-card .card__day')?.textContent?.trim()).toBe('26')
+    renderer.destroy()
+  })
+
+  it('renders frozen person cards and weather with their built-in display components', () => {
+    const host = document.createElement('div')
+    const renderer = createSnapshotRenderer()
+    const person: IBlockSnapshot = {
+      id: 'person-1', flavour: 'person-card', nodeType: BlockNodeType.void,
+      meta: {}, props: {
+        style: 'row', width: 183, height: 42,
+        person: JSON.stringify({name: '测试人员', pinyin: 'CE SHI REN YUAN'}),
+      }, children: [],
+    }
+    const weather = (temp: number): IBlockSnapshot => ({
+      id: 'weather-1', flavour: 'weather', nodeType: BlockNodeType.void,
+      meta: {}, props: {
+        style: 'ledger', date: '2026-09-25', width: 240, height: 80,
+        frozen: {tone: 'sunny', temp, condition: '晴', location: '上海', high: 29, low: 20},
+      }, children: [],
+    })
+    renderer.render(host, wrapRoot([person, weather(25)]))
+    const personBlock = host.querySelector<HTMLElement>('[data-block-id="person-1"]')!
+    const weatherBlock = host.querySelector<HTMLElement>('[data-block-id="weather-1"]')!
+    expect(personBlock.querySelector('.tpl-person-card')?.textContent).toContain('测试人员')
+    expect(personBlock.style.width).toBe('183px')
+    expect(weatherBlock.querySelector('.weather-card')?.textContent).toContain('25')
+    expect(weatherBlock.querySelector('.weather-card')?.textContent).toContain('上海')
+    renderer.update(wrapRoot([person, weather(28)]))
+    expect(host.querySelector('[data-block-id="weather-1"]')).toBe(weatherBlock)
+    expect(weatherBlock.querySelector('.weather-card')?.textContent).toContain('28')
+    renderer.destroy()
+  })
+
+  it('shows the built-in page divider marker', () => {
+    const host = document.createElement('div')
+    const renderer = createSnapshotRenderer()
+    renderer.render(host, wrapRoot([{
+      id: 'page-break-1', flavour: 'page-divider', nodeType: BlockNodeType.void,
+      meta: {}, props: {}, children: [],
+    }]))
+    expect(host.querySelector('.page-divider-label')?.textContent).toBe('分页符')
+    expect(host.querySelectorAll('.page-divider-seg').length).toBe(2)
+    renderer.destroy()
+  })
+
+  it('updates Mermaid text in place with the live edit-container structure', () => {
+    const host = document.createElement('div')
+    const renderer = createSnapshotRenderer({resourcePolicy: 'off'})
+    const textarea = (value: string): IBlockSnapshot => ({
+      id: 'mermaid-text-1', flavour: 'mermaid-textarea', nodeType: BlockNodeType.editable,
+      meta: {}, props: {}, children: [{insert: value}],
+    })
+    renderer.render(host, wrapRoot([textarea('graph TD;A-->B;')]))
+    const block = host.querySelector<HTMLElement>('[data-block-id="mermaid-text-1"]')!
+    expect(block.classList.contains('edit-container')).toBeTrue()
+    expect(block.querySelector('.edit-container')).toBeNull()
+
+    renderer.update(wrapRoot([textarea('graph TD;B-->C;')]))
+    expect(host.querySelector('[data-block-id="mermaid-text-1"]')).toBe(block)
+    expect(block.textContent).toBe('graph TD;B-->C;')
+    renderer.destroy()
+  })
+
   it('projects and removes paragraph decorations and region borders in preview', () => {
     const host = document.createElement('div')
     const renderer = createSnapshotRenderer()

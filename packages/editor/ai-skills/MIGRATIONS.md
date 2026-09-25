@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-09-24 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-09-25 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -67,6 +67,18 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > - `major` (e.g. 0.1.37 → 1.0.0): breaking — removed APIs, renamed exports, signature changes, behavior reversals
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
+
+## Unreleased — 2026-09-25：快照展示补齐内置物料
+
+**Severity**: patch
+
+**What changed**: Snapshot Viewer 为贴纸、天气、日期卡、人员卡、分页符和行内贴纸补齐内置只读展示；文本行内结构、代码末尾换行与 Mermaid 编辑容器对齐普通模式；独立渲染容器自动取得快照主题类。
+
+**Why**: 这些内置块此前在快照路径中会成为空壳或通用占位，且直接使用渲染器时缺少主题作用域，与普通展示的视觉结果不一致。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-app.md`。
+
+**Behavior Changes**: 现有快照不需迁移。日期卡与人员卡从快照定格字段显示；天气读取 `props.frozen`，实时或缺失数据时显示占位。卡片展示组件随块的更新和销毁释放，仍不创建 `BlockCraftDoc`。宿主自定义 renderer 的优先级保持不变。
 
 ## Unreleased — 2026-09-24：移除顿号触发插入菜单
 

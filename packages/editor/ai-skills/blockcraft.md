@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-09-24 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-09-25 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -1024,6 +1024,8 @@ Undo 历史。
 `DocExportManager` 提供 JSON、HTML、Markdown 与 PDF/打印导出，不再提供 `exportToJpeg()` 或 DOM-to-image 渲染配置。所有干净导出都使用 Revision 最终投影；存在决策或结构冲突时抛出 `RevisionConflictError`。需要位图截图的宿主应在应用层选择并维护独立的截图方案。
 
 ### Snapshot Viewer (Display Only)
+
+内置贴纸、天气、日期卡、人员卡、分页符以及行内贴纸由快照路径直接渲染；动态卡复用普通模式的只读展示组件，不建立 `BlockCraftDoc`。天气的定格数据来自快照 `props.frozen`，无定格数据时画占位。独立容器自动附着快照主题类；详见 `blockcraft-app.md`。
 
 ```typescript
 import { createSnapshotRenderer, SnapshotBlockRenderer } from '@ccc/blockcraft'

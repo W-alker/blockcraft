@@ -10,12 +10,10 @@
     min-height: 1px;
     min-width: 0;
     max-width: 100%;
-    overflow-x: hidden;
   }
 
   [data-block-id] {
     min-width: 0;
-    max-width: 100%;
     box-sizing: border-box;
   }
 
@@ -86,6 +84,75 @@
     max-width: 280px;
     font-size: 12px;
     line-height: 1.6;
+  }
+
+  .page-divider-block {
+    display: block;
+    margin: 8px 0;
+    user-select: none;
+
+    .page-divider-inner {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--bc-color-light, #8b9cad);
+      font-size: 12px;
+    }
+    .page-divider-seg {
+      flex: 1;
+      border-top: 1px dashed var(--bc-divider-color, #dddddd);
+    }
+    .page-divider-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      white-space: nowrap;
+      .bc_icon { font-size: 14px; }
+    }
+  }
+  &.bc-paginated .page-divider-block,
+  .bc-paginated .page-divider-block,
+  .bc-paginated & .page-divider-block { display: none; }
+
+  // The live sticker layout is component-scoped; the static snapshot DOM uses
+  // the same surface geometry without mounting Angular's component stylesheet.
+  .sticker-block {
+    display: block;
+    width: fit-content;
+    max-width: 100%;
+    user-select: none;
+
+    &[data-bc-placement="absolute"] {
+      max-width: none;
+    }
+
+    .sticker-block__surface {
+      position: relative;
+      max-width: 100%;
+    }
+
+    .sticker-block__surface img {
+      position: absolute;
+      inset: 0;
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: fill;
+    }
+
+    .sticker-block__missing {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      border: 1px dashed #aaa;
+      color: #777;
+      font-size: 12px;
+    }
+  }
+
+  [data-bc-object-group] .sticker-block__surface {
+    max-width: none;
   }
 
   .image-block,

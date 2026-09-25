@@ -20,11 +20,22 @@ const TEXT_FLAVOURS = new Set([
   "blockquote",
   "caption",
   "code",
-  "mermaid-textarea",
 ]);
 
 export function createTextRenderers(): SnapshotBlockRenderer[] {
   return [{
+    canRender: snapshot => snapshot.flavour === 'mermaid-textarea',
+    render: (ctx, snapshot) => renderMermaidTextarea(snapshot, ctx),
+    patch(ctx, current, next) {
+      const target = current.element
+      const fresh = createBlockShell(next)
+      fresh.classList.add('edit-container')
+      for (const name of target.getAttributeNames()) target.removeAttribute(name)
+      for (const name of fresh.getAttributeNames()) target.setAttribute(name, fresh.getAttribute(name)!)
+      target.replaceChildren(ctx.createInlineContent(next.children as InlineModel))
+      scheduleCodeHighlight(target, next, ctx, {lang: 'mermaid', withLineBreak: false})
+    },
+  }, {
     canRender: (snapshot) => TEXT_FLAVOURS.has(snapshot.flavour),
     render(ctx, snapshot) {
       switch (snapshot.flavour) {
@@ -36,8 +47,6 @@ export function createTextRenderers(): SnapshotBlockRenderer[] {
           return renderTodo(snapshot, ctx)
         case "code":
           return renderCode(snapshot, ctx)
-        case "mermaid-textarea":
-          return renderMermaidTextarea(snapshot, ctx)
         case "blockquote":
         case "caption":
         case "paragraph":
@@ -174,6 +183,7 @@ function renderCode(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   // No `host`: shiki restructures this container, so the always-placeholder
   // contract deliberately does not apply to highlighted code.
   const content = createEditableContainer(ctx, snapshot, {tag: "pre"})
+  content.append(createCodeEndBreak())
   scheduleCodeHighlight(content, snapshot, ctx, {
     lang: `${props["lang"] || "PlainText"}`,
     withLineBreak: true,
@@ -186,8 +196,11 @@ function renderCode(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
 
 function renderMermaidTextarea(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   const element = createBlockShell(snapshot)
-  element.append(createEditableContainer(ctx, snapshot))
-  scheduleCodeHighlight(element.querySelector(".edit-container") as HTMLElement, snapshot, ctx, {
+  // The live Mermaid textarea is itself the edit-container. An extra inner
+  // wrapper inherits Mermaid padding and shifts the block height by 6px.
+  element.classList.add('edit-container')
+  element.append(ctx.createInlineContent(snapshot.children as InlineModel))
+  scheduleCodeHighlight(element, snapshot, ctx, {
     lang: "mermaid",
     withLineBreak: false,
   })
@@ -225,8 +238,19 @@ function scheduleCodeHighlight(
       // inlineEmbeds AND registers resource-placeholder disposables — this
       // apply hook must not be the one inline path that skips either.
       target.append(ctx.createInlineContent(model as InlineModel))
+      if (options.withLineBreak) target.append(createCodeEndBreak())
     },
   })
+}
+
+function createCodeEndBreak(): HTMLElement {
+  // ScrollBlot keeps a terminal break in live code blocks. At narrow widths it
+  // occupies the last visual line after wrapped tokens, so omit it only at the
+  // cost of a shorter snapshot block and shifted following columns.
+  const end = document.createElement('c-element')
+  end.className = 'bc-end-break'
+  end.append(document.createElement('br'))
+  return end
 }
 
 function applyEditableProps(element: HTMLElement, snapshot: IBlockSnapshot) {
