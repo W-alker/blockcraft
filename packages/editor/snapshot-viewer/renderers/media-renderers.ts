@@ -127,9 +127,15 @@ function renderImage(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
       src,
     )
   } else {
+    element.setAttribute("data-bc-image-empty", "")
     const placeholder = document.createElement("div")
     placeholder.classList.add("upload-hint")
-    placeholder.textContent = "点击插入图片"
+    const icon = document.createElement("i")
+    icon.className = "bc_icon bc_tianjiatupian"
+    icon.setAttribute("aria-hidden", "true")
+    const label = document.createElement("span")
+    label.textContent = "点击插入图片"
+    placeholder.append(icon, label)
     wrapper.replaceChildren(placeholder)
   }
 

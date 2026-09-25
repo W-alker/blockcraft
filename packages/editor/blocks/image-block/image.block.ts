@@ -111,6 +111,7 @@ export function deriveInitialImageObjectSize(
   imports: [ShapeResizerComponent, BcResourcePlaceholderDirective],
   host: {
     '[attr.data-align]': 'props.align',
+    '[attr.data-bc-image-empty]': "resourcePreviewUrl ? null : ''",
     '[attr.data-bc-image-group-member]': "isGrouped ? '' : null"
   },
   styles: [`
@@ -144,7 +145,7 @@ export function deriveInitialImageObjectSize(
       object-fit: contain;
     }
 
-    .upload-hint, .peer-uploading {
+    .peer-uploading {
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -157,33 +158,12 @@ export function deriveInitialImageObjectSize(
       background: var(--bc-bg-secondary, #fafafa);
     }
 
-    /* The empty states occupy the same responsive frame as a loaded image. */
-    .img-wrapper[data-bc-object-sizing] > .upload-hint,
+    /* An in-flight peer resource keeps its responsive frame. */
     .img-wrapper[data-bc-object-sizing] > .peer-uploading {
       position: absolute;
       inset: 0;
       box-sizing: border-box;
       min-height: 0;
-    }
-
-    .upload-hint {
-      cursor: pointer;
-
-      &:hover {
-        border-color: var(--bc-active-color, #4857E2);
-        background: var(--bc-bg-hover, #f5f5f5);
-      }
-
-      i {
-        font-size: 28px;
-        color: var(--bc-color-light, #999);
-        margin-bottom: 8px;
-      }
-
-      span {
-        color: var(--bc-color-secondary, #666);
-        font-size: 14px;
-      }
     }
 
     .peer-uploading {

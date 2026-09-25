@@ -10,6 +10,43 @@ import {createAllBlocksFixture} from "../testing/fixtures/all-blocks.fixture";
 import {normalizeWordArtProps, WordArtBlockSchema} from "../../blocks";
 
 describe("snapshot-viewer renderers", () => {
+  it('marks only empty images for compact flow layout and clears the marker on upload', () => {
+    const image = createAllBlocksFixture().image
+    image.props = {src: '', wr: 100, ar: 1.65}
+    const host = document.createElement('div')
+    const renderer = createSnapshotRenderer({resourcePolicy: 'off'})
+    renderer.render(host, image)
+    expect(host.querySelector('.image-block')!.hasAttribute('data-bc-image-empty')).toBeTrue()
+    expect(host.querySelector('.upload-hint > span')!.textContent).toBe('点击插入图片')
+    expect(image.props).toEqual({src: '', wr: 100, ar: 1.65})
+    renderer.update({...image, props: {...image.props, src: 'https://cdn.example.com/photo.png', ar: 2}})
+    expect(host.querySelector('.image-block')!.hasAttribute('data-bc-image-empty')).toBeFalse()
+    expect(host.querySelector('.upload-hint')).toBeNull()
+    expect(host.querySelector<HTMLElement>('.img-wrapper')!.style.aspectRatio).toBe('2 / 1')
+    renderer.update(image)
+    expect(host.querySelector('.image-block')!.hasAttribute('data-bc-image-empty')).toBeTrue()
+    renderer.destroy()
+  })
+
+  it('keeps empty image placement geometry so compact flow rules exclude absolute/group members', () => {
+    for (const flavour of ['placement-layout', 'object-group'] as const) {
+      const image = createAllBlocksFixture().image
+      image.props = {src: '', wr: 50, ar: 2, position: '10 20'}
+      const host = document.createElement('div')
+      const renderer = createSnapshotRenderer({resourcePolicy: 'off'})
+      renderer.render(host, {
+        id: 'empty-plane', flavour, nodeType: BlockNodeType.block,
+        props: {width: 400, height: 300}, meta: {}, children: [image],
+      })
+      const block = host.querySelector<HTMLElement>('.image-block')!
+      expect(block.dataset['bcPlacement']).toBe('absolute')
+      expect(block.hasAttribute('data-bc-image-empty')).toBeTrue()
+      expect(block.style.left).toBe('10px')
+      expect(block.querySelector<HTMLElement>('.img-wrapper')!.style.aspectRatio).toBe('2 / 1')
+      renderer.destroy()
+    }
+  })
+
   it('preserves a rotated image wider than its visual group on render and update', () => {
     const image = createAllBlocksFixture().image
     image.props = {...image.props, wr: 160, ar: 2, rotation: 90, position: '-100 100'}

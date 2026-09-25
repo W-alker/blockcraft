@@ -288,6 +288,7 @@ describe("FixedTextToolbarComponent boundary selections", () => {
     ).toBeFalse();
     rootHost.remove();
   });
+
   it("allows spacing on a non-editable block while keeping line height unavailable", () => {
     const {component, p1, rootHost, selection} = makeHarness();
     p1.nodeType = BlockNodeType.void;
@@ -367,6 +368,108 @@ describe("FixedTextToolbarComponent boundary selections", () => {
     });
     expect(updateBlockProps).toHaveBeenCalledOnceWith(p1.id, {psb: 12, psa: 6});
     rootHost.remove();
+  });
+});
+
+describe('FixedTextToolbarComponent selected containers', () => {
+  it('enables font, paragraph, and heading commands for editable descendants', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const nodes: Record<string, any> = {
+      root: {id: 'root', flavour: 'root', nodeType: BlockNodeType.root, childrenIds: ['group'], parentId: null, props: {}},
+      group: {id: 'group', flavour: 'object-group', nodeType: BlockNodeType.block, childrenIds: ['p1', 'nested', 'image'], parentId: 'root', props: {}},
+      p1: {id: 'p1', flavour: 'paragraph', nodeType: BlockNodeType.editable, childrenIds: [], parentId: 'group', props: {depth: 0}, text: 'one'},
+      nested: {id: 'nested', flavour: 'callout', nodeType: BlockNodeType.block, childrenIds: ['p2'], parentId: 'group', props: {}},
+      p2: {id: 'p2', flavour: 'paragraph', nodeType: BlockNodeType.editable, childrenIds: [], parentId: 'nested', props: {depth: 0}, text: 'two'},
+      image: {id: 'image', flavour: 'image', nodeType: BlockNodeType.void, childrenIds: [], parentId: 'group', props: {}},
+    };
+    for (const node of Object.values(nodes)) {
+      node.hostElement = host;
+      node.parentBlock = node.parentId ? nodes[node.parentId] : null;
+    }
+    const doc: any = {
+      model: {
+        exists: (id: string) => !!nodes[id],
+        getNodeType: (id: string) => nodes[id].nodeType,
+        getFlavour: (id: string) => nodes[id].flavour,
+        getProps: (id: string) => nodes[id].props,
+        getChildrenIds: (id: string) => nodes[id].childrenIds,
+        getTextDeltas: (id: string) => [{insert: nodes[id].text ?? ''}],
+        getTextLength: (id: string) => nodes[id].text?.length ?? 0,
+      },
+      getBlockById: (id: string) => nodes[id],
+      isPlainTextBlock: () => false,
+      schemas: {get: () => null},
+      selection: {},
+    };
+    const selection = new BlockSelection(
+      {blockId: 'group', type: 'selected', block: nodes['group']} as any,
+      {blockId: 'group', type: 'selected', block: nodes['group']} as any,
+      'root', doc.getBlockById, () => 0,
+    );
+    doc.selection.value = selection;
+    const cdr = jasmine.createSpyObj<ChangeDetectorRef>('ChangeDetectorRef', ['markForCheck']);
+    const component = new FixedTextToolbarComponent(cdr);
+    component.doc = doc;
+
+    expect((component as any).canTransformSelection(selection)).toBeTrue();
+    expect((component as any).canFormatTextSelection(selection)).toBeTrue();
+    expect((component as any).canSetLineHeightForSelection(selection)).toBeTrue();
+    expect((component as any).canSetFontScaleForSelection(selection)).toBeTrue();
+    expect((component as any).canSetParagraphSpacingForSelection(selection)).toBeTrue();
+    (component as any).syncToolbarState(selection);
+    expect(component.allEditable).toBeTrue();
+    expect(component.canTransformBlocks).toBeTrue();
+    expect(component.canSetFontScale).toBeTrue();
+    expect(component.canSetLineHeight).toBeTrue();
+    expect(component.canSetParagraphSpacing).toBeTrue();
+    host.remove();
+  });
+
+  it('enables text and paragraph controls for a model table-cell selection', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const nodes: Record<string, any> = {
+      table: {id: 'table', flavour: 'table', nodeType: BlockNodeType.block, childrenIds: ['row'], props: {colWidths: [100]}},
+      row: {id: 'row', flavour: 'table-row', nodeType: BlockNodeType.block, childrenIds: ['cell'], parentId: 'table', props: {}},
+      cell: {id: 'cell', flavour: 'table-cell', nodeType: BlockNodeType.block, childrenIds: ['text'], parentId: 'row', props: {}},
+      text: {id: 'text', flavour: 'paragraph', nodeType: BlockNodeType.editable, childrenIds: [], parentId: 'cell', props: {depth: 0}, text: 'cell text'},
+    };
+    for (const node of Object.values(nodes)) {
+      node.hostElement = host;
+      node.parentBlock = node.parentId ? nodes[node.parentId] : null;
+    }
+    const doc: any = {
+      model: {
+        exists: (id: string) => !!nodes[id],
+        getNodeType: (id: string) => nodes[id].nodeType,
+        getFlavour: (id: string) => nodes[id].flavour,
+        getProps: (id: string) => nodes[id].props,
+        getChildrenIds: (id: string) => nodes[id].childrenIds,
+        getTextDeltas: (id: string) => [{insert: nodes[id].text ?? ''}],
+        getTextLength: (id: string) => nodes[id].text?.length ?? 0,
+      },
+      getBlockById: (id: string) => nodes[id],
+      isPlainTextBlock: () => false,
+      schemas: {get: () => null},
+      selection: {},
+    };
+    const point = {blockId: 'cell', type: 'table-cell', tableId: 'table', block: nodes['cell']} as any;
+    const selection = new BlockSelection(point, point, 'table', doc.getBlockById, () => 0);
+    doc.selection.value = selection;
+    const cdr = jasmine.createSpyObj<ChangeDetectorRef>('ChangeDetectorRef', ['markForCheck']);
+    const component = new FixedTextToolbarComponent(cdr);
+    component.doc = doc;
+
+    expect((component as any).canFormatTextSelection(selection)).toBeTrue();
+    expect((component as any).canTransformSelection(selection)).toBeTrue();
+    expect((component as any).canSetFontScaleForSelection(selection)).toBeTrue();
+    expect((component as any).canSetLineHeightForSelection(selection)).toBeTrue();
+    expect((component as any).canSetParagraphSpacingForSelection(selection)).toBeTrue();
+    (component as any).syncToolbarState(selection);
+    expect(component.allEditable).toBeTrue();
+    expect(component.canTransformBlocks).toBeTrue();
+    host.remove();
   });
 });
 
@@ -1668,107 +1771,5 @@ describe("FixedTextToolbarComponent extension actions", () => {
     });
 
     expect(emit).not.toHaveBeenCalled();
-  });
-});
-
-describe('FixedTextToolbarComponent selected containers', () => {
-  it('enables font, paragraph, and heading commands for editable descendants', () => {
-    const host = document.createElement('div');
-    document.body.appendChild(host);
-    const nodes: Record<string, any> = {
-      root: {id: 'root', flavour: 'root', nodeType: BlockNodeType.root, childrenIds: ['group'], parentId: null, props: {}},
-      group: {id: 'group', flavour: 'object-group', nodeType: BlockNodeType.block, childrenIds: ['p1', 'nested', 'image'], parentId: 'root', props: {}},
-      p1: {id: 'p1', flavour: 'paragraph', nodeType: BlockNodeType.editable, childrenIds: [], parentId: 'group', props: {depth: 0}, text: 'one'},
-      nested: {id: 'nested', flavour: 'callout', nodeType: BlockNodeType.block, childrenIds: ['p2'], parentId: 'group', props: {}},
-      p2: {id: 'p2', flavour: 'paragraph', nodeType: BlockNodeType.editable, childrenIds: [], parentId: 'nested', props: {depth: 0}, text: 'two'},
-      image: {id: 'image', flavour: 'image', nodeType: BlockNodeType.void, childrenIds: [], parentId: 'group', props: {}},
-    };
-    for (const node of Object.values(nodes)) {
-      node.hostElement = host;
-      node.parentBlock = node.parentId ? nodes[node.parentId] : null;
-    }
-    const doc: any = {
-      model: {
-        exists: (id: string) => !!nodes[id],
-        getNodeType: (id: string) => nodes[id].nodeType,
-        getFlavour: (id: string) => nodes[id].flavour,
-        getProps: (id: string) => nodes[id].props,
-        getChildrenIds: (id: string) => nodes[id].childrenIds,
-        getTextDeltas: (id: string) => [{insert: nodes[id].text ?? ''}],
-        getTextLength: (id: string) => nodes[id].text?.length ?? 0,
-      },
-      getBlockById: (id: string) => nodes[id],
-      isPlainTextBlock: () => false,
-      schemas: {get: () => null},
-      selection: {},
-    };
-    const selection = new BlockSelection(
-      {blockId: 'group', type: 'selected', block: nodes['group']} as any,
-      {blockId: 'group', type: 'selected', block: nodes['group']} as any,
-      'root', doc.getBlockById, () => 0,
-    );
-    doc.selection.value = selection;
-    const cdr = jasmine.createSpyObj<ChangeDetectorRef>('ChangeDetectorRef', ['markForCheck']);
-    const component = new FixedTextToolbarComponent(cdr);
-    component.doc = doc;
-
-    expect((component as any).canTransformSelection(selection)).toBeTrue();
-    expect((component as any).canFormatTextSelection(selection)).toBeTrue();
-    expect((component as any).canSetLineHeightForSelection(selection)).toBeTrue();
-    expect((component as any).canSetFontScaleForSelection(selection)).toBeTrue();
-    expect((component as any).canSetParagraphSpacingForSelection(selection)).toBeTrue();
-    (component as any).syncToolbarState(selection);
-    expect(component.allEditable).toBeTrue();
-    expect(component.canTransformBlocks).toBeTrue();
-    expect(component.canSetFontScale).toBeTrue();
-    expect(component.canSetLineHeight).toBeTrue();
-    expect(component.canSetParagraphSpacing).toBeTrue();
-    host.remove();
-  });
-
-  it('enables text and paragraph controls for a model table-cell selection', () => {
-    const host = document.createElement('div');
-    document.body.appendChild(host);
-    const nodes: Record<string, any> = {
-      table: {id: 'table', flavour: 'table', nodeType: BlockNodeType.block, childrenIds: ['row'], props: {colWidths: [100]}},
-      row: {id: 'row', flavour: 'table-row', nodeType: BlockNodeType.block, childrenIds: ['cell'], parentId: 'table', props: {}},
-      cell: {id: 'cell', flavour: 'table-cell', nodeType: BlockNodeType.block, childrenIds: ['text'], parentId: 'row', props: {}},
-      text: {id: 'text', flavour: 'paragraph', nodeType: BlockNodeType.editable, childrenIds: [], parentId: 'cell', props: {depth: 0}, text: 'cell text'},
-    };
-    for (const node of Object.values(nodes)) {
-      node.hostElement = host;
-      node.parentBlock = node.parentId ? nodes[node.parentId] : null;
-    }
-    const doc: any = {
-      model: {
-        exists: (id: string) => !!nodes[id],
-        getNodeType: (id: string) => nodes[id].nodeType,
-        getFlavour: (id: string) => nodes[id].flavour,
-        getProps: (id: string) => nodes[id].props,
-        getChildrenIds: (id: string) => nodes[id].childrenIds,
-        getTextDeltas: (id: string) => [{insert: nodes[id].text ?? ''}],
-        getTextLength: (id: string) => nodes[id].text?.length ?? 0,
-      },
-      getBlockById: (id: string) => nodes[id],
-      isPlainTextBlock: () => false,
-      schemas: {get: () => null},
-      selection: {},
-    };
-    const point = {blockId: 'cell', type: 'table-cell', tableId: 'table', block: nodes['cell']} as any;
-    const selection = new BlockSelection(point, point, 'table', doc.getBlockById, () => 0);
-    doc.selection.value = selection;
-    const cdr = jasmine.createSpyObj<ChangeDetectorRef>('ChangeDetectorRef', ['markForCheck']);
-    const component = new FixedTextToolbarComponent(cdr);
-    component.doc = doc;
-
-    expect((component as any).canFormatTextSelection(selection)).toBeTrue();
-    expect((component as any).canTransformSelection(selection)).toBeTrue();
-    expect((component as any).canSetFontScaleForSelection(selection)).toBeTrue();
-    expect((component as any).canSetLineHeightForSelection(selection)).toBeTrue();
-    expect((component as any).canSetParagraphSpacingForSelection(selection)).toBeTrue();
-    (component as any).syncToolbarState(selection);
-    expect(component.allEditable).toBeTrue();
-    expect(component.canTransformBlocks).toBeTrue();
-    host.remove();
   });
 });
