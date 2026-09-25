@@ -1,5 +1,6 @@
 <div class="bc-paragraph-layout">
   <div class="bc-paragraph-form">
+    @if (allowTextSettings) {
     <section class="bc-settings-section">
       <div class="bc-settings-field bc-settings-field--row" data-setting-field="paragraph-align">
         <span>对齐方式</span>
@@ -11,8 +12,9 @@
         </cs-select>
       </div>
     </section>
+    }
 
-    <section class="bc-settings-section">
+    <section class="bc-settings-section" data-setting-field="paragraph-spacing">
       <div class="bc-settings-grid bc-settings-grid--spacing">
         <label class="bc-settings-field">
           <span>段前</span>
@@ -32,6 +34,7 @@
             <span>pt</span>
           </div>
         </label>
+        @if (allowTextSettings) {
         <label class="bc-settings-field" data-setting-field="line-height">
           <span>行距</span>
           <cs-select csSize="sm" csVariant="outlined"
@@ -43,6 +46,7 @@
             }
           </cs-select>
         </label>
+        }
       </div>
       <p class="bc-spacing-note">
         相邻段落的间距取“段后”和“段前”的较大值。

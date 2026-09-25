@@ -527,21 +527,21 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
 
           <button
             class="toolbar-btn toolbar-btn--dropdown"
-            [title]="activeAlignAction.title"
-            [attr.aria-label]="'对齐方式：' + activeAlignAction.title"
+            [title]="allEditable ? activeAlignAction.title : '段落设置'"
+            [attr.aria-label]="allEditable ? '对齐方式：' + activeAlignAction.title : '段落设置'"
             aria-haspopup="menu"
-            [disabled]="readonly || !allEditable"
+            [disabled]="readonly || !canSetParagraphSpacing"
             csDropdown
             csTrigger="hover"
             csMatchTriggerWidth
             csOverlayClassName="bc-fixed-toolbar-dropdown"
             [csDropdownMenu]="alignDropdown"
-            [csDisabled]="readonly || !allEditable"
+            [csDisabled]="readonly || !canSetParagraphSpacing"
             [csClickHide]="false"
             csPlacement="bottom"
             #alignTrigger="csDropdown"
           >
-            <i [class]="['bc_icon', activeAlignAction.icon]"></i>
+            <i [class]="['bc_icon', allEditable ? activeAlignAction.icon : 'bc_version_settings']"></i>
             <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
           </button>
 
@@ -1271,6 +1271,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
         (onItemClick)="onAlignItemClicked($event, alignTrigger)"
         [gapAround]="8"
       >
+        @if (allEditable) {
         @for (item of alignActions; track item.value) {
           <bc-float-toolbar-item
             name="align"
@@ -1281,11 +1282,12 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
           >
         }
         <span class="bc-float-toolbar__divider"></span>
+        }
         <bc-float-toolbar-item
           name="more-paragraph-settings"
-          value="paragraph-align"
+          [value]="allEditable ? 'paragraph-align' : 'paragraph-spacing'"
           icon="bc_version_settings"
-          >更多设置…</bc-float-toolbar-item
+          >{{ allEditable ? '更多设置…' : '段落设置…' }}</bc-float-toolbar-item
         >
       </bc-float-toolbar>
     </cs-dropdown-menu>
@@ -1842,6 +1844,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
 
   /** 行间距属于块属性；混合选区中存在一个可编辑文本块即可执行。 */
   canSetLineHeight = false;
+  canSetParagraphSpacing = false;
 
   /** 字体缩放支持完整段落、局部文字与光标三种目标。 */
   canSetFontScale = false;
@@ -2227,7 +2230,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     trigger: IToolbarPopupController,
   ) {
     if (item.name === "more-paragraph-settings") {
-      trigger.close(false);
+      this.closePopupBeforeSettings(trigger);
       this.openParagraphSettings(item.value as ParagraphSettingsTarget);
       return;
     }
@@ -2321,8 +2324,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     parentTrigger?: IToolbarPopupController,
   ) {
     if (item.name === "more-font-settings") {
-      trigger.close(false);
-      parentTrigger?.close(false);
+      this.closePopupBeforeSettings(trigger, parentTrigger);
       this.openFontSettings(item.value as FontSettingsTarget);
       return;
     }
@@ -2337,8 +2339,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     parentTrigger?: IToolbarPopupController,
   ) {
     if (item.name === "more-font-settings") {
-      trigger.close(false);
-      parentTrigger?.close(false);
+      this.closePopupBeforeSettings(trigger, parentTrigger);
       this.openFontSettings(item.value as FontSettingsTarget);
       return;
     }
@@ -2353,8 +2354,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     parentTrigger?: IToolbarPopupController,
   ) {
     if (item.name === "more-font-settings") {
-      trigger.close(false);
-      parentTrigger?.close(false);
+      this.closePopupBeforeSettings(trigger, parentTrigger);
       this.openFontSettings(item.value as FontSettingsTarget);
       return;
     }
@@ -2369,8 +2369,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     parentTrigger?: IToolbarPopupController,
   ) {
     if (item.name === "more-paragraph-settings") {
-      trigger.close(false);
-      parentTrigger?.close(false);
+      this.closePopupBeforeSettings(trigger, parentTrigger);
       this.openParagraphSettings(item.value as ParagraphSettingsTarget);
       return;
     }
@@ -2383,6 +2382,16 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       },
       { allowPartialEditableBlocks: true },
     );
+  }
+
+  private closePopupBeforeSettings(
+    trigger: IToolbarPopupController,
+    parentTrigger?: IToolbarPopupController,
+  ): void {
+    // The modal restores its previously focused element on close. Hand focus
+    // back to the toolbar button so focusing the editor root cannot scroll it.
+    trigger.close(!parentTrigger);
+    parentTrigger?.close(true);
   }
 
   protected letterSpacingOptionLabel(value: number): string {
@@ -2444,17 +2453,22 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   }
 
   protected openParagraphSettings(target: ParagraphSettingsTarget): void {
-    if (!this.modalService || this.readonly || !this.canSetLineHeight) return;
+    if (!this.modalService || this.readonly || !this.canSetParagraphSpacing) return;
     const savedSelection = this.selectionJSON;
     if (!savedSelection) return;
 
     this._settingsModalRef?.close();
-    const formatIds = this.doc.selection.value ? this.getFormatBlockIds(this.doc.selection.value) : [];
-    const allowDecoration = formatIds.length > 0 && formatIds.every(id => this.doc.model.getFlavour(id) === 'paragraph');
+    const selection = this.doc.selection.value;
+    const formatIds = selection ? this.getFormatBlockIds(selection) : [];
+    const selectedSpacingOwner = selection ? this.getSelectedSpacingOwnerId(selection) : null;
+    const allowTextSettings = (!selectedSpacingOwner || this.isEditableTextBlockId(selectedSpacingOwner)) &&
+      formatIds.some(id => this.isEditableTextBlockId(id));
+    const allowDecoration = allowTextSettings && formatIds.length > 0 && formatIds.every(id => this.doc.model.getFlavour(id) === 'paragraph');
     const data: ParagraphSettingsDialogData = {
+      allowTextSettings,
       allowDecoration,
       decoration: allowDecoration ? normalizeParagraphDecoration(this.doc.model.getProps(formatIds[0])?.['decoration']) : null,
-      target,
+      target: allowTextSettings ? target : 'paragraph-spacing',
       align:
         this.activeProps.textAlign === "center" ||
         this.activeProps.textAlign === "right" ||
@@ -2545,11 +2559,24 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     this.runWithSavedSelection(
       savedSelection,
       () => {
-        this.toolbarHelper.updateBlockProps(
-          result.patch as Partial<IEditableBlockProps>,
-        );
+        const {psb, psa, ...textPatch} = result.patch;
+        const spacingPatch: Partial<IBlockProps> = {};
+        if (Object.prototype.hasOwnProperty.call(result.patch, 'psb')) spacingPatch['psb'] = psb;
+        if (Object.prototype.hasOwnProperty.call(result.patch, 'psa')) spacingPatch['psa'] = psa;
+        const selection = this.doc.selection.value;
+        if (!selection) return;
+        this.doc.crud.transact(() => {
+          if (Object.keys(textPatch).length) {
+            this.toolbarHelper.updateBlockProps(textPatch as Partial<IEditableBlockProps>, selection);
+          }
+          if (Object.keys(spacingPatch).length) {
+            for (const id of this.getParagraphSpacingTargetIds(selection)) {
+              this.doc.crud.updateBlockProps(id, spacingPatch);
+            }
+          }
+        });
       },
-      { allowPartialEditableBlocks: true },
+      { allowParagraphSpacingTargets: true },
     );
   }
 
@@ -2559,6 +2586,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     options?: {
       allowBlockTransform?: boolean;
       allowPartialEditableBlocks?: boolean;
+      allowParagraphSpacingTargets?: boolean;
       allowFontScaleTargets?: boolean;
     },
   ): void {
@@ -3014,6 +3042,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     options?: {
       allowBlockTransform?: boolean;
       allowPartialEditableBlocks?: boolean;
+      allowParagraphSpacingTargets?: boolean;
       allowFontScaleTargets?: boolean;
     },
   ) {
@@ -3023,6 +3052,8 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     const selection = this.doc.selection.value;
     const canRun = options?.allowFontScaleTargets
       ? this.canSetFontScaleForSelection(selection)
+      : options?.allowParagraphSpacingTargets
+        ? this.canSetParagraphSpacingForSelection(selection)
       : options?.allowPartialEditableBlocks
         ? this.canSetLineHeightForSelection(selection)
         : options?.allowBlockTransform
@@ -3577,6 +3608,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       this.allEditable = false;
       this.canSetFontScale = false;
       this.canSetLineHeight = false;
+      this.canSetParagraphSpacing = false;
       this.canTransformBlocks = false;
       this.canUseColumns = false;
       this.selectionJSON = null;
@@ -3594,9 +3626,10 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     this.canTransformBlocks = this.canTransformSelection(selection);
     this.canSetFontScale = this.canSetFontScaleForSelection(selection);
     this.canSetLineHeight = this.canSetLineHeightForSelection(selection);
+    this.canSetParagraphSpacing = this.canSetParagraphSpacingForSelection(selection);
     this.canUseColumns = this.canUseColumnPicker(selection);
     const canFormatText = this.canFormatTextSelection(selection);
-    if (!canFormatText && !this.canSetFontScale && !this.canSetLineHeight) {
+    if (!canFormatText && !this.canSetFontScale && !this.canSetLineHeight && !this.canSetParagraphSpacing) {
       this.activeAttrs = new Map<string, any>();
       this.activeColors = {};
       this.activeProps = {};
@@ -3623,6 +3656,11 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     this.activeParagraphTypography = common.paragraph
       ? { ...common.paragraph }
       : { pfs: null, lh: null, psb: null, psa: null };
+    if (this.canSetParagraphSpacing) {
+      const spacing = this.getCommonParagraphSpacing(selection);
+      this.activeParagraphTypography.psb = spacing.psb;
+      this.activeParagraphTypography.psa = spacing.psa;
+    }
     this.activeFlavour = common.flavour || "paragraph";
     this.allEditable = canFormatText;
     this.activeAttrs = this.allEditable
@@ -3726,6 +3764,65 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     if (this.isReadonlyFormatSelection(selection)) return false;
 
     return this.hasEditableTextTarget(selection);
+  }
+
+  private canSetParagraphSpacingForSelection(selection: BlockCraft.Selection | null) {
+    if (!this.isLiveSelection(selection)) return false;
+    if (this.isReadonlyFormatSelection(selection)) return false;
+    return this.getParagraphSpacingTargetIds(selection).length > 0;
+  }
+
+  private getParagraphSpacingTargetIds(selection: BlockCraft.Selection): string[] {
+    // A whole-block selection owns its spacing, even when text formatting
+    // expands the same selection to editable descendants (such as a caption).
+    const selectedBlockId = this.getSelectedSpacingOwnerId(selection);
+    const ids = selectedBlockId
+      ? [selectedBlockId]
+      : isSelectedContainer(selection, this.doc) || selection.getTableCellSelection?.()
+        ? this.getFormatBlockIds(selection)
+        : this.getSelectedBlockIds(selection);
+    return ids.filter(id => this.isParagraphSpacingTargetId(id));
+  }
+
+  private getSelectedSpacingOwnerId(selection: BlockCraft.Selection): string | null {
+    const id = selection.start.type === 'selected' &&
+      selection.end.type === 'selected' &&
+      selection.start.blockId === selection.end.blockId
+        ? selection.start.blockId
+        : null;
+    return id && this.isParagraphSpacingTargetId(id) ? id : null;
+  }
+
+  private isParagraphSpacingTargetId(id: string): boolean {
+    try {
+      const model = this.doc.model;
+      const inModel = model?.exists(id);
+      const block = inModel ? null : this.doc.getBlockById(id);
+      const nodeType = inModel ? model.getNodeType(id) : block?.nodeType;
+      const flavour = inModel ? model.getFlavour(id) : block?.flavour;
+      const props = inModel ? model.getProps(id) : block?.props;
+      if (nodeType !== BlockNodeType.editable && nodeType !== BlockNodeType.block && nodeType !== BlockNodeType.void) return false;
+      if (flavour === 'table-row' || flavour === 'table-cell' || flavour === 'column' || flavour === 'placement-layout' || flavour === 'object-group') return false;
+      return !props?.['position'];
+    } catch {
+      return false;
+    }
+  }
+
+  private getCommonParagraphSpacing(selection: BlockCraft.Selection): Pick<IParagraphTypographyState, 'psb' | 'psa'> {
+    const ids = this.getParagraphSpacingTargetIds(selection);
+    const values = ids.map(id => {
+      const props = this.doc.model?.exists(id) ? this.doc.model.getProps(id) : this.doc.getBlockById(id).props;
+      return {
+        psb: normalizeParagraphSpacing(props?.['psb']),
+        psa: normalizeParagraphSpacing(props?.['psa']),
+      };
+    });
+    const first = values[0] ?? {psb: null, psa: null};
+    return {
+      psb: values.every(value => value.psb === first.psb) ? first.psb : undefined,
+      psa: values.every(value => value.psa === first.psa) ? first.psa : undefined,
+    };
   }
 
   private hasEditableTextTarget(selection: BlockCraft.Selection) {

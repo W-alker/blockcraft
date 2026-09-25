@@ -155,6 +155,11 @@ function estimateBlock(
   const fallback =
     positiveNumber(options.estimatedHeights?.[flavour]) ??
     defaultHeight
+  const props = knownFacts?.props ?? doc.model.getProps(blockId) ?? {}
+  const nodeType = knownFacts?.nodeType ?? doc.model.getNodeType?.(blockId)
+  const outerSpacing = nodeType !== BlockNodeType.editable && nodeType !== BlockNodeType.root
+    ? nonEditableOuterSpacing(doc, blockId, props)
+    : 0
   visiting.add(blockId)
   try {
     const schemaEstimator = doc.schemas
@@ -163,8 +168,6 @@ function estimateBlock(
       ?.estimateHeight
     if (schemaEstimator) {
       try {
-        const props = knownFacts?.props ?? doc.model.getProps(blockId) ?? {}
-        const nodeType = knownFacts?.nodeType ?? doc.model.getNodeType?.(blockId)
         const context = {
           blockId,
           flavour,
@@ -181,7 +184,7 @@ function estimateBlock(
         } as BlockModelHeightEstimateContext
         const estimate = schemaEstimator(context)
         const height = nonNegativeNumber(estimate)
-        if (height !== null) return {height, modelDriven: true}
+        if (height !== null) return {height: height + outerSpacing, modelDriven: true}
       } catch (error) {
         doc.logger?.warn('blockModelHeightEstimatorError: ', error)
       }
@@ -189,7 +192,7 @@ function estimateBlock(
 
     const dimensions = doc.objectSizing?.resolve(
       flavour,
-      knownFacts?.props ?? doc.model.getProps(blockId),
+      props,
     )
     if (dimensions) {
       const childrenHeight = doc.model
@@ -205,16 +208,12 @@ function estimateBlock(
           0,
         )
       return {
-        height: Math.max(1, dimensions.height + childrenHeight),
+        height: Math.max(1, dimensions.height + childrenHeight) + outerSpacing,
         modelDriven: true,
       }
     }
 
-    const nodeType =
-      knownFacts?.nodeType ??
-      doc.model.getNodeType?.(blockId)
     if (nodeType === BlockNodeType.editable) {
-      const props = knownFacts?.props ?? doc.model.getProps(blockId) ?? {}
       const inlineImageHeight = estimateInlineImageLineHeight(
         doc.model.getTextDeltas?.(blockId) ?? [],
         doc.objectSizing?.rootContentWidth ?? 0,
@@ -230,13 +229,14 @@ function estimateBlock(
     }
 
     if (flavour === 'table') {
-      return estimateTableHeight(doc, blockId, options, fallback, visiting)
+      const estimate = estimateTableHeight(doc, blockId, options, fallback, visiting)
+      return {height: estimate.height + outerSpacing, modelDriven: estimate.modelDriven || outerSpacing > 0}
     }
 
     if (LINEAR_ESTIMATED_CONTAINERS.has(flavour)) {
       const children = doc.model.getChildrenIds(blockId)
       if (!children.length) {
-        return {height: fallback, modelDriven: false}
+        return {height: fallback + outerSpacing, modelDriven: outerSpacing > 0}
       }
       const childEstimates = children.map(childId =>
         estimateBlock(doc, childId, options, visiting),
@@ -248,12 +248,12 @@ function estimateBlock(
             (height, estimate) => height + estimate.height,
             0,
           ),
-        ),
-        modelDriven: childEstimates.some(estimate => estimate.modelDriven),
+        ) + outerSpacing,
+        modelDriven: childEstimates.some(estimate => estimate.modelDriven) || outerSpacing > 0,
       }
     }
 
-    return {height: fallback, modelDriven: false}
+    return {height: fallback + outerSpacing, modelDriven: outerSpacing > 0}
   } finally {
     visiting.delete(blockId)
   }
@@ -515,14 +515,28 @@ function paragraphOuterSpacing(
   }
 
   const defaultGap = nonNegativeNumber(doc.layoutMetrics?.segmentGap) ?? 10
-  const nextBefore = doc.model.getNodeType(nextId) === BlockNodeType.editable
-    ? normalizeParagraphSpacing(doc.model.getProps(nextId)?.['psb'])
-    : null
+  const nextBefore = normalizeParagraphSpacing(doc.model.getProps(nextId)?.['psb'])
   const trailing = Math.max(
     ownAfter === null ? defaultGap : paragraphPointsToPixels(ownAfter),
     paragraphPointsToPixels(nextBefore ?? 0),
   )
   return leading + trailing
+}
+
+function nonEditableOuterSpacing(
+  doc: BlockCraft.Doc,
+  blockId: string,
+  props: Record<string, unknown>,
+): number {
+  const nextId = siblingId(doc, blockId, 1)
+  const nextBefore = nextId
+    ? normalizeParagraphSpacing(doc.model.getProps(nextId)?.['psb'])
+    : null
+  if (normalizeParagraphSpacing(props['psb']) === null &&
+      normalizeParagraphSpacing(props['psa']) === null && nextBefore === null) {
+    return 0
+  }
+  return paragraphOuterSpacing(doc, blockId, props)
 }
 
 function hasParagraphTypographyFacts(props: Record<string, unknown>): boolean {

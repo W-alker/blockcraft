@@ -31,6 +31,7 @@ A block-based rich text editor built on **Angular (standalone components)** + **
 `blockcraft-plugins-formatting.md`。
 表格单元格区域选区同样作用于选中可见单元格内的文本块；合并单元格只处理一次。
 工具栏悬停导致浏览器恢复表格旧 gap 光标时，模型区域选区保持；编辑区内的新点击仍改变选区。
+非可编辑流式块可设置段前、段后间距；没有可编辑文本后代的对象选区只显示这两个字段。
 
 ## 贴纸块速查（未发布）
 

@@ -208,6 +208,24 @@ describe("snapshot-viewer renderers", () => {
     expect(element.style.getPropertyValue("--bc-block-text-indent")).toBe("")
   })
 
+  it("projects non-editable block spacing and the following block's before gap", () => {
+    const image = createAllBlocksFixture().image
+    image.props = {...image.props, psb: 6, psa: 8}
+    const next: IBlockSnapshot = {
+      id: 'after-image', flavour: 'paragraph', nodeType: BlockNodeType.editable,
+      props: {psb: 18}, meta: {}, children: [{insert: 'Next'}],
+    }
+    const host = renderFixture([image, next])
+    const element = host.querySelector<HTMLElement>('.image-block')!
+
+    expect(element.style.getPropertyValue('--bc-block-sb')).toBe('6pt')
+    expect(element.style.getPropertyValue('--bc-block-sa')).toBe('8pt')
+    expect(element.style.getPropertyValue('--bc-block-leading-sb')).toBe('6pt')
+    expect(element.hasAttribute('data-bc-block-leading-sb')).toBeTrue()
+    expect(element.style.getPropertyValue('--bc-next-block-sb')).toBe('18pt')
+    expect(element.style.getPropertyValue('--bc-block-lh')).toBe('')
+  })
+
   it("renders editable word art with CSS-owned presentation data", () => {
     const defaults = normalizeWordArtProps(
       WordArtBlockSchema.createSnapshot().props,

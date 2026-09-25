@@ -176,6 +176,22 @@ describe('estimateModelBlockHeight', () => {
     expect(estimate.height).toBe(144)
   })
 
+  it('includes authored spacing around a non-editable flow block', () => {
+    const doc = createDoc({
+      root: block('root', BlockNodeType.root, {}, ['image', 'next']),
+      image: block('image', BlockNodeType.block, {psb: 6, psa: 8}),
+      next: block('paragraph', BlockNodeType.editable, {psb: 18}),
+    }, {
+      image: () => 100,
+    })
+
+    // 100px body + 6pt leading + max(8pt after, 18pt before).
+    expect(estimateModelBlockHeightDetails(doc as any, 'image')).toEqual({
+      height: 132,
+      modelDriven: true,
+    })
+  })
+
   it('multiplies model-only line height and wrapping width by pfs', () => {
     const doc = createDoc({
       paragraph: {

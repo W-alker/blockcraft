@@ -31,6 +31,7 @@ export function createBlockShell(snapshot: IBlockSnapshot): HTMLElement {
       snapshot.nodeType,
       snapshot.props as Record<string, unknown>,
     )
+    applyBlockSpacing(element, snapshot.props as Record<string, unknown>)
   }
 
   if (snapshot.nodeType === BlockNodeType.editable) {
@@ -69,16 +70,13 @@ function applyEditableTypography(
     element.style.setProperty("--bc-block-lh", `${lineHeight}`)
   }
 
-  const spaceBefore = normalizeParagraphSpacing(props["psb"])
-  if (spaceBefore !== null) {
-    element.style.setProperty("--bc-block-sb", paragraphPointsToCss(spaceBefore))
-  }
+}
 
-  const spaceAfter = normalizeParagraphSpacing(props["psa"])
-  if (spaceAfter !== null) {
-    element.style.setProperty("--bc-block-sa", paragraphPointsToCss(spaceAfter))
-  }
-
+function applyBlockSpacing(element: HTMLElement, props: Record<string, unknown>) {
+  const before = normalizeParagraphSpacing(props["psb"])
+  const after = normalizeParagraphSpacing(props["psa"])
+  if (before !== null) element.style.setProperty("--bc-block-sb", paragraphPointsToCss(before))
+  if (after !== null) element.style.setProperty("--bc-block-sa", paragraphPointsToCss(after))
 }
 
 /**
@@ -92,21 +90,23 @@ export function projectParagraphSiblingSpacing(
   elements.forEach((element, index) => {
     element.style.removeProperty("--bc-next-block-sb")
     element.style.removeProperty("--bc-block-leading-sb")
+    element.removeAttribute("data-bc-block-leading-sb")
 
     const snapshot = snapshots[index]
     if (!snapshot) return
-    if (index === 0 && snapshot.nodeType === BlockNodeType.editable) {
+    if (index === 0) {
       const before = normalizeParagraphSpacing(snapshot.props["psb"])
       if (before !== null) {
         element.style.setProperty(
           "--bc-block-leading-sb",
           paragraphPointsToCss(before),
         )
+        element.setAttribute("data-bc-block-leading-sb", "")
       }
     }
 
     const next = snapshots[index + 1]
-    if (next?.nodeType !== BlockNodeType.editable) return
+    if (!next) return
     const nextBefore = normalizeParagraphSpacing(next.props["psb"])
     if (nextBefore !== null) {
       element.style.setProperty(

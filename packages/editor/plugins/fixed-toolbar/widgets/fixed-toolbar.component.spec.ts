@@ -288,6 +288,86 @@ describe("FixedTextToolbarComponent boundary selections", () => {
     ).toBeFalse();
     rootHost.remove();
   });
+  it("allows spacing on a non-editable block while keeping line height unavailable", () => {
+    const {component, p1, rootHost, selection} = makeHarness();
+    p1.nodeType = BlockNodeType.void;
+    p1.flavour = 'divider';
+    p1.props = {psb: 6, psa: 12};
+    const range = selection(0, 1);
+
+    expect((component as any).canSetParagraphSpacingForSelection(range)).toBeTrue();
+    expect((component as any).canSetLineHeightForSelection(range)).toBeFalse();
+    expect((component as any).getCommonParagraphSpacing(range)).toEqual({psb: 6, psa: 12});
+    rootHost.remove();
+  });
+
+  it("writes spacing to editable and non-editable blocks in one transaction", () => {
+    const {component, p2, rootHost, selection} = makeHarness();
+    p2.nodeType = BlockNodeType.void;
+    p2.flavour = 'divider';
+    const range = selection(0, 2);
+    const transact = jasmine.createSpy('transact').and.callFake((run: () => void) => run());
+    const updateBlockProps = jasmine.createSpy('updateBlockProps');
+    const updateTextProps = jasmine.createSpy('updateTextProps');
+    component.doc = {
+      ...component.doc,
+      selection: {value: range},
+      crud: {transact, updateBlockProps},
+    } as any;
+    component.utils = {updateBlockProps: updateTextProps} as any;
+    spyOn<any>(component, 'runWithSavedSelection').and.callFake(
+      (_saved: unknown, run: () => void) => run(),
+    );
+
+    (component as any).applyParagraphSettingsResult(range.toJSON(), {
+      patch: {lh: 1.5, psb: 6, psa: 12},
+    });
+
+    expect(transact).toHaveBeenCalledTimes(1);
+    expect(updateTextProps).toHaveBeenCalledOnceWith({lh: 1.5}, range);
+    expect(updateBlockProps).toHaveBeenCalledTimes(2);
+    expect(updateBlockProps).toHaveBeenCalledWith('p1', {psb: 6, psa: 12});
+    expect(updateBlockProps).toHaveBeenCalledWith('p2', {psb: 6, psa: 12});
+    rootHost.remove();
+  });
+
+  it("writes spacing to a selected image instead of its editable caption", () => {
+    const {component, p1, rootHost} = makeHarness();
+    p1.nodeType = BlockNodeType.block;
+    p1.flavour = 'image';
+    (p1 as any).childrenIds = ['caption'];
+    const caption = {
+      id: 'caption', flavour: 'paragraph', nodeType: BlockNodeType.editable,
+      parentId: p1.id, parentBlock: p1, childrenIds: [], props: {},
+      hostElement: document.createElement('p'),
+    };
+    p1.hostElement.appendChild(caption.hostElement);
+    const getBlockById = component.doc.getBlockById.bind(component.doc);
+    const resolveBlock = (id: string) => id === caption.id ? caption : getBlockById(id);
+    const selectedImage = new BlockSelection(
+      {blockId: p1.id, type: 'selected', block: p1} as any,
+      {blockId: p1.id, type: 'selected', block: p1} as any,
+      'root', resolveBlock as any, () => 0,
+    );
+    const updateBlockProps = jasmine.createSpy('updateBlockProps');
+    component.doc = {
+      ...component.doc,
+      getBlockById: resolveBlock,
+      selection: {value: selectedImage},
+      crud: {transact: (run: () => void) => run(), updateBlockProps},
+    } as any;
+    spyOn<any>(component, 'runWithSavedSelection').and.callFake(
+      (_saved: unknown, run: () => void) => run(),
+    );
+
+    expect((component as any).getSelectedSpacingOwnerId(selectedImage)).toBe(p1.id);
+    expect((component as any).getParagraphSpacingTargetIds(selectedImage)).toEqual([p1.id]);
+    (component as any).applyParagraphSettingsResult(selectedImage.toJSON(), {
+      patch: {psb: 12, psa: 6},
+    });
+    expect(updateBlockProps).toHaveBeenCalledOnceWith(p1.id, {psb: 12, psa: 6});
+    rootHost.remove();
+  });
 });
 
 describe("FixedTextToolbarComponent block insertion placement", () => {
@@ -1295,6 +1375,45 @@ describe("FixedTextToolbarComponent typography ownership", () => {
     return new FixedTextToolbarComponent(cdr);
   };
 
+  for (const [handler, target] of [
+    ["onFontFamilyItemClicked", "font-family"],
+    ["onFontScaleItemClicked", "font-scale"],
+    ["onLetterSpacingItemClicked", "letter-spacing"],
+  ] as const) {
+    it(`returns focus to the toolbar button before opening ${target} settings`, () => {
+      const component = createComponent();
+      const close = jasmine.createSpy("close");
+      const openFontSettings = spyOn<any>(component, "openFontSettings");
+
+      (component as any)[handler](
+        { name: "more-font-settings", value: target },
+        { close },
+      );
+
+      expect(close).toHaveBeenCalledOnceWith(true);
+      expect(close).toHaveBeenCalledBefore(openFontSettings);
+      expect(openFontSettings).toHaveBeenCalledOnceWith(target);
+    });
+  }
+
+  it("returns focus to the outer button before opening font settings from a submenu", () => {
+    const component = createComponent();
+    const closeSubmenu = jasmine.createSpy("closeSubmenu");
+    const closeParent = jasmine.createSpy("closeParent");
+    const openFontSettings = spyOn<any>(component, "openFontSettings");
+
+    (component as any).onFontScaleItemClicked(
+      { name: "more-font-settings", value: "font-scale" },
+      { close: closeSubmenu },
+      { close: closeParent },
+    );
+
+    expect(closeSubmenu).toHaveBeenCalledOnceWith(false);
+    expect(closeParent).toHaveBeenCalledOnceWith(true);
+    expect(closeParent).toHaveBeenCalledBefore(openFontSettings);
+    expect(openFontSettings).toHaveBeenCalledOnceWith("font-scale");
+  });
+
   it("writes compact inline typography through the selection helper", () => {
     const component = createComponent();
     const formatText = jasmine.createSpy("formatText");
@@ -1362,6 +1481,54 @@ describe("FixedTextToolbarComponent typography ownership", () => {
 
     expect(close).toHaveBeenCalled();
     expect(updateBlockProps).toHaveBeenCalledOnceWith({ textAlign: "right" });
+  });
+
+  it("returns focus to the alignment button before opening paragraph settings", () => {
+    const component = createComponent();
+    const close = jasmine.createSpy("close");
+    const openParagraphSettings = spyOn<any>(component, "openParagraphSettings");
+
+    (component as any).onAlignItemClicked(
+      { name: "more-paragraph-settings", value: "paragraph-spacing" },
+      { close },
+    );
+
+    expect(close).toHaveBeenCalledOnceWith(true);
+    expect(close).toHaveBeenCalledBefore(openParagraphSettings);
+    expect(openParagraphSettings).toHaveBeenCalledOnceWith("paragraph-spacing");
+  });
+
+  it("returns focus to the outer toolbar button from the line-height submenu", () => {
+    const component = createComponent();
+    const closeSubmenu = jasmine.createSpy("closeSubmenu");
+    const closeParent = jasmine.createSpy("closeParent");
+    const openParagraphSettings = spyOn<any>(component, "openParagraphSettings");
+
+    (component as any).onLineHeightItemClicked(
+      { name: "more-paragraph-settings", value: "paragraph-spacing" },
+      { close: closeSubmenu },
+      { close: closeParent },
+    );
+
+    expect(closeSubmenu).toHaveBeenCalledOnceWith(false);
+    expect(closeParent).toHaveBeenCalledOnceWith(true);
+    expect(closeParent).toHaveBeenCalledBefore(openParagraphSettings);
+    expect(openParagraphSettings).toHaveBeenCalledOnceWith("paragraph-spacing");
+  });
+
+  it("returns focus to the line-height button when it has no parent menu", () => {
+    const component = createComponent();
+    const close = jasmine.createSpy("close");
+    const openParagraphSettings = spyOn<any>(component, "openParagraphSettings");
+
+    (component as any).onLineHeightItemClicked(
+      { name: "more-paragraph-settings", value: "paragraph-line-height" },
+      { close },
+    );
+
+    expect(close).toHaveBeenCalledOnceWith(true);
+    expect(close).toHaveBeenCalledBefore(openParagraphSettings);
+    expect(openParagraphSettings).toHaveBeenCalledOnceWith("paragraph-line-height");
   });
 
   it("writes line height as a paragraph property", () => {
@@ -1549,11 +1716,13 @@ describe('FixedTextToolbarComponent selected containers', () => {
     expect((component as any).canFormatTextSelection(selection)).toBeTrue();
     expect((component as any).canSetLineHeightForSelection(selection)).toBeTrue();
     expect((component as any).canSetFontScaleForSelection(selection)).toBeTrue();
+    expect((component as any).canSetParagraphSpacingForSelection(selection)).toBeTrue();
     (component as any).syncToolbarState(selection);
     expect(component.allEditable).toBeTrue();
     expect(component.canTransformBlocks).toBeTrue();
     expect(component.canSetFontScale).toBeTrue();
     expect(component.canSetLineHeight).toBeTrue();
+    expect(component.canSetParagraphSpacing).toBeTrue();
     host.remove();
   });
 
@@ -1596,6 +1765,7 @@ describe('FixedTextToolbarComponent selected containers', () => {
     expect((component as any).canTransformSelection(selection)).toBeTrue();
     expect((component as any).canSetFontScaleForSelection(selection)).toBeTrue();
     expect((component as any).canSetLineHeightForSelection(selection)).toBeTrue();
+    expect((component as any).canSetParagraphSpacingForSelection(selection)).toBeTrue();
     (component as any).syncToolbarState(selection);
     expect(component.allEditable).toBeTrue();
     expect(component.canTransformBlocks).toBeTrue();

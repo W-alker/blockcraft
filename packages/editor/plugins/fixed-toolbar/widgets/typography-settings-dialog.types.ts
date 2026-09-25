@@ -10,7 +10,7 @@ export type FontSettingsTarget =
   | "font-scale"
   | "letter-spacing";
 
-export type ParagraphSettingsTarget = "paragraph-align" | "line-height";
+export type ParagraphSettingsTarget = "paragraph-align" | "line-height" | "paragraph-spacing";
 
 export interface FontSettingsDialogData {
   target: FontSettingsTarget;
@@ -38,6 +38,7 @@ export interface FontSettingsDialogResult {
 export interface ParagraphSettingsDialogData {
   decoration?: ParagraphDecoration | null;
   allowDecoration?: boolean;
+  allowTextSettings?: boolean;
   target: ParagraphSettingsTarget;
   align: IBlockProps["textAlign"] | "left";
   defaults: {

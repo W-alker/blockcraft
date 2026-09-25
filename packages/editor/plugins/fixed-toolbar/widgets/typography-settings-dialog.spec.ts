@@ -129,6 +129,28 @@ describe("typography settings dialogs", () => {
       patch: {lh: 1.75, psb: 12, psa: 0},
     });
   });
+
+  it('shows only spacing for a non-editable block', async () => {
+    await TestBed.configureTestingModule({
+      imports: [NoopAnimationsModule, ParagraphSettingsDialogComponent],
+      providers: [{provide: CS_MODAL_DATA, useValue: {
+        target: 'paragraph-spacing', align: 'left', allowTextSettings: false,
+        defaults: {lineHeight: 1.5, spaceAfter: 7.5},
+        paragraph: {psb: 6, psa: 12},
+      }}],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(ParagraphSettingsDialogComponent);
+    fixture.detectChanges();
+    const component = fixture.componentInstance as any;
+
+    expect(fixture.nativeElement.querySelector('[data-setting-field="paragraph-align"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-setting-field="line-height"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-setting-field="paragraph-spacing"]')).not.toBeNull();
+    component.setSpacing('psb', 8);
+    component.setLineHeight(2);
+    component.setAlign('center');
+    expect(component.buildResult()).toEqual({patch: {psb: 8}});
+  });
   it('previews both justified modes and clears last-line expansion when switching back', async () => {
     await TestBed.configureTestingModule({
       imports: [NoopAnimationsModule, ParagraphSettingsDialogComponent],

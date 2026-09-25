@@ -100,6 +100,12 @@ import {BlockNodeType} from '../../types'
       <p data-block-id="after-callout" data-node-type="editable">
         paragraph after callout
       </p>
+      <div data-block-id="object-spacing" data-node-type="void"
+        data-bc-block-leading-sb
+        style="--bc-block-leading-sb: 6pt; --bc-block-sa: 8pt; --bc-next-block-sb: 18pt">
+        object
+      </div>
+      <p data-block-id="after-object" data-node-type="editable">after object</p>
     </div>
   `,
 })
@@ -145,6 +151,24 @@ describe('BaseBlockComponent typography projection', () => {
     expect(block.blockSpaceAfter).toBe('12pt')
     expect(block.leadingBlockSpaceBefore).toBe('6pt')
     expect(block.nextBlockSpaceBefore).toBe('20pt')
+  })
+
+  it('projects spacing on a non-editable flow block without projecting text line height', () => {
+    const image = createBlock({psb: 6, psa: 12, lh: 2}, BlockNodeType.block)
+    ;(image as any).doc = {
+      model: {
+        getPreviousSiblingId: () => null,
+        getNextSiblingId: () => 'next',
+        getProps: () => ({psb: 18}),
+      },
+    }
+
+    expect(image.blockSpaceBefore).toBe('6pt')
+    expect(image.blockSpaceAfter).toBe('12pt')
+    expect(image.leadingBlockSpaceBefore).toBe('6pt')
+    expect(image.leadingBlockSpaceBeforeAttribute).toBe('')
+    expect(image.nextBlockSpaceBefore).toBe('18pt')
+    expect(image.blockLineHeight).toBeNull()
   })
 
   it('applies block line height to headings and normal editable blocks', async () => {
@@ -230,6 +254,12 @@ describe('BaseBlockComponent typography projection', () => {
     )!
     expect(Number.parseFloat(getComputedStyle(calloutFinal).marginBottom))
       .toBeCloseTo(28, 3)
+
+    const object = host.querySelector<HTMLElement>(
+      '[data-block-id="object-spacing"]',
+    )!
+    expect(Number.parseFloat(getComputedStyle(object).paddingBlockStart)).toBeCloseTo(8, 3)
+    expect(Number.parseFloat(getComputedStyle(object).marginBottom)).toBeCloseTo(24, 3)
 
     fixture.destroy()
   })

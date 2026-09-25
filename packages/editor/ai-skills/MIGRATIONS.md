@@ -68,6 +68,18 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## Unreleased — 2026-09-25：非可编辑流式块支持段前段后
+
+**Severity**: minor
+
+**What changed**: 固定工具栏的段落设置可对图片、分隔线等非可编辑流式块写入 `psb` / `psa`。实时视图、Snapshot Viewer 与虚拟高度估算按相邻块的单一间距规则投影这些值。
+
+**Why**: 之前工具栏要求可编辑文本目标，非可编辑块无法设置段前段后，已有字段在其视图上也不生效。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-formatting.md`。
+
+**Behavior Changes**: 整体选中的非可编辑流式块在段落弹窗中只显示段前段后，即使自身包含可编辑标题；混合选区一次事务更新各自适用的目标。行距和文本对齐仍仅作用于可编辑文本块；绝对定位对象及结构性行、单元格、分栏不参与流式间距。现有快照无需迁移。
+
 ## Unreleased — 2026-09-25：整体选中容器后批量设置文字与段落
 
 **Severity**: minor
@@ -80,7 +92,7 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 **New APIs / Features**: 现有工具栏命令与 `TextToolbarHelper` 方法接受整体容器和模型表格单元格区域选区；无新增调用签名。
 
-**Behavior Changes**: 文字类命令按模型树顺序处理嵌套的可编辑子块，跳过非文本及 `plainTextOnly` 子块；表格区域通过模型网格解析选中的可见主单元格，合并单元格只处理一次，畸形网格不执行。工具栏悬停意外恢复表格原生 gap 光标时，选区重算保留模型表格区域；编辑区内新的主指针手势仍可改变选区。段落设置应用到合格的内部可编辑块；混合状态从实际目标读取。普通整体叶块和折叠块间光标保持原有行为。含锁定目标时，固定工具栏禁用整批命令。无需迁移已有文档数据。
+**Behavior Changes**: 文字类命令按模型树顺序处理嵌套的可编辑子块，跳过非文本及 `plainTextOnly` 子块；表格区域通过模型网格解析选中的可见主单元格，合并单元格只处理一次，畸形网格不执行。工具栏悬停意外恢复表格原生 gap 光标时，选区重算保留模型表格区域；编辑区内新的主指针手势仍可改变选区。整体选中的合格流式块自身承载段前段后；结构性容器和表格区域按内部合格块处理。混合状态从实际目标读取。普通整体叶块和折叠块间光标保持原有行为。含锁定目标时，固定工具栏禁用整批命令。无需迁移已有文档数据。
 
 ## Unreleased — 2026-09-25：快照展示补齐内置物料
 

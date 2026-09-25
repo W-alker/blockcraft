@@ -2080,18 +2080,20 @@ EditableBlockComponent 通过 `data-bc-text-align` 标记两种新模式；列�
 分散对齐以原生 CSS 实现：不支持 `text-justify: inter-character` 的引擎仍撑满末行，
 但英文可能按词而不是逐字符分配空隙。普通左／中／右对齐不变。
 
-Editable rich-text blocks also accept compact paragraph typography props:
+Editable rich-text blocks accept compact text typography props; flow blocks of
+any node type can store the spacing props:
 
 | Prop  | Unit / range     | Meaning                                                |
 | ----- | ---------------- | ------------------------------------------------------ |
 | `pfs` | ratio, `0.5..3`  | Paragraph base font scale; missing/`null` inherits `1` |
 | `lh`  | unitless, `1..3` | Paragraph line-height ratio; missing inherits the root |
-| `psb` | pt, `0..120`     | Space before                                           |
-| `psa` | pt, `0..120`     | Space after; missing inherits `--bc-segments-gap`      |
+| `psb` | pt, `0..120`     | Space before a flow block                              |
+| `psa` | pt, `0..120`     | Space after a flow block; missing inherits `--bc-segments-gap` |
 
-Adjacent paragraph spacing is one physical gap: `max(previous.psa,
-next.psb)`. The first child's `psb` becomes leading block padding and the last
-child has no trailing gap. This avoids margin collapse differences and keeps
+Adjacent block spacing is one physical gap: `max(previous.psa,
+next.psb)`. The first child's `psb` becomes leading block padding and an
+explicit final `psa` remains visible. Absolute objects do not use flow spacing.
+This avoids margin collapse differences and keeps
 pagination's `border-box + margin-bottom` stride authoritative. Use the shared
 `normalizeParagraphSpacing()` and `paragraphPointsToCss/Pixels()` rather than
 writing unbounded values or assuming `1pt === 1px`.
@@ -2112,10 +2114,13 @@ following paragraph's `psb` also invalidate the preceding mounted sibling,
 because that sibling owns the effective physical gap.
 When a container is selected as a whole block, `TextToolbarHelper` expands its
 nested children before applying text and paragraph formatting. Only eligible
-editable descendants receive heading, alignment, line-height, paragraph
-spacing, typography and inline style changes; the container's own props are
-left intact. Non-text descendants do not receive text styles. Font scale on a
-complete editable descendant writes its paragraph `pfs`.
+editable descendants receive heading, alignment, line-height, typography and
+inline style changes; the container's own props are left intact. Non-text
+descendants do not receive text styles; the paragraph dialog's separate
+before/after spacing rule targets directly covered flow blocks, including a
+selected non-editable container itself. A pure object selection exposes only
+before/after spacing. Font scale
+on a complete editable descendant writes its paragraph `pfs`.
 Table-cell rectangle selections use the table model's visible master cells as
 format roots, so merged cells are handled once and unselected/hidden cells do
 not receive formatting.

@@ -142,6 +142,13 @@
       );
     }
 
+    // A flow object at the start of a container owns its authored before gap.
+    // Keep this conditional so object hosts with their own padding are unchanged
+    // until paragraph spacing is explicitly assigned.
+    &[data-bc-block-leading-sb]:not([data-node-type="editable"]):not([data-bc-placement="absolute"]) {
+      padding-block-start: var(--bc-block-leading-sb);
+    }
+
     &.selected {
       // This class is reserved for explicit/model-owned block interaction
       // state. Native-backed ranges never reuse its opaque host fill.

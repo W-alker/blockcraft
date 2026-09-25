@@ -299,7 +299,6 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
 
   @HostBinding('style.--bc-block-sb')
   get blockSpaceBefore(): string | null {
-    if (this.nodeType !== BlockNodeType.editable) return null
     return this._paragraphPointCss(
       normalizeParagraphSpacing(this._native?.props?.['psb']),
     )
@@ -307,7 +306,6 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
 
   @HostBinding('style.--bc-block-sa')
   get blockSpaceAfter(): string | null {
-    if (this.nodeType !== BlockNodeType.editable) return null
     return this._paragraphPointCss(
       normalizeParagraphSpacing(this._native?.props?.['psa']),
     )
@@ -323,9 +321,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   get nextBlockSpaceBefore(): string | null {
     const model = this.doc?.model
     const nextId = model?.getNextSiblingId?.(this.id)
-    if (!nextId || model.getNodeType(nextId) !== BlockNodeType.editable) {
-      return null
-    }
+    if (!nextId) return null
     return this._paragraphPointCss(
       normalizeParagraphSpacing(model.getProps(nextId)?.['psb']),
     )
@@ -333,10 +329,14 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
 
   @HostBinding('style.--bc-block-leading-sb')
   get leadingBlockSpaceBefore(): string | null {
-    if (this.nodeType !== BlockNodeType.editable) return null
     const model = this.doc?.model
     if (model?.getPreviousSiblingId?.(this.id)) return null
     return this.blockSpaceBefore
+  }
+
+  @HostBinding('attr.data-bc-block-leading-sb')
+  get leadingBlockSpaceBeforeAttribute(): '' | null {
+    return this.leadingBlockSpaceBefore === null ? null : ''
   }
 
   private _meta!: Model['meta']

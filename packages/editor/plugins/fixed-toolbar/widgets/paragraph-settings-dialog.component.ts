@@ -54,6 +54,7 @@ export class ParagraphSettingsDialogComponent {
   protected readonly lengthMode = decorationLengthMode;
   protected readonly lengthValue = decorationLengthValue;
   protected readonly allowDecoration = this.data.allowDecoration ?? false;
+  protected readonly allowTextSettings = this.data.allowTextSettings ?? true;
   protected readonly decoration = signal(normalizeParagraphDecoration(this.data.decoration));
   protected readonly decorationStyle = computed(() => paragraphDecorationStyles(this.decoration(), this.align()));
   protected readonly positions = [
@@ -180,11 +181,11 @@ export class ParagraphSettingsDialogComponent {
 
   buildResult(): ParagraphSettingsDialogResult {
     const patch: ParagraphSettingsDialogResult["patch"] = {};
-    if (this.dirty.has("textAlign")) {
+    if (this.allowTextSettings && this.dirty.has("textAlign")) {
       const align = this.align();
       patch.textAlign = align === "left" ? null : align;
     }
-    if (this.dirty.has("lh")) patch.lh = this.lineHeight();
+    if (this.allowTextSettings && this.dirty.has("lh")) patch.lh = this.lineHeight();
     if (this.dirty.has("psb")) {
       patch.psb = this.spaceBefore() === 0 ? null : this.spaceBefore();
     }

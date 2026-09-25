@@ -281,6 +281,14 @@ new TextMarkerPlugin(["paragraph", "blockquote"]);
   rectangle uses its selected visible master cells (including merged-cell
   closure) as roots, then applies the same commands to their editable
   descendants. Ordinary whole-leaf selections keep their existing behavior.
+- Paragraph settings expose before/after spacing for a selected non-editable
+  flow block. The dialog hides alignment and line height for a whole selected
+  non-editable flow block or a selection without eligible rich-text descendants.
+  In mixed selections, spacing updates covered
+  flow blocks while text-only fields update eligible editable descendants in
+  the same transaction. Absolute objects and structural row/cell/column blocks
+  are excluded from flow spacing. A whole selected image or other eligible
+  container owns its own spacing; an editable caption does not receive that value.
 - Heading and list transforms work on cross-block text selections as long as every covered block is editable and not `plainTextOnly`.
 - The ordered-list control is a split button: its main area toggles the list, while the caret opens the ordered marker library. Picking a marker updates each automatic-numbering group reached by the selection; same-level ordinary paragraphs do not split that group.
 - Link and inline-formula actions remain restricted to same-block text selections; on cross-block selections the buttons stay visible but disabled.
