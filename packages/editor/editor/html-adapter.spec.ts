@@ -214,7 +214,7 @@ describe('HtmlAdapter', () => {
     expect(importedShape.props['position']).toEqual("30 40")
   });
 
-  it('round-trips render-unit padding and background image props', async () => {
+  it('round-trips render-unit padding, typography and background image props', async () => {
     const region: IBlockSnapshot = {
       id: 'region-1',
       flavour: 'render-unit',
@@ -224,6 +224,10 @@ describe('HtmlAdapter', () => {
         ar: 2,
         backColor: '#fff7d6',
         borderColor: '#dfab01',
+        textFamily: 'serif',
+        textFont: '24px 600 normal',
+        textSpacing: '0.05em 1.5',
+        textFill: '#224466',
         p: [8, 12, 16, 20],
         bgi: "url(\"https://cdn.example.com/paper.png\") 30% 70% / contain no-repeat",
 
@@ -238,6 +242,7 @@ describe('HtmlAdapter', () => {
     expect(html).toContain('data-bc-p="8 12 16 20"');
     expect(html).toContain('data-bc-wr="50"');
     expect(html).toContain('data-bc-ar="2"');
+    expect(html).toContain('data-bc-text-font="24px 600 normal"');
     expect(new DOMParser().parseFromString(html, 'text/html')
       .querySelector('[data-bc-block="render-unit"]')?.getAttribute('data-bc-bgi'))
       .toBe(region.props['bgi'] as string);

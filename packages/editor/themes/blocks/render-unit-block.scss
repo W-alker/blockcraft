@@ -69,6 +69,13 @@
     z-index: 1;
     min-height: inherit;
     box-sizing: border-box;
+    font-family: var(--bc-render-unit-text-font-family, inherit);
+    font-size: var(--bc-render-unit-text-font-size, inherit);
+    font-weight: var(--bc-render-unit-text-font-weight, inherit);
+    font-style: var(--bc-render-unit-text-font-style, inherit);
+    letter-spacing: var(--bc-render-unit-text-letter-spacing, inherit);
+    line-height: var(--bc-render-unit-text-line-height, inherit);
+    color: var(--bc-render-unit-text-color, inherit);
     padding: var(--bc-render-unit-padding-top)
       var(--bc-render-unit-padding-right)
       var(--bc-render-unit-padding-bottom)

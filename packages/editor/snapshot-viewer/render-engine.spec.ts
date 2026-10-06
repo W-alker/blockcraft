@@ -355,6 +355,21 @@ describe("SnapshotRenderEngine", () => {
       .toBe("0px")
   })
 
+  it("projects and clears render-unit text defaults on snapshot updates", () => {
+    const host = document.createElement("div")
+    const renderer = createSnapshotRenderer()
+    renderer.render(host, wrapRoot([createRenderUnitFixture("region-text", {
+      textFamily: "serif", textFont: "20px 600 normal", textFill: "#224466",
+    })]))
+    const block = host.querySelector<HTMLElement>('[data-block-id="region-text"]')!
+    expect(block.style.getPropertyValue("--bc-render-unit-text-font-size")).toBe("20px")
+    expect(block.style.getPropertyValue("--bc-render-unit-text-color")).toBe("rgba(34, 68, 102, 1)")
+    renderer.update(wrapRoot([createRenderUnitFixture("region-text", {})]))
+    expect(host.querySelector('[data-block-id="region-text"]')).toBe(block)
+    expect(block.style.getPropertyValue("--bc-render-unit-text-font-size")).toBe("")
+    expect(block.style.getPropertyValue("--bc-render-unit-text-color")).toBe("")
+  })
+
   it("does not fetch render-unit background images when resources are off", () => {
     const host = document.createElement("div")
     const renderer = createSnapshotRenderer({resourcePolicy: "off"})

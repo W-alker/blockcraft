@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-09-25 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-10-06 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -67,6 +67,22 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > - `major` (e.g. 0.1.37 → 1.0.0): breaking — removed APIs, renamed exports, signature changes, behavior reversals
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
+
+## Unreleased — 2026-10-06：内容区域内边距与字体默认样式
+
+**Severity**: minor
+
+**What changed**: `render-unit` 浮动工具栏采用“外观选项”和“文本选项”两个一级按钮，分别提供填充/轮廓、内边距/字体页签。`RenderUnitBlockProps` 新增可选 `textFamily`、`textFont`、`textSpacing`、`textFill` 字段，复用文本框紧凑格式；原有 `p` 字段新增图形入口。实时编辑、Snapshot Viewer 和 HTML adapter 同步投影与往返保存。
+
+**Why**: 填写区需要像文本框一样直接设置内容留白及区域内文字的默认样式。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-toolbar.md`。
+
+**New APIs / Features**: `RenderUnitTypographyProps`、`normalizeRenderUnitTypographyProps()`、`resolveRenderUnitTypography()`、`applyRenderUnitTypography()`。
+
+**Migration Recipe**: 现有快照无需迁移；按需在 `RenderUnitBlockProps` 中设置 `p: [top, right, bottom, left]` 与 `textFont: '20px 600 normal'` 等字段。
+
+**Behavior Changes**: 字体只提供可继承的内容默认值，不覆盖子块或行内显式格式；清除属性后恢复文档继承。
 
 ## Unreleased — 2026-09-25：非可编辑流式块支持段前段后
 

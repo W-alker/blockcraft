@@ -9,6 +9,7 @@ import {
 import {RenderUnitBlockModel, resolveRenderUnitDimensions} from './index'
 import {ShapeResizerComponent, type ShapeResizeCommit} from '../shape-block/shape-resizer.component'
 import {takeUntil} from 'rxjs'
+import {applyRenderUnitTypography} from './typography'
 
 /**
  * Generic container used by host applications to declare a configurable
@@ -83,8 +84,12 @@ export class RenderUnitBlockComponent extends BaseBlockComponent<RenderUnitBlock
   override ngAfterViewInit() {
     super.ngAfterViewInit()
     applyRegionBorders(this.hostElement, this.props.borders)
+    applyRenderUnitTypography(this.hostElement, this.props)
     this.onPropsChange.pipe(takeUntil(this.onDestroy$)).subscribe(changes => {
       if (changes.has('borders')) applyRegionBorders(this.hostElement, this.props.borders)
+      if (['textFamily', 'textFont', 'textSpacing', 'textFill'].some(key => changes.has(key))) {
+        applyRenderUnitTypography(this.hostElement, this.props)
+      }
     })
     this.doc.objectSizing.widthChange$.pipe(takeUntil(this.onDestroy$)).subscribe(() => {
       this.changeDetectorRef.markForCheck()

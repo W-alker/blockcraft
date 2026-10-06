@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-09-25
+> Last updated: 2026-10-06
 
 通用数据描述和快照位于 `@ccc/blockcraft/framework/model`，类型为
 `BlockDescriptor<P, M, F>` / `BlockSnapshot<P, M, F>`，默认不依赖组件注册表。
@@ -591,8 +591,11 @@ The bundled `render-unit` is another deliberate block-specific surface: it
 persists optional `backColor` / `borderColor`, projects them through
 `--bc-render-unit-background-color` / `--bc-render-unit-border-color`, and
 draws a geometry-neutral 1px inner outline. `CalloutToolbarPlugin` exposes
-background and border palettes for this region without cascading values into
-its child blocks.
+background and border controls for this region. Its second rail button edits
+existing `p` inner padding and optional `textFamily`, `textFont`, `textSpacing`
+and solid `textFill` text defaults. Text defaults inherit into children, while
+explicit child block and inline formats remain authoritative. The live editor,
+Snapshot Viewer and HTML adapter project/round-trip the same fields.
 
 ### Opt-in Block Surface Props
 
@@ -962,7 +965,7 @@ through the content above it.
 `RenderUnitBlockComponent.setSize(width, height)` 接收布局像素，在一个事务内换算比例并清理旧 `width/height`；`objectDimensions` 提供当前显示尺寸。
 未设置完整有效尺寸时仍由内容自然撑高；不自动把旧容器变成固定尺寸。显式尺寸包含内边距，超出内容可滚动。
 分页和打印中的内容区域（含嵌套区域）最多占一页正文高度，边框与内边距计入上限；超出内容在内层滚动，外层保留选区与缩放控件。自然高度不会写回 props，删除内容后自动缩回；用户手动设置的尺寸保留，关闭分页后恢复原有显示尺寸。
-悬停或内部编辑时显示文本框同款顶部抓手聚焦按钮（`bc_caijian` 图标），点击或键盘激活后整块选中并显示八向手柄（无旋转）；整块选中后隐藏聚焦按钮，只读时不创建该按钮。CalloutToolbarPlugin 仅提供颜色入口，不显示宽高输入。
+悬停或内部编辑时显示文本框同款顶部抓手聚焦按钮，点击或键盘激活后整块选中并显示八向手柄（无旋转）；整块选中后隐藏聚焦按钮，只读时不创建该按钮。CalloutToolbarPlugin 提供填充、轮廓、内边距和字体入口，不显示宽高输入。
 HTML 通过 `data-bc-wr/ar`（以及旧 `data-bc-width/height`）保留尺寸；私有 Markdown 保留 props。只读、协同、撤销和虚拟估高沿用框架路径。
 背景默认仍透明，业务填写区的白底由宿主传入 `backColor`；框架不识别 `tplRegion` 等业务标记。
 

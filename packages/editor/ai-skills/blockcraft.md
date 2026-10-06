@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-09-25 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-10-06 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -422,8 +422,9 @@ The bundled non-editable `render-unit` content region persists the same
 contract. `CalloutToolbarPlugin` reuses its container toolbar for a cursor in a
 direct editable child of either Callout or `render-unit`; a whole-block
 `render-unit` selection also opens it so an empty region remains configurable.
-The current container toolbar exposes background and border controls only;
-those fields project through
+The region toolbar has separate appearance and text rail buttons. Their popups
+contain fill/outline and inner-padding/typography tabs respectively;
+the appearance fields project through
 `--bc-render-unit-background-color` / `--bc-render-unit-border-color`, and uses
 the same 82% solid-surface composition in the live editor and Snapshot Viewer.
 
@@ -432,6 +433,10 @@ persisted keys follow compact CSS-style abbreviations: `p` is a numeric CSS
 padding shorthand with one to four layout-pixel values;
 `bgi` stores image source, size/fit and position in one CSS background string;
 optional `bgo` stores opacity (omitted at 1).
+The optional `textFamily`, `textFont`, `textSpacing` and solid `textFill` fields
+reuse the text-box compact format. They style the region content as inheritable
+defaults, so explicit child block and inline styles keep precedence. Resetting
+them restores document inheritance without changing child Y.Text.
 Create or update the region through normal Schema/CRUD boundaries:
 
 ```typescript

@@ -534,8 +534,8 @@ export type ObjectFormatToolbarAction =
                       />
                     </label>
                     @if (shapeOutline.type === "line") {
-                      <label
-                        >颜色
+                      <div class="object-format__color-row">
+                        <span>颜色</span>
                         <cs-color-picker
                           csMode="palette"
                           csSize="sm"
@@ -546,7 +546,7 @@ export type ObjectFormatToolbarAction =
                           (csChangeComplete)="
                             outlineColorChangeValue($event.value)
                           "
-                      /></label>
+                      /></div>
                       <label
                         >宽度
                         <cs-input-number
@@ -685,8 +685,8 @@ export type ObjectFormatToolbarAction =
                         "
                     /></label>
                     @if (shapeEffects.shadow.enabled) {
-                      <label
-                        >颜色
+                      <div class="object-format__color-row">
+                        <span>颜色</span>
                         <cs-color-picker
                           csMode="palette"
                           csSize="sm"
@@ -697,7 +697,7 @@ export type ObjectFormatToolbarAction =
                           (csChangeComplete)="
                             effectColorValue('shadow', $event.value)
                           "
-                      /></label>
+                      /></div>
                       <label
                         >透明度
                         <cs-slider
@@ -751,8 +751,8 @@ export type ObjectFormatToolbarAction =
                         (csCheckedChange)="effectEnabledValue('glow', $event)"
                     /></label>
                     @if (shapeEffects.glow.enabled) {
-                      <label
-                        >颜色
+                      <div class="object-format__color-row">
+                        <span>颜色</span>
                         <cs-color-picker
                           csMode="palette"
                           csSize="sm"
@@ -763,7 +763,7 @@ export type ObjectFormatToolbarAction =
                           (csChangeComplete)="
                             effectColorValue('glow', $event.value)
                           "
-                      /></label>
+                      /></div>
                       <label
                         >透明度
                         <cs-slider
@@ -1172,8 +1172,8 @@ export type ObjectFormatToolbarAction =
                           (csCheckedChange)="textOutlineEnabledValue($event)"
                       /></label>
                       @if (textStyle.outline.type === "line") {
-                        <label
-                          >轮廓颜色
+                        <div class="object-format__color-row">
+                          <span>轮廓颜色</span>
                           <cs-color-picker
                             csMode="palette"
                             csSize="sm"
@@ -1184,7 +1184,7 @@ export type ObjectFormatToolbarAction =
                             (csChangeComplete)="
                               textOutlineColorValue($event.value)
                             "
-                        /></label>
+                        /></div>
                         <label
                           >轮廓宽度
                           <cs-input-number
@@ -1208,8 +1208,8 @@ export type ObjectFormatToolbarAction =
                           "
                       /></label>
                       @if (textStyle.effects.shadow.enabled) {
-                        <label
-                          >阴影颜色
+                        <div class="object-format__color-row">
+                          <span>阴影颜色</span>
                           <cs-color-picker
                             csMode="palette"
                             csSize="sm"
@@ -1220,7 +1220,7 @@ export type ObjectFormatToolbarAction =
                             (csChangeComplete)="
                               textEffectColorValue('shadow', $event.value)
                             "
-                        /></label>
+                        /></div>
                         <label
                           >阴影透明度
                           <cs-slider
@@ -1280,8 +1280,8 @@ export type ObjectFormatToolbarAction =
                           "
                       /></label>
                       @if (textStyle.effects.glow.enabled) {
-                        <label
-                          >发光颜色
+                        <div class="object-format__color-row">
+                          <span>发光颜色</span>
                           <cs-color-picker
                             csMode="palette"
                             csSize="sm"
@@ -1292,7 +1292,7 @@ export type ObjectFormatToolbarAction =
                             (csChangeComplete)="
                               textEffectColorValue('glow', $event.value)
                             "
-                        /></label>
+                        /></div>
                         <label
                           >发光透明度
                           <cs-slider
@@ -1397,7 +1397,8 @@ export type ObjectFormatToolbarAction =
         font-size: 13px;
         font-weight: 600;
       }
-      label {
+      label,
+      .object-format__color-row {
         display: grid;
         grid-template-columns: minmax(92px, 1fr) minmax(0, 1.4fr);
         gap: 8px;
@@ -1411,6 +1412,10 @@ export type ObjectFormatToolbarAction =
       label > cs-slider {
         min-width: 0;
         width: 100%;
+      }
+      .object-format__color-row > cs-color-picker {
+        justify-self: start;
+        max-width: 100%;
       }
       label > cs-slider {
         /* CSES places the handle at 0/100% and translates it by half its

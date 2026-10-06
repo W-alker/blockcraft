@@ -18,6 +18,10 @@
   gap: 4px;
 }
 
+.bc-settings-field > cs-color-picker {
+  align-self: flex-start;
+}
+
 .bc-settings-field > span,
 .bc-settings-preview__label {
   color: var(--cs-color-text-secondary, var(--bc-color-light));

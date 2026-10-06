@@ -16,8 +16,11 @@ import {RenderUnitBlockComponent} from './render-unit.block'
 export * from './agent'
 export * from './borders'
 import {normalizeRegionBorders, RegionBorders} from './borders'
+import {normalizeRenderUnitTypographyProps, RenderUnitTypographyProps} from './typography'
 
-export interface RenderUnitBlockProps extends BlockSurfaceProps, BlockObjectSizeProps {
+export * from './typography'
+
+export interface RenderUnitBlockProps extends BlockSurfaceProps, BlockObjectSizeProps, RenderUnitTypographyProps {
   borders?: RegionBorders | null
   backColor?: string | null
   borderColor?: string | null
@@ -48,6 +51,7 @@ export function normalizeRenderUnitBlockProps(
 ): RenderUnitBlockProps {
   const normalized: RenderUnitBlockProps = normalizeBlockSurfaceProps(input)
   if (!input) return normalized
+  Object.assign(normalized, normalizeRenderUnitTypographyProps(input))
   const borders = normalizeRegionBorders(input['borders'])
   if (borders) normalized.borders = borders
 

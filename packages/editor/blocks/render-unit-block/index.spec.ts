@@ -1,5 +1,5 @@
 import {BlockNodeType} from '../../framework'
-import {RenderUnitBlockSchema, resolveRenderUnitDimensions} from './index'
+import {RenderUnitBlockSchema, applyRenderUnitTypography, resolveRenderUnitDimensions} from './index'
 
 describe('RenderUnitBlockSchema', () => {
   it('preserves responsive sizes and uses the same root-width basis as images', () => {
@@ -46,6 +46,21 @@ describe('RenderUnitBlockSchema', () => {
 
   it('keeps the existing empty createSnapshot call compatible', () => {
     expect(RenderUnitBlockSchema.createSnapshot().props).toEqual({})
+  })
+
+  it('normalizes region text defaults and clears their projected styles', () => {
+    const props = RenderUnitBlockSchema.createSnapshot({}, {
+      textFamily: 'serif', textFont: '22px 700 italic',
+      textSpacing: '0.05em 1.5', textFill: '#224466',
+    }).props
+    const host = document.createElement('div')
+    applyRenderUnitTypography(host, props)
+    expect(host.style.getPropertyValue('--bc-render-unit-text-font-size')).toBe('22px')
+    expect(host.style.getPropertyValue('--bc-render-unit-text-font-weight')).toBe('700')
+    expect(host.style.getPropertyValue('--bc-render-unit-text-color')).toBe('rgba(34, 68, 102, 1)')
+    applyRenderUnitTypography(host, {})
+    expect(host.style.getPropertyValue('--bc-render-unit-text-font-size')).toBe('')
+    expect(host.style.getPropertyValue('--bc-render-unit-text-color')).toBe('')
   })
 
   it('adds vertical padding to model-only child height estimates', () => {

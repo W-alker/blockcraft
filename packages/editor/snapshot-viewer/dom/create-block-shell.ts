@@ -1,5 +1,6 @@
 import {BlockNodeType, IBlockSnapshot} from "../../framework/block-std/types/block.type";
 import {resolveBlockSurface} from "../../framework/block-std/block/block-surface";
+import {applyRenderUnitTypography} from "../../blocks/render-unit-block/typography";
 import {
   normalizeParagraphFontScale,
   normalizeParagraphSpacing,
@@ -121,6 +122,7 @@ function applyRenderUnitAppearance(
   element: HTMLElement,
   props: Record<string, unknown>,
 ) {
+  applyRenderUnitTypography(element, props)
   const {padding} = resolveBlockSurface(props)
   element.style.setProperty("--bc-render-unit-padding-top", `${padding.top}px`)
   element.style.setProperty("--bc-render-unit-padding-right", `${padding.right}px`)

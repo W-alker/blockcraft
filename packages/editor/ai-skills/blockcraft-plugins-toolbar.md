@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-09-24
+> Last updated: 2026-10-06
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
@@ -742,11 +742,13 @@ new BookmarkBlockExtensionPlugin();
 > `plugins/callout-toolbar/` — Shared appearance toolbar for Callout and
 > `render-unit` content-region blocks.
 
-Shows one floating container toolbar centered above/below a supported block
-when the cursor is inside a direct editable child. A whole-block `render-unit`
-selection also opens it, which keeps an empty content region configurable.
-Callout exposes text, background and border colors; `render-unit` exposes only
-background and border colors and never cascades the values to child blocks.
+Callout shows its existing floating color toolbar when editing a direct child.
+The `render-unit` toolbar appears on whole-block selection, including an empty
+region. Two first-level rail buttons reuse the shared object popup: appearance
+contains fill/outline tabs, while text contains inner-padding/typography tabs.
+Typography is an inheritable content default;
+explicit child formatting wins. Callout retains text, background and border
+colors.
 The plugin tracks block resize via one throttled `ResizeObserver` (100ms) while
 the overlay is open.
 
@@ -899,7 +901,7 @@ new TextMarkerPlugin(
 
 ### Render-unit 外观入口
 
-`CalloutToolbarPlugin` 对 `render-unit` 仅提供背景和边框颜色入口，不显示宽高输入。通过内容区域顶部抓手聚焦按钮整块选中后，尺寸由八向手柄或块的 `setSize()` 调整，继续采用与图片一致的 `wr/ar` 持久化。
+`CalloutToolbarPlugin` 对 `render-unit` 提供“外观选项”和“文本选项”两个一级按钮，分别包含填充/轮廓、内边距/字体页签，不显示宽高输入。通过内容区域顶部抓手聚焦按钮整块选中后，尺寸由八向手柄或块的 `setSize()` 调整，继续采用与图片一致的 `wr/ar` 持久化。内边距写入 `p`；字体设置写入 `textFamily`、`textFont`、`textSpacing`、`textFill`，只作为内容区域内文字的默认样式。
 
 ### 通用紧凑存储（2026-09-16）
 

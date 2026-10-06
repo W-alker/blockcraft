@@ -33,7 +33,7 @@ describe('CalloutBlockToolbar container appearance', () => {
     toolbar.onColorPicked({type: 'color', color: '#333333'})
 
     expect(toolbar.colorGroups.map(group => group.type))
-      .toEqual(['backColor', 'borderColor'])
+      .toEqual(['backColor', 'borderColor', 'textFill'])
     expect(block.updateProps.calls.allArgs()).toEqual([
       [{backColor: '#FBF3DB'}],
       [{borderColor: '#DFAB01'}],
@@ -41,6 +41,28 @@ describe('CalloutBlockToolbar container appearance', () => {
     expect(toolbar.activeColors).toEqual({
       backColor: '#FBF3DB',
       borderColor: '#DFAB01',
+      textFill: null,
+    })
+  })
+
+  it('writes region padding and only the edited text-style field', () => {
+    const block = makeBlock('render-unit', {p: [4, 8], textFont: '18px 400 normal'})
+    const toolbar = new CalloutBlockToolbar()
+    toolbar.containerBlock = block as any
+    toolbar.ngOnInit()
+    toolbar.changePadding('left', 12)
+    toolbar.changeTextNumber('fontSize', 24)
+    toolbar.onColorPicked({type: 'textFill', color: '#224466'})
+    expect(block.updateProps.calls.allArgs()).toEqual([
+      [{p: [4, 8, 4, 12]}],
+      [{textFont: '24px 400 normal'}],
+      [{textFill: '#224466'}],
+    ])
+    toolbar.resetPadding()
+    toolbar.resetTypography()
+    expect(block.updateProps).toHaveBeenCalledWith({p: null})
+    expect(block.updateProps).toHaveBeenCalledWith({
+      textFamily: null, textFont: null, textSpacing: null, textFill: null,
     })
   })
 
@@ -101,18 +123,30 @@ for (const flavour of ['render-unit', 'callout'] as const) {
     if (flavour === 'render-unit') {
       expect(element.querySelector('[data-bc-region-format-toolbar]')).not.toBeNull()
       expect(element.querySelector('bc-float-toolbar-item')).toBeNull()
-      expect(element.querySelectorAll('.object-format__rail button').length).toBe(1)
+      expect(element.querySelectorAll('.object-format__rail button').length).toBe(2)
       expect(element.querySelector('.object-format__panel')).toBeNull()
-      ;(element.querySelector('[aria-label="内容区域设置"]') as HTMLButtonElement).click()
+      ;(element.querySelector('[aria-label="外观选项"]') as HTMLButtonElement).click()
       fixture.detectChanges()
       expect(element.querySelector('cs-segmented')).not.toBeNull()
+      expect(element.querySelectorAll('cs-segmented label').length).toBe(2)
       expect(element.querySelectorAll('.object-format__tab-section')[0].hasAttribute('hidden')).toBeFalse()
       ;(element.querySelectorAll('cs-segmented label')[1] as HTMLLabelElement).click()
       fixture.detectChanges()
       expect(element.querySelectorAll('.object-format__tab-section')[1].hasAttribute('hidden')).toBeFalse()
       expect(element.querySelector('.region-format__fields cs-input-number input')).not.toBeNull()
       expect(element.querySelector('.region-format__fields cs-select')).not.toBeNull()
-      expect(element.querySelectorAll('.object-format__panel cs-color-picker').length).toBe(2)
+      ;(element.querySelector('[aria-label="文本选项"]') as HTMLButtonElement).click()
+      fixture.detectChanges()
+      expect(element.querySelectorAll('cs-segmented label').length).toBe(2)
+      expect(element.querySelectorAll('.object-format__tab-section')[2].hasAttribute('hidden')).toBeFalse()
+      ;(element.querySelectorAll('cs-segmented label')[1] as HTMLLabelElement).click()
+      fixture.detectChanges()
+      expect(element.querySelectorAll('.object-format__tab-section')[3].hasAttribute('hidden')).toBeFalse()
+      ;(element.querySelector('[aria-label="外观选项"]') as HTMLButtonElement).click()
+      fixture.detectChanges()
+      expect(element.querySelectorAll('.object-format__tab-section')[1].hasAttribute('hidden')).toBeFalse()
+      expect(element.querySelectorAll('.object-format__panel cs-color-picker').length).toBe(3)
+      expect(element.querySelectorAll('.region-format__reset .bc_huifu1').length).toBe(2)
       expect(element.querySelector('.object-format__panel bc-color-picker')).toBeNull()
     } else {
       expect(element.querySelector('bc-float-toolbar-item')).not.toBeNull()

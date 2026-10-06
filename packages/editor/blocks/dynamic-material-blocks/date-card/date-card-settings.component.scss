@@ -27,6 +27,7 @@ cs-select, cs-input-number { width: 100%; min-width: 0; }
 .font-grid, .color-grid { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 12px; }
 .font-grid label { justify-content: flex-end; }
 .color-grid { margin: 10px 0 12px; }
+.color-row cs-color-picker { align-self: flex-start; }
 .section-title { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--bc-border-color, #ddd); font-size: 13px; font-weight: 600; }
 p { margin: 8px 0 0; font-size: 12px; color: var(--bc-secondary-color, #697180); }
 footer { flex: none; justify-content: flex-end; padding: 10px 16px; border-top: 1px solid var(--bc-border-color, #ddd); }

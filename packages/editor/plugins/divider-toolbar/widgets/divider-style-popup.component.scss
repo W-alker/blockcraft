@@ -188,9 +188,6 @@ $divider-preview-color: var(--bc-divider-preview-color, var(--bc-border-color));
     font-size: 12px;
   }
 
-  cs-color-picker {
-    flex: 1;
-  }
 }
 
 .line-style-item {
@@ -468,9 +465,6 @@ $divider-preview-color: var(--bc-divider-preview-color, var(--bc-border-color));
     }
   }
 
-  .color-row cs-color-picker {
-    flex: 1;
-  }
 }
 
 // 新尺寸模型：长度和粗细互不影响。旧 data-tab-size 规则保留给历史预览快照，
