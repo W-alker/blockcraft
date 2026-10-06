@@ -1,4 +1,4 @@
-import {encodeAdapterProps, decodeAdapterProps} from '../../../adapters/generic'
+import {decodeAdapterProps} from '../../../adapters/generic'
 import {normalizeRegionBorders} from '../borders'
 import {
   normalizeRenderUnitBlockProps,
@@ -26,7 +26,13 @@ export const renderUnitBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
       if (!HastUtils.isElement(o.node)) return
       const rawProps: Partial<RenderUnitBlockProps> = {
         ...blockSurfacePropsFromHtml(o.node),
-        borders: normalizeRegionBorders(decodeAdapterProps(o.node.properties?.['dataBcBorders'])),
+        border: stringProperty(o.node, 'dataBcBorder'),
+        borders: normalizeRegionBorders(o.node.properties?.['dataBcBorders'])
+          ?? normalizeRegionBorders(decodeAdapterProps(o.node.properties?.['dataBcBorders'])),
+        borderTop: stringProperty(o.node, 'dataBcBorderTop'),
+        borderRight: stringProperty(o.node, 'dataBcBorderRight'),
+        borderBottom: stringProperty(o.node, 'dataBcBorderBottom'),
+        borderLeft: stringProperty(o.node, 'dataBcBorderLeft'),
         backColor: stringProperty(o.node, 'dataBcBackColor'),
         backOpacity: numberProperty(o.node, 'dataBcBackOpacity'),
         borderColor: stringProperty(o.node, 'dataBcBorderColor'),
@@ -58,7 +64,11 @@ export const renderUnitBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
         tagName: 'section',
         properties: {
           dataBcBlock: 'render-unit',
-          dataBcBorders: props.borders ? encodeAdapterProps(props.borders) : undefined,
+          dataBcBorder: props.border,
+          dataBcBorderTop: props.borderTop,
+          dataBcBorderRight: props.borderRight,
+          dataBcBorderBottom: props.borderBottom,
+          dataBcBorderLeft: props.borderLeft,
           dataBcBackColor: props.backColor,
           dataBcBackOpacity: props.backOpacity,
           dataBcBorderColor: props.borderColor,

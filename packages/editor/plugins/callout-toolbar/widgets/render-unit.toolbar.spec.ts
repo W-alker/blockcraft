@@ -16,7 +16,8 @@ describe('RenderUnitToolbar appearance', () => {
       .toEqual(['backColor', 'borderColor', 'textFill'])
     expect(block.updateProps.calls.allArgs()).toEqual([
       [{backColor: '#FBF3DB'}],
-      [{borderColor: '#DFAB01'}],
+      [{border: '1px solid #DFAB01', borders: null,
+        borderTop: null, borderRight: null, borderBottom: null, borderLeft: null, borderColor: null}],
     ])
     expect(toolbar.activeColors).toEqual({
       backColor: '#FBF3DB',
@@ -85,21 +86,44 @@ describe('RenderUnitToolbar appearance', () => {
     toolbar.changeBorderWidth(2)
     toolbar.changeBorderStyle('dashed')
 
-    const allSides = {top: '2px dashed #DFAB01', right: '2px dashed #DFAB01',
-      bottom: '2px dashed #DFAB01', left: '2px dashed #DFAB01'}
-    expect(block.updateProps).toHaveBeenCalledWith({borders: allSides, borderColor: null})
+    expect(block.updateProps).toHaveBeenCalledWith(jasmine.objectContaining({
+      border: '2px dashed #DFAB01', borders: null, borderColor: null,
+    }))
   })
 
-  it('keeps omitted sides omitted when editing an existing partial border', () => {
+  it('expands a compact uniform border before changing one edge', () => {
+    const block = makeBlock('render-unit', {border: '2px solid #AABBCC'})
+    const toolbar = new RenderUnitToolbar()
+    toolbar.containerBlock = block as any
+    toolbar.ngOnInit()
+    toolbar.changeEdge('width', 3)
+    expect(block.updateProps).toHaveBeenCalledWith(jasmine.objectContaining({
+      border: '2px solid #AABBCC', borderTop: '3px solid #AABBCC',
+      borderRight: null, borderBottom: null, borderLeft: null, borders: null,
+    }))
+  })
+
+  it('writes a font ID and keeps a custom legacy font selectable', () => {
+    const block = makeBlock('render-unit', {textFamily: 'Acme Custom, serif'})
+    const toolbar = new RenderUnitToolbar()
+    toolbar.containerBlock = block as any
+    toolbar.ngOnInit()
+    expect(toolbar.fontFamilyValue).toBe('Acme Custom, serif')
+    expect(toolbar.fontOptions.at(-1)?.label).toBe('自定义字体')
+    toolbar.changeFontFamily('arial')
+    expect(block.updateProps).toHaveBeenCalledWith({textFamily: 'arial'})
+  })
+
+  it('uses a uniform border when editing the legacy partial border controls', () => {
     const block = makeBlock('render-unit', {borders: {top: '1px solid #112233'}} as any)
     const toolbar = new RenderUnitToolbar()
     toolbar.containerBlock = block as any
     toolbar.ngOnInit()
     toolbar.onColorPicked({type: 'borderColor', color: '#AABBCC'})
 
-    expect(block.updateProps).toHaveBeenCalledWith({
-      borders: {top: '1px solid #AABBCC'}, borderColor: null,
-    })
+    expect(block.updateProps).toHaveBeenCalledWith(jasmine.objectContaining({
+      border: '1px solid #AABBCC', borders: null, borderColor: null,
+    }))
   })
 
   it('clears an existing structured border through the color picker', () => {
@@ -109,7 +133,9 @@ describe('RenderUnitToolbar appearance', () => {
     toolbar.ngOnInit()
     toolbar.onColorPicked({type: 'borderColor', color: null})
 
-    expect(block.updateProps).toHaveBeenCalledWith({borders: null, borderColor: null})
+    expect(block.updateProps).toHaveBeenCalledWith(jasmine.objectContaining({
+      border: null, borders: null, borderColor: null,
+    }))
     expect(toolbar.activeColors['borderColor']).toBeNull()
   })
 
@@ -131,16 +157,38 @@ describe('RenderUnitToolbar appearance', () => {
     expect(toolbar.hasIndependentBorders).toBeTrue()
     expect(toolbar.edgeWidth).toBe(2)
     toolbar.changeEdge('width', 3)
-    expect(block.props['borders']).toEqual({top: '3px solid #9A7654', left: '1px dotted #123456'})
+    expect(block.props['borders']).toBeUndefined()
+    expect(block.props['border']).toBe('none')
+    expect(block.props['borderTop']).toBe('3px solid #9A7654')
+    expect(block.props['borderLeft']).toBe('1px dotted #123456')
     toolbar.selectBorderSide('left')
     expect(toolbar.edgeStyle).toBe('dotted')
     toolbar.changeEdge('color', '#AABBCC')
-    expect(block.props['borders'].left).toBe('1px dotted #AABBCC')
+    expect(block.props['borderLeft']).toBe('1px dotted #AABBCC')
     toolbar.changeEdge('width', 0)
-    expect(block.props['borders'].left).toBe('none')
+    expect(block.props['borderLeft']).toBeUndefined()
     toolbar.resetBorders()
     expect(block.props['borders']).toBeUndefined()
+    expect(block.props['border']).toBeUndefined()
     expect(block.props['borderColor']).toBe('#4857E2')
+    expect(toolbar.hasIndependentBorders).toBeFalse()
+  })
+
+  it('removes the side prop after the four borders match again', () => {
+    const block = makeBlock('render-unit', {border: '2px solid #112233', borderLeft: '3px solid #112233'})
+    block.updateProps.and.callFake((patch: Record<string, unknown>) => {
+      for (const [key, value] of Object.entries(patch)) {
+        if (value === null) delete block.props[key]
+        else block.props[key] = value
+      }
+    })
+    const toolbar = new RenderUnitToolbar()
+    toolbar.containerBlock = block as any
+    toolbar.ngOnInit()
+    toolbar.selectBorderSide('left')
+    toolbar.changeEdge('width', 2)
+    expect(block.props['border']).toBe('2px solid #112233')
+    expect(block.props['borderLeft']).toBeUndefined()
     expect(toolbar.hasIndependentBorders).toBeFalse()
   })
 })

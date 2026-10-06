@@ -560,6 +560,11 @@ children remain ordinary nested block elements. Optional shell colors use
 uses `data-bc-back-opacity` (0–1); surface data uses compact keys
 that map one-to-one to persisted props:
 
+`data-bc-border` stores the uniform shorthand, and `data-bc-border-top/right/bottom/left`
+store only differing sides. Import still accepts older JSON-encoded `data-bc-borders`
+objects and converts them to the new properties. The shared object `textFamily`
+contract stores catalog font IDs; legacy and custom safe CSS stacks remain readable.
+
 - `data-bc-p`, containing one to four space-separated numeric values;
 - `data-bc-bgi`，保存 `url("...") 50% 50% / cover no-repeat` 形式的图片 CSS 字符串；
 - 可选 `data-bc-bgo`，保存独立图片透明度，默认 1 省略。

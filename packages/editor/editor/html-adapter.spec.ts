@@ -356,6 +356,21 @@ describe('HtmlAdapter', () => {
     )).toEqual(['paragraph', 'bullet']);
   });
 
+  it('omits the default text-box rotation in HTML and stores whole degrees', async () => {
+    const textBox: IBlockSnapshot = {
+      id: 'text-box-rotation', flavour: 'text-box', nodeType: BlockNodeType.block,
+      props: {width: 240, height: 120, rotation: 0}, meta: {},
+      children: [createParagraphSnapshot('text-box-rotation-p', 'text')],
+    }
+    const plainHtml = await adapter.toHtml(createRootSnapshot([textBox]))
+    expect(plainHtml).not.toContain('data-bc-object-rotation=')
+    textBox.props['rotation'] = 12.3456
+    const rotatedHtml = await adapter.toHtml(createRootSnapshot([textBox]))
+    expect(rotatedHtml).toContain('data-bc-object-rotation="12"')
+    const imported = await adapter.toBlockSnapshot(rotatedHtml)
+    expect((imported.children as IBlockSnapshot[])[0]!.props['rotation']).toBe(12)
+  })
+
   it('does not migrate removed text-box surface fields', async () => {
     const textBox: IBlockSnapshot = {
       id: 'text-box-artwork',
@@ -590,13 +605,35 @@ describe('HtmlAdapter', () => {
       props: {borders: {top: '2px solid #9A7654', left: 'none'}}, meta: {}, children: [paragraph]}
     const html = await adapter.toHtml(createRootSnapshot([region]))
     expect(html).toContain('data-bc-decoration=')
-    expect(html).toContain('data-bc-borders=')
+    expect(html).toContain('data-bc-border=')
+    expect(html).toContain('data-bc-border-top="2px solid #9A7654"')
     const restored = (await adapter.toBlockSnapshot(html)).children[0] as IBlockSnapshot
-    expect(restored.props['borders']).toEqual(region.props['borders'])
+    expect(restored.props).toEqual(jasmine.objectContaining({
+      border: 'none', borderTop: '2px solid #9A7654',
+    }))
     const child = restored.children[0] as IBlockSnapshot
     expect(child.props['heading']).toBe(1)
     expect(child.props['decoration']).toEqual(jasmine.objectContaining({position: 'after', after: '25%', color: '#D4C2A7'}))
     expect(child.children[0]).toEqual(jasmine.objectContaining({insert: '感悟'}))
+  })
+
+  it('imports the old encoded borders object as base and side props', async () => {
+    const oldBorders = encodeURIComponent(JSON.stringify({top: '2px solid #123456', left: 'none'}))
+    const restored = (await adapter.toBlockSnapshot(
+      `<section data-bc-block="render-unit" data-bc-borders="${oldBorders}"></section>`,
+    )).children[0] as IBlockSnapshot
+    expect(restored.props).toEqual(jasmine.objectContaining({border: 'none', borderTop: '2px solid #123456'}))
+  })
+
+  it('round-trips compact uniform region borders and font IDs', async () => {
+    const region: IBlockSnapshot = {id: 'uniform-region', flavour: 'render-unit', nodeType: BlockNodeType.block,
+      props: {border: '2px dashed #123456', textFamily: 'arial'}, meta: {}, children: []}
+    const html = await adapter.toHtml(createRootSnapshot([region]))
+    expect(html).toContain('data-bc-border="2px dashed #123456"')
+    expect(html).toContain('data-bc-text-family="arial"')
+    const restored = (await adapter.toBlockSnapshot(html)).children[0] as IBlockSnapshot
+    expect(restored.props['border']).toBe('2px dashed #123456')
+    expect(restored.props['textFamily']).toBe('arial')
   })
 
   describe('typography', () => {

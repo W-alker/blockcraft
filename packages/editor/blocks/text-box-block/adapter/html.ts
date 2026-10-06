@@ -1,6 +1,5 @@
 import {parseBlockPosition, storeBlockPosition} from '../../../framework/modules/object/block-placement/state'
 import {
-  normalizeTextBoxProps,
   normalizeTextBoxSnapshotProps,
   findTextBoxArtworkBySrc,
   resolveTextBoxArtworkSrc,
@@ -65,22 +64,19 @@ export const textBoxBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
   },
   fromBlockSnapshot: {
     enter: (o, context) => {
-      const props = normalizeTextBoxProps(
-        o.node.props as Partial<TextBoxBlockProps>,
-      )
+      const stored = normalizeTextBoxSnapshotProps(o.node.props as Partial<TextBoxBlockProps>)
+      const formatAttributes = objectFormatPropsToHtml(stored, TEXT_BOX_OBJECT_FORMAT_CAPABILITY)
+      if (stored.rotation == null) delete formatAttributes['dataBcObjectRotation']
       context.walkerContext.openNode({
         type: 'element',
         tagName: 'figure',
         properties: {
           dataBcBlock: 'text-box',
-          ...objectFormatPropsToHtml(
-            o.node.props as Partial<TextBoxBlockProps>,
-            TEXT_BOX_OBJECT_FORMAT_CAPABILITY,
-          ),
-          ...(props.artwork && resolveTextBoxArtworkSrc(props.artwork)
-            ? {dataBcObjectArtwork: resolveTextBoxArtworkSrc(props.artwork)!}
+          ...formatAttributes,
+          ...(stored.artwork && resolveTextBoxArtworkSrc(stored.artwork)
+            ? {dataBcObjectArtwork: resolveTextBoxArtworkSrc(stored.artwork)!}
             : {}),
-          ...placementToHtml(props.position, props.placementLayer),
+          ...placementToHtml(stored.position, stored.placementLayer),
         },
         children: [],
       }, 'children')

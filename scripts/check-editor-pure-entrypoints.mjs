@@ -18,7 +18,9 @@ await checkEntrypointDependencies(packageRoot, manifest, {
   'framework/ports': {},
   'framework/block-std/types/block-base': {runtime: ['framework/model'], types: ['framework/model']},
   'framework/block-std/typography': {runtime: ['framework/model'], types: ['framework/model']},
-  'framework/block-std/block/object-format': {types: ['framework/model']},
+  'framework/block-std/block/object-format': {
+    runtime: ['framework/block-std/typography'], types: ['framework/model'],
+  },
   'framework/modules/pagination/engine': {
     runtime: ['framework/model'],
     types: ['framework/model'],

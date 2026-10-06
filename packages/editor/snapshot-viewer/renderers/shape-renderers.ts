@@ -20,6 +20,7 @@ import {
   objectPaintTextColor,
   objectPicturePreserveAspectRatio,
   objectTextTransformCss,
+  resolveObjectTextFontFamily,
 } from '../../framework'
 import {createBlockShell} from '../dom/create-block-shell'
 import type {SnapshotBlockRenderer} from '../types'
@@ -162,7 +163,7 @@ export function createShapeRenderers(): SnapshotBlockRenderer[] {
           : `${textStyle.outline.width}px ${textStyle.outline.color}`,
       )
       text.style.filter = objectEffectsFilter(textStyle.effects)
-      text.style.fontFamily = format.textStyle!.fontFamily
+      text.style.fontFamily = resolveObjectTextFontFamily(format.textStyle!.fontFamily) ?? ''
       text.style.fontSize = `${format.textStyle!.fontSize}px`
       text.style.fontWeight = `${format.textStyle!.fontWeight}`
       text.style.fontStyle = format.textStyle!.fontStyle

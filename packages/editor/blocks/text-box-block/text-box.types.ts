@@ -6,6 +6,7 @@ import {
   DEFAULT_OBJECT_PAINT,
   DEFAULT_OBJECT_TEXT_FRAME,
   DEFAULT_OBJECT_TEXT_STYLE,
+  OBJECT_FORMAT_SECTION_KEYS,
   normalizeBlockObjectFormat,
   storeBlockObjectFormat,
   resolveBlockPosition,
@@ -18,9 +19,11 @@ import {
   type ObjectTextStyle,
   type BlockSurfacePadding,
   type BlockSurfaceProps,
+  type IBlockProps,
 } from '../../framework'
 import {getShapeDefinition} from '../shape-block/shape-definitions'
 import {normalizeShapeAdjustments} from '../shape-block/shape-geometry'
+import {storeTextBoxRotation} from './text-box.rotation'
 import {
   SHAPE_KINDS,
   isShapeKind,
@@ -37,7 +40,14 @@ import {
  */
 export type TextBoxWritingMode = 'h' | 'v'
 
-export interface TextBoxBlockProps extends BlockObjectFormatProps {
+type ObjectFormatStorageKey = (typeof OBJECT_FORMAT_SECTION_KEYS)[keyof typeof OBJECT_FORMAT_SECTION_KEYS][number]
+type TextBoxFormatFields = Pick<BlockObjectFormatProps, Exclude<ObjectFormatStorageKey, 'rotation'>>
+
+export interface TextBoxBlockProps extends IBlockProps, TextBoxFormatFields {
+  /** Missing means the default unrotated state. */
+  rotation?: number
+  position?: string
+  placementLayer?: 'under'
   /** Shape-shell kind; geometry remains catalog-side. */
   shape?: ShapeKind | null
   /** Shape-catalogue adjustment values, such as a callout tail position. */
@@ -117,7 +127,6 @@ export const TEXT_BOX_OBJECT_FORMAT_CAPABILITY: BlockObjectFormatCapability = {
 export const DEFAULT_TEXT_BOX_PROPS: Readonly<TextBoxBlockProps> = {
   width: 240,
   height: 120,
-  rotation: 0,
   lockRatio: false,
   shape: 'rectangle',
 }
@@ -188,8 +197,11 @@ export function normalizeTextBoxSnapshotProps(
   value: Readonly<Partial<TextBoxBlockProps>> | null | undefined,
 ): TextBoxBlockProps {
   const normalized = normalizeTextBoxProps(value)
+  const {rotation: _rotation, ...stored} = storeBlockObjectFormat(normalized, TEXT_BOX_OBJECT_FORMAT_CAPABILITY)
+  const rotation = storeTextBoxRotation(normalized.rotation)
   return {
-    ...storeBlockObjectFormat(normalized, TEXT_BOX_OBJECT_FORMAT_CAPABILITY),
+    ...stored,
+    ...(rotation === null ? {} : {rotation}),
     shape: normalized.shapeType,
     ...(normalized.artwork ? {artwork: normalized.artwork} : {}),
     ...(normalized.adjustments ? {adjustments: normalized.adjustments} : {}),

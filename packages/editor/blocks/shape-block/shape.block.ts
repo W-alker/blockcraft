@@ -19,6 +19,7 @@ import {
   objectPaintBackgroundSize,
   objectTextTransformCss,
   objectPicturePreserveAspectRatio,
+  resolveObjectTextFontFamily,
 } from '../../framework'
 import {getShapeDefinition} from './shape-definitions'
 import {resolveAdjustedShapeTextInsets, resolveShapeAdjustmentProjection} from './shape-adjustments'
@@ -180,7 +181,7 @@ const shapeRotationTransform = (rotation: unknown): string => {
         [style.text-align]="shapeProps.shapeTextAlign"
         [style.justify-content]="verticalJustify"
         [style.writing-mode]="textWritingMode"
-        [style.font-family]="shapeFormat.textStyle?.fontFamily"
+        [style.font-family]="shapeFormat.textStyle?.fontFamily ? resolveObjectTextFontFamily(shapeFormat.textStyle!.fontFamily) : null"
         [style.font-size.px]="shapeFormat.textStyle?.fontSize"
         [style.font-weight]="shapeFormat.textStyle?.fontWeight"
         [style.font-style]="shapeFormat.textStyle?.fontStyle"
@@ -296,6 +297,7 @@ const shapeRotationTransform = (rotation: unknown): string => {
   `],
 })
 export class ShapeBlockComponent extends BaseBlockComponent<ShapeBlockModel> {
+  protected readonly resolveObjectTextFontFamily = resolveObjectTextFontFamily
   private readonly _ngZone = inject(NgZone)
 
   @ViewChild('shapeShell', {read: ElementRef})

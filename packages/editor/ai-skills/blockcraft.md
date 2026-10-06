@@ -425,7 +425,11 @@ for a cursor in its direct editable child; whole-block `render-unit` selection
 opens its own toolbar so an empty region remains configurable.
 The region toolbar has separate appearance and text rail buttons. Their popups
 contain fill/outline and inner-padding/typography tabs respectively;
-the appearance fields project through
+uniform four-sided borders persist in `border`, while differing sides use
+`borderTop` / `borderRight` / `borderBottom` / `borderLeft`; old `borders` objects
+remain readable. Object text formatting shares short catalog IDs in `textFamily`,
+while preserving custom CSS stacks. See `blockcraft-block.md` for the contract.
+The appearance fields project through
 `--bc-render-unit-background-color` / `--bc-render-unit-border-color`, and uses
 the same 82% solid-surface composition in the live editor and Snapshot Viewer.
 

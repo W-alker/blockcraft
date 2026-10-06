@@ -1,4 +1,5 @@
 import {normalizeTextBoxSnapshotProps} from "./text-box.types";
+import {storeTextBoxRotation} from './text-box.rotation'
 import { Component } from "@angular/core";
 import { TestBed } from "@angular/core/testing";
 import * as Y from "yjs";
@@ -591,11 +592,20 @@ describe("TextBoxBlockSchema", () => {
     expect(snapshot.flavour).toBe("text-box");
     expect(snapshot.nodeType).toBe(BlockNodeType.block);
     expect(snapshot.props).toEqual(DEFAULT_TEXT_BOX_PROPS);
+    expect(snapshot.props.rotation).toBeUndefined();
     expect(snapshot.children.length).toBe(1);
     const paragraph = snapshot.children[0] as IBlockSnapshot;
     expect(paragraph.flavour).toBe("paragraph");
     expect(paragraph.children).toEqual([]);
   });
+
+  it('stores only a nonzero rotation in whole degrees', () => {
+    expect(normalizeTextBoxSnapshotProps({rotation: 12.3456}).rotation).toBe(12)
+    expect(normalizeTextBoxSnapshotProps({rotation: -15.234}).rotation).toBe(345)
+    expect(normalizeTextBoxSnapshotProps({rotation: 359.999}).rotation).toBeUndefined()
+    expect(storeTextBoxRotation(12.5)).toBe(13)
+    expect(storeTextBoxRotation(360)).toBeNull()
+  })
 
   it("keeps initial rich text in the seeded paragraph", () => {
     const snapshot = TextBoxBlockSchema.createSnapshot([
@@ -617,6 +627,7 @@ describe("TextBoxBlockSchema", () => {
 
     let readonly = false;
     const preset = getTextBoxPreset("quote-inverted");
+    expect(preset.props.rotation).toBeUndefined();
     const snapshot = TextBoxBlockSchema.createSnapshot("", preset.props);
     const yDoc = new Y.Doc();
     const yBlock = new Y.Map<unknown>() as YBlock;

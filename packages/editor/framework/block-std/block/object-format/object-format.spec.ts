@@ -18,6 +18,7 @@ import {
   storeObjectPaint,
   type BlockObjectFormatCapability,
 } from './object-format'
+import {OBJECT_DISPLAY_FONT_FAMILIES, TYPOGRAPHY_FONT_FAMILIES, resolveObjectTextFontFamily} from '../../typography/core'
 
 const capability: BlockObjectFormatCapability = {
   kind: 'shape',
@@ -35,6 +36,15 @@ const capability: BlockObjectFormatCapability = {
 }
 
 describe('object format domain', () => {
+  it('stores shared catalog font IDs and keeps custom CSS stacks intact', () => {
+    const arial = TYPOGRAPHY_FONT_FAMILIES.find(font => font.id === 'arial')!
+    const display = OBJECT_DISPLAY_FONT_FAMILIES.find(font => font.id === 'cjk-hei')!
+    expect(storeObjectTextStyle({...DEFAULT_OBJECT_TEXT_STYLE, fontFamily: arial.css}).textFamily).toBe('arial')
+    expect(storeObjectTextStyle({...DEFAULT_OBJECT_TEXT_STYLE, fontFamily: display.stack}).textFamily).toBe('cjk-hei')
+    expect(resolveObjectTextFontFamily('cjk-hei')).toBe(display.stack)
+    expect(storeObjectTextStyle({...DEFAULT_OBJECT_TEXT_STYLE, fontFamily: 'Acme Custom, serif'}).textFamily)
+      .toBe('Acme Custom, serif')
+  })
   it('quantizes grouped strings while leaving structured reads and source objects unchanged', () => {
     const effects = {
       shadow: {...DEFAULT_OBJECT_EFFECTS.shadow, enabled: true,

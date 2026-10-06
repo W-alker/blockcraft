@@ -2,8 +2,8 @@ import {ChangeDetectionStrategy, Component, ElementRef, Input, ViewChild} from '
 import {FormsModule} from '@angular/forms'
 import {CsButtonComponent, CsColorPickerComponent, CsInputNumberComponent, CsOptionComponent, CsSegmentedComponent, CsSelectComponent, CsSliderComponent, CsTooltipDirective, type CsSliderValue} from '@cses/ui'
 import {BUILTIN_BG_COLOR_LIST, BUILTIN_COLOR_LIST, ColorGroup} from '../../../components'
-import {normalizeRegionBorders, type RegionBorders} from '../../../blocks/render-unit-block/borders'
-import {normalizeBlockSurfaceProps, normalizeObjectTextStyle, resolveBlockSurface, resolveTypographyFontFamily, storeObjectTextStyle, TYPOGRAPHY_FONT_FAMILIES, type ObjectTextStyle} from '../../../framework'
+import {normalizeRegionBorderProps, regionBorderPatch, resolveRegionBorders, REGION_BORDER_SIDE_PROPS} from '../../../blocks/render-unit-block/borders'
+import {compactObjectTextFontFamily, normalizeBlockSurfaceProps, normalizeObjectTextStyle, resolveBlockSurface, storeObjectTextStyle, TYPOGRAPHY_FONT_FAMILIES, type ObjectTextStyle} from '../../../framework'
 import {OBJECT_FORMAT_POPUP_STYLES, ObjectFormatPopupState} from '../../object-format-toolbar/object-format-popup'
 
 type RegionPanel = 'appearance' | 'text'
@@ -130,7 +130,7 @@ const SIDES = ['top', 'right', 'bottom', 'left'] as const
                     <cs-select csSize="sm" csVariant="outlined" [csValue]="fontFamilyValue" csPlaceholder="文档默认"
                                [csShowSearch]="true" (csValueChange)="changeFontFamily($event)">
                       @for (font of fontOptions; track font.id) {
-                        <cs-option [csValue]="font.css" [csLabel]="font.label" />
+                        <cs-option [csValue]="font.id" [csLabel]="font.label" />
                       }
                     </cs-select>
                   </label>
@@ -208,7 +208,12 @@ export class RenderUnitToolbar {
     return this.activePanel === 'text' ? this.textTabOptions : this.appearanceTabOptions
   }
   readonly paddingSides = [{key: 'top', label: '上'}, {key: 'right', label: '右'}, {key: 'bottom', label: '下'}, {key: 'left', label: '左'}] as const
-  readonly fontOptions = TYPOGRAPHY_FONT_FAMILIES
+  get fontOptions() {
+    const current = this.containerBlock?.props.textFamily
+    return current && !TYPOGRAPHY_FONT_FAMILIES.some(font => font.id === compactObjectTextFontFamily(current))
+      ? [...TYPOGRAPHY_FONT_FAMILIES, {id: current, label: '自定义字体', css: current}]
+      : TYPOGRAPHY_FONT_FAMILIES
+  }
   readonly fontWeights = [
     {value: 400, label: '常规 400'}, {value: 500, label: '中等 500'},
     {value: 600, label: '半粗 600'}, {value: 700, label: '粗体 700'},
@@ -226,7 +231,7 @@ export class RenderUnitToolbar {
     {value: 'bottom', label: '下'}, {value: 'left', label: '左'},
   ]
   private get selectedEdge() {
-    const border = normalizeRegionBorders(this.containerBlock.props.borders)?.[this.borderSide]
+    const border = resolveRegionBorders(this.containerBlock.props)?.[this.borderSide]
     const match = border?.match(/^(\d+(?:\.\d+)?)px (solid|dashed|dotted|double) (.+)$/)
     return {
       width: match ? Number(match[1]) : 0,
@@ -237,15 +242,17 @@ export class RenderUnitToolbar {
   get edgeWidth() { return this.selectedEdge.width }
   get edgeStyle() { return this.selectedEdge.style }
   get edgeColor() { return this.selectedEdge.color }
-  get hasIndependentBorders() { return !!normalizeRegionBorders(this.containerBlock.props.borders) }
+  get hasIndependentBorders() {
+    const props = normalizeRegionBorderProps(this.containerBlock.props)
+    return SIDES.some(side => props[REGION_BORDER_SIDE_PROPS[side]] != null)
+  }
   padding = {top: 0, right: 0, bottom: 0, left: 0}
   textStyle = normalizeObjectTextStyle({})
   backOpacityPercent = 82
   private opacityPending = false
   get fontFamilyValue(): string | null {
-    return this.containerBlock.props.textFamily
-      ? resolveTypographyFontFamily(this.textStyle.fontFamily)
-      : null
+    const family = this.containerBlock.props.textFamily
+    return family ? compactObjectTextFontFamily(family) : null
   }
 
   ngOnInit() {
@@ -256,7 +263,7 @@ export class RenderUnitToolbar {
     this.textStyle = normalizeObjectTextStyle(this.containerBlock.props)
     this.backOpacityPercent = Math.round((this.containerBlock.props.backOpacity ?? 0.82) * 100)
 
-    const existingBorder = Object.values(normalizeRegionBorders(this.containerBlock.props.borders) ?? {})
+    const existingBorder = Object.values(resolveRegionBorders(this.containerBlock.props) ?? {})
       .find(value => value !== 'none')
     const parsed = existingBorder?.match(/^(\d+(?:\.\d+)?)px (solid|dashed|dotted|double) (.+)$/)
     if (parsed) {
@@ -348,8 +355,9 @@ export class RenderUnitToolbar {
   }
 
   changeFontFamily(value: unknown) {
-    if (typeof value !== 'string' || !this.fontOptions.some(font => font.css === value)) return
-    this.writeTextStyle('textFamily', {...this.textStyle, fontFamily: value})
+    if (typeof value !== 'string' || !TYPOGRAPHY_FONT_FAMILIES.some(font => font.id === value)) return
+    this.textStyle = {...this.textStyle, fontFamily: value}
+    this.containerBlock.updateProps({textFamily: value})
   }
 
   changeTextNumber(key: 'fontSize' | 'letterSpacingEm' | 'lineHeight', value: number | null) {
@@ -369,7 +377,7 @@ export class RenderUnitToolbar {
     this.containerBlock.updateProps({textFamily: null, textFont: null, textSpacing: null, textFill: null})
   }
 
-  private writeTextStyle(field: 'textFamily' | 'textFont' | 'textSpacing', style: ObjectTextStyle) {
+  private writeTextStyle(field: 'textFont' | 'textSpacing', style: ObjectTextStyle) {
     this.textStyle = style
     this.containerBlock.updateProps({[field]: storeObjectTextStyle(style)[field]})
   }
@@ -404,27 +412,19 @@ export class RenderUnitToolbar {
     if (!Number.isFinite(width) || width < 0 || width > 24 ||
         !['solid', 'dashed', 'dotted', 'double'].includes(String(style)) ||
         typeof color !== 'string') return
-    const borders = normalizeRegionBorders(this.containerBlock.props.borders) ?? {}
-    this.containerBlock.updateProps({borders: {
-      ...borders,
-      [this.borderSide]: width === 0 ? 'none' : `${width}px ${style} ${color}`,
-    }})
+    const current = normalizeRegionBorderProps(this.containerBlock.props)
+    this.containerBlock.updateProps(regionBorderPatch({
+      ...this.containerBlock.props, ...current,
+      [REGION_BORDER_SIDE_PROPS[this.borderSide]]: width === 0 ? 'none' : `${width}px ${style} ${color}`,
+    }))
   }
 
   resetBorders() {
-    this.containerBlock.updateProps({borders: null})
+    this.containerBlock.updateProps(regionBorderPatch({}))
   }
 
   private writeBorder(width: number, style: BorderStyle, color: string | null) {
-    const existing = normalizeRegionBorders(this.containerBlock.props.borders)
-    if (!existing && width === 1 && style === 'solid') {
-      this.containerBlock.updateProps({borderColor: color})
-      return
-    }
-    const borders: RegionBorders | null = width > 0 && color
-      ? Object.fromEntries(SIDES.filter(side => !existing || (existing[side] && existing[side] !== 'none'))
-          .map(side => [side, `${width}px ${style} ${color}`]))
-      : null
-    this.containerBlock.updateProps({borders, borderColor: null})
+    const border = width > 0 && color ? `${width}px ${style} ${color}` : null
+    this.containerBlock.updateProps({...regionBorderPatch({border}), borderColor: null})
   }
 }

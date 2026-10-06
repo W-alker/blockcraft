@@ -15,13 +15,12 @@ import {RenderUnitBlockComponent} from './render-unit.block'
 
 export * from './agent'
 export * from './borders'
-import {normalizeRegionBorders, RegionBorders} from './borders'
+import {normalizeRegionBorderProps, RegionBorderProps} from './borders'
 import {normalizeRenderUnitTypographyProps, RenderUnitTypographyProps} from './typography'
 
 export * from './typography'
 
-export interface RenderUnitBlockProps extends BlockSurfaceProps, BlockObjectSizeProps, RenderUnitTypographyProps {
-  borders?: RegionBorders | null
+export interface RenderUnitBlockProps extends BlockSurfaceProps, BlockObjectSizeProps, RenderUnitTypographyProps, RegionBorderProps {
   backColor?: string | null
   /** Background-color opacity from 0 to 1; omitted uses the theme default. */
   backOpacity?: number | null
@@ -54,8 +53,7 @@ export function normalizeRenderUnitBlockProps(
   const normalized: RenderUnitBlockProps = normalizeBlockSurfaceProps(input)
   if (!input) return normalized
   Object.assign(normalized, normalizeRenderUnitTypographyProps(input))
-  const borders = normalizeRegionBorders(input['borders'])
-  if (borders) normalized.borders = borders
+  Object.assign(normalized, normalizeRegionBorderProps(input))
 
   const backColor = normalizeColor(input['backColor'])
   if (backColor) normalized.backColor = backColor

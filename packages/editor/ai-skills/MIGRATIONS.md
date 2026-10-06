@@ -68,6 +68,44 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## Unreleased — 2026-10-06：文本框旋转值按需保存
+
+**Severity**: major
+
+**What changed**: 新建文本框和预设不再写入默认的 `rotation: 0`；非零旋转值在创建、旋转手柄提交及 HTML 往返时写为整数。`TextBoxBlockProps.rotation` 改为可选，缺省仍按 0° 渲染。
+
+**Why**: 默认角度是可推导值，无需占用快照字段；手柄的浮点计算结果不应原样写入文档。
+
+**Affected ai-skills files**: `blockcraft-block.md`。
+
+### Breaking Changes
+
+- 读取 `TextBoxBlockProps.rotation` 的 TypeScript 调用方现在需处理 `undefined`；旧快照中的 `rotation: 0` 保持可读。
+
+### Migration Recipe
+
+使用 `props.rotation ?? 0` 获取显示角度；创建默认文本框时省略 `rotation`。需要显式旋转时仍可传入数字，快照会归一化并取整。
+
+### Behavior Changes
+
+文本框默认快照与 HTML 不再包含旋转属性；手柄旋回 0° 时删除该属性。
+
+## Unreleased — 2026-10-06：内容区域边框与字体值精简
+
+**Severity**: minor
+
+**What changed**: `render-unit` 新写入的统一边框使用 `border`，差异边使用 `borderTop` / `borderRight` / `borderBottom` / `borderLeft`；旧 `borders` 四边对象只作兼容读取。通用对象文字属性 `textFamily` 的目录字体改存字体 ID，覆盖填写区、文本框、艺术字和形状。Schema、工具栏和 HTML 导入统一压缩新写入的值，旧对象边框与自定义 CSS 字体栈继续可读。
+
+**Why**: 避免在快照中重复保存四条相同边框和冗长的字体回退栈。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-toolbar.md`、`blockcraft-adapter.md`。
+
+**New APIs / Features**: `RegionBorderProps`、`REGION_BORDER_SIDE_PROPS`、`normalizeRegionBorderProps()`、`resolveRegionBorders()`、`regionBorderPatch()`、`OBJECT_DISPLAY_FONT_FAMILIES`、`compactObjectTextFontFamily()`、`resolveObjectTextFontFamily()`。
+
+**Migration Recipe**: 外部边框面板应读取 `border` 加四个单边属性；旧 `borders` 对象只作为回退。写入统一边框可用 `{border: '2px solid #123456'}`，只改左边可同时设置 `borderLeft`，四边一致时删除单边属性。目录字体可用 `textFamily: 'arial'`。旧快照无需批量迁移。
+
+**Behavior Changes**: 新快照和 HTML 导入将旧对象边框转换为 `border` 及差异边属性；四边一致时只保留 `border`。通用对象格式把与目录项完全相同的字体栈压缩为 ID；自定义字体栈保持原值。
+
 ## Unreleased — 2026-10-06：内容区域纯色填充透明度
 
 **Severity**: minor

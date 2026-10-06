@@ -77,7 +77,7 @@ const OBJECT_TEXT_FONT_OPTIONS = [
     id: font.id,
     label: font.label,
     css: font.css,
-    value: font.css,
+    value: font.id,
   })),
   ...WORD_ART_FONT_OPTIONS.filter(
     (font) => !TYPOGRAPHY_FONT_FAMILIES.some((item) => item.id === font.id),
@@ -85,14 +85,14 @@ const OBJECT_TEXT_FONT_OPTIONS = [
     id: font.id,
     label: font.label,
     css: font.stack,
-    value: font.stack,
+    value: font.id,
   })),
 ] as const;
 
 function resolveObjectTextFontValue(value: string): string {
   return (
     OBJECT_TEXT_FONT_OPTIONS.find(
-      (font) => font.id === value || font.value === value,
+      (font) => font.id === value || font.css === value,
     )?.value ?? value
   );
 }

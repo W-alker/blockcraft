@@ -1,7 +1,7 @@
 import {
   colorWithOpacity,
   normalizeObjectTextStyle,
-  resolveTypographyFontFamily,
+  resolveObjectTextFontFamily,
   storeObjectTextStyle,
 } from '../../framework'
 
@@ -39,7 +39,7 @@ export function resolveRenderUnitTypography(input: Readonly<Record<string, unkno
   }
   const style = normalizeObjectTextStyle(props)
   return {
-    fontFamily: props.textFamily ? resolveTypographyFontFamily(style.fontFamily) : null,
+    fontFamily: props.textFamily ? resolveObjectTextFontFamily(style.fontFamily) : null,
     fontSize: props.textFont ? `${style.fontSize}px` : null,
     fontWeight: props.textFont ? `${style.fontWeight}` : null,
     fontStyle: props.textFont ? style.fontStyle : null,

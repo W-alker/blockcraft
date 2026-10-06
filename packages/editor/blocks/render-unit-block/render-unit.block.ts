@@ -84,10 +84,12 @@ export class RenderUnitBlockComponent extends BaseBlockComponent<RenderUnitBlock
 
   override ngAfterViewInit() {
     super.ngAfterViewInit()
-    applyRegionBorders(this.hostElement, this.props.borders)
+    applyRegionBorders(this.hostElement, this.props)
     applyRenderUnitTypography(this.hostElement, this.props)
     this.onPropsChange.pipe(takeUntil(this.onDestroy$)).subscribe(changes => {
-      if (changes.has('borders')) applyRegionBorders(this.hostElement, this.props.borders)
+      if (['border', 'borders', 'borderTop', 'borderRight', 'borderBottom', 'borderLeft'].some(key => changes.has(key))) {
+        applyRegionBorders(this.hostElement, this.props)
+      }
       if (['textFamily', 'textFont', 'textSpacing', 'textFill'].some(key => changes.has(key))) {
         applyRenderUnitTypography(this.hostElement, this.props)
       }

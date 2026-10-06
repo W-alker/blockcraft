@@ -38,7 +38,7 @@ const title = ParagraphBlockSchema.createSnapshot('感悟', {
   decoration: {position: 'after', color: '#D4C2A7', width: 1, gap: 12},
 });
 const region = RenderUnitBlockSchema.createSnapshot({}, {
-  borders: {top: '2px solid #9A7654', left: 'none'},
+  border: '1px solid #9A7654', borderLeft: 'none',
 });
 ```
 
@@ -46,7 +46,7 @@ const region = RenderUnitBlockSchema.createSnapshot({}, {
 
 段落 DOM 现在稳定使用 `p.paragraph-block > span.bc-paragraph-text.edit-container`；不要假设文本直接挂在段落宿主上。装饰是宿主伪元素，不参与选区、复制或富文本长度。预览使用同一装饰投影；HTML adapter 用 `data-bc-decoration` 保存配置。
 
-`RegionBorders` 是 top/right/bottom/left 到 CSS 边框简写的稀疏映射，支持 none 或 `0..24px solid|dashed|dotted|double 色值`。有效 `borders` 存在时，未配置的边为 none，并优先于旧 `borderColor` 统一轮廓；`borders: null` 恢复原外观。HTML adapter 用 `data-bc-borders` 保留配置。该能力属于所有 render-unit，不要求模板填写区 meta 标记。
+`render-unit.props.border` 用单个 CSS 边框简写字符串设置四边；`borderTop`、`borderRight`、`borderBottom`、`borderLeft` 仅在对应边与统一值不同的情况下保存。支持 none 或 `0..24px solid|dashed|dotted|double 色值`。四边重新一致时清除单边属性，只保留 `border`。旧 `borders` 稀疏对象仍可读取：未配置的边视为 none，Schema/HTML 导入会转换为新属性；新快照不再写 `borders`。新边框属性优先于旧 `borderColor` 统一轮廓；清除全部边框属性恢复旧外观。HTML adapter 分别使用 `data-bc-border` 和四个 `data-bc-border-*` 属性。该能力属于所有 render-unit，不要求模板填写区 meta 标记。
 
 分割线仅呈现纯线条、胶带或花边。旧 text/align/color/fontSize/fontWeight/fontStyle/letterSpacing 字段忽略，HTML 导出也不再携带这些字段，不进行旧数据转换。要制作带文字的分隔标题，使用可编辑段落及 decoration。
 
@@ -1277,7 +1277,7 @@ const schema: IBlockSchemaOptions<MyObjectModel> = {
 | `textPadding` | `"18 22"`，布局 px，支持 CSS 顺序的一到四个值 |
 | `textAlignment` | `"left top"`；不与段落 `textAlign` 混用 |
 | `textDirection/textWrap/textAutoFit/textRotate` | 独立枚举/布尔值 |
-| `textFamily` | 独立字体 ID/安全字体栈，不拼入位置字符串 |
+| `textFamily` | 通用对象文字属性：目录字体存短 ID（如 `arial`、`cjk-hei`），自定义安全字体栈保持原值 |
 | `textFont` / `textSpacing` | `"24px 700 italic"` / `"0.1em 1.5"` |
 | `textOutline` / `textTransform` | `"1px #000000"` 或 `"none"` / 独立变形枚举 |
 
@@ -1299,7 +1299,7 @@ const schema: IBlockSchemaOptions<MyObjectModel> = {
 
 数值写入精度不变：渐变/阴影角度、阴影模糊与距离、发光半径及内边距取整；
 轮廓宽度按 `0.25px` 收敛；字号、字距、行高、透明度、停点及图片位置保留两位。
-定位使用 `storeBlockPosition()` 保留两位；宽高、旋转及比例保持原精度。只读行内解码可用 `{preservePrecision: true}`，
+定位使用 `storeBlockPosition()` 保留两位；通用对象格式的宽高、旋转及比例保持原精度，文本框旋转在其块级快照和手柄提交边界取整并省略 0°。只读行内解码可用 `{preservePrecision: true}`，
 它保留新格式中的合法精度，不是旧格式兼容开关。`OBJECT_FORMAT_SECTION_KEYS` 描述
 每项结构化操作拥有的小组；manager 只写变化的小组，并用 `null` 删除默认组。
 
@@ -1351,7 +1351,7 @@ document prose. Its exact child allowlist is `paragraph`, `bullet`, `ordered`,
 `todo` and `blockquote`; nested media, tables and drawing objects are rejected.
 Deleting the last child restores the framework's normal fallback paragraph.
 
-`TextBoxBlockProps` uses fixed `width`, `height`, `rotation` plus the unified
+`TextBoxBlockProps` uses fixed `width`, `height`, optional `rotation` plus the unified
 `lockRatio/shape` 以及上述独立外观和文字小组。 It also
 accepts the same optional flat numeric `adjustments` record as catalog Shape
 geometry. Callout presets use `tailX` / `tailY` in the normalized `0..1000`
@@ -1362,8 +1362,10 @@ stay concise by omitting redundant domain prefixes while remaining readable.
 must not be used for new snapshots. `position` and `placementLayer` remain
 independent and are present only while the text box is structurally absolute.
 Defaults are `240 × 120`, rectangle, rotation `0`,
-`textFrame.margins: [8, 12, 8, 12]`, a white fill and a black outline. Text
-direction is `textFrame.direction: 'horizontal' | 'vertical-rl' |
+`textFrame.margins: [8, 12, 8, 12]`, a white fill and a black outline. Text box
+snapshots omit `rotation` at 0°; nonzero angles are normalized to `[0, 360)`
+and stored as whole degrees. Existing snapshots with `rotation: 0`
+remain readable. Text direction is `textFrame.direction: 'horizontal' | 'vertical-rl' |
 'rotate-90' | 'rotate-270'`; the former compact `wm` field is not persisted.
 
 `TEXT_BOX_PRESETS` is the 58-style gallery grouped into `office`, `quote`,

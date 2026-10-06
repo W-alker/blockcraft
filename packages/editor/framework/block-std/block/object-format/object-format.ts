@@ -2,6 +2,7 @@ import {decodeCssPicture, encodeCssPicture} from './object-picture'
 import {decodeObjectGradient, encodeObjectGradient} from './object-gradient'
 import {quantizeObjectFormatNumber} from './object-format-number'
 import type {IBlockProps} from '@ccc/blockcraft/framework/model'
+import {compactObjectTextFontFamily} from '@ccc/blockcraft/framework/block-std/typography'
 
 /** 只读行内解码时保留合法精度；持久化构造使用缺省精度。 */
 type ObjectFormatStorageOptions = Readonly<{preservePrecision?: boolean}>
@@ -712,7 +713,7 @@ export function storeObjectTextStyle(
   const effects = storeObjectEffects(style.effects, options)
   const q = (n: number) => quantizeObjectFormatNumber(n, 0.01, options.preservePrecision)
   return {
-    textFamily: style.fontFamily,
+    textFamily: compactObjectTextFontFamily(style.fontFamily),
     textFont: `${q(style.fontSize)}px ${style.fontWeight} ${style.fontStyle}`,
     textSpacing: `${q(style.letterSpacingEm)}em ${q(style.lineHeight)}`,
     textFill: storeObjectPaint(style.fill, options),

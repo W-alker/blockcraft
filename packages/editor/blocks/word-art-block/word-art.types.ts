@@ -18,60 +18,10 @@ import {
   objectTextTransformCss,
   resolveBlockPosition,
   resolveTypographyFontFamily,
+  OBJECT_DISPLAY_FONT_FAMILIES,
 } from '../../framework'
 
-export const WORD_ART_FONT_OPTIONS = [
-  {
-    id: 'display-sans',
-    label: '醒目黑体',
-    stack: '"Arial Black", "PingFang SC", "Microsoft YaHei", sans-serif',
-  },
-  {
-    id: 'rounded-sans',
-    label: '圆体',
-    stack: '"Arial Rounded MT Bold", "PingFang SC", "Microsoft YaHei", sans-serif',
-  },
-  {
-    id: 'serif',
-    label: '衬线体',
-    stack: 'Georgia, "Songti SC", SimSun, serif',
-  },
-  {
-    id: 'cjk-hei',
-    label: '中文黑体',
-    stack: '"PingFang SC", "Microsoft YaHei", SimHei, sans-serif',
-  },
-  {
-    id: 'cjk-kai',
-    label: '中文楷体',
-    stack: 'Kaiti SC, KaiTi, STKaiti, serif',
-  },
-  {
-    id: 'condensed-sans',
-    label: '窄体黑体',
-    stack: 'Impact, "Arial Narrow", "Microsoft YaHei", sans-serif',
-  },
-  {
-    id: 'humanist-sans',
-    label: '人文无衬线',
-    stack: 'Trebuchet MS, "PingFang SC", "Microsoft YaHei", sans-serif',
-  },
-  {
-    id: 'slab-serif',
-    label: '粗衬线体',
-    stack: 'Rockwell, "Songti SC", SimSun, serif',
-  },
-  {
-    id: 'cjk-song',
-    label: '中文宋体',
-    stack: 'Songti SC, STSong, SimSun, serif',
-  },
-  {
-    id: 'monospace',
-    label: '等宽体',
-    stack: 'Menlo, Consolas, "Microsoft YaHei", monospace',
-  },
-] as const
+export const WORD_ART_FONT_OPTIONS = OBJECT_DISPLAY_FONT_FAMILIES
 
 export type WordArtFontId = typeof WORD_ART_FONT_OPTIONS[number]['id']
 export type WordArtFontWeight = 400 | 500 | 600 | 700 | 800 | 900

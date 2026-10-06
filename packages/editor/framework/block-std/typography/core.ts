@@ -106,6 +106,40 @@ export const TYPOGRAPHY_FONT_FAMILIES: readonly TypographyFontFamilyOption[] =
     },
   ] satisfies TypographyFontFamilyOption[]);
 
+/** Object text also offers the display fonts used by WordArt. */
+export const OBJECT_DISPLAY_FONT_FAMILIES = [
+  {id: 'display-sans', label: '醒目黑体', stack: '"Arial Black", "PingFang SC", "Microsoft YaHei", sans-serif'},
+  {id: 'rounded-sans', label: '圆体', stack: '"Arial Rounded MT Bold", "PingFang SC", "Microsoft YaHei", sans-serif'},
+  {id: 'serif', label: '衬线体', stack: 'Georgia, "Songti SC", SimSun, serif'},
+  {id: 'cjk-hei', label: '中文黑体', stack: '"PingFang SC", "Microsoft YaHei", SimHei, sans-serif'},
+  {id: 'cjk-kai', label: '中文楷体', stack: 'Kaiti SC, KaiTi, STKaiti, serif'},
+  {id: 'condensed-sans', label: '窄体黑体', stack: 'Impact, "Arial Narrow", "Microsoft YaHei", sans-serif'},
+  {id: 'humanist-sans', label: '人文无衬线', stack: 'Trebuchet MS, "PingFang SC", "Microsoft YaHei", sans-serif'},
+  {id: 'slab-serif', label: '粗衬线体', stack: 'Rockwell, "Songti SC", SimSun, serif'},
+  {id: 'cjk-song', label: '中文宋体', stack: 'Songti SC, STSong, SimSun, serif'},
+  {id: 'monospace', label: '等宽体', stack: 'Menlo, Consolas, "Microsoft YaHei", monospace'},
+] as const;
+
+const OBJECT_FONT_FAMILIES = [
+  ...TYPOGRAPHY_FONT_FAMILIES.map(font => ({id: font.id as string, css: font.css})),
+  ...OBJECT_DISPLAY_FONT_FAMILIES.filter(font => !TYPOGRAPHY_FONT_FAMILIES.some(item => item.id === font.id))
+    .map(font => ({id: font.id as string, css: font.stack})),
+];
+
+/** Persist catalog fonts by ID, while keeping custom and old CSS stacks intact. */
+export function compactObjectTextFontFamily(value: string): string {
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, ' ');
+  return OBJECT_FONT_FAMILIES.find(font => font.id === value ||
+    font.css.toLowerCase().replace(/\s+/g, ' ') === normalized)?.id ?? value;
+}
+
+/** Resolve object text IDs for live surfaces, exports and snapshot previews. */
+export function resolveObjectTextFontFamily(value: unknown): string | null {
+  const display = OBJECT_DISPLAY_FONT_FAMILIES.find(font =>
+    font.id !== 'serif' && font.id === value);
+  return display?.stack ?? resolveTypographyFontFamily(value);
+}
+
 const FAMILY_BY_ID = new Map(
   TYPOGRAPHY_FONT_FAMILIES.map((option) => [option.id, option] as const),
 );

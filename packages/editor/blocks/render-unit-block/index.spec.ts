@@ -1,5 +1,5 @@
-import {BlockNodeType} from '../../framework'
-import {RenderUnitBlockSchema, applyRenderUnitTypography, resolveRenderUnitDimensions} from './index'
+import {BlockNodeType, TYPOGRAPHY_FONT_FAMILIES} from '../../framework'
+import {RenderUnitBlockSchema, applyRegionBorders, applyRenderUnitTypography, resolveRenderUnitDimensions} from './index'
 
 describe('RenderUnitBlockSchema', () => {
   it('preserves responsive sizes and uses the same root-width basis as images', () => {
@@ -55,6 +55,31 @@ describe('RenderUnitBlockSchema', () => {
 
   it('keeps the existing empty createSnapshot call compatible', () => {
     expect(RenderUnitBlockSchema.createSnapshot().props).toEqual({})
+  })
+
+  it('compacts equal borders and catalog fonts while preserving distinct sides and custom fonts', () => {
+    const uniform = {top: '2px solid #123456', right: '2px solid #123456',
+      bottom: '2px solid #123456', left: '2px solid #123456'}
+    expect(RenderUnitBlockSchema.createSnapshot({}, {
+      borders: uniform, textFamily: TYPOGRAPHY_FONT_FAMILIES.find(font => font.id === 'arial')!.css,
+    }).props).toEqual({border: '2px solid #123456', textFamily: 'arial'})
+    expect(RenderUnitBlockSchema.createSnapshot({}, {
+      borders: {top: 'none', left: '1px dotted #abcdef'},
+      textFamily: 'Acme Custom, serif',
+    }).props).toEqual({
+      border: 'none', borderLeft: '1px dotted #abcdef',
+      textFamily: 'Acme Custom, serif',
+    })
+  })
+
+  it('projects the base border and side override, then clears both', () => {
+    const host = document.createElement('div')
+    applyRegionBorders(host, {border: '2px solid #123456', borderLeft: 'none'})
+    expect(host.style.getPropertyValue('--bc-region-border-top')).toBe('2px solid #123456')
+    expect(host.style.getPropertyValue('--bc-region-border-left')).toBe('none')
+    expect(host.hasAttribute('data-bc-region-borders')).toBeTrue()
+    applyRegionBorders(host, {})
+    expect(host.hasAttribute('data-bc-region-borders')).toBeFalse()
   })
 
   it('normalizes region text defaults and clears their projected styles', () => {

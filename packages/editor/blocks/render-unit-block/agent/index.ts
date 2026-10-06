@@ -28,7 +28,12 @@ export const RENDER_UNIT_BLOCK_AGENT_CAPABILITY = defineBlockAgentCapability({
   writableProps: blockAgentWritableProps({
     wr: {type: ['number', 'null'], minimum: 1, maximum: 100},
     ar: {type: ['number', 'null'], exclusiveMinimum: 0},
+    border: BLOCK_AGENT_NULLABLE_STRING_SCHEMA,
     borders: {type: ['object', 'null'], properties: {top: {type: 'string'}, right: {type: 'string'}, bottom: {type: 'string'}, left: {type: 'string'}}, additionalProperties: false},
+    borderTop: BLOCK_AGENT_NULLABLE_STRING_SCHEMA,
+    borderRight: BLOCK_AGENT_NULLABLE_STRING_SCHEMA,
+    borderBottom: BLOCK_AGENT_NULLABLE_STRING_SCHEMA,
+    borderLeft: BLOCK_AGENT_NULLABLE_STRING_SCHEMA,
     backColor: BLOCK_AGENT_NULLABLE_STRING_SCHEMA,
     backOpacity: {type: ['number', 'null'], minimum: 0, maximum: 1},
     borderColor: BLOCK_AGENT_NULLABLE_STRING_SCHEMA,

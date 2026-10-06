@@ -203,7 +203,6 @@ function canonicalizePreset<T extends TextBoxPresetDefinition>(
     props: normalizeTextBoxSnapshotProps({
       width: preset.defaultWidth,
       height: preset.defaultHeight,
-      rotation: defaults.rotation,
       lockRatio: defaults.lockAspectRatio,
       ...(source.adjustments
         ? { adjustments: { ...source.adjustments } }

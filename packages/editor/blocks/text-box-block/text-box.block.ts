@@ -48,6 +48,7 @@ import {
   type NormalizedTextBoxBlockProps,
   type TextBoxBlockProps,
 } from './text-box.types'
+import {storeTextBoxRotation} from './text-box.rotation'
 
 const rotationTransform = (rotation: number): string =>
   rotation === 0 ? '' : `rotate(${rotation}deg)`
@@ -543,9 +544,10 @@ export class TextBoxBlockComponent extends BaseBlockComponent<TextBoxBlockModel>
 
   commitRotation(event: ShapeRotateCommit): void {
     if (this.isReadonly) return
-    this.doc.placement.updateObjectGeometry(this, {rotation: event.rotation})
+    const rotation = storeTextBoxRotation(event.rotation)
+    this.doc.placement.updateObjectGeometry(this, {rotation})
     const surface = this._surface?.nativeElement
-    if (surface) surface.style.transform = rotationTransform(event.rotation)
+    if (surface) surface.style.transform = rotationTransform(rotation ?? 0)
   }
 
   /**

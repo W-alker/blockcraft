@@ -246,7 +246,7 @@ function renderRenderUnit(
   ctx: SnapshotRenderContext,
 ) {
   const element = createBlockShell(snapshot)
-  applyRegionBorders(element, snapshot.props["borders"])
+  applyRegionBorders(element, snapshot.props)
   const dimensions = resolveRenderUnitDimensions(snapshot.props as Record<string, unknown>, 100)
   if (dimensions) {
     element.classList.add('render-unit-sized')

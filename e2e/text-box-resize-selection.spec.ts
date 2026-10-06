@@ -107,6 +107,30 @@ for (const flow of [false, true]) {
 for (const absolute of [false, true]) {
   const mode = absolute ? 'absolute' : 'flow'
 
+  test(`${mode} text-box clears rotation when committed at zero`, async ({page}) => {
+    const id = await createTextBox(page, absolute)
+    await page.evaluate(id => {
+      const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+      doc.getBlockById(id).commitRotation({rotation: 1})
+    }, id)
+    await expect.poll(() => page.evaluate(id => {
+      const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+      return doc.getBlockById(id).props.rotation
+    }, id)).toBe(1)
+    await page.evaluate(id => {
+      const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+      doc.getBlockById(id).commitRotation({rotation: 0})
+    }, id)
+    await expect.poll(() => page.evaluate(id => {
+      const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+      const block = doc.getBlockById(id)
+      return {
+        hasRotation: Object.prototype.hasOwnProperty.call(block.props, 'rotation'),
+        transform: getComputedStyle(block.hostElement.querySelector('.text-box-block__surface')).transform,
+      }
+    }, id)).toEqual({hasRotation: false, transform: 'none'})
+  })
+
   test(`${mode} text-box keeps all handles through slow width resize and rotation`, async ({page}) => {
     const id = await createTextBox(page, absolute)
     const block = page.locator(`.text-box-block[data-block-id="${id}"]`)

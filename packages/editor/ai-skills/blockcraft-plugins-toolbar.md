@@ -748,8 +748,11 @@ Callout shows its existing floating color toolbar when editing a direct child
 region. Two first-level rail buttons reuse the shared object popup: appearance
 contains fill/outline tabs, while text contains inner-padding/typography tabs.
 The outline tab keeps uniform width, style and color controls and can edit each
-side independently through the existing `borders` prop; reset removes those
-per-side overrides and returns to the uniform border.
+side independently through `borderTop` / `borderRight` / `borderBottom` /
+`borderLeft`; reset removes these overrides. Uniform borders use `border`, and
+matching side overrides are removed automatically. The same compact catalog
+font IDs are stored in `textFamily` by render-unit and object formatting; older
+custom font stacks remain readable.
 Typography is an inheritable content default;
 explicit child formatting wins. Callout retains text, background and border
 colors.
@@ -905,7 +908,7 @@ new TextMarkerPlugin(
 
 ### Render-unit 外观入口
 
-`CalloutToolbarPlugin` 对 `render-unit` 提供“外观选项”和“文本选项”两个一级按钮，分别包含填充/轮廓、内边距/字体页签，不显示宽高输入。轮廓页可按上、右、下、左分别设置粗细、线型和颜色，写入现有 `borders` 属性；“恢复统一边框”清除四边覆盖。通过内容区域顶部抓手聚焦按钮整块选中后，尺寸由八向手柄或块的 `setSize()` 调整，继续采用与图片一致的 `wr/ar` 持久化。内边距写入 `p`；字体设置写入 `textFamily`、`textFont`、`textSpacing`、`textFill`，只作为内容区域内文字的默认样式。
+`CalloutToolbarPlugin` 对 `render-unit` 提供“外观选项”和“文本选项”两个一级按钮，分别包含填充/轮廓、内边距/字体页签，不显示宽高输入。轮廓页的统一值写入 `border`，独立边写入对应的 `borderTop` / `borderRight` / `borderBottom` / `borderLeft`；“恢复统一边框”清除这些覆盖。通过内容区域顶部抓手聚焦按钮整块选中后，尺寸由八向手柄或块的 `setSize()` 调整，继续采用与图片一致的 `wr/ar` 持久化。内边距写入 `p`；字体设置写入 `textFamily`、`textFont`、`textSpacing`、`textFill`，只作为内容区域内文字的默认样式。
 
 填充页保留纯色选择器，并提供与文本框一致的 0–100% 透明度滑杆和百分比输出，松开滑杆或键盘操作结束时写入 `backOpacity`（0–1）；调回默认的 82% 会清除覆盖。拖动期间只预览样式，避免每一帧都产生 Yjs 历史。缺省值沿用主题的实体块背景透明度，不影响 `bgi/bgo` 图片背景。
 
