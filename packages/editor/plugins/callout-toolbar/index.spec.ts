@@ -53,6 +53,7 @@ describe("CalloutToolbarPlugin delayed toolbar", () => {
         createConnectedOverlay: jasmine.createSpy("createConnectedOverlay").and.returnValue({
           componentRef: {
             setInput: jasmine.createSpy("setInput"),
+            instance: {panelChange: new Subject<void>()},
           },
           overlayRef: {
             dispose: jasmine.createSpy("dispose"),
@@ -116,7 +117,7 @@ describe("CalloutToolbarPlugin delayed toolbar", () => {
     plugin.destroy();
   }));
 
-  it("reuses the toolbar for text selections inside render-unit blocks", fakeAsync(() => {
+  it("does not open the toolbar for text selections inside render-unit blocks", fakeAsync(() => {
     const {plugin, doc, selection$, selectionValue, calloutSelection} = makeHarness("render-unit");
     plugin.init();
 
@@ -124,12 +125,7 @@ describe("CalloutToolbarPlugin delayed toolbar", () => {
     selection$.next(calloutSelection);
     tick(250);
 
-    expect(doc.overlayService.createConnectedOverlay).toHaveBeenCalled();
-    const {componentRef} = doc.overlayService.createConnectedOverlay.calls.mostRecent().returnValue;
-    expect(componentRef.setInput).toHaveBeenCalledWith(
-      "containerBlock",
-      calloutSelection.firstBlock.parentBlock,
-    );
+    expect(doc.overlayService.createConnectedOverlay).not.toHaveBeenCalled();
     plugin.destroy();
   }));
 
@@ -149,6 +145,49 @@ describe("CalloutToolbarPlugin delayed toolbar", () => {
 
     expect(doc.overlayService.createConnectedOverlay).toHaveBeenCalled();
     plugin.destroy();
+  }));
+
+  it("closes a render-unit toolbar when the cursor moves into its text", fakeAsync(() => {
+    const {plugin, doc, selection$, selectionValue, wholeRegionSelection, calloutSelection} = makeHarness("render-unit");
+    plugin.init();
+    selectionValue.current = wholeRegionSelection;
+    selection$.next(wholeRegionSelection);
+    tick(250);
+    const {overlayRef} = doc.overlayService.createConnectedOverlay.calls.mostRecent().returnValue;
+
+    selectionValue.current = calloutSelection;
+    selection$.next(calloutSelection);
+
+    expect(overlayRef.dispose).toHaveBeenCalled();
+    expect(doc.overlayService.createConnectedOverlay).toHaveBeenCalledTimes(1);
+    plugin.destroy();
+  }));
+
+  it("keeps the region panel during its own controls and closes on an outside pointer", fakeAsync(() => {
+    const {plugin, doc, selection$, selectionValue, wholeRegionSelection} = makeHarness("render-unit");
+    const overlayElement = document.createElement('div');
+    const control = document.createElement('button');
+    overlayElement.append(control);
+    document.body.append(overlayElement);
+    doc.overlayService.createConnectedOverlay.and.returnValue({
+      componentRef: {setInput: jasmine.createSpy('setInput'), instance: {panelChange: new Subject<void>()}},
+      overlayRef: {overlayElement, dispose: jasmine.createSpy('dispose'), updatePosition: jasmine.createSpy('updatePosition')},
+    } as any);
+    plugin.init();
+    selectionValue.current = wholeRegionSelection;
+    selection$.next(wholeRegionSelection);
+    tick(250);
+    const {overlayRef} = doc.overlayService.createConnectedOverlay.calls.mostRecent().returnValue;
+
+    control.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true}));
+    selectionValue.current = null;
+    selection$.next(null);
+    expect(overlayRef.dispose).not.toHaveBeenCalled();
+
+    document.body.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true}));
+    expect(overlayRef.dispose).toHaveBeenCalled();
+    plugin.destroy();
+    overlayElement.remove();
   }));
 
   it("does not open when the captured callout block is stale", fakeAsync(() => {

@@ -50,6 +50,7 @@ import { ShapeFillPanelComponent } from "../shape-toolbar/shape-fill-panel.compo
 import { ObjectFormatNumberPipe } from "./object-format-number.pipe";
 import { quantizeObjectFormatNumber } from "../../framework/block-std/block/object-format/object-format-number";
 import { normalizeObjectEffects, storeObjectEffects } from "../../framework";
+import {OBJECT_FORMAT_POPUP_STYLES, ObjectFormatPopupState} from "./object-format-popup";
 
 export type ObjectFormatPanel = "layout" | "shape" | "text";
 
@@ -1367,119 +1368,14 @@ export type ObjectFormatToolbarAction =
     </div>
   `,
   styles: [
+    OBJECT_FORMAT_POPUP_STYLES,
     `
-      :host {
-        display: block;
-        max-width: calc(100vw - 16px);
-      }
-      .object-format {
-        --object-format-settings-panel-width: 288px;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        box-sizing: border-box;
-        width: max-content;
-        max-width: 100%;
-        color: var(--bc-float-toolbar-item-color, #1f2937);
-        font-size: 12px;
-      }
-      .object-format--left {
-        flex-direction: row-reverse;
-      }
-      .object-format__rail {
-        display: flex;
-        flex: 0 0 auto;
-        flex-direction: column;
-        align-items: center;
-        gap: 4px;
-        box-sizing: border-box;
-        width: 42px;
-        padding: 5px;
-        border: 1px solid var(--bc-float-toolbar-divider-color, #e2e8f0);
-        border-radius: 11px;
-        background: var(--bc-float-toolbar-bg, #fff);
-        box-shadow: var(
-          --bc-fixed-toolbar-shadow,
-          0 8px 24px rgba(15, 23, 42, 0.16)
-        );
-      }
-      button .bc_icon {
-        flex: 0 0 auto;
-        font-size: 16px;
-      }
-      .object-format__rail button {
-        width: 32px;
-        min-width: 32px;
-        height: 32px;
-        min-height: 32px;
-        padding: 0;
-        color: inherit;
-      }
-      .object-format__rail button.active {
-        background: var(--bc-float-toolbar-item-active-bg, #eef2ff);
-        color: var(--bc-active-color, #4857e2);
-        box-shadow: inset 2px 0 0 var(--bc-active-color, #4857e2);
-      }
-      .object-format--left .object-format__rail button.active {
-        box-shadow: inset -2px 0 0 var(--bc-active-color, #4857e2);
-      }
-      .object-format__rail button .bc_icon {
-        font-size: 16px;
-      }
-      .object-format__rail-divider {
-        width: 24px;
-        height: 1px;
-        background: var(--bc-float-toolbar-divider-color, #e2e8f0);
-      }
-      .object-format__panel {
-        display: flex;
-        flex-direction: column;
-        box-sizing: border-box;
-        width: min(
-          var(--object-format-settings-panel-width),
-          calc(100vw - 86px)
-        );
-        max-width: 100%;
-        max-height: min(520px, calc(100vh - 24px));
-        padding: 10px;
-        overflow: hidden;
-        border: 1px solid var(--bc-float-toolbar-divider-color, #e2e8f0);
-        border-radius: 12px;
-        background: var(--bc-float-toolbar-bg, #fff);
-        box-shadow: var(
-          --bc-fixed-toolbar-shadow,
-          0 10px 28px rgba(15, 23, 42, 0.16)
-        );
-      }
-      .object-format__panel--compact {
-        --object-format-settings-panel-width: 228px;
-      }
       .object-format__notice {
         margin-bottom: 8px;
         padding: 7px 8px;
         border-radius: 6px;
         color: #92400e;
         background: #fffbeb;
-      }
-      .object-format__scroll {
-        box-sizing: border-box;
-        min-width: 0;
-        min-height: 0;
-        max-width: 100%;
-        overflow-x: hidden;
-        overflow-y: auto;
-        overscroll-behavior: contain;
-      }
-      .object-format__tabs {
-        display: block;
-        margin-bottom: 8px;
-      }
-      .object-format__tab-section[hidden] {
-        display: none;
-      }
-      .object-format__tab-section {
-        padding-bottom: 0;
-        border-bottom: 0;
       }
       section {
         padding: 10px 0;
@@ -1687,11 +1583,13 @@ export class ObjectFormatToolbarComponent {
     BLOCK_OBJECT_LAYOUT_OPTIONS.map((item) => item.value);
   @Input() groupSelection = false;
   @Output() readonly action = new EventEmitter<ObjectFormatToolbarAction>();
-  @Output() readonly panelChange = new EventEmitter<void>();
+  private readonly popup = new ObjectFormatPopupState<ObjectFormatPanel>();
+  @Output() readonly panelChange = this.popup.panelChange;
 
   // Keep the established compact rail-first interaction. Selecting an object
   // must not force a large panel open beside it.
-  activePanel: ObjectFormatPanel | null = null;
+  get activePanel(): ObjectFormatPanel | null { return this.popup.activePanel; }
+  set activePanel(value: ObjectFormatPanel | null) { this.popup.activePanel = value; }
   readonly panels = [
     { value: "layout" as const, label: "布局与排列", icon: "bc_buju" },
     { value: "shape" as const, label: "形状选项", icon: "bc_tuxing" },
@@ -1916,16 +1814,13 @@ export class ObjectFormatToolbarComponent {
   }
 
   open(panel: ObjectFormatPanel): void {
-    const closesCurrent = this.activePanel === panel;
     if (this.activePanel !== null) this.cancelEffectDrafts();
-    this.activePanel = closesCurrent ? null : panel;
-    this.panelChange.emit();
+    this.popup.toggle(panel);
   }
   close(): void {
     this.commitPendingSliders();
     this.cancelEffectDrafts();
-    this.activePanel = null;
-    this.panelChange.emit();
+    this.popup.close();
   }
   isSectionOpen(section: ObjectFormatSection): boolean {
     return !this.collapsedSections().has(section);
@@ -1937,7 +1832,7 @@ export class ObjectFormatToolbarComponent {
       else next.add(section);
       return next;
     });
-    this.panelChange.emit();
+    this.popup.changed();
   }
   selectShapeSection(value: string | number): void {
     if (value === "shape-type" && !this.canChangeShapeType) return;
@@ -1954,7 +1849,7 @@ export class ObjectFormatToolbarComponent {
         this.cancelShapeEffects();
       }
       this.activeShapeSection.set(value);
-      this.panelChange.emit();
+      this.popup.changed();
     }
   }
   selectTextSection(value: string | number): void {
@@ -1970,7 +1865,7 @@ export class ObjectFormatToolbarComponent {
         this.cancelTextEffects();
       }
       this.activeTextSection.set(value);
-      this.panelChange.emit();
+      this.popup.changed();
     }
   }
   layout(value: string): void {

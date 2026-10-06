@@ -1,9 +1,10 @@
 import { DocPlugin, getPositionWithOffset } from "../../framework";
-import { Subject, Subscription, takeUntil } from "rxjs";
+import { fromEvent, Subject, Subscription, takeUntil } from "rxjs";
 import { OverlayRef } from "@angular/cdk/overlay";
 import { CalloutBlockToolbar } from "./widgets/callout.toolbar";
 import { throttle } from "../../global";
 import {isSelectionAlive} from "../../framework/modules/selection/liveness";
+import {isObjectToolbarOwnedTarget} from '../object-layout/object-toolbar-interaction'
 
 export class CalloutToolbarPlugin extends DocPlugin {
   override name = 'callout-toolbar';
@@ -15,6 +16,7 @@ export class CalloutToolbarPlugin extends DocPlugin {
   private _closeToolbar$ = new Subject<void>()
 
   private _activeContainerBlock: BlockCraft.BlockComponent | null = null
+  private _toolbarInteraction = false
 
   private _isReadonly(block: BlockCraft.BlockComponent) {
     return this.doc.readonlyManager?.isReadonly(block) ?? this.doc.isReadonly
@@ -22,8 +24,20 @@ export class CalloutToolbarPlugin extends DocPlugin {
 
   init() {
     this._sub = new Subscription()
+    this._sub.add(fromEvent<PointerEvent>(document, 'pointerdown', {capture: true}).subscribe(event => {
+      const target = event.target instanceof Element ? event.target : null
+      this._toolbarInteraction = this._activeContainerBlock?.flavour === 'render-unit' &&
+        isObjectToolbarOwnedTarget(this._overlayRef?.overlayElement, target)
+      if (!this._toolbarInteraction && this._overlayRef && !this.doc.selection.value) {
+        this.closeToolbar()
+      }
+    }))
     this._sub.add(this.doc.selection.selectionChange$.subscribe(selection => {
       this.clearTimer()
+
+      if (!selection && this._toolbarInteraction && !this.doc.isReadonly && this._activeContainerBlock &&
+          this._isBlockAlive(this._activeContainerBlock) &&
+          !this._isReadonly(this._activeContainerBlock)) return
 
       const containerBlock = this.resolveAppearanceContainer(selection)
 
@@ -93,13 +107,12 @@ export class CalloutToolbarPlugin extends DocPlugin {
     }, 100))
     resizeObs.observe(containerBlock.hostElement)
 
-    const { componentRef, overlayRef } = this.doc.overlayService.createConnectedOverlay({
+    const { componentRef, overlayRef } = this.doc.overlayService.createConnectedOverlay<CalloutBlockToolbar>({
       target: containerBlock,
       component: CalloutBlockToolbar,
-      positions: [
-        getPositionWithOffset("top-center", 0, 8),
-        getPositionWithOffset("bottom-center", 0, 8),
-      ]
+      positions: containerBlock.flavour === 'render-unit'
+        ? [getPositionWithOffset('right-top', 8, 0), getPositionWithOffset('left-top', 8, 0)]
+        : [getPositionWithOffset('top-center', 0, 8), getPositionWithOffset('bottom-center', 0, 8)]
     }, this._closeToolbar$, () => {
       this.closeToolbar()
       resizeObs.disconnect()
@@ -118,6 +131,7 @@ export class CalloutToolbarPlugin extends DocPlugin {
     this._overlayRef?.dispose()
     this._overlayRef = undefined
     this._activeContainerBlock = null
+    this._toolbarInteraction = false
   }
 
   destroy() {
@@ -141,7 +155,7 @@ export class CalloutToolbarPlugin extends DocPlugin {
     try {
       if (selection.start.type === 'text' && selection.end.type === 'text') {
         const parent = selection.firstBlock.parentBlock
-        return parent && this.isAppearanceContainer(parent)
+        return parent?.flavour === 'callout'
           ? parent
           : null
       }
