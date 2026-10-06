@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-09-16
+> Last updated: 2026-10-06
 
 ## Theme Structure
 
@@ -236,6 +236,7 @@ Read `themes/base.scss` and `themes/variables.scss` for the current variable lis
 --bc-block-background-color         // current block's persisted backColor
 --bc-block-border-color             // current block's persisted borderColor
 --bc-render-unit-background-color   // content region's persisted backColor
+--bc-render-unit-background-opacity // optional backOpacity; defaults to the shared solid-surface opacity
 --bc-render-unit-border-color       // content region's persisted borderColor
 --bc-render-unit-padding-top        // resolved content padding in layout px
 --bc-render-unit-padding-right

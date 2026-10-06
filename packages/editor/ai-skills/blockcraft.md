@@ -419,9 +419,10 @@ bar and draws no rectangular outline.
 
 The bundled non-editable `render-unit` content region persists the same
 `backColor` / `borderColor` field names through its block-specific appearance
-contract. `CalloutToolbarPlugin` reuses its container toolbar for a cursor in a
-direct editable child of either Callout or `render-unit`; a whole-block
-`render-unit` selection also opens it so an empty region remains configurable.
+contract. `CalloutToolbarPlugin` owns selection and overlay lifecycle for both
+containers, but creates a separate toolbar component for each: Callout opens
+for a cursor in its direct editable child; whole-block `render-unit` selection
+opens its own toolbar so an empty region remains configurable.
 The region toolbar has separate appearance and text rail buttons. Their popups
 contain fill/outline and inner-padding/typography tabs respectively;
 the appearance fields project through
@@ -433,6 +434,8 @@ persisted keys follow compact CSS-style abbreviations: `p` is a numeric CSS
 padding shorthand with one to four layout-pixel values;
 `bgi` stores image source, size/fit and position in one CSS background string;
 optional `bgo` stores opacity (omitted at 1).
+`backOpacity` is the optional 0–1 opacity of the solid `backColor` fill;
+omitting it retains the theme's existing solid-surface opacity.
 The optional `textFamily`, `textFont`, `textSpacing` and solid `textFill` fields
 reuse the text-box compact format. They style the region content as inheritable
 defaults, so explicit child block and inline styles keep precedence. Resetting

@@ -23,6 +23,8 @@ export * from './typography'
 export interface RenderUnitBlockProps extends BlockSurfaceProps, BlockObjectSizeProps, RenderUnitTypographyProps {
   borders?: RegionBorders | null
   backColor?: string | null
+  /** Background-color opacity from 0 to 1; omitted uses the theme default. */
+  backOpacity?: number | null
   borderColor?: string | null
 }
 
@@ -57,6 +59,10 @@ export function normalizeRenderUnitBlockProps(
 
   const backColor = normalizeColor(input['backColor'])
   if (backColor) normalized.backColor = backColor
+  const backOpacity = input['backOpacity']
+  if (typeof backOpacity === 'number' && Number.isFinite(backOpacity)) {
+    normalized.backOpacity = Math.round(Math.min(1, Math.max(0, backOpacity)) * 100) / 100
+  }
   const borderColor = normalizeColor(input['borderColor'])
   if (borderColor) normalized.borderColor = borderColor
   const dimensions = resolveRenderUnitDimensions(input, 100)

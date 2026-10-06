@@ -223,6 +223,7 @@ describe('HtmlAdapter', () => {
         wr: 50,
         ar: 2,
         backColor: '#fff7d6',
+        backOpacity: 0.6,
         borderColor: '#dfab01',
         textFamily: 'serif',
         textFont: '24px 600 normal',
@@ -243,6 +244,7 @@ describe('HtmlAdapter', () => {
     expect(html).toContain('data-bc-wr="50"');
     expect(html).toContain('data-bc-ar="2"');
     expect(html).toContain('data-bc-text-font="24px 600 normal"');
+    expect(html).toContain('data-bc-back-opacity="0.6"');
     expect(new DOMParser().parseFromString(html, 'text/html')
       .querySelector('[data-bc-block="render-unit"]')?.getAttribute('data-bc-bgi'))
       .toBe(region.props['bgi'] as string);

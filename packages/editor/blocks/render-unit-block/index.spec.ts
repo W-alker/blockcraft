@@ -44,6 +44,15 @@ describe('RenderUnitBlockSchema', () => {
     })
   })
 
+  it('keeps optional background opacity bounded without changing legacy defaults', () => {
+    expect(RenderUnitBlockSchema.createSnapshot({}, {backOpacity: 0.6}).props)
+      .toEqual({backOpacity: 0.6})
+    expect(RenderUnitBlockSchema.createSnapshot({}, {backOpacity: 2}).props)
+      .toEqual({backOpacity: 1})
+    expect(RenderUnitBlockSchema.createSnapshot({}, {backOpacity: NaN}).props)
+      .toEqual({})
+  })
+
   it('keeps the existing empty createSnapshot call compatible', () => {
     expect(RenderUnitBlockSchema.createSnapshot().props).toEqual({})
   })

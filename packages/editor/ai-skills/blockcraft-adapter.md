@@ -4,7 +4,7 @@
 >
 > Adapters handle HTML ↔ BlockSnapshot and Markdown ↔ BlockSnapshot conversion.
 >
-> Last updated: 2026-09-24
+> Last updated: 2026-10-06
 
 ## 内置贴纸的导入导出（未发布）
 
@@ -556,7 +556,8 @@ syntax; an imported Markdown image therefore uses its Schema defaults.
 The built-in `render-unit` matcher uses
 `<section data-bc-block="render-unit">` as a surface-preserving HTML container. Its
 children remain ordinary nested block elements. Optional shell colors use
-`data-bc-back-color` / `data-bc-border-color`; surface data uses compact keys
+`data-bc-back-color` / `data-bc-border-color`; optional solid-background opacity
+uses `data-bc-back-opacity` (0–1); surface data uses compact keys
 that map one-to-one to persisted props:
 
 - `data-bc-p`, containing one to four space-separated numeric values;

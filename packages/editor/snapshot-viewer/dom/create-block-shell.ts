@@ -133,6 +133,11 @@ function applyRenderUnitAppearance(
   if (backColor) {
     element.style.setProperty("--bc-render-unit-background-color", backColor)
   }
+  const backOpacity = props["backOpacity"]
+  if (typeof backOpacity === "number" && Number.isFinite(backOpacity)) {
+    element.style.setProperty("--bc-render-unit-background-opacity",
+      `${Math.min(1, Math.max(0, backOpacity)) * 100}%`)
+  }
 
   const borderColor = normalizeAppearanceColor(props["borderColor"])
   if (borderColor) {

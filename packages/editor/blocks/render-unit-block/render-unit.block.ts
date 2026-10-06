@@ -67,6 +67,7 @@ import {applyRenderUnitTypography} from './typography'
     '[style.width.px]': 'objectDimensions?.width',
     '[style.height.px]': 'objectDimensions?.height',
     '[style.--bc-render-unit-background-color]': 'props.backColor',
+    '[style.--bc-render-unit-background-opacity]': 'props.backOpacity == null ? null : (props.backOpacity * 100) + "%"',
     '[style.--bc-render-unit-border-color]': 'props.borderColor',
     '[style.--bc-render-unit-padding-top]': 'surface.padding.top + "px"',
     '[style.--bc-render-unit-padding-right]': 'surface.padding.right + "px"',

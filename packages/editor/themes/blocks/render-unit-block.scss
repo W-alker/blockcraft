@@ -3,6 +3,7 @@
 [data-blockcraft-root="true"] {
   .render-unit-block {
     --bc-render-unit-background-color: transparent;
+    --bc-render-unit-background-opacity: var(--bc-solid-block-background-opacity, 82%);
     --bc-render-unit-border-color: transparent;
     --bc-render-unit-padding-top: 0px;
     --bc-render-unit-padding-right: 0px;
@@ -15,7 +16,7 @@
     background-color: var(--bc-render-unit-background-color);
     background-color: color-mix(
       in srgb,
-      var(--bc-render-unit-background-color) var(--bc-solid-block-background-opacity, 82%),
+      var(--bc-render-unit-background-color) var(--bc-render-unit-background-opacity),
       transparent
     );
     outline: 1px solid var(--bc-render-unit-border-color);

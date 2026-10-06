@@ -591,7 +591,11 @@ The bundled `render-unit` is another deliberate block-specific surface: it
 persists optional `backColor` / `borderColor`, projects them through
 `--bc-render-unit-background-color` / `--bc-render-unit-border-color`, and
 draws a geometry-neutral 1px inner outline. `CalloutToolbarPlugin` exposes
-background and border controls for this region. Its second rail button edits
+background and border controls for this region. Optional `backOpacity` stores
+the solid background's 0–1 opacity, projected through
+`--bc-render-unit-background-opacity`; omission retains the theme default
+(`--bc-solid-block-background-opacity`, falling back to 82%). It does not
+change the independent `bgo` picture opacity. Its second rail button edits
 existing `p` inner padding and optional `textFamily`, `textFont`, `textSpacing`
 and solid `textFill` text defaults. Text defaults inherit into children, while
 explicit child block and inline formats remain authoritative. The live editor,

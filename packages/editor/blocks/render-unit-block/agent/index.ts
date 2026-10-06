@@ -30,6 +30,7 @@ export const RENDER_UNIT_BLOCK_AGENT_CAPABILITY = defineBlockAgentCapability({
     ar: {type: ['number', 'null'], exclusiveMinimum: 0},
     borders: {type: ['object', 'null'], properties: {top: {type: 'string'}, right: {type: 'string'}, bottom: {type: 'string'}, left: {type: 'string'}}, additionalProperties: false},
     backColor: BLOCK_AGENT_NULLABLE_STRING_SCHEMA,
+    backOpacity: {type: ['number', 'null'], minimum: 0, maximum: 1},
     borderColor: BLOCK_AGENT_NULLABLE_STRING_SCHEMA,
     p: {type: ['array', 'null'], minItems: 1, maxItems: 4, items: {type: 'number', minimum: 0}},
     bgi: BLOCK_AGENT_NULLABLE_STRING_SCHEMA,

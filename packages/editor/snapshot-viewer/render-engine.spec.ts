@@ -280,6 +280,7 @@ describe("SnapshotRenderEngine", () => {
     const renderer = createSnapshotRenderer()
     const region = createRenderUnitFixture("region-1", {
       backColor: "#FBF3DB",
+      backOpacity: 0.6,
       borderColor: "#DFAB01",
     })
 
@@ -288,6 +289,8 @@ describe("SnapshotRenderEngine", () => {
     expect(block.getAttribute("data-bc-render-unit")).toBe("true")
     expect(block.style.getPropertyValue("--bc-render-unit-background-color"))
       .toBe("#FBF3DB")
+    expect(block.style.getPropertyValue("--bc-render-unit-background-opacity"))
+      .toBe("60%")
     expect(block.style.getPropertyValue("--bc-render-unit-border-color"))
       .toBe("#DFAB01")
 
@@ -301,6 +304,8 @@ describe("SnapshotRenderEngine", () => {
     expect(host.querySelector('[data-block-id="region-1"]')).toBe(block)
     expect(block.style.getPropertyValue("--bc-render-unit-background-color"))
       .toBe("#DDEDEA")
+    expect(block.style.getPropertyValue("--bc-render-unit-background-opacity"))
+      .toBe("")
     expect(block.style.getPropertyValue("--bc-render-unit-border-color"))
       .toBe("")
   })

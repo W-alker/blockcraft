@@ -68,6 +68,22 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## Unreleased — 2026-10-06：内容区域纯色填充透明度
+
+**Severity**: minor
+
+**What changed**: `RenderUnitBlockProps` 新增可选 `backOpacity`（0–1）；填写区填充页提供与文本框一致的透明度滑杆。填写区和 Callout 分别由独立工具栏组件渲染，选区与浮层生命周期仍由 `CalloutToolbarPlugin` 管理。实时编辑、Snapshot Viewer 和 HTML adapter 同步投影与往返保存。
+
+**Why**: 用户需要在保持现有纯色填充操作和弹窗结构的同时调整填充透明度。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-toolbar.md`、`blockcraft-adapter.md`、`blockcraft-theme.md`。
+
+**New APIs / Features**: `RenderUnitBlockProps.backOpacity`；`--bc-render-unit-background-opacity`；HTML 属性 `data-bc-back-opacity`。
+
+**Migration Recipe**: 旧快照无需迁移；需要指定透明度时写入 `{backOpacity: 0.6}`，清除该字段恢复主题默认值。图片背景仍使用 `bgo`。
+
+**Behavior Changes**: 未配置 `backOpacity` 时保持既有主题背景透明度；配置后只改变纯色填充的显示透明度。
+
 ## Unreleased — 2026-10-06：内容区域内边距与字体默认样式
 
 **Severity**: minor
