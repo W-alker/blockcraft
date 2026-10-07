@@ -45,7 +45,7 @@ async function geometry(page: Page, id: string) {
 }
 
 for (const nested of [false, true]) {
-  test(`填写区${nested ? '嵌套' : '根级'}默认随内容增减且最多一页`, async ({page}) => {
+  test(`填写区${nested ? '嵌套' : '根级'}默认随内容增减并跨页`,  async ({page}) => {
     const ids = await createRegion(page, false, nested)
     const region = page.locator(`[data-block-id="${ids.region}"]`)
     await expect(region).toBeVisible()
@@ -56,13 +56,8 @@ for (const nested of [false, true]) {
     await replaceContent(page, ids.paragraph, 100)
     await expect.poll(async () => {
       const g = await geometry(page, ids.region)
-      return g.height <= g.cap + 1 && g.scrollHeight > g.contentHeight + 200
+      return g.height > g.cap && g.overflow === 'visible'
     }).toBe(true)
-    const capped = await geometry(page, ids.region)
-    expect(capped.overflow).toBe('auto')
-    expect(capped.hostOverflow).toBe('visible')
-    await region.locator(':scope > .render-unit-content').evaluate(el => { el.scrollTop = 200 })
-    expect(await region.locator(':scope > .render-unit-content').evaluate(el => el.scrollTop)).toBeGreaterThan(0)
     await replaceContent(page, ids.paragraph, 1)
     await expect.poll(async () => (await geometry(page, ids.region)).height).toBeLessThan(initial.height + 10)
     expect((await geometry(page, ids.region)).inlineHeight).toBe('')
@@ -75,8 +70,12 @@ for (const nested of [false, true]) {
   })
 }
 
-test('手动拖动高度后保持固定，撤销恢复自适应；旧尺寸受页高约束', async ({page}) => {
+test('流式手动拖动高度后保持固定，撤销恢复自适应；分页临时展开旧尺寸', async ({page}) => {
   const ids = await createRegion(page)
+  await page.evaluate(() => {
+    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+    doc.plugins.find((p: any) => p.name === 'pagination').disable()
+  })
   const region = page.locator(`[data-block-id="${ids.region}"]`)
   await expect(region).toBeVisible()
   await page.evaluate(id => {
@@ -112,8 +111,11 @@ test('手动拖动高度后保持固定，撤销恢复自适应；旧尺寸受�
     doc.getBlockById(id).updateProps({width: 400, height: 1600, wr: null, ar: null})
   }, ids.region)
   await expect.poll(async () => (await geometry(page, ids.region)).inlineHeight).toBe('1600px')
-  const legacy = await geometry(page, ids.region)
-  expect(legacy.height).toBeLessThanOrEqual(legacy.cap + 1)
+  await page.evaluate(() => {
+    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+    doc.plugins.find((p: any) => p.name === 'pagination').enable()
+  })
+  await expect.poll(async () => (await geometry(page, ids.region)).height).toBeLessThan(1600)
   await page.evaluate(() => {
     const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
     doc.plugins.find((p: any) => p.name === 'pagination').disable()

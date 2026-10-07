@@ -55,13 +55,14 @@ export function resolveBlockPolicy(input: BlockPolicyInput): BlockPolicy {
     case 'caption':
       return {breakable: true, keepWithNext: false, capHeight: false};
     case 'render-unit':
-      // 内容区域保持整体，超出一页时由内层滚动承载，不能无限撑开分页占位。
+    case 'callout':
+      // 顺序容器保留模型身份，仅超页时按子块/长文本的安全锚点跨页。
+      return {breakable: true, keepWithNext: false, capHeight: false};
     case 'code':
       // 代码块超高时锁定最大高度到一页内（不按行拆）——与图片等原子块同策略。
       return {breakable: false, keepWithNext: false, capHeight: true};
     case 'table':
       return {breakable: true, keepWithNext: false, capHeight: false};
-    case 'callout':
     case 'columns':
     case 'column':
     case 'table-row':

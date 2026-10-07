@@ -122,14 +122,15 @@ function validateInlineBreakPlan(
     )
   }
 
-  let previousTextOffset = 0
+  const previousTextOffsets = new Map<string | undefined, number>()
   for (const [index, point] of plan.points.entries()) {
+    const previousTextOffset = previousTextOffsets.get(point.blockId) ?? (point.blockId ? -1 : 0)
     if (point.textOffset <= previousTextOffset) {
       throw new RangeError(
         `inlineBreakPlan.points[${index}].textOffset for ${measurement.id} must be strictly increasing`,
       )
     }
-    previousTextOffset = point.textOffset
+    previousTextOffsets.set(point.blockId, point.textOffset)
   }
 
   const layoutOffsets = plan.points.map(point => point.layoutOffset)

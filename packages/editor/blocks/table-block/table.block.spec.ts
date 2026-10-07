@@ -1742,6 +1742,7 @@ describe("TableBlockComponent pagination hot-path caches", () => {
     const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
     const wrapperHost = document.createElement("div");
     const tableElement = document.createElement("table");
+    tableElement.style.setProperty("clip-path", "none", "important");
     const body = document.createElement("tbody");
     const rowElement = document.createElement("tr");
     const cellHost = document.createElement("td");
@@ -1799,6 +1800,10 @@ describe("TableBlockComponent pagination hot-path caches", () => {
     table._applyCellFlowProjection(breaks);
     expect(editContainer.querySelector("[data-bc-inline-pagination-gap]")).not.toBeNull();
     expect(wrapperHost.querySelectorAll(".bc-pagination-table-flow-mask").length).toBe(1);
+    expect(tableElement.style.clipPath).toContain("polygon(evenodd,");
+    const mask = wrapperHost.querySelector<HTMLElement>(".bc-pagination-table-flow-mask")!;
+    expect(getComputedStyle(mask).backgroundColor).toBe("rgba(0, 0, 0, 0)");
+    expect(getComputedStyle(mask).backgroundImage).toBe("none");
 
     // Inline model updates deliberately revoke view-only markers first. The
     // table must not let the unchanged break signature leave only its mask.
@@ -1812,6 +1817,8 @@ describe("TableBlockComponent pagination hot-path caches", () => {
     runtime.destroy();
     table._applyCellFlowProjection(breaks);
     expect(wrapperHost.querySelector(".bc-pagination-table-flow-mask")).toBeNull();
+    expect(tableElement.style.clipPath).toBe("none");
+    expect(tableElement.style.getPropertyPriority("clip-path")).toBe("important");
 
     wrapperHost.remove();
   });

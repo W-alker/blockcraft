@@ -23,9 +23,9 @@ describe('block-policy', () => {
       .toEqual({breakable: true, keepWithNext: false, capHeight: false});
   });
 
-  it('内容区域整体占位且最多一页，不改变相邻容器策略', () => {
+  it('填写区可跨页，不改变相邻容器策略', () => {
     expect(resolveBlockPolicy({flavour: 'render-unit', nodeType: BlockNodeType.block}))
-      .toEqual({breakable: false, keepWithNext: false, capHeight: true});
+      .toEqual({breakable: true, keepWithNext: false, capHeight: false});
     for (const flavour of ['callout', 'columns', 'column', 'table-cell']) {
       expect(resolveBlockPolicy({flavour, nodeType: BlockNodeType.block}).capHeight).toBeFalse();
     }
@@ -41,8 +41,9 @@ describe('block-policy', () => {
       .toEqual({breakable: true, keepWithNext: false, capHeight: false});
   });
 
-  it('callout / columns 保持整体不可拆', () => {
-    expect(resolveBlockPolicy({flavour: 'callout', nodeType: BlockNodeType.block}).breakable).toBe(false);
+  it('高亮块可拆分，分栏仍保持整体', () => {
+    expect(resolveBlockPolicy({flavour: 'callout', nodeType: BlockNodeType.block}))
+      .toEqual({breakable: true, keepWithNext: false, capHeight: false});
     expect(resolveBlockPolicy({flavour: 'columns', nodeType: BlockNodeType.block}).breakable).toBe(false);
   });
 

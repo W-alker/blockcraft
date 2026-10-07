@@ -11,10 +11,13 @@
 // 严格小于引擎用的块总高（offsetHeight + marginBottom），是合法内部切点。
 
 import {measureInlineFloatPaginationBands} from '../../../block-std/inline/runtime/inline-float-layout';
+import {isSequentialPaginationContainer, paginationContainerElements} from './container-pagination';
 
 export interface SplitPointsOptions {
   /** 拆分时每侧至少保留的行/行盒数（widow/orphan 控制），默认 2。 */
   widowOrphanLines?: number;
+  /** 只读填写区测量：短子块保持整体，超页子块才递归提供内部切点。 */
+  contentHeight?: number;
 }
 
 const DEFAULT_WIDOW_ORPHAN = 2;
@@ -36,12 +39,52 @@ interface LineBox {
 export function computeSplitOffsets(el: HTMLElement, flavour: string, opts: SplitPointsOptions = {}): number[] {
   const minLines = Math.max(1, Math.floor(opts.widowOrphanLines ?? DEFAULT_WIDOW_ORPHAN));
   if (flavour === 'table') return computeTableSplitOffsets(el, opts).all;
+  if (isSequentialPaginationContainer(flavour)) return computeContainerSplitOffsets(el, opts);
   const originTop = el.getBoundingClientRect().top;
   const cuts = widowOrphanCuts(lineBottoms(el, originTop), minLines);
   return excludeCutsInsideVerticalBands(
     cuts,
     measureInlineFloatPaginationBands(el, originTop),
   );
+}
+
+/** 无 InlineRuntime 的只读导出后备路径，按顺序容器的真实子块边界拆分。 */
+function computeContainerSplitOffsets(el: HTMLElement, opts: SplitPointsOptions): number[] {
+  const origin = el.getBoundingClientRect().top;
+  const cuts: number[] = [];
+  let hasContent = false;
+  const visit = (region: HTMLElement, parentInset = 0) => {
+    const elements = paginationContainerElements(region);
+    if (!elements) return;
+    const {content, padding} = elements;
+    const style = getComputedStyle(region);
+    const contentStyle = getComputedStyle(padding);
+    const inset = parentInset + (parseFloat(style.borderTopWidth) || 0)
+      + (parseFloat(style.borderBottomWidth) || 0)
+      + (parseFloat(contentStyle.paddingTop) || 0) + (parseFloat(contentStyle.paddingBottom) || 0);
+    const budget = Math.max(1, (opts.contentHeight ?? Number.POSITIVE_INFINITY) - inset);
+    for (const child of Array.from(content.children) as HTMLElement[]) {
+      const childStyle = getComputedStyle(child);
+      if (!child.hasAttribute('data-block-id') || childStyle.display === 'none' || childStyle.position === 'absolute') continue;
+      const rect = child.getBoundingClientRect();
+      const top = rect.top - origin;
+      if (hasContent) cuts.push(top);
+      if (child.classList.contains('render-unit-block')
+        || (child.classList.contains('callout-block') && rect.height > budget)) {
+        visit(child, inset);
+        continue;
+      }
+      hasContent = true;
+      if (rect.height <= budget) continue;
+      if (child.classList.contains('table-block')) {
+        cuts.push(...computeTableSplitOffsets(child, opts).all.map(offset => top + offset));
+      } else if (child.getAttribute('data-node-type') === 'editable' && !child.classList.contains('code-block')) {
+        cuts.push(...computeSplitOffsets(child, 'paragraph', opts).map(offset => top + offset));
+      }
+    }
+  };
+  visit(el);
+  return [...new Set(cuts)].filter(cut => cut > 0 && cut < el.offsetHeight).sort((a, b) => a - b);
 }
 
 /**

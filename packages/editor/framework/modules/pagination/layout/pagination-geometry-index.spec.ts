@@ -51,6 +51,24 @@ function context(overrides: Partial<PaginationMeasureContext> = {}): PaginationM
 }
 
 describe('PaginationGeometryIndex', () => {
+  it('validates region text offsets within each child instead of across children', () => {
+    const index = new PaginationGeometryIndex()
+    const points = [
+      {layoutOffset: 40, textOffset: 0, blockId: 'first'},
+      {layoutOffset: 80, textOffset: 12, blockId: 'first'},
+      {layoutOffset: 120, textOffset: 0, blockId: 'second'},
+    ]
+    index.syncRootOrder([seed('region', 160, {flavour: 'render-unit', nodeType: BlockNodeType.block})])
+    const value = measurement('region', 160, {
+      flavour: 'render-unit', nodeType: BlockNodeType.block,
+      splitOffsets: points.map(point => point.layoutOffset), inlineBreakPlan: {points},
+    })
+    expect(() => index.applyMeasured([value])).not.toThrow()
+    expect(index.get('region')?.inlineBreakPlan?.points).toEqual(points)
+    points[2].blockId = 'first'
+    expect(() => index.applyMeasured([value])).toThrowError(RangeError)
+  })
+
   it('reuses measured geometry across root reordering', () => {
     const index = new PaginationGeometryIndex()
     index.syncRootOrder([seed('a'), seed('b')])

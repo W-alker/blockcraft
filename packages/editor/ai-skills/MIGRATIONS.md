@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-10-06 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-10-07 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -67,6 +67,62 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > - `major` (e.g. 0.1.37 → 1.0.0): breaking — removed APIs, renamed exports, signature changes, behavior reversals
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
+
+## Unreleased — 2026-10-07：高亮块优先下移并支持超页拆分
+
+**Severity**: minor
+
+**What changed**: 高亮块（`callout`）在当前页容不下时优先整体下移，只有高过完整正文页才从新页开始拆分。复用填写区的顺序流测量、可撤销投影和透明分页占位带。
+
+**Why**: 超页高亮内容需要完整显示和编辑，同时保持短高亮块整体排版。
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+- `blockcraft-plugins-util.md`
+
+### New APIs / Features
+
+- 高亮块按安全子块/文本行边界跨页，稳定打印与离线导出采用相同放置规则。
+
+### Migration Recipe
+
+无需迁移数据或修改配置；没有新增公共 API，包版本未调整。原来不可拆分的超页高亮块改为内容跨页。
+
+### Behavior Changes
+
+- Emoji 保留在首片段，续页延续背景和文本缩进；页眉页脚、页边距及物理页缝透明显示。
+- 旧快照中高亮块与填写区直接嵌套时沿顺序内容拆分，短高亮子块仍整体放置；Schema 子块白名单不变。
+- 不改变分栏、表格单元格的递归边界，不改动 Yjs 子树、块 ID 或 Undo 历史。
+
+## Unreleased — 2026-10-07：填写区支持跨页
+
+**Severity**: minor
+
+**What changed**: 根级 `render-unit` 及旧快照中已存在的直接嵌套填写区在分页/打印中按内容展开，超页时使用子块、长文本行及普通表格行的安全断点。填写区的模型 ID、子树与手动尺寸保持不变。
+
+**Why**: 填写内容超过一页时需要完整延续到后续页面，原来的单页内部滚动不能满足该排版要求。
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+- `blockcraft-plugins-util.md`
+
+### New APIs / Features
+
+- 新增填写区跨页投影；无需增加宿主配置或修改数据格式。
+
+### Migration Recipe
+
+无需迁移快照。原来手动设置高度的填写区在分页时展开，关闭分页恢复原尺寸；若宿主需展示固定高度滚动框，应使用流式视图。
+
+### Behavior Changes
+
+- 超页填写区由单页内部滚动改为跨页正文；不超过一页时仍整体放置。
+- 分页占位带统一透明裁切，透出页眉页脚、页边距和既有纸张阴影；不额外计算或填充正文剩余高度。
+- 分栏、表格单元格等容器的原子策略不变；其中的填写区仍受外层约束。Callout 的变化见同日高亮块条目。
+- 分页仅修改可撤销视图，不写 Yjs、不生成新的填写区、不增加 Undo 历史。
+- 包版本未调整，发布版本由用户确定。
 
 ## Unreleased — 2026-10-06：文本框旋转值按需保存
 

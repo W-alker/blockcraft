@@ -1,4 +1,5 @@
 // packages/editor/framework/modules/pagination/view/live-height-source.ts
+import {measureContainerBreakPlan, syncContainerPaginationFlow, clearContainerPaginationFlow, isSequentialPaginationContainer} from './container-pagination'
 import {Subject} from "rxjs";
 import {BlockNodeType} from "../../../block-std/types/block.type";
 import {resolveBlockPolicy} from "@ccc/blockcraft/framework/modules/pagination/engine";
@@ -241,6 +242,7 @@ export class LiveHeightSource {
     opts?: MeasureOptions,
     rootIds?: readonly string[],
   ): LivePaginationMeasurement[] {
+    syncContainerPaginationFlow(this.doc.root.hostElement);
     const metas: LivePaginationMeasurement[] = [];
     const options = measurementOptionsKey(opts);
     for (const id of rootIds ?? this.doc.root.childrenIds) {
@@ -524,10 +526,14 @@ export class LiveHeightSource {
       || !breakable
       || opts.contentHeight <= 0
       || naturalHeight <= opts.contentHeight
-      || block?.nodeType !== BlockNodeType.editable
     ) {
       return {}
     }
+
+    if (block && isSequentialPaginationContainer(block.flavour)) {
+      return breakPlanMetadata(measureContainerBreakPlan(block, opts))
+    }
+    if (block?.nodeType !== BlockNodeType.editable) return {}
 
     let runtime: object | null = null
     let container: HTMLElement | null = null
@@ -726,6 +732,7 @@ export class LiveHeightSource {
   }
 
   destroy(): void {
+    clearContainerPaginationFlow(this.doc.root.hostElement);
     this._ro.disconnect();
     this._observed.clear();
     this._layoutOwnedBlockSizes.clear();

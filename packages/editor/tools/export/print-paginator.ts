@@ -1,4 +1,5 @@
 // packages/editor/framework/modules/pagination/export/print-paginator.ts
+import {syncContainerPaginationFlow} from '../../framework/modules/pagination/view/container-pagination';
 import {includePlacementPages} from '../../framework/modules/object/block-placement/page-surface';
 import {createSnapshotRenderer} from "../../snapshot-viewer";
 import {IBlockSnapshot} from "../../framework/block-std/types/block.type";
@@ -265,6 +266,7 @@ export async function buildPaginatedPrintSurface(
   // 直接返回 disable 分页后的纯文档 root，若到搬入页盒后才补哨兵，稳定布局
   // 校验时已经丢了末块间距。在资源稳定和任何测量之前统一根结构。
   appendFlowSentinel(renderRoot);
+  syncContainerPaginationFlow(renderRoot);
 
   if (leadingContent) {
     // Header 必须先在“最终纸盒 + 最终正文宽度”里完成资源等待和高度测量。
@@ -1778,7 +1780,10 @@ function measureItemsFromDom(
       //   if (firstRow && firstRow.offsetHeight > 0) repeatHeaderHeight = firstRow.offsetHeight;
       // }
     } else if (el && policy.breakable && blk.flavour !== 'table' && height > regularContentHeight) {
-      const offsets = computeSplitOffsets(el, blk.flavour, {widowOrphanLines: config.widowOrphanLines});
+      const offsets = computeSplitOffsets(el, blk.flavour, {
+        widowOrphanLines: config.widowOrphanLines,
+        contentHeight: regularContentHeight,
+      });
       if (offsets.length) splitOffsets = offsets;
     }
 
@@ -1821,7 +1826,7 @@ function measureItemsFromDom(
       lockHeight,
       fitScale: pageMedia && fitScale < 1 ? fitScale : undefined,
       repeatHeaderHeight,
-      splitStartsNewPage: blk.flavour === 'table' || undefined, // 表格拆分独占新页起
+      splitStartsNewPage: blk.flavour === 'table' || blk.flavour === 'callout' || undefined,
       manualBreak: isManualBreak(blk.flavour),
     });
   }

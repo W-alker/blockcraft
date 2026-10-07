@@ -184,27 +184,6 @@ interface TableCellFlowAnchorOwner {
   rowElement: Element | null
 }
 
-function applyPaginationGapStyle(
-  element: HTMLElement,
-  height: number,
-  backdropOffset: number,
-  backdropHeight: number,
-): void {
-  const safeHeight = Math.max(0, height)
-  const bandStart = Math.max(0, Math.min(safeHeight, backdropOffset))
-  const bandEnd = Math.max(
-    bandStart,
-    Math.min(safeHeight, bandStart + Math.max(0, backdropHeight)),
-  )
-  element.style.height = `${safeHeight}px`
-  element.style.background = [
-    'linear-gradient(to bottom',
-    `var(--bc-page-sheet-bg, #fff) 0 ${bandStart}px`,
-    `var(--bc-pagination-backdrop-bg, #f3f4f6) ${bandStart}px ${bandEnd}px`,
-    `var(--bc-page-sheet-bg, #fff) ${bandEnd}px 100%)`,
-  ].join(', ')
-}
-
 function buildTablePaginationMask(
   mask: Extract<TablePaginationBreak, {kind: 'cell-flow'}>['mask'],
   table: HTMLElement,
@@ -221,13 +200,8 @@ function buildTablePaginationMask(
   element.style.pointerEvents = 'none'
   element.style.userSelect = 'none'
   element.style.webkitUserSelect = 'none'
-  element.style.zIndex = '90'
-  applyPaginationGapStyle(
-    element,
-    mask.height,
-    mask.backdropOffset,
-    mask.backdropHeight,
-  )
+  // 保留几何标记供命中排除与投影健康检查；不再盖一层白灰背景模拟纸张。
+  element.style.height = `${Math.max(0, mask.height)}px`
   return element
 }
 
@@ -568,6 +542,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   private _cellFlowSig = ''
   private _cellFlowBlockOffsets = new Map<HTMLElement, TableCellFlowBlockOffsetSnapshot>()
   private _cellFlowMasks = new Set<HTMLElement>()
+  private _cellFlowClip?: {element: HTMLElement; value: string; priority: string}
   private _cellFlowRuntimes = new Set<object>()
   /** Same-signature health check; bounded by the number of actual continuations. */
   private _cellFlowRuntimeGaps = new Map<object, TableCellFlowRuntimeGap[]>()
@@ -2977,7 +2952,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     const children = cell.getChildrenBlocks()
 
     // A visible but empty cell contributes no indivisible content. Mark it as
-    // completed near the row origin; the table-level mask paints page bands
+    // completed near the row origin; the table-level clip removes page bands
     // across that column. Treating the whole row stride as its only cell-end
     // point would make an otherwise splittable oversized row fail closed.
     if (!children.length) {
@@ -3332,7 +3307,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
     // 先批量读取自然 margin，再批量写入，避免 read/write 交错触发布局抖动。
     // 块边界只需要把锚点及其后续内容下推；直接复用真实块的 margin，不再向
-    // contenteditable 单元格注入可见占位节点。页面灰色间隔统一由 table mask 绘制。
+    // contenteditable 单元格注入可见占位节点。分页占位统一从 table 绘制层扣除。
     const offsets = [...blockOffsets]
     const measured = offsets.map(([target, {offset, wrapper, previous}]) => ({
       target,
@@ -3388,7 +3363,17 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       table.getBoundingClientRect().top
         - this.hostElement.getBoundingClientRect().top,
     )
+    // 与填写区相同：扣除完整占位带，透出页眉页脚、页边距及真实纸张阴影。
+    // 有限的视口外轮廓保留边框外侧绘制；行列控件仍在 table 的兄弟层，不参与裁切。
+    const start = '-100vmax'
+    const end = 'calc(100% + 100vmax)'
+    const origin = `${start} ${start}`
+    const clipPoints = [origin, `${end} ${start}`, `${end} ${end}`, `${start} ${end}`, origin]
     for (const pageBreak of breaks) {
+      const top = pageBreak.mask.top - tableTopFromHost
+      const bottom = top + Math.max(0, pageBreak.mask.height)
+      clipPoints.push(`${start} ${top}px`, `${start} ${bottom}px`,
+        `${end} ${bottom}px`, `${end} ${top}px`, `${start} ${top}px`, origin)
       const mask = buildTablePaginationMask(
         pageBreak.mask,
         table,
@@ -3397,6 +3382,12 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       this.tableWrapper.nativeElement.appendChild(mask)
       this._cellFlowMasks.add(mask)
     }
+    this._cellFlowClip = {
+      element: table,
+      value: table.style.getPropertyValue('clip-path'),
+      priority: table.style.getPropertyPriority('clip-path'),
+    }
+    table.style.setProperty('clip-path', `polygon(evenodd,${clipPoints.join(',')})`)
     this._cellFlowRuntimeGaps = new Map(
       [...runtimeGaps].map(([runtime, gaps]) => [
         runtime,
@@ -3408,6 +3399,12 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   }
 
   private _clearCellFlowProjection(): void {
+    if (this._cellFlowClip) {
+      const {element, value, priority} = this._cellFlowClip
+      if (value) element.style.setProperty('clip-path', value, priority)
+      else element.style.removeProperty('clip-path')
+      this._cellFlowClip = undefined
+    }
     for (const runtime of this._cellFlowRuntimes) clearInlinePaginationGaps(runtime)
     this._cellFlowRuntimes.clear()
     for (const [target, snapshot] of this._cellFlowBlockOffsets) {

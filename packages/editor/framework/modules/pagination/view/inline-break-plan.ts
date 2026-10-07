@@ -11,6 +11,8 @@
 export interface InlinePaginationBreakPoint {
   layoutOffset: number
   textOffset: number
+  /** 填写区内的子块锚点；textOffset=0 表示整个子块之前。缺省仍指根文本块。 */
+  blockId?: string
 }
 
 /** @internal Pagination measurement/view only. */
@@ -37,11 +39,12 @@ export function createInlinePaginationBreakPlan(
       && point.layoutOffset > 0
       && point.layoutOffset < maximum
       && Number.isInteger(point.textOffset)
-      && point.textOffset > 0,
+      && (point.blockId ? point.textOffset >= 0 : point.textOffset > 0),
     )
     .map(point => ({
       layoutOffset: point.layoutOffset,
       textOffset: point.textOffset,
+      ...(point.blockId ? {blockId: point.blockId} : {}),
     }))
     .sort((left, right) =>
       left.layoutOffset - right.layoutOffset
@@ -55,7 +58,7 @@ export function createInlinePaginationBreakPlan(
       previous
       && (
         Math.abs(previous.layoutOffset - point.layoutOffset) <= OFFSET_TOLERANCE
-        || previous.textOffset === point.textOffset
+        || (previous.blockId === point.blockId && previous.textOffset === point.textOffset)
       )
     ) {
       continue
@@ -84,6 +87,7 @@ export function inlinePaginationBreakPlansEqual(
     return !!candidate
       && Math.abs(point.layoutOffset - candidate.layoutOffset) <= OFFSET_TOLERANCE
       && point.textOffset === candidate.textOffset
+      && point.blockId === candidate.blockId
   })
 }
 

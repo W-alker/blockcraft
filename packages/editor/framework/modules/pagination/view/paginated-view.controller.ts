@@ -1,3 +1,4 @@
+import {clearContainerPaginationFlow} from './container-pagination';
 // packages/editor/framework/modules/pagination/view/paginated-view.controller.ts
 import {fromEvent, skip, Subscription} from "rxjs";
 import {includePlacementPages} from "../../object/block-placement/page-surface";
@@ -1445,6 +1446,7 @@ export class PaginatedViewController {
   private _clearPaginationView(): void {
     this._runCleanup('gap-view', () => this._gapApplier.clear());
     this._runCleanup('inline-break-view', () => this._inlineBreaks.clear());
+    this._runCleanup('region-flow-view', () => clearContainerPaginationFlow(this.doc.root.hostElement));
     this._runCleanup('table-break-view', () => this._tableBreaks.clear());
     this._runCleanup('height-lock-view', () => this._heightLockApplier.clear());
     this._runCleanup('page-frame-view', () => this._frameLayer.destroy());

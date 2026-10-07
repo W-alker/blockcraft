@@ -12,6 +12,7 @@ import {
   type InlinePaginationBreakPlan,
 } from './inline-break-plan'
 import type {BlockMeta} from './item-builder'
+import {ContainerPaginationProjection, containerPaginationProjection, isSequentialPaginationContainer} from './container-pagination'
 
 export interface InlineBreakUpdate {
   /** Keep the most recently applied projection as the new stable view. */
@@ -101,6 +102,7 @@ function gapsForContinuations(
     if (!Number.isFinite(height) || height <= 0) continue
     gaps.push({
       offset: point.textOffset,
+      ...(point.blockId ? {blockId: point.blockId, layoutOffset: point.layoutOffset} : {}),
       height,
       backdropOffset: Math.max(
         0,
@@ -117,7 +119,9 @@ function safeInlineRuntime(doc: BlockCraft.Doc, id: string): object | null {
   try {
     const block = doc.getBlockById(id, () => { missing = true }) as any
     if (missing || !block) return null
-    return block.runtime ?? null
+    return isSequentialPaginationContainer(block.flavour)
+      ? containerPaginationProjection(doc, block)
+      : block.runtime ?? null
   } catch {
     return null
   }
@@ -166,7 +170,7 @@ export class InlineBreakApplier {
       ?? new Set([...this._gaps.keys(), ...this._applied.keys()])
     for (const id of ids) {
       const runtime = this._applied.get(id) ?? safeInlineRuntime(this.doc, id)
-      if (!runtime || isInlinePaginationProjectionWritable(runtime)) continue
+      if (!runtime || projectionWritable(runtime)) continue
       deferred = true
       this._watchProjectionReady(id, runtime)
     }
@@ -246,7 +250,7 @@ export class InlineBreakApplier {
       this._releaseProjectionReadyWatch(id)
       this._releaseProjectionInvalidationWatch(id)
       if (!runtime) continue
-      clearInlinePaginationGaps(runtime)
+      clearProjection(runtime)
       this._applied.delete(id)
     }
   }
@@ -331,7 +335,7 @@ export class InlineBreakApplier {
 
     for (const [id, runtime] of this._applied) {
       if (this._gaps.has(id) && this._isMounted(id)) continue
-      clearInlinePaginationGaps(runtime)
+      clearProjection(runtime)
       this._applied.delete(id)
       this._releaseProjectionReadyWatch(id)
       this._releaseProjectionInvalidationWatch(id)
@@ -342,7 +346,7 @@ export class InlineBreakApplier {
       const runtime = safeInlineRuntime(this.doc, id)
       const previous = this._applied.get(id)
       if (previous && previous !== runtime) {
-        clearInlinePaginationGaps(previous)
+        clearProjection(previous)
         this._applied.delete(id)
         this._releaseProjectionReadyWatch(id)
         this._releaseProjectionInvalidationWatch(id)
@@ -353,10 +357,10 @@ export class InlineBreakApplier {
         failed.add(id)
         continue
       }
-      if (!applyInlinePaginationGaps(runtime, gaps)) {
-        clearInlinePaginationGaps(runtime)
+      if (!applyProjection(runtime, gaps)) {
+        clearProjection(runtime)
         this._applied.delete(id)
-        if (!isInlinePaginationProjectionWritable(runtime)) {
+        if (!projectionWritable(runtime)) {
           this._watchProjectionReady(id, runtime)
         } else {
           this._releaseProjectionReadyWatch(id)
@@ -374,7 +378,7 @@ export class InlineBreakApplier {
 
   private _clearApplied(): void {
     for (const [id, runtime] of this._applied) {
-      clearInlinePaginationGaps(runtime)
+      clearProjection(runtime)
       this._releaseProjectionInvalidationWatch(id)
     }
     this._applied.clear()
@@ -385,7 +389,7 @@ export class InlineBreakApplier {
     if (current?.runtime === runtime) return
     current?.release()
     let release: () => void = () => undefined
-    release = whenInlinePaginationProjectionWritable(runtime, () => {
+    release = whenProjectionWritable(runtime, () => {
       if (this._projectionReadyWatches.get(id)?.runtime !== runtime) return
       this._projectionReadyWatches.delete(id)
       release()
@@ -398,10 +402,11 @@ export class InlineBreakApplier {
     const current = this._projectionInvalidationWatches.get(id)
     if (current?.runtime === runtime) return
     current?.release()
-    const release = subscribeInlinePaginationProjectionInvalidated(
+    const release = subscribeProjectionInvalidated(
       runtime,
       () => {
         if (this._applied.get(id) !== runtime) return
+        if (runtime instanceof ContainerPaginationProjection) runtime.clear()
         this._applied.delete(id)
         this._releaseProjectionInvalidationWatch(id)
         this._onProjectionReady()
@@ -446,4 +451,29 @@ function cloneGapMap(
     id,
     gaps.map(gap => ({...gap})),
   ]))
+}
+
+function applyProjection(runtime: object, gaps: readonly InlinePaginationGap[]): boolean {
+  return runtime instanceof ContainerPaginationProjection
+    ? runtime.apply(gaps)
+    : applyInlinePaginationGaps(runtime, gaps)
+}
+function clearProjection(runtime: object): void {
+  if (runtime instanceof ContainerPaginationProjection) runtime.clear()
+  else clearInlinePaginationGaps(runtime)
+}
+function projectionWritable(runtime: object): boolean {
+  return runtime instanceof ContainerPaginationProjection
+    ? runtime.writable()
+    : isInlinePaginationProjectionWritable(runtime)
+}
+function whenProjectionWritable(runtime: object, listener: () => void): () => void {
+  return runtime instanceof ContainerPaginationProjection
+    ? runtime.whenWritable(listener)
+    : whenInlinePaginationProjectionWritable(runtime, listener)
+}
+function subscribeProjectionInvalidated(runtime: object, listener: () => void): () => void {
+  return runtime instanceof ContainerPaginationProjection
+    ? runtime.subscribeInvalidated(listener)
+    : subscribeInlinePaginationProjectionInvalidated(runtime, listener)
 }

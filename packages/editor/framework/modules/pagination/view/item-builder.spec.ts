@@ -36,4 +36,29 @@ describe('item-builder', () => {
   it('空输入返回空', () => {
     expect(buildPaginationItems([])).toEqual([]);
   });
+
+  for (const height of [240, 640]) {
+    it(`高亮块 ${height}px 优先整体下移，超过整页才从新页拆分`, () => {
+      const items = buildPaginationItems([
+        {id: 'lead', flavour: 'paragraph', nodeType: BlockNodeType.editable, isHeading: false, height: 160},
+        {id: 'callout', flavour: 'callout', nodeType: BlockNodeType.block, isHeading: false, height,
+          splitOffsets: Array.from({length: height / 80 - 1}, (_, i) => (i + 1) * 80)},
+      ]);
+      const result = paginate(items, {contentHeight: 320});
+      expect(result.pages[0].slots).toEqual([{id: 'lead'}]);
+      expect(result.byBlock.get('callout')?.pageIndex).toBe(1);
+      if (height === 240) expect(result.pages[1].slots).toEqual([{id: 'callout'}]);
+      else expect(result.pages.slice(1).map(page => page.slots[0].fragment))
+        .toEqual([{fromOffset: 0, toOffset: 320}, {fromOffset: 320, toOffset: 640}]);
+    });
+  }
+
+  it('首页面积较小时，能放进常规页的高亮块仍完整下移', () => {
+    const items = buildPaginationItems([
+      {id: 'callout', flavour: 'callout', nodeType: BlockNodeType.block, isHeading: false, height: 240},
+    ]);
+    const result = paginate(items, {contentHeight: 320, firstPageContentHeight: 160});
+    expect(result.byBlock.get('callout')?.pageIndex).toBe(1);
+    expect(result.pages[1].slots).toEqual([{id: 'callout'}]);
+  });
 });

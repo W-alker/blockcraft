@@ -7,6 +7,21 @@ import {
 } from './inline-break-plan'
 
 describe('InlinePaginationBreakPlan', () => {
+  it('preserves different child anchors at zero and detects a changed target', () => {
+    const plan = createInlinePaginationBreakPlan([
+      {layoutOffset: 10, textOffset: 0},
+      {layoutOffset: 80, textOffset: 0, blockId: 'first'},
+      {layoutOffset: 160, textOffset: 0, blockId: 'second'},
+      {layoutOffset: 240, textOffset: 12, blockId: 'second'},
+    ])!
+    expect(plan.points.length).toBe(3)
+    expect(inlineBreakPointAtLayoutOffset(plan, 160)?.blockId).toBe('second')
+    const changed = cloneInlinePaginationBreakPlan(plan)!
+    expect(inlinePaginationBreakPlansEqual(plan, changed)).toBeTrue()
+    changed.points[0].blockId = 'replacement'
+    expect(inlinePaginationBreakPlansEqual(plan, changed)).toBeFalse()
+  })
+
   it('validates, sorts and deduplicates measured points', () => {
     const plan = createInlinePaginationBreakPlan([
       {layoutOffset: 160, textOffset: 16},

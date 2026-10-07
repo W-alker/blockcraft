@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-10-06
+> Last updated: 2026-10-07
 
 通用数据描述和快照位于 `@ccc/blockcraft/framework/model`，类型为
 `BlockDescriptor<P, M, F>` / `BlockSnapshot<P, M, F>`，默认不依赖组件注册表。
@@ -968,10 +968,14 @@ through the content above it.
 `render-unit` 原生支持可选 `wr/ar`：宽度是正文内容区宽度的百分比，高度为宽度除以宽高比，与流式图片共用 `deriveObjectSizeFromPixels()`。
 `RenderUnitBlockComponent.setSize(width, height)` 接收布局像素，在一个事务内换算比例并清理旧 `width/height`；`objectDimensions` 提供当前显示尺寸。
 未设置完整有效尺寸时仍由内容自然撑高；不自动把旧容器变成固定尺寸。显式尺寸包含内边距，超出内容可滚动。
-分页和打印中的内容区域（含嵌套区域）最多占一页正文高度，边框与内边距计入上限；超出内容在内层滚动，外层保留选区与缩放控件。自然高度不会写回 props，删除内容后自动缩回；用户手动设置的尺寸保留，关闭分页后恢复原有显示尺寸。
+分页和打印中的根级填写区及旧快照中已存在的直接嵌套填写区按内容自然展开，超过一页时按子块边界或长文本安全行锚点拆分过页。能放下一页的填写区和短子块仍保持整体；普通表格沿用行边界与内容合并保护。分页只临时覆盖高度与内部滚动，保留宽度、边框、内边距和原始 `wr/ar` 或旧像素尺寸；关闭分页后恢复手动尺寸。页缝不写入 Yjs，不拆出新填写区，也不新增撤销记录。填写区与 Callout 的直接顺序嵌套共享拆分路径；分栏、表格单元格中的填写区仍受外层容器约束。不可拆的超页子对象沿用原有原子策略，不会按文字切点裁开。
 悬停或内部编辑时显示文本框同款顶部抓手聚焦按钮，点击或键盘激活后整块选中并显示八向手柄（无旋转）；整块选中后隐藏聚焦按钮，只读时不创建该按钮。CalloutToolbarPlugin 提供填充、轮廓、内边距和字体入口，不显示宽高输入。
 HTML 通过 `data-bc-wr/ar`（以及旧 `data-bc-width/height`）保留尺寸；私有 Markdown 保留 props。只读、协同、撤销和虚拟估高沿用框架路径。
 背景默认仍透明，业务填写区的白底由宿主传入 `backColor`；框架不识别 `tplRegion` 等业务标记。
+
+### Callout 分页
+
+高亮块在当前页容不下时优先整体下移；仅当自然高度超过一整页正文容量时，从新页开始按子块边界或超页文本的安全行锚点拆分。Emoji 只显示在起始片段，续页保留背景、文本缩进和编辑能力，分页占位带透明显示纸张及页眉页脚。分页不拆分模型、不增加撤销历史，关闭分页恢复连续布局。复用填写区的顺序流投影，支持旧快照中直接嵌套的填写区/高亮块；不改变 Schema 允许的子块类型，也不赋予分栏或表格单元格递归拆分能力。短高亮块不进行内部文本行测量。
 
 ### Placement-Plane-Relative Object Sizing
 

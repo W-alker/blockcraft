@@ -233,3 +233,31 @@ body.bc-table-fullscreen-lock
     }
   }
 }
+
+// 分页测量在 live、只读导出和 Snapshot Viewer 上设置同一临时标记。
+// 关闭分页由视图生命周期移除；模型中的手动尺寸完全不变。
+[data-blockcraft-root="true"] :is(.render-unit-block, .callout-block)[data-bc-region-pagination-flow] {
+  // 包内视图状态：只扣除分页占位带；外伸的选区/缩放手柄保留完整。
+  clip-path: var(--bc-region-pagination-clip, none);
+
+  // 全屏表格保留原 DOM 祖先；其连续编辑面不能继承祖先的纸间透明带。
+  &.bc-table-fullscreen-isolation-branch {
+    clip-path: none;
+  }
+
+  &.render-unit-block {
+    display: flex;
+    flex-direction: column;
+    height: auto !important;
+    max-height: none;
+    min-height: 0;
+    overflow: visible;
+
+    > .render-unit-content {
+      flex: 1 1 auto;
+      height: auto;
+      min-height: 0;
+      overflow: visible;
+    }
+  }
+}

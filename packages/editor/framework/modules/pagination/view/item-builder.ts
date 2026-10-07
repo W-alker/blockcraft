@@ -67,7 +67,7 @@ export function buildPaginationItems(metas: BlockMeta[]): PaginationItem[] {
     if (m.preferredSplitOffsets) item.preferredSplitOffsets = m.preferredSplitOffsets;
     if (m.lockHeight != null) item.lockHeight = m.lockHeight; // capHeight 块的锁定高度
     if (m.fitScale != null) item.fitScale = m.fitScale;
-    if (m.flavour === 'table') item.splitStartsNewPage = true; // 表格拆分独占新页起
+    if (m.flavour === 'table' || m.flavour === 'callout') item.splitStartsNewPage = true; // 表格/高亮块优先下移，从新页开始拆分
     if (m.repeatHeaderHeight != null && m.repeatHeaderHeight > 0) item.repeatHeaderHeight = m.repeatHeaderHeight;
     const tableCellFlowPlan = getTableCellFlowPlan(m);
     if (tableCellFlowPlan) setTableCellFlowPlan(item, tableCellFlowPlan);
