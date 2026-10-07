@@ -1746,8 +1746,8 @@ function reportLayoutDivergence(
  * 就地测量离屏渲染的顶层块高度 + 惰性测安全切点，装配 PaginationItem[]。
  * 仅在调用方未传入 `override.items` 时使用（纯导出路径：无 live 编辑器可复用其测量）。
  * - 文本块（段落/列表/代码…）：仅高过一整页时拆（keep-together，整块下推优先）；
- * - 表格：总是带切点，塞不进当前页剩余时按行填满本页再续（Word 式）；优先「干净」行边界，
- *   跨合并单元格的边界排在 preferred 之外、实在不行才切（裁剪窗口切片该合并单元格，内容不丢）。
+ * - 填写区：即使不足一页也提供安全切点，优先利用当前页剩余容量；
+ * - 表格与高亮块：优先整体下移，超过整页再拆。表格优先「干净」行边界。
  */
 function measureItemsFromDom(
   topSnapshots: IBlockSnapshot[],
@@ -1782,7 +1782,8 @@ function measureItemsFromDom(
       //   const firstRow = el.querySelector('tbody > tr') as HTMLElement | null;
       //   if (firstRow && firstRow.offsetHeight > 0) repeatHeaderHeight = firstRow.offsetHeight;
       // }
-    } else if (el && policy.breakable && blk.flavour !== 'table' && height > regularContentHeight) {
+    } else if (el && policy.breakable && blk.flavour !== 'table'
+      && (blk.flavour === 'render-unit' || height > regularContentHeight)) {
       const offsets = computeSplitOffsets(el, blk.flavour, {
         widowOrphanLines: config.widowOrphanLines,
         contentHeight: regularContentHeight,
@@ -1833,6 +1834,7 @@ function measureItemsFromDom(
       lockHeight,
       fitScale: pageMedia && fitScale < 1 ? fitScale : undefined,
       repeatHeaderHeight,
+      splitToFillPage: blk.flavour === 'render-unit' || undefined,
       splitStartsNewPage: blk.flavour === 'table' || blk.flavour === 'callout' || undefined,
       manualBreak: isManualBreak(blk.flavour),
     });

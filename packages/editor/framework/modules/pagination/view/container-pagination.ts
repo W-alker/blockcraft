@@ -72,11 +72,13 @@ export function measureContainerBreakPlan(
       hasContent = true
       const policy = resolveBlockPolicy({flavour: child.flavour, nodeType: child.nodeType})
       // 局部 padding/border 也占正文容量；不能等文本单独高过整页才检测。
-      if (child.nodeType === BlockNodeType.editable && policy.breakable && toLayout(childRect.height) > budget) {
+      if (child.nodeType === BlockNodeType.editable && policy.breakable
+        && (parent.flavour === 'render-unit' || toLayout(childRect.height) > budget)) {
         const editable = child as EditableBlockComponent
         const lines = measureInlinePaginationLineStarts(editable.runtime, Math.min(
           2048, Math.max(64, Math.ceil(toLayout(childRect.height) / options.contentHeight) * 8),
         ))
+        if (!lines.length) continue
         const minimum = Math.max(1, options.widowOrphanLines)
         const strict = lines.filter((_line, index) => index + 1 >= minimum && lines.length - index >= minimum)
         const containerTop = editable.containerElement.getBoundingClientRect().top

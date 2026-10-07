@@ -55,10 +55,26 @@ describe('填写区分页投影', () => {
     root.remove()
   })
 
-  it('按块边界测量，不为能放一页的普通段落测量文本行', () => {
+  it('子块没有文本行锚点时仍保留块边界', () => {
     const plan = measureContainerBreakPlan(region, {contentHeight: 250, widowOrphanLines: 2})!
     expect(plan.points.map(point => [point.layoutOffset, point.blockId, point.textOffset]))
       .toEqual([100, 200, 300, 400, 500].map((y, i) => [y, `p${i + 1}`, 0]))
+  })
+
+  it('不足一页的填写区也收集短子文本的安全行锚点', () => {
+    const child = blocks.get('p0')
+    child.hostElement.style.height = '200px'
+    child.containerElement = child.hostElement
+    child.runtime = {}
+    region.hostElement.style.height = '200px'
+    region.getChildrenBlocks = () => [child]
+    region.hostElement.querySelector('.render-unit-content').replaceChildren(child.hostElement)
+    releases.push(registerInlinePaginationAccess(child.runtime, {
+      apply: () => true, clear: () => {},
+      measureLineStarts: () => [50, 100, 150].map((top, i) => ({top, offset: (i + 1) * 10, visualGuardHeight: 20})),
+    }))
+    const plan = measureContainerBreakPlan(region, {contentHeight: 250, widowOrphanLines: 2})!
+    expect(plan.points).toEqual([{layoutOffset: 100, blockId: 'p0', textOffset: 20}])
   })
 
   it('子块断点可暂停、回滚，清理后原 DOM 顺序及尺寸不变', () => {
@@ -164,8 +180,8 @@ describe('填写区分页投影', () => {
 class RegionPaginationTheme {}
 
 describe('填写区稳定打印与离线导出', () => {
-  for (const flavour of ['render-unit', 'callout'] as const) for (const stable of [false, true]) {
-    it(`${flavour} ${stable ? '稳定布局' : '离线 DOM 测量'}保留全部片段`, async () => {
+  for (const short of [false, true]) for (const flavour of ['render-unit', 'callout'] as const) for (const stable of [false, true]) {
+    it(`${short ? '短块' : '长块'} ${flavour} ${stable ? '稳定布局' : '离线 DOM 测量'}保留全部片段`, async () => {
       TestBed.configureTestingModule({imports: [RegionPaginationTheme]})
       const fixture = TestBed.createComponent(RegionPaginationTheme)
       fixture.detectChanges()
@@ -178,7 +194,7 @@ describe('填写区稳定打印与离线导出', () => {
       host.style.cssText = 'width:380px;height:90px;margin:0;'
       const content = document.createElement('div')
       content.className = 'render-unit-content'
-      const children = Array.from({length: 12}, (_, index) => {
+      const children = Array.from({length: short ? 2 : 12}, (_, index) => {
         const child = document.createElement('div')
         child.className = 'paragraph-block'
         child.dataset['nodeType'] = 'editable'
@@ -200,26 +216,40 @@ describe('填写区稳定打印与离线导出', () => {
         wrapper.append(prefix, content)
         host.appendChild(wrapper)
       } else host.appendChild(content)
+      if (short) {
+        const lead = document.createElement('div')
+        lead.dataset['blockId'] = 'lead'
+        lead.style.cssText = 'height:100px;margin:0;'
+        lead.textContent = '前置内容'
+        offscreen.appendChild(lead)
+      }
       offscreen.appendChild(host)
       document.body.appendChild(offscreen)
+      const leadSnapshots: IBlockSnapshot[] = short ? [{id: 'lead', flavour: 'paragraph', nodeType: BlockNodeType.editable, meta: {}, props: {}, children: [{insert: '前置内容'}]}] : []
       const snapshot = {id: 'root-print', flavour: 'root', nodeType: BlockNodeType.root,
-        meta: {}, props: {}, children: [{id: 'printed-region', flavour,
+        meta: {}, props: {}, children: [...leadSnapshots, {id: 'printed-region', flavour,
           nodeType: BlockNodeType.block, meta: {}, props: {width: 380, height: 90}, children}]} satisfies IBlockSnapshot
       const config = {pageSize: {width: 400, height: 220}, margins: {top: 10, right: 10, bottom: 10, left: 10}}
       const geometry = resolveScreenGeometry(config)
       syncContainerPaginationFlow(offscreen)
       const inset = content.getBoundingClientRect().top - host.getBoundingClientRect().top
       const height = host.offsetHeight
-      const items = [{id: 'printed-region', height, trailingSpacing: 0, breakable: true, keepWithNext: false,
-        splitOffsets: Array.from({length: 11}, (_, index) => inset + (index + 1) * 80)}]
+      const items = [...(short ? [{id: 'lead', height: 100, trailingSpacing: 0, breakable: false, keepWithNext: false}] : []), {id: 'printed-region', height, trailingSpacing: 0, breakable: true, keepWithNext: false,
+        splitToFillPage: flavour === 'render-unit', splitStartsNewPage: flavour === 'callout',
+        splitOffsets: Array.from({length: short ? 1 : 11}, (_, index) => inset + (index + 1) * 80)}]
       const layout = stable ? createStablePaginationLayout(1, config, geometry, items, paginate(items, geometry.geometry)) : undefined
       const pages = await buildPaginatedPrintSurface(snapshot, config, {
         layout, resourcePolicy: 'strict',
         render: async () => ({root: offscreen, dispose: () => offscreen.remove()}),
       })
       try {
-        expect(pages.pageCount).toBe(6)
+        expect(pages.pageCount).toBe(short ? 2 : 6)
+        if (short) {
+          const firstContent = pages.container.querySelector('.bc-print-content')!
+          expect(!!firstContent.querySelector('[data-block-id="printed-region"]')).toBe(flavour === 'render-unit')
+        }
         const fragments = Array.from(pages.container.querySelectorAll<HTMLElement>('.bc-print-frag'))
+        if (!fragments.length) fragments.push(pages.container.querySelector<HTMLElement>('[data-block-id="printed-region"]')!)
         expect(fragments.reduce((sum, fragment) => sum + fragment.offsetHeight, 0)).toBe(height)
         const visibleIds: string[] = []
         for (const fragment of fragments) {
@@ -230,7 +260,7 @@ describe('填写区稳定打印与离线导出', () => {
           }
         }
         expect(visibleIds).toEqual(children.map(child => child.id))
-        expect(snapshot.children[0].props.height).toBe(90)
+        expect(snapshot.children[snapshot.children.length - 1].props['height']).toBe(90)
       } finally {
         pages.dispose()
         fixture.destroy()

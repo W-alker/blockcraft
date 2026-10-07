@@ -1,12 +1,12 @@
 import {expect, test, type Page} from '@playwright/test'
 
-async function createRegion(page: Page, kind: 'paragraphs' | 'long-text' | 'nested' | 'table' | 'large-gap' = 'paragraphs', fixed = false, sparse = false) {
+async function createRegion(page: Page, kind: 'paragraphs' | 'long-text' | 'nested' | 'table' | 'large-gap' | 'short-paragraphs' | 'short-text' = 'paragraphs', fixed = false, sparse = false) {
   await page.goto('/')
   const ids = await page.evaluate(async ({kind, fixed, sparse}) => {
     const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
     const paragraph = (text: string) => doc.schemas.createSnapshot('paragraph', [text])
-    const content = Array.from({length: 24}, (_, i) => `第${i + 1}段填写内容，用于检查跨页后文字完整。`)
-    const children = kind === 'long-text' ? [paragraph(content.join('\n'))] : content.map(paragraph)
+    const content = Array.from({length: kind.startsWith('short-') ? 6 : 24}, (_, i) => kind.startsWith('short-') ? `短填写内容${i + 1}` : `第${i + 1}段填写内容，用于检查跨页后文字完整。`)
+    const children = (kind === 'long-text' || kind === 'short-text') ? [paragraph(content.join('\n'))] : content.map(paragraph)
     const region = doc.schemas.createSnapshot('render-unit', [{tplRegion: true}, {
       p: [16, 20], border: '2px solid #333', backColor: '#eef5ff',
       ...(fixed ? {width: 480, height: 140} : {}),
@@ -24,7 +24,7 @@ async function createRegion(page: Page, kind: 'paragraphs' | 'long-text' | 'nest
     } else if (kind === 'large-gap') {
       region.children = [paragraph('填写区开头'), paragraph(content.slice(0, 9).join('\n')), paragraph(content.slice(9, 18).join('\n'))]
     } else region.children = children
-    const lead = paragraph('填写区之前')
+    const lead = paragraph(kind.startsWith('short-') ? Array(8).fill('填写区之前').join('\n') : '填写区之前')
     const after = paragraph('填写区之后')
     const editor = (window as any).ng.getComponent(document.querySelector('block-craft-editor'))
     const root = doc.schemas.createSnapshot('root', [editor.rootId, [lead, region, after]])
@@ -38,7 +38,7 @@ async function createRegion(page: Page, kind: 'paragraphs' | 'long-text' | 'nest
     pagination._experimentalSparseView = sparse
     pagination.updateConfig({pageSize: {width: 640, height: 400}, margins: {top: 40, right: 40, bottom: 40, left: 40}, pageGap: 24})
     pagination.enable()
-    ;(window as any).__regionTest = {doc, pagination, region: region.id, after: after.id}
+    ;(window as any).__regionTest = {doc, pagination, region: region.id, after: after.id, lead: lead.id}
     return {region: region.id, first: children[0].id, last: children[children.length - 1].id}
   }, {kind, fixed, sparse})
   await page.waitForFunction(() => {
@@ -252,5 +252,30 @@ for (const {scale, sparse} of [{scale: 0.75, sparse: false}, {scale: 1.25, spars
     await expect.poll(async () => (await geometry(page)).intersections).toBe(0)
     const state = await geometry(page)
     expect(state.afterPage).toBe(state.expectedAfterPage)
+  })
+}
+
+for (const kind of ['short-paragraphs', 'short-text'] as const) {
+  test(`${kind} 不足一页的填写区优先拆分利用当前页，固定高度不影响规则`, async ({page}) => {
+    const ids = await createRegion(page, kind, true)
+    await expect.poll(async () => (await geometry(page)).fragments.length).toBe(2)
+    const state = await geometry(page)
+    const leadPage = await page.evaluate(() => {
+      const {pagination, lead} = (window as any).__regionTest
+      return pagination.captureStableLayout().result.byBlock.get(lead).pageIndex
+    })
+    expect(state.fragments.map(fragment => fragment.page)).toEqual([leadPage, leadPage + 1])
+    expect(state.intersections).toBe(0)
+    expect(state.afterPage).toBe(state.expectedAfterPage)
+    expect(await page.evaluate(() => {
+      const {pagination, region} = (window as any).__regionTest
+      const layout = pagination.captureStableLayout()
+      return layout.items.find((item: any) => item.id === region).height <= layout.geometry.geometry.contentHeight
+    })).toBe(true)
+    const last = page.locator(`[data-block-id="${ids.last}"]`)
+    await last.locator('c-text').last().click()
+    await page.keyboard.press('End')
+    await page.keyboard.insertText('短填写区续页输入')
+    await expect(last).toContainText('短填写区续页输入')
   })
 }

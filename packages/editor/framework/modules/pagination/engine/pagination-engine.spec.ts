@@ -148,6 +148,24 @@ describe('paginate - 超大块', () => {
     expect(pageIds(r)).toEqual([['a'], ['t']]);
   });
 
+  it('拆分优先的短块利用当前页剩余空间', () => {
+    const region = item('region', 90, {breakable: true, splitToFillPage: true, splitOffsets: [30, 60]});
+    expect(pageIds(paginate([para('lead', 60), region], geo(100))))
+      .toEqual([['lead', 'region[0-30]'], ['region[30-90]']]);
+    expect(pageIds(paginate([region], geo(100, 40))))
+      .toEqual([['region[0-30]'], ['region[30-90]']]);
+  });
+
+  it('拆分优先仍保留放得下的整块，且没有安全切点时下移', () => {
+    const region = item('region', 90, {breakable: true, splitToFillPage: true, splitOffsets: [30, 60]});
+    expect(pageIds(paginate([region], geo(100)))).toEqual([['region']]);
+    const result = paginate([para('lead', 80), region], geo(100));
+    expect(result.byBlock.get('region')?.pageIndex).toBe(1);
+    expect(result.pages[1].usedHeight).toBe(90);
+    const atomic = {...region, splitOffsets: []};
+    expect(paginate([para('lead', 60), atomic], geo(100)).byBlock.get('region')?.pageIndex).toBe(1);
+  });
+
   it('可拆块高度恰好等于一页时仍整块放置', () => {
     // 容量 100；a(20) 后剩80，t 高度恰好100且带切点[50]，仍不进入拆分循环。
     const r = paginate([para('a', 20), breakBlock('t', 100, [50])], geo(100));

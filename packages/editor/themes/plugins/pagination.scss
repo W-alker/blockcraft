@@ -270,8 +270,11 @@ body.bc-table-fullscreen-lock
   > .columns-block {
     // 正文容量包含分栏自身的上下 padding，不能依赖宿主页面的全局 reset。
     box-sizing: border-box;
-    display: flex;
-    flex-direction: column;
+    // Grid 的拉伸区域提供确定的包含块高度，让填写区的百分比上限
+    // 基于栏内实际空间解析；仅有 flex + max-height 会继续按整页限高。
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
     max-height: var(--bc-page-content-height);
     min-height: 0;
 
@@ -285,25 +288,35 @@ body.bc-table-fullscreen-lock
     }
 
     > .columns-wrapper {
-      display: flex;
-      flex-direction: column;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr);
       min-height: 0;
 
       > .columns-layout {
         min-height: 0;
 
         > .column-block {
+          box-sizing: border-box;
           display: flex;
           flex-direction: column;
           min-height: 0;
 
           > .column-content {
+            box-sizing: border-box;
             height: auto;
             min-height: 0;
             flex: 1 1 auto;
 
             // Flex 子块保留自然高度，长列通过滚动访问，不能挤压文本/填写区。
             > [data-block-id] { flex-shrink: 0; }
+
+            // 单个填写区不撑出栏内空间；多个子块仍按自然尺寸累加，
+            // 总高度超限时由分栏滚动，不挤压各块或修改手动尺寸数据。
+            > .render-unit-block {
+              max-height: 100%;
+              max-width: 100%;
+            }
           }
         }
       }

@@ -1,6 +1,6 @@
 // packages/editor/framework/modules/pagination/view/split-points.ts
 //
-// 超大块（高过一整页）的安全拆分点：仅对 oversized && breakable 块惰性调用，
+// 可拆块的安全拆分点：默认只测超页块，填写区为优先拆分始终提供切点，
 // 用 Range.getClientRects()（文本行盒）/ <tr>（表格行）测出「块顶起算的安全切点（px）」，
 // 交给纯引擎在跨页处切片，避免 PDF 导出时 overflow:hidden 把超大块尾部直接截断丢内容。
 //
@@ -16,7 +16,7 @@ import {isSequentialPaginationContainer, paginationContainerElements} from './co
 export interface SplitPointsOptions {
   /** 拆分时每侧至少保留的行/行盒数（widow/orphan 控制），默认 2。 */
   widowOrphanLines?: number;
-  /** 只读填写区测量：短子块保持整体，超页子块才递归提供内部切点。 */
+  /** 只读顺序容器测量：填写区内文本优先拆分，其他短子块保持整体。 */
   contentHeight?: number;
 }
 
@@ -75,7 +75,9 @@ function computeContainerSplitOffsets(el: HTMLElement, opts: SplitPointsOptions)
         continue;
       }
       hasContent = true;
-      if (rect.height <= budget) continue;
+      const fillingText = region.classList.contains('render-unit-block')
+        && child.getAttribute('data-node-type') === 'editable';
+      if (rect.height <= budget && !fillingText) continue;
       if (child.classList.contains('table-block')) {
         cuts.push(...computeTableSplitOffsets(child, opts).all.map(offset => top + offset));
       } else if (child.getAttribute('data-node-type') === 'editable' && !child.classList.contains('code-block')) {

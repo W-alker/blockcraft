@@ -74,7 +74,7 @@ function nextContentItem(items: PaginationItem[], from: number): PaginationItem 
 /**
  * 块感知分页。纯函数，不碰 DOM/Yjs。
  * - 放得下 → 放；放不下整块 → 下推到下一页（不切断普通块）；
- * - 超大可拆块 → 在 splitOffsets 安全切点跨页拆；
+ * - 超大可拆块或启用 splitToFillPage 的块 → 在 splitOffsets 安全切点跨页拆；
  * - 超大原子块 → 独占新页、v1 允许溢出；
  * - manualBreak（page-divider）→ 强制新页，自身不占高度、不进任何一页；
  * - 空输入 → 单个空页。
@@ -133,9 +133,8 @@ export function paginate(items: PaginationItem[], geometry: PageGeometry): Pagin
       continue;
     }
 
-    // 情况3a：只有块自身高过一整页时才跨页拆。
-    // 不超过一页的块即使携带安全切点，也保持整块并在当前页放不下时下推。
-    if (it.breakable && it.height > capacity()) {
+    // 默认只拆超页块；填写区显式启用 splitToFillPage，优先利用本页剩余容量。
+    if (it.breakable && (it.height > capacity() || it.splitToFillPage)) {
       // 拆分独占新页起（表格）：当前页已有内容则先 commit，让被拆块从新页顶开始、不拼前一页剩余。
       if (it.splitStartsNewPage && hasPageContent()) commit();
       const total = it.height;

@@ -532,7 +532,7 @@ the same exclusion-band rule. During pointer/IME/object-layout leases, the
 controller retains the previous stable projection and recomputes after the
 wrapped layout refresh finishes.
 
-根级 `render-unit`（填写区）及旧快照中已存在的直接嵌套填写区在分页时展开完整内容，手动高度保留在模型中，退出分页恢复。超页区域按子块边界、超页文本的安全行锚点、普通表格的可拆行边界延续；短区块仍整体换页。复合锚点保留填写区 ID 与目标子块 ID，沿用 Inline 的零模型长度页缝和表格行投影。分页占位带统一透明裁切，透出纸张、页眉页脚、页边距和原有阴影，不额外计算或填充剩余正文高度。`--bc-region-pagination-clip` 是内部投影状态，不作为宿主配置使用。重测、关闭分页、虚拟化卸载与回滚统一撤销视图投影；稳定打印直接消费同一组像素片段。高亮块（`callout`）复用这一顺序流投影：当前页剩余容量不足时优先整体下移，只有超过整页正文容量才从新页开始拆分；Emoji 仅在首片段出现。填写区与高亮块可沿旧快照中的直接顺序嵌套继续拆分；不改变 Schema 子块白名单。分栏、表格单元格等其他容器仍保持原有边界。
+根级 `render-unit`（填写区）及旧快照中已存在的直接嵌套填写区在分页时展开完整内容，手动高度保留在模型中，退出分页恢复。填写区优先利用当前页剩余空间：即使自身不足一页，也按子块边界或内部文本的安全行锚点拆分；当前页没有可用安全切点时才整体下移。普通表格子块仍仅在超页时提供可拆行边界。纯引擎的 `PaginationItem.splitToFillPage?: boolean` 显式启用该规则，默认关闭；普通段落、表格与高亮块不启用。复合锚点保留填写区 ID 与目标子块 ID，沿用 Inline 的零模型长度页缝和表格行投影。分页占位带统一透明裁切，透出纸张、页眉页脚、页边距和原有阴影，不额外计算或填充剩余正文高度。`--bc-region-pagination-clip` 是内部投影状态，不作为宿主配置使用。重测、关闭分页、虚拟化卸载与回滚统一撤销视图投影；稳定打印直接消费同一组像素片段。高亮块（`callout`）复用这一顺序流投影：当前页剩余容量不足时优先整体下移，只有超过整页正文容量才从新页开始拆分；Emoji 仅在首片段出现。填写区与高亮块可沿旧快照中的直接顺序嵌套继续拆分；不改变 Schema 子块白名单。分栏、表格单元格等其他容器仍保持原有边界。
 
 `header` / `footer` customize fixed-height page chrome through the
 `left` / `center` / `right` text segments. `{page}` / `{total}` render decimal

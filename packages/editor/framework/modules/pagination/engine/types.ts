@@ -22,11 +22,11 @@ export interface PaginationItem {
    * computed margin-bottom）。打印重父和结构哨兵不得重新推导这个值。
    */
   trailingSpacing?: number;
-  /** 高于一整页时是否可在 splitOffsets 处拆开。 */
+  /** 是否可在 splitOffsets 处拆开；默认仅拆分高于整页的块。 */
   breakable: boolean;
   /** 通用的相邻块绑定信号；为 true 时尽量与下一内容块一起下推。内置标题策略默认不启用。 */
   keepWithNext: boolean;
-  /** 安全拆分点（块顶起算偏移 px，升序），仅在 oversized && breakable 时使用。 */
+  /** 安全拆分点（块顶起算偏移 px，升序），仅在可拆块超页或启用 splitToFillPage 时使用。 */
   splitOffsets?: number[];
   /**
    * 「优先」拆分点（`splitOffsets` 的子集）：在剩余空间内优先选这些切点，选不到再退回普通切点。
@@ -41,6 +41,8 @@ export interface PaginationItem {
    * 表格用——强制拆分的表格从新页顶开始，不与前一页内容拼。超页文本块不设此项，首片仍可利用当前页剩余空间。
    */
   splitStartsNewPage?: boolean;
+  /** 优先用安全切点填充当前页，即使整块未超过一页。默认 false；填写区启用。 */
+  splitToFillPage?: boolean;
   /**
    * 锁定最大高度（px）：capHeight 块超高时把分页占位锁到 ≤ 一页。
    * 引擎使用已投影的 `height` 定位；普通裁剪块等于 lockHeight。流式图片/视频

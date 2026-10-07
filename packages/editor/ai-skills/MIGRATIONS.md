@@ -68,6 +68,37 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## 0.12.0 — 2026-10-07：填写区优先拆分（待发布）
+
+**Severity**: minor
+
+**What changed**: `PaginationItem` 新增可选 `splitToFillPage`。内置填写区启用此策略，在当前页有安全断点时优先拆分，不再要求自身高度超过一整页。
+
+**Why**: 填写区属于连续填写内容，整体下移会留下大段页内空白；高亮块仍需要优先保持整体。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-plugins-util.md`
+
+### New APIs / Features
+
+- `PaginationItem.splitToFillPage?: boolean`，缺省关闭；仅在 `breakable` 为真时生效，整块放得下时仍完整放置，拆分沿用安全切点。`splitStartsNewPage` 仍控制是否从新页开始。
+
+### Behavior Changes
+
+- 根级填写区及可顺序递归的嵌套填写区按子块边界和文本安全行断点续排；不足一页也可拆分，当前页无安全断点时下移。
+- 高亮块、表格和根级普通段落的整体下移策略不变。分栏、单元格内的独立容器边界不变。
+- 编辑态、稳定打印及离线 DOM 测量使用相同优先级；手动尺寸和文档数据不变。此条为待发布记录，package 版本未改动。
+
+### Migration Recipe
+
+宿主使用内置 `PaginationPlugin` 无需迁移。自行组装引擎条目时，按需要显式启用：
+
+```typescript
+// before：短块整体下移
+const item = {id, height, breakable: true, keepWithNext: false, splitOffsets};
+// after：优先使用当前页安全断点
+const fillingItem = {...item, splitToFillPage: true};
+```
+
 ## 0.11.10 — 2026-10-07：绝对定位对象多选同步拖拽（待发布）
 
 **Severity**: patch

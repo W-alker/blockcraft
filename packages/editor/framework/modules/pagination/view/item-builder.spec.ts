@@ -53,6 +53,19 @@ describe('item-builder', () => {
     });
   }
 
+  for (const height of [240, 640]) {
+    it(`填写区 ${height}px 优先在当前页拆分`, () => {
+      const items = buildPaginationItems([
+        {id: 'lead', flavour: 'paragraph', nodeType: BlockNodeType.editable, isHeading: false, height: 160},
+        {id: 'region', flavour: 'render-unit', nodeType: BlockNodeType.block, isHeading: false, height,
+          splitOffsets: Array.from({length: height / 80 - 1}, (_, i) => (i + 1) * 80)},
+      ]);
+      const result = paginate(items, {contentHeight: 320});
+      expect(result.byBlock.get('region')?.pageIndex).toBe(0);
+      expect(result.pages[0].slots[1]).toEqual({id: 'region', fragment: {fromOffset: 0, toOffset: 160}});
+    });
+  }
+
   it('首页面积较小时，能放进常规页的高亮块仍完整下移', () => {
     const items = buildPaginationItems([
       {id: 'callout', flavour: 'callout', nodeType: BlockNodeType.block, isHeading: false, height: 240},

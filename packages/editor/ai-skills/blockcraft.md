@@ -952,6 +952,8 @@ permissions again on the persistence/server boundary when security matters.
 
 ### Pagination Plugin
 
+填写区（`render-unit`）在当前页有安全切点时优先拆分，包括不足整页的内容；高亮块仍优先整体下移，超过整页才从新页拆分。纯分页引擎通过可选 `PaginationItem.splitToFillPage` 表达此策略，默认关闭，屏幕与打印共用。分栏及表格单元格内的独立容器边界不变。
+
 ```typescript
 const pagination = new PaginationPlugin({
   enabled: false,

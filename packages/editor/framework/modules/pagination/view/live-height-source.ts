@@ -516,9 +516,8 @@ export class LiveHeightSource {
   }
 
   /**
-   * Measure visual lines only for a supported editable block that is genuinely
-   * taller than a full page. Ordinary paragraphs stay on the cheap height-only
-   * path and therefore keep their whole-block pagination semantics.
+   * 填写区始终准备安全切点以优先拆分；其他块仍仅在超过整页时测量。
+   * 根级短段落保持只测高度的快速路径，不增加逐行 Range 测量。
    */
   private _measureInlineBreakMetadata(
     block: any,
@@ -531,7 +530,7 @@ export class LiveHeightSource {
       !opts
       || !breakable
       || opts.contentHeight <= 0
-      || naturalHeight <= opts.contentHeight
+      || (naturalHeight <= opts.contentHeight && block?.flavour !== 'render-unit')
     ) {
       return {}
     }
