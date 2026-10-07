@@ -147,6 +147,26 @@ $icon-btn-size: 26px;
   }
 
   // ── Action buttons (replace) ────────────────────────────────
+  .replace-summary {
+    padding: 0 8px;
+    font-size: var(--bc-fs-xs, 12px);
+    color: var(--bc-color-lighter, #8b9cad);
+
+    > span {
+      cursor: help;
+      border-bottom: 1px dotted currentColor;
+    }
+  }
+
+  // Native action groups own disabled state independently of button loading state.
+  .replace-action {
+    display: flex;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
   .action-btn {
     flex-shrink: 0;
     height: $field-height;

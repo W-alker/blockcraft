@@ -141,6 +141,17 @@ changes are a cold path and rebuild model order without DOM traversal. A
 reading its compatibility `block` property materializes and resolves the view,
 so model-only integrations should use `blockId`.
 
+Mention 的 `insert.mention` 名称参与字面搜索（含部分匹配及忽略大小写），
+每个命中的 mention 计一条结果并高亮整个节点；不跨 Embed 边界拼接匹配。
+其 `FindReplaceMatch.replaceable` 为 `false`，`index/length` 仍为模型偏移/长度（长度为 1）；
+可写普通文本结果为 `true`，只读/锁定内容为 `false`，兼容旧调用方省略此字段。`replaceOne()` 对 mention 无操作，
+`replaceAll()` 跳过 mention 并保留其搜索结果；替换入口还会检查当前模型，禁止删除任何 Embed。
+宿主面板可用当前结果的 `replaceable !== false` 控制单项替换，
+用 `helper.hasReplaceableMatches` 控制全部替换。
+`helper.nonReplaceableCount` 为不可替换结果数，`helper.nonReplaceableTooltip` 汇总每种原因及数量；
+`match.replaceDisabledReason` 为单个结果的原因。默认对话框显示“其中 N 项无法替换”及 tooltip，
+宿主面板直接绑定这些字段。统计在结果/权限变化时更新，读取不遍历全文；只读/锁定状态变化后会同步刷新。
+
 ### Configuration
 
 ```typescript

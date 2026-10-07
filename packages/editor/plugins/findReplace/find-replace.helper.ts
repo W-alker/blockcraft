@@ -1,10 +1,9 @@
 import {Subscription} from "rxjs";
-import {deltaToString, nextTick, performanceTest} from "../../global";
+import {nextTick, performanceTest} from "../../global";
 import {
   BlockNodeType,
   DeltaOperation,
   FakeRange,
-  STR_ZERO_WIDTH_SPACE
 } from "../../framework";
 
 export interface FindReplaceMatch {
@@ -13,6 +12,10 @@ export interface FindReplaceMatch {
   block: BlockCraft.BlockComponent
   index: number
   length: number
+  /** False for atomic mention matches; omitted by legacy text-only consumers. */
+  readonly replaceable?: boolean
+  /** User-facing reason when this result cannot be replaced. */
+  readonly replaceDisabledReason?: string
   fakeRange: FakeRange | null
 }
 
@@ -53,6 +56,13 @@ export class FindReplaceHelper {
 
   get isActive() { return !!this._findText }
 
+  get hasReplaceableMatches() { return this.matchedList.length > this.nonReplaceableCount }
+  get nonReplaceableCount() { return this._nonReplaceableCount }
+  get nonReplaceableTooltip() { return this._nonReplaceableTooltip }
+
+  private _nonReplaceableCount = 0
+  private _nonReplaceableTooltip = ''
+
   private _findText = ''
   private _subs: Subscription[] = []
   private _blockOrder: string[] | null = null
@@ -87,6 +97,12 @@ export class FindReplaceHelper {
         if (this.isActive && this._lazyMode) this._syncMountedMatchObservers()
       }),
     )
+    const refreshPermissions = () => this._updateReplacementSummary()
+    if (this.doc.readonlyManager?.stateChange$) {
+      this._subs.push(this.doc.readonlyManager.stateChange$.subscribe(refreshPermissions))
+    } else if (this.doc.readonlySwitch$) {
+      this._subs.push(this.doc.readonlySwitch$.subscribe(refreshPermissions))
+    }
   }
 
   destroy() {
@@ -293,6 +309,7 @@ export class FindReplaceHelper {
       return
     }
     if (this.doc.readonlyManager?.isReadonly(blockId) ?? this.doc.isReadonly) return
+    if (!this._textOnlyMatches(blockId, [match]).length) return
     this.doc.crud.transact(() => {
       this.doc.crud.replaceText(blockId, match.index, match.length, replaceText)
     })
@@ -301,24 +318,48 @@ export class FindReplaceHelper {
   replaceAll(replaceText: string) {
     this.doc.crud.transact(() => {
       this.matchedBlockMap.forEach((matched, bid) => {
+        if (!this._isBlockIdAlive(bid)) {
+          this.clearOldMatchesMark(bid)
+          return
+        }
+        if (this.doc.model.getNodeType(bid) !== BlockNodeType.editable) return
+        if (this.doc.readonlyManager?.isReadonly(bid) ?? this.doc.isReadonly) return
+        const replaceable = this._textOnlyMatches(bid, matched)
+        if (!replaceable.length) return
         const delta: DeltaOperation[] = []
         let cursor = 0
-        matched.forEach(m => {
+        replaceable.forEach(m => {
           const retain = m.index - cursor
           if (retain > 0) delta.push({retain})
           delta.push({delete: m.length})
-        if (replaceText) delta.push({insert: replaceText})
-        cursor = m.index + m.length
-      })
-        if (!this._isBlockIdAlive(bid)) return
-        if (this.doc.model.getNodeType(bid) !== BlockNodeType.editable) return
-        if (this.doc.readonlyManager?.isReadonly(bid) ?? this.doc.isReadonly) return
+          if (replaceText) delta.push({insert: replaceText})
+          cursor = m.index + m.length
+        })
         this.doc.crud.applyTextDelta(bid, delta)
+        this.clearOldMatchesMark(bid)
+        // Refresh changed blocks only; untouched mention highlights stay alive.
+        this._queueModelRefresh([bid])
       })
-      this._destroyAllFakeRanges()
-      this.matchedList = []
-      this.matchedBlockMap.clear()
-      this._resetObservation()
+      this.matchedList = this.matchedList.filter(match => this.matchedBlockMap.has(this._matchBlockId(match)))
+      this._updateReplacementSummary()
+      this._clampMatchIndex()
+    })
+  }
+
+  /** Recheck current model boundaries so a queued refresh cannot expose embeds to replacement. */
+  private _textOnlyMatches(blockId: string, matches: FindReplaceMatch[]): FindReplaceMatch[] {
+    const embeds: number[] = []
+    let length = 0
+    for (const delta of this.doc.model.getTextDeltas(blockId) ?? []) {
+      if (typeof delta.insert === 'string') length += delta.insert.length
+      else embeds.push(length++)
+    }
+    let embedIndex = 0
+    return matches.filter(match => {
+      if (match.replaceable === false) return false
+      while (embedIndex < embeds.length && embeds[embedIndex] < match.index) embedIndex++
+      return match.index >= 0 && match.length > 0 && match.index + match.length <= length &&
+        (embedIndex === embeds.length || embeds[embedIndex] >= match.index + match.length)
     })
   }
 
@@ -349,6 +390,7 @@ export class FindReplaceHelper {
     this._destroyAllFakeRanges()
     this.matchedList = []
     this.matchedBlockMap.clear()
+    this._updateReplacementSummary()
     this._resetObservation()
     this._lazyMode = false
     this._pendingTextBlockIds.clear()
@@ -415,6 +457,7 @@ export class FindReplaceHelper {
       match.fakeRange = null
     }
     this._clampMatchIndex()
+    this._updateReplacementSummary()
   }
 
   private _clampMatchIndex() {
@@ -471,13 +514,31 @@ export class FindReplaceHelper {
   /** Pure model collection: no ComponentRef, DOM or observer work. */
   private _collectBlockMatches = (blockId: string): FindReplaceMatch[] | null => {
     const deltas = this.doc.model.getTextDeltas(blockId)
-    const text = deltas ? deltaToString(deltas, STR_ZERO_WIDTH_SPACE) : ''
-    if (!text) return null
-    const matches = text.matchAll(this.matchReg)
+    if (!deltas?.length) return null
     const res: FindReplaceMatch[] = []
-    for (const match of matches) {
-      res.push(this._createMatch(blockId, match.index, match[0].length))
+    let offset = 0
+    let text = ''
+    const flushText = () => {
+      for (const match of text.matchAll(this.matchReg)) {
+        res.push(this._createMatch(blockId, offset - text.length + match.index, match[0].length))
+      }
+      text = ''
     }
+    for (const delta of deltas) {
+      if (typeof delta.insert === 'string') {
+        text += delta.insert
+        offset += delta.insert.length
+        continue
+      }
+      flushText()
+      const mention = delta.insert['mention']
+      // One result per atomic node, even if its label contains repeated matches.
+      if (mention != null && String(mention).match(this.matchReg)) {
+        res.push(this._createMatch(blockId, offset, 1, false))
+      }
+      offset++
+    }
+    flushText()
     if (res.length) {
       this.matchedBlockMap.set(blockId, res)
     }
@@ -516,6 +577,21 @@ export class FindReplaceHelper {
       if (list) matchedList.push(...list)
     }
     this.matchedList = matchedList
+    this._updateReplacementSummary()
+  }
+
+  /** Recompute only when results or permissions change, never on each UI check. */
+  private _updateReplacementSummary() {
+    let count = 0
+    const reasons = new Map<string, number>()
+    for (const match of this.matchedList) {
+      if (match.replaceable !== false) continue
+      count++
+      const reason = match.replaceDisabledReason ?? '此结果仅支持查找，不能替换内容'
+      reasons.set(reason, (reasons.get(reason) ?? 0) + 1)
+    }
+    this._nonReplaceableCount = count
+    this._nonReplaceableTooltip = [...reasons].map(([reason, total]) => `${total} 项：${reason}`).join('\n')
   }
 
   private _computeBlockOrder(): string[] {
@@ -600,11 +676,21 @@ export class FindReplaceHelper {
     return match.blockId ?? match.block.id
   }
 
-  private _createMatch(blockId: string, index: number, length: number): FindReplaceMatch {
+  private _createMatch(blockId: string, index: number, length: number, replaceable = true): FindReplaceMatch {
+    const disabledReason = () => {
+      if (!replaceable) return 'Mention 是引用节点，仅支持搜索和高亮，不能替换内容'
+      if (this._isBlockIdAlive(blockId) &&
+        (this.doc.readonlyManager?.isReadonly(blockId) ?? this.doc.isReadonly)) {
+        return '所在内容为只读或已锁定，不能替换'
+      }
+      return undefined
+    }
     const match = {
       blockId,
       index,
       length,
+      get replaceable() { return !disabledReason() },
+      get replaceDisabledReason() { return disabledReason() },
       fakeRange: null,
     } as FindReplaceMatch
     Object.defineProperty(match, 'block', {

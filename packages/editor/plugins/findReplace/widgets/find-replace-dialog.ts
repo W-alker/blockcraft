@@ -3,7 +3,7 @@ import {FormsModule} from "@angular/forms";
 import {debounce} from "../../../global";
 import {AsyncPipe} from "@angular/common";
 import {FindReplaceHelper} from "../find-replace.helper";
-import {CsButtonComponent} from "@cses/ui";
+import {CsButtonComponent, CsTooltipDirective} from "@cses/ui";
 
 @Component({
   selector: 'find-replace',
@@ -14,6 +14,7 @@ import {CsButtonComponent} from "@cses/ui";
     FormsModule,
     AsyncPipe,
     CsButtonComponent,
+    CsTooltipDirective,
   ],
 })
 export class FindReplaceDialog implements OnInit, OnDestroy {
@@ -80,8 +81,12 @@ export class FindReplaceDialog implements OnInit, OnDestroy {
   }
 
   private _timer: any
+  private _lastFindText = ''
   onFindTextChange = debounce(() => {
-    if (this._destroyed) return
+    // Firefox can emit both compositionend and input for the same value.
+    // A trailing duplicate must not reset navigation after the user moves on.
+    if (this._destroyed || this.findText === this._lastFindText) return
+    this._lastFindText = this.findText
     if (this._timer) {
       clearTimeout(this._timer)
       this._timer = null

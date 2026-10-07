@@ -68,6 +68,34 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## 0.11.8 — 2026-10-07：Mention 搜索与只读高亮
+
+**Severity**: minor
+
+**What changed**: 查找替换支持按 mention 名称查找和整节点高亮，单个/全部替换均跳过 mention。
+
+**Why**: 引用名称应可定位，同时保持引用数据和原子节点完整。
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-util.md`
+
+### New APIs / Features
+
+- `FindReplaceMatch.replaceable?: boolean` 与 `replaceDisabledReason?: string`：mention 和只读/锁定结果不可替换，并提供原因。
+- `FindReplaceHelper.hasReplaceableMatches`：是否存在可替换文本结果，包含只读/锁定检查。
+- `nonReplaceableCount` / `nonReplaceableTooltip`：不可替换数量及按原因分组的 tooltip，供默认对话框与宿主共用。
+
+### Migration Recipe
+
+无需迁移数据。自定义搜索面板应在当前结果 `replaceable === false` 时禁用单项替换，
+并可使用 `helper.hasReplaceableMatches` 禁用全部替换，绑定 `nonReplaceableCount` / `nonReplaceableTooltip` 显示统计与原因。
+
+### Behavior Changes
+
+Mention 名称参与搜索计数和前后导航，部分命中高亮整个节点；每个节点只计一次，
+不跨 Embed 边界匹配。全部替换保留未替换 mention 的搜索结果，普通文本仍按原模型偏移替换。
+
 ## Unreleased — 2026-10-07：高亮块优先下移并支持超页拆分
 
 **Severity**: minor

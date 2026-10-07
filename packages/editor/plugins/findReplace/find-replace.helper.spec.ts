@@ -1,4 +1,4 @@
-import {BlockNodeType} from "../../framework";
+import {BlockNodeType, DeltaInsert} from "../../framework";
 import {FindReplaceHelper} from "./find-replace.helper";
 import {Subject} from "rxjs";
 
@@ -9,7 +9,7 @@ describe("FindReplaceHelper virtualized model reads", () => {
   };
 
   const makeModelHarness = () => {
-    const textById = new Map([
+    const textById = new Map<string, DeltaInsert[]>([
       ["p1", [{insert: "first needle"}]],
       ["p2", [{insert: "second needle"}]],
     ]);
@@ -33,6 +33,7 @@ describe("FindReplaceHelper virtualized model reads", () => {
     const textChange$ = new Subject<any>();
     const structureChange$ = new Subject<any>();
     const viewChange$ = new Subject<any>();
+    const readonlyStateChange$ = new Subject<void>();
     const fakeRanges: Array<{fragment: HTMLElement}> = [];
     const createFakeRange = jasmine.createSpy("createFakeRange").and.callFake((selection: any) => {
       const overlay = document.createElement("span");
@@ -78,10 +79,11 @@ describe("FindReplaceHelper virtualized model reads", () => {
         return block;
       },
       selection: {createFakeRange},
-      readonlyManager: {isReadonly: () => false},
+      readonlyManager: {isReadonly: (_id: string) => false, stateChange$: readonlyStateChange$},
       crud: {
         transact: (fn: () => void) => fn(),
         applyTextDelta,
+        replaceText: jasmine.createSpy("replaceText"),
       },
       scrollContainer: null,
     };
@@ -98,6 +100,7 @@ describe("FindReplaceHelper virtualized model reads", () => {
       textChange$,
       structureChange$,
       viewChange$,
+      readonlyStateChange$,
       createFakeRange,
       fakeRanges,
       applyTextDelta,
@@ -202,6 +205,128 @@ describe("FindReplaceHelper virtualized model reads", () => {
     expect(h.applyTextDelta.calls.argsFor(0)[0]).toBe("p1");
     expect(h.applyTextDelta.calls.argsFor(1)[0]).toBe("p2");
     expect(h.ensureViewMounted).not.toHaveBeenCalled();
+    h.cleanup();
+  });
+
+  it("finds formatted text and atomic mention labels in model order", () => {
+    const h = makeModelHarness();
+    h.textById.set("p1", [
+      {insert: "nee"}, {insert: "dle", attributes: {"b:bold": true}},
+      {insert: {mention: "needle needle"}},
+      {insert: {latex: "needle"}},
+      {insert: "needle"},
+    ]);
+    h.textById.set("p2", [{insert: {mention: "NEEDLE"}}]);
+    h.helper.toggleFlag(h.helper.regFlagList[0]);
+    h.helper.findAll("needle");
+
+    expect(h.helper.matchedList.map(m => [m.blockId, m.index, m.length, m.replaceable])).toEqual([
+      ["p1", 0, 6, true], ["p1", 6, 1, false], ["p1", 8, 6, true], ["p2", 0, 1, false],
+    ]);
+    expect(h.mounted.has("p2")).toBeFalse();
+    h.helper.findNext();
+    expect(h.createFakeRange.calls.mostRecent().args[0].from).toEqual({
+      blockId: "p1", index: 6, length: 1, type: "text",
+    });
+    h.helper.replaceOne("value");
+    expect(h.doc.crud.replaceText).not.toHaveBeenCalled();
+    h.helper.findNext();
+    h.helper.replaceOne("value");
+    expect(h.doc.crud.replaceText).toHaveBeenCalledOnceWith("p1", 8, 6, "value");
+    h.helper.destroy();
+    h.cleanup();
+  });
+
+  it("reports protected counts and reasons and refreshes them when permissions change", () => {
+    const h = makeModelHarness();
+    h.textById.set("p1", [{insert: {mention: "needle"}}]);
+    h.helper.listen();
+    h.helper.findAll("needle");
+    expect(h.helper.nonReplaceableCount).toBe(1);
+    expect(h.helper.nonReplaceableTooltip).toContain("1 项：Mention 是引用节点");
+    expect(h.helper.hasReplaceableMatches).toBeTrue();
+
+    h.doc.readonlyManager.isReadonly = id => id === "p2";
+    h.readonlyStateChange$.next();
+    expect(h.helper.nonReplaceableCount).toBe(2);
+    expect(h.helper.nonReplaceableTooltip).toContain("1 项：所在内容为只读或已锁定");
+    expect(h.helper.hasReplaceableMatches).toBeFalse();
+    h.helper.findNext();
+    h.helper.replaceOne("x");
+    h.helper.replaceAll("x");
+    expect(h.doc.crud.replaceText).not.toHaveBeenCalled();
+    expect(h.applyTextDelta).not.toHaveBeenCalled();
+
+    h.doc.readonlyManager.isReadonly = () => false;
+    h.readonlyStateChange$.next();
+    expect(h.helper.nonReplaceableCount).toBe(1);
+    expect(h.helper.matchedList[1].replaceDisabledReason).toBeUndefined();
+    h.helper.clearAll();
+    expect(h.helper.nonReplaceableCount).toBe(0);
+    expect(h.helper.nonReplaceableTooltip).toBe("");
+    h.helper.destroy();
+    h.cleanup();
+  });
+
+  it("does not match across mention boundaries or interpret regex characters", () => {
+    const h = makeModelHarness();
+    h.textById.set("p1", [{insert: "before"}, {insert: {mention: "A.B"}}, {insert: "after"}]);
+    for (const query of ["beforeA", "Bafter", "A+B", "a.b"]) {
+      h.helper.findAll(query);
+      expect(h.helper.matchedList).toEqual([]);
+    }
+    h.helper.findAll("A.B");
+    expect(h.helper.matchedList.length).toBe(1);
+    expect(h.helper.hasReplaceableMatches).toBeFalse();
+    h.helper.replaceAll("x");
+    expect(h.applyTextDelta).not.toHaveBeenCalled();
+    expect(h.helper.matchedList.length).toBe(1);
+    h.helper.destroy();
+    h.cleanup();
+  });
+
+  it("replaces text around mentions and keeps unchanged mention-only results", () => {
+    const h = makeModelHarness();
+    h.textById.set("p1", [{insert: "needle"}, {insert: {mention: "needle"}}, {insert: "needle"}]);
+    h.textById.set("p2", [{insert: {mention: "needle"}}]);
+    h.helper.findAll("needle");
+    h.ensureViewMounted.calls.reset();
+    h.helper.replaceAll("x");
+    expect(h.applyTextDelta).toHaveBeenCalledOnceWith("p1", [
+      {delete: 6}, {insert: "x"}, {retain: 1}, {delete: 6}, {insert: "x"},
+    ]);
+    expect(h.helper.matchedList.map(m => m.blockId)).toEqual(["p2"]);
+    expect(h.ensureViewMounted).not.toHaveBeenCalled();
+    h.helper.destroy();
+    h.cleanup();
+  });
+
+  it("protects an embed inserted before the search refresh runs", () => {
+    const h = makeModelHarness();
+    h.helper.findAll("needle");
+    h.textById.set("p1", [{insert: "first "}, {insert: {mention: "needle"}}, {insert: "....."}]);
+    h.helper.replaceOne("x");
+    expect(h.doc.crud.replaceText).not.toHaveBeenCalled();
+    h.helper.replaceAll("");
+    expect(h.applyTextDelta).toHaveBeenCalledOnceWith("p2", [{retain: 7}, {delete: 6}]);
+    h.helper.destroy();
+    h.cleanup();
+  });
+
+  it("refreshes changed mention labels without mounting their virtual views", async () => {
+    const h = makeModelHarness();
+    h.textById.set("p2", [{insert: {mention: "other"}}]);
+    h.helper.listen();
+    h.helper.findAll("needle");
+    h.ensureViewMounted.calls.reset();
+    h.textById.set("p2", [{insert: {mention: "needle"}}]);
+    h.textChange$.next({blockIds: ["p2"]});
+    await flushNextTick();
+    expect(h.helper.matchedList.map(m => [m.blockId, m.replaceable])).toEqual([
+      ["p1", true], ["p2", false],
+    ]);
+    expect(h.ensureViewMounted).not.toHaveBeenCalledWith(["p2"]);
+    h.helper.destroy();
     h.cleanup();
   });
 
