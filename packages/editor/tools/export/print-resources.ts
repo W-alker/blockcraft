@@ -111,7 +111,7 @@ function stripEditingState(root: HTMLElement): void {
   })
 
   // 滚动容器仍需保留裁剪/排版能力，但纸面不应出现浏览器或 WebView 的滚动条。
-  root.querySelectorAll<HTMLElement>('.bc-scrollable-container, .table-scrollable')
+  root.querySelectorAll<HTMLElement>('.bc-scrollable-container, .table-scrollable, .column-content')
     .forEach(el => {
       el.setAttribute('data-bc-print-scrollable', 'true')
       // 透明化而不是 width:none/display:none：传统滚动条会占布局空间，移除轨道会改变块高。

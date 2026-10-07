@@ -203,6 +203,23 @@
     }
 
     .column-content {
+      @include bc_scrollbar;
+      scrollbar-color: var(--bc-scrollbar-thumb-color) transparent;
+
+      &:hover {
+        scrollbar-color: var(--bc-scrollbar-thumb-hover-color) transparent;
+      }
+
+      &::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+
+      &::-webkit-scrollbar-track,
+      &::-webkit-scrollbar-corner {
+        background: transparent;
+      }
+
       width: 100%;
       height: 100%;
       padding: 4px;

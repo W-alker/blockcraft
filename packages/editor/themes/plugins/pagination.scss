@@ -261,3 +261,52 @@ body.bc-table-fullscreen-lock
     }
   }
 }
+
+// 分栏是整块分页的并行内容：正文高度约束作用于外壳，实际滚动由各列承载。
+// 只处理根级分栏；嵌套分栏仍由其所属容器决定尺寸。
+[data-blockcraft-root="true"].bc-paginated,
+[data-blockcraft-root="true"].bc-print-content,
+[data-blockcraft-root="true"].bc-pagination-print-source {
+  > .columns-block {
+    // 正文容量包含分栏自身的上下 padding，不能依赖宿主页面的全局 reset。
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    max-height: var(--bc-page-content-height);
+    min-height: 0;
+
+    // 只对已达到页高的分栏启用滚动，短分栏仍允许子块轮廓/手柄外伸。
+    &.bc-page-height-locked {
+      overflow: visible;
+
+      > .columns-wrapper > .columns-layout > .column-block > .column-content {
+        overflow: auto;
+      }
+    }
+
+    > .columns-wrapper {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+
+      > .columns-layout {
+        min-height: 0;
+
+        > .column-block {
+          display: flex;
+          flex-direction: column;
+          min-height: 0;
+
+          > .column-content {
+            height: auto;
+            min-height: 0;
+            flex: 1 1 auto;
+
+            // Flex 子块保留自然高度，长列通过滚动访问，不能挤压文本/填写区。
+            > [data-block-id] { flex-shrink: 0; }
+          }
+        }
+      }
+    }
+  }
+}

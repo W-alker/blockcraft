@@ -267,6 +267,9 @@ export async function buildPaginatedPrintSurface(
   // 校验时已经丢了末块间距。在资源稳定和任何测量之前统一根结构。
   appendFlowSentinel(renderRoot);
   syncContainerPaginationFlow(renderRoot);
+  // 离屏测量也使用正文容量，避免根级分栏到最终页盒才收缩而使稳定布局失配。
+  renderRoot.classList.add('bc-pagination-print-source');
+  renderRoot.style.setProperty('--bc-page-content-height', `${geom.geometry.contentHeight}px`);
 
   if (leadingContent) {
     // Header 必须先在“最终纸盒 + 最终正文宽度”里完成资源等待和高度测量。
@@ -1810,7 +1813,11 @@ function measureItemsFromDom(
     let effHeight = pageMedia && mediaHeight > 0 && fitScale < 1
       ? mediaHeight * fitScale + nonMediaStride
       : height;
-    if (policy.capHeight && visualContentHeight > regularContentHeight && regularContentHeight > 0) {
+    const columnsAtPageLimit = blk.flavour === 'columns'
+      && visualContentHeight >= regularContentHeight - 0.5;
+    if (regularContentHeight > 0 && (
+      (policy.capHeight && visualContentHeight > regularContentHeight) || columnsAtPageLimit
+    )) {
       lockHeight = pageMedia && fitScale < 1 ? undefined : regularContentHeight;
       if (!pageMedia) effHeight = regularContentHeight;
     }

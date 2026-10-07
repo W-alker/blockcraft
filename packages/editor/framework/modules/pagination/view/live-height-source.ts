@@ -386,7 +386,13 @@ export class LiveHeightSource {
           ? Math.max(0.01, opts.contentHeight - nonMediaStride) / mediaHeight
           : 1
       const fitScale = Math.max(0.01, Math.min(1, widthScale, heightScale))
-      if (capHeight && opts && opts.contentHeight > 0 && naturalContentHeight > opts.contentHeight) {
+      // 根级分栏已经由 CSS 限制外壳高度；达到上限时仍需投影锁定标记，
+      // 让各列承载滚动。保持通用 policy 不变，不影响单元格等容器内的分栏。
+      const columnsAtPageLimit = block.flavour === 'columns' && opts
+        && naturalContentHeight >= opts.contentHeight - 0.5;
+      if (opts && opts.contentHeight > 0 && (
+        (capHeight && naturalContentHeight > opts.contentHeight) || columnsAtPageLimit
+      )) {
         // 图片/视频只约束媒体 wrapper，caption/尾距保持正常字号和自然高度。
         const fittedHeight = pageMedia && mediaHeight != null && fitScale < 1
           ? mediaHeight * fitScale + nonMediaStride

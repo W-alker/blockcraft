@@ -105,6 +105,19 @@ describe('LiveHeightSource atomic block measurement', () => {
     host?.remove()
   })
 
+  it('根级分栏达到 CSS 页高上限时启用列滚动，内容缩短后清除锁定', () => {
+    source = createSource(200, 600, 'columns', BlockNodeType.block)
+    const full = source.measure({contentHeight: 200, widowOrphanLines: 2})[0]
+    expect(full.height).toBe(200)
+    expect(full.lockHeight).toBe(200)
+    Object.defineProperty(host, 'offsetHeight', {configurable: true, value: 80})
+    Object.defineProperty(host, 'scrollHeight', {configurable: true, value: 80})
+    source.invalidateMeasurements(['embed-1'])
+    const short = source.measure({contentHeight: 200, widowOrphanLines: 2})[0]
+    expect(short.height).toBe(88)
+    expect(short.lockHeight).toBeUndefined()
+  })
+
   it('uses visible overflow height for an atomic block below one page', () => {
     source = createSource(55, 464)
 
