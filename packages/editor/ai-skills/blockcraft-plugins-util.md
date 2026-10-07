@@ -152,6 +152,12 @@ Mention 的 `insert.mention` 名称参与字面搜索（含部分匹配及忽略
 `match.replaceDisabledReason` 为单个结果的原因。默认对话框显示“其中 N 项无法替换”及 tooltip，
 宿主面板直接绑定这些字段。统计在结果/权限变化时更新，读取不遍历全文；只读/锁定状态变化后会同步刷新。
 
+`helper.stateChange$: Observable<void>` 在匹配列表、当前索引、查找选项或替换权限更新后通知视图；
+同一同步更新合并为一次微任务通知，订阅回调读取的是完整更新后的状态。它不重放初始值，
+不会把模型更新搬进 Angular zone，也不因滚动重绘高亮而持续通知。`destroy()` 会完成该流并取消待发通知。
+默认对话框已订阅；自定义 Angular 面板应订阅后 `cdr.markForCheck()`（包含 OnPush 祖先），
+并在面板销毁时退订。不要用模型原始事件或定时轮询猜测搜索异步刷新何时完成。
+
 ### Configuration
 
 ```typescript

@@ -1,4 +1,4 @@
-import {Subscription} from "rxjs";
+import {Subject, Subscription} from "rxjs";
 import {nextTick, performanceTest} from "../../global";
 import {
   BlockNodeType,
@@ -44,6 +44,11 @@ const LAZY_THRESHOLD = 50
  * - virtual or high-match documents materialize only visible/current matches
  */
 export class FindReplaceHelper {
+  private readonly _stateChange = new Subject<void>()
+  /** Coalesced notification after results, navigation or replacement permissions change. */
+  readonly stateChange$ = this._stateChange.asObservable()
+  private _stateChangeQueued = false
+
   matchIndex = 0
   matchedList: FindReplaceMatch[] = []
   matchedBlockMap = new Map<string, FindReplaceMatch[]>()
@@ -112,6 +117,7 @@ export class FindReplaceHelper {
     this._destroyObserver()
     this._subs.forEach(s => s.unsubscribe())
     this._subs = []
+    this._stateChange.complete()
     this._pendingTextBlockIds.clear()
     this._refreshQueued = false
     this._refreshAll = false
@@ -219,6 +225,7 @@ export class FindReplaceHelper {
   toggleFlag(flag: FindReplaceFlag) {
     flag.checked = !flag.checked
     this.regFlag = 'g' + this.regFlagList.filter(f => f.checked).map(f => f.value).join('')
+    this._notifyStateChange()
   }
 
   // ── Find ─────────────────────────────────────────────────────
@@ -275,6 +282,7 @@ export class FindReplaceHelper {
   }
 
   highlightCurrent(withScroll = true) {
+    this._notifyStateChange()
     const scrollRequest = ++this._scrollRequest
     while (this.matchedList.length) {
       this._clampMatchIndex()
@@ -592,6 +600,18 @@ export class FindReplaceHelper {
     }
     this._nonReplaceableCount = count
     this._nonReplaceableTooltip = [...reasons].map(([reason, total]) => `${total} 项：${reason}`).join('\n')
+    this._notifyStateChange()
+  }
+
+  private _notifyStateChange() {
+    if (this._destroyed || this._stateChangeQueued) return
+    this._stateChangeQueued = true
+    // Emit after the complete update, including restored navigation and stale-range cleanup.
+    // A view subscribes once; document editing stays outside Angular change detection.
+    queueMicrotask(() => {
+      this._stateChangeQueued = false
+      if (!this._destroyed) this._stateChange.next()
+    })
   }
 
   private _computeBlockOrder(): string[] {

@@ -68,6 +68,32 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## 0.11.9 — 2026-10-07：搜索状态变更通知
+
+**Severity**: minor
+
+**What changed**: 新增 `FindReplaceHelper.stateChange$: Observable<void>`，默认搜索弹窗订阅后请求视图检查。
+
+**Why**: 模型异步刷新搜索结果和高亮后，OnPush 宿主不能依赖鼠标交互才刷新计数。
+
+**Affected ai-skills files**: `blockcraft-plugins-util.md`
+
+### New APIs / Features
+
+- `stateChange$`：匹配列表、当前索引、查找选项、替换权限更新后的合并通知；不重放，销毁时完成。
+
+### Migration Recipe
+
+自定义面板继续读取原字段，并在绑定 helper 时添加订阅：
+
+```typescript
+helper.stateChange$.pipe(takeUntilDestroyed(destroyRef)).subscribe(() => cdr.markForCheck())
+```
+
+### Behavior Changes
+
+新增/删除匹配内容、撤销重做或权限变化后，数量与不可替换说明主动刷新；模型扫描与高亮策略不变。
+
 ## 0.11.8 — 2026-10-07：Mention 搜索与只读高亮
 
 **Severity**: minor

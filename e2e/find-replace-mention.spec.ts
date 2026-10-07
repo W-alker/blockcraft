@@ -75,3 +75,47 @@ test('mention search highlights atomic nodes and replaces only surrounding text'
   await dialog.locator('.close-btn').click()
   await expect(paragraph.locator('.blockcraft-cursor')).toHaveCount(0)
 })
+
+test('search counts follow editing and undo without interacting with the dialog', async ({page}) => {
+  await page.goto('/')
+  await page.getByRole('button', {name: '初始化', exact: true}).click()
+  await page.waitForFunction(() => !!(window as any).ng.getComponent(document.querySelector('block-craft-editor'))?.doc?.isInitialized)
+  const id = await page.evaluate(() => {
+    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+    const id = doc.model.getChildrenIds(doc.rootId).find((id: string) => doc.model.getNodeType(id) === 'editable')
+    doc.crud.applyTextDelta(id, [{delete: doc.model.getTextLength(id)}, {insert: 'LiveNeedle'}])
+    doc.crud.undoManager.stopCapturing()
+    return id
+  })
+  const paragraph = page.locator(`[data-block-id="${id}"]`)
+  await paragraph.click()
+  await page.keyboard.press('ControlOrMeta+f')
+  const dialog = page.locator('find-replace')
+  await dialog.getByPlaceholder('查找', {exact: true}).fill('LiveNeedle')
+  await expect(dialog.locator('.match-info')).toHaveText('1/1')
+
+  // All following user input stays in the document, never hovering/clicking the panel.
+  await paragraph.click()
+  await page.keyboard.press('End')
+  await page.keyboard.insertText(' LiveNeedle')
+  await expect(dialog.locator('.match-info')).toHaveText('1/2')
+  await page.evaluate(() => {
+    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+    doc.crud.undoManager.stopCapturing()
+  })
+  await page.keyboard.press('Backspace')
+  await expect(dialog.locator('.match-info')).toHaveText('1/1')
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect(dialog.locator('.match-info')).toHaveText('1/2')
+  await page.keyboard.press('ControlOrMeta+Shift+z')
+  await expect(dialog.locator('.match-info')).toHaveText('1/1')
+
+  // Background model update: also refresh protected counts without a UI event.
+  await page.evaluate(id => {
+    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+    doc.crud.applyTextDelta(id, [{retain: doc.model.getTextLength(id)},
+      {insert: {mention: 'LiveNeedle'}, attributes: {mentionId: 'live-person', mentionType: 'user'}}])
+  }, id)
+  await expect(dialog.locator('.match-info')).toHaveText('1/2')
+  await expect(dialog.locator('.replace-summary')).toHaveText('其中 1 项无法替换')
+})

@@ -1,4 +1,5 @@
 import {ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, OnDestroy, OnInit, Output, ViewChild} from '@angular/core'
+import {Subscription} from "rxjs";
 import {FormsModule} from "@angular/forms";
 import {debounce} from "../../../global";
 import {AsyncPipe} from "@angular/common";
@@ -34,6 +35,7 @@ export class FindReplaceDialog implements OnInit, OnDestroy {
 
   private _destroyed = false
   private _ownsHelper = false
+  private _stateSubscription?: Subscription
 
   ngOnInit() {
     this._destroyed = false
@@ -42,6 +44,7 @@ export class FindReplaceDialog implements OnInit, OnDestroy {
       this.helper.listen()
       this._ownsHelper = true
     }
+    this._stateSubscription = this.helper.stateChange$.subscribe(() => this.cdr.markForCheck())
   }
 
   ngAfterViewInit() {
@@ -50,6 +53,7 @@ export class FindReplaceDialog implements OnInit, OnDestroy {
 
   ngOnDestroy() {
     this._destroyed = true
+    this._stateSubscription?.unsubscribe()
     if (this._timer) {
       clearTimeout(this._timer)
       this._timer = null

@@ -108,6 +108,60 @@ describe("FindReplaceHelper virtualized model reads", () => {
     };
   };
 
+  it("notifies settled results, active index and permissions after batched updates", async () => {
+    const h = makeModelHarness();
+    const states: Array<{count: number, index: number, protected: number}> = [];
+    h.helper.stateChange$.subscribe(() => states.push({
+      count: h.helper.matchedList.length,
+      index: h.helper.matchIndex,
+      protected: h.helper.nonReplaceableCount,
+    }));
+    h.helper.listen();
+    h.helper.findAll("needle");
+    h.helper.findNext();
+    await Promise.resolve();
+    expect(states).toEqual([{count: 2, index: 1, protected: 0}]);
+    states.length = 0;
+
+    h.textById.set("p1", [{insert: "needle needle"}, {insert: {mention: "needle"}}]);
+    h.textChange$.next({blockIds: ["p1"]});
+    h.textChange$.next({blockIds: ["p1"]});
+    await flushNextTick();
+    // The original active p2 moves to index 3; never publish the intermediate old index.
+    expect(states).toEqual([{count: 4, index: 3, protected: 1}]);
+    states.length = 0;
+
+    h.doc.readonlyManager.isReadonly = () => true;
+    h.readonlyStateChange$.next();
+    await Promise.resolve();
+    expect(states).toEqual([{count: 4, index: 3, protected: 4}]);
+    states.length = 0;
+
+    h.rootOrder.splice(0, 1);
+    h.textById.delete("p1");
+    h.structureChange$.next({});
+    await flushNextTick();
+    expect(states).toEqual([{count: 1, index: 0, protected: 1}]);
+    h.helper.clearAll();
+    await Promise.resolve();
+    expect(states[states.length - 1]).toEqual({count: 0, index: 0, protected: 0});
+    h.helper.destroy();
+    h.cleanup();
+  });
+
+  it("completes state notifications and cancels a queued notification on destroy", async () => {
+    const h = makeModelHarness();
+    const next = jasmine.createSpy("stateChange");
+    const complete = jasmine.createSpy("complete");
+    h.helper.stateChange$.subscribe({next, complete});
+    h.helper.findAll("needle");
+    h.helper.destroy();
+    await Promise.resolve();
+    expect(next).not.toHaveBeenCalled();
+    expect(complete).toHaveBeenCalledTimes(1);
+    h.cleanup();
+  });
+
   it("searches the complete model and materializes only the current match", () => {
     const h = makeModelHarness();
 
