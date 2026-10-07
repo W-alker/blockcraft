@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-09-24
+> Last updated: 2026-10-07
 
 ## ObjectDragPlugin
 
@@ -37,6 +37,14 @@ const plugins = [
 每种移动仍须通过 `doc.placement.supports(block, mode)`，不会突破容器的定位限制。
 文档只读时不拾取；块锁定时可选择但不可拖拽。正文与绝对定位继续使用既有
 `dragController` / `placement`，组合成员保留局部 absolute 坐标及原事务语义。
+
+同一 `placement-layout` 或 `object-group` 内的对象多选，在已有本体/移动手柄上
+拖动任一所选对象时，会保留多选并同步移动全部所选对象。点击未选对象仍切换为单选。
+拖动预览只写临时 transform；释放时批量提交位置，同组成员全部写入后才重算组合边界，
+一次撤销/重做恢复全部位置及组合尺寸。任何目标锁定、移除、换父容器或在手势中改变
+位置/层级都会拒绝整次多选移动；取消时恢复全部 transform 并释放所有视图租约。
+正文组合的多选成员移动保留固定局部原点，组合右/下边界随内容更新；超出左/上边界的
+成员保留负坐标并可见，不通过整体坐标归一化抵消拖动位移。单对象几何修改继续走原路径。
 
 ### 自定义块的命中区域
 

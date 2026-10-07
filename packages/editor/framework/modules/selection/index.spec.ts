@@ -788,6 +788,45 @@ describe('SelectionManager DOM selection normalization', () => {
     expect((h.manager as any)._navigationFence).toBeNull();
   });
 
+  it('keeps a group object selected when the browser revives an old prose caret', () => {
+    const h = createAbsoluteContainerManager();
+    h.doc.placement.isObjectGroup = (id: string) => id === 'text-box';
+    h.doc.placement.getAbsoluteObjectSelectionIds = () => null;
+    h.manager.selectBlock('text-box');
+    const selected = h.manager.value;
+    expect(document.getSelection()!.rangeCount).toBe(0);
+
+    h.setNativeCursor(h.outsideText, 2);
+    (h.manager as any)._suppressProgrammaticSelectionChangeUntil = 0;
+    h.dispatchSelectionChange();
+
+    expect(h.manager.value).toBe(selected);
+    expect(document.getSelection()!.rangeCount).toBe(0);
+    expect(h.manager.recalculate().value).toBe(selected);
+    h.doc.onDestroy$.next();
+  });
+
+  it('hands a group object selection back to a new member text pointer gesture', () => {
+    const h = createAbsoluteContainerManager();
+    Object.setPrototypeOf(h.insideBlock, EditableBlockComponent.prototype);
+    h.doc.placement.isObjectGroup = (id: string) => id === 'text-box';
+    h.doc.placement.getAbsoluteObjectSelectionIds = () => null;
+    h.manager.selectBlock('text-box');
+
+    h.insideHost.dispatchEvent(new PointerEvent('pointerdown', {
+      button: 0, isPrimary: true, bubbles: true, cancelable: true,
+    }));
+    h.setNativeCursor(h.insideText, 2);
+    h.dispatchSelectionChange();
+    window.dispatchEvent(new PointerEvent('pointerup', {isPrimary: true}));
+
+    expect(h.manager.value?.anchor.type).toBe('text');
+    expect(h.manager.value?.anchor.blockId).toBe('inside');
+    expect(document.getSelection()!.anchorNode).toBe(h.insideText);
+    expect(document.getSelection()!.anchorOffset).toBe(2);
+    h.doc.onDestroy$.next();
+  });
+
   it('accepts a plain-arrow caret move that stays in the absolute container', () => {
     const h = createAbsoluteContainerManager();
     h.manager.setCursorAt(h.insideBlock, 3);

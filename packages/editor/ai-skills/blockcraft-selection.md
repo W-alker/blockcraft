@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying selection behavior or when the L1 quick reference in `blockcraft.md` isn't enough.
 >
-> Last updated: 2026-09-25 | Source of truth: `framework/modules/selection/`
+> Last updated: 2026-10-07 | Source of truth: `framework/modules/selection/`
 
 ## 选中样式的归属
 
@@ -791,10 +791,16 @@ consume the gesture before it reaches the handle. An absolute border move
 that remains in the placement controller's `armed` state replays the still-live
 object selection on pointerup, after recalculation suppression is released. A
 click therefore cannot leave an older document Range painted behind the object;
-an actual drag still clears selection at the movement threshold and does not
-reassert it on drop. Border dragging captures the initiating pointer on its
+单对象真正拖拽仍在超过移动阈值时清空选区。对象多选在同一 `placement-layout` 或
+`object-group` 中拖动时保留整个选区，纯点击和释放均重新投影该多选，避免收回单选。
+组合内 Shift 点击可扩展直接成员边界；根级多选包含组合时，点击组合成员本体会拖动
+该组合整体，成员不会再次独立位移。Border dragging captures the initiating pointer on its
 actual owner window; pointer cancel, lost capture, blur and destroy all release
 the view lease and selection-recalculation guard.
+
+`object-group` 整体及其成员对象的单选和多选仅投影模型选区及外框，不向组合的非编辑平面写入原生 Range。
+浏览器在 Shift 等修饰键之后恢复的旧正文光标不能覆盖该对象选区；新的正文、空白平面或
+成员文本指针手势释放此归属，文本选择继续使用原生 Range。其他根级对象选区保持既有投影路径。
 
 ## Root Placement Layout Boundaries
 

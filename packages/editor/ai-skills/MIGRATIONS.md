@@ -68,6 +68,27 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## 0.11.10 — 2026-10-07：绝对定位对象多选同步拖拽（待发布）
+
+**Severity**: patch
+
+**What changed**: `ObjectDragPlugin` 与 `doc.placement.startDrag()` 支持拖动当前对象多选；同一组合内的直接成员也可 Shift 多选后同步移动。
+
+**Why**: 原入口会把多选降为单选，且单对象提交时逐次重算组合边框无法保证共同位移。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-plugins-block.md`、`blockcraft-plugins-toolbar.md`、`blockcraft-app.md`、`blockcraft-selection.md`
+
+### Behavior Changes
+
+- 拖动已选对象保留同平面的多选及相对位置；点击未选对象继续单选。文本编辑、缩放/旋转和正文排序入口保持原职责。
+- 组合成员位置先批量提交，再重算一次边框；全部位置、组合几何共用一个撤销事务。
+- 正文组合的多选移动保留局部原点并更新右/下边界；负坐标成员可显示在组合左/上方，避免归一化抵消拖动位移。单对象几何修改保留既有路径。
+- 根级多选包含组合时，可从其成员本体移动组合整体；单选组合仍遵循首次选组/再次选成员。
+- 组合内多选成员时关闭对象浮动格式菜单；成员单选和整组选中的菜单保留，多选外框及同步拖拽不受影响。
+- 组合及成员对象选区由模型及外框投影维护，阻止浏览器延迟原生选区覆盖首次选组/再次选成员和 Shift 多选；正文与成员文本指针手势仍可开始普通文本选择。
+- 多选包含不可写目标，或目标在手势中被移除、换父容器、改变位置/层级时，整次移动取消。
+- 公共方法签名和持久化格式不变，宿主无需改装配；本条为待发布记录，未修改 package 版本号。
+
 ## 0.11.9 — 2026-10-07：搜索状态变更通知
 
 **Severity**: minor

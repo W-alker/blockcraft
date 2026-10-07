@@ -39,6 +39,9 @@ export class BlockPlacementInteractionController {
       block: BlockCraft.BlockComponent,
       patch: Partial<IBlockProps>,
     ) => boolean,
+    private readonly commitObjectPositions: (
+      updates: readonly {block: BlockCraft.BlockComponent; position: {x: number; y: number}}[],
+    ) => boolean,
   ) {
     this.bindObjectHotkeys()
     this.subscriptions.add(this.doc.readonlySwitch$.subscribe(readonly => {
@@ -152,9 +155,32 @@ export class BlockPlacementInteractionController {
       return false
     }
 
+    const selection = this.doc.selection.value
+    const selectedIds = this.runtime.getAbsoluteObjectSelectionIds(selection)
+    const blockIds = selectedIds?.includes(block.id) ? selectedIds : [block.id]
+    const releaseLease = this.doc.virtualization.acquireBlockViewLease(blockIds)
+    const blocks = blockIds.map(id => this.runtime.resolveBlock(id))
+    if (blocks.some(candidate => !candidate || !candidate.hostElement.isConnected ||
+      candidate.parentId !== block.parentId || !this.runtime.supports(candidate, 'absolute') ||
+      this.runtime.getState(candidate).mode !== 'absolute' || this.runtime.isReadonly(candidate))) {
+      releaseLease()
+      return false
+    }
+    const targets = (blocks as BlockCraft.BlockComponent[]).map(candidate => ({
+      block: candidate,
+      host: candidate.hostElement,
+      parentId: candidate.parentId,
+      start: this.runtime.getState(candidate),
+      originalTransform: candidate.hostElement.style.transform,
+    }))
+    const isMultiSelection = targets.length > 1
+    if (isMultiSelection) event.preventDefault()
     const host = block.hostElement
     const box = resolvePlacementBox(host)
-    if (!box) return false
+    if (!box) {
+      releaseLease()
+      return false
+    }
 
     const pointerId = event.pointerId
     const ownerDocument = host.ownerDocument
@@ -168,13 +194,18 @@ export class BlockPlacementInteractionController {
     const start = this.runtime.getState(block)
     const placementStartX = start.x
     const placementStartY = start.y
-    const object = this.doc.objectSizing
-      ? resolvePlacementObjectGeometry(this.doc, block.id, {includeContent: true}) : null
-    const bounds = object ? resolvePlacementObjectVisualBounds({...object,
-      width: this.doc.placement?.surface?.measuredWidth(block.id) ?? object.width,
-      height: this.doc.placement?.surface?.measuredHeight(block.id) ?? object.height,
-    }) : null
-    const isRootObject = !this.runtime.isInObjectGroup(block)
+    let previewBottom: number | null = null
+    if (!this.runtime.isInObjectGroup(block) && this.doc.objectSizing) {
+      for (const candidate of targets) {
+        const object = resolvePlacementObjectGeometry(this.doc, candidate.block.id, {includeContent: true})
+        if (!object) continue
+        const bounds = resolvePlacementObjectVisualBounds({...object,
+          width: this.doc.placement?.surface?.measuredWidth(object.id) ?? object.width,
+          height: this.doc.placement?.surface?.measuredHeight(object.id) ?? object.height,
+        })
+        previewBottom = Math.max(previewBottom ?? bounds.bottom, bounds.bottom)
+      }
+    }
     let target = {x: placementStartX, y: placementStartY}
     const threshold = options.movementThreshold ??
       (
@@ -182,24 +213,32 @@ export class BlockPlacementInteractionController {
           ? DEFAULT_TOUCH_THRESHOLD
           : DEFAULT_MOUSE_THRESHOLD
       )
-    const originalTransform = host.style.transform
-    const releaseLease =
-      this.doc.virtualization.acquireBlockViewLease([block.id])
     let moved = false
     let dx = 0
     let dy = 0
     let cleaned = false
+    let previewFrame: number | null = null
 
     const isLiveWritable = () => {
-      const live = this.runtime.resolveBlock(block.id)
-      return live === block && !this.runtime.isReadonly(block)
+      return targets.every(candidate => {
+        const live = this.runtime.resolveBlock(candidate.block.id)
+        const current = this.runtime.getState(candidate.block)
+        return live === candidate.block && candidate.host.isConnected &&
+          candidate.block.parentId === candidate.parentId && current.mode === 'absolute' &&
+          !this.runtime.isReadonly(candidate.block) && (!isMultiSelection ||
+            (current.x === candidate.start.x && current.y === candidate.start.y && current.layer === candidate.start.layer))
+      })
     }
     const restorePreview = () => {
-      if (host.isConnected) host.style.transform = originalTransform
+      targets.forEach(candidate => {
+        candidate.host.style.transform = candidate.originalTransform
+      })
     }
     const cleanup = () => {
       if (cleaned) return
       cleaned = true
+      if (previewFrame !== null) ownerWindow.cancelAnimationFrame(previewFrame)
+      previewFrame = null
       ownerWindow.removeEventListener('pointermove', onPointerMove, true)
       ownerWindow.removeEventListener('pointerup', onPointerUp, true)
       ownerWindow.removeEventListener('pointercancel', onPointerCancel, true)
@@ -227,6 +266,17 @@ export class BlockPlacementInteractionController {
         this.stateSubject.next('idle')
       }
     }
+    const applyPreview = () => {
+      previewFrame = null
+      const layoutDx = target.x - placementStartX
+      const layoutDy = target.y - placementStartY
+      if (previewBottom !== null) this.doc.placement?.surface?.preview(previewBottom + layoutDy)
+      targets.forEach(candidate => {
+        candidate.host.style.transform =
+          `translate3d(${layoutDx}px, ${layoutDy}px, 0)` +
+          `${candidate.originalTransform ? ` ${candidate.originalTransform}` : ''}`
+      })
+    }
     const onPointerMove = (moveEvent: PointerEvent) => {
       if (moveEvent.pointerId !== pointerId) return
       if (!isLiveWritable()) {
@@ -239,10 +289,12 @@ export class BlockPlacementInteractionController {
       if (!moved) {
         moved = true
         this.stateSubject.next('dragging')
-        ;(ownerDocument.activeElement as HTMLElement | null)?.blur?.()
-        try {
-          this.doc.selection.blur()
-        } catch {}
+        if (!isMultiSelection) {
+          ;(ownerDocument.activeElement as HTMLElement | null)?.blur?.()
+          try {
+            this.doc.selection.blur()
+          } catch {}
+        }
       }
       moveEvent.preventDefault()
       // Pointer events expose visual viewport pixels.  Use the containing
@@ -250,40 +302,57 @@ export class BlockPlacementInteractionController {
       // browser zoom and host transforms can make the latter differ from the
       // geometry that actually produced the pointer coordinates.
       target = {x: placementStartX + dx / box.visualScale, y: placementStartY + dy / box.visualScale}
-      const layoutDx = target.x - placementStartX
-      const layoutDy = target.y - placementStartY
-      if (isRootObject && bounds) {
-        this.doc.placement?.surface?.preview(bounds.bottom + target.y - start.y)
-      }
-      host.style.transform =
-        `translate3d(${layoutDx}px, ${layoutDy}px, 0)` +
-        `${originalTransform ? ` ${originalTransform}` : ''}`
+      if (isMultiSelection) {
+        if (previewFrame === null) previewFrame = ownerWindow.requestAnimationFrame(applyPreview)
+      } else applyPreview()
     }
     const onPointerUp = (upEvent: PointerEvent) => {
       if (upEvent.pointerId !== pointerId) return
       const shouldCommit = moved && isLiveWritable()
-      const shouldReassertSelection = !moved &&
+      const shouldReassertMultiSelection = isMultiSelection &&
+        this.doc.selection.value === selection && isLiveWritable()
+      const shouldReassertSelection = !isMultiSelection && !moved &&
         isLiveWritable() &&
         this.runtime.isAbsoluteObjectSelection(this.doc.selection.value) &&
         this.doc.selection.value?.anchor.blockId === block.id
       if (shouldCommit) {
+        if (previewFrame !== null) {
+          ownerWindow.cancelAnimationFrame(previewFrame)
+          applyPreview()
+        }
+        if (isMultiSelection) this.doc.crud.undoManager?.stopCapturing()
         try {
           // 用户拖拽及组合内部的派生边界重算共用同一个 Undo 事务。
           let committed = false
-          this.doc.crud.transact(() => {
-            committed = this.updateAbsolute(block, target)
-          })
+          if (isMultiSelection) {
+            // The batch owns its transaction and keeps reflow observers muted
+            // until Yjs dispatch completes; an extra outer transaction would
+            // dispatch after that guard was released and queue another fit.
+            committed = this.commitObjectPositions(targets.map(candidate => ({
+              block: candidate.block,
+              position: {x: candidate.start.x + dx / box.visualScale, y: candidate.start.y + dy / box.visualScale},
+            })))
+          } else {
+            this.doc.crud.transact(() => {
+              committed = this.updateAbsolute(block, target)
+            })
+          }
           if (committed) {
             // Keep the transform preview in place until the committed left/top
             // bindings have reached the DOM. Otherwise pointerup briefly paints
             // the object's old position and looks like a rejected drop.
             try {
-              block.changeDetectorRef.detectChanges()
+              if (this.runtime.isInObjectGroup(block)) {
+                this.runtime.resolveBlock(block.parentId!)?.changeDetectorRef.detectChanges()
+              }
+              targets.forEach(candidate => candidate.block.changeDetectorRef.detectChanges())
             } catch {}
           }
         } finally {
+          if (isMultiSelection) this.doc.crud.undoManager?.stopCapturing()
           cleanup()
         }
+        if (shouldReassertMultiSelection) this.doc.selection.replay(selection!.toJSON())
         return
       }
 
@@ -293,6 +362,7 @@ export class BlockPlacementInteractionController {
       // that guard is released, so a click cannot leave an older document Range
       // painted behind the selected absolute object.
       if (shouldReassertSelection) this.doc.selection.selectBlock(block)
+      if (shouldReassertMultiSelection) this.doc.selection.replay(selection!.toJSON())
     }
     const onPointerCancel = (cancelEvent: PointerEvent) => {
       if (cancelEvent.pointerId === pointerId) cleanup()
@@ -302,7 +372,12 @@ export class BlockPlacementInteractionController {
       cleanup()
     }
     const onKeydown = (keyEvent: KeyboardEvent) => {
-      if (keyEvent.key === 'Escape') cleanup()
+      if (keyEvent.key !== 'Escape') return
+      if (isMultiSelection) {
+        keyEvent.preventDefault()
+        keyEvent.stopImmediatePropagation()
+      }
+      cleanup()
     }
     const onWindowBlur = () => cleanup()
     const onSelectStart = (selectEvent: Event) => {
@@ -490,7 +565,9 @@ export class BlockPlacementInteractionController {
     event.preventDefault()
     event.stopPropagation()
     const current = this.doc.selection.value
-    if (
+    const selectedIds = this.runtime.getAbsoluteObjectSelectionIds(current)
+    const keepsMultiSelection = !!selectedIds && selectedIds.length > 1 && selectedIds.includes(candidate.id)
+    if (!keepsMultiSelection &&
       current?.isInSameBlock &&
       current.firstBlockId === candidate.id &&
       current.anchor.type === 'selected' &&
@@ -500,7 +577,7 @@ export class BlockPlacementInteractionController {
       // already selected and selection equality suppresses another emission.
       this.doc.selection.blur()
     }
-    this.doc.selection.selectBlock(candidate)
+    if (!keepsMultiSelection) this.doc.selection.selectBlock(candidate)
   }
 
   /**

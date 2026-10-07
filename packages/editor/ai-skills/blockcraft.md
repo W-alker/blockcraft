@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-10-06 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-10-07 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -263,6 +263,8 @@ const revealed = await doc.navigateToBlock(blockId)
 ### Selection presentation
 
 通用 `.selected` / `.focused` 由 `SelectionSelectedManager` 统一对账。内置对象工具栏的焦点交接使用内部暂存机制，新的文本或 gap 选区立即使旧暂存失效；插件不可直接写通用选中类。详见 `blockcraft-selection.md`。
+
+同一绝对定位平面的对象多选可同步拖动；`object-group` 整体及其成员对象单选/多选由模型和外框投影维护，避免非编辑组合平面的原生 Range 被浏览器改写。新正文或成员文本手势释放该对象选区的模型归属，继续走正常文本选择路径。
 
 ### Revision / Track Changes
 

@@ -45,7 +45,7 @@ describe('Group geometry history', () => {
       updateProps: (patch: Record<string, any>) => update('member', patch),
       changeDetectorRef: {markForCheck() {}},
     }
-    return {yDoc, props, history, coordinator, block, onPropsUpdate$, readonlyIds}
+    return {yDoc, props, history, coordinator, block, onPropsUpdate$, readonlyIds, runtime}
   }
 
   for (const flavour of ['text-box', 'shape', 'word-art']) {
@@ -74,6 +74,72 @@ describe('Group geometry history', () => {
     const before = h.props.toJSON()
     h.coordinator.updateObjectGeometry(h.block, {rotation: 90})
     expect(h.props.get('group')!.toJSON()).toEqual(before['group'])
+    h.history.undo()
+    expect(h.props.toJSON()).toEqual(before)
+    h.coordinator.destroy()
+    h.yDoc.destroy()
+  })
+
+  it('moves members together before fitting the group and restores the entire batch in one undo', () => {
+    const h = setup()
+    const before = h.props.toJSON()
+    const sibling: any = {
+      id: 'sibling',
+      updateProps: (patch: Record<string, any>) => h.yDoc.transact(() => {
+        Object.entries(patch).forEach(([key, value]) => h.props.get('sibling')!.set(key, value))
+      }),
+      changeDetectorRef: {markForCheck() {}},
+    }
+    expect(h.coordinator.updateObjectPositions([
+      {block: h.block, position: {x: 50, y: 30}},
+      {block: sibling, position: {x: 350, y: 150}},
+    ])).toBeTrue()
+    const after = h.props.toJSON()
+    expect(after['group']).toEqual({...before['group'], position: '150 130'})
+    expect(after['member']).toEqual(before['member'])
+    expect(after['sibling']).toEqual(before['sibling'])
+    expect(h.history.undoStack.length).toBe(1)
+    h.history.undo()
+    expect(h.props.toJSON()).toEqual(before)
+    h.history.redo()
+    expect(h.props.toJSON()).toEqual(after)
+    h.coordinator.destroy()
+    h.yDoc.destroy()
+  })
+
+  it('rejects a locked member before writing any part of a movement batch', () => {
+    const h = setup()
+    h.readonlyIds.add('sibling')
+    const before = h.props.toJSON()
+    expect(h.coordinator.updateObjectPositions([
+      {block: h.block, position: {x: 50, y: 30}},
+      {block: {id: 'sibling'} as any, position: {x: 350, y: 150}},
+    ])).toBeFalse()
+    expect(h.props.toJSON()).toEqual(before)
+    expect(h.history.undoStack.length).toBe(0)
+    h.coordinator.destroy()
+    h.yDoc.destroy()
+  })
+
+  it('keeps a flow group origin fixed rather than cancelling member translation', () => {
+    const h = setup()
+    h.runtime.getPersistedState = () => ({mode: 'relative'})
+    h.yDoc.transact(() => h.props.get('group')!.delete('position'), 'remote')
+    const before = h.props.toJSON()
+    const sibling: any = {
+      id: 'sibling',
+      updateProps: (patch: Record<string, any>) => h.yDoc.transact(() => {
+        Object.entries(patch).forEach(([key, value]) => h.props.get('sibling')!.set(key, value))
+      }),
+      changeDetectorRef: {markForCheck() {}},
+    }
+    expect(h.coordinator.updateObjectPositions([
+      {block: h.block, position: {x: 50, y: 30}},
+      {block: sibling, position: {x: 350, y: 150}},
+    ])).toBeTrue()
+    expect(h.props.get('member')!.get('position')).toBe('50 30')
+    expect(h.props.get('sibling')!.get('position')).toBe('350 150')
+    expect(h.props.get('group')!.toJSON()).toEqual({width: 410, height: 210})
     h.history.undo()
     expect(h.props.toJSON()).toEqual(before)
     h.coordinator.destroy()

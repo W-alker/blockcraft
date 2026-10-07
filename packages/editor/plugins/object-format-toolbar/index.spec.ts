@@ -652,7 +652,7 @@ describe("ObjectFormatToolbarPlugin object/edit interaction", () => {
           id === "shape-1" || id === "image-1" ? "layout" : null,
         getChildrenIds: () => ["shape-1", "image-1"],
       },
-      placement: { isPlacementLayout: (id: string) => id === "layout" },
+      placement: { isPlacementLayout: (id: string) => id === "layout", startDrag: jasmine.createSpy("startDrag") },
       selection: {
         value: {
           anchor: { blockId: "shape-1", type: "selected" },
@@ -697,7 +697,7 @@ describe("ObjectFormatToolbarPlugin object/edit interaction", () => {
         getParentId: (id: string) =>
           id === "shape" ? "group" : id === "group" ? "layout" : null,
       },
-      placement: { isObjectGroup: (id: string) => id === "group" },
+      placement: { isObjectGroup: (id: string) => id === "group", getAbsoluteObjectSelectionIds: () => null },
       selection: {
         get value() {
           return selection.value;

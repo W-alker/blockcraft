@@ -30,6 +30,7 @@ describe('ObjectDragPlugin', () => {
       schemas: {get: () => ({metadata})},
       dragController: {state: 'idle', state$: new Subject<string>(), startDrag: jasmine.createSpy('flowStartDrag')},
       placement: {state: 'idle', state$: new Subject<string>(), supports: jasmine.createSpy('supports').and.returnValue(true),
+        getAbsoluteObjectSelectionIds: jasmine.createSpy('getAbsoluteObjectSelectionIds').and.returnValue(null),
         getState: () => ({mode: 'absolute'}), startDrag: jasmine.createSpy('startDrag')},
       selection: {value: null, selectBlock: jasmine.createSpy('selectBlock'), blur: jasmine.createSpy('blur')},
       readonlyManager: {isReadonly: () => false},
@@ -192,6 +193,21 @@ describe('ObjectDragPlugin', () => {
     ;(h.doc.selection as any).value = {firstBlockId: h.block.id, anchor: {type: 'selected'}, head: {type: 'selected'}}
     h.down()
     expect(h.doc.selection.blur).toHaveBeenCalledTimes(1)
+    expect(h.doc.selection.selectBlock).toHaveBeenCalledOnceWith(h.block as any)
+  })
+  it('拖动多选中的对象保留整个选区，纯点击也不会收回单选', () => {
+    const h = harness('image')
+    h.doc.placement.getAbsoluteObjectSelectionIds.and.returnValue(['card', 'sibling'])
+    h.down()
+    window.dispatchEvent(new PointerEvent('pointerup', {pointerId: 0}))
+    expect(h.doc.selection.selectBlock).not.toHaveBeenCalled()
+    expect(h.doc.selection.blur).not.toHaveBeenCalled()
+    expect(h.doc.placement.startDrag).toHaveBeenCalledTimes(1)
+  })
+  it('点击多选以外的对象仍重新单选', () => {
+    const h = harness('image')
+    h.doc.placement.getAbsoluteObjectSelectionIds.and.returnValue(['other', 'sibling'])
+    h.down()
     expect(h.doc.selection.selectBlock).toHaveBeenCalledOnceWith(h.block as any)
   })
   for (const mode of ['relative', 'absolute']) {

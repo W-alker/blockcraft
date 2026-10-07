@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-09-25
+> Last updated: 2026-10-07
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -2157,8 +2157,12 @@ lowest `under` and highest
 `over` objects are the disabled outer boundaries.
 
 `startDrag()` is Pointer Events-only. The initiating `pointerdown` arms the
-interaction, `pointermove` previews via `translate3d`, and `pointerup` commits
-one atomic `{x, y}` coordinate-object update. `pointercancel`, Escape and window blur abort. Do not
+interaction and `pointermove` previews via `translate3d`. 如果发起对象属于同一绝对定位
+平面内的当前多选，手势会同时预览全部所选对象并保持相对位置和多选；否则只移动发起对象。
+`pointerup` 在一次事务中写入所有 `position`（`"x y"`），同组成员写完后统一重算边界。
+正文流组合多选移动时保持局部坐标原点，更新右/下边界，避免归一化抵消成员位移。
+全部目标必须仍存在、可写且保持原父容器；多选手势期间的位置/层级变化会取消整次移动。
+`pointercancel`, Escape and window blur abort. Do not
 wire object positioning to native `dragstart / dragover / drop`; native HTML5
 drag/drop remains reserved for external browser/file interoperability.
 

@@ -53,16 +53,20 @@ export class ObjectDragPlugin extends DocPlugin {
     // 原生选区会把自绘 void 块的点击落到旁边的 gap，必须显式选择本体。
     // 已选对象重新点击也要唤起对应工具条，保持原有宿主交互。
     const current = this.doc.selection.value
-    if (current?.firstBlockId === block.id &&
+    const selectedIds = this.doc.placement.getAbsoluteObjectSelectionIds(current)
+    const keepsMultiSelection = !!selectedIds && selectedIds.length > 1 && selectedIds.includes(block.id)
+    if (!keepsMultiSelection && current?.firstBlockId === block.id &&
       current.anchor.type === 'selected' && current.head.type === 'selected') {
       this.doc.selection.blur()
     }
-    if (isHandle) {
+    if (isHandle || keepsMultiSelection) {
       event.preventDefault()
       event.stopPropagation()
     }
-    this.doc.selection.selectBlock(block)
-    if (usesMarkedTarget) this.confirmClickSelection(event, block)
+    if (!keepsMultiSelection) {
+      this.doc.selection.selectBlock(block)
+      if (usesMarkedTarget) this.confirmClickSelection(event, block)
+    }
     if (this.doc.readonlyManager.isReadonly(block)) return
     if (this.doc.placement.getState(block).mode === 'absolute') {
       if (supportsAbsolute) this.doc.placement.startDrag(event, block)

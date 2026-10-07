@@ -109,6 +109,7 @@ export class SelectionManager {
   private _navigationFence: NavigationFence | null = null
   private _navigationFenceExpiryTimer: ReturnType<typeof setTimeout> | null = null
   private _projectionVersion = 0
+  private _objectGroupModelSelection: BlockSelection | null = null
   private _projectionFrame: number | null = null
   private _virtualPaintRestore: (() => void) | null = null
   private _projectionMountAdapter: SelectionProjectionMountAdapter | null = null
@@ -377,6 +378,10 @@ export class SelectionManager {
         return
       }
       const current = this.selectionChange$.value
+      if (current && current === this._objectGroupModelSelection && this._surface.hasEditorFocus()) {
+        this._surface.clearNativeSelection()
+        return
+      }
       if (current && this._isDomProjectionPending(current.toJSON())) return
       if (this._suppressProgrammaticSelectionChangeUntil > performance.now()) return
       this.recalculate()
@@ -808,6 +813,13 @@ export class SelectionManager {
     // cancelling its protection here lets selectionchange reinterpret a closed
     // container as a content boundary and hide the active resize handles.
     if (element?.closest('[data-bc-selection-interaction-ignore]')) return
+    if (this._objectGroupModelSelection) {
+      const targetId = element ? closetBlockId(element) : null
+      const ids = this.doc.placement?.getAbsoluteObjectSelectionIds?.(this._objectGroupModelSelection)
+      // Object picking may have committed before this root listener. Only a
+      // new native content/blank-plane gesture releases its model ownership.
+      if (!targetId || !ids?.includes(targetId)) this._objectGroupModelSelection = null
+    }
     this._clearNavigationFence()
     this._primaryPointerDown = true
     this._suppressProgrammaticSelectionChangeUntil = 0
@@ -840,8 +852,21 @@ export class SelectionManager {
 
   private _shouldKeepModelOnlySelection(): boolean {
     const current = this.value
-    if (!current?.getTableCellSelection()) return false
+    if (!current?.getTableCellSelection() &&
+      !(current && current === this._objectGroupModelSelection && !this._primaryPointerDown)) return false
     return this._surface.hasEditorFocus()
+  }
+
+  private _isObjectGroupSelection(selection: BlockSelection | null): boolean {
+    if (selection?.anchor.type === 'selected' && selection.head.type === 'selected' &&
+      selection.anchor.blockId === selection.head.blockId &&
+      this.doc.placement?.isObjectGroup?.(selection.anchor.blockId) === true) return true
+    const ids = this.doc.placement?.getAbsoluteObjectSelectionIds?.(selection)
+    if (!ids?.length) return false
+    return ids.every(id => {
+      const parentId = this.doc.model?.getParentId(id) ?? this._readBlock(id)?.parentId
+      return !!parentId && this.doc.placement?.isObjectGroup?.(parentId) === true
+    })
   }
 
   private _recoverableMissingRootProjection(): BlockSelection | null {
@@ -1121,6 +1146,7 @@ export class SelectionManager {
   // ── Model state management ──
 
   private _publishState(selection: BlockSelection | null) {
+    this._objectGroupModelSelection = null
     this._clearNavigationFence()
     this._cancelProjectionFrame()
     this._cancelProjectionMountRequest()
@@ -1482,7 +1508,13 @@ export class SelectionManager {
     this._surface.focusRoot()
     this._suppressProgrammaticSelectionChange()
 
-    if (options.modelOnly) {
+    // A group and its members own a non-editable object plane. Browsers can
+    // reinterpret its Range as all members or an old prose caret. Keep object
+    // selection in the model and its frame projection; descendant text
+    // selections continue through the ordinary native path.
+    const objectGroupSelection = this._isObjectGroupSelection(selectionState)
+    if (options.modelOnly || objectGroupSelection) {
+      if (objectGroupSelection) this._objectGroupModelSelection = selectionState
       this._surface.clearNativeSelection()
       if (options.scrollIntoView) this.scrollSelectionIntoView()
       return null

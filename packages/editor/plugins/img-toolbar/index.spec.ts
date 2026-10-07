@@ -140,6 +140,7 @@ describe("ImgToolbarPlugin lifecycle", () => {
       },
       placement: {
         supports: () => true,
+        getAbsoluteObjectSelectionIds: () => null,
         supportsObjectLayout: jasmine.createSpy('supportsObjectLayout').and.returnValue(true),
         state$: placementState$,
         get state() {

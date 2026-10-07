@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-10-06
+> Last updated: 2026-10-07
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
@@ -204,7 +204,10 @@ new ImgToolbarPlugin({
 ## ObjectFormatToolbarPlugin
 
 对象移动由 `ObjectDragPlugin` 按视图标记统一接入。本插件保留文字编辑、组合层级拾取、
-Shift 多选与格式工具栏；不再自行启动块态移动或维护点击确认会话。
+Shift 多选与格式工具栏；通常由公共入口启动块态移动，不维护点击确认会话。
+Shift 点击在当前组合内扩展直接成员的 boundary 多选；根级多选包含组合时，
+成员本体的 pointerdown 按当前选区委托 `placement.startDrag(event, groupId)`，
+从而移动整个组合和其他所选对象。缩放、旋转与专属控件不参与该委托。
 
 `ObjectFormatToolbarPlugin` is the only bundled toolbar owner for whole-object
 Shape, TextBox and WordArt selection. It also owns Shift-click mixed selection,
@@ -261,7 +264,9 @@ A selected group uses the same historical surface for group layout, hierarchy
 and ungrouping. Group interaction keeps its established two-step contract: the
 first click anywhere in an inactive group selects the whole group, while a
 second click may enter the direct member; the ancestor group frame stays visible
-while a nested member owns Selection. Visible single-object layout modes are the capability
+while a nested member owns Selection. 组合内多选成员时关闭成员对象的浮动格式菜单，
+不回退到首个成员旁的格式工具栏；成员单选与整组选中仍显示各自菜单。
+多选外框和同步拖拽保持可用。Visible single-object layout modes are the capability
 intersection from `doc.placement.supportsObjectLayout()`: an object without an
 inline adapter, including TextBox, does not show or accept the inline layout
 action. The remaining layout choices use equal-width columns and fill the row.

@@ -106,6 +106,7 @@ export class BlockPlacementManager {
     this.doc,
     this.runtime,
     (block, patch) => this.groupCoordinator.updateObjectGeometry(block, patch),
+    updates => this.groupCoordinator.updateObjectPositions(updates),
   )
   private readonly _subscriptions = new Subscription()
   private readonly _objectLayoutAdapters =

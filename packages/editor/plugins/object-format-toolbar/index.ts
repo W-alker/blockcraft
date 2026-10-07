@@ -216,8 +216,13 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
       return;
     }
     const state = this.doc.objectFormat.readSelection();
-    if (!state) {
+    const parentId = state && state.blockIds.length > 1
+      ? this.doc.model.getParentId(state.blockIds[0]!)
+      : null;
+    if (!state || (parentId && this.doc.placement.isObjectGroup(parentId))) {
       // A live text/gap selection supersedes toolbar focus and pointer grace.
+      // Group-member multi-selection must also close the member's format rail;
+      // absolute object selections already guarantee one shared parent plane.
       this.close();
       return;
     }
@@ -881,15 +886,23 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
       !this.doc.root.hostElement.contains(target)
     )
       return false;
-    const targetId = this.resolveTopLevelObjectId(target);
+    if (target.closest('[data-bc-nodrag], [data-block-zero-space="true"]')) return false;
+    if (target.closest("block-resizer, [data-bc-placement-pick-ignore]") &&
+      !target.closest("[data-bc-object-drag-handle]")) return false;
+    const selection = this.doc.selection.value;
+    const groupElement = target.closest<HTMLElement>("[data-bc-object-group]");
+    const groupId = groupElement ? closetBlockId(groupElement) : null;
+    const targetId = groupId && this.selectionTouchesGroup(selection, groupId)
+      ? this.resolveDirectGroupChildId(target, groupId)
+      : this.resolveTopLevelObjectId(target);
     if (!targetId) return false;
     const parentId = this.doc.model.getParentId(targetId);
-    if (!parentId || !this.doc.placement.isPlacementLayout(parentId))
+    if (!parentId || !(this.doc.placement.isPlacementLayout(parentId) ||
+      this.doc.placement.isObjectGroup(parentId)))
       return false;
     const siblings = this.doc.model.getChildrenIds(parentId);
     const targetIndex = siblings.indexOf(targetId);
     if (targetIndex < 0) return false;
-    const selection = this.doc.selection.value;
     let anchorIndex = -1;
     if (
       selection?.anchor.type === "boundary" &&
@@ -915,6 +928,7 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
       head: { blockId: parentId, type: "boundary", index: to },
       commonParent: parentId,
     });
+    this.doc.placement.startDrag(event, targetId);
     return true;
   }
 
@@ -944,6 +958,16 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     if (!groupElement) return false;
     const groupId = closetBlockId(groupElement);
     if (!groupId || !this.doc.placement.isObjectGroup(groupId)) return false;
+
+    // 多选中的组合是一个整体，点击其成员本体不能把选区降为单组/单成员。
+    const selectedIds = this.doc.placement.getAbsoluteObjectSelectionIds(this.doc.selection.value);
+    if (selectedIds && selectedIds.length > 1 && selectedIds.includes(groupId) &&
+      !target.closest("block-resizer, [data-bc-placement-pick-ignore], [data-bc-nodrag]")) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      this.doc.placement.startDrag(event, groupId);
+      return true;
+    }
 
     const selectionIsWithinGroup = this.selectionTouchesGroup(
       this.doc.selection.value,

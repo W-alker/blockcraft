@@ -321,6 +321,43 @@ export class BlockPlacementGroupCoordinator {
     return result !== null
   }
 
+  /** Internal drag commit: write every local position before fitting each group once. */
+  updateObjectPositions(
+    updates: readonly {block: BlockCraft.BlockComponent; position: {x: number; y: number}}[],
+  ): boolean {
+    if (!updates.length) return false
+    const groupIds = new Set<string>()
+    for (const {block, position} of updates) {
+      if (this.runtime.isReadonly(block) || !Number.isFinite(position.x) || !Number.isFinite(position.y)) return false
+      const groupId = this.resolveOwningGroupId(block.id)
+      if (groupId) {
+        if (this.runtime.isReadonly(groupId)) return false
+        groupIds.add(groupId)
+      }
+    }
+    const startedAt = performanceNow()
+    const results: ObjectGroupReflowResult[] = []
+    this.mutating = true
+    try {
+      this.doc.crud.transact(() => {
+        updates.forEach(({block, position}) => block.updateProps({position: storeBlockPosition(position)}))
+        groupIds.forEach(groupId => {
+          // A flow group's outer origin cannot move. Keep its local plane
+          // fixed during member translation instead of cancelling the delta
+          // by normalizing every child against a newly shifted left/top edge.
+          const result = this.reflowInTransaction(groupId,
+            this.runtime.getPersistedState(groupId).mode !== 'absolute')
+          if (result) results.push(result)
+        })
+      })
+    } finally {
+      this.mutating = false
+    }
+    updates.forEach(({block}) => block.changeDetectorRef.markForCheck())
+    results.forEach(result => this.printPerformance(result, 'geometry-commit', performanceNow() - startedAt))
+    return true
+  }
+
   private resolveCandidate(blockIds: readonly string[]): GroupCandidate | null {
     const uniqueIds = [...new Set(blockIds)]
     if (uniqueIds.length < 2 || this.doc.isReadonly) return null
@@ -387,7 +424,8 @@ export class BlockPlacementGroupCoordinator {
     this.mutating = true
     try {
       this.doc.crud.transact(() => {
-        result = this.reflowInTransaction(groupId)
+        result = this.reflowInTransaction(groupId,
+          reason !== 'structure-change' && this.runtime.getPersistedState(groupId).mode !== 'absolute')
       }, OBJECT_GROUP_REFLOW_ORIGIN)
     } finally {
       this.mutating = false
@@ -398,7 +436,7 @@ export class BlockPlacementGroupCoordinator {
     return result !== null
   }
 
-  private reflowInTransaction(groupId: string): ObjectGroupReflowResult | null {
+  private reflowInTransaction(groupId: string, preserveLocalOrigin = false): ObjectGroupReflowResult | null {
     if (!this.runtime.isObjectGroup(groupId)) return null
     const groupProps = this.getLiveProps(groupId)
     if (!groupProps) return null
@@ -420,6 +458,13 @@ export class BlockPlacementGroupCoordinator {
     const resolvedObjects = objects as PlacementObjectGeometry[]
     const bounds = resolvePlacementObjectsVisualBounds(resolvedObjects)
     if (!bounds) return null
+
+    if (preserveLocalOrigin) {
+      bounds.left = 0
+      bounds.top = 0
+      bounds.right = Math.max(1, bounds.right)
+      bounds.bottom = Math.max(1, bounds.bottom)
+    }
 
     const contentWidth = roundPlacementGeometry(bounds.right - bounds.left)
     const contentHeight = roundPlacementGeometry(bounds.bottom - bounds.top)
