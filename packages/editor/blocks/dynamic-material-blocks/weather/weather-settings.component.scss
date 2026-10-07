@@ -1,9 +1,9 @@
 :host {
-  display:block; width:320px; max-width:calc(100vw - 24px);
+  display:flex; flex-direction:column; min-height:0; width:320px; max-width:calc(100vw - 24px);
   color:var(--bc-color, #1f2329); font:var(--bc-font-size, 14px)/1.5 var(--bc-font-family, sans-serif);
 }
 .settings-panel {
-  display:flex; flex-direction:column; max-height:min(620px, calc(100vh - 32px)); overflow:hidden;
+  display:flex; flex-direction:column; min-height:0; max-height:min(620px, calc(100vh - 32px)); overflow:hidden;
   border:1px solid var(--bc-border-color, #ddd); border-radius:12px;
   background:var(--bc-bg-color, #fff); box-shadow:0 8px 32px #0002;
 }

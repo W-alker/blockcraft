@@ -55,6 +55,46 @@ async function undo(page:Page,redo=false) {
     redo?doc.crud.undoManager.redo():doc.crud.undoManager.undo()
   },redo)
 }
+test('受限高度只滚动设置内容，标题和操作按钮保持可见',async({page})=>{
+  const id=await setup(page)
+  const panel=dialog(page),body=panel.locator('.settings-body')
+  await expect(page.getByRole('group',{name:'天气浮动工具栏',exact:true})).toHaveCount(0)
+  await expect(page.getByRole('button',{name:'刷新天气',exact:true})).toHaveCount(0)
+  const geometry=()=>panel.evaluate(el=>{
+    const pane=el.closest('.cdk-overlay-pane') as HTMLElement
+    const body=el.querySelector('.settings-body') as HTMLElement
+    const header=el.querySelector('header')!.getBoundingClientRect()
+    const footer=el.querySelector('footer')!.getBoundingClientRect()
+    const bounds=pane.getBoundingClientRect()
+    return {outerOverflow:pane.scrollHeight-pane.clientHeight,bodyOverflow:body.scrollHeight-body.clientHeight,
+      outerScroll:pane.scrollTop,bodyScroll:body.scrollTop,headerTop:header.top,footerTop:footer.top,
+      chromeFits:header.top>=bounds.top && footer.bottom<=bounds.bottom+1}
+  })
+  for(const height of [480,320,760]) {
+    await page.evaluate(height=>{
+      const doc=(window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+      doc.scrollContainer.style.height=`${height}px`
+    },height)
+    await expect.poll(async()=>(await geometry()).outerOverflow).toBeLessThanOrEqual(1)
+    await expect.poll(async()=>panel.evaluate(el=>el.closest('.cdk-overlay-pane')!.getBoundingClientRect().height)).toBeLessThanOrEqual(height-16+1)
+    await expect.poll(async()=>(await geometry()).chromeFits).toBe(true)
+    expect((await geometry()).bodyOverflow).toBeGreaterThan(0)
+  }
+  await body.evaluate(el=>{el.scrollTop=0})
+  const before=await geometry()
+  await body.hover()
+  await page.mouse.wheel(0,650)
+  await expect.poll(async()=>(await geometry()).bodyScroll).toBeGreaterThan(0)
+  const after=await geometry()
+  expect(after.outerScroll).toBe(0)
+  expect(after.headerTop).toBeCloseTo(before.headerTop,0)
+  expect(after.footerTop).toBeCloseTo(before.footerTop,0)
+  await expect(panel.getByText('清空颜色恢复色调默认；调整仅在预览中显示，应用后生效。')).toBeInViewport()
+  await apply(page)
+  await frame(page,id).click()
+  await expect(page.getByRole('button',{name:'刷新天气',exact:true})).toBeVisible()
+  await expect(page.getByRole('button',{name:'天气样式与配色',exact:true})).toBeVisible()
+})
 test('七款布局尺寸、六种天气、负温度和长城市名',async({page},info)=>{
   const id=await setup(page)
   await expect(frame(page,id)).toBeVisible()

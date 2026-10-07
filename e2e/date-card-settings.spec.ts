@@ -18,7 +18,7 @@ async function setup(page: Page, style = 'masthead', draft = false) {
 const card = (page: Page, id: string) => page.locator(`block-craft-editor [data-block-id="${id}"]`)
 const dialog = (page: Page) => page.getByRole('dialog', {name: '日期设置', exact: true})
 async function open(page: Page, id: string) {
-  await card(page, id).hover()
+  await card(page, id).locator('.card__day').click()
   await card(page, id).getByRole('button', {name: '日期设置', exact: true}).click()
   await expect(dialog(page)).toBeVisible()
 }
@@ -115,6 +115,51 @@ test('双击浮动卡片设置，Esc 取消；打开时切只读清理浮层', a
   await expect(card(page, id).getByRole('button', {name: '日期设置', exact: true})).toHaveCount(0)
   await card(page, id).locator('.card__day').dblclick()
   await expect(dialog(page)).toHaveCount(0)
+})
+
+test('日期入口仅选中或键盘聚焦显示，悬停不显示', async ({page}) => {
+  const id = await setup(page)
+  const otherId = await page.evaluate(() => {
+    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+    const snap = doc.schemas.createSnapshot('date-card', [])
+    snap.props = {style: 'masthead', date: '2026-10-07T10:00'}
+    doc.crud.insertBlockSnapshots(doc.rootId, 1, [snap])
+    return snap.id as string
+  })
+  const toolbar = card(page, id).locator('.date-card-settings-toolbar')
+  await card(page, otherId).locator('.card__day').click()
+  await card(page, id).hover()
+  await expect(toolbar).toHaveCSS('opacity', '0')
+  await expect(toolbar).toHaveCSS('pointer-events', 'none')
+  await card(page, id).locator('.card__day').click()
+  await card(page, otherId).hover()
+  await expect(toolbar).toHaveCSS('opacity', '1')
+  await expect(card(page, otherId).locator('.date-card-settings-toolbar')).toHaveCSS('opacity', '0')
+  await card(page, id).getByRole('button', {name: '日期设置', exact: true}).click()
+  await expect(dialog(page)).toBeVisible()
+  await page.keyboard.press('Escape')
+  await card(page, otherId).locator('.card__day').click()
+  await expect(toolbar).toHaveCSS('opacity', '0')
+  await card(page, id).getByRole('button', {name: '日期设置', exact: true}).focus()
+  await expect(toolbar).toHaveCSS('opacity', '1')
+})
+
+test('日期设置按钮支持键盘激活，不触发文档回车命令', async ({page}) => {
+  const id = await setup(page)
+  const before = await snapshot(page, id)
+  const blockCount = await page.evaluate(() =>
+    (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc.root.childrenLength)
+  const button = card(page, id).getByRole('button', {name: '日期设置', exact: true})
+  for (const key of ['Enter', 'Space']) {
+    await button.focus()
+    await button.press(key)
+    await expect(dialog(page)).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(dialog(page)).toHaveCount(0)
+    expect((await snapshot(page, id)).props).toEqual(before.props)
+    expect(await page.evaluate(() =>
+      (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc.root.childrenLength)).toBe(blockCount)
+  }
 })
 
 test('全部十二种样式沿用颜色设置，快照重开后保持颜色', async ({page}) => {

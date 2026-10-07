@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import { NgComponentOutlet } from '@angular/common';
-import {CsButtonComponent} from '@cses/ui';
+import {CsButtonComponent, CsTooltipDirective} from '@cses/ui';
 import { BaseBlockComponent, getPositionWithOffset } from '../../../framework';
 import {Subject, takeUntil} from 'rxjs';
 import {DateCardSettingsComponent} from './date-card-settings.component';
@@ -146,27 +146,41 @@ declare global {
     selector: 'div.date-card-block',
     standalone: true,
     changeDetection: ChangeDetectionStrategy.OnPush,
-    imports: [NgComponentOutlet, ScaleResizerComponent, CsButtonComponent],
+    imports: [NgComponentOutlet, ScaleResizerComponent, CsButtonComponent, CsTooltipDirective],
     host: {'(dblclick)': 'openSettings($event)'},
     template: DATE_CARD_TEMPLATE + `
         @if (!isReadonly) {
-            <button cs-button csType="secondary" csSize="sm" class="date-card-settings-trigger" type="button" contenteditable="false"
-                aria-label="日期设置" title="日期设置（也可双击卡片）"
-                data-bc-nodrag data-bc-selection-interaction-ignore data-bc-placement-pick-ignore
-                (pointerdown)="$event.stopPropagation()" (mousedown)="$event.stopPropagation()"
-                (click)="openSettings($event)"><i class="bc_icon bc_shezhi" aria-hidden="true"></i></button>
+            <div class="date-card-settings-toolbar" contenteditable="false"
+                data-bc-native-input data-bc-nodrag data-bc-selection-interaction-ignore data-bc-placement-pick-ignore
+                (pointerdown)="$event.stopPropagation()" (mousedown)="$event.stopPropagation()">
+                <button cs-button csType="text" csSize="sm" class="date-card-settings-trigger" type="button"
+                    aria-label="日期设置" csTooltip="日期设置（也可双击卡片）"
+                    (click)="openSettings($event)"><i class="bc_icon bc_shezhi" aria-hidden="true"></i></button>
+            </div>
         }
     `,
     styles: [`
-        .date-card-settings-trigger {
+        .date-card-settings-toolbar {
             position:absolute; top:4px; right:12px; z-index:11;
-            width:28px; min-width:28px; height:28px; padding:0;
-            display:inline-flex; align-items:center; justify-content:center;
+            display:flex; align-items:center; padding:3px; border-radius:8px;
+            background:var(--bc-float-toolbar-bg); box-shadow:var(--bc-float-toolbar-shadow);
+            border:1px solid var(--bc-float-toolbar-divider-color);
             opacity:0; pointer-events:none;
         }
-        :host(:hover) .date-card-settings-trigger, :host(.selected) .date-card-settings-trigger,
-        .date-card-settings-trigger:focus { opacity:1; pointer-events:auto; }
-        @media print { .date-card-settings-trigger { display:none; } }
+        .date-card-settings-trigger {
+            display:inline-flex; align-items:center; justify-content:center;
+            width:28px; min-width:28px; height:28px; padding:0;
+            border:0; border-radius:5px; box-shadow:none;
+            color:var(--bc-float-toolbar-item-color); background:transparent;
+        }
+        :host(.selected) .date-card-settings-toolbar,
+        .date-card-settings-toolbar:focus-within { opacity:1; pointer-events:auto; }
+        @media (any-hover:hover) {
+            .date-card-settings-trigger:hover:not(:disabled) {color:var(--bc-float-toolbar-item-color); background:var(--bc-float-toolbar-item-hover-bg);}
+        }
+        .date-card-settings-trigger:active:not(:disabled) {color:var(--bc-active-color); background:var(--bc-float-toolbar-item-active-bg);}
+        .date-card-settings-trigger:focus-visible {outline:2px solid var(--bc-active-color); outline-offset:-2px;}
+        @media print { .date-card-settings-toolbar { display:none; } }
     `]
 })
 export class DateCardRenderComponent extends ObjectBlockComponent<DateCardModel> {
