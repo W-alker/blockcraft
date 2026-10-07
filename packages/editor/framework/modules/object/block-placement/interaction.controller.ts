@@ -8,6 +8,7 @@ import {resolvePlacementBox} from './geometry'
 import {resolvePlacementObjectGeometry, resolvePlacementObjectVisualBounds} from './object-geometry'
 import {BlockPlacementRuntime} from './runtime'
 import {finitePlacementNumber} from './state'
+import {UnderlayObjectChrome} from './underlay-chrome'
 import {
   BLOCK_PLACEMENT_LAYOUT_FLAVOUR,
   type BlockPlacementDragState,
@@ -31,6 +32,8 @@ export class BlockPlacementInteractionController {
   private cleanupDrag: (() => void) | null = null
   private cleanupFlowSelectionPassthrough: (() => void) | null = null
   private rootHost: HTMLElement | null = null
+  private chromeFrame = 0
+  private readonly underlayChrome = new Map<string, () => void>()
 
   constructor(
     private readonly doc: BlockCraft.Doc,
@@ -46,6 +49,7 @@ export class BlockPlacementInteractionController {
     this.bindObjectHotkeys()
     this.subscriptions.add(this.doc.readonlySwitch$.subscribe(readonly => {
       if (readonly) this.cancelDrag()
+      this.scheduleUnderlayChrome()
     }))
     this.doc.afterInit?.(root => {
       if (this.stateSubject.closed || this.rootHost) return
@@ -57,6 +61,14 @@ export class BlockPlacementInteractionController {
           true,
         )
       })
+      if (this.doc.selection?.selectionChange$) {
+        this.subscriptions.add(this.doc.selection.selectionChange$
+          .subscribe(() => this.scheduleUnderlayChrome()))
+      }
+      if (this.doc.readonlyManager?.stateChange$) {
+        this.subscriptions.add(this.doc.readonlyManager.stateChange$
+          .subscribe(() => this.scheduleUnderlayChrome()))
+      }
     })
   }
 
@@ -92,14 +104,20 @@ export class BlockPlacementInteractionController {
       } else {
         this.underBlocks.delete(block)
       }
+      this.scheduleUnderlayChrome()
     }
     subscription.add(block.onPropsChange.subscribe(changes => {
-      if ((changes as ReadonlyMap<PropertyKey, unknown>).has('placementLayer')) {
+      if ((changes as ReadonlyMap<PropertyKey, unknown>).has('placementLayer') ||
+        (changes as ReadonlyMap<PropertyKey, unknown>).has('position')) {
         sync()
+      } else if (this.underBlocks.has(block)) {
+        this.scheduleUnderlayChrome()
       }
     }))
+    if (block.onViewInit$) subscription.add(block.onViewInit$.subscribe(sync))
     subscription.add(block.onReattach$.subscribe(sync))
     subscription.add(block.onDetach$.subscribe(() => {
+      this.clearUnderlayChrome(block)
       this.underBlocks.delete(block)
     }))
     this.registeredBlocks.set(block.id, {block, subscription})
@@ -185,6 +203,7 @@ export class BlockPlacementInteractionController {
     const pointerId = event.pointerId
     const ownerDocument = host.ownerDocument
     const ownerWindow = ownerDocument.defaultView ?? window
+    const recoveredFromOutside = event.target instanceof Node && !host.contains(event.target)
     // Selection blur can hide transient resize edges / object handles while a
     // drag is active. Capture on the stable block host so that removing the
     // initiating chrome cannot turn a valid drag into lostpointercapture.
@@ -249,6 +268,7 @@ export class BlockPlacementInteractionController {
         onLostPointerCapture,
       )
       ownerDocument.removeEventListener('selectstart', onSelectStart, true)
+      ownerWindow.removeEventListener('mousedown', onCompatibilityMouseDown, true)
       try {
         if (pointerCaptureTarget?.hasPointerCapture(pointerId)) {
           pointerCaptureTarget.releasePointerCapture(pointerId)
@@ -385,6 +405,14 @@ export class BlockPlacementInteractionController {
       selectEvent.preventDefault()
       selectEvent.stopImmediatePropagation()
     }
+    const onCompatibilityMouseDown = (mouseEvent: MouseEvent) => {
+      if (mouseEvent.button !== 0) return
+      // WebKit may still dispatch mousedown at the covering prose after the
+      // recovery pointerdown. It belongs to this object gesture, so it must not
+      // clear Selection's projection guard or start a native text selection.
+      mouseEvent.preventDefault()
+      mouseEvent.stopPropagation()
+    }
 
     // pointerdown 后浏览器仍会继续派发 mousedown / selectionchange。绝对定位块
     // 的内容落点不一定能被 normalizeRange 映射回块选区，因此 armed 阶段必须
@@ -401,6 +429,7 @@ export class BlockPlacementInteractionController {
         onLostPointerCapture,
       )
       ownerDocument.addEventListener('selectstart', onSelectStart, true)
+      if (recoveredFromOutside) ownerWindow.addEventListener('mousedown', onCompatibilityMouseDown, true)
       try {
         pointerCaptureTarget?.setPointerCapture(pointerId)
       } catch {}
@@ -415,6 +444,9 @@ export class BlockPlacementInteractionController {
   }
 
   destroy(): void {
+    this.clearUnderlayChrome()
+    if (this.chromeFrame) this.rootHost?.ownerDocument.defaultView?.cancelAnimationFrame(this.chromeFrame)
+    this.chromeFrame = 0
     this.cancelDrag()
     this.cleanupFlowSelectionPassthrough?.()
     if (this.rootHost) {
@@ -505,19 +537,21 @@ export class BlockPlacementInteractionController {
   }
 
   private readonly onRootPointerDown = (event: PointerEvent): void => {
-    this.armFlowSelectionPassthrough(event)
     if (
       event.defaultPrevented ||
       event.button !== 0 ||
       !this.rootHost ||
+      this.state !== 'idle' ||
+      this.doc.dragController.state !== 'idle' ||
       !this.underBlocks.size
     ) {
+      this.armFlowSelectionPassthrough(event)
       return
     }
     const target = event.target
     if (
       target instanceof Element &&
-      target.closest('block-resizer, [data-bc-placement-pick-ignore]')
+      target.closest('block-resizer, [data-bc-placement-pick-ignore], [data-bc-nodrag], [data-block-zero-space="true"]')
     ) {
       return
     }
@@ -532,23 +566,7 @@ export class BlockPlacementInteractionController {
       ) {
         continue
       }
-      const rect = block.hostElement.getBoundingClientRect()
-      if (
-        event.clientX < rect.left ||
-        event.clientX > rect.right ||
-        event.clientY < rect.top ||
-        event.clientY > rect.bottom
-      ) {
-        continue
-      }
-      const bx = Math.min(band, rect.width / 3)
-      const by = Math.min(band, rect.height / 3)
-      const inBand =
-        event.clientX - rect.left <= bx ||
-        rect.right - event.clientX <= bx ||
-        event.clientY - rect.top <= by ||
-        rect.bottom - event.clientY <= by
-      if (!inBand) continue
+      if (!this.isUnderlayEdge(block, event, band)) continue
 
       if (
         !candidate ||
@@ -560,7 +578,10 @@ export class BlockPlacementInteractionController {
         candidate = block
       }
     }
-    if (!candidate) return
+    if (!candidate) {
+      this.armFlowSelectionPassthrough(event)
+      return
+    }
 
     event.preventDefault()
     event.stopPropagation()
@@ -578,6 +599,78 @@ export class BlockPlacementInteractionController {
       this.doc.selection.blur()
     }
     if (!keepsMultiSelection) this.doc.selection.selectBlock(candidate)
+    this.startDrag(event, candidate)
+  }
+
+  private isUnderlayEdge(block: BlockCraft.BlockComponent, event: PointerEvent, band: number): boolean {
+    const host = block.hostElement
+    const surface = host.querySelector<HTMLElement>(
+      '[data-bc-object-surface], [data-bc-print-visual-surface], [data-bc-object-drag-surface]',
+    )
+    const target = surface?.closest('[data-block-id]') === host ? surface : host
+    const rect = target.getBoundingClientRect()
+    let x = event.clientX - rect.left
+    let y = event.clientY - rect.top
+    let width = rect.width
+    let height = rect.height
+    if (target !== host && target.offsetWidth && target.offsetHeight) {
+      const ownerWindow = host.ownerDocument.defaultView!
+      const transform = ownerWindow.getComputedStyle(target).transform
+      const matrix = new ownerWindow.DOMMatrixReadOnly(transform === 'none' ? undefined : transform)
+      const scale = resolvePlacementBox(host)?.visualScale ?? 1
+      const point = new ownerWindow.DOMMatrixReadOnly([matrix.a, matrix.b, matrix.c, matrix.d, 0, 0])
+        .inverse().transformPoint({x: (x - rect.width / 2) / scale, y: (y - rect.height / 2) / scale})
+      width = target.offsetWidth
+      height = target.offsetHeight
+      x = point.x + width / 2
+      y = point.y + height / 2
+      band /= scale
+    }
+    // The visible edge, including its outer half, is recoverable. The interior
+    // remains prose territory even while the object is selected.
+    return x >= -band && x <= width + band && y >= -band && y <= height + band &&
+      (Math.min(Math.abs(x), Math.abs(width - x)) <= Math.min(band, width / 3) ||
+        Math.min(Math.abs(y), Math.abs(height - y)) <= Math.min(band, height / 3))
+  }
+
+  private scheduleUnderlayChrome(): void {
+    const ownerWindow = this.rootHost?.ownerDocument.defaultView
+    if (!ownerWindow || this.chromeFrame || (!this.underBlocks.size && !this.underlayChrome.size)) return
+    this.doc.ngZone.runOutsideAngular(() => {
+      this.chromeFrame = ownerWindow.requestAnimationFrame(() => {
+        this.chromeFrame = 0
+        const ids = this.runtime.getAbsoluteObjectSelectionIds(this.doc.selection.value) ?? []
+        const selected = new Set(ids.filter(id => {
+          const block = this.runtime.resolveBlock(id)
+          if (!block || !block.hostElement.isConnected || this.runtime.isReadonly(block)) return false
+          for (let current: BlockCraft.BlockComponent | null = block; current;) {
+            if (this.underBlocks.has(current)) return true
+            current = current.parentId ? this.runtime.resolveBlock(current.parentId) : null
+          }
+          return false
+        }))
+        for (const [id, dispose] of this.underlayChrome) {
+          if (selected.has(id)) continue
+          this.underlayChrome.delete(id)
+          dispose()
+        }
+        for (const id of selected) {
+          if (this.underlayChrome.has(id)) continue
+          const block = this.runtime.resolveBlock(id)!
+          const dispose = UnderlayObjectChrome.mount(this.doc, block, event => this.startDrag(event, block))
+          if (dispose) this.underlayChrome.set(id, dispose)
+        }
+      })
+    })
+  }
+
+  private clearUnderlayChrome(owner?: BlockCraft.BlockComponent): void {
+    for (const [id, dispose] of this.underlayChrome) {
+      const block = this.runtime.resolveBlock(id)
+      if (owner && block && !owner.hostElement.contains(block.hostElement)) continue
+      this.underlayChrome.delete(id)
+      dispose()
+    }
   }
 
   /**
@@ -639,8 +732,10 @@ export class BlockPlacementInteractionController {
   private unregisterBlockView(id: string): void {
     const registered = this.registeredBlocks.get(id)
     if (!registered) return
+    this.clearUnderlayChrome(registered.block)
     registered.subscription.unsubscribe()
     this.underBlocks.delete(registered.block)
     this.registeredBlocks.delete(id)
+    this.scheduleUnderlayChrome()
   }
 }
