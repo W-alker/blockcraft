@@ -1,4 +1,4 @@
-import {DocPlugin, getPositionWithOffset} from "../../framework";
+import {closetBlockId, DocPlugin, EventListen, getPositionWithOffset, UIEventStateContext} from "../../framework";
 import {Subject, Subscription, takeUntil} from "rxjs";
 import {OverlayRef} from "@angular/cdk/overlay";
 import {EmbedFrameBlockToolbar} from "./widgets/iframe-toolbar";
@@ -13,6 +13,22 @@ export class EmbedFrameExtensionPlugin extends DocPlugin {
   private _closeToolbar$ = new Subject<void>()
 
   private _activeBlock: BlockCraft.BlockComponent | null = null
+
+  @EventListen('mouseDown', {flavour: 'root'})
+  private onReadonlyFrameClick(ctx: UIEventStateContext) {
+    const event = ctx.getDefaultEvent() as MouseEvent
+    if (event.button !== 0 || !(event.target instanceof Element)) return
+    const card = event.target.closest('embed-frame-card')
+    const id = card && closetBlockId(card)
+    if (!id) return
+    let block: BlockCraft.BlockComponent
+    try { block = this.doc.getBlockById(id) }
+    catch { return }
+    if (!block.flavour.endsWith('embed') || !block.isReadonly) return
+    ctx.preventDefault()
+    this.doc.selection.selectBlock(block)
+    return true
+  }
 
   init() {
     this._sub = this.doc.selection.selectionChange$.subscribe(selection => {
@@ -47,6 +63,7 @@ export class EmbedFrameExtensionPlugin extends DocPlugin {
 
         const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay({
           target: frameBlock,
+          allowReadonly: frameBlock.isReadonly,
           positions: [
             getPositionWithOffset("top-left", 0, 8),
             getPositionWithOffset("bottom-left", 0, 8),

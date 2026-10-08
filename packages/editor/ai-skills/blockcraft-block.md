@@ -2431,3 +2431,67 @@ doc.crud.transact(() => block.updateProps(patch))
 天气块支持 `refreshWeather()`、`canRefreshWeather` 与 `weatherStatus`。手动刷新保留日期及旧值，请求成功后实时值仅更新显示，固定值经 `updateProps` 写入并支持撤销；自动初始化仍使用无 Undo 写入。模板投影和只读块不能手动刷新。内部 `WeatherChip.refresh()` 强制重查，`reload()` 仍为幂等挂载重试。
 
 `WeatherChipSource.onRefreshResult` 仅报告主动刷新的成功/失败，天气块经 `doc.messageService` 展示结果；自动加载、取消及过期响应不弹消息。
+
+
+## 统一网页嵌入块
+
+`EmbedBlockSchema`、`EmbedBlockComponent` 从 `@ccc/blockcraft` 导出，flavour 为
+`embed`，属于 `void`。与行内 `EmbedConverter` 无关，不需要注册 `DocConfig.embeds`。
+默认 bundled schemas 已包含此块，插入菜单仅显示一个“嵌入”入口。
+
+```typescript
+const snapshot = doc.schemas.createSnapshot('embed', ['https://example.com/report.html']);
+// props: {url, wr: 100, ar: 16 / 9}
+doc.crud.insertBlockSnapshots(doc.rootId, 0, [snapshot]);
+doc.crud.updateBlockProps(snapshot.id, {url: 'https://youtu.be/M7lc1UVf-VE'});
+```
+
+来源始终是 `props.url`：只接受 HTTP/HTTPS 链接（含 `.html` 文件链接），
+不接受 HTML 源码、`srcdoc`、`data:`、`javascript:`、`file:` 或带用户名密码的 URL。
+`normalizeEmbedUrl(value: unknown): string | null` 进行有界校验与规范化，
+`resolveEmbedUrl(value: unknown): ResolvedEmbedUrl | null` 返回 `{url, iframeUrl, platform}`。
+原链接持久化；平台转换结果只由当前 URL 推导，不另存副本，不请求远程元数据。
+编辑器与 snapshot-viewer 共享此纯函数。来源变化重新加载，尺寸变化保留 iframe 状态。
+
+自动转换覆盖 Figma（design/file/board/proto）、哔哩哔哩（BV/av）、YouTube
+（watch/短链接/shorts/live/playlist）、Vimeo（含 unlisted hash）、Loom、Miro、
+CodePen、JSFiddle、Spotify、SoundCloud、Google Drive、Google 文档/表格/幻灯片、
+Google 表单。专用 player/embed 地址可直接粘贴，访问参数保留；掘金与其他网页使用原 URL。
+Google 的“发布到网页”ID 不从私有文件 ID 猜测，私有内容仍受目标平台权限限制。
+
+规则依据包括 [Figma Embed Kit](https://developers.figma.com/docs/embeds/embed-figma-file/)、
+[哔哩哔哩播放器](https://player.bilibili.com/)、
+[YouTube Player Parameters](https://developers.google.com/youtube/player_parameters)、
+[Miro Live Embed](https://developers.miro.com/docs/miro-live-embed-with-a-direct-link)、
+[CodePen Embeds](https://blog.codepen.io/docs/embeds/)、
+[JSFiddle Embedding](https://docs.jsfiddle.net/embedding-fiddles)、
+[Spotify Embeds](https://developer.spotify.com/documentation/embeds/tutorials/creating-an-embed)、
+[Google 发布与嵌入](https://support.google.com/docs/answer/183965?hl=en)。
+
+iframe 保持懒加载与既有 Safari 可见性策略。同宿主源的网页使用不含
+`allow-same-origin` 的静态沙盒分支，防止文件脚本访问编辑器；外部页面沿用既有权限。
+HTML 文件需通过 HTTP(S) 返回页面内容（`text/html`），下载附件响应不保证能预览。
+目标页面的 CSP / X-Frame-Options、登录、网络与浏览器限制仍然生效。块内仅显示网页内容，
+不显示品牌与来源地址；浮动工具栏提供“外部打开”图标按钮。
+浏览器不会可靠上报跨域 iframe 拒绝原因，不以 load 事件宣称页面已成功显示。
+
+新建三类嵌入均使用图片同款 `BlockObjectSizeProps`：`wr` 表示相对正文内容宽度的百分比，
+`ar` 表示外框宽高比，默认 `wr: 100, ar: 16 / 9`。八向抓手复用
+`ShapeResizerComponent` 和图片缩放算法：四角等比、四边独立调轴，流式嵌入不提供旋转。
+提交前将布局像素宽高取整数，再换算为保留精度的 `wr/ar`；一次事务清除旧 `width/height`，
+拖拽预览不写模型，一次撤销恢复。容器缩放、指针取消与 Escape 沿用共享抓手能力。
+旧像素快照（包括 `width: null, height: 424`）在读取时保持原尺寸，首次有效拖拽才迁移；
+只点击抓手或取消操作不迁移。只读隐藏抓手，切换只读和销毁会取消未提交拖拽。
+三类 Schema 声明 `selectionInteraction: {frame: 'selectable'}`，卡片标记所属 frame 区域，
+边框点击与开始缩放使用框架整块选区，避免浏览器原生文本光标使抓手或菜单消失。
+编辑器依赖文档级正文宽度通知，快照使用百分比与 aspect-ratio，Schema 纯模型估高保持同步。
+选中轮廓与抓手由实际卡片绘制，不在占满整行的块宿主上另画选中框。
+悬停仅保留阴影提示，选中后显示八向抓手。
+分页模式约束 iframe 卡片的可视高度到正文页高，抓手留在裁剪层外；拖拽同时受页高限制。
+切换分页只改变视图，不改写 `wr/ar` 或旧宽高，返回连续模式恢复自然尺寸。
+自定义使用 `IframeCardComponent` 时，可选 `[block]` 传入三类嵌入块实例以启用抓手和正文尺寸基准；
+不传仍可只读渲染。手动尺寸输入与尺寸弹窗入口已移除。
+
+旧 `FigmaEmbedBlockSchema` / `JueJinEmbedBlockSchema` 与旧快照类型仍可使用，
+无需自动改写持久化文档。手动装配宿主应保留旧 schemas，再添加新 schema。
+旧块也可从浮动菜单修改对应平台的链接，保留原块 ID 与尺寸；URL 修改、撤销与重做会更新 iframe 预览。

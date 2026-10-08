@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, EventEmitter, Input, Output } from "@angular/core";
 import { BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerDirective } from "../../../components";
+import {getEmbedViewFlavour} from '../../link-view-utils';
 
 @Component({
   selector: 'inline-link-toolbar',
@@ -79,7 +80,9 @@ export class InlineLinkToolbar {
   }
 
   ngOnInit() {
-
+    if (getEmbedViewFlavour(this.link, this.doc.schemas)) {
+      this.LINK_VIEW_MODE_MAP.set('embed', '嵌入视图')
+    }
   }
 
   onItemClick($event: BcFloatToolbarItemComponent) {

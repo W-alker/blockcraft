@@ -54,6 +54,11 @@ export const headingTransforms: IBlockTransformConfig[] = [
 
 export const blockTransforms: IBlockTransformConfig[] = [
   {
+    flavour: 'embed',
+    searchAlias: 'embed',
+    keywords: ['网页', 'HTML', 'iframe', 'Figma', '掘金', 'B站', 'YouTube', 'Miro', 'CodePen'],
+  },
+  {
     flavour: 'bullet',
     searchAlias: 'wxlb',
     markdown: /^[-+]\s$/,

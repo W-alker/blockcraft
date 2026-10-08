@@ -111,6 +111,9 @@ describe('bundled editor capabilities', () => {
 
     expect(flavours).toContain('paragraph')
     expect(flavours).toContain('image')
+    expect(flavours).toContain('embed')
+    expect(flavours).not.toContain('figma-embed')
+    expect(flavours).not.toContain('juejin-embed')
     expect(flavours).toContain('shape')
     expect(flavours).toContain('word-art')
     expect(flavours).toContain('text-box')
@@ -123,6 +126,17 @@ describe('bundled editor capabilities', () => {
     expect(projectBundledBlockMaterials()).toEqual(
       BUNDLED_EDITOR_BLOCK_MATERIAL_GROUPS,
     )
+  })
+
+  it('keeps the legacy embed schemas available for existing snapshots', () => {
+    const capabilities = createBundledEditorCapabilities()
+    const flavours = capabilities.schemaDefinitions.map(schema => schema.flavour)
+    expect(flavours).toContain('embed')
+    expect(flavours).toContain('figma-embed')
+    expect(flavours).toContain('juejin-embed')
+    const snapshot = capabilities.schemas.createSnapshot('embed', ['https://example.com/report.html'])
+    expect(snapshot.props).toEqual({url: 'https://example.com/report.html', wr: 100, ar: 16 / 9})
+    expect(() => capabilities.schemas.createSnapshot('embed', ['<h1>raw HTML</h1>'])).toThrow()
   })
 
   it('rejects duplicate host additions before document initialization', () => {

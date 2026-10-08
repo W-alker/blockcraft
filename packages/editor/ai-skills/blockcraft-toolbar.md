@@ -432,6 +432,11 @@ stable on the first rail click without replaying Selection or stealing focus.
 
 ## Overlay Lifecycle Management
 
+`createConnectedOverlay()` 的 `allowReadonly?: boolean` 默认关闭：普通浮层仍在文档进入只读时关闭。
+只有浏览、刷新、外部打开等只读可执行的控件才可显式启用；调用方仍须逐项保护写入命令。
+启用后，块/文档销毁、显式关闭、脱离 DOM 和视图 lease 清理规则保持不变。
+嵌入块在只读状态创建工具栏时启用该选项；编辑状态打开的菜单仍遵循原只读关闭规则。
+
 Key pattern: use `Subject` + `takeUntil` for cleanup.
 
 ```typescript

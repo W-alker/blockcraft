@@ -133,6 +133,8 @@ export interface IConnectOverlayCreateOptions {
   positions?: ConnectedPosition[];
   backdrop?: boolean;
   clampTo?: HTMLElement;
+  /** Opt in only for controls whose actions remain valid in readonly mode. Defaults to false. */
+  allowReadonly?: boolean;
   /**
    * Forwarded to CDK's `withFlexibleDimensions`. Defaults to `false` so
    * fixed-size overlays stay centered on their origin after position updates.
@@ -501,7 +503,7 @@ export class DocOverlayService {
         throttle(updatePosition, 200),
       );
 
-    merge(this.doc.readonlySwitch$.pipe(filter((v) => v)), this.doc.onDestroy$)
+    merge(this.doc.readonlySwitch$.pipe(filter(v => v && !('allowReadonly' in params && params.allowReadonly))), this.doc.onDestroy$)
       .pipe(takeUntil(close$))
       .subscribe(() => {
         close$.next(true);

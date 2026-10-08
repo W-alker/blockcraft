@@ -12,6 +12,7 @@ import {
   DividerBlockSchema,
   DateCardBlockSchema,
   FigmaEmbedBlockSchema,
+  EmbedBlockSchema,
   FormulaBlockSchema,
   ImageBlockSchema,
   StickerBlockSchema,
@@ -127,6 +128,7 @@ export const BUNDLED_EDITOR_SCHEMAS: readonly IBlockSchemaOptions[] = [
   BookmarkBlockSchema,
   FigmaEmbedBlockSchema,
   JuejinEmbedBlockSchema,
+  EmbedBlockSchema,
   CaptionBlockSchema,
   RootBlockSchema,
   MermaidTextareaBlockSchema,
@@ -195,7 +197,7 @@ export function projectBundledBlockMaterials(
       continue
     }
     const key: BundledBlockMaterialGroupKey =
-      schema.flavour.endsWith('-embed')
+      (schema.flavour === 'embed' || schema.flavour.endsWith('-embed'))
         ? 'embed'
         : schema.nodeType === BlockNodeType.editable
           ? 'base'

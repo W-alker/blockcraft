@@ -68,6 +68,70 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## 0.12.0 — 2026-10-08：统一网页嵌入块（待发布）
+
+**Severity**: minor
+
+**What changed**: 导出并默认注册 `EmbedBlockSchema`（`embed`），新插入统一使用网页链接块；
+支持网页、HTML 文件链接和常见平台专用嵌入 URL，创建与改来源复用既有链接粘贴弹窗。
+链接弹窗改用 cses-ui Modal、Input 和 Button，保留 URL 校验与块级生命周期。
+尺寸通过共享八向抓手调整，布局像素取整数后保存为图片同款 `wr/ar`，移除手动输入尺寸入口。
+卡片、链接、嵌入视图支持直接互转，链接无需先转卡片即可嵌入。
+新旧嵌入块与快照预览去掉品牌行和地址，外部打开收在浮动工具栏的图标按钮中。
+
+**Why**: 来源规则属于统一嵌入能力，避免为每个平台重复维护块类型和交互。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-app.md`、
+`blockcraft-adapter.md`、`blockcraft-plugins-toolbar.md`、`blockcraft-plugins-inline.md`、`blockcraft-toolbar.md`。
+
+### New APIs / Features
+
+- `EmbedBlockSchema`、`EmbedBlockComponent`、`EmbedBlockModel` 对外导出；创建参数为 `[url: string]`。
+- `normalizeEmbedUrl`、`resolveEmbedUrl`、`ResolvedEmbedUrl`：编辑器与只读预览共用的有界 URL 规则。
+- 修改来源、八向尺寸抓手、刷新、外部打开、链接/书签切换；书签优先转换为统一嵌入。
+- 三类嵌入模型使用 `BlockObjectSizeProps`；`IframeCardComponent.block` 可选输入启用抓手与文档宽度基准。
+- `InlineLinkExtension.switchView(view?: 'card' | 'embed')`，默认仍为卡片。
+- `IConnectOverlayCreateOptions.allowReadonly?: boolean` 默认关闭；只读嵌入菜单显式启用。
+
+### Deprecations
+
+旧 Figma/掘金块保留 API、类型与快照读取，新插入菜单隐藏这两个独立入口。
+
+### Behavior Changes
+
+- 普通网页与 HTML 文件链接直接加载；识别的平台转换为专用地址，保留原链接。
+- 只接收 URL，不接收 HTML 代码。宿主同源网页采用不含 `allow-same-origin` 的隔离分支。
+- HTML 元数据封套保留 URL 与尺寸；Markdown 使用显式链接提示，展示尺寸导入回默认。
+- 新建嵌入默认 `{wr: 100, ar: 16 / 9}`；四角等比、四边单轴，无旋转；比例保留精度。
+  旧像素宽高保持读取，首次有效拖拽以整数像素换算比例并在同一事务清除旧字段。点击抓手、取消、只读与销毁不写入。
+  编辑器、快照预览与 Schema 模型估高使用同一尺寸规则；尺寸弹窗与浮动菜单的手动尺寸入口移除。
+  三类 Schema 使用既有 `selectionInteraction.frame` 能力，卡片边框与缩放手势稳定选中整块。
+  悬停仅显示阴影，选中后显示抓手；分页可视高度与拖拽受正文页高限制。
+- iframe 懒加载，尺寸修改不重载内容；目标站点是否允许 iframe 仍由其权限与响应策略决定。
+- 嵌入块不再渲染 `.iframe-brand` / `.iframe-link`；保留 `brand/fontIcon` 输入的绑定兼容性。
+  外部打开使用原始 URL，提示不显示地址，只读时可用；快照资源关闭时也不显示来源地址。
+  只读嵌入块可通过边框区域选中并打开工具栏，iframe 内网页操作保持。
+- 三类嵌入都可修改来源；旧 Figma/掘金块保留平台校验和原尺寸，修改与撤销/重做会更新 iframe。
+  图标按钮使用 cses-ui Tooltip；修改来源弹窗关闭时避免将焦点还原到文档根节点而滚到顶部。
+- 独立链接转换时替换整块；正文中的链接转换保留两侧文字与格式。三种视图转换支持撤销，
+  捕获并恢复源/目标选区，不与连续输入合并；写入前检查只读、实例存活及父容器限制。
+
+### Migration Recipe
+
+```typescript
+// before：新文档单独创建平台块
+const snapshot = doc.schemas.createSnapshot('figma-embed', [url]);
+// after：新文档使用统一块；原平台块仍可读取
+const snapshot = doc.schemas.createSnapshot('embed', [url]);
+```
+
+手动装配 schemas 的宿主添加 `EmbedBlockSchema` 并保留旧 schemas；bundled 装配无需额外操作。
+自定义创建服务仍返回字符串 URL，存量快照无需改写。自行渲染嵌入尺寸的宿主应支持
+`wr/ar`，不再假设新快照始终有像素 `height`；继续使用 `IframeCardComponent` 的宿主
+绑定 `[block]` 即可获得文档宽度基准与抓手。本条为待发布记录，未调整 package 版本。
+
+---
+
 ## Unreleased — 2026-10-08：组合内日期、天气保持等比
 
 **Severity**: minor

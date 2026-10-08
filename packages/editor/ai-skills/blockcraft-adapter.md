@@ -4,7 +4,7 @@
 >
 > Adapters handle HTML ↔ BlockSnapshot and Markdown ↔ BlockSnapshot conversion.
 >
-> Last updated: 2026-10-06
+> Last updated: 2026-10-08
 
 ## 内置贴纸的导入导出（未发布）
 
@@ -822,3 +822,15 @@ import {
 序列化转义；导入使用同一有界解析器，完整消费每个路径字符。Markdown 的可往返
 封装保留该字符串，portable 输出继续使用既有展示策略。禁止重新 JSON 编码节点
 对象；预设等价的覆盖由 `normalizeShapeSnapshotProps()` 省略。
+
+
+## 统一网页嵌入的转换
+
+`blocks/embed-blocks/embed-block/adapter/` 使用共享 URL Embed 工厂，贡献 ID 与
+flavour 均为 `embed`。HTML 导出保留 `data-bc-block="embed"`、有界 props 元数据
+及可点击原链接，尺寸可往返；不输出可执行 iframe 或 HTML 源码。
+Markdown 导出为 `[网页嵌入](https://example.com/report.html "blockcraft:embed")`。
+显式类型提示恢复嵌入块；普通网页链接仍是正文链接，普通 `html` 围栏仍是代码块。
+Markdown 不保留展示尺寸，统一嵌入导入恢复 `wr: 100, ar: 16 / 9`。
+HTML 元数据同时支持 `wr/ar` 与旧 `width/height`，不为比例快照补入旧像素默认值。
+旧 Figma/掘金贡献保持原有 flavour 的导入导出，无需文档数据迁移。

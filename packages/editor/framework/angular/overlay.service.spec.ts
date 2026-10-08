@@ -1,15 +1,15 @@
 import {DocOverlayService, getPositionWithOffset, type OverlayPosition} from './overlay.service'
 import type {ConnectedPosition} from '@angular/cdk/overlay'
-import {Subject} from 'rxjs'
+import {BehaviorSubject, Subject} from 'rxjs'
 
 class TestOverlayComponent {}
 
 describe('DocOverlayService', () => {
-  function createOverlayHarness() {
+  function createOverlayHarness(initialReadonly = false) {
     const positionChanges = new Subject<void>()
     const backdropClick$ = new Subject<void>()
     const detachments$ = new Subject<void>()
-    const readonlySwitch$ = new Subject<boolean>()
+    const readonlySwitch$ = new BehaviorSubject<boolean>(initialReadonly)
     const docDestroy$ = new Subject<void>()
     const blockDestroy$ = new Subject<void>()
     const close$ = new Subject<void>()
@@ -118,6 +118,7 @@ describe('DocOverlayService', () => {
       cleanup,
       doc,
       docDestroy$,
+      blockDestroy$,
       order,
       overlay,
       overlayElement,
@@ -132,6 +133,40 @@ describe('DocOverlayService', () => {
       virtualization,
     }
   }
+
+  it('still closes ordinary overlays and releases their lease when readonly begins', () => {
+    const h = createOverlayHarness()
+    h.service.createConnectedOverlay({target: h.block as any, component: TestOverlayComponent}, h.close$)
+    h.doc.readonlySwitch$.next(true)
+    expect(h.overlayRef.dispose).toHaveBeenCalledTimes(1)
+    expect(h.releaseBlockViewLease).toHaveBeenCalledTimes(1)
+    h.cleanup()
+  })
+
+  it('allows readonly controls to open and still cleans up when their block is destroyed', () => {
+    const h = createOverlayHarness(true)
+    h.service.createConnectedOverlay({
+      target: h.block as any, component: TestOverlayComponent, allowReadonly: true,
+    }, h.close$)
+    h.doc.readonlySwitch$.next(true)
+    expect(h.overlayRef.dispose).not.toHaveBeenCalled()
+    expect(h.releaseBlockViewLease).not.toHaveBeenCalled()
+    h.blockDestroy$.next()
+    expect(h.overlayRef.dispose).toHaveBeenCalledTimes(1)
+    expect(h.releaseBlockViewLease).toHaveBeenCalledTimes(1)
+    h.cleanup()
+  })
+
+  it('closes readonly controls and releases their lease on document destruction', () => {
+    const h = createOverlayHarness(true)
+    h.service.createConnectedOverlay({
+      target: h.block as any, component: TestOverlayComponent, allowReadonly: true,
+    }, h.close$)
+    h.docDestroy$.next()
+    expect(h.overlayRef.dispose).toHaveBeenCalledTimes(1)
+    expect(h.releaseBlockViewLease).toHaveBeenCalledTimes(1)
+    h.cleanup()
+  })
 
   it('leases a BlockComponent target before CDK positioning and releases once on close', () => {
     const h = createOverlayHarness()

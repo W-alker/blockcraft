@@ -122,7 +122,7 @@ Three `nodeType` categories:
 | nodeType | Description | Base Class | Examples |
 |----------|-------------|------------|----------|
 | `editable` | Has inline text (Y.Text), no children | `EditableBlockComponent` | paragraph, code, bullet, ordered, todo, blockquote, caption, mermaid-textarea, word-art |
-| `void` | No children, no text | `BaseBlockComponent` | divider, image, bookmark, attachment, formula, video, audio, embed-blocks (figma, juejin), weather, date-card, person-card |
+| `void` | No children, no text | `BaseBlockComponent` | divider, image, bookmark, attachment, formula, video, audio, embed-blocks (embed; legacy figma, juejin), weather, date-card, person-card |
 | `block` | Has block children | `BaseBlockComponent` | callout, columns, column, table, table-row, table-cell, frame, shape, text-box, mermaid, render-unit, object-group, placement-layout (infrastructure) |
 | `root` | Special — top-level container | `BaseBlockComponent` (root-block) | root |
 
@@ -143,11 +143,16 @@ Three `nodeType` categories:
 图片八向抓手支持四角等比、四边独立调宽高，继续使用动态 `wr/ar`；四边拉伸通过
 图片专属 `fit: 'fill'` 保留，浮动布局的旋转抓手写入可选 `rotation` 角度属性（流式隐藏抓手），旧图片缺省外观不变，详见 `blockcraft-block.md`。
 
-`paragraph, ordered, bullet, todo, callout, code, divider, page-divider, image, table, table-row, table-cell, attachment, bookmark, figmaEmbed, juejinEmbed, caption, root, mermaid-textarea, mermaid, blockquote, columns, column, formula, video, audio, shape, shape-text, text-box, word-art, object-group, placement-layout, render-unit, weather, date-card, person-card`
+`paragraph, ordered, bullet, todo, callout, code, divider, page-divider, image, table, table-row, table-cell, attachment, bookmark, embed, figmaEmbed, juejinEmbed, caption, root, mermaid-textarea, mermaid, blockquote, columns, column, formula, video, audio, shape, shape-text, text-box, word-art, object-group, placement-layout, render-unit, weather, date-card, person-card`
 
 形状目录提供 111 种原生几何，包含平直双端内凹缎带 `ribbon-notched`、单侧缎带、
 书签、票券、拱形、六瓣花和波边徽章。它们是 `shape` 的种类，不是新 block flavour；
 对应 ID、分类与文字区域见 `blockcraft-block.md` 的 Shape 章节。
+
+统一网页嵌入使用 `EmbedBlockSchema`（flavour: `embed`），通过现有链接粘贴弹窗
+插入网页或 `.html` 文件 URL。普通网页直接使用原地址；支持的平台会转换为专用嵌入地址。
+`figma-embed` / `juejin-embed` 继续注册用于旧文档，但隐藏新插入入口。
+完整来源规则、平台范围和沙盒边界见 `blockcraft-block.md` → 统一网页嵌入块。
 
 A host application can register a subset or extend this list — see `blockcraft-app.md`.
 Hosts that need the complete reference-editor surface should call

@@ -420,9 +420,7 @@
   }
 
   .embed-frame-block .iframe-wrapper,
-  .embed-frame-block iframe,
-  .embed-frame-block .iframe-link,
-  .embed-frame-block .iframe-brand {
+  .embed-frame-block iframe {
     min-width: 0;
     max-width: 100%;
   }

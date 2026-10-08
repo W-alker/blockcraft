@@ -10,7 +10,6 @@ const defaultProps = {width: null, height: 424} as const
 export const embedFigmaBlockHtmlAdapterMatcher =
   createEmbedBlockHtmlAdapterMatcher('figma-embed', {
     label: 'Figma',
-    defaultProps,
   })
 export const embedFigmaBlockMarkdownAdapterMatcher =
   createEmbedBlockMarkdownAdapterMatcher('figma-embed', {

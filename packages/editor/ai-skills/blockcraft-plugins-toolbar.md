@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-10-07
+> Last updated: 2026-10-08
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
@@ -735,6 +735,11 @@ text. HTML round-trips the payload; Markdown degrades to readable text.
 
 Shows a floating `BookmarkBlockToolbar` when a bookmark block is selected. Dismissed when selection moves away.
 
+卡片、链接、嵌入视图可以从各自的视图菜单直接互转，来源 URL 保持。
+卡片与嵌入转换后选中新块；转链接后光标落到链接段落。提交前检查目标 schema、
+当前实例、只读和父容器插入限制。嵌入来源识别与行内链接共用规则，优先统一 `embed`。
+转换建立独立撤销边界，替换源块前捕获选区；撤销/重做恢复对应视图与选区。
+
 ### Configuration
 
 No configuration options.
@@ -814,7 +819,23 @@ new DividerExtensionPlugin();
 
 > `plugins/embed-frame-extension/` — Toolbar for iframe embed blocks.
 
-Shows a floating `EmbedFrameBlockToolbar` for any block whose flavour ends with `'embed'` (e.g., `figma-embed`, `juejin-embed`) when selected.
+Shows a floating `EmbedFrameBlockToolbar` for any block whose flavour ends with `'embed'` (e.g., `embed`, `figma-embed`, `juejin-embed`) when selected.
+
+统一 `embed` 与旧 Figma/掘金块均提供“修改嵌入来源”，复用创建时的单输入链接弹窗，
+不提供 HTML 代码输入。链接弹窗使用 cses-ui Modal、Input 和 Button。
+弹窗生命周期属于目标块与文档，聚焦输入框后不随选区工具栏关闭；
+目标块销毁、文档只读或销毁时释放弹窗和视图 lease。提交前重查当前实例与只读状态。
+弹窗按目标 schema 校验链接：统一块接收任意有效网页，旧块保留对应平台规则。
+打开前将焦点交给菜单入口，避免关闭时恢复到文档根节点并滚到顶部。
+新旧嵌入的尺寸通过对象块八向抓手调整，四角等比、四边独立调轴，不提供手动输入弹窗。
+悬停仅显示阴影，选中后显示尺寸抓手；图标按钮使用 cses-ui Tooltip 显示操作名称。
+像素宽高取整数后转换为图片同款 `wr/ar`，旧像素尺寸在首次有效拖拽时迁移。
+浮动菜单保留刷新与链接/卡片切换。尺寸和 URL 修改通过事务进入撤销历史；只读状态隐藏写入口与抓手。
+链接视图的工具栏也可直接转换为嵌入，无需经过卡片。
+新旧嵌入块和快照预览仅显示 iframe 内容，不再显示品牌行或来源地址。
+点击只读嵌入块的边框区域也可选中并显示浮动工具栏，不拦截 iframe 内网页操作。
+浮动工具栏的“外部打开”图标按钮打开原始 URL（`noopener,noreferrer`），只读时仍可用；
+按钮与提示均不显示地址。`IframeCardComponent.brand/fontIcon` 保留为兼容输入，但不再渲染。
 
 ### Configuration
 

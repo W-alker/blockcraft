@@ -14,6 +14,7 @@ import {ComponentRef} from "@angular/core";
 import {LinkEditFloatDialog} from "./widgets/link-edit-dialog";
 import {OneShotRangeAnchor} from "../../framework/utils/one-shot-selection-anchor";
 import {isSelectionAlive} from "../../framework/modules/selection/liveness";
+import {getEmbedViewFlavour, runLinkViewChange} from '../link-view-utils';
 
 type TextLinkInfo = {
   textRange: {
@@ -192,8 +193,8 @@ export class InlineLinkExtension extends DocPlugin {
           })
           return
         case 'switch-view':
-          if (item.value === 'card' && !this._isReadonly(block)) {
-            this.switchView()
+          if ((item.value === 'card' || item.value === 'embed') && !this._isReadonly(block)) {
+            this.switchView(item.value)
           }
           this.closeToolbar()
           return
@@ -318,7 +319,7 @@ export class InlineLinkExtension extends DocPlugin {
     })
   }
 
-  switchView() {
+  switchView(view: 'card' | 'embed' = 'card') {
     if (!this._linkNode) return
     const link = this.tryGetLink(this._linkNode)
     if (!link) return
@@ -330,21 +331,30 @@ export class InlineLinkExtension extends DocPlugin {
     if (!this._isBlockAlive(block) || !this.doc.isEditable(block)) return
     if (this._isReadonly(block)) return
 
-    const bookmark = this.doc.schemas.createSnapshot('bookmark', [link])
-    const insertBlocks: IBlockSnapshot[] = [bookmark]
+    const flavour = view === 'embed' ? getEmbedViewFlavour(link, this.doc.schemas) : 'bookmark'
+    if (!flavour || !this.doc.schemas.has(flavour)) return
+    const hasSuffix = index + length < block.textLength
+    if (!block.parentId || !this.doc.canInsertChild(block.parentId, flavour)
+      || (hasSuffix && !this.doc.canInsertChild(block.parentId, block.flavour))) {
+      this.doc.messageService.warn('当前位置无法转换为该视图')
+      return
+    }
+    const target = this.doc.schemas.createSnapshot(flavour, [link])
+    const insertBlocks: IBlockSnapshot[] = [target]
 
-    if (index + length < block.textLength) {
+    if (hasSuffix) {
       const splitRightDeltas = sliceDelta(block.textDeltas(), index + length)
       insertBlocks.push(this.doc.schemas.createSnapshot(block.flavour, [splitRightDeltas, block.props]))
     }
 
-    void this.doc.chain()
-      .transact(() => {
+    void runLinkViewChange(this.doc, block, target.id, () => {
+      if (index === 0) {
+        this.doc.crud.replaceWithSnapshots(block.id, insertBlocks)
+      } else {
         block.deleteText(index, block.textLength - index)
         this.doc.crud.insertBlocksAfter(block, insertBlocks)
-      })
-      .selectBlock(bookmark.id)
-      .run()
+      }
+    })
   }
 
   destroy() {

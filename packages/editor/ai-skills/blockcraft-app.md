@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-10-07
+> Last updated: 2026-10-08
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -744,6 +744,17 @@ when a custom Schema/Embed has no same-flavour/key adapter contribution. An
 an `additionalEmbeds` tuple—the factory creates a fresh converter from it. If
 the converter is data-bound and the contribution has no factory, pass the
 explicit tuple as shown above.
+
+默认 bundled schemas 同时注册 `EmbedBlockSchema` 和旧 Figma/掘金 schemas。
+新建统一走 `embed`，创建与修改来源复用链接粘贴弹窗，只接收网页或 HTML 文件链接。
+链接弹窗使用 cses-ui `CsModalService`、`CsInputDirective` 和 `CsButtonComponent`，
+沿用组件库的主题、焦点管理、遮罩与 Escape 关闭行为。
+手动装配 `SchemaManager` 的宿主需添加 `EmbedBlockSchema`，并保留旧 schemas
+以读取存量文档；自定义 `BlockCreatorService` 返回 `[url: string]`。
+`EmbedFrameExtensionPlugin` 为新旧嵌入提供修改来源、刷新和卡片/链接切换，尺寸复用对象八向抓手；
+书签工具栏在注册 `embed` 时允许任意有效网页转换为统一嵌入，未注册时保留旧平台回退。
+snapshot-viewer 已识别 `embed` 并遵循 `resourcePolicy`；`off` 不加载 iframe，也不显示来源地址。
+平台规则与数据契约见 `blockcraft-block.md` 的统一网页嵌入节。
 
 The bundled `embeds` list includes fresh `shape` and `word-art` converters, so
 the bundled Shape/WordArt toolbar Plugins can switch those blocks to inline or

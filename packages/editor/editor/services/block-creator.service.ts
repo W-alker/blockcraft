@@ -7,6 +7,8 @@ import {EmbedFrameCreator} from "./embed-frame-creator";
 import {MediaCreatorComponent, MediaCreatorResult} from "../../components/media-creator";
 import {ComponentPortal} from "@angular/cdk/portal";
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
+import {CsModalService} from '@cses/ui';
+import {take, takeUntil} from 'rxjs';
 
 @Injectable()
 export class MyBlockCreatorService extends BlockCreatorService {
@@ -41,6 +43,7 @@ export class MyBlockCreatorService extends BlockCreatorService {
         break
       case 'juejin-embed':
       case 'figma-embed':
+      case 'embed':
         const urlRes = await this.onShowFrameInputPad(schema)
         if (urlRes == null) return null
         params.push(urlRes)
@@ -66,33 +69,15 @@ export class MyBlockCreatorService extends BlockCreatorService {
   }
 
   private onShowFrameInputPad(schema: IBlockSchemaOptions) {
-    const overlay = this.injector.get(Overlay)
-    const ovr = overlay.create({
-      positionStrategy: overlay.position().global().centerHorizontally().centerVertically(),
-      scrollStrategy: overlay.scrollStrategies.reposition(),
-      hasBackdrop: true,
-      backdropClass: 'cdk-overlay-transparent-backdrop'
+    const ref = this.injector.get(CsModalService).open<{schema: IBlockSchemaOptions}, string, EmbedFrameCreator>({
+      content: EmbedFrameCreator,
+      data: {schema}, title: schema.metadata.label,
+      width: 'min(360px, calc(100vw - 48px))', centered: true, footer: null,
     })
-    const cpr = ovr.attach(new ComponentPortal(EmbedFrameCreator))
-    cpr.setInput('schema', schema)
     return new Promise<string | null>(resolve => {
-      let settled = false
-      const finish = (value: string | null) => {
-        if (settled) return
-        settled = true
-        ovr.dispose()
-        resolve(value)
-      }
-      ovr.backdropClick()
-        .pipe(takeUntilDestroyed(cpr.instance.destroyer))
-        .subscribe(() => finish(null))
-      cpr.instance.onSubmit.pipe(takeUntilDestroyed(cpr.instance.destroyer)).subscribe((url: string) => {
-        finish(url)
-      })
-
-      cpr.instance.onCancel.pipe(takeUntilDestroyed(cpr.instance.destroyer)).subscribe(() => {
-        finish(null)
-      })
+      ref.afterClose.pipe(take(1)).subscribe(url => resolve(typeof url === 'string' ? url : null))
+      ref.componentInstance!.onSubmit.pipe(take(1), takeUntil(ref.afterClose)).subscribe(url => ref.close(url))
+      ref.componentInstance!.onCancel.pipe(take(1), takeUntil(ref.afterClose)).subscribe(() => ref.close())
     })
   }
 

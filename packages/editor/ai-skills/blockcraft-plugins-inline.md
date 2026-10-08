@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-09-23
+> Last updated: 2026-10-08
 
 ## Inline Extensions
 
@@ -10,7 +10,7 @@
 
 > `plugins/inline-link-extension/` — Hyperlink interactions and editing.
 
-Handles inline link clicks (single-click shows toolbar, double-click navigates), provides link editing/unbinding/copying, and supports "switch view" to convert an inline link into a bookmark block.
+Handles inline link clicks (single-click shows toolbar, double-click navigates), provides link editing/unbinding/copying, and supports direct conversion to card or embed views.
 
 #### Configuration
 
@@ -30,7 +30,7 @@ new InlineLinkExtension(openLink?: (link: string) => void)
 | `edit-link` | Open `LinkEditFloatDialog` for editing |
 | `unbind-link` | Remove the link format, keep text |
 | `copy-link` | Copy URL to clipboard |
-| `switch-view` | Convert inline link to bookmark block |
+| `switch-view` | `card` 转网页卡片，`embed` 直接转嵌入；与卡片、嵌入工具栏形成三种视图互转 |
 
 #### Public API
 
@@ -39,9 +39,16 @@ new InlineLinkExtension(openLink?: (link: string) => void)
 | `openToolbar(target, link, block)` | Show the link toolbar for a specific link element |
 | `closeToolbar()` | Dismiss the toolbar |
 | `onEditLink(target, block)` | Open the link edit dialog |
-| `switchView()` | Convert the current link to a bookmark block |
+| `switchView(view?: 'card' \| 'embed')` | 转换当前链接；默认 `card` 保持旧调用方式 |
 | `tryGetLink(target)` | Get the `href` from a link element |
 | `getLinkInfo(target)` | Get `{ textRange, text }` for a link element |
+
+独立链接直接替换整块，不留下空段落；正文中的链接转换为独立卡片/嵌入块，
+两侧文字保留原格式与段落属性。转换经过一次 DocChain/DocCRUD 事务，并选中新目标。
+转换捕获源选区并建立独立撤销边界；撤销/重做恢复对应视图的光标或块选中状态。
+提交前重查实例存活、只读和父容器插入限制，禁止先删除文字再发现目标不能插入。
+嵌入优先使用 `embed`；只装配旧平台 schemas 的宿主继续回退到 Figma/掘金，
+其他网页、HTML 文件链接和平台地址需注册 `EmbedBlockSchema`。非 HTTP/HTTPS 链接不提供嵌入入口。
 
 #### Usage Example
 

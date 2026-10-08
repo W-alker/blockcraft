@@ -1,83 +1,40 @@
-import {Component, ElementRef, Input, ViewChild} from "@angular/core";
-import {BaseBlockComponent} from "../../../framework";
-import {HostUrlPipe} from "../pipes";
-import {MatIcon} from "@angular/material/icon";
-import {NgIf} from "@angular/common";
-import {EmbedBlockModel} from "./index";
+import {ChangeDetectionStrategy, Component, ViewChild} from '@angular/core'
+import {takeUntilDestroyed} from '@angular/core/rxjs-interop'
+import {BaseBlockComponent} from '../../../framework'
+import type {EmbedBlockModel} from './index'
+import {resolveEmbedUrl} from './source'
+import {IframeCardComponent} from '../components/iframe-card'
 
 @Component({
-  selector: "div.embed-block",
-  template: `
-    <div class="iframe-wrapper">
-      <iframe loading="lazy" allowfullscreen #iframeEle
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads allow-storage-access-by-user-activation"
-              draggable="false"
-              allow="encrypted-media;clipboard-read *;clipboard-write *;" referrerpolicy=""
-              data-iframe-will-auto-focus="1"
-              frameborder="0" data-aha-samesite=""></iframe>
-      <div class="iframe-mask"></div>
-    </div>
-    <div class="iframe-brand" *ngIf="brand">
-      <mat-icon [svgIcon]="brand.icon"></mat-icon>
-      <span spellcheck="false">{{ brand.title }}</span>
-    </div>
-    <a class="iframe-link" target="_blank" [href]="props.url">
-      <span>{{ props.url | hostUrl }}</span>
-      <i class="bc_icon bc_tiaozhuan"></i>
-    </a>
-  `,
+  selector: 'div.embed-block.embed-frame-block',
   standalone: true,
-  imports: [
-    HostUrlPipe,
-    MatIcon,
-    NgIf
-  ]
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [IframeCardComponent],
+  template: `<embed-frame-card [block]="this" [props]="props" [isolateUrl]="isolateUrl" [url]="iframeUrl"
+    [brand]="brand" [fontIcon]="true"></embed-frame-card>`,
 })
 export class EmbedBlockComponent extends BaseBlockComponent<EmbedBlockModel> {
-  private _url = ''
-  @Input()
-  set url(value: string) {
-    this._url = value
-    if (!value || !this.isViewInit) return
-    this.iframe.nativeElement.src = value
-  }
-
-  get url() {
-    return this._url
-  }
-
-  @ViewChild('iframeEle', {read: ElementRef})
-  iframe!: ElementRef<HTMLIFrameElement>
-
-  isViewInit = false
-
-  @Input()
-  brand?: {
-    icon: string
-    title: string
-  }
-
-  protected _iframeUrl: string = ''
+  @ViewChild(IframeCardComponent) private card?: IframeCardComponent
+  iframeUrl = ''
+  isolateUrl = false
+  brand = {icon: 'bc_wangluo', title: '网页'}
 
   override ngOnInit() {
-    super.ngOnInit();
-    this._iframeUrl = this.getValidUrl()
+    super.ngOnInit()
+    this.syncSource()
+    this.onPropsChange.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(changes => {
+      if (changes.has('url')) this.syncSource()
+    })
   }
 
-  override ngAfterViewInit() {
-    super.ngAfterViewInit();
-    this.isViewInit = true
-    if (!this.url) return
-    this.iframe.nativeElement.src = this._url
+  private syncSource() {
+    const resolved = resolveEmbedUrl(this.props.url)
+    this.iframeUrl = resolved?.iframeUrl ?? ''
+    this.isolateUrl = !!resolved && new URL(resolved.iframeUrl).origin === window.location.origin
+    this.brand = {icon: 'bc_wangluo', title: resolved?.platform ?? '网页'}
     this.changeDetectorRef.markForCheck()
   }
 
-  getValidUrl() {
-    return this.props.url
-  }
-
-  reloadIframe() {
-    this.hostElement.querySelector('iframe')!.src = this._iframeUrl = this.getValidUrl()
-  }
-
+  getValidUrl() { return this.iframeUrl }
+  reloadIframe() { this.card?.reload() }
 }

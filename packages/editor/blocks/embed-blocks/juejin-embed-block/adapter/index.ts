@@ -19,7 +19,6 @@ function isJuejinPostUrl(value: string): boolean {
 export const embedJuejinBlockHtmlAdapterMatcher =
   createEmbedBlockHtmlAdapterMatcher('juejin-embed', {
     label: '掘金',
-    defaultProps,
   })
 export const embedJuejinBlockMarkdownAdapterMatcher =
   createEmbedBlockMarkdownAdapterMatcher('juejin-embed', {

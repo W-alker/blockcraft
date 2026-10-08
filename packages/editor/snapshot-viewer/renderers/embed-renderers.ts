@@ -1,26 +1,50 @@
+import {resolveEmbedFrameSize} from '../../blocks/embed-blocks/components/embed-sizing';
 import {createBlockShell} from "../dom/create-block-shell";
 import {createBookmarkEnhancementTask, createIframeEnhancementTask} from "../enhancers";
 import {SnapshotBlockRenderer, SnapshotRenderContext} from "../types";
+import {createUnifiedEmbedRenderer} from './unified-embed-renderer';
 
 const EMBED_FLAVOURS = new Set([
-  "bookmark",
   "figma-embed",
   "juejin-embed",
 ]);
 
 export function createEmbedRenderers(): SnapshotBlockRenderer[] {
-  return [{
+  return [createUnifiedEmbedRenderer(), {
+    canRender: snapshot => snapshot.flavour === 'bookmark',
+    render: (ctx, snapshot) => renderBookmark(snapshot, ctx),
+  }, {
     canRender: (snapshot) => EMBED_FLAVOURS.has(snapshot.flavour),
     render(ctx, snapshot) {
       switch (snapshot.flavour) {
-        case "bookmark":
-          return renderBookmark(snapshot, ctx)
         case "figma-embed":
-          return renderIframeCard(snapshot, ctx, "Figma", "bc_Figma", resolveFigmaUrl(`${snapshot.props["url"] || ""}`))
+          return renderIframeCard(snapshot, ctx, resolveFigmaUrl(`${snapshot.props["url"] || ""}`))
         case "juejin-embed":
-          return renderIframeCard(snapshot, ctx, "掘金", "bc_juejin", `${snapshot.props["url"] || ""}`)
+          return renderIframeCard(snapshot, ctx, `${snapshot.props["url"] || ""}`)
         default:
           return {element: createBlockShell(snapshot)}
+      }
+    },
+    patch(ctx, current, next) {
+      const shell = createBlockShell(next)
+      shell.classList.add('embed-frame-block')
+      current.element.className = shell.className
+      current.element.style.cssText = shell.style.cssText
+      const url = `${next.props['url'] || ''}`
+      const iframeUrl = next.flavour === 'figma-embed' ? resolveFigmaUrl(url) : url
+      if (current.snapshot.props['url'] !== next.props['url']) {
+        const fresh = renderIframeCard(next, ctx, iframeUrl).element
+        current.element.replaceChildren(...Array.from(fresh.childNodes))
+      } else {
+        const card = current.element.querySelector<HTMLElement>('embed-frame-card')!
+        const size = resolveEmbedFrameSize(next.props)
+        card.style.width = size.width
+        card.style.height = size.height
+        card.style.aspectRatio = size.aspectRatio
+        const wrapper = card.querySelector<HTMLElement>('.iframe-wrapper')!
+        if (iframeUrl && !wrapper.querySelector('iframe')) {
+          ctx.scheduleEnhancement(createIframeEnhancementTask(wrapper, iframeUrl, `iframe:${next.id}:${iframeUrl}`))
+        }
       }
     },
   }]
@@ -157,17 +181,15 @@ function createBookmarkPlaceholder(): SVGSVGElement {
   return svg
 }
 
-function renderIframeCard(snapshot: any, ctx: SnapshotRenderContext, brandTitle: string, brandIcon: string, iframeUrl: string) {
+function renderIframeCard(snapshot: any, ctx: SnapshotRenderContext, iframeUrl: string) {
   const element = createBlockShell(snapshot)
   element.classList.add("embed-frame-block")
 
   const card = document.createElement("embed-frame-card")
-  if (snapshot.props.width) {
-    card.style.width = `${snapshot.props.width}px`
-  }
-  if (snapshot.props.height) {
-    card.style.height = `${snapshot.props.height}px`
-  }
+  const size = resolveEmbedFrameSize(snapshot.props)
+  card.style.width = size.width
+  card.style.height = size.height
+  card.style.aspectRatio = size.aspectRatio
 
   const iframeWrapper = document.createElement("div")
   iframeWrapper.classList.add("iframe-wrapper")
@@ -175,25 +197,7 @@ function renderIframeCard(snapshot: any, ctx: SnapshotRenderContext, brandTitle:
   mask.classList.add("iframe-mask")
   iframeWrapper.append(mask)
 
-  const brand = document.createElement("div")
-  brand.classList.add("iframe-brand")
-  const brandIconEl = document.createElement("i")
-  brandIconEl.className = `bc_icon ${brandIcon}`
-  const brandLabel = document.createElement("span")
-  brandLabel.textContent = brandTitle
-  brand.append(brandIconEl, brandLabel)
-
-  const link = document.createElement("a")
-  link.classList.add("iframe-link")
-  link.target = "_blank"
-  link.href = `${snapshot.props.url || ""}`
-  const linkText = document.createElement("span")
-  linkText.textContent = hostName(`${snapshot.props.url || ""}`)
-  const linkIcon = document.createElement("i")
-  linkIcon.className = "bc_icon bc_tiaozhuan"
-  link.append(linkText, linkIcon)
-
-  card.append(iframeWrapper, brand, link)
+  card.append(iframeWrapper)
   element.append(card)
 
   if (iframeUrl) {
