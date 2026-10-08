@@ -2272,13 +2272,29 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** 当前选区共有的字体缩放比例（1 = 默认/正文大小）。 */
+  /** 光标回显包含段落基准；范围选区仍显示其格式目标的倍率。 */
+  private get caretParagraphFontScale(): number | undefined {
+    const selection = this.selectionJSON;
+    if (
+      selection?.anchor.type !== "text" ||
+      selection.head.type !== "text" ||
+      selection.anchor.blockId !== selection.head.blockId ||
+      selection.anchor.offset !== selection.head.offset
+    ) {
+      return 1;
+    }
+    const scale = this.activeParagraphTypography.pfs;
+    return scale === null ? 1 : scale;
+  }
+
+  /** 当前显示倍率；原始 typography 保留给设置弹窗和格式刷。 */
   protected get activeFontScale(): number {
-    return this.activeTypography.fs ?? 1;
+    return (this.activeTypography.fs ?? 1) * (this.caretParagraphFontScale ?? 1);
   }
 
   protected get activeFontScaleLabel(): string {
-    return this.activeTypography.fs === undefined
+    return this.activeTypography.fs === undefined ||
+      this.caretParagraphFontScale === undefined
       ? "混合"
       : `${Math.round(this.activeFontScale * 1000) / 1000}×`;
   }
