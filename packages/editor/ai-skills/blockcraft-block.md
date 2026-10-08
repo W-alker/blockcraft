@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-10-07
+> Last updated: 2026-10-08
 
 通用数据描述和快照位于 `@ccc/blockcraft/framework/model`，类型为
 `BlockDescriptor<P, M, F>` / `BlockSnapshot<P, M, F>`，默认不依赖组件注册表。
@@ -1123,6 +1123,8 @@ per-group observer participates. Every recomputation emits an info-level
 
 整组选中时显示八个缩放抓手：四角等比缩放，四边只改变对应轴。
 成员中心、局部尺寸和间距同步调整；文本框保留字号与富文本内容，按新框体原生换行。
+日期、天气块保持原宽高比，以成员两条局部轴中较小的倍率同步缩放外框、字号和间距；
+中心坐标仍跟随组合调整。人员卡保留其独立内容倍率与重排规则。
 浮动组合固定对角/对边，左侧或顶部抓手同步调整组合 `position`；正文组合保持排版起点。
 成员单选继续使用自身缩放能力，整组缩放不需要额外 Plugin。
 
@@ -1133,7 +1135,9 @@ per-group observer participates. Every recomputation emits an info-level
 组合或任一成员（含子内容）只读时拒绝缩放。
 旋转成员保留角度，非等比倍率投影到成员局部轴，不持久化倾斜矩阵，
 因此外框尺寸可能与指针请求不同。空组合只调整自身宽高。
-预览按帧写入缓存的原生成员表面，不修改模型、不缩放字号；
+预览按帧写入缓存的原生成员表面，不修改模型；文本框字号保持，日期/天气同步内部绘制尺度。
+`DateCardRenderComponent.contentScale` 与 `WeatherBlockComponent.contentScale` 是只读、模型推导的
+当前内容倍率；预览结束读取实时值恢复，包含手势期间的尺寸或样式变化，不新增快照字段。
 提交生成一次 Undo，Escape、失焦、pointercancel 或手势期间模型变化会放弃写入。
 组合宽度改变会刷新成员的比例基准，包含远程变更与 Undo/Redo。
 组合旋转和嵌套组合仍不支持。

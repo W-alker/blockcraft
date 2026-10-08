@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-10-07 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-10-08 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -42,6 +42,10 @@ A block-based rich text editor built on **Angular (standalone components)** + **
 `ObjectDragPlugin` 统一块态图片、贴纸、形状本体及文本框/艺术字/组合块移动手柄的选中和拖拽。
 手动装配放在 `ObjectFormatToolbarPlugin`、`ImgToolbarPlugin` 之后；bundled 装配已包含。
 Schema 的 `objectDrag` 和视图区域标记见 `blockcraft-plugins-block.md`；工具栏保留专属编辑职责。
+
+组合缩放时，日期和天气块保持原宽高比，按两条轴中较小的倍率等比绘制；
+文本框继续原生重排。日期、天气组件的只读 `contentScale` 返回当前模型推导的内容倍率，
+供预览恢复使用；它不是持久化字段。具体规则见 `blockcraft-block.md` 的 Fixed Object Groups。
 
 ## Core Concepts
 

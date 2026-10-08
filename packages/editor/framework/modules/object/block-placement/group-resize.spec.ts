@@ -29,4 +29,17 @@ describe('Native group resize geometry', () => {
       format: {kind: 'text-box', features: {geometry: true}} as any,
     }], 1.2, 1.2)).toBeNull()
   })
+
+  for (const flavour of ['date-card', 'weather'] as const) {
+    it(`preserves ${flavour} proportions and scales its center during axis stretching`, () => {
+      const card = {...member, flavour, format: null, rotation: 0}
+      for (const [sx, sy] of [[2, 1], [1, 2], [.5, 1], [1, .5], [1.5, 1.5]]) {
+        const scaled = scaleObjectGroupMembers([card], sx, sy)![0]
+        expect(scaled.width / scaled.height).toBeCloseTo(card.width / card.height, 6)
+        expect(scaled.width / card.width).toBeCloseTo(Math.min(sx, sy), 6)
+        expect(scaled.x + scaled.width / 2).toBeCloseTo((card.x + card.width / 2) * sx, 6)
+        expect(scaled.y + scaled.height / 2).toBeCloseTo((card.y + card.height / 2) * sy, 6)
+      }
+    })
+  }
 })

@@ -802,6 +802,136 @@ for (const flow of [false, true]) {
   }
 }
 
+for (const flow of [false, true]) {
+  test(`whole group keeps date and weather proportions through preview and history (${flow ? 'flow' : 'absolute'})`, async ({page}, testInfo) => {
+    test.setTimeout(90_000)
+    const ids = (await mountFixture(page, undefined, true))!
+    const materials = await page.evaluate(async ({ids, flow}) => {
+      const doc = (window as any).__imageResizeDoc
+      const image = doc.model.toSnapshot(ids.imageId)
+      for (const id of [ids.groupId, ids.outsideId]) {
+        const parentId = doc.model.getParentId(id)
+        doc.crud.deleteBlocks(parentId, doc.model.getChildrenIds(parentId).indexOf(id), 1, true)
+      }
+      Object.assign(image.props, {wr: 400 / doc.objectSizing.rootContentWidth * 100, ar: 4 / 3})
+      const date = doc.schemas.createSnapshot('date-card', [])
+      Object.assign(date.props, {date: '2026-10-08', bg: '#f4ecd8'})
+      const weather = doc.schemas.createSnapshot('weather', [])
+      Object.assign(weather.props, {date: '2026-10-08', frozen: {
+        tone: 'sunny', temp: 21, condition: '晴', location: '北京', high: 25, low: 16,
+      }})
+      const members = [image, date, weather].map(snapshot => doc.placement.insertAbsoluteSnapshot(snapshot, {anchorRect: null}))
+      members.forEach((id, index) => doc.crud.updateBlockProps(id, {position: ['100 80', '280 100', '130 310'][index]}))
+      const groupId = doc.placement.group(members)
+      if (!groupId) throw new Error('Failed to group date and weather')
+      if (flow) doc.placement.setMode(groupId, 'relative')
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      doc.selection.selectBlock(groupId)
+      doc.crud.undoManager.clearHistory()
+      return {groupId, members: members.slice(1)}
+    }, {ids, flow})
+    const capture = () => page.evaluate(({groupId, members}) => {
+      const doc = (window as any).__imageResizeDoc
+      return [groupId, ...members].map(id => {
+        const host = doc.getBlockById(id).hostElement as HTMLElement
+        const rect = host.getBoundingClientRect()
+        const frame = host.querySelector<HTMLElement>('[data-bc-selection-interaction-frame]')
+        const content = frame?.querySelector<HTMLElement>('.card, .weather-card')
+        const contentRect = content?.getBoundingClientRect()
+        const label = frame?.querySelector<HTMLElement>('.card__day, .weather-card__temp')
+        return {props: {...doc.model.getProps(id)}, x: rect.x, y: rect.y, width: rect.width, height: rect.height,
+          unit: frame ? Number.parseFloat(getComputedStyle(frame).getPropertyValue('--u')) : 0,
+          contentWidth: contentRect?.width ?? 0, contentHeight: contentRect?.height ?? 0,
+          fontSize: label ? Number.parseFloat(getComputedStyle(label).fontSize) : 0}
+      })
+    }, materials)
+    const group = page.locator(`#image-resize-fixture [data-block-id="${materials.groupId}"]`)
+    const before = await capture()
+    for (const [direction, dx, dy] of [
+      ['south-east', 80, 60], ['east', 80, 0], ['south', 0, 60], ['west', 50, 0], ['north', 0, 35],
+    ] as const) {
+      const handle = (await group.locator(`:scope > shape-resizer [data-handle="${direction}"]`).boundingBox())!
+      await page.mouse.move(handle.x + 5, handle.y + 5)
+      await page.mouse.down()
+      await page.mouse.move(handle.x + 5 + dx, handle.y + 5 + dy, {steps: 6})
+      await page.waitForTimeout(50)
+      const preview = await capture()
+      expect(preview.map(item => item.props)).toEqual(before.map(item => item.props))
+      for (let i = 1; i < preview.length; i++) {
+        expect(preview[i].width / preview[i].height).toBeCloseTo(before[i].width / before[i].height, 2)
+        expect(preview[i].unit / before[i].unit).toBeCloseTo(preview[i].width / before[i].width, 2)
+        expect(preview[i].fontSize / before[i].fontSize).toBeCloseTo(preview[i].width / before[i].width, 2)
+        expect(preview[i].contentWidth / preview[i].contentHeight).toBeCloseTo(before[i].contentWidth / before[i].contentHeight, 2)
+      }
+      await page.mouse.up()
+      await expect.poll(async () => (await capture())[0].props).not.toEqual(before[0].props)
+      const after = await capture()
+      for (let i = 1; i < after.length; i++) {
+        for (const key of ['x', 'y', 'width', 'height', 'unit', 'contentWidth', 'contentHeight', 'fontSize'] as const) expect(after[i][key]).toBeCloseTo(preview[i][key], 0)
+        expect(after[i].props.width / after[i].props.height).toBeCloseTo(before[i].props.width / before[i].props.height, 3)
+        expect(after[i].unit / before[i].unit).toBeCloseTo(after[i].width / before[i].width, 2)
+      }
+      await page.evaluate(() => (window as any).__imageResizeDoc.crud.undoManager.undo())
+      await expect.poll(capture).toEqual(before)
+      expect(await page.evaluate(() => (window as any).__imageResizeDoc.crud.undoManager.isCanUndo())).toBe(false)
+      await page.evaluate(() => (window as any).__imageResizeDoc.crud.undoManager.redo())
+      await expect.poll(capture).toEqual(after)
+      await page.evaluate(() => (window as any).__imageResizeDoc.crud.undoManager.undo())
+      await expect.poll(capture).toEqual(before)
+    }
+    // Cancellation must restore both the frame and its internal content scale.
+    const corner = (await group.locator(':scope > shape-resizer [data-handle="south-east"]').boundingBox())!
+    await page.mouse.move(corner.x + 5, corner.y + 5)
+    await page.mouse.down()
+    await page.mouse.move(corner.x + 85, corner.y + 65, {steps: 6})
+    await page.keyboard.press('Escape')
+    await page.mouse.up()
+    await expect.poll(capture).toEqual(before)
+    expect(await page.evaluate(() => (window as any).__imageResizeDoc.crud.undoManager.isCanUndo())).toBe(false)
+    // If a concurrent edit renders a new card scale, ending the stale gesture
+    // must preserve that value rather than restoring its captured --u.
+    await page.mouse.move(corner.x + 5, corner.y + 5)
+    await page.mouse.down()
+    await page.mouse.move(corner.x + 85, corner.y + 65, {steps: 6})
+    const liveProps = await page.evaluate(async ({materials, width, height}) => {
+      const doc = (window as any).__imageResizeDoc
+      doc.placement.updateObjectGeometry(materials.members[0], {width: width * 1.1, height: height * 1.1})
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      return [materials.groupId, ...materials.members].map(id => ({...doc.model.getProps(id)}))
+    }, {materials, width: before[1].props.width, height: before[1].props.height})
+    await page.mouse.up()
+    const live = await capture()
+    expect(live.map(item => item.props)).toEqual(liveProps)
+    expect(live[1].unit / before[1].unit).toBeCloseTo(1.1, 2)
+    expect(live[1].width / live[1].height).toBeCloseTo(before[1].width / before[1].height, 2)
+    expect(live[2]).toEqual(before[2])
+    await page.evaluate(() => (window as any).__imageResizeDoc.crud.undoManager.undo())
+    await expect.poll(capture).toEqual(before)
+    await page.evaluate(() => (window as any).__imageResizeDoc.crud.undoManager.clearHistory())
+    await page.mouse.move(corner.x + 5, corner.y + 5)
+    await page.mouse.down()
+    await page.mouse.move(corner.x + 85, corner.y + 65, {steps: 6})
+    await page.mouse.up()
+    const resized = await capture()
+    await page.mouse.move(920, 680)
+    await page.screenshot({path: testInfo.outputPath('date-weather-after-resize.png')})
+    const snapshot = await page.evaluate(() => {
+      const doc = (window as any).__imageResizeDoc
+      return doc.model.toSnapshot(doc.rootId)
+    })
+    await mountFixture(page, snapshot, true)
+    await expect.poll(capture).toEqual(resized)
+    if (!flow) {
+      await page.evaluate(id => (window as any).__imageResizeDoc.placement.ungroup(id), materials.groupId)
+      for (const [index, id] of materials.members.entries()) {
+        const member = page.locator(`#image-resize-fixture [data-block-id="${id}"]`)
+        const rect = (await member.boundingBox())!
+        expect(rect.width / rect.height).toBeCloseTo(before[index + 1].width / before[index + 1].height, 2)
+      }
+    }
+  })
+}
+
 test('whole group resize cancellation, no-op and locked members leave geometry intact', async ({page}) => {
   const ids = (await mountFixture(page, undefined, true))!
   await page.evaluate(id => {

@@ -153,6 +153,7 @@ export class ObjectGroupBlockComponent
     id: string; host: HTMLElement; surface: HTMLElement
     left: string; top: string; width: string; height: string
     stretch: boolean
+    unit?: {target: HTMLElement; start: number; width: number; resolve: () => number}
   }[] = []
 
   override ngOnInit(): void {
@@ -184,6 +185,9 @@ export class ObjectGroupBlockComponent
       view.host.style.top = `${object.y - top}px`
       view.surface.style.width = `${object.width}px`
       view.surface.style.height = `${object.height}px`
+      if (view.unit) {
+        view.unit.target.style.setProperty('--u', `${view.unit.start * object.width / view.unit.width}px`)
+      }
       if (object.flavour === 'image') view.surface.toggleAttribute('data-bc-image-resize-stretch',
         Math.abs(request.width / start.width - request.height / start.height) > .0001)
     }
@@ -214,15 +218,26 @@ export class ObjectGroupBlockComponent
       this.resizeMembers.push({...geometry,
         format: this.doc.schemas.get(geometry.flavour, false)?.metadata.objectFormat,
       })
-      const host = this.doc.getBlockById(id)?.hostElement
+      const block = this.doc.getBlockById(id)
+      const host = block?.hostElement
       if (!host) continue
       // Resolve surfaces once at the gesture boundary; pointer frames only write
       // cached styles. Text lays out natively and never receives a font scale.
       const surface = host.querySelector<HTMLElement>('[data-bc-print-visual-surface], [data-bc-object-surface]') ?? host
+      // Cards own their model-derived unit; do not infer live values from the
+      // DOM during cancellation or concurrent changes. Personnel cards retain
+      // their independent content scale and native reflow semantics.
+      const card = (geometry.flavour === 'date-card' || geometry.flavour === 'weather') &&
+        block && 'contentScale' in block ? block as typeof block & {readonly contentScale: number} : null
+      const unitTarget = card ? host.querySelector<HTMLElement>('[data-bc-selection-interaction-frame]') : null
+      const unit = card?.contentScale ?? 0
       this.memberViews.push({id, host, surface,
         left: host.style.left, top: host.style.top,
         width: surface.style.width, height: surface.style.height,
         stretch: surface.hasAttribute('data-bc-image-resize-stretch'),
+        ...(unitTarget && card && Number.isFinite(unit) && unit > 0 ? {
+          unit: {target: unitTarget, start: unit, width: geometry.width, resolve: () => card.contentScale},
+        } : {}),
       })
     }
     this.resizeSnapshot = this.geometrySnapshot()
@@ -236,6 +251,7 @@ export class ObjectGroupBlockComponent
       view.surface.style.width = view.width
       view.surface.style.height = view.height
       view.surface.toggleAttribute('data-bc-image-resize-stretch', view.stretch)
+      if (view.unit) view.unit.target.style.setProperty('--u', `${view.unit.resolve()}px`)
       if (stale) {
         const live = resolvePlacementObjectGeometry(this.doc, view.id,
           {referenceWidth: this.groupProps.width})

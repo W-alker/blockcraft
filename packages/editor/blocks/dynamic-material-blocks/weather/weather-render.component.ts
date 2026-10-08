@@ -111,6 +111,9 @@ export class WeatherBlockComponent extends ObjectBlockComponent<WeatherModel> {
 
     protected override get watchedProps(): readonly string[] { return WEATHER_WATCHED_PROPS; }
 
+    /** Current model-derived content scale, also used to restore group previews. */
+    get contentScale(): number { return this.scaleUnit; }
+
     /** 外观统一投影到 look；样式尺寸由对象基类管理。 */
     protected override repaint(): void {
         const look = readWeatherLook(this.presentationProps);

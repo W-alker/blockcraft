@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-10-07 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-10-08 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -67,6 +67,30 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > - `major` (e.g. 0.1.37 → 1.0.0): breaking — removed APIs, renamed exports, signature changes, behavior reversals
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
+
+## Unreleased — 2026-10-08：组合内日期、天气保持等比
+
+**Severity**: minor
+
+**What changed**: 组合缩放保留日期、天气块的原宽高比，并同步预览的内部绘制尺度。天气组件新增只读内容倍率 getter，与日期组件的既有读取口保持一致。
+
+**Why**: 单轴组合缩放曾分别改变卡片宽高，但内容仍按宽度等比绘制，造成外框与内容比例脱节；过期手势恢复预览也应使用当前模型倍率。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`
+
+### New APIs / Features
+
+- `WeatherBlockComponent.contentScale: number`：只读、由当前模型推导的内容倍率，与 `DateCardRenderComponent.contentScale` 同一口径，不新增持久化字段。
+
+### Behavior Changes
+
+- 日期、天气成员按两条局部轴中较小的倍率等比缩放，中心位置仍随组合调整。
+- 预览同步内部字号和间距；取消或模型发生并发变化时，恢复当前模型推导的倍率。
+- 图片、形状、文本框和人员卡保留既有缩放/重排规则；事务、Undo/Redo、只读与快照结构保持。
+
+### Migration Recipe
+
+宿主无需修改装配或数据；需要读取天气卡片内容倍率时可使用 `contentScale`，不要从预览 DOM 反推模型倍率。
 
 ## 0.12.0 — 2026-10-07：组合块支持宽高缩放（待发布）
 

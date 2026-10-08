@@ -17,8 +17,17 @@ export function scaleObjectGroupMembers(
     const radians = object.rotation * Math.PI / 180
     const cos = Math.cos(radians)
     const sin = Math.sin(radians)
-    const width = object.width * Math.hypot(sx * cos, sy * sin)
-    const height = object.height * Math.hypot(sx * sin, sy * cos)
+    let widthScale = Math.hypot(sx * cos, sy * sin)
+    let heightScale = Math.hypot(sx * sin, sy * cos)
+    // These cards draw their entire content with one width-derived unit. Keep
+    // their original aspect ratio inside a stretched group as on their own
+    // resizers; fitting the smaller axis avoids stretching the frame away from
+    // the content. Other native objects retain independent axis resizing.
+    if (object.flavour === 'date-card' || object.flavour === 'weather') {
+      widthScale = heightScale = Math.min(widthScale, heightScale)
+    }
+    const width = object.width * widthScale
+    const height = object.height * heightScale
     const format = object.format
     if (format?.features.geometry && (width < 48 - .001 || height < 32 - .001 ||
       (format.kind === 'text-box' && (width > 2000 + .001 || height > 2000 + .001)))) return null
