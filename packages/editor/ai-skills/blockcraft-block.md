@@ -1121,9 +1121,22 @@ per-group observer participates. Every recomputation emits an info-level
 图片 `wr/ar` 的调整。键盘、工具栏及模型删除入口因此共享一次 Undo/Redo；
 删除最后一个成员仍保留空组合。该内部桥接不要求宿主额外调用，也不依赖组件挂载。
 
-V1 deliberately has no user-driven group resize, group rotation or nested
-group contract. Automatic tight-frame maintenance is part of member geometry,
-not a group resize gesture.
+整组选中时显示八个缩放抓手：四角等比缩放，四边只改变对应轴。
+成员中心、局部尺寸和间距同步调整；文本框保留字号与富文本内容，按新框体原生换行。
+浮动组合固定对角/对边，左侧或顶部抓手同步调整组合 `position`；正文组合保持排版起点。
+成员单选继续使用自身缩放能力，整组缩放不需要额外 Plugin。
+
+对 `object-group` 调用 `doc.placement.updateObjectGeometry(group, {width, height, position?})`
+会在一个 Yjs transaction 中缩放所有直接成员，并重算实际旋转包围盒。
+比例成员保留 `wr/ar` 数据格式；图片非等比拉伸写入 `fit: 'fill'`。
+形状/文本框沿用最小 48×32 的框体限制，文本框最大 2000×2000；
+组合或任一成员（含子内容）只读时拒绝缩放。
+旋转成员保留角度，非等比倍率投影到成员局部轴，不持久化倾斜矩阵，
+因此外框尺寸可能与指针请求不同。空组合只调整自身宽高。
+预览按帧写入缓存的原生成员表面，不修改模型、不缩放字号；
+提交生成一次 Undo，Escape、失焦、pointercancel 或手势期间模型变化会放弃写入。
+组合宽度改变会刷新成员的比例基准，包含远程变更与 Undo/Redo。
+组合旋转和嵌套组合仍不支持。
 HTML and Snapshot preserve the structural container and original sizing fields;
 Markdown remains a semantic, non-placement projection.
 

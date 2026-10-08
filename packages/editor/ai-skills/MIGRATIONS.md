@@ -68,6 +68,39 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## 0.12.0 — 2026-10-07：组合块支持宽高缩放（待发布）
+
+**Severity**: minor
+
+**What changed**: 组合块新增八个缩放抓手，整组尺寸提交在同一事务内调整原生成员的框体、局部坐标及图片比例尺寸。
+
+**Why**: 组合后仍需像独立对象一样调整整体宽高，且保存、协作和撤销应保持可编辑的原生结构。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-toolbar.md`
+
+### New APIs / Features
+
+- 既有 `doc.placement.updateObjectGeometry(group, {width, height, position?})` 支持整组缩放，无新增持久化字段。
+- 四角等比、四边单轴；文本框保留字号并重新排版，图片非等比拉伸采用 `fit: 'fill'`。
+
+### Behavior Changes
+
+- 选中可编辑组合显示八个抓手；成员单选与组合拖拽保持既有入口。
+- 浮动组合左/上抓手改变原点，正文组合保持排版起点；旋转成员保持角度，按实际包围盒收敛外框。
+- 一次缩放一次 Undo；取消、过期手势和只读成员不写入。组合宽度变化同时刷新比例成员，适用于远程修改与 Undo/Redo。
+- 此条为待发布记录，package 版本未改动。
+
+### Migration Recipe
+
+宿主无需额外注册插件。原先只更新组合框体宽高的代码，现在应通过 placement 命令同步调整成员：
+
+```typescript
+// before：只写外框
+group.updateProps({width, height});
+// after：原生成员与外框在同一事务中缩放
+doc.placement.updateObjectGeometry(group, {width, height});
+```
+
 ## 0.12.0 — 2026-10-07：填写区优先拆分（待发布）
 
 **Severity**: minor

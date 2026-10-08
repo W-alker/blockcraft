@@ -7,6 +7,7 @@ import {
   type BlockObjectGroupProps,
 } from './types'
 import {BlockPlacementRuntime} from './runtime'
+import {scaleObjectGroupMembers} from './group-resize'
 import {
   type PlacementObjectGeometry,
   resolvePlacementObjectGeometry,
@@ -275,8 +276,8 @@ export class BlockPlacementGroupCoordinator {
   }
 
   /**
-   * Apply one member geometry mutation and tighten its owning group in the
-   * same Yjs transaction. Non-group objects keep the ordinary update path.
+   * Apply member edits with group reflow, or resize the group's native members,
+   * in one Yjs transaction. Other objects keep the ordinary update path.
    */
   updateObjectGeometry(
     block: BlockCraft.BlockComponent,
@@ -287,6 +288,10 @@ export class BlockPlacementGroupCoordinator {
       const position = parseBlockPosition(patch.position)
       if (!position) return false
       patch = {...patch, position: storeBlockPosition(position)}
+    }
+    if (this.runtime.isObjectGroup(block.id) &&
+      (patch['width'] != null || patch['height'] != null)) {
+      return this.resizeGroup(block, patch)
     }
     const groupId = this.resolveOwningGroupId(block.id)
     if (!groupId) {
@@ -319,6 +324,70 @@ export class BlockPlacementGroupCoordinator {
       )
     }
     return result !== null
+  }
+
+  /** Scale native member geometry; keep responsive sizing and history model-only. */
+  private resizeGroup(block: BlockCraft.BlockComponent, patch: Partial<IBlockProps>): boolean {
+    const current = this.getLiveProps(block.id)
+    const oldWidth = finitePositive(current?.['width'])
+    const oldHeight = finitePositive(current?.['height'])
+    const requestedWidth = finitePositive(patch['width'] ?? oldWidth)
+    const requestedHeight = finitePositive(patch['height'] ?? oldHeight)
+    if (this.doc.isReadonly || !oldWidth || !oldHeight || !requestedWidth || !requestedHeight) return false
+    // Use the persisted precision as the ratio basis from the first write;
+    // rounding the group only after deriving wr can drift on Undo/Redo repair.
+    const width = roundPlacementGeometry(requestedWidth)
+    const height = roundPlacementGeometry(requestedHeight)
+    if (!width || !height) return false
+    const childIds = this.runtime.getLiveChildrenIds(block.id)
+    if (childIds.some(id => this.runtime.isReadonly(id) ||
+      this.doc.readonlyManager?.containsReadonly?.(id))) return false
+    const objects = childIds.map(id => {
+      const props = this.getLiveProps(id)
+      return props ? this.resolveGeometry(id, props, oldWidth) : null
+    })
+    if (objects.some(object => !object)) return false
+    const sx = width / oldWidth
+    const sy = height / oldHeight
+    const scaled = scaleObjectGroupMembers((objects as PlacementObjectGeometry[]).map(object => ({
+      ...object, format: this.doc.schemas.get(object.flavour, false)?.metadata.objectFormat,
+    })), sx, sy)
+    if (!scaled) return false
+    const updates = scaled.map(object => {
+      const memberWidth = object.width
+      const memberHeight = object.height
+      const memberPatch: Record<string, any> = {
+        position: storeBlockPosition({
+          x: object.x,
+          y: object.y,
+        }),
+      }
+      if (this.doc.objectSizing.getCapability(object.flavour)) {
+        const size = deriveObjectSizeFromPixels(memberWidth, memberHeight, width, true)
+        if (!size) return null
+        Object.assign(memberPatch, size, {width: null, height: null})
+      } else {
+        Object.assign(memberPatch, {width: roundPlacementGeometry(memberWidth), height: roundPlacementGeometry(memberHeight)})
+      }
+      if (object.flavour === 'image' && Math.abs(sx - sy) > .0001) memberPatch['fit'] = 'fill'
+      return {id: object.id, patch: memberPatch}
+    })
+    if (updates.some(update => !update)) return false
+    this.mutating = true
+    try {
+      this.doc.crud.transact(() => {
+        this.doc.crud.updateBlockProps(block.id, {...patch, width, height})
+        updates.forEach(update => {
+          if (update) this.doc.crud.updateBlockProps(update.id, update.patch)
+        })
+        this.reflowInTransaction(block.id,
+          this.runtime.getPersistedState(block.id).mode !== 'absolute')
+      })
+    } finally {
+      this.mutating = false
+    }
+    block.changeDetectorRef.markForCheck()
+    return true
   }
 
   /** Internal drag commit: write every local position before fitting each group once. */

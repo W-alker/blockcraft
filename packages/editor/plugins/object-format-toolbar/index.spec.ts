@@ -685,7 +685,11 @@ describe("ObjectFormatToolbarPlugin object/edit interaction", () => {
     groupHost.setAttribute("data-bc-object-group", "");
     const child = document.createElement("div");
     child.dataset["blockId"] = "shape";
+    child.innerHTML = '<shape-resizer><button data-handle="east"></button></shape-resizer>';
     groupHost.append(child);
+    const groupResizer = document.createElement("shape-resizer");
+    groupResizer.innerHTML = '<button data-handle="east"></button>';
+    groupHost.append(groupResizer);
     root.append(groupHost);
     document.body.append(root);
     const selectBlock = jasmine.createSpy("selectBlock");
@@ -708,7 +712,12 @@ describe("ObjectFormatToolbarPlugin object/edit interaction", () => {
       getBlockById: () => ({ id: "group", hostElement: groupHost }),
     };
 
-    const first = pointerEventOn(child);
+    const ownHandle = pointerEventOn(groupResizer.querySelector("button")!);
+    expect((plugin as any).handleObjectGroupPointerDown(ownHandle)).toBeFalse();
+    expect(selectBlock).not.toHaveBeenCalled();
+    expect(ownHandle.defaultPrevented).toBeFalse();
+
+    const first = pointerEventOn(child.querySelector("button")!);
     expect((plugin as any).handleObjectGroupPointerDown(first)).toBeTrue();
     expect(selectBlock).toHaveBeenCalledOnceWith("group");
     expect(first.defaultPrevented).toBeTrue();

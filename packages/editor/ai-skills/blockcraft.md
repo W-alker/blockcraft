@@ -746,8 +746,12 @@ rotation-aware group frame, rebases local positions and converts ratio members
 inside the same Yjs transaction. Pointer movement remains an O(1) transform
 preview. Each pass logs `[ObjectGroup][performance]` with elapsed milliseconds,
 member count, write count and reason through `doc.logger.info`.
-User-driven group resize, group rotation and nested groups are intentionally
-absent. The bundled `ObjectFormatToolbarPlugin` exposes Shift-click
+整组选中时提供八个抓手：四角等比、四边单轴缩放。文本框字号与内容保留，
+按新框体重新排版；旋转成员保持角度并重算包围盒。整组提交通过同一个
+`updateObjectGeometry(group, {width, height, position?})` 事务缩放原生成员，
+预览按帧更新缓存的成员表面，成本 O(n)，不读取逐帧 DOM 几何。
+一次操作对应一次 Undo，取消和只读成员不写数据。
+组合旋转和嵌套组合仍不支持。The bundled `ObjectFormatToolbarPlugin` exposes Shift-click
 multi-selection, mixed object formatting, rotation-aware object alignment/distribution, 组合/取消组合,
 first-click-group/second-click-member interaction and a four-edge move band on
 the selected group. Two objects enable left/horizontal-center/right,

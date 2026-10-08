@@ -959,6 +959,10 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     const groupId = closetBlockId(groupElement);
     if (!groupId || !this.doc.placement.isObjectGroup(groupId)) return false;
 
+    // 整组缩放器直接拥有手势，不能被首次选组的捕获处理截断。
+    // 成员缩放器仍遵循既有的首次选组、再次选成员规则。
+    if (target.closest("shape-resizer")?.parentElement === groupElement) return false;
+
     // 多选中的组合是一个整体，点击其成员本体不能把选区降为单组/单成员。
     const selectedIds = this.doc.placement.getAbsoluteObjectSelectionIds(this.doc.selection.value);
     if (selectedIds && selectedIds.length > 1 && selectedIds.includes(groupId) &&

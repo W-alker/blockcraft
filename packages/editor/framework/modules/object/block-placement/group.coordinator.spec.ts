@@ -245,6 +245,51 @@ describe('BlockPlacement group commands', () => {
     expect(h.props.get('image')!['placementLayer']).toBeUndefined()
   })
 
+  it('scales a whole group in one model command, including responsive and rotated members', () => {
+    const h = makeHarness()
+    h.manager.group(['image', 'shape'])
+    const before = structuredClone(h.props.get('group')!)
+    const transact = spyOn(h.doc.crud, 'transact').and.callThrough()
+    expect(h.manager.updateObjectGeometry('group', {width: 980, height: 460})).toBeTrue()
+    expect(transact.calls.count()).toBe(1)
+    expect(h.props.get('group')!['width']).toBeCloseTo(980, 2)
+    expect(h.props.get('group')!['height']).toBeCloseTo(460, 2)
+    expect(h.props.get('group')!['position']).toBe(before['position'])
+    expect(h.props.get('image')!['wr']).toBeCloseTo(81.6327, 4)
+    expect(h.props.get('image')!['ar']).toBe(2)
+    expect(h.props.get('image')!['position']).toBe('0 60')
+    expect(h.props.get('shape')).toEqual(jasmine.objectContaining({
+      width: 200, height: 80, rotation: 90, position: '840 60',
+    }))
+    h.manager.destroy()
+  })
+
+  it('scales the horizontal axis of a quarter-turned member and keeps flow placement', () => {
+    const h = makeHarness()
+    h.manager.group(['image', 'shape'])
+    h.manager.setObjectLayout('group', 'top-bottom')
+    expect(h.manager.updateObjectGeometry('group', {width: 980, height: 230})).toBeTrue()
+    expect(h.props.get('image')!['ar']).toBe(4)
+    expect(h.props.get('shape')).toEqual(jasmine.objectContaining({width: 100, height: 80, rotation: 90}))
+    expect(h.props.get('group')!['position']).toBeUndefined()
+    expect(h.manager.getObjectLayout('group')).toBe('top-bottom')
+    h.manager.destroy()
+  })
+
+  it('rejects invalid dimensions and readonly members before any resize writes', () => {
+    const h = makeHarness()
+    h.manager.group(['image', 'shape'])
+    const before = JSON.stringify([...h.props])
+    for (const width of [0, -1, Infinity, NaN]) {
+      expect(h.manager.updateObjectGeometry('group', {width, height: 230})).toBeFalse()
+      expect(JSON.stringify([...h.props])).toBe(before)
+    }
+    h.readonlyIds.add('shape')
+    expect(h.manager.updateObjectGeometry('group', {width: 980, height: 460})).toBeFalse()
+    expect(JSON.stringify([...h.props])).toBe(before)
+    h.manager.destroy()
+  })
+
   it('ungroups children back to root coordinates and root-relative image width', () => {
     const h = makeHarness()
     h.manager.group(['image', 'shape'])

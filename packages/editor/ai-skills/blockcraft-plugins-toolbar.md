@@ -264,7 +264,10 @@ A selected group uses the same historical surface for group layout, hierarchy
 and ungrouping. Group interaction keeps its established two-step contract: the
 first click anywhere in an inactive group selects the whole group, while a
 second click may enter the direct member; the ancestor group frame stays visible
-while a nested member owns Selection. 组合内多选成员时关闭成员对象的浮动格式菜单，
+while a nested member owns Selection.
+整组选中时，组合自身八个缩放抓手的 pointerdown 直接交给缩放组件，
+不被整组选区捕获逻辑消费；成员抓手仍遵循首次选组、再次进入成员的规则。
+组合内多选成员时关闭成员对象的浮动格式菜单，
 不回退到首个成员旁的格式工具栏；成员单选与整组选中仍显示各自菜单。
 多选外框和同步拖拽保持可用。Visible single-object layout modes are the capability
 intersection from `doc.placement.supportsObjectLayout()`: an object without an

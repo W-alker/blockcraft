@@ -80,6 +80,24 @@ describe('Group geometry history', () => {
     h.yDoc.destroy()
   })
 
+  it('restores a resized group and every member in one undo/redo', () => {
+    const h = setup()
+    const before = h.props.toJSON()
+    const group: any = {id: 'group', changeDetectorRef: {markForCheck() {}}}
+    expect(h.coordinator.updateObjectGeometry(group, {width: 540, height: 270, position: '80 90'})).toBeTrue()
+    const after = h.props.toJSON()
+    expect(after['group']).toEqual({width: 540, height: 270, position: '80 90'})
+    expect(after['member']).toEqual({width: 360, height: 150, rotation: 0, position: '0 0'})
+    expect(after['sibling']).toEqual({width: 90, height: 90, rotation: 0, position: '450 180'})
+    expect(h.history.undoStack.length).toBe(1)
+    h.history.undo()
+    expect(h.props.toJSON()).toEqual(before)
+    h.history.redo()
+    expect(h.props.toJSON()).toEqual(after)
+    h.coordinator.destroy()
+    h.yDoc.destroy()
+  })
+
   it('moves members together before fitting the group and restores the entire batch in one undo', () => {
     const h = setup()
     const before = h.props.toJSON()
