@@ -92,6 +92,26 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 
 宿主无需修改装配或数据；需要读取天气卡片内容倍率时可使用 `contentScale`，不要从预览 DOM 反推模型倍率。
 
+## Unreleased — 2026-10-08：分栏恢复就地入口，末尾加号收在右边界内
+
+**Severity**: patch
+
+**What changed**: 分栏用两端、栏间的就地加号替代随光标自动出现的结构浮层，取消分栏继续使用顶部固定入口。两端加号复用同一套绝对定位样式，分别使用 `left: 4px` / `right: 4px` 形成镜像布局，完整命中区域位于分栏边界内，不参与栏宽或填写区滚动宽度计算，也不引入 Overlay。
+
+**Why**: 保留分栏附近的直接操作，同时避免末尾添加控件越界撑宽填写区或被滚动内容层裁剪。
+
+**Affected ai-skills files**:
+
+- `blockcraft-toolbar.md`
+- `blockcraft-block.md`
+
+**Behavior Changes**:
+
+- 不再自动创建 `bc-columns-toolbar`；内部自动化应改为定位分栏内带有 aria-label 的原生按钮。
+- 新增私有 `.column-add-point`、`.column-add-point--start`、`.column-add-point--end`，不恢复末尾的添加专用 divider。
+- 默认入口为小圆点，悬停或键盘聚焦时为 20px 蓝底圆圈和白色加号，复用现有主题变量。
+- 栏间插入仍按稳定子栏 ID 定位，局部不显示取消按钮。8 栏上限、只读限制和现有顶部取消行为保持，快照无需迁移，宿主无需注册新 Plugin。
+
 ## 0.12.0 — 2026-10-07：组合块支持宽高缩放（待发布）
 
 **Severity**: minor

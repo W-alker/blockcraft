@@ -1,9 +1,8 @@
-import { ChangeDetectionStrategy, Component, ComponentRef } from "@angular/core";
-import { BaseBlockComponent, BlockReadonlyOperation, getPositionWithOffset, ORIGIN_SYSTEM_REPAIR } from "../../framework";
+import { ChangeDetectionStrategy, Component } from "@angular/core";
+import { BaseBlockComponent, ORIGIN_SYSTEM_REPAIR } from "../../framework";
 import { ColumnsBlockModel, ColumnBlockSchema } from "./index";
-import { OverlayRef } from '@angular/cdk/overlay';
-import { Subject, fromEvent, takeUntil } from 'rxjs';
-import { ColumnsToolbarComponent } from './columns-toolbar.component';
+import { CsTooltipDirective } from '@cses/ui';
+import { takeUntil } from 'rxjs';
 
 /**
  * 多栏布局容器组件
@@ -23,177 +22,94 @@ import { ColumnsToolbarComponent } from './columns-toolbar.component';
       </div>
 
       <!-- 列之间的可拖拽分割线 -->
-      @if (!isReadonly && dividerArray.length > 0) {
-        @for (i of dividerArray; track i) {
+      @if (!isReadonly) {
+        @for (columnId of dividerColumnIds; track columnId; let i = $index) {
           <div class="column-divider"
                [attr.data-divider-index]="i"
                (mousedown)="startResize($event, i)"
                contenteditable="false">
+            @if (childrenLength < 8) {
+              <button type="button" class="column-add-point"
+                      [attr.aria-label]="'在第 ' + (i + 1) + ' 栏右侧插入栏'" csTooltip="插入栏"
+                      data-bc-selection-interaction-ignore
+                      (keydown)="$event.stopPropagation()"
+                      (mousedown)="$event.preventDefault(); $event.stopPropagation()"
+                      (click)="addColumnAfter($event, columnId)">
+                <i class="bc_icon bc_plus" aria-hidden="true"></i>
+              </button>
+            }
             <div class="divider-line"></div>
           </div>
+        }
+        @if (childrenLength < 8) {
+          <button type="button" class="column-add-point column-add-point--start"
+                  aria-label="在最左侧插入栏" csTooltip="插入栏" contenteditable="false"
+                  data-bc-selection-interaction-ignore
+                  (keydown)="$event.stopPropagation()"
+                  (mousedown)="$event.preventDefault(); $event.stopPropagation()"
+                  (click)="addColumn($event, 0)">
+            <i class="bc_icon bc_plus" aria-hidden="true"></i>
+          </button>
+          <button type="button" class="column-add-point column-add-point--end"
+                  aria-label="在末尾插入栏" csTooltip="插入栏" contenteditable="false"
+                  data-bc-selection-interaction-ignore
+                  (keydown)="$event.stopPropagation()"
+                  (mousedown)="$event.preventDefault(); $event.stopPropagation()"
+                  (click)="addColumn($event)">
+            <i class="bc_icon bc_plus" aria-hidden="true"></i>
+          </button>
         }
       }
     </div>
   `,
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [CsTooltipDirective],
   host: {
-    '(click)': 'syncColumnToolbar()',
+    '[class.column-controls-dragging]': 'dragActive',
+    '[class.column-controls-active]': 'columnFocused',
   },
 })
 export class ColumnsBlockComponent extends BaseBlockComponent<ColumnsBlockModel> {
 
-  private toolbar?: {overlayRef: OverlayRef; componentRef: ComponentRef<ColumnsToolbarComponent>};
-  private readonly toolbarClose$ = new Subject<void>();
-  private activeColumnId?: string;
-  private toolbarPositionFrame?: number;
+  protected dragActive = false;
+  protected columnFocused = false;
 
-  protected syncColumnToolbar() {
-    const selection = this.doc.selection.value;
-    let id = selection?.head.blockId;
-    // 依据模型选区定位直属子栏，兼容键盘移动和子栏内的嵌套块。
-    while (id && this.doc.model.exists(id)) {
-      const parentId = this.doc.model.getParentId(id);
-      if (parentId === this.id) break;
-      id = parentId ?? undefined;
-    }
-    const column = id && this.childrenIds.includes(id) ? this.doc.getBlockById(id) : null;
-    if (!column || this.isReadonly || this.doc.dragController.state !== 'idle') {
-      this.closeColumnToolbar();
-      return;
-    }
-    if (this.toolbar) {
-      if (this.activeColumnId !== column.id) {
-        this.activeColumnId = column.id;
-        this.updateToolbarInputs();
-      }
-      return;
-    }
-    this.closeColumnToolbar();
-    this.activeColumnId = column.id;
-    const toolbar = this.doc.overlayService.createConnectedOverlay<ColumnsToolbarComponent>({
-      target: this,
-      component: ColumnsToolbarComponent,
-      positions: [getPositionWithOffset('top-center', 0, 8), getPositionWithOffset('bottom-center', 0, 8)],
-      flexibleDimensions: false,
-    }, this.toolbarClose$, () => {
-      if (this.toolbarPositionFrame !== undefined) cancelAnimationFrame(this.toolbarPositionFrame);
-      this.toolbarPositionFrame = undefined;
-      this.toolbar = undefined;
-      this.activeColumnId = undefined;
-    });
-    this.toolbar = toolbar;
-    this.updateToolbarInputs();
-    const component = toolbar.componentRef.instance;
-    component.insert.pipe(takeUntil(this.toolbarClose$)).subscribe(side => {
-      // 点击时按稳定子栏 ID 重查位置，避免协同插入后使用旧索引。
-      const index = this.childrenIds.indexOf(this.activeColumnId!);
-      if (index < 0) return this.closeColumnToolbar();
-      this.insertColumn(index + (side === 'after' ? 1 : 0));
-      this.updateToolbarInputs();
-      this.positionToolbar();
-    });
-    component.dissolve.pipe(takeUntil(this.toolbarClose$)).subscribe(() => this.dissolveColumns());
-    const owner = this.hostElement.ownerDocument;
-    fromEvent<KeyboardEvent>(owner, 'keydown').pipe(takeUntil(this.toolbarClose$)).subscribe(event => {
-      if (event.key === 'Escape') this.closeColumnToolbar();
-    });
-    fromEvent<MouseEvent>(owner, 'mousedown', {capture: true}).pipe(takeUntil(this.toolbarClose$)).subscribe(event => {
-      const target = event.target as Node;
-      if (!this.hostElement.contains(target) && !toolbar.overlayRef.overlayElement.contains(target)) this.closeColumnToolbar();
-    });
-  }
-
-  private updateToolbarInputs() {
-    this.toolbar?.componentRef.setInput('count', this.childrenLength);
-    this.toolbar?.componentRef.setInput('index', this.childrenIds.indexOf(this.activeColumnId!));
-    this.toolbar?.componentRef.setInput('canDissolve', this.canDissolveColumns());
-  }
-
-  private canDissolveColumns() {
-    const parent = this.parentBlock;
-    return !!parent && !this.isReadonly && !parent.isReadonly && !this.doc.readonlyManager.containsReadonly(this.id) &&
-      this.childrenIds.every(id => this.doc.model.getChildrenIds(id).every(childId => {
-        const node = this.doc.model.getYBlock(childId);
-        return !!node && this.doc.schemas.isValidChildrenForInstance(node.get('flavour'), parent.flavour, parent.meta);
-      }));
-  }
-
-  private dissolveColumns() {
-    const parent = this.parentBlock;
-    if (!parent || !this.canDissolveColumns()) return;
-    const columns = this.childrenIds.map(id => ({id, children: this.doc.model.getChildrenIds(id)}));
-    // Yjs 事务不提供异常回滚；先验证整组操作，避免只搬出部分内容。
-    this.doc.readonlyManager.assertRemovable([this.id], BlockReadonlyOperation.Delete);
-    this.doc.mutationPolicy?.assert({operation: 'delete', blockIds: [this.id], parentId: parent.id});
-    for (const column of columns) {
-      if (!column.children.length) continue;
-      this.doc.readonlyManager.assertMovable(column.children, parent.id, BlockReadonlyOperation.Move);
-      this.doc.mutationPolicy?.assert({operation: 'move', blockIds: [...column.children], parentId: column.id, targetId: parent.id});
-    }
-    const firstId = columns.flatMap(column => column.children)[0];
-    const selection = this.doc.selection.value?.toJSON();
-    let insertAt = this.getIndexOfParent();
-    this.doc.crud.undoManager.stopCapturing();
-    this.doc.crud.transact(() => {
-      for (const column of columns) {
-        this.doc.crud.moveBlocks(column.id, 0, column.children.length, parent.id, insertAt);
-        insertAt += column.children.length;
-      }
-      if (!firstId && parent.childrenLength === 1) {
-        this.doc.crud.insertBlocks(parent.id, insertAt++, [this.doc.schemas.createSnapshot('paragraph', [])]);
-      }
-      // 事务内模型索引尚未刷新，按搬移后的实时位置删除空分栏容器。
-      this.doc.crud.deleteBlocks(parent.id, insertAt, 1);
-    });
-    this.doc.crud.undoManager.stopCapturing();
-    this.closeColumnToolbar();
-    if (selection && this.doc.model.exists(selection.anchor.blockId) && this.doc.model.exists(selection.head.blockId)) {
-      this.doc.selection.replay(selection);
-    } else if (firstId) this.doc.selection.selectOrSetCursorAtBlock(firstId, true);
-  }
-
-  private closeColumnToolbar() {
-    this.toolbarClose$.next();
-  }
-
-  private positionToolbar() {
-    if (this.toolbarPositionFrame !== undefined) return;
-    this.toolbarPositionFrame = requestAnimationFrame(() => {
-      this.toolbarPositionFrame = undefined;
-      this.toolbar?.overlayRef.updatePosition();
-    });
-  }
-
-  override ngOnDestroy() {
-    this.closeColumnToolbar();
-    this.toolbarClose$.complete();
-    super.ngOnDestroy();
+  protected addColumnAfter(event: MouseEvent, columnId: string) {
+    // 按稳定子栏 ID 重查位置，避免协同插入后使用旧索引。
+    const index = this.childrenIds.indexOf(columnId);
+    if (index >= 0) this.addColumn(event, index + 1);
   }
 
   override applyReadonlyViewState() {
     super.applyReadonlyViewState()
-    if (this.isReadonly) this.closeColumnToolbar()
     this.applyColumnWidths()
     this.changeDetectorRef.markForCheck()
   }
 
   /**
-   * 生成分割线数组（列数-1）
+   * 生成栏间分割线的稳定子栏 ID（栏数-1）
    */
-  protected get dividerArray(): number[] {
-    const count = this.childrenLength;
-    if (!count || count < 2) return [];
-    return Array(count - 1).fill(0).map((_, i) => i);
+  protected get dividerColumnIds(): string[] {
+    return this.childrenIds.slice(0, -1);
   }
 
   override ngAfterViewInit() {
     super.ngAfterViewInit();
-    this.doc.selection.selectionChange$.pipe(takeUntil(this.onDestroy$)).subscribe(() => this.syncColumnToolbar());
-    this.doc.dragController.state$.pipe(takeUntil(this.onDestroy$)).subscribe(state => {
-      if (state !== 'idle') this.closeColumnToolbar();
+    this.doc.selection.selectionChange$.pipe(takeUntil(this.onDestroy$)).subscribe(selection => {
+      let id = selection?.head.blockId;
+      while (id && id !== this.id && this.doc.model.exists(id)) id = this.doc.model.getParentId(id) ?? undefined;
+      const focused = id === this.id;
+      if (this.columnFocused === focused) return;
+      this.columnFocused = focused;
+      this.changeDetectorRef.markForCheck();
     });
-    this.doc.readonlyManager.stateChange$.pipe(takeUntil(this.onDestroy$)).subscribe(() => this.updateToolbarInputs());
+    this.doc.dragController.state$.pipe(takeUntil(this.onDestroy$)).subscribe(state => {
+      const active = state !== 'idle';
+      if (this.dragActive === active) return;
+      this.dragActive = active;
+      this.changeDetectorRef.markForCheck();
+    });
     // 延迟初始化，确保 DOM 完全渲染
     setTimeout(() => {
       this.applyColumnWidths();
@@ -203,9 +119,6 @@ export class ColumnsBlockComponent extends BaseBlockComponent<ColumnsBlockModel>
 
   override onChildrenChange = (events: any) => {
     this.applyColumnWidths();
-    if (this.activeColumnId && !this.childrenIds.includes(this.activeColumnId)) this.closeColumnToolbar();
-    this.updateToolbarInputs();
-    if (this.toolbar) this.positionToolbar();
     this.changeDetectorRef.markForCheck();
   }
 
@@ -246,7 +159,10 @@ export class ColumnsBlockComponent extends BaseBlockComponent<ColumnsBlockModel>
    */
   addColumn(event: MouseEvent, index = this.childrenLength) {
     event.preventDefault();
+    event.stopPropagation();
+    this.doc.crud.undoManager.stopCapturing();
     this.insertColumn(index);
+    this.doc.crud.undoManager.stopCapturing();
   }
 
   private insertColumn(index: number) {
@@ -289,7 +205,6 @@ export class ColumnsBlockComponent extends BaseBlockComponent<ColumnsBlockModel>
     event.stopPropagation();
     if (this.isReadonly) return;
 
-    this.closeColumnToolbar();
     const startX = event.clientX;
     const wrapper = this.hostElement.querySelector('.columns-wrapper') as HTMLElement;
     const wrapperWidth = wrapper.getBoundingClientRect().width;

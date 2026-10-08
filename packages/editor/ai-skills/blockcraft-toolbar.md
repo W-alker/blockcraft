@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-09-24
+> Last updated: 2026-10-08
 
 ## Overlay Service
 
@@ -231,14 +231,18 @@ export class MyToolbarComponent {
 
 ## Existing Reusable Components
 
-分栏的 connected Overlay 固定在整组分栏上方居中，空间不足时回落到下方。
-切换子栏时复用浮层，操作对象跟随模型选区的 head 所在子栏，横向位置保持不变。工具栏提供当前栏左侧
-插入、右侧插入和取消分栏；插入时按稳定子栏 ID 重查索引，避免协同修改后错位。
-取消分栏在单次事务中将各栏内容按从左到右的顺序搬回父级，保留块身份和可恢复的选区，
-撤销可恢复分栏结构和栏宽；存在只读后代或父级不允许的内容类型时禁用。
-栏内只保留列宽拖动线，不再渲染 `.column-divider .add-point` 或末尾的添加专用 divider。
-浮层不进入填写区的滚动层，文档或填写区滚动时跟随定位；选区离开、外部点击、Escape、只读或销毁时关闭。
-此组件是分栏内部 UI，不需要宿主额外注册 Plugin，`columnWidths` 与 `addColumn()` 契约不变。
+分栏使用就地结构按钮，不再随文字光标自动创建 connected Overlay。
+悬停、模型选区位于分栏内、键盘聚焦或触摸环境下显示两端及栏间的加号，分别用于首栏前插入、末尾追加和栏间插入。
+栏间插入按稳定子栏 ID 重查索引，避免协同修改后错位；最多 8 栏，达到上限时移除加号。
+两端加号复用同一套绝对定位样式：首端 `left: 4px`，末尾 `.column-add-point--end` 使用 `right: 4px`，
+形成镜像布局，不引入 Overlay。完整命中区域收在分栏边界内并给两侧 gap 光标留出空间；
+不可重新挂到伸出 `100%` 右边界的末尾 divider，也不可通过裁剪填写区滚动来掩盖溢出。
+局部不显示取消分栏按钮；取消继续使用顶部固定分栏入口中的 1 栏选项。
+默认加栏入口显示无背景的小圆点，悬停或键盘聚焦时显示 20px 蓝底圆圈和白色字体加号；
+复用 `--bc-active-color` 和 `--bc-columns-handle-color`，命中尺寸固定，悬停不扩大滚动范围。
+栏间分割线继续调宽；结构按钮位于既有上下留白及水平边界内，不参与栏宽分配。
+只读时不渲染加号，内部拖拽期间隐藏加号并让出命中区域。
+此组件是分栏内部 UI，不需要宿主额外注册 Plugin，快照格式、`columnWidths` 与 `addColumn()` 契约不变。
 子栏悬停时显示底部居中的 mini 抓手（`column-drag-handle`），背景透明、图标继承正文颜色，接入既有
 `doc.dragController`，仅在当前分栏组内移动整栏；UI 命中与执行命令都拒绝组外落点。
 拖动时通过 CDK Overlay 显示半透明整栏预览和主题色插入线，离开分栏范围立即隐藏。
