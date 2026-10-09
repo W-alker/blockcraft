@@ -80,6 +80,8 @@ export interface DocConfig {
   canUnlockBlock?: (context: BlockUnlockContext) => boolean
   /** Global copy filter; seeded into ClipboardManager's registry. Omit = no filtering. */
   copyFilter?: ClipboardCopyFilter
+  /** Incoming paste text only. Omit/preserve keeps the original clipboard content. */
+  pasteTextPolicy?: 'preserve' | 'remove-stacked-marks'
   // 如果不传递，会尝试向上遍历获取
   scrollContainer?: HTMLElement
   /** Optional root-child view virtualization. Disabled by default. */

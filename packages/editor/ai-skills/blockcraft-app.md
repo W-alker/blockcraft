@@ -2,11 +2,24 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-10-08
+> Last updated: 2026-10-09
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
 ## High-Level Wiring
+
+### 粘贴正文策略（未发布）
+
+`DocConfig.pasteTextPolicy` 可设为 `'remove-stacked-marks'`，在粘贴入模前移除连续
+九个或更多 Unicode 组合符号，保留基础文字、正常音标及格式。保存与复制使用转化结果。
+仅需要防护的文档编辑实例启用；默认／`'preserve'` 保留原始粘贴内容。
+
+```typescript
+const doc = new BlockCraftDoc({...config, pasteTextPolicy: 'remove-stacked-marks'});
+```
+
+策略覆盖纯文本、结构化／HTML 来源及粘贴格式重应用，不用于存量文档、一般 adapter
+导入或直接／远端输入。它不向 Inline 渲染和日常键盘路径增加正文扫描。
 
 ```
 Host Angular component

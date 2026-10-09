@@ -58,6 +58,7 @@ import {
 import {focusEditingHostForBlock} from "../selection/focus-editing-host";
 import {getClipboardNavigator} from "./dom-context";
 import {insertAbsolutePlacementCopies} from '../object/block-placement/duplicate-command'
+import {sanitizePasteSnapshot, sanitizePasteText} from './paste-text-safety';
 
 export * from './types'
 export * from './copy-filter'
@@ -75,6 +76,14 @@ export class ClipboardManager {
 
   private get _sourceAdapters() {
     return this.adapter?.clipboardSourceAdapters ?? this.defaultSourceAdapters
+  }
+
+  private _sanitizePasteText(text: string): string {
+    return this.doc.config.pasteTextPolicy === 'remove-stacked-marks' ? sanitizePasteText(text) : text
+  }
+
+  private _sanitizePasteSnapshot(snapshot: IBlockSnapshot): void {
+    if (this.doc.config.pasteTextPolicy === 'remove-stacked-marks') sanitizePasteSnapshot(snapshot)
   }
 
   private _parseSourceData(state: ClipboardSourceData): IBlockSnapshot | undefined {
@@ -98,6 +107,7 @@ export class ClipboardManager {
       const afterInsert = adapter.prepareSnapshot?.(snapshot, this.doc)
       if (afterInsert) nextTick().then(afterInsert)
     }
+    this._sanitizePasteSnapshot(snapshot)
   }
 
   /** Emits null to clear, or format data after a paste with alternatives. */
@@ -318,6 +328,7 @@ export class ClipboardManager {
     ) {
       return false
     }
+    this._sanitizePasteSnapshot(rootSnapshot)
     try {
       return !!insertAbsolutePlacementCopies(
         this.doc,
@@ -632,7 +643,9 @@ export class ClipboardManager {
 
     const editableBlock = selection.firstBlock as EditableBlockComponent
     const fromIndex = selection.start.offset
-    const textLines = text.replace(/[\n\r]+$/, '').split('\n')
+    const safeText = this._sanitizePasteText(text)
+    if (!safeText) return null
+    const textLines = safeText.replace(/[\n\r]+$/, '').split('\n')
     const appendedSnapshots = textLines.slice(1).map((line: string) =>
       this.doc.schemas.createSnapshot('paragraph', [[{insert: line}], {depth: editableBlock.props.depth}])
     )
@@ -682,6 +695,7 @@ export class ClipboardManager {
   ): Promise<ClipboardPasteApplyResult | null> {
     if (selection.start.type !== 'text') return null
     if (snapshot.nodeType !== BlockNodeType.root || !snapshot.children.length) return null
+    this._sanitizePasteSnapshot(snapshot)
 
     const editableBlock = selection.firstBlock as EditableBlockComponent
     const fromIndex = selection.start.offset
@@ -809,8 +823,8 @@ export class ClipboardManager {
       return null
     }
 
-    const altPlainText = state.getData(ClipboardDataType.TEXT) || null
-    const markdownText = getMarkdownClipboardText(state) || (altPlainText && looksLikeMarkdown(altPlainText) ? altPlainText : null)
+    const altPlainText = this._sanitizePasteText(state.getData(ClipboardDataType.TEXT) || '') || null
+    const markdownText = this._sanitizePasteText(getMarkdownClipboardText(state) || '') || (altPlainText && looksLikeMarkdown(altPlainText) ? altPlainText : null)
 
     this._prepareSourceSnapshot(rootSnapshot)
 
@@ -1109,7 +1123,7 @@ export class ClipboardManager {
       this.doc.schemas?.get?.(editableBlock.flavour, false)
         ?.metadata.pastePlainTextOnly === true
     if (pastePlainTextOnly) {
-      const text = state.clipboardData?.getData(ClipboardDataType.TEXT)
+      const text = this._sanitizePasteText(state.clipboardData?.getData(ClipboardDataType.TEXT) || '')
       if (!text) return false
       editableBlock.replaceText(fromIndex, fromLength, text)
       // 收缩选区粘贴后不重设光标位置；仅范围选区时把粘贴内容选中
@@ -1182,9 +1196,9 @@ export class ClipboardManager {
     }
 
     // Collect alternative format data before mutations (plugin uses this for format selector)
-    const altPlainText = state.getData(ClipboardDataType.TEXT) || null
+    const altPlainText = this._sanitizePasteText(state.getData(ClipboardDataType.TEXT) || '') || null
     const savedHtmlSnapshot = rootSnapshot ? cloneSnapshot(rootSnapshot) : null
-    const markdownText = getMarkdownClipboardText(state) || (altPlainText && looksLikeMarkdown(altPlainText) ? altPlainText : null)
+    const markdownText = this._sanitizePasteText(getMarkdownClipboardText(state) || '') || (altPlainText && looksLikeMarkdown(altPlainText) ? altPlainText : null)
 
     const emitFormatData = (appliedType: ClipboardPasteFormatType, region: PasteRegion | null) => {
       this.pasteFormatData$.next({
@@ -1320,7 +1334,7 @@ export class ClipboardManager {
 
     // plain-text
     if (state.dataTypes.includes(ClipboardDataType.TEXT)) {
-      let text = state.getData(ClipboardDataType.TEXT)!
+      let text = altPlainText
       if (!text) return false
       text = text.replace(/\n$/g, '')
       if (isUrl(text) && isInSameBlock) {

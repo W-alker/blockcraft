@@ -821,6 +821,21 @@ import {
 通用 codecs 继续从 `@ccc/blockcraft` 导入。其公开声明仍约束已注册 `IBlockSnapshot`，
 没有把 flavour 放宽为任意字符串；`adapters/sources` 也不经 codecs 聚合入口导出。
 
+### 粘贴正文的异常组合符号转化（未发布）
+
+设置 `DocConfig.pasteTextPolicy: 'remove-stacked-marks'` 时，`ClipboardManager` 在本次
+粘贴内容进入 Yjs 前移除连续九个或更多 Unicode `\p{M}`
+组合符号，保留基础文字、正常音标、emoji、行内格式及 Embed。阈值跨相邻文本 Delta
+的格式边界判定；Embed 和块边界中断文本串。只改正文字符串，不改 props、meta 或 Embed payload。
+
+纯文本、纯文本块、内部 MIME／HTML marker、来源快照、通用 HTML、间隙与对象粘贴、
+以及 `applyPasteOption()` 重新应用均经过转化。来源 `prepareSnapshot` 完成后再处理正文，
+粘贴格式的备选数据也存转化后的内容；位置与选区长度以最终正文为准。
+
+这是入模转化，保存、协作和复制得到转化后的正文。Inline 没有显示占位，日常输入不增加
+扫描；存量文档、通用 adapter 导入、直接输入及远端写入保持原路径，后续保护另行设计。
+省略策略或设为 `preserve` 时不执行转化，便于消息等其他编辑实例保留原有语义。
+
 ### 形状自定义几何编码
 
 `data-shape-geometry` 以及行内形状 payload 中的 `customGeometry` 使用

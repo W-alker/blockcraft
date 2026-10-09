@@ -68,6 +68,29 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
 
+## 未发布 — 2026-10-09：粘贴异常组合符号转化
+
+**Severity**: minor
+
+**What changed**: 新增可选 `DocConfig.pasteTextPolicy`。启用 `remove-stacked-marks` 后，
+仅在 ClipboardManager 粘贴入模前移除本次内容中连续九个或更多
+Unicode 组合符号，保留基础文字、正常音标、格式与 Embed。富文本跨格式片段统一判定。
+覆盖纯文本块、普通粘贴、内部快照、来源适配、间隙／对象粘贴及粘贴格式重新应用。
+
+**Why**: 防止新粘贴的密集组合符号直接进入浏览器正文排版；不在 Inline 渲染或日常输入中扫描。
+
+**Affected ai-skills files**:
+
+- `blockcraft-adapter.md`
+- `blockcraft-app.md`
+
+### Behavior Changes
+
+省略配置或设为 `preserve` 保持原行为。启用策略的文档实例保存、协作和复制使用
+转化后的正文，不保留被移除的异常符号。
+不会迁移存量文档、清洗一般快照导入或转化直接输入／远端写入。
+包版本尚未调整，本条不表示已发布或下游客户端已接入。
+
 ## 0.12.0 — 2026-10-09：实际 px 字号与高级缩放共存（待发布）
 
 **Severity**: minor
