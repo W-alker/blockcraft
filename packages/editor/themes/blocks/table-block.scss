@@ -326,7 +326,8 @@
     }
 
     &.col-head {
-      td:first-child {
+      // 明确结构行和单元格，避免通用对象布局的正文层级覆盖 sticky 标题列。
+      tr.table-row-block > td.table-cell-block:first-child {
         position: sticky;
         left: -1px;
         z-index: 2;
@@ -360,10 +361,10 @@
       //   - 部分浏览器对 <tr> 的 background 不绘制 painting layer，
       //     导致 sticky tr 透出后面滚动过的内容
       // 改作用在 td 上后两个问题都消除：每个 td 自己是 sticky + 有 background。
-      tr:first-child {
+      tr.table-row-block:first-child {
         font-weight: bold;
 
-        > td {
+        > td.table-cell-block {
           position: sticky;
           top: -1px;
           z-index: 2;
@@ -402,9 +403,22 @@
       }
     }
 
-    // 分页占位行（页缝）始终透明。**col-head 表格**里占位行的 `<td colspan=N>` 是 `td:first-child`，
-    // 命中 `.col-head td:first-child{background:var(--bc-table-head-bg)!important}` 被刷成表头灰 → 页缝不透明。
-    // 这里用更高特异度（含 .col-head/.row-head 前缀）+ !important 压过表头底色，保证页缝透出页间背景。
+    // 横向滚动时，交叉格盖住其他表头；整表选中的 ::after 仍绘制在它上方。
+    &.col-head.row-head tr.table-row-block:first-child > td.table-cell-block:first-child {
+      z-index: 3;
+    }
+
+    &.col-head,
+    &.row-head {
+      // 标题格需要跨行共享表格层叠上下文，结构行不作为对象层叠平面。
+      // 单元格内部仍由 children wrapper 维持衬底/正文/浮于文字的对象层级。
+      table > tbody.children-render-container > tr.table-row-block[data-block-id][data-bc-placement-container] {
+        isolation: auto;
+        z-index: auto;
+      }
+    }
+
+    // 分页占位行（页缝）始终透明，不继承表头底色，保证页缝透出页间背景。
     &.col-head tr.bc-pagination-spacer > td,
     &.row-head tr.bc-pagination-spacer > td,
     tr.bc-pagination-spacer > td {
