@@ -68,7 +68,9 @@ function openSourceEditor(doc: BlockCraft.Doc, block: FrameBlock, bookmark: Rela
         <span class="bc-float-toolbar__divider"></span>
       }
       <bc-float-toolbar-item icon="bc_huanyige" name="reload" csTooltip="重新加载" aria-label="重新加载"></bc-float-toolbar-item>
-      <bc-float-toolbar-item icon="bc_tiaozhuan" name="open" csTooltip="外部打开" aria-label="外部打开"></bc-float-toolbar-item>
+      <a [attr.href]="externalUrl" target="_blank" rel="noopener noreferrer" csTooltip="外部打开" aria-label="外部打开">
+        <bc-float-toolbar-item icon="bc_tiaozhuan"></bc-float-toolbar-item>
+      </a>
     </bc-float-toolbar>
     <ng-template #viewModeTpl>
       <bc-float-toolbar direction="column" (onItemClick)="switchViewMode($event)">
@@ -78,10 +80,20 @@ function openSourceEditor(doc: BlockCraft.Doc, block: FrameBlock, bookmark: Rela
       </bc-float-toolbar>
     </ng-template>
   `,
+  styles: [`a { display: flex; color: inherit; text-decoration: none; }`],
 })
 export class EmbedFrameBlockToolbar {
   @Input() frameBlock!: FrameBlock
   @Input() doc!: BlockCraft.Doc
+
+  protected get externalUrl(): string | null {
+    try {
+      if (this.doc.getBlockById(this.frameBlock.id) !== this.frameBlock) return null
+      return normalizeEmbedUrl(this.frameBlock.props.url)
+    } catch {
+      return null
+    }
+  }
 
   private writable() {
     return isWritable(this.doc, this.frameBlock)
@@ -117,12 +129,6 @@ export class EmbedFrameBlockToolbar {
   }
 
   onItemClick(item: BcFloatToolbarItemComponent) {
-    if (item.name === 'open') {
-      try { if (this.doc.getBlockById(this.frameBlock.id) !== this.frameBlock) return }
-      catch { return }
-      const url = normalizeEmbedUrl(this.frameBlock.props.url)
-      if (url) window.open(url, '_blank', 'noopener,noreferrer')
-    }
     if (item.name === 'reload') this.frameBlock.reloadIframe()
     if (item.name === 'edit') this.editSource(item)
   }
