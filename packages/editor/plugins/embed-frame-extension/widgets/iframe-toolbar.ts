@@ -5,6 +5,7 @@ import {BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerDi
 import {EmbedFrameCreator} from '../../../blocks/embed-blocks/components/embed-source-editor'
 import {runLinkViewChange} from '../../link-view-utils'
 import {normalizeEmbedUrl} from '../../../blocks/embed-blocks/embed-block/source'
+import {captureRelativeSelectionBookmark, type RelativeSelectionBookmark} from '../../../framework/modules/selection/relative-bookmark'
 
 type FrameBlock = BlockCraft.IBlockComponents['embed' | 'figma-embed' | 'juejin-embed']
 
@@ -35,10 +36,13 @@ function openFrameDialog<T>(doc: BlockCraft.Doc, block: FrameBlock, content: Typ
   return {ref, close, close$}
 }
 
-function openSourceEditor(doc: BlockCraft.Doc, block: FrameBlock) {
+function openSourceEditor(doc: BlockCraft.Doc, block: FrameBlock, bookmark: RelativeSelectionBookmark | null) {
   const schema = doc.schemas.get(block.flavour)
   if (!schema) return
   const {ref, close, close$} = openFrameDialog(doc, block, EmbedFrameCreator, schema.metadata.label, {schema, initialUrl: block.props.url})
+  ref.afterClose.pipe(take(1)).subscribe(() => {
+    if (bookmark && isWritable(doc, block) && doc.root.hostElement.isConnected) doc.selection.restoreBookmark(bookmark)
+  })
   ref.componentInstance!.onSubmit.pipe(takeUntil(close$)).subscribe(value => {
     if (isWritable(doc, block)) {
       doc.crud.updateBlockProps(block.id, {url: value})
@@ -105,10 +109,11 @@ export class EmbedFrameBlockToolbar {
 
   private editSource(item: BcFloatToolbarItemComponent) {
     if (!this.writable() || !this.supportsSourceEditor()) return
+    const bookmark = captureRelativeSelectionBookmark(this.doc.selection.value, this.doc)
     // The toolbar suppresses mousedown focus. Give the modal a local return
     // target so closing it cannot focus the editor root and scroll to its top.
     item.hostEle.focus({preventScroll: true})
-    openSourceEditor(this.doc, this.frameBlock)
+    openSourceEditor(this.doc, this.frameBlock, bookmark)
   }
 
   onItemClick(item: BcFloatToolbarItemComponent) {

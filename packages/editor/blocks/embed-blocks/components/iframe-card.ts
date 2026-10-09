@@ -10,7 +10,7 @@ import {resolveEmbedFrameSize} from './embed-sizing';
 @Component({
   selector: 'embed-frame-card',
   template: `
-    <div class="iframe-wrapper">
+    <div class="iframe-wrapper" #iframeWrapper>
       @if (isolateUrl) {
         <iframe loading="lazy" allowfullscreen #iframeEle title="网页嵌入"
                 sandbox="allow-scripts allow-forms allow-popups"
@@ -30,7 +30,7 @@ import {resolveEmbedFrameSize} from './embed-sizing';
         [target]="hostElement" [maxWidthContainer]="block.hostElement"
         [maxWidthResolver]="resizeMaxWidth" [rotatable]="false"
         [resizeCalculator]="resizeCalculator" (resizeStart)="onResizeStart()"
-        (resizeCommit)="onResized($event)" />
+        (resizeEnd)="onResizeEnd()" (resizeCommit)="onResized($event)" />
     }
   `,
   standalone: true,
@@ -56,6 +56,8 @@ export class IframeCardComponent implements AfterViewInit, OnDestroy {
   private resizeStartBox: ShapeResizeBox | null = null
   private resizeBasisWidth = 0
   private resizeMaxHeight = Number.POSITIVE_INFINITY
+  @ViewChild('iframeWrapper', {read: ElementRef})
+  private iframeWrapper!: ElementRef<HTMLElement>
 
   get frameSize() {
     const referenceWidth = this.block?.doc.objectSizing.getReferenceWidth(this.block.id)
@@ -95,7 +97,14 @@ export class IframeCardComponent implements AfterViewInit, OnDestroy {
   }
 
   onResizeStart() {
+    // Chromium can route a captured drag into the iframe when the grip crosses
+    // its surface. Suspend iframe hit testing only for the resize gesture.
+    this.iframeWrapper.nativeElement.style.pointerEvents = 'none'
     if (this.block && !this.block.isReadonly) this.block.doc.selection.selectBlock(this.block)
+  }
+
+  onResizeEnd() {
+    this.iframeWrapper.nativeElement.style.pointerEvents = ''
   }
 
   onResized(event: ShapeResizeCommit) {

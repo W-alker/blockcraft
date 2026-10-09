@@ -667,7 +667,13 @@ export class BlockTransformerPlugin extends DocPlugin {
       if (schema.nodeType !== BlockNodeType.editable) {
         const creator = this.doc.injector.get(BLOCK_CREATOR_SERVICE_TOKEN);
         const resolved = await creator.getParamsByScheme(schema);
-        if (!resolved) return;
+        if (!resolved) {
+          const range = anchor.consume();
+          if (range && !this.destroyed && this.doc.root.hostElement.isConnected) {
+            this.doc.selection.setCursorAt(range.block, range.index + range.length);
+          }
+          return;
+        }
         params = resolved as unknown[];
       } else {
         params = [[], {...context.block.props, heading: undefined}];

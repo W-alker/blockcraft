@@ -9,7 +9,9 @@ import {
   Output,
   ViewChild
 } from "@angular/core";
-import {CS_MODAL_DATA, CsButtonComponent, CsInputDirective} from '@cses/ui';
+import {takeUntilDestroyed} from '@angular/core/rxjs-interop';
+import {take} from 'rxjs';
+import {CS_MODAL_DATA, CsButtonComponent, CsInputDirective, CsModalRef} from '@cses/ui';
 import {IBlockSchemaOptions} from "../../../framework/block-std/schema/block-schema";
 import {figmaUrlRegex, jueJinUrlRegex, urlRegex} from "../../../global";
 
@@ -51,6 +53,7 @@ import {normalizeEmbedUrl} from '../embed-block/source';
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class EmbedFrameCreator {
+  private readonly modalRef = inject(CsModalRef, {optional: true})
   private readonly modalData = inject(CS_MODAL_DATA, {optional: true}) as
     {schema: IBlockSchemaOptions; initialUrl?: string} | null
   @Input()
@@ -75,7 +78,13 @@ export class EmbedFrameCreator {
 
   ngAfterViewInit() {
     this.inputElement.nativeElement.value = this.initialUrl
-    this.inputElement.nativeElement.focus()
+    const focusInput = () => this.inputElement.nativeElement.focus({preventScroll: true})
+    if (this.modalRef) {
+      // 等 Modal 建立初始焦点后再聚焦，避免焦点被容器抢回。
+      this.modalRef.afterOpen.pipe(take(1), takeUntilDestroyed(this.destroyer)).subscribe(focusInput)
+    } else {
+      focusInput()
+    }
   }
 
   ngOnInit() {

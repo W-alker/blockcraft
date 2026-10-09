@@ -20,7 +20,8 @@ async function docAction(page: Page, action: 'undo' | 'redo' | 'stop') {
 
 async function dragHandle(page: Page, card: Locator, handle: string, dx: number, dy: number, cancel = false) {
   await card.scrollIntoViewIfNeeded()
-  await card.click({position: {x: 20, y: 4}})
+  // Select through the frame border; its entire inner area belongs to the iframe.
+  await card.click({position: {x: 20, y: .5}})
   const grip = card.locator(`shape-resizer [data-handle="${handle}"]`)
   await expect(grip).toBeVisible()
   // Keep both pointer endpoints inside the browser window (Firefox's native
@@ -53,15 +54,40 @@ async function frameProps(page: Page, id: string) {
   }, id)
 }
 
+async function expectFrameFitsBorder(card: Locator) {
+  const insets = await card.evaluate(element => {
+    const cardBox = element.getBoundingClientRect()
+    const frameBox = element.querySelector('iframe')!.getBoundingClientRect()
+    const style = getComputedStyle(element)
+    return [
+      frameBox.left - cardBox.left - parseFloat(style.borderLeftWidth),
+      frameBox.top - cardBox.top - parseFloat(style.borderTopWidth),
+      cardBox.right - frameBox.right - parseFloat(style.borderRightWidth),
+      cardBox.bottom - frameBox.bottom - parseFloat(style.borderBottomWidth),
+    ]
+  })
+  for (const inset of insets) expect(Math.abs(inset), JSON.stringify(insets)).toBeLessThanOrEqual(.5)
+}
+
+async function clickFrameControl(page: Page, control: Locator) {
+  await control.scrollIntoViewIfNeeded()
+  // Allow both the iframe and its scrolling parent to paint the new hit region.
+  for (const surface of [control, page]) {
+    await surface.evaluate(() => new Promise<void>(resolve =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+  }
+  await control.click()
+}
+
 const htmlFile = `<meta charset="utf-8"><style>body{background:rgb(231,245,255);color:rgb(12,34,56)}</style>
-<p id="isolation"></p><button onclick="this.textContent='运行成功'">运行脚本</button>
+<p id="isolation"></p><button onclick="this.dataset.clicks=String(+(this.dataset.clicks||0)+1);this.textContent='运行成功'">运行脚本</button>
 <script>try{parent.document.body.dataset.embedEscape='yes';document.querySelector('#isolation').textContent='未隔离'}catch(e){document.querySelector('#isolation').textContent='已隔离'}</script>`
 
 async function switchLinkView(page: Page, id: string, current: 'inline' | 'card' | 'embed', target: 'inline' | 'card' | 'embed') {
   const block = page.locator(`[data-block-id="${id}"]`)
   await block.scrollIntoViewIfNeeded()
   if (current === 'inline') await block.locator('c-element[link] c-text').first().click()
-  else if (current === 'embed') await block.locator('embed-frame-card').click({position: {x: 20, y: 4}})
+  else if (current === 'embed') await block.locator('embed-frame-card').click({position: {x: 20, y: .5}})
   else await block.locator('.bookmark-description').click()
   const labels = {inline: '链接视图', card: '卡片视图', embed: '嵌入视图'}
   const toolbar = page.locator(current === 'inline' ? 'inline-link-toolbar' : '.iframe-toolbar')
@@ -205,7 +231,7 @@ test('link popup insertion, HTML file embedding, editing, dimensions, undo and r
   expect(await frame.locator('body').evaluate(el => getComputedStyle(el).color)).toBe('rgb(12, 34, 56)')
   await expect(block.locator('.iframe-brand, .iframe-link, a')).toHaveCount(0)
 
-  await block.locator('embed-frame-card').click({position: {x: 20, y: 4}})
+  await block.locator('embed-frame-card').click({position: {x: 20, y: .5}})
   const toolbar = page.locator('.iframe-toolbar').filter({has: page.locator('[name="edit"]')})
   await expect(toolbar).toBeVisible()
   const open = toolbar.locator('[name="open"]')
@@ -242,12 +268,12 @@ test('link popup insertion, HTML file embedding, editing, dimensions, undo and r
   await expect.poll(async () => (await frameBox(card)).height).toBeCloseTo(resized.height, 1)
   if (test.info().project.name === 'chromium') await page.screenshot({path: '/tmp/blockcraft-embed-resize.png'})
 
-  await block.locator('embed-frame-card').click({position: {x: 20, y: 4}})
+  await block.locator('embed-frame-card').click({position: {x: 20, y: .5}})
   await toolbar.locator('[name="reload"]').click()
   await expect(frame.getByRole('button', {name: '运行脚本'})).toBeVisible()
 
   await docAction(page, 'stop')
-  await block.locator('embed-frame-card').click({position: {x: 20, y: 4}})
+  await block.locator('embed-frame-card').click({position: {x: 20, y: .5}})
   await toolbar.locator('[name="edit"]').click()
   await expect(creator.getByLabel('网页链接')).toHaveValue(originalUrl)
   const updatedUrl = 'http://127.0.0.1:8081/embed-updated.html'
@@ -274,7 +300,7 @@ test('link popup insertion, HTML file embedding, editing, dimensions, undo and r
   await page.evaluate(() => {
     (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc.toggleReadonly(true)
   })
-  await block.locator('embed-frame-card').click({position: {x: 20, y: 4}})
+  await block.locator('embed-frame-card').click({position: {x: 20, y: .5}})
   await expect(page.locator('.iframe-toolbar [name="edit"]')).toHaveCount(0)
   await expect(block.locator('shape-resizer')).toHaveCount(0)
   await expect(page.locator('.iframe-toolbar [name="open"]')).toBeVisible()
@@ -284,6 +310,39 @@ test('link popup insertion, HTML file embedding, editing, dimensions, undo and r
   await readonlyOpened.waitForURL(updatedUrl)
   expect(await readonlyOpened.evaluate(() => window.opener === null)).toBe(true)
   await readonlyOpened.close()
+})
+
+test('canceling webpage insertion from the slash menu restores the original caret', async ({page}) => {
+  await initialize(page)
+  const id = await page.evaluate(() => {
+    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+    const paragraphs = Array.from({length: 40}, (_, index) => doc.schemas.createSnapshot('paragraph', [[{insert: `阅读位置 ${index}`}]]))
+    const paragraph = doc.schemas.createSnapshot('paragraph', [[]])
+    doc.crud.insertBlockSnapshots(doc.rootId, 0, [...paragraphs, paragraph])
+    doc.selection.setCursorAtBlock(paragraph.id, false)
+    return paragraph.id
+  })
+  const paragraph = page.locator(`[data-block-id="${id}"]`)
+  await paragraph.scrollIntoViewIfNeeded()
+  await page.keyboard.type('/')
+  const menu = page.locator('block-transformer-contextmenu')
+  await expect(menu).toBeVisible()
+  await page.keyboard.type('embed')
+  await menu.getByRole('option', {name: /嵌入网页、平台内容/}).click()
+  const input = page.getByRole('dialog', {name: '嵌入', exact: true}).getByLabel('网页链接')
+  await expect(input).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(input).toHaveCount(0)
+  await expect.poll(() => page.evaluate(id => {
+    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+    return doc.selection.value?.firstBlock?.id
+  }, id)).toBe(id)
+  await page.keyboard.type('继续')
+  await expect(paragraph.locator('c-element:not([data-cursor-blot]) c-text')).toHaveText('/embed继续')
+  await expect.poll(() => page.evaluate(id => {
+    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+    return doc.model.getText(id)
+  }, id)).toBe('/embed继续')
 })
 
 test('editing a distant embed preserves document scroll on confirmation and cancellation', async ({page}) => {
@@ -306,7 +365,7 @@ test('editing a distant embed preserves document scroll on confirmation and canc
   })
   for (const action of ['confirm', 'enter', 'cancel', 'escape', 'backdrop'] as const) {
     await card.scrollIntoViewIfNeeded()
-    await card.click({position: {x: 20, y: 4}})
+    await card.click({position: {x: 20, y: .5}})
     const edit = page.locator('.iframe-toolbar [name="edit"]')
     await expect(edit).toBeVisible()
     await card.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
@@ -315,6 +374,7 @@ test('editing a distant embed preserves document scroll on confirmation and canc
     await edit.click()
     await expect(dialog).toBeVisible()
     const input = dialog.getByLabel('网页链接')
+    await expect(input).toBeFocused()
     await input.fill(`http://127.0.0.1:8081/embed-scroll-${action}.html`)
     await expect(input).toBeFocused()
     await input.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
@@ -350,12 +410,12 @@ test('cses-ui modal focus, dismissal and block lifetime', async ({page}) => {
   const block = page.locator(`[data-block-id="${id}"]`)
   const dialog = page.getByRole('dialog', {name: '嵌入', exact: true})
   const open = async () => {
-    await block.locator('embed-frame-card').click({position: {x: 20, y: 4}})
+    await block.locator('embed-frame-card').click({position: {x: 20, y: .5}})
     await page.locator('.iframe-toolbar [name="edit"]').click()
     await expect(dialog).toBeVisible()
   }
   await open()
-  await dialog.getByLabel('网页链接').focus()
+  await expect(dialog.getByLabel('网页链接')).toBeFocused()
   for (let index = 0; index < 4; index++) {
     await page.keyboard.press('Tab')
     await expect.poll(() => dialog.evaluate(el => el.contains(document.activeElement))).toBe(true)
@@ -406,6 +466,7 @@ test('unified and legacy embeds fit narrow columns', async ({page}) => {
     }))
     expect(sizes.card).toBeGreaterThan(0)
     expect(sizes.card).toBeLessThanOrEqual(sizes.column + 1)
+    await expectFrameFitsBorder(block.locator('embed-frame-card'))
   }
 })
 
@@ -437,9 +498,10 @@ test('legacy Figma and Juejin source editing preserves validation, dimensions, u
     await expect(iframe).toHaveAttribute('src', iframeUrl(initial))
     const original = await frameProps(page, id), originalSize = await frameBox(card)
     const open = async () => {
-      await card.click({position: {x: 20, y: 4}})
+      await card.click({position: {x: 20, y: .5}})
       await page.locator('.iframe-toolbar [name="edit"]').click()
       await expect(dialog).toBeVisible()
+      await expect(dialog.getByLabel('网页链接')).toBeFocused()
     }
     await docAction(page, 'stop')
     await open()
@@ -475,7 +537,7 @@ test('legacy Figma and Juejin source editing preserves validation, dimensions, u
     await expect(dialog).toHaveCount(0)
     await expect(iframe).toHaveAttribute('src', iframeUrl(updated))
     await page.evaluate(() => (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc.toggleReadonly(true))
-    await card.click({position: {x: 20, y: 4}})
+    await card.click({position: {x: 20, y: .5}})
     await expect(page.locator('.iframe-toolbar [name="open"]')).toBeVisible()
     await expect(page.locator('.iframe-toolbar [name="edit"]')).toHaveCount(0)
     await page.evaluate(() => (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc.toggleReadonly(false))
@@ -516,7 +578,7 @@ test('provider conversion, direct embed URLs and legacy snapshots', async ({page
     await block.scrollIntoViewIfNeeded()
     await expect(block.locator('iframe')).toHaveAttribute('src', /https:/)
     await expect(block.locator('.iframe-brand, .iframe-link, a')).toHaveCount(0)
-    await block.locator('embed-frame-card').click({position: {x: 20, y: 4}})
+    await block.locator('embed-frame-card').click({position: {x: 20, y: .5}})
     await expect(page.locator('.iframe-toolbar [name="open"]')).toBeVisible()
   }
   await page.evaluate(async id => {
@@ -526,7 +588,7 @@ test('provider conversion, direct embed URLs and legacy snapshots', async ({page
   }, ids[0])
   const block = page.locator(`[data-block-id="${ids[0]}"]`)
   await block.scrollIntoViewIfNeeded()
-  await block.locator('embed-frame-card').click({position: {x: 20, y: 4}})
+  await block.locator('embed-frame-card').click({position: {x: 20, y: .5}})
   await page.locator('.iframe-toolbar [name="edit"]').click()
   const creator = page.locator('embed-frame-creator')
   await creator.getByLabel('网页链接').fill('https://player.bilibili.com/player.html?bvid=BV1B7411m7LV')
@@ -553,14 +615,14 @@ test('eight handles, integer pixel commits, scaling, responsive dimensions and c
   await page.evaluate(id => (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc.navigateToBlock(id), id)
   await page.evaluate(() => (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc.selection.blur())
   const border = await card.evaluate(el => getComputedStyle(el).borderColor)
-  await card.hover({position: {x: 20, y: 4}})
+  await card.hover({position: {x: 20, y: .5}})
   await expect(block).not.toHaveClass(/selected/)
   await expect(card.locator('shape-resizer')).toBeHidden()
   await expect.poll(() => card.evaluate(el => getComputedStyle(el).boxShadow)).not.toBe('none')
   expect(await card.evaluate(el => getComputedStyle(el).borderColor)).toBe(border)
   expect(await frameProps(page, id)).toEqual(original)
   if (test.info().project.name === 'chromium') await card.screenshot({path: '/tmp/blockcraft-embed-hover-shadow.png'})
-  await card.click({position: {x: 20, y: 4}})
+  await card.click({position: {x: 20, y: .5}})
   await expect(block).toHaveClass(/selected/)
   await expect(card.locator('shape-resizer')).toBeVisible()
   await expect(card.locator('[data-handle]')).toHaveCount(8)
@@ -586,6 +648,9 @@ test('eight handles, integer pixel commits, scaling, responsive dimensions and c
   }
   await dragHandle(page, card, 'east', 30, 0, true)
   expect(await frameProps(page, id)).toEqual(original)
+  // Cancelling a resize must restore the iframe's normal pointer interaction.
+  await block.frameLocator('iframe').getByRole('button', {name: '运行脚本'}).click()
+  await expect(block.frameLocator('iframe').getByRole('button', {name: '运行成功'})).toBeVisible()
   const before = await frameBox(card)
   await dragHandle(page, card, 'south', 0, 42.4)
   const after = await frameBox(card)
@@ -607,7 +672,7 @@ test('eight handles, integer pixel commits, scaling, responsive dimensions and c
   await docAction(page, 'undo')
   expect(await frameProps(page, id)).toEqual(saved)
   expect(before.width).toBeGreaterThan(narrow.width)
-  await card.hover({position: {x: 20, y: 4}})
+  await card.hover({position: {x: 20, y: .5}})
   const gripBox = (await card.locator('[data-handle="south"]').boundingBox())!
   await page.mouse.move(gripBox.x + gripBox.width / 2, gripBox.y + gripBox.height / 2)
   await page.mouse.down()
@@ -658,6 +723,59 @@ test('legacy pixel frames migrate only after dragging and stay within narrow col
 })
 
 
+test('virtualized embeds retain the iframe and webpage state outside the viewport', async ({page}) => {
+  let requests = 0
+  await page.route('**/embed-keep-alive.html', route => {
+    requests++
+    return route.fulfill({contentType: 'text/html', body: '<h1>网页状态</h1>'})
+  })
+  await initialize(page)
+  const targets = await page.evaluate(() => {
+    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+    const url = 'http://127.0.0.1:8081/embed-keep-alive.html'
+    const direct = doc.schemas.createSnapshot('embed', [url])
+    const columns = doc.schemas.createSnapshot('columns', [2])
+    const nested = doc.schemas.createSnapshot('embed', [url])
+    columns.children[0].children = [nested]
+    const paragraphs = Array.from({length: 140}, (_, index) =>
+      doc.schemas.createSnapshot('paragraph', [[{insert: `虚拟渲染正文 ${index}`}]]))
+    doc.crud.insertBlockSnapshots(doc.rootId, 0, [direct, columns, ...paragraphs])
+    return {ids: [direct.id, nested.id], near: paragraphs[0].id, far: paragraphs[120].id}
+  })
+  for (const id of targets.ids) {
+    await page.evaluate(id => (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc.virtualization.scrollToBlock(id), id)
+    const block = page.locator(`[data-block-id="${id}"]`)
+    await expect(block.locator('iframe')).toBeVisible()
+    await block.frameLocator('iframe').locator('h1').evaluate((element, id) => element.textContent = `保留状态 ${id}`, id)
+  }
+  await page.evaluate(({ids}) => {
+    ;(window as any).retainedEmbedFrames = ids.map(id => document.querySelector(`[data-block-id="${id}"] iframe`))
+  }, targets)
+  const loadedRequests = requests
+  await page.evaluate(async ({far}) => {
+    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+    doc.selection.blur()
+    await doc.virtualization.scrollToBlock(far)
+  }, targets)
+  await expect.poll(() => page.evaluate(({near, far, ids}) => {
+    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+    return {
+      enabled: doc.virtualization.enabled, sparse: doc.vm.usesSparseRoot,
+      nearMounted: doc.vm.isMounted(near), farMounted: doc.vm.isMounted(far),
+      connected: ids.map((id, index) => {
+        const iframe = document.querySelector(`[data-block-id="${id}"] iframe`)
+        return !!iframe?.isConnected && iframe === (window as any).retainedEmbedFrames[index]
+      }),
+    }
+  }, targets)).toEqual({enabled: true, sparse: true, nearMounted: false, farMounted: true, connected: [true, true]})
+  for (const id of targets.ids) {
+    await expect(page.locator(`[data-block-id="${id}"]`).frameLocator('iframe').locator('h1')).toHaveText(`保留状态 ${id}`)
+    await page.evaluate(id => (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc.virtualization.scrollToBlock(id), id)
+    await expect(page.locator(`[data-block-id="${id}"]`).frameLocator('iframe').locator('h1')).toHaveText(`保留状态 ${id}`)
+  }
+  expect(requests).toBe(loadedRequests)
+})
+
 test('snapshot viewer uses responsive embed dimensions and fills the frame', async ({page}) => {
   await page.route('**/embed-snapshot.html', route => route.fulfill({contentType: 'text/html', body: '<h1>快照嵌入</h1>'}))
   await initialize(page)
@@ -679,8 +797,7 @@ test('snapshot viewer uses responsive embed dimensions and fills the frame', asy
   await expect(block.locator('iframe')).toHaveAttribute('src', 'http://127.0.0.1:8081/embed-snapshot.html')
   const box = await frameBox(card)
   expect(box.width / box.height).toBeCloseTo(1.4, 3)
-  const gap = await block.evaluate(el => el.querySelector('embed-frame-card')!.getBoundingClientRect().height - el.querySelector('iframe')!.getBoundingClientRect().height)
-  expect(gap).toBeLessThan(24)
+  await expectFrameFitsBorder(card)
 })
 
 test('embed selection chrome follows the resized card instead of the full row', async ({page}) => {
@@ -700,7 +817,7 @@ test('embed selection chrome follows the resized card instead of the full row', 
     await page.evaluate(id => (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc.navigateToBlock(id), id)
     const block = page.locator(`[data-block-id="${id}"]`), card = block.locator('embed-frame-card')
     await card.scrollIntoViewIfNeeded()
-    await card.click({position: {x: 20, y: 4}})
+    await card.click({position: {x: 20, y: .5}})
     await expect(block).toHaveClass(/selected/)
     const chrome = await block.evaluate(el => {
       const card = el.querySelector('embed-frame-card')!, resizer = card.querySelector('.shape-resizer__frame')!
@@ -749,10 +866,12 @@ test('paginated embeds cap the viewport and resizing to page height without losi
     await card.scrollIntoViewIfNeeded()
     await expect.poll(async () => (await frameBox(card)).height).toBeLessThanOrEqual(capacity + .5)
     expect((await frameBox(card)).height).toBeGreaterThan(capacity - 2)
+    await expectFrameFitsBorder(card)
     expect(await frameProps(page, id)).toEqual(originals[i])
     if (i === 0) {
-      await card.click({position: {x: 20, y: 4}})
-      await block.frameLocator('iframe').getByRole('button', {name: '运行脚本'}).click()
+      await card.click({position: {x: 20, y: .5}})
+      await expect(block).toHaveClass(/selected/)
+      await clickFrameControl(page, block.frameLocator('iframe').getByRole('button', {name: '运行脚本'}))
       await expect(block.frameLocator('iframe').getByRole('button', {name: '运行成功'})).toBeVisible()
     }
     await dragHandle(page, card, 'south', 0, 0)
@@ -760,6 +879,7 @@ test('paginated embeds cap the viewport and resizing to page height without losi
     await dragHandle(page, card, 'south', 0, -80)
     const smaller = await frameBox(card)
     expect(smaller.height).toBeLessThan(capacity - 60)
+    await expectFrameFitsBorder(card)
     await dragHandle(page, card, 'south', 0, 200)
     expect((await frameBox(card)).height).toBeLessThanOrEqual(capacity)
     const props = await frameProps(page, id)
@@ -776,7 +896,12 @@ test('paginated embeds cap the viewport and resizing to page height without losi
     expect(corner.width / corner.height).toBeCloseTo(beforeCorner.width / beforeCorner.height, 2)
     await expect(card.locator('[data-handle="south"]')).toBeVisible()
     expect(await block.evaluate(el => getComputedStyle(el).overflow)).toBe('visible')
-    if (i === 0) await expect(block.frameLocator('iframe').getByRole('button', {name: '运行成功'})).toBeVisible()
+    if (i === 0) {
+      const script = block.frameLocator('iframe').getByRole('button', {name: '运行成功'})
+      await expect(block).toHaveClass(/selected/)
+      await clickFrameControl(page, script)
+      await expect(script).toHaveAttribute('data-clicks', '2')
+    }
     if (JSON.stringify(await frameProps(page, id)) !== JSON.stringify(beforeCornerProps)) await docAction(page, 'undo')
     await docAction(page, 'undo')
     await docAction(page, 'undo')
@@ -799,6 +924,7 @@ test('paginated embeds cap the viewport and resizing to page height without losi
   const readonlyCard = page.locator(`[data-block-id="${ids[0]}"] embed-frame-card`)
   await expect(readonlyCard.locator('shape-resizer')).toHaveCount(0)
   await expect.poll(async () => (await frameBox(readonlyCard)).height).toBeLessThanOrEqual(landscapeCapacity + .5)
+  await expectFrameFitsBorder(readonlyCard)
   expect(await frameProps(page, ids[0])).toEqual(originals[0])
   await page.getByRole('button', {name: '连续布局', exact: true}).click()
   await page.evaluate(id => (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc.navigateToBlock(id), ids[0])

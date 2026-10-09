@@ -11,6 +11,7 @@ import {BLOCK_POSITION} from '../../doc/block-position';
 import { BlockReadonlyError, BlockReadonlyOperation } from "../../doc/block-readonly.types"
 import { DOC_FILE_SERVICE_TOKEN } from "../../host/file.service"
 import { BLOCK_CREATOR_SERVICE_TOKEN } from "../../host/block-creator.service"
+import { captureRelativeSelectionBookmark } from "../selection/relative-bookmark"
 import { calcDragLineRect, calcPositionByRect, type DragLineRect, type DragPosition } from "./_dnd-geometry"
 
 export enum DocDndDataTypes {
@@ -703,8 +704,12 @@ export class DocDndService {
     if (!this.doc.schemas.has(flavour)) return
     if (!this._tryAssertInsertable(targetParent.id, BlockReadonlyOperation.Insert)) return
     const blockCreator = this.doc.injector.get(BLOCK_CREATOR_SERVICE_TOKEN)
+    const bookmark = captureRelativeSelectionBookmark(this.doc.selection.value, this.doc)
     blockCreator.getParamsByScheme(this.doc.schemas.get(flavour)!).then(params => {
-      if (!params) return
+      if (!params) {
+        if (bookmark && this.doc.root.hostElement.isConnected) this.doc.selection.restoreBookmark(bookmark)
+        return
+      }
       const currentParent = targetBlock.parentBlock
       if (!currentParent) return
       if (!this.doc.canInsertChild(currentParent.id, flavour)) return
