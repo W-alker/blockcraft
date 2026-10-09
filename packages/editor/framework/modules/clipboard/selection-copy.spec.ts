@@ -1,7 +1,7 @@
 import {BlockNodeType, DeltaInsert, IBlockSnapshot} from "../../block-std";
 import {BlockSelection} from "../selection/blockSelection";
 import {ClipboardManager} from "./index";
-import {parseClipboardSnapshot} from './internal-clipboard';
+import {parseClipboardSnapshot, parseClipboardSnapshotFromHtml} from './internal-clipboard';
 import {ClipboardDataType} from './types';
 
 describe("ClipboardManager selection copy", () => {
@@ -211,6 +211,192 @@ describe("ClipboardManager selection copy", () => {
     );
     await copy;
     rootHost.remove();
+  });
+
+  it("keeps adapter formats and the native range when readonly async clipboard write is rejected", async () => {
+    const {addBlock, manager, doc, makeSelection, rootHost} = makeHarness();
+    const paragraph = addBlock("p1", "readonly rich text", BlockNodeType.editable);
+    paragraph.hostElement.textContent = "readonly rich text";
+    const nativeSelection = document.getSelection()!;
+    nativeSelection.setBaseAndExtent(paragraph.hostElement.firstChild!, 18, paragraph.hostElement.firstChild!, 0);
+    const selection = makeSelection(
+      {blockId: "p1", type: "text", offset: 0, block: paragraph},
+      {blockId: "p1", type: "text", offset: 18, block: paragraph},
+    );
+    (doc as any).isReadonly = true;
+    const html = jasmine.createSpy("html").and.resolveTo("<p><strong>readonly rich text</strong></p>");
+    const markdown = jasmine.createSpy("markdown").and.resolveTo("**readonly rich text**");
+    manager.adapter.supportedAdapters = [
+      {type: ClipboardDataType.HTML, fromSnapshot: html, toSnapshot: async () => undefined as any},
+      {type: ClipboardDataType.MARKDOWN, fromSnapshot: markdown, toSnapshot: async () => undefined as any},
+    ];
+    const write = spyOn(navigator.clipboard, "write").and.rejectWith(new DOMException("gesture required", "NotAllowedError"));
+    const copied = new DataTransfer();
+    spyOn(document, "execCommand").and.callFake(() => {
+      expect(document.getSelection()!.toString()).toBe("readonly rich text");
+      const event = new ClipboardEvent("copy", {bubbles: true, cancelable: true});
+      Object.defineProperty(event, "clipboardData", {value: copied});
+      document.body.dispatchEvent(event);
+      return true;
+    });
+    const nativeData = new DataTransfer();
+
+    try {
+      const copy = manager.copyFromSelection(selection, nativeData);
+      // Sync fallback commits before the asynchronous API starts its write.
+      expect(write).not.toHaveBeenCalled();
+      expect(nativeData.getData(ClipboardDataType.TEXT)).toBe("readonly rich text");
+      await copy;
+      expect(write).toHaveBeenCalledTimes(1);
+      expect(html).toHaveBeenCalledTimes(1);
+      expect(markdown).toHaveBeenCalledTimes(1);
+      expect(copied.getData(ClipboardDataType.HTML)).toContain("<strong>readonly rich text</strong>");
+      expect(copied.getData(ClipboardDataType.MARKDOWN)).toBe("**readonly rich text**");
+      expect(copied.getData(ClipboardDataType.BLOCKCRAFT_SNAPSHOT)).toBeTruthy();
+      expect(document.getSelection()!.toString()).toBe("readonly rich text");
+      expect(nativeSelection.anchorOffset).toBe(18);
+      expect(nativeSelection.focusOffset).toBe(0);
+      expect(doc.logger.warn).not.toHaveBeenCalled();
+    } finally {
+      document.getSelection()!.removeAllRanges();
+      rootHost.remove();
+    }
+  });
+
+  it("does not start a superseded async write while the native copy fallback is committing", async () => {
+    const {addBlock, manager, doc, makeSelection, rootHost} = makeHarness();
+    const paragraph = addBlock("p1", "text", BlockNodeType.editable);
+    (doc as any).isReadonly = true;
+    const write = spyOn(navigator.clipboard, "write").and.resolveTo();
+    const selection = makeSelection(
+      {blockId: "p1", type: "text", offset: 0, block: paragraph},
+      {blockId: "p1", type: "text", offset: 4, block: paragraph},
+    );
+    try {
+      const first = manager.copyFromSelection(selection, new DataTransfer());
+      const second = manager.copyFromSelection(selection, new DataTransfer());
+      expect(write).not.toHaveBeenCalled();
+      await Promise.all([first, second]);
+      expect(write).toHaveBeenCalledTimes(1);
+    } finally {
+      rootHost.remove();
+    }
+  });
+
+  for (const missingApi of ['clipboard', 'write', 'ClipboardItem']) {
+    it(`writes readonly adapter formats through native copy when ${missingApi} is unavailable`, async () => {
+      const {addBlock, manager, doc, makeSelection, rootHost} = makeHarness();
+      const paragraph = addBlock('p1', 'rich text', BlockNodeType.editable);
+      paragraph.textDeltas = () => [{insert: 'rich text', attributes: {'a:bold': true}}];
+      (doc as any).isReadonly = true;
+      const html = jasmine.createSpy('html').and.resolveTo('<p><strong>rich text</strong></p>');
+      const markdown = jasmine.createSpy('markdown').and.resolveTo('**rich text**');
+      manager.adapter.supportedAdapters = [
+        {type: ClipboardDataType.HTML, fromSnapshot: html, toSnapshot: async () => undefined as any},
+        {type: ClipboardDataType.MARKDOWN, fromSnapshot: markdown, toSnapshot: async () => undefined as any},
+      ];
+      const selection = makeSelection(
+        {blockId: paragraph.id, type: 'text', offset: 0, block: paragraph},
+        {blockId: paragraph.id, type: 'text', offset: 9, block: paragraph},
+      );
+      const target = missingApi === 'ClipboardItem' ? globalThis : missingApi === 'clipboard' ? navigator : navigator.clipboard;
+      const property = missingApi;
+      const descriptor = Object.getOwnPropertyDescriptor(target, property);
+      Object.defineProperty(target, property, {value: undefined, configurable: true});
+      const copied = new DataTransfer();
+      const command = spyOn(document, 'execCommand').and.callFake(() => {
+        const event = new ClipboardEvent('copy', {bubbles: true, cancelable: true});
+        Object.defineProperty(event, 'clipboardData', {value: copied});
+        document.body.dispatchEvent(event);
+        return true;
+      });
+      const nativeData = new DataTransfer();
+
+      try {
+        const copying = manager.copyFromSelection(selection, nativeData);
+        // This HTML fallback is available before any asynchronous adapter
+        // result, including on platforms that strip custom event MIME types.
+        const fallback = parseClipboardSnapshotFromHtml(nativeData.getData(ClipboardDataType.HTML));
+        expect((fallback?.children[0] as IBlockSnapshot).children)
+          .toEqual([{insert: 'rich text', attributes: {'a:bold': true}}]);
+        expect(command).not.toHaveBeenCalled();
+        await copying;
+        expect(command).toHaveBeenCalledTimes(1);
+        expect(html).toHaveBeenCalledTimes(1);
+        expect(markdown).toHaveBeenCalledTimes(1);
+        expect(copied.getData(ClipboardDataType.HTML)).toContain('<strong>rich text</strong>');
+        expect(copied.getData(ClipboardDataType.MARKDOWN)).toBe('**rich text**');
+        expect(doc.logger.warn).not.toHaveBeenCalled();
+      } finally {
+        if (descriptor) Object.defineProperty(target, property, descriptor);
+        else Reflect.deleteProperty(target, property);
+        rootHost.remove();
+      }
+    });
+  }
+
+  it('keeps the synchronous readonly HTML fallback readable and escapes literal markup', async () => {
+    const {addBlock, manager, doc, makeSelection, rootHost} = makeHarness();
+    const text = '<strong>literal</strong>&\nsecond';
+    const paragraph = addBlock('p1', text, BlockNodeType.editable);
+    (doc as any).isReadonly = true;
+    spyOn<any>(manager, '_writeRichClipboardAsync').and.resolveTo();
+    const selection = makeSelection(
+      {blockId: paragraph.id, type: 'text', offset: 0, block: paragraph},
+      {blockId: paragraph.id, type: 'text', offset: text.length, block: paragraph},
+    );
+    const data = new DataTransfer();
+    try {
+      const copying = manager.copyFromSelection(selection, data);
+      const parsed = new DOMParser().parseFromString(data.getData(ClipboardDataType.HTML), 'text/html');
+      expect(parsed.querySelector('p')!.textContent).toBe('<strong>literal</strong>&second');
+      expect(parsed.querySelector('strong')).toBeNull();
+      expect(parsed.querySelectorAll('br').length).toBe(1);
+      expect(parseClipboardSnapshotFromHtml(data.getData(ClipboardDataType.HTML))).toBeTruthy();
+      await copying;
+    } finally {
+      rootHost.remove();
+    }
+  });
+
+  it("does not let an older readonly adapter result overwrite a newer copy fallback", async () => {
+    const {addBlock, manager, doc, makeSelection, rootHost} = makeHarness();
+    const older = addBlock("older", "older", BlockNodeType.editable);
+    const newer = addBlock("newer", "newer", BlockNodeType.editable);
+    (doc as any).isReadonly = true;
+    const pending: Array<(html: string) => void> = [];
+    manager.adapter.supportedAdapters = [{
+      type: ClipboardDataType.HTML,
+      fromSnapshot: () => new Promise<string>(resolve => pending.push(resolve)),
+      toSnapshot: async () => undefined as any,
+    }];
+    spyOn(navigator.clipboard, "write").and.rejectWith(new DOMException("gesture required", "NotAllowedError"));
+    const copied = new DataTransfer();
+    const command = spyOn(document, "execCommand").and.callFake(() => {
+      const event = new ClipboardEvent("copy", {bubbles: true, cancelable: true});
+      Object.defineProperty(event, "clipboardData", {value: copied});
+      document.body.dispatchEvent(event);
+      return true;
+    });
+    const select = (block: typeof older) => makeSelection(
+      {blockId: block.id, type: "text", offset: 0, block},
+      {blockId: block.id, type: "text", offset: 5, block},
+    );
+
+    try {
+      const first = manager.copyFromSelection(select(older), new DataTransfer());
+      const second = manager.copyFromSelection(select(newer), new DataTransfer());
+      pending[1]("<p>newer</p>");
+      await second;
+      pending[0]("<p>older</p>");
+      await first;
+      expect(command).toHaveBeenCalledTimes(1);
+      expect(copied.getData(ClipboardDataType.TEXT)).toBe("newer");
+      expect(copied.getData(ClipboardDataType.HTML)).toContain("<p>newer</p>");
+      expect(doc.logger.warn).not.toHaveBeenCalled();
+    } finally {
+      rootHost.remove();
+    }
   });
 
   it("copies a one-character inline image selection as its embed delta", () => {

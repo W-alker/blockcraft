@@ -49,25 +49,20 @@ async function tryNavigator(this: ClipboardManager, snapshot: IBlockSnapshot) {
 }
 
 async function tryCommand(this: ClipboardManager, rootSnapshot: IBlockSnapshot) {
-  return new Promise<void>(async (resolve, reject) => {
-    const items = await buildClipboardItems(this.adapter.supportedAdapters, rootSnapshot, snapshots2Text([rootSnapshot]));
-    const ownerDocument = getClipboardOwnerDocument(this.doc)
+  const items = await buildClipboardItems(this.adapter.supportedAdapters, rootSnapshot, snapshots2Text([rootSnapshot]));
+  return writeClipboardItemsWithCommand(this.doc, items)
+}
 
-    let range: Range | undefined
-    const selection = ownerDocument.getSelection()
-    if (selection && selection.rangeCount) {
-      range = selection.getRangeAt(0)?.cloneRange()
-      selection.removeAllRanges()
-    }
+/** Internal fallback shared by model copies and readonly native copy events. */
+export function writeClipboardItemsWithCommand(doc: BlockCraft.Doc, items: Record<string, string>) {
+  return new Promise<void>((resolve, reject) => {
+    const ownerDocument = getClipboardOwnerDocument(doc)
 
+    // Copy leaves the native selection untouched, including backward ranges.
+    // Clearing it can disable WebKit's command in a non-editable root.
     let copyHandled = false
     const handler = (e: ClipboardEvent) => {
       copyHandled = true
-      if (range) {
-        ownerDocument.getSelection()?.removeAllRanges()
-        ownerDocument.getSelection()?.addRange(range)
-      }
-
       e.preventDefault()
       e.stopPropagation()
       if (!e.clipboardData) {
@@ -93,7 +88,7 @@ async function tryCommand(this: ClipboardManager, rootSnapshot: IBlockSnapshot) 
     }
     if (!copyHandled) {
       // copy 事件未触发：listener 仍挂在 ownerDocument.body 上，必须显式移除
-      // 否则会成为孤儿，下一次任意 copy 事件会以陈旧的 items/range 闭包错误地 resolve
+      // 否则会成为孤儿，下一次任意 copy 事件会以陈旧的 items 闭包错误地 resolve
       ownerDocument.body.removeEventListener('copy', handler)
       reject(success ? 'copy event did not fire' : 'execCommand copy failed')
     }

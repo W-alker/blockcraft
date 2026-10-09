@@ -283,11 +283,16 @@
   // flow beneath overlaid objects. Object-originated gestures never set this
   // transient root attribute, so selection/edit/drag inside the object keeps
   // its normal pointer behavior.
-  &[data-bc-flow-selection-passthrough]
-    [data-block-id][data-bc-placement='absolute'],
-  &[data-bc-flow-selection-passthrough]
-    [data-block-id][data-bc-placement='absolute'] * {
-    pointer-events: none !important;
+  &[data-bc-flow-selection-passthrough] {
+    // In reading mode, local absolute members of a flow group are part of the
+    // visible prose. Only independent overlays (including an absolute group
+    // and all of its descendants) should become pointer-transparent.
+    &:not(.readonly) [data-block-id][data-bc-placement='absolute'],
+    &:not(.readonly) [data-block-id][data-bc-placement='absolute'] *,
+    &.readonly [data-block-id][data-bc-placement='absolute']:not([data-bc-object-group] *),
+    &.readonly [data-block-id][data-bc-placement='absolute']:not([data-bc-object-group] *) * {
+      pointer-events: none !important;
+    }
   }
 
   // The root placement layout is an infrastructure surface, not an editable
@@ -441,7 +446,9 @@
 
   .edit-container {
     white-space: break-spaces;
-    user-select: text;
+    // The root disables native selection. WebKit needs its prefixed property
+    // explicitly overridden on text containers.
+    @include user-select(text);
     position: relative;
 
     span[contenteditable='false'] {

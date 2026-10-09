@@ -108,6 +108,11 @@ export class RootBlockComponent extends BaseBlockComponent<RootBlockModel> {
 
     this.doc.readonlySwitch$.pipe(takeUntil(this.onDestroy$)).subscribe(v => {
       this.hostElement.setAttribute('contenteditable', v ? 'false' : 'true')
+      // Model-only selections (table rectangles/objects) have no native Range.
+      // A readonly root must still accept programmatic focus for copy routing,
+      // without joining the Tab order or changing editable-host navigation.
+      if (v) this.hostElement.setAttribute('tabindex', '-1')
+      else this.hostElement.removeAttribute('tabindex')
       v ? this.hostElement.classList.add('readonly') : this.hostElement.classList.remove('readonly')
     })
 

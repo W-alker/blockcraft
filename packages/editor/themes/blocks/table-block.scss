@@ -293,10 +293,6 @@
       table {
         position: relative;
 
-        td {
-          -webkit-user-modify: read-write;
-        }
-
         &::after {
           content: '';
           position: absolute;
@@ -524,6 +520,13 @@
       }
     }
 
+  }
+
+  // Whole-table presentation must not create editable islands in a reading
+  // document (or a protected table); those islands trap native cross-block
+  // selection in Chromium. Preserve the existing editable-table behavior.
+  &:not(.readonly) .table-block.selected:not([data-bc-readonly]) table td {
+    -webkit-user-modify: read-write;
   }
 
   @at-root #{selector-unify(&, '.readonly')} {

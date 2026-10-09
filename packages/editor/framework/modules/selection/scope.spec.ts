@@ -2,7 +2,7 @@ import {
   BlockNodeType,
   BlockSelectionScopeCapability,
 } from "../../block-std";
-import {ISelectionPoint} from "./types";
+import {ISelectionPoint, ISelectionPointJSON} from "./types";
 import {
   getSelectionScopePolicy,
   resolveCommonSelectionScope,
@@ -24,6 +24,7 @@ describe("Selection scope", () => {
     mermaid: "transparent",
     "mermaid-textarea": "transparent",
     "text-box": {relative: "transparent", absolute: "container"},
+    "object-group": "container",
   }
 
   function schemaDoc(
@@ -479,6 +480,174 @@ describe("Selection scope", () => {
 
     expect(setBaseAndExtent).toHaveBeenCalledTimes(1)
   })
+
+  for (const backward of [false, true]) {
+    it(`keeps native ${backward ? 'backward' : 'forward'} reading selection while repairing the model scope`, () => {
+      const root = block("root", "root", BlockNodeType.root)
+      root.hostElement.setAttribute("contenteditable", "false")
+      root.hostElement.setAttribute("data-selection-scope-test", "true")
+      const callout = block("callout-1", "callout", BlockNodeType.block, root)
+      const inside = block("inside", "paragraph", BlockNodeType.editable, callout)
+      const after = block("after", "paragraph", BlockNodeType.editable, root)
+      const insideText = appendEditable(inside.hostElement, "inside")
+      const afterText = appendEditable(after.hostElement, "after")
+      attachInlineMapper(inside, insideText)
+      attachInlineMapper(after, afterText)
+      root.childrenIds = [callout.id, after.id]
+      root.childrenLength = 2
+      callout.childrenIds = [inside.id]
+      callout.childrenLength = 1
+      callout.getIndexOfParent = () => 0
+      inside.getIndexOfParent = () => 0
+      after.getIndexOfParent = () => 1
+      callout.hostElement.appendChild(inside.hostElement)
+      appendBlockGaps(callout)
+      root.hostElement.append(callout.hostElement, after.hostElement)
+      document.body.appendChild(root.hostElement)
+      const manager = createSelectionManager(root, {root, [callout.id]: callout, inside, after})
+      ;(manager.doc as any).isReadonly = true
+      const nativeSelection = document.getSelection()!
+      const anchorNode = backward ? afterText : insideText
+      const focusNode = backward ? insideText : afterText
+      nativeSelection.setBaseAndExtent(anchorNode, 2, focusNode, 3)
+      spyOn<any>(manager, "_normalizeRange").and.returnValue({
+        start: text(inside, backward ? 3 : 2),
+        end: text(after, backward ? 2 : 3),
+      })
+      const setBaseAndExtent = spyOn(nativeSelection, "setBaseAndExtent").and.callThrough()
+      const removeAllRanges = spyOn(nativeSelection, "removeAllRanges").and.callThrough()
+
+      const result = manager.recalculate()
+
+      expect(result.value?.toJSON()).toEqual({
+        anchor: backward
+          ? {blockId: after.id, type: "text", offset: 2}
+          : {blockId: root.id, type: "boundary", index: 0},
+        head: backward
+          ? {blockId: root.id, type: "boundary", index: 0}
+          : {blockId: after.id, type: "text", offset: 3},
+        commonParent: root.id,
+      })
+      expect(result.value?.direction).toBe(backward ? "backward" : "forward")
+      expect(nativeSelection.anchorNode).toBe(anchorNode)
+      expect(nativeSelection.anchorOffset).toBe(2)
+      expect(nativeSelection.focusNode).toBe(focusNode)
+      expect(nativeSelection.focusOffset).toBe(3)
+      expect(setBaseAndExtent).not.toHaveBeenCalled()
+      expect(removeAllRanges).not.toHaveBeenCalled()
+      expect(manager.doc.logger.warn).not.toHaveBeenCalled()
+    })
+  }
+
+  for (const route of ['into-group', 'out-of-group', 'between-groups'] as const) {
+    for (const backward of [false, true]) {
+      it(`repairs nested reading scopes ${route} ${backward ? 'backward' : 'forward'} without collapsing the native range`, () => {
+        const root = block('root', 'root', BlockNodeType.root)
+        root.hostElement.setAttribute('contenteditable', 'false')
+        root.hostElement.setAttribute('data-selection-scope-test', 'true')
+        const before = block('before', 'paragraph', BlockNodeType.editable, root)
+        const after = block('after', 'paragraph', BlockNodeType.editable, root)
+        const blocks: Record<string, any> = {root, before, after}
+        const beforeText = appendEditable(before.hostElement, 'before')
+        const afterText = appendEditable(after.hostElement, 'after')
+        attachInlineMapper(before, beforeText)
+        attachInlineMapper(after, afterText)
+        const groups = [0, 1].map(index => {
+          const group = block(`group-${index}`, 'object-group', BlockNodeType.block, root)
+          const frame = block(`frame-${index}`, 'text-box', BlockNodeType.block, group, DEFAULT_SCOPE_BY_FLAVOUR['text-box'], true)
+          const paragraph = block(`inside-${index}`, 'paragraph', BlockNodeType.editable, frame)
+          const node = appendEditable(paragraph.hostElement, `inside ${index}`)
+          attachInlineMapper(paragraph, node)
+          group.childrenIds = [frame.id]
+          frame.childrenIds = [paragraph.id]
+          frame.hostElement.appendChild(paragraph.hostElement)
+          group.hostElement.appendChild(frame.hostElement)
+          Object.assign(blocks, {[group.id]: group, [frame.id]: frame, [paragraph.id]: paragraph})
+          return {group, paragraph, node}
+        })
+        root.childrenIds = [before.id, groups[0].group.id, groups[1].group.id, after.id]
+        root.childrenLength = root.childrenIds.length
+        for (const value of Object.values(blocks)) {
+          value.getIndexOfParent = () => value.parentBlock?.childrenIds.indexOf(value.id) ?? -1
+        }
+        root.hostElement.append(before.hostElement, groups[0].group.hostElement, groups[1].group.hostElement, after.hostElement)
+        document.body.appendChild(root.hostElement)
+        const manager = createSelectionManager(root, blocks)
+        ;(manager.doc as any).isReadonly = true
+        const first = route === 'into-group' ? before : groups[0].paragraph
+        const last = route === 'out-of-group' ? after : groups[1].paragraph
+        const firstNode = route === 'into-group' ? beforeText : groups[0].node
+        const lastNode = route === 'out-of-group' ? afterText : groups[1].node
+        const nativeSelection = document.getSelection()!
+        nativeSelection.setBaseAndExtent(backward ? lastNode : firstNode, 1, backward ? firstNode : lastNode, 3)
+        spyOn<any>(manager, '_normalizeRange').and.returnValue({
+          start: text(first, backward ? 3 : 1), end: text(last, backward ? 1 : 3),
+        })
+        const range = nativeSelection.getRangeAt(0)
+        const collapse = spyOn(range, 'collapse').and.callThrough()
+        const setBaseAndExtent = spyOn(nativeSelection, 'setBaseAndExtent').and.callThrough()
+        const start: ISelectionPointJSON = route === 'into-group'
+          ? {blockId: before.id, type: 'text', offset: backward ? 3 : 1}
+          : {blockId: root.id, type: 'boundary', index: 1}
+        const end: ISelectionPointJSON = route === 'out-of-group'
+          ? {blockId: after.id, type: 'text', offset: backward ? 1 : 3}
+          : {blockId: root.id, type: 'boundary', index: 3}
+
+        const result = manager.recalculate()
+
+        expect(result.value?.toJSON()).toEqual({anchor: backward ? end : start, head: backward ? start : end, commonParent: root.id})
+        expect(nativeSelection.anchorNode).toBe(backward ? lastNode : firstNode)
+        expect(nativeSelection.focusNode).toBe(backward ? firstNode : lastNode)
+        expect(nativeSelection.anchorOffset).toBe(1)
+        expect(nativeSelection.focusOffset).toBe(3)
+        expect(range.collapsed).toBeFalse()
+        expect(collapse).not.toHaveBeenCalled()
+        expect(setBaseAndExtent).not.toHaveBeenCalled()
+        expect(manager.doc.logger.warn).withContext(JSON.stringify((manager.doc.logger.warn as jasmine.Spy).calls.allArgs())).not.toHaveBeenCalled()
+
+        // The same nested cross-scope range still follows the editing guard.
+        ;(manager.doc as any).isReadonly = false
+        expect(manager.recalculate().value).toBeNull()
+        expect(collapse).toHaveBeenCalledTimes(1)
+      })
+    }
+  }
+
+  for (const readonly of [false, true]) {
+    it(`keeps sibling member ranges inside their shared group in ${readonly ? 'reading' : 'editing'} mode`, () => {
+      const root = block('root', 'root', BlockNodeType.root)
+      root.hostElement.setAttribute('data-selection-scope-test', 'true')
+      const group = block('group', 'object-group', BlockNodeType.block, root)
+      const blocks: Record<string, any> = {root, group}
+      const members = [0, 1].map(index => {
+        const frame = block(`frame-${index}`, 'text-box', BlockNodeType.block, group, DEFAULT_SCOPE_BY_FLAVOUR['text-box'], true)
+        const paragraph = block(`inside-${index}`, 'paragraph', BlockNodeType.editable, frame)
+        const node = appendEditable(paragraph.hostElement, `inside ${index}`)
+        frame.childrenIds = [paragraph.id]
+        frame.hostElement.appendChild(paragraph.hostElement)
+        group.hostElement.appendChild(frame.hostElement)
+        Object.assign(blocks, {[frame.id]: frame, [paragraph.id]: paragraph})
+        return {frame, paragraph, node}
+      })
+      root.childrenIds = [group.id]
+      group.childrenIds = members.map(member => member.frame.id)
+      root.hostElement.appendChild(group.hostElement)
+      document.body.appendChild(root.hostElement)
+      const manager = createSelectionManager(root, blocks)
+      ;(manager.doc as any).isReadonly = readonly
+      setNativeRange(members[0].node, members[1].node)
+      spyOn<any>(manager, '_normalizeRange').and.returnValue({
+        start: text(members[0].paragraph), end: text(members[1].paragraph, 3),
+      })
+      spyOn<any>(manager, '_stabilizeCrossScopeDomSelection')
+
+      expect(manager.recalculate().value?.toJSON()).toEqual({
+        anchor: {blockId: group.id, type: 'boundary', index: 0},
+        head: {blockId: group.id, type: 'boundary', index: 2},
+        commonParent: group.id,
+      })
+    })
+  }
 
   it("preserves backward direction when stabilizing a repaired scope endpoint", () => {
     const root = block("root", "root", BlockNodeType.root)

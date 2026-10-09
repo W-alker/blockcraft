@@ -1080,16 +1080,26 @@ export class SelectionManager {
 
   private _repairCrossScopeEndpoints(endpoints: INormalizedEndpoints): INormalizedEndpoints | null {
     const getBlock = (id: string) => this.doc.getBlockById(id) as any
-    const startScope = resolveSelectionScope(endpoints.start, getBlock)
-    const endScope = resolveSelectionScope(endpoints.end, getBlock)
-    if (!startScope || !endScope || startScope.blockId === endScope.blockId) return null
+    let {start, end} = endpoints
+    do {
+      const startScope = resolveSelectionScope(start, getBlock)
+      const endScope = resolveSelectionScope(end, getBlock)
+      if (!startScope || !endScope || startScope.blockId === endScope.blockId) break
 
-    const start = startScope.kind === 'document'
-      ? endpoints.start
-      : this._boundaryPointForScope(startScope, 'before') ?? endpoints.start
-    const end = endScope.kind === 'document'
-      ? endpoints.end
-      : this._boundaryPointForScope(endScope, 'after') ?? endpoints.end
+      const nextStart = startScope.kind === 'document'
+        ? start
+        : this._boundaryPointForScope(startScope, 'before') ?? start
+      const nextEnd = endScope.kind === 'document'
+        ? end
+        : this._boundaryPointForScope(endScope, 'after') ?? end
+      if (nextStart === start && nextEnd === end) break
+      start = nextStart
+      end = nextEnd
+      // Reading can span nested closed scopes (e.g. a text box in a group).
+      // Lift model endpoints until they share a scope; stopping after the inner
+      // frame would reach the cross-parent rejection and collapse the live drag.
+      // Editing keeps its existing one-level boundary policy.
+    } while (this.doc.isReadonly)
 
     if (start === endpoints.start && end === endpoints.end) return null
     return {start, end}
@@ -1301,6 +1311,12 @@ export class SelectionManager {
     selectionState: BlockSelection,
     nativeSelection: globalThis.Selection,
   ): void {
+    // Reading has no editing-host boundary to enforce. Moving the native
+    // anchor to a closed container's gap during a drag makes WebKit restart
+    // selection there (and can collapse it to the gap). Keep the repaired
+    // model for structural copy, but let the browser retain its text gesture.
+    if (this.doc.isReadonly) return
+
     try {
       const range = this._buildDomRange(
         pointToLegacy(selectionState.start),

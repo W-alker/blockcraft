@@ -36,7 +36,7 @@ import {
   snapshots2Text,
 } from "../../utils";
 import {DOC_ADAPTER_SERVICE_TOKEN} from '../../angular/host-service-tokens';
-import {copyBlocks} from "./copyBlocks";
+import {copyBlocks, writeClipboardItemsWithCommand} from "./copyBlocks";
 import {applyCopyFilters, resolveCopyFilters, stripBlockLockMetaDeep} from "./copy-filter";
 import {
   BLOCKCRAFT_WEB_SNAPSHOT_MIME,
@@ -73,6 +73,7 @@ interface GapPastePayload {
 @DocEventRegister
 export class ClipboardManager {
   adapter = this.doc.injector.get(DOC_ADAPTER_SERVICE_TOKEN)
+  private _richClipboardWriteVersion = 0
 
   private get _sourceAdapters() {
     return this.adapter?.clipboardSourceAdapters ?? this.defaultSourceAdapters
@@ -222,36 +223,23 @@ export class ClipboardManager {
 
     const absoluteObjectSelection =
       this.doc.placement?.isAbsoluteObjectSelection(selection) === true
-    if (absoluteObjectSelection) {
+    if (absoluteObjectSelection || selectionReadonly) {
       // ClipboardEvent.clipboardData is writable only during the synchronous
       // copy event. Object selections have no native Range, so waiting for
       // async adapters can leave the real browser clipboard empty even though
-      // a plain DataTransfer-based unit test succeeds. Persist both the native
-      // snapshot MIME and an HTML marker before the first await; the latter is
-      // the fallback for browsers that strip custom event MIME types.
+      // a plain DataTransfer-based unit test succeeds. Readonly roots have the
+      // same synchronous lifetime limit. Persist both the native snapshot MIME
+      // and an HTML marker before the first await, so internal paste preserves
+      // structure even if custom MIME is stripped or adapters are still pending.
+      const marker = buildClipboardSnapshotMarkerHtml(snapshot)
+      // External rich-text targets may prefer HTML even before adapters finish.
+      // Keep readable text alongside the private marker instead of empty HTML.
+      const fallbackHtml = selectionReadonly
+        ? `<p>${plainText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')}</p>${marker}`
+        : marker
       this._setClipboardData(clipboardData, {
         [ClipboardDataType.TEXT]: plainText,
-        [ClipboardDataType.HTML]: buildClipboardSnapshotMarkerHtml(snapshot),
-        [ClipboardDataType.BLOCKCRAFT_SNAPSHOT]: serializeClipboardSnapshot(snapshot),
-      })
-      await this._writeRichClipboardAsync(snapshot, plainText)
-      return
-    }
-
-    if (selectionReadonly) {
-      // 只读模式：contenteditable=false 时 Chromium（特别是 Windows）会在
-      // 同步 copy 事件 handler 返回后立刻解绑 event.clipboardData，await 之后
-      // 的 setData 会被丢——之前 Windows 上只读复制完全拿不到内容就是这个
-      // 原因。这里改成两步：
-      //   1. 同步写最小集（TEXT + 内部 snapshot）兜底，确保 sync 窗口里
-      //      就已经有内容落地
-      //   2. 异步走 navigator.clipboard.write（接受 Promise，不受同步事件
-      //      窗口限制）覆盖富文本 MIME；非内置 MIME 自动走 `web ` 前缀的
-      //      Web Custom Format，BC↔BC 内部粘贴可以从那边恢复
-      // 外部应用读取 `text/markdown` / `text/rtf` 这类非标准 MIME 在这条
-      // 路径下会拿不到，是 web 平台 async clipboard 的硬约束，不是回归。
-      this._setClipboardData(clipboardData, {
-        [ClipboardDataType.TEXT]: plainText,
+        [ClipboardDataType.HTML]: fallbackHtml,
         [ClipboardDataType.BLOCKCRAFT_SNAPSHOT]: serializeClipboardSnapshot(snapshot),
       })
       await this._writeRichClipboardAsync(snapshot, plainText)
@@ -423,42 +411,59 @@ export class ClipboardManager {
   }
 
   private async _writeRichClipboardAsync(snapshot: IBlockSnapshot, plainText: string): Promise<void> {
-    if (typeof navigator === 'undefined' || !navigator.clipboard?.write) return
-    if (typeof ClipboardItem === 'undefined') return
+    const copyVersion = ++this._richClipboardWriteVersion
+    // Serialize regardless of async API availability. Older WebViews can still
+    // write adapter HTML/Markdown through a new synchronous copy event.
+    const pendingItems = buildClipboardItems(this.adapter.supportedAdapters, snapshot, plainText)
+    // Let the native copy commit before touching the pasteboard again. WebKit
+    // otherwise rejects a pending write when that event changes the pasteboard.
+    await new Promise<void>(resolve => setTimeout(resolve, 0))
+    if (copyVersion !== this._richClipboardWriteVersion) return
+    const ownerNavigator = getClipboardNavigator(this.doc)
 
-    let items: Record<string, string>
-    try {
-      items = await buildClipboardItems(this.adapter.supportedAdapters, snapshot, plainText)
-    } catch (e) {
-      this.doc.logger.warn('buildClipboardItems error', e)
-      return
+    if (ownerNavigator.clipboard?.write && typeof ClipboardItem !== 'undefined') {
+      // Standard MIME types are written directly; supported Web Custom Formats
+      // carry the remaining adapter data and the internal snapshot.
+      const writeTypes = new Map<string, string>()
+      const sourceTypes = new Set([
+        ClipboardDataType.TEXT,
+        ClipboardDataType.BLOCKCRAFT_SNAPSHOT,
+        ...this.adapter.supportedAdapters.map(adapter => adapter.type),
+      ])
+      for (const type of sourceTypes) {
+        if (supportsClipboardWriteType(type)) {
+          writeTypes.set(type, type)
+          continue
+        }
+        const webType = `web ${type}`
+        if (supportsClipboardWriteType(webType)) {
+          writeTypes.set(type, webType)
+        }
+      }
+
+      const itemData: Record<string, Promise<Blob>> = {}
+      for (const [sourceType, writeType] of writeTypes) {
+        itemData[writeType] = pendingItems.then(items => {
+          if (!(sourceType in items)) throw new Error(`Missing clipboard representation: ${sourceType}`)
+          return new Blob([items[sourceType]], {type: writeType})
+        })
+      }
+      try {
+        await ownerNavigator.clipboard.write([new ClipboardItem(itemData)])
+        return
+      } catch {
+        // Continue through the same native fallback as an unavailable API.
+      }
     }
 
-    // 内置 MIME（text/plain、text/html、image/png）直写；其余 MIME（markdown、
-    // rtf、blockcraft snapshot 等）一律包成 Web Custom Format（`web <mime>`），
-    // 这样 navigator.clipboard.write 的整体调用能容纳全部 adapter 产出，BC↔BC
-    // 内部粘贴可以从这些 web 前缀类型恢复完整 snapshot/markdown/rtf 数据。
-    // 注意：外部应用（Word / Google Docs / 第三方 MD 编辑器）只读取原始 MIME，
-    // 不识别 `web ` 前缀——这是 web 平台 async clipboard API 的硬约束，
-    // 没法在保留 Windows 兼容的同时同时满足。
-    const itemData: Record<string, Blob> = {}
-    for (const [type, value] of Object.entries(items)) {
-      if (supportsClipboardWriteType(type)) {
-        itemData[type] = new Blob([value], {type})
-        continue
-      }
-      const webType = `web ${type}`
-      if (supportsClipboardWriteType(webType)) {
-        itemData[webType] = new Blob([value], {type: webType})
-      }
-    }
-
-    if (Object.keys(itemData).length === 0) return
-
+    // Reuse serialized adapter output without changing the user's native range
+    // or re-entering the document's copy handlers.
     try {
-      await navigator.clipboard.write([new ClipboardItem(itemData)])
-    } catch (e) {
-      this.doc.logger.warn('navigator.clipboard.write error', e)
+      const items = await pendingItems
+      if (copyVersion !== this._richClipboardWriteVersion) return
+      await writeClipboardItemsWithCommand(this.doc, items)
+    } catch (fallbackError) {
+      this.doc.logger.warn('rich clipboard write error', fallbackError)
     }
   }
 
