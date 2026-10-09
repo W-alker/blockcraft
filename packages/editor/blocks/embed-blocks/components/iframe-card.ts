@@ -12,11 +12,11 @@ import {resolveEmbedFrameSize} from './embed-sizing';
   template: `
     <div class="iframe-wrapper" #iframeWrapper>
       @if (isolateUrl) {
-        <iframe loading="lazy" allowfullscreen #iframeEle title="网页嵌入"
+        <iframe loading="lazy" allowfullscreen #iframeEle title="网页嵌入" [style]="iframeViewportStyle"
                 sandbox="allow-scripts allow-forms allow-popups"
                 draggable="false" frameborder="0"></iframe>
       } @else {
-      <iframe loading="lazy" allowfullscreen #iframeEle title="网页嵌入"
+      <iframe loading="lazy" allowfullscreen #iframeEle title="网页嵌入" [style]="iframeViewportStyle"
               sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads allow-storage-access-by-user-activation"
               draggable="false"
               allow="encrypted-media;clipboard-read *;clipboard-write *;" referrerpolicy=""
@@ -64,6 +64,21 @@ export class IframeCardComponent implements AfterViewInit, OnDestroy {
     return resolveEmbedFrameSize(this.props, referenceWidth)
   }
 
+  protected get iframeViewportStyle() {
+    if (!IS_SAFARI) return null
+    const scale = this.block?.doc.viewScale.value ?? 1
+    // WKWebView pageZoom can leave a subframe's inherited CSS zoom stale.
+    // Keep its effective CSS zoom at 1 and project the viewport with a transform;
+    // reciprocal percentages preserve the card bounds and layout viewport.
+    return {
+      zoom: String(1 / scale),
+      width: `${100 / scale}%`,
+      height: `${100 / scale}%`,
+      transform: `scale(${scale})`,
+      'transform-origin': 'top left',
+    }
+  }
+
   readonly resizeCalculator: ShapeResizeCalculator = (handle, start, dx, dy, maxWidth) => {
     start = this.resizeStartBox ?? start
     // Keep corner resizing proportional when the page's height is the limit.
@@ -85,15 +100,19 @@ export class IframeCardComponent implements AfterViewInit, OnDestroy {
       width: Number.parseFloat(style.width), height: Number.parseFloat(style.height),
       offsetX: 0, offsetY: 0,
     }
+    const container = this.block!.hostElement.parentElement ?? this.block!.hostElement
+    const availableStyle = getComputedStyle(container)
+    const horizontalInset = ['paddingLeft', 'paddingRight']
+      .reduce((sum, key) => sum + (Number.parseFloat(availableStyle[key as keyof CSSStyleDeclaration] as string) || 0), 0)
+    const containerWidth = container.clientWidth - horizontalInset
     const containerStyle = getComputedStyle(this.block!.hostElement)
-    const containerWidth = Number.parseFloat(containerStyle.width)
     const maxHeight = Number.parseFloat(containerStyle.maxHeight)
     const verticalInset = ['paddingTop', 'paddingBottom', 'borderTopWidth', 'borderBottomWidth']
       .reduce((sum, key) => sum + (Number.parseFloat(containerStyle[key as keyof CSSStyleDeclaration] as string) || 0), 0)
     this.resizeMaxHeight = Number.isFinite(maxHeight) && maxHeight > verticalInset
       ? maxHeight - verticalInset
       : Infinity
-    return Math.min(this.resizeBasisWidth, containerWidth || this.block!.hostElement.clientWidth)
+    return Math.min(this.resizeBasisWidth, containerWidth > 0 ? containerWidth : this.resizeBasisWidth)
   }
 
   onResizeStart() {
@@ -179,7 +198,8 @@ export class IframeCardComponent implements AfterViewInit, OnDestroy {
     this.initSafariHitTestObserver()
     this.syncIframeSrc()
     if (this.block) {
-      merge(this.block.doc.objectSizing.widthChange$, this.block.doc.readonlySwitch$, this.block.onPropsChange)
+      merge(this.block.doc.objectSizing.widthChange$, this.block.doc.readonlySwitch$,
+        this.block.doc.viewScale.scale$, this.block.onPropsChange)
         .pipe(takeUntil(this.destroyed$)).subscribe(() => this.cdr.markForCheck())
     }
   }

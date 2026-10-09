@@ -59,11 +59,13 @@ async function expectFrameFitsBorder(card: Locator) {
     const cardBox = element.getBoundingClientRect()
     const frameBox = element.querySelector('iframe')!.getBoundingClientRect()
     const style = getComputedStyle(element)
+    const scaleX = cardBox.width / parseFloat(style.width)
+    const scaleY = cardBox.height / parseFloat(style.height)
     return [
-      frameBox.left - cardBox.left - parseFloat(style.borderLeftWidth),
-      frameBox.top - cardBox.top - parseFloat(style.borderTopWidth),
-      cardBox.right - frameBox.right - parseFloat(style.borderRightWidth),
-      cardBox.bottom - frameBox.bottom - parseFloat(style.borderBottomWidth),
+      frameBox.left - cardBox.left - parseFloat(style.borderLeftWidth) * scaleX,
+      frameBox.top - cardBox.top - parseFloat(style.borderTopWidth) * scaleY,
+      cardBox.right - frameBox.right - parseFloat(style.borderRightWidth) * scaleX,
+      cardBox.bottom - frameBox.bottom - parseFloat(style.borderBottomWidth) * scaleY,
     ]
   })
   for (const inset of insets) expect(Math.abs(inset), JSON.stringify(insets)).toBeLessThanOrEqual(.5)
@@ -800,7 +802,7 @@ test('snapshot viewer uses responsive embed dimensions and fills the frame', asy
   await expectFrameFitsBorder(card)
 })
 
-test('embed selection chrome follows the resized card instead of the full row', async ({page}) => {
+test('embed block hit area and selection chrome follow the resized card instead of the full row', async ({page}) => {
   await initialize(page)
   const ids = await page.evaluate(() => {
     const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
@@ -828,13 +830,94 @@ test('embed selection chrome follows the resized card instead of the full row', 
     expect(chrome.hostShadow).toBe('none')
     expect(chrome.hostBackground).toBe('rgba(0, 0, 0, 0)')
     expect(chrome.cardShadow).not.toBe('none')
-    expect(chrome.cardWidth).toBeLessThan(chrome.rowWidth * .7)
+    expect(chrome.cardWidth).toBeCloseTo(chrome.rowWidth, 0)
     expect(chrome.resizerWidth).toBeCloseTo(chrome.cardWidth - 2, 0)
     await dragHandle(page, card, 'east', 35, 0)
     const widths = await card.evaluate(el => ({card: el.getBoundingClientRect().width,
+      block: el.parentElement!.getBoundingClientRect().width,
       resizer: el.querySelector('.shape-resizer__frame')!.getBoundingClientRect().width}))
+    expect(widths.card).toBeGreaterThan(chrome.cardWidth + 30)
+    expect(widths.block).toBeCloseTo(widths.card, 0)
     expect(widths.resizer).toBeCloseTo(widths.card - 2, 0)
+    // Shrinking the hit area must not make its current width the next drag limit.
+    await dragHandle(page, card, 'east', -50, 0)
+    await dragHandle(page, card, 'east', 70, 0)
+    expect((await frameBox(card)).width).toBeGreaterThan(widths.card + 15)
     if (id === ids[0] && test.info().project.name === 'chromium') await page.screenshot({path: '/tmp/blockcraft-embed-frame-aligned.png'})
+  }
+})
+
+test('iframe viewport follows two-axis resize previews, commits and cancellation without reloading', async ({page}) => {
+  await page.setViewportSize({width: 1400, height: 1100})
+  await page.route('https://embed-viewport.example.test/**', route => route.fulfill({
+    contentType: 'text/html; charset=utf-8', body: `<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+      <style>html,body{margin:0}main{width:100vw;height:100vh;background:linear-gradient(135deg,cyan,pink)}</style>
+      <main><input aria-label="网页状态" value="初始状态"></main>`,
+  }))
+  await initialize(page)
+  const id = await page.evaluate(() => {
+    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+    const snapshot = doc.schemas.createSnapshot('embed', ['https://embed-viewport.example.test/report.html'])
+    snapshot.props = {...snapshot.props, wr: 45, ar: 1.5}
+    doc.crud.insertBlockSnapshots(doc.rootId, 0, [snapshot])
+    return snapshot.id
+  })
+  const block = page.locator(`[data-block-id="${id}"]`), card = block.locator('embed-frame-card')
+  const content = block.frameLocator('iframe').locator('main')
+  const input = block.frameLocator('iframe').getByRole('textbox', {name: '网页状态'})
+  await card.scrollIntoViewIfNeeded()
+  // Seed frame-owned state independently of native cross-frame keyboard injection.
+  await input.evaluate(el => (el as HTMLInputElement).value = '保留网页状态')
+  const expectViewportFits = async () => {
+    await expectFrameFitsBorder(card)
+    const frame = await block.locator('iframe').evaluate(el => ({width: el.clientWidth, height: el.clientHeight}))
+    // CSS zoom can make clientWidth round up while innerWidth rounds down.
+    await expect.poll(async () => content.evaluate((el, frame) => {
+      const content = el.getBoundingClientRect()
+      return Math.max(Math.abs(window.innerWidth - frame.width), Math.abs(window.innerHeight - frame.height),
+        Math.abs(content.width - frame.width), Math.abs(content.height - frame.height))
+    }, frame)).toBeLessThanOrEqual(1)
+    await expect(input).toHaveValue('保留网页状态')
+    const widths = await block.evaluate(el => ({host: el.getBoundingClientRect().width,
+      card: el.querySelector('embed-frame-card')!.getBoundingClientRect().width}))
+    expect(widths.host).toBeCloseTo(widths.card, 0)
+  }
+  for (const zoom of [1, .75, 1.5]) {
+    await page.evaluate(zoom => {
+      const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+      doc.viewScale.setScale(zoom)
+    }, zoom)
+    await expectViewportFits()
+    for (const [handle, dx, dy, cancel] of [
+      ['east', 60, 0, false], ['south', 0, 45, false],
+      ['south-east', 30, 30, false], ['east', -25, 0, true],
+    ] as const) {
+      await docAction(page, 'stop')
+      const original = await frameProps(page, id), before = await frameBox(card)
+      await page.evaluate(id => {
+        const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+        doc.selection.selectBlock(doc.getBlockById(id))
+      }, id)
+      const grip = card.locator(`[data-handle="${handle}"]`)
+      await grip.evaluate(el => el.scrollIntoView({block: 'center', inline: 'nearest', behavior: 'instant'}))
+      const box = (await grip.boundingBox())!
+      const x = box.x + box.width / 2, y = box.y + box.height / 2
+      await page.mouse.move(x, y)
+      await page.mouse.down()
+      await page.mouse.move(x + dx, y + dy, {steps: 4})
+      await expect.poll(async () => frameBox(card)).not.toEqual(before)
+      await expectViewportFits()
+      expect(await frameProps(page, id)).toEqual(original)
+      if (cancel) await page.keyboard.press('Escape')
+      await page.mouse.up()
+      if (!cancel) {
+        await expect.poll(() => frameProps(page, id)).not.toEqual(original)
+        await expectViewportFits()
+        await docAction(page, 'undo')
+      }
+      await expect.poll(() => frameProps(page, id)).toEqual(original)
+      await expectViewportFits()
+    }
   }
 })
 

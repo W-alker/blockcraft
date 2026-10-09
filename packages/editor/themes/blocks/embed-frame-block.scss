@@ -6,6 +6,13 @@
   }
 
   div.embed-frame-block {
+    // Live cards have a pixel width resolved against the document sizing plane.
+    // Let the block's hit area follow that card instead of filling the row.
+    // Static snapshot cards still use percentages of their full-width shell.
+    &:not(.bc-snapshot-block):not([data-bc-placement='absolute']) {
+      width: fit-content;
+      max-width: 100%;
+    }
 
     &[data-block-id].selected {
       background: unset;
