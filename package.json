@@ -11,7 +11,7 @@
     "test:desktop": "pnpm --dir apps/desktop test",
     "build:playground": "ng build playground",
     "build:editor": "ng build editor && node ./scripts/check-editor-package-styles.mjs && node ./scripts/check-editor-package-dependencies.mjs && node ./scripts/check-editor-global-entrypoints.mjs && node ./scripts/check-editor-pure-entrypoints.mjs && node ./scripts/check-editor-clipboard-boundaries.mjs && node ./scripts/check-editor-domain-boundaries.mjs && node --test ./scripts/check-editor-component-dependencies.test.mjs && node ./scripts/check-editor-component-dependencies.mjs",
-    "build:agent": "pnpm build:editor && ng build blockcraft-agent",
+    "build:agent": "node scripts/sync-document-design-skill.mjs --check && pnpm build:editor && ng build blockcraft-agent",
     "publish:agent": "node ./scripts/publish-agent.mjs",
     "agent:server": "node ./scripts/document-agent-server.mjs",
     "publish:editor": "node ./scripts/publish-editor.mjs",

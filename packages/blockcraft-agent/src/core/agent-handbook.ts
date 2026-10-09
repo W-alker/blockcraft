@@ -47,6 +47,10 @@ directory from the current host application. Use blockcraft.get_capability to
 read the selected block, Inline Embed, plugin, context, skill or semantic tool
 detail. A capability that is absent from this runtime must not be invented or
 written speculatively.
+For document layout or visual styling, when the directory includes
+blockcraft.skill.document-design, read that skill first and follow only the
+relevant sub-guides. Skill instructions do not expand writable capabilities or
+image reconstruction permissions. Plain wording edits do not require it.
 
 Editable text.delta is authoritative for rich inline content. A string insert
 uses its UTF-16 text length; an object insert is one Inline Embed and consumes

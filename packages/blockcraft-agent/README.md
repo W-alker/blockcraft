@@ -3,6 +3,12 @@
 BlockCraft Editor Agent 的编辑器适配包，覆盖文档写作、模型读取、Schema 感知和
 受控编辑操作。
 
+内置文档设计技能 `blockcraft.skill.document-design` 将排版方法与写入契约分开。
+目录仅提供摘要，`blockcraft.get_capability` 按需返回入口或 layout / typography /
+visual / execution 子指南。内容从 editor 的 `ai-skills/document-design/` 生成，
+不增加工具、放宽 schema 或启用图片布局重建；只注册段落的宿主也可读取指南，
+但只能使用自己暴露的块与写入参数。
+
 当前包提供：
 
 - `DocumentAgentPlugin`：监听 BlockCraft 选区并生成模型上下文；

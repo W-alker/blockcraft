@@ -185,6 +185,27 @@ const snapshot = doc.schemas.createSnapshot('embed', [url]);
 
 ---
 
+## Unreleased — 2026-10-08：独立文档设计技能与 Agent 按需入口
+
+**Severity**: minor（新增技能，未修改包版本）
+
+**What changed**: 随 editor 包分发 `document-design/SKILL.md` 及布局、文字、视觉、执行四份参考。
+`@ccc/blockcraft-agent` 的内置扩展新增五个 skill capability；目录仅暴露摘要，详细指令按需读取。
+Markdown 为唯一指令源，通过 `scripts/sync-document-design-skill.mjs` 生成运行时常量。
+整体视觉制作先用真实内容进行 HTML 视觉探索，方向形成后再核对能力并生成落地稿，
+以同一设计参数映射原生内容并对照验证；避免把当前工具已开放的字段当作审美上限。
+局部文字/样式修改仍直接编辑。无 HTML 预览能力时明确降级，不增加强制用户确认。
+
+**Why**: 文档制作需要理解原生能力如何组合，不能只有框架开发说明或某一种业务模板的固定配方。
+
+**Affected ai-skills files**: `SKILL.md`、`blockcraft.md`、`README.md`、`document-design/**`。
+
+**Migration**: 旧调用无需修改。外部 AI 可单独发现/安装 `blockcraft-document-design`；
+编辑器内 Agent 需升级 agent 包后通过 `blockcraft.get_capability` 读取
+`blockcraft.skill.document-design`。不新增写入权限、工具或图片布局重建能力。
+
+---
+
 ## Unreleased — 2026-10-08：组合内日期、天气保持等比
 
 **Severity**: minor

@@ -11,6 +11,12 @@
 >
 > **External users**: this skill pack is bundled with the npm package. AI agents can discover it via `SKILL.md` (frontmatter present); humans see `README.md` for installation and the one-command installer (`install.mjs`).
 
+## 文档设计入口
+
+制作、美化可编辑文档，读取 [blockcraft-document-design](document-design/SKILL.md)，
+按需进入布局/对象、文字/段落、视觉配方或执行验证。它独立于框架开发指南，随本包分发；
+编辑器内 `@ccc/blockcraft-agent` 通过 `blockcraft.skill.document-design` 按需暴露同源内容。
+
 ## What is BlockCraft?
 
 A block-based rich text editor built on **Angular (standalone components)** + **Yjs (CRDT)**. It provides:

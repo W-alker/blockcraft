@@ -1,3 +1,4 @@
+import {DocumentAgentToolExecutor} from './document-agent-tool-executor'
 import {
   BlockNodeType,
   AdapterRegistry,
@@ -31,6 +32,22 @@ import {
 import {DocumentAgentOperationApplier} from './document-agent-operation-applier'
 
 describe('BlockCraft Agent v2 contract', () => {
+  it('默认执行器可以按需读取内置设计技能，不产生文档变更', () => {
+    const doc = createFakeDoc()
+    const before = captureBlockCraftAgentContext(doc as never)
+    const executor = new DocumentAgentToolExecutor(doc as never)
+    const result = executor.execute({
+      name: 'blockcraft.get_capability',
+      arguments: {capabilityId: 'blockcraft.skill.document-design'},
+    })
+    expect(result.ok).toBeTrue()
+    if (!result.ok) throw new Error(result.error)
+    expect(result.data).toEqual(jasmine.objectContaining({
+      id: 'blockcraft.skill.document-design', kind: 'skill',
+    }))
+    expect(captureBlockCraftAgentContext(doc as never)).toEqual(before)
+  })
+
   it('treats images as references without advertising visual reconstruction', () => {
     const delegate = DOCUMENT_AGENT_TOOL_DEFINITIONS.find(
       definition => definition.name === 'blockcraft.delegate',
