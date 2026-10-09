@@ -36,7 +36,7 @@ describe("typography settings dialogs", () => {
     expect(fixture.nativeElement.querySelector(".bc_xiahuaxian")).toBeNull();
     expect(fixture.nativeElement.textContent).not.toContain("效果");
     expect(fixture.nativeElement.textContent).not.toContain("文字缩放");
-    expect(fixture.nativeElement.textContent).toContain("字符间距");
+    expect(fixture.nativeElement.textContent).toContain("高级");
     expect(component.selectedTab()).toBe(0);
     expect(fixture.nativeElement.textContent).not.toContain("应用到：");
     expect(fixture.nativeElement.textContent).not.toContain("定位：");
@@ -86,6 +86,28 @@ describe("typography settings dialogs", () => {
     expect(component.scalePercentValue).toBe(100);
     expect(component.spacingInputValue).toBe(0);
     expect(component.buildResult()).toEqual({typography: {}, attrs: {}});
+  });
+
+  it("keeps pixel and scale drafts separate until confirmation", async () => {
+    await TestBed.configureTestingModule({
+      imports: [NoopAnimationsModule, FontSettingsDialogComponent],
+      providers: [{provide: CS_MODAL_DATA, useValue: {
+        target: 'font-size', fontSize: 30, typography: {ff: null, fs: 1.5, ls: null},
+        attrs: {bold: false, italic: false, underline: false, strike: false, code: false},
+        colors: {color: null, backColor: null},
+      }}],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(FontSettingsDialogComponent);
+    fixture.detectChanges();
+    const component = fixture.componentInstance as any;
+    expect(component.fontSize()).toBe(30);
+    expect(component.previewFontSize).toBe('30px');
+    expect(component.buildResult()).toEqual({typography: {}, attrs: {}});
+    component.setFontSize(24);
+    expect(component.scale()).toBe(1.5);
+    expect(component.buildResult()).toEqual({fontSize: 24, typography: {}, attrs: {}});
+    component.setScale(2);
+    expect(component.buildResult()).toEqual({fontSize: 32, typography: {fs: 2}, attrs: {}});
   });
 
   it("builds one paragraph patch and preserves explicit zero after-spacing", async () => {

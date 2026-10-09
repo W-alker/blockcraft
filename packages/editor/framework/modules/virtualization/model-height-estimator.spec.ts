@@ -207,6 +207,26 @@ describe('estimateModelBlockHeight', () => {
     expect(estimate).toEqual({height: 384, modelDriven: true})
   })
 
+  it('estimates fixed pixels with pfs and does not add the heading size twice', () => {
+    const doc = createDoc({paragraph: {
+      ...block('paragraph', BlockNodeType.editable, {fs: 16, pfs: 2, heading: 1}),
+      deltas: [{insert: 'a'.repeat(200)}],
+    }});
+    doc.objectSizing.rootContentWidth = 400;
+    expect(estimateModelBlockHeightDetails(doc as any, 'paragraph')).toEqual({height: 384, modelDriven: true});
+  });
+
+  it('includes new inline pixel sizes in flow placeholders without paragraph props', () => {
+    const doc = createDoc({paragraph: {
+      ...block('paragraph', BlockNodeType.editable),
+      deltas: [{insert: 'a'.repeat(40), attributes: {'t:px': 64}}],
+    }});
+    doc.objectSizing.rootContentWidth = 400;
+    const estimate = estimateModelBlockHeightDetails(doc as any, 'paragraph');
+    expect(estimate.modelDriven).toBeTrue();
+    expect(estimate.height).toBeGreaterThanOrEqual(384);
+  });
+
   it('keeps explicit before and after spacing on a final paragraph', () => {
     const doc = createDoc({
       root: block('root', BlockNodeType.root, {}, ['paragraph']),

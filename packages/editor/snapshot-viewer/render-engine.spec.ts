@@ -17,6 +17,23 @@ import {
 import {createAllBlocksFixture} from "./testing/fixtures/all-blocks.fixture";
 
 describe("SnapshotRenderEngine", () => {
+  it('projects fixed pixels and both scales in the readonly renderer', () => {
+    const host = document.createElement('div');
+    const renderer = createSnapshotRenderer();
+    renderer.render(host, wrapRoot([{id: 'px', flavour: 'paragraph', nodeType: BlockNodeType.editable,
+      props: {fs: 16, pfs: 1.5, heading: 1}, meta: {}, children: [
+        {insert: 'fixed', attributes: {'t:px': 12.8, 't:fs': 1.25}},
+      ]}]));
+    const block = host.querySelector<HTMLElement>('[data-block-id="px"]')!;
+    expect(block.style.fontSize).toBe('24px');
+    expect(block.style.getPropertyValue('--bc-block-fs-scale')).toBe('1.5');
+    const inline = block.querySelector<HTMLElement>('[data-bc-px]')!;
+    document.body.append(host);
+    expect(getComputedStyle(inline).fontSize).toBe('24px');
+    renderer.destroy();
+    host.remove();
+  });
+
   it('applies the viewer theme scope to standalone hosts and restores their class on destroy', () => {
     const host = document.createElement('div')
     const renderer = createSnapshotRenderer()

@@ -1,3 +1,4 @@
+import {normalizeFontSizePixels, normalizeParagraphFontScale} from '../typography/core';
 import { Type } from "@angular/core";
 import {
   BlockNodeType,
@@ -311,6 +312,11 @@ export const editableBlockCreateSnapShotFn = <M extends NativeBlockModel = Nativ
     // @ts-ignore
     const _heading = props?.['heading'] || defaultProps?.['heading'] || undefined
     if (_heading) _props['heading'] = _heading
+    const typographyProps = props as Record<string, unknown> | undefined
+    const fs = normalizeFontSizePixels(typographyProps?.['fs'])
+    const pfs = normalizeParagraphFontScale(typographyProps?.['pfs'])
+    if (fs !== null || typographyProps?.['fs'] === null) _props['fs'] = fs
+    if (pfs !== null || typographyProps?.['pfs'] === null) _props['pfs'] = pfs
 
     return {
       id: generateId(),

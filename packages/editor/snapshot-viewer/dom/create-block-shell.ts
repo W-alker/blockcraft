@@ -6,7 +6,7 @@ import {
   normalizeParagraphSpacing,
   normalizeTypographyLineHeight,
   paragraphPointsToCss,
-  resolveEditableBlockFontScale,
+  editableBlockFontSizeCss,
 } from "@ccc/blockcraft/framework/block-std/typography";
 
 export function createBlockShell(snapshot: IBlockSnapshot): HTMLElement {
@@ -59,10 +59,11 @@ function applyEditableTypography(
   props: Record<string, unknown>,
   flavour: string,
 ) {
+  const fontSize = editableBlockFontSizeCss(props, flavour)
+  if (fontSize !== null) element.style.fontSize = fontSize
   const fontScale = normalizeParagraphFontScale(props["pfs"])
   if (fontScale !== null) {
     element.style.setProperty("--bc-block-fs-scale", `${fontScale}`)
-    element.style.fontSize = `${resolveEditableBlockFontScale(props, flavour) * 100}%`
   }
 
   const lineHeight = normalizeTypographyLineHeight(props["lh"])

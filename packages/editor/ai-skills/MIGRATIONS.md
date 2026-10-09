@@ -2,7 +2,7 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-10-08 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-10-09 | Tracks `@ccc/blockcraft` npm releases.
 
 ## Why This File Exists
 
@@ -67,6 +67,59 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > - `major` (e.g. 0.1.37 → 1.0.0): breaking — removed APIs, renamed exports, signature changes, behavior reversals
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
+
+## 0.12.0 — 2026-10-09：实际 px 字号与高级缩放共存（待发布）
+
+**Severity**: minor
+
+**What changed**: 新增段落固定基础字号 `fs`、行内固定基础字号 `t:px`；保留
+段落 `pfs` 与行内 `t:fs` 倍率。顶部工具栏显示／设置实际逻辑 CSS px，缩放能力移入
+字体设置弹窗的“高级”标签。编辑器、只读预览、HTML 与段落高度估算共享字号规则。
+
+**Why**: 用户需要直接设置实际字号，同时保留高级缩放和旧文档数据。
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-inline.md`
+- `blockcraft-data.md`
+- `blockcraft-adapter.md`
+- `blockcraft-plugins-formatting.md`
+
+### New APIs / Features
+
+- `INLINE_TYPOGRAPHY_ATTRS.fontSize = 't:px'`，`InlineTypographyKey` 增加 `'px'`。
+- `normalizeFontSizePixels()`、`resolveEditableBlockFontSize()`、
+  `editableBlockFontSizeCss()`、`readInlineFontSize()`、`inlineFontSizeCss()`。
+- `TextToolbarHelper.getFontSizePixels()`、`formatFontSizePixels()`、`formatFontScale()`；
+  `ITextCommonAttrs` 增加实际 px 和固定字号状态。
+- `editableBlockCreateSnapShotFn()` 接受并保留 `fs/pfs` 创建参数（含 null 继承）。
+- Editable Block Agent capability 和 Agent inline 校验接受新基础 px 字段。
+
+### Migration Recipe
+
+```typescript
+// 倍率数据保持原义；现有调用仍兼容整段合并行内倍率的行为。
+helper.formatTypography({fontScale: 1.5})
+
+// 新产品入口：设置实际 24px，保留所有倍率；null 仅恢复字号继承。
+helper.formatFontSizePixels(24)
+// 高级入口：只改本层倍率，保留固定基础 px 和另一层倍率。
+helper.formatFontScale(1.5)
+```
+
+### Behavior Changes
+
+- 显式段落 `fs` 覆盖标题默认字号，但不移除 `heading`；未指定固定字号时保留原默认。
+- 顶部实际 px 是 `(基础 px × 段落倍率 × 行内倍率)`，整段／局部／caret 都使用同一读法；
+  混合实际字号显示“混合”。20px × 1.5 改为实际 24px 会保存基础 16px、倍率 1.5。
+- 字号 UI 仅显示数字，回显四舍五入至最多一位小数且不改数据精度，不追加 px；快捷菜单不附加输入行，自定义值在“更多设置”中编辑。
+  字体族触发框为 104px；字号触发框最小 56px，并随完整数值展开。字体族菜单按内容展开
+  并完整显示名称，字号菜单跟随当前触发框保持等宽，顶部字号“更多设置”仅显示齿轮。快捷菜单不再提供“继承字号”，继承 API
+  保持兼容；窄屏字号菜单以专属 CSS class 覆盖最小宽度。
+- 旧数据打开时不迁移。新像素字段需全部协作端升级后启用；标准 Markdown 仍不保留字体排版。
+- 新功能未自动调整 npm 版本号或发布；`0.12.0` 沿用当前待发布条目的版本标识。
 
 ## 0.12.0 — 2026-10-08：统一网页嵌入块（待发布）
 

@@ -1,4 +1,6 @@
 import { setAttributes } from "./setAttributes";
+import {getAttributesFrom} from './getAttributes';
+import {compareAttributesWithEle} from './compareAttributes';
 import { IInlineNodeAttrs } from "../types";
 
 describe('setAttributes', () => {
@@ -28,6 +30,16 @@ describe('setAttributes', () => {
     expect(el.style.fontFamily).toContain('Kaiti SC');
     expect(el.style.fontSize).toBe('1.2em');
     expect(el.style.letterSpacing).toBe('0.1em');
+  });
+
+  it('roundtrips pixels and scales without adding CSS aliases or render churn', () => {
+    const attrs = {'t:px': 12.8, 't:fs': 1.25};
+    setAttributes(el, attrs);
+    expect(getAttributesFrom(el)).toEqual(attrs);
+    expect(compareAttributesWithEle(el, attrs)).toBeTrue();
+    setAttributes(el, {'t:fs': 2});
+    expect(getAttributesFrom(el)).toEqual({...attrs, 't:fs': 2});
+    expect(compareAttributesWithEle(el, {...attrs, 't:fs': 2})).toBeTrue();
   });
 
   it('rejects invalid compact typography values instead of applying arbitrary CSS', () => {

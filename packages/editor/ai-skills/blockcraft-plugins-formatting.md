@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-09-25
+> Last updated: 2026-10-09
 
 ## 段落对齐
 
@@ -118,11 +118,11 @@ new TextMarkerPlugin(["paragraph", "blockquote"]);
 
 > `plugins/fixed-toolbar/widgets/fixed-toolbar.component.ts` — Fixed-position toolbar embedded in host app template.
 
-**Not a `DocPlugin`** — this is an Angular standalone component (`<bc-fixed-toolbar>`) meant to be placed directly in the host application's template. Provides heading selection, inline formatting, font/relative-scale/character-spacing dropdowns, paragraph line-height and consolidated alignment dropdowns, color pickers, list conversion, shape/text-box/table/column insertion, image insertion, video/audio insertion, and link editing.
+**Not a `DocPlugin`** — this is an Angular standalone component (`<bc-fixed-toolbar>`) meant to be placed directly in the host application's template. Provides heading selection, inline formatting, font/actual-pixel-size/character-spacing dropdowns, paragraph line-height and consolidated alignment dropdowns, color pickers, list conversion, shape/text-box/table/column insertion, image insertion, video/audio insertion, and link editing.
 
 ### Typography groups
 
-- The fixed toolbar presents font family and relative font scale as one
+- The fixed toolbar presents font family and effective CSS pixel size as one
   adjacent, iconless Word-style control pair. Character spacing and paragraph
   line height remain independent dropdowns, with character spacing immediately
   before line height. The floating text toolbar keeps its previous compact
@@ -142,9 +142,10 @@ new TextMarkerPlugin(["paragraph", "blockquote"]);
   backgroundless content so the CSES submenu draws the only popup card.
   Responsive second-level pickers add no extra host gap; the CSES panel and the
   inner 4px content padding are the only spacing owners.
-- First-level overlays use the trigger width as their minimum and expand only
-  when menu content needs more room. Font-scale quick choices are
-  `0.75/0.875/1/1.25/1.5/1.75/2/2.5/3`; character-spacing quick choices are
+- 顶部字体族触发框宽 104px，下拉框按内容展开以完整显示字体名称；字号触发框及
+  下拉框保持严格等宽；触发框最小宽 56px，随数值展开。字体族菜单保留完整 title／aria-label。其他 first-level overlays
+  use the trigger width as their minimum and expand only when menu content needs more room. Pixel-size quick choices are
+  `12/14/16/18/20/24/28/32/36/48/64/72`, without an inherited-size action; custom `1..512px` input is available in **更多设置…**; character-spacing quick choices are
   `-0.05/-0.025/0.025/0.05/0.1em` plus default. The complete numeric range
   remains available through **更多设置…**.
 - Split controls use one hover surface across their main action and caret. The
@@ -153,13 +154,13 @@ new TextMarkerPlugin(["paragraph", "blockquote"]);
   this pattern; the baseline main action repeats the active or most recently
   chosen command, and choosing one baseline clears the other.
 - Each corresponding menu ends with **更多设置…** and the
-  `bc_version_settings` icon. Font family, relative scale and character spacing
+  `bc_version_settings` icon. The narrow top size menu uses the icon alone with a full title/aria-label. Font family, actual pixel size and character spacing
   open the CSES font modal at that field; alignment and line height open the
   CSES paragraph modal at that field. Modal, tabs, selects, numeric inputs,
   segmented controls, color pickers and buttons come from `@cses/ui`.
-- Font settings include family, relative scale, bold/italic style, text and
-  highlight colors, underline/strike/code and character spacing. The character
-  spacing tab stays limited to scale, spacing and preview; it does not duplicate
+- Font settings include family, actual px size, advanced relative scale, bold/italic style, text and
+  highlight colors, underline/strike/code and character spacing. The **高级**
+  tab contains scale, spacing and preview; it does not duplicate
   baseline effects or preset buttons. Paragraph settings include alignment,
   space before/after and line height. Paragraph values persist as `psb/psa/lh`;
   adjacent spacing is
@@ -174,15 +175,22 @@ new TextMarkerPlugin(["paragraph", "blockquote"]);
   selection. Individual fields expose document-default values where applicable;
   the dialogs do not expose a whole-dialog reset action.
 - Paragraph style keeps its current heading icon. The paired font-family and
-  relative-scale fields intentionally omit leading icons; responsive
-  **更多格式** uses `bc_zihao` for the scale submenu. Character spacing uses
+  pixel-size fields intentionally omit leading icons; responsive
+  **更多格式** uses `bc_zihao` for the pixel-size submenu. Character spacing uses
   `bc_zijianju` and stays adjacent to paragraph line height.
-- Font size stays relative rather than absolute. A complete editable block
-  persists compact paragraph scale `pfs`; a partial range or collapsed caret
-  persists/queues inline `t:fs`. Effective text scale is `pfs × t:fs`, so list
-  markers and todo controls follow full-block scaling. Family and letter
-  spacing use `t:ff` / `t:ls`; paragraph line height uses block prop `lh`.
-- Relative font scale exposes dense presets from `0.5×` through `3×`. Character
+- 顶部字号触发框和预设仅显示数字，不追加 px 文案；实际字号回显最多一位小数，
+  整数不补零，仅格式化展示，不改变模型精度；菜单不附加原生数值输入行，
+  自定义字号通过字体设置弹窗调整。触发框最小宽 56px，按完整数字自然展开，字号菜单保持等宽并采用更小的内容边距；
+  窄屏字号子菜单用 `bc-fixed-toolbar-font-size-submenu` 单独取消 CSES 默认最小宽度。
+  顶部字号菜单只操作实际 px；整段、局部和光标均回显实际大小，不同大小显示“混合”。
+  `formatFontSizePixels()` 反算段落 `fs`／行内 `t:px`，保留 `pfs/t:fs`。
+  字号菜单不再提供“继承字号”；`formatFontSizePixels(null)` 的继承 API 保持兼容。高级缩放在字体弹窗 **高级** 标签中以 `50%..300%`
+  编辑，调用 `formatFontScale()` 保留基础字号和另一层倍率。
+  例如基础 20px、倍率 1.5 显示 30px；顶部选择 24 后基础为 16px、倍率仍 1.5。
+  标题的 `heading` 语义保留，显式固定字号覆盖默认标题大小。相关段落或祖先的模型
+  字号变更也会按 40ms 合并刷新回显，不仅依赖光标移动。
+  Family and letter spacing use `t:ff` / `t:ls`; paragraph line height uses block prop `lh`.
+- Relative font scale stays available in advanced font settings. Character
   spacing exposes `-0.1em` through `0.5em`; menu items and toolbar state show
   the real numeric `em` value rather than descriptive names. The neutral item
   is shown as `默认（0em）` and is still omitted from persisted Delta attrs.

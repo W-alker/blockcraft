@@ -4,7 +4,7 @@
 >
 > Adapters handle HTML ↔ BlockSnapshot and Markdown ↔ BlockSnapshot conversion.
 >
-> Last updated: 2026-10-08
+> Last updated: 2026-10-09
 
 ## 内置贴纸的导入导出（未发布）
 
@@ -643,7 +643,7 @@ HTML 段落对齐导出标准 `text-align`：`distributed` 映射为
 Portable Markdown 没有段落对齐语义，不承诺保留；内部 Snapshot/JSON 保留 `textAlign`。
 
 HTML round-trips document root `ff/fs/lh`, editable paragraph
-`pfs/lh/psb/psa`, and inline `t:ff/t:fs/t:ls` through bounded
+`fs/pfs/lh/psb/psa`, and inline `t:ff/t:px/t:fs/t:ls` through bounded
 `data-bc-*` fields plus portable CSS. Paragraph fields map to
 `data-bc-pfs/lh/sb/sa` and relative `font-size`, `line-height`,
 `margin-top/bottom`. `pfs` accepts only bounded `em`/percent relative values;
@@ -652,11 +652,17 @@ stored as typographic points;
 plain external `px` values import through the standard `0.75pt/px` conversion.
 Paragraph padding and `text-indent` are not imported as BlockCraft typography.
 Import accepts only the shared font catalog (or supported safe legacy stacks),
-relative inline `em` values and bounded numeric root/block values. Raw arbitrary
+relative inline `em` values, fixed `px` values and bounded numeric root/block values.
+段落 `fs` 和行内 `t:px` 用 `data-bc-px` 保留未缩放基础值；`data-bc-pfs`／
+`data-bc-fs` 独立保留倍率，CSS `font-size` 导出组合后的大小。
+段落同时导出 `--bc-block-fs-scale`，供嵌套固定 px 文本组合计算；导入只信任经过
+范围校验的紧凑数据字段，不解析任意 `calc()` 表达式。 Raw arbitrary
 CSS properties and expressions such as `url()`, `var()`, `calc()` or
 `expression()` are ignored. Legacy `s:fontFamily`, `s:fontSize` and
 `s:letterSpacing` export read-compatibly and normalize to compact semantic keys
-on supported HTML import. Standard Markdown intentionally drops typography.
+on supported HTML import. Bare inline absolute CSS px remains `s:fontSize` so
+it preserves CSS parent-override semantics; explicit `data-bc-px` imports as the
+new composable `t:px` base. Standard Markdown intentionally drops typography.
 
 ## Ordered Marker Mapping
 

@@ -3,11 +3,12 @@ import {
   DeltaInsert,
   DeltaInsertEmbed,
   normalizeParagraphFontScale,
+  normalizeFontSizePixels,
   normalizeParagraphSpacing,
   normalizeTypographyLineHeight,
   paragraphPointsToPixels,
-  resolveEditableBlockFontScale,
 } from '../../block-std'
+import {resolvedBlockFontSize, resolvedInlineFontSize} from '../../utils/typography-font-size';
 import {readInlineImageDelta} from '../../block-std/inline/image-data'
 import type {
   BlockModelHeightEstimateContext,
@@ -214,8 +215,9 @@ function estimateBlock(
     }
 
     if (nodeType === BlockNodeType.editable) {
+      const deltas = doc.model.getTextDeltas?.(blockId) ?? []
       const inlineImageHeight = estimateInlineImageLineHeight(
-        doc.model.getTextDeltas?.(blockId) ?? [],
+        deltas,
         doc.objectSizing?.rootContentWidth ?? 0,
       )
       return estimateEditableBlockHeight(
@@ -225,6 +227,7 @@ function estimateBlock(
         fallback,
         doc.objectSizing?.rootContentWidth ?? 0,
         inlineImageHeight,
+        deltas,
       )
     }
 
@@ -426,10 +429,7 @@ function estimateTableCellChildHeight(
     ? positiveNumber(doc.layoutMetrics?.lineHeight) ??
       rootFontSize * TABLE_ESTIMATED_LINE_HEIGHT_RATIO
     : rootFontSize * paragraphLineHeight
-  const fontScale = resolveEditableBlockFontScale(
-    props,
-    doc.model.getFlavour(childId),
-  )
+  const fontScale = resolvedBlockFontSize(doc, childId, props, doc.model.getFlavour(childId)) / rootFontSize
   const characterWidth = rootFontSize *
     TABLE_ESTIMATED_CHARACTER_WIDTH_RATIO * fontScale
   const lineHeight = rootLineHeight * fontScale
@@ -455,12 +455,27 @@ function estimateEditableBlockHeight(
   fallback: number,
   contentWidth: number,
   inlineImageHeight: number,
+  deltas: readonly DeltaInsert[],
 ): ModelHeightEstimate {
-  const hasParagraphFacts = hasParagraphTypographyFacts(props)
+  const hasInlinePixels = deltas.some(run => run.attributes?.['t:px'] != null &&
+    normalizeFontSizePixels(run.attributes['t:px']) !== null)
+  const hasParagraphFacts = hasParagraphTypographyFacts(props) || hasInlinePixels
   if (!hasParagraphFacts) {
-    return {
-      height: Math.max(fallback, inlineImageHeight),
-      modelDriven: inlineImageHeight > 0,
+    return {height: Math.max(fallback, inlineImageHeight), modelDriven: inlineImageHeight > 0}
+  }
+  const paragraphSize = resolvedBlockFontSize(doc, blockId, props, doc.model.getFlavour(blockId))
+  let maxFontSize = paragraphSize
+  let weightedFontSize = 0
+  let sampledLength = 0
+  // Reuse deltas already materialized for image estimates. Ordinary paragraphs
+  // keep the cheap fallback above; table-cell sampling never scans inline text.
+  if (hasInlinePixels) {
+    for (const run of deltas) {
+      const length = typeof run.insert === 'string' ? run.insert.length : 1
+      const size = resolvedInlineFontSize(paragraphSize, props, run.attributes ?? {})
+      maxFontSize = Math.max(maxFontSize, size)
+      weightedFontSize += size * length
+      sampledLength += length
     }
   }
   const baseFontSize = positiveNumber(doc.layoutMetrics?.baseFontSize) ?? 16
@@ -468,18 +483,15 @@ function estimateEditableBlockHeight(
     baseFontSize * 1.5
   const defaultGap = nonNegativeNumber(doc.layoutMetrics?.segmentGap) ?? 10
   const lineHeightRatio = normalizeTypographyLineHeight(props['lh'])
-  const headingScale = resolveEditableBlockFontScale(
-    props,
-    doc.model.getFlavour(blockId),
-  )
+  const headingScale = (hasInlinePixels ? maxFontSize : paragraphSize) / baseFontSize
   const lineHeight = (
     lineHeightRatio === null
       ? defaultLineHeight
       : baseFontSize * lineHeightRatio
   ) * headingScale
   const textLength = Math.max(0, doc.model.getTextLength?.(blockId) ?? 0)
-  const characterWidth = baseFontSize * DEFAULT_ESTIMATED_CHARACTER_WIDTH /
-    16 * headingScale
+  const widthFontSize = hasInlinePixels && sampledLength > 0 ? weightedFontSize / sampledLength : paragraphSize
+  const characterWidth = widthFontSize * DEFAULT_ESTIMATED_CHARACTER_WIDTH / 16
   const lineCount = contentWidth > 0
     ? Math.max(1, Math.ceil(
         textLength * characterWidth / contentWidth,
@@ -541,6 +553,7 @@ function nonEditableOuterSpacing(
 
 function hasParagraphTypographyFacts(props: Record<string, unknown>): boolean {
   return [
+    normalizeFontSizePixels(props['fs']),
     normalizeParagraphFontScale(props['pfs']),
     normalizeTypographyLineHeight(props['lh']),
     normalizeParagraphSpacing(props['psb']),

@@ -9,12 +9,15 @@ import {
   createInlineTypographyPatch,
   matchTypographyFontFamily,
   normalizeInlineFontScale,
+  normalizeFontSizePixels,
+  readInlineFontSize,
   normalizeInlineLetterSpacing,
   normalizeParagraphFontScale,
   normalizeParagraphSpacing,
   normalizeTypographyLineHeight,
   type TypographyFontFamilyId,
 } from "../block-std";
+import {resolvedBlockFontSize, resolvedInlineFontSize} from './typography-font-size';
 import {getCommonAttributesFromDeltas, sliceDelta} from "../../global";
 import {isSelectionAlive} from "../modules/selection/liveness";
 import {getSelectionFormatBlockIds, isSelectedContainer} from './selection-format-blocks';
@@ -36,6 +39,9 @@ export interface ITextCommonAttrs {
     psb: number | null | undefined
     psa: number | null | undefined
   }
+  /** Effective CSS pixels, including semantic defaults and retained multipliers. */
+  fontSize?: number
+  hasFixedFontSize?: boolean
   flavour?: BlockCraft.BlockFlavour,
   allEditable?: boolean
 }
@@ -341,6 +347,118 @@ export class TextToolbarHelper {
     }))
   }
 
+  /** Effective size of all selected runs, including pending caret formatting. */
+  getFontSizePixels(selection: BlockCraft.Selection | null = this.doc.selection.value): number | undefined {
+    return this.getFontSizeState(selection).pixels;
+  }
+
+  private getFontSizeState(selection: BlockCraft.Selection | null): {pixels: number | undefined; fixed: boolean} {
+    const targets = this.getFontScaleTargets(selection);
+    const sizes: number[] = [];
+    let fixed = false;
+    for (const target of targets) {
+      const props = this.blockProps(target.blockId);
+      fixed ||= normalizeFontSizePixels(props.fs) !== null;
+      const paragraphSize = resolvedBlockFontSize(this.doc, target.blockId, props, this.blockFlavour(target.blockId));
+      const caret = selection?.collapsed && selection.start.type === 'text';
+      const runs: DeltaInsert[] = caret
+        ? [{insert: '', attributes: this.doc.inputManger.peekNextInsertAttrs({blockId: target.blockId, index: target.start}) ?? this.getCollapsedAttrs(target.blockId, target.start)}]
+        : sliceDelta(this.blockDeltas(target.blockId), target.start, target.start + target.length);
+      for (const run of runs.length ? runs : [{insert: ''}]) {
+        const attrs = run.attributes ?? {};
+        fixed ||= readInlineFontSize(attrs).pixels !== null;
+        sizes.push(resolvedInlineFontSize(paragraphSize, props, attrs));
+      }
+    }
+    return {pixels: sizes.length && sizes.every(size => size === sizes[0]) ? sizes[0] : undefined, fixed};
+  }
+
+  /** Advanced scaling changes its own layer and preserves all fixed bases. */
+  formatFontScale(value: unknown, selection: BlockCraft.Selection | null = this.doc.selection.value): void {
+    if (!selection || !this.isSelectionAlive(selection)) return;
+    const scale = value === null ? 1 : normalizeInlineFontScale(value);
+    if (scale === null) return;
+    const targets = this.getFontScaleTargets(selection);
+    if (!targets.length) return;
+    const inlineScalePatch = createInlineTypographyPatch('fs', scale) as IInlineNodeAttrs;
+    const legacyPixels = (attrs: IInlineNodeAttrs, pfs: number): IInlineNodeAttrs => {
+      const legacy = typeof attrs['s:fontSize'] === 'string' && /px$/i.test(attrs['s:fontSize']);
+      const pixels = legacy ? readInlineFontSize(attrs).pixels : null;
+      return pixels !== null && attrs['t:px'] == null && attrs['t:fs'] == null
+        ? {'t:px': normalizeFontSizePixels(pixels / pfs), 's:fontSize': null} : {};
+    };
+    if (selection.collapsed && selection.start.type === 'text') {
+      const target = targets[0];
+      const attrs = this.doc.inputManger.peekNextInsertAttrs({blockId: target.blockId, index: target.start}) ?? this.getCollapsedAttrs(target.blockId, target.start);
+      this.formatText({...legacyPixels(attrs, normalizeParagraphFontScale(this.blockProps(target.blockId).pfs) ?? 1), ...inlineScalePatch}, selection);
+      return;
+    }
+    this.doc.crud.transact(() => {
+      for (const target of targets) {
+        const oldScale = normalizeParagraphFontScale(this.blockProps(target.blockId).pfs) ?? 1;
+        if (target.kind === 'paragraph') {
+          let offset = target.start;
+          for (const run of this.blockDeltas(target.blockId)) {
+            const length = typeof run.insert === 'string' ? run.insert.length : 1;
+            const patch = legacyPixels(run.attributes ?? {}, oldScale);
+            if (Object.keys(patch).length) this.formatBlockText(target.blockId, offset, length, patch);
+            offset += length;
+          }
+          this.updateBlockPropsById(target.blockId, {pfs: scale === 1 ? null : scale});
+          // Paragraph scaling owns pfs only; existing inline scaling survives.
+          continue;
+        }
+        let offset = target.start;
+        for (const run of sliceDelta(this.blockDeltas(target.blockId), target.start, target.start + target.length)) {
+          const length = typeof run.insert === 'string' ? run.insert.length : 1;
+          this.formatBlockText(target.blockId, offset, length, {...legacyPixels(run.attributes ?? {}, oldScale), ...inlineScalePatch});
+          offset += length;
+        }
+      }
+    });
+    this.doc.selection.setSelection(selection.start, selection.end);
+  }
+
+  /** Set the effective pixel size without discarding either retained scale. */
+  formatFontSizePixels(value: unknown, selection: BlockCraft.Selection | null = this.doc.selection.value): void {
+    if (!selection || !this.isSelectionAlive(selection)) return;
+    const size = value === null ? null : normalizeFontSizePixels(value);
+    if (value !== null && (size === null || size < 1 || size > 512)) return;
+    const targets = this.getFontScaleTargets(selection);
+    if (!targets.length) return;
+    const patchFor = (attrs: IInlineNodeAttrs, paragraphScale: number, paragraph: boolean): IInlineNodeAttrs => {
+      const scale = readInlineFontSize(attrs).scale;
+      const patch: IInlineNodeAttrs = {
+        't:px': size === null || (paragraph && scale === 1) ? null : normalizeFontSizePixels(size / paragraphScale / scale),
+      };
+      if (typeof attrs['s:fontSize'] === 'string' && (size !== null || /px$/i.test(attrs['s:fontSize']))) {
+        // Canonicalize the selected legacy alias only; keep its multiplier.
+        if (/em$/i.test(attrs['s:fontSize']) && attrs['t:fs'] == null) patch['t:fs'] = scale === 1 ? null : scale;
+        patch['s:fontSize'] = null;
+      }
+      return patch;
+    };
+    if (selection.collapsed && selection.start.type === 'text') {
+      const target = targets[0];
+      const attrs = this.doc.inputManger.peekNextInsertAttrs({blockId: target.blockId, index: target.start}) ?? this.getCollapsedAttrs(target.blockId, target.start);
+      this.formatText(patchFor(attrs, normalizeParagraphFontScale(this.blockProps(target.blockId).pfs) ?? 1, false), selection);
+      return;
+    }
+    this.doc.crud.transact(() => {
+      for (const target of targets) {
+        const paragraphScale = normalizeParagraphFontScale(this.blockProps(target.blockId).pfs) ?? 1;
+        if (target.kind === 'paragraph') this.updateBlockPropsById(target.blockId, {fs: size === null ? null : normalizeFontSizePixels(size / paragraphScale)});
+        let offset = target.start;
+        for (const run of sliceDelta(this.blockDeltas(target.blockId), target.start, target.start + target.length)) {
+          const length = typeof run.insert === 'string' ? run.insert.length : 1;
+          this.formatBlockText(target.blockId, offset, length, patchFor(run.attributes ?? {}, paragraphScale, target.kind === 'paragraph'));
+          offset += length;
+        }
+      }
+    });
+    this.doc.selection.setSelection(selection.start, selection.end);
+  }
+
   getCurrentCommonAttrs(selection: BlockCraft.Selection): ITextCommonAttrs {
     if (!this.isSelectionAlive(selection)) return this.emptyCommonAttrs()
 
@@ -349,6 +467,7 @@ export class TextToolbarHelper {
       this.blockNodeType(id) === BlockNodeType.editable && !this.isPlainTextBlock(id))
     if (!editableIds.length) return this.emptyCommonAttrs()
 
+    const fontSize = this.getFontSizeState(selection);
     const firstId = editableIds[0]
     const attrs = new Map<string, any>()
     let colors: Record<string, string | null>
@@ -375,6 +494,8 @@ export class TextToolbarHelper {
         attrs,
         colors,
         props,
+        fontSize: fontSize.pixels,
+        hasFixedFontSize: fontSize.fixed,
         typography: this.inlineTypographyFromAttrs(collapsedAttrs),
         paragraph: this.commonParagraphTypography(paragraphStates),
         flavour,
@@ -422,6 +543,8 @@ export class TextToolbarHelper {
       attrs,
       colors,
       props,
+      fontSize: fontSize.pixels,
+      hasFixedFontSize: fontSize.fixed,
       typography: {
         ...this.commonInlineTypography(allDeltas),
         fs: this.commonFontScaleForTargets(this.getFontScaleTargets(selection)),
@@ -513,7 +636,7 @@ export class TextToolbarHelper {
 
     if (selection.collapsed && s.type === 'text') {
       const nextAttrs: Record<string, any> = {
-        ...this.getCollapsedAttrs(startId, s.offset)
+        ...(this.doc.inputManger.peekNextInsertAttrs({blockId: s.blockId, index: s.offset}) ?? this.getCollapsedAttrs(startId, s.offset))
       }
       Object.entries(attrs).forEach(([key, value]) => {
         if (value === null || value === undefined) {

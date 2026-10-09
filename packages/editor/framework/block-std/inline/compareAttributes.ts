@@ -3,7 +3,7 @@ import {
   INLINE_TYPOGRAPHY_ATTRS,
   inlineTypographyCssProperty,
   inlineTypographyDatasetKey,
-  normalizeInlineFontScale,
+  inlineFontSizeCss,
   normalizeInlineLetterSpacing,
   resolveTypographyFontFamily,
 } from '@ccc/blockcraft/framework/block-std/typography'
@@ -39,8 +39,8 @@ export const compareAttributesWithEle = (ele: HTMLElement, attrs?: IInlineNodeAt
       if (`${attr}` !== dataValue) return false
       const cssValue = key === INLINE_TYPOGRAPHY_ATTRS.fontFamily
         ? resolveTypographyFontFamily(attr)
-        : key === INLINE_TYPOGRAPHY_ATTRS.fontScale
-          ? `${normalizeInlineFontScale(attr)}em`
+        : key === INLINE_TYPOGRAPHY_ATTRS.fontScale || key === INLINE_TYPOGRAPHY_ATTRS.fontSize
+          ? inlineFontSizeCss(attrs?.[INLINE_TYPOGRAPHY_ATTRS.fontSize], attrs?.[INLINE_TYPOGRAPHY_ATTRS.fontScale])
           : `${normalizeInlineLetterSpacing(attr)}em`
       if (!cssValue || ele.style.getPropertyValue(property) !== cssValue) return false
     }

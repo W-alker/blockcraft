@@ -1,6 +1,6 @@
 import type {Element, Properties} from 'hast'
 import {INLINE_TYPOGRAPHY_ATTRS, IBlockProps, IEditableBlockProps, IInlineNodeAttrs} from '@ccc/blockcraft/framework/model';
-import {paragraphAlignmentStyles, isTypographyFontFamilyId, matchTypographyFontFamily, normalizeDocumentFontSize, normalizeInlineFontScale, normalizeInlineLetterSpacing, normalizeParagraphFontScale, normalizeParagraphSpacing, normalizeTypographyLineHeight, paragraphPointsToCss, resolveTypographyFontFamily} from '@ccc/blockcraft/framework/block-std/typography';
+import {normalizeFontSizePixels, inlineFontSizeCss, paragraphAlignmentStyles, isTypographyFontFamilyId, matchTypographyFontFamily, normalizeDocumentFontSize, normalizeInlineFontScale, normalizeInlineLetterSpacing, normalizeParagraphFontScale, normalizeParagraphSpacing, normalizeTypographyLineHeight, paragraphPointsToCss, resolveTypographyFontFamily} from '@ccc/blockcraft/framework/block-std/typography';
 
 type StyleMap = ReadonlyMap<string, string>
 
@@ -49,11 +49,11 @@ const unitless = (
     : null
 }
 
-const pixels = (value: unknown): number | null => {
-  if (typeof value === 'number') return normalizeDocumentFontSize(value)
+const pixels = (value: unknown, normalize = normalizeDocumentFontSize): number | null => {
+  if (typeof value === 'number') return normalize(value)
   if (typeof value !== 'string') return null
   const match = /^([+]?(?:\d+(?:\.\d+)?|\.\d+))px$/i.exec(value.trim())
-  return match ? normalizeDocumentFontSize(Number(match[1])) : null
+  return match ? normalize(Number(match[1])) : null
 }
 
 const points = (
@@ -110,6 +110,8 @@ export const inlineTypographyToHtmlProperties = (
     normalizeInlineLetterSpacing,
   )
 
+  const px = normalizeFontSizePixels(attributes[INLINE_TYPOGRAPHY_ATTRS.fontSize])
+  const legacyPx = fs === null ? pixels(attributes['s:fontSize'], normalizeFontSizePixels) : null
   const declarations: string[] = []
   const properties: Properties = {}
   if (ff) {
@@ -118,7 +120,13 @@ export const inlineTypographyToHtmlProperties = (
   }
   if (fs !== null) {
     properties['dataBcFs'] = fs
-    declarations.push(`font-size: ${fs}em`)
+    if (px === null) declarations.push(`font-size: ${fs}em`)
+  }
+  if (px !== null) {
+    properties['dataBcPx'] = px
+    declarations.push(`font-size: ${inlineFontSizeCss(px, fs)}`)
+  } else if (legacyPx !== null) {
+    declarations.push(`font-size: ${legacyPx}px`)
   }
   if (ls !== null) {
     properties['dataBcLs'] = ls
@@ -142,7 +150,11 @@ export const inlineTypographyFromHtml = (
     propertyValue(element.properties, 'dataBcLs'),
   ) ?? relativeEm(style.get('letter-spacing'), normalizeInlineLetterSpacing)
 
+  const px = normalizeFontSizePixels(propertyValue(element.properties, 'dataBcPx'))
+  const legacyPx = pixels(style.get('font-size'), normalizeFontSizePixels)
   const attributes: IInlineNodeAttrs = {}
+  if (px !== null) attributes[INLINE_TYPOGRAPHY_ATTRS.fontSize] = px
+  else if (legacyPx !== null && fs === null) attributes['s:fontSize'] = `${legacyPx}px`
   if (ff) attributes[INLINE_TYPOGRAPHY_ATTRS.fontFamily] = ff
   if (fs !== null) attributes[INLINE_TYPOGRAPHY_ATTRS.fontScale] = fs
   if (ls !== null) attributes[INLINE_TYPOGRAPHY_ATTRS.letterSpacing] = ls
@@ -152,6 +164,7 @@ export const inlineTypographyFromHtml = (
 export const editableTypographyToHtmlProperties = (
   props: IBlockProps,
 ): Properties => {
+  const px = normalizeFontSizePixels(props['fs'])
   const pfs = normalizeParagraphFontScale(props['pfs'])
   const lh = normalizeTypographyLineHeight(props['lh'])
   const psb = normalizeParagraphSpacing(props['psb'])
@@ -167,9 +180,14 @@ export const editableTypographyToHtmlProperties = (
       }
     }
   }
+  declarations.push(`--bc-block-fs-scale: ${pfs ?? 1}`)
+  if (px !== null) {
+    properties['dataBcPx'] = px
+    declarations.push(`font-size: ${px * (pfs ?? 1)}px`)
+  }
   if (pfs !== null) {
     properties['dataBcPfs'] = pfs
-    declarations.push(`font-size: ${pfs * 100}%`)
+    if (px === null) declarations.push(`font-size: ${pfs * 100}%`)
   }
   if (lh !== null) {
     properties['dataBcLh'] = lh
@@ -193,6 +211,8 @@ export const editableTypographyFromHtml = (
   const pfs = normalizeParagraphFontScale(
     propertyValue(element.properties, 'dataBcPfs'),
   ) ?? relativeFontScale(style.get('font-size'))
+  const px = normalizeFontSizePixels(propertyValue(element.properties, 'dataBcPx'))
+    ?? pixels(style.get('font-size'), normalizeFontSizePixels)
   const lh = normalizeTypographyLineHeight(
     propertyValue(element.properties, 'dataBcLh'),
   ) ?? unitless(style.get('line-height'), normalizeTypographyLineHeight)
@@ -210,6 +230,7 @@ export const editableTypographyFromHtml = (
     : align === 'center' || align === 'right' ? align : undefined
   return {
     ...(textAlign ? {textAlign} : {}),
+    ...(px === null ? {} : {fs: px}),
     ...(pfs === null ? {} : {pfs}),
     ...(lh === null ? {} : {lh}),
     ...(psb === null ? {} : {psb}),

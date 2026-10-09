@@ -3,11 +3,12 @@ import {toCamelCase} from "../../../global";
 import {
   INLINE_TYPOGRAPHY_ATTRS,
   normalizeInlineFontScale,
+  normalizeFontSizePixels,
   normalizeInlineLetterSpacing,
   isTypographyFontFamilyId,
 } from '@ccc/blockcraft/framework/block-std/typography'
 
-const COMPACT_DATA_ATTRIBUTES = new Set(['data-bc-ff', 'data-bc-fs', 'data-bc-ls'])
+const COMPACT_DATA_ATTRIBUTES = new Set(['data-bc-ff', 'data-bc-fs', 'data-bc-px', 'data-bc-ls'])
 
 export const getAttributesFrom = (ele: HTMLElement): IInlineNodeAttrs => {
   const attributeNames = ele.getAttributeNames()
@@ -23,9 +24,11 @@ export const getAttributesFrom = (ele: HTMLElement): IInlineNodeAttrs => {
   }
   const ff = ele.dataset['bcFf']
   const hasCompactFontFamily = isTypographyFontFamilyId(ff)
+  const px = normalizeFontSizePixels(ele.dataset['bcPx'])
   const fs = normalizeInlineFontScale(ele.dataset['bcFs'])
   const ls = normalizeInlineLetterSpacing(ele.dataset['bcLs'])
   if (hasCompactFontFamily) attributes[INLINE_TYPOGRAPHY_ATTRS.fontFamily] = ff
+  if (px !== null) attributes[INLINE_TYPOGRAPHY_ATTRS.fontSize] = px
   if (fs !== null) attributes[INLINE_TYPOGRAPHY_ATTRS.fontScale] = fs
   if (ls !== null) attributes[INLINE_TYPOGRAPHY_ATTRS.letterSpacing] = ls
 
@@ -34,7 +37,7 @@ export const getAttributesFrom = (ele: HTMLElement): IInlineNodeAttrs => {
     const key = css[i];
     if (
       (key === 'font-family' && hasCompactFontFamily) ||
-      (key === 'font-size' && fs !== null) ||
+      (key === 'font-size' && (fs !== null || px !== null)) ||
       (key === 'letter-spacing' && ls !== null)
     ) continue
     // Keep the public inline contract canonical (`font-size` → `fontSize`).

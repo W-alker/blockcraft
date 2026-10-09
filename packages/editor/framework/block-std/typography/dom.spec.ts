@@ -37,6 +37,22 @@ describe('typography DOM application', () => {
     expect(Object.keys(element.dataset)).toEqual([]);
   });
 
+  it('composes fixed pixels with both scales in either attribute order', () => {
+    parent.style.setProperty('--bc-block-fs-scale', '1.5');
+    applyInlineTypographyAttribute(element, 't:fs', 1.25);
+    applyInlineTypographyAttribute(element, 't:px', 16);
+    expect(getComputedStyle(element).fontSize).toBe('30px');
+    applyInlineTypographyAttribute(element, 't:fs', 2);
+    expect(getComputedStyle(element).fontSize).toBe('48px');
+    applyInlineTypographyAttribute(element, 't:fs', null);
+    expect(getComputedStyle(element).fontSize).toBe('24px');
+    applyInlineTypographyAttribute(element, 't:px', null);
+    expect(getComputedStyle(element).fontSize).toBe('16px');
+    applyInlineTypographyAttribute(element, 't:px', 16);
+    applyInlineTypographyAttribute(element, 't:fs', 1.25);
+    expect(getComputedStyle(element).fontSize).toBe('30px');
+  });
+
   it('leaves unrelated attributes untouched', () => {
     element.style.color = 'red';
     element.dataset['custom'] = 'keep';

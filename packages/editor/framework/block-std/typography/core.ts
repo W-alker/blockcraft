@@ -245,6 +245,56 @@ export const resolveEditableBlockFontScale = (
   return roundCompact(paragraphScale * presentationScale);
 };
 
+/** Base sizes allow fractional pixels after reversing retained scales. */
+export const normalizeFontSizePixels = (value: unknown): number | null => {
+  const size = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : NaN;
+  return Number.isFinite(size) && size >= 0.1 && size <= 4096 ? Math.round(size * 1e6) / 1e6 : null;
+};
+
+/** A fixed base size overrides the heading/caption default, retaining pfs. */
+export const resolveEditableBlockFontSize = (
+  props: Record<string, unknown> | undefined,
+  flavour: string | undefined,
+  inheritedFontSize: number,
+): number => {
+  const fixed = normalizeFontSizePixels(props?.['fs']);
+  return fixed === null
+    ? inheritedFontSize * resolveEditableBlockFontScale(props, flavour)
+    : fixed * (normalizeParagraphFontScale(props?.['pfs']) ?? 1);
+};
+
+/** Shared live/viewer projection; semantic sizes remain CSS theme defaults. */
+export const editableBlockFontSizeCss = (
+  props: Record<string, unknown> | undefined,
+  flavour?: string,
+): string | null => {
+  const fixed = normalizeFontSizePixels(props?.['fs']);
+  if (fixed !== null) return `${fixed * (normalizeParagraphFontScale(props?.['pfs']) ?? 1)}px`;
+  return normalizeParagraphFontScale(props?.['pfs']) === null
+    ? null : `${resolveEditableBlockFontScale(props, flavour) * 100}%`;
+};
+
+/** Legacy CSS sizes keep their unit; loading a document never rewrites them. */
+export const readInlineFontSize = (attrs: Readonly<Record<string, unknown>>) => {
+  const legacy = typeof attrs['s:fontSize'] === 'string' ? attrs['s:fontSize'].trim() : '';
+  const em = /^([+]?(?:\d+(?:\.\d+)?|\.\d+))em$/i.exec(legacy);
+  const px = /^([+]?(?:\d+(?:\.\d+)?|\.\d+))px$/i.exec(legacy);
+  const compactScale = normalizeInlineFontScale(attrs[INLINE_TYPOGRAPHY_ATTRS.fontScale]);
+  return {
+    pixels: normalizeFontSizePixels(attrs[INLINE_TYPOGRAPHY_ATTRS.fontSize]) ?? (compactScale === null && px ? normalizeFontSizePixels(px[1]) : null),
+    scale: compactScale ?? (em ? normalizeInlineFontScale(em[1]) : null) ?? 1,
+  };
+};
+
+/** Pixel runs use the paragraph multiplier without inheriting its base size. */
+export const inlineFontSizeCss = (pixels: unknown, scale: unknown): string | null => {
+  const px = normalizeFontSizePixels(pixels);
+  const fs = normalizeInlineFontScale(scale);
+  return px !== null
+    ? `calc(${px * (fs ?? 1)}px * var(--bc-block-fs-scale, 1))`
+    : fs !== null ? `${fs}em` : null;
+};
+
 export const normalizeInlineLetterSpacing = (value: unknown): number | null =>
   boundedNumber(value, -0.1, 0.5);
 
@@ -286,6 +336,8 @@ export const createInlineTypographyPatch = (
         "s:fontSize": null,
       };
     }
+    case "px":
+      return {[INLINE_TYPOGRAPHY_ATTRS.fontSize]: normalizeFontSizePixels(value)};
     case "ls": {
       const ls = normalizeInlineLetterSpacing(value);
       return {
@@ -303,6 +355,7 @@ export const inlineTypographyCssProperty = (
     case INLINE_TYPOGRAPHY_ATTRS.fontFamily:
       return "font-family";
     case INLINE_TYPOGRAPHY_ATTRS.fontScale:
+    case INLINE_TYPOGRAPHY_ATTRS.fontSize:
       return "font-size";
     case INLINE_TYPOGRAPHY_ATTRS.letterSpacing:
       return "letter-spacing";
@@ -313,12 +366,14 @@ export const inlineTypographyCssProperty = (
 
 export const inlineTypographyDatasetKey = (
   key: string,
-): "bcFf" | "bcFs" | "bcLs" | null => {
+): "bcFf" | "bcFs" | "bcPx" | "bcLs" | null => {
   switch (key) {
     case INLINE_TYPOGRAPHY_ATTRS.fontFamily:
       return "bcFf";
     case INLINE_TYPOGRAPHY_ATTRS.fontScale:
       return "bcFs";
+    case INLINE_TYPOGRAPHY_ATTRS.fontSize:
+      return "bcPx";
     case INLINE_TYPOGRAPHY_ATTRS.letterSpacing:
       return "bcLs";
     default:

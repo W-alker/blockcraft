@@ -33,7 +33,7 @@ import {
 } from "../../../doc/block-readonly.types";
 import {
   normalizeParagraphFontScale,
-  resolveEditableBlockFontScale,
+  editableBlockFontSizeCss,
   normalizeParagraphSpacing,
   normalizeTypographyLineHeight,
   paragraphPointsToCss,
@@ -293,8 +293,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   get blockFontSize(): string | null {
     if (this.nodeType !== BlockNodeType.editable) return null
     const props = this._native?.props as Record<string, unknown> | undefined
-    if (normalizeParagraphFontScale(props?.['pfs']) === null) return null
-    return `${resolveEditableBlockFontScale(props, this._native?.flavour) * 100}%`
+    return editableBlockFontSizeCss(props, this._native?.flavour)
   }
 
   @HostBinding('style.--bc-block-sb')

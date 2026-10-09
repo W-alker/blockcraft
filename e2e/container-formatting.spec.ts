@@ -51,12 +51,12 @@ test('selected callout formats its paragraphs through the fixed toolbar', async 
   await page.locator('bc-float-toolbar-item').filter({hasText: '二级标题'}).click()
   await expect.poll(async () => (await readBlocks(page, ids.inside)).every(block =>
     block.props.heading === 2 && block.heading === '2')).toBe(true)
-  await toolbar.getByTitle('文字缩放').hover()
-  await page.locator('bc-float-toolbar-item').filter({hasText: '1.5×'}).click()
+  await toolbar.getByTitle('字号').hover()
+  await page.locator('bc-float-toolbar-item').filter({hasText: /^24$/}).click()
   await expect.poll(async () => (await readBlocks(page, ids.inside)).every(block =>
-    block.props.pfs === 1.5)).toBe(true)
+    block.props.fs === 24)).toBe(true)
   expect((await readBlocks(page, [ids.outside]))[0].props.heading).toBeUndefined()
-  expect((await readBlocks(page, [ids.outside]))[0].props.pfs).toBeUndefined()
+  expect((await readBlocks(page, [ids.outside]))[0].props.fs).toBeUndefined()
 })
 
 test('table-cell rectangle formats only selected cells', async ({page}) => {

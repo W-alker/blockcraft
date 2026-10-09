@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-10-08
+> Last updated: 2026-10-09
 
 通用数据描述和快照位于 `@ccc/blockcraft/framework/model`，类型为
 `BlockDescriptor<P, M, F>` / `BlockSnapshot<P, M, F>`，默认不依赖组件注册表。
@@ -2118,6 +2118,7 @@ any node type can store the spacing props:
 
 | Prop  | Unit / range     | Meaning                                                |
 | ----- | ---------------- | ------------------------------------------------------ |
+| `fs` | CSS px, `0.1..4096` | Fixed paragraph base; missing/null inherits semantic defaults |
 | `pfs` | ratio, `0.5..3`  | Paragraph base font scale; missing/`null` inherits `1` |
 | `lh`  | unitless, `1..3` | Paragraph line-height ratio; missing inherits the root |
 | `psb` | pt, `0..120`     | Space before a flow block                              |
@@ -2139,6 +2140,30 @@ base. Use `normalizeParagraphFontScale()` and omit neutral `1` as `null`.
 from model offsets: complete blocks write `pfs` and clear their stale inline
 size, partial ranges write `t:fs`, and a collapsed caret updates pending insert
 attrs only. Existing inline-only documents are not migrated automatically.
+
+固定 px 与倍率独立存储：段落 `fs` 为基础 px、`pfs` 为段落倍率；行内 `t:px`
+覆盖基础 px、`t:fs` 为行内倍率。固定字号不自动移除倍率。未设置固定 px 时，
+文档默认、标题与 caption 的原有字号语义继续生效；显式段落 `fs` 覆盖标题默认字号，
+但保留 `heading` 语义。有效字号为 `(t:px ?? 段落基础字号) × pfs × t:fs`。
+
+- `TextToolbarHelper.getFontSizePixels(selection?)`：返回所选文字的实际逻辑 CSS px；
+  大小不同返回 `undefined`，包含 caret 的 pending attrs。
+- `formatFontSizePixels(px | null, selection?)`：产品输入范围 `1..512px`；反算基础值以
+  保留 `pfs/t:fs`。整段设置 `fs`，不同倍率的 run 以 `t:px` 补偿；局部写入 `t:px`，
+  caret 仅更新待输入属性。`null` 清除固定 px 并保留倍率。基础值允许六位小数，
+  用 `normalizeFontSizePixels()` 校验；不要将旧 `t:fs` 重新解释为 px。
+- `formatFontScale(scale | null, selection?)`：高级设置仅修改本层倍率，保留固定 px
+  和另一层倍率。整段写 `pfs`，局部／caret 写 `t:fs`。
+- 原 `formatTypography({fontScale})` 兼容保留整段清除行内倍率的旧规则；新高级 UI
+  使用 `formatFontScale()`，外部调用方自行选择所需语义。
+
+领域职责：模型只声明数字字段；typography 负责校验和共享计算／CSS 投影；
+`TextToolbarHelper` 按 Selection 模型划分目标并经 DocCRUD 事务写入；编辑器、
+Snapshot Viewer、HTML Adapter 和高度估算复用规则，不从 DOM 回写字号。
+Agent 的 editable Block capability 允许创建／更新基础 `fs`，行内 Delta 校验接受 `t:px`；
+直接字段操作写的是基础 px，实际字号需求仍须按倍率反算。
+工具栏在选区或相关模型事实变更后刷新；不扫描无关内容，也不在渲染 getter 中测量布局。
+虚拟表格保持原有有界采样和不物化行内 Delta 的估算路径。
 
 `TextToolbarHelper.updateBlockProps({...})` applies these props across the
 model-owned covered block IDs in one Yjs transaction, including unmounted

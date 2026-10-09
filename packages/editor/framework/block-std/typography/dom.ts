@@ -1,7 +1,7 @@
 import {
   INLINE_TYPOGRAPHY_ATTRS, inlineTypographyCssProperty, inlineTypographyDatasetKey,
   isTypographyFontFamilyId, normalizeInlineFontScale, normalizeInlineLetterSpacing,
-  resolveTypographyFontFamily, type TypographyFontFamilyId,
+  resolveTypographyFontFamily, normalizeFontSizePixels, inlineFontSizeCss, type TypographyFontFamilyId,
 } from './core';
 
 /** Apply one compact typography attribute to a live or readonly inline shell. */
@@ -19,6 +19,9 @@ export const applyInlineTypographyAttribute = (
   if (key === INLINE_TYPOGRAPHY_ATTRS.fontFamily) {
     normalized = isTypographyFontFamilyId(value) ? value : null;
     cssValue = normalized ? resolveTypographyFontFamily(normalized) : null;
+  } else if (key === INLINE_TYPOGRAPHY_ATTRS.fontSize) {
+    normalized = normalizeFontSizePixels(value);
+    cssValue = normalized === null ? null : `${normalized}px`;
   } else if (key === INLINE_TYPOGRAPHY_ATTRS.fontScale) {
     normalized = normalizeInlineFontScale(value);
     cssValue = normalized === null ? null : `${normalized}em`;
@@ -33,6 +36,11 @@ export const applyInlineTypographyAttribute = (
   } else {
     element.dataset[datasetKey] = `${normalized}`;
     element.style.setProperty(property, cssValue);
+  }
+  if (key === INLINE_TYPOGRAPHY_ATTRS.fontScale || key === INLINE_TYPOGRAPHY_ATTRS.fontSize) {
+    const size = inlineFontSizeCss(element.dataset['bcPx'], element.dataset['bcFs']);
+    if (size === null) element.style.removeProperty('font-size');
+    else element.style.setProperty('font-size', size);
   }
   return true;
 };

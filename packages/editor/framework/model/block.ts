@@ -31,7 +31,9 @@ export interface IBlockProps {
 export interface IEditableBlockProps extends IBlockProps {
   depth: number
   heading?: number
-  /** Paragraph base font scale; omitted/null inherits the document base size. */
+  /** Fixed base font size in CSS pixels; null inherits the semantic size. */
+  fs?: number | null
+  /** Independent paragraph multiplier; omitted/null means 1. */
   pfs?: number | null
   /** Compact unitless line-height ratio; omitted inherits the document root. */
   lh?: number | null

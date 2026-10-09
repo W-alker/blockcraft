@@ -121,6 +121,11 @@ bc-virtual-float-toolbar {
   }
 }
 
+// The size picker only needs its numeric choices and settings action.
+.bc-fixed-toolbar-font-size-submenu .cs-submenu-panel {
+  min-inline-size: 0;
+}
+
 .bc-fixed-toolbar-dropdown {
   max-inline-size: calc(100vw - 24px);
 
@@ -135,6 +140,20 @@ bc-virtual-float-toolbar {
     display: block;
     box-sizing: border-box;
     min-inline-size: 100%;
+  }
+}
+
+// The narrow size picker keeps its content inside the matched trigger width.
+.bc-fixed-toolbar-font-picker {
+  .cs-dropdown-standard-menu {
+    box-sizing: border-box;
+  }
+
+  bc-float-toolbar-item > span {
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 

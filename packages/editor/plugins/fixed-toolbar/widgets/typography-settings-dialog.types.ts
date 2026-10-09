@@ -6,6 +6,7 @@ import type {
 } from "../../../framework";
 
 export type FontSettingsTarget =
+  | "font-size"
   | "font-family"
   | "font-scale"
   | "letter-spacing";
@@ -14,6 +15,8 @@ export type ParagraphSettingsTarget = "paragraph-align" | "line-height" | "parag
 
 export interface FontSettingsDialogData {
   target: FontSettingsTarget;
+  /** Effective pixels; undefined means mixed. */
+  fontSize?: number;
   typography: {
     ff: TypographyFontFamilyId | null | undefined;
     fs: number | null | undefined;
@@ -27,6 +30,8 @@ export interface FontSettingsDialogData {
 }
 
 export interface FontSettingsDialogResult {
+  /** Only present when the user edited the actual pixel size. null inherits. */
+  fontSize?: number | null;
   typography: Partial<{
     ff: TypographyFontFamilyId | null;
     fs: number | null;

@@ -123,6 +123,11 @@ describe('BaseBlockComponent typography projection', () => {
     expect(block.blockLineHeightAttribute).toBe('')
   })
 
+  it('fixed base pixels retain pfs and override the heading default', () => {
+    expect(createBlock({fs: 20, pfs: 1.5, heading: 1}).blockFontSize).toBe('30px');
+    expect(createBlock({fs: 20, pfs: 1.5, heading: 1}).blockFontScale).toBe('1.5');
+  });
+
   it('suppresses invalid values and all non-editable projection', () => {
     const invalid = createBlock({lh: 0.5})
     expect(createBlock({pfs: 4}).blockFontScale).toBeNull()

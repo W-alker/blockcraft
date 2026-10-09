@@ -3,7 +3,7 @@ import {applyInlineTypographyAttribute, INLINE_TYPOGRAPHY_ATTRS} from '@ccc/bloc
 
 export const setAttributes = (element: HTMLElement, attributes: IInlineNodeAttrs) => {
   const hasCompactFontFamily = INLINE_TYPOGRAPHY_ATTRS.fontFamily in attributes
-  const hasCompactFontScale = INLINE_TYPOGRAPHY_ATTRS.fontScale in attributes
+  const hasCompactFontScale = INLINE_TYPOGRAPHY_ATTRS.fontScale in attributes || INLINE_TYPOGRAPHY_ATTRS.fontSize in attributes
   const hasCompactLetterSpacing = INLINE_TYPOGRAPHY_ATTRS.letterSpacing in attributes
   for (const key in attributes) {
     // @ts-ignore

@@ -81,8 +81,8 @@ describe("FixedTextToolbarComponent responsive layout", () => {
   it("keeps only frequent typography values in quick dropdowns", () => {
     const component = makeComponent();
 
-    expect((component as any).quickFontScalePresets).toEqual([
-      0.75, 0.875, 1, 1.25, 1.5, 1.75, 2, 2.5, 3,
+    expect((component as any).quickFontSizePresets).toEqual([
+      12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64, 72,
     ]);
     expect((component as any).quickLetterSpacingPresets).toEqual([
       -0.05, -0.025, 0.025, 0.05, 0.1,
@@ -1480,7 +1480,7 @@ describe("FixedTextToolbarComponent typography ownership", () => {
 
   for (const [handler, target] of [
     ["onFontFamilyItemClicked", "font-family"],
-    ["onFontScaleItemClicked", "font-scale"],
+    ["onFontSizeItemClicked", "font-size"],
     ["onLetterSpacingItemClicked", "letter-spacing"],
   ] as const) {
     it(`returns focus to the toolbar button before opening ${target} settings`, () => {
@@ -1505,7 +1505,7 @@ describe("FixedTextToolbarComponent typography ownership", () => {
     const closeParent = jasmine.createSpy("closeParent");
     const openFontSettings = spyOn<any>(component, "openFontSettings");
 
-    (component as any).onFontScaleItemClicked(
+    (component as any).onFontSizeItemClicked(
       { name: "more-font-settings", value: "font-scale" },
       { close: closeSubmenu },
       { close: closeParent },
@@ -1535,19 +1535,19 @@ describe("FixedTextToolbarComponent typography ownership", () => {
     });
   });
 
-  it("keeps font size as a relative scale", () => {
+  it("sets actual pixels through the selection helper", () => {
     const component = createComponent();
-    const formatTypography = jasmine.createSpy("formatTypography");
-    component.utils = { formatTypography } as any;
+    const formatFontSizePixels = jasmine.createSpy("formatFontSizePixels");
+    component.utils = { formatFontSizePixels } as any;
     spyOn<any>(component, "runWithSelection").and.callFake((run: () => void) =>
       run(),
     );
 
     const close = jasmine.createSpy("close");
-    (component as any).onFontScaleItemClicked({ value: 1.25 }, { close });
+    (component as any).onFontSizeItemClicked({ value: 24 }, { close });
 
     expect(close).toHaveBeenCalled();
-    expect(formatTypography).toHaveBeenCalledOnceWith({ fontScale: 1.25 });
+    expect(formatFontSizePixels).toHaveBeenCalledOnceWith(24);
   });
 
   it("shows letter spacing as the persisted em value", () => {

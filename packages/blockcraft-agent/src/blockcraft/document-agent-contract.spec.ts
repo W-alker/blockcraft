@@ -170,6 +170,20 @@ describe('BlockCraft Agent v2 contract', () => {
     ])
   })
 
+  it('accepts fixed pixel bases together with retained scales without changing the document during compilation', () => {
+    const doc = createFakeDoc();
+    const before = captureBlockCraftAgentContext(doc as never);
+    const compiler = new DocumentAgentOperationCompiler(doc as never, createDocumentContext(), createExtensions());
+    const prepared = compiler.compile([
+      {kind: 'update-block-props', blockId: 'p1', props: {fs: 16, pfs: 1.5}},
+      {kind: 'apply-text-delta', blockId: 'p1', delta: [{retain: 5, attributes: {'t:px': 12.8, 't:fs': 1.25}}]},
+    ]);
+    expect(prepared.length).toBe(2);
+    expect(captureBlockCraftAgentContext(doc as never)).toEqual(before);
+    expect(() => compiler.compile([{kind: 'apply-text-delta', blockId: 'p1', delta: [{retain: 5, attributes: {'t:px': 0}}]}]))
+      .toThrowError(DocumentAgentOperationCompileError);
+  });
+
   it('validates prop types from the selected Block capability', () => {
     const doc = createFakeDoc()
     const valid = new DocumentAgentOperationCompiler(

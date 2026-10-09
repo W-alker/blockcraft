@@ -18,6 +18,7 @@ import {
   TYPOGRAPHY_FONT_FAMILIES,
   isTypographyFontFamilyId,
   normalizeInlineFontScale,
+  normalizeFontSizePixels,
   normalizeInlineLetterSpacing,
   resolveTypographyFontFamily,
   type TypographyFontFamilyId,
@@ -59,6 +60,7 @@ export class FontSettingsDialogComponent {
   protected readonly family = signal<TypographyFontFamilyId | null>(
     this.data.typography.ff ?? null,
   );
+  protected readonly fontSize = signal<number | null>(this.data.fontSize ?? null);
   protected readonly scale = signal<number | null>(
     this.data.typography.fs ?? null,
   );
@@ -129,7 +131,12 @@ export class FontSettingsDialogComponent {
   }
 
   protected get previewFontSize(): string {
-    return `${20 * (this.scale() ?? 1)}px`;
+    return `${this.fontSize() ?? 20 * (this.scale() ?? 1)}px`;
+  }
+
+  protected setFontSize(value: unknown): void {
+    this.fontSize.set(value === null ? null : normalizeFontSizePixels(value));
+    this.dirty.add('fontSize');
   }
 
   protected get previewLetterSpacing(): string {
@@ -157,11 +164,11 @@ export class FontSettingsDialogComponent {
   }
 
   protected setScale(value: unknown): void {
-    this.scale.set(
-      value === null || value === DEFAULT_SELECT_VALUE
-        ? null
-        : normalizeInlineFontScale(value),
-    );
+    const previous = this.scale() ?? 1;
+    const next = value === null || value === DEFAULT_SELECT_VALUE ? null : normalizeInlineFontScale(value);
+    const pixels = this.fontSize();
+    if (pixels !== null) this.fontSize.set(Math.round(pixels / previous * (next ?? 1) * 1000) / 1000);
+    this.scale.set(next);
     this.dirty.add("fs");
   }
 
@@ -207,6 +214,7 @@ export class FontSettingsDialogComponent {
 
   buildResult(): FontSettingsDialogResult {
     const result: FontSettingsDialogResult = {typography: {}, attrs: {}};
+    if (this.dirty.has('fontSize')) result.fontSize = this.fontSize();
     if (this.dirty.has("ff")) result.typography.ff = this.family();
     if (this.dirty.has("fs")) result.typography.fs = this.scale();
     if (this.dirty.has("ls")) result.typography.ls = this.spacing();

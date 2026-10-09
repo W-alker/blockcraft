@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when working with the CRDT data layer.
 >
-> Last updated: 2026-09-22
+> Last updated: 2026-10-09
 
 ## Architecture Overview
 
@@ -34,6 +34,16 @@ BlockCraftDoc
        ├── Y.Map<RevisionDecision>             key = "bc:revision-decisions" (legacy import)
        └── Y.Map<unknown>                      key = "bc:revision-meta"
 ```
+
+## 固定字号与缩放的数据规则
+
+段落 `props.fs` 和行内 `t:px` 是基础 CSS px，`props.pfs` 与 `t:fs` 保持倍率。
+字段都是独立原始数字；缺省／`null` 继承，DOM 合成结果不持久化为第三份“实际字号”。
+根块已有 `props.fs` 仍表示文档默认 px，其 `10..32` 校验范围不变。
+固定字号基础值允许 `0.1..4096` 和六位小数，产品实际字号输入为 `1..512px`。
+设置实际 px 通过反算保留倍率；设置高级倍率也保留 px，所有范围写入在一个事务中完成。
+只在用户修改命中的范围时规范化旧 `s:fontSize` 别名，打开旧快照不迁移数据。
+协作参与者都需要支持新字段后再使用固定 px 能力；旧客户端的渲染不会理解 `t:px`。
 
 ## Key Files
 

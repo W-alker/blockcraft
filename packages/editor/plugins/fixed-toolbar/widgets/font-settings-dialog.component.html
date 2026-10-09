@@ -27,6 +27,13 @@
             </cs-select>
           </label>
 
+          <label class="bc-settings-field" data-setting-field="font-size">
+            <span>字号</span>
+            <cs-input-number csSize="sm" [csMin]="1" [csMax]="512" [csStep]="1"
+              [csPrecision]="3" [csValue]="fontSize()" csPlaceholder="混合或继承"
+              (csValueChange)="setFontSize($event)" />
+          </label>
+
           <label class="bc-settings-field">
             <span>字形</span>
             <cs-select csSize="sm" csVariant="outlined"
@@ -85,10 +92,11 @@
     </div>
   </cs-tab>
 
-  <cs-tab csTitle="字符间距">
+  <cs-tab csTitle="高级">
     <div class="bc-settings-panel bc-settings-panel--spacing">
       <section class="bc-settings-section">
-        <h3>缩放与字符间距</h3>
+        <h3>文字缩放与字符间距</h3>
+        <p class="bc-settings-hint">缩放倍率会叠加到字号上。整段选区调整段落缩放，局部选区调整所选文字的缩放。</p>
         <div class="bc-settings-grid bc-settings-grid--two">
           <label class="bc-settings-field" data-setting-field="font-scale">
             <span>文字缩放</span>

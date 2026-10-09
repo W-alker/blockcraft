@@ -47,6 +47,8 @@ export interface ITextStyles {
   /** Compact semantic typography keys used by new content. */
   't:ff'?: TypographyFontFamilyId | null;
   't:fs'?: number | null;
+  /** Fixed base font size in CSS pixels; scales remain independent. */
+  't:px'?: number | null;
   't:ls'?: number | null;
   /** Legacy generic CSS keys kept read-compatible. */
   's:color'?: string | null;

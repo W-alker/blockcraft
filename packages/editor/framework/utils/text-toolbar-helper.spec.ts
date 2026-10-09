@@ -89,6 +89,106 @@ describe("TextToolbarHelper boundary selections", () => {
     return {helper, doc, root, p1, p2, outside, rootHost, selection, queryBlocksBetween};
   };
 
+  it("reads effective pixels for a heading and mixed inline bases", () => {
+    const h = makeHarness();
+    (h.p1 as any).props = {depth: 0, heading: 1, pfs: 1.5};
+    const range = h.selection(
+      {blockId: 'p1', type: 'text', offset: 0, block: h.p1},
+      {blockId: 'p1', type: 'text', offset: 3, block: h.p1},
+    );
+    expect(h.helper.getFontSizePixels(range as any)).toBe(48);
+    (h.p1 as any).props.fs = 20;
+    expect(h.helper.getFontSizePixels(range as any)).toBe(30);
+    (h.p1 as any).textDeltas = () => [
+      {insert: 'o', attributes: {'t:px': 16, 't:fs': 1.25}},
+      {insert: 'ne', attributes: {'t:px': 10, 't:fs': 2}},
+    ];
+    expect(h.helper.getFontSizePixels(range as any)).toBe(30);
+    (h.p1 as any).textDeltas = () => [{insert: 'o'}, {insert: 'ne', attributes: {'t:fs': 2}}];
+    expect(h.helper.getFontSizePixels(range as any)).toBeUndefined();
+    h.rootHost.remove();
+  });
+
+  it("sets one actual size for a whole paragraph while retaining every multiplier", () => {
+    const h = makeHarness();
+    (h.p1 as any).props = {depth: 0, heading: 1, pfs: 1.5};
+    (h.p1 as any).textDeltas = () => [
+      {insert: 'o', attributes: {'t:fs': 1.25}},
+      {insert: 'ne', attributes: {'t:fs': 2}},
+    ];
+    const range = h.selection(
+      {blockId: 'p1', type: 'text', offset: 0, block: h.p1},
+      {blockId: 'p1', type: 'text', offset: 3, block: h.p1},
+    );
+    h.helper.formatFontSizePixels(24, range as any);
+    expect(h.p1.updateProps).toHaveBeenCalledOnceWith({fs: 16});
+    expect(h.p1.formatText.calls.allArgs()).toEqual([
+      [0, 1, {'t:px': 12.8}], [1, 2, {'t:px': 8}],
+    ]);
+    expect(h.p1.props as any).toEqual({depth: 0, heading: 1, pfs: 1.5});
+    expect(h.p2.formatText).not.toHaveBeenCalled();
+    h.rootHost.remove();
+  });
+
+  it("keeps pending font scale and bold when changing caret pixels", () => {
+    const h = makeHarness();
+    (h.p1 as any).props = {depth: 0, pfs: 2};
+    h.doc.inputManger.peekNextInsertAttrs.and.returnValue({'t:fs': 1.25, 'a:bold': true});
+    const caret = h.selection(
+      {blockId: 'p1', type: 'text', offset: 1, block: h.p1},
+      {blockId: 'p1', type: 'text', offset: 1, block: h.p1},
+    );
+    expect(h.helper.getFontSizePixels(caret as any)).toBe(40);
+    h.helper.formatFontSizePixels(30, caret as any);
+    expect(h.doc.inputManger.setNextInsertAttrs).toHaveBeenCalledWith(
+      {'t:fs': 1.25, 'a:bold': true, 't:px': 12}, {blockId: 'p1', index: 1},
+    );
+    expect(h.p1.updateProps).not.toHaveBeenCalled();
+    h.rootHost.remove();
+  });
+
+  it("canonicalizes selected legacy em sizes without rewriting other runs", () => {
+    const h = makeHarness();
+    (h.p1 as any).props = {depth: 0, pfs: 2};
+    (h.p1 as any).textDeltas = () => [{insert: 'one', attributes: {'s:fontSize': '1.25em'}}];
+    const range = h.selection(
+      {blockId: 'p1', type: 'text', offset: 1, block: h.p1},
+      {blockId: 'p1', type: 'text', offset: 2, block: h.p1},
+    );
+    expect(h.helper.getFontSizePixels(range as any)).toBe(40);
+    h.helper.formatFontSizePixels(25, range as any);
+    expect(h.p1.formatText).toHaveBeenCalledOnceWith(1, 1, {'t:px': 10, 't:fs': 1.25, 's:fontSize': null});
+    h.rootHost.remove();
+  });
+
+  it("advanced scaling retains fixed bases and the other multiplier", () => {
+    const h = makeHarness();
+    (h.p1 as any).props = {depth: 0, fs: 20, pfs: 1.5};
+    (h.p1 as any).textDeltas = () => [{insert: 'one', attributes: {'t:px': 12.8, 't:fs': 1.25}}];
+    const range = h.selection(
+      {blockId: 'p1', type: 'text', offset: 0, block: h.p1},
+      {blockId: 'p1', type: 'text', offset: 3, block: h.p1},
+    );
+    h.helper.formatFontScale(2, range as any);
+    expect(h.p1.updateProps).toHaveBeenCalledOnceWith({pfs: 2});
+    expect(h.p1.formatText).not.toHaveBeenCalled();
+    h.rootHost.remove();
+  });
+
+  it("clears only fixed px and keeps a legacy em multiplier", () => {
+    const h = makeHarness();
+    (h.p1 as any).props = {depth: 0, fs: 20, pfs: 1.5};
+    (h.p1 as any).textDeltas = () => [{insert: 'one', attributes: {'s:fontSize': '1.25em'}}];
+    const range = h.selection(
+      {blockId: 'p1', type: 'text', offset: 0, block: h.p1},
+      {blockId: 'p1', type: 'text', offset: 3, block: h.p1},
+    );
+    h.helper.formatFontSizePixels(null, range as any);
+    expect(h.p1.updateProps).toHaveBeenCalledOnceWith({fs: null});
+    expect(h.p1.formatText).toHaveBeenCalledOnceWith(0, 3, {'t:px': null});
+    h.rootHost.remove();
+  });
+
   it("updates only the child blocks covered by a boundary range", () => {
     const {helper, root, p1, p2, outside, rootHost, selection, queryBlocksBetween} = makeHarness();
     const boundarySelection = selection(

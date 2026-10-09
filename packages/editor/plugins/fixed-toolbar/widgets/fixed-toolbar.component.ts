@@ -48,7 +48,7 @@ import {
   TYPOGRAPHY_FONT_FAMILIES,
   type TypographyFontFamilyId,
 } from "../../../framework";
-import { fromEvent, merge, Subscription, take } from "rxjs";
+import { debounceTime, filter, fromEvent, merge, Subscription, take } from "rxjs";
 import { debounce, IS_MAC, nextTick } from "../../../global";
 import { Overlay } from "@angular/cdk/overlay";
 import { ComponentPortal } from "@angular/cdk/portal";
@@ -122,6 +122,7 @@ interface IToolbarIconAction<T extends string = string> {
 interface IFormatBrushPayload {
   inlineAttrs: IInlineNodeAttrs;
   fontScale?: number | null;
+  fontSize?: number;
   blockProps: Partial<Pick<IEditableBlockProps, "lh">>;
 }
 
@@ -215,9 +216,10 @@ const LIST_ACTIONS: IToolbarIconAction<TListFlavour>[] = [
 ];
 
 /** 高频快捷档位；完整范围由“更多设置”中的数值控件承接。 */
-const FIXED_TOOLBAR_FONT_SCALE_PRESETS = [
-  0.75, 0.875, 1, 1.25, 1.5, 1.75, 2, 2.5, 3,
-] as const;
+const FIXED_TOOLBAR_FONT_SIZE_PRESETS = [12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64, 72];
+const FIXED_TOOLBAR_FONT_FAMILY_WIDTH = 104;
+const FIXED_TOOLBAR_FONT_SIZE_MIN_WIDTH = 56;
+
 const FIXED_TOOLBAR_LETTER_SPACING_PRESETS = [
   -0.05, -0.025, 0.025, 0.05, 0.1,
 ] as const;
@@ -324,20 +326,21 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
 
             <button
               class="toolbar-btn toolbar-font-combo__control toolbar-btn--font-size"
-              title="文字缩放"
+              title="字号"
               aria-haspopup="menu"
               [disabled]="readonly || !canSetFontScale"
               csDropdown
               csTrigger="hover"
               csMatchTriggerWidth
-              csOverlayClassName="bc-fixed-toolbar-dropdown"
+              csOverlayClassName="bc-fixed-toolbar-dropdown bc-fixed-toolbar-font-picker"
+              [csOverlayStyle]="fontSizeDropdownStyle"
               [csDropdownMenu]="fontSizePicker"
               [csDisabled]="readonly || !canSetFontScale"
               [csClickHide]="false"
               csPlacement="bottom"
               #fontSizeTrigger="csDropdown"
             >
-              <span>{{ activeFontScaleLabel }}</span>
+              <span>{{ activeFontSizeLabel }}</span>
               <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
             </button>
           </span>
@@ -983,13 +986,13 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
           [csTitle]="compactFontScaleTitle"
           [csDisabled]="readonly || !canSetFontScale"
           csTriggerSubMenuAction="hover"
-          csMenuClassName="bc-fixed-toolbar-submenu"
+          csMenuClassName="bc-fixed-toolbar-submenu bc-fixed-toolbar-font-size-submenu"
           #compactFontScaleTrigger="csSubmenu"
         >
           <bc-float-toolbar
             [direction]="'column'"
             (onItemClick)="
-              onFontScaleItemClicked(
+              onFontSizeItemClicked(
                 $event,
                 compactFontScaleTrigger,
                 responsiveMoreTrigger
@@ -998,18 +1001,18 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
             [gapAround]="0"
             styles="max-height: min(60vh, 420px); overflow-x: hidden; overflow-y: auto"
           >
-            @for (scale of quickFontScalePresets; track scale) {
+            @for (size of quickFontSizePresets; track size) {
               <bc-float-toolbar-item
-                name="font-scale"
-                [value]="scale"
-                [active]="(activeTypography.fs ?? 1) === scale"
-                >{{ scale }}×</bc-float-toolbar-item
+                name="font-size"
+                [value]="size"
+                [active]="activeFontSizePixels === size"
+                >{{ size }}</bc-float-toolbar-item
               >
             }
             <span class="bc-float-toolbar__divider"></span>
             <bc-float-toolbar-item
               name="more-font-settings"
-              value="font-scale"
+              value="font-size"
               icon="bc_version_settings"
               >更多设置…</bc-float-toolbar-item
             >
@@ -1151,14 +1154,15 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
       <bc-float-toolbar
         [direction]="'column'"
         (onItemClick)="onFontFamilyItemClicked($event, fontFamilyTrigger)"
-        [gapAround]="8"
-        styles="box-sizing: border-box; width: 100%; min-width: 184px; max-width: calc(100vw - 24px); max-height: min(60vh, 420px); overflow-x: hidden; overflow-y: auto"
+        [gapAround]="0"
+        styles="box-sizing: border-box; width: max-content; min-width: 100%; max-width: calc(100vw - 24px); max-height: min(60vh, 420px); overflow-x: hidden; overflow-y: auto"
       >
         <bc-float-toolbar-item
           name="font-family"
           [value]="null"
           [active]="activeTypography.ff === null"
-          >默认字体</bc-float-toolbar-item
+          title="默认字体"
+          ><span>默认字体</span></bc-float-toolbar-item
         >
         @for (font of fontFamilies; track font.id) {
           <bc-float-toolbar-item
@@ -1166,7 +1170,9 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
             [value]="font.id"
             [active]="activeTypography.ff === font.id"
             [style.font-family]="font.css"
-            >{{ font.label }}</bc-float-toolbar-item
+            [title]="font.label"
+            [attr.aria-label]="font.label"
+            ><span>{{ font.label }}</span></bc-float-toolbar-item
           >
         }
         <span class="bc-float-toolbar__divider"></span>
@@ -1174,7 +1180,9 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
           name="more-font-settings"
           value="font-family"
           icon="bc_version_settings"
-          >更多设置…</bc-float-toolbar-item
+          title="更多设置…"
+          aria-label="更多设置…"
+          ><span>更多设置…</span></bc-float-toolbar-item
         >
       </bc-float-toolbar>
     </cs-dropdown-menu>
@@ -1182,24 +1190,26 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
     <cs-dropdown-menu #fontSizePicker="csDropdownMenu">
       <bc-float-toolbar
         [direction]="'column'"
-        (onItemClick)="onFontScaleItemClicked($event, fontSizeTrigger)"
-        [gapAround]="8"
+        (onItemClick)="onFontSizeItemClicked($event, fontSizeTrigger)"
+        [gapAround]="0"
         styles="box-sizing: border-box; width: 100%; max-height: min(60vh, 420px); overflow-x: hidden; overflow-y: auto"
       >
-        @for (scale of quickFontScalePresets; track scale) {
+        @for (size of quickFontSizePresets; track size) {
           <bc-float-toolbar-item
-            name="font-scale"
-            [value]="scale"
-            [active]="(activeTypography.fs ?? 1) === scale"
-            >{{ scale }}×</bc-float-toolbar-item
+            name="font-size"
+            [value]="size"
+            [active]="activeFontSizePixels === size"
+            >{{ size }}</bc-float-toolbar-item
           >
         }
         <span class="bc-float-toolbar__divider"></span>
         <bc-float-toolbar-item
           name="more-font-settings"
-          value="font-scale"
+          value="font-size"
           icon="bc_version_settings"
-          >更多设置…</bc-float-toolbar-item
+          title="更多设置…"
+          aria-label="更多设置…"
+          ></bc-float-toolbar-item
         >
       </bc-float-toolbar>
     </cs-dropdown-menu>
@@ -1628,12 +1638,12 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
       }
 
       .toolbar-btn--font-family {
-        width: 128px;
+        width: ${FIXED_TOOLBAR_FONT_FAMILY_WIDTH}px;
       }
 
       .toolbar-btn--font-size {
-        width: 72px;
-        min-width: 72px;
+        width: max-content;
+        min-width: ${FIXED_TOOLBAR_FONT_SIZE_MIN_WIDTH}px;
       }
 
       .toolbar-btn--letter-spacing {
@@ -1660,6 +1670,12 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
         text-align: left;
         text-overflow: ellipsis;
         white-space: nowrap;
+      }
+
+      .toolbar-btn--font-size > span {
+        flex: 0 0 auto;
+        overflow: visible;
+        text-overflow: clip;
       }
 
       .toolbar-btn--style > i:last-child {
@@ -1832,7 +1848,9 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   };
 
   protected readonly fontFamilies = TYPOGRAPHY_FONT_FAMILIES;
-  protected readonly quickFontScalePresets = FIXED_TOOLBAR_FONT_SCALE_PRESETS;
+  protected readonly quickFontSizePresets = FIXED_TOOLBAR_FONT_SIZE_PRESETS;
+  protected readonly fontSizeDropdownStyle = {width: "min-content"};
+  protected activeFontSizePixels: number | undefined = undefined;
   protected readonly quickLetterSpacingPresets =
     FIXED_TOOLBAR_LETTER_SPACING_PRESETS;
   protected readonly lineHeightPresets = PARAGRAPH_LINE_HEIGHT_PRESETS;
@@ -1888,6 +1906,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   protected readonly bgGraphList = BG_GRAPH_LIST;
   protected formatBrushActive = false;
   private _destroyed = false;
+  private readonly typographyContextIds = new Set<string>();
 
   protected get formatBrushTitle() {
     return `格式刷（${IS_MAC ? "⌘" : "Ctrl"}+Shift+C）`;
@@ -1905,6 +1924,13 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
         }, 40),
       ),
     );
+
+    if (this.doc.model?.contentChange$) {
+      this._sub.add(this.doc.model.contentChange$.pipe(
+        filter(change => change.blockIds.some((id: string) => this.typographyContextIds.has(id))),
+        debounceTime(40),
+      ).subscribe(() => this.syncToolbarState(this.doc.selection.value)));
+    }
 
     this._sub.add(
       this.doc.event.add("selectEnd", () => {
@@ -2272,31 +2298,17 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** 光标回显包含段落基准；范围选区仍显示其格式目标的倍率。 */
-  private get caretParagraphFontScale(): number | undefined {
-    const selection = this.selectionJSON;
-    if (
-      selection?.anchor.type !== "text" ||
-      selection.head.type !== "text" ||
-      selection.anchor.blockId !== selection.head.blockId ||
-      selection.anchor.offset !== selection.head.offset
-    ) {
-      return 1;
-    }
-    const scale = this.activeParagraphTypography.pfs;
-    return scale === null ? 1 : scale;
-  }
-
-  /** 当前显示倍率；原始 typography 保留给设置弹窗和格式刷。 */
-  protected get activeFontScale(): number {
-    return (this.activeTypography.fs ?? 1) * (this.caretParagraphFontScale ?? 1);
-  }
-
-  protected get activeFontScaleLabel(): string {
-    return this.activeTypography.fs === undefined ||
-      this.caretParagraphFontScale === undefined
+  protected get activeFontSizeLabel(): string {
+    return this.activeFontSizePixels === undefined
       ? "混合"
-      : `${Math.round(this.activeFontScale * 1000) / 1000}×`;
+      : `${Math.round(this.activeFontSizePixels * 10) / 10}`;
+  }
+
+  private applyFontSize(value: number | null): void {
+    this.runWithSelection(
+      () => this.toolbarHelper.formatFontSizePixels(value),
+      {allowFontScaleTargets: true},
+    );
   }
 
   protected get activeLineHeightLabel(): string {
@@ -2319,14 +2331,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     return getTypographyFontFamily(family)?.label ?? "默认字体";
   }
 
-  private applyInlineTypography(key: "ff" | "fs" | "ls", value: unknown) {
-    if (key === "fs") {
-      this.runWithSelection(
-        () => this.toolbarHelper.formatTypography({ fontScale: value }),
-        { allowFontScaleTargets: true },
-      );
-      return;
-    }
+  private applyInlineTypography(key: "ff" | "ls", value: unknown) {
     this.runWithSelection(() => {
       this.toolbarHelper.formatText(
         createInlineTypographyPatch(key, value) as IInlineNodeAttrs,
@@ -2349,7 +2354,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     this.applyInlineTypography("ff", item.value);
   }
 
-  protected onFontScaleItemClicked(
+  protected onFontSizeItemClicked(
     item: BcFloatToolbarItemComponent,
     trigger: IToolbarPopupController,
     parentTrigger?: IToolbarPopupController,
@@ -2361,7 +2366,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     }
     trigger.close();
     parentTrigger?.close();
-    this.applyInlineTypography("fs", item.value);
+    this.applyFontSize(item.value);
   }
 
   protected onLetterSpacingItemClicked(
@@ -2416,7 +2421,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
 
   protected openFontSettings(target: FontSettingsTarget): void {
     const canOpen =
-      target === "font-scale" ? this.canSetFontScale : this.allEditable;
+      target === "font-scale" || target === "font-size" ? this.canSetFontScale : this.allEditable;
     if (!this.modalService || this.readonly || !canOpen) return;
     const savedSelection = this.selectionJSON;
     if (!savedSelection) return;
@@ -2425,6 +2430,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     const data: FontSettingsDialogData = {
       target,
       typography: { ...this.activeTypography },
+      fontSize: this.activeFontSizePixels,
       attrs: {
         bold: this.isAttrActive("bold"),
         italic: this.isAttrActive("italic"),
@@ -2463,7 +2469,11 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       .subscribe(() => ref.componentInstance?.focusTarget());
     ref.afterClose.pipe(take(1)).subscribe((result) => {
       if (this._settingsModalRef === ref) this._settingsModalRef = undefined;
-      if (!result || this.readonly) return;
+      if (this.readonly) return;
+      if (!result) {
+        this.runWithSavedSelection(savedSelection, () => {}, {allowFontScaleTargets: true});
+        return;
+      }
       this.applyFontSettingsResult(savedSelection, result);
     });
   }
@@ -2554,13 +2564,15 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       result.typography,
       "fs",
     );
-    if (!Object.keys(patch).length && !hasFontScale) return;
+    const hasFontSize = Object.prototype.hasOwnProperty.call(result, "fontSize");
+    if (!Object.keys(patch).length && !hasFontScale && !hasFontSize) return;
     this.runWithSavedSelection(
       savedSelection,
       () => {
-        this.toolbarHelper.formatTypography({
-          attrs: patch,
-          ...(hasFontScale ? { fontScale: result.typography.fs } : {}),
+        this.doc.crud.transact(() => {
+          this.toolbarHelper.formatTypography({attrs: patch});
+          if (hasFontScale) this.toolbarHelper.formatFontScale(result.typography.fs);
+          if (hasFontSize) this.toolbarHelper.formatFontSizePixels(result.fontSize);
         });
       },
       { allowFontScaleTargets: true },
@@ -3170,6 +3182,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
 
     return {
       inlineAttrs,
+      ...(common.hasFixedFontSize && common.fontSize !== undefined ? {fontSize: common.fontSize} : {}),
       ...(fontScale !== undefined ? { fontScale } : {}),
       blockProps,
     } satisfies IFormatBrushPayload;
@@ -3330,6 +3343,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
         },
         selection,
       );
+      if (payload.fontSize !== undefined) this.toolbarHelper.formatFontSizePixels(payload.fontSize, selection);
       if (Object.keys(payload.blockProps).length) {
         this.toolbarHelper.updateBlockProps(payload.blockProps, selection);
       }
@@ -3610,10 +3624,12 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
 
   private syncToolbarState(selection: BlockCraft.Selection | null) {
     if (!this.isLiveSelection(selection)) {
+      this.typographyContextIds.clear();
       this.activeAttrs = new Map<string, any>();
       this.activeColors = {};
       this.activeProps = {};
       this.activeTypography = { ff: null, fs: null, ls: null };
+      this.activeFontSizePixels = undefined;
       this.activeParagraphTypography = {
         pfs: null,
         lh: null,
@@ -3650,6 +3666,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       this.activeColors = {};
       this.activeProps = {};
       this.activeTypography = { ff: null, fs: null, ls: null };
+      this.activeFontSizePixels = undefined;
       this.activeParagraphTypography = {
         pfs: null,
         lh: null,
@@ -3664,8 +3681,17 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
       return;
     }
 
+    this.typographyContextIds.clear();
+    for (const target of this.toolbarHelper.getFontScaleTargets(selection)) {
+      let id: string | null = target.blockId;
+      while (id && !this.typographyContextIds.has(id)) {
+        this.typographyContextIds.add(id);
+        id = this.doc.model?.getParentId?.(id) ?? null;
+      }
+    }
     const common = this.toolbarHelper.getCurrentCommonAttrs(selection);
     this.activeProps = { ...common.props };
+    this.activeFontSizePixels = common.fontSize;
     this.activeTypography = common.typography
       ? { ...common.typography }
       : { ff: null, fs: null, ls: null };

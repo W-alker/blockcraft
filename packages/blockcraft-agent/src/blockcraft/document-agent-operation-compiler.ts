@@ -18,6 +18,7 @@ Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
   'a:code': {type: ['boolean', 'null']},
   'a:link': {type: ['string', 'null'], maxLength: 8_192},
   't:ff': {type: ['string', 'null'], maxLength: 100},
+  't:px': {type: ['number', 'null'], minimum: 0.1, maximum: 4096},
   't:fs': {type: ['number', 'null'], minimum: 0.1, maximum: 10},
   't:ls': {type: ['number', 'null'], minimum: -1, maximum: 10},
   's:color': {type: ['string', 'null'], maxLength: 256},

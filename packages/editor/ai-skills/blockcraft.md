@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-10-08 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-10-09 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -346,14 +346,19 @@ whole-block or paragraph-boundary revisions, so clicking unchanged text in the
 same paragraph cannot activate an inline review popover.
 
 Typography ownership is layered and compact: root `ff/fs/lh` defines document
-defaults; editable block `pfs/lh/psb/psa` defines paragraph base scale, line
-height and spacing; inline `t:ff/t:fs/t:ls` defines selection font, relative
+defaults; editable block `fs/pfs/lh/psb/psa` defines fixed base px, paragraph scale, line
+height and spacing; inline `t:ff/t:px/t:fs/t:ls` defines selection font, fixed base px, relative
 multiplier and character spacing. Effective text scale is `pfs × t:fs`.
 Complete-block font scaling writes `pfs` so ordered/bullet/todo prefixes inherit
 it; partial ranges and collapsed carets keep `t:fs`. This selection/model rule
 requires no DOM measurement or resize listener, and old inline-only documents
 are not migrated automatically.
-The fixed toolbar presents font family and relative scale as one adjacent,
+`TextToolbarHelper.formatFontSizePixels(px | null)` sets the effective logical
+CSS pixels while retaining both multipliers; `formatFontScale(scale | null)`
+changes only the targeted multiplier. New pixel fields are additive; legacy
+`pfs/t:fs/s:fontSize` documents are not rewritten when opened. Advanced scale
+editing is available in the font modal; the fixed toolbar uses actual px only.
+The fixed toolbar presents font family and effective pixel size as one adjacent,
 iconless Word-style control pair. Character spacing sits immediately before
 paragraph line height, while superscript/subscript share a split action whose
 main half repeats the active or most recently chosen baseline command. Each
