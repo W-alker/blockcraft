@@ -36,7 +36,7 @@ import {objectGroupResizeBounds, scaleObjectGroupMembers, type ObjectGroupResize
         data-bc-selection-interaction-ignore
         [target]="hostElement"
         [maxWidthContainer]="placementContainer"
-        [maxWidthResolver]="objectMaxWidthResolver"
+        [maxWidthResolver]="resizeMaxWidth"
         [resizeCalculator]="resizeCalculator"
         [rotatable]="false"
         (resizeStart)="onResizeStart()"
@@ -146,6 +146,7 @@ export class ObjectGroupBlockComponent
   readonly groupPadding = BLOCK_OBJECT_GROUP_PADDING
   readonly moveEdges = ['north', 'east', 'south', 'west'] as const
   private resizeSnapshot: string | null = null
+  private resizeStartBox: ShapeResizeBox | null = null
   private resizeMembers: ObjectGroupResizeMember[] = []
   private resizeRequest: ShapeResizeBox | null = null
   private previewBox: ShapeResizeBox | null = null
@@ -168,9 +169,32 @@ export class ObjectGroupBlockComponent
     })
   }
 
+  protected readonly resizeMaxWidth = () => {
+    if (this.isAbsolute) return null
+    const container = this.placementContainer
+    if (!container) return null
+    const style = getComputedStyle(container)
+    const width = container.clientWidth -
+      (Number.parseFloat(style.paddingLeft) || 0) -
+      (Number.parseFloat(style.paddingRight) || 0)
+    return width > 0 ? width : null
+  }
+
   protected readonly resizeCalculator: ShapeResizeCalculator = (handle, start, dx, dy, maxWidth) => {
     if (!this.resizeSnapshot) return start
-    const request = calculateImageResize(handle, start, dx, dy, maxWidth)
+    // Flow CSS can constrain the displayed box without changing its model plane.
+    // Start dragging at that visible edge, but scale members from their original
+    // model dimensions so preview and the coordinator commit remain identical.
+    // Returning to the pointer origin must also retain oversized model geometry.
+    let request = dx === 0 && dy === 0
+      ? start
+      : calculateImageResize(handle, this.resizeStartBox ?? start, dx, dy, maxWidth)
+    if (this.resizeStartBox && handle.includes('-')) {
+      // A clipped flow frame may have a different ratio from the model plane.
+      // Corners still scale the original composition uniformly into the box.
+      const scale = Math.min(request.width / start.width, request.height / start.height)
+      request = {...request, width: start.width * scale, height: start.height * scale}
+    }
     const scaled = scaleObjectGroupMembers(this.resizeMembers,
       request.width / start.width, request.height / start.height)
     if (!scaled) return this.previewBox ?? start
@@ -206,12 +230,22 @@ export class ObjectGroupBlockComponent
 
   protected onResizeStart(): void {
     this.resizeSnapshot = null
+    this.resizeStartBox = null
     this.resizeRequest = this.previewBox = null
     this.resizeMembers = []
     this.memberViews = []
     const ids = this.doc.model.getChildrenIds(this.id)
     if (ids.some(id => this.doc.readonlyManager.isReadonly(id) ||
       this.doc.readonlyManager.containsReadonly(id))) return
+    if (!this.isAbsolute) {
+      // One layout read per gesture; pointer frames use only cached geometry.
+      const style = getComputedStyle(this.hostElement)
+      const width = Number.parseFloat(style.width)
+      const height = Number.parseFloat(style.height)
+      if (width > 0 && height > 0) {
+        this.resizeStartBox = {width, height, offsetX: 0, offsetY: 0}
+      }
+    }
     for (const id of ids) {
       const geometry = resolvePlacementObjectGeometry(this.doc, id, {referenceWidth: this.groupProps.width})
       if (!geometry) return
@@ -291,6 +325,7 @@ export class ObjectGroupBlockComponent
     this.hostElement.style.width = `${this.groupProps.width}px`
     this.hostElement.style.height = `${this.groupProps.height}px`
     this.resizeSnapshot = null
+    this.resizeStartBox = null
     this.resizeMembers = []
     this.resizeRequest = this.previewBox = null
     this.changeDetectorRef.markForCheck()

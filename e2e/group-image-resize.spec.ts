@@ -824,8 +824,12 @@ for (const flow of [false, true]) {
       members.forEach((id, index) => doc.crud.updateBlockProps(id, {position: ['100 80', '280 100', '130 310'][index]}))
       const groupId = doc.placement.group(members)
       if (!groupId) throw new Error('Failed to group date and weather')
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
       if (flow) doc.placement.setMode(groupId, 'relative')
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      if (doc.placement.getState(groupId).mode !== (flow ? 'relative' : 'absolute')) {
+        throw new Error('Unexpected group placement mode')
+      }
       doc.selection.selectBlock(groupId)
       doc.crud.undoManager.clearHistory()
       return {groupId, members: members.slice(1)}
@@ -932,6 +936,80 @@ for (const flow of [false, true]) {
   })
 }
 
+test('flow group resizes from its visible box inside a padded narrow container', async ({page}) => {
+  const ids = (await mountFixture(page, undefined, true))!
+  await page.evaluate(async id => {
+    const doc = (window as any).__imageResizeDoc
+    if (!doc.placement.setMode(id, 'relative')) throw new Error('Failed to enter flow')
+    const container = doc.getBlockById(id).placementContainer as HTMLElement
+    container.style.width = '420px'
+    container.style.boxSizing = 'border-box'
+    container.style.padding = '0 56px'
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    doc.selection.selectBlock(id)
+    doc.crud.undoManager.clearHistory()
+  }, ids.groupId)
+  const group = page.locator(`#image-resize-fixture [data-block-id="${ids.groupId}"]`)
+  const capture = () => page.evaluate(ids => {
+    const doc = (window as any).__imageResizeDoc
+    return [ids.groupId, ids.imageId, ids.siblingId].map(id => {
+      const block = doc.getBlockById(id)
+      const element = block.imgWrapper?.nativeElement ?? block.hostElement
+      const rect = element.getBoundingClientRect()
+      return {props: {...doc.model.getProps(id)}, x: rect.x, y: rect.y, width: rect.width, height: rect.height}
+    })
+  }, ids)
+  const before = await capture()
+  expect(before[0].props.width).toBeGreaterThan(before[0].width)
+  expect(before[0].width).toBeCloseTo(308, 1)
+  // Merely pressing a handle must retain oversized model geometry and history.
+  await group.locator(':scope > shape-resizer [data-handle="east"]').click()
+  expect(await capture()).toEqual(before)
+  expect(await page.evaluate(() => (window as any).__imageResizeDoc.crud.undoManager.isCanUndo())).toBe(false)
+  for (const [direction, dx, dy] of [
+    ['east', -60, 0], ['south', 0, -60], ['south-east', -60, -40],
+  ] as const) {
+    const rect = (await group.locator(`:scope > shape-resizer [data-handle="${direction}"]`).boundingBox())!
+    await page.mouse.move(rect.x + 5, rect.y + 5)
+    await page.mouse.down()
+    await page.mouse.move(rect.x + 5 + dx, rect.y + 5 + dy, {steps: 6})
+    await page.waitForTimeout(50)
+    const preview = await capture()
+    expect(preview.map(item => item.props)).toEqual(before.map(item => item.props))
+    if (dx) expect(preview[0].width).toBeCloseTo(before[0].width + dx, 0)
+    if (!dx) expect(preview[0].height).toBeCloseTo(before[0].height + dy, 0)
+    await page.mouse.up()
+    const after = await capture()
+    for (let i = 0; i < after.length; i++) {
+      for (const key of ['x', 'y', 'width', 'height'] as const) expect(after[i][key]).toBeCloseTo(preview[i][key], 0)
+    }
+    expect(after[0].props.width).toBeCloseTo(after[0].width, 1)
+    if (direction === 'south-east') {
+      expect(after[0].props.width / after[0].props.height)
+        .toBeCloseTo(before[0].props.width / before[0].props.height, 3)
+      for (let i = 1; i < after.length; i++) expect(after[i].props.ar).toBe(before[i].props.ar)
+    }
+    await page.evaluate(() => (window as any).__imageResizeDoc.crud.undoManager.undo())
+    await expect.poll(capture).toEqual(before)
+    expect(await page.evaluate(() => (window as any).__imageResizeDoc.crud.undoManager.isCanUndo())).toBe(false)
+    await page.evaluate(() => (window as any).__imageResizeDoc.crud.undoManager.redo())
+    await expect.poll(capture).toEqual(after)
+    await page.evaluate(() => (window as any).__imageResizeDoc.crud.undoManager.undo())
+    await expect.poll(capture).toEqual(before)
+    // Cancel and returning to the start point both restore the clipped box.
+    for (const cancel of [true, false]) {
+      await page.mouse.move(rect.x + 5, rect.y + 5)
+      await page.mouse.down()
+      await page.mouse.move(rect.x + 5 + dx, rect.y + 5 + dy, {steps: 6})
+      if (cancel) await page.keyboard.press('Escape')
+      else await page.mouse.move(rect.x + 5, rect.y + 5)
+      await page.mouse.up()
+      await expect.poll(capture).toEqual(before)
+      expect(await page.evaluate(() => (window as any).__imageResizeDoc.crud.undoManager.isCanUndo())).toBe(false)
+    }
+  }
+})
+
 test('whole group resize cancellation, no-op and locked members leave geometry intact', async ({page}) => {
   const ids = (await mountFixture(page, undefined, true))!
   await page.evaluate(id => {
@@ -1029,8 +1107,12 @@ for (const flow of [false, true]) {
       doc.crud.updateBlockProps(textId, {position: '140 80'})
       doc.crud.updateBlockProps(shapeId, {position: '410 180'})
       const groupId = doc.placement.group([textId, shapeId])
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
       if (flow) doc.placement.setMode(groupId, 'relative')
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      if (doc.placement.getState(groupId).mode !== (flow ? 'relative' : 'absolute')) {
+        throw new Error('Unexpected group placement mode')
+      }
       doc.selection.selectBlock(groupId)
       doc.crud.undoManager.clearHistory()
       return {groupId, textId, shapeId}
