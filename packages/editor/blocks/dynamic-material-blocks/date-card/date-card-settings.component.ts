@@ -1,6 +1,6 @@
 import {NgComponentOutlet} from '@angular/common';
-import {A11yModule} from '@angular/cdk/a11y';
-import {ChangeDetectionStrategy, Component, computed, EventEmitter, Input, Output, signal} from '@angular/core';
+import {A11yModule, CdkTrapFocus} from '@angular/cdk/a11y';
+import {AfterViewInit, ChangeDetectionStrategy, Component, computed, ElementRef, EventEmitter, inject, Input, OnDestroy, Output, signal, viewChild} from '@angular/core';
 import {CsButtonComponent, CsColorPickerComponent, CsInputNumberComponent, CsOptionComponent, CsSelectComponent} from '@cses/ui';
 import {TYPOGRAPHY_FONT_FAMILIES} from '../../../framework/block-std/typography/core';
 import {defineBorderConfigs} from '../kernel/material-border.util';
@@ -22,7 +22,10 @@ type Props = DateCardModel['props'];
     templateUrl: './date-card-settings.component.html',
     styleUrl: './date-card-settings.component.scss'
 })
-export class DateCardSettingsComponent {
+export class DateCardSettingsComponent implements AfterViewInit, OnDestroy {
+    private readonly element = inject<ElementRef<HTMLElement>>(ElementRef);
+    private readonly focusTrap = viewChild.required(CdkTrapFocus);
+    private previouslyFocusedElement: HTMLElement | null = null;
     private initialStyle = '';
     private readonly dirty = new Set<string>();
     protected readonly value = signal<Props>({});
@@ -34,6 +37,18 @@ export class DateCardSettingsComponent {
     @Input() scale = 1;
     @Output() readonly apply = new EventEmitter<Partial<Props>>();
     @Output() readonly cancel = new EventEmitter<void>();
+    ngAfterViewInit(): void {
+        this.previouslyFocusedElement = this.element.nativeElement.ownerDocument.activeElement as HTMLElement | null;
+        void this.focusTrap().focusTrap.focusInitialElementWhenReady();
+    }
+    ngOnDestroy(): void {
+        // CDK 自动恢复使用普通 focus()，会把编辑宿主滚到顶部。
+        // 保留原来的焦点归属，关闭设置时不触发浏览器滚动。
+        if (this.previouslyFocusedElement?.isConnected) {
+            this.previouslyFocusedElement.focus({preventScroll: true});
+        }
+        this.previouslyFocusedElement = null;
+    }
     protected readonly styles = DATE_CARD_STYLES.all;
     protected readonly families = TYPOGRAPHY_FONT_FAMILIES;
     protected readonly borders = defineBorderConfigs()[0].options!;

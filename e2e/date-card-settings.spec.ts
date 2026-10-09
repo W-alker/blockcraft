@@ -18,7 +18,10 @@ async function setup(page: Page, style = 'masthead', draft = false) {
 const card = (page: Page, id: string) => page.locator(`block-craft-editor [data-block-id="${id}"]`)
 const dialog = (page: Page) => page.getByRole('dialog', {name: '日期设置', exact: true})
 async function open(page: Page, id: string) {
-  await card(page, id).locator('.card__day').click()
+  const day = card(page, id).locator('.card__day')
+  const bounds = (await day.boundingBox())!
+  // 翻页牌的中心装饰缝覆盖数字，点击数字上部仍走真实命中检测。
+  await day.click({position: {x: bounds.width / 2, y: bounds.height / 4}})
   await card(page, id).getByRole('button', {name: '日期设置', exact: true}).click()
   await expect(dialog(page)).toBeVisible()
 }
