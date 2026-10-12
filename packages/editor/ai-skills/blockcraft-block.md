@@ -13,7 +13,7 @@
 `declare global { namespace BlockCraft { interface IBlockComponents { ... } } }`
 继续限定编辑器快照的 flavour 和后代节点。新增通用快照类型不替代组件注册或 Schema 校验。
 
-## 文本对象内容自适应（未发布）
+## 文本对象内容自适应（0.11.15）
 
 `TextBoxBlockSchema` 和 `WordArtBlockSchema` 支持 `textAutoFit: 'resize-shape'`。
 缺省/`none` 保持固定尺寸。横排按内容增减高度，竖排文本框按内容增减宽度；字号与另一轴尺寸保持。
