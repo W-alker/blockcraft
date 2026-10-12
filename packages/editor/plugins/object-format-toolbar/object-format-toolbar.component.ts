@@ -866,6 +866,16 @@ export type ObjectFormatToolbarAction =
                           </label>
                         }
                       </div>
+                      @if (supportsContentAutoFit) {
+                        <label>尺寸适应
+                          <cs-select csSize="sm" csVariant="outlined"
+                            [csValue]="textFrame.autoFit"
+                            (csValueChange)="autoFitChangeValue($event)">
+                            <cs-option csValue="none" csLabel="固定尺寸" />
+                            <cs-option csValue="resize-shape" csLabel="内容自适应" />
+                          </cs-select>
+                        </label>
+                      }
                       <label
                         >文字方向
                         <cs-select
@@ -2053,6 +2063,20 @@ export class ObjectFormatToolbarComponent {
     if (!this.shapeEffectsDraft) return;
     this.shapeEffectsDraft = null;
     this.action.emit({ name: "restore-preview" });
+  }
+  get supportsContentAutoFit(): boolean {
+    return !this.state.values.textFrame.mixed && this.state.targets.length > 0 && this.state.targets.every(target => {
+      const frame = target.format.textFrame;
+      if (!frame) return false;
+      if (target.capability.kind === "text-box")
+        return frame.direction === "horizontal" || frame.direction === "vertical-rl";
+      return target.capability.kind === "word-art" && frame.direction === "horizontal" &&
+        !["arch-up", "arch-down", "circle", "wave"].includes(target.format.textStyle!.transform);
+    });
+  }
+  autoFitChangeValue(value: unknown): void {
+    if (this.supportsContentAutoFit && (value === "none" || value === "resize-shape"))
+      this.patch({ textFrame: { ...this.textFrame, autoFit: value } });
   }
   marginChangeValue(index: number, value: number | null): void {
     if (value === null) return;

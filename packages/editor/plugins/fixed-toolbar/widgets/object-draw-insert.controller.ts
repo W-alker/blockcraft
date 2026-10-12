@@ -8,6 +8,8 @@ export interface ObjectDrawInsertGeometry {
   anchorRect: DOMRect;
   width: number;
   height: number;
+  /** Gesture intent, independent of clamped or default-sized geometry. */
+  gesture: "click" | "drag";
 }
 
 export interface ObjectDrawInsertRequest {
@@ -411,6 +413,7 @@ export class ObjectDrawInsertController {
       ),
       width,
       height,
+      gesture: dragged ? "drag" : "click",
     };
   }
 

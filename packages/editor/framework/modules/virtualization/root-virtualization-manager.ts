@@ -331,6 +331,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
   private indexById = new Map<string, number>()
   private spacerLayer: ProjectionSpacerLayer | null = null
   private scrollContainer: HTMLElement | null = null
+  private restoreNativeScrollAnchoring: (() => void) | null = null
   private ownerWindow: Window | null = null
   private viewportResizeObserver: ResizeObserver | null = null
   private usesWindowResizeFallback = false
@@ -575,6 +576,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
   init(scrollContainer: HTMLElement): void {
     if (!this.enabled || this.disposed || this.scrollContainer) return
     this.scrollContainer = scrollContainer
+    this.syncNativeScrollAnchoring()
     this.ownerWindow = scrollContainer.ownerDocument.defaultView ?? window
     this.idlePrefetchLastScrollTop = scrollContainer.scrollTop
     if (this.config.idlePrefetch) {
@@ -724,6 +726,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
+    this.syncNativeScrollAnchoring()
     layoutProjectionRegistrars.delete(this)
     idlePrefetchHandoffListeners.delete(this)
     idlePrefetchMeasurementReporters.delete(this)
@@ -1055,6 +1058,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     // Suspend before owner hooks: pagination can synchronously mutate Yjs while
     // installing or rolling back its reversible DOM projection.
     this.continuousEstimateJournalSuspended = true
+    this.syncNativeScrollAnchoring()
     this.customProjectionHandoffInProgress = true
     if (!this.scrollContainer) this.journalContinuousEstimateRefresh()
     try {
@@ -1078,6 +1082,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
         this.doc.logger.warn('continuousEstimateReplayError: ', replayError)
       } finally {
         this.continuousEstimateJournalSuspended = false
+        this.syncNativeScrollAnchoring()
         this.finishCustomProjectionHandoff()
         if (this.scrollContainer && !this.fullMountFallback) {
           this.syncHeightObserver()
@@ -3220,6 +3225,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     }
 
     this.fullMountFallback = true
+    this.syncNativeScrollAnchoring()
     this.pauseIdlePrefetch('full-mount-fallback', true)
     this.reconcileFailureCount = 0
     this.fallbackMountFailureLogged = false
@@ -3586,6 +3592,30 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     this.schedule()
   }
 
+  private syncNativeScrollAnchoring(): void {
+    const ownsAnchor = this.scrollContainer && !this.disposed && !this.fullMountFallback &&
+      !this.continuousEstimateJournalSuspended && this.layoutProjection === this.continuousLayoutProjection
+    if (!ownsAnchor) {
+      this.restoreNativeScrollAnchoring?.()
+      this.restoreNativeScrollAnchoring = null
+      return
+    }
+    if (this.restoreNativeScrollAnchoring) return
+    // We compensate model/measurement changes before the next spacer render.
+    // Native anchoring would compensate the same movement a second time.
+    // Pagination and full-mount fallback retain the host's original policy.
+    const style = this.scrollContainer!.style
+    const value = style.getPropertyValue('overflow-anchor')
+    const priority = style.getPropertyPriority('overflow-anchor')
+    style.setProperty('overflow-anchor', 'none', priority)
+    this.restoreNativeScrollAnchoring = () => {
+      if (style.getPropertyValue('overflow-anchor') !== 'none' ||
+          style.getPropertyPriority('overflow-anchor') !== priority) return
+      if (value) style.setProperty('overflow-anchor', value, priority)
+      else style.removeProperty('overflow-anchor')
+    }
+  }
+
   private restoreContinuousMeasurementAnchor(
     anchor: ScrollAnchorSnapshot | null,
     viewportTop: number,
@@ -3596,6 +3626,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     if (
       !anchor ||
       !this.scrollContainer ||
+      this.fullMountFallback ||
       this.blockNavigationTask ||
       this.pendingStructureAnchor
     ) {
@@ -3703,6 +3734,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
         this.customProjectionFailureCount = 0
         this.layoutProjection = this.continuousLayoutProjection
         this.continuousEstimateJournalSuspended = false
+        this.syncNativeScrollAnchoring()
         this.finishCustomProjectionHandoff()
         if (this.scrollContainer && !this.fullMountFallback) {
           this.syncHeightObserver()

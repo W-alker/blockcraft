@@ -1,3 +1,4 @@
+import {resolveTextFit} from '../../framework/block-std/block/object-format/text-fit'
 import {encodeCssPicture} from '../../framework/block-std/block/object-format/object-picture'
 import {parseBlockPosition, storeBlockPosition} from '../../framework/modules/object/block-placement/state'
 import {
@@ -152,6 +153,7 @@ export function normalizeTextBoxProps(
     value,
     TEXT_BOX_OBJECT_FORMAT_CAPABILITY,
   )
+  const fitted = resolveTextFit(value, TEXT_BOX_OBJECT_FORMAT_CAPABILITY)
   const fill = objectFormat.shapeFill!
   const outline = objectFormat.shapeOutline!
   const textFrame = objectFormat.textFrame!
@@ -160,8 +162,8 @@ export function normalizeTextBoxProps(
   const adjustments = normalizeShapeAdjustments(input?.['adjustments'])
 
   return {
-    width: boundedDimension(objectFormat.width, DEFAULT_TEXT_BOX_PROPS.width, MIN_WIDTH),
-    height: boundedDimension(objectFormat.height, DEFAULT_TEXT_BOX_PROPS.height, MIN_HEIGHT),
+    width: boundedDimension(fitted?.axis === 'width' ? fitted.size : objectFormat.width, DEFAULT_TEXT_BOX_PROPS.width, MIN_WIDTH),
+    height: boundedDimension(fitted?.axis === 'height' ? fitted.size : objectFormat.height, DEFAULT_TEXT_BOX_PROPS.height, MIN_HEIGHT),
     rotation: objectFormat.rotation,
     lockAspectRatio: objectFormat.lockAspectRatio,
     shapeType: normalizeTextBoxShape(objectFormat.shapeType),
@@ -197,10 +199,16 @@ export function normalizeTextBoxSnapshotProps(
   value: Readonly<Partial<TextBoxBlockProps>> | null | undefined,
 ): TextBoxBlockProps {
   const normalized = normalizeTextBoxProps(value)
-  const {rotation: _rotation, ...stored} = storeBlockObjectFormat(normalized, TEXT_BOX_OBJECT_FORMAT_CAPABILITY)
+  const {rotation: _rotation, ...stored} = storeBlockObjectFormat({
+    ...normalized,
+    width: boundedDimension(value?.width, DEFAULT_TEXT_BOX_PROPS.width, MIN_WIDTH),
+    height: boundedDimension(value?.height, DEFAULT_TEXT_BOX_PROPS.height, MIN_HEIGHT),
+  }, TEXT_BOX_OBJECT_FORMAT_CAPABILITY)
   const rotation = storeTextBoxRotation(normalized.rotation)
+  const fitted = resolveTextFit(value, TEXT_BOX_OBJECT_FORMAT_CAPABILITY)
   return {
     ...stored,
+    ...(fitted ? {textFit: fitted.size} : {}),
     ...(rotation === null ? {} : {rotation}),
     shape: normalized.shapeType,
     ...(normalized.artwork ? {artwork: normalized.artwork} : {}),

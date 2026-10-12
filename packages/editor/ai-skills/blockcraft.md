@@ -11,6 +11,14 @@
 >
 > **External users**: this skill pack is bundled with the npm package. AI agents can discover it via `SKILL.md` (frontmatter present); humans see `README.md` for installation and the one-command installer (`install.mjs`).
 
+## 文本对象内容自适应（未发布）
+
+文本框和横排、非路径艺术字可设置 `textAutoFit: 'resize-shape'`。
+固定工具栏选样式后，点击放置默认自适应，拖拽绘制保持固定尺寸；Schema/API 未指定该属性时仍为固定尺寸。
+`width/height` 保留用户设定，派生的 `textFit` 保存内容轴测量值。有效尺寸必须通过块的
+`normalize*Props()`、`doc.objectFormat.resolve()` 或对象布局读取；不要把原始 height 当作自适应后的高度。
+规则、撤销和限制见 `blockcraft-block.md`；设置入口见 `blockcraft-plugins-toolbar.md`。
+
 
 ## 表格初始内容（未发布）
 

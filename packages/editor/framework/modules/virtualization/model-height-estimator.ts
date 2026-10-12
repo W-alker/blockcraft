@@ -18,6 +18,7 @@ import {
   resolveInlineFloatGeometry,
 } from '../../block-std/inline/runtime/inline-float-layout'
 import type {IBlockModelContentChange} from '../../doc/model-graph'
+import {parseBlockPosition} from '../object/block-placement/state'
 
 const DEFAULT_INLINE_IMAGE_WIDTH = 320
 const DEFAULT_INLINE_IMAGE_HEIGHT = 240
@@ -185,7 +186,10 @@ function estimateBlock(
         } as BlockModelHeightEstimateContext
         const estimate = schemaEstimator(context)
         const height = nonNegativeNumber(estimate)
-        if (height !== null) return {height: height + outerSpacing, modelDriven: true}
+        if (height !== null) return {
+          height: height + intrinsicFrameSpacing(doc, blockId, props, nodeType, options, height, outerSpacing),
+          modelDriven: true,
+        }
       } catch (error) {
         doc.logger?.warn('blockModelHeightEstimatorError: ', error)
       }
@@ -208,8 +212,9 @@ function estimateBlock(
             ).height,
           0,
         )
+      const height = Math.max(1, dimensions.height + childrenHeight)
       return {
-        height: Math.max(1, dimensions.height + childrenHeight) + outerSpacing,
+        height: height + intrinsicFrameSpacing(doc, blockId, props, nodeType, options, height, outerSpacing),
         modelDriven: true,
       }
     }
@@ -509,6 +514,25 @@ function estimateEditableBlockHeight(
     height,
     modelDriven: inlineImageHeight > 0 || hasParagraphFacts,
   }
+}
+
+function intrinsicFrameSpacing(
+  doc: BlockCraft.Doc,
+  blockId: string,
+  props: Record<string, unknown>,
+  nodeType: BlockNodeType | undefined,
+  options: ModelHeightEstimatorOptions,
+  height: number,
+  outerSpacing: number,
+): number {
+  // Schema/object sizing yields the frame height. Continuous HeightObserver
+  // measures the stride to the next block, including the theme's segment gap.
+  // Fallback estimates already include that gap; pagination owns its spacing.
+  if (options.layoutMode === 'paginated' || height === 0 || nodeType === BlockNodeType.root) {
+    return outerSpacing
+  }
+  if (parseBlockPosition(props['position'])) return 0
+  return paragraphOuterSpacing(doc, blockId, props)
 }
 
 function paragraphOuterSpacing(

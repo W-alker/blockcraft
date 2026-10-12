@@ -2,9 +2,21 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-10-08
+> Last updated: 2026-10-12
 
 These plugins provide floating toolbars that appear when specific block types are selected.
+
+## 文本对象尺寸适应（未发布）
+
+对象格式工具栏 →「文本选项」→「文本框」新增「尺寸适应」：固定尺寸 / 内容自适应。
+仅对支持的文本框、横排非路径艺术字显示；普通形状和不支持的文字方向不显示。
+混选对象的文本框格式不一致时暂不显示，避免切换自适应时覆盖各对象原有边距、对齐和方向。
+固定工具栏选择文本框/艺术字预设后，点击放置默认开启内容自适应，拖拽绘制则使用固定尺寸。
+沿用现有 4px 屏幕距离阈值判定拖拽，轻微手抖仍按点击；拖拽即使恰好得到预设尺寸也保持固定。
+该规则只作用于工具栏新建，Schema/API 默认值、已有对象及普通形状保持原行为。
+固定尺寸保留最后一次手动设定，自适应按内容轴增减；手动调整内容轴尺寸会退出自适应。
+有效尺寸与持久化字段说明见 `blockcraft-block.md`。
+
 
 ## AttachmentExtensionPlugin
 

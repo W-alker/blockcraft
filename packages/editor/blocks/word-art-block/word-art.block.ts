@@ -24,6 +24,7 @@ import {
   type ShapeRotateCommit,
 } from '../shape-block'
 import type {WordArtBlockModel} from './index'
+import {TextContentAutoFit} from '../../framework/modules/object/text-content-auto-fit'
 import {calculateWordArtResize} from './word-art-resize'
 import {
   normalizeWordArtProps,
@@ -48,6 +49,7 @@ const rotationTransform = (rotation: number): string =>
       #surface
       class="word-art-block__surface"
       [class.word-art-block__surface--nonlinear]="isNonlinear"
+      [attr.data-bc-content-auto-fit]="wordArtProps.textFrame.autoFit === 'resize-shape' && !isNonlinear && wordArtProps.textFrame.direction === 'horizontal' ? '' : null"
       data-bc-print-visual-surface
       data-bc-object-surface
       data-bc-fake-range-overlay-host
@@ -138,6 +140,8 @@ const rotationTransform = (rotation: number): string =>
           [borderDraggable]="true"
           [resizeCalculator]="resizeCalculator"
           rotationLabel="旋转艺术字"
+          (resizeStart)="autoFit?.setPaused(true)"
+          (resizeEnd)="autoFit?.setPaused(false)"
           (resizeCommit)="commitResize($event)"
           (rotateCommit)="commitRotation($event)"
         >
@@ -154,9 +158,17 @@ export class WordArtBlockComponent extends EditableBlockComponent<WordArtBlockMo
   @ViewChild('surface', {read: ElementRef})
   private readonly _surface?: ElementRef<HTMLElement>
 
+  protected autoFit?: TextContentAutoFit
+
   override ngAfterViewInit(): void {
     super.ngAfterViewInit()
     this._ngZone.runOutsideAngular(() => {
+      this.autoFit = new TextContentAutoFit(this, this.surfaceElement, this.containerElement, () => {
+        const props = this.wordArtProps
+        if (props.textFrame.autoFit !== 'resize-shape' || this.isNonlinear ||
+          props.textFrame.direction !== 'horizontal') return null
+        return {axis: 'height', size: props.height, min: 32, max: 20000, inset: 0, padding: 0}
+      })
       fromEvent(this.containerElement, 'scroll', {passive: true})
         .pipe(takeUntil(this.onDestroy$))
         .subscribe(() => this._resetEditorScroll())
@@ -286,9 +298,13 @@ export class WordArtBlockComponent extends EditableBlockComponent<WordArtBlockMo
     const isCorner =
       (event.handle.includes('east') || event.handle.includes('west')) &&
       (event.handle.includes('north') || event.handle.includes('south'))
+    const fitting = current.textFrame.autoFit === 'resize-shape'
+    const fixesSize = this.wordArtFormat.lockAspectRatio || /north|south/.test(event.handle)
     const next: Partial<WordArtBlockProps> = {
       width: Math.round(event.width),
-      height: Math.round(event.height),
+      height: fitting && !fixesSize ? this.wordArtFormat.height : Math.round(event.height),
+      ...(fitting && fixesSize
+        ? {textAutoFit: null, textFit: null} : {}),
     }
 
     const placement = this.doc.placement?.getState?.(this.id) ?? {

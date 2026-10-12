@@ -202,6 +202,8 @@ export interface BlockObjectFormatProps extends IBlockProps {
   textDirection?: ObjectTextDirection | null
   textWrap?: boolean | null
   textAutoFit?: ObjectTextAutoFit | null
+  /** Last measured content extent on the fit axis; derived, never an authored size. */
+  textFit?: number | null
   textRotate?: boolean | null
   textFamily?: string | null
   textFont?: string | null

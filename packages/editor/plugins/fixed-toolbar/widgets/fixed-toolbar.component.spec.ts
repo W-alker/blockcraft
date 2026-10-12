@@ -840,7 +840,7 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
     expect(insertAbsoluteSnapshot).not.toHaveBeenCalled();
 
     const anchorRect = new DOMRect(120, 80, 480, 280);
-    await drawRequest.commit({ anchorRect, width: 240, height: 140 });
+    await drawRequest.commit({ anchorRect, width: 240, height: 140, gesture: "drag" });
 
     expect(createSnapshot).toHaveBeenCalledOnceWith("shape", ["diamond"]);
     expect(insertAbsoluteSnapshot).toHaveBeenCalledOnceWith(
@@ -864,60 +864,63 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
     rootHost.remove();
   });
 
-  it("draws a text box and keeps the whole-object selection after commit", async () => {
-    const {
-      component,
-      rootHost,
-      textBoxSnapshot,
-      textBoxEnterEditing,
-      createSnapshot,
-      insertAbsoluteSnapshot,
-    } = makeHarness();
-    spyOn<any>(component, "syncToolbarState");
-    let drawRequest: any;
-    spyOn<any>(component, "armObjectDrawing").and.callFake((request: any) => {
-      drawRequest = request;
-      return true;
+  for (const gesture of ["click", "drag"] as const) {
+    it(`creates a text box by ${gesture} and keeps the whole-object selection after commit`, async () => {
+      const {
+        component,
+        rootHost,
+        textBoxSnapshot,
+        textBoxEnterEditing,
+        createSnapshot,
+        insertAbsoluteSnapshot,
+      } = makeHarness();
+      spyOn<any>(component, "syncToolbarState");
+      let drawRequest: any;
+      spyOn<any>(component, "armObjectDrawing").and.callFake((request: any) => {
+        drawRequest = request;
+        return true;
+      });
+
+      const trigger = jasmine.createSpyObj<CsDropdownDirective>(
+        "CsDropdownDirective",
+        ["close"],
+      );
+      (component as any).insertTextBox("office-simple", trigger);
+
+      expect(trigger.close).toHaveBeenCalledTimes(1);
+      expect(drawRequest.defaultWidth).toBe(390);
+      expect(drawRequest.defaultHeight).toBe(178);
+      expect(createSnapshot).not.toHaveBeenCalled();
+      expect(textBoxEnterEditing).not.toHaveBeenCalled();
+
+      const anchorRect = new DOMRect(140, 90, 300, 180);
+      await drawRequest.commit({ anchorRect, width: 300, height: 180, gesture });
+
+      expect(createSnapshot).toHaveBeenCalledOnceWith("text-box", [
+        "",
+        {
+          ...getTextBoxPreset("office-simple").props,
+          width: 300,
+          height: 180,
+          textAutoFit: gesture === "click" ? "resize-shape" : "none",
+        },
+      ]);
+      expect(insertAbsoluteSnapshot).toHaveBeenCalledOnceWith(
+        textBoxSnapshot,
+        jasmine.objectContaining({ anchorRect, layer: "over" }),
+      );
+      expect(
+        component.doc.selection.selectOrSetCursorAtBlock,
+      ).toHaveBeenCalledOnceWith("new-text-box", true);
+      expect((component.doc as any).navigateToBlock).toHaveBeenCalledOnceWith(
+        "new-text-box",
+      );
+      // Text editing shows no frame chrome; the insertion tail must stay at the
+      // whole-object selection so handles and the settings rail remain visible.
+      expect(textBoxEnterEditing).not.toHaveBeenCalled();
+      rootHost.remove();
     });
-
-    const trigger = jasmine.createSpyObj<CsDropdownDirective>(
-      "CsDropdownDirective",
-      ["close"],
-    );
-    (component as any).insertTextBox("office-simple", trigger);
-
-    expect(trigger.close).toHaveBeenCalledTimes(1);
-    expect(drawRequest.defaultWidth).toBe(390);
-    expect(drawRequest.defaultHeight).toBe(178);
-    expect(createSnapshot).not.toHaveBeenCalled();
-    expect(textBoxEnterEditing).not.toHaveBeenCalled();
-
-    const anchorRect = new DOMRect(140, 90, 300, 180);
-    await drawRequest.commit({ anchorRect, width: 300, height: 180 });
-
-    expect(createSnapshot).toHaveBeenCalledOnceWith("text-box", [
-      "",
-      {
-        ...getTextBoxPreset("office-simple").props,
-        width: 300,
-        height: 180,
-      },
-    ]);
-    expect(insertAbsoluteSnapshot).toHaveBeenCalledOnceWith(
-      textBoxSnapshot,
-      jasmine.objectContaining({ anchorRect, layer: "over" }),
-    );
-    expect(
-      component.doc.selection.selectOrSetCursorAtBlock,
-    ).toHaveBeenCalledOnceWith("new-text-box", true);
-    expect((component.doc as any).navigateToBlock).toHaveBeenCalledOnceWith(
-      "new-text-box",
-    );
-    // Text editing shows no frame chrome; the insertion tail must stay at the
-    // whole-object selection so handles and the settings rail remain visible.
-    expect(textBoxEnterEditing).not.toHaveBeenCalled();
-    rootHost.remove();
-  });
+  }
 
   it("keeps catalog picks horizontal at the preset's own proportion", async () => {
     const { component, rootHost, createSnapshot } = makeHarness();
@@ -944,74 +947,78 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
       anchorRect: new DOMRect(0, 0, 280, 140),
       width: 280,
       height: 140,
+      gesture: "drag",
     });
 
     expect(createSnapshot).toHaveBeenCalledOnceWith("text-box", [
       "",
-      { ...preset.props, width: 280, height: 140 },
+      { ...preset.props, width: 280, height: 140, textAutoFit: "none" },
     ]);
     rootHost.remove();
   });
 
-  it("arms WordArt drawing without an editor selection and edits after commit", async () => {
-    const {
-      component,
-      rootHost,
-      wordArtSnapshot,
-      createSnapshot,
-      insertAbsoluteSnapshot,
-      enterEditing,
-    } = makeHarness();
-    spyOn<any>(component, "syncToolbarState");
-    let drawRequest: any;
-    spyOn<any>(component, "armObjectDrawing").and.callFake((request: any) => {
-      drawRequest = request;
-      return true;
+  for (const gesture of ["click", "drag"] as const) {
+    it(`creates WordArt by ${gesture} without an editor selection and edits after commit`, async () => {
+      const {
+        component,
+        rootHost,
+        wordArtSnapshot,
+        createSnapshot,
+        insertAbsoluteSnapshot,
+        enterEditing,
+      } = makeHarness();
+      spyOn<any>(component, "syncToolbarState");
+      let drawRequest: any;
+      spyOn<any>(component, "armObjectDrawing").and.callFake((request: any) => {
+        drawRequest = request;
+        return true;
+      });
+      const trigger = jasmine.createSpyObj<CsDropdownDirective>(
+        "CsDropdownDirective",
+        ["close"],
+      );
+      const preset = getWordArtPreset("ocean");
+
+      await (component as any).insertWordArt("ocean", trigger);
+
+      expect(trigger.close).toHaveBeenCalled();
+      expect(drawRequest.defaultWidth).toBe(320);
+      expect(drawRequest.defaultHeight).toBe(96);
+      expect(createSnapshot).not.toHaveBeenCalled();
+      expect(insertAbsoluteSnapshot).not.toHaveBeenCalled();
+      expect(enterEditing).not.toHaveBeenCalled();
+
+      const anchorRect = new DOMRect(160, 96, 420, 140);
+      await drawRequest.commit({ anchorRect, width: 420, height: 140, gesture });
+
+      expect(createSnapshot).toHaveBeenCalledOnceWith("word-art", [
+        "艺术字",
+        {
+          ...preset.props,
+          width: 420,
+          height: 140,
+          textAutoFit: gesture === "click" ? "resize-shape" : "none",
+        },
+      ]);
+      const insertedProps = createSnapshot.calls.mostRecent().args[1][1];
+      expect(insertedProps.textFill).toEqual(preset.props.textFill);
+      expect(insertAbsoluteSnapshot).toHaveBeenCalledOnceWith(
+        wordArtSnapshot,
+        jasmine.objectContaining({
+          anchorRect,
+          layer: "over",
+        }),
+      );
+      expect(
+        component.doc.selection.selectOrSetCursorAtBlock,
+      ).toHaveBeenCalledOnceWith("new-word-art", true);
+      expect((component.doc as any).navigateToBlock).toHaveBeenCalledOnceWith(
+        "new-word-art",
+      );
+      expect(enterEditing).toHaveBeenCalledOnceWith(true);
+      rootHost.remove();
     });
-    const trigger = jasmine.createSpyObj<CsDropdownDirective>(
-      "CsDropdownDirective",
-      ["close"],
-    );
-    const preset = getWordArtPreset("ocean");
-
-    await (component as any).insertWordArt("ocean", trigger);
-
-    expect(trigger.close).toHaveBeenCalled();
-    expect(drawRequest.defaultWidth).toBe(320);
-    expect(drawRequest.defaultHeight).toBe(96);
-    expect(createSnapshot).not.toHaveBeenCalled();
-    expect(insertAbsoluteSnapshot).not.toHaveBeenCalled();
-    expect(enterEditing).not.toHaveBeenCalled();
-
-    const anchorRect = new DOMRect(160, 96, 420, 140);
-    await drawRequest.commit({ anchorRect, width: 420, height: 140 });
-
-    expect(createSnapshot).toHaveBeenCalledOnceWith("word-art", [
-      "艺术字",
-      {
-        ...preset.props,
-        width: 420,
-        height: 140,
-      },
-    ]);
-    const insertedProps = createSnapshot.calls.mostRecent().args[1][1];
-    expect(insertedProps.textFill).toEqual(preset.props.textFill);
-    expect(insertAbsoluteSnapshot).toHaveBeenCalledOnceWith(
-      wordArtSnapshot,
-      jasmine.objectContaining({
-        anchorRect,
-        layer: "over",
-      }),
-    );
-    expect(
-      component.doc.selection.selectOrSetCursorAtBlock,
-    ).toHaveBeenCalledOnceWith("new-word-art", true);
-    expect((component.doc as any).navigateToBlock).toHaveBeenCalledOnceWith(
-      "new-word-art",
-    );
-    expect(enterEditing).toHaveBeenCalledOnceWith(true);
-    rootHost.remove();
-  });
+  }
 
   it("delegates the complete catalog to the shared categorized picker", () => {
     expect(SHAPE_DEFINITIONS.length).toBe(111);

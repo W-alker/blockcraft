@@ -4,7 +4,15 @@
 >
 > Adapters handle HTML ↔ BlockSnapshot and Markdown ↔ BlockSnapshot conversion.
 >
-> Last updated: 2026-10-09
+> Last updated: 2026-10-12
+
+## 文本对象自适应尺寸（未发布）
+
+对象 HTML 属性新增可选数值 `data-bc-object-text-fit`，对应派生缓存 `textFit`。
+与 `data-bc-object-text-auto-fit="resize-shape"`、原始 width/height 一起往返保存。
+文本框/艺术字 Schema 归一化保留用户设定尺寸，渲染归一化使用支持轴上的测量值；
+固定模式、普通形状及路径艺术字不应用该缓存。静态快照与打印复用已保存有效尺寸，不触发模型写入。
+
 
 ## 内置贴纸的导入导出（未发布）
 

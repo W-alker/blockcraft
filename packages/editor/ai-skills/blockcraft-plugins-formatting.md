@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-10-09
+> Last updated: 2026-10-12
 
 ## 段落对齐
 
@@ -119,6 +119,10 @@ new TextMarkerPlugin(["paragraph", "blockquote"]);
 > `plugins/fixed-toolbar/widgets/fixed-toolbar.component.ts` — Fixed-position toolbar embedded in host app template.
 
 **Not a `DocPlugin`** — this is an Angular standalone component (`<bc-fixed-toolbar>`) meant to be placed directly in the host application's template. Provides heading selection, inline formatting, font/actual-pixel-size/character-spacing dropdowns, paragraph line-height and consolidated alignment dropdowns, color pickers, list conversion, shape/text-box/table/column insertion, image insertion, video/audio insertion, and link editing.
+
+选择文本框/艺术字预设后，点击文档放置默认开启内容自适应，拖拽绘制则保持固定尺寸。
+使用现有 4px 屏幕距离阈值区分手势；横排点击创建保留预设宽度，按内容调整高度。
+普通形状、已有对象和 Schema/API 的固定尺寸缺省值不变；自适应支持范围见 `blockcraft-block.md`。
 
 ### Typography groups
 

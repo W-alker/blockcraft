@@ -43,6 +43,10 @@ const OBJECT_GROUP_GEOMETRY_KEYS = new Set([
   'rotation',
   'wr',
   'ar',
+  'textAutoFit',
+  'textFit',
+  'textDirection',
+  'textTransform',
 ])
 
 const performanceNow = (): number =>
@@ -369,6 +373,7 @@ export class BlockPlacementGroupCoordinator {
       } else {
         Object.assign(memberPatch, {width: roundPlacementGeometry(memberWidth), height: roundPlacementGeometry(memberHeight)})
       }
+      if (object.props['textAutoFit'] === 'resize-shape') memberPatch['textFit'] = null
       if (object.flavour === 'image' && Math.abs(sx - sy) > .0001) memberPatch['fit'] = 'fill'
       return {id: object.id, patch: memberPatch}
     })

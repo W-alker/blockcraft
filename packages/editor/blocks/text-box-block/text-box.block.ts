@@ -1,4 +1,5 @@
 import {storeBlockPosition} from '../../framework/modules/object/block-placement/state'
+import {TextContentAutoFit} from '../../framework/modules/object/text-content-auto-fit'
 import {
   ChangeDetectionStrategy,
   Component,
@@ -215,6 +216,8 @@ const rotationTransform = (rotation: number): string =>
           [rotation]="textBoxProps.rotation"
           [borderDraggable]="true"
           rotationLabel="旋转文本框"
+          (resizeStart)="autoFit?.setPaused(true)"
+          (resizeEnd)="autoFit?.setPaused(false)"
           (resizeCommit)="commitResize($event)"
           (rotateCommit)="commitRotation($event)">
         </shape-resizer>
@@ -257,31 +260,30 @@ export class TextBoxBlockComponent extends BaseBlockComponent<TextBoxBlockModel>
   private readonly _surface?: ElementRef<HTMLElement>
   @ViewChild('textContent', {read: ElementRef})
   private readonly _textContent?: ElementRef<HTMLElement>
-  private _autoFitObserver?: MutationObserver
-  private _autoFitFrame: number | null = null
+  protected autoFit?: TextContentAutoFit
 
   override ngAfterViewInit(): void {
     super.ngAfterViewInit()
     const content = this._textContent?.nativeElement
-    const ownerWindow = content?.ownerDocument.defaultView
-    if (!content || !ownerWindow?.MutationObserver) return
+    const surface = this._surface?.nativeElement
+    if (!content || !surface) return
     this._ngZone.runOutsideAngular(() => {
-      this._autoFitObserver = new ownerWindow.MutationObserver(() =>
-        this._scheduleAutoFit(),
-      )
-      this._autoFitObserver.observe(content, {
-        childList: true,
-        characterData: true,
-        subtree: true,
+      this.autoFit = new TextContentAutoFit(this, surface, content, () => {
+        const props = this.textBoxProps
+        const frame = this.textBoxFormat.textFrame!
+        if (frame.autoFit !== 'resize-shape' ||
+          !['horizontal', 'vertical-rl'].includes(frame.direction)) return null
+        const vertical = frame.direction === 'vertical-rl'
+        const axis = vertical ? 'width' : 'height'
+        return {
+          axis, size: props[axis], min: vertical ? 48 : 32, max: 2000,
+          inset: (parseFloat(this._shapeInset(vertical ? 'left' : 'top')) +
+            parseFloat(this._shapeInset(vertical ? 'right' : 'bottom'))) / 100,
+          padding: vertical ? frame.margins[1] + frame.margins[3]
+            : frame.margins[0] + frame.margins[2],
+        }
       })
     })
-    this.onDestroy$.subscribe(() => {
-      this._autoFitObserver?.disconnect()
-      this._autoFitObserver = undefined
-      if (this._autoFitFrame !== null) ownerWindow.cancelAnimationFrame(this._autoFitFrame)
-      this._autoFitFrame = null
-    })
-    this._scheduleAutoFit()
   }
 
   get textBoxProps(): NormalizedTextBoxBlockProps {
@@ -519,9 +521,14 @@ export class TextBoxBlockComponent extends BaseBlockComponent<TextBoxBlockModel>
     event = this.textBoxFormat.lockAspectRatio
       ? preserveResizeAspectRatio(event, current.width, current.height)
       : event
+    const fitting = this.textBoxFormat.textFrame!.autoFit === 'resize-shape'
+    const vertical = this.textBoxFormat.textFrame!.direction === 'vertical-rl'
+    const fixesSize = this.textBoxFormat.lockAspectRatio ||
+      (vertical ? /east|west/.test(event.handle) : /north|south/.test(event.handle))
     const next: Partial<TextBoxBlockProps> = {
-      width: Math.round(event.width),
-      height: Math.round(event.height),
+      width: fitting && !fixesSize && vertical ? this.textBoxFormat.width : Math.round(event.width),
+      height: fitting && !fixesSize && !vertical ? this.textBoxFormat.height : Math.round(event.height),
+      ...(fitting && fixesSize ? {textAutoFit: null, textFit: null} : {}),
     }
 
     const placement = this.doc.placement?.getState?.(this.id) ?? {
@@ -571,28 +578,4 @@ export class TextBoxBlockComponent extends BaseBlockComponent<TextBoxBlockModel>
     )[side] * 100}%`
   }
 
-  private _scheduleAutoFit(): void {
-    if (this._autoFitFrame !== null || this.isReadonly) return
-    const content = this._textContent?.nativeElement
-    const ownerWindow = content?.ownerDocument.defaultView
-    if (!content || !ownerWindow) return
-    this._autoFitFrame = ownerWindow.requestAnimationFrame(() => {
-      this._autoFitFrame = null
-      if (this.textBoxFormat.textFrame!.autoFit !== 'resize-shape') return
-      const overflow = this.textBoxFormat.textFrame!.direction === 'vertical-rl'
-        ? content.scrollWidth - content.clientWidth
-        : content.scrollHeight - content.clientHeight
-      if (!Number.isFinite(overflow) || overflow <= .5) return
-      const current = this.textBoxProps
-      this.doc.placement.updateObjectGeometry(this, {
-        [this.textBoxFormat.textFrame!.direction === 'vertical-rl'
-          ? 'width'
-          : 'height']: Math.ceil(
-          (this.textBoxFormat.textFrame!.direction === 'vertical-rl'
-            ? current.width
-            : current.height) + overflow,
-        ),
-      })
-    })
-  }
 }

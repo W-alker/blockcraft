@@ -1,3 +1,4 @@
+import {resolveTextFit} from '../../block-std/block/object-format/text-fit';
 import type {
   BlockObjectFormatCapability,
   BlockObjectFormatProps,
@@ -88,7 +89,7 @@ export class BlockObjectFormatManager {
     const capability = this.getCapability(flavour);
     const props = this.doc.model.getProps(blockId);
     if (!capability || !props) return null;
-    return normalizeBlockObjectFormat(
+    return resolveMeasuredFormat(
       props as Partial<BlockObjectFormatProps>,
       capability,
     );
@@ -137,7 +138,7 @@ export class BlockObjectFormatManager {
         capability,
         shapeTypes: resolveTargetShapeTypes(this.doc, blockId, capability),
         readonly: this.doc.readonlyManager.isReadonly(blockId),
-        format: normalizeBlockObjectFormat(
+        format: resolveMeasuredFormat(
           props as Partial<BlockObjectFormatProps>,
           capability,
         ),
@@ -209,6 +210,15 @@ export class BlockObjectFormatManager {
   }
 }
 
+/** Format previews must use the same effective geometry as object placement. */
+function resolveMeasuredFormat(
+  props: Partial<BlockObjectFormatProps>, capability: BlockObjectFormatCapability,
+): NormalizedBlockObjectFormat {
+  const format = normalizeBlockObjectFormat(props, capability);
+  const fitted = resolveTextFit(props, capability);
+  return fitted ? {...format, [fitted.axis]: fitted.size} : format;
+}
+
 function buildPersistentPatch(
   current: Partial<BlockObjectFormatProps>,
   capability: BlockObjectFormatCapability,
@@ -262,6 +272,11 @@ function buildPersistentPatch(
   if (nextLock && changesWidth !== changesHeight) {
     const coupledKey = changesWidth ? "height" : "width";
     persistent[coupledKey] = normalized[coupledKey];
+  }
+  const fitted = resolveTextFit(current, capability);
+  if (fitted && (typeof patch[fitted.axis] === "number" || nextLock && (changesWidth || changesHeight))) {
+    persistent['textAutoFit'] = null;
+    persistent['textFit'] = null;
   }
   return persistent;
 }

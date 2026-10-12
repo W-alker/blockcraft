@@ -1,3 +1,4 @@
+import {resolveTextFit} from '../../framework/block-std/block/object-format/text-fit'
 import {parseBlockPosition, storeBlockPosition} from '../../framework/modules/object/block-placement/state'
 import type {
   BlockObjectFormatCapability,
@@ -284,6 +285,7 @@ export function normalizeWordArtProps(
     value,
     WORD_ART_OBJECT_FORMAT_CAPABILITY,
   )
+  const fitted = resolveTextFit(value, WORD_ART_OBJECT_FORMAT_CAPABILITY)
   const style = objectFormat.textStyle!
   const frame = objectFormat.textFrame!
   const gradient = style.fill.type === 'linear-gradient'
@@ -304,7 +306,7 @@ export function normalizeWordArtProps(
     ...value,
     depth: 0,
     width: Math.max(48, objectFormat.width),
-    height: Math.max(32, objectFormat.height),
+    height: Math.max(32, fitted?.size ?? objectFormat.height),
     rotation: objectFormat.rotation,
     lockAspectRatio: objectFormat.lockAspectRatio,
     textFrame: frame,
@@ -365,9 +367,14 @@ export function normalizeWordArtSnapshotProps(
   options: Readonly<{preservePrecision?: boolean}> = {},
 ): WordArtBlockProps {
   const normalized = normalizeWordArtProps(value)
+  const authored = normalizeBlockObjectFormat(value, WORD_ART_OBJECT_FORMAT_CAPABILITY)
+  const fitted = resolveTextFit(value, WORD_ART_OBJECT_FORMAT_CAPABILITY)
   return {
     depth: 0,
-    ...storeBlockObjectFormat(normalized, WORD_ART_OBJECT_FORMAT_CAPABILITY, options),
+    ...storeBlockObjectFormat({...normalized,
+      width: Math.max(48, authored.width), height: Math.max(32, authored.height),
+    }, WORD_ART_OBJECT_FORMAT_CAPABILITY, options),
+    ...(fitted ? {textFit: fitted.size} : {}),
     ...(normalized.position ? {position: normalized.position} : {}),
     ...(normalized.placementLayer === 'under'
       ? {placementLayer: 'under' as const}

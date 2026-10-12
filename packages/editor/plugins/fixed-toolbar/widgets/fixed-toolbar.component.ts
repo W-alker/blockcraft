@@ -71,6 +71,7 @@ import { TextBoxPresetPickerComponent } from "../../../components/text-box-prese
 import {
   DEFAULT_WORD_ART_PROPS,
   getWordArtPreset,
+  type WordArtBlockProps,
   type WordArtPresetId,
 } from "../../../blocks/word-art-block";
 import {
@@ -2762,6 +2763,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
         ...props,
         width: geometry.width,
         height: geometry.height,
+        textAutoFit: geometry.gesture === "click" ? "resize-shape" : "none",
       },
     ]);
     const insertedId = this.doc.placement.insertAbsoluteSnapshot(snapshot, {
@@ -2813,10 +2815,11 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   ): Promise<void> {
     if (this._destroyed || this.readonly) return;
     const preset = getWordArtPreset(presetId);
-    const presetProps = {
+    const presetProps: Partial<WordArtBlockProps> = {
       ...preset.props,
       width: geometry.width,
       height: geometry.height,
+      textAutoFit: geometry.gesture === "click" ? "resize-shape" : "none",
     };
     const snapshot = this.doc.schemas.createSnapshot("word-art", [
       "艺术字",

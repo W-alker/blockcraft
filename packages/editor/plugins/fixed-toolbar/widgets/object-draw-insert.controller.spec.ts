@@ -115,6 +115,7 @@ describe("ObjectDrawInsertController", () => {
       .args[0] as ObjectDrawInsertGeometry;
     expect(geometry.width).toBe(200);
     expect(geometry.height).toBe(100);
+    expect(geometry.gesture).toBe("drag");
     expect(geometry.anchorRect.left).toBe(200);
     expect(geometry.anchorRect.top).toBe(150);
     expect(
@@ -157,6 +158,7 @@ describe("ObjectDrawInsertController", () => {
       .args[0] as ObjectDrawInsertGeometry;
     expect(geometry.width).toBe(180);
     expect(geometry.height).toBe(100);
+    expect(geometry.gesture).toBe("click");
     expect(geometry.anchorRect.left).toBe(300);
     expect(geometry.anchorRect.top).toBe(250);
 

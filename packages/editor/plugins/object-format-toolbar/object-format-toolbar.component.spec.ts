@@ -96,6 +96,20 @@ const state: BlockObjectFormatSelectionState = {
 };
 
 describe("ObjectFormatToolbarComponent", () => {
+  it("offers content fitting only for supported, consistent text frames", () => {
+    const component = TestBed.createComponent(ObjectFormatToolbarComponent).componentInstance;
+    const target = {...state.targets[0], capability: {...state.targets[0].capability, kind: "text-box" as const}};
+    component.state = {...state, targets: [target]};
+    const emit = spyOn(component.action, "emit");
+    expect(component.supportsContentAutoFit).toBeTrue();
+    component.autoFitChangeValue("resize-shape");
+    expect(emit).toHaveBeenCalled();
+    component.state = state;
+    expect(component.supportsContentAutoFit).toBeFalse();
+    component.state = {...state, targets: [target], values: {...state.values, textFrame: {mixed: true, value: undefined}}};
+    expect(component.supportsContentAutoFit).toBeFalse();
+  });
+
   it("keeps shape switching for text boxes and removes it when selection includes shapes", async () => {
     await TestBed.configureTestingModule({
       imports: [ObjectFormatToolbarComponent],
@@ -120,6 +134,20 @@ describe("ObjectFormatToolbarComponent", () => {
     expect(sectionElement(fixture, "shape-type").hidden).toBeFalse();
     fixture.componentInstance.shapeTypeChangeValue("ellipse");
     expect(action).toHaveBeenCalledWith({name: "patch", patch: {shapeType: "ellipse"}});
+
+    action.calls.reset();
+    fixture.componentRef.setInput("state", {
+      ...textBoxState,
+      blockIds: [textBoxTarget.blockId, "text-box-2"],
+      targets: [textBoxTarget, {...textBoxTarget, blockId: "text-box-2"}],
+      values: {...state.values, textFrame: {mixed: true, value: undefined}},
+    });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(tabs()).toBe("填充轮廓形状效果");
+    expect(fixture.componentInstance.supportsContentAutoFit).toBeFalse();
+    fixture.componentInstance.shapeTypeChangeValue("rectangle");
+    expect(action).toHaveBeenCalledWith({name: "patch", patch: {shapeType: "rectangle"}});
 
     for (const targets of [state.targets, [...state.targets, textBoxTarget]]) {
       action.calls.reset();

@@ -4,6 +4,51 @@
 >
 > Last updated: 2026-10-12 | Tracks `@ccc/blockcraft` npm releases.
 
+## 未发布 — 2026-10-12：文本对象按创建手势选择尺寸模式
+
+**Severity**: minor（发布版本号由用户决定，本次不修改 package.json）
+
+**What changed**: 固定工具栏创建文本框/艺术字时，点击放置默认设置 `textAutoFit: 'resize-shape'`，拖拽绘制设置 `none`。
+
+**Why**: 点击创建让文字决定内容轴尺寸；拖拽创建尊重用户绘制的固定宽高。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-toolbar.md`、`blockcraft-plugins-formatting.md`。
+
+### Behavior Changes
+
+工具栏复用现有 4px 屏幕距离拖拽阈值，按手势而非最终尺寸区分。横排自适应高度，宽度仍由预设决定。
+普通形状、已有对象和 Schema/API 缺省创建保持原行为；文字方向、路径艺术字的自适应限制不变。
+
+### Migration Recipe
+
+无需迁移已有文档。依赖工具栏点击创建后保持固定高度的流程，应改用拖拽创建或在尺寸适应设置中切换为固定尺寸。
+通过 Schema/API 创建时，继续显式传 `textAutoFit` 选择模式。
+
+## 未发布 — 2026-10-12：文本对象内容自适应
+
+**Severity**: minor（发布版本号由用户决定，本次不修改 package.json）
+
+**What changed**: 文本框和横排非路径艺术字新增可选内容自适应设置；输入增大、删除缩小，支持文字重排。
+
+**Why**: 固定文本框不能随内容变化，原 resize-shape 仅扩大且将派生高度覆盖为用户设定，无法完整撤销模式切换。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-toolbar.md`、`blockcraft-adapter.md`。
+
+### New APIs / Features
+
+`BlockObjectFormatProps.textFit?: number | null` 保存派生的内容轴测量值；HTML 使用 `data-bc-object-text-fit` 往返。
+对象格式工具栏新增「尺寸适应」；内置块归一化和对象布局/格式查询返回有效尺寸。
+
+### Migration Recipe
+
+默认固定尺寸文档无需迁移。需要自适应时，创建/更新对象的 `textAutoFit: 'resize-shape'`，不手动填缓存。
+原先直接读原始 props.width/height 的宿主，若要自适应后的视觉尺寸，改用块的 normalize*Props() 或 doc.objectFormat.resolve()。
+
+### Behavior Changes
+
+已设置 resize-shape 的文本框现在可缩回；width/height 保留用户设定，textFit 随文字重新测量但不新增撤销步骤。
+竖排文本框沿宽度适应；路径艺术字和旋转文字方向暂不支持。调整内容轴手柄/尺寸字段退出自适应。
+只读渲染使用缓存；旧快照无缓存时使用既有尺寸，可编辑挂载后计算。组合内边界随有效尺寸重排。
 
 ## 未发布：表格 Schema 支持初始单元格文本
 

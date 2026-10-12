@@ -13,6 +13,34 @@
 `declare global { namespace BlockCraft { interface IBlockComponents { ... } } }`
 继续限定编辑器快照的 flavour 和后代节点。新增通用快照类型不替代组件注册或 Schema 校验。
 
+## 文本对象内容自适应（未发布）
+
+`TextBoxBlockSchema` 和 `WordArtBlockSchema` 支持 `textAutoFit: 'resize-shape'`。
+缺省/`none` 保持固定尺寸。横排按内容增减高度，竖排文本框按内容增减宽度；字号与另一轴尺寸保持。
+固定工具栏在点击放置时显式传入 `resize-shape`，拖拽绘制时传入 `none`；Schema/API 的缺省值不变。
+旋转 90°/270° 的文字方向，以及弧形、圆形、波浪等路径艺术字暂不启用自适应。
+对象整体 rotation 不影响测量轴。最低高度 32px、竖排最低宽度 48px；沿用文本框 2000px、艺术字 20000px 上限。
+
+- `width/height` 是用户设定的尺寸；新增可选数值 `textFit` 是最后一次测量出的内容轴尺寸。
+  缓存通过普通 Yjs 同步，使用不计入 Undo 的事务。切换回固定尺寸恢复原设定，撤销/重做文字后重新测量。
+- 读取有效尺寸使用 `normalizeTextBoxProps()` / `normalizeWordArtProps()` 或 `doc.objectFormat.resolve()`。
+  Schema 快照归一化保留原尺寸与有效缓存；组合边界、虚拟高度估算和只读快照使用有效尺寸。
+- 改内容、字号、边距、字体加载完成和容器宽度变化都会合并到动画帧测量。固定尺寸对象不注册内容/尺寸观察器。尺寸缓存自身变化不触发重复测量，避免跨端字体差异造成回写循环。
+  DOM 测量不在 Angular 渲染 getter 内执行；使用未变换的布局像素，计入形状百分比留白、像素边距与字形溢出。
+- 拖动自适应轴的尺寸手柄，或在尺寸面板明确修改该轴，切回固定尺寸；拖动另一轴继续重排；锁定比例时，明确调整任一轴都会退出自适应。
+  拖拽期间暂停测量，预览不回写模型。组合缩放清掉旧测量缓存，随后按新宽度重新测量。
+- 只读组件不写模型，预览/打印采用已保存的测量值；缺缓存时采用用户设定尺寸，首次挂载可编辑对象时测量。
+  自动撑高不会自动移动其他绝对定位对象。
+
+```typescript
+TextBoxBlockSchema.createSnapshot('随内容增减高度', {
+  width: 320, height: 120, textAutoFit: 'resize-shape',
+});
+// textFit 由编辑器维护；宿主修改内容时无需自行测量或同步它。
+```
+
+艺术字表面内部标记 `data-bc-content-auto-fit` 使文字层容纳测量后的字形边界；静态快照使用同一投影。
+
 
 ## 表格初始内容（未发布）
 

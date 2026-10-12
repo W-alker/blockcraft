@@ -94,6 +94,67 @@ describe('estimateModelBlockHeight', () => {
     })
   })
 
+  for (const nodeType of [BlockNodeType.block, BlockNodeType.editable]) {
+    it(`keeps intrinsic ${nodeType} frames consistent with measured flow spacing`, () => {
+      const props: Record<string, unknown> = {height: 280}
+      const nextProps: Record<string, unknown> = {}
+      const doc = createDoc({
+        root: block('root', BlockNodeType.root, {}, ['object', 'next']),
+        object: block('object', nodeType, props),
+        next: block('paragraph', BlockNodeType.editable, nextProps),
+      }, {object: ({props}) => props.height})
+      Object.assign(doc.layoutMetrics, {segmentGap: 16})
+
+      expect(estimateModelBlockHeight(doc as any, 'object')).toBe(296)
+      // Content/style changes retain the same measured stride offscreen.
+      props['textPadding'] = '16 12'
+      expect(estimateModelBlockHeight(doc as any, 'object')).toBe(296)
+      props['height'] = 420
+      expect(estimateModelBlockHeight(doc as any, 'object')).toBe(436)
+      // Authored spacing overrides the default and collapses with next.psb.
+      props['psa'] = 6
+      nextProps['psb'] = 18
+      expect(estimateModelBlockHeight(doc as any, 'object')).toBe(444)
+      props['psb'] = 3
+      expect(estimateModelBlockHeight(doc as any, 'object')).toBe(448)
+      props['position'] = '20 30'
+      expect(estimateModelBlockHeight(doc as any, 'object')).toBe(420)
+    })
+  }
+
+  it('does not add a flow gap to terminal, zero-height or paginated schema frames', () => {
+    const props = {height: 280}
+    const children = ['object', 'next']
+    const doc = createDoc({
+      root: block('root', BlockNodeType.root, {}, children),
+      object: block('object', BlockNodeType.block, props),
+      next: block('paragraph', BlockNodeType.editable),
+    }, {object: ({props}) => props.height})
+
+    expect(estimateModelBlockHeight(doc as any, 'object', {layoutMode: 'paginated'})).toBe(280)
+    props.height = 0
+    expect(estimateModelBlockHeight(doc as any, 'object')).toBe(0)
+    props.height = 280
+    children.pop()
+    expect(estimateModelBlockHeight(doc as any, 'object')).toBe(280)
+  })
+
+  it('adds the theme gap to intrinsic media dimensions without inflating paragraph fallbacks', () => {
+    const doc = createDoc({
+      root: block('root', BlockNodeType.root, {}, ['image', 'paragraph', 'last']),
+      image: block('image', BlockNodeType.void, {wr: 50, ar: 2}),
+      paragraph: block('paragraph', BlockNodeType.editable),
+      last: block('paragraph', BlockNodeType.editable),
+    })
+    Object.assign(doc.layoutMetrics, {segmentGap: 16})
+    doc.objectSizing.resolve.and.callFake((flavour: string) =>
+      flavour === 'image' ? {width: 400, height: 200} : undefined)
+
+    expect(estimateModelBlockHeight(doc as any, 'image')).toBe(216)
+    expect(estimateModelBlockHeight(doc as any, 'paragraph')).toBe(48)
+    expect(estimateModelBlockHeight(doc as any, 'image', {layoutMode: 'paginated'})).toBe(200)
+  })
+
   it('falls back when a custom Schema returns an invalid height or throws', () => {
     const invalid = createDoc({
       widget: block('invalid-widget', BlockNodeType.void),

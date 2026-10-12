@@ -1,3 +1,4 @@
+import {resolveTextFit} from '../../../block-std/block/object-format/text-fit'
 import {estimateModelBlockHeight} from '../../virtualization/model-height-estimator'
 import {resolveObjectDimensions} from '../block-object-sizing.manager'
 import {resolveBlockPosition} from './state'
@@ -56,7 +57,8 @@ export function resolvePlacementObjectGeometry(
 ): PlacementObjectGeometry | null {
   const flavour = doc.model.getFlavour(blockId)
   if (!flavour) return null
-  const capability = doc.schemas.get(flavour, false)?.metadata.placement
+  const schema = doc.schemas.get(flavour, false)
+  const capability = schema?.metadata.placement
   if (!capability?.modes.includes('absolute')) return null
   const props = options.props ??
     doc.model.getProps(blockId) as Record<string, unknown>
@@ -70,8 +72,10 @@ export function resolvePlacementObjectGeometry(
         doc.placement?.isInObjectGroup?.(blockId) ?? false,
       )
     : null
-  const width = dimensions?.width ?? finitePositive(props['width'])
-  const height = dimensions?.height ?? finitePositive(props['height'])
+  const formatCapability = schema?.metadata.objectFormat
+  const fitted = formatCapability ? resolveTextFit(props, formatCapability) : null
+  const width = fitted?.axis === 'width' ? fitted.size : dimensions?.width ?? finitePositive(props['width'])
+  const height = fitted?.axis === 'height' ? fitted.size : dimensions?.height ?? finitePositive(props['height'])
   if (width === null || height === null) return null
   return {
     id: blockId,

@@ -74,7 +74,7 @@ describe('RootVirtualizationManager', () => {
     const scrollContainer = ownerDocument.createElement('div')
     scrollContainer.append(rootContainer)
     if (realLayout) {
-      scrollContainer.style.cssText = 'position:fixed;top:100px;left:100px;height:96px;width:300px;overflow:auto;overflow-anchor:none'
+      scrollContainer.style.cssText = 'position:fixed;top:100px;left:100px;height:96px;width:300px;overflow:auto'
       ownerDocument.body.appendChild(scrollContainer)
     } else {
       Object.defineProperty(scrollContainer, 'clientHeight', {value: 96})
@@ -160,6 +160,7 @@ describe('RootVirtualizationManager', () => {
         },
         getChildrenIds: () => [...ids],
         getFlavour: () => 'paragraph',
+        getProps: () => ({}),
         getPath: (id: string) => ['root', id],
         exists: (id: string) => ids.includes(id) || id === 'nested',
         structureChange$,
@@ -1489,7 +1490,10 @@ describe('RootVirtualizationManager', () => {
     const beforeDeactivate = jasmine.createSpy('beforeDeactivate')
 
     expect(() => registerRootLayoutProjection(h.manager, projection, {
-      beforeActivate: () => h.replaceRootIds([...h.ids, 'hook-inserted']),
+      beforeActivate: () => {
+        expect(h.scrollContainer.style.getPropertyValue('overflow-anchor')).toBe('')
+        h.replaceRootIds([...h.ids, 'hook-inserted'])
+      },
       beforeDeactivate,
     })).toThrowError(/length mismatch/)
 
@@ -1498,6 +1502,7 @@ describe('RootVirtualizationManager', () => {
       .toBe((h.manager as any).continuousLayoutProjection)
     expect((h.manager as any).customLayoutProjection).toBeNull()
     expect((h.manager as any).continuousEstimateJournalSuspended).toBeFalse()
+    expect(h.scrollContainer.style.getPropertyValue('overflow-anchor')).toBe('none')
     h.manager.dispose()
     projection.dispose()
   })
@@ -1544,6 +1549,40 @@ describe('RootVirtualizationManager', () => {
     release()
     h.manager.dispose()
     projection.dispose()
+  })
+
+  for (const original of ['', 'auto', 'none']) {
+    it(`restores native anchoring ${original || '(unset)'} through projection handoff and disposal`, () => {
+      const h = createHarness()
+      h.scrollContainer.style.setProperty('overflow-anchor', original, original ? 'important' : '')
+      h.manager.init(h.scrollContainer)
+      expect(h.scrollContainer.style.getPropertyValue('overflow-anchor')).toBe('none')
+      const heights = new HeightMap()
+      heights.bulkInit(h.ids.map(() => 100))
+      const projection = customProjection(h.ids, heights)
+      const release = registerRootLayoutProjection(h.manager, projection, {
+        beforeActivate: () => {
+          expect(h.scrollContainer.style.getPropertyValue('overflow-anchor')).toBe(original)
+          expect(h.scrollContainer.style.getPropertyPriority('overflow-anchor')).toBe(original ? 'important' : '')
+        },
+      })
+      expect(h.scrollContainer.style.getPropertyValue('overflow-anchor')).toBe(original)
+      release()
+      expect(h.scrollContainer.style.getPropertyValue('overflow-anchor')).toBe('none')
+      h.manager.dispose()
+      expect(h.scrollContainer.style.getPropertyValue('overflow-anchor')).toBe(original)
+      expect(h.scrollContainer.style.getPropertyPriority('overflow-anchor')).toBe(original ? 'important' : '')
+      projection.dispose()
+    })
+  }
+
+  it('preserves a host anchoring override made while virtualization is active', () => {
+    const h = createHarness()
+    h.manager.init(h.scrollContainer)
+    h.scrollContainer.style.setProperty('overflow-anchor', 'auto', 'important')
+    h.manager.dispose()
+    expect(h.scrollContainer.style.getPropertyValue('overflow-anchor')).toBe('auto')
+    expect(h.scrollContainer.style.getPropertyPriority('overflow-anchor')).toBe('important')
   })
 
   it('cleans custom projection view state when the manager disposes first', async () => {
@@ -2511,6 +2550,7 @@ describe('RootVirtualizationManager', () => {
           doc: {scrollContainer: h.scrollContainer},
           _surface: {getElementRect: (element: Element) => element.getBoundingClientRect()},
           _getSelectionHeadRect: () => h.ensureRef('new').instance.hostElement.getBoundingClientRect(),
+          _selectionScrollViewports: () => [],
         } as any)
         revealed = h.scrollContainer.scrollTop
       })
@@ -2967,6 +3007,7 @@ describe('RootVirtualizationManager', () => {
 
     expect((h.manager as any).fullMountFallback).toBeTrue()
     expect(h.ids.every(id => h.mounted.has(id))).toBeTrue()
+    expect(h.scrollContainer.style.getPropertyValue('overflow-anchor')).toBe('')
     expect(h.doc.messageService.warn).toHaveBeenCalledOnceWith(
       '虚拟渲染异常，已切换为完整渲染',
     )

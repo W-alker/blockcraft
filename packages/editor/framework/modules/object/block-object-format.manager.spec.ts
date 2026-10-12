@@ -38,7 +38,7 @@ const capability: BlockObjectFormatCapability = {
   textlessShapeTypes: ["line"],
 };
 
-function makeHarness() {
+function makeHarness(formatCapability = capability) {
   const props = new Map<string, Record<string, unknown>>([
     ["a", { width: 100, height: 50, shape: "rectangle" }],
     ["b", { width: 200, height: 50, shape: "rectangle" }],
@@ -57,7 +57,7 @@ function makeHarness() {
       }
     });
   const doc = {
-    schemas: { get: () => ({ metadata: { objectFormat: capability } }) },
+    schemas: { get: () => ({ metadata: { objectFormat: formatCapability } }) },
     model: {
       getFlavour: (id: string) => (props.has(id) ? "shape" : undefined),
       getProps: (id: string) => props.get(id),
@@ -81,6 +81,18 @@ function makeHarness() {
 }
 
 describe("BlockObjectFormatManager", () => {
+  it("previews fitted geometry and makes an explicit height edit fixed without changing other objects", () => {
+    const {manager, props} = makeHarness({...capability, kind: "text-box"});
+    Object.assign(props.get("a")!, {textAutoFit: "resize-shape", textFit: 280});
+    expect(manager.resolve("a")!.height).toBe(280);
+    expect(manager.readSelection()!.targets[0].format.height).toBe(280);
+    manager.updateSelection(["a", "b"], {height: 150});
+    expect(props.get("a")!["height"]).toBe(150);
+    expect(props.get("a")!["textAutoFit"]).toBeUndefined();
+    expect(props.get("a")!["textFit"]).toBeUndefined();
+    expect(props.get("b")!["height"]).toBe(50);
+  });
+
   it("quantizes only the requested groups and skips locked targets", () => {
     const {manager, props, transact} = makeHarness();
     const shadow = "60.9453959deg 4.9419024px 2.4px #000000 / 0.25";

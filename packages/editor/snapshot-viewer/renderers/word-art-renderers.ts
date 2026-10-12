@@ -35,6 +35,10 @@ export function createWordArtRenderers(): SnapshotBlockRenderer[] {
 
       const surface = document.createElement('div')
       surface.classList.add('word-art-block__surface')
+      if (props.textFrame.autoFit === 'resize-shape' && props.textFrame.direction === 'horizontal' &&
+        !resolveWordArtProjectionPath(props.effect, props.width, props.height)) {
+        surface.setAttribute('data-bc-content-auto-fit', '')
+      }
       surface.setAttribute('data-bc-print-visual-surface', '')
       surface.style.width = `${props.width}px`
       surface.style.height = `${props.height}px`

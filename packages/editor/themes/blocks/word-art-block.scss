@@ -65,6 +65,11 @@
     overflow-wrap: anywhere;
   }
 
+  // The fitted frame includes glyph overflow beyond the font's line box.
+  .word-art-block__surface[data-bc-content-auto-fit] .word-art-block__editor {
+    min-height: 100%;
+  }
+
   .word-art-block__projection {
     position: absolute;
     inset: 0;
