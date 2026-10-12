@@ -2,7 +2,15 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-10-09 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-10-12 | Tracks `@ccc/blockcraft` npm releases.
+
+
+## 未发布：表格 Schema 支持初始单元格文本
+
+- 范围：`TableBlockSchema` 与 `blockcraft.block.table` 能力合同。
+- 新增可选第三参数 `values: string[][]`；旧的 `[rows, columns]` 保持空表行为，无需迁移已有文档。
+- 携带内容时严格校验矩形尺寸和文本预算；非法输入整体拒绝，不截断或补造数据。
+- 版本号与发布待用户确认。
 
 ## Why This File Exists
 
@@ -67,6 +75,22 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 > - `major` (e.g. 0.1.37 → 1.0.0): breaking — removed APIs, renamed exports, signature changes, behavior reversals
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
+
+## 未发布 — 2026-10-11：网页资源的 Agent 嵌入合同
+
+**Severity**: minor
+
+**What changed**: 新增并导出 `EMBED_BLOCK_AGENT_CAPABILITY`，将现有 `embed` Schema 的
+`[HTTP/HTTPS URL]` 创建参数加入内置 Agent 目录；Agent 手册说明 HTML、图片、普通附件
+的资源类型分派。文件生成与上传继续属于 Host，不新增网关、磁盘或网络权限。
+
+**Why**: 已上传 HTML 应作为网页嵌入进入文档；仅注册 Schema 原先不会授予 Agent 创建权限。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`。
+
+**Behavior Changes**: 宿主注册 `EmbedBlockSchema` 后可通过默认 Agent 创建网页嵌入，
+仍校验 URL、Schema、父容器、只读、基线与修订；未注册该 Schema 的宿主不新增此能力。
+已在 Host 自行声明相同 flavour 的能力应在升级时移除重复声明。版本号与发布待用户决策。
 
 ## 未发布 — 2026-10-09：粘贴异常组合符号转化
 

@@ -51,4 +51,13 @@ describe('built-in Block Agent capabilities', () => {
         .toBeUndefined()
     }
   })
+
+  it('公开通用网页嵌入的创建合同，不把HTML内容误当作网址', () => {
+    const capability = BLOCKCRAFT_BUILTIN_BLOCK_AGENT_CAPABILITIES.find(item => item.flavour === 'embed')
+    expect(capability?.id).toBe('blockcraft.block.embed')
+    expect(capability?.createParameters).toEqual(jasmine.objectContaining({minItems: 1, maxItems: 1}))
+    expect(capability?.createParameters?.['prefixItems']).toEqual([
+      jasmine.objectContaining({type: 'string', pattern: '^https?://'}),
+    ])
+  })
 })

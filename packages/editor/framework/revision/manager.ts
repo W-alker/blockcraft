@@ -1883,6 +1883,10 @@ export class DocumentRevisionManager {
 
   private refreshBlocks(blockIds: ReadonlySet<string>): void {
     blockIds.forEach(blockId => {
+      // Structural decisions remove model blocks before Angular disposes their
+      // mounted views. Never ask a stale view to resolve readonly/inline state.
+      // Keep notifying presentation/state subscribers below so parents refresh.
+      if (!this.doc.yBlockMap.has(blockId) || !this.doc.model.exists(blockId)) return
       const block = this.doc.vm?.get(blockId)?.instance as any
       block?.applyReadonlyViewState?.()
       block?.changeDetectorRef?.markForCheck?.()

@@ -1,7 +1,7 @@
 import { generateId, NoEditableBlockNative } from "../../framework";
 import { TableBlockComponent } from "./table.block";
 import { IBlockSchemaOptions } from "../../framework/block-std/schema/block-schema";
-import { BlockNodeType, IBlockProps } from "../../framework";
+import { BlockNodeType, IBlockProps, IBlockSnapshot } from "../../framework";
 import { TableRowBlockComponent } from "./table-row.block";
 import { TableCellBlockComponent } from "./table-cell.block";
 import { ParagraphBlockSchema } from "../paragraph-block";
@@ -40,10 +40,24 @@ export const TableBlockSchema: IBlockSchemaOptions<TableBlockModel> = {
   flavour: 'table',
   nodeType: BlockNodeType.block,
   component: TableBlockComponent,
-  createSnapshot: (rows = 3, cells = 3) => {
+  createSnapshot: (rows = 3, cells = 3, values?: readonly (readonly string[])[]) => {
+    if (values !== undefined) {
+      if (!Number.isInteger(rows) || rows < 1 || rows > 100 || !Number.isInteger(cells) || cells < 1 || cells > 50
+        || !Array.isArray(values) || values.length !== rows
+        || values.some(row => !Array.isArray(row) || row.length !== cells || row.some(value => typeof value !== 'string' || value.length > 4000))
+        || values.reduce((total, row) => total + row.reduce((size: number, value: string) => size + value.length, 0), 0) > 120000) {
+        throw new Error('Table values must match the row/column dimensions and stay within the content limit.')
+      }
+    }
     const children = []
     for (let i = 0; i < rows; i++) {
-      children.push(TableRowBlockSchema.createSnapshot(cells))
+      const row = TableRowBlockSchema.createSnapshot(cells)
+      if (values) {
+        (row.children as IBlockSnapshot[]).forEach((cell, index) => {
+          cell.children = [ParagraphBlockSchema.createSnapshot(values[i][index])]
+        })
+      }
+      children.push(row)
     }
     return {
       id: generateId(),
@@ -129,7 +143,7 @@ declare global {
     }
 
     interface IBlockCreateParameters {
-      table: [number, number]
+      table: [number, number, (readonly (readonly string[])[])?]
       'table-row': [number]
       'table-cell': [string?]
     }

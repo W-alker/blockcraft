@@ -5,13 +5,21 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-10-09
+> Last updated: 2026-10-12
 
 通用数据描述和快照位于 `@ccc/blockcraft/framework/model`，类型为
 `BlockDescriptor<P, M, F>` / `BlockSnapshot<P, M, F>`，默认不依赖组件注册表。
 创建编辑器 Block 时仍使用原 `BaseBlockDesc`、`IBlockSnapshot` 与 Schema API；
 `declare global { namespace BlockCraft { interface IBlockComponents { ... } } }`
 继续限定编辑器快照的 flavour 和后代节点。新增通用快照类型不替代组件注册或 Schema 校验。
+
+
+## 表格初始内容（未发布）
+
+`TableBlockSchema.createSnapshot(rows, columns, values?)` 新增可选的 `string[][]` 参数。
+有 values 时要求 1–100 行、1–50 列，与声明尺寸完全一致；单元格最多 4000 字符，总计 120000 字符。
+内容按纯文本生成原生段落，不解析 HTML。省略 values 保持原有空表行为。
+Agent 查询 `blockcraft.block.table` 后可使用 `[rows, columns, values]` 一次生成完整表格，进入宿主的统一修订事务。
 
 ## 内置 SVG 贴纸（未发布）
 
@@ -94,6 +102,11 @@ blocks/
 ```
 
 ### Agent contract (optional, explicit opt-in)
+
+内置网页块 `embed` 已声明 `EMBED_BLOCK_AGENT_CAPABILITY`，并进入默认内置能力目录；
+只有宿主注册了 `EmbedBlockSchema` 时才可发现和创建。参数为 `[HTTP/HTTPS URL]`，
+适合已上传 HTML 文件的网页嵌入；HTML 源码、`data:`、`blob:` 和 `javascript:`
+不是可用创建参数。资源生成/上传由 Host 工具负责，不能在 Block Schema 中调用业务接口。
 
 Schema registration alone never authorizes AI creation or writes. If an
 external Block should participate in `blockcraft-agent`, keep its declarative

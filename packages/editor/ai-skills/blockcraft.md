@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-10-09 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-10-12 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -11,6 +11,14 @@
 >
 > **External users**: this skill pack is bundled with the npm package. AI agents can discover it via `SKILL.md` (frontmatter present); humans see `README.md` for installation and the one-command installer (`install.mjs`).
 
+
+## 表格初始内容（未发布）
+
+`TableBlockSchema.createSnapshot(rows, columns, values?)` 新增可选的 `string[][]` 参数。
+有 values 时要求 1–100 行、1–50 列，与声明尺寸完全一致；单元格最多 4000 字符，总计 120000 字符。
+内容按纯文本生成原生段落，不解析 HTML。省略 values 保持原有空表行为。
+Agent 查询 `blockcraft.block.table` 后可使用 `[rows, columns, values]` 一次生成完整表格，进入宿主的统一修订事务。
+
 ## 文档设计入口
 
 制作、美化可编辑文档，读取 [blockcraft-document-design](document-design/SKILL.md)，
@@ -18,6 +26,10 @@
 编辑器内 `@ccc/blockcraft-agent` 通过 `blockcraft.skill.document-design` 按需暴露同源内容。
 
 ## What is BlockCraft?
+
+通用网页嵌入 `embed` 提供内置 `blockcraft.block.embed` Agent 能力，创建参数为
+`[真实 HTTP/HTTPS URL]`。已上传 HTML 使用此块；图片使用 `image`，其他文件使用
+`attachment`。文件生成、上传与凭证归宿主，块参数与修订继续走既有 Agent 校验路径。
 
 A block-based rich text editor built on **Angular (standalone components)** + **Yjs (CRDT)**. It provides:
 - A tree of typed blocks (paragraph, image, table, callout, etc.)

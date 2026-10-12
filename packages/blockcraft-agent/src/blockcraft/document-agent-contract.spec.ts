@@ -1,6 +1,8 @@
 import {DocumentAgentToolExecutor} from './document-agent-tool-executor'
 import {
   BlockNodeType,
+  EmbedBlockSchema,
+  TableBlockSchema, TableRowBlockSchema, TableCellBlockSchema,
   AdapterRegistry,
   defineBlockAgentCapability,
   defineInlineEmbedAgentCapability,
@@ -32,6 +34,66 @@ import {
 import {DocumentAgentOperationApplier} from './document-agent-operation-applier'
 
 describe('BlockCraft Agent v2 contract', () => {
+  it('compiles populated native tables as one candidate without mutating the document', () => {
+    const doc = createFakeDoc()
+    const schemas = doc['schemas']
+    const originals = {...schemas}
+    const tableSchemas = [TableBlockSchema, TableRowBlockSchema, TableCellBlockSchema]
+    schemas.getSchemaList = () => [...originals.getSchemaList(), ...tableSchemas]
+    schemas.get = (flavour: string) => tableSchemas.find(s => s.flavour === flavour) ?? originals.get(flavour)
+    schemas.has = (flavour: string) => tableSchemas.some(s => s.flavour === flavour) || originals.has(flavour)
+    schemas.createSnapshot = (flavour: string, params: readonly unknown[]) => flavour === 'table'
+      ? TableBlockSchema.createSnapshot(params[0] as number, params[1] as number, params[2] as string[][])
+      : originals.createSnapshot(flavour, params)
+    schemas.isValidChildrenForInstance = (child: string, parent: string | Record<string, any>) => {
+      const flavour = typeof parent === 'string' ? parent : parent['flavour']
+      return ({root: 'table', table: 'table-row', 'table-row': 'table-cell', 'table-cell': 'paragraph'} as Record<string, string>)[flavour] === child
+        || originals.isValidChildrenForInstance(child, parent)
+    }
+    const context = captureBlockCraftAgentContext(doc as never)!
+    const compiler = new DocumentAgentOperationCompiler(doc as never, context, createExtensions())
+    const operation = {kind: 'create-blocks' as const, parentId: 'root', index: 1, flavour: 'table', params: [2, 2, [['项目', '数量'], ['材料A', '12']]]}
+    const compiled = compiler.compile([operation])
+    expect(compiled.length).toBe(1)
+    expect(JSON.stringify(compiled)).toContain('材料A')
+    expect(JSON.stringify(compiled)).toContain('"flavour":"table-cell"')
+    expect(captureBlockCraftAgentContext(doc as never)).toEqual(context)
+    expect(() => new DocumentAgentOperationCompiler(doc as never, context, createExtensions())
+      .compile([{...operation, params: [2, 2, [['A']]]}])).toThrow()
+  })
+
+  it('发现已注册网页嵌入并用真实Schema编译HTML资源，而不是正文或代码块', () => {
+    const doc = createFakeDoc()
+    const schemas = doc['schemas']
+    const oldList = schemas.getSchemaList
+    const oldGet = schemas.get
+    const oldHas = schemas.has
+    const oldCreate = schemas.createSnapshot
+    schemas.getSchemaList = () => [...oldList(), EmbedBlockSchema]
+    schemas.get = (flavour: string) => flavour === 'embed' ? EmbedBlockSchema : oldGet(flavour)
+    schemas.has = (flavour: string) => flavour === 'embed' || oldHas(flavour)
+    schemas.createSnapshot = (flavour: string, params: readonly unknown[]) => flavour === 'embed'
+      ? EmbedBlockSchema.createSnapshot(params[0] as string) : oldCreate(flavour, params)
+    const oldChildren = schemas.isValidChildrenForInstance
+    schemas.isValidChildrenForInstance = (child: string, parent: string | {flavour: string}) =>
+      (child === 'embed' && (typeof parent === 'string' ? parent : parent.flavour) === 'root') || oldChildren(child, parent)
+    const context = captureBlockCraftAgentContext(doc as never)!
+    expect(context.capabilities?.find(item => item.flavour === 'embed')).toEqual(jasmine.objectContaining({
+      capabilityId: 'blockcraft.block.embed', creatable: true,
+    }))
+    const compiler = new DocumentAgentOperationCompiler(doc as never, context, createExtensions())
+    const operations = compiler.compile([{
+      kind: 'create-blocks', parentId: 'root', index: 1, flavour: 'embed', params: ['https://files.example/report.html'],
+    }])
+    expect(JSON.stringify(operations)).toContain('https://files.example/report.html')
+    expect(JSON.stringify(operations)).toContain('"flavour":"embed"')
+    for (const url of ['<html>code</html>', 'data:text/html;base64,YQ==', 'blob:https://example.com/id', 'javascript:alert(1)']) {
+      expect(() => compiler.compile([{
+        kind: 'create-blocks', parentId: 'root', index: 1, flavour: 'embed', params: [url],
+      }])).toThrowError(DocumentAgentOperationCompileError)
+    }
+  })
+
   it('默认执行器可以按需读取内置设计技能，不产生文档变更', () => {
     const doc = createFakeDoc()
     const before = captureBlockCraftAgentContext(doc as never)

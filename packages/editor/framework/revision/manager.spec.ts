@@ -21,6 +21,78 @@ const FIRST_ID = 'p1'
 const SECOND_ID = 'p2'
 
 describe('DocumentRevisionManager', () => {
+  it('emits an empty review state when undo removes a still-mounted inserted batch, and restores it on redo', async () => {
+    const harness = createHarness('original', 'keep')
+    const insertedId = 'ai-inserted'
+    const refresh = jasmine.createSpy('refresh').and.callFake(() => {
+      if (!harness.doc.yBlockMap.has(insertedId)) throw new Error('Block not found')
+    })
+    harness.doc.vm.get = (id: string) => id === insertedId
+      ? {instance: {applyReadonlyViewState: refresh}} : undefined
+    const changes: string[] = []
+    const subscription = harness.manager.change$.subscribe(change => changes.push(change.kind))
+    harness.yDoc.transact(() => {
+      harness.doc.yBlockMap.set(insertedId, editableYBlock(insertedId, 'material'))
+      const children = harness.doc.yBlockMap.get(ROOT_ID).get('children') as Y.Array<string>
+      children.push([insertedId])
+      harness.manager.recordBlockInsertion([insertedId], ROOT_ID)
+    })
+    await Promise.resolve()
+    expect(harness.manager.state$.value.revisions.length).toBe(1)
+    refresh.calls.reset()
+    changes.length = 0
+
+    expect(() => harness.undo()).not.toThrow()
+    await Promise.resolve()
+    expect(harness.doc.yBlockMap.has(insertedId)).toBeFalse()
+    expect(refresh).not.toHaveBeenCalled()
+    expect(harness.manager.list()).toEqual([])
+    expect(harness.manager.state$.value.revisions).toEqual([])
+    expect(changes).toContain('records')
+    expect(harness.text(FIRST_ID)).toBe('original')
+    expect(harness.text(SECOND_ID)).toBe('keep')
+
+    expect(() => harness.redo()).not.toThrow()
+    await Promise.resolve()
+    expect(harness.text(insertedId)).toBe('material')
+    expect(harness.manager.state$.value.revisions.length).toBe(1)
+    expect(refresh).toHaveBeenCalled()
+    subscription.unsubscribe()
+  })
+
+  for (const decision of ['reject-insert', 'accept-delete'] as const) {
+    it(`refreshes surviving views and emits state after ${decision} removes a still-mounted block`, async () => {
+      const harness = createHarness('abc', 'keep')
+      const removedRefresh = jasmine.createSpy('removedRefresh').and.callFake(() => {
+        if (!harness.doc.yBlockMap.has(FIRST_ID)) throw new Error('Block not found')
+      })
+      const survivingRefresh = jasmine.createSpy('survivingRefresh')
+      harness.doc.vm.get = (id: string) => ({instance: {
+        applyReadonlyViewState: id === FIRST_ID ? removedRefresh : survivingRefresh,
+      }})
+      const changes: string[] = []
+      const subscription = harness.manager.change$.subscribe(change => changes.push(change.kind))
+      const revision = decision === 'reject-insert'
+        ? harness.manager.recordBlockInsertion([FIRST_ID], ROOT_ID)!
+        : harness.manager.recordBlockDeletion([FIRST_ID], ROOT_ID)!
+      removedRefresh.calls.reset()
+      expect(() => decision === 'reject-insert'
+        ? harness.manager.reject(revision) : harness.manager.accept(revision)).not.toThrow()
+      await Promise.resolve()
+      expect(harness.doc.yBlockMap.has(FIRST_ID)).toBeFalse()
+      expect(removedRefresh).not.toHaveBeenCalled()
+      expect(survivingRefresh).not.toHaveBeenCalled()
+      expect(harness.manager.list()).toEqual([])
+      expect(harness.manager.state$.value.revisions).toEqual([])
+      expect(changes).toContain('records')
+      expect(harness.text(SECOND_ID)).toBe('keep')
+      harness.manager.insertText(SECOND_ID, 4, '!')
+      expect(survivingRefresh).toHaveBeenCalled()
+      expect(harness.text(SECOND_ID)).toBe('keep!')
+      subscription.unsubscribe()
+    })
+  }
+
   it('requires an explicit actor before tracking is enabled', () => {
     const harness = createHarness('abc', '', false)
     expect(() => harness.manager.setMode('track'))
@@ -765,6 +837,7 @@ function createHarness(firstText: string, secondText: string, withActor = true) 
     stopCapturing: () => revisionUndo.stopCapturing(),
   }
   return {
+    doc,
     yDoc,
     manager,
     text: (id: string) =>
@@ -773,6 +846,7 @@ function createHarness(firstText: string, secondText: string, withActor = true) 
       yBlockMap.get(id)!.get('children') as unknown as Y.Text,
     clearUndo: () => revisionUndo.clear(),
     undo: () => revisionUndo.undo(),
+    redo: () => revisionUndo.redo(),
   }
 }
 

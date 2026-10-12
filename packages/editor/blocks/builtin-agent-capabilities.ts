@@ -14,6 +14,7 @@ import {PERSON_CARD_BLOCK_AGENT_CAPABILITY} from './dynamic-material-blocks/pers
 import {WEATHER_BLOCK_AGENT_CAPABILITY} from './dynamic-material-blocks/weather/agent'
 import {FIGMA_EMBED_BLOCK_AGENT_CAPABILITY} from './embed-blocks/figma-embed-block/agent'
 import {JUEJIN_EMBED_BLOCK_AGENT_CAPABILITY} from './embed-blocks/juejin-embed-block/agent'
+import {EMBED_BLOCK_AGENT_CAPABILITY} from './embed-blocks/embed-block/agent'
 import {FORMULA_BLOCK_AGENT_CAPABILITY} from './formula-block/agent'
 import {IMAGE_BLOCK_AGENT_CAPABILITY} from './image-block/agent'
 import {MERMAID_BLOCK_AGENT_CAPABILITY} from './mermaid-block/agent'
@@ -51,6 +52,7 @@ export const BLOCKCRAFT_BUILTIN_BLOCK_AGENT_CAPABILITIES:
   BOOKMARK_BLOCK_AGENT_CAPABILITY,
   FIGMA_EMBED_BLOCK_AGENT_CAPABILITY,
   JUEJIN_EMBED_BLOCK_AGENT_CAPABILITY,
+  EMBED_BLOCK_AGENT_CAPABILITY,
   ATTACHMENT_BLOCK_AGENT_CAPABILITY,
   VIDEO_BLOCK_AGENT_CAPABILITY,
   AUDIO_BLOCK_AGENT_CAPABILITY,

@@ -5,6 +5,7 @@ import {EmbedBlockComponent} from "./embed.block";
 import {normalizeEmbedUrl} from './source';
 export {EmbedBlockComponent} from './embed.block';
 export * from './source';
+export * from './agent';
 
 export interface EmbedBlockModel extends NoEditableBlockNative {
   flavour: 'embed',

@@ -195,6 +195,14 @@ An empty paragraph, list item or container child is still a valid structural
 target. To remove it, use delete-blocks with its actual parentId, index and
 count; never claim that an empty block cannot be changed just because it has
 no text.
+For a host-provided uploaded file, use its actual URL, name, MIME type and byte
+size. HTML intended as an embedded webpage uses the installed 'embed' capability
+with params [url]; images use 'image', and other files use 'attachment'. Read the
+current capability contract before creating a block. Never replace an HTML embed
+request with a code block or import its source as document paragraphs. Upload and
+file generation belong to registered host tools, not these document operations;
+do not invent upload results, data/blob URLs or unsupported binary artifacts.
+
 Do not return raw Snapshots, HTML, JavaScript, DOM instructions, Yjs operations,
 or direct property mutations. The host validates and immediately executes every
 operation. Revision-capable text and block-structure edits receive visible Diff
