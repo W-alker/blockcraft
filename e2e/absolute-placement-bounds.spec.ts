@@ -1,7 +1,8 @@
 import {expect, test, type Page} from '@playwright/test'
 
 const runtimeErrors = new WeakMap<Page, string[]>()
-test.beforeEach(({page}) => {
+test.beforeEach(async ({page}) => {
+  await page.routeWebSocket('**', socket => socket.close())
   const errors: string[] = []
   runtimeErrors.set(page, errors)
   page.on('pageerror', error => errors.push(error.message))
@@ -10,21 +11,29 @@ test.afterEach(({page}) => expect(runtimeErrors.get(page)).toEqual([]))
 
 async function setup(page: Page) {
   await page.goto('/')
-  await page.getByRole('button', {name: '初始化', exact: true}).click()
   await page.waitForFunction(() => {
     const element = document.querySelector('block-craft-editor')
-    return !!element && !!(window as any).ng?.getComponent(element)?.doc?.isInitialized
+    return !!element && !!(window as any).ng?.getComponent(element)?.doc
   })
   return page.evaluate(async () => {
-    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+    const source = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+    const viewport = document.createElement('div')
+    viewport.style.cssText = 'position:fixed;left:12px;top:12px;width:1000px;height:800px;overflow:auto;background:white;z-index:99999'
+    const target = document.createElement('div')
+    viewport.append(target)
+    document.body.append(viewport)
+    const Pagination = source.plugins.find((plugin: any) => plugin.name === 'pagination').constructor
+    const paragraph = source.schemas.createSnapshot('paragraph', [[{insert: '对象应当被纸面承载，正文保持在原位。'}]])
+    const snapshot = source.schemas.createSnapshot('root', ['placement-bounds', [paragraph]])
+    const doc = new source.constructor({...source.config, docId: snapshot.id,
+      yDoc: new source.yDoc.constructor(), plugins: [new Pagination()], scrollContainer: viewport})
+    await doc.initBySnapshot(snapshot, target)
+    doc.onDestroy(doc.viewScale.attach(target))
     ;(window as any).__placementDoc = doc
-    doc.crud.deleteBlocks(doc.rootId, 0, doc.model.getChildrenIds(doc.rootId).length)
     const shape = doc.schemas.createSnapshot('shape', ['rectangle'])
     shape.props = {...shape.props, width: 140, height: 100}
     const id = doc.placement.insertAbsoluteSnapshot(shape, {anchorRect: null})
     doc.crud.updateBlockProps(id, {position: "80 2400"})
-    const paragraph = doc.schemas.createSnapshot('paragraph', [[{insert: '对象应当被纸面承载，正文保持在原位。'}]])
-    doc.crud.insertBlockSnapshots(doc.rootId, 0, [paragraph])
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
     return {id, paragraphId: paragraph.id}
   })
@@ -149,7 +158,7 @@ test('rotated groups retain coordinates and document extent at 75% and 150% scal
   await page.evaluate(({groupId, gapY}) => {
     const doc = (window as any).__placementDoc
     // A remote transaction follows the same model event path and does not need a mounted view.
-    doc.yDoc.transact(() => doc.crud.getYBlock(groupId).get('props').set('position', {x: 80, y: gapY}), 'remote-regression')
+    doc.yDoc.transact(() => doc.crud.getYBlock(groupId).get('props').set('position', `80 ${gapY}`), 'remote-regression')
   }, {groupId, gapY})
   for (const scale of [0.75, 1.5]) {
     await page.evaluate(({groupId, scale}) => {
@@ -235,7 +244,7 @@ for (const mode of ['flow', 'full', 'sparse'] as const) {
           const targetX = edge === 'right' ? scroll.right - 20 : edge === 'left' ? scroll.left + 20 : rect.left + 10
           const targetY = edge === 'top' ? scroll.top + 20 : rect.top + 10
           const startX = rect.left + 10
-          const original = {...doc.model.getProps(id).position}
+          const original = doc.placement.getState(id)
           doc.placement.startDrag(new PointerEvent('pointerdown', {
             pointerId: 73, button: 0, clientX: startX, clientY: rect.top + 10,
           }), block)

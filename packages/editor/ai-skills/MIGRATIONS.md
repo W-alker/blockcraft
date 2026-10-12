@@ -4,6 +4,29 @@
 >
 > Last updated: 2026-10-12 | Tracks `@ccc/blockcraft` npm releases.
 
+## 未发布 — 2026-10-12：浮动层内逐对象虚拟化
+
+**Severity**: minor（发布版本号由用户决定，本次不修改 package.json）
+
+**What changed**: 根级 `placement-layout` 改为稀疏子视图。固定对象按坐标和包围盒
+独立挂载，自适应文本对象常驻；含自适应成员的组合整体常驻。CSS 按文档/帧批量测量，
+索引使用有效 `textFit` 计算缩小高度及旋转宽度。
+
+**Why**: 避免旧尺寸阻止自适应对象从下方进入视口，同时避免一个对象可见就挂载整层。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-perf.md`、`blockcraft-data.md`、`blockcraft-selection.md`、`blockcraft-app.md`。
+
+### Behavior Changes
+
+固定浮动对象离屏释放组件；根 `retainedViewLimit`、显式对象/keep-alive 租约仍有效。
+完整文档租约与关闭虚拟化时完整渲染。普通文档流、对象坐标与快照格式保持不变。
+
+### Migration Recipe
+
+读取离屏对象数据使用 `doc.model`；需要 DOM 时通过 `ensureViewMounted([id])` 或
+`acquireBlockViewLease([id])` 物化目标对象，不依赖同层其他可见对象隐式挂载所有兄弟。
+需要全层/全文 DOM 的任务使用浮动层视图租约/完整文档视图租约并及时释放。
+
 ## 未发布 — 2026-10-12：文本对象按创建手势选择尺寸模式
 
 **Severity**: minor（发布版本号由用户决定，本次不修改 package.json）

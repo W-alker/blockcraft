@@ -124,6 +124,8 @@ describe('RootVirtualizationManager', () => {
       return ensureRef(id)
     }
     const vm = {
+      _mountPlacementChildren: jasmine.createSpy('_mountPlacementChildren').and.returnValue(false),
+      _releaseUnrenderedPlacementChildren: jasmine.createSpy('_releaseUnrenderedPlacementChildren'),
       mountRootChild: jasmine.createSpy('mountRootChild').and.callFake(mountRootChild),
       retainRootChild: jasmine.createSpy('retainRootChild').and.callFake((id: string) => {
         mounted.delete(id)

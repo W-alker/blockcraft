@@ -18,6 +18,7 @@
 `width/height` 保留用户设定，派生的 `textFit` 保存内容轴测量值。有效尺寸必须通过块的
 `normalize*Props()`、`doc.objectFormat.resolve()` 或对象布局读取；不要把原始 height 当作自适应后的高度。
 规则、撤销和限制见 `blockcraft-block.md`；设置入口见 `blockcraft-plugins-toolbar.md`。
+浮动对象的固定尺寸按需挂载、自适应常驻与虚拟渲染边界见 `blockcraft-perf.md`。
 
 
 ## 表格初始内容（未发布）
@@ -122,7 +123,7 @@ DI Token 或默认实现；文件和取消操作仍使用 `File` / `FileList` / 
 | **Selection** | Anchor/head selection model over blocks | `SelectionManager` in `framework/modules/selection/` |
 | **Input** | Intercepts `beforeInput`, writes to Y.Text directly | `InputTransformer` in `framework/modules/input/` |
 | **Table Model** | DOM-free table coordinates, merged-cell closure and stable-ID rectangle targets | package-internal `framework/modules/table/` |
-| **Virtualization** | Optional model-first root-child windowing; nested subtrees stay atomic | `RootVirtualizationManager` in `framework/modules/virtualization/` |
+| **Virtualization** | Optional model-first root-child windowing; root placement children virtualize individually | `RootVirtualizationManager` in `framework/modules/virtualization/` |
 | **Object Layout** | Word-like inline/top-bottom/under/over states plus fixed-pixel object grouping, projected onto Schema-gated block placement | `BlockPlacementManager` in `framework/modules/object/` |
 | **Object Sizing** | Placement-plane-relative `wr/ar` sizing with legacy pixel compatibility | `BlockObjectSizingManager` in `framework/modules/object/` |
 | **Object Format** | DOM-free Shape/TextBox/WordArt geometry, paint, line, effects and text-frame normalization plus mixed batch writes | `BlockObjectFormatManager` at `doc.objectFormat` |
@@ -769,9 +770,10 @@ estimated height. The zero-height layout mounts when any projected band
 intersects the root-relative viewport plus one viewport of pre-rendering, and
 can detach when no band or interaction lease owns it. This projection does not
 change the normal-flow `HeightMap` and performs no child DOM reads on scroll.
-The layout remains one atomic root render unit, so one visible absolute child
-currently materializes all of its layout siblings; descendants do not acquire
-duplicate per-object leases.
+根级浮动层内，固定对象逐个按坐标挂载；自适应文本对象从初始化起常驻。
+组合保持原子子树，含自适应成员的组合整体常驻。选区、导航和目标视图租约能显式挂载
+离屏固定对象，全量文档租约挂载全部对象。普通流式容器仍保持完整子树。
+浮动对象滚出视口后释放组件，不建立额外的离屏组件缓存。
 `doc.placement.group(ids)` groups two or more contiguous, same-layer root
 absolute objects in one Yjs transaction; `ungroup(groupId)` restores their root
 coordinates. The group frame is the rotation-aware union of the members' visual

@@ -328,7 +328,9 @@ export class BlockGapCreatorPlugin extends DocPlugin {
   private _resolveContainerGutter(target: Node, x: number, y: number): {block: BlockCraft.BlockComponent; side: 'before' | 'after'} | null {
     const containerId = closetBlockId(target)
     const container = containerId ? this._safeGetBlock(containerId) : null
-    if (!container || container.nodeType === BlockNodeType.root || !container.childrenIds?.length) return null
+    // 可编辑块的 children 是行内文本，childrenIds getter 不适用于它们。
+    if (!container || container.nodeType === BlockNodeType.root ||
+      container.nodeType === BlockNodeType.editable || !container.childrenIds?.length) return null
     const content = container.childrenRenderRef?.containerElement ??
       container.hostElement.querySelector('.children-render-container')
     if (!(content instanceof HTMLElement) || !content.contains(target)) return null

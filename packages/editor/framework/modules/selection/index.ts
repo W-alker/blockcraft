@@ -1678,6 +1678,10 @@ export class SelectionManager {
       )
       if (neighbours.nextId) blockIds.add(neighbours.nextId)
       if (neighbours.previousId) blockIds.add(neighbours.previousId)
+      // A sparse placement layer is materialized through its requested object
+      // neighbours. Requesting the layer itself would mount every fixed object.
+      if ((neighbours.nextId || neighbours.previousId) &&
+        this.doc.model?.getFlavour?.(point.blockId) === 'placement-layout') blockIds.delete(point.blockId)
     }
 
     addPoint(selection.start)

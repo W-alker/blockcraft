@@ -1,5 +1,6 @@
 import {parseBlockPosition} from '../object/block-placement/state'
 import {estimateModelBlockHeight} from './model-height-estimator'
+import {resolveTextFit} from '../../block-std/block/object-format/text-fit'
 
 const PLACEMENT_LAYOUT_FLAVOUR = 'placement-layout'
 const DEFAULT_ABSOLUTE_HEIGHT = 48
@@ -9,9 +10,22 @@ interface VerticalBand {
   bottom: number
 }
 
+interface ObjectBand extends VerticalBand {
+  id: string
+}
+
+interface BandTree {
+  band: ObjectBand
+  maxBottom: number
+  left: BandTree | null
+  right: BandTree | null
+}
+
 interface LayoutBands {
   layoutId: string
-  bands: readonly VerticalBand[]
+  tree: BandTree | null
+  residentIds: readonly string[]
+  bottom: number
 }
 
 const finiteNumber = (value: unknown, fallback = 0): number =>
@@ -44,32 +58,28 @@ export class AbsolutePlacementVisibilityIndex {
   rebuild(rootIds: readonly string[]): void {
     this.rootIds = rootIds.filter(id =>
       this.doc.model.getFlavour(id) === PLACEMENT_LAYOUT_FLAVOUR)
-    this.layouts = this.rootIds
-      .map(layoutId => ({
-        layoutId,
-        bands: this.buildLayoutBands(layoutId),
-      }))
-      .filter(layout => layout.bands.length > 0)
+    this.layouts = this.rootIds.map(layoutId => this.buildLayoutBands(layoutId))
     this.surfaceRevision = this.doc.placement?.surface?.revision ?? 0
   }
 
   get bottom(): number {
     return this.layouts.reduce((bottom, layout) =>
-      Math.max(bottom, layout.bands[layout.bands.length - 1]?.bottom ?? 0), 0)
+      Math.max(bottom, layout.bottom), 0)
   }
 
   /**
-   * Return only root layout ids whose absolute descendants intersect the
-   * root-relative viewport plus a pixel overscan.
+   * Return root layouts owning visible objects or resident auto-fit objects.
    */
   visibleLayoutIds(
     viewportTop: number,
     viewportHeight: number,
     overscanPx: number,
   ): string[] {
-    // A mounted caption measurement/page projection can change an object's
-    // band without a model edit. Refresh once per surface revision, never scan
-    // the document on an unchanged scroll frame.
+    return [...this.visibleObjectIds(viewportTop, viewportHeight, overscanPx).keys()]
+  }
+
+  /** Direct objects to mount; resident auto-fit objects do not need a known size. */
+  visibleObjectIds(viewportTop: number, viewportHeight: number, overscanPx: number): Map<string, Set<string>> {
     if (this.surfaceRevision !== (this.doc.placement?.surface?.revision ?? 0)) {
       this.rebuild(this.rootIds)
     }
@@ -79,29 +89,38 @@ export class AbsolutePlacementVisibilityIndex {
     const rangeTop = top - overscan
     const rangeBottom = top + height + overscan
 
-    return this.layouts
-      .filter(layout => intersects(layout.bands, rangeTop, rangeBottom))
-      .map(layout => layout.layoutId)
+    const result = new Map<string, Set<string>>()
+    for (const layout of this.layouts) {
+      const ids = new Set(layout.residentIds)
+      queryBands(layout.tree, rangeTop, rangeBottom, ids)
+      if (ids.size) result.set(layout.layoutId, ids)
+    }
+    return result
   }
 
-  private buildLayoutBands(layoutId: string): readonly VerticalBand[] {
-    const bands = this.doc.model
-      .getChildrenIds(layoutId)
-      .map(id => this.resolveBlockBand(id))
-      .filter((band): band is VerticalBand => band !== null)
-      .sort((left, right) => left.top - right.top || left.bottom - right.bottom)
-    if (!bands.length) return []
-
-    const merged: VerticalBand[] = []
-    for (const band of bands) {
-      const previous = merged[merged.length - 1]
-      if (!previous || band.top > previous.bottom) {
-        merged.push({...band})
-        continue
-      }
-      previous.bottom = Math.max(previous.bottom, band.bottom)
+  private buildLayoutBands(layoutId: string): LayoutBands {
+    const bands: ObjectBand[] = []
+    const residentIds: string[] = []
+    let bottom = 0
+    for (const id of this.doc.model.getChildrenIds(layoutId)) {
+      const band = this.resolveBlockBand(id)
+      if (!band) continue
+      bottom = Math.max(bottom, band.bottom)
+      if (this.hasAutoFit(id)) residentIds.push(id)
+      else bands.push({...band, id})
     }
-    return merged
+    bands.sort((left, right) => left.top - right.top || left.bottom - right.bottom)
+    return {layoutId, tree: buildTree(bands, 0, bands.length), residentIds, bottom}
+  }
+
+  private hasAutoFit(id: string): boolean {
+    if (this.doc.revisions?.getBlockPresentation(id).hidden) return false
+    const flavour = this.doc.model.getFlavour(id)
+    const props = this.doc.model.getProps(id) ?? {}
+    const format = flavour ? this.doc.schemas?.get(flavour, false)?.metadata.objectFormat : undefined
+    // Validate the supported mode independently of an existing measured size.
+    if (format && resolveTextFit({...props, textFit: 1}, format)) return true
+    return flavour === 'object-group' && this.doc.model.getChildrenIds(id).some(childId => this.hasAutoFit(childId))
   }
 
   private resolveBlockBand(blockId: string): VerticalBand | null {
@@ -112,13 +131,15 @@ export class AbsolutePlacementVisibilityIndex {
     const y = position.y
 
     const flavour = this.doc.model.getFlavour(blockId)
+    const format = flavour ? this.doc.schemas?.get(flavour, false)?.metadata.objectFormat : undefined
+    const fitted = format ? resolveTextFit(props, format) : null
     const dimensions = flavour
       ? this.doc.objectSizing?.resolve(flavour, props)
       : null
     const explicitHeight =
       positiveNumber(dimensions?.height) ??
       positiveNumber(props['height'])
-    const estimatedHeight = positiveNumber(estimateModelBlockHeight(
+    const estimatedHeight = fitted?.axis === 'height' ? null : positiveNumber(estimateModelBlockHeight(
       this.doc,
       blockId,
       {
@@ -126,44 +147,41 @@ export class AbsolutePlacementVisibilityIndex {
         defaultHeight: DEFAULT_ABSOLUTE_HEIGHT,
       },
     ))
-    const height = Math.max(
+    const height = fitted?.axis === 'height' ? fitted.size : Math.max(
       1,
       explicitHeight ?? 0,
       this.doc.placement?.surface?.measuredHeight(blockId) ?? estimatedHeight ?? DEFAULT_ABSOLUTE_HEIGHT,
     )
 
-    const width =
+    const width = fitted?.axis === 'width' ? fitted.size :
       positiveNumber(this.doc.placement?.surface?.measuredWidth(blockId)) ??
       positiveNumber(dimensions?.width) ??
       positiveNumber(props['width'])
     const rotation = finiteNumber(props['rotation'])
-    if (width === null || rotation % 180 === 0) {
-      return {top: y, bottom: y + height}
+    const band = (width: number | null, height: number): VerticalBand => {
+      if (width === null || rotation % 180 === 0) return {top: y, bottom: y + height}
+      const radians = rotation * Math.PI / 180
+      const rotatedHeight = Math.abs(height * Math.cos(radians)) + Math.abs(width * Math.sin(radians))
+      const overflow = Math.max(0, rotatedHeight - height) / 2
+      return {top: y - overflow, bottom: y + height + overflow}
     }
-
-    const radians = rotation * Math.PI / 180
-    const rotatedHeight =
-      Math.abs(height * Math.cos(radians)) +
-      Math.abs(width * Math.sin(radians))
-    const visualOverflow = Math.max(0, rotatedHeight - height) / 2
-    return {
-      top: y - visualOverflow,
-      bottom: y + height + visualOverflow,
-    }
+    return band(width, height)
   }
 }
 
-function intersects(
-  bands: readonly VerticalBand[],
-  rangeTop: number,
-  rangeBottom: number,
-): boolean {
-  let low = 0
-  let high = bands.length
-  while (low < high) {
-    const middle = low + Math.floor((high - low) / 2)
-    if (bands[middle].bottom < rangeTop) low = middle + 1
-    else high = middle
-  }
-  return low < bands.length && bands[low].top <= rangeBottom
+function buildTree(bands: readonly ObjectBand[], start: number, end: number): BandTree | null {
+  if (start >= end) return null
+  const middle = start + Math.floor((end - start) / 2)
+  const left = buildTree(bands, start, middle)
+  const right = buildTree(bands, middle + 1, end)
+  const band = bands[middle]
+  return {band, left, right, maxBottom: Math.max(band.bottom, left?.maxBottom ?? -Infinity, right?.maxBottom ?? -Infinity)}
+}
+
+function queryBands(tree: BandTree | null, top: number, bottom: number, ids: Set<string>): void {
+  if (!tree || tree.maxBottom < top) return
+  queryBands(tree.left, top, bottom, ids)
+  if (tree.band.top > bottom) return
+  if (tree.band.bottom >= top) ids.add(tree.band.id)
+  queryBands(tree.right, top, bottom, ids)
 }

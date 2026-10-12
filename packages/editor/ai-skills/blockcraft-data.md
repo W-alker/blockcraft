@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when working with the CRDT data layer.
 >
-> Last updated: 2026-10-09
+> Last updated: 2026-10-12
 
 ## Architecture Overview
 
@@ -351,9 +351,13 @@ therefore treats a missing ComponentRef as a valid view state:
   and preserve the visible anchor across local, remote and undo/redo transactions;
   nested-only structure changes leave the root window index untouched.
 
-Nested children of a mounted or retained root child remain a complete subtree
-in the current implementation. All local and remote mutations still use the
-same Yjs transaction and observer path.
+根级 `placement-layout` 的直属对象采用稀疏视图；其他容器及对象内部保持完整子树。
+DocCRUD 对根与浮动层的结构变更只同步模型顺序，不为离屏对象创建组件。
+DocVM 的包内 `_mountPlacementChildren` / `_reconcileSparsePlacementChildren` 复用稀疏
+children renderer；跨父级移动在全部 delta 后交接所有权，同父级 IME 重排延迟到组合结束。
+固定对象离屏即释放组件，自适应对象（包括其所属组合）常驻。模型数据始终完整，
+本地、远端与撤销继续走相同事务/观察路径；返回组件的旧式插入 API 仍同步物化返回值。
+宿主需要离屏 DOM 时使用 `ensureViewMounted` 或视图租约，不直接调用这些 VM 内部方法。
 
 ## Persistent Block Readonly
 

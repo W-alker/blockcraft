@@ -48,6 +48,9 @@
       parseFloat(getComputedStyle(seed.doc.getBlockById(snapshot.id).hostElement
         .querySelector('[data-bc-object-surface]')).height)]))
     const prototype = Object.getPrototypeOf(seed.doc.getBlockById(calibration[0].id).autoFit)
+    const fitTimingScope = typeof prototype.capture === 'function'
+      ? 'DOM size reads only; shared batch setup/restore/model writes are included in CDP scriptMs'
+      : 'Complete per-object measure/restore/model callback; included downstream work overlaps estimateMs'
     if (!prototype.__stressWrapped) {
       const original = prototype.fit
       prototype.fit = function (...args) {
@@ -91,6 +94,9 @@
       if (active && Object.hasOwn(updates, 'textFit')) active.fitWrites++
       return originalUpdate.call(this, block, updates, ...rest)
     }
+    fixture.doc.onPropsUpdate$.subscribe(event => {
+      if (active && event.transactions.some(({changes}) => changes.has('textFit'))) active.fitTransactions++
+    })
     const originalEstimate = fixture.doc.virtualization.resolveModelHeightEstimate
     fixture.doc.virtualization.resolveModelHeightEstimate = function (...args) {
       const start = performance.now()
@@ -103,13 +109,13 @@
       })
       observer.observe({type: 'longtask'})
     }
-    return {heights, snapshotBuildMs, objectCount: objects.length, rootCount: roots.length}
+    return {heights, snapshotBuildMs, objectCount: objects.length, rootCount: roots.length, fitTimingScope}
   }
 
   function begin(name) {
     if (active) throw new Error('Phase already active')
     active = {name, started: performance.now(), frameMs: [], fitMs: [], fitCalls: 0,
-      detachedFitCalls: 0, fitWrites: 0, longTasks: [], mountedMax: 0, keyMs: [], operationMs: [], estimateMs: []}
+      detachedFitCalls: 0, fitWrites: 0, fitTransactions: 0, longTasks: [], mountedMax: 0, keyMs: [], operationMs: [], estimateMs: []}
     let previous = active.started, index = 0
     const tick = () => {
       if (!active) return

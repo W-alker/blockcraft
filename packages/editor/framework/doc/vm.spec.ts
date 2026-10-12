@@ -108,6 +108,7 @@ describe('DocVM sparse root mounts', () => {
     ].forEach(value => yBlocks.set(value.id, native2YBlock(value)))
 
     const schemas = new SchemaManager([
+      schema('placement-layout', BlockNodeType.block, TestVMContainerBlock),
       schema('test-root', BlockNodeType.root, TestVMRootBlock),
       schema('test-container', BlockNodeType.block, TestVMContainerBlock),
       schema('test-leaf', BlockNodeType.void, TestVMLeafBlock),
@@ -120,6 +121,7 @@ describe('DocVM sparse root mounts', () => {
         getYBlock: (id: string) => yBlocks.get(id),
       },
       model: {
+        getFlavour: (id: string) => yBlocks.get(id)?.get('flavour'),
         exists: (id: string) => {
           const visited = new Set<string>()
           const pending = ['root']
@@ -172,6 +174,71 @@ describe('DocVM sparse root mounts', () => {
   afterEach(() => {
     vm.clear()
     TestBed.inject(ApplicationRef).tick()
+  })
+
+  it('projects placement children individually while keeping object subtrees atomic', () => {
+    yBlocks.get('a')!.set('flavour', 'placement-layout')
+    vm.createRootOnlyByYBlock(yBlocks.get('root')!, {sparse: true})
+    vm.mountRootChild('a')
+    expect(vm.has('a1')).toBeFalse()
+    vm._mountPlacementChildren('a', new Set(['a1']))
+    expect(vm.isMounted('a1')).toBeTrue()
+    expect(vm.get('a')!.instance.childrenRenderRef!.ids).toEqual(['a1'])
+    vm._mountPlacementChildren('a', new Set())
+    vm._releaseUnrenderedPlacementChildren()
+    expect(vm.has('a1')).toBeFalse()
+    expect(vm.isMounted('a')).toBeTrue()
+    vm._mountPlacementChildren('a', new Set(['a1']))
+    expect(vm.isMounted('a1')).toBeTrue()
+  })
+
+  it('preserves a placement child already adopted by a dense destination', () => {
+    yBlocks.get('a')!.set('flavour', 'placement-layout')
+    const roots = yBlocks.get('root')!.get('children') as Y.Array<string>
+    roots.insert(roots.length, ['target'])
+    vm.createRootOnlyByYBlock(yBlocks.get('root')!, {sparse: true})
+    vm.mountRootChild('a')
+    vm.mountRootChild('target')
+    vm._mountPlacementChildren('a', new Set(['a1']))
+    const child = vm.get('a1')!
+    ;(yBlocks.get('a')!.get('children') as Y.Array<string>).delete(0, 1)
+    ;(yBlocks.get('target')!.get('children') as Y.Array<string>).insert(0, ['a1'])
+    vm.insert('target', 0, [child])
+    vm._reconcileSparsePlacementChildren('a', [])
+    vm._releaseUnrenderedPlacementChildren()
+    expect(vm.get('a1')).toBe(child)
+    expect(child.instance.parentId).toBe('target')
+    expect(vm.isMounted('a1')).toBeTrue()
+    expect(child.instance.hostElement.parentElement).toBe(vm.get('target')!.instance.childrenRenderRef!.containerElement)
+  })
+
+  it('defers composing placement order and releases materialized but unmounted children', () => {
+    yBlocks.get('a')!.set('flavour', 'placement-layout')
+    const roots = yBlocks.get('root')!.get('children') as Y.Array<string>
+    roots.delete(1, 1)
+    const children = yBlocks.get('a')!.get('children') as Y.Array<string>
+    children.insert(1, ['b'])
+    vm.createRootOnlyByYBlock(yBlocks.get('root')!, {sparse: true})
+    vm.mountRootChild('a')
+    vm._mountPlacementChildren('a', new Set(['a1', 'b']))
+    const render = vm.get('a')!.instance.childrenRenderRef!
+    const host = vm.get('a1')!.instance.hostElement
+    doc.inputManger = {compositionSession: {isActive: true, activeBlockId: 'a1'}}
+    doc.event.status.isComposing = true
+    doc.model.getPath = () => ['root', 'a', 'a1']
+    children.delete(0, 2)
+    children.insert(0, ['b', 'a1'])
+    vm._reconcileSparsePlacementChildren('a', ['b', 'a1'])
+    expect(render.containerElement.firstElementChild).toBe(host)
+    expect(vm.hasDeferredSparseRootOrder).toBeTrue()
+    doc.event.status.isComposing = false
+    vm._flushDeferredSparseRootOrder()
+    expect(render.ids).toEqual(['b', 'a1'])
+    expect(render.containerElement.lastElementChild).toBe(host)
+    vm._mountPlacementChildren('a', new Set())
+    vm.destroy('a')
+    expect(vm.has('a1')).toBeFalse()
+    expect(vm.has('b')).toBeFalse()
   })
 
   it('creates only the root while preserving its model child ids', () => {

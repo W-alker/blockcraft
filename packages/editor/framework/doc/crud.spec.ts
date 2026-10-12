@@ -167,6 +167,7 @@ const createDocHarness = (realModel = false) => {
 
   const vm = {
     usesSparseRoot: false,
+    _isSparsePlacementParent: () => false,
     applySparseRootChildrenDelta: jasmine.createSpy('applySparseRootChildrenDelta'),
     _reconcileSparseRootChildren: jasmine.createSpy('_reconcileSparseRootChildren')
       .and.callFake((ids: readonly string[]) => {
@@ -753,6 +754,48 @@ describe('DocCRUD', () => {
     expect(doc.vm.applySparseRootChildrenDelta).toHaveBeenCalled()
     expect(rootRef.instance.childrenIds).toEqual(['c'])
     expect(store.has('c')).toBeFalse()
+  })
+
+  it('keeps remote placement insertions model-only while synchronizing the sparse parent', () => {
+    const {crud, doc, yDoc, store} = createDocHarness(true)
+    const container = RenderUnitBlockSchema.createSnapshot()
+    crud.insertBlocks('root', 0, [container])
+    doc.vm.usesSparseRoot = true
+    ;(doc.vm as any)._isSparsePlacementParent = (id: string) => id === container.id
+    const reconcile = jasmine.createSpy('reconcilePlacement').and.callFake((id: string, ids: string[]) => {
+      store.get(id)!.instance._childrenIds = [...ids]
+    })
+    ;(doc.vm as any)._reconcileSparsePlacementChildren = reconcile
+    applyRemoteUpdate(yDoc, blocks => {
+      blocks.set('remote-placement-child', native2YBlock({
+        ...createEditableSnapshot('remote-placement-child'), children: [],
+      } as unknown as NativeBlockModel))
+      ;(blocks.get(container.id)!.get('children') as Y.Array<string>).insert(0, ['remote-placement-child'])
+    })
+    expect(reconcile).toHaveBeenCalledWith(container.id, ['remote-placement-child'])
+    expect(doc.model.exists('remote-placement-child')).toBeTrue()
+    expect(store.has('remote-placement-child')).toBeFalse()
+  })
+
+  it('synchronizes nested placement insertion before returning the requested component', () => {
+    const {crud, doc, store} = createDocHarness(true)
+    const container = RenderUnitBlockSchema.createSnapshot()
+    crud.insertBlocks('root', 0, [container])
+    doc.vm.usesSparseRoot = true
+    ;(doc.vm as any)._isSparsePlacementParent = (id: string) => id === container.id
+    ;(doc.vm as any)._retainPlacementChild = () => undefined
+    ;(doc.vm as any)._reconcileSparsePlacementChildren = (id: string, ids: string[]) => {
+      store.get(id)!.instance._childrenIds = [...ids]
+    }
+    ;(doc.vm as any)._ensurePlacementChildComponent = (parentId: string, id: string) => {
+      expect(doc.model.exists(id)).toBeTrue()
+      expect(doc.model.getChildrenIds(parentId)).toContain(id)
+      return createBlockRef(store, doc.yBlockMap.get(id)!, parentId)
+    }
+    crud.transact(() => {
+      const result = crud.insertBlocks(container.id, 0, [createEditableSnapshot('local-placement-child')])
+      expect(result.map(block => block.id)).toEqual(['local-placement-child'])
+    })
   })
 
   it('preserves a composing sparse-root move only while native composition owns the DOM', () => {

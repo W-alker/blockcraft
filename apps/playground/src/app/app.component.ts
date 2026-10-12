@@ -620,6 +620,12 @@ const ACTION_SECTIONS: DebugSection[] = [
                 routerLink="/template">
                 模板装饰 →
               </button>
+              <button
+                class="main-tab"
+                type="button"
+                routerLink="/tests/floating-text">
+                浮动文字测试 →
+              </button>
             </div>
             <span class="editor-header__hint">
               {{ activeMainTab === 'editor' ? 'Selection 实时刷新' : snapshotViewerSourceLabel }}

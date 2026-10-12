@@ -130,6 +130,19 @@ describe("BlockGapCreatorPlugin", () => {
     }
   }
 
+  it("does not read block children when clicking editable text", () => {
+    const h = createHarness()
+    const paragraph = h.doc.getBlockById('last')
+    Object.defineProperty(paragraph, 'childrenIds', {
+      get: () => { throw new Error('editable block has no children') },
+    })
+    const event = new MouseEvent('mousedown', {clientX: 160, clientY: 320})
+    Object.defineProperty(event, 'target', {value: paragraph.hostElement})
+    expect(() => (h.plugin as any)._shouldResolveOnMouseDown(event)).not.toThrow()
+    expect((h.plugin as any)._shouldResolveOnMouseDown(event)).toBeFalse()
+    expect(h.selection.setGapCursor).not.toHaveBeenCalled()
+  })
+
   it("resolves root side gutter by row before falling back to the last child", () => {
     const {plugin, voidBlock, selection} = createHarness()
 

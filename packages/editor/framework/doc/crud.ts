@@ -633,9 +633,10 @@ export class DocCRUD {
         // @ts-expect-error internal synchronized view snapshot
         const previousIds: readonly string[] = parent.instance._childrenIds
         const desiredIds = this.doc.model.getChildrenIds(parentId)
-        const sparseRoot = this.vm.usesSparseRoot && parentId === this.doc.rootId
+        const sparseParent = (this.vm.usesSparseRoot && parentId === this.doc.rootId) ||
+          this.vm._isSparsePlacementParent(parentId)
         if (this._sameIds(previousIds, desiredIds) &&
-          (sparseRoot || this._sameIds(parent.instance.childrenRenderRef.ids, desiredIds))) continue
+          (sparseParent || this._sameIds(parent.instance.childrenRenderRef.ids, desiredIds))) continue
         delay_childrenEvent_handlers.push({parent, deltas: [], previousIds, desiredIds})
       }
     }
@@ -740,6 +741,11 @@ export class DocCRUD {
         continue
       }
 
+      if (this.vm._isSparsePlacementParent(parentId)) {
+        this.vm._reconcileSparsePlacementChildren(parentId, desiredIds)
+        continue
+      }
+
       const current = renderRef.splice(0, renderRef.length)
       current.forEach(component => {
         const host = component.instance.hostElement
@@ -778,6 +784,10 @@ export class DocCRUD {
       if (parentId === this.doc.rootId) {
         if (this.vm.isDeferredSparseRootChild?.(id)) return
         this.vm.retainRootChild(id)
+        return
+      }
+      if (this.vm._isSparsePlacementParent(parentId)) {
+        this.vm._retainPlacementChild(parentId, id)
         return
       }
       if (this.vm.get(parentId)) return
@@ -822,8 +832,9 @@ export class DocCRUD {
     })
     const recoveryParentIds = new Set<string>()
     updates.forEach(({parent, deltas, previousIds, desiredIds}) => {
-      const isSparseRoot = this.vm.usesSparseRoot && parent.instance.id === this.doc.rootId
-      const viewMatchesPrevious = isSparseRoot ||
+      const isSparseParent = (this.vm.usesSparseRoot && parent.instance.id === this.doc.rootId) ||
+        this.vm._isSparsePlacementParent(parent.instance.id)
+      const viewMatchesPrevious = isSparseParent ||
         this._sameIds(parent.instance.childrenRenderRef?.ids ?? [], previousIds)
       // A repaired/missing edge or an already-materialized view cannot consume
       // this raw delta. Collect all such parents before any view adopts children.
@@ -839,6 +850,13 @@ export class DocCRUD {
       const isSparseRootEvent = this.vm.usesSparseRoot && bm.instance.id === this.doc.rootId
 
       if (recoveryParentIds.has(bm.instance.id)) {
+        bm.instance.onChildrenChange?.(deltas)
+        emitEvents.transactions.push({block: bm.instance})
+        return
+      }
+
+      if (this.vm._isSparsePlacementParent(bm.instance.id)) {
+        this.vm._reconcileSparsePlacementChildren(bm.instance.id, desiredIds)
         bm.instance.onChildrenChange?.(deltas)
         emitEvents.transactions.push({block: bm.instance})
         return
@@ -1109,16 +1127,25 @@ export class DocCRUD {
     }
     const insertedIds = this.insertBlockSnapshots(parentId, index, snapshots)
 
-    if (this.vm.usesSparseRoot && parentId === this.doc.rootId) {
-      if (insertedIds.some(id => !this.doc.model.exists(id))) {
-        this.doc.model.synchronizeParentBeforeView(parentId)
-      }
-      insertedIds.forEach(id => this.vm.ensureRootChildComponent(id))
-    }
+    this._materializeInsertedSparseChildren(parentId, insertedIds)
 
     return insertedIds
       .map(id => this.vm.get(id)?.instance)
       .filter((block): block is BlockCraft.BlockComponent => !!block)
+  }
+
+  private _materializeInsertedSparseChildren(parentId: string, insertedIds: readonly string[]): void {
+    if (!this.vm.usesSparseRoot) return
+    const isRoot = parentId === this.doc.rootId
+    if (!isRoot && !this.vm._isSparsePlacementParent(parentId)) return
+    if (insertedIds.some(id => !this.doc.model.exists(id))) {
+      this.doc.model.synchronizeParentBeforeView(parentId)
+    }
+    if (isRoot) insertedIds.forEach(id => this.vm.ensureRootChildComponent(id))
+    else {
+      this.vm._reconcileSparsePlacementChildren(parentId, this.doc.model.getChildrenIds(parentId))
+      insertedIds.forEach(id => this.vm._ensurePlacementChildComponent(parentId, id))
+    }
   }
 
   insertBlocksBefore(block: string | BlockCraft.BlockComponent, snapshots: IBlockSnapshot[]) {
@@ -1344,12 +1371,7 @@ export class DocCRUD {
       this.doc.virtualization?.ensureViewMounted([parentId])
     }
 
-    if (this.vm.usesSparseRoot && parentId === this.doc.rootId) {
-      if (insertedIds.some(id => !this.doc.model.exists(id))) {
-        this.doc.model.synchronizeParentBeforeView(parentId)
-      }
-      insertedIds.forEach(id => this.vm.ensureRootChildComponent(id))
-    }
+    if (parentId) this._materializeInsertedSparseChildren(parentId, insertedIds)
 
     return insertedIds
       .map(id => this.vm.get(id)?.instance)

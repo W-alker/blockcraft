@@ -3238,6 +3238,16 @@ describe('SelectionManager projection mount coordination', () => {
     expect(manager.value?.firstBlock.id).toBe('virtual-p1');
   });
 
+  it('requests only boundary neighbours when the parent is a sparse placement layer', () => {
+    const {manager, doc} = createProjectionMountManager();
+    (doc.model as any).getFlavour = () => 'placement-layout';
+    const ids = (manager as any)._projectionMountTargetIds({
+      start: {blockId: 'virtual-root', type: 'boundary', index: 2},
+      end: {blockId: 'virtual-root', type: 'boundary', index: 3},
+    });
+    expect(ids).toEqual(['virtual-p1', 'virtual-callout', 'virtual-p2']);
+  });
+
   it('projects a full-document boundary range identically on the first and second replay', () => {
     const {manager, mountEditable, mountedTextNodes, rootHost} = createProjectionMountManager();
     const ensureViewMounted = jasmine.createSpy('ensureViewMounted').and.callFake((blockIds: readonly string[]) => {

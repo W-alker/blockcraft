@@ -672,6 +672,8 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
         this.pins.unpin('projection')
         this.selectionSnapshot = nextSelectionSnapshot
         this.syncSelectionPins()
+        // Different objects in one placement layer share the same root pin.
+        if (this.absolutePlacementRootIds.size) this.schedule()
         // A programmatic caret move within the same root leaves the flattened
         // pin set unchanged. It must still resume any mounted-root geometry
         // revalidation that pauseIdlePrefetch just cancelled.
@@ -818,6 +820,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     const indices = this.resolveRootIndices(blockIds)
     this.pins.pin('projection', indices)
     this.mountRootIndices(indices, signal)
+    if (!signal.aborted) this.mountRequestedPlacementObjects(blockIds)
   }
 
   /**
@@ -828,6 +831,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
   ensureViewMounted(blockIds: readonly string[]): void {
     if (!this.enabled || this.disposed) return
     this.mountRootIndices(this.resolveRootIndices(blockIds))
+    this.mountRequestedPlacementObjects(blockIds)
   }
 
   /**
@@ -899,6 +903,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
       this.pins.pin(BLOCK_NAVIGATION_PIN, [rootIndex])
       this.centerEstimatedRootIndex(rootIndex)
       this.mountRootIndices([rootIndex])
+      this.mountRequestedPlacementObjects([task.blockId])
 
       const correction = this.readBlockCenterCorrection(task.blockId)
       if (correction !== null) {
@@ -943,6 +948,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
       if (this.disposed) return
       this.blockViewLeases.delete(leaseId)
       this.syncBlockViewLeases()
+      if (this.absolutePlacementRootIds.size) this.schedule()
       this.retainUnpinnedViewsBeforeInit()
     }
   }
@@ -2518,12 +2524,18 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
         ? configuredPlacementOriginY
         : 0
     )
-    const visibleAbsoluteLayouts = this.absolutePlacementVisibility
-      .visibleLayoutIds(
-        absoluteViewportTop,
-        viewportHeight,
-        viewportHeight * ABSOLUTE_PLACEMENT_OVERSCAN_VIEWPORTS,
-      )
+    const absoluteTargets = this.absolutePlacementVisibility.visibleObjectIds(
+      absoluteViewportTop, viewportHeight,
+      viewportHeight * ABSOLUTE_PLACEMENT_OVERSCAN_VIEWPORTS,
+    )
+    this.appendPlacementTargets(absoluteTargets, this.projectionBlockIds)
+    this.appendSelectionPlacementTargets(absoluteTargets)
+    if (this.blockNavigationTask) this.appendPlacementTargets(absoluteTargets, [this.blockNavigationTask.blockId])
+    for (const ids of this.blockViewLeases.values()) this.appendPlacementTargets(absoluteTargets, ids)
+    if (this.fullMountFallback || this.fullDocumentViewLeaseCount) {
+      this.appendPlacementTargets(absoluteTargets, [...this.absolutePlacementRootIds])
+    }
+    const visibleAbsoluteLayouts = [...absoluteTargets.keys()]
     const mountIndices = new Set(this.pins.snapshot())
     visibleAbsoluteLayouts.forEach(id => {
       const index = this.indexById.get(id)
@@ -2542,16 +2554,23 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
         )
     const target = this.expandSegments(segments)
     const mountedRootIds = this.doc.vm.getMountedRootChildIds()
+    // A layer can stay in the same root window while its individual objects change.
+    let placementChanged = false
+    for (const id of mountedRootIds) {
+      if (!this.absolutePlacementRootIds.has(id)) continue
+      placementChanged = this.doc.vm._mountPlacementChildren(id, absoluteTargets.get(id) ?? new Set()) || placementChanged
+    }
     // Range lookup remains on every scroll frame. Once it resolves to the same
     // projection window and no non-scroll owner invalidated reconciliation,
     // avoid repeating component, observer and spacer DOM synchronization.
-    if (this.canSkipStableDomReconciliation(
+    if (!placementChanged && this.canSkipStableDomReconciliation(
       invalidationRevision,
       segments,
       visibleAbsoluteLayouts,
       mountedRootIds,
       settledSparseRoot,
     )) {
+      this.doc.vm._releaseUnrenderedPlacementChildren()
       this.armIdlePrefetch()
       return
     }
@@ -2561,8 +2580,14 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
       if (!target.has(id)) this.retainRootView(id)
     })
     target.forEach((id) => {
-      if (!mounted.has(id)) this.mountRootView(id)
+      if (!mounted.has(id)) {
+        this.mountRootView(id)
+        if (this.absolutePlacementRootIds.has(id)) {
+          placementChanged = this.doc.vm._mountPlacementChildren(id, absoluteTargets.get(id) ?? new Set()) || placementChanged
+        }
+      }
     })
+    this.doc.vm._releaseUnrenderedPlacementChildren()
     this.syncRetainedRootViews()
     if (!this.fullMountFallback) {
       if (this.layoutProjection === this.continuousLayoutProjection) {
@@ -2583,7 +2608,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
       ),
     )
     this.restorePendingStructureAnchor(structureRestore)
-    this.publishViewChange()
+    this.publishViewChange(placementChanged)
     this.rememberReconciledWindow(
       invalidationRevision,
       segments,
@@ -3024,9 +3049,9 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     this.publishViewChange()
   }
 
-  private publishViewChange(): void {
+  private publishViewChange(force = false): void {
     const mountedRootIds = this.doc.vm.getMountedRootChildIds()
-    if (arraysEqual(this.lastPublishedMountedIds, mountedRootIds)) return
+    if (!force && arraysEqual(this.lastPublishedMountedIds, mountedRootIds)) return
     this.lastPublishedMountedIds = mountedRootIds
     this.viewChange$.next({mountedRootIds: [...mountedRootIds]})
   }
@@ -3238,6 +3263,56 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     this.schedule()
   }
 
+  private appendSelectionPlacementTargets(targets: Map<string, Set<string>>): void {
+    const selection = this.selectionSnapshot
+    if (!selection) return
+    const {anchor, head} = selection
+    if (anchor.type === 'boundary' && head.type === 'boundary' && anchor.blockId === head.blockId &&
+      this.absolutePlacementRootIds.has(anchor.blockId)) {
+      const children = this.doc.model.getChildrenIds(anchor.blockId)
+      const a = clampBoundaryIndex(anchor.index, children.length)
+      const h = clampBoundaryIndex(head.index, children.length)
+      const start = Math.min(a, h)
+      const end = Math.max(a, h)
+      // Boundary DOM projection also needs the adjacent hosts at both endpoints.
+      this.appendPlacementTargets(targets, children.slice(Math.max(0, start - 1), Math.min(children.length, end + 1)))
+      return
+    }
+    this.appendPlacementTargets(targets, [anchor.blockId, head.blockId].filter(id => id !== this.doc.rootId))
+  }
+
+  private appendPlacementTargets(targets: Map<string, Set<string>>, blockIds: readonly string[]): void {
+    for (const id of blockIds) {
+      let path: readonly string[] | null
+      try {
+        path = this.doc.model.getPath(id)
+      } catch {
+        // Selection/navigation/leases may outlive deletion until transaction cleanup.
+        continue
+      }
+      if (!path || path[0] !== this.doc.rootId || !this.absolutePlacementRootIds.has(path[1])) continue
+      const layoutId = path[1]
+      let ids = targets.get(layoutId)
+      if (!ids) targets.set(layoutId, ids = new Set())
+      if (path.length === 2) {
+        for (const childId of this.doc.model.getChildrenIds(layoutId)) ids.add(childId)
+      } else if (path[2]) ids.add(path[2])
+    }
+  }
+
+  private mountRequestedPlacementObjects(blockIds: readonly string[]): void {
+    const targets = new Map<string, Set<string>>()
+    this.appendPlacementTargets(targets, blockIds)
+    let changed = false
+    for (const [layoutId, ids] of targets) {
+      changed = this.doc.vm._mountPlacementChildren(layoutId, ids, true) || changed
+    }
+    if (changed) {
+      this.publishViewChange(true)
+      this.schedule()
+    }
+  }
+
   private syncBlockViewLeases(): void {
     const indices = new Set<number>()
     for (const blockIds of this.blockViewLeases.values()) {
@@ -3258,6 +3333,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     }
     this.pins.pin(BLOCK_VIEW_LEASE_PIN, ordered)
     this.mountRootIndices(ordered)
+    for (const ids of this.blockViewLeases.values()) this.mountRequestedPlacementObjects(ids)
   }
 
   private syncBlockNavigationPin(): void {
@@ -3325,6 +3401,7 @@ export class RootVirtualizationManager implements SelectionProjectionMountAdapte
     const indices = this.blockIds.map((_, index) => index)
     this.pins.pin('full-document-view', indices)
     this.mountRootIndices(indices)
+    this.mountRequestedPlacementObjects([...this.absolutePlacementRootIds])
   }
 
   private mountRootView(id: string): void {

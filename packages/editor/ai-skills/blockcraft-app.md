@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-10-09
+> Last updated: 2026-10-12
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -1190,10 +1190,9 @@ is a trusted-client invariant, not server-side authorization.
 
 ### Root Virtualization
 
-`virtualization.enabled` virtualizes direct root children only. Each root child
-and its nested subtree is one atomic render unit, so tables, columns and other
-container internals keep their existing selection/input semantics. Yjs and
-`BlockModelGraph` remain complete; only Angular components and DOM are sparse.
+`virtualization.enabled` 按根块虚拟化普通文档流，表格、分栏等容器的内部子树保持完整。
+根级 `placement-layout` 是例外：固定浮动对象逐个按坐标挂载，自适应文本对象常驻，
+含自适应成员的组合整体常驻。Yjs / `BlockModelGraph` 始终完整，只有组件与 DOM 稀疏。
 
 The bundled reference `<block-craft-editor>` exposes the initialization-only
 `virtualizationEnabled` input (default `true`) and `paginationSparseView`
@@ -1249,10 +1248,12 @@ remain disabled/false respectively.
   one transaction before the viewport mounts any root-child views.
 - A local selection leases only the direct-root units containing its anchor
   and head. The selected middle remains model-only and virtualized while
-  scrolling. Nested selections still lease only their owning root subtree.
+  scrolling. Nested selections still lease their owning atomic subtree; floating
+  layer boundary selections keep the selected objects and endpoint neighbours.
 - A temporary interaction that must keep specific block views alive can call
   `doc.virtualization.acquireBlockViewLease(blockIds)`. It synchronously mounts
-  only the containing root units, follows stable IDs across structure changes,
+  the containing atomic units (individual objects within a placement layer),
+  follows stable IDs across structure changes,
   and returns an idempotent release function. Always release it from the
   interaction's common teardown; internal block dragging does this for its
   sources before clearing Selection.
@@ -1264,20 +1265,16 @@ remain disabled/false respectively.
   for print/PDF.
 - A schema with `metadata.virtualization.viewRetention: 'keep-alive'` acquires a long-lived
   lease only after its view first materializes. Nested blocks pin their
-  containing direct-root render unit. Built-in iframe/media schemas opt in so
+  containing atomic render unit, including individual placement objects.
+  Built-in iframe/media schemas opt in so
   scrolling does not reset browsing context or playback; deletion and document
   disposal release the lease. These leases share one aggregated pin source and
   add no schema lookup, callback, or layout read to ordinary scroll frames.
-- The hidden zero-height root `placement-layout` is projected separately from
-  normal flow. A model-only index compares each child's root-relative
-  `position.y` plus estimated height with the root-relative viewport and one
-  viewport of pre-rendering. A hit mounts the layout root unit; no hit allows
-  it to detach unless Selection or an interaction lease owns it. The index
-  reuses `wr/ar` media sizing, includes rotated fixed-size shape bounds and
-  performs no child DOM reads on scroll.
-- `placement-layout` remains one atomic root render unit in this phase. One
-  visible absolute child therefore materializes all absolute siblings, while
-  none of those descendants acquires a duplicate per-object lease.
+- 浮动层使用根内容坐标下的区间树，复用 `wr/ar`、派生 `textFit` 和旋转包围盒。
+  上下各预挂载一个视口；常驻对象不依赖旧尺寸来决定是否创建视图。滚动不读取对象 DOM。
+- 固定浮动对象离屏释放组件；`retainedViewLimit` 继续控制根组件缓存，不为浮动层
+  另建缓存。显式请求浮动层视图或完整文档视图租约时挂载全部对象。需访问离屏对象 DOM
+  的宿主应按对象 ID 申请租约；读取数据用模型 API，不依赖兄弟对象隐式创建。
 
 Hosts can override built-in defaults when memory is more important than DOM
 state continuity:

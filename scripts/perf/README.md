@@ -33,5 +33,6 @@ node scripts/perf/text-fit-benchmark.mjs --prepared=/准备输出目录 --rounds
 - 每轮创建独立 Doc / Y.Doc / 页面，显式启用根虚拟化、关闭预取，固定/自适应交替执行；默认每组一轮预热、三轮有效样本，串行运行浏览器。可用 `--browsers=firefox,webkit`、`--cases=mixed-5000,nested-100` 定向检查。
 - 记录 RAF 间隔、长任务、自适应调用/写入/同步耗时、模型估高次数/耗时、挂载数量；Chromium 另外用 CDP 记录布局/样式耗时和次数。Firefox/WebKit 不支持的长任务指标为 `null`，不能当作零。键入延迟为 `beforeinput` 到第二帧，不是 INP。
 - 原始 JSON 保留逐帧、逐次测量数据、环境、浏览器版本、源码/构建/脚本 hash 和所有失败。阶段帧间隔的 P95 只描述本次负载，不是线上 P95；少量重复样本不能推断总体分布。
+- `fitWrites` 是对象缓存更新数，`fitTransactions` 是携带缓存更新的模型事务数。批量调度优化应减少事务数，不能靠丢掉对象更新来降低计数。`fixture.fitTimingScope` 说明内部 `fit()` 插桩范围；旧版含回写，批量版只含读取，不能直接比较两者的 `summary.fit.total`。跨实现对比使用帧间隔、CDP 布局/脚本耗时、模型估高数与事务数。
 
 测量使用真实 BlockCraft Doc、组件、Yjs 和输入路径；为隔离编辑器核心开销，宿主插件为空，Demo 正文不初始化。它不覆盖 CSES、Tauri、协作网络或业务插件。`--url=http://127.0.0.1:8087 --no-warmup --rounds=1` 仅供夹具预跑，正式比较应使用冻结的静态构建。

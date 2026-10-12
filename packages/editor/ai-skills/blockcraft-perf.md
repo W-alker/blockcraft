@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-08-31
+> Last updated: 2026-10-12
 
 ## Core Performance Principles
 
@@ -89,7 +89,26 @@ stride by `Element` across detach/reattach and suppresses a repeated value whose
 drift is at most `0.5px`; replacement elements and larger changes still publish.
 After projected range lookup, an otherwise identical scroll window also skips
 mount/retain, observer, spacer and `viewChange$` reconciliation. Nested subtrees
-are atomic in this phase.
+are atomic, except for direct children of a root placement layer.
+
+#### 浮动对象按尺寸模式挂载
+
+根级 `placement-layout` 的直属对象独立虚拟化。固定对象按根内容坐标、真实尺寸和
+旋转包围盒查询区间树，上下各预挂载一个视口；同层其他固定对象不会随之创建。
+`textAutoFit: 'resize-shape'` 且支持当前文字排版的文本框/艺术字从初始化起常驻。
+组合仍是原子子树，含自适应成员的组合整体常驻；隐藏修订对象不进入常驻集合。
+只读对象采用相同挂载策略，但不重新写入自适应尺寸。
+
+模型/表面几何变化重建索引；滚动查询不扫描模型或同步读取对象 DOM。
+`TextContentAutoFit` 按文档、按帧批量执行 CSS 自然尺寸测量，并以一次无撤销事务
+更新派生 `textFit`。不再维护测量有效性缓存或未知尺寸保守范围。
+文档底边仍由实际包围范围计算，常驻策略不额外扩大分页高度。
+
+选区端点与边界邻居、导航、对象视图租约保证目标对象及其完整子树挂载。
+显式租用整个浮动层或完整文档会挂载全部对象。固定对象离屏后释放组件；
+`retainedViewLimit` 继续控制根子树缓存，浮动层内部不另设缓存；`keep-alive` 租约优先。
+宿主不能依赖同层一个固定对象可见时其所有兄弟组件也存在，应通过模型 API 查询数据，
+需要 DOM 时申请目标对象的视图租约。关闭虚拟化时保持完整渲染。
 
 #### Idle speculative prefetch
 
