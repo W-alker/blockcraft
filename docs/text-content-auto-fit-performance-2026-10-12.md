@@ -188,7 +188,7 @@ PlaceholderPlugin 的延迟回调；原演示插件异步报错未在本次修�
 对照日志 `/tmp/bc-fit-floating-baseline.log`。这两项仍是失败，未修改断言或跳过。
 未验证生产构建、CSES/Tauri、真实协作网络或长期内存泄漏；不将浏览器结果当作这些层的验收。
 
-本轮提交范围不包含工作区原有 `package.json` 版本改动及本地压测原始文件；不推送或发布。
+工作区原有 `package.json` 版本改动单独保留；压测原始文件通过独立的验证资料提交归档，不推送或发布。
 
 ## 复现与原始数据
 
@@ -201,7 +201,7 @@ node scripts/perf/text-fit-benchmark.mjs --prepared=/对应冻结目录 --rounds
 node scripts/perf/text-fit-benchmark.mjs --prepared=/对应冻结目录 --rounds=2 --cases=nested-100 --browsers=firefox,webkit --output=/输出目录/cross-browser.json
 ```
 
-本次机器上的原始报告位于 `e2e/perf-results/`，作为本地生成文件保留，未作为提交内容：
+原始报告位于 `e2e/perf-results/`，随独立验证资料提交归档：
 
 - `text-fit-opt-before-chromium.json` / `text-fit-opt-after-chromium.json`
 - `text-fit-opt-before-cross-browser.json` / `text-fit-opt-after-cross-browser.json`

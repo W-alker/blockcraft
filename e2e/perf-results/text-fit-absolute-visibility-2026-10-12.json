@@ -1,0 +1,49 @@
+{
+  "date": "2026-10-12",
+  "scope": "floating auto-fit visibility, local development browser verification",
+  "floatingTests": {
+    "passed": 18,
+    "failed": 0,
+    "browsers": [
+      "chromium",
+      "firefox",
+      "webkit"
+    ],
+    "log": "/tmp/bc-fit-floating-complete.log"
+  },
+  "focusedUnitTests": {
+    "passed": 67,
+    "failed": 0,
+    "log": "/tmp/bc-fit-floating-unit-complete.log"
+  },
+  "existingTextFitAndFlowTests": {
+    "passed": 54,
+    "failed": 0,
+    "log": "/tmp/bc-fit-floating-regression.log",
+    "note": "Only these two suites; mixed log also contains old placement fixture failures."
+  },
+  "placementBounds": {
+    "passed": 29,
+    "failed": 7,
+    "log": "/tmp/bc-fit-floating-bounds-final.log",
+    "baselineLog": "/tmp/bc-fit-floating-baseline.log",
+    "baselineSameFailures": true
+  },
+  "stableCacheCheck": {
+    "objects": 1000,
+    "queries": 10000,
+    "additionalObjectPropsReads": 0,
+    "additionalTextReads": 0,
+    "note": "Focused index test, not end-to-end frame timing"
+  },
+  "packageBuild": {
+    "passed": true,
+    "log": "/tmp/bc-fit-floating-build-complete.log"
+  },
+  "sha256": {
+    "packages/editor/framework/modules/object/text-content-auto-fit.ts": "f9795310957ddbdcc2c8f4d76c5ffd6ec1dba80869c5323b44b72bf709e550bf",
+    "packages/editor/framework/modules/object/text-fit-measurements.ts": "bb06d614220c92c0b150e792c9c047330b70abc6b5b44b2600d24aabde72f816",
+    "packages/editor/framework/modules/object/block-placement/surface.controller.ts": "9cdbaf37ca97815c09b6aa734b130ac377d49152b4b5d24521b83aee5ced0ae2",
+    "packages/editor/framework/modules/virtualization/absolute-placement-visibility-index.ts": "736548888b0564c4d31d7e484a261091f359a44c1457d5b72de247db81a576f7"
+  }
+}
