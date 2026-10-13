@@ -2,11 +2,54 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-10-12
+> Last updated: 2026-10-13
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
 ## High-Level Wiring
+
+### 单次粘贴／导入的协同内容上限（未发布）
+
+默认每次新增内容最多 **1.5 MB（1,572,864 字节）**；可通过
+`DocConfig.maxIncomingContentBytes` 设置非负有限字节数，非法值回退到默认值。
+计量对象是转换、清理后的文本 Delta／Block Snapshot，使用独立临时 Yjs 文档的
+v1 编码计算，包含格式、块结构、属性和元数据。不是原始剪贴板／导入文件大小、
+整篇文档累计大小，也不是最终网络 update 的精确大小（后者另含删除、历史引用、修订等）。
+上传文件只计算写入协同内容的引用；不会为校验下载 URL 指向的资源。
+
+内置文本、HTML／来源快照、浮动对象、gap、表格填充、文件粘贴与格式重应用都在写入前
+校验，超限提示并拒绝整次操作。表格只计算目标范围内实际要写入的单元格内容。
+日常输入、远端更新、Undo/Redo、存量文档初始化和通用 Adapter 转换不受此入口规则影响。
+
+自定义宿主的文件导入必须在解析后、改选区或写入前接入同一检查：
+
+```typescript
+import {checkIncomingContentSize, checkIncomingSourceSize, IBlockSnapshot} from '@ccc/blockcraft';
+
+const source = await file.text();
+if (!checkIncomingSourceSize(doc, adapter, source)) return;
+const snapshot = await adapter.toSnapshot(source);
+const children = snapshot.children as IBlockSnapshot[];
+if (!checkIncomingContentSize(doc, {snapshots: children})) return;
+doc.crud.insertBlockSnapshots(parentId, index, children);
+```
+
+`checkIncomingContentSize(doc, {snapshots?, inline?})` 返回 boolean，拒绝时调用
+`doc.messageService.warn()`。`measureIncomingContentBytes(content)` 只计量、不提示。
+`checkIncomingContentSize` 先用文本／属性和块结构的保守下界快速拒绝，明显超限时
+不创建临时 Y.Doc；其余输入仍执行精确编码，不用估算值放行。
+`checkIncomingTextSize(doc, normalizedText)` 可在纯文本拆段／创建快照之前调用；
+按行拆段的入口传入第三参数 `{splitLines: true}`，同时检查新增段落的最小结构开销，
+尾部会被丢弃的 CR/LF 不计入块数；单个文本块保留换行的入口不传该选项。
+返回 true 仅表示尚不能确定超限，不代表通过最终校验。调用前先执行宿主的文本清理策略。
+`checkIncomingSourceSize(doc, adapter, source)` 使用可选的
+`IAdapter.exceedsIncomingContentLimit(data, limitBytes)`；未提供能力则继续正常转换。
+默认装配只提前识别字面正文 Markdown 和无属性／内嵌标签／实体的简单段落 HTML。
+复杂标记、自定义 registry／来源准备逻辑、可能被清理的组合字符均保守回退。
+不可用源文件 `size` 或整个 HTML／Markdown 原文大小代替协同内容限制。
+两者不修改传入 Snapshot、正式 Y.Doc 或 Undo。Playground 的 Markdown、HTML 和
+TXT Snapshot 导入已接入；其他宿主自行解析并直接调用 CRUD 的导入需按上例接入。
+不能在正式 Yjs `update` 事件后丢弃超限包来实现拒绝，否则本地与远端会分歧。
 
 ### 粘贴正文策略（未发布）
 

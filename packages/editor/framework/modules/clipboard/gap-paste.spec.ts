@@ -101,7 +101,7 @@ describe('ClipboardManager – paste at gap', () => {
         createSnapshot: (flavour: string, args: unknown[]) =>
           flavour === 'root'
             ? makeRootSnapshot(args[1] as IBlockSnapshot[])
-            : makeEditableSnapshot(flavour, ((args[0] as DeltaInsert[][])?.[0]) ?? []),
+            : makeEditableSnapshot(flavour, (args[0] as DeltaInsert[]) ?? []),
       },
       crud: {
         deleteBlockById,

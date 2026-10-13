@@ -1,3 +1,4 @@
+import {checkIncomingContentSize} from '../framework/doc/incoming-content'
 import {
   BindHotKey,
   ClipboardDataType,
@@ -524,75 +525,44 @@ export class TableBlockBinding extends DocPlugin {
 
     const grid = this._getTableModelGrid(table.id)
     if (grid === null) return
-    if (grid) {
-      this.doc.crud.transact(() => {
-        for (let rowOffset = 0; rowOffset < sourceRows.length; rowOffset++) {
-          const targetRowIndex = start[0] + rowOffset
-          if (targetRowIndex >= grid.rowCount) break
-
-          const sourceCells = sourceRows[rowOffset]
-          for (let colOffset = 0; colOffset < sourceCells.length; colOffset++) {
-            const sourceCell = sourceCells[colOffset]
-            const targetColumnIndex = start[1] + colOffset
-            if (targetColumnIndex >= grid.columnCount) break
-            if (!sourceCell) continue
-
-            const targetCellId = grid.getVisibleSourceCellIdAt(targetRowIndex, targetColumnIndex)
-            if (!targetCellId) continue
-            const children = cloneSnapshot(sourceCell.children || []) as IBlockSnapshot[]
-            const nextChildren = children.length
-              ? children
-              : [this.doc.schemas.createSnapshot('paragraph', [])]
-            replaceSnapshotsIdDeeply(nextChildren)
-
-            const currentChildren = this.doc.model.getChildrenIds(targetCellId)
-            if (currentChildren.length) {
-              this.doc.crud.deleteBlocks(targetCellId, 0, currentChildren.length, true)
-            }
-            this.doc.crud.insertBlockSnapshots(targetCellId, 0, nextChildren)
-          }
+    // Build the complete write plan first. Only cells inside the target grid count;
+    // over-limit paste must not clear even the first target cell.
+    const writes: Array<{id: string; children: IBlockSnapshot[]; deleteCount: number}> = []
+    for (let r = 0; r < sourceRows.length; r++) {
+      const targetRowIndex = start[0] + r
+      if (targetRowIndex >= (grid?.rowCount ?? table.rowLength)) break
+      const targetRow = grid ? null : table.getChildrenByIndex(targetRowIndex)
+      if (!grid && !targetRow) continue
+      for (let c = 0; c < sourceRows[r].length; c++) {
+        const sourceCell = sourceRows[r][c]
+        const targetColumnIndex = start[1] + c
+        if (grid && targetColumnIndex >= grid.columnCount) break
+        if (!sourceCell) continue
+        const id = grid
+          ? grid.getVisibleSourceCellIdAt(targetRowIndex, targetColumnIndex)
+          : targetRow!.childrenIds[targetColumnIndex]
+        if (!id) {
+          if (!grid) break
+          continue
         }
-      })
-
-      requestAnimationFrame(() => {
-        this._restoreCursorInCell(table, start)
-      })
-      return
+        const targetCell = grid ? null : this._getLiveBlockById<BlockCraft.IBlockComponents['table-cell']>(id)
+        if (!grid && (!this._isLiveTableCell(targetCell) || targetCell.props.display === 'none')) continue
+        const children = cloneSnapshot(sourceCell.children || []) as IBlockSnapshot[]
+        if (!children.length) children.push(this.doc.schemas.createSnapshot('paragraph', []))
+        replaceSnapshotsIdDeeply(children)
+        writes.push({id, children, deleteCount: grid
+          ? this.doc.model.getChildrenIds(id).length
+          : targetCell!.childrenLength})
+      }
     }
-
+    if (!checkIncomingContentSize(this.doc, {snapshots: writes.flatMap(write => write.children)})) return
     this.doc.crud.transact(() => {
-      for (let rowOffset = 0; rowOffset < sourceRows.length; rowOffset++) {
-        const targetRowIndex = start[0] + rowOffset
-        if (targetRowIndex >= table.rowLength) break
-
-        const sourceCells = sourceRows[rowOffset]
-        const targetRow = table.getChildrenByIndex(targetRowIndex)
-        if (!targetRow) continue
-
-        for (let colOffset = 0; colOffset < sourceCells.length; colOffset++) {
-          const sourceCell = sourceCells[colOffset]
-          const targetCellId = targetRow.childrenIds[start[1] + colOffset]
-          if (!targetCellId) break
-          if (!sourceCell) continue
-
-          const targetCell = this._getLiveBlockById<BlockCraft.IBlockComponents['table-cell']>(targetCellId)
-          if (!this._isLiveTableCell(targetCell)) continue
-          if (targetCell.props.display === 'none') continue
-
-          const children = cloneSnapshot(sourceCell.children || []) as IBlockSnapshot[]
-          const nextChildren = children.length
-            ? children
-            : [this.doc.schemas.createSnapshot('paragraph', [])]
-          replaceSnapshotsIdDeeply(nextChildren)
-
-          if (targetCell.childrenLength) {
-            this.doc.crud.deleteBlocks(targetCell.id, 0, targetCell.childrenLength, true)
-          }
-          this.doc.crud.insertBlocks(targetCell.id, 0, nextChildren)
-        }
+      for (const write of writes) {
+        if (write.deleteCount) this.doc.crud.deleteBlocks(write.id, 0, write.deleteCount, true)
+        if (grid) this.doc.crud.insertBlockSnapshots(write.id, 0, write.children)
+        else this.doc.crud.insertBlocks(write.id, 0, write.children)
       }
     })
-
     requestAnimationFrame(() => {
       this._restoreCursorInCell(table, start)
     })

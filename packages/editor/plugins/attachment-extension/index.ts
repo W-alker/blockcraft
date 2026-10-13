@@ -7,6 +7,7 @@ import {
 } from "../../framework";
 import {UIEventStateContext, IBlockSnapshot} from "../../framework";
 import {BlockCraftError, downloadFile, ErrorCode, nextTick} from "../../global";
+import {checkIncomingContentSize} from '../../framework/doc/incoming-content';
 import {merge, Subject, Subscription, takeUntil} from "rxjs";
 import {OverlayRef} from "@angular/cdk/overlay";
 import {AttachmentBlockToolbar, IAttachmentToolbarItem} from "./widgets/attachment-toolbar";
@@ -390,6 +391,7 @@ export class AttachmentExtensionPlugin extends DocPlugin {
       }
 
       if (!snapshots.length) return true;
+      if (!checkIncomingContentSize(this.doc, {snapshots})) return true;
       inserted = this._insertFileSnapshotsAtSelection(state.selection, snapshots);
       return true;
     } finally {

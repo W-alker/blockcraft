@@ -1,0 +1,145 @@
+{
+  "measuredAt": "2026-10-13T07:13:50.367Z",
+  "browser": "155.0.8059.40",
+  "yjsVersion": "13.6.30",
+  "methodology": "Current Playground Markdown adapter. Exact 100 KiB ASCII Markdown varying paragraph count, plus existing 10 KiB mixed fixtures. Standalone Y.Doc with client ID 0xffffffff, adapter generated IDs. v1 size asserted equal to current incoming-content helper. v2 decoded and compared to original data. No change to product format or protocol.",
+  "results": [
+    {
+      "name": "100 KiB plain Markdown / 1 paragraphs",
+      "sourceBytes": 102400,
+      "snapshotJsonBytes": 102521,
+      "yjsV1Bytes": 102584,
+      "yjsV2Bytes": 102553,
+      "blockCount": 1,
+      "textBytes": 102400,
+      "propertyCount": 0,
+      "emptyMeta": 1,
+      "flavours": {
+        "paragraph": 1
+      }
+    },
+    {
+      "name": "100 KiB plain Markdown / 100 paragraphs",
+      "sourceBytes": 102400,
+      "snapshotJsonBytes": 114203,
+      "yjsV1Bytes": 120893,
+      "yjsV2Bytes": 115132,
+      "blockCount": 100,
+      "textBytes": 102202,
+      "propertyCount": 0,
+      "emptyMeta": 100,
+      "flavours": {
+        "paragraph": 100
+      }
+    },
+    {
+      "name": "100 KiB plain Markdown / 1000 paragraphs",
+      "sourceBytes": 102400,
+      "snapshotJsonBytes": 220403,
+      "yjsV1Bytes": 286334,
+      "yjsV2Bytes": 229432,
+      "blockCount": 1000,
+      "textBytes": 100402,
+      "propertyCount": 0,
+      "emptyMeta": 1000,
+      "flavours": {
+        "paragraph": 1000
+      }
+    },
+    {
+      "name": "100 KiB plain Markdown / 10000 paragraphs",
+      "sourceBytes": 102400,
+      "snapshotJsonBytes": 1282403,
+      "yjsV1Bytes": 1945189,
+      "yjsV2Bytes": 1352440,
+      "blockCount": 10000,
+      "textBytes": 82402,
+      "propertyCount": 0,
+      "emptyMeta": 10000,
+      "flavours": {
+        "paragraph": 10000
+      }
+    },
+    {
+      "name": "10 KiB text-heavy",
+      "sourceBytes": 10240,
+      "snapshotJsonBytes": 20779,
+      "yjsV1Bytes": 27329,
+      "yjsV2Bytes": 22547,
+      "blockCount": 83,
+      "textBytes": 9778,
+      "propertyCount": 65,
+      "emptyMeta": 83,
+      "flavours": {
+        "paragraph": 46,
+        "bullet": 4,
+        "ordered": 3,
+        "todo": 2,
+        "blockquote": 1,
+        "divider": 1,
+        "code": 1,
+        "mermaid": 1,
+        "mermaid-textarea": 1,
+        "formula": 1,
+        "image": 1,
+        "table": 1,
+        "table-row": 4,
+        "table-cell": 16
+      }
+    },
+    {
+      "name": "10 KiB balanced",
+      "sourceBytes": 10240,
+      "snapshotJsonBytes": 51839,
+      "yjsV1Bytes": 79039,
+      "yjsV2Bytes": 59719,
+      "blockCount": 321,
+      "textBytes": 8118,
+      "propertyCount": 325,
+      "emptyMeta": 321,
+      "flavours": {
+        "paragraph": 136,
+        "bullet": 20,
+        "ordered": 15,
+        "todo": 10,
+        "blockquote": 5,
+        "divider": 5,
+        "code": 5,
+        "mermaid": 5,
+        "mermaid-textarea": 5,
+        "formula": 5,
+        "image": 5,
+        "table": 5,
+        "table-row": 20,
+        "table-cell": 80
+      }
+    },
+    {
+      "name": "10 KiB structure-heavy",
+      "sourceBytes": 10240,
+      "snapshotJsonBytes": 107687,
+      "yjsV1Bytes": 176034,
+      "yjsV2Bytes": 130833,
+      "blockCount": 761,
+      "textBytes": 7318,
+      "propertyCount": 836,
+      "emptyMeta": 761,
+      "flavours": {
+        "paragraph": 273,
+        "bullet": 76,
+        "ordered": 72,
+        "todo": 8,
+        "blockquote": 4,
+        "divider": 4,
+        "code": 4,
+        "mermaid": 4,
+        "mermaid-textarea": 4,
+        "formula": 4,
+        "image": 4,
+        "table": 4,
+        "table-row": 60,
+        "table-cell": 240
+      }
+    }
+  ]
+}

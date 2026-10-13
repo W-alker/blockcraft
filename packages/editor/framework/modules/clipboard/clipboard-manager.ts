@@ -59,6 +59,7 @@ import {focusEditingHostForBlock} from "../selection/focus-editing-host";
 import {getClipboardNavigator} from "./dom-context";
 import {insertAbsolutePlacementCopies} from '../object/block-placement/duplicate-command'
 import {sanitizePasteSnapshot, sanitizePasteText} from './paste-text-safety';
+import {checkIncomingContentSize, checkIncomingSourceSize, checkIncomingTextSize} from '../../doc/incoming-content';
 
 export * from './types'
 export * from './copy-filter'
@@ -68,6 +69,11 @@ interface GapPastePayload {
   rootSnapshot: IBlockSnapshot
   appliedType: ClipboardPasteFormatType
   exposeFormattedSnapshot: boolean
+}
+
+interface TextPastePayload {
+  textLines: string[]
+  appendedSnapshots: IBlockSnapshot[]
 }
 
 @DocEventRegister
@@ -87,6 +93,16 @@ export class ClipboardManager {
     if (this.doc.config.pasteTextPolicy === 'remove-stacked-marks') sanitizePasteSnapshot(snapshot)
   }
 
+  private _prepareTextPaste(text: string, block: EditableBlockComponent): TextPastePayload | null {
+    if (!text || !checkIncomingTextSize(this.doc, text, {splitLines: true})) return null
+    const textLines = text.replace(/[\n\r]+$/, '').split('\n')
+    const appendedSnapshots = textLines.slice(1).map(line =>
+      this.doc.schemas.createSnapshot('paragraph', [[{insert: line}], {depth: block.props.depth}])
+    )
+    return checkIncomingContentSize(this.doc, {inline: [{insert: textLines[0]}], snapshots: appendedSnapshots})
+      ? {textLines, appendedSnapshots} : null
+  }
+
   private _parseSourceData(state: ClipboardSourceData): IBlockSnapshot | undefined {
     for (const adapter of this._sourceAdapters) {
       const snapshot = adapter.parseStructured?.(state, this.doc)
@@ -103,12 +119,16 @@ export class ClipboardManager {
     return undefined
   }
 
-  private _prepareSourceSnapshot(snapshot: IBlockSnapshot): void {
+  private _prepareSourceSnapshot(snapshot: IBlockSnapshot): boolean {
+    const afterInsertCallbacks: Array<() => unknown> = []
     for (const adapter of this._sourceAdapters) {
       const afterInsert = adapter.prepareSnapshot?.(snapshot, this.doc)
-      if (afterInsert) nextTick().then(afterInsert)
+      if (afterInsert) afterInsertCallbacks.push(afterInsert)
     }
     this._sanitizePasteSnapshot(snapshot)
+    if (!checkIncomingContentSize(this.doc, {snapshots: snapshot.children as IBlockSnapshot[]})) return false
+    for (const afterInsert of afterInsertCallbacks) nextTick().then(afterInsert)
+    return true
   }
 
   /** Emits null to clear, or format data after a paste with alternatives. */
@@ -317,6 +337,7 @@ export class ClipboardManager {
       return false
     }
     this._sanitizePasteSnapshot(rootSnapshot)
+    if (!checkIncomingContentSize(this.doc, {snapshots: rootSnapshot.children as IBlockSnapshot[]})) return false
     try {
       return !!insertAbsolutePlacementCopies(
         this.doc,
@@ -472,14 +493,30 @@ export class ClipboardManager {
   }
 
   async applyPasteOption(option: ClipboardPasteOption, selection: BlockCraft.Selection): Promise<ClipboardPasteApplyResult | null> {
+    return this._applyPasteOption(option, selection)
+  }
+
+  private async _applyPasteOption(option: ClipboardPasteOption, selection: BlockCraft.Selection, beforeApply?: () => void): Promise<ClipboardPasteApplyResult | null> {
     if (selection.start.type !== 'text') return null
     if (!this._assertClipboardSelection(selection, BlockReadonlyOperation.Paste)) return null
+    // Normalize/check a private payload before blur, selection replacement or undo capture.
+    const payload = option.payload.kind === 'snapshot'
+      ? {kind: 'snapshot' as const, snapshot: cloneSnapshot(option.payload.snapshot)}
+      : {kind: 'text' as const, text: this._sanitizePasteText(option.payload.text)}
+    let textPaste: TextPastePayload | null = null
+    if (payload.kind === 'snapshot') {
+      this._sanitizePasteSnapshot(payload.snapshot)
+      if (!checkIncomingContentSize(this.doc, {snapshots: payload.snapshot.children as IBlockSnapshot[]})) return null
+    } else {
+      textPaste = this._prepareTextPaste(payload.text, selection.firstBlock as EditableBlockComponent)
+      if (!textPaste) return null
+    }
+    beforeApply?.()
     const originalCollapsedSelection = selection.collapsed ? selection.toJSON() : null
     this.doc.selection.blur()
 
-    const {payload} = option
     if (payload.kind === 'text') {
-      return this._applyTextPasteOption(payload.text, selection, originalCollapsedSelection)
+      return this._applyTextPasteOption(textPaste!, selection, originalCollapsedSelection)
     }
 
     if (payload.kind === 'snapshot') {
@@ -487,7 +524,7 @@ export class ClipboardManager {
       // (replaceSnapshotsIdDeeply + snapshots.shift()). The same option object is
       // reused across every format switch, so applying it must never consume it —
       // otherwise re-selecting a format would paste a progressively shortened tree.
-      return this._applySnapshotPasteOption(cloneSnapshot(payload.snapshot), selection, originalCollapsedSelection)
+      return this._applySnapshotPasteOption(payload.snapshot, selection, originalCollapsedSelection)
     }
 
     return null
@@ -513,18 +550,15 @@ export class ClipboardManager {
 
     // Each switch is its own undo step: stopCapturing keeps Yjs from time-merging it
     // into the paste (or a prior switch).
-    this.doc.crud.undoManager.stopCapturing()
-
     // Collapsed-origin: the caret belongs at the paste point (region start) and stays
     // there across every switch. Park it there BEFORE the change so the undo snapshot
     // records the paste point (not wherever the caret drifted), then
     // captureSelectionBeforeChange picks it up. Net caret position is unchanged → no flash.
-    if (collapsed) {
-      this._placeCaretAtRegionStart(region)
-    }
-    this.doc.crud.undoManager.captureSelectionBeforeChange()
-
-    const result = await this.applyPasteOption(option, selection)
+    const result = await this._applyPasteOption(option, selection, () => {
+      this.doc.crud.undoManager.stopCapturing()
+      if (collapsed) this._placeCaretAtRegionStart(region)
+      this.doc.crud.undoManager.captureSelectionBeforeChange()
+    })
     if (!result) return result
 
     // Set the final selection ourselves, focusing the editing host FIRST so the caret
@@ -640,7 +674,7 @@ export class ClipboardManager {
   }
 
   private async _applyTextPasteOption(
-    text: string,
+    prepared: TextPastePayload,
     selection: BlockCraft.Selection,
     originalCollapsedSelection: ReturnType<BlockCraft.Selection['toJSON']> | null
   ): Promise<ClipboardPasteApplyResult | null> {
@@ -648,12 +682,7 @@ export class ClipboardManager {
 
     const editableBlock = selection.firstBlock as EditableBlockComponent
     const fromIndex = selection.start.offset
-    const safeText = this._sanitizePasteText(text)
-    if (!safeText) return null
-    const textLines = safeText.replace(/[\n\r]+$/, '').split('\n')
-    const appendedSnapshots = textLines.slice(1).map((line: string) =>
-      this.doc.schemas.createSnapshot('paragraph', [[{insert: line}], {depth: editableBlock.props.depth}])
-    )
+    const {textLines, appendedSnapshots} = prepared
 
     // Delete + insert in ONE transaction → a single undo step (so Ctrl+Z reverts the
     // whole switch, not just the insert leaving the delete behind).
@@ -831,7 +860,7 @@ export class ClipboardManager {
     const altPlainText = this._sanitizePasteText(state.getData(ClipboardDataType.TEXT) || '') || null
     const markdownText = this._sanitizePasteText(getMarkdownClipboardText(state) || '') || (altPlainText && looksLikeMarkdown(altPlainText) ? altPlainText : null)
 
-    this._prepareSourceSnapshot(rootSnapshot)
+    if (!this._prepareSourceSnapshot(rootSnapshot)) return null
 
     const savedHtmlSnapshot = payload.exposeFormattedSnapshot ? cloneSnapshot(rootSnapshot) : null
     const snapshots: IBlockSnapshot[] = rootSnapshot.children as IBlockSnapshot[]
@@ -907,6 +936,7 @@ export class ClipboardManager {
         if (!rootSnapshot) {
           const htmlAdapter = this.adapter?.getAdapter(ClipboardDataType.HTML)
           if (htmlAdapter) {
+            if (!checkIncomingSourceSize(this.doc, htmlAdapter, htmlString)) return undefined
             try {
               rootSnapshot = await htmlAdapter.toSnapshot(htmlString)
               exposeFormattedSnapshot = !!rootSnapshot
@@ -922,6 +952,10 @@ export class ClipboardManager {
     if (!rootSnapshot && state.dataTypes.includes(ClipboardDataType.TEXT)) {
       const text = state.getData(ClipboardDataType.TEXT)
       if (!text) return undefined
+      // Source preparation is allowed to rewrite this fallback snapshot. Only
+      // reject raw text here when no later source hook can shrink it.
+      if (!this._sourceAdapters.some(adapter => adapter.prepareSnapshot)
+        && !checkIncomingTextSize(this.doc, this._sanitizePasteText(text), {splitLines: true})) return undefined
       const paras = text.replace(/[\n\r]+$/, '').split('\n').map(line =>
         this.doc.schemas.createSnapshot('paragraph', [[{insert: line}], {depth: gapDepth}])
       )
@@ -1130,6 +1164,7 @@ export class ClipboardManager {
     if (pastePlainTextOnly) {
       const text = this._sanitizePasteText(state.clipboardData?.getData(ClipboardDataType.TEXT) || '')
       if (!text) return false
+      if (!checkIncomingContentSize(this.doc, {inline: [{insert: text}]})) return true
       editableBlock.replaceText(fromIndex, fromLength, text)
       // 收缩选区粘贴后不重设光标位置；仅范围选区时把粘贴内容选中
       if (!collapsed) {
@@ -1166,6 +1201,7 @@ export class ClipboardManager {
         if (!rootSnapshot) {
           const htmlAdapter = this.adapter?.getAdapter(ClipboardDataType.HTML)
           if (htmlAdapter) {
+            if (!checkIncomingSourceSize(this.doc, htmlAdapter, htmlString)) return true
             // HTML 解析是本流程唯一的异步间隙：解析期间远端可能编辑/删除锚点块，
             // 事件时刻捕获的 fromIndex/fromLength 会漂移。用 RelativePosition
             // 锚定选区端点（一次性创建，无热路径开销），解析完成后重解析回绝对坐标
@@ -1192,7 +1228,7 @@ export class ClipboardManager {
     }
 
     // 插入/克隆前清理来源临时数据；下一 tick 执行收尾，继续使用原 snapshot 的最终 ID。
-    if (rootSnapshot) this._prepareSourceSnapshot(rootSnapshot)
+    if (rootSnapshot && !this._prepareSourceSnapshot(rootSnapshot)) return true
 
     // HTML parsing can yield to remote collaboration. Recheck immediately
     // before the first mutation so a newly locked target cannot be changed.
@@ -1343,6 +1379,7 @@ export class ClipboardManager {
       if (!text) return false
       text = text.replace(/\n$/g, '')
       if (isUrl(text) && isInSameBlock) {
+        if (!checkIncomingContentSize(this.doc, {inline: [{insert: text, attributes: {'a:link': text}}]})) return true
         selection.collapsed ?
           editableBlock.insertText(fromIndex, text, {'a:link': text})
           : editableBlock.formatText(fromIndex, fromLength, {'a:link': text})
@@ -1354,7 +1391,9 @@ export class ClipboardManager {
         return true
       }
 
-      const textLines = text.replace(/[\n\r]+$/, '').split('\n')
+      const prepared = this._prepareTextPaste(text, editableBlock)
+      if (!prepared) return true
+      const {textLines, appendedSnapshots} = prepared
       let finalCursorBlockId = editableBlock.id
       let finalCursorOffset = fromIndex + textLines[0].length
       this.doc.crud.transact(() => {
@@ -1365,10 +1404,9 @@ export class ClipboardManager {
           editableBlock.applyDeltaOperations([{retain: fromIndex}, {insert: textLines[0]}])
         }
         if (textLines.length > 1) {
-          const snapshots = textLines.slice(1).map(line => this.doc.schemas.createSnapshot('paragraph', [[{insert: line}], {depth: editableBlock.props.depth}]))
-          const inserted = this.doc.crud.insertBlocksAfter(editableBlock, snapshots)
+          const inserted = this.doc.crud.insertBlocksAfter(editableBlock, appendedSnapshots)
           const lastInserted = inserted[inserted.length - 1]
-          finalCursorBlockId = lastInserted?.id ?? snapshots[snapshots.length - 1].id
+          finalCursorBlockId = lastInserted?.id ?? appendedSnapshots[appendedSnapshots.length - 1].id
           finalCursorOffset = textLines[textLines.length - 1].length
         }
       })

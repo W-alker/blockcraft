@@ -82,6 +82,8 @@ export interface DocConfig {
   copyFilter?: ClipboardCopyFilter
   /** Incoming paste text only. Omit/preserve keeps the original clipboard content. */
   pasteTextPolicy?: 'preserve' | 'remove-stacked-marks'
+  /** Per paste/import standalone incoming-content Yjs v1 size. Default: 1,572,864 bytes. */
+  maxIncomingContentBytes?: number
   // 如果不传递，会尝试向上遍历获取
   scrollContainer?: HTMLElement
   /** Optional root-child view virtualization. Disabled by default. */

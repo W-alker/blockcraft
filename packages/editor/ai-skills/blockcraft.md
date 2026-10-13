@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-10-12 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-10-13 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -29,6 +29,13 @@
 Agent 查询 `blockcraft.block.table` 后可使用 `[rows, columns, values]` 一次生成完整表格，进入宿主的统一修订事务。
 
 ## 文档设计入口
+
+单次粘贴／文件导入新增的协同内容默认限制 1.5 MB（1,572,864 字节），使用独立 Yjs
+编码计量；超限在写入前整次拒绝。`DocConfig.maxIncomingContentBytes` 可配置上限，
+宿主自定义导入在转换前调用 `checkIncomingSourceSize()`，转换后通过
+`checkIncomingContentSize()` 接入；明显超限时预检会跳过转换／Yjs 编码。
+不是上传文件或整篇文档大小限制；
+计量口径与宿主示例见 `blockcraft-app.md`。
 
 制作、美化可编辑文档，读取 [blockcraft-document-design](document-design/SKILL.md)，
 按需进入布局/对象、文字/段落、视觉配方或执行验证。它独立于框架开发指南，随本包分发；

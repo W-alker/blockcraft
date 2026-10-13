@@ -4,7 +4,18 @@
 >
 > Adapters handle HTML ↔ BlockSnapshot and Markdown ↔ BlockSnapshot conversion.
 >
-> Last updated: 2026-10-12
+> Last updated: 2026-10-13
+
+## 导入大小预检（未发布）
+
+宿主 MIME 契约 `IAdapter` 新增可选同步方法
+`exceedsIncomingContentLimit(data: string, limitBytes: number): boolean`。
+返回 true 必须能证明转换后的协同内容超过预算；false 只表示无法提前拒绝。
+不要按整个原文／文件大小推断：注释、空白、实体或来源转换会改变实际内容。
+内置 AdapterService 仅对默认 registry／来源装配中的字面正文 Markdown、简单段落 HTML
+启用保守预检；自定义装配默认走原转换路径，可自行提供符合其转换语义的能力。
+转换器本身不设全局限制；编辑入口调用 `checkIncomingSourceSize()` 后仍须对最终快照
+调用 `checkIncomingContentSize()`。预览、导出、流式解析继续保持原语义。
 
 ## 文本对象自适应尺寸（未发布）
 

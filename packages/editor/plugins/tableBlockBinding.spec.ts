@@ -38,6 +38,33 @@ const table = (id: string, rows: IBlockSnapshot[]): IBlockSnapshot => ({
 })
 
 describe('TableBlockBinding paste helpers', () => {
+  for (const modelBacked of [false, true]) {
+    it(`preflights all target cells before any deletion (${modelBacked ? 'model' : 'mounted'})`, () => {
+      const binding = new TableBlockBinding()
+      const cells = ['a', 'b'].map(id => ({id, flavour: 'table-cell', props: {}, childrenLength: 1, getIndexOfParent: () => 0}))
+      const transact = jasmine.createSpy('transact').and.callFake((fn: () => void) => fn())
+      const insert = jasmine.createSpy('insert')
+      const remove = jasmine.createSpy('delete')
+      const warn = jasmine.createSpy('warn')
+      ;(binding as any).doc = {
+        config: {maxIncomingContentBytes: 1000}, messageService: {warn},
+        crud: {transact, insertBlocks: insert, insertBlockSnapshots: insert, deleteBlocks: remove},
+        model: {getChildrenIds: () => ['old']},
+        getBlockById: (id: string) => cells.find(cell => cell.id === id),
+      }
+      spyOn(binding as any, '_getTableModelGrid').and.returnValue(modelBacked
+        ? {rowCount: 1, columnCount: 2, getVisibleSourceCellIdAt: (_r: number, c: number) => cells[c]?.id}
+        : undefined)
+      const target = {id: 't', rowLength: 1, getChildrenByIndex: () => ({childrenIds: ['a', 'b']})}
+      const source = table('source', [row('r', [cell('first', 'small'), cell('second', '中'.repeat(500))])])
+      ;(binding as any)._fillTableFromSnapshot(target, source, [0, 0])
+      expect(transact).not.toHaveBeenCalled()
+      expect(remove).not.toHaveBeenCalled()
+      expect(insert).not.toHaveBeenCalled()
+      expect(warn).toHaveBeenCalledTimes(1)
+    })
+  }
+
   it('finds the first table inside a pasted root snapshot', () => {
     const tableSnapshot = table('table-1', [])
     const root: IBlockSnapshot = {

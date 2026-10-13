@@ -48,14 +48,15 @@ function harness(plainTextOnly = false) {
   });
   let seq = 0;
   const doc = {
-    config: {pasteTextPolicy: 'remove-stacked-marks' as 'preserve' | 'remove-stacked-marks' | undefined}, yDoc, event: {add() {}, bindHotkey() {}},
+    config: {maxIncomingContentBytes: undefined as number | undefined, pasteTextPolicy: 'remove-stacked-marks' as 'preserve' | 'remove-stacked-marks' | undefined}, yDoc, event: {add() {}, bindHotkey() {}},
     injector: {get: () => adapter}, root: {hostElement: host},
     logger: {warn: jasmine.createSpy('warn')},
+    messageService: {warn: jasmine.createSpy('warn')},
     isEditable: (block: any) => block.nodeType === BlockNodeType.editable,
     getBlockById: (id: string) => live.get(id),
     vm: {get: (id: string) => live.has(id) ? {instance: live.get(id)} : undefined},
     inputManger: {assertSelectionWritable: jasmine.createSpy('assertWritable')},
-    selection: {value: selection, blur() {}, replay() {}, setCursorAt: jasmine.createSpy('cursor'),
+    selection: {value: selection, blur: jasmine.createSpy('blur'), replay() {}, setCursorAt: jasmine.createSpy('cursor'),
       setSelection() {}, setCursorAtBlock() {}, scrollSelectionIntoView() {}},
     crud: {transact: (fn: () => void) => yDoc.transact(fn), insertBlocksAfter: insert, insertBlocksBefore: insert},
     schemas: {createSnapshot: (flavour: string, args: any[]) => flavour === 'root'
@@ -86,6 +87,112 @@ describe('clipboard paste text safety at the write boundary', () => {
     return result;
   };
   afterEach(() => { while (cleanups.length) cleanups.pop()!(); });
+
+  for (const plainOnly of [false, true]) {
+    it(`rejects oversized ${plainOnly ? 'plain-only' : 'ordinary'} text without a live Yjs update`, async () => {
+      const {paste, anchor, doc, yDoc} = create(plainOnly);
+      doc.config.maxIncomingContentBytes = 100;
+      const snapshots = spyOn(doc.schemas, 'createSnapshot').and.callThrough();
+      const update = jasmine.createSpy('update');
+      yDoc.on('update', update);
+      await paste({'text/plain': '中'.repeat(100)});
+      expect(anchor.yText.toString()).toBe('headtail');
+      expect(update).not.toHaveBeenCalled();
+      expect(doc.selection.blur).not.toHaveBeenCalled();
+      expect(doc.messageService.warn).toHaveBeenCalledTimes(1);
+      expect(snapshots).not.toHaveBeenCalled();
+    });
+  }
+
+  it('rejects plain text at a gap before allocating paragraph snapshots', async () => {
+    const {paste, doc, inserted} = create();
+    doc.config.maxIncomingContentBytes = 100;
+    const snapshots = spyOn(doc.schemas, 'createSnapshot').and.callThrough();
+    await paste({'text/plain': '中'.repeat(100)}, true);
+    expect(snapshots).not.toHaveBeenCalled();
+    expect(inserted).toEqual([]);
+    expect(doc.messageService.warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects excessive short lines before creating snapshots, but preserves trailing-line trimming', async () => {
+    const {paste, doc, anchor} = create();
+    doc.config.maxIncomingContentBytes = 500;
+    const snapshots = spyOn(doc.schemas, 'createSnapshot').and.callThrough();
+    await paste({'text/plain': 'x\n'.repeat(100)});
+    expect(snapshots).not.toHaveBeenCalled();
+    expect(anchor.yText.toString()).toBe('headtail');
+    await paste({'text/plain': 'ok' + '\n'.repeat(1000)});
+    expect(anchor.yText.toString()).toBe('headoktail');
+  });
+
+  for (const gap of [false, true]) {
+    it(`uses the selected HTML adapter preflight before ${gap ? 'gap' : 'text'} conversion`, async () => {
+      const {paste, doc, adapter, anchor, inserted} = create();
+      const toSnapshot = jasmine.createSpy('toSnapshot');
+      adapter.getAdapter.and.returnValue({toSnapshot, exceedsIncomingContentLimit: () => true});
+      await paste({'text/html': '<p>large</p>', 'text/plain': 'fallback'}, gap);
+      expect(toSnapshot).not.toHaveBeenCalled();
+      expect(anchor.yText.toString()).toBe('headtail');
+      expect(inserted).toEqual([]);
+      expect(doc.selection.blur).not.toHaveBeenCalled();
+      expect(doc.messageService.warn).toHaveBeenCalledTimes(1);
+    });
+  }
+
+  for (const gap of [false, true]) {
+    it(`rejects rich content before ${gap ? 'gap' : 'text'} insertion and source callbacks`, async () => {
+      const {paste, doc, adapter, anchor, inserted} = create();
+      doc.config.maxIncomingContentBytes = 100;
+      const afterInsert = jasmine.createSpy('afterInsert');
+      adapter.clipboardSourceAdapters.push({prepareSnapshot: () => afterInsert});
+      await paste({[ClipboardDataType.BLOCKCRAFT_SNAPSHOT]: serializeClipboardSnapshot(root([paragraph([{insert: 'x'.repeat(200)}])]))}, gap);
+      await Promise.resolve();
+      expect(inserted).toEqual([]);
+      expect(anchor.yText.toString()).toBe('headtail');
+      expect(afterInsert).not.toHaveBeenCalled();
+    });
+  }
+
+  it('rejects parsed HTML payload, rather than measuring the HTML wrapper', async () => {
+    const {paste, doc, adapter, anchor} = create();
+    doc.config.maxIncomingContentBytes = 500;
+    adapter.getAdapter.and.returnValue({toSnapshot: async () => root([paragraph([{insert: 'x'.repeat(600)}])])});
+    await paste({'text/html': '<p>x</p>'});
+    expect(anchor.yText.toString()).toBe('headtail');
+    expect(doc.messageService.warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows large source markup when conversion produces small collaborative content', async () => {
+    const {paste, doc, adapter, anchor} = create();
+    doc.config.maxIncomingContentBytes = 500;
+    adapter.getAdapter.and.returnValue({toSnapshot: async () => root([paragraph([{insert: 'ok'}])])});
+    await paste({'text/html': '<!--' + 'x'.repeat(2000) + '--><p>ok</p>'});
+    expect(anchor.yText.toString()).toBe('headoktail');
+    expect(doc.messageService.warn).not.toHaveBeenCalled();
+  });
+
+  it('rejects an imported snapshot option before blur and preserves the reusable payload', async () => {
+    const {doc, manager, selection, anchor} = create();
+    doc.config.maxIncomingContentBytes = 100;
+    const snapshot = root([paragraph([{insert: 'x'.repeat(200)}])]);
+    const before = JSON.stringify(snapshot);
+    expect(await manager.applyPasteOption({type: 'markdown', label: 'Markdown', payload: {kind: 'snapshot', snapshot}}, selection)).toBeNull();
+    expect(JSON.stringify(snapshot)).toBe(before);
+    expect(doc.selection.blur).not.toHaveBeenCalled();
+    expect(anchor.yText.toString()).toBe('headtail');
+  });
+
+  it('rejects a format switch before changing the selection or capturing undo', async () => {
+    const {doc, manager, selection} = create();
+    doc.config.maxIncomingContentBytes = 100;
+    const stop = jasmine.createSpy('stopCapturing');
+    (doc.crud as any).undoManager = {stopCapturing: stop, captureSelectionBeforeChange: jasmine.createSpy('capture')};
+    spyOn(manager as any, '_resolveRegionToSelection').and.returnValue(selection);
+    const caret = spyOn(manager as any, '_placeCaretAtRegionStart');
+    expect(await manager.replacePasteRegion({} as any, {type: 'plain-text', label: 'text', payload: {kind: 'text', text: 'x'.repeat(200)}}, true)).toBeNull();
+    expect(stop).not.toHaveBeenCalled();
+    expect(caret).not.toHaveBeenCalled();
+  });
 
   for (const policy of [undefined, 'preserve'] as const) {
     it(`keeps original paste content when policy is ${String(policy)}`, async () => {
@@ -156,6 +263,17 @@ describe('clipboard paste text safety at the write boundary', () => {
     }];
     await paste({'application/custom': 'source'});
     expect(anchor.yText.toString()).toBe('head我你tail');
+  });
+
+  it('lets a gap source hook shrink plain text before the content budget is checked', async () => {
+    const {paste, adapter, doc, inserted} = create();
+    doc.config.maxIncomingContentBytes = 500;
+    adapter.clipboardSourceAdapters = [{prepareSnapshot: (snapshot: IBlockSnapshot) => {
+      snapshot.children = [paragraph([{insert: 'small'}])];
+    }}];
+    await paste({'text/plain': '中'.repeat(1000)}, true);
+    expect(inserted[0].children).toEqual([{insert: 'small'}]);
+    expect(doc.messageService.warn).not.toHaveBeenCalled();
   });
 
   it('normalizes gap paste paragraphs before structural insertion', async () => {

@@ -7,6 +7,7 @@ import {BUNDLED_ADAPTER_REGISTRY} from '../bundled-adapter-registry'
 import {AdapterRegistry} from '../../adapters/registry'
 import {inject, Injectable, InjectionToken} from "@angular/core";
 import {BUNDLED_CLIPBOARD_SOURCE_ADAPTERS} from '../clipboard-source-adapters';
+import {exceedsLiteralMarkdownBudget, exceedsSimpleHtmlBudget} from './incoming-source-preflight';
 
 /**
  * Registry used by the editor-level HTML/Markdown service.
@@ -40,11 +41,17 @@ export class AdapterService extends DocAdapterService {
   supportedAdapters: IAdapter[] = [
     {
       type: ClipboardDataType.HTML,
+      exceedsIncomingContentLimit: (html, limit) => this.registry === BUNDLED_ADAPTER_REGISTRY
+        && this.clipboardSourceAdapters === BUNDLED_CLIPBOARD_SOURCE_ADAPTERS
+        && exceedsSimpleHtmlBudget(html, limit),
       toSnapshot: (html: string) => this.htmlAdapter.toBlockSnapshot(html),
       fromSnapshot: (snapshot: IBlockSnapshot) => this.htmlAdapter.toHtml(snapshot)
     },
     {
       type: ClipboardDataType.MARKDOWN,
+      exceedsIncomingContentLimit: (markdown, limit) => this.registry === BUNDLED_ADAPTER_REGISTRY
+        && this.clipboardSourceAdapters === BUNDLED_CLIPBOARD_SOURCE_ADAPTERS
+        && exceedsLiteralMarkdownBudget(markdown, limit),
       toSnapshot: (markdown: string) => this.markdownAdapter.toBlockSnapshot(markdown),
       fromSnapshot: (snapshot: IBlockSnapshot) => this.markdownAdapter.toMarkdown(snapshot)
     }

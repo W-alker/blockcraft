@@ -29,6 +29,7 @@ import {
   generateId,
   replaceSnapshotsIdDeeply
 } from '@ccc/blockcraft';
+import {checkIncomingContentSize, checkIncomingSourceSize} from '@ccc/blockcraft';
 import {PaginationSettingsComponent} from './pagination-settings.component';
 import {DocumentScaleSettingsComponent} from './document-scale-settings.component';
 import {PersonCardDebugComponent} from './person-card-debug.component';
@@ -3140,13 +3141,15 @@ graph TD
     // 文件导入属于编辑操作，不属于流式预览。先停止模拟流，避免旧定时器
     // 在 Paste 事务完成后继续写入；随后复用 ClipboardManager 的选区、
     // readonly、事务、Undo 和选区恢复规则。
-    this.stopMarkdownStreamTest();
+    if (!checkIncomingSourceSize(editor.doc, adapter, text)) return;
     const snapshot = await adapter.toSnapshot(text);
     if (!snapshot.children.length) {
       editor.doc.messageService.warn('Markdown 中没有可导入的内容');
       return;
     }
 
+    if (!checkIncomingContentSize(editor.doc, {snapshots: snapshot.children as IBlockSnapshot[]})) return;
+    this.stopMarkdownStreamTest();
     let selection = editor.doc.selection.value;
     if (!selection || selection.start.type !== 'text') {
       editor.doc.selection.setCursorAtBlock(editor.doc.root, false, false);
@@ -3198,11 +3201,13 @@ graph TD
       return;
     }
 
+    if (!checkIncomingSourceSize(editor.doc, adapter, text)) return;
     const snapshot = await adapter.toSnapshot(text);
     if (!snapshot) {
       return;
     }
 
+    if (!checkIncomingContentSize(editor.doc, {snapshots: snapshot.children as IBlockSnapshot[]})) return;
     editor.doc.crud.insertBlockSnapshots(editor.doc.rootId, 0, snapshot.children as IBlockSnapshot[]);
   }
 
@@ -3216,6 +3221,7 @@ graph TD
     try {
       const text = await files[0]!.text();
       const rootSnapshot = this.parseBlockSnapshotText(text);
+      if (!checkIncomingContentSize(editor.doc, {snapshots: rootSnapshot.children as IBlockSnapshot[]})) return;
       const children = this.prepareImportedSnapshotChildren(rootSnapshot, editor.doc);
 
       if (!children.length) {

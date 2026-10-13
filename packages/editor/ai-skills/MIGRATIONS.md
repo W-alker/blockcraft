@@ -2,7 +2,42 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-10-12 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-10-13 | Tracks `@ccc/blockcraft` npm releases.
+
+## 未发布 — 2026-10-13：单次粘贴／导入协同内容上限
+
+**Severity**: minor（默认行为变化；发布版本由用户另行决定，未改 package.json）
+
+**What changed**: 单次粘贴／导入新增内容按独立 Yjs v1 编码计量，默认上限
+1.5 MB（1,572,864 字节）。超限提示并在写入前整次拒绝；不改变上传文件大小限制。
+
+**Why**: 防止单次粘贴或外部内容导入向协同模型写入过量数据，不在正式 update 后丢包。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-app.md`、`blockcraft-adapter.md`。
+
+### New APIs
+
+`DocConfig.maxIncomingContentBytes?`、`IncomingContent`、
+`DEFAULT_MAX_INCOMING_CONTENT_BYTES`、`measureIncomingContentBytes()`、
+`checkIncomingContentSize()`、`checkIncomingTextSize()`、`checkIncomingSourceSize()`，
+以及 `IAdapter.exceedsIncomingContentLimit?`（保守预检扩展点）。
+
+### Behavior Changes
+
+默认拒绝超过上限的文本／富文本／对象／表格／文件引用粘贴与格式切换。
+Playground 的 Markdown／HTML／TXT Snapshot 文件导入也采用同一上限。
+计量不含既有文档和上传文件字节，不承诺最终网络包大小；远端同步、Undo/Redo、
+日常输入、初始化与通用 Adapter／CRUD 保持原有语义。
+明显超限的纯文本／简单 Markdown 与 HTML 在创建快照前拒绝；快照检查先执行保守
+下界扫描，明显超限则跳过临时 Yjs 编码。复杂来源和临界内容保留精确校验，不新增原文大小限制。
+
+### Migration Recipe
+
+旧宿主无需配置即可启用内置粘贴限制；需要不同上限时设置 `maxIncomingContentBytes`。
+自行解析并直接调用 CRUD 的文件导入，可在转换前调用 `checkIncomingSourceSize()`；
+仍需在写入和改选区前调用
+`checkIncomingContentSize(doc, {snapshots: children})`，返回 false 时立即终止。
+具体示例见 `blockcraft-app.md`。未同步改变任何宿主上传服务或服务器。
 
 ## 0.11.15 — 2026-10-12：浮动层内逐对象虚拟化
 

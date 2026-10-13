@@ -8,6 +8,8 @@ export interface IAdapter {
   type: ClipboardDataType
   toSnapshot: (data: string) => Promise<IBlockSnapshot>
   fromSnapshot: (snapshot: IBlockSnapshot) => Promise<string>
+  /** Optional conservative preflight: true must prove the converted Yjs content exceeds limitBytes. */
+  exceedsIncomingContentLimit?: (data: string, limitBytes: number) => boolean
 }
 
 export abstract class DocAdapterService {

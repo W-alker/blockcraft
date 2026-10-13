@@ -6,6 +6,7 @@ import {
   DocAttachmentInfo,
   DocFileService,
   IBlockSnapshot,
+  measureIncomingContentBytes,
 } from '../../framework'
 import {createGenericBlockAdapterContribution} from '../../adapters/generic'
 import {
@@ -159,5 +160,35 @@ describe('AdapterService registry composition', () => {
     expect(service.registry).toBe(registry)
     expect(service.registry.htmlMatchersForFlavour('custom-service-card'))
       .toEqual(custom.html!)
+    expect(service.getAdapter(ClipboardDataType.MARKDOWN)!.exceedsIncomingContentLimit!('中'.repeat(1000), 100)).toBeFalse()
+    expect(service.getAdapter(ClipboardDataType.HTML)!.exceedsIncomingContentLimit!('<p>' + '中'.repeat(1000) + '</p>', 100)).toBeFalse()
+  })
+
+  it('preflights literal prose and simple HTML without treating markup bytes as content', async () => {
+    TestBed.configureTestingModule({providers: [AdapterService, {provide: DOC_FILE_SERVICE_TOKEN, useClass: TestFileService}]})
+    const service = TestBed.inject(AdapterService)
+    const md = service.getAdapter(ClipboardDataType.MARKDOWN)!
+    const html = service.getAdapter(ClipboardDataType.HTML)!
+    for (const [adapter, source] of [
+      [md, '中'.repeat(200)],
+      [html, '<p>' + '中'.repeat(200) + '</p>'],
+      [html, '<h2>' + 'a'.repeat(250) + '</h2><p>' + '中'.repeat(100) + '</p>'],
+    ] as const) {
+      expect(adapter.exceedsIncomingContentLimit!(source, 500)).toBeTrue()
+      const snapshot = await adapter.toSnapshot(source)
+      const size = measureIncomingContentBytes({snapshots: snapshot.children as IBlockSnapshot[]})
+      expect(size).toBeGreaterThan(500)
+      expect(adapter.exceedsIncomingContentLimit!(source, size)).toBeFalse()
+    }
+    expect(md.exceedsIncomingContentLimit!(' '.repeat(10000), 500)).toBeFalse()
+    expect(md.exceedsIncomingContentLimit!('<!--' + 'x'.repeat(10000) + '-->', 500)).toBeFalse()
+    expect(md.exceedsIncomingContentLimit!('[unused]: https://test/' + 'x'.repeat(10000), 500)).toBeFalse()
+    for (const source of [
+      '<!--' + 'x'.repeat(10000) + '--><p>ok</p>',
+      '<p hidden>' + 'x'.repeat(10000) + '</p>',
+      '<p>' + '&amp;'.repeat(200) + '</p>',
+      '<p>ok</p><script>' + 'x'.repeat(10000) + '</script>',
+      '<p>' + ' '.repeat(10000) + '</p>',
+    ]) expect(html.exceedsIncomingContentLimit!(source, 500)).toBeFalse()
   })
 })
