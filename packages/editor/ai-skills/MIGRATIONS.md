@@ -2,7 +2,29 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-10-13 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-10-14 | Tracks `@ccc/blockcraft` npm releases.
+
+## 未发布 — 2026-10-14：Snapshot Viewer 的 Mermaid 只展示图形
+
+**Severity**: minor（快照展示行为变化；发布版本由用户另行决定）
+
+**What changed**: Snapshot Viewer 中的 Mermaid 移除源码区、标题栏和编辑工具按钮，
+始终展示图形。修复流式更新后异步 SVG 写入临时节点而导致空白的问题。
+
+**Why**: 只读快照需要稳定的图形预览；已完成的图不能因后续文本更新而消失。
+
+**Affected ai-skills files**: `blockcraft-app.md`。
+
+### Behavior Changes
+
+`props.mode` 不再控制快照的源码／图形展示，但仍保存在模型中供编辑器使用。
+更新 Mermaid 源码时保留上一张有效图，直到新图生成成功；旧任务在源码替换、
+清空、删除或销毁后不再回写。`resourcePolicy: 'off'` 继续禁止异步绘图。
+
+### Migration Recipe
+
+无需迁移文档数据。需要源码编辑和工具栏的页面继续使用编辑器；
+快照宿主如需自定义展示，可使用已有 `SnapshotViewerOptions.blockRenderers` 扩展。
 
 ## 未发布 — 2026-10-13：单次粘贴／导入协同内容上限
 

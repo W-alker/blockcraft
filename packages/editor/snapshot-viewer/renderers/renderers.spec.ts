@@ -645,6 +645,12 @@ describe("snapshot-viewer renderers", () => {
       expect(videoFrame.hasAttribute("aria-busy")).toBeFalse()
       expect(iframeFrame.hasAttribute("aria-busy")).toBeFalse()
 
+      // Streaming a sibling must preserve the existing visibility observers.
+      renderer.update([...snapshots, fixture.headingParagraph])
+      expect(observerHarness.observedCount()).toBe(4)
+      expect(host.querySelector(".image-block .img-wrapper")).toBe(imageFrame)
+      expect(image.hasAttribute("src")).toBeFalse()
+
       jasmine.clock().install()
       try {
         jasmine.clock().tick(10_001)
@@ -776,13 +782,12 @@ describe("snapshot-viewer renderers", () => {
 
     expect(host.querySelector(".formula-block .katex")).not.toBeNull()
     expect(host.querySelector('.mermaid-block .graph-con [data-rendered="true"]')).not.toBeNull()
-    expect(host.querySelector('.mermaid-block .download-btn')).not.toBeNull()
-    expect(host.querySelector('.mermaid-block .fullscreen-btn')).not.toBeNull()
+    expect(host.querySelector('.mermaid-block .head, .mermaid-block .text-container')).toBeNull()
   })
 
   it("applies async syntax highlighting to code and mermaid text blocks", async () => {
     const fixture = createAllBlocksFixture()
-    const host = renderFixture([fixture.code, fixture.mermaid])
+    const host = renderFixture([fixture.code, (fixture.mermaid.children as IBlockSnapshot[])[0]!])
     await shikiService.getHighlighter()
     await flushPromises()
 

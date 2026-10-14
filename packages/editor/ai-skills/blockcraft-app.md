@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-10-13
+> Last updated: 2026-10-14
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -345,6 +345,12 @@ The snapshot viewer is:
 - display-only
 - independent from `BlockCraftDoc`, plugins, Yjs, selection, and input modules
 - optimized for snapshot-first rendering, not editing
+
+快照中的 Mermaid 固定只展示图形，不渲染源码区、标题栏或编辑工具按钮；
+已有 `props.mode` 仍保留给编辑器使用，快照展示不改写模型。
+流式源码更新复用当前图形容器，异步绘图或不完整语法期间保留上一张有效 SVG；
+过期任务不能覆盖新图，后续正文追加不会取消未变化图形的渲染。
+`resourcePolicy: 'off'` 仍禁止 Mermaid 绘图，也不回退展示源码。
 
 内置块的只读视觉沿用普通模式的格式投影；贴纸复用预设 SVG，日期卡、人员卡和天气卡复用原展示组件与样式档，分页符也显示同款标记。展示组件仅在对应卡片出现时挂载，更新或销毁时释放，不会建立 `BlockCraftDoc` 或 Yjs 文档。定格天气从 `props.frozen` 显示；实时天气或缺少定格数据时仍显示普通组件的占位视觉，快照本身不包含可供查询的实时天气服务。直接调用 `createSnapshotRenderer()` 时，渲染容器会自动获得主题类 `bc-snapshot-viewer`，`destroy()` 会移除由渲染器添加的类。
 

@@ -29,8 +29,9 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
   private options: SnapshotViewerOptions
   private readonly renderers: SnapshotBlockRenderer[]
   private readonly enhancementCache = new Map<string, unknown>()
-  private readonly activeEnhancements = new Map<string, AbortController>()
-  private readonly enhancementCleanups = new Set<() => void>()
+  private readonly activeEnhancements = new Map<string, {target: Element; controller: AbortController}>()
+  private readonly enhancementCleanups = new Map<string, {target: Element; cleanup: () => void}>()
+  private readonly changedBlockElements = new Set<Element>()
   private readonly renderDisposables = new Map<Element, () => void>()
   private readonly inlineEmbeds: SnapshotViewerOptions["inlineEmbeds"]
   private mountedRoot: MountedSnapshotNode | null = null
@@ -98,7 +99,7 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
       return
     }
 
-    this.cancelEnhancements()
+    this.changedBlockElements.clear()
     const normalized = normalizeSnapshot(snapshot, this.options)
     const enhancementQueue: SnapshotEnhancementTask[] = []
     const renderContext = this.createRenderContext()
@@ -200,6 +201,7 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
     if (snapshotsAreEqual(current.snapshot, next)) {
       return current
     }
+    this.changedBlockElements.add(current.element)
 
     // A renderer that implements `patch` owns its whole subtree: the engine
     // hands over the mounted node and stops tracking children. This keeps
@@ -292,14 +294,47 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
   }
 
   private flushEnhancements(tasks: SnapshotEnhancementTask[]) {
+    // Container patching also renders temporary shells. Only mounted targets
+    // own work; unchanged blocks retain their pending render across updates.
+    const queuedTasks = Array.from(new Map(tasks
+      .filter(task => this.container?.contains(task.target))
+      .map(task => [task.key, task])).values())
+    const nextKeys = new Map<Element, Set<string>>()
+    queuedTasks.forEach(task => {
+      const keys = nextKeys.get(task.target) ?? new Set<string>()
+      keys.add(task.key)
+      nextKeys.set(task.target, keys)
+    })
+    const isStale = (key: string, target: Element) =>
+      !this.container?.contains(target) ||
+      (nextKeys.has(target) && !nextKeys.get(target)!.has(key)) ||
+      (this.changedBlockElements.has(target.closest('[data-block-id]')!) && !nextKeys.has(target))
+
+    this.activeEnhancements.forEach(({target, controller}, key) => {
+      if (!isStale(key, target)) return
+      controller.abort()
+      this.activeEnhancements.delete(key)
+    })
+    this.enhancementCleanups.forEach(({target, cleanup}, key) => {
+      if (!isStale(key, target)) return
+      cleanup()
+      this.enhancementCleanups.delete(key)
+    })
+    this.changedBlockElements.clear()
+
     const defaultPolicy = this.options.resourcePolicy ?? "eager"
     if (defaultPolicy === "off") {
       return
     }
 
-    const queuedTasks = Array.from(new Map(tasks.map((task) => [task.key, task])).values())
-
     queuedTasks.forEach((task) => {
+      const active = this.activeEnhancements.get(task.key)
+      const waiting = this.enhancementCleanups.get(task.key)
+      if (active?.target === task.target || waiting?.target === task.target) return
+      active?.controller.abort()
+      this.activeEnhancements.delete(task.key)
+      waiting?.cleanup()
+      this.enhancementCleanups.delete(task.key)
       const policy = task.policy ?? defaultPolicy
       if (policy === "visible" && typeof IntersectionObserver !== "undefined") {
         const observer = new IntersectionObserver((entries) => {
@@ -308,7 +343,8 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
           }
 
           observer.disconnect()
-          this.enhancementCleanups.delete(cleanup)
+          this.enhancementCleanups.delete(task.key)
+          if (!this.container?.contains(task.target)) return
           this.activateEnhancement(task)
         }, {
           rootMargin: "300px 0px 300px 0px",
@@ -316,7 +352,7 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
         })
 
         const cleanup = () => observer.disconnect()
-        this.enhancementCleanups.add(cleanup)
+        this.enhancementCleanups.set(task.key, {target: task.target, cleanup})
         observer.observe(task.target)
         return
       }
@@ -336,11 +372,11 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
 
   private runEnhancement(task: SnapshotEnhancementTask) {
     const controller = new AbortController()
-    this.activeEnhancements.set(task.key, controller)
+    this.activeEnhancements.set(task.key, {target: task.target, controller})
 
     Promise.resolve(task.load(controller.signal))
       .then((value) => {
-        if (controller.signal.aborted) {
+        if (controller.signal.aborted || !this.container?.contains(task.target)) {
           return
         }
         this.enhancementCache.set(task.key, value)
@@ -349,17 +385,18 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
       .catch(() => {
       })
       .finally(() => {
-        if (this.activeEnhancements.get(task.key) === controller) {
+        if (this.activeEnhancements.get(task.key)?.controller === controller) {
           this.activeEnhancements.delete(task.key)
         }
       })
   }
 
   private cancelEnhancements() {
-    this.activeEnhancements.forEach((controller) => controller.abort())
+    this.activeEnhancements.forEach(({controller}) => controller.abort())
     this.activeEnhancements.clear()
-    this.enhancementCleanups.forEach((cleanup) => cleanup())
+    this.enhancementCleanups.forEach(({cleanup}) => cleanup())
     this.enhancementCleanups.clear()
+    this.changedBlockElements.clear()
   }
 
   private disposeDetachedRenderedResources(): void {

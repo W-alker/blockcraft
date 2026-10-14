@@ -123,6 +123,7 @@ interface DebugMetaItem {
 const BLOCK_SNAPSHOT_NODE_TYPES = new Set(['root', 'block', 'void', 'editable']);
 const MARKDOWN_STREAM_TEST_MIN_CHUNK_SIZE = 4;
 const MARKDOWN_STREAM_TEST_MAX_CHUNKS = 240;
+const MARKDOWN_STREAM_INTERVAL_MS = 90;
 
 const DEFAULT_MARKDOWN_STREAM_TEST_SOURCE = `# BlockCraft Markdown Stream Test
 
@@ -642,53 +643,55 @@ const ACTION_SECTIONS: DebugSection[] = [
               [stickyTop]="0">
             </bc-fixed-toolbar>
           }
-          <div
-            class="revision-review-workspace"
-            [class.revision-review-workspace--panel-open]="revisionPanelOpen">
-            <section
-              class="editor-stage"
-              [class.editor-stage--flow]="!paginationEnabled">
-              <article #documentHeader class="playground-document-header">
-                <div class="playground-document-header__eyebrow">宿主文档头 · root 外部</div>
-                <h1>BlockCraft 分页坐标验证文档</h1>
-                <div class="playground-document-header__meta">
-                  <span class="playground-document-header__avatar">BC</span>
-                  <span>BlockCraft Playground</span>
-                  <span class="playground-document-header__divider" aria-hidden="true"></span>
-                  <span>连续布局与分页布局复用同一 DOM</span>
-                </div>
-              </article>
-              @if (virtualizationEnabled) {
-                <block-craft-editor
-                  #editor
-                  [stickyTop]="0"
-                  [showFixedToolbar]="false"
-                  [virtualizationEnabled]="true"
-                  [paginationSparseView]="true"
-                  [paginationDocumentHeader]="paginationDocumentHeaderOptions">
-                </block-craft-editor>
-              } @else {
-                <block-craft-editor
-                  #editor
-                  [stickyTop]="0"
-                  [showFixedToolbar]="false"
-                  [virtualizationEnabled]="false"
-                  [paginationSparseView]="false"
-                  [paginationDocumentHeader]="paginationDocumentHeaderOptions">
-                </block-craft-editor>
-              }
-            </section>
-            @if (revisionPanelOpen && editorDoc && revisionReviewPlugin) {
-              <bc-revision-review-panel
-                class="playground-revision-review-panel"
-                [doc]="editorDoc!"
-                [review]="revisionReviewPlugin!"
-                [canReview]="true"
-                (intent)="onRevisionReviewIntent($event)">
-              </bc-revision-review-panel>
-            }
-          </div>
         }
+        <!-- 展示快照时保留编辑器实例，避免切回后丢失文档和撤销历史。 -->
+        <div
+          class="revision-review-workspace"
+          [style.display]="activeMainTab === 'editor' ? null : 'none'"
+          [class.revision-review-workspace--panel-open]="revisionPanelOpen">
+          <section
+            class="editor-stage"
+            [class.editor-stage--flow]="!paginationEnabled">
+            <article #documentHeader class="playground-document-header">
+              <div class="playground-document-header__eyebrow">宿主文档头 · root 外部</div>
+              <h1>BlockCraft 分页坐标验证文档</h1>
+              <div class="playground-document-header__meta">
+                <span class="playground-document-header__avatar">BC</span>
+                <span>BlockCraft Playground</span>
+                <span class="playground-document-header__divider" aria-hidden="true"></span>
+                <span>连续布局与分页布局复用同一 DOM</span>
+              </div>
+            </article>
+            @if (virtualizationEnabled) {
+              <block-craft-editor
+                #editor
+                [stickyTop]="0"
+                [showFixedToolbar]="false"
+                [virtualizationEnabled]="true"
+                [paginationSparseView]="true"
+                [paginationDocumentHeader]="paginationDocumentHeaderOptions">
+              </block-craft-editor>
+            } @else {
+              <block-craft-editor
+                #editor
+                [stickyTop]="0"
+                [showFixedToolbar]="false"
+                [virtualizationEnabled]="false"
+                [paginationSparseView]="false"
+                [paginationDocumentHeader]="paginationDocumentHeaderOptions">
+              </block-craft-editor>
+            }
+          </section>
+          @if (revisionPanelOpen && editorDoc && revisionReviewPlugin) {
+            <bc-revision-review-panel
+              class="playground-revision-review-panel"
+              [doc]="editorDoc!"
+              [review]="revisionReviewPlugin!"
+              [canReview]="true"
+              (intent)="onRevisionReviewIntent($event)">
+            </bc-revision-review-panel>
+          }
+        </div>
 
         @if (activeMainTab === 'editor' && paginationEnabled && paginationPlugin) {
           <bc-pagination-settings
@@ -756,10 +759,14 @@ const ACTION_SECTIONS: DebugSection[] = [
 
             <div class="viewer-demo-panel__stage">
               @if (activeViewerMode === 'snapshot') {
-                <bc-snapshot-viewer
-                  [snapshot]="snapshotViewerSnapshot"
-                  [options]="snapshotViewerOptions">
-                </bc-snapshot-viewer>
+                @if (snapshotViewerSnapshot; as snapshot) {
+                  <bc-snapshot-viewer
+                    [snapshot]="snapshot"
+                    [options]="snapshotViewerOptions">
+                  </bc-snapshot-viewer>
+                } @else {
+                  <p>编辑器尚未初始化，请先在编辑器中加载内容。</p>
+                }
               } @else {
                 <div class="markdown-stream-demo">
                   <div class="markdown-stream-demo__controls">
@@ -1778,8 +1785,8 @@ export class AppComponent implements AfterViewInit, OnDestroy {
   agentDialogOpen = false;
   activeMainTab: 'editor' | 'viewer' = 'editor';
   activeViewerMode: 'snapshot' | 'markdown-stream' = 'snapshot';
-  snapshotViewerSnapshot: IBlockSnapshot = this.createDemoSnapshot();
-  snapshotViewerSource: 'demo' | 'current' = 'demo';
+  snapshotViewerSnapshot: IBlockSnapshot | null = null;
+  snapshotViewerSource: 'demo' | 'current' = 'current';
   readonly snapshotViewerOptions = {
     resourcePolicy: 'eager' as const
   };
@@ -1803,11 +1810,10 @@ graph TD
   markdownStreamTestSource = DEFAULT_MARKDOWN_STREAM_TEST_SOURCE;
   markdownStreamTestRunning = false;
   markdownStreamTestError: string | null = null;
-  markdownStreamChunkMode: 'paragraph' | 'random' = 'paragraph';
+  markdownStreamChunkMode: 'paragraph' | 'random' = 'random';
   markdownStreamChunks = this.buildMarkdownStreamChunks(this.markdownStreamSource);
   markdownStreamIndex = 0;
   private _markdownStreamPlayTimer: ReturnType<typeof setTimeout> | null = null;
-  private readonly _markdownStreamPlayIntervalMs = 700;
   private _markdownStreamViewer: MarkdownStreamViewer | null = null;
 
   // Monitor — focused block only
@@ -1963,6 +1969,10 @@ graph TD
   }
 
   setMainTab(tab: 'editor' | 'viewer') {
+    if (tab === 'viewer' && this.activeViewerMode === 'snapshot') {
+      this.syncSnapshotViewerFromEditor();
+      return;
+    }
     this.activeMainTab = tab;
     this.cdr.markForCheck();
     if (tab === 'viewer' && this.activeViewerMode === 'markdown-stream') {
@@ -1971,6 +1981,10 @@ graph TD
   }
 
   setViewerMode(mode: 'snapshot' | 'markdown-stream') {
+    if (mode === 'snapshot') {
+      this.syncSnapshotViewerFromEditor();
+      return;
+    }
     this.activeViewerMode = mode;
     this.cdr.markForCheck();
     if (mode === 'markdown-stream') {
@@ -2672,13 +2686,11 @@ graph TD
   }
 
   syncSnapshotViewerFromEditor() {
-    const editor = this.ensureEditorInitialized();
-    const snapshot = editor.doc.exportSnapshot();
-    if (!snapshot) {
-      return;
-    }
-
-    this.snapshotViewerSnapshot = JSON.parse(JSON.stringify(snapshot)) as IBlockSnapshot;
+    const doc = this.editor?.doc;
+    const snapshot = doc?.isInitialized ? doc.exportSnapshot() : null;
+    this.snapshotViewerSnapshot = snapshot
+      ? JSON.parse(JSON.stringify(snapshot)) as IBlockSnapshot
+      : null;
     this.snapshotViewerSource = 'current';
     this.activeMainTab = 'viewer';
     this.activeViewerMode = 'snapshot';
@@ -2826,7 +2838,7 @@ graph TD
       this.markdownStreamIndex += 1;
       this.cdr.markForCheck();
       this.scheduleMarkdownStreamPlayback();
-    }, this._markdownStreamPlayIntervalMs);
+    }, MARKDOWN_STREAM_INTERVAL_MS);
   }
 
   private stopMarkdownStreamPlayback() {
@@ -3076,7 +3088,7 @@ graph TD
       void Promise.resolve()
         .then(() => this.appendMarkdownChunk(chunk))
         .catch(error => this.handleMarkdownStreamTestError(runId, error));
-      this._markdownTestTimer = window.setTimeout(tick, 90);
+      this._markdownTestTimer = window.setTimeout(tick, MARKDOWN_STREAM_INTERVAL_MS);
     };
 
     void Promise.resolve()

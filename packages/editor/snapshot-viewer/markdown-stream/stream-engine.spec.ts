@@ -247,13 +247,19 @@ describe("SnapshotViewerStreamEngine", () => {
 
   it("renders an open Mermaid fence through the configured Markdown adapter", async () => {
     const host = document.createElement("div")
-    const engine = new SnapshotViewerStreamEngine({container: host})
+    const render = jasmine.createSpy().and.resolveTo('<svg data-diagram="ready"></svg>')
+    const engine = new SnapshotViewerStreamEngine({
+      container: host,
+      viewerOptions: {enhancers: {mermaid: {render}}},
+    })
 
     engine.append("Intro\n\n```mermaid\ngraph TD")
     await flushPromises()
     expect(host.textContent).toContain("Intro")
-    expect(host.textContent).toContain("graph TD")
-    expect(host.querySelector('.bc-flavour-mermaid')).not.toBeNull()
+    expect(render).toHaveBeenCalledWith('graph TD', jasmine.any(AbortSignal))
+    expect(host.querySelector('.bc-flavour-mermaid .graph-con svg')).not.toBeNull()
+    expect(host.querySelector('.bc-flavour-mermaid .text-container')).toBeNull()
+    engine.destroy()
   })
 
   it("preserves a closed fence block when subsequent chunks arrive", async () => {
@@ -475,7 +481,9 @@ describe("SnapshotViewerStreamEngine", () => {
     const root = host.querySelector<HTMLElement>('.bc-flavour-root')
     expect(root).not.toBeNull()
     expect(readDomFlavourTree(root!)).toEqual(
-      readSnapshotFlavourTree(expected.children as IBlockSnapshot[]),
+      // The source remains in the adapter model; snapshot Mermaid only mounts its graph.
+      readSnapshotFlavourTree(expected.children as IBlockSnapshot[])
+        .filter(flavour => flavour !== 'mermaid-textarea'),
     )
   })
 

@@ -15,6 +15,7 @@ import {
   SnapshotBlockRenderer,
   SnapshotEnhancementTask,
   SnapshotRenderContext,
+  MountedSnapshotNode,
 } from "../types";
 import {
   BlockObjectSizeProps,
@@ -36,7 +37,6 @@ const MEDIA_FLAVOURS = new Set([
   "video",
   "attachment",
   "formula",
-  "mermaid",
 ]);
 const IMAGE_OBJECT_SIZING: BlockObjectSizingCapability = {
   defaultWr: 100,
@@ -70,6 +70,10 @@ export function createMediaRenderers(): SnapshotBlockRenderer[] {
       }
     },
   }, {
+    canRender: snapshot => snapshot.flavour === "mermaid",
+    render: (ctx, snapshot) => renderMermaid(snapshot, ctx),
+    patch: (ctx, current, next) => patchMermaid(current, next, ctx),
+  }, {
     canRender: (snapshot) => MEDIA_FLAVOURS.has(snapshot.flavour),
     render(ctx, snapshot) {
       switch (snapshot.flavour) {
@@ -81,8 +85,6 @@ export function createMediaRenderers(): SnapshotBlockRenderer[] {
           return renderAttachment(snapshot, ctx)
         case "formula":
           return renderFormula(snapshot, ctx)
-        case "mermaid":
-          return renderMermaid(snapshot, ctx)
         default:
           return {element: createBlockShell(snapshot)}
       }
@@ -520,58 +522,10 @@ function renderFormula(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
 
 function renderMermaid(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   const element = createBlockShell(snapshot)
-  const props = snapshot.props as Record<string, unknown>
-  const mode = `${props["mode"] || "text"}`
-  element.setAttribute("data-mode", mode)
-
-  const head = document.createElement("div")
-  head.classList.add("head")
-  const label = document.createElement("div")
-  label.classList.add("btn")
-  label.textContent = "Mermaid"
-  head.append(label)
-
-  const downloadButton = document.createElement("div")
-  downloadButton.classList.add("download-btn", "btn", "icon-btn")
-  downloadButton.setAttribute("title", "导出 SVG")
-  const downloadIcon = document.createElement("i")
-  downloadIcon.className = "bc_icon bc_xiazai"
-  downloadButton.append(downloadIcon)
-  downloadButton.hidden = mode === "text"
-  head.append(downloadButton)
-
-  const controlButtons = document.createElement("div")
-  controlButtons.classList.add("control-btns")
-  controlButtons.hidden = mode === "text"
-  for (const iconName of ["bc_suoxiao", "bc_fangda"]) {
-    const button = document.createElement("span")
-    button.classList.add("btn", "icon-btn")
-    const icon = document.createElement("i")
-    icon.className = `bc_icon ${iconName}`
-    button.append(icon)
-    controlButtons.append(button)
-  }
-  head.append(controlButtons)
-
-  const fullscreenButton = document.createElement("button")
-  fullscreenButton.classList.add("fullscreen-btn", "btn", "icon-btn")
-  fullscreenButton.setAttribute("type", "button")
-  fullscreenButton.setAttribute("contenteditable", "false")
-  fullscreenButton.classList.toggle("only-fullscreen", mode === "text")
-  fullscreenButton.setAttribute("aria-label", "全屏")
-  fullscreenButton.setAttribute("title", "全屏")
-  const fullscreenIcon = document.createElement("i")
-  fullscreenIcon.className = "bc_icon bc_arrow-expand"
-  fullscreenButton.append(fullscreenIcon)
-  head.append(fullscreenButton)
+  element.setAttribute("data-mode", "graph")
 
   const content = document.createElement("div")
   content.classList.add("content")
-
-  const textContainer = document.createElement("div")
-  textContainer.classList.add("text-container", "children-render-container")
-  const mermaidChildren = snapshot.children as IBlockSnapshot[]
-  mermaidChildren.forEach((child) => textContainer.append(ctx.renderBlock(child)))
 
   const graphContainer = document.createElement("div")
   graphContainer.classList.add("graph-container")
@@ -579,27 +533,33 @@ function renderMermaid(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   graphCon.classList.add("graph-con")
   graphContainer.append(graphCon)
 
-  content.append(textContainer, graphContainer)
-  element.append(head, content)
-
-  const source = collectMermaidSource(snapshot)
-  if (mode !== "text") {
-    const task = createMermaidEnhancementTask(
-      ctx.options,
-      source,
-      graphCon,
-      `mermaid:${snapshot.id}:${source}`
-    )
-    if (task) {
-      ctx.scheduleEnhancement(task)
-    } else if (!source.trim()) {
-      graphCon.textContent = "Mermaid"
-    } else {
-      graphCon.textContent = source
-    }
-  }
+  content.append(graphContainer)
+  element.append(content)
+  scheduleMermaidGraph(snapshot, ctx, graphCon)
 
   return {element}
+}
+
+function patchMermaid(current: MountedSnapshotNode, next: IBlockSnapshot, ctx: SnapshotRenderContext) {
+  const shell = createBlockShell(next)
+  for (const name of current.element.getAttributeNames()) current.element.removeAttribute(name)
+  for (const name of shell.getAttributeNames()) current.element.setAttribute(name, shell.getAttribute(name)!)
+  current.element.setAttribute("data-mode", "graph")
+
+  const graph = current.element.querySelector<HTMLElement>(".graph-con")
+  if (!graph || !collectMermaidSource(next).trim()) {
+    // Replacing an emptied target also invalidates any late render for its old source.
+    current.element.replaceChildren(...Array.from(renderMermaid(next, ctx).element.childNodes))
+    return
+  }
+  // Keep the last valid SVG while an incomplete streamed source is rendering.
+  scheduleMermaidGraph(next, ctx, graph)
+}
+
+function scheduleMermaidGraph(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext, target: HTMLElement) {
+  const source = collectMermaidSource(snapshot)
+  const task = createMermaidEnhancementTask(ctx.options, source, target, `mermaid:${snapshot.id}:${source}`)
+  if (task) ctx.scheduleEnhancement(task)
 }
 
 function createEmptyMediaState(kind: "video" | "audio") {
