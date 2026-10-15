@@ -29,7 +29,13 @@ describe('Placement multi-object drag', () => {
     const releaseLease = jasmine.createSpy('releaseLease')
     const commitOne = jasmine.createSpy('commitOne')
     const commitBatch = jasmine.createSpy('commitBatch').and.returnValue(true)
+    const bindings: {binding: any; handler: BlockCraft.EventHandler; options: any; dispose: jasmine.Spy}[] = []
     const doc: any = {
+      event: {bindHotkey: (binding: any, handler: BlockCraft.EventHandler, options: any) => {
+        const dispose = jasmine.createSpy('dispose')
+        bindings.push({binding, handler, options, dispose})
+        return dispose
+      }},
       rootId: 'root', isReadonly: false,
       getBlockById: (id: string) => removed.has(id) ? null : blocks.find(block => block.id === id),
       model: {
@@ -52,12 +58,52 @@ describe('Placement multi-object drag', () => {
       crud: {undoManager: {stopCapturing: jasmine.createSpy('stopCapturing')}},
     }
     const controller = new BlockPlacementInteractionController(doc, new BlockPlacementRuntime(doc), commitOne, commitBatch)
-    return {plane, blocks, selection, json, locked, removed, doc, releaseLease, commitOne, commitBatch, controller}
+    return {plane, blocks, selection, json, locked, removed, doc, releaseLease, commitOne, commitBatch, controller, bindings}
   }
 
   function pointer(type: string, x = 20, y = 20) {
     return new PointerEvent(type, {pointerId: 1, pointerType: 'mouse', button: 0,
       clientX: x, clientY: y, bubbles: true, cancelable: true})
+  }
+
+  for (const [key, dx, dy] of [['ArrowLeft', -1, 0], ['ArrowRight', 1, 0], ['ArrowUp', 0, -1], ['ArrowDown', 0, 1]] as const) {
+    it(`${key} nudges the selection by one layout pixel without reading geometry`, () => {
+      const h = setup()
+      try {
+        const rect = spyOn(h.plane, 'getBoundingClientRect').and.callThrough()
+        const nudge = h.bindings.find(item => Array.isArray(item.binding.key))!
+        const context: any = {get: () => ({selection: h.selection, raw: {key}}), preventDefault: jasmine.createSpy()}
+        expect(nudge.handler(context)).toBeTrue()
+        expect(h.commitBatch).toHaveBeenCalledOnceWith(h.blocks.map((block, i) => ({block, position: {x: i * 100 + dx, y: i * 50 + dy}})))
+        expect(rect).not.toHaveBeenCalled()
+        expect(h.doc.selection.blur).not.toHaveBeenCalled()
+        expect(context.preventDefault).toHaveBeenCalled()
+        expect(h.releaseLease).toHaveBeenCalledTimes(1)
+        expect(h.doc.crud.undoManager.stopCapturing).toHaveBeenCalledTimes(2)
+        const registrations = h.bindings.filter(item => Array.isArray(item.binding.key))
+        expect(registrations.map(item => item.options.flavour)).toEqual(['placement-layout', 'object-group'])
+        expect(nudge.binding).toEqual(jasmine.objectContaining({shiftKey: false, altKey: false, ctrlKey: false, metaKey: false}))
+      } finally {h.controller.destroy(); h.plane.remove()}
+      h.bindings.forEach(item => expect(item.dispose).toHaveBeenCalledTimes(1))
+    })
+  }
+
+  for (const reason of ['locked', 'removed', 'dragging', 'readonly', 'text']) {
+    it(`does not partially nudge when ${reason}`, () => {
+      const h = setup()
+      try {
+        if (reason === 'locked') h.locked.add('b')
+        if (reason === 'removed') h.removed.add('b')
+        if (reason === 'dragging') h.doc.dragController.state = 'dragging'
+        if (reason === 'readonly') h.doc.isReadonly = true
+        const selection = reason === 'text' ? {...h.selection, anchor: {type: 'text'}, head: {type: 'text'}} : h.selection
+        const context: any = {get: () => ({selection, raw: {key: 'ArrowRight'}}), preventDefault: jasmine.createSpy()}
+        const nudge = h.bindings.find(item => Array.isArray(item.binding.key))!
+        expect(nudge.handler(context)).toBe(reason === 'text' ? undefined : true)
+        expect(h.commitBatch).not.toHaveBeenCalled()
+        if (reason === 'text') expect(context.preventDefault).not.toHaveBeenCalled()
+      } finally {h.controller.destroy(); h.plane.remove()}
+    })
   }
 
   it('previews every target once per frame and commits the measured-scale delta as one batch', fakeAsync(() => {

@@ -10,6 +10,7 @@ import {BlockPlacementRuntime} from './runtime'
 import {finitePlacementNumber} from './state'
 import {UnderlayObjectChrome} from './underlay-chrome'
 import {
+  BLOCK_OBJECT_GROUP_FLAVOUR,
   BLOCK_PLACEMENT_LAYOUT_FLAVOUR,
   type BlockPlacementDragState,
 } from './types'
@@ -472,6 +473,50 @@ export class BlockPlacementInteractionController {
   private bindObjectHotkeys(): void {
     const bindHotkey = this.doc.event?.bindHotkey
     if (typeof bindHotkey !== 'function') return
+
+    const handleNudge: BlockCraft.EventHandler = context => {
+      const {selection, raw} = context.get('keyboardState')
+      const blockIds = this.runtime.getAbsoluteObjectSelectionIds(selection)
+      if (!blockIds) return
+      context.preventDefault()
+      if (this.state !== 'idle' || this.doc.dragController.state !== 'idle' ||
+        blockIds.some(id => this.runtime.isReadonly(id))) return true
+
+      // Only selected views are needed; never measure DOM or scan the document.
+      const releaseLease = this.doc.virtualization.acquireBlockViewLease(blockIds)
+      try {
+        const updates: {block: BlockCraft.BlockComponent; position: {x: number; y: number}}[] = []
+        const dx = raw.key === 'ArrowLeft' ? -1 : raw.key === 'ArrowRight' ? 1 : 0
+        const dy = raw.key === 'ArrowUp' ? -1 : raw.key === 'ArrowDown' ? 1 : 0
+        for (const id of blockIds) {
+          const block = this.runtime.resolveBlock(id)
+          if (!block || !this.runtime.supports(block, 'absolute') || this.runtime.isReadonly(block)) return true
+          const position = this.runtime.getState(block)
+          if (position.mode !== 'absolute') return true
+          updates.push({block, position: {x: position.x + dx, y: position.y + dy}})
+        }
+        this.doc.crud.undoManager?.stopCapturing()
+        try {
+          // The batch also fits containing groups inside the same undo item.
+          this.commitObjectPositions(updates)
+        } finally {
+          this.doc.crud.undoManager?.stopCapturing()
+        }
+      } catch (error) {
+        if (!(error instanceof BlockReadonlyError)) throw error
+      } finally {
+        releaseLease()
+      }
+      return true
+    }
+    for (const flavour of [BLOCK_PLACEMENT_LAYOUT_FLAVOUR, BLOCK_OBJECT_GROUP_FLAVOUR]) {
+      this.subscriptions.add(bindHotkey(
+        {key: ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'],
+          shiftKey: false, altKey: false, ctrlKey: false, metaKey: false},
+        handleNudge,
+        {flavour},
+      ))
+    }
 
     const handleDelete: BlockCraft.EventHandler = context => {
       const selection = context.get('keyboardState').selection

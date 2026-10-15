@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-10-13 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-10-15 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -42,6 +42,10 @@ Agent 查询 `blockcraft.block.table` 后可使用 `[rows, columns, values]` 一
 编辑器内 `@ccc/blockcraft-agent` 通过 `blockcraft.skill.document-design` 按需暴露同源内容。
 
 ## What is BlockCraft?
+
+整体选中的浮动对象支持无修饰键方向键微调，每次移动 1 个文档布局像素。
+单选、多选、整组及组内成员共用 Placement 位置事务和撤销；缩放不改变布局步长。
+文本选区、流式块导航和修饰键组合保持原行为，详细边界见 `blockcraft-selection.md`。
 
 通用网页嵌入 `embed` 提供内置 `blockcraft.block.embed` Agent 能力，创建参数为
 `[真实 HTTP/HTTPS URL]`。已上传 HTML 使用此块；图片使用 `image`，其他文件使用

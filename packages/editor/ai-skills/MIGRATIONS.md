@@ -2,7 +2,28 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-10-14 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-10-15 | Tracks `@ccc/blockcraft` npm releases.
+
+## 未发布 — 2026-10-15：浮动对象方向键微调
+
+**Severity**: minor（新增对象键盘交互；发布版本由用户另行决定）
+
+**What changed**: 整体选中的浮动对象支持无修饰键方向键按 1 个布局 px 移动；
+支持单选、多选、组合整体及组内成员，位置和组合边界共享一次可撤销事务。
+
+**Why**: 提供无需鼠标拖拽的精确位置调整。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-selection.md`。
+
+### Behavior Changes
+
+对象选区的普通方向键现在移动对象并保留选区，不再进入公共光标导航。
+缩放不改变布局步长；长按重复按键逐次移动、逐次撤销。
+文本编辑、流式块、修饰键组合和原生输入保持原行为；只读或正在拖拽时不移动。
+
+### Migration Recipe
+
+无需数据迁移或宿主接线；使用已有 Placement 管理器自动启用。未修改包版本号。
 
 ## 未发布 — 2026-10-14：Snapshot Viewer 的 Mermaid 只展示图形
 

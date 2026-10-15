@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying selection behavior or when the L1 quick reference in `blockcraft.md` isn't enough.
 >
-> Last updated: 2026-10-12 | Source of truth: `framework/modules/selection/`
+> Last updated: 2026-10-15 | Source of truth: `framework/modules/selection/`
 
 ## 选中样式的归属
 
@@ -807,6 +807,17 @@ the view lease and selection-recalculation guard.
 成员文本指针手势释放此归属，文本选择继续使用原生 Range。其他根级对象选区保持既有投影路径。
 
 ## Root Placement Layout Boundaries
+
+### 浮动对象方向键微调
+
+对象整体选中时，无修饰键的四个方向键每次移动 1 个文档布局 CSS px，
+不随 `viewScale` 改变步长，不执行吸附。单选、多选、浮动组合整体及组合内成员
+通过 Placement 自有快捷键入口优先于公共光标导航处理；组内成员也适用于流式组合。
+一次按键的全部位置及组合边界重算共用同一 Yjs/Undo 事务，保留选区；长按重复事件
+逐次移动并可逐次撤销。只为选中对象获取视图 lease，不查询 DOM 几何或遍历全文。
+只读、包含锁定对象或拖拽期间不移动；任何一个目标不可写时不会部分移动。
+原生输入控件、IME、对象内部文本编辑、流式块整体选中及带 Shift/Alt/Ctrl/Meta 的
+方向键继续走原行为。未新增公开 API 或存储格式。
 
 Standard absolute objects are children of the final root
 `placement-layout`, not ordinary root-flow siblings. Ordinary drag selection,
