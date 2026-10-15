@@ -22,7 +22,7 @@ async function open(page: Page, id: string) {
   const bounds = (await day.boundingBox())!
   // 翻页牌的中心装饰缝覆盖数字，点击数字上部仍走真实命中检测。
   await day.click({position: {x: bounds.width / 2, y: bounds.height / 4}})
-  await card(page, id).getByRole('button', {name: '日期设置', exact: true}).click()
+  await page.locator('bc-material-toolbar').getByRole('button', {name: '日期设置', exact: true}).click()
   await expect(dialog(page)).toBeVisible()
 }
 async function select(page: Page, label: string, option: string) {
@@ -115,36 +115,25 @@ test('双击浮动卡片设置，Esc 取消；打开时切只读清理浮层', a
   await open(page, id)
   await page.getByRole('button', {name: '只读', exact: true}).press('Enter')
   await expect(dialog(page)).toHaveCount(0)
-  await expect(card(page, id).getByRole('button', {name: '日期设置', exact: true})).toHaveCount(0)
+  await expect(page.locator('bc-material-toolbar').getByRole('button', {name: '日期设置', exact: true})).toHaveCount(0)
   await card(page, id).locator('.card__day').dblclick()
   await expect(dialog(page)).toHaveCount(0)
 })
 
-test('日期入口仅选中或键盘聚焦显示，悬停不显示', async ({page}) => {
+test('日期入口只在选中时以块外工具栏显示，悬停不显示', async ({page}) => {
   const id = await setup(page)
-  const otherId = await page.evaluate(() => {
-    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
-    const snap = doc.schemas.createSnapshot('date-card', [])
-    snap.props = {style: 'masthead', date: '2026-10-07T10:00'}
-    doc.crud.insertBlockSnapshots(doc.rootId, 1, [snap])
-    return snap.id as string
-  })
-  const toolbar = card(page, id).locator('.date-card-settings-toolbar')
-  await card(page, otherId).locator('.card__day').click()
+  const toolbar = page.locator('bc-material-toolbar')
+  await expect(toolbar.getByRole('button', {name: '日期设置', exact: true})).toBeVisible()
+  expect(await card(page, id).locator('button[aria-label="日期设置"]').count()).toBe(0)
+  await page.mouse.click(100, 100)
+  await expect(toolbar).toHaveCount(0)
   await card(page, id).hover()
-  await expect(toolbar).toHaveCSS('opacity', '0')
-  await expect(toolbar).toHaveCSS('pointer-events', 'none')
+  await expect(toolbar).toHaveCount(0)
   await card(page, id).locator('.card__day').click()
-  await card(page, otherId).hover()
-  await expect(toolbar).toHaveCSS('opacity', '1')
-  await expect(card(page, otherId).locator('.date-card-settings-toolbar')).toHaveCSS('opacity', '0')
-  await card(page, id).getByRole('button', {name: '日期设置', exact: true}).click()
-  await expect(dialog(page)).toBeVisible()
-  await page.keyboard.press('Escape')
-  await card(page, otherId).locator('.card__day').click()
-  await expect(toolbar).toHaveCSS('opacity', '0')
-  await card(page, id).getByRole('button', {name: '日期设置', exact: true}).focus()
-  await expect(toolbar).toHaveCSS('opacity', '1')
+  await expect(toolbar).toBeVisible()
+  const box = (await card(page, id).boundingBox())!
+  const tools = (await toolbar.locator('nav').boundingBox())!
+  expect(tools.y + tools.height <= box.y || tools.y >= box.y + box.height).toBe(true)
 })
 
 test('日期设置按钮支持键盘激活，不触发文档回车命令', async ({page}) => {
@@ -152,7 +141,7 @@ test('日期设置按钮支持键盘激活，不触发文档回车命令', async
   const before = await snapshot(page, id)
   const blockCount = await page.evaluate(() =>
     (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc.root.childrenLength)
-  const button = card(page, id).getByRole('button', {name: '日期设置', exact: true})
+  const button = page.locator('bc-material-toolbar').getByRole('button', {name: '日期设置', exact: true})
   for (const key of ['Enter', 'Space']) {
     await button.focus()
     await button.press(key)

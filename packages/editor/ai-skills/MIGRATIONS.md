@@ -4,6 +4,29 @@
 >
 > Last updated: 2026-10-15 | Tracks `@ccc/blockcraft` npm releases.
 
+## 未发布 — 2026-10-15：动态物料块外统一工具栏
+
+**Severity**: minor（新增插件装配；发布版本由用户另行决定）
+
+**What changed**: 新增 `MaterialToolbarPlugin`，默认 bundled editor 用它统一日期、天气、人员的块外横向布局/层级工具栏，并合并日期设置、天气设置与刷新入口。日期块移除内部按钮及设置浮层生命周期。
+
+**Why**: 物料工具入口应与图片一样位于块外，避免一类对象同时出现层级浮层和块内设置按钮。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-plugin.md`、`blockcraft-plugins-toolbar.md`、`blockcraft-plugins-ref.md`、`blockcraft-block.md`。
+
+### New APIs
+
+`new MaterialToolbarPlugin()`，插件名 `material-toolbar`，无配置参数。
+
+### Behavior Changes
+
+日期/天气/人员整块选中显示同一横向工具栏；流式不显示层级，组合成员不改变布局或层级。日期双击仍打开原设置。应用、取消或 Esc 收起设置后保留工具栏并恢复设置按钮焦点；再次 Esc 或外部点击关闭工具栏。设置预览、草稿写入和撤销规则不变；不更改文档格式。
+
+### Migration Recipe
+
+bundled editor 无需改动。自定义 Doc 若要保留日期设置按钮或双击入口，在 `plugins` 中注册 `new MaterialToolbarPlugin()`；若之前使用 `new WeatherToolbarPlugin()`，替换为新插件即可覆盖三类物料。旧 WeatherToolbarPlugin 保留为仅天气的兼容入口，两者不要同时注册。宿主独立设置面板可继续使用原字段。未修改 package.json 版本号。
+
+
 ## 未发布 — 2026-10-15：浮动对象方向键微调
 
 **Severity**: minor（新增对象键盘交互；发布版本由用户另行决定）

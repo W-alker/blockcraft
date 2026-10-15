@@ -58,8 +58,8 @@ async function undo(page:Page,redo=false) {
 test('受限高度只滚动设置内容，标题和操作按钮保持可见',async({page})=>{
   const id=await setup(page)
   const panel=dialog(page),body=panel.locator('.settings-body')
-  await expect(page.getByRole('group',{name:'天气浮动工具栏',exact:true})).toHaveCount(0)
-  await expect(page.getByRole('button',{name:'刷新天气',exact:true})).toHaveCount(0)
+  await expect(page.getByRole('navigation',{name:'物料工具栏',exact:true})).toBeVisible()
+  await expect(page.getByRole('button',{name:'刷新天气',exact:true})).toBeVisible()
   const geometry=()=>panel.evaluate(el=>{
     const pane=el.closest('.cdk-overlay-pane') as HTMLElement
     const body=el.querySelector('.settings-body') as HTMLElement
@@ -224,8 +224,10 @@ test('切换块、Esc、外部点击与只读丢弃未应用编辑',async({page}
   await expect(dialog(page)).toHaveCount(0)
   expect((await state(page,id)).props).toEqual(before.props)
   await open(page,other);await select(page,'天气色调','雾蓝')
-  await page.keyboard.press('Escape');await expect(toolbar).toHaveCount(0)
+  await page.keyboard.press('Escape');await expect(dialog(page)).toHaveCount(0)
+  await expect(toolbar).toBeVisible()
   expect((await state(page,other)).props.palette).toBeUndefined()
+  await page.keyboard.press('Escape');await expect(toolbar).toHaveCount(0)
   await open(page,id);await select(page,'天气色调','陶土')
   await page.getByRole('heading',{name:'编辑器主内容区',exact:true}).click()
   await expect(toolbar).toHaveCount(0);expect((await state(page,id)).props).toEqual(before.props)

@@ -34,7 +34,7 @@ async function open(page: Page, id: string, flavour: 'date-card' | 'weather') {
   const block = blockFor(page, id)
   await block.locator(flavour === 'date-card' ? '.card__day' : '.tpl-weather-chip').click()
   await (flavour === 'date-card'
-    ? block.getByRole('button', {name: '日期设置', exact: true})
+    ? page.locator('bc-material-toolbar').getByRole('button', {name: '日期设置', exact: true})
     : page.getByRole('button', {name: '天气样式与配色', exact: true})).click()
   await expect(dialogFor(page, flavour)).toBeVisible()
 }
@@ -92,7 +92,7 @@ for (const flavour of ['date-card', 'weather'] as const) {
 test('日期双击和键盘打开，Esc、取消、应用恢复焦点且不滚动', async ({page}) => {
   const id = await setup(page, 'date-card')
   const block = blockFor(page, id)
-  const button = block.getByRole('button', {name: '日期设置', exact: true})
+  const button = page.locator('bc-material-toolbar').getByRole('button', {name: '日期设置', exact: true})
   const dialog = dialogFor(page, 'date-card')
   for (const [activation, dismissal] of [['双击', 'Escape'], ['Enter', '取消'], ['Space', '应用']]) {
     if (activation === '双击') {
@@ -109,7 +109,6 @@ test('日期双击和键盘打开，Esc、取消、应用恢复焦点且不滚�
     else await dialog.getByRole('button', {name: dismissal, exact: true}).click()
     await expect(dialog).toHaveCount(0)
     expect(Math.abs(await scrollTop(page) - beforeClose)).toBeLessThanOrEqual(4)
-    if (activation !== '双击') await expect(button).toBeFocused()
-    else await expect(page.locator('[data-blockcraft-root]')).toBeFocused()
+    await expect(button).toBeFocused()
   }
 })

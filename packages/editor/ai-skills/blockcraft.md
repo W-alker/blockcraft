@@ -1696,7 +1696,8 @@ onBold(ctx: UIEventStateContext) { ... }
 | `ObjectDragPlugin` | `plugins/object-drag/` | 按 placement 能力选择并拖动普通浮动对象，避让专属对象交互、缩放控件和 gap；注册在对象格式与图片插件之后 |
 | `ObjectFormatToolbarPlugin` | `plugins/object-format-toolbar/` | Unified Shape/TextBox/WordArt data actions inside the established side-aware 42px rail + responsive 288px secondary card; stable mixed selection, single/multi hierarchy, multi-only align/group commands, CSES segmented format tabs, paint, outline, effects, text frame and searchable font selection |
 | `CalloutToolbarPlugin` | `plugins/callout-toolbar/` | Callout and content-region appearance picker |
-| `WeatherToolbarPlugin` | `plugins/weather-toolbar/` | 天气块选中后的浮动布局与配色菜单 |
+| `MaterialToolbarPlugin` | `plugins/material-toolbar/` | 日期、天气、人员的块外横向布局、层级和设置工具栏 |
+| `WeatherToolbarPlugin` | `plugins/weather-toolbar/` | 兼容仅天气的宿主；不要与 MaterialToolbarPlugin 同时注册 |
 | `DividerExtensionPlugin` | `plugins/divider-toolbar/` | Divider hover toolbar (line/tape/colorful edge style, custom line color, independent length/thickness/opacity, optional text label + typography/alignment/color) |
 | `AttachmentExtensionPlugin` | `plugins/attachment-extension/` | Attachment preview/download UI |
 | `EmbedFrameExtensionPlugin` | `plugins/embed-frame-extension/` | Resize/replace iframe embeds |

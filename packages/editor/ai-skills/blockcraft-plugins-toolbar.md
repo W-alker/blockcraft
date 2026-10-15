@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-10-12
+> Last updated: 2026-10-15
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
@@ -962,16 +962,22 @@ new TextMarkerPlugin(
 不保存空/默认配置的规则。不要在各面板增加自定义序列化，也不要直接写 Y.Map。
 
 
-## WeatherToolbarPlugin
+## MaterialToolbarPlugin / WeatherToolbarPlugin
 
-> `plugins/weather-toolbar/` — 天气块专属浮动样式菜单，默认 bundled editor 已装配。
+> `plugins/material-toolbar/` — 日期、天气、人员块外横向工具栏，默认 bundled editor 已装配。
 
 ```typescript
-new WeatherToolbarPlugin(); // 自定义 Doc 的 plugins 按需注册；不要与 bundled 实例重复注册
+new MaterialToolbarPlugin(); // 自定义 Doc 的 plugins 按需注册；不要与 bundled 实例重复注册
+// 旧 WeatherToolbarPlugin 保留，仅处理天气；不要与 MaterialToolbarPlugin 同时注册。
 ```
 
-仅在单个、可写 `weather` 块整块选中时于右上角显示 28px 刷新单图标按钮与齿轮图标按钮（右边距 12px、顶部 4px），点击齿轮展开
-`WeatherSettingsComponent`。面板沿用日期设置的 320px 配置卡：顶部预览与样式/色调下拉，
+仅在单个、可写物料整块选中时显示块外横向工具栏，上方优先、下方回退，间隔 8px。
+按 placement 能力显示布局选项，浮动且未入组时显示层级，日期/天气显示已有设置，天气另有刷新。
+组合内日期/天气仅保留自身设置；人员没有专属设置面板，不伪造入口。
+日期双击也通过同一个 owner 打开 DateCardSettingsComponent；块内不再保留齿轮。
+工具栏展开设置时继续保留，设置沿块侧边定位，共用选区与浮层生命周期。
+应用、取消或 Esc 收起设置并将焦点恢复到设置按钮；再次 Esc 或点击外部关闭工具栏。
+天气的 `WeatherSettingsComponent` 沿用日期设置的 320px 配置卡：顶部预览与样式/色调下拉，
 显示、颜色、边框分区，底部取消/应用；使用同款 CSES Select、ColorPicker、Button。
 七款布局、色调与颜色覆盖、透明背景、图标及高低温均先在本地预览，应用时只提交改过的字段。
 不在左侧面板或 BlockController 菜单重复提供入口。

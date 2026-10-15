@@ -3,7 +3,8 @@ import {provideNoopAnimations} from '@angular/platform-browser/animations'
 import {WeatherInlineExtensionPlugin} from '.'
 import {InlineWeatherFormatDialog} from './weather-format-dialog'
 import {createInlineWeatherDelta, createInlineWeatherEmbedConverter} from '../../embeds/weather'
-import {WeatherToolbarComponent} from '../weather-toolbar/weather-toolbar.component'
+import {MaterialToolbarComponent} from '../material-toolbar/material-toolbar.component'
+import {Subject} from 'rxjs'
 
 const oldWeather = {tone:'sunny' as const,temp:20,high:25,low:15,condition:'晴',location:'杭州'}
 async function settle() { for(let i=0;i<8;i++) await Promise.resolve() }
@@ -82,8 +83,11 @@ describe('天气刷新弹窗',()=>{
     expect(refresh).toBeUndefined()
   })
   it('天气块刷新按钮读取响应状态，保留设置入口',()=>{
-    const fixture=TestBed.createComponent(WeatherToolbarComponent)
-    const block={canRefreshWeather:true,weatherStatus:'ready',refreshWeather:jasmine.createSpy()}
+    const fixture=TestBed.createComponent(MaterialToolbarComponent)
+    const block={id:'weather',flavour:'weather',canRefreshWeather:true,weatherStatus:'ready',refreshWeather:jasmine.createSpy(),doc:null as any}
+    block.doc={isReadonly:false,model:{exists:()=>true},vm:{get:()=>({instance:block})},
+      onChildrenUpdate$:new Subject(),onPropsUpdate$:new Subject(),readonlyManager:{stateChange$:new Subject()},
+      placement:{isInObjectGroup:()=>false,getState:()=>({mode:'relative'}),supportsObjectLayout:()=>false}}
     fixture.componentRef.setInput('block',block);fixture.detectChanges()
     const button=fixture.nativeElement.querySelector('button') as HTMLButtonElement
     expect(getComputedStyle(button.parentElement!).display).toBe('flex')
@@ -91,7 +95,7 @@ describe('天气刷新弹窗',()=>{
     expect(button.querySelector('.bc_huanyige')).not.toBeNull()
     expect(button.getBoundingClientRect().width).toBe(28)
     button.click();expect(block.refreshWeather).toHaveBeenCalledTimes(1)
-    fixture.componentRef.setInput('block',{...block,weatherStatus:'loading'});fixture.detectChanges()
+    block.weatherStatus='loading';fixture.changeDetectorRef.markForCheck();fixture.detectChanges()
     expect(button.disabled).toBeTrue();expect(button.querySelector('.cs-btn-loading-icon')).not.toBeNull();expect(button.querySelector('.bc_icon')).toBeNull()
     expect(fixture.nativeElement.querySelector('[aria-label="天气样式与配色"]')).not.toBeNull()
   })

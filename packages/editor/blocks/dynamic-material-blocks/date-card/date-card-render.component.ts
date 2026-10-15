@@ -1,10 +1,6 @@
 import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import { NgComponentOutlet } from '@angular/common';
-import {CsButtonComponent, CsTooltipDirective} from '@cses/ui';
-import { BaseBlockComponent, getPositionWithOffset } from '../../../framework';
-import {Subject, takeUntil} from 'rxjs';
-import {DateCardSettingsComponent} from './date-card-settings.component';
-import {draftPropMetaKey} from '../draft-props';
+import { BaseBlockComponent } from '../../../framework';
 import { ScaleResizerComponent } from '../kernel/scale-resizer.component';
 import type { BlockObjectSizeProps, NoEditableBlockNative } from '../../../framework';
 import { ObjectBlockComponent } from '../kernel/object-block.component';
@@ -146,86 +142,10 @@ declare global {
     selector: 'div.date-card-block',
     standalone: true,
     changeDetection: ChangeDetectionStrategy.OnPush,
-    imports: [NgComponentOutlet, ScaleResizerComponent, CsButtonComponent, CsTooltipDirective],
-    host: {'(dblclick)': 'openSettings($event)'},
-    template: DATE_CARD_TEMPLATE + `
-        @if (!isReadonly) {
-            <div class="date-card-settings-toolbar" contenteditable="false"
-                data-bc-native-input data-bc-nodrag data-bc-selection-interaction-ignore data-bc-placement-pick-ignore
-                (pointerdown)="$event.stopPropagation()" (mousedown)="$event.stopPropagation()">
-                <button cs-button csType="text" csSize="sm" class="date-card-settings-trigger" type="button"
-                    aria-label="日期设置" csTooltip="日期设置（也可双击卡片）"
-                    (click)="openSettings($event)"><i class="bc_icon bc_shezhi" aria-hidden="true"></i></button>
-            </div>
-        }
-    `,
-    styles: [`
-        .date-card-settings-toolbar {
-            position:absolute; top:4px; right:12px; z-index:11;
-            display:flex; align-items:center; padding:3px; border-radius:8px;
-            background:var(--bc-float-toolbar-bg); box-shadow:var(--bc-float-toolbar-shadow);
-            border:1px solid var(--bc-float-toolbar-divider-color);
-            opacity:0; pointer-events:none;
-        }
-        .date-card-settings-trigger {
-            display:inline-flex; align-items:center; justify-content:center;
-            width:28px; min-width:28px; height:28px; padding:0;
-            border:0; border-radius:5px; box-shadow:none;
-            color:var(--bc-float-toolbar-item-color); background:transparent;
-        }
-        :host(.selected) .date-card-settings-toolbar,
-        .date-card-settings-toolbar:focus-within { opacity:1; pointer-events:auto; }
-        @media (any-hover:hover) {
-            .date-card-settings-trigger:hover:not(:disabled) {color:var(--bc-float-toolbar-item-color); background:var(--bc-float-toolbar-item-hover-bg);}
-        }
-        .date-card-settings-trigger:active:not(:disabled) {color:var(--bc-active-color); background:var(--bc-float-toolbar-item-active-bg);}
-        .date-card-settings-trigger:focus-visible {outline:2px solid var(--bc-active-color); outline-offset:-2px;}
-        @media print { .date-card-settings-toolbar { display:none; } }
-    `]
+    imports: [NgComponentOutlet, ScaleResizerComponent],
+    template: DATE_CARD_TEMPLATE
 })
 export class DateCardRenderComponent extends ObjectBlockComponent<DateCardModel> {
-    private readonly closeSettings$ = new Subject<void>();
-
-    protected override beforeDetach(): void {
-        this.closeSettings$.next();
-        super.beforeDetach();
-    }
-
-    protected openSettings(event: Event): void {
-        if (this.isReadonly || !this.doc.model.exists(this.id)) return;
-        // Gap 光标和缩放手柄的双击不属于日期设置。
-        const target = event.target as HTMLElement;
-        if (target.closest('[data-block-gap-side], mtl-scale-resizer')) return;
-        event.preventDefault();
-        event.stopPropagation();
-        this.closeSettings$.next();
-        const draft = this.isDraftProjection;
-        const {componentRef} = this.doc.overlayService.createConnectedOverlay<DateCardSettingsComponent>({
-            component: DateCardSettingsComponent, target: this, backdrop: true,
-            // 窄窗口中正文可能超出视口；设置浮层仍须保持在可见窗口内。
-            clampTo: this.hostElement.ownerDocument.documentElement,
-            positions: [getPositionWithOffset('right-top', 12, 0), getPositionWithOffset('bottom-left', 0, 8)]
-        }, this.closeSettings$);
-        componentRef.setInput('props', {...this.presentationProps});
-        componentRef.setInput('scale', this.contentScale);
-        componentRef.instance.cancel.pipe(takeUntil(this.closeSettings$)).subscribe(() => this.closeSettings$.next());
-        this.doc.readonlyManager.stateChange$.pipe(takeUntil(this.closeSettings$)).subscribe(() => {
-            if (this.isReadonly) this.closeSettings$.next();
-        });
-        componentRef.instance.apply.pipe(takeUntil(this.closeSettings$)).subscribe(patch => {
-            if (!this.isReadonly && this.doc.model.exists(this.id) && draft === this.isDraftProjection && Object.keys(patch).length) {
-                this.doc.crud.undoManager.stopCapturing();
-                this.doc.crud.transact(() => {
-                    if (draft) {
-                        this.updateMeta(Object.fromEntries(Object.entries(patch).map(([key, value]) =>
-                            [draftPropMetaKey(key), value ?? (this.props[key] ? '' : null)])));
-                    } else this.updateProps(patch);
-                });
-                this.doc.crud.undoManager.stopCapturing();
-            }
-            this.closeSettings$.next();
-        });
-    }
     // 初值只是占位：字段初始化那刻 this.props 还没就绪（_props 要到 ngOnInit → _init 才建代理），
     // 真值在基类 ngOnInit 的首次 repaint 里补。给的初值就是「默认色 + 当天」，与最终回落口径一致
     //（styleDef 的同款占位在基类里，初值同样是默认档）。

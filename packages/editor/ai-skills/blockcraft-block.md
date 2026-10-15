@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-10-12
+> Last updated: 2026-10-15
 
 通用数据描述和快照位于 `@ccc/blockcraft/framework/model`，类型为
 `BlockDescriptor<P, M, F>` / `BlockSnapshot<P, M, F>`，默认不依赖组件注册表。
@@ -1898,7 +1898,7 @@ the block is writable; live results are never persisted.
 
 渲染变量在 `.tpl-weather-chip` 及其内层使用 `--wt-fg / --wt-accent / --wt-line / --wt-bg`；
 `--u` 仍由固定宽度推导。天气展示组件没有请求与模型写入；色调、高低温或图标变化不重设尺寸。
-默认编辑器通过 `WeatherToolbarPlugin` 在天气块选中时提供浮动设置；自定义 Doc 可按需注册。
+默认编辑器通过 `MaterialToolbarPlugin` 在天气块选中时提供块外工具栏；自定义 Doc 可按需注册。仅需天气的宿主仍可使用 `WeatherToolbarPlugin`，两者不要重复装配。
 宿主可复用 `WEATHER_DISPLAY_CONFIGS` 作为物料 `displayConfigs`，或嵌入
 `WeatherSettingsComponent` 并传入 `block`。面板先本地预览，点应用时把改过的字段作为一次事务提交，
 模板态写入 `draft:*`（清空使用空串覆盖），普通文档写 props；取消不写入。组件发出 `apply/cancel`
@@ -2482,15 +2482,15 @@ doc.crud.transact(() => block.updateProps(patch))
 
 ### 日期卡片独立设置（无需宿主侧栏）
 
-`DateCardRenderComponent` 自带右上角 28px 齿轮图标按钮（右边距 12px、顶部 4px，悬停/选中/键盘聚焦显示），保留“日期设置”无障碍名称，也可双击卡片打开 CDK 浮层。
+`DateCardRenderComponent` 只负责卡片展示，不再包含设置按钮。`MaterialToolbarPlugin` 在整块选中后于块外显示横向工具栏，合并布局、层级和“日期设置”入口；也负责双击日期卡片打开设置。默认编辑器已装配，自定义 Doc 需注册该插件。
 支持样式、显示内容、字体、分层字号、文字/主色 `fg`、背景 `bg`、边框色 `bc` 和线型 `bw`。
 取色器支持预设、自定义色和透明度；清空颜色恢复样式默认（与显式透明不同）。
 浮层先本地预览，点击应用以单个 Yjs 事务提交修改字段；取消/Esc 不写模型。
 
 普通文档写 props；已处于 draft 投影的模板写对应 `draft:*`，恢复默认时按原始 props 决定删除或用空字符串覆盖。
 不更改 `date` 和日期来源，颜色/字体修改不重置固定宽高；切换样式/显示内容沿用既有几何规则。
-浮层只在打开期间订阅只读状态，关闭时解除；删除、卸载或转只读立即关闭。打印/只读渲染没有设置按钮。
-宿主已有面板可继续使用原字段，不需要注册新插件。
+浮层由 MaterialToolbarPlugin 管理只读、删除、卸载和关闭生命周期；打印/只读渲染没有设置按钮。
+宿主已有独立面板可继续使用原字段；需要内置入口或双击设置时注册 MaterialToolbarPlugin。
 
 ### 天气手动刷新
 
