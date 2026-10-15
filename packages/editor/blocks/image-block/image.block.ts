@@ -125,6 +125,8 @@ export function deriveInitialImageObjectSize(
       max-width: 100%;
     }
 
+    :host([data-bc-placement='absolute']) .image-block__container,
+    :host([data-bc-placement='absolute']) .img-wrapper,
     :host([data-bc-image-group-member]) .image-block__container,
     :host([data-bc-image-group-member]) .img-wrapper {
       max-width: none;
@@ -235,6 +237,7 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
     this._resizeStartBox = width > 0 && height > 0
       ? {width, height, offsetX: 0, offsetY: 0}
       : null
+    if (this.isAbsolute) return null
     return this.doc.placement.isInObjectGroup(this.id)
       ? this.rootContentWidth
       : Math.min(this._resizeBasisWidth, this.resizeMaxWidthContainer.clientWidth)
@@ -266,7 +269,7 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
   get renderedWidth(): number | null {
     const width = this.objectDimensions?.width
     if (width == null) return null
-    if (this.isGrouped) return width
+    if (this.isAbsolute || this.isGrouped) return width
     const referenceWidth = this.referenceWidth
     return Number.isFinite(referenceWidth) && referenceWidth > 0
       ? Math.min(width, referenceWidth)
@@ -476,6 +479,7 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
       event.width,
       event.height,
       event.basisWidth,
+      this.isAbsolute,
     )
     if (!derived) return
     const changesAspect = !preserveAspect &&
@@ -551,12 +555,16 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
       this.props.width > 0
         ? this.props.width
         : undefined
-    const initialSize = deriveInitialImageObjectSize(
-      size,
-      this.initialAvailableWidth,
-      this.referenceWidth,
-      legacyWidth,
-    )
+    // Preserve an authored floating legacy width when metadata arrives. Newly
+    // inserted resources still start at their ordinary fit-to-content size.
+    const initialSize = this.isAbsolute && legacyWidth !== undefined
+      ? deriveObjectSizeFromPixels(legacyWidth, legacyWidth / size.ar, this.referenceWidth, true)
+      : deriveInitialImageObjectSize(
+          size,
+          this.initialAvailableWidth,
+          this.referenceWidth,
+          legacyWidth,
+        )
     if (!initialSize) return false
     const hasLegacyWidth = Object.prototype.hasOwnProperty.call(
       this.props,

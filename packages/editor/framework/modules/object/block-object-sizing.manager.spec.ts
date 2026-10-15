@@ -11,6 +11,19 @@ const imageCapability = {
 }
 
 describe('block object sizing', () => {
+  it('preserves an absolute ratio while flow consumers remain constrained', () => {
+    const doc = {
+      schemas: {get: () => ({metadata: {objectSizing: imageCapability}})},
+      placement: {isInAbsoluteLayout: (id: string) => id === 'floating'},
+    }
+    const manager = new BlockObjectSizingManager(doc as any)
+    spyOn(manager, 'getReferenceWidth').and.returnValue(800)
+    const props = {wr: 150, ar: 2}
+    expect(manager.resolveForBlock('floating', 'image', props)?.width).toBe(1200)
+    expect(manager.resolveForBlock('flow', 'image', props)?.width).toBe(800)
+    expect(props).toEqual({wr: 150, ar: 2})
+  })
+
   it('retains ratios beyond visual group width only when overflow is enabled', () => {
     const ratio = deriveObjectSizeFromPixels(400, 200, 250, true)!
     expect(ratio).toEqual({wr: 160, ar: 2})

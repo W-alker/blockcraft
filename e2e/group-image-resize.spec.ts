@@ -3,6 +3,14 @@ import {expect, test, type Page} from '@playwright/test'
 
 async function mountFixture(page: Page, snapshot?: any, groupInteraction = false) {
   await page.routeWebSocket('**', socket => socket.close())
+  // The geometry fixture uses local rasters. The source Demo also contains
+  // external iframes, which must not keep layout tests dependent on live sites.
+  await page.route('**/*', route => {
+    const url = new URL(route.request().url())
+    const external = ['http:', 'https:'].includes(url.protocol) &&
+      !['127.0.0.1', 'localhost'].includes(url.hostname)
+    return external ? route.abort() : route.continue()
+  })
   await page.route('**/api/worker/link-preview**', route => route.fulfill({
     status: 200,
     contentType: 'application/json',
@@ -98,6 +106,115 @@ async function dragImage(page: Page, id: string, side: 'left' | 'right', delta: 
 }
 
 test.use({viewport: {width: 1400, height: 1000}})
+
+for (const scale of [0.75, 1, 1.5]) {
+  test(`floating image exceeds content width and survives layout/history/reopen (scale ${scale})`, async ({page}) => {
+    test.setTimeout(60_000)
+    const ids = (await mountFixture(page))!
+    const id = ids.outsideId
+    await page.evaluate(({id, scale}) => {
+      const doc = (window as any).__imageResizeDoc
+      const mount = doc.root.hostElement.parentElement
+      mount.style.width = '500px'
+      mount.style.padding = '40px'
+      doc.viewScale.attach(mount)
+      doc.viewScale.setScale(scale)
+      doc.crud.updateBlockProps(id, {wr: 90, ar: 2, position: '0 20'})
+    }, {id, scale})
+    const read = () => page.evaluate(id => {
+      const doc = (window as any).__imageResizeDoc
+      const block = doc.getBlockById(id)
+      const el = block.imgWrapper.nativeElement
+      const content = doc.objectSizing.rootContentElement as HTMLElement
+      const style = getComputedStyle(content)
+      const layoutBasis = content.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
+      return {width: parseFloat(getComputedStyle(el).width), basis: block.referenceWidth,
+        layoutBasis, props: {...block.props}, maxWidth: getComputedStyle(el).maxWidth}
+    }, id)
+    // ResizeObserver publishes the new basis asynchronously. Comparing only
+    // width/basis can pass while both still refer to the previous root width.
+    await expect.poll(async () => {
+      const {basis, layoutBasis} = await read()
+      return Math.abs(basis - layoutBasis)
+    }).toBeLessThan(1)
+    await expect.poll(async () => (await read()).width / (await read()).basis).toBeCloseTo(0.9, 2)
+    const before = await read()
+    await page.evaluate(() => (window as any).__imageResizeDoc.crud.undoManager.clearHistory())
+    await dragImage(page, id, 'right', before.basis * 0.4 * scale)
+    // Pointer coordinates are quantized to screen pixels in Firefox/WebKit.
+    await expect.poll(async () => (await read()).props.wr).toBeCloseTo(130, 0)
+    await expect.poll(async () => (await read()).width / (await read()).basis).toBeCloseTo(1.3, 2)
+    const savedWr = (await read()).props.wr
+    expect((await read()).maxWidth).toBe('none')
+    await page.evaluate(() => (window as any).__imageResizeDoc.crud.undoManager.undo())
+    await expect.poll(async () => (await read()).props.wr).toBe(90)
+    expect(await page.evaluate(() => (window as any).__imageResizeDoc.crud.undoManager.isCanUndo())).toBe(false)
+    await page.evaluate(() => (window as any).__imageResizeDoc.crud.undoManager.redo())
+    await expect.poll(async () => (await read()).props.wr).toBe(savedWr)
+
+    await page.evaluate(id => (window as any).__imageResizeDoc.placement.setMode(id, 'relative'), id)
+    await expect.poll(async () => (await read()).width / (await read()).basis).toBeCloseTo(1, 2)
+    expect((await read()).props.wr).toBe(savedWr)
+    await page.evaluate(id => (window as any).__imageResizeDoc.placement.setMode(id, 'absolute'), id)
+    await expect.poll(async () => (await read()).width / (await read()).basis).toBeCloseTo(1.3, 2)
+
+    const snapshot = await page.evaluate(() => {
+      const doc = (window as any).__imageResizeDoc
+      return JSON.parse(JSON.stringify(doc.model.toSnapshot(doc.rootId)))
+    })
+    await mountFixture(page, snapshot)
+    await expect.poll(async () => (await read()).width / (await read()).basis).toBeCloseTo(1.3, 2)
+  })
+}
+
+test('oversized floating image keeps geometry through grouping and ungrouping', async ({page}) => {
+  const ids = (await mountFixture(page))!
+  await page.evaluate(id => {
+    const doc = (window as any).__imageResizeDoc
+    doc.crud.updateBlockProps(id, {wr: 150, ar: 2, position: '0 0'})
+  }, ids.outsideId)
+  const width = () => page.evaluate(id => {
+    const doc = (window as any).__imageResizeDoc
+    return parseFloat(getComputedStyle(doc.getBlockById(id).imgWrapper.nativeElement).width)
+      / doc.objectSizing.rootContentWidth
+  }, ids.outsideId)
+  await expect.poll(width).toBeCloseTo(1.5, 2)
+  const groupId = await page.evaluate(ids => {
+    const doc = (window as any).__imageResizeDoc
+    doc.placement.ungroup(ids.groupId)
+    doc.crud.undoManager.clearHistory()
+    return doc.placement.group([ids.imageId, ids.siblingId, ids.outsideId])
+  }, ids)
+  expect(groupId).toBeTruthy()
+  await expect.poll(width).toBeCloseTo(1.5, 2)
+  await page.evaluate(groupId => {
+    const doc = (window as any).__imageResizeDoc
+    doc.crud.undoManager.stopCapturing()
+    doc.placement.ungroup(groupId)
+  }, groupId)
+  await expect.poll(width).toBeCloseTo(1.5, 2)
+  await page.evaluate(() => (window as any).__imageResizeDoc.crud.undoManager.undo())
+  await expect.poll(width).toBeCloseTo(1.5, 2)
+  await page.evaluate(() => (window as any).__imageResizeDoc.crud.undoManager.redo())
+  await expect.poll(width).toBeCloseTo(1.5, 2)
+})
+
+test('snapshot viewer preserves an oversized floating image', async ({page}) => {
+  await mountFixture(page)
+  const id = await page.evaluate(() => {
+    document.getElementById('image-resize-fixture')!.remove()
+    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+    const image = doc.schemas.createSnapshot('image', [{src: '', wr: 150, ar: 2}])
+    return doc.placement.insertAbsoluteSnapshot(image, {anchorRect: null}) as string
+  })
+  await page.getByRole('tab', {name: 'Snapshot Viewer', exact: true}).click()
+  const frame = page.locator(`bc-snapshot-viewer [data-block-id="${id}"] .img-wrapper`)
+  await expect(frame).toBeVisible()
+  await expect.poll(() => frame.evaluate(el => {
+    const block = el.closest('[data-block-id]')!
+    return el.getBoundingClientRect().width / block.parentElement!.clientWidth
+  })).toBeCloseTo(1.5, 2)
+})
 
 for (const {flow, count, keyboard} of [
   {flow: false, count: 1, keyboard: false},

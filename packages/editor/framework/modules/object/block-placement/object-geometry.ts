@@ -69,7 +69,8 @@ export function resolvePlacementObjectGeometry(
         props,
         options.referenceWidth ?? doc.objectSizing.rootContentWidth,
         objectSizing,
-        doc.placement?.isInObjectGroup?.(blockId) ?? false,
+        (doc.placement?.isInAbsoluteLayout?.(blockId) ?? false) ||
+          (doc.placement?.isInObjectGroup?.(blockId) ?? false),
       )
     : null
   const formatCapability = schema?.metadata.objectFormat

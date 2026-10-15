@@ -223,7 +223,8 @@ export class BlockObjectSizingManager {
       props,
       this.getReferenceWidth(blockId),
       capability,
-      this.doc.placement?.isInObjectGroup?.(blockId) ?? false,
+      (this.doc.placement?.isInAbsoluteLayout?.(blockId) ?? false) ||
+        (this.doc.placement?.isInObjectGroup?.(blockId) ?? false),
     )
   }
 

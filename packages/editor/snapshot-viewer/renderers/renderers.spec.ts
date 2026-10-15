@@ -47,24 +47,28 @@ describe("snapshot-viewer renderers", () => {
     }
   })
 
-  it('preserves a rotated image wider than its visual group on render and update', () => {
-    const image = createAllBlocksFixture().image
-    image.props = {...image.props, wr: 160, ar: 2, rotation: 90, position: '-100 100'}
-    const group: IBlockSnapshot = {
-      id: 'rotated-image-group', flavour: 'object-group', nodeType: BlockNodeType.block,
-      props: {width: 250, height: 400}, meta: {}, children: [image],
-    }
-    const host = document.createElement('div')
-    const renderer = createSnapshotRenderer({resourcePolicy: 'off'})
-    renderer.render(host, group)
-    expect(host.querySelector<HTMLElement>('.image-block__container')!.style.width).toBe('160%')
-    expect(host.querySelector<HTMLElement>('.img-wrapper')!.style.transform).toBe('rotate(90deg)')
-    const next = structuredClone(group)
-    ;(next.children[0] as IBlockSnapshot).props['wr'] = 80
-    renderer.update(next)
-    expect(host.querySelector<HTMLElement>('.image-block__container')!.style.width).toBe('80%')
-    renderer.destroy()
-  })
+  for (const flavour of ['placement-layout', 'object-group'] as const) {
+    it(`preserves a rotated image wider than its ${flavour} on render and update`, () => {
+      const image = createAllBlocksFixture().image
+      image.props = {...image.props, wr: 160, ar: 2, rotation: 90, position: '-100 100'}
+      const group: IBlockSnapshot = {
+        id: 'rotated-image-group', flavour, nodeType: BlockNodeType.block,
+        props: {width: 250, height: 400}, meta: {}, children: [image],
+      }
+      const host = document.createElement('div')
+      const renderer = createSnapshotRenderer({resourcePolicy: 'off'})
+      renderer.render(host, group)
+      expect(host.querySelector<HTMLElement>('.image-block')!.style.width).toBe('160%')
+      expect(host.querySelector<HTMLElement>('.image-block')!.style.maxWidth).toBe('none')
+      expect(host.querySelector<HTMLElement>('.image-block__container')!.style.width).toBe('100%')
+      expect(host.querySelector<HTMLElement>('.img-wrapper')!.style.transform).toBe('rotate(90deg)')
+      const next = structuredClone(group)
+      ;(next.children[0] as IBlockSnapshot).props['wr'] = 80
+      renderer.update(next)
+      expect(host.querySelector<HTMLElement>('.image-block')!.style.width).toBe('80%')
+      renderer.destroy()
+    })
+  }
 
   it('preserves image stretch intent while retaining legacy contain behavior', () => {
     const image = createAllBlocksFixture().image
@@ -383,7 +387,8 @@ describe("snapshot-viewer renderers", () => {
     )?.style.width).toBe("100%")
     expect(image.style.left).toBe("30px")
     expect(image.style.top).toBe("40px")
-    expect(figure.style.width).toBe("50%")
+    expect(image.style.width).toBe("50%")
+    expect(figure.style.width).toBe("100%")
 
     const next = structuredClone(group)
     ;(next.children[0] as IBlockSnapshot).props['position'] = "80 90"

@@ -200,13 +200,21 @@ export function projectAbsolutePlaneChildren(
     child.style.zIndex = layer === "under" ? "0" : "2"
     child.style.margin = "0"
     child.style.pointerEvents = "auto"
-    // A rotated image's unrotated width can exceed its group's visual bounds.
-    // Preserve the stored group-relative ratio after the standalone renderer's cap.
-    if (snapshot.flavour === 'object-group' && snapshots[index]?.flavour === 'image') {
+    // An absolute image's host owns the plane-relative width. Leaving that
+    // percentage on its figure makes the auto-width host shrink-to-fit first,
+    // so the percentage resolves against the image rather than the plane.
+    if (snapshots[index]?.flavour === 'image') {
       const wr = props?.['wr']
+      const width = props?.['width']
       const figure = child.querySelector<HTMLElement>(':scope > .image-block__container')
-      if (figure && typeof wr === 'number' && Number.isFinite(wr) && wr > 100) {
-        figure.style.width = `${wr}%`
+      if (figure) {
+        child.style.width = typeof wr === 'number' && Number.isFinite(wr) && wr > 0
+          ? `${Math.max(1, wr)}%`
+          : typeof width === 'number' && Number.isFinite(width) && width > 0
+            ? `${width}px`
+            : '100%'
+        child.style.maxWidth = 'none'
+        figure.style.width = '100%'
       }
     }
   }

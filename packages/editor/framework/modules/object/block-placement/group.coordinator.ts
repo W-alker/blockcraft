@@ -246,6 +246,7 @@ export class BlockPlacementGroupCoordinator {
           dimensions.width,
           dimensions.height,
           rootWidth,
+          true,
         )
         if (!derived) return null
         patch['wr'] = derived.wr

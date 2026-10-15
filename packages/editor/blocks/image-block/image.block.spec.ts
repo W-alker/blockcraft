@@ -166,6 +166,14 @@ describe('ImageBlockComponent local preview sizing', () => {
     expect(setInitProps).toHaveBeenCalledOnceWith({ar: 2})
   })
 
+  it('preserves an oversized authored floating width when intrinsic metadata arrives', () => {
+    const {component, setInitProps} = createComponent(() => 800, 800)
+    ;(component as any)._props = {src: 'image.png', width: 1200, height: 600}
+    ;(component as any).doc.placement = {isInAbsoluteLayout: () => true}
+    component.onImageIntrinsicSize({width: 1200, height: 600, ar: 2})
+    expect(setInitProps).toHaveBeenCalledOnceWith({wr: 150, ar: 2, width: null, height: null})
+  })
+
   it('does not rewrite complete responsive sizing', () => {
     const {component, setInitProps} = createComponent(() => 800, 480)
     ;(component as any)._props = {
@@ -206,6 +214,12 @@ describe('ImageBlockComponent rendered width', () => {
 
   it('keeps narrower image widths unchanged', () => {
     expect(createComponent(480, 800).renderedWidth).toBe(480)
+  })
+
+  it('leaves floating widths beyond the root content width intact', () => {
+    const component = createComponent(1200, 800)
+    ;(component as any).doc.placement = {isInAbsoluteLayout: () => true}
+    expect(component.renderedWidth).toBe(1200)
   })
 })
 

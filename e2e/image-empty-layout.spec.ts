@@ -1,7 +1,17 @@
 import {expect, test} from '@playwright/test'
 
-test('empty image hint follows the image frame when its size changes', async ({page}) => {
+test('empty image preserves authored ratio through compact flow, floating and loaded states', async ({page}) => {
   await page.routeWebSocket('**', socket => socket.close())
+  // This layout test does not need the Demo's external embeds or resources.
+  await page.route('**/*', route => {
+    const url = new URL(route.request().url())
+    const external = ['http:', 'https:'].includes(url.protocol) &&
+      !['127.0.0.1', 'localhost'].includes(url.hostname)
+    return external ? route.abort() : route.continue()
+  })
+  await page.route('**/api/worker/link-preview**', route => route.fulfill({
+    status: 200, contentType: 'application/json', body: '{}',
+  }))
   await page.goto('/')
   await page.getByRole('button', {name: '初始化', exact: true}).click()
   await page.waitForFunction(() => {
@@ -25,15 +35,18 @@ test('empty image hint follows the image frame when its size changes', async ({p
     const image = document.querySelector<HTMLElement>(`[data-block-id="${id}"] .img-wrapper`)!
     const hint = image.querySelector<HTMLElement>('.upload-hint')!
     const outer = image.getBoundingClientRect()
-    const inner = hint.getBoundingClientRect()
+    const inner = hint?.getBoundingClientRect()
+    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
     return {
       frame: {x: outer.x, y: outer.y, width: outer.width, height: outer.height},
-      hint: {x: inner.x, y: inner.y, width: inner.width, height: inner.height},
+      hint: inner ? {x: inner.x, y: inner.y, width: inner.width, height: inner.height} : null,
+      props: {...doc.model.getProps(id)},
     }
   }, imageId)
 
   const before = await bounds()
   expect(before.hint).toEqual(before.frame)
+  expect(before.frame.height).toBe(80)
 
   await page.evaluate(id => {
     const editor = document.querySelector('block-craft-editor')!
@@ -43,5 +56,42 @@ test('empty image hint follows the image frame when its size changes', async ({p
   await expect.poll(async () => (await bounds()).frame.width).toBeLessThan(before.frame.width)
   const after = await bounds()
   expect(after.hint).toEqual(after.frame)
-  expect(after.frame.height).toBeCloseTo(after.frame.width / 2, 1)
+  expect(after.frame.height).toBe(80)
+  expect(after.props).toMatchObject({wr: 20, ar: 2, src: ''})
+
+  const expectRatioFrame = async () => {
+    await expect.poll(async () => {
+      const {frame} = await bounds()
+      return Math.abs(frame.height - frame.width / 2)
+    }).toBeLessThan(0.1)
+  }
+  await page.evaluate(id => {
+    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+    doc.placement.setMode(id, 'absolute')
+  }, imageId)
+  await expectRatioFrame()
+  const floating = await bounds()
+  expect(floating.hint).toEqual(floating.frame)
+  expect(floating.props).toMatchObject({wr: 20, ar: 2, src: ''})
+
+  await page.evaluate(id => {
+    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+    doc.placement.setMode(id, 'relative')
+    const canvas = document.createElement('canvas')
+    canvas.width = 200
+    canvas.height = 100
+    doc.crud.updateBlockProps(id, {src: canvas.toDataURL()})
+  }, imageId)
+  await expect(hint).toHaveCount(0)
+  await expect(frame).toHaveAttribute('data-bc-resource-state', 'ready')
+  await expectRatioFrame()
+  expect((await bounds()).props).toMatchObject({wr: 20, ar: 2})
+
+  await page.evaluate(id => {
+    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+    doc.crud.updateBlockProps(id, {src: ''})
+  }, imageId)
+  await expect(hint).toBeVisible()
+  await expect.poll(async () => (await bounds()).frame.height).toBe(80)
+  expect((await bounds()).props).toMatchObject({wr: 20, ar: 2, src: ''})
 })
