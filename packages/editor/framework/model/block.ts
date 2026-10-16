@@ -1,4 +1,7 @@
 import type {SimpleValue} from '@ccc/blockcraft/global/types';
+import type {IInlineNodeAttrs} from './inline';
+
+export type ParagraphNextStyle = 'same' | 'body';
 
 /**
  * root = 'root',
@@ -41,4 +44,8 @@ export interface IEditableBlockProps extends IBlockProps {
   psb?: number | null
   /** Paragraph space after, in typographic points; omitted inherits the theme gap. */
   psa?: number | null
+  /** 段落标记的字符外观；空文本在导航、保存重开后仍从这里继承。 */
+  textDefaults?: IInlineNodeAttrs | null
+  /** 段尾 Enter 的下一段样式；缺省按当前段落语义决定。 */
+  nextParagraphStyle?: ParagraphNextStyle | null
 }

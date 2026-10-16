@@ -1,4 +1,5 @@
-import {normalizeFontSizePixels, normalizeParagraphFontScale} from '../typography/core';
+import {normalizeFontSizePixels, normalizeParagraphFontScale, normalizeParagraphSpacing, normalizeTypographyLineHeight} from '../typography/core';
+import {normalizeParagraphNextStyle, normalizeParagraphTextDefaults} from '../typography/paragraph-style';
 import { Type } from "@angular/core";
 import {
   BlockNodeType,
@@ -313,10 +314,25 @@ export const editableBlockCreateSnapShotFn = <M extends NativeBlockModel = Nativ
     const _heading = props?.['heading'] || defaultProps?.['heading'] || undefined
     if (_heading) _props['heading'] = _heading
     const typographyProps = props as Record<string, unknown> | undefined
+    for (const key of ['backColor', 'borderColor'] as const) {
+      const value = typographyProps?.[key]
+      if (typeof value === 'string' && value.trim()) _props[key] = value.trim()
+      else if (value === null) _props[key] = null
+    }
     const fs = normalizeFontSizePixels(typographyProps?.['fs'])
     const pfs = normalizeParagraphFontScale(typographyProps?.['pfs'])
     if (fs !== null || typographyProps?.['fs'] === null) _props['fs'] = fs
     if (pfs !== null || typographyProps?.['pfs'] === null) _props['pfs'] = pfs
+    for (const [key, normalize] of [['lh', normalizeTypographyLineHeight], ['psb', normalizeParagraphSpacing], ['psa', normalizeParagraphSpacing]] as const) {
+      const value = normalize(typographyProps?.[key])
+      if (value !== null) _props[key] = value
+    }
+    if (typographyProps?.['textDefaults'] !== undefined) {
+      const defaults = normalizeParagraphTextDefaults(typographyProps['textDefaults'])
+      if (Object.keys(defaults).length) _props['textDefaults'] = defaults
+    }
+    const nextStyle = normalizeParagraphNextStyle(typographyProps?.['nextParagraphStyle'])
+    if (nextStyle) _props['nextParagraphStyle'] = nextStyle
 
     return {
       id: generateId(),

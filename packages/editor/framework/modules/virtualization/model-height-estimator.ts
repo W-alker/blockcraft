@@ -9,6 +9,7 @@ import {
   paragraphPointsToPixels,
 } from '../../block-std'
 import {resolvedBlockFontSize, resolvedInlineFontSize} from '../../utils/typography-font-size';
+import {normalizeParagraphTextDefaults} from '../../block-std/typography/paragraph-style';
 import {readInlineImageDelta} from '../../block-std/inline/image-data'
 import type {
   BlockModelHeightEstimateContext,
@@ -434,7 +435,10 @@ function estimateTableCellChildHeight(
     ? positiveNumber(doc.layoutMetrics?.lineHeight) ??
       rootFontSize * TABLE_ESTIMATED_LINE_HEIGHT_RATIO
     : rootFontSize * paragraphLineHeight
-  const fontScale = resolvedBlockFontSize(doc, childId, props, doc.model.getFlavour(childId)) / rootFontSize
+  const paragraphSize = resolvedBlockFontSize(doc, childId, props, doc.model.getFlavour(childId))
+  const emptySize = textLength === 0 && !doc.isPlainTextBlock?.(childId)
+    ? resolvedInlineFontSize(paragraphSize, props, normalizeParagraphTextDefaults(props['textDefaults'])) : paragraphSize
+  const fontScale = Math.max(paragraphSize, emptySize) / rootFontSize
   const characterWidth = rootFontSize *
     TABLE_ESTIMATED_CHARACTER_WIDTH_RATIO * fontScale
   const lineHeight = rootLineHeight * fontScale
@@ -464,12 +468,16 @@ function estimateEditableBlockHeight(
 ): ModelHeightEstimate {
   const hasInlinePixels = deltas.some(run => run.attributes?.['t:px'] != null &&
     normalizeFontSizePixels(run.attributes['t:px']) !== null)
-  const hasParagraphFacts = hasParagraphTypographyFacts(props) || hasInlinePixels
+  const emptyDefaults = deltas.length === 0 && !doc.isPlainTextBlock?.(blockId)
+    ? normalizeParagraphTextDefaults(props['textDefaults']) : {}
+  const hasEmptyFont = ['t:px', 't:fs', 's:fontSize'].some(key => emptyDefaults[key] != null)
+  const hasParagraphFacts = hasParagraphTypographyFacts(props) || hasInlinePixels || hasEmptyFont
   if (!hasParagraphFacts) {
     return {height: Math.max(fallback, inlineImageHeight), modelDriven: inlineImageHeight > 0}
   }
   const paragraphSize = resolvedBlockFontSize(doc, blockId, props, doc.model.getFlavour(blockId))
-  let maxFontSize = paragraphSize
+  let maxFontSize = hasEmptyFont
+    ? Math.max(paragraphSize, resolvedInlineFontSize(paragraphSize, props, emptyDefaults)) : paragraphSize
   let weightedFontSize = 0
   let sampledLength = 0
   // Reuse deltas already materialized for image estimates. Ordinary paragraphs
@@ -488,7 +496,7 @@ function estimateEditableBlockHeight(
     baseFontSize * 1.5
   const defaultGap = nonNegativeNumber(doc.layoutMetrics?.segmentGap) ?? 10
   const lineHeightRatio = normalizeTypographyLineHeight(props['lh'])
-  const headingScale = (hasInlinePixels ? maxFontSize : paragraphSize) / baseFontSize
+  const headingScale = (hasInlinePixels || hasEmptyFont ? maxFontSize : paragraphSize) / baseFontSize
   const lineHeight = (
     lineHeightRatio === null
       ? defaultLineHeight

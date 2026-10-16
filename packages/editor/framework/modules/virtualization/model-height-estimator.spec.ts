@@ -288,6 +288,18 @@ describe('estimateModelBlockHeight', () => {
     expect(estimate.height).toBeGreaterThanOrEqual(384);
   });
 
+  it('uses empty paragraph defaults for placeholder height without affecting existing text or plain text', () => {
+    const doc = createDoc({paragraph: {
+      ...block('paragraph', BlockNodeType.editable, {textDefaults: {'t:px': 64}}), deltas: [],
+    }});
+    expect(estimateModelBlockHeightDetails(doc as any, 'paragraph')).toEqual({height: 96, modelDriven: true});
+    doc.model.getTextDeltas = () => [{insert: 'existing'}];
+    expect(estimateModelBlockHeightDetails(doc as any, 'paragraph').modelDriven).toBeFalse();
+    doc.model.getTextDeltas = () => [];
+    (doc as any).isPlainTextBlock = () => true;
+    expect(estimateModelBlockHeightDetails(doc as any, 'paragraph').modelDriven).toBeFalse();
+  });
+
   it('keeps explicit before and after spacing on a final paragraph', () => {
     const doc = createDoc({
       root: block('root', BlockNodeType.root, {}, ['paragraph']),

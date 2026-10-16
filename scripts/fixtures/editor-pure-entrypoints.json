@@ -39,13 +39,17 @@
       "createInlineTypographyPatch",
       "inlineTypographyCssProperty",
       "inlineTypographyDatasetKey",
-      "applyInlineTypographyAttribute"
+      "applyInlineTypographyAttribute",
+      "normalizeParagraphTextDefaults",
+      "normalizeParagraphNextStyle",
+      "resolveNextParagraphStyle"
     ],
     "types": [
       "InlineTypographyAttr",
       "InlineTypographyKey",
       "TypographyFontFamilyId",
-      "TypographyFontFamilyOption"
+      "TypographyFontFamilyOption",
+      "NextParagraphStyle"
     ]
   },
   "framework/block-std/block/object-format": {
@@ -197,7 +201,8 @@
       "IBaseMetadata",
       "IMetadata",
       "BlockDescriptor",
-      "BlockSnapshot"
+      "BlockSnapshot",
+      "ParagraphNextStyle"
     ]
   }
 }

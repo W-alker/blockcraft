@@ -7,6 +7,21 @@
 >
 > Last updated: 2026-10-15
 
+## 段落标记与下一段样式
+
+`IEditableBlockProps.textDefaults?: IInlineNodeAttrs | null` 保存空段落的字符外观，
+包括字体、字号、字距、颜色和字样；不包含链接、业务属性和修订归属。
+文字仍以 `Y.Text` 为唯一数据源；该字段不覆盖已有文字，只在空段落输入时作为默认值。
+通过 `DocCRUD` / `TextToolbarHelper` 更新，参与既有 Yjs 事务、撤销及快照。
+
+`nextParagraphStyle?: 'same' | 'body' | null` 决定段尾 Enter：缺省正文／列表延续，
+标题／引用转正文；段中拆分保持样式。`same` 可明确让标题继续标题。
+共享快照工厂保留 `fs/pfs/lh/psb/psa/textDefaults/nextParagraphStyle` 及段落底色／边框色，不丢换段排版。
+虚拟滚动和表格的空段落高度估算读取默认字符字号，不遍历占位文本或查询 DOM 几何。
+空段落的零长光标锚使用 `data-bc-paragraph-defaults` 投影字样，不改变行内模型长度。
+纯计算 API 从 `@ccc/blockcraft/framework/block-std/typography` 导入：
+`normalizeParagraphTextDefaults()`、`normalizeParagraphNextStyle()`、`resolveNextParagraphStyle()`。
+
 通用数据描述和快照位于 `@ccc/blockcraft/framework/model`，类型为
 `BlockDescriptor<P, M, F>` / `BlockSnapshot<P, M, F>`，默认不依赖组件注册表。
 创建编辑器 Block 时仍使用原 `BaseBlockDesc`、`IBlockSnapshot` 与 Schema API；

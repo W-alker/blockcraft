@@ -4,7 +4,14 @@
 >
 > Adapters handle HTML ↔ BlockSnapshot and Markdown ↔ BlockSnapshot conversion.
 >
-> Last updated: 2026-10-13
+> Last updated: 2026-10-15
+
+## 段落格式元数据
+
+HTML 的 `data-bc-text-defaults` 保存规范化的段落标记字符外观（JSON），
+`data-bc-next-style` 保存 `same` / `body`。导入仅接受字符外观白名单，损坏的元数据忽略。
+它们不生成正文字符，也不转换为段落字号，避免空段落往返丢格式或重复倍率。
+原生 Snapshot / Yjs 保存完整段落属性；Markdown 的既有段落转换仍保留其原有语义范围。
 
 ## 导入大小预检（未发布）
 

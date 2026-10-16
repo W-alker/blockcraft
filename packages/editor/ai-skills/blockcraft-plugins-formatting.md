@@ -2,7 +2,17 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-10-12
+> Last updated: 2026-10-15
+
+## 当前输入格式
+
+文字工具栏通过 `TextToolbarHelper` 与 Input 的持续格式状态交互。
+光标处的字号、字体及字样命令持续作用于后续输入、删除和续写，直到用户修改格式或移动光标。
+局部文本选区命令只修改所选文字；完整段落的命令同时更新 `props.textDefaults`。
+空段落命令更新段落标记和本地输入状态，回显、导航和保存重开都继承该格式。
+编辑后的续写保留选区公共格式；标题／引用段尾回正文按下一段样式规则重置覆盖。
+自定义工具栏继续使用 `formatText()` / `formatTypography()` / `formatFontSizePixels()`，
+无需自行保存最后一次格式。状态生命周期和兼容方法见 `blockcraft-input.md`。
 
 ## 段落对齐
 

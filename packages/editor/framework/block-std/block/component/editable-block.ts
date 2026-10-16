@@ -2,11 +2,11 @@ import { ChangeDetectionStrategy, Component, HostBinding } from "@angular/core";
 import { BaseBlockComponent } from "./base-block";
 import { EditableBlockNative } from "../../reactive";
 import * as Y from 'yjs'
-import { DeltaInsert, DeltaOperation } from "../../types";
-import { INLINE_CONTAINER_CLASS, TextBlot, BlotType } from "../../inline";
+import { DeltaInsert, DeltaOperation, IInlineNodeAttrs } from "../../types";
+import { INLINE_CONTAINER_CLASS, InlineManager, TextBlot, BlotType } from "../../inline";
 import { InlineRuntime } from "../../inline/runtime/inline-runtime";
-import { Subject } from "rxjs";
-import {paragraphAlignmentStyles} from '../../typography';
+import { Subject, takeUntil } from "rxjs";
+import {normalizeParagraphTextDefaults, paragraphAlignmentStyles} from '../../typography';
 import {BlockReadonlyOperation} from "../../../doc/block-readonly.types";
 
 @Component({
@@ -44,6 +44,9 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
 
     this._initRuntime()
     this.rerender()
+    this.onPropsChange.pipe(takeUntil(this.onDestroy$)).subscribe(changes => {
+      if (changes.has('textDefaults')) this._projectEmptyTextDefaults()
+    })
 
     // WebKit/WKWebView (Tauri) 偶发会在聚焦空 contenteditable 时「深克隆」宿主元素，
     // 留下一个没有 Angular 组件、却带着相同 data-block-id 的孤儿 DOM 节点
@@ -175,8 +178,25 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
     this._runtime.render(
       this.doc.revisions?.projectInlineDeltas(this.id, deltas) ?? deltas,
     )
+    this._projectEmptyTextDefaults()
     // 任意一次 rerender 都顺手清掉 WebKit 留下的宿主克隆（首次输入即可自愈）。
     this._pruneDuplicateHostClones()
+  }
+
+  private _emptyTextDefaults: DeltaInsert['attributes'] = {}
+
+  /** 只投影到既有的零长光标节点，不向 Y.Text 插入占位字符。 */
+  private _projectEmptyTextDefaults(): void {
+    if (!this.isAttached) return
+    if ((this.plainTextOnly || this.textLength > 0) && !Object.keys(this._emptyTextDefaults ?? {}).length) return
+    const gap = this._containerElement?.firstElementChild as HTMLElement | null
+    if (gap?.getAttribute('data-zero-space') !== 'true') return
+    const defaults = this.plainTextOnly || this.textLength > 0
+      ? {} : normalizeParagraphTextDefaults(this.props['textDefaults'])
+    const cleared: Record<string, null> = Object.fromEntries(Object.keys(this._emptyTextDefaults ?? {}).map(key => [key, null]))
+    InlineManager.setAttrs(gap, {...cleared, ...defaults} as IInlineNodeAttrs)
+    gap.toggleAttribute('data-bc-paragraph-defaults', Object.keys(defaults).length > 0)
+    this._emptyTextDefaults = defaults
   }
 
   insertText(index: number, text: string, attributes?: DeltaInsert['attributes']) {
@@ -265,6 +285,7 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
     } catch {
       this._rerenderRestoringCursor(deltas)
     }
+    this._projectEmptyTextDefaults()
   }
 
   /**

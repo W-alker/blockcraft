@@ -37,10 +37,14 @@ export {
   inlineTypographyCssProperty,
   inlineTypographyDatasetKey,
   applyInlineTypographyAttribute,
+  normalizeParagraphTextDefaults,
+  normalizeParagraphNextStyle,
+  resolveNextParagraphStyle,
 } from '@ccc/blockcraft/framework/block-std/typography';
 export type {
   InlineTypographyAttr,
   InlineTypographyKey,
   TypographyFontFamilyId,
   TypographyFontFamilyOption,
+  NextParagraphStyle,
 } from '@ccc/blockcraft/framework/block-std/typography';

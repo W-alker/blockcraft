@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying text input behavior.
 >
-> Last updated: 2026-08-28
+> Last updated: 2026-10-15
 
 ## Architecture Overview
 
@@ -18,6 +18,41 @@ beforeInput / keydown / compositionStart
 ```
 
 **Key principle**: The editor intercepts `beforeInput` for `EditableBlockComponent` surfaces, prevents default browser behavior, and writes directly to Yjs. The DOM is never the source of truth for editable blocks — Yjs is.
+
+### 持续输入格式
+
+Input 通过内部 `TypingFormatState` 维护当前用户的输入格式。它与文档内容分离：
+实际文字及其格式仍保存在 `Y.Text`，当前输入状态不写入快照，也不向协作者同步。
+固定／浮动文字工具栏、普通输入和 `CompositionSession` 提交读取同一份状态。
+
+段落标记的字符默认格式保存在 `props.textDefaults`，属于文档并参与协同、快照及撤销。
+空段落的格式命令、完整段落的字符格式命令，以及删除最后一段文字，会在对应编辑事务内更新它。
+导航到空段落或保存重开时继承该默认值；本地明确选择的输入格式优先。
+只保存字体、字号、字距、颜色和字样，不复制链接、业务数据或修订标记。
+空段落的既有零长光标节点通过 `data-bc-paragraph-defaults` 投影外观，不写入占位文字。
+
+- 连续输入、删除部分文字、删空后续写保留当前格式；空文本不是重置格式的信号。
+- 光标移动到另一位置、切换文本块，或用户主动收起文本选区时，重新继承落点格式。
+  非折叠文本选区使用所选文字的公共格式；删除后的光标配方属于同一次编辑，继续该格式。
+- 当前点用 `Y.RelativePosition` 跟随本地及远端增删；编辑完成后重建相对锚点，
+  避免空文本继续引用已删除字符。续用样式的 Enter 段落继承当前字符外观。
+- 撤销／重做在本地 Undo item 上保存和恢复输入状态，包含恢复到空文本的情况。
+  清空选区、进入非文本选区或纯文本块时释放富文本状态；文档销毁时清理订阅和 Yjs 监听。
+- `setNextInsertAttrs()`、`peekNextInsertAttrs()`、`hasNextInsertAttrs()` 和
+  `clearNextInsertAttrs()` 保留兼容名称，但属性不再在一次输入后被消费。
+  新的格式命令更新持续状态，显式空属性对象表示移除格式。
+
+状态读取不查询 DOM 或要求块组件挂载；连续编辑复用当前格式，导航／范围格式变化才重新读取文本 Delta。
+粘贴和 API 直接写入的内容重新继承写入后的格式，避免旧输入状态覆盖外部内容。
+输入携带明确属性时直接使用 Yjs 观察者驱动视图，不先修改零宽占位符或行尾 DOM。
+
+### 下一段样式
+
+普通编辑与修订模式共用纯函数 `resolveNextParagraphStyle()`。
+段中拆分保留当前样式；段尾 Enter 读取 `props.nextParagraphStyle`：`same` 延续，`body` 回到正文。
+缺省时正文、列表延续，标题、引用回正文并清除原段的字符覆盖、对齐、缩进及排版覆盖。
+新列表项不继承已完成状态或显式起始编号；空列表仍先降低缩进，再退出到正文并保留字符外观。
+Shift+Enter 仍在同一段落内换行。纯文本及专属块输入继续由既有扩展点负责。
 
 ### Revision-aware execution
 

@@ -2,9 +2,14 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when working with the CRDT data layer.
 >
-> Last updated: 2026-10-12
+> Last updated: 2026-10-15
 
 ## Architecture Overview
+
+段落的字符默认外观持久化为 `props.textDefaults`（普通标量 record），下一段策略为
+`props.nextParagraphStyle`（`same` / `body`）。不新增 Yjs 类型或占位文本；旧文档缺省字段仍可读取。
+空段落格式命令、完整段落字符格式命令、删空操作把标记格式与正文变更放在对应事务中，
+共同参与 Undo/Redo、协同和快照。当前用户的临时输入覆盖另存为 Input 本地状态，不能序列化。
 
 基础内容数据契约归属 `framework/model/`，可聚合导入 `@ccc/blockcraft/framework/model`。
 它是 Block/Inline/Delta、元数据、通用快照及持久化格式标识的共享模型，不包含 Yjs、Angular 或 DOM，

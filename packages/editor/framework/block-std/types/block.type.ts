@@ -2,6 +2,7 @@ import type {SimpleRecord, UnknownRecord} from '@ccc/blockcraft/global/types';
 import {BlockNodeType, type BlockDescriptor, type InlineModel} from '@ccc/blockcraft/framework/model';
 export {
   BlockNodeType, type IBlockProps, type IEditableBlockProps,
+  type ParagraphNextStyle,
   type BlockPlaceholderMode, type IBaseMetadata, type IMetadata,
   type BlockDescriptor, type BlockSnapshot,
 } from '@ccc/blockcraft/framework/model';

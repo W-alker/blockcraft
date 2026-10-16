@@ -170,7 +170,9 @@ describe("TextToolbarHelper boundary selections", () => {
       {blockId: 'p1', type: 'text', offset: 3, block: h.p1},
     );
     h.helper.formatFontScale(2, range as any);
-    expect(h.p1.updateProps).toHaveBeenCalledOnceWith({pfs: 2});
+    expect(h.p1.updateProps.calls.allArgs()).toEqual([
+      [{pfs: 2}], [{textDefaults: {'t:px': 12.8, 't:fs': 1.25}}],
+    ]);
     expect(h.p1.formatText).not.toHaveBeenCalled();
     h.rootHost.remove();
   });
@@ -184,8 +186,26 @@ describe("TextToolbarHelper boundary selections", () => {
       {blockId: 'p1', type: 'text', offset: 3, block: h.p1},
     );
     h.helper.formatFontSizePixels(null, range as any);
-    expect(h.p1.updateProps).toHaveBeenCalledOnceWith({fs: null});
+    expect(h.p1.updateProps.calls.allArgs()).toEqual([
+      [{fs: null}], [{textDefaults: {'s:fontSize': '1.25em'}}],
+    ]);
     expect(h.p1.formatText).toHaveBeenCalledOnceWith(0, 3, {'t:px': null});
+    h.rootHost.remove();
+  });
+
+  it('scales an empty paragraph legacy pixel default through the same retained base', () => {
+    const h = makeHarness();
+    (h.p1 as any).props = {depth: 0, pfs: 1.5, textDefaults: {'s:fontSize': '24px'}};
+    (h.p1 as any).textLength = 0;
+    (h.p1 as any).textDeltas = () => [];
+    const range = h.selection(
+      {blockId: 'root', type: 'boundary', index: 0, block: h.root},
+      {blockId: 'root', type: 'boundary', index: 1, block: h.root},
+    );
+    h.helper.formatFontScale(2, range as any);
+    expect(h.p1.updateProps.calls.allArgs()).toEqual([
+      [{pfs: 2}], [{textDefaults: {'t:px': 16}}],
+    ]);
     h.rootHost.remove();
   });
 

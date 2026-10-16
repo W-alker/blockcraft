@@ -1628,6 +1628,14 @@ const endpoints = normalizeRange(staticRange, id => doc.getBlockById(id))
 
 `InputTransformer` adapts a live `BlockSelection` (or normalized native target endpoints) into one pure, short-lived `SelectionEditPlan`, then executes that plan through Yjs. `beforeInput`, printable fallback, Backspace/Delete, Enter, and IME composition share this planner/executor boundary. `deleteByRange()` accepts only `BlockSelection`; browser `StaticRange` adapters use the pure `normalizeRange()` function and `INormalizedEndpoints`. Post-edit cursor recipes commit through model-first selection APIs without a confirming DOM `recalculate()`. Unsupported or stale plans fail closed before native DOM mutation. See `blockcraft-input.md` for the plan kinds, IME ordering, undo grouping, and virtualization constraints.
 
+Input 内部的 `TypingFormatState` 统一维护当前用户的持续输入格式：连续输入、删除、
+删空后续写和段落续写保留格式；真正导航时继承落点格式。普通输入、IME 和工具栏共用，
+相对锚点跟随协同变更，Undo/Redo 恢复本地格式状态。本地状态与段落持久化的
+`props.textDefaults` 分开：空段落在导航、保存重开后继承段落标记的字符外观。
+`props.nextParagraphStyle` 支持 `same` / `body`；缺省正文、列表延续，标题、引用段尾回正文，
+段中拆分保留原样式。普通编辑与修订模式共用规则。
+兼容名称 `setNextInsertAttrs()` 的属性不再是一次性消费。详见 `blockcraft-input.md`。
+
 ### Event Handling (in Plugin or Block)
 
 ```typescript

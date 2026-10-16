@@ -17,6 +17,7 @@ import {
   normalizeTypographyLineHeight,
   type TypographyFontFamilyId,
 } from "../block-std";
+import {normalizeParagraphTextDefaults} from '../block-std/typography/paragraph-style';
 import {resolvedBlockFontSize, resolvedInlineFontSize} from './typography-font-size';
 import {getCommonAttributesFromDeltas, sliceDelta} from "../../global";
 import {isSelectionAlive} from "../modules/selection/liveness";
@@ -180,7 +181,7 @@ export class TextToolbarHelper {
 
   private getCollapsedAttrs(blockId: string, index: number) {
     const deltas = this.blockDeltas(blockId)
-    if (!deltas.length) return {}
+    if (!deltas.length) return normalizeParagraphTextDefaults(this.blockProps(blockId).textDefaults)
 
     const textLength = this.blockTextLength(blockId)
     const safeIndex = Math.max(0, Math.min(index, textLength))
@@ -188,6 +189,24 @@ export class TextToolbarHelper {
     const curAttrs = this.pickDeltaAttrsAt(deltas, safeIndex)
 
     return prevAttrs || curAttrs || {}
+  }
+
+  /** 完整段落的格式命令同时更新段落标记；局部选区只影响选中的文本。 */
+  private syncParagraphTextDefaults(
+    targets: IFontScaleTarget[],
+    emptyPatch: (target: IFontScaleTarget) => IInlineNodeAttrs = () => ({}),
+  ): void {
+    for (const target of targets) {
+      if (target.kind !== 'paragraph') continue
+      const previous = normalizeParagraphTextDefaults(this.blockProps(target.blockId).textDefaults)
+      const deltas = this.blockDeltas(target.blockId)
+      const defaults = normalizeParagraphTextDefaults(deltas.length
+        ? getCommonAttributesFromDeltas(deltas)
+        : {...previous, ...emptyPatch(target)})
+      const keys = Object.keys(defaults)
+      if (keys.length === Object.keys(previous).length && keys.every(key => defaults[key] === previous[key])) continue
+      this.updateBlockPropsById(target.blockId, {textDefaults: keys.length ? defaults : null})
+    }
   }
 
   private parseLegacyEm(value: unknown, normalize: (value: unknown) => number | null): number | null | undefined {
@@ -393,10 +412,14 @@ export class TextToolbarHelper {
       this.formatText({...legacyPixels(attrs, normalizeParagraphFontScale(this.blockProps(target.blockId).pfs) ?? 1), ...inlineScalePatch}, selection);
       return;
     }
+    const emptyPatches = new Map<string, IInlineNodeAttrs>();
     this.doc.crud.transact(() => {
       for (const target of targets) {
         const oldScale = normalizeParagraphFontScale(this.blockProps(target.blockId).pfs) ?? 1;
         if (target.kind === 'paragraph') {
+          if (target.length === 0) emptyPatches.set(target.blockId, legacyPixels(
+            normalizeParagraphTextDefaults(this.blockProps(target.blockId).textDefaults), oldScale,
+          ));
           let offset = target.start;
           for (const run of this.blockDeltas(target.blockId)) {
             const length = typeof run.insert === 'string' ? run.insert.length : 1;
@@ -415,6 +438,7 @@ export class TextToolbarHelper {
           offset += length;
         }
       }
+      this.syncParagraphTextDefaults(targets, target => emptyPatches.get(target.blockId) ?? {});
     });
     this.doc.selection.setSelection(selection.start, selection.end);
   }
@@ -455,6 +479,11 @@ export class TextToolbarHelper {
           offset += length;
         }
       }
+      this.syncParagraphTextDefaults(targets, target => patchFor(
+        normalizeParagraphTextDefaults(this.blockProps(target.blockId).textDefaults),
+        normalizeParagraphFontScale(this.blockProps(target.blockId).pfs) ?? 1,
+        true,
+      ));
     });
     this.doc.selection.setSelection(selection.start, selection.end);
   }
@@ -622,6 +651,10 @@ export class TextToolbarHelper {
           )
         }
       }
+      this.syncParagraphTextDefaults(targets, () => ({
+        ...attrs,
+        ...(hasFontScale ? {[INLINE_TYPOGRAPHY_ATTRS.fontScale]: null, 's:fontSize': null} : {}),
+      }))
     })
 
     this.doc.selection.setSelection(s, e)
@@ -660,6 +693,7 @@ export class TextToolbarHelper {
         if (target.length <= 0) continue
         this.formatBlockText(target.blockId, target.start, target.length, attrs)
       }
+      this.syncParagraphTextDefaults(targets, () => attrs)
     })
 
     // Restore selection after DOM restructuring from format

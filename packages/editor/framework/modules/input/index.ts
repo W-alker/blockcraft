@@ -38,6 +38,9 @@ import {
   sliceDelta,
 } from "../../../global";
 import {CompositionSession} from "./composition-session";
+import {TypingFormatState} from "./typing-format";
+import {ParagraphFormatManager} from "./paragraph-format";
+import {normalizeParagraphTextDefaults, resolveNextParagraphStyle} from "../../block-std/typography/paragraph-style";
 import {
   planSelectionEdit,
   SelectionEditPlan,
@@ -106,11 +109,8 @@ type TableCellEditPlan = Extract<SelectionEditPlan, {kind: "table-cell"}>;
 export class InputTransformer {
   readonly compositionSession: CompositionSession;
   private _compositionUndoGroupActive = false;
-  private _nextInsertAttrs: {
-    blockId: string;
-    index: number;
-    attrs?: DeltaInsert["attributes"];
-  } | null = null;
+  private readonly _typingFormat = new TypingFormatState(this.doc);
+  private readonly _paragraphFormat = new ParagraphFormatManager(this.doc);
 
   constructor(public readonly doc: BlockCraft.Doc) {
     this.compositionSession = new CompositionSession(doc);
@@ -120,40 +120,23 @@ export class InputTransformer {
     attrs: DeltaInsert["attributes"],
     point: { blockId: string; index: number },
   ) {
-    this._nextInsertAttrs = {
-      blockId: point.blockId,
-      index: point.index,
-      attrs,
-    };
+    if (point.index === 0) this._paragraphFormat.remember(point.blockId, attrs, true);
+    this._typingFormat.set(attrs, point, true);
   }
 
   hasNextInsertAttrs() {
-    return this._nextInsertAttrs !== null;
-  }
-
-  private matchNextInsertPoint(
-    point: { blockId: string; index: number },
-    allowNearby = false,
-  ) {
-    if (!this._nextInsertAttrs) return false;
-    if (this._nextInsertAttrs.blockId !== point.blockId) return false;
-    return allowNearby
-      ? Math.abs(this._nextInsertAttrs.index - point.index) <= 1
-      : this._nextInsertAttrs.index === point.index;
+    return this._typingFormat.active;
   }
 
   peekNextInsertAttrs(
     point: { blockId: string; index: number },
     options?: { allowNearby?: boolean },
   ) {
-    if (!this._nextInsertAttrs) return undefined;
-    if (!this.matchNextInsertPoint(point, !!options?.allowNearby))
-      return undefined;
-    return this._nextInsertAttrs.attrs;
+    return this._typingFormat.get(point, !!options?.allowNearby);
   }
 
   clearNextInsertAttrs() {
-    this._nextInsertAttrs = null;
+    this._typingFormat.clear();
   }
 
   /**
@@ -430,23 +413,12 @@ export class InputTransformer {
     return first && this.doc.isEditable(first) ? first : null;
   }
 
-  private consumeNextInsertAttrs(
+  private _getTypingAttrs(
     blockId: string,
     index: number,
     options?: { allowNearby?: boolean },
   ) {
-    if (!this._nextInsertAttrs) return undefined;
-    const hit = this.matchNextInsertPoint(
-      {
-        blockId,
-        index,
-      },
-      !!options?.allowNearby,
-    );
-    if (!hit) return undefined;
-    const attrs = hit ? this._nextInsertAttrs.attrs : undefined;
-    this._nextInsertAttrs = null;
-    return attrs;
+    return this.peekNextInsertAttrs({blockId, index}, options);
   }
 
   private _runRevisionGroup<T>(callback: () => T): T {
@@ -463,16 +435,18 @@ export class InputTransformer {
     origin: unknown = null,
     preserveUndefinedAttributes = false,
   ): void {
-    if (this.doc.revisions?.isTracking) {
-      this.doc.revisions.insertText(block.id, index, text, attributes, origin);
-      return;
-    }
-    this.doc.crud.transact(() => {
-      if (attributes !== undefined || preserveUndefinedAttributes) {
-        block.yText.insert(index, text, attributes);
+    this._typingFormat.runEdit(() => {
+      if (this.doc.revisions?.isTracking) {
+        this.doc.revisions.insertText(block.id, index, text, attributes, origin);
+        return;
       }
-      else block.yText.insert(index, text);
-    }, origin);
+      this.doc.crud.transact(() => {
+        if (attributes !== undefined || preserveUndefinedAttributes) {
+          block.yText.insert(index, text, attributes);
+        }
+        else block.yText.insert(index, text);
+      }, origin);
+    });
   }
 
   /**
@@ -1224,7 +1198,7 @@ export class InputTransformer {
         insertIndex,
       );
 
-      const insertAttrs = this.consumeNextInsertAttrs(
+      const insertAttrs = this._getTypingAttrs(
         insertBlock.id,
         insertIndex,
         { allowNearby: true },
@@ -1443,6 +1417,21 @@ export class InputTransformer {
 
     if (!text) return;
 
+    const typingAttrs = this._getTypingAttrs(
+      editableBlock.id,
+      plan.offset,
+      { allowNearby: true },
+    );
+    if (typingAttrs !== undefined) {
+      ev.preventDefault();
+      this._insertTextWithRevision(editableBlock, plan.offset, text, typingAttrs);
+      if (!this._setTextCursor(editableBlock.id, plan.offset + text.length)) {
+        this.doc.selection.blur();
+      }
+      return;
+    }
+    this.clearNextInsertAttrs();
+
     let needsRerender = false;
 
     // in zero text
@@ -1495,30 +1484,6 @@ export class InputTransformer {
         ev.preventDefault();
       }
       needsRerender = true;
-    }
-
-    const pendingInsertAttrs = this.consumeNextInsertAttrs(
-      editableBlock.id,
-      plan.offset,
-      { allowNearby: true },
-    );
-
-    if (pendingInsertAttrs !== undefined) {
-      ev.preventDefault();
-      this._insertTextWithRevision(
-        editableBlock,
-        plan.offset,
-        text,
-        pendingInsertAttrs,
-      );
-      if (!this._setTextCursor(editableBlock.id, plan.offset + text.length)) {
-        this.doc.selection.blur();
-      }
-      return;
-    }
-
-    if (this.hasNextInsertAttrs()) {
-      this.clearNextInsertAttrs();
     }
 
     if (needsRerender) {
@@ -1728,6 +1693,15 @@ export class InputTransformer {
   }
 
   private _replacePlannedRange(
+    plan: RangeEditPlan,
+    text?: string | null,
+    merge = false,
+    skipAppend = false,
+  ): boolean {
+    return this._typingFormat.runEdit(() => this._executePlannedRange(plan, text, merge, skipAppend));
+  }
+
+  private _executePlannedRange(
     plan: Extract<SelectionEditPlan, {kind: "range"}>,
     text?: string | null,
     merge = false,
@@ -1743,6 +1717,10 @@ export class InputTransformer {
       ? end
       : null;
     if (start.kind === "block" && !insertionEnd) return false;
+
+    const emptiedTextAttrs = !text && start.kind === "text" && start.from === 0 && start.to === start.block.textLength
+      ? this._typingFormat.getForBlock(start.blockId) ?? this._inheritedReplaceAttrs(start.block, start.from, start.to) ?? {}
+      : undefined;
 
     this.doc.crud.undoManager.captureSelectionBeforeChange();
     if (plan.stabilizeAt) this._stabilizePlannedRangeCursor(plan.stabilizeAt);
@@ -1800,6 +1778,12 @@ export class InputTransformer {
         const deleteLength = start.to - start.from;
         liveStartText.yText.delete(start.from, deleteLength);
         if (text) liveStartText.yText.insert(start.from, text, insertAttrs);
+        if (emptiedTextAttrs !== undefined) {
+          this._paragraphFormat.remember(start.blockId, emptiedTextAttrs, true);
+          if (liveStartText.yText.length === 0) {
+            this._typingFormat.set(normalizeParagraphTextDefaults(emptiedTextAttrs), {blockId: start.blockId, index: 0}, true);
+          }
+        }
 
         // Resolve the endpoint only after the structural transaction and its
         // observers have settled; the earlier VM reference may now be stale.
@@ -1858,6 +1842,9 @@ export class InputTransformer {
 
     this.doc.crud.undoManager.captureSelectionBeforeChange();
     if (plan.stabilizeAt) this._stabilizePlannedRangeCursor(plan.stabilizeAt);
+    const emptiedTextAttrs = !text && start.kind === "text" && start.from === 0 && start.to === start.block.textLength
+      ? this._typingFormat.getForBlock(start.blockId) ?? this._inheritedReplaceAttrs(start.block, start.from, start.to) ?? {}
+      : undefined;
 
     this._runRevisionGroup(() => {
       const throughPath = end
@@ -1869,11 +1856,10 @@ export class InputTransformer {
       });
 
       if (start.kind === "text") {
-        this.doc.revisions.deleteText(
-          start.blockId,
-          start.from,
-          start.to - start.from,
-        );
+        this.doc.crud.transact(() => {
+          if (emptiedTextAttrs !== undefined) this._paragraphFormat.remember(start.blockId, emptiedTextAttrs);
+          this.doc.revisions.deleteText(start.blockId, start.from, start.to - start.from);
+        });
       } else {
         this.doc.crud.deleteBlockById(start.blockId);
       }
@@ -2458,25 +2444,28 @@ export class InputTransformer {
       return true;
     }
     const offset = plan.offset;
+    const typingAttrs = this.peekNextInsertAttrs({blockId: block.id, index: offset});
 
     // 强制同段换行
     if (state.raw.shiftKey) {
-      block.insertText(offset, STR_LINE_BREAK);
+      this._typingFormat.runEdit(() => block.insertText(offset, STR_LINE_BREAK, typingAttrs));
       block.setInlineRange(offset + 1);
       this.doc.selection.scrollSelectionIntoView?.();
       return true;
     }
 
-    if (this.doc.revisions?.isTracking) {
-      return this._trackParagraphSplit(block, offset);
-    }
-
     // 空段落
     if (!block.textLength) {
-      if (block.props.heading) {
+      const nextStyle = resolveNextParagraphStyle(block.flavour, block.props, true);
+      if (block.props.heading && !nextStyle.continueTextFormat) {
         block.updateProps({
           heading: null,
+          depth: 0, textAlign: null, fs: null, pfs: null, lh: null, psb: null, psa: null,
+          backColor: null, borderColor: null, decoration: null,
+          textDefaults: null, nextParagraphStyle: null,
         } as any);
+        this._typingFormat.clear();
+        this._setTextCursor(block.id, 0);
         return true;
       }
 
@@ -2487,41 +2476,48 @@ export class InputTransformer {
         return true;
       }
 
-      const p = this.doc.schemas.createSnapshot("paragraph", [[], block.props]);
+      const defaults = normalizeParagraphTextDefaults(typingAttrs);
+      const style = block.flavour === 'paragraph' || (block.flavour === 'blockquote' && !nextStyle.continueTextFormat) ? nextStyle : {
+        flavour: 'paragraph' as const, props: {...block.props, heading: undefined, depth: 0}, continueTextFormat: true,
+      };
+      const p = this.doc.schemas.createSnapshot(style.flavour, [[], {
+        ...style.props, textDefaults: style.continueTextFormat ? defaults : undefined,
+      }]);
       await (
         block.flavour !== "paragraph"
           ? this.doc.chain().replaceWithSnapshots(block.id, [p])
           : this.doc.chain().insertAfterSnapshots(block, [p])
       )
+        .tap(() => {
+          this.setNextInsertAttrs(style.continueTextFormat ? defaults : {}, {blockId: p.id, index: 0});
+        })
         .selectOrSetCursorAtBlock(p.id, true)
         .run();
       return true;
+    }
+
+    if (this.doc.revisions?.isTracking) {
+      return this._trackParagraphSplit(block, offset);
     }
 
     // 在前面换行
     if (offset === 0) {
       const p = this.doc.schemas.createSnapshot(block.flavour, [
         [],
-        {
-          ...block.props,
-          heading: null,
-        },
+        block.props,
       ]);
       this.doc.crud.insertBlocksBefore(block, [p]);
       return true;
     }
 
     const deltas = sliceDelta(block.textDeltas(), offset);
+    const nextStyle = resolveNextParagraphStyle(block.flavour, block.props, offset === block.textLength);
+    const defaults = nextStyle.continueTextFormat ? normalizeParagraphTextDefaults(typingAttrs) : {};
     const p = this.doc.schemas.createSnapshot(
-      block.textLength && !block.heading && block.flavour !== "blockquote"
-        ? block.flavour
-        : "paragraph",
+      nextStyle.flavour,
       [
         deltas,
-        {
-          ...block.props,
-          heading: null,
-        },
+        {...nextStyle.props, textDefaults: Object.keys(defaults).length ? defaults : undefined},
       ],
     );
     void this.doc
@@ -2529,6 +2525,9 @@ export class InputTransformer {
       .transact(() => {
         block.deleteText(offset);
         this.doc.crud.insertBlocksAfter(block, [p]);
+      })
+      .tap(() => {
+        this.setNextInsertAttrs(defaults, {blockId: p.id, index: 0});
       })
       .selectOrSetCursorAtBlock(p.id, true)
       .run();
@@ -2544,23 +2543,19 @@ export class InputTransformer {
       this.doc.selection.blur();
       return true;
     }
+    const typingAttrs = this.peekNextInsertAttrs({blockId: block.id, index: offset});
+    const nextStyle = resolveNextParagraphStyle(block.flavour, block.props, offset === block.textLength);
+    const defaults = nextStyle.continueTextFormat ? normalizeParagraphTextDefaults(typingAttrs) : {};
 
     const tail = sliceDelta(block.textDeltas(), offset);
     const right = offset === 0
       ? block
       : null;
     const paragraph = this.doc.schemas.createSnapshot(
-      offset === 0 ? block.flavour : (
-        block.textLength && !block.heading && block.flavour !== "blockquote"
-          ? block.flavour
-          : "paragraph"
-      ),
+      nextStyle.flavour,
       [
         offset === 0 ? [] : tail,
-        {
-          ...block.props,
-          heading: offset === 0 ? null : block.props.heading ?? null,
-        },
+        {...nextStyle.props, textDefaults: Object.keys(defaults).length ? defaults : undefined},
       ],
     );
 
@@ -2583,10 +2578,9 @@ export class InputTransformer {
         );
       });
     });
-    this._setTextSelectionWhenReady(
-      offset === 0 ? block.id : paragraph.id,
-      0,
-    );
+    const targetId = offset === 0 ? block.id : paragraph.id;
+    this.setNextInsertAttrs(defaults, {blockId: targetId, index: 0});
+    this._setTextSelectionWhenReady(targetId, 0);
     return true;
   }
 }

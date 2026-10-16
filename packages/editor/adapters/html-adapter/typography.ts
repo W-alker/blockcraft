@@ -1,6 +1,7 @@
 import type {Element, Properties} from 'hast'
 import {INLINE_TYPOGRAPHY_ATTRS, IBlockProps, IEditableBlockProps, IInlineNodeAttrs} from '@ccc/blockcraft/framework/model';
 import {normalizeFontSizePixels, inlineFontSizeCss, paragraphAlignmentStyles, isTypographyFontFamilyId, matchTypographyFontFamily, normalizeDocumentFontSize, normalizeInlineFontScale, normalizeInlineLetterSpacing, normalizeParagraphFontScale, normalizeParagraphSpacing, normalizeTypographyLineHeight, paragraphPointsToCss, resolveTypographyFontFamily} from '@ccc/blockcraft/framework/block-std/typography';
+import {normalizeParagraphNextStyle, normalizeParagraphTextDefaults} from '@ccc/blockcraft/framework/block-std/typography';
 
 type StyleMap = ReadonlyMap<string, string>
 
@@ -171,6 +172,10 @@ export const editableTypographyToHtmlProperties = (
   const psa = normalizeParagraphSpacing(props['psa'])
   const declarations: string[] = []
   const properties: Properties = {}
+  const textDefaults = normalizeParagraphTextDefaults(props['textDefaults'])
+  const nextStyle = normalizeParagraphNextStyle(props['nextParagraphStyle'])
+  if (Object.keys(textDefaults).length) properties['dataBcTextDefaults'] = JSON.stringify(textDefaults)
+  if (nextStyle) properties['dataBcNextStyle'] = nextStyle
   if (props.textAlign) {
     const alignment = paragraphAlignmentStyles(props.textAlign)
     if (alignment.textAlign) {
@@ -208,6 +213,12 @@ export const editableTypographyFromHtml = (
   element: Element,
 ): Partial<IEditableBlockProps> => {
   const style = parseStyle(element.properties)
+  let textDefaults: IInlineNodeAttrs = {}
+  try {
+    const raw = propertyValue(element.properties, 'dataBcTextDefaults')
+    if (typeof raw === 'string') textDefaults = normalizeParagraphTextDefaults(JSON.parse(raw))
+  } catch { /* 外部 HTML 的无效元数据不影响正文导入。 */ }
+  const nextStyle = normalizeParagraphNextStyle(propertyValue(element.properties, 'dataBcNextStyle'))
   const pfs = normalizeParagraphFontScale(
     propertyValue(element.properties, 'dataBcPfs'),
   ) ?? relativeFontScale(style.get('font-size'))
@@ -229,6 +240,8 @@ export const editableTypographyFromHtml = (
     ? (style.get('text-align-last')?.toLowerCase() === 'justify' ? 'distributed' : 'justify')
     : align === 'center' || align === 'right' ? align : undefined
   return {
+    ...(Object.keys(textDefaults).length ? {textDefaults} : {}),
+    ...(nextStyle ? {nextParagraphStyle: nextStyle} : {}),
     ...(textAlign ? {textAlign} : {}),
     ...(px === null ? {} : {fs: px}),
     ...(pfs === null ? {} : {pfs}),

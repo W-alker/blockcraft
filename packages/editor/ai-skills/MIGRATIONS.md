@@ -4,6 +4,40 @@
 >
 > Last updated: 2026-10-15 | Tracks `@ccc/blockcraft` npm releases.
 
+## 未发布 — 2026-10-15：段落字符默认格式与下一段样式
+
+**Severity**: minor（新增可选段落属性与换段规则；发布版本由用户另行决定）
+
+**What changed**: `IEditableBlockProps` 新增 `textDefaults` 和 `nextParagraphStyle`。
+空段落默认字符外观参与快照、协同与撤销；普通和修订 Enter 共用下一段样式规则。
+共享快照工厂完整保留行距、段间距、底色、边框及上述字段；HTML 元数据保留两项新字段。
+空段落的模型高度估算包含默认字符字号。
+
+**Why**: 删除全部文字、离开段落或保存重开不应丢失用户设置的字符格式；换段语义应一致。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-input.md`、`blockcraft-block.md`、
+`blockcraft-data.md`、`blockcraft-plugins-formatting.md`、`blockcraft-adapter.md`。
+
+### New APIs
+
+模型类型 `ParagraphNextStyle`；Typography 纯入口新增 `NextParagraphStyle`、
+`normalizeParagraphTextDefaults()`、`normalizeParagraphNextStyle()`、`resolveNextParagraphStyle()`。
+
+### Behavior Changes
+
+空段落和完整段落字符格式命令更新段落标记；删空保留当前字符外观，不复制链接或修订归属。
+缺省正文／列表段尾延续，标题／引用段尾转正文并清除覆盖；段中拆分保持样式。
+空列表继续降低缩进／退出列表；下一列表项清除完成状态及显式编号起点。
+空光标锚的 `data-bc-paragraph-defaults` 仅用于显示，无模型字符。
+
+### Migration Recipe
+
+旧数据无需迁移。希望标题段尾继续标题时设置 `props.nextParagraphStyle = 'same'`；
+希望段尾转正文时设为 `'body'`。外部格式工具栏继续使用 `TextToolbarHelper`。
+HTML 的 `data-bc-text-defaults` 与 `data-bc-next-style` 保存可选格式元数据。
+未修改包版本号。
+
+
 ## 未发布 — 2026-10-15：容器内对象切换为根层浮动
 
 **Severity**: minor（扩展布局切换范围；发布版本由用户另行决定）
@@ -47,7 +81,6 @@
 
 bundled editor 无需改动。自定义 Doc 若要保留日期设置按钮或双击入口，在 `plugins` 中注册 `new MaterialToolbarPlugin()`；若之前使用 `new WeatherToolbarPlugin()`，替换为新插件即可覆盖三类物料。旧 WeatherToolbarPlugin 保留为仅天气的兼容入口，两者不要同时注册。宿主独立设置面板可继续使用原字段。未修改 package.json 版本号。
 
-
 ## 未发布 — 2026-10-15：浮动对象方向键微调
 
 **Severity**: minor（新增对象键盘交互；发布版本由用户另行决定）
@@ -68,6 +101,32 @@ bundled editor 无需改动。自定义 Doc 若要保留日期设置按钮或双
 ### Migration Recipe
 
 无需数据迁移或宿主接线；使用已有 Placement 管理器自动启用。未修改包版本号。
+
+## 未发布 — 2026-10-15：当前用户的持续输入格式
+
+**Severity**: minor（输入状态生命周期调整；发布版本由用户另行决定）
+
+**What changed**: Input 用内部 `TypingFormatState` 统一管理持续格式，替代一次性插入属性。
+工具栏、普通输入及 IME 共用状态，以相对位置跟随编辑；本地 Undo item 同时记录输入格式。
+
+**Why**: 字号／字样不应依赖上一段已存在文字才能延续，删除文字不能自动取消用户当前格式。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-input.md`、`blockcraft-plugins-formatting.md`。
+
+### Behavior Changes
+
+连续输入、删除部分文字、删空后续写、普通 Enter 续写保留当前行内格式。
+用户导航或主动收起选区重新继承落点格式；非文本／纯文本区域不携带富文本状态。
+粘贴及 API 内容写入继续继承新内容的格式，不套用先前输入状态。
+撤销／重做包含空文本位置的格式恢复。状态仅属于当前用户，不写入快照或同步给协作者。
+属性明确的受控输入直接走 Yjs 渲染，避免零宽占位符分支产生重复文字 DOM。
+
+### Migration Recipe
+
+文档数据无需迁移；工具栏继续通过 `TextToolbarHelper` 设置格式。
+`setNextInsertAttrs()` / `peekNextInsertAttrs()` / `hasNextInsertAttrs()` /
+`clearNextInsertAttrs()` 保留签名，但读取／输入不再消费属性；需要取消当前状态时显式调用
+`clearNextInsertAttrs()`，不要依赖一次输入将其清掉。未修改 package.json 版本号。
 
 ## 未发布 — 2026-10-14：Snapshot Viewer 的 Mermaid 只展示图形
 
