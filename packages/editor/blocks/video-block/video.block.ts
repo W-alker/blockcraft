@@ -1,4 +1,5 @@
 import {ChangeDetectionStrategy, Component, inject} from '@angular/core';
+import {AsyncPipe} from '@angular/common';
 import {DomSanitizer, SafeHtml, SafeResourceUrl} from '@angular/platform-browser';
 import {
   BaseBlockComponent,
@@ -57,6 +58,7 @@ import {getLocalVideoUpload} from './local-video-upload';
           } @else if (isDirectVideoUrl) {
             <div class="video-wrapper">
               <video [src]="resourcePreviewUrl"
+                     [style.--video-view-scale]="(doc.viewScale.scale$ | async) ?? 1"
                      controls
                      [attr.poster]="props.poster || null"
                      preload="metadata">
@@ -99,7 +101,7 @@ import {getLocalVideoUpload} from './local-video-upload';
   `,
   standalone: true,
   styleUrls: ['./video-block.scss'],
-  imports: [ResizeContainerComponent, BcResourcePlaceholderDirective],
+  imports: [AsyncPipe, ResizeContainerComponent, BcResourcePlaceholderDirective],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class VideoBlockComponent extends BaseBlockComponent<VideoBlockModel> {

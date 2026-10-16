@@ -3,6 +3,7 @@ import {Subject} from 'rxjs'
 import * as Y from 'yjs'
 import {VideoBlockComponent} from './video.block'
 import {VideoBlockSchema} from './index'
+import {DocumentViewScaleManager} from '../../framework/doc/view/document-view-scale.manager'
 
 // 真实 Angular 模板和 DOM；文件服务为只读测试替身，不执行上传。
 describe('VideoBlockComponent persisted poster rendering', () => {
@@ -24,6 +25,7 @@ describe('VideoBlockComponent persisted poster rendering', () => {
       fixture.componentRef.setInput('model', snapshot)
       fixture.componentRef.setInput('yBlock', yblock)
       fixture.componentRef.setInput('doc', {
+        viewScale: new DocumentViewScaleManager(),
         isReadonly: true,
         injector: {get: () => ({isLocalObjectURL: () => false})},
         objectSizing: {

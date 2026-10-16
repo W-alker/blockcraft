@@ -120,6 +120,17 @@
     width: 100%;
     height: 100%;
     object-fit: contain;
+    // WebKit 原生控件会把祖先 zoom 再用于内部坐标。仅隔离播放器的
+    // effective zoom；百分比尺寸仍填满已缩放的外层，保留块布局与拖拽几何。
+    zoom: calc(1 / var(--video-view-scale, 1));
+
+    &:fullscreen {
+      zoom: 1;
+    }
+
+    @media print {
+      zoom: 1;
+    }
   }
 
   .video-wrapper {
