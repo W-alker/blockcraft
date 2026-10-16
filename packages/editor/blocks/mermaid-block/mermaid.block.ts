@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, ChangeDetectorRef, Component, inject, NgZone } from "@angular/core";
+import { CsIconComponent, CsTooltipDirective } from '@cses/ui';
 import {
   BaseBlockComponent, DOC_FILE_SERVICE_TOKEN,
   generateId,
@@ -54,12 +55,11 @@ import type {TextEdit} from '@visimer/core';
               contenteditable="false"
               [class.only-fullscreen]="isReadonly && props.mode === 'text'"
               [attr.aria-label]="isFullscreen ? '退出全屏' : '全屏'"
-              [attr.title]="isFullscreen ? '退出全屏 · Esc' : '全屏'"
+              [csTooltip]="isFullscreen ? '退出全屏 · Esc' : '全屏'"
+              csTooltipPlacement="bottomRight"
               (mousedown)="$event.preventDefault(); $event.stopPropagation()"
               (click)="toggleFullscreen(); $event.stopPropagation()">
-        <i class="bc_icon"
-           [class.bc_arrow-expand]="!isFullscreen"
-           [class.bc_x-circle-contained]="isFullscreen"></i>
+        <cs-icon [csType]="isFullscreen ? 'fullscreen-shrink' : 'fullscreen-expand'" aria-hidden="true"></cs-icon>
       </button>
     </div>
 
@@ -79,6 +79,7 @@ import type {TextEdit} from '@visimer/core';
     </div>
   `,
   standalone: true,
+  imports: [CsIconComponent, CsTooltipDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel> {
