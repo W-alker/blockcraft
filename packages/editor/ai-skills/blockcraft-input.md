@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying text input behavior.
 >
-> Last updated: 2026-10-15
+> Last updated: 2026-10-16
 
 ## Architecture Overview
 
@@ -45,6 +45,13 @@ Input 通过内部 `TypingFormatState` 维护当前用户的输入格式。它�
 状态读取不查询 DOM 或要求块组件挂载；连续编辑复用当前格式，导航／范围格式变化才重新读取文本 Delta。
 粘贴和 API 直接写入的内容重新继承写入后的格式，避免旧输入状态覆盖外部内容。
 输入携带明确属性时直接使用 Yjs 观察者驱动视图，不先修改零宽占位符或行尾 DOM。
+
+### Tab 缩进上限
+
+通用 Tab 块缩进最多为 8 级（`depth: 8`，未缩进为 0），并保留不能超过前一个兄弟块
+深度加 1 的约束。多块选区在写入前检查全部目标；任一目标已达 8 级时，整次增加缩进
+不写入，避免改变相对层级。Shift+Tab 保持逐级减少缩进；已有超过 8 级的数据不自动
+裁剪，仍可减少缩进。代码块的 Tab 字符输入及表格专属导航不受此通用上限影响。
 
 ### 下一段样式
 

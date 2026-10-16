@@ -60,6 +60,8 @@ import {
   TableCellSelectionModelTarget,
 } from "../table";
 
+const MAX_TAB_INDENT_DEPTH = 8;
+
 const ALLOW_INPUT_TYPES = new Set([
   "insertText",
   "deleteContentBackward",
@@ -2339,7 +2341,7 @@ export class InputTransformer {
       return true;
     }
 
-    if (!state.raw.shiftKey && _newDepth > _prevDepth + 1) {
+    if (!state.raw.shiftKey && (_newDepth > MAX_TAB_INDENT_DEPTH || _newDepth > _prevDepth + 1)) {
       this.doc.messageService.warn("当前内容块已到最大缩进层级");
       return true;
     }
@@ -2350,6 +2352,14 @@ export class InputTransformer {
         sel.lastBlock,
         true,
       );
+      // Check the entire range before writing so a capped descendant cannot
+      // leave the selection partially indented or change its relative depths.
+      if (!state.raw.shiftKey && blocks.some(id =>
+        (this.doc.getBlockById(id)?.props.depth ?? 0) >= MAX_TAB_INDENT_DEPTH,
+      )) {
+        this.doc.messageService.warn("当前内容块已到最大缩进层级");
+        return true;
+      }
       this.doc.crud.transact(() => {
         for (const id of blocks) {
           const b = this.doc.getBlockById(id);

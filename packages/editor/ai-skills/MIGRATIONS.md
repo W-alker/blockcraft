@@ -4,6 +4,22 @@
 >
 > Last updated: 2026-10-16 | Tracks `@ccc/blockcraft` npm releases.
 
+## 未发布 — 2026-10-16：Tab 缩进最多 8 级
+
+**Severity**: patch（交互上限调整；发布版本由用户另行决定）
+
+**What changed**: 通用 Tab 块缩进最多为 `depth: 8`；多选时任一目标已达上限，整次增加缩进不写入。
+
+**Why**: 防止连续 Tab 无限增加缩进，同时保持多选块之间的相对层级。
+
+**Affected ai-skills files**: `blockcraft-input.md`。
+
+### Behavior Changes
+
+原有前一个兄弟块深度加 1 的约束及 Shift+Tab 减少缩进保留。
+已有超过 8 级的数据不自动裁剪；代码块 Tab 字符输入和表格专属导航不变。
+无数据迁移要求，未修改包版本号。
+
 ## 未发布 — 2026-10-16：方向键连续微调合并
 
 **Severity**: minor（新增可选撤销续接参数；发布版本由用户另行决定）

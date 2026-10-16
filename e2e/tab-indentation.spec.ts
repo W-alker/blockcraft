@@ -21,6 +21,30 @@ async function readBlock(page: Page, id: string) {
 }
 
 for (const flavour of ['paragraph', 'ordered', 'bullet']) {
+  test(`${flavour}: Tab stops at depth eight and Shift+Tab still works`, async ({page}) => {
+    const id = await page.locator(editorSelector).evaluate(async (editor, blockFlavour) => {
+      const doc = (window as any).ng.getComponent(editor).doc;
+      const previous = doc.schemas.createSnapshot(blockFlavour, ['previous', {depth: 8}]);
+      const target = doc.schemas.createSnapshot(blockFlavour, ['target', {depth: 7}]);
+      doc.crud.insertBlockSnapshots(doc.rootId, 0, [previous, target]);
+      await doc.navigateToBlock(target.id);
+      doc.selection.setCursorAt(doc.getBlockById(target.id), 0);
+      doc.crud.undoManager.clearHistory();
+      return target.id;
+    }, flavour);
+
+    await page.keyboard.press('Tab');
+    await expect.poll(() => readBlock(page, id)).toEqual({depth: 8, margin: 256, flavour});
+    for (let count = 0; count < 3; count++) await page.keyboard.press('Tab');
+    await expect.poll(() => readBlock(page, id)).toEqual({depth: 8, margin: 256, flavour});
+    await page.locator(editorSelector).evaluate(editor => {
+      (window as any).ng.getComponent(editor).doc.crud.undoManager.undo();
+    });
+    await expect.poll(() => readBlock(page, id)).toEqual({depth: 7, margin: 224, flavour});
+    await page.keyboard.press('Shift+Tab');
+    await expect.poll(() => readBlock(page, id)).toEqual({depth: 6, margin: 192, flavour});
+  });
+
   test(`${flavour}: initial indentation survives Enter and changes one level per Tab`, async ({page}) => {
     const id = await page.locator(editorSelector).evaluate(async (editor, blockFlavour) => {
       const doc = (window as any).ng.getComponent(editor).doc;
@@ -48,6 +72,53 @@ for (const flavour of ['paragraph', 'ordered', 'bullet']) {
     await expect.poll(() => readBlock(page, nextId)).toEqual({depth: 0, margin: 0, flavour});
   });
 }
+
+test('a later selected block at the cap prevents partial indentation', async ({page}) => {
+  const ids = await page.locator(editorSelector).evaluate(async editor => {
+    const doc = (window as any).ng.getComponent(editor).doc;
+    const snapshots = [7, 6, 8].map(depth =>
+      doc.schemas.createSnapshot('paragraph', [`depth ${depth}`, {depth}]));
+    doc.crud.insertBlockSnapshots(doc.rootId, 0, snapshots);
+    await doc.navigateToBlock(snapshots[1].id);
+    doc.selection.setSelection(
+      {blockId: snapshots[1].id, type: 'text', offset: 0},
+      {blockId: snapshots[2].id, type: 'text', offset: 1},
+    );
+    return snapshots.slice(1).map((snapshot: any) => snapshot.id) as string[];
+  });
+  const read = () => Promise.all(ids.map(id => readBlock(page, id)));
+  await page.keyboard.press('Tab');
+  await expect.poll(read).toEqual([
+    {depth: 6, margin: 192, flavour: 'paragraph'},
+    {depth: 8, margin: 256, flavour: 'paragraph'},
+  ]);
+  await page.keyboard.press('Shift+Tab');
+  await expect.poll(read).toEqual([
+    {depth: 5, margin: 160, flavour: 'paragraph'},
+    {depth: 7, margin: 224, flavour: 'paragraph'},
+  ]);
+  await page.keyboard.press('Tab');
+  await expect.poll(read).toEqual([
+    {depth: 6, margin: 192, flavour: 'paragraph'},
+    {depth: 8, margin: 256, flavour: 'paragraph'},
+  ]);
+});
+
+test('legacy depth above eight is preserved and can be decreased', async ({page}) => {
+  const id = await page.locator(editorSelector).evaluate(async editor => {
+    const doc = (window as any).ng.getComponent(editor).doc;
+    const snapshots = [10, 10].map(depth =>
+      doc.schemas.createSnapshot('paragraph', ['legacy', {depth}]));
+    doc.crud.insertBlockSnapshots(doc.rootId, 0, snapshots);
+    await doc.navigateToBlock(snapshots[1].id);
+    doc.selection.setCursorAt(doc.getBlockById(snapshots[1].id), 0);
+    return snapshots[1].id;
+  });
+  await page.keyboard.press('Tab');
+  await expect.poll(() => readBlock(page, id)).toEqual({depth: 10, margin: 320, flavour: 'paragraph'});
+  await page.keyboard.press('Shift+Tab');
+  await expect.poll(() => readBlock(page, id)).toEqual({depth: 9, margin: 288, flavour: 'paragraph'});
+});
 
 test('absolute placement clears every margin and restores flow indentation', async ({page}) => {
   const id = await page.locator(editorSelector).evaluate(async editor => {
