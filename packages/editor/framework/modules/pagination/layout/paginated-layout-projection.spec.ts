@@ -1,6 +1,7 @@
 import { BlockNodeType } from "../../../block-std/types/block.type";
 import {
   PageSlotFragment,
+  paginate,
   PaginationItem,
   PaginationResult,
 } from "../engine";
@@ -404,6 +405,49 @@ describe("buildProjectedBlockPlacements", () => {
 
     expect(placements[3]!.internalPageGap).toBe(60);
   });
+
+  for (const flavour of ["image", "video"]) {
+    it(`keeps the table after fitted ${flavour} aligned when media is virtualized`, () => {
+      // Only the 160px media surface is halved; its 20px caption/spacing stays.
+      const entries = [
+        entry("media", 180, {
+          flavour,
+          nodeType: BlockNodeType.void,
+          effectiveHeight: 100,
+          fitScale: 0.5,
+        }),
+        entry("table", 180, {
+          flavour: "table",
+          nodeType: BlockNodeType.block,
+          tableRows: [
+            {id: "row-0", top: 0, bottom: 60, coveredFromAbove: false},
+            {id: "row-1", top: 60, bottom: 120, coveredFromAbove: false},
+            {id: "row-2", top: 120, bottom: 180, coveredFromAbove: false},
+          ],
+        }),
+        entry("after", 25),
+      ];
+      const items = [
+        item("media", 100, {breakable: false, fitScale: 0.5}),
+        item("table", 180, {splitOffsets: [60, 120], splitStartsNewPage: true}),
+        item("after", 25),
+      ];
+      const geom = geometry();
+      const result = paginate(items, geom.geometry);
+      const projection = new PaginatedLayoutProjection();
+      projection.update(buildProjectedBlockPlacements(
+        entries.map(value => value.blockId), entries, items, result, geom,
+      ));
+
+      expect(projection.placementAt(0).projectedHostHeight).toBe(100);
+      // The unmounted media is represented by the same extent as its fitted DOM.
+      expect(projection.rangeHeight(0, 0)).toBe(100);
+      expect(projection.contentOffsetAt(1)).toBe(140);
+      expect(projection.contentOffsetAt(2)).toBe(3 * 140 + 60);
+      expect(entries[0]!.naturalHeight).toBe(180);
+      projection.dispose();
+    });
+  }
 
   it("uses the virtual cell-flow extent so blocks after an oversized cell start on the computed sheet", () => {
     const plan = planTableCellFlow([{

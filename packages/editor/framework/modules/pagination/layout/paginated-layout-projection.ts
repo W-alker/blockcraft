@@ -333,7 +333,9 @@ export function buildProjectedBlockPlacements(
         : (
           entry.lockHeight
           ?? entry.tableCellFlowPlan?.paginationHeight
-          ?? entry.naturalHeight
+          // 虚拟占位必须复用分页实际占高。媒体 fit 只缩主体，caption/间距
+          // 保持原尺寸；使用自然高度或整块乘 fitScale 都会使后续页漂移。
+          ?? entry.effectiveHeight
         ),
       internalPageGap:
         entry.flavour === "table"

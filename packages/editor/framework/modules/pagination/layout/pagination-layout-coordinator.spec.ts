@@ -289,6 +289,8 @@ describe("PaginationLayoutCoordinator", () => {
     });
     expect(sparse.items.map(paginationFields)).toEqual(legacy.map(paginationFields));
     expect(sparse.result.pages.length).toBe(1);
+    expect(sparse.placements[0].projectedHostHeight).toBe(40);
+    expect(sparse.projection.contentOffsetAt(1)).toBe(40);
   });
 
   it("seeds responsive object height from wr/ar without mounting the block", () => {
