@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when working with the CRDT data layer.
 >
-> Last updated: 2026-10-15
+> Last updated: 2026-10-16
 
 ## Architecture Overview
 
@@ -746,6 +746,13 @@ entire item before asking Yjs to pop it. If an affected reachable block is
 readonly, or an affected ancestor contains a locked descendant, the operation
 is rejected and the item remains on its original stack; unlocking makes that
 same item executable later.
+
+连续的异步手势可调用 `captureUndoItem(callback, previousToken)` 续接上一帧的记录。
+仅当 token 对应的记录仍是当前撤销栈顶时合并；失效或没有 token 时独立捕获。
+返回新的 `token` 供下一帧使用。每次 callback 必须同步执行，并将写入放在同一事务中。
+无写入返回 null；不改变原有单参数调用的独立捕获语义。
+捕获超时仅在 callback 内临时放宽，结束或抛错后恢复，不在两帧之间占用全局 capture group。
+使用方负责在松键、切换操作或外部事务等手势边界清除续接 token。
 
 IME flows that split one user intent across multiple Yjs transactions can temporarily open a capture group:
 

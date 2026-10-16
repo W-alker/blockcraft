@@ -9,6 +9,7 @@ import {resolvePlacementObjectGeometry, resolvePlacementObjectVisualBounds} from
 import {BlockPlacementRuntime} from './runtime'
 import {finitePlacementNumber} from './state'
 import {UnderlayObjectChrome} from './underlay-chrome'
+import {PlacementKeyboardNudge} from './keyboard-nudge'
 import {
   BLOCK_OBJECT_GROUP_FLAVOUR,
   BLOCK_PLACEMENT_LAYOUT_FLAVOUR,
@@ -34,6 +35,7 @@ export class BlockPlacementInteractionController {
   private cleanupFlowSelectionPassthrough: (() => void) | null = null
   private rootHost: HTMLElement | null = null
   private chromeFrame = 0
+  private keyboardNudge: PlacementKeyboardNudge | null = null
   private readonly underlayChrome = new Map<string, () => void>()
 
   constructor(
@@ -445,6 +447,7 @@ export class BlockPlacementInteractionController {
   }
 
   destroy(): void {
+    this.keyboardNudge?.end(false)
     this.clearUnderlayChrome()
     if (this.chromeFrame) this.rootHost?.ownerDocument.defaultView?.cancelAnimationFrame(this.chromeFrame)
     this.chromeFrame = 0
@@ -482,31 +485,38 @@ export class BlockPlacementInteractionController {
       if (this.state !== 'idle' || this.doc.dragController.state !== 'idle' ||
         blockIds.some(id => this.runtime.isReadonly(id))) return true
 
-      // Only selected views are needed; never measure DOM or scan the document.
-      const releaseLease = this.doc.virtualization.acquireBlockViewLease(blockIds)
-      try {
-        const updates: {block: BlockCraft.BlockComponent; position: {x: number; y: number}}[] = []
-        const dx = raw.key === 'ArrowLeft' ? -1 : raw.key === 'ArrowRight' ? 1 : 0
-        const dy = raw.key === 'ArrowUp' ? -1 : raw.key === 'ArrowDown' ? 1 : 0
-        for (const id of blockIds) {
-          const block = this.runtime.resolveBlock(id)
-          if (!block || !this.runtime.supports(block, 'absolute') || this.runtime.isReadonly(block)) return true
-          const position = this.runtime.getState(block)
-          if (position.mode !== 'absolute') return true
-          updates.push({block, position: {x: position.x + dx, y: position.y + dy}})
+      if (!this.keyboardNudge?.active) {
+        // Only selected views are leased; no DOM measurement or document scan.
+        const releaseLease = this.doc.virtualization.acquireBlockViewLease(blockIds)
+        const targets = blockIds.map(id => this.runtime.resolveBlock(id))
+        const parents = targets.map(block => block?.parentId)
+        const view = targets[0]?.hostElement.ownerDocument.defaultView
+        if (!view || targets.some(block => !block)) {
+          releaseLease()
+          return true
         }
-        this.doc.crud.undoManager?.stopCapturing()
-        try {
-          // The batch also fits containing groups inside the same undo item.
-          this.commitObjectPositions(updates)
-        } finally {
-          this.doc.crud.undoManager?.stopCapturing()
+        const isCurrent = () => {
+          const selected = this.runtime.getAbsoluteObjectSelectionIds(this.doc.selection.value)
+          return this.state === 'idle' && this.doc.dragController.state === 'idle' &&
+            !!selected && selected.length === blockIds.length && selected.every((id, i) => id === blockIds[i]) &&
+            targets.every((block, i) => !!block && this.runtime.resolveBlock(block.id) === block &&
+              block.parentId === parents[i] && this.runtime.supports(block, 'absolute') &&
+              !this.runtime.isReadonly(block) && this.runtime.getState(block).mode === 'absolute')
         }
-      } catch (error) {
-        if (!(error instanceof BlockReadonlyError)) throw error
-      } finally {
-        releaseLease()
+        if (!isCurrent()) { releaseLease(); return true }
+        this.keyboardNudge = new PlacementKeyboardNudge(this.doc, view, isCurrent, (dx, dy) => {
+          // Read the current model each frame: fitting a group may shift its
+          // origin and member coordinates during the previous batch.
+          return this.commitObjectPositions(targets.map(block => {
+            const position = this.runtime.getState(block!)
+            return {block: block!, position: {x: position.x + dx, y: position.y + dy}}
+          }))
+        }, () => {
+          releaseLease()
+          this.keyboardNudge = null
+        })
       }
+      this.keyboardNudge.add(raw.key)
       return true
     }
     for (const flavour of [BLOCK_PLACEMENT_LAYOUT_FLAVOUR, BLOCK_OBJECT_GROUP_FLAVOUR]) {

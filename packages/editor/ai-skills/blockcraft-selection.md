@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying selection behavior or when the L1 quick reference in `blockcraft.md` isn't enough.
 >
-> Last updated: 2026-10-15 | Source of truth: `framework/modules/selection/`
+> Last updated: 2026-10-16 | Source of truth: `framework/modules/selection/`
 
 ## 选中样式的归属
 
@@ -813,11 +813,14 @@ the view lease and selection-recalculation guard.
 对象整体选中时，无修饰键的四个方向键每次移动 1 个文档布局 CSS px，
 不随 `viewScale` 改变步长，不执行吸附。单选、多选、浮动组合整体及组合内成员
 通过 Placement 自有快捷键入口优先于公共光标导航处理；组内成员也适用于流式组合。
-一次按键的全部位置及组合边界重算共用同一 Yjs/Undo 事务，保留选区；长按重复事件
-逐次移动并可逐次撤销。只为选中对象获取视图 lease，不查询 DOM 几何或遍历全文。
+首次按下立即移动，同一帧的重复事件累积位移后批量写入；每批全部位置及组合边界
+重算共用同一 Yjs 事务，保留选区。一次连续按住方向键共用一条撤销记录，松开全部
+方向键后下次按键独立撤销。松键、鼠标操作、其他按键及失焦时提交剩余位移并结束；
+切换选区、失效目标、只读、销毁或外部事务打断时丢弃未写入位移，结束捕获，避免
+写回陈旧目标或混入其他编辑。会话仅租用选中对象，不查询 DOM 几何或遍历全文。
 只读、包含锁定对象或拖拽期间不移动；任何一个目标不可写时不会部分移动。
 原生输入控件、IME、对象内部文本编辑、流式块整体选中及带 Shift/Alt/Ctrl/Meta 的
-方向键继续走原行为。未新增公开 API 或存储格式。
+方向键继续走原行为。撤销使用 `captureUndoItem(callback, continuation?)`，存储格式不变。
 
 Standard absolute objects are children of the final root
 `placement-layout`, not ordinary root-flow siblings. Ordinary drag selection,

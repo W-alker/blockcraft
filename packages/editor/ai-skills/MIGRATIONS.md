@@ -2,7 +2,34 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-10-15 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-10-16 | Tracks `@ccc/blockcraft` npm releases.
+
+## 未发布 — 2026-10-16：方向键连续微调合并
+
+**Severity**: minor（新增可选撤销续接参数；发布版本由用户另行决定）
+
+**What changed**: 浮动对象首次方向键立即移动，重复事件按帧累积位移并批量写入。
+连续按住方向键共用一条撤销记录，松键后的新手势独立撤销。
+
+**Why**: 减少重复位置事务和组合重算，避免长按产生大量碎片撤销记录。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-selection.md`、`blockcraft-data.md`。
+
+### New APIs
+
+`DocUndoManger.captureUndoItem(callback, continuation?)` 可选传入上一批返回的 token；
+仅栈顶匹配时续接，否则独立捕获。既有单参数调用不变。
+
+### Migration Recipe
+
+现有调用无须修改。自定义连续手势可保存每批返回的 token，在下一批传入第二参数；
+手势结束时丢弃 token，每批 callback 保持同步且只写一个事务。
+
+### Behavior Changes
+
+松键、鼠标操作、其他按键及失焦会提交剩余位移并收尾；选区改变、目标失效、
+只读、销毁及外部事务打断会取消未写入位移。其他编辑不并入此次撤销。
+步长、缩放、多选、组边界与修饰键规则不变；无数据迁移或版本调整。
 
 ## 未发布 — 2026-10-15：段落字符默认格式与下一段样式
 

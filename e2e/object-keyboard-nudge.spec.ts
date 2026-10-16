@@ -108,11 +108,14 @@ for (const layout of ['root', 'over', 'top-bottom']) {
     await clearHistory(page)
     const allIds = [...ids, ...(groupId ? [groupId] : [])]
     const before = await state(page, allIds)
-    await page.keyboard.press('ArrowLeft')
-    await expect.poll(async () => (await state(page, ids))[0].x).toBeCloseTo(before[0].x - 1, 1)
+    for (let step = 1; step <= 3; step++) {
+      await page.keyboard.down('ArrowLeft')
+      await expect.poll(async () => (await state(page, ids))[0].x).toBeCloseTo(before[0].x - step, 1)
+    }
+    await page.keyboard.up('ArrowLeft')
     const after = await state(page, allIds)
     ids.forEach((_, i) => {
-      expect(after[i].x).toBeCloseTo(before[i].x - (i < 2 ? 1 : 0), 1)
+      expect(after[i].x).toBeCloseTo(before[i].x - (i < 2 ? 3 : 0), 1)
       expect(after[i].y).toBeCloseTo(before[i].y, 1)
       expect(after[i].width).toBeCloseTo(before[i].width, 1)
     })
@@ -192,19 +195,34 @@ test('锁定、原生输入与对象内部文字编辑不触发微调', async ({
   await expect.poll(() => page.evaluate(() => (window as any).__nudgeDoc.selection.value?.head.offset)).toBe(2)
 })
 
-test('连续按键每次移动 1px，多选包含锁定对象时整次不移动', async ({page}) => {
+test('长按累计位移合并一次撤销，多选包含锁定对象时整次不移动', async ({page}) => {
   const ids = await setup(page)
   await clickObject(page, ids[0])
   await clickObject(page, ids[1], true)
   await expect.poll(() => selected(page)).toEqual(ids.slice(0, 2))
   const before = await state(page, ids)
+  await clearHistory(page)
   await page.keyboard.down('ArrowRight')
+  // Span the default 500ms undo capture timeout.
+  await page.evaluate(async () => {
+    for (let i = 0; i < 40; i++) await new Promise(requestAnimationFrame)
+  })
   await page.keyboard.down('ArrowRight')
   await page.keyboard.down('ArrowRight')
   await page.keyboard.up('ArrowRight')
   await expect.poll(async () => (await state(page, ids))[0].x).toBeCloseTo(before[0].x + 3, 1)
   expect((await state(page, ids))[1].x).toBeCloseTo(before[1].x + 3, 1)
   expect(await selected(page)).toEqual(ids.slice(0, 2))
+  const moved = await state(page, ids)
+  await page.keyboard.press('ArrowDown')
+  await history(page, 'undo')
+  expect(await state(page, ids)).toEqual(moved)
+  await history(page, 'undo')
+  expect(await state(page, ids)).toEqual(before)
+  expect(await selected(page)).toEqual(ids.slice(0, 2))
+  expect(await page.evaluate(() => (window as any).__nudgeDoc.crud.undoManager.isCanUndo())).toBe(false)
+  await history(page, 'redo')
+  expect(await state(page, ids)).toEqual(moved)
   await page.evaluate(id => (window as any).__nudgeDoc.setBlockReadonly(id, true), ids[1])
   await clearHistory(page)
   const lockedBefore = await state(page, ids)
@@ -232,4 +250,22 @@ test('修饰键与流式对象保留原有导航，不写入位置', async ({pag
   await page.keyboard.press('ArrowRight')
   expect((await state(page, ids))[0].props).toEqual(props)
   expect(await page.evaluate(() => (window as any).__nudgeDoc.crud.undoManager.isCanUndo())).toBe(false)
+})
+
+
+test('按键会话中的程序化编辑保持独立撤销', async ({page}) => {
+  const ids = await setup(page, ['shape'])
+  await page.evaluate(id => (window as any).__nudgeDoc.selection.selectBlock(id), ids[0])
+  await clearHistory(page)
+  const before = await state(page, ids)
+  await page.keyboard.down('ArrowRight')
+  await expect.poll(async () => (await state(page, ids))[0].x).toBeCloseTo(before[0].x + 1, 1)
+  const moved = await state(page, ids)
+  await page.evaluate(id => (window as any).__nudgeDoc.crud.undoManager.captureUndoItem(() =>
+    (window as any).__nudgeDoc.crud.updateBlockProps(id, {width: 200})), ids[0])
+  await page.keyboard.up('ArrowRight')
+  await history(page, 'undo')
+  expect(await state(page, ids)).toEqual(moved)
+  await history(page, 'undo')
+  expect(await state(page, ids)).toEqual(before)
 })

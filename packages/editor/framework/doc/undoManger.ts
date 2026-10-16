@@ -129,8 +129,10 @@ export class DocUndoManger {
    * A null token means the callback did not produce exactly one tracked item.
    * Callers must wrap all writes in one Yjs transaction; several undo items
    * cannot be exposed as one atomic rollback token.
+   * Optional continuation extends the captured item only while it is still the
+   * latest local item; otherwise this call captures a new independent item.
    */
-  captureUndoItem<T>(callback: () => T): CapturedDocUndoItem<T> {
+  captureUndoItem<T>(callback: () => T, continuation?: DocUndoItemToken | null): CapturedDocUndoItem<T> {
     if (this._captureGroupDepth > 0) {
       throw new Error('Cannot capture an independent undo item inside a capture group.')
     }
@@ -138,19 +140,36 @@ export class DocUndoManger {
       throw new Error('Cannot capture an undo item while undo or redo is running.')
     }
 
+    // Only extend the current top item; never hold global capture state across
+    // animation frames or other asynchronous work.
+    const previousItem = continuation && this.canUndoCapturedItem(continuation)
+      ? this._capturedUndoItems.get(continuation) : undefined
+    const captureTimeout = this._yUndoManager.captureTimeout
     const captured: StackItem[] = []
     const onStackItemAdded = (event: StackItemEvent) => {
       if (event.type === 'undo') captured.push(event.stackItem)
     }
+    const onStackItemUpdated = (event: StackItemEvent) => {
+      if (event.type === 'undo' && event.stackItem === previousItem && !captured.includes(event.stackItem)) {
+        captured.push(event.stackItem)
+      }
+    }
 
     this.captureSelectionBeforeChange()
     this.stopCapturing()
+    if (previousItem) {
+      this._yUndoManager.captureTimeout = Number.MAX_SAFE_INTEGER
+      this._yUndoManager.lastChange = Date.now()
+    }
     this.on('stack-item-added', onStackItemAdded)
+    if (previousItem) this.on('stack-item-updated', onStackItemUpdated)
     let result: T
     try {
       result = callback()
     } finally {
       this.off('stack-item-added', onStackItemAdded)
+      if (previousItem) this.off('stack-item-updated', onStackItemUpdated)
+      if (previousItem) this._yUndoManager.captureTimeout = captureTimeout
       this.stopCapturing()
       if (!captured.length) this._pendingUndoSnapshot = undefined
     }

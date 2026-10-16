@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-10-15 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-10-16 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -43,7 +43,9 @@ Agent 查询 `blockcraft.block.table` 后可使用 `[rows, columns, values]` 一
 
 ## What is BlockCraft?
 
-整体选中的浮动对象支持无修饰键方向键微调，每次移动 1 个文档布局像素。
+整体选中的浮动对象支持无修饰键方向键微调，每个事件移动 1 个文档布局像素。
+首次立即反馈，重复事件按帧累积写入；一次连续按住方向键合并为一次撤销。
+撤销通过 `captureUndoItem(callback, continuation?)` 续接栈顶记录，详见 `blockcraft-data.md`。
 单选、多选、整组及组内成员共用 Placement 位置事务和撤销；缩放不改变布局步长。
 文本选区、流式块导航和修饰键组合保持原行为，详细边界见 `blockcraft-selection.md`。
 

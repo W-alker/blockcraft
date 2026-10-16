@@ -57,6 +57,43 @@ describe('DocUndoManger – undoRedoing flag never sticks', () => {
 
   const change = (key: string) => ydoc.transact(() => yBlockMap.set(key, new Y.Map()), null);
 
+  it('continues a captured gesture across time without holding a global capture group', () => {
+    const first = mgr.captureUndoItem(() => change('first'));
+    const later = Date.now() + 2000;
+    spyOn(Date, 'now').and.returnValue(later);
+    mgr.captureUndoItem(() => change('second'), first.token);
+    expect((mgr as any)._captureGroupDepth).toBe(0);
+    expect((mgr as any)._yUndoManager.captureTimeout).toBe(500);
+    expect((mgr as any)._yUndoManager.undoStack.length).toBe(1);
+    const other = mgr.captureUndoItem(() => change('other'));
+    expect(other.token).not.toBeNull();
+    mgr.undo();
+    expect(yBlockMap.has('other')).toBeFalse();
+    expect(yBlockMap.has('second')).toBeTrue();
+    mgr.undo();
+    expect(yBlockMap.size).toBe(0);
+    mgr.redo();
+    expect([...yBlockMap.keys()]).toEqual(['first', 'second']);
+  });
+
+  it('does not merge a stale continuation across another local action', () => {
+    const first = mgr.captureUndoItem(() => change('first'));
+    mgr.captureUndoItem(() => change('other'));
+    mgr.captureUndoItem(() => change('last'), first.token);
+    expect((mgr as any)._yUndoManager.undoStack.length).toBe(3);
+    mgr.undo();
+    expect(yBlockMap.has('last')).toBeFalse();
+    expect(yBlockMap.has('other')).toBeTrue();
+  });
+
+  it('restores capture settings when a continued callback throws', () => {
+    const first = mgr.captureUndoItem(() => change('first'));
+    expect(() => mgr.captureUndoItem(() => { throw new Error('failed'); }, first.token)).toThrowError('failed');
+    expect((mgr as any)._yUndoManager.captureTimeout).toBe(500);
+    mgr.captureUndoItem(() => change('other'));
+    expect((mgr as any)._yUndoManager.undoStack.length).toBe(2);
+  });
+
   it('clears the flag after undo()', () => {
     change('a');
     expect(mgr.isCanUndo()).toBeTrue();

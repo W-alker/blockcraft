@@ -1,5 +1,6 @@
 import {fakeAsync, tick} from '@angular/core/testing'
 import {BehaviorSubject} from 'rxjs'
+import * as Y from 'yjs'
 import {BlockPlacementInteractionController} from './interaction.controller'
 import {BlockPlacementRuntime} from './runtime'
 
@@ -28,7 +29,10 @@ describe('Placement multi-object drag', () => {
     const removed = new Set<string>()
     const releaseLease = jasmine.createSpy('releaseLease')
     const commitOne = jasmine.createSpy('commitOne')
-    const commitBatch = jasmine.createSpy('commitBatch').and.returnValue(true)
+    const commitBatch = jasmine.createSpy('commitBatch').and.callFake((updates: any[]) => {
+      updates.forEach(({block, position}) => block.props.position = `${position.x} ${position.y}`)
+      return true
+    })
     const bindings: {binding: any; handler: BlockCraft.EventHandler; options: any; dispose: jasmine.Spy}[] = []
     const doc: any = {
       event: {bindHotkey: (binding: any, handler: BlockCraft.EventHandler, options: any) => {
@@ -36,7 +40,7 @@ describe('Placement multi-object drag', () => {
         bindings.push({binding, handler, options, dispose})
         return dispose
       }},
-      rootId: 'root', isReadonly: false,
+      rootId: 'root', isReadonly: false, yDoc: new Y.Doc(),
       getBlockById: (id: string) => removed.has(id) ? null : blocks.find(block => block.id === id),
       model: {
         getParentId: (id: string) => blocks.find(block => block.id === id)?.parentId,
@@ -54,8 +58,9 @@ describe('Placement multi-object drag', () => {
         setSuppressRecalculate: jasmine.createSpy('setSuppressRecalculate'),
       },
       virtualization: {acquireBlockViewLease: jasmine.createSpy('lease').and.returnValue(releaseLease)},
-      ngZone: {runOutsideAngular: (fn: () => void) => fn()},
-      crud: {undoManager: {stopCapturing: jasmine.createSpy('stopCapturing')}},
+      ngZone: {run: (fn: () => void) => fn(), runOutsideAngular: (fn: () => void) => fn()},
+      crud: {undoManager: {stopCapturing: jasmine.createSpy('stopCapturing'),
+        captureUndoItem: jasmine.createSpy('captureUndoItem').and.callFake((fn: () => boolean) => ({result: fn(), token: {}}))}},
     }
     const controller = new BlockPlacementInteractionController(doc, new BlockPlacementRuntime(doc), commitOne, commitBatch)
     return {plane, blocks, selection, json, locked, removed, doc, releaseLease, commitOne, commitBatch, controller, bindings}
@@ -78,8 +83,10 @@ describe('Placement multi-object drag', () => {
         expect(rect).not.toHaveBeenCalled()
         expect(h.doc.selection.blur).not.toHaveBeenCalled()
         expect(context.preventDefault).toHaveBeenCalled()
+        expect(h.releaseLease).not.toHaveBeenCalled()
+        window.dispatchEvent(new KeyboardEvent('keyup', {key}))
         expect(h.releaseLease).toHaveBeenCalledTimes(1)
-        expect(h.doc.crud.undoManager.stopCapturing).toHaveBeenCalledTimes(2)
+        expect(h.doc.crud.undoManager.captureUndoItem).toHaveBeenCalledTimes(1)
         const registrations = h.bindings.filter(item => Array.isArray(item.binding.key))
         expect(registrations.map(item => item.options.flavour)).toEqual(['placement-layout', 'object-group'])
         expect(nudge.binding).toEqual(jasmine.objectContaining({shiftKey: false, altKey: false, ctrlKey: false, metaKey: false}))
@@ -104,6 +111,66 @@ describe('Placement multi-object drag', () => {
         if (reason === 'text') expect(context.preventDefault).not.toHaveBeenCalled()
       } finally {h.controller.destroy(); h.plane.remove()}
     })
+  }
+
+  it('keeps leading feedback and batches repeat deltas without losing the keyup tail', fakeAsync(() => {
+    const h = setup()
+    try {
+      const nudge = h.bindings.find(item => Array.isArray(item.binding.key))!
+      const press = (key = 'ArrowRight') => nudge.handler({
+        get: () => ({selection: h.selection, raw: {key}}), preventDefault: () => {},
+      } as any)
+      press(); press(); press()
+      expect(h.blocks[0].props.position).toBe('1 0')
+      expect(h.commitBatch).toHaveBeenCalledTimes(1)
+      tick(17)
+      expect(h.blocks[0].props.position).toBe('3 0')
+      expect(h.commitBatch).toHaveBeenCalledTimes(2)
+      press()
+      window.dispatchEvent(new KeyboardEvent('keyup', {key: 'ArrowRight'}))
+      expect(h.blocks[0].props.position).toBe('4 0')
+      expect(h.releaseLease).toHaveBeenCalledTimes(1)
+      tick(30)
+      expect(h.commitBatch).toHaveBeenCalledTimes(3)
+    } finally {h.controller.destroy(); h.plane.remove()}
+  }))
+
+  for (const boundary of ['blur', 'pointerdown', 'focusout', 'other-key']) {
+    it(`flushes the queued tail before ${boundary}`, fakeAsync(() => {
+      const h = setup()
+      try {
+        const nudge = h.bindings.find(item => Array.isArray(item.binding.key))!
+        const context: any = {get: () => ({selection: h.selection, raw: {key: 'ArrowRight'}}), preventDefault: () => {}}
+        nudge.handler(context); nudge.handler(context)
+        window.dispatchEvent(boundary === 'other-key'
+          ? new KeyboardEvent('keydown', {key: 'Escape'}) : new Event(boundary))
+        expect(h.blocks[0].props.position).toBe('2 0')
+        expect(h.releaseLease).toHaveBeenCalledTimes(1)
+        tick(30)
+        expect(h.commitBatch).toHaveBeenCalledTimes(2)
+      } finally {h.controller.destroy(); h.plane.remove()}
+    }))
+  }
+
+  for (const reason of ['removed', 'locked', 'reparented', 'selection', 'external', 'destroy']) {
+    it(`cancels queued nudge safely on ${reason}`, fakeAsync(() => {
+      const h = setup()
+      try {
+        const nudge = h.bindings.find(item => Array.isArray(item.binding.key))!
+        const context: any = {get: () => ({selection: h.selection, raw: {key: 'ArrowRight'}}), preventDefault: () => {}}
+        nudge.handler(context); nudge.handler(context)
+        if (reason === 'removed') h.removed.add('b')
+        if (reason === 'locked') h.locked.add('b')
+        if (reason === 'reparented') h.blocks[1].parentId = 'elsewhere'
+        if (reason === 'selection') h.doc.selection.value = null
+        if (reason === 'external') h.doc.yDoc.getMap('external').set('value', 1)
+        if (reason === 'destroy') h.controller.destroy()
+        tick(30)
+        expect(h.commitBatch).toHaveBeenCalledTimes(1)
+        expect(h.releaseLease).toHaveBeenCalledTimes(1)
+        expect(h.doc.crud.undoManager.captureUndoItem).toHaveBeenCalledTimes(1)
+      } finally {h.controller.destroy(); h.plane.remove()}
+    }))
   }
 
   it('previews every target once per frame and commits the measured-scale delta as one batch', fakeAsync(() => {
