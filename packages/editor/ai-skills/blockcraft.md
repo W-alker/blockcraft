@@ -77,6 +77,10 @@ A block-based rich text editor built on **Angular (standalone components)** + **
 
 ## 对象交互装配速查
 
+普通容器内的可浮动对象可通过既有布局菜单或 Placement API 移入根层唯一的
+`placement-layout`。对象脱离原容器，转换使用根层坐标；切回流式落在根层，
+Undo 恢复原归属。组合内部成员仍不能单独切换布局，详见 `blockcraft-block.md`。
+
 `ObjectDragPlugin` 统一块态图片、贴纸、形状本体及文本框/艺术字/组合块移动手柄的选中和拖拽。
 手动装配放在 `ObjectFormatToolbarPlugin`、`ImgToolbarPlugin` 之后；bundled 装配已包含。
 Schema 的 `objectDrag` 和视图区域标记见 `blockcraft-plugins-block.md`；工具栏保留专属编辑职责。

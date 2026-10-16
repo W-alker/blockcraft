@@ -252,6 +252,8 @@ function makeHarness() {
     setAbsolute,
     rootChildren,
     layoutChildren,
+    childrenById,
+    flavourById,
   }
 }
 
@@ -1006,6 +1008,54 @@ describe('BlockPlacementManager', () => {
     expect(props['position']).toBeUndefined()
     expect(props['placementLayer']).toBeUndefined()
 
+    manager.destroy()
+    container.remove()
+  })
+
+  it('lifts a nested object into the root plane using scaled root coordinates', () => {
+    const {container, host, props, block, manager, doc, rootChildren,
+      layoutChildren, childrenById, flavourById} = makeHarness()
+    rootChildren.splice(0, 1, 'region')
+    childrenById.set('region', [block.id])
+    flavourById.set('region', 'render-unit')
+    block.parentId = 'region'
+    block.parentBlock = {id: 'region', childrenIds: childrenById.get('region')!}
+    const region = document.createElement('div')
+    container.appendChild(region)
+    region.appendChild(host)
+    setRect(region, {left: 200, top: 80, width: 200})
+    container.style.padding = '10px 20px'
+    setRect(container, {left: 100, top: 50, width: 1000})
+
+    expect(manager.supportsObjectLayout(block as any, 'over')).toBeTrue()
+    expect(manager.setObjectLayout(block as any, 'under')).toBeTrue()
+    expect(doc.crud.moveBlocks).toHaveBeenCalledOnceWith('region', 0, 1, 'layout', 0)
+    expect(props['position']).toBe('43 10')
+    expect(props['placementLayer']).toBe('under')
+    expect(childrenById.get('region')).toEqual([])
+    expect(layoutChildren).toEqual([block.id])
+    expect(rootChildren).toEqual(['region', 'layout'])
+    expect(doc.crud.transact).toHaveBeenCalledTimes(1)
+
+    expect(manager.setObjectLayout(block as any, 'top-bottom')).toBeTrue()
+    expect(block.parentId).toBe('root')
+    expect(props['position']).toBeUndefined()
+    manager.destroy()
+    container.remove()
+  })
+
+  it('keeps grouped and readonly nested objects out of flow-to-root transitions', () => {
+    const {container, block, manager, doc, rootChildren, childrenById, flavourById} = makeHarness()
+    rootChildren.splice(0, 1, 'group')
+    childrenById.set('group', [block.id])
+    flavourById.set('group', 'object-group')
+    block.parentId = 'group'
+    expect(manager.supportsObjectLayout(block as any, 'over')).toBeFalse()
+    expect(manager.setObjectLayout(block as any, 'over')).toBeFalse()
+    flavourById.set('group', 'render-unit')
+    doc.readonlyManager.isReadonly.and.returnValue(true)
+    expect(manager.setObjectLayout(block as any, 'over')).toBeFalse()
+    expect(doc.crud.moveBlocks).not.toHaveBeenCalled()
     manager.destroy()
     container.remove()
   })

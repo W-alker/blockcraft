@@ -1,12 +1,12 @@
 import {storeBlockPosition} from './state'
 import type {BlockPlacementLayer} from '../../../block-std/types'
-import {measureBlockPlacement} from './geometry'
+import {measureBlockPlacement, measureObjectPlacement} from './geometry'
 import {RootPlacementLayoutCoordinator} from './root-layout.coordinator'
 import {BlockPlacementRuntime} from './runtime'
 import type {BlockPlacementFlowAnchor} from './types'
 
 /**
- * Converts root objects between normal flow and the absolute placement layout.
+ * Lifts flow objects into the root placement layout and returns them to root flow.
  */
 export class BlockPlacementFlowCoordinator {
   constructor(
@@ -168,13 +168,21 @@ export class BlockPlacementFlowCoordinator {
     if (
       !this.runtime.supports(block, 'absolute') ||
       this.runtime.isReadonly(block) ||
-      block.parentId !== this.runtime.rootId ||
+      !block.parentId ||
+      this.runtime.isInAbsoluteLayout(block) ||
       !block.hostElement.isConnected
     ) {
       return false
     }
 
-    const measured = measureBlockPlacement(block.hostElement)
+    const sourceParentId = block.parentId
+    const rootContent = this.doc.root.childrenRenderRef?.containerElement ??
+      this.doc.root.hostElement
+    // A nested object's current parent is a different coordinate plane. Measure
+    // against the destination before moving it; never persist container-local x/y.
+    const measured = sourceParentId === this.runtime.rootId
+      ? measureBlockPlacement(block.hostElement)
+      : measureObjectPlacement(block.hostElement, rootContent)
     if (
       !this.doc.model?.getChildrenIds ||
       !this.doc.crud?.insertBlockSnapshots ||
@@ -184,7 +192,7 @@ export class BlockPlacementFlowCoordinator {
     }
 
     const sourceIndex =
-      this.doc.model.getChildrenIds(this.runtime.rootId).indexOf(block.id)
+      this.doc.model.getChildrenIds(sourceParentId).indexOf(block.id)
     if (sourceIndex < 0) return false
 
     this.doc.crud.transact(() => {
@@ -193,7 +201,7 @@ export class BlockPlacementFlowCoordinator {
         ?.get('children')
         ?.length ?? 0
       this.doc.crud.moveBlocks(
-        this.runtime.rootId,
+        sourceParentId,
         sourceIndex,
         1,
         layoutId,

@@ -4,6 +4,27 @@
 >
 > Last updated: 2026-10-15 | Tracks `@ccc/blockcraft` npm releases.
 
+## 未发布 — 2026-10-15：容器内对象切换为根层浮动
+
+**Severity**: minor（扩展布局切换范围；发布版本由用户另行决定）
+
+**What changed**: 普通容器内、Schema 支持浮动的对象现在可以通过既有
+`setObjectLayout()` / `setMode()` 移入根层唯一的 `placement-layout`。
+
+**Why**: 文本框、组合块等放入容器后仍应能够切换为文档级浮动对象。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`。
+
+### Behavior Changes
+
+转换前按根层坐标基准测量位置，迁移父级与位置更新共用一次事务；
+原容器不再拥有该对象。切回流式仍按根层视觉锚点落位，Undo 恢复原容器归属。
+组合内部成员不能单独改变布局；只读与 Schema 能力限制保持不变。
+
+### Migration Recipe
+
+无需数据迁移或新增宿主接线，继续使用既有布局 API。未修改包版本号。
+
 ## 未发布 — 2026-10-15：动态物料块外统一工具栏
 
 **Severity**: minor（新增插件装配；发布版本由用户另行决定）

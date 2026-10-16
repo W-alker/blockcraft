@@ -61,7 +61,9 @@ export class BlockPlacementRuntime {
     if (!capability?.modes.includes(mode)) return false
     if (this.isInObjectGroup(block)) return mode === 'absolute'
     if (mode !== 'absolute') return true
-    return block.parentId === this.rootId || this.isInAbsoluteLayout(block)
+    // Ordinary container children can be lifted into the root placement plane.
+    // Group members keep their existing local-plane restriction above.
+    return !!block.parentId
   }
 
   isPlacementLayout(

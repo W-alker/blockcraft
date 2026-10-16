@@ -856,8 +856,11 @@ alignment, grouping, duplicate and HTML paths share the codec. Its optional
 separately; omission means `over`. A relative child persists neither field.
 There is no persisted `mode` or `unit`. The base block host applies
 `position/left/top` only to structurally absolute, Schema-capable children.
-The standard lift/return transition is root-only. The manager moves absolute objects
-under one hidden `placement-layout` at the end of `root.children`:
+流式对象（包括普通容器内的文本框、组合块等）切换 `under` / `over` 时，
+管理器将对象从原父容器移入根层唯一的 `placement-layout`，坐标转换为根层坐标。
+对象不再随原容器移动；组合内部成员保持原局部坐标与布局限制。
+切回 `top-bottom` 使用根层视觉锚点，不恢复旧容器归属；Undo 恢复原父级及布局。
+The manager keeps one hidden `placement-layout` at the end of `root.children`:
 
 ```text
 root
