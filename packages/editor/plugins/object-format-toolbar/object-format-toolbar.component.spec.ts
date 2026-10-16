@@ -402,6 +402,9 @@ describe("ObjectFormatToolbarComponent", () => {
       '[data-object-format-section="text-typography"] cs-select',
     );
     expect(fontSelect).not.toBeNull();
+    expect(fixture.componentInstance.fontOptions.some(
+      font => font.value === 'xingkai' && font.label === '行楷',
+    )).toBeTrue();
     expect(sectionElement(fixture, "text-frame").hidden).toBeTrue();
     expect(sectionElement(fixture, "text-typography").hidden).toBeFalse();
     expect(fixture.nativeElement.textContent).not.toContain("框内换行");

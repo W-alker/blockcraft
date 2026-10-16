@@ -52,6 +52,11 @@ describe("typography settings dialogs", () => {
       typography: {ff: "kai"},
       attrs: {"a:bold": true, "a:italic": true},
     });
+    expect(component.fonts.some((font: {id: string}) => font.id === "xingkai")).toBeTrue();
+    component.setFamily("xingkai");
+    fixture.detectChanges();
+    expect(component.buildResult().typography.ff).toBe("xingkai");
+    expect(component.previewFontFamily).toContain("Xingkai SC");
   });
 
   it("shows inherited font defaults without persisting untouched values", async () => {

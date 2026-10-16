@@ -95,9 +95,49 @@ export const TYPOGRAPHY_FONT_FAMILIES: readonly TypographyFontFamilyOption[] =
       css: '"Kaiti SC", KaiTi, STKaiti, serif',
     },
     {
+      id: "xingkai",
+      label: "行楷",
+      css: '"Xingkai SC", STXingkai, "Kaiti SC", KaiTi, STKaiti, serif',
+    },
+    {
       id: "fang",
       label: "仿宋",
       css: 'FangSong, STFangsong, "FangSong_GB2312", serif',
+    },
+    {
+      id: "dengxian",
+      label: "等线",
+      css: 'DengXian, "等线", "PingFang SC", "Microsoft YaHei", sans-serif',
+    },
+    {
+      id: "lishu",
+      label: "隶书",
+      css: 'LiSu, "隶书", "Kaiti SC", KaiTi, serif',
+    },
+    {
+      id: "youyuan",
+      label: "幼圆",
+      css: 'YouYuan, "幼圆", "Yuanti SC", "PingFang SC", sans-serif',
+    },
+    {
+      id: "cambria",
+      label: "Cambria",
+      css: 'Cambria, Georgia, "Times New Roman", "Songti SC", serif',
+    },
+    {
+      id: "palatino",
+      label: "Palatino",
+      css: '"Palatino Linotype", Palatino, "Book Antiqua", "Songti SC", serif',
+    },
+    {
+      id: "trebuchet",
+      label: "Trebuchet MS",
+      css: '"Trebuchet MS", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
+    },
+    {
+      id: "courier",
+      label: "Courier New",
+      css: '"Courier New", Courier, "SFMono-Regular", "Microsoft YaHei", monospace',
     },
     {
       id: "mono",
@@ -203,8 +243,17 @@ export const matchTypographyFontFamily = (
       return option.id;
     }
   }
+  if (/(?:dengxian|等线)/i.test(normalized)) return "dengxian";
+  if (/(?:\blisu\b|隶书)/i.test(normalized)) return "lishu";
+  if (/(?:youyuan|yuanti|幼圆)/i.test(normalized)) return "youyuan";
+  if (/(?:\bcambria\b)/i.test(normalized)) return "cambria";
+  if (/(?:palatino|book antiqua)/i.test(normalized)) return "palatino";
+  if (/(?:trebuchet)/i.test(normalized)) return "trebuchet";
+  if (/(?:\bcourier\b)/i.test(normalized)) return "courier";
   if (/\b(?:sfmono|consolas|monaco|courier|monospace)\b/i.test(normalized))
     return "mono";
+  // Prefer running script over the KaiTi fallback in imported font stacks.
+  if (/(?:xingkai|行楷)/i.test(normalized)) return "xingkai";
   if (/(?:kaiti|stkaiti|楷体)/i.test(normalized)) return "kai";
   if (/(?:fangsong|仿宋)/i.test(normalized)) return "fang";
   if (/(?:microsoft yahei|微软雅黑)/i.test(normalized)) return "yahei";

@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-10-06
+> Last updated: 2026-10-16
 
 ## Theme Structure
 
@@ -369,6 +369,12 @@ host: {
 > - Need a "one line tall" px length? Derive it: `calc(var(--bc-lh) * var(--bc-fs))`.
 > - Headings use `line-height: var(--bc-lh)` directly — the ratio already scales against each
 >   heading's enlarged `font-size`, so no `* N` multiplier is needed.
+
+共享字体目录包含 `xingkai`（行楷）、`dengxian`（等线）、`lishu`（隶书）、
+`youyuan`（幼圆）、`cambria`、`palatino`、`trebuchet`（Trebuchet MS）与 `courier`（Courier New）。
+正文、文本框和艺术字的字体选择器共用此目录。
+该预设优先使用系统的 `Xingkai SC` / `STXingkai`，缺少时回退到楷体、衬线体；
+不捆绑或下载字体文件。外部 HTML 的行楷字体栈会识别为 `xingkai`，优先于其中的楷体回退。
 
 Root `ff/fs/lh` are persisted document defaults. `ff` resolves a short catalog
 ID to a portable platform font stack; `fs` projects `--bc-fs`; `lh` projects

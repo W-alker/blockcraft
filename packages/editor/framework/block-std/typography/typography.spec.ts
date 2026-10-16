@@ -1,5 +1,7 @@
 import {
   createInlineTypographyPatch,
+  compactObjectTextFontFamily,
+  resolveObjectTextFontFamily,
   INLINE_FONT_SCALE_PRESETS,
   INLINE_LETTER_SPACING_PRESETS,
   matchTypographyFontFamily,
@@ -31,6 +33,42 @@ describe("compact typography contract", () => {
     );
     expect(matchTypographyFontFamily("SimSun, serif")).toBe("simsun");
     expect(matchTypographyFontFamily("Unknown Corporate Font")).toBeNull();
+  });
+
+  it("preserves running script through import, inline formatting and object storage", () => {
+    const css = resolveTypographyFontFamily("xingkai")!;
+    expect(css).toContain('"Xingkai SC", STXingkai');
+    expect(css).toContain('"Kaiti SC", KaiTi, STKaiti, serif');
+    for (const family of ['"Xingkai SC", "STXingkai", "Kaiti SC", "KaiTi", serif', 'STXingkai', '华文行楷']) {
+      expect(matchTypographyFontFamily(family)).toBe("xingkai");
+    }
+    expect(matchTypographyFontFamily('"Kaiti SC", KaiTi, serif')).toBe("kai");
+    expect(createInlineTypographyPatch("ff", "xingkai")).toEqual({
+      "t:ff": "xingkai", "s:fontFamily": null,
+    });
+    expect(compactObjectTextFontFamily(css)).toBe("xingkai");
+    expect(resolveObjectTextFontFamily("xingkai")).toBe(css);
+    expect(compactObjectTextFontFamily("Custom Script, serif")).toBe("Custom Script, serif");
+  });
+
+  it("recognizes named common fonts before their generic fallback families", () => {
+    for (const [id, family] of [
+      ['dengxian', 'DengXian, "PingFang SC", sans-serif'],
+      ['lishu', 'LiSu, KaiTi, serif'],
+      ['youyuan', 'YouYuan, "PingFang SC", sans-serif'],
+      ['cambria', 'Cambria, Georgia, serif'],
+      ['palatino', '"Palatino Linotype", "Songti SC", serif'],
+      ['trebuchet', '"Trebuchet MS", Arial, sans-serif'],
+      ['courier', '"Courier New", monospace'],
+    ] as const) {
+      expect(matchTypographyFontFamily(family)).toBe(id);
+      const css = resolveTypographyFontFamily(id)!;
+      expect(compactObjectTextFontFamily(css)).toBe(id);
+      expect(resolveObjectTextFontFamily(id)).toBe(css);
+      expect(createInlineTypographyPatch('ff', id)['t:ff']).toBe(id);
+    }
+    expect(matchTypographyFontFamily('Consolas, monospace')).toBe('mono');
+    expect(matchTypographyFontFamily('Georgia, serif')).toBe('georgia');
   });
 
   it("normalizes and bounds compact numeric values", () => {

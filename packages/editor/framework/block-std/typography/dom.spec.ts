@@ -24,6 +24,16 @@ describe('typography DOM application', () => {
     expect({...element.dataset}).toEqual({bcFs: '1.25', bcFf: 'mono', bcLs: '0.1'});
   });
 
+  it('renders running script from the compact font ID and retains it in the DOM', () => {
+    applyInlineTypographyAttribute(element, 't:ff', 'xingkai');
+    element.textContent = '每日感悟';
+    expect(element.dataset['bcFf']).toBe('xingkai');
+    expect(getComputedStyle(element).fontFamily).toContain('Xingkai SC');
+    expect(getComputedStyle(element).fontFamily).toContain('STXingkai');
+    applyInlineTypographyAttribute(element, 't:ff', 'kai');
+    expect(getComputedStyle(element).fontFamily).not.toContain('Xingkai');
+  });
+
   it('clears invalid or removed values and restores inherited typography', () => {
     applyInlineTypographyAttribute(element, 't:fs', 1.25);
     applyInlineTypographyAttribute(element, 't:ff', 'mono');

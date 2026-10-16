@@ -26,5 +26,13 @@ export type TypographyFontFamilyId =
   | "georgia"
   | "simsun"
   | "kai"
+  | "xingkai"
   | "fang"
+  | "dengxian"
+  | "lishu"
+  | "youyuan"
+  | "cambria"
+  | "palatino"
+  | "trebuchet"
+  | "courier"
   | "mono";

@@ -4,6 +4,23 @@
 >
 > Last updated: 2026-10-16 | Tracks `@ccc/blockcraft` npm releases.
 
+## 未发布 — 2026-10-16：补充通用字体预设
+
+**Severity**: minor（新增可选字体 ID；发布版本由用户另行决定）
+
+**What changed**: `TypographyFontFamilyId` 与共享字体目录新增 `xingkai`（行楷）、`dengxian`（等线）、`lishu`（隶书）、
+`youyuan`（幼圆）、`cambria`、`palatino`、`trebuchet`、`courier`，
+正文、文本框、艺术字共用现有字体选择与解析路径。HTML 导入优先识别新增的具名字体，再识别其回退字体。
+
+**Why**: 水墨模板的行楷标题以及常用中英文字体需要可在编辑器内直接选择。
+
+**Affected ai-skills files**: `blockcraft-theme.md`。
+
+### Migration Recipe
+
+无需迁移既有数据。字体为系统字体栈，未安装行楷的设备回退到楷体/衬线体；
+不附带字体文件，不改变已有默认字体。消费者升级后才可选择或解析这些新的字体 ID。
+
 ## 未发布 — 2026-10-16：Tab 缩进最多 8 级
 
 **Severity**: patch（交互上限调整；发布版本由用户另行决定）
