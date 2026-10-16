@@ -4,6 +4,27 @@
 >
 > Last updated: 2026-10-16 | Tracks `@ccc/blockcraft` npm releases.
 
+## 未发布 — 2026-10-16：固定工具栏双模式与优先级响应式
+
+**Severity**: minor（工具栏交互调整；发布版本由用户决定）
+
+**What changed**: 固定工具栏新增简略／双层切换和常驻文本／段落设置入口；
+按容器实际溢出逐级收起快捷项，收起的命令归入“更多格式”或“插入”。
+文字／背景颜色面板改为点击打开，使用 Tab 直接嵌入组件库基础颜色面板，支持更多颜色及 HEX/RGB 输入，保留原格式化数据路径。
+
+**Why**: 提高设置可发现性，并让窄容器保留常用操作而不增加命令行数。
+
+**Affected ai-skills files**: `blockcraft-toolbar.md`、`blockcraft-plugins-formatting.md`。
+
+### Behavior Changes / Migration Recipe
+
+默认简略模式，切换仅改变组件展示，不写入文档。原命令、权限、弹窗及选区恢复路径保留。
+宿主应将工具栏外层固定高度改为自然高度，以容纳双层命令；
+Playground 的模板编辑／使用页已同步调整。投影插槽和扩展动作契约不变。
+颜色 Tab 需要组件库导出 `CsColorPickerPanelComponent`；宿主需升级到已发布的 `@cses/ui@4.37.0`。
+研发依赖和 editor 的 peerDependencies 已同步为该版本，原临时颜色组件补丁已移除。
+无数据迁移，未修改包版本号。
+
 ## 未发布 — 2026-10-16：文档右键菜单与显式剪贴板命令
 
 **Severity**: minor（新增菜单和 API；发布版本由用户决定）

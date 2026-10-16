@@ -352,23 +352,23 @@ when their trigger and longest item need less space. Scope lightweight thin
 scrollbars to fixed-toolbar vertical dropdown/submenu content instead of
 changing every BlockCraft toolbar globally.
 
-The fixed toolbar uses the same split-control shell for ordered-list presets
-and superscript/subscript: hovering either half highlights the whole control,
-while the caret receives an additional hover/open state. Font family and
-relative scale form one adjacent, iconless Word-style pair on the wide surface;
-responsive layouts move both fields into **更多格式** so the pair is never left
-visually half-present; that responsive scale submenu uses `bc_zihao`. Character
-spacing uses `bc_zijianju` immediately before paragraph line height.
+固定工具栏的有序列表与上下标沿用分体按钮。字体和实际字号在宽屏相邻展示，
+收窄时优先保留字号；文本／段落组内的设置图标常驻并直接打开现有弹窗，tooltip 和 aria-label 提供名称。
+完整设置、格式命令和低优先级快捷项可从“更多格式”或“插入”进入。
 
-Formatting and insertion are non-shrinking sibling sections of the fixed
-toolbar's single row. When their combined intrinsic width exceeds the host,
-the toolbar progressively condenses based on measured overflow. Only the final
-narrow tier enables host-level horizontal scrolling with a thin
-transparent-track scrollbar; neither section creates a competing inner scroll
-range or overlays the other. Use safe centering so content stays centered while
-it fits and the inline start remains reachable once it overflows. Measure only
-the visible formatting and insertion sections; projected dropdown-menu template
-hosts must not force a false condensed state.
+工具栏支持简略／双层两种组件本地模式，通过右侧箭头展开／收起；分别保持一／两行命令，
+不渲染额外模式条或分组说明行。
+工具栏按内容宽度整体居中；依实际溢出逐组收起低优先级快捷项，避免轻微溢出就整档隐藏。
+双层模式将标题并入字体区，并平衡插入项的上下行，不把整个分组换到下一行。
+只测量 `.toolbar-body`，不把弹出菜单模板计入宽度；在 Angular zone 外观察宽度，
+通过合并的 RAF 测量，在档位变更时刷新视图。销毁时清理观察器和待执行帧。
+宿主容器需要自然高度；宿主投影插槽的超宽内容仍允许在命令区滚动访问。
+具体优先级与菜单路径见 `blockcraft-plugins-formatting.md`。
+菜单命令通过 CSES 的 `csClick` 统一处理鼠标和键盘；二级菜单由 `.cs-submenu-panel`
+承载背景、圆角和阴影，嵌入的选择器不重复绘制卡片，独立选择器保留原外观。
+颜色菜单使用 `CsTabsComponent` 切换文字色／背景色，直接嵌入 `CsColorPickerPanelComponent`；更多颜色和 HEX/RGB 输入由组件库提供。
+输入获得焦点时保留工具栏已有选区记录，在 `csChangeComplete` 时验证选区和权限并格式化。
+面板无触发器与浮层外壳，由工具栏单独承载卡片与定位。背景图形仅显示在背景 Tab，最近使用色按两类分别保存；关闭菜单或切换 Tab 时销毁对应面板。
 
 Editor-owned input surfaces use native `input` / `textarea` elements with
 component-scoped BlockCraft styles. This includes formula source, link editing,

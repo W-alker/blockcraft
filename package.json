@@ -38,7 +38,7 @@
     "@angular/material": "^20.2.14",
     "@angular/platform-browser": "^20.3.16",
     "@angular/router": "^20.3.16",
-    "@cses/ui": "4.29.0",
+    "@cses/ui": "4.37.0",
     "@types/hast": "^3.0.4",
     "@types/mdast": "^4.0.4",
     "@visimer/core": "1.1.2",

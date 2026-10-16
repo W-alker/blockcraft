@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-10-15
+> Last updated: 2026-10-16
 
 ## 当前输入格式
 
@@ -215,34 +215,29 @@ new TextMarkerPlugin(["paragraph", "blockquote"]);
   editable rich-text block. Applying it updates every eligible editable block
   in one transaction and skips container, void and plain-text-only blocks;
   other inline-format controls retain their all-blocks-editable requirement.
-- The fixed toolbar observes its own container width rather than the browser
-  viewport. Each actual width change first tries the complete surface and then
-  degrades one tier only when the two visible toolbar sections truly overflow;
-  projected dropdown-template hosts do not participate in this measurement. The first
-  tier moves the paired font family/scale control, character spacing and
-  paragraph line height into **更多格式**, while superscript/subscript, inline
-  link and inline formula leave the fixed surface. If that still does not fit,
-  the narrow tier collapses bold, italic, underline, strike-through, inline
-  code, superscript and subscript into one **文字格式** dropdown. The observer is
-  created once per component and disconnected on destroy.
-- Word-like semantic groups keep related commands together with visual dividers
-  and accessible group names, but do not render persistent group-caption text.
-  The surface remains one lightweight document-toolbar row instead of adopting
-  a full multi-row Office Ribbon.
-- Every responsive tier keeps formatting and insertion as sibling, non-shrinking
-  sections in one row. The toolbar centers when it fits and progressively
-  condenses before scrolling. Only the narrowest tier may expose one lightweight
-  horizontal scrollbar as a last resort; safe centering preserves the reachable
-  inline start instead of letting insertion cover formatting.
+- 固定工具栏默认采用简略模式，用户可通过右侧展开／收起箭头切换简略／双层；模式是组件本地展示状态，
+  不写入文档或修改选区。简略的命令区保持一行，双层保持两行，不显示分组说明行。
+- 文本设置与段落设置以组内图标常驻，保留 tooltip 和无障碍名称，直接复用现有设置弹窗、选区恢复和权限判断。
+  字号、加粗在最窄档位仍可直接操作；完整文字格式、编号样式、样式／列表、
+  格式刷及扩展命令可从“更多格式”进入。
+- 文字／背景颜色入口以 Tab 切换，直接复用组件库 `CsColorPickerPanelComponent` 的 palette 模式，保留“更多颜色”、HEX/RGB、调色板及最近使用色。
+  输入期间保留原格式选区，仅在 `csChangeComplete` 时走原有选区有效性、只读判断和格式化事务。
+  背景图形仅放在背景 Tab，文字色和背景色的最近使用记录独立保存；旧的共享 `ColorPickerComponent` 不受此面板调整影响。
+- 工具栏按实际内容宽度整体居中。双层模式将标题并入字体行，插入项按上下行均衡排列。
+  ResizeObserver 观察组件自身宽度；轻微溢出时先逐组收起引用、低频插入项等，
+  每一步重新测量，能放下就停止；更窄时才进入字体／历史／段落快捷项的紧凑布局，
+  最窄档位保留核心操作和设置入口。宽度扩大或模式切换时重新尝试完整布局。
+  测量在合并的 RAF 中完成；观察器在 Angular zone 外注册，档位变更才触发检查，
+  销毁时取消 RAF 并断开观察器。菜单模板不参与宽度测量。
+- `extensionActions` 在宽屏仍直接展示，窄屏通过“更多格式”访问，保留原来的
+  disabled、事件和选区恢复语义。宿主投影插槽保留；宿主应允许工具栏自然增高，
+  不要固定为 40px。对于宿主提供的超宽投影内容，命令区保留横向滚动兜底。
 
 ### Insertion Actions
 
-- Shape, text box, WordArt, Table, columns, image and video/audio remain
-  individually visible insertion actions at every responsive width; they are
-  never consolidated into one Insert menu. Unavailable actions retain their
-  existing Schema, selection and readonly disabled states. The insertion
-  section never overlays the formatting section; both travel together in the
-  toolbar's horizontal scroll range.
+- 图片、表格等快捷项随可用宽度逐级收起，“插入”菜单始终保留全部已注册功能。
+  形状、文本框、艺术字、表格、分栏沿用原选择器和命令；菜单与快捷项共用
+  Schema、选区和只读限制。未注册的形状／文本框／艺术字不展示入口。
 - When the document registers `ShapeBlockSchema`, the toolbar shows a Shape
   action using the existing `bc_tuxing` iconfont glyph. Click or keyboard
   activation opens the bounded categorized shape picker. Its 103

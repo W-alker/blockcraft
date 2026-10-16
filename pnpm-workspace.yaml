@@ -2,4 +2,4 @@ packages:
   - "apps/*"
   - "packages/*"
 minimumReleaseAgeExclude:
-  - '@cses/ui@4.29.0'
+  - '@cses/ui@4.37.0'

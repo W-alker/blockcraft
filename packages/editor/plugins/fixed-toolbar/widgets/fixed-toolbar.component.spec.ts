@@ -27,7 +27,7 @@ describe("FixedTextToolbarComponent responsive layout", () => {
     expect((component as any).nextToolbarLayout("narrow")).toBeNull();
   });
 
-  it("collapses all inline formatting toggles in the narrow tier", () => {
+  it("keeps the complete inline command set in the overflow menu", () => {
     const component = makeComponent();
 
     expect(
@@ -35,9 +35,6 @@ describe("FixedTextToolbarComponent responsive layout", () => {
         (item: { value: string }) => item.value,
       ),
     ).toEqual(["bold", "italic", "underline", "strike", "code", "sup", "sub"]);
-    expect((component as any).isNarrowInlineAction("strike")).toBeTrue();
-    expect((component as any).isNarrowInlineAction("sup")).toBeTrue();
-    expect((component as any).isNarrowInlineAction("sub")).toBeTrue();
   });
 
   it("keeps superscript and subscript mutually exclusive from the narrow menu", () => {
@@ -53,28 +50,16 @@ describe("FixedTextToolbarComponent responsive layout", () => {
     expect(toggleInline).not.toHaveBeenCalled();
   });
 
-  it("measures only visible toolbar sections when deciding to condense", () => {
+  it("measures the command body without including popup template hosts", () => {
     const component = makeComponent();
     const host = document.createElement("div");
-    const text = document.createElement("div");
-    const insert = document.createElement("div");
-    const dropdownTemplateHost = document.createElement("cs-dropdown-menu");
-    text.className = "toolbar-section toolbar-section--text";
-    insert.className = "toolbar-section toolbar-section--insert";
-    host.style.paddingInline = "8px";
-    host.style.columnGap = "4px";
-    host.append(text, insert, dropdownTemplateHost);
-    Object.defineProperty(host, "clientWidth", { value: 500 });
-    Object.defineProperty(text, "scrollWidth", { value: 200 });
-    Object.defineProperty(insert, "scrollWidth", {
-      configurable: true,
-      value: 200,
-    });
-    Object.defineProperty(dropdownTemplateHost, "scrollWidth", { value: 1000 });
-
+    const body = document.createElement("div");
+    body.className = "toolbar-body";
+    host.append(body, document.createElement("cs-dropdown-menu"));
+    Object.defineProperty(body, "clientWidth", {value: 500});
+    Object.defineProperty(body, "scrollWidth", {value: 500, configurable: true});
     expect((component as any).hasVisibleToolbarOverflow(host)).toBeFalse();
-
-    Object.defineProperty(insert, "scrollWidth", { value: 320 });
+    Object.defineProperty(body, "scrollWidth", {value: 540});
     expect((component as any).hasVisibleToolbarOverflow(host)).toBeTrue();
   });
 

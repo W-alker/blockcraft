@@ -136,7 +136,7 @@ export function createDecoDoc(opts: {
 export const EDITOR_SURFACE_STYLES = `
     :host{ display:flex; flex-direction:column; height:100%; min-height:0; background:var(--bc-bg-secondary,#f5f5f5) }
     /* 顶部工具条：满宽白底栏 + 内容居中（镜像 cses .editor-fixed-toolbar）；用 CSS 变量抹掉 toolbar 自带的浮卡边框/投影，压平成一条 */
-    .editor-fixed-toolbar{ flex:none; display:flex; justify-content:center; align-items:center; height:40px; background:#fff; border-bottom:1px solid var(--bc-border-color-light,#eee); --bc-fixed-toolbar-border:none; --bc-fixed-toolbar-shadow:none }
+    .editor-fixed-toolbar{ flex:none; display:flex; justify-content:center; align-items:center; min-height:40px; background:#fff; border-bottom:1px solid var(--bc-border-color-light,#eee); --bc-fixed-toolbar-border:none; --bc-fixed-toolbar-shadow:none }
     .editor-scroll{ position:relative; flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; padding:16px 0 }
     /* 居中白文档列：自己掌控的 div（必为 block），width+margin auto 稳定居中；cses 尺寸 + 8px 圆角、无投影。整页背景图铺这层（longhand 必须在 background 简写之后） */
     .editor-container{ position:relative; isolation:isolate; display:block; box-sizing:border-box; width:calc(min(908px, calc(100% - 32px)) * var(--tpl-editor-scale, 1)); min-height:100%; margin:0 auto; background:#fff; background-size:cover; background-position:center; background-repeat:no-repeat; border-radius:8px; padding:32px 70px 64px; color:var(--bc-color); cursor:text }   /* position:relative = 自由定位物料的参照父；isolation:isolate = 把 under(0)/正文(1)/over(2) 层叠限制在本页内 */

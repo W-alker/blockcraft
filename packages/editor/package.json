@@ -12,7 +12,7 @@
     "@angular/material": "^20.0.0",
     "@angular/platform-browser": "^20.0.0",
     "@angular/router": "^20.0.0",
-    "@cses/ui": "4.29.0",
+    "@cses/ui": "4.37.0",
     "mermaid": "^11.4.0",
     "nanoid": "^5.1.2",
     "shiki": "^3.22.0",

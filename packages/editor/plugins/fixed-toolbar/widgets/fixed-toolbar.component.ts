@@ -1,6 +1,7 @@
-import {PARAGRAPH_ALIGNMENT_OPTIONS} from '../../paragraph-alignment-options';
-import {normalizeParagraphDecoration} from '../../../blocks/paragraph-block/decoration';
+import { PARAGRAPH_ALIGNMENT_OPTIONS } from "../../paragraph-alignment-options";
+import { normalizeParagraphDecoration } from "../../../blocks/paragraph-block/decoration";
 import {
+  AfterViewInit,
   ChangeDetectionStrategy,
   ChangeDetectorRef,
   Component,
@@ -9,8 +10,10 @@ import {
   Input,
   OnDestroy,
   OnInit,
+  NgZone,
   Optional,
   Output,
+  ViewChild,
 } from "@angular/core";
 import {
   BcColumnCountPickerComponent,
@@ -18,15 +21,17 @@ import {
   BcFloatToolbarComponent,
   BcFloatToolbarItemComponent,
   BcTableSizePickerComponent,
-  ColorGroup,
-  ColorPickerComponent,
   IColumnCountPickedEvent,
   ITableSizePickedEvent,
 } from "../../../components";
 import {
+  CsColorPickerPanelComponent,
+  CsTabsComponent,
+  CsTabComponent,
   CsDropdownDirective,
   CsDropdownMenuComponent,
   CsMenuDirective,
+  CsMenuItemComponent,
   CsModalRef,
   CsModalService,
   CsSubmenuComponent,
@@ -48,7 +53,14 @@ import {
   TYPOGRAPHY_FONT_FAMILIES,
   type TypographyFontFamilyId,
 } from "../../../framework";
-import { debounceTime, filter, fromEvent, merge, Subscription, take } from "rxjs";
+import {
+  debounceTime,
+  filter,
+  fromEvent,
+  merge,
+  Subscription,
+  take,
+} from "rxjs";
 import { debounce, IS_MAC, nextTick } from "../../../global";
 import { Overlay } from "@angular/cdk/overlay";
 import { ComponentPortal } from "@angular/cdk/portal";
@@ -56,7 +68,11 @@ import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
 import { LinkInputPad } from "../../float-text-toolbar/widgets/link-input-pad";
 import { getSelectionCoveredBlockIds } from "../../../framework/modules/selection/covered-blocks";
 import { isSelectionAlive } from "../../../framework/modules/selection/liveness";
-import { getSelectionFormatBlockIds, getSelectionFormatRootIds, isSelectedContainer } from "../../../framework/utils/selection-format-blocks";
+import {
+  getSelectionFormatBlockIds,
+  getSelectionFormatRootIds,
+  isSelectedContainer,
+} from "../../../framework/utils/selection-format-blocks";
 import {
   applyOrderedMarkerStyle,
   isOrderedMarkerStyleId,
@@ -217,7 +233,9 @@ const LIST_ACTIONS: IToolbarIconAction<TListFlavour>[] = [
 ];
 
 /** 高频快捷档位；完整范围由“更多设置”中的数值控件承接。 */
-const FIXED_TOOLBAR_FONT_SIZE_PRESETS = [12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64, 72];
+const FIXED_TOOLBAR_FONT_SIZE_PRESETS = [
+  12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64, 72,
+];
 const FIXED_TOOLBAR_FONT_FAMILY_WIDTH = 104;
 const FIXED_TOOLBAR_FONT_SIZE_MIN_WIDTH = 56;
 
@@ -225,614 +243,792 @@ const FIXED_TOOLBAR_LETTER_SPACING_PRESETS = [
   -0.05, -0.025, 0.025, 0.05, 0.1,
 ] as const;
 
-const ALIGN_ACTIONS: IToolbarIconAction<TAlignValue>[] = PARAGRAPH_ALIGNMENT_OPTIONS;
+const ALIGN_ACTIONS: IToolbarIconAction<TAlignValue>[] =
+  PARAGRAPH_ALIGNMENT_OPTIONS;
 
-const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
+const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }> = [
   {
     attr: null,
     class: "none",
+    title: "无背景图形",
   },
   {
     attr: "r1",
     class: "radius-1",
+    title: "圆角背景",
   },
   {
     attr: "rb",
     class: "right-border",
+    title: "侧边强调背景",
   },
 ];
 
 @Component({
   selector: "bc-fixed-toolbar",
   template: `
-    <div class="toolbar-section toolbar-section--text">
-      <ng-content select="[fixed-toolbar-prefix]"></ng-content>
-
-      <div
-        class="toolbar-group toolbar-group--history"
-        role="group"
-        aria-label="历史"
-      >
-        <div class="toolbar-group__controls">
-          <button
-            class="toolbar-btn"
-            title="撤销"
-            (mousedown)="onActionMouseDown($event)"
-            (click)="undo()"
-            [disabled]="!doc?.crud?.undoManager?.isCanUndo()"
-          >
-            <i class="bc_icon bc_chehui"></i>
-          </button>
-          <button
-            class="toolbar-btn"
-            title="重做"
-            (mousedown)="onActionMouseDown($event)"
-            (click)="redo()"
-            [disabled]="!doc?.crud?.undoManager?.isCanRedo()"
-          >
-            <i class="bc_icon bc_huitui"></i>
-          </button>
-        </div>
-      </div>
-
-      <div
-        class="toolbar-group toolbar-group--styles"
-        role="group"
-        aria-label="样式"
-      >
-        <div class="toolbar-group__controls">
-          <button
-            class="toolbar-btn toolbar-btn--style"
-            [disabled]="readonly || !canTransformBlocks"
-            csDropdown
-            csTrigger="hover"
-            csMatchTriggerWidth
-            csOverlayClassName="bc-fixed-toolbar-dropdown"
-            [csDropdownMenu]="styleDropdown"
-            [csDisabled]="readonly || !canTransformBlocks"
-            [csClickHide]="false"
-            csPlacement="bottom"
-            #styleTrigger="csDropdown"
-          >
-            <i
-              [class]="[
-                'bc_icon',
-                activeStyleItem.icon,
-                'toolbar-btn__leading',
-              ]"
-            ></i>
-            <span>{{ activeStyleItem.intro }}</span>
-            <i class="bc_icon bc_xiajaintou"></i>
-          </button>
-
-          <span class="toolbar-font-combo toolbar-control--wide-only">
-            <button
-              class="toolbar-btn toolbar-font-combo__control toolbar-btn--font-family"
-              title="字体"
-              aria-haspopup="menu"
-              [disabled]="readonly || !allEditable"
-              csDropdown
-              csTrigger="hover"
-              csMatchTriggerWidth
-              csOverlayClassName="bc-fixed-toolbar-dropdown"
-              [csDropdownMenu]="fontFamilyPicker"
-              [csDisabled]="readonly || !allEditable"
-              [csClickHide]="false"
-              csPlacement="bottom"
-              #fontFamilyTrigger="csDropdown"
-            >
-              <span>{{ activeFontFamilyLabel }}</span>
-              <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
-            </button>
-
-            <button
-              class="toolbar-btn toolbar-font-combo__control toolbar-btn--font-size"
-              title="字号"
-              aria-haspopup="menu"
-              [disabled]="readonly || !canSetFontScale"
-              csDropdown
-              csTrigger="hover"
-              csMatchTriggerWidth
-              csOverlayClassName="bc-fixed-toolbar-dropdown bc-fixed-toolbar-font-picker"
-              [csOverlayStyle]="fontSizeDropdownStyle"
-              [csDropdownMenu]="fontSizePicker"
-              [csDisabled]="readonly || !canSetFontScale"
-              [csClickHide]="false"
-              csPlacement="bottom"
-              #fontSizeTrigger="csDropdown"
-            >
-              <span>{{ activeFontSizeLabel }}</span>
-              <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
-            </button>
-          </span>
-        </div>
-      </div>
-
-      <div
-        class="toolbar-group toolbar-group--font"
-        role="group"
-        aria-label="字体"
-      >
-        <div class="toolbar-group__controls">
-          @for (item of inlineToggleActions; track item.value) {
-            <button
-              class="toolbar-btn"
-              [class.toolbar-inline-action--narrow-hidden]="
-                isNarrowInlineAction(item.value)
-              "
-              [class.active]="isAttrActive(item.value)"
-              [title]="item.title"
-              [disabled]="readonly || !allEditable"
-              (mousedown)="onActionMouseDown($event)"
-              (click)="toggleInlineAttr(item.value)"
-            >
-              <i [class]="['bc_icon', item.icon]"></i>
-            </button>
-          }
-
-          <button
-            class="toolbar-btn toolbar-btn--dropdown toolbar-inline-more"
-            [class.active]="hasNarrowInlineActive"
-            title="文字格式"
-            aria-label="文字格式"
-            aria-haspopup="menu"
-            [disabled]="readonly || !allEditable"
-            csDropdown
-            csTrigger="hover"
-            csMatchTriggerWidth
-            csOverlayClassName="bc-fixed-toolbar-dropdown"
-            [csDropdownMenu]="inlineMorePicker"
-            [csDisabled]="readonly || !allEditable"
-            [csClickHide]="false"
-            csPlacement="bottom"
-            #inlineMoreTrigger="csDropdown"
-          >
-            <i class="bc_icon bc_jiacu"></i>
-            <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
-          </button>
-
-          <span
-            class="toolbar-split toolbar-control--wide-only"
-            [class.active]="isAttrActive('sup') || isAttrActive('sub')"
-            [class.toolbar-split--disabled]="readonly || !allEditable"
-            [class.toolbar-split--open]="scriptDropdownOpen"
-          >
-            <button
-              class="toolbar-btn toolbar-split__main"
-              [title]="activeScriptAction.title"
-              [attr.aria-label]="activeScriptAction.title"
-              [disabled]="readonly || !allEditable"
-              (mousedown)="onActionMouseDown($event)"
-              (click)="toggleScriptAttr(activeScriptAction.value)"
-            >
-              <i [class]="['bc_icon', activeScriptAction.icon]"></i>
-            </button>
-            <button
-              class="toolbar-btn toolbar-split__caret"
-              title="选择上标或下标"
-              aria-label="选择上标或下标"
-              aria-haspopup="menu"
-              [disabled]="readonly || !allEditable"
-              csDropdown
-              csTrigger="hover"
-              csMatchTriggerWidth
-              csOverlayClassName="bc-fixed-toolbar-dropdown"
-              [csDropdownMenu]="scriptPicker"
-              [csDisabled]="readonly || !allEditable"
-              [csClickHide]="false"
-              csPlacement="bottom"
-              (csOpenChange)="scriptDropdownOpen = $event"
-              #scriptTrigger="csDropdown"
-            >
-              <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
-            </button>
-          </span>
-
-          <button
-            class="toolbar-btn"
-            title="文字/背景颜色"
-            [attr.disabled]="readonly || !allEditable ? '' : null"
-            [disabled]="readonly || !allEditable"
-            csDropdown
-            csTrigger="hover"
-            csMatchTriggerWidth
-            csOverlayClassName="bc-fixed-toolbar-dropdown"
-            [csDropdownMenu]="colorPicker"
-            [csDisabled]="readonly || !allEditable"
-            [csClickHide]="false"
-            csPlacement="bottom"
-            [style.color]="activeColors['color']"
-            [style.background-color]="activeColors['backColor']"
-          >
-            <i class="bc_icon bc_bianji"></i>
-          </button>
-
-          <button
-            class="toolbar-btn"
-            title="清除格式"
-            [disabled]="readonly || !allEditable"
-            (mousedown)="onActionMouseDown($event)"
-            (click)="clearFormat()"
-          >
-            <i class="bc_icon bc_quxiao"></i>
-          </button>
-
-          <button
-            class="toolbar-btn"
-            [class.active]="formatBrushActive"
-            [title]="formatBrushTitle"
-            [disabled]="
-              readonly || (!formatBrushActive && !canCaptureFormatBrush())
-            "
-            (mousedown)="onActionMouseDown($event)"
-            (click)="toggleFormatBrush()"
-          >
-            <i class="bc_icon bc_geshishua"></i>
-          </button>
-        </div>
-      </div>
-
-      <div
-        class="toolbar-group toolbar-group--paragraph"
-        role="group"
-        aria-label="段落"
-      >
-        <div class="toolbar-group__controls">
-          @for (item of listActions; track item.value) {
-            @if (item.value !== "ordered") {
-              <button
-                class="toolbar-btn"
-                [class.active]="activeFlavour === item.value"
-                [title]="item.title"
-                [disabled]="readonly || !canTransformBlocks"
-                (mousedown)="onActionMouseDown($event)"
-                (click)="setList(item.value)"
-              >
-                <i [class]="['bc_icon', item.icon]"></i>
-              </button>
-            }
-          }
-
-          <span
-            class="toolbar-split"
-            [class.active]="activeFlavour === 'ordered'"
-            [class.toolbar-split--disabled]="readonly || !canTransformBlocks"
-            [class.toolbar-split--open]="orderedMarkerDropdownOpen"
-          >
-            <button
-              class="toolbar-btn toolbar-split__main"
-              title="有序列表"
-              [disabled]="readonly || !canTransformBlocks"
-              (mousedown)="onActionMouseDown($event)"
-              (click)="setList('ordered')"
-            >
-              <i class="bc_icon bc_youxuliebiao"></i>
-            </button>
-            <button
-              class="toolbar-btn toolbar-split__caret"
-              title="编号样式"
-              aria-label="选择编号样式"
-              aria-haspopup="menu"
-              [disabled]="readonly || !canTransformBlocks"
-              csDropdown
-              csTrigger="hover"
-              csMatchTriggerWidth
-              csOverlayClassName="bc-fixed-toolbar-dropdown"
-              [csDropdownMenu]="orderedMarkerPicker"
-              [csDisabled]="readonly || !canTransformBlocks"
-              [csClickHide]="false"
-              csPlacement="bottom"
-              (csOpenChange)="orderedMarkerDropdownOpen = $event"
-              #orderedMarkerTrigger="csDropdown"
-            >
-              <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
-            </button>
-          </span>
-
-          <button
-            class="toolbar-btn toolbar-btn--dropdown"
-            [title]="allEditable ? activeAlignAction.title : '段落设置'"
-            [attr.aria-label]="allEditable ? '对齐方式：' + activeAlignAction.title : '段落设置'"
-            aria-haspopup="menu"
-            [disabled]="readonly || !canSetParagraphSpacing"
-            csDropdown
-            csTrigger="hover"
-            csMatchTriggerWidth
-            csOverlayClassName="bc-fixed-toolbar-dropdown"
-            [csDropdownMenu]="alignDropdown"
-            [csDisabled]="readonly || !canSetParagraphSpacing"
-            [csClickHide]="false"
-            csPlacement="bottom"
-            #alignTrigger="csDropdown"
-          >
-            <i [class]="['bc_icon', allEditable ? activeAlignAction.icon : 'bc_version_settings']"></i>
-            <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
-          </button>
-
-          <button
-            class="toolbar-btn toolbar-btn--dropdown toolbar-control--wide-only"
-            [title]="'字符间距：' + activeLetterSpacingLabel"
-            [attr.aria-label]="'字符间距：' + activeLetterSpacingLabel"
-            aria-haspopup="menu"
-            [disabled]="readonly || !allEditable"
-            csDropdown
-            csTrigger="hover"
-            csMatchTriggerWidth
-            csOverlayClassName="bc-fixed-toolbar-dropdown"
-            [csDropdownMenu]="letterSpacingPicker"
-            [csDisabled]="readonly || !allEditable"
-            [csClickHide]="false"
-            csPlacement="bottom"
-            #letterSpacingTrigger="csDropdown"
-          >
-            <i class="bc_icon bc_zijianju"></i>
-            <span class="toolbar-btn__value">{{
-              activeLetterSpacingLabel
-            }}</span>
-            <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
-          </button>
-
-          <button
-            class="toolbar-btn toolbar-btn--dropdown toolbar-control--wide-only"
-            [title]="'行距：' + activeLineHeightLabel"
-            [attr.aria-label]="'行距：' + activeLineHeightLabel"
-            aria-haspopup="menu"
-            [disabled]="readonly || !canSetLineHeight"
-            csDropdown
-            csTrigger="hover"
-            csMatchTriggerWidth
-            csOverlayClassName="bc-fixed-toolbar-dropdown"
-            [csDropdownMenu]="lineHeightPicker"
-            [csDisabled]="readonly || !canSetLineHeight"
-            [csClickHide]="false"
-            csPlacement="bottom"
-            #lineHeightTrigger="csDropdown"
-          >
-            <i class="bc_icon bc_hangjianju"></i>
-            <span class="toolbar-btn__value">{{ activeLineHeightLabel }}</span>
-            <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
-          </button>
-        </div>
-      </div>
-
-      <div
-        class="toolbar-group toolbar-group--responsive-more"
-        role="group"
-        aria-label="更多格式"
-      >
-        <div class="toolbar-group__controls">
+    <div class="toolbar-surface">
+      <div class="toolbar-head">
+        <div class="toolbar-head__actions">
           <button
             class="toolbar-btn toolbar-btn--dropdown"
             title="更多格式"
             aria-label="更多格式"
             aria-haspopup="menu"
-            [disabled]="
-              readonly ||
-              (!allEditable && !canSetFontScale && !canSetLineHeight)
-            "
+            [disabled]="readonly"
             csDropdown
             csTrigger="hover"
             csMatchTriggerWidth
             csOverlayClassName="bc-fixed-toolbar-dropdown"
             [csDropdownMenu]="responsiveMorePicker"
-            [csDisabled]="
-              readonly ||
-              (!allEditable && !canSetFontScale && !canSetLineHeight)
-            "
+            [csDisabled]="readonly"
             [csClickHide]="false"
             csPlacement="bottom"
             #responsiveMoreTrigger="csDropdown"
           >
-            <i class="bc_icon bc_gengduo"></i>
-            <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
+            <i class="bc_icon bc_gengduo" aria-hidden="true"></i>
           </button>
         </div>
-      </div>
-
-      <div
-        class="toolbar-group toolbar-group--reference toolbar-control--wide-only"
-        role="group"
-        aria-label="引用"
-      >
-        <div class="toolbar-group__controls">
-          <button
-            class="toolbar-btn"
-            [class.active]="isAttrActive('link')"
-            title="链接"
-            [disabled]="
-              readonly || !allEditable || !isLinkAble || !hasTextSelection
-            "
-            (mousedown)="onActionMouseDown($event)"
-            (click)="onLinkAction()"
-          >
-            <i class="bc_icon bc_lianjie"></i>
-          </button>
-
-          <button
-            class="toolbar-btn"
-            title="行内公式"
-            [disabled]="
-              readonly || !allEditable || !isLinkAble || !hasTextSelection
-            "
-            (mousedown)="onActionMouseDown($event)"
-            (click)="insertFormula()"
-          >
-            <i class="bc_icon bc_gongshi"></i>
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <div class="toolbar-section toolbar-section--insert">
-      <div
-        class="toolbar-group toolbar-group--insert"
-        role="group"
-        aria-label="插入"
-      >
-        <div class="toolbar-group__controls">
-          <button
-            class="toolbar-btn toolbar-btn--dropdown"
-            title="插入形状"
-            aria-label="插入形状"
-            [hidden]="!doc.schemas.has('shape')"
-            [disabled]="readonly"
-            csDropdown
-            csTrigger="hover"
-            csMatchTriggerWidth
-            csOverlayClassName="bc-fixed-toolbar-dropdown"
-            [csDropdownMenu]="shapePicker"
-            [csDisabled]="readonly"
-            [csClickHide]="false"
-            csPlacement="bottom"
-            #shapeTrigger="csDropdown"
-          >
-            <i class="bc_icon bc_tuxing"></i>
-            <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
-          </button>
-
-          <button
-            class="toolbar-btn toolbar-btn--dropdown"
-            title="插入文本框"
-            aria-label="插入文本框"
-            [hidden]="!doc.schemas.has('text-box')"
-            [disabled]="readonly"
-            csDropdown
-            csTrigger="hover"
-            csMatchTriggerWidth
-            csOverlayClassName="bc-fixed-toolbar-dropdown"
-            [csDropdownMenu]="textBoxPicker"
-            [csDisabled]="readonly"
-            [csClickHide]="false"
-            csPlacement="bottom"
-            #textBoxTrigger="csDropdown"
-          >
-            <i class="bc_icon bc_wenbenkuang"></i>
-            <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
-          </button>
-
-          <button
-            class="toolbar-btn toolbar-btn--dropdown"
-            title="插入艺术字"
-            aria-label="插入艺术字"
-            [hidden]="!doc.schemas.has('word-art')"
-            [disabled]="readonly"
-            csDropdown
-            csTrigger="hover"
-            csMatchTriggerWidth
-            csOverlayClassName="bc-fixed-toolbar-dropdown"
-            [csDropdownMenu]="wordArtPicker"
-            [csDisabled]="readonly"
-            [csClickHide]="false"
-            csPlacement="bottom"
-            #wordArtTrigger="csDropdown"
-          >
-            <i class="bc_icon bc_yishuzishengcheng"></i>
-            <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
-          </button>
-
-          <button
-            class="toolbar-btn toolbar-btn--dropdown"
-            title="插入表格"
-            [disabled]="readonly || !canInsertBlock('table')"
-            csDropdown
-            csTrigger="hover"
-            csMatchTriggerWidth
-            csOverlayClassName="bc-fixed-toolbar-dropdown"
-            [csDropdownMenu]="quickTablePicker"
-            [csDisabled]="readonly || !canInsertBlock('table')"
-            [csClickHide]="false"
-            csPlacement="bottom"
-            #quickTableTrigger="csDropdown"
-          >
-            <i class="bc_icon bc_column-vertical"></i>
-            <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
-          </button>
-
-          <button
-            class="toolbar-btn toolbar-btn--dropdown"
-            title="分栏"
-            [disabled]="readonly || !canUseColumns"
-            csDropdown
-            csTrigger="hover"
-            csMatchTriggerWidth
-            csOverlayClassName="bc-fixed-toolbar-dropdown"
-            [csDropdownMenu]="columnCountPicker"
-            [csDisabled]="readonly || !canUseColumns"
-            [csClickHide]="false"
-            csPlacement="bottom"
-            #columnCountTrigger="csDropdown"
-          >
-            <i class="bc_icon bc_fenlan"></i>
-            <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
-          </button>
-
-          <button
-            class="toolbar-btn"
-            title="插入图片"
-            [disabled]="readonly || !canInsertBlock('image')"
-            (mousedown)="onActionMouseDown($event)"
-            (click)="insertSchemaBlock('image')"
-          >
-            <i class="bc_icon bc_tupian-color"></i>
-          </button>
-
-          <button
-            class="toolbar-btn toolbar-btn--dropdown"
-            title="插入视频或音频"
-            [disabled]="
-              readonly || (!canInsertBlock('video') && !canInsertBlock('audio'))
-            "
-            csDropdown
-            csTrigger="hover"
-            csMatchTriggerWidth
-            csOverlayClassName="bc-fixed-toolbar-dropdown"
-            [csDropdownMenu]="mediaTypePicker"
-            [csDisabled]="
-              readonly || (!canInsertBlock('video') && !canInsertBlock('audio'))
-            "
-            [csClickHide]="false"
-            csPlacement="bottom"
-            #mediaTypeTrigger="csDropdown"
-          >
-            <i class="bc_icon bc_shipin"></i>
-            <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
-          </button>
-        </div>
-      </div>
-
-      @if (extensionActions.length) {
-        <div
-          class="toolbar-group toolbar-group--extensions"
-          role="group"
-          aria-label="扩展"
+        <button
+          class="toolbar-btn toolbar-mode-switch"
+          [title]="
+            toolbarMode === 'simple' ? '展开为双层工具栏' : '收起为简略工具栏'
+          "
+          [attr.aria-label]="
+            toolbarMode === 'simple' ? '展开为双层工具栏' : '收起为简略工具栏'
+          "
+          [attr.aria-expanded]="toolbarMode === 'full'"
+          (mousedown)="onActionMouseDown($event)"
+          (click)="setToolbarMode(toolbarMode === 'simple' ? 'full' : 'simple')"
         >
-          <div class="toolbar-group__controls">
-            <span class="toolbar-divider"></span>
+          <i class="bc_icon bc_xiajaintou" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div class="toolbar-body">
+        <div class="toolbar-section toolbar-section--text">
+          <ng-content select="[fixed-toolbar-prefix]"></ng-content>
+          <div
+            class="toolbar-group toolbar-group--history"
+            role="group"
+            aria-label="历史"
+          >
+            <div class="toolbar-group__controls">
+              <button
+                class="toolbar-btn"
+                title="撤销"
+                (mousedown)="onActionMouseDown($event)"
+                (click)="undo()"
+                [disabled]="!doc?.crud?.undoManager?.isCanUndo()"
+              >
+                <i class="bc_icon bc_chehui"></i>
+              </button>
+              <button
+                class="toolbar-btn"
+                title="重做"
+                (mousedown)="onActionMouseDown($event)"
+                (click)="redo()"
+                [disabled]="!doc?.crud?.undoManager?.isCanRedo()"
+              >
+                <i class="bc_icon bc_huitui"></i>
+              </button>
+            </div>
+          </div>
+          <div
+            class="toolbar-group toolbar-group--font"
+            role="group"
+            aria-label="文本"
+          >
+            <div class="toolbar-group__controls">
+              <div class="toolbar-row">
+                <button
+                  class="toolbar-btn toolbar-btn--style"
+                  [class.toolbar-priority-hidden]="
+                    overflowedGroups.has('style')
+                  "
+                  [disabled]="readonly || !canTransformBlocks"
+                  csDropdown
+                  csTrigger="hover"
+                  csMatchTriggerWidth
+                  csOverlayClassName="bc-fixed-toolbar-dropdown"
+                  [csDropdownMenu]="styleDropdown"
+                  [csDisabled]="readonly || !canTransformBlocks"
+                  [csClickHide]="false"
+                  csPlacement="bottom"
+                  #styleTrigger="csDropdown"
+                >
+                  <i
+                    [class]="[
+                      'bc_icon',
+                      activeStyleItem.icon,
+                      'toolbar-btn__leading',
+                    ]"
+                  ></i>
+                  <span>{{ activeStyleItem.intro }}</span>
+                  <i class="bc_icon bc_xiajaintou"></i>
+                </button>
+                <span class="toolbar-font-combo">
+                  <button
+                    class="toolbar-btn toolbar-font-combo__control toolbar-btn--font-family"
+                    title="字体"
+                    aria-haspopup="menu"
+                    [disabled]="readonly || !allEditable"
+                    csDropdown
+                    csTrigger="hover"
+                    csMatchTriggerWidth
+                    csOverlayClassName="bc-fixed-toolbar-dropdown"
+                    [csDropdownMenu]="fontFamilyPicker"
+                    [csDisabled]="readonly || !allEditable"
+                    [csClickHide]="false"
+                    csPlacement="bottom"
+                    #fontFamilyTrigger="csDropdown"
+                  >
+                    <span>{{ activeFontFamilyLabel }}</span>
+                    <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
+                  </button>
 
-            @for (item of extensionActions; track item.key) {
-              @if (item.dividerBefore) {
-                <span class="toolbar-divider"></span>
-              }
+                  <button
+                    class="toolbar-btn toolbar-font-combo__control toolbar-btn--font-size"
+                    title="字号"
+                    aria-haspopup="menu"
+                    [disabled]="readonly || !canSetFontScale"
+                    csDropdown
+                    csTrigger="hover"
+                    csMatchTriggerWidth
+                    csOverlayClassName="bc-fixed-toolbar-dropdown bc-fixed-toolbar-font-picker"
+                    [csOverlayStyle]="fontSizeDropdownStyle"
+                    [csDropdownMenu]="fontSizePicker"
+                    [csDisabled]="readonly || !canSetFontScale"
+                    [csClickHide]="false"
+                    csPlacement="bottom"
+                    #fontSizeTrigger="csDropdown"
+                  >
+                    <span>{{ activeFontSizeLabel }}</span>
+                    <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
+                  </button>
+                </span>
+                <button
+                  class="toolbar-btn toolbar-settings-entry toolbar-settings-entry--text"
+                  title="文本设置"
+                  aria-label="文本设置"
+                  aria-haspopup="dialog"
+                  [disabled]="readonly || !canSetFontScale"
+                  (mousedown)="onActionMouseDown($event)"
+                  (click)="openSettings('text', $event)"
+                >
+                  <i class="bc_icon bc_zihao" aria-hidden="true"></i>
+                </button>
+              </div>
+              <div class="toolbar-row">
+                @for (item of inlineToggleActions; track item.value) {
+                  <button
+                    class="toolbar-btn"
+                    [attr.data-inline-action]="item.value"
+                    [class.active]="isAttrActive(item.value)"
+                    [title]="item.title"
+                    [disabled]="readonly || !allEditable"
+                    (mousedown)="onActionMouseDown($event)"
+                    (click)="toggleInlineAttr(item.value)"
+                  >
+                    <i [class]="['bc_icon', item.icon]"></i>
+                  </button>
+                }
+
+                <span
+                  class="toolbar-split toolbar-control--wide-only"
+                  [class.toolbar-priority-hidden]="
+                    overflowedGroups.has('script')
+                  "
+                  [class.active]="isAttrActive('sup') || isAttrActive('sub')"
+                  [class.toolbar-split--disabled]="readonly || !allEditable"
+                  [class.toolbar-split--open]="scriptDropdownOpen"
+                >
+                  <button
+                    class="toolbar-btn toolbar-split__main"
+                    [title]="activeScriptAction.title"
+                    [attr.aria-label]="activeScriptAction.title"
+                    [disabled]="readonly || !allEditable"
+                    (mousedown)="onActionMouseDown($event)"
+                    (click)="toggleScriptAttr(activeScriptAction.value)"
+                  >
+                    <i [class]="['bc_icon', activeScriptAction.icon]"></i>
+                  </button>
+                  <button
+                    class="toolbar-btn toolbar-split__caret"
+                    title="选择上标或下标"
+                    aria-label="选择上标或下标"
+                    aria-haspopup="menu"
+                    [disabled]="readonly || !allEditable"
+                    csDropdown
+                    csTrigger="hover"
+                    csMatchTriggerWidth
+                    csOverlayClassName="bc-fixed-toolbar-dropdown"
+                    [csDropdownMenu]="scriptPicker"
+                    [csDisabled]="readonly || !allEditable"
+                    [csClickHide]="false"
+                    csPlacement="bottom"
+                    (csOpenChange)="scriptDropdownOpen = $event"
+                    #scriptTrigger="csDropdown"
+                  >
+                    <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
+                  </button>
+                </span>
+
+                <button
+                  class="toolbar-btn toolbar-color-control"
+                  title="文字/背景颜色"
+                  [attr.disabled]="readonly || !allEditable ? '' : null"
+                  [disabled]="readonly || !allEditable"
+                  csDropdown
+                  csTrigger="click"
+                  csMatchTriggerWidth
+                  csOverlayClassName="bc-fixed-toolbar-dropdown bc-fixed-toolbar-color-dropdown"
+                  [csDropdownMenu]="colorPicker"
+                  (csOpenChange)="onColorPanelOpenChange($event)"
+                  #colorTrigger="csDropdown"
+                  [csDisabled]="readonly || !allEditable"
+                  [csClickHide]="false"
+                  csPlacement="bottom"
+                  [style.color]="activeColors['color']"
+                  [style.background-color]="activeColors['backColor']"
+                >
+                  <i class="bc_icon bc_bianji"></i>
+                </button>
+
+                <button
+                  class="toolbar-btn toolbar-format-utility"
+                  [class.toolbar-priority-hidden]="
+                    overflowedGroups.has('utilities')
+                  "
+                  title="清除格式"
+                  [disabled]="readonly || !allEditable"
+                  (mousedown)="onActionMouseDown($event)"
+                  (click)="clearFormat()"
+                >
+                  <i class="bc_icon bc_quxiao"></i>
+                </button>
+                <button
+                  class="toolbar-btn toolbar-format-utility"
+                  [class.toolbar-priority-hidden]="
+                    overflowedGroups.has('utilities')
+                  "
+                  [class.active]="formatBrushActive"
+                  [title]="formatBrushTitle"
+                  [disabled]="
+                    readonly || (!formatBrushActive && !canCaptureFormatBrush())
+                  "
+                  (mousedown)="onActionMouseDown($event)"
+                  (click)="toggleFormatBrush()"
+                >
+                  <i class="bc_icon bc_geshishua"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div
+            class="toolbar-group toolbar-group--paragraph"
+            role="group"
+            aria-label="段落"
+          >
+            <div class="toolbar-group__controls">
+              <div class="toolbar-row">
+                @for (item of listActions; track item.value) {
+                  @if (item.value !== "ordered") {
+                    <button
+                      class="toolbar-btn toolbar-list-control"
+                      [attr.data-list-action]="item.value"
+                      [class.active]="activeFlavour === item.value"
+                      [title]="item.title"
+                      [disabled]="readonly || !canTransformBlocks"
+                      (mousedown)="onActionMouseDown($event)"
+                      (click)="setList(item.value)"
+                    >
+                      <i [class]="['bc_icon', item.icon]"></i>
+                    </button>
+                  }
+                }
+
+                <span
+                  class="toolbar-split toolbar-list-control"
+                  [class.active]="activeFlavour === 'ordered'"
+                  [class.toolbar-split--disabled]="
+                    readonly || !canTransformBlocks
+                  "
+                  [class.toolbar-split--open]="orderedMarkerDropdownOpen"
+                >
+                  <button
+                    class="toolbar-btn toolbar-split__main"
+                    title="有序列表"
+                    [disabled]="readonly || !canTransformBlocks"
+                    (mousedown)="onActionMouseDown($event)"
+                    (click)="setList('ordered')"
+                  >
+                    <i class="bc_icon bc_youxuliebiao"></i>
+                  </button>
+                  <button
+                    class="toolbar-btn toolbar-split__caret"
+                    title="编号样式"
+                    aria-label="选择编号样式"
+                    aria-haspopup="menu"
+                    [disabled]="readonly || !canTransformBlocks"
+                    csDropdown
+                    csTrigger="hover"
+                    csMatchTriggerWidth
+                    csOverlayClassName="bc-fixed-toolbar-dropdown"
+                    [csDropdownMenu]="orderedMarkerPicker"
+                    [csDisabled]="readonly || !canTransformBlocks"
+                    [csClickHide]="false"
+                    csPlacement="bottom"
+                    (csOpenChange)="orderedMarkerDropdownOpen = $event"
+                    #orderedMarkerTrigger="csDropdown"
+                  >
+                    <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
+                  </button>
+                </span>
+
+                <button
+                  class="toolbar-btn toolbar-btn--dropdown toolbar-align-control"
+                  [title]="allEditable ? activeAlignAction.title : '段落设置'"
+                  [attr.aria-label]="
+                    allEditable
+                      ? '对齐方式：' + activeAlignAction.title
+                      : '段落设置'
+                  "
+                  aria-haspopup="menu"
+                  [disabled]="readonly || !canSetParagraphSpacing"
+                  csDropdown
+                  csTrigger="hover"
+                  csMatchTriggerWidth
+                  csOverlayClassName="bc-fixed-toolbar-dropdown"
+                  [csDropdownMenu]="alignDropdown"
+                  [csDisabled]="readonly || !canSetParagraphSpacing"
+                  [csClickHide]="false"
+                  csPlacement="bottom"
+                  #alignTrigger="csDropdown"
+                >
+                  <i
+                    [class]="[
+                      'bc_icon',
+                      allEditable
+                        ? activeAlignAction.icon
+                        : 'bc_version_settings',
+                    ]"
+                  ></i>
+                  <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
+                </button>
+                <button
+                  class="toolbar-btn toolbar-settings-entry toolbar-settings-entry--paragraph"
+                  title="段落设置"
+                  aria-label="段落设置"
+                  aria-haspopup="dialog"
+                  [disabled]="readonly || !canSetParagraphSpacing"
+                  (mousedown)="onActionMouseDown($event)"
+                  (click)="openSettings('paragraph', $event)"
+                >
+                  <i class="bc_icon bc_suojinheduiqi" aria-hidden="true"></i>
+                </button>
+              </div>
+              <div class="toolbar-row">
+                <button
+                  class="toolbar-btn toolbar-btn--dropdown toolbar-control--wide-only toolbar-letter-spacing"
+                  [class.toolbar-priority-hidden]="
+                    overflowedGroups.has('letter-spacing')
+                  "
+                  [title]="'字符间距：' + activeLetterSpacingLabel"
+                  [attr.aria-label]="'字符间距：' + activeLetterSpacingLabel"
+                  aria-haspopup="menu"
+                  [disabled]="readonly || !allEditable"
+                  csDropdown
+                  csTrigger="hover"
+                  csMatchTriggerWidth
+                  csOverlayClassName="bc-fixed-toolbar-dropdown"
+                  [csDropdownMenu]="letterSpacingPicker"
+                  [csDisabled]="readonly || !allEditable"
+                  [csClickHide]="false"
+                  csPlacement="bottom"
+                  #letterSpacingTrigger="csDropdown"
+                >
+                  <i class="bc_icon bc_zijianju"></i>
+                  <span class="toolbar-btn__value">{{
+                    activeLetterSpacingLabel
+                  }}</span>
+                  <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
+                </button>
+
+                <button
+                  class="toolbar-btn toolbar-btn--dropdown toolbar-control--wide-only toolbar-line-height"
+                  [class.toolbar-priority-hidden]="
+                    overflowedGroups.has('line-height')
+                  "
+                  [title]="'行距：' + activeLineHeightLabel"
+                  [attr.aria-label]="'行距：' + activeLineHeightLabel"
+                  aria-haspopup="menu"
+                  [disabled]="readonly || !canSetLineHeight"
+                  csDropdown
+                  csTrigger="hover"
+                  csMatchTriggerWidth
+                  csOverlayClassName="bc-fixed-toolbar-dropdown"
+                  [csDropdownMenu]="lineHeightPicker"
+                  [csDisabled]="readonly || !canSetLineHeight"
+                  [csClickHide]="false"
+                  csPlacement="bottom"
+                  #lineHeightTrigger="csDropdown"
+                >
+                  <i class="bc_icon bc_hangjianju"></i>
+                  <span class="toolbar-btn__value">{{
+                    activeLineHeightLabel
+                  }}</span>
+                  <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div
+            class="toolbar-group toolbar-group--reference toolbar-control--wide-only"
+            [class.toolbar-priority-hidden]="overflowedGroups.has('reference')"
+            role="group"
+            aria-label="引用"
+          >
+            <div class="toolbar-group__controls">
+              <button
+                class="toolbar-btn"
+                [class.active]="isAttrActive('link')"
+                title="链接"
+                [disabled]="
+                  readonly || !allEditable || !isLinkAble || !hasTextSelection
+                "
+                (mousedown)="onActionMouseDown($event)"
+                (click)="onLinkAction()"
+              >
+                <i class="bc_icon bc_lianjie"></i>
+              </button>
 
               <button
                 class="toolbar-btn"
-                [class.active]="!!item.active"
-                [title]="item.title"
-                [disabled]="readonly || !!item.disabled"
+                title="行内公式"
+                [disabled]="
+                  readonly || !allEditable || !isLinkAble || !hasTextSelection
+                "
                 (mousedown)="onActionMouseDown($event)"
-                (click)="onExtensionAction(item)"
+                (click)="insertFormula()"
               >
-                <i [class]="['bc_icon', item.icon]"></i>
+                <i class="bc_icon bc_gongshi"></i>
               </button>
-            }
+            </div>
           </div>
         </div>
-      }
+        <div class="toolbar-section toolbar-section--insert">
+          <div
+            class="toolbar-group toolbar-group--insert"
+            role="group"
+            aria-label="插入"
+          >
+            <div class="toolbar-group__controls">
+              <div class="toolbar-row">
+                <button
+                  class="toolbar-btn toolbar-insert-shortcut toolbar-insert-shortcut--image"
+                  title="插入图片"
+                  [disabled]="readonly || !canInsertBlock('image')"
+                  (mousedown)="onActionMouseDown($event)"
+                  (click)="insertSchemaBlock('image')"
+                >
+                  <i class="bc_icon bc_tupian-color"></i
+                  ><span class="toolbar-insert-label">图片</span></button
+                ><button
+                  class="toolbar-btn toolbar-insert-shortcut toolbar-insert-shortcut--table toolbar-btn--dropdown"
+                  title="插入表格"
+                  [disabled]="readonly || !canInsertBlock('table')"
+                  csDropdown
+                  csTrigger="hover"
+                  csMatchTriggerWidth
+                  csOverlayClassName="bc-fixed-toolbar-dropdown"
+                  [csDropdownMenu]="quickTablePicker"
+                  [csDisabled]="readonly || !canInsertBlock('table')"
+                  [csClickHide]="false"
+                  csPlacement="bottom"
+                  #quickTableTrigger="csDropdown"
+                >
+                  <i class="bc_icon bc_column-vertical"></i
+                  ><span class="toolbar-insert-label">表格</span>
+                  <i
+                    class="bc_icon bc_xiajaintou toolbar-btn__caret"
+                  ></i></button
+                ><button
+                  class="toolbar-btn toolbar-insert-shortcut toolbar-insert-shortcut--shape toolbar-btn--dropdown"
+                  [class.toolbar-priority-hidden]="
+                    overflowedGroups.has('shape')
+                  "
+                  title="插入形状"
+                  aria-label="插入形状"
+                  [hidden]="!doc.schemas.has('shape')"
+                  [disabled]="readonly"
+                  csDropdown
+                  csTrigger="hover"
+                  csMatchTriggerWidth
+                  csOverlayClassName="bc-fixed-toolbar-dropdown"
+                  [csDropdownMenu]="shapePicker"
+                  [csDisabled]="readonly"
+                  [csClickHide]="false"
+                  csPlacement="bottom"
+                  #shapeTrigger="csDropdown"
+                >
+                  <i class="bc_icon bc_tuxing"></i
+                  ><span class="toolbar-insert-label">形状</span>
+                  <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
+                </button>
+                <button
+                  class="toolbar-btn toolbar-insert-shortcut toolbar-insert-shortcut--media toolbar-btn--dropdown"
+                  [class.toolbar-priority-hidden]="
+                    overflowedGroups.has('media')
+                  "
+                  title="插入视频或音频"
+                  [disabled]="
+                    readonly ||
+                    (!canInsertBlock('video') && !canInsertBlock('audio'))
+                  "
+                  csDropdown
+                  csTrigger="hover"
+                  csMatchTriggerWidth
+                  csOverlayClassName="bc-fixed-toolbar-dropdown"
+                  [csDropdownMenu]="mediaTypePicker"
+                  [csDisabled]="
+                    readonly ||
+                    (!canInsertBlock('video') && !canInsertBlock('audio'))
+                  "
+                  [csClickHide]="false"
+                  csPlacement="bottom"
+                  #mediaTypeTrigger="csDropdown"
+                >
+                  <i class="bc_icon bc_shipin"></i
+                  ><span class="toolbar-insert-label">音视频</span>
+                  <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
+                </button>
+              </div>
+              <div class="toolbar-row">
+                <button
+                  class="toolbar-btn toolbar-insert-shortcut toolbar-insert-shortcut--textbox toolbar-btn--dropdown"
+                  [class.toolbar-priority-hidden]="
+                    overflowedGroups.has('textbox')
+                  "
+                  title="插入文本框"
+                  aria-label="插入文本框"
+                  [hidden]="!doc.schemas.has('text-box')"
+                  [disabled]="readonly"
+                  csDropdown
+                  csTrigger="hover"
+                  csMatchTriggerWidth
+                  csOverlayClassName="bc-fixed-toolbar-dropdown"
+                  [csDropdownMenu]="textBoxPicker"
+                  [csDisabled]="readonly"
+                  [csClickHide]="false"
+                  csPlacement="bottom"
+                  #textBoxTrigger="csDropdown"
+                >
+                  <i class="bc_icon bc_wenbenkuang"></i
+                  ><span class="toolbar-insert-label">文本框</span>
+                  <i
+                    class="bc_icon bc_xiajaintou toolbar-btn__caret"
+                  ></i></button
+                ><button
+                  class="toolbar-btn toolbar-insert-shortcut toolbar-insert-shortcut--wordart toolbar-btn--dropdown"
+                  [class.toolbar-priority-hidden]="
+                    overflowedGroups.has('wordart')
+                  "
+                  title="插入艺术字"
+                  aria-label="插入艺术字"
+                  [hidden]="!doc.schemas.has('word-art')"
+                  [disabled]="readonly"
+                  csDropdown
+                  csTrigger="hover"
+                  csMatchTriggerWidth
+                  csOverlayClassName="bc-fixed-toolbar-dropdown"
+                  [csDropdownMenu]="wordArtPicker"
+                  [csDisabled]="readonly"
+                  [csClickHide]="false"
+                  csPlacement="bottom"
+                  #wordArtTrigger="csDropdown"
+                >
+                  <i class="bc_icon bc_yishuzishengcheng"></i
+                  ><span class="toolbar-insert-label">艺术字</span>
+                  <i
+                    class="bc_icon bc_xiajaintou toolbar-btn__caret"
+                  ></i></button
+                ><button
+                  class="toolbar-btn toolbar-insert-shortcut toolbar-insert-shortcut--columns toolbar-btn--dropdown"
+                  [class.toolbar-priority-hidden]="
+                    overflowedGroups.has('columns')
+                  "
+                  title="分栏"
+                  [disabled]="readonly || !canUseColumns"
+                  csDropdown
+                  csTrigger="hover"
+                  csMatchTriggerWidth
+                  csOverlayClassName="bc-fixed-toolbar-dropdown"
+                  [csDropdownMenu]="columnCountPicker"
+                  [csDisabled]="readonly || !canUseColumns"
+                  [csClickHide]="false"
+                  csPlacement="bottom"
+                  #columnCountTrigger="csDropdown"
+                >
+                  <i class="bc_icon bc_fenlan"></i
+                  ><span class="toolbar-insert-label">分栏</span>
+                  <i
+                    class="bc_icon bc_xiajaintou toolbar-btn__caret"
+                  ></i></button
+                ><button
+                  class="toolbar-btn toolbar-insert-menu"
+                  title="插入"
+                  aria-label="插入"
+                  csDropdown
+                  csTrigger="hover"
+                  csMatchTriggerWidth
+                  csOverlayClassName="bc-fixed-toolbar-dropdown"
+                  [csDropdownMenu]="insertMorePicker"
+                  [csDisabled]="readonly"
+                  [disabled]="readonly"
+                  [csClickHide]="false"
+                  #insertMoreTrigger="csDropdown"
+                >
+                  插入<i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+          @if (extensionActions.length) {
+            <div
+              class="toolbar-group toolbar-group--extensions"
+              role="group"
+              aria-label="扩展"
+            >
+              <div class="toolbar-group__controls">
+                <span class="toolbar-divider"></span>
 
-      <ng-content></ng-content>
-      <ng-content select="[fixed-toolbar-suffix]"></ng-content>
+                @for (item of extensionActions; track item.key) {
+                  @if (item.dividerBefore) {
+                    <span class="toolbar-divider"></span>
+                  }
+
+                  <button
+                    class="toolbar-btn"
+                    [class.active]="!!item.active"
+                    [title]="item.title"
+                    [disabled]="readonly || !!item.disabled"
+                    (mousedown)="onActionMouseDown($event)"
+                    (click)="onExtensionAction(item)"
+                  >
+                    <i [class]="['bc_icon', item.icon]"></i>
+                  </button>
+                }
+              </div>
+            </div>
+          }
+
+          <ng-content></ng-content>
+          <ng-content select="[fixed-toolbar-suffix]"></ng-content>
+        </div>
+      </div>
     </div>
-
+    <cs-dropdown-menu #insertMorePicker="csDropdownMenu"
+      ><div
+        csMenu
+        aria-label="插入内容"
+        (csClick)="onMenuAction($event, insertMoreTrigger)"
+      >
+        <div
+          csMenuItem
+          [csDisabled]="readonly || !canInsertBlock('image')"
+          data-toolbar-command="insert-image"
+        >
+          图片
+        </div>
+        <div
+          csSubmenu
+          csTitle="形状"
+          [hidden]="!doc.schemas.has('shape')"
+          [csDisabled]="readonly || !doc.schemas.has('shape')"
+          csMenuClassName="bc-fixed-toolbar-submenu bc-fixed-toolbar-picker-submenu"
+          #insertShapeTrigger="csSubmenu"
+        >
+          <bc-shape-picker
+            (pick)="
+              insertMoreTrigger.close(); insertShape($event, insertShapeTrigger)
+            "
+          />
+        </div>
+        <div
+          csSubmenu
+          csTitle="文本框"
+          [hidden]="!doc.schemas.has('text-box')"
+          [csDisabled]="readonly || !doc.schemas.has('text-box')"
+          csMenuClassName="bc-fixed-toolbar-submenu bc-fixed-toolbar-picker-submenu"
+          #insertTextBoxTrigger="csSubmenu"
+        >
+          <bc-text-box-preset-picker
+            (pick)="
+              insertMoreTrigger.close();
+              insertTextBox($event, insertTextBoxTrigger)
+            "
+          />
+        </div>
+        <div
+          csSubmenu
+          csTitle="艺术字"
+          [hidden]="!doc.schemas.has('word-art')"
+          [csDisabled]="readonly || !doc.schemas.has('word-art')"
+          csMenuClassName="bc-fixed-toolbar-submenu bc-fixed-toolbar-picker-submenu"
+          #insertWordArtTrigger="csSubmenu"
+        >
+          <bc-word-art-preset-picker
+            (pick)="
+              insertMoreTrigger.close();
+              insertWordArt($event, insertWordArtTrigger)
+            "
+          />
+        </div>
+        <div
+          csSubmenu
+          csTitle="表格"
+          [csDisabled]="readonly || !canInsertBlock('table')"
+          csMenuClassName="bc-fixed-toolbar-submenu bc-fixed-toolbar-picker-submenu"
+          #insertTableTrigger="csSubmenu"
+        >
+          <bc-table-size-picker
+            (pick)="
+              insertMoreTrigger.close();
+              insertQuickTable($event, insertTableTrigger)
+            "
+          />
+        </div>
+        <div
+          csSubmenu
+          csTitle="分栏"
+          [csDisabled]="readonly || !canUseColumns"
+          csMenuClassName="bc-fixed-toolbar-submenu bc-fixed-toolbar-picker-submenu"
+          #insertColumnsTrigger="csSubmenu"
+        >
+          <bc-column-count-picker
+            [current]="columnPickerCurrent"
+            (pick)="
+              insertMoreTrigger.close();
+              insertColumnsBlock($event, insertColumnsTrigger)
+            "
+          />
+        </div>
+        <div
+          csMenuItem
+          [csDisabled]="readonly || !canInsertBlock('video')"
+          data-toolbar-command="insert-video"
+        >
+          视频
+        </div>
+        <div
+          csMenuItem
+          [csDisabled]="readonly || !canInsertBlock('audio')"
+          data-toolbar-command="insert-audio"
+        >
+          音频
+        </div>
+      </div></cs-dropdown-menu
+    >
     <cs-dropdown-menu #quickTablePicker="csDropdownMenu">
       <bc-table-size-picker
         (pick)="insertQuickTable($event, quickTableTrigger)"
@@ -899,24 +1095,6 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
       </bc-float-toolbar>
     </cs-dropdown-menu>
 
-    <cs-dropdown-menu #inlineMorePicker="csDropdownMenu">
-      <bc-float-toolbar
-        [direction]="'column'"
-        (onItemClick)="onNarrowInlineItemClicked($event, inlineMoreTrigger)"
-        [gapAround]="8"
-      >
-        @for (item of narrowInlineActions; track item.value) {
-          <bc-float-toolbar-item
-            name="inline-format"
-            [value]="item.value"
-            [icon]="item.icon"
-            [active]="isAttrActive(item.value)"
-            >{{ item.title }}</bc-float-toolbar-item
-          >
-        }
-      </bc-float-toolbar>
-    </cs-dropdown-menu>
-
     <cs-dropdown-menu #textBoxPicker="csDropdownMenu">
       <bc-text-box-preset-picker
         (pick)="insertTextBox($event, textBoxTrigger)"
@@ -924,7 +1102,147 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
     </cs-dropdown-menu>
 
     <cs-dropdown-menu #responsiveMorePicker="csDropdownMenu">
-      <div csMenu class="responsive-more-menu" aria-label="更多格式">
+      <div
+        csMenu
+        class="responsive-more-menu"
+        aria-label="更多格式"
+        (csClick)="onMenuAction($event, responsiveMoreTrigger)"
+      >
+        <div
+          csSubmenu
+          csTitle="编号样式"
+          [csDisabled]="readonly || !canTransformBlocks"
+          csMenuClassName="bc-fixed-toolbar-submenu"
+          #moreOrderedTrigger="csSubmenu"
+        >
+          <bc-ordered-marker-picker
+            [current]="activeOrderedMarkerStyle"
+            (pick)="
+              responsiveMoreTrigger.close();
+              applyOrderedMarker($event, moreOrderedTrigger)
+            "
+          />
+        </div>
+        <div
+          csSubmenu
+          csTitle="文字格式"
+          [csDisabled]="readonly || !allEditable"
+          csMenuClassName="bc-fixed-toolbar-submenu"
+          #inlineMoreTrigger="csSubmenu"
+        >
+          <bc-float-toolbar
+            direction="column"
+            [gapAround]="0"
+            (onItemClick)="
+              responsiveMoreTrigger.close();
+              onNarrowInlineItemClicked($event, inlineMoreTrigger)
+            "
+          >
+            @for (item of narrowInlineActions; track item.value) {
+              <bc-float-toolbar-item
+                name="inline-format"
+                [value]="item.value"
+                [icon]="item.icon"
+                [active]="isAttrActive(item.value)"
+                >{{ item.title }}</bc-float-toolbar-item
+              >
+            }
+          </bc-float-toolbar>
+        </div>
+        <div
+          csSubmenu
+          csTitle="段落样式与列表"
+          [csDisabled]="readonly || !canTransformBlocks"
+          csMenuClassName="bc-fixed-toolbar-submenu"
+          #styleMoreTrigger="csSubmenu"
+        >
+          <bc-float-toolbar direction="column" [gapAround]="0">
+            @for (item of headingMenuList; track item.value) {
+              <bc-float-toolbar-item
+                [name]="item.name"
+                [active]="isHeadingItemActive(item)"
+                [value]="item.value"
+                [icon]="item.icon"
+                #moreHeadingItem
+                (click)="
+                  responsiveMoreTrigger.close();
+                  onStyleItemClicked(moreHeadingItem, styleMoreTrigger)
+                "
+                >{{ item.intro }}</bc-float-toolbar-item
+              >
+            }
+            @for (item of listActions; track item.value) {
+              <bc-float-toolbar-item
+                [icon]="item.icon"
+                (click)="
+                  responsiveMoreTrigger.close();
+                  styleMoreTrigger.close();
+                  setList(item.value)
+                "
+                >{{ item.title }}</bc-float-toolbar-item
+              >
+            }
+          </bc-float-toolbar>
+        </div>
+        <div
+          csMenuItem
+          [csDisabled]="!doc?.crud?.undoManager?.isCanUndo()"
+          data-toolbar-command="undo"
+        >
+          撤销
+        </div>
+        <div
+          csMenuItem
+          [csDisabled]="!doc?.crud?.undoManager?.isCanRedo()"
+          data-toolbar-command="redo"
+        >
+          重做
+        </div>
+        <div
+          csMenuItem
+          [csDisabled]="readonly || !allEditable"
+          data-toolbar-command="clear-format"
+        >
+          清除格式
+        </div>
+        <div
+          csMenuItem
+          [csDisabled]="
+            readonly || (!formatBrushActive && !canCaptureFormatBrush())
+          "
+          data-toolbar-command="format-brush"
+        >
+          格式刷
+        </div>
+        <div
+          csMenuItem
+          [csDisabled]="
+            readonly || !allEditable || !isLinkAble || !hasTextSelection
+          "
+          data-toolbar-command="link"
+        >
+          链接
+        </div>
+        <div
+          csMenuItem
+          [csDisabled]="
+            readonly || !allEditable || !isLinkAble || !hasTextSelection
+          "
+          data-toolbar-command="formula"
+        >
+          行内公式
+        </div>
+        @for (item of extensionActions; track item.key) {
+          <div
+            csMenuItem
+            [csDisabled]="readonly || !!item.disabled"
+            data-toolbar-command="extension"
+            [attr.data-extension-key]="item.key"
+          >
+            {{ item.title }}
+          </div>
+        }
+
         <ng-template #compactFontFamilyTitle>
           <span class="responsive-more-menu__title">
             <i class="bc_icon bc_wenben"></i>
@@ -1122,19 +1440,37 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
     </cs-dropdown-menu>
 
     <cs-dropdown-menu #colorPicker="csDropdownMenu">
-      <bc-color-picker
-        (colorPicked)="onColorPicked($event)"
-        [gapAround]="8"
-        [activeColors]="activeColors"
-      >
+      <div class="toolbar-color-menu" (mousedown)="$event.stopPropagation()">
+        @if (colorPanelOpen) {
+          <cs-tabs csSize="small" [csAnimated]="false" [csCentered]="true"
+            [csDestroyInactiveTabPane]="true" [(csSelectedIndex)]="colorTabIndex">
+            <cs-tab csTitle="文字颜色">
+              @if (colorTabIndex === 0) {
+              <cs-color-picker-panel csMode="palette"
+                [csValue]="activeColors['color'] === 'var(--bc-color)' ? null : activeColors['color']"
+                [csDisabled]="readonly || !allEditable" [csShowAlpha]="false"
+                csClearText="自动" [(csRecentColors)]="recentTextColors"
+                (csChangeComplete)="onColorPicked({type: 'color', color: $event.value})" />
+              }
+            </cs-tab>
+            <cs-tab csTitle="背景颜色">
+              @if (colorTabIndex === 1) {
+              <cs-color-picker-panel csMode="palette"
+                [csValue]="activeColors['backColor'] === 'transparent' ? null : activeColors['backColor']"
+                [csDisabled]="readonly || !allEditable" [csShowAlpha]="false"
+                csClearText="无背景色" [(csRecentColors)]="recentBackgroundColors"
+                (csChangeComplete)="onColorPicked({type: 'backColor', color: $event.value})" />
         <div class="bc-color-group">
           <div class="bc-color-group-title">背景图形</div>
           <div class="bg-list">
             @for (item of bgGraphList; track item.attr) {
-              <div
+              <button type="button"
                 class="bg-graph-item"
                 [class]="item.class"
                 [class.active]="activeAttrs.get('bg') == item.attr"
+                [attr.aria-label]="item.title"
+                [title]="item.title"
+                [attr.aria-pressed]="activeAttrs.get('bg') == item.attr"
                 (click)="onBgGraphPicked(item.attr)"
               >
                 <span
@@ -1144,11 +1480,15 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
                   [style.color]="activeColors['color'] || '#ffffff'"
                   >文本</span
                 >
-              </div>
+              </button>
             }
           </div>
         </div>
-      </bc-color-picker>
+              }
+            </cs-tab>
+          </cs-tabs>
+        }
+      </div>
     </cs-dropdown-menu>
 
     <cs-dropdown-menu #fontFamilyPicker="csDropdownMenu">
@@ -1210,8 +1550,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
           icon="bc_version_settings"
           title="更多设置…"
           aria-label="更多设置…"
-          ></bc-float-toolbar-item
-        >
+        ></bc-float-toolbar-item>
       </bc-float-toolbar>
     </cs-dropdown-menu>
 
@@ -1283,22 +1622,22 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
         [gapAround]="8"
       >
         @if (allEditable) {
-        @for (item of alignActions; track item.value) {
-          <bc-float-toolbar-item
-            name="align"
-            [value]="item.value"
-            [icon]="item.icon"
-            [active]="isAlignActive(item.value)"
-            >{{ item.title }}</bc-float-toolbar-item
-          >
-        }
-        <span class="bc-float-toolbar__divider"></span>
+          @for (item of alignActions; track item.value) {
+            <bc-float-toolbar-item
+              name="align"
+              [value]="item.value"
+              [icon]="item.icon"
+              [active]="isAlignActive(item.value)"
+              >{{ item.title }}</bc-float-toolbar-item
+            >
+          }
+          <span class="bc-float-toolbar__divider"></span>
         }
         <bc-float-toolbar-item
           name="more-paragraph-settings"
           [value]="allEditable ? 'paragraph-align' : 'paragraph-spacing'"
           icon="bc_version_settings"
-          >{{ allEditable ? '更多设置…' : '段落设置…' }}</bc-float-toolbar-item
+          >{{ allEditable ? "更多设置…" : "段落设置…" }}</bc-float-toolbar-item
         >
       </bc-float-toolbar>
     </cs-dropdown-menu>
@@ -1325,26 +1664,12 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
     `
       :host {
         position: relative;
-        display: flex;
-        align-items: stretch;
-        justify-content: center;
-        justify-content: safe center;
-        column-gap: 4px;
-        flex-wrap: nowrap;
+        display: block;
         width: 100%;
         max-width: 100%;
         box-sizing: border-box;
-        padding: var(--bc-fixed-toolbar-padding, 5px 8px);
-        overflow-x: auto;
-        overflow-y: hidden;
-        overscroll-behavior-inline: contain;
-        scrollbar-color: color-mix(
-            in srgb,
-            var(--bc-float-toolbar-divider-color) 72%,
-            transparent
-          )
-          transparent;
-        scrollbar-width: none;
+        padding: var(--bc-fixed-toolbar-padding, 6px 8px);
+        background: var(--bc-float-toolbar-bg);
         border: var(
           --bc-fixed-toolbar-border,
           1px solid var(--bc-float-toolbar-divider-color)
@@ -1355,146 +1680,336 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
         );
         pointer-events: auto;
         transition: opacity 0.12s ease;
-        will-change: transform;
       }
-
-      :host::-webkit-scrollbar {
-        display: none;
-        height: 6px;
+      [hidden] {
+        display: none !important;
       }
-
-      :host(.toolbar-layout--narrow) {
-        scrollbar-width: thin;
-      }
-
-      :host(.toolbar-layout--narrow)::-webkit-scrollbar {
-        display: block;
-      }
-
-      :host::-webkit-scrollbar-track {
-        background: transparent;
-      }
-
-      :host::-webkit-scrollbar-thumb {
-        border: 2px solid transparent;
-        border-radius: 999px;
-        background: color-mix(
-          in srgb,
-          var(--bc-float-toolbar-divider-color) 72%,
-          transparent
-        );
-        background-clip: padding-box;
-      }
-
-      :host::-webkit-scrollbar-thumb:hover {
-        background: var(--bc-float-toolbar-divider-color);
-        background-clip: padding-box;
-      }
-
-      .toolbar-section {
+      .toolbar-surface {
+        width: max-content;
+        max-width: 100%;
+        margin-inline: auto;
         display: flex;
         align-items: center;
-        flex: 0 0 auto;
-        gap: 4px;
-        min-width: max-content;
-      }
-
-      .toolbar-group {
-        position: relative;
-        display: flex;
-        align-items: center;
-        flex: 0 0 auto;
-        padding-inline: 8px;
-      }
-
-      .toolbar-group:first-child {
-        padding-inline-start: 0;
-      }
-
-      .toolbar-group + .toolbar-group::before {
-        position: absolute;
-        inset-block: 2px 3px;
-        inset-inline-start: 0;
-        width: 1px;
-        background: var(--bc-float-toolbar-divider-color);
-        content: "";
-      }
-
-      .toolbar-group__controls {
-        display: flex;
-        align-items: center;
-        gap: 4px;
+        gap: 8px;
         min-width: 0;
       }
-
-      .toolbar-section--text {
-        flex: 0 0 auto;
+      .toolbar-head {
+        display: flex;
+        align-items: center;
+        flex: none;
+        order: 1;
+        gap: 2px;
+        padding-inline-start: 6px;
+        border-inline-start: 1px solid var(--bc-float-toolbar-divider-color);
       }
-
-      .toolbar-section--insert {
-        flex: 0 0 auto;
-      }
-
-      .toolbar-group--responsive-more {
-        display: none;
-      }
-
-      .toolbar-btn.toolbar-inline-more {
-        display: none;
-      }
-
-      :host(.toolbar-layout--wide) {
-        flex-wrap: nowrap;
-      }
-
-      :host(.toolbar-layout--wide) .toolbar-section--text {
-        flex: 0 0 auto;
-      }
-
-      :host(.toolbar-layout--balanced) .toolbar-section--text {
-        flex: 0 0 auto;
-        flex-wrap: nowrap;
-      }
-
-      :host(.toolbar-layout--balanced) {
-        flex-wrap: nowrap;
-      }
-
-      :host(.toolbar-layout--balanced) .toolbar-control--wide-only,
-      :host(.toolbar-layout--compact) .toolbar-control--wide-only,
-      :host(.toolbar-layout--narrow) .toolbar-control--wide-only {
-        display: none;
-      }
-
-      :host(.toolbar-layout--balanced) .toolbar-group--responsive-more,
-      :host(.toolbar-layout--compact) .toolbar-group--responsive-more,
-      :host(.toolbar-layout--narrow) .toolbar-group--responsive-more {
+      .toolbar-head__actions {
         display: flex;
       }
-
-      :host(.toolbar-layout--compact) {
-        flex-wrap: nowrap;
+      .toolbar-mode-switch[aria-expanded="true"] > i {
+        transform: rotate(180deg);
       }
-
-      :host(.toolbar-layout--compact) .toolbar-section--text {
-        flex: 0 0 auto;
+      .toolbar-mode-switch > i {
+        font-size: 10px;
       }
-
-      :host(.toolbar-layout--compact) .toolbar-section--insert {
-        flex: 0 0 auto;
+      :host(.toolbar-mode--full) .toolbar-head {
+        flex-direction: column;
+        gap: 6px;
       }
-
-      :host(.toolbar-layout--compact) .toolbar-group,
-      :host(.toolbar-layout--narrow) .toolbar-group {
-        padding-inline: 6px;
+      .toolbar-body {
+        display: flex;
+        align-items: stretch;
+        justify-content: flex-start;
+        flex: 0 1 auto;
+        gap: 0;
+        min-width: 0;
+        overflow-x: auto;
+        scrollbar-width: thin;
+        scrollbar-color: var(--bc-float-toolbar-divider-color) transparent;
       }
-
-      :host(.toolbar-layout--narrow) .toolbar-inline-action--narrow-hidden {
+      .toolbar-section {
+        display: flex;
+        align-items: stretch;
+        flex: none;
+        gap: 0;
+        min-width: max-content;
+      }
+      .toolbar-group {
+        display: flex;
+        align-items: center;
+        flex: none;
+        padding-inline: 8px;
+        border-inline-start: 1px solid var(--bc-float-toolbar-divider-color);
+      }
+      .toolbar-section--text > .toolbar-group:first-of-type {
+        border: 0;
+        padding-inline-start: 0;
+      }
+      .toolbar-section--insert > .toolbar-group:last-of-type {
+        padding-inline-end: 0;
+      }
+      .toolbar-group__controls,
+      .toolbar-row {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .toolbar-row {
+        min-height: 28px;
+        flex: none;
+      }
+      .toolbar-btn {
+        flex: none;
+        white-space: nowrap;
+      }
+      .toolbar-settings-entry {
+        margin-inline-start: 4px;
+      }
+      :host(.toolbar-mode--full) .toolbar-settings-entry {
+        margin-inline-start: 0;
+      }
+      :host(.toolbar-mode--full) .toolbar-row {
+        justify-content: space-between;
+      }
+      :host(.toolbar-mode--full)
+        .toolbar-group--paragraph
+        .toolbar-row:last-child
+        > .toolbar-btn {
+        flex: 1 1 0;
+        justify-content: space-between;
+      }
+      .toolbar-priority-hidden {
+        display: none !important;
+      }
+      .toolbar-insert-menu {
+        font-size: 12px;
+        gap: 4px;
+      }
+      .toolbar-insert-label {
+        display: none;
+        font-size: 12px;
+      }
+      :host(.toolbar-mode--full) .toolbar-group__controls {
+        display: grid;
+        grid-template-rows: 28px 28px;
+        gap: 6px;
+      }
+      :host(.toolbar-mode--full) .toolbar-row:nth-child(2) {
+        grid-row: 2;
+      }
+      :host(.toolbar-mode--full)
+        .toolbar-group--history
+        .toolbar-group__controls {
+        justify-items: center;
+      }
+      :host(.toolbar-mode--full) .toolbar-insert-label {
+        display: inline;
+      }
+      :host(.toolbar-mode--full) .toolbar-insert-shortcut {
+        gap: 4px;
+      }
+      :host(.toolbar-mode--full)
+        .toolbar-group--reference
+        .toolbar-group__controls {
+        justify-items: center;
+      }
+      :host(.toolbar-mode--full)
+        .toolbar-group--extensions
+        .toolbar-group__controls {
+        display: flex;
+      }
+      /* Each tier removes lower-priority shortcuts; all destinations remain in menus. */
+      :host(:not(.toolbar-layout--wide)) .toolbar-control--wide-only,
+      :host(:not(.toolbar-layout--wide)) [data-inline-action="strike"],
+      :host(:not(.toolbar-layout--wide)) [data-inline-action="code"],
+      :host(:not(.toolbar-layout--wide)) [data-list-action="todo"],
+      :host(:not(.toolbar-layout--wide)) .toolbar-format-utility,
+      :host(:not(.toolbar-layout--wide)) .toolbar-btn--style,
+      :host(:not(.toolbar-layout--wide)) .toolbar-insert-shortcut--shape,
+      :host(:not(.toolbar-layout--wide)) .toolbar-insert-shortcut--textbox,
+      :host(:not(.toolbar-layout--wide)) .toolbar-insert-shortcut--wordart,
+      :host(:not(.toolbar-layout--wide)) .toolbar-insert-shortcut--columns,
+      :host(:not(.toolbar-layout--wide)) .toolbar-insert-shortcut--media {
         display: none;
       }
-
-      :host(.toolbar-layout--narrow) .toolbar-btn.toolbar-inline-more {
+      :host(.toolbar-layout--balanced) .toolbar-insert-shortcut {
+        display: none;
+      }
+      :host(.toolbar-mode--full.toolbar-layout--balanced)
+        .toolbar-insert-shortcut--image,
+      :host(.toolbar-mode--full.toolbar-layout--balanced)
+        .toolbar-insert-shortcut--table,
+      :host(.toolbar-mode--full.toolbar-layout--balanced)
+        .toolbar-insert-shortcut--textbox,
+      :host(.toolbar-mode--full.toolbar-layout--balanced)
+        .toolbar-letter-spacing,
+      :host(.toolbar-mode--full.toolbar-layout--balanced) .toolbar-line-height {
         display: inline-flex;
+      }
+      :host(.toolbar-layout--compact) .toolbar-group--font,
+      :host(.toolbar-layout--narrow) .toolbar-group--font {
+        border-inline-start: 0;
+        padding-inline-start: 0;
+      }
+      :host(.toolbar-layout--compact) .toolbar-btn--font-family,
+      :host(.toolbar-layout--narrow) .toolbar-btn--font-family,
+      :host(.toolbar-layout--compact) .toolbar-group--history,
+      :host(.toolbar-layout--narrow) .toolbar-group--history,
+      :host(.toolbar-layout--compact) .toolbar-list-control,
+      :host(.toolbar-layout--narrow) .toolbar-list-control,
+      :host(.toolbar-layout--narrow) .toolbar-align-control,
+      :host(.toolbar-layout--compact) .toolbar-insert-shortcut,
+      :host(.toolbar-layout--narrow) .toolbar-insert-shortcut,
+      :host(.toolbar-layout--compact) .toolbar-group--extensions,
+      :host(.toolbar-layout--narrow) .toolbar-group--extensions {
+        display: none;
+      }
+      :host(.toolbar-layout--compact) .toolbar-group,
+      :host(.toolbar-layout--narrow) .toolbar-group {
+        padding-inline: 4px;
+      }
+      :host(.toolbar-layout--narrow) [data-inline-action="italic"],
+      :host(.toolbar-layout--narrow) [data-inline-action="underline"],
+      :host(.toolbar-layout--compact) .toolbar-color-control,
+      :host(.toolbar-layout--narrow) .toolbar-color-control {
+        display: none;
+      }
+      :host(.toolbar-layout--narrow) .toolbar-btn {
+        padding-inline: 4px;
+      }
+      :host(.toolbar-layout--narrow) .toolbar-insert-menu .toolbar-btn__caret {
+        display: none;
+      }
+      :host(.toolbar-layout--compact) .toolbar-btn--font-size,
+      :host(.toolbar-layout--narrow) .toolbar-btn--font-size {
+        border: 0;
+      }
+      :host(.toolbar-mode--full.toolbar-layout--balanced)
+        .toolbar-group--font
+        .toolbar-group__controls {
+        grid-template-columns: repeat(5, 28px);
+        column-gap: 4px;
+      }
+      :host(.toolbar-mode--full.toolbar-layout--balanced)
+        .toolbar-group--font
+        .toolbar-row {
+        display: contents;
+      }
+      :host(.toolbar-mode--full.toolbar-layout--balanced) .toolbar-font-combo {
+        grid-column: 1 / -1;
+        grid-row: 1;
+        justify-self: start;
+      }
+      :host(.toolbar-mode--full.toolbar-layout--balanced)
+        [data-inline-action="bold"] {
+        grid-row: 2;
+        grid-column: 1;
+      }
+      :host(.toolbar-mode--full.toolbar-layout--balanced)
+        [data-inline-action="italic"] {
+        grid-row: 2;
+        grid-column: 2;
+      }
+      :host(.toolbar-mode--full.toolbar-layout--balanced)
+        [data-inline-action="underline"] {
+        grid-row: 2;
+        grid-column: 3;
+      }
+      :host(.toolbar-mode--full.toolbar-layout--balanced)
+        .toolbar-color-control {
+        grid-row: 2;
+        grid-column: 4;
+      }
+      :host(.toolbar-mode--full.toolbar-layout--balanced)
+        .toolbar-settings-entry--text {
+        grid-row: 2;
+        grid-column: 5;
+      }
+      /* At the smallest width, keep format commands above the group launchers. */
+      :host(.toolbar-mode--full.toolbar-layout--compact) .toolbar-body,
+      :host(.toolbar-mode--full.toolbar-layout--narrow) .toolbar-body {
+        display: grid;
+        grid-template-rows: 28px 28px;
+        grid-auto-columns: max-content;
+        gap: 6px 4px;
+        justify-content: start;
+      }
+      :host(.toolbar-mode--full.toolbar-layout--compact) .toolbar-section,
+      :host(.toolbar-mode--full.toolbar-layout--narrow) .toolbar-section,
+      :host(.toolbar-mode--full.toolbar-layout--compact) .toolbar-group--font,
+      :host(.toolbar-mode--full.toolbar-layout--narrow) .toolbar-group--font,
+      :host(.toolbar-mode--full.toolbar-layout--compact)
+        .toolbar-group--paragraph,
+      :host(.toolbar-mode--full.toolbar-layout--narrow)
+        .toolbar-group--paragraph,
+      :host(.toolbar-mode--full.toolbar-layout--compact) .toolbar-group--insert,
+      :host(.toolbar-mode--full.toolbar-layout--narrow) .toolbar-group--insert,
+      :host(.toolbar-mode--full.toolbar-layout--compact)
+        .toolbar-group__controls,
+      :host(.toolbar-mode--full.toolbar-layout--narrow)
+        .toolbar-group__controls,
+      :host(.toolbar-mode--full.toolbar-layout--compact) .toolbar-row,
+      :host(.toolbar-mode--full.toolbar-layout--narrow) .toolbar-row {
+        display: contents;
+      }
+      :host(.toolbar-mode--full.toolbar-layout--compact) .toolbar-align-control,
+      :host(.toolbar-mode--full.toolbar-layout--narrow) .toolbar-align-control {
+        display: none;
+      }
+      :host(.toolbar-mode--full.toolbar-layout--compact) .toolbar-font-combo,
+      :host(.toolbar-mode--full.toolbar-layout--narrow) .toolbar-font-combo {
+        grid-row: 1;
+        grid-column: 1;
+      }
+      :host(.toolbar-mode--full.toolbar-layout--compact)
+        [data-inline-action="bold"],
+      :host(.toolbar-mode--full.toolbar-layout--narrow)
+        [data-inline-action="bold"] {
+        grid-row: 1;
+        grid-column: 2;
+      }
+      :host(.toolbar-mode--full.toolbar-layout--compact)
+        [data-inline-action="italic"],
+      :host(.toolbar-mode--full.toolbar-layout--narrow)
+        [data-inline-action="italic"] {
+        display: inline-flex;
+        grid-row: 1;
+        grid-column: 3;
+      }
+      :host(.toolbar-mode--full.toolbar-layout--compact)
+        [data-inline-action="underline"],
+      :host(.toolbar-mode--full.toolbar-layout--narrow)
+        [data-inline-action="underline"] {
+        display: inline-flex;
+        grid-row: 1;
+        grid-column: 4;
+      }
+      :host(.toolbar-mode--full.toolbar-layout--compact) .toolbar-color-control,
+      :host(.toolbar-mode--full.toolbar-layout--narrow) .toolbar-color-control {
+        display: inline-flex;
+        grid-row: 1;
+        grid-column: 5;
+      }
+      :host(.toolbar-mode--full.toolbar-layout--compact)
+        .toolbar-settings-entry--text,
+      :host(.toolbar-mode--full.toolbar-layout--narrow)
+        .toolbar-settings-entry--text {
+        grid-row: 2;
+        grid-column: 1;
+        margin-inline-start: 0;
+      }
+      :host(.toolbar-mode--full.toolbar-layout--compact)
+        .toolbar-settings-entry--paragraph,
+      :host(.toolbar-mode--full.toolbar-layout--narrow)
+        .toolbar-settings-entry--paragraph {
+        grid-row: 2;
+        grid-column: 2;
+        margin-inline-start: 0;
+      }
+      :host(.toolbar-mode--full.toolbar-layout--compact) .toolbar-insert-menu,
+      :host(.toolbar-mode--full.toolbar-layout--narrow) .toolbar-insert-menu {
+        grid-row: 2;
+        grid-column: 3 / 6;
+        justify-self: start;
       }
 
       :host(.hidden) {
@@ -1624,12 +2139,16 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
 
       .toolbar-font-combo {
         display: inline-flex;
+        align-items: center;
+        height: 28px;
+        box-sizing: border-box;
         overflow: hidden;
         border: 1px solid var(--bc-border-color);
         border-radius: 6px;
       }
 
       .toolbar-font-combo__control {
+        height: 26px;
         gap: 4px;
         border-radius: 0;
       }
@@ -1708,7 +2227,34 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
         flex-wrap: wrap;
       }
 
+      .toolbar-color-menu {
+        width: max-content;
+        max-width: calc(100vw - 40px);
+        box-sizing: border-box;
+        padding: 4px;
+        border-radius: 8px;
+        background: var(--bc-float-toolbar-bg);
+        box-shadow: var(--bc-float-toolbar-shadow);
+        color: var(--bc-color);
+        font-size: var(--bc-fs-xs);
+      }
+
+      .toolbar-color-menu .bc-color-group {
+        margin: 0 8px 8px;
+        padding-top: 10px;
+        border-top: 1px solid var(--bc-border-color);
+      }
+
+      .bc-color-group-title {
+        margin-bottom: 7px;
+        color: var(--bc-color-light);
+        font-size: var(--bc-fs-xs);
+      }
+
       .bg-graph-item {
+        padding: 0;
+        box-sizing: border-box;
+        background: transparent;
         width: 46px;
         height: 27px;
         border-radius: 2px;
@@ -1764,10 +2310,13 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
     CsDropdownDirective,
     CsDropdownMenuComponent,
     CsMenuDirective,
+    CsMenuItemComponent,
     CsSubmenuComponent,
     BcFloatToolbarComponent,
     BcFloatToolbarItemComponent,
-    ColorPickerComponent,
+    CsColorPickerPanelComponent,
+  CsTabsComponent,
+  CsTabComponent,
     BcTableSizePickerComponent,
     BcColumnCountPickerComponent,
     BcOrderedMarkerPickerComponent,
@@ -1780,6 +2329,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
     contenteditable: "false",
     "[class.readonly]": "readonly",
     "[class.hidden]": "!visible",
+    "[class.toolbar-mode--full]": "toolbarMode === 'full'",
     "[class.toolbar-layout--wide]": "toolbarLayout === 'wide'",
     "[class.toolbar-layout--balanced]": "toolbarLayout === 'balanced'",
     "[class.toolbar-layout--compact]": "toolbarLayout === 'compact'",
@@ -1788,7 +2338,29 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
     "(mousedown)": "onToolbarMouseDown($event)",
   },
 })
-export class FixedTextToolbarComponent implements OnInit, OnDestroy {
+export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestroy {
+  protected overflowedGroups = new Set<string>();
+  private _overflowStep = 0;
+  private readonly simpleOverflowGroups = [
+    ["reference"],
+    ["media"],
+    ["wordart"],
+    ["columns"],
+    ["shape"],
+    ["textbox"],
+    ["letter-spacing"],
+    ["script"],
+    ["utilities"],
+    ["style"],
+    ["line-height"],
+  ];
+  private readonly fullOverflowGroups = [
+    ["reference"],
+    ["media", "wordart"],
+    ["shape", "columns"],
+    ["utilities", "script", "style"],
+  ];
+
   private readonly _sub = new Subscription();
   private _toolbarHelper?: TextToolbarHelper;
   private _formatBrushPayload: IFormatBrushPayload | null = null;
@@ -1801,6 +2373,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   private _observedToolbarWidth = -1;
   private _settingsModalRef?: CsModalRef<any, any>;
   protected toolbarLayout: "wide" | "balanced" | "compact" | "narrow" = "wide";
+  protected toolbarMode: "simple" | "full" = "simple";
   protected orderedMarkerDropdownOpen = false;
   protected scriptDropdownOpen = false;
   private preferredScriptValue: TScriptToggle = "sup";
@@ -1809,6 +2382,7 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     private readonly cdr: ChangeDetectorRef,
     private readonly hostRef?: ElementRef<HTMLElement>,
     @Optional() private readonly modalService?: CsModalService,
+    @Optional() private readonly zone?: NgZone,
   ) {}
 
   @Input({ required: true })
@@ -1915,7 +2489,6 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
 
   ngOnInit() {
     this._destroyed = false;
-    this.observeToolbarWidth();
     this.syncToolbarState(this.doc.selection.value);
 
     this._sub.add(
@@ -1953,6 +2526,16 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     );
 
     this._sub.add(
+      fromEvent<KeyboardEvent>(document, "keydown", {capture: true}).subscribe((evt) => {
+        if (evt.key === "Escape" && this.colorPanelOpen) {
+          this.restoreSelection();
+          this.colorTrigger?.close();
+          evt.preventDefault();
+          evt.stopPropagation();
+        }
+      }),
+    );
+    this._sub.add(
       fromEvent<KeyboardEvent>(document, "keydown").subscribe((evt) => {
         if (this.isNativeInputTarget(evt.target)) return;
 
@@ -1969,6 +2552,10 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
         this.cdr.markForCheck();
       }),
     );
+  }
+
+  ngAfterViewInit(): void {
+    this.observeToolbarWidth();
   }
 
   ngOnDestroy() {
@@ -1988,61 +2575,102 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
     this._sub.unsubscribe();
   }
 
+  protected setToolbarMode(mode: "simple" | "full"): void {
+    if (mode === this.toolbarMode) return;
+    this.toolbarMode = mode;
+    this.resetToolbarLayout();
+    this.scheduleToolbarFit();
+  }
+
   private observeToolbarWidth(): void {
     const host = this.hostRef?.nativeElement;
     if (!host || typeof ResizeObserver === "undefined") return;
-
-    this._resizeObserver = new ResizeObserver((entries) => {
-      const width = entries[0]?.contentRect.width ?? host.clientWidth;
-      if (Math.abs(width - this._observedToolbarWidth) > 0.5) {
-        this._observedToolbarWidth = width;
-        if (this.toolbarLayout !== "wide") {
-          this.toolbarLayout = "wide";
-          this.cdr.markForCheck();
+    const observe = () => {
+      this._resizeObserver = new ResizeObserver((entries) => {
+        const hostEntry = entries.find((entry) => entry.target === host);
+        const width = hostEntry?.contentRect.width;
+        if (
+          width !== undefined &&
+          Math.abs(width - this._observedToolbarWidth) > 0.5
+        ) {
+          this._observedToolbarWidth = width;
+          this.resetToolbarLayout();
         }
-      }
-      this.scheduleToolbarFit();
-    });
-    this._resizeObserver.observe(host);
+        this.scheduleToolbarFit();
+      });
+      this._resizeObserver.observe(host);
+      // Projected content, extension actions and font labels can resize independently of the host.
+      host
+        .querySelectorAll<HTMLElement>(".toolbar-section")
+        .forEach((section) => this._resizeObserver!.observe(section));
+    };
+    this.zone ? this.zone.runOutsideAngular(observe) : observe();
   }
 
-  private scheduleToolbarFit() {
+  private resetToolbarLayout(): void {
+    const reset = () => {
+      this.toolbarLayout = "wide";
+      this.overflowedGroups = new Set();
+      this._overflowStep = 0;
+      this.cdr.markForCheck();
+    };
+    this.zone ? this.zone.run(reset) : reset();
+  }
+
+  private collapseNextPriorityGroup(): boolean {
+    const groups =
+      this.toolbarMode === "full"
+        ? this.fullOverflowGroups
+        : this.simpleOverflowGroups;
+    const next = groups[this._overflowStep];
+    if (!next || this.toolbarLayout !== "wide") return false;
+    const collapse = () => {
+      this._overflowStep++;
+      this.overflowedGroups = new Set([...this.overflowedGroups, ...next]);
+      this.cdr.markForCheck();
+    };
+    this.zone ? this.zone.run(collapse) : collapse();
+    return true;
+  }
+
+  private updateToolbarLayout(
+    layout: "wide" | "balanced" | "compact" | "narrow",
+  ): void {
+    if (layout === this.toolbarLayout) return;
+    const update = () => {
+      this.toolbarLayout = layout;
+      this.overflowedGroups = new Set();
+      this.cdr.markForCheck();
+    };
+    this.zone ? this.zone.run(update) : update();
+  }
+
+  private scheduleToolbarFit(): void {
     const host = this.hostRef?.nativeElement;
     const view = host?.ownerDocument.defaultView;
-    if (!host || !view) return;
-    if (this._layoutFitFrame !== null) {
-      view.cancelAnimationFrame(this._layoutFitFrame);
-    }
-    this._layoutFitFrame = view.requestAnimationFrame(() => {
-      this._layoutFitFrame = null;
-      if (this._destroyed || !this.hasVisibleToolbarOverflow(host)) return;
-      const nextLayout = this.nextToolbarLayout(this.toolbarLayout);
-      if (!nextLayout) return;
-      this.toolbarLayout = nextLayout;
-      this.cdr.markForCheck();
-      this.scheduleToolbarFit();
-    });
+    if (!host || !view || this._destroyed || this._layoutFitFrame !== null)
+      return;
+    const schedule = () => {
+      this._layoutFitFrame = view.requestAnimationFrame(() => {
+        this._layoutFitFrame = null;
+        if (this._destroyed || !this.hasVisibleToolbarOverflow(host)) return;
+        if (this.collapseNextPriorityGroup()) {
+          this.scheduleToolbarFit();
+          return;
+        }
+        const nextLayout = this.nextToolbarLayout(this.toolbarLayout);
+        if (!nextLayout) return;
+        this.updateToolbarLayout(nextLayout);
+        this.scheduleToolbarFit();
+      });
+    };
+    this.zone ? this.zone.runOutsideAngular(schedule) : schedule();
   }
 
-  private hasVisibleToolbarOverflow(host: HTMLElement) {
-    const sections = Array.from(host.children).filter(
-      (child): child is HTMLElement =>
-        child instanceof HTMLElement &&
-        child.classList.contains("toolbar-section"),
-    );
-    if (!sections.length) return false;
-
-    const style = host.ownerDocument.defaultView?.getComputedStyle(host);
-    const paddingInline = style
-      ? (Number.parseFloat(style.paddingLeft) || 0) +
-        (Number.parseFloat(style.paddingRight) || 0)
-      : 0;
-    const columnGap = style ? Number.parseFloat(style.columnGap) || 0 : 0;
-    const contentWidth = sections.reduce(
-      (width, section) => width + section.scrollWidth,
-      paddingInline + columnGap * Math.max(0, sections.length - 1),
-    );
-    return contentWidth > host.clientWidth + 1;
+  private hasVisibleToolbarOverflow(host: HTMLElement): boolean {
+    // Only command content participates; CDK template hosts are outside the surface.
+    const body = host.querySelector<HTMLElement>(".toolbar-body");
+    return !!body && body.scrollWidth > body.clientWidth + 1;
   }
 
   protected nextToolbarLayout(
@@ -2121,14 +2749,6 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
         [`a:${name}`]: active ? null : true,
       } as IInlineNodeAttrs);
     });
-  }
-
-  protected isNarrowInlineAction(value: TInlineToggle): boolean {
-    return NARROW_INLINE_ACTIONS.some((item) => item.value === value);
-  }
-
-  protected get hasNarrowInlineActive() {
-    return NARROW_INLINE_ACTIONS.some((item) => this.isAttrActive(item.value));
   }
 
   protected onNarrowInlineItemClicked(
@@ -2277,7 +2897,6 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   protected onColorPicked(evt: {
     type: string;
     color: string | null;
-    group: ColorGroup;
   }) {
     this.runWithSelection(() => {
       switch (evt.type) {
@@ -2291,6 +2910,19 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
           break;
       }
     });
+  }
+
+  protected colorPanelOpen = false;
+  protected colorTabIndex = 0;
+  protected recentTextColors: readonly string[] = [];
+  protected recentBackgroundColors: readonly string[] = [];
+  @ViewChild("colorTrigger") private colorTrigger?: CsDropdownDirective;
+
+  protected onColorPanelOpenChange(open: boolean): void {
+    this.colorPanelOpen = open;
+    if (!open) {
+      this.syncToolbarState(this.doc.selection.value);
+    }
   }
 
   protected onBgGraphPicked(bg: string | null) {
@@ -2418,6 +3050,61 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
 
   protected letterSpacingOptionLabel(value: number): string {
     return `${Math.round(value * 1000) / 1000}em`;
+  }
+
+  protected onMenuAction(
+    event: { originalEvent: Event },
+    trigger: IToolbarPopupController,
+  ): void {
+    const target = event.originalEvent.target;
+    if (!(target instanceof Element)) return;
+    const item = target.closest<HTMLElement>("[data-toolbar-command]");
+    if (!item || item.getAttribute("aria-disabled") === "true") return;
+    const command = item.dataset["toolbarCommand"];
+    trigger.close();
+    switch (command) {
+      case "undo":
+        this.undo();
+        break;
+      case "redo":
+        this.redo();
+        break;
+      case "clear-format":
+        this.clearFormat();
+        break;
+      case "format-brush":
+        this.toggleFormatBrush();
+        break;
+      case "link":
+        this.onLinkAction();
+        break;
+      case "formula":
+        this.insertFormula();
+        break;
+      case "insert-image":
+        this.insertSchemaBlock("image");
+        break;
+      case "insert-video":
+        this.insertSchemaBlock("video");
+        break;
+      case "insert-audio":
+        this.insertSchemaBlock("audio");
+        break;
+      case "extension": {
+        const action = this.extensionActions.find(
+          (action) => action.key === item.dataset["extensionKey"],
+        );
+        if (action) this.onExtensionAction(action);
+        break;
+      }
+    }
+  }
+
+  protected openSettings(kind: "text" | "paragraph", event: Event): void {
+    // The modal must restore focus to its trigger, not scroll the editor root into view.
+    (event.currentTarget as HTMLElement | null)?.focus({ preventScroll: true });
+    if (kind === "text") this.openFontSettings("font-size");
+    else this.openParagraphSettings("paragraph-align");
   }
 
   protected openFontSettings(target: FontSettingsTarget): void {
@@ -3626,6 +4313,10 @@ export class FixedTextToolbarComponent implements OnInit, OnDestroy {
   }
 
   private syncToolbarState(selection: BlockCraft.Selection | null) {
+    // Native colour/HEX inputs temporarily own focus. Keep the existing saved
+    // selection until the panel closes; runWithSelection still validates it
+    // against the live document and readonly state before every format action.
+    if (!selection && this.colorPanelOpen) return;
     if (!this.isLiveSelection(selection)) {
       this.typographyContextIds.clear();
       this.activeAttrs = new Map<string, any>();
