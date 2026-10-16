@@ -2,7 +2,33 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-10-07
+> Last updated: 2026-10-16
+
+## ContextMenuPlugin
+
+> `plugins/context-menu/` — 文档内容区域右键菜单。
+
+```typescript
+new ContextMenuPlugin() // name: context-menu；bundled 已包含，不要重复注册
+```
+
+提供复制、剪切、粘贴、粘贴为（保留格式、纯文本、按 Markdown 解析）和全选。
+“粘贴为”悬停后展开二级菜单，右侧空间不足向左回退。鼠标操作不抢编辑器焦点；
+键盘导航时使用共享选区呈现，Escape 恢复原范围。右键及菜单的 `mousedown` 阻止默认行为与传播，
+保留已有光标或选区；仅在没有选区时定位右键目标。全选直接建立整篇范围，不排队恢复旧选区。菜单支持方向键、Enter、Escape，
+点击外部、外部滚动、窗口失焦、只读切换或文档销毁时关闭。原生输入框、按钮、链接不接管。
+只读可复制/全选，剪切/粘贴禁用；执行前再次检查块锁和写入权限。
+
+复制调用全部配置的 adapter 及 `copyFilter`，优先通过同步 `copy` 事件写入 HTML、Markdown 等 MIME；
+命令不可用时回退到浏览器异步剪贴板 API，该回退受浏览器支持的 MIME 类型限制。剪切仅在写入成功后删除，
+等待写入期间文档发生任何数据变更时保守取消删除，已复制内容保留。
+粘贴只在用户点击时读取系统剪贴板，不在菜单打开时读取；使用协同相对位置锚定目标，
+解析后仍走既有 paste 事件、来源适配、纯文本块限制、内容上限与 Undo 路径。
+Markdown 需要宿主 Markdown adapter；普通粘贴的文件/图片仍交由原插件处理。
+浏览器拒绝剪贴板权限或 API 不可用时提示用户使用系统快捷键；WebView 权限由宿主决定。
+`PasteFormatSelectorPlugin` 的粘贴后格式切换继续可用。
+
+---
 
 ## PlaceholderPlugin
 

@@ -11,6 +11,12 @@
 >
 > **External users**: this skill pack is bundled with the npm package. AI agents can discover it via `SKILL.md` (frontmatter present); humans see `README.md` for installation and the one-command installer (`install.mjs`).
 
+## 文档右键菜单（未发布）
+
+Bundled 装配新增 `ContextMenuPlugin`（`context-menu`）：复制、剪切、粘贴、粘贴为与全选。
+粘贴为支持保留格式、纯文本、按 Markdown 解析；宿主手动装配方式及浏览器限制见
+`blockcraft-plugins-util.md`。现有快捷键与粘贴后格式切换保持原行为。
+
 ## 文本对象内容自适应（0.11.15）
 
 文本框和横排、非路径艺术字可设置 `textAutoFit: 'resize-shape'`。
@@ -1702,6 +1708,7 @@ onBold(ctx: UIEventStateContext) { ... }
 | `BlockTransformerPlugin` | `plugins/block-transformer/` | Slash menu / block conversion |
 | `BlockControllerPlugin` | `plugins/block-controller/` | Drag handle, block appearance, hover menu, custom block-tool injection |
 | `BlockGapCreatorPlugin` | `plugins/block-gap-creator/` | Click between blocks → insert paragraph |
+| `ContextMenuPlugin` | `plugins/context-menu/` | 文档右键菜单、复制剪切与粘贴为 |
 | `PasteFormatSelectorPlugin` | `plugins/paste-format-selector/` | Choose paste format (HTML / Markdown / plain) |
 | `OrderedBlockPlugin` | `plugins/ordered-extension/` | Auto-renumber ordered lists |
 | `CodeInlineEditorBinding` | `plugins/codeEditorBinding.ts` | Shiki syntax highlighting binding for code blocks |

@@ -145,6 +145,8 @@ export interface IConnectOverlayCreateOptions {
 }
 
 export type IGlobalOverlayCreateOptions = {
+  /** Keep read-only actions available, matching connected overlays. */
+  allowReadonly?: boolean;
   component: ComponentType<any>;
   backdrop?: boolean;
 } & {

@@ -4,6 +4,32 @@
 >
 > Last updated: 2026-10-16 | Tracks `@ccc/blockcraft` npm releases.
 
+## 未发布 — 2026-10-16：文档右键菜单与显式剪贴板命令
+
+**Severity**: minor（新增菜单和 API；发布版本由用户决定）
+
+**What changed**: 新增 `ContextMenuPlugin`，bundled 默认启用。新增
+`ClipboardManager.copySelectionToClipboard(selection, cut?)`、
+`pasteFromClipboard(selection, format?)`，`copyBlocks` 支持可选 `plainText` 参数；全局 Overlay 选项补充 `allowReadonly`。
+
+**Why**: 提供复制、剪切和可选粘贴格式入口，复用现有剪贴板转换/权限/撤销边界。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-plugin.md`、`blockcraft-plugins-ref.md`、
+`blockcraft-plugins-util.md`、`blockcraft-app.md`、`blockcraft-toolbar.md`。
+
+### New APIs / Behavior Changes
+
+bundled 文档内容区右键改为编辑菜单；输入控件、按钮及链接保持原有行为。
+手动装配可加入 `new ContextMenuPlugin()`；原有快捷键、默认粘贴策略和保存格式不变。
+菜单剪切确认系统写入成功才删除；等待期间文档变更时取消删除。
+权限拒绝提供快捷键反馈；WebView 是否支持读取由宿主授权决定。
+
+### Migration Recipe
+
+无需数据迁移。bundled 宿主不要重复注册；手动装配只需添加插件。
+使用自有菜单的宿主可不添加此插件，或在 bundled 结果中按 `name !== 'context-menu'` 过滤。
+未修改包版本号。
+
 ## 未发布 — 2026-10-16：补充通用字体预设
 
 **Severity**: minor（新增可选字体 ID；发布版本由用户另行决定）

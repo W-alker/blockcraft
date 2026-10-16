@@ -2,9 +2,25 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-10-14
+> Last updated: 2026-10-16
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
+
+## 显式剪贴板命令（未发布）
+
+宿主菜单可调用以下异步入口（应由用户点击触发）：
+
+```typescript
+await doc.clipboard.copySelectionToClipboard(selection)       // Promise<boolean>
+await doc.clipboard.copySelectionToClipboard(selection, true) // 剪切；写入失败不删除
+await doc.clipboard.pasteFromClipboard(selection, 'auto')     // 'auto' | 'plain-text' | 'markdown'
+```
+
+底层 `copyBlocks(snapshot, plainText?)` 可选传入选区纯文本，以免行内复制增加段末换行；省略参数维持块复制行为。
+复制沿用适配器、copyFilter 和锁元数据清理；全过滤返回 false。剪切等待期间发生文档数据变更，
+取消删除；删除前重新解析相对位置并检查权限。读取拒绝/不可用会 reject，调用方必须显示反馈。
+粘贴返回 true 表示已派发到正常 paste 事件链，不代表异步图片上传或后续插件已经完成。
+无内容/锚点失效/写入不允许返回 false。不会自动申请持久权限或在打开菜单时读取剪贴板。
 
 ## High-Level Wiring
 

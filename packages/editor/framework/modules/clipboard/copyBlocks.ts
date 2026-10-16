@@ -9,7 +9,7 @@ import {
 } from "./internal-clipboard";
 import {getClipboardNavigator, getClipboardOwnerDocument} from "./dom-context";
 
-async function tryNavigator(this: ClipboardManager, snapshot: IBlockSnapshot) {
+async function tryNavigator(this: ClipboardManager, snapshot: IBlockSnapshot, plainText: string) {
   const ownerNavigator = getClipboardNavigator(this.doc)
   const supportedAdapterTypes = new Set<string>();
   for (const adapter of this.adapter.supportedAdapters) {
@@ -21,7 +21,7 @@ async function tryNavigator(this: ClipboardManager, snapshot: IBlockSnapshot) {
   const items = await buildClipboardItems(
     this.adapter.supportedAdapters,
     snapshot,
-    snapshots2Text([snapshot]),
+    plainText,
     supportedAdapterTypes
   );
   const itemData: Record<string, Blob> = {};
@@ -38,18 +38,18 @@ async function tryNavigator(this: ClipboardManager, snapshot: IBlockSnapshot) {
       }
     }
   } catch (e) {
-    return tryCommand.call(this, snapshot)
+    return tryCommand.call(this, snapshot, plainText)
   }
 
   try {
     return await ownerNavigator.clipboard.write([new ClipboardItem(itemData)])
   } catch (e) {
-    return tryCommand.call(this, snapshot)
+    return tryCommand.call(this, snapshot, plainText)
   }
 }
 
-async function tryCommand(this: ClipboardManager, rootSnapshot: IBlockSnapshot) {
-  const items = await buildClipboardItems(this.adapter.supportedAdapters, rootSnapshot, snapshots2Text([rootSnapshot]));
+async function tryCommand(this: ClipboardManager, rootSnapshot: IBlockSnapshot, plainText: string) {
+  const items = await buildClipboardItems(this.adapter.supportedAdapters, rootSnapshot, plainText);
   return writeClipboardItemsWithCommand(this.doc, items)
 }
 
@@ -95,10 +95,10 @@ export function writeClipboardItemsWithCommand(doc: BlockCraft.Doc, items: Recor
   })
 }
 
-export function copyBlocks(this: ClipboardManager, snapshot: IBlockSnapshot) {
+export function copyBlocks(this: ClipboardManager, snapshot: IBlockSnapshot, plainText = snapshots2Text([snapshot])) {
   const ownerNavigator = getClipboardNavigator(this.doc)
   if (ownerNavigator.clipboard) {
-    return tryNavigator.call(this, snapshot)
+    return tryNavigator.call(this, snapshot, plainText)
   }
-  return tryCommand.call(this, snapshot)
+  return tryCommand.call(this, snapshot, plainText)
 }

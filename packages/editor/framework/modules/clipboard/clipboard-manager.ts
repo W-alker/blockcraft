@@ -7,7 +7,7 @@ import {
   EditableBlockComponent,
   EventListen,
   IBlockSnapshot, STR_LINE_BREAK,
-  UIEventStateContext
+  UIEventStateContext, UIEventState, EventSourceState, EventScopeSourceType
 } from "../../block-std";
 import {
   compareSimpleValue,
@@ -56,6 +56,7 @@ import {
   BlockReadonlyOperation,
 } from "../../doc/block-readonly.types";
 import {focusEditingHostForBlock} from "../selection/focus-editing-host";
+import {captureRelativeSelectionBookmark, resolveRelativeSelectionBookmark} from '../selection/relative-bookmark';
 import {getClipboardNavigator} from "./dom-context";
 import {insertAbsolutePlacementCopies} from '../object/block-placement/duplicate-command'
 import {sanitizePasteSnapshot, sanitizePasteText} from './paste-text-safety';
@@ -486,6 +487,115 @@ export class ClipboardManager {
     } catch (fallbackError) {
       this.doc.logger.warn('rich clipboard write error', fallbackError)
     }
+  }
+
+  /** Menu command: confirms a system clipboard write before deleting anything. */
+  async copySelectionToClipboard(selection: BlockCraft.Selection, cut = false): Promise<boolean> {
+    if (selection.collapsed) return false
+    if (cut && !this._assertClipboardSelection(selection, BlockReadonlyOperation.Cut)) return false
+    const bookmark = captureRelativeSelectionBookmark(selection, this.doc)
+    if (!bookmark) return false
+    let {snapshot, plainText} = this._buildCopyPayload(selection)
+    const filters = resolveCopyFilters(this._copyFilters)
+    if (filters.length) {
+      snapshot = applyCopyFilters(snapshot, filters, {
+        source: 'selection', readonly: this._isSelectionReadonly(selection),
+      }, this.doc.logger)
+      if (!snapshot.children.length) return false
+      plainText = snapshots2Text([snapshot])
+    }
+    snapshot = stripBlockLockMetaDeep(snapshot)
+    // A delayed write must never delete text that changed while the OS prompt was open.
+    let changed = false
+    const observe = (transaction: Y.Transaction) => { if (transaction.changed.size) changed = true }
+    if (cut) this.doc.yDoc.on('afterTransaction', observe)
+    try {
+      // Native copy events accept configured adapter MIME types (Markdown,
+      // RTF, etc.) that ClipboardItem.write may otherwise filter out.
+      const items = await buildClipboardItems(this.adapter.supportedAdapters, snapshot, plainText)
+      try {
+        await writeClipboardItemsWithCommand(this.doc, items)
+      } catch {
+        await copyBlocks.call(this, snapshot, plainText)
+      }
+      if (!cut) return true
+      if (this.doc.yDoc.isDestroyed) return false
+      if (changed) {
+        this.doc.messageService.warn('内容已复制；文档在复制期间发生变化，请重新选择后剪切')
+        return false
+      }
+      const json = resolveRelativeSelectionBookmark(bookmark, this.doc)
+      if (!json) return false
+      const live = this.doc.selection.createSelection(json)
+      if (!live) return false
+      if (!this._assertClipboardSelection(live, BlockReadonlyOperation.Cut)) return false
+      this.doc.selection.replay(json)
+      this.doc.crud.undoManager.stopCapturing()
+      this.deleteContentFromSelection(live)
+      this.doc.crud.undoManager.stopCapturing()
+      return true
+    } finally {
+      if (cut) this.doc.yDoc.off('afterTransaction', observe)
+    }
+  }
+
+  /** Read only on an explicit user action; route the result through normal paste handlers. */
+  async pasteFromClipboard(
+    selection: BlockCraft.Selection,
+    format: 'auto' | 'plain-text' | 'markdown' = 'auto',
+  ): Promise<boolean> {
+    if (!this._assertClipboardSelection(selection, BlockReadonlyOperation.Paste)) return false
+    const bookmark = captureRelativeSelectionBookmark(selection, this.doc)
+    if (!bookmark) return false
+    const clipboard = getClipboardNavigator(this.doc).clipboard
+    const data = new DataTransfer()
+    if (clipboard?.read) {
+      const items = await clipboard.read()
+      for (const item of items) {
+        for (const type of item.types) {
+          const normalized = type.startsWith('web ') ? type.slice(4) : type
+          if (format !== 'auto' && normalized !== ClipboardDataType.TEXT &&
+              !(format === 'markdown' && normalized === ClipboardDataType.MARKDOWN)) continue
+          const blob = await item.getType(type)
+          if (normalized.startsWith('text/') || normalized === ClipboardDataType.BLOCKCRAFT_SNAPSHOT) {
+            data.setData(normalized, await blob.text())
+          } else if (format === 'auto' && normalized.startsWith('image/')) {
+            data.items.add(new File([blob], 'clipboard.png', {type: normalized}))
+          }
+        }
+      }
+    } else if (clipboard?.readText) {
+      data.setData(ClipboardDataType.TEXT, await clipboard.readText())
+    } else {
+      throw new Error('Clipboard read is unavailable')
+    }
+    if (format === 'markdown') {
+      const text = data.getData(ClipboardDataType.MARKDOWN) || data.getData(ClipboardDataType.TEXT)
+      if (!text) return false
+      const adapter = this.adapter.getAdapter(ClipboardDataType.MARKDOWN)
+      if (!adapter) throw new Error('Markdown adapter is unavailable')
+      if (!checkIncomingSourceSize(this.doc, adapter, text)) return false
+      const snapshot = await adapter.toSnapshot(text)
+      data.setData(ClipboardDataType.TEXT, text)
+      data.setData(ClipboardDataType.BLOCKCRAFT_SNAPSHOT, serializeClipboardSnapshot(snapshot))
+    }
+    if (!data.types.length || this.doc.yDoc.isDestroyed) return false
+    const json = resolveRelativeSelectionBookmark(bookmark, this.doc)
+    if (!json) return false
+    const live = this.doc.selection.createSelection(json)
+    if (!live) return false
+    if (!this._assertClipboardSelection(live, BlockReadonlyOperation.Paste)) return false
+    this.doc.selection.replay(json)
+    const event = new ClipboardEvent('paste', {cancelable: true})
+    // Firefox does not consistently accept clipboardData in ClipboardEventInit.
+    Object.defineProperty(event, 'clipboardData', {value: data})
+    this.doc.crud.undoManager.stopCapturing()
+    this.doc.event.run('paste', UIEventStateContext.from(
+      new UIEventState(event),
+      new ClipboardEventState({event, selection: live}),
+      new EventSourceState({event, sourceType: EventScopeSourceType.Selection}),
+    ))
+    return true
   }
 
   deleteContentFromSelection = (selection: BlockCraft.Selection) => {

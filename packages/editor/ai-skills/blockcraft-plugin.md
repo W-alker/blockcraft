@@ -5,7 +5,15 @@
 > For configuring existing built-in plugins, see `blockcraft-plugins-ref.md`.
 > For event system internals, see L2: `blockcraft-event.md`.
 >
-> Last updated: 2026-10-15
+> Last updated: 2026-10-16
+
+## 文档右键菜单装配
+
+`ContextMenuPlugin` 的运行时名称为 `context-menu`，bundled 已注册，不要重复追加。
+手动宿主可注册 `new ContextMenuPlugin()`；不注册时保持原有行为。
+菜单仅在文档内容区域接管右键，原生输入控件、按钮、链接保持原有行为。
+菜单使用 CDK Overlay，关闭/销毁清理监听；不更改通用 Selection/Input 事件默认行为。
+详细能力及 ClipboardManager 命令入口见 `blockcraft-plugins-util.md`。
 
 ## Plugin Lifecycle
 

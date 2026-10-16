@@ -2,7 +2,13 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-10-08
+> Last updated: 2026-10-16
+
+## 只读全局菜单
+
+`createGlobalOverlay()` 的选项新增 `allowReadonly?: boolean`，与 connected overlay 一致。
+默认仍在只读时关闭；显式设 true 可保留复制等只读操作。调用方自行禁用写入动作并在执行时复查。
+`ContextMenuPlugin` 使用此选项，在只读文档中提供复制/全选。
 
 ## Overlay Service
 

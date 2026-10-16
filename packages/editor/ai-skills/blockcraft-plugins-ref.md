@@ -4,7 +4,7 @@
 >
 > For creating new plugins, see `blockcraft-plugin.md`.
 >
-> Last updated: 2026-10-15
+> Last updated: 2026-10-16
 
 This index covers the built-in plugins. Pick the category file that matches your task — don't read all files at once.
 
@@ -16,7 +16,7 @@ This index covers the built-in plugins. Pick the category file that matches your
 | Block Management | `blockcraft-plugins-block.md` | BlockControllerPlugin, BlockGapCreatorPlugin, BlockTransformerPlugin, OrderedBlockPlugin, ObjectDragPlugin |
 | Block Toolbars | `blockcraft-plugins-toolbar.md` | AttachmentExtensionPlugin, ImgToolbarPlugin, ObjectFormatToolbarPlugin, BookmarkBlockExtensionPlugin, CalloutToolbarPlugin, MaterialToolbarPlugin, WeatherToolbarPlugin, DividerExtensionPlugin, EmbedFrameExtensionPlugin, FormulaBlockExtensionPlugin |
 | Inline & Keyboard | `blockcraft-plugins-inline.md` | InlineLinkExtension, MentionPlugin, DateInlineExtensionPlugin, WeatherInlineExtensionPlugin, PersonInlineExtensionPlugin, CodeInlineEditorBinding, TableBlockBinding |
-| Utilities | `blockcraft-plugins-util.md` | PlaceholderPlugin, FindReplacePlugin, PasteFormatSelectorPlugin, DemoPresentationPlugin, RevisionReviewPlugin, TranslatePlugin, PaginationPlugin |
+| Utilities | `blockcraft-plugins-util.md` | ContextMenuPlugin, PlaceholderPlugin, FindReplacePlugin, PasteFormatSelectorPlugin, DemoPresentationPlugin, RevisionReviewPlugin, TranslatePlugin, PaginationPlugin |
 
 ## Quick Lookup
 
@@ -49,6 +49,7 @@ This index covers the built-in plugins. Pick the category file that matches your
 | `TableBlockBinding` | `inline` | none (zero-config) |
 | `PlaceholderPlugin` | `util` | `overrides`; supports instance `plh` / `plhMode` on editable blocks |
 | `FindReplacePlugin` | `util` | none (zero-config) |
+| `ContextMenuPlugin` | `util` | none (zero-config); bundled 已注册 |
 | `PasteFormatSelectorPlugin` | `util` | none (zero-config) |
 | `DemoPresentationPlugin` | `util` | none (zero-config) |
 | `TranslatePlugin` | `util` | `service` (required), language options |
