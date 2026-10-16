@@ -3,6 +3,7 @@ import {
   textBoxArtworkRef as art,
 } from './artwork'
 import type {TextBoxPresetDefinition} from '../text-box.presets'
+import {getShapeDefinition} from '../../shape-block/shape-definitions'
 
 /**
  * 「线框」tab, reproduction set — traced from a 4x3 reference sheet rather
@@ -218,16 +219,13 @@ const cross = (x: number, y: number, a: number): string =>
   `<path d="M${x - a} ${y}h${a * 2}M${x} ${y - a}v${a * 2}"/>`
 
 /**
- * `cloud`'s own outline from `shape-definitions.ts`, duplicated here for the
+ * `cloud`'s own outline from `shape-definitions.ts`, shared here for the
  * inner dotted rule of r1c2. It is written in the shape catalog's 1000x1000
  * space; `INNER_CLOUD` maps it into this file's 1000x600 decoration canvas and
  * shrinks it toward the centre, so the dotted line tracks the real border
  * instead of approximating it with a hand-drawn scallop that would drift.
  */
-const CLOUD_PATH =
-  'M170 820C10 810-40 620 80 530C20 370 170 230 330 290C390 90 680 50 780 250' +
-  'C960 220 1070 410 970 550C1090 690 970 860 800 830C710 980 490 970 420 840' +
-  'C330 920 220 900 170 820Z'
+const CLOUD_PATH = getShapeDefinition('cloud').path
 
 /**
  * The catalog cloud, mapped y*0.6 into this canvas then scaled k about
