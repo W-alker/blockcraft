@@ -1,5 +1,5 @@
 import {BlockNodeType, TYPOGRAPHY_FONT_FAMILIES} from '../../framework'
-import {RenderUnitBlockSchema, applyRegionBorders, applyRenderUnitTypography, resolveRenderUnitDimensions} from './index'
+import {RenderUnitBlockSchema, applyRegionBorders, applyRenderUnitTypography, resolveRenderUnitDimensions, resolveRenderUnitWidth} from './index'
 
 describe('RenderUnitBlockSchema', () => {
   it('preserves responsive sizes and uses the same root-width basis as images', () => {
@@ -20,6 +20,22 @@ describe('RenderUnitBlockSchema', () => {
     expect(RenderUnitBlockSchema.createSnapshot({}, {wr: 200, ar: 2}).props).toEqual({wr: 100, ar: 2})
     expect(RenderUnitBlockSchema.createSnapshot({}, {width: 400, height: 200}).props)
       .toEqual({width: 400, height: 200})
+  })
+
+  it('preserves an independent width without inventing a fixed height', () => {
+    for (const [input, normalized, width] of [
+      [{wr: 50, ar: null}, {wr: 50}, 400],
+      [{wr: 200}, {wr: 100}, 800],
+      [{width: 320, height: null}, {width: 320}, 320],
+      [{wr: NaN, width: 320}, {width: 320}, 320],
+      [{wr: -1, width: Infinity}, {}, null],
+      [{ar: 2, height: 200}, {}, null],
+    ] as const) {
+      const props = RenderUnitBlockSchema.createSnapshot({}, input).props
+      expect(props).toEqual(normalized)
+      expect(resolveRenderUnitWidth(props, 800)).toBe(width)
+      expect(resolveRenderUnitDimensions(props, 800)).toBeNull()
+    }
   })
 
   it('creates a snapshot with canonical surface props', () => {
@@ -106,7 +122,7 @@ describe('RenderUnitBlockSchema', () => {
       blockId: 'region-1',
       flavour: 'render-unit',
       nodeType: BlockNodeType.block,
-      props: {p: [20, 0, 24]},
+      props: {p: [20, 0, 24], wr: 50},
       childIds: ['paragraph-1', 'paragraph-2'],
       layoutMode: 'paginated',
       fallbackHeight: 48,

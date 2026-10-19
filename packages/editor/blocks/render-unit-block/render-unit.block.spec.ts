@@ -1,4 +1,5 @@
 import {RenderUnitBlockComponent} from './render-unit.block'
+import {resolveRenderUnitDimensions} from './index'
 
 describe('RenderUnitBlockComponent sizing', () => {
   const fixture = (readonly = false, basis = 800) => ({
@@ -28,6 +29,39 @@ describe('RenderUnitBlockComponent sizing', () => {
       RenderUnitBlockComponent.prototype.setSize.call(block as any, width, height)
       expect(block.updateProps).not.toHaveBeenCalled()
     }
+  })
+
+  it('restores natural height for ratio and legacy sizes without touching width or appearance', () => {
+    for (const props of [{wr: 50, ar: 2}, {width: 320, height: 200}]) {
+      const block = {...fixture(), objectDimensions: resolveRenderUnitDimensions(props, 800)}
+      RenderUnitBlockComponent.prototype.resetHeight.call(block as any)
+      expect(block.updateProps).toHaveBeenCalledOnceWith({ar: null, height: null})
+    }
+  })
+
+  it('does not write a redundant reset for natural height or a readonly region', () => {
+    for (const block of [
+      {...fixture(), objectDimensions: null},
+      {...fixture(true), objectDimensions: {width: 400, height: 200}},
+    ]) {
+      RenderUnitBlockComponent.prototype.resetHeight.call(block as any)
+      expect(block.updateProps).not.toHaveBeenCalled()
+    }
+  })
+
+  it('freezes layout dimensions rather than transformed screen bounds and supports both directions', () => {
+    const hostElement = document.createElement('div')
+    Object.defineProperties(hostElement, {offsetWidth: {value: 320}, offsetHeight: {value: 120}})
+    const block = {...fixture(), hostElement, objectDimensions: null as any,
+      setSize: jasmine.createSpy('setSize'), resetHeight: jasmine.createSpy('resetHeight')}
+    RenderUnitBlockComponent.prototype.toggleSizeMode.call(block as any)
+    expect(block.setSize).toHaveBeenCalledOnceWith(320, 120)
+    block.objectDimensions = {width: 320, height: 120}
+    RenderUnitBlockComponent.prototype.toggleSizeMode.call(block as any)
+    expect(block.resetHeight).toHaveBeenCalledTimes(1)
+    block.isReadonly = true
+    RenderUnitBlockComponent.prototype.toggleSizeMode.call(block as any)
+    expect(block.resetHeight).toHaveBeenCalledTimes(1)
   })
 })
 

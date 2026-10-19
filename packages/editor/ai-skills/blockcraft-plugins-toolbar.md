@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-10-15
+> Last updated: 2026-10-16
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
@@ -783,6 +783,9 @@ explicit child formatting wins. Callout retains text, background and border
 colors.
 The plugin tracks block resize via one throttled `ResizeObserver` (100ms) while
 the overlay is open.
+
+填写区侧边快捷栏用 `bc_size-fixed` / `bc_size-auto` 表示当前尺寸模式，点击调用 `toggleSizeMode()` 双向切换。固定模式恢复自适应时调用 `resetHeight()`，只清除固定高度，
+保留宽度、内容和外观。自适应状态下点击会按当前布局尺寸固定；撤销、再次拖动或协同写入尺寸后同步更新图标。此按钮不改变 Callout。
 
 The Callout prefix action opens the shared CSES EmojiPicker with an explicit
 `zh-CN` locale and persists the selected native Emoji in `props.prefix`.

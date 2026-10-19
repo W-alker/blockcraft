@@ -1,9 +1,9 @@
 @font-face {
   font-family: "bc_icon"; /* Project id 4682833 */
-  src: url('bc-iconfont.woff2?t=1790140816107') format('woff2'),
-       url('bc-iconfont.woff?t=1790140816107') format('woff'),
-       url('bc-iconfont.ttf?t=1790140816107') format('truetype'),
-       url('bc-iconfont.svg?t=1790140816107#bc_icon') format('svg');
+  src: url('bc-iconfont.woff2?t=06f58e28f5ff') format('woff2'),
+       url('bc-iconfont.woff?t=06f58e28f5ff') format('woff'),
+       url('bc-iconfont.ttf?t=06f58e28f5ff') format('truetype'),
+       url('bc-iconfont.svg?t=06f58e28f5ff#bc_icon') format('svg');
 }
 
 .bc_icon {
@@ -1734,3 +1734,13 @@
   content: "\e70f";
 }
 
+
+.bc_size-auto:before,
+.bc_zishiyingchicun:before {
+  content: "\e970";
+}
+
+.bc_size-fixed:before,
+.bc_gudingchicun-1:before {
+  content: "\e661";
+}

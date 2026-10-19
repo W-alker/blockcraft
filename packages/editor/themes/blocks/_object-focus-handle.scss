@@ -23,9 +23,18 @@
   transform: translate(-50%, -50%);
   transition: opacity 120ms ease;
 
-  .bc_icon {
+  > .bc_yidong {
+    flex: 0 0 auto;
+    width: 1em;
     font-size: 11px;
     line-height: 1;
+    letter-spacing: 0;
+    text-indent: 0;
+    text-align: center;
+
+    &::before {
+      display: block;
+    }
   }
 
   &:focus-visible {

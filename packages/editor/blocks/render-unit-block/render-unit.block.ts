@@ -6,7 +6,7 @@ import {
   resolveBlockSurface,
   deriveObjectSizeFromPixels,
 } from '../../framework'
-import {RenderUnitBlockModel, resolveRenderUnitDimensions} from './index'
+import {RenderUnitBlockModel, resolveRenderUnitDimensions, resolveRenderUnitWidth} from './index'
 import {ShapeResizerComponent, type ShapeResizeCommit} from '../shape-block/shape-resizer.component'
 import {takeUntil} from 'rxjs'
 import {applyRenderUnitTypography} from './typography'
@@ -64,7 +64,7 @@ import {applyRenderUnitTypography} from './typography'
   host: {
     'data-bc-render-unit': 'true',
     '[class.render-unit-sized]': '!!objectDimensions',
-    '[style.width.px]': 'objectDimensions?.width',
+    '[style.width.px]': 'objectWidth',
     '[style.height.px]': 'objectDimensions?.height',
     '[style.--bc-render-unit-background-color]': 'props.backColor',
     '[style.--bc-render-unit-background-opacity]': 'props.backOpacity == null ? null : (props.backOpacity * 100) + "%"',
@@ -76,6 +76,10 @@ import {applyRenderUnitTypography} from './typography'
   },
 })
 export class RenderUnitBlockComponent extends BaseBlockComponent<RenderUnitBlockModel> {
+  get objectWidth() {
+    return resolveRenderUnitWidth(this.props, this.doc.objectSizing.getReferenceWidth(this.id))
+  }
+
   get objectDimensions() {
     return resolveRenderUnitDimensions(this.props, this.doc.objectSizing.getReferenceWidth(this.id))
   }
@@ -110,6 +114,22 @@ export class RenderUnitBlockComponent extends BaseBlockComponent<RenderUnitBlock
 
   onResized(event: ShapeResizeCommit): void {
     this.setSize(event.width, event.height)
+  }
+
+  /** 恢复内容自然高度，保留手动宽度；单次事务支持协同和撤销。 */
+  resetHeight(): void {
+    if (this.isReadonly || !this.objectDimensions) return
+    this.updateProps({ar: null, height: null})
+  }
+
+  /** 只在用户切换时读取布局尺寸，避免把缩放后的屏幕像素写入模型。 */
+  toggleSizeMode(): void {
+    if (this.isReadonly) return
+    if (this.objectDimensions) {
+      this.resetHeight()
+    } else {
+      this.setSize(this.hostElement.offsetWidth, this.hostElement.offsetHeight)
+    }
   }
 
   protected get surface() {

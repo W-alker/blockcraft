@@ -3014,6 +3014,20 @@
       "font_class": "bianji",
       "unicode": "e70f",
       "unicode_decimal": 59151
+    },
+    {
+      "icon_id": "44156719",
+      "name": "自适应尺寸",
+      "font_class": "zishiyingchicun",
+      "unicode": "e970",
+      "unicode_decimal": 59760
+    },
+    {
+      "icon_id": "47530072",
+      "name": "固定尺寸-1",
+      "font_class": "gudingchicun-1",
+      "unicode": "e661",
+      "unicode_decimal": 58977
     }
   ]
 }

@@ -1,8 +1,10 @@
-import {ChangeDetectionStrategy, Component, ElementRef, Input, ViewChild} from '@angular/core'
+import {ChangeDetectionStrategy, Component, ElementRef, Input, ViewChild, signal} from '@angular/core'
+import {Subscription} from 'rxjs'
 import {FormsModule} from '@angular/forms'
 import {CsButtonComponent, CsColorPickerComponent, CsInputNumberComponent, CsOptionComponent, CsSegmentedComponent, CsSelectComponent, CsSliderComponent, CsTooltipDirective, type CsSliderValue} from '@cses/ui'
 import {BUILTIN_BG_COLOR_LIST, BUILTIN_COLOR_LIST, ColorGroup} from '../../../components'
 import {normalizeRegionBorderProps, regionBorderPatch, resolveRegionBorders, REGION_BORDER_SIDE_PROPS} from '../../../blocks/render-unit-block/borders'
+import {resolveRenderUnitDimensions} from '../../../blocks/render-unit-block'
 import {compactObjectTextFontFamily, normalizeBlockSurfaceProps, normalizeObjectTextStyle, resolveBlockSurface, storeObjectTextStyle, TYPOGRAPHY_FONT_FAMILIES, type ObjectTextStyle} from '../../../framework'
 import {OBJECT_FORMAT_POPUP_STYLES, ObjectFormatPopupState} from '../../object-format-toolbar/object-format-popup'
 
@@ -33,6 +35,13 @@ const PANEL_MAX_HEIGHT = 520
                   [attr.aria-expanded]="activePanel === 'text'" aria-label="文本选项"
                   csTooltip="文本选项" [csTooltipPlacement]="panelSide === 'left' ? 'right' : 'left'" (click)="togglePanel('text')">
             <i class="bc_icon bc_wenben" aria-hidden="true"></i>
+          </button>
+          <button cs-button csType="text" csSize="sm" type="button"
+                  [attr.aria-label]="hasFixedHeight() ? '恢复内容自适应' : '切换为固定尺寸'"
+                  [csTooltip]="hasFixedHeight() ? '固定尺寸，点击恢复内容自适应' : '内容自适应，点击切换为固定尺寸'"
+                  [csTooltipPlacement]="panelSide === 'left' ? 'right' : 'left'"
+                  (mousedown)="$event.preventDefault()" (click)="containerBlock.toggleSizeMode()">
+            <i class="bc_icon" [class.bc_size-fixed]="hasFixedHeight()" [class.bc_size-auto]="!hasFixedHeight()" aria-hidden="true"></i>
           </button>
         </nav>
         @if (activePanel) {
@@ -172,6 +181,9 @@ const PANEL_MAX_HEIGHT = 520
   `,
   styles: [OBJECT_FORMAT_POPUP_STYLES, `
     .object-format{--object-format-settings-panel-width:228px}
+    .object-format__rail .bc_icon{display:block;width:1em;line-height:1;text-align:center;letter-spacing:0;text-indent:0}
+    .object-format__rail .bc_icon::before{display:block}
+    .object-format__rail .bc_size-fixed{transform:translateY(calc(23 / 1024 * 1em))}
     .object-format__tab-section{padding:2px 0}
     .region-format__color{display:flex;flex-direction:column;gap:6px}
     .region-format__color cs-color-picker{align-self:flex-start}
@@ -193,6 +205,8 @@ const PANEL_MAX_HEIGHT = 520
 })
 export class RenderUnitToolbar {
   @Input() containerBlock!: BlockCraft.IBlockComponents['render-unit']
+  readonly hasFixedHeight = signal(false)
+  private sizeSubscription?: Subscription
   @ViewChild('rail') private rail?: ElementRef<HTMLElement>
   @ViewChild('panel') set panel(ref: ElementRef<HTMLElement> | undefined) {
     this.disconnectPanelPositioning()
@@ -328,6 +342,11 @@ export class RenderUnitToolbar {
   }
 
   ngOnInit() {
+    const syncHeight = () => this.hasFixedHeight.set(!!resolveRenderUnitDimensions(this.containerBlock.props, 100))
+    syncHeight()
+    this.sizeSubscription = this.containerBlock.onPropsChange?.subscribe(changes => {
+      if (['wr', 'ar', 'width', 'height'].some(key => changes.has(key))) syncHeight()
+    })
     this.colorGroups = [...this.backgroundGroups, ...this.borderGroups,
       {title: '文字颜色', type: 'textFill', list: BUILTIN_COLOR_LIST, templateUse: 'font'}]
 
@@ -407,6 +426,7 @@ export class RenderUnitToolbar {
   }
 
   ngOnDestroy() {
+    this.sizeSubscription?.unsubscribe()
     this.disconnectPanelPositioning()
     if (!this.opacityPending) return
     const opacity = this.containerBlock.props.backOpacity

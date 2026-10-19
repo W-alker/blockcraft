@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-10-15
+> Last updated: 2026-10-16
 
 ## 段落标记与下一段样式
 
@@ -1028,8 +1028,9 @@ through the content above it.
 ### Render-unit 响应式尺寸
 
 `render-unit` 原生支持可选 `wr/ar`：宽度是正文内容区宽度的百分比，高度为宽度除以宽高比，与流式图片共用 `deriveObjectSizeFromPixels()`。
-`RenderUnitBlockComponent.setSize(width, height)` 接收布局像素，在一个事务内换算比例并清理旧 `width/height`；`objectDimensions` 提供当前显示尺寸。
-未设置完整有效尺寸时仍由内容自然撑高；不自动把旧容器变成固定尺寸。显式尺寸包含内边距，超出内容可滚动。
+`RenderUnitBlockComponent.setSize(width, height)` 接收布局像素，在一个事务内换算比例并清理旧 `width/height`；`objectDimensions` 只提供完整固定尺寸，内容自适应时返回 null。
+`resetHeight()` 在一个属性事务内清除 `ar/height`，保留 `wr` 或旧 `width`、正文与外观；只读或已经自然高度时不写入。`toggleSizeMode()` 在固定尺寸时调用 `resetHeight()`，自适应时读取未受视图缩放影响的布局宽高并调用 `setSize()`。侧栏按钮始终支持双向切换，图标表示当前模式；再次拖动尺寸沿用 `setSize()` 恢复固定尺寸。
+仅设置有效 `wr` 或旧 `width` 时保留宽度、高度随内容增减；`objectWidth` / `resolveRenderUnitWidth(props, referenceWidth)` 独立解析宽度，无显式宽度时返回 null。Schema、HTML 和只读快照都保留此状态，虚拟估高继续使用子内容。未设置完整有效尺寸时不套用默认宽高比；不自动把旧容器变成固定尺寸。显式尺寸包含内边距，超出内容可滚动。
 分页和打印中的根级填写区及旧快照中已存在的直接嵌套填写区按内容自然展开，超过一页时按子块边界或长文本安全行锚点拆分过页。能放下一页的填写区和短子块仍保持整体；普通表格沿用行边界与内容合并保护。分页只临时覆盖高度与内部滚动，保留宽度、边框、内边距和原始 `wr/ar` 或旧像素尺寸；关闭分页后恢复手动尺寸。页缝不写入 Yjs，不拆出新填写区，也不新增撤销记录。填写区与 Callout 的直接顺序嵌套共享拆分路径；分栏、表格单元格中的填写区仍受外层容器约束。不可拆的超页子对象沿用原有原子策略，不会按文字切点裁开。
 悬停或内部编辑时显示文本框同款顶部抓手聚焦按钮，点击或键盘激活后整块选中并显示八向手柄（无旋转）；整块选中后隐藏聚焦按钮，只读时不创建该按钮。CalloutToolbarPlugin 提供填充、轮廓、内边距和字体入口，不显示宽高输入。
 HTML 通过 `data-bc-wr/ar`（以及旧 `data-bc-width/height`）保留尺寸；私有 Markdown 保留 props。只读、协同、撤销和虚拟估高沿用框架路径。

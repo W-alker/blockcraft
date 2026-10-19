@@ -47,6 +47,30 @@ HTML typography 支持字重往返；`textDefaults` 保留字重以支持后续�
 无需数据迁移。浮动工具栏原有链接范围格式化不变；使用固定工具栏的宿主无需改接线。
 新增行为与旧选区转换共用 Yjs / 撤销路径。未修改包版本号。
 
+## 未发布 — 2026-10-16：填写区尺寸模式切换
+
+**Severity**: minor（新增可撤销操作与宽度独立保存；发布版本由用户决定）
+
+**What changed**: 填写区侧边工具栏提供固定尺寸／内容自适应双向切换，使用 `bc_size-fixed` / `bc_size-auto` 图标表示当前模式。恢复自适应时清除固定高度并保留手动宽度；切回固定尺寸时读取当前布局宽高。
+
+**Why**: 手动调整尺寸后缺少返回自然高度的入口，且原归一化会丢弃不带高度的宽度。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-toolbar.md`。
+
+### New APIs / Behavior Changes
+
+新增 `RenderUnitBlockComponent.resetHeight()`、`toggleSizeMode()`、`objectWidth` 与
+`resolveRenderUnitWidth(props, referenceWidth)`。`objectDimensions` 仍只解析完整固定尺寸。
+填写区仅含 `wr` 或旧 `width` 时，现在保留宽度并按内容撑高；Schema、HTML、只读快照均保持该语义。
+完整尺寸和默认无尺寸行为不变；未改变图片等其他对象的尺寸规则。
+
+### Migration Recipe
+
+无需迁移已有完整尺寸。恢复自然高度时，使用 `region.resetHeight()` 替代清空全部尺寸属性，
+或通过原属性事务写入 `{ar: null, height: null}`。读取宽度使用 `objectWidth`，不要从
+`objectDimensions` 是否为 null 推断宽度未设置。操作支持协同、撤销；再次拖动会恢复固定尺寸。
+未修改包版本号。
+
 ## 未发布 — 2026-10-16：固定工具栏双模式与优先级响应式
 
 **Severity**: minor（工具栏交互调整；发布版本由用户决定）

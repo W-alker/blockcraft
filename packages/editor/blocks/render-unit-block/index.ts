@@ -29,13 +29,23 @@ export interface RenderUnitBlockProps extends BlockSurfaceProps, BlockObjectSize
 
 export const RENDER_UNIT_OBJECT_SIZING = {defaultWr: 100, defaultAr: 1} as const
 
+const positive = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value > 0
+
+/** 宽度可独立于固定高度保留；没有显式宽度时仍使用容器的自然宽度。 */
+export function resolveRenderUnitWidth(
+  props: Readonly<Record<string, unknown>>,
+  referenceWidth: number,
+): number | null {
+  if (!positive(props['wr']) && !positive(props['width'])) return null
+  return resolveObjectDimensions(props, referenceWidth, RENDER_UNIT_OBJECT_SIZING)?.width ?? null
+}
+
 /** 未设置完整尺寸的旧容器继续由内容撑高，不套用对象的默认正方形。 */
 export function resolveRenderUnitDimensions(
   props: Readonly<Record<string, unknown>>,
   referenceWidth: number,
 ) {
-  const positive = (value: unknown): value is number =>
-    typeof value === 'number' && Number.isFinite(value) && value > 0
   if (!(positive(props['wr']) && positive(props['ar'])) &&
       !(positive(props['width']) && positive(props['height']))) return null
   return resolveObjectDimensions(props, referenceWidth, RENDER_UNIT_OBJECT_SIZING)
@@ -71,6 +81,10 @@ export function normalizeRenderUnitBlockProps(
   } else if (dimensions?.source === 'legacy') {
     normalized.width = dimensions.width
     normalized.height = dimensions.height
+  } else if (positive(input['wr'])) {
+    normalized.wr = normalizeObjectSize(input, RENDER_UNIT_OBJECT_SIZING).wr
+  } else if (positive(input['width'])) {
+    normalized.width = input['width']
   }
   return normalized
 }

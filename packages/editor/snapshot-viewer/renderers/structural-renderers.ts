@@ -41,7 +41,7 @@ import {
 import {TEXT_BOX_OBJECT_FORMAT_CAPABILITY} from "../../blocks/text-box-block";
 import {createBlockShell} from "../dom/create-block-shell";
 import {SnapshotBlockRenderer, SnapshotRenderContext} from "../types";
-import {resolveRenderUnitDimensions} from '../../blocks/render-unit-block';
+import {normalizeRenderUnitBlockProps, resolveRenderUnitDimensions, resolveRenderUnitWidth} from '../../blocks/render-unit-block';
 
 const STRUCTURAL_FLAVOURS = new Set([
   "root",
@@ -255,10 +255,12 @@ function renderRenderUnit(
 ) {
   const element = createBlockShell(snapshot)
   applyRegionBorders(element, snapshot.props)
-  const dimensions = resolveRenderUnitDimensions(snapshot.props as Record<string, unknown>, 100)
+  const props = normalizeRenderUnitBlockProps(snapshot.props as Record<string, unknown>)
+  const dimensions = resolveRenderUnitDimensions(props, 100)
+  const width = resolveRenderUnitWidth(props, 100)
+  if (width !== null) element.style.width = props.wr != null ? `${width}%` : `${width}px`
   if (dimensions) {
     element.classList.add('render-unit-sized')
-    element.style.width = dimensions.source === 'legacy' ? `${dimensions.width}px` : `${dimensions.wr}%`
     element.style.aspectRatio = `${dimensions.ar}`
     if (dimensions.source === 'legacy') element.style.height = `${dimensions.height}px`
   }

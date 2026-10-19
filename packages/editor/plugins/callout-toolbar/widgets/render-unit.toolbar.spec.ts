@@ -1,4 +1,5 @@
 import {TestBed} from '@angular/core/testing'
+import {Subject} from 'rxjs'
 import {RenderUnitToolbar} from './render-unit.toolbar'
 
 describe('RenderUnitToolbar appearance', () => {
@@ -202,17 +203,22 @@ function makeBlock(
     props,
     hostElement: document.createElement('div'),
     updateProps: jasmine.createSpy('updateProps'),
+    toggleSizeMode: jasmine.createSpy('toggleSizeMode'),
+    onPropsChange: new Subject<Set<string>>(),
   }
 }
 
 it('renders the region rail and its two panels', () => {
   const fixture = TestBed.createComponent(RenderUnitToolbar)
-  fixture.componentRef.setInput('containerBlock', makeBlock('render-unit', {}))
+  const block = makeBlock('render-unit', {})
+  fixture.componentRef.setInput('containerBlock', block)
   fixture.detectChanges()
   const element: HTMLElement = fixture.nativeElement
   expect(element.querySelector('[data-bc-region-format-toolbar]')).not.toBeNull()
   expect(element.querySelector('bc-float-toolbar-item')).toBeNull()
-  expect(element.querySelectorAll('.object-format__rail button').length).toBe(2)
+  expect(element.querySelectorAll('.object-format__rail button').length).toBe(3)
+  expect(element.querySelector('[aria-label="切换为固定尺寸"] .bc_size-auto')).not.toBeNull()
+  expect(element.querySelector('[aria-label="恢复内容自适应"]')).toBeNull()
   expect(element.querySelector('.object-format__panel')).toBeNull()
   ;(element.querySelector('[aria-label="外观选项"]') as HTMLButtonElement).click()
   fixture.detectChanges()
@@ -240,4 +246,34 @@ it('renders the region rail and its two panels', () => {
   expect(element.querySelectorAll('.region-format__reset .bc_huifu1').length).toBe(2)
   expect(element.querySelector('.object-format__panel bc-color-picker')).toBeNull()
   fixture.destroy()
+})
+
+it('switches mode icons and actions following local, undo and remote property changes', () => {
+  const fixture = TestBed.createComponent(RenderUnitToolbar)
+  const block = makeBlock('render-unit', {})
+  fixture.componentRef.setInput('containerBlock', block)
+  fixture.detectChanges()
+  const element: HTMLElement = fixture.nativeElement
+  const reset = () => element.querySelector<HTMLButtonElement>('[aria-label="恢复内容自适应"]')
+  const fix = () => element.querySelector<HTMLButtonElement>('[aria-label="切换为固定尺寸"]')
+  expect(reset()).toBeNull()
+  expect(fix()!.querySelector('.bc_size-auto')).not.toBeNull()
+  fix()!.click()
+  expect(block.toggleSizeMode).toHaveBeenCalledTimes(1)
+  for (const props of [{wr: 50, ar: 2}, {width: 320, height: 200}]) {
+    block.props = props
+    block.onPropsChange.next(new Set(['wr', 'ar', 'width', 'height']))
+    fixture.detectChanges()
+    expect(reset()).not.toBeNull()
+    expect(reset()!.querySelector('.bc_size-fixed')).not.toBeNull()
+    reset()!.click()
+    expect(block.toggleSizeMode).toHaveBeenCalled()
+    block.props = {wr: 50}
+    block.onPropsChange.next(new Set(['ar', 'height']))
+    fixture.detectChanges()
+    expect(reset()).toBeNull()
+    expect(fix()!.querySelector('.bc_size-auto')).not.toBeNull()
+  }
+  fixture.destroy()
+  expect(block.onPropsChange.observed).toBeFalse()
 })

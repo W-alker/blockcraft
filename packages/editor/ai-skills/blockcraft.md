@@ -3,6 +3,9 @@
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
 > Last updated: 2026-10-19 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+
+填写区侧边工具栏支持固定尺寸／内容自适应双向切换：`toggleSizeMode()` 按当前布局冻结尺寸，`resetHeight()` 保留宽度、清除固定高度。
+仅 `wr` 或旧 `width` 的快照保持自然高度；尺寸读取与保存契约见 `blockcraft-block.md` 的“Render-unit 响应式尺寸”。
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
