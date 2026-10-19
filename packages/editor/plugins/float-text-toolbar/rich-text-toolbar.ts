@@ -12,6 +12,8 @@ import {isSelectionAlive} from "../../framework/modules/selection/liveness";
 import {isExternalModalOpen} from "./external-modal";
 
 export interface FloatTextToolbarPluginOptions {
+  /** 只控制浮层，保留格式快捷键。默认开启。 */
+  enabled?: boolean;
   /**
    * 追加到工具栏末尾的自定义按钮
    */
@@ -33,6 +35,7 @@ export class FloatTextToolbarPlugin extends DocPlugin {
   private _closeCpr$ = new Subject();
 
   protected utils!: TextToolbarUtils;
+  private enabled: boolean;
   private activeCommonAttrs: ITextCommonAttrs = {
     attrs: new Map(),
     colors: {},
@@ -41,6 +44,12 @@ export class FloatTextToolbarPlugin extends DocPlugin {
 
   constructor(private options?: FloatTextToolbarPluginOptions) {
     super();
+    this.enabled = options?.enabled !== false;
+  }
+
+  setEnabled(enabled: boolean): void {
+    this.enabled = enabled;
+    if (!enabled) this.closeToolbar();
   }
 
   private _isSelectionReadonly(selection: BlockCraft.Selection) {
@@ -62,7 +71,7 @@ export class FloatTextToolbarPlugin extends DocPlugin {
 
     this._sub.add(
       this.doc.selection.changeObserve().subscribe(debounce(sel => {
-        if (this.doc.isReadonly
+        if (!this.enabled || this.doc.isReadonly
           || isExternalModalOpen(this.doc)
           || !isFloatTextToolbarSelection(sel)
           || !isSelectionAlive(sel as any, this.doc)
@@ -107,7 +116,7 @@ export class FloatTextToolbarPlugin extends DocPlugin {
   // }
 
   openToolbar() {
-    if (isExternalModalOpen(this.doc)) return;
+    if (!this.enabled || isExternalModalOpen(this.doc)) return;
     const sel = this.doc.selection.value;
     if (!isFloatTextToolbarSelection(sel) || !isSelectionAlive(sel as any, this.doc)) return;
     if (this._isSelectionReadonly(sel)) return;
@@ -163,6 +172,8 @@ export class FloatTextToolbarPlugin extends DocPlugin {
   closeToolbar() {
     this._closeCpr$.next(true);
     this.toolbarOvr?.dispose();
+    this.toolbarOvr = undefined;
+    this._cpr = undefined;
   }
 
   @BindHotKey({ key: 'b', shortKey: true })

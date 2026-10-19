@@ -2,9 +2,19 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-10-16
+> Last updated: 2026-10-19
 
 These plugins provide floating toolbars that appear when specific block types are selected.
+
+## 个人工具栏偏好（0.11.22）
+
+`new FloatTextToolbarPlugin({enabled?: boolean})` 默认开启浮层。
+`setEnabled(enabled: boolean)` 支持运行时更新；关闭时释放当前浮层，保留加粗、斜体等格式快捷键。
+重新开启后随下一次选区变化显示，不抢夺焦点。
+
+`FixedTextToolbarComponent` 新增 `toolbarMode: 'simple' | 'full'` 输入（默认 `full`）及
+`toolbarModeChange` 输出。输入更新重新计算布局，但不回发 change；用户切换时才发出输出。
+宿主可用 `[toolbarMode]` 与 `(toolbarModeChange)` 管理个人最近模式；框架不存储账号设置。
 
 ## 文本对象尺寸适应（未发布）
 

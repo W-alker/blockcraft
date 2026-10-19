@@ -42,6 +42,8 @@ export interface SlashCommandItem {
 }
 
 export interface BlockTransformerPluginOptions {
+  /** 是否通过冒号打开 emoji 选择器；不影响斜杠菜单。默认开启。 */
+  enableColonEmoji?: boolean;
   transformList?: readonly IBlockTransformConfig[]
   commands?: readonly SlashCommandItem[]
 }

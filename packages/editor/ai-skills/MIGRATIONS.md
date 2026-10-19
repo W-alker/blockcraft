@@ -4,6 +4,27 @@
 >
 > Last updated: 2026-10-19 | Tracks `@ccc/blockcraft` npm releases.
 
+## 0.11.22 — 2026-10-19：编辑器个人交互配置入口
+
+**Severity**: patch（按用户指定小版本发布，新增可选宿主配置）
+
+**What changed**: 冒号 Emoji 和浮动文字工具栏可在运行时启停；固定工具栏模式可由宿主初始化并监听切换。
+
+**Why**: 宿主需要按个人偏好控制编辑交互，不把个人状态写入共享文档。
+
+**Affected ai-skills files**: `blockcraft-plugins-block.md`、`blockcraft-plugins-toolbar.md`。
+
+### New APIs / Behavior Changes
+
+- `BlockTransformerPluginOptions.enableColonEmoji?: boolean`、`setColonEmojiEnabled(boolean)`：默认开启，关闭仅释放冒号浮层并保留文字，不影响斜杠菜单。
+- `FloatTextToolbarPluginOptions.enabled?: boolean`、`setEnabled(boolean)`：默认开启，关闭浮层但保留格式快捷键。
+- `FixedTextToolbarComponent.toolbarMode` 输入和 `toolbarModeChange` 输出，模式为 `'simple' | 'full'`。默认仍为 `full`，仅用户切换发出输出。
+
+### Migration Recipe
+
+原调用无需修改。需个人设置的宿主在构造插件时传入配置，保存后调用 setter；固定工具栏绑定 `[toolbarMode]`，在 `(toolbarModeChange)` 中保存个人最近模式。
+无弃用 API。使用这些入口的宿主需升级到 `@ccc/blockcraft@0.11.22`，并满足其 `@cses/ui@4.37.1` peer 依赖；旧版 UI 缺少 `CsColorPickerPanelComponent` 导出，会导致打包失败。
+
 ## 未发布 — 2026-10-19：正文独立字重
 
 **Severity**: minor（新增排版能力；发布版本由用户决定）

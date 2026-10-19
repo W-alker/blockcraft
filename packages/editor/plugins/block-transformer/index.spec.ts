@@ -1561,3 +1561,33 @@ describe("BlockTransformerPlugin external slash commands", () => {
     expect(items.some((item: any) => item.kind !== "command")).toBeFalse();
   });
 });
+
+describe('BlockTransformerPlugin colon preference', () => {
+  it('blocks colon only, including a queued trigger after disabling', () => {
+    const plugin = new BlockTransformerPlugin({enableColonEmoji: false}) as any;
+    const selection = spyOn(plugin, 'getCurrentSelection').and.returnValue(null);
+    plugin.tryOpenInputTrigger(':');
+    expect(selection).not.toHaveBeenCalled();
+    plugin.tryOpenInputTrigger('/');
+    expect(selection).toHaveBeenCalledTimes(1);
+    plugin.setColonEmojiEnabled(true);
+    plugin.tryOpenInputTrigger(':');
+    expect(selection).toHaveBeenCalledTimes(2);
+    plugin.setColonEmojiEnabled(false);
+    plugin.tryOpenInputTrigger(':');
+    expect(selection).toHaveBeenCalledTimes(2);
+  });
+
+  it('closes only a colon session without changing text or a slash picker', () => {
+    const plugin = new BlockTransformerPlugin() as any;
+    const close$ = new Subject<void>();
+    const close = jasmine.createSpy('close');
+    close$.subscribe(close);
+    plugin.activePickerSession = {close$};
+    plugin.setColonEmojiEnabled(false);
+    expect(close).not.toHaveBeenCalled();
+    plugin.activePickerSession = {close$, trigger: 'colon'};
+    plugin.setColonEmojiEnabled(false);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+});

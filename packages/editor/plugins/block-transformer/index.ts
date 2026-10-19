@@ -75,6 +75,7 @@ const GROUP_LABELS = {
 const EMOJI_NAV_PIN_WINDOW_MS = 500;
 
 type ActivePickerSession = {
+  trigger?: "colon";
   close$: Subject<void>;
   scheduleRefresh?(): void;
   handleEditorKey(key: string, event?: KeyboardEvent): boolean;
@@ -99,6 +100,7 @@ export class BlockTransformerPlugin extends DocPlugin {
   private mdTransformList: { regex: RegExp; flavour: string }[] = [];
   private pendingInputTriggerSeq = 0;
   private destroyed = false;
+  private colonEmojiEnabled = true;
   private activeMenu?: BlockTransformContextMenu;
   private activePickerSession?: ActivePickerSession;
   private readonly commandRegistry = new Map<
@@ -113,6 +115,14 @@ export class BlockTransformerPlugin extends DocPlugin {
     );
   }
 
+  /** 更新个人输入偏好；关闭冒号浮层时保留已输入文字。 */
+  setColonEmojiEnabled(enabled: boolean): void {
+    this.colonEmojiEnabled = enabled;
+    if (!enabled && this.activePickerSession?.trigger === "colon") {
+      this.activePickerSession.close$.next();
+    }
+  }
+
   private isReadonly(block: BlockCraft.BlockComponent) {
     return this.doc.readonlyManager?.isReadonly(block) ?? this.doc.isReadonly;
   }
@@ -123,6 +133,7 @@ export class BlockTransformerPlugin extends DocPlugin {
       this.transformList = config;
     } else {
       const options = config as BlockTransformerPluginOptions;
+      this.colonEmojiEnabled = options.enableColonEmoji !== false;
       this.transformList = options.transformList ?? blockTransforms;
       this.registerCommands(options.commands ?? []);
     }
@@ -1008,6 +1019,7 @@ export class BlockTransformerPlugin extends DocPlugin {
       return true;
     };
     session = {
+      trigger: "colon",
       close$,
       scheduleRefresh,
       handleEditorKey: (key, event) => {
@@ -1508,6 +1520,7 @@ export class BlockTransformerPlugin extends DocPlugin {
   }
 
   private tryOpenInputTrigger(inputText: "/" | ":") {
+    if (inputText === ":" && !this.colonEmojiEnabled) return;
     const selection = this.getCurrentSelection();
     if (
       !selection ||

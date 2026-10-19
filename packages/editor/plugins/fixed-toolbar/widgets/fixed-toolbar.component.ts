@@ -2496,7 +2496,19 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
   private _observedToolbarWidth = -1;
   private _settingsModalRef?: CsModalRef<any, any>;
   protected toolbarLayout: "wide" | "balanced" | "compact" | "narrow" = "wide";
-  protected toolbarMode: "simple" | "full" = "full";
+  private _toolbarMode: "simple" | "full" = "full";
+
+  @Input()
+  get toolbarMode(): "simple" | "full" { return this._toolbarMode; }
+  set toolbarMode(mode: "simple" | "full") {
+    if (mode === this._toolbarMode) return;
+    this._toolbarMode = mode;
+    this.resetToolbarLayout();
+    this.scheduleToolbarFit();
+  }
+
+  /** 仅用户点击切换时发出；宿主负责保存个人偏好。 */
+  @Output() toolbarModeChange = new EventEmitter<"simple" | "full">();
   // Keep two-row tooltips outside the command rows, including after modal focus restoration.
   protected get fontActionsTooltipPlacement(): "top" | "bottom" {
     return this.toolbarMode === "full" &&
@@ -2723,8 +2735,7 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
   protected setToolbarMode(mode: "simple" | "full"): void {
     if (mode === this.toolbarMode) return;
     this.toolbarMode = mode;
-    this.resetToolbarLayout();
-    this.scheduleToolbarFit();
+    this.toolbarModeChange.emit(mode);
   }
 
   private observeToolbarWidth(): void {

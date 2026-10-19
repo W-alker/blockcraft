@@ -18,6 +18,17 @@ describe("FixedTextToolbarComponent responsive layout", () => {
     return new FixedTextToolbarComponent(cdr);
   };
 
+  it("accepts a host mode without echoing it and emits only user changes", () => {
+    const component = makeComponent();
+    const emit = spyOn(component.toolbarModeChange, 'emit');
+    component.toolbarMode = 'simple';
+    expect(component.toolbarMode).toBe('simple');
+    expect(emit).not.toHaveBeenCalled();
+    (component as any).setToolbarMode('full');
+    (component as any).setToolbarMode('full');
+    expect(emit).toHaveBeenCalledOnceWith('full');
+  });
+
   it("degrades container layouts one tier at a time when content overflows", () => {
     const component = makeComponent();
 

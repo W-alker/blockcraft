@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-10-07
+> Last updated: 2026-10-19
 
 ## ObjectDragPlugin
 
@@ -368,6 +368,11 @@ to add host-owned slash commands:
 |--------|------|---------|-------------|
 | `transformList` | `readonly IBlockTransformConfig[]` | `blockTransforms` | Block types available for conversion and Markdown shortcuts |
 | `commands` | `readonly SlashCommandItem[]` | `[]` | Additional items appended to the grouped slash menu |
+| `enableColonEmoji` | `boolean` | `true` | 是否允许冒号触发 Emoji；不影响斜杠菜单和 Markdown 转换 |
+
+运行时调用 `setColonEmojiEnabled(enabled: boolean)` 更新个人输入偏好。
+关闭时销毁当前冒号浮层并保留正文；已排队的冒号触发也会检查最新配置。
+宿主负责持久化，插件不向 Yjs 写入个人设置。
 
 Each `IBlockTransformConfig`:
 
