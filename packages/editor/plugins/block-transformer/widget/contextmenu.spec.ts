@@ -1,4 +1,6 @@
 import { ElementRef } from "@angular/core";
+import * as Y from "yjs";
+import {OneShotRangeAnchor} from "../../../framework";
 import { BlockTransformContextMenu } from "./contextmenu";
 
 describe("BlockTransformContextMenu keyboard navigation", () => {
@@ -36,15 +38,20 @@ describe("BlockTransformContextMenu keyboard navigation", () => {
 
     component.list = [
       {
+        id: "block:paragraph",
+        kind: "block",
+        group: "basic",
+        groupLabel: "基础内容",
         flavour: "paragraph",
-        type: "block",
-        metadata: { label: "Paragraph" },
+        label: "Paragraph",
       },
     ] as any;
     const activeBlockContainer = document.createElement("div");
     component.activeBlock = {
       id: "block-1",
+      flavour: "paragraph",
       textLength: 5,
+      textDeltas: () => [{insert: "/icon"}],
       containerElement: activeBlockContainer,
       runtime: {
         domPointToModel: jasmine
@@ -132,6 +139,27 @@ describe("BlockTransformContextMenu keyboard navigation", () => {
     expect(preventDefault).toHaveBeenCalled();
     expect(stopPropagation).toHaveBeenCalled();
     expect(component.selectDown).toHaveBeenCalled();
+  });
+
+  it("normalizes a legacy WebKit ArrowDown key before consuming it", () => {
+    const { component } = createComponent({
+      collapsed: true,
+      start: { type: "text" },
+      firstBlock: { id: "block-1" },
+    });
+    spyOn(component, "selectDown");
+    const preventDefault = jasmine.createSpy("preventDefault");
+
+    (component as any).handleRootKeydown({
+      key: "Unidentified",
+      keyCode: 40,
+      preventDefault,
+      stopPropagation: jasmine.createSpy("stopPropagation"),
+      stopImmediatePropagation: jasmine.createSpy("stopImmediatePropagation"),
+    } as unknown as KeyboardEvent);
+
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+    expect(component.selectDown).toHaveBeenCalledTimes(1);
   });
 
   it("ignores immediate selection drift right after keyboard navigation", () => {
@@ -229,7 +257,7 @@ describe("BlockTransformContextMenu keyboard navigation", () => {
     expect(hostElement.scrollLeft).toBe(18);
   });
 
-  it("handles ArrowDown through the hotkey fallback path", () => {
+  it("exposes ArrowDown routing for the editor event fallback path", () => {
     const { component } = createComponent({
       collapsed: true,
       start: { type: "text" },
@@ -237,25 +265,19 @@ describe("BlockTransformContextMenu keyboard navigation", () => {
     });
     spyOn(component, "selectDown");
 
-    const preventDefault = jasmine.createSpy("preventDefault");
-    const stopPropagation = jasmine.createSpy("stopPropagation");
-
-    const handled = (component as any).handleHotkeyEvent(
-      {
-        preventDefault,
-        getDefaultEvent: () =>
-          ({
-            key: "ArrowDown",
-            stopPropagation,
-          }) as unknown as KeyboardEvent,
-      },
-      "ArrowDown",
-    );
+    const handled = component.handleEditorKey("ArrowDown");
 
     expect(handled).toBeTrue();
-    expect(preventDefault).toHaveBeenCalled();
-    expect(stopPropagation).toHaveBeenCalled();
     expect(component.selectDown).toHaveBeenCalled();
+  });
+
+  it("starts keyboard navigation from the first result after an empty filter", () => {
+    const {component} = createComponent(null, null);
+    (component as any).activeIdx = -1;
+
+    component.selectDown();
+
+    expect((component as any).activeIdx).toBe(0);
   });
 
   it("still handles ArrowDown when the native selection snapshot is lost", () => {
@@ -361,5 +383,136 @@ describe("BlockTransformContextMenu keyboard navigation", () => {
     expect(component.activeBlock.setInlineRange).not.toHaveBeenCalled();
 
     (component as any)._disarmCaretGuard();
+  });
+
+  it("reads the filter query when slash command text occupies the whole paragraph", () => {
+    const block = {id: "block-1"};
+    const {component} = createComponent({
+      collapsed: true,
+      start: {type: "text", offset: 5},
+      firstBlock: block,
+    });
+    component.triggerIndex = 0;
+    component.activeBlock.textDeltas = () => [{insert: "/icon"}];
+
+    expect(component.currentQuery()).toBe("icon");
+  });
+
+  it("keeps filtering when Y.Text updates before the canonical selection offset", () => {
+    const block = {id: "block-1"};
+    const {component} = createComponent({
+      collapsed: true,
+      // InputTransformer has committed `/icon`, but selection projection may
+      // still report the offset immediately after the original slash.
+      start: {type: "text", offset: 1},
+      firstBlock: block,
+    });
+    component.triggerIndex = 0;
+    (component.activeBlock as any).textLength = 5;
+    component.activeBlock.textDeltas = () => [{insert: "/icon"}];
+
+    expect(component.currentQuery()).toBe("icon");
+  });
+
+  it("tracks query input and collaborative prefix edits without consuming the existing suffix", () => {
+    const selection = {
+      collapsed: true,
+      start: {type: "text", offset: 1},
+      firstBlock: {id: "block-1"},
+    };
+    const {component} = createComponent(selection);
+    const yDoc = new Y.Doc();
+    const yText = yDoc.getText("paragraph");
+    yText.insert(0, "/原有正文");
+    const block = component.activeBlock;
+    Object.defineProperty(block, "textLength", {get: () => yText.length});
+    (block as any).yText = yText;
+    block.textDeltas = () => yText.toDelta();
+    const doc = component.doc as any;
+    doc.yDoc = yDoc;
+    doc.getBlockById = () => block;
+    doc.isEditable = (candidate: unknown) => candidate === block;
+    const range = new OneShotRangeAnchor(doc);
+    range.capture(block, 0, 1);
+    component.queryRange = range;
+
+    expect(component.currentQuery()).toBe("");
+    yText.insert(1, "icon");
+    // Query updates must not depend on selection projection catching up.
+    expect(component.currentQuery()).toBe("icon");
+    yText.insert(0, "前文");
+    selection.start.offset = 7;
+    expect(component.currentQuery()).toBe("icon");
+    selection.start.offset = 8;
+    expect(component.currentQuery()).toBeNull();
+    selection.start.offset = 7;
+    yText.delete(2, 1);
+    expect(component.currentQuery()).toBeNull();
+    range.reset();
+    yDoc.destroy();
+  });
+
+  it("reads only the slash query in the middle of existing paragraph text", () => {
+    const block = {id: "block-1"};
+    const {component} = createComponent({
+      collapsed: true,
+      start: {type: "text", offset: 12},
+      firstBlock: block,
+    });
+    component.triggerIndex = 7;
+    (component.activeBlock as any).textLength = 18;
+    component.activeBlock.textDeltas = () => [{insert: "before /icon after"}];
+
+    expect(component.currentQuery()).toBe("icon");
+  });
+
+  it("rejects a middle slash query after the caret leaves its token", () => {
+    const block = {id: "block-1"};
+    const {component} = createComponent({
+      collapsed: true,
+      start: {type: "text", offset: 18},
+      firstBlock: block,
+    });
+    component.triggerIndex = 7;
+    (component.activeBlock as any).textLength = 18;
+    component.activeBlock.textDeltas = () => [{insert: "before /icon after"}];
+
+    expect(component.currentQuery()).toBeNull();
+  });
+
+  it("emits the selected unified slash item", () => {
+    const {component} = createComponent(null, null);
+    const item = component.list[0];
+    const selected = jasmine.createSpy("selected");
+    component.commandSelected.subscribe(selected);
+
+    component.select();
+
+    expect(selected).toHaveBeenCalledOnceWith(item);
+  });
+
+  it("selects the item directly pressed by pointer instead of a stale hover index", () => {
+    const {component} = createComponent(null, null);
+    component.list.push({
+      id: "inline:icon",
+      kind: "command",
+      group: "inline",
+      groupLabel: "行内内容",
+      label: "Icon",
+    } as any);
+    const itemElement = document.createElement("li");
+    itemElement.className = "list__item";
+    itemElement.dataset["index"] = "1";
+    const child = document.createElement("span");
+    itemElement.appendChild(child);
+    const selected = jasmine.createSpy("selected");
+    component.commandSelected.subscribe(selected);
+
+    component.onMouseDown({
+      target: child,
+      preventDefault: jasmine.createSpy("preventDefault"),
+    } as unknown as MouseEvent);
+
+    expect(selected).toHaveBeenCalledOnceWith(component.list[1]);
   });
 });

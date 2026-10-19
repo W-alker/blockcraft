@@ -7,7 +7,7 @@
 /bazel-out
 
 # Node
-/node_modules
+node_modules/
 npm-debug.log
 yarn-error.log
 
@@ -35,6 +35,9 @@ yarn-error.log
 .sass-cache/
 /connect.lock
 /coverage
+/test-results
+/playwright-report
+/blob-report
 /libpeerconnection.logs
 testem.log
 /typings
@@ -55,3 +58,5 @@ pnpm-lock.yaml
 
 # Superpowers brainstorm mockups
 .superpowers/
+/.codegraph
+/.pnpm-store

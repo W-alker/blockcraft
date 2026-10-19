@@ -1,16 +1,169 @@
-import {BlockNodeType, DeltaInsert, EditableBlockComponent, IEditableBlockProps, IInlineNodeAttrs} from "../block-std";
+import {
+  BlockNodeType,
+  DeltaInsert,
+  EditableBlockComponent,
+  IEditableBlockProps,
+  IBlockProps,
+  IInlineNodeAttrs,
+  INLINE_TYPOGRAPHY_ATTRS,
+  createInlineTypographyPatch,
+  matchTypographyFontFamily,
+  normalizeInlineFontScale,
+  normalizeFontSizePixels,
+  readInlineFontSize,
+  normalizeInlineLetterSpacing,
+  normalizeParagraphFontScale,
+  normalizeParagraphSpacing,
+  normalizeTypographyLineHeight,
+  type TypographyFontFamilyId,
+} from "../block-std";
+import {normalizeParagraphTextDefaults} from '../block-std/typography/paragraph-style';
+import {resolvedBlockFontSize, resolvedInlineFontSize} from './typography-font-size';
 import {getCommonAttributesFromDeltas, sliceDelta} from "../../global";
+import {isSelectionAlive} from "../modules/selection/liveness";
+import {getSelectionFormatBlockIds, isSelectedContainer} from './selection-format-blocks';
 
 export interface ITextCommonAttrs {
   attrs: Map<string, any>
   colors: Record<string, string | null>
   props: Partial<IEditableBlockProps>,
+  /** `null` means inherited/default; `undefined` means mixed or unsupported. */
+  typography?: {
+    ff: TypographyFontFamilyId | null | undefined
+    fs: number | null | undefined
+    ls: number | null | undefined
+  }
+  /** Paragraph-level typography across every editable block in the selection. */
+  paragraph?: {
+    pfs: number | null | undefined
+    lh: number | null | undefined
+    psb: number | null | undefined
+    psa: number | null | undefined
+  }
+  /** Effective CSS pixels, including semantic defaults and retained multipliers. */
+  fontSize?: number
+  hasFixedFontSize?: boolean
   flavour?: BlockCraft.BlockFlavour,
   allEditable?: boolean
 }
 
+export interface IFontScaleTarget {
+  blockId: string
+  kind: 'paragraph' | 'inline'
+  start: number
+  length: number
+}
+
 export class TextToolbarHelper {
   constructor(public readonly doc: BlockCraft.Doc) {
+  }
+
+  private emptyCommonAttrs(): ITextCommonAttrs {
+    return {
+      attrs: new Map(),
+      colors: {},
+      props: {},
+      typography: {ff: null, fs: null, ls: null},
+      paragraph: {pfs: null, lh: null, psb: null, psa: null},
+      allEditable: false,
+    }
+  }
+
+  private isSelectionAlive(selection: BlockCraft.Selection | null | undefined): selection is BlockCraft.Selection {
+    return isSelectionAlive(selection as any, this.doc)
+  }
+
+  private hasModelBlock(blockId: string): boolean {
+    return typeof (this.doc as any).model?.exists === 'function' && this.doc.model.exists(blockId)
+  }
+
+  private firstBlockId(selection: BlockCraft.Selection): string {
+    return (selection as BlockCraft.Selection & {firstBlockId?: string}).firstBlockId ?? selection.firstBlock.id
+  }
+
+  private lastBlockId(selection: BlockCraft.Selection): string {
+    return (selection as BlockCraft.Selection & {lastBlockId?: string}).lastBlockId ?? selection.lastBlock.id
+  }
+
+  private blockNodeType(blockId: string): BlockNodeType | undefined {
+    if (this.hasModelBlock(blockId)) return this.doc.model.getNodeType(blockId)
+    try {
+      return this.doc.getBlockById(blockId).nodeType
+    } catch {
+      return undefined
+    }
+  }
+
+  private blockProps(blockId: string): Partial<IEditableBlockProps> {
+    if (this.hasModelBlock(blockId)) {
+      return (this.doc.model.getProps(blockId) ?? {}) as Partial<IEditableBlockProps>
+    }
+    try {
+      return this.doc.getBlockById(blockId).props as Partial<IEditableBlockProps>
+    } catch {
+      return {}
+    }
+  }
+
+  private blockFlavour(blockId: string): BlockCraft.BlockFlavour | undefined {
+    if (this.hasModelBlock(blockId)) return this.doc.model.getFlavour(blockId)
+    try {
+      return this.doc.getBlockById(blockId).flavour
+    } catch {
+      return undefined
+    }
+  }
+
+  private blockDeltas(blockId: string): DeltaInsert[] {
+    if (this.hasModelBlock(blockId)) return this.doc.model.getTextDeltas(blockId) ?? []
+    try {
+      return (this.doc.getBlockById(blockId) as EditableBlockComponent).textDeltas()
+    } catch {
+      return []
+    }
+  }
+
+  private blockTextLength(blockId: string): number {
+    if (this.hasModelBlock(blockId)) return this.doc.model.getTextLength(blockId)
+    try {
+      return (this.doc.getBlockById(blockId) as EditableBlockComponent).textLength
+    } catch {
+      return 0
+    }
+  }
+
+  private isPlainTextBlock(blockId: string): boolean {
+    if (typeof (this.doc as any).isPlainTextBlock === 'function') {
+      return this.doc.isPlainTextBlock(blockId)
+    }
+    try {
+      return !!(this.doc.getBlockById(blockId) as EditableBlockComponent).plainTextOnly
+    } catch {
+      return false
+    }
+  }
+
+  private formatBlockText(
+    blockId: string,
+    index: number,
+    length: number,
+    attrs: IInlineNodeAttrs,
+  ): void {
+    if (this.hasModelBlock(blockId) && typeof (this.doc.crud as any).formatText === 'function') {
+      this.doc.crud.formatText(blockId, index, length, attrs)
+      return
+    }
+    ;(this.doc.getBlockById(blockId) as EditableBlockComponent).formatText(index, length, attrs)
+  }
+
+  private updateBlockPropsById(blockId: string, props: Partial<IEditableBlockProps>): void {
+    if (this.hasModelBlock(blockId) && typeof (this.doc.crud as any).updateBlockProps === 'function') {
+      this.doc.crud.updateBlockProps(blockId, props)
+      return
+    }
+    // The stable ID was already checked as an editable block. Global flavour
+    // unions cannot express this runtime narrowing (root `lh` is non-nullable).
+    this.doc.getBlockById(blockId).updateProps({...props} as never)
   }
 
   private pickDeltaAttrsAt(deltas: DeltaInsert[], index: number) {
@@ -26,11 +179,11 @@ export class TextToolbarHelper {
     return null
   }
 
-  private getCollapsedAttrs(block: EditableBlockComponent, index: number) {
-    const deltas = block.textDeltas()
-    if (!deltas.length) return {}
+  private getCollapsedAttrs(blockId: string, index: number) {
+    const deltas = this.blockDeltas(blockId)
+    if (!deltas.length) return normalizeParagraphTextDefaults(this.blockProps(blockId).textDefaults)
 
-    const textLength = block.textLength
+    const textLength = this.blockTextLength(blockId)
     const safeIndex = Math.max(0, Math.min(index, textLength))
     const prevAttrs = safeIndex > 0 ? this.pickDeltaAttrsAt(deltas, safeIndex - 1) : null
     const curAttrs = this.pickDeltaAttrsAt(deltas, safeIndex)
@@ -38,23 +191,327 @@ export class TextToolbarHelper {
     return prevAttrs || curAttrs || {}
   }
 
+  /** 完整段落的格式命令同时更新段落标记；局部选区只影响选中的文本。 */
+  private syncParagraphTextDefaults(
+    targets: IFontScaleTarget[],
+    emptyPatch: (target: IFontScaleTarget) => IInlineNodeAttrs = () => ({}),
+  ): void {
+    for (const target of targets) {
+      if (target.kind !== 'paragraph') continue
+      const previous = normalizeParagraphTextDefaults(this.blockProps(target.blockId).textDefaults)
+      const deltas = this.blockDeltas(target.blockId)
+      const defaults = normalizeParagraphTextDefaults(deltas.length
+        ? getCommonAttributesFromDeltas(deltas)
+        : {...previous, ...emptyPatch(target)})
+      const keys = Object.keys(defaults)
+      if (keys.length === Object.keys(previous).length && keys.every(key => defaults[key] === previous[key])) continue
+      this.updateBlockPropsById(target.blockId, {textDefaults: keys.length ? defaults : null})
+    }
+  }
+
+  private parseLegacyEm(value: unknown, normalize: (value: unknown) => number | null): number | null | undefined {
+    if (value === null || value === undefined || value === '') return null
+    if (typeof value !== 'string') return undefined
+    const match = /^(-?(?:\d+(?:\.\d+)?|\.\d+))em$/i.exec(value.trim())
+    return match ? normalize(match[1]) ?? undefined : undefined
+  }
+
+  private inlineTypographyFromAttrs(attrs: IInlineNodeAttrs) {
+    let ff: TypographyFontFamilyId | null | undefined = null
+    const compactFamily = attrs[INLINE_TYPOGRAPHY_ATTRS.fontFamily]
+    if (compactFamily !== null && compactFamily !== undefined) {
+      ff = matchTypographyFontFamily(compactFamily) ?? undefined
+    } else if (attrs['s:fontFamily'] !== null && attrs['s:fontFamily'] !== undefined) {
+      ff = matchTypographyFontFamily(attrs['s:fontFamily']) ?? undefined
+    }
+
+    const compactScale = attrs[INLINE_TYPOGRAPHY_ATTRS.fontScale]
+    const fs = compactScale === null || compactScale === undefined
+      ? this.parseLegacyEm(attrs['s:fontSize'], normalizeInlineFontScale)
+      : normalizeInlineFontScale(compactScale) ?? undefined
+
+    const compactSpacing = attrs[INLINE_TYPOGRAPHY_ATTRS.letterSpacing]
+    const ls = compactSpacing === null || compactSpacing === undefined
+      ? this.parseLegacyEm(attrs['s:letterSpacing'], normalizeInlineLetterSpacing)
+      : normalizeInlineLetterSpacing(compactSpacing) ?? undefined
+
+    return {ff, fs, ls}
+  }
+
+  private commonValue<T>(values: ReadonlyArray<T | null | undefined>): T | null | undefined {
+    if (!values.length) return null
+    const first = values[0]
+    if (first === undefined) return undefined
+    return values.every(value => value !== undefined && value === first) ? first : undefined
+  }
+
+  private commonInlineTypography(deltas: readonly DeltaInsert[]) {
+    const states = deltas.length
+      ? deltas.map(delta => this.inlineTypographyFromAttrs(delta.attributes ?? {}))
+      : [this.inlineTypographyFromAttrs({})]
+    return {
+      ff: this.commonValue(states.map(state => state.ff)),
+      fs: this.commonValue(states.map(state => state.fs)),
+      ls: this.commonValue(states.map(state => state.ls)),
+    }
+  }
+
+  private paragraphTypographyFromProps(props: Partial<IEditableBlockProps>) {
+    const lineHeight = props.lh
+    return {
+      pfs: this.normalizedParagraphValue(props.pfs, normalizeParagraphFontScale),
+      lh: lineHeight === null || lineHeight === undefined
+        ? null
+        : normalizeTypographyLineHeight(lineHeight) ?? undefined,
+      psb: this.normalizedParagraphValue(props.psb, normalizeParagraphSpacing, true),
+      psa: this.normalizedParagraphValue(props.psa, normalizeParagraphSpacing),
+    }
+  }
+
+  private normalizedParagraphValue(
+    value: unknown,
+    normalize: (value: unknown) => number | null,
+    zeroIsDefault = false,
+  ): number | null | undefined {
+    if (value === null || value === undefined) return null
+    const normalized = normalize(value)
+    if (normalized === null) return undefined
+    return zeroIsDefault && normalized === 0 ? null : normalized
+  }
+
+  private commonParagraphTypography(states: Array<{
+    pfs: number | null | undefined
+    lh: number | null | undefined
+    psb: number | null | undefined
+    psa: number | null | undefined
+  }>) {
+    return {
+      pfs: this.commonValue(states.map(state => state.pfs)),
+      lh: this.commonValue(states.map(state => state.lh)),
+      psb: this.commonValue(states.map(state => state.psb)),
+      psa: this.commonValue(states.map(state => state.psa)),
+    }
+  }
+
+  /**
+   * Resolve model-only font-scale targets. A range that covers a complete
+   * editable block becomes paragraph formatting; every other text range stays
+   * inline. No DOM geometry or observers are involved.
+   */
+  getFontScaleTargets(
+    selection: BlockCraft.Selection | null = this.doc.selection.value,
+  ): IFontScaleTarget[] {
+    if (!selection || !this.isSelectionAlive(selection) ||
+        (selection.isAllSelected && !isSelectedContainer(selection, this.doc))) return []
+
+    let coveredIds: string[]
+    try {
+      coveredIds = getSelectionFormatBlockIds(selection, this.doc)
+    } catch {
+      return []
+    }
+
+    const startId = this.firstBlockId(selection)
+    const endId = this.lastBlockId(selection)
+    const targets: IFontScaleTarget[] = []
+
+    for (const blockId of coveredIds) {
+      if (this.blockNodeType(blockId) !== BlockNodeType.editable || this.isPlainTextBlock(blockId)) continue
+
+      const textLength = this.blockTextLength(blockId)
+      let start = 0
+      let end = textLength
+      if (selection.start.type === 'text' && blockId === startId) {
+        start = Math.max(0, Math.min(selection.start.offset, textLength))
+      }
+      if (selection.end.type === 'text' && blockId === endId) {
+        end = Math.max(0, Math.min(selection.end.offset, textLength))
+      }
+      if (end < start) [start, end] = [end, start]
+
+      const isCollapsedCaret = selection.collapsed &&
+        selection.start.type === 'text' &&
+        blockId === startId
+      const completeBlock = !isCollapsedCaret && start === 0 && end === textLength
+      targets.push({
+        blockId,
+        kind: completeBlock ? 'paragraph' : 'inline',
+        start,
+        length: end - start,
+      })
+    }
+
+    return targets
+  }
+
+  canFormatFontScale(selection: BlockCraft.Selection | null = this.doc.selection.value): boolean {
+    return this.getFontScaleTargets(selection).length > 0
+  }
+
+  private commonFontScaleForTargets(targets: readonly IFontScaleTarget[]) {
+    return this.commonValue(targets.map(target => {
+      if (target.kind === 'paragraph') {
+        return this.normalizedParagraphValue(
+          this.blockProps(target.blockId).pfs,
+          normalizeParagraphFontScale,
+        )
+      }
+      return this.commonInlineTypography(
+        sliceDelta(
+          this.blockDeltas(target.blockId),
+          target.start,
+          target.start + target.length,
+        ),
+      ).fs
+    }))
+  }
+
+  /** Effective size of all selected runs, including pending caret formatting. */
+  getFontSizePixels(selection: BlockCraft.Selection | null = this.doc.selection.value): number | undefined {
+    return this.getFontSizeState(selection).pixels;
+  }
+
+  private getFontSizeState(selection: BlockCraft.Selection | null): {pixels: number | undefined; fixed: boolean} {
+    const targets = this.getFontScaleTargets(selection);
+    const sizes: number[] = [];
+    let fixed = false;
+    for (const target of targets) {
+      const props = this.blockProps(target.blockId);
+      fixed ||= normalizeFontSizePixels(props.fs) !== null;
+      const paragraphSize = resolvedBlockFontSize(this.doc, target.blockId, props, this.blockFlavour(target.blockId));
+      const caret = selection?.collapsed && selection.start.type === 'text';
+      const runs: DeltaInsert[] = caret
+        ? [{insert: '', attributes: this.doc.inputManger.peekNextInsertAttrs({blockId: target.blockId, index: target.start}) ?? this.getCollapsedAttrs(target.blockId, target.start)}]
+        : sliceDelta(this.blockDeltas(target.blockId), target.start, target.start + target.length);
+      for (const run of runs.length ? runs : [{insert: ''}]) {
+        const attrs = run.attributes ?? {};
+        fixed ||= readInlineFontSize(attrs).pixels !== null;
+        sizes.push(resolvedInlineFontSize(paragraphSize, props, attrs));
+      }
+    }
+    return {pixels: sizes.length && sizes.every(size => size === sizes[0]) ? sizes[0] : undefined, fixed};
+  }
+
+  /** Advanced scaling changes its own layer and preserves all fixed bases. */
+  formatFontScale(value: unknown, selection: BlockCraft.Selection | null = this.doc.selection.value): void {
+    if (!selection || !this.isSelectionAlive(selection)) return;
+    const scale = value === null ? 1 : normalizeInlineFontScale(value);
+    if (scale === null) return;
+    const targets = this.getFontScaleTargets(selection);
+    if (!targets.length) return;
+    const inlineScalePatch = createInlineTypographyPatch('fs', scale) as IInlineNodeAttrs;
+    const legacyPixels = (attrs: IInlineNodeAttrs, pfs: number): IInlineNodeAttrs => {
+      const legacy = typeof attrs['s:fontSize'] === 'string' && /px$/i.test(attrs['s:fontSize']);
+      const pixels = legacy ? readInlineFontSize(attrs).pixels : null;
+      return pixels !== null && attrs['t:px'] == null && attrs['t:fs'] == null
+        ? {'t:px': normalizeFontSizePixels(pixels / pfs), 's:fontSize': null} : {};
+    };
+    if (selection.collapsed && selection.start.type === 'text') {
+      const target = targets[0];
+      const attrs = this.doc.inputManger.peekNextInsertAttrs({blockId: target.blockId, index: target.start}) ?? this.getCollapsedAttrs(target.blockId, target.start);
+      this.formatText({...legacyPixels(attrs, normalizeParagraphFontScale(this.blockProps(target.blockId).pfs) ?? 1), ...inlineScalePatch}, selection);
+      return;
+    }
+    const emptyPatches = new Map<string, IInlineNodeAttrs>();
+    this.doc.crud.transact(() => {
+      for (const target of targets) {
+        const oldScale = normalizeParagraphFontScale(this.blockProps(target.blockId).pfs) ?? 1;
+        if (target.kind === 'paragraph') {
+          if (target.length === 0) emptyPatches.set(target.blockId, legacyPixels(
+            normalizeParagraphTextDefaults(this.blockProps(target.blockId).textDefaults), oldScale,
+          ));
+          let offset = target.start;
+          for (const run of this.blockDeltas(target.blockId)) {
+            const length = typeof run.insert === 'string' ? run.insert.length : 1;
+            const patch = legacyPixels(run.attributes ?? {}, oldScale);
+            if (Object.keys(patch).length) this.formatBlockText(target.blockId, offset, length, patch);
+            offset += length;
+          }
+          this.updateBlockPropsById(target.blockId, {pfs: scale === 1 ? null : scale});
+          // Paragraph scaling owns pfs only; existing inline scaling survives.
+          continue;
+        }
+        let offset = target.start;
+        for (const run of sliceDelta(this.blockDeltas(target.blockId), target.start, target.start + target.length)) {
+          const length = typeof run.insert === 'string' ? run.insert.length : 1;
+          this.formatBlockText(target.blockId, offset, length, {...legacyPixels(run.attributes ?? {}, oldScale), ...inlineScalePatch});
+          offset += length;
+        }
+      }
+      this.syncParagraphTextDefaults(targets, target => emptyPatches.get(target.blockId) ?? {});
+    });
+    this.doc.selection.setSelection(selection.start, selection.end);
+  }
+
+  /** Set the effective pixel size without discarding either retained scale. */
+  formatFontSizePixels(value: unknown, selection: BlockCraft.Selection | null = this.doc.selection.value): void {
+    if (!selection || !this.isSelectionAlive(selection)) return;
+    const size = value === null ? null : normalizeFontSizePixels(value);
+    if (value !== null && (size === null || size < 1 || size > 512)) return;
+    const targets = this.getFontScaleTargets(selection);
+    if (!targets.length) return;
+    const patchFor = (attrs: IInlineNodeAttrs, paragraphScale: number, paragraph: boolean): IInlineNodeAttrs => {
+      const scale = readInlineFontSize(attrs).scale;
+      const patch: IInlineNodeAttrs = {
+        't:px': size === null || (paragraph && scale === 1) ? null : normalizeFontSizePixels(size / paragraphScale / scale),
+      };
+      if (typeof attrs['s:fontSize'] === 'string' && (size !== null || /px$/i.test(attrs['s:fontSize']))) {
+        // Canonicalize the selected legacy alias only; keep its multiplier.
+        if (/em$/i.test(attrs['s:fontSize']) && attrs['t:fs'] == null) patch['t:fs'] = scale === 1 ? null : scale;
+        patch['s:fontSize'] = null;
+      }
+      return patch;
+    };
+    if (selection.collapsed && selection.start.type === 'text') {
+      const target = targets[0];
+      const attrs = this.doc.inputManger.peekNextInsertAttrs({blockId: target.blockId, index: target.start}) ?? this.getCollapsedAttrs(target.blockId, target.start);
+      this.formatText(patchFor(attrs, normalizeParagraphFontScale(this.blockProps(target.blockId).pfs) ?? 1, false), selection);
+      return;
+    }
+    this.doc.crud.transact(() => {
+      for (const target of targets) {
+        const paragraphScale = normalizeParagraphFontScale(this.blockProps(target.blockId).pfs) ?? 1;
+        if (target.kind === 'paragraph') this.updateBlockPropsById(target.blockId, {fs: size === null ? null : normalizeFontSizePixels(size / paragraphScale)});
+        let offset = target.start;
+        for (const run of sliceDelta(this.blockDeltas(target.blockId), target.start, target.start + target.length)) {
+          const length = typeof run.insert === 'string' ? run.insert.length : 1;
+          this.formatBlockText(target.blockId, offset, length, patchFor(run.attributes ?? {}, paragraphScale, target.kind === 'paragraph'));
+          offset += length;
+        }
+      }
+      this.syncParagraphTextDefaults(targets, target => patchFor(
+        normalizeParagraphTextDefaults(this.blockProps(target.blockId).textDefaults),
+        normalizeParagraphFontScale(this.blockProps(target.blockId).pfs) ?? 1,
+        true,
+      ));
+    });
+    this.doc.selection.setSelection(selection.start, selection.end);
+  }
+
   getCurrentCommonAttrs(selection: BlockCraft.Selection): ITextCommonAttrs {
+    if (!this.isSelectionAlive(selection)) return this.emptyCommonAttrs()
+
+    const between = getSelectionFormatBlockIds(selection, this.doc)
+    const editableIds = between.filter(id =>
+      this.blockNodeType(id) === BlockNodeType.editable && !this.isPlainTextBlock(id))
+    if (!editableIds.length) return this.emptyCommonAttrs()
+
+    const fontSize = this.getFontSizeState(selection);
+    const firstId = editableIds[0]
     const attrs = new Map<string, any>()
     let colors: Record<string, string | null>
-    let props: Partial<IEditableBlockProps> = JSON.parse(JSON.stringify(selection.firstBlock.props))
-    let flavour: BlockCraft.BlockFlavour | undefined = selection.firstBlock.flavour
-    let allEditable = selection.firstBlock.nodeType === BlockNodeType.editable
-
-    const between = this.doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock, true).map(id => this.doc.getBlockById(id))
+    let props: Partial<IEditableBlockProps> = JSON.parse(JSON.stringify(this.blockProps(firstId)))
+    let flavour: BlockCraft.BlockFlavour | undefined = this.blockFlavour(firstId)
+    const allEditable = editableIds.length === between.length
+    const paragraphStates = [this.paragraphTypographyFromProps(props)]
 
     const allDeltas: DeltaInsert[] = []
     if (selection.start.type === 'text' && selection.collapsed) {
-      const startBlock = selection.firstBlock as EditableBlockComponent
       const startOffset = selection.start.offset
       const collapsedAttrs = this.doc.inputManger.peekNextInsertAttrs({
         blockId: selection.start.blockId,
         index: startOffset
-      }) || this.getCollapsedAttrs(startBlock, startOffset)
+      }) || this.getCollapsedAttrs(firstId, startOffset)
       colors = {
         color: (collapsedAttrs['s:color'] as string | null) ?? null,
         backColor: (collapsedAttrs['s:background'] as string | null) ?? null
@@ -66,39 +523,41 @@ export class TextToolbarHelper {
         attrs,
         colors,
         props,
+        fontSize: fontSize.pixels,
+        hasFixedFontSize: fontSize.fixed,
+        typography: this.inlineTypographyFromAttrs(collapsedAttrs),
+        paragraph: this.commonParagraphTypography(paragraphStates),
         flavour,
         allEditable
       }
     }
 
-    if (selection.start.type === 'text') {
-      const startBlock = selection.firstBlock as EditableBlockComponent
-      const startOffset = selection.start.offset
-      const endOffset = selection.isInSameBlock && selection.end.type === 'text'
-        ? selection.end.offset
-        : startBlock.textLength
-      allDeltas.push(...sliceDelta(startBlock.textDeltas(), startOffset, endOffset))
-    }
-
-    between.slice(1).forEach((block, i) => {
-      if (!this.doc.isEditable(block) || block.plainTextOnly) {
-        allEditable = false
-        return
+    editableIds.forEach((blockId, index) => {
+      if (index > 0) {
+        const blockProps = this.blockProps(blockId)
+        paragraphStates.push(this.paragraphTypographyFromProps(blockProps))
+        const blockFlavour = this.blockFlavour(blockId)
+        if (props.textAlign !== null && blockProps.textAlign !== props.textAlign) {
+          props.textAlign = undefined
+        }
+        if (props.heading !== null && blockProps.heading !== props.heading) {
+          props.heading = undefined
+        }
+        if (blockProps.lh !== props.lh) {
+          props.lh = undefined
+        }
+        for (const key of ['psb', 'psa'] as const) {
+          if (blockProps[key] !== props[key]) props[key] = undefined
+        }
+        if (blockFlavour !== flavour) {
+          flavour = undefined
+        }
       }
-      if (props.textAlign !== null && block.props.textAlign !== props.textAlign) {
-        props.textAlign = undefined
-      }
-      if (props.heading !== null && block.props.heading !== props.heading) {
-        props.heading = undefined
-      }
-      if (block.flavour !== null && block.flavour !== flavour) {
-        flavour = undefined
-      }
-      if (i === between.length - 2 && !selection.isInSameBlock && selection.end.type === 'text') {
-        allDeltas.push(...sliceDelta(block.textDeltas(), 0, selection.end.offset))
-      } else {
-        allDeltas.push(...block.textDeltas())
-      }
+      const start = selection.start.type === 'text' && blockId === selection.start.blockId
+        ? selection.start.offset : 0
+      const end = selection.end.type === 'text' && blockId === selection.end.blockId
+        ? selection.end.offset : this.blockTextLength(blockId)
+      allDeltas.push(...sliceDelta(this.blockDeltas(blockId), start, end))
     })
 
     const commonAttrs = getCommonAttributesFromDeltas(allDeltas)
@@ -113,20 +572,104 @@ export class TextToolbarHelper {
       attrs,
       colors,
       props,
+      fontSize: fontSize.pixels,
+      hasFixedFontSize: fontSize.fixed,
+      typography: {
+        ...this.commonInlineTypography(allDeltas),
+        fs: this.commonFontScaleForTargets(this.getFontScaleTargets(selection)),
+      },
+      paragraph: this.commonParagraphTypography(paragraphStates),
       flavour,
       allEditable
     }
   }
 
+  /**
+   * Apply typography with paragraph-aware font scaling. Family, letter spacing
+   * and effects still target the selected text; font scale is promoted to
+   * `pfs` only for complete blocks and clears stale full-block inline size.
+   */
+  formatTypography(
+    options: {
+      attrs?: IInlineNodeAttrs
+      fontScale?: unknown
+    },
+    selection: BlockCraft.Selection | null = this.doc.selection.value,
+  ): void {
+    if (!selection || !this.isSelectionAlive(selection)) return
+
+    const targets = this.getFontScaleTargets(selection)
+    if (!targets.length) return
+    const hasFontScale = Object.prototype.hasOwnProperty.call(options, 'fontScale')
+    const normalizedScale = hasFontScale
+      ? options.fontScale === null || options.fontScale === undefined
+        ? 1
+        : normalizeParagraphFontScale(options.fontScale)
+      : null
+    if (hasFontScale && normalizedScale === null) return
+
+    const attrs = options.attrs ?? {}
+    const hasAttrs = Object.keys(attrs).length > 0
+    if (!hasAttrs && !hasFontScale) return
+
+    if (selection.collapsed && selection.start.type === 'text') {
+      const caretPatch = {
+        ...attrs,
+        ...(hasFontScale
+          ? createInlineTypographyPatch('fs', normalizedScale)
+          : {}),
+      } as IInlineNodeAttrs
+      this.formatText(caretPatch, selection)
+      return
+    }
+
+    const s = selection.start
+    const e = selection.end
+    this.doc.crud.transact(() => {
+      for (const target of targets) {
+        if (hasAttrs && target.length > 0) {
+          this.formatBlockText(target.blockId, target.start, target.length, attrs)
+        }
+        if (!hasFontScale) continue
+
+        if (target.kind === 'paragraph') {
+          this.updateBlockPropsById(target.blockId, {
+            pfs: normalizedScale === 1 ? null : normalizedScale,
+          })
+          if (target.length > 0) {
+            this.formatBlockText(target.blockId, 0, target.length, {
+              [INLINE_TYPOGRAPHY_ATTRS.fontScale]: null,
+              's:fontSize': null,
+            })
+          }
+        } else if (target.length > 0) {
+          this.formatBlockText(
+            target.blockId,
+            target.start,
+            target.length,
+            createInlineTypographyPatch('fs', normalizedScale) as IInlineNodeAttrs,
+          )
+        }
+      }
+      this.syncParagraphTextDefaults(targets, () => ({
+        ...attrs,
+        ...(hasFontScale ? {[INLINE_TYPOGRAPHY_ATTRS.fontScale]: null, 's:fontSize': null} : {}),
+      }))
+    })
+
+    this.doc.selection.setSelection(s, e)
+  }
+
   formatText = (attrs: IInlineNodeAttrs, selection: BlockCraft.Selection | null = this.doc.selection.value) => {
     if (!selection) return
+    if (!this.isSelectionAlive(selection)) return
 
     const s = selection.start, e = selection.end
+    const startId = this.firstBlockId(selection)
 
     if (selection.collapsed && s.type === 'text') {
-      const startBlock = selection.firstBlock as EditableBlockComponent
       const nextAttrs: Record<string, any> = {
-        ...this.getCollapsedAttrs(startBlock, s.offset)
+        ...(this.doc.inputManger.peekNextInsertAttrs({blockId: s.blockId, index: s.offset}) ?? this.getCollapsedAttrs(startId, s.offset))
       }
       Object.entries(attrs).forEach(([key, value]) => {
         if (value === null || value === undefined) {
@@ -141,59 +684,57 @@ export class TextToolbarHelper {
       })
     }
 
-    if (s.type === 'text') {
-      const startBlock = selection.firstBlock as EditableBlockComponent
-      if (!startBlock.plainTextOnly) {
-        const len = selection.isInSameBlock && e.type === 'text' ? e.offset - s.offset : startBlock.textLength - s.offset
-        startBlock.formatText(s.offset, len, attrs)
+    const targets = this.getFontScaleTargets(selection)
+    this.doc.crud.transact(() => {
+      if (selection.collapsed && s.type === 'text') {
+        this.formatBlockText(startId, s.offset, 0, attrs)
       }
-    }
-    if (selection.isInSameBlock) {
-      // Restore selection after DOM restructuring from format (e.g., text node splits)
-      if (!selection.collapsed) {
-        this.doc.selection.setSelection(s, e)
+      for (const target of targets) {
+        if (target.length <= 0) continue
+        this.formatBlockText(target.blockId, target.start, target.length, attrs)
       }
-      return
-    }
-
-    if (e.type === 'text') {
-      const endBlock = selection.lastBlock as EditableBlockComponent
-      if (!endBlock.plainTextOnly && e.offset > 0) {
-        endBlock.formatText(0, e.offset, attrs)
-      }
-    }
-
-    const between = this.doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock)
-    for (const id of between) {
-      const block = this.doc.getBlockById(id)
-      if (!this.doc.isEditable(block) || block.plainTextOnly) continue
-      block.formatText(0, block.textLength, attrs)
-    }
+      this.syncParagraphTextDefaults(targets, () => attrs)
+    })
 
     // Restore selection after DOM restructuring from format
-    if (!selection.collapsed) {
+    if (!selection.collapsed || selection.getTableCellSelection?.()) {
       this.doc.selection.setSelection(s, e)
     }
   }
 
   updateBlockProps(props: Partial<IEditableBlockProps>, selection: BlockCraft.Selection | null = this.doc.selection.value) {
     if (!selection) return
+    if (!this.isSelectionAlive(selection)) return
 
     this.doc.crud.transact(() => {
-      const between: string[] = this.doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock, true)
+      let between: string[] = []
+      try {
+        between = getSelectionFormatBlockIds(selection, this.doc)
+      } catch {
+        return
+      }
       for (const id of between) {
-        const block = this.doc.getBlockById(id)
-        if (!this.doc.isEditable(block)) continue
-        if (block.plainTextOnly) continue
-        block.updateProps({...props})
+        if (this.blockNodeType(id) !== BlockNodeType.editable) continue
+        if (this.isPlainTextBlock(id)) continue
+        this.updateBlockPropsById(id, props)
       }
     })
   }
 
-  transformBlocks(flavour: BlockCraft.BlockFlavour, selection: BlockCraft.Selection | null = this.doc.selection.value) {
+  transformBlocks(
+    flavour: BlockCraft.BlockFlavour,
+    selection: BlockCraft.Selection | null = this.doc.selection.value,
+    props?: IBlockProps,
+  ) {
     if (!selection) return
+    if (!this.isSelectionAlive(selection)) return
 
-    const between: string[] = this.doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock, true)
+    let between: string[]
+    try {
+      between = getSelectionFormatBlockIds(selection, this.doc)
+    } catch {
+      return
+    }
 
     // 切列表类型等批量替换：WKWebView 在 DOM 大批替换 + contenteditable=false
     // 子元素（todo/ordered/bullet 的 prefix）附近会同步发出大量 selectionchange，
@@ -208,12 +749,13 @@ export class TextToolbarHelper {
     void this.doc.chain()
       .transact(() => {
         between.forEach(id => {
-          const block = this.doc.getBlockById(id)
-          if (!this.doc.isEditable(block)) return
-          if (block.plainTextOnly || block.flavour === flavour) return
-          const newBlock = this.doc.schemas.createSnapshot(flavour, [block.textDeltas(), {
-            ...block.props,
-            heading: flavour === 'ordered' ? block.props.heading : null
+          if (this.blockNodeType(id) !== BlockNodeType.editable) return
+          if (this.isPlainTextBlock(id) || this.blockFlavour(id) === flavour) return
+          const blockProps = this.blockProps(id)
+          const newBlock = this.doc.schemas.createSnapshot(flavour, [this.blockDeltas(id), {
+            ...blockProps,
+            heading: flavour === 'ordered' ? blockProps.heading : null,
+            ...props,
           }])
           idMap.set(id, newBlock.id)
           this.doc.crud.replaceWithSnapshots(id, [newBlock])
@@ -221,24 +763,38 @@ export class TextToolbarHelper {
       })
       .run()
       .finally(() => {
-        // 等 Angular 同步插入完成 + 一帧 layout 后再放开。
-        // 直接放开会让残留的 selectionchange 队列立刻进入 recalculate。
-        requestAnimationFrame(() => {
-          // 用 idMap remap 老选区，恢复焦点到对应的新块。
-          // 未被替换的块（已是目标 flavour / plainTextOnly）id 不变。
-          // textDeltas 完全克隆到新块，offset 仍然有效。
-          const remapId = (id: string) => idMap.get(id) ?? id
-          const remapped = {
-            anchor: { ...savedJson.anchor, blockId: remapId(savedJson.anchor.blockId) },
-            head: { ...savedJson.head, blockId: remapId(savedJson.head.blockId) },
-            commonParent: remapId(savedJson.commonParent),
-          }
+        // 等 Angular 同步插入完成 + 一帧 layout 后再放开。后台页或视图切换
+        // 可能长期不执行 RAF，因此再提供一个 timeout 终止保证；两条路径共享
+        // 同一个幂等 finalizer，避免重复 replay。
+        let done = false
+        let frameId: number | null = null
+        let timeoutId: ReturnType<typeof setTimeout> | null = null
+        const finishRestore = () => {
+          if (done) return
+          done = true
+          if (frameId !== null) cancelAnimationFrame(frameId)
+          if (timeoutId !== null) clearTimeout(timeoutId)
           try {
-            this.doc.selection.replay(remapped)
-          } catch {}
-          this.doc.selection.setSuppressRecalculate(false)
-          this.doc.selection.recalculate()
-        })
+            // 用 idMap remap 老选区，恢复焦点到对应的新块。
+            // 未被替换的块（已是目标 flavour / plainTextOnly）id 不变。
+            const remapId = (id: string) => idMap.get(id) ?? id
+            this.doc.selection.replay({
+              anchor: { ...savedJson.anchor, blockId: remapId(savedJson.anchor.blockId) },
+              head: { ...savedJson.head, blockId: remapId(savedJson.head.blockId) },
+              commonParent: remapId(savedJson.commonParent),
+            })
+          } catch {
+          } finally {
+            this.doc.selection.setSuppressRecalculate(false)
+          }
+        }
+
+        timeoutId = setTimeout(finishRestore, 100)
+        try {
+          frameId = requestAnimationFrame(finishRestore)
+        } catch {
+          finishRestore()
+        }
       })
   }
 }

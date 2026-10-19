@@ -1,5 +1,6 @@
 import * as Y from "yjs";
 import {EditableBlockComponent} from "../block-std";
+import {normalizeRange} from "../modules/selection/normalize";
 
 /**
  * 文本光标点（单点）：
@@ -110,17 +111,27 @@ export class OneShotCursorAnchor {
    * - true：捕获成功
    * - false：当前 selection 不是 text（例如 block 选中）
    *
-   * `options` 会透传给 `selection.recalculate`，
-   * 如 IME 场景可传 `{ isComposing: true }`。
+   * 该方法读取 canonical model selection，不触发 DOM recalculate。
+   * `options` 仅为兼容旧调用签名保留。
    */
-  captureFromSelection(options?: { isComposing?: boolean }) {
-    const {value: sel} = this.doc.selection.recalculate(false, options)
+  captureFromSelection(_options?: { isComposing?: boolean }) {
+    const sel = this.doc.selection.value
     if (!sel || sel.start.type !== 'text') {
       this._point = null
       return false
     }
-    this.capture(sel.firstBlock as EditableBlockComponent, sel.start.offset)
-    return true
+    try {
+      const block = this.doc.getBlockById(sel.start.blockId)
+      if (!this.doc.isEditable(block)) {
+        this._point = null
+        return false
+      }
+      this.capture(block, sel.start.offset)
+      return true
+    } catch {
+      this._point = null
+      return false
+    }
   }
 
   /**
@@ -128,12 +139,22 @@ export class OneShotCursorAnchor {
    * 常用于 `beforeinput.getTargetRanges()`。
    */
   captureFromStaticRange(range: StaticRange, options?: { isComposing?: boolean }) {
-    const sel = this.doc.selection.normalizeRange(range, options)
-    if (sel.from.type !== 'text') {
+    try {
+      const endpoints = normalizeRange(
+        range,
+        id => this.doc.getBlockById(id) as any,
+        options,
+      )
+      if (endpoints.start.type !== 'text') {
+        return false
+      }
+      const block = this.doc.getBlockById(endpoints.start.blockId)
+      if (!this.doc.isEditable(block)) return false
+      this.capture(block, endpoints.start.offset)
+      return true
+    } catch {
       return false
     }
-    this.capture(sel.from.block, sel.from.index)
-    return true
   }
 
   /**
@@ -228,8 +249,8 @@ export class OneShotRangeAnchor {
    * - 仅支持同一块内的 text 选区；
    * - 非 text 或跨块：返回 false 并 reset。
    */
-  captureFromSelection(options?: { isComposing?: boolean }) {
-    const {value: sel} = this.doc.selection.recalculate(false, options)
+  captureFromSelection(_options?: { isComposing?: boolean }) {
+    const sel = this.doc.selection.value
     if (!sel || sel.start.type !== 'text') {
       this.reset()
       return false
@@ -241,8 +262,18 @@ export class OneShotRangeAnchor {
     }
 
     // start/end are document-ordered, so offset math is straightforward
-    this.capture(sel.firstBlock as EditableBlockComponent, sel.start.offset, sel.end.offset - sel.start.offset)
-    return true
+    try {
+      const block = this.doc.getBlockById(sel.start.blockId)
+      if (!this.doc.isEditable(block)) {
+        this.reset()
+        return false
+      }
+      this.capture(block, sel.start.offset, sel.end.offset - sel.start.offset)
+      return true
+    } catch {
+      this.reset()
+      return false
+    }
   }
 
   /**

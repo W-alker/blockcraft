@@ -1,0 +1,67 @@
+<section class="settings-panel" role="dialog" aria-label="天气设置" data-testid="weather-settings">
+  <header>
+    <strong>天气设置</strong>
+    <button cs-button csType="text" csSize="sm" type="button" aria-label="关闭天气设置" (click)="cancel.emit()">×</button>
+  </header>
+  <div class="settings-body">
+    <div class="overview">
+      <div class="preview" aria-label="天气样式预览">
+        <div class="preview-fit" [style.width.px]="previewFit.width" [style.height.px]="previewFit.height">
+          <div class="preview-card" [style.transform]="'scale(' + previewFit.scale + ')'"
+            [style.width.px]="previewSize.width" [style.height.px]="previewSize.height" style="--u:1px"
+            [style.--wt-fg]="look.fg" [style.--wt-accent]="look.accent" [style.--wt-line]="look.line" [style.--wt-bg]="look.bg"
+            [style.color]="look.fg" [style.border-width]="look.bw" [style.border-style]="look.bs" [style.border-color]="look.bc">
+            <bc-weather-card [layout]="look.style" [weather]="previewWeather" [showRange]="look.showRange" [iconMode]="look.iconMode" />
+          </div>
+        </div>
+      </div>
+      <div class="layout-fields">
+        <label>样式
+          <cs-select csSize="sm" aria-label="天气样式" [csValue]="look.style" (csValueChange)="set('style',$event)">
+            @for (option of styleOptions; track option.value) { <cs-option [csValue]="option.value" [csLabel]="option.label" /> }
+          </cs-select>
+        </label>
+        <label>色调
+          <cs-select csSize="sm" aria-label="天气色调" [csValue]="props.palette || ''" (csValueChange)="setPalette($event)">
+            <cs-option csValue="" csLabel="默认" />
+            @for (palette of palettes; track palette.id) { <cs-option [csValue]="palette.id" [csLabel]="palette.label" /> }
+          </cs-select>
+        </label>
+      </div>
+    </div>
+    <div class="section-title">显示</div>
+    <label class="inline-field">图标
+      <cs-select csSize="sm" aria-label="天气图标颜色" [csValue]="look.iconMode" (csValueChange)="set('iconMode',$event)">
+        <cs-option csValue="original" csLabel="天气原色" /><cs-option csValue="mono" csLabel="随强调色" />
+      </cs-select>
+    </label>
+    <div class="inline-field"><span>显示高低温</span>
+      <cs-switch csSize="sm" aria-label="显示天气高低温" [csChecked]="look.showRange" [csDisabled]="look.style === 'classic'"
+        (csCheckedChange)="patch({range:$event ? 'on' : 'off'})" />
+    </div>
+    <div class="section-title">颜色
+      <button cs-button csType="text" csSize="sm" type="button" (click)="resetColors()">恢复默认颜色</button>
+    </div>
+    <div class="color-grid">
+      @for (color of colors; track color.key) {
+        <div class="color-row"><span>{{color.label}}</span>
+          <cs-color-picker csSize="sm" csLocale="zh-CN" [attr.aria-label]="color.label" [csShowText]="false"
+            [csAllowClear]="true" csClearText="恢复默认" [csValue]="props[color.key] || null" (csValueChange)="set(color.key,$event)" />
+        </div>
+      }
+    </div>
+    <div class="inline-field"><span>透明底色</span>
+      <cs-switch csSize="sm" aria-label="天气透明底色" [csChecked]="look.bg === 'transparent'" (csCheckedChange)="setTransparent($event)" />
+    </div>
+    <label class="inline-field">边框
+      <cs-select csSize="sm" aria-label="天气边框" [csValue]="props.bw || '0px solid'" (csValueChange)="set('bw',$event)">
+        @for (border of borders; track border.value) { <cs-option [csValue]="border.value" [csLabel]="border.label" /> }
+      </cs-select>
+    </label>
+    <p>清空颜色恢复色调默认；调整仅在预览中显示，应用后生效。</p>
+  </div>
+  <footer>
+    <button cs-button csSize="sm" type="button" (click)="cancel.emit()">取消</button>
+    <button cs-button csSize="sm" csType="primary" type="button" [disabled]="block.isReadonly" (click)="confirm()">应用</button>
+  </footer>
+</section>

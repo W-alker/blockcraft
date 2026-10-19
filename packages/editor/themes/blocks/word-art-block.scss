@@ -1,0 +1,154 @@
+@use "object-focus-handle" as *;
+
+[data-blockcraft-root="true"] .word-art-block,
+.bc-snapshot-viewer .word-art-block {
+  display: block;
+  width: fit-content;
+  margin-inline: auto;
+  background: transparent;
+
+  &.selected {
+    background: transparent;
+  }
+
+  .word-art-block__surface {
+    position: relative;
+    display: flex;
+    box-sizing: border-box;
+    transform-origin: center center;
+    touch-action: none;
+  }
+
+  .word-art-block__object-handle {
+    @include object-focus-handle;
+  }
+
+  &:hover .word-art-block__object-handle,
+  &:focus-within .word-art-block__object-handle {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  @media (hover: none) {
+    .word-art-block__object-handle {
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
+
+  &.word-art-block--object-selected .word-art-block__object-handle {
+    display: none;
+  }
+
+  &.word-art-block--object-selected shape-resizer {
+    display: block;
+  }
+
+  .word-art-block__editor {
+    position: relative;
+    z-index: 1;
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    max-height: 100%;
+    margin: 0;
+    padding: 0.08em 0.12em;
+    overflow: hidden;
+    overflow: clip;
+    outline: 0;
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
+    transform-origin: center center;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  // The fitted frame includes glyph overflow beyond the font's line box.
+  .word-art-block__surface[data-bc-content-auto-fit] .word-art-block__editor {
+    min-height: 100%;
+  }
+
+  .word-art-block__projection {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+  }
+
+  .word-art-block__surface--nonlinear:not(:focus-within) {
+    .word-art-block__editor { opacity: 0; }
+  }
+
+  .word-art-block__surface--nonlinear:focus-within {
+    .word-art-block__projection { opacity: 0; }
+  }
+
+  .word-art-block__editor::before {
+    color: var(--bc-color-secondary);
+    background: none;
+    -webkit-text-stroke: 0;
+    text-shadow: none;
+  }
+
+  .word-art-block__editor * {
+    color: inherit;
+    -webkit-text-fill-color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    background: transparent;
+    -webkit-text-stroke: inherit;
+    text-shadow: inherit;
+  }
+}
+
+// 对象宽度契约在编辑器内由 base.scss 按 data-bc-object 统一实施；静态快照
+// 渲染没有那个宿主标记，这里按同一规则补齐：流内收敛到内容列，浮动
+// （absolute）不设上限。
+.bc-snapshot-viewer .word-art-block:not([data-bc-placement='absolute']) {
+  max-width: 100%;
+
+  .word-art-block__surface {
+    max-width: 100%;
+  }
+}
+
+// Block/inline WordArt 都可能被拖拽代理克隆到 document.body，不能只依赖
+// editor root。WordArt 是 plain-text block；强制内容 blot 继承唯一 CSS 视觉层，
+// 避免遗留 c-element 行内格式或拖拽容器的默认 color 再绘制一层黑字。
+.word-art-block__editor c-element:not([data-cursor-blot]),
+.word-art-block__editor c-element:not([data-cursor-blot]) *,
+.bc-inline-word-art__text * {
+  color: inherit !important;
+  -webkit-text-fill-color: inherit !important;
+  font: inherit !important;
+  letter-spacing: inherit !important;
+  background: transparent !important;
+  -webkit-text-stroke: inherit !important;
+  text-shadow: inherit !important;
+}
+
+.word-art-block__editor[data-bc-word-art-print-props]::selection,
+.word-art-block__editor[data-bc-word-art-print-props] *::selection,
+.bc-inline-word-art__text[data-bc-word-art-print-props]::selection,
+.bc-inline-word-art__text[data-bc-word-art-print-props] *::selection {
+  color: inherit !important;
+  -webkit-text-fill-color: inherit !important;
+  -webkit-text-stroke: inherit !important;
+  text-shadow: inherit !important;
+}
+
+// Firefox 伪元素必须单列；Chromium 会丢弃含未知 ::-moz-selection 的整组规则。
+.word-art-block__editor[data-bc-word-art-print-props]::-moz-selection,
+.word-art-block__editor[data-bc-word-art-print-props] *::-moz-selection,
+.bc-inline-word-art__text[data-bc-word-art-print-props]::-moz-selection,
+.bc-inline-word-art__text[data-bc-word-art-print-props] *::-moz-selection {
+  color: inherit !important;
+  -webkit-text-fill-color: inherit !important;
+  -webkit-text-stroke: inherit !important;
+  text-shadow: inherit !important;
+}

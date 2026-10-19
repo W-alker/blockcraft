@@ -1,0 +1,325 @@
+/* ───────── pagination（分页展示模式，默认不生效，由 controller 加类启用）───────── */
+.bc-paginated-scroll {
+  background: var(--bc-pagination-backdrop-bg) !important;
+}
+
+/* root 的直接父容器是页框和正文共享的定位面。scrollContainer 可以
+   是更外层的祖先，不应对它的其他子节点施加 flex 布局。 */
+.bc-pagination-surface {
+  position: relative;
+  /* 用 flex 居中正文列，而不是依赖 root 的 margin:auto——后者会被后载入的主题规则
+     把 margin-left 改成 0 而失效（中线偏移）。align-items:center 由容器侧居中，
+     不与 root 的 margin 特异度打架，且窄视口时正文与页框一起对称溢出、中线始终一致。
+     背景层是 absolute，不参与 flex 布局，仍按 padding box 定位。 */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* !important 压过 editor 组件内 scoped 的 .editor-container 默认 padding/background。
+     横向 padding 必须为 0：页框背景层 absolute 定位于 padding box、会忽略 padding，
+     若容器留横向 padding，正文列与全宽居中的页框中线就会错开。 */
+  padding: 24px 0 !important;
+  box-sizing: border-box;
+  width: 100%;
+  /* Root 与绝对定位的纸张 backdrop 必须共享同一个中心。若 surface 比纸宽，
+     Chromium 会把过宽 flex 子项的 center 安全回退到 start，但 backdrop 仍居中，
+     两者便相差半个溢出宽。最小纸宽同时提供确定的横向滚动范围。 */
+  min-width: var(--bc-page-width, 0px);
+}
+
+.bc-pagination-backdrop {
+  position: absolute;
+  top: 24px;
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  /* backdrop 是绝对定位元素，它的 height 会直接成为滚动溢出边界；
+     surface 自身的 padding-bottom 不会继续扩展这段 overflow。
+     因此在 backdrop 末端显式补一份与顶部相同的画布留白，避免末页触底。 */
+  box-sizing: content-box;
+  padding-bottom: 24px;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.bc-page-sheet {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bc-page-sheet-bg);
+  box-shadow: var(--bc-page-sheet-shadow);
+  border-radius: 2px;
+}
+
+.bc-page-header,
+.bc-page-footer {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--bc-page-chrome-fs);
+  line-height: 1.2;
+  color: var(--bc-page-chrome-color);
+  pointer-events: none;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.bc-page-chrome-left { text-align: left; }
+.bc-page-chrome-center { text-align: center; }
+.bc-page-chrome-right { text-align: right; }
+
+.bc-page-chrome-rich {
+  overflow: hidden;
+}
+
+.bc-page-chrome-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bc-page-chrome-text--muted {
+  color: var(--bc-page-chrome-muted-color);
+}
+
+[data-blockcraft-root="true"].bc-paginated {
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+  width: var(--bc-page-width);
+  flex: 0 0 auto;
+  /* 与 .bc-page-sheet、外部 document header 使用完全相同的定位公式。
+     不能让 root 依赖 flex center、纸张依赖 absolute 50%：窄宿主、滚动条和
+     custom-element containing block 会让两种算法产生不同的安全对齐结果。 */
+  align-self: flex-start;
+  left: 50%;
+  transform: translateX(-50%);
+  /* The host document header remains a sibling of the editor root.  Move the
+     whole root to the first-page body origin instead of simulating that origin
+     with root padding and a second placement-plane offset.  Flow and paginated
+     views therefore expose the same root-local coordinate space. */
+  margin: var(--bc-page-root-offset-top, 0px) 0 0;
+  padding: var(--bc-page-margin-top) var(--bc-page-margin-right) var(--bc-page-margin-bottom) var(--bc-page-margin-left);
+  background: transparent;
+
+  > [data-block-id] {
+    margin-top: 0;
+  }
+
+}
+
+/* 分页 root 用 left:50% + transform 与纸张共享中线，但 transform 也会把后代的
+   position:fixed 困在 root 坐标系。表格全屏期间由既有 body lock 生命周期
+   临时解除这一个 BlockCraft 自有 transform，并同步归零配套的 left 偏移；前者让
+   inset:0 真正相对 viewport，后者避免背景 scrollContainer 多出半张纸的横向 overflow。
+   退出后正常分页中线自动恢复。 */
+body.bc-table-fullscreen-lock
+  [data-blockcraft-root="true"].bc-paginated.bc-table-fullscreen-isolation-container {
+  left: 0;
+  transform: none;
+}
+
+/* live 与 print 共用同一块约束。图片/视频由分页层直接限制媒体 wrapper，
+   其余确认超页的原子块才裁剪。 */
+[data-blockcraft-root="true"].bc-paginated,
+[data-blockcraft-root="true"].bc-print-content {
+  /* Fixed-size object Blocks can participate in ordinary root flow. Their
+     persisted frame may be taller than one page, but a flow unit cannot own
+     more than one page body. Root absolute objects remain untouched. */
+  > .object-group-block:not([data-bc-placement='absolute']),
+  > .text-box-block:not([data-bc-placement='absolute']),
+  > .word-art-block:not([data-bc-placement='absolute']),
+  > .shape-block:not([data-bc-placement='absolute']) {
+    max-block-size: var(--bc-page-content-height);
+    /* Selection outlines and resize/rotation controls deliberately sit beyond
+       the object frame. The host must not become their clipping ancestor. */
+    overflow: visible !important;
+  }
+
+  /* The persisted height lives on each visual frame rather than its Block
+     host. Clamp that frame as well, so its geometry and resizer target share
+     the single-page size while the surrounding interaction chrome stays
+     visible. The inner content layers already own their normal clipping. */
+  > .text-box-block:not([data-bc-placement='absolute'])
+    > .text-box-block__surface,
+  > .word-art-block:not([data-bc-placement='absolute'])
+    > .word-art-block__surface,
+  > .shape-block:not([data-bc-placement='absolute'])
+    > .shape-block__shell {
+    max-block-size: var(--bc-page-content-height);
+  }
+
+  /* A root-flow group keeps its members in a local absolute plane. That local
+     `data-bc-placement='absolute'` must not opt the members out of the page
+     cap: the outer group's flow mode owns the pagination boundary. As above,
+     cap hosts/visual frames but never turn either into a clipping ancestor. */
+  > .object-group-block:not([data-bc-placement='absolute'])
+    > .object-group-block__children {
+    > .image-block,
+    > .text-box-block,
+    > .word-art-block,
+    > .shape-block {
+      max-block-size: var(--bc-page-content-height);
+      overflow: visible !important;
+    }
+
+    > .image-block > .image-block__container > .img-wrapper,
+    > .text-box-block > .text-box-block__surface,
+    > .word-art-block > .word-art-block__surface,
+    > .shape-block > .shape-block__shell {
+      max-block-size: var(--bc-page-content-height);
+    }
+  }
+
+  // 区域可嵌套；用自然 flex 高度增长到页高，收缩时也能恢复内容高度。
+  // 上限是整个 border-box，内边距/边框由 flex 布局扣除，控件留在滚动层外。
+  .render-unit-block {
+    display: flex;
+    flex-direction: column;
+    max-height: var(--bc-page-content-height);
+    min-height: 0;
+
+    > .render-unit-content {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: auto;
+    }
+  }
+
+  > .bc-page-height-locked.render-unit-block {
+    overflow: visible;
+  }
+
+  > .bc-page-height-locked {
+    max-height: var(--bc-page-content-height);
+    overflow: hidden;
+
+    > [data-block-zero-space="true"][data-block-gap-side="before"] {
+      left: 1px;
+    }
+
+    > [data-block-zero-space="true"][data-block-gap-side="after"] {
+      right: 1px;
+    }
+  }
+
+  /* 未进入媒体 max-size 的兼容块仍可能使用宿主锁高；横向抓手收进锁定边界。 */
+  > .bc-page-height-locked.image-block,
+  > .bc-page-height-locked.video-block {
+    .block-resizer__bar--left {
+      left: 0;
+    }
+
+    .block-resizer__bar--right {
+      right: 0;
+    }
+  }
+
+  /* 代码块宿主不能裁剪绝对定位在底边外侧的 resize bar。
+     由 flex 收缩正文包装层，超高代码在内部滚动，标题与抓手保持可见。 */
+  > .bc-page-height-locked.code-block {
+    display: flex;
+    flex-direction: column;
+    max-height: var(--bc-page-content-height);
+    overflow: visible;
+
+    > .code-block__head {
+      flex: 0 0 auto;
+    }
+
+    > .edit-container-wrapper {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+    }
+  }
+}
+
+// 分页测量在 live、只读导出和 Snapshot Viewer 上设置同一临时标记。
+// 关闭分页由视图生命周期移除；模型中的手动尺寸完全不变。
+[data-blockcraft-root="true"] :is(.render-unit-block, .callout-block)[data-bc-region-pagination-flow] {
+  // 包内视图状态：只扣除分页占位带；外伸的选区/缩放手柄保留完整。
+  clip-path: var(--bc-region-pagination-clip, none);
+
+  // 全屏表格保留原 DOM 祖先；其连续编辑面不能继承祖先的纸间透明带。
+  &.bc-table-fullscreen-isolation-branch {
+    clip-path: none;
+  }
+
+  &.render-unit-block {
+    display: flex;
+    flex-direction: column;
+    height: auto !important;
+    max-height: none;
+    min-height: 0;
+    overflow: visible;
+
+    > .render-unit-content {
+      flex: 1 1 auto;
+      height: auto;
+      min-height: 0;
+      overflow: visible;
+    }
+  }
+}
+
+// 分栏是整块分页的并行内容：正文高度约束作用于外壳，实际滚动由各列承载。
+// 只处理根级分栏；嵌套分栏仍由其所属容器决定尺寸。
+[data-blockcraft-root="true"].bc-paginated,
+[data-blockcraft-root="true"].bc-print-content,
+[data-blockcraft-root="true"].bc-pagination-print-source {
+  > .columns-block {
+    // 正文容量包含分栏自身的上下 padding，不能依赖宿主页面的全局 reset。
+    box-sizing: border-box;
+    // Grid 的拉伸区域提供确定的包含块高度，让填写区的百分比上限
+    // 基于栏内实际空间解析；仅有 flex + max-height 会继续按整页限高。
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    max-height: var(--bc-page-content-height);
+    min-height: 0;
+
+    // 只对已达到页高的分栏启用滚动，短分栏仍允许子块轮廓/手柄外伸。
+    &.bc-page-height-locked {
+      overflow: visible;
+
+      > .columns-wrapper > .columns-layout > .column-block > .column-content {
+        overflow: auto;
+      }
+    }
+
+    > .columns-wrapper {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr);
+      min-height: 0;
+
+      > .columns-layout {
+        min-height: 0;
+
+        > .column-block {
+          box-sizing: border-box;
+          display: flex;
+          flex-direction: column;
+          min-height: 0;
+
+          > .column-content {
+            box-sizing: border-box;
+            height: auto;
+            min-height: 0;
+            flex: 1 1 auto;
+
+            // Flex 子块保留自然高度，长列通过滚动访问，不能挤压文本/填写区。
+            > [data-block-id] { flex-shrink: 0; }
+
+            // 单个填写区不撑出栏内空间；多个子块仍按自然尺寸累加，
+            // 总高度超限时由分栏滚动，不挤压各块或修改手动尺寸数据。
+            > .render-unit-block {
+              max-height: 100%;
+              max-width: 100%;
+            }
+          }
+        }
+      }
+    }
+  }
+}

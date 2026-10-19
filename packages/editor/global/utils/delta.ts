@@ -1,5 +1,5 @@
-// 纯类型用 `import type`：编译期擦除，避免 global → framework barrel 的运行时成环边。
-import type {DeltaInsert, IInlineNodeAttrs} from "../../framework";
+// 兼容工具入口仅依赖共享内容模型类型，不加载排版或编辑器运行时。
+import type {DeltaInsert, IInlineNodeAttrs} from '@ccc/blockcraft/framework/model';
 
 // 将DeltaInsert[]根据其中的\n拆分成多个DeltaInsert[]
 export const splitDeltaByLineBreak = (delta: DeltaInsert[], str_break = '\n'): DeltaInsert[][] => {

@@ -2,10 +2,12 @@ import { ChangeDetectionStrategy, Component, HostBinding } from "@angular/core";
 import { BaseBlockComponent } from "./base-block";
 import { EditableBlockNative } from "../../reactive";
 import * as Y from 'yjs'
-import { DeltaInsert, DeltaOperation } from "../../types";
-import { INLINE_CONTAINER_CLASS, TextBlot, BlotType } from "../../inline";
+import { DeltaInsert, DeltaOperation, IInlineNodeAttrs } from "../../types";
+import { INLINE_CONTAINER_CLASS, InlineManager, TextBlot, BlotType } from "../../inline";
 import { InlineRuntime } from "../../inline/runtime/inline-runtime";
-import { Subject } from "rxjs";
+import { Subject, takeUntil } from "rxjs";
+import {normalizeParagraphTextDefaults, paragraphAlignmentStyles} from '../../typography';
+import {BlockReadonlyOperation} from "../../../doc/block-readonly.types";
 
 @Component({
   selector: 'editable-block',
@@ -17,9 +19,9 @@ import { Subject } from "rxjs";
 export class EditableBlockComponent<Model extends EditableBlockNative = EditableBlockNative> extends BaseBlockComponent<Model> {
   plainTextOnly = false
 
-  private _yText!: Y.Text
+  private _yText: Y.Text | undefined
   get yText() {
-    return this._yText ||= this.yBlock.get('children') as Y.Text
+    return this._yText ??= this.yBlock.get('children') as Y.Text
   }
 
   protected _runtime!: InlineRuntime
@@ -38,8 +40,13 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
     super.ngAfterViewInit();
     this._containerElement = this.hostElement.classList.contains(INLINE_CONTAINER_CLASS) ? this.hostElement : this.hostElement.querySelector(`.${INLINE_CONTAINER_CLASS}`)!
 
+    this.applyReadonlyViewState()
+
     this._initRuntime()
     this.rerender()
+    this.onPropsChange.pipe(takeUntil(this.onDestroy$)).subscribe(changes => {
+      if (changes.has('textDefaults')) this._projectEmptyTextDefaults()
+    })
 
     // WebKit/WKWebView (Tauri) 偶发会在聚焦空 contenteditable 时「深克隆」宿主元素，
     // 留下一个没有 Angular 组件、却带着相同 data-block-id 的孤儿 DOM 节点
@@ -80,12 +87,24 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
    */
   protected _initRuntime() {
     const embedConverters = new Map(this.doc.config.embeds || [])
-    this._runtime = new InlineRuntime(this._containerElement, embedConverters)
+    this._runtime = new InlineRuntime(this._containerElement, embedConverters, {
+      beginSelectionProjection: () =>
+        this.doc.selection.acquireInlineLayoutProjectionGuard(),
+    })
   }
 
-  override reattach() {
-    super.reattach();
+  /** Detached blocks accept model updates but never patch a stale blot tree. */
+  dirtyWhileDetached = false
+
+  protected override beforeDetach(): void {
+    this._runtime?.destroy()
+  }
+
+  protected override afterReattach(): void {
+    this._yText = undefined
+    this._initRuntime()
     this.rerender()
+    this.dirtyWhileDetached = false
   }
 
   protected _containerElement!: HTMLElement
@@ -94,9 +113,45 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
     return this._containerElement
   }
 
+  override applyReadonlyViewState() {
+    super.applyReadonlyViewState()
+    if (!this._containerElement) return
+
+    if (this.isReadonly || this.doc.revisions?.viewMode === 'final') {
+      if (this._containerElement.getAttribute('contenteditable') !== 'false') {
+        this._containerElement.setAttribute('contenteditable', 'false')
+        this._containerElement.dataset['bcReadonlyEditable'] = 'true'
+      }
+      return
+    }
+
+    if (this._containerElement.dataset['bcReadonlyEditable'] === 'true') {
+      this._containerElement.removeAttribute('contenteditable')
+      this._containerElement.removeAttribute('data-bc-readonly-editable')
+    }
+  }
+
   @HostBinding('style.text-align')
   get textAlign() {
-    return this._native.props['textAlign']
+    const align = this.props.textAlign
+    if (this.plainTextOnly) return align === 'justify' || align === 'distributed' ? '' : align
+    return paragraphAlignmentStyles(align).textAlign
+  }
+
+  @HostBinding('style.text-align-last')
+  get textAlignLast() {
+    return paragraphAlignmentStyles(this.plainTextOnly ? undefined : this.props.textAlign).textAlignLast
+  }
+
+  @HostBinding('style.text-justify')
+  get textJustify() {
+    return paragraphAlignmentStyles(this.plainTextOnly ? undefined : this.props.textAlign).textJustify
+  }
+
+  @HostBinding('attr.data-bc-text-align')
+  get justifiedTextAlignment() {
+    const align = this.plainTextOnly ? undefined : this.props.textAlign
+    return align === 'justify' || align === 'distributed' ? align : null
   }
 
   @HostBinding('attr.data-heading')
@@ -119,22 +174,58 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
   }
 
   rerender() {
-    this._runtime.render(this.textDeltas())
+    const deltas = this.textDeltas()
+    this._runtime.render(
+      this.doc.revisions?.projectInlineDeltas(this.id, deltas) ?? deltas,
+    )
+    this._projectEmptyTextDefaults()
     // 任意一次 rerender 都顺手清掉 WebKit 留下的宿主克隆（首次输入即可自愈）。
     this._pruneDuplicateHostClones()
   }
 
+  private _emptyTextDefaults: DeltaInsert['attributes'] = {}
+
+  /** 只投影到既有的零长光标节点，不向 Y.Text 插入占位字符。 */
+  private _projectEmptyTextDefaults(): void {
+    if (!this.isAttached) return
+    if ((this.plainTextOnly || this.textLength > 0) && !Object.keys(this._emptyTextDefaults ?? {}).length) return
+    const gap = this._containerElement?.firstElementChild as HTMLElement | null
+    if (gap?.getAttribute('data-zero-space') !== 'true') return
+    const defaults = this.plainTextOnly || this.textLength > 0
+      ? {} : normalizeParagraphTextDefaults(this.props['textDefaults'])
+    const cleared: Record<string, null> = Object.fromEntries(Object.keys(this._emptyTextDefaults ?? {}).map(key => [key, null]))
+    InlineManager.setAttrs(gap, {...cleared, ...defaults} as IInlineNodeAttrs)
+    gap.toggleAttribute('data-bc-paragraph-defaults', Object.keys(defaults).length > 0)
+    this._emptyTextDefaults = defaults
+  }
+
   insertText(index: number, text: string, attributes?: DeltaInsert['attributes']) {
     if (!text) return
-    this.yText.insert(index, text, attributes)
+    this.doc.readonlyManager.assertTextWritable(this, BlockReadonlyOperation.Text)
+    if (this.doc.revisions?.isTracking) {
+      this.doc.revisions.insertText(this.id, index, text, attributes)
+    } else {
+      this.yText.insert(index, text, attributes)
+    }
   }
 
   deleteText(index: number, length = this.textLength - index) {
     if (!length) return
-    this.yText.delete(index, length)
+    this.doc.readonlyManager.assertTextWritable(this, BlockReadonlyOperation.Text)
+    if (this.doc.revisions?.isTracking) {
+      this.doc.revisions.deleteText(this.id, index, length)
+    } else {
+      this.yText.delete(index, length)
+    }
   }
 
   replaceText(index: number, length: number, text?: string | null, attributes?: DeltaInsert['attributes']) {
+    if (length <= 0 && !text) return
+    this.doc.readonlyManager.assertTextWritable(this, BlockReadonlyOperation.Replace)
+    if (this.doc.revisions?.isTracking) {
+      this.doc.revisions.replaceText(this.id, index, length, text, attributes)
+      return
+    }
     const delta: DeltaOperation[] = []
     index > 0 && delta.push({ retain: index })
     length > 0 && delta.push({ delete: length })
@@ -143,11 +234,26 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
   }
 
   formatText(index: number, length: number, attributes: DeltaInsert['attributes']) {
+    if (!length || !Object.keys(attributes ?? {}).length) return
+    this.doc.readonlyManager.assertTextWritable(this, BlockReadonlyOperation.Format)
+    if (this.doc.revisions?.isTracking) {
+      const delta: DeltaOperation[] = []
+      if (index > 0) delta.push({retain: index})
+      delta.push({retain: length, attributes})
+      this.doc.revisions.applyDelta(this.id, delta)
+      return
+    }
     this.yText.format(index, length, attributes as any)
   }
 
   applyDeltaOperations(delta: DeltaOperation[]) {
-    this.yText.applyDelta(delta)
+    if (!delta.length) return
+    this.doc.readonlyManager.assertTextWritable(this, BlockReadonlyOperation.Text)
+    if (this.doc.revisions?.isTracking) {
+      this.doc.revisions.applyDelta(this.id, delta)
+    } else {
+      this.yText.applyDelta(delta)
+    }
   }
 
   protected _applyDeltaToYText(deltas: DeltaOperation[]) {
@@ -163,6 +269,14 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
    * Y.Text 脱节，后续光标定位与写入全部错位。
    */
   protected _applyDeltaToView(deltas: DeltaOperation[]) {
+    if (!this.isAttached) {
+      this.dirtyWhileDetached = true
+      return
+    }
+    if (this.doc.revisions?.hasTextRevisions(this.id)) {
+      this._rerenderRestoringCursor(deltas)
+      return
+    }
     try {
       this._runtime.applyDelta(deltas)
       if (!this._verifyBlotConsistency()) {
@@ -171,6 +285,7 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
     } catch {
       this._rerenderRestoringCursor(deltas)
     }
+    this._projectEmptyTextDefaults()
   }
 
   /**

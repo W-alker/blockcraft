@@ -1,0 +1,1767 @@
+import { ChangeDetectorRef } from "@angular/core";
+import { CsDropdownDirective } from "@cses/ui";
+import { BlockNodeType } from "../../../framework";
+import { BlockSelection } from "../../../framework/modules/selection/blockSelection";
+import { getWordArtPreset } from "../../../blocks/word-art-block";
+import { getTextBoxPreset } from "../../../blocks/text-box-block";
+import {
+  SHAPE_CATEGORIES,
+  SHAPE_DEFINITIONS,
+} from "../../../blocks/shape-block";
+import { FixedTextToolbarComponent } from "./fixed-toolbar.component";
+
+describe("FixedTextToolbarComponent responsive layout", () => {
+  const makeComponent = () => {
+    const cdr = jasmine.createSpyObj<ChangeDetectorRef>("ChangeDetectorRef", [
+      "markForCheck",
+    ]);
+    return new FixedTextToolbarComponent(cdr);
+  };
+
+  it("degrades container layouts one tier at a time when content overflows", () => {
+    const component = makeComponent();
+
+    expect((component as any).nextToolbarLayout("wide")).toBe("balanced");
+    expect((component as any).nextToolbarLayout("balanced")).toBe("compact");
+    expect((component as any).nextToolbarLayout("compact")).toBe("narrow");
+    expect((component as any).nextToolbarLayout("narrow")).toBeNull();
+  });
+
+  it("keeps the complete inline command set in the overflow menu", () => {
+    const component = makeComponent();
+
+    expect(
+      (component as any).narrowInlineActions.map(
+        (item: { value: string }) => item.value,
+      ),
+    ).toEqual(["bold", "italic", "underline", "strike", "code", "sup", "sub"]);
+  });
+
+  it("keeps superscript and subscript mutually exclusive from the narrow menu", () => {
+    const component = makeComponent();
+    const trigger = { close: jasmine.createSpy("close") };
+    const toggleScript = spyOn<any>(component, "toggleScriptAttr");
+    const toggleInline = spyOn<any>(component, "toggleInlineAttr");
+
+    (component as any).onNarrowInlineItemClicked({ value: "sup" }, trigger);
+
+    expect(trigger.close).toHaveBeenCalled();
+    expect(toggleScript).toHaveBeenCalledOnceWith("sup");
+    expect(toggleInline).not.toHaveBeenCalled();
+  });
+
+  it("measures the command body without including popup template hosts", () => {
+    const component = makeComponent();
+    const host = document.createElement("div");
+    const body = document.createElement("div");
+    body.className = "toolbar-body";
+    host.append(body, document.createElement("cs-dropdown-menu"));
+    Object.defineProperty(body, "clientWidth", {value: 500});
+    Object.defineProperty(body, "scrollWidth", {value: 500, configurable: true});
+    expect((component as any).hasVisibleToolbarOverflow(host)).toBeFalse();
+    Object.defineProperty(body, "scrollWidth", {value: 540});
+    expect((component as any).hasVisibleToolbarOverflow(host)).toBeTrue();
+  });
+
+  it("keeps only frequent typography values in quick dropdowns", () => {
+    const component = makeComponent();
+
+    expect((component as any).quickFontSizePresets).toEqual([
+      12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64, 72,
+    ]);
+    expect((component as any).quickLetterSpacingPresets).toEqual([
+      -0.05, -0.025, 0.025, 0.05, 0.1,
+    ]);
+  });
+
+  it("keeps superscript and subscript in one mutually exclusive split action", () => {
+    const component = makeComponent();
+    const formatText = jasmine.createSpy("formatText");
+    component.utils = { formatText } as any;
+    component.activeAttrs = new Map([["sup", true]]);
+    spyOn<any>(component, "runWithSelection").and.callFake((run: () => void) =>
+      run(),
+    );
+
+    (component as any).toggleScriptAttr("sub");
+
+    expect(formatText).toHaveBeenCalledWith({
+      "a:sub": true,
+      "a:sup": null,
+    });
+  });
+
+  it("uses the active baseline action as the split-button main action", () => {
+    const component = makeComponent();
+    component.activeAttrs = new Map([["sub", true]]);
+
+    expect((component as any).activeScriptAction.value).toBe("sub");
+    expect((component as any).activeScriptAction.icon).toBe("bc_xiabiao");
+  });
+});
+
+describe("FixedTextToolbarComponent boundary selections", () => {
+  const makeHarness = () => {
+    const rootHost = document.createElement("div");
+    const p1Host = document.createElement("p");
+    const p2Host = document.createElement("p");
+    const p3Host = document.createElement("p");
+    rootHost.append(p1Host, p2Host, p3Host);
+    document.body.appendChild(rootHost);
+
+    const root = {
+      id: "root",
+      flavour: "root",
+      nodeType: BlockNodeType.root,
+      hostElement: rootHost,
+      childrenIds: ["p1", "p2", "p3"],
+      childrenLength: 3,
+    };
+    const makeBlock = (
+      id: string,
+      hostElement: HTMLElement,
+      index: number,
+    ) => ({
+      id,
+      flavour: "paragraph",
+      nodeType: BlockNodeType.editable,
+      hostElement,
+      parentId: "root",
+      parentBlock: root,
+      props: {},
+      plainTextOnly: false,
+      textLength: 1,
+      getIndexOfParent: () => index,
+    });
+    const p1 = makeBlock("p1", p1Host, 0);
+    const p2 = makeBlock("p2", p2Host, 1);
+    const p3 = makeBlock("p3", p3Host, 2);
+    const blocks: Record<string, any> = { root, p1, p2, p3 };
+    const queryBlocksBetween = jasmine
+      .createSpy("queryBlocksBetween")
+      .and.callFake(
+        (from: { id: string }, to: { id: string }, contain = false) => {
+          const fromIndex = root.childrenIds.indexOf(from.id);
+          const toIndex = root.childrenIds.indexOf(to.id);
+          return root.childrenIds.slice(
+            Math.min(fromIndex, toIndex) + (contain ? 0 : 1),
+            Math.max(fromIndex, toIndex) + (contain ? 1 : 0),
+          );
+        },
+      );
+    const getBlockById = (id: string) => blocks[id];
+    const doc = {
+      getBlockById,
+      schemas: { get: () => null },
+      isEditable: (block: { nodeType: BlockNodeType }) =>
+        block.nodeType === BlockNodeType.editable,
+      queryBlocksBetween,
+    };
+    const cdr = jasmine.createSpyObj<ChangeDetectorRef>("ChangeDetectorRef", [
+      "markForCheck",
+    ]);
+    const component = new FixedTextToolbarComponent(cdr);
+    component.doc = doc as any;
+    const selection = (from: number, to: number) =>
+      new BlockSelection(
+        { blockId: "root", type: "boundary", index: from, block: root } as any,
+        { blockId: "root", type: "boundary", index: to, block: root } as any,
+        "root",
+        getBlockById,
+        (a, b) =>
+          blocks[a].hostElement.compareDocumentPosition(blocks[b].hostElement),
+      );
+
+    return { component, p1, p2, p3, rootHost, selection, queryBlocksBetween };
+  };
+
+  it("does not treat a collapsed boundary cursor as a transformable block range", () => {
+    const { component, rootHost, selection, queryBlocksBetween } =
+      makeHarness();
+    const boundaryCursor = selection(1, 1);
+
+    expect(
+      (component as any).canTransformSelection(boundaryCursor),
+    ).toBeFalse();
+    expect(queryBlocksBetween).not.toHaveBeenCalled();
+    rootHost.remove();
+  });
+
+  it("treats a boundary range covering one block as transformable", () => {
+    const { component, rootHost, selection, queryBlocksBetween } =
+      makeHarness();
+    const boundaryRange = selection(0, 1);
+
+    expect((component as any).canTransformSelection(boundaryRange)).toBeTrue();
+    expect(queryBlocksBetween).not.toHaveBeenCalled();
+    rootHost.remove();
+  });
+
+  it("enables paragraph-aware font scaling for a boundary block range", () => {
+    const { component, rootHost, selection } = makeHarness();
+    const boundaryRange = selection(0, 2);
+
+    expect(
+      (component as any).canSetFontScaleForSelection(boundaryRange),
+    ).toBeTrue();
+    rootHost.remove();
+  });
+
+  it("resolves the exact child ids for a multi-block boundary range", () => {
+    const { component, p1, p2, rootHost, selection } = makeHarness();
+    const boundaryRange = selection(0, 2);
+
+    expect((component as any).getSelectedBlockIds(boundaryRange)).toEqual([
+      p1.id,
+      p2.id,
+    ]);
+    rootHost.remove();
+  });
+
+  it("enables line height when a mixed block range contains one editable text block", () => {
+    const { component, p2, rootHost, selection } = makeHarness();
+    p2.nodeType = BlockNodeType.void;
+    const mixedRange = selection(0, 2);
+
+    expect((component as any).canTransformSelection(mixedRange)).toBeFalse();
+    expect((component as any).canFormatTextSelection(mixedRange)).toBeTrue();
+    expect(
+      (component as any).canSetLineHeightForSelection(mixedRange),
+    ).toBeTrue();
+    (component as any).syncToolbarState(mixedRange);
+    expect(component.canTransformBlocks).toBeFalse();
+    expect(component.allEditable).toBeTrue();
+    rootHost.remove();
+  });
+
+  it("keeps text formatting enabled when editable endpoints span a non-editable block", () => {
+    const { component, p1, p2, p3, rootHost } = makeHarness();
+    p2.nodeType = BlockNodeType.void;
+    const blocks = { p1, p2, p3 } as Record<string, any>;
+    const mixedTextRange = new BlockSelection(
+      { blockId: "p1", type: "text", offset: 0, block: p1 } as any,
+      { blockId: "p3", type: "text", offset: 1, block: p3 } as any,
+      "root",
+      (id) => blocks[id],
+      (a, b) =>
+        blocks[a].hostElement.compareDocumentPosition(blocks[b].hostElement),
+    );
+
+    expect(
+      (component as any).canTransformSelection(mixedTextRange),
+    ).toBeFalse();
+    expect(
+      (component as any).canFormatTextSelection(mixedTextRange),
+    ).toBeTrue();
+    (component as any).syncToolbarState(mixedTextRange);
+    expect(component.canTransformBlocks).toBeFalse();
+    expect(component.allEditable).toBeTrue();
+    rootHost.remove();
+  });
+
+  it("disables line height when a block range has no editable text block", () => {
+    const { component, p1, p2, rootHost, selection } = makeHarness();
+    p1.nodeType = BlockNodeType.void;
+    p2.nodeType = BlockNodeType.block;
+    const nonEditableRange = selection(0, 2);
+
+    expect(
+      (component as any).canSetLineHeightForSelection(nonEditableRange),
+    ).toBeFalse();
+    expect(
+      (component as any).canFormatTextSelection(nonEditableRange),
+    ).toBeFalse();
+    rootHost.remove();
+  });
+
+  it("allows spacing on a non-editable block while keeping line height unavailable", () => {
+    const {component, p1, rootHost, selection} = makeHarness();
+    p1.nodeType = BlockNodeType.void;
+    p1.flavour = 'divider';
+    p1.props = {psb: 6, psa: 12};
+    const range = selection(0, 1);
+
+    expect((component as any).canSetParagraphSpacingForSelection(range)).toBeTrue();
+    expect((component as any).canSetLineHeightForSelection(range)).toBeFalse();
+    expect((component as any).getCommonParagraphSpacing(range)).toEqual({psb: 6, psa: 12});
+    rootHost.remove();
+  });
+
+  it("writes spacing to editable and non-editable blocks in one transaction", () => {
+    const {component, p2, rootHost, selection} = makeHarness();
+    p2.nodeType = BlockNodeType.void;
+    p2.flavour = 'divider';
+    const range = selection(0, 2);
+    const transact = jasmine.createSpy('transact').and.callFake((run: () => void) => run());
+    const updateBlockProps = jasmine.createSpy('updateBlockProps');
+    const updateTextProps = jasmine.createSpy('updateTextProps');
+    component.doc = {
+      ...component.doc,
+      selection: {value: range},
+      crud: {transact, updateBlockProps},
+    } as any;
+    component.utils = {updateBlockProps: updateTextProps} as any;
+    spyOn<any>(component, 'runWithSavedSelection').and.callFake(
+      (_saved: unknown, run: () => void) => run(),
+    );
+
+    (component as any).applyParagraphSettingsResult(range.toJSON(), {
+      patch: {lh: 1.5, psb: 6, psa: 12},
+    });
+
+    expect(transact).toHaveBeenCalledTimes(1);
+    expect(updateTextProps).toHaveBeenCalledOnceWith({lh: 1.5}, range);
+    expect(updateBlockProps).toHaveBeenCalledTimes(2);
+    expect(updateBlockProps).toHaveBeenCalledWith('p1', {psb: 6, psa: 12});
+    expect(updateBlockProps).toHaveBeenCalledWith('p2', {psb: 6, psa: 12});
+    rootHost.remove();
+  });
+
+  it("writes spacing to a selected image instead of its editable caption", () => {
+    const {component, p1, rootHost} = makeHarness();
+    p1.nodeType = BlockNodeType.block;
+    p1.flavour = 'image';
+    (p1 as any).childrenIds = ['caption'];
+    const caption = {
+      id: 'caption', flavour: 'paragraph', nodeType: BlockNodeType.editable,
+      parentId: p1.id, parentBlock: p1, childrenIds: [], props: {},
+      hostElement: document.createElement('p'),
+    };
+    p1.hostElement.appendChild(caption.hostElement);
+    const getBlockById = component.doc.getBlockById.bind(component.doc);
+    const resolveBlock = (id: string) => id === caption.id ? caption : getBlockById(id);
+    const selectedImage = new BlockSelection(
+      {blockId: p1.id, type: 'selected', block: p1} as any,
+      {blockId: p1.id, type: 'selected', block: p1} as any,
+      'root', resolveBlock as any, () => 0,
+    );
+    const updateBlockProps = jasmine.createSpy('updateBlockProps');
+    component.doc = {
+      ...component.doc,
+      getBlockById: resolveBlock,
+      selection: {value: selectedImage},
+      crud: {transact: (run: () => void) => run(), updateBlockProps},
+    } as any;
+    spyOn<any>(component, 'runWithSavedSelection').and.callFake(
+      (_saved: unknown, run: () => void) => run(),
+    );
+
+    expect((component as any).getSelectedSpacingOwnerId(selectedImage)).toBe(p1.id);
+    expect((component as any).getParagraphSpacingTargetIds(selectedImage)).toEqual([p1.id]);
+    (component as any).applyParagraphSettingsResult(selectedImage.toJSON(), {
+      patch: {psb: 12, psa: 6},
+    });
+    expect(updateBlockProps).toHaveBeenCalledOnceWith(p1.id, {psb: 12, psa: 6});
+    rootHost.remove();
+  });
+});
+
+describe('FixedTextToolbarComponent selected containers', () => {
+  it('enables font, paragraph, and heading commands for editable descendants', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const nodes: Record<string, any> = {
+      root: {id: 'root', flavour: 'root', nodeType: BlockNodeType.root, childrenIds: ['group'], parentId: null, props: {}},
+      group: {id: 'group', flavour: 'object-group', nodeType: BlockNodeType.block, childrenIds: ['p1', 'nested', 'image'], parentId: 'root', props: {}},
+      p1: {id: 'p1', flavour: 'paragraph', nodeType: BlockNodeType.editable, childrenIds: [], parentId: 'group', props: {depth: 0}, text: 'one'},
+      nested: {id: 'nested', flavour: 'callout', nodeType: BlockNodeType.block, childrenIds: ['p2'], parentId: 'group', props: {}},
+      p2: {id: 'p2', flavour: 'paragraph', nodeType: BlockNodeType.editable, childrenIds: [], parentId: 'nested', props: {depth: 0}, text: 'two'},
+      image: {id: 'image', flavour: 'image', nodeType: BlockNodeType.void, childrenIds: [], parentId: 'group', props: {}},
+    };
+    for (const node of Object.values(nodes)) {
+      node.hostElement = host;
+      node.parentBlock = node.parentId ? nodes[node.parentId] : null;
+    }
+    const doc: any = {
+      model: {
+        exists: (id: string) => !!nodes[id],
+        getNodeType: (id: string) => nodes[id].nodeType,
+        getFlavour: (id: string) => nodes[id].flavour,
+        getProps: (id: string) => nodes[id].props,
+        getChildrenIds: (id: string) => nodes[id].childrenIds,
+        getTextDeltas: (id: string) => [{insert: nodes[id].text ?? ''}],
+        getTextLength: (id: string) => nodes[id].text?.length ?? 0,
+      },
+      getBlockById: (id: string) => nodes[id],
+      isPlainTextBlock: () => false,
+      schemas: {get: () => null},
+      selection: {},
+    };
+    const selection = new BlockSelection(
+      {blockId: 'group', type: 'selected', block: nodes['group']} as any,
+      {blockId: 'group', type: 'selected', block: nodes['group']} as any,
+      'root', doc.getBlockById, () => 0,
+    );
+    doc.selection.value = selection;
+    const cdr = jasmine.createSpyObj<ChangeDetectorRef>('ChangeDetectorRef', ['markForCheck']);
+    const component = new FixedTextToolbarComponent(cdr);
+    component.doc = doc;
+
+    expect((component as any).canTransformSelection(selection)).toBeTrue();
+    expect((component as any).canFormatTextSelection(selection)).toBeTrue();
+    expect((component as any).canSetLineHeightForSelection(selection)).toBeTrue();
+    expect((component as any).canSetFontScaleForSelection(selection)).toBeTrue();
+    expect((component as any).canSetParagraphSpacingForSelection(selection)).toBeTrue();
+    (component as any).syncToolbarState(selection);
+    expect(component.allEditable).toBeTrue();
+    expect(component.canTransformBlocks).toBeTrue();
+    expect(component.canSetFontScale).toBeTrue();
+    expect(component.canSetLineHeight).toBeTrue();
+    expect(component.canSetParagraphSpacing).toBeTrue();
+    host.remove();
+  });
+
+  it('enables text and paragraph controls for a model table-cell selection', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const nodes: Record<string, any> = {
+      table: {id: 'table', flavour: 'table', nodeType: BlockNodeType.block, childrenIds: ['row'], props: {colWidths: [100]}},
+      row: {id: 'row', flavour: 'table-row', nodeType: BlockNodeType.block, childrenIds: ['cell'], parentId: 'table', props: {}},
+      cell: {id: 'cell', flavour: 'table-cell', nodeType: BlockNodeType.block, childrenIds: ['text'], parentId: 'row', props: {}},
+      text: {id: 'text', flavour: 'paragraph', nodeType: BlockNodeType.editable, childrenIds: [], parentId: 'cell', props: {depth: 0}, text: 'cell text'},
+    };
+    for (const node of Object.values(nodes)) {
+      node.hostElement = host;
+      node.parentBlock = node.parentId ? nodes[node.parentId] : null;
+    }
+    const doc: any = {
+      model: {
+        exists: (id: string) => !!nodes[id],
+        getNodeType: (id: string) => nodes[id].nodeType,
+        getFlavour: (id: string) => nodes[id].flavour,
+        getProps: (id: string) => nodes[id].props,
+        getChildrenIds: (id: string) => nodes[id].childrenIds,
+        getTextDeltas: (id: string) => [{insert: nodes[id].text ?? ''}],
+        getTextLength: (id: string) => nodes[id].text?.length ?? 0,
+      },
+      getBlockById: (id: string) => nodes[id],
+      isPlainTextBlock: () => false,
+      schemas: {get: () => null},
+      selection: {},
+    };
+    const point = {blockId: 'cell', type: 'table-cell', tableId: 'table', block: nodes['cell']} as any;
+    const selection = new BlockSelection(point, point, 'table', doc.getBlockById, () => 0);
+    doc.selection.value = selection;
+    const cdr = jasmine.createSpyObj<ChangeDetectorRef>('ChangeDetectorRef', ['markForCheck']);
+    const component = new FixedTextToolbarComponent(cdr);
+    component.doc = doc;
+
+    expect((component as any).canFormatTextSelection(selection)).toBeTrue();
+    expect((component as any).canTransformSelection(selection)).toBeTrue();
+    expect((component as any).canSetFontScaleForSelection(selection)).toBeTrue();
+    expect((component as any).canSetLineHeightForSelection(selection)).toBeTrue();
+    expect((component as any).canSetParagraphSpacingForSelection(selection)).toBeTrue();
+    (component as any).syncToolbarState(selection);
+    expect(component.allEditable).toBeTrue();
+    expect(component.canTransformBlocks).toBeTrue();
+    host.remove();
+  });
+});
+
+describe("FixedTextToolbarComponent block insertion placement", () => {
+  const makeHarness = () => {
+    const rootHost = document.createElement("div");
+    const beforeHost = document.createElement("p");
+    const tableHost = document.createElement("div");
+    const cellHost = document.createElement("td");
+    const columnsHost = document.createElement("div");
+    const columnHost = document.createElement("div");
+    const columnParagraphHost = document.createElement("p");
+    rootHost.append(beforeHost, tableHost, columnsHost);
+    tableHost.appendChild(cellHost);
+    columnsHost.appendChild(columnHost);
+    columnHost.appendChild(columnParagraphHost);
+    document.body.appendChild(rootHost);
+
+    const root = {
+      id: "root",
+      flavour: "root",
+      nodeType: BlockNodeType.root,
+      hostElement: rootHost,
+      childrenIds: ["p1", "table-1", "columns-1"],
+      childrenLength: 3,
+    };
+    const paragraph = {
+      id: "p1",
+      flavour: "paragraph",
+      nodeType: BlockNodeType.editable,
+      hostElement: beforeHost,
+      parentId: "root",
+      parentBlock: root,
+      props: {},
+      plainTextOnly: false,
+      textLength: 1,
+      getIndexOfParent: () => 0,
+    };
+    const table = {
+      id: "table-1",
+      flavour: "table",
+      nodeType: BlockNodeType.block,
+      hostElement: tableHost,
+      parentId: "root",
+      parentBlock: root,
+      childrenIds: ["row-1"],
+      childrenLength: 1,
+      getIndexOfParent: () => 1,
+    };
+    const cell = {
+      id: "cell-1",
+      flavour: "table-cell",
+      nodeType: BlockNodeType.block,
+      hostElement: cellHost,
+      parentId: "row-1",
+      parentBlock: null,
+      childrenIds: [],
+      childrenLength: 0,
+      getIndexOfParent: () => 0,
+    };
+    const columns = {
+      id: "columns-1",
+      flavour: "columns",
+      nodeType: BlockNodeType.block,
+      hostElement: columnsHost,
+      parentId: "root",
+      parentBlock: root,
+      childrenIds: ["column-1"],
+      childrenLength: 1,
+      getIndexOfParent: () => 2,
+    };
+    const column = {
+      id: "column-1",
+      flavour: "column",
+      nodeType: BlockNodeType.block,
+      hostElement: columnHost,
+      parentId: "columns-1",
+      parentBlock: columns,
+      childrenIds: ["p-col"],
+      childrenLength: 1,
+      getIndexOfParent: () => 0,
+    };
+    const columnParagraph = {
+      id: "p-col",
+      flavour: "paragraph",
+      nodeType: BlockNodeType.editable,
+      hostElement: columnParagraphHost,
+      parentId: "column-1",
+      parentBlock: column,
+      props: {},
+      plainTextOnly: false,
+      textLength: 1,
+      getIndexOfParent: () => 0,
+    };
+    const blocks: Record<string, any> = {
+      root,
+      p1: paragraph,
+      "table-1": table,
+      "cell-1": cell,
+      "columns-1": columns,
+      "column-1": column,
+      "p-col": columnParagraph,
+    };
+    const cdr = jasmine.createSpyObj<ChangeDetectorRef>("ChangeDetectorRef", [
+      "markForCheck",
+    ]);
+    const component = new FixedTextToolbarComponent(cdr);
+    let currentSelection: BlockCraft.Selection | null = null;
+    const tableSnapshot = {
+      id: "new-table",
+      flavour: "table",
+      nodeType: BlockNodeType.block,
+      props: {},
+      meta: {},
+      children: [],
+    };
+    const shapeSnapshot = {
+      id: "new-shape",
+      flavour: "shape",
+      nodeType: BlockNodeType.block,
+      props: { shapeType: "diamond" },
+      meta: {},
+      children: [],
+    };
+    const wordArtSnapshot = {
+      id: "new-word-art",
+      flavour: "word-art",
+      nodeType: BlockNodeType.editable,
+      props: {},
+      meta: {},
+      children: [{ insert: "艺术字" }],
+    };
+    const textBoxSnapshot = {
+      id: "new-text-box",
+      flavour: "text-box",
+      nodeType: BlockNodeType.block,
+      props: {},
+      meta: {},
+      children: [],
+    };
+    const enterEditing = jasmine.createSpy("enterEditing");
+    const textBoxEnterEditing = jasmine.createSpy("textBoxEnterEditing");
+    const wordArtBlock = {
+      id: wordArtSnapshot.id,
+      flavour: "word-art",
+      enterEditing,
+    };
+    const textBoxBlock = {
+      id: textBoxSnapshot.id,
+      flavour: "text-box",
+      enterEditing: textBoxEnterEditing,
+    };
+    const createSnapshot = jasmine
+      .createSpy("createSnapshot")
+      .and.callFake((flavour: string, _args?: unknown[]) =>
+        flavour === "shape"
+          ? shapeSnapshot
+          : flavour === "text-box"
+            ? textBoxSnapshot
+            : flavour === "word-art"
+              ? wordArtSnapshot
+              : tableSnapshot,
+      );
+    const chain = {
+      insertBeforeSnapshots: jasmine
+        .createSpy("insertBeforeSnapshots")
+        .and.returnValue(null),
+      insertAfterSnapshots: jasmine
+        .createSpy("insertAfterSnapshots")
+        .and.returnValue(null),
+      insertSnapshots: jasmine
+        .createSpy("insertSnapshots")
+        .and.returnValue(null),
+      run: jasmine.createSpy("run").and.resolveTo(undefined),
+    };
+    chain.insertBeforeSnapshots.and.returnValue(chain);
+    chain.insertAfterSnapshots.and.returnValue(chain);
+    chain.insertSnapshots.and.returnValue(chain);
+    const insertAbsoluteSnapshot = jasmine
+      .createSpy("insertAbsoluteSnapshot")
+      .and.callFake((snapshot: { id: string }) => snapshot.id);
+    component.doc = {
+      schemas: {
+        has: jasmine.createSpy("has").and.returnValue(true),
+        get: jasmine.createSpy("get").and.callFake((flavour: string) => ({
+          flavour,
+          metadata: {
+            label:
+              flavour === "shape"
+                ? "形状"
+                : flavour === "text-box"
+                  ? "文本框"
+                  : "表格",
+          },
+        })),
+        isValidChildren: jasmine
+          .createSpy("isValidChildren")
+          .and.callFake(
+            (flavour: string, parent: string | { flavour: string }) =>
+              parent === "root" ||
+              (typeof parent === "object" && parent.flavour === "column" &&
+                ["paragraph", "text-box"].includes(flavour)),
+          ),
+        createSnapshot,
+      },
+      getBlockById: (id: string) =>
+        id === wordArtSnapshot.id
+          ? wordArtBlock
+          : id === textBoxSnapshot.id
+            ? textBoxBlock
+            : blocks[id],
+      navigateToBlock: jasmine.createSpy("navigateToBlock").and.resolveTo(true),
+      canInsertChild: jasmine.createSpy("canInsertChild").and.returnValue(true),
+      isEditable: (block: { nodeType: BlockNodeType }) =>
+        block.nodeType === BlockNodeType.editable,
+      queryBlocksBetween: jasmine
+        .createSpy("queryBlocksBetween")
+        .and.callFake(
+          (from: { id: string }, to: { id: string }, contain = false) => {
+            const fromIndex = root.childrenIds.indexOf(from.id);
+            const toIndex = root.childrenIds.indexOf(to.id);
+            return root.childrenIds.slice(
+              Math.min(fromIndex, toIndex) + (contain ? 0 : 1),
+              Math.max(fromIndex, toIndex) + (contain ? 1 : 0),
+            );
+          },
+        ),
+      chain: jasmine.createSpy("chain").and.returnValue(chain),
+      placement: { insertAbsoluteSnapshot },
+      messageService: { warn: jasmine.createSpy("warn") },
+      selection: {
+        get value() {
+          return currentSelection;
+        },
+        replay: jasmine.createSpy("replay"),
+        setCursorAtBlock: jasmine.createSpy("setCursorAtBlock"),
+        selectOrSetCursorAtBlock: jasmine.createSpy("selectOrSetCursorAtBlock"),
+        getSelectionRect: jasmine
+          .createSpy("getSelectionRect")
+          .and.returnValue(new DOMRect(120, 80, 0, 24)),
+      },
+    } as any;
+
+    const selection = (anchor: any, head = anchor) =>
+      new BlockSelection(
+        anchor,
+        head,
+        "root",
+        (id) => blocks[id],
+        (a, b) =>
+          blocks[a].hostElement.compareDocumentPosition(blocks[b].hostElement),
+      );
+    const setSelection = (next: BlockCraft.Selection | null) => {
+      currentSelection = next;
+    };
+
+    return {
+      component,
+      blocks,
+      rootHost,
+      root,
+      paragraph,
+      table,
+      cell,
+      columns,
+      columnParagraph,
+      selection,
+      setSelection,
+      chain,
+      tableSnapshot,
+      shapeSnapshot,
+      wordArtSnapshot,
+      textBoxSnapshot,
+      wordArtBlock,
+      enterEditing,
+      textBoxEnterEditing,
+      createSnapshot,
+      insertAbsoluteSnapshot,
+    };
+  };
+
+  it("嵌套位置不能向 root 回退插入顶层块，其他块保持回退", () => {
+    const {component, rootHost, root, paragraph, columnParagraph} = makeHarness();
+    (component.doc as any).rootId = root.id;
+    (component.doc.schemas.get as jasmine.Spy).and.callFake((flavour: string) => ({
+      metadata: {rootOnly: flavour === "page-divider"},
+    }));
+    (component.doc.canInsertChild as jasmine.Spy).and.callFake((parentId: string) => parentId === root.id);
+    const resolve = (block: unknown, flavour = "page-divider") =>
+      (component as any).resolveBlockInsertPlacement(flavour, block, "after");
+    for (const flavour of ["page-divider"]) {
+      expect(resolve(columnParagraph, flavour)).toBeNull();
+      expect(resolve(paragraph, flavour)).toEqual({kind: "after", anchor: paragraph});
+    }
+    for (const flavour of ["image", "table", "render-unit"]) {
+      expect(resolve(columnParagraph, flavour).anchor.parentBlock).toBe(root);
+    }
+    rootHost.remove();
+  });
+
+  it("inserts before the block for a leading gap cursor", async () => {
+    const { component, rootHost, table, selection, chain, tableSnapshot } =
+      makeHarness();
+    const gapBeforeTable = selection({
+      blockId: "table-1",
+      type: "gap",
+      side: "before",
+      block: table,
+    } as any);
+
+    const inserted = await (component as any).insertTable(2, 2, gapBeforeTable);
+
+    expect(inserted).toBe(tableSnapshot);
+    expect(chain.insertBeforeSnapshots).toHaveBeenCalledOnceWith(table, [
+      tableSnapshot,
+    ]);
+    expect(chain.insertAfterSnapshots).not.toHaveBeenCalled();
+    expect(chain.insertSnapshots).not.toHaveBeenCalled();
+    rootHost.remove();
+  });
+
+  it("inserts at the structural index for a collapsed boundary cursor", async () => {
+    const { component, rootHost, root, selection, chain, tableSnapshot } =
+      makeHarness();
+    const boundaryCursor = selection({
+      blockId: "root",
+      type: "boundary",
+      index: 1,
+      block: root,
+    } as any);
+
+    const inserted = await (component as any).insertTable(2, 2, boundaryCursor);
+
+    expect(inserted).toBe(tableSnapshot);
+    expect(chain.insertSnapshots).toHaveBeenCalledOnceWith("root", 1, [
+      tableSnapshot,
+    ]);
+    expect(chain.insertBeforeSnapshots).not.toHaveBeenCalled();
+    expect(chain.insertAfterSnapshots).not.toHaveBeenCalled();
+    rootHost.remove();
+  });
+
+  it("arms shape drawing without an editor selection and commits only after release", async () => {
+    const {
+      component,
+      rootHost,
+      shapeSnapshot,
+      createSnapshot,
+      insertAbsoluteSnapshot,
+    } = makeHarness();
+    spyOn<any>(component, "syncToolbarState");
+    let drawRequest: any;
+    spyOn<any>(component, "armObjectDrawing").and.callFake((request: any) => {
+      drawRequest = request;
+      return true;
+    });
+    const trigger = jasmine.createSpyObj<CsDropdownDirective>(
+      "CsDropdownDirective",
+      ["close"],
+    );
+
+    await (component as any).insertShape("diamond", trigger);
+
+    expect(trigger.close).toHaveBeenCalled();
+    expect(drawRequest.defaultWidth).toBe(180);
+    expect(drawRequest.defaultHeight).toBe(100);
+    expect(createSnapshot).not.toHaveBeenCalled();
+    expect(insertAbsoluteSnapshot).not.toHaveBeenCalled();
+
+    const anchorRect = new DOMRect(120, 80, 480, 280);
+    await drawRequest.commit({ anchorRect, width: 240, height: 140, gesture: "drag" });
+
+    expect(createSnapshot).toHaveBeenCalledOnceWith("shape", ["diamond"]);
+    expect(insertAbsoluteSnapshot).toHaveBeenCalledOnceWith(
+      {
+        ...shapeSnapshot,
+        props: {
+          ...shapeSnapshot.props,
+          width: 240,
+          height: 140,
+        },
+      },
+      jasmine.objectContaining({
+        anchorRect,
+        layer: "over",
+      }),
+    );
+    expect((component.doc as any).chain).not.toHaveBeenCalled();
+    expect(
+      component.doc.selection.selectOrSetCursorAtBlock,
+    ).toHaveBeenCalledOnceWith("new-shape", true);
+    rootHost.remove();
+  });
+
+  for (const gesture of ["click", "drag"] as const) {
+    it(`creates a text box by ${gesture} and keeps the whole-object selection after commit`, async () => {
+      const {
+        component,
+        rootHost,
+        textBoxSnapshot,
+        textBoxEnterEditing,
+        createSnapshot,
+        insertAbsoluteSnapshot,
+      } = makeHarness();
+      spyOn<any>(component, "syncToolbarState");
+      let drawRequest: any;
+      spyOn<any>(component, "armObjectDrawing").and.callFake((request: any) => {
+        drawRequest = request;
+        return true;
+      });
+
+      const trigger = jasmine.createSpyObj<CsDropdownDirective>(
+        "CsDropdownDirective",
+        ["close"],
+      );
+      (component as any).insertTextBox("office-simple", trigger);
+
+      expect(trigger.close).toHaveBeenCalledTimes(1);
+      expect(drawRequest.defaultWidth).toBe(390);
+      expect(drawRequest.defaultHeight).toBe(178);
+      expect(createSnapshot).not.toHaveBeenCalled();
+      expect(textBoxEnterEditing).not.toHaveBeenCalled();
+
+      const anchorRect = new DOMRect(140, 90, 300, 180);
+      await drawRequest.commit({ anchorRect, width: 300, height: 180, gesture });
+
+      expect(createSnapshot).toHaveBeenCalledOnceWith("text-box", [
+        "",
+        {
+          ...getTextBoxPreset("office-simple").props,
+          width: 300,
+          height: 180,
+          textAutoFit: gesture === "click" ? "resize-shape" : "none",
+        },
+      ]);
+      expect(insertAbsoluteSnapshot).toHaveBeenCalledOnceWith(
+        textBoxSnapshot,
+        jasmine.objectContaining({ anchorRect, layer: "over" }),
+      );
+      expect(
+        component.doc.selection.selectOrSetCursorAtBlock,
+      ).toHaveBeenCalledOnceWith("new-text-box", true);
+      expect((component.doc as any).navigateToBlock).toHaveBeenCalledOnceWith(
+        "new-text-box",
+      );
+      // Text editing shows no frame chrome; the insertion tail must stay at the
+      // whole-object selection so handles and the settings rail remain visible.
+      expect(textBoxEnterEditing).not.toHaveBeenCalled();
+      rootHost.remove();
+    });
+  }
+
+  it("keeps catalog picks horizontal at the preset's own proportion", async () => {
+    const { component, rootHost, createSnapshot } = makeHarness();
+    spyOn<any>(component, "syncToolbarState");
+    let drawRequest: any;
+    spyOn<any>(component, "armObjectDrawing").and.callFake((request: any) => {
+      drawRequest = request;
+      return true;
+    });
+    const trigger = jasmine.createSpyObj<CsDropdownDirective>(
+      "CsDropdownDirective",
+      ["close"],
+    );
+
+    (component as any).insertTextBox("office-simple", trigger);
+
+    // Fixed-toolbar catalog insertion keeps the chosen style's own horizontal
+    // proportion; text direction can be changed after insertion.
+    const preset = getTextBoxPreset("office-simple");
+    expect(drawRequest.defaultWidth).toBe(preset.defaultWidth);
+    expect(drawRequest.defaultHeight).toBe(preset.defaultHeight);
+
+    await drawRequest.commit({
+      anchorRect: new DOMRect(0, 0, 280, 140),
+      width: 280,
+      height: 140,
+      gesture: "drag",
+    });
+
+    expect(createSnapshot).toHaveBeenCalledOnceWith("text-box", [
+      "",
+      { ...preset.props, width: 280, height: 140, textAutoFit: "none" },
+    ]);
+    rootHost.remove();
+  });
+
+  for (const gesture of ["click", "drag"] as const) {
+    it(`creates WordArt by ${gesture} without an editor selection and edits after commit`, async () => {
+      const {
+        component,
+        rootHost,
+        wordArtSnapshot,
+        createSnapshot,
+        insertAbsoluteSnapshot,
+        enterEditing,
+      } = makeHarness();
+      spyOn<any>(component, "syncToolbarState");
+      let drawRequest: any;
+      spyOn<any>(component, "armObjectDrawing").and.callFake((request: any) => {
+        drawRequest = request;
+        return true;
+      });
+      const trigger = jasmine.createSpyObj<CsDropdownDirective>(
+        "CsDropdownDirective",
+        ["close"],
+      );
+      const preset = getWordArtPreset("ocean");
+
+      await (component as any).insertWordArt("ocean", trigger);
+
+      expect(trigger.close).toHaveBeenCalled();
+      expect(drawRequest.defaultWidth).toBe(320);
+      expect(drawRequest.defaultHeight).toBe(96);
+      expect(createSnapshot).not.toHaveBeenCalled();
+      expect(insertAbsoluteSnapshot).not.toHaveBeenCalled();
+      expect(enterEditing).not.toHaveBeenCalled();
+
+      const anchorRect = new DOMRect(160, 96, 420, 140);
+      await drawRequest.commit({ anchorRect, width: 420, height: 140, gesture });
+
+      expect(createSnapshot).toHaveBeenCalledOnceWith("word-art", [
+        "艺术字",
+        {
+          ...preset.props,
+          width: 420,
+          height: 140,
+          textAutoFit: gesture === "click" ? "resize-shape" : "none",
+        },
+      ]);
+      const insertedProps = createSnapshot.calls.mostRecent().args[1][1];
+      expect(insertedProps.textFill).toEqual(preset.props.textFill);
+      expect(insertAbsoluteSnapshot).toHaveBeenCalledOnceWith(
+        wordArtSnapshot,
+        jasmine.objectContaining({
+          anchorRect,
+          layer: "over",
+        }),
+      );
+      expect(
+        component.doc.selection.selectOrSetCursorAtBlock,
+      ).toHaveBeenCalledOnceWith("new-word-art", true);
+      expect((component.doc as any).navigateToBlock).toHaveBeenCalledOnceWith(
+        "new-word-art",
+      );
+      expect(enterEditing).toHaveBeenCalledOnceWith(true);
+      rootHost.remove();
+    });
+  }
+
+  it("delegates the complete catalog to the shared categorized picker", () => {
+    expect(SHAPE_DEFINITIONS.length).toBe(111);
+    expect(
+      SHAPE_CATEGORIES.flatMap((category) => category.definitions),
+    ).toEqual(SHAPE_DEFINITIONS);
+    expect(SHAPE_DEFINITIONS.map((item) => item.type)).toContain(
+      "notched-right-arrow",
+    );
+    expect(
+      SHAPE_DEFINITIONS.every(
+        (item) => typeof item.path === "string" && !("icon" in item),
+      ),
+    ).toBeTrue();
+  });
+
+  it("disables generic block insertion for model table-cell selections", () => {
+    const { component, rootHost, cell, selection } = makeHarness();
+    const tableCellSelection = selection({
+      blockId: "cell-1",
+      type: "table-cell",
+      tableId: "table-1",
+      block: cell,
+    } as any);
+
+    expect(
+      (component as any).canInsertBlock("image", tableCellSelection),
+    ).toBeFalse();
+    rootHost.remove();
+  });
+
+  it("disables the column picker for model table-cell selections", () => {
+    const { component, rootHost, cell, selection } = makeHarness();
+    const tableCellSelection = selection({
+      blockId: "cell-1",
+      type: "table-cell",
+      tableId: "table-1",
+      block: cell,
+    } as any);
+
+    expect(
+      (component as any).canUseColumnPicker(tableCellSelection),
+    ).toBeFalse();
+    rootHost.remove();
+  });
+
+  it("does not run the columns command for a stale table-cell selection", async () => {
+    const { component, rootHost, cell, selection, setSelection } =
+      makeHarness();
+    const tableCellSelection = selection({
+      blockId: "cell-1",
+      type: "table-cell",
+      tableId: "table-1",
+      block: cell,
+    } as any);
+    setSelection(tableCellSelection);
+    component.selectionJSON = tableCellSelection.toJSON();
+    const insertColumns = spyOn<any>(component, "insertColumns").and.resolveTo(
+      {},
+    );
+    const trigger = jasmine.createSpyObj<CsDropdownDirective>(
+      "CsDropdownDirective",
+      ["close"],
+    );
+
+    await (component as any).insertColumnsBlock({ count: 2 }, trigger);
+
+    expect(trigger.close).toHaveBeenCalled();
+    expect(insertColumns).not.toHaveBeenCalled();
+    rootHost.remove();
+  });
+
+  it("disables the column picker for a collapsed boundary cursor", () => {
+    const { component, rootHost, root, selection } = makeHarness();
+    const boundaryCursor = selection({
+      blockId: "root",
+      type: "boundary",
+      index: 1,
+      block: root,
+    } as any);
+
+    expect((component as any).canUseColumnPicker(boundaryCursor)).toBeFalse();
+    rootHost.remove();
+  });
+
+  it("enables the column picker for a boundary range covering an editable block", () => {
+    const { component, rootHost, root, selection } = makeHarness();
+    const boundaryRange = selection(
+      { blockId: "root", type: "boundary", index: 0, block: root } as any,
+      { blockId: "root", type: "boundary", index: 1, block: root } as any,
+    );
+
+    expect((component as any).canUseColumnPicker(boundaryRange)).toBeTrue();
+    rootHost.remove();
+  });
+
+  it("enables the column picker from a text cursor inside an existing columns block", () => {
+    const { component, rootHost, columnParagraph, selection } = makeHarness();
+    const textCursor = selection({
+      blockId: "p-col",
+      type: "text",
+      offset: 0,
+      block: columnParagraph,
+    } as any);
+
+    expect((component as any).canUseColumnPicker(textCursor)).toBeTrue();
+    rootHost.remove();
+  });
+
+  const makeTextBoxRange = (boundary = false) => {
+    const harness = makeHarness();
+    const { root, rootHost, blocks, selection } = harness;
+    const boxes = [0, 1].map((index) => {
+      const hostElement = document.createElement("div");
+      rootHost.appendChild(hostElement);
+      const block = {
+        id: `text-box-${index}`,
+        flavour: "text-box",
+        nodeType: BlockNodeType.block,
+        parentId: root.id,
+        parentBlock: root,
+        hostElement,
+        getIndexOfParent: () => root.childrenIds.indexOf(block.id),
+      };
+      blocks[block.id] = block;
+      return block;
+    });
+    root.childrenIds = boxes.map((block) => block.id);
+    root.childrenLength = 2;
+    const range = boundary
+      ? selection(
+          { blockId: root.id, type: "boundary", index: 0, block: root } as any,
+          { blockId: root.id, type: "boundary", index: 2, block: root } as any,
+        )
+      : selection(
+          { blockId: boxes[0].id, type: "selected", block: boxes[0] } as any,
+          { blockId: boxes[1].id, type: "selected", block: boxes[1] } as any,
+        );
+    return { ...harness, boxes, range };
+  };
+
+  for (const boundary of [false, true]) {
+    it(`enables columns for two flow text boxes selected by ${boundary ? "boundaries" : "frames"} without enabling text transforms`, () => {
+      const { component, rootHost, range } = makeTextBoxRange(boundary);
+      try {
+        (component as any).syncToolbarState(range);
+        expect((component as any).canUseColumns).toBeTrue();
+        expect((component as any).canTransformBlocks).toBeFalse();
+      } finally {
+        rootHost.remove();
+      }
+    });
+  }
+
+  it("keeps readonly text boxes and schema-rejected column contents disabled", () => {
+    const { component, rootHost, range } = makeTextBoxRange();
+    try {
+      const readonly = jasmine.createSpy("isSelectionReadonly").and.returnValue(true);
+      (component.doc as any).readonlyManager = { isSelectionReadonly: readonly };
+      expect((component as any).canUseColumnPicker(range)).toBeFalse();
+      readonly.and.returnValue(false);
+      (component.doc.schemas.isValidChildren as jasmine.Spy).and.returnValue(false);
+      expect((component as any).canUseColumnPicker(range)).toBeFalse();
+      expect((component as any).convertSelectedBlocksToColumns(2, range)).toBeNull();
+    } finally {
+      rootHost.remove();
+    }
+  });
+
+  it("requires a common parent that accepts columns for text-box conversion", () => {
+    const { component, rootHost, range, boxes } = makeTextBoxRange();
+    try {
+      (component.doc.canInsertChild as jasmine.Spy).and.returnValue(false);
+      expect((component as any).canUseColumnPicker(range)).toBeFalse();
+      (component.doc.canInsertChild as jasmine.Spy).and.returnValue(true);
+      boxes[1].parentId = "other-parent";
+      expect((component as any).canUseColumnPicker(range)).toBeFalse();
+      expect((component as any).convertSelectedBlocksToColumns(2, range)).toBeNull();
+    } finally {
+      rootHost.remove();
+    }
+  });
+
+  it("deletes the shifted empty columns container after adding a landing paragraph", () => {
+    const { component, root, rootHost, columns, columnParagraph } = makeHarness();
+    root.childrenIds = [columns.id];
+    root.childrenLength = 1;
+    columns.getIndexOfParent = () => 0;
+    columnParagraph.textLength = 0;
+    const deleteBlocks = jasmine.createSpy("deleteBlocks");
+    (component.doc as any).crud = {
+      transact: (run: () => void) => run(),
+      insertBlocks: jasmine.createSpy("insertBlocks"),
+      deleteBlocks,
+    };
+    try {
+      (component as any).dissolveColumns(columns);
+      expect(deleteBlocks).toHaveBeenCalledOnceWith(root.id, 1, 1);
+      expect(component.doc.crud.insertBlocks).toHaveBeenCalled();
+    } finally {
+      rootHost.remove();
+    }
+  });
+});
+
+describe("FixedTextToolbarComponent link pad", () => {
+  it("does not replay a saved selection after destroy", () => {
+    const replay = jasmine.createSpy("replay");
+    const doc = {
+      selection: {
+        value: null,
+        replay,
+      },
+    };
+    const cdr = jasmine.createSpyObj<ChangeDetectorRef>("ChangeDetectorRef", [
+      "markForCheck",
+    ]);
+    const component = new FixedTextToolbarComponent(cdr);
+    component.doc = doc as any;
+    component.ngOnDestroy();
+
+    const result = (component as any).replaySelection({
+      anchor: { blockId: "p1", type: "text", offset: 0 },
+      head: { blockId: "p1", type: "text", offset: 1 },
+      commonParent: "root",
+    });
+
+    expect(result).toBeFalse();
+    expect(replay).not.toHaveBeenCalled();
+  });
+
+  it("reports replay failure when the restored selection is cleared as stale", () => {
+    const replay = jasmine.createSpy("replay");
+    const doc = {
+      selection: {
+        value: null,
+        replay,
+      },
+    };
+    const cdr = jasmine.createSpyObj<ChangeDetectorRef>("ChangeDetectorRef", [
+      "markForCheck",
+    ]);
+    const component = new FixedTextToolbarComponent(cdr);
+    component.doc = doc as any;
+
+    const result = (component as any).replaySelection({
+      anchor: { blockId: "deleted", type: "text", offset: 0 },
+      head: { blockId: "deleted", type: "text", offset: 1 },
+      commonParent: "root",
+    });
+
+    expect(result).toBeFalse();
+    expect(replay).toHaveBeenCalled();
+  });
+
+  it("reports replay failure when the restored selection points at missing blocks", () => {
+    const hostElement = document.createElement("p");
+    document.body.appendChild(hostElement);
+    const block = {
+      id: "deleted",
+      flavour: "paragraph",
+      nodeType: BlockNodeType.editable,
+      hostElement,
+    };
+    const selection = new BlockSelection(
+      { blockId: "deleted", type: "text", offset: 0, block } as any,
+      { blockId: "deleted", type: "text", offset: 1, block } as any,
+      "root",
+      () => block as any,
+      () => 0,
+    );
+    const replay = jasmine.createSpy("replay");
+    const doc = {
+      getBlockById: jasmine.createSpy("getBlockById").and.throwError("missing"),
+      selection: {
+        value: selection,
+        replay,
+      },
+    };
+    const cdr = jasmine.createSpyObj<ChangeDetectorRef>("ChangeDetectorRef", [
+      "markForCheck",
+    ]);
+    const component = new FixedTextToolbarComponent(cdr);
+    component.doc = doc as any;
+
+    const result = (component as any).replaySelection(selection.toJSON());
+
+    expect(result).toBeFalse();
+    expect(replay).toHaveBeenCalled();
+    hostElement.remove();
+  });
+
+  it("does not create a fake range when the text selection has no DOM rect", () => {
+    const hostElement = document.createElement("p");
+    document.body.appendChild(hostElement);
+
+    const block = {
+      id: "p1",
+      flavour: "paragraph",
+      nodeType: BlockNodeType.editable,
+      hostElement,
+      props: {},
+      plainTextOnly: false,
+      textLength: 5,
+    };
+    const blocks: Record<string, any> = { p1: block };
+    const selection = new BlockSelection(
+      { blockId: "p1", type: "text", offset: 0, block } as any,
+      { blockId: "p1", type: "text", offset: 2, block } as any,
+      "root",
+      (id) => blocks[id],
+      () => 0,
+    );
+    const selectionJSON = selection.toJSON();
+    const getSelectionRect = jasmine
+      .createSpy("getSelectionRect")
+      .and.returnValue(null);
+    const createFakeRange = jasmine.createSpy("createFakeRange");
+    const replay = jasmine.createSpy("replay");
+    const doc = {
+      selection: {
+        get value() {
+          return selection;
+        },
+        replay,
+        getSelectionRect,
+        createFakeRange,
+      },
+    };
+    const cdr = jasmine.createSpyObj<ChangeDetectorRef>("ChangeDetectorRef", [
+      "markForCheck",
+    ]);
+    const component = new FixedTextToolbarComponent(cdr);
+    component.doc = doc as any;
+    component.selectionJSON = selectionJSON;
+    component.hasTextSelection = true;
+
+    (component as any).openLinkPad();
+
+    expect(replay).toHaveBeenCalledOnceWith(selectionJSON);
+    expect(getSelectionRect).toHaveBeenCalled();
+    expect(createFakeRange).not.toHaveBeenCalled();
+    hostElement.remove();
+  });
+});
+
+describe("FixedTextToolbarComponent model-owned commands", () => {
+  it("syncs toolbar state after a command without resampling the native selection", () => {
+    const selection = { anchor: { blockId: "p1" } } as any;
+    const recalculate = jasmine.createSpy("recalculate");
+    const cdr = jasmine.createSpyObj<ChangeDetectorRef>("ChangeDetectorRef", [
+      "markForCheck",
+    ]);
+    const component = new FixedTextToolbarComponent(cdr);
+    component.doc = {
+      selection: {
+        value: selection,
+        recalculate,
+      },
+    } as any;
+    spyOn<any>(component, "restoreSelection");
+    spyOn<any>(component, "canFormatTextSelection").and.returnValue(true);
+    const syncToolbarState = spyOn<any>(component, "syncToolbarState");
+    const run = jasmine.createSpy("run");
+
+    (component as any).runWithSelection(run);
+
+    expect(run).toHaveBeenCalled();
+    expect(recalculate).not.toHaveBeenCalled();
+    expect(syncToolbarState).toHaveBeenCalledOnceWith(selection);
+    expect(cdr.markForCheck).toHaveBeenCalled();
+  });
+
+  it("syncs a columns command without resampling the native selection", async () => {
+    const selection = { anchor: { blockId: "p1" } } as any;
+    const recalculate = jasmine.createSpy("recalculate");
+    const cdr = jasmine.createSpyObj<ChangeDetectorRef>("ChangeDetectorRef", [
+      "markForCheck",
+    ]);
+    const component = new FixedTextToolbarComponent(cdr);
+    component.selectionJSON = {} as any;
+    component.doc = {
+      selection: {
+        value: selection,
+        recalculate,
+      },
+    } as any;
+    spyOn<any>(component, "restoreSelection");
+    spyOn<any>(component, "isLiveSelection").and.returnValue(true);
+    spyOn<any>(component, "canUseColumnPicker").and.returnValue(true);
+    spyOn<any>(component, "insertColumns").and.resolveTo({ id: "columns-1" });
+    const syncToolbarState = spyOn<any>(component, "syncToolbarState");
+    const trigger = jasmine.createSpyObj<CsDropdownDirective>(
+      "CsDropdownDirective",
+      ["close"],
+    );
+
+    await (component as any).insertColumnsBlock({ count: 2 }, trigger);
+
+    expect(trigger.close).toHaveBeenCalled();
+    expect(recalculate).not.toHaveBeenCalled();
+    expect(syncToolbarState).toHaveBeenCalledOnceWith(selection);
+    expect(cdr.markForCheck).toHaveBeenCalled();
+  });
+
+  it("re-resolves selection ancestry after shrinking columns", () => {
+    const setSelection = jasmine.createSpy("setSelection");
+    const setCursorAtBlock = jasmine.createSpy("setCursorAtBlock");
+    const cdr = jasmine.createSpyObj<ChangeDetectorRef>("ChangeDetectorRef", [
+      "markForCheck",
+    ]);
+    const component = new FixedTextToolbarComponent(cdr);
+    const selection = {
+      anchor: { blockId: "p1", type: "text", offset: 1 },
+      head: { blockId: "p2", type: "text", offset: 2 },
+    } as any;
+    component.doc = {
+      selection: { setSelection, setCursorAtBlock },
+    } as any;
+
+    (component as any).restoreSelectionAfterColumnShrink(
+      selection,
+      "column-keep",
+    );
+
+    expect(setSelection).toHaveBeenCalledOnceWith(
+      selection.anchor,
+      selection.head,
+    );
+    expect(setCursorAtBlock).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the last retained column when a shrunk endpoint was deleted", () => {
+    const setSelection = jasmine
+      .createSpy("setSelection")
+      .and.throwError("missing endpoint");
+    const setCursorAtBlock = jasmine.createSpy("setCursorAtBlock");
+    const cdr = jasmine.createSpyObj<ChangeDetectorRef>("ChangeDetectorRef", [
+      "markForCheck",
+    ]);
+    const component = new FixedTextToolbarComponent(cdr);
+    const selection = {
+      anchor: { blockId: "deleted", type: "text", offset: 0 },
+      head: { blockId: "deleted", type: "text", offset: 0 },
+    } as any;
+    component.doc = {
+      selection: { setSelection, setCursorAtBlock },
+    } as any;
+
+    (component as any).restoreSelectionAfterColumnShrink(
+      selection,
+      "column-keep",
+    );
+
+    expect(setCursorAtBlock).toHaveBeenCalledOnceWith("column-keep", true);
+  });
+});
+
+describe("FixedTextToolbarComponent typography ownership", () => {
+  const createComponent = () => {
+    const cdr = jasmine.createSpyObj<ChangeDetectorRef>("ChangeDetectorRef", [
+      "markForCheck",
+    ]);
+    return new FixedTextToolbarComponent(cdr);
+  };
+
+  for (const [handler, target] of [
+    ["onFontFamilyItemClicked", "font-family"],
+    ["onFontSizeItemClicked", "font-size"],
+    ["onLetterSpacingItemClicked", "letter-spacing"],
+  ] as const) {
+    it(`returns focus to the toolbar button before opening ${target} settings`, () => {
+      const component = createComponent();
+      const close = jasmine.createSpy("close");
+      const openFontSettings = spyOn<any>(component, "openFontSettings");
+
+      (component as any)[handler](
+        { name: "more-font-settings", value: target },
+        { close },
+      );
+
+      expect(close).toHaveBeenCalledOnceWith(true);
+      expect(close).toHaveBeenCalledBefore(openFontSettings);
+      expect(openFontSettings).toHaveBeenCalledOnceWith(target);
+    });
+  }
+
+  it("returns focus to the outer button before opening font settings from a submenu", () => {
+    const component = createComponent();
+    const closeSubmenu = jasmine.createSpy("closeSubmenu");
+    const closeParent = jasmine.createSpy("closeParent");
+    const openFontSettings = spyOn<any>(component, "openFontSettings");
+
+    (component as any).onFontSizeItemClicked(
+      { name: "more-font-settings", value: "font-scale" },
+      { close: closeSubmenu },
+      { close: closeParent },
+    );
+
+    expect(closeSubmenu).toHaveBeenCalledOnceWith(false);
+    expect(closeParent).toHaveBeenCalledOnceWith(true);
+    expect(closeParent).toHaveBeenCalledBefore(openFontSettings);
+    expect(openFontSettings).toHaveBeenCalledOnceWith("font-scale");
+  });
+
+  it("writes compact inline typography through the selection helper", () => {
+    const component = createComponent();
+    const formatText = jasmine.createSpy("formatText");
+    component.utils = { formatText } as any;
+    spyOn<any>(component, "runWithSelection").and.callFake((run: () => void) =>
+      run(),
+    );
+
+    const close = jasmine.createSpy("close");
+    (component as any).onFontFamilyItemClicked({ value: "kai" }, { close });
+
+    expect(close).toHaveBeenCalled();
+    expect(formatText).toHaveBeenCalledOnceWith({
+      "t:ff": "kai",
+      "s:fontFamily": null,
+    });
+  });
+
+  it("sets actual pixels through the selection helper", () => {
+    const component = createComponent();
+    const formatFontSizePixels = jasmine.createSpy("formatFontSizePixels");
+    component.utils = { formatFontSizePixels } as any;
+    spyOn<any>(component, "runWithSelection").and.callFake((run: () => void) =>
+      run(),
+    );
+
+    const close = jasmine.createSpy("close");
+    (component as any).onFontSizeItemClicked({ value: 24 }, { close });
+
+    expect(close).toHaveBeenCalled();
+    expect(formatFontSizePixels).toHaveBeenCalledOnceWith(24);
+  });
+
+  it("shows letter spacing as the persisted em value", () => {
+    const component = createComponent();
+    (component as any).activeTypography = { ff: null, fs: null, ls: 0.075 };
+
+    expect((component as any).activeLetterSpacingLabel).toBe("0.075em");
+    expect((component as any).letterSpacingOptionLabel(-0.05)).toBe("-0.05em");
+  });
+
+  it("keeps the paragraph-style leading icon in sync", () => {
+    const component = createComponent();
+
+    (component as any).activeProps = {};
+    expect((component as any).activeStyleItem.icon).toBe("bc_wenben");
+
+    (component as any).activeProps = { heading: 2 };
+    expect((component as any).activeStyleItem.icon).toBe("bc_biaoti_2");
+  });
+
+  it("uses one alignment menu and reflects the current alignment", () => {
+    const component = createComponent();
+    const updateBlockProps = jasmine.createSpy("updateBlockProps");
+    component.utils = { updateBlockProps } as any;
+    (component as any).activeProps = { textAlign: "center" };
+    spyOn<any>(component, "runWithSelection").and.callFake((run: () => void) =>
+      run(),
+    );
+
+    expect((component as any).activeAlignAction.value).toBe("center");
+
+    const close = jasmine.createSpy("close");
+    (component as any).onAlignItemClicked({ value: "right" }, { close });
+
+    expect(close).toHaveBeenCalled();
+    expect(updateBlockProps).toHaveBeenCalledOnceWith({ textAlign: "right" });
+  });
+
+  it("returns focus to the alignment button before opening paragraph settings", () => {
+    const component = createComponent();
+    const close = jasmine.createSpy("close");
+    const openParagraphSettings = spyOn<any>(component, "openParagraphSettings");
+
+    (component as any).onAlignItemClicked(
+      { name: "more-paragraph-settings", value: "paragraph-spacing" },
+      { close },
+    );
+
+    expect(close).toHaveBeenCalledOnceWith(true);
+    expect(close).toHaveBeenCalledBefore(openParagraphSettings);
+    expect(openParagraphSettings).toHaveBeenCalledOnceWith("paragraph-spacing");
+  });
+
+  it("returns focus to the outer toolbar button from the line-height submenu", () => {
+    const component = createComponent();
+    const closeSubmenu = jasmine.createSpy("closeSubmenu");
+    const closeParent = jasmine.createSpy("closeParent");
+    const openParagraphSettings = spyOn<any>(component, "openParagraphSettings");
+
+    (component as any).onLineHeightItemClicked(
+      { name: "more-paragraph-settings", value: "paragraph-spacing" },
+      { close: closeSubmenu },
+      { close: closeParent },
+    );
+
+    expect(closeSubmenu).toHaveBeenCalledOnceWith(false);
+    expect(closeParent).toHaveBeenCalledOnceWith(true);
+    expect(closeParent).toHaveBeenCalledBefore(openParagraphSettings);
+    expect(openParagraphSettings).toHaveBeenCalledOnceWith("paragraph-spacing");
+  });
+
+  it("returns focus to the line-height button when it has no parent menu", () => {
+    const component = createComponent();
+    const close = jasmine.createSpy("close");
+    const openParagraphSettings = spyOn<any>(component, "openParagraphSettings");
+
+    (component as any).onLineHeightItemClicked(
+      { name: "more-paragraph-settings", value: "paragraph-line-height" },
+      { close },
+    );
+
+    expect(close).toHaveBeenCalledOnceWith(true);
+    expect(close).toHaveBeenCalledBefore(openParagraphSettings);
+    expect(openParagraphSettings).toHaveBeenCalledOnceWith("paragraph-line-height");
+  });
+
+  it("writes line height as a paragraph property", () => {
+    const component = createComponent();
+    const updateBlockProps = jasmine.createSpy("updateBlockProps");
+    component.utils = { updateBlockProps } as any;
+    spyOn<any>(component, "runWithSelection").and.callFake((run: () => void) =>
+      run(),
+    );
+
+    const close = jasmine.createSpy("close");
+    (component as any).onLineHeightItemClicked({ value: 1.5 }, { close });
+
+    expect(close).toHaveBeenCalled();
+    expect(updateBlockProps).toHaveBeenCalledOnceWith({ lh: 1.5 });
+  });
+});
+
+describe("FixedTextToolbarComponent extension actions", () => {
+  const makeTextSelection = (id = "p1", offset = 0) => {
+    const hostElement = document.createElement("p");
+    document.body.appendChild(hostElement);
+    const block = {
+      id,
+      flavour: "paragraph",
+      nodeType: BlockNodeType.editable,
+      hostElement,
+      props: {},
+      plainTextOnly: false,
+      textLength: 5,
+    };
+    const blocks: Record<string, any> = { [id]: block };
+    const selection = new BlockSelection(
+      { blockId: id, type: "text", offset, block } as any,
+      { blockId: id, type: "text", offset, block } as any,
+      "root",
+      (blockId) => blocks[blockId],
+      () => 0,
+    );
+    return { block, hostElement, selection };
+  };
+
+  it("emits the live replayed selection instead of the saved snapshot", () => {
+    const { hostElement, selection } = makeTextSelection("p1", 2);
+    let currentSelection: BlockCraft.Selection | null = null;
+    const replay = jasmine.createSpy("replay").and.callFake(() => {
+      currentSelection = selection;
+    });
+    const cdr = jasmine.createSpyObj<ChangeDetectorRef>("ChangeDetectorRef", [
+      "markForCheck",
+    ]);
+    const component = new FixedTextToolbarComponent(cdr);
+    component.doc = {
+      selection: {
+        get value() {
+          return currentSelection;
+        },
+        replay,
+      },
+    } as any;
+    component.selectionJSON = {
+      anchor: { blockId: "stale", type: "text", offset: 0 },
+      head: { blockId: "stale", type: "text", offset: 0 },
+      commonParent: "root",
+    };
+    const emitted: any[] = [];
+    component.extensionAction.subscribe((ctx) => emitted.push(ctx));
+
+    (component as any).onExtensionAction({
+      key: "custom",
+      icon: "bc_test",
+      title: "Custom",
+    });
+
+    expect(replay).toHaveBeenCalledOnceWith(component.selectionJSON);
+    expect(emitted.length).toBe(1);
+    expect(emitted[0].selection).toEqual(selection.toJSON());
+    hostElement.remove();
+  });
+
+  it("emits null selection when replay clears a stale saved selection", () => {
+    let currentSelection: BlockCraft.Selection | null = null;
+    const replay = jasmine.createSpy("replay");
+    const cdr = jasmine.createSpyObj<ChangeDetectorRef>("ChangeDetectorRef", [
+      "markForCheck",
+    ]);
+    const component = new FixedTextToolbarComponent(cdr);
+    component.doc = {
+      selection: {
+        get value() {
+          return currentSelection;
+        },
+        replay,
+      },
+    } as any;
+    component.selectionJSON = {
+      anchor: { blockId: "deleted", type: "text", offset: 0 },
+      head: { blockId: "deleted", type: "text", offset: 0 },
+      commonParent: "root",
+    };
+    const emitted: any[] = [];
+    component.extensionAction.subscribe((ctx) => emitted.push(ctx));
+
+    (component as any).onExtensionAction({
+      key: "custom",
+      icon: "bc_test",
+      title: "Custom",
+    });
+
+    expect(replay).toHaveBeenCalled();
+    expect(emitted.length).toBe(1);
+    expect(emitted[0].selection).toBeNull();
+    expect(component.selectionJSON).toBeNull();
+  });
+
+  it("does not emit disabled or readonly extension actions", () => {
+    const cdr = jasmine.createSpyObj<ChangeDetectorRef>("ChangeDetectorRef", [
+      "markForCheck",
+    ]);
+    const component = new FixedTextToolbarComponent(cdr);
+    component.doc = {
+      selection: { value: null, replay: jasmine.createSpy("replay") },
+    } as any;
+    const emit = spyOn(component.extensionAction, "emit");
+
+    (component as any).onExtensionAction({
+      key: "disabled",
+      icon: "bc_test",
+      title: "Disabled",
+      disabled: true,
+    });
+    component.readonly = true;
+    (component as any).onExtensionAction({
+      key: "readonly",
+      icon: "bc_test",
+      title: "Readonly",
+    });
+
+    expect(emit).not.toHaveBeenCalled();
+  });
+});

@@ -1,17 +1,21 @@
-import {Subscription} from "rxjs";
-import {deltaToString, nextTick, performanceTest} from "../../global";
+import {Subject, Subscription} from "rxjs";
+import {nextTick, performanceTest} from "../../global";
 import {
   BlockNodeType,
   DeltaOperation,
-  EditableBlockComponent,
   FakeRange,
-  STR_ZERO_WIDTH_SPACE
 } from "../../framework";
 
 export interface FindReplaceMatch {
+  /** Stable model identity; available even when the block view is unmounted. */
+  readonly blockId?: string
   block: BlockCraft.BlockComponent
   index: number
   length: number
+  /** False for atomic mention matches; omitted by legacy text-only consumers. */
+  readonly replaceable?: boolean
+  /** User-facing reason when this result cannot be replaced. */
+  readonly replaceDisabledReason?: string
   fakeRange: FakeRange | null
 }
 
@@ -34,11 +38,17 @@ const LAZY_THRESHOLD = 50
 /**
  * Headless find-replace helper.
  *
- * 混合策略：
- * - 匹配数 ≤ LAZY_THRESHOLD：全量创建 FakeRange，零 observer 开销
- * - 匹配数 > LAZY_THRESHOLD：IntersectionObserver 懒加载，只为视口内块创建 FakeRange
+ * Mixed strategy:
+ * - model scan always covers mounted and unmounted blocks
+ * - non-virtual documents with few matches create every FakeRange
+ * - virtual or high-match documents materialize only visible/current matches
  */
 export class FindReplaceHelper {
+  private readonly _stateChange = new Subject<void>()
+  /** Coalesced notification after results, navigation or replacement permissions change. */
+  readonly stateChange$ = this._stateChange.asObservable()
+  private _stateChangeQueued = false
+
   matchIndex = 0
   matchedList: FindReplaceMatch[] = []
   matchedBlockMap = new Map<string, FindReplaceMatch[]>()
@@ -51,9 +61,21 @@ export class FindReplaceHelper {
 
   get isActive() { return !!this._findText }
 
+  get hasReplaceableMatches() { return this.matchedList.length > this.nonReplaceableCount }
+  get nonReplaceableCount() { return this._nonReplaceableCount }
+  get nonReplaceableTooltip() { return this._nonReplaceableTooltip }
+
+  private _nonReplaceableCount = 0
+  private _nonReplaceableTooltip = ''
+
   private _findText = ''
   private _subs: Subscription[] = []
   private _blockOrder: string[] | null = null
+  private _destroyed = false
+  private _refreshQueued = false
+  private _refreshAll = false
+  private _pendingTextBlockIds = new Set<string>()
+  private _scrollRequest = 0
 
   /** 当前搜索是否使用懒加载模式 */
   private _lazyMode = false
@@ -70,63 +92,35 @@ export class FindReplaceHelper {
   // ── Lifecycle ────────────────────────────────────────────────
 
   listen() {
+    this._destroyed = false
     this._initObserver()
 
     this._subs.push(
-      this.doc.onChildrenUpdate$.subscribe(evt => {
-        if (!this.isActive) return
-        this.cancelHighlight()
-        this._blockOrder = null
-
-        nextTick().then(() => {
-          evt.transactions.forEach(t => {
-            if (t.deleted) {
-              const parentBlock = t.block
-              const childIdSet = new Set(parentBlock.childrenIds)
-              const toRemove: string[] = []
-              for (const [bid, m] of this.matchedBlockMap) {
-                if (m[0].block.parentId === parentBlock.id && !childIdSet.has(bid)) {
-                  toRemove.push(bid)
-                }
-              }
-              toRemove.forEach(id => this.clearOldMatchesMark(id))
-            }
-
-            if (t.inserted) {
-              t.inserted.forEach(block => {
-                if (!this.doc.isEditable(block)) return
-                this._matchBlockText(block)
-              })
-            }
-          })
-
-          this._resortMatches()
-          this.highlightCurrent(false)
-        })
+      this.doc.model.structureChange$.subscribe(() => this._queueModelRefresh()),
+      this.doc.model.textChange$.subscribe(evt => this._queueModelRefresh(evt.blockIds)),
+      this.doc.virtualization.viewChange$.subscribe(() => {
+        if (this.isActive && this._lazyMode) this._syncMountedMatchObservers()
       }),
-
-      this.doc.onTextUpdate$.subscribe(evt => {
-        if (!this.isActive) return
-        this.cancelHighlight()
-
-        nextTick().then(() => {
-          evt.transactions.forEach(t => {
-            const block = t.block
-            this.clearOldMatchesMark(block.id)
-            this._matchBlockText(block)
-          })
-          this._resortMatches()
-          this.highlightCurrent(false)
-        })
-      })
     )
+    const refreshPermissions = () => this._updateReplacementSummary()
+    if (this.doc.readonlyManager?.stateChange$) {
+      this._subs.push(this.doc.readonlyManager.stateChange$.subscribe(refreshPermissions))
+    } else if (this.doc.readonlySwitch$) {
+      this._subs.push(this.doc.readonlySwitch$.subscribe(refreshPermissions))
+    }
   }
 
   destroy() {
+    this._destroyed = true
+    this._scrollRequest++
     this.clearAll()
     this._destroyObserver()
     this._subs.forEach(s => s.unsubscribe())
     this._subs = []
+    this._stateChange.complete()
+    this._pendingTextBlockIds.clear()
+    this._refreshQueued = false
+    this._refreshAll = false
   }
 
   // ── IntersectionObserver ────────────────────────────────────
@@ -169,25 +163,28 @@ export class FindReplaceHelper {
     this._observer.unobserve(el)
     this._observedEls.delete(blockId)
     this._elToBlockId.delete(el)
+    this._visibleBlockIds.delete(blockId)
   }
 
   /** 为进入视口的块创建 FakeRange */
   private _materializeBlock(blockId: string) {
     const matches = this.matchedBlockMap.get(blockId)
     if (!matches) return
-    matches.forEach(m => {
-      if (m.fakeRange) return
-      m.fakeRange = this._createFakeRange(m)
-    })
+    const pending = [...matches]
+    pending.forEach(m => this._ensureFakeRange(m))
+    const activeMatch = this.matchedList[this.matchIndex]
+    if (activeMatch && this._matchBlockId(activeMatch) === blockId) {
+      activeMatch.fakeRange?.setColor({bgColor: ACTIVE_COLOR})
+    }
   }
 
-  /** 为离开视口的块销毁 FakeRange（保留当前高亮项） */
-  private _dematerializeBlock(blockId: string) {
+  /** Destroy view highlights outside the observed window. */
+  private _dematerializeBlock(blockId: string, force = false) {
     const matches = this.matchedBlockMap.get(blockId)
     if (!matches) return
     const activeMatch = this.matchedList.length > 0 ? this.matchedList[this.matchIndex] : null
     matches.forEach(m => {
-      if (m.fakeRange && m !== activeMatch) {
+      if (m.fakeRange && (force || m !== activeMatch)) {
         m.fakeRange.destroy()
         m.fakeRange = null
       }
@@ -197,19 +194,17 @@ export class FindReplaceHelper {
   /** 全量创建所有 FakeRange（非懒加载模式） */
   private _materializeAll() {
     this.matchedBlockMap.forEach(matches => {
-      matches.forEach(m => {
-        if (!m.fakeRange) {
-          m.fakeRange = this._createFakeRange(m)
-        }
-      })
+      const pending = [...matches]
+      pending.forEach(m => this._ensureFakeRange(m))
     })
   }
 
-  /** 断开所有观察，但保留 _visibleBlockIds 供下次搜索复用 */
+  /** Disconnect every observed host before rebuilding the view projection. */
   private _resetObservation() {
     this._observer?.disconnect()
     this._observedEls.clear()
     this._elToBlockId.clear()
+    this._visibleBlockIds.clear()
   }
 
   private _destroyObserver() {
@@ -230,6 +225,7 @@ export class FindReplaceHelper {
   toggleFlag(flag: FindReplaceFlag) {
     flag.checked = !flag.checked
     this.regFlag = 'g' + this.regFlagList.filter(f => f.checked).map(f => f.value).join('')
+    this._notifyStateChange()
   }
 
   // ── Find ─────────────────────────────────────────────────────
@@ -243,29 +239,12 @@ export class FindReplaceHelper {
     this.buildRegex(findText)
     this._blockOrder = null
 
-    // Phase 1: 纯文本扫描，收集匹配位置（不创建 FakeRange）
-    const walk = (b: BlockCraft.BlockComponent) => {
-      b.getChildrenBlocks().forEach(child => {
-        if (child.nodeType === 'void') return
-        if (child.nodeType === 'editable') {
-          this._collectBlockMatches(child as EditableBlockComponent)
-        } else {
-          walk(child)
-        }
-      })
-    }
-    walk(this.doc.root)
+    // Phase 1: scan the complete model without creating Angular views.
+    this._scanModel()
     this._resortMatches()
 
     // Phase 2: 根据匹配数量决定策略
-    this._lazyMode = this.matchedList.length > LAZY_THRESHOLD
-    if (this._lazyMode) {
-      // 懒加载：observer 按需创建
-      this._observeAndMaterializeVisible()
-    } else {
-      // 全量：直接创建所有 FakeRange
-      this._materializeAll()
-    }
+    this._syncMaterializationStrategy()
 
     if (this.matchedList.length) {
       this.highlightCurrent()
@@ -303,17 +282,28 @@ export class FindReplaceHelper {
   }
 
   highlightCurrent(withScroll = true) {
-    if (!this.matchedList.length) return
-    if (this.matchIndex >= this.matchedList.length) {
-      this.matchIndex = this.matchedList.length - 1
+    this._notifyStateChange()
+    const scrollRequest = ++this._scrollRequest
+    while (this.matchedList.length) {
+      this._clampMatchIndex()
+      const match = this.matchedList[this.matchIndex]
+      const blockId = this._matchBlockId(match)
+      const needsBlockNavigation = !!this.doc.virtualization?.enabled &&
+        !this.doc.vm.isMounted(blockId)
+      if (!this._ensureFakeRange(match)) continue
+      match.fakeRange!.setColor({bgColor: ACTIVE_COLOR})
+      if (withScroll) {
+        if (needsBlockNavigation) {
+          void this.doc.virtualization.scrollToBlock(blockId).then(revealed => {
+            if (!revealed || scrollRequest !== this._scrollRequest) return
+            this._scrollMatchIntoView(match)
+          })
+        } else {
+          this._scrollMatchIntoView(match)
+        }
+      }
+      return
     }
-    if (this.matchIndex < 0) {
-      this.matchIndex = 0
-    }
-    const match = this.matchedList[this.matchIndex]
-    this._ensureFakeRange(match)
-    match.fakeRange!.setColor({bgColor: ACTIVE_COLOR})
-    withScroll && match.block.hostElement.scrollIntoView({behavior: 'smooth', block: 'center', inline: 'center'})
   }
 
   // ── Replace ──────────────────────────────────────────────────
@@ -321,31 +311,63 @@ export class FindReplaceHelper {
   replaceOne(replaceText: string) {
     if (!this.matchedList.length) return
     const match = this.matchedList[this.matchIndex]
+    const blockId = this._matchBlockId(match)
+    if (!this._isBlockIdAlive(blockId)) {
+      this._dropMatch(match)
+      return
+    }
+    if (this.doc.readonlyManager?.isReadonly(blockId) ?? this.doc.isReadonly) return
+    if (!this._textOnlyMatches(blockId, [match]).length) return
     this.doc.crud.transact(() => {
-      this._replaceMatch(match, replaceText)
+      this.doc.crud.replaceText(blockId, match.index, match.length, replaceText)
     })
   }
 
   replaceAll(replaceText: string) {
     this.doc.crud.transact(() => {
       this.matchedBlockMap.forEach((matched, bid) => {
+        if (!this._isBlockIdAlive(bid)) {
+          this.clearOldMatchesMark(bid)
+          return
+        }
+        if (this.doc.model.getNodeType(bid) !== BlockNodeType.editable) return
+        if (this.doc.readonlyManager?.isReadonly(bid) ?? this.doc.isReadonly) return
+        const replaceable = this._textOnlyMatches(bid, matched)
+        if (!replaceable.length) return
         const delta: DeltaOperation[] = []
         let cursor = 0
-        matched.forEach(m => {
+        replaceable.forEach(m => {
           const retain = m.index - cursor
           if (retain > 0) delta.push({retain})
           delta.push({delete: m.length})
           if (replaceText) delta.push({insert: replaceText})
           cursor = m.index + m.length
         })
-        const block = this.doc.getBlockById(bid)
-        if (!this.doc.isEditable(block)) return
-        block.applyDeltaOperations(delta)
+        this.doc.crud.applyTextDelta(bid, delta)
+        this.clearOldMatchesMark(bid)
+        // Refresh changed blocks only; untouched mention highlights stay alive.
+        this._queueModelRefresh([bid])
       })
-      this._destroyAllFakeRanges()
-      this.matchedList = []
-      this.matchedBlockMap.clear()
-      this._resetObservation()
+      this.matchedList = this.matchedList.filter(match => this.matchedBlockMap.has(this._matchBlockId(match)))
+      this._updateReplacementSummary()
+      this._clampMatchIndex()
+    })
+  }
+
+  /** Recheck current model boundaries so a queued refresh cannot expose embeds to replacement. */
+  private _textOnlyMatches(blockId: string, matches: FindReplaceMatch[]): FindReplaceMatch[] {
+    const embeds: number[] = []
+    let length = 0
+    for (const delta of this.doc.model.getTextDeltas(blockId) ?? []) {
+      if (typeof delta.insert === 'string') length += delta.insert.length
+      else embeds.push(length++)
+    }
+    let embedIndex = 0
+    return matches.filter(match => {
+      if (match.replaceable === false) return false
+      while (embedIndex < embeds.length && embeds[embedIndex] < match.index) embedIndex++
+      return match.index >= 0 && match.length > 0 && match.index + match.length <= length &&
+        (embedIndex === embeds.length || embeds[embedIndex] >= match.index + match.length)
     })
   }
 
@@ -371,12 +393,16 @@ export class FindReplaceHelper {
   // ── Internal ─────────────────────────────────────────────────
 
   private _clearMatches() {
+    this._scrollRequest++
     this.matchIndex = 0
     this._destroyAllFakeRanges()
     this.matchedList = []
     this.matchedBlockMap.clear()
+    this._updateReplacementSummary()
     this._resetObservation()
     this._lazyMode = false
+    this._pendingTextBlockIds.clear()
+    this._refreshAll = false
   }
 
   private _destroyAllFakeRanges() {
@@ -390,15 +416,75 @@ export class FindReplaceHelper {
     })
   }
 
-  private _ensureFakeRange(match: FindReplaceMatch) {
-    if (match.fakeRange) return
-    match.fakeRange = this._createFakeRange(match)
+  private _ensureFakeRange(match: FindReplaceMatch): boolean {
+    const blockId = this._matchBlockId(match)
+    if (this._destroyed || !this._isBlockIdAlive(blockId)) {
+      this._dropMatch(match)
+      return false
+    }
+    if (match.fakeRange && !match.fakeRange.hasLostRenderedSpans) return true
+    if (match.fakeRange) {
+      match.fakeRange.destroy()
+      match.fakeRange = null
+    }
+    const block = this._resolveBlockView(blockId, true)
+    if (!block) {
+      this._dropMatch(match)
+      return false
+    }
+    try {
+      match.fakeRange = this._createFakeRange(match)
+      if (this._lazyMode) this._observeBlock(block)
+      return true
+    } catch {
+      this._dropMatch(match)
+      return false
+    }
+  }
+
+  private _dropMatch(match: FindReplaceMatch) {
+    const blockId = this._matchBlockId(match)
+    const blockMatches = this.matchedBlockMap.get(blockId)
+    if (blockMatches) {
+      const blockIndex = blockMatches.indexOf(match)
+      if (blockIndex >= 0) blockMatches.splice(blockIndex, 1)
+      if (!blockMatches.length) {
+        this.matchedBlockMap.delete(blockId)
+        this._unobserveBlock(blockId)
+      }
+    }
+
+    const listIndex = this.matchedList.indexOf(match)
+    if (listIndex >= 0) {
+      this.matchedList.splice(listIndex, 1)
+      if (listIndex <= this.matchIndex) this.matchIndex--
+    }
+
+    if (match.fakeRange) {
+      match.fakeRange.destroy()
+      match.fakeRange = null
+    }
+    this._clampMatchIndex()
+    this._updateReplacementSummary()
+  }
+
+  private _clampMatchIndex() {
+    if (!this.matchedList.length) {
+      this.matchIndex = 0
+      return
+    }
+    if (this.matchIndex >= this.matchedList.length) {
+      this.matchIndex = this.matchedList.length - 1
+    }
+    if (this.matchIndex < 0) {
+      this.matchIndex = 0
+    }
   }
 
   private _createFakeRange(match: FindReplaceMatch): FakeRange {
     return this.doc.selection.createFakeRange({
       from: {
-        blockId: match.block.id,
+        blockId: this._matchBlockId(match),
         index: match.index,
         length: match.length,
         type: 'text'
@@ -407,58 +493,86 @@ export class FindReplaceHelper {
     }, {bgColor: MATCH_COLOR})
   }
 
-  /** 纯数据收集，不创建 FakeRange，不 observe */
-  private _collectBlockMatches = (block: EditableBlockComponent): FindReplaceMatch[] | null => {
-    const text = deltaToString(block.textDeltas(), STR_ZERO_WIDTH_SPACE)
-    if (!text) return null
-    const matches = text.matchAll(this.matchReg)
+  /**
+   * Scroll the rendered match fragment instead of its block host. A single
+   * editable block can span many viewport heights, so block-level navigation
+   * cannot distinguish matches on different visual lines.
+   */
+  private _scrollMatchIntoView(match: FindReplaceMatch) {
+    if (this.matchedList[this.matchIndex] !== match || !match.fakeRange) return
+
+    const overlays = match.fakeRange.fakeSpans?.filter(span =>
+      span.isConnected && span.getAttribute('data-fake-range-detached') !== 'true'
+    ) ?? []
+    const fragments = overlays.flatMap(overlay =>
+      Array.from(overlay.children).filter(child => child.isConnected)
+    )
+    const target = fragments[Math.floor(fragments.length / 2)]
+      ?? overlays[0]
+      ?? this._resolveBlockView(this._matchBlockId(match), false)?.hostElement
+    if (!target?.isConnected) return
+
+    target.scrollIntoView({
+      behavior: 'smooth',
+      block: 'center',
+      inline: 'nearest',
+    })
+  }
+
+  /** Pure model collection: no ComponentRef, DOM or observer work. */
+  private _collectBlockMatches = (blockId: string): FindReplaceMatch[] | null => {
+    const deltas = this.doc.model.getTextDeltas(blockId)
+    if (!deltas?.length) return null
     const res: FindReplaceMatch[] = []
-    for (const match of matches) {
-      res.push({
-        fakeRange: null,
-        index: match.index,
-        length: match[0].length,
-        block: block,
-      })
+    let offset = 0
+    let text = ''
+    const flushText = () => {
+      for (const match of text.matchAll(this.matchReg)) {
+        res.push(this._createMatch(blockId, offset - text.length + match.index, match[0].length))
+      }
+      text = ''
     }
+    for (const delta of deltas) {
+      if (typeof delta.insert === 'string') {
+        text += delta.insert
+        offset += delta.insert.length
+        continue
+      }
+      flushText()
+      const mention = delta.insert['mention']
+      // One result per atomic node, even if its label contains repeated matches.
+      if (mention != null && String(mention).match(this.matchReg)) {
+        res.push(this._createMatch(blockId, offset, 1, false))
+      }
+      offset++
+    }
+    flushText()
     if (res.length) {
-      this.matchedBlockMap.set(block.id, res)
+      this.matchedBlockMap.set(blockId, res)
     }
     return res
-  }
-
-  /** 增量更新：扫描块文本 + 根据当前模式同步高亮 */
-  private _matchBlockText = (block: EditableBlockComponent): FindReplaceMatch[] | null => {
-    const res = this._collectBlockMatches(block)
-    if (res?.length) {
-      this._syncBlockHighlight(block)
-    }
-    return res
-  }
-
-  /** 根据当前模式为单个块同步高亮 */
-  private _syncBlockHighlight(block: BlockCraft.BlockComponent) {
-    if (!this._lazyMode) {
-      // 非懒加载：直接创建
-      this._materializeBlock(block.id)
-      return
-    }
-    // 懒加载：observe + 如果可见则立即创建
-    this._observeBlock(block)
-    if (this._visibleBlockIds.has(block.id)) {
-      this._materializeBlock(block.id)
-    }
   }
 
   /** 为所有已匹配块注册观察，并立即创建可见块的 FakeRange */
   private _observeAndMaterializeVisible() {
-    for (const [blockId, matches] of this.matchedBlockMap) {
-      const block = matches[0].block
-      this._observeBlock(block)
-      if (this._visibleBlockIds.has(blockId)) {
-        this._materializeBlock(blockId)
-      }
+    this._syncMountedMatchObservers()
+  }
+
+  private _syncMountedMatchObservers() {
+    for (const blockId of [...this._observedEls.keys()]) {
+      if (this.doc.vm.isMounted(blockId)) continue
+      this._unobserveBlock(blockId)
+      this._dematerializeBlock(blockId, true)
     }
+
+    const visit = (blockId: string) => {
+      if (this.matchedBlockMap.has(blockId) && !this._observedEls.has(blockId)) {
+        const block = this._resolveBlockView(blockId, false)
+        if (block) this._observeBlock(block)
+      }
+      this.doc.model.getChildrenIds(blockId).forEach(visit)
+    }
+    this.doc.vm.getMountedRootChildIds().forEach(visit)
   }
 
   private _resortMatches() {
@@ -471,30 +585,152 @@ export class FindReplaceHelper {
       if (list) matchedList.push(...list)
     }
     this.matchedList = matchedList
+    this._updateReplacementSummary()
+  }
+
+  /** Recompute only when results or permissions change, never on each UI check. */
+  private _updateReplacementSummary() {
+    let count = 0
+    const reasons = new Map<string, number>()
+    for (const match of this.matchedList) {
+      if (match.replaceable !== false) continue
+      count++
+      const reason = match.replaceDisabledReason ?? '此结果仅支持查找，不能替换内容'
+      reasons.set(reason, (reasons.get(reason) ?? 0) + 1)
+    }
+    this._nonReplaceableCount = count
+    this._nonReplaceableTooltip = [...reasons].map(([reason, total]) => `${total} 项：${reason}`).join('\n')
+    this._notifyStateChange()
+  }
+
+  private _notifyStateChange() {
+    if (this._destroyed || this._stateChangeQueued) return
+    this._stateChangeQueued = true
+    // Emit after the complete update, including restored navigation and stale-range cleanup.
+    // A view subscribes once; document editing stays outside Angular change detection.
+    queueMicrotask(() => {
+      this._stateChangeQueued = false
+      if (!this._destroyed) this._stateChange.next()
+    })
   }
 
   private _computeBlockOrder(): string[] {
     const ids: string[] = []
-    const walk = (b: BlockCraft.BlockComponent) => {
-      for (const childId of b.childrenIds) {
+    const walk = (parentId: string) => {
+      for (const childId of this.doc.model.getChildrenIds(parentId)) {
         ids.push(childId)
-        try {
-          const child = this.doc.getBlockById(childId)
-          if (child.nodeType === BlockNodeType.block) {
-            walk(child)
-          }
-        } catch {
-          // block may have been destroyed between events
-        }
+        if (this.doc.model.getNodeType(childId) === BlockNodeType.block) walk(childId)
       }
     }
-    walk(this.doc.root)
+    walk(this.doc.rootId)
     return ids
   }
 
-  private _replaceMatch(match: FindReplaceMatch, replaceText: string) {
-    if (!this.doc.isEditable(match.block)) return
-    match.block.yText.delete(match.index, match.length)
-    replaceText && match.block.yText.insert(match.index, replaceText)
+  private _scanModel() {
+    this._blockOrder = this._computeBlockOrder()
+    for (const blockId of this._blockOrder) {
+      if (this.doc.model.getNodeType(blockId) === BlockNodeType.editable) {
+        this._collectBlockMatches(blockId)
+      }
+    }
+  }
+
+  private _syncMaterializationStrategy() {
+    const nextLazyMode = !!this.doc.virtualization?.enabled || this.matchedList.length > LAZY_THRESHOLD
+    if (nextLazyMode !== this._lazyMode) {
+      this._destroyAllFakeRanges()
+      this._resetObservation()
+      this._lazyMode = nextLazyMode
+    }
+    if (this._lazyMode) this._observeAndMaterializeVisible()
+    else this._materializeAll()
+  }
+
+  private _queueModelRefresh(blockIds?: readonly string[]) {
+    if (!this.isActive) return
+    if (blockIds) blockIds.forEach(blockId => this._pendingTextBlockIds.add(blockId))
+    else this._refreshAll = true
+    if (this._refreshQueued) return
+    this._refreshQueued = true
+
+    nextTick().then(() => {
+      this._refreshQueued = false
+      if (this._destroyed || !this.isActive) return
+      const previousIndex = this.matchIndex
+      const activeMatch = this.matchedList[previousIndex]
+      const activeKey = activeMatch ? {
+        blockId: this._matchBlockId(activeMatch),
+        index: activeMatch.index,
+        length: activeMatch.length,
+      } : null
+      this.cancelHighlight()
+
+      if (this._refreshAll) {
+        this._clearMatches()
+        this._scanModel()
+      } else {
+        const changedIds = [...this._pendingTextBlockIds]
+        changedIds.forEach(blockId => {
+          this.clearOldMatchesMark(blockId)
+          if (this.doc.model.getNodeType(blockId) === BlockNodeType.editable) {
+            this._collectBlockMatches(blockId)
+          }
+        })
+      }
+      this._refreshAll = false
+      this._pendingTextBlockIds.clear()
+      this._resortMatches()
+      const restoredIndex = activeKey ? this.matchedList.findIndex(match =>
+        this._matchBlockId(match) === activeKey.blockId &&
+        match.index === activeKey.index &&
+        match.length === activeKey.length
+      ) : -1
+      this.matchIndex = restoredIndex >= 0 ? restoredIndex : previousIndex
+      this._clampMatchIndex()
+      this._syncMaterializationStrategy()
+      this.highlightCurrent(false)
+    })
+  }
+
+  private _matchBlockId(match: FindReplaceMatch): string {
+    return match.blockId ?? match.block.id
+  }
+
+  private _createMatch(blockId: string, index: number, length: number, replaceable = true): FindReplaceMatch {
+    const disabledReason = () => {
+      if (!replaceable) return 'Mention 是引用节点，仅支持搜索和高亮，不能替换内容'
+      if (this._isBlockIdAlive(blockId) &&
+        (this.doc.readonlyManager?.isReadonly(blockId) ?? this.doc.isReadonly)) {
+        return '所在内容为只读或已锁定，不能替换'
+      }
+      return undefined
+    }
+    const match = {
+      blockId,
+      index,
+      length,
+      get replaceable() { return !disabledReason() },
+      get replaceDisabledReason() { return disabledReason() },
+      fakeRange: null,
+    } as FindReplaceMatch
+    Object.defineProperty(match, 'block', {
+      enumerable: false,
+      get: () => {
+        const block = this._resolveBlockView(blockId, true)
+        if (!block) throw new Error(`Block view not found: ${blockId}`)
+        return block
+      },
+    })
+    return match
+  }
+
+  private _isBlockIdAlive(blockId: string): boolean {
+    return this.doc.model.exists(blockId)
+  }
+
+  private _resolveBlockView(blockId: string, materialize: boolean): BlockCraft.BlockComponent | null {
+    if (!this._isBlockIdAlive(blockId)) return null
+    if (materialize) this.doc.virtualization?.ensureViewMounted([blockId])
+    return this.doc.vm.get(blockId)?.instance ?? null
   }
 }

@@ -2,8 +2,13 @@ import {IBlockSnapshot} from "../framework/block-std/types/block.type";
 import {InlineModel} from "../framework/block-std/types/inline.type";
 import {DeltaInsert} from "../framework/block-std/types/delta.type";
 import {patchChildren, resolveChildContainer} from "./dom/patch-children";
+import {projectParagraphSiblingSpacing} from "./dom/create-block-shell";
+import {alwaysPlaceholderVisible} from "./dom/always-placeholder";
 import {normalizeSnapshot} from "./dom/normalize-snapshot";
-import {renderInline} from "./inline/render-inline";
+import {
+  createBuiltinInlineEmbedRenderers,
+  renderInline,
+} from "./inline/render-inline";
 import {createBuiltinRendererRegistry} from "./registry";
 import {
   MountedSnapshotNode,
@@ -13,23 +18,43 @@ import {
   SnapshotRenderer,
   SnapshotViewerOptions
 } from "./types";
+import {
+  destroyResourcePlaceholder,
+} from '@ccc/blockcraft/global/resource-placeholder';
+import {projectAbsolutePlaneChildren} from "./renderers/structural-renderers";
 
 export class SnapshotRenderEngine implements SnapshotRenderer {
   private container: HTMLElement | null = null
+  private addedViewerClass = false
   private options: SnapshotViewerOptions
   private readonly renderers: SnapshotBlockRenderer[]
   private readonly enhancementCache = new Map<string, unknown>()
-  private readonly activeEnhancements = new Map<string, AbortController>()
-  private readonly enhancementCleanups = new Set<() => void>()
+  private readonly activeEnhancements = new Map<string, {target: Element; controller: AbortController}>()
+  private readonly enhancementCleanups = new Map<string, {target: Element; cleanup: () => void}>()
+  private readonly changedBlockElements = new Set<Element>()
+  private readonly renderDisposables = new Map<Element, () => void>()
+  private readonly inlineEmbeds: SnapshotViewerOptions["inlineEmbeds"]
   private mountedRoot: MountedSnapshotNode | null = null
 
   constructor(options: SnapshotViewerOptions = {}) {
     this.options = options
-    this.renderers = createBuiltinRendererRegistry()
+    // Host renderers go first so they can claim custom flavours (and override
+    // builtins when they choose to); the generic fallback stays last.
+    this.renderers = [...(options.blockRenderers ?? []), ...createBuiltinRendererRegistry()]
+    this.inlineEmbeds = {
+      ...createBuiltinInlineEmbedRenderers(),
+      ...(options.inlineEmbeds ?? {}),
+    }
   }
 
   render(container: HTMLElement, snapshot: IBlockSnapshot | IBlockSnapshot[]): void {
+    const alreadyOwnedViewerClass = this.container === container && this.addedViewerClass
+    if (this.container && this.container !== container && this.addedViewerClass) {
+      this.container.classList.remove('bc-snapshot-viewer')
+    }
     this.container = container
+    this.addedViewerClass = alreadyOwnedViewerClass || !container.classList.contains('bc-snapshot-viewer')
+    container.classList.add('bc-snapshot-viewer')
     this.commitRender(snapshot)
   }
 
@@ -42,10 +67,15 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
 
   destroy(): void {
     this.cancelEnhancements()
+    this.disposeAllRenderedResources()
     if (this.container) {
       this.container.replaceChildren()
+      if (this.addedViewerClass) {
+        this.container.classList.remove('bc-snapshot-viewer')
+      }
     }
     this.container = null
+    this.addedViewerClass = false
     this.mountedRoot = null
   }
 
@@ -60,6 +90,7 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
     const mountedRoot = this.mountNode(normalized.root, renderContext)
     this.container!.replaceChildren(mountedRoot.element)
     this.mountedRoot = mountedRoot
+    this.disposeDetachedRenderedResources()
     this.flushEnhancements(enhancementQueue)
   }
 
@@ -68,7 +99,7 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
       return
     }
 
-    this.cancelEnhancements()
+    this.changedBlockElements.clear()
     const normalized = normalizeSnapshot(snapshot, this.options)
     const enhancementQueue: SnapshotEnhancementTask[] = []
     const renderContext = this.createRenderContext()
@@ -80,6 +111,7 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
       const mountedRoot = this.mountNode(normalized.root, renderContext)
       this.container.replaceChildren(mountedRoot.element)
       this.mountedRoot = mountedRoot
+      this.disposeDetachedRenderedResources()
       this.flushEnhancements(enhancementQueue)
       return
     }
@@ -88,6 +120,7 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
     if (this.container.firstElementChild !== this.mountedRoot.element) {
       this.container.replaceChildren(this.mountedRoot.element)
     }
+    this.disposeDetachedRenderedResources()
     this.flushEnhancements(enhancementQueue)
   }
 
@@ -97,7 +130,18 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
       throw new Error(`No snapshot renderer found for flavour "${snapshot.flavour}"`)
     }
 
-    return renderer.render(renderContext, snapshot).element
+    const element = renderer.render(renderContext, snapshot).element
+    // Child mapping and placement projection identify block roots by these
+    // attributes; stamp them so custom renderers cannot break the contract.
+    // hasAttribute over dataset: this runs once per block on the mount hot
+    // path, and builtin shells always carry both already.
+    if (!element.hasAttribute("data-block-id")) {
+      element.setAttribute("data-block-id", snapshot.id)
+    }
+    if (!element.hasAttribute("data-node-type")) {
+      element.setAttribute("data-node-type", `${snapshot.nodeType}`)
+    }
+    return element
   }
 
   private mountNode(snapshot: IBlockSnapshot, renderContext: SnapshotRenderContext): MountedSnapshotNode {
@@ -113,6 +157,7 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
         .filter((child): child is HTMLElement => child instanceof HTMLElement && child.hasAttribute("data-block-id"))
       : []
 
+    projectParagraphSiblingSpacing(childSnapshots, childElements)
     return {
       snapshot,
       element,
@@ -123,8 +168,24 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
   private createRenderContext(): SnapshotRenderContext {
     const renderContext: SnapshotRenderContext = {
       renderBlock: (snapshot) => this.renderBlock(snapshot, renderContext),
-      createInlineContent: (model: InlineModel) => renderInline(model),
+      createInlineContent: (model: InlineModel) => {
+        const fragment = renderInline(model, this.inlineEmbeds)
+        fragment
+          .querySelectorAll<HTMLElement>('.bc-resource-placeholder-frame')
+          .forEach(frame => {
+            renderContext.registerDisposable?.(
+              frame,
+              () => destroyResourcePlaceholder(frame),
+            )
+          })
+        return fragment
+      },
       scheduleEnhancement: () => {
+      },
+      registerDisposable: (target, cleanup) => {
+        const previous = this.renderDisposables.get(target)
+        if (previous && previous !== cleanup) previous()
+        this.renderDisposables.set(target, cleanup)
       },
       options: this.options,
     }
@@ -139,6 +200,20 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
 
     if (snapshotsAreEqual(current.snapshot, next)) {
       return current
+    }
+    this.changedBlockElements.add(current.element)
+
+    // A renderer that implements `patch` owns its whole subtree: the engine
+    // hands over the mounted node and stops tracking children. This keeps
+    // stateful renderer DOM from being clobbered by syncElement.
+    const patchingRenderer = this.renderers.find(candidate => candidate.canRender(next))
+    if (patchingRenderer?.patch) {
+      patchingRenderer.patch(renderContext, current, next)
+      return {
+        snapshot: next,
+        element: current.element,
+        children: [],
+      }
     }
 
     if (next.nodeType === "editable" || next.nodeType === "void") {
@@ -170,7 +245,27 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
     }
 
     const fresh = this.renderBlock(next, renderContext)
-    this.syncElement(current.element, fresh, false)
+    const freshChildContainer = resolveChildContainer(fresh, next)
+    if (
+      currentChildContainer === current.element ||
+      !freshChildContainer ||
+      freshChildContainer === fresh
+    ) {
+      this.syncElement(current.element, fresh, false)
+    } else {
+      currentChildContainer.setAttribute(
+        'data-bc-snapshot-preserve-children',
+        '',
+      )
+      freshChildContainer.setAttribute(
+        'data-bc-snapshot-preserve-children',
+        '',
+      )
+      this.syncElement(current.element, fresh)
+      currentChildContainer.removeAttribute(
+        'data-bc-snapshot-preserve-children',
+      )
+    }
 
     const childContainer = resolveChildContainer(current.element, next)
     if (!childContainer) {
@@ -185,6 +280,11 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
       patchNode: (mounted, snapshot) => this.patchNode(mounted, snapshot, renderContext),
       mountNode: (snapshot) => this.mountNode(snapshot, renderContext),
     })
+    projectParagraphSiblingSpacing(
+      this.getBlockChildren(next),
+      children.map(child => child.element),
+    )
+    projectAbsolutePlaneChildren(current.element, next)
 
     return {
       snapshot: next,
@@ -194,19 +294,47 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
   }
 
   private flushEnhancements(tasks: SnapshotEnhancementTask[]) {
+    // Container patching also renders temporary shells. Only mounted targets
+    // own work; unchanged blocks retain their pending render across updates.
+    const queuedTasks = Array.from(new Map(tasks
+      .filter(task => this.container?.contains(task.target))
+      .map(task => [task.key, task])).values())
+    const nextKeys = new Map<Element, Set<string>>()
+    queuedTasks.forEach(task => {
+      const keys = nextKeys.get(task.target) ?? new Set<string>()
+      keys.add(task.key)
+      nextKeys.set(task.target, keys)
+    })
+    const isStale = (key: string, target: Element) =>
+      !this.container?.contains(target) ||
+      (nextKeys.has(target) && !nextKeys.get(target)!.has(key)) ||
+      (this.changedBlockElements.has(target.closest('[data-block-id]')!) && !nextKeys.has(target))
+
+    this.activeEnhancements.forEach(({target, controller}, key) => {
+      if (!isStale(key, target)) return
+      controller.abort()
+      this.activeEnhancements.delete(key)
+    })
+    this.enhancementCleanups.forEach(({target, cleanup}, key) => {
+      if (!isStale(key, target)) return
+      cleanup()
+      this.enhancementCleanups.delete(key)
+    })
+    this.changedBlockElements.clear()
+
     const defaultPolicy = this.options.resourcePolicy ?? "eager"
     if (defaultPolicy === "off") {
       return
     }
 
-    const queuedTasks = Array.from(new Map(tasks.map((task) => [task.key, task])).values())
-
     queuedTasks.forEach((task) => {
-      if (this.enhancementCache.has(task.key)) {
-        task.apply(this.enhancementCache.get(task.key))
-        return
-      }
-
+      const active = this.activeEnhancements.get(task.key)
+      const waiting = this.enhancementCleanups.get(task.key)
+      if (active?.target === task.target || waiting?.target === task.target) return
+      active?.controller.abort()
+      this.activeEnhancements.delete(task.key)
+      waiting?.cleanup()
+      this.enhancementCleanups.delete(task.key)
       const policy = task.policy ?? defaultPolicy
       if (policy === "visible" && typeof IntersectionObserver !== "undefined") {
         const observer = new IntersectionObserver((entries) => {
@@ -215,30 +343,40 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
           }
 
           observer.disconnect()
-          this.enhancementCleanups.delete(cleanup)
-          this.runEnhancement(task)
+          this.enhancementCleanups.delete(task.key)
+          if (!this.container?.contains(task.target)) return
+          this.activateEnhancement(task)
         }, {
           rootMargin: "300px 0px 300px 0px",
           threshold: 0,
         })
 
         const cleanup = () => observer.disconnect()
-        this.enhancementCleanups.add(cleanup)
+        this.enhancementCleanups.set(task.key, {target: task.target, cleanup})
         observer.observe(task.target)
         return
       }
 
-      this.runEnhancement(task)
+      this.activateEnhancement(task)
     })
+  }
+
+  private activateEnhancement(task: SnapshotEnhancementTask) {
+    if (this.enhancementCache.has(task.key)) {
+      task.apply(this.enhancementCache.get(task.key))
+      return
+    }
+
+    this.runEnhancement(task)
   }
 
   private runEnhancement(task: SnapshotEnhancementTask) {
     const controller = new AbortController()
-    this.activeEnhancements.set(task.key, controller)
+    this.activeEnhancements.set(task.key, {target: task.target, controller})
 
     Promise.resolve(task.load(controller.signal))
       .then((value) => {
-        if (controller.signal.aborted) {
+        if (controller.signal.aborted || !this.container?.contains(task.target)) {
           return
         }
         this.enhancementCache.set(task.key, value)
@@ -247,17 +385,32 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
       .catch(() => {
       })
       .finally(() => {
-        if (this.activeEnhancements.get(task.key) === controller) {
+        if (this.activeEnhancements.get(task.key)?.controller === controller) {
           this.activeEnhancements.delete(task.key)
         }
       })
   }
 
   private cancelEnhancements() {
-    this.activeEnhancements.forEach((controller) => controller.abort())
+    this.activeEnhancements.forEach(({controller}) => controller.abort())
     this.activeEnhancements.clear()
-    this.enhancementCleanups.forEach((cleanup) => cleanup())
+    this.enhancementCleanups.forEach(({cleanup}) => cleanup())
     this.enhancementCleanups.clear()
+    this.changedBlockElements.clear()
+  }
+
+  private disposeDetachedRenderedResources(): void {
+    const container = this.container
+    this.renderDisposables.forEach((cleanup, target) => {
+      if (container?.contains(target)) return
+      cleanup()
+      this.renderDisposables.delete(target)
+    })
+  }
+
+  private disposeAllRenderedResources(): void {
+    this.renderDisposables.forEach(cleanup => cleanup())
+    this.renderDisposables.clear()
   }
 
   private getBlockChildren(snapshot: IBlockSnapshot): IBlockSnapshot[] {
@@ -275,6 +428,19 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
     if (!propsEqual(current.snapshot.props, next.props)) {
       return false
     }
+    // Meta drives render-time projection too (the always-placeholder contract
+    // today, anything else tomorrow), and the delta-level patch below never
+    // looks at it — a meta-only change (e.g. the plh hint text) would report
+    // success while the DOM keeps the stale projection. Bail to a full
+    // re-render on any meta difference.
+    if (!metaEqual(current.snapshot.meta, next.meta)) {
+      return false
+    }
+    // Placeholder visibility also flips on DELTA changes (empty ↔ filled) with
+    // identical meta — the delta patch would append text next to a stale hint.
+    if (alwaysPlaceholderVisible(current.snapshot) !== alwaysPlaceholderVisible(next)) {
+      return false
+    }
     const oldDelta = current.snapshot.children as unknown as DeltaInsert[]
     const newDelta = next.children as unknown as DeltaInsert[]
     if (!Array.isArray(oldDelta) || !Array.isArray(newDelta)) {
@@ -287,13 +453,13 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
     // 1) Pure-append fast path — works even when the container has been restructured
     //    (e.g. shiki tokenized a code block into many <c-element>s). We only need to
     //    locate the trailing text node and appendData the new tail.
-    if (tryAppendOnlyDelta(editContainer, oldDelta, newDelta)) {
+    if (tryAppendOnlyDelta(editContainer, oldDelta, newDelta, this.inlineEmbeds)) {
       return true
     }
     // 2) Structural c-element-level diff — requires the container children still map
     //    1:1 to the old delta.
     if (editContainer.childNodes.length === oldDelta.length) {
-      return applyInlineDelta(editContainer, oldDelta, newDelta)
+      return applyInlineDelta(editContainer, oldDelta, newDelta, this.inlineEmbeds)
     }
     return false
   }
@@ -359,6 +525,20 @@ function syncChildNodes(target: Node, source: Node) {
         target.replaceChild(sourceChild.cloneNode(true), targetChild)
         continue
       }
+      // Resource frames own live listeners, retry controls, and controller
+      // cleanup. Treat them as atomic nodes so patching moves the prepared
+      // frame into the live tree instead of cloning inert markup.
+      if (sourceEl.classList.contains('bc-resource-placeholder-frame')) {
+        target.replaceChild(sourceEl, targetEl)
+        continue
+      }
+      if (
+        sourceEl.hasAttribute('data-bc-snapshot-preserve-children') &&
+        targetEl.hasAttribute('data-bc-snapshot-preserve-children')
+      ) {
+        syncAttributes(targetEl, sourceEl)
+        continue
+      }
       syncAttributes(targetEl, sourceEl)
       syncChildNodes(targetEl, sourceEl)
       continue
@@ -382,6 +562,10 @@ function propsEqual(a: IBlockSnapshot["props"], b: IBlockSnapshot["props"]): boo
   return JSON.stringify(a ?? {}) === JSON.stringify(b ?? {})
 }
 
+function metaEqual(a: IBlockSnapshot["meta"], b: IBlockSnapshot["meta"]): boolean {
+  return JSON.stringify(a ?? {}) === JSON.stringify(b ?? {})
+}
+
 function deltaAttributesEqual(
   a?: DeltaInsert["attributes"],
   b?: DeltaInsert["attributes"],
@@ -402,6 +586,7 @@ function applyInlineDelta(
   container: HTMLElement,
   oldDelta: DeltaInsert[],
   newDelta: DeltaInsert[],
+  inlineEmbeds?: SnapshotViewerOptions["inlineEmbeds"],
 ): boolean {
   const commonLen = Math.min(oldDelta.length, newDelta.length)
 
@@ -434,7 +619,7 @@ function applyInlineDelta(
     }
 
     // Attributes, embed type or text-vs-embed changed → replace just this c-element.
-    const replacement = renderInline([newItem]).firstElementChild as HTMLElement | null
+    const replacement = renderInline([newItem], inlineEmbeds).firstElementChild as HTMLElement | null
     if (!replacement) {
       return false
     }
@@ -442,7 +627,7 @@ function applyInlineDelta(
   }
 
   if (newDelta.length > oldDelta.length) {
-    const extras = renderInline(newDelta.slice(oldDelta.length))
+    const extras = renderInline(newDelta.slice(oldDelta.length), inlineEmbeds)
     container.appendChild(extras)
   } else if (oldDelta.length > newDelta.length) {
     while (container.childNodes.length > newDelta.length) {
@@ -514,6 +699,7 @@ function tryAppendOnlyDelta(
   container: HTMLElement,
   oldDelta: DeltaInsert[],
   newDelta: DeltaInsert[],
+  inlineEmbeds?: SnapshotViewerOptions["inlineEmbeds"],
 ): boolean {
   // Only handle pure-text deltas; embeds change structure and need real diffing.
   for (const item of oldDelta) {
@@ -555,7 +741,7 @@ function tryAppendOnlyDelta(
 
   // Append entirely new delta items as fresh c-elements.
   if (newDelta.length > oldDelta.length) {
-    const extras = renderInline(newDelta.slice(oldDelta.length))
+    const extras = renderInline(newDelta.slice(oldDelta.length), inlineEmbeds)
     container.appendChild(extras)
   }
 

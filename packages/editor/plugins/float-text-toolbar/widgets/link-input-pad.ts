@@ -7,7 +7,7 @@ import {
   Output,
   ViewChild
 } from "@angular/core";
-import {NzButtonComponent} from "ng-zorro-antd/button";
+import {CsButtonComponent} from "@cses/ui";
 import {isUrl} from "../../../global";
 
 @Component({
@@ -16,8 +16,8 @@ import {isUrl} from "../../../global";
     <input type="text" (input)="onInput($event)" [class.error]="!isValid" placeholder="输入链接地址" #inputElement
            (keydown.enter)="submitValue($event)" (keydown.escape)="closePad($event)"    />
     <div style="display: flex; justify-content: flex-end; gap: 8px; width: 100%;">
-      <button nz-button nzType="default" (mousedown)="closePad($event)">取消</button>
-      <button nz-button nzType="primary" (mousedown)="submitValue($event)">确定</button>
+      <button cs-button csType="secondary" csSize="sm" (mousedown)="closePad($event)">取消</button>
+      <button cs-button csType="primary" csSize="sm" (mousedown)="submitValue($event)">确定</button>
     </div>
   `,
   styles: [`
@@ -55,7 +55,7 @@ import {isUrl} from "../../../global";
   `],
   standalone: true,
   imports: [
-    NzButtonComponent
+    CsButtonComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush
 })

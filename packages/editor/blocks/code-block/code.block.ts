@@ -3,11 +3,11 @@ import {
   DeltaOperation,
   EditableBlockComponent,
   getPositionWithOffset, ORIGIN_SKIP_SYNC,
+  normalizeRange,
   STR_LINE_BREAK
 } from "../../framework";
 import { CodeBlockModel } from "./index";
-import { isLanguageSupported, loadLanguage, SHIKI_LANGUAGE_MAP } from "./shiki-config";
-import { AsyncPipe, NgForOf } from "@angular/common";
+import { SHIKI_LANGUAGE_MAP } from "./shiki-config";
 import { fromEvent, Subject, take, throttleTime } from "rxjs";
 import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
 import { LangListComponent } from "./lang-list.component";
@@ -29,9 +29,12 @@ import { isFormatOnlyDelta } from "./color-merge";
       <div class="head-btn__group">
         <div class="head-btn" (mousedown)="showLangList($event)">
           <span class="lang">{{ props.lang }}</span>
-          <i class="bc_icon bc_xiajaintou" [hidden]="doc.readonlySwitch$ | async"></i>
+          <i class="bc_icon bc_xiajaintou" [hidden]="isReadonly"></i>
         </div>
-        <div class="head-btn" (mousedown)="onCopyText($event)"><i class="bc_icon bc_fuzhi"></i> 复制</div>
+        <div
+          class="head-btn"
+          data-bc-print-exclude="true"
+          (mousedown)="onCopyText($event)"><i class="bc_icon bc_fuzhi"></i> 复制</div>
       </div>
     </div>
 
@@ -39,14 +42,13 @@ import { isFormatOnlyDelta } from "./color-merge";
       <pre class="edit-container"></pre>
     </div>
 
-    @if (!(doc.readonlySwitch$ | async) && !props.collapse) {
+    @if (!isReadonly && !props.collapse) {
       <div class="resize-bar-btm" contenteditable="false" (mousedown)="onResizeMouseDown($event)">
         <div class="bar-drag"></div>
       </div>
     }
   `,
   standalone: true,
-  imports: [NgForOf, AsyncPipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[class.is-collapse]': 'props.collapse'
@@ -72,6 +74,15 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
       lang: SHIKI_LANGUAGE_MAP[this.props.lang],
       withLineBreak: true,
       theme: this.doc.theme.includes('light') ? 'github-light' : 'github-dark',
+      canonicalHost: {
+        readModel: () => ({
+          text: this.textContent(),
+          deltas: this._projectedTextDeltas(),
+        }),
+        hasTextRevisions: () => !!this.doc.revisions?.hasTextRevisions(this.id),
+        isCompositionBusy: () => this._isCompositionProjectionBusy(),
+        readSelection: () => this._readCanonicalSelection(),
+      },
     })
     this._runtime = this._codeRuntime
   }
@@ -110,31 +121,43 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
     if (this.doc.event.status.isComposing) return
     nextTick().then(() => {
       this._codeRuntime.diffHighLight(e, {
-        block: this,
+        block: {
+          id: this.id,
+          textContent: () => this.textContent(),
+          textDeltas: () => this._projectedTextDeltas(),
+          setInlineRange: index => this.setInlineRange(index),
+        },
         selectionValue: this.doc.selection.value,
-        normalizeRange: (range: Range) => this.doc.selection.normalizeRange(range)
+        normalizeRange: (range: Range) => normalizeRange(
+          range,
+          id => this.doc.getBlockById(id) as any,
+        )
       })
     })
   }, 200)
 
-  override rerender() {
-    // Synchronous blot tree build first (plain text, no colors).
-    // This ensures the blot tree is immediately available for cursor positioning
-    // (e.g. after compositionEnd which calls rerender then setInlineRange).
-    super.rerender()
+  private _isCompositionProjectionBusy() {
+    return this.doc.event.status.isComposing ||
+      !this.doc.inputManger.compositionSession.isIdle
+  }
 
-    // Defer async Shiki highlighting to next microtask.
-    // This ensures setInlineRange() (called after rerender in compositionEnd)
-    // has already set the DOM cursor before renderCode captures/restores it.
-    const shikiLang = SHIKI_LANGUAGE_MAP[this.props.lang]
-    if (!isLanguageSupported(shikiLang)) {
-      loadLanguage(this.props.lang).then(() => {
-        this._codeRuntime.renderCode(() => this.textContent(), () => this.textDeltas())
-      })
-    } else {
-      queueMicrotask(() => {
-        this._codeRuntime.renderCode(() => this.textContent(), () => this.textDeltas())
-      })
+  private _projectedTextDeltas() {
+    const deltas = this.textDeltas()
+    return this.doc.revisions?.projectInlineDeltas(this.id, deltas) ?? deltas
+  }
+
+  private _readCanonicalSelection() {
+    const selection = this.doc.selection.value
+    if (
+      !selection?.isInSameBlock ||
+      selection.anchor.type !== 'text' ||
+      selection.head.type !== 'text' ||
+      selection.anchor.blockId !== this.id ||
+      selection.head.blockId !== this.id
+    ) return null
+    return {
+      anchor: selection.anchor.offset,
+      head: selection.head.offset,
     }
   }
 
@@ -161,12 +184,12 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
 
   changeLanguage(lang: CodeBlockLanguage) {
     if (this.props.lang === lang) return
-    this.props.lang = lang
+    this.updateProps({lang})
     this.changeDetectorRef.markForCheck()
   }
 
   showLangList(e: Event) {
-    if (this.doc.isReadonly) return
+    if (this.isReadonly) return
     e.preventDefault()
     e.stopPropagation()
 
@@ -182,6 +205,7 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
 
     cpr.instance.langChange.pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe(lang => {
       closeList$.next(true)
+      if (this.isReadonly) return
       this.setInlineRange(0)
       this.changeLanguage(lang)
     })
@@ -200,7 +224,7 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
   }
 
   showBlockNameInput(event: MouseEvent) {
-    if (this.doc.isReadonly) return
+    if (this.isReadonly) return
     event.stopPropagation()
     event.preventDefault()
 
@@ -226,6 +250,10 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
     })
 
     componentRef.instance.valueChange.pipe(takeUntilDestroyed(componentRef.instance.destroyRef)).subscribe(value => {
+      if (this.isReadonly) {
+        close()
+        return
+      }
       this.updateProps({
         blockName: value || null
       })
@@ -234,6 +262,7 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
   }
 
   onResizeMouseDown(evt: MouseEvent) {
+    if (this.isReadonly) return
     evt.stopPropagation()
     evt.preventDefault()
     let startY = evt.clientY;
@@ -256,6 +285,7 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
 
       fromEvent<MouseEvent>(document, 'mouseup', { capture: true }).pipe(take(1)).subscribe((e) => {
         mouseMove$.unsubscribe()
+        if (this.isReadonly) return
         this.updateProps({ h: newHeight })
       })
 
@@ -264,7 +294,7 @@ export class CodeBlockComponent extends EditableBlockComponent<CodeBlockModel> {
 
   onToggleCollapse($event: MouseEvent) {
     $event.stopPropagation()
-    if (this.doc.isReadonly) {
+    if (this.isReadonly) {
       this.hostElement.classList.toggle('is-collapse')
       return
     }

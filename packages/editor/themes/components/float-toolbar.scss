@@ -53,10 +53,15 @@ bc-virtual-float-toolbar {
       flex-direction: column;
 
       bc-float-toolbar-item {
+        box-sizing: border-box;
         margin-top: 2px;
+        min-width: 0;
+        max-width: 100%;
         padding: var(--bc-padding-sm) var(--bc-padding-md);
         width: 100%;
         justify-content: flex-start;
+        overflow: hidden;
+        text-overflow: ellipsis;
 
         &:first-of-type {
           margin-top: 0;
@@ -104,4 +109,112 @@ bc-virtual-float-toolbar {
 
   }
 
+}
+
+// CSES submenu already owns the popup surface. Keep BlockCraft's vertical
+// picker as content only so responsive fixed-toolbar submenus render one card.
+.bc-fixed-toolbar-submenu .cs-submenu-panel {
+  // Gallery pickers are standalone cards elsewhere; inside this menu the panel owns the surface.
+  > bc-table-size-picker > .bc-table-size-picker,
+  > bc-column-count-picker > .bc-column-count-picker,
+  > bc-shape-picker > .shape-picker,
+  > bc-text-box-preset-picker > .text-box-preset-picker,
+  > bc-word-art-preset-picker > .word-art-preset-picker,
+  > bc-ordered-marker-picker > .ordered-marker-picker {
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  bc-float-toolbar .bc-float-toolbar__wrapper {
+    background: transparent;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}
+
+// Gallery content uses this panel's padding, rather than nesting another padded card.
+.bc-fixed-toolbar-picker-submenu .cs-submenu-panel {
+  min-inline-size: 0;
+  padding: 8px;
+}
+
+// The size picker only needs its numeric choices and settings action.
+.bc-fixed-toolbar-font-size-submenu .cs-submenu-panel {
+  min-inline-size: 0;
+}
+
+.bc-fixed-toolbar-dropdown {
+  max-inline-size: calc(100vw - 24px);
+
+  // CSES defaults standard dropdowns to 3 * interactive-xl (about 288px).
+  // Fixed-toolbar menus instead start at the matched trigger width and only
+  // expand when their intrinsic content genuinely needs more room.
+  .cs-dropdown-standard-menu {
+    min-inline-size: 100%;
+  }
+
+  .cs-dropdown-standard-menu > bc-float-toolbar {
+    display: block;
+    box-sizing: border-box;
+    min-inline-size: 100%;
+  }
+}
+
+// Colour input retains a text range, which may recreate the contextual toolbar.
+// The open colour panel stays above that selection toolbar in CDK's stacking context.
+.cdk-overlay-connected-position-bounding-box:has(> .bc-fixed-toolbar-color-dropdown) {
+  z-index: var(--cs-z-popover, 1010);
+}
+
+// The narrow size picker keeps its content inside the matched trigger width.
+.bc-fixed-toolbar-font-picker {
+  .cs-dropdown-standard-menu {
+    box-sizing: border-box;
+  }
+
+  bc-float-toolbar-item > span {
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.bc-fixed-toolbar-dropdown .cs-dropdown-standard-menu > bc-float-toolbar,
+.bc-fixed-toolbar-submenu .cs-submenu-panel > bc-float-toolbar {
+  .bc-float-toolbar__wrapper[data-direction="column"] {
+    scrollbar-color: color-mix(
+      in srgb,
+      var(--bc-float-toolbar-divider-color) 72%,
+      transparent
+    ) transparent;
+    scrollbar-width: thin;
+
+    &::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      border: 2px solid transparent;
+      border-radius: 999px;
+      background: color-mix(
+        in srgb,
+        var(--bc-float-toolbar-divider-color) 72%,
+        transparent
+      );
+      background-clip: padding-box;
+    }
+
+    &::-webkit-scrollbar-thumb:hover {
+      background: var(--bc-float-toolbar-divider-color);
+      background-clip: padding-box;
+    }
+  }
 }

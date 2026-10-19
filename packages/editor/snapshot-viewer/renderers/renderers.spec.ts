@@ -1,13 +1,182 @@
-import {BlockNodeType, IBlockSnapshot} from "../../framework/block-std/types/block.type";
-import {DocLinkPreviewerService} from "../../framework/services/link-previewer.service";
+import {
+  BlockNodeType,
+  IBlockSnapshot,
+  storeObjectTextFrame,
+  storeObjectTextStyle,
+} from "../../framework";
+import {shikiService} from "../../blocks/code-block/shiki-config";
 import {createSnapshotRenderer} from "../create-snapshot-renderer";
 import {createAllBlocksFixture} from "../testing/fixtures/all-blocks.fixture";
+import {normalizeWordArtProps, WordArtBlockSchema} from "../../blocks";
 
 describe("snapshot-viewer renderers", () => {
+  it('marks only empty images for compact flow layout and clears the marker on upload', () => {
+    const image = createAllBlocksFixture().image
+    image.props = {src: '', wr: 100, ar: 1.65}
+    const host = document.createElement('div')
+    const renderer = createSnapshotRenderer({resourcePolicy: 'off'})
+    renderer.render(host, image)
+    expect(host.querySelector('.image-block')!.hasAttribute('data-bc-image-empty')).toBeTrue()
+    expect(host.querySelector('.upload-hint > span')!.textContent).toBe('点击插入图片')
+    expect(image.props).toEqual({src: '', wr: 100, ar: 1.65})
+    renderer.update({...image, props: {...image.props, src: 'https://cdn.example.com/photo.png', ar: 2}})
+    expect(host.querySelector('.image-block')!.hasAttribute('data-bc-image-empty')).toBeFalse()
+    expect(host.querySelector('.upload-hint')).toBeNull()
+    expect(host.querySelector<HTMLElement>('.img-wrapper')!.style.aspectRatio).toBe('2 / 1')
+    renderer.update(image)
+    expect(host.querySelector('.image-block')!.hasAttribute('data-bc-image-empty')).toBeTrue()
+    renderer.destroy()
+  })
+
+  it('keeps empty image placement geometry so compact flow rules exclude absolute/group members', () => {
+    for (const flavour of ['placement-layout', 'object-group'] as const) {
+      const image = createAllBlocksFixture().image
+      image.props = {src: '', wr: 50, ar: 2, position: '10 20'}
+      const host = document.createElement('div')
+      const renderer = createSnapshotRenderer({resourcePolicy: 'off'})
+      renderer.render(host, {
+        id: 'empty-plane', flavour, nodeType: BlockNodeType.block,
+        props: {width: 400, height: 300}, meta: {}, children: [image],
+      })
+      const block = host.querySelector<HTMLElement>('.image-block')!
+      expect(block.dataset['bcPlacement']).toBe('absolute')
+      expect(block.hasAttribute('data-bc-image-empty')).toBeTrue()
+      expect(block.style.left).toBe('10px')
+      expect(block.querySelector<HTMLElement>('.img-wrapper')!.style.aspectRatio).toBe('2 / 1')
+      renderer.destroy()
+    }
+  })
+
+  for (const flavour of ['placement-layout', 'object-group'] as const) {
+    it(`preserves a rotated image wider than its ${flavour} on render and update`, () => {
+      const image = createAllBlocksFixture().image
+      image.props = {...image.props, wr: 160, ar: 2, rotation: 90, position: '-100 100'}
+      const group: IBlockSnapshot = {
+        id: 'rotated-image-group', flavour, nodeType: BlockNodeType.block,
+        props: {width: 250, height: 400}, meta: {}, children: [image],
+      }
+      const host = document.createElement('div')
+      const renderer = createSnapshotRenderer({resourcePolicy: 'off'})
+      renderer.render(host, group)
+      expect(host.querySelector<HTMLElement>('.image-block')!.style.width).toBe('160%')
+      expect(host.querySelector<HTMLElement>('.image-block')!.style.maxWidth).toBe('none')
+      expect(host.querySelector<HTMLElement>('.image-block__container')!.style.width).toBe('100%')
+      expect(host.querySelector<HTMLElement>('.img-wrapper')!.style.transform).toBe('rotate(90deg)')
+      const next = structuredClone(group)
+      ;(next.children[0] as IBlockSnapshot).props['wr'] = 80
+      renderer.update(next)
+      expect(host.querySelector<HTMLElement>('.image-block')!.style.width).toBe('80%')
+      renderer.destroy()
+    })
+  }
+
+  it('preserves image stretch intent while retaining legacy contain behavior', () => {
+    const image = createAllBlocksFixture().image
+    image.props = {...image.props, wr: 50, ar: 3, fit: 'fill', rotation: -90}
+    const host = document.createElement('div')
+    const renderer = createSnapshotRenderer({resourcePolicy: 'off'})
+    renderer.render(host, image)
+    expect(host.querySelector('img')!.style.objectFit).toBe('fill')
+    expect(host.querySelector<HTMLElement>('.img-wrapper')!.style.aspectRatio).toBe('3 / 1')
+    expect(host.querySelector<HTMLElement>('.img-wrapper')!.style.transform).toBe('rotate(270deg)')
+    expect(host.querySelector<HTMLElement>('figure')!.style.transform).toBe('')
+    const legacy = structuredClone(image)
+    delete legacy.props['fit']
+    delete legacy.props['rotation']
+    renderer.update(legacy)
+    expect(host.querySelector('img')!.style.objectFit).toBe('')
+    expect(host.querySelector<HTMLElement>('.img-wrapper')!.style.transform).toBe('')
+    renderer.destroy()
+  })
+
+  it("supports readonly audio playback, seeking, errors and disposal across updates", async () => {
+    const snapshot = createAllBlocksFixture().audio
+    const host = document.createElement("div")
+    const renderer = createSnapshotRenderer()
+    renderer.render(host, snapshot)
+    const audio = host.querySelector("audio")!
+    const play = host.querySelector<HTMLButtonElement>(".audio-player__button--primary")!
+    const mute = host.querySelector<HTMLButtonElement>(".audio-player__button--volume")!
+    const seek = host.querySelector<HTMLInputElement>("input")!
+    const pause = spyOn(audio, "pause")
+    spyOn(audio, "load")
+    const start = spyOn(audio, "play").and.returnValue(Promise.resolve())
+    Object.defineProperty(audio, "duration", {configurable: true, value: 120})
+    expect(audio.controls).toBeFalse()
+    audio.dispatchEvent(new Event("loadedmetadata"))
+    play.click()
+    expect(start).toHaveBeenCalledTimes(1)
+    seek.value = "30"
+    seek.dispatchEvent(new Event("input"))
+    expect(audio.currentTime).toBe(30)
+    expect(seek.style.getPropertyValue("--audio-progress")).toBe("25%")
+    mute.click()
+    audio.dispatchEvent(new Event("volumechange"))
+    expect(audio.muted).toBeTrue()
+    expect(mute.getAttribute("aria-label")).toBe("取消静音")
+    renderer.update({...snapshot, props: {...snapshot.props, name: "更名音频"}})
+    expect(host.querySelector("audio")).toBe(audio)
+    expect(host.querySelector(".audio-name")!.textContent).toBe("更名音频")
+    expect(audio.currentTime).toBe(30)
+    audio.dispatchEvent(new Event("error"))
+    expect(play.disabled).toBeTrue()
+    expect(host.querySelector(".audio-status")!.textContent).toBe("无法播放")
+    audio.dispatchEvent(new Event("loadedmetadata"))
+    expect(play.disabled).toBeFalse()
+    renderer.update({...snapshot, props: {...snapshot.props, url: "https://example.com/new.ogg"}})
+    expect(host.querySelector("audio")).not.toBe(audio)
+    expect(pause).toHaveBeenCalledTimes(1)
+    play.click()
+    expect(start).toHaveBeenCalledTimes(1)
+    const nextAudio = host.querySelector("audio")!
+    const nextPause = spyOn(nextAudio, "pause")
+    spyOn(nextAudio, "load")
+    renderer.destroy()
+    expect(nextPause).toHaveBeenCalledTimes(1)
+    await Promise.resolve()
+    expect(host.childElementCount).toBe(0)
+  })
+
   it("renders a callout prefix and nested paragraph children", () => {
     const host = renderFixture(createAllBlocksFixture().callout)
-    expect(host.querySelector(".callout-block-prefix")?.textContent).toContain("📢")
+    const callout = host.querySelector<HTMLElement>(".callout-block")!
+    expect(callout.querySelector(".callout-block-prefix")?.textContent).toContain("📢")
+    expect(callout.querySelector(":scope > .bc-block-content")).not.toBeNull()
+    expect(callout.querySelector(":scope > .bc-block-content > .callout-content.children-render-container")).not.toBeNull()
     expect(host.querySelector(".paragraph-block")).not.toBeNull()
+    expect(callout.style.getPropertyValue("--bc-callout-background-color"))
+      .toBe("#FFE6CD")
+    expect(callout.style.backgroundColor).toBe("")
+  })
+
+  it("keeps readonly media and attachment shells aligned with live block DOM", () => {
+    const fixture = createAllBlocksFixture()
+    const host = renderFixture([fixture.video, fixture.audio, fixture.attachment])
+    const root = host.querySelector<HTMLElement>("[data-blockcraft-root='true']")!
+    const video = host.querySelector<HTMLElement>(".video-block")!
+    const attachment = host.querySelector<HTMLElement>(".attachment-block")!
+
+    expect(root.getAttribute("contenteditable")).toBe("false")
+    expect(video.querySelector(".video-block__wrapper")?.getAttribute("contenteditable"))
+      .toBe("false")
+    expect(attachment.querySelector(":scope > .attachment-block__prefix")).not.toBeNull()
+    expect(attachment.querySelector(":scope > .attachment-block__info")).not.toBeNull()
+    expect(attachment.querySelector(":scope > .attachment-block__icon-wrapper")).not.toBeNull()
+  })
+
+  it("keeps the bookmark title and fallback banner geometry", () => {
+    const host = renderFixture(createAllBlocksFixture().bookmark, {
+      enhancers: {
+        bookmark: {
+          load: async () => { throw new Error("offline") },
+        },
+      },
+    })
+    const bookmark = host.querySelector<HTMLElement>(".bookmark-block")!
+
+    expect(bookmark.querySelector(".bookmark-title > h3.title")).not.toBeNull()
+    expect(bookmark.querySelector(".bookmark-banner > svg"))
+      .not.toBeNull()
   })
 
   it("renders list-like text blocks with readonly prefixes", () => {
@@ -15,8 +184,26 @@ describe("snapshot-viewer renderers", () => {
     const host = renderFixture([fixture.bullet, fixture.ordered, fixture.todo])
 
     expect(host.querySelector(".bullet-block-prefix .circle")).not.toBeNull()
-    expect(host.querySelector(".ordered-block-prefix")?.textContent).toContain("2.")
+    expect(host.querySelector(".ordered-block-prefix")?.textContent).toContain("3.")
     expect(host.querySelector(".todo-block.is-checked")).not.toBeNull()
+  })
+
+  it("renders ordered marker presets through the shared formatter", () => {
+    const ordered: IBlockSnapshot = {
+      id: 'ordered-circle',
+      flavour: 'ordered',
+      nodeType: BlockNodeType.editable,
+      props: {depth: 0, order: 9, ms: 'o1'},
+      meta: {},
+      children: [{insert: 'tenth'}],
+    }
+    const host = renderFixture(ordered)
+    const prefix = host.querySelector<HTMLElement>('.ordered-block-prefix')!
+    const text = prefix.querySelector<HTMLElement>('.ordered-block-prefix__text')!
+
+    expect(prefix.dataset['bcMarkerEnclosure']).toBe('circle')
+    expect(text.textContent).toBe('10')
+    expect(text.style.fontSize).toBe('0.62em')
   })
 
   it("renders heading paragraphs, blockquotes, and captions with editable containers", () => {
@@ -28,6 +215,107 @@ describe("snapshot-viewer renderers", () => {
     expect(host.querySelector("figcaption.caption-block")).not.toBeNull()
   })
 
+  it("projects persisted paragraph spacing", () => {
+    const paragraph: IBlockSnapshot = {
+      id: "paragraph-spacing",
+      flavour: "paragraph",
+      nodeType: BlockNodeType.editable,
+      props: {pfs: 1.5, lh: 1.75, psb: 6, psa: 12, pis: 18, pie: 9, pti: -24},
+      meta: {},
+      children: [{insert: "Paragraph spacing"}],
+    }
+    const nextParagraph: IBlockSnapshot = {
+      ...paragraph,
+      id: "paragraph-spacing-next",
+      props: {psb: 18},
+      children: [{insert: "Next paragraph"}],
+    }
+    const host = renderFixture([paragraph, nextParagraph])
+    const element = host.querySelector<HTMLElement>(
+      '[data-block-id="paragraph-spacing"]',
+    )!
+
+    expect(element.style.getPropertyValue("--bc-block-fs-scale")).toBe("1.5")
+    expect(element.style.fontSize).toBe("150%")
+    expect(element.style.getPropertyValue("--bc-block-lh")).toBe("1.75")
+    expect(element.style.getPropertyValue("--bc-block-sb")).toBe("6pt")
+    expect(element.style.getPropertyValue("--bc-block-sa")).toBe("12pt")
+    expect(element.style.getPropertyValue("--bc-block-leading-sb")).toBe("6pt")
+    expect(element.style.getPropertyValue("--bc-next-block-sb")).toBe("18pt")
+    expect(element.style.marginBlockStart).toBe("")
+    expect(element.style.marginBlockEnd).toBe("")
+    expect(element.style.paddingInlineStart).toBe("")
+    expect(element.style.paddingInlineEnd).toBe("")
+    expect(element.style.getPropertyValue("--bc-block-text-indent")).toBe("")
+  })
+
+  it("projects non-editable block spacing and the following block's before gap", () => {
+    const image = createAllBlocksFixture().image
+    image.props = {...image.props, psb: 6, psa: 8}
+    const next: IBlockSnapshot = {
+      id: 'after-image', flavour: 'paragraph', nodeType: BlockNodeType.editable,
+      props: {psb: 18}, meta: {}, children: [{insert: 'Next'}],
+    }
+    const host = renderFixture([image, next])
+    const element = host.querySelector<HTMLElement>('.image-block')!
+
+    expect(element.style.getPropertyValue('--bc-block-sb')).toBe('6pt')
+    expect(element.style.getPropertyValue('--bc-block-sa')).toBe('8pt')
+    expect(element.style.getPropertyValue('--bc-block-leading-sb')).toBe('6pt')
+    expect(element.hasAttribute('data-bc-block-leading-sb')).toBeTrue()
+    expect(element.style.getPropertyValue('--bc-next-block-sb')).toBe('18pt')
+    expect(element.style.getPropertyValue('--bc-block-lh')).toBe('')
+  })
+
+  it("renders editable word art with CSS-owned presentation data", () => {
+    const defaults = normalizeWordArtProps(
+      WordArtBlockSchema.createSnapshot().props,
+    )
+    const wordArt = WordArtBlockSchema.createSnapshot("新品发布", {
+      width: 360,
+      height: 110,
+      rotation: 15,
+      ...storeObjectTextFrame(defaults.textFrame),
+      ...storeObjectTextStyle({
+        ...defaults.textStyle,
+        fontSize: 54,
+        fill: {
+          type: "linear-gradient",
+          opacity: 1,
+          angle: 180,
+          stops: [
+            {color: "#00FFFF", offset: 0, opacity: 1},
+            {color: "#0000FF", offset: 1, opacity: 1},
+          ],
+        },
+        outline: {type: "line", color: "#111111", width: 2.7},
+        transform: "slant-right",
+      }),
+    })
+    const host = renderFixture(wordArt)
+    const surface = host.querySelector(
+      ".word-art-block__surface",
+    ) as HTMLElement
+    const content = surface.querySelector(
+      ".word-art-block__editor",
+    ) as HTMLElement
+
+    expect(surface.style.width).toBe("360px")
+    expect(surface.style.transform).toBe("rotate(15deg)")
+    expect(content.textContent).toBe("新品发布")
+    expect(content.style.fontSize).toBe("54px")
+    expect(content.style.backgroundImage).toContain("linear-gradient(")
+    expect(content.style.webkitTextFillColor).toBe("transparent")
+    expect(content.style.backgroundClip).toBe("text")
+    expect(content.style.getPropertyValue("-webkit-background-clip")).toBe("text")
+    expect(content.style.getPropertyValue("-webkit-text-stroke"))
+      .toContain("0.0509em") // 2.75px / 54px，快照与 live 使用同一写入精度。
+    expect(content.style.transform).toBe("skewX(10deg)")
+    expect(content.dataset["bcWordArtPrintProps"]).toContain("linear-gradient")
+    expect(content.dataset["bcWordArtEffectTransform"]).toBe("skewX(10deg)")
+    expect(surface.querySelector("svg")).toBeNull()
+  })
+
   it("renders divider and columns shells", () => {
     const fixture = createAllBlocksFixture()
     const host = renderFixture([fixture.divider, fixture.columns])
@@ -35,6 +323,79 @@ describe("snapshot-viewer renderers", () => {
     expect(host.querySelector(".divider-block .divide-line.dashed")).not.toBeNull()
     expect(host.querySelector(".columns-block .columns-layout")).not.toBeNull()
     expect(host.querySelectorAll(".column-block .column-content").length).toBe(2)
+  })
+
+  it("uses the root content box for readonly absolute placement", () => {
+    const host = renderFixture({
+      id: "placement",
+      flavour: "placement-layout",
+      nodeType: BlockNodeType.block,
+      meta: {},
+      props: {},
+      children: [],
+    })
+    const plane = host.querySelector<HTMLElement>("[data-bc-placement-layout]")!
+    const content = plane.querySelector<HTMLElement>(
+      ":scope > .children-render-container",
+    )!
+
+    expect(plane.style.left).toBe("0px")
+    expect(plane.style.right).toBe("0px")
+    expect(plane.style.width).toBe("auto")
+    expect(plane.style.padding).toBe("inherit")
+    expect(content.style.position).toBe("relative")
+    expect(content.style.width).toBe("100%")
+  })
+
+  it("renders and patches a fixed object group with local ratio sizing", () => {
+    const group: IBlockSnapshot = {
+      id: "group",
+      flavour: "object-group",
+      nodeType: BlockNodeType.block,
+      meta: {},
+      props: {width: 400, height: 220},
+      children: [{
+        id: "image-in-group",
+        flavour: "image",
+        nodeType: BlockNodeType.block,
+        meta: {},
+        props: {
+          src: "https://cdn.example.com/group.png",
+          wr: 50,
+          ar: 2,
+          position: "30 40",
+        },
+        children: [],
+      }],
+    }
+    const host = document.createElement("div")
+    const renderer = createSnapshotRenderer({resourcePolicy: "off"})
+    renderer.render(host, group)
+
+    const shell = host.querySelector<HTMLElement>("[data-bc-object-group]")!
+    const image = host.querySelector<HTMLElement>(
+      '[data-block-id="image-in-group"]',
+    )!
+    const figure = image.querySelector<HTMLElement>(".image-block__container")!
+    expect(shell.style.width).toBe("400px")
+    expect(shell.style.height).toBe("220px")
+    expect(shell.style.padding).toBe("0px")
+    expect(shell.style.getPropertyValue("--bc-object-group-padding"))
+      .toBe("4px")
+    expect(shell.querySelector<HTMLElement>(
+      ":scope > .object-group-block__children",
+    )?.style.width).toBe("100%")
+    expect(image.style.left).toBe("30px")
+    expect(image.style.top).toBe("40px")
+    expect(image.style.width).toBe("50%")
+    expect(figure.style.width).toBe("100%")
+
+    const next = structuredClone(group)
+    ;(next.children[0] as IBlockSnapshot).props['position'] = "80 90"
+    renderer.update(next)
+    expect(image.style.left).toBe("80px")
+    expect(image.style.top).toBe("90px")
+    renderer.destroy()
   })
 
   it("renders frame indentation and code shell", () => {
@@ -73,7 +434,269 @@ describe("snapshot-viewer renderers", () => {
     expect(host.querySelector('.attachment-block__icon-wrapper mat-icon[data-mat-icon-type="svg"]')).not.toBeNull()
   })
 
-  it("uses dedicated empty states for video/audio without playable resources", () => {
+  it("renders wr/ar media sizing and preserves legacy pixel sizing", () => {
+    const host = renderFixture([
+      {
+        id: "image-ratio",
+        flavour: "image",
+        nodeType: BlockNodeType.block,
+        meta: {},
+        props: {src: "https://cdn.example.com/image.png", wr: 40, ar: 2},
+        children: [],
+      },
+      {
+        id: "video-ratio",
+        flavour: "video",
+        nodeType: BlockNodeType.void,
+        meta: {},
+        props: {
+          url: "https://cdn.example.com/video.mp4",
+          sourceType: "link",
+          wr: 60,
+          ar: 16 / 9,
+        },
+        children: [],
+      },
+      {
+        id: "image-legacy",
+        flavour: "image",
+        nodeType: BlockNodeType.block,
+        meta: {},
+        props: {
+          src: "https://cdn.example.com/legacy.png",
+          width: 320,
+          height: 180,
+        },
+        children: [],
+      },
+    ])
+
+    const ratioImageFigure = host.querySelector(
+      '[data-block-id="image-ratio"] .image-block__container',
+    ) as HTMLElement
+    const ratioImage = host.querySelector(
+      '[data-block-id="image-ratio"] .img-wrapper',
+    ) as HTMLElement
+    const ratioVideo = host.querySelector(
+      '[data-block-id="video-ratio"] .video-block__wrapper',
+    ) as HTMLElement
+    const legacyImage = host.querySelector(
+      '[data-block-id="image-legacy"] img',
+    ) as HTMLImageElement
+
+    expect(ratioImageFigure.style.width).toBe("40%")
+    expect(ratioImage.style.width).toBe("100%")
+    expect(Number.parseFloat(ratioImage.style.aspectRatio)).toBe(2)
+    expect(ratioVideo.style.width).toBe("60%")
+    expect(Number.parseFloat(ratioVideo.style.aspectRatio)).toBeCloseTo(16 / 9, 4)
+    expect(legacyImage.style.width).toBe("320px")
+    expect(legacyImage.style.height).toBe("180px")
+  })
+
+  it("keeps a stable image placeholder and disposes it with the renderer", async () => {
+    const host = document.createElement("div")
+    const renderer = createSnapshotRenderer()
+    renderer.render(host, {
+      id: "image-placeholder",
+      flavour: "image",
+      nodeType: BlockNodeType.block,
+      meta: {},
+      props: {
+        src: "https://cdn.example.com/image.png",
+        wr: 50,
+        ar: 2,
+      },
+      children: [],
+    })
+    await flushPromises()
+
+    const frame = host.querySelector(".img-wrapper") as HTMLElement
+    const image = frame.querySelector("img") as HTMLImageElement
+    expect(frame.dataset["bcResourceState"]).toBe("loading")
+    expect(Number.parseFloat(frame.style.aspectRatio)).toBe(2)
+
+    image.dispatchEvent(new Event("error"))
+    expect(frame.dataset["bcResourceState"]).toBe("error")
+
+    renderer.update({
+      id: "image-placeholder",
+      flavour: "image",
+      nodeType: BlockNodeType.block,
+      meta: {},
+      props: {
+        src: "https://cdn.example.com/image-next.png",
+        wr: 50,
+        ar: 2,
+      },
+      children: [],
+    })
+    await flushPromises()
+    const nextFrame = host.querySelector(".img-wrapper") as HTMLElement
+    const nextImage = nextFrame.querySelector("img") as HTMLImageElement
+    expect(nextFrame).not.toBe(frame)
+    expect(nextFrame.dataset["bcResourceState"]).toBe("loading")
+    nextImage.dispatchEvent(new Event("error"))
+    expect(nextFrame.dataset["bcResourceState"]).toBe("error")
+
+    renderer.destroy()
+    expect(nextFrame.querySelector(".bc-resource-placeholder")).toBeNull()
+  })
+
+  it("keeps image, direct-video, audio, and iframe resources idle when resources are off", () => {
+    const fixture = createAllBlocksFixture()
+    const directVideo: IBlockSnapshot = {
+      ...fixture.video,
+      id: "video-off",
+      props: {
+        ...fixture.video.props,
+        poster: "https://cdn.example.com/poster.png",
+      },
+    }
+    const embedVideo: IBlockSnapshot = {
+      id: "video-iframe-off",
+      flavour: "video",
+      nodeType: BlockNodeType.void,
+      meta: {},
+      props: {
+        url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        sourceType: "link",
+      },
+      children: [],
+    }
+    const host = renderFixture([
+      fixture.image,
+      directVideo,
+      fixture.audio,
+      embedVideo,
+    ], {resourcePolicy: "off"})
+
+    const imageFrame = host.querySelector<HTMLElement>(".image-block .img-wrapper")!
+    const image = imageFrame.querySelector("img")!
+    const videoFrame = host.querySelector<HTMLElement>(
+      '[data-block-id="video-off"] .video-block__wrapper',
+    )!
+    const video = videoFrame.querySelector("video")!
+    const audio = host.querySelector(".audio-block audio")!
+
+    expect(image.hasAttribute("src")).toBeFalse()
+    expect(video.hasAttribute("src")).toBeFalse()
+    expect(video.hasAttribute("poster")).toBeFalse()
+    expect(audio.hasAttribute("src")).toBeFalse()
+    expect(imageFrame.dataset["bcResourceState"]).toBeUndefined()
+    expect(videoFrame.dataset["bcResourceState"]).toBeUndefined()
+    expect(imageFrame.querySelector(".bc-resource-placeholder")).toBeNull()
+    expect(videoFrame.querySelector(".bc-resource-placeholder")).toBeNull()
+    expect(host.querySelector(
+      '[data-block-id="video-iframe-off"] iframe',
+    )).toBeNull()
+  })
+
+  it("keeps resource controllers idle and starts sources only when visible", async () => {
+    const observerHarness = installIntersectionObserverHarness()
+    const host = document.createElement("div")
+    const renderer = createSnapshotRenderer({resourcePolicy: "visible"})
+    const fixture = createAllBlocksFixture()
+    const directVideo: IBlockSnapshot = {
+      ...fixture.video,
+      id: "video-visible",
+      props: {
+        ...fixture.video.props,
+        poster: "https://cdn.example.com/poster.png",
+      },
+    }
+    const embedVideo: IBlockSnapshot = {
+      id: "video-iframe-visible",
+      flavour: "video",
+      nodeType: BlockNodeType.void,
+      meta: {},
+      props: {
+        url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        sourceType: "link",
+      },
+      children: [],
+    }
+    const snapshots = [
+      fixture.image,
+      directVideo,
+      fixture.audio,
+      embedVideo,
+    ]
+
+    try {
+      renderer.render(host, snapshots)
+
+      const imageFrame = host.querySelector<HTMLElement>(".image-block .img-wrapper")!
+      const image = imageFrame.querySelector("img")!
+      const videoFrame = host.querySelector<HTMLElement>(
+        '[data-block-id="video-visible"] .video-block__wrapper',
+      )!
+      const video = videoFrame.querySelector("video")!
+      const audio = host.querySelector(".audio-block audio")!
+      const iframeFrame = host.querySelector<HTMLElement>(
+        '[data-block-id="video-iframe-visible"] .video-block__wrapper',
+      )!
+      const iframe = iframeFrame.querySelector("iframe")!
+
+      expect(observerHarness.observedCount()).toBe(4)
+      expect(image.hasAttribute("src")).toBeFalse()
+      expect(video.hasAttribute("src")).toBeFalse()
+      expect(video.hasAttribute("poster")).toBeFalse()
+      expect(audio.hasAttribute("src")).toBeFalse()
+      expect(iframe.hasAttribute("src")).toBeFalse()
+      expect(imageFrame.dataset["bcResourceState"]).toBe("idle")
+      expect(videoFrame.dataset["bcResourceState"]).toBe("idle")
+      expect(iframeFrame.dataset["bcResourceState"]).toBe("idle")
+      expect(imageFrame.hasAttribute("aria-busy")).toBeFalse()
+      expect(videoFrame.hasAttribute("aria-busy")).toBeFalse()
+      expect(iframeFrame.hasAttribute("aria-busy")).toBeFalse()
+
+      // Streaming a sibling must preserve the existing visibility observers.
+      renderer.update([...snapshots, fixture.headingParagraph])
+      expect(observerHarness.observedCount()).toBe(4)
+      expect(host.querySelector(".image-block .img-wrapper")).toBe(imageFrame)
+      expect(image.hasAttribute("src")).toBeFalse()
+
+      jasmine.clock().install()
+      try {
+        jasmine.clock().tick(10_001)
+      } finally {
+        jasmine.clock().uninstall()
+      }
+      expect(iframeFrame.dataset["bcResourceState"]).toBe("idle")
+
+      observerHarness.triggerAll()
+      await flushPromises()
+
+      expect(image.getAttribute("src")).toBe("https://cdn.example.com/image.png")
+      expect(video.getAttribute("src")).toBe("https://cdn.example.com/demo.mp4")
+      expect(video.getAttribute("poster")).toBe("https://cdn.example.com/poster.png")
+      expect(audio.getAttribute("src")).toBe("https://cdn.example.com/demo.ogg")
+      expect(iframe.getAttribute("src")).toContain("youtube.com/embed/")
+      expect(imageFrame.dataset["bcResourceState"]).toBe("loading")
+      expect(videoFrame.dataset["bcResourceState"]).toBe("loading")
+      expect(iframeFrame.dataset["bcResourceState"]).toBe("loading")
+      expect(audio.closest(".bc-resource-placeholder-frame")).toBeNull()
+
+      renderer.render(host, snapshots)
+      const cachedImageFrame = host.querySelector<HTMLElement>(
+        ".image-block .img-wrapper",
+      )!
+      const cachedImage = cachedImageFrame.querySelector("img")!
+      expect(cachedImage.hasAttribute("src")).toBeFalse()
+      expect(cachedImageFrame.dataset["bcResourceState"]).toBe("idle")
+      expect(cachedImageFrame.hasAttribute("aria-busy")).toBeFalse()
+
+      observerHarness.triggerAll()
+      expect(cachedImage.getAttribute("src"))
+        .toBe("https://cdn.example.com/image.png")
+      expect(cachedImageFrame.dataset["bcResourceState"]).toBe("loading")
+    } finally {
+      renderer.destroy()
+      observerHarness.restore()
+    }
+  })
+
+  it("keeps the video empty state and matches the live audio placeholder", () => {
     const host = renderFixture([
       {
         id: "video-empty",
@@ -100,7 +723,16 @@ describe("snapshot-viewer renderers", () => {
     ])
 
     expect(host.querySelector('.bc-snapshot-empty-state--video')).not.toBeNull()
-    expect(host.querySelector('.bc-snapshot-empty-state--audio')).not.toBeNull()
+    const audio = host.querySelector('.audio-block')!
+    const hint = audio.querySelector<HTMLElement>('.upload-hint')!
+    expect(hint).not.toBeNull()
+    expect(hint.textContent).toBe('点击插入音频')
+    expect(hint.contentEditable).toBe('false')
+    expect(hint.querySelector('.bc_icon.bc_yinpin')).not.toBeNull()
+    expect(audio.querySelector('.bc-snapshot-empty-state')).toBeNull()
+    hint.click()
+    expect(audio.querySelector('input[type="file"]')).toBeNull()
+    expect(audio.querySelector('audio')).toBeNull()
   })
 
   it("keeps bookmark shell visible when preview enhancement rejects", async () => {
@@ -120,17 +752,20 @@ describe("snapshot-viewer renderers", () => {
   })
 
   it("uses the default bookmark preview fetcher when no custom enhancer is provided", async () => {
-    const querySpy = spyOn(DocLinkPreviewerService.prototype, "query").and.resolveTo({
-      title: "Angular",
-      description: "Framework",
-      icon: "https://cdn.example.com/icon.png",
-      image: "https://cdn.example.com/banner.png",
-    })
+    const fetchSpy = spyOn(window, "fetch").and.resolveTo({
+      ok: true,
+      json: async () => ({
+        title: "Angular",
+        description: "Framework",
+        favicons: ["https://cdn.example.com/icon.png"],
+        images: ["https://cdn.example.com/banner.png"],
+      }),
+    } as Response)
 
     const host = renderFixture(createAllBlocksFixture().bookmark)
     await flushPromises()
 
-    expect(querySpy).toHaveBeenCalled()
+    expect(fetchSpy).toHaveBeenCalled()
     expect(host.textContent).toContain("Angular")
     expect(host.querySelector(".bookmark-icon img")?.getAttribute("src")).toBe("https://cdn.example.com/icon.png")
     expect(host.querySelector(".bookmark-banner img")?.getAttribute("src")).toBe("https://cdn.example.com/banner.png")
@@ -152,16 +787,20 @@ describe("snapshot-viewer renderers", () => {
 
     expect(host.querySelector(".formula-block .katex")).not.toBeNull()
     expect(host.querySelector('.mermaid-block .graph-con [data-rendered="true"]')).not.toBeNull()
+    expect(host.querySelector('.mermaid-block .head, .mermaid-block .text-container')).toBeNull()
   })
 
   it("applies async syntax highlighting to code and mermaid text blocks", async () => {
     const fixture = createAllBlocksFixture()
-    const host = renderFixture([fixture.code, fixture.mermaid])
+    const host = renderFixture([fixture.code, (fixture.mermaid.children as IBlockSnapshot[])[0]!])
+    await shikiService.getHighlighter()
     await flushPromises()
 
     expect(host.querySelector('.code-block .edit-container c-element[style*="color"]')).not.toBeNull()
+    expect(host.querySelector('.code-block .btn-collapse')).not.toBeNull()
+    expect(host.querySelector('.code-block [data-bc-print-exclude="true"]')).not.toBeNull()
     expect(host.querySelector('.mermaid-textarea.edit-container, .mermaid-textarea .edit-container')).not.toBeNull()
-    expect(host.querySelector('.mermaid-textarea .edit-container c-element[style*="color"]')).not.toBeNull()
+    expect(host.querySelector('.mermaid-textarea.edit-container c-element[style*="color"]')).not.toBeNull()
   })
 
   it("mounts iframe-style embeds only when resource loading is enabled", async () => {
@@ -200,6 +839,79 @@ function renderFixture(snapshot: IBlockSnapshot | IBlockSnapshot[], options = {}
 }
 
 async function flushPromises() {
+  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
   await Promise.resolve()
   await Promise.resolve()
+}
+
+function installIntersectionObserverHarness() {
+  const original = globalThis.IntersectionObserver
+  const observers: Array<{
+    callback: IntersectionObserverCallback
+    observer: IntersectionObserver
+    targets: Set<Element>
+  }> = []
+
+  class TestIntersectionObserver {
+    readonly root = null
+    readonly rootMargin = ""
+    readonly thresholds = [0]
+    private readonly targets = new Set<Element>()
+
+    constructor(private readonly callback: IntersectionObserverCallback) {
+      observers.push({
+        callback,
+        observer: this as unknown as IntersectionObserver,
+        targets: this.targets,
+      })
+    }
+
+    observe(target: Element) {
+      this.targets.add(target)
+    }
+
+    unobserve(target: Element) {
+      this.targets.delete(target)
+    }
+
+    disconnect() {
+      this.targets.clear()
+    }
+
+    takeRecords(): IntersectionObserverEntry[] {
+      return []
+    }
+  }
+
+  Object.defineProperty(globalThis, "IntersectionObserver", {
+    configurable: true,
+    writable: true,
+    value: TestIntersectionObserver,
+  })
+
+  return {
+    observedCount: () => observers.reduce(
+      (count, observer) => count + observer.targets.size,
+      0,
+    ),
+    triggerAll: () => {
+      observers.forEach(({callback, observer, targets}) => {
+        const entries = Array.from(targets).map(target => ({
+          target,
+          isIntersecting: true,
+          intersectionRatio: 1,
+        })) as IntersectionObserverEntry[]
+        if (entries.length > 0) {
+          callback(entries, observer)
+        }
+      })
+    },
+    restore: () => {
+      Object.defineProperty(globalThis, "IntersectionObserver", {
+        configurable: true,
+        writable: true,
+        value: original,
+      })
+    },
+  }
 }

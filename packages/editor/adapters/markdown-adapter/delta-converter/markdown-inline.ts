@@ -101,17 +101,6 @@ export const markdownTableToDeltaMatcher: MarkdownASTToDeltaMatcher = {
   toDelta: () => [],
 };
 
-export const markdownInlineMathToDeltaMatcher: MarkdownASTToDeltaMatcher = {
-  name: 'inlineMath',
-  match: ast => ast.type === 'inlineMath',
-  toDelta: ast => {
-    if (!('value' in ast)) {
-      return [];
-    }
-    return [{insert: {latex: ast.value}}];
-  },
-};
-
 export const markdownInlineToDeltaMatchers: MarkdownASTToDeltaMatcher[] = [
   markdownTextToDeltaMatcher,
   markdownInlineCodeToDeltaMatcher,
@@ -119,7 +108,6 @@ export const markdownInlineToDeltaMatchers: MarkdownASTToDeltaMatcher[] = [
   markdownEmphasisToDeltaMatcher,
   markdownDeleteToDeltaMatcher,
   markdownLinkToDeltaMatcher,
-  markdownInlineMathToDeltaMatcher,
   markdownListToDeltaMatcher,
   markdownTableToDeltaMatcher,
 ];

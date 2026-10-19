@@ -2,15 +2,32 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when working with the CRDT data layer.
 >
-> Last updated: 2026-04-07
+> Last updated: 2026-10-16
 
 ## Architecture Overview
 
+段落的字符默认外观持久化为 `props.textDefaults`（普通标量 record），下一段策略为
+`props.nextParagraphStyle`（`same` / `body`）。不新增 Yjs 类型或占位文本；旧文档缺省字段仍可读取。
+空段落格式命令、完整段落字符格式命令、删空操作把标记格式与正文变更放在对应事务中，
+共同参与 Undo/Redo、协同和快照。当前用户的临时输入覆盖另存为 Input 本地状态，不能序列化。
+
+基础内容数据契约归属 `framework/model/`，可聚合导入 `@ccc/blockcraft/framework/model`。
+它是 Block/Inline/Delta、元数据、通用快照及持久化格式标识的共享模型，不包含 Yjs、Angular 或 DOM，
+也不负责数据写入。`BlockModelGraph`、`NativeBlockModel`、Yjs 代理与事务仍属于文档编辑运行时。
+旧 block-std 类型路径继续兼容。独立读取或交换数据可使用 `BlockSnapshot<P, M, F>`，
+默认 `F = string`，不要求组件注册；它只是数据描述，不负责运行时验证。
+文档编辑与 `doc.exportSnapshot()` 继续使用注册表约束的 `IBlockSnapshot<P, M>`，
+其递归后代也受同一注册表约束。父节点 props/meta 泛型不传播给子块。
+`BaseBlockDesc` 保留 interface 形式及类型增强能力，并复用通用 `BlockDescriptor` 的基础字段。
+
 ```
 BlockCraftDoc
+  ├── model: BlockModelGraph                   derived, read-only reachable tree
+  ├── readonlyManager: BlockReadonlyManager   derived permission/cache layer
+  ├── revisions: DocumentRevisionManager      revision/query/projection domain
   └── yDoc: Y.Doc
-       └── yBlockMap: Y.Map<string, YBlock>    key = "blocks"
-            └── YBlock: Y.Map
+       ├── yBlockMap: Y.Map<string, YBlock>    key = "blocks"
+       │    └── YBlock: Y.Map
                  ├── id: string
                  ├── flavour: string
                  ├── nodeType: number
@@ -18,21 +35,45 @@ BlockCraftDoc
                  ├── meta: Y.Map               (metadata)
                  ├── children: Y.Array<string>  (child block IDs)
                  └── text?: Y.Text              (inline content, editable blocks only)
+       ├── Y.Map<RevisionRecord>               key = "bc:revisions"
+       ├── Y.Map<RevisionDecision>             key = "bc:revision-decisions" (legacy import)
+       └── Y.Map<unknown>                      key = "bc:revision-meta"
 ```
+
+## 固定字号与缩放的数据规则
+
+段落 `props.fs` 和行内 `t:px` 是基础 CSS px，`props.pfs` 与 `t:fs` 保持倍率。
+字段都是独立原始数字；缺省／`null` 继承，DOM 合成结果不持久化为第三份“实际字号”。
+根块已有 `props.fs` 仍表示文档默认 px，其 `10..32` 校验范围不变。
+固定字号基础值允许 `0.1..4096` 和六位小数，产品实际字号输入为 `1..512px`。
+设置实际 px 通过反算保留倍率；设置高级倍率也保留 px，所有范围写入在一个事务中完成。
+只在用户修改命中的范围时规范化旧 `s:fontSize` 别名，打开旧快照不迁移数据。
+协作参与者都需要支持新字段后再使用固定 px 能力；旧客户端的渲染不会理解 `t:px`。
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
 | `framework/doc/index.ts` | `BlockCraftDoc` — owns `Y.Doc`, exposes services |
+| `framework/doc/model-graph.ts` | `BlockModelGraph` — DOM-free structure/order/text/snapshot reads |
+| `framework/doc/block-readonly-manager.ts` | Persistent/inherited block permission resolver and guards |
+| `framework/doc/block-readonly.types.ts` | Public readonly resolution, operation, violation and error contracts |
 | `framework/doc/crud.ts` | `DocCRUD` — all Yjs mutations + observables |
+| `framework/doc/sync-lifecycle.ts` | Internal remote transaction before/after view-sync lifecycle |
 | `framework/doc/vm.ts` | `DocVM` — Angular component creation/lookup |
 | `framework/doc/undoManger.ts` | `DocUndoManager` — undo/redo with selection (note: filename is "Manger") |
+| `framework/revision/` | Non-destructive proposals, undoable decision materialization, projection and legacy checkpoint compaction |
+| `framework/modules/selection/relative-bookmark.ts` | Shared Yjs-relative selection bookmark codec |
+| `framework/modules/selection/live-bookmark-tracker.ts` | Revisioned current-selection bookmark used by remote sync |
+| `framework/modules/selection/remote-selection-reconciler.ts` | Selection-owned remote bookmark reconciliation |
+| `framework/modules/selection/history-restorer.ts` | Selection-owned Undo/Redo bookmark restoration |
+| `framework/modules/table/` | Package-internal table topology/selection projections over stable model IDs |
 | `framework/block-std/reactive/block.ts` | `proxyMap`, `YBlock`, `NativeBlockModel` |
 
 ## Reactive Proxy System
 
-`proxyMap()` creates a JavaScript Proxy over Yjs data:
+`proxyMap()` creates a JavaScript Proxy over Yjs data. The write example below
+describes internal plumbing, not an extension API:
 
 ```typescript
 const native = proxyMap(nativeObj, yMap);
@@ -48,6 +89,53 @@ console.log(native.color);
 
 This is how `block.props.color = 'red'` automatically syncs via Yjs.
 
+Custom Blocks and Plugins must not assign proxied props/meta directly because a
+raw proxy assignment bypasses transaction grouping and block-readonly guards.
+Use `block.updateProps()`, guarded inline methods, `DocChain`, or `DocCRUD`.
+
+### Flat props and collaborative value boundaries
+
+Every top-level block prop is an independent entry in the block's `props`
+Y.Map. A nested `SimpleRecord` is legal snapshot data, but updating that one
+top-level key replaces the record as one collaborative value. Prefer flat
+primitive fields when users may edit parts independently.
+
+通用存储规则适用于 root、容器和可定位对象，而非某几个块的特例：
+
+- 运行时继续使用结构化领域值，持久化只保存实际覆盖的配置。
+- 未启用的效果不保留参数；等于所属 Schema 默认值的小组省略。缺省继承，
+  显式 `none` 用于覆盖默认启用的功能；通过 CRUD 的 `null` 删除 Y.Map 属性。
+- 相关且应整体编辑的值使用有界字符串；独立功能使用独立顶层键。
+  不把整个配置打包为 JSON，也不全局改写未知业务 props。
+- `position` 是布局 px 的 `"x y"`，写入最多两位小数；内部计算使用数值。
+  x/y 仍作为一个协同原子值更新，Undo/Redo 一起恢复。
+- `fill/textFill` 支持颜色、`linear-gradient(...)`、
+  `url("...") 50% 50% / cover no-repeat`；渐变/图片整体透明度使用
+  `fillOpacity/textFillOpacity`，默认 1 省略。色标透明度保留在 CSS `color-mix()` 中。
+- 通用容器图片背景使用同一图片 codec，存为 `bgi` CSS shorthand + 可选 `bgo`；
+  不再保存 `bgs/bgx/bgy`。root 的 `background` 本来就是 CSS shorthand，
+  默认 root 快照为 `{}`，不为它增加空填充对象；它现有的多层背景字符串保持有效。
+
+`BlockSurfaceProps.p` 仍是有界数值 shorthand；它与文字框运行时边距类型共用，
+不要将所有数组/对象盲目字符串化。样式按领域 codec 处理，文档树、富文本、资源元数据
+和业务对象保持各自结构。渲染、远程协同与 Undo 使用同一读取路径，不在读取时写回 Yjs。
+
+对象外观按 `OBJECT_FORMAT_SECTION_KEYS` 的独立小组持久化，旧
+`effects/textFrame/textStyle` 与填充 records 不兼容。用
+`storeBlockObjectFormat()` 或块的 `normalize*SnapshotProps()` 构造最终快照；
+手工填充操作展开 `storeObjectFormatSection("shapeFill", paint)`，以同时保存整体透明度。
+`storeObjectPaint()` 只生成 paint token，不能独自代替完整填充组。
+多组更新仍通过一笔 Yjs transaction 形成一次 Undo。
+
+形状 `customGeometry` 使用 `v1|width height|fill-rule|f:path|s:path` 紧凑路径字符串，
+仍是单个原子 Y.Map 值。运行时节点对象不直接持久化，旧 JSON 字符串不再兼容。
+无变化不写入；恢复预设时通过事务删除覆盖，Undo/Redo 恢复或删除完整路径。
+
+`BlockObjectFormatManager.updateSelection()` stays selection-guarded by
+default. Its `allowDetachedSelection` option accepts only a `null` selection
+gap and is intended for the object toolbar while browser focus is owned by its
+input or CSES child overlay; it never accepts a different non-empty selection.
+
 ## Data Flow: Write Path
 
 ```
@@ -62,13 +150,295 @@ block.updateProps({ color: 'red' })
   → Angular markForCheck() on affected components
 ```
 
+Model-first structural mutation is also available when no view capability is
+needed:
+
+```typescript
+const insertedIds = doc.crud.insertBlockSnapshots(parentId, index, snapshots)
+doc.crud.deleteBlocks(parentId, index, count)
+doc.crud.deleteBlockById(blockId)
+doc.crud.moveBlocks(parentId, index, count, targetParentId, targetIndex)
+```
+
+The method validates schema and readonly rules, writes the snapshots and parent
+children array in one Yjs transaction, and returns only stable block IDs. The
+parent may be reachable without a ComponentRef, and the method never resolves
+inserted components for its return value. If the parent view already exists,
+the normal Yjs observer still synchronizes that view; sparse-root and uncreated
+parent insertions remain model-only. The existing `insertBlocks()` API delegates
+to the same write path, then preserves its legacy synchronous
+`BlockComponent[]` result by materializing views where required.
+Deletion and movement resolve their parent, child range and target from the
+reachable Yjs model rather than `DocVM`. Their readonly checks and writes run
+before/in the same transaction as before. Existing views are patched by the
+normal observer, while an uncreated source or target remains model-only.
+
 ## Data Flow: Read Path
 
 ```
 Component template: {{ props.color }}
   → ProxyMap getter → yMap.get('color')
   → Returns current Yjs value
+
+Model-first query: doc.model.getPath(blockId)
+  → BlockModelGraph reachable-tree index + current YBlock values
+  → Returns without ComponentRef, HTMLElement or layout reads
 ```
+
+`BlockModelGraph` is built from the root after the initial YBlockMap is complete
+and before mounted-view observers start. It observes structural Yjs changes,
+reconciles affected parents/subtrees incrementally, and is destroyed with the
+document. Props/text reads always come from the current YBlock; the graph does
+not duplicate mutable business state.
+
+## BlockModelGraph API
+
+```typescript
+doc.model.exists(blockId): boolean
+doc.model.getYBlock(blockId): YBlock | undefined
+doc.model.getParentId(blockId): string | null
+doc.model.getChildrenIds(blockId): readonly string[]
+doc.model.getPath(blockId): readonly string[] | null
+doc.model.indexInParent(blockId): number
+doc.model.getPreviousSiblingId(blockId): string | null
+doc.model.getNextSiblingId(blockId): string | null
+
+doc.model.getFlavour(blockId)
+doc.model.getNodeType(blockId)
+doc.model.getProps(blockId)
+doc.model.getText(blockId)
+doc.model.getTextDeltas(blockId)
+doc.model.getTextLength(blockId)
+
+doc.model.comparePosition(aId, bId)
+doc.model.queryBetween(fromId, toId, contain?)
+doc.model.toSnapshot(blockId): IBlockSnapshot | null
+doc.model.structureRevision: number
+doc.model.structureChange$: Observable<IBlockModelStructureChange>
+doc.model.contentChange$: Observable<IBlockModelContentChange>
+doc.model.textChange$: Observable<IBlockModelTextChange>
+
+// @internal: DocCRUD view-materialization barrier for an open outer transaction
+doc.model.synchronizeParentBeforeView(parentId): void
+
+doc.exportSnapshot(): IBlockSnapshot | undefined
+```
+
+Important boundaries:
+
+- `exists()` means reachable from the current document root. An orphan entry in
+  `yBlockMap` is not a document block and returns `false`.
+- The graph tolerates missing, cyclic and duplicate child references by skipping
+  invalid edges. It reports diagnostics but never repairs/writes Yjs; structural
+  repair ownership remains in CRUD/`ChildrenRepairer`.
+- `comparePosition()` preserves the numeric bitmask direction of the former DOM
+  `compareDocumentPosition()` implementation, including combined containment
+  and ordering bits.
+- `queryBetween()` preserves `BlockCraftDoc.queryBlocksBetween()` semantics: it
+  returns the sibling interval below the closest common parent, not a full-tree
+  preorder slice.
+- `toSnapshot()` preserves rich `Y.Text` deltas, props, meta and nested blocks,
+  and does not require mounted components.
+- `doc.exportSnapshot()` is the full-document convenience entry point. Prefer it
+  for persistence and export so virtualized offscreen blocks are included
+  without creating Angular views.
+- `getTextDeltas()` and `textChange$` provide rich-text reads and transaction-
+  coalesced changed block IDs for mounted or unmounted editable blocks. Use
+  these for model-wide indexes such as search; `onTextUpdate$` remains a
+  component/view update stream and intentionally omits uncreated views.
+- `contentChange$` is the broader model-level invalidation stream. It reports
+  reachable text, inline-attribute and props changes without requiring mounted
+  views; see the contract below. Existing `textChange$` subscribers keep their
+  original filtering and transaction context unchanged.
+- Model APIs are queries only. Plugins must still mutate through `DocCRUD` or
+  `DocChain`; never write a returned YBlock or cached props object directly.
+- `synchronizeParentBeforeView()` is the one internal exception to the query
+  surface. `DocCRUD` uses it only when a sparse-root insert must synchronously
+  return a component before an outer Yjs transaction can notify deep observers.
+  Extensions must not call it or treat it as a mutation API.
+
+### Table Model Projection
+
+`framework/modules/table/TableModelGrid` is a package-internal read model over
+the direct `table → table-row → table-cell` topology. It builds stable-ID
+coordinate, physical-cell, visible-master and rowspan/colspan indexes without
+reading ComponentRefs, descendants, text or layout. `TableModelProjectionStore`
+caches that grid per document/table and invalidates it only for table/cell prop
+changes, table/row child-structure changes, table removal or document destroy;
+ordinary cell text and row-height changes retain the projection.
+
+The projection is read-only and diagnostic. A malformed grid never repairs Yjs
+or guesses from the mounted view. Table selection, input and table keyboard /
+clipboard commands resolve their complete target set from this model, then send
+stable IDs to `DocCRUD` or obtain snapshots through `doc.model.toSnapshot()`.
+Component lookup remains a view capability for focus and mounted-cell painting,
+not mutation authority.
+- `doc.vm` and `getBlockById()` describe mounted Angular view state. Do not use
+  them as document-existence checks when model-only behavior is sufficient.
+
+### Model Change Streams
+
+```typescript
+export type BlockModelContentChangeKind = "text" | "props"
+
+export interface IBlockModelContentChange {
+  readonly blockIds: readonly string[]
+  readonly kinds: readonly BlockModelContentChangeKind[]
+  readonly origin: unknown
+  readonly local: boolean
+  readonly isUndoRedo: boolean
+}
+
+export interface IBlockModelStructureChange {
+  revision: number
+  reachableAddedIds: readonly string[]
+  reachableRemovedIds: readonly string[]
+  affectedParentIds: readonly string[]
+  readonly affectedRootIds?: readonly string[]
+}
+```
+
+`contentChange$` emits at most once per Yjs transaction for changed blocks that
+remain reachable from the document root. It covers editable text mutations,
+inline attribute changes, nested `props` mutations, `children`/`props`
+replacement and whole reachable block replacement. `meta`-only changes and
+unreachable/orphan blocks are excluded. `kinds` is the transaction-coalesced
+set of `"text"` and `"props"`; `origin`, `local` and `isUndoRedo` preserve the
+same transaction context used by `textChange$`.
+
+`textChange$` remains fully compatible: it still emits only reachable editable
+text block IDs and keeps its previous transaction metadata. Existing search or
+text-index subscriptions do not need to migrate. Use `contentChange$` only
+when props or non-view model invalidation also matters.
+
+`structureChange$.affectedRootIds` identifies direct-root render units whose
+content/layout ownership changed, including nested moves and deletes. The field
+is optional so existing constructed mocks and consumers remain source
+compatible, but current runtimes always emit it. Direct-root additions and
+removals include the affected IDs; a pure direct-root reorder emits `[]`
+because order synchronization is already represented by the structure event
+and does not invalidate measured block geometry.
+
+## Sparse View Synchronization
+
+When `DocConfig.virtualization.enabled` is true, direct root children can be
+uncreated, mounted or retained while their YBlocks remain live. `DocCRUD`
+therefore treats a missing ComponentRef as a valid view state:
+
+- snapshot initialization materializes the complete YBlock tree in one
+  transaction, builds `BlockModelGraph`, and creates only the root component;
+- text/props changes on an uncreated block update Yjs/model only; mounting
+  rebuilds from current Yjs state;
+- retained editable blocks skip DOM patches and rebuild `InlineRuntime` on
+  reattach;
+- remote root insertions update model order and sparse indices without creating
+  components;
+- `insertBlockSnapshots()` keeps local root insertions model-only and returns
+  stable IDs; legacy `insertBlocks()` ensures retained components so its command
+  return values stay compatible, while Selection/viewport leases decide whether
+  to mount them. If that compatibility materialization occurs inside a nested
+  Yjs transaction, `DocCRUD` synchronizes the affected parent projection before
+  Angular lifecycle runs; the commit observer detects the already-reconciled
+  graph and does not emit a duplicate structure revision;
+- `deleteBlocks()`, `deleteBlockById()` and `moveBlocks()` can mutate reachable
+  uncreated parents/blocks directly; mounted parents still receive the same
+  children delta and retain component identity for moved blocks;
+- root delete/move/undo shifts only mounted sparse indices and never requires a
+  dense ComponentRef array;
+- when one transaction deletes a temporary container while moving one of its
+  children to a surviving parent (for example, undoing a drag-created columns
+  block), component destruction follows the post-transaction model owner.
+  `DocVM` destroys only data-deleted descendants, retains a still-reachable
+  moved subtree, and lets the destination children event adopt it. A delayed
+  event captured from the deleted parent is discarded by parent liveness and
+  ComponentRef identity checks;
+- direct-root order changes remap Selection/Projection leases by stable block ID
+  and preserve the visible anchor across local, remote and undo/redo transactions;
+  nested-only structure changes leave the root window index untouched.
+
+根级 `placement-layout` 的直属对象采用稀疏视图；其他容器及对象内部保持完整子树。
+DocCRUD 对根与浮动层的结构变更只同步模型顺序，不为离屏对象创建组件。
+DocVM 的包内 `_mountPlacementChildren` / `_reconcileSparsePlacementChildren` 复用稀疏
+children renderer；跨父级移动在全部 delta 后交接所有权，同父级 IME 重排延迟到组合结束。
+固定对象离屏即释放组件，自适应对象（包括其所属组合）常驻。模型数据始终完整，
+本地、远端与撤销继续走相同事务/观察路径；返回组件的旧式插入 API 仍同步物化返回值。
+宿主需要离屏 DOM 时使用 `ensureViewMounted` 或视图租约，不直接调用这些 VM 内部方法。
+
+## Persistent Block Readonly
+
+`IBaseMetadata.lock?: string` persists the explicit lock owner's non-empty user
+ID. Absence means no explicit lock. Do not persist a separate boolean or
+inherited flag—`BlockReadonlyManager` resolves inheritance from
+`BlockModelGraph` and caches only derived permission state. Legacy
+`meta.readonly` is not read or migrated.
+
+```typescript
+const doc = new BlockCraftDoc({
+  // ...
+  currentUserId: currentUser.id,
+  canUnlockBlock: ({currentUserId}) =>
+    currentUserId !== null && permissions.isAdmin(currentUserId),
+})
+
+doc.setBlockReadonly(blockId, true)
+
+doc.readonlyManager.resolve(blockId)
+doc.readonlyManager.isExplicitReadonly(blockId)
+doc.readonlyManager.getExplicitLockUserId(blockId)
+doc.readonlyManager.containsReadonly(blockId)
+doc.canUnlockBlock(blockId)
+
+doc.setBlockReadonly(blockId, false)
+```
+
+Lock control uses `ORIGIN_BLOCK_READONLY_CONTROL`: it synchronizes and persists
+but is excluded from normal content Undo/Redo. `DocConfig.currentUserId` is
+captured at document construction and owns new locks. Unlock requires the same
+user or an additional synchronous `canUnlockBlock` grant; missing identity
+disables lock control without making unlocked content readonly. Root cannot
+receive this field. `ORIGIN_SYSTEM_REPAIR` is reserved for deterministic
+internal consistency repairs (children de-duplication, table normalization,
+ordered numbering); it may bypass user-facing block guards but is not an
+authorization escape hatch for host or plugin mutations.
+
+The manager indexes explicit owners as `Map<blockId, userId>` and intentionally
+does not copy `parentById` or any other structure index. Effective lookup walks
+`doc.model.getPath()` once and caches the result; subtree lock counts are
+rebuilt lazily from explicit lock paths after a model revision. Queries never
+read DOM/layout and work for reachable unmounted blocks. The host unlock policy
+is not called from input/write-guard hot paths.
+
+Remote Yjs updates are still applied and rendered—the guard is for local user,
+plugin, chain, CRUD and history entry points. This makes block readonly a
+trusted-client editing policy, not cryptographic/server access control.
+
+## Remote Transactions and Local Selection
+
+DocCRUD publishes transaction/view-sync facts; the Selection domain maps the current local selection through relevant remote Yjs changes without treating DOM as the source of truth:
+
+```text
+selectionChange$ → revisioned live RelativeSelectionBookmark
+
+remote Y.Transaction
+  → DocCRUD emits before-view-sync + affected block IDs
+  → RemoteSelectionReconciler snapshots the live bookmark
+  → _syncYEvent() updates model and mounted view
+  → DocCRUD emits after-view-sync for the same transaction
+  → direct endpoint hit, or changed endpoint ancestor path/index?
+       no  → no selection work
+       yes → one animation-frame reconciliation
+  → revision and editor focus still current?
+       no  → cancel
+       yes → resolve Y.RelativePosition + current commonParent
+              success → SelectionManager.replay(mapped JSON)
+              failure → one owned-native-Range recalculate, otherwise replay(null)
+```
+
+Text endpoints are relative to the owning `Y.Text`; boundary endpoints are relative to the container's children `Y.Array`. Selected/gap/table-cell points are validated structurally by ID. Ancestor dependency IDs provide a cheap candidate filter, then only captured structural edges owned by affected parents are checked; parent/sibling positions prevent unrelated root or container changes from replaying every local selection. The path performs no layout read; DOM normalization is a guarded failure fallback only.
+
+DocCRUD never reads DOM selection or calls selection replay in this flow. `RemoteSelectionReconciler` owns capture/relevance/replay, while `SelectionSurfaceAdapter` owns the guarded native-selection/focus/frame boundary.
+
+`DocUndoManager` uses the same relative bookmark codec for one-shot selection snapshots. Live collaboration and Undo have different lifecycles, but they share point affinity, liveness checks, current-tree `commonParent` resolution, and table/boundary semantics. History restoration records whether the resolved head is visible before native Selection replay: visible targets preserve the viewport, while offscreen virtual targets delegate to bounded stable-ID center navigation after replay.
 
 ## DocCRUD API
 
@@ -84,6 +454,14 @@ doc.crud.deleteBlockById(blockId)
 
 // Replace
 doc.crud.replaceWithSnapshots(blockId, snapshots[])
+doc.crud.replaceBlockSnapshots(blockId, snapshots[]) // returns IDs, no view required
+
+// Props writes by stable model ID (mounted component not required)
+doc.crud.updateBlockProps(blockId, patch)
+
+// Text writes by stable model ID (mounted component not required)
+doc.crud.replaceText(blockId, index, length, text?, attributes?)
+doc.crud.applyTextDelta(blockId, deltaOperations)
 
 // Move
 doc.crud.moveBlocks(parentId, index, count, targetId, targetIndex)
@@ -94,6 +472,191 @@ doc.crud.transact(fn, origin?)
 // Access raw Yjs
 doc.crud.getYBlock(id): YBlock  // Y.Map
 ```
+
+`updateBlockProps()` resolves a reachable block's props `Y.Map`, removes keys
+whose patch value is `null`, runs the block-readonly guard, and writes only
+changed keys through a Yjs transaction. `replaceText()` and `applyTextDelta()`
+resolve a reachable editable `Y.Text` with the same model-first and readonly
+guarantees. These APIs are the mutation boundary for plugins that operate on
+unmounted blocks; plugins must not write Yjs values returned through internal
+model plumbing directly.
+
+`replaceBlockSnapshots()` replaces one reachable non-root block and returns the
+inserted stable IDs without resolving components. `replaceWithSnapshots()`
+delegates to the same model mutation, then materializes the replacement view
+only to preserve its legacy synchronous `BlockComponent[]` return contract.
+
+`deleteBlocks()`, `deleteBlockById()`, `replaceBlockSnapshots()` and
+`moveBlocks()` resolve structure from
+`BlockModelGraph`/YBlock, so host and `DocChain` workflows may operate on
+reachable offscreen blocks without materializing their views. Their existing
+readonly guards, return values and root non-empty behavior are unchanged.
+
+`deleteBlocks()` is selection-neutral. When a non-forced deletion removes every
+child of a `renderUnit` container, DocCRUD synchronously inserts one empty
+paragraph to keep the container editable, but it does not sample or reposition
+the browser selection. The Input/plugin action that owns the mutation must place
+the final caret or range explicitly through `SelectionManager` (`setCursorAt()`,
+`setCursorAtBlock()`, `replay()`, etc.). Do not call `recalculate()` merely to
+confirm a programmatic write.
+
+### Per-block placeholder metadata
+
+`IBaseMetadata.plh?: string` stores an editable block's instance-level
+placeholder override. An empty string explicitly disables the placeholder for
+that block; absence lets `PlaceholderPlugin` fall back to its flavour override
+and then Schema `metadata.placeholder`.
+
+Set the field on a Snapshot before insertion, or call
+`block.updateMeta({plh: value})` on a mounted block. `updateMeta({plh: null})`
+deletes the key and restores fallback resolution. The method's public patch
+type now describes its existing runtime rule that `null` deletes any metadata
+key. Do not mutate `block.meta` or a raw Y.Map directly.
+
+DocCRUD's existing `onMetaUpdate$` stream reports local, remote and Undo/Redo
+changes by stable block ID. `PlaceholderPlugin` keeps one doc-level
+subscription and filters it to the active block and `plh` key; metadata remains
+excluded from `BlockModelGraph.contentChange$`.
+
+## Revision CRDT and Complete Snapshot
+
+While a proposal is pending, canonical content remains in the existing
+block/Y.Text tree and `bc:revisions` stores its non-destructive
+range/block/boundary attribution. Accept/reject immediately materializes the
+chosen canonical content and deletes the consumed records in one tracked Yjs
+transaction. Undo therefore restores both the pre-decision content and pending
+records. `bc:revision-decisions` is retained only to import legacy append-only
+snapshots; new decisions return compatibility receipts but do not persist them.
+`bc:revision-meta` keeps the legacy compaction epoch.
+
+Decision materialization is an online, serialized host boundary. The Yjs
+content transaction converges normally once admitted, but a host must not let
+two disconnected reviewers accept/reject the same pending record independently:
+after the active record is consumed there is no append-only decision graph to
+reopen that disagreement. Collaboration servers should reject stale review
+commands or execute them authoritatively against the latest document state.
+
+Text targets use encoded `Y.RelativePosition` values in the live CRDT. Complete
+JSON export converts them to current absolute start/end offsets and recreates
+relative positions after loading the root snapshot:
+
+Text-insert targets are boundary-tight: a later insertion exactly at either
+edge remains adjacent instead of being absorbed into the older revision. The
+original author can still grow or shrink their own pending insertion because
+that mutation explicitly rewrites the target to its new range. Destructive
+gestures crossing active ranges are split at dependency boundaries while their
+records retain one shared review `groupId`.
+
+An insertion nested in an existing deletion or insertion may keep extending
+its one pending record across its declared ancestor dependencies. Those
+ancestors do not split continuous typing into one record per input event;
+an unrelated nested revision still blocks target resizing so another actor's
+content is never absorbed.
+
+That `groupId` has no idle timeout. Adjacent same-actor text records stay in one
+tracking-session batch across pauses; actor/session, block/kind or adjacency
+changes provide the deterministic boundaries and avoid timer-dependent CRDT
+grouping.
+
+```typescript
+interface BlockCraftDocumentSnapshot {
+  version: 1
+  root: IBlockSnapshot
+  revisions: RevisionSnapshotRecord[]
+  decisions: RevisionDecision[]
+  revisionEpoch: number
+}
+
+const complete = doc.exportDocumentSnapshot()
+doc.initByDocumentSnapshot(complete, container)
+```
+
+`exportSnapshot()` / `initBySnapshot()` remain content-only compatibility APIs.
+Undo scopes include `bc:revisions` with the block map, so both proposal creation
+and later decision materialization undo atomically. A decision is an independent
+Undo item: undoing it restores pending markup; undoing the preceding edit then
+removes the original proposal. `compactResolved({epoch, stateVector})` is now a
+legacy migration path for imported accepted/rejected records and still requires
+no pending/conflicted revisions plus an exact state-vector match.
+
+Overlapping line edits are dependency-aware rather than rejected wholesale.
+For a non-destructive deletion that crosses existing revision boundaries, the
+manager creates adjacent `text-delete` records for each distinct active
+dependency set, all under the same `groupId`. Rejecting an insertion ancestor
+therefore discards only the segment inside that insertion; original text in an
+adjacent segment remains independently reviewable. Rejected nested deletions
+also do not override a still-pending insertion's markup kind.
+
+Review integrations that maintain their own projection should use the
+incremental group contract instead of rescanning `state$.revisions` after every
+Yjs update:
+
+```typescript
+doc.revisions.change$.subscribe(change => {
+  for (const groupId of change.groupIds) {
+    updateReviewGroup(groupId, doc.revisions.listGroup(groupId))
+  }
+  if (change.conflictsChanged) refreshStructuralConflicts()
+})
+```
+
+`RevisionDomainChange` reports `records`, `decisions` or `meta`, the affected
+revision/group IDs and whether structural-conflict projection may have
+changed. Indexes and resolved statuses are updated before the event is emitted.
+`mode$` and `viewMode$` remain the dedicated mode streams; `state$` remains the
+complete compatibility snapshot for low-frequency consumers. Rewriting only a
+text revision's relative target still emits the affected group, allowing a
+consumer such as `RevisionReviewPlugin` to compare semantic group state and
+avoid republishing unchanged cards.
+
+`doc.revisions.readRevisionContent(revisionId)` is the model-only content
+query for review UIs. Text targets resolve their `Y.RelativePosition` anchors
+and return only that range; whole-block targets serialize only their targeted
+subtrees; split/merge boundaries return an empty string because the boundary
+owns no paragraph text. The query never mounts a Block view.
+
+Markup projection decorates only pending/conflicted records. Accepting or
+rejecting materializes accepted deletions/rejected insertions as real content
+deletions, consumes the records, and removes all `data-bc-revision-*` marker
+attributes and review cards in the same transaction. Undo recreates the pending
+records and markup. The “已处理” filter is compatibility-only for imported
+legacy decision snapshots.
+Inline Revision presentation is range-owned: text IDs and
+`data-bc-revision-kind/state` attributes decorate only their exact projected
+`c-element` segments. `getBlockPresentation()` exposes host `revisionIds` only
+for whole-block and right-side split/merge boundary records, never merely
+because the paragraph contains text revisions.
+For an overlapping pending insertion inside a pending deletion, the inserted
+Delta segment takes `insert` presentation priority while the surrounding
+baseline segments remain `delete`; this is presentation precedence only and
+does not rewrite either dependency record.
+
+Active deletion effects are idempotent for the same actor. Repeating a pending
+or accepted text/whole-block deletion reuses the existing record, and an
+extended selection persists only the uncovered text segments or block IDs.
+After a rejected proposal is consumed, the same content can receive a fresh
+proposal. Different actors still store independent overlapping pending
+deletions until one materialized result makes another target moot.
+
+Revision tracking is attribution, not a mutation capability gate. Object
+inserts in Y.Text are tracked as length-one ranges. Semantic Embed attribute
+updates are represented non-destructively as an old-object deletion and
+new-object insertion in one group; a same-author pending insertion is updated
+in place. Operations outside the v1 record model—props/general formatting,
+block or Embed movement, table-cell structure and cross-container
+structure—commit via their normal Yjs transaction and Undo path with no
+Revision record. Composite fallbacks bypass tracking for the whole transaction
+so they cannot leave a partial Diff beside an otherwise untracked mutation.
+
+Programmatic producers such as document agents can use
+`doc.revisions.runAsRevision(actor, callback, {groupId})` to create the same
+CRDT-owned Revision records without changing global `mode$`. The synchronous
+scope temporarily supplies its actor/session/group to Revision-aware CRUD,
+restores all prior state in `finally`, and lets `runWithoutTracking()` continue
+to suppress tracking for internal materialization. A nested `runInGroup()`
+reuses the outer forced group by default, so compound Schema replacement stays
+within the caller's review card. This is a write-attribution scope, not a
+separate DOM preview or shadow document.
 
 ## IBlockSnapshot Format
 
@@ -115,9 +678,32 @@ Snapshots are the serialization format used for:
 - HTML/Markdown import/export
 - Document persistence
 
+Persistence/export snapshots retain `meta.plh` and `meta.lock`. The native
+BlockCraft Snapshot clipboard payload also preserves `plh`; HTML/Markdown/plain
+retention remains adapter-dependent. `lock` is the deliberate copy exception:
+copy clones the source snapshot and recursively removes the lock owner before
+producing any clipboard payload, so a native BlockCraft paste keeps its
+placeholder but never recreates permission state. When an absolute object
+selection owns the placement plane, only that native BlockCraft snapshot format
+is accepted for object paste; the inserted tree receives fresh IDs, each
+top-level object is offset by 12px on both axes, and plain text or general HTML
+is rejected instead of being promoted into positioned objects. Ctrl/Cmd+D uses
+the same clone pipeline without reading or writing the OS clipboard.
+
 ## Undo/Redo
 
-`DocUndoManager` wraps `Y.UndoManager` with parallel selection stacks. It lives on `doc.crud.undoManager`:
+本地 CRUD 减栏后的结构收尾归属 `framework/modules/columns/column-structure.ts`。
+`moveBlocks()` / `deleteBlocks()` 记录受影响分栏，外层 `DocCRUD.transact()` 回调
+执行完毕、通知模型与视图观察者之前，才检查最终栏数。二栏及以上减为一栏时，
+将剩余栏内容按序搬回父级并删除空布局容器，共用原事务与同一 Undo 项。
+中间态先删再补栏不触发展开；父级类型限制或只读锁不允许展开时保留容器。
+同组重排的栏宽跟随子栏 ID，增减栏后的等分宽度与结构一起进入历史。
+纯文本、普通容器与未变更分栏不做子树遍历或额外写入。
+Undo/Redo、远端同步直接消费已有事务结果，不从视图回调再次触发展开；
+初始加载不迁移历史单栏快照。系统修复或其他不记录历史的 origin，包括其嵌套
+CRUD 调用，不执行这项本地收尾，也不预先捕获撤销选区。
+
+`DocUndoManager` wraps `Y.UndoManager` and stores selection bookmarks on each owning Yjs `StackItem.meta`. It lives on `doc.crud.undoManager`:
 
 ```typescript
 // All mutations via DocCRUD.transact() are automatically tracked
@@ -129,7 +715,55 @@ doc.crud.undoManager.canUndo()
 doc.crud.undoManager.canRedo()
 ```
 
-Selection state is saved alongside undo items using `Y.RelativePosition` (collaboration-safe).
+Synchronous batch producers that need a targeted rollback can isolate one
+outer transaction as an independent Undo item:
+
+```typescript
+const {result, token} = doc.crud.undoManager.captureUndoItem(() =>
+  doc.crud.transact(() => applyWholeBatch()))
+
+if (token && doc.crud.undoManager.canUndoCapturedItem(token)) {
+  doc.crud.undoManager.undoCapturedItem(token)
+}
+```
+
+`DocUndoItemToken` is an opaque, in-memory stack identity. The callback must
+complete synchronously and create exactly one Undo item; otherwise the token is
+`null`. Capture boundaries on
+both sides prevent Yjs `captureTimeout` from merging the batch with adjacent
+edits. `undoCapturedItem()` never falls back to a generic Undo: it returns
+`false` once a later local edit, Undo/Redo, history clear or write policy makes
+the token unsafe. This is the correct primitive for an immediately applied
+Agent batch that may combine Revision-aware and ordinary operations in one
+`DocCRUD.transact()`.
+
+Selection state is saved on the content stack item itself using the shared Relative Selection Bookmark codec (`Y.RelativePosition` for text/boundary points, structural IDs for selected/gap/table-cell points). A merged item keeps its earliest pre-change bookmark. Undo captures the current selection for the redo `StackItem` Yjs creates, and redo performs the symmetric capture for the replacement undo item. This follows Yjs stack identity through merge, clear, truncation and undo/redo without parallel array indexes.
+
+After a stack item is popped, Selection's `SelectionHistoryRestorer` owns focus, endpoint view materialization, relative-position resolution, replay, viewport reveal and bounded DOM/model verification. Under root virtualization it materializes only bookmark endpoints before resolving, then waits for the matching Selection DOM projection to settle instead of repeatedly publishing and canceling it. This restores offscreen or fully evicted targets with model selection, native selection and focus aligned. `DocUndoManager` does not read `document`, schedule animation frames or recalculate a browser range.
+
+Every history item also accumulates affected block IDs. Undo/Redo checks the
+entire item before asking Yjs to pop it. If an affected reachable block is
+readonly, or an affected ancestor contains a locked descendant, the operation
+is rejected and the item remains on its original stack; unlocking makes that
+same item executable later.
+
+连续的异步手势可调用 `captureUndoItem(callback, previousToken)` 续接上一帧的记录。
+仅当 token 对应的记录仍是当前撤销栈顶时合并；失效或没有 token 时独立捕获。
+返回新的 `token` 供下一帧使用。每次 callback 必须同步执行，并将写入放在同一事务中。
+无写入返回 null；不改变原有单参数调用的独立捕获语义。
+捕获超时仅在 callback 内临时放宽，结束或抛错后恢复，不在两帧之间占用全局 capture group。
+使用方负责在松键、切换操作或外部事务等手势边界清除续接 token。
+
+IME flows that split one user intent across multiple Yjs transactions can temporarily open a capture group:
+
+```typescript
+doc.crud.undoManager.beginCaptureGroup()
+// compositionStart: materialize/delete blocks
+// compositionEnd: commit final IME text
+doc.crud.undoManager.endCaptureGroup()
+```
+
+The group forces the involved transactions into one undo item regardless of elapsed wall time, then restores the normal Yjs `captureTimeout` and stops capturing so the next user action starts a fresh undo item. This is used internally by `InputTransformer`; plugins should prefer higher-level editor APIs unless they are implementing a comparable multi-transaction input primitive.
 
 ## Transaction Origins
 
@@ -142,6 +776,12 @@ doc.crud.transact(() => { ... }, ORIGIN_SKIP_HISTORY)
 
 // Skip sync (for metadata updates)
 doc.crud.transact(() => { ... }, ORIGIN_SKIP_SYNC)
+
+// Persistent block-lock control (framework-owned)
+doc.crud.transact(() => { ... }, ORIGIN_BLOCK_READONLY_CONTROL)
+
+// Deterministic consistency repair (framework-owned; may bypass block guards)
+doc.crud.transact(() => { ... }, ORIGIN_SYSTEM_REPAIR)
 ```
 
 ## Block Tree Navigation
@@ -178,3 +818,17 @@ Both paths converge at Y.Events, so the same update logic handles local and remo
 - **Working with Y.Text directly**: Read `EditableBlockComponent`, `InlineRuntime`
 - **Transaction handling**: Read `DocCRUD.transact()`
 - **Full architecture**: Read `packages/editor/ARCHITECTURE.md`
+
+## 原子结构变换（2026-09-22）
+
+公开 `DocumentStructurePlan` 与 `applyDocumentStructurePlan(doc, plan)`：
+
+- `children`：新 root 子树；新块必须使用新 ID。
+- `retainedChildren`：`{sourceId, targetId}[]`，把原容器的所有子树承接到目标空容器，保持块 ID、Y.Text 及相对评论锚点。
+- `rootProps` / `rootMeta`：只更新指定字段；null/undefined 删除字段。
+- `retainedMetaPatches`：保留后代的元数据补丁，禁止变更 lock/lockKind。
+- `purpose`：宿主授权和历史权限重验的业务目的。
+
+先校验引用、Schema、incl/excl、权限和映射，在隔离 Y.Doc 中准备完整差量，再通过一次 `doc.crud.transact` 应用。正式文档不经历逐项 CRUD 中间态；序列化失败不写正式文档。Yjs transaction 没有自动回滚能力，不能在正式事务内开始异步加载或依靠抛异常恢复。
+
+`captureStructureTransform` 为该内核操作设置独立历史边界和 purpose；撤销/重做仍实时验证宿主授权、用户锁与文档可写状态。默认编辑历史路径保持原规则。不要用此能力代替普通编辑或系统修复接口。

@@ -4,7 +4,39 @@
 >
 > Adapters handle HTML ↔ BlockSnapshot and Markdown ↔ BlockSnapshot conversion.
 >
-> Last updated: 2026-06-16
+> Last updated: 2026-10-15
+
+## 段落格式元数据
+
+HTML 的 `data-bc-text-defaults` 保存规范化的段落标记字符外观（JSON），
+`data-bc-next-style` 保存 `same` / `body`。导入仅接受字符外观白名单，损坏的元数据忽略。
+它们不生成正文字符，也不转换为段落字号，避免空段落往返丢格式或重复倍率。
+原生 Snapshot / Yjs 保存完整段落属性；Markdown 的既有段落转换仍保留其原有语义范围。
+
+## 导入大小预检（未发布）
+
+宿主 MIME 契约 `IAdapter` 新增可选同步方法
+`exceedsIncomingContentLimit(data: string, limitBytes: number): boolean`。
+返回 true 必须能证明转换后的协同内容超过预算；false 只表示无法提前拒绝。
+不要按整个原文／文件大小推断：注释、空白、实体或来源转换会改变实际内容。
+内置 AdapterService 仅对默认 registry／来源装配中的字面正文 Markdown、简单段落 HTML
+启用保守预检；自定义装配默认走原转换路径，可自行提供符合其转换语义的能力。
+转换器本身不设全局限制；编辑入口调用 `checkIncomingSourceSize()` 后仍须对最终快照
+调用 `checkIncomingContentSize()`。预览、导出、流式解析继续保持原语义。
+
+## 文本对象自适应尺寸（未发布）
+
+对象 HTML 属性新增可选数值 `data-bc-object-text-fit`，对应派生缓存 `textFit`。
+与 `data-bc-object-text-auto-fit="resize-shape"`、原始 width/height 一起往返保存。
+文本框/艺术字 Schema 归一化保留用户设定尺寸，渲染归一化使用支持轴上的测量值；
+固定模式、普通形状及路径艺术字不应用该缓存。静态快照与打印复用已保存有效尺寸，不触发模型写入。
+
+
+## 内置贴纸的导入导出（未发布）
+
+`sticker` HTML 使用 `<figure data-bc-block="sticker">`，另存预设 ID/版本、稀疏色槽和对象几何；子级 `<img>` 仅用于独立 HTML 的可视呈现。导入优先匹配贴纸 figure，未知预设版本保留为不可用占位，不转成普通图片。BlockCraft Markdown 使用 `bc-sticker` 指令保留块属性并重新规范化色槽；Portable Markdown 仅保留“贴纸”文本提示，不承诺可编辑性。贴纸预设源码和默认色不进入块快照，导入后的渲染仍从本地版本化目录生成。
+
+贴纸固定几何：HTML 的 `data-sticker-width/height`、Markdown props 的 `width/height` 保存实际布局像素；行内尺寸继续存于 delta attributes，块级与行内转换保留宽高。不读取或导出 `wr/ar`，缺少有效固定宽高时使用预设尺寸。
 
 ## Architecture
 
@@ -22,13 +54,49 @@ Each block type needs a **matcher** for each adapter (HTML and/or Markdown). A m
 - `toBlockSnapshot` — Convert AST node → BlockSnapshot (import)
 - `fromBlockSnapshot` — Convert BlockSnapshot → AST node (export)
 
+Matchers are owned by their domain, not by the global AST walker. Keep them in
+`blocks/<block>/adapter/`; Inline Embed format adapters belong in
+`embeds/<embed-key>/adapter/`. Each directory exports one contribution record,
+which the immutable `AdapterRegistry` aggregates at the composition root:
+
+```text
+blocks/my-block/
+├── index.ts
+└── adapter/
+    ├── html.ts             # concrete HAST matcher
+    ├── markdown.ts         # concrete MDAST matcher
+    └── index.ts            # contribution only
+
+embeds/my-embed/
+├── index.ts                # DOM EmbedConverter
+└── adapter/
+    └── index.ts            # HTML + Markdown Delta/AST matchers
+```
+
+`packages/editor/adapters/` 的通用转换核心包含 walker、matcher 接口、registry、
+通用工厂、元数据 codec 和 HTML/Markdown 引擎。核心不能依赖 `blocks/`、`embeds/`、
+`editor/` 或具体来源适配。`adapters/sources/` 单独承载来源集成，可调用内置 Schema，
+但不经 adapters 核心 barrel 导出；依赖方向不能倒置。
+内置块/Embed 贡献由 `editor/bundled-adapter-registry.ts` 组合；剪贴板来源由
+`editor/clipboard-source-adapters.ts` 组合。这两类扩展职责不同，来源适配不伪装成可双向导出的 MIME codec。
+
+Built-in ownership is exposed through
+`BUNDLED_BLOCK_ADAPTER_CONTRIBUTIONS`,
+`BUNDLED_INLINE_EMBED_ADAPTER_CONTRIBUTIONS`, and
+`BUNDLED_ADAPTER_REGISTRY`. Export lookup is pre-indexed by Block flavour, so
+adding more adapters does not turn every export node into a scan across all
+registered Block matchers.
+
 ## Template: HTML Adapter Matcher (Void Block)
 
 ```typescript
-// adapters/html-adapter/block-matchers/my-block-matcher.ts
-import { BlockHtmlAdapterMatcher } from "../../types";
-import { HastUtils } from "../../utils";
-import { MyBlockSchema } from "../../../blocks/my-block";
+// blocks/my-block/adapter/index.ts
+import type {
+  BlockAdapterContribution,
+  BlockHtmlAdapterMatcher,
+} from '@ccc/blockcraft'
+import {BlockNodeType, HastUtils} from '@ccc/blockcraft'
+import {MyBlockSchema} from '..'
 
 export const myBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
   // Import: match HAST node → should we handle this?
@@ -86,10 +154,12 @@ export const myBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
 ## Template: HTML Adapter Matcher (Editable Block with Inline Content)
 
 ```typescript
-import { BlockHtmlAdapterMatcher } from "../../types";
-import { HastUtils } from "../../utils";
-import { generateId } from "../../../framework";
-import { BlockNodeType } from "../../../framework";
+import {
+  BlockNodeType,
+  HastUtils,
+  generateId,
+  type BlockHtmlAdapterMatcher,
+} from '@ccc/blockcraft'
 
 export const myEditableBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
   toMatch: (o) =>
@@ -152,10 +222,12 @@ export const myEditableBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
 ## Template: Markdown Adapter Matcher
 
 ```typescript
-// adapters/markdown-adapter/block-matchers/my-block-matcher.ts
-import { BlockMarkdownAdapterMatcher } from "../../types";
-import { generateId } from "../../../framework";
-import { BlockNodeType } from "../../../framework";
+// blocks/my-block/adapter/index.ts
+import {
+  BlockNodeType,
+  generateId,
+  type BlockMarkdownAdapterMatcher,
+} from '@ccc/blockcraft'
 
 export const myBlockMarkdownAdapterMatcher: BlockMarkdownAdapterMatcher = {
   // Import: match MDAST node
@@ -202,43 +274,496 @@ export const myBlockMarkdownAdapterMatcher: BlockMarkdownAdapterMatcher = {
 walkerContext.openNode(node, childrenField)   // Push node onto stack
 walkerContext.closeNode()                      // Pop and attach to parent
 walkerContext.skipAllChildren()                // Don't traverse children (leaf node optimization)
-walkerContext.setNodeValue(key, value)          // Set property on current open node
+walkerContext.currentNode()                     // Read/mutate the current output node for a transparent root
 walkerContext.getNodeContext(key)               // Get property from nearest ancestor
+walkerContext.setNodeContext(key, value)        // Store state on the current output-node frame
 walkerContext.setGlobalContext(key, value)      // Set global state
 walkerContext.getGlobalContext(key)             // Get global state
 ```
 
-## Registration
+## Contribution and Registration
 
-### HTML Adapter Matchers
-
-```typescript
-// adapters/html-adapter/block-matchers/index.ts
-export const blockHtmlAdapterMatchers: BlockHtmlAdapterMatcher[] = [
-  paragraphBlockHtmlAdapterMatcher,
-  myBlockHtmlAdapterMatcher,  // Add here
-  // ...
-];
-```
-
-### Markdown Adapter Matchers
+Export one record from the Block's `adapter/` directory. `id` and every owned
+flavour must be unique; construction fails fast when two contributions claim
+the same identity or flavour.
 
 ```typescript
-// adapters/markdown-adapter/block-matchers/index.ts
-export const blockMarkdownAdapterMatchers: BlockMarkdownAdapterMatcher[] = [
-  paragraphBlockMarkdownAdapterMatcher,
-  myBlockMarkdownAdapterMatcher,  // Add here
-  // ...
-];
+// blocks/my-block/adapter/index.ts
+export const myBlockAdapters: BlockAdapterContribution = {
+  id: 'my-block',
+  flavours: ['my-block'],
+  html: [myBlockHtmlAdapterMatcher],
+  markdown: [myBlockMarkdownAdapterMatcher],
+  markdownSyntax: [{
+    id: 'block:my-block',
+    title: 'My block',
+    description: 'Use only when the typed container semantics are required.',
+    kind: 'container-directive',
+    profiles: ['hybrid', 'blockcraft'],
+    example: ':::bc-my-block\\n\\nReadable content.\\n\\n:::',
+  }],
+}
 ```
+
+`markdownSyntax` is optional but should be supplied whenever an AI, help UI or
+other producer needs to author this grammar. It describes syntax the Adapter
+already imports; it does not register another matcher. `AdapterRegistry`
+validates IDs and bounded fields, then exposes the current profile through:
+
+```typescript
+const manifest = registry.createMarkdownManifest('hybrid')
+// {version: 1, profile: 'hybrid', standardFirst: true, syntaxes: [...]}
+```
+
+The manifest always starts with ordinary Markdown guidance and includes only
+registered contribution descriptors allowed by that profile. A host-defined
+Block therefore reaches model prompts and documentation from the same
+composition root as import/export. Do not maintain a parallel server-side
+directive list.
+
+Sibling domains still own separate contribution records even when one grammar
+matcher recognizes the whole family. For example, `ordered`, `bullet`, and
+`todo` each publish their own contribution, while all three may reference the
+same list matcher object. `AdapterRegistry` de-duplicates identical matcher
+objects once for import, but keeps the per-flavour export index and ownership
+invariant. Do not make one sibling directory claim another sibling's flavour.
+
+A claimed flavour is not sufficient evidence of an adapter. Except for an
+explicitly transparent infrastructure node, every contribution must have an
+import path (`toMatch` + `toBlockSnapshot`) and an export path (`fromMatch` +
+`fromBlockSnapshot`) for both HTML and Markdown. Add a representative
+round-trip fixture for the flavour; a coverage test that only compares string
+sets will not detect a matcher that always returns `false` or reads props the
+Schema never defines.
+
+Compose external contributions without editing global matcher arrays:
+
+```typescript
+import {
+  HtmlAdapter,
+  MarkdownAdapter,
+  createBundledAdapterRegistry,
+} from '@ccc/blockcraft'
+import {myBlockAdapters} from '@acme/my-block/adapter'
+
+const registry = createBundledAdapterRegistry({
+  additionalBlocks: [myBlockAdapters],
+})
+const html = new HtmlAdapter(fileService, new Map(), registry)
+const markdown = new MarkdownAdapter(fileService, new Map(), registry)
+```
+
+两个构造函数的 `fileService` 与 `AdapterContext.fileManager` 使用
+`DocFilePort`（`import type {DocFilePort} from '@ccc/blockcraft/framework/ports'`）。
+该端口与原 `DocFileService` 的公开结构等价；已有实例及子类可直接使用。
+转换核心只引用契约，宿主负责上传、下载与本地预览实现；本轮不改变 matcher、registry、
+快照参数或文件 URL 的含义，也不表示整个 adapters 已具备独立 npm 入口。
+
+When the host uses the bundled capability factory, pass the same contribution
+arrays with its custom Schemas and Embed converters. The factory validates the
+pairing before a document is initialized and returns the composed registry:
+
+```typescript
+const capabilities = createBundledEditorCapabilities({
+  additionalSchemas: [myBlockSchema],
+  additionalBlockAdapters: [myBlockAdapters],
+  additionalEmbeds: [['my-embed', myEmbedConverter]],
+  additionalInlineEmbedAdapters: [myEmbedAdapters],
+})
+
+capabilities.adapterRegistry // bundled + host contributions
+```
+
+`AdapterService` resolves `EDITOR_ADAPTER_REGISTRY_TOKEN`. A custom Angular
+host must provide the registry created from those same arrays in the injector
+that provides `DOC_ADAPTER_SERVICE_TOKEN`; otherwise the document can render a
+custom type while its HTML/Markdown service still uses only bundled adapters.
+See `blockcraft-app.md` for the complete provider example.
+
+The third constructor argument is mandatory: pass either an explicit matcher
+array or an `AdapterRegistry`. The core adapters intentionally have no knowledge
+of the bundled Block set. New code should use `AdapterRegistry`; only
+registry-backed export gets O(1) flavour routing and duplicate ownership
+validation. Matcher `priority` orders import candidates; `consumes: true` stops
+lower-priority matchers after a match.
+
+## Markdown Profiles and Custom Inline Syntax
+
+The default `hybrid` profile combines a portable Markdown base with selective
+custom Block syntax. A standard renderer, plain-text reader and language model
+still encounters meaningful text, links, images, tables and fenced code;
+registered Block types opt into a private directive only when flattening would
+erase their core container semantics. Use Snapshot or `.bcdoc` when exact
+model/layout recovery is required.
+
+The three export profiles are:
+
+- `portable`: emit only ordinary, readable Markdown; custom containers flatten;
+- `hybrid` (default): use ordinary Markdown first, plus directives only for
+  Block adapters with `markdownDirective: true`;
+- `blockcraft`: includes hybrid Block behavior and permits registered private
+  Inline Embed directives where no portable representation exists.
+
+Markdown import is intentionally a superset in every profile: it recognizes
+legacy and explicitly authored BlockCraft directives through the normal
+Markdown MIME adapter. Select a non-default profile only when the consumer has
+a stricter portability or Inline Embed fidelity requirement:
+
+```typescript
+import {
+  BUNDLED_ADAPTER_REGISTRY,
+  MARKDOWN_ADAPTER_PROFILE_CONFIG,
+  MarkdownAdapter,
+} from '@ccc/blockcraft'
+
+const markdown = new MarkdownAdapter(
+  fileService,
+  new Map([[MARKDOWN_ADAPTER_PROFILE_CONFIG, 'portable']]),
+  BUNDLED_ADAPTER_REGISTRY,
+)
+```
+
+When a private extension is genuinely needed, BlockCraft follows the
+generic-directives convention implemented by `remark-directive`; these markers
+are an extension, not CommonMark/GFM syntax:
+
+- `:bc-*` is a text/inline directive for an Inline Embed that has no useful
+  standard representation; the legacy `:bc-mention[...]` form is accepted on
+  import but is no longer emitted;
+- `::bc-*` is a leaf directive for a custom Block representation with no
+  meaningful Markdown body and no parameters;
+- `:::bc-* ... :::` is a container directive for a Block representation that
+  owns text or child Blocks, for example Callout, Text Box, Render Unit,
+  Columns, Frame and Object Group. Shape and Word Art use containers for their
+  text.
+
+Custom Block parameters are a YAML front-matter section at the start of the
+container:
+
+```markdown
+:::bc-text-box
+
+---
+width: 320
+height: 160
+p: [8,12]
+position:
+  x: 12
+  y: 24
+---
+
+Readable **Markdown content** remains ordinary Markdown.
+
+:::
+```
+
+This is a bounded YAML 1.2 subset: records use two-space indentation and arrays
+use JSON-compatible YAML flow values. Import does not enable YAML tags, anchors,
+implicit timestamps or executable types, and the parsed record still passes
+through the existing depth, size, prototype and active-content sanitizer. The
+former percent-encoded `props="..."` directive attribute is not imported.
+HTML adapters continue to use bounded `data-bc-*` attributes because HTML has
+no equivalent metadata body.
+
+Nested containers follow generic-directives fence-length rules. The serializer
+automatically uses a longer outer fence, so Columns/Column output resembles
+`::::bc-columns ... :::bc-column ... ::: ... ::::`. Each container owns only
+the YAML front matter at the start of its own body. Canonical export leaves
+exactly one blank line after every container opening fence and before its
+closing fence; import tolerates zero or more blank lines so manually authored
+directives remain usable.
+
+Native Markdown wins in every profile whenever it carries the user-facing
+meaning. Images stay `![]()`, Divider stays a thematic break, Mermaid stays a
+fenced code block, and Video/Audio/Attachment/bookmark/iframe cards stay normal
+links with a minimal `blockcraft:<type>` title hint. These forms render in other
+Markdown tools and remain easy for AI to interpret. Presentation-only fields
+such as dimensions, placement, colors, preview payloads and toolbar state are
+allowed to degrade; do not serialize them into an opaque `props=` payload just
+to claim a lossless Markdown round trip.
+
+Do not manufacture an HTTP hyperlink solely to hide an internal identity.
+Mention is the bounded exception because its identity is its core semantic
+contract: it exports as
+`[@label](urn:blockcraft:mention:<type>:<id> "blockcraft:mention")`, with each
+URN component percent-encoded. The built-in Mention matcher recognizes that
+URN with or without the title and rebuilds the Mention Embed; a missing ID
+degrades to plain `@label`. An inline Date still exports as formatted date text.
+A host that owns a genuine user/profile or calendar URL may replace this with a
+domain adapter. Inline images are images (`![alt](url)`), not links.
+
+Directives are reserved for semantic custom structures such as Callout,
+Columns, Frame, Render Unit, Text Box and Object Group, where flattening would
+erase the authored container relationship. Shape and Word Art may also use a
+container directive because their text belongs to a typed visual object.
+`createGenericBlockAdapterContribution()` and
+`createGenericMarkdownBlockMatcher()` therefore require the explicit
+`markdownDirective: true` option before the `hybrid` or `blockcraft` profile
+emits a directive; omission keeps the readable portable fallback in every
+profile.
+The contribution factory also derives a `markdownSyntax` descriptor for opted-in
+directives. Use its `markdownSyntax` option to improve the title, description or
+example without changing the grammar.
+Import accepts either leaf or container form for registered block-level
+directives where structurally valid. YAML properties use the bounded,
+prototype-safe codec; URL-like fields reject active-content schemes. Do not
+invent raw HTML or execute decoded metadata.
+
+Use native Markdown whenever it already has an unambiguous representation.
+For example, the Mermaid Block imports and exports a standard fenced code block
+whose language info string is `mermaid` in every profile; it does not use a
+private directive. Its `mermaid-textarea` child is the source payload and is
+consumed with the parent, so it must not be emitted as a second paragraph or
+directive. Import also tolerates the common transposition `mermiad`, but export
+always canonicalizes the language back to `mermaid`.
+
+The standalone Markdown Stream Viewer uses the same `MarkdownAdapter` and
+`AdapterRegistry`; it has no second Markdown grammar or source-window planner.
+On each coalesced render it sends the complete accumulated source through that
+adapter exactly once. This is important for multiline/nested container
+directives, tilde or long backtick fences, and host-defined fenced matchers:
+adding a contribution must not require a Stream-specific parser branch. The
+streamed snapshot is therefore the same semantic result as parsing the current
+complete source once with the same registry/profile, ignoring generated IDs and
+meta.
+
+### Resource side-effect boundary
+
+HTML/Markdown AST matching must not fetch, decode, upload, or rehost remote
+resources. A resource matcher synchronously creates a snapshot with the
+validated source URL and enough persisted geometry for a stable frame. The
+mounted Block or Snapshot Viewer then owns browser loading, loading/error/retry
+UI, intrinsic-size backfill, and any host-specific post-insert workflow. This
+keeps one-shot import and Markdown Stream parsing deterministic and prevents a
+slow or failed resource from delaying or deleting unrelated parsed content.
+
+The built-in Image Block matchers follow the same rule as direct file paste: an
+ordinary HTML `<img>` or Markdown image produces the Image snapshot immediately.
+Direct file paste may first use a local Object URL so the block is visible while
+its component uploads; ordinary adapter input keeps its original safe relative,
+`http:`, `https:`, `blob:` or image `data:` source and is not silently
+copied into host storage. Active-content and non-image data schemes are rejected.
+If a host requires rehosting, schedule it after insertion at the Clipboard or
+application boundary and write the result through DocCRUD/Yjs. Do not perform
+that side effect from `toBlockSnapshot`.
+
+An unregistered Inline Embed must never crash an entire export or silently
+vanish. The core Delta converter degrades it to its primitive value when that
+is readable, otherwise to a visible `[embed-key]` marker. This fallback is not
+lossless: importing the marker produces text. Register the same-key Inline
+Embed contribution when round-trip reconstruction is required.
 
 ## Media Blocks: Recommended Mapping
 
 - **HTML export**: `video` / `audio` blocks should emit native media tags. Wrapping them in `<figure>` is recommended so generic paragraph matchers don't accidentally flatten them as inline content.
 - **HTML import**: Prefer reading `src` from the media element first, then fall back to the first `<source>` child. Preserve useful metadata through `data-*` attributes such as `data-source-type`, `data-name`, `data-size`, `data-type`.
-- **Markdown export**: Markdown has no stable native media syntax. Export media blocks as links and add a lightweight title hint, for example `[Clip](https://cdn.example.com/demo.mp4 "blockcraft:video")`.
-- **Markdown import**: Recognize the media hint title first. If there is no hint, fall back to URL heuristics such as common media extensions or known video platform hosts.
+- **Markdown export (every profile)**: Markdown has no stable native media element syntax. Export media blocks as links and add a lightweight title hint, for example `[Clip](https://cdn.example.com/demo.mp4 "blockcraft:video")`. Keep poster, dimensions and other presentation props out of the Markdown source.
+- **Markdown import**: Recognize registered leaf/container directives and the media hint title first. If there is no hint, fall back to URL heuristics such as common media extensions or known video platform hosts.
 - **Paragraph matcher interaction**: If your markdown/html paragraph matcher also accepts raw `html`, `div`, or `paragraph` nodes, explicitly exclude media-only nodes so both matchers do not consume the same source node.
+
+Responsive object blocks preserve placement-plane-relative sizing in HTML with
+`data-bc-wr` and `data-bc-ar`; CSS `width`/`aspect-ratio` is emitted for
+portable display:
+
+```html
+<video
+  src="https://cdn.example.com/demo.mp4"
+  data-bc-wr="60"
+  data-bc-ar="1.7777777778"
+  style="width: 60%; aspect-ratio: 1.7777777778"></video>
+```
+
+Import prefers valid `data-bc-wr/data-bc-ar`, then falls back to legacy
+`width/height` or `data-width`. Standard Markdown does not gain private size
+syntax; an imported Markdown image therefore uses its Schema defaults.
+
+## Render Unit Surface Mapping
+
+The built-in `render-unit` matcher uses
+`<section data-bc-block="render-unit">` as a surface-preserving HTML container. Its
+children remain ordinary nested block elements. Optional shell colors use
+`data-bc-back-color` / `data-bc-border-color`; optional solid-background opacity
+uses `data-bc-back-opacity` (0–1); surface data uses compact keys
+that map one-to-one to persisted props:
+
+`data-bc-border` stores the uniform shorthand, and `data-bc-border-top/right/bottom/left`
+store only differing sides. Import still accepts older JSON-encoded `data-bc-borders`
+objects and converts them to the new properties. The shared object `textFamily`
+contract stores catalog font IDs; legacy and custom safe CSS stacks remain readable.
+
+- `data-bc-p`, containing one to four space-separated numeric values;
+- `data-bc-bgi`，保存 `url("...") 50% 50% / cover no-repeat` 形式的图片 CSS 字符串；
+- 可选 `data-bc-bgo`，保存独立图片透明度，默认 1 省略。
+
+对象的 `fill/textFill` 同样以 CSS 渐变或图片字符串导出，不再 JSON 编码填充记录；
+整体透明度分别由 `fillOpacity/textFillOpacity` 的数据属性保存。文字框目录装饰使用
+独立 `artwork` 引用，由专属适配器展开/收回装饰图形。定位的 HTML x/y 数据属性仍为
+数值，导入时通过 `storeBlockPosition()` 合并为最多两位小数的 `"x y"` 属性。
+
+Import passes all fields through `normalizeRenderUnitBlockProps()`, which also
+applies the shared bounded surface normalizer and rejects active script URL
+schemes. Raw inline `background` CSS is neither emitted nor trusted. Register
+this matcher before generic paragraph-like containers so its children attach
+to the open region snapshot.
+
+Standard Markdown has no portable container-surface syntax. The `portable`
+profile therefore walks through the region and preserves readable child blocks
+while dropping padding, colors and the background image. The default `hybrid`
+and `blockcraft` profiles preserve the registered `render-unit` envelope with a
+container directive. Internal BlockCraft snapshot copy/paste remains lossless.
+
+## Object Group Mapping
+
+The built-in `object-group` matcher uses
+`<figure data-bc-block="object-group">` as a lossless HTML envelope. Fixed
+group geometry is stored in `data-object-group-width/height`; root placement is
+stored in `data-object-group-placement-mode/x/y/layer`. Its nested object
+elements retain their native sizing fields and local `position` values, so a
+ratio-sized image keeps `wr/ar` relative to the fixed group width.
+
+Import rejects nested groups and infrastructure children, then restores the
+surviving direct objects under one `object-group` snapshot. Register this
+matcher before the image, shape, text-box and WordArt matchers so their output
+attaches to the open group. The `portable` profile intentionally walks through
+the container and keeps only the children’s readable degradation; `hybrid` and
+`blockcraft` retain the registered container directive.
+
+## Text Box Mapping
+
+The built-in `text-box` matcher uses
+`<figure data-bc-block="text-box">` as a lossless HTML envelope. Unified object
+format is carried by bounded semantic `data-bc-object-*` attributes for width,
+height, rotation, lock ratio, shape, fill, outline, effects, text frame and text style.
+attributes. Structured attributes contain the compact primitive record encoded
+as JSON only because HTML attributes are strings; importing them restores the
+record directly rather than writing a JSON string into Yjs. Built-in catalog
+artwork uses the separate `data-bc-object-artwork` attribute and is collapsed back to
+its `bc:<id>` reference. Absolute placement remains on the same element with
+the text-box placement mode/x/y/layer attributes. Preset IDs never enter HTML
+or Snapshot data.
+
+Ordinary paragraph/list/blockquote elements stay nested inside the figure.
+Import opens the text-box snapshot before walking those children and restores a
+default paragraph only when none survive. All external surface, geometry,
+Shape and WordArt values pass through the shared normalizers; unsupported
+line/connectors fall back to a rectangle and oversized/malformed object-format
+metadata is discarded. Inline `background` CSS is not trusted as model data. Register
+this matcher before the generic paragraph-like matchers.
+
+In Markdown, `portable` flattens the Text Box into its readable paragraphs and
+lists. The default `hybrid` and `blockcraft` profiles emit
+`:::bc-text-box ... :::`, preserving the custom container while leaving its
+body as ordinary Markdown and its parameters in the leading YAML front matter.
+
+Standard Markdown intentionally emits only the readable child blocks. It drops
+fixed geometry, placement and surface appearance, and Markdown import never
+guesses a text box from ordinary prose. Internal Snapshot and HTML paths remain
+lossless.
+
+## Typography Mapping
+
+HTML 段落对齐导出标准 `text-align`：`distributed` 映射为
+`text-align: justify; text-align-last: justify; text-justify: inter-character`；
+`justify` 导出 `text-align-last: auto`。导入用 `text-align` 与 `text-align-last`
+还原两种模式，也接受标准的 `center/right` 和 HTML `align` 属性。
+Portable Markdown 没有段落对齐语义，不承诺保留；内部 Snapshot/JSON 保留 `textAlign`。
+
+HTML round-trips document root `ff/fs/lh`, editable paragraph
+`fs/pfs/lh/psb/psa`, and inline `t:ff/t:px/t:fs/t:ls` through bounded
+`data-bc-*` fields plus portable CSS. Paragraph fields map to
+`data-bc-pfs/lh/sb/sa` and relative `font-size`, `line-height`,
+`margin-top/bottom`. `pfs` accepts only bounded `em`/percent relative values;
+it is not inferred from an absolute font size. Paragraph spacing is
+stored as typographic points;
+plain external `px` values import through the standard `0.75pt/px` conversion.
+Paragraph padding and `text-indent` are not imported as BlockCraft typography.
+Import accepts only the shared font catalog (or supported safe legacy stacks),
+relative inline `em` values, fixed `px` values and bounded numeric root/block values.
+段落 `fs` 和行内 `t:px` 用 `data-bc-px` 保留未缩放基础值；`data-bc-pfs`／
+`data-bc-fs` 独立保留倍率，CSS `font-size` 导出组合后的大小。
+段落同时导出 `--bc-block-fs-scale`，供嵌套固定 px 文本组合计算；导入只信任经过
+范围校验的紧凑数据字段，不解析任意 `calc()` 表达式。 Raw arbitrary
+CSS properties and expressions such as `url()`, `var()`, `calc()` or
+`expression()` are ignored. Legacy `s:fontFamily`, `s:fontSize` and
+`s:letterSpacing` export read-compatibly and normalize to compact semantic keys
+on supported HTML import. Bare inline absolute CSS px remains `s:fontSize` so
+it preserves CSS parent-override semantics; explicit `data-bc-px` imports as the
+new composable `t:px` base. Standard Markdown intentionally drops typography.
+
+## Ordered Marker Mapping
+
+Ordered blocks persist the compact semantic `ms` field, not generated marker
+text. HTML does not emit a private marker-style attribute. The five styles with
+a native equivalent split `<ol>` groups as needed and emit
+`type="1|a|A|i|I"`; import maps those standard values back to `ms`. The other
+seven presets intentionally degrade to ordinary HTML numbering. Standard
+Markdown likewise has no marker-style syntax and emits ordinary `1.` numbering.
+
+## Shape Block Mapping
+
+`placement-layout` is a BlockCraft-internal snapshot container. HTML/Markdown
+walkers deliberately do not emit a visible wrapper for it; they continue into
+its children. HTML therefore preserves an equivalent recoverable structure on
+the object itself:
+
+- image blocks emit `<figure data-bc-block="image">` with
+  `data-image-placement-mode/x/y/layer`;
+- shape blocks keep the placement fields described below;
+- importing those objects produces root-level absolute snapshots, and
+  `BlockPlacementManager` normalizes them below the root layout when the
+  document initializes.
+
+Markdown has no portable absolute-layout primitive and continues to use the
+existing readable degradation. Internal BlockCraft snapshot copy/paste retains
+the complete `placement-layout` subtree.
+
+The built-in `shape` matcher uses
+`<figure data-bc-block="shape">` as a lossless HTML envelope. Shape type,
+dimensions, fill, outline, text styling and absolute placement are stored in
+`data-shape-*` attributes. Rotation is stored in
+`data-shape-rotation="<degrees>"`; the collaborative child deltas are
+serialized inside `<div data-bc-shape-text>`. Empty shapes omit that element,
+and HTML import keeps them childless; non-empty text creates the single
+`shape-text` child. Import passes untrusted attributes, including rotation,
+through `normalizeShapeProps()` before creating the snapshot.
+
+All 103 built-in `ShapeKind` values use this same envelope. Category metadata,
+SVG geometry and detail paths are catalog-owned and are not serialized. Open
+line/connector appearances therefore round-trip through `data-shape-type` just
+like closed shapes while their non-filled/no-text behavior is recovered from
+`SHAPE_DEFINITIONS`.
+
+Markdown has no portable shape primitive. The `portable` profile degrades a
+shape to one readable paragraph built from its `shape-text` deltas. `hybrid`
+and `blockcraft` use a registered `:::bc-shape` container so the visual-object
+identity survives while the body stays readable.
+
+## WordArt Block Mapping
+
+The built-in editable `word-art` matcher uses
+`<figure data-bc-block="word-art">`. Its direct plain-text deltas live in
+`<div data-bc-word-art-text>`; dimensions, typography, fill, gradient arrays,
+outline, shadow, safe effect and absolute placement are stored in bounded
+`data-word-art-*` attributes. Export also emits sanitized inline presentation
+CSS so the HTML remains visually useful without BlockCraft themes.
+
+HTML import ignores raw presentation CSS and rebuilds props only from the
+allowlisted data attributes through `normalizeWordArtProps()`. Inline
+formatting and embeds are stripped because WordArt styling is whole-block and
+the Schema is `plainTextOnly`. Markdown has no portable WordArt primitive, so
+`portable` produces a readable paragraph; `hybrid` and `blockcraft` use the
+registered `:::bc-word-art` container.
+
+The same allowlist now covers 16 built-in presets, 10 font IDs and 15 safe
+effect IDs; raw CSS is still neither persisted nor accepted during import.
+
+Inline `shape` and `word-art` representations use a separate lossless HTML
+envelope: `<span data-bc-inline-object="shape|word-art">`. The payload remains
+the primitive JSON string stored in the Embed, while `width/height` and
+optional square-wrap fields are emitted as bounded `data-bc-*` attributes.
+Import normalizes the payload through the matching `read/createInline*Delta`
+helpers. Markdown cannot reconstruct object presentation and emits only the
+embedded shape/WordArt text as ordinary inline text.
 
 ## Checklist
 
@@ -249,25 +774,29 @@ export const blockMarkdownAdapterMatchers: BlockMarkdownAdapterMatcher[] = [
 - [ ] For editable blocks: inline content converted via `deltaConverter`
 - [ ] `skipAllChildren()` called when children are consumed by deltaConverter
 - [ ] `openNode`/`closeNode` are properly balanced (enter opens, leave closes)
-- [ ] Matcher registered in the corresponding matchers index file
+- [ ] Resource matchers create snapshots without network or storage side effects
+- [ ] Matcher and contribution exported from the owning `adapter/index.ts`
 
 ## Reference: Real Matcher Examples
 
 | Block | HTML Matcher | Markdown Matcher |
 |-------|-------------|-----------------|
-| Divider | `html-adapter/block-matchers/divider-matcher.ts` | `markdown-adapter/block-matchers/divider-matcher.ts` |
-| Paragraph | `html-adapter/block-matchers/paragraph-matchers.ts` | `markdown-adapter/block-matchers/paragraph-matcher.ts` |
-| Image | `html-adapter/block-matchers/image-matcher.ts` | `markdown-adapter/block-matchers/image-matcher.ts` |
-| Code | `html-adapter/block-matchers/code-matcher.ts` | `markdown-adapter/block-matchers/code-matcher.ts` |
-| Video / Audio | `html-adapter/block-matchers/media-matcher.ts` | `markdown-adapter/block-matchers/media-matcher.ts` |
+| Divider | `blocks/divider-block/adapter/html.ts` | `blocks/divider-block/adapter/markdown.ts` |
+| Paragraph | `blocks/paragraph-block/adapter/html.ts` | `blocks/paragraph-block/adapter/markdown.ts` |
+| Image | `blocks/image-block/adapter/html.ts` | `blocks/image-block/adapter/markdown.ts` |
+| Code | `blocks/code-block/adapter/html.ts` | `blocks/code-block/adapter/markdown.ts` |
+| Video / Audio | `blocks/video-block/adapter/html.ts` | `blocks/video-block/adapter/markdown.ts` |
+| Shape | `blocks/shape-block/adapter/html.ts` | `blocks/shape-block/adapter/markdown.ts` |
+| Text box | `blocks/text-box-block/adapter/html.ts` | `blocks/text-box-block/adapter/index.ts` |
+| WordArt | `blocks/word-art-block/adapter/html.ts` | `blocks/word-art-block/adapter/markdown.ts` |
 
 ## 有道云笔记 `text/yne-json` 剪贴板适配器
 
-有道云笔记复制时在剪贴板写入高保真私有格式 `text/yne-json`（结构化块数组）+ `text/yne-image-json`（图片 URL→base64）。`adapters/yne-adapter/` 把它直接翻译成 `BlockSnapshot`，绕过有损的 HTML。
+有道云笔记复制时在剪贴板写入高保真私有格式 `text/yne-json`（结构化块数组）+ `text/yne-image-json`（图片 URL→base64）。`adapters/sources/yne/` 把它直接翻译成 `IBlockSnapshot`，绕过有损的 HTML。旧 `framework/modules/clipboard/adapters/yne/` 文件仅保留转导出兼容。
 
-- **入口**：`parseYneClipboard(state, doc): YneParseResult | null`（`adapters/yne-adapter/index.ts`）。
+- **入口**：`parseYneClipboard(state, doc): IBlockSnapshot | null`（`adapters/sources/yne/index.ts`）。
 - **优先级**：`ClipboardManager.onPaste` 中位于 internal snapshot 之后、`text/html` 之前；解析失败/未知块返回 `null` → 回退 HTML。
-- **与 html/markdown adapter 的区别**：yne-json 是纯 JSON，不走 unified/rehype/remark + `ASTWalker`，因此独立成模块，不接入 `doc.adapter` 统一管线。
+- **与 html/markdown adapter 的区别**：yne-json 不走 unified/rehype/remark + `ASTWalker`，通过 `DocAdapterService.clipboardSourceAdapters` 单独装配，不加入可双向转换的 `supportedAdapters`。
 - **图片**：base64 → `File` → `fileService.createObjectURL` → image block 自动上传。
 - **附件**：先用有道云 URL 建块，插入后 `rehostYneAttachments` 异步 fetch 重传（best-effort，CORS/鉴权失败则保留原 URL）。
 - **样式映射**：`bold/italic/strike → a:*`，`color/back-color/font-size → s:color/s:background/s:fontSize`；标题丢弃冗余 font-size。
@@ -276,11 +805,79 @@ export const blockMarkdownAdapterMatchers: BlockMarkdownAdapterMatcher[] = [
 
 WKWebView（Tauri）及部分浏览器会从 `paste` 事件里**剥离自定义剪贴板 MIME**（`text/yne-json` / `text/yne-image-json`），只留 `text/html`——此时上面的 `text/yne-json` 分支拿不到数据，会回退到有损 HTML（附件变图片、行内 CSS 样式丢失）。但完整高保真结构仍嵌在 HTML 里的 `<article data-content="…bulb JSON…">`（HTML 属性，不会被剥离），图片字节也在可见 `<img data-media-type="image" src="data:…">` 中。
 
-- **入口**：`parseYoudaoHtml(html, fileService): IBlockSnapshot | null`（`adapters/yne-adapter/youdao-html.ts`）；用 `isYoudaoHtml(html)` 先做 marker 预判。
-- **位置（关键）**：解析在 **`HtmlAdapter.toBlockSnapshot` 内短路**——`isYoudaoHtml(html)` 命中就走 bulb 高保真解析、跳过通用 HAST，否则照常。**HTML→snapshot 全部归 Adapter 层**，`clipboard.ts` 不再特判有道云（符合 DDD「Block 不解析 HTML，走 Adapter 防腐层」）。浏览器仍优先 `text/yne-json` 分支；Tauri 等被剥离自定义 MIME 的环境由这条 HTML 路径兜住。
+- **入口**：`parseYoudaoHtml(html, fileService): IBlockSnapshot | null`（`adapters/sources/yne/youdao-html.ts`）；用 `isYoudaoHtml(html)` 先做 marker 预判，文件能力类型为 `DocFilePort`。
+- **位置（关键）**：`ClipboardManager` 在通用 HTML codec 之前调用来源接口；YNE 的识别和资源逻辑封装在 `YNE_CLIPBOARD_SOURCE_ADAPTER` 中。普通 `HtmlAdapter` 不依赖外部应用格式；插入、事务、只读检查和选区恢复仍由剪贴板负责。
 - **格式**：bulb 格式（`{name, data, nodes:[{type:'text', leaves:[{text, marks}]}]}`），见 `bulb-converter.ts`。marks 映射：`bold/italic/delete/underline → a:*`，`color/backgroundColor → s:color/s:background`，`fontSize → s:fontSize`。
 - **表格**：bulb 表格是嵌套（table>row>cell，省略被合并格），转换时按 colSpan/rowSpan 重建网格并补 `display:'none'` 占位格。
 - **图片**：从可见 `<img data:base64>` 按文档顺序取字节（`text/yne-image-json` 被剥离时的唯一字节来源）→ `fileService.createObjectURL` → image block 自动上传。
 - **代码 / 图表**：bulb `code`/`diagram` 把每行包成 `code-line` 子块（`type:'block'`，文本在其子节点里），转换时下钻 `code-line` 并以 `\n` 连接；语言经 `mapLang` 大小写不敏感解析到 `CodeBlockLanguage`，无匹配（如 PlantUML/Mermaid）回退 `PlainText`。`diagram` 无原生对应，按代码块保留源码。
 - **未知块容错**：单个不认识的 bulb 块**不会**中断整篇解析——降级为保留其文本的段落（无文本则丢弃），而非抛错。整篇回退到有损 HTML 仅用于真正无法解析的 payload（无 `<article>` / JSON 损坏）。
-- **附件重传（关键拆分）**：附件的异步 fetch 重传是**插入后、协同敏感**的副作用，不在 adapter 里做。两条有道云路径都用 `buildAttachmentSnapshot` 在 attachment snapshot 的 `meta` 上打**临时重传标记**；`clipboard.ts` 在插入/克隆前用 `collectAndStripRehostMarkers` 统一**收集并剥离**标记（绝不写进 Yjs、不同步给协同端），插入后再 `rehostYneAttachments` 异步重传（只有本地粘贴者做）。
+- **附件重传（关键拆分）**：转换阶段只生成快照。两条路径都用 `buildAttachmentSnapshot` 在 `meta` 写临时标记；来源接口的 `prepareSnapshot` 在插入/克隆前收集并剥离标记，不写进 Yjs。它返回收尾闭包，由剪贴板安排到下一 tick；闭包保留 snapshot 引用以读取最终 ID，重传前后检查目标存活。重传仍走原文件服务与无撤回的初始化属性更新，失败或非 http(s) 结果保留原 URL。
+
+### 剪贴板来源装配契约
+
+```typescript
+import {
+  DocAdapterService, BUNDLED_CLIPBOARD_SOURCE_ADAPTERS,
+  type ClipboardSourceAdapter, type ClipboardSourceData,
+} from '@ccc/blockcraft';
+
+// 在现有 DocAdapterService 子类中提供完整的来源列表：
+// override clipboardSourceAdapters = [mySource, ...BUNDLED_CLIPBOARD_SOURCE_ADAPTERS];
+```
+
+`ClipboardSourceAdapter` 位于 `framework/modules/clipboard/source-adapter.ts`，有三个可选 hook：
+
+- `parseStructured(data, doc)`：同步读取私有格式；返回 null 或空 children 时继续下一个来源。
+- `parseHtml(html, doc)`：内部 HTML marker 之后、通用 HTML codec 之前同步调用；null 表示未匹配。
+- `prepareSnapshot(snapshot, doc)`：在克隆/改写 ID/插入前清理瞬态数据，可返回 `() => Promise<void>`
+  供下一 tick 收尾。它会处理当前所选来源列表上的所有准备 hook，包括内部快照输入；收尾必须检查目标
+  是否插入成功且仍存活，并自行处理预期失败。不要在解析 hook 中写文档。
+
+两个解析 hook 同步运行，不新增协作竞态间隙。旧通用 HTML 解析的 RelativePosition 重定位继续保留。
+此接口依赖编辑器文档和注册快照，属于剪贴板应用层扩展，不放入纯 `framework/ports`，不新增 npm 子入口。
+
+默认 `AdapterService` 显式使用只读 `BUNDLED_CLIPBOARD_SOURCE_ADAPTERS`。旧宿主不声明该字段时，
+公共 ClipboardManager 在 `editor/clipboard-manager.ts` 构造时传入默认列表，保持原有 YNE 支持；
+显式 `[]` 可关闭来源适配，普通 HTML / 纯文本仍可粘贴。核心位于
+`framework/modules/clipboard/clipboard-manager.ts`，不引用任何默认来源；过渡的 legacy-defaults
+桥已移除。公共 Doc 的默认装配创建同一个公共 ClipboardManager，事件仍只注册一次。
+`build:editor` 同时检查领域实现不得引用旧兼容 barrel，来源实现不得回流剪贴板核心或通用转换核心。
+
+通用 codecs 继续从 `@ccc/blockcraft` 导入。其公开声明仍约束已注册 `IBlockSnapshot`，
+没有把 flavour 放宽为任意字符串；`adapters/sources` 也不经 codecs 聚合入口导出。
+
+### 粘贴正文的异常组合符号转化（未发布）
+
+设置 `DocConfig.pasteTextPolicy: 'remove-stacked-marks'` 时，`ClipboardManager` 在本次
+粘贴内容进入 Yjs 前移除连续九个或更多 Unicode `\p{M}`
+组合符号，保留基础文字、正常音标、emoji、行内格式及 Embed。阈值跨相邻文本 Delta
+的格式边界判定；Embed 和块边界中断文本串。只改正文字符串，不改 props、meta 或 Embed payload。
+
+纯文本、纯文本块、内部 MIME／HTML marker、来源快照、通用 HTML、间隙与对象粘贴、
+以及 `applyPasteOption()` 重新应用均经过转化。来源 `prepareSnapshot` 完成后再处理正文，
+粘贴格式的备选数据也存转化后的内容；位置与选区长度以最终正文为准。
+
+这是入模转化，保存、协作和复制得到转化后的正文。Inline 没有显示占位，日常输入不增加
+扫描；存量文档、通用 adapter 导入、直接输入及远端写入保持原路径，后续保护另行设计。
+省略策略或设为 `preserve` 时不执行转化，便于消息等其他编辑实例保留原有语义。
+
+### 形状自定义几何编码
+
+`data-shape-geometry` 以及行内形状 payload 中的 `customGeometry` 使用
+`v1|width height|nonzero或evenodd|f:path|s:path` 字符串。HTML 属性仍通过 AST
+序列化转义；导入使用同一有界解析器，完整消费每个路径字符。Markdown 的可往返
+封装保留该字符串，portable 输出继续使用既有展示策略。禁止重新 JSON 编码节点
+对象；预设等价的覆盖由 `normalizeShapeSnapshotProps()` 省略。
+
+
+## 统一网页嵌入的转换
+
+`blocks/embed-blocks/embed-block/adapter/` 使用共享 URL Embed 工厂，贡献 ID 与
+flavour 均为 `embed`。HTML 导出保留 `data-bc-block="embed"`、有界 props 元数据
+及可点击原链接，尺寸可往返；不输出可执行 iframe 或 HTML 源码。
+Markdown 导出为 `[网页嵌入](https://example.com/report.html "blockcraft:embed")`。
+显式类型提示恢复嵌入块；普通网页链接仍是正文链接，普通 `html` 围栏仍是代码块。
+Markdown 不保留展示尺寸，统一嵌入导入恢复 `wr: 100, ar: 16 / 9`。
+HTML 元数据同时支持 `wr/ar` 与旧 `width/height`，不为比例快照补入旧像素默认值。
+旧 Figma/掘金贡献保持原有 flavour 的导入导出，无需文档数据迁移。

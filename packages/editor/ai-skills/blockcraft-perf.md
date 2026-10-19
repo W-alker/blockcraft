@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-04-07
+> Last updated: 2026-10-12
 
 ## Core Performance Principles
 
@@ -16,6 +16,14 @@ ALL block components use `ChangeDetectionStrategy.OnPush`. Angular only re-rende
 - `changeDetectorRef.markForCheck()` is explicitly called
 
 **Rule**: Never use `Default` change detection in block components.
+
+Whole-document scaling is applied once at the host surface by
+`doc.viewScale`; do not rewrite font sizes or per-block transforms. Scale
+changes invalidate virtualization estimates through the existing scheduled
+window refresh, while measurement converts visual `getBoundingClientRect()`
+values back to layout pixels. Host fit-width/fit-page observers should coalesce
+their own resize callbacks (for example with one `requestAnimationFrame`) before
+calling `setScale()`.
 
 ### 2. NgZone Optimization
 
@@ -44,7 +52,373 @@ The inline system prefers `applyDelta(ops)` over full `render()`:
 - Full `render` rebuilds the entire blot tree
 - Consistency check after `applyDelta` falls back to `render` only if mismatch detected
 
-### 4. Debounce & Throttle
+### 4. Root-Child Virtualization
+
+Large documents can opt into model-first root virtualization through
+`DocConfig.virtualization`. Yjs and `BlockModelGraph` remain complete while
+`DocVM` creates/mounts only viewport and leased root-child subtrees.
+
+```typescript
+virtualization: {
+  enabled: true,
+  idlePrefetch: true, // default false; eligible safe text roots only
+  overscanViewports: 1,
+  segmentMergeGap: 2,
+  retainedViewLimit: 12,
+  estimatedHeights: {paragraph: 32, table: 240},
+  resolveViewRetention: ({flavour}) =>
+    flavour === 'custom-player' ? 'keep-alive' : undefined,
+}
+```
+
+Scroll and pin changes are coalesced into one animation frame. Height lookup
+uses incremental Fenwick-tree prefix sums: measurement updates, range sums and
+offset lookup stay `O(log N)`, while structural rebuilds remain a cold `O(N)`
+path. A normal scroll frame touches the mounted window, not every document
+block. `overscanViewports` is a projected-height budget, not a root-count
+budget: the default `1` mounts one viewport above and below the visible area
+(three viewport heights total), redistributing unavailable budget at document
+edges. An oversized root consumes the budget by its full projected height.
+`segmentMergeGap` can coalesce a small number of omitted roots between sparse
+leases, but the omitted projected height is additionally capped at one quarter
+of the viewport so giant tables cannot bypass the height window.
+`ResizeObserver` corrects estimates and
+records each mounted block's layout stride, including inter-block spacing, then
+restores an ID-based scroll anchor. The public `HeightObserver` remembers that
+stride by `Element` across detach/reattach and suppresses a repeated value whose
+drift is at most `0.5px`; replacement elements and larger changes still publish.
+After projected range lookup, an otherwise identical scroll window also skips
+mount/retain, observer, spacer and `viewChange$` reconciliation. Nested subtrees
+are atomic, except for direct children of a root placement layer.
+
+#### 浮动对象按尺寸模式挂载
+
+根级 `placement-layout` 的直属对象独立虚拟化。固定对象按根内容坐标、真实尺寸和
+旋转包围盒查询区间树，上下各预挂载一个视口；同层其他固定对象不会随之创建。
+`textAutoFit: 'resize-shape'` 且支持当前文字排版的文本框/艺术字从初始化起常驻。
+组合仍是原子子树，含自适应成员的组合整体常驻；隐藏修订对象不进入常驻集合。
+只读对象采用相同挂载策略，但不重新写入自适应尺寸。
+
+模型/表面几何变化重建索引；滚动查询不扫描模型或同步读取对象 DOM。
+`TextContentAutoFit` 按文档、按帧批量执行 CSS 自然尺寸测量，并以一次无撤销事务
+更新派生 `textFit`。不再维护测量有效性缓存或未知尺寸保守范围。
+文档底边仍由实际包围范围计算，常驻策略不额外扩大分页高度。
+
+选区端点与边界邻居、导航、对象视图租约保证目标对象及其完整子树挂载。
+显式租用整个浮动层或完整文档会挂载全部对象。固定对象离屏后释放组件；
+`retainedViewLimit` 继续控制根子树缓存，浮动层内部不另设缓存；`keep-alive` 租约优先。
+宿主不能依赖同层一个固定对象可见时其所有兄弟组件也存在，应通过模型 API 查询数据，
+需要 DOM 时申请目标对象的视图租约。关闭虚拟化时保持完整渲染。
+
+#### Idle speculative prefetch
+
+`VirtualizationConfig.idlePrefetch?: boolean` is an opt-in idle geometry warm-up
+and defaults to `false`. When enabled, only direct-root text Schemas declaring
+`metadata.virtualization.speculativeMount: 'safe'` are eligible. The scheduler
+first spends idle budget on eligible roots within one projected viewport before
+the mounted window in the latest scroll direction, then uses later idle slices
+to sweep the remaining eligible roots by nearest projected-pixel distance,
+breaking equal-distance ties toward the latest scroll direction. It uses
+`requestIdleCallback` where available and a cancellable
+short-budget timer fallback in browsers or WebViews that do not provide it.
+
+This path must remain cheaper than scrolling into the same roots. Work is
+limited to one newly started Root per idle slice, avoids Angular-zone churn,
+coalesces paginated geometry publication, and yields or cancels when foreground
+reconciliation invalidates its work. A quiet episode attempts at most 32 Roots
+or 100ms of cumulative synchronous mount time. A flavour whose mount exceeds
+8ms is denied for the rest of the session; three consecutive failures disable
+only this document's idle prefetch. Nearby views remain under normal ownership,
+but a far-sweep view is destroyed after its targeted lease has no viewport,
+Selection, or other owner, so it never consumes the retained-view LRU.
+Scroll, input/IME, pointer/drag, navigation, projection changes, hidden windows,
+and active font loading pause the scheduler. Content/structure, width,
+pagination, font, theme, scale, or layout-metric changes invalidate the current
+measurement epoch before any later result is accepted.
+
+The first release deliberately excludes tables, media/iframe/resource Blocks,
+async widgets, `keep-alive` views and container render units. Those views may
+load resources, preserve DOM-owned state or require table/split geometry that a
+text-only speculative pass cannot safely reproduce. Prefer model-only
+`estimateHeight()` for them.
+The audited built-ins are `paragraph`, `ordered`, `bullet`, `todo`,
+`blockquote`, and `caption`.
+Their first mount starts no network/upload work or media decoding/playback,
+writes no Yjs/model state, emits no notification, and registers no global
+listener or other side effect that normal detach/destroy cannot fully release;
+the work is safe to cancel, repeat and reverse.
+
+Flow and sparse pagination are separate measurement domains. A flow warm-up may
+update only the continuous layout stride/`HeightMap`; a sparse-pagination
+warm-up may update only pagination geometry. Page gaps, table flow, split plans,
+height locks and fitted media state never cross into continuous coordinates.
+Default live pagination already holds an exact full-document view lease, so it
+does not run another idle prefetch pass. The optimization is useful for ordinary
+virtualized flow and experimental sparse pagination; it does not change the rule
+that non-exact sparse layouts use complete readonly print/PDF reflow.
+
+Custom blocks can provide a model-driven estimate through
+`schema.metadata.virtualization.estimateHeight(context)`. It runs before
+object-sizing and per-flavour fallback rules and receives readonly props,
+direct child IDs, a lazy `estimateChildHeight()` helper, cached root width,
+document `baseFontSize` / `lineHeight`, and
+`layoutMode: 'flow' | 'paginated'`. A finite non-negative result (including
+zero) participates in offscreen content/structure refreshes; invalid results or
+errors fall back safely. The callback must be synchronous, deterministic and
+DOM/network free. Persist async layout facts such as row count or height in
+props, and keep the common path `O(1)` unless the block genuinely owns a bounded
+child-height aggregation.
+
+Built-in Shape and WordArt Schemas return their normalized `props.height`
+through this callback. Their unmounted flow projection therefore follows the
+persisted fixed frame instead of a generic `estimatedHeights` value; live DOM
+measurement still corrects surrounding layout stride after mount.
+
+Built-in tables receive a bounded content-aware model estimate before their
+root view mounts. Legacy `table-row.props.height` is deliberately ignored
+because it is not stable intrinsic geometry across continuous and paginated
+layout. The cold path samples no more than 96 rows, 24 cells per sampled row and
+12 children per sampled cell, then projects the representative content delta.
+It uses model `colWidths`, cell padding, visible merge masters,
+`colspan` / `rowspan`, child count and O(1) `Y.Text.length`; it never materializes
+rich deltas or walks characters merely to estimate text height. Average glyph
+width is `0.75 × baseFontSize`, while line boxes use the document's resolved
+`lineHeight`. Mounted DOM measurement remains authoritative.
+
+The two typography facts come from `DocConfig.layoutMetrics` or from one
+computed-style read during document initialization. Estimation code performs no
+DOM read. If a host changes `--bc-fs` / `--bc-lh` at runtime, it must call
+`doc.updateLayoutMetrics({baseFontSize, lineHeight})`, or apply external CSS and
+call `doc.refreshLayoutMetrics()`. That one explicit update refreshes continuous
+virtualization and sparse pagination projections. Ordinary nested text input
+continues to avoid whole-table estimate recomputation.
+
+Pagination/virtualization Phase A introduced a package-internal
+`VerticalLayoutProjection` query seam while retaining the same Fenwick-backed
+continuous `HeightMap`. Phase B added a stable-ID GeometryIndex,
+LayoutCoordinator, paginated Projection and bounded legacy/shadow comparator.
+These implementation types remain absent from the public barrel.
+
+Phase C adds an internal exclusive Projection registration to
+`RootVirtualizationManager`. Registration and release capture an ID-based
+scroll anchor in the old coordinate system, pause reconciliation, validate
+root order, switch viewport/spacer reads, then restore the anchor in the new
+coordinate system. While a custom Projection is active, continuous
+`HeightObserver` input is disconnected so pagination gaps cannot contaminate
+the default `HeightMap`. A transient root-order mismatch skips that frame;
+three consecutive invalid states disable the sparse pagination view and return
+to continuous virtualization instead of triggering full mount.
+
+`PaginationPlugin({experimentalSparseView: true})` enables this path only when
+root virtualization is active. The default remains `false`, so the compatible
+product path still uses an exact full-document lease. In sparse mode,
+Gap/TableBreak/HeightLock appliers cache complete layout facts but query and
+mutate only the mounted-ID diff. `LiveHeightSource` observes and measures only
+the mounted window; unmounted records keep flavour estimates. A remounted root
+immediately replays its cached pagination state. A retained host whose completed
+measurement is still current does not schedule pagination work. A recreated
+host performs one mounted-window verification; if its canonical geometry is
+unchanged, the controller stops before the `O(N)` pagination/projection/DOM
+publish path. Content, structure, measure-context and genuine geometry changes
+still invalidate the cache and take the normal recomputation path.
+
+Sparse content/structure/props events all schedule at most one recomputation
+per animation frame because an offscreen text mutation has no
+`ResizeObserver`. The current pagination engine performs an `O(N)` scan of
+cached numbers, but that scan contains no DOM queries. Projection offset,
+range-height and viewport lookup remain Fenwick-backed `O(log N)` operations;
+ordinary scrolling only diffs the mounted window. Tests with 1000 root blocks
+keep the mounted count below ten while traversing projected page geometry.
+Printing/PDF do not consume a sparse state whose `exact` flag is false; they
+fall back to the complete readonly reflow.
+
+Table rectangle commands use a cached `TableModelGrid`. A cold build is
+`O(rows × columns)` over direct row/cell facts only; it does not descend into
+cell content or read DOM. Table/cell geometry props and table/row structure
+invalidate the cache, while ordinary text input and row-height changes keep it.
+Pointer movement, Arrow/Tab, copy/cut/delete/paste target lookup and selected
+text then use array/Map lookups over stable IDs. Visual selection diffs only
+currently mounted master-cell components and never mounts the rectangle middle.
+
+Table column resizing keeps the committed `<col>` widths fixed during the
+gesture. The hot `mousemove` path performs one body-level guide
+`style.transform` write outside Angular. The guide is not clipped by the
+current wrapper width when the last column grows, and it does not trigger table layout, row `ResizeObserver`,
+pagination measurement or Yjs. Mouse release re-resolves the stable source
+cell against the current `TableModelGrid` and commits one `colWidths` props
+update; cancellation performs no model write.
+Outside a gesture, delegated cell `mousemove` keeps the single resize handle
+attached after pagination projection. Same-cell events compare DOM/model
+identity and return before pagination-mask geometry is read.
+The Safari/WebKit td-hit fallback reads one cell boundary only on primary
+mousedown; it adds no geometry work to mousemove or scrolling.
+
+Oversized table-cell flow is measured lazily: ordinary tables still read only
+row geometry, and visual text-line discovery runs only after a physical table
+row exceeds `contentHeight`. Planning is pure and linear in the supplied safe
+anchors. Its immutable plan is carried through GeometryIndex, the stable live
+layout and readonly printing. Sparse Projection uses the plan's virtual content
+height plus every internal sheet gap—not the smaller natural table height—so
+the next root Block receives the correct offset without a DOM query. Screen
+projection application is signature-idempotent, all reads remain outside
+Angular change detection, and IME composition skips recomputation until the
+model-owned composition completes.
+
+Top-level text follows the same lazy boundary. Editable text blocks at or
+below one regular content page never enumerate Range line geometry and stay
+whole even when the current page remainder is smaller. Only an oversized text
+Block builds an immutable `{layoutOffset, textOffset}` break plan. The engine
+consumes the pixel offsets, while the mounted view replays at most one
+zero-model-length marker per continuation page. Before remeasurement, old
+markers are revoked in one write phase; natural heights and line geometry are
+then batch-read before the next projection write. The old and new projected
+root IDs are registered together so ResizeObserver delivery cannot create a
+pagination feedback loop. Sparse geometry includes every internal text page gap
+in the root extent, and non-exact sparse state is never reused for printing. A
+missing or rejected live anchor triggers a bounded retry plus atomic screen
+fallback; that fallback snapshot is also excluded from print reuse, so readonly
+export performs a complete remeasurement rather than clipping oversized text.
+Wrapped text snapshots all shell/frame/group exclusion rectangles once per lazy
+oversized measurement; candidate-line filtering performs no repeated DOM reads.
+The float and pagination layers share one reversible projection. A pointer, IME
+or wrapped-object lease defers the whole pagination transaction before markers
+are cleared, then schedules one recompute after the animation-frame float refresh,
+so natural measurement never observes a half-rebuilt Blot tree.
+
+Each frame adds only constant-time checks for local height/index lengths and the
+model structure revision. A mismatch performs one cold `O(N)` rebuild. A
+transient reconciliation failure receives bounded frame retries; after three
+consecutive failures the document permanently falls back to complete root
+mounting and warns once. The fallback does not run parallel window logic and
+therefore trades memory for continued editability without adding steady-state
+work to healthy documents. It repairs the sparse root from canonical model
+order and clears virtual spacers before mounting the complete root, even if a
+later mount throws. Height observation and scroll/resize scheduling stay off in
+fallback mode, so stale estimated gaps cannot leave a large blank document.
+Detached root subtrees use a bounded LRU (`retainedViewLimit`, default `12`) so
+scrolling and model-first bulk insertion cannot make `DocVM.store` grow with
+every root ever visited. Eviction runs on the coalesced reconciliation frame,
+destroys the complete detached subtree, and rebuilds it from current Yjs state
+if it is mounted again. Set the limit to `0` to trade remount work for minimum
+retained-view memory.
+
+Stateful iframe/media flavours can declare
+`metadata.virtualization.viewRetention: 'keep-alive'`, and hosts can override that decision
+with `virtualization.resolveViewRetention(context)`. The policy is evaluated
+when a component first mounts, outside the scroll hot path. Activation is
+deferred until the current Angular mount transaction finishes, and all active
+long-lived leases are collapsed into one `PinRegistry` source. Nested stateful
+blocks pin only their containing direct-root render unit.
+
+Keep-alive preserves iframe browsing context and media playback but is an
+intentional memory tradeoff: each materialized unit remains mounted until its
+stateful block is deleted or the document is disposed. It does not scan or
+pre-mount the document. Avoid opting ordinary blocks in, and use a host override
+returning `'virtual'` when a deployment prefers bounded DOM over state
+continuity.
+
+Direct-root structure transactions use a separate cold path. The manager keeps
+the first visible block ID and its viewport-relative offset, rebuilds root
+indices once, and re-evaluates active point-aware Selection pins from stable
+endpoint IDs plus root boundary indices. Active local selections pin only their
+two endpoint root units; the selected middle stays virtualized. Presentation
+coverage checks only the mounted window using O(1) model sibling indices, while
+copy/text/format commands materialize model IDs only when explicitly invoked.
+Projection pins remain endpoint-ID based. All transactions are coalesced before
+the next frame around the original anchor.
+It computes the target window from estimated heights, mounts that window, then
+uses the anchor host's actual DOM position for one final correction. This work
+does not run on ordinary scroll events or nested-only structure changes.
+
+Do not query `doc.vm` to decide whether document data exists. Use `doc.model`
+for model work and let Selection/virtualization mount view capabilities only
+when needed.
+
+For imports and bulk insertion, prefer
+`doc.crud.insertBlockSnapshots(parentId, index, snapshots)`. It returns block
+IDs without resolving inserted Angular components for the caller. Sparse-root
+and uncreated-parent insertion stays model-only; an already-created parent view
+still synchronizes through the normal Yjs observer. `insertBlocks()`
+intentionally keeps its older synchronous component return contract and can
+therefore create a transient component peak before the retained-view LRU
+reconciles.
+
+For structural cleanup and reordering, `deleteBlocks()`, `deleteBlockById()`
+and `moveBlocks()` accept stable IDs/indices and resolve directly through the
+complete Yjs model. They do not materialize offscreen source or target views;
+if a parent is already mounted, its existing observer applies the children
+delta. Prefer these APIs over calling `getBlockById()` solely to discover a
+parent or sibling before a structural write.
+
+`RootVirtualizationManager.ensureViewMounted(blockIds)` is the synchronous
+interaction boundary for code that has already resolved model IDs but needs a
+component immediately (for example, keyboard navigation to an adjacent root
+unit). It materializes the containing root units and refreshes spacer/height
+tracking without creating a persistent pin. The resulting Selection or
+viewport must take ownership before the next reconciliation frame.
+Callers must not keep the returned component as long-lived state: an offscreen
+transient component can be evicted once the frame reconciles.
+`SelectionManager` uses this boundary before publishing only when one of its
+bounded endpoint or boundary-adjacent views is missing. Normal typing and arrow
+updates whose endpoints are already mounted perform only constant-count VM
+availability lookups; they do not run height, spacer, geometry, or full-range
+work. The endpoint selection lease is reconciled separately in the existing
+coalesced virtualization frame; it does not expand with selection length.
+
+`RootVirtualizationManager.scrollToBlock(blockId)` is a cold stable-ID
+navigation path. It resolves the containing direct-root unit, performs one
+`O(log N)` height-index jump, mounts that unit, and corrects against the real
+requested host. Completion requires two consecutive sub-1px frames and is
+hard-bounded at eight frames so late `ResizeObserver` measurements cannot leave
+the target displaced. While navigation owns placement, pending structural and
+height anchors do not compete with target centering. Each correction reads only
+the target and scroll-container rects; ordinary scroll/input/selection frames
+gain no work. Undo calls this path only when the restored head was not already
+visible before DOM Selection replay.
+
+`RootVirtualizationManager.acquireBlockViewLease(blockIds)` is the targeted
+longer-lived counterpart. It synchronously mounts and pins only the direct-root
+units containing those stable IDs, re-resolves them after root structure
+changes, and returns an idempotent release function. Acquisition and a structure
+change cost `O(K)` for `K` leased IDs/root units; pointer movement and ordinary
+scrolling add no lease traversal. Interaction owners must release from one
+symmetric teardown path. Internal dragging holds one lease for all source blocks
+after crossing its movement threshold, then releases it on drop or cancellation.
+
+`RootVirtualizationManager.viewChange$` emits a model-ordered list of mounted
+root IDs only when that list changes. Consumers should use it for view-bound
+projection lifecycle rather than adding another scroll handler. Work performed
+from this stream must stay proportional to the mounted window or its nested
+atomic subtrees, never to total document size. Selection class replay checks the
+mounted window; native Selection repair for a non-collapsed cross-root range
+touches only its two pinned endpoints. That repair is paid once per changed
+mounted-ID window, not per raw scroll event or selected block. During the
+bounded endpoint mount/frame retry, `selectionchange` performs an O(1)
+selection-identity check and returns; there is no document traversal, layout
+read, recurring timer, or extension of the mounted window.
+
+Non-collapsed virtual-root boundary projection also performs no geometry read:
+it maps directly into the adjacent pinned block's inline/gap/host edge. Because
+the Range no longer stores root child offsets, ordinary middle-window mount and
+unmount operations cannot rebase its endpoints; the deduplicated view-change
+repair remains only a bounded endpoint-rerender safety net.
+
+`RootVirtualizationManager.acquireFullDocumentViewLease()` is the explicit
+escape hatch for capabilities that require exact DOM geometry for every root
+unit. It synchronously mounts all root views, includes root blocks inserted
+while held, and returns an idempotent release function. The default live
+pagination compatibility path uses this lease because estimated offscreen
+heights cannot produce exact page and table-row breaks. Experimental sparse
+pagination deliberately does not use it; non-exact print/export work is
+reflowed in the complete readonly renderer. Model-only
+search/export/collaboration code must not use the lease.
+
+Find/replace follows this split explicitly: indexing scans `doc.model` and
+creates no components; text changes rescan only the changed block IDs; virtual
+window changes bind `IntersectionObserver` only to matched blocks in mounted
+subtrees; navigating to a result materializes only that result's root unit.
+
+### 5. Debounce & Throttle
 
 High-frequency operations should be debounced/throttled:
 
@@ -58,9 +432,45 @@ this.doc.onTextUpdate$.pipe(debounceTime(300)).subscribe(...)
 scrollEvent$.pipe(throttleTime(16)).subscribe(...)  // ~60fps
 ```
 
-### 5. IntersectionObserver
+### 5. Mounted View Lifecycle vs IntersectionObserver
 
-For blocks that need visibility awareness (lazy loading, etc.):
+When root virtualization is enabled, a direct-root business block normally
+does **not** need its own `IntersectionObserver` just to delay the first data
+request. Start the request from `ngAfterViewInit()`, stop view-bound realtime
+subscriptions from `beforeDetach()`, and restore them from `afterReattach()`.
+The virtual window already limits this work to mounted root units (viewport plus
+height-budgeted overscan), while the detach hooks also cover retained LRU views that have left
+the window.
+
+Do not combine root virtualization with a second `getBoundingClientRect()` +
+`IntersectionObserver` gate for the same request. That duplicates viewport
+tracking, can use the wrong scroll root, and leaves retained components with an
+unclear subscription lifetime.
+
+Ratio-sized members of a fixed `object-group` resolve against the persisted
+group width through `doc.objectSizing.resolveForBlock()`. Do not add one
+`ResizeObserver` per group/member: user-driven groups are not resizable in V1,
+and the existing single root observer remains the only responsive invalidation
+source. Member pointer movement previews with one transform. Pointerup calls
+`doc.placement.updateObjectGeometry()`, which performs one O(n) pure-model
+rotation-aware bounds pass and one Yjs transaction; changing the group width
+also converts ratio-member `wr` so pixels do not feed back into the new frame.
+Remote/Undo/structure repair requests are deduplicated per group in one
+microtask. Console-backed loggers expose each pass as
+`[ObjectGroup][performance] reflow <duration>ms` plus `{members, writes,
+changed, reason}` for direct profiling.
+Root virtualization indexes the group as one fixed-height root unit in either
+top-bottom or absolute placement; its nested members materialize atomically
+with that group.
+
+Mounted is deliberately broader than browser-visible: height-budgeted overscan
+materializes a small nearby window, and nested subtrees are atomic. Keep an
+`IntersectionObserver` only when the feature truly needs **exact intersection**
+rather than materialization—for example pausing an expensive animation inside
+a tall nested container, activating an iframe only when painted, or projecting
+visible find/replace ranges. In that case use the editor scroll container as
+the root and disconnect the observer from `beforeDetach()` as well as permanent
+destroy:
 
 ```typescript
 const observer = new IntersectionObserver((entries) => {
@@ -97,4 +507,5 @@ For current performance patterns, read:
 - `framework/block-std/block/component/base-block.ts` — OnPush, lifecycle hooks
 - `framework/block-std/inline/runtime/` — incremental patching logic
 - Any existing plugin for debounce/throttle patterns
-- `packages/editor/VIRTUAL_RENDERING.md` — planned virtual rendering design
+- `framework/modules/virtualization/` — current root virtualization kernel,
+  spacer layer, height observer and coordinator

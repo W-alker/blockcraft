@@ -1,13 +1,23 @@
 import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from "@angular/core";
-import { NgIf } from "@angular/common";
-import { NzDropDownDirective, NzDropdownMenuComponent } from "ng-zorro-antd/dropdown";
-import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
+import {
+  CsDropdownDirective,
+  CsDropdownMenuComponent,
+  CsMenuDirective,
+  CsMenuItemComponent,
+  CsTooltipDirective,
+} from "@cses/ui";
 import type { TranslateLanguageOption } from "../translate.plugin";
 
 @Component({
   selector: "bc-translation-preview",
   standalone: true,
-  imports: [NgIf, NzDropDownDirective, NzDropdownMenuComponent, NzTooltipDirective],
+  imports: [
+    CsDropdownDirective,
+    CsDropdownMenuComponent,
+    CsMenuDirective,
+    CsMenuItemComponent,
+    CsTooltipDirective,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     "contenteditable": "false"
@@ -31,10 +41,10 @@ import type { TranslateLanguageOption } from "../translate.plugin";
         @if (displayLanguages.length > 0) {
           <button type="button"
                   class="translation-preview__lang-trigger"
-                  nz-dropdown
-                  [nzDropdownMenu]="langMenu"
-                  nzPlacement="bottomLeft"
-                  nzTrigger="click"
+                  csDropdown
+                  [csDropdownMenu]="langMenu"
+                  csPlacement="bottom-left"
+                  csTrigger="click"
                   (mousedown)="onLangTriggerMousedown($event)">
             <span class="translation-preview__lang-badge">
               {{ selectedLanguageLabel }}
@@ -46,29 +56,29 @@ import type { TranslateLanguageOption } from "../translate.plugin";
         <button type="button"
                 class="icon-btn icon-btn--apply"
                 [disabled]="loading || !translatedText"
-                [nz-tooltip]="'替换原文'"
+                csTooltip="替换原文"
                 (mousedown)="onApply($event)">
           <i class="bc_icon bc_xuanzhong"></i>
         </button>
         <button type="button"
                 class="icon-btn icon-btn--append"
                 [disabled]="loading || !translatedText"
-                [nz-tooltip]="'追加到段落后'"
+                csTooltip="追加到段落后"
                 (mousedown)="onAppend($event)">
           <i class="bc_icon bc_plus"></i>
         </button>
         <button type="button"
                 class="icon-btn icon-btn--close"
-                [nz-tooltip]="'关闭预览'"
+                csTooltip="关闭预览"
                 (mousedown)="onClose($event)">
           <i class="bc_icon bc_guanbi"></i>
         </button>
       </div>
 
-      <nz-dropdown-menu #langMenu="nzDropdownMenu">
-        <div class="translation-preview__lang-menu" (mousedown)="onLangMenuMousedown($event)">
+      <cs-dropdown-menu #langMenu="csDropdownMenu">
+        <div csMenu [csSelectable]="false" class="translation-preview__lang-menu" (mousedown)="onLangMenuMousedown($event)">
           @for (language of displayLanguages; track language.code) {
-            <button type="button"
+            <button csMenuItem type="button"
                     class="translation-preview__lang-menu-item"
                     [class.active]="language.code === selectedTargetLang"
                     (mousedown)="onTargetLangSelect($event, language.code)">
@@ -76,7 +86,7 @@ import type { TranslateLanguageOption } from "../translate.plugin";
             </button>
           }
         </div>
-      </nz-dropdown-menu>
+      </cs-dropdown-menu>
     </div>
   `,
   styles: [`

@@ -1,82 +1,199 @@
-import {BaseBlockComponent, BlockNodeType, EditableBlockComponent} from "../../block-std";
+import {
+  BaseBlockComponent,
+  BlotType,
+  BlockNodeType,
+  EditableBlockComponent,
+  EmbedBlot,
+} from "../../block-std";
+import {
+  getMountedSelectionCoveredBlockIds,
+  getSelectionCoveredBlockIds,
+} from "./covered-blocks";
 
 export class SelectionSelectedManager {
 
   constructor(private doc: BlockCraft.Doc) {
   }
 
+  private _selection: BlockCraft.Selection | null = null
+  private _mountedRootIds?: readonly string[]
+  private _retainedSelection: BlockCraft.Selection | null = null
+
+  /** Preserve toolbar presentation across native blur, never across new model intent. */
+  retainPresentation(selection: BlockCraft.Selection | null): () => void {
+    if (!selection) return () => {}
+    this._retainedSelection = selection
+    return () => {
+      if (this._retainedSelection !== selection) return
+      this._retainedSelection = null
+      this.setSelected(this._selection, this._mountedRootIds)
+    }
+  }
+
   private _selectedSet = new Set<BaseBlockComponent<any>>()
   private _focusedSet = new Set<EditableBlockComponent<any>>()
+  private _selectedEmbedSet = new Set<HTMLElement>()
 
-  private _setSelectedClass(block: BaseBlockComponent<any>) {
+  private _addSelectedClass(block: BaseBlockComponent<any>) {
     block.hostElement.classList.add('selected')
-    // `contenteditable=false` is only safe on `void` blocks (image, divider, ...)
-    // where it locks down a leaf that has no editable descendants — the gap-zero
-    // spans (`createBlockGapSpace`) re-open `contenteditable=true` so the native
-    // Range cursor can still anchor and `keydown` / `beforeinput` keep firing.
-    //
-    // Container blocks (`nodeType === 'block'`: callout / columns / column /
-    // table / table-cell / frame) MUST NOT receive `contenteditable=false`,
-    // because the attribute is inherited and would silently freeze the entire
-    // descendant subtree. If the cleanup path (`_clearAllClass` via the next
-    // `setSelected`) is skipped — e.g. a resize / drag-out / mouseup lands
-    // outside root and no `selectionchange` fires — the container stays
-    // contenteditable=false and the whole document becomes uneditable.
-    // if (block.nodeType === BlockNodeType.void) {
-    //   block.hostElement.setAttribute('contenteditable', 'false')
-    // }
-    this._selectedSet.add(block)
   }
 
-  private _setFocusedClass(block: EditableBlockComponent<any>) {
+  private _addFocusedClass(block: EditableBlockComponent<any>) {
     block.hostElement.classList.add('focused')
-    this._focusedSet.add(block)
   }
 
-  private _setClass(block: BaseBlockComponent<any>) {
-    block.nodeType === BlockNodeType.editable ? this._setFocusedClass(block as any) : this._setSelectedClass(block)
-  }
-
-  private _clearAllClass() {
-    this._selectedSet.forEach(v => {
-      v.hostElement.classList.remove('selected')
-      // Symmetric with `_setSelectedClass`: only void blocks ever receive
-      // `contenteditable=false` here, so only void blocks should have it
-      // cleared. Calling `removeAttribute('contenteditable')` on a container
-      // is a no-op, but on `root` it would strip the `contenteditable="true"`
-      // installed by `RootBlockComponent` and freeze the entire editor.
-      // if (v.nodeType === BlockNodeType.void) {
-      //   v.hostElement.removeAttribute('contenteditable')
-      // }
+  private _reconcileClasses(
+    nextSelected: Set<BaseBlockComponent<any>>,
+    nextFocused: Set<EditableBlockComponent<any>>,
+  ) {
+    this._selectedSet.forEach(block => {
+      if (!nextSelected.has(block)) block.hostElement.classList.remove('selected')
     })
-    this._focusedSet.forEach(v => {
-      v.hostElement.classList.remove('focused')
+    this._focusedSet.forEach(block => {
+      if (!nextFocused.has(block)) block.hostElement.classList.remove('focused')
     })
-    this._selectedSet.clear()
-    this._focusedSet.clear()
+    nextSelected.forEach(block => {
+      if (!this._selectedSet.has(block)) this._addSelectedClass(block)
+    })
+    nextFocused.forEach(block => {
+      if (!this._focusedSet.has(block)) this._addFocusedClass(block)
+    })
+    this._selectedSet = nextSelected
+    this._focusedSet = nextFocused
   }
 
-  setSelected(selection: BlockCraft.Selection | null) {
-    this._clearAllClass()
-    if (!selection) return;
+  private _reconcileEmbedSelection(
+    selection: BlockCraft.Selection | null,
+    editableBlocks: Set<EditableBlockComponent<any>>,
+  ) {
+    const nextSelected = new Set<HTMLElement>()
 
-    const {isAllSelected, isInSameBlock} = selection
+    if (
+      selection &&
+      !selection.collapsed &&
+      typeof selection.contains === 'function'
+    ) {
+      editableBlocks.forEach(block => {
+        const scrollBlot = block.runtime?.scrollBlot
+        if (!scrollBlot) return
 
-    isAllSelected ? this.doc.root.hostElement.classList.add('all-selected') : this.doc.root.hostElement.classList.remove('all-selected')
-
-    if (isInSameBlock) {
-      this._setClass(selection.firstBlock)
-      return;
+        for (const leaf of scrollBlot.leaves) {
+          if (leaf.type !== BlotType.Embed) continue
+          const embed = leaf as EmbedBlot
+          const offset = scrollBlot.offsetOf(embed)
+          if (offset < 0) continue
+          try {
+            if (
+              selection.contains(block.id, offset) &&
+              selection.contains(block.id, offset + embed.length)
+            ) {
+              nextSelected.add(embed.cElement)
+            }
+          } catch {
+            // A concurrent view replacement can invalidate this presentation
+            // pass. The next model selection or mounted-window update retries.
+          }
+        }
+      })
     }
 
-    // Cross-block: mark start, end, and all between
-    this._setClass(selection.firstBlock)
-    this._setClass(selection.lastBlock)
-    const between = this.doc.queryBlocksBetween(selection.firstBlock, selection.lastBlock, false)
-    if (!between?.length) return
-    between.forEach(v => {
-      const b = this.doc.getBlockById(v)
-      this._setClass(<any>b)
+    this._selectedEmbedSet.forEach(element => {
+      if (!nextSelected.has(element)) {
+        element.classList.remove('bc-inline-embed--selected')
+      }
     })
+    nextSelected.forEach(element => {
+      if (!this._selectedEmbedSet.has(element)) {
+        element.classList.add('bc-inline-embed--selected')
+      }
+    })
+    this._selectedEmbedSet = nextSelected
+  }
+
+  setSelected(
+    selection: BlockCraft.Selection | null,
+    mountedRootIds?: readonly string[],
+  ) {
+    this._selection = selection
+    this._mountedRootIds = mountedRootIds
+    if (selection && selection !== this._retainedSelection) {
+      this._retainedSelection = null
+    }
+    selection = selection ?? this._retainedSelection
+    const nextSelected = new Set<BaseBlockComponent<any>>()
+    const nextFocused = new Set<EditableBlockComponent<any>>()
+    const nextEmbedCandidates = new Set<EditableBlockComponent<any>>()
+
+    if (selection) {
+      const mountedBlockIds = mountedRootIds
+        ? this._collectMountedBlockIds(mountedRootIds)
+        : undefined
+      const coveredIds = mountedRootIds
+        ? getMountedSelectionCoveredBlockIds(
+          selection,
+          this.doc,
+          mountedBlockIds!,
+        )
+        : getSelectionCoveredBlockIds(selection, this.doc)
+      coveredIds.forEach(id => this._collectPresentationBlocks(
+        id,
+        nextSelected,
+        nextFocused,
+        nextEmbedCandidates,
+      ))
+    }
+
+    this._reconcileClasses(nextSelected, nextFocused)
+    this._reconcileEmbedSelection(selection, nextEmbedCandidates)
+  }
+
+  private _collectPresentationBlocks(
+    blockId: string,
+    selected: Set<BaseBlockComponent<any>>,
+    focused: Set<EditableBlockComponent<any>>,
+    embedCandidates: Set<EditableBlockComponent<any>>,
+  ): void {
+    let block: BaseBlockComponent<any>
+    try {
+      block = this.doc.getBlockById(blockId) as BaseBlockComponent<any>
+    } catch {
+      return
+    }
+
+    // The absolute placement plane is infrastructure, not a selectable object.
+    // A range covering it still presents its mounted objects individually.
+    if (this.doc.placement?.isPlacementLayout?.(blockId)) {
+      for (const childId of block.childrenIds) {
+        if (this.doc.vm && !this.doc.vm.isMounted(childId)) continue
+        this._collectPresentationBlocks(childId, selected, focused, embedCandidates)
+      }
+      return
+    }
+
+    if (block.nodeType === BlockNodeType.editable) {
+      const editable = block as EditableBlockComponent<any>
+      embedCandidates.add(editable)
+      focused.add(editable)
+      return
+    }
+    selected.add(block)
+  }
+
+  private _collectMountedBlockIds(rootIds: readonly string[]): string[] {
+    const ids: string[] = []
+    const stack = [...rootIds].reverse()
+    const visited = new Set<string>()
+    while (stack.length) {
+      const blockId = stack.pop()!
+      if (visited.has(blockId)) continue
+      visited.add(blockId)
+      if (!this.doc.vm.isMounted(blockId)) continue
+      ids.push(blockId)
+      const children = this.doc.model.getChildrenIds(blockId)
+      for (let index = children.length - 1; index >= 0; index--) {
+        stack.push(children[index])
+      }
+    }
+    return ids
   }
 }

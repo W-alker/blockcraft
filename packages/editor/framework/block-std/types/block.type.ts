@@ -1,50 +1,38 @@
-import {SimpleBasicType, SimpleRecord, SimpleValue, UnknownRecord} from "../../../global";
-import {InlineModel} from "./inline.type";
+import type {SimpleRecord, UnknownRecord} from '@ccc/blockcraft/global/types';
+import {BlockNodeType, type BlockDescriptor, type InlineModel} from '@ccc/blockcraft/framework/model';
+export {
+  BlockNodeType, type IBlockProps, type IEditableBlockProps,
+  type ParagraphNextStyle,
+  type BlockPlaceholderMode, type IBaseMetadata, type IMetadata,
+  type BlockDescriptor, type BlockSnapshot,
+} from '@ccc/blockcraft/framework/model';
+
+export type BlockPlacementMode = 'relative' | 'absolute'
+export type BlockPlacementLayer = 'under' | 'over'
 
 /**
- * root = 'root',
- * block: 普通的块级节点，一般这代表它有children\
- * void: 无children的block节点，且不可编辑，类似html的 \<img /> 闭合标签类型 \
- * editable: 可编辑的文本块节点，和void一样，是最底层的block节点\
+ * Runtime coordinates in the nearest placement-plane layout pixels.
+ * Persisted IBlockProps.position uses a compact string.
+ *
+ * Layout mode is structural: a direct child of `placement-layout` or
+ * `object-group` is absolute; an ordinary root child remains in normal flow.
+ * Position therefore carries no duplicated `mode` or `unit` discriminator.
  */
-export enum BlockNodeType {
-  root = 'root',
-  block = 'block',
-  void = 'void',
-  editable = 'editable'
+export type BlockPosition = {
+  x: number
+  y: number
 }
 
-export interface IBaseMetadata {
-  folded?: boolean
-  selected?: boolean
-  createdTime?: number
-  lastModified?: {
-    time: number
-    [key: string]: SimpleBasicType
-  }
+export type ResolvedBlockPosition = {
+  mode: BlockPlacementMode
+  x: number
+  y: number
+  layer: BlockPlacementLayer
 }
 
-export type IMetadata = IBaseMetadata & SimpleRecord
-
-export interface IBlockProps {
-  textAlign?: 'center' | 'right'
-  depth?: number
-
-  [key: string]: SimpleValue
-}
-
-export interface IEditableBlockProps extends IBlockProps {
-  depth: number
-  heading?: number
-}
-
-export interface BaseBlockDesc<P extends SimpleRecord = SimpleRecord, M extends SimpleRecord = SimpleRecord> {
-  id: string
-  flavour: BlockCraft.BlockFlavour
-  nodeType: BlockNodeType | `${BlockNodeType}`
-  meta: IMetadata & M
-  props: IBlockProps & P
-}
+/** 编辑器描述继续受注册表约束；通用数据描述使用模型入口的 BlockDescriptor。 */
+export interface BaseBlockDesc<P extends SimpleRecord = SimpleRecord, M extends SimpleRecord = SimpleRecord>
+  extends BlockDescriptor<P, M, BlockCraft.BlockFlavour> {}
 
 export type IBlockSnapshot<P extends SimpleRecord = SimpleRecord, M extends SimpleRecord = SimpleRecord> =
   UnknownRecord

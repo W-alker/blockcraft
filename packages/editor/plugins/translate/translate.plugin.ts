@@ -4,7 +4,7 @@ import {
   createComponent,
   EnvironmentInjector
 } from "@angular/core";
-import { Subject, take, takeUntil } from "rxjs";
+import { Subject, Subscription, take, takeUntil } from "rxjs";
 import {
   DocPlugin,
   EditableBlockComponent,
@@ -99,6 +99,7 @@ export class TranslatePlugin extends DocPlugin {
   private _activeEditableBlock: EditableBlockComponent | null = null;
   private _translatedText = "";
   private _translateRequestId = 0;
+  private _sub = new Subscription();
 
   constructor(options: TranslatePluginOptions = {}) {
     super();
@@ -120,10 +121,14 @@ export class TranslatePlugin extends DocPlugin {
   init() {
     this.restorePersistedTargetLang();
     void this.loadSupportedLanguages();
-    this.doc.subscribeReadonlyChange(v => {
-      if (v) this.closePreview();
-    });
-    this.doc.onDestroy$.pipe(take(1)).subscribe(() => this.closePreview());
+    this._sub.add(
+      this.doc.subscribeReadonlyChange(v => {
+        if (v) this.closePreview();
+      })
+    );
+    this._sub.add(
+      this.doc.onDestroy$.pipe(take(1)).subscribe(() => this.closePreview())
+    );
   }
 
   setService(service: TranslatePluginService | null) {
@@ -139,7 +144,12 @@ export class TranslatePlugin extends DocPlugin {
   }
 
   private blockMenuResolver: BlockMenuResolver = (ctx: BlockMenuContext): BlockMenuSection[] => {
-    if (!this.translationService || !this.doc.isEditable(ctx.activeBlock)) return [];
+    if (
+      !this.translationService
+      || ctx.readonly.readonly
+      || !this.doc.isEditable(ctx.activeBlock)
+      || !this.isBlockAlive(ctx.activeBlock)
+    ) return [];
     return [
       {
         key: "translate-tools",
@@ -160,7 +170,7 @@ export class TranslatePlugin extends DocPlugin {
     if (event.item.name !== TRANSLATE_MENU_NAMES.translateParagraph || event.source !== "simple") {
       return false;
     }
-    if (!this.doc.isEditable(ctx.activeBlock)) {
+    if (ctx.readonly.readonly || !this.doc.isEditable(ctx.activeBlock) || !this.isBlockAlive(ctx.activeBlock)) {
       return false;
     }
     void this.translateParagraph(ctx.activeBlock);
@@ -172,6 +182,7 @@ export class TranslatePlugin extends DocPlugin {
       this.doc.messageService.warn("未配置翻译服务");
       return;
     }
+    if (!this.isBlockAlive(block)) return;
     const sourceText = block.textContent();
     if (!sourceText.trim()) {
       this.doc.messageService.warn("当前段落为空，无法翻译");
@@ -201,25 +212,34 @@ export class TranslatePlugin extends DocPlugin {
         targetLang,
       });
       if (requestId !== this._translateRequestId) return;
-      if (!this._previewRef || this._activeEditableBlock?.id !== block.id) return;
+      if (!this.isCurrentPreviewBlock(block)) return;
+      if (this.doc.readonlyManager.isReadonly(block)) {
+        this.closePreview();
+        return;
+      }
+      const previewRef = this._previewRef;
+      if (!previewRef) return;
       const resultText = (translated || "").trim();
       this._translatedText = resultText;
       if (!resultText) {
-        this._previewRef.setInput("errorText", "翻译返回为空，请稍后重试");
+        previewRef.setInput("errorText", "翻译返回为空，请稍后重试");
         return;
       }
-      this._previewRef.setInput("translatedText", resultText);
+      previewRef.setInput("translatedText", resultText);
     } catch (error) {
       if (requestId !== this._translateRequestId) return;
+      if (!this.isCurrentPreviewBlock(block)) return;
       const errorMessage = error instanceof Error ? error.message : "翻译失败，请稍后重试";
       this._previewRef?.setInput("errorText", errorMessage);
     } finally {
       if (requestId !== this._translateRequestId) return;
+      if (!this.isCurrentPreviewBlock(block)) return;
       this._previewRef?.setInput("loading", false);
     }
   }
 
   private openPreview(block: EditableBlockComponent) {
+    if (!this.isBlockAlive(block)) return;
     this.closePreview();
 
     this._activeEditableBlock = block;
@@ -251,7 +271,15 @@ export class TranslatePlugin extends DocPlugin {
 
     this._previewRef.instance.targetLangChange.pipe(takeUntil(this._closePreview$)).subscribe(code => {
       const nextCode = this.findLanguageCode(code) || code;
-      if (!nextCode || nextCode === this._selectedTargetLang || !this._activeEditableBlock) {
+      if (
+        !nextCode
+        || nextCode === this._selectedTargetLang
+        || !this._activeEditableBlock
+        || !this.isBlockAlive(this._activeEditableBlock)
+      ) {
+        if (this._activeEditableBlock && !this.isBlockAlive(this._activeEditableBlock)) {
+          this.closePreview();
+        }
         return;
       }
       this._selectedTargetLang = nextCode;
@@ -275,11 +303,19 @@ export class TranslatePlugin extends DocPlugin {
 
   private replaceOriginalText() {
     if (!this._activeEditableBlock) return;
+    if (!this.isBlockAlive(this._activeEditableBlock)) {
+      this.closePreview();
+      return;
+    }
     if (!this._translatedText.trim()) {
       this.doc.messageService.warn("当前没有可替换的翻译结果");
       return;
     }
     const block = this._activeEditableBlock;
+    if (this.doc.readonlyManager.isReadonly(block)) {
+      this.closePreview();
+      return;
+    }
     block.replaceText(0, block.textLength, this._translatedText);
     block.setInlineRange(this._translatedText.length);
     this.doc.messageService.success("已替换为翻译结果");
@@ -288,12 +324,20 @@ export class TranslatePlugin extends DocPlugin {
 
   private appendTranslatedText() {
     if (!this._activeEditableBlock) return;
+    if (!this.isBlockAlive(this._activeEditableBlock)) {
+      this.closePreview();
+      return;
+    }
     if (!this._translatedText.trim()) {
       this.doc.messageService.warn("当前没有可追加的翻译结果");
       return;
     }
 
     const block = this._activeEditableBlock;
+    if (this.doc.readonlyManager.isReadonly(block)) {
+      this.closePreview();
+      return;
+    }
     const startIndex = block.textLength;
     const separator = startIndex > 0 && !block.textContent().endsWith(STR_LINE_BREAK)
       ? STR_LINE_BREAK
@@ -313,6 +357,7 @@ export class TranslatePlugin extends DocPlugin {
 
   destroy() {
     this.closePreview();
+    this._sub.unsubscribe();
   }
 
   private async loadSupportedLanguages() {
@@ -431,6 +476,7 @@ export class TranslatePlugin extends DocPlugin {
     componentRef: ComponentRef<TranslationPreviewComponent>;
     hostElement: HTMLElement;
   } | null {
+    if (!this.isBlockAlive(block)) return null;
     const parent = block.hostElement.parentElement;
     if (!parent) return null;
 
@@ -458,5 +504,20 @@ export class TranslatePlugin extends DocPlugin {
     this._previewRef = null;
     this._activeEditableBlock = null;
     this._translatedText = "";
+  }
+
+  private isCurrentPreviewBlock(block: EditableBlockComponent) {
+    return !!this._previewRef
+      && this._activeEditableBlock?.id === block.id
+      && this.isBlockAlive(block);
+  }
+
+  private isBlockAlive(block: BlockCraft.BlockComponent | null | undefined) {
+    if (!block) return false;
+    try {
+      return this.doc.getBlockById(block.id) === block;
+    } catch {
+      return false;
+    }
   }
 }

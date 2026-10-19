@@ -1,3 +1,4 @@
+import {normalizeShapeRotation} from '../../blocks/shape-block/shape.types';
 import {IBlockSnapshot} from "../../framework/block-std/types/block.type";
 import {InlineModel} from "../../framework/block-std/types/inline.type";
 import katex from "katex";
@@ -8,20 +9,71 @@ import {
   createImageEnhancementTask,
   createMediaSourceEnhancementTask,
   createMermaidEnhancementTask,
+  createSnapshotIframeElement,
 } from "../enhancers";
-import {SnapshotBlockRenderer, SnapshotRenderContext} from "../types";
+import {
+  SnapshotBlockRenderer,
+  SnapshotEnhancementTask,
+  SnapshotRenderContext,
+  MountedSnapshotNode,
+} from "../types";
+import {
+  BlockObjectSizeProps,
+  normalizeObjectSize,
+} from "../../framework/services";
+import type {BlockObjectSizingCapability} from "../../framework/block-std/schema/block-schema";
+import {
+  destroyResourcePlaceholder,
+  iframeResourcePlaceholderAdapter,
+  imageResourcePlaceholderAdapter,
+  ResourcePlaceholderAdapter,
+  ResourcePlaceholderController,
+  ResourcePlaceholderElement,
+  videoResourcePlaceholderAdapter,
+} from '@ccc/blockcraft/global/resource-placeholder';
 
 const MEDIA_FLAVOURS = new Set([
   "image",
   "video",
-  "audio",
   "attachment",
   "formula",
-  "mermaid",
 ]);
+const IMAGE_OBJECT_SIZING: BlockObjectSizingCapability = {
+  defaultWr: 100,
+  defaultAr: 4 / 3,
+};
+const VIDEO_OBJECT_SIZING: BlockObjectSizingCapability = {
+  defaultWr: 100,
+  defaultAr: 16 / 9,
+};
 
 export function createMediaRenderers(): SnapshotBlockRenderer[] {
   return [{
+    canRender: snapshot => snapshot.flavour === "audio",
+    render: (ctx, snapshot) => renderAudio(snapshot, ctx),
+    patch(ctx, current, next) {
+      // Stateful controls must keep their listeners on the mounted DOM.
+      const keepPlayer = current.snapshot.props['url'] === next.props['url'] && current.element.querySelector('audio')
+      const fresh = keepPlayer ? createBlockShell(next) : renderAudio(next, ctx).element
+      for (const name of current.element.getAttributeNames()) current.element.removeAttribute(name)
+      for (const name of fresh.getAttributeNames()) current.element.setAttribute(name, fresh.getAttribute(name)!)
+      if (keepPlayer) {
+        const name = current.element.querySelector<HTMLElement>('.audio-name')!
+        name.textContent = name.title = `${next.props['name'] || "音频"}`
+        const audio = current.element.querySelector("audio")!
+        if (!audio.hasAttribute("src")) {
+          const url = resolveUrl(`${next.props['url'] || ""}`, ctx.options.baseUrl)
+          ctx.scheduleEnhancement(createMediaSourceEnhancementTask(audio, url, `audio:${next.id}:${url}`))
+        }
+      } else {
+        current.element.replaceChildren(...Array.from(fresh.childNodes))
+      }
+    },
+  }, {
+    canRender: snapshot => snapshot.flavour === "mermaid",
+    render: (ctx, snapshot) => renderMermaid(snapshot, ctx),
+    patch: (ctx, current, next) => patchMermaid(current, next, ctx),
+  }, {
     canRender: (snapshot) => MEDIA_FLAVOURS.has(snapshot.flavour),
     render(ctx, snapshot) {
       switch (snapshot.flavour) {
@@ -29,14 +81,10 @@ export function createMediaRenderers(): SnapshotBlockRenderer[] {
           return renderImage(snapshot, ctx)
         case "video":
           return renderVideo(snapshot, ctx)
-        case "audio":
-          return renderAudio(snapshot, ctx)
         case "attachment":
           return renderAttachment(snapshot, ctx)
         case "formula":
           return renderFormula(snapshot, ctx)
-        case "mermaid":
-          return renderMermaid(snapshot, ctx)
         default:
           return {element: createBlockShell(snapshot)}
       }
@@ -54,24 +102,42 @@ function renderImage(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
 
   const wrapper = document.createElement("div")
   wrapper.classList.add("img-wrapper")
+  const rotation = normalizeShapeRotation(props["rotation"])
+  if (rotation) wrapper.style.transform = `rotate(${rotation}deg)`
+  wrapper.setAttribute("data-bc-print-visual-surface", "")
 
   const img = document.createElement("img")
   img.loading = "lazy"
-  if (props["width"]) {
-    img.style.width = `${props["width"]}px`
-  }
-  if (props["height"]) {
-    img.style.height = `${props["height"]}px`
-  }
+  applySnapshotObjectSizing(
+    figure,
+    wrapper,
+    img,
+    props,
+    IMAGE_OBJECT_SIZING,
+  )
   wrapper.append(img)
+  if (props['fit'] === 'fill') img.style.objectFit = 'fill'
 
   const src = resolveUrl(`${props["src"] || ""}`, ctx.options.baseUrl)
   if (src) {
-    ctx.scheduleEnhancement(createImageEnhancementTask(img, src, `image:${snapshot.id}:${src}`))
+    scheduleSnapshotResourceEnhancement(
+      ctx,
+      createImageEnhancementTask(img, src, `image:${snapshot.id}:${src}`),
+      wrapper,
+      img,
+      imageResourcePlaceholderAdapter,
+      src,
+    )
   } else {
+    element.setAttribute("data-bc-image-empty", "")
     const placeholder = document.createElement("div")
     placeholder.classList.add("upload-hint")
-    placeholder.textContent = "点击插入图片"
+    const icon = document.createElement("i")
+    icon.className = "bc_icon bc_tianjiatupian"
+    icon.setAttribute("aria-hidden", "true")
+    const label = document.createElement("span")
+    label.textContent = "点击插入图片"
+    placeholder.append(icon, label)
     wrapper.replaceChildren(placeholder)
   }
 
@@ -96,9 +162,14 @@ function renderVideo(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
 
   const wrapper = document.createElement("div")
   wrapper.classList.add("video-block__wrapper", "resizable-container")
-  if (props["width"]) {
-    wrapper.style.width = `${props["width"]}px`
-  }
+  wrapper.setAttribute("contenteditable", "false")
+  applySnapshotObjectSizing(
+    wrapper,
+    wrapper,
+    wrapper,
+    props,
+    VIDEO_OBJECT_SIZING,
+  )
 
   const container = document.createElement("div")
   container.classList.add("video-block__container")
@@ -106,11 +177,27 @@ function renderVideo(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   if (isEmbedVideo(url, `${props["sourceType"] || ""}`)) {
     const embed = document.createElement("div")
     embed.classList.add("embed-container")
+    // This inline background is part of the live video block contract and is
+    // visible before/when an iframe is unavailable.
+    embed.style.background = "#1a1a1a"
     container.append(embed)
 
     const embedUrl = toVideoEmbedUrl(url)
-    if (embedUrl) {
-      ctx.scheduleEnhancement(createIframeEnhancementTask(embed, embedUrl, `video-iframe:${snapshot.id}:${embedUrl}`))
+    if (embedUrl && ctx.options.resourcePolicy !== "off") {
+      const iframe = createSnapshotIframeElement()
+      embed.append(iframe)
+      scheduleSnapshotResourceEnhancement(
+        ctx,
+        createIframeEnhancementTask(
+          embed,
+          embedUrl,
+          `video-iframe:${snapshot.id}:${embedUrl}`,
+        ),
+        wrapper,
+        iframe,
+        iframeResourcePlaceholderAdapter,
+        embedUrl,
+      )
     }
   } else if (isDirectVideo(url, props["type"])) {
     const videoWrapper = document.createElement("div")
@@ -118,12 +205,25 @@ function renderVideo(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
     const video = document.createElement("video")
     video.controls = true
     video.preload = "metadata"
-    if (props["poster"]) {
-      video.poster = `${props["poster"]}`
-    }
     videoWrapper.append(video)
     container.append(videoWrapper)
-    ctx.scheduleEnhancement(createMediaSourceEnhancementTask(video, url, `video:${snapshot.id}:${url}`))
+    scheduleSnapshotResourceEnhancement(
+      ctx,
+      createMediaSourceEnhancementTask(
+        video,
+        url,
+        `video:${snapshot.id}:${url}`,
+      ),
+      wrapper,
+      video,
+      videoResourcePlaceholderAdapter,
+      url,
+      () => {
+        if (props["poster"]) {
+          video.poster = `${props["poster"]}`
+        }
+      },
+    )
   } else {
     const preview = document.createElement("div")
     preview.classList.add("video-link-preview")
@@ -136,36 +236,172 @@ function renderVideo(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   return {element}
 }
 
+function scheduleSnapshotResourceEnhancement(
+  ctx: SnapshotRenderContext,
+  task: SnapshotEnhancementTask<string>,
+  frame: HTMLElement,
+  element: ResourcePlaceholderElement,
+  adapter: ResourcePlaceholderAdapter,
+  resourceKey: string,
+  beforeApply?: () => void,
+): void {
+  if (ctx.options.resourcePolicy === "off") {
+    return
+  }
+
+  const controller = new ResourcePlaceholderController(frame)
+  ctx.registerDisposable?.(
+    frame,
+    () => destroyResourcePlaceholder(frame),
+  )
+  const apply = task.apply
+  const wrappedTask: SnapshotEnhancementTask<string> = {
+    ...task,
+    apply(value) {
+      controller.bind({
+        element,
+        adapter,
+        resourceKey,
+      })
+      beforeApply?.()
+      apply(value)
+    },
+  }
+  ctx.scheduleEnhancement(wrappedTask)
+}
+
+function applySnapshotObjectSizing(
+  widthTarget: HTMLElement,
+  ratioTarget: HTMLElement,
+  legacyTarget: HTMLElement,
+  props: Record<string, unknown>,
+  capability: BlockObjectSizingCapability,
+): void {
+  const normalized = normalizeObjectSize(
+    props as BlockObjectSizeProps,
+    capability,
+  )
+  if (normalized.source === "legacy") {
+    const width = Number(props["width"])
+    const height = Number(props["height"])
+    if (Number.isFinite(width) && width > 0) {
+      legacyTarget.style.width = `${width}px`
+    }
+    if (
+      legacyTarget !== widthTarget &&
+      Number.isFinite(height) &&
+      height > 0
+    ) {
+      legacyTarget.style.height = `${height}px`
+    }
+    return
+  }
+
+  ratioTarget.dataset["bcObjectSizing"] = ""
+  widthTarget.style.width = `${normalized.wr}%`
+  ratioTarget.style.aspectRatio = `${normalized.ar}`
+  if (ratioTarget !== widthTarget) ratioTarget.style.width = "100%"
+}
+
 function renderAudio(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   const element = createBlockShell(snapshot)
   const props = snapshot.props as Record<string, unknown>
   const url = resolveUrl(`${props["url"] || ""}`, ctx.options.baseUrl)
   if (!url) {
-    element.append(createEmptyMediaState("audio"))
+    const hint = document.createElement("div")
+    hint.className = "upload-hint"
+    hint.contentEditable = "false"
+    hint.innerHTML = '<i class="bc_icon bc_yinpin" aria-hidden="true"></i><span>点击插入音频</span>'
+    element.append(hint)
     return {element}
   }
 
   const wrapper = document.createElement("div")
-  wrapper.classList.add("audio-block__wrapper")
-
-  const player = document.createElement("div")
-  player.classList.add("audio-player")
-
-  const info = document.createElement("div")
-  info.classList.add("audio-info")
-  if (props["name"]) {
-    const name = document.createElement("div")
-    name.classList.add("audio-name")
-    name.textContent = `${props["name"]}`
-    info.append(name)
+  wrapper.className = "audio-block__wrapper"
+  wrapper.contentEditable = "false"
+  // Static markup only; user-provided names are assigned through textContent.
+  wrapper.innerHTML = `
+    <div class="audio-heading">
+      <i class="audio-heading__icon bc_icon bc_yinpin" aria-hidden="true"></i>
+      <span class="audio-name"></span><span class="audio-status">0:00</span>
+    </div>
+    <div class="audio-player">
+      <button type="button" class="audio-player__button audio-player__button--primary cs-btn cs-btn-primary cs-btn-sm cs-btn-shape-circle cs-btn-icon-only">
+        <span class="cs-icon cs-btn-icon" aria-hidden="true"><i class="csicon csicon-play-bold"></i></span>
+      </button>
+      <span class="audio-player__time audio-player__time--current">0:00</span>
+      <input class="audio-player__seek" type="range" min="0" max="0" step="0.01" value="0" aria-label="音频播放进度">
+      <span class="audio-player__time">0:00</span>
+      <button type="button" class="audio-player__button audio-player__button--volume cs-btn cs-btn-text cs-btn-sm cs-btn-shape-circle cs-btn-icon-only">
+        <span class="cs-icon cs-btn-icon" aria-hidden="true"><i class="csicon csicon-volume"></i></span>
+      </button>
+      <audio preload="metadata"></audio>
+    </div>`
+  const name = wrapper.querySelector<HTMLElement>(".audio-name")!
+  name.textContent = name.title = `${props["name"] || "音频"}`
+  const audio = wrapper.querySelector("audio")!
+  const play = wrapper.querySelector<HTMLButtonElement>(".audio-player__button--primary")!
+  const mute = wrapper.querySelector<HTMLButtonElement>(".audio-player__button--volume")!
+  const seek = wrapper.querySelector<HTMLInputElement>("input")!
+  const times = wrapper.querySelectorAll<HTMLElement>(".audio-player__time")
+  const status = wrapper.querySelector<HTMLElement>(".audio-status")!
+  let failed = false
+  let disposed = false
+  const formatTime = (seconds: number) => {
+    const value = Number.isFinite(seconds) && seconds > 0 ? seconds : 0
+    return `${Math.floor(value / 60)}:${Math.floor(value % 60).toString().padStart(2, "0")}`
   }
-
-  const audio = document.createElement("audio")
-  audio.controls = true
-  audio.preload = "metadata"
-  info.append(audio)
-  player.append(info)
-  wrapper.append(player)
+  const sync = () => {
+    if (disposed) return
+    const duration = Number.isFinite(audio.duration) ? Math.max(0, audio.duration) : 0
+    const playing = !audio.paused && !audio.ended
+    play.disabled = mute.disabled = failed || ctx.options.resourcePolicy === "off"
+    seek.disabled = play.disabled || duration <= 0
+    play.setAttribute("aria-label", playing ? "暂停音频" : "播放音频")
+    play.title = playing ? "暂停" : "播放"
+    play.querySelector("i")!.className = `csicon csicon-${playing ? "pause-bold" : "play-bold"}`
+    mute.setAttribute("aria-label", audio.muted ? "取消静音" : "静音")
+    mute.title = audio.muted ? "取消静音" : "静音"
+    mute.querySelector("i")!.className = `csicon csicon-${audio.muted ? "volume-off" : "volume"}`
+    times[0]!.textContent = formatTime(audio.currentTime)
+    times[1]!.textContent = formatTime(duration)
+    status.textContent = failed ? "无法播放" : formatTime(duration)
+    status.classList.toggle("audio-status--error", failed)
+    seek.max = `${duration}`
+    seek.value = `${audio.currentTime || 0}`
+    seek.style.setProperty("--audio-progress", `${duration ? Math.min(100, Math.max(0, audio.currentTime / duration * 100)) : 0}%`)
+  }
+  const cleanups: (() => void)[] = []
+  const listen = (target: EventTarget, event: string, callback: EventListener) => {
+    target.addEventListener(event, callback)
+    cleanups.push(() => target.removeEventListener(event, callback))
+  }
+  listen(play, "click", event => {
+    event.stopPropagation()
+    if (play.disabled) return
+    if (!audio.paused) audio.pause()
+    else void audio.play().catch(sync)
+  })
+  listen(mute, "click", event => {
+    event.stopPropagation()
+    if (!mute.disabled) audio.muted = !audio.muted
+  })
+  listen(seek, "input", () => {
+    if (seek.disabled || !Number.isFinite(seek.valueAsNumber)) return
+    audio.currentTime = Math.min(audio.duration, Math.max(0, seek.valueAsNumber))
+    sync()
+  })
+  for (const event of ["durationchange", "timeupdate", "play", "pause", "ended", "volumechange"]) listen(audio, event, sync)
+  listen(audio, "loadedmetadata", () => { failed = false; sync() })
+  listen(audio, "error", () => { failed = true; sync() })
+  ctx.registerDisposable?.(wrapper, () => {
+    disposed = true
+    cleanups.forEach(cleanup => cleanup())
+    audio.pause()
+    audio.removeAttribute("src")
+    audio.load()
+  })
+  sync()
   element.append(wrapper)
 
   ctx.scheduleEnhancement(createMediaSourceEnhancementTask(audio, url, `audio:${snapshot.id}:${url}`))
@@ -175,6 +411,28 @@ function renderAudio(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
 function renderAttachment(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   const element = createBlockShell(snapshot)
   const props = snapshot.props as Record<string, unknown>
+  const url = `${props["url"] || ""}`
+
+  if (!url) {
+    const empty = document.createElement("div")
+    empty.classList.add("attachment-block__empty")
+    empty.setAttribute("contenteditable", "false")
+    const emptyIcon = document.createElement("i")
+    emptyIcon.className = "bc_icon bc_wenjian-color"
+    const emptyLabel = document.createElement("span")
+    emptyLabel.textContent = "上传文件"
+    empty.append(emptyIcon, emptyLabel)
+    element.append(empty)
+    return {element}
+  }
+
+  // Match the live attachment order: the small file marker is positioned by
+  // the theme, while the large type icon stays in the trailing wrapper.
+  const prefix = document.createElement("div")
+  prefix.classList.add("attachment-block__prefix")
+  const prefixIcon = document.createElement("i")
+  prefixIcon.className = "bc_icon bc_wenjian-color"
+  prefix.append(prefixIcon)
 
   const iconWrapper = document.createElement("div")
   iconWrapper.classList.add("attachment-block__icon-wrapper")
@@ -219,7 +477,7 @@ function renderAttachment(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) 
   size.textContent = formatFileSize(Number(props["size"] || 0))
 
   info.append(name, size)
-  element.append(iconWrapper, info)
+  element.append(prefix, info, iconWrapper)
   return {element}
 }
 
@@ -264,24 +522,10 @@ function renderFormula(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
 
 function renderMermaid(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   const element = createBlockShell(snapshot)
-  const props = snapshot.props as Record<string, unknown>
-  const mode = `${props["mode"] || "text"}`
-  element.setAttribute("data-mode", mode)
-
-  const head = document.createElement("div")
-  head.classList.add("head")
-  const label = document.createElement("div")
-  label.classList.add("btn")
-  label.textContent = "Mermaid"
-  head.append(label)
+  element.setAttribute("data-mode", "graph")
 
   const content = document.createElement("div")
   content.classList.add("content")
-
-  const textContainer = document.createElement("div")
-  textContainer.classList.add("text-container", "children-render-container")
-  const mermaidChildren = snapshot.children as IBlockSnapshot[]
-  mermaidChildren.forEach((child) => textContainer.append(ctx.renderBlock(child)))
 
   const graphContainer = document.createElement("div")
   graphContainer.classList.add("graph-container")
@@ -289,27 +533,33 @@ function renderMermaid(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   graphCon.classList.add("graph-con")
   graphContainer.append(graphCon)
 
-  content.append(textContainer, graphContainer)
-  element.append(head, content)
-
-  const source = collectMermaidSource(snapshot)
-  if (mode !== "text") {
-    const task = createMermaidEnhancementTask(
-      ctx.options,
-      source,
-      graphCon,
-      `mermaid:${snapshot.id}:${source}`
-    )
-    if (task) {
-      ctx.scheduleEnhancement(task)
-    } else if (!source.trim()) {
-      graphCon.textContent = "Mermaid"
-    } else {
-      graphCon.textContent = source
-    }
-  }
+  content.append(graphContainer)
+  element.append(content)
+  scheduleMermaidGraph(snapshot, ctx, graphCon)
 
   return {element}
+}
+
+function patchMermaid(current: MountedSnapshotNode, next: IBlockSnapshot, ctx: SnapshotRenderContext) {
+  const shell = createBlockShell(next)
+  for (const name of current.element.getAttributeNames()) current.element.removeAttribute(name)
+  for (const name of shell.getAttributeNames()) current.element.setAttribute(name, shell.getAttribute(name)!)
+  current.element.setAttribute("data-mode", "graph")
+
+  const graph = current.element.querySelector<HTMLElement>(".graph-con")
+  if (!graph || !collectMermaidSource(next).trim()) {
+    // Replacing an emptied target also invalidates any late render for its old source.
+    current.element.replaceChildren(...Array.from(renderMermaid(next, ctx).element.childNodes))
+    return
+  }
+  // Keep the last valid SVG while an incomplete streamed source is rendering.
+  scheduleMermaidGraph(next, ctx, graph)
+}
+
+function scheduleMermaidGraph(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext, target: HTMLElement) {
+  const source = collectMermaidSource(snapshot)
+  const task = createMermaidEnhancementTask(ctx.options, source, target, `mermaid:${snapshot.id}:${source}`)
+  if (task) ctx.scheduleEnhancement(task)
 }
 
 function createEmptyMediaState(kind: "video" | "audio") {

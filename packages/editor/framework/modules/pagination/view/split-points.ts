@@ -1,0 +1,242 @@
+// packages/editor/framework/modules/pagination/view/split-points.ts
+//
+// 可拆块的安全拆分点：默认只测超页块，填写区为优先拆分始终提供切点，
+// 用 Range.getClientRects()（文本行盒）/ <tr>（表格行）测出「块顶起算的安全切点（px）」，
+// 交给纯引擎在跨页处切片，避免 PDF 导出时 overflow:hidden 把超大块尾部直接截断丢内容。
+//
+// 放在 view/（DOM 测量层，与 live-height-source 同层），保持 engine/ 纯逻辑无 DOM 的不变量。
+//
+// 跨浏览器注意：getClientRects() 在缩放下有亚像素抖动，按「垂直重叠」聚类成行（容差 1px）；
+// 偏移以块 border-box 顶（getBoundingClientRect().top）为原点，故落在 (0, offsetHeight) 内，
+// 严格小于引擎用的块总高（offsetHeight + marginBottom），是合法内部切点。
+
+import {measureInlineFloatPaginationBands} from '../../../block-std/inline/runtime/inline-float-layout';
+import {isSequentialPaginationContainer, paginationContainerElements} from './container-pagination';
+
+export interface SplitPointsOptions {
+  /** 拆分时每侧至少保留的行/行盒数（widow/orphan 控制），默认 2。 */
+  widowOrphanLines?: number;
+  /** 只读顺序容器测量：填写区内文本优先拆分，其他短子块保持整体。 */
+  contentHeight?: number;
+}
+
+const DEFAULT_WIDOW_ORPHAN = 2;
+/** 行聚类容差（px）：同一行内不同字号行盒底边的亚像素差异。真实行间距远大于此。 */
+const LINE_MERGE_TOLERANCE = 1;
+
+interface LineBox {
+  top: number;
+  bottom: number;
+}
+
+/**
+ * 计算块的安全拆分偏移（块 border-box 顶起算 px，升序、严格在 (0, 高) 内）。
+ * - `table`：按 `<tr>` 底边（按行拆，表头重复留 v2）。
+ * - 其它 editable（paragraph / blockquote / caption / list / code / mermaid-textarea…）：按文本行盒底边。
+ * 过滤 widow/orphan：保证每侧 ≥ `widowOrphanLines` 行。
+ * 测不到（无内容 / 单行 / 行数不足两侧最小行）→ 返回 `[]`，引擎退化为原子（v1 允许溢出）。
+ */
+export function computeSplitOffsets(el: HTMLElement, flavour: string, opts: SplitPointsOptions = {}): number[] {
+  const minLines = Math.max(1, Math.floor(opts.widowOrphanLines ?? DEFAULT_WIDOW_ORPHAN));
+  if (flavour === 'table') return computeTableSplitOffsets(el, opts).all;
+  if (isSequentialPaginationContainer(flavour)) return computeContainerSplitOffsets(el, opts);
+  const originTop = el.getBoundingClientRect().top;
+  const cuts = widowOrphanCuts(lineBottoms(el, originTop), minLines);
+  return excludeCutsInsideVerticalBands(
+    cuts,
+    measureInlineFloatPaginationBands(el, originTop),
+  );
+}
+
+/** 无 InlineRuntime 的只读导出后备路径，按顺序容器的真实子块边界拆分。 */
+function computeContainerSplitOffsets(el: HTMLElement, opts: SplitPointsOptions): number[] {
+  const origin = el.getBoundingClientRect().top;
+  const cuts: number[] = [];
+  let hasContent = false;
+  const visit = (region: HTMLElement, parentInset = 0) => {
+    const elements = paginationContainerElements(region);
+    if (!elements) return;
+    const {content, padding} = elements;
+    const style = getComputedStyle(region);
+    const contentStyle = getComputedStyle(padding);
+    const inset = parentInset + (parseFloat(style.borderTopWidth) || 0)
+      + (parseFloat(style.borderBottomWidth) || 0)
+      + (parseFloat(contentStyle.paddingTop) || 0) + (parseFloat(contentStyle.paddingBottom) || 0);
+    const budget = Math.max(1, (opts.contentHeight ?? Number.POSITIVE_INFINITY) - inset);
+    for (const child of Array.from(content.children) as HTMLElement[]) {
+      const childStyle = getComputedStyle(child);
+      if (!child.hasAttribute('data-block-id') || childStyle.display === 'none' || childStyle.position === 'absolute') continue;
+      const rect = child.getBoundingClientRect();
+      const top = rect.top - origin;
+      if (hasContent) cuts.push(top);
+      if (child.classList.contains('render-unit-block')
+        || (child.classList.contains('callout-block') && rect.height > budget)) {
+        visit(child, inset);
+        continue;
+      }
+      hasContent = true;
+      const fillingText = region.classList.contains('render-unit-block')
+        && child.getAttribute('data-node-type') === 'editable';
+      if (rect.height <= budget && !fillingText) continue;
+      if (child.classList.contains('table-block')) {
+        cuts.push(...computeTableSplitOffsets(child, opts).all.map(offset => top + offset));
+      } else if (child.getAttribute('data-node-type') === 'editable' && !child.classList.contains('code-block')) {
+        cuts.push(...computeSplitOffsets(child, 'paragraph', opts).map(offset => top + offset));
+      }
+    }
+  };
+  visit(el);
+  return [...new Set(cuts)].filter(cut => cut > 0 && cut < el.offsetHeight).sort((a, b) => a - b);
+}
+
+/**
+ * 排除严格落在环绕对象垂直内部的文本切点。区间上下边界仍是合法切点，
+ * 这样打印 fallback 可以在环绕带之前或之后断页，而不会把对象本身裁成两半。
+ */
+export function excludeCutsInsideVerticalBands(
+  cuts: readonly number[],
+  bands: readonly {top: number; bottom: number}[],
+): number[] {
+  const validBands = bands.filter(band =>
+    Number.isFinite(band.top)
+    && Number.isFinite(band.bottom)
+    && band.bottom > band.top,
+  );
+  if (!validBands.length) return [...cuts];
+  return cuts.filter(cut => !validBands.some(
+    band => cut > band.top && cut < band.bottom,
+  ));
+}
+
+/**
+ * 表格按行切点（导出侧从渲染 DOM 读）。返回：
+ * - `all`：所有行边界（widow/orphan 过滤）；跨合并单元格的边界也在内（断在此会拆分该合并单元格）。
+ * - `preferred`：「干净」行边界（不跨合并单元格）；引擎优先选这些，实在不行才切跨合并的边界。
+ * 用本表自身的 `HTMLTableElement.rows`（不含嵌套表行）而非 querySelectorAll('tr')，对未来放开嵌套也稳健。
+ */
+export function computeTableSplitOffsets(el: HTMLElement, opts: SplitPointsOptions = {}): {all: number[]; preferred: number[]} {
+  const minLines = Math.max(1, Math.floor(opts.widowOrphanLines ?? DEFAULT_WIDOW_ORPHAN));
+  const originTop = el.getBoundingClientRect().top;
+  const tableEl = el.querySelector('table') as HTMLTableElement | null;
+  const rows = (tableEl ? Array.from(tableEl.rows) : Array.from(el.querySelectorAll('tr'))) as HTMLElement[];
+  const bottoms = rows.map(r => Math.round(r.getBoundingClientRect().bottom - originTop));
+  return {
+    // all = 可断边界，**排除带内容合并单元格内部**（无法跨页拆、拆开必溢出 → keep-together），与屏幕一致；
+    // 空合并单元格内部仍可断。无内容合并时与 widowOrphanCuts 等价。
+    all: rowSplitOffsets(bottoms, domRowContentCoverage(rows), minLines),
+    preferred: rowSplitOffsets(bottoms, domRowCoverage(rows), minLines),
+  };
+}
+
+/**
+ * 逐行判定「该行是否被上方某个**带内容**的 rowspan 单元格覆盖」（渲染 DOM 版，对标屏幕 `cell.hasContent`）。
+ * 带内容竖向合并单元格无法跨页拆（内容流不进空续段、必溢出），故其内部边界完全不可断 → keep-together。
+ * 「带内容」= 去零宽空格后有文本，或含媒体/void 元素。
+ */
+function domRowContentCoverage(rows: HTMLElement[]): boolean[] {
+  const n = rows.length;
+  const covered = new Array<boolean>(n).fill(false);
+  for (let r = 0; r < n; r++) {
+    for (const cell of Array.from(rows[r].children)) {
+      if (cell.tagName !== 'TD' && cell.tagName !== 'TH') continue;
+      const rs = parseInt(cell.getAttribute('rowspan') || '1', 10) || 1;
+      if (rs <= 1) continue;
+      const hasContent = (cell.textContent || '').replace(/[​\s]/g, '').length > 0
+        || !!cell.querySelector('img, video, audio, iframe, canvas, [data-node-type="void"]');
+      if (!hasContent) continue;
+      for (let rr = r + 1; rr < r + rs && rr < n; rr++) covered[rr] = true;
+    }
+  }
+  return covered;
+}
+
+/**
+ * 逐行判定「该行是否被上方某个 rowspan 单元格覆盖」（来自渲染 DOM 的 <td rowspan>）。
+ * `covered[r] === true` ⇔ 存在起始于 <r 行、rowspan 延伸到 r 行的单元格 → 边界 r 被合并单元格跨越，不可切。
+ * 只需布尔（任意列被覆盖即可），无需精确列定位，故对 colspan 不敏感、实现简单稳健。
+ */
+function domRowCoverage(rows: HTMLElement[]): boolean[] {
+  const n = rows.length;
+  const covered = new Array<boolean>(n).fill(false);
+  for (let r = 0; r < n; r++) {
+    for (const cell of Array.from(rows[r].children)) {
+      if (cell.tagName !== 'TD' && cell.tagName !== 'TH') continue;
+      const rs = parseInt(cell.getAttribute('rowspan') || '1', 10) || 1;
+      for (let rr = r + 1; rr < r + rs && rr < n; rr++) covered[rr] = true;
+    }
+  }
+  return covered;
+}
+
+/**
+ * 文本行盒底边（块顶起算 px，升序）。按垂直重叠把行盒聚类成行。
+ * 逐个后代文本节点取 Range.getClientRects()（每个换行片段一个 rect）——比对整个 host
+ * selectNodeContents 更稳：后者在含块级子节点/嵌套结构时各浏览器返回不一致（实测可能为空）。
+ */
+function lineBottoms(el: HTMLElement, originTop: number): number[] {
+  const doc = el.ownerDocument;
+  const walker = doc.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  const rects: DOMRect[] = [];
+  let node = walker.nextNode();
+  while (node) {
+    if ((node.nodeValue ?? '').trim()) {
+      const range = doc.createRange();
+      range.selectNodeContents(node);
+      for (const r of Array.from(range.getClientRects())) {
+        if (r.height > 0 && r.width > 0) rects.push(r);
+      }
+    }
+    node = walker.nextNode();
+  }
+
+  const sorted = rects.slice().sort((a, b) => a.top - b.top || a.bottom - b.bottom);
+  const lines: LineBox[] = [];
+  for (const r of sorted) {
+    const last = lines[lines.length - 1];
+    // top 落在当前行底边之上（容差）= 与该行垂直重叠 → 并入同一行，取最大底边。
+    if (last && r.top < last.bottom - LINE_MERGE_TOLERANCE) {
+      last.bottom = Math.max(last.bottom, r.bottom);
+      last.top = Math.min(last.top, r.top);
+    } else {
+      lines.push({top: r.top, bottom: r.bottom});
+    }
+  }
+  return lines.map(l => Math.round(l.bottom - originTop));
+}
+
+/**
+ * 行底边数组 → 合法切点。在第 k 行后切（1 ≤ k ≤ L-1）= 偏移 bottoms[k-1]，
+ * 上方 k 行、下方 L-k 行。要求两侧 ≥ minLines → minLines ≤ k ≤ L-minLines。
+ * 故有效下标区间 [minLines-1, L-minLines-1]；L < 2*minLines 时无合法切点。
+ * 末行底边（= 块内容底）永远被排除，结果都是严格内部切点。
+ *
+ * 导出供单测：纯整数运算，是 widow/orphan 语义的真相来源。
+ */
+export function widowOrphanCuts(bottoms: number[], minLines: number): number[] {
+  const L = bottoms.length;
+  if (L < 2 * minLines) return [];
+  const out: number[] = [];
+  for (let i = minLines - 1; i <= L - minLines - 1; i++) {
+    if (bottoms[i] > 0) out.push(bottoms[i]);
+  }
+  return out;
+}
+
+/**
+ * 表格按行切点：在 widow/orphan 窗口内，**额外跳过被合并单元格（rowspan）跨越的边界**。
+ * - `bottoms[i]`：第 i 行底边（块顶起算 px，升序）。
+ * - `coveredFromAbove[r]`：第 r 行是否被起始于更上方的 rowspan 单元格覆盖（边界 r 被跨越）。
+ * 在第 i 行底切 = 边界 i+1；若 `coveredFromAbove[i+1]` 为真，则该处切会把合并单元格腰斩，跳过。
+ *
+ * `coveredFromAbove` 全 false 时等价于 {@link widowOrphanCuts}。纯逻辑、可单测。
+ */
+export function rowSplitOffsets(bottoms: number[], coveredFromAbove: boolean[], minLines: number): number[] {
+  const L = bottoms.length;
+  if (L < 2 * minLines) return [];
+  const out: number[] = [];
+  for (let i = minLines - 1; i <= L - minLines - 1; i++) {
+    if (coveredFromAbove[i + 1]) continue; // 边界 i+1 被 rowspan 跨越 → 不可切
+    if (bottoms[i] > 0) out.push(bottoms[i]);
+  }
+  return out;
+}

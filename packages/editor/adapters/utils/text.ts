@@ -1,4 +1,5 @@
-import {compareAttributes, DeltaInsert} from "../../framework";
+import {compareAttributes} from '../../framework/block-std/inline/compareAttributes';
+import {DeltaInsert} from '@ccc/blockcraft/framework/model';
 
 const mergeDeltas = (
   acc: DeltaInsert[],

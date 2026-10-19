@@ -1,0 +1,2 @@
+@use './person-card' as card;
+@include card.layout(175, 32, 15, 12, 8);

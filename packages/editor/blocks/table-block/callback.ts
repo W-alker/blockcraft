@@ -2,6 +2,51 @@ import { TableBlockComponent } from "./table.block";
 import { TableCellBlockComponent } from "./table-cell.block";
 import { IBlockSnapshot } from "../../framework";
 import { TableRowBlockComponent } from "./table-row.block";
+import {
+  getTableModelProjection,
+  TableModelGrid,
+} from "../../framework/modules/table";
+
+const BLOCKING_MODEL_COMMAND_DIAGNOSTICS = new Set([
+  'table-not-found',
+  'unexpected-table-child',
+  'unexpected-row-child',
+  'ragged-row',
+  'missing-physical-cell',
+  'duplicate-cell-id',
+  'diagnostics-truncated',
+])
+
+/**
+ * 结构命令优先读取缓存后的 model projection，不再为大表构建 Component 矩阵。
+ *
+ * 协同合并时 colWidths 是整数组 LWW 值，可能短暂落后于已经合并完成的物理列；
+ * 这种诊断不影响行/cell 的稳定 ID 和合并覆盖关系，可以继续执行并由同一命令
+ * 写回新的 colWidths。历史数据中的孤立 hidden cell、越界 span 等合并诊断也
+ * 使用投影已经裁剪后的保守结果；旧 Component 矩阵同样会裁剪这些 span，却会
+ * 额外遍历/解析整张已挂载视图。只有非矩形物理结构或重复 ID 才回退兼容路径。
+ */
+function getOperationalModelGrid(table: TableBlockComponent): TableModelGrid | undefined {
+  try {
+    const model = table.doc.model
+    if (
+      !model
+      || typeof model.getChildrenIds !== 'function'
+      || typeof model.getFlavour !== 'function'
+      || typeof model.getProps !== 'function'
+    ) {
+      return undefined
+    }
+    const grid = getTableModelProjection(table.doc, table.id).grid
+    return grid.isValid || grid.diagnostics.every(diagnostic =>
+      !BLOCKING_MODEL_COMMAND_DIAGNOSTICS.has(diagnostic.code),
+    )
+      ? grid
+      : undefined
+  } catch {
+    return undefined
+  }
+}
 
 const isSourceMergeCell = (cell: BlockCraft.BlockComponent) => cell.props.display !== 'none' && (cell.props.rowspan || cell.props.colspan)
 
@@ -158,6 +203,35 @@ export function unMergeTableCell(this: TableBlockComponent, cell: TableCellBlock
 }
 
 export function addTableRow(this: TableBlockComponent, index: number) {
+  const grid = getOperationalModelGrid(this)
+  if (grid) {
+    const insertIndex = Math.max(0, Math.min(index, grid.rowCount))
+    const newRow = this.doc.schemas.createSnapshot('table-row', [grid.columnCount])
+    const newCells = newRow.children as IBlockSnapshot[]
+    let insertedIds: string[] = []
+
+    this.doc.crud.transact(() => {
+      if (insertIndex > 0) {
+        const expandedMasters = new Set<string>()
+        for (let columnIndex = 0; columnIndex < grid.columnCount; columnIndex++) {
+          const masterId = grid.getMasterCellIdAt(insertIndex - 1, columnIndex)
+          if (!masterId) continue
+          const master = grid.getMaster(masterId)
+          if (!master || master.span.end[0] < insertIndex) continue
+
+          newCells[columnIndex].props['display'] = 'none'
+          if (expandedMasters.has(masterId)) continue
+          expandedMasters.add(masterId)
+          this.doc.crud.updateBlockProps(masterId, {
+            rowspan: master.rowspan + 1,
+          })
+        }
+      }
+      insertedIds = this.doc.crud.insertBlockSnapshots(this.id, insertIndex, [newRow])
+    })
+    return insertedIds
+  }
+
   const cellCount = this.firstChildren!.childrenLength;
   const newRow = this.doc.schemas.createSnapshot('table-row', [cellCount]);
 
@@ -210,6 +284,48 @@ export function addTableRow(this: TableBlockComponent, index: number) {
 }
 
 export function addTableCol(this: TableBlockComponent, index: number) {
+  const grid = getOperationalModelGrid(this)
+  if (grid) {
+    const insertIndex = Math.max(0, Math.min(index, grid.columnCount))
+    const expandedMasters = new Set<string>()
+
+    this.doc.crud.transact(() => {
+      for (let rowIndex = 0; rowIndex < grid.rowCount; rowIndex++) {
+        const newCell = this.doc.schemas.createSnapshot('table-cell', [])
+        if (insertIndex > 0) {
+          const masterId = grid.getMasterCellIdAt(rowIndex, insertIndex - 1)
+          const master = masterId ? grid.getMaster(masterId) : null
+          if (master && master.span.end[1] >= insertIndex) {
+            newCell.props['display'] = 'none'
+            if (!expandedMasters.has(master.id)) {
+              expandedMasters.add(master.id)
+              this.doc.crud.updateBlockProps(master.id, {
+                colspan: master.colspan + 1,
+              })
+            }
+          }
+        }
+        this.doc.crud.insertBlockSnapshots(
+          grid.rowIds[rowIndex],
+          insertIndex,
+          [newCell],
+        )
+      }
+
+      const oldWidths = this.doc.model.getProps(this.id)?.['colWidths']
+      const widths = Array.isArray(oldWidths)
+        ? oldWidths.map(width => Number(width))
+        : []
+      const finiteWidths = widths.filter(width => Number.isFinite(width) && width > 0)
+      const newWidth = finiteWidths.length
+        ? Math.floor(finiteWidths.reduce((sum, width) => sum + width, 0) / finiteWidths.length)
+        : 100
+      widths.splice(insertIndex, 0, newWidth)
+      this.doc.crud.updateBlockProps(this.id, {colWidths: widths})
+    })
+    return
+  }
+
   const rows = this.getChildrenBlocks();
   const rowCount = rows.length;
   const currentColCount = rows[0]?.childrenLength || 0;

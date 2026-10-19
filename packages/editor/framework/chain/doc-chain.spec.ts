@@ -1,6 +1,7 @@
 import "../../blocks"
 import { BlockNodeType, IBlockSnapshot } from "../block-std"
 import { DocChain } from "./doc-chain"
+import {BlockReadonlyError, BlockReadonlyOperation} from "../doc"
 
 const createSnapshot = (id: string): IBlockSnapshot => ({
   id,
@@ -72,5 +73,29 @@ describe('DocChain', () => {
     expect(doc.crud.transact).toHaveBeenCalled()
     expect(order).toEqual(['transact', 'body', 'tap:done'])
     expect(result.lastResult).toBe('done')
+  })
+
+  it('evaluates a queued CRUD step at run time', async () => {
+    let locked = false
+    const doc = {
+      crud: {
+        deleteBlockById: jasmine.createSpy('deleteBlockById').and.callFake(() => {
+          if (locked) {
+            throw new BlockReadonlyError({
+              operation: BlockReadonlyOperation.Delete,
+              blockIds: ['p1'],
+              source: {kind: 'self', blockId: 'p1'},
+            })
+          }
+          return []
+        }),
+      },
+    }
+    const chain = new DocChain(doc as unknown as BlockCraft.Doc).deleteById('p1')
+
+    locked = true
+
+    await expectAsync(chain.run()).toBeRejectedWithError(BlockReadonlyError)
+    expect(doc.crud.deleteBlockById).toHaveBeenCalledTimes(1)
   })
 })

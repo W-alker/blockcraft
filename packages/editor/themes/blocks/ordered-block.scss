@@ -29,10 +29,37 @@
       &:hover {
         background-color: var(--bc-select-background-color);
       }
+
+      &[data-bc-marker-enclosure="circle"] {
+        box-sizing: border-box;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.15em;
+        height: 1.15em;
+        // Align the enclosure with the first text line, including custom line spacing.
+        margin-top: calc((1lh - 1.15em) / 2);
+        padding: 0;
+        border: .0625em solid currentColor;
+        border-radius: 50%;
+        line-height: inherit;
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+
+        .ordered-block-prefix__text {
+          line-height: 1;
+        }
+      }
     }
 
     .edit-container {
       width: fit-content;
+
+      &[data-bc-inline-float-owner] {
+        flex: 1 1 auto;
+        width: auto;
+        min-width: 0;
+      }
     }
   }
 }

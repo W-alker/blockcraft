@@ -1,3 +1,4 @@
+import {PARAGRAPH_ALIGNMENT_OPTIONS} from '../../paragraph-alignment-options';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -16,14 +17,16 @@ import {
 } from "../../../components";
 import {BlockCraftError, ErrorCode, IS_MAC, nextTick, SimpleValue} from "../../../global";
 import {NgForOf, NgIf} from "@angular/common";
-import {IInlineNodeAttrs, IEditableBlockProps} from "../../../framework";
+import {IInlineNodeAttrs, IEditableBlockProps, ISelectionJSON} from "../../../framework";
 import {Overlay} from "@angular/cdk/overlay";
 import {ComponentPortal} from "@angular/cdk/portal";
 import {merge} from "rxjs";
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 import {LinkInputPad} from "./link-input-pad";
 import {TextToolbarUtils} from "../utils";
-import {NzTooltipDirective} from "ng-zorro-antd/tooltip";
+import {CsTooltipDirective} from "@cses/ui";
+import {isFloatTextToolbarSelection} from "../selection";
+import {isSelectionAlive} from "../../../framework/modules/selection/liveness";
 
 export interface IToolbarMenuItem {
   label?: string
@@ -95,26 +98,9 @@ export const LIST_LIST: IToolbarMenuItem[] = [
   }
 ]
 
-const ALIGN_LIST: IToolbarMenuItem[] = [
-  {
-    name: "align",
-    icon: "bc_zuoduiqi",
-    intro: "左对齐",
-    value: 'left',
-  },
-  {
-    name: "align",
-    value: "center",
-    icon: "bc_juzhongduiqi",
-    intro: "居中",
-  },
-  {
-    name: "align",
-    value: "right",
-    icon: "bc_youduiqi",
-    intro: "右对齐",
-  }
-]
+const ALIGN_LIST: IToolbarMenuItem[] = PARAGRAPH_ALIGNMENT_OPTIONS.map(item => ({
+  name: 'align', value: item.value, icon: item.icon, intro: item.title,
+}));
 
 const DEFAULT_MENU_LIST: IToolbarMenuItem[] = [
   // ...ALIGN_LIST,
@@ -206,7 +192,8 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
 
         <bc-float-toolbar-item [name]="item.name" [value]="activeAttrs.has(item.name) ? null : true"
                                [icon]="item.icon" [title]="item.tip" [active]="activeAttrs.has(item.name)"
-                               [nz-tooltip]="item.tip">
+                               [csTooltip]="item.tip ?? ''"
+                               [csTooltipDisabled]="!item.tip">
         </bc-float-toolbar-item>
       }
 
@@ -218,7 +205,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
 
       <bc-float-toolbar-item name="formula" [value]="true"
                              icon="bc_gongshi" title="行内公式" *ngIf="isLinkAble"
-                             nz-tooltip="行内公式">
+                             csTooltip="行内公式">
       </bc-float-toolbar-item>
 
       <span class="bc-float-toolbar__divider"></span>
@@ -232,7 +219,8 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
           <bc-float-toolbar-item [name]="item.name" [value]="item.value"
                                  [icon]="item.icon" [title]="item.tip"
                                  [active]="item.active"
-                                 [nz-tooltip]="item.tip">
+                                 [csTooltip]="item.tip ?? ''"
+                                 [csTooltipDisabled]="!item.tip">
           </bc-float-toolbar-item>
         }
       }
@@ -284,7 +272,6 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
   `,
   styles: [`
     :host {
-      z-index: 100;
       display: block;
       user-select: none;
       -webkit-user-select: none;
@@ -353,7 +340,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
     NgForOf,
     ColorPickerComponent,
     NgIf,
-    NzTooltipDirective
+    CsTooltipDirective
   ],
   standalone: true,
   host: {
@@ -402,11 +389,13 @@ export class FloatTextToolbarComponent {
   protected activeHeading = HEADING_LIST[0]
 
   isLinkAble = false
+  private _destroyed = false
 
   constructor() {
   }
 
   ngOnInit() {
+    this._destroyed = false
     this.syncSelectionState()
   }
 
@@ -417,12 +406,13 @@ export class FloatTextToolbarComponent {
   }
 
   private syncSelectionState() {
-    const selection = this.doc.selection.value!
-    this.isLinkAble = !!selection && selection.isInSameBlock && selection.start.type === 'text'
+    const selection = this.doc.selection.value
+    this.isLinkAble = isFloatTextToolbarSelection(selection) && selection.isInSameBlock
     this.activeHeading = HEADING_LIST.find(v => v.value === this.activeProps.heading) || HEADING_LIST[0]
   }
 
   ngOnDestroy() {
+    this._destroyed = true
     this.onDestroy.emit()
   }
 
@@ -486,20 +476,25 @@ export class FloatTextToolbarComponent {
         this.formatText({'s:background': evt.color === 'transparent' ? null : evt.color})
         break
     }
-    this.doc.selection.recalculate()
   }
 
   onBgGraphPicked(bg: string | null) {
     this.formatText({'a:bg': bg})
-    this.doc.selection.recalculate()
   }
 
   onLink() {
-    const selection = this.doc.selection.value!
+    const selection = this.doc.selection.value
+    if (!isFloatTextToolbarSelection(selection) || !selection.isInSameBlock || !isSelectionAlive(selection as any, this.doc)) return
     const selectionJSON = selection.toJSON()
 
-    const rect = this.doc.selection.getSelectionRect()!
-    const fake = this.doc.selection.createFakeRange(selection)
+    const rect = this.doc.selection.getSelectionRect()
+    if (!rect) return
+    let fake
+    try {
+      fake = this.doc.selection.createFakeRange(selection)
+    } catch {
+      return
+    }
     const overlay = this.doc.injector.get(Overlay)
 
     const positionStrategy = overlay.position().global().top(rect.bottom + 'px').left(rect.left + 'px')
@@ -514,24 +509,36 @@ export class FloatTextToolbarComponent {
       ovr.dispose()
       fake.destroy()
       nextTick().then(() => {
-        this.doc.selection.replay(selectionJSON)
+        this.replaySelection(selectionJSON)
       })
     }
     const cpr = ovr.attach(portal)
     merge(ovr.backdropClick(), cpr.instance.onCancel).pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe(close)
     cpr.instance.onConfirm.pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe((url: string) => {
       close()
-      if (selection.start.type !== 'text') return
-      const startBlock = selection.firstBlock as any
-      const index = selection.start.offset
-      const length = selection.isInSameBlock && selection.end.type === 'text' ? selection.end.offset - index : startBlock.textLength - index
+      const liveSelection = this.replaySelection(selectionJSON)
+      if (!isFloatTextToolbarSelection(liveSelection) || !liveSelection.isInSameBlock || liveSelection.start.type !== 'text') return
+      const startBlock = liveSelection.firstBlock as any
+      const index = liveSelection.start.offset
+      const length = liveSelection.end.type === 'text' ? liveSelection.end.offset - index : startBlock.textLength - index
       startBlock.formatText(index, length, {'a:link': url})
     })
   }
 
+  private replaySelection(selectionJSON: ISelectionJSON | null): BlockCraft.Selection | null {
+    if (this._destroyed || !selectionJSON) return null
+    try {
+      this.doc.selection.replay(selectionJSON)
+      const selection = this.doc.selection.value
+      return isSelectionAlive(selection as any, this.doc) ? selection : null
+    } catch {
+      return null
+    }
+  }
+
   onInlineFormula() {
     const selection = this.doc.selection.value
-    if (!selection || selection.start.type !== 'text') return
+    if (!isFloatTextToolbarSelection(selection) || selection.start.type !== 'text' || !isSelectionAlive(selection as any, this.doc)) return
     const block = selection.firstBlock as any
     const index = selection.start.offset
     const length = selection.isInSameBlock && selection.end.type === 'text' ? selection.end.offset - index : block.textLength - index

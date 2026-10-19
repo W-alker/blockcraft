@@ -1,0 +1,590 @@
+import {normalizeWordArtSnapshotProps} from "./word-art.types";
+import { Component, CUSTOM_ELEMENTS_SCHEMA } from "@angular/core";
+import { TestBed } from "@angular/core/testing";
+import * as Y from "yjs";
+import {
+  BlockNodeType,
+  normalizeBlockObjectFormat,
+  storeObjectTextStyle,
+} from "../../framework";
+import { ShapeResizerComponent } from "../shape-block";
+import {
+  WORD_ART_FONT_OPTIONS,
+  WORD_ART_PRESETS,
+  WordArtBlockComponent,
+  WordArtBlockSchema,
+  WORD_ART_OBJECT_FORMAT_CAPABILITY,
+  calculateWordArtResize,
+  getWordArtPreset,
+  normalizeWordArtProps,
+  resolveWordArtPresentation,
+  wordArtPresentationToInlineStyle,
+} from "./index";
+
+@Component({
+  selector: "word-art-transform-visibility-harness",
+  standalone: true,
+  imports: [ShapeResizerComponent],
+  template: `
+    <div data-blockcraft-root="true">
+      <div
+        class="word-art-block"
+        [class.word-art-block--object-selected]="objectSelected"
+      >
+        <div #surface class="word-art-block__surface">
+          <button class="word-art-block__object-handle"></button>
+          <shape-resizer [target]="surface"></shape-resizer>
+        </div>
+      </div>
+    </div>
+  `,
+  styleUrl: "../../themes/blocks/word-art-block.scss",
+  schemas: [CUSTOM_ELEMENTS_SCHEMA],
+})
+class WordArtTransformVisibilityHarness {
+  objectSelected = true;
+}
+
+@Component({
+  selector: "word-art-css-inheritance-harness",
+  standalone: true,
+  template: `
+    <div
+      class="word-art-block__editor"
+      data-bc-word-art-print-props="{}"
+      style="color: transparent; -webkit-text-fill-color: transparent; font: 900 48px/1.1 sans-serif"
+    >
+      <c-element
+        style="color: black; -webkit-text-fill-color: black; font: 16px serif"
+      >
+        <c-text>艺术字</c-text>
+      </c-element>
+    </div>
+  `,
+  styleUrl: "../../themes/blocks/word-art-block.scss",
+  schemas: [CUSTOM_ELEMENTS_SCHEMA],
+})
+class WordArtCssInheritanceHarness {}
+
+/**
+ * 对象宽度契约：浮动（absolute）宽度不设上限，落回文档流收敛到内容列。
+ * 编辑器内由 base.scss 按 data-bc-object / data-bc-object-surface 实施；
+ * 快照查看器没有那对标记，由 word-art scss 的 .bc-snapshot-viewer 规则按
+ * 同一契约补齐。base.scss @import 了 word-art scss，一个 styleUrl 覆盖两边。
+ */
+@Component({
+  selector: "word-art-width-contract-harness",
+  standalone: true,
+  template: `
+    <div
+      data-blockcraft-root="true"
+      style="position: relative; box-sizing: border-box; width: 500px;
+        padding: 0 20px 0 40px"
+    >
+      <div data-plane="" style="position: relative; width: 100%">
+        <div
+          class="word-art-block"
+          data-block-id="wa-float"
+          data-bc-object=""
+          data-bc-placement="absolute"
+          data-live-float=""
+          style="position: absolute; left: -40px; top: 0; margin: 0"
+        >
+          <div
+            class="word-art-block__surface"
+            data-bc-object-surface=""
+            style="width: 800px; height: 60px"
+          ></div>
+        </div>
+        <div
+          class="word-art-block"
+          data-block-id="wa-flow"
+          data-bc-object=""
+          data-live-flow=""
+        >
+          <div
+            class="word-art-block__surface"
+            data-bc-object-surface=""
+            style="width: 800px; height: 60px"
+          ></div>
+        </div>
+      </div>
+    </div>
+    <div class="bc-snapshot-viewer" style="position: relative; width: 440px">
+      <div class="word-art-block" data-viewer-flow="">
+        <div
+          class="word-art-block__surface"
+          style="width: 800px; height: 60px"
+        ></div>
+      </div>
+      <div
+        class="word-art-block"
+        data-bc-placement="absolute"
+        data-viewer-float=""
+        style="position: absolute; left: 0; top: 0; margin: 0"
+      >
+        <div
+          class="word-art-block__surface"
+          style="width: 800px; height: 60px"
+        ></div>
+      </div>
+    </div>
+  `,
+  styleUrl: "../../themes/base.scss",
+  schemas: [CUSTOM_ELEMENTS_SCHEMA],
+})
+class WordArtWidthContractHarness {}
+
+describe("Word art block domain", () => {
+
+  it("stores rounded coordinates and drops invalid position values", () => {
+    expect(normalizeWordArtSnapshotProps({position: "12.345 -0.001"} as any).position)
+      .toBe("12.35 0");
+    for (const position of [{x: 12, y: 34}, "12 invalid", "Infinity 0"]) {
+      const props = normalizeWordArtSnapshotProps({position} as any);
+      expect(Object.prototype.hasOwnProperty.call(props, "position")).toBeFalse();
+    }
+  });
+  it("stores compact preset effects and quarter-pixel outlines before insertion", () => {
+    for (const preset of WORD_ART_PRESETS) {
+      const style = normalizeBlockObjectFormat(preset.props, WORD_ART_OBJECT_FORMAT_CAPABILITY).textStyle!;
+      if (preset.props.textShadow && preset.props.textShadow !== 'none') {
+        for (const value of [style.effects.shadow.blur, style.effects.shadow.angle, style.effects.shadow.distance]) {
+          expect(Number.isInteger(value)).withContext(preset.id).toBeTrue();
+        }
+      }
+      if (preset.props.textOutline && style.outline.type === 'line') {
+        expect(Number.isInteger(style.outline.width * 4)).withContext(preset.id).toBeTrue();
+      }
+      expect(preset.props['textStyle']).toBeUndefined();
+      expect(style.lineHeight).toBeGreaterThan(0);
+
+    }
+  });
+
+  it("estimates an unmounted flow block from its normalized model height", () => {
+    const estimateHeight =
+      WordArtBlockSchema.metadata.virtualization?.estimateHeight;
+
+    expect(estimateHeight).toBeDefined();
+    expect(
+      estimateHeight!({
+        props: WordArtBlockSchema.createSnapshot(undefined, { height: 360 })
+          .props,
+      } as any),
+    ).toBe(360);
+    expect(
+      estimateHeight!({
+        props: WordArtBlockSchema.createSnapshot(undefined, { height: 9_999 })
+          .props,
+      } as any),
+    ).toBe(9_999);
+  });
+
+  it("switches between the compact handle and whole-object transform chrome", async () => {
+    await TestBed.configureTestingModule({
+      imports: [WordArtTransformVisibilityHarness],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(WordArtTransformVisibilityHarness);
+    fixture.detectChanges();
+    const resizer = fixture.nativeElement.querySelector(
+      "shape-resizer",
+    ) as HTMLElement;
+    const objectHandle = fixture.nativeElement.querySelector(
+      ".word-art-block__object-handle",
+    ) as HTMLButtonElement;
+
+    expect(getComputedStyle(resizer).display).toBe("block");
+    expect(getComputedStyle(objectHandle).display).toBe("none");
+
+    fixture.componentInstance.objectSelected = false;
+    fixture.detectChanges();
+    objectHandle.focus();
+    expect(getComputedStyle(resizer).display).toBe("none");
+    expect(getComputedStyle(objectHandle).display).toBe("flex");
+    expect(getComputedStyle(objectHandle).pointerEvents).toBe("auto");
+
+    fixture.destroy();
+    TestBed.resetTestingModule();
+  });
+
+  it("keeps legacy inline glyph styles from turning selection or drag clones black", async () => {
+    await TestBed.configureTestingModule({
+      imports: [WordArtCssInheritanceHarness],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(WordArtCssInheritanceHarness);
+    fixture.detectChanges();
+    const editor = fixture.nativeElement.querySelector(
+      ".word-art-block__editor",
+    ) as HTMLElement;
+    const clone = editor.cloneNode(true) as HTMLElement;
+    document.body.appendChild(clone);
+
+    try {
+      for (const host of [editor, clone]) {
+        const inline = host.querySelector("c-element") as HTMLElement;
+        const computed = getComputedStyle(inline);
+        expect(computed.color).toBe("rgba(0, 0, 0, 0)");
+        expect(computed.webkitTextFillColor).toBe("rgba(0, 0, 0, 0)");
+        expect(computed.fontSize).toBe("48px");
+        expect(computed.fontWeight).toBe("900");
+      }
+    } finally {
+      clone.remove();
+      fixture.destroy();
+      TestBed.resetTestingModule();
+    }
+  });
+
+  it("restores a real caret host inside a non-editable placement shell", async () => {
+    await TestBed.configureTestingModule({
+      imports: [WordArtBlockComponent],
+    }).compileComponents();
+
+    let readonly = false;
+    const snapshot = WordArtBlockSchema.createSnapshot();
+    const yDoc = new Y.Doc();
+    const yBlock = new Y.Map<unknown>();
+    yDoc.getMap("blocks").set(snapshot.id, yBlock);
+    const yProps = new Y.Map<unknown>();
+    for (const [key, value] of Object.entries(snapshot.props)) {
+      yProps.set(key, value);
+    }
+    const yMeta = new Y.Map<unknown>();
+    const yText = new Y.Text();
+    yText.applyDelta(snapshot.children);
+    yBlock.set("props", yProps);
+    yBlock.set("meta", yMeta);
+    yBlock.set("children", yText);
+    const doc = {
+      isReadonly: false,
+      config: { embeds: [] },
+      schemas: { get: () => WordArtBlockSchema },
+      placement: {
+        allowsGapCursor: () => false,
+        isInAbsoluteLayout: () => true,
+        registerBlockView: () => null,
+      },
+      readonlyManager: {
+        isReadonly: () => readonly,
+        resolve: () => ({
+          readonly,
+          source: readonly ? { kind: "document" } : null,
+        }),
+      },
+    } as unknown as BlockCraft.Doc;
+
+    const fixture = TestBed.createComponent(WordArtBlockComponent);
+    fixture.componentRef.setInput("model", snapshot);
+    fixture.componentRef.setInput("yBlock", yBlock);
+    fixture.componentRef.setInput("doc", doc);
+    const placementShell = document.createElement("div");
+    placementShell.contentEditable = "false";
+    document.body.appendChild(placementShell);
+    placementShell.appendChild(fixture.nativeElement);
+
+    try {
+      fixture.detectChanges();
+      const editor = fixture.nativeElement.querySelector(
+        ".word-art-block__editor",
+      ) as HTMLElement;
+
+      expect(placementShell.isContentEditable).toBeFalse();
+      expect(fixture.nativeElement.querySelector("svg")).toBeNull();
+      expect(editor.style.color).toBe("transparent");
+      expect(editor.style.webkitTextFillColor).toBe("transparent");
+      expect(editor.style.backgroundImage).toContain("linear-gradient(");
+      expect(editor.style.backgroundClip).toBe("text");
+      expect(editor.style.getPropertyValue("-webkit-background-clip")).toBe(
+        "text",
+      );
+      expect(editor.style.getPropertyValue("-webkit-text-stroke")).toContain(
+        "0.0208em", // 默认 1px / 48px。
+      );
+      expect(editor.style.textShadow).toContain("rgba(124, 45, 18, 0.3)");
+      expect(editor.style.transform).toBe("");
+      expect(editor.getAttribute("contenteditable")).toBe("true");
+      expect(editor.isContentEditable).toBeTrue();
+      const objectHandle = fixture.nativeElement.querySelector(
+        ".word-art-block__object-handle",
+      ) as HTMLButtonElement | null;
+      expect(objectHandle).not.toBeNull();
+      expect(objectHandle?.getAttribute("aria-label")).toBe("选中艺术字并拖动");
+      expect(
+        objectHandle?.hasAttribute("data-bc-selection-interaction-ignore"),
+      ).toBeTrue();
+      expect(
+        fixture.nativeElement.querySelectorAll(".shape-resizer__move-edge")
+          .length,
+      ).toBe(4);
+
+      editor.focus();
+      const text = document
+        .createTreeWalker(editor, NodeFilter.SHOW_TEXT)
+        .nextNode();
+      expect(text).not.toBeNull();
+      const range = document.createRange();
+      range.setStart(text!, Math.min(1, text!.textContent?.length ?? 0));
+      range.collapse(true);
+      const selection = document.getSelection()!;
+      selection.removeAllRanges();
+      selection.addRange(range);
+
+      expect(document.activeElement).toBe(editor);
+      expect(editor.contains(selection.anchorNode)).toBeTrue();
+
+      const overflowProbe = document.createElement("div");
+      overflowProbe.style.height = "1000px";
+      editor.style.height = "1px";
+      editor.style.overflow = "auto";
+      editor.appendChild(overflowProbe);
+      editor.scrollTop = 40;
+      expect(editor.scrollTop).toBeGreaterThan(0);
+
+      editor.dispatchEvent(new Event("scroll"));
+
+      expect(editor.scrollTop).toBe(0);
+      overflowProbe.remove();
+      editor.style.removeProperty("height");
+      editor.style.removeProperty("overflow");
+
+      readonly = true;
+      fixture.componentInstance.applyReadonlyViewState();
+      fixture.detectChanges();
+      expect(editor.getAttribute("contenteditable")).toBe("false");
+      expect(editor.isContentEditable).toBeFalse();
+      expect(
+        fixture.nativeElement.querySelector(".shape-resizer__move-edge"),
+      ).toBeNull();
+      expect(
+        fixture.nativeElement.querySelector(".word-art-block__object-handle"),
+      ).toBeNull();
+    } finally {
+      document.getSelection()?.removeAllRanges();
+      fixture.destroy();
+      placementShell.remove();
+      TestBed.resetTestingModule();
+    }
+  });
+
+  it("is an editable block backed directly by inline text", () => {
+    const snapshot = WordArtBlockSchema.createSnapshot();
+
+    expect(snapshot.flavour).toBe("word-art");
+    expect(snapshot.nodeType).toBe(BlockNodeType.editable);
+    expect(snapshot.children).toEqual([{ insert: "艺术字" }]);
+    expect(
+      snapshot.children.some(
+        (child) => typeof child === "object" && "flavour" in child,
+      ),
+    ).toBeFalse();
+    expect(WordArtBlockSchema.metadata.plainTextOnly).toBeTrue();
+    expect(WordArtBlockSchema.metadata.selectionInteraction).toEqual({
+      frame: "selectable",
+      escapeToFrame: "always",
+      editingBoundary: "always",
+    });
+  });
+
+  it("strips rich inline attributes and embeds at creation time", () => {
+    const snapshot = WordArtBlockSchema.createSnapshot([
+      { insert: "安全", attributes: { "a:bold": true } },
+      { insert: { mention: "成员" } },
+      { insert: { break: "\n" } },
+      { insert: "文字" },
+    ]);
+
+    expect(snapshot.children).toEqual([
+      { insert: "安全" },
+      { insert: { break: "\n" } },
+      { insert: "文字" },
+    ]);
+  });
+
+  it("normalizes malformed external values into bounded safe props", () => {
+    const input: any = {
+      width: -20,
+      height: Number.NaN,
+      rotation: -15,
+      fontFamily: "url(javascript:bad)",
+      fontSize: 9999,
+      fillColor: "#abc",
+      gradientColors: ["red", "#0af", "#123456", "#fff", "#000"],
+      gradientStops: [2, -1, 0.5, 0.8],
+      outlineColor: "currentColor",
+      shadowOpacity: 5,
+      effect: "rotate(999deg)",
+    };
+    const normalized = normalizeWordArtProps(input);
+
+    expect(normalized.width).toBe(48);
+    expect(normalized.height).toBe(96);
+    expect(normalized.rotation).toBe(345);
+    expect(normalized.fontFamily).toBe("display-sans");
+    // Removed flat style fields never override the canonical textStyle section.
+    expect(normalized.fontSize).toBe(48);
+    expect(normalized.fillColor).toBe("#FDE047");
+    expect(normalized.gradientColors).toEqual([
+      "#FDE047",
+      "#F97316",
+      "#DC2626",
+    ]);
+    expect(normalized.gradientStops).toEqual([0, 0.58, 1]);
+    expect(normalized.outlineColor).toBe("#9A3412");
+    expect(normalized.shadowOpacity).toBe(0.3);
+    expect(normalized.effect).toBe("none");
+    expect(input.width).toBe(-20);
+  });
+
+  it("resolves a portable gradient, stroke, shadow and safe effect", () => {
+    const defaults = normalizeBlockObjectFormat(
+      {},
+      WORD_ART_OBJECT_FORMAT_CAPABILITY,
+    );
+    const presentation = resolveWordArtPresentation({
+      ...storeObjectTextStyle({
+        ...defaults.textStyle!,
+        fill: {
+          type: "linear-gradient",
+          opacity: 1,
+          angle: 90,
+          stops: [
+            { color: "#00FFFF", offset: 0, opacity: 1 },
+            { color: "#0000FF", offset: 1, opacity: 1 },
+          ],
+        },
+        outline: {
+          ...defaults.textStyle!.outline,
+          type: "line",
+          color: "#111111",
+          width: 2.4,
+        },
+        effects: {
+          ...defaults.textStyle!.effects,
+          shadow: {
+            ...defaults.textStyle!.effects.shadow,
+            enabled: true,
+            color: "#000000",
+            opacity: 0.4,
+          },
+        },
+        transform: "perspective-left",
+      }),
+    });
+
+    expect(presentation.backgroundImage).toBe(
+      "linear-gradient(90deg, rgba(0, 255, 255, 1) 0%, rgba(0, 0, 255, 1) 100%)",
+    );
+    expect(presentation.textStroke).toBe("0.0521em #111111"); // 2.5px / 48px
+    expect(presentation.textShadow).toContain("rgba(0, 0, 0, 0.4)");
+    expect(presentation.effectTransform).toBe(
+      "perspective(600px) rotateY(-12deg)",
+    );
+    expect(wordArtPresentationToInlineStyle(presentation.props)).toContain(
+      "-webkit-text-fill-color:transparent",
+    );
+  });
+
+  it("offers the expanded style, font and safe transform catalogs", () => {
+    expect(WORD_ART_PRESETS.length).toBe(16);
+    expect(WORD_ART_FONT_OPTIONS.length).toBe(10);
+    expect(new Set(WORD_ART_PRESETS.map((item) => item.id)).size).toBe(16);
+    expect(new Set(WORD_ART_FONT_OPTIONS.map((item) => item.id)).size).toBe(10);
+    const defaults = normalizeBlockObjectFormat(
+      {},
+      WORD_ART_OBJECT_FORMAT_CAPABILITY,
+    );
+    const withTransform = (transform: "perspective-up" | "wide") => ({
+      ...storeObjectTextStyle({
+        ...defaults.textStyle!,
+        transform,
+      }),
+    });
+    expect(
+      resolveWordArtPresentation(withTransform("perspective-up"))
+        .effectTransform,
+    ).toBe("perspective(600px) rotateX(12deg)");
+    expect(
+      resolveWordArtPresentation(withTransform("wide")).effectTransform,
+    ).toBe("scaleX(1.18)");
+
+    const sharedFontStack =
+      'Georgia, "Songti SC", SimSun, serif';
+    expect(
+      resolveWordArtPresentation({
+        ...storeObjectTextStyle({
+          ...defaults.textStyle!,
+          fontFamily: sharedFontStack,
+        }),
+      }).fontFamily,
+    ).toBe(sharedFontStack);
+  });
+
+  it("keeps corners proportional while side handles reflow one axis", () => {
+    const start = { width: 320, height: 96, offsetX: 0, offsetY: 0 };
+    const corner = calculateWordArtResize("south-east", start, 160, 10);
+    const side = calculateWordArtResize("east", start, 80, 200);
+
+    expect(corner.width).toBe(480);
+    expect(corner.height).toBe(144);
+    expect(side.width).toBe(400);
+    expect(side.height).toBe(96);
+  });
+
+  it("frees floating word art of width caps in editor and snapshot contexts", async () => {
+    await TestBed.configureTestingModule({
+      imports: [WordArtWidthContractHarness],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(WordArtWidthContractHarness);
+    document.body.appendChild(fixture.nativeElement);
+    fixture.detectChanges();
+
+    const host = fixture.nativeElement as HTMLElement;
+    const surfaceOf = (probe: string) =>
+      host
+        .querySelector<HTMLElement>(`[${probe}] .word-art-block__surface`)!
+        .getBoundingClientRect().width;
+
+    try {
+      // 内容列 = 500 - 40 - 20 = 440。
+      expect(host.querySelector<HTMLElement>("[data-plane]")!.clientWidth).toBe(
+        440,
+      );
+      // 编辑器：流内收敛到内容列，浮动比编辑器还宽也不截。
+      expect(surfaceOf("data-live-flow")).toBe(440);
+      expect(surfaceOf("data-live-float")).toBe(800);
+      // 快照查看器：同一契约由 word-art scss 的 viewer 作用域实施。
+      expect(surfaceOf("data-viewer-flow")).toBe(440);
+      expect(surfaceOf("data-viewer-float")).toBe(800);
+    } finally {
+      fixture.nativeElement.remove();
+      fixture.destroy();
+      TestBed.resetTestingModule();
+    }
+  });
+
+  it("exposes canonical presets through the unified text-style section", () => {
+    const preset = getWordArtPreset("ocean");
+    const format = normalizeBlockObjectFormat(
+      preset.props,
+      WORD_ART_OBJECT_FORMAT_CAPABILITY,
+    );
+    expect(preset.id).toBe("ocean");
+    const oceanFill = format.textStyle!.fill;
+    const sunsetFill = normalizeBlockObjectFormat(
+      getWordArtPreset("sunset").props,
+      WORD_ART_OBJECT_FORMAT_CAPABILITY,
+    ).textStyle!.fill;
+    expect(oceanFill.type).toBe("linear-gradient");
+    expect(sunsetFill.type).toBe("linear-gradient");
+    if (
+      oceanFill.type !== "linear-gradient" ||
+      sunsetFill.type !== "linear-gradient"
+    ) return;
+    expect(oceanFill.stops.length).toBeGreaterThanOrEqual(2);
+    expect(oceanFill.stops.map((stop) => stop.color)).not.toEqual(
+      sunsetFill.stops.map((stop) => stop.color),
+    );
+    expect(getWordArtPreset("missing").id).toBe("sunset");
+  });
+});

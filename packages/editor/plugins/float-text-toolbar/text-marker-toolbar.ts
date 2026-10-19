@@ -1,10 +1,13 @@
 import {DocPlugin} from "../../framework";
-import {Subject, Subscription} from "rxjs";
+import {fromEvent, Subject, Subscription} from "rxjs";
 import {ComponentRef} from "@angular/core";
 import {OverlayRef} from "@angular/cdk/overlay";
 import {ITextCommonAttrs, TextToolbarUtils} from "./utils";
 import {TextMarkerComponent} from "./widgets/marker.component";
 import {calcFloatToolbarPosition} from "./toolbar-position";
+import {isFloatTextToolbarSelection} from "./selection";
+import {isSelectionAlive} from "../../framework/modules/selection/liveness";
+import {isExternalModalOpen} from "./external-modal";
 
 export class TextMarkerPlugin extends DocPlugin {
   override name = "text-marker-toolbar";
@@ -31,26 +34,47 @@ export class TextMarkerPlugin extends DocPlugin {
     super();
   }
 
+  private _isSelectionReadonly(selection: BlockCraft.Selection) {
+    return this.doc.readonlyManager?.isSelectionReadonly(selection) ?? this.doc.isReadonly
+  }
+
   init() {
     this.utils = new TextToolbarUtils(this.doc)
 
+    this._sub.add(fromEvent(this.doc.scrollContainer?.ownerDocument ?? document, 'focusin').subscribe(() => {
+      if (this.toolbarOvr && isExternalModalOpen(this.doc)) this.closeToolbar()
+    }))
+
     this.markTextBlockFlavours.forEach(flavour => {
-      this.doc.event.add('selectEnd', this.onSelectEnd, {flavour})
+      this._sub.add(this.doc.event.add('selectEnd', this.onSelectEnd, {flavour}))
     })
     this.colorOnlyFlavours.forEach(flavour => {
       // 同一 flavour 若也在 markTextBlockFlavours 里则跳过，避免重复注册 selectEnd 导致开两个 overlay。
       if (this.markTextBlockFlavours.includes(flavour)) return
-      this.doc.event.add('selectEnd', this.onSelectEnd, {flavour})
+      this._sub.add(this.doc.event.add('selectEnd', this.onSelectEnd, {flavour}))
     })
 
-    this.doc.subscribeReadonlyChange(() => {
-      this.toolbarOvr && this.closeToolbar()
-    })
+    this._sub.add(
+      this.doc.subscribeReadonlyChange(() => {
+        this.toolbarOvr && this.closeToolbar()
+      })
+    )
+
+    const stateChange$ = this.doc.readonlyManager?.stateChange$
+    if (stateChange$) {
+      this._sub.add(stateChange$.subscribe(() => {
+        const selection = this.doc.selection.value
+        if (selection && this._isSelectionReadonly(selection) && this.toolbarOvr) {
+          this.closeToolbar()
+        }
+      }))
+    }
   }
 
   onSelectEnd = () => {
     const sel = this.doc.selection.value!
-    if (this.doc.isReadonly || !sel || sel.collapsed || sel.isAllSelected || sel.isEmpty  || !sel.isInSameBlock
+    if (this.doc.isReadonly || isExternalModalOpen(this.doc) || !isFloatTextToolbarSelection(sel) || !sel.isInSameBlock || !isSelectionAlive(sel as any, this.doc)
+      || this._isSelectionReadonly(sel)
       // || this.doc.event.status.isSelecting
     ) {
       if (this.toolbarOvr) this.closeToolbar()
@@ -61,9 +85,14 @@ export class TextMarkerPlugin extends DocPlugin {
   }
 
   openToolbar() {
-    const sel = this.doc.selection.value!
+    if (isExternalModalOpen(this.doc)) return
+    const sel = this.doc.selection.value
+    if (!isFloatTextToolbarSelection(sel) || !sel.isInSameBlock || !isSelectionAlive(sel as any, this.doc)) return
+    if (this._isSelectionReadonly(sel)) return
 
-    const {connectElement, connectPositions} = calcFloatToolbarPosition(this.doc, sel)
+    const position = calcFloatToolbarPosition(this.doc, sel)
+    if (!position) return
+    const {connectElement, connectPositions} = position
 
     const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay<TextMarkerComponent>({
       target: connectElement,
@@ -74,7 +103,7 @@ export class TextMarkerPlugin extends DocPlugin {
     this._cpr = componentRef
     this.toolbarOvr = overlayRef
 
-    this.activeCommonAttrs = this.utils.getCurrentCommonAttrs(this.doc.selection.value!)
+    this.activeCommonAttrs = this.utils.getCurrentCommonAttrs(sel)
     this._cpr.setInput('doc', this.doc)
     this._cpr.setInput('utils', this.utils)
     this._cpr.setInput('activeAttrs', this.activeCommonAttrs.attrs)

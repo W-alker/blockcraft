@@ -1,0 +1,228 @@
+import {NoopAnimationsModule} from "@angular/platform-browser/animations";
+import {TestBed} from "@angular/core/testing";
+import {CS_MODAL_DATA} from "@cses/ui";
+import {FontSettingsDialogComponent} from "./font-settings-dialog.component";
+import {ParagraphSettingsDialogComponent} from "./paragraph-settings-dialog.component";
+
+describe("typography settings dialogs", () => {
+  afterEach(() => TestBed.resetTestingModule());
+
+  it("keeps untouched mixed font fields out of the confirm patch", async () => {
+    await TestBed.configureTestingModule({
+      imports: [NoopAnimationsModule, FontSettingsDialogComponent],
+      providers: [{
+        provide: CS_MODAL_DATA,
+        useValue: {
+          target: "font-family",
+          typography: {ff: undefined, fs: 1.25, ls: undefined},
+          attrs: {
+            bold: false,
+            italic: false,
+            underline: false,
+            strike: false,
+            code: false,
+          },
+          colors: {color: undefined, backColor: undefined},
+        },
+      }],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(FontSettingsDialogComponent);
+    fixture.detectChanges();
+    const component = fixture.componentInstance as any;
+
+    expect((fixture.nativeElement as HTMLElement).getBoundingClientRect().width)
+      .toBeLessThanOrEqual(320);
+    expect(fixture.nativeElement.querySelectorAll("cs-select").length).toBe(2);
+    expect(fixture.nativeElement.querySelector(".bc_xiahuaxian")).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain("效果");
+    expect(fixture.nativeElement.textContent).not.toContain("文字缩放");
+    expect(fixture.nativeElement.textContent).toContain("高级");
+    expect(component.selectedTab()).toBe(0);
+    expect(fixture.nativeElement.textContent).not.toContain("应用到：");
+    expect(fixture.nativeElement.textContent).not.toContain("定位：");
+    expect(fixture.nativeElement.textContent).not.toContain("恢复默认");
+    expect(component.familySelectValue).toBeNull();
+    expect(component.scalePercentValue).toBe(125);
+    expect(component.spacingInputValue).toBeNull();
+    expect(component.buildResult()).toEqual({typography: {}, attrs: {}});
+    component.setFamily("kai");
+    component.setFontStyle("bold-italic");
+
+    expect(component.buildResult()).toEqual({
+      typography: {ff: "kai"},
+      attrs: {"a:bold": true, "a:italic": true},
+    });
+    expect(component.fonts.some((font: {id: string}) => font.id === "xingkai")).toBeTrue();
+    component.setFamily("xingkai");
+    fixture.detectChanges();
+    expect(component.buildResult().typography.ff).toBe("xingkai");
+    expect(component.previewFontFamily).toContain("Xingkai SC");
+  });
+
+  it("shows inherited font defaults without persisting untouched values", async () => {
+    await TestBed.configureTestingModule({
+      imports: [NoopAnimationsModule, FontSettingsDialogComponent],
+      providers: [{
+        provide: CS_MODAL_DATA,
+        useValue: {
+          target: "font-scale",
+          typography: {ff: null, fs: null, ls: null},
+          attrs: {
+            bold: false,
+            italic: false,
+            underline: false,
+            strike: false,
+            code: false,
+          },
+          colors: {color: null, backColor: null},
+        },
+      }],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(FontSettingsDialogComponent);
+    fixture.detectChanges();
+    const component = fixture.componentInstance as any;
+
+    expect(component.selectedTab()).toBe(1);
+    expect(fixture.nativeElement.textContent).toContain("文字缩放");
+    expect(
+      fixture.nativeElement.querySelector('[data-setting-field="font-scale"]'),
+    ).not.toBeNull();
+    expect(component.familySelectValue).toBe(component.defaultSelectValue);
+    expect(component.scalePercentValue).toBe(100);
+    expect(component.spacingInputValue).toBe(0);
+    expect(component.buildResult()).toEqual({typography: {}, attrs: {}});
+  });
+
+  it("keeps pixel and scale drafts separate until confirmation", async () => {
+    await TestBed.configureTestingModule({
+      imports: [NoopAnimationsModule, FontSettingsDialogComponent],
+      providers: [{provide: CS_MODAL_DATA, useValue: {
+        target: 'font-size', fontSize: 30, typography: {ff: null, fs: 1.5, ls: null},
+        attrs: {bold: false, italic: false, underline: false, strike: false, code: false},
+        colors: {color: null, backColor: null},
+      }}],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(FontSettingsDialogComponent);
+    fixture.detectChanges();
+    const component = fixture.componentInstance as any;
+    expect(component.fontSize()).toBe(30);
+    expect(component.previewFontSize).toBe('30px');
+    expect(component.buildResult()).toEqual({typography: {}, attrs: {}});
+    component.setFontSize(24);
+    expect(component.scale()).toBe(1.5);
+    expect(component.buildResult()).toEqual({fontSize: 24, typography: {}, attrs: {}});
+    component.setScale(2);
+    expect(component.buildResult()).toEqual({fontSize: 32, typography: {fs: 2}, attrs: {}});
+  });
+
+  it("builds one paragraph patch and preserves explicit zero after-spacing", async () => {
+    await TestBed.configureTestingModule({
+      imports: [NoopAnimationsModule, ParagraphSettingsDialogComponent],
+      providers: [{
+        provide: CS_MODAL_DATA,
+        useValue: {
+          target: "line-height",
+          align: "left",
+          defaults: {lineHeight: 1.5, spaceAfter: 7.5},
+          paragraph: {
+            lh: null,
+            psb: null,
+            psa: null,
+          },
+        },
+      }],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(ParagraphSettingsDialogComponent);
+    fixture.detectChanges();
+    const component = fixture.componentInstance as any;
+
+    expect((fixture.nativeElement as HTMLElement).getBoundingClientRect().width)
+      .toBeLessThanOrEqual(640);
+    expect(fixture.nativeElement.textContent).not.toContain("应用到：");
+    expect(fixture.nativeElement.textContent).not.toContain("定位：");
+    expect(fixture.nativeElement.querySelector('[data-setting-field="paragraph-align"] cs-select')).not.toBeNull();
+    expect(component.spaceBeforeValue).toBe(0);
+    expect(component.spaceAfterValue).toBe(7.5);
+    expect(component.lineHeightSelectValue).toBe(component.defaultLineHeightValue);
+    expect(fixture.nativeElement.textContent).not.toContain("应用范围");
+    expect(fixture.nativeElement.textContent).not.toContain("恢复默认");
+    expect(fixture.nativeElement.textContent).not.toContain("缩进");
+    expect(component.buildResult()).toEqual({patch: {}});
+    component.setSpacing("psb", 12);
+    component.setSpacing("psa", 0);
+    component.setLineHeight(1.75);
+
+    expect(component.buildResult()).toEqual({
+      patch: {lh: 1.75, psb: 12, psa: 0},
+    });
+  });
+
+  it('shows only spacing for a non-editable block', async () => {
+    await TestBed.configureTestingModule({
+      imports: [NoopAnimationsModule, ParagraphSettingsDialogComponent],
+      providers: [{provide: CS_MODAL_DATA, useValue: {
+        target: 'paragraph-spacing', align: 'left', allowTextSettings: false,
+        defaults: {lineHeight: 1.5, spaceAfter: 7.5},
+        paragraph: {psb: 6, psa: 12},
+      }}],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(ParagraphSettingsDialogComponent);
+    fixture.detectChanges();
+    const component = fixture.componentInstance as any;
+
+    expect(fixture.nativeElement.querySelector('[data-setting-field="paragraph-align"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-setting-field="line-height"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-setting-field="paragraph-spacing"]')).not.toBeNull();
+    component.setSpacing('psb', 8);
+    component.setLineHeight(2);
+    component.setAlign('center');
+    expect(component.buildResult()).toEqual({patch: {psb: 8}});
+  });
+  it('previews both justified modes and clears last-line expansion when switching back', async () => {
+    await TestBed.configureTestingModule({
+      imports: [NoopAnimationsModule, ParagraphSettingsDialogComponent],
+      providers: [{provide: CS_MODAL_DATA, useValue: {
+        target: 'paragraph-align', align: 'distributed', paragraph: {},
+        defaults: {lineHeight: 1.5, spaceAfter: 0},
+      }}],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(ParagraphSettingsDialogComponent);
+    const component = fixture.componentInstance as any;
+    fixture.detectChanges();
+    const preview = fixture.nativeElement.querySelector('.bc-focus-paragraph') as HTMLElement;
+    expect(preview.style.textAlignLast).toBe('justify');
+    expect(component.buildResult()).toEqual({patch: {}});
+    component.setAlign('justify'); fixture.detectChanges();
+    expect(preview.style.textAlignLast).toBe('auto');
+    expect(component.buildResult()).toEqual({patch: {textAlign: 'justify'}});
+    component.setAlign('left'); fixture.detectChanges();
+    expect(preview.style.textAlign).toBe('left');
+    expect(preview.style.textAlignLast).toBe('auto');
+    expect(component.buildResult()).toEqual({patch: {textAlign: null}});
+  });
+
+  it('keeps decoration untouched until edited and shows controls for the selected edge', async () => {
+    await TestBed.configureTestingModule({
+      imports: [NoopAnimationsModule, ParagraphSettingsDialogComponent],
+      providers: [{provide: CS_MODAL_DATA, useValue: {
+        target: 'paragraph-align', align: 'left', allowDecoration: true,
+        defaults: {lineHeight: 1.5, spaceAfter: 7.5}, paragraph: {},
+        decoration: {position: 'after', after: '40px'},
+      }}],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(ParagraphSettingsDialogComponent);
+    fixture.detectChanges();
+    const component = fixture.componentInstance as any;
+    expect(component.buildResult()).toEqual({patch: {}});
+    expect(fixture.nativeElement.textContent).toContain('后侧长度');
+    expect(fixture.nativeElement.textContent).not.toContain('前侧长度');
+    expect(fixture.nativeElement.textContent).not.toContain('上下线宽度');
+    component.setDecoration('position', 'above');
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('上下线宽度');
+    expect(fixture.nativeElement.textContent).not.toContain('垂直对齐');
+    component.setDecoration('position', 'none');
+    expect(component.buildResult()).toEqual({patch: {decoration: null}});
+  });
+
+});

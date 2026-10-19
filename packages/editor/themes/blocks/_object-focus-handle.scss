@@ -1,0 +1,35 @@
+@mixin object-focus-handle {
+  position: absolute;
+  z-index: 5;
+  top: 0;
+  left: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid var(--bc-active-color, #4857e2);
+  border-radius: 7px;
+  background: var(--bc-bg-primary, #fff);
+  color: var(--bc-active-color, #4857e2);
+  opacity: 0;
+  pointer-events: none;
+  touch-action: none;
+  cursor: move;
+  // Straddle the object's top edge so the control remains inside the block's
+  // hit-test area. Fully external controls can be painted but skipped by the
+  // contenteditable root's hit testing, most visibly on flow WordArt.
+  transform: translate(-50%, -50%);
+  transition: opacity 120ms ease;
+
+  .bc_icon {
+    font-size: 11px;
+    line-height: 1;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--bc-active-color, #4857e2);
+    outline-offset: 2px;
+  }
+}

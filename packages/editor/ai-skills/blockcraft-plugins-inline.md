@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-05-09
+> Last updated: 2026-10-08
 
 ## Inline Extensions
 
@@ -10,7 +10,7 @@
 
 > `plugins/inline-link-extension/` — Hyperlink interactions and editing.
 
-Handles inline link clicks (single-click shows toolbar, double-click navigates), provides link editing/unbinding/copying, and supports "switch view" to convert an inline link into a bookmark block.
+Handles inline link clicks (single-click shows toolbar, double-click navigates), provides link editing/unbinding/copying, and supports direct conversion to card or embed views.
 
 #### Configuration
 
@@ -30,7 +30,7 @@ new InlineLinkExtension(openLink?: (link: string) => void)
 | `edit-link` | Open `LinkEditFloatDialog` for editing |
 | `unbind-link` | Remove the link format, keep text |
 | `copy-link` | Copy URL to clipboard |
-| `switch-view` | Convert inline link to bookmark block |
+| `switch-view` | `card` 转网页卡片，`embed` 直接转嵌入；与卡片、嵌入工具栏形成三种视图互转 |
 
 #### Public API
 
@@ -39,9 +39,16 @@ new InlineLinkExtension(openLink?: (link: string) => void)
 | `openToolbar(target, link, block)` | Show the link toolbar for a specific link element |
 | `closeToolbar()` | Dismiss the toolbar |
 | `onEditLink(target, block)` | Open the link edit dialog |
-| `switchView()` | Convert the current link to a bookmark block |
+| `switchView(view?: 'card' \| 'embed')` | 转换当前链接；默认 `card` 保持旧调用方式 |
 | `tryGetLink(target)` | Get the `href` from a link element |
 | `getLinkInfo(target)` | Get `{ textRange, text }` for a link element |
+
+独立链接直接替换整块，不留下空段落；正文中的链接转换为独立卡片/嵌入块，
+两侧文字保留原格式与段落属性。转换经过一次 DocChain/DocCRUD 事务，并选中新目标。
+转换捕获源选区并建立独立撤销边界；撤销/重做恢复对应视图的光标或块选中状态。
+提交前重查实例存活、只读和父容器插入限制，禁止先删除文字再发现目标不能插入。
+嵌入优先使用 `embed`；只装配旧平台 schemas 的宿主继续回退到 Figma/掘金，
+其他网页、HTML 文件链接和平台地址需注册 `EmbedBlockSchema`。非 HTTP/HTTPS 链接不提供嵌入入口。
 
 #### Usage Example
 
@@ -89,6 +96,19 @@ The `panel` factory must return an object implementing `IMentionPanel`:
 | `updatePosition(rect)` | `(DOMRect) => void` | Plugin calls on scroll to reposition |
 | `dispose()` | `() => void` | Plugin calls when session closes |
 
+#### Public API
+
+```typescript
+mentionPlugin.openAt(block, index, replaceLength = 0): boolean
+```
+
+`openAt()` opens the same mention session at an explicit model position. A
+non-zero `replaceLength` atomically replaces that range with the configured
+mention trigger before the panel opens; this is how the built-in slash menu
+turns `/mention` into `@`. It returns `false` for stale, plain-text-only, or
+effectively readonly blocks. Command surfaces must use this API instead of
+writing an `@` into contenteditable DOM.
+
 #### Usage Example
 
 ```typescript
@@ -113,8 +133,47 @@ new MentionPlugin({
 #### Notes
 
 - Uses `OneShotCursorAnchor` for collaboration-safe cursor tracking during the mention session
+- `openAt()` is the public bridge for slash menus and other model-owned command surfaces
+- A preceding atomic inline Embed is a valid trigger boundary, like a space or
+  line break; typing `@` immediately after a date, formula, image or other Embed
+  opens Mention rather than treating the Embed as part of a word
 - The trigger character is physically inserted into `Y.Text` and removed/replaced on confirm or cancel
 - `onConfirm` lets a host block turn a mention into a **side-effect that runs only on the acting client** rather than a CRDT-synced embed node. Use it when every collaborator observing the node would otherwise re-run the effect (e.g. a synced todo adding a task collaborator from `@user` — only the picker should write; others learn via that domain's own realtime channel)
+
+---
+
+### DateInlineExtensionPlugin
+
+> `plugins/date-inline-extension/` — Click-to-edit for the bundled `date` inline embed.
+> Runtime plugin ID: `date-inline-extension`.
+
+Clicking a `.bc-inline-date` embed opens a connected overlay holding a
+`cs-date-time-picker` and the format list. The list previews each format
+against the currently drafted moment rather than showing token strings, so the
+author picks by appearance.
+
+#### Configuration
+
+```typescript
+new DateInlineExtensionPlugin()   // zero-config
+```
+
+#### Behavior
+
+| Aspect | Behavior |
+|--------|----------|
+| Insertion | Owned by the `/日期` slash command (`inline:date`), not by this plugin |
+| Value semantics | **Frozen.** The plugin never subscribes to a clock and never recomputes at render time — see the `date` embed in `blockcraft-embed.md` |
+| Commit | Only on 确定. The write replaces the embed, which recreates the DOM node the overlay is anchored to, so live-applying each keystroke would strand the anchor |
+| Write path | `applyDeltaOperations([{retain: i}, {delete: 1}, {insert, attributes}])`, with `i` resolved from a live DOM range so a concurrent edit upstream can't misplace it |
+| Readonly | Closes on `subscribeReadonlyChange` and on block-level `readonlyManager.stateChange$` |
+
+#### Notes
+
+- The embed's logical length is always 1, so the update is a `delete: 1` +
+  re-insert rather than an in-place DOM mutation
+- The cursor is restored to `embedIndex + 1` on the next frame, matching
+  `FormulaBlockExtensionPlugin`'s inline path
 
 ---
 
@@ -123,6 +182,7 @@ new MentionPlugin({
 ### CodeInlineEditorBinding
 
 > `plugins/codeEditorBinding.ts` — Keyboard bindings for code and mermaid blocks.
+> Runtime plugin ID: `code-inline-editor-binding`.
 
 Handles Enter (newline with indent preservation or block splitting with Shift), Tab/Shift+Tab (insert/remove tabs), and IME composition end for `code` and `mermaid-textarea` blocks.
 
@@ -147,8 +207,30 @@ new CodeInlineEditorBinding()
 ### TableBlockBinding
 
 > `plugins/tableBlockBinding.ts` — Keyboard and clipboard bindings for table blocks.
+> Runtime plugin ID: `table-block-binding`.
 
-Handles copy/cut of selected cell ranges, table-shaped paste into existing cells, Shift+Arrow to select whole table, Delete/Backspace to clear cells, and Cmd+A to select entire table.
+Handles copy/cut of selected cell ranges, table-shaped paste into existing cells, Arrow/Shift+Arrow movement for model-owned cell rectangles, Delete/Backspace to clear cells, and Cmd+A to select entire table.
+
+Table rectangular selection is model-owned when possible: drag-selected cells are written as `table-cell` anchor/head points via `SelectionManager.setTableCellSelection(table, anchorCell, headCell)`. `TableBlockBinding` resolves that intent through the package-internal `TableModelGrid`, so copy/cut/paste/delete/Arrow/Tab use stable cell IDs and model snapshots even when intermediate cell components are not mounted. `TableBlockComponent` only projects the resolved rectangle onto currently mounted master cells with its private `.bc-table-cell-selected` class; it does not build a Component-owned full-table master map. Row ranges, column ranges, and older transient paths still live as explicit table coordinates, so nonstandard documents without a usable model graph retain the bounded component fallback. Malformed real model grids fail closed. Plain Arrow moves/collapses to the adjacent visible source cell, while Shift+Arrow keeps the anchor and extends the head. Delete/Backspace therefore clears every selected master cell instead of only the anchor cell, while ordinary text deletion inside a cell is still left to `InputTransformer`.
+
+The built-in `TableBlockComponent` previews column resizing with an inert blue
+viewport guide outside the clipped table subtree instead of changing live
+`<col>` widths. Dragging therefore leaves cell content, row heights and
+pagination geometry unchanged. Mouse release resolves
+the stable source-cell anchor through the current model grid and writes
+`colWidths` once; Escape, window blur, a readonly release or
+a stale anchor cancel without a write. This behavior has no configuration
+option and does not change the `TableBlockBinding` constructor or public API.
+The resize handle is a `data-bc-native-input` UI island, so root mouse and
+selection controls do not arm a competing text/rectangle-selection gesture
+before the table starts resizing. The table capture boundary gives that handle
+priority over pagination flow masks and rectangle-selection arming, then stops
+the mousedown from reaching later selection handlers. Idle cell `mousemove`
+repairs the handle's actual DOM ownership after pagination/Angular projection;
+same-cell movement exits through identity checks without reading layout.
+At capture time the built-in table also recognizes the narrow right-edge cell
+geometry as resize ownership. This covers Safari/WebKit table-cell hit testing,
+where a painted absolute handle may still be reported as its `td` or content.
 
 #### Configuration
 
@@ -165,12 +247,43 @@ new TableBlockBinding()
 | `copy` | `table` | Copy selected cells as table snapshot |
 | `cut` | `table` | Copy + clear selected cells |
 | `paste` | `table` | When clipboard content is a BlockCraft/HTML/Markdown/TSV table, fill existing table cells one-to-one from the focused cell or selected top-left cell; oversized source rows/columns are clipped to the current table, then the range selection UI is cleared |
-| `Shift+Arrow` | `table-cell` | Select the whole table block |
-| `Delete` / `Backspace` | `table` | Clear content of selected cells |
-| `Cmd/Ctrl+A` | `table-cell` | Select entire table (when cell is all-selected) |
+| `Arrow` | `table-cell` | Move/collapse a model table-cell selection to the adjacent visible cell; boundary arrows are consumed and keep the selection unchanged |
+| `Shift+Arrow` | `table-cell` | Extend the model table-cell selection by moving the head cell and keeping the anchor cell fixed |
+| `Delete` / `Backspace` | `table` | Clear content of the explicit selected cell rectangle; if there is no rectangle, only a whole-cell block selection falls back to clearing the single selected cell. Plain text deletion inside a cell is left to `InputTransformer` |
+| `Cmd/Ctrl+A` | `table-cell` | Select entire table after the current cell content is already fully selected |
 
 #### Public API
 
 | Method | Description |
 |--------|-------------|
-| `clearCellContent(cells)` | Clear content of given table cells |
+| `clearCellContent(cells)` | Clear content of given mounted table-cell components; built-in model commands use a private stable-ID write path |
+
+#### Related Table Component API
+
+| Method | Description |
+|--------|-------------|
+| `table.getExplicitSelectedCoordinates()` | Return the active cell/row/column rectangle only. Unlike `getSelectedCoordinates()`, it never falls back to the current selection's first cell |
+| `doc.selection.setTableCellSelection(table, anchorCell, headCell?)` | Store a model-owned rectangular table-cell selection. The browser native Range is cleared and the table component paints the selected rectangle |
+
+### WeatherInlineExtensionPlugin
+
+`plugins/weather-inline-extension/`，运行时 ID `weather-inline-extension`，零配置。
+点击行内天气（含 SVG 图标）打开显示格式选择：完整、温度+天气、仅温度、仅天气，均带图标。
+已有天气在菜单中显示实际结果；模板显示字段组合，不写入模拟天气。
+取消不修改；确定通过 Block 公开 Delta API 替换一个位置，保留天气快照与模板来源，支持 Undo/Redo。
+只读文档/冻结块禁止修改，转只读时关闭弹层，协同删除或重渲染使原锚点失效后放弃提交。
+`createBundledEditorCapabilities()` 默认包含此插件。
+
+### PersonInlineExtensionPlugin
+
+`plugins/person-inline-extension/`，运行时 ID `person-inline-extension`，零配置。
+点击 `person` 原生行内素材打开“行内人员格式”：仅姓名、头像＋姓名、姓名＋部门/职务、头像＋姓名＋部门/职务。
+不改变已定格人员或模板来源，字号继承段落；默认蓝色，悬停加同色下划线，显式文字颜色可覆盖。原生 Delta 替换支持撤销重做。
+文档/块只读、协同删除及锚点失效时禁止写入；进入只读关闭配置，销毁释放监听。
+创建人由宿主建档时传给 `materializeInlinePersonSnapshots()`，插件不访问业务人员服务。
+
+### 天气手动刷新
+
+行内天气弹窗右上角提供“刷新天气”单图标按钮（悬停提示，加载时显示单个转圈图标），沿用 `weatherDate`，旧快照无日期时查实时值；模板创建意向不提供刷新入口。成功通过公开 Delta API 替换快照并保留其他属性及当前显示格式、支持撤销，随后关闭；失败保留旧值并允许重试。取消或销毁弹窗中止等待，协同锚点失效及只读时不写入。
+
+主动刷新成功/失败通过 `doc.messageService`（`DocMessageService`）提示，弹窗不额外渲染结果文案；取消或失效请求不提示。

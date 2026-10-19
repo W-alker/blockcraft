@@ -1,6 +1,5 @@
 import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from "@angular/core";
 import { BcFloatToolbarComponent, BcFloatToolbarItemComponent } from "../../../components";
-import { AsyncPipe } from "@angular/common";
 
 export interface IAttachmentToolbarItem {
   name: string
@@ -16,7 +15,7 @@ export interface IAttachmentToolbarItem {
   selector: "div.attachment-toolbar",
   template: `
     <bc-float-toolbar (onItemClick)="onItemClick.emit($event)">
-      @if (canUse && !(doc.readonlySwitch$ | async)) {
+      @if (canUse && !isReadonly) {
         <bc-float-toolbar-item icon="bc_bianji_1" name="rename" title="重命名"></bc-float-toolbar-item>
       }
       @if (canUse && showPreview) {
@@ -27,12 +26,12 @@ export interface IAttachmentToolbarItem {
       }
 
       @for (item of extraItems; track item.name) {
-        @if ((canUse || item.showWhenUnavailable) && (!item.editOnly || !(doc.readonlySwitch$ | async))) {
+        @if ((canUse || item.showWhenUnavailable) && (!item.editOnly || !isReadonly)) {
           <bc-float-toolbar-item [icon]="item.icon" [name]="item.name" [title]="item.label"></bc-float-toolbar-item>
         }
       }
 
-      @if (!(doc.readonlySwitch$ | async)) {
+      @if (!isReadonly) {
         @if (canUse) {
           <span class="bc-float-toolbar__divider"></span>
         }
@@ -42,8 +41,7 @@ export interface IAttachmentToolbarItem {
   `,
   imports: [
     BcFloatToolbarComponent,
-    BcFloatToolbarItemComponent,
-    AsyncPipe
+    BcFloatToolbarItemComponent
   ],
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -55,6 +53,9 @@ export class AttachmentBlockToolbar {
   /** 附件是否就绪（已上传完成且可访问），控制 rename/preview/download 的可见性 */
   @Input()
   canUse = true
+
+  @Input()
+  isReadonly = false
 
   /** 是否显示预览按钮 */
   @Input()

@@ -7,6 +7,8 @@ import {
 } from "../../framework/block-std/schema/block-schema";
 import {BulletBlockComponent} from "./bullet.block";
 
+export * from './agent'
+
 export interface BulletBlockModel extends EditableBlockNative {
   flavour: 'bullet'
 }
@@ -19,9 +21,13 @@ export const BulletBlockSchema: IBlockSchemaOptions<BulletBlockModel> = {
   metadata: {
     version: 1,
     label: "无序列表",
+    description: "创建不强调先后顺序的列表",
     icon: 'bc_icon bc_wuxuliebiao-color',
     svgIcon: 'bc_wuxuliebiao-color',
     placeholder: '列表项',
+    virtualization: {
+      speculativeMount: 'safe',
+    },
   }
 }
 

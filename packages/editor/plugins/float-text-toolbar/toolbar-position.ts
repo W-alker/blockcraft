@@ -1,5 +1,6 @@
 import {ConnectedPosition} from "@angular/cdk/overlay";
 import {POSITION_MAP} from "../../framework";
+import {isFloatTextToolbarSelection} from "./selection";
 
 /**
  * 计算浮动文字工具栏的连接定位（connectElement + connectPositions）。
@@ -19,16 +20,19 @@ export function calcFloatToolbarPosition(
   doc: BlockCraft.Doc,
   selection: BlockCraft.Selection,
   toolbarHeight = 48,
-): { connectElement: HTMLElement; connectPositions: ConnectedPosition[] } {
+): { connectElement: HTMLElement; connectPositions: ConnectedPosition[] } | null {
+  if (!isFloatTextToolbarSelection(selection)) return null;
+
   // 光标是向前还是向后
-  const isForward = selection.getDirection() === 'forward';
+  const isForward = selection.direction === 'forward';
   const relativeBlock = isForward ? selection.lastBlock : selection.firstBlock;
 
   let rect: DOMRect;
   if (relativeBlock.nodeType !== 'editable') {
     rect = relativeBlock.hostElement.getBoundingClientRect();
   } else {
-    const selRect = doc.selection.getSelectionRects()!;
+    const selRect = doc.selection.getSelectionRects();
+    if (!selRect?.length) return null;
     rect = selection.isInSameBlock ? selRect[0] : (isForward ? selRect[selRect.length - 1] : selRect[0]);
   }
   const blockRect = relativeBlock.hostElement.getBoundingClientRect();

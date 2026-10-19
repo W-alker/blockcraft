@@ -143,9 +143,19 @@ export class InlinePositionMapper {
       if (remaining <= leaf.length) {
         if (leaf.type === BlotType.Embed) {
           if (remaining === 1) {
-            // After embed: position in the gap zero-space
+            // Park after the marker, not before it. Native IME updates replace
+            // text relative to this DOM boundary; placing the caret at offset 0
+            // leaves the zero-width marker on the composing side and WebKit can
+            // append each intermediate composition value instead of replacing it.
             const gap = (leaf as EmbedBlot).gapNode
-            return { node: gap.firstChild as Text, offset: 0 }
+            const marker = gap.firstChild
+            if (marker?.nodeType === Node.TEXT_NODE) {
+              return {
+                node: marker,
+                offset: marker.textContent?.length ?? 0,
+              }
+            }
+            return {node: gap, offset: gap.childNodes.length}
           }
           // Before embed (remaining === 0 handled above)
           const wrapper = (leaf as EmbedBlot).cElement.querySelector('span[contenteditable="false"]')!
@@ -220,14 +230,22 @@ export class InlinePositionMapper {
   }
 
   private _resolveContainerOffset(container: HTMLElement, offset: number): number {
-    // Container child offset: count inline elements up to `offset`
-    // offset 0 = before leading gap, offset 1 = leading gap, offset 2+ = inline elements
+    // Container child offset: count actual Blot DOM nodes before the boundary.
+    // View-only projections may insert zero-model-length direct children
+    // (pagination gaps) or wrap Blots in fragment groups; fixed `offset - 2`
+    // arithmetic would count those nodes as text and shift the caret model offset.
     const leaves = this.scrollBlot.leaves
     if (!leaves.length) return 0
-    const index = Math.min(leaves.length - 1, Math.max(0, offset - 2))
+    const boundary = Math.max(0, Math.min(container.childNodes.length, offset))
+    const preceding = new Set<Node>(
+      Array.from(container.childNodes).slice(0, boundary),
+    )
     let modelOffset = 0
-    for (let i = 0; i <= index; i++) {
-      modelOffset += leaves[i].length
+    for (const leaf of leaves) {
+      const directChild = directChildOf(container, leaf.domNode)
+      if (directChild && preceding.has(directChild)) {
+        modelOffset += leaf.length
+      }
     }
     return modelOffset
   }
@@ -278,4 +296,12 @@ export class InlinePositionMapper {
 
     return Math.min(offset, leaf.length)
   }
+}
+
+function directChildOf(container: HTMLElement, node: Node): Node | null {
+  let current: Node | null = node
+  while (current?.parentNode && current.parentNode !== container) {
+    current = current.parentNode
+  }
+  return current?.parentNode === container ? current : null
 }

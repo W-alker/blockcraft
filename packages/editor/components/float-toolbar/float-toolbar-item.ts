@@ -1,9 +1,12 @@
 import {ChangeDetectionStrategy, Component, ElementRef, HostBinding, Input} from '@angular/core';
+import {MatIcon} from '@angular/material/icon';
 
 @Component({
   selector: 'bc-float-toolbar-item',
   template: `
-    @if (icon) {
+    @if (svgIcon) {
+      <mat-icon class="bc-toolbar-svg-icon" [svgIcon]="svgIcon"></mat-icon>
+    } @else if (icon) {
       <i [class]="['bc_icon',icon]"></i>
     }
     <ng-content></ng-content>
@@ -11,6 +14,15 @@ import {ChangeDetectionStrategy, Component, ElementRef, HostBinding, Input} from
       <i class="bc_icon bc_xiajaintou dropdown"></i>
     }
   `,
+  styles: [`
+    .bc-toolbar-svg-icon {
+      width: 1em;
+      height: 1em;
+      flex: none;
+      overflow: visible;
+    }
+  `],
+  imports: [MatIcon],
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -22,6 +34,7 @@ export class BcFloatToolbarItemComponent {
   value!: any;
 
   @Input() icon?: string;
+  @Input() svgIcon?: string;
 
   @Input()
   @HostBinding('class.active')

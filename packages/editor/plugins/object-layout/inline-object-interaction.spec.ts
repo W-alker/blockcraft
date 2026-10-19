@@ -1,0 +1,324 @@
+import {NgZone} from '@angular/core'
+import {Subject} from 'rxjs'
+import {
+  createInlineShapeDelta,
+  createInlineWordArtDelta,
+} from '../../embeds'
+import type {InlineObjectKind} from '../../blocks'
+import {InlineImageDragProxy} from '../img-toolbar/inline-image-drag'
+import {InlineObjectInteractionController} from './inline-object-interaction'
+
+describe('InlineObjectInteractionController', () => {
+  it('keeps the CSS WordArt presentation when its drag proxy moves under body', () => {
+    const frame = document.createElement('span')
+    frame.className = 'bc-inline-object-frame bc-inline-word-art-frame'
+    const text = document.createElement('span')
+    text.className = 'bc-inline-word-art__text'
+    text.setAttribute('data-bc-word-art-print-props', '{}')
+    text.style.color = 'transparent'
+    text.style.webkitTextFillColor = 'transparent'
+    text.style.backgroundImage =
+      'linear-gradient(180deg, #fde047 0%, #f97316 58%, #dc2626 100%)'
+    text.style.backgroundClip = 'text'
+    text.style.setProperty('-webkit-background-clip', 'text')
+    text.style.setProperty('-webkit-text-stroke', '0.03em #9a3412')
+    text.style.textShadow = '0.08em 0.12em 0.04em rgba(124, 45, 18, 0.3)'
+    text.style.transform = 'skewX(10deg)'
+    text.textContent = '艺术字'
+    frame.append(text)
+
+    const proxy = new InlineImageDragProxy(
+      frame,
+      new DOMRect(100, 20, 240, 80),
+      120,
+      40,
+      {
+        className: 'bc-inline-object-drag-proxy',
+        attribute: 'data-bc-inline-object-drag-proxy',
+        preserveTransform: true,
+      },
+    )
+
+    try {
+      const clone = proxy.element.querySelector<HTMLElement>(
+        '.bc-inline-word-art-frame',
+      )!
+      expect(proxy.element.parentElement).toBe(document.body)
+      expect(clone.querySelector('svg')).toBeNull()
+      const clonedText = clone.querySelector<HTMLElement>(
+        '.bc-inline-word-art__text',
+      )!
+      expect(clonedText.hasAttribute('data-bc-word-art-print-props')).toBeTrue()
+      expect(clonedText.style.color).toBe('transparent')
+      expect(clonedText.style.webkitTextFillColor).toBe('transparent')
+      expect(clonedText.style.backgroundImage).toContain('linear-gradient')
+      expect(clonedText.style.backgroundClip).toBe('text')
+      expect(clonedText.style.getPropertyValue('-webkit-text-stroke'))
+        .toContain('0.03em')
+      expect(clonedText.style.textShadow).toContain('rgba(124, 45, 18, 0.3)')
+      expect(clonedText.style.transform).toBe('skewX(10deg)')
+    } finally {
+      proxy.destroy()
+    }
+  })
+
+  it('selects the one-character Embed in both selection models on click', () => {
+    const root = document.createElement('div')
+    const host = document.createElement('div')
+    host.dataset['blockId'] = 'paragraph-1'
+    const shell = document.createElement('span')
+    shell.className = 'bc-inline-object-shell'
+    shell.dataset['bcInlineObject'] = 'shape'
+    const frame = document.createElement('span')
+    frame.className = 'bc-inline-object-frame'
+    frame.setAttribute('data-bc-inline-float-frame', '')
+    shell.appendChild(frame)
+    host.appendChild(shell)
+    root.appendChild(host)
+    document.body.appendChild(root)
+
+    const setInlineRange = jasmine.createSpy('setInlineRange')
+    const block = {
+      id: 'paragraph-1',
+      containerElement: host,
+      runtime: {domPointToModel: () => 3},
+      textDeltas: () => [
+        {insert: 'abc'},
+        createInlineShapeDelta({shapeType: 'star'}, [{insert: '重点'}]),
+      ],
+      setInlineRange,
+    } as any
+    const onItemClicked = new Subject<any>()
+    const setInput = jasmine.createSpy('setInput')
+    const overlayRef = {
+      overlayElement: document.createElement('div'),
+      dispose: jasmine.createSpy('dispose'),
+    }
+    const doc = {
+      root: {hostElement: root},
+      getBlockById: () => block,
+      isEditable: () => true,
+      isReadonly: false,
+      event: {status: {isComposing: false}},
+      readonlyManager: {isReadonly: () => false},
+      overlayService: {
+        createConnectedOverlay: () => ({
+          overlayRef,
+          componentRef: {
+            setInput,
+            instance: {onItemClicked},
+          },
+        }),
+      },
+    } as any
+    const controller = new InlineObjectInteractionController(
+      doc,
+      'shape',
+      () => undefined,
+    )
+    let event!: PointerEvent
+    frame.addEventListener('pointerdown', value => event = value)
+    frame.dispatchEvent(new PointerEvent('pointerdown', {
+      button: 0,
+      bubbles: true,
+      cancelable: true,
+      isPrimary: true,
+    }))
+
+    ;(controller as any)._onPointerDown(event)
+
+    expect(setInlineRange).toHaveBeenCalledOnceWith(3, 1)
+    expect(shell.classList.contains('bc-inline-object-shell--selected'))
+      .toBeTrue()
+    expect(setInput).not.toHaveBeenCalledWith('side', jasmine.anything())
+    controller.destroy()
+    onItemClicked.complete()
+    root.remove()
+  })
+
+  for (const kind of ['shape', 'word-art'] as const) {
+    for (const wrapped of [false, true]) {
+      it(`drags a ${wrapped ? 'wrapped' : 'plain inline'} ${kind} Embed and commits its new anchor`, () => {
+      const root = document.createElement('div')
+      const host = document.createElement('div')
+      host.dataset['blockId'] = 'paragraph-1'
+      const text = document.createTextNode('abc')
+      const shell = document.createElement('span')
+      shell.className = 'bc-inline-object-shell'
+      shell.dataset['bcInlineObject'] = kind
+      const frame = document.createElement('span')
+      frame.className = 'bc-inline-object-frame'
+      frame.setAttribute('data-bc-inline-float-frame', '')
+      shell.appendChild(frame)
+      host.append(text, shell)
+      root.appendChild(host)
+      document.body.appendChild(root)
+
+      const delta = kind === 'shape'
+        ? createInlineShapeDelta(
+            {shapeType: 'star'},
+            [{insert: '重点'}],
+            wrapped
+              ? {wrap: true, x: 0.2, gap: 12}
+              : undefined,
+          )
+        : createInlineWordArtDelta(
+            {fontSize: 48},
+            [{insert: '艺术字'}],
+            wrapped
+              ? {wrap: true, x: 0.2, gap: 12}
+              : undefined,
+          )
+      if (wrapped) {
+        delta.attributes = {...delta.attributes, side: 'left'}
+      }
+      const deltas = [{insert: 'abc'}, delta]
+      const releaseLayoutFreeze = jasmine.createSpy('releaseLayoutFreeze')
+      const releaseViewLease = jasmine.createSpy('releaseViewLease')
+      const applyTextDelta = jasmine.createSpy('applyTextDelta')
+      const runWithoutTracking = jasmine.createSpy('runWithoutTracking')
+        .and.callFake((run: () => void) => run())
+      const setInlineRange = jasmine.createSpy('setInlineRange')
+      const block = {
+        id: 'paragraph-1',
+        hostElement: host,
+        containerElement: host,
+        textLength: 4,
+        runtime: {
+          domPointToModel: (node: Node) => node === shell ? 3 : 1,
+          acquireFloatLayoutFreeze: () => releaseLayoutFreeze,
+        },
+        textDeltas: () => deltas,
+        setInlineRange,
+      } as any
+      const onItemClicked = new Subject<any>()
+      const overlayRef = {
+        overlayElement: document.createElement('div'),
+        dispose: jasmine.createSpy('dispose'),
+      }
+      const doc = {
+        root: {hostElement: root},
+        getBlockById: () => block,
+        isEditable: () => true,
+        isPlainTextBlock: () => false,
+        isReadonly: false,
+        event: {status: {isComposing: false}},
+        readonlyManager: {isReadonly: () => false},
+        model: {exists: () => true},
+        vm: {isMounted: () => true},
+        virtualization: {
+          acquireBlockViewLease: () => releaseViewLease,
+        },
+        injector: {
+          get: (token: unknown) => token === NgZone
+            ? {runOutsideAngular: (run: () => void) => run()}
+            : null,
+        },
+        logger: {warn: jasmine.createSpy('warn')},
+        crud: {
+          transact: (run: () => void) => run(),
+          applyTextDelta,
+        },
+        revisions: {isTracking: true, runWithoutTracking},
+        overlayService: {
+          createConnectedOverlay: () => ({
+            overlayRef,
+            componentRef: {
+              setInput: jasmine.createSpy('setInput'),
+              instance: {onItemClicked},
+            },
+          }),
+        },
+      } as any
+      Object.defineProperty(host, 'clientWidth', {
+        configurable: true,
+        value: 500,
+      })
+      root.getBoundingClientRect = () => new DOMRect(0, 0, 800, 600)
+      host.getBoundingClientRect = () => new DOMRect(0, 0, 500, 160)
+      frame.getBoundingClientRect = () => new DOMRect(100, 20, 120, 80)
+      const caretRange = document.createRange()
+      caretRange.setStart(text, 1)
+      caretRange.collapse(true)
+      const caretSpy = spyOn(
+        document as Document & {
+          caretRangeFromPoint(x: number, y: number): Range | null
+        },
+        'caretRangeFromPoint',
+      ).and.returnValue(caretRange)
+      const controller = new InlineObjectInteractionController(
+        doc,
+        kind as InlineObjectKind,
+        () => undefined,
+      )
+      let event!: PointerEvent
+      frame.addEventListener('pointerdown', value => event = value)
+      frame.dispatchEvent(new PointerEvent('pointerdown', {
+        button: 0,
+        bubbles: true,
+        cancelable: true,
+        isPrimary: true,
+        clientX: 120,
+        clientY: 40,
+        pointerId: 7,
+      }))
+
+      ;(controller as any)._onPointerDown(event)
+      expect(document.querySelector(
+        '[data-bc-inline-object-drag-proxy]',
+      )).toBeNull()
+      window.dispatchEvent(new PointerEvent('pointerup', {
+        clientX: 120,
+        clientY: 40,
+        pointerId: 7,
+      }))
+      expect(document.querySelector(
+        '[data-bc-inline-object-drag-proxy]',
+      )).toBeNull()
+      expect(applyTextDelta).not.toHaveBeenCalled()
+
+      setInlineRange.calls.reset()
+      ;(controller as any)._onPointerDown(event)
+      window.dispatchEvent(new PointerEvent('pointermove', {
+        clientX: 220,
+        clientY: 80,
+        pointerId: 7,
+      }))
+      expect(document.querySelector(
+        '[data-bc-inline-object-drag-proxy]',
+      )).not.toBeNull()
+      window.dispatchEvent(new PointerEvent('pointerup', {
+        clientX: 220,
+        clientY: 80,
+        pointerId: 7,
+      }))
+
+      expect(setInlineRange).toHaveBeenCalledOnceWith(3, 1)
+      expect(runWithoutTracking).toHaveBeenCalledTimes(1)
+      expect(applyTextDelta).toHaveBeenCalledTimes(1)
+      const operations = applyTextDelta.calls.mostRecent().args[1]
+      expect(operations[0]).toEqual({retain: 1})
+      expect(operations[1].insert).toEqual(delta.insert)
+      if (wrapped) {
+        expect(operations[1].attributes['wrap']).toBeTrue()
+        expect(operations[1].attributes['x']).toBeGreaterThan(0.2)
+        expect(operations[1].attributes['x']).toBeLessThanOrEqual(0.4)
+        expect(operations[1].attributes['side']).toBeUndefined()
+      } else {
+        expect(operations[1].attributes['wrap']).toBeUndefined()
+        expect(operations[1].attributes['x']).toBeUndefined()
+      }
+      expect(releaseLayoutFreeze).toHaveBeenCalledTimes(1)
+      expect(releaseViewLease).toHaveBeenCalledTimes(1)
+      expect(document.querySelector(
+        '[data-bc-inline-object-drag-proxy]',
+      )).toBeNull()
+
+      controller.destroy()
+      caretSpy.and.callThrough()
+      onItemClicked.complete()
+      root.remove()
+      })
+    }
+  }
+})

@@ -83,15 +83,7 @@
       border-top: 1px solid #E6E6E6;
 
       &__button {
-        padding: 8px 16px;
-        cursor: pointer;
-        font-size: 14px;
-        color: #4857E2;
-        text-align: center;
-
-        &:hover {
-          background: #F9F9F9;
-        }
+        margin: 8px 0;
       }
     }
   }

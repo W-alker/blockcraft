@@ -17,20 +17,41 @@
   .list {
     margin: 0;
     padding: 4px;
-    width: 224px;
+    width: min(380px, calc(100vw - 24px));
+
+    &__group {
+      height: 24px;
+      padding: 6px 8px 2px;
+      box-sizing: border-box;
+      color: var(--bc-color-lighter);
+      font-size: 11px;
+      line-height: 16px;
+      list-style: none;
+    }
+
+    &__empty {
+      padding: 18px 12px;
+      color: var(--bc-color-lighter);
+      font-size: 12px;
+      line-height: 18px;
+      list-style: none;
+      text-align: center;
+    }
 
     &__item {
       display: flex;
       align-items: center;
       gap: 8px;
-      height: 36px;
-      padding: 0 8px;
+      min-height: 42px;
+      padding: 5px 8px;
       border-radius: 4px;
       cursor: pointer;
 
       > mat-icon,
-      i {
-        font-size: 1em;
+      > cs-icon,
+      > i {
+        flex: none;
+        font-size: 16px;
         color: var(--bc-active-color);
       }
 
@@ -41,6 +62,81 @@
       &.active {
         background: var(--bc-bg-hover);
       }
+    }
+
+    &__content {
+      display: flex;
+      min-width: 0;
+      flex: 1;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    &__main {
+      display: flex;
+      min-width: 0;
+      flex: 1;
+      flex-direction: column;
+      gap: 1px;
+    }
+
+    &__label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+      line-height: 18px;
+    }
+
+    &__description {
+      overflow: hidden;
+      color: var(--bc-color-lighter);
+      font-size: 11px;
+      line-height: 15px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    &__markdown {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      gap: 4px;
+      color: var(--bc-color-lighter);
+      font-size: 10px;
+      line-height: 16px;
+    }
+
+    &__markdown-label {
+      flex: none;
+    }
+
+    &__hints {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    &__hint-stack {
+      display: flex;
+      flex: none;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 2px;
+    }
+
+    &__hint {
+      padding: 0 4px;
+      border: 0;
+      border-radius: 3px;
+      background: var(--bc-bg-secondary);
+      color: var(--bc-color-lighter);
+      font-family: inherit;
+      font-size: 10px;
+      font-weight: 400;
+      line-height: 16px;
+      white-space: nowrap;
     }
   }
 }
