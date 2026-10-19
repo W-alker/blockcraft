@@ -1,4 +1,5 @@
-import { fakeAsync, flushMicrotasks } from "@angular/core/testing";
+import {Injector, signal} from "@angular/core";
+import { TestBed, fakeAsync, flushMicrotasks } from "@angular/core/testing";
 import { BehaviorSubject, Subject } from "rxjs";
 import * as Y from "yjs";
 import { OneShotCursorAnchor } from "../../framework";
@@ -713,6 +714,119 @@ describe("BlockTransformerPlugin slash execution", () => {
 });
 
 describe("BlockTransformerPlugin colon Emoji execution", () => {
+  function searchHarness(initialText = ":") {
+    const plugin = new BlockTransformerPlugin() as any;
+    const yDoc = new Y.Doc();
+    const yText = yDoc.getText("source");
+    yText.insert(0, initialText);
+    const editor = document.createElement("div");
+    const block = {
+      id: "source", yText, containerElement: editor,
+      onDestroy$: new Subject<void>(),
+      get textLength() { return yText.length; },
+      textDeltas: () => yText.toDelta(),
+    };
+    const selection = {
+      collapsed: true,
+      start: {type: "text", blockId: block.id, offset: yText.length},
+      end: {type: "text", blockId: block.id, offset: yText.length},
+      firstBlock: block, lastBlock: block,
+    };
+    const picker = {
+      csQuery: signal(""), isLoading: signal(false), isUnavailable: signal(false),
+      visibleItems: signal<unknown[]>([{}]), csEmojiSelect: new Subject<any>(),
+    };
+    const componentRef = {
+      injector: TestBed.inject(Injector), instance: picker,
+      setInput: (name: string, value: string) => {
+        if (name === "csQuery") picker.csQuery.set(value);
+      },
+    };
+    plugin.doc = {
+      yDoc, isReadonly: false,
+      getBlockById: () => block, isEditable: (candidate: unknown) => candidate === block,
+      event: {status: {isComposing: false}},
+      selection: {value: selection, selectionChange$: new BehaviorSubject(selection)},
+      readonlySwitch$: new Subject<boolean>(), onDestroy$: new Subject<void>(),
+      overlayService: {createConnectedOverlay: () => ({componentRef})},
+    };
+    const scheduler = (window as any).scheduler;
+    if (scheduler?.yield) spyOn(scheduler, "yield").and.returnValue(Promise.resolve());
+    else spyOn(window as any, "requestIdleCallback").and.callFake((cb: Function) => {cb(); return 1;});
+    const settle = () => {TestBed.flushEffects(); flushMicrotasks();};
+    plugin.openColonEmojiPicker(block, 0);
+    return {plugin, picker, settle, yText};
+  }
+
+  it("closes an unmatched committed query without deleting text", fakeAsync(() => {
+    const h = searchHarness();
+    // Preserve the literal trigger so its relative anchor remains valid.
+    h.yText.insert(1, "zzzzzzzz");
+    h.plugin.doc.selection.value.start.offset = h.yText.length;
+    h.picker.visibleItems.set([]);
+    h.settle();
+    expect(h.plugin.activePickerSession).toBeUndefined();
+    expect(h.yText.toString()).toBe(":zzzzzzzz");
+  }));
+
+  it("keeps empty queries, loading and unavailable data open", fakeAsync(() => {
+    const h = searchHarness();
+    h.picker.visibleItems.set([]);
+    h.settle();
+    expect(h.plugin.activePickerSession).toBeDefined();
+    h.picker.isLoading.set(true);
+    h.yText.insert(1, "zzzzzzzz");
+    h.plugin.doc.selection.value.start.offset = h.yText.length;
+    h.settle();
+    expect(h.plugin.activePickerSession).toBeDefined();
+    h.picker.isUnavailable.set(true);
+    h.picker.isLoading.set(false);
+    h.settle();
+    expect(h.plugin.activePickerSession).toBeDefined();
+    // A successful late load must close without requiring another keystroke.
+    h.picker.isUnavailable.set(false);
+    h.settle();
+    expect(h.plugin.activePickerSession).toBeUndefined();
+  }));
+
+  it("defers a late empty result through IME and checks the committed query", fakeAsync(() => {
+    const h = searchHarness(":zzzzzzzz");
+    h.plugin.doc.event.status.isComposing = true;
+    h.picker.visibleItems.set([]);
+    h.settle();
+    expect(h.plugin.activePickerSession).toBeDefined();
+    // Composition commits a matching query before the deferred refresh runs.
+    h.yText.delete(1, h.yText.length - 1);
+    h.yText.insert(1, "笑");
+    h.plugin.doc.selection.value.start.offset = 2;
+    h.picker.visibleItems.set([{}]);
+    h.plugin.doc.event.status.isComposing = false;
+    h.plugin.onCompositionEnd();
+    h.settle();
+    expect(h.picker.csQuery()).toBe("笑");
+    expect(h.plugin.activePickerSession).toBeDefined();
+    h.plugin.closePickerSession();
+    h.settle();
+  }));
+
+  it("closes after an unmatched IME commit and ignores pending work after disposal", fakeAsync(() => {
+    const h = searchHarness();
+    h.plugin.doc.event.status.isComposing = true;
+    h.yText.insert(1, "找不到的表情");
+    h.plugin.doc.selection.value.start.offset = h.yText.length;
+    h.picker.visibleItems.set([]);
+    h.settle();
+    expect(h.plugin.activePickerSession).toBeDefined();
+    h.plugin.doc.event.status.isComposing = false;
+    h.plugin.onCompositionEnd();
+    h.settle();
+    expect(h.plugin.activePickerSession).toBeUndefined();
+    expect(h.yText.toString()).toBe(":找不到的表情");
+    h.picker.visibleItems.set([{}]);
+    h.settle();
+    expect(h.plugin.activePickerSession).toBeUndefined();
+  }));
+
   it("captures arrows for a virtual Emoji selection without moving editor focus", () => {
     const plugin = new BlockTransformerPlugin() as any;
     const yDoc = new Y.Doc();
@@ -755,7 +869,12 @@ describe("BlockTransformerPlugin colon Emoji execution", () => {
     const moveCategory = jasmine.createSpy("moveCategory").and.returnValue(true);
     const selectActive = jasmine.createSpy("selectActive").and.returnValue(true);
     const componentRef = {
+      injector: TestBed.inject(Injector),
       instance: {
+        csQuery: signal("smile"),
+        isLoading: () => false,
+        isUnavailable: () => false,
+        visibleItems: () => [{}],
         csEmojiSelect: emojiSelect$,
         moveActive,
         moveCategory,

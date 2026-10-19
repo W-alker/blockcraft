@@ -146,7 +146,9 @@ export function installBlockTransformerKeyboardCapture(options: {
     route();
   };
   const onKeyDown = (event: KeyboardEvent) => routeOnce(event, () => {
-    if (options.isComposing()) return;
+    // IME confirmation may arrive after compositionend reset the document
+    // status. Native search inputs also own composition outside that status.
+    if (options.isComposing() || event.isComposing || event.keyCode === 229) return;
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     const key = normalizeBlockTransformerNavigationKey(event.key, event.keyCode);
     if (!key || !options.accepts(key)) {
@@ -166,11 +168,13 @@ export function installBlockTransformerKeyboardCapture(options: {
     options.onKey(key, event);
   });
   const onKeyPress = (event: KeyboardEvent) => routeOnce(event, () => {
+    if (options.isComposing() || event.isComposing || event.keyCode === 229) return;
     const key = normalizeBlockTransformerNavigationKey(event.key, event.keyCode);
     if (!key || !options.accepts(key)) return;
     if (heldKeys.has(key) || (!closed && belongsToSession(event))) consume(event);
   });
   const onKeyUp = (event: KeyboardEvent) => routeOnce(event, () => {
+    if (options.isComposing() || event.isComposing || event.keyCode === 229) return;
     const key = normalizeBlockTransformerNavigationKey(event.key, event.keyCode);
     if (!key || !options.accepts(key)) return;
     if (heldKeys.has(key) || (!closed && belongsToSession(event))) consume(event);
@@ -178,6 +182,7 @@ export function installBlockTransformerKeyboardCapture(options: {
     finishTailIfPossible();
   });
   const onBeforeInput = (event: InputEvent) => routeOnce(event, () => {
+    if (options.isComposing() || event.isComposing) return;
     if (
       !["insertParagraph", "insertLineBreak", "insertTab"].includes(
         event.inputType,

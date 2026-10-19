@@ -300,3 +300,75 @@ for (const picker of [
     expect(leaked).toEqual([]);
   });
 }
+
+test('colon emoji closes on no match, preserves text and releases editor keys', async ({page}) => {
+  await initialize(page);
+  const blockId = await createEmptyParagraphWithCaret(page);
+  await page.keyboard.type(':');
+  const panel = page.locator('.cs-emoji-picker__panel');
+  await expect(panel.locator('.cs-emoji-picker__option').first()).toBeVisible();
+  await page.keyboard.type('xiao');
+  await expect(panel.locator('.cs-emoji-picker__option').first()).toBeVisible();
+  await page.keyboard.type('zzzzzzzz');
+  await expect(panel).toHaveCount(0);
+  const paragraph = page.locator(`[data-block-id="${blockId}"]`);
+  await expect.poll(() => paragraph.textContent().then(text => text?.replace(/[\u200B\u200C\uFEFF]/g, ''))).toBe(':xiaozzzzzzzz');
+  expect((await editorSelectionSnapshot(page)).blockId).toBe(blockId);
+  await page.keyboard.type('stilltyping');
+  await expect.poll(() => paragraph.textContent().then(text => text?.replace(/[\u200B\u200C\uFEFF]/g, ''))).toBe(':xiaozzzzzzzzstilltyping');
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => (await editorSelectionSnapshot(page)).blockId).not.toBe(blockId);
+});
+
+test('slash emoji keeps its search panel open for no match', async ({page}) => {
+  await initialize(page);
+  await createEmptyParagraphWithCaret(page);
+  await page.keyboard.type('/');
+  await page.locator('block-transformer-contextmenu').getByRole('option', {name: /^emoji/i}).click();
+  const panel = page.locator('.cs-emoji-picker__panel');
+  await expect(panel.locator('.cs-emoji-picker__option').first()).toBeVisible();
+  await panel.locator('input').fill('zzzzzzzz');
+  await expect(panel.locator('.cs-emoji-picker__empty')).toBeVisible();
+  await expect(panel).toBeVisible();
+});
+
+test('colon emoji waits for native IME commit before closing unmatched results', async ({page, context, browserName}) => {
+  test.skip(browserName !== 'chromium', 'Chromium native composition protocol');
+  await initialize(page);
+  const blockId = await createEmptyParagraphWithCaret(page);
+  const panel = page.locator('.cs-emoji-picker__panel');
+  await page.keyboard.type(':');
+  await expect(panel.locator('.cs-emoji-picker__option').first()).toBeVisible();
+  const cdp = await context.newCDPSession(page);
+  try {
+    for (const [draft, committed, matching] of [
+      ['xiaoxxxxxxxxxx', '笑', true],
+      ['zzzzzzzz', '找不到的表情', false],
+    ] as const) {
+      await cdp.send('Input.imeSetComposition', {text: draft, selectionStart: draft.length, selectionEnd: draft.length});
+      await expect.poll(() => page.evaluate(() => {
+        const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc;
+        return doc.inputManger.compositionSession.phase;
+      })).toBe('active');
+      await expect(panel).toBeVisible();
+      await cdp.send('Input.insertText', {text: committed});
+      // A terminal IME key with keyCode 229 must neither select an emoji nor split text.
+      await page.evaluate(() => {
+        document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'Enter', keyCode: 229, bubbles: true, cancelable: true,
+        }));
+      });
+      if (matching) await expect(panel.locator('.cs-emoji-picker__option').first()).toBeVisible();
+      else await expect(panel).toHaveCount(0);
+    }
+    const paragraph = page.locator(`[data-block-id="${blockId}"]`);
+    await expect(paragraph).toHaveText(':笑找不到的表情');
+    expect((await editorSelectionSnapshot(page)).blockId).toBe(blockId);
+    expect(await page.evaluate(id => {
+      const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc;
+      return doc.getBlockById(id).yText.toString();
+    }, blockId)).toBe(':笑找不到的表情');
+  } finally {
+    await cdp.detach();
+  }
+});

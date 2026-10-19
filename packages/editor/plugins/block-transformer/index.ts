@@ -1,4 +1,5 @@
 import {preserveTransformPlaceholder} from './placeholder';
+import {effect} from '@angular/core';
 import {
   filter,
   merge,
@@ -902,6 +903,13 @@ export class BlockTransformerPlugin extends DocPlugin {
     let session!: ActivePickerSession;
     const ownerDocument = block.containerElement.ownerDocument;
     const picker = componentRef.instance;
+    // The pinned CSES picker exposes these signals to its template, but has no
+    // search-result output. Read the same state instead of duplicating search
+    // or inferring emptiness from the virtualized option DOM.
+    const hasNoResults = () =>
+      !picker['isLoading']() &&
+      !picker['isUnavailable']() &&
+      picker['visibleItems']().length === 0;
 
     const caretIsAt = (offset: number) => {
       const dom = ownerDocument.getSelection();
@@ -968,6 +976,10 @@ export class BlockTransformerPlugin extends DocPlugin {
         return;
       }
       componentRef.setInput("csQuery", context.query);
+      if (context.query && hasNoResults()) {
+        close$.next();
+        return;
+      }
       if (keyboardNavigation) {
         componentRef.changeDetectorRef.detectChanges();
         picker.moveActive("first", { preserveFocus: true });
@@ -1052,6 +1064,13 @@ export class BlockTransformerPlugin extends DocPlugin {
     });
     this.activePickerSession = session;
 
+    // Data can finish loading without another editor input. Always go through
+    // the deferred refresh so IME commit, model selection and the current query
+    // settle before closing; a newer refresh/session supersedes this one.
+    const resultEffect = effect(() => {
+      if (picker.csQuery() && hasNoResults()) scheduleRefresh();
+    }, {injector: componentRef.injector, manualCleanup: true});
+
     const textObserver = () => scheduleRefresh();
     block.yText.observe(textObserver);
     this.doc.selection.selectionChange$
@@ -1066,6 +1085,7 @@ export class BlockTransformerPlugin extends DocPlugin {
       .subscribe(() => close$.next());
     close$.pipe(take(1)).subscribe(() => {
       refreshSeq++;
+      resultEffect.destroy();
       keyboardCapture.close();
       releaseCaretPin();
       try {
