@@ -38,6 +38,18 @@ async function read(page: Page, id: string) {
   }, id)
 }
 
+async function clickParagraphEnd(page: Page, id: string, offset: number) {
+  await page.locator(`[data-block-id="${id}"] c-text`).click()
+  const caret = () => page.locator('block-craft-editor').evaluate(editor => {
+    const selection = (window as any).ng.getComponent(editor).doc.selection.value
+    return {blockId: selection?.start.blockId, offset: selection?.start.offset}
+  })
+  // Native selectionchange is asynchronous; wait before sending the next key.
+  await expect.poll(caret).toMatchObject({blockId: id})
+  await page.keyboard.press('End')
+  await expect.poll(caret).toEqual({blockId: id, offset})
+}
+
 for (const mode of ['range-backspace', 'range-delete', 'backspace', 'delete']) {
   test(`empty text retains typography and character styles after ${mode}`, async ({page}) => {
     const {id} = await start(page)
@@ -180,6 +192,51 @@ test('empty paragraph defaults survive navigation and a fresh document', async (
   await expect.poll(() => read(page, id)).toEqual([{insert: 'X', attributes: format}])
   await expect(page.locator(`[data-block-id="${id}"] c-text`)).toHaveCSS('font-size', '45px')
 })
+
+test('empty paragraph bold stays local when visiting another paragraph before typing', async ({page}) => {
+  const {id, plain} = await start(page, [])
+  await setRange(page, id, 0)
+  const bold = page.locator('bc-fixed-toolbar').getByRole('button', {name: '加粗', exact: true})
+  await bold.click()
+  await expect(bold).toHaveClass(/\bactive\b/)
+  await expect(page.locator(`[data-block-id="${id}"] [data-bc-paragraph-defaults]`)).toHaveCSS('font-weight', '700')
+
+  await clickParagraphEnd(page, plain, 5)
+  await expect(bold).not.toHaveClass(/\bactive\b/)
+  await page.keyboard.type('Z')
+  await expect.poll(() => read(page, plain)).toEqual([{insert: 'plainZ'}])
+  await expect(page.locator(`[data-block-id="${plain}"] c-text`)).toHaveCSS('font-weight', '400')
+
+  await setRange(page, id, 0)
+  await expect(bold).toHaveClass(/\bactive\b/)
+  await page.keyboard.type('X')
+  await expect.poll(() => read(page, id)).toEqual([{insert: 'X', attributes: {'a:bold': true}}])
+  await expect(page.locator(`[data-block-id="${id}"] c-text`)).toHaveCSS('font-weight', '700')
+})
+
+for (const offset of [0, 1, 2]) {
+  test(`untyped bold in existing text is discarded after navigation from offset ${offset}`, async ({page}) => {
+    const {id, plain} = await start(page, [{insert: 'AB'}])
+    await setRange(page, id, offset)
+    const bold = page.locator('bc-fixed-toolbar').getByRole('button', {name: '加粗', exact: true})
+    await bold.click()
+    await expect(bold).toHaveClass(/\bactive\b/)
+    await expect.poll(() => read(page, id)).toEqual([{insert: 'AB'}])
+    const defaults = await page.locator('block-craft-editor').evaluate((editor, id) =>
+      (window as any).ng.getComponent(editor).doc.model.getProps(id).textDefaults ?? {}, id)
+    expect(defaults).toEqual({})
+
+    await clickParagraphEnd(page, plain, 5)
+    await expect(bold).not.toHaveClass(/\bactive\b/)
+    await page.keyboard.type('Z')
+    await expect.poll(() => read(page, plain)).toEqual([{insert: 'plainZ'}])
+    await setRange(page, id, offset)
+    await expect(bold).not.toHaveClass(/\bactive\b/)
+    await page.keyboard.type('X')
+    await expect.poll(() => read(page, id)).toEqual([{insert: 'AB'.slice(0, offset) + 'X' + 'AB'.slice(offset)}])
+    await expect(page.locator(`[data-block-id="${id}"] c-text`)).toHaveCSS('font-weight', '400')
+  })
+}
 
 test('empty format commands undo atomically and do not retain deleted links', async ({page}) => {
   const {id} = await start(page, [])

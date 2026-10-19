@@ -6,6 +6,34 @@
   "description": "文档库2.0",
   "glyphs": [
     {
+      "icon_id": "31419885",
+      "name": "段落",
+      "font_class": "duanla",
+      "unicode": "e665",
+      "unicode_decimal": 58981
+    },
+    {
+      "icon_id": "46072999",
+      "name": "font_setting_outline",
+      "font_class": "zitishezhi",
+      "unicode": "e8b1",
+      "unicode_decimal": 59569
+    },
+    {
+      "icon_id": "44156719",
+      "name": "自适应尺寸",
+      "font_class": "zishiyingchicun",
+      "unicode": "e970",
+      "unicode_decimal": 59760
+    },
+    {
+      "icon_id": "47530072",
+      "name": "固定尺寸-1",
+      "font_class": "gudingchicun-1",
+      "unicode": "e661",
+      "unicode_decimal": 58977
+    },
+    {
       "icon_id": "12550416",
       "name": "两端对齐，末行左对齐",
       "font_class": "liangduanduiqi",
@@ -3014,20 +3042,6 @@
       "font_class": "bianji",
       "unicode": "e70f",
       "unicode_decimal": 59151
-    },
-    {
-      "icon_id": "44156719",
-      "name": "自适应尺寸",
-      "font_class": "zishiyingchicun",
-      "unicode": "e970",
-      "unicode_decimal": 59760
-    },
-    {
-      "icon_id": "47530072",
-      "name": "固定尺寸-1",
-      "font_class": "gudingchicun-1",
-      "unicode": "e661",
-      "unicode_decimal": 58977
     }
   ]
 }

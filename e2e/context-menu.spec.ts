@@ -151,6 +151,49 @@ for (const keyboard of [false, true]) {
   });
 }
 
+test('delayed text toolbar stays behind overlapping context menu items', async ({page}) => {
+  const id = await setup(page);
+  await expect(page.locator('.float-text-toolbar')).toBeVisible();
+  await page.evaluate(() => {
+    const timing = {opened: 0, toolbar: 0};
+    (window as any).contextMenuTiming = timing;
+    document.addEventListener('contextmenu', () => timing.opened = performance.now(), {capture: true, once: true});
+    const observer = new MutationObserver(records => {
+      if (!timing.opened) return;
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (node instanceof Element && (node.matches('.float-text-toolbar') || node.querySelector('.float-text-toolbar'))) {
+            timing.toolbar = performance.now();
+            observer.disconnect();
+          }
+        }
+      }
+    });
+    observer.observe(document.body, {childList: true, subtree: true});
+  });
+  await open(page, id);
+  await expect.poll(() => page.evaluate(() => (window as any).contextMenuTiming.toolbar)).toBeGreaterThan(0);
+  await expect(page.locator('.float-text-toolbar')).toBeVisible();
+  const overlap = await menu(page).evaluate(contextMenu => {
+    const menuRect = contextMenu.getBoundingClientRect();
+    const toolbarRect = document.querySelector('.float-text-toolbar')!.getBoundingClientRect();
+    const left = Math.max(menuRect.left, toolbarRect.left);
+    const right = Math.min(menuRect.right, toolbarRect.right);
+    const top = Math.max(menuRect.top, toolbarRect.top);
+    const bottom = Math.min(menuRect.bottom, toolbarRect.bottom);
+    const x = (left + right) / 2;
+    const y = (top + bottom) / 2;
+    const hit = document.elementFromPoint(x, y);
+    return {width: right - left, height: bottom - top, menuReceivesPointer: contextMenu.contains(hit), x, y};
+  });
+  expect(overlap.width).toBeGreaterThan(0);
+  expect(overlap.height).toBeGreaterThan(0);
+  expect(overlap.menuReceivesPointer).toBe(true);
+  await clipboard(page, {'text/plain': ''});
+  await page.mouse.click(overlap.x, overlap.y);
+  await expect(menu(page)).toHaveCount(0);
+});
+
 test('right click preserves range, menu is opaque and keyboard Escape restores selection', async ({page}) => {
   const id = await setup(page);
   await open(page, id);

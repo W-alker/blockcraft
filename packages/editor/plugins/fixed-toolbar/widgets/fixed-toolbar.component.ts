@@ -456,7 +456,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
                   (mousedown)="onActionMouseDown($event)"
                   (click)="openSettings('text', $event); textSettingsTooltip.hide()"
                 >
-                  <i class="bc_icon bc_zihao" aria-hidden="true"></i>
+                  <i class="bc_icon bc_zitishezhi" aria-hidden="true"></i>
                 </button>
               </div>
               <div class="toolbar-row">
@@ -732,7 +732,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
                   (mousedown)="onActionMouseDown($event)"
                   (click)="openSettings('paragraph', $event); paragraphSettingsTooltip.hide()"
                 >
-                  <i class="bc_icon bc_suojinheduiqi" aria-hidden="true"></i>
+                  <i class="bc_icon bc_duanla" aria-hidden="true"></i>
                 </button>
               </div>
             </div>
