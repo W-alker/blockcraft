@@ -20,13 +20,14 @@ import {NgForOf, NgIf} from "@angular/common";
 import {IInlineNodeAttrs, IEditableBlockProps, ISelectionJSON} from "../../../framework";
 import {Overlay} from "@angular/cdk/overlay";
 import {ComponentPortal} from "@angular/cdk/portal";
-import {merge} from "rxjs";
+import {filter, merge} from "rxjs";
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 import {LinkInputPad} from "./link-input-pad";
 import {TextToolbarUtils} from "../utils";
 import {CsTooltipDirective} from "@cses/ui";
 import {isFloatTextToolbarSelection} from "../selection";
 import {isSelectionAlive} from "../../../framework/modules/selection/liveness";
+import {captureRelativeSelectionBookmark, resolveRelativeSelectionBookmark} from "../../../framework/modules/selection/relative-bookmark";
 
 export interface IToolbarMenuItem {
   label?: string
@@ -485,7 +486,8 @@ export class FloatTextToolbarComponent {
   onLink() {
     const selection = this.doc.selection.value
     if (!isFloatTextToolbarSelection(selection) || !selection.isInSameBlock || !isSelectionAlive(selection as any, this.doc)) return
-    const selectionJSON = selection.toJSON()
+    const bookmark = captureRelativeSelectionBookmark(selection, this.doc)
+    if (!bookmark) return
 
     const rect = this.doc.selection.getSelectionRect()
     if (!rect) return
@@ -505,18 +507,38 @@ export class FloatTextToolbarComponent {
       backdropClass: 'cdk-overlay-transparent-backdrop',
     })
 
+    // The floating toolbar is dismissed when the panel's native input takes
+    // focus. The panel's saved document range outlives that toolbar instance.
+    let documentDestroyed = false
+    const restore = () => {
+      if (documentDestroyed || this.doc.isReadonly) return null
+      const saved = resolveRelativeSelectionBookmark(bookmark, this.doc)
+      if (!saved) return null
+      try {
+        this.doc.selection.replay(saved)
+        const live = this.doc.selection.value
+        return isSelectionAlive(live, this.doc) && !this.doc.readonlyManager.isSelectionReadonly(live!) ? live : null
+      } catch {
+        return null
+      }
+    }
     const close = () => {
       ovr.dispose()
       fake.destroy()
       nextTick().then(() => {
-        this.replaySelection(selectionJSON)
+        restore()
       })
     }
     const cpr = ovr.attach(portal)
     merge(ovr.backdropClick(), cpr.instance.onCancel).pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe(close)
+    this.doc.onDestroy$.pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe(() => {
+      documentDestroyed = true
+      close()
+    })
+    this.doc.readonlySwitch$.pipe(filter(Boolean), takeUntilDestroyed(cpr.instance.destroyRef)).subscribe(close)
     cpr.instance.onConfirm.pipe(takeUntilDestroyed(cpr.instance.destroyRef)).subscribe((url: string) => {
       close()
-      const liveSelection = this.replaySelection(selectionJSON)
+      const liveSelection = restore()
       if (!isFloatTextToolbarSelection(liveSelection) || !liveSelection.isInSameBlock || liveSelection.start.type !== 'text') return
       const startBlock = liveSelection.firstBlock as any
       const index = liveSelection.start.offset

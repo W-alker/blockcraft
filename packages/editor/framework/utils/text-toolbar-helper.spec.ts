@@ -89,6 +89,27 @@ describe("TextToolbarHelper boundary selections", () => {
     return {helper, doc, root, p1, p2, outside, rootHost, selection, queryBlocksBetween};
   };
 
+  it("reads mixed and numeric weights and clears numeric overrides through bold commands", () => {
+    const h = makeHarness();
+    const range = h.selection(
+      {blockId: 'p1', type: 'text', offset: 0, block: h.p1},
+      {blockId: 'p1', type: 'text', offset: 3, block: h.p1},
+    );
+    (h.p1 as any).textDeltas = () => [{insert: 'one', attributes: {'s:fontWeight': '600'}}];
+    expect(h.helper.getCurrentCommonAttrs(range as any).fontWeight).toBe(600);
+    expect(h.helper.getCurrentCommonAttrs(range as any).attrs.get('bold')).toBeTrue();
+    h.helper.formatText({'a:bold': null}, range as any);
+    expect(h.p1.formatText).toHaveBeenCalledWith(0, 3, {'a:bold': null, 's:fontWeight': null, 's:font-weight': null});
+    (h.p1 as any).textDeltas = () => [{insert: 'o', attributes: {'s:fontWeight': '600'}}, {insert: 'ne', attributes: {'a:bold': true}}];
+    expect(h.helper.getCurrentCommonAttrs(range as any).fontWeight).toBeUndefined();
+    expect(h.helper.getCurrentCommonAttrs(range as any).attrs.get('bold')).toBeTrue();
+    const caret = h.selection({blockId: 'p1', type: 'text', offset: 1, block: h.p1}, {blockId: 'p1', type: 'text', offset: 1, block: h.p1});
+    h.doc.inputManger.peekNextInsertAttrs.and.returnValue({'s:fontWeight': '500'});
+    h.helper.formatTypography({attrs: {'a:bold': true}}, caret as any);
+    expect(h.doc.inputManger.setNextInsertAttrs.calls.mostRecent().args[0]).toEqual({'a:bold': true});
+    h.rootHost.remove();
+  });
+
   it("reads effective pixels for a heading and mixed inline bases", () => {
     const h = makeHarness();
     (h.p1 as any).props = {depth: 0, heading: 1, pfs: 1.5};
@@ -354,9 +375,9 @@ describe("TextToolbarHelper boundary selections", () => {
     helper.formatText({"a:bold": true}, textSelection as any);
 
     expect((doc.crud as any).formatText.calls.allArgs()).toEqual([
-      ["p1", 1, 2, {"a:bold": true}],
-      ["p2", 0, 3, {"a:bold": true}],
-      ["outside", 0, 2, {"a:bold": true}],
+      ["p1", 1, 2, {"a:bold": true, "s:fontWeight": null, "s:font-weight": null}],
+      ["p2", 0, 3, {"a:bold": true, "s:fontWeight": null, "s:font-weight": null}],
+      ["outside", 0, 2, {"a:bold": true, "s:fontWeight": null, "s:font-weight": null}],
     ]);
     expect(p2.formatText).not.toHaveBeenCalled();
     void root;
@@ -669,9 +690,9 @@ describe('TextToolbarHelper selected containers', () => {
     helper.updateBlockProps({heading: 3, lh: 1.75}, selection as any);
 
     expect(doc.crud.formatText.calls.allArgs()).toEqual([
-      ['p1', 0, 3, {'a:bold': true}],
+      ['p1', 0, 3, {'a:bold': true, 's:fontWeight': null, 's:font-weight': null}],
       ['p1', 0, 3, {'t:fs': null, 's:fontSize': null}],
-      ['p2', 0, 3, {'a:bold': true}],
+      ['p2', 0, 3, {'a:bold': true, 's:fontWeight': null, 's:font-weight': null}],
       ['p2', 0, 3, {'t:fs': null, 's:fontSize': null}],
     ]);
     expect(doc.crud.updateBlockProps.calls.allArgs()).toEqual([
@@ -779,9 +800,9 @@ describe('TextToolbarHelper table cell selections', () => {
     helper.formatText({'a:bold': true}, selection as any);
     helper.updateBlockProps({heading: 2}, selection as any);
     expect(doc.crud.formatText.calls.allArgs()).toEqual([
-      ['p00', 0, 3, {'a:bold': true}],
-      ['p10', 0, 3, {'a:bold': true}],
-      ['p11', 0, 3, {'a:bold': true}],
+      ['p00', 0, 3, {'a:bold': true, 's:fontWeight': null, 's:font-weight': null}],
+      ['p10', 0, 3, {'a:bold': true, 's:fontWeight': null, 's:font-weight': null}],
+      ['p11', 0, 3, {'a:bold': true, 's:fontWeight': null, 's:font-weight': null}],
     ]);
     expect(doc.selection.setSelection).toHaveBeenCalledOnceWith(selection.start, selection.end);
     expect(doc.crud.updateBlockProps.calls.allArgs()).toEqual([

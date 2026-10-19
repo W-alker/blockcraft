@@ -194,11 +194,13 @@ export class FloatTextToolbarPlugin extends DocPlugin {
     ctx.preventDefault();
     const selection = this.doc.selection.value;
     if (!selection || this._isSelectionReadonly(selection)) return true;
+    // Keyboard actions must not depend on the debounced floating toolbar state.
+    this.activeCommonAttrs = this.utils.getCurrentCommonAttrs(selection);
     const value = this.activeCommonAttrs.attrs.has(attrName);
     // @ts-ignore
     this.utils.formatText({ [`a:${attrName}`]: value ? null : true });
     if (this._cpr) {
-      value ? this.activeCommonAttrs.attrs.delete(attrName) : this.activeCommonAttrs.attrs.set(attrName, value);
+      value ? this.activeCommonAttrs.attrs.delete(attrName) : this.activeCommonAttrs.attrs.set(attrName, true);
       this._cpr.setInput('activeAttrs', this.activeCommonAttrs.attrs);
       this._cpr.changeDetectorRef.markForCheck();
     }

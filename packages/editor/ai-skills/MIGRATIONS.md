@@ -2,15 +2,58 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-10-16 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-10-19 | Tracks `@ccc/blockcraft` npm releases.
+
+## 未发布 — 2026-10-19：正文独立字重
+
+**Severity**: minor（新增排版能力；发布版本由用户决定）
+
+**What changed**: 文本设置增加数值字重；接通加粗、混合选区、格式刷、段落默认格式及 HTML 交换。
+
+**Why**: 支持中等、半粗等正文排版，保持显示、编辑和保存恢复的一致性。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-inline.md`、`blockcraft-plugins-formatting.md`、`blockcraft-adapter.md`。
+
+### New APIs / Behavior Changes
+
+typography 入口导出 `normalizeInlineFontWeight`、`readInlineFontWeight`、`normalizeInlineFontWeightPatch`。
+`ITextCommonAttrs.fontWeight`、`FontSettingsDialogData.fontWeight` 为可选字段：number / null（继承）/ undefined（混合）。
+显式字重保存为 `s:fontWeight` 字符串，600 及以上同时标记粗体；独立 B 命令移除数字覆盖，避免数值样式压住快捷开关。
+HTML typography 支持字重往返；`textDefaults` 保留字重以支持后续输入。
+
+### Migration Recipe
+
+无需迁移旧快照，旧 `a:bold` 内容继续按 700 读取。使用 `TextToolbarHelper` 的宿主自动获得字重与加粗的一致处理。
+直接构造格式补丁的调用方可使用 `normalizeInlineFontWeightPatch({'s:fontWeight': '500'})`，再通过已有 DocChain / DocCRUD 格式化事务写入。
+未弃用现有 API，未修改包版本号。
+
+## 未发布 — 2026-10-18：固定工具栏链接与公式的光标操作
+
+**Severity**: minor（新增交互能力；发布版本由用户决定）
+
+**What changed**: 空光标可输入链接文本／地址或 LaTeX 后插入；链接按钮反映并可退出当前输入链接格式；精确选中公式时可还原为普通文本。
+
+**Why**: 补齐收缩光标的引用插入及退出操作，避免必须先输入并选中文字。
+
+**Affected ai-skills files**: `blockcraft-plugins-formatting.md`、`blockcraft-toolbar.md`。
+
+### New APIs / Behavior Changes
+
+`LinkInputPad` 新增可选 `showTextInput`（默认 false）和 `textValue`；原 `onConfirm` 字符串事件不变。
+固定工具栏新插入引用后光标位于末尾，后续输入不携带链接。公式选中态只对应一个完整的 LaTeX 行内对象。
+
+### Migration Recipe
+
+无需数据迁移。浮动工具栏原有链接范围格式化不变；使用固定工具栏的宿主无需改接线。
+新增行为与旧选区转换共用 Yjs / 撤销路径。未修改包版本号。
 
 ## 未发布 — 2026-10-16：固定工具栏双模式与优先级响应式
 
 **Severity**: minor（工具栏交互调整；发布版本由用户决定）
 
-**What changed**: 固定工具栏新增简略／双层切换和常驻文本／段落设置入口；
+**What changed**: 固定工具栏新增简略／双层切换，双层保留文本／段落设置入口，简略优先保留链接，间距／公式先收纳；
 按容器实际溢出逐级收起快捷项，收起的命令归入“更多格式”或“插入”。
-文字／背景颜色面板改为点击打开，使用 Tab 直接嵌入组件库基础颜色面板，支持更多颜色及 HEX/RGB 输入，保留原格式化数据路径。
+文字颜色和背景颜色拆为两个独立按钮，点击打开对应的组件库基础颜色面板，支持更多颜色及 HEX/RGB 输入，保留原格式化数据路径。
 
 **Why**: 提高设置可发现性，并让窄容器保留常用操作而不增加命令行数。
 
@@ -18,10 +61,10 @@
 
 ### Behavior Changes / Migration Recipe
 
-默认简略模式，切换仅改变组件展示，不写入文档。原命令、权限、弹窗及选区恢复路径保留。
+默认双层模式，切换仅改变组件展示，不写入文档。原命令、权限、弹窗及选区恢复路径保留。
 宿主应将工具栏外层固定高度改为自然高度，以容纳双层命令；
 Playground 的模板编辑／使用页已同步调整。投影插槽和扩展动作契约不变。
-颜色 Tab 需要组件库导出 `CsColorPickerPanelComponent`；宿主需升级到已发布的 `@cses/ui@4.37.0`。
+独立颜色面板需要组件库导出 `CsColorPickerPanelComponent`；宿主需升级到已发布的 `@cses/ui@4.37.0`。
 研发依赖和 editor 的 peerDependencies 已同步为该版本，原临时颜色组件补丁已移除。
 无数据迁移，未修改包版本号。
 

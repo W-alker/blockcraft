@@ -187,9 +187,9 @@ test('actual px unifies a mixed paragraph, retains scales, and undoes in one ste
   expect(after.deltas.map((run: any) => run.attributes['t:px'])).toEqual([12.8, 8])
   const sizes = await page.locator(`[data-block-id="${id}"] c-text`).evaluateAll(elements => elements.map(el => getComputedStyle(el).fontSize))
   expect(sizes).toEqual(['24px', '24px'])
-  await page.locator('bc-fixed-toolbar').getByTitle('撤销', {exact: true}).click()
+  await page.locator('bc-fixed-toolbar').getByRole('button', { name: '撤销', exact: true }).click()
   await expect.poll(() => pixelState(page, id)).toEqual(before)
-  await page.locator('bc-fixed-toolbar').getByTitle('重做', {exact: true}).click()
+  await page.locator('bc-fixed-toolbar').getByRole('button', { name: '重做', exact: true }).click()
   await expect.poll(() => pixelState(page, id)).toEqual(after)
 })
 
@@ -248,7 +248,7 @@ test('advanced modal changes scale while preserving px bases and inline scale', 
   expect(after.props).toMatchObject({fs: 16, pfs: 2})
   expect(after.deltas).toEqual(before.deltas)
   expect(await fontSize(page, id)).toBeCloseTo(32, 2)
-  await page.locator('bc-fixed-toolbar').getByTitle('撤销', {exact: true}).click()
+  await page.locator('bc-fixed-toolbar').getByRole('button', { name: '撤销', exact: true }).click()
   await expect.poll(() => pixelState(page, id)).toEqual(before)
 })
 

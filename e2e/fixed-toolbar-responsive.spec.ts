@@ -12,6 +12,9 @@ async function start(page: Page, atEnd = false) {
         document.querySelector("block-craft-editor"),
       )?.doc?.isInitialized,
   );
+  const toolbar = page.locator("bc-fixed-toolbar");
+  await expect(toolbar).toHaveClass(/toolbar-mode--full/);
+  await toolbar.getByRole("button", { name: "收起为简略工具栏", exact: true }).click();
   return page.locator("block-craft-editor").evaluate(async (editor, atEnd) => {
     const doc = (window as any).ng.getComponent(editor).doc;
     const p = doc.schemas.createSnapshot("paragraph", ["工具栏响应式验证文本"]);
@@ -35,6 +38,10 @@ async function resizeToolbar(page: Page, width: number) {
     (el, value) => ((el as HTMLElement).style.width = `${value}px`),
     width,
   );
+  // Let ResizeObserver reset the tier before checking the subsequent fit frames.
+  await toolbar.evaluate(() => new Promise<void>(resolve =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  ));
   await expect
     .poll(() =>
       toolbar
@@ -45,20 +52,102 @@ async function resizeToolbar(page: Page, width: number) {
   return toolbar;
 }
 
-test("tabbed library colour panels apply both colours without nested popups", async ({
+test("direct toolbar actions show tooltips on hover and keyboard focus", async ({
+  page,
+  browserName,
+}, testInfo) => {
+  await start(page);
+  const toolbar = page.locator("bc-fixed-toolbar");
+  const tooltip = page.getByRole("tooltip");
+  const bold = toolbar.getByRole("button", { name: "加粗", exact: true });
+  await bold.hover();
+  await expect(tooltip).toHaveText("加粗");
+  await expect(tooltip).toHaveCSS("opacity", "1");
+  await expect(bold).not.toHaveAttribute("title");
+  await page.mouse.move(0, 0);
+  await expect(tooltip).toHaveCount(0);
+
+  const redo = toolbar.getByRole("button", { name: "重做", exact: true });
+  await expect(redo).toBeDisabled();
+  await redo.hover();
+  await expect(tooltip).toHaveText("重做");
+  await page.mouse.move(0, 0);
+  await expect(tooltip).toHaveCount(0);
+
+  await toolbar.getByRole("button", { name: "展开为双层工具栏", exact: true }).click();
+  await page.mouse.move(0, 0);
+  const settings = toolbar.getByRole("button", { name: "文本设置", exact: true });
+  await settings.focus();
+  await expect(tooltip).toHaveText("文本设置");
+  await settings.press("Escape");
+  await expect(tooltip).toHaveCount(0);
+  // WebKit on macOS uses Option+Tab to include buttons in keyboard navigation.
+  await settings.press(browserName === "webkit" ? "Alt+Tab" : "Tab");
+  await expect(bold).toBeFocused();
+  await expect(tooltip).toHaveText("加粗");
+  await bold.press("Escape");
+  await expect(tooltip).toHaveCount(0);
+
+  await page.mouse.move(0, 0);
+  await expect(tooltip).toHaveCount(0);
+  await bold.hover();
+  await expect(tooltip).toHaveText("加粗");
+  expect((await tooltip.boundingBox())!.y).toBeGreaterThanOrEqual(
+    (await bold.boundingBox())!.y + (await bold.boundingBox())!.height,
+  );
+  await page.mouse.move(0, 0);
+  await expect(tooltip).toHaveCount(0);
+  // Isolate the toolbar from the Playground's fixed 320px debug sidebar.
+  await toolbar.evaluate((el) => Object.assign((el as HTMLElement).style, {
+    position: "fixed", left: "20px", top: "8px", width: "320px",
+  }));
+  await page.setViewportSize({ width: 360, height: 800 });
+  await resizeToolbar(page, 320);
+  const paragraph = toolbar.getByRole("button", { name: "段落设置", exact: true });
+  await paragraph.hover();
+  await expect(tooltip).toHaveText("段落设置");
+  const bounds = await tooltip.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(360);
+  const buttonBounds = await paragraph.boundingBox();
+  expect(bounds!.y).toBeGreaterThanOrEqual(buttonBounds!.y + buttonBounds!.height);
+  await page.screenshot({ path: testInfo.outputPath("narrow-toolbar-tooltip.png") });
+});
+
+test("colour tooltips close when panels open and do not overlap hover menus", async ({
+  page,
+}) => {
+  await start(page);
+  const toolbar = page.locator("bc-fixed-toolbar");
+  const tooltip = page.getByRole("tooltip");
+  for (const label of ["文字颜色", "背景颜色"]) {
+    const button = toolbar.getByRole("button", { name: label, exact: true });
+    await button.hover();
+    await expect(tooltip).toHaveText(label);
+    await button.click();
+    await expect(page.locator(".toolbar-color-menu")).toBeVisible();
+    await expect(tooltip).toHaveCount(0);
+    await button.click();
+    await expect(page.locator(".toolbar-color-menu")).toHaveCount(0);
+    await page.mouse.move(0, 0);
+  }
+  await toolbar.getByTitle("插入表格", { exact: true }).hover();
+  await expect(page.locator("bc-table-size-picker")).toBeVisible();
+  await expect(tooltip).toHaveCount(0);
+});
+
+test("separate colour buttons apply both colours without nested popups", async ({
   page,
 }, testInfo) => {
   test.setTimeout(60000);
   const id = await start(page);
   const toolbar = page.locator("bc-fixed-toolbar");
-  await toolbar.getByTitle("文字/背景颜色", { exact: true }).click();
-  const menu = page.locator(".toolbar-color-menu");
+  const textButton = toolbar.getByRole("button", { name: "文字颜色", exact: true });
+  const backgroundButton = toolbar.getByRole("button", { name: "背景颜色", exact: true });
+  await textButton.click();
+  const menu = page.locator(".toolbar-color-menu").filter({ has: page.locator("cs-color-picker-panel") });
   const palette = menu.locator(".cs-color-picker-panel");
-  const textTab = menu.getByRole("tab", { name: "文字颜色", exact: true });
-  const backgroundTab = menu.getByRole("tab", {
-    name: "背景颜色",
-    exact: true,
-  });
   const readDelta = () =>
     page
       .locator("block-craft-editor")
@@ -70,14 +159,16 @@ test("tabbed library colour panels apply both colours without nested popups", as
   const readColor = (key: string) =>
     readDelta().then((delta) => delta[0].attributes?.[key]?.toLowerCase());
   const original = await readDelta();
-  await expect(textTab).toHaveAttribute("aria-selected", "true");
+  await expect(textButton).toHaveAttribute("aria-expanded", "true");
+  await expect(menu.getByRole("tab")).toHaveCount(0);
+  await expect(page.locator(".toolbar-color-menu cs-color-picker-panel")).toHaveCount(1);
   await expect(menu.locator("cs-color-picker-panel")).toHaveCount(1);
   await expect(menu.locator(".cs-color-picker-trigger")).toHaveCount(0);
   await expect(page.locator(".cs-color-picker-overlay-pane")).toHaveCount(0);
   await expect(palette).toHaveCSS("box-shadow", "none");
   await expect(palette.getByRole("radio").count()).resolves.toBeGreaterThan(20);
   await menu.screenshot({
-    path: testInfo.outputPath("tabbed-colour-palette.png"),
+    path: testInfo.outputPath("separate-colour-palette.png"),
   });
   await palette.getByRole("button", { name: "更多颜色", exact: true }).click();
   const hex = palette.getByRole("textbox", { name: "Hex", exact: true });
@@ -99,17 +190,17 @@ test("tabbed library colour panels apply both colours without nested popups", as
     )
     .toBe(true);
   await menu.screenshot({
-    path: testInfo.outputPath("tabbed-colour-advanced.png"),
+    path: testInfo.outputPath("separate-colour-advanced.png"),
   });
   await palette
     .getByRole("textbox", { name: "红色通道", exact: true })
     .fill("30");
-  await palette
-    .getByRole("textbox", { name: "红色通道", exact: true })
-    .press("Enter");
+  // Switching buttons commits the focused field and retains the original range.
+  await backgroundButton.click();
   await expect.poll(() => readColor("s:color")).toBe("#1e77aa");
-  await backgroundTab.click();
-  await expect(backgroundTab).toHaveAttribute("aria-selected", "true");
+  await expect(backgroundButton).toHaveAttribute("aria-expanded", "true");
+  await expect(textButton).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator(".toolbar-color-menu cs-color-picker-panel")).toHaveCount(1);
   await expect(menu.getByText("背景图形", { exact: true })).toBeVisible();
   await expect(
     palette.getByRole("radiogroup", { name: "最近使用" }),
@@ -126,13 +217,13 @@ test("tabbed library colour panels apply both colours without nested popups", as
   await expect.poll(() => readColor("a:bg")).toBeUndefined();
   await palette.getByRole("button", { name: "返回色板", exact: true }).click();
   await menu.screenshot({
-    path: testInfo.outputPath("tabbed-colour-background.png"),
+    path: testInfo.outputPath("separate-colour-background.png"),
   });
   await palette
     .getByRole("radio", { name: "无背景色", exact: true })
     .press("Enter");
   await expect.poll(() => readColor("s:background")).toBeUndefined();
-  await textTab.click();
+  await textButton.click();
   await expect(menu.getByText("背景图形", { exact: true })).toHaveCount(0);
   await expect(
     palette.getByRole("radiogroup", { name: "最近使用" }),
@@ -154,15 +245,17 @@ test("tabbed library colour panels apply both colours without nested popups", as
       text: original.map((r: any) => r.insert).join(""),
       unformatted: true,
     });
-  // Tab keyboard navigation and closing belong to the embedding toolbar.
-  await textTab.focus();
-  await page.keyboard.press("ArrowRight");
-  await expect(backgroundTab).toHaveAttribute("aria-selected", "true");
+  // Each button opens its own panel by keyboard; Escape restores the editor range.
   await page.keyboard.press("Escape");
   await expect(menu).toBeHidden();
-  await toolbar.getByTitle("文字/背景颜色", { exact: true }).click();
-  await expect(backgroundTab).toHaveAttribute("aria-selected", "true");
+  const editorHasFocus = () => page.locator('block-craft-editor').evaluate(editor =>
+    (window as any).ng.getComponent(editor).doc.root.hostElement.contains(document.activeElement));
+  await expect.poll(editorHasFocus).toBe(true);
+  await backgroundButton.focus();
+  await backgroundButton.press("Enter");
+  await expect(menu.getByText("背景图形", { exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
+  await expect.poll(editorHasFocus).toBe(true);
   await page.addStyleTag({
     content: `.document-scale-settings-float{display:none!important}
     bc-fixed-toolbar{position:fixed!important;top:16px!important;left:16px!important;width:calc(100vw - 32px)!important;z-index:500!important}`,
@@ -171,14 +264,20 @@ test("tabbed library colour panels apply both colours without nested popups", as
   await toolbar
     .getByRole("button", { name: "展开为双层工具栏", exact: true })
     .click();
-  await toolbar.getByTitle("文字/背景颜色", { exact: true }).click();
-  await textTab.click();
+  await expect(textButton).toBeVisible();
+  await expect(backgroundButton).toBeVisible();
+  await expect.poll(() => toolbar.evaluate(el => {
+    const text = el.querySelector('.toolbar-color-control--text')!.getBoundingClientRect();
+    const background = el.querySelector('.toolbar-color-control--background')!.getBoundingClientRect();
+    return background.left - text.right;
+  })).toBeGreaterThanOrEqual(0);
+  await textButton.click();
   await palette.getByRole("button", { name: "更多颜色", exact: true }).click();
   const bounds = await menu.boundingBox();
   expect(bounds!.x).toBeGreaterThanOrEqual(0);
   expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
   await menu.screenshot({
-    path: testInfo.outputPath("tabbed-colour-narrow.png"),
+    path: testInfo.outputPath("separate-colour-narrow.png"),
   });
 });
 
@@ -186,6 +285,7 @@ test("existing library popup reuses the same panel and preserves confirmation", 
   page,
 }) => {
   const id = await start(page);
+  await page.locator("bc-fixed-toolbar").getByRole("button", { name: "展开为双层工具栏", exact: true }).click();
   await page.locator("bc-fixed-toolbar .toolbar-settings-entry--text").click();
   const modal = page.locator("bc-font-settings-dialog");
   const trigger = modal.locator("cs-color-picker").first().getByRole("button");
@@ -232,14 +332,28 @@ test("container width progressively removes shortcuts while preserving named des
         .click();
     }
     const counts: number[] = [];
-    for (const width of [1440, 1000, 760, 560, 390, 320]) {
+    for (const width of [1800, 1440, 1200, 1000, 900, 760, 560, 390, 320]) {
       await resizeToolbar(page, width);
-      await expect(
-        toolbar.locator(".toolbar-settings-entry--text"),
-      ).toBeVisible();
-      await expect(
-        toolbar.locator(".toolbar-settings-entry--paragraph"),
-      ).toBeVisible();
+      for (const settings of ["text", "paragraph"]) {
+        await expect(toolbar.locator(`.toolbar-settings-entry--${settings}`)).toBeVisible({visible: mode === "双层"});
+      }
+      if (mode === "简略") {
+        await expect(toolbar.getByRole("button", {name: "链接", exact: true})).toBeVisible();
+      }
+      const formula = toolbar.getByRole("button", {name: "行内公式", exact: true});
+      const spacing = toolbar.locator(".toolbar-letter-spacing, .toolbar-line-height");
+      if (width === 1800) {
+        await expect(formula).toBeVisible();
+        for (const button of await spacing.all()) await expect(button).toBeVisible();
+      } else if (width <= 760) {
+        await expect(formula).toBeHidden();
+        for (const button of await spacing.all()) await expect(button).toBeHidden();
+      }
+      // Specialist controls collapse before the common image/table shortcuts.
+      if (!(await toolbar.locator(".toolbar-insert-shortcut--image").isVisible())) {
+        await expect(formula).toBeHidden();
+        for (const button of await spacing.all()) await expect(button).toBeHidden();
+      }
       await expect(toolbar.locator(".toolbar-insert-menu")).toBeVisible();
       await expect(toolbar.locator(".toolbar-btn--font-size")).toBeVisible();
       await expect
@@ -267,14 +381,14 @@ test("container width progressively removes shortcuts while preserving named des
           "grid",
         );
         const commands = toolbar.locator(
-          '[data-inline-action="bold"], [data-inline-action="italic"], [data-inline-action="underline"], .toolbar-font-combo',
+          '[data-inline-action="bold"], [data-inline-action="italic"], [data-inline-action="underline"], .toolbar-font-combo, .toolbar-color-control',
         );
         const tops = await commands.evaluateAll((els) =>
           els.map((el) => Math.round(el.getBoundingClientRect().top)),
         );
         expect(new Set(tops).size).toBe(1);
       }
-      if (mode === "简略" && width === 760) {
+      if (mode === "简略" && width === 1000) {
         await expect(
           toolbar.locator(".toolbar-btn--font-family"),
         ).toBeVisible();
@@ -305,7 +419,7 @@ test("container width progressively removes shortcuts while preserving named des
     await expect(
       toolbar.locator(".toolbar-insert-shortcut--shape"),
     ).toBeHidden();
-    await resizeToolbar(page, 1440);
+    await resizeToolbar(page, 1800);
     await expect(toolbar.locator(".toolbar-btn--font-family")).toBeVisible();
     await expect
       .poll(() => toolbar.locator(".toolbar-body button:visible").count())
@@ -344,7 +458,7 @@ test("named settings preserve the selected range through mode changes and cancel
         ),
     )
     .toBe(scrollTop);
-  await toolbar.getByTitle("加粗", { exact: true }).click();
+  await toolbar.getByRole("button", { name: "加粗", exact: true }).click();
   await expect
     .poll(() =>
       page.locator("block-craft-editor").evaluate((editor, id) => {
@@ -463,7 +577,7 @@ test("overflow items use the menu appearance and preserve keyboard commands", as
 }, testInfo) => {
   const id = await start(page);
   const toolbar = await resizeToolbar(page, 320);
-  await toolbar.getByTitle("加粗", { exact: true }).click();
+  await toolbar.getByRole("button", { name: "加粗", exact: true }).click();
   await toolbar.getByRole("button", { name: "更多格式", exact: true }).click();
   const menu = page.locator(".responsive-more-menu");
   const clear = menu.getByRole("menuitem", { name: "清除格式", exact: true });

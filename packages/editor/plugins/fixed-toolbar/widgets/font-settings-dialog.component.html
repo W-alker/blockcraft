@@ -34,6 +34,21 @@
               (csValueChange)="setFontSize($event)" />
           </label>
 
+          <label class="bc-settings-field" data-setting-field="font-weight">
+            <span>字重</span>
+            <cs-select csSize="sm" csVariant="outlined"
+              [csValue]="weightSelectValue" [csPlaceholder]="weightPlaceholder"
+              (csValueChange)="setWeight($event)">
+              <cs-option [csValue]="defaultSelectValue" csLabel="文档默认" />
+              @for (option of weightOptions; track option.value) {
+                <cs-option [csValue]="option.value" [csLabel]="option.label" />
+              }
+              @if (customWeight !== null) {
+                <cs-option [csValue]="customWeight" [csLabel]="'自定义 ' + customWeight" />
+              }
+            </cs-select>
+          </label>
+
           <label class="bc-settings-field">
             <span>字形</span>
             <cs-select csSize="sm" csVariant="outlined"
@@ -126,6 +141,8 @@
         <span class="bc-settings-preview__label">预览</span>
         <div [style.font-family]="previewFontFamily"
           [style.font-size]="previewFontSize"
+          [style.font-weight]="previewFontWeight"
+          [style.font-style]="previewFontStyle"
           [style.letter-spacing]="previewLetterSpacing">
           字符间距预览 AaBbCc
         </div>

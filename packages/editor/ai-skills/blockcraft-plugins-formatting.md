@@ -2,7 +2,15 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-10-16
+> Last updated: 2026-10-19
+
+## 独立字重
+
+“文本设置 → 字体”新增字重下拉框，提供文档默认和 100–900 预设，预览随草稿变化，确认后才写入正文。
+混合选区显示“多种字重”，未编辑字重时不改写原值；只改倾斜也不重置已有的 500/600 等字重。
+字形的加粗／常规选项与字重同步；工具栏 B 和 Cmd/Ctrl+B 通过共享格式化路径清除数值覆盖并切换旧加粗属性。
+格式刷复制统一字重，混合字重不覆盖目标；清除格式移除字重。光标设置仅影响后续输入，完整段落设置也更新段落标记。
+`FontSettingsDialogData.fontWeight` 可选，number 表示字重、null 继承、显式 undefined 表示混合；结果写入 `attrs['s:fontWeight']`。
 
 ## 当前输入格式
 
@@ -134,6 +142,19 @@ new TextMarkerPlugin(["paragraph", "blockquote"]);
 使用现有 4px 屏幕距离阈值区分手势；横排点击创建保留预设宽度，按内容调整高度。
 普通形状、已有对象和 Schema/API 的固定尺寸缺省值不变；自适应支持范围见 `blockcraft-block.md`。
 
+### 链接与行内公式
+
+固定工具栏和“更多格式”中的链接、公式操作支持同一可编辑文本块内的收缩光标。
+链接在空光标处显示“显示文本”与“链接地址”输入，确认后插入并将光标放到末尾；
+已有非空选区仍只输入地址，对选中文字应用链接。光标处链接按钮根据当前输入格式高亮，
+再次点击只退出后续输入的链接格式，保留既有链接与其他字样；范围选区则移除所选文字的链接。
+
+公式在空光标处复用 `FormulaBlockToolbar` 的 LaTeX 输入与预览；选中文字仍直接转换为
+`{insert: {latex}}`。精确选中一个公式时按钮高亮，再次点击还原为 LaTeX 普通文本。
+公式是单字符行内对象，光标在其前后不视为公式选中。新插入链接／公式后，后续文字不带链接。
+所有插入和公式转换独立记录撤销；弹窗用相对选区书签保留位置，取消不写文档，
+只读切换、源块删除或工具栏销毁后不能继续提交。
+
 ### Typography groups
 
 - The fixed toolbar presents font family and effective CSS pixel size as one
@@ -215,18 +236,19 @@ new TextMarkerPlugin(["paragraph", "blockquote"]);
   editable rich-text block. Applying it updates every eligible editable block
   in one transaction and skips container, void and plain-text-only blocks;
   other inline-format controls retain their all-blocks-editable requirement.
-- 固定工具栏默认采用简略模式，用户可通过右侧展开／收起箭头切换简略／双层；模式是组件本地展示状态，
+- 固定工具栏默认采用双层模式，用户可通过右侧展开／收起箭头切换简略／双层；模式是组件本地展示状态，
   不写入文档或修改选区。简略的命令区保持一行，双层保持两行，不显示分组说明行。
-- 文本设置与段落设置以组内图标常驻，保留 tooltip 和无障碍名称，直接复用现有设置弹窗、选区恢复和权限判断。
+- 简略模式隐藏独立的文本／段落设置按钮，优先保留链接按钮，行内公式与间距快捷项在空间不足时先收纳；高级设置仍从字体、字号、对齐等菜单的“更多设置…”进入。
+  双层模式保留组内设置图标、tooltip、无障碍名称及原有响应式收起策略，复用现有设置弹窗、选区恢复和权限判断。
   字号、加粗在最窄档位仍可直接操作；完整文字格式、编号样式、样式／列表、
   格式刷及扩展命令可从“更多格式”进入。
-- 文字／背景颜色入口以 Tab 切换，直接复用组件库 `CsColorPickerPanelComponent` 的 palette 模式，保留“更多颜色”、HEX/RGB、调色板及最近使用色。
+- 文字颜色和背景颜色为两个独立按钮，分别带当前颜色指示，直接复用组件库 `CsColorPickerPanelComponent` 的 palette 模式，保留“更多颜色”、HEX/RGB、调色板及最近使用色。
   输入期间保留原格式选区，仅在 `csChangeComplete` 时走原有选区有效性、只读判断和格式化事务。
-  背景图形仅放在背景 Tab，文字色和背景色的最近使用记录独立保存；旧的共享 `ColorPickerComponent` 不受此面板调整影响。
+  背景图形仅放在背景颜色面板，文字色和背景色的最近使用记录独立保存；旧的共享 `ColorPickerComponent` 不受此面板调整影响。
 - 工具栏按实际内容宽度整体居中。双层模式将标题并入字体行，插入项按上下行均衡排列。
-  ResizeObserver 观察组件自身宽度；轻微溢出时先逐组收起引用、低频插入项等，
+  ResizeObserver 观察组件自身宽度；轻微溢出时先收起字符间距、行距和行内公式，再逐组收起低频插入项等（双层的链接晚于公式收起），
   每一步重新测量，能放下就停止；更窄时才进入字体／历史／段落快捷项的紧凑布局，
-  最窄档位保留核心操作和设置入口。宽度扩大或模式切换时重新尝试完整布局。
+  最窄档位保留核心操作，简略保留链接，双层保留设置入口。宽度扩大或模式切换时重新尝试完整布局。
   测量在合并的 RAF 中完成；观察器在 Angular zone 外注册，档位变更才触发检查，
   销毁时取消 RAF 并断开观察器。菜单模板不参与宽度测量。
 - `extensionActions` 在宽屏仍直接展示，窄屏通过“更多格式”访问，保留原来的

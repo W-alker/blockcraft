@@ -2,13 +2,23 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-10-16
+> Last updated: 2026-10-19
 
 ## 只读全局菜单
 
 `createGlobalOverlay()` 的选项新增 `allowReadonly?: boolean`，与 connected overlay 一致。
 默认仍在只读时关闭；显式设 true 可保留复制等只读操作。调用方自行禁用写入动作并在执行时复查。
 `ContextMenuPlugin` 使用此选项，在只读文档中提供复制/全选。
+
+## 固定工具栏引用输入面板
+
+固定工具栏链接／公式输入通过 `doc.overlayService.createConnectedOverlay()` 托管，
+退出时释放订阅和虚拟视图租约；Escape、遮罩、只读切换及宿主销毁都走同一关闭路径。
+打开前用相对选区书签保存位置，提交前重新解析并检查可编辑性；输入控件不能覆盖插入光标。
+`LinkInputPad.showTextInput` 缺省 `false`，保留浮动工具栏原有 URL-only 行为和
+`onConfirm: EventEmitter<string>` 契约；固定工具栏的空光标插入启用显示文本输入，
+通过 `textValue` 读取文本。浮动工具栏在原生输入框获焦后关闭时，链接面板继续持有
+相对书签；确认检查文档和块的有效性／只读状态，不依赖已销毁的工具栏实例。公式继续复用 `FormulaBlockToolbar`，不新增公式数据格式。
 
 ## Overlay Service
 
@@ -353,22 +363,24 @@ scrollbars to fixed-toolbar vertical dropdown/submenu content instead of
 changing every BlockCraft toolbar globally.
 
 固定工具栏的有序列表与上下标沿用分体按钮。字体和实际字号在宽屏相邻展示，
-收窄时优先保留字号；文本／段落组内的设置图标常驻并直接打开现有弹窗，tooltip 和 aria-label 提供名称。
+收窄时优先保留字号。单行模式隐藏独立文本／段落设置图标，优先保留链接，行内公式随空间不足先收纳；
+双层模式保留组内设置图标并直接打开现有弹窗，tooltip 和 aria-label 提供名称。
 完整设置、格式命令和低优先级快捷项可从“更多格式”或“插入”进入。
 
-工具栏支持简略／双层两种组件本地模式，通过右侧箭头展开／收起；分别保持一／两行命令，
+工具栏默认双层，支持简略／双层两种组件本地模式，通过右侧箭头展开／收起；分别保持一／两行命令，
 不渲染额外模式条或分组说明行。
 工具栏按内容宽度整体居中；依实际溢出逐组收起低优先级快捷项，避免轻微溢出就整档隐藏。
 双层模式将标题并入字体区，并平衡插入项的上下行，不把整个分组换到下一行。
+字符间距、行距和公式先于常用插入项收纳；段间距从段落设置进入。收起间距后，段落操作重新排成两行，紧凑档不重新显示间距。
 只测量 `.toolbar-body`，不把弹出菜单模板计入宽度；在 Angular zone 外观察宽度，
 通过合并的 RAF 测量，在档位变更时刷新视图。销毁时清理观察器和待执行帧。
 宿主容器需要自然高度；宿主投影插槽的超宽内容仍允许在命令区滚动访问。
 具体优先级与菜单路径见 `blockcraft-plugins-formatting.md`。
 菜单命令通过 CSES 的 `csClick` 统一处理鼠标和键盘；二级菜单由 `.cs-submenu-panel`
 承载背景、圆角和阴影，嵌入的选择器不重复绘制卡片，独立选择器保留原外观。
-颜色菜单使用 `CsTabsComponent` 切换文字色／背景色，直接嵌入 `CsColorPickerPanelComponent`；更多颜色和 HEX/RGB 输入由组件库提供。
+文字颜色和背景颜色使用两个独立图标按钮，各自显示当前颜色；点击直接打开对应的 `CsColorPickerPanelComponent`，更多颜色和 HEX/RGB 输入由组件库提供。
 输入获得焦点时保留工具栏已有选区记录，在 `csChangeComplete` 时验证选区和权限并格式化。
-面板无触发器与浮层外壳，由工具栏单独承载卡片与定位。背景图形仅显示在背景 Tab，最近使用色按两类分别保存；关闭菜单或切换 Tab 时销毁对应面板。
+面板无触发器与浮层外壳，由工具栏单独承载卡片与定位。背景图形仅显示在背景颜色面板，最近使用色按两类分别保存；同一时间只打开一个颜色面板，关闭或切换按钮时销毁原面板。
 
 Editor-owned input surfaces use native `input` / `textarea` elements with
 component-scoped BlockCraft styles. This includes formula source, link editing,

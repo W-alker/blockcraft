@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-10-16 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-10-19 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 >
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
@@ -10,6 +10,11 @@
 > 3. Read L2 deep dives only when L1 isn't enough or you're modifying framework internals.
 >
 > **External users**: this skill pack is bundled with the npm package. AI agents can discover it via `SKILL.md` (frontmatter present); humans see `README.md` for installation and the one-command installer (`install.mjs`).
+
+## 正文字重（未发布）
+
+固定工具栏的文本设置支持独立字重。正文复用 `s:fontWeight` 字符串保存数值，旧 `a:bold` 保持可读。
+设置、加粗快捷命令、格式刷、段落默认格式和 HTML 交换的规则见 `blockcraft-plugins-formatting.md`、`blockcraft-inline.md`、`blockcraft-adapter.md`。
 
 ## 文档右键菜单（未发布）
 

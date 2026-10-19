@@ -18,6 +18,7 @@ import {
   TYPOGRAPHY_FONT_FAMILIES,
   isTypographyFontFamilyId,
   normalizeInlineFontScale,
+  normalizeInlineFontWeight,
   normalizeFontSizePixels,
   normalizeInlineLetterSpacing,
   resolveTypographyFontFamily,
@@ -61,6 +62,35 @@ export class FontSettingsDialogComponent {
     this.data.typography.ff ?? null,
   );
   protected readonly fontSize = signal<number | null>(this.data.fontSize ?? null);
+  protected readonly weight = signal<number | null>(
+    'fontWeight' in this.data ? this.data.fontWeight ?? null : this.data.attrs.bold ? 700 : null,
+  );
+  private readonly weightInitiallyMixed = 'fontWeight' in this.data && this.data.fontWeight === undefined;
+  protected readonly weightOptions = [
+    {value: 100, label: '极细 100'}, {value: 200, label: '特细 200'},
+    {value: 300, label: '细体 300'}, {value: 400, label: '常规 400'},
+    {value: 500, label: '中等 500'}, {value: 600, label: '半粗 600'},
+    {value: 700, label: '粗体 700'}, {value: 800, label: '特粗 800'},
+    {value: 900, label: '极粗 900'},
+  ];
+  protected get weightSelectValue(): number | string | null {
+    return this.weightInitiallyMixed && !this.dirty.has('font-weight')
+      ? null : this.weight() ?? DEFAULT_SELECT_VALUE;
+  }
+  protected get weightPlaceholder(): string {
+    return this.weightInitiallyMixed && !this.dirty.has('font-weight') ? '多种字重' : '文档默认';
+  }
+  protected get customWeight(): number | null {
+    const weight = this.weight();
+    return weight !== null && !this.weightOptions.some(option => option.value === weight) ? weight : null;
+  }
+  protected setWeight(value: unknown): void {
+    const weight = value === DEFAULT_SELECT_VALUE ? null : normalizeInlineFontWeight(value);
+    if (value !== DEFAULT_SELECT_VALUE && weight === null) return;
+    this.weight.set(weight);
+    this.dirty.add('font-weight');
+    this.fontStyle.set(this.resolveFontStyle(weight !== null && weight >= 600, this.fontStyle().includes('italic')));
+  }
   protected readonly scale = signal<number | null>(
     this.data.typography.fs ?? null,
   );
@@ -144,7 +174,7 @@ export class FontSettingsDialogComponent {
   }
 
   protected get previewFontWeight(): string {
-    return this.fontStyle().includes("bold") ? "700" : "400";
+    return String(this.weight() ?? (this.fontStyle().includes("bold") ? 700 : 400));
   }
 
   protected get previewFontStyle(): string {
@@ -179,7 +209,9 @@ export class FontSettingsDialogComponent {
 
   protected setFontStyle(value: unknown): void {
     if (!this.isFontStyle(value)) return;
+    const wasBold = this.fontStyle().includes('bold');
     this.fontStyle.set(value);
+    if (wasBold !== value.includes('bold')) this.setWeight(value.includes('bold') ? 700 : 400);
     this.dirty.add("font-style");
   }
 
@@ -220,8 +252,12 @@ export class FontSettingsDialogComponent {
     if (this.dirty.has("ls")) result.typography.ls = this.spacing();
 
     if (this.dirty.has("font-style")) {
-      result.attrs["a:bold"] = this.fontStyle().includes("bold") || null;
       result.attrs["a:italic"] = this.fontStyle().includes("italic") || null;
+    }
+    if (this.dirty.has('font-weight')) {
+      const weight = this.weight();
+      result.attrs['s:fontWeight'] = weight === null ? null : String(weight);
+      result.attrs['a:bold'] = weight !== null && weight >= 600 ? true : null;
     }
     if (this.dirty.has("color")) result.attrs["s:color"] = this.color();
     if (this.dirty.has("highlight")) {

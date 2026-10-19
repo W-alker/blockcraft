@@ -3,3 +3,4 @@ export * from './core';
 export {applyInlineTypographyAttribute} from './dom';
 export {paragraphAlignmentStyles} from './paragraph-alignment';
 export * from './paragraph-style';
+export * from './font-weight';

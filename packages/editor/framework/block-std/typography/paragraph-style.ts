@@ -1,3 +1,4 @@
+import {normalizeInlineFontWeight} from './font-weight';
 import type {IEditableBlockProps, IInlineNodeAttrs, ParagraphNextStyle} from '@ccc/blockcraft/framework/model';
 import {
   isTypographyFontFamilyId, normalizeFontSizePixels, normalizeInlineFontScale,
@@ -15,6 +16,8 @@ export function normalizeParagraphTextDefaults(value: unknown): IInlineNodeAttrs
   for (const key of ['s:color', 's:background', 's:fontFamily', 's:fontSize', 's:letterSpacing']) {
     if (typeof input[key] === 'string' && input[key]) result[key] = input[key] as string;
   }
+  const weight = normalizeInlineFontWeight(input['s:fontWeight'] ?? input['s:font-weight']);
+  if (weight !== null) result['s:fontWeight'] = String(weight);
   if (isTypographyFontFamilyId(input['t:ff'])) result['t:ff'] = input['t:ff'];
   for (const [key, normalize] of [
     ['t:px', normalizeFontSizePixels], ['t:fs', normalizeInlineFontScale], ['t:ls', normalizeInlineLetterSpacing],

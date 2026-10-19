@@ -9,6 +9,8 @@ import {
   createInlineTypographyPatch,
   matchTypographyFontFamily,
   normalizeInlineFontScale,
+  readInlineFontWeight,
+  normalizeInlineFontWeightPatch,
   normalizeFontSizePixels,
   readInlineFontSize,
   normalizeInlineLetterSpacing,
@@ -42,6 +44,8 @@ export interface ITextCommonAttrs {
   }
   /** Effective CSS pixels, including semantic defaults and retained multipliers. */
   fontSize?: number
+  /** null inherits; undefined means mixed numeric weights. */
+  fontWeight?: number | null
   hasFixedFontSize?: boolean
   flavour?: BlockCraft.BlockFlavour,
   allEditable?: boolean
@@ -519,8 +523,13 @@ export class TextToolbarHelper {
       Object.entries(collapsedAttrs).forEach(([key, value]) => {
         attrs.set(key.slice(2), value)
       })
+      const fontWeight = readInlineFontWeight(collapsedAttrs);
+      if (fontWeight !== null) {
+        fontWeight >= 600 ? attrs.set('bold', true) : attrs.delete('bold');
+      }
       return {
         attrs,
+        fontWeight,
         colors,
         props,
         fontSize: fontSize.pixels,
@@ -568,8 +577,12 @@ export class TextToolbarHelper {
     Object.entries(commonAttrs).forEach(([key, value]) => {
       attrs.set(key.slice(2), value)
     })
+    const weights = allDeltas.map(delta => readInlineFontWeight(delta.attributes ?? {}));
+    if (weights.length && weights.every(weight => weight !== null && weight >= 600)) attrs.set('bold', true);
+    else attrs.delete('bold');
     return {
       attrs,
+      fontWeight: this.commonValue(weights),
       colors,
       props,
       fontSize: fontSize.pixels,
@@ -608,7 +621,7 @@ export class TextToolbarHelper {
       : null
     if (hasFontScale && normalizedScale === null) return
 
-    const attrs = options.attrs ?? {}
+    const attrs = normalizeInlineFontWeightPatch(options.attrs ?? {})
     const hasAttrs = Object.keys(attrs).length > 0
     if (!hasAttrs && !hasFontScale) return
 
@@ -664,6 +677,7 @@ export class TextToolbarHelper {
     if (!selection) return
     if (!this.isSelectionAlive(selection)) return
 
+    attrs = normalizeInlineFontWeightPatch(attrs)
     const s = selection.start, e = selection.end
     const startId = this.firstBlockId(selection)
 

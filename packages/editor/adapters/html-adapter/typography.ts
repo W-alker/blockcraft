@@ -1,6 +1,6 @@
 import type {Element, Properties} from 'hast'
 import {INLINE_TYPOGRAPHY_ATTRS, IBlockProps, IEditableBlockProps, IInlineNodeAttrs} from '@ccc/blockcraft/framework/model';
-import {normalizeFontSizePixels, inlineFontSizeCss, paragraphAlignmentStyles, isTypographyFontFamilyId, matchTypographyFontFamily, normalizeDocumentFontSize, normalizeInlineFontScale, normalizeInlineLetterSpacing, normalizeParagraphFontScale, normalizeParagraphSpacing, normalizeTypographyLineHeight, paragraphPointsToCss, resolveTypographyFontFamily} from '@ccc/blockcraft/framework/block-std/typography';
+import {normalizeInlineFontWeight, normalizeFontSizePixels, inlineFontSizeCss, paragraphAlignmentStyles, isTypographyFontFamilyId, matchTypographyFontFamily, normalizeDocumentFontSize, normalizeInlineFontScale, normalizeInlineLetterSpacing, normalizeParagraphFontScale, normalizeParagraphSpacing, normalizeTypographyLineHeight, paragraphPointsToCss, resolveTypographyFontFamily} from '@ccc/blockcraft/framework/block-std/typography';
 import {normalizeParagraphNextStyle, normalizeParagraphTextDefaults} from '@ccc/blockcraft/framework/block-std/typography';
 
 type StyleMap = ReadonlyMap<string, string>
@@ -113,7 +113,9 @@ export const inlineTypographyToHtmlProperties = (
 
   const px = normalizeFontSizePixels(attributes[INLINE_TYPOGRAPHY_ATTRS.fontSize])
   const legacyPx = fs === null ? pixels(attributes['s:fontSize'], normalizeFontSizePixels) : null
+  const weight = normalizeInlineFontWeight(attributes['s:fontWeight'] ?? attributes['s:font-weight'])
   const declarations: string[] = []
+  if (weight !== null) declarations.push(`font-weight: ${weight}`)
   const properties: Properties = {}
   if (ff) {
     properties['dataBcFf'] = ff
@@ -154,6 +156,11 @@ export const inlineTypographyFromHtml = (
   const px = normalizeFontSizePixels(propertyValue(element.properties, 'dataBcPx'))
   const legacyPx = pixels(style.get('font-size'), normalizeFontSizePixels)
   const attributes: IInlineNodeAttrs = {}
+  const weight = normalizeInlineFontWeight(style.get('font-weight'))
+  if (weight !== null) {
+    attributes['s:fontWeight'] = String(weight)
+    if (weight >= 600) attributes['a:bold'] = true
+  }
   if (px !== null) attributes[INLINE_TYPOGRAPHY_ATTRS.fontSize] = px
   else if (legacyPx !== null && fs === null) attributes['s:fontSize'] = `${legacyPx}px`
   if (ff) attributes[INLINE_TYPOGRAPHY_ATTRS.fontFamily] = ff

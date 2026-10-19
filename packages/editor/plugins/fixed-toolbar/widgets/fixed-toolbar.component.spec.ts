@@ -1296,7 +1296,7 @@ describe("FixedTextToolbarComponent link pad", () => {
     hostElement.remove();
   });
 
-  it("does not create a fake range when the text selection has no DOM rect", () => {
+  it("does not open reference input when the saved selection cannot be formatted", () => {
     const hostElement = document.createElement("p");
     document.body.appendChild(hostElement);
 
@@ -1341,10 +1341,11 @@ describe("FixedTextToolbarComponent link pad", () => {
     component.selectionJSON = selectionJSON;
     component.hasTextSelection = true;
 
+    spyOn<any>(component, "canFormatTextSelection").and.returnValue(false);
     (component as any).openLinkPad();
 
     expect(replay).toHaveBeenCalledOnceWith(selectionJSON);
-    expect(getSelectionRect).toHaveBeenCalled();
+    expect(getSelectionRect).not.toHaveBeenCalled();
     expect(createFakeRange).not.toHaveBeenCalled();
     hostElement.remove();
   });

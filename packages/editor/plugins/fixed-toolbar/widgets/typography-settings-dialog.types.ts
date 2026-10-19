@@ -17,6 +17,8 @@ export interface FontSettingsDialogData {
   target: FontSettingsTarget;
   /** Effective pixels; undefined means mixed. */
   fontSize?: number;
+  /** null inherits; undefined means mixed. */
+  fontWeight?: number | null;
   typography: {
     ff: TypographyFontFamilyId | null | undefined;
     fs: number | null | undefined;

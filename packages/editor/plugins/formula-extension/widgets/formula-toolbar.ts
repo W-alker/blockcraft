@@ -12,7 +12,7 @@ import katex from 'katex';
     <div class="ft-container">
       <div class="ft-preview" #preview></div>
       <div class="ft-editor">
-        <textarea #latexInput class="ft-input" [value]="latex"
+        <textarea #latexInput class="ft-input" aria-label="LaTeX 公式" [value]="latex"
           (input)="onInput($event)" (keydown.meta.enter)="onConfirm()"
           (keydown.control.enter)="onConfirm()"
           placeholder="输入 LaTeX 公式，如 E = mc^2" rows="3"></textarea>
@@ -25,7 +25,8 @@ import katex from 'katex';
   `,
   styles: [`
     .ft-container {
-      width: 400px;
+      width: min(400px, calc(100vw - 24px));
+      box-sizing: border-box;
       background: var(--bc-bg-primary);
       border-radius: 8px;
       border: 1px solid var(--bc-border-color);

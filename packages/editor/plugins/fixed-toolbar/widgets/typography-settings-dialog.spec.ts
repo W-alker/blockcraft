@@ -32,7 +32,7 @@ describe("typography settings dialogs", () => {
 
     expect((fixture.nativeElement as HTMLElement).getBoundingClientRect().width)
       .toBeLessThanOrEqual(320);
-    expect(fixture.nativeElement.querySelectorAll("cs-select").length).toBe(2);
+    expect(fixture.nativeElement.querySelectorAll("cs-select").length).toBe(3);
     expect(fixture.nativeElement.querySelector(".bc_xiahuaxian")).toBeNull();
     expect(fixture.nativeElement.textContent).not.toContain("效果");
     expect(fixture.nativeElement.textContent).not.toContain("文字缩放");
@@ -50,13 +50,42 @@ describe("typography settings dialogs", () => {
 
     expect(component.buildResult()).toEqual({
       typography: {ff: "kai"},
-      attrs: {"a:bold": true, "a:italic": true},
+      attrs: {"a:bold": true, "a:italic": true, "s:fontWeight": "700"},
     });
     expect(component.fonts.some((font: {id: string}) => font.id === "xingkai")).toBeTrue();
     component.setFamily("xingkai");
     fixture.detectChanges();
     expect(component.buildResult().typography.ff).toBe("xingkai");
     expect(component.previewFontFamily).toContain("Xingkai SC");
+  });
+
+  it("preserves mixed weights until changed and keeps italic independent", async () => {
+    await TestBed.configureTestingModule({
+      imports: [NoopAnimationsModule, FontSettingsDialogComponent],
+      providers: [{provide: CS_MODAL_DATA, useValue: {
+        target: 'font-size', fontWeight: undefined, typography: {ff: null, fs: null, ls: null},
+        attrs: {bold: false, italic: false, underline: false, strike: false, code: false},
+        colors: {color: null, backColor: null},
+      }}],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(FontSettingsDialogComponent);
+    fixture.detectChanges();
+    const component = fixture.componentInstance as any;
+    expect(component.weightSelectValue).toBeNull();
+    expect(component.weightPlaceholder).toBe('多种字重');
+    component.setFontSize(24);
+    expect(component.buildResult().attrs).toEqual({});
+    component.setWeight(500);
+    component.setFontStyle('italic');
+    expect(component.previewFontWeight).toBe('500');
+    expect(component.buildResult().attrs).toEqual({'s:fontWeight': '500', 'a:bold': null, 'a:italic': true});
+    component.setWeight(600);
+    expect(component.fontStyle()).toBe('bold-italic');
+    expect(component.buildResult().attrs['a:bold']).toBeTrue();
+    component.setFontStyle('italic');
+    expect(component.previewFontWeight).toBe('400');
+    component.setWeight(component.defaultSelectValue);
+    expect(component.buildResult().attrs['s:fontWeight']).toBeNull();
   });
 
   it("shows inherited font defaults without persisting untouched values", async () => {

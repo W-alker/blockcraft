@@ -14,6 +14,7 @@ import {
   Optional,
   Output,
   ViewChild,
+  Type,
 } from "@angular/core";
 import {
   BcColumnCountPickerComponent,
@@ -26,8 +27,7 @@ import {
 } from "../../../components";
 import {
   CsColorPickerPanelComponent,
-  CsTabsComponent,
-  CsTabComponent,
+  CsIconComponent,
   CsDropdownDirective,
   CsDropdownMenuComponent,
   CsMenuDirective,
@@ -35,6 +35,7 @@ import {
   CsModalRef,
   CsModalService,
   CsSubmenuComponent,
+  CsTooltipDirective,
 } from "@cses/ui";
 import {
   BLOCK_CREATOR_SERVICE_TOKEN,
@@ -44,6 +45,8 @@ import {
   IEditableBlockProps,
   IInlineNodeAttrs,
   ISelectionJSON,
+  DeltaInsert,
+  getPositionWithOffset,
   createInlineTypographyPatch,
   normalizeParagraphSpacing,
   normalizeTypographyLineHeight,
@@ -57,14 +60,14 @@ import {
   debounceTime,
   filter,
   fromEvent,
-  merge,
+  Subject,
+  takeUntil,
   Subscription,
   take,
 } from "rxjs";
-import { debounce, IS_MAC, nextTick } from "../../../global";
-import { Overlay } from "@angular/cdk/overlay";
-import { ComponentPortal } from "@angular/cdk/portal";
-import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
+import { debounce, IS_MAC, nextTick, sliceDelta } from "../../../global";
+import { FormulaBlockToolbar } from "../../formula-extension/widgets/formula-toolbar";
+import { ToolbarSelectionSession } from "./toolbar-selection-session";
 import { LinkInputPad } from "../../float-text-toolbar/widgets/link-input-pad";
 import { getSelectionCoveredBlockIds } from "../../../framework/modules/selection/covered-blocks";
 import { isSelectionAlive } from "../../../framework/modules/selection/liveness";
@@ -291,7 +294,8 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
         </div>
         <button
           class="toolbar-btn toolbar-mode-switch"
-          [title]="
+          #modeTooltip="csTooltip"
+          [csTooltip]="
             toolbarMode === 'simple' ? '展开为双层工具栏' : '收起为简略工具栏'
           "
           [attr.aria-label]="
@@ -299,7 +303,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
           "
           [attr.aria-expanded]="toolbarMode === 'full'"
           (mousedown)="onActionMouseDown($event)"
-          (click)="setToolbarMode(toolbarMode === 'simple' ? 'full' : 'simple')"
+          (click)="modeTooltip.hide(); setToolbarMode(toolbarMode === 'simple' ? 'full' : 'simple')"
         >
           <i class="bc_icon bc_xiajaintou" aria-hidden="true"></i>
         </button>
@@ -310,12 +314,13 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
           <div
             class="toolbar-group toolbar-group--history"
             role="group"
-            aria-label="历史"
+            aria-label="编辑操作"
           >
             <div class="toolbar-group__controls">
               <button
                 class="toolbar-btn"
-                title="撤销"
+                csTooltip="撤销"
+                aria-label="撤销"
                 (mousedown)="onActionMouseDown($event)"
                 (click)="undo()"
                 [disabled]="!doc?.crud?.undoManager?.isCanUndo()"
@@ -324,12 +329,45 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
               </button>
               <button
                 class="toolbar-btn"
-                title="重做"
+                csTooltip="重做"
+                [csTooltipPlacement]="toolbarMode === 'full' ? 'bottom' : 'top'"
+                aria-label="重做"
                 (mousedown)="onActionMouseDown($event)"
                 (click)="redo()"
                 [disabled]="!doc?.crud?.undoManager?.isCanRedo()"
               >
                 <i class="bc_icon bc_huitui"></i>
+              </button>
+              <button
+                class="toolbar-btn toolbar-format-utility"
+                [class.toolbar-priority-hidden]="
+                  overflowedGroups.has('utilities')
+                "
+                [class.active]="formatBrushActive"
+                [csTooltip]="formatBrushTitle"
+                #formatBrushTooltip="csTooltip"
+                [attr.aria-label]="formatBrushTitle"
+                [disabled]="
+                  readonly || (!formatBrushActive && !canCaptureFormatBrush())
+                "
+                (mousedown)="onActionMouseDown($event)"
+                (click)="formatBrushTooltip.hide(); toggleFormatBrush()"
+              >
+                <i class="bc_icon bc_geshishua"></i>
+              </button>
+              <button
+                class="toolbar-btn toolbar-format-utility"
+                [class.toolbar-priority-hidden]="
+                  overflowedGroups.has('utilities')
+                "
+                csTooltip="清除格式"
+                [csTooltipPlacement]="toolbarMode === 'full' ? 'bottom' : 'top'"
+                aria-label="清除格式"
+                [disabled]="readonly || !allEditable"
+                (mousedown)="onActionMouseDown($event)"
+                (click)="clearFormat()"
+              >
+                <i class="bc_icon bc_quxiao"></i>
               </button>
             </div>
           </div>
@@ -408,12 +446,15 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
                 </span>
                 <button
                   class="toolbar-btn toolbar-settings-entry toolbar-settings-entry--text"
-                  title="文本设置"
+                  [hidden]="toolbarMode === 'simple'"
+                  csTooltip="文本设置"
+                  #textSettingsTooltip="csTooltip"
+                  [csTooltipPlacement]="toolbarMode === 'full' && toolbarLayout !== 'wide' ? 'bottom' : 'top'"
                   aria-label="文本设置"
                   aria-haspopup="dialog"
                   [disabled]="readonly || !canSetFontScale"
                   (mousedown)="onActionMouseDown($event)"
-                  (click)="openSettings('text', $event)"
+                  (click)="openSettings('text', $event); textSettingsTooltip.hide()"
                 >
                   <i class="bc_icon bc_zihao" aria-hidden="true"></i>
                 </button>
@@ -424,7 +465,9 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
                     class="toolbar-btn"
                     [attr.data-inline-action]="item.value"
                     [class.active]="isAttrActive(item.value)"
-                    [title]="item.title"
+                    [csTooltip]="item.title"
+                    [csTooltipPlacement]="fontActionsTooltipPlacement"
+                    [attr.aria-label]="item.title"
                     [disabled]="readonly || !allEditable"
                     (mousedown)="onActionMouseDown($event)"
                     (click)="toggleInlineAttr(item.value)"
@@ -444,7 +487,8 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
                 >
                   <button
                     class="toolbar-btn toolbar-split__main"
-                    [title]="activeScriptAction.title"
+                    [csTooltip]="activeScriptAction.title"
+                    [csTooltipPlacement]="fontActionsTooltipPlacement"
                     [attr.aria-label]="activeScriptAction.title"
                     [disabled]="readonly || !allEditable"
                     (mousedown)="onActionMouseDown($event)"
@@ -474,58 +518,62 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
                 </span>
 
                 <button
-                  class="toolbar-btn toolbar-color-control"
-                  title="文字/背景颜色"
-                  [attr.disabled]="readonly || !allEditable ? '' : null"
+                  type="button"
+                  class="toolbar-btn toolbar-color-control toolbar-color-control--text"
+                  csTooltip="文字颜色"
+                  [csTooltipPlacement]="fontActionsTooltipPlacement"
+                  #textColorTooltip="csTooltip"
+                  [csTooltipDisabled]="activeColorPanel === 'color'"
+                  aria-label="文字颜色"
                   [disabled]="readonly || !allEditable"
+                  (mousedown)="onColorTriggerMouseDown($event)"
                   csDropdown
                   csTrigger="click"
                   csMatchTriggerWidth
                   csOverlayClassName="bc-fixed-toolbar-dropdown bc-fixed-toolbar-color-dropdown"
-                  [csDropdownMenu]="colorPicker"
-                  (csOpenChange)="onColorPanelOpenChange($event)"
-                  #colorTrigger="csDropdown"
+                  [csDropdownMenu]="textColorPicker"
+                  (csOpenChange)="textColorTooltip.hide(); onColorPanelOpenChange('color', $event)"
+                  #textColorTrigger="csDropdown"
                   [csDisabled]="readonly || !allEditable"
                   [csClickHide]="false"
                   csPlacement="bottom"
-                  [style.color]="activeColors['color']"
-                  [style.background-color]="activeColors['backColor']"
                 >
-                  <i class="bc_icon bc_bianji"></i>
+                  <cs-icon csType="text-field" [csSize]="16" aria-hidden="true" />
+                  <span class="toolbar-color-indicator" aria-hidden="true"
+                    [style.background-color]="activeColors['color'] || 'var(--bc-color)'"></span>
                 </button>
 
                 <button
-                  class="toolbar-btn toolbar-format-utility"
-                  [class.toolbar-priority-hidden]="
-                    overflowedGroups.has('utilities')
-                  "
-                  title="清除格式"
+                  type="button"
+                  class="toolbar-btn toolbar-color-control toolbar-color-control--background"
+                  csTooltip="背景颜色"
+                  [csTooltipPlacement]="fontActionsTooltipPlacement"
+                  #backgroundColorTooltip="csTooltip"
+                  [csTooltipDisabled]="activeColorPanel === 'backColor'"
+                  aria-label="背景颜色"
                   [disabled]="readonly || !allEditable"
-                  (mousedown)="onActionMouseDown($event)"
-                  (click)="clearFormat()"
+                  (mousedown)="onColorTriggerMouseDown($event)"
+                  csDropdown
+                  csTrigger="click"
+                  csMatchTriggerWidth
+                  csOverlayClassName="bc-fixed-toolbar-dropdown bc-fixed-toolbar-color-dropdown"
+                  [csDropdownMenu]="backgroundColorPicker"
+                  (csOpenChange)="backgroundColorTooltip.hide(); onColorPanelOpenChange('backColor', $event)"
+                  #backgroundColorTrigger="csDropdown"
+                  [csDisabled]="readonly || !allEditable"
+                  [csClickHide]="false"
+                  csPlacement="bottom"
                 >
-                  <i class="bc_icon bc_quxiao"></i>
-                </button>
-                <button
-                  class="toolbar-btn toolbar-format-utility"
-                  [class.toolbar-priority-hidden]="
-                    overflowedGroups.has('utilities')
-                  "
-                  [class.active]="formatBrushActive"
-                  [title]="formatBrushTitle"
-                  [disabled]="
-                    readonly || (!formatBrushActive && !canCaptureFormatBrush())
-                  "
-                  (mousedown)="onActionMouseDown($event)"
-                  (click)="toggleFormatBrush()"
-                >
-                  <i class="bc_icon bc_geshishua"></i>
+                  <i class="bc_icon bc_tianchongyanse" aria-hidden="true"></i>
+                  <span class="toolbar-color-indicator" aria-hidden="true"
+                    [style.background-color]="activeColors['backColor'] || 'transparent'"></span>
                 </button>
               </div>
             </div>
           </div>
           <div
             class="toolbar-group toolbar-group--paragraph"
+            [class.toolbar-group--spacing-collapsed]="overflowedGroups.has('spacing')"
             role="group"
             aria-label="段落"
           >
@@ -537,7 +585,9 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
                       class="toolbar-btn toolbar-list-control"
                       [attr.data-list-action]="item.value"
                       [class.active]="activeFlavour === item.value"
-                      [title]="item.title"
+                      [csTooltip]="item.title"
+                      [csTooltipPlacement]="toolbarMode === 'full' && toolbarLayout === 'wide' && overflowedGroups.has('spacing') && item.value === 'bullet' ? 'bottom' : 'top'"
+                      [attr.aria-label]="item.title"
                       [disabled]="readonly || !canTransformBlocks"
                       (mousedown)="onActionMouseDown($event)"
                       (click)="setList(item.value)"
@@ -557,7 +607,9 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
                 >
                   <button
                     class="toolbar-btn toolbar-split__main"
-                    title="有序列表"
+                    csTooltip="有序列表"
+                    [csTooltipPlacement]="toolbarMode === 'full' && toolbarLayout === 'balanced' ? 'bottom' : 'top'"
+                    aria-label="有序列表"
                     [disabled]="readonly || !canTransformBlocks"
                     (mousedown)="onActionMouseDown($event)"
                     (click)="setList('ordered')"
@@ -615,23 +667,12 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
                   ></i>
                   <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
                 </button>
-                <button
-                  class="toolbar-btn toolbar-settings-entry toolbar-settings-entry--paragraph"
-                  title="段落设置"
-                  aria-label="段落设置"
-                  aria-haspopup="dialog"
-                  [disabled]="readonly || !canSetParagraphSpacing"
-                  (mousedown)="onActionMouseDown($event)"
-                  (click)="openSettings('paragraph', $event)"
-                >
-                  <i class="bc_icon bc_suojinheduiqi" aria-hidden="true"></i>
-                </button>
               </div>
               <div class="toolbar-row">
                 <button
                   class="toolbar-btn toolbar-btn--dropdown toolbar-control--wide-only toolbar-letter-spacing"
                   [class.toolbar-priority-hidden]="
-                    overflowedGroups.has('letter-spacing')
+                    overflowedGroups.has('spacing')
                   "
                   [title]="'字符间距：' + activeLetterSpacingLabel"
                   [attr.aria-label]="'字符间距：' + activeLetterSpacingLabel"
@@ -657,7 +698,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
                 <button
                   class="toolbar-btn toolbar-btn--dropdown toolbar-control--wide-only toolbar-line-height"
                   [class.toolbar-priority-hidden]="
-                    overflowedGroups.has('line-height')
+                    overflowedGroups.has('spacing')
                   "
                   [title]="'行距：' + activeLineHeightLabel"
                   [attr.aria-label]="'行距：' + activeLineHeightLabel"
@@ -679,11 +720,27 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
                   }}</span>
                   <i class="bc_icon bc_xiajaintou toolbar-btn__caret"></i>
                 </button>
+                <button
+                  class="toolbar-btn toolbar-settings-entry toolbar-settings-entry--paragraph"
+                  [hidden]="toolbarMode === 'simple'"
+                  csTooltip="段落设置"
+                  #paragraphSettingsTooltip="csTooltip"
+                  csTooltipPlacement="bottom"
+                  aria-label="段落设置"
+                  aria-haspopup="dialog"
+                  [disabled]="readonly || !canSetParagraphSpacing"
+                  (mousedown)="onActionMouseDown($event)"
+                  (click)="openSettings('paragraph', $event); paragraphSettingsTooltip.hide()"
+                >
+                  <i class="bc_icon bc_suojinheduiqi" aria-hidden="true"></i>
+                </button>
               </div>
             </div>
           </div>
           <div
-            class="toolbar-group toolbar-group--reference toolbar-control--wide-only"
+            class="toolbar-group toolbar-group--reference"
+            [class.toolbar-group--formula-collapsed]="overflowedGroups.has('formula')"
+            [class.toolbar-control--wide-only]="toolbarMode === 'full'"
             [class.toolbar-priority-hidden]="overflowedGroups.has('reference')"
             role="group"
             aria-label="引用"
@@ -692,9 +749,11 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
               <button
                 class="toolbar-btn"
                 [class.active]="isAttrActive('link')"
-                title="链接"
+                [attr.aria-pressed]="isAttrActive('link')"
+                csTooltip="链接"
+                aria-label="链接"
                 [disabled]="
-                  readonly || !allEditable || !isLinkAble || !hasTextSelection
+                  readonly || !allEditable || !isLinkAble
                 "
                 (mousedown)="onActionMouseDown($event)"
                 (click)="onLinkAction()"
@@ -703,10 +762,15 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
               </button>
 
               <button
-                class="toolbar-btn"
-                title="行内公式"
+                class="toolbar-btn toolbar-control--wide-only"
+                [class.toolbar-priority-hidden]="overflowedGroups.has('formula')"
+                [class.active]="formulaActive"
+                [attr.aria-pressed]="formulaActive"
+                csTooltip="行内公式"
+                [csTooltipPlacement]="toolbarMode === 'full' ? 'bottom' : 'top'"
+                aria-label="行内公式"
                 [disabled]="
-                  readonly || !allEditable || !isLinkAble || !hasTextSelection
+                  readonly || !allEditable || !isLinkAble
                 "
                 (mousedown)="onActionMouseDown($event)"
                 (click)="insertFormula()"
@@ -726,7 +790,8 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
               <div class="toolbar-row">
                 <button
                   class="toolbar-btn toolbar-insert-shortcut toolbar-insert-shortcut--image"
-                  title="插入图片"
+                  csTooltip="插入图片"
+                  aria-label="插入图片"
                   [disabled]="readonly || !canInsertBlock('image')"
                   (mousedown)="onActionMouseDown($event)"
                   (click)="insertSchemaBlock('image')"
@@ -910,7 +975,8 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
                   <button
                     class="toolbar-btn"
                     [class.active]="!!item.active"
-                    [title]="item.title"
+                    [csTooltip]="item.title"
+                    [attr.aria-label]="item.title"
                     [disabled]="readonly || !!item.disabled"
                     (mousedown)="onActionMouseDown($event)"
                     (click)="onExtensionAction(item)"
@@ -1217,8 +1283,10 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
         <div
           csMenuItem
           [csDisabled]="
-            readonly || !allEditable || !isLinkAble || !hasTextSelection
+            readonly || !allEditable || !isLinkAble
           "
+          [csSelected]="isAttrActive('link')"
+          (mousedown)="onActionMouseDown($event)"
           data-toolbar-command="link"
         >
           链接
@@ -1226,8 +1294,10 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
         <div
           csMenuItem
           [csDisabled]="
-            readonly || !allEditable || !isLinkAble || !hasTextSelection
+            readonly || !allEditable || !isLinkAble
           "
+          [csSelected]="formulaActive"
+          (mousedown)="onActionMouseDown($event)"
           data-toolbar-command="formula"
         >
           行内公式
@@ -1439,54 +1509,50 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
       </div>
     </cs-dropdown-menu>
 
-    <cs-dropdown-menu #colorPicker="csDropdownMenu">
-      <div class="toolbar-color-menu" (mousedown)="$event.stopPropagation()">
-        @if (colorPanelOpen) {
-          <cs-tabs csSize="small" [csAnimated]="false" [csCentered]="true"
-            [csDestroyInactiveTabPane]="true" [(csSelectedIndex)]="colorTabIndex">
-            <cs-tab csTitle="文字颜色">
-              @if (colorTabIndex === 0) {
-              <cs-color-picker-panel csMode="palette"
-                [csValue]="activeColors['color'] === 'var(--bc-color)' ? null : activeColors['color']"
-                [csDisabled]="readonly || !allEditable" [csShowAlpha]="false"
-                csClearText="自动" [(csRecentColors)]="recentTextColors"
-                (csChangeComplete)="onColorPicked({type: 'color', color: $event.value})" />
-              }
-            </cs-tab>
-            <cs-tab csTitle="背景颜色">
-              @if (colorTabIndex === 1) {
-              <cs-color-picker-panel csMode="palette"
-                [csValue]="activeColors['backColor'] === 'transparent' ? null : activeColors['backColor']"
-                [csDisabled]="readonly || !allEditable" [csShowAlpha]="false"
-                csClearText="无背景色" [(csRecentColors)]="recentBackgroundColors"
-                (csChangeComplete)="onColorPicked({type: 'backColor', color: $event.value})" />
-        <div class="bc-color-group">
-          <div class="bc-color-group-title">背景图形</div>
-          <div class="bg-list">
-            @for (item of bgGraphList; track item.attr) {
-              <button type="button"
-                class="bg-graph-item"
-                [class]="item.class"
-                [class.active]="activeAttrs.get('bg') == item.attr"
-                [attr.aria-label]="item.title"
-                [title]="item.title"
-                [attr.aria-pressed]="activeAttrs.get('bg') == item.attr"
-                (click)="onBgGraphPicked(item.attr)"
-              >
-                <span
-                  [style.background-color]="
-                    activeColors['backColor'] || '#f4a1a1'
-                  "
-                  [style.color]="activeColors['color'] || '#ffffff'"
-                  >文本</span
+    <cs-dropdown-menu #textColorPicker="csDropdownMenu">
+      <div class="toolbar-color-menu" aria-label="文字颜色面板" (mousedown)="$event.stopPropagation()">
+        @if (activeColorPanel === 'color') {
+          <cs-color-picker-panel csMode="palette"
+            [csValue]="activeColors['color'] === 'var(--bc-color)' ? null : activeColors['color']"
+            [csDisabled]="readonly || !allEditable" [csShowAlpha]="false"
+            csClearText="自动" [(csRecentColors)]="recentTextColors"
+            (csChangeComplete)="onColorPicked({type: 'color', color: $event.value})" />
+        }
+      </div>
+    </cs-dropdown-menu>
+
+    <cs-dropdown-menu #backgroundColorPicker="csDropdownMenu">
+      <div class="toolbar-color-menu" aria-label="背景颜色面板" (mousedown)="$event.stopPropagation()">
+        @if (activeColorPanel === 'backColor') {
+          <cs-color-picker-panel csMode="palette"
+            [csValue]="activeColors['backColor'] === 'transparent' ? null : activeColors['backColor']"
+            [csDisabled]="readonly || !allEditable" [csShowAlpha]="false"
+            csClearText="无背景色" [(csRecentColors)]="recentBackgroundColors"
+            (csChangeComplete)="onColorPicked({type: 'backColor', color: $event.value})" />
+          <div class="bc-color-group">
+            <div class="bc-color-group-title">背景图形</div>
+            <div class="bg-list">
+              @for (item of bgGraphList; track item.attr) {
+                <button type="button"
+                  class="bg-graph-item"
+                  [class]="item.class"
+                  [class.active]="activeAttrs.get('bg') == item.attr"
+                  [attr.aria-label]="item.title"
+                  [csTooltip]="item.title"
+                  [attr.aria-pressed]="activeAttrs.get('bg') == item.attr"
+                  (click)="onBgGraphPicked(item.attr)"
                 >
-              </button>
-            }
-          </div>
-        </div>
+                  <span
+                    [style.background-color]="
+                      activeColors['backColor'] || '#f4a1a1'
+                    "
+                    [style.color]="activeColors['color'] || '#ffffff'"
+                    >文本</span
+                  >
+                </button>
               }
-            </cs-tab>
-          </cs-tabs>
+            </div>
+          </div>
         }
       </div>
     </cs-dropdown-menu>
@@ -1770,10 +1836,15 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
       :host(.toolbar-mode--full) .toolbar-row {
         justify-content: space-between;
       }
+      :host(.toolbar-mode--full.toolbar-layout--wide)
+        .toolbar-group--paragraph:not(.toolbar-group--spacing-collapsed)
+        .toolbar-row:first-child > .toolbar-btn {
+        flex: 1 1 0;
+      }
       :host(.toolbar-mode--full)
         .toolbar-group--paragraph
         .toolbar-row:last-child
-        > .toolbar-btn {
+        > .toolbar-btn--dropdown {
         flex: 1 1 0;
         justify-content: space-between;
       }
@@ -1799,6 +1870,8 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
       :host(.toolbar-mode--full)
         .toolbar-group--history
         .toolbar-group__controls {
+        grid-auto-flow: column;
+        grid-auto-columns: 28px;
         justify-items: center;
       }
       :host(.toolbar-mode--full) .toolbar-insert-label {
@@ -1839,11 +1912,32 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
       :host(.toolbar-mode--full.toolbar-layout--balanced)
         .toolbar-insert-shortcut--table,
       :host(.toolbar-mode--full.toolbar-layout--balanced)
-        .toolbar-insert-shortcut--textbox,
-      :host(.toolbar-mode--full.toolbar-layout--balanced)
-        .toolbar-letter-spacing,
-      :host(.toolbar-mode--full.toolbar-layout--balanced) .toolbar-line-height {
+        .toolbar-insert-shortcut--textbox {
         display: inline-flex;
+      }
+      /* Reflow the remaining paragraph commands when spacing shortcuts collapse. */
+      :host(.toolbar-mode--full.toolbar-layout--wide)
+        .toolbar-group--spacing-collapsed .toolbar-row,
+      :host(.toolbar-mode--full.toolbar-layout--balanced)
+        .toolbar-group--paragraph .toolbar-row {
+        display: contents;
+      }
+      :host(.toolbar-mode--full.toolbar-layout--wide)
+        .toolbar-group--spacing-collapsed .toolbar-group__controls,
+      :host(.toolbar-mode--full.toolbar-layout--balanced)
+        .toolbar-group--paragraph .toolbar-group__controls {
+        grid-auto-flow: column;
+        grid-auto-columns: max-content;
+      }
+      :host(.toolbar-mode--full.toolbar-layout--wide)
+        .toolbar-group--spacing-collapsed .toolbar-settings-entry--paragraph,
+      :host(.toolbar-mode--full.toolbar-layout--balanced)
+        .toolbar-settings-entry--paragraph {
+        grid-row: 2;
+      }
+      :host(.toolbar-mode--full)
+        .toolbar-group--formula-collapsed .toolbar-group__controls {
+        grid-template-rows: 28px;
       }
       :host(.toolbar-layout--compact) .toolbar-group--font,
       :host(.toolbar-layout--narrow) .toolbar-group--font {
@@ -1879,6 +1973,9 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
       :host(.toolbar-layout--narrow) .toolbar-insert-menu .toolbar-btn__caret {
         display: none;
       }
+      :host(:not(.toolbar-mode--full).toolbar-layout--narrow) .toolbar-group--paragraph {
+        display: none;
+      }
       :host(.toolbar-layout--compact) .toolbar-btn--font-size,
       :host(.toolbar-layout--narrow) .toolbar-btn--font-size {
         border: 0;
@@ -1886,7 +1983,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
       :host(.toolbar-mode--full.toolbar-layout--balanced)
         .toolbar-group--font
         .toolbar-group__controls {
-        grid-template-columns: repeat(5, 28px);
+        grid-template-columns: repeat(6, 28px);
         column-gap: 4px;
       }
       :host(.toolbar-mode--full.toolbar-layout--balanced)
@@ -1915,14 +2012,19 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
         grid-column: 3;
       }
       :host(.toolbar-mode--full.toolbar-layout--balanced)
-        .toolbar-color-control {
+        .toolbar-color-control--text {
         grid-row: 2;
         grid-column: 4;
       }
       :host(.toolbar-mode--full.toolbar-layout--balanced)
-        .toolbar-settings-entry--text {
+        .toolbar-color-control--background {
         grid-row: 2;
         grid-column: 5;
+      }
+      :host(.toolbar-mode--full.toolbar-layout--balanced)
+        .toolbar-settings-entry--text {
+        grid-row: 2;
+        grid-column: 6;
       }
       /* At the smallest width, keep format commands above the group launchers. */
       :host(.toolbar-mode--full.toolbar-layout--compact) .toolbar-body,
@@ -1989,6 +2091,10 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
         grid-row: 1;
         grid-column: 5;
       }
+      :host(.toolbar-mode--full.toolbar-layout--compact) .toolbar-color-control--background,
+      :host(.toolbar-mode--full.toolbar-layout--narrow) .toolbar-color-control--background {
+        grid-column: 6;
+      }
       :host(.toolbar-mode--full.toolbar-layout--compact)
         .toolbar-settings-entry--text,
       :host(.toolbar-mode--full.toolbar-layout--narrow)
@@ -2008,7 +2114,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
       :host(.toolbar-mode--full.toolbar-layout--compact) .toolbar-insert-menu,
       :host(.toolbar-mode--full.toolbar-layout--narrow) .toolbar-insert-menu {
         grid-row: 2;
-        grid-column: 3 / 6;
+        grid-column: 3 / 7;
         justify-self: start;
       }
 
@@ -2227,6 +2333,23 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
         flex-wrap: wrap;
       }
 
+      .toolbar-color-control {
+        position: relative;
+      }
+      .toolbar-color-control > .bc_icon,
+      .toolbar-color-control > cs-icon {
+        transform: translateY(-2px);
+      }
+      .toolbar-color-indicator {
+        position: absolute;
+        inset-inline: 6px;
+        bottom: 3px;
+        height: 3px;
+        border: 1px solid var(--bc-border-color);
+        border-radius: 1px;
+        box-sizing: border-box;
+        pointer-events: none;
+      }
       .toolbar-color-menu {
         width: max-content;
         max-width: calc(100vw - 40px);
@@ -2312,11 +2435,11 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
     CsMenuDirective,
     CsMenuItemComponent,
     CsSubmenuComponent,
+    CsTooltipDirective,
     BcFloatToolbarComponent,
     BcFloatToolbarItemComponent,
     CsColorPickerPanelComponent,
-  CsTabsComponent,
-  CsTabComponent,
+    CsIconComponent,
     BcTableSizePickerComponent,
     BcColumnCountPickerComponent,
     BcOrderedMarkerPickerComponent,
@@ -2341,23 +2464,23 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
 export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestroy {
   protected overflowedGroups = new Set<string>();
   private _overflowStep = 0;
+  // Collapse specialist commands first; link remains independent of formula.
   private readonly simpleOverflowGroups = [
-    ["reference"],
+    ["spacing", "formula"],
     ["media"],
     ["wordart"],
     ["columns"],
     ["shape"],
     ["textbox"],
-    ["letter-spacing"],
     ["script"],
     ["utilities"],
     ["style"],
-    ["line-height"],
   ];
   private readonly fullOverflowGroups = [
-    ["reference"],
+    ["spacing", "formula"],
     ["media", "wordart"],
     ["shape", "columns"],
+    ["reference"],
     ["utilities", "script", "style"],
   ];
 
@@ -2373,7 +2496,15 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
   private _observedToolbarWidth = -1;
   private _settingsModalRef?: CsModalRef<any, any>;
   protected toolbarLayout: "wide" | "balanced" | "compact" | "narrow" = "wide";
-  protected toolbarMode: "simple" | "full" = "simple";
+  protected toolbarMode: "simple" | "full" = "full";
+  // Keep two-row tooltips outside the command rows, including after modal focus restoration.
+  protected get fontActionsTooltipPlacement(): "top" | "bottom" {
+    return this.toolbarMode === "full" &&
+      (this.toolbarLayout === "wide" || this.toolbarLayout === "balanced")
+      ? "bottom"
+      : "top";
+  }
+
   protected orderedMarkerDropdownOpen = false;
   protected scriptDropdownOpen = false;
   private preferredScriptValue: TScriptToggle = "sup";
@@ -2425,6 +2556,7 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
   protected readonly fontFamilies = TYPOGRAPHY_FONT_FAMILIES;
   protected readonly quickFontSizePresets = FIXED_TOOLBAR_FONT_SIZE_PRESETS;
   protected readonly fontSizeDropdownStyle = {width: "min-content"};
+  protected activeFontWeight: number | null | undefined = null;
   protected activeFontSizePixels: number | undefined = undefined;
   protected readonly quickLetterSpacingPresets =
     FIXED_TOOLBAR_LETTER_SPACING_PRESETS;
@@ -2451,6 +2583,11 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
 
   @Input()
   isLinkAble = false;
+  protected formulaActive = false;
+  private closeReferencePad?: () => void;
+  private settingsSelection?: ToolbarSelectionSession;
+  private colorSelection?: ToolbarSelectionSession;
+  private restoreColorOnClose = false;
 
   private _hasTextSelection = false;
 
@@ -2516,6 +2653,10 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
       this.doc.readonlySwitch$.subscribe((readonly) => {
         this.readonly = readonly;
         if (readonly) {
+          this.settingsSelection?.dispose();
+          this.colorSelection?.dispose();
+          this.textColorTrigger?.close();
+          this.backgroundColorTrigger?.close();
           this._settingsModalRef?.close();
           this._settingsModalRef = undefined;
           this.clearFormatBrush();
@@ -2528,8 +2669,9 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
     this._sub.add(
       fromEvent<KeyboardEvent>(document, "keydown", {capture: true}).subscribe((evt) => {
         if (evt.key === "Escape" && this.colorPanelOpen) {
-          this.restoreSelection();
-          this.colorTrigger?.close();
+          const trigger = this.activeColorPanel === 'color' ? this.textColorTrigger : this.backgroundColorTrigger;
+          this.restoreColorOnClose = true;
+          trigger?.close();
           evt.preventDefault();
           evt.stopPropagation();
         }
@@ -2560,6 +2702,9 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
 
   ngOnDestroy() {
     this._destroyed = true;
+    this.settingsSelection?.dispose();
+    this.colorSelection?.dispose();
+    this.closeReferencePad?.();
     const view = this.hostRef?.nativeElement.ownerDocument.defaultView;
     if (view && this._layoutFitFrame !== null) {
       view.cancelAnimationFrame(this._layoutFitFrame);
@@ -2898,7 +3043,7 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
     type: string;
     color: string | null;
   }) {
-    this.runWithSelection(() => {
+    this.colorSelection?.run(() => {
       switch (evt.type) {
         case "color":
           this.toolbarHelper.formatText({ "s:color": evt.color });
@@ -2912,21 +3057,50 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
     });
   }
 
-  protected colorPanelOpen = false;
-  protected colorTabIndex = 0;
+  protected activeColorPanel: 'color' | 'backColor' | null = null;
+  protected get colorPanelOpen(): boolean {
+    return this.activeColorPanel !== null;
+  }
   protected recentTextColors: readonly string[] = [];
   protected recentBackgroundColors: readonly string[] = [];
-  @ViewChild("colorTrigger") private colorTrigger?: CsDropdownDirective;
+  @ViewChild("textColorTrigger") private textColorTrigger?: CsDropdownDirective;
+  @ViewChild("backgroundColorTrigger") private backgroundColorTrigger?: CsDropdownDirective;
 
-  protected onColorPanelOpenChange(open: boolean): void {
-    this.colorPanelOpen = open;
-    if (!open) {
-      this.syncToolbarState(this.doc.selection.value);
+  protected onColorTriggerMouseDown(event: MouseEvent): void {
+    event.stopPropagation();
+    // Let a focused colour field blur and confirm before switching panels.
+    if (!this.colorPanelOpen) event.preventDefault();
+  }
+
+  protected onColorPanelOpenChange(type: 'color' | 'backColor', open: boolean): void {
+    if (open) {
+      if (!this.colorSelection && this.selectionJSON) {
+        this.colorSelection = new ToolbarSelectionSession(this.doc, this.selectionJSON, () => {
+          this.textColorTrigger?.close();
+          this.backgroundColorTrigger?.close();
+        });
+      }
+      this.activeColorPanel = type;
+      (type === 'color' ? this.backgroundColorTrigger : this.textColorTrigger)?.close();
+    } else if (this.activeColorPanel === type) {
+      this.activeColorPanel = null;
+      // An outside click can close the old panel before the other trigger opens.
+      // Reconcile after that click, so a switch retains the saved text range.
+      queueMicrotask(() => {
+        if (this._destroyed || this.colorPanelOpen) return;
+        const focused = this.hostRef?.nativeElement.ownerDocument.activeElement;
+        const returnToEditor = this.restoreColorOnClose || !!focused && !!this.hostRef?.nativeElement.contains(focused);
+        this.restoreColorOnClose = false;
+        this.colorSelection?.finish(returnToEditor && !this._destroyed && !this.readonly);
+        this.colorSelection = undefined;
+        this.syncToolbarState(this.doc.selection.value);
+        this.cdr.markForCheck();
+      });
     }
   }
 
   protected onBgGraphPicked(bg: string | null) {
-    this.runWithSelection(() => {
+    this.colorSelection?.run(() => {
       this.toolbarHelper.formatText({ "a:bg": bg });
     });
   }
@@ -3114,11 +3288,16 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
     const savedSelection = this.selectionJSON;
     if (!savedSelection) return;
 
+    this.settingsSelection?.dispose();
     this._settingsModalRef?.close();
+    const session = new ToolbarSelectionSession(this.doc, savedSelection, () => this._settingsModalRef?.close());
+    if (!session.resolve()) return;
+    this.settingsSelection = session;
     const data: FontSettingsDialogData = {
       target,
       typography: { ...this.activeTypography },
       fontSize: this.activeFontSizePixels,
+      fontWeight: this.activeFontWeight,
       attrs: {
         bold: this.isAttrActive("bold"),
         italic: this.isAttrActive("italic"),
@@ -3157,12 +3336,13 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
       .subscribe(() => ref.componentInstance?.focusTarget());
     ref.afterClose.pipe(take(1)).subscribe((result) => {
       if (this._settingsModalRef === ref) this._settingsModalRef = undefined;
-      if (this.readonly) return;
-      if (!result) {
-        this.runWithSavedSelection(savedSelection, () => {}, {allowFontScaleTargets: true});
-        return;
-      }
-      this.applyFontSettingsResult(savedSelection, result);
+      const current = this.settingsSelection === session;
+      if (current) this.settingsSelection = undefined;
+      const restored = session.finish(current && !this._destroyed && !this.readonly);
+      if (!restored) return;
+      if (result) this.applyFontSettingsResult(restored, result);
+      this.syncToolbarState(this.doc.selection.value);
+      this.cdr.markForCheck();
     });
   }
 
@@ -3171,7 +3351,11 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
     const savedSelection = this.selectionJSON;
     if (!savedSelection) return;
 
+    this.settingsSelection?.dispose();
     this._settingsModalRef?.close();
+    const session = new ToolbarSelectionSession(this.doc, savedSelection, () => this._settingsModalRef?.close());
+    if (!session.resolve()) return;
+    this.settingsSelection = session;
     const selection = this.doc.selection.value;
     const formatIds = selection ? this.getFormatBlockIds(selection) : [];
     const selectedSpacingOwner = selection ? this.getSelectedSpacingOwnerId(selection) : null;
@@ -3231,8 +3415,13 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
       .subscribe(() => ref.componentInstance?.focusTarget());
     ref.afterClose.pipe(take(1)).subscribe((result) => {
       if (this._settingsModalRef === ref) this._settingsModalRef = undefined;
-      if (!result || this.readonly) return;
-      this.applyParagraphSettingsResult(savedSelection, result);
+      const current = this.settingsSelection === session;
+      if (current) this.settingsSelection = undefined;
+      const restored = session.finish(current && !this._destroyed && !this.readonly);
+      if (!restored) return;
+      if (result) this.applyParagraphSettingsResult(restored, result);
+      this.syncToolbarState(this.doc.selection.value);
+      this.cdr.markForCheck();
     });
   }
 
@@ -3543,111 +3732,138 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
   }
 
   protected onLinkAction() {
-    if (
-      this.readonly ||
-      !this.allEditable ||
-      !this.isLinkAble ||
-      !this.hasTextSelection
-    )
-      return;
+    if (this.readonly || !this.allEditable || !this.isLinkAble) return;
     if (this.isAttrActive("link")) {
-      this.runWithSelection(() => {
-        this.toolbarHelper.formatText({ "a:link": null });
-      });
-      return;
+      this.runWithSelection(() => this.toolbarHelper.formatText({"a:link": null}));
+    } else {
+      this.openLinkPad();
     }
-    this.openLinkPad();
   }
 
   protected openLinkPad() {
-    this.restoreSelection();
-    const selection = this.doc.selection.value;
-    if (
-      !this.isLiveSelection(selection) ||
-      !selection.isInSameBlock ||
-      selection.start.type !== "text" ||
-      !this.hasTextSelection
-    )
-      return;
-    const selectionJSON = selection.toJSON();
-
-    const rect = this.doc.selection.getSelectionRect();
-    if (!rect) return;
-
-    let fake;
-    try {
-      fake = this.doc.selection.createFakeRange(selection);
-    } catch {
-      return;
-    }
-    const overlay = this.doc.injector.get(Overlay);
-
-    const positionStrategy = overlay
-      .position()
-      .global()
-      .top(rect.bottom + "px")
-      .left(rect.left + "px");
-    const portal = new ComponentPortal(LinkInputPad);
-    const ovr = overlay.create({
-      positionStrategy,
-      hasBackdrop: true,
-      backdropClass: "cdk-overlay-transparent-backdrop",
+    this.openReferencePad(LinkInputPad, (pad, selection, confirm, close$) => {
+      pad.setInput("showTextInput", selection.collapsed);
+      pad.instance.onCancel.pipe(takeUntil(close$)).subscribe(() => close$.next());
+      pad.instance.onConfirm.pipe(takeUntil(close$)).subscribe(url => {
+        const text = pad.instance.textValue;
+        confirm(live => {
+          if (live.collapsed) {
+            if (!text.trim()) return;
+            this.replaceReference(live, {insert: text, attributes: {
+              ...this.referenceInsertAttrs(live), "a:link": url,
+            }});
+          } else {
+            this.toolbarHelper.formatText({"a:link": url}, live);
+          }
+        });
+      });
     });
-
-    const close = () => {
-      ovr.dispose();
-      fake.destroy();
-      nextTick().then(() => {
-        if (!this.replaySelection(selectionJSON)) return;
-        this.syncToolbarState(this.doc.selection.value);
-        this.cdr.markForCheck();
-      });
-    };
-
-    const cpr = ovr.attach(portal);
-    merge(ovr.backdropClick(), cpr.instance.onCancel)
-      .pipe(takeUntilDestroyed(cpr.instance.destroyRef))
-      .subscribe(close);
-    cpr.instance.onConfirm
-      .pipe(takeUntilDestroyed(cpr.instance.destroyRef))
-      .subscribe((url: string) => {
-        close();
-        if (!this.replaySelection(selectionJSON)) return;
-        const liveSelection = this.doc.selection.value;
-        if (
-          !this.isLiveSelection(liveSelection) ||
-          liveSelection.start.type !== "text"
-        )
-          return;
-        const startBlock = liveSelection.firstBlock as any;
-        const startOff = liveSelection.start.offset;
-        const len =
-          liveSelection.isInSameBlock && liveSelection.end.type === "text"
-            ? liveSelection.end.offset - startOff
-            : startBlock.textLength - startOff;
-        startBlock.formatText(startOff, len, { "a:link": url });
-      });
   }
 
   protected insertFormula() {
-    if (!this.hasTextSelection) return;
+    if (this.readonly || !this.allEditable || !this.isLinkAble) return;
     this.runWithSelection(() => {
-      const selection = this.doc.selection.value;
-      if (!this.isLiveSelection(selection) || selection.start.type !== "text")
-        return;
-      const block = selection.firstBlock as any;
-      const index = selection.start.offset;
-      const length =
-        selection.isInSameBlock && selection.end.type === "text"
-          ? selection.end.offset - index
-          : block.textLength - index;
-      const text = this.doc.selection.getSelectedText();
-      block.applyDeltaOperations([
-        ...(index > 0 ? [{ retain: index }] : []),
-        { delete: length },
-        { insert: { latex: text } },
-      ]);
+      const selection = this.doc.selection.value!;
+      const formula = this.selectedFormula(selection);
+      if (formula && typeof formula.insert === 'object') {
+        this.replaceReference(selection, {insert: String(formula.insert['latex']), attributes: formula.attributes});
+      } else if (!selection.collapsed) {
+        // Keep the existing selected-text-to-formula shortcut.
+        this.replaceReference(selection, {insert: {latex: this.doc.selection.getSelectedText()}});
+      } else {
+        this.openReferencePad(FormulaBlockToolbar, (pad, _selection, confirm, close$) => {
+          pad.setInput("doc", this.doc);
+          pad.instance.confirm.pipe(takeUntil(close$)).subscribe(latex => {
+            if (!latex.trim()) return;
+            confirm(live => this.replaceReference(live, {insert: {latex}}));
+          });
+        });
+      }
     });
+  }
+
+  /** Only an explicitly selected formula is active; a caret beside it is plain text. */
+  private selectedFormula(selection: BlockCraft.Selection | null) {
+    if (!selection || !selection.isInSameBlock || selection.start.type !== "text" ||
+        selection.end.type !== "text" || selection.end.offset - selection.start.offset !== 1) return null;
+    const runs = sliceDelta(this.doc.model.getTextDeltas(selection.start.blockId) ?? [],
+      selection.start.offset, selection.end.offset);
+    const run = runs[0];
+    return runs.length === 1 && run && typeof run.insert === "object" && 'latex' in run.insert ? run : null;
+  }
+
+  private referenceInsertAttrs(selection: BlockCraft.Selection): IInlineNodeAttrs {
+    if (selection.start.type !== "text") return {};
+    const {blockId, offset} = selection.start;
+    const pending = this.doc.inputManger.peekNextInsertAttrs({blockId, index: offset});
+    if (pending) return {...pending};
+    const index = Math.max(0, offset - (selection.collapsed ? 1 : 0));
+    return {...sliceDelta(this.doc.model.getTextDeltas(blockId) ?? [], index, index + 1)[0]?.attributes};
+  }
+
+  private replaceReference(selection: BlockCraft.Selection, run: DeltaInsert): void {
+    if (selection.start.type !== "text" || selection.end.type !== "text") return;
+    const {blockId, offset} = selection.start;
+    const attrs = this.referenceInsertAttrs(selection);
+    delete attrs['a:link'];
+    this.doc.crud.undoManager.stopCapturing();
+    this.doc.crud.applyTextDelta(blockId, [
+      ...(offset ? [{retain: offset}] : []),
+      ...(selection.end.offset > offset ? [{delete: selection.end.offset - offset}] : []),
+      run,
+    ]);
+    const end = offset + (typeof run.insert === 'string' ? run.insert.length : 1);
+    this.doc.selection.setSelection({blockId, type: 'text', index: end, length: 0});
+    // Links and formulas are explicit insertions; following text starts outside them.
+    this.doc.inputManger.setNextInsertAttrs(attrs, {blockId, index: end});
+    this.doc.crud.undoManager.stopCapturing();
+  }
+
+  private openReferencePad<T>(component: Type<T>, setup: (
+    pad: import('@angular/core').ComponentRef<T>, selection: BlockCraft.Selection,
+    confirm: (apply: (selection: BlockCraft.Selection) => void) => void, close$: Subject<void>,
+  ) => void): void {
+    this.restoreSelection();
+    const selection = this.doc.selection.value;
+    if (!this.canFormatTextSelection(selection) || !selection?.isInSameBlock ||
+        selection.start.type !== 'text' || selection.end.type !== 'text') return;
+    this.closeReferencePad?.();
+    const close$ = new Subject<void>();
+    const close = () => close$.next();
+    const session = new ToolbarSelectionSession(this.doc, selection.toJSON(), close);
+    if (!session.resolve()) return;
+    this.closeReferencePad = close;
+    const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay<T>({
+      target: selection.firstBlock,
+      // These input panels belong to the fixed toolbar, including hosts whose
+      // document canvas is wider than the visible viewport.
+      clampTo: this.doc.root.hostElement.ownerDocument.documentElement,
+      component,
+      backdrop: true,
+      positions: [getPositionWithOffset('bottom-left', 0, 8), getPositionWithOffset('top-left', 0, 8)],
+    }, close$);
+    close$.pipe(take(1)).subscribe(() => {
+      if (this.closeReferencePad === close) this.closeReferencePad = undefined;
+      if (session.finish(!this._destroyed && !this.readonly)) {
+        this.syncToolbarState(this.doc.selection.value);
+        this.cdr.markForCheck();
+      }
+    });
+    overlayRef.keydownEvents().pipe(takeUntil(close$)).subscribe(event => {
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); }
+    });
+    setup(componentRef, selection, apply => {
+      const saved = session.resolve();
+      close();
+      const live = this.doc.selection.value;
+      if (this.readonly || !this.canFormatTextSelection(live) || !live?.isInSameBlock ||
+          live.start.type !== 'text' || live.end.type !== 'text') return;
+      // A removed source block must never redirect confirmation to another selection.
+      if (!saved) return;
+      apply(live);
+      this.syncToolbarState(this.doc.selection.value);
+      this.cdr.markForCheck();
+    }, close$);
   }
 
   protected clearFormat() {
@@ -3850,8 +4066,12 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
       "a:bg": this.readFormatBrushAttr(common.attrs, "bg"),
       "s:color": common.colors["color"] ?? null,
       "s:background": common.colors["backColor"] ?? null,
+      ...(common.fontWeight !== undefined ? {
+        "s:fontWeight": common.fontWeight === null ? null : String(common.fontWeight),
+      } : {}),
     } as IInlineNodeAttrs;
 
+    if ('fontWeight' in common && common.fontWeight === undefined) delete inlineAttrs['a:bold'];
     const typography = common.typography;
     if (typography?.ff !== undefined) {
       Object.assign(
@@ -4316,7 +4536,8 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
     // Native colour/HEX inputs temporarily own focus. Keep the existing saved
     // selection until the panel closes; runWithSelection still validates it
     // against the live document and readonly state before every format action.
-    if (!selection && this.colorPanelOpen) return;
+    if (!selection && (this.colorPanelOpen || this.closeReferencePad || this.settingsSelection)) return;
+    this.formulaActive = this.isLiveSelection(selection) && !!this.selectedFormula(selection);
     if (!this.isLiveSelection(selection)) {
       this.typographyContextIds.clear();
       this.activeAttrs = new Map<string, any>();
@@ -4324,6 +4545,7 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
       this.activeProps = {};
       this.activeTypography = { ff: null, fs: null, ls: null };
       this.activeFontSizePixels = undefined;
+      this.activeFontWeight = null;
       this.activeParagraphTypography = {
         pfs: null,
         lh: null,
@@ -4386,6 +4608,7 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
     const common = this.toolbarHelper.getCurrentCommonAttrs(selection);
     this.activeProps = { ...common.props };
     this.activeFontSizePixels = common.fontSize;
+    this.activeFontWeight = common.fontWeight;
     this.activeTypography = common.typography
       ? { ...common.typography }
       : { ff: null, fs: null, ls: null };

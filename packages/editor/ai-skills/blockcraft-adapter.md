@@ -4,7 +4,13 @@
 >
 > Adapters handle HTML ↔ BlockSnapshot and Markdown ↔ BlockSnapshot conversion.
 >
-> Last updated: 2026-10-15
+> Last updated: 2026-10-19
+
+## 正文数值字重
+
+HTML typography 转换器将 `s:fontWeight` 导出为 `font-weight` 样式，并从 span 的合法数值、normal、bold 样式读回。
+旧 `<strong>` / `a:bold` 规则保留；600 及以上的显式数值同时提供粗体语义。段落 `textDefaults` 元数据保留数值字重。
+快照无须迁移；普通 Markdown 不承载精确数值字重，沿用粗体语义降级，不新增私有 Markdown 语法。
 
 ## 段落格式元数据
 

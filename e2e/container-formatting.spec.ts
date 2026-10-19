@@ -40,10 +40,10 @@ test('selected callout formats its paragraphs through the fixed toolbar', async 
   const toolbar = page.locator('bc-fixed-toolbar')
   await expect(page.locator(`[data-block-id="${ids.callout}"]`)).toHaveClass(/selected/)
   await expect(toolbar.locator('.toolbar-btn--style')).toBeEnabled()
-  await expect(toolbar.getByTitle('加粗', {exact: true})).toBeEnabled()
+  await expect(toolbar.getByRole('button', { name: '加粗', exact: true })).toBeEnabled()
   await expect(toolbar.getByTitle('行距：默认')).toBeEnabled()
 
-  await toolbar.getByTitle('加粗', {exact: true}).click()
+  await toolbar.getByRole('button', { name: '加粗', exact: true }).click()
   await expect.poll(async () => (await readBlocks(page, ids.inside)).every(block =>
     block.deltas[0]?.attributes?.['a:bold'] === true)).toBe(true)
 
@@ -85,8 +85,8 @@ test('table-cell rectangle formats only selected cells', async ({page}) => {
 
   const toolbar = page.locator('bc-fixed-toolbar')
   await expect(toolbar.locator('.toolbar-btn--style')).toBeEnabled()
-  await expect(toolbar.getByTitle('加粗', {exact: true})).toBeEnabled()
-  await toolbar.getByTitle('加粗', {exact: true}).click()
+  await expect(toolbar.getByRole('button', { name: '加粗', exact: true })).toBeEnabled()
+  await toolbar.getByRole('button', { name: '加粗', exact: true }).click()
   await expect.poll(async () => (await readBlocks(page, ids.selected)).every(block =>
     block.deltas[0]?.attributes?.['a:bold'] === true)).toBe(true)
   expect((await readBlocks(page, ids.unselected)).every(block =>

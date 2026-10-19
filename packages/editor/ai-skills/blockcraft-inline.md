@@ -2,11 +2,20 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying the inline editing system.
 >
-> Last updated: 2026-10-09
+> Last updated: 2026-10-19
 
 行内图片数据协议及归一化位于 `framework/block-std/inline/image-data.ts`，数值辅助实现位于
 `image-numbers.ts`。浮动排版和虚拟化只依赖数据规则；DOM converter 与资源控制器仍在
 `embeds/image/`，原导出转发同一份数据函数，不再由行内核心反向加载 converter。
+
+## 正文字重与加粗
+
+正文的独立数值字重使用已有通用样式键 `s:fontWeight`（数字字符串），无需改动 Y.Text 或快照结构。
+`normalizeInlineFontWeight` 接受 1–1000 的整数及 `normal` / `bold`；UI 提供 100–900 的百位预设，导入的其他合法整数可回显。
+`readInlineFontWeight` 优先读取数值，兼容 `s:font-weight`，旧 `a:bold` 映射为 700；没有覆盖值返回 null（继承）。
+`normalizeInlineFontWeightPatch` 将显式字重与 `a:bold` 同步（600 及以上为粗体），清理连字符别名；独立的加粗命令清除旧数值覆盖。
+`TextToolbarHelper.formatText` / `formatTypography` 统一使用该规则；`getCurrentCommonAttrs().fontWeight` 为 null（继承）、number 或 undefined（混合）。
+段落 `textDefaults` 保留数值字重，光标输入及删除到空段落继续复用原输入状态机制。Live renderer 与 Snapshot Viewer 均复用通用样式投影。
 
 ## Architecture Overview
 
