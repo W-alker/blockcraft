@@ -413,6 +413,54 @@ describe("TableBlockComponent selection UI sync", () => {
   });
 });
 
+describe("TableBlockComponent toolbar scale lifecycle", () => {
+  for (const closeBy of ["close", "detach"] as const) {
+    it(`coalesces scale refreshes and unsubscribes on ${closeBy}`, () => {
+      const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;
+      const scaleChanges = new BehaviorSubject({scale: 1, source: "api"});
+      const detached = new Subject<void>();
+      const overlayRef = {detachments: () => detached};
+      const componentRef = {};
+      table._closeToolbar$ = new Subject<void>();
+      table._tableMenu = {visible: true};
+      table.tableMenuAnchor = {nativeElement: document.createElement("div")};
+      Object.defineProperties(table, {
+        isReadonly: {value: false},
+        isFullscreen: {value: false},
+      });
+      table._isTableUiLive = () => true;
+      table._resolveToolbarPositions = () => [];
+      table._applyToolbarInputs = () => {};
+      table.refreshTableMenuFromSelection = jasmine.createSpy("refreshTableMenuFromSelection");
+      let pending: (() => void) | undefined;
+      table._cancelTableMenuFrames = () => { pending = undefined; };
+      table._scheduleTableMenuFrame = (callback: () => void) => { pending = callback; };
+      table.doc = {
+        viewScale: {change$: scaleChanges},
+        overlayService: {createConnectedOverlay: () => ({componentRef, overlayRef})},
+      };
+
+      table._showTableMenuOverlay();
+      expect(pending).toBeUndefined();
+      scaleChanges.next({scale: 0.75, source: "api"});
+      scaleChanges.next({scale: 1.25, source: "api"});
+      expect(table.refreshTableMenuFromSelection).not.toHaveBeenCalled();
+      pending!();
+      pending = undefined;
+      expect(table.refreshTableMenuFromSelection).toHaveBeenCalledTimes(1);
+
+      if (closeBy === "close") table._closeToolbar$.next();
+      else detached.next();
+      scaleChanges.next({scale: 1, source: "api"});
+      expect(pending).toBeUndefined();
+      expect(table.refreshTableMenuFromSelection).toHaveBeenCalledTimes(1);
+      scaleChanges.complete();
+      detached.complete();
+      table._closeToolbar$.complete();
+    });
+  }
+});
+
 describe("TableBlockComponent column resize", () => {
   function createResizeHarness(colWidths = [120, 140]) {
     const table = Object.create(TableBlockComponent.prototype) as TableBlockComponent & any;

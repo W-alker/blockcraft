@@ -26,7 +26,7 @@ import {
 } from "../../framework/modules/table";
 import { TableBlockModel } from "./index";
 import { TableCellBlockComponent } from "./table-cell.block";
-import { BehaviorSubject, filter, fromEvent, merge, Subject, Subscription, take, takeUntil } from "rxjs";
+import { BehaviorSubject, filter, fromEvent, merge, skip, Subject, Subscription, take, takeUntil } from "rxjs";
 import { ColReorderEndEvent, ColReorderMoveEvent, ColReorderStartEvent, TableColBarComponent } from "./widgets/table-col-bar.component";
 import { RowReorderEndEvent, RowReorderMoveEvent, RowReorderStartEvent, TableRowBarComponent } from "./widgets/table-row-bar.component";
 import { TableStructureToolbarComponent } from "./widgets/table-structure-toolbar.component";
@@ -1972,10 +1972,13 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
     this._tableMenu = {
       visible: true,
-      left: anchor.left,
-      top: anchor.top,
-      width: anchor.width,
-      height: anchor.height,
+      // BCR 是屏幕坐标，锚点 style 属于缩放后的 wrapper；位置和尺寸分别
+      // 使用已有的浏览器能力换算，避免锚点被 CSS zoom 再缩放一次。
+      left: this._stylePositionFromBcrDistance(anchor.left),
+      top: this._stylePositionFromBcrDistance(anchor.top),
+      // width 只用于模板计算中心点偏移，因此按 position 而非 size 换算。
+      width: this._stylePositionFromBcrDistance(anchor.width),
+      height: this._styleSizeFromBcrDistance(anchor.height),
       rowIndex: options.rowIndex,
       rowCount: options.rowCount ?? 1,
       colIndex: options.colIndex,
@@ -2252,6 +2255,17 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     this.toolbarOvr = overlayRef
     this.toolbarRef = componentRef
     this._applyToolbarInputs(componentRef)
+
+    // 仅在工具栏存活时订阅。change$ 先于缩放样式写入发出，下一帧再测量，
+    // 连续缩放合并为一次刷新，关闭/销毁后不再触发定位。
+    this.doc.viewScale.change$
+      .pipe(skip(1), takeUntil(merge(this._closeToolbar$, overlayRef.detachments())))
+      .subscribe(() => {
+        this._cancelTableMenuFrames()
+        this._scheduleTableMenuFrame(() => {
+          if (this.toolbarOvr === overlayRef) this.refreshTableMenuFromSelection()
+        })
+      })
   }
 
   private _isTableUiLive(): boolean {
