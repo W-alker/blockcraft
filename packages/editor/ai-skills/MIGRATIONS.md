@@ -4,6 +4,16 @@
 >
 > Last updated: 2026-10-19 | Tracks `@ccc/blockcraft` npm releases.
 
+## 未发布 — 2026-10-19：只读正文链接单击导航
+
+**Severity**: patch（只读交互调整；版本由用户决定）
+
+**What changed / Why**: `InlineLinkExtension` 在整篇文档只读时单击直接调用原有 `openLink` 回调，方便阅读跳转；拖选文字、右键及双击后续事件不重复导航。
+
+**Affected ai-skills files**: `blockcraft-plugins-inline.md`。
+
+**Behavior Changes / Migration Recipe**: 无需修改构造参数或宿主导航回调。编辑模式仍单击工具栏、双击导航；单块锁定不视为整篇只读。运行时切换只读立即生效，销毁插件清理监听器。未变更文档格式或持久化数据。
+
 ## 0.11.22 — 2026-10-19：编辑器个人交互配置入口
 
 **Severity**: patch（按用户指定小版本发布，新增可选宿主配置）

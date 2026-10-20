@@ -251,6 +251,7 @@ describe("InlineLinkExtension range handling", () => {
     };
     const plugin = new InlineLinkExtension();
     (plugin as any).doc = {
+      afterInit: jasmine.createSpy("afterInit"),
       subscribeReadonlyChange: jasmine.createSpy("subscribeReadonlyChange").and.returnValue(readonlySub),
     };
 
@@ -274,6 +275,7 @@ describe("InlineLinkExtension range handling", () => {
       isReadonly: false,
       getBlockById: jasmine.createSpy("getBlockById").and.returnValue(block),
       readonlyManager,
+      afterInit: jasmine.createSpy("afterInit"),
       subscribeReadonlyChange: jasmine.createSpy("subscribeReadonlyChange"),
     };
     const plugin = new InlineLinkExtension();
@@ -291,5 +293,74 @@ describe("InlineLinkExtension range handling", () => {
     expect(readonlyManager.isReadonly).not.toHaveBeenCalled();
     expect((plugin as any)._cpr).toBeNull();
     plugin.destroy();
+  });
+});
+
+describe('InlineLinkExtension readonly navigation', () => {
+  let host: HTMLElement;
+  let target: HTMLElement;
+  let plugin: InlineLinkExtension;
+  let openLink: jasmine.Spy;
+  let doc: any;
+
+  beforeEach(() => {
+    host = document.createElement('div');
+    host.dataset['blockId'] = 'p1';
+    const element = document.createElement(INLINE_ELEMENT_TAG);
+    element.setAttribute('link', 'https://example.com');
+    target = document.createElement(INLINE_TEXT_NODE_TAG);
+    target.textContent = 'link text';
+    element.appendChild(target);
+    host.appendChild(element);
+    document.body.appendChild(host);
+    const block = {id: 'p1'};
+    doc = {
+      isReadonly: true,
+      root: {hostElement: host},
+      afterInit: (callback: () => void) => callback(),
+      subscribeReadonlyChange: () => new Subject().subscribe(),
+      getBlockById: jasmine.createSpy('getBlockById').and.returnValue(block),
+    };
+    openLink = jasmine.createSpy('openLink');
+    plugin = new InlineLinkExtension(openLink);
+    (plugin as any).doc = doc;
+    plugin.init();
+    document.getSelection()?.removeAllRanges();
+  });
+
+  afterEach(() => {
+    plugin.destroy();
+    host.remove();
+    document.getSelection()?.removeAllRanges();
+  });
+
+  const click = () => new MouseEvent('click', {bubbles: true, button: 0, detail: 1});
+
+  it('only navigates for a live readonly document and removes the listener on destroy', () => {
+    target.dispatchEvent(click());
+    expect(openLink).toHaveBeenCalledOnceWith('https://example.com');
+    openLink.calls.reset();
+    doc.isReadonly = false;
+    target.dispatchEvent(click());
+    doc.isReadonly = true;
+    doc.getBlockById.and.throwError('removed block');
+    target.dispatchEvent(click());
+    expect(openLink).not.toHaveBeenCalled();
+    doc.getBlockById.and.returnValue({id: 'p1'});
+    plugin.destroy();
+    target.dispatchEvent(click());
+    expect(openLink).not.toHaveBeenCalled();
+  });
+
+  it('preserves a selected text range and ignores subsequent double-click events', () => {
+    const range = document.createRange();
+    range.selectNodeContents(target);
+    document.getSelection()!.addRange(range);
+    target.dispatchEvent(click());
+    expect(document.getSelection()!.toString()).toBe('link text');
+    document.getSelection()!.removeAllRanges();
+    target.dispatchEvent(new MouseEvent('click', {bubbles: true, detail: 2}));
+    plugin.onDoubleClick({getDefaultEvent: () => ({target})} as any);
+    expect(openLink).not.toHaveBeenCalled();
   });
 });

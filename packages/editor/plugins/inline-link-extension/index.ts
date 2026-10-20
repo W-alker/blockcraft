@@ -6,7 +6,7 @@ import {
   INLINE_TEXT_NODE_TAG, INLINE_ELEMENT_TAG,
   normalizeRange,
 } from "../../framework";
-import {skip, Subject, Subscription, takeUntil} from "rxjs";
+import {fromEvent, skip, Subject, Subscription, takeUntil} from "rxjs";
 import {InlineLinkToolbar} from "./widgets/inline-link-toolbar";
 import {nextTick, sliceDelta} from "../../global";
 import {UIEventStateContext, IBlockSnapshot} from "../../framework";
@@ -49,6 +49,23 @@ export class InlineLinkExtension extends DocPlugin {
   }
 
   init() {
+    this.doc.afterInit(() => {
+      this._sub.add(fromEvent<MouseEvent>(this.doc.root.hostElement, 'click').subscribe(event => {
+        if (!this.doc.isReadonly || event.button !== 0 || event.detail > 1) return
+        const target = event.target
+        if (!(target instanceof HTMLElement)) return
+        const link = this.tryGetLink(target)
+        if (!link) return
+        // 拖选链接文字时保留原生选区，不触发导航。
+        const selection = target.ownerDocument.getSelection()
+        if (selection && !selection.isCollapsed) return
+        const blockId = closetBlockId(target)
+        if (!blockId || !this._getLiveBlockById(blockId)) return
+        event.preventDefault()
+        this.closeToolbar()
+        this.openLink(link)
+      }))
+    })
     this._sub.add(
       this.doc.subscribeReadonlyChange(() => {
         this._refreshToolbarReadonlyState()
@@ -78,6 +95,7 @@ export class InlineLinkExtension extends DocPlugin {
 
   @EventListen('doubleClick', {flavour: "root"})
   onDoubleClick(ctx: UIEventStateContext) {
+    if (this.doc.isReadonly) return
     const target = ctx.getDefaultEvent().target as Node | null
     if (!target || !(target instanceof HTMLElement)) return
     const link = this.tryGetLink(target)
@@ -88,6 +106,7 @@ export class InlineLinkExtension extends DocPlugin {
 
   @EventListen('mouseDown', {flavour: "root"})
   onClick(ctx: UIEventStateContext) {
+    if (this.doc.isReadonly) return
     const target = ctx.getDefaultEvent().target as Node | null
     if (!target || !(target instanceof HTMLElement)) return
     const link = this.tryGetLink(target)

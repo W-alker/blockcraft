@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-10-08
+> Last updated: 2026-10-19
 
 ## Inline Extensions
 
@@ -10,7 +10,7 @@
 
 > `plugins/inline-link-extension/` — Hyperlink interactions and editing.
 
-Handles inline link clicks (single-click shows toolbar, double-click navigates), provides link editing/unbinding/copying, and supports direct conversion to card or embed views.
+Handles inline link clicks (编辑模式单击显示工具栏、双击导航；整篇文档只读时单击直接导航，拖选文字和右键不导航，双击只导航一次；单个块锁定仍保留原工具栏行为), provides link editing/unbinding/copying, and supports direct conversion to card or embed views.
 
 #### Configuration
 
