@@ -31,9 +31,14 @@
 
 [data-blockcraft-root="true"] {
   .columns-block {
-    padding: 8px 0;
+    padding: 0;
 
     // 分栏两侧保留光标入口，但不让占位点扩张填写区的滚动范围。
+    // 入口覆盖像素取整误差，避免无内边距时 Firefox 命中相邻正文。
+    > [data-block-zero-space="true"] {
+      width: 2px;
+    }
+
     > [data-block-zero-space="true"][data-block-gap-side="before"] {
       left: 1px;
     }
@@ -126,7 +131,8 @@
       opacity: 0;
       pointer-events: none;
       z-index: 11;
-      top: -8px;
+      // 按钮中心贴齐内容上沿，一半在内、一半在外，不占正文高度。
+      top: -10px;
       left: -4px;
       &--start { left: 4px; }
       &--end { left: auto; right: 4px; }
@@ -233,9 +239,14 @@
     padding: 0 8px;
     margin-bottom: 0 !important;
 
+    // 只保留栏间间隔，分栏外沿与正文对齐。
+    &:first-child { padding-left: 0; }
+    &:last-child { padding-right: 0; }
+
     .column-drag-handle {
       position: absolute;
-      bottom: -8px;
+      // 抓手中心贴齐内容下沿，一半在内、一半在外，不预留正文高度。
+      bottom: -7px;
       left: 50%;
       transform: translateX(-50%);
       display: flex;
@@ -253,7 +264,7 @@
       pointer-events: none;
       z-index: 11;
 
-      i { font-size: var(--bc-fs-sm); transform: rotate(90deg); }
+      i { font-size: var(--bc-fs-sm); line-height: 1; transform: rotate(90deg); pointer-events: none; }
       &:active { cursor: grabbing; }
     }
 
@@ -282,7 +293,7 @@
 
       width: 100%;
       height: 100%;
-      padding: 4px;
+      padding: 0;
       border-radius: 4px;
       /* 子块在这里纵向堆叠 */
       display: flex;
