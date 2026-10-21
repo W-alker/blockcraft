@@ -4,6 +4,16 @@
 >
 > Last updated: 2026-10-21 | Tracks `@ccc/blockcraft` npm releases.
 
+## 未发布 — 2026-10-21：升级 CSES UI 与统一右键菜单图标
+
+**Severity**: patch（依赖升级；发布版本由用户决定）
+
+**What changed / Why**: `@cses/ui` 精确 peer 升级到 `4.37.3`。右键菜单统一使用 `cs-icon`，文本设置、段落设置和全选使用新版提供的 `font-settings`、`paragraph-settings`、`select-all`；“粘贴为”三个子菜单保持纯文字。新版已包含颜色面板未编辑字段失焦不提交的修复，移除旧版 `4.37.1` 本地补丁。
+
+**Affected ai-skills files**: `blockcraft-app.md`。
+
+**Migration Recipe**: 宿主安装 `@cses/ui@4.37.3`，继续加载 `@cses/ui/styles/cses-ui.scss`。无需修改菜单注册、格式 API 或文档数据；本次不调整 BlockCraft 包版本。
+
 ## 未发布 — 2026-10-21：右键菜单增加文本与段落设置
 
 **Severity**: minor（增加菜单入口；发布版本由用户决定）

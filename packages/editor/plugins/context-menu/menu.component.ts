@@ -1,34 +1,43 @@
 import {CdkMenu, CdkMenuItem} from '@angular/cdk/menu';
 import {CdkConnectedOverlay, CdkOverlayOrigin, ConnectedPosition} from '@angular/cdk/overlay';
 import {ChangeDetectionStrategy, ChangeDetectorRef, Component, DestroyRef, ElementRef, inject, input, output, ViewChild} from '@angular/core';
+import {CsIconComponent} from '@cses/ui';
 import {generateId} from '../../framework/utils';
 
 @Component({
   selector: 'bc-editor-context-menu',
   standalone: true,
-  imports: [CdkMenu, CdkMenuItem, CdkConnectedOverlay, CdkOverlayOrigin],
+  imports: [CdkMenu, CdkMenuItem, CdkConnectedOverlay, CdkOverlayOrigin, CsIconComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div cdkMenu #mainMenu="cdkMenu" aria-label="编辑菜单" [attr.data-bc-context-menu]="menuId" (keydown.tab)="dismiss.emit()">
       <button cdkMenuItem [cdkMenuItemDisabled]="!hasSelection() || !writable()"
         [disabled]="!hasSelection() || !writable()" (mouseenter)="showFormats(false)"
-        (cdkMenuItemTriggered)="action.emit('cut')">剪切 <span>{{ shortcut() }}X</span></button>
+        (cdkMenuItemTriggered)="action.emit('cut')">
+        <cs-icon csType="cut" aria-hidden="true" /><span>剪切</span> <small>{{ shortcut() }}X</small></button>
       <button cdkMenuItem [cdkMenuItemDisabled]="!hasSelection()" [disabled]="!hasSelection()"
-        (mouseenter)="showFormats(false)" (cdkMenuItemTriggered)="action.emit('copy')">复制 <span>{{ shortcut() }}C</span></button>
+        (mouseenter)="showFormats(false)" (cdkMenuItemTriggered)="action.emit('copy')">
+        <cs-icon csType="copy" aria-hidden="true" /><span>复制</span> <small>{{ shortcut() }}C</small></button>
       <button cdkMenuItem [cdkMenuItemDisabled]="!pasteEnabled()" [disabled]="!pasteEnabled()"
-        (mouseenter)="showFormats(false)" (cdkMenuItemTriggered)="action.emit('paste')">粘贴 <span>{{ shortcut() }}V</span></button>
+        (mouseenter)="showFormats(false)" (cdkMenuItemTriggered)="action.emit('paste')">
+        <cs-icon csType="paste" aria-hidden="true" /><span>粘贴</span> <small>{{ shortcut() }}V</small></button>
       <button #pasteButton cdkMenuItem cdkOverlayOrigin #pasteOrigin="cdkOverlayOrigin"
         [cdkMenuItemDisabled]="!formatsEnabled()" [disabled]="!formatsEnabled()"
         aria-haspopup="menu" [attr.aria-expanded]="formats"
         (mouseenter)="showFormats(true)" (keydown.arrowright)="enterFormats($event)"
-        (cdkMenuItemTriggered)="showFormats(true)">粘贴为 <span>›</span></button>
+        (cdkMenuItemTriggered)="showFormats(true)">
+        <cs-icon csType="paste-two" aria-hidden="true" /><span>粘贴为</span>
+        <cs-icon csType="arrow-right" aria-hidden="true" /></button>
       <div class="separator" role="separator"></div>
       <button cdkMenuItem [cdkMenuItemDisabled]="!textSettingsEnabled()" [disabled]="!textSettingsEnabled()"
-        (mouseenter)="showFormats(false)" (cdkMenuItemTriggered)="action.emit('text-settings')">文本设置</button>
+        (mouseenter)="showFormats(false)" (cdkMenuItemTriggered)="action.emit('text-settings')">
+        <cs-icon csType="font-settings" aria-hidden="true" /><span>文本设置</span></button>
       <button cdkMenuItem [cdkMenuItemDisabled]="!paragraphSettingsEnabled()" [disabled]="!paragraphSettingsEnabled()"
-        (mouseenter)="showFormats(false)" (cdkMenuItemTriggered)="action.emit('paragraph-settings')">段落设置</button>
+        (mouseenter)="showFormats(false)" (cdkMenuItemTriggered)="action.emit('paragraph-settings')">
+        <cs-icon csType="paragraph-settings" aria-hidden="true" /><span>段落设置</span></button>
       <div class="separator" role="separator"></div>
-      <button cdkMenuItem (mouseenter)="showFormats(false)" (cdkMenuItemTriggered)="action.emit('select-all')">全选 <span>{{ shortcut() }}A</span></button>
+      <button cdkMenuItem (mouseenter)="showFormats(false)" (cdkMenuItemTriggered)="action.emit('select-all')">
+        <cs-icon csType="select-all" aria-hidden="true" /><span>全选</span> <small>{{ shortcut() }}A</small></button>
     </div>
     <ng-template cdkConnectedOverlay [cdkConnectedOverlayOrigin]="pasteOrigin"
       [cdkConnectedOverlayOpen]="formats" [cdkConnectedOverlayPositions]="positions"
@@ -37,24 +46,32 @@ import {generateId} from '../../framework/utils';
       <div cdkMenu #formatMenu="cdkMenu" aria-label="粘贴为" [attr.data-bc-context-menu]="menuId"
         (mousedown)="$event.preventDefault(); $event.stopPropagation()" (contextmenu)="$event.preventDefault()"
         (keydown.arrowleft)="leaveFormats($event)" (keydown.tab)="dismiss.emit()">
-        <button cdkMenuItem (cdkMenuItemTriggered)="action.emit('paste')">保留格式</button>
-        <button cdkMenuItem (cdkMenuItemTriggered)="action.emit('plain-text')">纯文本</button>
-        <button cdkMenuItem (cdkMenuItemTriggered)="action.emit('markdown')">Markdown</button>
+        <button cdkMenuItem (cdkMenuItemTriggered)="action.emit('paste')">
+          <span>保留格式</span></button>
+        <button cdkMenuItem (cdkMenuItemTriggered)="action.emit('plain-text')">
+          <span>纯文本</span></button>
+        <button cdkMenuItem (cdkMenuItemTriggered)="action.emit('markdown')">
+          <span>Markdown</span></button>
       </div>
     </ng-template>
   `,
   styles: [`
     :host { display: block; user-select: none; }
-    [cdkMenu] { display: flex; flex-direction: column; min-width: 210px; padding: 4px;
+    [cdkMenu] { display: flex; flex-direction: column; box-sizing: border-box; min-width: 180px; padding: 4px;
       border-radius: var(--bc-radius-lg); border: 1px solid var(--bc-border-color);
       background: var(--bc-bg-elevated); color: var(--bc-color); user-select: none;
       box-shadow: var(--bc-shadow-md); font-size: var(--bc-fs-sm); }
-    button { display: flex; align-items: center; justify-content: space-between; gap: 24px;
-      border: 0; border-radius: 4px; padding: 7px 12px; background: transparent;
+    [cdkMenu][aria-label="粘贴为"] { min-width: 156px; }
+    button { display: flex; align-items: center; gap: 8px;
+      border: 0; border-radius: 4px; padding: 6px 8px; background: transparent;
       color: inherit; font: inherit; text-align: left; cursor: pointer; outline: none; }
     button:hover:not(:disabled), button:focus-visible, button[aria-expanded="true"] { background: var(--bc-bg-hover); }
     button:disabled { color: var(--bc-color-lighter); cursor: default; }
-    span { color: var(--bc-color-light); }
+    button > cs-icon { flex: 0 0 16px; width: 16px; font-size: var(--bc-fs); line-height: 1; text-align: center; }
+    button[aria-haspopup] > cs-icon:last-child { font-size: var(--bc-fs-sm); }
+    button > span { flex: 1; white-space: nowrap; }
+    small { color: var(--bc-color-light); font: inherit; white-space: nowrap; }
+    button:disabled small { color: inherit; }
     .separator { height: 1px; background: var(--bc-border-color); margin: 4px; }
   `],
   host: {'(mousedown)': '$event.preventDefault(); $event.stopPropagation()', '(contextmenu)': '$event.preventDefault()'},

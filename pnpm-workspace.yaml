@@ -2,8 +2,4 @@ packages:
   - "apps/*"
   - "packages/*"
 minimumReleaseAgeExclude:
-  - '@cses/ui@4.37.0'
-  - '@cses/ui@4.37.1'
-# pnpm 10+；package.json 同时保留项目声明的 pnpm 9 补丁入口。
-patchedDependencies:
-  '@cses/ui@4.37.1': patches/@cses__ui@4.37.1.patch
+  - '@cses/ui@4.37.3'

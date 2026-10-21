@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-10-16
+> Last updated: 2026-10-21
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -94,12 +94,12 @@ Host Angular component
 The editor lives in `packages/editor` and is published as `@ccc/blockcraft`. External consumers import from the package barrel `index.ts` which re-exports framework, blocks, plugins, services and types.
 
 BlockCraft's built-in editor chrome consumes the exact peer
-`@cses/ui@4.29.0`. Install that version beside `@ccc/blockcraft`; do not add
+`@cses/ui@4.37.3`. Install that version beside `@ccc/blockcraft`; do not add
 `ng-zorro-antd` for BlockCraft. Angular Material remains a peer only for the
 existing SVG/brand-icon path.
 
 ```bash
-pnpm add @ccc/blockcraft @cses/ui@4.29.0
+pnpm add @ccc/blockcraft @cses/ui@4.37.3
 ```
 
 发布依赖以 `packages/editor/package.json` 及构建产物为准：
@@ -2350,7 +2350,7 @@ doc.dragController.isDragging  // boolean
 - [ ] A fresh bundled capability result is used per Doc (if using the factory)
 - [ ] `BlockCraftDoc` constructed with `yDoc`, `docId`, `schemas`, `logger`, `injector`
 - [ ] Container element passed to `initBySnapshot` or `initByYBlock`
-- [ ] Exact `@cses/ui@4.26.1` peer installed
+- [ ] Exact `@cses/ui@4.37.3` peer installed
 - [ ] `@cses/ui/styles/cses-ui.scss` loaded for CSES component styles
 - [ ] BlockCraft base + selected theme stylesheet imported
 - [ ] Persistence wired up (snapshot save/load OR Yjs provider)
