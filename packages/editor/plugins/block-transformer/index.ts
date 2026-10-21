@@ -346,6 +346,10 @@ export class BlockTransformerPlugin extends DocPlugin {
           heading: heading + 1,
         });
       });
+      // Removing the prefix moves the caret to the start of the remaining text.
+      // Commit the model as well as its DOM projection: IME starts from the model
+      // selection, which would otherwise still point past an empty heading.
+      this.doc.selection.setCursorAt(block, 0);
       return true;
     }
 
