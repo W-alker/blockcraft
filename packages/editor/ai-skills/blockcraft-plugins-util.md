@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-10-16
+> Last updated: 2026-10-21
 
 ## ContextMenuPlugin
 
@@ -12,12 +12,15 @@
 new ContextMenuPlugin() // name: context-menu；bundled 已包含，不要重复注册
 ```
 
-提供复制、剪切、粘贴、粘贴为（保留格式、纯文本、按 Markdown 解析）和全选。
+提供复制、剪切、粘贴、粘贴为（保留格式、纯文本、按 Markdown 解析）、文本设置、段落设置和全选。
 “粘贴为”悬停后展开二级菜单，右侧空间不足向左回退。鼠标操作不抢编辑器焦点；
 键盘导航时使用共享选区呈现，Escape 恢复原范围。右键及菜单的 `mousedown` 阻止默认行为与传播，
 保留已有光标或选区；仅在没有选区时定位右键目标。全选直接建立整篇范围，不排队恢复旧选区。菜单支持方向键、Enter、Escape，
 点击外部、外部滚动、窗口失焦、只读切换或文档销毁时关闭。原生输入框、按钮、链接不接管。
-只读可复制/全选，剪切/粘贴禁用；执行前再次检查块锁和写入权限。
+文本/段落设置复用固定工具栏的弹窗、协同选区会话与格式事务，不依赖固定工具栏组件存在；
+取消保持内容，确认只应用到保存的有效选区，切换只读或销毁文档时关闭。宿主需要 `CsModalService`。
+手动创建 `BlockCraftDoc` 的宿主必须显式注册 `new ContextMenuPlugin()`；仅升级依赖不会自动注入插件。
+只读可复制/全选，剪切/粘贴/设置禁用；执行前再次检查块锁和写入权限。
 
 复制调用全部配置的 adapter 及 `copyFilter`，优先通过同步 `copy` 事件写入 HTML、Markdown 等 MIME；
 命令不可用时回退到浏览器异步剪贴板 API，该回退受浏览器支持的 MIME 类型限制。剪切仅在写入成功后删除，

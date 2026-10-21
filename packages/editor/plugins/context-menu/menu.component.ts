@@ -23,6 +23,11 @@ import {generateId} from '../../framework/utils';
         (mouseenter)="showFormats(true)" (keydown.arrowright)="enterFormats($event)"
         (cdkMenuItemTriggered)="showFormats(true)">粘贴为 <span>›</span></button>
       <div class="separator" role="separator"></div>
+      <button cdkMenuItem [cdkMenuItemDisabled]="!textSettingsEnabled()" [disabled]="!textSettingsEnabled()"
+        (mouseenter)="showFormats(false)" (cdkMenuItemTriggered)="action.emit('text-settings')">文本设置</button>
+      <button cdkMenuItem [cdkMenuItemDisabled]="!paragraphSettingsEnabled()" [disabled]="!paragraphSettingsEnabled()"
+        (mouseenter)="showFormats(false)" (cdkMenuItemTriggered)="action.emit('paragraph-settings')">段落设置</button>
+      <div class="separator" role="separator"></div>
       <button cdkMenuItem (mouseenter)="showFormats(false)" (cdkMenuItemTriggered)="action.emit('select-all')">全选 <span>{{ shortcut() }}A</span></button>
     </div>
     <ng-template cdkConnectedOverlay [cdkConnectedOverlayOrigin]="pasteOrigin"
@@ -59,8 +64,10 @@ export class EditorContextMenuComponent {
   readonly writable = input(false);
   readonly pasteEnabled = input(false);
   readonly formatsEnabled = input(false);
+  readonly textSettingsEnabled = input(false);
+  readonly paragraphSettingsEnabled = input(false);
   readonly shortcut = input('Ctrl+');
-  readonly action = output<'copy' | 'cut' | 'paste' | 'plain-text' | 'markdown' | 'select-all'>();
+  readonly action = output<'copy' | 'cut' | 'paste' | 'plain-text' | 'markdown' | 'select-all' | 'text-settings' | 'paragraph-settings'>();
   readonly dismiss = output<void>();
   readonly menuId = generateId();
   readonly positions: ConnectedPosition[] = [

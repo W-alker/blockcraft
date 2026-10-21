@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-10-19 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-10-21 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 
 填写区侧边工具栏支持固定尺寸／内容自适应双向切换：`toggleSizeMode()` 按当前布局冻结尺寸，`resetHeight()` 保留宽度、清除固定高度。
 仅 `wr` 或旧 `width` 的快照保持自然高度；尺寸读取与保存契约见 `blockcraft-block.md` 的“Render-unit 响应式尺寸”。
@@ -21,7 +21,7 @@
 
 ## 文档右键菜单（未发布）
 
-Bundled 装配新增 `ContextMenuPlugin`（`context-menu`）：复制、剪切、粘贴、粘贴为与全选。
+Bundled 装配新增 `ContextMenuPlugin`（`context-menu`）：复制、剪切、粘贴、粘贴为、文本设置、段落设置与全选。
 粘贴为支持保留格式、纯文本、按 Markdown 解析；宿主手动装配方式及浏览器限制见
 `blockcraft-plugins-util.md`。现有快捷键与粘贴后格式切换保持原行为。
 

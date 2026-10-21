@@ -2,7 +2,14 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-10-19
+> Last updated: 2026-10-21
+
+## 文本与段落设置入口
+
+右键菜单与固定工具栏共用内部 `TypographySettingsController`，复用已有设置弹窗与
+`ToolbarSelectionSession`。设置目标、只读检查、字体/段落事务和取消恢复统一处理；
+右键入口无需固定工具栏组件。字体、段落数据格式与原工具栏入口保持兼容。
+浮动文字工具栏的 350ms 延迟不变。
 
 ## 独立字重
 

@@ -152,6 +152,8 @@ for (const keyboard of [false, true]) {
 }
 
 test('delayed text toolbar stays behind overlapping context menu items', async ({page}) => {
+  // Keep the taller settings menu below the selection so the two overlays overlap.
+  await page.setViewportSize({width: 1280, height: 1000});
   const id = await setup(page);
   await expect(page.locator('.float-text-toolbar')).toBeVisible();
   await page.evaluate(() => {
@@ -283,6 +285,62 @@ test('readonly keeps copy available and disables mutations', async ({page}) => {
   await expect(menu(page).getByRole('menuitem', {name: /^复制/})).toBeEnabled();
   await expect(menu(page).getByRole('menuitem', {name: /^剪切/})).toBeDisabled();
   await expect(menu(page).getByRole('menuitem', {name: /^粘贴 /})).toBeDisabled();
+  await expect(menu(page).getByRole('menuitem', {name: '文本设置'})).toBeDisabled();
+  await expect(menu(page).getByRole('menuitem', {name: '段落设置'})).toBeDisabled();
+});
+
+test('context text settings preserve the range through cancel, confirm and undo', async ({page}) => {
+  await page.setViewportSize({width: 1440, height: 1000});
+  const id = await setup(page, '设置文字');
+  await page.locator('block-craft-editor').evaluate((editor, id) => {
+    const doc = (window as any).ng.getComponent(editor).doc;
+    doc.selection.setSelection({blockId: id, type: 'text', offset: 0}, {blockId: id, type: 'text', offset: 2});
+    doc.crud.undoManager.clearHistory();
+  }, id);
+  const dialog = page.locator('bc-font-settings-dialog');
+  const openSettings = async () => {
+    await open(page, id);
+    await menu(page).getByRole('menuitem', {name: '文本设置'}).click();
+    await expect(dialog).toBeVisible();
+    await expect(menu(page)).toHaveCount(0);
+  };
+  await openSettings();
+  await dialog.locator('[data-setting-field="font-size"] input').fill('24');
+  await page.getByRole('button', {name: '取消', exact: true}).click();
+  await expect(dialog).toBeHidden();
+  expect(await read(page, id)).toEqual([{insert: '设置文字'}]);
+  await openSettings();
+  await dialog.locator('[data-setting-field="font-size"] input').fill('24');
+  await dialog.locator('[data-setting-field="font-size"] input').press('Tab');
+  await page.getByRole('button', {name: '确定', exact: true}).click();
+  await expect(dialog).toBeHidden();
+  const text = page.locator(`[data-block-id="${id}"] c-text`);
+  await expect(text.first()).toHaveText('设置');
+  await expect(text.first()).toHaveCSS('font-size', '24px');
+  expect((await read(page, id)).at(-1)).toEqual({insert: '文字'});
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect.poll(() => read(page, id)).toEqual([{insert: '设置文字'}]);
+});
+
+test('context paragraph settings apply to the saved paragraph and cancel on readonly', async ({page}) => {
+  await page.setViewportSize({width: 1440, height: 1000});
+  const id = await setup(page);
+  const dialog = page.locator('bc-paragraph-settings-dialog');
+  await open(page, id);
+  await menu(page).getByRole('menuitem', {name: '段落设置'}).click();
+  await expect(dialog).toBeVisible();
+  await dialog.locator('[data-setting-field="paragraph-align"] cs-select').click();
+  await page.getByRole('option', {name: '右对齐', exact: true}).click();
+  await page.getByRole('button', {name: '确定', exact: true}).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.locator(`[data-block-id="${id}"]`)).toHaveCSS('text-align', 'right');
+  await open(page, id);
+  await menu(page).getByRole('menuitem', {name: '段落设置'}).click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator('[data-setting-field="paragraph-align"]')).toContainText('右对齐');
+  await page.locator('block-craft-editor').evaluate(e => (window as any).ng.getComponent(e).doc.toggleReadonly(true));
+  await expect(dialog).toBeHidden();
+  await expect(page.locator(`[data-block-id="${id}"]`)).toHaveCSS('text-align', 'right');
 });
 
 test('delayed paste resolves the original target after concurrent insertion', async ({page}) => {

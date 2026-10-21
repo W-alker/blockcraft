@@ -308,15 +308,12 @@ describe("FixedTextToolbarComponent boundary selections", () => {
     const updateTextProps = jasmine.createSpy('updateTextProps');
     component.doc = {
       ...component.doc,
-      selection: {value: range},
+      selection: {value: range, createSelection: () => range, replay: jasmine.createSpy("replay")},
       crud: {transact, updateBlockProps},
     } as any;
     component.utils = {updateBlockProps: updateTextProps} as any;
-    spyOn<any>(component, 'runWithSavedSelection').and.callFake(
-      (_saved: unknown, run: () => void) => run(),
-    );
 
-    (component as any).applyParagraphSettingsResult(range.toJSON(), {
+    (component as any).typographySettings.applyParagraphSettingsResult(range.toJSON(), {
       patch: {lh: 1.5, psb: 6, psa: 12},
     });
 
@@ -350,16 +347,13 @@ describe("FixedTextToolbarComponent boundary selections", () => {
     component.doc = {
       ...component.doc,
       getBlockById: resolveBlock,
-      selection: {value: selectedImage},
+      selection: {value: selectedImage, createSelection: () => selectedImage, replay: jasmine.createSpy("replay")},
       crud: {transact: (run: () => void) => run(), updateBlockProps},
     } as any;
-    spyOn<any>(component, 'runWithSavedSelection').and.callFake(
-      (_saved: unknown, run: () => void) => run(),
-    );
 
-    expect((component as any).getSelectedSpacingOwnerId(selectedImage)).toBe(p1.id);
-    expect((component as any).getParagraphSpacingTargetIds(selectedImage)).toEqual([p1.id]);
-    (component as any).applyParagraphSettingsResult(selectedImage.toJSON(), {
+    expect((component as any).typographySettings.getSelectedSpacingOwnerId(selectedImage)).toBe(p1.id);
+    expect((component as any).typographySettings.getParagraphSpacingTargetIds(selectedImage)).toEqual([p1.id]);
+    (component as any).typographySettings.applyParagraphSettingsResult(selectedImage.toJSON(), {
       patch: {psb: 12, psa: 6},
     });
     expect(updateBlockProps).toHaveBeenCalledOnceWith(p1.id, {psb: 12, psa: 6});

@@ -5,6 +5,8 @@ import {
   captureRelativeSelectionBookmark, RelativeSelectionBookmark, resolveRelativeSelectionBookmark,
 } from '../../framework/modules/selection/relative-bookmark';
 import {EditorContextMenuComponent} from './menu.component';
+import {CsModalService} from '@cses/ui';
+import {TypographySettingsController} from '../fixed-toolbar/widgets/typography-settings-controller';
 
 /** Editor-owned context menu; native form controls retain their existing handling. */
 export class ContextMenuPlugin extends DocPlugin {
@@ -13,6 +15,11 @@ export class ContextMenuPlugin extends DocPlugin {
   private close$?: Subject<void>;
   private destroyed = false;
   private busy = false;
+  private settings?: TypographySettingsController;
+
+  private get typographySettings() {
+    return this.settings ||= new TypographySettingsController(this.doc, this.doc.injector.get(CsModalService, null));
+  }
 
   init() {
     this.destroyed = false;
@@ -35,6 +42,7 @@ export class ContextMenuPlugin extends DocPlugin {
   destroy() {
     this.destroyed = true;
     this.close();
+    this.settings?.destroy();
     this.subscriptions.unsubscribe();
   }
 
@@ -90,6 +98,9 @@ export class ContextMenuPlugin extends DocPlugin {
     overlayRef.hostElement.style.zIndex = '1001';
     componentRef.setInput('hasSelection', !selection.collapsed);
     componentRef.setInput('writable', writable);
+    const hasSettings = !!this.doc.injector.get(CsModalService, null);
+    componentRef.setInput('textSettingsEnabled', hasSettings && this.typographySettings.canSetFontScaleForSelection(selection));
+    componentRef.setInput('paragraphSettingsEnabled', hasSettings && this.typographySettings.canSetParagraphSpacingForSelection(selection));
     const textTarget = selection.start.type === 'text' || selection.start.type === 'gap';
     componentRef.setInput('pasteEnabled', writable && (textTarget || this.doc.placement.isAbsoluteObjectSelection(selection)));
     componentRef.setInput('formatsEnabled', writable && textTarget);
@@ -170,7 +181,7 @@ export class ContextMenuPlugin extends DocPlugin {
     close$?.complete();
   }
 
-  private async execute(action: 'copy' | 'cut' | 'paste' | 'plain-text' | 'markdown' | 'select-all', bookmark: RelativeSelectionBookmark) {
+  private async execute(action: 'copy' | 'cut' | 'paste' | 'plain-text' | 'markdown' | 'select-all' | 'text-settings' | 'paragraph-settings', bookmark: RelativeSelectionBookmark) {
     if (this.busy || this.destroyed) return;
     this.close();
     if (action === 'select-all') {
@@ -180,6 +191,11 @@ export class ContextMenuPlugin extends DocPlugin {
     const json = resolveRelativeSelectionBookmark(bookmark, this.doc);
     if (!json) return;
     this.doc.selection.replay(json);
+    if (action === 'text-settings' || action === 'paragraph-settings') {
+      if (action === 'text-settings') this.typographySettings.openFontSettings('font-size', json);
+      else this.typographySettings.openParagraphSettings('paragraph-align', json);
+      return;
+    }
     this.busy = true;
     try {
       const selection = this.doc.selection.createSelection(json);

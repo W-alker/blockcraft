@@ -2,7 +2,17 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-10-19 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-10-21 | Tracks `@ccc/blockcraft` npm releases.
+
+## 未发布 — 2026-10-21：右键菜单增加文本与段落设置
+
+**Severity**: minor（增加菜单入口；发布版本由用户决定）
+
+**What changed / Why**: `ContextMenuPlugin` 增加“文本设置”和“段落设置”，与固定工具栏复用内部设置控制器、弹窗和相对选区会话，避免两套格式规则。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-plugins-util.md`、`blockcraft-plugins-formatting.md`、`blockcraft-toolbar.md`。
+
+**Behavior Changes / Migration Recipe**: Bundled 编辑器自动获得入口；手动装配的宿主需在 `DocConfig.plugins` 中注册一次 `new ContextMenuPlugin()`，并提供原设置弹窗使用的 `CsModalService`。只读或无适用目标时禁用设置，确认前复查目标与权限。原复制/粘贴、固定工具栏入口、浮动工具栏 350ms 延迟及文档数据格式不变，无 API 弃用。
 
 ## 未发布 — 2026-10-19：只读正文链接单击导航
 

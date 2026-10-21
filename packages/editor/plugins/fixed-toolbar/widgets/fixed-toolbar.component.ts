@@ -1,5 +1,5 @@
+import {TypographySettingsController} from './typography-settings-controller';
 import { PARAGRAPH_ALIGNMENT_OPTIONS } from "../../paragraph-alignment-options";
-import { normalizeParagraphDecoration } from "../../../blocks/paragraph-block/decoration";
 import {
   AfterViewInit,
   ChangeDetectionStrategy,
@@ -32,7 +32,6 @@ import {
   CsDropdownMenuComponent,
   CsMenuDirective,
   CsMenuItemComponent,
-  CsModalRef,
   CsModalService,
   CsSubmenuComponent,
   CsTooltipDirective,
@@ -48,7 +47,6 @@ import {
   DeltaInsert,
   getPositionWithOffset,
   createInlineTypographyPatch,
-  normalizeParagraphSpacing,
   normalizeTypographyLineHeight,
   getTypographyFontFamily,
   PARAGRAPH_LINE_HEIGHT_PRESETS,
@@ -69,10 +67,7 @@ import { debounce, IS_MAC, nextTick, sliceDelta } from "../../../global";
 import { FormulaBlockToolbar } from "../../formula-extension/widgets/formula-toolbar";
 import { ToolbarSelectionSession } from "./toolbar-selection-session";
 import { LinkInputPad } from "../../float-text-toolbar/widgets/link-input-pad";
-import { getSelectionCoveredBlockIds } from "../../../framework/modules/selection/covered-blocks";
-import { isSelectionAlive } from "../../../framework/modules/selection/liveness";
 import {
-  getSelectionFormatBlockIds,
   getSelectionFormatRootIds,
   isSelectedContainer,
 } from "../../../framework/utils/selection-format-blocks";
@@ -104,14 +99,8 @@ import {
   type ObjectDrawInsertGeometry,
   type ObjectDrawInsertRequest,
 } from "./object-draw-insert.controller";
-import { FontSettingsDialogComponent } from "./font-settings-dialog.component";
-import { ParagraphSettingsDialogComponent } from "./paragraph-settings-dialog.component";
 import type {
-  FontSettingsDialogData,
-  FontSettingsDialogResult,
   FontSettingsTarget,
-  ParagraphSettingsDialogData,
-  ParagraphSettingsDialogResult,
   ParagraphSettingsTarget,
 } from "./typography-settings-dialog.types";
 
@@ -2494,7 +2483,7 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
   private _resizeObserver?: ResizeObserver;
   private _layoutFitFrame: number | null = null;
   private _observedToolbarWidth = -1;
-  private _settingsModalRef?: CsModalRef<any, any>;
+  private _typographySettings?: TypographySettingsController;
   protected toolbarLayout: "wide" | "balanced" | "compact" | "narrow" = "wide";
   private _toolbarMode: "simple" | "full" = "full";
 
@@ -2597,7 +2586,6 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
   isLinkAble = false;
   protected formulaActive = false;
   private closeReferencePad?: () => void;
-  private settingsSelection?: ToolbarSelectionSession;
   private colorSelection?: ToolbarSelectionSession;
   private restoreColorOnClose = false;
 
@@ -2665,12 +2653,10 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
       this.doc.readonlySwitch$.subscribe((readonly) => {
         this.readonly = readonly;
         if (readonly) {
-          this.settingsSelection?.dispose();
+          this._typographySettings?.close();
           this.colorSelection?.dispose();
           this.textColorTrigger?.close();
           this.backgroundColorTrigger?.close();
-          this._settingsModalRef?.close();
-          this._settingsModalRef = undefined;
           this.clearFormatBrush();
           this._objectDrawInsert?.cancel();
         }
@@ -2714,7 +2700,7 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
 
   ngOnDestroy() {
     this._destroyed = true;
-    this.settingsSelection?.dispose();
+    this._typographySettings?.close();
     this.colorSelection?.dispose();
     this.closeReferencePad?.();
     const view = this.hostRef?.nativeElement.ownerDocument.defaultView;
@@ -2722,8 +2708,7 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
       view.cancelAnimationFrame(this._layoutFitFrame);
       this._layoutFitFrame = null;
     }
-    this._settingsModalRef?.close();
-    this._settingsModalRef = undefined;
+    this._typographySettings?.destroy();
     this._resizeObserver?.disconnect();
     this._resizeObserver = undefined;
     this.clearFormatBrush();
@@ -3293,221 +3278,13 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
   }
 
   protected openFontSettings(target: FontSettingsTarget): void {
-    const canOpen =
-      target === "font-scale" || target === "font-size" ? this.canSetFontScale : this.allEditable;
-    if (!this.modalService || this.readonly || !canOpen) return;
-    const savedSelection = this.selectionJSON;
-    if (!savedSelection) return;
-
-    this.settingsSelection?.dispose();
-    this._settingsModalRef?.close();
-    const session = new ToolbarSelectionSession(this.doc, savedSelection, () => this._settingsModalRef?.close());
-    if (!session.resolve()) return;
-    this.settingsSelection = session;
-    const data: FontSettingsDialogData = {
-      target,
-      typography: { ...this.activeTypography },
-      fontSize: this.activeFontSizePixels,
-      fontWeight: this.activeFontWeight,
-      attrs: {
-        bold: this.isAttrActive("bold"),
-        italic: this.isAttrActive("italic"),
-        underline: this.isAttrActive("underline"),
-        strike: this.isAttrActive("strike"),
-        code: this.isAttrActive("code"),
-      },
-      colors: {
-        color: this.activeColors["color"],
-        backColor: this.activeColors["backColor"],
-      },
-    };
-
-    let ref!: CsModalRef<FontSettingsDialogComponent, FontSettingsDialogResult>;
-    ref = this.modalService.open<
-      FontSettingsDialogData,
-      FontSettingsDialogResult,
-      FontSettingsDialogComponent
-    >({
-      content: FontSettingsDialogComponent,
-      data,
-      title: "字体",
-      ariaLabel: "字体高级设置",
-      width: "min(352px, calc(100vw - 24px))",
-      centered: true,
-      mask: true,
-      maskClosable: false,
-      keyboard: true,
-      okText: "确定",
-      cancelText: "取消",
-      onOk: () => ref.componentInstance?.buildResult(),
-    });
-    this._settingsModalRef = ref;
-    ref.afterOpen
-      .pipe(take(1))
-      .subscribe(() => ref.componentInstance?.focusTarget());
-    ref.afterClose.pipe(take(1)).subscribe((result) => {
-      if (this._settingsModalRef === ref) this._settingsModalRef = undefined;
-      const current = this.settingsSelection === session;
-      if (current) this.settingsSelection = undefined;
-      const restored = session.finish(current && !this._destroyed && !this.readonly);
-      if (!restored) return;
-      if (result) this.applyFontSettingsResult(restored, result);
-      this.syncToolbarState(this.doc.selection.value);
-      this.cdr.markForCheck();
-    });
+    if (this.readonly || !this.selectionJSON) return;
+    this.typographySettings.openFontSettings(target, this.selectionJSON);
   }
 
   protected openParagraphSettings(target: ParagraphSettingsTarget): void {
-    if (!this.modalService || this.readonly || !this.canSetParagraphSpacing) return;
-    const savedSelection = this.selectionJSON;
-    if (!savedSelection) return;
-
-    this.settingsSelection?.dispose();
-    this._settingsModalRef?.close();
-    const session = new ToolbarSelectionSession(this.doc, savedSelection, () => this._settingsModalRef?.close());
-    if (!session.resolve()) return;
-    this.settingsSelection = session;
-    const selection = this.doc.selection.value;
-    const formatIds = selection ? this.getFormatBlockIds(selection) : [];
-    const selectedSpacingOwner = selection ? this.getSelectedSpacingOwnerId(selection) : null;
-    const allowTextSettings = (!selectedSpacingOwner || this.isEditableTextBlockId(selectedSpacingOwner)) &&
-      formatIds.some(id => this.isEditableTextBlockId(id));
-    const allowDecoration = allowTextSettings && formatIds.length > 0 && formatIds.every(id => this.doc.model.getFlavour(id) === 'paragraph');
-    const data: ParagraphSettingsDialogData = {
-      allowTextSettings,
-      allowDecoration,
-      decoration: allowDecoration ? normalizeParagraphDecoration(this.doc.model.getProps(formatIds[0])?.['decoration']) : null,
-      target: allowTextSettings ? target : 'paragraph-spacing',
-      align:
-        this.activeProps.textAlign === "center" ||
-        this.activeProps.textAlign === "right" ||
-        this.activeProps.textAlign === "justify" ||
-        this.activeProps.textAlign === "distributed"
-          ? this.activeProps.textAlign
-          : "left",
-      defaults: {
-        lineHeight:
-          normalizeTypographyLineHeight(
-            this.doc.layoutMetrics.lineHeight /
-              this.doc.layoutMetrics.baseFontSize,
-          ) ?? 1.5,
-        spaceAfter:
-          normalizeParagraphSpacing(this.doc.layoutMetrics.segmentGap * 0.75) ??
-          0,
-      },
-      paragraph: { ...this.activeParagraphTypography },
-    };
-
-    let ref!: CsModalRef<
-      ParagraphSettingsDialogComponent,
-      ParagraphSettingsDialogResult
-    >;
-    ref = this.modalService.open<
-      ParagraphSettingsDialogData,
-      ParagraphSettingsDialogResult,
-      ParagraphSettingsDialogComponent
-    >({
-      content: ParagraphSettingsDialogComponent,
-      data,
-      title: "段落",
-      ariaLabel: "段落高级设置",
-      width: "min(480px, calc(100vw - 24px))",
-      centered: true,
-      mask: true,
-      maskClosable: false,
-      keyboard: true,
-      okText: "确定",
-      cancelText: "取消",
-      onOk: () => ref.componentInstance?.buildResult(),
-    });
-    this._settingsModalRef = ref;
-    ref.afterOpen
-      .pipe(take(1))
-      .subscribe(() => ref.componentInstance?.focusTarget());
-    ref.afterClose.pipe(take(1)).subscribe((result) => {
-      if (this._settingsModalRef === ref) this._settingsModalRef = undefined;
-      const current = this.settingsSelection === session;
-      if (current) this.settingsSelection = undefined;
-      const restored = session.finish(current && !this._destroyed && !this.readonly);
-      if (!restored) return;
-      if (result) this.applyParagraphSettingsResult(restored, result);
-      this.syncToolbarState(this.doc.selection.value);
-      this.cdr.markForCheck();
-    });
-  }
-
-  private applyFontSettingsResult(
-    savedSelection: ISelectionJSON,
-    result: FontSettingsDialogResult,
-  ): void {
-    const patch: IInlineNodeAttrs = { ...result.attrs };
-    for (const [key, value] of Object.entries(result.typography)) {
-      if (key === "fs") continue;
-      Object.assign(
-        patch,
-        createInlineTypographyPatch(key as "ff" | "fs" | "ls", value),
-      );
-    }
-    const hasFontScale = Object.prototype.hasOwnProperty.call(
-      result.typography,
-      "fs",
-    );
-    const hasFontSize = Object.prototype.hasOwnProperty.call(result, "fontSize");
-    if (!Object.keys(patch).length && !hasFontScale && !hasFontSize) return;
-    this.runWithSavedSelection(
-      savedSelection,
-      () => {
-        this.doc.crud.transact(() => {
-          this.toolbarHelper.formatTypography({attrs: patch});
-          if (hasFontScale) this.toolbarHelper.formatFontScale(result.typography.fs);
-          if (hasFontSize) this.toolbarHelper.formatFontSizePixels(result.fontSize);
-        });
-      },
-      { allowFontScaleTargets: true },
-    );
-  }
-
-  private applyParagraphSettingsResult(
-    savedSelection: ISelectionJSON,
-    result: ParagraphSettingsDialogResult,
-  ): void {
-    if (!Object.keys(result.patch).length) return;
-    this.runWithSavedSelection(
-      savedSelection,
-      () => {
-        const {psb, psa, ...textPatch} = result.patch;
-        const spacingPatch: Partial<IBlockProps> = {};
-        if (Object.prototype.hasOwnProperty.call(result.patch, 'psb')) spacingPatch['psb'] = psb;
-        if (Object.prototype.hasOwnProperty.call(result.patch, 'psa')) spacingPatch['psa'] = psa;
-        const selection = this.doc.selection.value;
-        if (!selection) return;
-        this.doc.crud.transact(() => {
-          if (Object.keys(textPatch).length) {
-            this.toolbarHelper.updateBlockProps(textPatch as Partial<IEditableBlockProps>, selection);
-          }
-          if (Object.keys(spacingPatch).length) {
-            for (const id of this.getParagraphSpacingTargetIds(selection)) {
-              this.doc.crud.updateBlockProps(id, spacingPatch);
-            }
-          }
-        });
-      },
-      { allowParagraphSpacingTargets: true },
-    );
-  }
-
-  private runWithSavedSelection(
-    savedSelection: ISelectionJSON,
-    run: () => void,
-    options?: {
-      allowBlockTransform?: boolean;
-      allowPartialEditableBlocks?: boolean;
-      allowParagraphSpacingTargets?: boolean;
-      allowFontScaleTargets?: boolean;
-    },
-  ): void {
-    this.selectionJSON = savedSelection;
-    this.runWithSelection(run, options);
+    if (this.readonly || !this.selectionJSON) return;
+    this.typographySettings.openParagraphSettings(target, this.selectionJSON);
   }
 
   protected async insertQuickTable(
@@ -4547,7 +4324,7 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
     // Native colour/HEX inputs temporarily own focus. Keep the existing saved
     // selection until the panel closes; runWithSelection still validates it
     // against the live document and readonly state before every format action.
-    if (!selection && (this.colorPanelOpen || this.closeReferencePad || this.settingsSelection)) return;
+    if (!selection && (this.colorPanelOpen || this.closeReferencePad || this._typographySettings?.isOpen)) return;
     this.formulaActive = this.isLiveSelection(selection) && !!this.selectedFormula(selection);
     if (!this.isLiveSelection(selection)) {
       this.typographyContextIds.clear();
@@ -4711,20 +4488,15 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
   }
 
   private getSelectedBlockIds(selection: BlockCraft.Selection) {
-    return getSelectionCoveredBlockIds(selection, this.doc);
+    return this.typographySettings.getSelectedBlockIds(selection);
   }
 
   private getFormatBlockIds(selection: BlockCraft.Selection) {
-    return getSelectionFormatBlockIds(selection, this.doc);
+    return this.typographySettings.getFormatBlockIds(selection);
   }
 
   private canFormatTextSelection(selection: BlockCraft.Selection | null) {
-    if (!this.isLiveSelection(selection) ||
-        (selection.isAllSelected && !isSelectedContainer(selection, this.doc)))
-      return false;
-    if (this.isReadonlyFormatSelection(selection)) return false;
-    if (selection.collapsed && selection.start.type !== "text" && !selection.getTableCellSelection?.()) return false;
-    return this.hasEditableTextTarget(selection);
+    return this.typographySettings.canFormatTextSelection(selection);
   }
 
   private canSetLineHeightForSelection(selection: BlockCraft.Selection | null) {
@@ -4737,118 +4509,45 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
   }
 
   private canSetParagraphSpacingForSelection(selection: BlockCraft.Selection | null) {
-    if (!this.isLiveSelection(selection)) return false;
-    if (this.isReadonlyFormatSelection(selection)) return false;
-    return this.getParagraphSpacingTargetIds(selection).length > 0;
-  }
-
-  private getParagraphSpacingTargetIds(selection: BlockCraft.Selection): string[] {
-    // A whole-block selection owns its spacing, even when text formatting
-    // expands the same selection to editable descendants (such as a caption).
-    const selectedBlockId = this.getSelectedSpacingOwnerId(selection);
-    const ids = selectedBlockId
-      ? [selectedBlockId]
-      : isSelectedContainer(selection, this.doc) || selection.getTableCellSelection?.()
-        ? this.getFormatBlockIds(selection)
-        : this.getSelectedBlockIds(selection);
-    return ids.filter(id => this.isParagraphSpacingTargetId(id));
-  }
-
-  private getSelectedSpacingOwnerId(selection: BlockCraft.Selection): string | null {
-    const id = selection.start.type === 'selected' &&
-      selection.end.type === 'selected' &&
-      selection.start.blockId === selection.end.blockId
-        ? selection.start.blockId
-        : null;
-    return id && this.isParagraphSpacingTargetId(id) ? id : null;
-  }
-
-  private isParagraphSpacingTargetId(id: string): boolean {
-    try {
-      const model = this.doc.model;
-      const inModel = model?.exists(id);
-      const block = inModel ? null : this.doc.getBlockById(id);
-      const nodeType = inModel ? model.getNodeType(id) : block?.nodeType;
-      const flavour = inModel ? model.getFlavour(id) : block?.flavour;
-      const props = inModel ? model.getProps(id) : block?.props;
-      if (nodeType !== BlockNodeType.editable && nodeType !== BlockNodeType.block && nodeType !== BlockNodeType.void) return false;
-      if (flavour === 'table-row' || flavour === 'table-cell' || flavour === 'column' || flavour === 'placement-layout' || flavour === 'object-group') return false;
-      return !props?.['position'];
-    } catch {
-      return false;
-    }
+    return this.typographySettings.canSetParagraphSpacingForSelection(selection);
   }
 
   private getCommonParagraphSpacing(selection: BlockCraft.Selection): Pick<IParagraphTypographyState, 'psb' | 'psa'> {
-    const ids = this.getParagraphSpacingTargetIds(selection);
-    const values = ids.map(id => {
-      const props = this.doc.model?.exists(id) ? this.doc.model.getProps(id) : this.doc.getBlockById(id).props;
-      return {
-        psb: normalizeParagraphSpacing(props?.['psb']),
-        psa: normalizeParagraphSpacing(props?.['psa']),
-      };
-    });
-    const first = values[0] ?? {psb: null, psa: null};
-    return {
-      psb: values.every(value => value.psb === first.psb) ? first.psb : undefined,
-      psa: values.every(value => value.psa === first.psa) ? first.psa : undefined,
-    };
+    return this.typographySettings.getCommonParagraphSpacing(selection);
   }
 
   private hasEditableTextTarget(selection: BlockCraft.Selection) {
-    try {
-      return this.getFormatBlockIds(selection).some((id) =>
-        this.isEditableTextBlockId(id),
-      );
-    } catch {
-      return false;
-    }
+    return this.typographySettings.hasEditableTextTarget(selection);
   }
 
   private canSetFontScaleForSelection(selection: BlockCraft.Selection | null) {
-    if (!this.isLiveSelection(selection) ||
-        (selection.isAllSelected && !isSelectedContainer(selection, this.doc)))
-      return false;
-    if (this.isReadonlyFormatSelection(selection)) return false;
-    return this.toolbarHelper.canFormatFontScale(selection);
+    return this.typographySettings.canSetFontScaleForSelection(selection);
   }
 
   private isEditableTextBlockId(id: string) {
-    if (
-      typeof (this.doc as any).model?.exists === "function" &&
-      this.doc.model.exists(id)
-    ) {
-      return (
-        this.doc.model.getNodeType(id) === BlockNodeType.editable &&
-        !this.doc.isPlainTextBlock(id)
-      );
-    }
-    try {
-      const block = this.doc.getBlockById(id);
-      return this.doc.isEditable(block) && !block.plainTextOnly;
-    } catch {
-      return false;
-    }
+    return this.typographySettings.isEditableTextBlockId(id);
   }
 
   private isLiveSelection(
     selection: BlockCraft.Selection | null | undefined,
   ): selection is BlockCraft.Selection {
-    return isSelectionAlive(selection as any, this.doc);
+    return this.typographySettings.isLiveSelection(selection);
   }
 
   private isReadonlySelection(selection: BlockCraft.Selection) {
-    return (
-      this.doc.readonlyManager?.isSelectionReadonly(selection) ??
-      this.doc.isReadonly
-    );
+    return this.typographySettings.isReadonlySelection(selection);
   }
 
   private isReadonlyFormatSelection(selection: BlockCraft.Selection) {
-    if (this.isReadonlySelection(selection)) return true;
-    const readonlyManager = this.doc.readonlyManager;
-    return !!readonlyManager?.containsReadonly &&
-      getSelectionFormatRootIds(selection, this.doc).some(id => readonlyManager.containsReadonly(id));
+    return this.typographySettings.isReadonlyFormatSelection(selection);
+  }
+
+  private get typographySettings(): TypographySettingsController {
+    return this._typographySettings ||= new TypographySettingsController(this.doc, this.modalService, this.toolbarHelper, () => {
+      if (this._destroyed) return;
+      this.syncToolbarState(this.doc.selection.value);
+      this.cdr.markForCheck();
+    });
   }
 
   private get toolbarHelper() {
