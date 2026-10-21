@@ -12,9 +12,7 @@
   width: fit-content;
   background: transparent;
 
-  // Frame chrome (handles + outline via shape-resizer) is exclusive to
-  // whole-object selection, matching the shape block: a caret inside the
-  // frame edits like plain prose, with no object chrome at all.
+  // 完整缩放边框仅用于整块选中，文本编辑使用浅色聚焦线。
   // Outrank the generic [data-block-id].selected fill, which base.scss emits
   // after block themes. The transformed surface owns the frame chrome; a fill
   // on this untransformed host would remain behind during north/west resizing.
@@ -240,4 +238,12 @@
 [data-blockcraft-root="true"].bc-print-content .text-box-block__content,
 .bc-snapshot-viewer .text-box-block__content {
   overflow: hidden;
+}
+
+@media screen {
+  [data-blockcraft-root="true"]:not(.readonly):not(.bc-print-content):focus-within
+  .text-box-block:not(.selected):not([data-bc-readonly]):has(.focused:not([data-bc-readonly]))
+  > .text-box-block__surface {
+    @include object-editing-outline;
+  }
 }

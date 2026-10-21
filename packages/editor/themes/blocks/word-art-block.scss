@@ -1,5 +1,13 @@
 @use "object-focus-handle" as *;
 
+@media screen {
+  [data-blockcraft-root="true"]:not(.readonly):not(.bc-print-content):focus-within
+  .word-art-block.focused:not(.word-art-block--object-selected):not([data-bc-readonly])
+  > .word-art-block__surface {
+    @include object-editing-outline;
+  }
+}
+
 [data-blockcraft-root="true"] .word-art-block,
 .bc-snapshot-viewer .word-art-block {
   display: block;

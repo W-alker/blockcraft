@@ -1,3 +1,16 @@
+// 聚焦线贴齐框内边缘，与已有边框重叠，不占布局或拦截操作。
+@mixin object-editing-outline {
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    outline: 1px solid color-mix(in srgb, var(--bc-active-color) 40%, transparent);
+    outline-offset: -1px;
+    pointer-events: none;
+  }
+}
+
 @mixin object-focus-handle {
   position: absolute;
   z-index: 5;
