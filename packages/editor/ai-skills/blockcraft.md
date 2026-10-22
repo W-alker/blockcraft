@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-10-21 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-10-22 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 
 填写区侧边工具栏支持固定尺寸／内容自适应双向切换：`toggleSizeMode()` 按当前布局冻结尺寸，`resetHeight()` 保留宽度、清除固定高度。
 仅 `wr` 或旧 `width` 的快照保持自然高度；尺寸读取与保存契约见 `blockcraft-block.md` 的“Render-unit 响应式尺寸”。
@@ -13,6 +13,14 @@
 > 3. Read L2 deep dives only when L1 isn't enough or you're modifying framework internals.
 >
 > **External users**: this skill pack is bundled with the npm package. AI agents can discover it via `SKILL.md` (frontmatter present); humans see `README.md` for installation and the one-command installer (`install.mjs`).
+
+## 可配置对象动画（未发布）
+
+整体选中支持 `metadata.placement.modes: ['relative', 'absolute']` 的对象后，对象侧边工具栏显示独立“动画”tab（`bc_donghua`）。
+`doc.objectAnimation` 统一管理设置、预览与阅读播放；`props.animation` 是原生 CSS animation 简写，
+不另存 effect/duration 等字段。默认无动画；编辑和只读模式均按可视区域播放，编辑对象时暂停。面板调整后自动预览、确定后保存并结束选中编辑。
+配置和 CSS keyframes 契约见 `blockcraft-block.md`，宿主与 Snapshot Viewer 见 `blockcraft-app.md`。
+
 
 ## 正文字重（未发布）
 

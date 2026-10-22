@@ -6,6 +6,20 @@
   "description": "文档库2.0",
   "glyphs": [
     {
+      "icon_id": "24948471",
+      "name": "动画",
+      "font_class": "donghua",
+      "unicode": "e7fd",
+      "unicode_decimal": 59389
+    },
+    {
+      "icon_id": "4892277",
+      "name": "全选-01",
+      "font_class": "quanxuan-",
+      "unicode": "e66e",
+      "unicode_decimal": 58990
+    },
+    {
       "icon_id": "31419885",
       "name": "段落",
       "font_class": "duanla",

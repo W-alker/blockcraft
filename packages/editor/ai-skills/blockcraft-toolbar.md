@@ -2,7 +2,18 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-10-21
+> Last updated: 2026-10-22
+
+## 对象动画设置面板（未发布）
+
+`ObjectFormatToolbarComponent` 在现有侧边 rail 中内嵌 `ObjectAnimationSettingsComponent`。
+其他可浮动对象由 `ObjectFormatToolbarPlugin` 使用内部 `ObjectAnimationToolbarController` 打开块侧边的 Connected Overlay。
+两者都使用 `bc_icon bc_donghua` 独立 tab，设置组件共用；对象租约和选中外观随浮层关闭释放。
+面板动态展开配置后通过 ResizeObserver + 合并 rAF 重新定位；CSES 下拉取焦归属遵循既有对象工具栏规则。
+设置和播放调用 `doc.objectAnimation`，UI 不访问 Yjs，不直接修改定位/缩放样式。
+草稿仅存在面板组件内，调整后合并 180ms 自动预览，确定时提交一次事务并结束对象编辑选区；关闭、切换 tab 或销毁时清理待播计时器和临时预览。
+工具栏使用 `doc.objectAnimation.acquireEditingLease(ids)` 保持目标及相关组合静态，关闭时释放；`stopPreview()` 不会停止其他对象的已保存动画。
+
 
 ## 文本与段落设置入口
 

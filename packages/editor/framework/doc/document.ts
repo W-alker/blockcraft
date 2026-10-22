@@ -42,6 +42,7 @@ import {
 } from '../modules/object/block-placement.manager'
 import {BlockObjectSizingManager} from '../modules/object/block-object-sizing.manager'
 import {BlockObjectFormatManager} from '../modules/object/block-object-format.manager'
+import {BlockObjectAnimationManager} from '../modules/object/block-object-animation.manager'
 import {DocumentViewScaleManager} from './view/document-view-scale.manager'
 import {
   DocumentLayoutMetricsConfig,
@@ -157,6 +158,7 @@ export class BlockCraftDoc {
   public readonly placement = new BlockPlacementManager(this)
   public readonly objectSizing = new BlockObjectSizingManager(this)
   public readonly objectFormat = new BlockObjectFormatManager(this)
+  public readonly objectAnimation = new BlockObjectAnimationManager(this)
 
   private _scrollContainer: HTMLElement | null = null
 
@@ -280,6 +282,7 @@ export class BlockCraftDoc {
   private _disposeSubsystems(): void {
     if (this._subsystemsDisposed) return
     this._subsystemsDisposed = true
+    this.objectAnimation.destroy()
     this.blockNavigation.destroy()
     this.virtualization.dispose()
     this.viewScale.destroy()

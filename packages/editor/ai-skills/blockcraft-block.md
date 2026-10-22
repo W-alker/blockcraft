@@ -5,7 +5,54 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-10-16
+> Last updated: 2026-10-22
+
+## 对象动画：CSS 数据与本地播放
+
+支持 absolute placement 能力的对象（包括仍处于流式布局的对象）可设置可选 `props.animation`。
+它是单条原生 CSS `animation` 简写，关闭时通过 CRUD 写入 null 删除字段，不存空配置或播放进度。
+
+```typescript
+// 可以直接赋给 HTMLElement.style.animation；预设 keyframes 随 themes/base.scss 发布。
+const animation = 'bc-fade-in 600ms ease-out 200ms 1 normal both';
+doc.objectAnimation.update([block.id], animation);
+doc.objectAnimation.preview([block.id]); // 编辑时由用户主动触发
+doc.objectAnimation.stop();
+```
+
+预设分为进入和强调，`OBJECT_ANIMATION_EFFECTS` 的 `category` 为 `entrance | emphasis`，分类不持久化。
+
+- 进入：`bc-fade-in`、`bc-slide-in-up/down/left/right`、`bc-zoom-in`、`bc-bounce-in`、`bc-flip-in`、`bc-rotate-in`、`bc-roll-in`、`bc-drop-in`。
+- 强调：`bc-pulse`、`bc-swing`、`bc-heartbeat`、`bc-shake`、`bc-hop`、`bc-float`、`bc-wobble`、`bc-spin`。
+
+飞入名称指移动方向。CSS 独立 translate/scale/rotate 属性与对象原有
+transform 组合；不写位置、尺寸、旋转或虚拟化测量值。首次无配置的块保持原行为。
+
+`normalizeObjectAnimation(value)` 返回面板使用的 `ObjectAnimationConfig | null`，
+`storeObjectAnimation(value)` 输出 CSS 简写或 null；配置对象只用于运行时输入，不作为第二份持久数据。
+支持 ms/s 时间单位、单动画的常规简写顺序、标准 easing/cubic-bezier/steps、normal/reverse/alternate/
+alternate-reverse 和 none/forwards/backwards/both。时长约束 100–10000ms，延迟 0–10000ms，次数为
+1–10 或 infinite；不支持任意 keyframes 名、多动画列表或 paused。无法识别的旧值显示为无动画，读取不迁移。
+
+`doc.objectAnimation` 的公开入口：`supports(id)`、`getSelectionIds(selection?)`、`read(id)`、
+`update(ids, value)`、`preview(ids, draft?)`、`stopPreview()`、`stop()`、`acquireEditingLease(ids)` 与只读 `reducedMotion`。批量设置使用一个 DocCRUD
+事务，目标失效、无定位能力或任一目标只读时整次不写；支持 Undo/Redo、原生快照保存和协同。
+`preview(ids, draft)` 可预览临时 CSS/配置对象，省略 draft 时读取已保存配置；预览不写模型，不产生 Undo，
+不会将草稿交给阅读播放器。预览仅操作已挂载的可编辑对象，不强制全篇挂载；整篇只读时拒绝手动预览。设置面板跳过锁定目标，
+保持对象格式工具栏原有的多选权限语义；独立动画侧栏持有选中目标的视图租约。
+
+有限次数动画在一次编辑/阅读会话内首次进入可视区域时播放，虚拟卸载/重挂载不重复入场；
+循环效果离开视口或卸载时停止，重新进入后播放。切换编辑/阅读重置本地播放历史。
+编辑预览中的 infinite 临时按两次播放，存储值不变；开始拖动、缩放、输入或关闭面板时停止。
+编辑模式选中对象、编辑其内部文字或组合成员时暂停相关对象；暂停时恢复原始几何，进度仅保存在当前视图中，取消选中后继续。
+工具栏 `acquireEditingLease(ids)` 返回幂等 release，跨原生焦点转移保持暂停；关闭时释放。手动预览可覆盖编辑暂停，但不覆盖持久配置。
+`stopPreview()` 结束临时预览并恢复未被选中或租约暂停的已保存动画；`stop()` 结束当前全部播放。
+动画结束/取消恢复原有 inline animation 样式。系统减少动态效果、打印和不支持动画的环境保持静态。
+
+BaseBlockComponent 仅在已有 placement 能力分支注册动画视图，detach/reattach/destroy 对称清理；
+普通段落、表格单元格等不接入该路径。播放器使用共享 IntersectionObserver，不在 scroll 或动画帧中
+读取布局，不向 Yjs 写入播放帧；文档销毁清理观察器、媒体查询和事件监听。
+
 
 ## 段落标记与下一段样式
 

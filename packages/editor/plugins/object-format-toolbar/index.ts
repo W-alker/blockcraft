@@ -1,3 +1,4 @@
+import {ObjectAnimationToolbarController} from '../object-animation/toolbar-controller';
 import {
   FlexibleConnectedPositionStrategy,
   OverlayRef,
@@ -77,6 +78,9 @@ const GROUP_ALIGNMENT_ACTIONS = new Set<BlockObjectAlignment>([
 export class ObjectFormatToolbarPlugin extends DocPlugin {
   override name = "object-format-toolbar";
 
+  private animationRail?: ObjectAnimationToolbarController;
+  private panelResizeObserver?: ResizeObserver;
+  private updateToolbarPosition?: () => void;
   private readonly subscription = new Subscription();
   private readonly close$ = new Subject<void>();
   private overlayRef?: OverlayRef;
@@ -89,6 +93,7 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
   private toolbarPointerGraceUntil = 0;
   private toolbarPositionFrame: number | null = null;
   private releaseObjectPresentation?: () => void;
+  private releaseAnimationEditing?: () => void;
   private selectionWithinGroupHosts = new Set<HTMLElement>();
   private inlineObjects: InlineObjectInteractionController[] = [];
   private previewFrame: number | null = null;
@@ -119,7 +124,7 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
         .subscribe((event) => {
           const target = this.resolveElement(event.target);
           if (
-            isObjectToolbarOwnedTarget(this.overlayRef?.overlayElement, target)
+            (isObjectToolbarOwnedTarget(this.overlayRef?.overlayElement, target) || this.animationRail?.owns(target))
           ) {
             this.toolbarPointerActive = true;
             this.toolbarFocusActive = true;
@@ -170,6 +175,9 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
   }
 
   close = (): void => {
+    this.animationRail?.close();
+    this.panelResizeObserver?.disconnect();
+    this.panelResizeObserver = undefined;
     this.activeWordArtHost?.classList.remove("word-art-block--object-selected");
     this.activeWordArtHost = undefined;
     this.restorePreview();
@@ -182,6 +190,7 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
       this.toolbarPositionFrame = null;
     }
     this.overlayRef = undefined;
+    this.updateToolbarPosition = undefined;
     this.component = undefined;
     this.toolbarKind = null;
     this.toolbarKey = "";
@@ -212,6 +221,7 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     const groupState = this.resolveGroupToolbarState(selection);
     if (groupState) {
       this.openGroupToolbar(groupState);
+      this.openAnimationRail(groupState.blockIds);
       this.retainObjectChrome(true);
       return;
     }
@@ -219,6 +229,14 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     const parentId = state && state.blockIds.length > 1
       ? this.doc.model.getParentId(state.blockIds[0]!)
       : null;
+    if (!state) {
+      const ids = this.doc.objectAnimation?.getSelectionIds(selection) ?? [];
+      if (ids.length) {
+        if (this.toolbarKind) this.close();
+        this.openAnimationRail(ids);
+        return;
+      }
+    }
     if (!state || (parentId && this.doc.placement.isObjectGroup(parentId))) {
       // A live text/gap selection supersedes toolbar focus and pointer grace.
       // Group-member multi-selection must also close the member's format rail;
@@ -228,6 +246,20 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     }
     this.open(state, false);
     this.retainObjectChrome(true);
+  }
+
+  private openAnimationRail(ids: readonly string[]): void {
+    const anchor = this.doc.vm.get(ids[0])?.instance?.hostElement;
+    if (!anchor) return;
+    this.animationRail ??= new ObjectAnimationToolbarController(this.doc, () => {
+      if (!this.overlayRef) {
+        this.releaseRetainedObjectChrome();
+        this.toolbarPointerActive = false;
+        this.toolbarFocusActive = false;
+        this.toolbarPointerGraceUntil = 0;
+      }
+    });
+    this.animationRail.open(anchor, ids);
   }
 
   private open(
@@ -257,27 +289,25 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
       anchor.hostElement.querySelector<HTMLElement>(
         "[data-bc-object-surface]",
       ) ?? anchor.hostElement;
-    const toolbar =
-      this.doc.overlayService.createConnectedOverlay<ObjectFormatToolbarComponent>(
-        {
-          target: surface,
-          component: ObjectFormatToolbarComponent,
-          positions: [
-            getPositionWithOffset("right-center", TOOLBAR_GAP, 0),
-            getPositionWithOffset("left-center", TOOLBAR_GAP, 0),
-            getPositionWithOffset("right-top", TOOLBAR_GAP, 0),
-            getPositionWithOffset("left-top", TOOLBAR_GAP, 0),
-          ],
-          clampTo: this.doc.scrollContainer ?? undefined,
-        },
-        this.close$,
-        this.close,
-      );
+    const options = {
+      target: surface,
+      component: ObjectFormatToolbarComponent,
+      positions: [
+        getPositionWithOffset("right-center", TOOLBAR_GAP, 0),
+        getPositionWithOffset("left-center", TOOLBAR_GAP, 0),
+        getPositionWithOffset("right-top", TOOLBAR_GAP, 0),
+        getPositionWithOffset("left-top", TOOLBAR_GAP, 0),
+      ],
+      clampTo: this.doc.scrollContainer ?? undefined,
+    };
+    const toolbar = this.doc.overlayService.createConnectedOverlay<ObjectFormatToolbarComponent>(options, this.close$, this.close);
     this.overlayRef = toolbar.overlayRef;
+    this.updateToolbarPosition = toolbar.updatePosition;
     this.component = toolbar.componentRef.instance;
     this.toolbarKind = "format";
     this.toolbarKey = key;
     this.activeIds = [...state.blockIds];
+    toolbar.componentRef.setInput("doc", this.doc);
     toolbar.componentRef.setInput("state", state);
     toolbar.componentRef.setInput(
       "activeLayout",
@@ -288,12 +318,23 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
       this.resolveSupportedObjectLayouts(state.blockIds),
     );
     toolbar.componentRef.setInput("groupSelection", groupSelection);
+    toolbar.componentRef.instance.animationConfirm.pipe(takeUntil(this.close$)).subscribe(() => {
+      this.close();
+      this.doc.selection.blur();
+    });
     toolbar.componentRef.instance.action
       .pipe(takeUntil(this.close$))
       .subscribe((action) => void this.handleAction(action));
     toolbar.componentRef.instance.panelChange
       .pipe(takeUntil(this.close$))
-      .subscribe(() => this.scheduleToolbarPositionUpdate());
+      .subscribe(() => {
+        // Animation settings can grow past the visible part of the document
+        // scroller (e.g. after Undo restores focus). Keep its controls on screen.
+        options.clampTo = this.component?.activePanel === "animation"
+          ? surface.ownerDocument.documentElement
+          : this.doc.scrollContainer ?? undefined;
+        this.scheduleToolbarPositionUpdate();
+      });
     const strategy = toolbar.overlayRef.getConfig().positionStrategy;
     if (strategy instanceof FlexibleConnectedPositionStrategy) {
       strategy.positionChanges
@@ -304,6 +345,8 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
           toolbar.componentRef.setInput("side", side);
         });
     }
+    this.panelResizeObserver = new ResizeObserver(() => this.scheduleToolbarPositionUpdate());
+    this.panelResizeObserver.observe(toolbar.overlayRef.overlayElement);
     this.watchProps(state.blockIds);
   }
 
@@ -330,7 +373,7 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     );
     this.component.cdr.markForCheck();
     this.component.reapplyEffectDraftPreview();
-    this.overlayRef?.updatePosition();
+    this.updateToolbarPosition?.();
   }
 
   private async handleAction(action: ObjectFormatToolbarAction): Promise<void> {
@@ -609,6 +652,7 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
   }
 
   private ownsInteraction(): boolean {
+    if (this.animationRail?.isOpen && this.animationRail.owns(this.doc.root.hostElement.ownerDocument.activeElement)) return true;
     if (this.toolbarPointerActive) return true;
     if (this.toolbarFocusActive) return true;
     if (Date.now() < this.toolbarPointerGraceUntil) return true;
@@ -624,7 +668,7 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
   private handleFocusIn(event: FocusEvent): void {
     if (!this.overlayRef) return;
     const target = this.resolveElement(event.target);
-    if (isObjectToolbarOwnedTarget(this.overlayRef.overlayElement, target)) {
+    if (isObjectToolbarOwnedTarget(this.overlayRef.overlayElement, target) || this.animationRail?.owns(target)) {
       this.toolbarFocusActive = true;
       this.retainObjectChrome();
       // The browser may collapse a whole-object Range to an empty container
@@ -662,13 +706,16 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     }
     this.toolbarPositionFrame = ownerWindow.requestAnimationFrame(() => {
       this.toolbarPositionFrame = null;
-      this.overlayRef?.updatePosition();
+      this.updateToolbarPosition?.();
     });
   }
 
   private retainObjectChrome(refresh = false): void {
     if (refresh || !this.releaseObjectPresentation) {
       this.releaseObjectPresentation = this.doc.selection.retainPresentation();
+      const releasePrevious = this.releaseAnimationEditing;
+      this.releaseAnimationEditing = this.doc.objectAnimation?.acquireEditingLease(this.activeIds);
+      releasePrevious?.();
     }
   }
 
@@ -791,6 +838,7 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
         this.close,
       );
     this.overlayRef = toolbar.overlayRef;
+    this.updateToolbarPosition = toolbar.updatePosition;
     this.toolbarKind = "group";
     this.toolbarKey = key;
     this.activeIds = [...state.blockIds];
@@ -869,6 +917,8 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
   private releaseRetainedObjectChrome(): void {
     this.releaseObjectPresentation?.();
     this.releaseObjectPresentation = undefined;
+    this.releaseAnimationEditing?.();
+    this.releaseAnimationEditing = undefined;
   }
 
   private resolveElement(target: EventTarget | null): Element | null {

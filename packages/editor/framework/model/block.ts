@@ -23,6 +23,8 @@ export interface IBlockProps {
   position?: string
   /** Omitted means the default `over` layer. */
   placementLayer?: 'under'
+  /** Native CSS animation shorthand using the bundled bc-* keyframes. Null removes it. */
+  animation?: string | null
   /** Persisted editable-block fill color. `null` removes the override. */
   backColor?: string | null
   /** Persisted editable-block outline color. `null` removes the override. */

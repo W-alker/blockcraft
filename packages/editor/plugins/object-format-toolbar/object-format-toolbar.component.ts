@@ -1,3 +1,4 @@
+import {ObjectAnimationSettingsComponent} from '../object-animation/settings.component';
 import {
   ChangeDetectionStrategy,
   ChangeDetectorRef,
@@ -52,7 +53,7 @@ import { quantizeObjectFormatNumber } from "../../framework/block-std/block/obje
 import { normalizeObjectEffects, storeObjectEffects } from "../../framework";
 import {OBJECT_FORMAT_POPUP_STYLES, ObjectFormatPopupState} from "./object-format-popup";
 
-export type ObjectFormatPanel = "layout" | "shape" | "text";
+export type ObjectFormatPanel = "layout" | "shape" | "text" | "animation";
 
 type ObjectFormatSection =
   | "shape-type"
@@ -121,6 +122,7 @@ export type ObjectFormatToolbarAction =
     CsTooltipDirective,
     ShapeFillPanelComponent,
     ObjectFormatNumberPipe,
+    ObjectAnimationSettingsComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -196,6 +198,9 @@ export type ObjectFormatToolbarAction =
             class="object-format__scroll"
             [class.object-format__scroll--layout]="panel === 'layout'"
           >
+            @if (panel === "animation" && doc) {
+              <bc-object-animation-settings [doc]="doc" [blockIds]="state.blockIds" [embedded]="true" (dismiss)="dismissAnimation($event)"/>
+            }
             @if (panel === "layout") {
               <section aria-label="布局与排列">
                 <div
@@ -1597,6 +1602,7 @@ export type ObjectFormatToolbarAction =
   ],
 })
 export class ObjectFormatToolbarComponent {
+  @Input() doc?: BlockCraft.Doc;
   @Input({ required: true }) state!: BlockObjectFormatSelectionState;
   @Input() side: "left" | "right" = "right";
   @Input() activeLayout: BlockObjectLayout | null = null;
@@ -1615,6 +1621,7 @@ export class ObjectFormatToolbarComponent {
     { value: "layout" as const, label: "布局与排列", icon: "bc_buju" },
     { value: "shape" as const, label: "形状选项", icon: "bc_tuxing" },
     { value: "text" as const, label: "文本选项", icon: "bc_wenben" },
+    { value: "animation" as const, label: "动画", icon: "bc_donghua" },
   ];
   get layoutOptions() {
     return BLOCK_OBJECT_LAYOUT_OPTIONS.filter((item) =>
@@ -1819,6 +1826,7 @@ export class ObjectFormatToolbarComponent {
   }
 
   isPanelVisible(panel: ObjectFormatPanel): boolean {
+    if (panel === "animation") return !!this.doc?.objectAnimation && this.state.blockIds.every(id => this.doc!.objectAnimation.supports(id));
     if (panel === "shape") return this.state.features.shape;
     if (panel === "text") {
       return Boolean(
@@ -1838,6 +1846,12 @@ export class ObjectFormatToolbarComponent {
     if (this.activePanel !== null) this.cancelEffectDrafts();
     this.popup.toggle(panel);
   }
+  @Output() readonly animationConfirm = new EventEmitter<void>();
+  dismissAnimation(reason: 'confirm' | undefined): void {
+    this.close();
+    if (reason === 'confirm') this.animationConfirm.emit();
+  }
+
   close(): void {
     this.commitPendingSliders();
     this.cancelEffectDrafts();

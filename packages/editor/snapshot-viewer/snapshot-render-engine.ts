@@ -22,6 +22,8 @@ import {
   destroyResourcePlaceholder,
 } from '@ccc/blockcraft/global/resource-placeholder';
 import {projectAbsolutePlaneChildren} from "./renderers/structural-renderers";
+import {ObjectAnimationPlayer} from '../framework/modules/object/animation/player';
+import {normalizeObjectAnimation} from '../framework/modules/object/animation/config';
 
 export class SnapshotRenderEngine implements SnapshotRenderer {
   private container: HTMLElement | null = null
@@ -35,6 +37,8 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
   private readonly renderDisposables = new Map<Element, () => void>()
   private readonly inlineEmbeds: SnapshotViewerOptions["inlineEmbeds"]
   private mountedRoot: MountedSnapshotNode | null = null
+  private animationPlayer?: ObjectAnimationPlayer
+  private animatedElements = new Map<string, HTMLElement>()
 
   constructor(options: SnapshotViewerOptions = {}) {
     this.options = options
@@ -48,6 +52,9 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
   }
 
   render(container: HTMLElement, snapshot: IBlockSnapshot | IBlockSnapshot[]): void {
+    this.animationPlayer?.destroy()
+    this.animationPlayer = undefined
+    this.animatedElements.clear()
     const alreadyOwnedViewerClass = this.container === container && this.addedViewerClass
     if (this.container && this.container !== container && this.addedViewerClass) {
       this.container.classList.remove('bc-snapshot-viewer')
@@ -56,6 +63,7 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
     this.addedViewerClass = alreadyOwnedViewerClass || !container.classList.contains('bc-snapshot-viewer')
     container.classList.add('bc-snapshot-viewer')
     this.commitRender(snapshot)
+    this.syncAnimations()
   }
 
   update(snapshot: IBlockSnapshot | IBlockSnapshot[]): void {
@@ -63,9 +71,13 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
       return
     }
     this.commitUpdate(snapshot)
+    this.syncAnimations()
   }
 
   destroy(): void {
+    this.animationPlayer?.destroy()
+    this.animationPlayer = undefined
+    this.animatedElements.clear()
     this.cancelEnhancements()
     this.disposeAllRenderedResources()
     if (this.container) {
@@ -77,6 +89,31 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
     this.container = null
     this.addedViewerClass = false
     this.mountedRoot = null
+  }
+
+  private syncAnimations(): void {
+    if (this.options.animations === false || !this.container || !this.mountedRoot) return
+    const next = new Map<string, HTMLElement>()
+    const visit = (node: MountedSnapshotNode) => {
+      if (normalizeObjectAnimation(node.snapshot.props?.animation)) {
+        if (!this.animationPlayer) {
+          this.animationPlayer = new ObjectAnimationPlayer(this.container!.ownerDocument)
+          this.animationPlayer.setEnabled(true)
+        }
+        const previous = this.animatedElements.get(node.snapshot.id)
+        if (previous && previous !== node.element) this.animationPlayer.remove(previous)
+        this.animationPlayer.set(node.element, node.snapshot.id, node.snapshot.props.animation)
+        next.set(node.snapshot.id, node.element)
+      }
+      node.children.forEach(visit)
+    }
+    visit(this.mountedRoot)
+    for (const [id, element] of this.animatedElements) {
+      if (next.has(id)) continue
+      this.animationPlayer?.remove(element)
+      this.animationPlayer?.forget(id)
+    }
+    this.animatedElements = next
   }
 
   private commitRender(snapshot: IBlockSnapshot | IBlockSnapshot[]) {
@@ -201,6 +238,8 @@ export class SnapshotRenderEngine implements SnapshotRenderer {
     if (snapshotsAreEqual(current.snapshot, next)) {
       return current
     }
+    // Restore transient CSS before patching authored styles. Loop playback resumes after commit.
+    this.animationPlayer?.stop(current.element)
     this.changedBlockElements.add(current.element)
 
     // A renderer that implements `patch` owns its whole subtree: the engine

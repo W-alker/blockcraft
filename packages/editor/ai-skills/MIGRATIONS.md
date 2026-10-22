@@ -2,7 +2,32 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-10-21 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-10-22 | Tracks `@ccc/blockcraft` npm releases.
+
+## 未发布 — 2026-10-22：可配置 CSS 对象动画
+
+**Severity**: minor（新增可选公共能力，发布版本由用户决定）
+
+**What changed / Why**: 可浮动定位对象新增 `props.animation` 原生 CSS animation 简写；提供预设 keyframes、
+统一 `doc.objectAnimation`、对象侧栏动画 tab（`bc_donghua`）和阅读表面播放，便于宿主直接复用 CSS 数据。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-app.md`、
+`blockcraft-plugins-toolbar.md`、`blockcraft-toolbar.md`。
+
+**New APIs**: `BlockObjectAnimationManager`、`ObjectAnimationConfig`、`ObjectAnimationEffect`、
+`OBJECT_ANIMATION_EFFECTS`、`normalizeObjectAnimation()`、`storeObjectAnimation()`，以及
+`SnapshotViewerOptions.animations?: boolean`；`doc.objectAnimation.stopPreview()` 与 `acquireEditingLease(ids)` 分离预览清理和工具栏编辑暂停。BaseBlockComponent 为已有 placement 能力对象增加动画视图生命周期接线。
+
+**Behavior Changes**: 未配置时无变化；编辑面板调整后自动预览临时草稿，点击“确定”才保存，关闭或切换 tab 放弃调整。
+提供进入、强调两类共 16 个预设，`OBJECT_ANIMATION_EFFECTS` 增加展示用 `category`；旧效果标识不变。
+重复通过“单次 / 指定次数 / 持续循环”下拉框配置（指定次数 2–10 次），移除停止按钮；`preview(ids, draft?)` 可预览未保存配置，不产生 Undo。
+编辑、整篇只读和 Snapshot Viewer 均按可视区域播放。编辑态选中对象或其组合内部成员时暂停并恢复原始几何，取消选中后继续。
+确定保存后关闭对象侧栏并结束编辑选区，持续循环继续；工具栏输入焦点切换由编辑租约维持暂停。
+有限动画不因虚拟重挂载重复入场，循环离屏停止；减少动态效果和打印保持静态。没有弃用 API。
+
+**Migration Recipe**: 无需迁移旧数据；继续加载 `themes/base.scss` 获得 bc-* keyframes。
+宿主用 `doc.objectAnimation.update(ids, 'bc-fade-in 600ms ease-out 0ms 1 normal both')` 设置，
+或通过工具栏配置；静态 Snapshot Viewer 传 `{animations: false}`。不修改包版本号。
 
 ## 未发布 — 2026-10-21：升级 CSES UI 与统一右键菜单图标
 

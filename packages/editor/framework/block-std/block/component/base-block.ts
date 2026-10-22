@@ -79,6 +79,7 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
   private _releaseViewRetention: (() => void) | null = null
   private _releasePlacementRetention: (() => void) | null = null
   private _releasePlacementPicking: (() => void) | null = null
+  private _releaseObjectAnimation: (() => void) | null = null
   private _placementRetentionSub: Subscription | null = null
   private _placementRetentionSyncQueued = false
   private _blockGapSub: Subscription | null = null
@@ -373,6 +374,9 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
     const placementCapability =
       this.doc.schemas?.get(this.flavour, false)?.metadata.placement
     if (placementCapability?.modes.includes('absolute')) {
+      this._releaseObjectAnimation = this.doc.objectAnimation?.registerBlockView(
+        this as unknown as BlockCraft.BlockComponent,
+      ) ?? null
       this._releasePlacementPicking =
         this.doc.placement?.registerBlockView?.(
           this as unknown as BlockCraft.BlockComponent,
@@ -385,6 +389,8 @@ export class BaseBlockComponent<Model extends NativeBlockModel = NativeBlockMode
 
   ngOnDestroy() {
     if (this._viewState === 'destroyed') return
+    this._releaseObjectAnimation?.()
+    this._releaseObjectAnimation = null
     this._releaseViewRetention?.()
     this._releaseViewRetention = null
     this._placementRetentionSub?.unsubscribe()

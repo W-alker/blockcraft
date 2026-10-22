@@ -2,9 +2,27 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-10-21
+> Last updated: 2026-10-22
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
+
+## 对象动画与阅读表面（未发布）
+
+内核自带 `doc.objectAnimation`，播放不需要额外 Plugin；`ObjectFormatToolbarPlugin` 提供对象侧栏的独立“动画”tab。
+手动宿主可调用 `update(ids, 'bc-fade-in 600ms ease-out 0ms 1 normal both')`、`preview(ids, draft?)`、`stop()`；draft 仅用于临时预览，不保存。
+数据和边界见 `blockcraft-block.md`。必须继续加载 `themes/base.scss`，其中包含 bc-* CSS keyframes。
+单独复用动画数据时可直接 `element.style.animation = props.animation`；可见性触发与减少动态效果等
+播放策略由该表面的宿主负责，BlockCraft 阅读表面已处理。
+
+编辑与整篇只读 Doc 都自动按可视区域播放；单块锁定不改变整篇模式。
+编辑时选中的对象及相关组合暂停并恢复原始几何，取消选中后继续；工具栏持有编辑租约，原生输入焦点导致 selection blur 不会误恢复。
+面板草稿独立预览；“确定”保存并结束本次对象选中编辑，已保存的持续循环继续播放。关闭/取消只丢弃草稿。
+自定义工具栏用 `acquireEditingLease(ids)` 保持对象静态，销毁时调用返回的 release；`stopPreview()` 只结束临时预览，`stop()` 停止当前全部播放。
+Snapshot Viewer 复用播放器，`SnapshotViewerOptions.animations?: boolean` 默认 true；静态缩略图、
+截图或导出表面应传 `{animations: false}`。打印媒体始终静态；旧快照未配置 animation 时无变化。
+Snapshot Viewer `render()` 开始新播放会话，`update()` 保留相同块 ID/相同配置的已播放记录。
+配置由原生快照保存；HTML/Markdown 交换未新增动画往返契约。
+
 
 ## 显式剪贴板命令（未发布）
 

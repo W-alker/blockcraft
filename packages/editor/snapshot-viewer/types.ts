@@ -3,6 +3,8 @@ import {InlineModel} from "../framework/block-std/types/inline.type";
 import {DeltaInsertEmbed} from "../framework/block-std/types/delta.type";
 
 export interface SnapshotViewerOptions {
+  /** Play configured CSS object animations on visibility. Set false for static thumbnails/exports. */
+  animations?: boolean
   rootId?: string
   baseUrl?: string
   resourcePolicy?: SnapshotResourcePolicy
