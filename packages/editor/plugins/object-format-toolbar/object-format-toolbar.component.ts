@@ -149,6 +149,22 @@ export type ObjectFormatToolbarAction =
             </button>
           }
         }
+        @if (supportsContentAutoFit) {
+          <button
+            cs-button
+            csType="text"
+            csSize="sm"
+            type="button"
+            [attr.aria-label]="textFrame.autoFit === 'resize-shape' ? '切换为固定尺寸' : '恢复内容自适应'"
+            [csTooltip]="textFrame.autoFit === 'resize-shape' ? '内容自适应，点击切换为固定尺寸' : '固定尺寸，点击恢复内容自适应'"
+            csTooltipPlacement="left"
+            (mousedown)="$event.preventDefault()"
+            (click)="autoFitChangeValue(textFrame.autoFit === 'resize-shape' ? 'none' : 'resize-shape')"
+          >
+            <i class="bc_icon" [class.bc_size-auto]="textFrame.autoFit === 'resize-shape'"
+               [class.bc_size-fixed]="textFrame.autoFit === 'none'" aria-hidden="true"></i>
+          </button>
+        }
         <span class="object-format__rail-divider"></span>
         <button
           cs-button
@@ -866,16 +882,6 @@ export type ObjectFormatToolbarAction =
                           </label>
                         }
                       </div>
-                      @if (supportsContentAutoFit) {
-                        <label>尺寸适应
-                          <cs-select csSize="sm" csVariant="outlined"
-                            [csValue]="textFrame.autoFit"
-                            (csValueChange)="autoFitChangeValue($event)">
-                            <cs-option csValue="none" csLabel="固定尺寸" />
-                            <cs-option csValue="resize-shape" csLabel="内容自适应" />
-                          </cs-select>
-                        </label>
-                      }
                       <label
                         >文字方向
                         <cs-select

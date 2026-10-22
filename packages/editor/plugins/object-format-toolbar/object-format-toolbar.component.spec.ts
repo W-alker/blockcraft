@@ -96,18 +96,43 @@ const state: BlockObjectFormatSelectionState = {
 };
 
 describe("ObjectFormatToolbarComponent", () => {
-  it("offers content fitting only for supported, consistent text frames", () => {
-    const component = TestBed.createComponent(ObjectFormatToolbarComponent).componentInstance;
+  it("switches content fitting directly from the rail only for supported, consistent text frames", () => {
+    const fixture = TestBed.createComponent(ObjectFormatToolbarComponent);
+    const component = fixture.componentInstance;
     const target = {...state.targets[0], capability: {...state.targets[0].capability, kind: "text-box" as const}};
-    component.state = {...state, targets: [target]};
+    const textBoxState = {...state, targets: [target]};
+    fixture.componentRef.setInput("state", textBoxState);
     const emit = spyOn(component.action, "emit");
-    expect(component.supportsContentAutoFit).toBeTrue();
-    component.autoFitChangeValue("resize-shape");
-    expect(emit).toHaveBeenCalled();
-    component.state = state;
-    expect(component.supportsContentAutoFit).toBeFalse();
-    component.state = {...state, targets: [target], values: {...state.values, textFrame: {mixed: true, value: undefined}}};
-    expect(component.supportsContentAutoFit).toBeFalse();
+    fixture.detectChanges();
+    const element: HTMLElement = fixture.nativeElement;
+    const rail = element.querySelector(".object-format__rail")!;
+    const auto = rail.querySelector<HTMLButtonElement>('[aria-label="恢复内容自适应"]')!;
+    expect(auto.querySelector(".bc_size-fixed")).not.toBeNull();
+    auto.click();
+    expect(emit).toHaveBeenCalledWith({name: "patch", patch: {textFrame: {...format.textFrame, autoFit: "resize-shape"}}});
+    expect(element.querySelector(".object-format__panel")).toBeNull();
+
+    const fittedFrame = {...format.textFrame, autoFit: "resize-shape" as const};
+    fixture.componentRef.setInput("state", {...textBoxState,
+      targets: [{...target, format: {...format, textFrame: fittedFrame}}],
+      values: {...state.values, textFrame: {mixed: false, value: fittedFrame}},
+    });
+    fixture.detectChanges();
+    const fixed = rail.querySelector<HTMLButtonElement>('[aria-label="切换为固定尺寸"]')!;
+    expect(fixed.querySelector(".bc_size-auto")).not.toBeNull();
+    fixed.click();
+    expect(emit).toHaveBeenCalledWith({name: "patch", patch: {textFrame: {...format.textFrame, autoFit: "none"}}});
+
+    component.open("text");
+    fixture.detectChanges();
+    expect(element.querySelector(".object-format__panel")!.textContent).not.toContain("尺寸适应");
+    for (const unsupported of [state, {...textBoxState, values: {...state.values, textFrame: {mixed: true, value: undefined}}}]) {
+      fixture.componentRef.setInput("state", unsupported);
+      fixture.detectChanges();
+      expect(rail.querySelector(".bc_size-fixed, .bc_size-auto")).toBeNull();
+      expect(component.supportsContentAutoFit).toBeFalse();
+    }
+    fixture.destroy();
   });
 
   it("keeps shape switching for text boxes and removes it when selection includes shapes", async () => {

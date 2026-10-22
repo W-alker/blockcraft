@@ -112,22 +112,53 @@ test('fixed objects and nonlinear word-art retain authored dimensions', async ({
   expect((await measure(page, id)).height).toBe(160)
 })
 
-test('text-frame panel enables fitting without replacing other formatting', async ({page, browserName}) => {
+test('size rail toggles fitting, follows external updates and preserves the text-frame panel', async ({page, browserName}) => {
   await initialize(page)
-  const {id} = await create(page, 'text-box', {textAutoFit: 'none'})
+  const {id} = await create(page, 'text-box', {
+    textAutoFit: 'none', textPadding: '7 11 13 17', textFont: '20px 700', shape: 'rounded-rectangle',
+  })
   await page.evaluate(id => {
     const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
     doc.selection.selectBlock(doc.getBlockById(id))
+    doc.crud.undoManager.clearHistory()
   }, id)
   const toolbar = page.locator('[data-bc-object-format-toolbar]')
-  await toolbar.getByRole('button', {name: '文本选项', exact: true}).click()
-  const panel = page.locator('.object-format__panel')
-  await panel.getByText('文本框', {exact: true}).first().click()
-  await panel.locator('label').filter({hasText: '尺寸适应'}).locator('cs-select').click()
-  await page.getByText('内容自适应', {exact: true}).last().click()
+  const auto = toolbar.getByRole('button', {name: '恢复内容自适应', exact: true})
+  const fixed = toolbar.getByRole('button', {name: '切换为固定尺寸', exact: true})
+  const panel = toolbar.locator('.object-format__panel')
+  await expect(auto.locator('.bc_size-fixed')).toBeVisible()
+  await expect(panel).toHaveCount(0)
+  const before = await measure(page, id)
+  await auto.click()
+  await expect(fixed.locator('.bc_size-auto')).toBeVisible()
+  await expect(panel).toHaveCount(0)
   await expect.poll(async () => (await measure(page, id)).height).toBeLessThan(160)
   expect((await measure(page, id)).autoFit).toBe('resize-shape')
-  if (browserName === 'chromium') await page.screenshot({path: '/tmp/blockcraft-auto-fit-panel.png'})
+  const after = await measure(page, id)
+  for (const key of ['textPadding', 'textFont', 'shape']) expect(after.props[key]).toEqual(before.props[key])
+  if (browserName === 'chromium') await page.screenshot({path: '/tmp/blockcraft-auto-fit-rail.png'})
+
+  await page.evaluate(id => {
+    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+    doc.getBlockById(id).updateProps({textAutoFit: 'none'})
+  }, id)
+  await expect.poll(async () => (await measure(page, id)).height).toBe(160)
+  await expect(auto.locator('.bc_size-fixed')).toBeVisible()
+  await page.evaluate(id => {
+    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+    doc.getBlockById(id).updateProps({textAutoFit: 'resize-shape'})
+  }, id)
+  await expect(fixed.locator('.bc_size-auto')).toBeVisible()
+
+  await toolbar.getByRole('button', {name: '文本选项', exact: true}).click()
+  await panel.getByText('文本框', {exact: true}).first().click()
+  await expect(panel.getByText('尺寸适应', {exact: true})).toHaveCount(0)
+  await expect(panel.locator('label').filter({hasText: '文字方向'})).toBeVisible()
+  await expect(panel.locator('.object-format__margin-input input')).toHaveCount(4)
+  await fixed.click()
+  await expect(auto.locator('.bc_size-fixed')).toBeVisible()
+  await expect(panel).toBeVisible()
+  await expect.poll(async () => (await measure(page, id)).height).toBe(160)
 })
 
 for (const {flavour, direction, axis} of [
@@ -135,7 +166,7 @@ for (const {flavour, direction, axis} of [
   {flavour: 'text-box', direction: 'vertical-rl', axis: 'width'},
   {flavour: 'word-art', direction: 'horizontal', axis: 'height'},
 ] as const) {
-  test(`${flavour} ${direction} fits existing content immediately when enabled in the panel`, async ({page}) => {
+  test(`${flavour} ${direction} fits existing content immediately when enabled from the rail`, async ({page}) => {
     await initialize(page)
     const {id, textId} = await create(page, flavour, {
       textAutoFit: 'none', textDirection: direction,
@@ -152,24 +183,18 @@ for (const {flavour, direction, axis} of [
       const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
       doc.selection.selectBlock(doc.getBlockById(id))
     }, id)
-    await page.locator('[data-bc-object-format-toolbar]')
-      .getByRole('button', {name: '文本选项', exact: true}).click()
-    const panel = page.locator('.object-format__panel')
-    await panel.getByText('文本框', {exact: true}).first().click()
-    const sizing = panel.locator('label').filter({hasText: '尺寸适应'}).locator('cs-select')
-    await sizing.click()
-    await page.getByText('内容自适应', {exact: true}).last().click()
+    const toolbar = page.locator('[data-bc-object-format-toolbar]')
+    await toolbar.getByRole('button', {name: '恢复内容自适应', exact: true}).click()
+    await expect(toolbar.locator('.object-format__panel')).toHaveCount(0)
     await expect.poll(async () => (await measure(page, id))[axis]).toBeGreaterThan(fixed[axis])
     const fitted = await measure(page, id)
     expect(fitted[axis === 'width' ? 'overflowX' : 'overflow']).toBeLessThanOrEqual(1)
     expect(fitted[axis === 'width' ? 'height' : 'width']).toBe(fixed[axis === 'width' ? 'height' : 'width'])
 
     // A second activation must work after observers have been disconnected.
-    await sizing.click()
-    await page.getByText('固定尺寸', {exact: true}).last().click()
+    await toolbar.getByRole('button', {name: '切换为固定尺寸', exact: true}).click()
     await expect.poll(async () => (await measure(page, id))[axis]).toBe(fixed[axis])
-    await sizing.click()
-    await page.getByText('内容自适应', {exact: true}).last().click()
+    await toolbar.getByRole('button', {name: '恢复内容自适应', exact: true}).click()
     await expect.poll(async () => (await measure(page, id))[axis]).toBe(fitted[axis])
   })
 }
