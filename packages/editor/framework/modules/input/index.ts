@@ -2436,11 +2436,13 @@ export class InputTransformer {
     }
 
     if (plan.kind === "range") {
-      if (!this._replacePlannedRange(plan)) {
+      const wordArtLineBreak = plan.start.kind === "text" && !plan.end &&
+        this._getLiveBlockById(plan.start.blockId)?.flavour === "word-art";
+      if (!this._replacePlannedRange(plan, wordArtLineBreak ? STR_LINE_BREAK : undefined)) {
         this.doc.selection.blur();
         return true;
       }
-      this._syncPlannedRangeSelection(plan);
+      this._syncPlannedRangeSelection(plan, wordArtLineBreak ? 1 : 0);
       return true;
     }
 
@@ -2456,8 +2458,8 @@ export class InputTransformer {
     const offset = plan.offset;
     const typingAttrs = this.peekNextInsertAttrs({blockId: block.id, index: offset});
 
-    // 强制同段换行
-    if (state.raw.shiftKey) {
+    // 艺术字的 Enter 与 Shift+Enter 均在当前对象的文本内换行。
+    if (state.raw.shiftKey || block.flavour === "word-art") {
       this._typingFormat.runEdit(() => block.insertText(offset, STR_LINE_BREAK, typingAttrs));
       block.setInlineRange(offset + 1);
       this.doc.selection.scrollSelectionIntoView?.();
