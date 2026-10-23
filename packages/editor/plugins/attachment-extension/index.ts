@@ -14,6 +14,7 @@ import {AttachmentBlockToolbar, IAttachmentToolbarItem} from "./widgets/attachme
 import {RenameInputPad} from "./widgets/rename-input-pad";
 import {isSelectionAlive} from "../../framework/modules/selection/liveness";
 import {ComponentRef} from "@angular/core";
+import {focusAfterImageInsertion} from '../../framework/modules/selection/after-insertion';
 
 type AttachmentBlock = BlockCraft.IBlockComponents['attachment']
 
@@ -393,6 +394,7 @@ export class AttachmentExtensionPlugin extends DocPlugin {
       if (!snapshots.length) return true;
       if (!checkIncomingContentSize(this.doc, {snapshots})) return true;
       inserted = this._insertFileSnapshotsAtSelection(state.selection, snapshots);
+      if (inserted) focusAfterImageInsertion(this.doc, snapshots[snapshots.length - 1]);
       return true;
     } finally {
       if (!inserted) this._releaseObjectUrls(objectUrls);

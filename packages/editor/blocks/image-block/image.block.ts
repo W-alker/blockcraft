@@ -1,4 +1,5 @@
 import {storeBlockPosition} from '../../framework/modules/object/block-placement/state'
+import {focusAfterImageInsertion} from '../../framework/modules/selection/after-insertion';
 import {ChangeDetectionStrategy, Component, ElementRef, ViewChild} from '@angular/core';
 import {
   BaseBlockComponent,
@@ -371,6 +372,7 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
         height: null,
       });
       this.uploadImage(url);
+      focusAfterImageInsertion(this.doc, this);
     } catch (e) {
       console.error('选择图片失败', e);
     }

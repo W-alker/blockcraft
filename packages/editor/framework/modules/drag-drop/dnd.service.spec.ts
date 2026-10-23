@@ -41,6 +41,7 @@ function makeMockDoc(blocks: Record<string, any>): any {
     },
     messageService: { warn: (msg: string) => calls.warn.push(msg), success: () => {} },
     crud: {
+      undoManager: {stopCapturing: jasmine.createSpy('stopCapturing')},
       transact: (fn: () => void) => { calls.transact++; fn() },
       moveBlocks: (...args: any[]) => calls.moveBlocks.push(args),
       insertBlocks: () => {},
@@ -460,7 +461,8 @@ describe('DocDndService readonly insertion preflight', () => {
     const target = makeBlock('t', 'p', 'paragraph', { __index: 0 })
     target.parentBlock = parent
     const doc = makeMockDoc({ p: parent, t: target })
-    const snapshot = { props: {} }
+    const snapshot = { id: 'image-1', flavour: 'image', props: {} }
+    doc.selection.setGapCursor = jasmine.createSpy('setGapCursor')
     doc.schemas.createSnapshot = jasmine.createSpy('createSnapshot').and.returnValue(snapshot)
     doc.crud.insertBlocks = jasmine.createSpy('insertBlocks')
     const fileService = {
@@ -480,6 +482,7 @@ describe('DocDndService readonly insertion preflight', () => {
       src: 'local://image',
     }])
     expect(doc.crud.insertBlocks).toHaveBeenCalledWith('p', 1, [snapshot])
+    expect(doc.selection.setGapCursor).toHaveBeenCalledOnceWith('image-1', 'after', true)
   })
 
   it('does not create a file object URL when the target parent is readonly', () => {

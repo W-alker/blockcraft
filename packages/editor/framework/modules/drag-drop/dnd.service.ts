@@ -12,6 +12,7 @@ import { BlockReadonlyError, BlockReadonlyOperation } from "../../doc/block-read
 import { DOC_FILE_SERVICE_TOKEN } from "../../host/file.service"
 import { BLOCK_CREATOR_SERVICE_TOKEN } from "../../host/block-creator.service"
 import { captureRelativeSelectionBookmark } from "../selection/relative-bookmark"
+import {focusAfterImageInsertion} from '../selection/after-insertion'
 import { calcDragLineRect, calcPositionByRect, type DragLineRect, type DragPosition } from "./_dnd-geometry"
 
 export enum DocDndDataTypes {
@@ -682,7 +683,9 @@ export class DocDndService {
     } catch {
       fileService.removeObjectURL(url)
       this.doc.messageService.warn('图片插入失败')
+      return
     }
+    focusAfterImageInsertion(this.doc, snapshot)
   }
 
   onInsertNewBlock(
@@ -719,7 +722,11 @@ export class DocDndService {
       initMeta && Object.assign(snapshot.meta, initMeta)
       void this.doc.chain()
         .insertSnapshots(currentParent.id, targetBlock.getIndexOfParent() + (position === 'after' ? 1 : 0), [snapshot])
-        .setCursorAtBlock(snapshot.id, true)
+        .tap(() => {
+          if (!focusAfterImageInsertion(this.doc, snapshot)) {
+            this.doc.selection.setCursorAtBlock(snapshot.id, true)
+          }
+        })
         .run()
         .catch(error => {
           if (!(error instanceof BlockReadonlyError)) throw error

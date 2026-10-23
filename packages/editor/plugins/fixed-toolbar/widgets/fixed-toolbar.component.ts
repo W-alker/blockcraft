@@ -1,4 +1,5 @@
 import {TypographySettingsController} from './typography-settings-controller';
+import {focusAfterImageInsertion} from '../../../framework/modules/selection/after-insertion';
 import { PARAGRAPH_ALIGNMENT_OPTIONS } from "../../paragraph-alignment-options";
 import {
   AfterViewInit,
@@ -4071,7 +4072,9 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
 
       const snapshot = this.doc.schemas.createSnapshot(flavour, params as any);
       await this.insertSnapshotsAtPlacement(placement, [snapshot]);
-      this.doc.selection.selectOrSetCursorAtBlock(snapshot.id, true);
+      if (!focusAfterImageInsertion(this.doc, snapshot)) {
+        this.doc.selection.selectOrSetCursorAtBlock(snapshot.id, true);
+      }
       this.syncToolbarState(this.doc.selection.value);
       this.cdr.markForCheck();
     } catch {}

@@ -5,6 +5,50 @@ import {ImgToolbarPlugin} from "./index";
 import {ObjectDragPlugin} from "../object-drag";
 import {ImageBlockSchema} from "../../blocks/image-block";
 
+describe('ImgToolbarPlugin Enter ownership', () => {
+  for (const side of ['before', 'after']) {
+    it(`leaves a collapsed ${side} gap to InputTransformer`, () => {
+      const plugin = new ImgToolbarPlugin();
+      const chain = jasmine.createSpy('chain');
+      (plugin as any).doc = {isReadonly: false, chain};
+      const preventDefault = jasmine.createSpy('preventDefault');
+      const selection = {collapsed: true, anchor: {type: 'gap', side}};
+      const result = plugin.onImageTitleEnter({get: () => ({selection}), preventDefault} as any);
+      expect(result).toBeFalse();
+      expect(preventDefault).not.toHaveBeenCalled();
+      expect(chain).not.toHaveBeenCalled();
+    });
+  }
+
+  for (const caption of [false, true]) {
+    for (const ctrlKey of [false, true]) {
+      it(`preserves ${caption ? 'caption' : 'selected image'} ${ctrlKey ? 'Ctrl+Enter' : 'Enter'}`, () => {
+        const plugin = new ImgToolbarPlugin();
+        const image = {id: 'image', flavour: 'image', parentId: 'cell', getIndexOfParent: () => 2};
+        const block = caption ? {id: 'caption', flavour: 'caption', parentBlock: image} : image;
+        const paragraph = {id: 'new-paragraph'};
+        const chain = {
+          insertSnapshots: jasmine.createSpy('insertSnapshots'),
+          selectOrSetCursorAtBlock: jasmine.createSpy('selectOrSetCursorAtBlock'),
+          run: jasmine.createSpy('run').and.resolveTo(undefined),
+        };
+        chain.insertSnapshots.and.returnValue(chain);
+        chain.selectOrSetCursorAtBlock.and.returnValue(chain);
+        (plugin as any).doc = {
+          isReadonly: false, getBlockById: () => block,
+          schemas: {createSnapshot: () => paragraph},
+          readonlyManager: {isReadonly: () => false}, chain: () => chain,
+        };
+        const preventDefault = jasmine.createSpy('preventDefault');
+        const selection = {collapsed: true, anchor: {type: caption ? 'text' : 'selected'}, commonParent: block.id};
+        expect(plugin.onImageTitleEnter({get: () => ({selection, raw: {ctrlKey}}), preventDefault} as any)).toBeTrue();
+        expect(preventDefault).toHaveBeenCalled();
+        expect(chain.insertSnapshots).toHaveBeenCalledOnceWith('cell', ctrlKey ? 2 : 3, [paragraph]);
+      });
+    }
+  }
+});
+
 describe("ImgToolbarPlugin lifecycle", () => {
   const sharedPlugins: ObjectDragPlugin[] = [];
   afterEach(() => sharedPlugins.splice(0).forEach(plugin => plugin.destroy()));

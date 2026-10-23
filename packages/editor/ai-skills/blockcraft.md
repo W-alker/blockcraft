@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-10-22 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-10-23 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 
 填写区侧边工具栏支持固定尺寸／内容自适应双向切换：`toggleSizeMode()` 按当前布局冻结尺寸，`resetHeight()` 保留宽度、清除固定高度。
 仅 `wr` 或旧 `width` 的快照保持自然高度；尺寸读取与保存契约见 `blockcraft-block.md` 的“Render-unit 响应式尺寸”。
@@ -13,6 +13,12 @@
 > 3. Read L2 deep dives only when L1 isn't enough or you're modifying framework internals.
 >
 > **External users**: this skill pack is bundled with the npm package. AI agents can discover it via `SKILL.md` (frontmatter present); humans see `README.md` for installation and the one-command installer (`install.mjs`).
+
+## 图片插入后的光标（未发布）
+
+内置用户插图入口将流式图片的光标放到图片后的 `gap(after)`，浮动图片保持对象选中。
+上传完成不会抢回焦点。图片前后 gap 上的 Enter 使用统一输入路径，按 gap 方向插段落；
+说明文字和整图选中的快捷键不变。入口及边界见 `blockcraft-plugins-toolbar.md`。
 
 ## 可配置对象动画（未发布）
 

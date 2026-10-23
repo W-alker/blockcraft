@@ -7,6 +7,31 @@
 
   div.image-block {
 
+    // Keep the row as the sizing plane, but anchor native gaps to the same
+    // shrink-to-content grid area as the figure (including during resize).
+    &:not(.bc-snapshot-block):not([data-bc-placement='absolute']):not([data-bc-image-group-member]) {
+      display: grid;
+      grid-template-columns: minmax(0, max-content);
+      justify-content: start;
+
+      &[data-align='center'] {
+        justify-content: center;
+      }
+
+      &[data-align='right'] {
+        justify-content: end;
+      }
+
+      > .image-block__container {
+        grid-area: 1 / 1 / 2 / 2;
+        margin: 0;
+      }
+
+      > [data-block-zero-space='true'] {
+        grid-area: 1 / 1 / 2 / 2;
+      }
+    }
+
     .img-wrapper[data-bc-image-resize-stretch] > img {
       object-fit: fill !important;
     }

@@ -133,9 +133,13 @@ export class ImgToolbarPlugin extends DocPlugin {
   onImageTitleEnter(ctx: UIEventStateContext) {
     if (this.doc.isReadonly) return;
 
-    ctx.preventDefault();
     const state = ctx.get("keyboardState");
     const selection = state.selection;
+    // Gap input belongs to InputTransformer, which preserves its before/after
+    // side. This shortcut only owns the image/caption editing interaction.
+    if (selection.collapsed && selection.anchor.type === "gap") return false;
+
+    ctx.preventDefault();
     const blockId = selection.commonParent;
     const block = this._getLiveBlockById(blockId);
     if (!block) return true;

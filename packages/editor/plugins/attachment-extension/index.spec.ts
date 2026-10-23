@@ -412,7 +412,9 @@ describe("AttachmentExtensionPlugin file paste selection handling", () => {
       clipboard: {
         deleteContentFromSelection: jasmine.createSpy("deleteContentFromSelection"),
       },
+      selection: {setGapCursor: jasmine.createSpy('setGapCursor')},
       crud: {
+        undoManager: {stopCapturing: jasmine.createSpy('stopCapturing')},
         transact: jasmine.createSpy("transact").and.callFake((run: () => void) => run()),
         insertBlocks: jasmine.createSpy("insertBlocks"),
         insertBlocksAfter: jasmine.createSpy("insertBlocksAfter"),

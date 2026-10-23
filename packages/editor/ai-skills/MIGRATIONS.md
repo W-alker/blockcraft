@@ -2,7 +2,25 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-10-22 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-10-23 | Tracks `@ccc/blockcraft` npm releases.
+
+## 未发布 — 2026-10-23：图片插入后的 gap 光标
+
+**Severity**: patch（默认交互调整；发布版本由用户决定）
+
+**What changed / Why**: 用户插入流式图片后直接获得图片后的 gap 光标，便于继续输入；
+图片插件不再抢先消费 gap 光标上的 Enter，修复表格等容器内 gap-before 仍向后插段落的问题。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-plugins-toolbar.md`、`blockcraft-plugins-block.md`。
+
+**Behavior Changes**: 固定工具栏、斜杠菜单、块菜单、文件拖入、文件粘贴和空图片选择文件，
+完成插入后落到图片的 `gap(after)`，不额外创建段落；插图与随后继续输入分开撤销。
+混合文件粘贴仅在最后一项是图片时应用该落点。浮动图片没有 gap，继续整体选中。
+上传完成、协同加载和普通挂载不触发重新取焦；其他块、图片说明文字及整图选中的快捷键保持原行为。
+
+**Migration Recipe**: 无需修改数据或调用签名；宿主自定义插入入口可在用户确认插图后调用
+`doc.selection.setGapCursor(imageId, 'after', true)`，不要在块生命周期或上传完成时调用。
+未增加公共 API，不修改包版本号。
 
 ## 未发布 — 2026-10-22：可配置 CSS 对象动画
 

@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-10-22
+> Last updated: 2026-10-23
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
@@ -98,6 +98,13 @@ new AttachmentExtensionPlugin({
 ## ImgToolbarPlugin
 
 > `plugins/img-toolbar/` — Image block toolbar and interactions.
+
+用户通过固定工具栏、斜杠菜单、块菜单、文件拖入、文件粘贴或空图片选文件插入图片后，
+光标落在图片后的 `gap(after)`；不自动新增空段落，插图与随后继续输入分开撤销。
+混合文件粘贴仅在最后一项是图片时应用该落点。没有 gap 的浮动图片仍整体选中。
+该落点只由用户插入动作设置，上传结束、协同加载和普通视图挂载不会再次取焦。
+图片 gap 上的 Enter 交给 `InputTransformer`，按 before/after 在同一父容器内插入段落；
+图片说明文字和整图选中的 Enter / Ctrl+Enter 保留原来的快捷键行为。
 
 块态图片的点击选择和拖拽由 `ObjectDragPlugin` 统一处理；本插件通过 selection 变化
 显示工具栏，保留上传/预览/布局转换及行内图片交互。手动装配必须同时注册

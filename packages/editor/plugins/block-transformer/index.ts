@@ -1,4 +1,5 @@
 import {preserveTransformPlaceholder} from './placeholder';
+import {focusAfterImageInsertion} from '../../framework/modules/selection/after-insertion';
 import {effect} from '@angular/core';
 import {
   filter,
@@ -733,12 +734,17 @@ export class BlockTransformerPlugin extends DocPlugin {
     preserveTransformPlaceholder(this.doc, block, snapshots);
     if (snapshots.some(snapshot => !this.doc.canInsertChild(parentId, snapshot.flavour))) return;
 
-    await this.doc.chain()
+    const chain = this.doc.chain()
       .replaceWithSnapshots(block.id, snapshots)
-      .nextTick()
-      .selectOrSetCursorAtBlock(inserted.id, true)
-      .recalculateSelection()
-      .run();
+      .nextTick();
+    if (inserted.flavour === 'image') {
+      // Model-first gap projection can retry until its native anchor mounts.
+      // Sampling the DOM immediately would discard that pending model intent.
+      chain.tap(() => { focusAfterImageInsertion(this.doc, inserted); });
+    } else {
+      chain.selectOrSetCursorAtBlock(inserted.id, true).recalculateSelection();
+    }
+    await chain.run();
   }
 
   private createCommandRange(context: SlashCommandContext) {
