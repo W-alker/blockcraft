@@ -2,7 +2,40 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when working with the CRDT data layer.
 >
-> Last updated: 2026-10-16
+> Last updated: 2026-10-23
+
+## 独立区域组合会话（未发布）
+
+`DocumentCompositionSession` 属于 Document 上下文，使用独立 editorDoc 作为编辑运行时。
+共享源 sharedDoc 始终独立；输入、Blot、Selection、Undo 和虚拟渲染继续面对单一 Y.Doc。
+JSON 只作为宿主独立区域内容的持久化交换格式，不替代运行时 Y.Text。
+
+- 共享区域：sharedDoc 为权威；本地块/属性/children/text 变化按归属以语义增量回写。
+- 独立区域：容器壳仍共享，所有 children 后代归稳定 regionId，编辑只产生个人 dirty 通知。
+- 共享→运行时投影使用独立 origin 与 `Y.transact(..., false)`，进入现有远端视图、选区和 IME 延迟路径。
+- 运行时→共享源绝不转发二进制 update，不导出组合后的共享祖先整棵快照；区域后代不会通过这条路径进入源。
+- 文本/属性变更按命中的事件处理；结构变更才重建归属。个人 JSON 在显式导出时序列化。
+- 绑定区域壳的 `textFit` 是当前内容测得的局部派生尺寸，不双向同步；用户设置的其他壳属性仍共享。
+
+组合模式额外保存一份共享块的编辑运行时副本，首次装配与完整导出为 O(块数 + 内容量)，
+内存高于单 Y.Doc。结构变更需要校验归属；普通文本输入不重建整篇文档。
+这项隔离成本不等于已完成超大文档性能验收，宿主需按真实文档规模测量内存、打开和输入延迟。
+
+`DocConfig.contentComposition.editorDoc` 与 `yDoc` 必须匹配，并从会话 root 的 YBlock 初始化。普通文档未启用时无额外
+组合监听/扫描。会话的静态绑定必须通过宿主重建切换；可改名的业务 name 不承担永久身份。
+区域记录缺失与 children 空数组区分；默认子树生成独立 ID。区域源删除不删除个人持久化记录。
+
+编辑预检在执行输入计划之前检查完整写入范围，跨域移动/范围替换不会先修改一部分再拒绝。
+区域壳及包含壳的本地破坏性操作被保护；外部共享更新仍由共享源驱动。
+绑定校验拒绝 columns 本身作为区域壳（启动及运行中结构变化均检查），因为其列数/列宽
+由 children 推导。区域内部可正常使用分栏；共享分栏的自动提升若会移动已绑定壳，保留
+分栏结构并完成宽度收尾，不能在已完成合法删除后抛出未处理异常。
+Undo/Redo 仍在运行时本地执行，合法结果分别投影到所属源；共享远端更新不进入本地历史。
+修订域、网络光标与宿主身份/权限不是区域 JSON 的一部分；首版显式拒绝开启组合文档修订。
+组合快照可能包含个人内容，shared export 与 personal export 必须按持久化用途分别使用。
+
+接口、加载/保存/清理示例见 `blockcraft-app.md`；设计与验证边界见仓库
+`docs/document-content-composition.md`。不把框架内存/浏览器测试解释成宿主服务端的用户隔离验收。
 
 ## Architecture Overview
 

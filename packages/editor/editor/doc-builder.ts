@@ -5,6 +5,7 @@ import { EmbedConverter, IBlockSnapshot, YBlock } from "../framework/block-std"
 import {BlockCraftDoc} from "./document"
 import type {BlockLockKind, BlockUnlockContext} from "../framework/doc/block-readonly.types"
 import { DocPlugin } from "../framework/plugin"
+import type {DocumentCompositionSession} from "../framework/doc/composition"
 
 interface DocBuilderConfig {
   docId: string
@@ -12,6 +13,7 @@ interface DocBuilderConfig {
   logger: Logger
   injector: Injector
   yDoc: Y.Doc
+  contentComposition?: DocumentCompositionSession
   theme?: string
   embeds?: [string, EmbedConverter][]
   plugins?: DocPlugin[]
@@ -40,6 +42,7 @@ export class BlockCraftDocBuilder {
     cloned.config.logger = this.config.logger
     cloned.config.injector = this.config.injector
     cloned.config.yDoc = this.config.yDoc
+    cloned.config.contentComposition = this.config.contentComposition
     cloned.config.theme = this.config.theme
     cloned.config.readonly = this.config.readonly
     cloned.config.currentUserId = this.config.currentUserId
@@ -73,6 +76,13 @@ export class BlockCraftDocBuilder {
 
   yDoc(yDoc: Y.Doc) {
     this.config.yDoc = yDoc
+    return this
+  }
+
+  /** Bind an isolated composition runtime; only the supplied shared source belongs on the network. */
+  contentComposition(session: DocumentCompositionSession) {
+    this.config.contentComposition = session
+    this.config.yDoc = session.editorDoc
     return this
   }
 
@@ -148,6 +158,7 @@ export class BlockCraftDocBuilder {
       logger,
       injector,
       yDoc,
+      contentComposition: this.config.contentComposition,
       theme: this.config.theme,
       readonly: this.config.readonly,
       currentUserId: this.config.currentUserId,

@@ -1,6 +1,7 @@
 import {isYArray} from '../../utils/yAbstractType'
 import {BlockReadonlyError, BlockReadonlyOperation} from '../../doc/block-readonly.types'
 import {BlockMutationPolicyError} from '../../doc/block-mutation-policy'
+import {DocumentCompositionMutationError} from '../../doc/composition-guards'
 
 type ColumnChange = {parentId: string | null; ids: string[]; widths: number[]}
 
@@ -77,7 +78,8 @@ export class ColumnStructureNormalizer {
               landing ??= content[0]
               continue
             } catch (error) {
-              if (!(error instanceof BlockReadonlyError) && !(error instanceof BlockMutationPolicyError)) throw error
+              if (!(error instanceof BlockReadonlyError) && !(error instanceof BlockMutationPolicyError) &&
+                !(error instanceof DocumentCompositionMutationError)) throw error
             }
           }
         }

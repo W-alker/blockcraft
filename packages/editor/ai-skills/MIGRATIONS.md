@@ -4,6 +4,33 @@
 >
 > Last updated: 2026-10-23 | Tracks `@ccc/blockcraft` npm releases.
 
+## 未发布 — 2026-10-23：共享文档与独立区域内容组合
+
+**Severity**: minor（新增显式启用能力；发布版本由用户决定）
+
+**What changed / Why**: 新增 DocumentCompositionSession，在独立编辑运行时组合共享 Yjs 和宿主提供的区域
+JSON，保留富文本、选区与撤销，允许同一共享文档显示不同用户的独立填写内容。
+共享源与个人数据的写入、输出和生命周期明确分开。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-app.md`、`blockcraft-data.md`、`blockcraft-input.md`。
+
+**New APIs**: DocumentCompositionSession、DocumentCompositionOptions、DocumentContentRegion、
+DocumentPersonalData、DocumentPersonalChange、DocumentContentScope、DocumentCompositionError；
+`DocConfig.contentComposition`、`BlockCraftDocBuilder.contentComposition(session)`。
+
+**Behavior Changes**: 仅组合模式新增跨域编辑/绑定壳保护及修订限制；不启用时原文档路径保持不变。
+稳定区域 ID 与容器块 ID 分离，显式空内容不会恢复默认值；共享源删除区域时保留个人 JSON。
+首版不直接绑定 columns 壳，请以 render-unit/text-box 包裹；区域内部的分栏保持正常编辑。
+
+**Migration Recipe**: 现有宿主无需迁移。接入时只给 sharedDoc 挂协同 provider，传
+`{yDoc: session.editorDoc, contentComposition: session}` 并从会话根 YBlock 初始化；个人保存调用
+exportPersonalData()，共享快照调用 exportSharedSnapshot()。不要继续将 doc.yDoc、组合快照或
+Awareness 相对位置发送到共享服务；详细示例与首版边界见 blockcraft-app.md。
+本次未发布开发版的临时名称 `DocConfig.composition` 与 Builder `.composition(session)` 已统一改为
+`DocConfig.contentComposition` 与 `.contentComposition(session)`；不保留旧名称别名。
+是否配置启用使用 `!!doc.config.contentComposition`，未提供时默认关闭。
+`DocumentCompositionSession` 类名及持久化数据格式保持不变，不修改包版本。
+
 ## 未发布 — 2026-10-23：图片插入后的 gap 光标
 
 **Severity**: patch（默认交互调整；发布版本由用户决定）

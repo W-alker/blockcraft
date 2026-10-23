@@ -85,4 +85,22 @@ describe('默认文档装配与领域实现', () => {
     const clipboardEvents = add.calls.allArgs().filter(([name]) => name === 'copy' || name === 'cut' || name === 'paste');
     expect(clipboardEvents.map(([name]) => name).sort()).toEqual(['copy', 'cut', 'paste']);
   });
+  it('主入口公开组合会话，Builder 显式绑定其独立运行时', () => {
+    const options = config();
+    options.yDoc.getMap('blocks').set('composition-root', publicApi.native2YBlock({
+      id: 'composition-root', flavour: 'root', nodeType: publicApi.BlockNodeType.root,
+      props: {}, meta: {}, children: [],
+    }));
+    const session = new publicApi.DocumentCompositionSession({
+      sharedDoc: options.yDoc, rootId: 'composition-root', regions: [],
+    });
+    cleanups.push(() => session.dispose());
+    const doc = own(BlockCraftDocBuilder.create()
+      .docId(options.docId).schemas(options.schemas).injector(options.injector)
+      .logger(options.logger).contentComposition(session).clone().build());
+    expect(doc.config.contentComposition).toBe(session);
+    expect(doc.yDoc).toBe(session.editorDoc);
+    expect(doc.yDoc).not.toBe(options.yDoc);
+  });
+
 });

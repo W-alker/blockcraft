@@ -8,6 +8,9 @@ import {
 } from "../modules/selection/relative-bookmark";
 import {BlockReadonlyError, BlockReadonlyOperation} from "./block-readonly.types";
 import {BlockMutationPolicyError} from "./block-mutation-policy";
+import {compositionTransactionScopes, CompositionScope} from './composition-guards'
+import type {DocumentCompositionSession} from './composition'
+import type {YBlock} from '../block-std'
 import {assertDocumentStructureTransformAllowed} from './structure-transform'
 
 type UndoManagerEventName = 'stack-item-added' | 'stack-item-updated' | 'stack-item-popped' | 'stack-cleared'
@@ -33,9 +36,20 @@ export interface CapturedDocUndoItem<T> {
 const BLOCK_READONLY_AFFECTED_IDS = Symbol('block-readonly-affected-ids')
 const SELECTION_BOOKMARK = Symbol('selection-bookmark')
 const STRUCTURE_TRANSFORM_PURPOSE = Symbol('structure-transform-purpose')
+const COMPOSITION_HISTORY = Symbol('composition-history')
+
+interface CompositionHistory {
+  session: DocumentCompositionSession
+  scopes: ReadonlySet<CompositionScope>
+  anchors: ReadonlyMap<string, YBlock | undefined>
+}
 
 export class DocUndoManger {
   private _structureTransformPurpose: string | undefined
+  private _compositionScopes: ReadonlySet<CompositionScope> | undefined
+  private _lastCompositionScopes: ReadonlySet<CompositionScope> | undefined
+  private _compositionReplay: CompositionHistory | undefined
+  private _compositionRegionBlocks: ReadonlyMap<string, string> | undefined
   private _yUndoManager!: Y.UndoManager
   private _trackedOrigins = new Set<any>([ORIGIN_SKIP_SYNC, null])
   private readonly _capturedUndoItems = new WeakMap<DocUndoItemToken, StackItem>()
@@ -64,7 +78,10 @@ export class DocUndoManger {
       trackedOrigins: new Set<any>(options?.trackedOrigins || [ORIGIN_SKIP_SYNC, null])
     })
 
+    this._bindCompositionCapture()
+
     this.on('stack-item-added', (evt) => {
+      this._captureCompositionHistory(evt)
       if (this._structureTransformPurpose) evt.stackItem.meta.set(STRUCTURE_TRANSFORM_PURPOSE, this._structureTransformPurpose)
       this._mergeAffectedBlockIds(evt)
       const pending = evt.type === 'undo'
@@ -87,6 +104,7 @@ export class DocUndoManger {
       }
     })
     this.on('stack-item-updated', (evt) => {
+      this._captureCompositionHistory(evt)
       this._mergeAffectedBlockIds(evt)
       if (evt.type === 'undo') {
         // A pre-captured snapshot belongs only to the next NEW stack item. If
@@ -98,6 +116,68 @@ export class DocUndoManger {
         this._pendingRedoSnapshot = undefined
       }
     })
+  }
+
+  private _bindCompositionCapture(): void {
+    const session = this.doc.config?.contentComposition
+    if (!session) return
+    this._compositionRegionBlocks = new Map(session.regions.map(region => [region.id, region.blockId]))
+    const beforeObservers = (transaction: Y.Transaction) => {
+      this._compositionScopes = undefined
+      if (session.failed || session.disposed || !transaction.local || !this._yUndoManager.trackedOrigins.has(transaction.origin)) return
+      const scopes = compositionTransactionScopes(this.doc, transaction)
+      if (!scopes.size) return
+      this._compositionScopes = scopes
+      // A text edit in another storage domain must not merge into the previous
+      // 500ms item, including writes made directly through EditableBlock.yText.
+      const previous = this._lastCompositionScopes
+      if (!previous || previous.size !== scopes.size || [...scopes].some(scope => !previous.has(scope))) {
+        this.stopCapturing()
+      }
+      this._lastCompositionScopes = scopes
+    }
+    const dispose = () => {
+      this.doc.yDoc.off('beforeObserverCalls', beforeObservers)
+      this.doc.yDoc.off('destroy', dispose)
+      this._yUndoManager.destroy()
+    }
+    this.doc.yDoc.on('beforeObserverCalls', beforeObservers)
+    this.doc.yDoc.on('destroy', dispose)
+    this.doc.onDestroy?.(dispose)
+  }
+
+  private _captureCompositionHistory(event: StackItemEvent): void {
+    const session = this.doc.config?.contentComposition
+    if (!session) return
+    if (this._compositionReplay) {
+      event.stackItem.meta.set(COMPOSITION_HISTORY, this._compositionReplay)
+      return
+    }
+    if (!this._compositionScopes?.size) return
+    const scopes = new Set(this._compositionScopes)
+    const anchors = new Map<string, YBlock | undefined>()
+    for (const scope of scopes) {
+      if (scope === null) continue
+      const blockId = this._compositionRegionBlocks?.get(scope)
+      anchors.set(scope, blockId ? this.doc.yBlockMap.get(blockId) : undefined)
+    }
+    event.stackItem.meta.set(COMPOSITION_HISTORY, {session, scopes, anchors} satisfies CompositionHistory)
+  }
+
+  private _isCompositionHistoryWritable(stackItem: StackItem): boolean {
+    const session = this.doc.config?.contentComposition
+    if (!session) return true
+    if (session.failed || session.disposed || session.editorDoc.isDestroyed) return false
+    const history = stackItem.meta.get(COMPOSITION_HISTORY) as CompositionHistory | undefined
+    if (!history || history.session !== session) return false
+    // Removed/recreated region shells invalidate their old Y.Text history.
+    // The stored scope still identifies deleted private blocks after they leave
+    // the live graph; checking only reachable affectedIds would lose this fact.
+    for (const [regionId, anchor] of history.anchors) {
+      const blockId = this._compositionRegionBlocks?.get(regionId)
+      if (!anchor || !blockId || this.doc.yBlockMap.get(blockId) !== anchor) return false
+    }
+    return true
   }
 
   /**
@@ -268,6 +348,7 @@ export class DocUndoManger {
   undo() {
     if (!this.isCanUndo() || this.undoRedoing$.value) return
     if (!this._isHistoryItemWritable('undo')) return
+    this._compositionReplay = this._yUndoManager.undoStack.at(-1)?.meta.get(COMPOSITION_HISTORY)
     this._structureTransformPurpose = this._yUndoManager.undoStack.at(-1)?.meta.get(STRUCTURE_TRANSFORM_PURPOSE)
     this.undoRedoing$.next(true)
     try {
@@ -284,6 +365,7 @@ export class DocUndoManger {
       }
     } finally {
       this._structureTransformPurpose = undefined
+      this._compositionReplay = undefined
       this._pendingRedoSnapshot = undefined
       // The flag is normally cleared inside crud._syncYEvent during the undo
       // transaction. But if that observer throws before reaching the reset (e.g. a
@@ -296,6 +378,7 @@ export class DocUndoManger {
   redo() {
     if (!this.isCanRedo() || this.undoRedoing$.value) return
     if (!this._isHistoryItemWritable('redo')) return
+    this._compositionReplay = this._yUndoManager.redoStack.at(-1)?.meta.get(COMPOSITION_HISTORY)
     this._structureTransformPurpose = this._yUndoManager.redoStack.at(-1)?.meta.get(STRUCTURE_TRANSFORM_PURPOSE)
     this.undoRedoing$.next(true)
     try {
@@ -312,6 +395,7 @@ export class DocUndoManger {
       }
     } finally {
       this._structureTransformPurpose = undefined
+      this._compositionReplay = undefined
       this._pendingUndoSnapshot = undefined
       this.undoRedoing$.next(false)
     }
@@ -327,7 +411,7 @@ export class DocUndoManger {
       ? this._yUndoManager.undoStack
       : this._yUndoManager.redoStack
     const stackItem = stack.at(-1)
-    if (!stackItem) return false
+    if (!stackItem || !this._isCompositionHistoryWritable(stackItem)) return false
 
     // Lightweight/model-only consumers created before block readonly existed
     // may embed DocUndoManger without the document permission services.
@@ -460,6 +544,9 @@ export class DocUndoManger {
     this._yUndoManager.clear()
     this._pendingUndoSnapshot = undefined
     this._pendingRedoSnapshot = undefined
+    this._compositionScopes = undefined
+    this._lastCompositionScopes = undefined
+    this._compositionReplay = undefined
   }
 
 

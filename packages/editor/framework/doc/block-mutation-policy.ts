@@ -1,3 +1,4 @@
+import {assertCompositionMutation, DocumentCompositionMutationError} from './composition-guards'
 import {BlockCraftError, ErrorCode} from '../../global'
 
 export type BlockMutationOperation =
@@ -52,6 +53,16 @@ export class BlockMutationPolicyManager {
   constructor(private readonly doc: BlockCraft.Doc) {}
 
   allows(context: BlockMutationContext): BlockMutationPolicyResult {
+    try {
+      assertCompositionMutation(this.doc, context)
+    } catch (error) {
+      if (error instanceof DocumentCompositionMutationError) return {allowed: false, message: error.message}
+      throw error
+    }
+    return this.hostAllows(context)
+  }
+
+  private hostAllows(context: BlockMutationContext): BlockMutationPolicyResult {
     const policy = this.doc.config.blockMutationPolicy
     if (!policy) return {allowed: true}
     const result = policy(context, this.doc)
@@ -61,7 +72,8 @@ export class BlockMutationPolicyManager {
   }
 
   assert(context: BlockMutationContext): void {
-    const result = this.allows(context)
+    assertCompositionMutation(this.doc, context)
+    const result = this.hostAllows(context)
     if (result.allowed) return
     throw new BlockMutationPolicyError(context, result.message)
   }

@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying text input behavior.
 >
-> Last updated: 2026-10-16
+> Last updated: 2026-10-23
 
 ## Architecture Overview
 
@@ -18,6 +18,17 @@ beforeInput / keydown / compositionStart
 ```
 
 **Key principle**: The editor intercepts `beforeInput` for `EditableBlockComponent` surfaces, prevents default browser behavior, and writes directly to Yjs. The DOM is never the source of truth for editable blocks — Yjs is.
+
+### 独立区域组合模式
+
+通过 `DocConfig.contentComposition` 显式启用 `DocumentCompositionSession` 时，输入和粘贴在写入前通过完整
+`SelectionEditPlan` 的文字、删除及插入落点检查归属。跨共享正文/独立区域、跨两个独立区域，
+以及删除绑定容器的操作整次拒绝；不能先写部分内容再抛错，Yjs 事务不会自动回滚。
+会话失败或销毁后，编辑器切为只读；不能重新解除只读继续写入失效会话。
+
+输入仍只写 `editorDoc`。共享源投影以远端事务进入已有选区和 IME 延迟同步路径；
+独立区域内容不进入共享源。Undo 按内容归属隔离捕获，并在执行时核验区域壳仍为同一实例，
+避免恢复已删除或重新绑定区域的历史。未启用组合的文档保留原输入、修订与撤销路径。
 
 ### 持续输入格式
 

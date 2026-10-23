@@ -1,3 +1,4 @@
+import {assertCompositionInsertion} from './composition-guards'
 import {
   BlockNodeType,
   DeltaInsert,
@@ -1104,6 +1105,7 @@ export class DocCRUD {
       this.doc.messageService.warn(`已过滤该位置不允许的内容块`)
     }
 
+    assertCompositionInsertion(this.doc, parentId, validSnapshots)
     this.transact(() => {
       this._insertBySnapshots(parentYBlock, index, validSnapshots)
       this.doc.revisions?.recordBlockInsertion(
@@ -1341,6 +1343,7 @@ export class DocCRUD {
         )
       }
     }
+    assertCompositionInsertion(this.doc, parentId, snapshots)
     this.transact(() => {
       if (this.doc.revisions?.isTracking) {
         this.doc.revisions.runInGroup(() => {

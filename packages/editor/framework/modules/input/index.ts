@@ -1,3 +1,4 @@
+import {assertCompositionWriteFootprint, DocumentCompositionMutationError} from '../../doc/composition-guards';
 import {ORIGIN_SKIP_SYNC} from '../../doc/origins';
 import {
   BindHotKey,
@@ -258,23 +259,26 @@ export class InputTransformer {
     trigger: BlockReadonlyViolationTrigger = "input",
   ): void {
     const manager = this.doc.readonlyManager;
-    if (!manager) return;
+    if (!manager && !this.doc.config?.contentComposition) return;
     const footprint = buildReadonlyWriteFootprint(plan, this._readonlyEditReader());
     footprint.textBlockIds.forEach(blockId =>
-      manager.assertTextWritable(blockId, operation, trigger));
+      manager?.assertTextWritable(blockId, operation, trigger));
 
     const removableIds = plan.kind === "gap" && operation !== BlockReadonlyOperation.Delete
       ? []
       : footprint.removableRootIds;
     if (removableIds.length) {
-      manager.assertRemovable(removableIds, operation, trigger);
+      manager?.assertRemovable(removableIds, operation, trigger);
     }
 
     const insertParentIds = plan.kind === "gap" && operation === BlockReadonlyOperation.Delete
       ? []
       : footprint.insertParentIds;
+    assertCompositionWriteFootprint(this.doc, {
+      textBlockIds: footprint.textBlockIds, removableRootIds: removableIds, insertParentIds,
+    });
     insertParentIds.forEach(parentId =>
-      manager.assertInsertable(parentId, operation, trigger));
+      manager?.assertInsertable(parentId, operation, trigger));
   }
 
   assertSelectionWritable(
@@ -294,7 +298,8 @@ export class InputTransformer {
       this._assertPlanWritable(plan, operation);
       return true;
     } catch (error) {
-      if (!(error instanceof BlockReadonlyError)) throw error;
+      if (!(error instanceof BlockReadonlyError) && !(error instanceof DocumentCompositionMutationError)) throw error;
+      if (error instanceof DocumentCompositionMutationError) this.doc.messageService?.warn(error.message);
       context.preventDefault();
       return false;
     }
@@ -1192,7 +1197,7 @@ export class InputTransformer {
           "input",
         );
       } catch (error) {
-        if (!(error instanceof BlockReadonlyError)) throw error;
+        if (!(error instanceof BlockReadonlyError) && !(error instanceof DocumentCompositionMutationError)) throw error;
         return;
       }
       this._captureCompositionCommitUndoSelection(
@@ -1536,7 +1541,7 @@ export class InputTransformer {
         return true;
       }
     } catch (error) {
-      if (!(error instanceof BlockReadonlyError)) throw error;
+      if (!(error instanceof BlockReadonlyError) && !(error instanceof DocumentCompositionMutationError)) throw error;
       ev.preventDefault();
       return true;
     }
@@ -2087,7 +2092,7 @@ export class InputTransformer {
     try {
       modelDeleteResult = this._handleModelDeleteSelection(sel, "after");
     } catch (error) {
-      if (!(error instanceof BlockReadonlyError)) throw error;
+      if (!(error instanceof BlockReadonlyError) && !(error instanceof DocumentCompositionMutationError)) throw error;
       context.preventDefault();
       return true;
     }
@@ -2192,7 +2197,7 @@ export class InputTransformer {
           "input",
         );
       } catch (error) {
-        if (!(error instanceof BlockReadonlyError)) throw error;
+        if (!(error instanceof BlockReadonlyError) && !(error instanceof DocumentCompositionMutationError)) throw error;
         return true;
       }
       if (this.doc.revisions?.isTracking) {
@@ -2244,7 +2249,7 @@ export class InputTransformer {
     try {
       modelDeleteResult = this._handleModelDeleteSelection(sel, "before");
     } catch (error) {
-      if (!(error instanceof BlockReadonlyError)) throw error;
+      if (!(error instanceof BlockReadonlyError) && !(error instanceof DocumentCompositionMutationError)) throw error;
       context.preventDefault();
       return true;
     }
@@ -2277,7 +2282,7 @@ export class InputTransformer {
             "input",
           );
         } catch (error) {
-          if (!(error instanceof BlockReadonlyError)) throw error;
+          if (!(error instanceof BlockReadonlyError) && !(error instanceof DocumentCompositionMutationError)) throw error;
           return true;
         }
         if (this.doc.revisions?.isTracking) {

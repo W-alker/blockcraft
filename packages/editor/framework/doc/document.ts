@@ -1,4 +1,6 @@
 import { DocCRUD } from "./crud";
+import type {DocumentCompositionSession} from './composition'
+import {attachCompositionDocument, detachCompositionDocument, assertCompositionRoot, assertCompositionActive, DocumentCompositionMutationError} from './composition-guards'
 import { ComponentRef, Injector, NgZone, ViewContainerRef } from "@angular/core";
 import { BlockCraftError, ErrorCode, getScrollContainer, Logger, nextTick } from "../../global";
 import { DocVM } from "./vm";
@@ -66,6 +68,8 @@ export interface DocConfig {
   logger: Logger
   injector: Injector
   yDoc: Y.Doc
+  /** Optional isolated content session. yDoc must be its editorDoc; only sharedDoc may sync. */
+  contentComposition?: DocumentCompositionSession
   theme?: string
   embeds?: [string, EmbedConverter][]
   plugins?: DocPlugin[]
@@ -271,17 +275,24 @@ export class BlockCraftDoc {
     public readonly config: DocConfig,
     private readonly runtime: DocumentRuntime,
   ) {
-    this.config.embeds = this.runtime.resolveEmbeds(this.config.embeds)
-    this._plugins = this.config.plugins || []
-    this._bindReadonlyViolationFeedback()
-    this.onDestroy(() => this._disposeSubsystems())
-    this._yBlockMap = this.yDoc.getMap<YBlock>(Y_BLOCK_MAP_NAME)
-    this.revisions = new DocumentRevisionManager(this, this.config.revision)
+    attachCompositionDocument(this)
+    try {
+      this.config.embeds = this.runtime.resolveEmbeds(this.config.embeds)
+      this._plugins = this.config.plugins || []
+      this._bindReadonlyViolationFeedback()
+      this.onDestroy(() => this._disposeSubsystems())
+      this._yBlockMap = this.yDoc.getMap<YBlock>(Y_BLOCK_MAP_NAME)
+      this.revisions = new DocumentRevisionManager(this, this.config.revision)
+    } catch (error) {
+      detachCompositionDocument(this)
+      throw error
+    }
   }
 
   private _disposeSubsystems(): void {
     if (this._subsystemsDisposed) return
     this._subsystemsDisposed = true
+    detachCompositionDocument(this)
     this.objectAnimation.destroy()
     this.blockNavigation.destroy()
     this.virtualization.dispose()
@@ -314,6 +325,7 @@ export class BlockCraftDoc {
   // init from a snapshot as root
   initBySnapshot(snapShot: IBlockSnapshot, container: HTMLElement) {
     if (this._root) return
+    if (this.config.contentComposition) throw new DocumentCompositionMutationError('组合文档必须从会话根块初始化，不能覆写组合快照')
     const startedAt = performance.now()
 
     if (snapShot.flavour !== 'root') {
@@ -363,6 +375,7 @@ export class BlockCraftDoc {
     initMethod: DocInitMethod,
     startedAt: number,
   ): void {
+    assertCompositionRoot(this, yRoot)
     const id = yRoot.get('id')
     const sparse = this.virtualization.enabled
     const root = this.vm.createRootOnlyByYBlock(yRoot, {sparse})
@@ -745,6 +758,7 @@ export class BlockCraftDoc {
   }
 
   toggleReadonly(readonly: boolean) {
+    if (!readonly) assertCompositionActive(this)
     this.config.readonly = readonly
     this.readonlySwitch$.next(readonly)
   }

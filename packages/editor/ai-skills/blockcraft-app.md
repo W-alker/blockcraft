@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-10-22
+> Last updated: 2026-10-23
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -1144,6 +1144,71 @@ const result = await exports.exportToPdf('document.pdf', {
 
 `choosePdfPath()` and `invokeNativePdfPrint()` belong to the host. A Tauri implementation can map the latter to `WKWebView` print operations on macOS and WebView2 `PrintToPdf` on Windows. A host that requires pixel-identical paginated output can instead capture each mounted `.bc-print-page` through a native WebView snapshot API and let Rust create exactly one PDF page per capture; this avoids asking the platform print engine to paginate the fixed boxes again. Do not substitute `html2canvas`: it is a second CSS renderer and cannot guarantee parity for arbitrary business blocks. BlockCraft does not import `@tauri-apps/*`, create windows, choose file paths, or infer the platform. Do not run this backend in an iframe: native WebView printing/snapshot APIs target the current top-level WebView.
 
+## 独立区域内容与组合文档（未发布）
+
+当同一共享文档中的指定容器需要显示各用户独立内容时，显式创建组合会话：
+
+```typescript
+import {BlockCraftDoc, DocumentCompositionSession, type YBlock} from '@ccc/blockcraft'
+
+// 先完成共享源加载；只有 sharedDoc 连接网络 provider。
+const session = new DocumentCompositionSession({
+  sharedDoc,
+  rootId,
+  regions: [{id: 'reflection', blockId: reflectionContainerId}],
+  personalData: savedPersonalData, // undefined 使用区域默认子树
+})
+const doc = new BlockCraftDoc({
+  docId, schemas, logger, injector,
+  yDoc: session.editorDoc,
+  contentComposition: session,
+  readonly: false,
+})
+doc.initByYBlock(session.editorDoc.getMap('blocks').get(rootId) as YBlock, element)
+
+const subscription = session.personalChanges$.subscribe(({regionIds}) => {
+  // 宿主可合并保存请求；不要同步请求阻塞键盘输入。
+  markPersonalDataDirty(regionIds)
+})
+const personalJson = session.exportPersonalData()
+const sharedSnapshot = session.exportSharedSnapshot()
+// doc.exportSnapshot() 是当前用户的组合内容，仅用于明确的当前用户输出。
+```
+
+Builder 可使用 `.contentComposition(session)` 同时设置 contentComposition 和 yDoc。
+通过 `!!doc.config.contentComposition` 判断是否配置启用；未提供时按普通文档运行，默认关闭。
+该判断不代表会话仍健康，失败或销毁状态分别查看 `session.failed` 与 `session.disposed`。
+配置在构造时确定；切换开关前保存个人 JSON，再重建会话与文档，不在运行中直接修改配置。
+同一会话只绑定一个活动 Doc；不能调用 initBySnapshot 覆盖组合运行时。
+会话使用静态 `{id, blockId}` 绑定：`id` 是独立内容的稳定身份，`blockId` 是当前共享容器。
+业务名称改名/模板切换由宿主解析并重建会话，不把 CSES 或特定业务 meta 固化进框架。
+绑定不能重复、嵌套或指向 root；JSON 块 ID 不能与共享源或其他区域冲突。
+
+持久化数据结构为 `{formatVersion: 1, regions: {[regionId]: {children: IBlockSnapshot[]}}}`。
+不存在的区域记录才使用默认子树并生成独立块 ID；`children: []` 表示明确清空。
+区域壳从共享源删除后，个人数据保留为未挂载记录，恢复相同壳时可重新挂载。
+重建会话前保存当前 JSON。宿主负责用户/租户/文档分区、鉴权、版本冲突和存储失败重试。
+
+**同步与输出边界**：
+
+- provider、共享持久化与共享搜索只读取 sharedDoc / exportSharedSnapshot()。
+- 个人保存只使用 exportPersonalData()；个人变更通知只报告区域，不自动写网络。
+- editorDoc / doc.yDoc 包含当前用户数据，禁止发送其二进制 update、全量状态或相对位置到共享通道。
+- Awareness 的 Y.RelativePosition 必须按共享源另做转换，不能直接转发编辑器的本地位置。
+- 组合内容导出、复制及 AI 读取是宿主显式选择的数据范围，不代表共享发布。
+
+绑定容器的 textFit 自适应测量值仅在本地运行时保持，其余容器样式仍共享。
+首版编辑器不允许把 columns 本身绑定为独立区域：它的列数与列宽随内部内容变化，不能继续
+作为共享壳属性使用。请绑定外层 render-unit 或 text-box，区域内部仍可正常使用分栏。
+自定义容器接入前也应核对由 children 推导的壳属性，避免把个人内容派生状态写回共享源。
+区域内普通富文本、格式、结构操作及撤销重做复用现有能力。跨区域移动、范围删除/替换以及本地
+删除/替换绑定容器由预检拒绝；复制仍是用户明确的内容输出。第一版组合会话不支持修订/审阅，
+启用时明确报错，避免修订记录脱离数据归属。普通文档的这些能力不受影响。
+订阅 session.errors$ 处理异常；出现无效源结构时会话停止回写，编辑器转为只读；保留最近一次成功保存的个人 JSON，修复后重建会话。
+
+销毁时取消宿主订阅，按既有 Doc 生命周期销毁编辑器，再 session.dispose()；会话拥有
+editorDoc，宿主持有并负责 sharedDoc/provider 的生命周期。不要在销毁前丢弃尚未保存的 JSON。
+
 ## Step 4 — Create the Doc
 
 ```typescript
@@ -1213,6 +1278,7 @@ interface DocConfig {
   logger: Logger
   injector: Injector
   yDoc: Y.Doc
+  contentComposition?: DocumentCompositionSession // 可选内容合成会话；默认不启用
   theme?: string                          // default: 'light'
   embeds?: [string, EmbedConverter][]     // inline embed converters
   plugins?: DocPlugin[]

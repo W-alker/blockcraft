@@ -14,6 +14,14 @@
 >
 > **External users**: this skill pack is bundled with the npm package. AI agents can discover it via `SKILL.md` (frontmatter present); humans see `README.md` for installation and the one-command installer (`install.mjs`).
 
+## 独立区域内容与组合文档（未发布）
+
+`DocumentCompositionSession` 将共享 Yjs 与宿主提供的区域 JSON 组合成独立 `editorDoc`。
+`DocConfig.contentComposition` 或 Builder 的 `.contentComposition(session)` 显式启用；默认关闭，普通文档不变。
+网络 provider 只连接传入会话的 `sharedDoc`，不能连接 `doc.yDoc` / `session.editorDoc`。
+区域以稳定 `id` 和容器 `blockId` 绑定，不解释业务 name/user/tenant；接入示例见 `blockcraft-app.md`，
+数据归属、增量同步、撤销和不支持的跨域操作见 `blockcraft-data.md`。
+
 ## 图片插入后的光标（未发布）
 
 内置用户插图入口将流式图片的光标放到图片后的 `gap(after)`，浮动图片保持对象选中。

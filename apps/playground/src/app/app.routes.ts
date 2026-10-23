@@ -10,6 +10,11 @@ import { AppComponent } from './app.component'
 export const routes: Routes = [
   { path: '', component: AppComponent },
   {
+    path: 'tests/region-content-composition',
+    loadComponent: () => import('./region-content-composition-test/region-content-composition-test.component')
+      .then(m => m.RegionContentCompositionTestComponent),
+  },
+  {
     path: 'tests/floating-text',
     loadComponent: () =>
       import('./floating-text-test/floating-text-test.component').then(m => m.FloatingTextTestComponent),

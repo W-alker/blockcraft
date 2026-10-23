@@ -1,3 +1,4 @@
+import {assertCompositionRevisionSupport} from '../doc/composition-guards'
 import * as Y from 'yjs'
 import {BehaviorSubject, Subject} from 'rxjs'
 import type {BlockCraftDoc} from '../doc/document';
@@ -43,9 +44,8 @@ import {
 } from './attribution-adapter'
 import {emitRevisionPresentationChange} from './presentation-change'
 
-export const Y_REVISION_MAP_NAME = 'bc:revisions'
-export const Y_REVISION_DECISION_MAP_NAME = 'bc:revision-decisions'
-export const Y_REVISION_META_MAP_NAME = 'bc:revision-meta'
+import {Y_REVISION_MAP_NAME, Y_REVISION_DECISION_MAP_NAME, Y_REVISION_META_MAP_NAME} from './store'
+export {Y_REVISION_MAP_NAME, Y_REVISION_DECISION_MAP_NAME, Y_REVISION_META_MAP_NAME} from './store'
 
 const REVISION_EPOCH_KEY = 'epoch'
 
@@ -188,6 +188,7 @@ export class DocumentRevisionManager {
   }
 
   setMode(mode: RevisionMode): void {
+    if (mode !== 'off') assertCompositionRevisionSupport(this.doc)
     if (mode === 'track' && !this.actor) {
       throw new RevisionActorRequiredError('开启修订模式前必须由宿主提供有效 actorId')
     }
@@ -197,6 +198,7 @@ export class DocumentRevisionManager {
   }
 
   setViewMode(mode: RevisionViewMode): void {
+    if (mode !== 'markup') assertCompositionRevisionSupport(this.doc)
     if (mode === 'final') {
       this.assertNoConflicts()
     }
@@ -238,6 +240,7 @@ export class DocumentRevisionManager {
     callback: () => T,
     options: RevisionWriteScopeOptions = {},
   ): T {
+    assertCompositionRevisionSupport(this.doc)
     const previousActor = this.actor
     const previousSessionId = this.sessionId
     const previousLastGroup = this.lastGroup
@@ -1132,6 +1135,7 @@ export class DocumentRevisionManager {
   }
 
   importDocumentSnapshot(snapshot: BlockCraftDocumentSnapshot): void {
+    assertCompositionRevisionSupport(this.doc)
     if (snapshot.version !== 1) {
       throw new RevisionCheckpointError(`不支持的 BlockCraftDocumentSnapshot 版本：${snapshot.version}`)
     }
@@ -1153,6 +1157,7 @@ export class DocumentRevisionManager {
 
   /** Materializes imported legacy decided records at a synchronized checkpoint. */
   compactResolved(checkpoint: RevisionCheckpoint): BlockCraftDocumentSnapshot {
+    assertCompositionRevisionSupport(this.doc)
     if (checkpoint.epoch !== this.epoch) {
       throw new RevisionCheckpointError(
         `修订 epoch 不匹配：当前 ${this.epoch}，检查点 ${checkpoint.epoch}`,
@@ -1360,6 +1365,7 @@ export class DocumentRevisionManager {
    * restores both canonical content and the pending review records together.
    */
   private finalizePlan(entries: readonly RevisionFinalizeEntry[]): RevisionDecision[] {
+    assertCompositionRevisionSupport(this.doc)
     if (!entries.length) return []
     const actor = this.requireActor()
     const byRevisionId = new Map<string, RevisionFinalizeEntry>()
