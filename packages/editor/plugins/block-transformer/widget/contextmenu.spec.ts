@@ -1,4 +1,5 @@
 import { ElementRef } from "@angular/core";
+import {fakeAsync, flushMicrotasks} from "@angular/core/testing";
 import * as Y from "yjs";
 import {OneShotRangeAnchor} from "../../../framework";
 import { BlockTransformContextMenu } from "./contextmenu";
@@ -465,6 +466,111 @@ describe("BlockTransformContextMenu keyboard navigation", () => {
 
     expect(component.currentQuery()).toBe("icon");
   });
+
+  function createQuerySession() {
+    const selection = {
+      collapsed: true,
+      start: {type: "text", offset: 1},
+      firstBlock: {id: "block-1"},
+    };
+    const {component, cdr} = createComponent(selection);
+    const yDoc = new Y.Doc();
+    const yText = yDoc.getText("paragraph");
+    yText.insert(0, "/原有正文withoutSpaces");
+    const block = component.activeBlock;
+    Object.defineProperty(block, "textLength", {get: () => yText.length});
+    Object.assign(block, {yText, parentBlock: {id: "root"}});
+    block.textDeltas = () => yText.toDelta();
+    const doc = component.doc as any;
+    Object.assign(doc, {
+      yDoc,
+      getBlockById: () => block,
+      isEditable: (candidate: unknown) => candidate === block,
+    });
+    const range = new OneShotRangeAnchor(doc);
+    range.capture(block, 0, 1);
+    component.queryRange = range;
+    component.items = [...component.list, {
+      id: "inline:icon", kind: "command", group: "inline",
+      groupLabel: "行内内容", label: "Icon",
+    }];
+    const destroyCallbacks: (() => void)[] = [];
+    (component.destroyRef.onDestroy as jasmine.Spy).and.callFake(
+      (callback: () => void) => destroyCallbacks.push(callback),
+    );
+    const closed = jasmine.createSpy("closed");
+    component.close$.subscribe(closed);
+    component.ngOnInit();
+    flushMicrotasks();
+    return {
+      component, cdr, yText, selection, closed, doc,
+      destroy: () => {
+        destroyCallbacks.forEach(callback => callback());
+        range.reset();
+        yDoc.destroy();
+      },
+    };
+  }
+
+  it("checks deletion after the resulting caret and keeps an empty query open", fakeAsync(() => {
+    const h = createQuerySession();
+    h.yText.insert(1, "icon");
+    h.selection.start.offset = 5;
+    flushMicrotasks();
+    expect(h.component.list.map(item => item.id)).toEqual(["inline:icon"]);
+
+    h.yText.delete(4, 1);
+    // Y.Text observers see the shortened token before the caret moves left.
+    expect(h.closed).not.toHaveBeenCalled();
+    h.selection.start.offset = 4;
+    flushMicrotasks();
+    expect(h.closed).not.toHaveBeenCalled();
+    expect(h.component.currentQuery()).toBe("ico");
+
+    h.yText.delete(1, 3);
+    h.selection.start.offset = 1;
+    flushMicrotasks();
+    expect(h.closed).not.toHaveBeenCalled();
+    expect(h.component.list.length).toBe(2);
+    expect(h.yText.toString()).toBe("/原有正文withoutSpaces");
+
+    h.yText.delete(0, 1);
+    h.selection.start.offset = 0;
+    flushMicrotasks();
+    expect(h.closed).toHaveBeenCalledTimes(1);
+    h.destroy();
+  }));
+
+  it("checks committed composition length and cancels queued refreshes on destruction", fakeAsync(() => {
+    const h = createQuerySession();
+    h.doc.event.status.isComposing = true;
+    h.yText.insert(1, "一二三四五六七八");
+    h.selection.start.offset = 9;
+    flushMicrotasks();
+    expect(h.closed).not.toHaveBeenCalled();
+
+    h.doc.event.status.isComposing = false;
+    h.component.refreshQuery();
+    flushMicrotasks();
+    expect(h.closed).toHaveBeenCalledTimes(1);
+    expect(h.yText.toString()).toBe("/一二三四五六七八原有正文withoutSpaces");
+
+    h.component.refreshQuery();
+    h.destroy();
+    flushMicrotasks();
+    expect(h.closed).toHaveBeenCalledTimes(1);
+  }));
+
+  it("preserves the active item when a selection refresh keeps the same query", fakeAsync(() => {
+    const h = createQuerySession();
+    h.component.selectDown();
+    expect((h.component as any).activeIdx).toBe(1);
+    h.component.refreshQuery();
+    flushMicrotasks();
+    expect((h.component as any).activeIdx).toBe(1);
+    expect(h.closed).not.toHaveBeenCalled();
+    h.destroy();
+  }));
 
   it("rejects a middle slash query after the caret leaves its token", () => {
     const block = {id: "block-1"};

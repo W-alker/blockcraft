@@ -11,8 +11,9 @@ import {
 import { NgForOf } from "@angular/common";
 import { MatIcon } from "@angular/material/icon";
 import { CsIconComponent } from "@cses/ui";
+import {asapScheduler, auditTime, Subject} from "rxjs";
 import { EditableBlockComponent, OneShotRangeAnchor } from "../../../framework";
-import { debounce, sliceDelta } from "../../../global";
+import { sliceDelta } from "../../../global";
 import {isSelectionAlive} from "../../../framework/modules/selection/liveness";
 import type {SlashMenuItem} from "../command";
 import {createSlashSearchIndex, matchesSlashSearch} from "../search";
@@ -134,6 +135,7 @@ export class BlockTransformContextMenu {
   // 一次性护栏，避免宿主桥接层重复派发回车时执行两次命令。
   private _consumed = false;
   private keyboardCapture?: BlockTransformerKeyboardCapture;
+  private readonly queryRefresh$ = new Subject<void>();
 
   constructor(
     public readonly cdr: ChangeDetectorRef,
@@ -156,14 +158,21 @@ export class BlockTransformContextMenu {
       listAll.map(item => [item.id, createSlashSearchIndex(item)]),
     );
     this.list = listAll;
+    let previousQuery: string | null = null;
 
-    const textObserver = debounce(() => {
+    // Y.Text observers run before InputTransformer publishes the resulting
+    // caret. Coalesce text/selection changes and validate the settled model.
+    const querySubscription = this.queryRefresh$.pipe(
+      auditTime(0, asapScheduler),
+    ).subscribe(() => {
       if (this.doc.event.status.isComposing) return;
       const query = this.currentQuery();
       if (query === null) {
         this.close$.next(true);
         return;
       }
+      if (query === previousQuery) return;
+      previousQuery = query;
       const matchedItems = listAll.filter(
         item => matchesSlashSearch(searchIndexes.get(item.id) ?? [], query),
       );
@@ -175,9 +184,11 @@ export class BlockTransformContextMenu {
         this.activeIdx = 0;
       }
       this.cdr.markForCheck();
-    }, 100);
+    });
 
+    const textObserver = () => this.refreshQuery();
     this.activeBlock.yText.observe(textObserver);
+    this.refreshQuery();
 
     const ownerDocument = this.activeBlock.containerElement.ownerDocument;
     this.keyboardCapture = installBlockTransformerKeyboardCapture({
@@ -196,6 +207,8 @@ export class BlockTransformContextMenu {
       this.keyboardCapture?.close();
       this.keyboardCapture = undefined;
       this.activeBlock.yText?.unobserve(textObserver);
+      querySubscription.unsubscribe();
+      this.queryRefresh$.complete();
       if (this.suppressTimerId !== null) {
         clearTimeout(this.suppressTimerId);
         this.suppressTimerId = null;
@@ -208,6 +221,10 @@ export class BlockTransformContextMenu {
   showGroupLabel(index: number) {
     return index === 0 ||
       this.list[index - 1]?.groupLabel !== this.list[index]?.groupLabel;
+  }
+
+  refreshQuery() {
+    this.queryRefresh$.next();
   }
 
   currentQuery(): string | null {

@@ -309,6 +309,7 @@ export class BlockTransformerPlugin extends DocPlugin {
   @EventListen("compositionEnd")
   onCompositionEnd() {
     this.activePickerSession?.scheduleRefresh?.();
+    this.activeMenu?.refreshQuery();
   }
 
   private _mdTransform = () => {
@@ -1434,10 +1435,10 @@ export class BlockTransformerPlugin extends DocPlugin {
   openContextMenu(block: EditableBlockComponent, triggerIndex = 0) {
     if (
       this.destroyed ||
-      !this.resolveSlashQueryState(block, triggerIndex)
+      !this.resolveSlashQueryState(block, triggerIndex, triggerIndex + 1)
     ) return;
-    // 关掉可能还存在的旧菜单。textObserver 关菜单有 debounce，用户在窗口内
-    // "删除字符 → 重新输入 / 触发"时不能让两个 overlay 同时持有键盘事件。
+    // 查询刷新会合并到微任务；先关闭旧菜单，避免同一轮删除再输入 / 时
+    // 两个 overlay 同时持有键盘事件。
     this.closePickerSession();
     this.closeContextMenu();
 
@@ -1479,21 +1480,14 @@ export class BlockTransformerPlugin extends DocPlugin {
         });
       });
 
+    this.doc.selection.selectionChange$.pipe(
+      skip(1),
+      filter(() => !cpr.instance.shouldIgnoreSelectionChange()),
+      takeUntil(this.closeMenu$),
+    ).subscribe(() => cpr.instance.refreshQuery());
+
     merge(
       cpr.instance.close$,
-      this.doc.selection.selectionChange$.pipe(
-        skip(1),
-        filter(() => !cpr.instance.shouldIgnoreSelectionChange()),
-        filter(
-          (v) =>
-            !v ||
-            !isSelectionAlive(v as any, this.doc) ||
-            !v.isInSameBlock ||
-            !v.collapsed ||
-            v.firstBlock.id !== block.id ||
-            cpr.instance.currentQuery() === null,
-        ),
-      ),
       block.onDestroy$,
     )
       .pipe(takeUntil(this.closeMenu$))
@@ -1614,6 +1608,11 @@ export class BlockTransformerPlugin extends DocPlugin {
       return;
     }
     if (block.flavour !== "paragraph") return;
+    if (triggerIndex > 0) {
+      const previous = modelCharacterAt(block.textDeltas(), triggerIndex - 1);
+      // A slash attached to ordinary text (for example a path) is not a trigger.
+      if (typeof previous !== "string" || !/^[ \u00a0\u3000]$/.test(previous)) return;
+    }
     this.openContextMenu(block, triggerIndex);
   }
 

@@ -47,6 +47,135 @@ async function editorSelectionSnapshot(page: Page) {
   });
 }
 
+async function expectParagraphText(page: Page, blockId: string, expected: string) {
+  await expect.poll(() => page.evaluate(({selector, id}) => {
+    const doc = (window as any).ng.getComponent(document.querySelector(selector)).doc;
+    return {
+      model: doc.getBlockById(id).yText.toString(),
+      // WebKit projects a zero-width placeholder beside the native caret.
+      dom: document.querySelector(`[data-block-id="${id}"]`)?.textContent?.replace(/[\u200B\u200C\uFEFF]/g, ''),
+    };
+  }, {selector: editorSelector, id: blockId})).toEqual({model: expected, dom: expected});
+}
+
+for (const prefix of ['正文', 'https://example.com']) {
+  test(`slash trigger stays closed immediately after non-space text (${prefix})`, async ({page}) => {
+    await initialize(page);
+    const blockId = await createEmptyParagraphWithCaret(page);
+    await page.keyboard.insertText(prefix);
+    await page.keyboard.type('/path');
+    await expectParagraphText(page, blockId, prefix + '/path');
+    await page.evaluate(() => new Promise<void>(resolve =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    ));
+    await expect(page.locator('block-transformer-contextmenu')).toHaveCount(0);
+  });
+}
+
+for (const [name, space] of [['ASCII', ' '], ['NBSP', '\u00a0'], ['full-width', '\u3000']] as const) {
+  test(`slash trigger opens inline commands after ${name} space`, async ({page}) => {
+    await initialize(page);
+    const blockId = await createEmptyParagraphWithCaret(page);
+    await page.keyboard.insertText('正文' + space);
+    await page.keyboard.type('/');
+    const menu = page.locator('block-transformer-contextmenu');
+    await expect(menu.getByRole('option', {name: /^日期/})).toBeVisible();
+    await expect(menu.getByRole('option', {name: /^emoji/i})).toBeVisible();
+    await expect(menu.getByRole('option', {name: /高亮块|一级标题/})).toHaveCount(0);
+    await expectParagraphText(page, blockId, '正文' + space + '/');
+  });
+}
+
+test('slash query stays open while backspacing and closes only when the slash is deleted', async ({page}) => {
+  await initialize(page);
+  const blockId = await createEmptyParagraphWithCaret(page);
+  await page.keyboard.type('/');
+  const menu = page.locator('block-transformer-contextmenu');
+  await expect(menu).toBeVisible();
+  const initialCount = await menu.getByRole('option').count();
+  await page.keyboard.type('gl');
+  await expect(menu.getByRole('option')).toHaveCount(1);
+
+  await page.keyboard.press('Backspace');
+  await expect.poll(() => menu.getByRole('option').count()).toBeGreaterThan(1);
+  await expect(menu).toBeVisible();
+  await page.keyboard.press('Backspace');
+  await expect(menu.getByRole('option')).toHaveCount(initialCount);
+  await expectParagraphText(page, blockId, '/');
+  await page.keyboard.press('Backspace');
+  await expect(menu).toHaveCount(0);
+  expect((await editorSelectionSnapshot(page)).blockId).toBe(blockId);
+});
+
+test('slash query can delete a character before the caret and recover matching commands', async ({page}) => {
+  await initialize(page);
+  const blockId = await createEmptyParagraphWithCaret(page);
+  await page.keyboard.type('/');
+  const menu = page.locator('block-transformer-contextmenu');
+  await expect(menu).toBeVisible();
+  await page.keyboard.type('gxl');
+  await expect(menu.getByRole('option')).toHaveCount(0);
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('Backspace');
+  await expect(menu.getByRole('option', {name: /高亮块/})).toBeVisible();
+  await expect(menu.getByRole('option')).toHaveCount(1);
+  await expectParagraphText(page, blockId, '/gl');
+  expect((await editorSelectionSnapshot(page)).blockId).toBe(blockId);
+});
+
+for (const character of ['x', '𠮷']) {
+  test(`slash query closes after seven Unicode characters (${character}) and releases editor keys`, async ({page}) => {
+    await initialize(page);
+    const blockId = await createEmptyParagraphWithCaret(page);
+    await page.keyboard.type('/');
+    const menu = page.locator('block-transformer-contextmenu');
+    await expect(menu).toBeVisible();
+    await page.keyboard.insertText(character.repeat(7));
+    await expect(menu.getByRole('option')).toHaveCount(0);
+    await expect(menu).toBeVisible();
+    await page.keyboard.insertText(character);
+    await expect(menu).toHaveCount(0);
+    await expectParagraphText(page, blockId, '/' + character.repeat(8));
+    await page.keyboard.press('Backspace');
+    await expectParagraphText(page, blockId, '/' + character.repeat(7));
+    await expect(menu).toHaveCount(0);
+    await page.keyboard.type('stilltyping');
+    await expectParagraphText(page, blockId, '/' + character.repeat(7) + 'stilltyping');
+    await page.keyboard.press('Enter');
+    await expect.poll(async () => (await editorSelectionSnapshot(page)).blockId).not.toBe(blockId);
+  });
+}
+
+test('slash query waits for native IME commit before applying the seven-character limit', async ({page, context, browserName}) => {
+  test.skip(browserName !== 'chromium', 'Chromium native composition protocol');
+  await initialize(page);
+  const blockId = await createEmptyParagraphWithCaret(page);
+  await page.keyboard.type('/');
+  const menu = page.locator('block-transformer-contextmenu');
+  await expect(menu).toBeVisible();
+  const cdp = await context.newCDPSession(page);
+  try {
+    for (const [draft, committed, withinLimit] of [
+      ['riqiriqi', '日期', true],
+      ['putongzhengwen', '这是普通正文', false],
+    ] as const) {
+      await cdp.send('Input.imeSetComposition', {text: draft, selectionStart: draft.length, selectionEnd: draft.length});
+      await expect.poll(() => page.evaluate(() => {
+        const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc;
+        return doc.inputManger.compositionSession.phase;
+      })).toBe('active');
+      await expect(menu).toBeVisible();
+      await cdp.send('Input.insertText', {text: committed});
+      if (withinLimit) await expect(menu.getByRole('option', {name: /^日期/})).toBeVisible();
+      else await expect(menu).toHaveCount(0);
+    }
+    await expectParagraphText(page, blockId, '/日期这是普通正文');
+    expect((await editorSelectionSnapshot(page)).blockId).toBe(blockId);
+  } finally {
+    await cdp.detach();
+  }
+});
+
 for (const command of ['icon', 'emoji', 'date'] as const) {
   for (const query of ['', command]) {
     test(`slash ${command} preserves adjacent paragraph text with query ${query || '(empty)'}`, async ({page}) => {

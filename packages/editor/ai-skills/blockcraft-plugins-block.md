@@ -324,7 +324,8 @@ new BlockGapCreatorPlugin()
 
 > `plugins/block-transformer/` — Slash menu, block-type conversion, and Markdown shortcuts.
 
-仅 `/` 触发插入菜单；顿号 `、` 和逗号 `，` / `,` 作为普通文本输入。
+仅 `/` 触发插入菜单；段首直接触发，行内必须紧跟空格（含不换行空格、全角空格）。
+紧贴文字或路径的 `/`、顿号 `、` 和逗号 `，` / `,` 作为普通文本输入。
 
 Enables slash-command (`/`) to open one grouped insertion surface,
 Markdown shortcuts (e.g., `# ` for heading, `- ` for bullet), and
@@ -336,6 +337,10 @@ space or inline Embed, so inserting an inline result preserves text on both
 sides. Filtering reads model Y.Text rather than depending on selection offset
 update order, so the first query character cannot prematurely close the menu.
 Moving the caret outside that token or typing whitespace closes the menu.
+删除查询字会更新筛选，删到只剩 `/` 时恢复未筛选菜单；删除 `/` 则关闭。
+查询最多保留 7 个 Unicode 字符（不含 `/`，已有前后正文不计入），输入第 8 个后
+关闭菜单并保留全部文字。IME 组词期间不关闭，提交后再按最终查询检查。
+文本、选区和 compositionEnd 的刷新在同一微任务内合并，避免退格时旧光标导致误关闭。
 `ArrowUp` / `ArrowDown` move the active item, `Enter` selects it, and `Escape`
 closes the menu without moving the editor caret.
 
