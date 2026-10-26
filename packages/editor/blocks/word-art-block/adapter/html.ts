@@ -1,3 +1,4 @@
+import {wordArtTextLayout} from '../word-art-text-layout'
 import {parseBlockPosition, storeBlockPosition} from '../../../framework/modules/object/block-placement/state'
 import type {Element} from 'hast'
 import {
@@ -97,7 +98,7 @@ const sanitizePlainTextDelta = (value: DeltaInsert[]): DeltaInsert[] => {
 }
 
 const surfaceStyle = (
-  props: {width: number; height: number; rotation: number},
+  props: ReturnType<typeof normalizeWordArtProps>,
 ): string =>
   [
     `width:${props.width}px`,
@@ -106,6 +107,8 @@ const surfaceStyle = (
       ? 'none'
       : `rotate(${props.rotation}deg)`}`,
     'position:relative',
+    ...(props.textFrame.direction === 'vertical-rl'
+      ? ['display:flex', `justify-content:${wordArtTextLayout(props).justifyContent}`] : []),
   ].join(';')
 
 export const wordArtBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
@@ -155,14 +158,15 @@ export const wordArtBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
         o.node.props as Partial<WordArtBlockProps>,
         WORD_ART_OBJECT_FORMAT_CAPABILITY,
       )
+      const layout = wordArtTextLayout(props)
       const position = parseBlockPosition(props.position)
       const delta = sanitizePlainTextDelta(
         o.node.children as DeltaInsert[],
       )
       const projectionPath = resolveWordArtProjectionPath(
         props.effect,
-        props.width,
-        props.height,
+        layout.pathWidth,
+        layout.pathHeight,
       )
       const projection = projectionPath
         ? wordArtProjectionNode(
@@ -231,10 +235,11 @@ function wordArtProjectionNode(
   blockId: string,
   pathValue: string,
   textValue: string,
-  props: {width: number; height: number},
+  props: ReturnType<typeof normalizeWordArtProps>,
   style: NonNullable<ReturnType<typeof normalizeBlockObjectFormat>['textStyle']>,
   fontFamily: string,
 ): Element {
+  const layout = wordArtTextLayout(props)
   const token = blockId.replace(/[^a-zA-Z0-9_-]/g, '-')
   const pathId = `bc-word-art-html-path-${token}`
   const gradientId = `${pathId}-gradient`
@@ -286,9 +291,9 @@ function wordArtProjectionNode(
     tagName: 'svg',
     properties: {
       dataBcWordArtProjection: true,
-      viewBox: `0 0 ${props.width} ${props.height}`,
+      viewBox: layout.viewBox,
       preserveAspectRatio: 'none',
-      style: 'position:absolute;inset:0;width:100%;height:100%;overflow:visible',
+      style: 'position:absolute;inset:0;width:100%;height:100%;overflow:visible;' + layout.projectionCss,
       ariaHidden: 'true',
     },
     children: [{
@@ -298,7 +303,7 @@ function wordArtProjectionNode(
       children: [{
         type: 'element',
         tagName: 'path',
-        properties: {id: pathId, d: pathValue},
+        properties: {id: pathId, d: pathValue, ...(layout.pathTransform ? {transform: layout.pathTransform} : {})},
         children: [],
       }, ...gradient, ...picture],
     }, {
@@ -312,6 +317,7 @@ function wordArtProjectionNode(
         strokeWidth: `${style.outline.type === 'none' ? 0 : style.outline.width}`,
         style: [
           `font-family:${fontFamily}`,
+          `writing-mode:${layout.textStyle.writingMode || 'horizontal-tb'}`,
           `font-size:${style.fontSize}px`,
           `font-weight:${style.fontWeight}`,
           `font-style:${style.fontStyle}`,

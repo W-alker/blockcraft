@@ -5,7 +5,23 @@
   .word-art-block.focused:not(.word-art-block--object-selected):not([data-bc-readonly])
   > .word-art-block__surface {
     @include object-editing-outline;
+
+    &.word-art-block__surface--nonlinear .word-art-block__projection {
+      opacity: 0;
+    }
   }
+}
+
+// Selection owns text-editing state. The browser may keep native focus on the
+// document root even while the caret is inside this nested editable block.
+[data-blockcraft-root="true"]:is(:not(:focus-within), .readonly, .bc-print-content)
+  .word-art-block__surface--nonlinear .word-art-block__editor,
+[data-blockcraft-root="true"]
+  .word-art-block:is(:not(.focused), .word-art-block--object-selected, [data-bc-readonly])
+  > .word-art-block__surface--nonlinear .word-art-block__editor {
+  // Visibility takes precedence over inline paint opacity, which is preserved
+  // when editing (including transparent/picture fills).
+  opacity: 0 !important;
 }
 
 [data-blockcraft-root="true"] .word-art-block,
@@ -86,14 +102,6 @@
     height: 100%;
     overflow: visible;
     pointer-events: none;
-  }
-
-  .word-art-block__surface--nonlinear:not(:focus-within) {
-    .word-art-block__editor { opacity: 0; }
-  }
-
-  .word-art-block__surface--nonlinear:focus-within {
-    .word-art-block__projection { opacity: 0; }
   }
 
   .word-art-block__editor::before {

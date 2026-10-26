@@ -1,3 +1,5 @@
+import {NgStyle} from '@angular/common'
+import {wordArtTextLayout} from './word-art-text-layout'
 import {storeBlockPosition} from '../../framework/modules/object/block-placement/state'
 import {
   ChangeDetectionStrategy,
@@ -42,9 +44,10 @@ const rotationTransform = (rotation: number): string =>
 @Component({
   selector: 'div.word-art-block',
   standalone: true,
-  imports: [ShapeResizerComponent],
+  imports: [ShapeResizerComponent, NgStyle],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
+    @let layout = textLayout;
     <div
       #surface
       class="word-art-block__surface"
@@ -62,6 +65,7 @@ const rotationTransform = (rotation: number): string =>
       [style.font-size.px]="wordArtProps.fontSize"
       [style.transform]="surfaceTransform"
       [style.align-items]="verticalAlignment"
+      [style.justify-content]="layout.justifyContent"
     >
       @if (!isReadonly) {
         <button
@@ -77,10 +81,10 @@ const rotationTransform = (rotation: number): string =>
         </button>
       }
       @if (isNonlinear) {
-        <svg class="word-art-block__projection" [attr.viewBox]="'0 0 ' + wordArtProps.width + ' ' + wordArtProps.height"
+        <svg class="word-art-block__projection" [attr.viewBox]="layout.viewBox" [ngStyle]="layout.projectionStyle"
           preserveAspectRatio="none" aria-hidden="true">
           <defs>
-            <path [attr.id]="projectionPathId" [attr.d]="projectionPath"></path>
+            <path [attr.id]="projectionPathId" [attr.d]="projectionPath" [attr.transform]="layout.pathTransform"></path>
             @if (wordArtFormat.textStyle?.fill?.type === 'linear-gradient') {
               <linearGradient [attr.id]="projectionGradientId" x1="0" y1="0" x2="1" y2="0">
                 @for (stop of projectionGradientStops; track $index) {
@@ -97,7 +101,7 @@ const rotationTransform = (rotation: number): string =>
               </pattern>
             }
           </defs>
-          <text text-anchor="middle" [attr.fill]="projectionFill"
+          <text [style.writing-mode]="layout.textStyle.writingMode" text-anchor="middle" [attr.fill]="projectionFill"
             [attr.fill-opacity]="projectionFillOpacity"
             [attr.stroke]="projectionStroke" [attr.stroke-width]="projectionStrokeWidth"
             [style.font-family]="presentation.fontFamily" [style.font-size.px]="wordArtProps.fontSize"
@@ -127,9 +131,9 @@ const rotationTransform = (rotation: number): string =>
         [style.-webkit-background-clip]="'text'"
         [style.-webkit-text-stroke]="presentation.textStroke"
         [style.text-shadow]="presentation.textShadow"
-        [style.transform]="presentation.effectTransform"
+        [ngStyle]="layout.textStyle"
         [style.opacity]="presentation.textOpacity"
-        [attr.data-bc-word-art-effect-transform]="presentation.effectTransform"
+        [attr.data-bc-word-art-effect-transform]="layout.textStyle.transform"
       ></div>
       @if (!isReadonly) {
         <shape-resizer
@@ -199,12 +203,16 @@ export class WordArtBlockComponent extends EditableBlockComponent<WordArtBlockMo
     const fill = this.wordArtFormat.textStyle!.fill
     return fill.type === 'picture' ? fill.src : null
   }
+  protected get textLayout() {
+    return wordArtTextLayout(this.wordArtProps)
+  }
+
   get projectionPath(): string {
-    const {width, height} = this.wordArtProps
+    const {pathWidth, pathHeight} = this.textLayout
     return resolveWordArtProjectionPath(
       this.wordArtFormat.textStyle!.transform,
-      width,
-      height,
+      pathWidth,
+      pathHeight,
     ) ?? ''
   }
 

@@ -1,3 +1,4 @@
+import {wordArtTextLayout} from '../../blocks/word-art-block/word-art-text-layout'
 import {
   normalizeWordArtProps,
   resolveWordArtPresentation,
@@ -33,6 +34,7 @@ export function createWordArtRenderers(): SnapshotBlockRenderer[] {
         WORD_ART_OBJECT_FORMAT_CAPABILITY,
       )
 
+      const layout = wordArtTextLayout(props)
       const surface = document.createElement('div')
       surface.classList.add('word-art-block__surface')
       if (props.textFrame.autoFit === 'resize-shape' && props.textFrame.direction === 'horizontal' &&
@@ -40,6 +42,7 @@ export function createWordArtRenderers(): SnapshotBlockRenderer[] {
         surface.setAttribute('data-bc-content-auto-fit', '')
       }
       surface.setAttribute('data-bc-print-visual-surface', '')
+      surface.style.justifyContent = layout.justifyContent
       surface.style.width = `${props.width}px`
       surface.style.height = `${props.height}px`
       surface.style.transform = props.rotation === 0
@@ -80,10 +83,9 @@ export function createWordArtRenderers(): SnapshotBlockRenderer[] {
         presentation.textStroke,
       )
       content.style.textShadow = presentation.textShadow
-      content.style.transform = presentation.effectTransform
+      Object.assign(content.style, layout.textStyle)
       content.style.opacity = `${presentation.textOpacity}`
-      content.dataset['bcWordArtEffectTransform'] =
-        presentation.effectTransform
+      content.dataset['bcWordArtEffectTransform'] = content.style.transform
       content.append(
         ctx.createInlineContent(snapshot.children as InlineModel),
       )
@@ -93,8 +95,8 @@ export function createWordArtRenderers(): SnapshotBlockRenderer[] {
 
       const path = resolveWordArtProjectionPath(
         props.effect,
-        props.width,
-        props.height,
+        layout.pathWidth,
+        layout.pathHeight,
       )
       if (path) {
         content.style.opacity = '0'
@@ -130,16 +132,19 @@ function createProjection(
   fontFamily: string,
   allowPicture: boolean,
 ): SVGSVGElement {
+  const layout = wordArtTextLayout(props)
   const ns = 'http://www.w3.org/2000/svg'
   const svg = document.createElementNS(ns, 'svg')
   svg.classList.add('word-art-block__projection')
-  svg.setAttribute('viewBox', `0 0 ${props.width} ${props.height}`)
+  svg.setAttribute('viewBox', layout.viewBox)
+  Object.assign(svg.style, layout.projectionStyle)
   svg.setAttribute('preserveAspectRatio', 'none')
   const defs = document.createElementNS(ns, 'defs')
   const path = document.createElementNS(ns, 'path')
   const pathId = `bc-word-art-viewer-path-${id.replace(/[^a-zA-Z0-9_-]/g, '-')}`
   path.id = pathId
   path.setAttribute('d', pathValue)
+  if (layout.pathTransform) path.setAttribute('transform', layout.pathTransform)
   defs.append(path)
   let fill = style.fill.type === 'solid' ? style.fill.color : 'none'
   if (style.fill.type === 'linear-gradient') {
@@ -170,6 +175,7 @@ function createProjection(
     fill = `url(#${pattern.id})`
   }
   const text = document.createElementNS(ns, 'text')
+  text.style.writingMode = layout.textStyle.writingMode
   text.setAttribute('text-anchor', 'middle')
   text.setAttribute('fill', fill)
   text.setAttribute(

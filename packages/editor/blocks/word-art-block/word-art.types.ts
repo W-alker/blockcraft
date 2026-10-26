@@ -1,3 +1,4 @@
+import {wordArtTextLayout} from './word-art-text-layout'
 import {resolveTextFit} from '../../framework/block-std/block/object-format/text-fit'
 import {parseBlockPosition, storeBlockPosition} from '../../framework/modules/object/block-placement/state'
 import type {
@@ -521,6 +522,7 @@ export function wordArtPresentationToInlineStyle(
     `transform:${presentation.effectTransform || 'none'}`,
     `opacity:${presentation.textOpacity}`,
     'white-space:pre-wrap',
+    wordArtTextLayout(props).textCss,
   ].join(';')
 }
 

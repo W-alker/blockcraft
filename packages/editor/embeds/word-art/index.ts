@@ -1,3 +1,4 @@
+import {wordArtTextLayout} from '../../blocks/word-art-block/word-art-text-layout'
 import type {
   DeltaInsert,
   DeltaInsertEmbed,
@@ -142,6 +143,7 @@ export const createInlineWordArtEmbedConverter = (): EmbedConverter => ({
       height: data.height,
     })
     const props = presentation.props
+    const layout = wordArtTextLayout(props)
     const style = normalizeBlockObjectFormat(
       {...data.props, width: data.width, height: data.height},
       WORD_ART_OBJECT_FORMAT_CAPABILITY,
@@ -152,6 +154,7 @@ export const createInlineWordArtEmbedConverter = (): EmbedConverter => ({
     frame.dataset['bcInlineObjectPayload'] = String(
       delta.insert[INLINE_WORD_ART_EMBED_KEY] ?? '',
     )
+    frame.style.justifyContent = layout.justifyContent
     frame.style.transform = props.rotation === 0
       ? ''
       : `rotate(${props.rotation}deg)`
@@ -186,13 +189,13 @@ export const createInlineWordArtEmbedConverter = (): EmbedConverter => ({
     text.style.setProperty('-webkit-background-clip', 'text')
     text.style.setProperty('-webkit-text-stroke', presentation.textStroke)
     text.style.textShadow = presentation.textShadow
-    text.style.transform = presentation.effectTransform
+    Object.assign(text.style, layout.textStyle)
     text.style.opacity = `${presentation.textOpacity}`
-    text.dataset['bcWordArtEffectTransform'] = presentation.effectTransform
+    text.dataset['bcWordArtEffectTransform'] = text.style.transform
     const path = resolveWordArtProjectionPath(
       props.effect,
-      props.width,
-      props.height,
+      layout.pathWidth,
+      layout.pathHeight,
     )
     if (path) {
       text.style.opacity = '0'
@@ -238,14 +241,17 @@ function createInlineProjection(
   style: NonNullable<ReturnType<typeof normalizeBlockObjectFormat>['textStyle']>,
   fontFamily: string,
 ): SVGSVGElement {
+  const layout = wordArtTextLayout(props)
   const ns = 'http://www.w3.org/2000/svg'
   const svg = document.createElementNS(ns, 'svg')
   svg.classList.add('word-art-block__projection')
-  svg.setAttribute('viewBox', `0 0 ${props.width} ${props.height}`)
-  const id = `bc-inline-word-art-path-${stableToken(pathValue + textValue)}`
+  svg.setAttribute('viewBox', layout.viewBox)
+  Object.assign(svg.style, layout.projectionStyle)
+  const id = `bc-inline-word-art-path-${stableToken(pathValue + textValue + (layout.pathTransform ?? ''))}`
   const path = document.createElementNS(ns, 'path')
   path.id = id
   path.setAttribute('d', pathValue)
+  if (layout.pathTransform) path.setAttribute('transform', layout.pathTransform)
   const defs = document.createElementNS(ns, 'defs')
   defs.append(path)
   let fill = style.fill.type === 'solid' ? style.fill.color : 'none'
@@ -277,6 +283,7 @@ function createInlineProjection(
     fill = `url(#${pattern.id})`
   }
   const text = document.createElementNS(ns, 'text')
+  text.style.writingMode = layout.textStyle.writingMode
   text.setAttribute('text-anchor', 'middle')
   text.setAttribute('fill', fill)
   text.setAttribute(

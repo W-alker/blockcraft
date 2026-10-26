@@ -49,6 +49,33 @@ describe('Word art adapters', () => {
   const htmlAdapter = new HtmlAdapter(fileService, new Map(), BUNDLED_ADAPTER_REGISTRY)
   const markdownAdapter = new MarkdownAdapter(fileService, new Map(), BUNDLED_ADAPTER_REGISTRY)
 
+  for (const direction of ['vertical-rl', 'rotate-90', 'rotate-270'] as const) {
+    for (const effect of ['slant-right', 'arch-up', 'arch-down', 'circle', 'wave'] as const) {
+      it(`round-trips direction ${direction} with ${effect} through HTML`, async () => {
+        const snapshot = WordArtBlockSchema.createSnapshot('艺术字ABC', {
+          width: 180, height: 320, textDirection: direction, textTransform: effect,
+        })
+        const html = await htmlAdapter.toHtml(rootSnapshot([snapshot]))
+        const dom = new DOMParser().parseFromString(html, 'text/html')
+        const text = dom.querySelector<HTMLElement>('[data-bc-word-art-text]')!
+        expect(text.style.writingMode).toBe(direction === 'vertical-rl' ? 'vertical-rl' : '')
+        if (direction.startsWith('rotate-')) {
+          expect(text.style.transform).toContain(`rotate(${direction.slice(7)}deg)`)
+        }
+        const svg = dom.querySelector('svg')
+        if (effect !== 'slant-right') {
+          expect(svg).not.toBeNull()
+          expect(svg!.getAttribute('viewBox')).toBe(direction === 'vertical-rl' ? '0 0 180 320' : '0 0 320 180')
+          expect(svg!.querySelector('path')!.getAttribute('transform'))
+            .toBe(direction === 'vertical-rl' ? 'matrix(0 1 -1 0 180 0)' : null)
+        }
+        const imported = (await htmlAdapter.toBlockSnapshot(html)).children[0] as IBlockSnapshot
+        expect(imported.props['textDirection']).toBe(direction)
+        expect(imported.props['textTransform']).toBe(effect)
+      })
+    }
+  }
+
   it('round-trips text, presentation and placement through HTML', async () => {
     const defaults = normalizeWordArtProps(
       WordArtBlockSchema.createSnapshot().props,
