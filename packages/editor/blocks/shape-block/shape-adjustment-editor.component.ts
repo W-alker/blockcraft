@@ -231,7 +231,9 @@ export class ShapeAdjustmentEditorComponent implements OnChanges, OnDestroy {
     if (this._raf) cancelAnimationFrame(this._raf)
     this._raf = 0
     this._pendingPointer = null
-    if (!keepPreview) {
+    // Locking/readonly also destroys idle editors, which have no path backup.
+    // Restore only an active gesture; otherwise an empty backup erases the shape.
+    if (!keepPreview && this._activePointerId !== null) {
       this._targetPath()?.setAttribute('d', this._originalPathData)
       this._working = this._committed
       this._refreshProjection()
