@@ -1,4 +1,4 @@
-import {Subject, Subscription} from "rxjs";
+import {animationFrameScheduler, auditTime, filter, skip, Subject, Subscription} from "rxjs";
 import {nextTick, performanceTest} from "../../global";
 import {
   BlockNodeType,
@@ -82,6 +82,7 @@ export class FindReplaceHelper {
 
   // ── Viewport-aware FakeRange ───────────────────────────────
   private _observer: IntersectionObserver | null = null
+  private readonly _renderedMatches = new Set<FindReplaceMatch>()
   private _visibleBlockIds = new Set<string>()
   private _observedEls = new Map<string, Element>()
   private _elToBlockId = new Map<Element, string>()
@@ -102,6 +103,13 @@ export class FindReplaceHelper {
         if (this.isActive && this._lazyMode) this._syncMountedMatchObservers()
       }),
     )
+    if (this.doc.viewScale?.change$) {
+      this._subs.push(this.doc.viewScale.change$.pipe(
+        skip(1),
+        filter(() => this.isActive),
+        auditTime(0, animationFrameScheduler),
+      ).subscribe(() => this._refreshHighlightGeometry()))
+    }
     const refreshPermissions = () => this._updateReplacementSummary()
     if (this.doc.readonlyManager?.stateChange$) {
       this._subs.push(this.doc.readonlyManager.stateChange$.subscribe(refreshPermissions))
@@ -185,8 +193,7 @@ export class FindReplaceHelper {
     const activeMatch = this.matchedList.length > 0 ? this.matchedList[this.matchIndex] : null
     matches.forEach(m => {
       if (m.fakeRange && (force || m !== activeMatch)) {
-        m.fakeRange.destroy()
-        m.fakeRange = null
+        this._destroyFakeRange(m)
       }
     })
   }
@@ -381,9 +388,7 @@ export class FindReplaceHelper {
   clearOldMatchesMark(id: string) {
     const matches = this.matchedBlockMap.get(id)
     if (!matches) return
-    matches.forEach(m => {
-      if (m.fakeRange) m.fakeRange.destroy()
-    })
+    matches.forEach(m => this._destroyFakeRange(m))
     this.matchedBlockMap.delete(id)
     if (this._lazyMode) {
       this._unobserveBlock(id)
@@ -406,34 +411,35 @@ export class FindReplaceHelper {
   }
 
   private _destroyAllFakeRanges() {
-    this.matchedBlockMap.forEach(matches => {
-      matches.forEach(m => {
-        if (m.fakeRange) {
-          m.fakeRange.destroy()
-          m.fakeRange = null
-        }
-      })
-    })
+    this._renderedMatches.forEach(match => this._destroyFakeRange(match))
   }
 
-  private _ensureFakeRange(match: FindReplaceMatch): boolean {
+  private _destroyFakeRange(match: FindReplaceMatch) {
+    this._renderedMatches.delete(match)
+    const range = match.fakeRange
+    match.fakeRange = null
+    range?.destroy()
+  }
+
+  private _ensureFakeRange(match: FindReplaceMatch, materialize = true): boolean {
     const blockId = this._matchBlockId(match)
     if (this._destroyed || !this._isBlockIdAlive(blockId)) {
       this._dropMatch(match)
       return false
     }
-    if (match.fakeRange && !match.fakeRange.hasLostRenderedSpans) return true
-    if (match.fakeRange) {
-      match.fakeRange.destroy()
-      match.fakeRange = null
+    if (match.fakeRange && !match.fakeRange.hasLostRenderedSpans) {
+      this._renderedMatches.add(match)
+      return true
     }
-    const block = this._resolveBlockView(blockId, true)
+    this._destroyFakeRange(match)
+    const block = this._resolveBlockView(blockId, materialize)
     if (!block) {
       this._dropMatch(match)
       return false
     }
     try {
       match.fakeRange = this._createFakeRange(match)
+      this._renderedMatches.add(match)
       if (this._lazyMode) this._observeBlock(block)
       return true
     } catch {
@@ -460,10 +466,7 @@ export class FindReplaceHelper {
       if (listIndex <= this.matchIndex) this.matchIndex--
     }
 
-    if (match.fakeRange) {
-      match.fakeRange.destroy()
-      match.fakeRange = null
-    }
+    this._destroyFakeRange(match)
     this._clampMatchIndex()
     this._updateReplacementSummary()
   }
@@ -479,6 +482,21 @@ export class FindReplaceHelper {
     if (this.matchIndex < 0) {
       this.matchIndex = 0
     }
+  }
+
+  private _refreshHighlightGeometry() {
+    if (this._destroyed || !this.isActive) return
+    // Zoom can reflow browser font metrics. Refresh only existing projections
+    // after the scale is applied, without rescanning text or navigating blocks.
+    // Snapshot the set because rebuilding removes and re-adds each entry.
+    const renderedMatches = [...this._renderedMatches]
+    for (const match of renderedMatches) {
+      this._destroyFakeRange(match)
+      if (this.doc.vm.isMounted(this._matchBlockId(match))) {
+        this._ensureFakeRange(match, false)
+      }
+    }
+    this.matchedList[this.matchIndex]?.fakeRange?.setColor({bgColor: ACTIVE_COLOR})
   }
 
   private _createFakeRange(match: FindReplaceMatch): FakeRange {

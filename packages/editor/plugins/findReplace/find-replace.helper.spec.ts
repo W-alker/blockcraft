@@ -1,6 +1,7 @@
 import {BlockNodeType, DeltaInsert} from "../../framework";
 import {FindReplaceHelper} from "./find-replace.helper";
-import {Subject} from "rxjs";
+import {BehaviorSubject, Subject} from "rxjs";
+import {fakeAsync, tick} from "@angular/core/testing";
 
 describe("FindReplaceHelper virtualized model reads", () => {
   const flushNextTick = async () => {
@@ -34,6 +35,7 @@ describe("FindReplaceHelper virtualized model reads", () => {
     const structureChange$ = new Subject<any>();
     const viewChange$ = new Subject<any>();
     const readonlyStateChange$ = new Subject<void>();
+    const scaleChange$ = new BehaviorSubject({scale: 1, source: 'api'});
     const fakeRanges: Array<{fragment: HTMLElement}> = [];
     const createFakeRange = jasmine.createSpy("createFakeRange").and.callFake((selection: any) => {
       const overlay = document.createElement("span");
@@ -86,6 +88,7 @@ describe("FindReplaceHelper virtualized model reads", () => {
         replaceText: jasmine.createSpy("replaceText"),
       },
       scrollContainer: null,
+      viewScale: {change$: scaleChange$},
     };
     const helper = new FindReplaceHelper(doc as any);
 
@@ -101,12 +104,166 @@ describe("FindReplaceHelper virtualized model reads", () => {
       structureChange$,
       viewChange$,
       readonlyStateChange$,
+      scaleChange$,
       createFakeRange,
       fakeRanges,
       applyTextDelta,
       cleanup: () => mounted.forEach(block => block.hostElement.remove()),
     };
   };
+
+  it("coalesces scale changes and refreshes only rendered matches without navigation", fakeAsync(() => {
+    const h = makeModelHarness();
+    h.helper.listen();
+    h.helper.findAll("needle");
+    tick();
+    const current = h.helper.matchedList[0];
+    const oldRange = current.fakeRange!;
+    const previousMatches = [...h.helper.matchedList];
+    h.createFakeRange.calls.reset();
+    h.ensureViewMounted.calls.reset();
+    h.scrollToBlock.calls.reset();
+
+    h.scaleChange$.next({scale: 0.75, source: 'api'});
+    h.scaleChange$.next({scale: 1.5, source: 'api'});
+    expect(h.createFakeRange).not.toHaveBeenCalled();
+    tick(16);
+
+    expect(oldRange.destroy).toHaveBeenCalledTimes(1);
+    expect(h.createFakeRange).toHaveBeenCalledTimes(1);
+    expect(current.fakeRange!.setColor).toHaveBeenCalledWith({bgColor: 'rgba(245, 74, 69, .4)'});
+    expect(h.helper.matchedList).toEqual(previousMatches);
+    expect(h.helper.matchedList[1].fakeRange).toBeNull();
+    expect(h.ensureViewMounted).not.toHaveBeenCalled();
+    expect(h.scrollToBlock).not.toHaveBeenCalled();
+
+    h.scaleChange$.next({scale: 2, source: 'api'});
+    h.helper.destroy();
+    tick(16);
+    expect(h.createFakeRange).toHaveBeenCalledTimes(1);
+    h.cleanup();
+  }));
+
+  it("does not scan ten thousand unrendered matches when the scale changes", fakeAsync(() => {
+    const h = makeModelHarness();
+    h.textById.set("p2", [{insert: "needle ".repeat(10_000)}]);
+    h.helper.listen();
+    h.helper.findAll("needle");
+    tick();
+    expect(h.helper.matchedList.length).toBe(10_001);
+    expect(h.createFakeRange).toHaveBeenCalledTimes(1);
+    let resultReads = 0;
+    h.helper.matchedList = new Proxy(h.helper.matchedList, {
+      get(target, key, receiver) {
+        if (typeof key === 'string' && /^\d+$/.test(key)) resultReads++;
+        return Reflect.get(target, key, receiver);
+      },
+    });
+    h.createFakeRange.calls.reset();
+    h.ensureViewMounted.calls.reset();
+
+    h.scaleChange$.next({scale: 0.75, source: 'api'});
+    tick(16);
+
+    // Only the active result is read to restore its colour; hidden results are untouched.
+    expect(resultReads).toBe(1);
+    expect(h.createFakeRange).toHaveBeenCalledTimes(1);
+    expect(h.ensureViewMounted).not.toHaveBeenCalled();
+    h.helper.destroy();
+    h.cleanup();
+  }));
+
+  it("removes unmounted highlights from scale refresh and tracks remounted highlights", fakeAsync(() => {
+    const h = makeModelHarness();
+    h.helper.listen();
+    h.helper.findAll("needle");
+    tick();
+    const match = h.helper.matchedList[0];
+    const oldRange = match.fakeRange!;
+    h.mounted.get("p1").hostElement.remove();
+    h.mounted.delete("p1");
+    h.viewChange$.next({mountedRootIds: []});
+    expect(oldRange.destroy).toHaveBeenCalledTimes(1);
+    expect(match.fakeRange).toBeNull();
+    h.createFakeRange.calls.reset();
+    h.scaleChange$.next({scale: 0.75, source: 'api'});
+    tick(16);
+    expect(h.createFakeRange).not.toHaveBeenCalled();
+    expect(h.helper.matchedList.length).toBe(2);
+
+    h.ensureViewMounted(["p1"]);
+    h.viewChange$.next({mountedRootIds: ["p1"]});
+    h.helper.highlightCurrent(false);
+    h.createFakeRange.calls.reset();
+    h.scaleChange$.next({scale: 1.5, source: 'api'});
+    tick(16);
+    expect(h.createFakeRange).toHaveBeenCalledTimes(1);
+    h.helper.destroy();
+    h.cleanup();
+  }));
+
+  it("forgets old highlights after text changes, query changes and clearing", async () => {
+    const h = makeModelHarness();
+    const changeScale = async (scale: number) => {
+      h.scaleChange$.next({scale, source: 'api'});
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    };
+    h.helper.listen();
+    h.helper.findAll("needle");
+    await flushNextTick();
+    const oldMatch = h.helper.matchedList[0];
+    const oldRange = oldMatch.fakeRange!;
+    h.textById.set("p1", [{insert: "no match"}]);
+    h.textChange$.next({blockIds: ["p1"]});
+    await flushNextTick();
+    expect(oldRange.destroy).toHaveBeenCalledTimes(1);
+    expect(oldMatch.fakeRange).toBeNull();
+    expect(h.helper.matchedList.length).toBe(1);
+    h.createFakeRange.calls.reset();
+    await changeScale(0.75);
+    expect(h.createFakeRange).toHaveBeenCalledTimes(1);
+    expect(h.createFakeRange.calls.mostRecent().args[0].from.blockId).toBe("p2");
+
+    h.helper.findAll("absent");
+    h.createFakeRange.calls.reset();
+    await changeScale(1.5);
+    expect(h.createFakeRange).not.toHaveBeenCalled();
+    h.helper.findAll("needle");
+    h.helper.clearAll();
+    h.createFakeRange.calls.reset();
+    await changeScale(2);
+    expect(h.createFakeRange).not.toHaveBeenCalled();
+    h.helper.destroy();
+    h.cleanup();
+  });
+
+  it("refreshes a replaced stale highlight once and forgets a failed recreation", fakeAsync(() => {
+    const h = makeModelHarness();
+    h.helper.listen();
+    h.helper.findAll("needle");
+    tick();
+    const oldRange = h.helper.matchedList[0].fakeRange!;
+    Object.defineProperty(oldRange, 'hasLostRenderedSpans', {value: true});
+    h.helper.highlightCurrent(false);
+    expect(oldRange.destroy).toHaveBeenCalledTimes(1);
+    const replacement = h.helper.matchedList[0].fakeRange!;
+    h.createFakeRange.calls.reset();
+    h.scaleChange$.next({scale: 0.75, source: 'api'});
+    tick(16);
+    expect(replacement.destroy).toHaveBeenCalledTimes(1);
+    expect(h.createFakeRange).toHaveBeenCalledTimes(1);
+
+    h.createFakeRange.and.throwError("stale range");
+    h.scaleChange$.next({scale: 1.5, source: 'api'});
+    tick(16);
+    expect(h.helper.matchedList.map(match => match.blockId)).toEqual(["p2"]);
+    h.createFakeRange.calls.reset();
+    h.scaleChange$.next({scale: 2, source: 'api'});
+    tick(16);
+    expect(h.createFakeRange).not.toHaveBeenCalled();
+    h.helper.destroy();
+    h.cleanup();
+  }));
 
   it("notifies settled results, active index and permissions after batched updates", async () => {
     const h = makeModelHarness();

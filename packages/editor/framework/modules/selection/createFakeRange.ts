@@ -413,14 +413,17 @@ export class FakeRange {
     span.classList.add('blockcraft-cursor')
     span.style.setProperty('--bgColor', this.config.bgColor || 'var(--bc-select-background-color)')
     const _rRects = range.getClientRects();
+    // Range/host rects use visual pixels; the overlay inherits the document's
+    // zoom, so its inline styles must stay in layout pixels.
+    const scale = this.doc.viewScale?.geometryScale ?? 1
 
     const createPart = (rect: DOMRect) => {
       const span = ownerDocument.createElement('span');
       span.style.cssText = `
-        width: ${Math.max(rect.width, this.config.minCursorWidth || 2)}px;
-        height: ${rect.height}px;
-        left: ${rect.left - wrapRect.left}px;
-        top: ${rect.top - wrapRect.top}px;
+        width: ${Math.max(rect.width / scale, this.config.minCursorWidth || 2)}px;
+        height: ${rect.height / scale}px;
+        left: ${(rect.left - wrapRect.left) / scale}px;
+        top: ${(rect.top - wrapRect.top) / scale}px;
       `
       return span
     }
