@@ -4,6 +4,8 @@ import { calcDragLineRect, calcPositionByRect, type DragLineRect, type DragPosit
 import { closetBlockId } from "../../utils"
 import { BlockReadonlyError, BlockReadonlyOperation } from "../../doc/block-readonly.types"
 import { ColumnDragPreview } from '../columns/column-drag-preview'
+import { captureRelativeSelectionBookmark, resolveRelativeSelectionBookmark, RelativeSelectionBookmark } from '../selection/relative-bookmark'
+import { ISelectionPointJSON } from '../selection/types'
 
 export type InternalDragState = 'idle' | 'armed' | 'dragging' | 'dropping'
 
@@ -60,6 +62,11 @@ export class DocInternalDragController {
   private _columnFrame: number | null = null
   private _columnLandingId: string | null = null
   private _columnSelection: ReturnType<BlockCraft.Selection['toJSON']> | null = null
+  private _multiSelection: {
+    before: RelativeSelectionBookmark
+    moved: RelativeSelectionBookmark
+    followMovedBlocks: boolean
+  } | null = null
   private _activePointerId: number | null = null
   private _data: InternalDragData | null = null
   private readonly _sourceIds = new Set<string>()
@@ -167,6 +174,7 @@ export class DocInternalDragController {
     this._columnGroupId = this._columnDragId ? this._safeGetBlockById(this._columnDragId)?.parentId ?? null : null
     this._activePointerId = evt.pointerId
     this._data = normalized
+    this._multiSelection = normalized.kind === 'origin-blocks' ? this._captureMultiSelection() : null
     this._sourceIds.clear()
     if (normalized.kind === 'origin-block') this._sourceIds.add(normalized.blockId)
     if (normalized.kind === 'origin-blocks') {
@@ -234,13 +242,13 @@ export class DocInternalDragController {
   }
 
   private _onWindowBlur = (): void => {
-    if (this._state$.value !== 'idle') this.cancel()
+    if (this._state$.value !== 'idle') this._teardown(false)
   }
 
   private _onWindowPointerDown = (evt: PointerEvent): void => {
     if (this._state$.value === 'idle') return
     if (!evt.isPrimary || evt.pointerId === this._activePointerId) return
-    this._teardown()
+    this._teardown(false)
   }
 
   private _onSelectStart = (evt: Event): void => {
@@ -295,7 +303,11 @@ export class DocInternalDragController {
     this._teardown()
   }
 
-  private _teardown(): void {
+  private _teardown(restoreSelection = true): void {
+    const wasDragging = this.isDragging
+    const multiSelection = restoreSelection && wasDragging && !this.doc.isReadonly
+      ? this._resolveMultiSelection() : null
+    this._multiSelection = null
     const columnId = this._columnDragId
     const landingId = this._columnLandingId
     const selection = this._columnSelection
@@ -334,6 +346,7 @@ export class DocInternalDragController {
     this._pointerType = 'mouse'
     this._detachGlobalListeners()
     this._state$.next('idle')
+    if (multiSelection) this.doc.selection.replay(multiSelection)
     if (columnId) {
       this.doc.crud.undoManager.stopCapturing()
       if (selection && this.doc.model.exists(selection.anchor.blockId) && this.doc.model.exists(selection.head.blockId)) {
@@ -342,6 +355,42 @@ export class DocInternalDragController {
         this.doc.selection.setCursorAtBlock(landingId, true)
       }
     }
+  }
+
+  private _captureMultiSelection() {
+    const selection = this.doc.selection.value
+    const before = captureRelativeSelectionBookmark(selection, this.doc)
+    if (!selection || !before) return null
+    // A boundary belongs to its parent's Y.Array, whose deleted entries do not
+    // follow a move. Anchor the drop projection to the covered edge blocks;
+    // keep the original boundary bookmark separately for Undo and cancellation.
+    const edge = (point: ISelectionPointJSON, start: boolean): ISelectionPointJSON => point.type === 'boundary'
+      ? {type: 'gap', blockId: start ? selection.firstBlockId : selection.lastBlockId, side: start ? 'before' : 'after'}
+      : point
+    const json = selection.toJSON()
+    const moved = captureRelativeSelectionBookmark(this.doc.selection.createSelection({
+      ...json,
+      anchor: edge(json.anchor, selection.direction === 'forward'),
+      head: edge(json.head, selection.direction !== 'forward'),
+    }), this.doc)
+    return moved ? {before, moved, followMovedBlocks: false} : null
+  }
+
+  private _resolveMultiSelection(beforeMove = false) {
+    const saved = this._multiSelection
+    if (!saved) return null
+    if (beforeMove || !saved.followMovedBlocks) return resolveRelativeSelectionBookmark(saved.before, this.doc)
+    const selection = resolveRelativeSelectionBookmark(saved.moved, this.doc)
+    if (!selection) return null
+    for (const key of ['anchor', 'head'] as const) {
+      if (saved.before.source[key].type !== 'boundary') continue
+      const point = selection[key]
+      const block = this._safeGetBlockById(point.blockId)
+      if (!block?.parentId || point.type !== 'gap') return null
+      selection[key] = {type: 'boundary', blockId: block.parentId,
+        index: block.getIndexOfParent() + (point.side === 'after' ? 1 : 0)}
+    }
+    return selection
   }
 
   private _onWindowPointerMove = (evt: PointerEvent): void => {
@@ -463,7 +512,13 @@ export class DocInternalDragController {
         .filter((b): b is BlockCraft.BlockComponent => !!b)
       if (sources.length < 2) return
       if (sources.includes(this._prevBlock)) return
-      this.doc.dndService.onSortBlocks(sources, this._prevBlock, this._prevDragPosition)
+      const selection = this._resolveMultiSelection(true)
+      if (selection) this.doc.selection.replay(selection)
+      // Capture only at a valid drop. A cancelled/no-op gesture must not leave
+      // a pending bookmark that would be consumed by unrelated later typing.
+      this.doc.crud.undoManager.captureUndoItem(() =>
+        this.doc.dndService.onSortBlocks(sources, this._prevBlock!, this._prevDragPosition))
+      if (this._multiSelection) this._multiSelection.followMovedBlocks = true
       return
     }
 
@@ -480,7 +535,7 @@ export class DocInternalDragController {
 
   destroy(): void {
     try {
-      this.cancel()
+      if (this._state$.value !== 'idle') this._teardown(false)
     } finally {
       this._subs.unsubscribe()
       this._state$.complete()

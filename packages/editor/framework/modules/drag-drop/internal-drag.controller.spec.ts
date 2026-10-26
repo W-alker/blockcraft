@@ -17,6 +17,9 @@ function makeMockDoc(): any {
       setSuppressRecalculate: jasmine.createSpy('setSuppressRecalculate'),
       blur: jasmine.createSpy('blur'),
     },
+    crud: {undoManager: {
+      captureUndoItem: jasmine.createSpy('captureUndoItem').and.callFake((callback: () => void) => callback()),
+    }},
     virtualization: {
       acquireBlockViewLease: jasmine.createSpy('acquireBlockViewLease')
         .and.returnValue(releaseBlockViewLease),
@@ -39,6 +42,86 @@ function makePointerEvent(type: string, opts: Partial<PointerEventInit> = {}): P
 function makeBlock(id: string, host: HTMLElement): any {
   return { id, hostElement: host, flavour: 'paragraph' }
 }
+
+describe('DocInternalDragController multi-selection lifecycle', () => {
+  let doc: any
+  let ctrl: DocInternalDragController
+  let blocks: Record<string, any>
+  const selection = {
+    anchor: {type: 'selected', blockId: 'a'},
+    head: {type: 'selected', blockId: 'b'},
+    commonParent: 'root',
+  }
+
+  beforeEach(() => {
+    doc = makeMockDoc()
+    const root = {id: 'root', childrenIds: ['a', 'b', 'target']}
+    blocks = {root}
+    for (const id of root.childrenIds) {
+      const host = document.createElement('div')
+      doc.root.hostElement.appendChild(host)
+      blocks[id] = {...makeBlock(id, host), parentId: 'root', parentBlock: root}
+    }
+    document.body.appendChild(doc.root.hostElement)
+    doc.getBlockById = (id: string) => blocks[id]
+    const model = (json: any) => json && ({...json, direction: 'forward', toJSON: () => json})
+    doc.selection.value = model(selection)
+    doc.selection.createSelection = model
+    doc.selection.replay = jasmine.createSpy('replay').and.callFake((json: any) => {
+      doc.selection.value = model(json)
+    })
+    doc.selection.blur.and.callFake(() => { doc.selection.value = null })
+    ctrl = new DocInternalDragController(doc)
+  })
+
+  afterEach(() => {
+    ctrl.destroy()
+    doc.root.hostElement.remove()
+  })
+
+  function start() {
+    const evt = makePointerEvent('pointerdown')
+    Object.defineProperty(evt, 'target', {value: blocks['a'].hostElement})
+    ctrl.startDrag(evt, {kind: 'origin-blocks', blockIds: ['a', 'b']})
+    window.dispatchEvent(makePointerEvent('pointermove', {clientX: 20, clientY: 20}))
+    expect(doc.selection.value).toBeNull()
+  }
+
+  it('captures the original selection at commit and restores it after drop', () => {
+    start()
+    ;(ctrl as any)._prevBlock = blocks['target']
+    ;(ctrl as any)._prevDragPosition = 'after'
+    doc.dndService.onSortBlocks.and.callFake(() => {
+      expect(doc.selection.value.toJSON()).toEqual(selection)
+      doc.selection.blur()
+    })
+    window.dispatchEvent(makePointerEvent('pointerup'))
+    expect(doc.crud.undoManager.captureUndoItem).toHaveBeenCalledTimes(1)
+    expect(doc.selection.value.toJSON()).toEqual(selection)
+    expect(ctrl.state).toBe('idle')
+  })
+
+  it('restores cancelled selection without capturing history', () => {
+    start()
+    window.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}))
+    expect(doc.selection.value.toJSON()).toEqual(selection)
+    expect(doc.crud.undoManager.captureUndoItem).not.toHaveBeenCalled()
+  })
+
+  for (const finish of ['blur', 'destroy', 'deleted'] as const) {
+    it(`does not restore a multi-selection on ${finish}`, () => {
+      start()
+      if (finish === 'blur') window.dispatchEvent(new Event('blur'))
+      else if (finish === 'destroy') ctrl.destroy()
+      else {
+        delete blocks['b']
+        ctrl.cancel()
+      }
+      expect(doc.selection.replay).not.toHaveBeenCalled()
+      expect(doc.crud.undoManager.captureUndoItem).not.toHaveBeenCalled()
+    })
+  }
+})
 
 describe('DocInternalDragController source subtree exclusion', () => {
   let doc: ReturnType<typeof makeMockDoc>

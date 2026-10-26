@@ -486,11 +486,8 @@ export class DocDndService {
     }
     if (!this._tryAssertMovable(sources.map(source => source.id), targetParent.id)) return
 
-    const targetDepth = target.props['depth']
     this.doc.crud.transact(() => {
-      for (const s of sources) {
-        if (s.props['depth'] !== targetDepth) s.updateProps({ depth: targetDepth })
-      }
+      // Move the range without flattening its existing paragraph hierarchy.
       this.doc.crud.moveBlocks(sourceParent.id, firstIdx, count, targetParent.id, targetIdx)
       this._handleSourceParentAfterMove(sourceParent.id)
     })

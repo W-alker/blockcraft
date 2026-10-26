@@ -276,6 +276,26 @@ describe('DocDndService.onSortBlocks — same parent reorder', () => {
 })
 
 describe('DocDndService.onSortBlocks — cross parent', () => {
+  for (const crossParent of [false, true]) {
+    it(`preserves each source depth during ${crossParent ? 'cross-parent' : 'same-parent'} reorder`, () => {
+      const parent = makeBlock('p', null, 'root', {childrenIds: ['a', 'b', 'c', 'gap', 't']})
+      const destination = crossParent
+        ? makeBlock('destination', null, 'column', {childrenIds: ['t']}) : parent
+      const sources = [0, 1, 3].map((depth, index) => makeBlock(['a', 'b', 'c'][index], 'p', 'paragraph', {
+        __index: index, props: {depth}, parentBlock: parent,
+      }))
+      const target = makeBlock('t', destination.id, 'paragraph', {
+        __index: crossParent ? 0 : 4, props: {depth: 2}, parentBlock: destination,
+      })
+      const doc = makeMockDoc({p: parent, destination, t: target})
+
+      new DocDndService(doc).onSortBlocks(sources, target, 'after')
+
+      expect(doc._calls.moveBlocks.length).toBe(1)
+      sources.forEach(source => expect(source.updateProps).not.toHaveBeenCalled())
+    })
+  }
+
   it('rejects when any source is invalid child of target parent', () => {
     const parentA = makeBlock('pa', null, 'root', { childrenIds: ['b1', 'b2'] })
     const parentB = makeBlock('pb', null, 'column')
