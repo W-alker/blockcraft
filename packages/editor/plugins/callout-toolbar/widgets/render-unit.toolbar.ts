@@ -56,9 +56,9 @@ const PANEL_MAX_HEIGHT = 520
                                    [csAllowClear]="true" [csShowText]="true" [csShowAlpha]="false"
                                    (csChangeComplete)="onColorPicked({type: 'backColor', color: $event.value})" />
                 </div>
-                <label class="object-format__slider-row region-format__opacity">透明度
+                <label class="object-format__slider-row region-format__opacity">不透明度
                   <cs-slider [csMin]="0" [csMax]="100" [csStep]="1"
-                             csAriaLabel="填写区填充透明度" [csValue]="backOpacityPercent"
+                             csAriaLabel="填写区填充不透明度" [csValue]="backOpacityPercent"
                              (pointerup)="commitBackOpacity()" (keyup)="commitBackOpacity()"
                              (focusout)="commitBackOpacity()" (csValueChange)="changeBackOpacity($event)" />
                   <output>{{backOpacityPercent}}%</output>

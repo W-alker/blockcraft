@@ -67,7 +67,7 @@
                 @for (border of borders; track border.value) {<cs-option [csValue]="border.value" [csLabel]="border.label" />}
             </cs-select>
         </label>
-        <p>清空颜色恢复样式默认；透明度设为 0 可使用透明背景。</p>
+        <p>清空颜色恢复样式默认；不透明度设为 0 可使用透明背景。</p>
     </div>
     <footer>
         <button cs-button csType="secondary" csSize="sm" type="button" (click)="cancel.emit()">取消</button>

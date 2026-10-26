@@ -89,9 +89,9 @@
                     csAriaLabel="分割线粗细" />
     </div>
     <div class="appearance-row opacity-row">
-      <span class="option-label">透明度</span>
+      <span class="option-label">不透明度</span>
       <cs-slider [csMin]="10" [csMax]="100" [csStep]="5"
-                 csAriaLabel="分割线透明度"
+                 csAriaLabel="分割线不透明度"
                  [csValue]="activeOpacity"
                  (csValueChange)="setOpacity($event)" />
       <output>{{ activeOpacity }}%</output>

@@ -45,17 +45,15 @@ import {
           class="shape-fill-panel__control"
           csSize="sm"
           csVariant="outlined"
-          [csValue]="paint.type"
+          [csValue]="paint.type === 'picture' && !pictureEnabled ? null : paint.type"
           (csValueChange)="setFillType($event)"
         >
           <cs-option csValue="none" csLabel="无填充" />
           <cs-option csValue="solid" csLabel="纯色填充" />
           <cs-option csValue="linear-gradient" csLabel="渐变填充" />
-          <cs-option
-            csValue="picture"
-            csLabel="图片填充"
-            [csDisabled]="!pictureEnabled"
-          />
+          @if (pictureEnabled) {
+            <cs-option csValue="picture" csLabel="图片填充" />
+          }
         </cs-select>
       </label>
 
@@ -239,7 +237,11 @@ export class ShapeFillPanelComponent {
   }
 
   setFillType(value: unknown): void {
-    if (!isPaintType(value) || value === this.paint.type) return;
+    if (
+      !isPaintType(value) ||
+      value === this.paint.type ||
+      (value === "picture" && !this.pictureEnabled)
+    ) return;
     if (value === "linear-gradient") {
       this.emitGradient(this.gradient);
       return;

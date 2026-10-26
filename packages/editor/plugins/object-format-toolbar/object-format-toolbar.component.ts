@@ -69,8 +69,6 @@ type ObjectFormatSliderKey =
   | "shape-fill-position-y"
   | "shape-fill-opacity"
   | "shape-outline-opacity"
-  | "text-fill-position-x"
-  | "text-fill-position-y"
   | "text-fill-opacity";
 
 const OBJECT_TEXT_FONT_OPTIONS = [
@@ -102,7 +100,7 @@ export type ObjectFormatToolbarAction =
   | { name: "patch"; patch: ObjectFormatPatch }
   | { name: "preview"; patch: ObjectFormatPatch }
   | { name: "restore-preview" }
-  | { name: "upload-picture"; target: "shape" | "text" }
+  | { name: "upload-picture" }
   | { name: "layout"; value: string }
   | { name: "delete" };
 
@@ -429,7 +427,6 @@ export type ObjectFormatToolbarAction =
                         (click)="
                           action.emit({
                             name: 'upload-picture',
-                            target: 'shape',
                           })
                         "
                       >
@@ -449,7 +446,7 @@ export type ObjectFormatToolbarAction =
                               csVariant="outlined"
                               [csValue]="shapeFill.fit"
                               (csValueChange)="
-                                pictureFitChangeValue('shape', $event)
+                                pictureFitChangeValue($event)
                               "
                             >
                               @for (fit of pictureFits; track fit.value) {
@@ -475,7 +472,6 @@ export type ObjectFormatToolbarAction =
                               (focusout)="commitSlider('shape-fill-position-x')"
                               (csValueChange)="
                                 picturePositionValue(
-                                  'shape',
                                   'positionX',
                                   $event
                                 )
@@ -496,7 +492,6 @@ export type ObjectFormatToolbarAction =
                               (focusout)="commitSlider('shape-fill-position-y')"
                               (csValueChange)="
                                 picturePositionValue(
-                                  'shape',
                                   'positionY',
                                   $event
                                 )
@@ -507,12 +502,12 @@ export type ObjectFormatToolbarAction =
                     }
                     @if (showsPaintOpacity(shapeFill)) {
                       <label class="object-format__slider-row"
-                        >透明度
+                        >不透明度
                         <cs-slider
                           [csMin]="0"
                           [csMax]="100"
                           [csStep]="1"
-                          csAriaLabel="形状填充透明度"
+                          csAriaLabel="形状填充不透明度"
                           [csValue]="paintOpacity(shapeFill) * 100"
                           (pointerup)="commitSlider('shape-fill-opacity')"
                           (keyup)="commitSlider('shape-fill-opacity')"
@@ -583,12 +578,12 @@ export type ObjectFormatToolbarAction =
                           "
                       /></label>
                       <label
-                        >透明度
+                        >不透明度
                         <cs-slider
                           [csMin]="0"
                           [csMax]="100"
                           [csStep]="1"
-                          csAriaLabel="形状轮廓透明度"
+                          csAriaLabel="形状轮廓不透明度"
                           [csValue]="shapeOutline.opacity * 100"
                           (pointerup)="commitSlider('shape-outline-opacity')"
                           (keyup)="commitSlider('shape-outline-opacity')"
@@ -720,12 +715,12 @@ export type ObjectFormatToolbarAction =
                           "
                       /></div>
                       <label
-                        >透明度
+                        >不透明度
                         <cs-slider
                           [csMin]="0"
                           [csMax]="100"
                           [csStep]="1"
-                          csAriaLabel="阴影透明度"
+                          csAriaLabel="阴影不透明度"
                           [csValue]="shapeEffects.shadow.opacity * 100"
                           (csValueChange)="
                             effectOpacityValue('shadow', $event)
@@ -786,12 +781,12 @@ export type ObjectFormatToolbarAction =
                           "
                       /></div>
                       <label
-                        >透明度
+                        >不透明度
                         <cs-slider
                           [csMin]="0"
                           [csMax]="100"
                           [csStep]="1"
-                          csAriaLabel="发光透明度"
+                          csAriaLabel="发光不透明度"
                           [csValue]="shapeEffects.glow.opacity * 100"
                           (csValueChange)="effectOpacityValue('glow', $event)"
                       /></label>
@@ -1065,125 +1060,53 @@ export type ObjectFormatToolbarAction =
                   </div>
                   @if (isSectionOpen("text-effects")) {
                     <div class="object-format__section-body">
-                      <bc-shape-fill-panel
-                        [paint]="textStyle.fill"
-                        [pictureEnabled]="state.features.pictureFill"
-                        (paintChange)="paintChangeValue('text', $event)"
-                      />
-                      @if (textStyle.fill.type === "picture") {
-                        <label
-                          >图片 URL
-                          <input
-                            cs-input
+                      @if (simpleTextFill) {
+                        <div class="object-format__color-row">
+                          <span>字体颜色</span>
+                          <cs-color-picker
+                            csMode="palette"
                             csSize="sm"
-                            type="url"
-                            [value]="pictureSourceValue(textStyle.fill)"
-                            placeholder="https://…"
-                            (change)="textPictureUrl($event)"
-                        /></label>
-                        <button
-                          cs-button
-                          csType="text"
-                          csSize="sm"
-                          type="button"
-                          (click)="
-                            action.emit({
-                              name: 'upload-picture',
-                              target: 'text',
-                            })
-                          "
-                        >
-                          {{
-                            hasUserPicture(textStyle.fill)
-                              ? "替换文字图片"
-                              : "上传文字图片"
-                          }}
-                        </button>
-                        @if (hasUserPicture(textStyle.fill)) {
-                          <div
-                            class="object-format__picture-config"
-                            data-object-format-picture-config="text"
-                          >
-                            <label
-                              >适应
-                              <cs-select
-                                csSize="sm"
-                                csVariant="outlined"
-                                [csValue]="textStyle.fill.fit"
-                                (csValueChange)="
-                                  pictureFitChangeValue('text', $event)
-                                "
-                              >
-                                @for (fit of pictureFits; track fit.value) {
-                                  <cs-option
-                                    [csValue]="fit.value"
-                                    [csLabel]="fit.label"
-                                  />
-                                }</cs-select
-                            ></label>
-                            <label
-                              >水平位置
-                              <cs-slider
-                                [csMin]="0"
-                                [csMax]="100"
-                                [csStep]="1"
-                                csAriaLabel="文字图片水平位置"
-                                [csValue]="textStyle.fill.positionX"
-                                (pointerup)="
-                                  commitSlider('text-fill-position-x')
-                                "
-                                (keyup)="commitSlider('text-fill-position-x')"
-                                (focusout)="
-                                  commitSlider('text-fill-position-x')
-                                "
-                                (csValueChange)="
-                                  picturePositionValue(
-                                    'text',
-                                    'positionX',
-                                    $event
-                                  )
-                                "
-                            /></label>
-                            <label
-                              >垂直位置
-                              <cs-slider
-                                [csMin]="0"
-                                [csMax]="100"
-                                [csStep]="1"
-                                csAriaLabel="文字图片垂直位置"
-                                [csValue]="textStyle.fill.positionY"
-                                (pointerup)="
-                                  commitSlider('text-fill-position-y')
-                                "
-                                (keyup)="commitSlider('text-fill-position-y')"
-                                (focusout)="
-                                  commitSlider('text-fill-position-y')
-                                "
-                                (csValueChange)="
-                                  picturePositionValue(
-                                    'text',
-                                    'positionY',
-                                    $event
-                                  )
-                                "
-                            /></label>
-                          </div>
-                        }
-                      }
-                      @if (showsPaintOpacity(textStyle.fill)) {
-                        <label
-                          >文字填充透明度
+                            [csValue]="textStyle.fill.type === 'solid' ? textStyle.fill.color : null"
+                            [csShowText]="true"
+                            [csShowAlpha]="false"
+                            [csAllowClear]="false"
+                            (csChangeComplete)="textColorValue($event.value)"
+                          />
+                        </div>
+                        <label>字体不透明度
                           <cs-slider
                             [csMin]="0"
                             [csMax]="100"
                             [csStep]="1"
-                            csAriaLabel="文字填充透明度"
-                            [csValue]="paintOpacity(textStyle.fill) * 100"
+                            csAriaLabel="字体不透明度"
+                            [csValue]="textOpacityPercent"
                             (pointerup)="commitSlider('text-fill-opacity')"
                             (keyup)="commitSlider('text-fill-opacity')"
                             (focusout)="commitSlider('text-fill-opacity')"
-                            (csValueChange)="textFillOpacityValue($event)"
-                        /></label>
+                            (csValueChange)="textOpacityValue($event)"
+                          />
+                        </label>
+                      } @else {
+                        <bc-shape-fill-panel
+                          [paint]="textStyle.fill"
+                          [pictureEnabled]="false"
+                          (paintChange)="paintChangeValue('text', $event)"
+                        />
+                        @if (showsPaintOpacity(textStyle.fill)) {
+                          <label
+                            >文字填充不透明度
+                            <cs-slider
+                              [csMin]="0"
+                              [csMax]="100"
+                              [csStep]="1"
+                              csAriaLabel="文字填充不透明度"
+                              [csValue]="paintOpacity(textStyle.fill) * 100"
+                              (pointerup)="commitSlider('text-fill-opacity')"
+                              (keyup)="commitSlider('text-fill-opacity')"
+                              (focusout)="commitSlider('text-fill-opacity')"
+                              (csValueChange)="textFillOpacityValue($event)"
+                          /></label>
+                        }
                       }
                       <label class="object-format__switch-row"
                         >文字轮廓
@@ -1243,12 +1166,12 @@ export type ObjectFormatToolbarAction =
                             "
                         /></div>
                         <label
-                          >阴影透明度
+                          >阴影不透明度
                           <cs-slider
                             [csMin]="0"
                             [csMax]="100"
                             [csStep]="1"
-                            csAriaLabel="文字阴影透明度"
+                            csAriaLabel="文字阴影不透明度"
                             [csValue]="textStyle.effects.shadow.opacity * 100"
                             (csValueChange)="
                               textEffectOpacityValue('shadow', $event)
@@ -1315,12 +1238,12 @@ export type ObjectFormatToolbarAction =
                             "
                         /></div>
                         <label
-                          >发光透明度
+                          >发光不透明度
                           <cs-slider
                             [csMin]="0"
                             [csMax]="100"
                             [csStep]="1"
-                            csAriaLabel="文字发光透明度"
+                            csAriaLabel="文字发光不透明度"
                             [csValue]="textStyle.effects.glow.opacity * 100"
                             (csValueChange)="
                               textEffectOpacityValue('glow', $event)
@@ -1757,6 +1680,10 @@ export class ObjectFormatToolbarComponent {
   get showsAbsoluteLayoutTools(): boolean {
     return this.activeLayout === "under" || this.activeLayout === "over";
   }
+  protected get simpleTextFill(): boolean {
+    // Mixed selections use the common controls whenever a text box participates.
+    return this.state.targets.some(target => target.capability.kind === "text-box");
+  }
   get textTabOptions(): CsSegmentedOptions {
     return [
       ...(this.state.features.textFrame
@@ -1929,6 +1856,7 @@ export class ObjectFormatToolbarComponent {
       this.patch({ shapeFill: paint });
       return;
     }
+    if (paint.type === "picture") return;
     this.patch({
       textStyle: { ...this.textStyle, fill: paint },
     });
@@ -1955,40 +1883,20 @@ export class ObjectFormatToolbarComponent {
         : createObjectPaint("picture");
     this.patch({ shapeFill: { ...fill, src: valueFrom(event) } });
   }
-  pictureFitChangeValue(target: "shape" | "text", value: unknown): void {
-    if (!isStringEnum(value, PICTURE_FITS)) return;
-    if (target === "shape") {
-      if (this.shapeFill.type !== "picture") return;
-      this.patch({ shapeFill: { ...this.shapeFill, fit: value } });
-    } else {
-      if (this.textStyle.fill.type !== "picture") return;
-      this.patch({
-        textStyle: {
-          ...this.textStyle,
-          fill: { ...this.textStyle.fill, fit: value },
-        },
-      });
-    }
+  pictureFitChangeValue(value: unknown): void {
+    if (!isStringEnum(value, PICTURE_FITS) || this.shapeFill.type !== "picture") return;
+    this.patch({ shapeFill: { ...this.shapeFill, fit: value } });
   }
   picturePositionValue(
-    target: "shape" | "text",
     key: "positionX" | "positionY",
     sliderValue: CsSliderValue,
   ): void {
-    const value = singleSliderValue(sliderValue);
-    const fill = target === "shape" ? this.shapeFill : this.textStyle.fill;
+    const fill = this.shapeFill;
     if (fill.type !== "picture") return;
-    const patch: ObjectFormatPatch =
-      target === "shape"
-        ? { shapeFill: { ...fill, [key]: value } }
-        : {
-            textStyle: {
-              ...this.textStyle,
-              fill: { ...fill, [key]: value },
-            },
-          };
     const axis = key === "positionX" ? "x" : "y";
-    this.stageSlider(`${target}-fill-position-${axis}`, patch);
+    this.stageSlider(`shape-fill-position-${axis}`, {
+      shapeFill: { ...fill, [key]: singleSliderValue(sliderValue) },
+    });
   }
   fillOpacityValue(value: CsSliderValue): void {
     if (this.shapeFill.type === "none") return;
@@ -2160,15 +2068,31 @@ export class ObjectFormatToolbarComponent {
       textStyle: { ...this.textStyle, fontStyle: value ? "italic" : "normal" },
     });
   }
-  textPictureUrl(event: Event): void {
-    const fill =
-      this.textStyle.fill.type === "picture"
-        ? this.textStyle.fill
-        : createObjectPaint("picture");
-    this.patch({
+  protected textColorValue(color: string | null): void {
+    if (!color) return;
+    const fill = this.textStyle.fill;
+    this.paintChangeValue("text", {
+      type: "solid",
+      color,
+      opacity: fill.type === "none" ? 1 : fill.opacity,
+    });
+  }
+  protected get textOpacityPercent(): number {
+    return Math.round(this.paintOpacity(this.textStyle.fill) * 100);
+  }
+  protected textOpacityValue(value: CsSliderValue): void {
+    const fill = this.textStyle.fill;
+    // A legacy no-fill value still needs to become visible through this control.
+    const paint = fill.type === "none"
+      ? createObjectPaint("solid", this.state.targets[0].capability.defaults.textStyle?.fill)
+      : fill;
+    this.stageSlider("text-fill-opacity", {
       textStyle: {
         ...this.textStyle,
-        fill: { ...fill, src: valueFrom(event) },
+        fill: {
+          ...paint,
+          opacity: singleSliderValue(value) / 100,
+        },
       },
     });
   }

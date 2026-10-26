@@ -96,6 +96,134 @@ const state: BlockObjectFormatSelectionState = {
 };
 
 describe("ObjectFormatToolbarComponent", () => {
+  it("removes text picture controls for shapes and WordArt while retaining shape picture fill", async () => {
+    await TestBed.configureTestingModule({imports: [ObjectFormatToolbarComponent]}).compileComponents();
+    const fixture = TestBed.createComponent(ObjectFormatToolbarComponent);
+    const picture = {...createObjectPaint("picture"), src: "https://example.com/legacy.png"};
+    const style = {...format.textStyle, fill: picture};
+    const wordArt = {...state.targets[0], capability: {...state.targets[0].capability, kind: "word-art" as const}};
+    const emit = spyOn(fixture.componentInstance.action, "emit");
+    fixture.componentInstance.open("text");
+    fixture.componentInstance.selectTextSection("text-effects");
+    for (const targets of [state.targets, [wordArt], [...state.targets, wordArt]]) {
+      fixture.componentRef.setInput("state", {
+        ...state, targets,
+        values: {...state.values, textStyle: {mixed: false, value: style}},
+      });
+      fixture.detectChanges();
+      const section = sectionElement(fixture, "text-effects");
+      const fillPanel = fixture.debugElement.query(By.css('[data-object-format-section="text-effects"] bc-shape-fill-panel'));
+      expect(fillPanel.componentInstance.pictureEnabled).toBeFalse();
+      expect(section.querySelector('input[type="url"], [data-object-format-picture-config="text"]')).toBeNull();
+      expect(section.textContent).not.toContain("上传文字图片");
+      expect(section.textContent).not.toContain("替换文字图片");
+      expect(fixture.componentInstance.textStyle.fill).toEqual(picture);
+    }
+    expect(emit).not.toHaveBeenCalled();
+    fixture.componentInstance.paintChangeValue("text", picture);
+    expect(emit).not.toHaveBeenCalled();
+    fixture.componentInstance.paintChangeValue("text", createObjectPaint("linear-gradient"));
+    expect(emit.calls.mostRecent().args[0]).toEqual({name: "patch", patch: {
+      textStyle: {...style, fill: createObjectPaint("linear-gradient")},
+    }});
+    emit.calls.reset();
+    fixture.componentInstance.open("shape");
+    fixture.componentInstance.cdr.markForCheck();
+    fixture.detectChanges();
+    expect(fixture.debugElement.query(By.css('[data-object-format-section="shape-fill"] bc-shape-fill-panel')).componentInstance.pictureEnabled).toBeTrue();
+    fixture.componentInstance.paintChangeValue("shape", picture);
+    expect(emit).toHaveBeenCalledWith({name: "patch", patch: {shapeFill: picture}});
+    fixture.destroy();
+  });
+
+  it("simplifies text-box fill while retaining text effects, including mixed selections", async () => {
+    await TestBed.configureTestingModule({imports: [ObjectFormatToolbarComponent]}).compileComponents();
+    const fixture = TestBed.createComponent(ObjectFormatToolbarComponent);
+    const textBox = {...state.targets[0], capability: {...state.targets[0].capability, kind: "text-box" as const}};
+    const wordArt = {...state.targets[0], capability: {...state.targets[0].capability, kind: "word-art" as const}};
+    const emit = spyOn(fixture.componentInstance.action, "emit");
+    fixture.componentRef.setInput("state", {...state, targets: [textBox]});
+    fixture.componentInstance.open("text");
+    fixture.componentInstance.selectTextSection("text-effects");
+    fixture.detectChanges();
+    await fixture.whenStable();
+    for (const targets of [[textBox], [textBox, textBox], [textBox, wordArt]]) {
+      fixture.componentRef.setInput("state", {...state, targets});
+      fixture.detectChanges();
+      const section = sectionElement(fixture, "text-effects");
+      expect(section.hidden).toBeFalse();
+      expect(section.textContent).toContain("字体颜色");
+      expect(section.textContent).toContain("字体不透明度");
+      expect(section.querySelectorAll("cs-color-picker").length).toBe(1);
+      expect(section.querySelectorAll("cs-slider").length).toBe(1);
+      expect(section.querySelector("bc-shape-fill-panel, input[type=url]")).toBeNull();
+      expect(section.querySelectorAll("cs-switch").length).toBe(3);
+      expect(section.querySelector("cs-select")).not.toBeNull();
+      expect(section.textContent).toContain("文字阴影");
+      expect(section.textContent).toContain("文字轮廓");
+      expect(section.textContent).toContain("文字发光");
+      expect(getComputedStyle(section).display).not.toBe("none");
+    }
+    expect(emit).not.toHaveBeenCalled();
+    for (const targets of [state.targets, [wordArt]]) {
+      fixture.componentRef.setInput("state", {...state, targets});
+      fixture.detectChanges();
+      const section = sectionElement(fixture, "text-effects");
+      expect(section.querySelector("bc-shape-fill-panel")).not.toBeNull();
+      expect(section.textContent).toContain("文字轮廓");
+      expect(section.textContent).toContain("文字阴影");
+    }
+    fixture.destroy();
+  });
+
+  it("preserves legacy text paints until edited and commits opacity through the slider", async () => {
+    await TestBed.configureTestingModule({imports: [ObjectFormatToolbarComponent]}).compileComponents();
+    const fixture = TestBed.createComponent(ObjectFormatToolbarComponent);
+    const textBox = {...state.targets[0], capability: {...state.targets[0].capability, kind: "text-box" as const}};
+    const setFill = (fill: ObjectPaint) => {
+      fixture.componentRef.setInput("state", {
+        ...state, targets: [textBox],
+        values: {...state.values, textStyle: {mixed: false, value: {...format.textStyle, fill}}},
+      });
+      fixture.detectChanges();
+    };
+    const emit = spyOn(fixture.componentInstance.action, "emit");
+    fixture.componentInstance.open("text");
+    fixture.componentInstance.selectTextSection("text-effects");
+    const gradient = {...createObjectPaint("linear-gradient"), opacity: 0.7};
+    setFill(gradient);
+    await fixture.whenStable();
+    expect(emit).not.toHaveBeenCalled();
+    const section = fixture.debugElement.query(By.css('[data-object-format-section="text-effects"]'));
+    const slider = section.query(By.directive(CsSliderComponent));
+    expect(slider.componentInstance.csValue()).toBe(70);
+    slider.triggerEventHandler("csValueChange", 65);
+    expect(emit).toHaveBeenCalledWith({name: "preview", patch: {
+      textStyle: {...format.textStyle, fill: {...gradient, opacity: 0.65}},
+    }});
+    slider.triggerEventHandler("keyup", new KeyboardEvent("keyup", {key: "ArrowRight"}));
+    expect(emit.calls.mostRecent().args[0]).toEqual({name: "patch", patch: {
+      textStyle: {...format.textStyle, fill: {...gradient, opacity: 0.65}},
+    }});
+    section.query(By.directive(CsColorPickerComponent)).triggerEventHandler("csChangeComplete", {value: "#123456"});
+    expect(emit.calls.mostRecent().args[0]).toEqual({name: "patch", patch: {
+      textStyle: {...format.textStyle, fill: {type: "solid", color: "#123456", opacity: 0.7}},
+    }});
+    setFill({type: "none"});
+    slider.triggerEventHandler("csValueChange", 100);
+    slider.triggerEventHandler("pointerup", new Event("pointerup"));
+    const restored = emit.calls.mostRecent().args[0];
+    expect(restored).toEqual({name: "patch", patch: {
+      textStyle: {...format.textStyle, fill: {type: "solid", color: "#0F172A", opacity: 1}},
+    }});
+    slider.triggerEventHandler("csValueChange", 0);
+    slider.triggerEventHandler("focusout", new Event("focusout"));
+    expect(emit.calls.mostRecent().args[0]).toEqual({name: "patch", patch: {
+      textStyle: {...format.textStyle, fill: {type: "solid", color: "#0F172A", opacity: 0}},
+    }});
+    fixture.destroy();
+  });
+
   it("switches content fitting directly from the rail only for supported, consistent text frames", () => {
     const fixture = TestBed.createComponent(ObjectFormatToolbarComponent);
     const component = fixture.componentInstance;

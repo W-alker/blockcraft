@@ -55,6 +55,31 @@ describe("ShapeFillPanelComponent unified paint adapter", () => {
     ]);
   });
 
+  it("omits disabled picture fill without changing a legacy paint", () => {
+    const fixture = TestBed.createComponent(ShapeFillPanelComponent);
+    const paint = {...createObjectPaint("picture"), src: "https://example.com/legacy.png"};
+    fixture.componentRef.setInput("paint", paint);
+    fixture.componentRef.setInput("pictureEnabled", false);
+    const emit = spyOn(fixture.componentInstance.paintChange, "emit");
+    fixture.detectChanges();
+    const select = fixture.debugElement.query(By.directive(CsSelectComponent))
+      .componentInstance as CsSelectComponent;
+    const options = () => select.options().map(option => option.csValue());
+    expect(options()).toEqual(["none", "solid", "linear-gradient"]);
+    expect(emit).not.toHaveBeenCalled();
+    fixture.componentInstance.setFillType("solid");
+    expect(emit).toHaveBeenCalledWith(createObjectPaint("solid"));
+    emit.calls.reset();
+    fixture.componentRef.setInput("paint", createObjectPaint("solid"));
+    fixture.componentInstance.setFillType("picture");
+    expect(emit).not.toHaveBeenCalled();
+    fixture.componentRef.setInput("pictureEnabled", true);
+    fixture.detectChanges();
+    expect(options()).toContain("picture");
+    fixture.componentInstance.setFillType("picture");
+    expect(emit).toHaveBeenCalledWith(createObjectPaint("picture"));
+  });
+
   it("switches the complete paint mode from the CSES select value", () => {
     const fixture = TestBed.createComponent(ShapeFillPanelComponent);
     fixture.componentRef.setInput("paint", {

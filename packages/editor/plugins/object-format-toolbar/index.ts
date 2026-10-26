@@ -391,7 +391,7 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
       return;
     }
     if (action.name === "upload-picture") {
-      await this.uploadPicture(action.target);
+      await this.uploadPicture();
       return;
     }
     if (action.name === "layout") {
@@ -531,7 +531,7 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     }
   }
 
-  private async uploadPicture(target: "shape" | "text"): Promise<void> {
+  private async uploadPicture(): Promise<void> {
     const service = this.doc.injector.get<DocFileService | null>(
       DOC_FILE_SERVICE_TOKEN,
       null,
@@ -550,29 +550,13 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
       }
       const url = await service.uploadImg(file);
       const state = this.doc.objectFormat.readSelection(this.activeIds);
-      if (target === "shape") {
-        const fill = state?.targets[0]?.format.shapeFill;
-        if (fill) {
-          const picture =
-            fill.type === "picture" ? fill : createObjectPaint("picture");
-          this.applyPatch({
-            shapeFill: { ...picture, src: url },
-          });
-        }
-      } else {
-        const style = state?.targets[0]?.format.textStyle;
-        if (style) {
-          const picture =
-            style.fill.type === "picture"
-              ? style.fill
-              : createObjectPaint("picture");
-          this.applyPatch({
-            textStyle: {
-              ...style,
-              fill: { ...picture, src: url },
-            },
-          });
-        }
+      const fill = state?.targets[0]?.format.shapeFill;
+      if (fill) {
+        const picture =
+          fill.type === "picture" ? fill : createObjectPaint("picture");
+        this.applyPatch({
+          shapeFill: { ...picture, src: url },
+        });
       }
     } catch {
       this.doc.messageService.warn("图片上传失败");
