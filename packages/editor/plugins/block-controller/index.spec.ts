@@ -22,13 +22,13 @@ describe("BlockControllerPlugin selection range handling", () => {
     (plugin as any).doc = {
       onDestroy$: new Subject<void>(),
       getBlockById: () => block,
-      selection: {value: null},
+      selection: {value: null, selectBlock: jasmine.createSpy('selectBlock')},
       dragController,
     };
     (plugin as any)._activeBlock = block;
     (plugin as any)._cpr = {location: {nativeElement: host}, instance: trigger};
     plugin.addDraggable();
-    return {plugin, host, trigger, state$, dragController};
+    return {plugin, host, trigger, state$, dragController, block, doc: (plugin as any).doc};
   };
 
   it("keeps the hovered menu enabled for a press and release without dragging", () => {
@@ -58,7 +58,7 @@ describe("BlockControllerPlugin selection range handling", () => {
     (plugin as any)._sub.unsubscribe();
   });
 
-  it("does not disable the menu or retain a subscription when drag start is rejected", () => {
+  it("does not disable the menu when drag start is rejected", () => {
     const {plugin, host, trigger, state$, dragController} = makeDragHarness();
     dragController.startDrag.and.stub();
     host.dispatchEvent(new PointerEvent("pointerdown", {button: 0}));
@@ -68,6 +68,52 @@ describe("BlockControllerPlugin selection range handling", () => {
     expect(trigger.menuDisabled).toBeFalse();
     (plugin as any)._sub.unsubscribe();
   });
+
+  it('selects the whole block only after releasing the handle without dragging', () => {
+    const {plugin, host, block, doc, state$} = makeDragHarness();
+    document.body.appendChild(host);
+    const down = new PointerEvent('pointerdown', {button: 0, pointerId: 1, bubbles: true, cancelable: true});
+    host.dispatchEvent(down);
+    expect(down.defaultPrevented).toBeTrue();
+    expect(doc.selection.selectBlock).not.toHaveBeenCalled();
+    state$.next('idle');
+    host.dispatchEvent(new PointerEvent('pointerup', {pointerId: 1, bubbles: true}));
+    expect(doc.selection.selectBlock).toHaveBeenCalledOnceWith(block as any);
+    expect((plugin as any)._handleClick).toBeUndefined();
+    (plugin as any)._sub.unsubscribe();
+    host.remove();
+  });
+
+  it('allows whole-block selection when a locked block cannot be dragged', () => {
+    const {plugin, host, block, doc, dragController} = makeDragHarness();
+    block.isReadonly = true;
+    document.body.appendChild(host);
+    host.dispatchEvent(new PointerEvent('pointerdown', {button: 0, pointerId: 1, bubbles: true}));
+    host.dispatchEvent(new PointerEvent('pointerup', {pointerId: 1, bubbles: true}));
+    expect(dragController.startDrag).not.toHaveBeenCalled();
+    expect(doc.selection.selectBlock).toHaveBeenCalledOnceWith(block as any);
+    (plugin as any)._sub.unsubscribe();
+    host.remove();
+  });
+
+  for (const reason of ['drag', 'escape', 'cancel', 'blur', 'destroy', 'outside'] as const) {
+    it(`does not select the pressed block after ${reason}`, () => {
+      const {plugin, host, doc, state$} = makeDragHarness();
+      document.body.appendChild(host);
+      host.dispatchEvent(new PointerEvent('pointerdown', {button: 0, pointerId: 1, bubbles: true}));
+      if (reason === 'drag') state$.next('dragging');
+      if (reason === 'escape') window.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}));
+      if (reason === 'cancel') window.dispatchEvent(new PointerEvent('pointercancel', {pointerId: 1}));
+      if (reason === 'blur') window.dispatchEvent(new Event('blur'));
+      if (reason === 'destroy') (plugin as any)._sub.unsubscribe();
+      const target = reason === 'outside' ? document.body : host;
+      target.dispatchEvent(new PointerEvent('pointerup', {pointerId: 1, bubbles: true}));
+      expect(doc.selection.selectBlock).not.toHaveBeenCalled();
+      expect((plugin as any)._handleClick).toBeUndefined();
+      (plugin as any)._sub.unsubscribe();
+      host.remove();
+    });
+  }
 
   it("adds the built-in appearance section only for an editable non-leaf block", () => {
     const plugin = new BlockControllerPlugin();

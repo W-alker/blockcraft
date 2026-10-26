@@ -2,7 +2,22 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-10-23 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-10-26 | Tracks `@ccc/blockcraft` npm releases.
+
+## 未发布 — 2026-10-26：浮动抓手点击完整选择
+
+**Severity**: patch（默认交互调整；发布版本由用户决定）
+
+**What changed / Why**: BlockController 的浮动抓手支持单击完整选中目标块，便于继续复制、
+格式化和编辑；已有跨块选区时补齐首尾块，避免只保留部分段落文字。
+
+**Affected ai-skills files**: `blockcraft-plugins-block.md`。
+
+**Behavior Changes**: 单块点击包含完整内容与容器后代；范围内抓手选择整个现有块范围，
+范围外抓手切换为单块。锁定块可选择，但拖动和修改仍受原权限约束。
+真正拖拽、取消手势不触发点击选择；悬停菜单和拖拽落点行为保持原规则。
+
+**Migration Recipe**: 宿主无需改动调用或数据；没有新增配置，不修改包版本号。
 
 ## 未发布 — 2026-10-23：斜杠菜单触发、查询长度与删除行为
 

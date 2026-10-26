@@ -59,6 +59,7 @@ export class BlockControllerPlugin extends DocPlugin {
 
   private _timer?: number
   private _sub = new Subscription()
+  private _handleClick?: Subscription
 
   public readonly customTools: IContextMenuItem[]
   private readonly customToolHandler?: customToolHandler
@@ -229,7 +230,7 @@ export class BlockControllerPlugin extends DocPlugin {
       placement.getState?.(block)?.mode !== 'absolute'
   }
 
-  private resolveDragData(activeBlock: BlockCraft.BlockComponent): InternalDragData {
+  private resolveDragData(activeBlock: BlockCraft.BlockComponent, selectedIds?: string[]): InternalDragData {
     const sel = this.doc.selection.value
     if (!sel || !isSelectionAlive(sel as any, this.doc) || sel.isInSameBlock) {
       return { kind: 'origin-block', blockId: activeBlock.id }
@@ -237,7 +238,7 @@ export class BlockControllerPlugin extends DocPlugin {
     if (sel.firstBlock.parentId !== sel.lastBlock.parentId) {
       return { kind: 'origin-block', blockId: activeBlock.id }
     }
-    const ids = this.resolveSelectedRangeIds(sel)
+    const ids = selectedIds ?? this.resolveSelectedRangeIds(sel)
     if (!ids.includes(activeBlock.id)) {
       return { kind: 'origin-block', blockId: activeBlock.id }
     }
@@ -250,6 +251,7 @@ export class BlockControllerPlugin extends DocPlugin {
       fromEvent<PointerEvent>(this._cpr.location.nativeElement, 'pointerdown')
         .pipe(takeUntil(this.doc.onDestroy$))
         .subscribe(evt => {
+          this._handleClick?.unsubscribe()
           const activeBlock = this._activeBlock
           if (!activeBlock) return
           if (evt.button !== 0) return
@@ -262,12 +264,18 @@ export class BlockControllerPlugin extends DocPlugin {
             this.clearActiveBlock()
             return
           }
-          if (this.isBlockProtected(activeBlock)) return
-
           const dragController = this.doc.dragController
           const initialState = dragController.state
           if (initialState !== 'idle') return
-          dragController.startDrag(evt, this.resolveDragData(activeBlock))
+          const selection = this.doc.selection.value
+          const selectedIds = selection ? this.resolveSelectedRangeIds(selection) : []
+          const clickIds = selectedIds.includes(activeBlock.id) ? selectedIds : [activeBlock.id]
+          // 保留按下前的多段选区，避免原生 mousedown 将它折叠到抓手旁。
+          evt.preventDefault()
+          if (!this.isBlockProtected(activeBlock)) {
+            dragController.startDrag(evt, this.resolveDragData(activeBlock, selectedIds))
+          }
+          this.confirmHandleClick(evt, activeBlock, clickIds)
           if (dragController.state !== 'armed') return
 
           // A press only arms the gesture. Keep the hovered menu open until
@@ -286,6 +294,66 @@ export class BlockControllerPlugin extends DocPlugin {
           this._sub.add(sub)
         })
     )
+  }
+
+  private confirmHandleClick(
+    startEvent: PointerEvent,
+    activeBlock: BlockCraft.BlockComponent,
+    blockIds: string[],
+  ): void {
+    const gesture = this._handleClick = new Subscription()
+    this._sub.add(gesture)
+    const host = this._cpr.location.nativeElement as HTMLElement
+    const view = host.ownerDocument.defaultView!
+    const cancel = () => gesture.unsubscribe()
+    gesture.add(() => {
+      if (this._handleClick === gesture) this._handleClick = undefined
+    })
+    gesture.add(this.doc.onDestroy$.subscribe(cancel))
+    gesture.add(this.doc.dragController.state$.subscribe(state => {
+      if (state === 'dragging' || state === 'dropping') cancel()
+    }))
+    gesture.add(fromEvent<PointerEvent>(view, 'pointerup', {capture: true}).subscribe(event => {
+      if (event.pointerId !== startEvent.pointerId) return
+      cancel()
+      if (
+        this.doc.isReadonly ||
+        !this.isBlockAlive(activeBlock) ||
+        !this.isControllerEligible(activeBlock) ||
+        !(event.target instanceof view.Node) || !host.contains(event.target)
+      ) return
+      // 协作删除/换父级时不把旧范围扩展到其它内容。
+      const current = this.doc.selection.value
+      const currentIds = current ? this.resolveSelectedRangeIds(current) : []
+      if (blockIds.length > 1 && (
+        currentIds.length !== blockIds.length ||
+        currentIds.some((id, index) => id !== blockIds[index])
+      )) return
+      if (blockIds.length === 1) {
+        this.doc.selection.selectBlock(activeBlock)
+      } else if (current?.start.type === 'text' && current.end.type === 'text' &&
+        current.firstBlock.parentId !== current.lastBlock.parentId) {
+        // 跨列等文本范围保留文本边界，整块端点会提升为整列/整个祖先分支。
+        this.doc.selection.replay({
+          anchor: {blockId: current.start.blockId, type: 'text', offset: 0},
+          head: {blockId: current.end.blockId, type: 'text', offset: current.end.block.textLength},
+          commonParent: current.commonParent,
+        })
+      } else {
+        this.doc.selection.setSelection(
+          {blockId: blockIds[0], type: 'selected'},
+          {blockId: blockIds[blockIds.length - 1], type: 'selected'},
+        )
+      }
+    }))
+    gesture.add(fromEvent<PointerEvent>(view, 'pointercancel', {capture: true}).subscribe(event => {
+      if (event.pointerId === startEvent.pointerId) cancel()
+    }))
+    gesture.add(fromEvent(view, 'pointerdown', {capture: true}).subscribe(cancel))
+    gesture.add(fromEvent(view, 'blur').subscribe(cancel))
+    gesture.add(fromEvent<KeyboardEvent>(view, 'keydown', {capture: true}).subscribe(event => {
+      if (event.key === 'Escape') cancel()
+    }))
   }
 
   @EventListen('selectStart', {flavour: "root"})

@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-10-23
+> Last updated: 2026-10-26
 
 ## ObjectDragPlugin
 
@@ -145,6 +145,11 @@ new BlockControllerPlugin({
 
 ### Notes
 
+- 单击浮动抓手会通过 Selection 的模型入口完整选中当前块，容器连同内部段落一起覆盖。
+  已有跨块选区且抓手位于该范围内时，点击补齐首尾块，完整选中这些块；点击范围外的抓手
+  则切换为该块。跨列文本范围只补齐首尾段落，不扩大为整列。锁定块仍可选中用于复制。
+  只有在抓手上释放且未进入拖拽时提交选择；
+  Escape、取消、窗口失焦和销毁会清理本次手势。悬停菜单与拖拽的范围、落点规则保持不变。
 
 - The built-in **颜色** second-level menu appears for an eligible editable flow
   block and whenever a multi-block range contains at least one eligible,
