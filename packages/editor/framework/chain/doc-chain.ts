@@ -1,6 +1,6 @@
 import { nextTick } from "../../global"
 import { IBlockSnapshot } from "../block-std"
-import { IBlockInlineRangeJSON } from "../modules"
+import {IBlockInlineRangeJSON} from '../modules/selection/types';
 
 export interface DocChainContext {
   doc: BlockCraft.Doc

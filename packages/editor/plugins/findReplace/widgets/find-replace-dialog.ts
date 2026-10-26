@@ -1,8 +1,10 @@
 import {ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, OnDestroy, OnInit, Output, ViewChild} from '@angular/core'
+import {Subscription} from "rxjs";
 import {FormsModule} from "@angular/forms";
 import {debounce} from "../../../global";
 import {AsyncPipe} from "@angular/common";
 import {FindReplaceHelper} from "../find-replace.helper";
+import {CsButtonComponent, CsTooltipDirective} from "@cses/ui";
 
 @Component({
   selector: 'find-replace',
@@ -11,7 +13,9 @@ import {FindReplaceHelper} from "../find-replace.helper";
   standalone: true,
   imports: [
     FormsModule,
-    AsyncPipe
+    AsyncPipe,
+    CsButtonComponent,
+    CsTooltipDirective,
   ],
 })
 export class FindReplaceDialog implements OnInit, OnDestroy {
@@ -26,11 +30,21 @@ export class FindReplaceDialog implements OnInit, OnDestroy {
   findText = ''
   replaceText = ''
 
+  @Input()
   helper!: FindReplaceHelper
 
+  private _destroyed = false
+  private _ownsHelper = false
+  private _stateSubscription?: Subscription
+
   ngOnInit() {
-    this.helper = new FindReplaceHelper(this.doc)
-    this.helper.listen()
+    this._destroyed = false
+    if (!this.helper) {
+      this.helper = new FindReplaceHelper(this.doc)
+      this.helper.listen()
+      this._ownsHelper = true
+    }
+    this._stateSubscription = this.helper.stateChange$.subscribe(() => this.cdr.markForCheck())
   }
 
   ngAfterViewInit() {
@@ -38,10 +52,17 @@ export class FindReplaceDialog implements OnInit, OnDestroy {
   }
 
   ngOnDestroy() {
-    this.helper.destroy()
+    this._destroyed = true
+    this._stateSubscription?.unsubscribe()
+    if (this._timer) {
+      clearTimeout(this._timer)
+      this._timer = null
+    }
+    if (this._ownsHelper) this.helper?.destroy()
+    else this.helper?.clearAll()
   }
 
-  onFlagChange(item: typeof this.helper.regFlagList[number]) {
+  onFlagChange(item: FindReplaceHelper['regFlagList'][number]) {
     this.helper.toggleFlag(item)
     this.helper.findAll(this.findText)
     this.cdr.markForCheck()
@@ -64,7 +85,12 @@ export class FindReplaceDialog implements OnInit, OnDestroy {
   }
 
   private _timer: any
+  private _lastFindText = ''
   onFindTextChange = debounce(() => {
+    // Firefox can emit both compositionend and input for the same value.
+    // A trailing duplicate must not reset navigation after the user moves on.
+    if (this._destroyed || this.findText === this._lastFindText) return
+    this._lastFindText = this.findText
     if (this._timer) {
       clearTimeout(this._timer)
       this._timer = null

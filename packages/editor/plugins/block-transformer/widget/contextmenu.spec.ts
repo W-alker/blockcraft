@@ -1,4 +1,7 @@
 import { ElementRef } from "@angular/core";
+import {fakeAsync, flushMicrotasks} from "@angular/core/testing";
+import * as Y from "yjs";
+import {OneShotRangeAnchor} from "../../../framework";
 import { BlockTransformContextMenu } from "./contextmenu";
 
 describe("BlockTransformContextMenu keyboard navigation", () => {
@@ -36,15 +39,20 @@ describe("BlockTransformContextMenu keyboard navigation", () => {
 
     component.list = [
       {
+        id: "block:paragraph",
+        kind: "block",
+        group: "basic",
+        groupLabel: "基础内容",
         flavour: "paragraph",
-        type: "block",
-        metadata: { label: "Paragraph" },
+        label: "Paragraph",
       },
     ] as any;
     const activeBlockContainer = document.createElement("div");
     component.activeBlock = {
       id: "block-1",
+      flavour: "paragraph",
       textLength: 5,
+      textDeltas: () => [{insert: "/icon"}],
       containerElement: activeBlockContainer,
       runtime: {
         domPointToModel: jasmine
@@ -132,6 +140,27 @@ describe("BlockTransformContextMenu keyboard navigation", () => {
     expect(preventDefault).toHaveBeenCalled();
     expect(stopPropagation).toHaveBeenCalled();
     expect(component.selectDown).toHaveBeenCalled();
+  });
+
+  it("normalizes a legacy WebKit ArrowDown key before consuming it", () => {
+    const { component } = createComponent({
+      collapsed: true,
+      start: { type: "text" },
+      firstBlock: { id: "block-1" },
+    });
+    spyOn(component, "selectDown");
+    const preventDefault = jasmine.createSpy("preventDefault");
+
+    (component as any).handleRootKeydown({
+      key: "Unidentified",
+      keyCode: 40,
+      preventDefault,
+      stopPropagation: jasmine.createSpy("stopPropagation"),
+      stopImmediatePropagation: jasmine.createSpy("stopImmediatePropagation"),
+    } as unknown as KeyboardEvent);
+
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+    expect(component.selectDown).toHaveBeenCalledTimes(1);
   });
 
   it("ignores immediate selection drift right after keyboard navigation", () => {
@@ -229,7 +258,7 @@ describe("BlockTransformContextMenu keyboard navigation", () => {
     expect(hostElement.scrollLeft).toBe(18);
   });
 
-  it("handles ArrowDown through the hotkey fallback path", () => {
+  it("exposes ArrowDown routing for the editor event fallback path", () => {
     const { component } = createComponent({
       collapsed: true,
       start: { type: "text" },
@@ -237,25 +266,19 @@ describe("BlockTransformContextMenu keyboard navigation", () => {
     });
     spyOn(component, "selectDown");
 
-    const preventDefault = jasmine.createSpy("preventDefault");
-    const stopPropagation = jasmine.createSpy("stopPropagation");
-
-    const handled = (component as any).handleHotkeyEvent(
-      {
-        preventDefault,
-        getDefaultEvent: () =>
-          ({
-            key: "ArrowDown",
-            stopPropagation,
-          }) as unknown as KeyboardEvent,
-      },
-      "ArrowDown",
-    );
+    const handled = component.handleEditorKey("ArrowDown");
 
     expect(handled).toBeTrue();
-    expect(preventDefault).toHaveBeenCalled();
-    expect(stopPropagation).toHaveBeenCalled();
     expect(component.selectDown).toHaveBeenCalled();
+  });
+
+  it("starts keyboard navigation from the first result after an empty filter", () => {
+    const {component} = createComponent(null, null);
+    (component as any).activeIdx = -1;
+
+    component.selectDown();
+
+    expect((component as any).activeIdx).toBe(0);
   });
 
   it("still handles ArrowDown when the native selection snapshot is lost", () => {
@@ -361,5 +384,241 @@ describe("BlockTransformContextMenu keyboard navigation", () => {
     expect(component.activeBlock.setInlineRange).not.toHaveBeenCalled();
 
     (component as any)._disarmCaretGuard();
+  });
+
+  it("reads the filter query when slash command text occupies the whole paragraph", () => {
+    const block = {id: "block-1"};
+    const {component} = createComponent({
+      collapsed: true,
+      start: {type: "text", offset: 5},
+      firstBlock: block,
+    });
+    component.triggerIndex = 0;
+    component.activeBlock.textDeltas = () => [{insert: "/icon"}];
+
+    expect(component.currentQuery()).toBe("icon");
+  });
+
+  it("keeps filtering when Y.Text updates before the canonical selection offset", () => {
+    const block = {id: "block-1"};
+    const {component} = createComponent({
+      collapsed: true,
+      // InputTransformer has committed `/icon`, but selection projection may
+      // still report the offset immediately after the original slash.
+      start: {type: "text", offset: 1},
+      firstBlock: block,
+    });
+    component.triggerIndex = 0;
+    (component.activeBlock as any).textLength = 5;
+    component.activeBlock.textDeltas = () => [{insert: "/icon"}];
+
+    expect(component.currentQuery()).toBe("icon");
+  });
+
+  it("tracks query input and collaborative prefix edits without consuming the existing suffix", () => {
+    const selection = {
+      collapsed: true,
+      start: {type: "text", offset: 1},
+      firstBlock: {id: "block-1"},
+    };
+    const {component} = createComponent(selection);
+    const yDoc = new Y.Doc();
+    const yText = yDoc.getText("paragraph");
+    yText.insert(0, "/原有正文");
+    const block = component.activeBlock;
+    Object.defineProperty(block, "textLength", {get: () => yText.length});
+    (block as any).yText = yText;
+    block.textDeltas = () => yText.toDelta();
+    const doc = component.doc as any;
+    doc.yDoc = yDoc;
+    doc.getBlockById = () => block;
+    doc.isEditable = (candidate: unknown) => candidate === block;
+    const range = new OneShotRangeAnchor(doc);
+    range.capture(block, 0, 1);
+    component.queryRange = range;
+
+    expect(component.currentQuery()).toBe("");
+    yText.insert(1, "icon");
+    // Query updates must not depend on selection projection catching up.
+    expect(component.currentQuery()).toBe("icon");
+    yText.insert(0, "前文");
+    selection.start.offset = 7;
+    expect(component.currentQuery()).toBe("icon");
+    selection.start.offset = 8;
+    expect(component.currentQuery()).toBeNull();
+    selection.start.offset = 7;
+    yText.delete(2, 1);
+    expect(component.currentQuery()).toBeNull();
+    range.reset();
+    yDoc.destroy();
+  });
+
+  it("reads only the slash query in the middle of existing paragraph text", () => {
+    const block = {id: "block-1"};
+    const {component} = createComponent({
+      collapsed: true,
+      start: {type: "text", offset: 12},
+      firstBlock: block,
+    });
+    component.triggerIndex = 7;
+    (component.activeBlock as any).textLength = 18;
+    component.activeBlock.textDeltas = () => [{insert: "before /icon after"}];
+
+    expect(component.currentQuery()).toBe("icon");
+  });
+
+  function createQuerySession() {
+    const selection = {
+      collapsed: true,
+      start: {type: "text", offset: 1},
+      firstBlock: {id: "block-1"},
+    };
+    const {component, cdr} = createComponent(selection);
+    const yDoc = new Y.Doc();
+    const yText = yDoc.getText("paragraph");
+    yText.insert(0, "/原有正文withoutSpaces");
+    const block = component.activeBlock;
+    Object.defineProperty(block, "textLength", {get: () => yText.length});
+    Object.assign(block, {yText, parentBlock: {id: "root"}});
+    block.textDeltas = () => yText.toDelta();
+    const doc = component.doc as any;
+    Object.assign(doc, {
+      yDoc,
+      getBlockById: () => block,
+      isEditable: (candidate: unknown) => candidate === block,
+    });
+    const range = new OneShotRangeAnchor(doc);
+    range.capture(block, 0, 1);
+    component.queryRange = range;
+    component.items = [...component.list, {
+      id: "inline:icon", kind: "command", group: "inline",
+      groupLabel: "行内内容", label: "Icon",
+    }];
+    const destroyCallbacks: (() => void)[] = [];
+    (component.destroyRef.onDestroy as jasmine.Spy).and.callFake(
+      (callback: () => void) => destroyCallbacks.push(callback),
+    );
+    const closed = jasmine.createSpy("closed");
+    component.close$.subscribe(closed);
+    component.ngOnInit();
+    flushMicrotasks();
+    return {
+      component, cdr, yText, selection, closed, doc,
+      destroy: () => {
+        destroyCallbacks.forEach(callback => callback());
+        range.reset();
+        yDoc.destroy();
+      },
+    };
+  }
+
+  it("checks deletion after the resulting caret and keeps an empty query open", fakeAsync(() => {
+    const h = createQuerySession();
+    h.yText.insert(1, "icon");
+    h.selection.start.offset = 5;
+    flushMicrotasks();
+    expect(h.component.list.map(item => item.id)).toEqual(["inline:icon"]);
+
+    h.yText.delete(4, 1);
+    // Y.Text observers see the shortened token before the caret moves left.
+    expect(h.closed).not.toHaveBeenCalled();
+    h.selection.start.offset = 4;
+    flushMicrotasks();
+    expect(h.closed).not.toHaveBeenCalled();
+    expect(h.component.currentQuery()).toBe("ico");
+
+    h.yText.delete(1, 3);
+    h.selection.start.offset = 1;
+    flushMicrotasks();
+    expect(h.closed).not.toHaveBeenCalled();
+    expect(h.component.list.length).toBe(2);
+    expect(h.yText.toString()).toBe("/原有正文withoutSpaces");
+
+    h.yText.delete(0, 1);
+    h.selection.start.offset = 0;
+    flushMicrotasks();
+    expect(h.closed).toHaveBeenCalledTimes(1);
+    h.destroy();
+  }));
+
+  it("checks committed composition length and cancels queued refreshes on destruction", fakeAsync(() => {
+    const h = createQuerySession();
+    h.doc.event.status.isComposing = true;
+    h.yText.insert(1, "一二三四五六七八");
+    h.selection.start.offset = 9;
+    flushMicrotasks();
+    expect(h.closed).not.toHaveBeenCalled();
+
+    h.doc.event.status.isComposing = false;
+    h.component.refreshQuery();
+    flushMicrotasks();
+    expect(h.closed).toHaveBeenCalledTimes(1);
+    expect(h.yText.toString()).toBe("/一二三四五六七八原有正文withoutSpaces");
+
+    h.component.refreshQuery();
+    h.destroy();
+    flushMicrotasks();
+    expect(h.closed).toHaveBeenCalledTimes(1);
+  }));
+
+  it("preserves the active item when a selection refresh keeps the same query", fakeAsync(() => {
+    const h = createQuerySession();
+    h.component.selectDown();
+    expect((h.component as any).activeIdx).toBe(1);
+    h.component.refreshQuery();
+    flushMicrotasks();
+    expect((h.component as any).activeIdx).toBe(1);
+    expect(h.closed).not.toHaveBeenCalled();
+    h.destroy();
+  }));
+
+  it("rejects a middle slash query after the caret leaves its token", () => {
+    const block = {id: "block-1"};
+    const {component} = createComponent({
+      collapsed: true,
+      start: {type: "text", offset: 18},
+      firstBlock: block,
+    });
+    component.triggerIndex = 7;
+    (component.activeBlock as any).textLength = 18;
+    component.activeBlock.textDeltas = () => [{insert: "before /icon after"}];
+
+    expect(component.currentQuery()).toBeNull();
+  });
+
+  it("emits the selected unified slash item", () => {
+    const {component} = createComponent(null, null);
+    const item = component.list[0];
+    const selected = jasmine.createSpy("selected");
+    component.commandSelected.subscribe(selected);
+
+    component.select();
+
+    expect(selected).toHaveBeenCalledOnceWith(item);
+  });
+
+  it("selects the item directly pressed by pointer instead of a stale hover index", () => {
+    const {component} = createComponent(null, null);
+    component.list.push({
+      id: "inline:icon",
+      kind: "command",
+      group: "inline",
+      groupLabel: "行内内容",
+      label: "Icon",
+    } as any);
+    const itemElement = document.createElement("li");
+    itemElement.className = "list__item";
+    itemElement.dataset["index"] = "1";
+    const child = document.createElement("span");
+    itemElement.appendChild(child);
+    const selected = jasmine.createSpy("selected");
+    component.commandSelected.subscribe(selected);
+
+    component.onMouseDown({
+      target: child,
+      preventDefault: jasmine.createSpy("preventDefault"),
+    } as unknown as MouseEvent);
+
+    expect(selected).toHaveBeenCalledOnceWith(component.list[1]);
   });
 });

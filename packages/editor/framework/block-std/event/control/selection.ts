@@ -1,4 +1,4 @@
-import { debounceTime, fromEvent, skip, takeUntil } from "rxjs";
+import { fromEvent, takeUntil } from "rxjs";
 import { UIEventState, UIEventStateContext } from "../base";
 import { EventScopeSourceType, EventSourceState, SelectEventState } from "../state";
 import { isMac } from "lib0/environment";
@@ -13,6 +13,9 @@ export class SelectionControl {
   private _mouseDown = false;
   private _lastSelectionString = ''; // 用于检测选区变化
   private _selectionChangeDebounceTimer: any = null;
+  private _multiClickEndTimer: any = null;
+  private _keyboardSelectionEndCleanup: (() => void) | null = null;
+  private _finishSelectionListenerCleanups: Array<() => void> = [];
 
   get isSelecting() {
     return this._isSelecting;
@@ -20,6 +23,14 @@ export class SelectionControl {
 
   get shiftKeyPressing() {
     return this._shiftKeyPressing;
+  }
+
+  private get _ownerDocument(): Document {
+    return this._dispatcher.rootElement.ownerDocument
+  }
+
+  private get _ownerWindow(): EventTarget {
+    return this._ownerDocument.defaultView ?? this._ownerDocument
   }
 
   private _finishSelection = (e: Event) => {
@@ -43,29 +54,63 @@ export class SelectionControl {
     }
     // 鼠标/触摸选择
     else if (this._mouseDown) {
+      this._clearFinishSelectionListeners()
+
       // 监听拖拽开始（可能转为拖放操作）
-      this._dispatcher.rootElement.addEventListener('dragstart', this._finishSelection, { once: true, capture: true })
+      this._listenOnceForFinish(this._dispatcher.rootElement, 'dragstart')
 
       // Safari may miss pointer events during native text selection, so also
       // listen to legacy mouse/touch releases to guarantee selectEnd.
-      window.addEventListener('pointerup', this._finishSelection, { once: true, capture: true })
-      window.addEventListener('mouseup', this._finishSelection, { once: true, capture: true })
-      window.addEventListener('touchend', this._finishSelection, { once: true, capture: true })
+      this._listenOnceForFinish(this._ownerWindow, 'pointerup')
+      this._listenOnceForFinish(this._ownerWindow, 'pointercancel')
+      this._listenOnceForFinish(this._ownerWindow, 'mouseup')
+      this._listenOnceForFinish(this._ownerWindow, 'touchend')
+      this._listenOnceForFinish(this._ownerWindow, 'touchcancel')
+      this._listenOnceForFinish(this._ownerWindow, 'blur')
+      this._listenOnceForFinish(this._ownerDocument, 'visibilitychange')
     }
+  }
+
+  private _listenOnceForFinish(target: EventTarget, eventName: string) {
+    const listener = (e: Event) => {
+      this._clearFinishSelectionListeners()
+      this._finishSelection(e)
+    }
+    target.addEventListener(eventName, listener, {once: true, capture: true})
+    this._finishSelectionListenerCleanups.push(() => {
+      target.removeEventListener(eventName, listener, true)
+    })
+  }
+
+  private _clearFinishSelectionListeners() {
+    this._finishSelectionListenerCleanups.forEach(cleanup => cleanup())
+    this._finishSelectionListenerCleanups = []
+  }
+
+  private _clearKeyboardSelectionEndListener() {
+    this._keyboardSelectionEndCleanup?.()
+    this._keyboardSelectionEndCleanup = null
   }
 
   /**
    * 为键盘选择设置结束监听
    */
   private _setupKeyboardSelectionEnd() {
+    this._clearKeyboardSelectionEndListener()
+
     // Shift 键释放时结束选择
-    const keyupHandler = (e: KeyboardEvent) => {
+    const keyupHandler: EventListener = event => {
+      const e = event as KeyboardEvent
+      this._keyboardSelectionEndCleanup = null
       if (!e.shiftKey && this._isSelecting) {
         this._isSelecting = false;
         this._dispatcher.run('selectEnd', this._buildContext(e));
       }
     };
-    window.addEventListener('keyup', keyupHandler, { once: true, capture: true });
+    this._ownerWindow.addEventListener('keyup', keyupHandler, { once: true, capture: true });
+    this._keyboardSelectionEndCleanup = () => {
+      this._ownerWindow.removeEventListener('keyup', keyupHandler, true)
+    }
   }
 
   /**
@@ -74,7 +119,9 @@ export class SelectionControl {
   private _handleMultiClickEnd = (e: MouseEvent) => {
     if (this._isSelecting) {
       // 双击/三击后立即标记选择结束
-      setTimeout(() => {
+      clearTimeout(this._multiClickEndTimer)
+      this._multiClickEndTimer = setTimeout(() => {
+        this._multiClickEndTimer = null
         if (this._isSelecting) {
           this._isSelecting = false;
           this._dispatcher.run('selectEnd', this._buildContext(e));
@@ -87,7 +134,7 @@ export class SelectionControl {
    * 通过 selectionchange 检测程序化选择
    */
   private _handleSelectionChange = () => {
-    const selection = document.getSelection();
+    const selection = this._ownerDocument.getSelection();
     if (!selection || selection.rangeCount === 0) {
       // 选区清空
       if (this._lastSelectionString) {
@@ -152,6 +199,8 @@ export class SelectionControl {
   }
 
   listen(root: BlockCraft.IBlockComponents['root']) {
+    const ownerWindow = root.hostElement.ownerDocument.defaultView ?? root.hostElement.ownerDocument
+
     // 1. 监听原生 selectstart 事件（鼠标拖拽、双击、三击）
     fromEvent<MouseEvent>(root.hostElement, 'selectstart').pipe(takeUntil(root.onDestroy$)).subscribe(e => {
       if (isNativeInputTarget(e.target)) return
@@ -159,7 +208,7 @@ export class SelectionControl {
     });
 
     // 2. 监听键盘事件
-    fromEvent<KeyboardEvent>(window, 'keydown', { capture: true }).pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
+    fromEvent<KeyboardEvent>(ownerWindow, 'keydown', { capture: true }).pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
       if (isNativeInputTarget(evt.target)) return
       // 追踪 Shift 键状态
       if (evt.shiftKey) {
@@ -177,7 +226,7 @@ export class SelectionControl {
     })
 
     // 3. 键盘释放事件
-    fromEvent<KeyboardEvent>(window, 'keyup', { capture: true }).pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
+    fromEvent<KeyboardEvent>(ownerWindow, 'keyup', { capture: true }).pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
       if (!evt.shiftKey) {
         this._shiftKeyPressing = false;
       }
@@ -202,13 +251,13 @@ export class SelectionControl {
     })
 
     // 5. 监听鼠标释放（重置状态）
-    fromEvent<PointerEvent>(window, 'pointerup', { capture: true }).pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
+    fromEvent<PointerEvent>(ownerWindow, 'pointerup', { capture: true }).pipe(takeUntil(root.onDestroy$)).subscribe(evt => {
       this._mouseDown = false;
     })
-    fromEvent<MouseEvent>(window, 'mouseup', { capture: true }).pipe(takeUntil(root.onDestroy$)).subscribe(() => {
+    fromEvent<MouseEvent>(ownerWindow, 'mouseup', { capture: true }).pipe(takeUntil(root.onDestroy$)).subscribe(() => {
       this._mouseDown = false;
     })
-    fromEvent<TouchEvent>(window, 'touchend', { capture: true }).pipe(takeUntil(root.onDestroy$)).subscribe(() => {
+    fromEvent<TouchEvent>(ownerWindow, 'touchend', { capture: true }).pipe(takeUntil(root.onDestroy$)).subscribe(() => {
       this._mouseDown = false;
     })
 
@@ -224,5 +273,10 @@ export class SelectionControl {
    */
   dispose() {
     clearTimeout(this._selectionChangeDebounceTimer);
+    this._selectionChangeDebounceTimer = null;
+    clearTimeout(this._multiClickEndTimer);
+    this._multiClickEndTimer = null;
+    this._clearKeyboardSelectionEndListener();
+    this._clearFinishSelectionListeners();
   }
 }

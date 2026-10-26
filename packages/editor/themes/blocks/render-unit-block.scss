@@ -1,0 +1,105 @@
+@use "object-focus-handle" as *;
+
+[data-blockcraft-root="true"] {
+  .render-unit-block {
+    --bc-render-unit-background-color: transparent;
+    --bc-render-unit-background-opacity: var(--bc-solid-block-background-opacity, 82%);
+    --bc-render-unit-border-color: transparent;
+    --bc-render-unit-padding-top: 0px;
+    --bc-render-unit-padding-right: 0px;
+    --bc-render-unit-padding-bottom: 0px;
+    --bc-render-unit-padding-left: 0px;
+    position: relative;
+    isolation: isolate;
+    min-height: calc(var(--bc-lh) * var(--bc-fs));
+    box-sizing: border-box;
+    background-color: var(--bc-render-unit-background-color);
+    background-color: color-mix(
+      in srgb,
+      var(--bc-render-unit-background-color) var(--bc-render-unit-background-opacity),
+      transparent
+    );
+    outline: 1px solid var(--bc-render-unit-border-color);
+    outline-offset: -1px;
+
+    > .render-unit-block__object-handle {
+      @include object-focus-handle;
+    }
+    &:hover > .render-unit-block__object-handle,
+    &:focus-within > .render-unit-block__object-handle {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    @media (hover: none) {
+      > .render-unit-block__object-handle {
+        opacity: 1;
+        pointer-events: auto;
+      }
+    }
+    &.selected > .render-unit-block__object-handle { display: none; }
+
+    // 与文本框相同：只在整块选中时显示八向手柄。
+    &.selected > shape-resizer { display: block; }
+    > shape-resizer {
+      .shape-resizer__rotate, .shape-resizer__rotation-stem { display: none; }
+    }
+    &.render-unit-sized {
+      min-height: 0;
+      > .render-unit-content {
+        height: 100%;
+        min-height: 0;
+        overflow: auto;
+      }
+    }
+  }
+
+  .render-unit-background-image {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .render-unit-content {
+    position: relative;
+    z-index: 1;
+    min-height: inherit;
+    box-sizing: border-box;
+    font-family: var(--bc-render-unit-text-font-family, inherit);
+    font-size: var(--bc-render-unit-text-font-size, inherit);
+    font-weight: var(--bc-render-unit-text-font-weight, inherit);
+    font-style: var(--bc-render-unit-text-font-style, inherit);
+    letter-spacing: var(--bc-render-unit-text-letter-spacing, inherit);
+    line-height: var(--bc-render-unit-text-line-height, inherit);
+    color: var(--bc-render-unit-text-color, inherit);
+    padding: var(--bc-render-unit-padding-top)
+      var(--bc-render-unit-padding-right)
+      var(--bc-render-unit-padding-bottom)
+      var(--bc-render-unit-padding-left);
+  }
+}
+
+[data-blockcraft-root="true"] .render-unit-block[data-bc-region-borders] {
+  outline: none;
+  border-top: var(--bc-region-border-top, none);
+  border-right: var(--bc-region-border-right, none);
+  border-bottom: var(--bc-region-border-bottom, none);
+  border-left: var(--bc-region-border-left, none);
+}
+
+@media screen {
+  [data-blockcraft-root="true"]:not(.readonly):not(.bc-print-content):focus-within
+  .render-unit-block:not(.selected):not([data-bc-readonly]):has(> .render-unit-content .focused:not([data-bc-readonly])) {
+    @include object-editing-outline;
+
+    // 绝对定位伪元素以 padding box 为基准，向外 1px 正好覆盖边框内沿。
+    &[data-bc-region-borders]::after {
+      outline-offset: 0;
+    }
+  }
+}

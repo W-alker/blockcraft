@@ -1,0 +1,183 @@
+/**
+ * Compact runtime reference for the model. This is intentionally narrower
+ * than the full editor skill: it contains the contracts an Agent may read or
+ * propose through the host, without asking the model to reproduce framework
+ * internals or DOM code.
+ */
+export const BLOCKCRAFT_AGENT_API_REFERENCE = `
+BLOCKCRAFT API REFERENCE
+
+The host uses BlockCraft's model-first API. The document is a Yjs-backed tree;
+the model graph is the source of truth and DOM/component instances may be
+virtualized or absent.
+
+READ APIs (conceptual host APIs):
+- blockcraft.get_editor_state returns rootId, readonly state, current
+  anchor/head selection, selected text, structure revision and capabilities.
+- blockcraft.get_block({blockId}) returns one model block's parent/index,
+  child IDs, props, text {plain, delta} and an on-demand snapshot without
+  requiring a mounted view. Normal document context omits recursive snapshots.
+- blockcraft.get_document_context({offset,maxBlocks}) returns a bounded live
+  outline page with coverage.nextOffset. Omit both arguments only when the
+  complete compatibility payload is explicitly required.
+- blockcraft.search_document({query,maxResults?}) searches the complete live
+  model text even when the request context is paged.
+- doc.model.getPath(blockId)
+- doc.model.getParentId(blockId)
+- doc.model.getChildrenIds(blockId)
+- doc.model.getTextLength(blockId)
+- doc.model.getTextDeltas(blockId)
+- doc.model.getProps(blockId)
+- doc.model.getFlavour(blockId)
+- doc.model.toSnapshot(blockId)
+- doc.exportSnapshot()
+- doc.schemas.has(flavour), doc.schemas.get(flavour, false)
+- blockcraft.get_schema_capabilities returns the actual schemas registered by
+  this host, including the existing nodeType, label, child constraints,
+  placement modes, semantic roles, creatability, writable prop keys and atomic
+  prop boundaries.
+- blockcraft.get_capability_directory returns the runtime-filtered Agent
+  extension directory for installed blocks, Inline Embeds, plugins, contexts,
+  skills and semantic tools.
+- blockcraft.get_capability({capabilityId}) returns one complete declaration,
+  including Block creation parameters, writable props, Inline Embed insertion
+  schemas and semantic actions.
+- blockcraft.delegate({specialist, objective, input?}) runs one independent,
+  read-only specialist model turn. Available specialists are document-analysis,
+  content-writing, structure-planning, host-workflow and quality-review.
+- doc.canInsertChild(parentId, childFlavour)
+
+MASTER TOOL LOOP:
+- A model turn may request registered tools before producing the final result.
+- Built-in and host read tools run in the browser host against current state.
+- Tool exchanges are bounded and returned on the next stateless model turn.
+- Specialist results are evidence and candidate operations; only the Master
+  may reconcile them into the final DocumentAgentResult.
+- After host semantic validation, complex edits may enter an independent
+  quality-review gate. A revise verdict is mandatory correction feedback; the
+  repaired result is validated and reviewed again before delivery.
+- blockcraft.apply_changes, document-write and external-write never execute in
+  the Master loop; they return requiresConfirmation for the host UI to handle.
+- Unknown tools and undeclared host capabilities fail closed.
+
+WRITE APIs (the host executes these only through an explicit validated delivery boundary):
+- doc.crud.transact(() => { ... })
+- doc.crud.replaceText(blockId, index, length, replacement)
+- doc.crud.applyTextDelta(blockId, delta)
+- doc.crud.updateBlockProps(blockId, props)
+- doc.crud.insertBlockSnapshots(parentId, index, snapshots)
+- doc.crud.replaceBlockSnapshots(blockId, snapshots)
+- doc.crud.deleteBlockById(blockId), deleteBlocks(parentId, index, count)
+- doc.crud.moveBlocks(parentId, index, count, targetParentId, targetIndex)
+- doc.schemas.createSnapshot(flavour, params)
+
+AGENT OPERATION MAPPING:
+- replace-text maps to doc.crud.replaceText; offsets are model text offsets.
+- update-block-props maps to doc.crud.updateBlockProps; only existing props or
+  host-allowlisted presentation props may be changed.
+- create-blocks asks the host to call doc.schemas.createSnapshot(flavour, params)
+  so the host, not the model, generates block IDs and normalized defaults.
+- replace-block asks the host to create one Schema snapshot and atomically call
+  doc.crud.replaceBlockSnapshots on an existing block. Use this for representation
+  changes such as bookmark/embed/card or inline transformations.
+- apply-text-delta maps to doc.crud.applyTextDelta and is the rich-text path
+  for formatting or inline changes. Use model offsets and Delta operations;
+  do not issue DOM selection or contenteditable commands.
+- An Inline Embed Delta insert is exactly {insert: {[embedKey]: primitive},
+  attributes?: primitiveRecord}. It consumes one model offset. The converter
+  and a same-key runtime capability must both be installed, and capability.insert
+  must validate the complete value and attributes. A capability without insert
+  is understanding-only and cannot be generated by the Agent.
+- Frozen date/time uses the installed blockcraft.inline-embed.date capability:
+  {insert: {date: "YYYY-MM-DDTHH:mm"}, attributes: {format: "YYYY-MM-DD HH:mm"}}.
+  Never encode a date as mention. If date insertion is unavailable, use a
+  normal string insert. Add a following string space before existing text.
+- Retain may write canonical text formats only. Embed semantic attributes cannot
+  be patched with retain; delete the one-offset Embed and insert a fully
+  validated replacement. Generic range deletion can still remove an Embed.
+- delete-blocks maps to doc.crud.deleteBlocks and removes a contiguous child
+  range. move-blocks maps to doc.crud.moveBlocks and only moves existing
+  contiguous children into a Schema-compatible parent.
+- Operations use sequential coordinates. The host simulates every operation
+  against a shadow Block tree before starting one Yjs transaction.
+- create-blocks and replace-block may declare clientRef. Use the generated root
+  as create-blocks.parentId for nested content or move-blocks.targetId for
+  existing content via "$ref:<clientRef>". Do not replace, delete, or move a
+  newly created block; emit its final form and location directly. Forward or
+  duplicate refs fail closed.
+
+REVISION DIFF DELIVERY:
+- Existing text edits, text insertion/deletion, block insertion/deletion and
+  block replacement can be staged as visible Revision Diff records.
+- Existing-block props/format changes, format-only text Delta, inline-object
+  insertion and block movement are not representable by Revision v1. They still
+  execute through the normal CRUD/Yjs/Undo path and simply have no Diff styling.
+- Mixed results are allowed. The host executes the complete validated result;
+  the user accepts or rejects only the operations represented in the revision
+  review UI. Diff coverage is never an Agent capability gate. This is not DOM
+  preview and does not enable global revision tracking for subsequent user input.
+- For append/end-of-document requests, create the new block directly at
+  context.document.append.parentId/index. Do not use move-blocks as an
+  insertion-position workaround.
+
+BLOCK TAXONOMY:
+- editable: paragraph, ordered, bullet, todo, blockquote, caption, code,
+  mermaid-textarea, word-art. Text lives in model inline/Y.Text deltas.
+- block/container: root, callout, columns, column, table, table-row, table-cell,
+  frame, shape, text-box, mermaid, object-group, placement-layout, render-unit.
+- void: divider, page-divider, image, attachment, bookmark, formula, video,
+  audio and registered embed blocks.
+
+DESIGN BLOCK CREATE CONTRACTS (summary only; get_capability is authoritative):
+- shape: createSnapshot('shape', [shapeType, optionalText]); text is a
+  shape-text child. Geometry uses width/height/rotation. Appearance uses small
+  independent groups (fill, outline, arrows, shadow, textFont, textPadding, etc.).
+  Do not invent their encoding or write removed effects/textFrame/textStyle records;
+  get_capability determines which props are writable.
+- text-box: createSnapshot('text-box', [textOrDeltas, props]); it contains a
+  paragraph child. Use the capability's current geometry and writable-prop
+  schema rather than legacy compact field names.
+- word-art: createSnapshot('word-art', [textOrDeltas, props]); it is editable
+  plain text. Text appearance uses independent compact groups; omitted groups
+  inherit schema defaults. The writable contract comes from get_capability.
+- mermaid: createSnapshot('mermaid', [mode, source]); mode is 'text', 'graph',
+  or 'default', and source is the plain Mermaid DSL string. The Schema creates
+  the internal 'mermaid-textarea' child; never insert that child directly under
+  the document root.
+- Existing Mermaid view mode changes use update-block-props on the Mermaid
+  block with {mode: 'graph'} for preview-only, {mode: 'text'} for source-only,
+  and {mode: 'default'} for source plus preview. Never set data-mode or
+  manipulate the rendered DOM.
+- paragraph headings are props.heading; do not invent a heading flavour.
+
+COMMON STORAGE RULES:
+- root.background remains a CSS background shorthand; root defaults add no fill object.
+- Object position is one "x y" string in layout px, at most two decimals.
+- Gradient/image fill and textFill use CSS linear-gradient(...) or
+  url("...") x% y% / cover no-repeat. Overall alpha is a separate
+  fillOpacity/textFillOpacity prop, omitted at 1. Container images use bgi/bgo.
+- Omit disabled/default groups. Do not invent props: get_capability still
+  determines each block's writable fields.
+
+LAYOUT RULES:
+- Absolute design objects use their block placement/position props and must be
+  inserted under a parent that accepts the requested flavour.
+- Use stable IDs from context for edits. For new blocks use create-blocks;
+  never manually concatenate IDs or return DOM/CSS/HTML instructions.
+- Use the schema's normalized defaults. Do not omit required creation params
+  when a block's createSnapshot contract requires them.
+
+SAFETY RULES:
+- The request context is authoritative. Never invent a blockId, text offset,
+  schema, parent or prop key.
+- Runtime host capabilities are allowlisted declarations, not permission to
+  invoke arbitrary application code. Undeclared custom behavior fails closed.
+- An Inline Embed key is its canonical value/attributes data contract. A host
+  renderer override using the same key must preserve that contract; a different
+  shape requires a new key and a new Agent capability.
+- Do not write Yjs maps, DOM nodes, Angular components or framework internals.
+- The host validates readonly state, structure/content revision, schema
+  compatibility and writable props before one Yjs transaction.
+- Return a concise summary and structured operations only; do not claim a
+  change was accepted before the user decides in the Revision review UI.
+`

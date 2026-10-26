@@ -1,3 +1,5 @@
+@use "sass:meta";
+
 .bc-snapshot-viewer {
   display: block;
   width: 100%;
@@ -8,12 +10,10 @@
     min-height: 1px;
     min-width: 0;
     max-width: 100%;
-    overflow-x: hidden;
   }
 
   [data-block-id] {
     min-width: 0;
-    max-width: 100%;
     box-sizing: border-box;
   }
 
@@ -86,6 +86,75 @@
     line-height: 1.6;
   }
 
+  .page-divider-block {
+    display: block;
+    margin: 8px 0;
+    user-select: none;
+
+    .page-divider-inner {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--bc-color-light, #8b9cad);
+      font-size: 12px;
+    }
+    .page-divider-seg {
+      flex: 1;
+      border-top: 1px dashed var(--bc-divider-color, #dddddd);
+    }
+    .page-divider-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      white-space: nowrap;
+      .bc_icon { font-size: 14px; }
+    }
+  }
+  &.bc-paginated .page-divider-block,
+  .bc-paginated .page-divider-block,
+  .bc-paginated & .page-divider-block { display: none; }
+
+  // The live sticker layout is component-scoped; the static snapshot DOM uses
+  // the same surface geometry without mounting Angular's component stylesheet.
+  .sticker-block {
+    display: block;
+    width: fit-content;
+    max-width: 100%;
+    user-select: none;
+
+    &[data-bc-placement="absolute"] {
+      max-width: none;
+    }
+
+    .sticker-block__surface {
+      position: relative;
+      max-width: 100%;
+    }
+
+    .sticker-block__surface img {
+      position: absolute;
+      inset: 0;
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: fill;
+    }
+
+    .sticker-block__missing {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      border: 1px dashed #aaa;
+      color: #777;
+      font-size: 12px;
+    }
+  }
+
+  [data-bc-object-group] .sticker-block__surface {
+    max-width: none;
+  }
+
   .image-block,
   .bookmark-block,
   .attachment-block,
@@ -108,6 +177,220 @@
   .attachment-block {
     max-width: 100%;
     min-width: 0;
+  }
+
+  // Shape's live layout is component-scoped. The snapshot DOM needs the same
+  // positioning for its geometry-derived text rectangle and user margins.
+  .shape-block {
+    display: block;
+    width: fit-content;
+    background: transparent;
+  }
+
+  .shape-block__shell {
+    position: relative;
+    box-sizing: border-box;
+    transform-origin: center center;
+  }
+
+  .shape-block__geometry {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+  }
+
+  .shape-block__text-frame {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+
+    > .shape-text-block {
+      width: 100%;
+      max-height: 100%;
+      margin: 0;
+      border: 0;
+      overflow: hidden;
+      background: transparent;
+      color: inherit;
+      text-align: inherit;
+    }
+  }
+
+  // Audio and video keep their component styles in the live editor's
+  // encapsulated stylesheets. Snapshot Viewer creates the same DOM by hand,
+  // so project the presentation rules here as well.
+  .audio-block {
+    display: block;
+    margin: 6px 0;
+    max-width: 520px;
+
+    @include meta.load-css("../blocks/audio-player");
+
+    // Snapshot DOM does not instantiate CsButtonComponent, whose base styles
+    // are normally injected by Angular. Keep the same token-based primitives.
+    .audio-player__button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      border: 1px solid transparent;
+      border-radius: 50%;
+      background: transparent;
+      font: var(--cs-ref-typo-cn-12-regular);
+      cursor: pointer;
+      transition: all .2s ease;
+
+      &:focus-visible {
+        outline: 2px solid var(--cs-color-primary, var(--bc-active-color));
+        outline-offset: 2px;
+      }
+
+      &:disabled { cursor: not-allowed; }
+
+      &--primary {
+        background: var(--cs-color-primary, var(--bc-active-color));
+        color: var(--cs-color-text-inverse, var(--bc-bg-primary));
+
+        &:hover:not(:disabled) {
+          background: var(--cs-color-primary-hover, var(--bc-active-color));
+        }
+        &:active:not(:disabled) {
+          background: var(--cs-color-primary-active, var(--bc-active-color));
+        }
+        &:disabled {
+          background: var(--cs-sem-bg-disabled, var(--bc-bg-gray));
+          color: var(--cs-color-text-light2, var(--bc-color-lighter));
+        }
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .audio-block__wrapper,
+      .audio-player__button { transition: none; }
+    }
+
+  }
+
+  .video-block {
+    display: block;
+    position: relative;
+    margin: 8px 0;
+
+    .video-block__wrapper {
+      position: relative;
+      width: 100%;
+      max-width: 100%;
+      border-radius: 8px;
+    }
+
+    .video-block__container {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      border-radius: 8px;
+      background: #000;
+
+      video {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+      }
+
+      .video-wrapper {
+        position: relative;
+      }
+
+      .embed-container {
+        position: relative;
+        width: 100%;
+        height: 0;
+        overflow: hidden;
+        padding-bottom: 56.25%;
+        background: #1a1a1a;
+
+        iframe,
+        embed,
+        object {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          border: 0;
+        }
+      }
+
+      .video-link-preview {
+        display: flex;
+        align-items: center;
+        padding: 16px;
+        border-radius: 8px;
+        background: var(--bc-bg-secondary, #f5f5f5);
+
+        .link-info {
+          flex: 1;
+          min-width: 0;
+        }
+
+        .link-title {
+          margin-bottom: 4px;
+          color: var(--bc-color, #333);
+          font-size: 14px;
+          font-weight: 500;
+        }
+
+        .link-url {
+          display: block;
+          overflow: hidden;
+          margin-bottom: 4px;
+          color: var(--bc-active-color, #1890FF);
+          font-size: 13px;
+          text-overflow: ellipsis;
+          text-decoration: none;
+          white-space: nowrap;
+        }
+
+        .link-hint {
+          color: var(--bc-color-light, #999);
+          font-size: 12px;
+        }
+      }
+    }
+  }
+
+  .image-block .img-wrapper[data-bc-object-sizing] {
+    max-width: 100%;
+
+    // Match the live image frame geometry in snapshot and print rendering.
+    > img {
+      position: absolute;
+      inset: 0;
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+  }
+
+  .video-block .video-block__wrapper[data-bc-object-sizing] {
+    .video-block__container,
+    .video-wrapper {
+      width: 100%;
+      height: 100%;
+    }
+
+    .embed-container {
+      height: 100%;
+      padding-bottom: 0;
+    }
   }
 
   .columns-block .columns-wrapper,
@@ -137,9 +420,7 @@
   }
 
   .embed-frame-block .iframe-wrapper,
-  .embed-frame-block iframe,
-  .embed-frame-block .iframe-link,
-  .embed-frame-block .iframe-brand {
+  .embed-frame-block iframe {
     min-width: 0;
     max-width: 100%;
   }

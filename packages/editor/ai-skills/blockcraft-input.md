@@ -2,21 +2,230 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying text input behavior.
 >
-> Last updated: 2026-04-13
+> Last updated: 2026-10-23
 
 ## Architecture Overview
 
 ```
-DOM beforeInput event inside an editable block
+beforeInput / keydown / compositionStart
   → UIEventDispatcher routes to InputTransformer
-  → e.preventDefault() (ALWAYS — editor owns all mutations)
-  → InputTransformer classifies inputType
-  → Writes directly to Y.Text via EditableBlockComponent methods
-  → Y.Text fires Y.Event
-  → InlineRuntime.applyDelta() updates DOM
+  → source adapter chooses live BlockSelection or normalized StaticRange endpoints
+  → planSelectionEdit() creates one short-lived SelectionEditPlan
+  → InputTransformer dispatches by plan.kind and prevents owned native input
+  → executor mutates blocks / Y.Text in Yjs transactions
+  → post-edit cursor recipe updates the canonical model selection
+  → Y.Event drives InlineRuntime.applyDelta() and DOM projection
 ```
 
 **Key principle**: The editor intercepts `beforeInput` for `EditableBlockComponent` surfaces, prevents default browser behavior, and writes directly to Yjs. The DOM is never the source of truth for editable blocks — Yjs is.
+
+### 独立区域组合模式
+
+通过 `DocConfig.contentComposition` 显式启用 `DocumentCompositionSession` 时，输入和粘贴在写入前通过完整
+`SelectionEditPlan` 的文字、删除及插入落点检查归属。跨共享正文/独立区域、跨两个独立区域，
+以及删除绑定容器的操作整次拒绝；不能先写部分内容再抛错，Yjs 事务不会自动回滚。
+会话失败或销毁后，编辑器切为只读；不能重新解除只读继续写入失效会话。
+
+输入仍只写 `editorDoc`。共享源投影以远端事务进入已有选区和 IME 延迟同步路径；
+独立区域内容不进入共享源。Undo 按内容归属隔离捕获，并在执行时核验区域壳仍为同一实例，
+避免恢复已删除或重新绑定区域的历史。未启用组合的文档保留原输入、修订与撤销路径。
+
+### 持续输入格式
+
+Input 通过内部 `TypingFormatState` 维护当前用户的输入格式。它与文档内容分离：
+实际文字及其格式仍保存在 `Y.Text`，当前输入状态不写入快照，也不向协作者同步。
+固定／浮动文字工具栏、普通输入和 `CompositionSession` 提交读取同一份状态。
+
+段落标记的字符默认格式保存在 `props.textDefaults`，属于文档并参与协同、快照及撤销。
+空段落的格式命令、完整段落的字符格式命令，以及删除最后一段文字，会在对应编辑事务内更新它。
+导航到空段落或保存重开时继承该默认值；本地明确选择的输入格式优先。
+只保存字体、字号、字距、颜色和字样，不复制链接、业务数据或修订标记。
+空段落的既有零长光标节点通过 `data-bc-paragraph-defaults` 投影外观，不写入占位文字。
+
+- 连续输入、删除部分文字、删空后续写保留当前格式；空文本不是重置格式的信号。
+- 光标移动到另一位置、切换文本块，或用户主动收起文本选区时，重新继承落点格式。
+  非折叠文本选区使用所选文字的公共格式；删除后的光标配方属于同一次编辑，继续该格式。
+- 当前点用 `Y.RelativePosition` 跟随本地及远端增删；编辑完成后重建相对锚点，
+  避免空文本继续引用已删除字符。续用样式的 Enter 段落继承当前字符外观。
+- 撤销／重做在本地 Undo item 上保存和恢复输入状态，包含恢复到空文本的情况。
+  清空选区、进入非文本选区或纯文本块时释放富文本状态；文档销毁时清理订阅和 Yjs 监听。
+- `setNextInsertAttrs()`、`peekNextInsertAttrs()`、`hasNextInsertAttrs()` 和
+  `clearNextInsertAttrs()` 保留兼容名称，但属性不再在一次输入后被消费。
+  新的格式命令更新持续状态，显式空属性对象表示移除格式。
+
+状态读取不查询 DOM 或要求块组件挂载；连续编辑复用当前格式，导航／范围格式变化才重新读取文本 Delta。
+粘贴和 API 直接写入的内容重新继承写入后的格式，避免旧输入状态覆盖外部内容。
+输入携带明确属性时直接使用 Yjs 观察者驱动视图，不先修改零宽占位符或行尾 DOM。
+
+### Tab 缩进上限
+
+通用 Tab 块缩进最多为 8 级（`depth: 8`，未缩进为 0），并保留不能超过前一个兄弟块
+深度加 1 的约束。多块选区在写入前检查全部目标；任一目标已达 8 级时，整次增加缩进
+不写入，避免改变相对层级。Shift+Tab 保持逐级减少缩进；已有超过 8 级的数据不自动
+裁剪，仍可减少缩进。代码块的 Tab 字符输入及表格专属导航不受此通用上限影响。
+
+### 下一段样式
+
+普通编辑与修订模式共用纯函数 `resolveNextParagraphStyle()`。
+段中拆分保留当前样式；段尾 Enter 读取 `props.nextParagraphStyle`：`same` 延续，`body` 回到正文。
+缺省时正文、列表延续，标题、引用回正文并清除原段的字符覆盖、对齐、缩进及排版覆盖。
+新列表项不继承已完成状态或显式起始编号；空列表仍先降低缩进，再退出到正文并保留字符外观。
+Shift+Enter 仍在同一段落内换行。纯文本及专属块输入继续由既有扩展点负责。
+
+### Revision-aware execution
+
+When `doc.revisions.isTracking` is true—either because global mode is `track`
+or while a synchronous `runAsRevision()` scope is active—the same planner and executor route
+text insert/delete/replace, paste, cross-block selection edits, Enter splits,
+paragraph-boundary Backspace/Delete merges and IME commits through
+`DocumentRevisionManager`. Local and remote changes therefore still converge
+through the normal Yjs observe/render path; there is no local-only revision DOM
+path. One IME composition is one atomic revision, while adjacent same-author
+text gestures in the same tracking session can share a review-card `groupId`.
+
+Deletion is non-destructive: text remains in Y.Text and is attributed by
+relative range; whole blocks remain in the block tree; split/merge keeps both
+same-parent editable blocks and records a boundary revision. A user may directly
+shrink or extend their own pending insertion. A later inline edit may cross
+pending or decided text revisions: Input keeps the user gesture in one group,
+splits destructive ranges wherever the active dependency set changes, and
+stacks each segment through `dependsOn`. This prevents rejecting an outer
+insertion from also discarding adjacent original text. Normal Undo/Redo tracks
+content and revision records together. Accept/reject materializes the chosen
+content and consumes those records as a separate Undo item; undoing that item
+restores the pending revision instead of creating a second decision.
+
+Repeated deletion is effect-idempotent per author while the proposal is
+pending. The manager reuses that `text-delete` / `block-delete` record and an
+extended gesture creates records only for uncovered ranges or block IDs. Once
+accepted/rejected, the record is consumed; surviving content may receive a new
+proposal, while another author receives an independent pending record.
+
+Continuous tracked typing has no wall-clock idle cutoff. Adjacent same-actor
+insert/delete records in the same block and tracking session retain one
+`groupId` even after a long pause. Semantic discontinuity—not elapsed time—ends
+the batch: a session/actor/mode reset, target block or operation-kind change,
+non-adjacent edit, or explicit grouping scope.
+If new text is inserted inside a pending deletion range, the overlapping Delta
+segment renders with insertion styling; the deletion style remains on the
+surrounding original text. Continuous typing there extends one insertion
+record even though the outer deletion remains an explicit dependency. A truly
+unrelated nested revision still ends that fast path and stays independently
+reviewable.
+
+Pending insertion ranges use tight relative boundaries. A different author's
+insert at the start/end is adjacent; an insert strictly inside is dependent.
+Only the original author may resize their own uncontested pending insertion,
+and that fast path rewrites the relative target after the Y.Text mutation.
+
+Inline Embed insertion/deletion goes through the same length-one Revision range
+path. A delete-plus-object-insert replacement shares one review group, while an
+unprefixed semantic `formatText(offset, 1, attrs)` is normalized to that same
+old/new replacement. General text format changes, table row/column or
+cell-structure edits, block/Embed movement and cross-container structure remain
+enabled through their normal Yjs/Undo path without a Diff. This is a model
+fallback, never a fallback to native `contenteditable`. Invalid/stale edit
+plans still fail closed before browser DOM mutation.
+
+`runAsRevision()` does not change `mode$` and must not span asynchronous user
+input. Its callback is for immediate programmatic CRUD only; after the callback
+returns, ordinary user input follows the previously configured global mode.
+
+### Adapter / Planner / Executor
+
+Input has one internal planning boundary:
+
+- The **adapter** accepts the current `BlockSelection` when semantic model intent must win (gap, boundary, table-cell, whole-block, scoped text), or normalizes `beforeinput.getTargetRanges()` directly to current `INormalizedEndpoints` for ordinary native text input.
+- The pure **planner** in `selection-edit-plan.ts` reads only block IDs, `parentId`, `childrenIds`, and text lengths. It emits `text-cursor`, `range`, `block-range`, `gap`, `boundary`, `table-cell`, or `unsupported`; it never reads DOM, layout, or lazy endpoint `point.block` references.
+- The **executor** in `InputTransformer` resolves live blocks by ID immediately before mutation, validates half-open text slices, captures undo selection, performs Yjs transactions, and applies the plan's insertion/stabilization cursor recipe.
+
+`beforeInput`, printable keydown fallback, Backspace/Delete, Enter, and `compositionStart` each create at most one plan for the accepted model selection. Specialized table, boundary, gap, and whole-block behavior is an executor selected by `plan.kind`, not a separate point-shape pipeline.
+
+For performance, ordinary printable text keydown and ordinary text Backspace/Delete are rejected by an O(1) endpoint-type gate before planning; their authoritative work remains in `beforeInput` or the existing inline keyboard path. Planning performs no layout reads and resolves scope/tree data once per owned edit event.
+
+`InputTransformer.deleteByRange()` accepts only a live `BlockSelection`; the legacy `INormalizedRange` overload has been removed. Browser-owned `StaticRange` values are normalized at the event adapter boundary into `INormalizedEndpoints`, then planned without converting through deprecated `from/to/index/length` shapes. This distinction matters for virtual rendering: the planner is model-only and render-independent; only final DOM projection/focus requires a mounted editing surface.
+
+After an executor mutates Yjs, its cursor recipe resolves the live editable block by ID and commits through `SelectionManager.setCursorAt()` / `setCursorAtBlock()`. A successful programmatic write is authoritative and is not followed by `recalculate()`. Failure to resolve or project the intended cursor fails closed (`blur()` or a documented adjacent-block focus recipe); Input does not inspect the DOM to guess whether its own model write succeeded.
+
+## Fail-Closed Input Guard
+
+`InputTransformer` must run for editor-root `beforeInput` even when `doc.selection.value` is currently `null`. If neither the live `BlockSelection` nor `beforeinput.getTargetRanges()` can produce a valid edit plan, the handler **must call `preventDefault()` and clear the editor selection** instead of returning silently. Stale IDs, invalid offsets/indexes, unsupported endpoint combinations, or live blocks that no longer match the plan all fail closed before native DOM mutation.
+
+This protects complex native selections such as container-block / nested-block selections where the browser can paint a range but BlockCraft cannot yet express it safely. Until a selection is represented by `BlockSelection` (or a normalized target range), user input is not allowed to mutate DOM directly.
+
+### Absolute Object Selection
+
+A same-block whole selection whose persisted placement is absolute, or a
+non-empty boundary interval inside `placement-layout` / `object-group`, is an
+object selection—not a request to replace those blocks with text.
+`BlockPlacementManager.isAbsoluteObjectSelection()` is the centralized semantic
+check used by Input. In this state printable keydown fallback, non-deletion
+`beforeinput`, IME composition start, Enter, Tab and paste are prevented while
+the model selection remains on the object set. Input must not materialize a
+paragraph inside the placement plane, create a composition session, modify the
+layout container's indentation or let native contenteditable mutate the DOM.
+
+This is input isolation, not readonly. Delete/Backspace still follows the
+placement deletion path; a multi-selection deletes its contiguous object
+interval in one undo step. Object drag, resize, styling and layout transitions
+remain legal. Once a shape double-click focuses its nested
+`shape-text` editable child, the selection is text-shaped and the normal
+InputTransformer/CompositionSession pipeline applies.
+
+Boundary selections (`ISelectionPoint.type === 'boundary'`) are model-recognized and editable when both endpoints are in the same `renderUnit` container that can host paragraphs. In that case typing / printable keydown replaces the covered child range with one paragraph, IME first materializes an empty paragraph so the composition commits into `Y.Text`, Backspace/Delete delete the covered child range, and Enter replaces the range with an empty paragraph. Supported mixed `text + boundary` ranges under the same direct parent are replaced through the Yjs-owned text path, preserving the surviving text endpoint for typing and IME instead of blurring or letting native DOM input mutate content. Boundary selections in containers that cannot safely host a paragraph still fail closed (`preventDefault()` + clear selection).
+
+Table-cell selections (`ISelectionPoint.type === 'table-cell'`) are also model-recognized and **do not rely on a native DOM Range or a complete cell Component matrix**. `resolveTableCellSelectionTarget()` resolves anchor/head stable IDs through `TableModelGrid`, expands merged-cell closure, and returns unique visible master IDs. Typing or printable keydown replaces each target cell's children through `DocCRUD.insertBlockSnapshots()` / `deleteBlocks()`, inserts text into the anchor cell's fresh paragraph, and moves the caret after the inserted text. IME first performs the same stable-ID structural materialization, moves the caret to the fresh anchor paragraph, then starts `CompositionSession` so the committed text is written to `Y.Text`. Backspace/Delete clear every selected visible master and restore the table-cell rectangle selection. Enter clears the selected cells and places the caret in the anchor cell's fresh empty paragraph. Intermediate cells may be unmounted; invalid/malformed model targets fail closed instead of falling back to partial DOM state.
+
+Text-shaped ranges can inherit behavior from `SelectionScopePolicy` (`selection/scope.ts`). The scope is resolved from the nearest ancestor block schema with `metadata.selectionScope`; blocks with no declaration or `selectionScope: 'transparent'` are transparent. The built-in `columns` policy is model-first for `beforeInput`: it deletes the selected content and any fully covered intermediate column/block content, but it does **not** append the surviving tail of the end-column text block into the start-column text block. IME follows the same rule: composition still prevents native DOM mutation and starts from the surviving start text endpoint, but cross-column replacement does not merge text across column boundaries.
+
+Composition has the same rule:
+
+- `compositionStart` tries to recover selection from `CompositionEventState.selectionResult`.
+- The recovered model selection is planned exactly once. Gap, boundary, table-cell, whole-block, mixed structural/text, cross-block text, and collapsed text composition all dispatch from that plan.
+- Once `compositionStart` accepts a model selection, `CompositionSession` captures its commit anchor directly from the accepted text point or the materialized paragraph (`gap` / `boundary` / `table-cell` / selected renderUnit). Materialization commits its model cursor directly; it does not run a follow-up `selection.recalculate()`.
+- IME paths that materialize structure before commit (`gap`, `boundary`, `table-cell`, whole-block selected, mixed cross-block ranges) keep the structural transaction and the later `compositionEnd` text commit inside one `DocUndoManager` capture group. Undo therefore restores the pre-input selection and data atomically even when the user spends longer than Yjs' normal `captureTimeout` inside the input method.
+- While the session is active, composing `beforeinput` target ranges are treated as transient browser state and do not retarget the captured `OneShotCursorAnchor`.
+- If recovery fails, it prevents default, blurs editor selection, and does not start `CompositionSession`.
+- If recovery fails because the current selection still points at removed blocks,
+  `InputTransformer` marks the pending composition as aborted. The matching
+  `compositionEnd` is consumed without committing text; BlockCraft does not
+  guess a nearby insertion block for stale IME input.
+- A later `compositionEnd` without an accepted active session is ignored after `preventDefault()`.
+- `beforeInput` events with `isComposing === true` are prevented when no active `CompositionSession` owns them.
+
+## Block Readonly Write Footprint
+
+Before an input plan mutates Yjs, `readonly-write-footprint.ts` lowers the
+`SelectionEditPlan` to the blocks that the operation will write, insert into,
+remove, or structurally replace. `InputTransformer` asks
+`BlockReadonlyManager` to validate that footprint before the executor runs.
+This covers collapsed text, cross-block ranges, gap/boundary insertion,
+whole-block replacement, table-cell rectangles and scope-policy operations
+without reading DOM or layout.
+
+If any target is effectively readonly, or a removal/move target contains a
+locked descendant, input fails closed: the owned browser event is prevented,
+the model is unchanged, and a typed `BlockReadonlyError`/`violation$` signal is
+produced at the guard boundary. Selection itself remains legal so users can
+drag-select and copy protected content.
+
+Composition follows the same preflight:
+
+- `compositionStart` never materializes a paragraph or opens a session inside a
+  protected footprint;
+- when that preflight is rejected, Input clears the native/model selection as
+  part of aborting the session. Calling `preventDefault()` alone is insufficient
+  on some IME/browser combinations because native composition may otherwise
+  continue mutating the projected DOM even though Yjs commit is blocked;
+- an active session rechecks permission before `compositionEnd` commits, so a
+  local or remote lock arriving during IME cannot leak text into Yjs;
+- aborting for readonly closes the capture group without consuming unrelated
+  undo history.
+
+Native input islands bypass `InputTransformer`, so their owning Block/Plugin
+must hide/disable editing UI and recheck `block.isReadonly` immediately before
+every synchronous or awaited `updateProps()` commit. Read-only actions such as
+preview/download may remain enabled.
 
 ## Native Input Islands
 
@@ -32,7 +241,9 @@ DOM beforeInput event inside an editable block
 | File | Purpose |
 |------|---------|
 | `framework/modules/input/index.ts` | `InputTransformer` — main input handler |
+| `framework/modules/input/selection-edit-plan.ts` | Pure model selection → edit intent planner |
 | `framework/modules/input/composition-session.ts` | `CompositionSession` — IME state machine |
+| `framework/modules/input/readonly-write-footprint.ts` | Pure plan → guarded block operation mapping |
 | `framework/block-std/event/control/` | Event controls (keyboard, mouse, composition) |
 
 ## Input Types Handled
@@ -52,7 +263,14 @@ The `beforeInput` event's `inputType` determines behavior:
 | `deleteSoftLineForward` | Cmd+Delete — delete to line end |
 | `insertFromPaste` | Handled by ClipboardManager |
 | `insertReplacementText` | Autocorrect/spell check replacement |
+| `deleteByDrag` | Rejected fail-closed; BlockCraft object/inline-image movement uses model-owned Pointer transactions |
+| `insertFromDrop` | Rejected fail-closed; external files use `DndService`, not browser contenteditable insertion |
 | `formatBold/Italic/...` | Format shortcuts (browser-initiated) |
+
+The default inline-image renderer additionally prevents native HTML DnD at
+`dragstart`, so its normal Pointer move path does not emit either drag input
+type. The InputTransformer rejection remains a last-resort DOM consistency
+guard for browser, extension or script anomalies.
 
 ## IME / Composition
 
@@ -73,7 +291,10 @@ Manages the lifecycle of an active IME session:
 - Creates a `CursorBlot` at the cursor position
 - Tracks the composition text
 - Uses `OneShotCursorAnchor` (Yjs `RelativePosition`) to maintain cursor position during collaboration
+- Captures the anchor from the accepted model selection/materialized block at `compositionStart`; DOM selection jitter during IME startup must not retarget the eventual commit.
 - On commit: removes CursorBlot, inserts final text into Y.Text
+- Restores the committed caret with `setCursorAt()` after rerender; if WebKit drops focus during projection, the editor refocuses and reapplies the same model cursor without reading the DOM back into the model
+- If the active editable block owns wrapped-image line fragments, acquires one idempotent InlineRuntime layout-freeze lease before native composition starts. Resize/content invalidations stay dirty-only until the final Y.Text write, rerender and caret restoration finish; `end()`, abort, block deletion and reset all release the same lease.
 
 ## Cross-Block Operations
 
@@ -82,9 +303,21 @@ When selection spans multiple blocks:
 | Operation | Behavior |
 |-----------|----------|
 | Insert text | Delete selected content across blocks, insert at anchor |
+| IME over cross-block text selection | Capture undo snapshot, collapse the live model/native selection to the surviving text endpoint, delete covered blocks/text, then start `CompositionSession` there |
+| Insert text / IME over a scope policy with preserved text tail (`columns`) | Delete selected content across that scope and insert/compose at the start endpoint without appending the end text tail into the start block |
+| Insert text / IME over mixed whole-block→text selection | Capture undo snapshot, collapse the model/native selection to the surviving editable text endpoint before deleting whole-block endpoints, delete covered blocks/text, then commit there |
+| Insert text over same-container boundary range | Delete covered child blocks, insert one paragraph at the boundary index, place caret after inserted text |
+| IME over same-container boundary range | Open one undo capture group, materialize an empty paragraph at the boundary index, then commit IME text into that paragraph at `compositionEnd` |
+| Insert text / IME over supported mixed text+boundary selection | Lower the boundary side to explicit block/text plan edges, delete selected blocks/text through Yjs, and keep the caret/composition on the surviving editable text endpoint |
+| Insert text over table-cell rectangle | Clear selected visible cells, insert text into the anchor cell's fresh paragraph, place caret after text |
+| IME over table-cell rectangle | Open one undo capture group, clear selected visible cells, materialize the anchor paragraph, then commit IME text into that paragraph |
 | Backspace at block start | Merge current block into previous block |
 | Delete at block end | Merge next block into current block |
+| Backspace/Delete over same-container boundary range | Delete covered child blocks, then place selection on the adjacent remaining child / auto-created empty paragraph |
+| Backspace/Delete over table-cell rectangle | Clear selected visible cells and keep the table-cell rectangle selected |
 | Enter | Split current block at cursor, create new block |
+| Enter over same-container boundary range | Replace covered child blocks with an empty paragraph |
+| Enter over table-cell rectangle | Clear selected visible cells and place the caret in the anchor cell |
 
 ## Block Boundary Behavior
 

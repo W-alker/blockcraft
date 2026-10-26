@@ -7,6 +7,35 @@
 
   div.image-block {
 
+    // Keep the row as the sizing plane, but anchor native gaps to the same
+    // shrink-to-content grid area as the figure (including during resize).
+    &:not(.bc-snapshot-block):not([data-bc-placement='absolute']):not([data-bc-image-group-member]) {
+      display: grid;
+      grid-template-columns: minmax(0, max-content);
+      justify-content: start;
+
+      &[data-align='center'] {
+        justify-content: center;
+      }
+
+      &[data-align='right'] {
+        justify-content: end;
+      }
+
+      > .image-block__container {
+        grid-area: 1 / 1 / 2 / 2;
+        margin: 0;
+      }
+
+      > [data-block-zero-space='true'] {
+        grid-area: 1 / 1 / 2 / 2;
+      }
+    }
+
+    .img-wrapper[data-bc-image-resize-stretch] > img {
+      object-fit: fill !important;
+    }
+
     &.selected {
       background: unset;
 
@@ -48,6 +77,31 @@
       //display: inline-block;
       position: relative;
       width: fit-content;
+    }
+
+    .img-wrapper[data-bc-object-sizing] {
+      > .bc-resource-placeholder > .bc-resource-placeholder__skeleton {
+        display: none;
+      }
+
+      &[data-bc-resource-state='loading'] {
+        background-color: var(--bc-bg-secondary, #fafaf7);
+        background-image: linear-gradient(
+          90deg,
+          transparent 25%,
+          rgba(255, 255, 255, 0.45) 50%,
+          transparent 75%
+        );
+        background-image: linear-gradient(
+          90deg,
+          transparent 25%,
+          color-mix(in srgb, var(--bc-bg-primary, #fff) 72%, transparent) 50%,
+          transparent 75%
+        );
+        background-repeat: no-repeat;
+        background-size: 200% 100%;
+        animation: bc-image-frame-placeholder-shimmer 1.5s linear infinite;
+      }
     }
 
     img {
@@ -112,4 +166,77 @@
     }
 
   }
+}
+
+@keyframes bc-image-frame-placeholder-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-blockcraft-root="true"] div.image-block {
+    .img-wrapper[data-bc-object-sizing][data-bc-resource-state='loading'] {
+      animation: none;
+    }
+  }
+}
+
+// Bare snapshots need the same empty-image presentation even without a root shell.
+[data-blockcraft-root="true"] div.image-block:not(.bc-snapshot-block),
+.bc-snapshot-viewer .image-block:not([data-bc-placement="absolute"]) {
+  // Shared empty-image UI for the editor and static snapshots.
+  .upload-hint {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    min-height: 80px;
+    padding: 0 8px;
+    border: 2px dashed var(--bc-border-color, #e0e0e0);
+    border-radius: 8px;
+    background: var(--bc-bg-secondary, #fafafa);
+    cursor: pointer;
+    transition: border-color 0.2s, background-color 0.2s;
+
+    &:hover {
+      border-color: var(--bc-active-color, #4857E2);
+      background: var(--bc-bg-hover, #f5f5f5);
+    }
+
+    i {
+      font-size: 28px;
+      color: var(--bc-color-light, #999);
+      margin-bottom: 8px;
+    }
+
+    span {
+      color: var(--bc-color-secondary, #666);
+      font-size: 14px;
+    }
+  }
+
+  .img-wrapper[data-bc-object-sizing] > .upload-hint {
+    position: absolute;
+    inset: 0;
+    min-height: 0;
+  }
+
+  // An upload affordance is not an image frame. Keep the model's saved ratio
+  // untouched, but collapse empty flow images until they have a resource.
+  // Absolute/group members retain their authored geometry.
+  &[data-bc-image-empty]:not([data-bc-placement="absolute"]) > .image-block__container > .img-wrapper {
+    aspect-ratio: auto !important;
+
+    > .upload-hint {
+      position: static;
+      min-height: 80px;
+    }
+  }
+
 }

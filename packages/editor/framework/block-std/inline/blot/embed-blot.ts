@@ -101,6 +101,7 @@ export class EmbedBlot extends LeafBlot implements IFormattedBlot {
     if (hasSemanticChange && this._converter) {
       try {
         const newView = this._converter.toView(nextDelta)
+        this._converter.onDestroy?.(this._embedElement, this._delta)
         this._embedElement.replaceWith(newView)
         this._embedElement = newView
       } catch {

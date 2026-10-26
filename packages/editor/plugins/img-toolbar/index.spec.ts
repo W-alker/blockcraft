@@ -1,0 +1,1144 @@
+import {fakeAsync, tick} from "@angular/core/testing";
+import {Subject} from "rxjs";
+import {BlockNodeType} from "../../framework";
+import {ImgToolbarPlugin} from "./index";
+import {ObjectDragPlugin} from "../object-drag";
+import {ImageBlockSchema} from "../../blocks/image-block";
+
+describe('ImgToolbarPlugin Enter ownership', () => {
+  for (const side of ['before', 'after']) {
+    it(`leaves a collapsed ${side} gap to InputTransformer`, () => {
+      const plugin = new ImgToolbarPlugin();
+      const chain = jasmine.createSpy('chain');
+      (plugin as any).doc = {isReadonly: false, chain};
+      const preventDefault = jasmine.createSpy('preventDefault');
+      const selection = {collapsed: true, anchor: {type: 'gap', side}};
+      const result = plugin.onImageTitleEnter({get: () => ({selection}), preventDefault} as any);
+      expect(result).toBeFalse();
+      expect(preventDefault).not.toHaveBeenCalled();
+      expect(chain).not.toHaveBeenCalled();
+    });
+  }
+
+  for (const caption of [false, true]) {
+    for (const ctrlKey of [false, true]) {
+      it(`preserves ${caption ? 'caption' : 'selected image'} ${ctrlKey ? 'Ctrl+Enter' : 'Enter'}`, () => {
+        const plugin = new ImgToolbarPlugin();
+        const image = {id: 'image', flavour: 'image', parentId: 'cell', getIndexOfParent: () => 2};
+        const block = caption ? {id: 'caption', flavour: 'caption', parentBlock: image} : image;
+        const paragraph = {id: 'new-paragraph'};
+        const chain = {
+          insertSnapshots: jasmine.createSpy('insertSnapshots'),
+          selectOrSetCursorAtBlock: jasmine.createSpy('selectOrSetCursorAtBlock'),
+          run: jasmine.createSpy('run').and.resolveTo(undefined),
+        };
+        chain.insertSnapshots.and.returnValue(chain);
+        chain.selectOrSetCursorAtBlock.and.returnValue(chain);
+        (plugin as any).doc = {
+          isReadonly: false, getBlockById: () => block,
+          schemas: {createSnapshot: () => paragraph},
+          readonlyManager: {isReadonly: () => false}, chain: () => chain,
+        };
+        const preventDefault = jasmine.createSpy('preventDefault');
+        const selection = {collapsed: true, anchor: {type: caption ? 'text' : 'selected'}, commonParent: block.id};
+        expect(plugin.onImageTitleEnter({get: () => ({selection, raw: {ctrlKey}}), preventDefault} as any)).toBeTrue();
+        expect(preventDefault).toHaveBeenCalled();
+        expect(chain.insertSnapshots).toHaveBeenCalledOnceWith('cell', ctrlKey ? 2 : 3, [paragraph]);
+      });
+    }
+  }
+});
+
+describe("ImgToolbarPlugin lifecycle", () => {
+  const sharedPlugins: ObjectDragPlugin[] = [];
+  afterEach(() => sharedPlugins.splice(0).forEach(plugin => plugin.destroy()));
+  const makeHarness = (withSharedDrag = false) => {
+    const rootHost = document.createElement("div");
+    const imageHost = document.createElement("div");
+    const wrapper = document.createElement("div");
+    const img = document.createElement("img");
+    imageHost.setAttribute("data-block-id", "img-1");
+    imageHost.className = "image-block";
+    wrapper.className = "img-wrapper";
+    wrapper.setAttribute("data-bc-object-drag-surface", "");
+    wrapper.appendChild(img);
+    imageHost.appendChild(wrapper);
+    rootHost.appendChild(imageHost);
+    document.body.appendChild(rootHost);
+
+    const selection$ = new Subject<any>();
+    const nextSelection$ = new Subject<any>();
+    const onDestroy$ = new Subject<void>();
+    const readonlyState$ = new Subject<void>();
+    const readonlySub = {
+      unsubscribe: jasmine.createSpy("unsubscribeReadonly"),
+    };
+    const imageBlock = {
+      id: "img-1",
+      flavour: "image",
+      nodeType: BlockNodeType.void,
+      hostElement: imageHost,
+      props: {src: "https://example.com/a.png"},
+      childrenLength: 0,
+      updateProps: jasmine.createSpy("updateProps"),
+      onPropsChange: new Subject<void>(),
+      onDestroy$: new Subject<void>(),
+    };
+    const selectionValue = {current: null as any};
+    const imageSelection = {
+      isInSameBlock: true,
+      anchor: {type: "selected"},
+      head: {type: "selected"},
+      firstBlock: imageBlock,
+      firstBlockId: imageBlock.id,
+      commonParent: "img-1",
+    };
+    const imageGapSelection = {
+      isInSameBlock: true,
+      anchor: {type: "gap", side: "after"},
+      head: {type: "gap", side: "after"},
+      firstBlock: imageBlock,
+      commonParent: "img-1",
+    };
+    const dragState$ = new Subject<string>();
+    const dragState = {current: "idle"};
+    const placementState$ = new Subject<string>();
+    const placementDragState = {current: "idle"};
+    const placementMode = {current: "relative" as "relative" | "absolute"};
+    let objectLayoutAdapter: any;
+    const toolbarClicks = new Subject<any>();
+    const fileService = {
+      previewImg: jasmine.createSpy("previewImg"),
+      downloadAttachment: jasmine.createSpy("downloadAttachment"),
+      isLocalObjectURL: jasmine.createSpy("isLocalObjectURL")
+        .and.callFake((url: string) => url.startsWith("__blockcraft_local__:")),
+    };
+    const run = jasmine.createSpy("run").and.resolveTo({lastResult: undefined, results: []});
+    const nextTick = jasmine.createSpy("nextTick");
+    const selectOrSetCursorAtBlock = jasmine.createSpy("selectOrSetCursorAtBlock");
+    const setSelection = jasmine.createSpy("setSelection");
+    const replaceWithSnapshots = jasmine.createSpy("replaceWithSnapshots");
+    const applyTextDelta = jasmine.createSpy("applyTextDelta");
+    const deleteBlocks = jasmine.createSpy("deleteBlocks");
+    const crudTransact = jasmine.createSpy("crudTransact")
+      .and.callFake((executor: () => unknown) => executor());
+    let doc: any;
+    const transact = jasmine.createSpy("transact").and.callFake((executor: (doc: any) => unknown) => {
+      executor(doc);
+      return chain;
+    });
+    const chain: any = {
+      transact,
+      nextTick,
+      selectOrSetCursorAtBlock,
+      setSelection,
+      run,
+    };
+    nextTick.and.returnValue(chain);
+    selectOrSetCursorAtBlock.and.returnValue(chain);
+    setSelection.and.returnValue(chain);
+    doc = {
+      isReadonly: false,
+      schemas: {get: () => ImageBlockSchema},
+      onDestroy$,
+      root: {hostElement: rootHost},
+      messageService: {
+        warn: jasmine.createSpy("warn"),
+        success: jasmine.createSpy("success"),
+      },
+      model: {
+        toSnapshot: jasmine.createSpy("toSnapshot"),
+        getParentId: jasmine.createSpy("getParentId").and.returnValue("placement-layout"),
+        indexInParent: jasmine.createSpy("indexInParent").and.returnValue(0),
+        getPath: jasmine.createSpy("getPath").and.returnValue(["root", "paragraph-1"]),
+      },
+      crud: {
+        transact: crudTransact,
+        replaceWithSnapshots,
+        applyTextDelta,
+        deleteBlocks,
+      },
+      chain: jasmine.createSpy("chain").and.returnValue(chain),
+      injector: {
+        get: jasmine.createSpy("get").and.returnValue(fileService),
+      },
+      selection: {
+        selectionChange$: selection$,
+        get value() {
+          return selectionValue.current;
+        },
+        blur: jasmine.createSpy("blur"),
+        selectBlock: jasmine.createSpy("selectBlock"),
+        afterNextChange: jasmine.createSpy("afterNextChange"),
+        nextChangeObserve: jasmine.createSpy("nextChangeObserve").and.returnValue(nextSelection$),
+      },
+      dragController: {
+        state$: dragState$,
+        get state() {
+          return dragState.current;
+        },
+        get isDragging() {
+          return dragState.current === "dragging" || dragState.current === "dropping";
+        },
+        startDrag: jasmine.createSpy("startDrag"),
+      },
+      placement: {
+        supports: () => true,
+        getAbsoluteObjectSelectionIds: () => null,
+        supportsObjectLayout: jasmine.createSpy('supportsObjectLayout').and.returnValue(true),
+        state$: placementState$,
+        get state() {
+          return placementDragState.current;
+        },
+        get isDragging() {
+          return placementDragState.current === "dragging";
+        },
+        getState: jasmine.createSpy("getPlacementState").and.callFake(() => ({
+          mode: placementMode.current,
+          x: 0,
+          y: 0,
+          layer: "over",
+        })),
+        startDrag: jasmine.createSpy("startPlacementDrag"),
+        registerObjectLayoutAdapter: jasmine.createSpy("registerObjectLayoutAdapter")
+          .and.callFake((_flavour: string, adapter: any) => {
+            objectLayoutAdapter = adapter;
+            return () => {
+              if (objectLayoutAdapter === adapter) objectLayoutAdapter = undefined;
+            };
+          }),
+        getObjectLayout: jasmine.createSpy("getObjectLayout").and.callFake(() =>
+          placementMode.current === "relative" ? "top-bottom" : "over"),
+        setObjectLayout: jasmine.createSpy("setObjectLayout")
+          .and.callFake((block: any, layout: string) => {
+            if (layout === "inline") {
+              return objectLayoutAdapter?.toInline({doc, block}) ?? false;
+            }
+            placementMode.current =
+              layout === "top-bottom" ? "relative" : "absolute";
+            return true;
+          }),
+        setMode: jasmine.createSpy("setPlacementMode").and.returnValue(true),
+        setLayer: jasmine.createSpy("setPlacementLayer").and.returnValue(true),
+        canMoveForward: jasmine.createSpy("canMoveForward").and.returnValue(true),
+        canMoveBackward: jasmine.createSpy("canMoveBackward").and.returnValue(true),
+        moveForward: jasmine.createSpy("moveForward").and.returnValue(true),
+        moveBackward: jasmine.createSpy("moveBackward").and.returnValue(true),
+        resolveFlowAnchor: jasmine.createSpy("resolveFlowAnchor").and.returnValue({
+          parentId: "root",
+          anchorBlockId: "paragraph-1",
+          side: "after",
+        }),
+        reanchorToFlow: jasmine.createSpy("reanchorToFlow").and.returnValue(true),
+      },
+      overlayService: {
+        createConnectedOverlay: jasmine.createSpy("createConnectedOverlay").and.returnValue({
+          updatePosition: jasmine.createSpy("updatePositionAndClamp"),
+          componentRef: {
+            setInput: jasmine.createSpy("setInput"),
+            instance: {
+              cdr: {
+                markForCheck: jasmine.createSpy("markForCheck"),
+              },
+              onItemClicked: toolbarClicks,
+            },
+          },
+          overlayRef: {
+            dispose: jasmine.createSpy("dispose"),
+            updatePosition: jasmine.createSpy("updatePosition"),
+          },
+        }),
+      },
+      subscribeReadonlyChange: jasmine.createSpy("subscribeReadonlyChange").and.returnValue(readonlySub),
+      readonlyManager: {
+        isReadonly: jasmine.createSpy("isReadonly").and.returnValue(false),
+        stateChange$: readonlyState$,
+      },
+      getBlockById: jasmine.createSpy("getBlockById").and.returnValue(imageBlock),
+    };
+    const plugin = new ImgToolbarPlugin();
+    (plugin as any).doc = doc;
+    if (withSharedDrag) {
+      const shared = new ObjectDragPlugin();
+      (shared as any).doc = doc;
+      shared.init();
+      sharedPlugins.push(shared);
+    }
+
+    return {
+      plugin,
+      doc,
+      fileService,
+      rootHost,
+      wrapper,
+      imageHost,
+      imageBlock,
+      selection$,
+      nextSelection$,
+      selectionValue,
+      imageSelection,
+      imageGapSelection,
+      readonlySub,
+      readonlyState$,
+      dragState$,
+      dragState,
+      placementState$,
+      placementDragState,
+      placementMode,
+      toolbarClicks,
+      transact,
+      crudTransact,
+      nextTick,
+      replaceWithSnapshots,
+      applyTextDelta,
+      deleteBlocks,
+      selectOrSetCursorAtBlock,
+      setSelection,
+      run,
+    };
+  };
+
+  it("keeps image preview available for a readonly block", () => {
+    const {plugin, doc, fileService, rootHost, wrapper} = makeHarness();
+    doc.readonlyManager.isReadonly.and.returnValue(true);
+    const event = new MouseEvent("dblclick", {bubbles: true});
+    Object.defineProperty(event, "target", {value: wrapper});
+
+    expect(plugin.onImageMouseDown({
+      getDefaultEvent: () => event,
+    } as any)).toBeTrue();
+    expect(fileService.previewImg).toHaveBeenCalled();
+    rootHost.remove();
+  });
+
+  it("rechecks placement before caption changes and keeps flow captions working", fakeAsync(() => {
+    const h = makeHarness();
+    const title = {id: 'caption-new'};
+    h.doc.schemas = {createSnapshot: jasmine.createSpy('createSnapshot').and.returnValue(title)};
+    const chain = h.doc.chain();
+    chain.insertSnapshots = jasmine.createSpy('insertSnapshots').and.returnValue(chain);
+    h.plugin.init();
+    h.selectionValue.current = h.imageSelection;
+    h.selection$.next(h.imageSelection);
+    tick(250);
+
+    // A toolbar opened in flow can receive a stale action after layout changes.
+    h.placementMode.current = 'absolute';
+    h.toolbarClicks.next({name: 'caption'});
+    expect(h.doc.schemas.createSnapshot).not.toHaveBeenCalled();
+    expect(chain.insertSnapshots).not.toHaveBeenCalled();
+    h.imageBlock.childrenLength = 1;
+    h.toolbarClicks.next({name: 'caption'});
+    expect(h.deleteBlocks).not.toHaveBeenCalled();
+
+    h.placementMode.current = 'relative';
+    h.toolbarClicks.next({name: 'caption'});
+    expect(h.deleteBlocks).toHaveBeenCalledOnceWith('img-1', 0, 1, true);
+    h.imageBlock.childrenLength = 0;
+    h.toolbarClicks.next({name: 'caption'});
+    expect(chain.insertSnapshots).toHaveBeenCalledOnceWith('img-1', 0, [title]);
+    expect(h.selectOrSetCursorAtBlock).toHaveBeenCalledOnceWith(title.id, true);
+    expect(h.run).toHaveBeenCalledTimes(1);
+
+    tick();
+    h.plugin.destroy();
+    h.rootHost.remove();
+  }));
+
+  it("opens preview when an editable selected image receives the double click", () => {
+    const {
+      plugin,
+      fileService,
+      rootHost,
+      imageHost,
+    } = makeHarness();
+    const img = imageHost.querySelector("img")!;
+    imageHost.classList.add("selected");
+    const event = new MouseEvent("dblclick", {bubbles: true});
+    Object.defineProperty(event, "target", {value: img});
+
+    expect(plugin.onImageMouseDown({
+      getDefaultEvent: () => event,
+    } as any)).toBeTrue();
+    expect(fileService.previewImg).toHaveBeenCalledOnceWith({el: img});
+    rootHost.remove();
+  });
+
+  it("opens preview for an absolute image without depending on the wrapper target", () => {
+    const {
+      plugin,
+      fileService,
+      rootHost,
+      imageHost,
+      placementMode,
+    } = makeHarness();
+    placementMode.current = "absolute";
+    const img = imageHost.querySelector("img")!;
+    const event = new MouseEvent("dblclick", {bubbles: true});
+    Object.defineProperty(event, "target", {value: img});
+
+    expect(plugin.onImageMouseDown({
+      getDefaultEvent: () => event,
+    } as any)).toBeTrue();
+    expect(fileService.previewImg).toHaveBeenCalledOnceWith({el: img});
+    rootHost.remove();
+  });
+
+  it("does not preview from resize and resource action controls", () => {
+    const {plugin, fileService, rootHost, wrapper} = makeHarness();
+    const resizer = document.createElement("block-resizer");
+    const shapeResizer = document.createElement("shape-resizer");
+    const resourcePlaceholder = document.createElement("div");
+    const retry = document.createElement("button");
+    resourcePlaceholder.className = "bc-resource-placeholder";
+    resourcePlaceholder.append(retry);
+    wrapper.append(resizer, shapeResizer, resourcePlaceholder);
+
+    for (const target of [resizer, shapeResizer, retry]) {
+      const event = new MouseEvent("dblclick", {bubbles: true});
+      Object.defineProperty(event, "target", {value: target});
+      expect(plugin.onImageMouseDown({
+        getDefaultEvent: () => event,
+      } as any)).toBeUndefined();
+    }
+
+    expect(fileService.previewImg).not.toHaveBeenCalled();
+    rootHost.remove();
+  });
+
+  it("toolbar plugin alone does not take ownership of block body gestures", () => {
+    const {plugin, doc, rootHost, wrapper} = makeHarness();
+    plugin.init();
+    wrapper.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true, button: 0}));
+    expect(doc.selection.selectBlock).not.toHaveBeenCalled();
+    expect(doc.dragController.startDrag).not.toHaveBeenCalled();
+    plugin.destroy();
+    rootHost.remove();
+  });
+
+  it("selects an image through the shared object pointerdown path", () => {
+    const {plugin, doc, rootHost, wrapper, imageBlock} = makeHarness(true);
+    plugin.init();
+
+    wrapper.dispatchEvent(new PointerEvent("pointerdown", {bubbles: true, button: 0}));
+
+    expect(doc.selection.selectBlock).toHaveBeenCalledWith(imageBlock as any);
+    expect(doc.dragController.startDrag).toHaveBeenCalledWith(
+      jasmine.any(PointerEvent),
+      {kind: "origin-block", blockId: "img-1"},
+      {ghostLabel: "图片"},
+    );
+    plugin.destroy();
+    rootHost.remove();
+  });
+
+  it("free-drags an absolute image instead of reordering it", () => {
+    const {plugin, doc, rootHost, wrapper, imageBlock, placementMode} = makeHarness(true);
+    placementMode.current = "absolute";
+    plugin.init();
+
+    wrapper.dispatchEvent(new PointerEvent("pointerdown", {bubbles: true, button: 0}));
+
+    expect(doc.selection.selectBlock).toHaveBeenCalledWith(imageBlock as any);
+    expect(doc.placement.startDrag).toHaveBeenCalledWith(
+      jasmine.any(PointerEvent),
+      imageBlock as any,
+    );
+    expect(doc.dragController.startDrag).not.toHaveBeenCalled();
+    plugin.destroy();
+    rootHost.remove();
+  });
+
+  it("does not start image dragging or replace selection from eight-way handles", () => {
+    const {plugin, doc, rootHost, wrapper} = makeHarness(true);
+    const resizer = document.createElement('shape-resizer');
+    resizer.setAttribute('data-bc-placement-pick-ignore', '');
+    const handle = document.createElement('button');
+    resizer.append(handle);
+    wrapper.append(resizer);
+    plugin.init();
+    handle.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true, button: 0}));
+    expect(doc.selection.selectBlock).not.toHaveBeenCalled();
+    expect(doc.dragController.startDrag).not.toHaveBeenCalled();
+    expect(doc.placement.startDrag).not.toHaveBeenCalled();
+    plugin.destroy();
+    rootHost.remove();
+  });
+
+  it("re-publishes an already-selected image when its toolbar was closed", () => {
+    const {
+      plugin,
+      doc,
+      rootHost,
+      wrapper,
+      imageBlock,
+      imageSelection,
+      selectionValue,
+      placementMode,
+    } = makeHarness(true);
+    placementMode.current = "absolute";
+    selectionValue.current = imageSelection;
+    plugin.init();
+
+    wrapper.dispatchEvent(new PointerEvent("pointerdown", {
+      bubbles: true,
+      button: 0,
+    }));
+
+    expect(doc.selection.blur).toHaveBeenCalledTimes(1);
+    expect(doc.selection.selectBlock).toHaveBeenCalledWith(imageBlock as any);
+    plugin.destroy();
+    rootHost.remove();
+  });
+
+  it("ignores image block whitespace so gap selection can handle it", () => {
+    const {plugin, doc, rootHost, imageHost} = makeHarness(true);
+    plugin.init();
+
+    imageHost.dispatchEvent(new PointerEvent("pointerdown", {bubbles: true, button: 0, pointerId: 1}));
+
+    expect(doc.selection.selectBlock).not.toHaveBeenCalled();
+    expect(doc.dragController.startDrag).not.toHaveBeenCalled();
+    plugin.destroy();
+    rootHost.remove();
+  });
+
+  it("confirms image selection after a click that never enters dragging", () => {
+    const {plugin, doc, rootHost, wrapper, imageBlock} = makeHarness(true);
+    plugin.init();
+
+    wrapper.dispatchEvent(new PointerEvent("pointerdown", {bubbles: true, button: 0, pointerId: 1}));
+    window.dispatchEvent(new PointerEvent("pointerup", {bubbles: true, pointerId: 1}));
+
+    expect(doc.selection.selectBlock).toHaveBeenCalledTimes(2);
+    expect(doc.selection.selectBlock).toHaveBeenCalledWith(imageBlock as any);
+    plugin.destroy();
+    rootHost.remove();
+  });
+
+  it("does not confirm image selection after a real image drag", () => {
+    const {plugin, doc, rootHost, wrapper, dragState$, dragState} = makeHarness(true);
+    plugin.init();
+
+    wrapper.dispatchEvent(new PointerEvent("pointerdown", {bubbles: true, button: 0, pointerId: 1}));
+    dragState.current = "dragging";
+    dragState$.next("dragging");
+    window.dispatchEvent(new PointerEvent("pointerup", {bubbles: true, pointerId: 1}));
+
+    expect(doc.selection.selectBlock).toHaveBeenCalledTimes(1);
+    plugin.destroy();
+    rootHost.remove();
+  });
+
+  it("confirms an absolute image selection when the pointer never starts dragging", () => {
+    const {plugin, doc, rootHost, wrapper, imageBlock, placementMode} = makeHarness(true);
+    placementMode.current = "absolute";
+    plugin.init();
+
+    wrapper.dispatchEvent(new PointerEvent("pointerdown", {bubbles: true, button: 0, pointerId: 1}));
+    window.dispatchEvent(new PointerEvent("pointerup", {bubbles: true, pointerId: 1}));
+
+    expect(doc.selection.selectBlock).toHaveBeenCalledTimes(2);
+    expect(doc.selection.selectBlock).toHaveBeenCalledWith(imageBlock as any);
+    plugin.destroy();
+    rootHost.remove();
+  });
+
+  it("does not reconfirm an absolute image selection after free dragging", () => {
+    const {
+      plugin,
+      doc,
+      rootHost,
+      wrapper,
+      placementMode,
+      placementDragState,
+      placementState$,
+    } = makeHarness(true);
+    placementMode.current = "absolute";
+    plugin.init();
+
+    wrapper.dispatchEvent(new PointerEvent("pointerdown", {bubbles: true, button: 0, pointerId: 1}));
+    placementDragState.current = "dragging";
+    placementState$.next("dragging");
+    window.dispatchEvent(new PointerEvent("pointerup", {bubbles: true, pointerId: 1}));
+
+    expect(doc.selection.selectBlock).toHaveBeenCalledTimes(1);
+    plugin.destroy();
+    rootHost.remove();
+  });
+
+  for (const layout of ['over', 'under', 'inline', 'wrap', 'top-bottom']) {
+    it(`rechecks layout capability before executing ${layout}`, fakeAsync(() => {
+      const {plugin, doc, rootHost, selection$, selectionValue, imageSelection, toolbarClicks} = makeHarness();
+      plugin.init();
+      selectionValue.current = imageSelection;
+      selection$.next(imageSelection);
+      tick(250);
+      doc.placement.supportsObjectLayout.and.returnValue(false);
+      toolbarClicks.next({name: 'object-layout', value: layout});
+      expect(doc.placement.setObjectLayout).not.toHaveBeenCalled();
+      expect(doc.crud.replaceWithSnapshots).not.toHaveBeenCalled();
+      plugin.destroy();
+      rootHost.remove();
+    }));
+  }
+
+  it("cancels delayed toolbar open when image selection is cleared", fakeAsync(() => {
+    const {plugin, doc, rootHost, selection$, selectionValue, imageSelection} = makeHarness();
+    plugin.init();
+
+    selectionValue.current = imageSelection;
+    selection$.next(imageSelection);
+    tick(50);
+    selectionValue.current = null;
+    selection$.next(null);
+    tick(250);
+
+    expect(doc.overlayService.createConnectedOverlay).not.toHaveBeenCalled();
+    plugin.destroy();
+    rootHost.remove();
+  }));
+
+  it("opens toolbar for selected image blocks", fakeAsync(() => {
+    const {plugin, doc, rootHost, selection$, selectionValue, imageSelection} = makeHarness();
+    plugin.init();
+
+    selectionValue.current = imageSelection;
+    selection$.next(imageSelection);
+    tick(250);
+
+    expect(doc.overlayService.createConnectedOverlay).toHaveBeenCalled();
+    plugin.destroy();
+    rootHost.remove();
+  }));
+
+  it("anchors the toolbar to the resize chrome instead of the image body", fakeAsync(() => {
+    const h = makeHarness();
+    const chrome = document.createElement("shape-resizer");
+    h.wrapper.appendChild(chrome);
+    h.plugin.init();
+    h.selectionValue.current = h.imageSelection;
+    h.selection$.next(h.imageSelection);
+    tick(250);
+    const options = h.doc.overlayService.createConnectedOverlay.calls.mostRecent().args[0];
+    expect(options.origin).toBe(chrome);
+    expect(options.target).toBe(h.wrapper.querySelector("img"));
+    h.plugin.destroy();
+    h.rootHost.remove();
+  }));
+
+  it("rebinds the toolbar and actions when another image is selected", fakeAsync(() => {
+    const h = makeHarness();
+    const secondHost = document.createElement("div");
+    const secondWrapper = document.createElement("div");
+    const secondImage = document.createElement("img");
+    secondHost.setAttribute("data-block-id", "img-2");
+    secondWrapper.className = "img-wrapper";
+    secondWrapper.appendChild(secondImage);
+    secondHost.appendChild(secondWrapper);
+    h.rootHost.appendChild(secondHost);
+    const secondBlock = {
+      id: "img-2",
+      flavour: "image",
+      nodeType: BlockNodeType.void,
+      hostElement: secondHost,
+      props: {src: "https://example.com/b.png"},
+      childrenLength: 0,
+      updateProps: jasmine.createSpy("secondImage.updateProps"),
+      onPropsChange: new Subject<void>(),
+      onDestroy$: new Subject<void>(),
+    };
+    const secondSelection = {
+      isInSameBlock: true,
+      anchor: {type: "selected"},
+      head: {type: "selected"},
+      firstBlock: secondBlock,
+      firstBlockId: secondBlock.id,
+      commonParent: secondBlock.id,
+    };
+    h.doc.getBlockById.and.callFake((id: string) =>
+      id === secondBlock.id ? secondBlock : h.imageBlock,
+    );
+    h.plugin.init();
+
+    h.selectionValue.current = h.imageSelection;
+    h.selection$.next(h.imageSelection);
+    tick(250);
+    h.selectionValue.current = secondSelection;
+    h.selection$.next(secondSelection);
+    tick(250);
+
+    expect(h.doc.overlayService.createConnectedOverlay).toHaveBeenCalledTimes(2);
+    expect(h.doc.overlayService.createConnectedOverlay.calls.argsFor(0)[0].target)
+      .toBe(h.imageHost.querySelector("img"));
+    expect(h.doc.overlayService.createConnectedOverlay.calls.argsFor(1)[0].target)
+      .toBe(secondImage);
+
+    h.toolbarClicks.next({name: "align", value: "right"});
+    expect(h.imageBlock.updateProps).not.toHaveBeenCalled();
+    expect(secondBlock.updateProps).toHaveBeenCalledOnceWith({align: "right"});
+
+    h.plugin.destroy();
+    h.rootHost.remove();
+  }));
+
+  it("does not open toolbar for readonly image blocks", fakeAsync(() => {
+    const {plugin, doc, rootHost, selection$, selectionValue, imageSelection} = makeHarness();
+    doc.readonlyManager.isReadonly.and.returnValue(true);
+    plugin.init();
+
+    selectionValue.current = imageSelection;
+    selection$.next(imageSelection);
+    tick(250);
+
+    expect(doc.overlayService.createConnectedOverlay).not.toHaveBeenCalled();
+    plugin.destroy();
+    rootHost.remove();
+  }));
+
+  it("does not open the delayed toolbar when the selected image block is stale", fakeAsync(() => {
+    const {plugin, doc, rootHost, selection$, selectionValue, imageSelection} = makeHarness();
+    plugin.init();
+
+    selectionValue.current = imageSelection;
+    selection$.next(imageSelection);
+    doc.getBlockById.and.throwError("missing");
+    tick(250);
+
+    expect(doc.overlayService.createConnectedOverlay).not.toHaveBeenCalled();
+    plugin.destroy();
+    rootHost.remove();
+  }));
+
+  it("does not run toolbar actions when the image block becomes stale", fakeAsync(() => {
+    const {plugin, doc, rootHost, selection$, selectionValue, imageSelection, imageBlock} = makeHarness();
+    plugin.init();
+
+    selectionValue.current = imageSelection;
+    selection$.next(imageSelection);
+    tick(250);
+    const onItemClicked = doc.overlayService.createConnectedOverlay.calls.mostRecent()
+      .returnValue.componentRef.instance.onItemClicked as Subject<any>;
+
+    doc.getBlockById.and.throwError("missing");
+    onItemClicked.next({name: "align", value: "center"});
+
+    expect(imageBlock.updateProps).not.toHaveBeenCalled();
+    plugin.destroy();
+    rootHost.remove();
+  }));
+
+  it("switches image layout through the document manager", fakeAsync(() => {
+    const h = makeHarness();
+    h.plugin.init();
+
+    h.selectionValue.current = h.imageSelection;
+    h.selection$.next(h.imageSelection);
+    tick(250);
+    h.toolbarClicks.next({name: "object-layout", value: "over"});
+
+    expect(h.doc.placement.setObjectLayout).toHaveBeenCalledOnceWith(
+      h.imageBlock as any,
+      "over",
+    );
+    h.plugin.destroy();
+    h.rootHost.remove();
+  }));
+
+  it("switches a floating image layout through the document manager", fakeAsync(() => {
+    const h = makeHarness();
+    h.placementMode.current = "absolute";
+    h.plugin.init();
+
+    h.selectionValue.current = h.imageSelection;
+    h.selection$.next(h.imageSelection);
+    tick(250);
+    h.toolbarClicks.next({name: "object-layout", value: "under"});
+
+    expect(h.doc.placement.setObjectLayout).toHaveBeenCalledWith(
+      h.imageBlock as any,
+      "under",
+    );
+    expect(h.doc.placement.setObjectLayout).toHaveBeenCalledTimes(1);
+    h.plugin.destroy();
+    h.rootHost.remove();
+  }));
+
+  it("moves a floating image one stack step through the document manager", fakeAsync(() => {
+    const h = makeHarness();
+    h.placementMode.current = "absolute";
+    h.plugin.init();
+
+    h.selectionValue.current = h.imageSelection;
+    h.selection$.next(h.imageSelection);
+    tick(250);
+    h.toolbarClicks.next({name: "move-forward"});
+    h.toolbarClicks.next({name: "move-backward"});
+
+    expect(h.doc.placement.moveForward).toHaveBeenCalledOnceWith(
+      h.imageBlock as any,
+    );
+    expect(h.doc.placement.moveBackward).toHaveBeenCalledOnceWith(
+      h.imageBlock as any,
+    );
+    expect(h.imageBlock.updateProps).not.toHaveBeenCalled();
+    h.plugin.destroy();
+    h.rootHost.remove();
+  }));
+
+  it("ignores a disabled stack toolbar item", fakeAsync(() => {
+    const h = makeHarness();
+    h.placementMode.current = "absolute";
+    h.plugin.init();
+
+    h.selectionValue.current = h.imageSelection;
+    h.selection$.next(h.imageSelection);
+    tick(250);
+    h.toolbarClicks.next({name: "move-forward", disabled: true});
+
+    expect(h.doc.placement.moveForward).not.toHaveBeenCalled();
+    h.plugin.destroy();
+    h.rootHost.remove();
+  }));
+
+  it("replaces a relative image in place without reanchoring it", fakeAsync(() => {
+    const h = makeHarness();
+    h.doc.model.toSnapshot.and.returnValue({
+      id: "img-1",
+      flavour: "image",
+      nodeType: BlockNodeType.block,
+      props: {src: "https://example.com/a.png", width: 320, height: 180},
+      meta: {},
+      children: [],
+    });
+    h.plugin.init();
+
+    h.selectionValue.current = h.imageSelection;
+    h.selection$.next(h.imageSelection);
+    tick(250);
+    h.toolbarClicks.next({name: "object-layout", value: "inline"});
+
+    const paragraph = h.replaceWithSnapshots.calls.mostRecent().args[1][0];
+    expect(h.doc.placement.resolveFlowAnchor).not.toHaveBeenCalled();
+    expect(h.doc.placement.reanchorToFlow).not.toHaveBeenCalled();
+    expect(h.crudTransact).toHaveBeenCalledTimes(1);
+    expect(h.replaceWithSnapshots).toHaveBeenCalledOnceWith("img-1", [paragraph]);
+    expect(paragraph.children[0]).toEqual({
+      insert: {image: "https://example.com/a.png"},
+      attributes: {width: 320, height: 180},
+    });
+    expect(h.nextTick).toHaveBeenCalledTimes(1);
+    expect(h.selectOrSetCursorAtBlock).toHaveBeenCalledOnceWith(paragraph.id, false);
+    expect(h.run).toHaveBeenCalledTimes(1);
+
+    h.plugin.destroy();
+    h.rootHost.remove();
+  }));
+
+  it("reanchors an absolute image before replacing it with an inline paragraph", fakeAsync(() => {
+    const h = makeHarness();
+    h.placementMode.current = "absolute";
+    h.doc.model.toSnapshot.and.returnValue({
+      id: "img-1",
+      flavour: "image",
+      nodeType: BlockNodeType.block,
+      props: {
+        src: "https://example.com/a.png",
+        position: "24 32",
+      },
+      meta: {},
+      children: [],
+    });
+    h.plugin.init();
+
+    h.selectionValue.current = h.imageSelection;
+    h.selection$.next(h.imageSelection);
+    tick(250);
+    h.toolbarClicks.next({name: "object-layout", value: "inline"});
+
+    expect(h.doc.placement.resolveFlowAnchor).toHaveBeenCalledOnceWith(h.imageBlock);
+    expect(h.doc.placement.reanchorToFlow).toHaveBeenCalledOnceWith(
+      h.imageBlock,
+      {
+        parentId: "root",
+        anchorBlockId: "paragraph-1",
+        side: "after",
+      },
+    );
+    expect(h.replaceWithSnapshots).toHaveBeenCalledTimes(1);
+    expect(h.selectOrSetCursorAtBlock).toHaveBeenCalledTimes(1);
+
+    h.plugin.destroy();
+    h.rootHost.remove();
+  }));
+
+  it("falls back to a wrapped paragraph when an absolute image covers no text", fakeAsync(() => {
+    const h = makeHarness();
+    h.placementMode.current = "absolute";
+    h.doc.placement.getState.and.returnValue({
+      mode: "absolute",
+      x: 36,
+      y: 32,
+      layer: "over",
+    });
+    h.doc.model.toSnapshot.and.returnValue({
+      id: "img-1",
+      flavour: "image",
+      nodeType: BlockNodeType.block,
+      props: {src: "https://example.com/a.png", width: 320, height: 180},
+      meta: {},
+      children: [],
+    });
+    const placementWidth = Math.max(
+      1,
+      h.imageBlock.hostElement.parentElement?.clientWidth ?? 0,
+    );
+    h.plugin.init();
+
+    h.selectionValue.current = h.imageSelection;
+    h.selection$.next(h.imageSelection);
+    tick(250);
+    h.toolbarClicks.next({name: "object-layout", value: "wrap"});
+
+    const paragraph = h.replaceWithSnapshots.calls.mostRecent().args[1][0];
+    expect(paragraph.children[0]).toEqual({
+      insert: {image: "https://example.com/a.png"},
+      attributes: {
+        width: 320,
+        height: 180,
+        wrap: true,
+        side: "auto",
+        x: jasmine.any(Number),
+        gap: 12,
+      },
+    });
+    expect(paragraph.children[0].attributes.x).toBeCloseTo(
+      36 / placementWidth,
+      8,
+    );
+    expect(h.doc.placement.resolveFlowAnchor).toHaveBeenCalledOnceWith(h.imageBlock);
+    expect(h.doc.placement.reanchorToFlow).toHaveBeenCalledTimes(1);
+    expect(h.doc.placement.setObjectLayout).not.toHaveBeenCalled();
+
+    h.plugin.destroy();
+    h.rootHost.remove();
+  }));
+
+  it("reanchors an absolute image to root flow before enabling wrapping", fakeAsync(() => {
+    const h = makeHarness();
+    h.placementMode.current = "absolute";
+    h.doc.placement.getState.and.returnValue({
+      mode: "absolute",
+      x: 36,
+      y: 32,
+      layer: "over",
+    });
+    h.doc.model.toSnapshot.and.returnValue({
+      id: "img-1",
+      flavour: "image",
+      nodeType: BlockNodeType.block,
+      props: {src: "https://example.com/a.png", width: 320, height: 180},
+      meta: {},
+      children: [{
+        id: "caption-1",
+        flavour: "caption",
+        nodeType: BlockNodeType.editable,
+        props: {},
+        meta: {},
+        children: [{insert: "说明", attributes: {bold: true}}],
+      }],
+    });
+    h.plugin.init();
+
+    h.selectionValue.current = h.imageSelection;
+    h.selection$.next(h.imageSelection);
+    tick(250);
+    h.toolbarClicks.next({name: "object-layout", value: "wrap"});
+
+    expect(h.doc.placement.resolveFlowAnchor)
+      .toHaveBeenCalledOnceWith(h.imageBlock);
+    expect(h.doc.placement.reanchorToFlow)
+      .toHaveBeenCalledOnceWith(h.imageBlock, jasmine.anything());
+    expect(h.replaceWithSnapshots).toHaveBeenCalledTimes(1);
+    expect(h.applyTextDelta).not.toHaveBeenCalled();
+    expect(h.deleteBlocks).not.toHaveBeenCalled();
+    expect(h.setSelection).not.toHaveBeenCalled();
+
+    h.plugin.destroy();
+    h.rootHost.remove();
+  }));
+
+  it("keeps an absolute image when it cannot be reanchored", fakeAsync(() => {
+    const h = makeHarness();
+    h.placementMode.current = "absolute";
+    h.doc.placement.reanchorToFlow.and.returnValue(false);
+    h.doc.model.toSnapshot.and.returnValue({
+      id: "img-1",
+      flavour: "image",
+      nodeType: BlockNodeType.block,
+      props: {
+        src: "https://example.com/a.png",
+        position: "24 32",
+      },
+      meta: {},
+      children: [],
+    });
+    h.plugin.init();
+
+    h.selectionValue.current = h.imageSelection;
+    h.selection$.next(h.imageSelection);
+    tick(250);
+    h.toolbarClicks.next({name: "object-layout", value: "inline"});
+
+    expect(h.replaceWithSnapshots).not.toHaveBeenCalled();
+    expect(h.selectOrSetCursorAtBlock).not.toHaveBeenCalled();
+    expect(h.doc.messageService.warn).toHaveBeenCalledOnceWith(
+      "图片无法回到正文位置，未转换为嵌入型",
+    );
+
+    h.plugin.destroy();
+    h.rootHost.remove();
+  }));
+
+  it("waits for a local image upload before converting it to inline", fakeAsync(() => {
+    const h = makeHarness();
+    const localSrc = "__blockcraft_local__:blob:test";
+    h.imageBlock.props.src = localSrc;
+    h.doc.model.toSnapshot.and.callFake(() => ({
+      id: "img-1",
+      flavour: "image",
+      nodeType: BlockNodeType.block,
+      props: {src: h.imageBlock.props.src, width: 320, height: 180},
+      meta: {},
+      children: [],
+    }));
+    h.plugin.init();
+
+    h.selectionValue.current = h.imageSelection;
+    h.selection$.next(h.imageSelection);
+    tick(250);
+    h.toolbarClicks.next({name: "object-layout", value: "inline"});
+
+    expect(h.replaceWithSnapshots).not.toHaveBeenCalled();
+    expect(h.doc.messageService.warn).toHaveBeenCalledOnceWith(
+      "图片正在上传，完成后将自动转为嵌入型",
+    );
+
+    h.imageBlock.props.src = "https://example.com/uploaded.png";
+    h.imageBlock.onPropsChange.next();
+
+    const paragraph = h.replaceWithSnapshots.calls.mostRecent().args[1][0];
+    expect(h.replaceWithSnapshots).toHaveBeenCalledTimes(1);
+    expect(paragraph.children[0].insert).toEqual({
+      image: "https://example.com/uploaded.png",
+    });
+
+    h.plugin.destroy();
+    h.rootHost.remove();
+  }));
+
+  it("keeps the image block when a deferred inline conversion upload fails", fakeAsync(() => {
+    const h = makeHarness();
+    h.imageBlock.props.src = "__blockcraft_local__:blob:test";
+    h.doc.model.toSnapshot.and.callFake(() => ({
+      id: "img-1",
+      flavour: "image",
+      nodeType: BlockNodeType.block,
+      props: {src: h.imageBlock.props.src},
+      meta: {},
+      children: [],
+    }));
+    h.plugin.init();
+
+    h.selectionValue.current = h.imageSelection;
+    h.selection$.next(h.imageSelection);
+    tick(250);
+    h.toolbarClicks.next({name: "object-layout", value: "inline"});
+
+    h.imageBlock.props.src = "";
+    h.imageBlock.onPropsChange.next();
+
+    expect(h.replaceWithSnapshots).not.toHaveBeenCalled();
+    expect(h.doc.messageService.warn).toHaveBeenCalledWith(
+      "图片上传失败，未转换为嵌入型",
+    );
+
+    h.plugin.destroy();
+    h.rootHost.remove();
+  }));
+
+  it("keeps an empty-src image block unchanged", fakeAsync(() => {
+    const h = makeHarness();
+    h.doc.model.toSnapshot.and.returnValue({
+      id: "img-1",
+      flavour: "image",
+      nodeType: BlockNodeType.block,
+      props: {src: ""},
+      meta: {},
+      children: [],
+    });
+    h.plugin.init();
+
+    h.selectionValue.current = h.imageSelection;
+    h.selection$.next(h.imageSelection);
+    tick(250);
+    h.toolbarClicks.next({name: "object-layout", value: "inline"});
+
+    expect(h.replaceWithSnapshots).not.toHaveBeenCalled();
+    expect(h.doc.messageService.warn).toHaveBeenCalledOnceWith("图片地址为空，无法转换为嵌入型");
+
+    h.plugin.destroy();
+    h.rootHost.remove();
+  }));
+
+  it("ignores readonly state changes while the live selection is stale", () => {
+    const {plugin, doc, rootHost, selectionValue, readonlyState$} = makeHarness();
+    const staleSelection = {
+      anchor: {blockId: "missing", type: "selected"},
+      head: {blockId: "missing", type: "selected"},
+      commonParent: "missing",
+    } as any;
+    Object.defineProperty(staleSelection, "firstBlock", {
+      get: () => {
+        throw new Error("Block not found: missing");
+      },
+    });
+    selectionValue.current = staleSelection;
+    plugin.init();
+
+    expect(() => readonlyState$.next()).not.toThrow();
+
+    plugin.destroy();
+    rootHost.remove();
+  });
+
+  it("does not open toolbar for image gap cursor", fakeAsync(() => {
+    const {plugin, doc, rootHost, selection$, selectionValue, imageGapSelection} = makeHarness();
+    plugin.init();
+
+    selectionValue.current = imageGapSelection;
+    selection$.next(imageGapSelection);
+    tick(250);
+
+    expect(doc.overlayService.createConnectedOverlay).not.toHaveBeenCalled();
+    plugin.destroy();
+    rootHost.remove();
+  }));
+
+  it("tears down document pointer and readonly observers on destroy", fakeAsync(() => {
+    const {plugin, doc, rootHost, wrapper, selection$, selectionValue, imageSelection, readonlySub} = makeHarness();
+    plugin.init();
+
+    selectionValue.current = imageSelection;
+    selection$.next(imageSelection);
+    plugin.destroy();
+    tick(250);
+    wrapper.dispatchEvent(new PointerEvent("pointerdown", {bubbles: true, button: 0}));
+
+    expect(doc.overlayService.createConnectedOverlay).not.toHaveBeenCalled();
+    expect(doc.selection.selectBlock).not.toHaveBeenCalled();
+    expect(doc.dragController.startDrag).not.toHaveBeenCalled();
+    expect(readonlySub.unsubscribe).toHaveBeenCalledTimes(1);
+    rootHost.remove();
+  }));
+});

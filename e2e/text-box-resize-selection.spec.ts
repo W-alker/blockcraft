@@ -1,0 +1,235 @@
+import {expect, test, type Page} from '@playwright/test'
+
+async function createTextBox(page: Page, absolute: boolean): Promise<string> {
+  // These geometry checks must not share document mutations with other tabs.
+  await page.routeWebSocket('**', socket => socket.close())
+  await page.goto('/')
+  await page.getByRole('button', {name: '初始化', exact: true}).click()
+  await page.waitForFunction(() => (window as any).ng
+    ?.getComponent(document.querySelector('block-craft-editor'))?.doc?.isInitialized)
+  return page.evaluate(async absolute => {
+    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+    const snapshot = doc.schemas.createSnapshot('text-box', ['缩放后继续编辑', {width: 360, height: 180}])
+    doc.crud.insertBlockSnapshots(doc.rootId, 0, [snapshot])
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    const block = doc.getBlockById(snapshot.id)
+    if (absolute) doc.placement.setMode(block, 'absolute')
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    block.hostElement.scrollIntoView({block: 'center'})
+    doc.selection.selectBlock(block)
+    return snapshot.id
+  }, absolute)
+}
+
+async function expectObjectSelection(page: Page, id: string): Promise<void> {
+  const block = page.locator(`.text-box-block[data-block-id="${id}"]`)
+  await expect(block).toHaveClass(/\bselected\b/)
+  await expect(block.locator('.shape-resizer__handle:visible')).toHaveCount(8)
+  await expect.poll(() => page.evaluate(id => {
+    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+    const selection = doc.selection.value
+    return selection?.anchor.blockId === id && selection?.head.blockId === id &&
+      selection?.anchor.type === 'selected' && selection?.head.type === 'selected'
+  }, id)).toBe(true)
+}
+
+for (const flow of [false, true]) {
+  for (const gesture of ['rotation', 'resize']) {
+    test(`${flow ? 'flow commit' : 'absolute pointer'} group text-box ${gesture} restores full geometry in one undo/redo`, async ({page}) => {
+      const id = await createTextBox(page, true)
+      const ids = await page.evaluate(async ({id, flow}) => {
+        const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+        doc.crud.updateBlockProps(id, {position: '100 100'})
+        const sibling = doc.schemas.createSnapshot('shape', ['rectangle'])
+        sibling.props = {...sibling.props, width: 80, height: 60}
+        const siblingId = doc.placement.insertAbsoluteSnapshot(sibling, {anchorRect: null})
+        doc.crud.updateBlockProps(siblingId, {position: '520 300'})
+        const groupId = doc.placement.group([id, siblingId])
+        if (!groupId) throw new Error('Missing text-box group')
+        if (flow) doc.placement.setMode(groupId, 'relative')
+        await doc.navigateToBlock(groupId)
+        doc.selection.selectBlock(doc.getBlockById(id))
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+        doc.crud.undoManager.clearHistory()
+        return [id, siblingId, groupId]
+      }, {id, flow})
+      const read = () => page.evaluate(ids => {
+        const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+        return ids.map(id => {
+          const block = doc.getBlockById(id)
+          const surface = block.hostElement.querySelector('.text-box-block__surface') ?? block.hostElement
+          return {
+            props: {...doc.model.getProps(id)},
+            connected: surface.isConnected,
+            transform: getComputedStyle(surface).transform,
+          }
+        })
+      }, ids)
+      await expectObjectSelection(page, id)
+      const before = await read()
+      if (flow) {
+        // Exercise the same component commit with real model/DOM. Root-flow
+        // handles can overlap neighbouring demo content in this fixture.
+        await page.evaluate(({id, gesture}) => {
+          const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+          const block = doc.getBlockById(id)
+          if (gesture === 'rotation') block.commitRotation({rotation: 30})
+          else block.commitResize({width: 295, height: 180, offsetX: 65, offsetY: 0, handle: 'west'})
+        }, {id, gesture})
+      } else {
+        const block = page.locator(`.text-box-block[data-block-id="${id}"]`)
+        const handle = block.locator(gesture === 'rotation' ? '.shape-resizer__rotate' : '[data-handle="west"]')
+        await handle.hover()
+        const rect = (await handle.boundingBox())!
+        const x = rect.x + rect.width / 2, y = rect.y + rect.height / 2
+        await page.mouse.move(x, y)
+        await page.mouse.down()
+        await page.mouse.move(x + 65, y + (gesture === 'rotation' ? 30 : 0), {steps: 8})
+        // Pointer preview must not write Yjs or create an undo item.
+        expect((await read()).map(item => item.props)).toEqual(before.map(item => item.props))
+        expect(await page.evaluate(() => (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc.crud.undoManager.isCanUndo())).toBe(false)
+        await page.mouse.up()
+      }
+      await expect.poll(async () => (await read())[0].props[gesture === 'rotation' ? 'rotation' : 'width'])
+        .not.toBe(before[0].props[gesture === 'rotation' ? 'rotation' : 'width'])
+      const after = await read()
+      expect(after[2].props).not.toEqual(before[2].props)
+      await page.evaluate(() => (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc.crud.undoManager.undo())
+      await expect.poll(read).toEqual(before)
+      await expectObjectSelection(page, id)
+      expect(await page.evaluate(() => (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc.crud.undoManager.isCanUndo())).toBe(false)
+      await page.evaluate(() => (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc.crud.undoManager.redo())
+      await expect.poll(read).toEqual(after)
+    })
+  }
+}
+
+for (const absolute of [false, true]) {
+  const mode = absolute ? 'absolute' : 'flow'
+
+  test(`${mode} text-box clears rotation when committed at zero`, async ({page}) => {
+    const id = await createTextBox(page, absolute)
+    await page.evaluate(id => {
+      const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+      doc.getBlockById(id).commitRotation({rotation: 1})
+    }, id)
+    await expect.poll(() => page.evaluate(id => {
+      const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+      return doc.getBlockById(id).props.rotation
+    }, id)).toBe(1)
+    await page.evaluate(id => {
+      const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+      doc.getBlockById(id).commitRotation({rotation: 0})
+    }, id)
+    await expect.poll(() => page.evaluate(id => {
+      const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+      const block = doc.getBlockById(id)
+      return {
+        hasRotation: Object.prototype.hasOwnProperty.call(block.props, 'rotation'),
+        transform: getComputedStyle(block.hostElement.querySelector('.text-box-block__surface')).transform,
+      }
+    }, id)).toEqual({hasRotation: false, transform: 'none'})
+  })
+
+  test(`${mode} text-box keeps all handles through slow width resize and rotation`, async ({page}) => {
+    const id = await createTextBox(page, absolute)
+    const block = page.locator(`.text-box-block[data-block-id="${id}"]`)
+    const surface = block.locator('.text-box-block__surface')
+    await expectObjectSelection(page, id)
+
+    for (const side of ['east', 'west']) {
+      const before = (await surface.boundingBox())!
+      const handle = (await block.locator(`[data-handle="${side}"]`).boundingBox())!
+      const x = handle.x + handle.width / 2
+      const y = handle.y + handle.height / 2
+      await page.mouse.move(x, y)
+      await page.mouse.down()
+      // Outlast programmatic selection suppression: a held gesture must stay
+      // selected, rather than recovering only after pointerup.
+      await page.waitForTimeout(150)
+      await expectObjectSelection(page, id)
+      await page.mouse.move(x + 40, y, {steps: 5})
+      await page.waitForTimeout(150)
+      await expectObjectSelection(page, id)
+      const delta = side === 'east' ? 40 : -40
+      await expect.poll(async () => (await surface.boundingBox())!.width)
+        .toBeCloseTo(before.width + delta, 0)
+      await page.mouse.up()
+      await expectObjectSelection(page, id)
+      await expect.poll(() => page.evaluate(id => {
+        const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+        return doc.getBlockById(id).props.width
+      }, id)).toBeCloseTo(before.width + delta, 0)
+    }
+
+    const rotate = (await block.locator('.shape-resizer__rotate').boundingBox())!
+    await page.mouse.move(rotate.x + rotate.width / 2, rotate.y + rotate.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(rotate.x + 65, rotate.y + 30, {steps: 5})
+    await page.waitForTimeout(150)
+    await expectObjectSelection(page, id)
+    await page.mouse.up()
+    await expectObjectSelection(page, id)
+    await expect.poll(() => page.evaluate(id => {
+      const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+      return doc.getBlockById(id).props.rotation ?? 0
+    }, id)).not.toBe(0)
+  })
+
+  test(`${mode} text-box cancels resize and releases selection to text editing`, async ({page}) => {
+    const id = await createTextBox(page, absolute)
+    const block = page.locator(`.text-box-block[data-block-id="${id}"]`)
+    const surface = block.locator('.text-box-block__surface')
+    await expectObjectSelection(page, id)
+    const before = (await surface.boundingBox())!
+    const handle = (await block.locator('[data-handle="east"]').boundingBox())!
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(handle.x + 65, handle.y + handle.height / 2, {steps: 5})
+    await expect.poll(async () => (await surface.boundingBox())!.width).toBeGreaterThan(before.width + 30)
+    await page.keyboard.press('Escape')
+    await page.mouse.up()
+    await expect.poll(async () => (await surface.boundingBox())!.width).toBeCloseTo(before.width, 0)
+    await expectObjectSelection(page, id)
+
+    const paragraph = block.locator('.text-box-block__content [data-node-type="editable"]').first()
+    await paragraph.click({position: {x: 20, y: 10}})
+    await expect.poll(() => page.evaluate(() => {
+      const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+      return doc.selection.value?.anchor.type
+    })).toBe('text')
+    await expect(block.locator('.shape-resizer__handle:visible')).toHaveCount(0)
+    await page.keyboard.type('typing')
+    await expect(paragraph).toContainText('typing')
+  })
+
+  test(`${mode} text-box corner preview keeps the selection chrome on its surface`, async ({page}) => {
+    const id = await createTextBox(page, absolute)
+    const block = page.locator(`.text-box-block[data-block-id="${id}"]`)
+    const surface = block.locator('.text-box-block__surface')
+    const before = (await surface.boundingBox())!
+    const handle = (await block.locator('[data-handle="north-west"]').boundingBox())!
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(handle.x + handle.width / 2 + 60, handle.y + handle.height / 2 - 30, {steps: 5})
+    await page.waitForTimeout(150)
+    await expectObjectSelection(page, id)
+    // The generic selected host fill must not remain at its old coordinates.
+    await expect(block).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+    const preview = (await surface.boundingBox())!
+    const frame = (await block.locator('.shape-resizer__frame').boundingBox())!
+    expect(preview.width).toBeCloseTo(before.width - 60, 0)
+    expect(preview.height).toBeCloseTo(before.height + 30, 0)
+    expect(preview.x).toBeCloseTo(before.x + (absolute ? 60 : 0), 0)
+    expect(preview.y).toBeCloseTo(before.y - (absolute ? 30 : 0), 0)
+    for (const key of ['x', 'y', 'width', 'height'] as const) {
+      expect(frame[key]).toBeCloseTo(preview[key], 0)
+    }
+    await page.mouse.up()
+    await expectObjectSelection(page, id)
+    const committed = (await surface.boundingBox())!
+    for (const key of ['x', 'y', 'width', 'height'] as const) {
+      expect(committed[key]).toBeCloseTo(preview[key], 0)
+    }
+  })
+}

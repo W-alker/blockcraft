@@ -1,4 +1,13 @@
 import {BlockNodeType, IBlockSnapshot} from "../../framework/block-std/types/block.type";
+import {resolveBlockSurface} from "../../framework/block-std/block/block-surface";
+import {applyRenderUnitTypography} from "../../blocks/render-unit-block/typography";
+import {
+  normalizeParagraphFontScale,
+  normalizeParagraphSpacing,
+  normalizeTypographyLineHeight,
+  paragraphPointsToCss,
+  editableBlockFontSizeCss,
+} from "@ccc/blockcraft/framework/block-std/typography";
 
 export function createBlockShell(snapshot: IBlockSnapshot): HTMLElement {
   const element = document.createElement(getTagName(snapshot))
@@ -10,10 +19,159 @@ export function createBlockShell(snapshot: IBlockSnapshot): HTMLElement {
 
   if (snapshot.nodeType === BlockNodeType.root) {
     element.setAttribute("data-blockcraft-root", "true")
+    // The snapshot tree is display-only. Keep the same root marker/class used
+    // by the live editor so the shared theme applies, while also preventing
+    // the browser from treating the rendered tree as an editable surface.
+    element.setAttribute("contenteditable", "false")
     element.classList.add("readonly")
   }
 
+  if (snapshot.nodeType !== BlockNodeType.root) {
+    applyBlockAppearance(
+      element,
+      snapshot.nodeType,
+      snapshot.props as Record<string, unknown>,
+    )
+    applyBlockSpacing(element, snapshot.props as Record<string, unknown>)
+  }
+
+  if (snapshot.nodeType === BlockNodeType.editable) {
+    applyEditableTypography(
+      element,
+      snapshot.props as Record<string, unknown>,
+      snapshot.flavour,
+    )
+  }
+
+  if (snapshot.flavour === "render-unit") {
+    element.setAttribute("data-bc-render-unit", "true")
+    applyRenderUnitAppearance(
+      element,
+      snapshot.props as Record<string, unknown>,
+    )
+  }
+
   return element
+}
+
+function applyEditableTypography(
+  element: HTMLElement,
+  props: Record<string, unknown>,
+  flavour: string,
+) {
+  const fontSize = editableBlockFontSizeCss(props, flavour)
+  if (fontSize !== null) element.style.fontSize = fontSize
+  const fontScale = normalizeParagraphFontScale(props["pfs"])
+  if (fontScale !== null) {
+    element.style.setProperty("--bc-block-fs-scale", `${fontScale}`)
+  }
+
+  const lineHeight = normalizeTypographyLineHeight(props["lh"])
+  if (lineHeight !== null) {
+    element.setAttribute("data-bc-block-lh", "")
+    element.style.setProperty("--bc-block-lh", `${lineHeight}`)
+  }
+
+}
+
+function applyBlockSpacing(element: HTMLElement, props: Record<string, unknown>) {
+  const before = normalizeParagraphSpacing(props["psb"])
+  const after = normalizeParagraphSpacing(props["psa"])
+  if (before !== null) element.style.setProperty("--bc-block-sb", paragraphPointsToCss(before))
+  if (after !== null) element.style.setProperty("--bc-block-sa", paragraphPointsToCss(after))
+}
+
+/**
+ * Projects the same one-gap rule as the live BaseBlockComponent: the physical
+ * gap belongs to the preceding sibling and is max(previous after, next before).
+ */
+export function projectParagraphSiblingSpacing(
+  snapshots: readonly IBlockSnapshot[],
+  elements: readonly HTMLElement[],
+): void {
+  elements.forEach((element, index) => {
+    element.style.removeProperty("--bc-next-block-sb")
+    element.style.removeProperty("--bc-block-leading-sb")
+    element.removeAttribute("data-bc-block-leading-sb")
+
+    const snapshot = snapshots[index]
+    if (!snapshot) return
+    if (index === 0) {
+      const before = normalizeParagraphSpacing(snapshot.props["psb"])
+      if (before !== null) {
+        element.style.setProperty(
+          "--bc-block-leading-sb",
+          paragraphPointsToCss(before),
+        )
+        element.setAttribute("data-bc-block-leading-sb", "")
+      }
+    }
+
+    const next = snapshots[index + 1]
+    if (!next) return
+    const nextBefore = normalizeParagraphSpacing(next.props["psb"])
+    if (nextBefore !== null) {
+      element.style.setProperty(
+        "--bc-next-block-sb",
+        paragraphPointsToCss(nextBefore),
+      )
+    }
+  })
+}
+
+function applyRenderUnitAppearance(
+  element: HTMLElement,
+  props: Record<string, unknown>,
+) {
+  applyRenderUnitTypography(element, props)
+  const {padding} = resolveBlockSurface(props)
+  element.style.setProperty("--bc-render-unit-padding-top", `${padding.top}px`)
+  element.style.setProperty("--bc-render-unit-padding-right", `${padding.right}px`)
+  element.style.setProperty("--bc-render-unit-padding-bottom", `${padding.bottom}px`)
+  element.style.setProperty("--bc-render-unit-padding-left", `${padding.left}px`)
+
+  const backColor = normalizeAppearanceColor(props["backColor"])
+  if (backColor) {
+    element.style.setProperty("--bc-render-unit-background-color", backColor)
+  }
+  const backOpacity = props["backOpacity"]
+  if (typeof backOpacity === "number" && Number.isFinite(backOpacity)) {
+    element.style.setProperty("--bc-render-unit-background-opacity",
+      `${Math.min(1, Math.max(0, backOpacity)) * 100}%`)
+  }
+
+  const borderColor = normalizeAppearanceColor(props["borderColor"])
+  if (borderColor) {
+    element.style.setProperty("--bc-render-unit-border-color", borderColor)
+  }
+}
+
+function applyBlockAppearance(
+  element: HTMLElement,
+  nodeType: BlockNodeType,
+  props: Record<string, unknown>,
+) {
+  const backColor = nodeType === BlockNodeType.editable
+    ? normalizeAppearanceColor(props["backColor"])
+    : null
+  if (backColor) {
+    element.setAttribute("data-bc-block-background", "")
+    element.style.setProperty("--bc-block-background-color", backColor)
+  }
+
+  const borderColor = nodeType === BlockNodeType.editable
+    ? normalizeAppearanceColor(props["borderColor"])
+    : null
+  if (borderColor) {
+    element.setAttribute("data-bc-block-border", "")
+    element.style.setProperty("--bc-block-border-color", borderColor)
+  }
+}
+
+function normalizeAppearanceColor(value: unknown): string | null {
+  if (typeof value !== "string") return null
+  const color = value.trim()
+  return color && color.toLowerCase() !== "transparent" ? color : null
 }
 
 function getTagName(snapshot: IBlockSnapshot): string {

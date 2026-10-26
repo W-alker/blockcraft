@@ -1,0 +1,14 @@
+:host { display: block; height: 100vh; background: #f4f5f8; color: #202231; }
+main { height: 100%; display: flex; flex-direction: column; }
+header { padding: 16px 24px; flex: none; background: white; border-bottom: 1px solid #dddfe7; }
+h1 { font-size: 20px; margin: 0 0 8px; }
+p { margin: 8px 0; font-size: 13px; }
+.actions { display: flex; gap: 10px; }
+button { border: 1px solid #c7cbd9; border-radius: 5px; background: white; padding: 7px 12px; cursor: pointer; }
+button:disabled { opacity: .5; cursor: default; }
+.status { margin-top: 10px; font-size: 13px; }
+[role="alert"] { color: #b42318; }
+.viewport { flex: 1; min-height: 0; overflow: auto; padding: 24px; }
+.document-surface { max-width: 760px; min-height: 420px; padding: 32px; margin: 0 auto; background: white; border: 1px solid #dce0ea; }
+:host ::ng-deep [data-blockcraft-root="true"] { min-height: 320px; }
+:host ::ng-deep .render-unit-block { margin: 20px 0; }

@@ -4,6 +4,7 @@ import {BlockSchemaOptions} from "../../framework/block-std/schema/block-schema"
 import {nanoid} from "nanoid";
 import {FrameBlockComponent} from "./frame.block";
 
+
 export interface FrameBlockModel extends NoEditableBlockNative {
   flavour: 'frame',
   nodeType: BlockNodeType.block
@@ -30,7 +31,8 @@ export const FrameBlockSchema: BlockSchemaOptions<FrameBlockModel> = {
   },
   metadata: {
     version: 1,
-    label: "自由块"
+    label: "自由块",
+    description: "创建可自由组织内容的容器"
   }
 }
 

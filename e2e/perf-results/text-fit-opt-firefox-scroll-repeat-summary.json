@@ -1,0 +1,45 @@
+{
+  "methodology": "Firefox init+scroll only; after first then before; 1 warmup + 3 valid rounds per variant; frozen bundles unchanged",
+  "groups": [
+    {
+      "version": "before",
+      "variant": "auto",
+      "frameP95": [
+        370,
+        287,
+        297
+      ],
+      "median": 297
+    },
+    {
+      "version": "before",
+      "variant": "fixed",
+      "frameP95": [
+        351,
+        270,
+        296
+      ],
+      "median": 296
+    },
+    {
+      "version": "after",
+      "variant": "auto",
+      "frameP95": [
+        288,
+        287,
+        373
+      ],
+      "median": 288
+    },
+    {
+      "version": "after",
+      "variant": "fixed",
+      "frameP95": [
+        309,
+        388,
+        240
+      ],
+      "median": 309
+    }
+  ]
+}

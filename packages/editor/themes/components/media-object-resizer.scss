@@ -1,0 +1,26 @@
+// Images and stickers use the same handles and hover/focus affordance.
+[data-blockcraft-root="true"] {
+  // The transformed surface owns sticker selection chrome. The layout host
+  // must not paint the generic block fill at its unrotated dimensions.
+  div.sticker-block[data-block-id].selected {
+    background: transparent;
+  }
+
+  div.image-block.selected > .image-block__container > .img-wrapper > shape-resizer,
+  div.image-block .img-wrapper:hover > shape-resizer,
+  div.image-block .img-wrapper > shape-resizer:focus-within,
+  div.sticker-block.selected > .sticker-block__surface > shape-resizer,
+  div.sticker-block .sticker-block__surface:hover > shape-resizer,
+  div.sticker-block .sticker-block__surface > shape-resizer:focus-within {
+    display: block;
+  }
+
+  // Bridge the gap to the rotation knob so unselected hover handles stay open.
+  div.image-block .img-wrapper > shape-resizer .shape-resizer__rotation-stem::before,
+  div.sticker-block .sticker-block__surface > shape-resizer .shape-resizer__rotation-stem::before {
+    content: '';
+    position: absolute;
+    inset: -2px -11px -10px;
+    pointer-events: auto;
+  }
+}

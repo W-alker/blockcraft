@@ -1,9 +1,54 @@
+import {applyRegionBorders} from '../../blocks/render-unit-block/borders'
+import {resolveBlockPosition} from '../../framework/modules/object/block-placement/state'
 import {IBlockSnapshot} from "../../framework/block-std/types/block.type";
+import {
+  normalizeDocumentFontSize,
+  normalizeTypographyLineHeight,
+  resolveTypographyFontFamily,
+} from "@ccc/blockcraft/framework/block-std/typography";
+import {
+  blockSurfaceImageFitToObjectFit,
+  resolveBlockSurface,
+} from "../../framework/block-std/block/block-surface";
+import {
+  normalizeTextBoxProps,
+  type TextBoxBlockProps,
+} from "../../blocks/text-box-block";
+import {getShapeDefinition} from "../../blocks/shape-block/shape-definitions";
+import {
+  resolveAdjustedShapeTextInsets,
+  resolveShapeAdjustmentProjection,
+} from "../../blocks/shape-block/shape-adjustments";
+import {resolveDividerPresentation} from "../../blocks/divider-block/divider-presentation";
+import type {DividerBlockModel} from "../../blocks/divider-block";
+import {
+  getTextBoxArtwork,
+  resolveTextBoxArtworkSrc,
+} from "../../blocks/text-box-block";
+import {resolveWordArtPresentation} from "../../blocks/word-art-block";
+import {
+  normalizeBlockObjectFormat,
+  objectEffectsFilter,
+  objectLineDasharray,
+  objectPaintBackgroundPosition,
+  objectPaintBackgroundSize,
+  objectTextTransformCss,
+  storeObjectTextFrame,
+  storeObjectTextStyle,
+  BLOCK_OBJECT_GROUP_PADDING,
+  normalizeBlockObjectGroupProps,
+} from "../../framework";
+import {TEXT_BOX_OBJECT_FORMAT_CAPABILITY} from "../../blocks/text-box-block";
 import {createBlockShell} from "../dom/create-block-shell";
 import {SnapshotBlockRenderer, SnapshotRenderContext} from "../types";
+import {normalizeRenderUnitBlockProps, resolveRenderUnitDimensions, resolveRenderUnitWidth} from '../../blocks/render-unit-block';
 
 const STRUCTURAL_FLAVOURS = new Set([
   "root",
+  "placement-layout",
+  "object-group",
+  "render-unit",
+  "text-box",
   "callout",
   "divider",
   "columns",
@@ -19,6 +64,10 @@ export function createStructuralRenderers(): SnapshotBlockRenderer[] {
     canRender: (snapshot) => STRUCTURAL_FLAVOURS.has(snapshot.flavour),
     render(ctx, snapshot) {
       switch (`${snapshot.flavour}`) {
+        case "render-unit":
+          return renderRenderUnit(snapshot, ctx)
+        case "text-box":
+          return renderTextBox(snapshot, ctx)
         case "callout":
           return renderCallout(snapshot, ctx)
         case "divider":
@@ -35,6 +84,10 @@ export function createStructuralRenderers(): SnapshotBlockRenderer[] {
           return renderTableRow(snapshot, ctx)
         case "table-cell":
           return renderTableCell(snapshot, ctx)
+        case "placement-layout":
+          return renderPlacementLayout(snapshot, ctx)
+        case "object-group":
+          return renderObjectGroup(snapshot, ctx)
         case "root":
         default:
           return renderRoot(snapshot, ctx)
@@ -43,17 +96,510 @@ export function createStructuralRenderers(): SnapshotBlockRenderer[] {
   }]
 }
 
+function renderPlacementLayout(
+  snapshot: IBlockSnapshot,
+  ctx: SnapshotRenderContext,
+) {
+  const element = createBlockShell(snapshot)
+  element.setAttribute("data-bc-placement-layer-bridge", "")
+  element.setAttribute("data-bc-placement-layout", "")
+  Object.assign(element.style, {
+    position: "absolute",
+    top: "0",
+    left: "0",
+    right: "0",
+    width: "auto",
+    height: "0",
+    boxSizing: "border-box",
+    padding: "inherit",
+    margin: "0",
+    pointerEvents: "none",
+    overflow: "visible",
+  })
+  const content = document.createElement("div")
+  content.classList.add("children-render-container")
+  content.setAttribute("data-bc-placement-container", "")
+  content.style.position = "relative"
+  content.style.boxSizing = "border-box"
+  content.style.width = "100%"
+  content.style.height = "0"
+  content.style.isolation = "auto"
+  content.style.pointerEvents = "none"
+  appendChildren(content, ctx, snapshot.children)
+  element.append(content)
+  projectAbsolutePlaneChildren(element, snapshot)
+  return {element}
+}
+
+function renderObjectGroup(
+  snapshot: IBlockSnapshot,
+  ctx: SnapshotRenderContext,
+) {
+  const element = createBlockShell(snapshot)
+  const props = normalizeBlockObjectGroupProps(snapshot.props)
+  element.setAttribute("data-bc-object-group", "")
+  Object.assign(element.style, {
+    width: `${props.width}px`,
+    height: `${props.height}px`,
+    boxSizing: "border-box",
+    padding: "0",
+    overflow: "visible",
+  })
+  element.style.setProperty(
+    "--bc-object-group-padding",
+    `${BLOCK_OBJECT_GROUP_PADDING}px`,
+  )
+  const content = document.createElement("div")
+  content.classList.add(
+    "object-group-block__children",
+    "children-render-container",
+  )
+  content.setAttribute("data-bc-placement-container", "")
+  Object.assign(content.style, {
+    position: "relative",
+    width: "100%",
+    height: "100%",
+    boxSizing: "border-box",
+    isolation: "isolate",
+    overflow: "visible",
+  })
+  appendChildren(content, ctx, snapshot.children)
+  element.append(content)
+  projectAbsolutePlaneChildren(element, snapshot)
+  return {element}
+}
+
+/** Reapply model placement after structural snapshot children are patched. */
+export function projectAbsolutePlaneChildren(
+  element: HTMLElement,
+  snapshot: IBlockSnapshot,
+): void {
+  if (snapshot.flavour !== "placement-layout" && snapshot.flavour !== "object-group") {
+    return
+  }
+  const content = element.querySelector<HTMLElement>(
+    ":scope > .children-render-container",
+  )
+  if (!content) return
+  const snapshots = Array.isArray(snapshot.children)
+    ? snapshot.children as IBlockSnapshot[]
+    : []
+  for (const [index, child] of Array.from(content.children).entries()) {
+    if (!(child instanceof HTMLElement)) continue
+    const props = snapshots[index]?.props as Record<string, unknown> | undefined
+    const {x, y} = resolveBlockPosition(props?.["position"])
+    const layer = snapshot.flavour === "placement-layout" &&
+      props?.["placementLayer"] === "under"
+      ? "under"
+      : "over"
+    child.dataset["bcPlacement"] = "absolute"
+    child.dataset["bcPlacementLayer"] = layer
+    child.style.position = "absolute"
+    child.style.left = `${Number.isFinite(x) ? x : 0}px`
+    child.style.top = `${Number.isFinite(y) ? y : 0}px`
+    child.style.zIndex = layer === "under" ? "0" : "2"
+    child.style.margin = "0"
+    child.style.pointerEvents = "auto"
+    // An absolute image's host owns the plane-relative width. Leaving that
+    // percentage on its figure makes the auto-width host shrink-to-fit first,
+    // so the percentage resolves against the image rather than the plane.
+    if (snapshots[index]?.flavour === 'image') {
+      const wr = props?.['wr']
+      const width = props?.['width']
+      const figure = child.querySelector<HTMLElement>(':scope > .image-block__container')
+      if (figure) {
+        child.style.width = typeof wr === 'number' && Number.isFinite(wr) && wr > 0
+          ? `${Math.max(1, wr)}%`
+          : typeof width === 'number' && Number.isFinite(width) && width > 0
+            ? `${width}px`
+            : '100%'
+        child.style.maxWidth = 'none'
+        figure.style.width = '100%'
+      }
+    }
+  }
+}
+
 function renderRoot(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   const element = createBlockShell(snapshot)
+  const props = snapshot.props as Record<string, unknown>
+  const fontFamily = resolveTypographyFontFamily(props["ff"])
+  const fontSize = normalizeDocumentFontSize(props["fs"])
+  const lineHeight = normalizeTypographyLineHeight(props["lh"])
+  if (fontFamily) {
+    element.dataset["bcFf"] = `${props["ff"]}`
+    element.style.fontFamily = fontFamily
+  }
+  if (fontSize !== null) {
+    element.dataset["bcFs"] = `${fontSize}`
+    element.style.setProperty("--bc-fs", `${fontSize}px`)
+  }
+  if (lineHeight !== null) {
+    element.dataset["bcLh"] = `${lineHeight}`
+    element.style.setProperty("--bc-lh", `${lineHeight}`)
+  }
+  // Document text color — same pair RootBlockComponent binds ('[style.color]' +
+  // '[style.--bc-color]'). Document background stays a host concern in both
+  // surfaces: the editor root does not bind it either.
+  if (typeof props["color"] === "string" && props["color"]) {
+    element.style.color = `${props["color"]}`
+    element.style.setProperty("--bc-color", `${props["color"]}`)
+  }
   appendChildren(element, ctx, snapshot.children)
   return {element}
+}
+
+function renderRenderUnit(
+  snapshot: IBlockSnapshot,
+  ctx: SnapshotRenderContext,
+) {
+  const element = createBlockShell(snapshot)
+  applyRegionBorders(element, snapshot.props)
+  const props = normalizeRenderUnitBlockProps(snapshot.props as Record<string, unknown>)
+  const dimensions = resolveRenderUnitDimensions(props, 100)
+  const width = resolveRenderUnitWidth(props, 100)
+  if (width !== null) element.style.width = props.wr != null ? `${width}%` : `${width}px`
+  if (dimensions) {
+    element.classList.add('render-unit-sized')
+    element.style.aspectRatio = `${dimensions.ar}`
+    if (dimensions.source === 'legacy') element.style.height = `${dimensions.height}px`
+  }
+  const {backgroundImage} = resolveBlockSurface(
+    snapshot.props as Record<string, unknown>,
+  )
+
+  if (backgroundImage && ctx.options.resourcePolicy !== "off") {
+    element.append(createSurfaceBackgroundImage(
+      "render-unit-background-image",
+      backgroundImage,
+      ctx,
+    ))
+  }
+
+  const content = document.createElement("div")
+  content.classList.add("children-render-container", "render-unit-content")
+  if (dimensions) {
+    // 固定比例的容器不再由子内容撑高，超出内容沿用编辑器的滚动容器。
+    content.style.position = 'absolute'
+    content.style.inset = '0'
+  }
+  appendChildren(content, ctx, snapshot.children)
+  element.append(content)
+  return {element}
+}
+
+function renderTextBox(
+  snapshot: IBlockSnapshot,
+  ctx: SnapshotRenderContext,
+) {
+  const element = createBlockShell(snapshot)
+  const props = normalizeTextBoxProps(
+    snapshot.props as Partial<TextBoxBlockProps>,
+  )
+  const {padding, backgroundImage} = resolveBlockSurface(props as never)
+  const format = normalizeBlockObjectFormat(
+    snapshot.props as Partial<TextBoxBlockProps>,
+    TEXT_BOX_OBJECT_FORMAT_CAPABILITY,
+  )
+  element.setAttribute("data-bc-text-box", "true")
+  element.setAttribute("data-bc-text-box-wm", props.wm)
+  // Same variable name as the live Block so one theme rule drives both paths.
+  // Horizontal frames leave it unset and fall back to `horizontal-tb`.
+  if (props.wm === "v") {
+    element.style.setProperty("--bc-text-box-writing-mode", "vertical-rl")
+  }
+  element.style.setProperty(
+    "--bc-text-box-background-color",
+    props.backColor ?? "transparent",
+  )
+  element.style.setProperty(
+    "--bc-text-box-border-color",
+    props.borderColor ?? "transparent",
+  )
+  element.style.setProperty("--bc-text-box-padding-top", `${padding.top}px`)
+  element.style.setProperty("--bc-text-box-padding-right", `${padding.right}px`)
+  element.style.setProperty("--bc-text-box-padding-bottom", `${padding.bottom}px`)
+  element.style.setProperty("--bc-text-box-padding-left", `${padding.left}px`)
+  const definition = getShapeDefinition(props.shapeType)
+  const adjustmentProjection = resolveShapeAdjustmentProjection(
+    props.shapeType,
+    props.adjustments,
+  )
+  const renderDefinition = adjustmentProjection
+    ? {...definition, path: adjustmentProjection.path, detailPath: undefined}
+    : definition
+  // Same precedence as the live Block: a catalog drawing carries its own
+  // text-safe frame; ordinary shapes resolve their geometry before margins.
+  const artwork = getTextBoxArtwork(props.artwork)
+  const shapeInsets = artwork
+    ? artwork.textInsets
+    : resolveAdjustedShapeTextInsets(
+        props.shapeType,
+        props.adjustments,
+        definition.textInsets,
+      )
+  element.style.setProperty(
+    "--bc-text-box-shape-inset-top",
+    `${shapeInsets.top * 100}%`,
+  )
+  element.style.setProperty(
+    "--bc-text-box-shape-inset-right",
+    `${shapeInsets.right * 100}%`,
+  )
+  element.style.setProperty(
+    "--bc-text-box-shape-inset-bottom",
+    `${shapeInsets.bottom * 100}%`,
+  )
+  element.style.setProperty(
+    "--bc-text-box-shape-inset-left",
+    `${shapeInsets.left * 100}%`,
+  )
+
+  const surface = document.createElement("div")
+  surface.classList.add("text-box-block__surface")
+  surface.setAttribute("data-bc-print-visual-surface", "")
+  surface.style.width = `${props.width}px`
+  surface.style.height = `${props.height}px`
+  surface.style.transform = props.rotation === 0
+    ? ""
+    : `rotate(${props.rotation}deg)`
+  surface.style.filter = objectEffectsFilter(format.shapeEffects!)
+  const clipPathId = `bc-text-box-clip-${snapshot.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`
+  surface.append(createTextBoxFillGeometry(
+    renderDefinition,
+    format.shapeFill!,
+    clipPathId,
+  ))
+
+  if (backgroundImage && ctx.options.resourcePolicy !== "off") {
+    const image = createSurfaceBackgroundImage(
+      "text-box-block__background-image",
+      backgroundImage,
+      ctx,
+    )
+    image.style.clipPath = `url(#${clipPathId})`
+    image.style.setProperty("-webkit-clip-path", `url(#${clipPathId})`)
+    surface.append(image)
+  }
+  const artworkSrc = typeof props.artwork === "string"
+    ? resolveTextBoxArtworkSrc(props.artwork)
+    : null
+  if (artworkSrc && ctx.options.resourcePolicy !== "off") {
+    const image = createSurfaceBackgroundImage(
+      "text-box-block__background-image",
+      {
+        src: artworkSrc,
+        fit: "stretch",
+        positionX: 50,
+        positionY: 50,
+        opacity: 1,
+      },
+      ctx,
+    )
+    image.classList.add("text-box-block__background-image--artwork")
+    image.style.clipPath = `url(#${clipPathId})`
+    image.style.setProperty("-webkit-clip-path", `url(#${clipPathId})`)
+    surface.append(image)
+  }
+
+  const content = document.createElement("div")
+  content.classList.add("children-render-container", "text-box-block__content")
+  const textFrame = format.textFrame!
+  const textTransforms: string[] = []
+  if (textFrame.direction === "rotate-90") textTransforms.push("rotate(90deg)")
+  if (textFrame.direction === "rotate-270") textTransforms.push("rotate(270deg)")
+  if (!textFrame.rotateWithShape && props.rotation) {
+    textTransforms.push(`rotate(${-props.rotation}deg)`)
+  }
+  const textTransform = objectTextTransformCss(format.textStyle!.transform)
+  if (textTransform) textTransforms.push(textTransform)
+  content.style.transform = textTransforms.join(" ")
+  content.style.whiteSpace = textFrame.wrap ? "" : "nowrap"
+  {
+    const wordArt = resolveWordArtPresentation({
+      depth: 0,
+      width: props.width,
+      height: props.height,
+      rotation: 0,
+      ...storeObjectTextFrame(props.textFrame),
+      ...storeObjectTextStyle(props.textStyle),
+    })
+    const textStyle = format.textStyle!
+    // Match the live TextBox projection for ordinary rich text. The WordArt
+    // class below only owns non-solid paint/effects; typography and a solid
+    // base color must still survive a preset when no advanced effect is used.
+    content.style.fontFamily = wordArt.fontFamily
+    content.style.fontSize = `${textStyle.fontSize}px`
+    content.style.fontWeight = `${textStyle.fontWeight}`
+    content.style.fontStyle = textStyle.fontStyle
+    content.style.letterSpacing = `${textStyle.letterSpacingEm}em`
+    content.style.lineHeight = `${textStyle.lineHeight}`
+    content.style.textAlign = textFrame.horizontalAlign
+    content.style.justifyContent = textFrame.verticalAlign === "top"
+      ? "flex-start"
+      : textFrame.verticalAlign === "bottom"
+        ? "flex-end"
+        : "center"
+    if (textStyle.fill.type === "solid") {
+      content.style.color = wordArt.textColor
+    }
+    const advancedPaint = textStyle.fill.type !== "solid" ||
+      textStyle.outline.type !== "none" || textStyle.effects.shadow.enabled ||
+      textStyle.effects.glow.enabled || textStyle.transform !== "none"
+    if (advancedPaint) content.classList.add("text-box-block__content--word-art")
+    element.style.setProperty(
+      "--bc-text-box-word-art-font-family",
+      wordArt.fontFamily,
+    )
+    element.style.setProperty(
+      "--bc-text-box-word-art-font-size",
+      `${wordArt.props.fontSize}px`,
+    )
+    element.style.setProperty(
+      "--bc-text-box-word-art-font-weight",
+      `${wordArt.props.fontWeight}`,
+    )
+    element.style.setProperty(
+      "--bc-text-box-word-art-font-style",
+      wordArt.props.fontStyle,
+    )
+    element.style.setProperty(
+      "--bc-text-box-word-art-letter-spacing",
+      `${wordArt.props.letterSpacingEm}em`,
+    )
+    element.style.setProperty(
+      "--bc-text-box-word-art-line-height",
+      `${wordArt.props.lineHeight}`,
+    )
+    element.style.setProperty(
+      "--bc-text-box-word-art-align",
+      wordArt.props.horizontalAlign,
+    )
+    element.style.setProperty(
+      "--bc-text-box-word-art-vertical",
+      wordArt.props.verticalAlign === "top"
+        ? "flex-start"
+        : wordArt.props.verticalAlign === "bottom"
+          ? "flex-end"
+          : "center",
+    )
+    element.style.setProperty("--bc-text-box-word-art-color", wordArt.textColor)
+    element.style.setProperty(
+      "--bc-text-box-word-art-background",
+      wordArt.backgroundImage,
+    )
+    element.style.setProperty("--bc-text-box-word-art-stroke", wordArt.textStroke)
+    element.style.setProperty("--bc-text-box-word-art-shadow", wordArt.textShadow)
+    element.style.setProperty(
+      "--bc-text-box-word-art-transform",
+      wordArt.effectTransform || "none",
+    )
+    if (textStyle.fill.type === "picture") {
+      content.style.backgroundSize = objectPaintBackgroundSize(textStyle.fill)
+      content.style.backgroundPosition = objectPaintBackgroundPosition(textStyle.fill)
+    }
+    if (textStyle.fill.type === "picture") {
+      content.style.opacity = `${textStyle.fill.opacity}`
+    }
+  }
+  appendChildren(content, ctx, snapshot.children)
+  surface.append(content, createTextBoxOutlineGeometry(
+    renderDefinition,
+    format.shapeOutline!,
+  ))
+  element.append(surface)
+  return {element}
+}
+
+const SVG_NS = "http://www.w3.org/2000/svg"
+
+function createTextBoxFillGeometry(
+  definition: ReturnType<typeof getShapeDefinition>,
+  paint: NonNullable<ReturnType<typeof normalizeBlockObjectFormat>["shapeFill"]>,
+  clipPathId: string,
+): SVGSVGElement {
+  const svg = textBoxSvg("text-box-block__geometry--fill")
+  const defs = document.createElementNS(SVG_NS, "defs")
+  const clipPath = document.createElementNS(SVG_NS, "clipPath")
+  clipPath.id = clipPathId
+  clipPath.setAttribute("clipPathUnits", "objectBoundingBox")
+  const clipShape = document.createElementNS(SVG_NS, "path")
+  clipShape.setAttribute("d", definition.path)
+  clipShape.setAttribute("transform", "scale(.001)")
+  clipPath.append(clipShape)
+  defs.append(clipPath)
+  if (paint.type === "linear-gradient") {
+    const gradient = document.createElementNS(SVG_NS, "linearGradient")
+    gradient.id = `${clipPathId}-gradient`
+    const radians = (paint.angle - 90) * Math.PI / 180
+    const x = Math.cos(radians)
+    const y = Math.sin(radians)
+    gradient.setAttribute("x1", `${0.5 - x / 2}`)
+    gradient.setAttribute("y1", `${0.5 - y / 2}`)
+    gradient.setAttribute("x2", `${0.5 + x / 2}`)
+    gradient.setAttribute("y2", `${0.5 + y / 2}`)
+    paint.stops.forEach(item => {
+      const stop = document.createElementNS(SVG_NS, "stop")
+      stop.setAttribute("offset", `${item.offset}`)
+      stop.setAttribute("stop-color", item.color)
+      stop.setAttribute("stop-opacity", `${item.opacity}`)
+      gradient.append(stop)
+    })
+    defs.append(gradient)
+  }
+  const fill = document.createElementNS(SVG_NS, "path")
+  fill.setAttribute("d", definition.path)
+  fill.setAttribute("fill", paint.type === "none" || paint.type === "picture"
+    ? "none"
+    : paint.type === "linear-gradient"
+      ? `url(#${clipPathId}-gradient)`
+      : paint.color)
+  fill.setAttribute("fill-opacity", `${paint.type === "none" ? 0 : paint.opacity}`)
+  if (definition.fillRule) fill.setAttribute("fill-rule", definition.fillRule)
+  svg.append(defs, fill)
+  return svg
+}
+
+function createTextBoxOutlineGeometry(
+  definition: ReturnType<typeof getShapeDefinition>,
+  outline: NonNullable<ReturnType<typeof normalizeBlockObjectFormat>["shapeOutline"]>,
+): SVGSVGElement {
+  const svg = textBoxSvg("text-box-block__geometry--outline")
+  for (const pathValue of [definition.path, definition.detailPath]) {
+    if (!pathValue) continue
+    const path = document.createElementNS(SVG_NS, "path")
+    path.setAttribute("d", pathValue)
+    path.setAttribute("fill", "none")
+    path.setAttribute("stroke", outline.type === "none" ? "none" : outline.color)
+    path.setAttribute("stroke-opacity", `${outline.opacity}`)
+    path.setAttribute("stroke-width", `${outline.width}`)
+    path.setAttribute("stroke-linecap", outline.cap)
+    path.setAttribute("stroke-linejoin", outline.join)
+    path.setAttribute("vector-effect", "non-scaling-stroke")
+    const dasharray = objectLineDasharray(outline)
+    if (dasharray) path.setAttribute("stroke-dasharray", dasharray)
+    svg.append(path)
+  }
+  return svg
+}
+
+function textBoxSvg(modifier: string): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, "svg")
+  svg.classList.add("text-box-block__geometry", modifier)
+  svg.setAttribute("viewBox", "0 0 1000 1000")
+  svg.setAttribute("preserveAspectRatio", "none")
+  svg.setAttribute("aria-hidden", "true")
+  return svg
 }
 
 function renderCallout(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   const element = createBlockShell(snapshot)
   const props = snapshot.props as Record<string, unknown>
   if (props["backColor"]) {
-    element.style.backgroundColor = `${props["backColor"]}`
+    element.style.setProperty(
+      "--bc-callout-background-color",
+      `${props["backColor"]}`,
+    )
   }
   if (props["color"]) {
     element.style.color = `${props["color"]}`
@@ -67,23 +613,48 @@ function renderCallout(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   prefix.setAttribute("contenteditable", "false")
   prefix.textContent = `${props["prefix"] ?? ""}`
 
+  // Keep the live component's .bc-block-content wrapper. The callout theme
+  // owns its row layout and padding on this element, not on the host.
+  const blockContent = document.createElement("div")
+  blockContent.classList.add("bc-block-content")
+
   const content = document.createElement("div")
-  content.classList.add("callout-content")
+  content.classList.add("callout-content", "children-render-container")
   appendChildren(content, ctx, snapshot.children)
 
-  element.append(prefix, content)
+  blockContent.append(prefix, content)
+  element.append(blockContent)
   return {element}
 }
 
 function renderDivider(snapshot: IBlockSnapshot) {
   const element = createBlockShell(snapshot)
-  const props = snapshot.props as Record<string, unknown>
-  const line = document.createElement("div")
-  line.classList.add("divide-line", `${props["style"] || "solid"}`)
-  if (props["size"]) {
-    line.dataset["size"] = `${props["size"]}`
+  const props = snapshot.props as DividerBlockModel["props"]
+  // Same resolver as DividerBlockComponent (length/thickness with the deprecated
+  // `size` fallback, opacity clamps) and the same DOM contract: the theme's
+  // divider rules key off `.divider-block > .bc-block-content` and the
+  // data-length / data-thickness / data-align attributes.
+  const view = resolveDividerPresentation(props)
+
+  const content = document.createElement("div")
+  content.classList.add("bc-block-content")
+  if (props.lineColor) {
+    content.style.setProperty("--bc-divider-line-color", `${props.lineColor}`)
   }
-  element.append(line)
+
+  const applyLineAttrs = (line: HTMLElement) => {
+    line.dataset["length"] = view.length
+    line.dataset["thickness"] = view.thickness
+    if (view.opacity !== 1) {
+      line.style.opacity = `${view.opacity}`
+    }
+  }
+  const line = document.createElement('div')
+  line.classList.add('divide-line', view.style)
+  applyLineAttrs(line)
+  content.append(line)
+
+  element.append(content)
   return {element}
 }
 
@@ -206,4 +777,34 @@ function appendChildren(
   }
 
   children.forEach((child) => container.append(ctx.renderBlock(child as IBlockSnapshot)))
+}
+
+function resolveResourceUrl(src: string, baseUrl?: string): string {
+  if (!baseUrl) return src
+  try {
+    return new URL(src, baseUrl).toString()
+  } catch {
+    return src
+  }
+}
+
+function createSurfaceBackgroundImage(
+  className: string,
+  backgroundImage: NonNullable<
+    ReturnType<typeof resolveBlockSurface>["backgroundImage"]
+  >,
+  ctx: SnapshotRenderContext,
+): HTMLImageElement {
+  const image = document.createElement("img")
+  image.classList.add(className)
+  image.alt = ""
+  image.setAttribute("aria-hidden", "true")
+  image.loading = "eager"
+  image.decoding = "async"
+  image.draggable = false
+  image.style.objectFit = blockSurfaceImageFitToObjectFit(backgroundImage.fit)
+  image.style.objectPosition = `${backgroundImage.positionX}% ${backgroundImage.positionY}%`
+  image.style.opacity = `${backgroundImage.opacity}`
+  image.src = resolveResourceUrl(backgroundImage.src, ctx.options.baseUrl)
+  return image
 }

@@ -4,7 +4,8 @@ import {
   EditableBlockComponent,
 } from "../../block-std";
 import {BehaviorSubject, fromEvent, skip, take, takeUntil} from "rxjs";
-import {closetBlockId, getBlockGapAnchor, isNativeInputTarget} from "../../utils";
+import {closetBlockId, getBlockGapAnchor, getBlockGapCaretSpan, isNativeInputTarget} from "../../utils";
+import {deltaToString} from "../../../global";
 import {SelectionSelectedManager} from "./selected-manager";
 import {SelectionKeyboard} from "./selection-keyboard";
 import {FakeRange, IFakeRangeConfig} from "./createFakeRange";
@@ -17,7 +18,77 @@ import {
   ISelectionPoint,
   ISelectionPointJSON,
 } from "./types";
-import {normalizeRange as _normalizeRange, INormalizedEndpoints, endpointsToLegacy, lazyPoint as _lazyPoint} from "./normalize";
+import {
+  normalizeRange as _normalizeRange,
+  INormalizedEndpoints,
+  endpointsToLegacy,
+  lazyPoint as _lazyPoint,
+  lazyGapPoint,
+  lazyBoundaryPoint,
+  lazyTableCellPoint,
+} from "./normalize";
+import {hasLiveSelectionEndpoints, isSelectionAlive} from "./liveness";
+import {
+  resolveCommonSelectionScope,
+  resolveSelectionContainerId,
+  resolveSelectionScope,
+  SelectionScope,
+} from "./scope";
+import {
+  SelectionPositionOrder,
+  SelectionPositionResolver,
+} from "./position-resolver";
+import {SelectionModelResolver} from "./model-resolver";
+import {resolveSelectionCommonParent} from "./common-parent";
+import {RemoteSelectionReconciler} from './remote-selection-reconciler';
+import {
+  RelativeSelectionBookmark,
+  sameSelectionJSON,
+} from './relative-bookmark';
+import {SelectionHistoryRestorer} from './history-restorer';
+import {
+  DOMSelectionSurfaceAdapter,
+  SelectionSurfaceAdapter,
+} from './surface-adapter';
+import type {SelectionProjectionMountAdapter} from './projection-mount-adapter';
+import {resolveTableCellSelectionTarget} from '../table';
+import {
+  hasClosedContainerEditingBoundary,
+  hasSelectableBlockFrame,
+} from './interaction-policy';
+import {isVisibleInSelectionViewports, revealInSelectionViewports, selectionScrollViewports} from './scroll-viewport';
+
+const DOM_PROJECTION_RETRY_LIMIT = 8
+
+interface ProjectionMountRequest {
+  adapter: SelectionProjectionMountAdapter
+  controller: AbortController
+  expected: ISelectionJSON
+  projectionVersion: number
+  scrollIntoView?: boolean
+}
+
+type NavigationArrowKey = 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight'
+
+interface NavigationFence {
+  readonly key: NavigationArrowKey
+  readonly ownerBlockId: string
+  readonly sourceBlockId: string
+  readonly sourceJSON: ISelectionJSON
+  readonly sourceRange: Range
+  readonly projectionVersion: number
+}
+
+const NAVIGATION_ARROW_KEYS = new Set<NavigationArrowKey>([
+  'ArrowUp',
+  'ArrowDown',
+  'ArrowLeft',
+  'ArrowRight',
+])
+// Chromium can dispatch the keyup before the queued selectionchange. Keep the
+// one-shot fence alive beyond that task, while every new user/model intent
+// clears it synchronously.
+const NAVIGATION_FENCE_EXPIRY_MS = 120
 
 @DocEventRegister
 export class SelectionManager {
@@ -25,20 +96,237 @@ export class SelectionManager {
   public readonly selectionChange$ = new BehaviorSubject<BlockSelection | null>(null)
 
   private selectedManager = new SelectionSelectedManager(this.doc)
-  private _keyboard = new SelectionKeyboard(this.doc)
+  private readonly _keyboard: SelectionKeyboard
   private _suppressRecalculate = false
+  private _inlineLayoutProjectionGuardDepth = 0
+  private _suppressBeforeInlineLayoutProjection = false
+  private _suppressProgrammaticSelectionChangeUntil = 0
+  private _compositionSelectionRecheckQueued = false
+  private _compositionSelectionRecheckTimer: ReturnType<typeof setTimeout> | null = null
+  private _compositionSelectionRecheckVersion = 0
+  private _primaryPointerDown = false
+  private _releasePrimaryPointerLayoutFreeze: (() => void) | null = null
+  private _navigationFence: NavigationFence | null = null
+  private _navigationFenceExpiryTimer: ReturnType<typeof setTimeout> | null = null
+  private _projectionVersion = 0
+  private _objectGroupModelSelection: BlockSelection | null = null
+  private _projectionFrame: number | null = null
+  private _virtualPaintRestore: (() => void) | null = null
+  private _projectionMountAdapter: SelectionProjectionMountAdapter | null = null
+  private _projectionMountRegistrationVersion = 0
+  private _projectionMountRequest: ProjectionMountRequest | null = null
+  private readonly _positionResolver: SelectionPositionResolver
+  private readonly _modelResolver: SelectionModelResolver | null
+  private readonly _remoteSelectionReconciler: RemoteSelectionReconciler | null
+  private readonly _historyRestorer: SelectionHistoryRestorer
+  private readonly _surface: SelectionSurfaceAdapter
 
-  constructor(public readonly doc: BlockCraft.Doc) {
+  constructor(
+    public readonly doc: BlockCraft.Doc,
+    surface?: SelectionSurfaceAdapter,
+  ) {
+    this._surface = surface ?? new DOMSelectionSurfaceAdapter(doc)
+    this._modelResolver = this.doc.model
+      ? new SelectionModelResolver(this.doc.model)
+      : null
+    this._keyboard = new SelectionKeyboard(this.doc, this._surface)
+    this._remoteSelectionReconciler = this.doc.crud?.remoteSyncLifecycle$
+      ? new RemoteSelectionReconciler(
+        this.doc,
+        this.doc.crud.remoteSyncLifecycle$,
+        this.changeObserve(),
+        this._surface,
+      )
+      : null
+    this._historyRestorer = new SelectionHistoryRestorer(this.doc, {
+      replay: selection => this._replay(selection),
+      readModelSelection: () => this.value?.toJSON() ?? null,
+      readDomSelection: () => this.recalculate(false).value?.toJSON() ?? null,
+      isProjectionPending: selection => this._isDomProjectionPending(selection),
+      isSelectionVisible: selection => this._isSelectionVisibleInViewport(selection),
+      ensureViewMounted: blockIds => this._ensureViewMounted(blockIds),
+      scrollToBlock: blockId => {
+        if (!this.doc.virtualization?.enabled) return false
+        // A mounted nested editor needs caret reveal, not root-block centering.
+        if (this._selectionScrollViewports({blockId}).length) return false
+        void this.doc.virtualization.scrollToBlock(blockId)
+        return true
+      },
+      scrollSelectionIntoView: () => this.scrollSelectionIntoView(),
+    }, this._surface)
+    this._positionResolver = new SelectionPositionResolver({
+      getParentId: blockId => {
+        if (this._modelResolver?.exists(blockId)) {
+          return this.doc.model.getParentId(blockId)
+        }
+        const block = this._readBlock(blockId)
+        return block ? block.parentId ?? null : undefined
+      },
+      getChildrenIds: blockId => {
+        if (this._modelResolver?.exists(blockId)) {
+          return this._modelResolver.getChildrenIds(blockId)
+        }
+        const block = this._readBlock(blockId)
+        if (!block) return null
+        if (block.nodeType === BlockNodeType.editable) return []
+        try {
+          return block.childrenIds ?? null
+        } catch {
+          return null
+        }
+      },
+    })
     this.doc.afterInit(this._bindEvents)
+    this.doc.onDestroy$.pipe(take(1)).subscribe(() => {
+      this._clearNavigationFence()
+      this._cancelCompositionSelectionRecheck()
+      this._cancelProjectionFrame()
+      this._cancelProjectionMountRequest()
+      this._projectionMountRegistrationVersion += 1
+      this._projectionMountAdapter = null
+      this._primaryPointerDown = false
+      this._releasePrimaryPointerFreeze()
+      this._remoteSelectionReconciler?.destroy()
+      this._historyRestorer.destroy()
+    })
+  }
+
+  /**
+   * Register the renderer responsible for mounting the bounded DOM neighborhood
+   * required by native selection projection. Registering a replacement aborts
+   * any request owned by the previous adapter.
+   */
+  registerProjectionMountAdapter(adapter: SelectionProjectionMountAdapter): () => void {
+    const interruptedRequest = this._projectionMountRequest
+    this._cancelProjectionMountRequest()
+    const registrationVersion = ++this._projectionMountRegistrationVersion
+    this._projectionMountAdapter = adapter
+    if (interruptedRequest) {
+      this._recoverDomProjection(
+        interruptedRequest.expected,
+        interruptedRequest.projectionVersion,
+        interruptedRequest.scrollIntoView,
+      )
+    }
+    let disposed = false
+    return () => {
+      if (disposed) return
+      disposed = true
+      if (registrationVersion !== this._projectionMountRegistrationVersion) return
+      this._projectionMountRegistrationVersion += 1
+      const pendingRequest = this._projectionMountRequest
+      this._cancelProjectionMountRequest()
+      this._projectionMountAdapter = null
+      if (pendingRequest) {
+        this._retryDomRangeWhenReady(
+          pendingRequest.expected,
+          pendingRequest.projectionVersion,
+          pendingRequest.scrollIntoView,
+        )
+      }
+    }
+  }
+
+  restoreBookmark(bookmark: RelativeSelectionBookmark | null): void {
+    this._historyRestorer.restore(bookmark)
+  }
+
+  private _readBlock(blockId: string): BlockCraft.BlockComponent | null {
+    try {
+      return this.doc.getBlockById(blockId) ?? null
+    } catch {
+      return null
+    }
+  }
+
+  private _selectableFrameAtTarget(
+    target: EventTarget | null,
+  ): BlockCraft.BlockComponent | null {
+    if (!(target instanceof Node) || !this.doc.root.hostElement.contains(target)) {
+      return null
+    }
+    const targetElement = target instanceof Element
+      ? target
+      : target.parentElement
+    if (!targetElement) return null
+
+    const declaredFrame = targetElement.closest(
+      '[data-bc-selection-interaction-frame]',
+    )
+    const blockId = closetBlockId(declaredFrame ?? targetElement)
+    const block = blockId ? this._readBlock(blockId) : null
+    if (!hasSelectableBlockFrame(this.doc, block)) return null
+
+    // A selectable container has two interaction planes: descendant content
+    // remains native, while the block's own host or an explicitly declared
+    // frame hit region selects the whole object. Requiring an owned frame role
+    // prevents a generic wrapper/background descendant from swallowing text
+    // selection merely because its nearest block is selectable.
+    if (!declaredFrame && targetElement !== block.hostElement) return null
+    return block
+  }
+
+  private _handleSelectableFramePointerDown(event: PointerEvent): void {
+    if (
+      event.defaultPrevented ||
+      !event.isPrimary ||
+      event.button !== 0 ||
+      isNativeInputTarget(event.target)
+    ) {
+      return
+    }
+    const target = event.target instanceof Element ? event.target : null
+    if (target?.closest('[data-bc-selection-interaction-ignore]')) return
+
+    const block = this._selectableFrameAtTarget(event.target)
+    if (!block) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    this.selectBlock(block)
+  }
+
+  private _handleClosedContainerDoubleClick(event: MouseEvent): void {
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      isNativeInputTarget(event.target)
+    ) {
+      return
+    }
+    const target = event.target instanceof Element ? event.target : null
+    if (target?.closest('[data-bc-selection-interaction-ignore]')) return
+
+    const block = this._selectableFrameAtTarget(event.target)
+    if (!hasClosedContainerEditingBoundary(this.doc, block)) return
+    if (
+      this.doc.isReadonly ||
+      this.doc.readonlyManager?.isReadonly?.(block)
+    ) {
+      return
+    }
+
+    event.preventDefault()
+    event.stopPropagation()
+    this.setCursorAtBlock(block, true)
   }
 
   get value() {
-    return this.selectionChange$.value
+    const selection = this.selectionChange$.value
+    if (!selection) return null
+    if (hasLiveSelectionEndpoints(selection, this.doc)) return selection
+    this._applyState(null)
+    return null
+  }
+
+  /** @internal Retain toolbar presentation without retaining or rewriting model selection. */
+  retainPresentation(): () => void {
+    return this.selectedManager.retainPresentation(this.value)
   }
 
   blur() {
     this._applyState(null)
-    document.getSelection()?.removeAllRanges()
+    this._surface.clearNativeSelection()
   }
 
   changeObserve() {
@@ -54,9 +342,48 @@ export class SelectionManager {
   }
 
   private _bindEvents = (root: BlockCraft.IBlockComponents['root']) => {
-    this.doc.event.customListen(document, 'selectionchange').subscribe(e => {
+    const virtualizationViewChange$ = this.doc.virtualization?.viewChange$
+    virtualizationViewChange$?.pipe(takeUntil(this.doc.onDestroy$))
+      .subscribe(({mountedRootIds}) => {
+        const selection = this.selectionChange$.value
+        this.selectedManager.setSelected(
+          selection,
+          mountedRootIds,
+        )
+        this._reprojectAfterVirtualViewChange(selection)
+      })
+    this.doc.event.customListen(this._surface.ownerDocument, 'selectionchange').subscribe(e => {
+      // Explicit gates protect an active drag/transform and must stay hard.
+      // The short programmatic projection window is different: when an IME
+      // session recovers during that window, remember this native change and
+      // replay it once the window expires instead of dropping it forever.
+      const navigationFence = this._handleNavigationFenceSelectionChange()
+      if (navigationFence === 'repaired') return
+      if (navigationFence === 'inside-moved') {
+        this._clearNavigationFence()
+        if (this.doc.event.status.isComposing) {
+          this._queueCompositionSelectionRecheck()
+        } else if (!this._suppressRecalculate) {
+          this.recalculate()
+        }
+        return
+      }
+      // A delayed programmatic selectionchange can arrive after keydown but
+      // before the browser performs its arrow default. Do not let that no-op
+      // event clear the fence that belongs to the pending navigation intent.
+      if (navigationFence === 'inside-unchanged') return
       if (this._suppressRecalculate) return
-      if (this.doc.event.status.isComposing) return
+      if (this.doc.event.status.isComposing) {
+        this._queueCompositionSelectionRecheck()
+        return
+      }
+      const current = this.selectionChange$.value
+      if (current && current === this._objectGroupModelSelection && this._surface.hasEditorFocus()) {
+        this._surface.clearNativeSelection()
+        return
+      }
+      if (current && this._isDomProjectionPending(current.toJSON())) return
+      if (this._suppressProgrammaticSelectionChangeUntil > performance.now()) return
       this.recalculate()
     })
     this.doc.event.customListen<FocusEvent>(root.hostElement, 'focusin').subscribe(event => {
@@ -75,6 +402,12 @@ export class SelectionManager {
     fromEvent<MouseEvent>(root.hostElement, 'mousedown', {capture: true})
       .pipe(takeUntil(this.doc.onDestroy$))
       .subscribe(event => {
+        // A new primary-pointer intent must not inherit the short suppression
+        // window from the previous programmatic DOM projection. Any selection
+        // API invoked later in this mousedown will establish its own window.
+        if (event.button === 0) {
+          this._beginPrimaryPointerIntent(event.target)
+        }
         if (event.detail !== 3) return
         if (isNativeInputTarget(event.target)) return
         const blockId = closetBlockId(event.target as Node)
@@ -84,6 +417,60 @@ export class SelectionManager {
         event.preventDefault()
         this.selectAllChildren(block)
       })
+
+    fromEvent<KeyboardEvent>(root.hostElement, 'keydown', {capture: true})
+      .pipe(takeUntil(this.doc.onDestroy$))
+      .subscribe(event => {
+        this._flushVirtualPaintRestore()
+        this._armNavigationFence(event)
+      })
+    for (const eventName of ['beforeinput', 'compositionstart']) {
+      fromEvent(root.hostElement, eventName, {capture: true})
+        .pipe(takeUntil(this.doc.onDestroy$))
+        .subscribe(() => this._flushVirtualPaintRestore())
+    }
+    fromEvent<KeyboardEvent>(root.hostElement, 'keyup', {capture: true})
+      .pipe(takeUntil(this.doc.onDestroy$))
+      .subscribe(event => {
+        if (this._navigationFence?.key === event.key) {
+          this._settleNavigationFenceAfterKeyup()
+        }
+      })
+
+    const ownerWindow = this._surface.ownerDocument.defaultView ?? this._surface.ownerDocument
+    fromEvent(ownerWindow, 'blur')
+      .pipe(takeUntil(this.doc.onDestroy$))
+      .subscribe(() => this._clearNavigationFence())
+    fromEvent<PointerEvent>(root.hostElement, 'pointerdown', {capture: true})
+      .pipe(takeUntil(this.doc.onDestroy$))
+      .subscribe(event => {
+        if (event.isPrimary && event.button === 0) {
+          this._beginPrimaryPointerIntent(event.target)
+        }
+        this._handleSelectableFramePointerDown(event)
+      })
+    fromEvent<MouseEvent>(root.hostElement, 'dblclick', {capture: true})
+      .pipe(takeUntil(this.doc.onDestroy$))
+      .subscribe(event => this._handleClosedContainerDoubleClick(event))
+    const releasePrimaryPointer = () => {
+      this._primaryPointerDown = false
+      this._releasePrimaryPointerFreeze()
+    }
+    fromEvent<PointerEvent>(ownerWindow, 'pointerup', {capture: true})
+      .pipe(takeUntil(this.doc.onDestroy$))
+      .subscribe(releasePrimaryPointer)
+    fromEvent<PointerEvent>(ownerWindow, 'pointercancel', {capture: true})
+      .pipe(takeUntil(this.doc.onDestroy$))
+      .subscribe(releasePrimaryPointer)
+    fromEvent<MouseEvent>(ownerWindow, 'mouseup', {capture: true})
+      .pipe(takeUntil(this.doc.onDestroy$))
+      .subscribe(releasePrimaryPointer)
+    fromEvent<TouchEvent>(ownerWindow, 'touchend', {capture: true})
+      .pipe(takeUntil(this.doc.onDestroy$))
+      .subscribe(releasePrimaryPointer)
+    fromEvent<TouchEvent>(ownerWindow, 'touchcancel', {capture: true})
+      .pipe(takeUntil(this.doc.onDestroy$))
+      .subscribe(releasePrimaryPointer)
   }
 
   /**
@@ -98,39 +485,509 @@ export class SelectionManager {
    * 因此调用方应在批量操作结束后手动 `recalculate()` 一次收敛。
    */
   setSuppressRecalculate(v: boolean) {
+    if (this._inlineLayoutProjectionGuardDepth > 0) {
+      this._suppressBeforeInlineLayoutProjection = v
+      this._suppressRecalculate = true
+      if (v) this._cancelCompositionSelectionRecheck()
+      return
+    }
     this._suppressRecalculate = v
+    if (v) this._cancelCompositionSelectionRecheck()
+  }
+
+  /**
+   * Guard a view-only inline layout rewrite and then rebuild the native Range
+   * from the unchanged canonical BlockSelection.
+   *
+   * @internal InlineRuntime only. The release callback is idempotent.
+   */
+  acquireInlineLayoutProjectionGuard(): () => void {
+    if (this._inlineLayoutProjectionGuardDepth++ === 0) {
+      this._suppressBeforeInlineLayoutProjection = this._suppressRecalculate
+      this._suppressRecalculate = true
+      this._cancelCompositionSelectionRecheck()
+    }
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      this._inlineLayoutProjectionGuardDepth = Math.max(
+        0,
+        this._inlineLayoutProjectionGuardDepth - 1,
+      )
+      if (this._inlineLayoutProjectionGuardDepth > 0) return
+
+      this._suppressRecalculate = this._suppressBeforeInlineLayoutProjection
+      if (
+        this._suppressRecalculate ||
+        this.doc.event.status.isComposing ||
+        this._primaryPointerDown
+      ) {
+        return
+      }
+      const selection = this.value
+      if (
+        !selection ||
+        (!this._surface.hasEditorFocus() &&
+          !this._surface.ownsNativeSelection())
+      ) {
+        return
+      }
+      const projectionVersion = this._projectionVersion
+      try {
+        this._applyDomRangeForSelection(
+          selection,
+          false,
+          projectionVersion,
+          false,
+        )
+      } catch {
+        this._surface.clearNativeSelection()
+        this._recoverDomProjection(
+          selection.toJSON(),
+          projectionVersion,
+        )
+      }
+    }
+  }
+
+  private _suppressProgrammaticSelectionChange() {
+    this._cancelCompositionSelectionRecheck()
+    this._suppressProgrammaticSelectionChangeUntil = Math.max(
+      this._suppressProgrammaticSelectionChangeUntil,
+      performance.now() + 80,
+    )
+  }
+
+  private _queueCompositionSelectionRecheck() {
+    if (this._compositionSelectionRecheckQueued || this._compositionSelectionRecheckTimer !== null) return
+    this._compositionSelectionRecheckQueued = true
+    const version = ++this._compositionSelectionRecheckVersion
+    queueMicrotask(() => {
+      if (version !== this._compositionSelectionRecheckVersion) return
+      this._compositionSelectionRecheckQueued = false
+      this._runCompositionSelectionRecheck(version, 2)
+    })
+  }
+
+  private _runCompositionSelectionRecheck(version: number, composingRetryBudget = 0) {
+    if (version !== this._compositionSelectionRecheckVersion) return
+    if (this._suppressRecalculate) return
+    if (this.doc.event.status.isComposing) {
+      // CompositionControl clears a stale cross-block session after the native
+      // event finishes. Two bounded task hops cover either listener order; a
+      // genuinely active composition is then left untouched without polling.
+      if (composingRetryBudget <= 0) return
+      this._compositionSelectionRecheckTimer = setTimeout(() => {
+        if (version !== this._compositionSelectionRecheckVersion) return
+        this._compositionSelectionRecheckTimer = null
+        this._runCompositionSelectionRecheck(version, composingRetryBudget - 1)
+      }, 0)
+      return
+    }
+
+    const remaining = this._suppressProgrammaticSelectionChangeUntil - performance.now()
+    if (remaining > 0) {
+      this._compositionSelectionRecheckTimer = setTimeout(() => {
+        if (version !== this._compositionSelectionRecheckVersion) return
+        this._compositionSelectionRecheckTimer = null
+        this._runCompositionSelectionRecheck(version)
+      }, Math.ceil(remaining) + 1)
+      return
+    }
+    this.recalculate()
+  }
+
+  private _cancelCompositionSelectionRecheck() {
+    this._compositionSelectionRecheckVersion++
+    this._compositionSelectionRecheckQueued = false
+    if (this._compositionSelectionRecheckTimer !== null) {
+      clearTimeout(this._compositionSelectionRecheckTimer)
+      this._compositionSelectionRecheckTimer = null
+    }
+  }
+
+  private _armNavigationFence(event: KeyboardEvent): void {
+    this._settleNavigationFenceBeforeKeyboardIntent()
+    const key = event.key as NavigationArrowKey
+    if (
+      !NAVIGATION_ARROW_KEYS.has(key) ||
+      event.shiftKey ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey ||
+      isNativeInputTarget(event.target)
+    ) {
+      return
+    }
+
+    const current = this.value
+    if (
+      !current?.collapsed ||
+      !current.isInSameBlock ||
+      current.start.type !== 'text' ||
+      current.end.type !== 'text'
+    ) {
+      return
+    }
+
+    try {
+      const scope = resolveSelectionScope(
+        current.start,
+        id => this.doc.getBlockById(id) as any,
+      )
+      if (scope?.kind !== 'container') return
+      const owner = this._readBlock(scope.blockId)
+      if (
+        !owner?.hostElement.isConnected ||
+        this.doc.placement?.isInAbsoluteLayout?.(owner) !== true
+      ) {
+        return
+      }
+
+      const nativeSelection = this._surface.getNativeSelection()
+      if (!nativeSelection?.rangeCount || !nativeSelection.isCollapsed) return
+      const sourceRange = nativeSelection.getRangeAt(0).cloneRange()
+      if (
+        !owner.hostElement.contains(sourceRange.startContainer) ||
+        !owner.hostElement.contains(sourceRange.endContainer) ||
+        closetBlockId(sourceRange.startContainer) !== current.start.blockId ||
+        closetBlockId(sourceRange.endContainer) !== current.start.blockId
+      ) {
+        return
+      }
+
+      this._navigationFence = {
+        key,
+        ownerBlockId: owner.id,
+        sourceBlockId: current.start.blockId,
+        sourceJSON: current.toJSON(),
+        sourceRange,
+        projectionVersion: this._projectionVersion,
+      }
+    } catch {
+      this._clearNavigationFence()
+    }
+  }
+
+  private _handleNavigationFenceSelectionChange():
+    | 'none'
+    | 'inside-unchanged'
+    | 'inside-moved'
+    | 'repaired' {
+    const fence = this._navigationFence
+    if (!fence) return 'none'
+
+    const current = this.value
+    if (
+      !current ||
+      fence.projectionVersion !== this._projectionVersion ||
+      !sameSelectionJSON(current.toJSON(), fence.sourceJSON)
+    ) {
+      this._clearNavigationFence()
+      return 'none'
+    }
+
+    const owner = this._readBlock(fence.ownerBlockId)
+    if (
+      !owner?.hostElement.isConnected ||
+      this.doc.placement?.isInAbsoluteLayout?.(owner) !== true
+    ) {
+      this._clearNavigationFence()
+      return 'none'
+    }
+
+    const nativeSelection = this._surface.getNativeSelection()
+    const nativeInsideOwner = !!nativeSelection?.rangeCount &&
+      !!nativeSelection.anchorNode &&
+      !!nativeSelection.focusNode &&
+      owner.hostElement.contains(nativeSelection.anchorNode) &&
+      owner.hostElement.contains(nativeSelection.focusNode)
+    if (nativeInsideOwner) {
+      return this._nativeRangeMatchesNavigationSource(fence)
+        ? 'inside-unchanged'
+        : 'inside-moved'
+    }
+
+    // Native arrow navigation is allowed to resolve visual lines/columns, but
+    // an absolute container is a closed editing plane. Restore the exact DOM
+    // caret captured on keydown before the escaped Range reaches recalculate().
+    this._clearNavigationFence()
+    this._surface.focusEditingHost(fence.sourceBlockId)
+    try {
+      if (this._canRestoreNavigationSourceRange(fence, owner)) {
+        this._applyDomRange(fence.sourceRange)
+      } else {
+        this._applyDomRangeForSelection(
+          current,
+          false,
+          this._projectionVersion,
+          false,
+        )
+      }
+    } catch {
+      this._surface.clearNativeSelection()
+      this._recoverDomProjection(
+        fence.sourceJSON,
+        this._projectionVersion,
+      )
+    }
+    return 'repaired'
+  }
+
+  private _nativeRangeMatchesNavigationSource(fence: NavigationFence): boolean {
+    const nativeSelection = this._surface.getNativeSelection()
+    if (!nativeSelection?.rangeCount || !nativeSelection.isCollapsed) return false
+    const range = nativeSelection.getRangeAt(0)
+    return range.startContainer === fence.sourceRange.startContainer &&
+      range.startOffset === fence.sourceRange.startOffset &&
+      range.endContainer === fence.sourceRange.endContainer &&
+      range.endOffset === fence.sourceRange.endOffset
+  }
+
+  private _canRestoreNavigationSourceRange(
+    fence: NavigationFence,
+    owner: BlockCraft.BlockComponent,
+  ): boolean {
+    const {sourceRange} = fence
+    return sourceRange.startContainer.isConnected &&
+      sourceRange.endContainer.isConnected &&
+      owner.hostElement.contains(sourceRange.startContainer) &&
+      owner.hostElement.contains(sourceRange.endContainer) &&
+      closetBlockId(sourceRange.startContainer) === fence.sourceBlockId &&
+      closetBlockId(sourceRange.endContainer) === fence.sourceBlockId
+  }
+
+  private _settleNavigationFenceBeforeKeyboardIntent(): void {
+    const result = this._handleNavigationFenceSelectionChange()
+    if (result === 'inside-moved') {
+      this._clearNavigationFence()
+      if (!this.doc.event.status.isComposing && !this._suppressRecalculate) {
+        this.recalculate()
+      }
+    } else if (result === 'inside-unchanged') {
+      this._clearNavigationFence()
+    }
+  }
+
+  private _settleNavigationFenceAfterKeyup(): void {
+    const result = this._handleNavigationFenceSelectionChange()
+    if (result === 'inside-moved') {
+      this._clearNavigationFence()
+      if (!this.doc.event.status.isComposing && !this._suppressRecalculate) {
+        this.recalculate()
+      }
+      return
+    }
+    if (result === 'inside-unchanged') {
+      this._scheduleNavigationFenceExpiry()
+    }
+  }
+
+  private _clearNavigationFence(): void {
+    this._navigationFence = null
+    if (this._navigationFenceExpiryTimer !== null) {
+      clearTimeout(this._navigationFenceExpiryTimer)
+      this._navigationFenceExpiryTimer = null
+    }
+  }
+
+  private _scheduleNavigationFenceExpiry(): void {
+    if (this._navigationFenceExpiryTimer !== null) {
+      clearTimeout(this._navigationFenceExpiryTimer)
+    }
+    const fence = this._navigationFence
+    this._navigationFenceExpiryTimer = setTimeout(() => {
+      this._navigationFenceExpiryTimer = null
+      if (this._navigationFence === fence) this._navigationFence = null
+    }, NAVIGATION_FENCE_EXPIRY_MS)
+  }
+
+  private _beginPrimaryPointerIntent(target?: EventTarget | null): void {
+    this._flushVirtualPaintRestore()
+    const element = target instanceof Element
+      ? target
+      : target instanceof Node ? target.parentElement : null
+    // Object chrome owns its gesture, not a new native text selection. A
+    // document capture listener may already have reprojected the object Range;
+    // cancelling its protection here lets selectionchange reinterpret a closed
+    // container as a content boundary and hide the active resize handles.
+    if (element?.closest('[data-bc-selection-interaction-ignore]')) return
+    if (this._objectGroupModelSelection) {
+      const targetId = element ? closetBlockId(element) : null
+      const ids = this.doc.placement?.getAbsoluteObjectSelectionIds?.(this._objectGroupModelSelection)
+      // Object picking may have committed before this root listener. Only a
+      // new native content/blank-plane gesture releases its model ownership.
+      if (!targetId || !ids?.includes(targetId)) this._objectGroupModelSelection = null
+    }
+    this._clearNavigationFence()
+    this._primaryPointerDown = true
+    this._suppressProgrammaticSelectionChangeUntil = 0
+    this._cancelCompositionSelectionRecheck()
+    this._cancelProjectionFrame()
+    this._cancelProjectionMountRequest()
+    if (this._releasePrimaryPointerLayoutFreeze || !(target instanceof Node)) {
+      return
+    }
+    const blockId = closetBlockId(target)
+    if (!blockId) return
+    try {
+      const block = this.doc.getBlockById(blockId) as BlockCraft.BlockComponent & {
+        runtime?: {acquireFloatLayoutFreeze?: () => (() => void)}
+      }
+      this._releasePrimaryPointerLayoutFreeze =
+        block?.runtime?.acquireFloatLayoutFreeze?.() ?? null
+    } catch {
+      // A virtualized/deleted pointer target has no layout lease to hold.
+    }
+  }
+
+  private _releasePrimaryPointerFreeze(): void {
+    const release = this._releasePrimaryPointerLayoutFreeze
+    this._releasePrimaryPointerLayoutFreeze = null
+    release?.()
   }
 
   // ── Read from DOM (user interaction path) ──
+
+  private _shouldKeepModelOnlySelection(): boolean {
+    const current = this.value
+    if (!current?.getTableCellSelection() &&
+      !(current && current === this._objectGroupModelSelection && !this._primaryPointerDown)) return false
+    return this._surface.hasEditorFocus()
+  }
+
+  private _isObjectGroupSelection(selection: BlockSelection | null): boolean {
+    if (selection?.anchor.type === 'selected' && selection.head.type === 'selected' &&
+      selection.anchor.blockId === selection.head.blockId &&
+      this.doc.placement?.isObjectGroup?.(selection.anchor.blockId) === true) return true
+    const ids = this.doc.placement?.getAbsoluteObjectSelectionIds?.(selection)
+    if (!ids?.length) return false
+    return ids.every(id => {
+      const parentId = this.doc.model?.getParentId(id) ?? this._readBlock(id)?.parentId
+      return !!parentId && this.doc.placement?.isObjectGroup?.(parentId) === true
+    })
+  }
+
+  private _recoverableMissingRootProjection(): BlockSelection | null {
+    // A primary pointer gesture intentionally replaces the current selection.
+    // Chromium/WebKit may transiently publish an empty native Selection between
+    // pointerdown and the new caret/range. Reprojecting a full-root boundary in
+    // that interval traps the old Ctrl+A selection and makes every later text
+    // click appear inert.
+    if (this._primaryPointerDown) return null
+
+    const current = this.value
+    const rootId = this.doc.root.id
+    if (
+      !current ||
+      current.collapsed ||
+      current.start.type !== 'boundary' ||
+      current.end.type !== 'boundary' ||
+      current.start.blockId !== rootId ||
+      current.end.blockId !== rootId
+    ) {
+      return null
+    }
+
+    const active = this._surface.getActiveElement()
+    const rootHost = this.doc.root.hostElement
+    const editorStillOwnsFocus = active === rootHost ||
+      (!!active && rootHost.contains(active))
+    const documentFocusWasDropped =
+      this._surface.isFocusDropped() &&
+      !this._surface.ownerDocument.hasFocus()
+
+    return editorStillOwnsFocus || documentFocusWasDropped ? current : null
+  }
 
   recalculate(execNext = true, options?: { isComposing?: boolean }, _depth = 0): {
     value: BlockSelection | null
     next?: () => void
   } {
-    const activeElement = document.activeElement
+    const activeElement = this._surface.getActiveElement()
     if (activeElement && this.doc.root.hostElement.contains(activeElement) && isNativeInputTarget(activeElement)) {
       const next = () => this._applyState(null)
       execNext && next()
       return {value: null, next: execNext ? undefined : next}
     }
 
-    const selection = document.getSelection()
+    const selection = this._surface.getNativeSelection()
     if (!selection || !selection.rangeCount) {
+      if (this._shouldKeepModelOnlySelection()) {
+        return {value: this.value}
+      }
+      const recoverableRootProjection =
+        this._recoverableMissingRootProjection()
+      if (recoverableRootProjection) {
+        this._recoverDomProjection(
+          recoverableRootProjection.toJSON(),
+          this._projectionVersion,
+        )
+        return {value: recoverableRootProjection}
+      }
       const next = () => this._applyState(null)
       execNext && next()
       return {value: null, next: execNext ? undefined : next}
     }
 
     const range = selection?.getRangeAt(0)
-    if (!range ||
-      (document.activeElement !== this.doc.root.hostElement && !this.doc.root.hostElement.contains(range.commonAncestorContainer))
-    ) {
+    const rootHost = this.doc.root.hostElement
+    // A Range's common ancestor is inside root iff both endpoints are inside
+    // root, so one ancestor walk is enough for the ownership guard.
+    const rangeInsideRoot = !!range && rootHost.contains(range.commonAncestorContainer)
+    if (!rangeInsideRoot) {
+      const keepModelOnlySelection = this._shouldKeepModelOnlySelection()
+      const editorOwnsFocus = activeElement === rootHost ||
+        (!!activeElement && rootHost.contains(activeElement))
+      // Safari may keep extending a native drag beyond the contenteditable root
+      // after a model-owned table rectangle has taken over. Do not let that
+      // external endpoint enter normalization or leave a second visual selection.
+      if (editorOwnsFocus && selection.rangeCount) {
+        selection.removeAllRanges()
+      }
+      if (keepModelOnlySelection) {
+        return {value: this.value}
+      }
       const next = () => this._applyState(null)
       execNext && next()
       return {value: null, next: execNext ? undefined : next}
     }
 
-    if (range.startContainer === this.doc.root.hostElement || range.endContainer === this.doc.root.hostElement) {
+    // A model-only table rectangle has no native Range. Hovering a toolbar
+    // dropdown can make the browser revive the table's old gap caret and emit
+    // selectionchange. Keep the rectangle until a pointer gesture in the
+    // editor explicitly starts a new selection.
+    const tableCellSelection = this.value?.getTableCellSelection()
+    if (tableCellSelection && !this._primaryPointerDown &&
+        this._shouldKeepModelOnlySelection() && range.collapsed) {
+      const startElement = range.startContainer instanceof Element
+        ? range.startContainer
+        : range.startContainer.parentElement
+      const gap = startElement?.closest('[data-block-gap-side][data-block-zero-space]')
+      if (gap?.closest('[data-block-id]')?.getAttribute('data-block-id') === tableCellSelection.tableId) {
+        this._surface.clearNativeSelection()
+        return {value: this.value}
+      }
+    }
+
+    // Boundary selections deliberately project to descendant text/gap points.
+    // Besides keeping virtual-root endpoints stable, this is required for a
+    // nested contenteditable (for example a text box): Chromium retains a
+    // parent-offset Range there but does not paint its selected glyphs. Preserve
+    // the canonical structural selection when selectionchange reports the exact
+    // descendant-backed projection.
+    if (this._matchesCurrentBoundaryProjection(range)) {
+      return {value: this.value}
+    }
+
+    if (
+      range.collapsed &&
+      (range.startContainer === rootHost || range.endContainer === rootHost)
+    ) {
+      // A collapsed blank-root click still needs a concrete native caret.
+      // Non-collapsed drag endpoints are valid structural boundaries; moving
+      // those would collapse the user's range, especially over page spacers.
       // selection.modify 在边界处可能无法推进 range，原代码同步自递归会栈溢出；
       // 限制重试深度，超出后视为无效选区。
       if (_depth >= 3) {
@@ -145,27 +1002,53 @@ export class SelectionManager {
     try {
       // normalizeRange returns {start, end} in document order.
       // Determine real anchor/head from native Selection direction.
-      const endpoints = this._normalizeRange(range, options)
+      const rawEndpoints = this._normalizeRange(range, options)
+      const repairedEndpoints = this._repairCrossScopeEndpoints(rawEndpoints)
+      const endpoints = repairedEndpoints ?? rawEndpoints
       const isBackward = isSelectionBackward(selection)
-      const anchor = isBackward ? endpoints.end : endpoints.start
-      const head = isBackward ? endpoints.start : endpoints.end
+      const rawAnchor = isBackward ? endpoints.end : endpoints.start
+      const rawHead = isBackward ? endpoints.start : endpoints.end
+      const disallowedGapBlockId =
+        this._disallowedCollapsedGapBlockId(rawAnchor, rawHead)
+      const selectedPoint = disallowedGapBlockId
+        ? this._pointFromJSON({
+            blockId: disallowedGapBlockId,
+            type: 'selected',
+          })
+        : null
+      const anchor = selectedPoint ?? rawAnchor
+      const head = selectedPoint ?? rawHead
 
-      // Cross-parent constraint (kept for now)
+      // Cross-parent guard: reject ranges that leave their semantic editing
+      // scope, while allowing transparent child containers inside the same
+      // scope to span their physical parents.
+      let commonParent = disallowedGapBlockId ?? anchor.blockId
       if (anchor.blockId !== head.blockId) {
-        const anchorParent = anchor.block.parentId
-        const headParent = head.block.parentId
+        const anchorParent = resolveSelectionContainerId(anchor)
+        const headParent = resolveSelectionContainerId(head)
+        let commonScope: SelectionScope | null | undefined
         if (anchorParent !== headParent) {
-          range.collapse()
-          return {value: null, next: () => {}}
+          commonScope = resolveCommonSelectionScope(
+            anchor,
+            head,
+            id => this.doc.getBlockById(id) as any,
+          )
+          if (!commonScope) {
+            range.collapse()
+            return {value: null, next: () => {}}
+          }
         }
+        commonParent = this._commonParentForPoints(anchor, head, range, commonScope)
       }
 
-      const commonParent = anchor.blockId !== head.blockId
-        ? closetBlockId(range.commonAncestorContainer)!
-        : anchor.blockId
-
       const r = this._createBlockSelection(anchor, head, commonParent)
-      const next = () => this._applyState(r)
+      if (!r) throw new Error('Selection endpoints are disconnected')
+      const next = () => {
+        this._applyState(r)
+        if (repairedEndpoints) {
+          this._stabilizeCrossScopeDomSelection(r, selection)
+        }
+      }
       execNext && next()
       return {value: r, next: execNext ? undefined : next}
     } catch (e) {
@@ -182,6 +1065,10 @@ export class SelectionManager {
   /**
    * Public API returns legacy INormalizedRange for backward compat.
    * Internally use _normalizeRange() for new anchor/head format.
+   *
+   * @deprecated Use the exported pure `normalizeRange()` function and
+   * `INormalizedEndpoints`. This compatibility facade will be removed in a
+   * future breaking release.
    */
   normalizeRange(range: StaticRange, options?: { isComposing?: boolean }): INormalizedRange {
     return endpointsToLegacy(this._normalizeRange(range, options))
@@ -191,19 +1078,708 @@ export class SelectionManager {
     return _normalizeRange(range, id => this.doc.getBlockById(id) as any, options)
   }
 
-  // ── Model state management ──
+  private _repairCrossScopeEndpoints(endpoints: INormalizedEndpoints): INormalizedEndpoints | null {
+    const getBlock = (id: string) => this.doc.getBlockById(id) as any
+    let {start, end} = endpoints
+    do {
+      const startScope = resolveSelectionScope(start, getBlock)
+      const endScope = resolveSelectionScope(end, getBlock)
+      if (!startScope || !endScope || startScope.blockId === endScope.blockId) break
 
-  private _applyState(sel: BlockSelection | null) {
-    this.selectionChange$.next(sel)
-    this.selectedManager.setSelected(sel)
+      const nextStart = startScope.kind === 'document'
+        ? start
+        : this._boundaryPointForScope(startScope, 'before') ?? start
+      const nextEnd = endScope.kind === 'document'
+        ? end
+        : this._boundaryPointForScope(endScope, 'after') ?? end
+      if (nextStart === start && nextEnd === end) break
+      start = nextStart
+      end = nextEnd
+      // Reading can span nested closed scopes (e.g. a text box in a group).
+      // Lift model endpoints until they share a scope; stopping after the inner
+      // frame would reach the cross-parent rejection and collapse the live drag.
+      // Editing keeps its existing one-level boundary policy.
+    } while (this.doc.isReadonly)
+
+    if (start === endpoints.start && end === endpoints.end) return null
+    return {start, end}
   }
 
-  private _createBlockSelection(anchor: ISelectionPoint, head: ISelectionPoint, commonParent: string): BlockSelection {
+  private _boundaryPointForScope(
+    scope: SelectionScope,
+    side: 'before' | 'after',
+  ): ISelectionPoint | null {
+    const block = this.doc.getBlockById(scope.blockId)
+    const parent = block.parentBlock
+    if (!parent) return null
+    const childrenIds = parent.childrenIds ?? []
+    let index = childrenIds.indexOf(block.id)
+    if (index < 0 && typeof block.getIndexOfParent === 'function') {
+      index = block.getIndexOfParent()
+    }
+    if (index < 0) return null
+    return lazyBoundaryPoint(
+      parent.id,
+      side === 'before' ? index : index + 1,
+      id => this.doc.getBlockById(id) as any,
+    )
+  }
+
+  private _commonParentForPoints(
+    anchor: ISelectionPoint,
+    head: ISelectionPoint,
+    range: Range,
+    commonScope?: SelectionScope | null,
+  ): string {
+    const modelCommonParent = this._commonParentFromModel(anchor, head, commonScope)
+    if (modelCommonParent) return modelCommonParent
+    return closetBlockId(range.commonAncestorContainer)!
+  }
+
+  private _commonParentFromModel(
+    anchor: ISelectionPoint,
+    head: ISelectionPoint,
+    resolvedScope?: SelectionScope | null,
+  ): string | null {
+    try {
+      return resolveSelectionCommonParent(
+        anchor,
+        head,
+        id => this.doc.getBlockById(id) as any,
+        resolvedScope,
+      )
+    } catch {
+      return null
+    }
+  }
+
+  // ── Model state management ──
+
+  private _publishState(selection: BlockSelection | null) {
+    this._objectGroupModelSelection = null
+    this._clearNavigationFence()
+    this._cancelProjectionFrame()
+    this._cancelProjectionMountRequest()
+    this._projectionVersion += 1
+    this.selectionChange$.next(selection)
+    this.selectedManager.setSelected(
+      selection,
+      this.doc.virtualization?.enabled && typeof this.doc.vm?.getMountedRootChildIds === 'function'
+        ? this.doc.vm.getMountedRootChildIds()
+        : undefined,
+    )
+  }
+
+  private _cancelProjectionFrame(): void {
+    this._virtualPaintRestore = null
+    if (this._projectionFrame === null) return
+    this._surface.cancelFrame(this._projectionFrame)
+    this._projectionFrame = null
+  }
+
+  private _cancelProjectionMountRequest(): void {
+    const request = this._projectionMountRequest
+    if (!request) return
+    this._projectionMountRequest = null
+    request.controller.abort()
+  }
+
+  private _isDomProjectionPending(expected: ISelectionJSON): boolean {
+    const current = this.value
+    if (!current || !sameSelectionJSON(current.toJSON(), expected)) return false
+    const mountRequest = this._projectionMountRequest
+    if (mountRequest && sameSelectionJSON(mountRequest.expected, expected)) return true
+    return this._projectionFrame !== null
+  }
+
+  private _scheduleProjectionFrame(callback: FrameRequestCallback): void {
+    this._cancelProjectionFrame()
+    const frame = this._surface.requestFrame(timestamp => {
+      if (this._projectionFrame !== frame) return
+      this._projectionFrame = null
+      callback(timestamp)
+    })
+    this._projectionFrame = frame
+  }
+
+  private _applyState(selection: BlockSelection | null) {
+    this._publishState(isSelectionAlive(selection, this.doc) ? selection : null)
+  }
+
+  private _createBlockSelection(
+    anchor: ISelectionPoint,
+    head: ISelectionPoint,
+    commonParent: string,
+  ): BlockSelection | null {
+    const position = anchor.blockId === head.blockId
+      ? {order: 0 as const, commonAncestor: anchor.blockId}
+      : this._positionResolver.resolve(anchor.blockId, head.blockId)
+    if (!position) return null
+
     return new BlockSelection(
       anchor, head, commonParent,
       id => this.doc.getBlockById(id) as any,
-      (a, b) => this.doc.compareBlockPosition(a, b),
+      (a, b) => {
+        if (a === anchor.blockId && b === head.blockId) {
+          return this._modelOrderToDomPosition(position.order)
+        }
+        if (a === head.blockId && b === anchor.blockId) {
+          const reverseOrder = position.order === 0 ? 0 : -position.order as SelectionPositionOrder
+          return this._modelOrderToDomPosition(reverseOrder)
+        }
+        return this._compareModelPosition(a, b)
+      },
+      this._modelResolver ?? undefined,
     )
+  }
+
+  private _compareModelPosition(a: string, b: string): number {
+    const resolution = this._positionResolver.resolve(a, b)
+    if (!resolution) return Node.DOCUMENT_POSITION_DISCONNECTED
+    return this._modelOrderToDomPosition(resolution.order)
+  }
+
+  private _modelOrderToDomPosition(order: SelectionPositionOrder): number {
+    if (order < 0) return Node.DOCUMENT_POSITION_FOLLOWING
+    if (order > 0) return Node.DOCUMENT_POSITION_PRECEDING
+    return 0
+  }
+
+  private _getGapCaretDomPoint(
+    hostElement: HTMLElement,
+    side: 'before' | 'after',
+  ): {node: Node; offset: number} | null {
+    const span = getBlockGapCaretSpan(hostElement, side)
+    if (!span) return null
+    const text = span.firstChild
+    if (text?.nodeType === Node.TEXT_NODE) return {node: text, offset: 0}
+    return {node: span, offset: 0}
+  }
+
+  private _applyDomRange(
+    range: Range,
+    direction: 'forward' | 'backward' = 'forward',
+  ) {
+    const selection = this._surface.getNativeSelection()
+    if (!selection) throw new Error('Native selection is unavailable')
+    this._suppressProgrammaticSelectionChange()
+
+    if (direction === 'backward') {
+      if (typeof selection.setBaseAndExtent === 'function') {
+        selection.setBaseAndExtent(
+          range.endContainer,
+          range.endOffset,
+          range.startContainer,
+          range.startOffset,
+        )
+        this._assertNativeRangeApplied(selection, range)
+        return
+      }
+      if (typeof selection.extend === 'function') {
+        selection.removeAllRanges()
+        selection.collapse(range.endContainer, range.endOffset)
+        selection.extend(range.startContainer, range.startOffset)
+        this._assertNativeRangeApplied(selection, range)
+        return
+      }
+    }
+
+    selection.removeAllRanges()
+    selection.addRange(range)
+    this._assertNativeRangeApplied(selection, range)
+  }
+
+  private _assertNativeRangeApplied(
+    selection: globalThis.Selection,
+    expected: Range,
+  ): void {
+    if (!selection.rangeCount) {
+      throw new Error('Native selection rejected the DOM range')
+    }
+    const actual = selection.getRangeAt(0)
+    if (
+      actual.startContainer !== expected.startContainer ||
+      actual.startOffset !== expected.startOffset ||
+      actual.endContainer !== expected.endContainer ||
+      actual.endOffset !== expected.endOffset
+    ) {
+      throw new Error('Native selection normalized the DOM range unexpectedly')
+    }
+  }
+
+  private _stabilizeCrossScopeDomSelection(
+    selectionState: BlockSelection,
+    nativeSelection: globalThis.Selection,
+  ): void {
+    // Reading has no editing-host boundary to enforce. Moving the native
+    // anchor to a closed container's gap during a drag makes WebKit restart
+    // selection there (and can collapse it to the gap). Keep the repaired
+    // model for structural copy, but let the browser retain its text gesture.
+    if (this.doc.isReadonly) return
+
+    try {
+      const range = this._buildDomRange(
+        pointToLegacy(selectionState.start),
+        pointToLegacy(selectionState.end),
+      )
+      const backward = selectionState.direction === 'backward'
+      const anchorNode = backward ? range.endContainer : range.startContainer
+      const anchorOffset = backward ? range.endOffset : range.startOffset
+      const focusNode = backward ? range.startContainer : range.endContainer
+      const focusOffset = backward ? range.startOffset : range.endOffset
+
+      // Native drag must keep producing selectionchange events. The projected
+      // boundary range round-trips unchanged, so no suppression window is used.
+      if (typeof nativeSelection.setBaseAndExtent === 'function') {
+        nativeSelection.setBaseAndExtent(
+          anchorNode,
+          anchorOffset,
+          focusNode,
+          focusOffset,
+        )
+        return
+      }
+
+      nativeSelection.removeAllRanges()
+      if (backward && typeof nativeSelection.extend === 'function') {
+        nativeSelection.collapse(anchorNode, anchorOffset)
+        nativeSelection.extend(focusNode, focusOffset)
+      } else {
+        nativeSelection.addRange(range)
+      }
+    } catch (error) {
+      this.doc.logger.warn('crossScopeSelectionProjectionError: ', error)
+    }
+  }
+
+  private _applyDomRangeForSelection(
+    selectionState: BlockSelection,
+    scrollIntoView?: boolean,
+    projectionVersion = this._projectionVersion,
+    requestMount = true,
+  ): Range | null {
+    if (this._shouldDeferGapDomRange(selectionState)) {
+      this._suppressProgrammaticSelectionChange()
+      this._surface.clearNativeSelection()
+      const expected = selectionState.toJSON()
+      if (requestMount) {
+        this._recoverDomProjection(expected, projectionVersion, scrollIntoView)
+      } else {
+        this._retryDomRangeWhenReady(expected, projectionVersion, scrollIntoView)
+      }
+      return null
+    }
+
+    const range = this._buildDomRange(
+      pointToLegacy(selectionState.start),
+      pointToLegacy(selectionState.end),
+    )
+    this._applyDomRange(range, selectionState.direction)
+    if (scrollIntoView) {
+      this.scrollSelectionIntoView()
+    }
+    return range
+  }
+
+  /**
+   * Reassert a cross-root native range after the virtual window rewrites its
+   * intermediate DOM. The model range stays canonical; this repair runs only
+   * on deduplicated mounted-window epochs, never on every scroll event.
+   */
+  private _reprojectAfterVirtualViewChange(selection: BlockSelection | null): void {
+    if (!selection || selection.collapsed || !this.doc.virtualization?.enabled) return
+    if (
+      this._suppressRecalculate ||
+      this.doc.event.status.isComposing ||
+      this._primaryPointerDown
+    ) {
+      return
+    }
+    if (!this._selectionCrossesRootRenderUnits(selection)) return
+    const focusDroppedWithDom = this._surface.isFocusDropped()
+    if (
+      !focusDroppedWithDom &&
+      !this._surface.hasEditorFocus() &&
+      !this._surface.ownsNativeSelection()
+    ) {
+      return
+    }
+    if (focusDroppedWithDom) {
+      this._surface.focusRoot()
+    }
+
+    const expected = selection.toJSON()
+    const projectionVersion = this._projectionVersion
+    try {
+      const range = this._applyDomRangeForSelection(selection, false, projectionVersion, false)
+      if (range && this._surface.needsVirtualSelectionPaintReset) {
+        this._resetVirtualSelectionPaint(selection, projectionVersion)
+      }
+    } catch {
+      this._surface.clearNativeSelection()
+      this._recoverDomProjection(expected, projectionVersion)
+    }
+  }
+
+  private _resetVirtualSelectionPaint(selection: BlockSelection, projectionVersion: number): void {
+    const expected = selection.toJSON()
+    let cleared = false
+    let activeBeforeClear: Element | null = null
+    const canRestore = () => this._projectionVersion === projectionVersion &&
+      !!this.value && sameSelectionJSON(this.value.toJSON(), expected) &&
+      this._surface.isRootConnected() &&
+      !this._suppressRecalculate && !this.doc.event.status.isComposing &&
+      !this._primaryPointerDown &&
+      (cleared
+        ? this._surface.getActiveElement() === activeBeforeClear &&
+          !this._surface.getNativeSelection()?.rangeCount
+        : this._surface.hasEditorFocus() || this._surface.ownsNativeSelection())
+    const restore = () => {
+      if (!canRestore()) return
+      try {
+        this._applyDomRangeForSelection(selection, false, projectionVersion, false)
+      } catch {
+        this._recoverDomProjection(expected, projectionVersion)
+      }
+    }
+
+    // WebKit retains the painted selection of detached renderers when both
+    // endpoints stay pinned. Clearing and adding the same Range in one frame
+    // is coalesced and leaves newly mounted middle paragraphs unhighlighted.
+    // Let one paint observe the clear, then project the unchanged model range.
+    // Use the existing cancellable projection queue, not a scroll listener or
+    // full-range mount lease. New model/pointer intent cancels stale work.
+    this._scheduleProjectionFrame(() => {
+      this._virtualPaintRestore = null
+      if (!canRestore()) return
+      // Readonly roots need not be focusable. Preserve their selection without
+      // stealing focus, but never overwrite a new focus/native selection.
+      activeBeforeClear = this._surface.getActiveElement()
+      this._surface.clearNativeSelection()
+      cleared = true
+      this._scheduleProjectionFrame(() => {
+        this._virtualPaintRestore = null
+        restore()
+      })
+      this._virtualPaintRestore = restore
+    })
+    this._virtualPaintRestore = restore
+  }
+
+  private _flushVirtualPaintRestore(): void {
+    const restore = this._virtualPaintRestore
+    if (!restore) return
+    this._cancelProjectionFrame()
+    // Keyboard/IME/shift-click must see the original native anchor even when
+    // they arrive in the one-frame paint reset window.
+    restore()
+    this._suppressProgrammaticSelectionChangeUntil = 0
+  }
+
+  private _selectionCrossesRootRenderUnits(selection: BlockSelection): boolean {
+    const startUnit = this._rootRenderUnitForPoint(selection.start, 'start')
+    const endUnit = this._rootRenderUnitForPoint(selection.end, 'end')
+    return !!startUnit && !!endUnit && startUnit !== endUnit
+  }
+
+  private _rootRenderUnitForPoint(
+    point: ISelectionPoint,
+    edge: 'start' | 'end',
+  ): string | null {
+    const model = this.doc.model
+    const rootId = this.doc.root.id
+    if (!model) return null
+
+    if (point.type === 'boundary' && point.blockId === rootId) {
+      const children = model.getChildrenIds(rootId)
+      const index = Math.max(0, Math.min(point.index, children.length))
+      const neighbours = this._getBoundaryProjectionNeighbours(
+        point.blockId,
+        children,
+        index,
+      )
+      return edge === 'start'
+        ? neighbours.nextId ?? neighbours.previousId ?? null
+        : neighbours.previousId ?? neighbours.nextId ?? null
+    }
+
+    const path = model.getPath(point.blockId)
+    return path?.[0] === rootId ? path[1] ?? null : null
+  }
+
+  private _focusSelectionHost(selection: BlockSelection): void {
+    // A text caret belongs to its editing host. Refocusing the root first
+    // blurs nested editors during compositionstart/commit, which can end IME
+    // even when applying the Range immediately returns focus to that editor.
+    if (selection.collapsed && selection.start.type === 'text') {
+      this._surface.focusEditingHost(selection.start.blockId)
+    } else {
+      this._surface.focusRoot()
+    }
+  }
+
+  private _commitSelection(
+    selectionState: BlockSelection | null,
+    options: {scrollIntoView?: boolean; modelOnly?: boolean} = {},
+  ): Range | null {
+    if (
+      !isSelectionAlive(selectionState, this.doc)
+    ) {
+      this.blur()
+      return null
+    }
+
+    this._ensureSelectionViewMounted(selectionState)
+    this._publishState(selectionState)
+    const projectionVersion = this._projectionVersion
+    this._focusSelectionHost(selectionState)
+    this._suppressProgrammaticSelectionChange()
+
+    // A group and its members own a non-editable object plane. Browsers can
+    // reinterpret its Range as all members or an old prose caret. Keep object
+    // selection in the model and its frame projection; descendant text
+    // selections continue through the ordinary native path.
+    const objectGroupSelection = this._isObjectGroupSelection(selectionState)
+    if (options.modelOnly || objectGroupSelection) {
+      if (objectGroupSelection) this._objectGroupModelSelection = selectionState
+      this._surface.clearNativeSelection()
+      if (options.scrollIntoView) this.scrollSelectionIntoView()
+      return null
+    }
+
+    try {
+      return this._applyDomRangeForSelection(
+        selectionState,
+        options.scrollIntoView,
+        projectionVersion,
+      )
+    } catch {
+      this._suppressProgrammaticSelectionChange()
+      this._surface.clearNativeSelection()
+      this._recoverDomProjection(
+        selectionState.toJSON(),
+        projectionVersion,
+        options.scrollIntoView,
+      )
+      return null
+    }
+  }
+
+  private _shouldDeferGapDomRange(selection: BlockSelection): boolean {
+    const gap = this._collapsedGapPoint(selection)
+    if (!gap) return false
+    try {
+      return !this._getGapCaretDomPoint(gap.block.hostElement, gap.side)
+    } catch {
+      return false
+    }
+  }
+
+  private _matchesCurrentBoundaryProjection(range: Range): boolean {
+    const current = this.value
+    if (
+      !current ||
+      current.collapsed ||
+      current.start.type !== 'boundary' ||
+      current.end.type !== 'boundary' ||
+      current.start.blockId !== current.end.blockId
+    ) {
+      return false
+    }
+    try {
+      const start = this._getBoundaryDomPoint(current.start, 'start', true)
+      const end = this._getBoundaryDomPoint(current.end, 'end', true)
+      return range.startContainer === start.node &&
+        range.startOffset === start.offset &&
+        range.endContainer === end.node &&
+        range.endOffset === end.offset
+    } catch {
+      return false
+    }
+  }
+
+  private _collapsedGapPoint(selection: BlockSelection): Extract<ISelectionPoint, {type: 'gap'}> | null {
+    if (!selection.collapsed) return null
+    if (selection.start.type !== 'gap' || selection.end.type !== 'gap') return null
+    if (selection.start.blockId !== selection.end.blockId || selection.start.side !== selection.end.side) return null
+    return selection.start
+  }
+
+  private _recoverDomProjection(
+    expected: ISelectionJSON,
+    projectionVersion: number,
+    scrollIntoView?: boolean,
+  ): void {
+    const adapter = this._projectionMountAdapter
+    const current = this.value
+    if (!adapter || !current || !sameSelectionJSON(current.toJSON(), expected)) {
+      this._retryDomRangeWhenReady(expected, projectionVersion, scrollIntoView)
+      return
+    }
+
+    const blockIds = this._projectionMountTargetIds(current)
+    if (!blockIds.length) {
+      this._retryDomRangeWhenReady(expected, projectionVersion, scrollIntoView)
+      return
+    }
+
+    this._cancelProjectionMountRequest()
+    const request = {
+      adapter,
+      controller: new AbortController(),
+      expected,
+      projectionVersion,
+      scrollIntoView,
+    }
+    this._projectionMountRequest = request
+
+    let result: void | Promise<void>
+    try {
+      result = adapter.ensureMounted(blockIds, request.controller.signal)
+    } catch {
+      this._finishProjectionMountRequest(request)
+      return
+    }
+    void Promise.resolve(result).then(
+      () => this._finishProjectionMountRequest(request),
+      () => this._finishProjectionMountRequest(request),
+    )
+  }
+
+  private _finishProjectionMountRequest(request: ProjectionMountRequest): void {
+    if (
+      request.controller.signal.aborted ||
+      this._projectionMountRequest !== request ||
+      this._projectionMountAdapter !== request.adapter ||
+      request.projectionVersion !== this._projectionVersion
+    ) {
+      return
+    }
+    const current = this.value
+    if (!current || !sameSelectionJSON(current.toJSON(), request.expected)) {
+      this._projectionMountRequest = null
+      return
+    }
+
+    this._projectionMountRequest = null
+    this._retryDomRangeWhenReady(
+      request.expected,
+      request.projectionVersion,
+      request.scrollIntoView,
+    )
+  }
+
+  private _projectionMountTargetIds(selection: BlockSelection): string[] {
+    const blockIds = new Set<string>()
+    const addPoint = (point: ISelectionPoint) => {
+      blockIds.add(point.blockId)
+      if (point.type !== 'boundary' || !this._modelResolver) return
+
+      let children: readonly string[]
+      try {
+        children = this._modelResolver.getChildrenIds(point.blockId)
+      } catch {
+        return
+      }
+      const index = Math.max(0, Math.min(point.index, children.length))
+      const neighbours = this._getBoundaryProjectionNeighbours(
+        point.blockId,
+        children,
+        index,
+      )
+      if (neighbours.nextId) blockIds.add(neighbours.nextId)
+      if (neighbours.previousId) blockIds.add(neighbours.previousId)
+      // A sparse placement layer is materialized through its requested object
+      // neighbours. Requesting the layer itself would mount every fixed object.
+      if ((neighbours.nextId || neighbours.previousId) &&
+        this.doc.model?.getFlavour?.(point.blockId) === 'placement-layout') blockIds.delete(point.blockId)
+    }
+
+    addPoint(selection.start)
+    addPoint(selection.end)
+    return [...blockIds]
+  }
+
+  private _retryDomRangeWhenReady(
+    expected: ISelectionJSON,
+    projectionVersion: number,
+    scrollIntoView?: boolean,
+    attempts = DOM_PROJECTION_RETRY_LIMIT,
+  ): void {
+    this._scheduleProjectionFrame(() => {
+      if (projectionVersion !== this._projectionVersion) return
+      const current = this.value
+      if (!current || !sameSelectionJSON(current.toJSON(), expected)) return
+      if (!isSelectionAlive(current, this.doc)) {
+        this._applyState(null)
+        return
+      }
+
+      const rootHost = this.doc.root.hostElement
+      const active = this._surface.getActiveElement()
+      const focusDroppedWithDom = this._surface.isFocusDropped()
+      if (
+        !focusDroppedWithDom &&
+        active !== rootHost &&
+        !rootHost.contains(active)
+      ) {
+        return
+      }
+      if (focusDroppedWithDom) {
+        this._focusSelectionHost(current)
+      }
+      this._suppressProgrammaticSelectionChange()
+      if (this._shouldDeferGapDomRange(current)) {
+        if (attempts > 0) {
+          this._retryDomRangeWhenReady(
+            expected,
+            projectionVersion,
+            scrollIntoView,
+            attempts - 1,
+          )
+        }
+        return
+      }
+      try {
+        this._applyDomRangeForSelection(current, scrollIntoView, projectionVersion, false)
+      } catch (error) {
+        this._surface.clearNativeSelection()
+        if (attempts > 0) {
+          this._retryDomRangeWhenReady(
+            expected,
+            projectionVersion,
+            scrollIntoView,
+            attempts - 1,
+          )
+        } else {
+          this.doc.logger.warn('selectionProjectionRetryError: ', error)
+        }
+      }
+    })
+  }
+
+  private _wholeBlockPoint(blockId: string): ISelectionPoint {
+    return this._pointFromJSON(wholeBlockSelectionPointJSON(blockId))
+  }
+
+  private _setWholeBlockRangeEndpoint(
+    range: Range,
+    side: 'start' | 'end',
+    target: BlockCraft.BlockComponent,
+  ) {
+    const anchor = getBlockGapAnchor(
+      target.hostElement,
+      side === 'start' ? 'leading' : 'trailing',
+    )
+    if (anchor) {
+      side === 'start'
+        ? range.setStart(anchor.node, anchor.offset)
+        : range.setEnd(anchor.node, anchor.offset)
+      return
+    }
+    side === 'start'
+      ? range.setStart(target.hostElement, 0)
+      : range.setEnd(target.hostElement, target.hostElement.childElementCount)
   }
 
   // ── DOM Range construction ──
@@ -213,8 +1789,56 @@ export class SelectionManager {
    * Works with both new ISelectionPointJSON and legacy IBlockInlineRangeJSON.
    */
   private _buildDomRange(startPoint: any, endPoint?: any | null): Range {
-    const range = document.createRange()
+    const range = this._surface.createRange()
     const fromBlock = this.doc.getBlockById(startPoint.blockId)
+
+    if (startPoint.type === 'table-cell') {
+      range.setStart(fromBlock.hostElement, 0)
+      if (!endPoint || (endPoint.blockId === startPoint.blockId && endPoint.type === 'table-cell')) {
+        range.setEnd(fromBlock.hostElement, fromBlock.hostElement.childElementCount)
+        return range
+      }
+    }
+
+    if (startPoint.type === 'boundary') {
+      const collapsedBoundary = !endPoint || (
+        endPoint.blockId === startPoint.blockId &&
+        endPoint.type === 'boundary' &&
+        endPoint.index === startPoint.index
+      )
+      const point = this._getBoundaryDomPoint(
+        startPoint,
+        'start',
+        !collapsedBoundary,
+      )
+      range.setStart(point.node, point.offset)
+      if (collapsedBoundary) {
+        range.collapse(true)
+        return range
+      }
+    }
+
+    // Handle gap start
+    if (startPoint.type === 'gap') {
+      // Collapsed gap caret: place it inside the filler text node so Safari can
+      // paint a real native caret. The span itself still owns the visual line box.
+      const point = this._getGapCaretDomPoint(fromBlock.hostElement, startPoint.side === 'before' ? 'before' : 'after')
+      if (point) {
+        range.setStart(point.node, point.offset)
+      } else {
+        range.setStart(fromBlock.hostElement, startPoint.side === 'before' ? 0 : fromBlock.hostElement.childElementCount)
+      }
+
+      // For collapsed gap range, collapse and return. Only collapse when the end
+      // is the SAME side — a same-block before→after gap range must build a real
+      // range via the trailing/leading anchors (handled by the gap-end block below).
+      if (!endPoint || (endPoint.blockId === startPoint.blockId && endPoint.type === 'gap' && endPoint.side === startPoint.side)) {
+        range.collapse(true)
+        return range
+      }
+
+      // Gap start with non-gap end: fall through to handle end
+    }
 
     if (startPoint.type === 'text') {
       const fb = fromBlock as EditableBlockComponent
@@ -237,16 +1861,11 @@ export class SelectionManager {
       }
     }
 
-    if (startPoint.type === 'selected') {
+    if (isWholeBlockSelectionPoint(startPoint)) {
       // Anchor on the leading gap span's text node so the native Range starts
       // inside an editable text node — this lets Safari fire `beforeinput` for
       // backspace/delete on void/block selections.
-      const leading = getBlockGapAnchor(fromBlock.hostElement, 'leading')
-      if (leading) {
-        range.setStart(leading.node, leading.offset)
-      } else {
-        range.setStart(fromBlock.hostElement, 0)
-      }
+      this._setWholeBlockRangeEndpoint(range, 'start', fromBlock)
     }
 
     if (!endPoint) {
@@ -255,6 +1874,29 @@ export class SelectionManager {
     }
 
     const toBlock = this.doc.getBlockById(endPoint.blockId)
+
+    if (endPoint.type === 'table-cell') {
+      range.setEnd(toBlock.hostElement, toBlock.hostElement.childElementCount)
+      return range
+    }
+
+    if (endPoint.type === 'boundary') {
+      const point = this._getBoundaryDomPoint(endPoint, 'end', true)
+      range.setEnd(point.node, point.offset)
+      return range
+    }
+
+    // Handle gap end
+    if (endPoint.type === 'gap') {
+      const point = this._getGapCaretDomPoint(toBlock.hostElement, endPoint.side === 'before' ? 'before' : 'after')
+      if (point) {
+        range.setEnd(point.node, point.offset)
+      } else {
+        range.setEnd(toBlock.hostElement, endPoint.side === 'before' ? 0 : toBlock.hostElement.childElementCount)
+      }
+      return range
+    }
+
     if (endPoint.type === 'text') {
       const tb = toBlock as EditableBlockComponent
       const endOffset = endPoint.offset ?? ((endPoint.index ?? 0) + (endPoint.length ?? 0))
@@ -263,78 +1905,337 @@ export class SelectionManager {
       return range
     }
 
-    const trailing = getBlockGapAnchor(toBlock.hostElement, 'trailing')
-    if (trailing) {
-      range.setEnd(trailing.node, trailing.offset)
-    } else {
-      range.setEnd(toBlock.hostElement, toBlock.hostElement.childElementCount)
-    }
+    this._setWholeBlockRangeEndpoint(range, 'end', toBlock)
     return range
+  }
+
+  private _getBoundaryDomPoint(
+    point: { blockId: string; index: number },
+    side: 'start' | 'end',
+    useStableChildEdge = false,
+  ): {node: Node; offset: number} {
+    const block = this.doc.getBlockById(point.blockId)
+    const container =
+      block.childrenRenderRef?.containerElement ??
+      block.hostElement.querySelector<HTMLElement>('.children-render-container') ??
+      block.hostElement
+    const childIds = block.childrenIds ?? []
+    const index = Math.max(0, Math.min(point.index ?? 0, childIds.length))
+    // Parent child offsets can be structurally correct without being paintable:
+    // Chromium does not render their glyph highlight inside nested editable
+    // hosts, and virtual root offsets can rebase while siblings mount. Keep
+    // every non-collapsed boundary endpoint inside its adjacent child instead.
+    const stableChildEdge = useStableChildEdge
+    const childNodes = Array.from(container.childNodes)
+    const neighbours = this._getBoundaryProjectionNeighbours(
+      point.blockId,
+      childIds,
+      index,
+    )
+    const candidates = side === 'start'
+      ? [
+          {childId: neighbours.nextId, edge: 'start' as const},
+          {childId: neighbours.previousId, edge: 'end' as const},
+        ]
+      : [
+          {childId: neighbours.previousId, edge: 'end' as const},
+          {childId: neighbours.nextId, edge: 'start' as const},
+        ]
+
+    // Placement children participate in the model range, but native endpoints
+    // belong to the first/last flow block. Editable blocks project to their
+    // inline text edge; non-editable blocks project to their gap affordance.
+    // Keep the host/container edge only as a malformed/leaf fallback.
+    if (
+      point.blockId === this.doc.root.id &&
+      this._getRootFlowIdSet(childIds).size < childIds.length
+    ) {
+      for (const candidate of candidates) {
+        if (!candidate.childId) continue
+        const child = this._readBlock(candidate.childId)
+        if (!child) continue
+        if (child.nodeType === BlockNodeType.editable) {
+          return this._getStableBlockEdgeDomPoint(child, candidate.edge)
+        }
+        const gapPoint = getBlockGapAnchor(
+          child.hostElement,
+          candidate.edge === 'start' ? 'leading' : 'trailing',
+        )
+        if (gapPoint) return gapPoint
+        const domIndex = childNodes.indexOf(child.hostElement)
+        if (domIndex < 0) continue
+        return {
+          node: container,
+          offset: candidate.edge === 'start' ? domIndex : domIndex + 1,
+        }
+      }
+      if (useStableChildEdge && candidates.some(candidate => !!candidate.childId)) {
+        throw new Error('Boundary endpoint view is not mounted')
+      }
+    }
+
+    for (const candidate of candidates) {
+      if (!candidate.childId) continue
+      const child = this._readBlock(candidate.childId)
+      if (!child) continue
+      const gapPoint = getBlockGapAnchor(
+        child.hostElement,
+        candidate.edge === 'start' ? 'leading' : 'trailing',
+      )
+      if (gapPoint) return gapPoint
+      if (stableChildEdge) {
+        return this._getStableBlockEdgeDomPoint(child, candidate.edge)
+      }
+
+      const domIndex = childNodes.indexOf(child.hostElement)
+      if (domIndex >= 0) {
+        return {
+          node: container,
+          offset: candidate.edge === 'start' ? domIndex : domIndex + 1,
+        }
+      }
+    }
+
+    if (useStableChildEdge && candidates.some(candidate => !!candidate.childId)) {
+      throw new Error('Boundary endpoint view is not mounted')
+    }
+    return {node: container, offset: Math.min(index, childNodes.length)}
+  }
+
+  /**
+   * Native ranges represent only the root's normal-flow projection. The model
+   * boundary still counts placement-layout/absolute children so document-wide
+   * copy, cut and delete keep their full semantics. Resolving both neighbours
+   * from the model-first flow list also keeps mount targets and the final DOM
+   * projection stable after placement normalization settles.
+   */
+  private _getBoundaryProjectionNeighbours(
+    blockId: string,
+    childIds: readonly string[],
+    index: number,
+  ): {previousId?: string; nextId?: string} {
+    if (blockId !== this.doc.root.id) {
+      return {
+        previousId: index > 0 ? childIds[index - 1] : undefined,
+        nextId: childIds[index],
+      }
+    }
+
+    const flowIds = this._getRootFlowIdSet(childIds)
+    let previousId: string | undefined
+    for (let cursor = index - 1; cursor >= 0; cursor--) {
+      if (!flowIds.has(childIds[cursor])) continue
+      previousId = childIds[cursor]
+      break
+    }
+    let nextId: string | undefined
+    for (let cursor = index; cursor < childIds.length; cursor++) {
+      if (!flowIds.has(childIds[cursor])) continue
+      nextId = childIds[cursor]
+      break
+    }
+    return {previousId, nextId}
+  }
+
+  private _getRootFlowIdSet(childIds: readonly string[]): Set<string> {
+    const placement = this.doc.placement
+    const configuredFlowIds = placement?.getRootFlowChildIds?.(childIds)
+    return new Set<string>(
+      Array.isArray(configuredFlowIds)
+        ? configuredFlowIds
+        : childIds.filter(id =>
+            placement?.isPlacementLayout?.(id) !== true &&
+            placement?.allowsGapCursor?.(id) !== false,
+          ),
+    )
+  }
+
+  private _getStableBlockEdgeDomPoint(
+    block: BlockCraft.BlockComponent,
+    edge: 'start' | 'end',
+  ): {node: Node; offset: number} {
+    if (block.nodeType === BlockNodeType.editable) {
+      const editable = block as EditableBlockComponent
+      try {
+        const offset = edge === 'start' ? 0 : editable.textLength
+        return editable.runtime.mapper.modelPointToDomPoint(
+          editable.containerElement,
+          offset,
+        )
+      } catch {
+        // A newly mounted inline runtime can settle after its host. The host
+        // edge remains descendant-stable until the next bounded reprojection.
+      }
+    }
+
+    return {
+      node: block.hostElement,
+      offset: edge === 'start' ? 0 : block.hostElement.childNodes.length,
+    }
+  }
+
+  private _selectionFromWritePoints(
+    from: SelectionWritePoint,
+    to?: SelectionWritePoint | null,
+  ): BlockSelection | null {
+    try {
+      const anchor = this._pointFromJSON(this._writePointJSON(from, 'start'))
+      const hasExplicitHead = to !== null && to !== undefined
+      const head = this._pointFromJSON(this._writePointJSON(
+        to ?? from,
+        hasExplicitHead || this._isLegacyTextPoint(from) ? 'end' : 'start',
+      ))
+      const commonParent = this._commonParentFromModel(anchor, head)
+      if (!commonParent) return null
+
+      const selection = this._createBlockSelection(anchor, head, commonParent)
+      if (!selection) return null
+      const legacyWrite = this._isLegacyWritePoint(from) || (!!to && this._isLegacyWritePoint(to))
+      return legacyWrite && selection.direction === 'backward'
+        ? this._createBlockSelection(selection.start, selection.end, commonParent)
+        : selection
+    } catch {
+      return null
+    }
+  }
+
+  private _writePointJSON(
+    point: SelectionWritePoint,
+    edge: 'start' | 'end',
+  ): ISelectionPointJSON {
+    const value = point as any
+    if (value.type === 'text') {
+      const startOffset = typeof value.offset === 'number'
+        ? value.offset
+        : (value.index ?? 0)
+      const offset = typeof value.offset === 'number' || edge === 'start'
+        ? startOffset
+        : startOffset + (value.length ?? 0)
+      return {blockId: value.blockId, type: 'text', offset}
+    }
+    if (value.type === 'gap') {
+      if (value.side !== 'before' && value.side !== 'after') throw new Error('Invalid gap selection point')
+      return {blockId: value.blockId, type: 'gap', side: value.side}
+    }
+    if (value.type === 'boundary') {
+      return {blockId: value.blockId, type: 'boundary', index: value.index ?? 0}
+    }
+    if (value.type === 'table-cell') {
+      if (!value.tableId) throw new Error('Invalid table-cell selection point')
+      return {blockId: value.blockId, type: 'table-cell', tableId: value.tableId}
+    }
+    if (value.type === 'selected') {
+      return {blockId: value.blockId, type: 'selected'}
+    }
+    throw new Error('Invalid selection point')
+  }
+
+  private _isLegacyTextPoint(point: SelectionWritePoint): boolean {
+    return point.type === 'text' && typeof (point as any).offset !== 'number'
+  }
+
+  private _isLegacyWritePoint(point: SelectionWritePoint): boolean {
+    if (this._isLegacyTextPoint(point)) return true
+    return !('block' in point)
+  }
+
+  private _ensureViewMounted(blockIds: readonly string[]): void {
+    this.doc.virtualization?.ensureViewMounted(blockIds)
+  }
+
+  private _ensureSelectionViewMounted(selection: BlockSelection): void {
+    const blockIds = this._projectionMountTargetIds(selection)
+    if (blockIds.every(blockId => this._hasBlockView(blockId))) return
+    this._ensureViewMounted(blockIds)
+  }
+
+  private _hasBlockView(blockId: string): boolean {
+    try {
+      if (!this.doc.getBlockById(blockId)) return false
+      const isMounted = this.doc.vm?.isMounted
+      return typeof isMounted !== 'function' || isMounted.call(this.doc.vm, blockId)
+    } catch {
+      return false
+    }
+  }
+
+  private _resolveBlockView(block: string | BlockCraft.BlockComponent): BlockCraft.BlockComponent {
+    if (typeof block !== 'string') return block
+    this._ensureViewMounted([block])
+    return this.doc.getBlockById(block)
   }
 
   // ── Public API: programmatic selection ──
 
   selectBlock(block: BlockCraft.BlockComponent | string) {
-    block = typeof block === 'string' ? this.doc.getBlockById(block) : block
-
-    const selection = document.getSelection()!
-    const range = document.createRange()
-
-    const setEndpoint = (
-      side: 'start' | 'end',
-      target: BlockCraft.BlockComponent,
-    ) => {
-      const anchor = getBlockGapAnchor(
-        target.hostElement,
-        side === 'start' ? 'leading' : 'trailing',
-      )
-      if (anchor) {
-        side === 'start'
-          ? range.setStart(anchor.node, anchor.offset)
-          : range.setEnd(anchor.node, anchor.offset)
-        return
-      }
-      side === 'start'
-        ? range.setStart(target.hostElement, 0)
-        : range.setEnd(target.hostElement, target.hostElement.childElementCount)
-    }
+    block = this._resolveBlockView(block)
+    let anchorBlock: BlockCraft.BlockComponent | null = null
+    let headBlock: BlockCraft.BlockComponent | null = null
 
     if (block.nodeType === 'root') {
-      setEndpoint('start', block.firstChildren!)
-      setEndpoint('end', block.lastChildren!)
+      const childIds = this._modelResolver?.getChildrenIds(block.id) ?? block.childrenIds
+      const firstId = childIds?.[0]
+      const lastId = childIds?.[childIds.length - 1]
+      if (firstId && lastId) {
+        this._ensureViewMounted(firstId === lastId ? [firstId] : [firstId, lastId])
+        anchorBlock = this.doc.getBlockById(firstId)
+        headBlock = this.doc.getBlockById(lastId)
+      } else {
+        anchorBlock = block.firstChildren ?? null
+        headBlock = block.lastChildren ?? null
+      }
     } else {
-      setEndpoint('start', block)
-      setEndpoint('end', block)
+      anchorBlock = block
+      headBlock = block
     }
+    if (!anchorBlock || !headBlock) return
 
-    selection.removeAllRanges()
-    selection.addRange(range)
+    const anchor = this._wholeBlockPoint(anchorBlock.id)
+    const head = this._wholeBlockPoint(headBlock.id)
+    this._commitSelection(this._createBlockSelection(anchor, head, block.id))
   }
 
   /** @deprecated Use setSelection with ISelectionPointJSON */
   setSelection(from: IBlockInlineRangeJSON, to?: IBlockInlineRangeJSON | null): Range
   setSelection(from: ISelectionPoint, to?: ISelectionPoint | null): Range
   setSelection(from: any, to?: any): Range {
-    const range = this._buildDomRange(from, to)
-    const selection = document.getSelection()!
-    selection.removeAllRanges()
-    selection.addRange(range)
-    return range
+    const selectionState = this._selectionFromWritePoints(from, to)
+    if (!selectionState) {
+      this.blur()
+      throw new Error('Invalid programmatic selection')
+    }
+    const range = this._commitSelection(selectionState, {
+      modelOnly: !!selectionState.getTableCellSelection(),
+    })
+    return range ?? this._buildDomRange(
+      pointToLegacy(selectionState.start),
+      pointToLegacy(selectionState.end),
+    )
   }
 
   setCursorAt(block: EditableBlockComponent, index: number) {
-    const startNodePos = block.runtime.mapper.modelPointToDomPoint(block.containerElement, index)
-    const selection = document.getSelection()!
-    selection.setPosition(startNodePos.node, startNodePos.offset)
+    const point = this._pointFromJSON({blockId: block.id, type: 'text', offset: index})
+    this._commitSelection(this._createBlockSelection(point, point, block.id))
   }
 
   extendTo(block: EditableBlockComponent, index: number) {
-    const pos = block.runtime.mapper.modelPointToDomPoint(block.containerElement, index)
-    document.getSelection()?.extend(pos.node, pos.offset)
+    const current = this.value
+    if (!current) {
+      this.setCursorAt(block, index)
+      return
+    }
+
+    const head = this._pointFromJSON({blockId: block.id, type: 'text', offset: index})
+    const commonParent = this._commonParentFromModel(current.anchor, head)
+    if (!commonParent) {
+      this.blur()
+      return
+    }
+    this._commitSelection(this._createBlockSelection(current.anchor, head, commonParent))
   }
 
   selectOrSetCursorAtBlock(block: string | BlockCraft.BlockComponent, atStart: boolean, scrollIntoView = true) {
-    block = typeof block === 'string' ? this.doc.getBlockById(block) : block
+    block = this._resolveBlockView(block)
     if (this.doc.isEditable(block)) {
       this.setCursorAt(block, atStart ? 0 : block.textLength)
     } else {
@@ -344,45 +2245,138 @@ export class SelectionManager {
   }
 
   setCursorAtBlock(block: string | BlockCraft.BlockComponent, atStart: boolean, scrollIntoView = true) {
-    block = typeof block === 'string' ? this.doc.getBlockById(block) : block
+    block = this._resolveBlockView(block)
     if (this.doc.isEditable(block)) {
-      this.setCursorAt(block, atStart ? 0 : block.textLength)
+      const point = this._pointFromJSON({
+        blockId: block.id, type: 'text', offset: atStart ? 0 : block.textLength,
+      })
+      // Keep the reveal intent attached to projection retries when DOM is not ready.
+      this._commitSelection(this._createBlockSelection(point, point, block.id), {scrollIntoView})
+      return
     } else if (block.nodeType === BlockNodeType.void) {
       this.selectBlock(block)
     } else {
       const children = searchEditableDescendant(block, atStart)
       if (!children) this.selectBlock(block)
-      else this.selectOrSetCursorAtBlock(children, atStart)
+      else this.selectOrSetCursorAtBlock(children, atStart, false)
     }
     scrollIntoView && this.scrollSelectionIntoView()
   }
 
   selectAllChildren(block: string | BlockCraft.BlockComponent) {
-    block = typeof block === 'string' ? this.doc.getBlockById(block) : block
+    block = this._resolveBlockView(block)
     if (this.doc.isEditable(block)) {
-      this.setSelection({
-        blockId: block.id,
-        type: 'text',
-        index: 0,
-        length: block.textLength
+      this.replay({
+        anchor: {blockId: block.id, type: 'text', offset: 0},
+        head: {blockId: block.id, type: 'text', offset: block.textLength},
+        commonParent: block.id,
+      })
+    } else if (block.childrenLength > 0) {
+      this.replay({
+        anchor: {blockId: block.id, type: 'boundary', index: 0},
+        head: {blockId: block.id, type: 'boundary', index: block.childrenLength},
+        commonParent: block.id,
       })
     } else {
       this.selectBlock(block)
     }
   }
 
+  /**
+   * Place a collapsed gap caret beside a void/container block.
+   * `side: 'before'` anchors inside the leading gap span, `'after'` the trailing one.
+   */
+  public setGapCursor(block: string | BlockCraft.BlockComponent, side: 'before' | 'after', scrollIntoView?: boolean): void {
+    const resolvedBlock = this._resolveBlockView(block)
+    if (this.doc.placement?.allowsGapCursor?.(resolvedBlock) === false) {
+      this.selectBlock(resolvedBlock)
+      return
+    }
+    const gapPoint = lazyGapPoint(
+      resolvedBlock.id,
+      side,
+      id => this.doc.getBlockById(id) as any,
+    )
+    this._commitSelection(
+      this._createBlockSelection(gapPoint, gapPoint, resolvedBlock.id),
+      {scrollIntoView},
+    )
+  }
+
+  public setTableCellSelection(
+    table: string | BlockCraft.IBlockComponents['table'],
+    anchorCell: string | BlockCraft.IBlockComponents['table-cell'],
+    headCell?: string | BlockCraft.IBlockComponents['table-cell'],
+    scrollIntoView?: boolean,
+  ): void {
+    this._ensureViewMounted([
+      typeof table === 'string' ? table : table.id,
+      typeof anchorCell === 'string' ? anchorCell : anchorCell.id,
+      typeof headCell === 'string' ? headCell : headCell?.id,
+    ].filter((id): id is string => !!id))
+    const resolvedTable = typeof table === 'string'
+      ? this.doc.getBlockById(table) as BlockCraft.IBlockComponents['table']
+      : table
+    const resolvedAnchor = typeof anchorCell === 'string'
+      ? this.doc.getBlockById(anchorCell) as BlockCraft.IBlockComponents['table-cell']
+      : anchorCell
+    const resolvedHead = typeof headCell === 'string'
+      ? this.doc.getBlockById(headCell) as BlockCraft.IBlockComponents['table-cell']
+      : (headCell ?? resolvedAnchor)
+    const getBlock = (id: string) => this.doc.getBlockById(id) as any
+    const anchor = lazyTableCellPoint(resolvedAnchor.id, resolvedTable.id, getBlock)
+    const head = lazyTableCellPoint(resolvedHead.id, resolvedTable.id, getBlock)
+    this._commitSelection(
+      this._createBlockSelection(anchor, head, resolvedTable.id),
+      {scrollIntoView, modelOnly: true},
+    )
+  }
+
   /** @deprecated Use replay with ISelectionJSON */
   replay(json: IBlockSelectionJSON | ISelectionJSON | null) {
-    if (!json) return
+    this._replay(json)
+  }
+
+  private _replay(
+    json: IBlockSelectionJSON | ISelectionJSON | null,
+  ): void {
+    if (!json) {
+      this.blur()
+      return
+    }
     if ('anchor' in json) {
       // New format
-      const range = this._buildDomRange(json.anchor, json.head)
-      const selection = document.getSelection()!
-      selection.removeAllRanges()
-      selection.addRange(range)
+      const selectionState = this.createSelection(json)
+      if (!selectionState) {
+        this.blur()
+        return
+      }
+      if (selectionState.getTableCellSelection()) {
+        this._commitSelection(selectionState, {modelOnly: true})
+        return
+      }
+      try {
+        this._commitSelection(selectionState)
+      } catch {
+        this.blur()
+      }
     } else {
+      if (json.from.type === 'table-cell') {
+        const head = json.to?.type === 'table-cell' ? json.to : json.from
+        const selection = this.createSelection({
+          anchor: {blockId: json.from.blockId, type: 'table-cell', tableId: json.from.tableId},
+          head: {blockId: head.blockId, type: 'table-cell', tableId: head.tableId},
+          commonParent: json.commonParent,
+        })
+        if (selection) this._commitSelection(selection, {modelOnly: true})
+        return
+      }
       // Legacy format
-      this.setSelection(json.from, json.to)
+      try {
+        this.setSelection(json.from, json.to)
+      } catch {
+        this.blur()
+      }
     }
   }
 
@@ -393,17 +2387,54 @@ export class SelectionManager {
    * if either endpoint block no longer exists.
    */
   createSelection(json: ISelectionJSON): BlockSelection | null {
+    if (!this._selectionModelBlockExists(json.anchor.blockId)) return null
+    if (!this._selectionModelBlockExists(json.head.blockId)) return null
+    if (json.commonParent && !this._selectionModelBlockExists(json.commonParent)) return null
+    if (json.anchor.type === 'table-cell' || json.head.type === 'table-cell') {
+      if (json.anchor.type !== 'table-cell' || json.head.type !== 'table-cell') return null
+      if (!json.anchor.tableId || json.anchor.tableId !== json.head.tableId) return null
+      if (!this._selectionModelBlockExists(json.anchor.tableId)) return null
+    }
+    const disallowedCollapsedGap =
+      this._disallowedCollapsedGapBlockId(json.anchor, json.head) !== null
+    const anchorJSON: ISelectionPointJSON = disallowedCollapsedGap
+      ? {blockId: json.anchor.blockId, type: 'selected'}
+      : json.anchor
+    const headJSON: ISelectionPointJSON = disallowedCollapsedGap
+      ? {blockId: json.head.blockId, type: 'selected'}
+      : json.head
+    const makePoint = (p: ISelectionPointJSON) => this._pointFromJSON(p)
+    const selection = this._createBlockSelection(
+      makePoint(anchorJSON),
+      makePoint(headJSON),
+      disallowedCollapsedGap ? json.anchor.blockId : json.commonParent,
+    )
+    return isSelectionAlive(selection, this.doc) ? selection : null
+  }
+
+  private _selectionModelBlockExists(blockId: string): boolean {
+    if (this._modelResolver) return this._modelResolver.exists(blockId)
     try {
-      this.doc.getBlockById(json.anchor.blockId)
-      this.doc.getBlockById(json.head.blockId)
+      return !!this.doc.getBlockById(blockId)
     } catch {
+      return false
+    }
+  }
+
+  private _disallowedCollapsedGapBlockId(
+    anchor: Pick<ISelectionPointJSON, 'blockId' | 'type'>,
+    head: Pick<ISelectionPointJSON, 'blockId' | 'type'>,
+  ): string | null {
+    if (
+      anchor.type !== 'gap' ||
+      head.type !== 'gap' ||
+      anchor.blockId !== head.blockId
+    ) {
       return null
     }
-    return this._createBlockSelection(
-      _lazyPoint(json.anchor, id => this.doc.getBlockById(id) as any),
-      _lazyPoint(json.head, id => this.doc.getBlockById(id) as any),
-      json.commonParent,
-    )
+    return this.doc.placement?.allowsGapCursor?.(anchor.blockId) === false
+      ? anchor.blockId
+      : null
   }
 
   createFakeRange(source: Pick<IBlockSelectionJSON, 'from' | 'to'> | BlockSelection | ISelectionJSON, config: IFakeRangeConfig = {}) {
@@ -412,11 +2443,7 @@ export class SelectionManager {
     }
     if ('anchor' in source) {
       // ISelectionJSON → build a BlockSelection
-      const sel = this._createBlockSelection(
-        _lazyPoint(source.anchor, id => this.doc.getBlockById(id) as any),
-        _lazyPoint(source.head, id => this.doc.getBlockById(id) as any),
-        source.commonParent
-      )
+      const sel = this.createSelection(source)
       return new FakeRange(this.doc, sel, config)
     }
     return new FakeRange(this.doc, source, config)
@@ -427,6 +2454,7 @@ export class SelectionManager {
   private _rangeFromModel(): Range | null {
     const sel = this.value
     if (!sel) return null
+    if (sel.getTableCellSelection()) return null
     try {
       return this._buildDomRange(pointToLegacy(sel.start), pointToLegacy(sel.end))
     } catch {
@@ -435,50 +2463,103 @@ export class SelectionManager {
   }
 
   getSelectionRect(): DOMRect | null {
+    // Gap caret: the collapsed Range sits inside the filler text node, while the
+    // filler span owns the positioned line box used for scroll/overlay geometry.
+    const start = this.value?.start
+    if (start && start.type === 'gap') {
+      try {
+        const span = getBlockGapCaretSpan(start.block.hostElement, start.side)
+        if (span) return this._surface.getElementRect(span)
+      } catch {
+        // fall through to the range-based path
+      }
+    }
     const range = this._rangeFromModel()
     if (!range) return null
-    return range.getBoundingClientRect()
+    return this._surface.getRangeRect(range)
   }
 
   getSelectionRects(): DOMRectList | null {
     const range = this._rangeFromModel()
     if (!range) return null
-    return range.getClientRects()
+    return this._surface.getRangeRects(range)
   }
 
   getSelectedText(): string {
     const sel = this.value
     if (!sel) return ''
+    const tableCellSelection = sel.getTableCellSelection()
+    if (tableCellSelection) {
+      const target = resolveTableCellSelectionTarget(this.doc, tableCellSelection)
+      if (!target) return ''
+      return target.physicalCellIds
+        .map(row => row.map(cellId => this._selectionBlockText(cellId)).join('\t'))
+        .join('\n')
+    }
+    const boundaryChildIds = sel.getBoundarySelectedChildIds()
+    if (boundaryChildIds) {
+      return boundaryChildIds.map(id => this._selectionBlockText(id)).join('\n')
+    }
     const s = sel.start, e = sel.end
-    const startBlock = sel.firstBlock, endBlock = sel.lastBlock
+    const startId = sel.firstBlockId
+    const endId = sel.lastBlockId
 
     if (sel.isInSameBlock) {
-      if (s.type !== 'text') return startBlock.textContent()
-      const eOff = e.type === 'text' ? e.offset : (startBlock as any).textLength
-      return startBlock.textContent().slice(s.offset, eOff)
+      if (s.type === 'gap') return ''
+      const text = this._selectionBlockText(startId)
+      if (s.type !== 'text') return text
+      const eOff = e.type === 'text' ? e.offset : text.length
+      return text.slice(s.offset, eOff)
     }
 
     let text = s.type === 'text'
-      ? startBlock.textContent().slice(s.offset)
-      : startBlock.textContent()
-    const betweenBlocks = this.doc.queryBlocksBetween(startBlock, endBlock)
+      ? this._selectionBlockText(startId).slice(s.offset)
+      : this._selectionBlockText(startId)
+    const modelBacked = typeof (this.doc as any).model?.exists === 'function'
+    const betweenBlocks = modelBacked
+      ? this.doc.queryBlocksBetween(startId, endId)
+      : this.doc.queryBlocksBetween(sel.firstBlock, sel.lastBlock)
     for (const bid of betweenBlocks) {
-      text += '\n' + this.doc.getBlockById(bid).textContent()
+      text += '\n' + this._selectionBlockText(bid)
     }
     if (e.type === 'text') {
-      text += '\n' + endBlock.textContent().slice(0, e.offset)
+      text += '\n' + this._selectionBlockText(endId).slice(0, e.offset)
     } else {
-      text += '\n' + endBlock.textContent()
+      text += '\n' + this._selectionBlockText(endId)
     }
     return text
   }
 
+  private _selectionBlockText(blockId: string, visiting = new Set<string>()): string {
+    const model = (this.doc as any).model
+    if (typeof model?.exists === 'function' && model.exists(blockId)) {
+      if (visiting.has(blockId)) return ''
+      const deltas = model.getTextDeltas?.(blockId)
+      if (deltas) return deltaToString(deltas)
+      if (model.getNodeType?.(blockId) === BlockNodeType.void) return ''
+
+      visiting.add(blockId)
+      const text = (model.getChildrenIds?.(blockId) ?? [])
+        .map((id: string) => this._selectionBlockText(id, visiting))
+        .join('\n')
+      visiting.delete(blockId)
+      return text
+    }
+    try {
+      return this.doc.getBlockById(blockId).textContent()
+    } catch {
+      return ''
+    }
+  }
+
   scrollSelectionIntoView() {
-    const rect = this.getSelectionRect()
-    if (!rect || rect.height === 0) return
+    let rect = this._getSelectionHeadRect() ?? this.getSelectionRect()
+    if (!rect || (!rect.width && !rect.height)) return
 
     const container = this.doc.scrollContainer!
-    const cRect = container.getBoundingClientRect()
+    if (!container) return
+    rect = revealInSelectionViewports(rect, this._selectionScrollViewports(this.value?.head))
+    const cRect = this._surface.getElementRect(container)
     const padding = 24
 
     if (rect.bottom > cRect.bottom) {
@@ -486,6 +2567,87 @@ export class SelectionManager {
     } else if (rect.top < cRect.top) {
       container.scrollTop -= cRect.top - rect.top + padding
     }
+  }
+
+  private _isSelectionVisibleInViewport(selection: ISelectionJSON): boolean {
+    const container = this.doc.scrollContainer
+    if (!container?.isConnected) return false
+    const rect = this._getSelectionPointRect(selection.head)
+    if (!rect || (!rect.width && !rect.height)) return false
+
+    const viewport = this._surface.getElementRect(container)
+    return rect.top >= viewport.top && rect.bottom <= viewport.bottom &&
+      isVisibleInSelectionViewports(rect, this._selectionScrollViewports(selection.head))
+  }
+
+  private _selectionScrollViewports(point: {blockId: string} | undefined): HTMLElement[] {
+    const container = this.doc.scrollContainer
+    if (!point || !container) return []
+    const block = this._readBlock(point.blockId)
+    return selectionScrollViewports(block?.hostElement, container)
+  }
+
+  private _getSelectionHeadRect(): DOMRect | null {
+    const head = this.value?.head
+    if (!head) return null
+    return this._getSelectionPointRect(head)
+  }
+
+  private _getSelectionPointRect(
+    point: ISelectionPoint | ISelectionPointJSON,
+  ): DOMRect | null {
+    const block = this._readBlock(point.blockId)
+    if (!block) return null
+    if (point.type === 'gap') {
+      try {
+        const span = getBlockGapCaretSpan(block.hostElement, point.side!)
+        return span ? this._surface.getElementRect(span) : null
+      } catch {
+        return null
+      }
+    }
+    if (point.type === 'selected' || point.type === 'table-cell') {
+      return this._surface.getElementRect(block.hostElement)
+    }
+    try {
+      const legacyPoint = pointToLegacy(point as ISelectionPoint)
+      const range = this._buildDomRange(legacyPoint, legacyPoint)
+      const rect = this._surface.getRangeRect(range)
+      // An empty paragraph can project to an element boundary (before its BR),
+      // whose collapsed Range has no geometry even though the line is visible.
+      // Use that empty line's content box so Enter can reveal the new paragraph.
+      if (!rect.width && !rect.height && point.type === 'text' && this.doc.isEditable(block)) {
+        if (block.textLength === 0) return this._surface.getElementRect(block.containerElement)
+        // Firefox can report a zero-size caret at the start of vertical text.
+        // Measure the adjacent model character without touching native selection
+        // or inserting a DOM marker; its box includes the missing caret edge.
+        const index = Math.min(point.offset!, block.textLength - 1)
+        const adjacent = this._buildDomRange(
+          pointToLegacy({...point, offset: index} as ISelectionPoint),
+          pointToLegacy({...point, offset: index + 1} as ISelectionPoint),
+        )
+        return this._surface.getRangeRect(adjacent)
+      }
+      return rect
+    } catch {
+      return null
+    }
+  }
+
+  private _pointFromJSON(p: ISelectionPointJSON): ISelectionPoint {
+    if (p.type === 'gap') {
+      return lazyGapPoint(p.blockId, p.side!, id => this.doc.getBlockById(id) as any)
+    }
+    if (p.type === 'boundary') {
+      return lazyBoundaryPoint(p.blockId, p.index ?? 0, id => this.doc.getBlockById(id) as any)
+    }
+    if (p.type === 'table-cell') {
+      return lazyTableCellPoint(p.blockId, p.tableId!, id => this.doc.getBlockById(id) as any)
+    }
+    if (isWholeBlockSelectionPoint(p)) {
+      return _lazyPoint(wholeBlockSelectionPointJSON(p.blockId), id => this.doc.getBlockById(id) as any)
+    }
+    return _lazyPoint(p, id => this.doc.getBlockById(id) as any)
   }
 }
 
@@ -502,15 +2664,39 @@ function isSelectionBackward(sel: globalThis.Selection): boolean {
   return !!(cmp & Node.DOCUMENT_POSITION_PRECEDING)
 }
 
+type DomRangePointJSON =
+  | ISelectionPointJSON
+  | IBlockInlineRangeJSON
+  | (Extract<IBlockInlineRangeJSON, { type: 'text' }> & { offset?: number })
+
+type SelectionWritePoint = ISelectionPoint | IBlockInlineRangeJSON
+
+function isWholeBlockSelectionPoint(point: Pick<ISelectionPointJSON, 'type'>): boolean {
+  return point.type === 'selected'
+}
+
+function wholeBlockSelectionPointJSON(blockId: string): ISelectionPointJSON {
+  return {blockId, type: 'selected'}
+}
+
 /** Convert new ISelectionPoint to legacy-compatible shape for _buildDomRange */
-function pointToLegacy(p: ISelectionPoint): any {
+function pointToLegacy(p: ISelectionPoint): DomRangePointJSON {
+  if (p.type === 'gap') {
+    return {blockId: p.blockId, type: 'gap', side: p.side}
+  }
+  if (p.type === 'boundary') {
+    return {blockId: p.blockId, type: 'boundary', index: p.index}
+  }
+  if (p.type === 'table-cell') {
+    return {blockId: p.blockId, type: 'table-cell', tableId: p.tableId}
+  }
   if (p.type === 'text') {
     return {blockId: p.blockId, type: 'text', offset: p.offset, index: p.offset, length: 0}
   }
-  return {blockId: p.blockId, type: 'selected'}
+  return wholeBlockSelectionPointJSON(p.blockId)
 }
 
-const searchEditableDescendant = (block: BlockCraft.BlockComponent, isStart: boolean): EditableBlockComponent | null => {
+export const searchEditableDescendant = (block: BlockCraft.BlockComponent, isStart: boolean): EditableBlockComponent | null => {
   if (block.nodeType === BlockNodeType.editable) return <EditableBlockComponent>block
   const child = isStart ? block.firstChildren : block.lastChildren
   if (!child || child.nodeType === BlockNodeType.void) return null
@@ -526,5 +2712,7 @@ declare global {
 export * from './types'
 export * from './createFakeRange'
 export * from './blockSelection'
+export * from './model-resolver'
+export * from './projection-mount-adapter'
 export {normalizeRange} from './normalize'
 export type {INormalizedEndpoints} from './normalize'

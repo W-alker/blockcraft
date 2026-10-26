@@ -4,19 +4,19 @@
 >
 > For creating new plugins, see `blockcraft-plugin.md`.
 >
-> Last updated: 2026-06-08
+> Last updated: 2026-10-16
 
-This index covers all 23 built-in plugins. Pick the category file that matches your task — don't read all files at once.
+This index covers the built-in plugins. Pick the category file that matches your task — don't read all files at once.
 
 ## Category Router
 
 | Category | File | Plugins |
 |----------|------|---------|
 | Text Formatting | `blockcraft-plugins-formatting.md` | FloatTextToolbarPlugin, TextMarkerPlugin, FixedTextToolbarComponent |
-| Block Management | `blockcraft-plugins-block.md` | BlockControllerPlugin, BlockGapCreatorPlugin, BlockTransformerPlugin, OrderedBlockPlugin |
-| Block Toolbars | `blockcraft-plugins-toolbar.md` | AttachmentExtensionPlugin, ImgToolbarPlugin, BookmarkBlockExtensionPlugin, CalloutToolbarPlugin, DividerExtensionPlugin, EmbedFrameExtensionPlugin, FormulaBlockExtensionPlugin |
-| Inline & Keyboard | `blockcraft-plugins-inline.md` | InlineLinkExtension, MentionPlugin, CodeInlineEditorBinding, TableBlockBinding |
-| Utilities | `blockcraft-plugins-util.md` | PlaceholderPlugin, FindReplacePlugin, PasteFormatSelectorPlugin, DemoPresentationPlugin, TranslatePlugin |
+| Block Management | `blockcraft-plugins-block.md` | BlockControllerPlugin, BlockGapCreatorPlugin, BlockTransformerPlugin, OrderedBlockPlugin, ObjectDragPlugin |
+| Block Toolbars | `blockcraft-plugins-toolbar.md` | AttachmentExtensionPlugin, ImgToolbarPlugin, ObjectFormatToolbarPlugin, BookmarkBlockExtensionPlugin, CalloutToolbarPlugin, MaterialToolbarPlugin, WeatherToolbarPlugin, DividerExtensionPlugin, EmbedFrameExtensionPlugin, FormulaBlockExtensionPlugin |
+| Inline & Keyboard | `blockcraft-plugins-inline.md` | InlineLinkExtension, MentionPlugin, DateInlineExtensionPlugin, WeatherInlineExtensionPlugin, PersonInlineExtensionPlugin, CodeInlineEditorBinding, TableBlockBinding |
+| Utilities | `blockcraft-plugins-util.md` | ContextMenuPlugin, PlaceholderPlugin, FindReplacePlugin, PasteFormatSelectorPlugin, DemoPresentationPlugin, RevisionReviewPlugin, TranslatePlugin, PaginationPlugin |
 
 ## Quick Lookup
 
@@ -25,26 +25,36 @@ This index covers all 23 built-in plugins. Pick the category file that matches y
 | `FloatTextToolbarPlugin` | `formatting` | `extraItems`, `onExtraItemClick` |
 | `TextMarkerPlugin` | `formatting` | `markTextBlockFlavours` (required) |
 | `FixedTextToolbarComponent` | `formatting` | Angular component inputs |
+| `ObjectDragPlugin` | `block` | none (zero-config) |
 | `BlockControllerPlugin` | `block` | `blockMenuResolver`, `blockMenuActionHandler`, `positionResolver` |
 | `BlockGapCreatorPlugin` | `block` | none (zero-config) |
-| `BlockTransformerPlugin` | `block` | `transformList` |
+| `BlockTransformerPlugin` | `block` | `transformList` array, `{ transformList, commands }`, or runtime `registerCommand(s)` |
 | `OrderedBlockPlugin` | `block` | none (zero-config) |
 | `AttachmentExtensionPlugin` | `toolbar` | `extraItems`, `onPreview`, `onExtraItemClick` |
 | `ImgToolbarPlugin` | `toolbar` | `extraItems`, `onExtraItemClick` |
+| `ObjectFormatToolbarPlugin` | `toolbar` | none (zero-config) |
 | `BookmarkBlockExtensionPlugin` | `toolbar` | none (zero-config) |
-| `CalloutToolbarPlugin` | `toolbar` | none (zero-config) |
+| `CalloutToolbarPlugin` | `toolbar` | none; handles Callout and `render-unit` appearance |
+| `MaterialToolbarPlugin` | `toolbar` | none; 日期、天气、人员的块外横向工具栏 |
+| `WeatherToolbarPlugin` | `toolbar` | none; 仅天气的兼容入口，与 MaterialToolbarPlugin 二选一 |
 | `DividerExtensionPlugin` | `toolbar` | none (zero-config) |
 | `EmbedFrameExtensionPlugin` | `toolbar` | none (zero-config) |
 | `FormulaBlockExtensionPlugin` | `toolbar` | none (zero-config) |
 | `InlineLinkExtension` | `inline` | `openLink` callback |
 | `MentionPlugin` | `inline` | `panel` (required), `trigger`, `onMentionClick` |
+| `DateInlineExtensionPlugin` | `inline` | none (zero-config) |
+| `WeatherInlineExtensionPlugin` | `inline` | none; 行内天气格式 |
+| `PersonInlineExtensionPlugin` | `inline` | none; 行内人员格式 |
 | `CodeInlineEditorBinding` | `inline` | none (zero-config) |
 | `TableBlockBinding` | `inline` | none (zero-config) |
-| `PlaceholderPlugin` | `util` | `overrides` (optional per-flavour text override map) |
+| `PlaceholderPlugin` | `util` | `overrides`; supports instance `plh` / `plhMode` on editable blocks |
 | `FindReplacePlugin` | `util` | none (zero-config) |
+| `ContextMenuPlugin` | `util` | none (zero-config); bundled 已注册 |
 | `PasteFormatSelectorPlugin` | `util` | none (zero-config) |
 | `DemoPresentationPlugin` | `util` | none (zero-config) |
 | `TranslatePlugin` | `util` | `service` (required), language options |
+| `PaginationPlugin` | `util` | page geometry, browser/host-native WYSIWYG PDF printing, runtime enable, print shortcut |
+| `RevisionReviewPlugin` | `util` | none (headless grouped state + keep/revert commands) |
 
 ## Plugin Composition Pattern
 
@@ -63,6 +73,8 @@ const plugins = [
   new OrderedBlockPlugin(),
   new AttachmentExtensionPlugin({ onPreview: handlePreview }),
   new ImgToolbarPlugin(),
+  new ObjectFormatToolbarPlugin(),
+  new ObjectDragPlugin(),
   new BookmarkBlockExtensionPlugin(),
   new CalloutToolbarPlugin(),
   new DividerExtensionPlugin(),
@@ -70,13 +82,30 @@ const plugins = [
   new FormulaBlockExtensionPlugin(),
   new InlineLinkExtension(),
   new MentionPlugin({ panel: mentionPanelFactory }),
+  new DateInlineExtensionPlugin(),
   new CodeInlineEditorBinding(),
   new TableBlockBinding(),
   new FindReplacePlugin(),
   new PasteFormatSelectorPlugin(),
+  new RevisionReviewPlugin(),
+  new PaginationPlugin({enabled: false, pageSize: 'A4'}),
   translatePlugin,
 ];
 ```
+
+The bundled composition is also available as
+`createBundledEditorCapabilities()`. It creates fresh instances and validates
+unique runtime names. The stable IDs for the bindings that historically
+inherited/collided are:
+
+| Plugin | `name` |
+|--------|--------|
+| `OrderedBlockPlugin` | `ordered-block` |
+| `CodeInlineEditorBinding` | `code-inline-editor-binding` |
+| `TableBlockBinding` | `table-block-binding` |
+| `BookmarkBlockExtensionPlugin` | `bookmark-block-extension` |
+| `ObjectFormatToolbarPlugin` | `object-format-toolbar` |
+| `RevisionReviewPlugin` | `revision-review` |
 
 ## Checklist
 

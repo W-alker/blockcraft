@@ -10,7 +10,7 @@
   div.mermaid-block {
     display: block;
     border-radius: var(--bc-radius-md);
-    overflow: hidden;
+    //overflow: hidden;
     border: 1px solid var(--bc-border-color);
 
     &.selected {
@@ -47,6 +47,57 @@
         height: 0;
         overflow: hidden;
         padding: 0;
+      }
+    }
+
+    &.is-fullscreen {
+      position: fixed;
+      inset: 0;
+      z-index: var(--bc-table-fullscreen-z);
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      max-width: none;
+      max-height: none;
+      margin: 0 !important;
+      overflow: hidden;
+      border: 0;
+      border-radius: 0;
+      background: var(--bc-table-fullscreen-bg);
+
+      .head {
+        flex: 0 0 45px;
+      }
+
+      .content {
+        display: flex;
+        flex: 1 1 auto;
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .text-container,
+      .graph-container {
+        flex: 1 1 0;
+        min-width: 0;
+        min-height: 0;
+        height: 100%;
+        max-height: none;
+      }
+
+      &[data-mode="text"] .graph-container,
+      &[data-mode="graph"] .text-container {
+        display: none;
+      }
+
+      .text-container .mermaid-textarea {
+        box-sizing: border-box;
+        min-height: 100%;
+      }
+
+      .graph-con {
+        cursor: default;
       }
     }
 
@@ -108,7 +159,19 @@
         margin-left: 4px;
       }
 
+      .fullscreen-btn {
+        flex: 0 0 auto;
+        margin-left: 4px;
+        border: 0;
+        background: transparent;
+        font: inherit;
+      }
+
       .control-btns[hidden] + .switch-btn {
+        margin-left: auto;
+      }
+
+      .fullscreen-btn.only-fullscreen {
         margin-left: auto;
       }
 
@@ -137,5 +200,32 @@
     font-size: calc(var(--bc-fs) * 0.85);
     tab-size: 1em;
     @include code-highlight-theme;
+  }
+}
+
+[data-blockcraft-root="true"] .mermaid-block {
+  .graph-container { position: relative; }
+  .visual-con.visual-pending {
+    position: absolute;
+    inset: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .visual-con {
+    --mw-chrome-bg: var(--bc-bg-primary);
+    --mw-chrome-fg: var(--bc-color);
+    --mw-chrome-border: var(--bc-border-color);
+    --mw-chrome-hover: var(--bc-bg-hover);
+    --mw-editor-bg: var(--bc-bg-primary);
+    height: 100%;
+    min-height: 240px;
+  }
+  .mermaid-visual-surface { height: 100%; min-height: 240px; }
+  .mw-zoom-controls { display: none; }
+  .visual-status {
+    padding: var(--bc-padding-md);
+    color: var(--bc-color-light);
+    background: var(--bc-bg-muted);
+    border: 0;
   }
 }

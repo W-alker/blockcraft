@@ -6,9 +6,16 @@ import {
   STR_TAB,
   UIEventStateContext
 } from "../framework";
+import {BlockReadonlyError, BlockReadonlyOperation} from "../framework/doc/block-readonly.types";
 import {BlockCraftError, ErrorCode, getLinesByRange, getScrollContainer} from "../global";
+import {isSelectionAlive} from "../framework/modules/selection/liveness";
 
 export class CodeInlineEditorBinding extends DocPlugin {
+  override name = 'code-inline-editor-binding'
+
+  private _isBlockReadonly(block: BlockCraft.BlockComponent): boolean {
+    return this.doc.readonlyManager?.isReadonly(block) ?? !!block.isReadonly
+  }
   // private _compositionAnchor: OneShotCursorAnchor | null = null
 
   // private get compositionAnchor() {
@@ -25,6 +32,11 @@ export class CodeInlineEditorBinding extends DocPlugin {
   @EventListen('compositionEnd', {flavour: 'code'})
   @EventListen('compositionEnd', {flavour: 'mermaid-textarea'})
   private _handleCompositionEnd(context: UIEventStateContext) {
+    // Revision-aware IME commits are owned by InputTransformer. Let its global
+    // compositionEnd handler attach attribution and keep the whole commit in a
+    // single revision group instead of writing directly to Y.Text here.
+    if (this.doc.revisions?.isTracking) return false
+
     const ev = context.getDefaultEvent<CompositionEvent>()
     const compositionState = context.get('compositionState')
     ev.preventDefault()
@@ -38,6 +50,17 @@ export class CodeInlineEditorBinding extends DocPlugin {
       }
 
       const {block, index} = point
+
+      try {
+        this.doc.readonlyManager.assertTextWritable(
+          block,
+          BlockReadonlyOperation.Text,
+          'input',
+        )
+      } catch (error) {
+        if (error instanceof BlockReadonlyError) return true
+        throw error
+      }
 
       this.doc.crud.transact(() => {
         text && block.yText.insert(index, text)
@@ -62,8 +85,12 @@ export class CodeInlineEditorBinding extends DocPlugin {
     if (this.doc.isReadonly) return
     const state = context.get('keyboardState')
     const sel = state.selection
-    if (!sel.isInSameBlock || sel.start.type !== 'text') return false
+    if (!isSelectionAlive(sel as any, this.doc) || !sel.isInSameBlock || sel.start.type !== 'text') return false
     const block = sel.firstBlock as any
+    if (this._isBlockReadonly(block)) {
+      context.preventDefault()
+      return true
+    }
     const offset = sel.start.offset
     const len = sel.end.type === 'text' ? sel.end.offset - offset : 0
 
@@ -101,9 +128,13 @@ export class CodeInlineEditorBinding extends DocPlugin {
     if (this.doc.isReadonly) return
     const state = context.get('keyboardState')
     const sel = state.selection
-    if (!sel.isInSameBlock || sel.start.type !== 'text') return false
+    if (!isSelectionAlive(sel as any, this.doc) || !sel.isInSameBlock || sel.start.type !== 'text') return false
     context.preventDefault()
     const block = sel.firstBlock as any
+    if (this._isBlockReadonly(block)) {
+      context.preventDefault()
+      return true
+    }
     const offset = sel.start.offset
     const len = sel.end.type === 'text' ? sel.end.offset - offset : 0
 
@@ -144,7 +175,6 @@ export class CodeInlineEditorBinding extends DocPlugin {
 
     if (!deltas.length) return true
     block.applyDeltaOperations(deltas)
-    this.doc.selection.recalculate()
     return true
   }
 

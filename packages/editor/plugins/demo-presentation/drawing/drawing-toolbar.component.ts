@@ -187,7 +187,7 @@ const OPACITY_LEVELS = [
               </div>
             </div>
             <div class="panel-section">
-              <span class="panel-label">透明度</span>
+              <span class="panel-label">不透明度</span>
               <div class="dash-row">
                 @for (o of opacityLevels; track o.value) {
                   <span class="dash-opt"

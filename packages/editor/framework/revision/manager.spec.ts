@@ -1,0 +1,922 @@
+import * as Y from 'yjs'
+import {
+  BlockNodeType,
+  DeltaInsert,
+  IBlockSnapshot,
+  NativeBlockModel,
+  YBlock,
+  native2YBlock,
+} from '../block-std'
+import {DocumentRevisionManager} from './manager'
+import {
+  RevisionActorRequiredError,
+  RevisionConflictError,
+} from './errors'
+import {setAttributes} from '../block-std/inline/setAttributes'
+import {EmbedBlot} from '../block-std/inline/blot'
+import {subscribeRevisionPresentationChange} from './presentation-change'
+
+const ROOT_ID = 'root'
+const FIRST_ID = 'p1'
+const SECOND_ID = 'p2'
+
+describe('DocumentRevisionManager', () => {
+  it('emits an empty review state when undo removes a still-mounted inserted batch, and restores it on redo', async () => {
+    const harness = createHarness('original', 'keep')
+    const insertedId = 'ai-inserted'
+    const refresh = jasmine.createSpy('refresh').and.callFake(() => {
+      if (!harness.doc.yBlockMap.has(insertedId)) throw new Error('Block not found')
+    })
+    harness.doc.vm.get = (id: string) => id === insertedId
+      ? {instance: {applyReadonlyViewState: refresh}} : undefined
+    const changes: string[] = []
+    const subscription = harness.manager.change$.subscribe(change => changes.push(change.kind))
+    harness.yDoc.transact(() => {
+      harness.doc.yBlockMap.set(insertedId, editableYBlock(insertedId, 'material'))
+      const children = harness.doc.yBlockMap.get(ROOT_ID).get('children') as Y.Array<string>
+      children.push([insertedId])
+      harness.manager.recordBlockInsertion([insertedId], ROOT_ID)
+    })
+    await Promise.resolve()
+    expect(harness.manager.state$.value.revisions.length).toBe(1)
+    refresh.calls.reset()
+    changes.length = 0
+
+    expect(() => harness.undo()).not.toThrow()
+    await Promise.resolve()
+    expect(harness.doc.yBlockMap.has(insertedId)).toBeFalse()
+    expect(refresh).not.toHaveBeenCalled()
+    expect(harness.manager.list()).toEqual([])
+    expect(harness.manager.state$.value.revisions).toEqual([])
+    expect(changes).toContain('records')
+    expect(harness.text(FIRST_ID)).toBe('original')
+    expect(harness.text(SECOND_ID)).toBe('keep')
+
+    expect(() => harness.redo()).not.toThrow()
+    await Promise.resolve()
+    expect(harness.text(insertedId)).toBe('material')
+    expect(harness.manager.state$.value.revisions.length).toBe(1)
+    expect(refresh).toHaveBeenCalled()
+    subscription.unsubscribe()
+  })
+
+  for (const decision of ['reject-insert', 'accept-delete'] as const) {
+    it(`refreshes surviving views and emits state after ${decision} removes a still-mounted block`, async () => {
+      const harness = createHarness('abc', 'keep')
+      const removedRefresh = jasmine.createSpy('removedRefresh').and.callFake(() => {
+        if (!harness.doc.yBlockMap.has(FIRST_ID)) throw new Error('Block not found')
+      })
+      const survivingRefresh = jasmine.createSpy('survivingRefresh')
+      harness.doc.vm.get = (id: string) => ({instance: {
+        applyReadonlyViewState: id === FIRST_ID ? removedRefresh : survivingRefresh,
+      }})
+      const changes: string[] = []
+      const subscription = harness.manager.change$.subscribe(change => changes.push(change.kind))
+      const revision = decision === 'reject-insert'
+        ? harness.manager.recordBlockInsertion([FIRST_ID], ROOT_ID)!
+        : harness.manager.recordBlockDeletion([FIRST_ID], ROOT_ID)!
+      removedRefresh.calls.reset()
+      expect(() => decision === 'reject-insert'
+        ? harness.manager.reject(revision) : harness.manager.accept(revision)).not.toThrow()
+      await Promise.resolve()
+      expect(harness.doc.yBlockMap.has(FIRST_ID)).toBeFalse()
+      expect(removedRefresh).not.toHaveBeenCalled()
+      expect(survivingRefresh).not.toHaveBeenCalled()
+      expect(harness.manager.list()).toEqual([])
+      expect(harness.manager.state$.value.revisions).toEqual([])
+      expect(changes).toContain('records')
+      expect(harness.text(SECOND_ID)).toBe('keep')
+      harness.manager.insertText(SECOND_ID, 4, '!')
+      expect(survivingRefresh).toHaveBeenCalled()
+      expect(harness.text(SECOND_ID)).toBe('keep!')
+      subscription.unsubscribe()
+    })
+  }
+
+  it('requires an explicit actor before tracking is enabled', () => {
+    const harness = createHarness('abc', '', false)
+    expect(() => harness.manager.setMode('track'))
+      .toThrowError(RevisionActorRequiredError)
+  })
+
+  it('records a scoped revision Diff without enabling global tracking', () => {
+    const harness = createHarness('abc', '', false)
+    harness.manager.setActor({actorId: 'reviewer', displayName: 'Reviewer'})
+    const modeChanges: string[] = []
+    const subscription = harness.manager.mode$.subscribe(mode => modeChanges.push(mode))
+
+    harness.manager.runAsRevision(
+      {actorId: 'blockcraft-agent', displayName: 'BlockCraft AI'},
+      () => {
+        expect(harness.manager.isTracking).toBeTrue()
+        expect(harness.manager.currentActor?.actorId).toBe('blockcraft-agent')
+        harness.manager.runInGroup(() => {
+          harness.manager.replaceText(FIRST_ID, 1, 1, 'X')
+        })
+      },
+      {groupId: 'agent-diff'},
+    )
+
+    expect(harness.manager.mode).toBe('off')
+    expect(harness.manager.isTracking).toBeFalse()
+    expect(harness.manager.currentActor?.actorId).toBe('reviewer')
+    expect(modeChanges).toEqual(['off'])
+    expect(harness.manager.listGroup('agent-diff').map(item => item.actor.actorId))
+      .toEqual(['blockcraft-agent', 'blockcraft-agent'])
+    expect(snapshotText(harness.manager.projectFinalSnapshot(), FIRST_ID)).toBe('aXc')
+    subscription.unsubscribe()
+  })
+
+  it('restores scoped revision state when the mutation throws', () => {
+    const harness = createHarness('abc', '', false)
+    expect(() => harness.manager.runAsRevision(
+      {actorId: 'blockcraft-agent'},
+      () => {
+        throw new Error('boom')
+      },
+    )).toThrowError('boom')
+
+    expect(harness.manager.mode).toBe('off')
+    expect(harness.manager.isTracking).toBeFalse()
+    expect(harness.manager.currentActor).toBeNull()
+  })
+
+  it('materializes inline decisions and removes their revision records', () => {
+    const harness = createHarness('abc', '')
+    const insertId = harness.manager.insertText(FIRST_ID, 1, 'X')!
+    const deleteId = harness.manager.deleteText(FIRST_ID, 3, 1)!
+
+    expect(harness.text(FIRST_ID)).toBe('aXbc')
+    expect(snapshotText(harness.manager.projectFinalSnapshot(), FIRST_ID)).toBe('aXb')
+    const inserted = harness.manager.projectInlineDeltas(FIRST_ID, [{insert: 'aXbc'}])
+      .find(operation => operation.insert === 'X')
+    const revisionElement = document.createElement('c-element')
+    setAttributes(revisionElement, inserted?.attributes ?? {})
+    expect(revisionElement.getAttribute('data-bc-revision-kind')).toBe('insert')
+    expect(revisionElement.getAttribute('data-bc-revision-state')).toBe('pending')
+
+    harness.manager.accept(insertId)
+    harness.manager.reject(deleteId)
+    expect(harness.manager.list()).toEqual([])
+    expect(harness.text(FIRST_ID)).toBe('aXbc')
+    expect(snapshotText(harness.manager.projectFinalSnapshot(), FIRST_ID)).toBe('aXbc')
+    const decidedProjection = harness.manager.projectInlineDeltas(
+      FIRST_ID,
+      [{insert: 'aXbc'}],
+    )
+    expect(decidedProjection.every(operation =>
+      operation.attributes?.['a:data-bc-revision-ids'] === undefined &&
+      operation.attributes?.['a:data-bc-revision-state'] === undefined,
+    )).toBeTrue()
+
+    expect(() => harness.manager.reject(insertId)).toThrowError(/修订不存在/)
+  })
+
+  it('restores canonical content and pending records when a decision is undone', () => {
+    const harness = createHarness('abc', '')
+    const deletionId = harness.manager.deleteText(FIRST_ID, 1, 1)!
+    harness.clearUndo()
+
+    harness.manager.accept(deletionId)
+    expect(harness.text(FIRST_ID)).toBe('ac')
+    expect(harness.manager.list()).toEqual([])
+
+    harness.undo()
+    expect(harness.text(FIRST_ID)).toBe('abc')
+    expect(harness.manager.get(deletionId).status).toBe('pending')
+  })
+
+  it('materializes a block decision and removes its review presentation', () => {
+    const harness = createHarness('first', 'second')
+    const deletionId = harness.manager.recordBlockDeletion([FIRST_ID], ROOT_ID)!
+
+    expect(harness.manager.getBlockPresentation(FIRST_ID)).toEqual({
+      revisionIds: [deletionId],
+      kind: 'delete',
+      state: 'pending',
+      hidden: false,
+      boundaryBefore: null,
+    })
+
+    harness.manager.accept(deletionId)
+
+    expect(harness.manager.list()).toEqual([])
+    expect(snapshotText(harness.manager.projectFinalSnapshot(), FIRST_ID)).toBe('')
+    expect(harness.manager.getBlockPresentation(FIRST_ID)).toEqual({
+      revisionIds: [],
+      kind: null,
+      state: null,
+      hidden: false,
+      boundaryBefore: null,
+    })
+  })
+
+  it('keeps inline revision markers off the editable block host', () => {
+    const harness = createHarness('abc', '')
+    harness.manager.deleteText(FIRST_ID, 1, 1)
+
+    expect(harness.manager.getBlockPresentation(FIRST_ID)).toEqual({
+      revisionIds: [],
+      kind: null,
+      state: null,
+      hidden: false,
+      boundaryBefore: null,
+    })
+  })
+
+  it('applies an untrackable mixed Delta normally without creating a partial Diff', () => {
+    const harness = createHarness('abc', '')
+
+    harness.manager.applyDelta(FIRST_ID, [
+      {retain: 1},
+      {delete: 1},
+      {insert: 'X'},
+      {retain: 1, attributes: {'a:bold': true}},
+    ])
+
+    expect(harness.text(FIRST_ID)).toBe('aXc')
+    expect(harness.manager.list()).toEqual([])
+    expect(harness.yText(FIRST_ID).toDelta()).toEqual([
+      {insert: 'aX'},
+      {insert: 'c', attributes: {'a:bold': true}},
+    ])
+  })
+
+  it('tracks an inline Embed insertion and projects the mark onto its c-element', () => {
+    const harness = createHarness('abc', '')
+
+    const ids = harness.manager.applyDelta(FIRST_ID, [
+      {retain: 1},
+      {insert: {mention: 'member-1'}},
+    ])
+
+    expect(ids).toHaveSize(1)
+    expect(harness.manager.list()).toEqual([
+      jasmine.objectContaining({id: ids[0], kind: 'text-insert'}),
+    ])
+    expect(harness.yText(FIRST_ID).toDelta()).toEqual([
+      {insert: 'a'},
+      {insert: {mention: 'member-1'}},
+      {insert: 'bc'},
+    ])
+    const projected = harness.manager.projectInlineDeltas(
+      FIRST_ID,
+      harness.yText(FIRST_ID).toDelta() as DeltaInsert[],
+    ).find(operation => typeof operation.insert !== 'string')
+    const revisionElement = new EmbedBlot(
+      document.createElement('span'),
+      projected?.attributes,
+    ).cElement
+    expect(revisionElement.getAttribute('data-bc-revision-kind')).toBe('insert')
+    expect(revisionElement.getAttribute('data-bc-revision-state')).toBe('pending')
+
+    harness.manager.reject(ids[0])
+    expect(snapshotText(
+      harness.manager.projectFinalSnapshot(),
+      FIRST_ID,
+    )).toBe('abc')
+  })
+
+  it('tracks an existing Embed semantic update as one replacement group', () => {
+    const harness = createHarness('', '')
+    harness.yDoc.transact(() => harness.yText(FIRST_ID).applyDelta([
+      {insert: 'a'},
+      {insert: {mention: 'member-1'}, attributes: {mentionId: 'old'}},
+      {insert: 'b'},
+    ]))
+
+    const ids = harness.manager.applyDelta(FIRST_ID, [
+      {retain: 1},
+      {retain: 1, attributes: {mentionId: 'new'}},
+    ])
+
+    const revisions = ids.map(id => harness.manager.get(id))
+    expect(revisions).toHaveSize(2)
+    expect(new Set(revisions.map(revision => revision.groupId)).size).toBe(1)
+    expect(revisions.map(revision => revision.kind).sort()).toEqual([
+      'text-delete',
+      'text-insert',
+    ])
+    const projectedEmbeds = harness.manager.projectInlineDeltas(
+      FIRST_ID,
+      harness.yText(FIRST_ID).toDelta() as DeltaInsert[],
+    ).filter(operation => typeof operation.insert !== 'string')
+    expect(projectedEmbeds).toHaveSize(2)
+    expect(projectedEmbeds.map(operation =>
+      operation.attributes?.['a:data-bc-revision-kind']).sort()).toEqual([
+      'delete',
+      'insert',
+    ])
+    expect(snapshotDeltas(
+      harness.manager.projectFinalSnapshot(),
+      FIRST_ID,
+    )).toEqual([
+      {insert: 'a'},
+      {insert: {mention: 'member-1'}, attributes: {mentionId: 'new'}},
+      {insert: 'b'},
+    ])
+
+    harness.manager.rejectGroup(revisions[0].groupId)
+    expect(snapshotDeltas(
+      harness.manager.projectFinalSnapshot(),
+      FIRST_ID,
+    )).toEqual([
+      {insert: 'a'},
+      {insert: {mention: 'member-1'}, attributes: {mentionId: 'old'}},
+      {insert: 'b'},
+    ])
+  })
+
+  it('updates an own pending Embed in place without stacking another Diff', () => {
+    const harness = createHarness('', '')
+    const [revisionId] = harness.manager.applyDelta(FIRST_ID, [
+      {insert: {mention: 'member-1'}, attributes: {mentionId: 'old'}},
+    ])
+
+    const ids = harness.manager.applyDelta(FIRST_ID, [
+      {retain: 1, attributes: {mentionId: 'new'}},
+    ])
+
+    expect(ids).toEqual([revisionId])
+    expect(harness.manager.list()).toHaveSize(1)
+    expect(harness.yText(FIRST_ID).toDelta()).toEqual([
+      {insert: {mention: 'member-1'}, attributes: {mentionId: 'new'}},
+    ])
+  })
+
+  it('reads only the canonical content owned by a revision', () => {
+    const insertion = createHarness('abc', '')
+    const insertionId = insertion.manager.insertText(FIRST_ID, 1, 'XY')!
+    expect(insertion.manager.readRevisionContent(insertionId)).toBe('XY')
+
+    const deletion = createHarness('abc', '')
+    const deletionId = deletion.manager.deleteText(FIRST_ID, 1, 1)!
+    expect(deletion.manager.readRevisionContent(deletionId)).toBe('b')
+
+    const wholeBlock = createHarness('first', 'second')
+    const blockId = wholeBlock.manager.recordBlockDeletion([FIRST_ID], ROOT_ID)!
+    expect(wholeBlock.manager.readRevisionContent(blockId)).toBe('first')
+  })
+
+  it('keeps exact content when consecutive typing expands one insertion', () => {
+    const harness = createHarness('abc', '')
+    harness.yDoc.transact(() => {
+      harness.yText(FIRST_ID).insertEmbed(1, {type: 'test-embed'})
+    })
+    const revisionId = harness.manager.insertText(FIRST_ID, 4, ' ')!
+    'REVIEW_UI'.split('').forEach(character => {
+      harness.manager.insertText(
+        FIRST_ID,
+        harness.yText(FIRST_ID).length,
+        character,
+      )
+    })
+
+    expect(harness.manager.list({kind: 'text-insert'})).toHaveSize(1)
+    expect(harness.manager.readRevisionContent(revisionId)).toBe(' REVIEW_UI')
+  })
+
+  it('publishes affected block ids for revision-only presentation changes', () => {
+    const harness = createHarness('abc', '')
+    const changes: string[][] = []
+    const unsubscribe = subscribeRevisionPresentationChange(
+      harness.manager,
+      change => changes.push([...change.blockIds]),
+    )
+
+    const revisionId = harness.manager.deleteText(FIRST_ID, 1, 1)!
+    expect(changes.at(-1)).toEqual([FIRST_ID])
+
+    harness.manager.accept(revisionId)
+    expect(changes.at(-1)).toEqual([FIRST_ID])
+
+    harness.manager.setViewMode('final')
+    expect(new Set(changes.at(-1))).toEqual(new Set([FIRST_ID, ROOT_ID]))
+
+    unsubscribe()
+  })
+
+  it('publishes incremental domain changes and indexes revision groups', () => {
+    const harness = createHarness('abc', '')
+    const changes: Array<{
+      kind: string
+      revisionIds: readonly string[]
+      groupIds: readonly string[]
+    }> = []
+    harness.manager.change$.subscribe(change => changes.push(change))
+
+    const revisionId = harness.manager.insertText(FIRST_ID, 1, 'X')!
+    const groupId = harness.manager.get(revisionId).groupId
+    expect(changes.at(-1)).toEqual(jasmine.objectContaining({
+      kind: 'records',
+      revisionIds: [revisionId],
+      groupIds: [groupId],
+    }))
+    expect(harness.manager.listGroup(groupId).map(item => item.id))
+      .toEqual([revisionId])
+
+    harness.manager.insertText(FIRST_ID, 2, 'Y')
+    expect(changes.at(-1)?.groupIds).toEqual([groupId])
+    expect(harness.manager.listGroup(groupId)).toHaveSize(1)
+
+    harness.manager.accept(revisionId)
+    expect(changes.at(-1)).toEqual(jasmine.objectContaining({
+      kind: 'records',
+      revisionIds: [revisionId],
+      groupIds: [groupId],
+    }))
+    expect(harness.manager.listGroup(groupId)).toEqual([])
+  })
+
+  it('keeps replacement insertion outside the deletion attribution range', () => {
+    const harness = createHarness('abc', '')
+    harness.manager.replaceText(FIRST_ID, 1, 1, 'X')
+
+    expect(harness.text(FIRST_ID)).toBe('aXbc')
+    expect(snapshotText(harness.manager.projectFinalSnapshot(), FIRST_ID)).toBe('aXc')
+  })
+
+  it('lets an author resize one pending insertion and stacks another author edit', () => {
+    const harness = createHarness('abc', '')
+    const revisionId = harness.manager.insertText(FIRST_ID, 1, 'X')!
+    expect(harness.manager.insertText(FIRST_ID, 2, 'Y')).toBe(revisionId)
+    expect(harness.manager.list()).toHaveSize(1)
+    expect(harness.text(FIRST_ID)).toBe('aXYbc')
+
+    harness.manager.setActor({actorId: 'author-b'})
+    const nestedId = harness.manager.insertText(FIRST_ID, 2, 'Z')!
+    expect(nestedId).not.toBe(revisionId)
+    expect(harness.manager.get(nestedId).dependsOn).toEqual([revisionId])
+    expect(harness.text(FIRST_ID)).toBe('aXZYbc')
+
+    harness.manager.reject(revisionId)
+    expect(snapshotText(harness.manager.projectFinalSnapshot(), FIRST_ID)).toBe('abc')
+  })
+
+  it('keeps continuous text inside a pending deletion as one insertion revision', () => {
+    const harness = createHarness('abc', '')
+    harness.manager.deleteText(FIRST_ID, 0, 3)
+    harness.manager.setActor({actorId: 'author-b'})
+    const insertionId = harness.manager.insertText(FIRST_ID, 1, 'X')!
+    expect(harness.manager.insertText(FIRST_ID, 2, 'Y')).toBe(insertionId)
+
+    const projected = harness.manager.projectInlineDeltas(
+      FIRST_ID,
+      harness.yText(FIRST_ID).toDelta() as DeltaInsert[],
+    )
+    const inserted = projected.find(operation => operation.insert === 'XY')
+    const deleted = projected.find(operation => operation.insert === 'a')
+
+    expect(harness.manager.list({kind: 'text-insert'})).toHaveSize(1)
+    expect(inserted?.attributes?.['a:data-bc-revision-kind']).toBe('insert')
+    expect(deleted?.attributes?.['a:data-bc-revision-kind']).toBe('delete')
+  })
+
+  it('does not absorb an unrelated nested revision while extending an insertion', () => {
+    const harness = createHarness('abc', '')
+    const outerId = harness.manager.insertText(FIRST_ID, 1, 'XY')!
+    harness.manager.setActor({actorId: 'author-b'})
+    const nestedId = harness.manager.insertText(FIRST_ID, 2, 'Z')!
+
+    harness.manager.setActor({actorId: 'author-a'})
+    const followupId = harness.manager.insertText(FIRST_ID, 2, 'Q')!
+
+    expect(followupId).not.toBe(outerId)
+    expect(followupId).not.toBe(nestedId)
+    expect(harness.manager.list({kind: 'text-insert'})).toHaveSize(3)
+  })
+
+  it('cancels an own pending insertion when the author deletes it again', () => {
+    const harness = createHarness('abc', '')
+    harness.manager.insertText(FIRST_ID, 1, 'XY')
+
+    harness.manager.deleteText(FIRST_ID, 1, 2)
+
+    expect(harness.text(FIRST_ID)).toBe('abc')
+    expect(harness.manager.list()).toEqual([])
+    expect(snapshotText(harness.manager.projectFinalSnapshot(), FIRST_ID)).toBe('abc')
+  })
+
+  it('consumes the own pending-insert portion and marks only baseline text as deleted', () => {
+    const harness = createHarness('abc', '')
+    harness.manager.insertText(FIRST_ID, 1, 'X')
+
+    harness.manager.deleteText(FIRST_ID, 1, 2)
+
+    expect(harness.text(FIRST_ID)).toBe('abc')
+    expect(harness.manager.list({kind: 'text-insert'})).toEqual([])
+    expect(harness.manager.list({kind: 'text-delete'})).toHaveSize(1)
+    expect(snapshotText(harness.manager.projectFinalSnapshot(), FIRST_ID)).toBe('ac')
+  })
+
+  it('consumes multiple own pending insertions covered by one deletion gesture', () => {
+    const harness = createHarness('abc', '')
+    harness.manager.insertText(FIRST_ID, 1, 'X')
+    harness.manager.insertText(FIRST_ID, 3, 'Y')
+
+    harness.manager.deleteText(FIRST_ID, 1, 3)
+
+    expect(harness.text(FIRST_ID)).toBe('abc')
+    expect(harness.manager.list({kind: 'text-insert'})).toEqual([])
+    expect(harness.manager.list({kind: 'text-delete'})).toHaveSize(1)
+    expect(snapshotText(harness.manager.projectFinalSnapshot(), FIRST_ID)).toBe('ac')
+  })
+
+  it('replaces own pending content without leaving an insert-delete overlay', () => {
+    const harness = createHarness('abc', '')
+    harness.manager.insertText(FIRST_ID, 1, 'X')
+
+    harness.manager.replaceText(FIRST_ID, 1, 2, 'Q')
+
+    expect(harness.text(FIRST_ID)).toBe('aQbc')
+    expect(harness.manager.list({kind: 'text-insert'})).toHaveSize(1)
+    expect(harness.manager.list({kind: 'text-delete'})).toHaveSize(1)
+    expect(snapshotText(harness.manager.projectFinalSnapshot(), FIRST_ID)).toBe('aQc')
+  })
+
+  it('turns an accepted insertion into baseline content for later edits', () => {
+    const harness = createHarness('abc', '')
+    const insertionId = harness.manager.insertText(FIRST_ID, 1, 'X')!
+    harness.manager.accept(insertionId)
+
+    harness.manager.deleteText(FIRST_ID, 1, 1)
+
+    expect(harness.text(FIRST_ID)).toBe('aXbc')
+    expect(harness.manager.list({kind: 'text-insert'})).toHaveSize(0)
+    expect(harness.manager.list({kind: 'text-delete'})).toHaveSize(1)
+    expect(snapshotText(harness.manager.projectFinalSnapshot(), FIRST_ID)).toBe('abc')
+  })
+
+  it('splits an overlapping deletion at dependency boundaries', () => {
+    const harness = createHarness('abc', '')
+    const insertionId = harness.manager.insertText(FIRST_ID, 1, 'X')!
+
+    harness.manager.setActor({actorId: 'author-b'})
+    harness.manager.deleteText(FIRST_ID, 1, 2)
+    const deletions = harness.manager.list({kind: 'text-delete'})
+
+    expect(deletions).toHaveSize(2)
+    expect(new Set(deletions.map(record => record.groupId)).size).toBe(1)
+    expect(deletions.map(record => record.dependsOn)).toContain([insertionId])
+    expect(deletions.map(record => record.dependsOn)).toContain([])
+
+    harness.manager.rejectGroup(deletions[0].groupId)
+    harness.manager.reject(insertionId)
+    expect(snapshotText(harness.manager.projectFinalSnapshot(), FIRST_ID)).toBe('abc')
+  })
+
+  it('keeps a replacement across inserted and original text in one review group', () => {
+    const harness = createHarness('abc', '')
+    const outerInsertion = harness.manager.insertText(FIRST_ID, 1, 'X')!
+    harness.manager.setActor({actorId: 'author-b'})
+
+    const replacementIds = harness.manager.replaceText(FIRST_ID, 1, 2, 'Q')
+    const replacement = replacementIds.map(id => harness.manager.get(id))
+    expect(replacement).toHaveSize(3)
+    expect(new Set(replacement.map(record => record.groupId)).size).toBe(1)
+    expect(harness.text(FIRST_ID)).toBe('aQXbc')
+
+    harness.manager.acceptGroup(replacement[0].groupId)
+    if (harness.manager.list().some(record => record.id === outerInsertion)) {
+      harness.manager.reject(outerInsertion)
+    }
+    expect(snapshotText(harness.manager.projectFinalSnapshot(), FIRST_ID)).toBe('aQc')
+  })
+
+  it('removes an accepted deletion record before a later deletion proposal', () => {
+    const harness = createHarness('abc', '')
+    const firstDeletion = harness.manager.deleteText(FIRST_ID, 1, 1)!
+
+    expect(harness.manager.deleteText(FIRST_ID, 1, 1)).toBe(firstDeletion)
+    expect(harness.manager.list({kind: 'text-delete'})).toHaveSize(1)
+
+    harness.manager.accept(firstDeletion)
+    expect(harness.manager.list({kind: 'text-delete'})).toHaveSize(0)
+    expect(harness.manager.deleteText(FIRST_ID, 1, 1)).not.toBe(firstDeletion)
+    expect(harness.manager.list({kind: 'text-delete'})).toHaveSize(1)
+  })
+
+  it('keeps an adjacent deletion extension in one batch after a pause', () => {
+    jasmine.clock().install()
+    try {
+      const harness = createHarness('abcde', '')
+      const firstDeletion = harness.manager.deleteText(FIRST_ID, 1, 2)!
+      jasmine.clock().tick(60_000)
+
+      const extensionId = harness.manager.deleteText(FIRST_ID, 1, 3)!
+      const deletions = harness.manager.list({kind: 'text-delete'})
+
+      expect(extensionId).toBe(firstDeletion)
+      expect(deletions).toHaveSize(2)
+      expect(new Set(deletions.map(record => record.groupId)).size).toBe(1)
+      expect(snapshotText(harness.manager.projectFinalSnapshot(), FIRST_ID)).toBe('ae')
+    } finally {
+      jasmine.clock().uninstall()
+    }
+  })
+
+  it('creates a fresh deletion after the previous own proposal was rejected', () => {
+    const harness = createHarness('abc', '')
+    const rejectedId = harness.manager.deleteText(FIRST_ID, 1, 1)!
+    harness.manager.reject(rejectedId)
+
+    const retryId = harness.manager.deleteText(FIRST_ID, 1, 1)!
+
+    expect(retryId).not.toBe(rejectedId)
+    expect(harness.manager.list({kind: 'text-delete'})).toHaveSize(1)
+    expect(snapshotText(harness.manager.projectFinalSnapshot(), FIRST_ID)).toBe('ac')
+  })
+
+  it('keeps overlapping deletions independently reviewable', () => {
+    const harness = createHarness('abc', '')
+    const firstDeletion = harness.manager.deleteText(FIRST_ID, 1, 1)!
+
+    harness.manager.setActor({actorId: 'author-b'})
+    const secondDeletion = harness.manager.deleteText(FIRST_ID, 1, 1)!
+    expect(harness.manager.get(secondDeletion).dependsOn).toEqual([firstDeletion])
+
+    harness.manager.reject(firstDeletion)
+    harness.manager.accept(secondDeletion)
+    expect(snapshotText(harness.manager.projectFinalSnapshot(), FIRST_ID)).toBe('ac')
+  })
+
+  it('reuses an active own whole-block deletion and records only new block targets', () => {
+    const harness = createHarness('first', 'second')
+    const firstDeletion = harness.manager.recordBlockDeletion([FIRST_ID], ROOT_ID)!
+
+    expect(harness.manager.recordBlockDeletion([FIRST_ID], ROOT_ID)).toBe(firstDeletion)
+    const extensionId = harness.manager.recordBlockDeletion(
+      [FIRST_ID, SECOND_ID],
+      ROOT_ID,
+    )!
+    const deletions = harness.manager.list({kind: 'block-delete'})
+
+    expect(extensionId).not.toBe(firstDeletion)
+    expect(deletions).toHaveSize(2)
+    expect(deletions.find(record => record.id === extensionId)?.target).toEqual({
+      kind: 'block',
+      blockIds: [SECOND_ID],
+      parentId: ROOT_ID,
+    })
+  })
+
+  it('keeps another author whole-block deletion independently reviewable', () => {
+    const harness = createHarness('first', 'second')
+    const firstDeletion = harness.manager.recordBlockDeletion([FIRST_ID], ROOT_ID)!
+    harness.manager.setActor({actorId: 'author-b'})
+
+    const secondDeletion = harness.manager.recordBlockDeletion([FIRST_ID], ROOT_ID)!
+
+    expect(secondDeletion).not.toBe(firstDeletion)
+    expect(harness.manager.list({kind: 'block-delete'})).toHaveSize(2)
+    expect(harness.manager.get(secondDeletion).dependsOn).toContain(firstDeletion)
+  })
+
+  it('does not let a rejected nested deletion override the pending insertion mark', () => {
+    const harness = createHarness('abc', '')
+    harness.manager.insertText(FIRST_ID, 1, 'X')
+    harness.manager.setActor({actorId: 'author-b'})
+    const deletionId = harness.manager.deleteText(FIRST_ID, 1, 1)!
+    harness.manager.reject(deletionId)
+
+    const inserted = harness.manager.projectInlineDeltas(
+      FIRST_ID,
+      [{insert: harness.text(FIRST_ID)}],
+    ).find(operation => operation.insert === 'X')
+    const revisionElement = document.createElement('c-element')
+    setAttributes(revisionElement, inserted?.attributes ?? {})
+
+    expect(revisionElement.getAttribute('data-bc-revision-kind')).toBe('insert')
+    expect(revisionElement.getAttribute('data-bc-revision-state')).toBe('pending')
+  })
+
+  it('does not destructively resize an own insertion across a nested revision', () => {
+    const harness = createHarness('abc', '')
+    const outerId = harness.manager.insertText(FIRST_ID, 1, 'XY')!
+    harness.manager.setActor({actorId: 'author-b'})
+    const innerId = harness.manager.insertText(FIRST_ID, 2, 'Z')!
+
+    harness.manager.setActor({actorId: 'author-a'})
+    const deletionId = harness.manager.deleteText(FIRST_ID, 2, 1)!
+
+    expect(deletionId).not.toBe(outerId)
+    expect(deletionId).not.toBe(innerId)
+    expect(harness.text(FIRST_ID)).toBe('aXZYbc')
+    expect(harness.manager.get(deletionId).dependsOn).toEqual([innerId, outerId].sort())
+  })
+
+  it('synchronizes materialized decisions without retaining review records', () => {
+    const first = createHarness('abc', '')
+    const revisionId = first.manager.insertText(FIRST_ID, 3, '!')!
+    const seed = Y.encodeStateAsUpdate(first.yDoc)
+    const second = createHarness('', '')
+    Y.applyUpdate(second.yDoc, seed)
+    second.manager.setActor({actorId: 'reviewer-b'})
+
+    first.manager.accept(revisionId)
+    expect(first.text(FIRST_ID)).toBe('abc!')
+    exchange(first.yDoc, second.yDoc)
+
+    expect(first.manager.list()).toEqual([])
+    expect(second.manager.list()).toEqual([])
+  })
+
+  it('surfaces concurrent destructive structural overlap instead of choosing a winner', () => {
+    const first = createHarness('left', 'right')
+    const seed = Y.encodeStateAsUpdate(first.yDoc)
+    const second = createHarness('', '')
+    Y.applyUpdate(second.yDoc, seed)
+    second.manager.setActor({actorId: 'author-b'})
+
+    first.yDoc.transact(() => {
+      first.manager.recordBlockDeletion([FIRST_ID], ROOT_ID)
+    })
+    second.yDoc.transact(() => {
+      second.manager.recordBoundary('block-merge', ROOT_ID, FIRST_ID, SECOND_ID)
+    })
+    exchange(first.yDoc, second.yDoc)
+
+    expect(first.manager.getOverlapConflicts().length).toBe(1)
+    expect(() => first.manager.projectFinalSnapshot()).toThrowError(RevisionConflictError)
+  })
+
+  it('materializes only fully decided content at a matching checkpoint', () => {
+    const harness = createHarness('abc', '')
+    const revisionId = harness.manager.deleteText(FIRST_ID, 1, 1)!
+    harness.manager.accept(revisionId)
+    const compacted = harness.manager.compactResolved({
+      epoch: 0,
+      stateVector: Y.encodeStateVector(harness.yDoc),
+    })
+
+    expect(harness.text(FIRST_ID)).toBe('ac')
+    expect(compacted.revisionEpoch).toBe(1)
+    expect(compacted.revisions).toEqual([])
+    expect(compacted.decisions).toEqual([])
+  })
+
+  it('exports materialized decisions as clean document state', () => {
+    const source = createHarness('abc', '')
+    const revisionId = source.manager.insertText(FIRST_ID, 1, 'X')!
+    source.manager.reject(revisionId)
+    const snapshot = source.manager.exportDocumentSnapshot()
+
+    expect(snapshot.revisions).toEqual([])
+    expect(snapshot.decisions).toEqual([])
+
+    const restored = createHarness('abc', '')
+    restored.manager.importDocumentSnapshot(snapshot)
+
+    expect(() => restored.manager.get(revisionId)).toThrowError(/修订不存在/)
+    expect(snapshotText(restored.manager.projectFinalSnapshot(), FIRST_ID)).toBe('abc')
+  })
+})
+
+function createHarness(firstText: string, secondText: string, withActor = true) {
+  const yDoc = new Y.Doc({gc: false})
+  const yBlockMap = yDoc.getMap<YBlock>('blocks')
+  const root = containerYBlock(ROOT_ID, [FIRST_ID, SECOND_ID])
+  const first = editableYBlock(FIRST_ID, firstText)
+  const second = editableYBlock(SECOND_ID, secondText)
+  yDoc.transact(() => {
+    yBlockMap.set(ROOT_ID, root)
+    yBlockMap.set(FIRST_ID, first)
+    yBlockMap.set(SECOND_ID, second)
+  })
+
+  let manager!: DocumentRevisionManager
+  const doc: any = {
+    yDoc,
+    yBlockMap,
+    rootId: ROOT_ID,
+    isInitialized: true,
+    onDestroy: () => undefined,
+    vm: {get: () => undefined},
+    model: {
+      exists: (id: string) => yBlockMap.has(id),
+      getParentId: (id: string) => id === ROOT_ID ? null : ROOT_ID,
+      getChildrenIds: (id: string) => id === ROOT_ID ? [FIRST_ID, SECOND_ID] : [],
+      toSnapshot: (id: string) => {
+        if (id === ROOT_ID) return exportRoot(yBlockMap)
+        const block = yBlockMap.get(id)
+        if (!block) return null
+        return {
+          id,
+          flavour: 'paragraph',
+          nodeType: BlockNodeType.editable,
+          props: {},
+          meta: {},
+          children: (block.get('children') as unknown as Y.Text).toDelta(),
+        } as IBlockSnapshot
+      },
+    },
+    crud: {
+      undoManager: null,
+      transact: (callback: () => void, origin: unknown = null) =>
+        yDoc.transact(callback, origin),
+      deleteBlockById: (id: string) => {
+        const children = root.get('children') as Y.Array<string>
+        const index = children.toArray().indexOf(id)
+        if (index >= 0) children.delete(index, 1)
+        yBlockMap.delete(id)
+      },
+    },
+    exportSnapshot: () => exportRoot(yBlockMap),
+  }
+  manager = new DocumentRevisionManager(doc, withActor ? {
+    actor: {actorId: 'author-a', displayName: 'Author A'},
+    mode: 'track',
+  } : undefined)
+  doc.revisions = manager
+  const revisionUndo = new Y.UndoManager(
+    [yBlockMap, manager.yRevisionMap],
+    {captureTimeout: 0, trackedOrigins: new Set([null])},
+  )
+  doc.crud.undoManager = {
+    captureSelectionBeforeChange: () => undefined,
+    stopCapturing: () => revisionUndo.stopCapturing(),
+  }
+  return {
+    doc,
+    yDoc,
+    manager,
+    text: (id: string) =>
+      (yBlockMap.get(id)!.get('children') as unknown as Y.Text).toString(),
+    yText: (id: string) =>
+      yBlockMap.get(id)!.get('children') as unknown as Y.Text,
+    clearUndo: () => revisionUndo.clear(),
+    undo: () => revisionUndo.undo(),
+    redo: () => revisionUndo.redo(),
+  }
+}
+
+function containerYBlock(id: string, children: string[]): YBlock {
+  return native2YBlock({
+    id,
+    flavour: 'root',
+    nodeType: BlockNodeType.root,
+    props: {},
+    meta: {},
+    children,
+  } as NativeBlockModel)
+}
+
+function editableYBlock(id: string, text: string): YBlock {
+  return native2YBlock({
+    id,
+    flavour: 'paragraph',
+    nodeType: BlockNodeType.editable,
+    props: {},
+    meta: {},
+    children: text ? [{insert: text}] : [],
+  } as NativeBlockModel)
+}
+
+function exportRoot(yBlockMap: Y.Map<YBlock>): IBlockSnapshot {
+  const root = yBlockMap.get(ROOT_ID)!
+  const childIds = (root.get('children') as Y.Array<string>).toArray()
+  return {
+    id: ROOT_ID,
+    flavour: 'root',
+    nodeType: BlockNodeType.root,
+    props: {},
+    meta: {},
+    children: childIds.map(id => {
+      const block = yBlockMap.get(id)!
+      return {
+        id,
+        flavour: 'paragraph',
+        nodeType: BlockNodeType.editable,
+        props: {},
+        meta: {},
+        children: (block.get('children') as unknown as Y.Text).toDelta(),
+      } as IBlockSnapshot
+    }),
+  }
+}
+
+function snapshotText(snapshot: IBlockSnapshot, blockId: string): string {
+  if (snapshot.nodeType !== BlockNodeType.root && snapshot.nodeType !== BlockNodeType.block) {
+    return ''
+  }
+  const block = snapshot.children.find(child => child.id === blockId)
+  if (!block || block.nodeType !== BlockNodeType.editable) return ''
+  return block.children.map(delta =>
+    typeof delta.insert === 'string' ? delta.insert : '\ufffc').join('')
+}
+
+function snapshotDeltas(snapshot: IBlockSnapshot, blockId: string): DeltaInsert[] {
+  if (snapshot.nodeType !== BlockNodeType.root && snapshot.nodeType !== BlockNodeType.block) {
+    return []
+  }
+  const block = snapshot.children.find(child => child.id === blockId)
+  if (!block || block.nodeType !== BlockNodeType.editable) return []
+  return structuredClone(block.children)
+}
+
+function exchange(left: Y.Doc, right: Y.Doc): void {
+  const leftUpdate = Y.encodeStateAsUpdate(left)
+  const rightUpdate = Y.encodeStateAsUpdate(right)
+  Y.applyUpdate(left, rightUpdate)
+  Y.applyUpdate(right, leftUpdate)
+}

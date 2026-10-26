@@ -1,0 +1,56 @@
+import {expect, test} from '@playwright/test'
+
+test('文本框字体填充简化为颜色和不透明度，保留效果并同步快照', async ({page}) => {
+  await page.setViewportSize({width: 1440, height: 1200})
+  await page.goto('/')
+  await page.getByRole('button', {name: '初始化', exact: true}).click()
+  await page.waitForFunction(() => (window as any).ng?.getComponent(document.querySelector('block-craft-editor'))?.doc?.isInitialized)
+  const id = await page.locator('block-craft-editor').evaluate(async editor => {
+    const doc = (window as any).ng.getComponent(editor).doc
+    const snapshot = doc.schemas.createSnapshot('text-box', ['字体外观验证', {width: 320, height: 120}])
+    doc.crud.insertBlockSnapshots(doc.rootId, 0, [snapshot])
+    await doc.navigateToBlock(snapshot.id)
+    return snapshot.id as string
+  })
+  const box = page.locator(`block-craft-editor [data-block-id="${id}"]`)
+  await box.hover()
+  await box.locator('.text-box-block__object-handle').click()
+  const toolbar = page.locator('[data-bc-object-format-toolbar]')
+  await toolbar.getByRole('button', {name: '文本选项', exact: true}).click()
+  await toolbar.getByText('外观', {exact: true}).click()
+  const appearance = toolbar.locator('[data-object-format-section="text-effects"]')
+  await expect(appearance).toBeVisible()
+  await expect(appearance.locator('bc-shape-fill-panel, input[type=url]')).toHaveCount(0)
+  await expect(appearance.locator('cs-color-picker')).toHaveCount(1)
+  await expect(appearance.getByText('文字阴影', {exact: true})).toBeVisible()
+  await expect(appearance.getByText('文字轮廓', {exact: true})).toBeVisible()
+  await expect(appearance.getByText('文字发光', {exact: true})).toBeVisible()
+  await expect(appearance.getByRole('slider', {name: '字体不透明度', exact: true})).toHaveAttribute('aria-valuenow', '100')
+
+  await appearance.locator('label').filter({hasText: '文字阴影'}).getByRole('switch').click()
+  await expect(appearance.getByText('阴影颜色', {exact: true})).toBeVisible()
+  await appearance.getByRole('button', {name: '取消', exact: true}).click()
+  await expect(appearance.getByText('阴影颜色', {exact: true})).toHaveCount(0)
+  await appearance.locator('cs-color-picker').getByRole('button').click()
+  await page.getByRole('radio', {name: '#E5484D', exact: true}).first().click()
+  const content = box.locator('.text-box-block__content')
+  await expect(content).toHaveCSS('color', 'rgb(229, 72, 77)')
+  const slider = appearance.getByRole('slider', {name: '字体不透明度', exact: true})
+  await slider.focus()
+  await slider.press('End')
+  await slider.press('ArrowLeft')
+  await expect(slider).toHaveAttribute('aria-valuenow', '99')
+  await expect(content).toHaveCSS('color', 'rgba(229, 72, 77, 0.99)')
+  const readFill = () => page.locator('block-craft-editor').evaluate((editor, blockId) => {
+    return (window as any).ng.getComponent(editor).doc.objectFormat.resolve(blockId).textStyle.fill
+  }, id)
+  await expect.poll(readFill).toEqual({type: 'solid', color: '#E5484D', opacity: 0.99})
+  await toolbar.getByRole('button', {name: '文本选项', exact: true}).click()
+  await toolbar.getByRole('button', {name: '文本选项', exact: true}).click()
+  await expect(slider).toHaveAttribute('aria-valuenow', '99')
+  await page.locator('playground-home').evaluate(app => {
+    (window as any).ng.getComponent(app).syncSnapshotViewerFromEditor()
+  })
+  await expect(page.locator(`bc-snapshot-viewer [data-block-id="${id}"] .text-box-block__content`))
+    .toHaveCSS('color', 'rgba(229, 72, 77, 0.99)')
+})

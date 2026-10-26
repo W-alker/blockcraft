@@ -1,0 +1,147 @@
+import {focusEditingHostForBlock} from './focus-editing-host';
+
+export interface SelectionSurfaceAdapter {
+  readonly ownerDocument: Document
+  readonly needsVirtualSelectionPaintReset?: boolean
+  getActiveElement(): Element | null
+  getNativeSelection(): globalThis.Selection | null
+  clearNativeSelection(): void
+  createRange(): Range
+  focusRoot(): void
+  focusEditingHost(blockId?: string): void
+  hasEditorFocus(): boolean
+  isFocusDropped(): boolean
+  isRootConnected(): boolean
+  ownsNativeSelection(): boolean
+  requestFrame(callback: FrameRequestCallback): number
+  cancelFrame(frame: number): void
+  getElementRect(element: Element): DOMRect
+  getRangeRect(range: Range): DOMRect
+  getRangeRects(range: Range): DOMRectList
+}
+
+/**
+ * Browser-facing port for the selection domain. It deliberately owns no
+ * selection state and performs no caching; callers keep model state in
+ * SelectionManager and use this adapter only at DOM projection boundaries.
+ */
+export class DOMSelectionSurfaceAdapter implements SelectionSurfaceAdapter {
+  constructor(private readonly doc: BlockCraft.Doc) {}
+
+  get ownerDocument(): Document {
+    return this.root.ownerDocument
+  }
+
+  get needsVirtualSelectionPaintReset(): boolean {
+    return /Apple Computer/.test(this.ownerDocument.defaultView?.navigator.vendor ?? '')
+  }
+
+  getActiveElement(): Element | null {
+    return this.ownerDocument.activeElement
+  }
+
+  getNativeSelection(): globalThis.Selection | null {
+    return this.ownerDocument.getSelection()
+  }
+
+  clearNativeSelection(): void {
+    this.getNativeSelection()?.removeAllRanges()
+  }
+
+  createRange(): Range {
+    return this.ownerDocument.createRange()
+  }
+
+  focusRoot(): void {
+    const root = this.root
+    if (this.getActiveElement() === root) return
+
+    // WebKit can reveal its previous native selection while refocusing an
+    // editing host, even with preventScroll, after a selected object moves
+    // between the absolute layer and normal flow. Keep that synchronous
+    // focus side effect separate from SelectionManager's explicit reveal.
+    const positions: {element: HTMLElement; left: number; top: number}[] = []
+    for (let element: HTMLElement | null = root; element; element = element.parentElement) {
+      positions.push({element, left: element.scrollLeft, top: element.scrollTop})
+    }
+    root.focus({preventScroll: true})
+    for (const {element, left, top} of positions) {
+      if (element.scrollLeft !== left) element.scrollLeft = left
+      if (element.scrollTop !== top) element.scrollTop = top
+    }
+  }
+
+  focusEditingHost(blockId?: string): void {
+    let block: BlockCraft.BlockComponent | null = null
+    let host: Element | null = null
+    try {
+      if (blockId) {
+        block = this.doc.getBlockById(blockId)
+        host = block?.hostElement.closest('[contenteditable="true"]') ?? null
+      }
+    } catch {
+      // Restored components can mount one frame after their Yjs data returns.
+    }
+    // Returning to root text must leave an active nested editor and retain
+    // the WebKit scroll preservation owned by focusRoot().
+    if (!host || host === this.root) {
+      this.focusRoot()
+      return
+    }
+    focusEditingHostForBlock(this.doc, block)
+  }
+
+  hasEditorFocus(): boolean {
+    const active = this.getActiveElement()
+    return !!active && (active === this.root || this.root.contains(active))
+  }
+
+  isFocusDropped(): boolean {
+    const active = this.getActiveElement()
+    return !active || active === this.ownerDocument.body || active === this.ownerDocument.documentElement
+  }
+
+  isRootConnected(): boolean {
+    return this.root.isConnected
+  }
+
+  ownsNativeSelection(): boolean {
+    const selection = this.getNativeSelection()
+    const anchor = selection?.anchorNode ?? null
+    const head = selection?.focusNode ?? null
+    return !!selection?.rangeCount &&
+      !!anchor && !!head &&
+      this.contains(anchor) &&
+      this.contains(head)
+  }
+
+  requestFrame(callback: FrameRequestCallback): number {
+    return this.ownerDocument.defaultView?.requestAnimationFrame(callback) ?? requestAnimationFrame(callback)
+  }
+
+  cancelFrame(frame: number): void {
+    const view = this.ownerDocument.defaultView
+    if (view) view.cancelAnimationFrame(frame)
+    else cancelAnimationFrame(frame)
+  }
+
+  getElementRect(element: Element): DOMRect {
+    return element.getBoundingClientRect()
+  }
+
+  getRangeRect(range: Range): DOMRect {
+    return range.getBoundingClientRect()
+  }
+
+  getRangeRects(range: Range): DOMRectList {
+    return range.getClientRects()
+  }
+
+  private get root(): HTMLElement {
+    return this.doc.root.hostElement
+  }
+
+  private contains(node: Node): boolean {
+    return node === this.root || this.root.contains(node)
+  }
+}

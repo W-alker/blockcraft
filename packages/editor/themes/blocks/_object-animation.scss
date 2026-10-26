@@ -1,0 +1,26 @@
+// Independent transform properties compose with existing placement/rotation transforms.
+// Missing endpoints interpolate to the underlying style (including authored opacity).
+@keyframes bc-fade-in { from { opacity: 0; } }
+@keyframes bc-slide-in-up { from { opacity: 0; translate: 0 24px; } }
+@keyframes bc-slide-in-down { from { opacity: 0; translate: 0 -24px; } }
+@keyframes bc-slide-in-left { from { opacity: 0; translate: 24px 0; } }
+@keyframes bc-slide-in-right { from { opacity: 0; translate: -24px 0; } }
+@keyframes bc-zoom-in { from { opacity: 0; scale: .85; } }
+@keyframes bc-bounce-in { from { opacity: 0; scale: .7; } 70% { scale: 1.06; } }
+@keyframes bc-pulse { 50% { scale: 1.04; } }
+@keyframes bc-swing { 20% { rotate: -3deg; } 50% { rotate: 3deg; } 75% { rotate: -2deg; } }
+
+@keyframes bc-flip-in { from { opacity: 0; rotate: x 75deg; } }
+@keyframes bc-rotate-in { from { opacity: 0; rotate: -45deg; scale: .85; } }
+@keyframes bc-roll-in { from { opacity: 0; translate: -32px 0; rotate: -90deg; } }
+@keyframes bc-drop-in { from { opacity: 0; translate: 0 -32px; } 70% { translate: 0 5px; } }
+@keyframes bc-heartbeat { 20%, 50% { scale: 1.1; } 35%, 65% { scale: 1; } }
+@keyframes bc-shake { 15%, 45%, 75% { translate: -6px 0; } 30%, 60%, 90% { translate: 6px 0; } }
+@keyframes bc-hop { 30% { translate: 0 -16px; } 60% { translate: 0 0; } 80% { translate: 0 -6px; } }
+@keyframes bc-float { 50% { translate: 0 -8px; } }
+@keyframes bc-wobble { 20% { translate: -8px 0; rotate: -4deg; } 45% { translate: 6px 0; rotate: 3deg; } 70% { translate: -3px 0; rotate: -2deg; } }
+@keyframes bc-spin { from { rotate: 0deg; } to { rotate: 360deg; } }
+
+@media print, (prefers-reduced-motion: reduce) {
+  [data-bc-animating] { animation: none !important; }
+}

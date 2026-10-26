@@ -2,7 +2,590 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-06-30 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-10-26 | Tracks `@ccc/blockcraft` npm releases.
+
+## 未发布 — 2026-10-26：浮动抓手点击完整选择
+
+**Severity**: patch（默认交互调整；发布版本由用户决定）
+
+**What changed / Why**: BlockController 的浮动抓手支持单击完整选中目标块，便于继续复制、
+格式化和编辑；已有跨块选区时补齐首尾块，避免只保留部分段落文字。
+
+**Affected ai-skills files**: `blockcraft-plugins-block.md`。
+
+**Behavior Changes**: 单块点击包含完整内容与容器后代；范围内抓手选择整个现有块范围，
+范围外抓手切换为单块。锁定块可选择，但拖动和修改仍受原权限约束。
+真正拖拽、取消手势不触发点击选择；悬停菜单和拖拽落点行为保持原规则。
+
+**Migration Recipe**: 宿主无需改动调用或数据；没有新增配置，不修改包版本号。
+
+## 未发布 — 2026-10-23：斜杠菜单触发、查询长度与删除行为
+
+**Severity**: patch（默认交互调整；发布版本由用户决定）
+
+**What changed / Why**: 斜杠菜单在文本与选区更新完成后统一判断查询，修复退格时旧光标
+越过缩短后的查询范围而误关闭。查询超过 7 个 Unicode 字符时自动关闭，避免干扰普通输入。
+
+**Affected ai-skills files**: `blockcraft-plugins-block.md`。
+
+**Behavior Changes**: 段首 `/` 直接触发；行内 `/` 仅在空格后触发（含不换行、全角空格），
+紧贴正文或路径时不弹出。`/` 后最多 7 个字符，第 8 个字符提交后关闭并保留全文；已有正文不计入。
+删至仅剩 `/` 仍显示菜单，删除触发符、输入空白或移出查询范围仍关闭。IME 组词期间保留菜单，
+提交后再判断。冒号 Emoji 和命令选中后打开的独立面板保持原规则。
+
+**Migration Recipe**: 宿主无需改动调用或数据；没有新增配置，不修改包版本号。
+
+## 未发布 — 2026-10-23：共享文档与独立区域内容组合
+
+**Severity**: minor（新增显式启用能力；发布版本由用户决定）
+
+**What changed / Why**: 新增 DocumentCompositionSession，在独立编辑运行时组合共享 Yjs 和宿主提供的区域
+JSON，保留富文本、选区与撤销，允许同一共享文档显示不同用户的独立填写内容。
+共享源与个人数据的写入、输出和生命周期明确分开。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-app.md`、`blockcraft-data.md`、`blockcraft-input.md`。
+
+**New APIs**: DocumentCompositionSession、DocumentCompositionOptions、DocumentContentRegion、
+DocumentPersonalData、DocumentPersonalChange、DocumentContentScope、DocumentCompositionError；
+`DocConfig.contentComposition`、`BlockCraftDocBuilder.contentComposition(session)`。
+
+**Behavior Changes**: 仅组合模式新增跨域编辑/绑定壳保护及修订限制；不启用时原文档路径保持不变。
+稳定区域 ID 与容器块 ID 分离，显式空内容不会恢复默认值；共享源删除区域时保留个人 JSON。
+首版不直接绑定 columns 壳，请以 render-unit/text-box 包裹；区域内部的分栏保持正常编辑。
+
+**Migration Recipe**: 现有宿主无需迁移。接入时只给 sharedDoc 挂协同 provider，传
+`{yDoc: session.editorDoc, contentComposition: session}` 并从会话根 YBlock 初始化；个人保存调用
+exportPersonalData()，共享快照调用 exportSharedSnapshot()。不要继续将 doc.yDoc、组合快照或
+Awareness 相对位置发送到共享服务；详细示例与首版边界见 blockcraft-app.md。
+本次未发布开发版的临时名称 `DocConfig.composition` 与 Builder `.composition(session)` 已统一改为
+`DocConfig.contentComposition` 与 `.contentComposition(session)`；不保留旧名称别名。
+是否配置启用使用 `!!doc.config.contentComposition`，未提供时默认关闭。
+`DocumentCompositionSession` 类名及持久化数据格式保持不变，不修改包版本。
+
+## 未发布 — 2026-10-23：图片插入后的 gap 光标
+
+**Severity**: patch（默认交互调整；发布版本由用户决定）
+
+**What changed / Why**: 用户插入流式图片后直接获得图片后的 gap 光标，便于继续输入；
+图片插件不再抢先消费 gap 光标上的 Enter，修复表格等容器内 gap-before 仍向后插段落的问题。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-plugins-toolbar.md`、`blockcraft-plugins-block.md`。
+
+**Behavior Changes**: 固定工具栏、斜杠菜单、块菜单、文件拖入、文件粘贴和空图片选择文件，
+完成插入后落到图片的 `gap(after)`，不额外创建段落；插图与随后继续输入分开撤销。
+混合文件粘贴仅在最后一项是图片时应用该落点。浮动图片没有 gap，继续整体选中。
+上传完成、协同加载和普通挂载不触发重新取焦；其他块、图片说明文字及整图选中的快捷键保持原行为。
+
+**Migration Recipe**: 无需修改数据或调用签名；宿主自定义插入入口可在用户确认插图后调用
+`doc.selection.setGapCursor(imageId, 'after', true)`，不要在块生命周期或上传完成时调用。
+未增加公共 API，不修改包版本号。
+
+## 未发布 — 2026-10-22：可配置 CSS 对象动画
+
+**Severity**: minor（新增可选公共能力，发布版本由用户决定）
+
+**What changed / Why**: 可浮动定位对象新增 `props.animation` 原生 CSS animation 简写；提供预设 keyframes、
+统一 `doc.objectAnimation`、对象侧栏动画 tab（`bc_donghua`）和阅读表面播放，便于宿主直接复用 CSS 数据。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-app.md`、
+`blockcraft-plugins-toolbar.md`、`blockcraft-toolbar.md`。
+
+**New APIs**: `BlockObjectAnimationManager`、`ObjectAnimationConfig`、`ObjectAnimationEffect`、
+`OBJECT_ANIMATION_EFFECTS`、`normalizeObjectAnimation()`、`storeObjectAnimation()`，以及
+`SnapshotViewerOptions.animations?: boolean`；`doc.objectAnimation.stopPreview()` 与 `acquireEditingLease(ids)` 分离预览清理和工具栏编辑暂停。BaseBlockComponent 为已有 placement 能力对象增加动画视图生命周期接线。
+
+**Behavior Changes**: 未配置时无变化；编辑面板调整后自动预览临时草稿，点击“确定”才保存，关闭或切换 tab 放弃调整。
+提供进入、强调两类共 16 个预设，`OBJECT_ANIMATION_EFFECTS` 增加展示用 `category`；旧效果标识不变。
+重复通过“单次 / 指定次数 / 持续循环”下拉框配置（指定次数 2–10 次），移除停止按钮；`preview(ids, draft?)` 可预览未保存配置，不产生 Undo。
+编辑、整篇只读和 Snapshot Viewer 均按可视区域播放。编辑态选中对象或其组合内部成员时暂停并恢复原始几何，取消选中后继续。
+确定保存后关闭对象侧栏并结束编辑选区，持续循环继续；工具栏输入焦点切换由编辑租约维持暂停。
+有限动画不因虚拟重挂载重复入场，循环离屏停止；减少动态效果和打印保持静态。没有弃用 API。
+
+**Migration Recipe**: 无需迁移旧数据；继续加载 `themes/base.scss` 获得 bc-* keyframes。
+宿主用 `doc.objectAnimation.update(ids, 'bc-fade-in 600ms ease-out 0ms 1 normal both')` 设置，
+或通过工具栏配置；静态 Snapshot Viewer 传 `{animations: false}`。不修改包版本号。
+
+## 未发布 — 2026-10-21：升级 CSES UI 与统一右键菜单图标
+
+**Severity**: patch（依赖升级；发布版本由用户决定）
+
+**What changed / Why**: `@cses/ui` 精确 peer 升级到 `4.37.3`。右键菜单统一使用 `cs-icon`，文本设置、段落设置和全选使用新版提供的 `font-settings`、`paragraph-settings`、`select-all`；“粘贴为”三个子菜单保持纯文字。新版已包含颜色面板未编辑字段失焦不提交的修复，移除旧版 `4.37.1` 本地补丁。
+
+**Affected ai-skills files**: `blockcraft-app.md`。
+
+**Migration Recipe**: 宿主安装 `@cses/ui@4.37.3`，继续加载 `@cses/ui/styles/cses-ui.scss`。无需修改菜单注册、格式 API 或文档数据；本次不调整 BlockCraft 包版本。
+
+## 未发布 — 2026-10-21：右键菜单增加文本与段落设置
+
+**Severity**: minor（增加菜单入口；发布版本由用户决定）
+
+**What changed / Why**: `ContextMenuPlugin` 增加“文本设置”和“段落设置”，与固定工具栏复用内部设置控制器、弹窗和相对选区会话，避免两套格式规则。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-plugins-util.md`、`blockcraft-plugins-formatting.md`、`blockcraft-toolbar.md`。
+
+**Behavior Changes / Migration Recipe**: Bundled 编辑器自动获得入口；手动装配的宿主需在 `DocConfig.plugins` 中注册一次 `new ContextMenuPlugin()`，并提供原设置弹窗使用的 `CsModalService`。只读或无适用目标时禁用设置，确认前复查目标与权限。原复制/粘贴、固定工具栏入口、浮动工具栏 350ms 延迟及文档数据格式不变，无 API 弃用。
+
+## 未发布 — 2026-10-19：只读正文链接单击导航
+
+**Severity**: patch（只读交互调整；版本由用户决定）
+
+**What changed / Why**: `InlineLinkExtension` 在整篇文档只读时单击直接调用原有 `openLink` 回调，方便阅读跳转；拖选文字、右键及双击后续事件不重复导航。
+
+**Affected ai-skills files**: `blockcraft-plugins-inline.md`。
+
+**Behavior Changes / Migration Recipe**: 无需修改构造参数或宿主导航回调。编辑模式仍单击工具栏、双击导航；单块锁定不视为整篇只读。运行时切换只读立即生效，销毁插件清理监听器。未变更文档格式或持久化数据。
+
+## 0.11.22 — 2026-10-19：编辑器个人交互配置入口
+
+**Severity**: patch（按用户指定小版本发布，新增可选宿主配置）
+
+**What changed**: 冒号 Emoji 和浮动文字工具栏可在运行时启停；固定工具栏模式可由宿主初始化并监听切换。
+
+**Why**: 宿主需要按个人偏好控制编辑交互，不把个人状态写入共享文档。
+
+**Affected ai-skills files**: `blockcraft-plugins-block.md`、`blockcraft-plugins-toolbar.md`。
+
+### New APIs / Behavior Changes
+
+- `BlockTransformerPluginOptions.enableColonEmoji?: boolean`、`setColonEmojiEnabled(boolean)`：默认开启，关闭仅释放冒号浮层并保留文字，不影响斜杠菜单。
+- `FloatTextToolbarPluginOptions.enabled?: boolean`、`setEnabled(boolean)`：默认开启，关闭浮层但保留格式快捷键。
+- `FixedTextToolbarComponent.toolbarMode` 输入和 `toolbarModeChange` 输出，模式为 `'simple' | 'full'`。默认仍为 `full`，仅用户切换发出输出。
+
+### Migration Recipe
+
+原调用无需修改。需个人设置的宿主在构造插件时传入配置，保存后调用 setter；固定工具栏绑定 `[toolbarMode]`，在 `(toolbarModeChange)` 中保存个人最近模式。
+无弃用 API。使用这些入口的宿主需升级到 `@ccc/blockcraft@0.11.22`，并满足其 `@cses/ui@4.37.1` peer 依赖；旧版 UI 缺少 `CsColorPickerPanelComponent` 导出，会导致打包失败。
+
+## 未发布 — 2026-10-19：正文独立字重
+
+**Severity**: minor（新增排版能力；发布版本由用户决定）
+
+**What changed**: 文本设置增加数值字重；接通加粗、混合选区、格式刷、段落默认格式及 HTML 交换。
+
+**Why**: 支持中等、半粗等正文排版，保持显示、编辑和保存恢复的一致性。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-inline.md`、`blockcraft-plugins-formatting.md`、`blockcraft-adapter.md`。
+
+### New APIs / Behavior Changes
+
+typography 入口导出 `normalizeInlineFontWeight`、`readInlineFontWeight`、`normalizeInlineFontWeightPatch`。
+`ITextCommonAttrs.fontWeight`、`FontSettingsDialogData.fontWeight` 为可选字段：number / null（继承）/ undefined（混合）。
+显式字重保存为 `s:fontWeight` 字符串，600 及以上同时标记粗体；独立 B 命令移除数字覆盖，避免数值样式压住快捷开关。
+HTML typography 支持字重往返；`textDefaults` 保留字重以支持后续输入。
+
+### Migration Recipe
+
+无需迁移旧快照，旧 `a:bold` 内容继续按 700 读取。使用 `TextToolbarHelper` 的宿主自动获得字重与加粗的一致处理。
+直接构造格式补丁的调用方可使用 `normalizeInlineFontWeightPatch({'s:fontWeight': '500'})`，再通过已有 DocChain / DocCRUD 格式化事务写入。
+未弃用现有 API，未修改包版本号。
+
+## 未发布 — 2026-10-18：固定工具栏链接与公式的光标操作
+
+**Severity**: minor（新增交互能力；发布版本由用户决定）
+
+**What changed**: 空光标可输入链接文本／地址或 LaTeX 后插入；链接按钮反映并可退出当前输入链接格式；精确选中公式时可还原为普通文本。
+
+**Why**: 补齐收缩光标的引用插入及退出操作，避免必须先输入并选中文字。
+
+**Affected ai-skills files**: `blockcraft-plugins-formatting.md`、`blockcraft-toolbar.md`。
+
+### New APIs / Behavior Changes
+
+`LinkInputPad` 新增可选 `showTextInput`（默认 false）和 `textValue`；原 `onConfirm` 字符串事件不变。
+固定工具栏新插入引用后光标位于末尾，后续输入不携带链接。公式选中态只对应一个完整的 LaTeX 行内对象。
+
+### Migration Recipe
+
+无需数据迁移。浮动工具栏原有链接范围格式化不变；使用固定工具栏的宿主无需改接线。
+新增行为与旧选区转换共用 Yjs / 撤销路径。未修改包版本号。
+
+## 未发布 — 2026-10-16：填写区尺寸模式切换
+
+**Severity**: minor（新增可撤销操作与宽度独立保存；发布版本由用户决定）
+
+**What changed**: 填写区侧边工具栏提供固定尺寸／内容自适应双向切换，使用 `bc_size-fixed` / `bc_size-auto` 图标表示当前模式。恢复自适应时清除固定高度并保留手动宽度；切回固定尺寸时读取当前布局宽高。
+
+**Why**: 手动调整尺寸后缺少返回自然高度的入口，且原归一化会丢弃不带高度的宽度。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-toolbar.md`。
+
+### New APIs / Behavior Changes
+
+新增 `RenderUnitBlockComponent.resetHeight()`、`toggleSizeMode()`、`objectWidth` 与
+`resolveRenderUnitWidth(props, referenceWidth)`。`objectDimensions` 仍只解析完整固定尺寸。
+填写区仅含 `wr` 或旧 `width` 时，现在保留宽度并按内容撑高；Schema、HTML、只读快照均保持该语义。
+完整尺寸和默认无尺寸行为不变；未改变图片等其他对象的尺寸规则。
+
+### Migration Recipe
+
+无需迁移已有完整尺寸。恢复自然高度时，使用 `region.resetHeight()` 替代清空全部尺寸属性，
+或通过原属性事务写入 `{ar: null, height: null}`。读取宽度使用 `objectWidth`，不要从
+`objectDimensions` 是否为 null 推断宽度未设置。操作支持协同、撤销；再次拖动会恢复固定尺寸。
+未修改包版本号。
+
+## 未发布 — 2026-10-16：固定工具栏双模式与优先级响应式
+
+**Severity**: minor（工具栏交互调整；发布版本由用户决定）
+
+**What changed**: 固定工具栏新增简略／双层切换，双层保留文本／段落设置入口，简略优先保留链接，间距／公式先收纳；
+按容器实际溢出逐级收起快捷项，收起的命令归入“更多格式”或“插入”。
+文字颜色和背景颜色拆为两个独立按钮，点击打开对应的组件库基础颜色面板，支持更多颜色及 HEX/RGB 输入，保留原格式化数据路径。
+
+**Why**: 提高设置可发现性，并让窄容器保留常用操作而不增加命令行数。
+
+**Affected ai-skills files**: `blockcraft-toolbar.md`、`blockcraft-plugins-formatting.md`。
+
+### Behavior Changes / Migration Recipe
+
+默认双层模式，切换仅改变组件展示，不写入文档。原命令、权限、弹窗及选区恢复路径保留。
+宿主应将工具栏外层固定高度改为自然高度，以容纳双层命令；
+Playground 的模板编辑／使用页已同步调整。投影插槽和扩展动作契约不变。
+独立颜色面板需要组件库导出 `CsColorPickerPanelComponent`；宿主需升级到已发布的 `@cses/ui@4.37.0`。
+研发依赖和 editor 的 peerDependencies 已同步为该版本，原临时颜色组件补丁已移除。
+无数据迁移，未修改包版本号。
+
+## 未发布 — 2026-10-16：文档右键菜单与显式剪贴板命令
+
+**Severity**: minor（新增菜单和 API；发布版本由用户决定）
+
+**What changed**: 新增 `ContextMenuPlugin`，bundled 默认启用。新增
+`ClipboardManager.copySelectionToClipboard(selection, cut?)`、
+`pasteFromClipboard(selection, format?)`，`copyBlocks` 支持可选 `plainText` 参数；全局 Overlay 选项补充 `allowReadonly`。
+
+**Why**: 提供复制、剪切和可选粘贴格式入口，复用现有剪贴板转换/权限/撤销边界。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-plugin.md`、`blockcraft-plugins-ref.md`、
+`blockcraft-plugins-util.md`、`blockcraft-app.md`、`blockcraft-toolbar.md`。
+
+### New APIs / Behavior Changes
+
+bundled 文档内容区右键改为编辑菜单；输入控件、按钮及链接保持原有行为。
+手动装配可加入 `new ContextMenuPlugin()`；原有快捷键、默认粘贴策略和保存格式不变。
+菜单剪切确认系统写入成功才删除；等待期间文档变更时取消删除。
+权限拒绝提供快捷键反馈；WebView 是否支持读取由宿主授权决定。
+
+### Migration Recipe
+
+无需数据迁移。bundled 宿主不要重复注册；手动装配只需添加插件。
+使用自有菜单的宿主可不添加此插件，或在 bundled 结果中按 `name !== 'context-menu'` 过滤。
+未修改包版本号。
+
+## 未发布 — 2026-10-16：补充通用字体预设
+
+**Severity**: minor（新增可选字体 ID；发布版本由用户另行决定）
+
+**What changed**: `TypographyFontFamilyId` 与共享字体目录新增 `xingkai`（行楷）、`dengxian`（等线）、`lishu`（隶书）、
+`youyuan`（幼圆）、`cambria`、`palatino`、`trebuchet`、`courier`，
+正文、文本框、艺术字共用现有字体选择与解析路径。HTML 导入优先识别新增的具名字体，再识别其回退字体。
+
+**Why**: 水墨模板的行楷标题以及常用中英文字体需要可在编辑器内直接选择。
+
+**Affected ai-skills files**: `blockcraft-theme.md`。
+
+### Migration Recipe
+
+无需迁移既有数据。字体为系统字体栈，未安装行楷的设备回退到楷体/衬线体；
+不附带字体文件，不改变已有默认字体。消费者升级后才可选择或解析这些新的字体 ID。
+
+## 未发布 — 2026-10-16：Tab 缩进最多 8 级
+
+**Severity**: patch（交互上限调整；发布版本由用户另行决定）
+
+**What changed**: 通用 Tab 块缩进最多为 `depth: 8`；多选时任一目标已达上限，整次增加缩进不写入。
+
+**Why**: 防止连续 Tab 无限增加缩进，同时保持多选块之间的相对层级。
+
+**Affected ai-skills files**: `blockcraft-input.md`。
+
+### Behavior Changes
+
+原有前一个兄弟块深度加 1 的约束及 Shift+Tab 减少缩进保留。
+已有超过 8 级的数据不自动裁剪；代码块 Tab 字符输入和表格专属导航不变。
+无数据迁移要求，未修改包版本号。
+
+## 未发布 — 2026-10-16：方向键连续微调合并
+
+**Severity**: minor（新增可选撤销续接参数；发布版本由用户另行决定）
+
+**What changed**: 浮动对象首次方向键立即移动，重复事件按帧累积位移并批量写入。
+连续按住方向键共用一条撤销记录，松键后的新手势独立撤销。
+
+**Why**: 减少重复位置事务和组合重算，避免长按产生大量碎片撤销记录。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-selection.md`、`blockcraft-data.md`。
+
+### New APIs
+
+`DocUndoManger.captureUndoItem(callback, continuation?)` 可选传入上一批返回的 token；
+仅栈顶匹配时续接，否则独立捕获。既有单参数调用不变。
+
+### Migration Recipe
+
+现有调用无须修改。自定义连续手势可保存每批返回的 token，在下一批传入第二参数；
+手势结束时丢弃 token，每批 callback 保持同步且只写一个事务。
+
+### Behavior Changes
+
+松键、鼠标操作、其他按键及失焦会提交剩余位移并收尾；选区改变、目标失效、
+只读、销毁及外部事务打断会取消未写入位移。其他编辑不并入此次撤销。
+步长、缩放、多选、组边界与修饰键规则不变；无数据迁移或版本调整。
+
+## 未发布 — 2026-10-15：段落字符默认格式与下一段样式
+
+**Severity**: minor（新增可选段落属性与换段规则；发布版本由用户另行决定）
+
+**What changed**: `IEditableBlockProps` 新增 `textDefaults` 和 `nextParagraphStyle`。
+空段落默认字符外观参与快照、协同与撤销；普通和修订 Enter 共用下一段样式规则。
+共享快照工厂完整保留行距、段间距、底色、边框及上述字段；HTML 元数据保留两项新字段。
+空段落的模型高度估算包含默认字符字号。
+
+**Why**: 删除全部文字、离开段落或保存重开不应丢失用户设置的字符格式；换段语义应一致。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-input.md`、`blockcraft-block.md`、
+`blockcraft-data.md`、`blockcraft-plugins-formatting.md`、`blockcraft-adapter.md`。
+
+### New APIs
+
+模型类型 `ParagraphNextStyle`；Typography 纯入口新增 `NextParagraphStyle`、
+`normalizeParagraphTextDefaults()`、`normalizeParagraphNextStyle()`、`resolveNextParagraphStyle()`。
+
+### Behavior Changes
+
+空段落和完整段落字符格式命令更新段落标记；删空保留当前字符外观，不复制链接或修订归属。
+缺省正文／列表段尾延续，标题／引用段尾转正文并清除覆盖；段中拆分保持样式。
+空列表继续降低缩进／退出列表；下一列表项清除完成状态及显式编号起点。
+空光标锚的 `data-bc-paragraph-defaults` 仅用于显示，无模型字符。
+
+### Migration Recipe
+
+旧数据无需迁移。希望标题段尾继续标题时设置 `props.nextParagraphStyle = 'same'`；
+希望段尾转正文时设为 `'body'`。外部格式工具栏继续使用 `TextToolbarHelper`。
+HTML 的 `data-bc-text-defaults` 与 `data-bc-next-style` 保存可选格式元数据。
+未修改包版本号。
+
+
+## 未发布 — 2026-10-15：容器内对象切换为根层浮动
+
+**Severity**: minor（扩展布局切换范围；发布版本由用户另行决定）
+
+**What changed**: 普通容器内、Schema 支持浮动的对象现在可以通过既有
+`setObjectLayout()` / `setMode()` 移入根层唯一的 `placement-layout`。
+
+**Why**: 文本框、组合块等放入容器后仍应能够切换为文档级浮动对象。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`。
+
+### Behavior Changes
+
+转换前按根层坐标基准测量位置，迁移父级与位置更新共用一次事务；
+原容器不再拥有该对象。切回流式仍按根层视觉锚点落位，Undo 恢复原容器归属。
+组合内部成员不能单独改变布局；只读与 Schema 能力限制保持不变。
+
+### Migration Recipe
+
+无需数据迁移或新增宿主接线，继续使用既有布局 API。未修改包版本号。
+
+## 未发布 — 2026-10-15：动态物料块外统一工具栏
+
+**Severity**: minor（新增插件装配；发布版本由用户另行决定）
+
+**What changed**: 新增 `MaterialToolbarPlugin`，默认 bundled editor 用它统一日期、天气、人员的块外横向布局/层级工具栏，并合并日期设置、天气设置与刷新入口。日期块移除内部按钮及设置浮层生命周期。
+
+**Why**: 物料工具入口应与图片一样位于块外，避免一类对象同时出现层级浮层和块内设置按钮。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-plugin.md`、`blockcraft-plugins-toolbar.md`、`blockcraft-plugins-ref.md`、`blockcraft-block.md`。
+
+### New APIs
+
+`new MaterialToolbarPlugin()`，插件名 `material-toolbar`，无配置参数。
+
+### Behavior Changes
+
+日期/天气/人员整块选中显示同一横向工具栏；流式不显示层级，组合成员不改变布局或层级。日期双击仍打开原设置。应用、取消或 Esc 收起设置后保留工具栏并恢复设置按钮焦点；再次 Esc 或外部点击关闭工具栏。设置预览、草稿写入和撤销规则不变；不更改文档格式。
+
+### Migration Recipe
+
+bundled editor 无需改动。自定义 Doc 若要保留日期设置按钮或双击入口，在 `plugins` 中注册 `new MaterialToolbarPlugin()`；若之前使用 `new WeatherToolbarPlugin()`，替换为新插件即可覆盖三类物料。旧 WeatherToolbarPlugin 保留为仅天气的兼容入口，两者不要同时注册。宿主独立设置面板可继续使用原字段。未修改 package.json 版本号。
+
+## 未发布 — 2026-10-15：浮动对象方向键微调
+
+**Severity**: minor（新增对象键盘交互；发布版本由用户另行决定）
+
+**What changed**: 整体选中的浮动对象支持无修饰键方向键按 1 个布局 px 移动；
+支持单选、多选、组合整体及组内成员，位置和组合边界共享一次可撤销事务。
+
+**Why**: 提供无需鼠标拖拽的精确位置调整。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-selection.md`。
+
+### Behavior Changes
+
+对象选区的普通方向键现在移动对象并保留选区，不再进入公共光标导航。
+缩放不改变布局步长；长按重复按键逐次移动、逐次撤销。
+文本编辑、流式块、修饰键组合和原生输入保持原行为；只读或正在拖拽时不移动。
+
+### Migration Recipe
+
+无需数据迁移或宿主接线；使用已有 Placement 管理器自动启用。未修改包版本号。
+
+## 未发布 — 2026-10-15：当前用户的持续输入格式
+
+**Severity**: minor（输入状态生命周期调整；发布版本由用户另行决定）
+
+**What changed**: Input 用内部 `TypingFormatState` 统一管理持续格式，替代一次性插入属性。
+工具栏、普通输入及 IME 共用状态，以相对位置跟随编辑；本地 Undo item 同时记录输入格式。
+
+**Why**: 字号／字样不应依赖上一段已存在文字才能延续，删除文字不能自动取消用户当前格式。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-input.md`、`blockcraft-plugins-formatting.md`。
+
+### Behavior Changes
+
+连续输入、删除部分文字、删空后续写、普通 Enter 续写保留当前行内格式。
+用户导航或主动收起选区重新继承落点格式；非文本／纯文本区域不携带富文本状态。
+粘贴及 API 内容写入继续继承新内容的格式，不套用先前输入状态。
+撤销／重做包含空文本位置的格式恢复。状态仅属于当前用户，不写入快照或同步给协作者。
+属性明确的受控输入直接走 Yjs 渲染，避免零宽占位符分支产生重复文字 DOM。
+
+### Migration Recipe
+
+文档数据无需迁移；工具栏继续通过 `TextToolbarHelper` 设置格式。
+`setNextInsertAttrs()` / `peekNextInsertAttrs()` / `hasNextInsertAttrs()` /
+`clearNextInsertAttrs()` 保留签名，但读取／输入不再消费属性；需要取消当前状态时显式调用
+`clearNextInsertAttrs()`，不要依赖一次输入将其清掉。未修改 package.json 版本号。
+
+## 未发布 — 2026-10-14：Snapshot Viewer 的 Mermaid 只展示图形
+
+**Severity**: minor（快照展示行为变化；发布版本由用户另行决定）
+
+**What changed**: Snapshot Viewer 中的 Mermaid 移除源码区、标题栏和编辑工具按钮，
+始终展示图形。修复流式更新后异步 SVG 写入临时节点而导致空白的问题。
+
+**Why**: 只读快照需要稳定的图形预览；已完成的图不能因后续文本更新而消失。
+
+**Affected ai-skills files**: `blockcraft-app.md`。
+
+### Behavior Changes
+
+`props.mode` 不再控制快照的源码／图形展示，但仍保存在模型中供编辑器使用。
+更新 Mermaid 源码时保留上一张有效图，直到新图生成成功；旧任务在源码替换、
+清空、删除或销毁后不再回写。`resourcePolicy: 'off'` 继续禁止异步绘图。
+
+### Migration Recipe
+
+无需迁移文档数据。需要源码编辑和工具栏的页面继续使用编辑器；
+快照宿主如需自定义展示，可使用已有 `SnapshotViewerOptions.blockRenderers` 扩展。
+
+## 未发布 — 2026-10-13：单次粘贴／导入协同内容上限
+
+**Severity**: minor（默认行为变化；发布版本由用户另行决定，未改 package.json）
+
+**What changed**: 单次粘贴／导入新增内容按独立 Yjs v1 编码计量，默认上限
+1.5 MB（1,572,864 字节）。超限提示并在写入前整次拒绝；不改变上传文件大小限制。
+
+**Why**: 防止单次粘贴或外部内容导入向协同模型写入过量数据，不在正式 update 后丢包。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-app.md`、`blockcraft-adapter.md`。
+
+### New APIs
+
+`DocConfig.maxIncomingContentBytes?`、`IncomingContent`、
+`DEFAULT_MAX_INCOMING_CONTENT_BYTES`、`measureIncomingContentBytes()`、
+`checkIncomingContentSize()`、`checkIncomingTextSize()`、`checkIncomingSourceSize()`，
+以及 `IAdapter.exceedsIncomingContentLimit?`（保守预检扩展点）。
+
+### Behavior Changes
+
+默认拒绝超过上限的文本／富文本／对象／表格／文件引用粘贴与格式切换。
+Playground 的 Markdown／HTML／TXT Snapshot 文件导入也采用同一上限。
+计量不含既有文档和上传文件字节，不承诺最终网络包大小；远端同步、Undo/Redo、
+日常输入、初始化与通用 Adapter／CRUD 保持原有语义。
+明显超限的纯文本／简单 Markdown 与 HTML 在创建快照前拒绝；快照检查先执行保守
+下界扫描，明显超限则跳过临时 Yjs 编码。复杂来源和临界内容保留精确校验，不新增原文大小限制。
+
+### Migration Recipe
+
+旧宿主无需配置即可启用内置粘贴限制；需要不同上限时设置 `maxIncomingContentBytes`。
+自行解析并直接调用 CRUD 的文件导入，可在转换前调用 `checkIncomingSourceSize()`；
+仍需在写入和改选区前调用
+`checkIncomingContentSize(doc, {snapshots: children})`，返回 false 时立即终止。
+具体示例见 `blockcraft-app.md`。未同步改变任何宿主上传服务或服务器。
+
+## 0.11.15 — 2026-10-12：浮动层内逐对象虚拟化
+
+**Severity**: minor（行为变更级别；发布版本按用户指定采用 patch：0.11.15）
+
+**What changed**: 根级 `placement-layout` 改为稀疏子视图。固定对象按坐标和包围盒
+独立挂载，自适应文本对象常驻；含自适应成员的组合整体常驻。CSS 按文档/帧批量测量，
+索引使用有效 `textFit` 计算缩小高度及旋转宽度。
+
+**Why**: 避免旧尺寸阻止自适应对象从下方进入视口，同时避免一个对象可见就挂载整层。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-perf.md`、`blockcraft-data.md`、`blockcraft-selection.md`、`blockcraft-app.md`。
+
+### Behavior Changes
+
+固定浮动对象离屏释放组件；根 `retainedViewLimit`、显式对象/keep-alive 租约仍有效。
+完整文档租约与关闭虚拟化时完整渲染。普通文档流、对象坐标与快照格式保持不变。
+
+### Migration Recipe
+
+读取离屏对象数据使用 `doc.model`；需要 DOM 时通过 `ensureViewMounted([id])` 或
+`acquireBlockViewLease([id])` 物化目标对象，不依赖同层其他可见对象隐式挂载所有兄弟。
+需要全层/全文 DOM 的任务使用浮动层视图租约/完整文档视图租约并及时释放。
+
+## 0.11.15 — 2026-10-12：文本对象按创建手势选择尺寸模式
+
+**Severity**: minor（行为变更级别；发布版本按用户指定采用 patch：0.11.15）
+
+**What changed**: 固定工具栏创建文本框/艺术字时，点击放置默认设置 `textAutoFit: 'resize-shape'`，拖拽绘制设置 `none`。
+
+**Why**: 点击创建让文字决定内容轴尺寸；拖拽创建尊重用户绘制的固定宽高。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-toolbar.md`、`blockcraft-plugins-formatting.md`。
+
+### Behavior Changes
+
+工具栏复用现有 4px 屏幕距离拖拽阈值，按手势而非最终尺寸区分。横排自适应高度，宽度仍由预设决定。
+普通形状、已有对象和 Schema/API 缺省创建保持原行为；文字方向、路径艺术字的自适应限制不变。
+
+### Migration Recipe
+
+无需迁移已有文档。依赖工具栏点击创建后保持固定高度的流程，应改用拖拽创建或在尺寸适应设置中切换为固定尺寸。
+通过 Schema/API 创建时，继续显式传 `textAutoFit` 选择模式。
+
+## 0.11.15 — 2026-10-12：文本对象内容自适应
+
+**Severity**: minor（行为变更级别；发布版本按用户指定采用 patch：0.11.15）
+
+**What changed**: 文本框和横排非路径艺术字新增可选内容自适应设置；输入增大、删除缩小，支持文字重排。
+
+**Why**: 固定文本框不能随内容变化，原 resize-shape 仅扩大且将派生高度覆盖为用户设定，无法完整撤销模式切换。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-toolbar.md`、`blockcraft-adapter.md`。
+
+### New APIs / Features
+
+`BlockObjectFormatProps.textFit?: number | null` 保存派生的内容轴测量值；HTML 使用 `data-bc-object-text-fit` 往返。
+对象格式工具栏新增「尺寸适应」；内置块归一化和对象布局/格式查询返回有效尺寸。
+
+### Migration Recipe
+
+默认固定尺寸文档无需迁移。需要自适应时，创建/更新对象的 `textAutoFit: 'resize-shape'`，不手动填缓存。
+原先直接读原始 props.width/height 的宿主，若要自适应后的视觉尺寸，改用块的 normalize*Props() 或 doc.objectFormat.resolve()。
+
+### Behavior Changes
+
+已设置 resize-shape 的文本框现在可缩回；width/height 保留用户设定，textFit 随文字重新测量但不新增撤销步骤。
+竖排文本框沿宽度适应；路径艺术字和旋转文字方向暂不支持。调整内容轴手柄/尺寸字段退出自适应。
+只读渲染使用缓存；旧快照无缓存时使用既有尺寸，可编辑挂载后计算。组合内边界随有效尺寸重排。
+
+## 未发布：表格 Schema 支持初始单元格文本
+
+- 范围：`TableBlockSchema` 与 `blockcraft.block.table` 能力合同。
+- 新增可选第三参数 `values: string[][]`；旧的 `[rows, columns]` 保持空表行为，无需迁移已有文档。
+- 携带内容时严格校验矩形尺寸和文本预算；非法输入整体拒绝，不截断或补造数据。
+- 版本号与发布待用户确认。
 
 ## Why This File Exists
 
@@ -28,18 +611,23 @@ Every entry follows this template:
 **Why**: the motivation (incident, design lesson, feature request, …). Helps future-you decide if a follow-up is still relevant.
 
 **Affected ai-skills files**:
+
 - list of L0/L1/L2 markdowns updated in the same PR
 
 ### Breaking Changes (only for major)
+
 - removed APIs, renamed exports, changed signatures, removed events, …
 
 ### Deprecations
+
 - APIs marked `@deprecated` with the version they will be removed in (or "no removal date")
 
 ### New APIs / Features
+
 - new exports, new methods, new lifecycle hooks, new schema fields, …
 
 ### Migration Recipe
+
 Concrete before/after code snippets so a downstream developer can find-and-replace mechanically:
 
 \`\`\`typescript
@@ -51,21 +639,12193 @@ selection.anchor.block
 \`\`\`
 
 ### Behavior Changes
+
 Things that didn't change shape but changed behavior — e.g. an event now fires earlier, a method now throws on a previously-silent edge case.
 ```
 
 > **Severity → version bump rule**:
+>
 > - `patch` (e.g. 0.1.37 → 0.1.38): bug fix, doc-only change, internal refactor that doesn't touch any exported surface
 > - `minor` (e.g. 0.1.37 → 0.2.0): additive — new APIs, new plugins, new blocks, new optional schema fields, new exports
 > - `major` (e.g. 0.1.37 → 1.0.0): breaking — removed APIs, renamed exports, signature changes, behavior reversals
 >
 > **Deprecations are minor**, not major — they only become major when the deprecated API is actually removed.
->
+
+## 未发布 — 2026-10-11：网页资源的 Agent 嵌入合同
+
+**Severity**: minor
+
+**What changed**: 新增并导出 `EMBED_BLOCK_AGENT_CAPABILITY`，将现有 `embed` Schema 的
+`[HTTP/HTTPS URL]` 创建参数加入内置 Agent 目录；Agent 手册说明 HTML、图片、普通附件
+的资源类型分派。文件生成与上传继续属于 Host，不新增网关、磁盘或网络权限。
+
+**Why**: 已上传 HTML 应作为网页嵌入进入文档；仅注册 Schema 原先不会授予 Agent 创建权限。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`。
+
+**Behavior Changes**: 宿主注册 `EmbedBlockSchema` 后可通过默认 Agent 创建网页嵌入，
+仍校验 URL、Schema、父容器、只读、基线与修订；未注册该 Schema 的宿主不新增此能力。
+已在 Host 自行声明相同 flavour 的能力应在升级时移除重复声明。版本号与发布待用户决策。
+
+## 未发布 — 2026-10-09：粘贴异常组合符号转化
+
+**Severity**: minor
+
+**What changed**: 新增可选 `DocConfig.pasteTextPolicy`。启用 `remove-stacked-marks` 后，
+仅在 ClipboardManager 粘贴入模前移除本次内容中连续九个或更多
+Unicode 组合符号，保留基础文字、正常音标、格式与 Embed。富文本跨格式片段统一判定。
+覆盖纯文本块、普通粘贴、内部快照、来源适配、间隙／对象粘贴及粘贴格式重新应用。
+
+**Why**: 防止新粘贴的密集组合符号直接进入浏览器正文排版；不在 Inline 渲染或日常输入中扫描。
+
+**Affected ai-skills files**:
+
+- `blockcraft-adapter.md`
+- `blockcraft-app.md`
+
+### Behavior Changes
+
+省略配置或设为 `preserve` 保持原行为。启用策略的文档实例保存、协作和复制使用
+转化后的正文，不保留被移除的异常符号。
+不会迁移存量文档、清洗一般快照导入或转化直接输入／远端写入。
+包版本尚未调整，本条不表示已发布或下游客户端已接入。
+
+## 0.12.0 — 2026-10-09：实际 px 字号与高级缩放共存（待发布）
+
+**Severity**: minor
+
+**What changed**: 新增段落固定基础字号 `fs`、行内固定基础字号 `t:px`；保留
+段落 `pfs` 与行内 `t:fs` 倍率。顶部工具栏显示／设置实际逻辑 CSS px，缩放能力移入
+字体设置弹窗的“高级”标签。编辑器、只读预览、HTML 与段落高度估算共享字号规则。
+
+**Why**: 用户需要直接设置实际字号，同时保留高级缩放和旧文档数据。
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-inline.md`
+- `blockcraft-data.md`
+- `blockcraft-adapter.md`
+- `blockcraft-plugins-formatting.md`
+
+### New APIs / Features
+
+- `INLINE_TYPOGRAPHY_ATTRS.fontSize = 't:px'`，`InlineTypographyKey` 增加 `'px'`。
+- `normalizeFontSizePixels()`、`resolveEditableBlockFontSize()`、
+  `editableBlockFontSizeCss()`、`readInlineFontSize()`、`inlineFontSizeCss()`。
+- `TextToolbarHelper.getFontSizePixels()`、`formatFontSizePixels()`、`formatFontScale()`；
+  `ITextCommonAttrs` 增加实际 px 和固定字号状态。
+- `editableBlockCreateSnapShotFn()` 接受并保留 `fs/pfs` 创建参数（含 null 继承）。
+- Editable Block Agent capability 和 Agent inline 校验接受新基础 px 字段。
+
+### Migration Recipe
+
+```typescript
+// 倍率数据保持原义；现有调用仍兼容整段合并行内倍率的行为。
+helper.formatTypography({fontScale: 1.5})
+
+// 新产品入口：设置实际 24px，保留所有倍率；null 仅恢复字号继承。
+helper.formatFontSizePixels(24)
+// 高级入口：只改本层倍率，保留固定基础 px 和另一层倍率。
+helper.formatFontScale(1.5)
+```
+
+### Behavior Changes
+
+- 显式段落 `fs` 覆盖标题默认字号，但不移除 `heading`；未指定固定字号时保留原默认。
+- 顶部实际 px 是 `(基础 px × 段落倍率 × 行内倍率)`，整段／局部／caret 都使用同一读法；
+  混合实际字号显示“混合”。20px × 1.5 改为实际 24px 会保存基础 16px、倍率 1.5。
+- 字号 UI 仅显示数字，回显四舍五入至最多一位小数且不改数据精度，不追加 px；快捷菜单不附加输入行，自定义值在“更多设置”中编辑。
+  字体族触发框为 104px；字号触发框最小 56px，并随完整数值展开。字体族菜单按内容展开
+  并完整显示名称，字号菜单跟随当前触发框保持等宽，顶部字号“更多设置”仅显示齿轮。快捷菜单不再提供“继承字号”，继承 API
+  保持兼容；窄屏字号菜单以专属 CSS class 覆盖最小宽度。
+- 旧数据打开时不迁移。新像素字段需全部协作端升级后启用；标准 Markdown 仍不保留字体排版。
+- 新功能未自动调整 npm 版本号或发布；`0.12.0` 沿用当前待发布条目的版本标识。
+
+## 0.12.0 — 2026-10-08：统一网页嵌入块（待发布）
+
+**Severity**: minor
+
+**What changed**: 导出并默认注册 `EmbedBlockSchema`（`embed`），新插入统一使用网页链接块；
+支持网页、HTML 文件链接和常见平台专用嵌入 URL，创建与改来源复用既有链接粘贴弹窗。
+链接弹窗改用 cses-ui Modal、Input 和 Button，保留 URL 校验与块级生命周期。
+尺寸通过共享八向抓手调整，布局像素取整数后保存为图片同款 `wr/ar`，移除手动输入尺寸入口。
+卡片、链接、嵌入视图支持直接互转，链接无需先转卡片即可嵌入。
+新旧嵌入块与快照预览去掉品牌行和地址，外部打开收在浮动工具栏的图标按钮中。
+
+**Why**: 来源规则属于统一嵌入能力，避免为每个平台重复维护块类型和交互。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-app.md`、
+`blockcraft-adapter.md`、`blockcraft-plugins-toolbar.md`、`blockcraft-plugins-inline.md`、`blockcraft-toolbar.md`。
+
+### New APIs / Features
+
+- `EmbedBlockSchema`、`EmbedBlockComponent`、`EmbedBlockModel` 对外导出；创建参数为 `[url: string]`。
+- `normalizeEmbedUrl`、`resolveEmbedUrl`、`ResolvedEmbedUrl`：编辑器与只读预览共用的有界 URL 规则。
+- 修改来源、八向尺寸抓手、刷新、外部打开、链接/书签切换；书签优先转换为统一嵌入。
+- 三类嵌入模型使用 `BlockObjectSizeProps`；`IframeCardComponent.block` 可选输入启用抓手与文档宽度基准。
+- `InlineLinkExtension.switchView(view?: 'card' | 'embed')`，默认仍为卡片。
+- `IConnectOverlayCreateOptions.allowReadonly?: boolean` 默认关闭；只读嵌入菜单显式启用。
+
+### Deprecations
+
+旧 Figma/掘金块保留 API、类型与快照读取，新插入菜单隐藏这两个独立入口。
+
+### Behavior Changes
+
+- 普通网页与 HTML 文件链接直接加载；识别的平台转换为专用地址，保留原链接。
+- 只接收 URL，不接收 HTML 代码。宿主同源网页采用不含 `allow-same-origin` 的隔离分支。
+- HTML 元数据封套保留 URL 与尺寸；Markdown 使用显式链接提示，展示尺寸导入回默认。
+- 新建嵌入默认 `{wr: 100, ar: 16 / 9}`；四角等比、四边单轴，无旋转；比例保留精度。
+  旧像素宽高保持读取，首次有效拖拽以整数像素换算比例并在同一事务清除旧字段。点击抓手、取消、只读与销毁不写入。
+  编辑器、快照预览与 Schema 模型估高使用同一尺寸规则；尺寸弹窗与浮动菜单的手动尺寸入口移除。
+  三类 Schema 使用既有 `selectionInteraction.frame` 能力，卡片边框与缩放手势稳定选中整块。
+  悬停仅显示阴影，选中后显示抓手；分页可视高度与拖拽受正文页高限制。
+- iframe 懒加载，尺寸修改不重载内容；目标站点是否允许 iframe 仍由其权限与响应策略决定。
+- 嵌入块不再渲染 `.iframe-brand` / `.iframe-link`；保留 `brand/fontIcon` 输入的绑定兼容性。
+  外部打开使用原始 URL，提示不显示地址，只读时可用；快照资源关闭时也不显示来源地址。
+  只读嵌入块可通过边框区域选中并打开工具栏，iframe 内网页操作保持。
+- 三类嵌入都可修改来源；旧 Figma/掘金块保留平台校验和原尺寸，修改与撤销/重做会更新 iframe。
+  图标按钮使用 cses-ui Tooltip；修改来源弹窗关闭时避免将焦点还原到文档根节点而滚到顶部。
+- 独立链接转换时替换整块；正文中的链接转换保留两侧文字与格式。三种视图转换支持撤销，
+  捕获并恢复源/目标选区，不与连续输入合并；写入前检查只读、实例存活及父容器限制。
+
+### Migration Recipe
+
+```typescript
+// before：新文档单独创建平台块
+const snapshot = doc.schemas.createSnapshot('figma-embed', [url]);
+// after：新文档使用统一块；原平台块仍可读取
+const snapshot = doc.schemas.createSnapshot('embed', [url]);
+```
+
+手动装配 schemas 的宿主添加 `EmbedBlockSchema` 并保留旧 schemas；bundled 装配无需额外操作。
+自定义创建服务仍返回字符串 URL，存量快照无需改写。自行渲染嵌入尺寸的宿主应支持
+`wr/ar`，不再假设新快照始终有像素 `height`；继续使用 `IframeCardComponent` 的宿主
+绑定 `[block]` 即可获得文档宽度基准与抓手。本条为待发布记录，未调整 package 版本。
+
+---
+
+## Unreleased — 2026-10-08：独立文档设计技能与 Agent 按需入口
+
+**Severity**: minor（新增技能，未修改包版本）
+
+**What changed**: 随 editor 包分发 `document-design/SKILL.md` 及布局、文字、视觉、执行四份参考。
+`@ccc/blockcraft-agent` 的内置扩展新增五个 skill capability；目录仅暴露摘要，详细指令按需读取。
+Markdown 为唯一指令源，通过 `scripts/sync-document-design-skill.mjs` 生成运行时常量。
+整体视觉制作先用真实内容进行 HTML 视觉探索，方向形成后再核对能力并生成落地稿，
+以同一设计参数映射原生内容并对照验证；避免把当前工具已开放的字段当作审美上限。
+局部文字/样式修改仍直接编辑。无 HTML 预览能力时明确降级，不增加强制用户确认。
+
+**Why**: 文档制作需要理解原生能力如何组合，不能只有框架开发说明或某一种业务模板的固定配方。
+
+**Affected ai-skills files**: `SKILL.md`、`blockcraft.md`、`README.md`、`document-design/**`。
+
+**Migration**: 旧调用无需修改。外部 AI 可单独发现/安装 `blockcraft-document-design`；
+编辑器内 Agent 需升级 agent 包后通过 `blockcraft.get_capability` 读取
+`blockcraft.skill.document-design`。不新增写入权限、工具或图片布局重建能力。
+
+---
+
+## Unreleased — 2026-10-08：组合内日期、天气保持等比
+
+**Severity**: minor
+
+**What changed**: 组合缩放保留日期、天气块的原宽高比，并同步预览的内部绘制尺度。天气组件新增只读内容倍率 getter，与日期组件的既有读取口保持一致。
+
+**Why**: 单轴组合缩放曾分别改变卡片宽高，但内容仍按宽度等比绘制，造成外框与内容比例脱节；过期手势恢复预览也应使用当前模型倍率。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`
+
+### New APIs / Features
+
+- `WeatherBlockComponent.contentScale: number`：只读、由当前模型推导的内容倍率，与 `DateCardRenderComponent.contentScale` 同一口径，不新增持久化字段。
+
+### Behavior Changes
+
+- 日期、天气成员按两条局部轴中较小的倍率等比缩放，中心位置仍随组合调整。
+- 预览同步内部字号和间距；取消或模型发生并发变化时，恢复当前模型推导的倍率。
+- 图片、形状、文本框和人员卡保留既有缩放/重排规则；事务、Undo/Redo、只读与快照结构保持。
+
+### Migration Recipe
+
+宿主无需修改装配或数据；需要读取天气卡片内容倍率时可使用 `contentScale`，不要从预览 DOM 反推模型倍率。
+
+## Unreleased — 2026-10-08：分栏恢复就地入口，末尾加号收在右边界内
+
+**Severity**: patch
+
+**What changed**: 分栏用两端、栏间的就地加号替代随光标自动出现的结构浮层，取消分栏继续使用顶部固定入口。两端加号复用同一套绝对定位样式，分别使用 `left: 4px` / `right: 4px` 形成镜像布局，完整命中区域位于分栏边界内，不参与栏宽或填写区滚动宽度计算，也不引入 Overlay。
+
+**Why**: 保留分栏附近的直接操作，同时避免末尾添加控件越界撑宽填写区或被滚动内容层裁剪。
+
+**Affected ai-skills files**:
+
+- `blockcraft-toolbar.md`
+- `blockcraft-block.md`
+
+**Behavior Changes**:
+
+- 不再自动创建 `bc-columns-toolbar`；内部自动化应改为定位分栏内带有 aria-label 的原生按钮。
+- 新增私有 `.column-add-point`、`.column-add-point--start`、`.column-add-point--end`，不恢复末尾的添加专用 divider。
+- 默认入口为小圆点，悬停或键盘聚焦时为 20px 蓝底圆圈和白色加号，复用现有主题变量。
+- 栏间插入仍按稳定子栏 ID 定位，局部不显示取消按钮。8 栏上限、只读限制和现有顶部取消行为保持，快照无需迁移，宿主无需注册新 Plugin。
+
+## 0.12.0 — 2026-10-07：组合块支持宽高缩放（待发布）
+
+**Severity**: minor
+
+**What changed**: 组合块新增八个缩放抓手，整组尺寸提交在同一事务内调整原生成员的框体、局部坐标及图片比例尺寸。
+
+**Why**: 组合后仍需像独立对象一样调整整体宽高，且保存、协作和撤销应保持可编辑的原生结构。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-toolbar.md`
+
+### New APIs / Features
+
+- 既有 `doc.placement.updateObjectGeometry(group, {width, height, position?})` 支持整组缩放，无新增持久化字段。
+- 四角等比、四边单轴；文本框保留字号并重新排版，图片非等比拉伸采用 `fit: 'fill'`。
+
+### Behavior Changes
+
+- 选中可编辑组合显示八个抓手；成员单选与组合拖拽保持既有入口。
+- 浮动组合左/上抓手改变原点，正文组合保持排版起点；旋转成员保持角度，按实际包围盒收敛外框。
+- 一次缩放一次 Undo；取消、过期手势和只读成员不写入。组合宽度变化同时刷新比例成员，适用于远程修改与 Undo/Redo。
+- 此条为待发布记录，package 版本未改动。
+
+### Migration Recipe
+
+宿主无需额外注册插件。原先只更新组合框体宽高的代码，现在应通过 placement 命令同步调整成员：
+
+```typescript
+// before：只写外框
+group.updateProps({width, height});
+// after：原生成员与外框在同一事务中缩放
+doc.placement.updateObjectGeometry(group, {width, height});
+```
+
+## 0.12.0 — 2026-10-07：填写区优先拆分（待发布）
+
+**Severity**: minor
+
+**What changed**: `PaginationItem` 新增可选 `splitToFillPage`。内置填写区启用此策略，在当前页有安全断点时优先拆分，不再要求自身高度超过一整页。
+
+**Why**: 填写区属于连续填写内容，整体下移会留下大段页内空白；高亮块仍需要优先保持整体。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-plugins-util.md`
+
+### New APIs / Features
+
+- `PaginationItem.splitToFillPage?: boolean`，缺省关闭；仅在 `breakable` 为真时生效，整块放得下时仍完整放置，拆分沿用安全切点。`splitStartsNewPage` 仍控制是否从新页开始。
+
+### Behavior Changes
+
+- 根级填写区及可顺序递归的嵌套填写区按子块边界和文本安全行断点续排；不足一页也可拆分，当前页无安全断点时下移。
+- 高亮块、表格和根级普通段落的整体下移策略不变。分栏、单元格内的独立容器边界不变。
+- 编辑态、稳定打印及离线 DOM 测量使用相同优先级；手动尺寸和文档数据不变。此条为待发布记录，package 版本未改动。
+
+### Migration Recipe
+
+宿主使用内置 `PaginationPlugin` 无需迁移。自行组装引擎条目时，按需要显式启用：
+
+```typescript
+// before：短块整体下移
+const item = {id, height, breakable: true, keepWithNext: false, splitOffsets};
+// after：优先使用当前页安全断点
+const fillingItem = {...item, splitToFillPage: true};
+```
+
+## 0.11.10 — 2026-10-07：绝对定位对象多选同步拖拽（待发布）
+
+**Severity**: patch
+
+**What changed**: `ObjectDragPlugin` 与 `doc.placement.startDrag()` 支持拖动当前对象多选；同一组合内的直接成员也可 Shift 多选后同步移动。
+
+**Why**: 原入口会把多选降为单选，且单对象提交时逐次重算组合边框无法保证共同位移。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-plugins-block.md`、`blockcraft-plugins-toolbar.md`、`blockcraft-app.md`、`blockcraft-selection.md`
+
+### Behavior Changes
+
+- 拖动已选对象保留同平面的多选及相对位置；点击未选对象继续单选。文本编辑、缩放/旋转和正文排序入口保持原职责。
+- 组合成员位置先批量提交，再重算一次边框；全部位置、组合几何共用一个撤销事务。
+- 正文组合的多选移动保留局部原点并更新右/下边界；负坐标成员可显示在组合左/上方，避免归一化抵消拖动位移。单对象几何修改保留既有路径。
+- 根级多选包含组合时，可从其成员本体移动组合整体；单选组合仍遵循首次选组/再次选成员。
+- 组合内多选成员时关闭对象浮动格式菜单；成员单选和整组选中的菜单保留，多选外框及同步拖拽不受影响。
+- 组合及成员对象选区由模型及外框投影维护，阻止浏览器延迟原生选区覆盖首次选组/再次选成员和 Shift 多选；正文与成员文本指针手势仍可开始普通文本选择。
+- 多选包含不可写目标，或目标在手势中被移除、换父容器、改变位置/层级时，整次移动取消。
+- 公共方法签名和持久化格式不变，宿主无需改装配；本条为待发布记录，未修改 package 版本号。
+
+## 0.11.9 — 2026-10-07：搜索状态变更通知
+
+**Severity**: minor
+
+**What changed**: 新增 `FindReplaceHelper.stateChange$: Observable<void>`，默认搜索弹窗订阅后请求视图检查。
+
+**Why**: 模型异步刷新搜索结果和高亮后，OnPush 宿主不能依赖鼠标交互才刷新计数。
+
+**Affected ai-skills files**: `blockcraft-plugins-util.md`
+
+### New APIs / Features
+
+- `stateChange$`：匹配列表、当前索引、查找选项、替换权限更新后的合并通知；不重放，销毁时完成。
+
+### Migration Recipe
+
+自定义面板继续读取原字段，并在绑定 helper 时添加订阅：
+
+```typescript
+helper.stateChange$.pipe(takeUntilDestroyed(destroyRef)).subscribe(() => cdr.markForCheck())
+```
+
+### Behavior Changes
+
+新增/删除匹配内容、撤销重做或权限变化后，数量与不可替换说明主动刷新；模型扫描与高亮策略不变。
+
+## 0.11.8 — 2026-10-07：Mention 搜索与只读高亮
+
+**Severity**: minor
+
+**What changed**: 查找替换支持按 mention 名称查找和整节点高亮，单个/全部替换均跳过 mention。
+
+**Why**: 引用名称应可定位，同时保持引用数据和原子节点完整。
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-util.md`
+
+### New APIs / Features
+
+- `FindReplaceMatch.replaceable?: boolean` 与 `replaceDisabledReason?: string`：mention 和只读/锁定结果不可替换，并提供原因。
+- `FindReplaceHelper.hasReplaceableMatches`：是否存在可替换文本结果，包含只读/锁定检查。
+- `nonReplaceableCount` / `nonReplaceableTooltip`：不可替换数量及按原因分组的 tooltip，供默认对话框与宿主共用。
+
+### Migration Recipe
+
+无需迁移数据。自定义搜索面板应在当前结果 `replaceable === false` 时禁用单项替换，
+并可使用 `helper.hasReplaceableMatches` 禁用全部替换，绑定 `nonReplaceableCount` / `nonReplaceableTooltip` 显示统计与原因。
+
+### Behavior Changes
+
+Mention 名称参与搜索计数和前后导航，部分命中高亮整个节点；每个节点只计一次，
+不跨 Embed 边界匹配。全部替换保留未替换 mention 的搜索结果，普通文本仍按原模型偏移替换。
+
+## Unreleased — 2026-10-07：高亮块优先下移并支持超页拆分
+
+**Severity**: minor
+
+**What changed**: 高亮块（`callout`）在当前页容不下时优先整体下移，只有高过完整正文页才从新页开始拆分。复用填写区的顺序流测量、可撤销投影和透明分页占位带。
+
+**Why**: 超页高亮内容需要完整显示和编辑，同时保持短高亮块整体排版。
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+- `blockcraft-plugins-util.md`
+
+### New APIs / Features
+
+- 高亮块按安全子块/文本行边界跨页，稳定打印与离线导出采用相同放置规则。
+
+### Migration Recipe
+
+无需迁移数据或修改配置；没有新增公共 API，包版本未调整。原来不可拆分的超页高亮块改为内容跨页。
+
+### Behavior Changes
+
+- Emoji 保留在首片段，续页延续背景和文本缩进；页眉页脚、页边距及物理页缝透明显示。
+- 旧快照中高亮块与填写区直接嵌套时沿顺序内容拆分，短高亮子块仍整体放置；Schema 子块白名单不变。
+- 不改变分栏、表格单元格的递归边界，不改动 Yjs 子树、块 ID 或 Undo 历史。
+
+## Unreleased — 2026-10-07：填写区支持跨页
+
+**Severity**: minor
+
+**What changed**: 根级 `render-unit` 及旧快照中已存在的直接嵌套填写区在分页/打印中按内容展开，超页时使用子块、长文本行及普通表格行的安全断点。填写区的模型 ID、子树与手动尺寸保持不变。
+
+**Why**: 填写内容超过一页时需要完整延续到后续页面，原来的单页内部滚动不能满足该排版要求。
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+- `blockcraft-plugins-util.md`
+
+### New APIs / Features
+
+- 新增填写区跨页投影；无需增加宿主配置或修改数据格式。
+
+### Migration Recipe
+
+无需迁移快照。原来手动设置高度的填写区在分页时展开，关闭分页恢复原尺寸；若宿主需展示固定高度滚动框，应使用流式视图。
+
+### Behavior Changes
+
+- 超页填写区由单页内部滚动改为跨页正文；不超过一页时仍整体放置。
+- 分页占位带统一透明裁切，透出页眉页脚、页边距和既有纸张阴影；不额外计算或填充正文剩余高度。
+- 分栏、表格单元格等容器的原子策略不变；其中的填写区仍受外层约束。Callout 的变化见同日高亮块条目。
+- 分页仅修改可撤销视图，不写 Yjs、不生成新的填写区、不增加 Undo 历史。
+- 包版本未调整，发布版本由用户确定。
+
+## Unreleased — 2026-10-06：文本框旋转值按需保存
+
+**Severity**: major
+
+**What changed**: 新建文本框和预设不再写入默认的 `rotation: 0`；非零旋转值在创建、旋转手柄提交及 HTML 往返时写为整数。`TextBoxBlockProps.rotation` 改为可选，缺省仍按 0° 渲染。
+
+**Why**: 默认角度是可推导值，无需占用快照字段；手柄的浮点计算结果不应原样写入文档。
+
+**Affected ai-skills files**: `blockcraft-block.md`。
+
+### Breaking Changes
+
+- 读取 `TextBoxBlockProps.rotation` 的 TypeScript 调用方现在需处理 `undefined`；旧快照中的 `rotation: 0` 保持可读。
+
+### Migration Recipe
+
+使用 `props.rotation ?? 0` 获取显示角度；创建默认文本框时省略 `rotation`。需要显式旋转时仍可传入数字，快照会归一化并取整。
+
+### Behavior Changes
+
+文本框默认快照与 HTML 不再包含旋转属性；手柄旋回 0° 时删除该属性。
+
+## Unreleased — 2026-10-06：内容区域边框与字体值精简
+
+**Severity**: minor
+
+**What changed**: `render-unit` 新写入的统一边框使用 `border`，差异边使用 `borderTop` / `borderRight` / `borderBottom` / `borderLeft`；旧 `borders` 四边对象只作兼容读取。通用对象文字属性 `textFamily` 的目录字体改存字体 ID，覆盖填写区、文本框、艺术字和形状。Schema、工具栏和 HTML 导入统一压缩新写入的值，旧对象边框与自定义 CSS 字体栈继续可读。
+
+**Why**: 避免在快照中重复保存四条相同边框和冗长的字体回退栈。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-toolbar.md`、`blockcraft-adapter.md`。
+
+**New APIs / Features**: `RegionBorderProps`、`REGION_BORDER_SIDE_PROPS`、`normalizeRegionBorderProps()`、`resolveRegionBorders()`、`regionBorderPatch()`、`OBJECT_DISPLAY_FONT_FAMILIES`、`compactObjectTextFontFamily()`、`resolveObjectTextFontFamily()`。
+
+**Migration Recipe**: 外部边框面板应读取 `border` 加四个单边属性；旧 `borders` 对象只作为回退。写入统一边框可用 `{border: '2px solid #123456'}`，只改左边可同时设置 `borderLeft`，四边一致时删除单边属性。目录字体可用 `textFamily: 'arial'`。旧快照无需批量迁移。
+
+**Behavior Changes**: 新快照和 HTML 导入将旧对象边框转换为 `border` 及差异边属性；四边一致时只保留 `border`。通用对象格式把与目录项完全相同的字体栈压缩为 ID；自定义字体栈保持原值。
+
+## Unreleased — 2026-10-06：内容区域纯色填充透明度
+
+**Severity**: minor
+
+**What changed**: `RenderUnitBlockProps` 新增可选 `backOpacity`（0–1）；填写区填充页提供与文本框一致的透明度滑杆。填写区和 Callout 分别由独立工具栏组件渲染，选区与浮层生命周期仍由 `CalloutToolbarPlugin` 管理。实时编辑、Snapshot Viewer 和 HTML adapter 同步投影与往返保存。
+
+**Why**: 用户需要在保持现有纯色填充操作和弹窗结构的同时调整填充透明度。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-toolbar.md`、`blockcraft-adapter.md`、`blockcraft-theme.md`。
+
+**New APIs / Features**: `RenderUnitBlockProps.backOpacity`；`--bc-render-unit-background-opacity`；HTML 属性 `data-bc-back-opacity`。
+
+**Migration Recipe**: 旧快照无需迁移；需要指定透明度时写入 `{backOpacity: 0.6}`，清除该字段恢复主题默认值。图片背景仍使用 `bgo`。
+
+**Behavior Changes**: 未配置 `backOpacity` 时保持既有主题背景透明度；配置后只改变纯色填充的显示透明度。
+
+## Unreleased — 2026-10-06：内容区域内边距与字体默认样式
+
+**Severity**: minor
+
+**What changed**: `render-unit` 浮动工具栏采用“外观选项”和“文本选项”两个一级按钮，分别提供填充/轮廓、内边距/字体页签。`RenderUnitBlockProps` 新增可选 `textFamily`、`textFont`、`textSpacing`、`textFill` 字段，复用文本框紧凑格式；原有 `p` 字段新增图形入口。实时编辑、Snapshot Viewer 和 HTML adapter 同步投影与往返保存。
+
+**Why**: 填写区需要像文本框一样直接设置内容留白及区域内文字的默认样式。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-toolbar.md`。
+
+**New APIs / Features**: `RenderUnitTypographyProps`、`normalizeRenderUnitTypographyProps()`、`resolveRenderUnitTypography()`、`applyRenderUnitTypography()`。
+
+**Migration Recipe**: 现有快照无需迁移；按需在 `RenderUnitBlockProps` 中设置 `p: [top, right, bottom, left]` 与 `textFont: '20px 600 normal'` 等字段。
+
+**Behavior Changes**: 字体只提供可继承的内容默认值，不覆盖子块或行内显式格式；清除属性后恢复文档继承。
+
+## Unreleased — 2026-09-25：非可编辑流式块支持段前段后
+
+**Severity**: minor
+
+**What changed**: 固定工具栏的段落设置可对图片、分隔线等非可编辑流式块写入 `psb` / `psa`。实时视图、Snapshot Viewer 与虚拟高度估算按相邻块的单一间距规则投影这些值。
+
+**Why**: 之前工具栏要求可编辑文本目标，非可编辑块无法设置段前段后，已有字段在其视图上也不生效。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-formatting.md`。
+
+**Behavior Changes**: 整体选中的非可编辑流式块在段落弹窗中只显示段前段后，即使自身包含可编辑标题；混合选区一次事务更新各自适用的目标。行距和文本对齐仍仅作用于可编辑文本块；绝对定位对象及结构性行、单元格、分栏不参与流式间距。现有快照无需迁移。
+
+## Unreleased — 2026-09-25：整体选中容器后批量设置文字与段落
+
+**Severity**: minor
+
+**What changed**: 固定格式工具栏和 `TextToolbarHelper` 在整体选中容器块或表格单元格区域时取得内部可编辑块，支持字体样式、字号、标题、对齐、行距和段落设置；列表转换也作用于符合条件的子块。
+
+**Why**: 容器或表格单元格区域被选中后，格式命令原本因目标不是可编辑叶块而禁用，无法一次调整内部文字。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-formatting.md`、`blockcraft-selection.md`。
+
+**New APIs / Features**: 现有工具栏命令与 `TextToolbarHelper` 方法接受整体容器和模型表格单元格区域选区；无新增调用签名。
+
+**Behavior Changes**: 文字类命令按模型树顺序处理嵌套的可编辑子块，跳过非文本及 `plainTextOnly` 子块；表格区域通过模型网格解析选中的可见主单元格，合并单元格只处理一次，畸形网格不执行。工具栏悬停意外恢复表格原生 gap 光标时，选区重算保留模型表格区域；编辑区内新的主指针手势仍可改变选区。整体选中的合格流式块自身承载段前段后；结构性容器和表格区域按内部合格块处理。混合状态从实际目标读取。普通整体叶块和折叠块间光标保持原有行为。含锁定目标时，固定工具栏禁用整批命令。无需迁移已有文档数据。
+
+## Unreleased — 2026-09-25：快照展示补齐内置物料
+
+**Severity**: patch
+
+**What changed**: Snapshot Viewer 为贴纸、天气、日期卡、人员卡、分页符和行内贴纸补齐内置只读展示；文本行内结构、代码末尾换行与 Mermaid 编辑容器对齐普通模式；独立渲染容器自动取得快照主题类。
+
+**Why**: 这些内置块此前在快照路径中会成为空壳或通用占位，且直接使用渲染器时缺少主题作用域，与普通展示的视觉结果不一致。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-app.md`。
+
+**Behavior Changes**: 现有快照不需迁移。日期卡与人员卡从快照定格字段显示；天气读取 `props.frozen`，实时或缺失数据时显示占位。卡片展示组件随块的更新和销毁释放，仍不创建 `BlockCraftDoc`。宿主自定义 renderer 的优先级保持不变。
+
+## Unreleased — 2026-09-24：移除顿号触发插入菜单
+
+**Severity**: patch
+
+**What changed**: BlockTransformer 插入菜单仅由 `/` 触发，不再接受顿号 `、`。
+
+**Why**: 避免普通标点输入意外打开菜单。
+
+**Affected ai-skills files**: `blockcraft-plugins-block.md`。
+
+**Behavior Changes**: 段首及行内的 `、` 均作为普通文本；中英文逗号仍为普通文本。`/` 的段首完整菜单、行内菜单、`:` 表情入口和 Markdown 快捷转换保持原有行为。习惯使用顿号的用户改用 `/`，宿主无需改代码。
+
+## Unreleased — 2026-09-24：浮动工具栏视觉定位参照
+
+**Severity**: minor（可选参数，无需宿主迁移）
+
+**What changed**: Connected Overlay 增加 `origin?: HTMLElement`，将视觉定位参照与 `target` 生命周期所有者分开。图片和贴纸块工具栏以八向抓手完整外框定位，避开旋转抓手。
+
+**Why**: 对象本体不包含向外伸出的旋转控件，工具栏不能仅按本体尺寸定位。
+
+**Affected ai-skills files**: `blockcraft-toolbar.md`, `blockcraft-plugins-toolbar.md`。
+
+**New APIs / Migration Recipe**: 需要独立视觉参照时传入 `{target: block, origin: resizeChrome, component: Toolbar}`；既有调用无需修改。定位、边界回退与祖先滚动采用 origin，target 的销毁处理和虚拟化租约保持原义。创建结果新增 `updatePosition()`，供几何提交后同时重定位并校验编辑区边界；已关闭时无操作。
+
+## Unreleased — 2026-09-24：统一对象移动入口
+
+**Severity**: major（手动插件装配依赖变化；版本由用户决定）
+
+**What changed**: 图片、贴纸、形状本体及文本框、艺术字、组合块的移动手柄统一由
+`ObjectDragPlugin` 处理选中、点击确认和拖拽分派。移除图片/格式工具栏里的重复移动路径。
+
+**Why**: 拖拽入口不应依赖对象类型或工具栏，新增对象通过声明命中区域复用公共交互。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-embed.md`、`blockcraft-plugins-ref.md`、`blockcraft-plugins-block.md`、`blockcraft-plugins-toolbar.md`。
+
+### New APIs / Features
+
+`metadata.objectDrag?: 'placement' | 'body' | 'handles' | 'custom'`。默认卡片行为不变；
+`body` 接入标记表面/手柄，`handles` 仅接入标记手柄，`custom` 供宿主专属交互避让。
+视图标记为 `data-bc-object-drag-surface`、`data-bc-object-drag-handle`，可选
+`data-bc-object-drag-label` 提供实例级拖拽提示。标记不写入文档快照。
+
+### Breaking Changes / Migration Recipe
+
+仅手动注册 `ImgToolbarPlugin` / `ObjectFormatToolbarPlugin` 的宿主必须加上公共插件：
+
+```typescript
+// before
+const plugins = [new ObjectFormatToolbarPlugin(), new ImgToolbarPlugin()]
+// after：优先完成组/成员拾取和文字编辑判断，再进入公共移动入口
+const plugins = [new ObjectFormatToolbarPlugin(), new ImgToolbarPlugin(), new ObjectDragPlugin()]
+```
+
+bundled 装配已包含一个实例，无需重复注册。完全重建内置 Schema/视图的宿主须同步
+相应的 objectDrag 声明与区域标记。自定义对象可用 body/handles 接入；现有 custom
+声明继续有效，内置对象已不再使用它。
+
+### Behavior Changes
+
+移动仍调用现有正文排序及 placement 控制器；选组/选成员、Shift 多选、文字编辑、
+缩放/旋转职责保留。点击确认会话按手势建立，取消/销毁时清理。旧快照无需迁移。
+
+### Deprecations
+
+无公开方法删除；工具栏不再隐式提供块态拖拽入口。
+
+## Unreleased — 2026-09-24：内置 SVG 贴纸块
+
+**Severity**: minor（新增块；版本由用户决定）
+
+**What changed**: 新增 `sticker` 块及 `STICKER_PRESETS`、`getStickerPreset`、`normalizeStickerColors`、`setStickerColor`、`renderStickerDataUrl`。bundled editor 和 HTML/Markdown adapter 已注册；playground `/template` 有插入与改色演示。`StickerToolbarPlugin` 统一管理块态/行内贴纸交互，块态菜单可直接转换为四周型环绕。
+
+**Why**: 保留贴纸图形可编辑、分部改色的同时，避免在每个文档实例中重复保存 SVG 和默认配置。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-adapter.md`。
+
+**Migration Recipe**: 宿主若使用自定义 Schema/Adapter 清单，按需加入 `StickerBlockSchema` 和 `stickerBlockAdapters`；bundled editor 无需宿主迁移。新预设 ID/版本须随客户端发布并保持旧版本可用。
+
+**Behavior Changes**: 贴纸使用固定 `width/height`，不再随正文宽度缩放；新实例取预设宽高，手动缩放及块级/行内转换保留实际尺寸；提交、导入导出及初始化的宽高/旋转最多保留两位小数。未发布的 `wr/ar` 试验字段不提供兼容，不读取或导出；缺少有效固定宽高时使用预设尺寸。图片等其他对象的尺寸规则不变。贴纸数据只接受内置预设版本和已声明的十六进制色槽；未知版本显示占位提示。
+
+## Unreleased — 2026-09-23：天气手动刷新
+
+**Severity**: minor
+
+**What changed**: 天气块与行内天气工具弹窗增加刷新。`DocWeatherQuery.refresh?: boolean` 为宿主提供绕过缓存的明确意图。
+
+**Why**: 用户可以主动重试失败请求或重新获取天气，而无需重新挂载。
+
+**Affected ai-skills files**: `blockcraft-app.md`、`blockcraft-block.md`、`blockcraft-plugins-toolbar.md`、`blockcraft-plugins-inline.md`。
+
+### New APIs / Features
+
+- `WeatherBlockComponent.refreshWeather()`、`canRefreshWeather`、`weatherStatus`；内部 chip 增加 `refresh()`，原 `reload()` 幂等语义不变。
+- 宿主 `query({date, refresh: true}, signal)` 应绕过结果缓存；未传 refresh 的查询不变。
+
+### Behavior Changes
+
+手动刷新保留原日期和外观；成功后替换固定天气（可撤销），失败保留旧值。主动刷新结果统一通过 `DocMessageService` 提示，取消或失效请求保持静默。行内天气无日期的旧快照按实时查询。模板意向仍不联网；关闭行内弹窗取消本次等待，失效锚点或只读状态不提交。
+
+### Migration Recipe
+
+宿主若缓存天气，读取 `request?.refresh`，为 true 时跳过缓存读取并重新查询后更新缓存。旧实现仍兼容，但忽略该字段时可能返回缓存。版本号由发布时确定。
+
+## Unreleased — 2026-09-23：段落两端与分散对齐
+
+**Severity**: minor（可选能力新增；版本由用户决定）
+
+**What changed**: `IBlockProps.textAlign` 新增 `justify` / `distributed`，工具栏、块菜单、段落设置、只读快照和 HTML 对齐映射同步支持；新增纯函数 `paragraphAlignmentStyles()`。
+
+**Why**: 支持段落铺满可用行宽，并区分自然末行与撑满末行；兼容行内嵌入和单侧／双侧图片环绕。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-formatting.md`、`blockcraft-adapter.md`、`blockcraft-inline.md`。
+
+### New APIs / Features
+
+- `textAlign: 'justify'`：两端对齐，末行与软换行前的行自然结束。
+- `textAlign: 'distributed'`：末行也拉伸，浏览器支持时按字符分配间距。
+- `paragraphAlignmentStyles(value)`：共享 CSS 投影，返回只读的 `textAlign/textAlignLast/textJustify`。
+
+### Migration Recipe
+
+旧数据无需迁移。自定义对齐白名单和 UI 增加两个可选值即可；操作仍走 `block.updateProps({textAlign: 'justify'})` 或 `DocCRUD`，不要直接写 DOM。
+
+### Behavior Changes
+
+默认左／中／右对齐不变。新模式下列表文字区占满剩余宽度，双侧环绕按图片两边的可用区间分别对齐；原子嵌入内容不继承段落末行拉伸。HTML 导入导出保留对齐；Portable Markdown 不承诺保留。英文逐字符分散依赖浏览器 `text-justify` 支持，不模拟 Word 的排版引擎。
+
+## Unreleased — 2026-09-23：填写提示段落转换
+
+**Severity**: patch
+
+**What changed**: BlockTransformer 的快捷键、Markdown 和 slash 块转换保留 `plh` / `plhMode`，只传给首个可编辑结果；纯非文本结果追加可填写段落。锁、区域身份与其他 meta 不继承。
+
+**Why**: 转换填写段落后继续显示模板提示，撤销／重做保持提示与内容一致。
+
+**Affected ai-skills files**: `blockcraft-plugins-block.md`。
+
+**Migration**: 无新增公共 API；宿主若禁止所有提示段落 replace 操作，需在自己的模板域策略中允许区域内正文替换，保留用户锁和 Schema 校验。
+
+## Unreleased — 2026-09-22：授权结构变换
+
+**Severity**: minor（新增可选 API；版本由用户决定）
+
+**What changed**: Document 域新增 `applyDocumentStructurePlan`、`DocumentStructurePlan`、保留子树映射和 `DocConfig.authorizeStructureTransform`。
+
+**Why**: 模板切换需要保留富文本身份，并把新结构和版式作为一个可撤销事务提交。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-app.md`、`blockcraft-data.md`。
+
+### New APIs / Features
+
+目标树先在隔离 CRDT 中准备，再一次提交；映射区域保留 Y.Text、块 ID 和相对锚点。历史回放重新核验权限。
+
+### Deprecations
+
+无。
+
+### Migration Recipe
+
+原有宿主无需修改。需要此能力的宿主增加实时授权回调，加载和确认完毕后传入目标树、空承接容器映射和 root 补丁。不要把快照整体重新导入当作保留身份。详见 `blockcraft-app.md` 和 `blockcraft-data.md`。
+
+### Behavior Changes
+
+仅显式授权的结构操作可处理模板锁；用户锁、只读、输入法组合、未处理修订继续阻止操作。普通 CRUD 和普通历史规则不变。
+
+## Unreleased — 2026-09-22：有序列表默认连续编号
+
+**Severity**: major（默认断组行为变更；不在本次修改包版本号）
+
+**What changed**: 同父容器、同缩进和标题级别的有序列表默认跨非有序块连续编号；编号样式分组与新项样式继承沿用同一边界。
+
+**Why**: 普通段落用于穿插说明，不应使后续列表自动从 1 开始。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-block.md`。
+
+### Breaking Changes
+
+- 未设置正数 `start` 的旧列表，触发编号重算时会跨同层或更深的非有序块续号；`continuePrevious: false` 不表示显式重启。
+
+### Migration Recipe
+
+需要保留旧断组效果时，为后段首项设置 `{start: 1}`；需要连续时省略 `start` 或设为 `0`。
+已有正数起始值保持不变，不执行批量数据迁移。`continuePrevious` 字段及菜单写入保持兼容。
+
+### Behavior Changes
+
+- 普通标题不截断；更浅缩进、相关有序标题边界、不同父容器与正数 `start` 仍划分计数。
+- 自动修复只写 `order`，新插入项可继承同组 `ms`，不因普通段落写入 `start`。
+- 仅修改起始值时沿同组局部重算，跨普通段落传播并止于下一个显式起始值；不再维护跨段专用的第二份计数缓存。
+
+## Unreleased — 2026-09-22：人员卡部门/职务位置
+
+**Severity**: minor
+
+**What changed**: 人员卡复用 `dept` 表达显隐与位置：`off` 关闭、`on` 跟随样式、`below/right/above` 明确位置。
+
+**Why**: 页眉与署名需要紧凑同行排版，身份介绍也可能需要先展示部门职务；单字段避免开关与位置的冗余组合。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`。
+
+### New APIs / Features
+
+- `DEPT_DISPLAY` 新增 `Below` / `Right` / `Above`，`showsDept()` 识别 `on / below / right / above`。
+- `viewOf(person, display?, style?)` 支持 dept 字符串与样式，兼容原 boolean 调用（true 保持下方）。
+  `PersonCardView.dept` 为可选展示方式，旧 view 的已有描述继续排在下方。
+
+### Deprecations
+
+无。
+
+### Migration Recipe
+
+已有数据无需批量迁移。`dept: 'on'` 按样式取默认：横排及横排拼音为右侧，竖排为下方。
+需要固定原下方外观时显式使用 `{dept: 'below'}`；右侧使用 `{dept: 'right'}`，上方使用 `{dept: 'above'}`。
+关闭使用 `{dept: 'off'}` 或删除属性。
+模板宿主继续写 `draft:dept`，建档转为同名 props；不增加独立位置字段。
+宿主原先用 `dept === 'on'` 判断开启的地方需改为 `showsDept(dept)` 或识别自动及三种明确位置。
+CSES 配置入口需要搭配包含本能力的 BlockCraft 版本。版本号及发布由维护者决定。
+
+### Behavior Changes
+
+缺省/未知值保持关闭；旧 `on` 在横排样式下从下方变成默认右侧，竖排保持下方。
+显式 `below/right/above` 不随样式切换。姓名和拼音始终作为一组，右侧空间不足时部门换到下一行；
+切换显示方式不修改字号、缩放或外框几何。部门为空时不留占位，关闭后不另存之前位置。
+
+## Unreleased — 2026-09-22：图片八向抓手与旋转
+
+**Severity**: minor
+
+**What changed**: 图片复用公共八向抓手及旋转抓手，四角等比缩放、四边独立调整宽高，新增可选 `rotation` 属性，保留动态 `wr/ar` 和组合尺寸归一化。
+
+**Why**: 统一图片与艺术字的缩放操作，同时保留容器响应式尺寸与旧图片外观。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`。
+
+### New APIs / Features
+
+- `ShapeResizerComponent.rotatable` 默认 `true`，可关闭旋转按钮。图片仅在浮动布局显示旋转抓手。
+- `ImageBlockModel.props.rotation` 与 `ImageBlockCreateInput.rotation` 为可选顺时针角度，缺省 0；旋转抓手支持 Shift 15° 吸附和 Escape 取消。
+- `normalizeObjectSize()`、`resolveObjectDimensions()`、`deriveObjectSizeFromPixels()` 新增可选末参数 `allowOverflow = false`；组合内换算启用它，避免宽图旋转后受 100% 上限影响而缩小。
+- 可选订阅 `resizeStart`（手柄方向）和 `resizeEnd`（提交前或取消时），用于临时外观清理。
+- 图片可选 `props.fit: 'fill'` 表示四边拉伸意图；未设置时仍为 contain。
+
+### Behavior Changes
+
+- 图片原左右等比条替换为八向抓手，四边现在独立调整对应轴；四角保持当前比例。
+- 浮动图片北/西向缩放同步回写位置，组合重排与尺寸写入仍在同一个 Undo 事务内。
+- 抓手不触发整图移动或双击预览；视频和行内图片的抓手不变。
+- 图片工具栏保持原定位；流式（上下型）图片隐藏旋转抓手，八向缩放与已有 `rotation` 属性不变。
+- 旋转图片的视觉面保持与模型角度一致；说明文字不旋转。旋转后的八向缩放补偿中心变化，保持对边/对角锚点。
+- 组合内图片允许宽度比例大于 100%，以表达未旋转宽度超出旋转后包围盒的情况；普通对象的比例上限保持不变。
+
+### Migration Recipe
+
+无需迁移已有文档。自定义图片抓手样式应从图片内的 `block-resizer` 调整到
+`shape-resizer` / `.shape-resizer__handle`。HTML 保存 `data-bc-image-fit="fill"` 和 `data-bc-image-rotation`；
+自定义组合模型投影计算比例时需传入 `allowOverflow: true`（普通对象仍使用默认值）；
+标准 Markdown 继续降级为内容图片。此条目不调整包版本号。
+
+## Unreleased — 2026-09-22：原生行内人员
+
+**Severity**: minor
+
+**What changed**: 新增 `person` Embed、`PersonInlineExtensionPlugin`、显示格式及创建人实例化 API。
+
+**Why**: 记录人等短信息应能与日期、天气、正文同段排版，避免为姓名放置固定尺寸人员卡片。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-embed.md`、`blockcraft-plugin.md`、`blockcraft-plugins-ref.md`、`blockcraft-plugins-inline.md`。
+
+### New APIs
+
+- `createInlinePersonDelta(person?, format?)`、`readInlinePersonDelta`、`formatInlinePersonDelta`、`createInlinePersonEmbedConverter`。
+- `INLINE_PERSON_EMBED_KEY`、`INLINE_PERSON_CLASS`、`INLINE_PERSON_FORMATS`、`INLINE_PERSON_FORMAT_LABELS`、`InlinePersonFormat`、`isInlinePersonFormat`。
+- `personEmbedAdapters`、`materializeInlinePersonSnapshots(snapshots, creator)`、`PersonInlineExtensionPlugin`。
+
+### Migration Recipe
+
+```typescript
+const intent = createInlinePersonDelta(); // 文档创建人占位，默认仅姓名
+// 在建档边界调用；creator 复用 FrozenPersonCardData，缺失时传 null。
+const children = materializeInlinePersonSnapshots(template.children, creator);
+```
+
+bundled editor、adapter 和 Snapshot Viewer 自动注册；自组装宿主需注册同 key converter / adapter 及格式插件。
+原人员卡片、mention 与现有数据不变，无自动转换。CSES 模板面板接入及依赖升级独立进行，本条目不代表发布。
+
+### Behavior Changes
+
+显示格式可选姓名、头像＋姓名、姓名＋部门/职务、头像＋姓名＋部门/职务，字号继承段落；默认蓝色，悬停加同色下划线，显式文字颜色可覆盖。建档后不依赖查看者身份；
+已有真值不重写，缺失来源显示不可用。只读及已失效锚点不写入。HTML/BlockCraft Markdown 保真，portable Markdown 输出文字。
+
+## Unreleased — 2026-09-22：补齐缎带及模板装饰形状
+
+**Severity**: minor
+
+**What changed**: `ShapeKind` / `SHAPE_KINDS` / `SHAPE_DEFINITIONS` 新增 8 种形状，目录从 103 扩展至 111 项。
+
+**Why**: 花间来信的平直双端内凹标题缎带无法由原上凸 / 下凸弯带准确表达，同时补充常用模板装饰轮廓。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`。
+
+### New APIs
+
+新增种类：`ribbon-notched`、`ribbon-notched-left`、`ribbon-notched-right`、`bookmark`、`ticket`、`arch`、`flower-6`、`scalloped-seal`。
+使用方式：`ShapeBlockSchema.createSnapshot('ribbon-notched', '每日感悟')`；选择器自动显示新种类。
+
+### Migration Recipe
+
+现有数据无需迁移，原 `ribbon` / `ribbon-2` 轮廓不变。需要平直内凹缎带时显式选用 `ribbon-notched`。
+宿主须升级至包含这些种类的编辑器后再创建相关模板；旧版本不识别新 ID，不能保证还原。
+版本号及发布由维护者决定，此条目不代表已经发布。
+
+### Behavior Changes
+
+新增几何共用既有文字编辑、描边、填充、效果、几何节点编辑及快照渲染路径，不改变原形状默认行为。
+HTML 与 BlockCraft Markdown 保留新形状 ID；portable Markdown 仍降级为文字。
+
+## Unreleased — 2026-09-22：Connected Overlay 按实际可视边界切换候选位置
+
+**Severity**: patch
+
+**What changed**: `DocOverlayService` 在平移越界浮层之前，先按 `doc.scrollContainer` 或显式 `clampTo` 与浏览器视口的可用空间选择已有候选位置。Connected Overlay 同时跟随锚点祖先的独立滚动。
+
+**Why**: CDK 仅按浏览器窗口判断上下空间，编辑器视口更小时，顶部放不下的工具栏会被直接推回目标块上。内层填写区滚动也需要重新检查边界。
+
+**Affected ai-skills files**:
+
+- `blockcraft-toolbar.md`
+
+### Behavior Changes
+
+- 上方空间不足且下方可容纳时，使用调用方提供的下方候选；左右候选同样遵守实际边界。
+- 保留调用方的候选顺序与偏移，滚回后可恢复首选位置；都放不下时仍沿用尺寸限制和平移兜底。
+- `clampTo` 仍优先于文档滚动容器，全屏浮层不会受背景编辑器边界限制；global overlay 行为不变。
+- API 签名与数据格式不变，宿主无需迁移。
+
+## Unreleased — 2026-09-22：行内天气模板素材与显示格式
+
+**Severity**: minor
+
+**What changed**: 新增 `weather` Inline Embed、模板实例化 helper 和零配置 `WeatherInlineExtensionPlugin`。模板面板新增天气随文素材，支持四种显示组合。
+
+**Why**: 天气需要与日期一样嵌入段落，并独立配置格式，不能用独立卡片外观代替文本流对象。
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-embed.md`
+- `blockcraft-app.md`
+- `blockcraft-plugin.md`
+- `blockcraft-plugins-inline.md`
+- `blockcraft-plugins-ref.md`
+
+### New APIs / Features
+
+`INLINE_WEATHER_EMBED_KEY`、`INLINE_WEATHER_CLASS`、`INLINE_WEATHER_FORMATS`、`InlineWeatherFormat`、
+`isInlineWeatherFormat`、`createInlineWeatherDelta`、`readInlineWeatherDelta`、`formatInlineWeatherDelta`、
+`createInlineWeatherEmbedConverter`、`weatherEmbedAdapters`、`materializeInlineWeatherSnapshots`、`WeatherInlineExtensionPlugin`。
+
+### Migration Recipe
+
+旧天气卡片无需迁移。bundled 编辑器与只读快照展示自动识别新 Embed；
+自组装宿主注册 converter、adapter 和格式插件，模板创建流程调用
+`materializeInlineWeatherSnapshots` 并传入现有天气服务（示例见 `blockcraft-app.md`）。
+
+### Behavior Changes
+
+仅新增行内天气，默认使用主题蓝色，允许显式文字色覆盖。格式独立存储，不改变定格天气；模板编辑不查询天气，
+创建文档时一次求值并保存。普通服务失败显示不可用；取消不会返回供写入的快照。
+既有天气块/行内日期不变。包版本由用户决定，本条为未发布记录。
+
+## Unreleased — 2026-09-21：子栏 mini 抓手与事务内单栏展开
+
+**Severity**: minor
+
+**What changed**: 子栏顶部新增悬停抓手，仅支持当前分栏组内重排，提供半透明整栏预览和插入线；本地 CRUD 减栏后的单栏容器在原事务内自动展开。
+
+**Why**: 子栏需要直接拖动；单栏收尾必须与原操作共享 Undo 项，避免视图回调或延时清理破坏重做和焦点。
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+- `blockcraft-toolbar.md`
+- `blockcraft-data.md`
+
+### Behavior Changes
+
+- `columns.removeColumn()` 接受任意有效子栏索引；减到一栏时保留内容并展开为上下布局。
+- `DocCRUD.transact()` 在本地外层回调结束前收尾受影响分栏；中途减栏再补栏不会误展开。Undo/Redo、远端同步和初始加载不另行触发清理。
+- 同组重排的栏宽跟随子栏 ID；增减栏后的宽度与结构同时记录进历史。只读后代或父级不允许内容类型时保留单栏容器。
+- 抓手使用 `.column-drag-handle`，不需要额外注册 Plugin，无快照格式迁移。
+
+## Unreleased — 2026-09-21：分栏改用跟随子栏焦点的悬浮操作条
+
+**Severity**: patch
+
+**What changed**: 分栏结构控件移到跟随子栏焦点的 CDK connected Overlay，提供左右插入和取消分栏，保留栏间拖动线。
+
+**Why**: 避免控件撑大填写区的横向滚动范围、被裁剪或占据正文空间。
+
+**Affected ai-skills files**:
+
+- `blockcraft-toolbar.md`
+
+### Behavior Changes
+
+- 根据模型选区显示当前子栏的操作条，支持左右插入；取消分栏按从左到右的顺序保留内容，可撤销恢复。
+- 不再渲染 `.column-divider .add-point` 或末尾添加专用 divider；宿主针对这些内部节点的样式或自动化定位需调整。
+- 快照结构、列宽、列数上限、添加列命令与填写区滚动语义不变，无数据迁移。
+
+## Unreleased — 2026-09-21：填写区域限制单页高度
+
+**Severity**: patch
+
+**What changed**: `render-unit` 在分页和打印模式下最多占一页正文高度（含边框、内边距），超出内容由内层滚动承载，保留外层选区和缩放控件；嵌套区域同样受限。
+
+**Why**: 内容区域此前没有单页高度约束，长内容会溢出纸张正文。
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+
+### Behavior Changes
+
+- 未设置尺寸的区域继续随内容增长或收缩，不把分页上限写成固定高度。
+- 手动设置的比例或旧像素尺寸仍保留；分页仅限制显示高度，关闭分页恢复原有尺寸。
+- 不修改快照格式、嵌套规则或其他容器的分页策略；宿主无需迁移数据。
+
+## 0.10.5 — 2026-09-21：通用对象拖拽插件归入框架
+
+**Severity**: patch（按本次发布要求；新增通用插件，修复宿主拖拽能力不一致）。
+
+**What changed**: 框架导出零配置 `ObjectDragPlugin`，默认 bundled 装配在对象格式和图片插件之后注册。
+对象移动按 placement 能力判断，保留专属交互、只读、锁定、缩放控件与 gap 的边界。
+组合成员拖动以普通用户事务提交，位置和派生组合边界一起进入撤销历史。
+
+**Why**: 对象拖拽属于编辑器能力；宿主只在模板页装载临时实现会导致普通文档中的人员等浮动块无法移动。
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-plugin.md`
+- `blockcraft-plugins-ref.md`
+- `blockcraft-plugins-block.md`
+
+### New APIs / Features
+
+- `ObjectDragPlugin`，运行时插件名 `ObjectDrag`，无构造选项。
+
+### Migration Recipe
+
+```typescript
+// before: 宿主维护自己的实现
+import {ObjectDragPlugin} from './materials/plugins/object-drag.plugin';
+// after: 手动装配仍创建一个实例，顺序在对象格式与图片插件之后
+import {ObjectDragPlugin} from '@ccc/blockcraft';
+```
+
+使用 `createBundledEditorCapabilities()` 的宿主直接使用返回的插件列表，删除自行追加的拖拽实例。
+删除宿主重复实现；客户端需要升级到包含该导出的框架产物后才能使用新 import。
+
+### Behavior Changes
+
+- 默认装配中的人员、日期、天气及自定义 placement 对象可从本体启动浮动移动。
+- 正文流排序、组合首击选择和其他专属对象的编辑手势保持原路径。
+- 手动装配且不添加此插件的宿主行为不变。
+
+## Unreleased — 2026-09-21：天气块布局与色调
+
+**Severity**: minor（新增可选展示能力，不修改包版本）。
+
+**What changed**: 天气新增六种通用布局，保留经典紧凑默认；新增独立色调、颜色覆盖、
+透明背景、随强调色图标和高低温开关。`WeatherToolbarPlugin` 提供天气专属浮动设置，配置入口位于块右上角。
+
+**Why**: 支持不同文档排版和主题，避免把固定装饰风格与天气数据绑定。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-plugin.md`、`blockcraft-block.md`、
+`blockcraft-plugins-ref.md`、`blockcraft-plugins-toolbar.md`。
+
+### New APIs / Features
+
+`WEATHER_LAYOUTS`、`WEATHER_STYLES`、`WEATHER_PALETTES`、`WEATHER_DISPLAY_CONFIGS`、
+`WeatherPresentationProps`、`WeatherLayout`、`WeatherPalette`、`resolveWeatherLayout`、
+`weatherPalettePatch`、`WeatherSettingsComponent`、`WeatherToolbarPlugin`；`WeatherLook` 增加布局和色调投影字段。
+
+### Migration Recipe
+
+旧快照不需要改动；`WeatherBlockSchema.createSnapshot()` 仍创建 160×42 默认块。
+宿主物料面板可把旧 `fg/bw/bc` 配置替换成 `WEATHER_DISPLAY_CONFIGS`。
+默认 bundled editor 已装配浮动插件；自定义 Doc 可注册 `new WeatherToolbarPlugin()`。
+主动启用新款时写入 `{style: 'ledger', ...weatherPalettePatch('blue')}`。
+
+### Behavior Changes
+
+仅主动选用新选项时生效。换布局重置为该档尺寸；颜色/图标/高低温不重置尺寸。
+天气配置面板与日期设置一致：本地预览、取消/应用，应用仅写改过的字段并作为一个撤销步骤。
+CSES 取色器与下拉子浮层保持当前天气操作目标；关闭或切换块丢弃未应用修改。
+保留时间锚、宿主定位/查询、定格数据、选区、模板投影、只读保护和旧外框语义。
+
+## Unreleased — 2026-09-21：日期卡片独立设置入口
+
+**Severity**: minor（新增交互，不修改包版本）。
+
+**What changed**: 可编辑日期卡片在悬停、选中或键盘聚焦时显示右上角齿轮图标按钮，并支持双击卡片打开 CDK 设置浮层。
+浮层统一配置样式、显示内容、字体、分层字号、文字/主色、背景色、边框色和线型；无需宿主侧栏或额外插件。
+
+**Why**: 普通文档没有模板设置面板，也需要完整配置日期块。
+
+**Affected ai-skills files**: `blockcraft-block.md`。
+
+### New APIs / Features
+
+配置沿用既有 `style/format/ff/fs*/fg/bg/bc/bw` 字段；浮层内预览，应用时只提交修改字段并形成一个撤销步骤。
+
+### Migration Recipe
+
+无数据迁移或注册变更。普通文档写 props；已有 draft 投影的模板写同名 draft meta，清空覆盖值沿用空字符串语义。
+
+### Behavior Changes
+
+只读/锁定块没有入口；设置期间转只读、删除块或卸载视图会关闭浮层。取消与 Esc 不修改文档。
+日期定格值不在设置范围内，既有侧栏继续使用相同字段。
+
+## Unreleased — 2026-09-21：段落装饰与区域边框
+
+**Severity**: major（包含已确认的分割线文字行为移除；发布版本由用户决定，本次不修改版本号）。
+
+**What changed**: 新增 ParagraphDecoration 和 RegionBorders；段落设置提供边缘装饰线，render-unit 支持四边独立边框。编辑器与快照预览共享投影，HTML adapter 保留新增配置。
+
+**Why**: 模板标题需要可编辑文字与延伸线；内容区域需要独立上边框，避免叠加填写区或将文字封装成不可编辑的分割线标签。
+
+**Affected ai-skills files**: blockcraft-block.md、blockcraft-plugins-toolbar.md。
+
+### Breaking Changes
+
+- divider 旧 text、align、color、fontSize、fontWeight、fontStyle、letterSpacing 不再渲染，HTML adapter 不再输出或恢复；不迁移旧数据。纯线条、胶带、花边及尺寸回落保留。
+- paragraph 的文本容器从宿主移动到稳定内层 `.bc-paragraph-text.edit-container`。自定义 DOM 代码应使用块的原生编辑容器 API，不依赖宿主直接文本子节点。
+
+### New APIs / Features
+
+- paragraph.props.decoration：before/after/both/above/below，线型、线色、透明度、粗细、间距、独立长度、对齐、上下线范围与窄栏处理。null 关闭。不提供横格背景。
+- render-unit.props.borders：四边稀疏 CSS 边框简写；有显式边框时未声明边为 none，覆盖旧 borderColor；null 恢复旧外观。
+
+### Migration Recipe
+
+已有 divider 文字字段允许留存但被忽略。新建可编辑分隔标题时使用：
+
+```typescript
+ParagraphBlockSchema.createSnapshot('感悟', {
+  decoration: {position: 'after', color: '#D4C2A7', width: 1, gap: 12},
+});
+```
+
+
+## Unreleased — 2026-09-21：日期卡片新增五种形式
+
+**Severity**: minor（新增可选样式，不修改包版本）。
+
+**What changed**: `DATE_CARD_STYLES` 追加报头、页边签、对开日期、胶囊、双轨；
+`DATE_CARD_FONT_KEYS` / `DateCardTypographyProps` 对应追加五个独立字号字段。
+
+**Why**: 将已选定的 HTML 形式 01–05 落为可编辑、可保存的日期卡片样式。
+
+**Affected ai-skills files**: `blockcraft-block.md`。
+
+### New APIs / Features
+
+新增 style ID `masthead/bookmark/split/pill/rail` 与字号字段
+`fsMasthead/fsBookmark/fsSplit/fsPill/fsRail`，支持已有字体、颜色、边框和格式设置。
+
+### Migration Recipe
+
+旧文档无需迁移；默认样式和既有七档尺寸不变。模板宿主直接消费公开目录，
+更新 BlockCraft 依赖后会派生新缩略图选项和字号存储字段，不需额外注册物料。
+
+### Behavior Changes
+
+新样式三种格式保留固定轮廓，只切换年份与星期显隐。它们与已有样式沿用相同的
+Yjs、draft 投影、撤销重做和缩放路径；不会改变日期来源或定格规则。
+
+## Unreleased — 2026-09-21：日期卡片字体与字号
+
+**Severity**: minor（新增可选能力，不修改包版本）。
+
+**What changed**: 日期卡片支持 `ff` 字体与按七种样式分别保存的字号覆盖；新增
+`DateCardTypographyProps`、`DateCardFontKey/Role`、`DATE_CARD_FONT_KEYS`、`dateCardFonts()`、
+`storeDateCardFont()` 及 `DateCardRenderComponent.contentScale`。`DateCardLook` 新增字体与字号投影。
+
+**Why**: 模板作者需要修改日期卡片的字体及各文字层级大小，同时保留整卡缩放和原有样式默认值。
+
+**Affected ai-skills files**:
+- `blockcraft-block.md`
+
+### New APIs / Features
+
+字体使用公共字体目录；字号覆盖按样式存为稀疏字符串。模板 draft 和正式 props 共用渲染路径。
+
+### Migration Recipe
+
+旧文档无需迁移。宿主读取 `dateCardFonts()`，以 `contentScale` 换算控件显示字号；
+通过 `storeDateCardFont()` 构造事务补丁，模板域将相同字段声明到配置目录并写入 draft meta。
+
+### Behavior Changes
+
+无字体/字号覆盖时保留原设计。显式覆盖只改变日期卡片文字；卡片原缩放、格式和颜色路径继续生效。
+
+## Unreleased — 2026-09-21：行内时间显示分隔符
+
+**Severity**: patch（不修改包版本）。
+
+**What changed**: `formatInlineDateValue()` 将内置格式中日期、星期和时间之间的空格显示为 ` · `，英文日期内部空格保持不变。
+
+**Why**: 让行内时间的各部分边界更清晰。
+
+**Affected ai-skills files**: `blockcraft-embed.md`。
+
+### Behavior Changes
+
+正文、格式菜单、只读预览与导出文本统一显示为例如 `2026-08-14 · 15:54`。
+冻结时间值、格式标识及 HTML 往返数据不变，无需数据迁移；依赖显示文本的断言需同步调整。
+
+## Unreleased — 2026-09-20：DDD 目录归位与默认装配收敛
+
+**Severity**: patch（架构和源码归属整理，原公开签名与默认行为不变；不修改包版本）。
+
+**What changed**: 宿主基类/注册契约归入 `framework/host`，Token 和 Overlay 归入
+`framework/angular`，文档视图归入 `framework/doc/view`，对象操作与拖放归入
+`framework/modules/object` / `drag-drop`。打印导出从分页核心迁入 `tools/export`。
+旧服务、导出、YNE 路径保留同一实现的转导出。Doc / Clipboard / Builder 的默认装配归属
+`editor`，核心使用显式运行时依赖，第四阶段过渡性的 legacy-defaults 桥已移除。
+图片数据规则与 DOM converter 分离；领域实现和通用 codec 禁止经兼容 barrel 回流产品层。
+仓库桌面应用迁入 `apps/desktop`。
+
+**Why**: 让目录体现领域职责、平台接入和产品组合的所有权，并以源码检查约束依赖方向。
+保留旧构造器、Token 身份、宿主自定义服务的 YNE 缺省能力、Embed 覆盖规则和事件注册次数。
+此次入口审计不新增 adapters/viewer/export npm 子入口：注册快照、内置 registry、Doc/分页插件
+依赖仍是当前契约的一部分，不能通过扩大 flavour 或复制默认类来隐藏。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-app.md`、`blockcraft-adapter.md`、
+`blockcraft-inline.md`、`blockcraft-embed.md`、`blockcraft-toolbar.md`。
+
+### Migration Recipe
+
+外部 npm 调用方无需修改；继续从 `@ccc/blockcraft` 导入 `BlockCraftDoc`、`ClipboardManager`、
+服务类、Token、转换/展示/导出 API，或使用已有轻量子入口。`DocumentRuntime` 是内部装配接口，
+不属于新的 npm 入口，也不是 DocConfig 的配置项。没有新增 deprecated API。
+
+仓库内贡献者应从领域实现路径导入，旧 services 等目录只维护兼容转导出；应用命令更新为
+`pnpm dev:desktop` / `pnpm build:desktop` / `pnpm test:desktop`，原生开发为
+`pnpm --dir apps/desktop tauri:dev`。
+
+### Behavior Changes
+
+无预期用户行为变化。Yjs 数据、快照格式、Schema/注册表约束、剪贴板优先级、资源回传、
+Undo/Redo、打印后端和桌面文件关联均保持原语义。六个 DI Token 的描述和泛型保持不变；
+链接/天气 Token 保留 type-only 的具体类兼容引用，因此不宣称整个 framework 已可独立发布。
+
+## Unreleased — 2026-09-20：剪贴板来源适配第四阶段
+
+**Severity**: minor（新增可选扩展契约；不修改包版本，不新增 npm 子入口）。
+
+**What changed**: 有道云 JSON / HTML 转换与资源处理迁入 `adapters/sources/yne/`，原源码路径保留
+同一实现的转导出。ClipboardManager 改为调用来源接口；默认编辑器显式组合来源列表，
+旧宿主缺省行为由一个兼容装配入口保留。通用 HTML/Markdown codec 不引用来源集成。
+
+**Why**: 将特定应用格式、剪贴板编排和默认组合分开，同时保持已有自定义 DocAdapterService
+的隐式 YNE 支持。兼容桥仍有物理反向依赖，本轮不宣称整个 framework 已彻底解耦。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-app.md`、`blockcraft-adapter.md`。
+
+### New APIs / Features
+
+- 主入口新增 `ClipboardSourceAdapter`、`ClipboardSourceData` 类型和只读
+  `BUNDLED_CLIPBOARD_SOURCE_ADAPTERS` 默认组合。
+- `DocAdapterService.clipboardSourceAdapters` 为可选列表；缺省使用原默认来源，显式列表完整替代默认值。
+- 来源解析同步；`prepareSnapshot` 在克隆/改写 ID 前清理临时数据，可返回下一 tick 的资源收尾闭包。
+  接口涉及文档生命周期与注册快照，不属于纯 `framework/ports`。无新增 deprecation。
+
+### Migration Recipe
+
+旧服务、provider、剪贴板调用无需迁移。在现有服务子类中按需增加：
+
+```typescript
+import {BUNDLED_CLIPBOARD_SOURCE_ADAPTERS} from '@ccc/blockcraft';
+// 使用自己的 mySource 优先解析，继续保留默认来源：
+// override clipboardSourceAdapters = [mySource, ...BUNDLED_CLIPBOARD_SOURCE_ADAPTERS];
+// 显式关闭来源识别（普通 HTML / 纯文本仍保留）：
+// override clipboardSourceAdapters = [];
+```
+
+### Behavior Changes
+
+现有默认行为不变：内部快照、YNE JSON、HTML marker、YNE HTML、普通 HTML/文本优先级，
+文本/gap 插入、格式选择和异步 HTML 的协作选区重定位保留。附件标记在插入前剥离，使用最终 ID
+异步重传；目标删除、CORS/鉴权失败、非 http(s) 上传结果继续按原规则处理。无需文档数据迁移。
+
+## Unreleased — 2026-09-20：宿主能力端口与 Angular 接入第三阶段
+
+**Severity**: minor（新增聚合类型入口；不修改包版本）。
+
+**What changed**: 新增 `@ccc/blockcraft/framework/ports`，聚合文件、消息、链接预览、
+天气的宿主契约。四个原 DI Token 归入 `framework/angular`；链接预览与天气默认实现
+归入 `editor/services`。原服务模块继续转导出同一 Token / 类，文件与消息基类保留。
+HTML/Markdown Adapter 及其上下文改为仅类型依赖结构等价的 `DocFilePort`。
+
+**Why**: 分开编辑器对宿主的能力需求、Angular 注入与默认实现，独立消费契约时
+不加载完整编辑器；按宿主边界提供一个聚合入口，避免按服务细分 npm 子路径。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-app.md`、`blockcraft-adapter.md`。
+
+### New APIs / Features
+
+`DocFilePort`、`DocMessagePort`、`DocLinkPreviewPort`、`DocWeatherPort` 从 ports 及主入口导出。
+既有 `DocAttachmentInfo`、`UploadProgressCallback`、`LinkPreviewData`、`DocWeatherTone`、
+`DocWeatherData`、`DocWeatherQuery` 也可从 ports 独立导入。无新增 deprecation。
+Port 只有类型；文件与取消契约仍需要 `File` / `FileList` / `AbortSignal` 浏览器类型库。
+
+### Migration Recipe
+
+```typescript
+// 原有继承和 Angular provider 继续使用，无需迁移。
+import {DocFileService, DOC_FILE_SERVICE_TOKEN} from '@ccc/blockcraft';
+// 仅描述宿主文件能力时，可独立引用契约。
+import type {DocFilePort} from '@ccc/blockcraft/framework/ports';
+function useHostFiles(files: DocFilePort) {
+  return files.inputFiles('image/*', false);
+}
+```
+
+仅实现 Port 不会继承基类的默认方法；原 `extends DocFileService` 继续获得下载与文件选择实现。
+Token 保留原泛型，包括链接服务类的 private/protected 类型边界，不强制改写现有注入结果类型。
+
+### Behavior Changes
+
+无行为或数据格式变化：原方法、默认实现、Token 身份及描述、provider 方式均保留。
+文件内部映射 URL 与浏览器预览 URL 的区别、清理方式、链接 endpoint / abort / 错误处理、
+天气未配置错误保持不变。无需迁移文档数据。
+
+## Unreleased — 2026-09-20：通用快照与注册表边界第二阶段
+
+**Severity**: minor（新增类型 API；不修改包版本或新增 npm 子入口）。
+
+**What changed**: 现有 `framework/model` 入口新增 `BlockDescriptor<P, M, F>` 与
+`BlockSnapshot<P, M, F>`，并接收基础元数据契约。通用快照不依赖组件注册表；
+编辑器 `BaseBlockDesc` 复用通用描述字段，`IBlockSnapshot` 保留注册表、递归和接口增强关系。
+
+**Why**: 将数据交换契约与编辑器组件注册约束分开，独立消费模型时不加载 Angular 或编辑器声明，
+同时保持现有 Schema、文档编辑、转换和展示 API 的类型约束。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-app.md`、`blockcraft-block.md`、`blockcraft-data.md`。
+
+### New APIs / Features
+
+`BlockDescriptor`、`BlockSnapshot` 通过模型聚合入口和原主入口导出。
+`IBaseMetadata`、`IMetadata`、`BlockPlaceholderMode` 在模型入口独立可用，旧路径继续转导出。
+`F` 缺省为 `string`，指定 flavour 集合时约束整个子树；父节点的 `P` / `M` 不传播给子块。
+无新增 deprecation。
+
+### Migration Recipe
+
+```typescript
+// 编辑器创建/编辑流程：原契约继续使用
+import type {IBlockSnapshot} from '@ccc/blockcraft';
+// 独立数据交换：无需全局注册表，不自动获得编辑器 Schema 资格
+import type {BlockSnapshot} from '@ccc/blockcraft/framework/model';
+type PortableTree = BlockSnapshot;
+type KnownTree = BlockSnapshot<{}, {}, 'root' | 'paragraph'>;
+```
+
+### Behavior Changes
+
+无运行时或存储格式变化。编辑器 flavour、children、props/meta 泛型、空 void children、
+editable Delta 及 BaseBlockDesc 类型增强语义保持兼容；通用快照不是运行时校验器。
+Schema 注册、Yjs 事务、doc.exportSnapshot 和写入路径不变，无文档数据迁移。
+
+## Unreleased — 2026-09-20：共享内容模型与 DDD 边界第一阶段
+
+**Severity**: minor（新增兼容聚合入口；不修改包版本）。
+
+**What changed**: 将基础 Block 属性、Inline/Delta 契约和持久化排版标识归入
+`framework/model/`，提供一个 `@ccc/blockcraft/framework/model` 聚合入口。
+原主入口、旧类型路径及 `block-base` / typography 子入口继续转导出同一份契约和运行时符号。
+`global/utils` 改为仅类型依赖共享模型，移除对排版实现层的声明引用及此前的包根入口绕行文件。
+
+**Why**: 以共享内容模型作为编辑、转换与展示的稳定契约，明确依赖方向，
+不按文件数量扩张 npm 入口。字体 ID 与格式键属于数据契约，字体目录、算法和 DOM 应用属于排版能力。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-app.md`、`blockcraft-data.md`、`blockcraft-inline.md`。
+
+### New APIs / Features
+
+新增聚合入口 `@ccc/blockcraft/framework/model`，包含 `BlockNodeType`、`InlineNodeType`、
+`INLINE_TYPOGRAPHY_ATTRS`、基础块属性、Delta/行内类型与字体 ID 类型。
+无第三方运行时依赖，可在无 DOM 类型库和编辑器全局声明的 Node 环境中使用。
+无新增 deprecation。
+
+### Migration Recipe
+
+```typescript
+// before（继续兼容）
+import {BlockNodeType, type DeltaInsert} from '@ccc/blockcraft';
+// after（独立使用基础内容契约）
+import {BlockNodeType, type DeltaInsert} from '@ccc/blockcraft/framework/model';
+```
+
+### Behavior Changes
+
+字段、枚举值、格式键、字体 ID、类型索引约束与 `null` 清除语义不变；无数据迁移。
+`IBlockSnapshot` / `BaseBlockDesc` 仍依赖原块注册表，未搬入新入口，也未放宽其类型约束。
+DocCRUD / DocChain、Yjs 事务、选区与撤回路径不变。整包 peerDependencies 不变。
+
+## Unreleased — 2026-09-20：轻量领域能力与基础块类型入口
+
+**Severity**: minor（新增兼容入口；发布版本由维护者决定，不修改包版本）。
+
+**What changed**: 新增 typography、object-format、pagination/engine 和 block-base
+四个独立构建入口，保留源码目录层级，统一以能力目录中的 `index.ts` 作为构建入口。
+排版计算与 DOM 应用代码在能力目录内分开，对象格式的 helper 归入同一能力目录。
+`BlockNodeType` 与 `IBlockProps` 提取到纯基础
+类型模块，原 `block.type.ts` 和主入口继续转导出；编辑器内部调用统一引用子入口。
+
+**Why**: 独立使用排版、对象格式转换或分页算法时，无需加载 Angular/Yjs、编辑器运行时，
+也无需引入编辑器快照声明或 `BlockCraft` 全局类型命名空间。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-app.md`。
+
+### New APIs / Features
+
+新增 `@ccc/blockcraft/framework/block-std/typography`、
+`@ccc/blockcraft/framework/block-std/block/object-format`、
+`@ccc/blockcraft/framework/modules/pagination/engine`、
+`@ccc/blockcraft/framework/block-std/types/block-base`。
+分页引擎同时提供同一份 `BlockNodeType`，便于构造策略输入。
+
+### Migration Recipe
+
+```typescript
+// before（继续兼容）
+import {normalizeInlineFontScale, storeObjectPaint, paginate, BlockNodeType} from '@ccc/blockcraft';
+// after（按需导入）
+import {normalizeInlineFontScale} from '@ccc/blockcraft/framework/block-std/typography';
+import {storeObjectPaint} from '@ccc/blockcraft/framework/block-std/block/object-format';
+import {paginate, BlockNodeType} from '@ccc/blockcraft/framework/modules/pagination/engine';
+import type {IBlockProps} from '@ccc/blockcraft/framework/block-std/types/block-base';
+```
+
+### Behavior Changes
+
+既有字段、计算规则、格式存储、分页规则和枚举值不变，无文档数据迁移。
+排版中的 DOM 应用函数仍需 HTMLElement；分页入口只负责计算，不包含视图和打印流程。
+`global/utils` 仅在类型层引用共享内容模型（见上方 DDD 第一阶段条目）；整包 peerDependencies 保持不变。
+
+## Unreleased — 2026-09-20：补齐 global 独立入口
+
+**Severity**: minor（新增兼容子入口；发布版本由维护者决定，不修改包版本）。
+
+**What changed**: 新增 `@ccc/blockcraft/global/env`、`logger`、`exceptions`、
+`decorators`、`types`、`resource-placeholder` 子入口，与既有 `global/utils`
+遵循同一目录命名；另提供 `@ccc/blockcraft/global` 聚合全部七个子入口。
+编辑器主入口继续转导出 global；资源控制器调用方统一引用资源子入口。
+
+**Why**: 平台检测、日志、异常处理和资源占位等独立用途无需引入编辑器及 Angular/Yjs。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-app.md`。
+
+### New APIs / Features
+
+六个独立构建入口均无第三方运行时依赖。`global/types` 仅包含原有类型。
+资源子入口提供 `ResourcePlaceholderController`、`destroyResourcePlaceholder`，
+这两个符号也通过 global 聚合入口和编辑器主入口导出。
+
+### Migration Recipe
+
+```typescript
+// before（继续兼容）
+import {IS_MAC, BlockCraftError} from '@ccc/blockcraft';
+// after（按需导入）
+import {IS_MAC} from '@ccc/blockcraft/global/env';
+import {BlockCraftError} from '@ccc/blockcraft/global/exceptions';
+// 多类能力也可从轻量聚合入口导入
+import {IS_MAC, BlockCraftError} from '@ccc/blockcraft/global';
+```
+
+### Behavior Changes
+
+平台检测、错误码、异常行为、日志和资源状态机规则不变。异常类与资源适配器保持
+跨入口身份一致；资源控制器及 iframe 适配器的内部缓存不重复创建。
+DOM/计时工具保持原宿主 API 要求；资源占位样式、主题变量和 iconfont 仍由宿主加载。
+整包 peerDependencies 不变，无文档数据迁移。
+
+## Unreleased — 2026-09-20：轻量公共工具入口
+
+**Severity**: minor（新增兼容入口；实际发布版本由维护者决定，本条不修改包版本）。
+
+**What changed**: 将 `global/utils` 的全部导出统一提供为独立构建入口
+`@ccc/blockcraft/global/utils`；主入口转导出该入口，保持同一份运行时实现。
+
+**Why**: 宿主只使用通用工具时，不必加载完整编辑器模块及其依赖。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-app.md`。
+
+### New APIs / Features
+
+新增 `@ccc/blockcraft/global/utils` 子路径，包含文件/MIME、函数控制、Delta、URL、fetch、
+DOM、颜色、文本、比较、对象、图片尺寸工具及其既有导出类型。独立入口无第三方运行时依赖。
+
+### Migration Recipe
+
+```typescript
+// before（继续兼容）
+import { extMimeMap } from '@ccc/blockcraft';
+// after（只加载公共工具）
+import { extMimeMap, debounce, sliceDelta } from '@ccc/blockcraft/global/utils';
+```
+
+### Behavior Changes
+
+工具签名、映射数据和处理规则不变。两个入口共享 Map 实例；导入无需 DOM，
+浏览器工具仍需原宿主 API。Delta 类型使用纯类型叶子，文本分行不再反向加载 Inline
+常量模块。类型索引约束保持不变。整包 peerDependencies 不变。
+
+## Unreleased — 2026-09-20：本地视频可选封面
+
+**What changed**: 视频 Schema 保留创建参数 `poster`，组件直接显示持久化封面。
+本地文件上传时异步提取一张限尺寸 JPEG，并复用 `DocFileService.uploadImg()` 保存，
+成功后无新增撤回步骤地回填 `poster`。同一宿主/File 的上传与提帧只执行一次。
+
+**Behavior Changes**: 视频上传不等待封面；已有封面不重新生成，封面失败不影响视频。
+只读、协同端无本地 File、远端链接和历史文档不自动提帧。异步回填不覆盖替换后的
+视频或用户已修改的封面，不写入已删除的块。无需宿主 API 或历史数据迁移。
+
+**Affected ai-skills files**: `blockcraft-app.md`。未发布，包版本由维护者决定。
+
+## Unreleased — 2026-09-20：分页导出的视频空封面与错误归属
+
+**Severity**: patch；版本由维护者决定，本条不修改包版本。
+
+**What changed**: `preparePrintResources()` 从原始属性判断视频封面；无封面或封面失败时
+保留等尺寸视频占位，不额外加载视频或提帧。封面转成图片后仍保留视频错误归属。
+
+**Why**: 空 `poster=""` 的 URL getter 会返回导出页面地址，旧代码把 HTML 页面当图片加载，
+导致可播放视频的导出误报“图片资源加载失败”。
+
+**Affected ai-skills files**: `blockcraft-app.md`。
+
+### Behavior Changes
+
+视频封面成为可选资源：缺失、加载/解码失败或超时在 strict / best-effort 下均不阻塞导出，
+输出视频占位与 warning；显式取消仍中止。普通图片、字体、音频、附件行为不变。
+调用方无需修改 API、快照或持久化数据。
+
+## 0.9.7 — 2026-09-18：人员块排版与整体缩放
+
+**Severity**: patch（兼容旧数据，按本次小版本发布决策纳入 0.9.7）。
+
+**What changed**: 人员块采用八向手柄：边调整排版空间，角等比缩放外框与全部内容。
+新增 `sc` 和三种样式的紧凑字号 shorthand（`fsr/fsp/fsc`）；姓名、拼音、部门分行并允许换行。
+调试台提供真实块示例及独立字号、宽高、倍率控件。
+
+**Why**: 原先宽度和字号一起变化，拉宽也无法显示更多文字；同时保留一手拖角整体缩放的便捷操作。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`。
+
+### New APIs / Features
+
+- `PersonCardTypographyProps`、`PersonCardFontRole`、`PersonCardFontKey`、`personCardFonts()`、
+  `personCardContentScale()`、`storePersonCardFont()`、`calculatePersonCardResize()`、`isPersonCardCorner()`；
+  `PersonCardRenderComponent.contentScale`。
+- `ShapeResizerComponent.scaleVariable`：可选无单位内容倍率 CSS 变量；缺省关闭，原调用方行为不变。
+
+### Migration Recipe
+
+无需批量迁移旧文档。新建请走 `PersonCardBlockSchema.createSnapshot()`（包含 `sc:1`）。
+旧快照缺少 `sc` 时保留按宽度推导字号的兼容路径，首次交互再将倍率写入。
+宿主若自带字号控件，应显示“设计字号 × 当前倍率”，写回时除以倍率；恢复默认只删除当前
+样式的字号覆盖字段。不要把新卡片的 `sc:1` 当作冗余默认值删除。
+
+```ts
+// before：改变 width 同时改变字号
+block.updateProps({width: 360});
+// after：先固定旧文档的倍率，再独立改变排版空间
+block.doc.crud.transact(() => block.doc.placement.updateObjectGeometry(block.id, {
+  width: 360, sc: Math.round(block.contentScale * 100) / 100,
+}));
+```
+
+### Behavior Changes
+
+- 人员块长文本换行，部门移至独立行；固定外框保持用户设定，不显示溢出提示。
+- 宽高取整、倍率和设计字号最多两位小数；字号 shorthand 裁剪默认值。
+- 切样式保留总体倍率与各样式字号覆盖，重设该样式默认外框；角缩放同步头像和间距。
+- 天气/日期卡以及未启用 `scaleVariable` 的形状/文本框/艺术字保持原有缩放策略。
+
+## 0.9.6 — 2026-09-18：发布依赖清理
+
+**Severity**: patch
+
+**What changed**: 移除 editor 未使用的 `hast`、`rehype`、`y-websocket`、`@angular/animations` peer；显式声明公开类型所需的 `@types/hast`、`@types/mdast`，以及运行时直接引用的 `collapse-white-space`、`lib0`。构建新增发布产物依赖检查。
+
+**Why**: 减少宿主安装的无用依赖，避免公开类型和运行时依赖仅在 monorepo 中偶然可解析。
+
+**Affected ai-skills files**: `blockcraft-app.md`。
+
+### Migration Recipe
+
+仅为 editor 安装的 `hast`、`mdast`、`rehype` 可以删除。宿主若直接使用
+`y-websocket` 或调用 `provideAnimations()`，须在自己的 `package.json` 中保留相应依赖。
+不要删除仍被宿主自身引用的包。公开编辑器 API、文档数据格式和编辑行为不变。
+
+## 0.9.0 — 2026-09-16：紧凑对象属性与自定义几何
+
+**Severity**: major（包含破坏性存储契约变更，按用户指定的 0.x 版本 0.9.0 发布）
+
+**What changed**: 对象外观按独立小组存储，省略默认及未启用配置；坐标、渐变、图片填充和自定义几何统一采用紧凑字符串。形状块及包含形状的混合选区工具栏不再显示切换形状的 tab，文本框保留该入口。
+
+**Why**: 减少快照与协同数据的冗余，统一编辑器、适配器及快照阅读器的读写规则。
+
+**Affected ai-skills files**: blockcraft.md、blockcraft-block.md、blockcraft-data.md、blockcraft-adapter.md、blockcraft-plugins-toolbar.md。
+
+**升级约定**: 不兼容下列旧存储格式，也不提供自动迁移；宿主应使用框架的序列化与格式操作 API。
+
+### 自定义形状紧凑路径
+
+**What changed**: `customGeometry` 从节点 JSON 字符串改为有界的版本化路径字符串。
+运行时 `CustomShapeGeometry` 接口保持不变，现有 serializer/normalizer 统一处理。
+
+**Why**: 去除节点字段名冗余，避免无变化手势生成完整路径和 Undo。
+
+**Affected ai-skills files**: blockcraft.md、blockcraft-block.md、blockcraft-data.md、blockcraft-adapter.md、blockcraft-plugins-toolbar.md。
+
+#### Breaking Changes
+
+旧 JSON 字符串不再解析，不提供自动迁移。不要直接 `JSON.stringify/parse` 几何属性。
+
+#### New APIs / Features
+
+无新增公共 API；继续使用 `serializeCustomShapeGeometry()` / `normalizeCustomShapeGeometry()`。
+
+#### Migration Recipe
+
+```typescript
+// before
+const customGeometry = JSON.stringify(geometry)
+// after
+const customGeometry = serializeCustomShapeGeometry(geometry)
+// v1|1000 1000|nonzero|s:M0 500L1000 500
+const runtime = normalizeCustomShapeGeometry(customGeometry)
+```
+
+#### Behavior Changes
+
+保留三位坐标精度、坐标范围、多路径、填充规则和圆弧。点击无位移、拖回起点、
+重复提交不写入。提交或生成快照时省略预设等价的几何；恢复预设走 CRUD 删除属性，
+保持原有协同原子值及 Undo/Redo 语义。
+
+### 通用坐标和填充字符串
+
+**What changed**: `IBlockProps.position` 改为 `"x y"`；所有对象渐变和图片填充改为
+CSS 字符串。容器 `bgi` 也改用图片 CSS shorthand，移除 `bgs/bgx/bgy`。
+
+**Why**: 统一 root、容器和对象的通用存储规则，去除浮点尾数和可合并的冗余属性。
+
+**Affected ai-skills files**: blockcraft.md、blockcraft-block.md、blockcraft-data.md、blockcraft-adapter.md、blockcraft-plugins-toolbar.md。
+
+#### Breaking Changes
+
+- 旧坐标对象、渐变/图片 fill records、容器裸 URL 和分散图片参数不兼容，不自动迁移。
+- `StoredObjectPaint` 只含字符串，删除 `StoredComplexObjectPaint`。
+- `storeObjectPaint()` 只编码 paint token；渐变/图片整体透明度由
+  `fillOpacity/textFillOpacity` 保存。构造完整 props 必须使用 section/snapshot helper。
+- 通用容器整体透明度仍为 `bgo`，缺省 1；root 原有 `background` CSS shorthand 保持。
+
+#### New APIs / Features
+
+- `storeBlockPosition({x, y})`、`parseBlockPosition(value)`；现有 `resolveBlockPosition()`
+  读取字符串后返回数值坐标。
+- 渐变保留 2–4 色标、颜色函数及各自 alpha；图片保留 source、位置、fit 与整体 alpha。
+
+#### Migration Recipe
+
+```typescript
+// before: {position: {x: 123.45678, y: 78.9}}
+const props = {position: storeBlockPosition({x: 123.45678, y: 78.9})} // "123.46 78.9"
+const fillProps = storeObjectFormatSection('shapeFill', paint)
+// {fill: 'linear-gradient(135deg, #fff 0%, #000 100%)', fillOpacity: 0.5}
+// {fill: 'url("paper.png") 50% 50% / cover no-repeat', fillOpacity: 0.5}
+const surface = {bgi: 'url("paper.png") 50% 50% / cover no-repeat'}
+```
+
+#### Behavior Changes
+
+定位在提交时保留最多两位小数，拖动预览仍使用完整计算精度。组合、对齐、复制、缩放、
+适配器、虚拟化与 Snapshot Viewer 共用读取规则。默认透明度不保存；禁用图片后无孤立参数。
+样式解码不查询 DOM、不在滚动路径写入 Yjs。根快照默认无外观覆盖。
+
+### 对象格式改为独立紧凑小组
+
+**What changed**: Shape/TextBox/WordArt 的外观和文字属性改用独立小组，简单小组采用字符串；
+关闭项清除参数，默认组省略。默认对象轮廓和 WordArt 文字轮廓宽度统一为 1px。
+
+**Why**: 避免未开启功能持久化整套参数，并缩小协同编辑时的覆盖范围。
+
+**Affected ai-skills files**: blockcraft.md、blockcraft-block.md、blockcraft-plugins-toolbar.md。
+
+#### Breaking Changes
+
+- 不再保存/读取旧 `effects/textFrame/textStyle` 大对象；不提供旧数据迁移。
+- 简单 `fill`、`outline` 使用字符串；`storeObjectLine/Effects/TextFrame/TextStyle` 返回 props 片段。
+- HTML 使用对应独立 `data-bc-object-*` 属性；旧大对象 HTML 不兼容。
+- 三类对象的 Schema `metadata.version` 及 Agent capability `schemaVersion` 更新为 2，原子属性列表同步，writableProps 权限不扩大。
+
+#### New APIs
+
+- `storeBlockObjectFormat(format, capability)`：按所属 Schema 默认值裁剪最终快照。
+- `OBJECT_FORMAT_SECTION_KEYS`、`storeObjectFormatSection()`：结构化操作与持久化小组映射。
+
+#### Migration Recipe
+
+```typescript
+// before: props.textStyle = storeObjectTextStyle(style)
+// after: create a canonical snapshot from structured runtime values
+const props = storeBlockObjectFormat({...capability.defaults, textStyle: style}, capability)
+// Runtime operations stay structured:
+doc.objectFormat.updateSelection(ids, {textStyle: style})
+```
+
+#### Behavior Changes
+
+未启用效果不记忆已关闭参数；重新开启使用默认参数。缺省继承 Schema，明确关闭默认效果用
+`none`；重置用 `null` 删除该操作的小组。默认轮廓宽度为 1px，显式预设和用户宽度仍保留，
+允许范围不变。几何、定位、公共块背景和段落/表格结构不在本次改动范围内。
+
+## 0.8.5 — 2026-09-16：填写区改用抓手聚焦按钮
+
+**Severity**: patch（按指定版本 0.8.5 发布）
+
+**What changed**: 移除 render-unit 浮动工具栏中的宽高输入及对应尺寸订阅，保留原有颜色入口；复用文本框的顶部抓手样式，新增整块选中按钮以唤起八向手柄。
+
+**Why**: 填写区通过整块选中的八向手柄调整尺寸，不在浮层中提供数字输入。
+
+**Affected ai-skills files**: blockcraft-block.md、blockcraft-plugins-toolbar.md。
+
+**Behavior Changes**: 悬停、内部聚焦及触屏环境显示顶部抓手按钮，支持主指针和键盘激活；整块选中或只读时隐藏。不进入打印/快照。`setSize()`、`wr/ar`、尺寸拖拽和序列化不变。无需数据迁移。
+
+## 0.8.4 — 2026-09-16：Render-unit 响应式尺寸
+
+**Severity**: patch（按指定版本 0.8.4 发布，新增向后兼容的尺寸能力）
+
+**What changed**: render-unit 原生提供 wr/ar、布局像素 setSize、八向手柄、宽高输入及 HTML/Markdown 尺寸保留，虚拟估高与显示尺寸一致。
+
+**Why**: 宿主填写区需要复用流式图片的尺寸口径，不能在业务仓维护替代容器和另一套缩放计算。
+
+**Affected ai-skills files**: blockcraft-block.md、blockcraft-plugins-toolbar.md。
+
+### New APIs / Features
+
+- `RenderUnitBlockProps` 支持 `BlockObjectSizeProps`，`resolveRenderUnitDimensions()` 保留未设尺寸时的自然布局。
+- `RenderUnitBlockComponent.setSize(width, height)` 与 `objectDimensions`。
+
+### Behavior Changes
+
+旧容器不自动迁移尺寸，背景和边框仍默认透明。整块选中可缩放，显式尺寸内的溢出内容可滚动；只读容器不显示手柄。宿主可用 `backColor: '#ffffff'` 设置业务默认白底。
+
+### Migration Recipe
+
+宿主继续注册原有 `RenderUnitBlockSchema` 与 `CalloutToolbarPlugin`，无需替换组件。直接创建比例尺寸可传 `createSnapshot({}, {wr: 50, ar: 2})`；现有块用 `setSize(400, 200)` 换算后通过 Yjs 保存。
+
+## Unreleased — 2026-09-16 — 组合成员删除与几何恢复
+
+**Severity**: patch（内部修复，无外部适配要求；版本号未修改）
+
+**What changed**: 组合成员删除与组合尺寸、原点和剩余成员几何重算进入同一 Yjs 事务；一次 Undo/Redo 同时恢复成员和布局。
+
+**Why**: 原异步重算不进入删除历史，撤销后会混用旧成员数据与删除后的组合坐标和图片比例基准。
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+
+**内部实现**: `reflowAfterMemberDeletion()` 仅作为 DocCRUD 到组合几何协调器的内部桥接；普通容器、组合外对象及空组合语义不变，宿主无需调用或迁移数据。
+
+## Unreleased — 2026-09-16 — 组合外框不再占用内容区
+
+**Severity**: major（已有组合尺寸字段的行为语义调整；版本号未修改）
+
+**What changed**: 组合 `width/height` 直接表示内容区尺寸。`BLOCK_OBJECT_GROUP_PADDING` 和 `--bc-object-group-padding` 调整为 4px 的外侧选中框/拖动区域偏移，不再参与内容区、比例尺寸、组合坐标或分页高度计算。编辑器和快照阅读器统一取消组合内边距。
+
+**Why**: 组合是对象的几何集合，交互外框不应挤占内部对象的可用宽高。
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-theme.md`
+
+### Breaking Changes / Behavior Changes
+
+- 创建和重算组合直接取对象视觉边界并集；取消组合直接叠加组合与成员坐标，不再加减 8px。
+- 比例尺寸以完整组合宽度为基准；流式组合成员的分页上限不再扣除 16px。
+- 按本次明确决策，旧组合直接使用新语义，接受其显示尺寸/位置变化；不增加布局版本字段，不自动转换旧数据。
+
+### Migration Recipe
+
+外部调用方若曾使用 `group.width - 16` 计算内容宽度，应改为 `group.width`；组合坐标即内容原点。需要保留历史视觉效果的宿主应在自身历史数据导入层另行处理旧数据，不应继续依赖外框参与内容布局。
+
+## Unreleased — 2026-09-16 — 按形状几何计算文字区域
+
+**Severity**: patch
+
+**What changed**: 文本框、普通形状及行内形状统一按“形状文字矩形 + 用户四边内边距”计算内容区域。矩形取消目录默认内缩，圆角和可调形状的文字矩形随几何参数变化；阅读器补齐普通形状的文字定位与裁剪样式。
+
+**Why**: 固定的目录边距导致用户将内边距设为 0 后仍出现大块空白，同一形状在不同渲染入口的边界也不一致。文字区域采用 Word/DrawingML 的分层语义，并适配当前轮廓。
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+
+### Behavior Changes
+
+- 矩形、圆角/剪角矩形、椭圆、三角形、平行四边形、梯形、单向/双向箭头及矩形/圆角气泡使用几何派生的文字矩形；其他目录形状、自定义路径及 artwork 继续使用原有文字矩形定义。
+- `textFrame.margins` 仍以 px 存储，0 只移除用户追加的内边距。原文档的可用文字区域可能增减并产生重新换行；外轮廓、尺寸、默认圆角和文档数据格式不变，无需数据迁移。
+- 本次未修改包版本号；不宣称与 Word 的全部预设形状及缩放结果逐像素一致。
+
+## Unreleased — 2026-09-16 — 分割线默认通栏细实线
+
+**Severity**: patch
+
+**What changed**: 分割线未配置长度、粗细且没有旧版 `size` 时，默认从 `long` / `regular` 改为 `full` / `thin`；线型继续默认 `solid`。编辑器、快照阅读器和设置面板使用一致的默认值。
+
+**Why**: 默认插入效果应为普通实线、通栏、细线。
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-toolbar.md`
+
+### Behavior Changes
+
+旧快照中缺省的外观也采用新默认值，不进行数据迁移。显式属性和已有旧版 `size` 映射不变；如需维持过去的缺省外观，可显式设置 `{length: 'long', thickness: 'regular'}`。版本号未调整。
+
+## Unreleased — 2026-09-15 — 对象工具栏选中样式统一对账
+
+**Severity**: patch
+
+**What changed**: 对象工具栏不再直接增删通用 `.selected`，改由 `SelectionSelectedManager` 对账临时保留的选区投影。新增内部 `SelectionManager.retainPresentation()` 交接方法，返回关闭时调用的释放函数，不作为宿主扩展 API。
+
+**Why**: 工具栏的异步补色可在折叠选区或进入文本后留下管理器未记录的选中类。
+
+**Affected ai-skills files**:
+
+- `blockcraft-selection.md`
+- `blockcraft.md`
+
+### Behavior Changes
+
+操作工具栏导致的原生选区清空仍保留对象样式；新的非空模型选区立即使暂存失效。取消工具栏关闭后的微任务补色。模型选区、数据格式、快捷键和宿主调用方式不变，无需迁移。版本号未调整。
+
+## v0.7.10 — 2026-09-15 — 取消表格和填写区块的 root 限制
+
+**Severity**: patch
+
+**What changed**: 移除 `TableBlockSchema` 和 `RenderUnitBlockSchema` 的 `rootOnly` 声明，恢复填写区块插入命令的原有回退逻辑；保留分页符的 root 直属子级限制。
+
+**Why**: 撤回 0.7.9 中对表格和填写区块扩大施加的限制。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`。
+
+### Behavior Changes
+
+- 表格和填写区块按原有父级 Schema 和实例约束插入、移动；内容区域内可插入表格。
+- 表格单元格禁止嵌套表格等既有规则保持不变；无需迁移数据。
+
+**Version**: `0.7.10`。
+
+## v0.7.9 — 2026-09-15 — 分页符、表格和填写区块仅限 root 直属子级
+
+**Severity**: minor
+
+**What changed**: Schema 新增可选 `metadata.rootOnly`；分页符、表格和填写区块（`render-unit`）启用该限制，插入、转换、移动与嵌套快照写入统一拒绝非 root 父级。固定工具栏和模板物料面板不再从嵌套位置向上回退插入这些块。
+
+**Why**: 分页符、表格和填写区块统一归属文档顶层，避免在表格、分栏或内容区域中重复嵌套。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`。
+
+### New APIs / Features
+
+- `IBlockSchemaOptions.metadata.rootOnly?: boolean`：子块可声明只允许 root 直属父级。缺省不改变其他块行为。
+
+### Behavior Changes
+
+- 分页符、表格和填写区块不能插入或移入嵌套容器；包含这些非法嵌套块的待插入子树被拒绝，沿用现有 CRUD 过滤/错误处理。
+- 父级通配白名单和实例约束不能扩大此权限；不自动修改已加载的历史文档。
+
+### Migration Recipe
+
+宿主插入上述块前通过 `doc.canInsertChild(parentId, flavour)` 判断，选择 root 直属位置再插入。自定义 Schema 若需要同样限制可设置 `metadata.rootOnly: true`；其他 Schema 无需修改。
+
+**Version**: `0.7.9`（按用户小版本发布指令；上述 severity 描述新增可选契约的变更级别）。
+
+## Unreleased — 2026-09-14 — 对象格式写入精度收敛
+
+**Severity**: patch
+
+**What changed**: Shape/TextBox/WordArt 共用的 `storeObject*()` 在写入时收敛计算长尾；工具栏按相同规则显示和输入，效果草稿预览与确认保持一致。
+
+**Why**: 仅限制输入框显示仍会让浮点长尾进入预设、文档和序列化结果。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-toolbar.md`。
+
+### Behavior Changes
+
+- 渐变和阴影角度、阴影模糊/距离、发光半径、内边距取最近整数；形状/文字轮廓宽度取最近 `0.25px`。
+- 字号、字距、行高、透明度、渐变停点与图片位置最多两位小数；不改变宽高、对象旋转、定位和宽高比精度。
+- 读取 helper 保留合法旧值；新建或序列化以及写入某个原子格式 section 时应用新规则。不在打开文档或聚焦输入框时批量改写旧文档。
+- `storeObject*()`、`normalizeShapeSnapshotProps()` 和 `normalizeWordArtSnapshotProps()` 增加可选 `{preservePrecision: true}` 参数，仅用于行内旧 payload 的只读解码。行内新建及导出仍使用缺省收敛规则。
+
+### Migration Recipe
+
+继续通过 `storeObject*()` 构造持久化格式，并通过 `doc.objectFormat.updateSelection()` 提交面板编辑；不要依赖序列化后保留任意小数精度。例如阴影角度 `60.9453959` 写为 `61`，距离 `4.9419024` 写为 `5`，轮廓 `1.2` 写为 `1.25`。原子 section 内未单独编辑的数值也会在该 section 写入时一起收敛。
+
+**Version**: 尚未发布，包版本保持不变。
+
+## Unreleased — 2026-09-10 — 普通有序列表手动跨段续号
+
+**Severity**: minor
+
+**What changed**: 新增可选 `OrderedBlockModel.props.continuePrevious`，使“继续编号”可显式接续被普通段落隔开的前段列表。前段增删和起始值变化会同步重算后段。
+
+**Why**: 原操作只清除 `start`，自动编号扫描仍被非有序块截断，且缺省状态会禁用继续按钮。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-block.md`。
+
+### New APIs / Features
+
+- `continuePrevious?: boolean`：同父容器、同 depth/heading 的最近前段续号意图；不跨更浅缩进或相关标题边界。正数 `start` 优先，无前段则从 1 开始。
+
+### Migration Recipe
+
+旧文档无需迁移；要显式续号，通过块 `updateProps({start: 0, continuePrevious: true})` 写入。重新编号使用 `updateProps({start: 1, continuePrevious: false})`。新建后继项不继承该状态。
+
+### Behavior Changes
+
+缺省仍断组；手动接续随原生 props 持久化，HTML/Markdown 仅保留输出编号。含接续块的父容器在 `start` 变更时完整重算，否则仍局部重算；不挂载离屏组件。样式分组边界不变。
+
+**Version**: 尚未发布，包版本保持不变。
+
+## Unreleased — 2026-09-09 — 绝对对象的文档范围与分页边界
+
+**Severity**: patch
+
+**What changed**: 流式文档的最小高度包含根级绝对对象范围；分页和打印补齐对象所需尾页。
+保持 scrollContainer 内自由拖动，不限制在正文内容区、不吸附纸张或页缝；
+松手写入一次定位事务。组合成员的局部坐标保持不变，超页对象不自动缩放。
+
+**Why**: 零高度定位层不应使正文结束后的图片悬浮在白底或末页之外。
+
+**Behavior Changes**: 打开旧文档或切换视图保持对象原始坐标，不迁移或改写 `position`。
+移动/删除对象后文档范围可以收缩。打印独立重排保留自由坐标；页数含对象专用尾页。
+无需修改持久化格式。`BlockPlacementManager.surface` 仅供框架内部布局协作使用。
+
+**Affected ai-skills files**: `blockcraft-block.md`。
+**Version**: 尚未发布，包版本保持不变。
+
+## v0.7.6 — 2026-09-11
+
+**Severity**: patch
+
+**What changed**: 共享 SCSS 统一由 `themes/` 承载；音频播放器 partial 移至 `themes/blocks/_audio-player.scss`，组件与 Snapshot Viewer 引用同一文件。构建新增 themes 目录独立编译门禁。
+
+**Why**: 0.7.5 的 Snapshot Viewer 主题引用了未随包发布的组件目录文件，导致消费者 Sass 编译失败。沿用 `themes/**/*` 发布规则，避免逐文件补打包白名单。
+
+**Affected ai-skills files**:
+
+- `blockcraft-theme.md`
+
+**Migration**: 消费者继续导入 `@ccc/blockcraft/themes/base.scss`，无需修改入口。CSS 选择器、变量和渲染行为保持不变。
+
+## v0.7.4 — 2026-09-09 — Mermaid 全屏双向编辑
+
+**Severity**: minor
+
+**What changed**: Mermaid 可写全屏视图增加 Visimer 图形编辑，图形操作实时写回原源码块。普通模式仍使用 SVG 预览。
+
+**Why**: 将可视化编辑的加载和交互成本限制在单个全屏块。
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+
+### New APIs / Features
+
+- 全屏图形编辑与源码共享文档撤销；未新增公开 TypeScript API。
+
+### Migration Recipe
+
+宿主增加 `@visimer/core@1.1.2`、`@visimer/dom@1.1.2` peer dependencies。无需迁移文档数据。本次按维护者指定的 patch 版本 `0.7.4` 发布。
+
+### Behavior Changes
+
+- 可写全屏自动激活图形编辑；普通模式及只读模式保持静态预览。
+- 外部源码变化结束旧图形编辑会话；退出全屏提交当前标签并释放实例。
+
+## Unreleased — 2026-08-31 — Opt-in idle prefetch for safe text roots
+
+**Severity**: minor
+
+**What changed**: Root virtualization adds the optional
+`VirtualizationConfig.idlePrefetch?: boolean` host switch and the Schema-owned
+`BlockVirtualizationCapability.speculativeMount?: 'safe'` declaration. When both
+are enabled, BlockCraft can use idle time to materialize and measure eligible
+direct-root text views before they enter the mounted window.
+
+**Why**: Model-only estimates keep large documents sparse, but browser line
+wrapping can still correct a text root's height when it first becomes visible.
+Bounded speculative warm-up reduces that first-visit correction without making
+media, tables or stateful views part of an uncontrolled background mount.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-block.md`
+- `blockcraft-perf.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `VirtualizationConfig.idlePrefetch?: boolean` enables the scheduler and
+  defaults to `false`.
+- `BlockVirtualizationCapability.speculativeMount?: 'safe'` lets an eligible
+  text Schema promise that offscreen construction starts no network/upload work
+  or media decoding/playback, writes no Yjs/model state, emits no notification,
+  and registers no global listener or other side effect that normal
+  detach/destroy cannot fully release. The mount must be cancellable, repeatable
+  and reversible.
+- The scheduler prioritizes eligible roots within one projected viewport of the
+  mounted window, then sweeps farther eligible roots during later idle slices.
+  It uses `requestIdleCallback` with a cancellable short-budget timer fallback.
+- The audited built-in safe text roots are `paragraph`, `ordered`, `bullet`,
+  `todo`, `blockquote`, and `caption`.
+
+### Migration Recipe
+
+Existing hosts need no change. To opt a virtualized document and a custom safe
+text Block into idle prefetch:
+
+```typescript
+// before: unchanged behavior; idle prefetch is disabled
+virtualization: {
+  enabled: true,
+}
+
+// after: opt in at both the document and Schema boundaries
+virtualization: {
+  enabled: true,
+  idlePrefetch: true,
+}
+
+const PlainNoteSchema = {
+  // flavour, nodeType, component, createSnapshot, ...
+  metadata: {
+    version: 1,
+    virtualization: {
+      speculativeMount: 'safe',
+    },
+  },
+}
+```
+
+Do not add `speculativeMount: 'safe'` to a table, media/iframe/resource Block,
+asynchronous widget, `keep-alive` view or container render unit in this release.
+
+### Behavior Changes
+
+- The default remains unchanged because `idlePrefetch` is `false` when omitted.
+- When enabled, nearby eligible text roots warm first; distant eligible roots
+  are processed only as later idle budgets allow.
+- Continuous-flow measurements and sparse-pagination measurements stay isolated;
+  pagination gaps or split/height-lock state never enter the continuous
+  `HeightMap`.
+- Ordinary live pagination already uses an exact full-document view lease and
+  receives no additional prefetch pass or benefit. Experimental sparse
+  pagination may use the warmed paginated geometry, while non-exact print/PDF
+  still performs complete readonly reflow.
+
+## Unreleased — 2026-08-31 — Remove Agent visual reconstruction and candidate preview
+
+**Severity**: major
+
+**What changed**: `blockcraft-agent` keeps image upload/paste and multimodal
+understanding, but removes the dedicated image-to-document visual reconstruction
+specialist and the candidate Snapshot screenshot pipeline. Images are now source
+material for questions, extraction, summarization, fact checking and ordinary
+semantic edits. Candidate results are delivered through the existing Revision
+Diff and batch accept/revert workflow.
+
+**Why**: Rendering a second candidate surface duplicated the document's review
+UX, added DOM/raster budgets and latency, and could fail independently of an
+otherwise valid structured edit. Revision Diff is the canonical user review
+surface. Image understanding remains useful without promising visual layout or
+geometry reproduction.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `MIGRATIONS.md`
+
+### Breaking Changes
+
+- Removed `visual-reconstruction` from `DocumentAgentSpecialist` and the
+  `blockcraft.delegate` specialist enum.
+- Removed `BlockCraftEditorAgentQualityReviewOptions.candidatePreview`.
+- Removed `BlockCraftEditorAgentCandidatePreviewOptions`,
+  `DocumentAgentCandidatePreviewRequest`, `DocumentAgentCandidatePreview`,
+  `DocumentAgentCandidatePreviewAdapter`, and
+  `DocumentAgentCandidatePreviewError`.
+- Removed `createSnapshotViewerCandidatePreviewAdapter()` and its browser
+  implementation.
+- Removed `DocumentAgentImageAttachment.purpose`; every request attachment is
+  now a user-supplied source image.
+
+### Migration Recipe
+
+Remove candidate-preview configuration and keep the semantic quality gate:
+
+```typescript
+// before
+new BlockCraftEditorAgent(doc, runner, {
+  orchestration: {
+    qualityReview: {
+      mode: 'auto',
+      candidatePreview: {
+        adapter: createSnapshotViewerCandidatePreviewAdapter(),
+        failureMode: 'throw',
+      },
+    },
+  },
+})
+
+// after
+new BlockCraftEditorAgent(doc, runner, {
+  orchestration: {
+    qualityReview: {mode: 'auto', maxRepairs: 1},
+  },
+})
+```
+
+Replace a `visual-reconstruction` delegation with normal image-aware analysis
+or content writing. Do not map image geometry to layout blocks:
+
+```typescript
+// before
+{specialist: 'visual-reconstruction', objective: '复原这张设计图'}
+
+// after: extract semantic content only
+{specialist: 'document-analysis', objective: '提取图片中的文字与事实并给出结构化提纲'}
+```
+
+### Behavior Changes
+
+- Uploaded/pasted JPEG, PNG and WebP attachments are still passed to supported
+  model transports, but the Agent must not reproduce their visual hierarchy,
+  geometry or styling as document blocks.
+- Automatic quality review remains bounded and semantic. It receives the
+  original image attachments when relevant, but no rendered candidate image or
+  `candidatePreview` metadata.
+- Structured operation validation, one-transaction application, Revision Diff,
+  and batch accept/revert behavior are unchanged.
+
+## Unreleased — 2026-08-30 — Automatic Editor Agent quality and visual gate
+
+**Severity**: minor
+
+**What changed**: `blockcraft-agent` adds a structured quality-review contract
+and an optional host-owned gate after semantic operation validation. Complex
+edit candidates can now receive an independent `pass | revise` verdict; a
+`revise` result is returned to the Master for a bounded correction and the
+repaired candidate is reviewed again before delivery. A host can also attach a
+candidate Preview Adapter: validated operations are projected onto an isolated
+Snapshot and the rendered candidate is sent to the reviewer beside user
+reference images without mutating the live document.
+
+**Why**: Schema-valid operations can still be incomplete, inconsistent with the
+document voice, visually inaccurate, or semantically weaker than the user's
+request. A separate review turn catches these quality failures without giving a
+specialist tool or write access, and without adding latency to trivial edits.
+Operation JSON alone is insufficient for judging geometry, styling, custom
+Block rendering and image reconstruction; the optional preview closes that
+evidence gap while keeping raster capture host-owned.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `DocumentAgentQualityReview` and `DocumentAgentQualityReviewIssue`
+- `DocumentAgentSubAgentResult.review`
+- `DocumentAgentRunner.supportsSubAgents`
+- `BlockCraftEditorAgentOptions.orchestration.qualityReview`
+- `DocumentAgentQualityReviewError`
+- `DocumentAgentImageAttachment.purpose`
+- `DocumentAgentCandidatePreviewAdapter` and candidate preview request/result
+  contracts
+- `BlockCraftEditorAgentQualityReviewOptions.candidatePreview`
+- `DocumentAgentCandidatePreviewError`
+- `createSnapshotViewerCandidatePreviewAdapter()` browser fallback
+
+### Migration Recipe
+
+Existing transports require no change in the default `auto` mode. To require
+the gate, implement both `runTurn()` and `runSubAgent()` and opt into `always`:
+
+```typescript
+new BlockCraftEditorAgent(doc, runner, {
+  orchestration: {
+    qualityReview: {
+      mode: 'always',
+      maxRepairs: 1,
+      candidatePreview: {
+        adapter: createSnapshotViewerCandidatePreviewAdapter({
+          viewerOptions: {blockRenderers, inlineEmbeds},
+        }),
+        failureMode: 'throw',
+      },
+    },
+  },
+})
+```
+
+When a custom Transport implements `runSubAgent()`, its `quality-review` result
+must include a non-null structured `review`; other specialists omit it from the
+public result (strict JSON transports may send `null`, which the runner
+normalizes away).
+
+### Behavior Changes
+
+- `auto` reviews image-backed, multi-operation, structural, rich-text and other
+  non-trivial candidates only when both turn and specialist protocols exist.
+- A second `revise` after the configured repair budget fails closed; no
+  candidate reaches Revision staging.
+- Automatic reviews have their own `maxRepairs + 1` bound and do not consume
+  the Master's `maxDelegations` budget.
+- A configured Preview Adapter runs only after semantic preflight and receives
+  an isolated projected Snapshot. It never stages Yjs or Revision mutations.
+- Reviewer attachments label rendered output as `candidate-preview` and source
+  images as `user-reference`; the rendered image is ordered first.
+- Preview failure defaults to semantic fallback. Hosts can select `throw` to
+  fail closed before Revision staging.
+
+## Unreleased — 2026-08-29 — Progressive Editor Agent document context
+
+**Severity**: minor
+
+**What changed**: `blockcraft-agent` now separates its complete host validation
+baseline from structured Master requests. When `runTurn()` is available,
+oversized document scope becomes a bounded outline page with explicit
+`context.coverage`; document context reads accept optional `offset/maxBlocks`,
+and `search_document` traverses the current complete model instead of only the
+active request context. The revision content fingerprint is now a fixed-size
+opaque digest rather than the serialized block payload itself.
+
+**Why**: Full props, rich-text Delta and duplicated plain text were previously
+resent on every Master turn. Large documents therefore grew request cost and
+latency, while context-bound search could miss content outside a selected or
+compacted request.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `DocumentAgentContext.coverage` and outline block metadata
+- `DocumentAgentModelContextOptions`
+- `BlockCraftEditorAgentOptions.modelContext`
+- Fixed-size opaque `baseRevision.contentFingerprint`
+- Optional `offset` / `maxBlocks` parameters on
+  `blockcraft.get_document_context`
+
+### Migration Recipe
+
+No change is required for existing hosts. To retain the previous full model
+payload because the provider already manages document retrieval:
+
+```typescript
+new BlockCraftEditorAgent(doc, runner, {
+  modelContext: {strategy: 'full'},
+})
+```
+
+### Behavior Changes
+
+- Small documents, explicit selection scope, legacy `run()` transports and the
+  current Markdown stream remain lossless.
+- Large document scope sends an outline page to the model, while final writes
+  continue to validate against the complete context captured at request start.
+- `get_document_context({offset, maxBlocks})` omits repeated capability data and
+  returns an outline page; calling it without those arguments remains backward
+  compatible and returns the complete context.
+
+## Unreleased — 2026-08-28 — Snapshot Viewer inline Embed converter parity
+
+**Severity**: patch
+
+**What changed**: Snapshot Viewer now uses the bundled live DOM converters for
+`icon`, `image`, `date`, `mention`, `latex`, `shape`, and `word-art` inline
+Embeds by default. The existing `inlineEmbeds` option remains an explicit host
+override and still takes precedence over bundled converters.
+
+**Why**: Read-only inline Embeds were previously rendered as generic chips for
+most bundled keys, so their presentation DOM and styles diverged from the live
+editor even though the same Delta model was used.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Bundled inline Embeds now render their converter-owned presentation in the
+  Snapshot Viewer without requiring host configuration.
+- Unknown inline Embed keys still use the generic fallback chip, and host
+  `inlineEmbeds` overrides still win.
+
+## Unreleased — 2026-08-28 — Adapter-derived AI Markdown chat
+
+**Severity**: minor
+
+**What changed**: Block and Inline Embed Adapter contributions may now declare
+bounded `markdownSyntax` metadata. `AdapterRegistry.createMarkdownManifest()`
+projects the exact active grammar for a profile. `blockcraft-agent` adds a
+separate Markdown stream request/transport/facade contract and an opt-in panel
+mode that renders replies with the standalone Snapshot Viewer before an
+explicit Clipboard-based insertion.
+
+**Why**: AI-authored Markdown must follow the same host-composed Adapter
+registry as import, export, paste and stream rendering. Read-only chat must not
+share the structured Editor Agent's document-write path.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-adapter.md`
+- `blockcraft-app.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `BlockAdapterContribution.markdownSyntax`
+- `InlineEmbedAdapterContribution.markdownSyntax`
+- `AdapterRegistry.createMarkdownManifest(profile)`
+- `DocumentAgentTransport.streamMarkdown()` and
+  `BlockCraftEditorAgent.streamMarkdown()`
+- `DocumentAgentPanelComponent.markdownChat`, `chatRequest`, and
+  `insertMarkdown`
+
+### Migration Recipe
+
+Existing Adapter and Agent integrations need no change. Hosts opting into AI
+Markdown chat pass the same registry/profile used by their editor and Snapshot
+Viewer:
+
+```typescript
+new BlockCraftEditorAgent(doc, runner, {
+  markdown: {adapterRegistry: capabilities.adapterRegistry, profile: 'hybrid'},
+})
+```
+
+### Behavior Changes
+
+- The structured edit request/Revision path is unchanged.
+- Markdown chat never mutates a document automatically; insertion is an
+  explicit host Clipboard action using the original Markdown source.
+
+## Unreleased — 2026-08-28 — Scope Revision markers to their edited content
+
+**Severity**: patch
+
+**What changed**: `DocumentRevisionManager.getBlockPresentation()` no longer
+returns paragraph-host `revisionIds` for text-only revisions. Inline Revision
+IDs remain on the exact projected `c-element` ranges; block insert/delete and
+split/merge boundary revisions continue to mark their block host. The default
+review popover also rejects a paragraph-host marker for a text-only review item.
+
+**Why**: Aggregating every text Revision ID onto an editable block made any
+click in that paragraph look like a click on changed text and exposed unrelated
+inline Revision attributes on the whole paragraph.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-data.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Clicking or focusing an unchanged part of a paragraph does not open a
+  text-Revision popover; the exact inserted/deleted marker must be targeted.
+- Whole-block and paragraph-boundary Revision popovers remain block-anchored.
+
+## Unreleased — 2026-08-28 — Revision decisions materialize immediately
+
+**Severity**: major
+
+**What changed**: `DocumentRevisionManager.accept*()` / `reject*()` and the
+headless `RevisionReviewPlugin.keep*()` / `revert*()` commands now materialize
+the chosen canonical content and remove the consumed Revision records in one
+normal Undo transaction. New decisions no longer accumulate accepted/rejected
+records or append-only decision nodes. Undo restores the pending records and
+their Diff presentation.
+
+**Why**: Once a reviewer decides, the document should immediately become
+ordinary editable content without stale marks, floating cards or a growing
+resolved-history list. The decision itself is a document mutation and belongs
+in the same Yjs/Undo model as other editor actions.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-data.md`
+- `blockcraft-input.md`
+- `MIGRATIONS.md`
+
+### Breaking Changes
+
+- A successful accept/reject consumes the target record. Calling `get()`,
+  `redecide()` or another decision method with that revision ID now throws
+  `RevisionNotFoundError` unless Undo first restores it.
+- New accepted/rejected items do not remain available through the “已处理”
+  filter. That filter is compatibility-only for imported legacy snapshots.
+- Review decisions are now online serialized host actions. Collaboration hosts
+  must reject stale/offline review commands instead of merging opposite
+  disconnected decisions later.
+
+### Migration Recipe
+
+```typescript
+// before: reverse a persisted decision
+doc.revisions.accept(revisionId)
+doc.revisions.redecide(revisionId, 'reject')
+
+// after: reverse the materialized decision through normal document history
+doc.revisions.accept(revisionId)
+doc.crud.undoManager.undo()
+// the restored pending revision can now be rejected if desired
+doc.revisions.reject(revisionId)
+```
+
+### Behavior Changes
+
+- Text/block insertion, deletion and split/merge decisions are materialized
+  before their records are removed; dependency references are pruned and
+  surviving right-side text revisions migrate across a materialized merge.
+- One group decision creates one isolated Undo item. Undo restores canonical
+  content and pending Revision records together.
+- `compactResolved()` remains for imported legacy accepted/rejected records;
+  new decisions do not require a later checkpoint compaction.
+- Document markers, connected popovers and review cards disappear from the
+  same record-removal event.
+- Adjacent same-actor text edits no longer split into new review groups after a
+  10-second pause; batching now ends only at a semantic edit/session boundary.
+- A pending insertion nested inside a pending deletion now renders as an
+  insertion on that Delta segment instead of inheriting deletion styling.
+  Continuous typing inside that deletion extends one insertion record instead
+  of creating a separate marked segment for every input event; unrelated
+  nested revisions still prevent target resizing.
+
+## Unreleased — 2026-08-28 — Captured atomic Undo items
+
+**Severity**: minor
+
+**What changed**: `DocUndoManger` now exports `captureUndoItem()`,
+`canUndoCapturedItem()` and `undoCapturedItem()` together with the opaque
+`DocUndoItemToken` type. A synchronous producer can isolate one Yjs transaction
+from the normal capture timeout, retain its exact stack identity and later
+revert it only while it is still the latest local Undo item.
+
+**Why**: Document agents and other programmatic batch producers need immediate
+application plus a safe “revert this batch” action. Calling generic `undo()`
+could remove a later user edit, while relying only on Revision decisions cannot
+cover operations that have no Revision Diff representation.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-data.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `DocUndoManger.captureUndoItem(callback)` returns the callback result and an
+  opaque token for the one independently captured Undo item, or `null` when the
+  callback did not produce exactly one tracked item.
+- `canUndoCapturedItem(token)` checks stack identity without changing history.
+- `undoCapturedItem(token)` performs no generic fallback and returns `false`
+  after a later local edit, Undo/Redo, history clear or readonly-policy denial.
+
+### Migration Recipe
+
+No existing integration must change. Batch producers that need a targeted
+rollback can opt in:
+
+```typescript
+const captured = doc.crud.undoManager.captureUndoItem(() =>
+  doc.crud.transact(() => applyWholeBatch()))
+
+if (captured.token) {
+  doc.crud.undoManager.undoCapturedItem(captured.token)
+}
+```
+
+### Behavior Changes
+
+- The callback must be synchronous and must produce exactly one Undo item for a
+  token to be returned. Put all writes in one outer `DocCRUD.transact()`.
+- Fresh capture boundaries are installed before and after the callback, so the
+  batch never time-merges with an adjacent user action.
+
+## Unreleased — 2026-08-28 — Object layout capability filtering
+
+**Severity**: patch
+
+**What changed**: `ObjectFormatToolbarPlugin` now routes mixed absolute-object
+selections to the restored compact horizontal group-toolbar surface, while
+retaining one Plugin owner. Single-object layout choices are filtered to the
+`BlockPlacementManager.supportsObjectLayout()` capability and are checked again
+before mutation. The remaining layout choices fill their row with equal-width
+columns.
+
+**Why**: Layout and grouping belong to the placement domain, not the object
+paint domain. Requiring every selected block to expose `objectFormat` hid the
+grouping toolbar for valid mixed selections, while presenting every global
+layout mode incorrectly exposed inline layout for TextBox.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-toolbar.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Mixed absolute-object selections use the historical horizontal alignment,
+  distribution and grouping toolbar instead of the object-format rail.
+- Selected groups reuse that toolbar for layout, hierarchy and ungrouping.
+- Group focus again follows first-click whole-group selection and second-click
+  member entry; the group frame remains visible while a nested member is active.
+- TextBox and other blocks without an inline placement adapter no longer show
+  or accept the inline layout action.
+- Inline and top-bottom objects hide and reject page alignment, object
+  arrangement and hierarchy commands until they return to under/over layout.
+
+## Unreleased — 2026-08-28 — Interoperable Markdown and selective directives
+
+**Severity**: minor
+
+**What changed**: The normal Markdown import grammar now recognizes BlockCraft
+`remark-directive` records in the `portable`, `hybrid` and `blockcraft`
+profiles. Markdown export now treats interoperability and readable semantics
+as the primary contract. Native representations win in every profile: Image uses
+`![]()`, Divider uses a thematic break, Mermaid uses a fenced code block, and
+Video/Audio/Attachment/bookmark/iframe cards use ordinary links with a minimal
+`blockcraft:<type>` title hint. `remark-directive` remains available only for
+custom semantic structures without a useful CommonMark/GFM representation.
+Mention uses a readable Markdown link with a stable
+`urn:blockcraft:mention:<type>:<id>` destination. Import remains a compatibility
+superset for registered syntax names. Custom Block parameters now use a
+readable YAML front-matter section inside the directive instead of a
+percent-encoded directive attribute.
+
+**Why**: File import and clipboard paste use the registered Markdown MIME
+adapter, so recognized private syntax must still import correctly. Export has a
+different priority: Markdown should remain useful in GitHub, note applications,
+plain-text workflows and AI context. Exact BlockCraft model/layout persistence
+belongs to Snapshot/`.bcdoc`, not an opaque props payload in Markdown prose.
+
+**Affected ai-skills files**:
+
+- `blockcraft-adapter.md`
+- `blockcraft-app.md`
+- `blockcraft-embed.md`
+- `blockcraft.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `GenericBlockAdapterOptions.markdownDirective?: boolean` explicitly opts a
+  generic custom Block into private directive export. It defaults to `false`;
+  `markdownProfile` continues to control eligible private representations.
+- `MarkdownAdapterProfile` adds `hybrid`, and
+  `DEFAULT_MARKDOWN_ADAPTER_PROFILE` exports the framework default.
+- `createMarkdownPropsNode()`, `isMarkdownPropsNode()` and
+  `readMarkdownPropsNode()` define the bounded in-directive YAML front-matter
+  contract used by custom Block matchers.
+- Link-like Blocks preserve their URL, readable label and semantic type through
+  standard Markdown links. Presentation-only props may intentionally degrade.
+- Mention URN links preserve `mentionId` and `mentionType` without embedding an
+  opaque props payload in Markdown prose.
+
+### Migration Recipe
+
+No host code change is required. Producers should prefer a typed standard link
+for resources and external cards:
+
+```markdown
+<!-- before: still accepted on import -->
+::bc-attachment{props="..."}
+
+<!-- after: readable in ordinary Markdown tools -->
+[产品说明.pdf](https://example.com/product.pdf "blockcraft:attachment")
+```
+
+### Behavior Changes
+
+- Every Markdown profile imports recognized `::bc-*` and
+  `:::bc-*` directives through the active `AdapterRegistry`; unknown directives
+  continue to degrade safely through the Markdown AST.
+- The default export profile is now `hybrid`: ordinary content uses portable
+  Markdown, while Block adapters that explicitly set `markdownDirective: true`
+  retain their semantic container. Choose `portable` explicitly when no private
+  directives may be emitted; choose `blockcraft` when private Inline Embed
+  directives are also required.
+- Every profile uses native Markdown for image, divider, Mermaid and link-like
+  resource/card Blocks. Their presentation-only props are not embedded in text.
+- Every profile exports a Mention with an ID as
+  `[@label](urn:blockcraft:mention:<type>:<id> "blockcraft:mention")`; import
+  recognizes the URN even when another Markdown tool removes the optional title.
+  Missing-ID Mentions and inline Dates still degrade to readable text.
+- Generic Block adapters without `markdownDirective: true` use their portable
+  fallback even under the `hybrid` and `blockcraft` profiles.
+- When a private directive is necessary, inline/text uses `:`, bodyless leaf
+  uses `::`, and a container with nested content uses `:::`.
+- A custom Block with parameters uses `:::` and places a YAML mapping between
+  leading `---` delimiters. New export does not emit or
+  import the former percent-encoded `props="..."` attribute; HTML `data-bc-*`
+  envelopes are unchanged.
+- Nested custom containers use longer outer colon fences, and each container
+  reads only the leading YAML section in its own body. Canonical export leaves
+  exactly one blank line after the opening fence and before the closing fence;
+  import tolerates zero or more blank lines at both boundaries.
+- Existing documents written with the earlier private resource directives
+  remain readable and are rewritten to their interoperable representation on
+  their next export.
+- This entry does not change `packages/editor/package.json`; release versioning
+  remains a separate maintainer decision.
+
+## Unreleased — 2026-08-28 — Revision-aware inline Embeds
+
+**Severity**: minor
+
+**What changed**: Revision tracking now attributes inline Embed insertion,
+deletion and semantic modification. An existing Embed semantic-attribute update
+is represented as a non-destructive deletion of the old object plus insertion
+of its replacement in one review group. The outer `c-element` receives the
+existing Revision presentation attributes; no Embed-specific frame API or CSS
+contract was added.
+
+**Why**: Inline objects previously committed normally while tracking was active,
+so inserted or resized/configured Embeds had no reviewable Diff and final
+projection could not accept or reject the object change.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-embed.md`
+- `blockcraft-inline.md`
+- `blockcraft-input.md`
+- `blockcraft-data.md`
+- `blockcraft-test.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- No new exported API. Existing `applyDeltaOperations()`,
+  `DocCRUD.applyTextDelta()` and `formatText()` entry points become
+  Revision-aware for inline Embed content.
+
+### Migration Recipe
+
+No host code change is required. Existing converter code keeps rendering the
+same one-unit Embed and the existing theme styles its outer `c-element`.
+
+```typescript
+// Existing insertion code now creates a reviewable length-one Diff in track mode.
+block.applyDeltaOperations([
+  { retain: offset },
+  { insert: { myEmbed: value }, attributes: { format: "compact" } },
+]);
+
+// Existing semantic updates now create one old/new replacement group.
+block.formatText(offset, 1, { format: "expanded" });
+```
+
+### Behavior Changes
+
+- Object inserts and delete-plus-object-insert replacements are no longer
+  treated as unsupported Delta while Revision tracking is active.
+- Unprefixed semantic attributes on an Embed-only retained range are tracked as
+  replacement. General `a:` / `d:` / `s:` / `t:` formatting remains untracked.
+- Repeated semantic changes to the same actor's pending Embed insertion update
+  that insertion in place and do not stack another Diff.
+- Embed anchor movement and system-owned image intrinsic-size backfill remain
+  operational without creating a Revision record.
+- This entry does not define or change `packages/editor/package.json` version;
+  release versioning remains a separate maintainer decision.
+
+## Unreleased — 2026-08-28 — Loading-first adapter resources
+
+**Severity**: patch
+
+**What changed**: Built-in HTML and Markdown Image matchers now create an Image
+snapshot synchronously from a validated source instead of downloading the
+resource and waiting for `DocFileService.uploadImg()` during AST traversal.
+Snapshot Viewer resource activation now consistently follows its existing
+`eager | visible | off` policy for images, direct video, audio and video
+iframes, including cached enhancements and placeholder timeout state.
+
+**Why**: Parsing and resource acquisition are different lifecycle boundaries.
+Adapter-side network work delayed one-shot imports and the complete Markdown
+Stream render, silently dropped failed images, and could repeat uploads as
+source changed. Starting a `visible` iframe timeout before setting its `src`
+also produced false errors for offscreen resources.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-adapter.md`
+- `blockcraft-app.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Ordinary HTML/Markdown images retain safe relative, HTTP(S), Blob and image
+  Data URL sources immediately. Active-content and non-image Data URL schemes
+  are rejected. Imported responsive sizing, legacy `width/height`, caption and
+  placement metadata remain attached to the Image snapshot.
+- Image import no longer fetches a remote source, converts it to a `File`, or
+  calls `uploadImg()`. Hosts that require rehosting must schedule it after
+  insertion; the mounted Block or Snapshot Viewer owns loading/error/retry UI.
+- Markdown Stream can mount the Image frame on its first adapter flush without
+  waiting for the image resource, and later chunks do not re-ingest it.
+- Snapshot Viewer `visible` resources stay idle until observed; only then are
+  their placeholder subscriptions/timeouts and `src` activated. `off` leaves
+  sources unset and does not display a false loading state.
+- This patch does not define or require a package version; release versioning
+  remains a separate maintainer decision.
+
+## Unreleased — 2026-08-28 — Plain ordered-list interruption boundaries
+
+**Severity**: patch
+
+**What changed**: Automatic numbering for an ordered block without a positive
+`heading` now starts a fresh counter after a non-ordered sibling whose `depth`
+is equal to or greater than that ordered counter's depth. Ordered heading
+counters continue scanning across those siblings under the existing
+depth/heading pruning rules. Marker-style groups use the same boundary.
+
+**Why**: A same-level or more-indented ordinary block represents an interruption
+of a plain ordered sequence. Continuing its number after that interruption made
+independent plain lists appear to be one list, while heading-numbered structures
+still need broad traversal across intervening content.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-plugins-block.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Plain ordered counters and marker-style inheritance no longer cross a
+  same-or-deeper non-ordered sibling.
+- Ordered counters with a positive `heading` retain their previous traversal
+  behavior.
+- No package version was changed; release versioning remains a separate
+  maintainer decision.
+
+## Unreleased — 2026-08-28 — Co-located Block and Inline Embed adapters
+
+**Severity**: major
+
+**What changed**: Every bundled Block flavour and all seven built-in Inline
+Embed keys now own an `adapter/` contribution beside their domain source.
+The concrete HTML/Markdown matcher implementations now physically live inside
+those domain directories; `packages/editor/adapters/` contains only the core
+walker, matcher contracts, registry, generic codecs, and HTML/Markdown engines.
+`AdapterRegistry` validates exclusive ownership, pre-indexes Block export
+matchers by flavour, and supplies both walkers. The bundled registry is composed
+in `editor/bundled-adapter-registry.ts`, while the YNE converter is owned by the
+Clipboard domain. The default hybrid Markdown profile adds selective,
+higher-fidelity Block directives for semantic structures that portable
+Markdown cannot usefully represent; the explicit BlockCraft profile also
+allows private Inline Embed directives. Native readable Markdown continues to
+win for resources and links. Custom capability composition is now closed over the same
+contract: the bundled capability factory accepts paired Block/Inline Embed
+adapter contributions, returns the composed registry, derives a runtime Embed
+converter from `createDomConverter` when available, and rejects unpaired custom
+types before document initialization. `AdapterService` resolves that registry
+through an overridable Angular token. The standalone Markdown stream viewer can
+now consume the same composed registry and select the portable or BlockCraft
+profile explicitly. The Stream no longer has an independent planner or parses
+source fragments as separate Markdown documents. Once per coalesced refresh it
+sends the complete accumulated source through the configured `MarkdownAdapter`
+and Adapter Registry.
+
+**Why**: Matcher arrays had grown into a central switchboard, making a Block or
+Embed incomplete unless unrelated global files were also edited. Co-location
+makes serialization part of the domain contract, while the registry provides a
+single composition root and keeps export routing independent of registry size.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-adapter.md`
+- `blockcraft-embed.md`
+- `blockcraft-app.md`
+- `blockcraft-debug.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `AdapterRegistry`
+- `BlockAdapterContribution`
+- `InlineEmbedAdapterContribution`
+- `BundledAdapterRegistryOptions`
+- `createBundledAdapterRegistry()`
+- `BUNDLED_ADAPTER_REGISTRY`
+- `BUNDLED_BLOCK_ADAPTER_CONTRIBUTIONS`
+- `BUNDLED_INLINE_EMBED_ADAPTER_CONTRIBUTIONS`
+- `EDITOR_ADAPTER_REGISTRY_TOKEN`
+- `BundledEditorCapabilityOptions.additionalBlockAdapters`
+- `BundledEditorCapabilityOptions.additionalInlineEmbedAdapters`
+- `BundledEditorCapabilities.adapterRegistry`
+- `MarkdownStreamViewerOptions.adapterRegistry`
+- `MarkdownStreamViewerOptions.markdownProfile`
+- `MarkdownStreamViewerOptions.onError`
+- `MarkdownAdapterProfile`
+- `MARKDOWN_ADAPTER_PROFILE_CONFIG`
+- Optional matcher `priority` and `consumes` fields
+
+### Behavior Changes
+
+- The standalone Markdown Stream no longer has Mermaid-, table-, list-, or
+  raw-text-specific conversion branches or a source-window planner.
+  Multiline/nested BlockCraft container directives, tilde fences, and long
+  backtick fences follow the same full-source grammar and matcher registry as
+  one-shot Markdown import.
+- Incomplete Mermaid fences are parsed by the Mermaid adapter immediately,
+  matching the editable `MarkdownStreamRenderer`; `finish()` flushes the latest
+  source without changing adapter semantics.
+- A failed standalone Stream refresh preserves the last successful snapshot,
+  reports through `onError` when supplied, and allows later input to retry from
+  the complete source instead of permanently rejecting its render queue.
+- The editable `MarkdownStreamRenderer` discards stale async parses when newer
+  source arrives, recovers its queue after a rejected parse/apply call, and
+  blocks in-flight DocCRUD writes after `destroy()`.
+
+### Breaking Changes
+
+- `HtmlAdapter` and `MarkdownAdapter` now require an explicit third constructor
+  argument: either an `AdapterRegistry` or a matcher array. They no longer pull
+  concrete bundled Block matchers into the core adapter layer implicitly.
+- The central `DEFAULT_BLOCK_MATCHERS`,
+  `defaultBlockMarkdownAdapterMatchers`, and concrete
+  `adapters/*/block-matchers/*` exports were removed. Import a domain-owned
+  contribution from `blocks/<block>/adapter` or use
+  `BUNDLED_ADAPTER_REGISTRY`.
+- Internal YNE files moved from `adapters/yne-adapter/` to
+  `framework/modules/clipboard/adapters/yne/`. These files were never exported
+  from the package root; unsupported deep imports must be updated or removed.
+- `AdapterService` no longer advertises Markdown as `text/rtf`. Request
+  `ClipboardDataType.MARKDOWN`; legacy incoming clipboard payload detection
+  still recognizes historical Markdown that was mislabeled as RTF.
+
+### Migration Recipe
+
+Existing explicit matcher-array construction remains valid. Construction that
+previously relied on the implicit bundled default must now pass the registry:
+
+```typescript
+// before
+const html = new HtmlAdapter(fileService, configs);
+const markdown = new MarkdownAdapter(fileService, configs);
+
+// after
+const html = new HtmlAdapter(fileService, configs, BUNDLED_ADAPTER_REGISTRY);
+const markdown = new MarkdownAdapter(
+  fileService,
+  configs,
+  BUNDLED_ADAPTER_REGISTRY,
+);
+```
+
+New Block and Embed domains should publish a co-located contribution and extend
+the bundled registry:
+
+```typescript
+// before
+const html = new HtmlAdapter(fileService, configs, [myBlockHtmlMatcher]);
+
+// after
+const registry = createBundledAdapterRegistry({
+  additionalBlocks: [myBlockAdapters],
+  additionalInlineEmbeds: [myInlineEmbedAdapters],
+});
+const html = new HtmlAdapter(fileService, configs, registry);
+const markdown = new MarkdownAdapter(fileService, configs, registry);
+```
+
+Hosts using `createBundledEditorCapabilities()` must pair every custom
+Schema/Embed with its co-located contribution and provide the same registry to
+the bundled `AdapterService`:
+
+```typescript
+// before: custom data rendered, but AdapterService silently stayed bundled-only
+const capabilities = createBundledEditorCapabilities({
+  additionalSchemas: [myBlockSchema],
+  additionalEmbeds: [['my-embed', myEmbedConverter]],
+})
+
+// after
+const blockAdapters = [myBlockAdapters] as const
+const inlineEmbedAdapters = [myEmbedAdapters] as const
+const registry = createBundledAdapterRegistry({
+  additionalBlocks: blockAdapters,
+  additionalInlineEmbeds: inlineEmbedAdapters,
+})
+const capabilities = createBundledEditorCapabilities({
+  additionalSchemas: [myBlockSchema],
+  additionalBlockAdapters: blockAdapters,
+  additionalEmbeds: [['my-embed', myEmbedConverter]],
+  additionalInlineEmbedAdapters: inlineEmbedAdapters,
+})
+
+// Angular provider at the same document-host boundary as AdapterService
+{provide: EDITOR_ADAPTER_REGISTRY_TOKEN, useValue: registry}
+```
+
+The default `hybrid` profile combines portable Markdown with opted-in semantic
+Block directives. Choose `portable` for standard-only exchange or `blockcraft`
+when the consumer also owns private Inline Embed syntax:
+
+```typescript
+const configs = new Map([[MARKDOWN_ADAPTER_PROFILE_CONFIG, "blockcraft"]]);
+```
+
+No package version was changed by this migration entry; release versioning
+remains a separate maintainer decision.
+
+### Behavior Changes
+
+- The editor service, offline desktop service, and Markdown stream viewer use
+  the bundled registry by default, so previously uncovered bundled flavours no
+  longer disappear during adapter export.
+- `hybrid` is the default Markdown behavior. Every profile imports registered
+  directives; `hybrid` and `blockcraft` export opted-in Block directives, while
+  only `blockcraft` exports private Inline Embed directives.
+- Duplicate contribution IDs, Block flavours, or Inline Embed keys now throw
+  during registry construction instead of relying on matcher order.
+- Separate sibling contributions may reference one shared grammar matcher;
+  the registry de-duplicates that matcher by identity for import while keeping
+  flavour-indexed export ownership separate.
+- `createBundledEditorCapabilities()` now throws when a custom Schema or Embed
+  has no matching adapter contribution, or when a factoryless custom Inline
+  Embed adapter has no explicit runtime converter. A contribution's
+  `createDomConverter` is consumed automatically when present.
+- Bookmark, Figma, and Juejin cards now have real HTML/Markdown import paths and
+  no longer disappear when their Schema omits an optional title.
+- Shape, ShapeText, WordArt, Divider, block Image, and inline Image use bounded
+  BlockCraft directives where their complete structure or presentation has no
+  portable Markdown equivalent. Portable output stays readable and standard.
+- Mermaid imports and exports the native fenced-code representation with the
+  `mermaid` language info string in both profiles; its internal textarea is not
+  emitted as a second Markdown node. Import also accepts the common `mermiad`
+  transposition and canonicalizes it to `mermaid` on export.
+- Image HTML keeps `<figcaption>` inside its `<figure>`, so a caption remains an
+  Image child after round-trip. The BlockCraft image directive preserves that
+  relationship plus responsive/placement properties.
+- HTML round-trip now recognizes todo checkboxes, preserves a Code Block's
+  language, and prevents Formula markup from also producing an empty paragraph.
+- An Inline Embed without a registered contribution now exports as readable
+  fallback text instead of disappearing from Markdown or aborting HTML export.
+  The fallback is intentionally not reconstructable as an Embed.
+- Markdown export and streaming request `text/markdown`; the old RTF-labelled
+  Markdown path remains only as compatibility for historical clipboard data.
+
+## Unreleased — 2026-08-28 — Central Inline Embed ownership and Agent contracts
+
+**Severity**: minor
+
+**What changed**: Built-in Inline Embed converters, keys, helpers, tests, and
+optional Agent declarations now live under one
+`packages/editor/embeds/<embed-key>/` ownership boundary and are aggregated by
+the central `embeds` barrel. The old scattered `*-embed.ts` source files were
+removed. The editor now exports a runtime-independent Inline Embed Agent
+capability contract, and `blockcraft-agent` exposes or accepts Embed generation
+only when the host has installed both a converter and a same-key capability
+with an explicit `insert` schema.
+
+**Why**: converter registration describes how existing Delta renders, but it
+does not tell a model what an Embed means or which values it may safely invent.
+Colocating an optional Agent declaration with the converter lets built-in and
+external Embed packages ship one canonical data contract without making the
+editor depend on `blockcraft-agent`.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-embed.md`
+- `blockcraft-inline.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `InlineEmbedAgentInsertDefinition`
+- `InlineEmbedAgentExample`
+- `InlineEmbedAgentCapabilityDefinition`
+- `defineInlineEmbedAgentCapability()`
+- `BLOCKCRAFT_BUILTIN_INLINE_AGENT_CAPABILITIES`
+- `BLOCKCRAFT_BUILTIN_AGENT_CAPABILITIES`
+- Built-in `INLINE_*_AGENT_CAPABILITY` declarations for `image`, `icon`,
+  `date`, `mention`, `latex`, `shape`, and `word-art`
+
+### Migration Recipe
+
+Public package consumers should import Embed APIs from the root entry, which
+re-exports `packages/editor/embeds/index.ts`. Source-deep imports into the old
+layout must be replaced:
+
+```typescript
+// before: removed source-deep modules
+import { inlineImageEmbedConverter } from "./framework/block-std/inline/image-embed";
+import { createInlineShapeEmbedConverter } from "./blocks/shape-block/shape-embed";
+
+// after: supported package public entry
+import {
+  createInlineShapeEmbedConverter,
+  inlineImageEmbedConverter,
+} from "@ccc/blockcraft";
+```
+
+For an external Embed that the Agent may create, colocate and export an
+optional declaration, then register both sides in the host:
+
+```typescript
+// @acme/my-embed: embeds/my-embed/agent/index.ts
+export const MY_EMBED_AGENT_CAPABILITY = defineInlineEmbedAgentCapability({
+  id: "acme.inline-embed.my-embed",
+  kind: "inline-embed",
+  embedKey: "myEmbed",
+  title: "My Embed",
+  description: "An ACME entity reference.",
+  insert: { value: { type: "string", minLength: 1 } },
+});
+
+// host
+const doc = new BlockCraftDoc({
+  embeds: [["myEmbed", myEmbedConverter]],
+});
+const extension: DocumentAgentHostExtension = {
+  id: "acme.embeds",
+  version: "1",
+  description: "ACME Embed contracts",
+  capabilities: [MY_EMBED_AGENT_CAPABILITY],
+};
+const agent = new BlockCraftEditorAgent(doc, runner, {
+  extensions: [extension],
+});
+```
+
+If an Embed needs no AI-specific semantics, do not add or register an Agent
+declaration. If it should be understandable but not generatable, declare the
+capability without `insert`.
+
+### Behavior Changes
+
+- `embedKey` is the canonical primitive value/attributes contract. A same-key
+  converter override is renderer-only and must preserve that data shape.
+- Agent object inserts require exactly one installed key and must validate the
+  capability's complete value/attributes schemas. An Embed consumes one model
+  offset.
+- Agent `retain + attributes` accepts canonical general text formatting only;
+  semantic Embed changes use delete-one plus a separately validated insert.
+- Built-in `mention`, `shape`, and `word-art` are understanding-only by
+  default. Generic range deletion can still remove them; the missing insert
+  grant prevents fabrication, not ordinary deletion.
+
+## Unreleased — 2026-08-28 — Weather anchor materialization
+
+**Severity**: minor
+
+**What changed**: BlockCraft now exports `DocWeatherService`,
+`DOC_WEATHER_SERVICE_TOKEN`, `DocWeatherQuery`, and `DocWeatherData`. Weather
+blocks resolve the service from `doc.injector`, request current data for the
+`live` anchor, request the configured ISO date for fixed anchors, and persist a
+successful fixed result to `props.frozen` through Yjs when writable. The generic
+`DYNAMIC_MATERIAL_DATA` weather port remains as a deprecated compatibility API
+but is no longer consumed by the built-in weather block.
+
+**Why**: fixed and live weather previously rendered the same current value and
+fixed results existed only in component memory, so reopening a document could
+change a supposedly creation-day card.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-block.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `DocWeatherService`
+- `DOC_WEATHER_SERVICE_TOKEN`
+- `DocWeatherQuery` with optional `date`
+- `DocWeatherData` and `DocWeatherTone`
+
+### Migration Recipe
+
+Replace the generic dynamic-material weather port with a Doc-injected service:
+
+```typescript
+// before
+{ provide: DYNAMIC_MATERIAL_DATA, useClass: MyDynamicMaterialData }
+
+// after
+{ provide: DOC_WEATHER_SERVICE_TOKEN, useClass: MyDocWeatherService }
+
+class MyDocWeatherService extends DocWeatherService {
+  override query = (request?: DocWeatherQuery, signal?: AbortSignal) =>
+    request?.date
+      ? history(request.date, signal)
+      : current(signal)
+}
+```
+
+### Behavior Changes
+
+- Template draft projections still perform no weather request.
+- Fixed ISO-date weather is persisted only when the block is writable; readonly
+  views render the requested value without mutating the document.
+- Live weather remains runtime-only and ignores legacy `props.frozen`.
+
+## Unreleased — 2026-08-27 — Block-owned Agent capability contracts
+
+**Severity**: minor
+
+**What changed**: Block Agent semantics are now an additive public editor
+contract. Built-in declarations moved from one `blockcraft-agent` table into
+the owning `blocks/<block>/agent/` directories and are exposed through one
+aggregation-only export. External Block packages can use the same declaration
+shape and let the host register it with `blockcraft-agent`.
+
+**Why**: Schema metadata explains rendering and tree validity, but it does not
+describe safe model generation parameters or Agent-writable props. Keeping the
+AI contract beside the Block makes those rules ship and evolve with external
+Block code without creating a reverse dependency from `@ccc/blockcraft` to
+`blockcraft-agent`.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-app.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `BlockAgentActionEffect`
+- `BlockAgentCapabilityAction`
+- `BlockAgentCapabilityDefinition`
+- `defineBlockAgentCapability()`
+- `BLOCKCRAFT_BUILTIN_BLOCK_AGENT_CAPABILITIES`
+- Built-in Block-owned `*_BLOCK_AGENT_CAPABILITY` exports
+
+### Migration Recipe
+
+Existing Blocks that do not need AI-specific understanding require no change.
+For an opt-in external Block, move its declaration beside the Block and export
+it; the host remains responsible for registration:
+
+```typescript
+// before: host-only inline declaration
+const extension = {
+  id: "acme.blocks",
+  version: "1",
+  description: "ACME Blocks",
+  capabilities: [
+    {
+      id: "acme.block.card",
+      kind: "block",
+      flavour: "acme-card",
+      title: "Card",
+      description: "ACME card",
+    },
+  ],
+};
+
+// after: blocks/acme-card/agent/index.ts
+export const ACME_CARD_AGENT_CAPABILITY = defineBlockAgentCapability({
+  id: "acme.block.card",
+  kind: "block",
+  flavour: "acme-card",
+  schemaVersion: 1,
+  title: "Card",
+  description: "ACME card",
+});
+
+// host composition
+const extension = {
+  id: "acme.blocks",
+  version: "1",
+  description: "ACME Blocks",
+  capabilities: [ACME_CARD_AGENT_CAPABILITY],
+};
+```
+
+### Behavior Changes
+
+- Schema registration by itself still does not grant Agent creation or prop
+  writes. Missing `createParameters` and `writableProps` fail closed.
+- An external declaration is discoverable only after the host registers it.
+- Built-in runtime capability semantics are unchanged; their source of truth is
+  now the owning Block directory.
+
+## Unreleased — 2026-08-28 — Text-box callout adjustment contract
+
+**Severity**: minor
+
+**What changed**: `TextBoxBlockProps` and `NormalizedTextBoxBlockProps` now
+accept optional `adjustments: Record<string, number>`. Text-box callout geometry
+uses the same `tailX` / `tailY` projection as Shape in the live editor, preset
+picker and Snapshot Viewer. The callout projection now selects the nearest
+frame edge, so top, right, bottom and left tails keep their intended direction
+and move the editable text-safe inset to that edge.
+
+**Why**: the gallery prototype used presentation-only `tail` and `leader`
+fields. Persisting only `shape` silently discarded those values and made
+several distinct bubble styles render with the same default lower-left tail.
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `TextBoxBlockProps.adjustments?: ShapeAdjustmentValues | null`
+- `NormalizedTextBoxBlockProps.adjustments?: ShapeAdjustmentValues`
+
+### Migration Recipe
+
+Store callout direction through canonical numeric adjustments rather than
+prototype-only strings:
+
+```typescript
+// before: ignored by the TextBox normalizer
+const prototypePreset = { shape: "wedge-round-callout", tail: "top-left" };
+
+// after: persisted and rendered by every TextBox projection
+const snapshot = TextBoxBlockSchema.createSnapshot("正文", {
+  shape: "wedge-round-callout",
+  adjustments: { tailX: 170, tailY: 0 },
+});
+```
+
+### Behavior Changes
+
+- Existing text boxes without `adjustments` keep the default lower-left tail.
+- Adjusted callout paths and their text-safe insets now match between the live
+  editor, preset thumbnail and Snapshot Viewer.
+- Gallery leader-line callouts remain registry artwork because one closed
+  callout Shape cannot represent a separate box and leader line.
+
+## Unreleased — 2026-08-27 — Text-box gallery replacement
+
+**Severity**: major
+
+**What changed**: the bundled text-box preset catalog was replaced wholesale
+with 58 Word-inspired single-object styles in ten categories. The picker now
+uses `CsTabsComponent` / `CsTabComponent`; only its category row scrolls, while
+the style grid expands without vertical clipping.
+
+**Why**: the former three groups were visually repetitive and mixed decorative
+bitmap silhouettes with editable callout semantics. The new catalog separates
+shape geometry, surface ornament and text styling, and includes real editable
+callout shapes plus explicit vertical presets.
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+- `blockcraft-toolbar.md`
+- `blockcraft-plugins-formatting.md`
+- `blockcraft-plugins-toolbar.md`
+- `MIGRATIONS.md`
+
+### Breaking Changes
+
+- Category ids `outline` and `rect` were removed. The new ids are `office`,
+  `quote`, `sidebar`, `editorial`, `shape`, `bubble`, `note`, `culture`,
+  `material` and `vertical`.
+- Preset ids `classic`, `no-fill`, `outline-r-*`, `rect-r-*` and `bubble-r-*`
+  are not retained. Unknown ids resolve to `office-simple`.
+
+### Migration Recipe
+
+Replace any hard-coded old preset/category ids with a new gallery id, or derive
+choices from `TEXT_BOX_PRESETS` and `TEXT_BOX_PRESET_CATEGORIES` at runtime.
+
+### Behavior Changes
+
+- The picker renders ten `cs-tab` panes instead of a segmented three-way
+  switch.
+- The tab navigation is horizontally scrollable; the picker content itself is
+  not a scroll container.
+
+## Unreleased — 2026-08-27 — Scoped revision Diff writes
+
+**Severity**: minor
+
+**What changed**: `DocumentRevisionManager.runAsRevision()` can now attribute a
+synchronous programmatic mutation set to one actor and review group without
+enabling global revision tracking. Nested structural replacement grouping
+reuses the outer scoped group.
+
+**Why**: Document agents and other programmatic producers need to show changes
+as in-document Revision Diff first, then let users accept or reject them,
+without causing subsequent manual editing to enter track-changes mode.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-input.md`
+- `blockcraft-data.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `RevisionWriteScopeOptions`
+- `doc.revisions.runAsRevision(actor, callback, {groupId?})`
+
+### Migration Recipe
+
+No existing consumer changes are required. Programmatic writers that previously
+temporarily toggled global mode can use the scoped API:
+
+```typescript
+// before: changes global state observed by the editor UI and later input
+doc.revisions.setActor(agentActor);
+doc.revisions.setMode("track");
+applyAgentOperations();
+doc.revisions.setMode("off");
+
+// after: creates one visible review Diff and restores prior state
+doc.revisions.runAsRevision(agentActor, applyAgentOperations, {
+  groupId: agentRequestId,
+});
+```
+
+### Behavior Changes
+
+- `doc.revisions.isTracking` is also true inside `runAsRevision()` while
+  `mode$` and `mode` retain their previous values.
+- The callback is synchronous. Operations outside Revision v1 continue through
+  their normal Yjs/Undo path without creating a partial Diff. Agent delivery
+  must not reject or omit those operations merely because they have no Diff
+  styling; mixed results execute completely, and review decisions apply only to
+  the represented revision records.
+
+## Unreleased — 2026-08-27 — Unified object format domain
+
+**Severity**: major
+
+**What changed**: Shape, TextBox and WordArt now share atomic object-format
+sections, the model-only `doc.objectFormat` manager, Schema `objectFormat`
+capabilities and one `ObjectFormatToolbarPlugin`. HTML uses bounded
+`data-bc-object-*` metadata and Snapshot Viewer/inline/print paths consume the
+same normalized values.
+
+**Why**: The former blocks and four object toolbars encoded fill, outline,
+effects, text and frame geometry differently. Mixed selection, predictable
+Undo, shared rendering and Word-like customization could not be implemented
+without one domain contract.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-adapter.md`
+- `blockcraft-app.md`
+- `blockcraft-block.md`
+- `blockcraft-data.md`
+- `blockcraft-embed.md`
+- `blockcraft-plugin.md`
+- `blockcraft-plugins-formatting.md`
+- `blockcraft-plugins-ref.md`
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-plugins-util.md`
+- `blockcraft-selection.md`
+- `blockcraft-test.md`
+- `blockcraft-toolbar.md`
+- `MIGRATIONS.md`
+
+### Breaking Changes
+
+- Removed public exports and bundled registration for `ShapeToolbarPlugin`,
+  `TextBoxToolbarPlugin`, `WordArtToolbarPlugin`, `ObjectGroupToolbarPlugin`
+  and their public Action/Component contracts.
+- Shape/TextBox/WordArt persist readable compact keys
+  `lockRatio/shape/fill/outline/effects/textFrame/textStyle`. Each structured section is one
+  primitive-only record value, not a JSON string or nested Y.Map. Old style
+  fields and old HTML attributes are not migrated; invalid/missing sections
+  resolve to Schema defaults without throwing.
+- HTML export/import now uses bounded semantic `data-bc-object-*` metadata.
+  TextBox catalog artwork is separate `data-bc-object-artwork`; it never
+  masquerades as a user picture fill.
+
+### New APIs / Features
+
+- `BlockObjectFormatProps`, `ObjectPaint`, `ObjectLine`, `ObjectEffects`,
+  `ObjectTextFrame`, `ObjectTextStyle`, `ObjectFormatPatch` and normalization/
+  compact storage helpers.
+- `IBlockSchemaOptions.metadata.objectFormat` and
+  `BlockObjectFormatCapability` declare geometry, Shape, picture fill, arrow,
+  text-frame and rich-default/uniform-text support.
+- `BlockCraftDoc.objectFormat: BlockObjectFormatManager` provides DOM-free
+  normalized reads, mixed values, capability intersections, stable selection
+  validation and single-transaction batch writes.
+- `ObjectFormatToolbarPlugin` owns single/mixed object selection while reusing
+  the established side-aware 42px quick rail and responsive 288px secondary card.
+- WordArt adds deterministic `arch-up`, `arch-down`, `circle` and `wave`
+  projections while retaining a real plain-text editor during editing.
+
+### Migration Recipe
+
+```typescript
+// before
+new ShapeToolbarPlugin();
+block.updateProps({ fillColor: "#4857E2", strokeWidth: 2 });
+
+// after: bundled capabilities already register this plugin
+new ObjectFormatToolbarPlugin();
+doc.objectFormat.updateSelection([block.id], {
+  shapeFill: { ...DEFAULT_OBJECT_PAINT, color: "#4857E2" },
+  shapeOutline: { ...DEFAULT_OBJECT_LINE, width: 2 },
+});
+```
+
+Custom object Schemas must opt in with `metadata.objectFormat`; store sections
+through the matching `storeObject*()` helpers. The resulting shallow records
+contain primitives only and are each assigned as one top-level Yjs prop.
+
+### Behavior Changes
+
+- Reset deletes one format section and falls back to that Schema's default;
+  explicit `none` fill/outline stays distinct from reset.
+- Mixed-selection writes revalidate stable IDs, skip locked targets with user
+  feedback and fail closed if selection/targets drift before the transaction.
+- Shape catalog `textInsets` establish the safe text region first; user
+  `textFrame.margins` are then added inward. External text-wrap distances and
+  Word tight/through contour wrapping are not introduced.
+- Object selection and text editing keep the established interaction contract:
+  Shape shell clicks select the whole object, text surfaces keep their native
+  editing path, explicit object handles select/move, and Escape returns from
+  object text to the whole object. Selection opens only the compact iconfont
+  rail; the established 288px secondary card opens after the user chooses a rail group.
+- The unified rail and panel use CSES UI Button, Tooltip, Select, Input,
+  InputNumber, ColorPicker, Slider and Switch controls. BlockCraft
+  retains only Overlay ownership, iconfont glyphs and editor-specific layout;
+  paint/outline sliders preview during movement and create one model write on
+  completion. Shadow/glow controls preview a complete local draft; only the
+  explicit Apply action writes the whole `effects` or `textStyle` record once, while Cancel
+  restores the current model projection without a Yjs write.
+- The responsive floating panel omits the size/properties rail entry. Layout,
+  page alignment and hierarchy remain available for one or multiple objects;
+  object alignment, distribution and grouping appear only for multi-selection.
+  Shape uses one CSES segmented tab strip for Fill/Outline/Change Shape/Effects;
+  Text uses one for Text Frame/Typography/Appearance, with only one content area
+  visible at a time. Font selection is a searchable CSES Select backed by the
+  shared font catalogs and persists the bounded CSS stack used by Shape,
+  TextBox and WordArt. Active tab content has no trailing divider and the UI
+  exposes no per-section Reset action. Shape and text fill reuse the established
+  `ShapeFillPanelComponent`; a CSES Select switches fill mode and reveals only
+  its matching tools. The preset grid, start/end color pickers and angle control
+  adapt to one atomic `ObjectPaint`, while picture details and opacity remain in
+  the owning unified card. Internal `bc:` preset artwork is never echoed as a
+  user URL; fit, position and picture opacity stay hidden until the user sets a
+  URL or uploads an image. The UI no longer exposes text-frame wrap-inside,
+  rotate-with-object or auto-grow toggles, while their normalized data fields
+  remain supported programmatically.
+- Secondary cards omit redundant title/description headers. Format cards remain
+  288px; the layout card is 228px and uses compact CSES actions with icons above
+  visible one- or two-line labels plus tooltips. A common current layout mode is visibly active, while mixed layout
+  selections show no false active state. Margin steppers use the CSES small
+  control with a locally reduced compact height.
+- The unified data/actions do not replace the prior two-level toolbar shell.
+  The shell retains center-first right/left connected positions, side flipping,
+  `--bc-float-toolbar-*` theme tokens, RAF geometry updates and toolbar/CSES
+  sub-overlay focus ownership, including the pointer-to-focus grace interval.
+- Focused inputs, sliders and steppers no longer close the object toolbar when
+  the browser temporarily detaches the editor Selection. The Plugin uses
+  `allowDetachedSelection` only after proving that focus belongs to its panel or
+  owned CSES child overlay; any different non-empty selection still fails closed.
+- The same toolbar-owned focus gap retains the object's existing selected
+  outline and resize handles. Closing the toolbar removes only chrome retained
+  by the toolbar and never steals focus from its input controls. Retention now
+  begins on the first owned pointerdown and reprojects after that synchronous
+  selection broadcast, so the first rail click does not flash the chrome away.
+- Fixed-toolbar TextBox and WordArt preset galleries now resolve canonical
+  `fill`/`outline`/`textFrame`/`textStyle` sections at their catalog
+  boundary. Their previews and inserted objects therefore share the same
+  normalized presentation instead of falling back to black or one default
+  WordArt style after removal of legacy style fields.
+- Shape/text effects, line options, text-frame fields, gradient stops, shared
+  font selection and Transform controls emit canonical section patches through
+  the same Manager path; WordArt presentation resolves the canonical shared
+  font stack instead of silently falling back to its old font id.
+
+## Unreleased — 2026-08-26 — Resumable flow and paginated presentation
+
+**Severity**: minor
+
+**What changed**: `PresentationController` now exposes the layout-independent
+`canResume` getter and `resume()` command. Leaving fullscreen preserves the
+current flow slide or paginated paper-sheet index; `destroy()` still permanently
+clears the complete presentation session.
+
+**Why**: The previous host integration inferred history from the controller's
+private flow-only `pages` array, so paginated presentations could not offer the
+same continue action and normal teardown also discarded the saved position.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-util.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `PresentationController.canResume: boolean`
+- `PresentationController.resume(): boolean`
+
+### Migration Recipe
+
+Hosts should stop inspecting or invoking private controller members:
+
+```typescript
+// before: flow-only and unsupported
+const pages = (controller as any).pages;
+if (pages?.length) (controller as any).renderPage(savedIndex);
+
+// after: works for flow and pagination
+if (controller.canResume) controller.resume();
+```
+
+### Behavior Changes
+
+- Control-bar exit, Escape, and browser fullscreen exit preserve presentation
+  progress. Explicit `destroy()` remains the final cleanup boundary and resets
+  the saved page.
+
+## v0.7.2 — 2026-08-25 — Root-flow object-group gap cursor
+
+**Severity**: patch
+
+**What changed**: An `object-group` in root-flow top-bottom mode now mounts the
+standard before/after gap anchors used by other flow container blocks. Whole-
+group selection consequently retains a native keyboard focus anchor.
+
+**Why**: Object groups were excluded by flavour even after leaving the absolute
+placement plane, so their root-flow representation could be selected visually
+but did not support gap cursors or the normal selected-block keyboard path.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-selection.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Root-flow top-bottom object groups accept before/after gap cursors and selected-
+  block keyboard events. Absolute object groups and every member inside an
+  object group remain ineligible for gap cursors.
+
+## v0.7.1 — 2026-08-25 — Shape text paste is plain text only
+
+**Severity**: patch
+
+**What changed**: Schema metadata adds `pastePlainTextOnly?: boolean`. The
+built-in `shape-text` child enables it without enabling `plainTextOnly`.
+Shape creation and HTML import retain formatting attributes on text inserts but
+drop non-break inline embeds; paste reads `text/plain` before attempting any
+rich clipboard parser.
+
+**Why**: Shape labels must not import structured clipboard content, but users
+still need to apply font, size, color and other character formatting manually.
+Paste policy and formatting capability are separate concerns.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-plugins-toolbar.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `IBlockSchemaOptions.metadata.pastePlainTextOnly?: boolean` opts a
+  formattable editable block into text-only clipboard ingestion.
+
+### Behavior Changes
+
+- Formatting commands continue to apply to `shape-text`; pasted formatting and
+  inline embeds do not.
+- The first Ctrl/Cmd+A inside a closed container with one direct editable child
+  now selects that child's full text range. Shape-text Delete and paste remain
+  text operations; a repeated shortcut can still promote to the container.
+- Pasting HTML, Markdown, internal BlockCraft snapshots or files into active
+  shape text inserts only the clipboard's `text/plain` value.
+- `ShapeBlockSchema.createSnapshot()` and `ShapeTextBlockSchema.createSnapshot()`
+  keep string content, text formatting attributes and line breaks but discard
+  non-break embeds from supplied Delta input.
+
+## v0.7.0 — 2026-08-25 — Revision / track-changes domain
+
+**Severity**: minor
+
+**What changed**: BlockCraft adds a document-owned Revision domain for
+non-destructive text and structural change tracking, append-only collaborative
+review decisions, deterministic conflict projection, complete document
+snapshots, checkpoint compaction, a headless review Plugin, optional reusable
+review UI and revision theme tokens.
+
+**Why**: Hosts need Word-like track changes that converges for offline authors
+and reviewers without moving authentication, authorization or synchronization
+policy into the editor.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-input.md`
+- `blockcraft-inline.md`
+- `blockcraft-selection.md`
+- `blockcraft-data.md`
+- `blockcraft-test.md`
+- `blockcraft-theme.md`
+- `blockcraft-plugin.md`
+- `blockcraft-plugins-ref.md`
+- `blockcraft-plugins-util.md`
+- `blockcraft-toolbar.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `RevisionMode`, `RevisionViewMode`, `RevisionActorSnapshot`,
+  `RevisionRecord`, `RevisionDecision`, `RevisionStatus`,
+  `RevisionOverlapConflict`, `RevisionCheckpoint`, related query/state/error
+  contracts, and `BlockCraftDocumentSnapshot`
+- `DocConfig.revision` and `doc.revisions` with actor/mode/view queries,
+  accept/reject/redecide/batch commands, `resolveOverlap()`, incremental
+  `change$` / `listGroup()`, `readRevisionContent()`,
+  `projectFinalSnapshot()` and `compactResolved()`
+- `BlockCraftDoc.initByDocumentSnapshot()` and
+  `BlockCraftDoc.exportDocumentSnapshot()`
+- `RevisionToolbarComponent`, `RevisionReviewPopoverComponent`,
+  `RevisionReviewPanelComponent`, `RevisionReviewUiController` and the
+  `RevisionReviewIntent` / `RevisionReviewPopoverIntent` UI contracts. The
+  overall panel shows content-sized comment-style cards (exact fragments clamp
+  to two lines) for mounted document revision anchors, follows the document
+  scroller, clips horizontal overflow and owns
+  card-local iconfont navigation/decision controls with tooltips. Its default
+  “待处理” queue drops accepted/rejected cards immediately after the headless
+  state update; those records remain available only under the explicit
+  “已处理” history filter for redecision. Structural
+  overlaps are focused one at a time and identify both choices by actor,
+  revision type, time and exact fragment before emitting `resolve-overlap`,
+  instead of exposing ambiguous “former/latter” actions. The compact
+  popover shows actor identity, revision time and “接收修订 / 拒绝修订” icon
+  actions (emitting `keep` / `revert` intents); the
+  controller reveals offscreen targets with a stable block ID and one targeted
+  block view lease
+- `RevisionReviewPlugin`, `RevisionReviewState`, `RevisionReviewItem` and
+  related query/navigation/content contracts, including `readContent()`. The
+  bundled capability factory returns its fresh instance as
+  `revisionReviewPlugin`; the Plugin is headless and refreshes only affected
+  revision groups
+- `DocExportManager.exportToHtml()`; JSON/HTML/Markdown/PDF/print clean exports
+  use `doc.revisions.projectFinalSnapshot()`
+- `--bc-revision-*` theme variables and `data-bc-revision-*` DOM hooks
+- Absolute object selections support native BlockCraft Ctrl/Cmd+C/V cloning
+  and clipboard-independent Ctrl/Cmd+D duplication.
+
+### Migration Recipe
+
+Existing consumers require no change. Content-only persistence remains valid:
+
+```typescript
+const content = doc.exportSnapshot();
+doc.initBySnapshot(content!, container);
+```
+
+Hosts that enable revisions must persist the complete document instead:
+
+```typescript
+const doc = new BlockCraftDoc({
+  ...config,
+  revision: { actor: { actorId: currentUser.id }, mode: "off" },
+});
+
+doc.initByDocumentSnapshot(await loadCompleteDocument(), container);
+await saveCompleteDocument(doc.exportDocumentSnapshot());
+```
+
+Authorization still belongs to the host. Only call review commands after the
+host has granted the action; BlockCraft validates revision state, not roles.
+
+### Behavior Changes
+
+- Enabling tracking without a valid `actorId` throws instead of creating an
+  anonymous change.
+- Final projection and clean export throw `RevisionConflictError` while an
+  opposite decision head or structural overlap is active.
+- Content Undo/Redo includes revision records but not review decisions.
+- Revision mode v1 does not attribute format revisions, inline-object Delta,
+  table row/column or cell-structure edits, block/object movement, object
+  geometry or cross-container structure. Those operations remain enabled and
+  use their normal Yjs/Undo path without creating a Diff; composite fallbacks
+  bypass tracking for the entire mutation so no partial revision is left.
+- Later inline edits may cross existing text revisions. Destructive ranges are
+  split by active dependency boundaries and kept in one review group, so an
+  outer insertion decision cannot absorb adjacent original text. Insert ranges
+  are boundary-tight while same-author resizing explicitly updates their
+  targets. Repeating a same-author pending/accepted text or whole-block deletion
+  reuses the active record, while an extension records only uncovered content;
+  rejected proposals can be made again and different authors retain independent
+  attribution/decisions. Code-block syntax highlighting preserves the same temporary
+  revision attribution and yields foreground/background painting to revision
+  theme colors while a token is visibly pending or conflicted.
+- Revision-only presentation changes invalidate affected pagination roots, and
+  bundled asynchronous Inline renderers replay any page-gap projection they
+  revoke. Hidden resolved blocks contribute neither border-box height nor
+  authored trailing margin. `captureStableLayout()` continues to expose the
+  exact live markup layout, while clean print/PDF never reuses that geometry
+  while revision records remain.
+- Absolute positioned blocks use external solid/dashed/double revision
+  outlines without changing their persisted under/over stacking layer.
+- Root `placement-layout` nodes never receive whole-block revision attribution.
+  The first absolute-object insert records and paints the actual object child,
+  matching later inserts, replacements and deletions.
+- Pasting a native BlockCraft object snapshot or pressing Ctrl/Cmd+D while an
+  absolute object set is selected creates fresh unlocked IDs, offsets each
+  top-level copy by 12px on both axes and selects the inserted copies. Plain
+  text and general HTML remain isolated from the object-owned input path.
+
+## v0.6.1 — 2026-08-25 — Mermaid validation and object drawing boundary
+
+**Severity**: patch
+
+**What changed**: The built-in `mermaid` Schema now declares its generated
+`mermaid-textarea` child through `metadata.includeChildren`. The BlockCraft
+model-first child validator can therefore validate Mermaid snapshots produced
+by `MermaidBlockSchema.createSnapshot(mode, source)`. Shape, TextBox and WordArt
+drag creation now uses the configured `doc.scrollContainer` viewport as its
+drawing and clamping boundary instead of the root block box.
+
+**Why**: Mermaid already creates an editable source child internally, but its
+Schema metadata omitted that relationship. Agent-created Mermaid snapshots were
+valid at runtime yet were rejected before insertion as invalid snapshots. The
+root box also prevented users from drawing objects across the editor's complete
+scroll viewport.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-plugins-formatting.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- `doc.canInsertChild()` and model-first snapshot validation now recognize
+  `mermaid-textarea` as the valid child of a `mermaid` block. Hosts should still
+  create the outer `mermaid` block and let its Schema generate the source child.
+- The fixed toolbar's one-shot Shape, TextBox and WordArt drawing layer and
+  committed rectangle are constrained to `doc.scrollContainer`. Hosts with a
+  custom scroll viewport should ensure it is the intended object-creation area.
+
+## v0.6.0 — 2026-08-24 — Canonical dynamic blocks and template draft projection
+
+**Severity**: minor
+
+**What changed**: BlockCraft now exports the canonical `weather`, `date-card`,
+and `person-card` void-block schemas and their presentation helpers. Template
+authors can keep unresolved configuration in namespaced `draft:*` block meta,
+project it for editing, and materialize it into real props when a host creates a
+normal document. New-block drag data can carry initial metadata, and dynamic
+weather data is provided through the optional `DYNAMIC_MATERIAL_DATA` host port.
+
+**Why**: Template editing and normal documents need one stable flavour family.
+Keeping template-only choices in meta avoids parallel `template-*` schemas,
+while preserving the host boundary for authentication and business data.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `WeatherBlockSchema`, `DateCardBlockSchema`, and `PersonCardBlockSchema`
+- `DYNAMIC_MATERIAL_DATA` and `DynamicMaterialDataPort`
+- `draftPropMetaKey()`, `readDraftProp()`, `projectDraftProps()`, and
+  `hasDraftProps()`
+- `InternalDragData.initMeta?: Record<string, unknown>`
+
+### Migration Recipe
+
+Hosts should stop registering parallel template-only schemas. While editing a
+template, store unresolved choices in block meta and pass them during drag:
+
+```typescript
+dragController.startDrag(event, {
+  kind: "new-block",
+  flavour: "date-card",
+  initMeta: {
+    [draftPropMetaKey("style")]: "calendar",
+  },
+});
+```
+
+When creating a normal document, resolve each `draft:*` entry into its matching
+real prop and delete the consumed meta key. Geometry and placement stay in real
+props in both states. Existing persisted documents are not migrated by
+BlockCraft.
+
+### Behavior Changes
+
+- The bundled schema set now includes `weather`, `date-card`, and `person-card`.
+- Dynamic blocks project declared draft keys for display without mutating props.
+- A dropped new-block snapshot merges `initMeta` before insertion.
+
+## Unreleased — 2026-08-24 — Text-box and WordArt object focus affordances
+
+**Severity**: minor
+
+**What changed**: `BlockSelectionInteractionCapability` adds the optional
+`escapeToFrame: 'always' | 'absolute'` field, independently controlling the
+Escape transition from a direct editable child to whole-frame selection. The
+built-in `text-box` enables it in every placement and adds a top object handle
+that selects and moves the frame without intercepting text editing. Editable
+`word-art` now declares both transitions as `always`, uses the same compact
+handle, and limits its toolbar/resizer chrome to whole-object selection.
+Omitting the new field preserves the existing `editingBoundary` Escape policy.
+
+**Why**: text-box and WordArt content should remain one-click editable, but
+relying on thin invisible frame hit bands made whole-object focus difficult.
+Both object types need the same discoverable select/move path without restoring
+the distracting editing-state outline and transform chrome.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md` (Selection quick reference)
+- `blockcraft-block.md` (Schema interaction field and object declarations)
+- `blockcraft-selection.md` (independent Escape transition policy)
+- `blockcraft-plugins-toolbar.md` (text-box and WordArt handle ownership)
+- `blockcraft-theme.md` (shared handle and WordArt object-state classes)
+
+### New APIs / Features
+
+- `BlockSelectionInteractionCapability.escapeToFrame?: 'always' | 'absolute'`
+- `.text-box-block__object-handle` is the built-in text-box select/move
+  affordance.
+- `.word-art-block__object-handle` is the matching WordArt select/move
+  affordance.
+- `.word-art-block--object-selected` is the bundled WordArt whole-object chrome
+  hook. Do not use `.focused` to infer WordArt object mode.
+
+### Migration Recipe
+
+Existing Blocks require no change. Custom selectable containers that want
+Escape to select the frame without also changing Enter or double-click entry
+can declare the capabilities independently:
+
+```typescript
+metadata: {
+  selectionInteraction: {
+    frame: 'selectable',
+    escapeToFrame: 'always',
+    editingBoundary: 'absolute',
+  },
+}
+```
+
+### Behavior Changes
+
+- A collapsed caret in a direct editable child of the built-in text box now
+  returns to whole-text-box selection on Escape in both relative and absolute
+  placement.
+- Hovering the text box, focusing one of its descendants, or using a
+  hover-less pointer surface reveals the top object handle. No editing-state
+  frame outline is added.
+- Clicking or dragging the handle selects the text box first; drag routing
+  remains placement-aware through the existing object movement controllers.
+- Editable WordArt now uses the same object/edit split: its compact handle
+  selects/moves the object, core Selection handles Enter/Escape, and a text
+  caret or range closes the object toolbar and hides resize/rotation chrome.
+- TextBox WordArt presets preserve the current text size (or the neutral 16px
+  inherited size) instead of importing the standalone preset's display size.
+- TextBox and WordArt handles are both 24×14 and straddle the top frame edge so
+  they remain real hit targets inside a contenteditable root. No editing-state
+  frame outline is added.
+- WordArt toolbar-owned pointer/focus transitions keep the rail and format card
+  alive while native selection settles; the 288px secondary cards size to
+  their active content without an internal scrollbar.
+
+## Unreleased — 2026-08-24 — text-box picture-fill controls
+
+**Severity**: minor
+
+**What changed**: `TextBoxToolbarPlugin` now accepts a validated `http(s)`
+image link in the text-box picture-fill controls, alongside the existing local
+upload flow. It also exposes horizontal and vertical percentage-position
+sliders backed by the existing `bgx/bgy` props. The controls keep the compact
+surface contract used by live rendering, Snapshot Viewer, HTML export and
+print/PDF.
+
+**Why**: externally hosted images should not need to be downloaded and uploaded
+again before they can be used as a text-box background.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-toolbar.md` (picture-fill input behavior)
+
+### New APIs / Features
+
+- The built-in text-box shape panel exposes an `http(s)` background-image link
+  input with apply-button and Enter-key submission.
+- Non-stretched custom images expose 0–100 horizontal and vertical position
+  sliders; 50/50 is centered.
+
+### Migration Recipe
+
+No call-site or stored-document migration is required. Existing `bgi` values
+already use the same URL contract.
+
+### Behavior Changes
+
+- Invalid or empty link values are not written to the document.
+- Applied links are trimmed before one `update-props` action writes `bgi`.
+- Position slider movement remains local and writes `bgx` or `bgy` once when
+  the interaction completes.
+
+## Unreleased — 2026-08-23 — Placement-aware frame selection
+
+**Severity**: minor
+
+**What changed**: Block Schema metadata can now resolve `selectionScope`
+statically or by placement with `{ relative, absolute }`. It also adds a
+structured `selectionInteraction` capability that independently declares a
+selectable frame and an `always` or `absolute` frame/child editing boundary.
+Core Selection owns those capabilities and placement-sensitive keyboard
+boundaries. The built-in `text-box` uses a transparent scope and no editing
+boundary in relative flow, matching Mermaid text behavior; in absolute
+placement it becomes a closed container. `TextBoxToolbarPlugin` retains only
+toolbar, resize and move-gesture ownership. Descendant-rendered frame borders
+can now declare their precise Selection-owned hit region with
+`data-bc-selection-interaction-frame`.
+
+**Why**: a flow text box is part of the document's reading/editing stream and
+must behave like Mermaid for caret, word selection, IME, arrows and Ctrl/Cmd+A.
+Only an absolutely placed text box is an isolated editing object. Expressing
+that distinction in Schema and resolving it through Selection/Placement avoids
+both flavour checks and duplicated Plugin state machines.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md` (Selection quick reference)
+- `blockcraft-block.md` (Schema field and TextBox declaration)
+- `blockcraft-selection.md` (frame, keyboard and placement policy)
+- `blockcraft-plugins-toolbar.md` (TextBox Plugin ownership boundary)
+
+### New APIs / Features
+
+- `BlockPlacementSelectionScopeMetadata`
+- `BlockSelectionScopeCapability`
+- `BlockSelectionInteractionCapability`
+- `IBlockSchemaOptions.metadata.selectionScope` accepts either a static scope
+  or `{ relative, absolute }`.
+- `IBlockSchemaOptions.metadata.selectionInteraction` accepts
+  `BlockSelectionInteractionCapability`.
+
+### Migration Recipe
+
+Existing Blocks require no change. Custom selectable containers can remove
+their flavour-specific frame and keyboard handlers and declare:
+
+```typescript
+metadata: {
+  selectionScope: {
+    relative: 'transparent',
+    absolute: 'container',
+  },
+  selectionInteraction: {
+    frame: 'selectable',
+    editingBoundary: 'absolute',
+  },
+}
+```
+
+When the visible frame is rendered below the Block host, mark only its border
+hit plane; do not mark the editable surface:
+
+```html
+<path data-bc-selection-interaction-frame></path>
+```
+
+Use a static `selectionScope` or `editingBoundary: 'always'` when placement
+should not change the behavior. Scope, frame selection and editing-boundary
+transitions remain intentionally independent.
+
+### Behavior Changes
+
+- A direct relative or absolute text-box frame click selects the whole frame.
+- Whole-frame selection applies the standard `.selected` presentation class;
+  the built-in text box exposes a scale-stable transparent border hit band.
+- A relative text box resolves to `transparent`: descendant caret, double-click,
+  IME, Enter/Escape, arrows and Ctrl/Cmd+A follow ordinary document behavior,
+  matching Mermaid.
+- An absolute text box resolves to `container`; Enter/direct-frame double-click
+  and Escape transition between frame and direct editable child through
+  Selection, not `TextBoxToolbarPlugin`.
+- Absolute edge arrows and repeated Ctrl/Cmd+A remain capped at the object.
+- A new primary-pointer text gesture replaces a full-document Ctrl/Cmd+A range
+  even when Chromium/WebKit transiently clears the native Range first.
+
+## Unreleased — 2026-08-22 — demo mode follows the active document layout
+
+**Severity**: minor
+
+**What changed**: `DemoPresentationPlugin` now selects its presentation model
+from the source document's active layout. A flow document keeps the existing
+slide analyzer and optional synthetic cover. A document with an enabled
+`PaginationPlugin` instead creates a complete isolated readonly snapshot Doc,
+registers a fresh pagination plugin with the source page config and a visual
+clone of its document header, and navigates the real `.bc-page-sheet` results.
+Paginated presentation fits one sheet into its clipped viewport and translates
+between sheets with a non-layout visual transform, without rewriting Snapshot
+content or calculating a second set of manual slide breaks.
+`PaginationPlugin.documentHeader` is now exposed as a
+readonly getter so isolated renderers can construct their own DOM copy instead
+of moving or reusing the live host element.
+
+**Why**: flow slides and paper pagination have different page ownership rules.
+Applying the flow analyzer or a fixed presentation scale to an already
+paginated document changed wrapping, table fragmentation and page geometry,
+making demo mode disagree with the authoring view.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-util.md` (layout selection, paginated demo behavior and PaginationPlugin API)
+
+### New APIs / Features
+
+- `PaginationPlugin.documentHeader` — returns the configured readonly
+  `PaginationDocumentHeaderOptions`, if present, for isolated visual projections.
+- Demo mode automatically reuses the active pagination configuration and real
+  page sheets when the source `PaginationPlugin.enabled` is `true`.
+
+### Migration Recipe
+
+No call-site change is required. Keep the source pagination plugin enabled when
+entering demo mode to present paper pages; disable it to use flow-slide analysis:
+
+```typescript
+pagination.enable();
+doc.enterDemoMode(); // real paginated sheets
+
+pagination.disable();
+doc.enterDemoMode({ cover }); // existing flow-slide mode
+```
+
+### Behavior Changes
+
+- `DemoConfig.cover` is intentionally ignored for paginated presentation,
+  because injecting a synthetic page would change the source document's page
+  breaks and first-page document-header geometry.
+- `DemoConfig.viewScale` and its deprecated aliases continue to control flow
+  presentation. Paginated presentation derives an independent fit-page scale
+  from the real sheet and viewport dimensions.
+- Only an enabled source `PaginationPlugin` selects paginated presentation;
+  merely registering a disabled plugin leaves the existing flow behavior intact.
+- Paginated presentation disables experimental sparse rendering. If the live
+  sparse result still contains estimates, demo mode uses the complete exact
+  readonly page result instead of preserving a transient mounted-window count.
+  Startup now waits for the isolated pagination controller, forces an exact
+  recompute, and verifies the current page plus two following pages against the
+  same stable layout and mounted Block DOM before presentation or navigation is
+  allowed. Later image/font changes invalidate that readiness for the next turn.
+- The paginated viewport now uses the complete presentation stage. Its control
+  bar exposes zoom out, percentage/fit-page and zoom in; keyboard and
+  Ctrl/Cmd-wheel zoom are supported. Manual presentation zoom remains a local
+  visual transform and does not recompute pagination or mutate the source Doc.
+  A manually enlarged current sheet now expands an isolated scroll canvas, so
+  its overflow can be panned on both axes without scrolling into another page.
+
+## Unreleased — 2026-08-22 — demo mode uses uniform whole-page view scaling
+
+**Severity**: minor
+
+**What changed**: `DemoConfig` gained `viewScale`, which applies the existing
+`DocumentViewScaleManager` to the complete readonly `.demo-root`. Demo mode now
+copies the source `--bc-fs`, `--bc-lh` and `--bc-segments-gap` values unchanged,
+projects compact root typography through the same normalizers as the authoring
+root, keeps the flow surface fitted to the presentation stage's existing content
+width, and inserts page Snapshots without rewriting table `colWidths`.
+`fontScale` remains as a deprecated fallback alias for `viewScale` so existing
+callers still receive the requested magnification, but its implementation now
+scales the whole page instead of changing only `--bc-fs`. Explicit legacy
+`lineHeightScale` and `segmentsGapScale` values remain supported as deprecated
+pre-zoom compatibility corrections.
+
+**Why**: changing the base font and a subset of spacing/table dimensions caused
+presentation layout to reflow differently from the real document. Fixed-size
+objects, table geometry, wrapping and block boundaries did not share one scale.
+A single view scale preserves the document's relative geometry while leaving
+presentation controls at screen size.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-util.md` (DemoPresentationPlugin configuration and scaling contract)
+
+### Deprecations
+
+- `DemoConfig.fontScale` is a deprecated alias for `viewScale` (no removal date).
+- `DemoConfig.lineHeightScale` and `DemoConfig.segmentsGapScale` are deprecated
+  compatibility corrections (no removal date); new integrations should persist
+  document typography/spacing instead.
+
+### New APIs / Features
+
+- `DemoConfig.viewScale?: number` — uniform whole-page presentation scale,
+  default `1.5`, clamped by `DocumentViewScaleManager` to `0.5–2`.
+
+### Migration Recipe
+
+```typescript
+// before: enlarged only typography and selected spacing/table dimensions
+doc.enterDemoMode({ fontScale: 1.5 });
+
+// after: enlarges the complete page through one normalized geometry scale
+doc.enterDemoMode({ viewScale: 1.5 });
+```
+
+Existing `fontScale` calls continue to work as an alias. Remove explicit
+`lineHeightScale` / `segmentsGapScale` when the presentation should exactly
+match document layout proportions.
+
+### Behavior Changes
+
+- Default demo mode no longer rewrites `--bc-fs`, `--bc-lh`, block spacing or
+  table `colWidths`; all page content is uniformly zoomed.
+- The flow presentation root continues to fill the stage's content width; whole-
+  page zoom does not narrow the visible slide or change the existing `10vw`
+  presentation safe margins.
+- Root document `ff/fs/lh/color` props now project onto the presentation root
+  through the same safe normalization as the authoring root.
+
+## Unreleased — 2026-08-21 — absolute objects align to the page plane; TextBox/Shape toolbars gain 页面对齐
+
+**Severity**: minor
+
+**What changed**: `BlockPlacementManager` gained a plane-relative alignment
+command pair: `canAlignObjectsToPlane(blockIds, alignment?)` and
+`alignObjectsToPlane(blockIds, alignment)` with the new
+`BlockObjectPlaneAlignment` type (`'left' | 'horizontal-center' | 'right'`).
+Unlike the existing `alignObjects()` (mutual alignment, minimum two objects),
+the reference is the root placement plane itself: each object's rotation-aware
+visual bounds snap independently to the plane's left edge, horizontal center
+(`rootContentWidth / 2`) or right edge, so a single floating object is a valid
+target. Only `position.x` is written, in one Yjs transaction; `y`, sizes,
+responsive fields and `placementLayer` are untouched. The command requires the
+same placement-layout parent and readonly rules as every alignment command plus
+a measured plane width, so object-group members are excluded. The shared
+`BLOCK_OBJECT_PLANE_ALIGNMENT_OPTIONS` catalog (`靠左 / 水平居中 / 靠右` with
+`bc_align2left/center/right` icons) is exported for toolbar consumers. The
+TextBox and Shape layout panels expose the command as their own labeled
+**页面对齐** section of three inline buttons below 排列, disabled while
+`canAlignObjectsToPlane()` is false (e.g. before the plane width is measured).
+Both emit a new `plane-align` toolbar action; grouped members never see the
+control.
+
+**Why**: a floating text box or shape could only be positioned by hand-dragging;
+there was no way to align it relative to the page (Word's align-to-page
+left/center/right). Vertical page alignment is deliberately absent: in flow
+view the plane height is the whole document, so top/middle/bottom-of-page has
+no stable meaning.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md` (Object Layout quick reference: plane alignment API)
+- `blockcraft-plugins-toolbar.md` (TextBoxToolbarPlugin + ShapeToolbarPlugin 页面对齐 control)
+
+### New APIs / Features
+
+- `BlockPlacementManager.canAlignObjectsToPlane(blockIds, alignment?)`
+- `BlockPlacementManager.alignObjectsToPlane(blockIds, alignment)`
+- `BlockObjectPlaneAlignment` type and `BlockObjectPlaneAlignmentOption` interface
+- `BLOCK_OBJECT_PLANE_ALIGNMENT_OPTIONS` exported catalog
+- `plane-align` action on `TextBoxToolbarAction` / `ShapeToolbarAction`
+
+### Migration Recipe
+
+No action required — everything is additive. To align a floating object to the
+page from host code:
+
+```typescript
+// before: only mutual multi-object alignment existed
+doc.placement.alignObjects([aId, bId], "left"); // needs ≥ 2 objects
+
+// after: one object aligns against the plane itself
+doc.placement.alignObjectsToPlane([blockId], "horizontal-center");
+```
+
+## Unreleased — 2026-08-21 — Shape 填充支持线性渐变；形状工具条改为类目式面板
+
+**Severity**: minor
+
+**What changed**: `ShapeBlockProps` gained optional structured gradient-fill
+fields — `fillType: 'solid' | 'linear-gradient'`, `gradientAngle`,
+`gradientColors`, `gradientStops` — mirroring the WordArt fill contract. A
+missing `fillType` still means solid, so existing documents render unchanged.
+The shape block component and the inline shape Embed both render gradients as
+per-instance SVG `<linearGradient>` defs; the HTML adapter round-trips the new
+fields through `dataShapeFillType` / `dataShapeGradient*` attributes. The shape
+toolbar was restructured from one long strip into the text-box/WordArt
+rail-plus-panel form: rail entries 布局选项 / 形状样式 / 删除形状, with the
+样式 panel embedding `ShapeFillPanelComponent` (纯色 palette / 渐变 preset
+gallery `SHAPE_FILL_GRADIENT_PRESETS` + custom start/end color and angle),
+填充透明度, and the 轮廓 controls (CSES palette color, width and line-style
+radio rows); the 布局 panel holds 文字环绕, 排列 and 页面对齐. Fill changes
+emit one atomic `fill-style` action; the old `fill-color` action stays
+accepted but is `@deprecated`. The plugin anchors the toolbar right-top /
+left-top beside the shape and feeds the `side` input from position changes.
+Supporting change: the WordArt toolbar's
+interaction-ownership check was extracted to the shared
+`isObjectToolbarOwnedTarget()` / `hasOpenOwnedSubOverlay()` helpers in
+`plugins/object-layout/object-toolbar-interaction.ts`, now also used by the
+shape toolbar so panel interaction (including the stray `selectionchange`
+fired when a panel with form controls mounts) no longer closes it.
+
+**Why**: 模板场景需要 Word 式的形状渐变填充；长条工具条容不下渐变与
+轮廓设置，遂对齐文本框/艺术字的类目式面板。同时修复面板/下拉交互中
+杂散 selectionchange 丢选区导致工具条整体关闭的问题。
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`（ShapeBlockProps 填充契约）
+- `blockcraft-plugins-toolbar.md`（ShapeToolbarPlugin 类目式面板与填充）
+
+### Deprecations
+
+- `ShapeToolbarAction` 的 `{name: 'fill-color'}` 变体 `@deprecated`（无移除
+  计划）；UI 改发 `{name: 'fill-style', value: ShapeFillChange}`。
+
+### New APIs / Features
+
+- `ShapeBlockProps.fillType / gradientAngle / gradientColors / gradientStops`
+- `ShapeFillType`, `ShapeGradientFill`, `ShapeFillGradientPreset`,
+  `DEFAULT_SHAPE_GRADIENT`, `SHAPE_FILL_GRADIENT_PRESETS`,
+  `normalizeShapeGradient()`, `normalizeShapeGradientAngle()`,
+  `shapeGradientToCss()`, `shapeGradientToSvgVector()`,
+  `resolveShapeFillGradient()`（`blocks/shape-block` barrel 导出）
+- `ShapeFillPanelComponent` / `ShapeFillChange` / `ShapeToolbarPanel` /
+  `ShapeToolbarSide`（`plugins/shape-toolbar`；`ShapeToolbarComponent` 新增
+  `side` input 与 `panelChange` output）
+- `isObjectToolbarOwnedTarget()` / `hasOpenOwnedSubOverlay()`
+  （`plugins/object-layout`）
+
+### Migration Recipe
+
+```typescript
+// 写入渐变填充（一次事务）
+block.updateProps({
+  fillType: "linear-gradient",
+  gradientAngle: 160,
+  gradientColors: ["#26405E", "#58402E"],
+  gradientStops: [0, 1],
+});
+
+// 回到纯色
+block.updateProps({ fillType: "solid", fillColor: "#93C5FD" });
+```
+
+### Behavior Changes
+
+- 形状工具条由横向长条改为侧边 rail + 面板（右上优先、左上回退），
+  填充/透明度/轮廓收进「形状样式」面板，环绕/排列/页面对齐收进
+  「布局选项」面板；`ShapeToolbarComponent` 不再渲染横向按钮条。
+- 工具条面板交互期间（含面板挂载触发的杂散 selectionchange、取色器弹层
+  抢占焦点把整块选中重算成同块 boundary 选区、或选区暂空）形状工具条
+  不再自动关闭；选区离开当前形状或交互归属丢失时仍会关闭。
+
+## Unreleased — 2026-08-20 — Snapshot viewer accepts host block renderers and inline embed views
+
+**Severity**: minor
+
+**What changed**: `SnapshotViewerOptions` gained two additive extension points.
+`blockRenderers?: SnapshotBlockRenderer[]` prepends host renderers to the
+builtin registry (first `canRender` wins; the generic fallback stays last), so
+consumer-registered flavours no longer degrade to an empty block shell in
+`bc-snapshot-viewer` / `createSnapshotRenderer`. `inlineEmbeds?: Record<string,
+SnapshotInlineEmbedRenderer>` maps an embed insert key to a DOM view factory,
+consulted before the builtin `latex`/`mention` views; a factory that throws
+falls back to the generic embed chip. Both extension points apply on first
+render and on incremental `update()` patches (the inline map is threaded
+through every `renderInline` call site, including the c-element level delta
+diff), and both flow through `createMarkdownStreamViewer({viewerOptions})`.
+Supporting changes: the engine now stamps `data-block-id` / `data-node-type`
+onto custom-rendered block roots when absent; `resolveChildContainer` resolves
+unknown flavours through a new `data-bc-snapshot-children` attribute convention
+so container-style custom renderers participate in child patching; the types
+`SnapshotBlockRenderer`, `SnapshotInlineEmbedRenderer`, `SnapshotRenderContext`,
+`SnapshotRenderResult`, `SnapshotEnhancementTask` and `MountedSnapshotNode` are
+now exported from the package root.
+
+**Why**: downstream template libraries render document previews with the
+snapshot viewer, but their business materials (custom void blocks and inline
+embeds registered in the editor) rendered as empty shells / plain-text chips
+because the renderer registry was hardcoded. Options-based injection was chosen
+over a global registration API (no shared mutable state, per-instance scoping)
+and over mounting host Angular components (the viewer stays independent from
+`BlockCraftDoc`, plugins and Yjs).
+
+**Affected ai-skills files**:
+
+- `blockcraft-app.md` (new "Extending the snapshot viewer with custom renderers" section)
+- `blockcraft.md` (Snapshot Viewer quick-reference now shows the extension fields)
+
+### New APIs / Features
+
+- `SnapshotViewerOptions.blockRenderers?: SnapshotBlockRenderer[]`
+- `SnapshotViewerOptions.inlineEmbeds?: Record<string, SnapshotInlineEmbedRenderer>`
+- `SnapshotInlineEmbedRenderer` type (`(delta: DeltaInsertEmbed) => HTMLElement`)
+- New package-root type exports: `SnapshotBlockRenderer`, `SnapshotRenderContext`,
+  `SnapshotRenderResult`, `SnapshotEnhancementTask`, `MountedSnapshotNode`
+- `data-bc-snapshot-children` attribute convention for container-style custom renderers
+
+### Migration Recipe
+
+No action required for existing consumers — both fields are optional and the
+builtin registry is unchanged. To render custom materials in previews:
+
+```typescript
+// before: custom flavours fall through to the generic empty shell
+const renderer = createSnapshotRenderer({ baseUrl });
+
+// after: hosts inject their own renderers per viewer instance
+const renderer = createSnapshotRenderer({
+  baseUrl,
+  blockRenderers: [weatherRenderer],
+  inlineEmbeds: { person: personEmbedConverter.toView },
+});
+```
+
+### Behavior Changes
+
+- Block elements produced by custom renderers are stamped with
+  `data-block-id` / `data-node-type` when the renderer did not set them.
+  Builtin renderers already set both — no observable change without
+  `blockRenderers`.
+- `resolveChildContainer` now resolves the `[data-bc-snapshot-children]`
+  marker whenever the builtin selector misses (previously unknown flavours
+  returned `null` unconditionally) — including for custom renderers that
+  override a builtin container flavour. Editable/void blocks skip the scan
+  entirely, and a marker is only adopted when its nearest `[data-block-id]`
+  ancestor is the block being resolved (no leaking a nested block's container
+  into an unmarked ancestor). The marked container must hold only child-block
+  elements. Builtin markup never carries the marker, so builtin blocks are
+  unaffected.
+- `SnapshotBlockRenderer.patch` is now dispatched: when a matched renderer
+  defines it, the engine calls it on `update()` and stops tracking that
+  block's children (the renderer owns its subtree). Builtin renderers define
+  no `patch`, so this is observable only through `options.blockRenderers`.
+- The viewer's divider renderer now mirrors `DividerBlockComponent` exactly
+  (text/tape variants, `length`/`thickness`/`align`/`opacity`, label styling,
+  the deprecated `size` fallback, and the `.bc-block-content` wrapper the theme
+  keys on). Previously it only understood the legacy `style`/`size` props, so
+  configured dividers degraded to a default full-width line in previews. The
+  resolution rules were extracted to `resolveDividerPresentation()`
+  (`blocks/divider-block/divider-presentation.ts`), shared by both surfaces.
+- Editable blocks with `meta.plhMode === "always"` and an empty delta now render
+  their `meta.plh` hint through the editor's placeholder CSS contract
+  (`data-placeholder` + `.bc-placeholder-target` on the container,
+  `.empty.bc-placeholder-empty` on the host), plus a filler `<br>` so the empty
+  container keeps a real line box (the hint itself is an absolutely-positioned
+  `::before` and must not take part in layout). Incremental `update()`
+  re-renders the block when placeholder visibility flips. Focus-driven
+  placeholders remain editor-only — snapshots have no cursor.
+- The root renderer now projects `props.color` as `style.color` + `--bc-color`,
+  matching `RootBlockComponent`'s host bindings. Document `background` remains a
+  host concern on both surfaces (the editor root does not bind it either).
+
+## Unreleased — 2026-08-20 — 极简 preset leads the text-box 线框 catalog
+
+**Severity**: minor
+
+**What changed**: `TEXT_BOX_PRESETS` gained a curated **极简** entry
+(`id: 'no-fill'`) that now leads the 线框 tab, ahead of 默认白框. It is the
+classic white frame with its fill zeroed — `fo: 0`, the same value the 无填充
+button writes — so the slate border stays visible in the picker thumbnail and
+on the canvas while the surface behind the text is fully transparent. The
+picker additionally renders a transparency checkerboard inside the fill-less
+thumbnail: on the picker's near-white panel, a transparent fill and a white
+fill would otherwise look identical.
+`getTextBoxPreset()` no longer falls back to the catalog's first slot for
+unknown ids; the fallback is pinned to 默认白框 (`'classic'`).
+
+**Why**: a text box without a fill was only reachable by picking 默认白框 and
+then clearing the fill by hand in the shape panel. A fully invisible variant
+(no fill _and_ no border) was considered and rejected: it renders an empty
+swatch in the picker and an invisible object on the canvas.
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+- `blockcraft-plugins-formatting.md`
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-toolbar.md`
+
+### New APIs / Features
+
+- New `TextBoxPresetId` member: `'no-fill'` (label 极简, `cat: 'outline'`,
+  first entry of 线框 and of the whole catalog).
+
+### Behavior Changes
+
+- `getTextBoxPresetsFor(wm, 'outline')[0]` is now 极简; 默认白框 is second.
+  Preset ids are never persisted, so existing documents are unaffected.
+- `getTextBoxPreset(unknownId)` still resolves to 默认白框, but by explicit id
+  rather than by catalog position.
+
+## Unreleased — 2026-08-20 — text editing inside a text box shows no object chrome
+
+**Severity**: minor (reverses an 0.5.0 UI refinement and removes the
+`.text-box-block--editing` theme hook — treat as major at release time if a
+downstream theme targets that class)
+
+**What changed**: while a caret or text/child-boundary range belongs to a
+descendant of a `text-box`, the frame now shows **no object chrome at all**:
+`TextBoxToolbarPlugin` closes the settings rail instead of keeping it open, the
+bundled theme no longer displays the `shape-resizer` (handles + active-color
+outline) for that state, and the `.text-box-block--editing` host class is gone
+— the plugin never applies it and the theme no longer styles it. Frame chrome
+(resize/rotation handles, outline, settings rail) is now exclusive to the
+whole-object `.selected` state. Enter / frame double-click still enters the
+first editable descendant; Escape still returns to the whole-frame selection;
+clicking the frame's padding, border or shape shell still selects the whole
+object. This matches the `shape` block convention, which has always dropped
+its chrome while `shape-text` owns the caret. Because the editing state now
+has no chrome, the fixed toolbar's text-box insertion tail no longer enters
+the initial paragraph after commit: both the crosshair drag-draw and the
+click-place gestures end at the whole-object selection, keeping handles and
+the settings rail visible on the freshly inserted frame.
+
+**Why**: template consumers fill text boxes in documents created from a
+template. With the 0.5.0 keep-open refinement, merely placing the caret to type
+surfaced resize handles, an outline and the settings rail — object-editing
+affordances the filling flow never needs. Typing in a frame should read like
+typing in plain prose; object styling remains one Escape or frame-click away.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-theme.md`
+- `blockcraft-plugins-formatting.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- `TextBoxToolbarPlugin` closes the object toolbar on descendant text or
+  child-boundary selections (0.5.0 kept it open alongside the text toolbars).
+- The fixed toolbar's 插入文本框 commit no longer calls `enterEditing` on the
+  new frame. Drag-draw and click-place both finish whole-object selected with
+  handles and the settings rail visible; typing starts with a content click or
+  Enter.
+- The bundled theme's `shape-resizer` display rule now matches only
+  `.text-box-block.selected`; the editing-state outline on
+  `.text-box-block__surface` is removed.
+- `.text-box-block--editing` is no longer applied to the frame host. Downstream
+  CSS targeting it becomes dead; remove such rules or key them off `.selected`.
+- This entry does not modify the package version.
+
+## Unreleased — 2026-08-19 — objects land on the editor padding; floating width is uncapped
+
+**Severity**: minor
+
+**What changed**: two related placement-domain changes.
+
+1. The placeable plane for root absolute objects is now the placement
+   container's **padding box** instead of its content box. Drawing an object
+   with the fixed toolbar's crosshair, and the landing point computed by
+   `insertAbsoluteSnapshot()`, both accept coordinates on the editor padding —
+   under pagination, the page margins. `PlacementBox` gained
+   `contentInsetLeft` / `contentInsetRight` / `contentInsetTop`, and
+   `resolvePlacementPlaneBounds()` derives the `{minX, maxX, minY}` plane
+   bounds from them.
+2. The object width contract is now a shared framework capability. While an
+   object **floats** (`absolute` placement) its width belongs entirely to the
+   user: resizing has **no cap** and rendering never clamps it, even beyond the
+   editor itself. When it returns to the flow (top-bottom), its **rendered**
+   width collapses to the content column (editor minus padding); the stored
+   `width` prop is preserved, so floating it again restores the full size.
+   This applies to every block whose Schema declares the `absolute` placement
+   mode — shape, text box, word art, object group — never to a hard-coded
+   flavour list.
+
+**Why**: object drawing and insertion clamped every coordinate to
+`[0, contentWidth]` while dragging never clamped, so the paths disagreed about
+where the editor ends. Resizing was capped by the DOM parent's `clientWidth`
+and shape/word-art carried their own `max-width: 100%`, so a floating object
+was silently truncated at the content column even though its props already
+stored a wider value. `position.x/y` keeps measuring from the content origin,
+which pagination and print projection depend on; only the bounds moved.
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `PlacementPlaneBounds` (`{minX, maxX, minY}`) exported from
+  `framework/services/block-placement/types`.
+- `resolvePlacementPlaneBounds(box: PlacementBox): PlacementPlaneBounds` exported
+  from `framework/services/block-placement/geometry` and re-exported from
+  `block-placement.manager`.
+- `PlacementBox.contentInsetLeft` / `.contentInsetRight` / `.contentInsetTop` —
+  distance from the content origin to each padding-box edge, in layout px.
+  Invariant: `contentInsetLeft + width + contentInsetRight === clientWidth`.
+- `data-bc-object` host attribute — stamped by `BaseBlockComponent` on every
+  block whose Schema `placement.modes` includes `'absolute'`.
+- `data-bc-object-surface` template attribute — marks the element carrying the
+  object's inline `width`. `themes/base.scss` enforces the width contract on
+  the host/surface pair (`max-width: 100%` in flow, unconstrained while
+  absolute); blocks must not declare a second `max-width` for these elements.
+- `BaseBlockComponent.placementContainer` — hoisted from the shape / text-box /
+  word-art components, which carried three identical copies. Subclasses inherit
+  it; the per-block getters are gone.
+- `BaseBlockComponent.objectMaxWidthResolver` — reference-stable
+  `() => number | null` for binding into resizers: `null` while floating
+  (no cap), the content-column width in flow.
+- `ShapeResizerComponent.maxWidthResolver` — optional `() => number | null`
+  evaluated once per gesture. **Returning `null` means "no cap"**; a positive
+  number is the cap in layout px. When the input is absent the resizer falls
+  back to `maxWidthContainer.clientWidth`, and `maxWidthContainer` otherwise
+  only supplies the visual-scale reference.
+
+### Migration Recipe
+
+Code that assumed the placeable plane starts at `0` should read the bounds
+instead of hard-coding the content box:
+
+```typescript
+// before
+const x = Math.min(box.width - objectWidth, Math.max(0, localX));
+
+// after
+const bounds = resolvePlacementPlaneBounds(box);
+const x = Math.min(bounds.maxX - objectWidth, Math.max(bounds.minX, localX));
+```
+
+Anyone constructing a `PlacementBox` literal (test doubles included) must supply
+the three new fields; `resolvePlacementContainerBox()` already fills them in.
+
+A custom object block that declared its own width caps should delete them and
+mark its sizing surface instead:
+
+```html
+<!-- before: component CSS carried max-width: 100% (+ absolute overrides) -->
+<!-- after: one attribute, base.scss owns the rest -->
+<div
+  class="my-object__surface"
+  data-bc-object-surface
+  [style.width.px]="props.width"
+></div>
+```
+
+### Behavior Changes
+
+- A drawn or inserted object may now carry a negative `position.x` / `position.y`
+  (down to `-paddingLeft` / `-paddingTop`) and may extend to
+  `contentWidth + paddingRight`. Consumers that assumed non-negative placement
+  coordinates need to handle the padding band.
+- The outer landing boundary is still the editor itself: a pointer outside the
+  padding box is clamped to that box rather than left unbounded.
+- Resizing a floating shape / text box / word art is **uncapped**; the committed
+  `width` may exceed the editor width. Flow resizing stays capped at the
+  content column.
+- A wide object falling back to the flow renders at the content-column width
+  without mutating its stored `width` prop.
+- `text-box` now participates in the flow cap too (it previously declared no
+  `max-width` at all and could overflow the content column while in flow).
+- The snapshot viewer applies the same contract to word art through
+  `.bc-snapshot-viewer`-scoped rules (its static DOM has no `data-bc-object`).
+- `ShapeResizerComponent` reads its width cap once at gesture start rather
+  than on every `pointermove`, removing a per-frame layout read.
+- Object dragging is unchanged — it was never clamped.
+- Ratio-sized objects (`image`, `video`) are unaffected: `wr` stays clamped to
+  `1..100` percent of the root content width.
+- Relative to the previous unreleased draft only (never released):
+  `doc.placement.getObjectPlaneWidth()` and
+  `BaseBlockComponent.objectPlaneWidthResolver` are gone, and the placeable
+  plane no longer caps resizing.
+- No package version was modified.
+
+## Unreleased — 2026-08-18 — add editable Shape endpoints and safe custom paths
+
+**Severity**: minor
+
+**What changed**: the built-in `shape` block now supports Word/DrawingML-style
+optional adjustment values and safe custom path geometry. Selected line,
+connector and scribble shapes expose endpoint, node and cubic control handles;
+sixteen common catalogue shapes expose yellow parameter handles for corners,
+vertices, skew, arrow proportions and callout pointers. Each completed gesture
+persists one validated atomic geometry or flat adjustment value.
+The remaining catalogue definitions are converted from their trusted static
+paths only for editing, so all 103 built-in Shape kinds expose draggable nodes
+without adding path data to untouched snapshots.
+
+**Why**: fixed catalogue SVG paths could be resized and rotated but their line
+endpoints and curves could not be edited independently. Persisting arbitrary SVG
+or node-level Yjs structures would either create an injection surface or expose
+invalid partial curve states during collaboration.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-plugins-toolbar.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `ShapeBlockProps.adjustments?: Record<string, number>` stores flat catalogue
+  adjustment inputs. Built-in projections cover three rounded-rectangle forms,
+  triangle, parallelogram, trapezoid, six block arrows and four callouts.
+- `ShapeBlockProps.customGeometry?: SerializedCustomShapeGeometry` stores one
+  versioned, validated JSON value compatible with the existing `SimpleValue`
+  props boundary.
+- `CustomShapeGeometry`, `CustomShapePath` and the safe `move` / `line` /
+  `cubic` / `arc` / `close` command union describe decoded geometry. Optional
+  `fillRule: 'evenodd'` retains holes in compound shapes.
+- `normalizeCustomShapeGeometry()`, `serializeCustomShapeGeometry()`,
+  `createDefaultEditableShapeGeometry()` and the path projection helpers are
+  exported for hosts that create custom Shape tooling.
+
+### Migration Recipe
+
+Existing snapshots and hosts need no migration. To author a custom curve, use
+the validated codec rather than assigning raw SVG:
+
+```typescript
+const encoded = serializeCustomShapeGeometry({
+  version: 1,
+  width: 1000,
+  height: 1000,
+  paths: [
+    {
+      fill: false,
+      commands: [
+        { type: "move", x: 0, y: 500 },
+        {
+          type: "cubic",
+          control1X: 250,
+          control1Y: 0,
+          control2X: 750,
+          control2Y: 1000,
+          x: 1000,
+          y: 500,
+        },
+      ],
+    },
+  ],
+});
+
+if (encoded) doc.crud.updateBlockProps(shapeId, { customGeometry: encoded });
+```
+
+### Behavior Changes
+
+- Catalogue shapes remain path-free and render exactly as before until a user
+  completes an editable geometry gesture.
+- Pointer move changes only local SVG/handle presentation. Pointerup writes one
+  geometry value and therefore creates one Undo intent; Escape, pointer cancel,
+  blur and teardown restore the committed path without a model write.
+- Catalogue adjustment gestures follow the same preview/commit boundary and
+  persist only `radius`, `apexX`, `inset`, `headLength`, `shaftThickness`,
+  `tailX` and `tailY` as applicable. Explicit `customGeometry` takes precedence.
+- All other built-in definitions use an internal trusted-path projection for
+  editing. It accepts only absolute `M/L/H/V/C/S/Q/T/A/Z`, converts quadratic
+  and smooth segments plus catalogue arcs to cubic controls, and stores nothing
+  until the first completed node gesture. The public safe geometry codec still
+  validates explicit `arc` commands supplied by hosts.
+- `customGeometry` accepts no SVG/XML, event attributes, URLs, filters or
+  foreign objects. Invalid versions, commands, coordinates and oversized
+  payloads are ignored by normalization.
+- Automatic connector attachment is still not implemented.
+- No package version was modified.
+
+## Unreleased — 2026-08-18 — allow object groups in top-bottom flow
+
+**Severity**: patch
+
+**What changed**: the bundled `object-group` Schema now supports both relative
+and absolute placement. Its selected-group toolbar exposes **上下型 / 衬于文字下方 /
+浮于文字上方** for the group as one atomic object while keeping every member in
+the existing local absolute plane.
+
+**Why**: a completed group previously remained absolute-only even though its
+fixed outer frame can participate safely in root flow. This made the standard
+top-bottom object layout unavailable for combinations.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-block.md`
+- `blockcraft-perf.md`
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- `ObjectGroupBlockSchema.metadata.placement.modes` is now
+  `['relative', 'absolute']`.
+- Top-bottom clears the group's root coordinates and reanchors the complete
+  frame in normal flow; member positions, sizes and ordering remain local and
+  unchanged.
+- A top-bottom group uses ordinary block reorder instead of the absolute frame
+  edge drag regions. Later member geometry commits cannot recreate root
+  absolute position intent. Member-level layout transitions remain unavailable.
+- Paginated live/print CSS caps direct-root top-bottom groups, text boxes,
+  WordArt and Shapes to `--bc-page-content-height` at their visual frame while
+  keeping host overflow visible for selection and resize chrome. Members of a
+  top-bottom group receive the same visual-frame cap despite remaining locally
+  absolute. That member cap subtracts both block-axis sides of the group's
+  `--bc-object-group-padding`; root absolute placement objects remain uncapped.
+- Cancelling a group remains an absolute-plane operation, so the action is
+  enabled after choosing under/over; the selected-group toolbar remains open in
+  top-bottom flow to make that transition directly available.
+- No package version was modified.
+
+## Unreleased — 2026-08-18 — isolate multi-selected absolute objects from document input
+
+**Severity**: patch
+
+**What changed**: a non-empty boundary selection inside `placement-layout` or
+`object-group` now has the same input-isolation semantics as a single selected
+absolute object. Printable input, IME, Enter, Tab and paste preserve the object
+selection. Delete/Backspace removes the selected contiguous object interval in
+one undo step.
+
+**Why**: Shift-multi-select is represented by boundary endpoints rather than
+same-block `selected` endpoints. The previous absolute-selection predicate did
+not recognize that model shape, so printable input could replace the selected
+objects with a paragraph and Tab could enter the layout container's normal
+indentation path.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-input.md`
+- `blockcraft-selection.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Object-owned input isolation now covers both single and Shift-multi-selected
+  absolute objects.
+- Multi-object deletion validates readonly state for the complete set, captures
+  one undo bookmark, force-deletes one contiguous placement range and then
+  clears the stale selection.
+- Root/document boundary selections remain on the ordinary document input path.
+- No package version was modified.
+
+## Unreleased — 2026-08-17 — add inline-only slash menus inside paragraphs
+
+**Severity**: minor
+
+**What changed**: `BlockTransformerPlugin` now accepts `/` and `、` inside
+existing paragraph text. A non-zero trigger position receives an inline-only
+menu; paragraph-start triggers keep the complete block and inline catalog. The
+session owns only its contiguous slash token and replaces only that range.
+
+**Why**: inline commands such as Mention, Emoji, Icon, Link, inline Image,
+Formula and Date are useful inside a sentence, but the old empty-paragraph-only
+gate made them inaccessible there. Offering block commands in the same context
+would split or restructure surrounding text unexpectedly, so the in-text menu
+is deliberately narrower.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-block.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- `/` or `、` at paragraph index `0` keeps the complete grouped menu.
+- A trigger at a non-zero paragraph index shows only commands whose group is
+  `inline`; block, heading, media and embed items are excluded.
+- The query ends at the first whitespace or inline Embed. Moving the caret
+  outside the token or typing whitespace closes the menu, and command
+  replacement preserves text before and after it.
+
+## Unreleased — 2026-08-17 — allow Mention after inline Embeds
+
+**Severity**: patch
+
+**What changed**: `MentionPlugin` now treats a preceding atomic inline Embed as
+a valid `@` trigger boundary, alongside a space, line break or the start of a
+line. This applies uniformly to date, mention, formula, image and custom Embed
+values, each of which occupies one model position.
+
+**Why**: the existing boundary check received an object from
+`characterAtDelta()` for an Embed and rejected it as if it were a word
+character. As a result, typing `@` immediately after a date Embed could not open
+the Mention panel.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-inline.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Typing the configured Mention trigger immediately after any inline Embed now
+  opens the normal Mention session. Trigger behavior after ordinary text,
+  whitespace and line breaks is unchanged.
+
+## Unreleased — 2026-08-17 — refine the bundled date embed presentation
+
+**Severity**: patch
+
+**What changed**: the default `date` inline Embed now renders the existing
+`@cses/ui` `csicon-date-time` icon before its formatted value and uses a compact,
+theme-aware chip treatment with distinct hover, editing and atomic-selection
+states. Its Delta shape, data attributes, frozen wall-clock value and format
+behavior are unchanged.
+
+**Why**: the text-only date was hard to distinguish from ordinary document
+content and its interaction affordance appeared only on hover. The icon and
+quiet surface make the editable object recognizable without overpowering the
+surrounding sentence.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-embed.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- `createInlineDateEmbedConverter().toView()` includes an
+  `i.csicon.csicon-date-time[aria-hidden="true"]` before the derived date text in
+  `.bc-inline-date__value`.
+- `.bc-inline-date` is an inline-flex chip whose colors come entirely from
+  existing BlockCraft theme variables; no new theme token is required. Its
+  border-box height is one inherited line-height (`1lh`), while the icon and
+  value use smaller internal font sizes.
+
+## Unreleased — 2026-08-17 — add paragraph-level font scaling for editable blocks
+
+**Severity**: minor
+
+**What changed**: editable rich-text blocks now accept the optional compact
+`pfs` paragraph font-scale prop (`0.5..3`). The fixed toolbar promotes a font
+scale to `pfs` when the selected range covers a complete eligible block, while
+partial text and collapsed carets continue to use inline `t:fs`. Live blocks,
+Snapshot Viewer, HTML round-trip and model-only height estimation share the
+same paragraph scale.
+
+**Why**: ordered numbers, bullet markers and todo controls are block siblings
+of the inline text container, so an inline-only `t:fs` cannot resize them. A
+block-owned scale lets every visual part inherit one font size without DOM
+measurement, resize listeners or duplicated marker state.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-toolbar.md`
+- `blockcraft-plugins-formatting.md`
+- `blockcraft-adapter.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `IEditableBlockProps.pfs?: number | null` stores the paragraph scale.
+- `normalizeParagraphFontScale()` validates the compact `0.5..3` range.
+- `TextToolbarHelper.getFontScaleTargets()`, `canFormatFontScale()` and
+  `formatTypography()` expose the model-only paragraph/inline targeting rule.
+- `resolveEditableBlockFontScale()` combines `pfs` with heading/caption
+  presentation scale for live, Snapshot and model-only rendering.
+- `--bc-block-fs-scale` exposes the persisted paragraph scale to themes; live
+  and Snapshot hosts project the effective size as a relative percentage.
+
+### Migration Recipe
+
+Custom toolbars that want list markers and todo controls to follow full-block
+font scaling should use the paragraph-aware command:
+
+```typescript
+// before: always inline, marker siblings do not resize
+helper.formatText(createInlineTypographyPatch("fs", 1.5), selection);
+
+// after: complete blocks use pfs; partial ranges and carets use t:fs
+helper.formatTypography({ fontScale: 1.5 }, selection);
+```
+
+Existing documents are not rewritten or inferred. Historical whole-block
+`t:fs` runs keep their old appearance until the user reapplies a full-block
+scale.
+
+### Behavior Changes
+
+- A complete eligible block stores `pfs` and clears `t:fs` / legacy
+  `s:fontSize` across that block; a partial range stores only inline `t:fs`.
+- Effective text scale is `pfs × t:fs`. Heading scale multiplies the same
+  paragraph base.
+- Cross-block commands partition each covered editable block in one Yjs
+  transaction. Non-editable and `plainTextOnly` blocks are skipped.
+- The implementation reads only Selection/model offsets; it performs no DOM
+  geometry reads and installs no resize or mutation observer.
+
+## Unreleased — 2026-08-17 — make the WordArt toolbar a two-level object toolbar
+
+**Severity**: minor
+
+**What changed**: the bundled selected-WordArt toolbar now uses the same
+left/right vertical-rail and click-owned secondary-card structure as TextBox.
+The rail exposes 布局、艺术字格式 and 删除; the format card groups the existing
+controls into 字体、填充与轮廓、效果. `WordArtToolbarComponent` adds local panel
+state, a `side` input and a `panelChange` output so the owning Plugin can keep
+one connected Overlay positioned while card geometry changes. Both secondary
+cards are capped at 288px, and the format card's generic form fields use CSES
+Select、Segmented、
+InputNumber、ColorPicker、Slider and Switch components.
+
+**Why**: the previous two-row toolbar exposed every control at once, producing
+a wide floating surface that competed with the selected object. The two-level
+structure keeps the primary surface compact while preserving all existing
+WordArt styling and placement actions. Reusing CSES form controls keeps the
+selected-object settings consistent with the TextBox settings surface.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-toolbar.md`
+- `blockcraft-plugins-toolbar.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `WordArtToolbarPanel`, `WordArtToolbarSide` and `WordArtFormatSection` are
+  exported from `plugins/word-art-toolbar/word-art-toolbar.component`.
+- `WordArtToolbarComponent.side` selects the rail/card order after CDK chooses
+  the available side.
+- `WordArtToolbarComponent.panelChange` reports panel-only geometry changes;
+  it does not represent or perform a document mutation.
+
+### Migration Recipe
+
+No host migration is required when using `WordArtToolbarPlugin`. A custom host
+that creates `WordArtToolbarComponent` directly may optionally consume the new
+panel geometry output:
+
+```typescript
+componentRef.setInput("side", "right");
+componentRef.instance.panelChange.subscribe(() => overlayRef.updatePosition());
+```
+
+### Behavior Changes
+
+- The default toolbar no longer renders its complete formatting and layout
+  controls in two always-visible horizontal rows.
+- Opening, closing or switching the local secondary card does not write Yjs or
+  create Undo history. Existing `WordArtToolbarAction` payloads are unchanged.
+- Letter-spacing and outline-width slider movement stays local and emits one
+  props update only when the interaction completes.
+- CSES Select and ColorPicker sibling panes remain toolbar-owned only while the
+  originating control inside this WordArt toolbar is open.
+
+## Unreleased — 2026-08-17 — collapse inline-object wrapping controls and defer drag proxies
+
+**Severity**: major
+
+**What changed**: bundled inline image, Shape and WordArt toolbars now expose
+**四周型环绕** as one product behavior and remove 自动环绕 / 文字在左 /
+文字在右. Shape and WordArt Delta no longer persist `side`; their data types
+remove that field and their creation helpers use Shape/WordArt-specific wrap
+option types. Their HTML no longer emits `data-bc-wrap-side`. Shape/WordArt
+pointerdown also defers drag-proxy creation until movement crosses 2px.
+
+**Why**: the three side buttons exposed an implementation detail as product
+features even though 四周型环绕 already means that text should wrap around the
+object. Separately, creating the proxy on pointerdown made a normal Shape or
+WordArt click flash a drag ghost before the user expressed drag intent.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-embed.md`
+- `blockcraft-inline.md`
+- `blockcraft-plugins-toolbar.md`
+- `MIGRATIONS.md`
+
+### Breaking Changes
+
+- `InlineShapeData.side` and `InlineWordArtData.side` are removed.
+- `createInlineShapeDelta()` and `createInlineWordArtDelta()` no longer accept
+  a wrap-side choice.
+- Existing Shape/WordArt `side` attributes and imported
+  `data-bc-wrap-side` values are ignored rather than migrated.
+
+### New APIs / Features
+
+- `InlineShapeWrapOptions` is the Shape-specific `wrap/x/gap` option type.
+- `InlineWordArtWrapOptions` is the WordArt-specific `wrap/x/gap` option type.
+
+### Migration Recipe
+
+Remove `side` from programmatic Shape and WordArt creation:
+
+```typescript
+// before
+createInlineShapeDelta(props, text, {
+  wrap: true,
+  side: "left",
+  x: 0.32,
+  gap: 12,
+});
+
+createInlineWordArtDelta(props, text, {
+  wrap: true,
+  x: 0.32,
+  gap: 12,
+});
+
+// after
+createInlineShapeDelta(props, text, {
+  wrap: true,
+  x: 0.32,
+  gap: 12,
+});
+```
+
+### Behavior Changes
+
+- All bundled inline-object toolbars omit the three text-side actions. Wrapped
+  objects use automatic geometry in the product UI.
+- Shape/WordArt drag, DOM conversion, HTML round-trip and model-only height
+  estimation all ignore or remove stale `side` metadata.
+- Shape/WordArt pointerdown selects and opens the toolbar without creating a
+  proxy, acquiring a layout freeze or taking a virtual-view lease. Those start
+  only after 2px movement; pointerup below the threshold remains a click.
+- No package version was modified.
+
+## Unreleased — 2026-08-17 — absolute-object click takeover
+
+**Severity**: patch
+
+**What changed**: text-box resize/rotate controls now opt out of underlay edge
+picking and reproject their owning object after the pointerdown dispatch; an
+armed absolute border click reprojects the unchanged object selection after
+pointer protection is released.
+
+**Why**: a document selection could expose an absolute text-box resizer;
+hitting a handle or completing a no-move border click could leave the old
+document Range behind the active object.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-selection.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Resize/rotate handles reproject their text box selection after root capture
+  and after gesture completion while preserving the shared resizer gesture; a
+  click on an absolute move edge reasserts the same object Range after the armed pointer guard ends.
+  Move-edge drag also owns pointer capture and releases its view/selection
+  guards on lost capture. Geometry behavior is unchanged.
+- No exported TypeScript signature or package version changed.
+
+## Unreleased — 2026-08-17 — Word-like font and paragraph settings dialogs
+
+**Severity**: minor
+
+**What changed**: fixed-toolbar font family, relative scale, character spacing,
+alignment and line-height menus now end with a `bc_version_settings`
+**更多设置…** action. It opens a field-focused `@cses/ui` font or paragraph
+modal. Editable blocks gain bounded paragraph spacing props; live rendering,
+Snapshot Viewer, HTML round-trip and model-first virtual height estimation use
+the same contract.
+
+**Why**: presets alone could not express paragraph before/after spacing or a
+consolidated Word-like typography workflow. Persisting semantic point values
+keeps Yjs compact, while one effective sibling gap avoids margin collapse
+differences across flow, text-box/flex, pagination and readonly rendering.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-block.md`
+- `blockcraft-plugins-formatting.md`
+- `blockcraft-adapter.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `IEditableBlockProps.psb/psa`: paragraph before/after spacing in points.
+- `normalizeParagraphSpacing()`, `paragraphPointsToCss()` and
+  `paragraphPointsToPixels()`.
+- `DocumentLayoutMetrics.segmentGap` and
+  `DocConfig.layoutMetrics.segmentGap`; zero is a valid explicit default gap.
+- `IInlineNodeAttrs`' built-in boolean format keys explicitly accept `null` as
+  the existing Y.Text format-removal value.
+- HTML `data-bc-sb/sa` round-trip fields.
+
+### Migration Recipe
+
+Hosts writing paragraph settings should persist the semantic props rather than
+inline DOM margins:
+
+```typescript
+// before: view-only and not collaborative
+paragraphElement.style.marginBottom = "12pt";
+
+// after: collaborative, undoable and pagination-aware
+doc.crud.updateBlockProps(paragraphId, {
+  psb: 6,
+  psa: 12,
+});
+```
+
+### Behavior Changes
+
+- Dialog edits only update preview until **确定**. Confirm replays the saved
+  model Selection and commits once; cancel/Escape/readonly never commit.
+- Mixed values remain untouched until explicitly changed; the dialogs do not
+  expose a whole-dialog reset action.
+- The effective gap between siblings is
+  `max(previous.psa, next.psb)`. Missing `psa` inherits
+  `--bc-segments-gap`; the first child's `psb` is leading padding and the last
+  child has no trailing gap.
+- Paragraph props affect offscreen height estimation and invalidate adjacent
+  mounted spacing owners without scanning the entire virtualized root.
+- The floating toolbar and document-level `ff/fs/lh` ownership remain
+  unchanged. No package version was modified.
+
+## Unreleased — 2026-08-17 — fixed-toolbar dropdown lifecycle
+
+**Severity**: patch
+
+**What changed**: every popup trigger inside `FixedTextToolbarComponent` now
+uses `CsDropdownDirective` with `CsDropdownMenuComponent`. The responsive
+**更多格式** branches use `CsSubmenuComponent`; complex color, table-size,
+shape, text-box and other visual pickers keep their existing BlockCraft content
+and explicit close-on-pick behavior. First-level dropdowns and responsive
+second-level submenus now open on hover. Font family and relative scale form an
+adjacent iconless control pair, superscript/subscript share a split action, and
+character spacing moves beside paragraph line height.
+
+**Why**: the previous `BcOverlayTriggerDirective` treated a Tooltip's sibling
+CDK overlay as a different floating binding. Moving the pointer from a menu item
+onto its Tooltip therefore closed the entire dropdown. CSES dropdown ownership
+keeps Tooltip overlays compatible with the menu that opened them.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-formatting.md`
+- `blockcraft-toolbar.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Hovering a Tooltip opened by fixed-toolbar dropdown content no longer closes
+  the dropdown.
+- Hovering any enabled fixed-toolbar dropdown trigger opens its menu; hovering a
+  **更多格式** submenu item opens the nested menu. Click/touch and keyboard
+  activation remain available.
+- An open dropdown trigger keeps the toolbar hover background. Responsive
+  nested pickers render inside the CSES submenu's single card instead of drawing
+  a second BlockCraft panel surface or adding a second 8px host gap.
+- Dropdown overlays use their trigger width as the minimum, then grow only for
+  intrinsic menu content; the fixed-toolbar scope suppresses CSES's generic
+  three-`interactive-xl` menu minimum so compact menus are not forced to about
+  288px. Font-scale presets cover `0.75×` through `3×`, including
+  `1.75×/2×/2.5×/3×`; character-spacing presets retain their high-frequency
+  quick values. **更多设置…** keeps the complete numeric controls. Scrollable
+  vertical menus use a thin, transparent-track scrollbar.
+- The ordered-list split control highlights the complete control when either
+  half is hovered; its caret receives an additional local hover/open highlight.
+- Superscript/subscript use the same split-control interaction. Its main action
+  repeats the active or most recently selected baseline command; choosing one
+  clears the other.
+- Wide layouts render font family and relative scale as one adjacent iconless
+  pair. Responsive layouts move both fields into **更多格式** and use `bc_zihao`
+  for the scale submenu. Character spacing uses `bc_zijianju` immediately
+  before paragraph line height.
+- Fixed-toolbar dropdown triggers now expose the CSES open/disabled classes and
+  ARIA state. No exported TypeScript signature or host configuration changes.
+
+## Unreleased — 2026-08-17 — add a Word-like ordered marker library
+
+**Severity**: minor
+
+**What changed**: ordered blocks can persist one optional semantic
+`ms` (marker style). Its value is one stable two-character code. The built-in
+library supplies 12 Arabic, alphabetic, Roman, Chinese and CSS-circle presets.
+The fixed ordered-list control is now a split
+button and is the only marker-style entry point. The marker-click toolbar keeps
+its existing continue / restart / recalculate scope. Live rendering, Snapshot
+rendering share the same marker resolver. HTML uses only its standard `<ol
+type>` subset and deliberately degrades unsupported presets.
+
+**Why**: depth-based cycling remains useful as a default, but it did not let a
+user choose the visual grammar of one numbered group. Marker identity is now
+kept separate from counter repair and from unrelated text formatting.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-plugins-block.md`
+- `blockcraft-plugins-formatting.md`
+- `blockcraft-adapter.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `OrderedMarkerStyleId`, `OrderedMarkerEnclosure`,
+  `OrderedMarkerStyleDescriptor`, `ORDERED_MARKER_STYLES`
+- `formatOrderedMarker()`, `resolveOrderedMarker()`,
+  `isOrderedMarkerStyleId()` and `resolveOrderedMarkerDigitScale()`
+- `resolveOrderedMarkerGroupIds()` and `applyOrderedMarkerStyle()`
+- `BcOrderedMarkerPickerComponent` (`bc-ordered-marker-picker`)
+- ordered block prop `ms`
+- compact preset IDs `n1..n5`, `a1..a2`, `r1..r2`, `c1..c2`, and `o1`
+- optional third `props` argument on `TextToolbarHelper.transformBlocks()`
+- portable HTML mapping through `<ol type="1|a|A|i|I">`; no private marker
+  attribute is emitted
+
+### Migration Recipe
+
+Hosts that render ordered prefixes themselves should use the shared resolver:
+
+```typescript
+// before
+const marker = `${getNumberPrefix(props.order, props.depth)}.`;
+
+// after
+const marker = resolveOrderedMarker(props.order, props.depth, props.ms).text;
+```
+
+### Behavior Changes
+
+- Missing, null or unknown `ms` preserves the exact legacy depth
+  cycle (`1.` → `a.` → `III.`).
+- Picking a style follows the automatic counter's numbered-group boundary for
+  the anchor `depth + heading`: same-level ordinary paragraphs do not split the
+  group; structural pruning or an explicit positive `start` does.
+- A marker-only props change never schedules or writes `order`. User marker
+  changes use one normal transaction; automatic counter repair continues to
+  use `ORIGIN_SYSTEM_REPAIR`.
+- A newly inserted ordered block that omits `ms` inherits a valid marker preset
+  from the automatic-numbering group it joins, including across same-level
+  ordinary paragraphs. Existing blocks are not backfilled; an explicit preset
+  wins, and a positive `start` boundary does not inherit from the prior group.
+- The CSS-circle preset uses a compact `1.15em` ring and optically scales even
+  single-digit content; it does not depend on font-specific circled glyphs.
+- Marker text now lives in `.ordered-block-prefix__text`. Pointer integrations
+  must use `closest('.ordered-block-prefix')` when the inner span is the target.
+- HTML preserves the five presets expressible through standard `<ol type>` and
+  intentionally degrades the other seven to ordinary numbering. It emits and
+  imports no private marker-style attribute. Standard Markdown likewise exports
+  ordinary `1.` numbering because it has no marker-style primitive.
+- This additive change does not modify the package version.
+
+## Unreleased — 2026-08-17 — simplify the text-box catalog and keep style-owned safe areas
+
+**Severity**: patch
+
+**What changed**: the Unreleased text-box catalog now exposes only 线框 / 矩形 /
+气泡. The former 精选 category and seven decorative curated entries were
+removed; **默认白框** is the one retained entry and now leads 线框. The fixed
+toolbar's **插入文本框** menu opens that catalog directly instead of putting
+**横向** / **竖向** plain-frame shortcuts above it. Catalog styles keep their
+own editable safe-area data: the plain white rectangle uses ordinary pixel
+padding, while decorated frames and bubbles use their artwork or Shape
+`textInsets` with zero duplicated `p`.
+
+**Why**: 精选 duplicated the semantic tabs without adding a distinct styling
+rule, and the fixed toolbar repeated direction controls that already belong to
+the selected text box. More importantly, one shared padding tuple cannot match
+both a rectangular white frame and an asymmetric balloon with a tail. The
+frame's visible interior must be part of the style definition and must scale
+with the frame.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-plugins-formatting.md`
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-toolbar.md`
+- `MIGRATIONS.md`
+
+### Breaking Changes
+
+None shipped. `featured` and the removed preset ids existed only in the
+Unreleased catalog work. Source-preview consumers must stop passing
+`cat: 'featured'` or referring to `soft-blue`, `paper-note`, `speech`, `cloud`,
+`ink-title`, `royal-banner` and `neon-card`.
+
+### Behavior Changes
+
+- `TEXT_BOX_PRESET_CATEGORIES` is now `outline` / `rect` / `bubble`, and
+  `TextBoxPresetCategory` no longer includes `featured`.
+- Fixed-toolbar insertion always starts from a horizontal catalog style.
+  Writing direction can still be changed from the selected text box's text
+  settings; the frame model and `wm` API are unchanged.
+- 默认白框 keeps `p: [10, 14]`. Decorated catalog entries keep `p` at zero and
+  derive the editable viewport from their proportional `textInsets`, which the
+  live Block and Snapshot Viewer already resolve with the same precedence.
+- This correction does not modify the package version.
+
+## Unreleased — 2026-08-17 — container Ctrl+A follows the object layout boundary
+
+**Severity**: patch
+
+**What changed**: the first Cmd/Ctrl+A from text inside a
+`metadata.selectionScope: 'container'` block now selects that container's full
+child boundary range. In a text box this means all paragraphs are selected at
+once, regardless of which paragraph owns the caret. A repeated shortcut stays
+there only when the container belongs to an absolute object; normal-flow
+containers continue through their parent to root. Non-collapsed boundary DOM
+projection now uses adjacent child text/gap edges so nested editable containers
+paint a visible browser selection while retaining their structural model range.
+
+**Why**: a rich-text container is one user-visible editing surface even when its
+model content is split across several editable Blocks, but semantic selection
+scope is not the same thing as document select-all ownership. Absolute objects
+must isolate editing from the flow document; Callout/高亮块 in normal flow must
+still participate in the ordinary ladder. Chromium also accepts a parent-offset
+Range inside nested contenteditable islands without painting its glyphs, so the
+browser view needs descendant-backed endpoints.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-selection.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- `SelectionKeyboard` resolves the common semantic scope through
+  `resolveCommonSelectionScope()`; it does not hard-code text-box or callout
+  flavours and performs no DOM/layout read.
+- Table-cell promotion remains higher priority. Non-container document text
+  keeps the prior progressive full-paragraph → parent-content ladder.
+- A full container boundary range is terminal only inside an absolute object.
+  A normal-flow text box, Callout or highlight container continues through its
+  parent to root on the next shortcut.
+- Programmatic boundary ranges anchor editable endpoints in the first/last
+  child text and preserve their boundary model on exact DOM resampling. The
+  TextBox toolbar also remains active for that boundary selection.
+- This correction does not modify the package version.
+
+## Unreleased — 2026-08-17 — text-box focus and layout-card refinement
+
+**Severity**: patch
+
+**What changed**: `TextBoxToolbarPlugin` now keeps the text-box settings overlay
+open when a caret or text range belongs to any editable descendant of the same
+`text-box`. It marks that frame with `.text-box-block--editing`, whose bundled
+theme paints an outer active-color outline. The existing nested
+`contenteditable=false → true` object/text editing boundary remains; within the
+inner host, the last ordinary child now grows across any remaining block-axis
+space. The layout card no longer repeats its three object-layout choices through
+a separate **位置基准 / 随文字移动 / 固定在页面上** control.
+
+**Why**: the previous whole-object-only condition closed the settings overlay as
+soon as a paragraph acquired a caret. Previously, fixed-frame whitespace
+belonged to the inner editing container instead of a real child Block, so the
+browser could not derive a paragraph text point there and only precise hits on
+rendered paragraph content appeared to focus the text box. Assigning that space
+to the last child gives native caret hit testing a real paragraph target, like
+Callout/高亮块, without weakening the object/text editing boundary.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Descendant text editing now shows both the normal text-formatting surface and
+  the owning text box's settings toolbar.
+- The editing outline belongs to the outer frame; inner focus outline and
+  scrollbar chrome remain suppressed, and resize/rotation handles remain
+  exclusive to whole-object selection.
+- Text-box whitespace interaction is layout/HTML-native; no blank-area event
+  handler or geometry read was added to the Plugin.
+- The layout card still exposes `top-bottom`, `under` and `over`, plus stack
+  controls for absolute objects; only the redundant position-basis section and
+  its UI-only mapping were removed.
+
+## Unreleased — 2026-08-16 — catalog drawings move to a registry; `bgi` holds a reference
+
+**Severity**: minor
+
+**What changed**: the 36 decorated text-box presets no longer inline their
+drawing. `bgi` now holds a `bc:<id>` reference into a new artwork registry that
+carries the drawing **and its text-safe frame**. New exports from
+`@ccc/blockcraft`: `TextBoxArtwork`, `TEXT_BOX_ARTWORK_SCHEME`,
+`textBoxArtworkRef()`, `registerTextBoxArtwork()`, `getTextBoxArtwork()`,
+`resolveTextBoxArtworkSrc()`, `findTextBoxArtworkBySrc()`, and one
+`*_TEXT_BOX_ARTWORK` array per shape tab.
+
+**Why**: two separate faults, one cause — a drawing was being treated as
+document content instead of as an asset.
+
+_Weight._ `bgi` is a reference field: the shape panel's own image flow uploads
+through `DOC_FILE_SERVICE_TOKEN` and stores the URL the host returns. Inlining a
+`data:` URI put 0.3–1.6 KB of SVG into every decorated frame — 903 bytes median,
+1.4 KB serialized for a whole text box against 161 bytes for one of the original
+shape-built presets. That rode along in every Yjs sync, undo entry and export;
+twenty framed text boxes cost ~18 KB of document. References cost 25 bytes, a
+97% reduction, and the drawings ship with the package.
+
+_Geometry._ The text-safe frame was held in `p`, which is absolute px, while the
+drawing stretches with the frame (`preserveAspectRatio="none"` plus
+`bgs: 'stretch'`). It was therefore only correct at the size each entry was
+drawn for, and frames are dragged to arbitrary sizes. Measured live: a
+`bubble-r-blob-halo` drawn at 540x160 kept a 360px-wide text rectangle inside a
+balloon whose interior had become 270px — the text crossed the outline by 90px.
+Most 线框 / 矩形 entries broke too, just at larger sizes (`rect-r-rainbow-cloud`
+above 187px tall, `outline-r-rainbow` above 220px, and so on). As fractions in
+the registry the reserve tracks the frame at any size.
+
+This is the mechanism the original eight presets already used, reached a
+different way: `sh` names geometry plus `textInsets`, and `bgi` now names a
+drawing plus its own `textInsets`. `_shapeInset()` resolves artwork first, then
+the `rectangle` exemption, then the shape — which is why 24 rectangle-framed
+entries could not be fixed by choosing a different `sh`.
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+- `blockcraft-adapter.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `getTextBoxArtwork(src)` returns the registry entry for a `bc:` reference,
+  `null` for a URL, a legacy inline URI, or an id this build does not know.
+- `resolveTextBoxArtworkSrc(src)` returns what to paint: the registered drawing
+  for a reference, the value itself for anything else, `null` for an unknown
+  reference.
+- `findTextBoxArtworkBySrc(src)` collapses an expanded drawing back to its entry.
+- `registerTextBoxArtwork(entries)` lets a catalog module own its own drawings.
+
+### Behavior Changes
+
+- HTML export expands a reference into the drawing so the file stands alone
+  elsewhere; import collapses a recognised drawing back to its reference.
+- An unrecognised `bc:` reference paints nothing rather than handing `<img>` a
+  source it cannot load, leaving an ordinary framed text box.
+- The shape panel's 选择图片 / 替换图片 / 移除 controls now key off
+  _uploaded_ images only. They share the `bgi` field with catalog drawings, so
+  before this a single click on a decorated frame replaced or erased the
+  preset's artwork.
+- Documents written before this keep their inline `data:` URI and render exactly
+  as they did; nothing is rewritten underneath them. They simply stay large, and
+  their reserve stays fixed-px.
+
+## Unreleased — 2026-08-16 — paragraph spacing works inside a text box again
+
+**Severity**: patch
+
+**What changed**: `.text-box-block__content > [data-block-id]` states its
+segment spacing logically — `margin-block-start` / `margin-block-end` — and both
+now carry base.scss's own fallback chain, `var(--bc-block-sb, 0)` and
+`var(--bc-block-sa, var(--bc-segments-gap))`.
+
+**Why**: the vertical-text-direction change restated the gap logically so a
+`vertical-rl` frame would not stack its segments on the inline axis, but wrote
+the value literally as `var(--bc-segments-gap)`. That selector outranks
+base.scss, so a paragraph's 段后间距 (`sa`) was silently ignored inside a text
+box while it kept working everywhere else in the document — set it to 40px and
+the frame still rendered 10px. 段前间距 (`sb`) was worse: nothing restated it,
+so in a vertical frame it landed on the inline axis and pushed the text
+sideways instead of spacing the paragraphs.
+
+**Affected ai-skills files**:
+
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- `--bc-block-sa` and `--bc-block-sb` now reach paragraphs inside a text box,
+  and land on the frame's own block axis in both directions. Horizontal frames
+  with no spacing props set render exactly as before — the logical properties
+  resolve to `margin-top` / `margin-bottom` under `horizontal-tb`.
+- The last child still ends at zero, so a trailing gap cannot eat into a fixed
+  frame's bottom reserve.
+
+## Unreleased — 2026-08-16 — text-box content reserve is geometry, not padding
+
+**Severity**: patch
+
+**What changed**: `.text-box-block__content` no longer carries the frame's
+reserve as `padding`. `--bc-text-box-shape-inset-*` and
+`--bc-text-box-padding-*` are now summed into the viewport's own
+`top/right/bottom/left`, and `padding` is `0`. Both variables keep their names,
+their values and their producers — the Block and the Snapshot Viewer emit them
+unchanged, and `p` means exactly what it meant.
+
+**Why**: padding only reserves the two start edges. `padding-top` /
+`padding-left` offset where the first line begins, so they always hold; the end
+edges are trailing space in the flow, and `overflow` clips at the padding box,
+not the content box. The moment the text was taller than the frame it painted
+straight through the bottom reserve — in the editor it scrolled across the ink
+(the reserve reappeared only at maximum scroll), and under readonly / print /
+Snapshot Viewer `overflow: hidden` the last line was clipped mid-glyph at the
+frame edge with the ornament covered.
+
+It showed worst on the 气泡 tab because a tail hangs below the balloon, so those
+entries carry the catalog's biggest bottom reserve — 27%–41% of frame height,
+against 12%–16% typical in 线框 and 12%–19% in 矩形 — and leave only 36%–56% of
+the frame for text, which a normal sentence overruns in five or six lines. The
+mechanism was never bubble-specific.
+
+All four physical sides moved rather than just `bottom`, because a vertical
+frame is `vertical-rl` and its block flow ends on the left.
+
+**Affected ai-skills files**:
+
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Layout is byte-identical while the text fits the frame. Once it overflows,
+  the viewport scrolls (editing) or clips (readonly / print / Snapshot Viewer)
+  at the reserve line instead of over the frame's own artwork.
+- The reserve band is no longer part of the editable viewport, so clicking it —
+  a bubble's tail, a ribbon's skirt — no longer places a caret. The caret has to
+  be placed in the text area. Nothing could be typed into that band before
+  either; only the hit target changed.
+- Themes that overrode `.text-box-block__content { padding }` to retune the
+  reserve now have no effect. Override the four `--bc-text-box-padding-*`
+  variables instead, which is what they were for.
+- Seventeen catalog entries had their bottom reserve retuned in the same change.
+  (Those measurements now live in the artwork registry as fractions — see the
+  entry above — but they are the same numbers.)
+  While the reserve was soft an over-generous bottom cost nothing; as geometry
+  it costs a line of text, so each was re-measured by rasterising its `bgi` at
+  frame size and scanning down from the text rectangle for the first non-paper
+  pixel. Entries with ornament below keep its clearance; entries with nothing
+  below share a flat 12px margin off the `bw` line. Nine of them gain a line at
+  the default 16px/1.5. The other nineteen were left alone — eleven of the
+  twelve 气泡 entries already sat within 3px of their own ink, and the three
+  built on `plaque` / `cloud` / `folded-corner` take most of their reserve from
+  those shapes' `textInsets` rather than from `p`.
+
+## Unreleased — 2026-08-16 — text-box catalog: shared tab control, horizontal-only picks, lighter bubble contours
+
+**Severity**: patch
+
+**What changed**: three adjustments to the text-box preset catalog, none of
+which touches a published surface — the two entries the catalog was introduced
+in are still Unreleased and have been corrected in place rather than reversed
+here.
+
+1. `TextBoxPresetPickerComponent` no longer takes a `wm` input and no longer
+   splits the catalog by direction. Its tab strip is now `CsSegmentedComponent`
+   from `@cses/ui` instead of hand-written buttons.
+2. The fixed toolbar's 插入文本框 panel dropped direction controls entirely and
+   opens the catalog directly. A catalog pick is always stamped `wm: 'h'` at
+   the preset's own proportion; selected-object text settings still change it.
+3. The 气泡 tab's four heavy contours were thinned — `ink-shout` 5.2 → 2.6,
+   `pixel-frame` 10 → 4, `crimson-oval` 6 → 3.4, `pixel-cloud` 8 → 4 canvas
+   units, and `ink-shout`'s impact strokes rescaled with its rim.
+
+**Why**: transposing a preset does not rotate it. Both the Shape path and the
+`bgi` surface image stretch (`preserveAspectRatio="none"`), so a vertical
+catalog was showing every entry smeared rather than reoriented. Direction is a
+frame flag that belongs on top of a pick, not a second copy of the catalog.
+
+The stroke change is about reach, not taste: 气泡 entries draw their contour
+inside `bgi` with `bw: 0`, so unlike the 线框 / 矩形 tabs — where the frame is a
+real `bw: 2` outline the toolbar can edit — nothing downstream can thin them
+afterwards. Tracing the reference sheet literally put four of them at 6–12 real
+px, three to six times the other tabs, with no way out.
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+- `blockcraft-plugins-toolbar.md`
+- `MIGRATIONS.md`
+
+### Breaking Changes
+
+None shipped. `TextBoxPresetPickerComponent.wm` existed only in an Unreleased
+entry; that entry's New APIs list has been corrected instead of deprecating a
+never-published input.
+
+### Behavior Changes
+
+- Every tab is now offered unconditionally. `getTextBoxPresetsFor(wm, cat?)`
+  and `getTextBoxPresetCategoriesFor(wm)` keep their `wm` parameter and their
+  filtering; the picker simply passes `'h'`.
+- The tab strip suppresses `mousedown` the same way the preset grid does. Each
+  cs-segmented tab is a `<label>` wrapping a radio, so a plain click would pull
+  focus out of the editor and drop the selection the picker was opened for;
+  cs-segmented commits on `click`, so the default costs nothing.
+- 气泡 contours land at roughly 3–5 real px instead of 6–12. Ornaments drawn as
+  fat round-capped strokes — confetti capsules, speed bars, the gold gloss arc —
+  were left alone; they are shapes, not borders.
+
+## Unreleased — 2026-08-15 — fixed-pixel object groups and local placement planes
+
+**Severity**: minor
+
+**What changed**: Added the internal `object-group` Block, a fixed-pixel local
+absolute placement plane, model-first group/ungroup commands on
+`BlockPlacementManager`, group-aware responsive object sizing and the bundled
+`ObjectGroupToolbarPlugin`. Snapshot Viewer and HTML round-trip preserve the
+container, local positions and native child sizing fields.
+
+**Why**: Images use relative `wr/ar` sizing while Shape, TextBox and WordArt use
+fixed pixels. Freezing every object to pixels would destroy responsive image
+semantics; keeping every child root-relative would deform a composition when
+the root width changed. A fixed group plane lets each child retain its native
+model while the composition remains stable.
+
+## Unreleased — 2026-08-14 — add the bundled `date` inline embed
+
+**Severity**: minor
+
+**What changed**: a new bundled inline embed `date` renders a frozen date/time
+stamp inside the text flow. The `/日期` slash command (`inline:date`, group
+`inline`) inserts one carrying the current local time; clicking it opens
+`DateInlineExtensionPlugin`'s dialog, which pairs `@cses/ui`'s
+`cs-date-time-picker` with an 11-entry format list. Delta shape is
+`{insert: {date: 'YYYY-MM-DDTHH:mm'}, attributes: {format}}` — the frozen value
+and its display format are stored separately. Both are mirrored onto
+`data-bc-date-value` / `data-bc-date-format` on a `span.bc-inline-date` so
+DOM-to-Delta round-trips (copy/paste, HTML import) reconstruct from DOM alone.
+
+**Why**: "insert today's date" is a baseline document affordance, and doing it
+as an inline embed rather than a block keeps it inside the sentence where
+authors want it. Two decisions are load-bearing. The value is a **local
+wall-clock stamp, frozen at insertion** — not a UTC instant and not recomputed
+at render time — so every collaborator in every timezone reads the same thing;
+a live clock would make the document's content depend on when it was opened.
+And the format lives in `attributes`, not inside the value, so switching format
+is a pure presentation change that can never rewrite or lose the frozen stamp.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-app.md`
+- `blockcraft-plugin.md`
+- `blockcraft-adapter.md`
+- `blockcraft-toolbar.md`
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-plugins-ref.md`
+- `blockcraft-perf.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `ObjectGroupBlockSchema`, `ObjectGroupBlockComponent` and
+  `BLOCK_OBJECT_GROUP_FLAVOUR` plus the fixed
+  `BLOCK_OBJECT_GROUP_PADDING` (8 layout pixels).
+- `BlockObjectGroupProps` and `normalizeBlockObjectGroupProps()`.
+- `BlockPlacementManager.canGroup()`, `group()`, `canUngroup()`, `ungroup()`,
+  `isObjectGroup()`, `isInObjectGroup()` and `updateObjectGeometry()`.
+- `BlockObjectAlignment`, `BlockPlacementManager.canAlignObjects()` and
+  `alignObjects()` for model-only rotation-aware object alignment.
+- `BlockObjectSizingManager.getReferenceWidth()` and `resolveForBlock()`.
+- `ObjectGroupToolbarPlugin` and `ObjectGroupToolbarComponent`.
+
+### Migration Recipe
+
+`createBundledEditorCapabilities()` registers the new Schema and Plugin
+automatically. Manual capability assemblies that want grouping should add both,
+with the group Plugin before per-flavour object toolbars:
+
+```typescript
+const schemas = new SchemaManager([
+  RootBlockSchema,
+  PlacementLayoutBlockSchema,
+  ObjectGroupBlockSchema,
+  ImageBlockSchema,
+  ShapeBlockSchema,
+]);
+
+const plugins = [
+  new ObjectGroupToolbarPlugin(),
+  new ImgToolbarPlugin(),
+  new ShapeToolbarPlugin(),
+];
+```
+
+Live ratio-sized block components should use the block-aware resolver:
+
+```typescript
+// before: always root-relative
+doc.objectSizing.resolve(block.flavour, block.props);
+
+// after: root-relative normally, group-relative for direct group members
+doc.objectSizing.resolveForBlock(block.id, block.flavour, block.props);
+```
+
+### Behavior Changes
+
+- A direct child of `object-group` is structurally absolute and its `position`
+  is local to the group rather than root content.
+- Group creation requires at least two contiguous, same-layer direct root
+  absolute objects. It computes a rotation-aware fixed frame and moves existing
+  IDs without cloning.
+- Ratio-sized images preserve their pixel frame by converting `wr` between the
+  root width and the inset group content width when grouping/ungrouping.
+- Persisted group `width/height` describe an outer frame with an 8px inset on
+  every side; member positions and ratio sizing use the inner content plane.
+- Member move/resize/rotation tightens the rotation-aware group frame in the
+  same transaction and logs `[ObjectGroup][performance]` timing metrics.
+- A selected group moves from four edge hit bands; its first content click only
+  selects the group and the second enters a member. Selection on any descendant
+  keeps the ancestor frame visible, and subsequent member pointer events stay
+  owned by that member's object Plugin.
+- Only the group owns a root-stack layer. Group members reject `setLayer()` and
+  forward/backward moves. Image/Shape/WordArt member toolbars omit layout and
+  stack controls; TextBox omits its complete 布局 entry and panel.
+- 组合 and 取消组合 use `bc_combination` and `bc_quxiaozuhe`.
+- A contiguous multi-object selection exposes six single-axis alignments,
+  combined center alignment, and horizontal/vertical distribution. Alignment
+  accepts mixed root layers and existing groups, writes only `position` in one
+  transaction, and leaves the stricter group eligibility rule independent.
+- Layout UI uses `bc_buju` for its entry,
+  `bc_tuwenraopaiqianrushi` for 嵌入型,
+  `bc_tuwenraopaishangxiashi` for 上下型 and `bc_tuwenraopai` for
+  四周型环绕.
+- User-driven group resize, group rotation and nested groups are not part of V1.
+
+## Unreleased — 2026-08-15 — model-drive fixed object height estimates
+
+**Severity**: patch
+
+**What changed**: Built-in Shape and WordArt Schemas now estimate an unmounted
+flow block from its normalized persisted `props.height` through
+`metadata.virtualization.estimateHeight`.
+
+**Why**: These objects already persist an authoritative fixed pixel frame.
+Using a generic per-flavour fallback made tall offscreen objects reserve the
+wrong height until their DOM mounted and was measured.
+
+- `blockcraft-embed.md`
+- `blockcraft-plugins-ref.md`
+- `blockcraft-plugins-inline.md`
+- `blockcraft-plugins-block.md`
+
+### New APIs / Features
+
+- `INLINE_DATE_EMBED_KEY`, `INLINE_DATE_CLASS`, `INLINE_DATE_FORMAT_ATTR`
+- `INLINE_DATE_FORMATS`, `DEFAULT_INLINE_DATE_FORMAT`, `InlineDateFormat`,
+  `InlineDateData`
+- `createInlineDateDelta()`, `readInlineDateDelta()`, `readInlineDateElement()`,
+  `closestInlineDateElement()`
+- `formatInlineDateValue()`, `toInlineDateValue()`, `parseInlineDateValue()`,
+  `isInlineDateFormat()`
+- `createInlineDateEmbedConverter()` — a factory, not a shared constant, because
+  bundled capabilities require one converter instance per document
+- `DateInlineExtensionPlugin` (runtime id `date-inline-extension`),
+  `InlineDateEditDialog`, `InlineDateEditResult`
+- CSS class `.bc-inline-date` (plus `.editing`), themed in
+  `themes/blocks/inline-date.scss`
+
+### Migration Recipe
+
+Nothing to change — the embed, the plugin and the slash command are all
+registered automatically by `createBundledEditorCapabilities()`. Hosts that
+build their own capability list opt in explicitly:
+
+```typescript
+// embeds
+[INLINE_DATE_EMBED_KEY, createInlineDateEmbedConverter()],
+
+// plugins
+new DateInlineExtensionPlugin(),
+```
+
+**Watch for a key collision.** The bundled list now occupies the `date` key,
+and `additionalEmbeds` is appended rather than merged — so a host that was
+already passing its own `date` converter through
+`createBundledEditorCapabilities({additionalEmbeds})` will now throw
+`Duplicate Embed name: date` from `validateBundledEditorCapabilities()`. The
+host-wins merge in `withDefaultEmbedConverters()` (the `DocConfig.embeds` path)
+is unaffected. Rename the host key, or drop it if the bundled embed suffices.
+
+## Unreleased — 2026-08-15 — make placement structural and split position from layer
+
+**Severity**: major
+
+**What changed**: Object layout mode is now derived from the block tree instead
+of `props.placement.mode`. A direct root child is relative flow, while a direct
+child of the root `placement-layout` is absolute. Absolute objects persist one
+atomic `props.position: {x, y}` value in root-content layout pixels and an
+independent optional `props.placementLayer: 'under'`; omission means `over`.
+Relative objects persist neither field.
+
+**Why**: Persisting mode, coordinates, unit and layer in one placement record
+duplicated structural truth and made a drag rewrite unrelated layout state.
+Separating structural mode, atomic coordinates and stacking lets concurrent
+dragging replace only one coherent `{x, y}` object while layer commands remain
+independent. The contract also leaves a clean structural boundary for future
+group-local absolute layout.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-app.md`
+- `blockcraft-plugins-util.md`
+- `MIGRATIONS.md`
+
+### Breaking Changes
+
+- `IBlockProps.placement` and `BlockPositionState` were removed.
+- `IBlockProps.position?: BlockPosition` and
+  `IBlockProps.placementLayer?: 'under'` replace the old record.
+- `resolveBlockPlacement()` and `resolvePlacementXInPixels()` were removed.
+- Absolute coordinates no longer accept a percentage-x legacy form or a
+  persisted `unit`; both axes are root-content layout pixels.
+- Layout mode must be determined through `doc.placement.getState()` /
+  `isInAbsoluteLayout()` or parent structure, not a props field.
+
+### New APIs / Features
+
+- `BlockPosition` represents the atomic persisted `{x, y}` coordinate object.
+- `resolveBlockPosition()` normalizes that coordinate object.
+- `resolvePlacementLayer()` resolves omitted/invalid values to `over`.
+
+### Migration Recipe
+
+```typescript
+// before
+const props = {
+  placement: {
+    mode: "absolute" as const,
+    x: 120,
+    y: 240,
+    unit: "px" as const,
+    layer: "under" as const,
+  },
+};
+
+// after: insert/move this block under placement-layout
+const props = {
+  position: { x: 120, y: 240 },
+  placementLayer: "under" as const,
+};
+```
+
+For relative flow, keep the block as a direct root child and omit both fields.
+No old snapshot compatibility is provided because this contract changed before
+the placement format was formally released; regenerate unreleased fixtures and
+stored development data with the new shape.
+
+### Behavior Changes
+
+- Drag release replaces `position` once; it does not rewrite mode or layer.
+- Layer changes update `placementLayer` and/or child order without rewriting
+  `position`.
+- Returning to flow moves the block structurally and clears both persisted
+  absolute-only fields.
+- Absolute → inline/wrap conversion reanchors into root flow before replacing
+  the block and never inserts into a nearby absolute object's editable child.
+- Live and Snapshot DOM emit `data-bc-placement="absolute"` only for absolute
+  children. They no longer project a `relative` marker.
+
+## Unreleased — 2026-08-14 — organize the fixed toolbar and make it container-responsive
+
+**Severity**: patch
+
+**What changed**: `FixedTextToolbarComponent` now keeps Shape, text box,
+WordArt, Table, columns, image and video/audio as individually visible insertion
+actions at every width. Word-like command groups retain visual separators and
+accessible names without persistent caption text. Its layout responds to the
+toolbar container through one `ResizeObserver`: a complete wide surface and a
+frequency-prioritized medium/compact surface. Formatting and insertion now stay
+as non-shrinking siblings in one horizontal scroll range.
+
+**Why**: Insertion capabilities must remain directly discoverable. Responsive
+space should instead come from lower-frequency formatting controls rather than
+collapsing the whole insertion domain.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-formatting.md`
+- `blockcraft-toolbar.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Insertion capabilities and their existing pickers remain individually
+  exposed at all widths.
+- Responsive mode uses the component's actual inline size and rendered
+  overflow of its visible formatting/insertion sections rather than viewport
+  media queries, fixed pixel breakpoints or projected dropdown templates. It
+  first tries the complete layout, then moves font family/scale, character
+  spacing and line height into **更多格式** while omitting superscript/subscript,
+  inline link and inline formula. If content still overflows, bold, italic,
+  underline, strike-through, inline code, superscript and subscript collapse
+  into one **文字格式** dropdown.
+- Visible formatting and insertion groups are centered in every responsive
+  tier while they fit. The toolbar progressively condenses before scrolling;
+  only the narrowest tier exposes one thin horizontal scrollbar and preserves
+  the inline start. Insertion no longer compresses, covers or independently
+  scrolls past the formatting section.
+- Column-oriented float-toolbar menus constrain items with border-box sizing,
+  hide horizontal overflow and keep long lists vertical-scroll-only.
+- Paragraph line height is enabled for mixed multi-block selections when at
+  least one selected block is editable. Applying it updates eligible editable
+  rich-text blocks only; other text-format controls keep their stricter
+  all-selected-blocks-editable rule.
+- The floating text toolbar and object-specific toolbars are unchanged.
+
+## Unreleased — 2026-08-14 — group the text-box catalog into shape tabs
+
+**Severity**: minor
+
+**What changed**: `TEXT_BOX_PRESETS` grew from 8 to 37 entries, grouped into
+Word-style tabs (线框 / 矩形 / 气泡) via a new optional `cat` field. The retained
+**默认白框** leads 线框 rather than occupying a separate 精选 category. Each
+shape tab carries both geometry-only entries built from the Shape
+catalog and decorated entries whose whole appearance — border, texture and
+ornament — is a drawing named through `bgi`. (Those drawings were inlined as
+`data:image/svg+xml` URIs at first; a later entry above moves them into the
+artwork registry and leaves only a reference in the document.) The preset picker
+gained a `CsSegmentedComponent` tab strip and thumbnails that render the surface
+image, detail strokes and even-odd fills.
+
+**Why**: a flat list of eight entries could not express Word's shape
+categories, and geometry alone cannot produce hand-drawn borders, ribbons or
+multi-color ornament — a Shape shell paints one fill and one stroke. Painting
+the ornament into the surface image keeps that expressiveness without a new
+Block, a new render path, or any external asset.
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+- `blockcraft-plugins-toolbar.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `TEXT_BOX_PRESET_CATEGORIES`, `TextBoxPresetCategory` and
+  `TextBoxPresetEntry` are exported.
+- `TextBoxPresetDefinition` accepts optional `cat` and `wm`.
+- `getTextBoxPresetsFor(wm, cat?)` and `getTextBoxPresetCategoriesFor(wm)`
+  return the entries and tabs valid for a direction.
+
+### Behavior Changes
+
+- The picker renders one tab at a time rather than the whole catalog. It is
+  horizontal-only and always queries `getTextBoxPresetsFor('h', cat)`: direction
+  is a frame flag applied on top of a pick, not a second copy of the catalog.
+  The query functions still take `wm` for callers that do need it.
+- Decorated presets set `sh: 'rectangle'` with `bw: 0` / `fo: 0`; the shape
+  exists only to define the clip region, because the surface image is clipped
+  to the shape path. A non-rectangular shell would crop the ornament and limit
+  strokes to one width and color.
+- Preset ids remain non-persisted catalog state. `TextBoxPresetId` is still a
+  literal union: every catalog module ends in
+  `as const satisfies readonly TextBoxPresetDefinition[]`, because an explicit
+  array annotation anywhere in the chain widens `id` to `string`.
+- Surface images stay under 1.6 KB each and use only the shared palette.
+- The 线框 / 矩形 / 气泡 tabs split responsibility between the two layers: the
+  frame is a real `bw` outline on the chosen shape, so it stays editable and
+  keeps a constant width at any frame size, while `bgi` carries ornament only.
+  气泡 is the deliberate exception — a speech balloon is not a rectangle with a
+  badge on it, so those entries set `bw: 0` and draw the contour themselves.
+- Because the surface image is clipped to the shape and the outline paints above
+  it, ornament cannot bleed past the frame or interrupt the border. Entries whose
+  source art does both settle for ornament tucked inside the edge. One entry
+  escapes this by picking `folded-corner`, whose `detailPath` makes the notch
+  part of the real border.
+- Card-shaped tabs set `fo: 1` over a white `backColor`. A transparent card lets
+  a colored page show through while the ornament keeps its own hardcoded white,
+  which reads as stray white marks rather than as a card.
+- The editable safe area is reverse-engineered per drawing from its innermost
+  extent — for a curve that means its true extreme, not its bounding box — and
+  stored as proportional `textInsets`. Decorated entries keep `p` at zero so a
+  fixed second reserve does not stack underneath it.
+
+## Unreleased — 2026-08-14 — add Word-like vertical text direction to text boxes
+
+**Severity**: minor
+
+**What changed**: `text-box` gained a compact `wm` writing-direction flag
+(`'h'` | `'v'`, default `'h'`). A vertical frame renders `writing-mode:
+vertical-rl`, projected through the new `--bc-text-box-writing-mode` variable
+shared by the live Block and Snapshot Viewer. The bundled fixed toolbar inserts
+horizontal catalog styles; writing direction is changed from the object rail's
+**文本 / 文字方向** control, whose two alignment
+rows relabel themselves per direction. The default frame outline is now black.
+
+**Why**: vertical text is the defining visual of Chinese poster-style
+templates, and a frame-level flag reuses the existing paragraph children,
+Y.Text model and IME path instead of introducing a second text representation.
+CSS logical axes already flip alignment and block stacking, so the model needs
+one flag rather than a mirrored set of properties.
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-theme.md`
+- `blockcraft-adapter.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `TextBoxWritingMode` and `DEFAULT_VERTICAL_TEXT_BOX_SIZE` are exported.
+- `TextBoxBlockProps.wm` and `NormalizedTextBoxBlockProps.wm` carry the
+  direction; `normalizeTextBoxProps()` defaults it to `'h'` and rejects any
+  other value.
+- `TextBoxPresetDefinition` gained optional `cat` (catalog tab) and `wm`
+  (directions the preset is offered in; omitted means both).
+  `TEXT_BOX_PRESET_CATEGORIES` and `TextBoxPresetCategory` are exported.
+- `--bc-text-box-writing-mode` exposes the resolved direction to live and
+  Snapshot Viewer themes.
+
+### Migration Recipe
+
+Existing documents require no migration — an absent `wm` normalizes to `'h'`
+and renders exactly as before.
+
+```typescript
+const snapshot = TextBoxBlockSchema.createSnapshot("正文", {
+  width: 120,
+  height: 240,
+  wm: "v",
+});
+
+doc.crud.updateBlockProps(textBoxId, { wm: "h" });
+```
+
+### Behavior Changes
+
+- `DEFAULT_TEXT_BOX_PROPS.borderColor` changed from `#64748B` to `#000000`,
+  and the theme's `--bc-text-box-border-color` fallback follows. Existing
+  documents persist their own outline color and are unaffected; only frames
+  created without an explicit appearance pick up the new default.
+- Fixed-toolbar catalog picks are stamped `wm: 'h'`; selected-object settings
+  remain the place to change direction.
+- Host code can still create a vertical frame with `wm: 'v'`, but must provide
+  suitable geometry; the fixed toolbar no longer transposes catalog defaults.
+- Text-box children now space themselves with `margin-block-end`. Under
+  `horizontal-tb` this resolves to the previous `margin-bottom`, so horizontal
+  frames are unchanged; vertical frames get correct inter-block spacing.
+- The embedded preset catalog no longer renders its own heading, because every
+  embedded host already supplies one.
+- HTML round-trips the direction as `data-bc-wm`. Markdown stays
+  presentation-lossy and drops it.
+- Known limitation, unchanged by this release: a caret that leaves a
+  fixed-size frame is not scrolled into view, because
+  `SelectionManager.scrollSelectionIntoView()` only scrolls the document-level
+  container on its vertical axis. This already affected horizontal frames;
+  vertical frames surface it on the horizontal axis.
+
+## Unreleased — 2026-08-14 — add composable Word-like text boxes
+
+**Severity**: minor
+
+**What changed**: BlockCraft now exports an independent `text-box` container
+Block and `TextBoxToolbarPlugin`. A text box combines fixed
+width/height/rotation and relative/absolute object placement with the existing
+compact `p/bgi/bgs/bgx/bgy/bgo` surface contract. Its content remains ordinary
+paragraph/list/blockquote child Blocks, and the bundled editor adds a one-shot
+drawing action, live resize/rotation, Shape-backed background geometry,
+optional WordArt-compatible text presentation, preset-first styling, Snapshot
+Viewer output and lossless HTML import/export. Padding and background-image
+fields remain model/API capabilities. Whole-frame selection opens a Word-style
+vertical rail with click-owned layout/style/shape/text settings cards built
+from CSES controls; picture fill uses the host file service and the toolbar does
+not expose raw padding or URL controls.
+
+**Why**: Word-style text boxes need stable drawing-object geometry without
+turning every Block into a padded image surface or duplicating the editor's
+Y.Text/IME/collaboration model inside a special leaf.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-plugin.md`
+- `blockcraft-plugins-ref.md`
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-plugins-formatting.md`
+- `blockcraft-toolbar.md`
+- `blockcraft-adapter.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `TextBoxBlockSchema`, `TextBoxBlockComponent`, `TextBoxBlockProps`,
+  `NormalizedTextBoxBlockProps`, `DEFAULT_TEXT_BOX_PROPS` and
+  `normalizeTextBoxProps()` are exported.
+- `TEXT_BOX_PRESETS`, `getTextBoxPreset()`, `TextBoxPresetDefinition`,
+  `TextBoxPresetPickerComponent`, `TextBoxWordArtStyle`,
+  `normalizeTextBoxWordArtStyle()` and `serializeTextBoxWordArtStyle()` expose
+  catalog-side presets and the compact WordArt value-object boundary.
+- `ShapePickerComponent.supportsTextOnly` filters line/connector geometries
+  that cannot own a text frame.
+- `ShapePickerComponent.embedded` and `TextBoxPresetPickerComponent.embedded`
+  remove standalone popup chrome when the catalogs are composed inside a
+  settings card.
+- `TextBoxToolbarPlugin`, `TextBoxToolbarComponent`, `TextBoxToolbarAction` and
+  `TextBoxToolbarPropsPatch` provide preset, shape, picture-fill, detailed
+  WordArt-compatible text, placement, stack and deletion commands.
+- `TextBoxToolbarPanel` and `TextBoxToolbarSide` describe the public rail panel
+  state and its right/left fallback placement.
+- `TextBoxBlockSchema.createSnapshot(text?, props?)` creates a fixed frame with
+  one normal paragraph. The bundled factory registers both Schema and Plugin.
+
+### Migration Recipe
+
+Existing documents require no migration. A custom Schema composition can opt
+in explicitly:
+
+```typescript
+const schemas = new SchemaManager([
+  ParagraphBlockSchema,
+  PlacementLayoutBlockSchema,
+  TextBoxBlockSchema,
+]);
+
+const plugins = [new TextBoxToolbarPlugin()];
+
+const snapshot = TextBoxBlockSchema.createSnapshot("正文", {
+  width: 320,
+  height: 160,
+  sh: "rounded-speech-bubble",
+  p: [12, 20],
+  bgi: "https://cdn.example.com/paper.png",
+});
+```
+
+Preset IDs are catalog/UI state and are not persisted. Applying a preset writes
+its concrete props so later catalog changes cannot restyle existing documents.
+The optional `wa` prop is a canonical serialized primitive produced by
+`serializeTextBoxWordArtStyle()`; this keeps nested gradient arrays out of the
+single-value Y.Map boundary while preserving the complete WordArt contract.
+
+All clients in one collaborative room must register the new flavour before a
+writer persists it; the live editor still treats unknown Block flavours as a
+schema error.
+
+### Behavior Changes
+
+- The bundled fixed toolbar shows **插入文本框** only when the Schema is
+  registered. It creates an absolute `over` object only when drawing commits,
+  then enters its first paragraph.
+- Text boxes expose top-bottom/under/over in the first release. They do not
+  advertise inline or wrap because a multi-Block container has no inline Embed
+  adapter.
+- The object rail maps top-bottom to **随文字移动** and under/over to **固定在页面上**.
+  Word Square/Tight/Through wrapping remains hidden until the placement domain
+  owns a real block-wrap and anchor representation.
+- Shape/text slider drags keep preview state locally and write once on gesture
+  completion. CSES ColorPicker/Select sibling panes remain owned by the active
+  text-box toolbar while their originating control is open.
+- HTML preserves geometry, placement and surface fields. Markdown deliberately
+  flattens to readable ordinary children and drops drawing appearance.
+
+## Unreleased — 2026-08-14 — add compact document, text and paragraph typography
+
+**Severity**: minor
+
+**What changed**: BlockCraft now persists document defaults as root `ff/fs/lh`,
+paragraph line height as editable-block `lh`, and selection typography as
+compact inline `t:ff/t:fs/t:ls`. The fixed text toolbar exposes separate
+font-family, relative-scale, character-spacing, alignment and line-height
+dropdowns; the floating text toolbar keeps its previous compact formatting
+surface. Document defaults deliberately remain host/document-settings owned.
+Live
+rendering, Snapshot Viewer and HTML import/export share the same bounded
+projection.
+
+**Why**: Font and paragraph settings have different ownership and selection
+semantics. Compact semantic fields avoid repeating CSS stacks/units in every
+Y.Text run, while a shared catalog keeps rendering and external HTML safe.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-block.md`
+- `blockcraft-inline.md`
+- `blockcraft-adapter.md`
+- `blockcraft-theme.md`
+- `blockcraft-plugins-formatting.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `INLINE_TYPOGRAPHY_ATTRS`, `TYPOGRAPHY_FONT_FAMILIES`, shared presets and
+  normalization/resolution helpers are exported.
+- `ITextStyles` accepts `t:ff`, `t:fs`, `t:ls`; `IEditableBlockProps` accepts
+  `lh`; `RootBlockModel.props` accepts `ff`, `fs` and `lh`.
+- `ITextCommonAttrs.typography` and `.paragraph` distinguish inherited
+  (`null`) from mixed/unsupported (`undefined`) toolbar values.
+
+### Migration Recipe
+
+Existing `s:fontFamily`, `s:fontSize` and `s:letterSpacing` content remains
+read-compatible. New writes should use semantic patches:
+
+```typescript
+toolbar.formatText(createInlineTypographyPatch("ff", "kai"));
+toolbar.formatText(createInlineTypographyPatch("fs", 1.25));
+toolbar.updateBlockProps({ lh: 1.5 });
+
+// A host-owned document settings surface may update root defaults.
+doc.crud.updateBlockProps(doc.rootId, { ff: "serif", fs: 18, lh: 1.6 });
+```
+
+Use `null` to remove a field. Neutral inline scale `1` and letter spacing `0`
+are omitted by `createInlineTypographyPatch()`.
+
+### Behavior Changes
+
+- Font stacks come from a short safe catalog covering system, common web/Office
+  and Chinese families; arbitrary inline CSS is not a font-selection product
+  contract.
+- Shared selection presets now cover relative scale `0.5×`–`3×` and character
+  spacing `-0.1em`–`0.5em`. Character-spacing menus and triggers display the
+  real numeric `em` value; the model continues to persist only compact numbers.
+- `lh` is a unitless ratio. Cross-block changes use one Yjs transaction and
+  skip non-editable/plain-text blocks.
+- HTML preserves supported root/block/inline typography with `data-bc-*` plus
+  portable CSS. Markdown remains presentation-lossy by design.
+- The fixed toolbar never mutates document-level defaults; the floating text
+  toolbar does not expose the new typography controls.
+- Selection font size remains relative scaling (`t:fs`); no absolute selection
+  font-size value is written.
+- Fixed-toolbar text and insertion actions occupy one row when possible and
+  wrap as two whole sections when width is constrained.
+
+## Unreleased — 2026-08-13 — add opt-in block surface padding and background images
+
+**Severity**: minor
+
+**What changed**: BlockCraft now exports a reusable, opt-in `BlockSurfaceProps`
+contract with one CSS-like numeric padding shorthand and a bounded background-image
+descriptor. The bundled `render-unit` is the first consumer: its live view,
+Snapshot Viewer, HTML adapter and model-only virtualization estimate now share
+the same normalizer. Background images render as decorative `<img>` layers so
+existing print/PDF image decoding can wait for them.
+
+**Why**: Word-like text containers need persisted inset and image-surface data,
+but applying one box model to every Block would conflict with paragraphs,
+tables, shapes and page margins. A reusable opt-in value contract establishes
+the data/render boundary without turning `render-unit` into a complete floating
+text-box object.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-data.md`
+- `blockcraft-adapter.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `BlockSurfaceProps`, `BlockSurfacePadding`, `BlockSurfaceImageFit`,
+  `ResolvedBlockSurface` and `ResolvedBlockSurfaceImage` are exported from the framework.
+- `normalizeBlockSurfaceProps()`, `resolveBlockSurface()` and
+  `blockSurfaceImageFitToObjectFit()` provide one bounded projection contract.
+- `RenderUnitBlockProps` extends `BlockSurfaceProps`, and
+  `RenderUnitBlockSchema.createSnapshot(meta?, props?)` accepts the new fields.
+- `--bc-render-unit-padding-top/right/bottom/left` expose the resolved content
+  insets to live and Snapshot Viewer themes.
+
+### Migration Recipe
+
+No existing document migration is required. Hosts can opt a content region in:
+
+```typescript
+const region = RenderUnitBlockSchema.createSnapshot(
+  {},
+  {
+    p: [16, 24],
+    bgi: "https://cdn.example.com/paper.png",
+    bgs: "cover",
+  },
+);
+
+doc.crud.updateBlockProps(regionId, { p: [16, 32] });
+doc.crud.updateBlockProps(regionId, { bgi: null });
+```
+
+### Behavior Changes
+
+- Padding is clamped to `0..1000` layout pixels; image positions to `0..100`
+  percent and opacity to `0..1`. Missing image options resolve to
+  `cover / 50% 50% / 1`.
+- Persisted fields use compact CSS-style keys: `p` and
+  `bgi/bgs/bgx/bgy/bgo`; the HTML envelope mirrors those names as
+  `data-bc-*` attributes.
+- `javascript:` and `vbscript:` image sources are rejected. Raw CSS background
+  strings are never persisted or interpreted.
+- HTML uses a surface-preserving `<section data-bc-block="render-unit">` envelope.
+  Standard Markdown remains intentionally presentation-lossy and keeps only the
+  region's readable child content.
+- This additive surface contract does not add size, rotation, placement,
+  resizing or insertion UI; those remain work for a dedicated text-box object.
+
+## Unreleased — 2026-08-13 — add content-region background and border colors
+
+**Severity**: minor
+
+**What changed**: the bundled `render-unit` model now accepts optional
+`backColor` / `borderColor` props and projects them consistently in the live
+editor and Snapshot Viewer. The existing zero-config `CalloutToolbarPlugin`
+also recognizes `render-unit`, reusing one container appearance overlay instead
+of adding another stateful Plugin. The bundled region Schema now uses
+`bc_icon bc_erjidaohang_caogaoxiang`.
+
+**Why**: template content regions need the same persisted surface styling as
+highlights while keeping one overlay lifecycle, one readonly boundary and one
+Yjs mutation path.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-plugins-ref.md`
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `RenderUnitBlockModel.props` includes optional `backColor` and `borderColor`.
+- Region themes can consume `--bc-render-unit-background-color` and
+  `--bc-render-unit-border-color` from both live and snapshot surfaces.
+
+### Behavior Changes
+
+- A text selection in a direct editable `render-unit` child opens the shared
+  container toolbar with background and border palettes only.
+- Selecting an empty `render-unit` as a whole also opens the toolbar.
+- Region colors style only the container shell and never cascade model writes
+  into its children. Readonly and stale-block checks remain fail-closed.
+
+## Unreleased — 2026-08-13 — apply BlockController colors to multi-block selections
+
+**Severity**: minor
+
+**What changed**: `BlockControllerPlugin` now keeps its built-in **颜色** menu
+for a cross-block selection whenever at least one covered block is an eligible,
+writable editable flow block. Picking a background or border color updates that
+stable-ID subset in one Yjs transaction, including virtualized middle blocks;
+other selected block types and protected blocks remain untouched.
+
+**Why**: Block appearance is a block-level formatting command, so paragraph
+ranges should not require repeating the same color choice one block at a time.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-plugins-block.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Mixed initial colors render with no active swatch until the user chooses one.
+- A mixed range exposes the menu as long as it contains a writable editable
+  target. Non-editable and already-protected selected blocks are skipped.
+- If the selection changes, a target disappears, or a target becomes protected
+  while the picker is open, the color action fails closed without a model write.
+
+## Unreleased — 2026-08-13 — add colon Emoji type-ahead
+
+**Severity**: minor
+
+**What changed**: `BlockTransformerPlugin` now opens a searchless CSES
+EmojiPicker when a valid half-width `:` is typed in rich text. Characters after
+the colon remain in Y.Text and drive the picker's public `csQuery`; selection
+replaces the complete `:query` range through one model delta operation. All
+built-in BlockTransformer and Callout EmojiPicker surfaces explicitly use the
+`zh-CN` locale.
+
+**Why**: Inline Emoji insertion should stay in the writing flow instead of
+requiring the slash menu and a second search field.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-block.md`
+- `blockcraft-plugins-toolbar.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- `:` opens Emoji type-ahead at any position in rich editable text; the existing
+  `/` / `、` slash-menu trigger path is unchanged.
+- Deleting/replacing the colon, entering whitespace, leaving the query range,
+  destroying the block, or pressing `Escape` closes the picker.
+- With the `:` picker open, the first `ArrowUp` / `ArrowDown` / `ArrowLeft` /
+  `ArrowRight` enters the Emoji grid without moving the document caret. The
+  picker then owns four-direction navigation and `Enter` through a virtual
+  active option while real focus stays in the editor, so further text and IME
+  input can continue refining `:query`. `Tab` / `Shift+Tab` cycle categories,
+  and `Escape` closes the picker. BlockTransformer owns these key bindings and
+  delegates semantic movement/selection to the CSES picker methods.
+- `/emoji` remains available and continues to show EmojiPicker's search input.
+- Built-in EmojiPicker labels, search terms and category text use Chinese.
+
+## Unreleased — 2026-08-13 — align the CSES UI peer to 4.26.1
+
+**Severity**: patch
+
+**What changed**: BlockCraft now installs and requires the exact
+`@cses/ui@4.26.1` peer for its shared buttons, menus, tooltips, EmojiPicker and
+IconPicker surfaces.
+
+**Why**: Keep BlockCraft's development dependency, published peer contract and
+host installation guidance on the latest compatible CSES UI release instead
+of resolving different component-library versions in development and consumer
+applications.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-toolbar.md`
+- `MIGRATIONS.md`
+
+### Migration Recipe
+
+```bash
+pnpm add @cses/ui@4.26.1
+```
+
+## Unreleased — 2026-08-13 — show selection state for inline Embeds
+
+**Severity**: patch
+
+**What changed**: Every mounted inline Embed, including host-registered
+converters, now receives the ephemeral `.bc-inline-embed--selected` class on
+its outer `c-element` while its full one-length model range is covered by the
+local selection. The base theme paints a selection background on that atomic
+wrapper, without a border, outline or ring.
+
+**Why**: Embed views live inside non-editable atomic content, so browsers do not
+paint their ordinary native `::selection` feedback. The model selection was
+already correct, but a Shift+Arrow range that first covered only an Embed could
+appear to have disappeared.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-embed.md`
+- `blockcraft-selection.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Selecting a range that fully covers any inline Embed now paints the wrapper's
+  selection state; a collapsed caret before or after it does not.
+- The state is presentation-only and does not change Delta content,
+  converter-owned DOM, copy/cut semantics or host converter overrides.
+
+## Unreleased — 2026-08-13 — restore editor-owned input styling
+
+**Severity**: patch
+
+**What changed**: Built-in editor overlays no longer attach `CsInputDirective`
+to their native inputs and textareas. Formula source, link editing,
+find/replace, comments, media/embed URLs, code-block naming, attachment renaming
+and divider label controls once again use their existing component-scoped
+BlockCraft styles. CSES UI buttons and the other generic controls are unchanged.
+
+**Why**: The generic input directive overrides the compact geometry and focus
+presentation owned by these editor-specific surfaces. In particular, the
+formula textarea lost its original borderless editor appearance.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-toolbar.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Built-in editor input surfaces render with their previous local styles and
+  local `.error` / wrapper validation classes instead of CSES input styling.
+- This is an internal presentation rollback; host APIs and model data are
+  unchanged.
+
+## Unreleased — 2026-08-13 — unify block and inline slash commands
+
+**Severity**: minor
+
+**What changed**: `BlockTransformerPlugin` now opens one grouped insertion menu
+from an empty paragraph and can insert both blocks and inline content. The
+built-in inline catalogue contains formula, mention, Emoji, CSES Icon, link and
+inline image. Hosts can append commands through the new options constructor,
+register or unregister commands at runtime, and `MentionPlugin.openAt()` exposes
+the existing mention flow to model-owned command surfaces. Menu search now
+supports Chinese pinyin initials, and its keyboard navigation uses one owned
+event route with a WebView fallback.
+
+**Why**: Document authors need one searchable Notion/Yuque-style command surface
+for both block and inline insertion, while keeping `/` unambiguous inside normal
+text. The empty-paragraph boundary preserves ordinary slash typing and still
+reuses the editor's inline embed and shared CSES picker systems without
+bypassing Yjs.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-block.md`
+- `blockcraft-plugins-inline.md`
+- `blockcraft-plugins-ref.md`
+- `blockcraft-block.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `BlockTransformerPluginOptions` with optional `transformList` and `commands`.
+- `SlashCommandItem`, `SlashCommandContext`, `SlashCommandGroup`, and grouped
+  menu metadata. `SlashCommandContext.replace()` is a collaboration-safe,
+  single-use replacement for `/query` and can resolve after an async picker.
+  Host commands override a built-in command when their stable IDs match.
+- `BlockTransformerPlugin.registerCommand()`, `registerCommands()`, and
+  `unregisterCommand()` allow independently loaded host extensions to contribute
+  and clean up slash commands at runtime. Stable-ID registrations are stacked,
+  so disposing the latest override reveals the previous one.
+- `IBlockTransformConfig` adds optional `keywords`, `searchAlias`, and
+  `markdownHint`; `description` is now an optional menu-local override of Schema
+  `metadata.description`. `SlashCommandItem` adds `searchAlias` and
+  `shortcutHint` presentation fields.
+- `MentionPlugin.openAt(block, index, replaceLength?)`.
+- Built-in inline commands for formula, mention, Emoji, CSES Icon, link and
+  inline image. Emoji/Icon selection uses the CSES UI peer components.
+
+### Migration Recipe
+
+The existing array constructor remains source-compatible. Use the options form
+only when adding commands:
+
+```typescript
+// before: still valid
+new BlockTransformerPlugin(blockTransforms);
+
+// after: additive host command
+const transformer = new BlockTransformerPlugin({
+  transformList: blockTransforms,
+  commands: [
+    {
+      id: "inline:date",
+      label: "日期",
+      group: "inline",
+      run: async (context) => {
+        const date = await chooseDate();
+        if (date)
+          context.replace([
+            { insert: date.label, attributes: { "d:date": date.iso } },
+          ]);
+      },
+    },
+  ],
+});
+
+// Runtime extension; call the returned disposer when the feature unloads.
+const dispose = transformer.registerCommand({
+  id: "host:approval",
+  label: "快捷审批",
+  keywords: ["workflow"],
+  run: (context) => context.replace([{ insert: "审批" }]),
+});
+```
+
+### Behavior Changes
+
+- `/` and `、` open the menu only as the first character of an empty paragraph.
+  The complete `/query` must remain in that paragraph; other block flavours,
+  suffix text, stale and effectively readonly blocks remain excluded. Query
+  filtering reads the complete Y.Text value and tolerates the canonical
+  selection offset being one projection tick behind the text mutation.
+- Choosing a block replaces the slash-command paragraph. Inline commands
+  replace the same model-owned `/query` range.
+- The searchable menu remains open with an empty result list when no command
+  matches, so users can correct the query without retriggering it.
+- Search covers labels, IDs, flavours, explicit aliases and host `keywords`, and
+  automatically indexes Chinese label/keyword initials (`/gl` matches `高亮块`).
+- Block introductions now resolve from `IBlockTransformConfig.description`, then
+  Schema `metadata.description`, without mutating the Schema. Markdown syntax,
+  keyboard shortcuts, and quick-search aliases render separately: Markdown has
+  its own second row in the right-hand hint area, below the keyboard shortcut
+  and quick-search alias. Every bundled Block Schema now provides a plain introduction.
+  Introduction and group-label text no longer produce search matches.
+- `ArrowUp` / `ArrowDown`, `Enter`, and `Escape` are owned by one menu keyboard
+  route, with the editor event pipeline retained only as a WebView fallback; this
+  avoids duplicate jumps while keeping the caret anchored in the source block.
+- Slash-opened EmojiPicker and IconPicker share an editor-owned picker session:
+  four-direction keys navigate the grid, Tab / Shift+Tab cycle categories,
+  Enter selects, and Escape closes. The capture route also works from each
+  picker's search input while leaving text, Backspace, and IME input untouched.
+- Async inserts resolve a Yjs relative range and abort safely if the target was
+  deleted or protected. All writes continue through Block/DocChain paths.
+
+## Unreleased — 2026-08-13 — enrich divider presentation styles
+
+**Severity**: minor
+
+**What changed**: The divider line catalog grows from four to ten styles with
+`fade`, `wave`, `zigzag`, `sketch`, `triple-dot` and `diamond`. The colorful
+edge catalog grows from two to six SVG patterns, monochrome lines gain an
+independent color palette, and text labels gain font size, emphasis and letter
+spacing controls. The former combined `size` selector is split into independent
+length, thickness and opacity controls. The style popup keeps a compact
+two-column line grid and theme-compatible decorative artwork, adopts CSES UI
+controls, and uses the ColorPicker's built-in palette for line and label colors.
+
+**Why**: Documents need both restrained editorial separators and more expressive
+decorative accents. Keeping every pattern in the existing divider block avoids
+new block types, extra DOM structures and duplicated rendering rules.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-plugins-toolbar.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- Six additive `DividerBlockModel.props.style` values: `fade`, `wave`,
+  `zigzag`, `sketch`, `triple-dot` and `diamond`.
+- A two-column line-style selector with named previews for all ten values.
+- Text-only top tabs plus CSES Segmented, Slider, ColorPicker, Button and Input
+  controls; the palette exposes only CSES built-in theme and standard colors,
+  and popup pointer events do not clear the active divider selection.
+- Theme-colored SVG masks for wave, zigzag and sketch, shared by the popup,
+  plain dividers and text-label segments.
+- Four additive colorful edge values: `edge-vine`, `edge-daisy`, `edge-stars`
+  and `edge-berries`; the existing `edge-grass` and `edge-flower` remain valid.
+- `DividerBlockModel.props.fontSize?: number`, with 14px as the default,
+  10–32px rendering bounds and 10 / 12 / 14 / 16 / 18 / 20 / 24 / 28 / 32px toolbar presets.
+- `DividerBlockModel.props.lineColor?: string`, applied to monochrome line
+  styles and the two line segments around a label, but not to tape or colorful
+  SVG edge artwork.
+- `DividerBlockModel.props.fontWeight?: 'normal' | 'bold'` and
+  `fontStyle?: 'normal' | 'italic'` for label emphasis.
+- `DividerBlockModel.props.letterSpacing?: number`, defaulting to 0, clamped to
+  0–8px and exposed through 0 / 0.5 / 1 / 1.5 / 2 / 3 / 4 / 6 / 8px presets.
+- Exported `DividerLength = 'short' | 'medium' | 'long' | 'full'` and
+  `DividerBlockModel.props.length?: DividerLength`, rendered at 25% / 50% / 75%
+  / 100% width.
+- Exported `DividerThickness = 'thin' | 'regular' | 'thick'` and
+  `DividerBlockModel.props.thickness?: DividerThickness`, applied consistently
+  to monochrome lines, tape height and colorful SVG artwork size.
+- `DividerBlockModel.props.opacity?: number`, clamped to 0.1–1 and applied to
+  the whole divider, including tape, artwork and optional label.
+
+### Deprecations
+
+- `DividerBlockModel.props.size` is deprecated with no removal date. It remains
+  readable for old snapshots; new toolbar writes use `length` and `thickness`.
+
+### Migration Recipe
+
+Existing snapshots need no data migration. Downstream exhaustive style lists
+may optionally add the ten new line/edge values. New code should replace one
+combined size write with explicit appearance props:
+
+```typescript
+// before: still read for compatibility
+divider.updateProps({ size: "large" });
+
+// after
+divider.updateProps({ length: "full", thickness: "thick", opacity: 0.8 });
+```
+
+Legacy sizes normalize as `thin` → short/thin, `small` → medium/thin,
+`medium` (and omitted) → long/regular, and `large` → full/thick. Omitted
+typography, `lineColor` and `opacity` retain the prior theme defaults; unknown
+styles continue to use the existing divider fallback behavior.
+
+### Behavior Changes
+
+- A decorative line selected on a labeled divider renders the same pattern on
+  both sides of the label.
+- The two original colorful edge styles retain their identifiers and data but
+  render with calmer, theme-compatible botanical SVG artwork; four additional
+  patterns extend the same plain and labeled-divider rendering path.
+- Label font size affects both tape labels and labels between line/edge
+  segments without changing the divider's void-block model.
+- Label weight, style and letter spacing follow the same plain/tape/edge render
+  path. Line color is independent from label `color` and intentionally
+  remains dormant when a colorful edge or tape style is selected.
+- Length now has style-independent 25% / 50% / 75% / 100% geometry, while
+  thickness controls visual weight without changing width. This intentionally
+  normalizes the slightly different widths that legacy `size` used across line,
+  tape and edge styles.
+- Opacity affects the complete divider presentation and is capped at 10% to
+  avoid an invisible selected void block.
+
+## Unreleased — 2026-08-13 — expand Word-like shapes and WordArt catalogs
+
+**Severity**: minor
+
+**What changed**: The built-in Shape catalog grows from 12 to 103 types and is
+organized into eight Word-like categories in the fixed insertion toolbar.
+WordArt grows from 5 to 16 visual presets, from 5 to 10 safe font stacks, and
+from 5 to 15 allowlisted whole-text effects; selected WordArt now exposes
+font-family selection directly. Fixed-toolbar Shape and WordArt insertion now
+uses a Word-like one-shot drawing gesture instead of creating the object as soon
+as a catalog item is picked.
+
+**Why**: Shape and WordArt blocks already owned safe geometry, collaborative
+text, placement, resize/rotation and lossless HTML, but the small flat catalogs
+made them unsuitable for normal document-authoring workflows. The expanded
+catalog stays model-light by keeping category and SVG data outside Yjs.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-adapter.md`
+- `blockcraft-plugins-formatting.md`
+- `blockcraft-plugins-toolbar.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `SHAPE_CATEGORIES`, `ShapeCategoryId` and `ShapeCategoryDefinition`.
+- 91 additive `ShapeKind` values across rectangles, basic shapes, lines,
+  arrows, equation shapes, flowchart, stars/banners and callouts.
+- Optional `ShapeDefinition.detailPath`, `fillable`, `supportsText` and
+  `fillRule` capabilities. Existing custom reads of `type`, `label`, `path` and
+  `textInsets` remain valid.
+- 11 additive `WordArtPresetId` values, 5 additive `WordArtFontId` values and
+  10 additive `WordArtEffect` values.
+- A font-family menu on the connected WordArt toolbar.
+
+### Migration Recipe
+
+Downstream code with exhaustive switches over the exported unions should add a
+fallback or handle the new catalog values:
+
+```typescript
+// before
+function shapeGroup(kind: ShapeKind) {
+  if (kind === "rectangle") return "basic";
+  if (kind === "ellipse") return "basic";
+  return "legacy-other";
+}
+
+// after: prefer the framework-owned category projection
+const category = SHAPE_CATEGORIES.find((group) =>
+  group.definitions.some((definition) => definition.type === kind),
+);
+```
+
+Existing snapshots and HTML need no migration. `shapeType` and WordArt props
+keep the same fields; new types pass through the existing normalizers and
+`data-shape-*` / `data-word-art-*` envelopes.
+
+### Behavior Changes
+
+- The fixed-toolbar shape picker is categorized, bounded and scrollable instead
+  of a flat four-column 12-item panel. Cells are compact icon-only controls
+  whose names remain available through CSES Tooltip and `aria-label`.
+- The 16-card WordArt preset panel uses a compact six-column visual grid;
+  preset names remain available through Tooltip and accessible labels.
+- Choosing a fixed-toolbar Shape or WordArt item only arms the drawing tool.
+  The two entries are available without an editor focus or active Selection and
+  are disabled only for readonly documents; Schema absence still hides them.
+  Primary-pointer drag previews the final bounds and writes position plus size
+  once on release; click/release uses default dimensions. Escape,
+  pointercancel, blur, scrolling, readonly changes and teardown cancel without
+  a Yjs mutation.
+- The eight line/connector appearances paint no fill and do not expose a
+  `shape-text` editing surface. They provide Word-like visual geometry only;
+  automatic endpoint attachment remains a separate future connector domain.
+- Shape geometry with internal construction strokes paints those strokes from
+  `detailPath` without allowing SVG's implicit fill closure to distort them.
+- WordArt effects remain allowlisted transforms on the single real CSS text
+  surface. This expansion does not introduce raw CSS, mirrored SVG glyphs or a
+  separate curved-text renderer.
+
+## Unreleased — 2026-08-12 — adopt the CSES EmojiPicker
+
+**Severity**: major
+
+**What changed**: BlockCraft now requires the exact `@cses/ui@4.25.0` peer.
+The Callout prefix picker renders `CsEmojiPickerComponent` in BlockCraft's
+connected overlay and consumes `csEmojiSelect`. The exported BlockCraft
+`EmojiPickerComponent` and its bundled static emoji catalogue were removed.
+
+**Why**: Emoji search, categories, recent items, keyboard behavior and
+accessibility now have one owner in the shared CSES component library instead
+of a second, smaller implementation inside BlockCraft.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-toolbar.md`
+- `MIGRATIONS.md`
+
+### Breaking Changes
+
+- `EmojiPickerComponent` is no longer exported from `@ccc/blockcraft`.
+- Hosts must install the exact `@cses/ui@4.25.0` peer.
+
+### Migration Recipe
+
+```typescript
+// before
+import { EmojiPickerComponent } from "@ccc/blockcraft";
+componentRef.instance.emojiSelected.subscribe((emoji) => updatePrefix(emoji));
+
+// after
+import { CsEmojiPickerComponent } from "@cses/ui";
+componentRef.instance.csEmojiSelect.subscribe(({ emoji }) =>
+  updatePrefix(emoji.native),
+);
+```
+
+When a host already owns positioning and dismissal, render the CSES picker in
+its default `panel` mode. Use `csMode="popup"` only when the CSES component
+should also own its trigger and Dropdown Overlay.
+
+### Behavior Changes
+
+- Callout selection now closes the picker after updating the prefix.
+- The picker gains the CSES search, category, recent-use, virtual rendering and
+  keyboard-navigation behavior while preserving external editor focus during
+  pointer selection.
+
+## v0.5.0 — 2026-08-12 — common block background and border colors
+
+**Severity**: minor
+
+**What changed**: `IBlockProps` now defines common `backColor` and
+`borderColor` overrides whose common projection is limited to editable blocks.
+`BaseBlockComponent`, the
+base theme and Snapshot Viewer share one surface projection. The built-in
+`BlockControllerPlugin` adds an appearance color picker for its current single
+flow block while keeping Callout's existing floating toolbar.
+
+**Why**: Background and border styling previously belonged only to individual
+blocks such as Callout and table cells. A common Block-domain contract lets
+built-in and custom blocks persist, collaborate, undo and render the same
+appearance without per-component special cases.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-plugins-block.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `IBlockProps.backColor?: string | null`
+- `IBlockProps.borderColor?: string | null`
+- `--bc-block-background-color` and `--bc-block-border-color`
+- `data-bc-block-background` and `data-bc-block-border`
+- `BlockMenuDropdownItem.menuWidth?: number` for a second-level panel whose
+  content needs a width different from the parent menu.
+- A zero-config **颜色** second-level menu in `BlockControllerPlugin` for
+  background and border colors.
+
+### Migration Recipe
+
+Custom editable blocks can remove local host bindings and use the common props:
+
+```typescript
+// before
+host: {
+  '[style.background-color]': 'props.backColor',
+  '[style.border-color]': 'props.borderColor',
+}
+
+// after
+// Extend BaseBlockComponent and persist backColor/borderColor through
+// updateProps(); the base host/theme projects both automatically.
+```
+
+Use `null` to delete an override. Existing concrete Callout values remain valid
+through Callout's block-specific compatibility surface. Non-editable common
+values remain snapshot-compatible but are ignored by the common projection;
+`transparent` remains read-compatible and renders as no override.
+
+### Behavior Changes
+
+- Concrete common fills render at the existing
+  `--bc-solid-block-background-opacity` value; concrete `borderColor` values
+  render as a 1px outline without changing block geometry or adding common
+  padding. Every editable block host receives a 4px radius. Block-specific
+  focused/selected highlights retain priority over the persisted outline.
+  Blockquote maps `borderColor` to its 1px left accent bar and does not draw the
+  common rectangular outline.
+- The menu edits only its active editable block, is hidden for
+  protected/non-editable/internal/multi selections and does not reclaim
+  absolute objects from their own toolbars. Non-editable snapshots do not
+  receive the common background/outline projection; block-specific legacy
+  surfaces such as Callout remain compatible.
+- HTML/Markdown adapters keep their existing lossy behavior; snapshots,
+  collaboration, internal copy, Snapshot Viewer and print/PDF retain the props.
+
+## v0.4.0 — 2026-08-12 — built-in icon embed and translucent block surfaces
+
+**Severity**: minor
+
+**What changed**: BlockCraft now owns the document-library `icon` inline embed.
+Every `BlockCraftDoc` installs the converter by default alongside the inline
+image converter, while an explicitly configured same-key converter continues
+to override the built-in implementation. Code-block body/header surfaces and
+callout background fills now retain 82% of their solid color and let the
+underlying document background color or image show through. The opacity is
+controlled by the public `--bc-solid-block-background-opacity` theme variable.
+The existing icon Delta shape and persisted callout colors remain unchanged.
+
+**Why**: Icon embed semantics belong to BlockCraft's Inline bounded context.
+Keeping the converter in each document host duplicated framework behavior and
+made existing icon deltas depend on host-specific registration. Fully opaque
+content blocks also visually disconnected from document pages that use a custom
+background color or image.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-embed.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `INLINE_ICON_EMBED_KEY` exports the stable `icon` Delta key.
+- `inlineIconEmbedConverter` exports the built-in converter for inspection or
+  explicit host overrides.
+- `{insert: {icon: 'bc_icon bc_document'}}` now renders in every
+  `BlockCraftDoc` without a `DocConfig.embeds` entry.
+- `--bc-solid-block-background-opacity` defaults to `82%` and can be overridden
+  by a host theme.
+- Replacement callout components bind `props.backColor` through
+  `--bc-callout-background-color` so the shared theme owns alpha composition.
+
+### Migration Recipe
+
+Document hosts can remove their equivalent local converter and registration
+after upgrading to the release that contains this change:
+
+```typescript
+// before
+new BlockCraftDoc({
+  // ...
+  embeds: [["icon", localIconEmbedConverter]],
+});
+
+// after
+new BlockCraftDoc({
+  // ...
+  // icon is built in; keep only host-specific embeds
+});
+```
+
+Replacement Callout components should hand the persisted color to the shared
+theme instead of painting an opaque inline background:
+
+```typescript
+// before
+host: {'[style.background-color]': 'props.backColor'}
+
+// after
+host: {'[style.--bc-callout-background-color]': 'props.backColor'}
+```
+
+### Behavior Changes
+
+- Unknown `icon` deltas no longer fall back to an unregistered-embed path.
+- The converter preserves the full class string and mirrors it to `data-icon`,
+  matching existing document-library content.
+- Code-block header and body paint non-overlapping translucent surfaces so the
+  effective opacity remains predictable.
+- Callout transparency is a render projection; `props.backColor`, text, syntax
+  colors, borders, selection feedback, overlays and table-cell fills are
+  unchanged.
+
+## v0.3.2 — 2026-08-12
+
+**Severity**: patch
+
+**What changed**: The built-in Mermaid block now shows a fullscreen button in
+its header. Text, graph and side-by-side modes fill the viewport while keeping
+the existing `mermaid-textarea` component and rendered graph in their
+Angular-owned DOM tree. Table and Mermaid now share the same internal
+fullscreen owner, so only one block can be fullscreen at a time.
+
+**Why**: Mermaid source and preview need the same focused workspace already
+available to large tables, without moving the editable child out of the editor
+tree or bypassing InputTransformer, Y.Text, IME, collaboration and Undo/Redo.
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+- `blockcraft-toolbar.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- No new exported API. The existing table controller was generalized as an
+  internal `BlockFullscreenController`; the table-local import name remains as
+  a compatibility alias for package-internal code and tests.
+- Mermaid fullscreen holds a targeted virtualization view lease, reuses the
+  existing fullscreen isolation/body-lock lifecycle, and keeps readonly source
+  protection unchanged.
+- `DocOverlayService.createConnectedOverlay({clampTo})` keeps its existing
+  option shape, but an explicit clamp element is now the authoritative visible
+  boundary instead of being intersected with `doc.scrollContainer`.
+
+### Behavior Changes
+
+- The Mermaid header always exposes fullscreen/exit controls; Escape exits
+  unless an IME composition is active.
+- `text`, `graph` and `default` modes receive a viewport-sized scrollable
+  workspace. Fullscreen is local view state and never writes Yjs or Undo.
+- Entering Mermaid fullscreen exits a fullscreen table or Mermaid block, and
+  vice versa.
+- Mermaid retains its existing graph zoom controls. Fullscreen consumes
+  Ctrl/Cmd + wheel without changing graph scale, so the host document zoom
+  shortcut cannot run underneath it.
+- Fullscreen graph clicks no longer open the separate image-preview viewer;
+  preview clicks outside fullscreen are unchanged.
+- Fullscreen locks the resolved document scroller plus every scrollable
+  ancestor on the active block's DOM ownership path. Safari therefore cannot
+  paint a host-app outer-container scrollbar above the fixed Mermaid surface;
+  all inline overflow declarations and scroll offsets are restored on exit.
+- Mermaid header menus anchor to their actual button and clamp to the fullscreen
+  host, so a locked normal-flow document scroller cannot push them back into
+  page coordinates.
+- No host migration or package version change is required for this source
+  change; the release version remains a separate maintainer decision.
+
+### v0.3.0-alpha.32 - 2026-08-10 (patch) — paginate oversized wrapped paragraphs
+
+**What changed**: An oversized editable paragraph that contains a wrapped
+image, Shape or WordArt now continues across pages at safe visual-line
+boundaries outside the object's exclusion band. The wrapped object plus its
+single-side shell/gap or dual-side fragment group remains indivisible. Live,
+sparse and readonly print measurement use the same exclusion-band rule.
+
+**Why**: Wrapped InlineRuntime owners previously returned no line anchors at
+all, forcing the entire oversized paragraph into an atomic overflow fallback.
+Float and pagination projections now share one reversible DOM owner, and
+pointer/IME/object-layout leases defer pagination until the float plan is
+writable instead of exposing a partially rebuilt Blot tree.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-inline.md`
+- `blockcraft-plugins-util.md`
+- `blockcraft-perf.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Wrapped objects are never cut through their painted exclusion band, but text
+  before and after that band can now paginate when the containing paragraph is
+  taller than one full content page.
+- No public API, Yjs data, Undo history or host migration is required.
+
+### v0.3.0-alpha.32 - 2026-08-10 (major) — adopt `@cses/ui@4.23.0` and stabilize virtualized scrolling
+
+**What changed**: BlockCraft now declares the exact `@cses/ui@4.23.0` peer and
+uses its public Button, Input, Tooltip, Dropdown/Menu, Empty and Message APIs for
+generic editor chrome. The old `ng-zorro-antd` peer and runtime imports are
+removed. BlockCraft theme variables, existing `bc_icon` and Angular Material
+SVG/brand-icon paths are unchanged. Root virtualization now also preserves
+completed element measurements across retained detach/reattach cycles, skips
+stable-window DOM reconciliation, and treats layout-stride drift of at most
+`0.5px` as ResizeObserver noise. Sparse pagination verifies a recreated host
+only within the mounted window and avoids full-document pagination when its
+canonical geometry is unchanged.
+
+**Why**: Standard controls need one CSES-owned implementation instead of a mix
+of native controls and ng-zorro. Editor-specific geometry controls remain
+BlockCraft-owned because generic components do not cover their interaction
+contracts. Re-observing retained views previously replayed equivalent geometry
+through pagination and scroll-anchor correction, so a stable document could
+still do whole-document work or visibly move its scrollbar while scrolling.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-perf.md`
+- `blockcraft-toolbar.md`
+- `MIGRATIONS.md`
+
+### Breaking Changes
+
+- Hosts must install the exact `@cses/ui@4.23.0` peer.
+- Hosts must load `@cses/ui/styles/cses-ui.scss` so the replaced CSES controls
+  receive their required global styles.
+- `ng-zorro-antd` is no longer a BlockCraft peer and should be removed when the
+  host does not use it independently.
+
+### Migration Recipe
+
+```jsonc
+// before
+{
+  "dependencies": {
+    "@ccc/blockcraft": "0.3.0-alpha.31",
+    "ng-zorro-antd": "^20.0.0"
+  }
+}
+
+// after
+{
+  "dependencies": {
+    "@ccc/blockcraft": "0.3.0-alpha.32",
+    "@cses/ui": "4.23.0"
+  }
+}
+```
+
+```scss
+// global styles, before BlockCraft entries
+@use "@cses/ui/styles/cses-ui";
+@use "@ccc/blockcraft/themes/base";
+@use "@ccc/blockcraft/themes/light";
+```
+
+### Behavior Changes
+
+- Built-in generic buttons, text inputs, tooltips, dropdown menus, empty states
+  and messages follow CSES component behavior, focus styles and accessibility.
+- BlockCraft light/dark themes, inline color matrix, drag/resize/table geometry
+  controls and all existing icon paths keep their current ownership.
+- `HeightObserver` does not publish a repeated layout stride when the same
+  `Element` is re-observed and differs by no more than `0.5px`; a new element
+  or a larger change still publishes normally.
+- Returning to a warm sparse-pagination window no longer measures, paginates,
+  republishes page DOM, or writes `scrollTop`. A recreated host is measured once
+  for correctness, but equal geometry stops before full pagination.
+- Content, structure, navigation, projection, measure-context, and genuine
+  geometry changes still invalidate the stable-window fast path.
+
+### v0.3.0-alpha.31 - 2026-08-10 (patch) — keep short text blocks whole and flow oversized text by visual line
+
+**What changed**: Built-in heading paragraphs no longer keep the following
+Block with them during pagination. Every breakable top-level text Block whose
+natural stride is at most one regular content page now stays whole and moves to
+the next page when necessary. A text Block is split only when it is itself
+taller than a page; live layout then pairs safe visual-line pixel cuts with
+Y.Text offsets and applies reversible zero-model-length continuation gaps.
+Sparse projection and stable printing consume the same fragment geometry. If a
+mounted Runtime cannot materialize every continuation, the live view falls back
+atomically and marks that snapshot as non-reusable so readonly export measures
+its own complete visual-line plan instead of clipping the oversized tail. IME
+composition-end recovery now waits until the model-owned commit has settled, so
+the visual-line projection is restored without requiring a later scroll event.
+
+**Why**: The engine could previously split a short Block merely because one of
+its safe cuts fitted the current remainder, while heading policy could move an
+otherwise fitting title together with an entire following list. Live ordinary
+text also supplied no line anchors, so a paragraph taller than one page
+overflowed instead of continuing. This restores the documented oversized-only
+split contract and keeps screen and PDF pagination aligned.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-plugins-util.md`
+- `blockcraft-inline.md`
+- `blockcraft-perf.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Heading styling alone no longer keeps the next Block on the same page.
+- A breakable text Block with `height <= contentHeight` is never fragmented,
+  even when it carries safe split offsets; it moves whole to the next page.
+- Standard oversized editable text uses reversible visual-line continuation in
+  live pagination without changing Yjs, Snapshot, collaboration or Undo data.
+- IME edits inside a continued paragraph restore live pagination after the
+  composition commit without waiting for scroll or ResizeObserver activity.
+- Wrapped inline-float owners and a single visual line taller than a page remain
+  atomic fallbacks until they have a separate safe visual policy.
+
+### v0.3.0-alpha.30 - 2026-08-10 (patch) — preserve paginated table fullscreen editing
+
+**What changed**: Table fullscreen now isolates only sibling branches along the
+active table's DOM ownership path instead of hiding an application ancestor. The
+controller uses the table's `ownerDocument` realm, refreshes isolation markers
+after pagination or virtualization reparents the block, suspends table-local page
+decorations while fullscreen, and replays the latest projection on exit. A
+paginated root also drops its own centering transform for the fullscreen lifetime
+so the fixed table is viewport-relative.
+
+**Why**: Chromium can emit native `input` without `beforeinput` when a
+contenteditable editing host has a hidden ancestor. That bypasses BlockCraft's
+input transformer and Y.Text update path. Separately, the pagination root's
+centering transform creates a containing block for `position: fixed`, while page
+spacers, gaps and masks are view-only artifacts that should not appear inside the
+fullscreen table.
+
+**Affected ai-skills files**:
+
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Fullscreen themes must preserve the active path marked by
+  `.bc-table-fullscreen-isolation-container` and
+  `.bc-table-fullscreen-isolation-branch`; only sibling branches are hidden.
+- Entering fullscreen temporarily suspends table pagination decorations and the
+  BlockCraft-owned paginated-root transform. Both are restored from the latest
+  projection when fullscreen exits.
+- Existing `.table-block.is-fullscreen`, `body.bc-table-fullscreen-lock` and CDK
+  overlay behavior remain compatible.
+
+### v0.3.0-alpha.29 - 2026-08-09 (patch) — bound final print stability observation
+
+**What changed**: The final fixed-page print surface still requires the complete
+DOM subtree to stop mutating, but its `ResizeObserver` now watches only physical
+page boundaries, direct page layers and top-level content slots/fragments. It no
+longer installs one resize target for every deeply cloned `data-block-id`.
+Timeout diagnostics now report the final change target plus mutation, resize and
+observed-boundary counts.
+
+**Why**: An oversized cell-flow table can be cloned across many pages and contain
+hundreds of nested cell/text blocks per fragment. Observing every clone made the
+stability gate scale as `pages × nested blocks` and could exhaust the fixed wait
+budget even after the physical page boxes were stable. The active paginated root
+also produces its own synchronous clear/restore projection mutations while
+capturing table geometry, so host-managed readonly export copies should use one
+synchronous stable-layout capture rather than a second generic DOM-silence gate.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-util.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Final `.bc-print-root[data-bc-print-root="true"]` surfaces keep subtree mutation
+  stability, while resize stability is evaluated at page-geometry boundaries.
+  Changes that alter a whole block or fragment size are still observed.
+- A host that owns an already-active paginated readonly copy should finish its
+  business/resource preparation, then call `captureStableLayout()` exactly once
+  and capture the snapshot in the same task. It should not wait for generic DOM
+  silence on that active projection first.
+
+### v0.3.0-alpha.28 - 2026-08-09 (minor) — preserve stable block trailing spacing in paginated print
+
+**What changed**: `PaginationItem` now carries optional `trailingSpacing`, the
+block-end spacing already included in its measured `height`. Live pagination,
+sparse geometry, readonly fallback measurement and paginated printing preserve
+that value through the stable layout. Printing freezes it on each whole-block
+host before validation and page reparenting; table fragments continue to carry
+the same spacing only in their stable final fragment window.
+
+**Why**: the readonly print tree appends structural sentinels so non-terminal
+page blocks do not lose their gap when reparented. For a real document-tail block,
+that sentinel changes `:last-child` and can revive the default 10px margin after
+the stable layout captured a zero margin. Re-reading computed margin in the print
+tree therefore produced a false `24px` versus `34px` divergence after oversized
+tables and could move whole blocks. Stable spacing is now data, not a print-DOM
+side effect.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-util.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `PaginationItem.trailingSpacing?: number` — stable block-end spacing in layout
+  pixels, already included in `height`; custom stable-layout providers may set it
+  when their render tree can change `:last-child` during export.
+
+### Behavior Changes
+
+- Stable paginated print no longer derives a captured block's tail spacing from
+  the reparented readonly DOM. Legacy layouts without `trailingSpacing` retain the
+  previous computed-style fallback.
+
+### v0.3.0-alpha.27 - 2026-08-09 (minor) — structured pagination chrome content
+
+**What changed**: `PageChrome` now accepts optional serializable `content` for
+the left, center and right regions. Each region can contain image and text items,
+including muted text and page-number tokens. An optional `separator` renders the
+same divider box in live pagination and fixed PDF page surfaces.
+
+**Why**: Host applications need to compose brand, date and page-number content
+without converting a whole footer to a bitmap or maintaining separate live and
+print renderers.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `PageChrome.content` / `PageChromeContentSegments`
+- `PageChromeInlineContent` and serializable text/image content item types
+- `PageChrome.separator: 'top' | 'bottom'`
+
+### Migration Recipe
+
+Existing string segments remain valid. A structured brand region can be added
+incrementally:
+
+```typescript
+footer: {
+  content: {
+    left: {items: [
+      {kind: 'image', src: logo, height: 20, maxWidth: 28},
+      {kind: 'text', text: company},
+      {kind: 'text', text: appVersion, tone: 'muted'},
+    ]},
+  },
+  center: '{page}',
+  right: exportDate,
+  separator: 'top',
+}
+```
+
+### Unreleased - 2026-08-09 (patch) — constrain paginated media without changing block coordinates
+
+**What changed**: Paginated live and fixed-page print views no longer apply CSS
+`zoom` to an entire oversized block. Only flow-layout image/video media wrappers
+receive deterministic `max-width` and `max-height` constraints. Captions, block
+hosts and editor controls keep their normal font and coordinate system. Absolute
+image/video objects, shapes and all other atomic blocks never receive a media
+fit projection. Sparse pagination also stops inferring fit from flavour and
+`lockHeight`; only a stable full-DOM media measurement may publish `fitScale`.
+
+**Why**: Whole-block `zoom` changed the coordinate system inherited by absolute
+placement objects and was not reproduced identically by every browser/print
+host. It could therefore shift image and shape coordinates even when paper and
+content-box dimensions matched. Constraining the actual media surface keeps the
+page root and placement plane at 100% while still fitting oversized flow media.
+
+**Affected ai-skills files**:
+
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- `.bc-page-height-fitted` and `--bc-page-fit-scale` are no longer used for
+  rendering; stale copies are removed defensively when constructing print pages.
+- Flow image/video captions are not scaled. The available page content height
+  is reduced by their natural non-media stride before the wrapper limit is
+  calculated.
+- Shapes, bookmarks and absolute placement objects retain their persisted pixel
+  width, height, x and y; an oversized non-media atomic block follows its normal
+  cap/overflow policy instead of being silently zoomed.
+
+### Unreleased - 2026-08-08 (patch) — restore CSS-native WordArt rendering
+
+**What changed**: Editable, readonly, snapshot and inline WordArt now paint the
+real CSS text node again. The block no longer mounts an SVG visual mirror or
+makes the editable glyph layer transparent. Fixed-page export preserves the
+stable cloned text box and freezes presentation CSS without measuring Range or
+DOMRect. WKWebView print degrades gradient fill to the first configured gradient
+color; solid fill, font metrics, stroke, shadow and transform remain intact.
+
+**Why**: Keeping contenteditable HTML only as a transparent interaction layer
+made caret/selection/drag proxies vulnerable to a second black glyph run and
+kept browser text layout separate from what users actually saw. Native WebKit
+PDF still cannot safely receive CSS gradient clipping, so only that unsupported
+paint is degraded instead of maintaining an SVG rendering system everywhere.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-plugins-util.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+#### Behavior Changes
+
+- Screen/editor/snapshot/inline WordArt contains no generated SVG glyph layer.
+- Legacy rich-text styling on WordArt child blots no longer overrides the
+  block's plain-text presentation during selection or drag proxies.
+- Native PDF gradient WordArt uses the first gradient color as a deterministic
+  WebKit fallback; non-gradient presentation remains unchanged.
+
+> The version in `packages/editor/package.json` MUST be bumped according to this rule before running `pnpm publish:editor`.
+
+---
+
+### Unreleased - 2026-08-08 (minor) — canonicalize and freeze placement print projection
+
+**What changed**: Flow, live pagination, and fixed-page export now keep the
+root placement plane at `top/left = 0/0` inside the root content box and fill
+the content width. Stable placement geometry now comes directly from resolved
+pagination margins, page chrome and first-page leading geometry; print no longer
+converts DOMRect measurements into X/Y/width compensation.
+Custom render providers can now capture detached placement-plane DOM and its
+per-block visual geometry before disabling pagination or changing root sizing;
+fixed-page assembly consumes that stable source and validates one canonical
+projection instead of reading the post-switch root.
+
+**Why**: A DOMRect captured in a scaled screen view or isolated readonly window
+can include host padding or a different zoom/transform chain. Converting that
+visual value back into pagination data produced origins such as 93px for a
+canonical 72px margin even though persisted `placement.x/y` was correct.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-plugins-util.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Print page 1 mounts the placement plane at `0/0`; later pages apply only the
+  continuous-screen page-stride Y projection.
+- Fixed pages mount captured placement content in a fresh `100%`/`zoom:1`
+  wrapper whose containing block is `.bc-print-content`. Hidden page assembly
+  happens at viewport `0/0`, avoiding WebKit drift from very large negative
+  staging coordinates.
+- Fixed `placement.x/y` remain unchanged and exclude root padding everywhere.
+- Stable placement geometry is canonical model data. Optional provider geometry
+  remains diagnostic and reports `layout-diverged` instead of becoming a print offset.
+- `PrintRenderResult.placementOriginX/Y/placementWidth` remain accepted as
+  compatibility diagnostics but no longer control print layout.
+- When `PrintRenderResult.placementPlanes` is present, it is the only placement
+  DOM source. An incomplete set is `layout-diverged`; it never falls back to the
+  changed readonly root.
+- The live pagination surface has `min-width` equal to the sheet width, keeping
+  root, external header, and page backdrop center-aligned in narrow hosts. All
+  three use the same `left:50% + translateX(-50%)` centerline; root no longer
+  relies on flex centering.
+
+### New APIs / Features
+
+- `captureStablePrintPlacementPlanes(root)` captures detached root placement
+  planes and O(objects) visual-bounds manifests inside the stable pagination
+  barrier.
+- `PrintRenderResult.placementPlanes?: readonly StablePrintPlacementPlane[]`
+  lets a custom provider deliver those snapshots to fixed-page assembly.
+
 > The version in `packages/editor/package.json` MUST be bumped according to this rule before running `pnpm publish:editor`.
 
 ---
 
 ## Releases
+
+### v0.3.0-alpha.22 - 2026-08-07 (patch) — make absolute placement content-box relative
+
+**Severity**: patch
+
+**What changed**: Interactive blocks, Snapshot Viewer, pagination capture and
+fixed-page export now use the root content box as the single absolute-placement
+containing block. The placement plane mirrors root padding around a zero-height
+content container, while geometry measurement subtracts that padding from its
+origin and width.
+
+**Why**: Treating `root.clientWidth` and the outer placement plane as the
+coordinate space included root padding in some paths but not in isolated print
+pages. Fixed `placement.x/y` therefore shifted whenever the editor and export
+roots used the same paper width with different padding contexts.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-plugins-util.md`
+- `MIGRATIONS.md`
+
+#### Behavior Changes
+
+- `placement.x/y = 0` now resolves to the root content-box top-left in every
+  renderer.
+- Legacy percentage `placement.x` resolves against content width, excluding
+  left and right root padding.
+- `StablePaginationLayout.placementOriginX/placementOriginY/placementWidth`
+  describe the placement content box, not the outer root padding box.
+
+### v0.3.0-alpha.19 - 2026-08-07 (patch) — capture absolute placement with the stable page layout
+
+**Severity**: patch
+
+**What changed**: `StablePaginationLayout` now carries the optional
+`placementOriginY` captured from the rendered pagination plane in the same
+synchronous export barrier as page breaks. Fixed print pages prefer that value
+over provider hints and inferred header offsets. When stable first-page geometry
+contains a document-header leading offset but the readonly renderer cannot
+return the header DOM, the body keeps the same offset instead of moving only the
+normal flow upward.
+
+**Why**: Interpreting the same CSS `top` again after reparenting into print page
+boxes could put every absolute shape, image, and WordArt block at a different Y
+position from the editor. A missing generic `leadingContent` widened the error
+by exactly the document-header height.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-plugins-util.md`
+- `MIGRATIONS.md`
+
+#### API Additions
+
+- `StablePaginationLayout.placementOriginY?: number`
+
+#### Behavior Changes
+
+- Stable-layout export uses the captured live placement-plane origin.
+- `PrintRenderResult.placementOriginY` remains a backward-compatible fallback.
+- A stable first-page leading offset also applies to normal flow when the
+  generic readonly provider cannot reproduce the external header DOM.
+
+### v0.3.0-alpha.18 - 2026-08-07 (patch) — apply document text color to headings
+
+**Severity**: patch
+
+**What changed**: The root `color` prop now updates both the root host `color`
+style and the root-scoped `--bc-color` theme token. Headings and other default
+text styles that consume the theme token therefore follow the document color.
+
+**Why**: The first root color implementation relied on inheritance, but heading
+styles explicitly consume `--bc-color` and could keep the theme default.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `MIGRATIONS.md`
+
+#### Behavior Changes
+
+- Root document color now covers headings and other default theme-token text.
+- Explicit inline and block colors continue to override the document default.
+
+### v0.3.0-alpha.17 - 2026-08-07 (minor) — persist the inherited document text color
+
+**Severity**: minor (additive schema field)
+
+**What changed**: `RootBlockModel.props` now declares the optional `color?:
+string` field. `RootBlockComponent` applies it as its host CSS `color`, making it
+the inherited default for document blocks while preserving explicit inline and
+block-level colors.
+
+**Why**: Document-level appearance settings need a collaborative, snapshot-safe
+default text color that can be committed in the same root props transaction as
+the document background.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `MIGRATIONS.md`
+
+#### New APIs / Features
+
+- `RootBlockModel.props.color?: string`
+
+#### Migration Recipe
+
+No existing document needs migration. Set or clear the inherited text color
+through normal root props mutations:
+
+```typescript
+doc.crud.updateBlockProps(doc.rootId, { color: "#182230" });
+doc.crud.updateBlockProps(doc.rootId, { color: null });
+```
+
+#### Behavior Changes
+
+- When present, the root `color` prop is rendered on the BlockCraft root host
+  and inherited by descendants that do not declare their own color.
+
+### v0.3.0-alpha.16 - 2026-08-07 (minor) — persist CSS document backgrounds on the root block
+
+**Severity**: minor (additive schema field)
+
+**What changed**: `RootBlockModel.props` now declares the optional
+`background?: string` field. The value is a standard CSS `background` shorthand
+stored in the root Yjs props and therefore participates in collaboration,
+Undo/Redo and full-document snapshots.
+
+**Why**: Document backgrounds need one compact, durable value that can express
+color, image, position/size, repeat, attachment and origin/clip while allowing
+flow and paginated hosts to project the same data onto different visual
+surfaces.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `MIGRATIONS.md`
+
+#### New APIs / Features
+
+- `RootBlockModel.props.background?: string`
+
+#### Migration Recipe
+
+No existing document needs migration. Hosts can opt in with a normal model-first
+props mutation and project the value onto their own view surface:
+
+```typescript
+doc.crud.updateBlockProps(doc.rootId, {
+  background:
+    '#fff url("https://cdn.example.com/bg.png") center / cover no-repeat',
+});
+```
+
+Use `{background: null}` to remove the field. Do not persist view-specific DOM
+selectors or personal preferences in this root prop.
+
+#### Behavior Changes
+
+- BlockCraft persists but does not automatically paint the background. Flow
+  containers and paginated sheets remain host-owned rendering surfaces.
+
+### v0.3.0-alpha.15 - 2026-08-07 (patch) — require stable WordArt SVG before fixed-page export
+
+**Severity**: patch
+
+**What changed**: Fixed-page export no longer constructs or recomputes WordArt
+SVG from CSS text inside final page boxes. It now accepts only the stable SVG
+produced by the readonly/snapshot renderer, reuses that exact node and geometry,
+and removes the CSS text layer. WordArt content, size, props or font changes
+clear the ready marker immediately so pagination waits for the next stable SVG.
+
+**Why**: Export-time `Range` / `DOMRect` sampling ran in a different formatting
+context from the user-visible paginated page. That second geometry calculation
+could move WordArt even when both surfaces used the same editor configuration.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-plugins-util.md`
+- `MIGRATIONS.md`
+
+#### Migration Recipe
+
+Built-in WordArt consumers require no code change. Custom readonly or snapshot
+renderers that emit WordArt print metadata must finish the normal BlockCraft SVG
+rendering path before reporting pagination stability; export no longer provides
+a CSS-text fallback renderer.
+
+#### Behavior Changes
+
+- Final fixed page boxes never call `Range` / `DOMRect` and never create a new
+  WordArt SVG.
+- Missing or stale stable WordArt SVG now fails with `layout-not-ready` instead
+  of silently exporting geometry calculated from the print surface.
+- The same SVG node, fractional dimensions, transforms and glyph positions from
+  stable readonly rendering are preserved through page assembly and native PDF.
+- Repeated WordArt finalization from print-live and print-vector stages has been
+  removed; the assembled page surface finalizes exactly once.
+
+### v0.3.0-alpha.14 - 2026-08-07 (minor) — allow host-rendered find/replace panels
+
+**Severity**: minor (additive API)
+
+**What changed**: `FindReplacePlugin` now accepts
+`{defaultDialog?: boolean}`. Setting it to `false` leaves Cmd/Ctrl+F available
+to the host while the plugin continues to own and expose its initialized
+`FindReplaceHelper`. BlockCraft's bundled dialog now reuses that same helper
+instead of creating a second model listener and highlight projection.
+
+**Why**: Host applications need product-specific search panel styling without
+copying the model scan, virtualized highlight, navigation, readonly and Yjs
+replacement behavior.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-util.md`
+- `MIGRATIONS.md`
+
+#### New APIs / Features
+
+- `FindReplacePluginOptions.defaultDialog?: boolean`
+
+#### Migration Recipe
+
+Hosts with their own panel can register the headless presentation mode and
+delegate all operations to the plugin-owned helper:
+
+```typescript
+const findReplace = new FindReplacePlugin({ defaultDialog: false });
+plugins.push(findReplace);
+
+findReplace.helper.findAll(query);
+findReplace.helper.findNext();
+findReplace.helper.replaceOne(replacement);
+```
+
+#### Behavior Changes
+
+- The bundled dialog and plugin now share one helper lifecycle. Directly
+  constructed `FindReplaceDialog` instances without a helper input retain the
+  previous self-owned fallback behavior.
+
+### v0.3.0-alpha.14 - 2026-08-07 (minor) — allow host presence layers to suppress the local cursor
+
+**Severity**: minor (additive API)
+
+**What changed**: `BlockCraftAwareness` now exposes
+`setLocalCursorEnabled(enabled)` and the readonly `localCursorEnabled` state.
+Disabling clears only the local awareness cursor; remote cursor rendering,
+virtualized reprojection and the collaboration connection remain active.
+Re-enabling immediately publishes the current canonical BlockCraft selection.
+The class is now exported from the package root, and its optional config accepts
+`shouldRenderRemoteCursor(state)` for host presence filtering.
+
+**Why**: Host applications need editing/viewing presence states without
+copying BlockCraft's cursor renderer and falling behind its virtualization,
+selection, scrolling and lifecycle behavior.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `MIGRATIONS.md`
+
+#### New APIs / Features
+
+- `BlockCraftAwareness.setLocalCursorEnabled(enabled: boolean): void`
+- `BlockCraftAwareness.localCursorEnabled: boolean`
+- `BlockCraftAwarenessConfig.shouldRenderRemoteCursor(state): boolean`
+- Root export: `import {BlockCraftAwareness} from '@ccc/blockcraft'`
+
+#### Migration Recipe
+
+Hosts with a custom viewing state can delegate cursor projection to BlockCraft:
+
+```typescript
+cursorAwareness.setLocalCursorEnabled(presenceStatus === "editing");
+```
+
+#### Behavior Changes
+
+- Calling the new method with the current value is a no-op. Calls after
+  `destroy()` are ignored.
+
+### v0.3.0-alpha.14 - 2026-08-07 (patch) — make WordArt SVG-native and preserve the projected placement origin
+
+**Severity**: patch
+
+**What changed**: Editable, readonly and snapshot WordArt now share one SVG
+visual layer; the contenteditable element remains only as a transparent input,
+caret and selection host. Its inline styles keep only text/input geometry;
+fill, gradient, outline, shadow and effect transforms are SVG-owned.
+Collapsed fake-range overlays now mount on the opt-in WordArt surface instead
+of inside the geometry-constrained contenteditable host, and transient editor UI
+is excluded from SVG text collection and invalidation. SVG materialization also
+preserves fractional border-box and local-position geometry instead of rounding
+through integer `offsetWidth` / `offsetHeight` values.
+Native `::selection` keeps the themed highlight background but forces the
+interaction-layer glyph color transparent, so selecting text cannot paint a
+second black glyph run above SVG. The SVG-ready paint rule is keyed directly
+off the WordArt surface/frame instead of an editor-root ancestor, so an inline
+drag proxy cloned under `document.body` cannot restore gray HTML glyphs beside
+the cloned SVG. Its selection selector also includes the WordArt print-props
+attribute, keeping sufficient specificity against host-level
+`.no-native-selection ...::selection { color: HighlightText !important; }`
+rules. Standard `::selection` and Firefox `::-moz-selection` live in separate
+rules; combining them makes Chromium reject the complete selector list.
+`PrintRenderResult` also accepts the optional
+`placementOriginY`, allowing a host that captured an isolated stable pagination
+layout to pass the placement plane's actual root-relative layout origin into
+fixed PDF page assembly.
+
+**Why**: Equal pagination settings do not guarantee equal final formatting
+contexts after a host document header and page surface have been projected.
+Recomputing that origin during export can add the leading offset twice. A
+print-only CSS-to-SVG conversion also left screen and native PDF on different
+visual DOM paths. In Chromium, inserting a fake cursor inside the transparent
+editable host could additionally enlarge that host, rebuild the SVG from a
+different box, and move WordArt even though the document model had not changed.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-plugins-util.md`
+- `MIGRATIONS.md`
+
+#### Behavior Changes
+
+- Hosts that already render WordArt need no migration. Screen and print now
+  consume the same SVG visual node automatically.
+- Local and collaborative fake cursors remain visible without participating in
+  WordArt measurement, SVG text extraction or export invalidation. Chromium no
+  longer changes WordArt geometry merely because a virtual cursor is present.
+- Fractional WordArt dimensions and local offsets are retained across live,
+  readonly and print SVG materialization, avoiding subpixel drift between the
+  editor surface and native PDF output.
+- Hosts rebuilding fixed pages from a projected isolated document should pass
+  `placementOriginY`; omitted values preserve the geometry-derived fallback.
+
+### v0.3.0-alpha.13 - 2026-08-07 (patch) — stabilize paginated WordArt and registry-backed SVG icons
+
+**Severity**: patch
+
+**What changed**: Paginated PDF, live-print and vector-print surfaces now
+materialize CSS gradient WordArt as SVG only after their final page boxes and
+per-page placement planes are mounted. SVG text uses the source Range's visual
+top edge directly. BlockController trigger icons, nested menu icons and sort
+action icons also consistently render `svgIcon` values through Angular
+Material's `MatIconRegistry` again.
+
+**Why**: WKWebView's native PDF painter can expand
+`background-clip:text` into a full gradient rectangle and interpret an
+alphabetic SVG baseline differently from browsers. Materializing the final
+static print tree prevents renderer races and keeps absolute placement aligned
+with the paginated screen surface. Rendering registered icons as raw
+`<svg><use>` references also required a global symbol sprite that documented
+host integrations do not load, leaving those icons blank.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-block.md`
+- `blockcraft-plugins-util.md`
+- `MIGRATIONS.md`
+
+#### Behavior Changes
+
+- Hosts that already register BlockCraft icons with `MatIconRegistry` need no
+  changes. A global SVG symbol sprite is no longer required by BlockController.
+- CSS gradient WordArt is converted only inside framework-owned readonly print
+  copies. The live document, stored block data, placement coordinates and
+  stable pagination layout remain unchanged.
+- WordArt SVG lines use `dominant-baseline="text-before-edge"` with the visual
+  top returned by `Range`; native PDF output no longer receives a guessed
+  Canvas alphabetic baseline that can move CJK glyphs by roughly one ascent.
+
+### v0.3.0-alpha.12 - 2026-08-07 (patch) — isolate oversized-cell gap geometry from page painting
+
+**Severity**: patch
+
+**What changed**: Oversized table-cell live pagination no longer inserts
+`.bc-pagination-cell-flow-gap` siblings at Block/cell-start anchors. It applies
+one reversible margin offset to the existing Block host instead. Text-line
+continuations retain their zero-model-length Inline markers, but those markers
+are transparent; a single table-level mask now owns every sheet/background
+band in the table coordinate system.
+
+**Why**: Different logical cells can continue at different safe anchors. When
+each cell-local spacer painted its own page gradient, their local coordinates
+produced staggered gray rectangles inside otherwise valid sheet content and
+added unnecessary nodes to contenteditable cell DOM.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-util.md`
+- `blockcraft-inline.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+#### Migration Recipe
+
+No host API, stored document or pagination configuration migration is required.
+Hosts that inspected `.bc-pagination-cell-flow-gap` should stop depending on
+that plugin-owned implementation class and style page colors through the
+existing `--bc-page-sheet-bg` / `--bc-pagination-backdrop-bg` tokens.
+
+#### Behavior Changes
+
+- Block/cell-start continuation projection adds no sibling DOM node and restores
+  the Block host's original inline margin exactly when pagination is cleared.
+- `[data-bc-inline-pagination-gap]` remains zero-model-length and now contributes
+  geometry only; it never paints a local page-gradient band.
+- `.bc-pagination-table-flow-mask` is the sole live table page-band painter, so
+  columns with different continuation anchors cannot expose staggered gray bars.
+- No public TypeScript API, stored schema or package version changed.
+
+### v0.3.0-alpha.11 - 2026-08-05 (minor) — isolated PDF preparation and stability barrier
+
+**Severity**: minor (additive prerelease API)
+
+**What changed**: Paginated PDF options now accept a `prepareDocument` hook
+that runs against the internally created readonly snapshot copy before
+measurement. A generic DOM/ResizeObserver quiet barrier runs after print
+resources settle and can be tuned through `stability`.
+Named pagination paper sizes are also emitted as explicit physical dimensions
+for browser/native print mirrors, including A0/A1/A2 and Tabloid. Browser CSS
+uses the paper standards' native `mm`/`in` values while native PDF metadata keeps
+the exact PostScript-point values; fixed page boxes no longer round through
+screen pixels. Oversized image/video
+blocks and over-wide non-breakable atomic blocks are fitted into the content
+box instead of being hard-cropped.
+Live pagination, isolated export measurement and stable-layout validation now
+share one atomic-block visual-height rule: `overflow: visible` contributes the
+painted `scrollHeight`, while `hidden`, `clip`, `auto` and `scroll` use the host
+border box. Clipped internal overflow therefore no longer creates phantom page
+stride or a 4px live/export mismatch.
+
+**Why**: Async business blocks may need to fetch fresh data in the export copy.
+Pagination must not guess whether an empty view is loaded, nor measure while
+that view, its images, fonts or dimensions are still changing.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-plugins-util.md`
+- `MIGRATIONS.md`
+
+#### New APIs / Features
+
+- `PaginationPdfOptions.prepareDocument`
+- `PaginationPrintDocumentContext`
+- `PaginationPrintDocumentPreparer`
+- `PaginationPdfOptions.stability`
+- `PaginationRenderStabilityOptions`
+- `waitForPaginationRenderStable()`
+
+#### Migration Recipe
+
+Existing exports require no change. Hosts with async business blocks can opt in:
+
+```typescript
+await pagination.exportToPdf("document.pdf", {
+  prepareDocument: async ({ doc, root, signal }) => {
+    await businessExportCoordinator.reloadAndWait(doc, { root, signal });
+  },
+  stability: { quietFrames: 2, timeoutMs: 10000 },
+});
+```
+
+The hook must operate on the supplied readonly `doc`; it must not read or mutate
+the live collaborative document.
+
+#### Behavior Changes
+
+- PDF reflow waits for two quiet DOM/size frames after images and fonts settle.
+- A rejected business hook fails with `layout-not-ready` and destroys the copy.
+- `resourcePolicy: 'best-effort'` converts only the generic stability timeout to
+  a warning; semantic preparation failures remain fatal.
+- Named page geometry keeps standard CSS `mm`/`in` values and exact physical pt metadata;
+  hosts should forward `page.widthPt` / `page.heightPt` without rounding.
+- Physical page flow slots and the print root now use the same explicit standard
+  `mm`/`in` width as `@page`; they do not resolve paper width through `100%` of a
+  WebView viewport. A fixed-height slot naturally consumes exactly one physical
+  page; no adjacent-slot `break-before` / `break-after` is emitted, because a
+  second forced advance creates alternating blank pages in WebKit. A `0.01px`
+  negative height tolerance absorbs only the device-pixel rounding tail and
+  avoids cumulative one-pixel drift.
+  Hosts printing an already paginated surface must keep scale at `1:1` (for
+  example `NSPrintInfo.horizontalPagination = clip`) rather than shrink-to-fit;
+  continuous-flow exports may continue to use fit.
+- Default browser PDF export now prints a top-level print mirror instead of a
+  zero-sized iframe. Non-splitting flow slots map one deterministic BlockCraft
+  page to one browser sheet; `@page`, the mirror and every slot share one physical
+  width/height contract so a host print backend cannot silently derive a second
+  viewport-sized paper box.
+- Browser print uses a minimally short flow slot with `overflow:hidden`; the real
+  page keeps its exact physical height inside it. Page descendants can no longer
+  extend the slot's fragment and make WebKit emit an intervening blank sheet.
+  The inner `.bc-print-content` root explicitly uses `width:auto`: its left and
+  right offsets are the sole content-width constraints. This overrides the base
+  editor root's `width:100%`, which otherwise discards the right inset and clips
+  one full right margin from every wide block.
+  Print content is no longer clipped at the inner content-box edge; fragment
+  windows and height locks clip their own content, then the physical page is the
+  final clipping boundary. Shadows and business controls may therefore extend
+  into the configured margin exactly as they do in the paginated screen view.
+- The zero-height root `placement-layout` is excluded from normal flow pagination.
+  Its global absolute-placement plane is cloned into every print page and shifted
+  by the screen page stride (`paper height + pageGap`), so an object keeps its
+  original visual page and crossing objects are clipped by adjacent paper boxes
+  instead of the whole plane being moved to the last slot page.
+  A custom `PrintRenderProvider` supplies host-owned leading content through
+  `leadingContent`. BlockCraft mounts that exact DOM in a final-paper-width
+  staging page, waits for resources and layout stability, validates its height
+  against the stable first-page geometry, then mounts it at z=2 above the z=1
+  body. It must not be synthesized as a normal block or measured in a wider host.
+  This keeps persisted `placement.y` relative to the same post-header origin as
+  the live paginated view. Each print content root
+  also retains `data-bc-placement-container`, preserving the theme's
+  `under(0) / flow(1) / over(2)` stacking contract. The projected plane is
+  widened back from the content box to the full sheet width, so percentage x
+  coordinates retain the live root's sheet-relative coordinate system even
+  with asymmetric margins. Strict export now fails with `layout-diverged` when
+  a non-empty placement plane is missing from the readonly DOM.
+- Oversized media and non-breakable atomic blocks may receive
+  `--bc-page-fit-scale`; the theme applies this with CSS `zoom` so the complete
+  block remains visible inside the page content width/height.
+- The unified print surface now idempotently adds its zero-size flow sentinel
+  before resource settling and stable-layout validation, including for custom
+  render providers. A provider that returns a pagination-disabled document root
+  can no longer make its tail block newly match `:last-child`, drop the theme's
+  bottom gap, and fail strict export with a false 4px height divergence.
+
+### v0.3.0-alpha.10 - 2026-08-05 (patch) — cap oversized atomic table-cell content
+
+**Severity**: patch
+
+**What changed**: Live pagination now consistently limits oversized atomic
+children inside table cells to the page content height. Nested media and embeds
+remain clipped, while nested code blocks keep their header visible and expose an
+internally scrollable code body.
+
+**Why**: An image, code block or embed taller than one page must not expand its
+table row through a sheet boundary. Code still needs an accessible live editing
+surface after the atomic one-page cap is applied.
+
+**Affected ai-skills files**:
+
+- `blockcraft-theme.md`
+
+### Behavior Changes
+
+- `.bc-page-nested-height-locked.code-block` now uses a one-page flex shell and
+  scrolls `.edit-container-wrapper`; other nested atomic blocks retain clipped
+  overflow. The class remains reversible pagination-only view state.
+
+### v0.3.0-alpha.9 - 2026-08-05 (minor) — explicit document layout metrics
+
+**Severity**: minor (additive prerelease API)
+
+**What changed**: `DocConfig.layoutMetrics` can now provide resolved document
+`baseFontSize` and `lineHeight` values. `BlockCraftDoc` exposes
+`updateLayoutMetrics()` and `refreshLayoutMetrics()` so runtime CSS typography
+changes explicitly invalidate model-first virtualization and sparse pagination
+geometry. Built-in table estimates now ignore legacy `table-row.props.height`
+and use bounded cell-content projection based on O(1) text length.
+
+**Why**: Table placeholder geometry must follow `--bc-fs` / `--bc-lh`, but
+estimators cannot safely call `getComputedStyle()` or traverse rich-text deltas.
+One document-owned measurement plus explicit host updates keeps the hot and
+offscreen paths deterministic.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-perf.md`
+- `MIGRATIONS.md`
+
+#### New APIs / Features
+
+- `DocConfig.layoutMetrics?: {baseFontSize?: number; lineHeight?: number}`
+- `doc.layoutMetrics` (`DocumentLayoutMetricsManager`)
+- `doc.updateLayoutMetrics(metrics)`
+- `doc.refreshLayoutMetrics()`
+- `BlockModelHeightEstimateContext.baseFontSize` / `.lineHeight`
+
+#### Migration Recipe
+
+Existing hosts require no change; root typography is measured once at init.
+Hosts that mutate typography after init must make the invalidation explicit:
+
+```typescript
+root.style.setProperty("--bc-fs", "18px");
+root.style.setProperty("--bc-lh", "1.5");
+doc.refreshLayoutMetrics();
+
+// Or let BlockCraft update both metrics and CSS variables:
+doc.updateLayoutMetrics({ baseFontSize: 18, lineHeight: 27 });
+```
+
+#### Behavior Changes
+
+- `table-row.props.height` no longer contributes to model-only table height.
+- Table text projection uses `Y.Text.length` rather than `toDelta()` or
+  per-character inspection.
+- Runtime typography changes do not auto-poll computed style; the host must
+  call one of the explicit APIs above.
+
+### v0.3.0-alpha.8 - 2026-08-05 (major) — height-budgeted virtualization overscan
+
+**Severity**: major (breaking prerelease configuration rename)
+
+**What changed**: Root virtualization replaces the root-count-based `overscan`
+option with `overscanViewports`. The mounted window is now calculated entirely
+from projected height. Its default value `1` reserves one viewport above and
+below the visible viewport, for a three-viewport total window. Sparse segment
+merging also refuses to bridge an omitted projected gap taller than one quarter
+of the viewport.
+
+**Why**: Expanding by root count cannot bound DOM work: two adjacent roots may
+be two very large tables. A height budget makes the amount of materialized
+layout proportional to the scroll container while keeping small-block documents
+smooth during scrolling.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-perf.md`
+- `MIGRATIONS.md`
+
+#### Breaking Changes
+
+- `VirtualizationConfig.overscan` and
+  `ResolvedVirtualizationConfig.overscan` are replaced by
+  `overscanViewports`.
+
+#### Migration Recipe
+
+```typescript
+// before: six root children on each side
+virtualization: {enabled: true, overscan: 6}
+
+// after: one viewport of projected height on each side (three total)
+virtualization: {enabled: true, overscanViewports: 1}
+```
+
+#### Behavior Changes
+
+- Fractions such as `overscanViewports: 0.5` are supported; negative values
+  clamp to zero.
+- At the start or end of a long document, unavailable preload budget shifts to
+  the other side so the mounted window still targets three viewport heights.
+- A root taller than the target window is mounted as one atomic subtree, but
+  no additional roots are added merely to satisfy an item count.
+- `segmentMergeGap` remains a root-count cap and now also has a projected-height
+  veto, preventing sparse leases from pulling giant omitted roots into the DOM.
+
+### v0.3.0-alpha.7 - 2026-08-05 (patch) — backfill complete responsive image sizing
+
+**Severity**: patch
+
+**What changed**: A mounted built-in image whose persisted data lacks `wr` now
+uses the first successful intrinsic-size load to write complete `wr/ar` sizing.
+Existing pixel `width/height` is converted using the current root and parent
+content widths, then removed in the same no-history Yjs transaction. Images
+that already have `wr` continue to backfill only a missing `ar`.
+
+**Why**: Virtualization and sparse pagination can estimate media geometry from
+model-only responsive sizing. Previously old image data could acquire `ar`
+while permanently retaining no `wr`, leaving persistence only partially
+normalized after the image had already mounted and loaded successfully.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `MIGRATIONS.md`
+
+#### Migration Recipe
+
+No host-code migration is required. Loading an editable legacy image once is
+enough to normalize its responsive dimensions. Offscreen images remain on the
+existing model fallback until mounted, and readonly images remain unchanged.
+
+#### Behavior Changes
+
+- A successfully loaded, writable legacy image now writes `wr/ar` through
+  `ORIGIN_NO_RECORD`; the compatibility write synchronizes and persists but
+  does not add an Undo item.
+- A legacy pixel width is capped by the current parent width before conversion,
+  so the initial responsive frame matches the mounted visual width.
+- Once backfilled props arrive, continuous virtualization and sparse pagination
+  refresh their shared model-only height estimate from the persisted `wr/ar`.
+
+### v0.3.0-alpha.6 - 2026-08-05 (minor) — independent page chrome distance and styled page-number tokens
+
+**Severity**: minor (additive prerelease API)
+
+**What changed**: `PageChrome` adds an optional `distance` field so headers and
+footers can be positioned independently from body margins. Pagination token
+substitution now supports decimal, upper/lower Roman and Chinese page numbers.
+Resolved pagination geometry exposes the effective chrome distances and body
+insets, and live pagination plus print/PDF consume those same resolved values.
+
+**Why**: Word-compatible page setup treats “header from top” and “footer from
+bottom” as independent settings. Host applications also need page-number
+presets such as Roman numerals, Chinese numerals, decorated numbers and
+“current / total” without implementing a second live/print formatter.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-plugins-util.md`
+- `MIGRATIONS.md`
+
+#### New APIs / Features
+
+- `PageChrome.distance?: number` measures from the top edge for a header and
+  from the bottom edge for a footer.
+- `PageNumberTokenStyle`, `formatPageNumber()` and styled `{page:*}` /
+  `{total:*}` tokens: `decimal`, `roman-upper`, `roman-lower`, `chinese`.
+- `ResolvedPaginationGeometry` includes `headerDistance`, `footerDistance`,
+  `contentTop` and `contentBottom` when produced by `resolveScreenGeometry()`.
+
+#### Migration Recipe
+
+No migration is required. Existing configs without `distance` retain their
+previous margin-plus-chrome-height layout. To opt in to Word-like page chrome:
+
+```typescript
+pagination.updateConfig({
+  margins: { top: 72, right: 72, bottom: 72, left: 72 },
+  header: { center: "{page:roman-upper}", distance: 48 },
+  footer: {
+    right: "第 {page:chinese} 页 共 {total:chinese} 页",
+    distance: 48,
+  },
+});
+```
+
+#### Behavior Changes
+
+- An explicit `distance` places chrome inside the body margin band whenever it
+  fits; only chrome crossing the body boundary reduces page content height.
+- Live page frames and print/PDF pages resolve identical edge distances and
+  number tokens.
+
+### v0.3.0-alpha.5 - 2026-08-05 (minor) — add host-controlled document scaling and margin header placement
+
+**Severity**: minor (additive prerelease API)
+
+**What changed**: `BlockCraftDoc` now exposes a `DocumentViewScaleManager` as
+`doc.viewScale`. It can attach one host-owned document surface, apply a clamped
+50%–200% visual scale, handle Ctrl/Cmd+wheel and publish scale changes while
+normalizing virtualization, block placement and table-fullscreen coordinates.
+`PaginationDocumentHeaderOptions` also adds `placement: 'top-margin'` and
+`topInset` so host document chrome can occupy the first sheet's top margin
+without automatically consuming the same height from body content.
+
+**Why**: Host applications need Word-like whole-document zoom without changing
+stored font sizes, and custom document headers must share one coordinate system
+with live sheets while preserving ordinary page margins.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-block.md`
+- `blockcraft-theme.md`
+- `blockcraft-perf.md`
+- `MIGRATIONS.md`
+
+#### New APIs / Features
+
+- `DocumentViewScaleManager`, `DocumentViewScaleAttachOptions`,
+  `DocumentViewScaleChange` and `DocumentViewScaleChangeSource`.
+- `doc.viewScale` with `attach`, `detach`, `setScale`, `zoomIn`, `zoomOut`,
+  `reset`, `layoutToVisual`, `visualToLayout`, `scale$` and `change$`.
+- `PaginationDocumentHeaderOptions.placement` and `.topInset`.
+
+#### Migration Recipe
+
+No migration is required. To opt in:
+
+```typescript
+doc.viewScale.attach(documentPageElement, { wheel: true });
+doc.viewScale.setScale(1.25);
+
+const pagination = new PaginationPlugin({
+  documentHeader: {
+    element: documentHeaderElement,
+    placement: "top-margin",
+    topInset: 20,
+  },
+});
+```
+
+#### Behavior Changes
+
+- Layout-facing measurements used by root virtualization and block placement
+  are normalized while a view scale is attached. At scale 1 the existing
+  behavior is unchanged.
+- A top-margin document header deducts only its overflow beyond the configured
+  body start. The existing default `placement: 'content'` remains unchanged.
+- Projecting a host document header keeps absolute objects strictly relative to
+  the root content coordinate system. Rendering, pointer measurement and
+  virtual visibility share the deterministic `--bc-placement-content-origin-y`
+  value (the effective paginated top padding), so objects follow body content
+  without using a projection-time DOM delta; persisted `placement.x/y` remains
+  unchanged.
+- `PaginationPlugin({enabled: true})` now defers controller activation to the
+  first frame after document initialization. This avoids sparse-projection
+  re-entry during root virtualization setup while preserving the requested
+  initial mode.
+- Table fullscreen now isolates the active table from host document chrome,
+  pagination sheets, absolute objects and fixed host toolbars without reparenting
+  the block. It also cancels the host document scale for the duration of fullscreen,
+  so table fullscreen and table-local zoom remain viewport-correct at any document
+  zoom level. Existing fullscreen classes and CSS tokens remain compatible.
+
+### v0.3.0-alpha.4 - 2026-08-05 (patch) — align nested-host pagination surfaces
+
+**Severity**: patch
+
+**What changed**: Live pagination now distinguishes the actual scroll
+container from the root layout surface. `.bc-paginated-scroll` remains on the
+configured scrolling ancestor, while the new plugin-owned
+`.bc-pagination-surface` class is applied to the root's direct parent and owns
+page/content centering. The ordinary editor root also defaults to
+`box-sizing: border-box; width: 100%` outside paginated mode. The additive
+`PaginationPluginOptions.documentHeader` contract projects and measures a
+host-owned first-page header on that same surface.
+
+**Why**: Host applications can place a document header or other wrappers
+between the scrolling viewport and the editor root. Mounting page sheets on
+the viewport made their origin differ from the root's origin, while host
+padding combined with content-box sizing could make the flow root overflow its
+declared container width.
+
+**Affected ai-skills files**:
+
+- `blockcraft-app.md`
+- `blockcraft-theme.md`
+- `blockcraft-plugins-util.md`
+
+### Behavior Changes
+
+- Pagination sheets are mounted under the root's direct parent instead of an
+  outer configured scroll ancestor. Host code must continue treating the
+  generated backdrop and runtime classes as plugin-owned. The final sheet now
+  retains the same 24px canvas clearance as the first sheet instead of ending
+  directly at the scroll overflow boundary.
+- Non-paginated roots fill the inline size of their immediate container by
+  default. A host that intentionally needs a narrower root should set that
+  width explicitly in its theme.
+- Invalid custom page-chrome heights (`NaN`, infinity or negative values) now
+  use the 24px default, so `header` / `footer` customization cannot produce
+  invalid page geometry.
+- `documentHeader` temporarily reparents the configured live element while
+  pagination is enabled, observes its height and includes it in first-page
+  capacity and subsequent page-gap geometry. Disable/destroy restores the
+  original DOM position and inline styles.
+
+### v0.3.0-alpha.2 - 2026-08-04 (major) — consolidate Schema virtualization capabilities
+
+**Severity**: major (breaking prerelease API cleanup)
+
+**What changed**: The block-level view-retention policy moved from
+`IBlockSchemaOptions.metadata.viewRetention` to
+`IBlockSchemaOptions.metadata.virtualization.viewRetention`. The existing
+`estimateHeight` callback remains in that same `virtualization` capability
+object. The former top-level Schema field has been removed. Built-in audio,
+video and iframe-style Schemas were migrated without changing their runtime
+keep-alive behavior.
+
+**Why**: View retention and model-only height estimation are both policies by
+which one block flavour participates in root virtualization. Keeping one at the
+Schema metadata root and one under `virtualization` exposed a historical
+implementation split rather than a coherent public domain boundary. The alpha
+line is the appropriate point to remove that inconsistency before consumers
+rely on both spellings.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-block.md`
+- `blockcraft-perf.md`
+- `MIGRATIONS.md`
+
+#### Breaking Changes
+
+- Removed `IBlockSchemaOptions.metadata.viewRetention`.
+- Schema-owned retention is now declared as
+  `IBlockSchemaOptions.metadata.virtualization.viewRetention`.
+
+#### New APIs / Features
+
+- `BlockVirtualizationCapability<T>.viewRetention?: BlockViewRetention`
+  groups the materialized-view lifecycle policy with the existing model-only
+  `estimateHeight` geometry policy.
+
+#### Migration Recipe
+
+Move the existing field into the Schema's virtualization capability object:
+
+```typescript
+// before (0.3.0-alpha.1 and earlier)
+metadata: {
+  version: 1,
+  label: 'Custom player',
+  viewRetention: 'keep-alive',
+}
+
+// after (0.3.0-alpha.2)
+metadata: {
+  version: 1,
+  label: 'Custom player',
+  virtualization: {
+    viewRetention: 'keep-alive',
+    estimateHeight: ({props}) => props.height ?? 320,
+  },
+}
+```
+
+`DocConfig.virtualization.resolveViewRetention`, `retainedViewLimit` and the
+other document-wide runtime options do not move.
+
+#### Behavior Changes
+
+- None. Keep-alive still begins only after first materialization and pins the
+  containing direct-root render unit until deletion or document disposal.
+
+### v0.3.0-alpha.1 - 2026-08-04 (minor) — let custom Schemas estimate virtual height
+
+**Severity**: minor
+
+**What changed**: `IBlockSchemaOptions.metadata.virtualization.estimateHeight`
+lets a custom block return a pure model-only height for continuous root
+virtualization and sparse pagination. Its typed context includes block identity,
+readonly props, direct child IDs, a cycle-safe child estimator, cached root
+content width, fallback height and `layoutMode: 'flow' | 'paginated'`. Finite
+non-negative values, including zero, are treated as model-driven geometry and
+refresh after relevant offscreen model changes. Invalid values or exceptions
+fall through to the existing sizing/built-in/flavour estimate path.
+
+**Why**: Host-specific cards and data views previously had only one fixed
+per-flavour estimate. Even when a block persisted an exact `props.height`, it
+could not supply that value before mounting. A Schema-owned contract keeps
+height rules in the block's domain and also lets semantic blocks such as manual
+page breaks distinguish continuous-flow presentation from paginated geometry.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-block.md`
+- `blockcraft-perf.md`
+- `MIGRATIONS.md`
+
+#### New APIs / Features
+
+- `BlockVirtualizationLayoutMode`
+- `BlockModelHeightEstimateContext<T>`
+- `BlockModelHeightEstimator<T>`
+- `BlockVirtualizationCapability<T>`
+- Optional `IBlockSchemaOptions.metadata.virtualization.estimateHeight`
+
+#### Migration Recipe
+
+Existing hosts require no changes. A custom block that previously relied on a
+fixed flavour estimate can move the rule into its Schema:
+
+```typescript
+// before
+new BlockCraftDoc({
+  // ...
+  virtualization: {
+    enabled: true,
+    estimatedHeights: { "task-list": 600 },
+  },
+});
+
+// after
+const TaskListSchema: IBlockSchemaOptions<TaskListModel> = {
+  // ...
+  metadata: {
+    version: 1,
+    label: "Task list",
+    virtualization: {
+      estimateHeight: ({ props }) => props.height ?? 600,
+    },
+  },
+};
+```
+
+The callback must not read DOM or request external data. Persist a compact
+layout fact in props when asynchronous content changes height.
+
+#### Behavior Changes
+
+- The bundled `page-divider` estimates `32px` in flow layout and `0px` in
+  paginated layout. Its flavour and manual-break semantics are unchanged.
+- Schema estimates take precedence over object-sizing, built-in estimates and
+  `estimatedHeights[flavour]`; mounted `ResizeObserver` measurements still
+  provide exact live geometry.
+
+### v0.3.0-alpha.0 - 2026-08-04 (minor) — add inline and wrapped Shape/WordArt objects
+
+**Severity**: minor
+
+**What changed**: The bundled editor now registers `shape` and `word-art`
+inline Embed converters. `ShapeToolbarPlugin` and `WordArtToolbarPlugin` expose
+**嵌入型** and **四周型环绕**, preserve the complete object presentation and
+text payload during block/inline conversion, and restore top-bottom/under/over
+blocks from mixed text without losing adjacent Delta formatting. The shared
+inline float layout now accepts a generic object-frame dataset contract in
+addition to the existing image contract. HTML round-trips inline object
+payloads and wrapping metadata; Markdown degrades them to readable text. Plain
+inline and wrapped Shape/WordArt frames also support immediate Pointer Events
+drag with same- or cross-editable-block Delta reanchoring.
+
+**Why**: Shapes and WordArt previously supported only block flow and absolute
+layers, so they could not participate in a text line or Word-like square text
+wrapping. Reusing the one-length Embed and float projection model keeps
+selection, clipboard, collaboration, virtualization and adapter behavior
+consistent with inline images.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-embed.md`
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-inline.md`
+- `blockcraft-adapter.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+#### New APIs / Features
+
+- `INLINE_SHAPE_EMBED_KEY`, `createInlineShapeDelta()`,
+  `readInlineShapeDelta()`, `createInlineShapeEmbedConverter()` and
+  `inlineShapeEmbedConverter`.
+- `INLINE_WORD_ART_EMBED_KEY`, `createInlineWordArtDelta()`,
+  `readInlineWordArtDelta()`, `createInlineWordArtEmbedConverter()` and
+  `inlineWordArtEmbedConverter`.
+- Shared inline-object payload/layout types and DOM helpers are exported from
+  `blocks/inline-object/`.
+- `.bc-inline-object-shell`, `.bc-inline-object-frame`,
+  `.bc-inline-object-drag-proxy`,
+  `[data-bc-inline-float-frame]` and
+  `[data-bc-inline-float-layout="wrap"]` form the generic object view/theme
+  contract.
+
+#### Migration Recipe
+
+Hosts using `createBundledEditorCapabilities()` need no code change. Hosts that
+manually assemble Shape/WordArt capabilities should register a fresh converter
+beside each existing Plugin:
+
+```typescript
+// before
+plugins: [new ShapeToolbarPlugin(), new WordArtToolbarPlugin()]
+
+// after
+embeds: [
+  ['shape', createInlineShapeEmbedConverter()],
+  ['word-art', createInlineWordArtEmbedConverter()],
+],
+plugins: [new ShapeToolbarPlugin(), new WordArtToolbarPlugin()]
+```
+
+No stored-document rewrite or package version change was made in this worktree.
+Existing block Shape/WordArt snapshots and image Embed attributes remain
+compatible.
+
+#### Behavior Changes
+
+- An absolute Shape/WordArt switched directly to wrapping enters the editable
+  text line it visibly covers. Without a covered editable block it falls back
+  to the nearest visual flow anchor.
+- Clicking an inline Shape/WordArt selects the exact one-character Embed in the
+  model and native DOM Range before opening its layout-only toolbar, so
+  copy/cut target the object rather than a stale text cursor.
+- Inline Shape/WordArt detailed editing is intentionally not nested inside the
+  atomic Embed; switching to top-bottom/under/over restores the editable block.
+- Dragging a selected inline Shape/WordArt moves its exact Embed payload in one
+  Yjs transaction. Wrapped objects also update normalized `x`; plain inline
+  objects do not gain float coordinates. Cancel/Escape/blur/readonly teardown
+  leaves the model unchanged.
+- Model-only virtualization height estimation now accounts for their persisted
+  dimensions and square-wrap exclusion height.
+
+### v?.?.? - 2026-08-04 (patch) — convert absolute images directly to text wrapping
+
+**Severity**: patch
+
+**What changed**: `ImgToolbarPlugin` now shows **四周型环绕** directly in the
+toolbar for an absolute image. If the image visually overlaps a compatible
+editable text block, the action inserts the wrapped image Embed into that
+covered text line and removes the absolute image in one Yjs transaction. Its
+normalized `x` is recalculated against the target text container, and a
+non-empty image caption is preserved as following inline content. If no text
+block is actually covered, conversion falls back to a new wrapped paragraph at
+the nearest visual flow anchor while translating the absolute `placement.x`.
+Clipboard copy/cut/paste event boundaries also resample an editor-owned native
+Range before dispatch, so a browser `selectionchange` delay cannot leave those
+commands operating on an older collapsed model cursor. Clicking an inline
+image now explicitly selects its one-character Embed range in both
+`BlockSelection` and the native DOM selection; readonly documents allow this
+selection for copy without opening image editing controls.
+
+**Why**: A floating image previously required two toolbar actions to reach text
+wrapping. Separately, browsers can dispatch a clipboard shortcut before the
+latest native drag selection has propagated into `BlockSelection`; copy then
+produced empty content and cut deleted a zero-length range.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-toolbar.md`
+- `MIGRATIONS.md`
+
+#### Migration Recipe
+
+No host code, plugin configuration, stored document migration or package
+version change is required. Existing image and inline-image snapshots remain
+compatible.
+
+#### Behavior Changes
+
+- The block image toolbar shows **四周型环绕** only while the selected image is
+  absolute; relative block images keep the existing four layout actions.
+- Direct wrapping only enters an editable block whose visual rectangle actually
+  intersects the image. A merely nearby block is not used, and the source
+  image's own caption cannot become the target.
+- A local image still uploading remembers the requested wrap target and
+  completes the same conversion after its final URL becomes available.
+- Clipboard commands with a native Range inside the editor synchronously sample
+  that Range at the browser event boundary. Model-only selections with no
+  native Range continue using the canonical `BlockSelection` directly.
+- Clicking an inline image produces a length-one text selection covering its
+  Embed. Repeated clicks restore that selection without rebuilding the toolbar.
+- An Embed-only inline range does not open the floating text/marker toolbar;
+  mixed text-plus-Embed selections continue to open it.
+- No exported API, option, schema, theme token or package version changed.
+
+### v?.?.? - 2026-08-03 (patch) — preview table column resize with a guide
+
+**Severity**: patch
+
+**What changed**: Built-in table column resizing no longer mutates the live
+`<col>` width and column bar on every mouse move. The committed table remains
+fixed while an inert body-level active-color vertical guide previews the target
+boundary without being clipped by the current table width; mouse release
+re-resolves the source cell against the current model grid and writes
+`colWidths` once.
+
+**Why**: Live width preview forced the full table to reflow throughout the
+gesture. On large paginated tables that repeatedly changed row heights, woke
+`ResizeObserver`, invalidated pagination geometry and made the drag lag or
+jitter.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-perf.md`
+- `blockcraft-plugins-inline.md`
+- `MIGRATIONS.md`
+
+#### Migration Recipe
+
+No host code, stored document or plugin configuration migration is required.
+Existing `colWidths` data and `TableBlockBinding` construction are unchanged.
+No package version was changed.
+
+#### Behavior Changes
+
+- Mouse movement updates only the visual guide and performs no Yjs/model write,
+  live table-width mutation or Angular change detection.
+- Primary mouse release commits one final `colWidths` update and therefore one
+  normal table/pagination reflow.
+- Escape, window blur, a readonly release and a stale
+  stable-cell anchor cancel the gesture without changing column widths.
+- The built-in resize handle is isolated from root mouse/selection capture via
+  the existing `data-bc-native-input` UI-island contract, preventing a
+  competing selection gesture from being armed before resize starts. Table
+  capture gives resize priority over pagination flow-mask and rectangle checks.
+- Idle delegated `mousemove` repairs a handle left at the table host after view
+  projection; repeated movement in the same cell uses a layout-free identity
+  fast path.
+- Safari/WebKit may paint the absolute handle while hit-testing the same point
+  as its `td`; primary mousedown therefore recognizes the narrow right-edge
+  cell geometry without adding reads to the move path.
+- A concurrent column reorder is handled by resolving the captured cell ID at
+  commit time instead of applying the width to a stale numeric column index.
+- No public API, option, stored schema, theme token or package version changed.
+
+### v?.?.? - 2026-08-03 (patch) — make table rectangle editing model-first
+
+**Severity**: patch
+
+**What changed**: Table rectangular selection now resolves coordinates,
+rowspan/colspan closure, physical snapshot shape and visible edit targets from a
+cached, DOM-free model grid. Input, selected-text extraction and table
+copy/cut/paste/delete/Arrow/Tab commands operate on stable cell IDs and model
+snapshots. `TableBlockComponent` projects that rectangle only onto currently
+mounted cell components.
+
+**Why**: A model-owned `table-cell` selection could remain live while its
+intermediate cells lacked ComponentRefs, but subsequent editing still rebuilt
+the range from the mounted Component matrix. Rectangular selection followed by
+typing or deletion could therefore miss cells or use stale coordinates.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-selection.md`
+- `blockcraft-input.md`
+- `blockcraft-data.md`
+- `blockcraft-perf.md`
+- `blockcraft-plugins-inline.md`
+- `MIGRATIONS.md`
+
+#### Migration Recipe
+
+No host code or stored-document migration is required. Continue using
+`SelectionManager.setTableCellSelection()` and `TableBlockBinding`; built-in
+commands automatically use the complete model. No package version was changed.
+
+#### Behavior Changes
+
+- Rectangular typing, IME materialization, delete, selected-text extraction and
+  table clipboard/navigation commands no longer require every selected cell to
+  have a mounted ComponentRef.
+- Merged coverage cells preserve physical TSV/snapshot shape but are edited only
+  once through their visible master cell.
+- Table selection highlighting touches only mounted master cells and does not
+  materialize offscreen cells.
+- Malformed real table grids fail closed instead of guessing a destructive
+  target from partial component state.
+- No public option, method signature, stored schema or package version changed.
+
+### v?.?.? - 2026-08-03 (patch) — continue oversized table cells across pages
+
+**Severity**: patch
+
+**What changed**: Live pagination now creates safe, editable continuations when
+one physical table row is taller than the page content area. Direct child-Block
+boundaries and complete visual text lines become cell-local continuation
+anchors; a pure planner advances different columns independently and stores one
+stable plan for exact live layout, sparse Projection and readonly printing.
+Screen gaps and table masks are zero-model-length view state. The table's
+virtual flow height and internal sheet gaps now also position every following
+root Block, preventing content below the table from drifting into the wrong
+sheet. IME composition retains the previous stable projection until completion.
+
+**Why**: Row-only table splitting had no legal cut inside a single oversized
+`<tr>`. The engine could advance its page count while the live DOM retained the
+natural table height, so the table crossed sheet gaps and all later blocks used
+a stale vertical origin.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-plugins-util.md`
+- `blockcraft-inline.md`
+- `blockcraft-theme.md`
+- `blockcraft-perf.md`
+- `MIGRATIONS.md`
+
+#### Migration Recipe
+
+No host code, stored document or pagination configuration migration is
+required. Existing `PaginationPlugin` registrations automatically receive the
+corrected behavior. Pagination remains opt-in and continuous layout is
+unchanged.
+
+#### Behavior Changes
+
+- A physical table row taller than one content area continues at complete
+  Block/text-line boundaries instead of overflowing as one fragment.
+- Continuation gaps do not write Yjs, change Delta length or enter Undo history;
+  selection mapping ignores them and IME projection is frozen while composing.
+- Exact live, sparse live and print layouts share one immutable cell-flow plan;
+  blocks after the table use its virtual projected extent.
+- Irreducible nested atomic content is clipped locally to the page content
+  height without adding a cell scroll container.
+- Content-bearing rowspans across several otherwise normal-height physical rows
+  retain the existing keep-together row-boundary behavior.
+- No public option/signature or package version changed.
+
+### v?.?.? - 2026-08-01 (patch) — suppress native HTML drag for default inline images
+
+**Severity**: patch
+
+**What changed**: The built-in inline-image Embed now renders its real `<img>`
+with `draggable="false"` and capture-cancels residual native `dragstart` at the
+atomic image shell. The guard is removed through `EmbedConverter.onDestroy()`.
+The existing InputTransformer rejection of `deleteByDrag` and
+`insertFromDrop` remains the last-resort consistency boundary.
+
+**Why**: A browser could start native image DnD alongside the model-owned
+Pointer proxy and dispatch drag input types inside contenteditable even though
+BlockCraft later prevented their default DOM mutation.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-embed.md`
+- `blockcraft-inline.md`
+- `blockcraft-input.md`
+- `MIGRATIONS.md`
+
+#### Migration Recipe
+
+No downstream code or stored-document migration is required. Hosts using the
+default image converter now receive Pointer-only inline-image movement. A host
+that intentionally needs native/cross-application image dragging must continue
+to provide its own same-key `image` EmbedConverter.
+
+#### Behavior Changes
+
+- Default inline images no longer start native HTML DnD or drag out of the
+  editor; `ImgToolbarPlugin` Pointer movement remains unchanged.
+- The shell guard stops only dragstart events originating in that Embed subtree;
+  ordinary text selection drag, block handles and external file drops remain
+  available.
+- Unexpected drag input types are still prevented without a Yjs/model write.
+- No public API, Delta field, theme token or package version changed.
+
+### v?.?.? - 2026-08-01 (patch) — isolate inline-image resize preview from text layout
+
+**Severity**: patch
+
+**What changed**: Ordinary and wrapped inline images no longer preview a resize
+by changing the committed frame inside contenteditable. Their left/right handles
+now freeze the frame, text fragments, selection and connected toolbar while an
+accessibility-inert body-level outline displays the proportional target bounds
+and live pixel dimensions. Pointerup still writes the existing short
+`width/height` Delta attributes once.
+
+**Why**: A live frame resize could enter or cross projected wrap text while the
+fragment boundaries still represented the committed size, making the visual
+resize feedback become obscured or disappear.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-plugins-toolbar.md`
+- `MIGRATIONS.md`
+
+#### Migration Recipe
+
+No downstream code or stored document migration is required. The existing
+inline-image Delta fields and `ImgToolbarPlugin` construction remain unchanged.
+
+#### Behavior Changes
+
+- The real inline-image frame and editable text layout stay fixed for the whole
+  resize gesture; only the inert body overlay updates on animation frames.
+- The left handle fixes the committed right edge and the right handle fixes the
+  committed left edge. Target width is clamped to the owning editable content
+  bounds, height keeps the resolved image ratio, and wrapped left-edge resizes
+  update the existing normalized `x` so the final frame matches the preview.
+- Escape, pointercancel, window blur, toolbar close, readonly changes and stale
+  Delta anchors remove the outline and release layout/virtual-view leases
+  without writing model data.
+- Block-image, shape and WordArt resize behavior is unchanged.
+- No public API, theme token, serialized field or package version changed.
+
+### v?.?.? - 2026-08-01 (patch) — estimate offscreen table height from row models
+
+**Severity**: patch
+
+**What changed**: Root virtualization and sparse pagination now estimate a
+built-in table's pre-mount height from its direct `table-row` models. Positive
+row `props.height` values are summed, invalid heights use the configured
+`table-row` estimate or the built-in 60px fallback, and the configured `table`
+estimate remains a minimum total height.
+
+**Why**: Treating every unmounted table as one fixed-height card made the main
+scroll range and model-only navigation severely underestimate tables with
+hundreds or thousands of rows.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-perf.md`
+- `MIGRATIONS.md`
+
+#### Migration Recipe
+
+No downstream code changes are required. Existing height configuration remains
+valid; the table value is now a floor and an optional row fallback can refine
+invalid/missing row heights:
+
+```typescript
+virtualization: {
+  enabled: true,
+  estimatedHeights: {
+    table: 240,
+    'table-row': 60,
+  },
+}
+```
+
+#### Behavior Changes
+
+- A non-empty unmounted table can reserve more vertical space than its static
+  `estimatedHeights.table` value when its row sum is larger.
+- Empty/malformed tables retain the previous flavour fallback.
+- Initial and row-structure estimation is `O(rows)` and reads no cell content
+  or DOM.
+- Nested cell text/props changes do not rescan all rows per keystroke; direct
+  table-row height props and row structure changes refresh the estimate.
+- The value remains non-exact for pagination/printing, and table row/cell views
+  are not virtualized by this patch.
+- No package version was changed by this source update.
+
+### v?.?.? - 2026-07-31 (minor) — add dual-sided Word-like inline-image wrapping
+
+**Severity**: minor
+
+**What changed**: Wrapped inline images with `side: 'auto'` now place real
+editable text on both sides when both intervals are at least 96 CSS pixels.
+The mounted editable block uses reversible local TextBlot row fragments while
+retaining the same one-length Delta Embed and persisted `wrap/side/x/gap`
+fields. Explicit left/right and unsafe auto positions keep the contained
+single-side float fallback. Multiple anchors use deterministic Delta-order
+push-down, and virtual height estimates use combined dual-side capacity.
+Wrapped-image dragging now keeps the committed frame in place and moves an
+inert x/y proxy; pointerup maps y to a same- or cross-block Delta anchor and
+commits the preserved Embed payload in one transaction.
+
+**Why**: A native CSS float can reserve only one edge-connected exclusion and
+cannot reproduce Word-style text on both sides of a centered image. Local real
+Blot fragments provide dual-side layout without introducing a cloned editor,
+new model fields or cross-block exclusions.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-inline.md`
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-input.md`
+- `blockcraft-selection.md`
+- `MIGRATIONS.md`
+
+#### New APIs / Features
+
+- Eligible `side: 'auto'` dual-side line-fragment projection
+- Grapheme-safe Range fitting and projection-owned TextBlot split rollback
+- Delta-order multi-image exclusion-band push-down
+- Package-internal selection, IME and pointer layout-freeze coordination
+- Word-style x/y drag proxy with same/cross-editable-block anchor movement
+- Presentation-only `.bc-inline-image-drag-proxy` theme hook
+
+#### Migration Recipe
+
+No data or host-code migration is required. To force the prior one-sided
+presentation, persist an explicit side instead of `auto`:
+
+```typescript
+// before: auto selected the wider single side
+createInlineImageDelta(url, 320, 180, {
+  wrap: true,
+  side: "auto",
+  x: 0.3,
+});
+
+// after: explicit side preserves single-sided wrapping
+createInlineImageDelta(url, 320, 180, {
+  wrap: true,
+  side: "right",
+  x: 0.3,
+});
+```
+
+#### Behavior Changes
+
+- `auto` uses both sides only when each side is at least 96 CSS pixels; it
+  otherwise falls back to the wider side. Ties remain deterministic.
+- Explicit `left/right` behavior and all serialized Delta/HTML fields remain
+  unchanged.
+- During drag, fragment boundaries, selection and the committed image stay
+  frozen while an accessibility-inert proxy follows x/y outside contenteditable.
+  Pointerup commits normalized `x` plus the resolved Delta anchor once; no
+  pixel `y` is added to the schema.
+- Same-block moves compensate forward offsets after deleting the one-length
+  Embed. Cross-block moves delete and insert the exact Embed payload inside one
+  Yjs transaction. Gaps/non-editable hits snap to the nearest compatible
+  mounted editable block; editor-external drops cancel.
+- IME and native pointer selection defer fragment rewrites until their active
+  gesture ends. Selection is reprojected from the existing anchor/head model.
+- Runtime detach/destroy removes projections, observers, scheduled frames and
+  leases; reattach rebuilds from current Y.Text.
+- No package version was changed by this source update.
+
+### v?.?.? - 2026-07-31 (patch) — restore immediate local-image upload preview
+
+**Severity**: patch
+
+**What changed**: Built-in local block-image insertion no longer waits for
+intrinsic metadata before creating the block. The block immediately shows its
+local preview and upload progress, then initializes root-relative `wr/ar` from
+the first successful preview load. Initial display width and later pointer
+resize are capped by the current parent content width while `wr` remains based
+on the root content width.
+
+**Why**: Waiting for image decoding before insertion hid the established upload
+state and made selecting or dropping an image feel unresponsive. The mounted
+preview already exposes reliable browser-normalized intrinsic dimensions and
+can initialize responsive sizing without blocking document insertion.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `MIGRATIONS.md`
+
+#### Migration Recipe
+
+No downstream code changes are required. Custom interactive insertion paths
+that copied the old built-in pre-read pattern can insert immediately:
+
+```typescript
+// before: delays insertion until metadata decoding finishes
+const size = await readImageIntrinsicSize(file);
+const snapshot = ImageBlockSchema.createSnapshot({
+  src: fileService.createObjectURL(file),
+  wr: 100,
+  ...(size ? { ar: size.ar } : {}),
+});
+
+// after: the mounted built-in image preview initializes wr/ar
+const snapshot = ImageBlockSchema.createSnapshot({
+  src: fileService.createObjectURL(file),
+});
+```
+
+`readImageIntrinsicSize()` remains available for model-only workflows that
+must provide explicit dimensions before mounting.
+
+#### Behavior Changes
+
+- Media-panel selection, empty-image selection and file drop insert the local
+  image before intrinsic metadata decoding.
+- The first successful local preview writes `wr/ar` through the no-history
+  initialization path. Upload completion changes only `src`.
+- Small images retain intrinsic width; large or nested images are capped at
+  the current parent width. Persisted `wr` remains root-relative for
+  virtualization, pagination and responsive rendering.
+- Image pointer resizing uses the parent width as its maximum and the root
+  width as its persistence basis.
+- Remote/legacy image initialization, peer “同步中…” presentation and upload
+  failure behavior are unchanged.
+- No package version was changed by this source update.
+
+### v?.?.? - 2026-07-31 (minor) — add square wrapping for inline images
+
+**Severity**: minor
+
+**What changed**: The built-in one-length `image` inline Embed now supports
+optional square text wrapping. New typed wrap attributes round-trip through
+the default converter and HTML adapter, the image toolbar can switch and
+position the wrapped image with a Word-style x/y proxy, and
+virtualization/sparse pagination reserve a model-derived contained height
+before the DOM mounts.
+
+**Why**: Inline images need Word-like four-sided text flow without becoming
+block images or absolute placement objects, while retaining native caret/IME
+behavior and predictable virtual geometry.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-embed.md`
+- `blockcraft-inline.md`
+- `blockcraft-plugins-toolbar.md`
+- `MIGRATIONS.md`
+
+#### New APIs / Features
+
+- `InlineImageWrapSide = 'auto' | 'left' | 'right'`
+- `InlineImageWrapOptions`
+- Optional fourth
+  `createInlineImageDelta(src, width, height, wrapOptions)` argument
+- `normalizeInlineImageWrapOptions()`
+- Stable `.bc-inline-image-frame` inside the existing inline-image shell
+- Inline-only **四周型环绕** toolbar action and proxy-based Pointer Events
+  positioning
+- HTML `data-bc-wrap*` preservation and model-only wrapped-height estimation
+
+#### Migration Recipe
+
+Existing inline-image snapshots and three-argument helper calls require no
+migration. To opt in:
+
+```typescript
+// before: ordinary inline image
+createInlineImageDelta(url, 320, 180);
+
+// after: square wrapping, image starts at 24% of the editable width
+createInlineImageDelta(url, 320, 180, {
+  wrap: true,
+  side: "auto",
+  x: 0.24,
+  gap: 12,
+});
+```
+
+#### Behavior Changes
+
+- Missing `wrap` preserves the previous ordinary inline rendering.
+- Wrapped floats are contained inside their owning editable block and never
+  affect later blocks.
+- HTML preserves `wrap/side/x/gap`; Markdown intentionally drops those layout
+  fields while keeping the image URL.
+- Wrapped resize creates one final model write. Drag previews remain DOM-only;
+  release creates one transaction that may update `x`, the Delta anchor, or
+  both.
+- No package version was changed by this source update.
+
+### v?.?.? - 2026-07-31 (patch) — simplify the WordArt floating toolbar
+
+**Severity**: patch
+
+**What changed**: The default WordArt connected toolbar no longer duplicates
+the preset and font-family selectors owned by the fixed toolbar. Font size and
+the remaining local styling, alignment, placement, layering and deletion
+controls stay available. The shadow toggle now uses the semantic
+`bc_wenziyinying` iconfont glyph.
+
+**Why**: Keeping whole-preset and font-family selection in one fixed-toolbar
+entry makes the object toolbar narrower and avoids two competing entry points
+for the same presentation controls.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-toolbar.md`
+- `MIGRATIONS.md`
+
+#### Behavior Changes
+
+- `WordArtToolbarComponent` no longer renders `艺术字预设` or `艺术字字体`
+  overlay triggers.
+- The fixed toolbar's **插入艺术字** visual preset dropdown is unchanged.
+- No WordArt schema, props, snapshot or Plugin registration migration is
+  required.
+
+### v?.?.? - 2026-07-31 (minor) — distinguish template locks from user locks
+
+**Severity**: minor
+
+**What changed**: Persistent block locks now carry an optional origin. Ordinary
+user locks preserve the existing owner-unlock behavior, while template locks
+remain protected after a template is instantiated and require an explicit host
+unlock grant even when the current user ID matches the persisted owner. The
+rendered block host also exposes the effective lock kind so template authoring
+can reveal lock decoration without showing it in ordinary template use.
+
+**Why**: Screen-local styling or a fixed demo identity cannot express the
+business lifecycle of authoring a template and later using its snapshots in
+other editors. Lock intent must travel with the block data.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `BlockLockKind = 'user' | 'template'`
+- `SetBlockReadonlyOptions` and
+  `BlockCraftDoc.setBlockReadonly(block, readonly, {kind})`
+- `DocConfig.defaultBlockLockKind?: BlockLockKind`
+- `BlockCraftDocBuilder.defaultBlockLockKind(kind)`
+- `BlockReadonlyResolution.lockKind`
+- `BlockUnlockContext.lockKind`
+- `IBaseMetadata.lockKind?: 'template'`
+- `data-bc-lock-kind="user|template"` on readonly block hosts
+- `data-bc-reveal-template-locks` authoring-only styling hook
+
+### Migration Recipe
+
+Existing locks require no data migration and continue to resolve as user locks.
+Template authoring hosts should opt their generic lock controls into template
+locks and explicitly authorize template unlocks:
+
+```typescript
+const doc = new BlockCraftDoc({
+  // before
+  currentUserId: session.userId,
+});
+
+doc.setBlockReadonly(regionId, true);
+```
+
+```typescript
+const doc = new BlockCraftDoc({
+  // after
+  currentUserId: session.userId,
+  defaultBlockLockKind: "template",
+  canUnlockBlock: ({ lockKind, currentUserId, lockUserId }) =>
+    lockKind === "template" &&
+    permissions.canEditTemplate(currentUserId) &&
+    currentUserId === lockUserId,
+});
+
+doc.setBlockReadonly(regionId, true); // generic controls now create template locks
+// or: doc.setBlockReadonly(regionId, true, {kind: 'template'})
+```
+
+For legacy snapshots known to come from a template-authoring store, migrate
+valid `meta.lock` values by adding `meta.lockKind = 'template'` before import.
+Do not apply that migration indiscriminately to ordinary documents.
+
+### Behavior Changes
+
+- Missing or unknown `meta.lockKind` resolves as `'user'`.
+- A user lock remains owner-unlockable; a template lock always requires
+  `DocConfig.canUnlockBlock` to return `true`.
+- Clipboard copies remove both `meta.lock` and `meta.lockKind`.
+- The base theme hides explicit template-lock decoration unless an ancestor
+  opts in with `data-bc-reveal-template-locks`; readonly enforcement is
+  unchanged.
+
+### v?.?.? - 2026-07-31 (minor) — add editable WordArt blocks
+
+**Severity**: minor
+
+**What changed**: The package now exports a direct-Y.Text `word-art` editable
+Block, classic WordArt presentation presets and normalization helpers, a
+zero-config `WordArtToolbarPlugin`, lossless HTML mapping, readable Markdown
+degradation and a dedicated Snapshot Viewer renderer. The bundled capability
+factory and fixed toolbar register and insert it by default. The existing
+`ShapeResizerComponent` gained backward-compatible calculator, preview-mirror,
+rotation-label and border-drag inputs so WordArt and future fixed objects can
+share the same eight handles, rotation affordance and Word-like edge movement.
+
+**Why**: Decorative text needs the same selection, placement, resizing,
+rotation, layering, collaboration and persistence guarantees as visual
+objects, while remaining directly editable through the framework's normal
+Y.Text/IME pipeline.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-plugin.md`
+- `blockcraft-plugins-ref.md`
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-adapter.md`
+- `MIGRATIONS.md`
+
+#### New APIs / Features
+
+- `WordArtBlockSchema`, `WordArtBlockComponent`, `WordArtBlockProps`
+- `WordArtToolbarPlugin`, `WordArtToolbarComponent`,
+  `WordArtTransformOverlayComponent`
+- `WORD_ART_PRESETS`, `WORD_ART_FONT_OPTIONS`, `getWordArtPreset()`
+- `normalizeWordArtProps()`, `resolveWordArtPresentation()`,
+  `wordArtPresentationToInlineStyle()`, `calculateWordArtResize()`
+- `ShapeResizeCalculator` and optional `ShapeResizerComponent` inputs:
+  `resizeCalculator`, `previewMirror`, `rotationLabel`, `borderDraggable`
+
+#### Migration Recipe
+
+The bundled editor requires no migration. A custom Schema/Plugin assembly can
+opt in explicitly:
+
+```typescript
+const schemas = new SchemaManager([
+  // existing schemas
+  WordArtBlockSchema,
+  PlacementLayoutBlockSchema,
+]);
+
+const plugins = [
+  // existing plugins
+  new WordArtToolbarPlugin(),
+];
+```
+
+#### Behavior Changes
+
+- Bundled block materials now include `word-art`; the fixed toolbar shows
+  the **插入艺术字** five-card visual preset dropdown when that Schema is
+  registered. Its previews reuse the production presentation resolver.
+- Choosing a fixed-toolbar preset creates an absolute `over` object near the
+  saved selection with that presentation, enters editing and selects all
+  default `艺术字` text.
+- WordArt transform handles render inside the real surface so rotated resize
+  previews and committed placement share one coordinate system. Its preset,
+  font, fill, effect and horizontal/vertical alignment menus use the shared
+  floating-toolbar overlays. Alignment choices are iconfont-only, and range
+  controls match the shape-toolbar track, thumb and focus treatment.
+- Clicking text or blank space enters WordArt text editing without arming an
+  object drag. Object placement/reorder starts only from one of the four
+  invisible hit regions on the visible selection border; no separate move
+  handle is rendered.
+- HTML preserves the complete allowlisted presentation/placement model.
+  Markdown intentionally degrades to a normal readable paragraph.
+- No existing Schema, snapshot or Plugin configuration changes are required.
+
+### v?.?.? - 2026-07-31 (minor) — add generic instance metadata for content regions
+
+**Severity**: minor
+
+**What changed**: Editable Block instances can now persist a custom placeholder
+mode (`plhMode`), while container instances can persist opt-in direct-child
+filters (`incl` / `excl`). Schemas declare which non-editable containers
+interpret the child filters and whether a container may remain empty. The
+package also adds a generic `render-unit` block,
+model-first child eligibility, and an optional host mutation policy for
+protecting template structure.
+
+**Why**: Template decorators need contextual hints in empty content areas and
+per-instance child restrictions without creating one Block flavour per
+template. Static Schema restrictions remain the non-negotiable upper bound.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-block.md`
+- `blockcraft-plugins-ref.md`
+- `blockcraft-plugins-util.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+#### New APIs / Features
+
+- `IBaseMetadata.plhMode?: 'focused' | 'always'`
+- `IBaseMetadata.incl?: string[]` and `excl?: string[]`
+- `BlockPlaceholderMode`
+- `BlockInstanceMetaCapability`
+- `IBlockSchemaOptions.metadata.instanceMeta`
+- `IBlockSchemaOptions.metadata.allowEmptyChildren`
+- `SchemaManager.isValidChildrenForInstance(...)`
+- `matchesBlockFlavourPattern(...)` and
+  `evaluateInstanceChildConstraints(...)`
+- `BlockCraftDoc.canInsertChild(parentId, childFlavour)`
+- `RenderUnitBlockSchema`, `RenderUnitBlockComponent`, and
+  `RenderUnitBlockModel`
+- `DocConfig.blockMutationPolicy?: BlockMutationPolicy` and the exported
+  mutation-policy types, manager and error
+
+#### Migration Recipe
+
+```typescript
+metadata: {
+  includeChildren: ['paragraph', 'image'],
+  instanceMeta: {
+    childConstraints: true,
+  },
+}
+
+const region = MyRegionSchema.createSnapshot()
+region.meta = {
+  incl: ['paragraph'],
+  excl: ['image'],
+}
+const paragraph = ParagraphBlockSchema.createSnapshot()
+paragraph.meta = {
+  plh: '在此添加正文或图片',
+  plhMode: 'always',
+}
+region.children = [paragraph]
+
+// Instance-aware insertion eligibility:
+doc.canInsertChild(parentId, childFlavour)
+```
+
+#### Behavior Changes
+
+- Instance rules only narrow the static Schema. `excl` wins over `incl`, an
+  explicit empty `incl` allows nothing, and malformed rules fail closed.
+- `DocCRUD` enforces instance rules for insert, move and replace.
+- Persistent placeholders on editable blocks remain visible in readonly mode
+  while empty and hide during IME composition. Non-editable containers do not
+  render placeholder metadata; regions place it on an editable child.
+- Placeholder DOM uses `.bc-placeholder-empty` and
+  `.bc-placeholder-target[data-placeholder]`, retaining host `.empty`.
+- `table-cell`, `column`, and `callout` do not opt into instance child
+  constraints.
+- Package version is intentionally unchanged; maintainers decide releases.
+
+### v?.?.? - 2026-07-31 (patch) — virtualize root absolute layouts from model geometry
+
+**Severity**: patch
+
+**What changed**: Root virtualization now builds a model-only vertical
+visibility index for absolute children of the zero-height root
+`placement-layout`. It compares persisted root-relative `placement.y` and
+estimated object height with the current root-relative viewport plus one
+viewport of pre-rendering. The layout is no longer keep-alive after its first
+materialization; it can detach when no absolute child or interaction lease is
+visible.
+
+**Why**: Continuous root virtualization previously saw only the layout's
+zero-height root entry. On a cold reload it could omit the layout even when an
+absolute image was visibly positioned in the initial viewport, so the image
+component and its stable loading placeholder were never created. Permanently
+pinning the entire layout would fix correctness but defeat virtual rendering.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-block.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- Absolute coordinates are interpreted against the root children content
+  coordinate system. New direct absolute insertion uses that same container as
+  its measurement origin.
+- `placement-layout` does not contribute to normal-flow height or scroll
+  anchoring. Its visibility projection runs separately and reads no child DOM
+  geometry during scrolling.
+- Responsive media uses persisted `wr/ar`; fixed-size objects use model
+  `width/height`; rotated fixed-size objects expand their vertical visibility
+  band to the rotated bounding box.
+- The current root-layout phase remains atomic: one visible absolute child
+  mounts all siblings in that layout. Selection and pointer interactions can
+  still pin the unit independently.
+- No snapshot or host configuration migration is required.
+
+### v?.?.? - 2026-07-30 (minor) — add stable visual-resource placeholders
+
+**Severity**: minor
+
+**What changed**: The package now exports a standalone visual-resource
+placeholder directive, generic image/video/iframe adapters, resource state
+types and a browser-compatible local-image metadata reader. Built-in block
+images, videos, default inline images and Snapshot Viewer compose the same
+loading/error/retry presentation with their existing stable size frame.
+Image creation also accepts a short `{src, wr?, ar?}` object input. Root
+virtualization and sparse pagination now share one model-only media height
+estimator.
+
+**Why**: Waiting for media metadata left image geometry at zero, caused layout
+jumps after virtual remounts and made inline/block failure states inconsistent.
+Persisting or deterministically reserving the frame before loading lets
+offscreen layout compute without mounting DOM while keeping resource loading an
+optional directive/component extension rather than a document capability.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-block.md`
+- `blockcraft-inline.md`
+- `blockcraft-plugins-toolbar.md`
+- `MIGRATIONS.md`
+
+#### New APIs / Features
+
+- `BcResourcePlaceholderDirective`
+- `ResourcePlaceholderState`, `ResourceIntrinsicSize`,
+  `ResourcePlaceholderAdapter` and related binding types
+- `imageResourcePlaceholderAdapter`,
+  `videoResourcePlaceholderAdapter`,
+  `iframeResourcePlaceholderAdapter`
+- `readImageIntrinsicSize(source, options?)`
+- `ImageBlockCreateInput` and
+  `ImageBlockSchema.createSnapshot({src, wr?, ar?})`
+
+#### Migration Recipe
+
+Existing integrations require no migration. Custom visual blocks can opt into
+the shared state UI while keeping geometry in their own props:
+
+```html
+<div
+  #frame
+  bcResourcePlaceholder
+  [resourceElement]="image"
+  [resourceKey]="props.src"
+>
+  <img #image [src]="props.src" />
+  <block-resizer [container]="frame" />
+</div>
+```
+
+Local image creators can avoid the fallback correction:
+
+```typescript
+const size = await readImageIntrinsicSize(file);
+const snapshot = ImageBlockSchema.createSnapshot({
+  src: fileService.createObjectURL(file),
+  wr: 100,
+  ...(size ? { ar: size.ar } : {}),
+});
+```
+
+The positional `createSnapshot(src, width?, height?, caption?)` image API is
+still supported.
+
+#### Behavior Changes
+
+- New local image insertions read intrinsic dimensions before writing the
+  snapshot. Remote/legacy block images with no `ar` use 4:3 immediately and
+  backfill the first successful ratio without Undo history.
+- Default inline images use stored `width/height` or reserve `320 × 240`; the
+  first successful load fills only missing dimensions in an
+  `ORIGIN_NO_RECORD` transaction.
+- Loading failure keeps the same geometry and exposes an in-place retry.
+- Snapshot updates move prepared resource frames into the live tree and
+  destroy detached controllers; completed resources do not leak listeners.
+- Continuous virtualization and sparse pagination use the same DOM-free
+  `wr/ar` / inline-image estimator. Ordinary text keeps its prior measured
+  height rather than being overwritten by a generic fallback.
+- `EmbedConverter.onDestroy` now also runs for the old view during semantic
+  embed re-render, not only on final blot detach.
+
+### v?.?.? - 2026-07-30 (major) — share the full bundled capability catalog
+
+**Severity**: major
+
+**What changed**: The package now exports one reference-editor capability
+catalog through `BUNDLED_EDITOR_SCHEMAS`,
+`BUNDLED_EDITOR_BLOCK_MATERIAL_GROUPS`,
+`projectBundledBlockMaterials()`, `validateBundledEditorCapabilities()` and
+`createBundledEditorCapabilities()`. The bundled editor and template surfaces
+consume the same factory instead of maintaining divergent registration lists.
+Four built-in Plugins that previously inherited/collided on non-unique runtime
+names now publish stable IDs.
+
+**Why**: A host that copied the bundled list could silently omit blocks,
+inline embeds or toolbars, and stateful Plugin instances could accidentally be
+shared across documents. Unique validation also exposed historical Plugin name
+collisions that made a complete validated stack impossible.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-plugin.md`
+- `blockcraft-plugins-ref.md`
+- `blockcraft-plugins-block.md`
+- `blockcraft-plugins-inline.md`
+- `blockcraft-plugins-toolbar.md`
+
+#### Breaking Changes
+
+- `OrderedBlockPlugin.name`: `"custom"` → `"ordered-block"`
+- `CodeInlineEditorBinding.name`: `"custom"` →
+  `"code-inline-editor-binding"`
+- `TableBlockBinding.name`: `"custom"` → `"table-block-binding"`
+- `BookmarkBlockExtensionPlugin.name`: `"EmbedFrameExtensionPlugin"` →
+  `"bookmark-block-extension"`
+
+Only integrations that use `plugin.name` as a lookup key need to migrate.
+Plugin constructors and behavior are otherwise unchanged.
+
+#### New APIs / Features
+
+- `BUNDLED_EDITOR_SCHEMAS`: ordered, duplicate-free full Schema baseline.
+- `BUNDLED_EDITOR_BLOCK_MATERIAL_GROUPS` and
+  `projectBundledBlockMaterials()`: insertion-panel projection that omits root,
+  internal child and infrastructure schemas.
+- `createBundledEditorCapabilities(options)`: creates a fresh
+  `SchemaManager`, embed converter list and full Plugin stack per Doc, with
+  host options and additional Schema/embed extension points.
+- `validateBundledEditorCapabilities(input)`: rejects duplicate block
+  flavours, embed names and Plugin names before initialization.
+
+#### Migration Recipe
+
+```typescript
+// before: copied lists can drift, and stateful instances are easy to reuse
+const schemas = new SchemaManager(copiedBundledSchemas);
+const plugins = copiedBundledPlugins;
+
+// after: call once for every BlockCraftDoc
+const capabilities = createBundledEditorCapabilities({
+  additionalSchemas: [MyBlockSchema],
+  additionalEmbeds: [["my-embed", myEmbedConverter]],
+});
+const doc = new BlockCraftDoc({
+  // ...
+  schemas: capabilities.schemas,
+  embeds: [...capabilities.embeds],
+  plugins: [...capabilities.plugins],
+});
+```
+
+If application code keys Plugin settings by the old names, replace those keys
+with the stable IDs listed under Breaking Changes.
+
+#### Behavior Changes
+
+- Full bundled capability creation throws immediately on duplicate Schema,
+  embed or Plugin identities instead of allowing later registration ambiguity.
+- Each factory call owns new Plugin and embed converter instances; sharing one
+  returned capability object across documents is unsupported.
+
+### v?.?.? - 2026-07-30 (minor) — add per-block placeholder metadata
+
+**Severity**: minor
+
+**What changed**: Editable block instances can now persist their own
+placeholder with `meta.plh?: string`. `PlaceholderPlugin` resolves this field
+before its per-flavour runtime override and Schema default, and observes active
+block meta changes through one doc-level subscription. The public
+`BaseBlockComponent.updateMeta()` patch type now also describes its existing
+runtime behavior that `null` deletes a metadata key.
+
+**Why**: Schema placeholder declarations and Plugin overrides apply to every
+block of one flavour. Applications need two paragraph instances of the same
+flavour to carry different collaborative, serializable guidance without
+cloning or mutating a global Schema.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-plugins-util.md`
+- `blockcraft-data.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `IBaseMetadata.plh?: string`
+- `BaseBlockComponent.updateMeta()` accepts `null` as a typed deletion command
+  for metadata keys, matching its existing runtime behavior.
+
+### Migration Recipe
+
+No existing document or integration requires migration. Set an instance
+placeholder before insertion or on a mounted block:
+
+```typescript
+const snapshot = ParagraphBlockSchema.createSnapshot();
+snapshot.meta.plh = "请输入摘要";
+
+block.updateMeta({ plh: "请输入摘要" });
+block.updateMeta({ plh: "" }); // disable only this block
+block.updateMeta({ plh: null }); // delete and restore flavour/schema fallback
+```
+
+### Behavior Changes
+
+- Resolution order is `block.meta.plh` → Plugin flavour override → Schema
+  `metadata.placeholder`.
+- Empty-string `plh` explicitly disables placeholder for that block.
+- Missing `plh` preserves the previous behavior; malformed non-string values
+  are ignored and fall through without modifying the document.
+- Active-block local, remote and Undo/Redo `plh` changes refresh immediately.
+  Other blocks and other meta keys do not trigger placeholder DOM writes.
+- Plugin subscription count remains constant with document size.
+
+### v?.?.? - 2026-07-30 (minor) — add one-step absolute object stacking
+
+**Severity**: minor
+
+**What changed**: `BlockPlacementManager` now exposes one-step
+foreground/background movement for absolute root objects. Child order inside
+the root `placement-layout` defines order within the `under` and `over` tiers,
+with ordinary flow content acting as a virtual boundary. The built-in image and
+shape toolbars expose the same movement using the
+`bc_cengji-shangyi` / `bc_cengji-xiayi` iconfont glyphs.
+
+**Why**: Choosing only **衬于文字下方** or **浮于文字上方** could not resolve
+overlap between multiple absolute objects. Authors need predictable adjacent
+movement without editing numeric z-index values or coupling ordering to DOM
+paint accidents.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-plugins-toolbar.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `BlockPlacementManager.canMoveForward(blockOrId)`
+- `BlockPlacementManager.canMoveBackward(blockOrId)`
+- `BlockPlacementManager.moveForward(blockOrId)`
+- `BlockPlacementManager.moveBackward(blockOrId)`
+
+### Migration Recipe
+
+Existing snapshots require no data migration. Custom absolute-object toolbars
+can delegate to the document manager:
+
+```typescript
+if (doc.placement.canMoveForward(block)) {
+  doc.placement.moveForward(block);
+}
+
+if (doc.placement.canMoveBackward(block)) {
+  doc.placement.moveBackward(block);
+}
+```
+
+### Behavior Changes
+
+- Later `placement-layout.children` siblings paint above earlier siblings within
+  the same semantic tier.
+- Moving the highest `under` object forward makes it the lowest `over` object;
+  moving the lowest `over` object backward makes it the highest `under` object.
+  The layer and child order change in one Yjs transaction.
+- Moving forward at the highest `over` object or backward at the lowest `under`
+  object returns `false`; built-in toolbar controls render disabled there.
+
+### v?.?.? - 2026-07-30 (minor) — add root-relative object sizing
+
+**Severity**: minor
+
+**What changed**: Block Schemas can now opt into root-relative object sizing.
+The built-in image and video blocks persist top-level `wr` (root content width
+percentage) and `ar` (width/height), share one Pointer Events width resizer,
+and resolve dimensions through the document-owned
+`BlockObjectSizingManager`. Root virtualization, sparse pagination, Snapshot
+Viewer and HTML adapters consume the same model. Existing pixel
+`width/height` snapshots remain supported and migrate only after the user
+completes a resize.
+
+**Why**: Pixel sizes were tied to one editing viewport and could not provide
+stable model-only height estimates for virtual rendering. A flavour-agnostic
+Schema capability also lets iframe-like objects adopt the same sizing model
+without duplicating media-specific logic.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-block.md`
+- `blockcraft-adapter.md`
+- `blockcraft-plugins-toolbar.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- Optional `IBlockSchemaOptions.metadata.objectSizing`
+- `BlockObjectSizingCapability`
+- `BlockObjectSizeProps`
+- `ObjectDimensionsSource`
+- `NormalizedObjectSize`
+- `ResolvedObjectDimensions`
+- `normalizeObjectSize()`
+- `resolveObjectDimensions()`
+- `deriveObjectSizeFromPixels()`
+- `BlockObjectSizingManager` and `doc.objectSizing`
+- `ResizeContainerComponent.referenceWidth`
+- `BlockResizeCommit.basisWidth`
+
+### Migration Recipe
+
+Existing custom pixel-sized blocks continue to work. To adopt responsive object
+sizing, compose the props type, persist `wr`, declare Schema defaults and use
+the document resolver:
+
+```typescript
+// before
+props: {width?: number; height?: number}
+
+// after
+props: BlockObjectSizeProps & {url: string}
+
+metadata: {
+  objectSizing: {defaultWr: 100, defaultAr: 16 / 9},
+}
+
+const dimensions = doc.objectSizing.resolve(block.flavour, block.props)
+```
+
+Lossless custom HTML adapters should write/read `data-bc-wr` and
+`data-bc-ar`. Standard Markdown requires no change.
+
+### Behavior Changes
+
+- New images and videos default to `wr: 100`; missing image/video ratios use
+  Schema defaults until intrinsic metadata fills `ar`.
+- Root width changes update mounted dimensions and offscreen height estimates
+  without writing Yjs or adding Undo history.
+- Image/video aspect ratio is locked during left/right Pointer Events resize;
+  pointerup produces one props write.
+- A legacy pixel object keeps its old visual size until the first completed
+  resize, then writes `wr/ar` and clears `width/height` atomically.
+- Snapshot Viewer and HTML export now preserve `wr/ar`; HTML import prefers the
+  new data attributes before legacy pixel dimensions.
+
+### v?.?.? - 2026-07-30 (major) — converge shape picker icons on SVG geometry
+
+**Severity**: major
+
+**What changed**: The fixed toolbar's 12-item shape picker now renders trusted
+shape geometry through the exported `ShapeIconComponent`. The
+`ShapeDefinition.icon` field and built-in picker iconfont values were removed;
+each picker preview reuses the same `path` as the inserted shape. The fixed
+toolbar entry keeps its existing `bc_tuxing` iconfont glyph.
+
+**Why**: Iconfont approximations duplicated geometry metadata and caused
+several distinct shapes to display the same generic glyph. A single path source
+keeps built-in and future shape previews accurate without adding SVG asset
+files or font glyphs.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-plugins-formatting.md`
+- `blockcraft-plugins-toolbar.md`
+- `MIGRATIONS.md`
+
+### Breaking Changes
+
+- Exported `ShapeDefinition` no longer contains `icon: string`.
+
+### New APIs / Features
+
+- Exported standalone `ShapeIconComponent` with required `path` input.
+
+### Migration Recipe
+
+Shape definition values should remove their duplicate iconfont class:
+
+```typescript
+// before
+const definition: ShapeDefinition = {
+  type: "rectangle",
+  label: "矩形",
+  icon: "bc_icon bc_juxing",
+  path: "M0 0H1000V1000H0Z",
+  textInsets,
+};
+
+// after
+const definition: ShapeDefinition = {
+  type: "rectangle",
+  label: "矩形",
+  path: "M0 0H1000V1000H0Z",
+  textInsets,
+};
+```
+
+### Behavior Changes
+
+- The shape entry keeps its existing `bc_tuxing` iconfont glyph.
+- Picker icons inherit `currentColor` and display the exact inserted geometry.
+- Other BlockCraft icons continue to use iconfont.
+
+### v?.?.? - 2026-07-30 (minor) — add drag rotation to shapes
+
+**Severity**: minor
+
+**What changed**: The built-in shape block now supports Word-like
+drag rotation from a top-center selection handle. Rotation is persisted as an
+optional shape prop, normalized to finite degrees, rendered together with shape
+text, preserved by HTML import/export and committed once per Pointer Events
+gesture. Eight-direction resize now transforms screen pointer deltas into the
+rotated shape's local axes and maps edge compensation back to page coordinates.
+
+**Why**: Shapes need direct visual rotation without adding toolbar-only controls
+or allowing browser-native drag/drop. Coordinate-aware resize is part of the
+same feature because axis-aligned pointer math becomes incorrect as soon as a
+shape is rotated.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-adapter.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- Optional `ShapeBlockProps.rotation`; normalized
+  `NormalizedShapeBlockProps.rotation`
+- `ShapeRotateCommit`
+- `normalizeShapeRotation()`
+- `calculateShapeRotation()`
+- `rotateShapeVector()`
+- `ShapeResizerComponent.rotation` input and `rotateCommit` output
+
+### Migration Recipe
+
+Existing shape snapshots and typed prop overrides require no change because
+`rotation` is optional and missing values normalize to `0`. Custom exporters
+that aim for lossless BlockCraft HTML should preserve the new attribute:
+
+```html
+<figure data-bc-block="shape" data-shape-rotation="37.5"></figure>
+```
+
+### Behavior Changes
+
+- Selecting an unlocked shape shows a rotation handle above its resize outline.
+  Dragging rotates freely; holding Shift snaps to the nearest 15°.
+- Rotation preview is animation-frame-coalesced outside Angular. Pointerup
+  performs one `updateProps()` write; pointer cancel, Escape, window blur and
+  destruction restore the pre-gesture transform without a write.
+- Rotated resize handles follow shape-local axes. Absolute west/north resize
+  compensation is rotated back into the placement container coordinate system.
+- The shape toolbar keeps additional top clearance so it does not cover the
+  rotation handle, and pointerdown on the handle never starts object movement.
+- HTML round-trips rotation through `data-shape-rotation`; malformed external
+  values normalize safely.
+
+### v?.?.? - 2026-07-30 (minor) — add the root placement layout
+
+**Severity**: minor
+
+**What changed**: Standard absolute image and shape blocks now live below one
+hidden `placement-layout` at the end of `root.children` instead of remaining
+ordinary root-flow siblings. The bundled editor registers the new
+`PlacementLayoutBlockSchema`; `BlockPlacementManager` lazily creates, merges,
+normalizes and removes the layout. Absolute descendants are excluded from
+BlockController and ordinary sibling navigation, while an explicit
+full-document root selection still copies/deletes the complete layout subtree.
+Object position adjustment is Pointer Events-only and commits one placement
+update on `pointerup`; it does not use native HTML5 drag/drop.
+
+**Why**: A CSS-absolute block that remained a normal flow sibling had
+contradictory model and visual positions. BlockController, range operations and
+virtualization could still treat it as if it occupied its old source location.
+A root infrastructure surface gives placement one canonical structural
+boundary and keeps future positionable shapes on the same editor capability.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-block.md`
+- `blockcraft-selection.md`
+- `blockcraft-input.md`
+- `blockcraft-plugins-block.md`
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-adapter.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `PlacementLayoutBlockSchema`, `PlacementLayoutBlockComponent`
+- `BLOCK_PLACEMENT_LAYOUT_FLAVOUR`
+- `BlockPlacementManager.isPlacementLayout()`
+- `BlockPlacementManager.isInAbsoluteLayout()`
+- `BlockPlacementManager.getRootFlowChildIds()`
+- `BlockPlacementManager.getAbsoluteBlockIds()`
+- `BlockPlacementManager.insertAbsoluteSnapshot()`
+- `BlockPlacementManager.allowsGapCursor()`
+- `BlockPlacementManager.isAbsoluteObjectSelection()`
+- Snapshot Viewer structural rendering for `placement-layout`
+- The layout accepts future custom positionable flavours; normalization keeps
+  only children whose own Schema supports absolute placement.
+
+### Migration Recipe
+
+Custom schema assemblies that enable standard absolute placement must register
+the infrastructure schema:
+
+```typescript
+// before
+const schemas = new SchemaManager([
+  ImageBlockSchema,
+  ShapeBlockSchema,
+  ShapeTextBlockSchema,
+]);
+
+// after
+const schemas = new SchemaManager([
+  PlacementLayoutBlockSchema,
+  ImageBlockSchema,
+  ShapeBlockSchema,
+  ShapeTextBlockSchema,
+]);
+```
+
+Do not add native drag handlers to custom object toolbars:
+
+```typescript
+// before
+host.addEventListener("dragstart", startPositionDrag);
+
+// after
+host.addEventListener("pointerdown", (event) => {
+  doc.placement.startDrag(event, block);
+});
+```
+
+### Behavior Changes
+
+- The standard absolute transition is root-only. Nested container objects
+  return `false` for absolute layout until a future scoped layout phase.
+- Legacy root-level absolute objects and duplicate/invalid placement layouts
+  are normalized through a no-undo Yjs repair path.
+- Returning to top-bottom or inline placement inserts near the object's current
+  visual position; it does not persist or restore the old logical index.
+- Ordinary range navigation/copy/delete stops before the placement layout.
+  Full-root copy/cut/delete includes its absolute descendants.
+- BlockController never responds to the placement layout or its descendants;
+  image/shape-specific toolbars own those interactions.
+- The fixed toolbar creates shapes directly in the placement layout with the
+  default `over` tier. If this is the first object, the layout and shape are
+  inserted as one nested snapshot; no temporary root-flow state is rendered.
+- The placement layout and absolute objects expose no gap cursor. Stale gap
+  snapshots degrade to whole-block selection, and relative gaps are restored
+  when an object returns to flow.
+- Whole absolute-object selection prevents printable input, IME, Enter, Tab and
+  paste while preserving Delete/Backspace and object toolbar operations.
+  Nested editable children such as `shape-text` still use normal text input.
+- Shape text is visually integrated with its shape and has no independent
+  border, outline, shadow, background or block margin.
+- HTML flattens the infrastructure wrapper but preserves image/shape placement
+  attributes so document initialization can reconstruct the root layout.
+
+### v?.?.? - 2026-07-29 (patch) — simplify shape editing UI and create text lazily
+
+**Severity**: patch
+
+**What changed**: Empty `ShapeBlockSchema` snapshots no longer contain a
+placeholder `shape-text` child. The child is created and focused only when the
+user double-clicks the shape, or when non-empty text is explicitly passed to
+`createSnapshot()`. The default shape toolbar no longer shows shape type, text
+color or text alignment controls, and its remaining outline-width dropdown now
+uses BlockCraft's shared floating-toolbar style instead of a native `select`.
+Empty shape HTML also omits `data-bc-shape-text`.
+
+**Why**: Empty editable children appeared as unexplained paragraphs in the
+document model, while native selects and duplicated controls made the compact
+object toolbar inconsistent with other BlockCraft toolbars.
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-adapter.md`
+- `MIGRATIONS.md`
+
+### Behavior Changes
+
+- `ShapeBlockSchema.createSnapshot()` and calls with empty text now return a
+  childless shape. Callers that pass non-empty text keep the previous one-child
+  result.
+- `ShapeToolbarAction` and the underlying text-style props remain available for
+  compatibility; only the bundled toolbar surface is reduced.
+- HTML import/export preserves both childless shapes and shapes containing text.
+
+### v?.?.? - 2026-07-29 (minor) — add Word-like shape blocks
+
+**Severity**: minor
+
+**What changed**: BlockCraft now exports a `shape` container block, its
+collaborative `shape-text` editable child, 12 normalized SVG shape definitions,
+eight-direction resize behavior, and `ShapeToolbarPlugin`. The toolbar controls
+shape geometry/style/text alignment and uses the shared object-layout states
+**上下型 / 衬于文字下方 / 浮于文字上方**; no inline-shape representation is
+introduced. The bundled fixed toolbar adds a visible **插入形状** picker backed
+by the same 12 definitions. HTML preserves the full shape model and Markdown
+degrades to readable text.
+
+**Why**: Documents need Word-like diagram objects that share the editor's
+selection, collaboration, undo/redo, object placement and iconfont conventions
+instead of a one-off host implementation.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-block.md`
+- `blockcraft-plugin.md`
+- `blockcraft-plugins-formatting.md`
+- `blockcraft-plugins-ref.md`
+- `blockcraft-plugins-toolbar.md`
+- `blockcraft-adapter.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `ShapeBlockSchema`, `ShapeTextBlockSchema`
+- `ShapeBlockComponent`, `ShapeTextBlockComponent`
+- `ShapeToolbarPlugin`, `ShapeToolbarComponent`, `ShapeToolbarAction`
+- `ShapeBlockProps`, `ShapeKind`, `ShapeStrokeStyle`, `ShapeTextAlign`,
+  `ShapeVerticalAlign`
+- `SHAPE_KINDS`, `SHAPE_DEFINITIONS`, `DEFAULT_SHAPE_PROPS`,
+  `getShapeDefinition()`, `isShapeKind()`, `normalizeShapeProps()`
+- `ShapeResizerComponent`, `ShapeResizeHandle`, `ShapeResizeCommit`,
+  `calculateShapeResize()`
+
+### Migration Recipe
+
+Custom editor assemblies can opt in additively:
+
+```typescript
+const schemas = new SchemaManager([
+  // existing schemas...
+  ShapeBlockSchema,
+  ShapeTextBlockSchema,
+]);
+
+const plugins = [
+  // existing plugins...
+  new ShapeToolbarPlugin(),
+];
+```
+
+### Behavior Changes
+
+- The bundled editor registers both shape schemas and the toolbar plugin, so the
+  slash/block insertion menu now includes **形状**. Its fixed toolbar also
+  shows a `bc_tuxing` **插入形状** button whose 12-item picker inserts the
+  chosen type near the saved selection and selects the new shape.
+- Shape HTML round-trips geometry, style, text and placement. Shape Markdown
+  exports only its readable text.
+- No existing block or plugin behavior is removed or renamed.
+
+### v?.?.? - 2026-07-29 (patch) — stabilize connected overlay positioning
+
+**Severity**: patch
+
+**What changed**: `DocOverlayService.createConnectedOverlay()` now defaults
+`flexibleDimensions` to `false`. Callers can still opt into CDK flexible sizing
+by passing `flexibleDimensions: true`.
+
+**Why**: CDK's flexible-position bounding box can left-align a fixed-width pane
+after a scroll-driven position update, causing a centered toolbar to jump
+toward the viewport edge. Exact dimensions keep fixed toolbars anchored
+consistently.
+
+**Affected ai-skills files**:
+
+- `blockcraft-toolbar.md`
+- `MIGRATIONS.md`
+
+### Migration Recipe
+
+Only overlays that relied on the previous implicit flexible sizing need a
+change:
+
+```typescript
+doc.overlayService.createConnectedOverlay(
+  {
+    target,
+    component: LongPickerComponent,
+    flexibleDimensions: true,
+  },
+  close$,
+);
+```
+
+### Behavior Changes
+
+- Connected overlays now use CDK exact dimensions unless
+  `flexibleDimensions: true` is supplied explicitly.
+
+### v?.?.? - 2026-07-29 (minor) — add schema-gated block placement and layers
+
+**Severity**: minor
+
+**What changed**: BlockCraft now provides a document-level relative/absolute
+placement capability. Schemas opt in through `metadata.placement`; placement
+state lives in normal block props and the new `doc.placement` manager owns mode
+switching, the standard under/over stacking tiers and pointer drag. Its
+user-facing object-layout facade standardizes **嵌入型 / 上下型 /
+衬于文字下方 / 浮于文字上方**, while relative/absolute remain implementation
+details. Hosts
+with an existing layout domain can adapt mode transitions synchronously through
+`DocConfig.placement.transitionMode`. The built-in image Schema, image toolbar
+and BlockController use this capability, including edge recovery for blocks
+placed below normal content. Returning an absolute block to relative flow, or
+converting an absolute block image to an inline image, now resolves the nearest
+ordinary sibling from the block's current visual center and performs the
+move plus clear/replace atomically. BlockController SVG metadata now renders
+symbol IDs directly instead of depending on `MatIconRegistry`.
+
+**Why**: free positioning previously lived in a template-decoration feature,
+so ordinary images could only be reordered in document flow. SVG icons also
+appeared blank when a route had not registered icon names with Angular
+Material, even though the iconfont symbol sprite was present.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-block.md`
+- `blockcraft-selection.md`
+- `blockcraft-plugins-block.md`
+- `blockcraft-plugins-toolbar.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `BlockPlacementMode`, `BlockPlacementLayer`, `BlockPositionState` and
+  `ResolvedBlockPosition`.
+- `IBlockProps.placement?: BlockPositionState`.
+- `IBlockSchemaOptions.metadata.placement?: {modes: readonly BlockPlacementMode[]}`.
+- `BlockCraftDoc.placement: BlockPlacementManager`.
+- `DocConfig.placement?: BlockPlacementConfig`, with the synchronous
+  `BlockPlacementTransitionContext` adapter.
+- `BlockPlacementManager.getState()`, `supports()`, `setMode()`,
+  `resolveFlowAnchor()`, `reanchorToFlow()`, `setLayer()`, `updateAbsolute()`,
+  `startDrag()`, `cancelDrag()` and its drag state stream.
+- `BlockObjectLayout`, `BlockObjectBlockLayout`,
+  `BLOCK_OBJECT_LAYOUT_OPTIONS`, `BlockObjectLayoutAdapter`, and
+  `BlockObjectLayoutAdapterContext`.
+- `BlockPlacementManager.getObjectLayout()`, `supportsObjectLayout()`,
+  `setObjectLayout()` and `registerObjectLayoutAdapter()`.
+- `BlockPlacementFlowAnchor`, a stable-id `{parentId, anchorBlockId, side}`
+  descriptor for composing flow reanchoring into another Yjs transaction.
+- `resolveBlockPlacement()`, `resolvePlacementBox()` and
+  `measureBlockPlacement()` helpers, plus `measureObjectPlacement()` for
+  measuring an inline representation against its future block container.
+- Block menu item/action types accept the optional `svgIcon` symbol ID.
+- `ImageBlockSchema` supports relative and absolute placement by default.
+
+### Migration Recipe
+
+No migration is required for flow-only blocks. To opt a custom visual block in:
+
+```typescript
+interface MyProps {
+  placement?: BlockPositionState;
+}
+
+const MySchema = {
+  // ...
+  metadata: {
+    version: 1,
+    label: "My block",
+    placement: { modes: ["relative", "absolute"] },
+  },
+};
+
+doc.placement.setObjectLayout(block, "under");
+doc.placement.setObjectLayout(block, "top-bottom");
+```
+
+When migrating an older custom free-positioning shape, translate it once at the
+snapshot boundary:
+
+```typescript
+// before
+props: {x: 20, y: 80}
+
+// after
+props: {placement: {mode: 'absolute', x: 20, y: 80}}
+```
+
+To expose **嵌入型** for a custom shape, register its representation adapter
+during plugin initialization and release it during destruction:
+
+```typescript
+const release = doc.placement.registerObjectLayoutAdapter("my-shape", {
+  toInline: ({ doc, block }) => {
+    // replace the block with your inline embed in one transaction
+    return true;
+  },
+});
+```
+
+### Behavior Changes
+
+- Built-in placement menus no longer expose “相对定位 / 绝对定位” or a
+  separate layer menu. Under/over automatically enter absolute placement;
+  top-bottom automatically returns to relative flow.
+- Image block and inline-image toolbars use the same four labels and iconfont
+  glyphs. Inline → under/over preserves the inline image's current visual
+  coordinates when creating the absolute block.
+
+If an application already moves blocks between host-owned flow and free-layout
+containers, adapt the core command once instead of duplicating UI behavior:
+
+```typescript
+new BlockCraftDoc({
+  // ...
+  placement: {
+    transitionMode: ({ block, to }) => {
+      if (!isHostLayoutBlock(block)) return false;
+      moveInHostLayout(block, to);
+      return true;
+    },
+  },
+});
+```
+
+### Behavior Changes
+
+- The base block host renders absolute positioning only for Schemas that opt in;
+  stale placement props on other Schemas remain relative.
+- Switching to absolute measures the block's current visual position. Switching
+  back resolves the nearest mounted ordinary sibling from the absolute block's
+  visual center, moves before/after that sibling's midpoint and removes
+  placement in one transaction. With no valid anchor it keeps the old logical
+  position and only clears placement.
+- The image toolbar's block-image → inline-image conversion consumes the same
+  visual anchor and groups reordering plus replacement into one transaction.
+- Pointer movement uses transform-only preview and commits one undoable props
+  update on release. Readonly blocks and concurrent block reorder drags reject
+  the interaction.
+- Materialized absolute blocks hold a virtualization view lease until returned
+  to relative flow.
+- Absolute placement layers resolve to `under` or `over`; the base
+  renderer uses `under: 0`, ordinary flow children `1`, and `over: 2` inside an
+  isolated placement container. Existing state without `layer` remains `over`;
+  legacy unreleased `normal` and `top` values are read as `over` and normalized
+  on the next layer or coordinate write.
+- Under-content blocks can be selected from a narrow visible edge band; readonly
+  blocks remain selectable while their mutations stay rejected.
+- `setMode()` offers the optional host adapter even when the requested core mode
+  equals the current one, allowing multiple host domain states to refine
+  relative flow.
+- BlockController trigger/menu SVG icons resolve document symbol IDs directly.
+
+### v?.?.? - 2026-07-28 (minor) — add experimental sparse live pagination
+
+**Severity**: minor
+
+**What changed**: `PaginationPluginOptions` adds the opt-in
+`experimentalSparseView` flag, and the bundled reference
+`<block-craft-editor>` adds the initialization-only `paginationSparseView`
+input. When both sparse pagination and root virtualization are enabled, an
+internal paginated Projection drives root viewport/spacer geometry without a
+full-document view lease. Pagination gap, table-break and height-lock effects
+now cache complete layout state while reading and mutating only mounted root
+views.
+
+**Why**: exact live pagination previously required mounting every root Block,
+which removed the memory and mount-time benefit of root virtualization. Phase C
+introduces a guarded sparse path so large-document behavior can be exercised
+before it becomes the default in a later phase.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-perf.md`
+- `blockcraft-plugins-util.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `PaginationPluginOptions.experimentalSparseView?: boolean` defaults to
+  `false`. With root virtualization enabled, `true` activates the Phase C
+  sparse Projection path.
+- The bundled reference editor accepts
+  `<block-craft-editor [paginationSparseView]="true">`. Like
+  `virtualizationEnabled`, it is read during component construction.
+- The sparse path keeps mounted root count proportional to viewport,
+  overscan and existing pins. Offscreen roots use model-derived estimates;
+  mounted roots upgrade to live measurements.
+
+### Migration Recipe
+
+No migration is required. Existing applications retain the exact
+full-document-lease behavior because the new option defaults to `false`.
+Opt in explicitly for large-document validation:
+
+```typescript
+const pagination = new PaginationPlugin({
+  enabled: true,
+  experimentalSparseView: true,
+});
+
+const doc = new BlockCraftDoc({
+  // ...
+  virtualization: { enabled: true },
+  plugins: [pagination],
+});
+```
+
+For the bundled reference editor:
+
+```html
+<block-craft-editor
+  [virtualizationEnabled]="true"
+  [paginationSparseView]="true"
+/>
+```
+
+### Behavior Changes
+
+- Default behavior is unchanged: live pagination still holds the exact
+  full-document view lease while enabled.
+- In experimental sparse mode, the paginated Projection owns viewport/spacer
+  coordinates; continuous height observation is paused so page gaps cannot
+  pollute the continuous `HeightMap`.
+- Offscreen text/props/structure updates invalidate model geometry and schedule
+  one frame-coalesced `O(N)` scan of cached numbers. DOM reads remain bounded
+  to mounted roots.
+- Unmounted page gaps, table breaks and height locks are replayed when their
+  root view remounts and are cleared idempotently on disable/destroy.
+- A non-exact sparse layout is not reused for print/PDF; export falls back to
+  the complete readonly reflow. The Phase E background `ensureExact()` queue is
+  not part of this release.
+- Repeated invalid Projection order/length disables sparse pagination and
+  restores continuous virtualization; it does not force a full-document mount.
+
+### v?.?.? - 2026-07-28 (minor) — expose model layout invalidation facts
+
+**Severity**: minor
+
+**What changed**: `BlockModelGraph` now exposes the additive
+`contentChange$` stream with `IBlockModelContentChange` and
+`BlockModelContentChangeKind`. Structure events add optional
+`affectedRootIds` for direct-root layout invalidation. Phase B also introduces
+a package-internal stable-ID pagination GeometryIndex, LayoutCoordinator,
+paginated Projection and bounded shadow comparator; these internals compare
+against the legacy live pagination result and are not exported.
+
+**Why**: pagination and future sparse layout work need model-level content and
+root-impact facts that remain valid for unmounted blocks. The internal shadow
+path can now validate model-derived pagination geometry before it is allowed to
+control mounting or DOM presentation.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-data.md`
+- `blockcraft-perf.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- `BlockModelGraph.contentChange$` emits transaction-coalesced reachable block
+  IDs, `"text"` / `"props"` kinds and Yjs `origin`, `local` and `isUndoRedo`
+  context.
+- Exported `IBlockModelContentChange` and
+  `BlockModelContentChangeKind = "text" | "props"` describe that stream.
+- `IBlockModelStructureChange.affectedRootIds?: readonly string[]` reports the
+  direct-root render units affected by structural layout changes. Current
+  runtimes always populate the optional field; pure direct-root reorder emits
+  an empty array.
+
+### Migration Recipe
+
+No migration is required for existing text-only consumers. `textChange$`
+retains its original filtering and transaction context:
+
+```typescript
+// Existing code remains valid.
+doc.model.textChange$.subscribe(({ blockIds, local, origin, isUndoRedo }) => {
+  updateTextIndex(blockIds);
+});
+
+// Opt in only when text, inline attributes or props should invalidate work.
+doc.model.contentChange$.subscribe(({ blockIds, kinds }) => {
+  invalidateModelDerivedState(blockIds, kinds);
+});
+
+// The new structure field is optional for source-compatible mocks/consumers.
+doc.model.structureChange$.subscribe((change) => {
+  invalidateRootLayout(change.affectedRootIds ?? []);
+});
+```
+
+### Behavior Changes
+
+- `contentChange$` includes reachable text mutations, inline attribute changes,
+  nested props changes, `children`/`props` replacement and whole reachable
+  block replacement. It ignores `meta`-only changes and unreachable blocks.
+- Every runtime structure event now carries `affectedRootIds`, while the public
+  field remains optional.
+- Phase B pagination remains diagnostic-only: legacy DOM appliers and the
+  full-document view lease are still authoritative. Text-only changes mark
+  geometry dirty and rely on `ResizeObserver`; props, structure, theme, font
+  and content-width changes schedule coalesced animation-frame recomputation.
+  Each actual recomputation temporarily performs legacy and shadow pagination,
+  both linear in document size.
+
+### v?.?.? - 2026-07-28 (patch) — prepare internal vertical layout projection seams
+
+**Severity**: patch
+
+**What changed**: Phase A added the package-internal
+`VerticalLayoutProjection` query contract, its continuous-layout
+`ContinuousLayoutProjection` adapter, and parallel projected viewport and
+scroll-anchor helpers. `RootVirtualizationManager` now routes viewport,
+scroll-anchor, spacer and stable-navigation layout reads through its internal
+active Projection. `HeightMap` remains the mutable continuous-layout index, and
+all existing exported entry points retain their current signatures.
+
+**Why**: later pagination/virtualization integration needs read-only projected
+geometry without making the still-evolving Projection lifecycle a public
+extension contract. This patch is internal architecture preparation only and
+has no external API or runtime behavior impact.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-perf.md`
+- `MIGRATIONS.md`
+
+### Migration Recipe
+
+No migration is required. Existing `HeightMap`, viewport, scroll-anchor,
+virtualization and pagination calls continue to work unchanged. The new
+Projection types and projected helpers are not exported from the
+virtualization public barrel.
+
+### Behavior Changes
+
+None externally. The active Projection is fixed to
+`ContinuousLayoutProjection`, which reads the same `HeightMap`; continuous
+layout coordinates and runtime behavior remain equivalent. Custom Projection
+registration, `change$`-driven switching and continuous/paginated Projection
+transitions are not implemented. Live `PaginationPlugin` still acquires a
+full-document view lease while enabled, so the pagination/virtualization
+conflict is not resolved in Phase A.
+
+### v?.?.? - 2026-07-28 (minor) — stabilize collaboration cursor colors
+
+**Severity**: minor
+
+**What changed**: `BlockCraftAwareness.setLocalUser()` now accepts an optional
+`color` on the user object. A valid concrete CSS color is used for that user's
+remote cursor; otherwise the stable user ID maps to a curated collaboration
+palette. Labels and collapsed carets use the solid color, while non-collapsed
+ranges use the same color at 18% opacity.
+
+**Why**: the previous `getRandomDarkColor(.4)` fallback could create muddy,
+nearly black, or visually adjacent colors. It also assigned the same user a
+different color on different clients and reconnects, while using a translucent
+color for the name label reduced text contrast.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-theme.md`
+- `MIGRATIONS.md`
+
+### New APIs / Features
+
+- The exported `CollaborationUser` shape is
+  `{id: string, name: string, color?: string}`.
+- `setLocalUser({id, name, color})` publishes an optional host-selected
+  concrete CSS color through Awareness.
+
+### Migration Recipe
+
+Existing integrations remain valid:
+
+```typescript
+cursorAwareness.setLocalUser({
+  id: currentUser.id,
+  name: currentUser.name,
+});
+```
+
+To preserve a product/account color:
+
+```typescript
+cursorAwareness.setLocalUser({
+  id: currentUser.id,
+  name: currentUser.name,
+  color: currentUser.profileColor,
+});
+```
+
+### Behavior Changes
+
+- Missing or invalid explicit colors now fall back to a deterministic palette
+  entry derived from `user.id`; `Math.random()` is no longer used.
+- The same user ID keeps the same fallback color across clients and reconnects.
+- Cursor name labels use white text on an opaque solid background.
+- Non-collapsed remote selections use an 18%-opacity version of the same color.
+- Color parsing and hashing run only when a remote user is created or its
+  identity/color changes, not on selection, text, scroll, resize, or virtual
+  view refresh paths.
+
+### v?.?.? - 2026-07-28 (major) — make persistent block locks owner-aware
+
+**Severity**: major
+
+**What changed**: the persistent block-level readonly bit was replaced by an
+owner user ID. `meta.lock?: string` now represents both explicit lock presence
+and ownership. `DocConfig.currentUserId` owns new locks, and only the same user
+or a synchronous host `canUnlockBlock` grant can remove them.
+
+**Why**: `meta.readonly?: boolean` could prevent content writes but could not
+distinguish the user who created a lock from any other collaborator, so every
+compatible client could expose an unrestricted unlock action.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-block.md`
+- `blockcraft-data.md`
+- `blockcraft-plugins-block.md`
+- `MIGRATIONS.md`
+
+### Breaking Changes
+
+- `IBaseMetadata.readonly?: boolean` was removed and replaced by
+  `IBaseMetadata.lock?: string`.
+- Legacy `meta.readonly` values are not read or migrated; old locked blocks load
+  as unlocked until the host performs its own data migration.
+- `BlockReadonlyResolution` now includes required
+  `lockUserId: string | null`.
+- `setBlockReadonly(block, true)` now throws `BlockLockError` when the document
+  has no valid `DocConfig.currentUserId`.
+- `setBlockReadonly(block, false)` now throws `BlockLockError` unless the
+  current user owns the explicit lock or the host grants additional permission.
+
+### Deprecations
+
+- `stripReadonlyMetaDeep()` remains as an alias with no removal date. New code
+  should use `stripBlockLockMetaDeep()`.
+
+### New APIs / Features
+
+- `DocConfig.currentUserId?: string` supplies the stable identity captured by
+  the document's block-lock manager.
+- `DocConfig.canUnlockBlock?: (context: BlockUnlockContext) => boolean`
+  synchronously grants additional unlock permission, typically for admins.
+- `BlockCraftDoc.canUnlockBlock(blockOrId)` exposes the current unlock decision.
+- `BlockReadonlyResolution.lockUserId` exposes the effective explicit owner's
+  ID for self or ancestor locks.
+- `BlockReadonlyManager.currentUserId`,
+  `getExplicitLockUserId()`, `canLock()` and `canUnlock()` expose owner-aware
+  permission state.
+- `BlockLockError`, `BlockLockErrorReason` and `BlockUnlockContext` are exported
+  for typed host integration.
+
+### Migration Recipe
+
+Before:
+
+```typescript
+const doc = new BlockCraftDoc({
+  // ...
+});
+
+// persisted metadata
+block.meta.readonly = true;
+
+doc.setBlockReadonly(block.id, true);
+doc.setBlockReadonly(block.id, false); // any compatible client could unlock
+```
+
+After:
+
+```typescript
+const doc = new BlockCraftDoc({
+  // ...
+  currentUserId: currentUser.id,
+  canUnlockBlock: ({ currentUserId }) =>
+    currentUserId !== null && permissions.isDocumentAdmin(currentUserId),
+});
+
+// persisted metadata after locking
+block.meta.lock === currentUser.id;
+
+doc.setBlockReadonly(block.id, true);
+if (doc.canUnlockBlock(block.id)) {
+  doc.setBlockReadonly(block.id, false);
+}
+```
+
+BlockCraft intentionally performs no automatic legacy migration. If existing
+`meta.readonly === true` data must stay protected, migrate it before document
+initialization by assigning an application-defined owner ID to `meta.lock`.
+
+### Behavior Changes
+
+- Missing identity disables lock/unlock controls but does not make unlocked
+  content readonly.
+- Another user's explicit lock cannot be overwritten by calling
+  `setBlockReadonly(block, true)`.
+- Owners always retain unlock permission; `canUnlockBlock` only adds permission
+  and cannot deny the owner.
+- The BlockController switch distinguishes owner, other-user, inherited and
+  missing-identity states and rechecks authorization when clicked.
+- Full document snapshots retain `meta.lock`; clipboard serialization removes
+  it so pasted copies are editable.
+- Owner-aware checks remain a trusted-client policy. Raw Yjs updates still need
+  server/persistence authorization when they cross a security boundary.
+
+### v?.?.? - 2026-07-28 (minor) — add mode-independent stable block navigation
+
+**Severity**: minor
+
+**What changed**: `BlockCraftDoc.navigateToBlock(blockId)` now reveals a
+reachable stable block ID in both full and virtual rendering. It waits for
+document initialization, uses latest-request-wins cancellation, and resolves a
+boolean without changing model Selection, native DOM Selection, or focus. The
+bundled editor's copied block links now preserve the current document URL and
+can reveal an initially unmounted target after reload or same-document history
+navigation.
+
+**Why**: Hosts need one navigation contract for copied links, search, comments,
+outline entries, and history restoration. Calling the virtualization subsystem
+directly leaked rendering mode and could race document initialization.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+
+### New APIs / Features
+
+- `BlockCraftDoc.navigateToBlock(blockId: string): Promise<boolean>` reveals a
+  stable target in either rendering mode. `true` means the latest request
+  reached a mounted target; missing/stale/destroyed/superseded requests resolve
+  `false`.
+
+### Migration Recipe
+
+```typescript
+// before: virtual-mode-only host integration
+const revealed = await doc.virtualization.scrollToBlock(blockId);
+
+// after: works before init and in either rendering mode
+const revealed = await doc.navigateToBlock(blockId);
+```
+
+### Behavior Changes
+
+- `RootVirtualizationManager.scrollToBlock(blockId)` now keeps a pre-init
+  request pending until the manager is initialized. A newer request or disposal
+  settles that pending request with `false`.
+- Copied links from the bundled editor replace only the copied URL's `blockId`
+  query parameter instead of using a hard-coded document origin.
+- Activating a same-document block link navigates directly without writing the
+  current URL or browser history.
+- An initial URL `blockId` queues navigation but does not initialize the bundled
+  Playground editor; the target is revealed after explicit initialization.
+
+### v?.?.? - 2026-07-22 (minor) — add opt-in model-first root virtualization
+
+**Severity**: minor
+
+**What changed**: `DocConfig.virtualization` can now enable root-child view
+windowing. Yjs and `BlockModelGraph` stay complete while `DocVM` creates and
+mounts only viewport, overscan and selection-leased root subtrees. Spacer DOM,
+measured height correction and ID-based scroll anchoring preserve document
+geometry.
+
+**Why**: Selection and input no longer require every block component to exist,
+so large documents can reduce Angular/DOM cost without introducing a second
+data or selection model.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-app.md`
+- `blockcraft-block.md`
+- `blockcraft-data.md`
+- `blockcraft-perf.md`
+- `blockcraft-plugins-block.md`
+- `blockcraft-plugins-util.md`
+- `blockcraft-selection.md`
+- `blockcraft-toolbar.md`
+
+### New APIs / Features
+
+- `DocConfig.virtualization?: VirtualizationConfig` with `enabled`, `overscan`,
+  `segmentMergeGap`, bounded `retainedViewLimit`, and per-flavour
+  `estimatedHeights`, plus optional `resolveViewRetention(context)` overrides.
+- Exported virtualization kernel types/utilities and
+  `RootVirtualizationManager`.
+- `BlockCraftDoc.virtualization` exposes the document-owned coordinator.
+- The bundled `EditorComponent.virtualizationEnabled` input selects whether its
+  internally constructed document enables virtualization. It defaults to
+  `true` and is applied once during component initialization.
+- `DocVM` supports root-only creation, retained subtree ensure/mount and sparse
+  root structural reconciliation.
+- `RootVirtualizationManager.ensureViewMounted(blockIds)` synchronously
+  materializes transient view capabilities without creating a persistent pin.
+- `RootVirtualizationManager.scrollToBlock(blockId)` resolves a stable nested or
+  root block ID, transiently mounts/pins its containing root unit, and returns a
+  promise that settles after bounded real-DOM center correction.
+- `RootVirtualizationManager.acquireBlockViewLease(blockIds)` synchronously
+  mounts and pins only the containing root units, follows stable IDs across
+  structure changes, and returns an idempotent release function.
+- `RootVirtualizationManager.viewChange$` emits deduplicated mounted root-ID
+  windows for view-bound plugin projection lifecycle.
+- `RootVirtualizationManager.acquireFullDocumentViewLease()` synchronously
+  mounts all root units for exact whole-document DOM capabilities and returns
+  an idempotent release function.
+- `BlockModelGraph.getTextDeltas(blockId)` and `textChange$` expose rich text
+  reads and changed block IDs without requiring mounted components.
+- `BlockModelGraph.synchronizeParentBeforeView(parentId)` is exported for
+  framework composition but marked `@internal`. It is the sparse-root write
+  pipeline's model-before-view barrier; extensions must continue to treat
+  `doc.model` as read-only.
+- `DocCRUD.replaceText(blockId, ...)` and `applyTextDelta(blockId, ...)` provide
+  readonly-guarded Yjs writes for reachable unmounted editable blocks.
+- `DocCRUD.formatText(blockId, index, length, attrs)` provides the corresponding
+  readonly-guarded rich-text formatting write without a ComponentRef.
+- `DocCRUD.updateBlockProps(blockId, patch)` provides the corresponding
+  readonly-guarded props write for reachable blocks without requiring a
+  ComponentRef. A `null` patch value deletes the key.
+- `DocCRUD.insertBlockSnapshots(parentId, index, snapshots)` inserts into a
+  reachable parent without requiring its ComponentRef and returns stable block
+  IDs without resolving inserted components for the caller. Existing parent
+  views still follow normal Yjs synchronization; `insertBlocks()` keeps its
+  synchronous component-returning contract.
+- `DocCRUD.replaceBlockSnapshots(blockId, snapshots)` replaces a reachable
+  non-root block and returns stable IDs without resolving replacement views.
+  `replaceWithSnapshots()` keeps its component-returning compatibility API.
+- `FindReplaceMatch.blockId` exposes stable model identity; its existing
+  `block` property remains available as a lazy view-materializing accessor.
+- `IBlockSchemaOptions.metadata.plainTextOnly?: boolean` declares an editable
+  flavour's model-level formatting capability. `BlockCraftDoc.isPlainTextBlock()`
+  resolves that capability without mounting the block; built-in `code` and
+  `mermaid-textarea` opt in.
+- `IBlockSchemaOptions.metadata.viewRetention?: 'virtual' | 'keep-alive'`
+  declares whether a materialized stateful block may leave the live document.
+  `BlockViewRetention`, `BlockViewRetentionContext`, and
+  `BlockViewRetentionResolver` are exported for custom schemas and host config.
+- `RootVirtualizationManager.bindBlockViewRetention(context)` binds the resolved
+  schema/host policy to one component lifetime. `BaseBlockComponent` invokes it
+  automatically; custom blocks normally only declare schema metadata.
+
+### Migration Recipe
+
+No migration is required because virtualization defaults to disabled. Opt in at
+document construction:
+
+```typescript
+new BlockCraftDoc({
+  // ...
+  virtualization: {
+    enabled: true,
+    overscan: 6,
+    retainedViewLimit: 12,
+    estimatedHeights: { paragraph: 32, table: 240 },
+  },
+});
+```
+
+The bundled reference editor can opt out before initialization:
+
+```html
+<block-craft-editor [virtualizationEnabled]="false" />
+```
+
+Changing this input after `BlockCraftDoc` initialization is unsupported;
+destroy and recreate the component instead.
+
+Model-only integrations should use `doc.model`; `doc.vm` and
+`getBlockById()` continue to represent component availability.
+
+Custom editable flavours that set `component.plainTextOnly = true` should mirror
+that intrinsic capability in schema metadata so offscreen formatting commands
+can make the same decision:
+
+```typescript
+metadata: {
+  // ...
+  plainTextOnly: true,
+}
+```
+
+Custom iframe/media blocks that own browser-side state can opt in without
+writing lifecycle code:
+
+```typescript
+metadata: {
+  // ...
+  viewRetention: 'keep-alive',
+}
+```
+
+Hosts can override schema defaults globally:
+
+```typescript
+virtualization: {
+  enabled: true,
+  resolveViewRetention: ({flavour}) =>
+    flavour === 'video' ? 'virtual' : undefined,
+}
+```
+
+### Behavior Changes
+
+- With virtualization enabled, both `initByYBlock()` and `initBySnapshot()`
+  create only root initially. Snapshot input is fully materialized into Yjs and
+  `BlockModelGraph` before viewport children are created.
+- Healthy virtual reconciliation adds only constant-time local
+  revision/length checks. Detected height/index drift receives one cold rebuild;
+  a transient coordinator failure is retried for at most three consecutive
+  frames. Continued failure permanently switches that document to complete
+  root mounting and emits one message-service warning, favoring editability over
+  sparse-view memory until the document is disposed.
+- Direct root children are virtualization units. Nested subtrees are not
+  independently windowed.
+- Detached root component subtrees are retained in an LRU bounded by
+  `retainedViewLimit` (default 12, minimum 0). Eviction permanently destroys
+  the complete detached subtree; a later mount reconstructs it from current
+  Yjs state. Components synchronously returned by commands remain valid for the
+  current command but are not durable references across reconciliation frames.
+- Built-in `audio`, `video`, `embed`, `figma-embed`, and `juejin-embed` views
+  become keep-alive after first materialization. Their containing root unit
+  remains mounted until block deletion or document disposal, preserving iframe
+  and playback state. No initial scan/pre-mount occurs, active leases share one
+  pin source, and ordinary scroll frames perform no retention-policy work.
+- An active local selection pins only the direct root units containing its
+  ordered start/end while scrolling. Root boundary pairs keep their `[start,
+end)` model semantics while intermediate units remain virtualized; a collapsed
+  root boundary pins only the adjacent caret-bearing unit, and a nested boundary
+  pins its containing root unit. Root-order transactions rebuild indices and
+  re-evaluate endpoint pins from stable IDs plus root boundary indices.
+- Local `.selected` / `.focused` presentation follows deduplicated mounted-root
+  windows and repaints newly mounted fragments from model coverage segments.
+  Selection liveness, copy, `getSelectedText()`, common-format reads and bulk
+  text/props formatting no longer require intermediate ComponentRefs.
+- A non-collapsed cross-root native Selection is reprojected after each
+  deduplicated mounted-root window change. Virtual-root boundary endpoints now
+  project inside the adjacent pinned block's inline/gap/host edge rather than
+  mutable root-container child offsets, so middle DOM mount/unmount cannot
+  rebase the browser live Range. Reprojection remains an endpoint-rerender
+  safety net, preserves backward anchor/focus, and is skipped only while a
+  primary pointer is actually held or during IME composition. A transient
+  dispatcher `isSelecting` flag from
+  programmatic full-select no longer blocks repair. While the matching bounded
+  endpoint mount/frame projection is pending, native `selectionchange` cannot
+  overwrite the canonical model range; a new primary pointer intent cancels
+  the retry. This does not add work to every raw scroll event or enumerate the
+  selected middle.
+- Internal block dragging acquires one targeted block-view lease for all source
+  blocks before clearing Selection. Edge auto-scroll can move beyond overscan
+  without detaching the source components, and every drop/cancel/destroy path
+  releases the lease through common teardown. Pointer movement performs no
+  additional lease calculation.
+- `DocOverlayService.createConnectedOverlay()` now treats an explicit
+  `BlockComponent` target as a block-owned interaction and automatically holds
+  its targeted view lease until close, CDK detach/dispose, creation rollback or
+  document teardown. `HTMLElement` targets keep their existing
+  close-on-disconnect behavior and acquire no lease. Open/close boundaries pay
+  the pin update; scroll and pointer paths do no additional lease work.
+- Collaborative `FakeRange` projections now follow the deduplicated virtual
+  root window. Offscreen remote endpoints stay model-only and reappear without
+  a new awareness message when mounted; cross-root remote selections paint only
+  mounted fragments. Remote positions acquire no local view lease, and each
+  window update checks only remote cursors against mounted root IDs rather than
+  scanning the document or complete selected ranges.
+- Root insert/delete/move/undo/redo captures one visible ID anchor across all
+  transactions coalesced into the next frame. The estimated target window is
+  mounted first, then the actual anchor host position supplies a final scroll
+  correction; ordinary scroll frames and nested-only structure changes do not
+  pay this work.
+- Undo/redo checks the restored head geometry before native Selection replay.
+  A head that is already fully visible leaves the viewport unchanged; an
+  offscreen or unavailable head delegates to virtual block navigation and is
+  centered when scroll bounds allow. This pre-replay check avoids mistaking the
+  browser's own minimal focus scroll for prior visibility.
+- Remote changes to uncreated blocks are model-only until mount and do not emit
+  missing-component warnings.
+- Deleting a temporary container and moving its child to another parent in one
+  transaction now destroys views by post-transaction model ownership. The
+  moved ComponentRef survives, and stale delayed events from the deleted parent
+  are ignored. This keeps drag-created columns undo/redo coherent without a
+  scroll-triggered rerender.
+- Imports and bulk writers can use `insertBlockSnapshots()` to avoid transient
+  Angular component creation for sparse-root/uncreated-parent inserts.
+  `insertBlocks()` delegates to the same validated Yjs write path, then
+  materializes views only to preserve its legacy return value. When that legacy
+  path runs inside an outer Yjs transaction, it synchronizes only the affected
+  parent into `BlockModelGraph` before Angular lifecycle hooks read the inserted
+  block; the later deep-observer pass detects the no-op and does not emit a
+  duplicate structure revision. Ordinary top-level inserts do not pay this
+  extra reconciliation.
+- `deleteBlocks()`, `deleteBlockById()` and `moveBlocks()` now resolve reachable
+  structure from Yjs/`BlockModelGraph`; source and target ComponentRefs are no
+  longer required. Offscreen mutations remain model-only, while mounted parents
+  still synchronize through the existing observer and preserve moved component
+  identity. Readonly guards, return values and root non-empty behavior remain
+  unchanged.
+- `nextSibling()` / `prevSibling()` materialize an adjacent virtual root unit
+  before returning its component, so keyboard navigation can cross an isolated
+  pinned segment or viewport boundary. This transient mount is reclaimed unless
+  the resulting Selection or viewport takes ownership.
+- Component-oriented programmatic Selection helpers materialize string targets
+  before resolving their block components. Table/cell targets are batched, and
+  `selectBlock(root)` materializes only its first/last endpoint units before the
+  endpoint selection lease takes ownership.
+- A virtualized Selection commit checks its bounded endpoint neighborhood and
+  synchronously materializes missing endpoint/boundary-adjacent views before
+  publishing `doc.selection.value`. Synchronous observers may therefore read
+  `firstBlock` / `lastBlock` without racing the next virtualization frame.
+  A retained but detached component counts as missing for DOM projection;
+  Selection uses the O(1) `DocVM.isMounted()` status before projecting an empty
+  caret, with no DOM connectivity or layout read.
+  Already-mounted commits do not trigger height, spacer, geometry, or
+  full-selection traversal; the endpoint lease remains frame-coalesced and
+  independent of selection length.
+- Undo/redo history restoration materializes only bookmark endpoint views before
+  relative-position resolution, including retained-but-detached and fully
+  LRU-evicted targets. It submits one scroll-visible model-first replay and waits
+  while that exact DOM projection is pending instead of republishing and
+  canceling it. After projection, the active selection head is revealed in the
+  editor viewport and bounded verification repairs only genuine focus or
+  DOM/model mismatch.
+- Find/replace scans and incrementally updates against the complete model. It
+  does not mount blocks while indexing or replacing all; active result
+  navigation materializes one root unit, and passive highlights follow the
+  mounted virtual window.
+- `OrderedBlockPlugin` queues stable IDs, computes numbering from the complete
+  `BlockModelGraph` sibling sequence, and writes derived `order` props through
+  `DocCRUD`. Missing offscreen components no longer abort a renumber pass, and
+  sorting does not materialize those components.
+- `MarkdownStreamRenderer` preserves its incremental ID-stable diff semantics,
+  but now reads complete structure/text/props from `BlockModelGraph` and writes
+  through `DocCRUD`. Streaming can patch, insert, delete or replace offscreen
+  root blocks without mounting them or accessing raw Yjs values.
+- `BlockCraftDoc` publishes the configured whole-document readonly policy before
+  `afterInit` callbacks and plugin registration. Initialization observers no
+  longer see the temporary protected bootstrap state, and immediate guarded
+  writes are checked against `DocConfig.readonly`.
+- Full-document JSON/Markdown/PDF export and pagination printing obtain their
+  snapshots through `doc.exportSnapshot()`. Offscreen virtual blocks remain in
+  the output without materializing their Angular views.
+- Root blank-area/gap hit-testing reads only mounted root views; it never walks
+  unmounted siblings to answer a DOM coordinate query.
+- Live pagination automatically owns a full-document view lease while enabled,
+  including root blocks inserted during the lease, and releases it after all
+  pagination view effects are cleared. Exact pagination therefore suspends
+  root virtualization's mount/memory savings until pagination is disabled.
+- Permanent full-mount fallback first repairs mounted root order from the
+  canonical model, clears all virtual spacers and disconnects height tracking.
+  Scroll/resize no longer schedules window work in fallback mode, and stale
+  estimated geometry cannot keep the document blank after a mount failure.
+- `packages/editor/package.json` remains unchanged because release numbering is
+  user-owned.
+
+### v?.?.? - 2026-07-19 (major) — separate retained views from permanent block destruction
+
+**Severity**: major
+
+**What changed**: `BaseBlockComponent.detach()` now enters an idempotent
+`retained` view state without emitting or completing `onDestroy$`.
+`reattach()` recreates view-only state from the current Yjs model and returns
+the block to `mounted`. Permanent Angular destruction remains the only source
+of `onDestroy$`.
+
+**Why**: Virtual rendering must temporarily remove expensive view state while
+keeping the component and its document subscriptions reusable. Treating a
+reversible detach as permanent destruction silently completed subscriptions,
+left inline/embed resources behind, and made a later reattach incomplete.
+
+**Affected ai-skills files**:
+
+- `blockcraft-block.md`
+
+### Breaking Changes
+
+- Code that relied on `detach()` emitting `onDestroy$` must move temporary
+  view cleanup to `onDetach$` or `beforeDetach()`.
+
+### New APIs / Features
+
+- Exported `BlockViewState` with `mounted`, `retained`, and `destroyed` states.
+- `BaseBlockComponent.viewState` and `isAttached`.
+- `BaseBlockComponent.onDetach$` and `onReattach$`.
+- Protected `beforeDetach()` and `afterReattach()` lifecycle hooks.
+
+### Migration Recipe
+
+Keep permanent subscriptions bound to component destruction, and separate
+temporary view resources explicitly:
+
+```typescript
+// before: detach() also completed this subscription
+source$.pipe(takeUntil(this.onDestroy$)).subscribe(...)
+
+// after: permanent document/component subscription remains alive
+source$.pipe(takeUntil(this.onDestroy$)).subscribe(...)
+
+// release and recreate only DOM/view resources across virtualization
+protected override beforeDetach() {
+  this.overlay?.dispose()
+}
+
+protected override afterReattach() {
+  this.renderFromCurrentModel()
+}
+```
+
+### Behavior Changes
+
+- Repeated `detach()` and `reattach()` calls are no-ops after the first valid
+  transition.
+- Permanent destruction of a still-mounted component invokes `beforeDetach()`
+  once before broadcasting `onDestroy$`.
+- `EditableBlockComponent` destroys its inline runtime while retained, ignores
+  detached DOM patches, and rebuilds from the latest Y.Text on reattach.
+- Inline teardown removes retained DOM and invokes each embed converter's
+  `onDestroy` exactly once.
+- `packages/editor/package.json` remains unchanged because release numbering is
+  user-owned.
+
+### v?.?.? - 2026-07-19 (minor) — make selection structure model-resolvable
+
+**Severity**: minor
+
+**What changed**: `BlockSelection` structural derivation now uses a
+`SelectionModelResolver` backed by `BlockModelGraph`. Selection liveness,
+document order, boundary coverage, text-edge predicates and content endpoint
+IDs no longer require mounted Angular block components. `firstBlockId` and
+`lastBlockId` expose model-safe content edges while the existing component
+accessors remain available for view code. Virtual renderers can optionally
+register a `SelectionProjectionMountAdapter`; when DOM projection fails,
+Selection requests only the endpoint neighborhood before replaying its existing
+bounded projection retry.
+
+**Why**: A canonical model selection must survive virtualization, delayed view
+mounts and remote/undo reconciliation. Treating `point.block` as model
+authority caused valid selections to be cleared whenever their components were
+temporarily absent from the VM. Model-safe state alone was not enough to make
+the native caret visible again; Selection also needed a bounded, cancellable
+way to ask the renderer for the minimum DOM required by projection.
+
+**Affected ai-skills files**:
+
+- `blockcraft-selection.md`
+- `blockcraft.md`
+
+### New APIs / Features
+
+- Exported `SelectionModelResolver` and `SelectionModelReader`.
+- Exported `SelectionProjectionMountAdapter` with
+  `ensureMounted(blockIds, signal)`.
+- `BlockSelection.firstBlockId` and `BlockSelection.lastBlockId`.
+- The optional `SelectionModelResolver` constructor argument for advanced
+  direct `BlockSelection` construction.
+- `SelectionManager.registerProjectionMountAdapter(adapter)` returns an
+  idempotent unregister function.
+
+### Migration Recipe
+
+Model/data code should use IDs without forcing component resolution:
+
+```typescript
+// before: requires the endpoint component to be mounted
+const startId = selection.firstBlock.id;
+
+// after: valid for mounted and virtualized selections
+const startId = selection.firstBlockId;
+```
+
+View code that needs `hostElement`, inline runtime or block methods may keep
+using `firstBlock` / `lastBlock` after ensuring the component is mounted.
+
+Virtual renderers may opt into projection recovery without pinning the selected
+middle range:
+
+```typescript
+const unregister = doc.selection.registerProjectionMountAdapter({
+  ensureMounted(blockIds, signal) {
+    return virtualRenderer.ensureBlocksMounted(blockIds, { signal });
+  },
+});
+```
+
+### Behavior Changes
+
+- `SelectionManager.createSelection()` accepts structurally valid JSON when
+  endpoint components are unmounted; missing model IDs still return `null`.
+- `doc.selection.value` liveness is determined by `BlockModelGraph`, not VM
+  component presence.
+- Selected/focused class reconciliation skips currently unmounted covered IDs
+  instead of invalidating or throwing from the model selection.
+- Failed DOM projection asks a registered adapter for deduplicated endpoint IDs;
+  boundary points additionally request only their immediate previous/next
+  children. Two boundary endpoints request at most six IDs.
+- Newer selection intent, adapter replacement/unregistration, and document
+  destruction abort an in-flight mount request. Replacement transfers the same
+  intent to the new adapter; unregistration falls back to frame retry; destroy
+  schedules no more work. Late completion is ignored.
+- Adapter resolution or rejection enters the existing bounded projection retry;
+  hosts without an adapter retain the previous retry behavior.
+- Existing selection JSON and programmatic write methods are unchanged.
+- `packages/editor/package.json` remains unchanged because release numbering is
+  user-owned.
+
+### v?.?.? - 2026-07-17 (minor) — add default inline image embed
+
+**Severity**: minor
+
+**What changed**: BlockCraft now includes a default, overridable `image` inline
+Embed. `ImgToolbarPlugin` supports bidirectional block/inline conversion and
+proportional resizing of the default inline renderer while preserving valid
+dimensions and surrounding formatted content. Active inline images also receive
+a temporary theme-colored selection outline that is cleared with their controls.
+
+**Why**: Images previously existed only as blocks, so documents could not mix
+an atomic image with surrounding inline text without a host-defined converter.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md`
+- `blockcraft-embed.md`
+- `blockcraft-plugins-block.md`
+
+### New APIs / Features
+
+- `INLINE_IMAGE_EMBED_KEY`, `inlineImageEmbedConverter`,
+  `createInlineImageDelta`, `readInlineImageDelta`, and
+  `withDefaultEmbedConverters`.
+- `image` is present by default; a user-provided converter with the same key
+  wins without changing other configured embeds.
+- `ImgToolbarPlugin` exposes **转为行内图片** and preserves caption deltas.
+- The default inline shell exposes proportional resize handles and **转为图片块**
+  through the same plugin. Its selected outline is DOM-only and mouseup writes
+  only `width` / `height` once.
+
+### Migration Recipe
+
+No registration is required for the default renderer. Existing custom renderers
+continue to override it:
+
+```typescript
+new BlockCraftDoc({
+  // ...
+  embeds: [["image", customImageEmbedConverter]],
+});
+```
+
+### Behavior Changes
+
+- Mixed HTML/Markdown images can round-trip as inline embeds.
+- Standalone Markdown images and `<figure><img></figure>` remain image blocks.
+- Inline-to-block conversion splits formatted text around the new image block,
+  omits empty sides, creates no caption, and respects the parent Schema.
+- Clicking the default inline renderer adds
+  `.bc-inline-image-shell--selected` until the inline controls close; no Delta
+  attribute is added.
+- `packages/editor/package.json` remains unchanged because release numbering is
+  user-owned.
+
+### v?.?.? - 2026-07-17 (patch) — show feedback for rejected readonly edits
+
+**Severity**: patch
+
+**What changed**: `BlockCraftDoc` now forwards readonly violations caused by
+direct user actions to the configured `DocMessageService` as a warning. Repeated
+violations are coalesced to one warning per second; programmatic `api` writes
+remain error-only and do not produce UI messages.
+
+**Why**: Write guards correctly prevented locked content from changing, but
+silent rejection made typing, IME, clipboard, drag and Undo/Redo attempts look
+unresponsive.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md` — documents the built-in feedback and API exclusion.
+- `blockcraft-app.md` — documents message-service behavior and throttling.
+
+### Behavior Changes
+
+- Hosts using the standard document runtime receive "内容已锁定，无法修改"
+  through `DocMessageService.warn` for rejected non-`api` writes.
+- Selection, copy, links, media preview and download remain silent and usable.
+- No API migration is required, and `packages/editor/package.json` remains
+  unchanged because release numbering is user-owned.
+
+### v?.?.? - 2026-07-17 (patch) — centralize selection synchronization boundaries
+
+**Severity**: patch
+
+**What changed**: Selection reconciliation around remote Yjs view sync moved
+out of `DocCRUD` into the Selection domain. Undo/Redo relative selection
+bookmarks now live on their owning Yjs `StackItem.meta`, while
+`SelectionHistoryRestorer` owns focus, relative-position resolution and bounded
+DOM/model verification. Native selection, focus, animation frames, Range
+creation and geometry access are centralized behind an internal
+`SelectionSurfaceAdapter`.
+
+**Why**: Content history and selection history must share Yjs stack identity;
+parallel arrays can drift when Yjs merges, truncates, clears or regenerates
+stack items. Data mutation code also should not own browser focus and DOM Range
+recovery. These boundaries keep DocCRUD data-only, Selection model-first, and
+browser compatibility replaceable without adding layout work to hot paths.
+
+**Affected ai-skills files**:
+
+- `blockcraft-selection.md` — documents reconciliation, history and surface ownership.
+- `blockcraft-data.md` — documents Yjs StackItem metadata and remote sync lifecycle.
+- `blockcraft.md` — updates the Selection quick reference.
+
+### Behavior Changes
+
+- No external migration is required; selection JSON and public editing APIs are unchanged.
+- Undo/Redo restoration follows the exact Yjs stack item rather than a parallel selection index.
+- Remote transactions expose internal before/after view-sync facts; DocCRUD no longer reads or replays browser selection.
+- The surface adapter delegates existing browser calls without caching, polling or extra model traversal.
+- `packages/editor/package.json` version is intentionally unchanged; release numbering remains a user-owned decision.
+
+### v?.?.? - 2026-07-16 (minor) — expose pagination content height as a CSS token
+
+**Severity**: minor
+
+**What changed**: Live and print pagination now publish the resolved page
+content height as `--bc-page-content-height`. Top-level void and code blocks use
+a predeclared `themes/plugins/pagination.scss` override to cap their height
+instead of receiving per-block inline `max-height` and `overflow` mutations.
+Code blocks constrain their internal content surface so the bottom resize
+control is not clipped; image blocks inset their horizontal resize controls
+inside the existing host clipping boundary.
+
+**Why**: The cap is page geometry shared by all atomic blocks, not block-owned
+state. Keeping it on the pagination root centralizes configuration, reduces DOM
+style churn during reflow, and gives live and print surfaces the same CSS
+contract while preserving natural-height measurement in JavaScript.
+
+**Affected ai-skills files**:
+
+- `blockcraft-theme.md` — documents the new pagination geometry token and ownership rule.
+
+### New APIs / Features
+
+- `--bc-page-content-height` on `.bc-paginated` roots and `.bc-print-content`.
+
+### Behavior Changes
+
+- Top-level void/code blocks are capped by the pagination stylesheet. Nested
+  atomic blocks are intentionally unaffected.
+- Code blocks scroll `.edit-container-wrapper` while the host remains visible;
+  image blocks preserve host crop semantics and natural-height measurement,
+  with resize controls inset into the clipping boundary.
+- Live `.bc-paginated` and print `.bc-print-content` consume the same late-loaded
+  pagination stylesheet instead of maintaining separate height-cap rules.
+- Pagination still measures natural height and records `lockHeight`; only the
+  presentation write moved from per-block inline styles to inherited CSS.
+- `packages/editor/package.json` version is intentionally unchanged; release
+  numbering remains a user-owned decision.
+
+### v?.?.? - 2026-07-16 (minor) — add persistent inherited block readonly
+
+**Severity**: minor
+
+**What changed**: BlockCraft now supports a synchronized, persistent readonly
+flag on any non-root block. `BlockReadonlyManager` resolves explicit,
+ancestor-inherited and whole-document protection from the model graph and
+enforces it across Block APIs, DocChain/DocCRUD, input/IME, clipboard, drag and
+drop, Undo/Redo, built-in Blocks, toolbars and Plugins. The Block Controller has
+a built-in lock switch and readonly-aware custom menu contracts.
+
+**Why**: Whole-document readonly could not protect an approved section while
+leaving the rest of a collaborative document editable. A UI-only flag would be
+easy to bypass and would fail for unmounted blocks, asynchronous commits and
+programmatic writes, so permission resolution and final enforcement now live at
+the model/data boundaries.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md` — adds block readonly to core concepts and Quick Reference.
+- `blockcraft-app.md` — documents host APIs, inheritance, events and trust boundary.
+- `blockcraft-block.md` — documents Block readonly state and guarded mutation rules.
+- `blockcraft-plugins-block.md` — documents the built-in switch and `readonlyBehavior`.
+- `blockcraft-input.md` — documents write-footprint preflight and IME races.
+- `blockcraft-data.md` — documents Yjs metadata, model-derived caching, origins and history.
+
+### New APIs / Features
+
+- `IBaseMetadata.readonly?: boolean` persists an explicit non-root lock.
+- Exported `BlockReadonlyManager`, `BlockRef`, `BlockReadonlyResolution`,
+  `BlockReadonlySource`, `BlockReadonlyBlocker`, `BlockReadonlyOperation`,
+  `BlockReadonlyViolation`, `BlockReadonlyViolationTrigger` and
+  `BlockReadonlyError` contracts.
+- `BlockCraftDoc.readonlyManager`, `setBlockReadonly(blockOrId, readonly)` and
+  `isBlockReadonly(blockOrId)`.
+- `BaseBlockComponent.isReadonly`, `isExplicitReadonly` and `readonlySource`.
+- `BlockReadonlyManager.stateChange$` for effective permission-driven UI and
+  throttled `violation$` for rejected-action feedback.
+- `BlockMenuContext.readonly` and `BlockMenuItem.readonlyBehavior` with
+  `hide | disable | allow` policies.
+- `ORIGIN_BLOCK_READONLY_CONTROL` and the framework-reserved
+  `ORIGIN_SYSTEM_REPAIR` transaction origins.
+- `BlockModelGraph.structureRevision` / `structureChange$` support permission
+  cache invalidation without duplicating the tree index.
+
+### Migration Recipe
+
+Keep whole-document mode for a global viewer/editor switch:
+
+```typescript
+// unchanged global mode
+doc.toggleReadonly(true);
+```
+
+Use the block API for a persisted section lock:
+
+```typescript
+doc.setBlockReadonly(calloutId, true);
+
+if (doc.isBlockReadonly(paragraphInsideCalloutId)) {
+  // inherited from the callout
+}
+
+doc.setBlockReadonly(calloutId, false);
+```
+
+Make custom Block Controller items explicit about protected content:
+
+```typescript
+// before: all custom actions were treated uniformly
+{type: 'simple', name: 'inspect', label: '查看'}
+
+// after: read-only action remains available; omitted defaults to disabled
+{type: 'simple', name: 'inspect', label: '查看', readonlyBehavior: 'allow'}
+{type: 'simple', name: 'translate', label: '翻译', readonlyBehavior: 'disable'}
+```
+
+Custom Blocks/Plugins must use guarded mutation APIs:
+
+```typescript
+// do not: bypasses readonly/transaction ownership
+block.props.title = nextTitle;
+block.yText.insert(index, text);
+
+// do
+block.updateProps({ title: nextTitle });
+block.insertText(index, text);
+```
+
+### Behavior Changes
+
+- A block lock applies to its entire descendant subtree. An unlocked ancestor
+  containing a locked descendant cannot be deleted or moved.
+- Root persistent locking is rejected; use `toggleReadonly()` for document mode.
+- Guarded programmatic writes throw `BlockReadonlyError`. Owned input/clipboard/
+  drag UI prevents the event before mutation and reports the violation.
+- `setInitProps()` now performs the same block-permission check as
+  `updateProps()`; asynchronous loaders recheck after every await.
+- Selection, copy, link activation, media preview and download remain allowed.
+  Clipboard copies recursively strip readonly metadata, while persistence and
+  collaboration snapshots retain it.
+- A blocked Undo/Redo item is not popped and becomes available after unlock.
+- Remote updates and deterministic internal consistency repairs still apply and
+  render. Block readonly is a trusted-client editing policy, not server-side
+  authorization.
+- `packages/editor/package.json` version is intentionally unchanged; release
+  numbering remains a user-owned decision.
+
+### v?.?.? - 2026-07-15 (minor) — add the model-first document query graph
+
+**Severity**: minor
+
+**What changed**: BlockCraft now exports `BlockModelGraph` and exposes one as
+`BlockCraftDoc.model`. The graph reads the complete root-reachable Yjs tree
+without requiring Angular Block components or DOM hosts. Document path,
+position, sibling interval and snapshot export calculations now use this model
+layer while existing component-returning APIs keep their mounted-view boundary.
+
+**Why**: `DocVM` previously acted as both the view registry and the only tree
+query surface. That made a temporarily unmounted block indistinguishable from a
+deleted block and prevented safe virtual rendering. Separating read-only model
+queries from mounted view lookup provides the first virtualization foundation
+without changing current full rendering.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md` — adds the model graph to core concepts and Quick Reference.
+- `blockcraft-data.md` — documents lifecycle, APIs, reachable-node semantics and mutation boundaries.
+
+### New APIs / Features
+
+- Exported `BlockModelGraph`.
+- `BlockCraftDoc.model` for DOM-free structure, order, text and snapshot reads.
+- Incremental Yjs structural reconciliation with missing/cyclic/duplicate edge tolerance.
+
+### Migration Recipe
+
+Use model queries when code needs document data but not component or DOM
+capabilities:
+
+```typescript
+// before: requires a mounted component
+const block = doc.getBlockById(blockId);
+const parentId = block.parentId;
+const path = doc.getBlockPath(block);
+
+// after: works for any root-reachable YBlock, mounted or not
+const parentId = doc.model.getParentId(blockId);
+const path = doc.model.getPath(blockId);
+```
+
+Keep component lookup for view work:
+
+```typescript
+// unchanged: toolbar geometry, focus and DOM Range still need a mounted view
+const mountedBlock = doc.getBlockById(blockId);
+mountedBlock.hostElement.focus();
+```
+
+### Behavior Changes
+
+- `BlockCraftDoc.getBlockPath()`, sibling-ID reads, position comparison,
+  `queryBlocksBetween()` and `exportSnapshot()` no longer calculate through the
+  component tree.
+- `getBlockById()` / `getBlockRef()`, CRUD event payloads, plugin lifecycle and
+  current full-render behavior are unchanged.
+- This release does not add a virtual window, component unmounting, spacers or
+  pagination/virtualization integration.
+- `packages/editor/package.json` version is intentionally unchanged; release
+  numbering remains a user-owned decision.
+
+### v?.?.? - 2026-07-15 (major) — remove DOM-to-image JPEG export
+
+**Severity**: major
+
+**What changed**: BlockCraft removed `DocExportManager.exportToJpeg()`, the protected `_toCanvas()` hook, the constructor's DOM rendering options, and the `dom-to-image-more` peer dependency. `DocExportManager` now accepts only the document and remains responsible for JSON, Markdown, PDF, and print export.
+
+**Why**: DOM-to-image rendering was an isolated, high-memory path with browser and resource compatibility limits. Pagination PDF and printing already use readonly BlockCraft components and native print surfaces, so carrying a rasterization dependency solely for JPEG export was not justified.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md` — updates the export manager quick reference.
+- `blockcraft-app.md` — documents the remaining export surface and host ownership of bitmap screenshots.
+- `blockcraft-plugins-util.md` — removes the obsolete runtime dependency reference from pagination export guidance.
+
+### Breaking Changes
+
+- `DocExportManager.exportToJpeg(name, options?)` is removed.
+- `DocExportManager` no longer accepts a second DOM rendering options argument.
+- Subclasses can no longer override the protected `_toCanvas()` rasterization hook.
+- Consumers no longer need to install or provide `dom-to-image-more` for `@ccc/blockcraft`.
+
+### Migration Recipe
+
+Keep document export on the supported structured or print paths:
+
+```typescript
+// before
+const exports = new DocExportManager(doc, { scale: 2, bgcolor: "#fff" });
+await exports.exportToJpeg("document.jpg", { scale: 2 });
+
+// after: BlockCraft-owned document/PDF export
+const exports = new DocExportManager(doc);
+await exports.exportToPdf("document.pdf");
+
+// If the product still requires bitmap screenshots, implement that concern in
+// the host application with explicitly chosen browser/resource semantics.
+```
+
+### Behavior Changes
+
+- JSON, Markdown, paginated PDF, and print behavior are unchanged.
+- BlockCraft no longer clones arbitrary editor DOM into a large canvas, reducing the package dependency surface and avoiding that path's memory peak.
+
+### v?.?.? - 2026-07-15 (minor) — pagination becomes an opt-in plugin
+
+**Severity**: minor
+
+**What changed**: BlockCraft now exports `PaginationPlugin`, the pure pagination layout/export primitives, and `PageDividerBlockSchema`. The plugin owns reversible live page layout, configuration commands, the optional Cmd/Ctrl+P binding, and a stable WYSIWYG print surface. Tables can render cross-page continuation spacers without changing Yjs data. `DocExportManager.exportToPdf()` opens browser native printing by default or invokes a host-provided native backend while the current top-level WebView print mirror is mounted. The PDF body uses readonly BlockCraft components and the captured live page result instead of snapshot-viewer or DOM rasterization. The playground owns its debug-only settings panel; it is not part of the package API.
+
+**Why**: The prototype on `feat/pagination` coupled pagination to `BlockCraftDoc` construction and its page-shaped playground. Making pagination a registered plugin keeps continuous layout as the default, lets hosts switch layouts at runtime, and gives pagination one symmetric `init()` / `destroy()` lifecycle without persisting presentation state into the document model.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md` — adds the pagination domain, registered schema, plugin and quick reference.
+- `blockcraft-plugin.md` — documents the reversible runtime plugin pattern.
+- `blockcraft-plugins-ref.md` — indexes `PaginationPlugin` in the utility category.
+- `blockcraft-plugins-util.md` — documents pagination options, APIs and settings integration.
+- `blockcraft-app.md` — documents host registration, layout switching and print/PDF usage.
+- `blockcraft-theme.md` — documents pagination CSS tokens and view classes.
+
+### New APIs / Features
+
+- `PaginationPlugin` and `PaginationPluginOptions`; the live layout defaults to disabled.
+- `PageDividerBlockSchema` for explicit manual page breaks.
+- Pure pagination layout, view and export types/functions under `framework/modules/pagination/`.
+- `DocExportManager.exportToPdf()` pagination configuration and `printPdf()` vector printing.
+- `PaginationPlugin.exportToPdf()` and `DocExportManager.exportToPdf()` return print metadata and reuse the current stable page result unless explicitly reflowed.
+- `PaginationPdfHostBackend`, `PaginationPdfHostContext`, `PaginationPdfHostResult`, `PaginationPdfOptions`, `PaginationPdfResult` and structured `PaginationExportError` for browser/Tauri-neutral integration.
+- Pagination theme tokens under the `--bc-pagination-*` namespace.
+- Legacy `exportToPdf()` options `paging` and `blockMargin` remain accepted as deprecated no-ops for source compatibility; the new engine always uses block-aware pagination.
+
+### Migration Recipe
+
+Do not copy the prototype branch's document-service wiring:
+
+```typescript
+// before (prototype only; never released as the target contract)
+const doc = new BlockCraftDoc({
+  pagination: { enabled: true, pageSize: "A4" },
+});
+doc.pagination.updateConfig({ orientation: "landscape" });
+
+// after
+const pagination = new PaginationPlugin({
+  enabled: true,
+  pageSize: "A4",
+});
+const doc = new BlockCraftDoc({
+  // ...required config
+  plugins: [pagination],
+});
+pagination.updateConfig({ orientation: "landscape" });
+pagination.disable(); // return to continuous layout without rebuilding the doc
+```
+
+Register `PageDividerBlockSchema` only when the host wants explicit manual page breaks. Existing documents and hosts remain on continuous layout when the plugin is absent or disabled.
+
+To export the page layout currently visible on screen, stop passing a duplicate pagination config:
+
+```typescript
+// before: always reflows using this separate config
+await exports.exportToPdf("document.pdf", {
+  pagination: {
+    pageSize: "A4",
+    margins: { top: 72, right: 72, bottom: 72, left: 72 },
+  },
+});
+
+// after: enabled PaginationPlugin supplies the current stable layout
+await exports.exportToPdf("document.pdf");
+
+// Tauri/host application: run this inside a dedicated top-level export WebView
+await exports.exportToPdf("document.pdf", {
+  backend: async ({ suggestedName, page, pageCount }) => {
+    const path = await choosePdfPath(suggestedName);
+    if (!path) return { status: "cancelled" };
+    await invokeNativePdfPrint({ path, page, pageCount });
+    return { status: "saved", path };
+  },
+});
+```
+
+### Behavior Changes
+
+- Continuous layout remains the default. Enabling or disabling pagination changes local DOM/CSS view state only and does not write Yjs or create Undo history.
+- Pagination observers and table continuation views are created lazily and are fully removed on disable/destroy.
+- With enabled pagination and no explicit override, PDF export captures the current stable layout and snapshot synchronously, then uses real readonly BlockCraft components. Explicit `options.pagination` requests a separate reflow; a disabled plugin uses its config; no plugin falls back to A4.
+- PDF body export no longer uses `dom-to-image-more` or `pdf-lib`. Browser calls a same-origin print iframe; Tauri/other shells inject a native backend that prints the current top-level export WebView. Platform print engines may have small font/color differences, while page boxes and breakpoints stay fixed.
+- `DocExportManager.exportToPdf()` no longer returns bytes or downloads a generated Blob. It returns `output/status/pageCount/layoutRevision/warnings/path?`; browser cancellation is not observable, while host backends return `saved` or `cancelled`.
+- iframe content remains in the native print DOM and no longer raises the raster-only `unsupported-resource` error. Tainted canvas and unstable resources can still fail according to `resourcePolicy`.
+- Cmd/Ctrl+P is consumed by pagination only when the plugin is enabled and `printShortcut` is true.
+
+### v?.?.? - 2026-07-15 (patch) — collaboration cursors preserve gap semantics across rerenders
+
+**Severity**: patch
+
+**What changed**: `FakeRange` now renders a collapsed `gap` selection as a caret on its explicit `before` / `after` filler instead of degrading it to a whole-block border. Block gap fillers carry `data-block-gap-side`, so their geometry no longer depends on `:first-of-type` / `:last-of-type` and cannot be displaced by an appended collaboration overlay. `BlockCraftAwareness` also detects when a related inline full rerender detached a remote cursor and rebuilds only that lost overlay in a coalesced microtask. Remote user labels render in one shared fixed portal under `document.body`, projected from their caret rectangles, so block-level `overflow: hidden` cannot clip them. The portal mirrors the editor scroll viewport and uses `overflow: hidden`, preventing labels from painting outside that viewport. Scroll and resize refreshes are coalesced to one animation-frame pass. `BlockCraftAwareness.destroy()` explicitly releases its portal, overlays, subscriptions, awareness callback, and global listeners when a host leaves a room without destroying the document.
+
+**Why**: IME commit can call the inline runtime's full `rerender()`, which removes unmanaged `FakeRange` nodes from editable content even though the remote awareness coordinate did not change. Separately, treating `gap` as `selected` lost selection intent, and an appended cursor `span` could make the real trailing gap stop matching `:last-of-type`.
+
+### Behavior Changes
+
+- Remote text cursors survive local IME full rerenders. Incremental input that leaves the overlay connected performs no collaboration-cursor layout work.
+- A remote collapsed gap is drawn as a narrow caret at the selected side; explicit whole-block `selected` points retain the block border overlay.
+- Leading/trailing gap placement is keyed by `data-block-gap-side="before|after"`, independent of other sibling spans.
+- Remote user labels are outside editable/block DOM and therefore are not clipped by block overflow or included in inline rerenders. Their shared fixed portal matches the `doc.scrollContainer` client box and clips overflow natively; inner scrolling does not add a container-geometry read. One document-level scroll listener updates all labels once per frame, batching all geometry reads before style writes; no per-cursor listener or CDK overlay is created.
+- Hosts that replace a collaboration provider while retaining the document must call `BlockCraftAwareness.destroy()` before discarding the old manager.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md` — adds the collaboration cursor lifecycle quick reference.
+- `blockcraft-app.md` — documents host room cleanup with `BlockCraftAwareness.destroy()`.
+- `blockcraft-selection.md` — documents portal projection, bounded layout work, and cleanup ownership.
+
+### v?.?.? - 2026-07-14 (patch) — remote collaboration maps live selections through Yjs bookmarks
+
+**Severity**: patch
+
+**What changed**: The current local `BlockSelection` now has an internal revisioned Relative Selection Bookmark. Relevant remote text and children transactions resolve text/boundary endpoints through `Y.RelativePosition`, validate structural points, recompute `commonParent` from the current tree, and publish through the existing model-first `selection.replay()` path. `DocUndoManager` now uses the same bookmark codec instead of maintaining a second point-mapping implementation.
+
+**Why**: Remote sync previously relied on `recalculate()` after selected endpoint blocks changed. That made the canonical selection depend on mounted DOM and browser-specific Range state, could drift during Safari/WebKit updates, and duplicated the relative-position rules already needed by Undo. A shared model mapping path is deterministic, collaboration-safe, and compatible with delayed or virtualized rendering.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md` — Quick Reference records bookmark-first remote selection mapping.
+- `blockcraft-selection.md` — documents the shared codec, live tracker, structural relevance filter, focus guards, and DOM fallback.
+- `blockcraft-data.md` — documents the remote Yjs transaction to local Selection flow and Undo reuse.
+
+### Behavior Changes
+
+- Remote changes to a selected text block or boundary container map the local anchor/head in the current Yjs model and replay once; successful mapping no longer confirms itself through DOM `recalculate()`.
+- Ancestor-only transactions schedule reconciliation only when an endpoint's parent path or sibling index changed. Unrelated root/container inserts do no selection work.
+- Pending remote reconciliation is canceled when newer local selection intent is published or focus leaves the editor/native input island.
+- When mapping fails, DOM is sampled at most once and only if both native Range endpoints still belong to the current editor root; otherwise the stale model selection is cleared.
+- This is an internal patch behavior change. No new public API is exported, and no package version is changed until an explicit release decision.
+
+### v?.?.? - 2026-07-14 (patch) — cross-scope native drag endpoints stabilize on boundaries
+
+**Severity**: patch
+
+**What changed**: When native drag normalization projects an endpoint out of a closed selection scope, `SelectionManager` now publishes the repaired `BlockSelection` and immediately aligns the browser anchor/focus with the same gap-backed boundary while preserving forward/backward direction. Native endpoints are also validated against the editor root before normalization, preventing a Safari drag leaked into surrounding page DOM from entering block lookup. `SelectionSelectedManager` reconciles covered-block class sets instead of removing and re-adding unchanged `.selected` / `.focused` classes.
+
+**Why**: Safari/WebKit could retain the original table-internal DOM endpoint after the model had made the table atomic. Repeated `selectionchange` events then alternated between internal text and parent boundaries, making both the native highlight and whole-table virtual selection flash. Full class teardown additionally restarted table selection transitions even when the covered blocks had not changed.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md` — Quick Reference records cross-scope native endpoint stabilization.
+- `blockcraft-selection.md` — documents the native-drag projection exception, direction preservation, idempotence, and class reconciliation.
+
+### Behavior Changes
+
+- Native drags crossing table/container scopes now leave their closed-scope endpoint on the scope block's parent boundary in both model and DOM views.
+- The stabilizing DOM write runs only when scope repair changed an endpoint, does not read layout, and does not suppress subsequent pointer-driven `selectionchange` events.
+- A native Range with an endpoint outside root is never normalized. BlockCraft clears it only while the editor owns focus; external page/editor selections remain untouched, and model-owned table-cell rectangles are preserved.
+- Repeated equivalent selection broadcasts no longer toggle classes on unchanged covered blocks. No package version is changed until an explicit release decision.
+
+### v?.?.? - 2026-07-14 (patch) — DocCRUD render-unit deletion is selection-neutral
+
+**Severity**: patch
+
+**What changed**: `DocCRUD.deleteBlocks()` still synchronously replaces the final child of a non-forced `renderUnit` deletion with one empty paragraph, but it no longer calls `SelectionManager.recalculate()` afterward. Structural mutation and selection placement now have separate owners: DocCRUD updates Yjs/the block tree, while the Input or plugin action commits the intended caret/range through model-first Selection APIs.
+
+**Why**: The removed DOM read happened in the middle of higher-level replacement flows, before typed text and the final cursor recipe had been applied. It could publish a stale intermediate selection, add a forced layout/readback to a mutation hot path, and couple low-level data operations to mounted DOM availability.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md` — records the selection-neutral DocCRUD convention.
+- `blockcraft-data.md` — documents the render-unit fallback paragraph and explicit post-mutation selection ownership.
+
+### Behavior Changes
+
+- Direct callers of `deleteBlocks()` that expect a caret after deleting all children of a `renderUnit` must now call `setCursorAt()`, `setCursorAtBlock()`, `replay()`, or another explicit Selection API.
+- Data behavior is unchanged: the fallback empty paragraph is still created synchronously in the same Yjs transaction.
+- No package version is changed until an explicit release decision.
+
+### v?.?.? - 2026-07-14 (patch) — transient selection projection failures preserve the model
+
+**Severity**: patch
+
+**What changed**: Programmatic `SelectionManager` writes now keep a live canonical `BlockSelection` when its native DOM Range cannot be built or applied because block DOM is still mounting. Selection performs a bounded, projection-version-guarded retry; a newer selection or explicit external focus cancels the old task. Gap cursor readiness uses the same recovery path. Invalid/stale model endpoints and explicit `blur()` / `replay(null)` continue to clear selection.
+
+**Why**: Paste-format switches replace block DOM and create an independent Undo item. Undo can restore the Yjs data and block component before Angular/Safari has mounted the corresponding inline DOM. Treating that temporary projection gap as an invalid selection cleared the undo snapshot and left the editor without a caret across collapsed text, range, and gap paste entry points.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md` — Quick Reference documents delayed, model-preserving DOM projection.
+- `blockcraft-selection.md` — documents projection recovery, version cancellation, focus ownership, and exhaustion semantics.
+
+### Behavior Changes
+
+- `setCursorAt()`, `setSelection()`, `setCursorAtBlock()`, `selectBlock()`, `setGapCursor()`, `extendTo()`, and `replay()` no longer clear a live model selection solely because DOM Range projection is temporarily unavailable.
+- Projection retries run only on the failure/deferred path, do not call `recalculate()`, and do not republish the model selection.
+- Retry tasks do not steal focus from an explicitly focused external element. When DOM replacement naturally drops focus to `body`, they may refocus the editor host before projecting.
+- Code that intentionally wants to clear selection must call `doc.selection.blur()` or `doc.selection.replay(null)` explicitly. No package version is changed until an explicit release decision.
+
+### v?.?.? - 2026-07-14 (major) — DOM adapters and input use canonical selection contracts
+
+**Severity**: major
+
+**What changed**: `InputTransformer.deleteByRange()` now accepts only a live `BlockSelection`; its deprecated `INormalizedRange` overload and legacy input executor have been removed. Framework DOM adapters normalize browser ranges through the exported pure `normalizeRange(staticRange, getBlockById, options?)` function and consume `INormalizedEndpoints.start/end`. `SelectionManager.normalizeRange()` remains available as a deprecated compatibility facade returning `INormalizedRange`. Input cursor restoration now commits through model-first selection APIs without immediately sampling the DOM through `recalculate()`.
+
+**Why**: Keeping current model selections, deprecated range shapes, and browser DOM readback active in the same execution path allowed one user intent to be reinterpreted more than once. That increased selection drift risk around IME, structure replacement, undo, Safari/WebKit projection, and future virtual rendering. The new boundary makes DOM normalization an explicit event adapter, keeps edit planning model-only, and treats successful programmatic selection writes as authoritative.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md` — Quick Reference distinguishes explicit DOM sampling, pure endpoint normalization, and model-first Input cursor recipes.
+- `blockcraft-selection.md` — documents the deprecated manager facade and the DOM sampling boundary.
+- `blockcraft-input.md` — documents the model-only `deleteByRange()` contract and post-edit cursor behavior.
+
+### Breaking Changes
+
+- `InputTransformer.deleteByRange(range: INormalizedRange, merge?)` has been removed. Pass a live `BlockSelection` instead.
+- Framework integrations that need to interpret a browser `StaticRange` must consume `INormalizedEndpoints`; the deprecated manager method's `from/to/index/length` result is not accepted by Input.
+
+### Deprecations
+
+- `SelectionManager.normalizeRange()` is deprecated with no removal date. Use the exported pure `normalizeRange()` function for DOM adapter code.
+
+### Migration Recipe
+
+For model-owned deletion:
+
+```typescript
+// before
+const range = doc.selection.normalizeRange(staticRange);
+doc.inputManger.deleteByRange(range, true);
+
+// after
+const selection = doc.selection.value;
+if (selection) {
+  doc.inputManger.deleteByRange(selection, true);
+}
+```
+
+For browser DOM adapters:
+
+```typescript
+// before
+const range = doc.selection.normalizeRange(staticRange);
+if (range.from.type === "text") {
+  useOffset(range.from.index);
+}
+
+// after
+const endpoints = normalizeRange(staticRange, (id) => doc.getBlockById(id));
+if (endpoints.start.type === "text") {
+  useOffset(endpoints.start.offset);
+}
+```
+
+Do not call `doc.selection.recalculate()` after `setSelection()`, `setCursorAt()`, `setCursorAtBlock()`, or `replay()` merely to confirm the write. Read `doc.selection.value` synchronously instead. The package version remains unchanged until an explicit release decision.
+
+### Behavior Changes
+
+- Input planning and deletion no longer execute deprecated range shapes or retain endpoint block references as mutation authority.
+- Programmatic cursor restoration after ordinary input, structural replacement, table-cell materialization, and IME commit no longer performs a redundant DOM-to-model walk.
+- IME commit still refocuses and reapplies the same model cursor when WebKit drops focus during DOM projection; it does not infer a new cursor from the browser selection.
+
+### v?.?.? - 2026-07-14 (patch) — input edits use model-native plans
+
+**Severity**: patch
+
+**What changed**: `InputTransformer` now adapts current `BlockSelection` and normalized native target endpoints into one pure, short-lived edit plan before executing any model-owned input. `beforeInput`, printable keydown fallback, Backspace/Delete, Enter, and `compositionStart` share the same plan kinds for text cursors/ranges, whole-block ranges, gaps, container boundaries, and table-cell rectangles. Current model execution no longer converts through deprecated `INormalizedRange` `from/to/index/length` shapes; the legacy range branch remains only for explicit compatibility callers.
+
+**Why**: Point-shape branching had spread across input entry points, which made equivalent user intent take different deletion, cursor, IME, and undo paths. A pure planner gives Input one validated intent boundary, keeps Yjs mutation ordering centralized, removes DOM/lazy block references from planning, and allows future virtual rendering to preserve model input semantics without mounted block hosts.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md` — Quick Reference documents model-native input planning.
+- `blockcraft-selection.md` — documents the Selection-to-Input consumer boundary.
+- `blockcraft-input.md` — documents the adapter/planner/executor flow, compatibility boundary, fail-closed rules, IME dispatch, and virtualization constraint.
+
+### Behavior Changes
+
+- Equivalent model selections now choose the same edit semantics across `beforeInput`, keydown fallback, deletion, Enter, and composition startup.
+- Stale IDs, invalid text slices/boundary indexes, unsupported endpoint combinations, and live blocks that no longer match a plan fail closed before native DOM writes.
+- Cross-column tail preservation, structural IME undo groups, table rectangles, gap materialization, and boundary replacement retain their existing externally visible behavior.
+- Planning reads model IDs/ancestry/children/text lengths only; block components are resolved immediately before execution and DOM is used only for focus/projection adapters.
+- Ordinary text keydown and ordinary text Backspace/Delete skip the structural planner through an O(1) endpoint-type gate, so the new boundary does not add model-tree work to those hot paths.
+
+### Migration Recipe
+
+No application migration is required and no exported API was added or removed. Existing callers may continue using the deprecated `INormalizedRange` overload where already supported, but new code should pass/read current `BlockSelection` points. The package version remains unchanged until an explicit release decision.
+
+### v?.?.? - 2026-07-14 (minor) — programmatic selection writes are model-first
+
+**Severity**: minor
+
+**What changed**: `SelectionManager` now resolves endpoint order and nearest common ancestry from the BlockCraft model tree instead of DOM `compareDocumentPosition()`. All programmatic selection writers canonicalize current or deprecated point shapes, publish the canonical `BlockSelection` synchronously, and only then project it to a native DOM `Range`. This includes `setSelection()`, `setCursorAt()`, `extendTo()`, editable block cursor helpers, whole-block selection, gap cursors, table-cell selection, and replay. Model-only table-cell selections still clear the native Range, while gap projection keeps its delayed filler-readiness retry.
+
+**Why**: A programmatic DOM-first write left a timing window where Input, IME, toolbar, and undo code could still read the previous model selection until a browser-specific `selectionchange` arrived. DOM ordering also made model direction depend on rendered host nodes. One model-first commit invariant removes that drift and gives future input/undo convergence a stable selection primitive.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md` — Quick Reference documents synchronous programmatic writes and model-tree ordering.
+- `blockcraft-selection.md` — documents `SelectionPositionResolver`, canonicalization, and the unified commit path.
+
+### Behavior Changes
+
+- `setSelection()`, `setCursorAt()`, `extendTo()`, `setCursorAtBlock()`, and `selectOrSetCursorAtBlock()` expose the updated `doc.selection.value` before returning when they target editable content.
+- Existing `selectBlock()`, `setGapCursor()`, `setTableCellSelection()`, and replay paths now share the same validation, focus, suppression, and projection ordering.
+- Deprecated `index/length` range inputs preserve their exact end-offset semantics and normalize to forward document order. Current `ISelectionPoint` inputs and replay retain anchor/head direction.
+- Live block IDs whose parent/child chain is disconnected or inconsistent fail closed instead of deriving order from coincidental DOM placement.
+- DOM projection failures clear the canonical selection and native ranges after logging, rather than leaving a partially committed model/DOM pair.
+
+### Migration Recipe
+
+No call-site migration is required. Code that waited for a native `selectionchange` only to read back a programmatic selection can now read `doc.selection.value` immediately after the write. The package version remains unchanged until an explicit release decision.
+
+### v?.?.? - 2026-07-13 (patch) — DOM selection recalculation uses semantic scopes
+
+**Severity**: patch
+
+**What changed**: `IBlockSchemaOptions.metadata.selectionScope` now lets block schemas declare semantic selection scopes (`document`, `table`, `columns`, `container`, or `transparent`). `SelectionManager.recalculate()` resolves `SelectionScope` from that schema metadata when a native DOM range normalizes to endpoints with different physical parent blocks. Ranges are kept when both endpoints belong to the same scope. When native drag crosses a closed scope, the internal endpoint is projected to the scope block's parent `boundary` point, so the scope block is selected as a whole instead of collapsing the entire range. Built-in schemas declare `root → document`, `table → table`, `columns → columns`, `callout → container`, and `mermaid` / `mermaid-textarea → transparent`. `root.id` is the topmost document scope and the `commonParent` for top-level child-list operations. Whole-block `selected` and collapsed `gap` points still belong to the selected block's parent domain, so selecting a table/callout/columns block as a root child keeps the existing block-selection behavior. `SelectionScopePolicy` centralizes scope-owned text input and generic selected-class behavior: `columns` is model-first for text `beforeInput`, preserves the end-column tail, and paints endpoint text blocks only; `table` also paints endpoint text blocks only for text-shaped fallback ranges; document-scope text ranges paint endpoint text blocks plus fully covered middle groups from `queryBlocksThroughPathDeeply`, so transparent endpoint ancestors are not marked as whole-block selected. `RootBlockComponent` stops starting its block-level pointerleave selection chain when the mouse selection starts inside an editable block, so native text drag ranges can reach the scope resolver instead of being promoted to parent block selection first. `FloatTextToolbarPlugin` ignores table-cell rectangles and cross-cell text-shaped fallback ranges so table rows are not styled as block selections.
+
+**Why**: The previous same-physical-parent guard blocked legitimate structured selections, especially text selections across columns, while still not expressing why table/callout internals must not merge with outside root text. A semantic scope layer gives selection, input, and future deletion semantics a single domain boundary. Reading that boundary from schema metadata keeps the selection module from hard-coding individual flavours such as `columns`, `table-row`, or `table-cell`; non-scope blocks stay transparent and inherit the nearest configured scope's behavior.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md` — Quick Reference documents the semantic scope guard.
+- `blockcraft-block.md` — documents the `metadata.selectionScope` schema field.
+- `blockcraft-selection.md` — documents `selection/scope.ts`, scope rules, and the new recalculation guard.
+- `blockcraft-input.md` — documents cross-column text replacement / IME semantics.
+- `blockcraft-plugins-formatting.md` — documents FloatTextToolbarPlugin's table-cell selection guard.
+
+### New Internal APIs
+
+- `BlockSelectionScopeKind` and `BlockSelectionScopeMetadata` are exported from the block schema layer for schema metadata typing.
+- `IBlockSchemaOptions.metadata.selectionScope?: BlockSelectionScopeMetadata` declares the semantic scope owned by a block schema.
+- `SelectionScopePolicy` describes scope-owned `beforeInput`, cross-text-tail, and selected-class behavior.
+- `getSelectionScopePolicy(scope)`, `resolveSelectionScopeForBlock(...)`, `resolveSelectionScopeForBlockId(...)`, and `resolveSelectionScopePolicyForBlockId(...)` let framework modules derive behavior from the semantic scope instead of testing block flavours locally.
+
+### Behavior Changes
+
+- Native DOM selections whose endpoints are in different columns of the same `columns` block can now normalize into a `BlockSelection` with `commonParent` set to the `columns` block.
+- Native DOM selections from `mermaid-textarea` to surrounding root text can now normalize into a document-level `BlockSelection` whose `commonParent` is `root.id`.
+- Native DOM selections from table/callout/columns internals to outside root content project the internal endpoint to the table/callout/columns block's parent boundary, selecting that scope block as a whole instead of letting native selection reset anchor/focus inside the closed scope.
+- Document-scope text selections that start or end inside a transparent container no longer apply generic `.selected` styling to that endpoint ancestor container; only the endpoint text blocks and fully covered middle groups are marked.
+- Dragging from editable text no longer triggers root's block-level pointerleave promotion, so cross-column text selection is not interrupted before `selectionchange`.
+- Typing, deleting, or IME over a text range whose scope policy preserves text tails (`columns`) no longer merges the surviving end-column text tail into the start-column text block. Fully covered intermediate column/block content is still removed according to the selected range.
+- Model-owned table-cell rectangle selections and cross-cell text-shaped fallback ranges no longer open the floating rich-text toolbar or mark table-row containers through generic `.selected` painting.
+
+### Migration Recipe
+
+No application migration is required for built-in blocks. Custom block schemas that want closed selection behavior should declare `metadata.selectionScope: 'container'` (or a more specific built-in kind such as `columns` / `table` when matching those semantics). Blocks that should participate in the surrounding scope should omit the field or set `selectionScope: 'transparent'`. Plugins that inspect `selection.commonParent` should treat it as the operation host for cross-parent selections, not always the nearest DOM/common ancestor. At the document fallback level this host is still `root.id`; that does not mean root is a closed semantic scope. Plugins that need to know table rectangles should continue using `selection.getTableCellSelection()`.
+
+### v?.?.? - 2026-07-12 (patch) — IME structural edits undo atomically
+
+**Severity**: patch
+
+**What changed**: `InputTransformer` now wraps IME flows that materialize or delete blocks at `compositionStart` in a `DocUndoManager` capture group that remains open until `compositionEnd` commits the final text. `DocUndoManager` can temporarily force multiple tracked Yjs transactions into one undo item regardless of elapsed wall time, then restores the normal capture timeout and stops capturing so the next user action stays separate.
+
+**Why**: Yjs' default `captureTimeout` can split a single IME intent when the user spends longer than the merge window in the input method. For selected non-editable blocks and other structural IME paths, that meant undo could restore only the text commit or only the structural replacement, leaving the restored model selection and native DOM selection out of sync.
+
+**Affected ai-skills files**:
+
+- `blockcraft-input.md` — documents IME capture groups for structural materialization paths.
+- `blockcraft-data.md` — documents `DocUndoManager` capture groups over multi-transaction input primitives.
+
+### Behavior Changes
+
+- IME over gap, boundary, table-cell, whole-block selected, and mixed cross-block selections now undoes as one user action even if composition lasts longer than Yjs' normal `captureTimeout`.
+- Undo after such IME input restores the pre-input selection snapshot attached to the structural edit, instead of letting the later text commit create a separate undo item with a caret inside the replacement paragraph.
+- A new `compositionStart` closes any leftover IME capture group before starting another session, preventing an interrupted composition from merging unrelated future edits.
+
+### Migration Recipe
+
+No application migration is required. Plugins implementing comparable multi-transaction IME/input primitives should use existing editor mutation APIs and avoid manually splitting one user intent into independent undo items.
+
+### v?.?.? - 2026-07-07 (patch) — IME composition aborts stale selections safely
+
+**Severity**: patch
+
+**What changed**: `InputTransformer` now treats a composition selection that still points at removed blocks as a fail-closed IME startup. It tries the existing composition selection recovery once; if no live model-backed insertion point exists, it prevents default, clears the selection, marks the pending composition as aborted, and consumes the matching `compositionEnd` without committing text. `CompositionEventState.getFallbackPoint()` returns `null` instead of throwing if a recalculated selection becomes stale.
+
+**Why**: IME events can arrive while undo, block deletion, table/cell selection, or browser selectionchange has left a short-lived stale `BlockSelection`. Throwing from lazy `firstBlock` / `lastBlock` reads leaves the editor in a repeated `Block not found` state. Aborting the single invalid composition keeps Yjs authoritative and avoids committing native IME text into the wrong block.
+
+**Affected ai-skills files**:
+
+- `blockcraft-input.md` — documents stale composition selection abort behavior.
+
+### Behavior Changes
+
+- `compositionStart` over an unrecoverable stale selection clears the editor selection and aborts the pending composition instead of throwing.
+- The matching `compositionEnd` exits without reading `compositionState` or writing text.
+- `compositionEnd` with no resolved commit point exits without throwing `Invalid inputRange`.
+
+### Migration Recipe
+
+No application migration is required. Downstream code that intentionally expected IME `BlockCraftError`s for stale selections should instead treat this as dropped browser input and observe normal selection/input state.
+
+### v?.?.? - 2026-07-08 (patch) — whole-block selection and gap-block Shift+Arrow are model-first
+
+**Severity**: patch
+
+**What changed**: `SelectionManager.selectBlock()` now writes the canonical `BlockSelection` synchronously before applying the derived native DOM `Range`. Programmatic DOM range application for model-first selection paths briefly suppresses native `selectionchange`, and new-format `replay(ISelectionJSON)` derives the native DOM Range from document-ordered `start/end` while preserving anchor/head direction in the model. `selectAllChildren()` is now model-first too: editable blocks replay a full text range, container/root blocks with children replay a `[boundary(0), boundary(childrenLength)]` range, and only void/empty blocks fall back to whole-block `selected`. Ctrl+A now treats a full editable text range, full container boundary range, or explicit whole-block selection as already covering the current block's content and climbs to `selectAllChildren(parent)`, while partial container boundary ranges expand inside the current container first. Shift+Arrow extension that crosses into a void/container block now replays a parent `boundary` endpoint, and Shift+Arrow leaving a container from its first/last child maps the moving endpoint to the container's boundary in its parent instead of promoting the container to whole-block `selected`. Boundary DOM range construction prefers the adjacent block's leading/trailing gap text anchor when one exists, instead of using native `Selection.extend(hostElement, ...)` or a whole-block `selected` endpoint for range extension; non-collapsed cross-block gap anchors and void/container chrome endpoints now normalize back to the corresponding parent boundary point. Existing non-collapsed text anchors remain text points, with `InputTransformer` handling supported mixed `text + boundary` replacement and IME materialization. `SelectionSelectedManager` no longer writes the legacy root `.all-selected` class; consumers should use `BlockSelection.isAllSelected` or block-level `.selected` classes instead. `AttachmentExtensionPlugin` no longer fakes `.selected` on attachment blocks while the rename input is focused; it uses `.bc-attachment-renaming` for that private visual state and restores the real model selection on close. `TableBlockComponent` now paints rectangular cell selection with `.bc-table-cell-selected` instead of reusing the generic `.selected` class on `td.table-cell-block`.
+
+**Why**: Safari/WebKit can reinterpret a callout/highlight/container host range as internal child text or boundary endpoints when the browser fires a delayed `selectionchange`. That could make undo restore the callout's internal content selection instead of the selected block, and could make Shift+Arrow selection shrink or stop when crossing into a container block. Boundary endpoints keep the moving Shift+Arrow endpoint as a document-position range, while gap anchors keep the native DOM endpoints out of the container's editable children. Keeping existing text anchors avoids a visual/model split where the browser paints only a container selection but input deletes additional text below it.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md` — Quick Reference notes that `selectBlock()` updates `doc.selection.value` synchronously.
+- `blockcraft-selection.md` — documents model-first whole-block selection, boundary-backed Shift+Arrow over gap blocks, and short native selectionchange suppression for derived DOM ranges.
+- `blockcraft-input.md` — documents Yjs-owned replacement and IME handling for supported mixed `text + boundary` ranges.
+- `blockcraft-plugins-toolbar.md` — documents AttachmentExtensionPlugin rename-mode visual class ownership.
+- `blockcraft-plugins-inline.md` — documents the private table cell rectangle class used by `TableBlockComponent`.
+
+### Behavior Changes
+
+- Code that calls `doc.selection.selectBlock(block)` can read `doc.selection.value` immediately after the call. The value is the whole-block selected model state before the browser native Selection view catches up.
+- Code that calls `doc.selection.selectAllChildren(block)` can read `doc.selection.value` immediately after the call. For editable blocks, the value is a full text range. For container/root blocks with children, the value is a boundary range over direct children instead of a whole-block selected endpoint.
+- Repeated Ctrl+A climbs by model coverage: partial editable text selects the full text, full editable text selects parent content, partial container boundary ranges expand to the current container's children, and full container boundary or explicit whole-block selections climb to parent content. Table-cell text still promotes to model table-cell selection before whole-table selection.
+- The editor no longer adds `.all-selected` to the root host for whole-block selected ranges. External code should read `doc.selection.value?.isAllSelected` for state and style the actual selected blocks through `.selected`.
+- Attachment rename mode no longer adds `.selected` directly while the rename overlay input owns focus. Theme/custom CSS that intentionally styled the rename-active attachment through `.attachment-block.selected` should also target `.attachment-block.bc-attachment-renaming`.
+- Table rectangular cell selection no longer adds `.selected` to `td.table-cell-block`; it uses `.bc-table-cell-selected`. Whole-table block selection still uses `.table-block.selected` through the normal `SelectionManager` path.
+- Programmatic whole-block selection is less browser-dependent around container/callout blocks. A delayed native `selectionchange` caused by applying the derived DOM Range should not overwrite the canonical model selection.
+- Shift+Arrow crossing from text or a gap cursor into a void/container block now extends the moving endpoint with parent `{type: 'boundary', index}` points. Shift+Arrow leaving a container from its first or last child does the same at the container's parent boundary instead of turning the container into a whole-block `selected` endpoint. Continued Shift+Arrow extension advances from the model `head` instead of the browser native `Selection.focusNode`, so replayed backward ranges keep growing from the upper edge instead of shrinking from the lower text endpoint. Collapsed starts can still materialize structural boundary ranges, but existing non-collapsed text anchors stay text points so the visible text extent remains represented in the model. The DOM view for boundary endpoints prefers the target block's gap text node, so Safari has a stable native anchor; if a later `selectionchange` reads that cross-block gap anchor or void/container chrome endpoint back, it normalizes to the same parent boundary point instead of a whole-block `selected` endpoint. Same-block leading→trailing gap/chrome ranges still represent explicit whole-block selection.
+- Typing, Backspace/Delete fallback, Enter, and IME over supported mixed `text + boundary` selections stay in the Yjs-owned input path and keep the caret/composition on the surviving editable text endpoint instead of blurring.
+- IME over cross-block text selections now also collapses the live model/native selection to the surviving text endpoint after undo snapshot capture but before deleting covered blocks, so composition commits into the retained `Y.Text` even when a container/highlight block is inside the selected range.
+- No migration is required for normal consumers. Tests that waited for native `selectionchange` after `selectBlock()` should assert the synchronous model selection instead.
+
+### v?.?.? - 2026-07-07 (patch) — stale selections clear before reads and broadcasts
+
+**Severity**: patch
+
+**What changed**: `SelectionManager` now validates a `BlockSelection`'s lazy block references before applying/broadcasting it through `selectionChange$` and before returning `doc.selection.value`. If undo/replay or structural edits leave a selection pointing at deleted blocks, the manager clears it to `null` instead of letting consumers read `firstBlock` / `lastBlock` and throw `Block not found`.
+
+**Why**: Table focus UI, selected-class painting, toolbars, and other selection subscribers all consume the same canonical selection stream. Centralizing the stale-selection guard prevents each subscriber from needing its own `try/catch` around lazy block access after undo/redo.
+
+**Affected ai-skills files**:
+
+- `blockcraft.md` — notes that stale block refs are cleared before `selectionChange$` emit and `doc.selection.value` read.
+- `blockcraft-selection.md` — documents the selection liveness guard in the lifecycle, value getter, and observer API.
+
+### Behavior Changes
+
+- Invalid replay/undo selections that reference missing blocks now clear to `null` before selection subscribers run or when `doc.selection.value` is read. No public API shape changed; consumers that already handle `null` selections need no migration.
+
+### v?.?.? - 2026-07-06 (patch) — mixed whole-block/text IME input collapses before deletion
+
+**Severity**: patch
+
+**What changed**: `InputTransformer` now handles mixed selections such as `{ anchor: selected block, head: text offset }` during IME startup by capturing the undo snapshot first, collapsing the live model/native selection to the surviving editable text endpoint before deleting whole-block endpoints, then starting composition there. The same destructive replace helper now avoids exposing a dangling selected block to sync observers while keeping the native IME target focused.
+
+**Why**: IME over a selection that starts on a whole block and ends inside text could delete the selected block while `doc.selection.value` still pointed at it. Synchronous observers and subsequent editing/undo could then read a stale block id, causing repeated `block not found`-style failures.
+
+**Affected ai-skills files**:
+
+- `blockcraft-input.md` — documents mixed whole-block/text input and IME replacement behavior.
+
+### Behavior Changes
+
+- IME and text replacement over mixed whole-block/text ranges now stay in the controlled Yjs input path and keep focus on the surviving text endpoint instead of leaving a stale selection that points at a deleted block.
+- No external API shape changed; no migration is required for normal consumers.
+
+### v?.?.? - 2026-07-06 (patch) — selection replay and undo snapshots use anchor/head model
+
+**Severity**: patch
+
+**What changed**: `SelectionManager.replay(ISelectionJSON)` now updates the canonical `BlockSelection` synchronously before applying the derived native DOM Range. `DocUndoManager` now captures and restores selection snapshots as anchor/head model points instead of legacy `from/to`, preserving text selection direction, gap side, boundary indexes, and table-cell anchor/head intent during undo/redo.
+
+**Why**: undo/redo and programmatic replay need a stable model selection immediately after restore. Relying on a later browser `selectionchange` can leave `doc.selection.value` stale or null, and legacy `from/to` snapshots lose direction-sensitive intent for backward text selections and rectangular table selections.
+
+**Affected ai-skills files**:
+
+- `blockcraft-selection.md` — documents synchronous new-format replay and anchor/head undo snapshots.
+- `blockcraft.md` — Quick Reference notes that `replay(ISelectionJSON)` updates `doc.selection.value` synchronously.
+
+### Behavior Changes
+
+- Code that calls `doc.selection.replay(savedSelectionJson)` with the new `ISelectionJSON` shape can read `doc.selection.value` immediately after the call. The browser native `Selection` remains a derived view and may still be absent for model-only table-cell selections.
+- Undo/redo restores anchor/head direction for supported selection point types instead of normalizing snapshots to document-ordered legacy `from/to`.
+
+### v?.?.? - 2026-07-06 (patch) — IME composition anchors are captured from the accepted model target
+
+**Severity**: patch
+
+**What changed**: `InputTransformer` now starts `CompositionSession` directly from the accepted model text point or from the paragraph it materializes for gap, boundary, table-cell, and selected renderUnit IME input. `selection.recalculate()` can still run after materialization to settle local UI, but the composition commit anchor no longer depends on that DOM-derived result. Active composing `beforeinput` target ranges no longer retarget the session anchor.
+
+**Why**: during IME startup, browsers can temporarily clear or move the native DOM selection, especially around model-only table-cell selections and gap/boundary materialization. Re-reading DOM selection after the editor already knows the intended target could retarget or drop the composition. Capturing from the model/materialized block keeps the commit in Y.Text control flow.
+
+**Affected ai-skills files**:
+
+- `blockcraft-input.md` — documents the compositionStart model-anchor rule and the reduced role of `selection.recalculate()` during IME startup.
+
+### Behavior Changes
+
+- IME composition over text, gap, boundary, table-cell, and selected renderUnit targets commits to the model target accepted at `compositionStart`, even if a follow-up DOM selection recalculation or composing `beforeinput` target range returns `null` or a stale range during browser IME startup.
+
+### v?.?.? - 2026-07-06 (patch) — table-cell selections no longer expose DOM range geometry
+
+**Severity**: patch
+
+**What changed**: `SelectionManager.getSelectionRect()` and `getSelectionRects()` now return `null` for model-owned table-cell selections. Table-cell selections still round-trip through `BlockSelection.getTableCellSelection()`, `setTableCellSelection()`, replay, clipboard/input handlers, and `createFakeRange()`.
+
+**Why**: a rectangular table selection is model-owned and the browser native range is intentionally cleared. Exposing a synthetic DOM Range from `getSelectionRect(s)` let unrelated toolbar/overlay code treat table-cell selections as DOM-backed text/block selections, which could resurrect floating text UI or derive misleading geometry.
+
+**Affected ai-skills files**:
+
+- `blockcraft-selection.md` — documents that table-cell selections are rectless/model-only for geometry APIs.
+- `blockcraft.md` — Quick Reference notes that `getSelectionRect(s)` returns `null` for table-cell selections.
+
+### Behavior Changes
+
+- Plugins that position UI from `doc.selection.getSelectionRect()` or `getSelectionRects()` must handle `null` for table-cell selections. Use `selection.getTableCellSelection()` plus table component APIs, or `doc.selection.createFakeRange(selection)`, when table-specific visual feedback is needed.
+
+### v?.?.? - 2026-07-06 (patch) — gap cursor uses a text-only native caret anchor
+
+**Severity**: patch
+
+**What changed**: `createBlockGapSpace()` now creates each block gap filler with only a zero-width text node, and `SelectionManager` places collapsed gap DOM ranges inside that text node instead of at the filler span boundary. The previous filler `<br>` is removed. The selection model is unchanged: gap selections are still represented as `{ blockId, type: 'gap', side }`, and `getBlockGapCaretSpan()` still returns the visual filler span for geometry.
+
+**Why**: Safari/WebKit does not reliably paint a native caret for a collapsed range at `(fillerSpan, 0)` when the editable filler behaves like an empty span. Anchoring the range in a real text node keeps the native caret path visible without reintroducing a CSS fake cursor; removing `<br>` keeps the filler DOM shape single-purpose.
+
+**Affected ai-skills files**:
+
+- `blockcraft-selection.md` — documented the text-only gap filler and zero-width text-node anchor.
+- `blockcraft.md` — Quick Reference notes that gap DOM ranges anchor inside the filler text node for WebKit caret visibility.
+
+### Behavior Changes
+
+- The DOM shape of internal block gap fillers changes from span + `<br>` to span + zero-width text node. Code should continue reading the `BlockSelection` model instead of depending on `document.getSelection().anchorNode` being the filler span itself.
+- No migration is required for normal `doc.selection.setGapCursor()`, input, keyboard, clipboard, or undo/redo usage.
+
+### v?.?.? - 2026-07-03 (minor) — table-cell 选区点与表格矩形选区模型化
+
+**Severity**: minor
+
+**What changed**: the selection point union now includes `ITableCellSelectionPoint { blockId, type: 'table-cell', tableId, block }`. `SelectionManager.setTableCellSelection(table, anchorCell, headCell?, scrollIntoView?)` stores a model-owned rectangular table selection synchronously, focuses the editor host, clears the browser native range, and lets `TableBlockComponent` paint the selected cells. `BlockSelection.getTableCellSelection()` exposes `{ tableId, anchorCellId, headCellId }`. Selection-sourced events for table-cell model selections now route from the anchor/head cells before bubbling to rows/table/root. `TableBlockBinding` now reads the table-cell model selection for copy/cut/paste/delete/arrow navigation before falling back to explicit table-owned row/column/cell coordinates. `InputTransformer` also recognizes table-cell selections for typing, printable keydown fallback, Enter, Backspace/Delete fallback, and IME materialization. Undo/redo snapshots preserve `blockId + tableId` and replay the table-cell model selection when both still exist.
+
+**Why**: table cell selection is rectangular and cannot be represented safely by DOM Range endpoints or a single block selection. Modeling the rectangle in `BlockSelection` gives input, clipboard, deletion, and undo/redo a stable source of truth while keeping the browser selection as a derived/optional view.
+
+**Affected ai-skills files**:
+
+- `blockcraft-selection.md` — documented `ITableCellSelectionPoint`, JSON shape, `getTableCellSelection()`, `setTableCellSelection()`, model-only replay, and undo/redo behavior
+- `blockcraft-input.md` — documented table-cell rectangle input, delete, Enter, and IME materialization semantics
+- `blockcraft-plugins-inline.md` — documented TableBlockBinding's table-cell model selection flow and fallback to explicit coordinates
+- `blockcraft-event.md` — documented table-cell model selection event scope routing from anchor/head cells
+- `blockcraft.md` — Quick Reference now lists `table-cell` selection points and `setTableCellSelection()`
+
+### New APIs / Features
+
+- `ITableCellSelectionPoint { blockId, type: 'table-cell', tableId, block }` — a new selection endpoint variant for table-cell rectangles.
+- `ISelectionPointJSON` accepts `{ blockId, type: 'table-cell', tableId }`.
+- `BlockSelection.getTableCellSelection(): { tableId: string; anchorCellId: string; headCellId: string } | null`.
+- `doc.selection.setTableCellSelection(table, anchorCell, headCell?, scrollIntoView?)`.
+
+### Behavior Changes
+
+- Drag-selecting multiple table cells now writes a model table-cell selection instead of selecting only the anchor cell as a whole block.
+- Replaying table-cell JSON restores the model selection without constructing a native DOM Range.
+- Empty native `selectionchange` events caused by clearing the browser range no longer clear a model-owned table-cell selection while the editor host keeps focus, so undo/redo can restore the rectangle reliably.
+- `doc.selection.getSelectedText()` for a table-cell rectangle returns selected cell text as tab/newline-separated table text.
+- `doc.selection.createFakeRange(selection)` now paints model-owned table-cell selections as a border-only focus ring on the anchor cell instead of rendering the full rectangle.
+- Table copy/cut/paste/delete paths prefer table-cell model coordinates before fallback table component coordinates.
+- Keydown events over model table-cell selections route from the anchor/head cells, so `{flavour: 'table-cell'}` and `{flavour: 'table'}` handlers still run when the browser native Selection has no focus node.
+- Arrow over a model table-cell selection moves/collapses to the adjacent visible cell; Shift+Arrow keeps the anchor and extends the head. Boundary arrows are consumed and keep the model selection unchanged.
+- Typing or printable keydown over a table-cell rectangle clears selected visible cells, inserts text into the anchor cell's fresh paragraph, and moves the caret after the inserted text.
+- IME over a table-cell rectangle clears selected visible cells, materializes a fresh empty paragraph in the anchor cell, and starts `CompositionSession` there so commit writes to `Y.Text`.
+- Backspace/Delete fallback over a table-cell rectangle clears selected visible cells and restores the model table-cell rectangle; Enter clears selected visible cells and places the caret in the anchor cell.
+
+### Migration Recipe
+
+Consumers with exhaustive `switch (point.type)` logic must add a `table-cell` branch:
+
+```typescript
+if (selection.start.type === "table-cell") {
+  const cell = selection.start.block;
+  const tableId = selection.start.tableId;
+  const rectangle = selection.getTableCellSelection();
+}
+```
+
+Plugins that previously inferred table rectangles from `selection.firstBlock` should prefer `selection.getTableCellSelection()` and derive coordinates from the owning table.
+
+### v?.?.? - 2026-07-03 (minor) — 表格显式矩形选区删除
+
+**Severity**: minor
+
+**What changed**: `TableBlockComponent` now exposes `getExplicitSelectedCoordinates()`, which returns only an active table-structure selection (dragged cell rectangle, row range, or column range) and never falls back to the current cursor / first cell. `TableBlockBinding` uses that explicit rectangle for Delete/Backspace before considering the legacy single-cell block-selection fallback.
+
+**Why**: table cell selection is rectangular, while the generic `BlockSelection` can still point only at the anchor cell or an inner paragraph. The old Delete/Backspace path could therefore clear only the first cell when the visual table rectangle was selected. Preferring the table-owned rectangle keeps the data mutation aligned with the user's selected cells without treating DOM classes as the source of truth.
+
+**Affected ai-skills files**:
+
+- `blockcraft-plugins-inline.md` — documented TableBlockBinding's explicit rectangle delete behavior and the related table component API
+- `blockcraft.md` — updated the plugin quick reference for TableBlockBinding
+
+### New APIs / Features
+
+- `TableBlockComponent.getExplicitSelectedCoordinates(): TableCellsSelection | null` returns the active cell/row/column rectangle only.
+
+### Behavior Changes
+
+- Delete/Backspace over an explicit table cell rectangle clears every cell in that rectangle.
+- Plain text deletion inside a table cell is still left to `InputTransformer` when no explicit table rectangle is active.
+
+### Migration Recipe
+
+No code migration required for normal consumers. Plugins that need to distinguish a real table rectangle from the current cursor cell should use `getExplicitSelectedCoordinates()` instead of `getSelectedCoordinates()`.
+
+### v?.?.? - 2026-07-03 (minor) — boundary 选区点与容器边界归一化
+
+**Severity**: minor
+
+**What changed**: the selection point union now includes `IBoundarySelectionPoint { blockId, type: 'boundary', index, block }`, representing a document-tree child boundary inside a container/root block. Non-collapsed DOM range endpoints that land on a container/root block host, a wrapper around its children container, or its `.children-render-container` now normalize to boundary points instead of lossy text or whole-block selected points. `SelectionManager.setSelection()` / `replay()` can build DOM Ranges from boundary JSON, `SelectedManager` paints covered child blocks, `FakeRange` renders covered child blocks, and `DocUndoManager` stores boundary indexes as Yjs relative positions over the parent children array. `InputTransformer` can now structurally edit same-container boundary ranges in renderUnit containers that accept paragraphs.
+
+**Why**: browsers often paint selections whose endpoints sit on wrapper elements around nested editable children, especially in callout/container blocks. Treating those endpoints as whole-container `selected` points could mix a container point with child text points and then fail the parent guard; mapping them to text points made the selection controllable, but erased the fact that the user selected a child-list boundary. Boundary points give BlockCraft a ProseMirror-like model position for container content while keeping DOM as a derived view.
+
+**Affected ai-skills files**:
+
+- `blockcraft-selection.md` — documented `IBoundarySelectionPoint`, boundary JSON, normalization, replay, fake range, undo/redo, and structural input constraints
+- `blockcraft-input.md` — documented structural input / IME behavior for same-container boundary selections
+- `blockcraft.md` — Quick Reference notes that container-boundary DOM endpoints normalize to boundary points
+
+### New APIs / Features
+
+- `IBoundarySelectionPoint { blockId, type: 'boundary', index, block }` — a new selection endpoint variant. `blockId` is the owning container/root block; `index` is the child boundary position.
+- `ISelectionPointJSON` accepts `{ blockId, type: 'boundary', index }`.
+- `BlockSelection.getBoundarySelectedChildIds(): string[] | null` returns direct child ids covered by a same-container boundary range.
+
+### Behavior Changes
+
+- Drag or browser-created selections that start/end on a container block's child wrapper can now become boundary-to-boundary selections instead of collapsing to `null` or degrading to descendant text endpoints.
+- `doc.selection.getSelectedText()` for a boundary range returns covered child block text joined by newlines.
+- `createFakeRange()` and selected CSS painting cover the selected child blocks for same-container boundary ranges.
+- Same-container boundary selections inside renderUnit containers that accept paragraphs are now Yjs-controlled for input: typing / printable keydown replaces the covered children with one paragraph, IME first materializes an empty paragraph before `CompositionSession` starts, Backspace/Delete delete the covered children, and Enter replaces them with an empty paragraph.
+- Boundary selections in containers that cannot safely host paragraphs remain fail-closed: input prevents default and clears the editor selection instead of allowing browser-native DOM mutation.
+- Collapsed selections on non-editable block hosts are unchanged; they still normalize as whole-block/gap-style block selections where applicable.
+
+### Migration Recipe
+
+Consumers with exhaustive `switch (point.type)` logic must add a `boundary` branch:
+
+```typescript
+if (selection.start.type === "boundary") {
+  const container = selection.start.block;
+  const index = selection.start.index;
+}
+```
+
+Downstream tests that asserted container-wrapper selections were rejected or normalized to descendant text endpoints should update expectations to boundary points.
+
+### v?.?.? - 2026-07-02 (patch) — 未识别选区输入 fail-closed
+
+**Severity**: patch
+
+**What changed**: selection-sourced events now still run global handlers when `doc.selection.value` is `null`. `InputTransformer` uses that path to fail closed: if editor-root `beforeInput` cannot be resolved from either the live model selection or `beforeinput.getTargetRanges()`, it prevents the native browser mutation and clears the editor selection. IME follows the same rule: `compositionStart` tries to recover a model selection, refuses to start `CompositionSession` if recovery fails, and composing `beforeInput` is prevented when no active session owns it.
+
+**Why**: browsers can paint complex native selections across container blocks / nested editable children that BlockCraft cannot yet express safely. Letting input proceed in that state mutates DOM outside Yjs, creating phantom content and selection drift. Failing closed keeps DOM and Yjs consistent while the richer container-selection model is being built.
+
+**Affected ai-skills files**:
+
+- `blockcraft-input.md` — documented the fail-closed input guard and IME behavior
+- `blockcraft-event.md` — documented global handler dispatch when selection-sourced events have no model selection
+
+### Behavior Changes
+
+- Global `@EventListen('beforeInput')` / composition handlers can now run even when `doc.selection.value` is `null`.
+- Editor-root `beforeInput` with an un-normalizable selection now calls `preventDefault()` instead of silently returning and allowing browser-native DOM mutation.
+- `compositionStart` without a recoverable model selection is rejected; a matching idle `compositionEnd` is ignored after `preventDefault()`.
+
+### Migration Recipe
+
+No code migration required. Plugins that register global selection-sourced handlers should tolerate `doc.selection.value === null`; this was already possible for defensive code, but those handlers may now be invoked in that state.
+
+### v?.?.? - 2026-07-02 (patch) — gap 光标模型同步与 trailing filler 稳定性
+
+**Severity**: patch
+
+**What changed**: `SelectionManager.setGapCursor(block, side, scrollIntoView?)` now updates the canonical `BlockSelection` synchronously before applying the derived native DOM `Range`. The zero-gap helpers that resolve leading/trailing filler spans now enumerate direct gap children instead of relying on `:first-of-type` / `:last-of-type`, so an appended FakeRange cursor span no longer hides the trailing gap filler.
+
+**Why**: gap 光标是 void/container 块旁输入、键盘导航、粘贴和 IME materialize 的共同入口。如果 programmatic gap cursor 只写 DOM，再等浏览器 `selectionchange` 回填模型，调用方会短暂读到旧 selection；而 FakeRange overlay 追加的普通 `span` 也可能让 trailing gap 查找失败。模型优先和直接 gap 枚举能让选区状态更接近 ProseMirror 的 state-first 语义。
+
+**Affected ai-skills files**:
+
+- `blockcraft-selection.md` — documented the model-first `setGapCursor()` flow
+- `blockcraft.md` — Quick Reference notes that `setGapCursor()` updates `doc.selection.value` synchronously
+
+### Behavior Changes
+
+- `doc.selection.setGapCursor()` returns with `doc.selection.value` already set to a collapsed `{type: 'gap', side}` `BlockSelection`, and `selectionChange$` has already emitted that state.
+- Trailing gap anchor/caret lookup remains correct when an unrelated sibling `span` (for example a FakeRange cursor overlay) is appended after the block's gap fillers.
+- `doc.selection.getSelectedText()` returns `''` for a collapsed gap cursor instead of returning the adjacent block's text content.
+
+### Migration Recipe
+
+No code migration required. If downstream tests assumed `setGapCursor()` only updated the native DOM selection and waited for a later `selectionchange` event before reading `doc.selection.value`, update them to assert the synchronous gap state immediately after the call.
 
 ### v?.?.? - 2026-06-30 (patch) — OrderedBlockPlugin 父节点级自动重排
 
@@ -76,9 +12836,11 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 **Why**: The old local-neighborhood algorithm missed several user-visible cases: changing the `heading` on one ordered block could leave following ordered blocks with stale order values; nested ordered items could continue under the wrong parent after the sequence returned to a shallower depth; and deletion/insert cases depended too heavily on the immediate neighboring block. Parent-level scanning makes the plugin behave closer to how users expect continuous ordered blocks to sort themselves.
 
 **Affected ai-skills files**:
+
 - `blockcraft-plugins-block.md` — OrderedBlockPlugin behavior notes updated for parent-level renumbering
 
 ### Behavior Changes
+
 - Changing an ordered block's `heading`, `depth`, or `start` now renumbers following ordered siblings in the same parent during the next scheduling tick. Previously the plugin could update only the local run around the changed block.
 - Ordered numbering now groups by `depth + heading`: lower-level heading ordered blocks no longer split higher-level heading numbering, and same-depth/same-heading ordered blocks continue as one sequence.
 - Same-depth ordered blocks continue across non-ordered siblings. Returning to a shallower depth clears deeper counters, so nested ordered numbering restarts below the next shallower item.
@@ -86,7 +12848,64 @@ Things that didn't change shape but changed behavior — e.g. an event now fires
 - No public API or configuration changes. Existing `new OrderedBlockPlugin()` usage stays unchanged.
 
 ### Migration Recipe
+
 No code migration required. If downstream tests asserted exact stale `order` props after `heading` / `depth` edits, update those expectations to the corrected renumbered sequence.
+
+### v?.?.? - 2026-06-30 (minor) — gap 光标模型与边界场景（粘贴、undo side）
+
+**Severity**: minor
+
+**What changed**: 选区系统新增第三种点类型 `IGapSelectionPoint`（`type: 'gap'`），表示 **void 或容器块旁的折叠光标**（光标在块的左边界 `side: 'before'` 或右边界 `side: 'after'`）。它复用了 `BaseBlockComponent` 为非叶子 void/容器块挂载的 `contenteditable` gap **filler span**（`<span data-block-zero-space class="bc-block-gap"><br></span>`，由 `createBlockGapSpace()` 创建）：collapsed 原生 range 落在 leading filler → `gap-before`，落在 trailing filler → `gap-after`。光标定位走 `(fillerSpan, 0)`（`<br>` 之前），**由浏览器渲染真实的原生光标**（在卡片上方表示 `before`、下方表示 `after`），不再使用 CSS 伪元素假光标条。
+
+gap 点在 `ISelectionPointJSON` 里新增可选字段 `side?: 'before' | 'after'`，并新增 `SelectionManager.setGapCursor(block, side, scrollIntoView?)` 公开方法。本次（P6）补齐两个边界场景：(1) 在 gap 处**粘贴**不再是 no-op，而是把剪贴板块作为兄弟插入到 gap 索引处（`before` = 当前块索引，`after` = 当前块索引 + 1），**保留**该 void/容器块（不替换）；(2) **undo/redo** 精确还原 gap 的 `side`，不再退化为整块 `selected` 快照。
+
+**Why**: 语雀式编辑中，gap 光标是块间导航和输入的基本单位。在 void/容器块旁粘贴和撤销时，必须精确还原光标「在块前还是块后」的语义，否则会丢失插入位置或退化为整块选中。
+
+**Affected ai-skills files**:
+
+- `blockcraft-selection.md` — 新增 `IGapSelectionPoint` 类型说明、gap 光标机制小节、JSON 序列化（`side` 字段）说明、`setGapCursor` API、常见错误条目
+- `blockcraft.md` — Quick Reference 选区小节新增 `gap` 点类型、`setGapCursor()` API 和 gap 类型收窄示例
+
+### New APIs / Features
+
+- `IGapSelectionPoint { blockId, type: 'gap', side: 'before' | 'after', block }` — 新的选区点类型；`ISelectionPoint` 联合类型从两种扩展为三种。
+- `ISelectionPointJSON.side?: 'before' | 'after'` — gap 点序列化时携带侧向（`type === 'gap'` 时存在）。
+- `doc.selection.setGapCursor(block, side, scrollIntoView?)` — 在 void/容器块旁设置折叠 gap 光标。
+- 粘贴路径：在 gap 处同时接受 plain text 与 snapshot（内部格式 / web custom format / 有道云 / HTML adapter），统一作为兄弟块插入。
+
+### Behavior Changes
+
+- 粘贴到 gap 光标时：剪贴板块作为兄弟块插入到 gap 索引处，原 void/容器块保留（此前该场景是 no-op）。
+- undo/redo 能精确恢复 gap 光标的 `side`；此前 gap 在 undo 快照里退化为 `selected`，丢失侧向信息。`toJSON()` / `replay()` 往返同样保持 `side` 字段。
+- `toLegacyJSON()` 仍把 gap 降级为 lossy 的 `selected` 点（旧格式无法表达 gap）；新格式 `toJSON()` 不受影响。
+
+### Migration Recipe
+
+纯新增特性，向后兼容，现有代码无需改动。gap 选区点仅在以下场景自动或手动产生：
+
+- 左右方向键导航 void/容器块（自动）
+- 点击 void/容器块旁的空白区域（自动）
+- undo/redo 还原 gap 光标（自动）
+- 调用 `doc.selection.setGapCursor()`（手动）
+
+消费者若想在 copy/paste 等事件处理里识别 gap：
+
+```typescript
+const sel = doc.selection.value;
+if (sel && sel.start.type === "gap") {
+  const { blockId, side } = sel.start; // side: 'before' | 'after'
+  // 在 blockId 的 before/after 一侧进行操作
+}
+```
+
+若要序列化选区并稍后还原（含 gap）：
+
+```typescript
+const json = selection.toJSON(); // start.type === 'gap' 时 json 含 side 字段
+selection.replay(json); // 自动还原 gap 的 side
+```
+
+---
 
 ### v?.?.? - 2026-06-24 (minor) — Code block 支持用户颜色叠加；TextMarkerPlugin 新增 `colorOnlyFlavours`
 
@@ -101,6 +12920,7 @@ The bundled `<editor>` component (`packages/editor/editor/editor.ts`) now regist
 **Why**: Code blocks are marked `plainTextOnly`, so the existing `FloatTextToolbarPlugin` declined to format them. Users needed to color code spans (e.g., highlight a variable name) while keeping Shiki syntax highlighting. The `colorOnlyFlavours` extension point lets the host selectively enable color-only overlays on any plain-text block without exposing the full rich-text toolbar.
 
 **Affected ai-skills files**:
+
 - `blockcraft-plugins-toolbar.md` — 新增 TextMarkerPlugin 完整章节（`colorOnlyFlavours` 参数、`colorOnly` Input、使用示例）
 
 ### New APIs / Features
@@ -126,10 +12946,10 @@ The bundled `<editor>` component (`packages/editor/editor/editor.ts`) now regist
 
 ```typescript
 // before — code blocks get no color toolbar
-new TextMarkerPlugin(['paragraph', 'heading'])
+new TextMarkerPlugin(["paragraph", "heading"]);
 
 // after — add 'code' / 'mermaid-textarea' to colorOnlyFlavours; existing rich flavours unaffected
-new TextMarkerPlugin(['paragraph', 'heading'], ['code', 'mermaid-textarea'])
+new TextMarkerPlugin(["paragraph", "heading"], ["code", "mermaid-textarea"]);
 ```
 
 使用捆绑 `<editor>` 组件的消费者无需任何改动——升级即启用代码块颜色工具栏。
@@ -143,13 +12963,16 @@ new TextMarkerPlugin(['paragraph', 'heading'], ['code', 'mermaid-textarea'])
 **Why**: 协同场景下把「@人员」固化成 CRDT 同步的 mention 节点，会让每个打开文档的协作者都各自观察到该节点并重复执行副作用（cses 待办块「@人 → 加任务参与人」一度在 N 端各触发一次 `updateCollaborator` + 抢删同一节点）。本钩子让宿主把这类 mention 收敛成「只在点选这一端发生的副作用」，其余端通过各自领域的实时通道（如任务订阅）获知结果，而非通过文档节点。
 
 **Affected ai-skills files**:
+
 - `blockcraft-plugins-inline.md` — MentionPlugin 配置表新增 `onConfirm` 行 + Notes 说明宿主认领语义
 
 ### New APIs / Features
+
 - `MentionPluginConfig.onConfirm?: (data, { block }) => boolean | void` — 确认拦截钩子；返回 `true` 时插件跳过 embed 插入，仅删除 `@keyword`
 - 新增导出类型 `MentionConfirmContext`（`{ block: EditableBlockComponent }`）
 
 ### Migration Recipe
+
 纯新增、可选，现有代码零改动。需要「@ 落地为宿主副作用而非节点」时：
 
 ```typescript
@@ -157,11 +12980,13 @@ new MentionPlugin({
   panel,
   // 返回 true：插件删除 @keyword 但不插入 mention 节点，宿主自行处理（如加协作者）
   onConfirm: (data, { block }) =>
-    block.flavour === 'todo' && (block as any).handleMentionConfirm?.(data) === true,
-})
+    block.flavour === "todo" &&
+    (block as any).handleMentionConfirm?.(data) === true,
+});
 ```
 
 ### Behavior Changes
+
 - 仅当配置了 `onConfirm` 且其返回 `true` 时，确认产生的 delta 由「删 `@keyword` + 插 `{mention}` embed + 空格」变为「仅删 `@keyword`」。未配置或返回假值时，行为与改动前逐字节一致。
 
 ### v?.?.? - 2026-06-17 (minor) — `--bc-lh` 改为无单位行高比例（修复 WebKit CSS zoom 下行间重叠）
@@ -171,25 +12996,34 @@ new MentionPlugin({
 **Why**: 表格全屏视图用 CSS `zoom` 缩放。实测 **WebKit / WKWebView（Tauri 桌面端、Safari）下 CSS `zoom` 只放大字号，不放大写死 px 的 `line-height`**（`getComputedStyle` 显示行高被除以 zoom 倍数，net 视觉行高恒定）——放大后字越来越大、行高纹丝不动，文字行逐渐重叠。Chromium 两者都缩放、无此问题。无单位比例随字号等比放大，跨引擎都正确，且与既有 `c-element[style*="font-size"] { line-height: 1.5 }`（v?.?.? 2026-06-15）同一思路、收敛为单一来源。zoom=1 时所有可见排版与改动前逐像素一致（已用 WKWebView 实测：正文/标题在 1×/2×/3× 比例恒为 1.5）。
 
 **Affected ai-skills files**:
+
 - `blockcraft-theme.md` — 「CSS Custom Properties」节新增 `--bc-lh` 无单位契约说明
 
 ### Behavior Changes
+
 - 文档基准与标题行高现在随 `font-size` 等比缩放（无单位比例），在 CSS `zoom`（表格全屏）下不再重叠；视觉默认值不变（`16px × 1.5 = 24px`）。
 - `--bc-lh` 现在是无单位数字。**下游若覆盖 `--bc-lh`，必须给无单位数字（如 `1.6`），不能再给 px 长度**——给 px 会让 `calc(var(--bc-lh) * var(--bc-fs))` 退化为非法的 `length × length`，导致 attachment 前缀 / code-block padding 等尺寸失效。这是本次唯一的破坏点；不覆盖此变量的消费者零影响。
 - 演示模式（demo-presentation）的有效行高与块间距与改动前等价；`lineHeightScale` / `fontScale` 语义不变。
 
 ### Migration Recipe
+
 仅当你在自定义主题里覆盖过 `--bc-lh`：
 
 ```scss
 /* before — px 长度 */
-:root { --bc-lh: 28px; }
+:root {
+  --bc-lh: 28px;
+}
 
 /* after — 无单位比例（28 / 16 ≈ 1.75） */
-:root { --bc-lh: 1.75; }
+:root {
+  --bc-lh: 1.75;
+}
 
 /* 若你曾依赖 var(--bc-lh) 作为「一行高度」的 px，改写为： */
-.something { height: calc(var(--bc-lh) * var(--bc-fs)); }
+.something {
+  height: calc(var(--bc-lh) * var(--bc-fs));
+}
 ```
 
 ### v?.?.? - 2026-06-16 (minor) — 有道云 HTML data-content 粘贴路径
@@ -199,15 +13033,18 @@ new MentionPlugin({
 **Why**: 桌面端（cses-client / Tauri）实测有道云粘贴走不到 `text/yne-json` 分支——WKWebView 只透传 `text/html`。需要一条基于 HTML `data-content` 的路径，覆盖所有环境；并把 HTML 解析收敛到 Adapter 层（DDD），重传这种 post-insertion/协同敏感的副作用留在 clipboard。
 
 **Affected ai-skills files**:
+
 - `blockcraft-adapter.md` — 「有道云笔记」节新增「有道云 HTML data-content 路径」子节
 
 ### New APIs / Features
+
 - `parseYoudaoHtml(html, fileService): IBlockSnapshot | null` 与 `isYoudaoHtml(html)`（内部模块，从 `adapters/yne-adapter` 导出，未从包根导出；由 `HtmlAdapter` 调用）。
 - `collectAndStripRehostMarkers(root): YneDeferredAttachment[]`（收集并剥离附件重传标记）。
 - `buildImageSnapshot` / `buildAttachmentSnapshot`（`resource.ts` 内部共享构建器）。
 - `parseYneClipboard` 返回值改为 `IBlockSnapshot | null`（原 `{snapshot, deferredAttachments}` 结构连同 `YneParseResult` 类型移除；附件重传改走 meta 标记机制）。
 
 ### Behavior Changes
+
 - 从有道云粘贴时：浏览器优先 `text/yne-json`；被剥离自定义 MIME 的环境（Tauri 等）由 `HtmlAdapter` 内部识别 `data-content` 兜住。两者产出等价的高保真结果（标题/列表/待办/分割线/代码/合并表格/图片/附件 + 行内样式），不再回退到「附件变图片、样式丢失」的通用 HTML。
 - 非有道云 HTML 不含 `data-content`/`yne-bulb-block` marker → `isYoudaoHtml` 返回 false → 完全走原通用 HTML adapter，零回归。
 - 附件重传标记仅存在于内存中的 paste snapshot 上，插入前即被剥离，不进入 Yjs、不同步给协同端——只有本地粘贴者执行重传。
@@ -215,6 +13052,7 @@ new MentionPlugin({
 - **未知块容错（throw → 降级）**：两条有道云路径的 `convertBulbBlock` / `convertBlock` 遇到不认识的块**不再抛错**，而是降级为保留其文本的段落（无文本则丢弃）。此前单个未知块（如 `diagram`）会经 catch 触发**整篇**回退到有损 HTML；现在仅真正无法解析的 payload（无 `<article>` / JSON 损坏）才整篇回退，单个生僻块不再连累全文。
 
 ### Migration Recipe
+
 无需迁移（新增能力，向后兼容）。
 
 ### v?.?.? - 2026-06-15 (minor) — 固定工具栏字体缩放工具
@@ -226,19 +13064,23 @@ new MentionPlugin({
 配套在 base 主题加一条规则 `c-element[style*="font-size"] { line-height: 1.5 }`，让缩放后的行内文字行高随字号等比增长（文档基准比例 `--bc-lh / --bc-fs = 1.5`），避免大字号挤在固定行高里。
 
 **Affected ai-skills files**:
+
 - `blockcraft-plugins-formatting.md` — `FixedTextToolbarComponent` 新增「Font Scale」节
 - `blockcraft-inline.md` — Attributes 节补充 `a:`/`d:`/`s:` → DOM 应用规则与 camelCase→kebab 说明
 
 ### New APIs / Features
+
 - `BcFontScalePickerComponent`（`bc-font-scale-picker`）：相对字体缩放选择器，`@Input() current: number`、`@Output() pick: EventEmitter<number>`，从包根导出。
 - 固定工具栏新增字体缩放工具——无需额外配置，随 `bc-fixed-toolbar` 自带。
 
 ### Behavior Changes
+
 - `s:` 行内样式中的 camelCase key（`s:fontSize`、`s:fontFamily` 等）现在会正确渲染为对应的连字符 CSS 属性（`font-size`、`font-family`）；此前因 `setProperty` 不识别 camelCase 而被静默忽略。单词 key（`s:color`、`s:background`）与 CSS 自定义属性（`s:--x`）行为不变。
 - 影响面极小：此前唯一写入 `s:fontSize` 的是有道云粘贴适配器，且写的是无单位数字（如 `16`），修复后仍是非法 font-size 值被忽略，现有内容观感不变。
 - 固定工具栏「格式刷」现在也复制字号缩放（`s:fontSize`）；此前只复制粗斜体/下划线/删除线/代码/上下标/底纹/颜色/背景。
 
 ### Migration Recipe
+
 无需迁移（新增能力 + 兼容性修复，向后兼容）。
 
 ### v?.?.? - 2026-06-15 (minor)
@@ -248,18 +13090,22 @@ new MentionPlugin({
 **Why**: 有道云 HTML 有损，其剪贴板自带高保真 `text/yne-json`，直接翻译可大幅提升粘贴质量。
 
 **Affected ai-skills files**:
+
 - `blockcraft-adapter.md` — 新增「有道云笔记 `text/yne-json` 剪贴板适配器」节
 - `blockcraft.md` — Doc Services Index 追加粘贴优先级说明
 
 ### New APIs / Features
+
 - `parseYneClipboard(state, doc): YneParseResult | null`（内部模块 `adapters/yne-adapter/`，未从包根导出，外部无需改动）。
 - `rehostYneAttachments(doc, deferred): Promise<void>`（同上，内部使用）。
 
 ### Behavior Changes
+
 - 从有道云笔记粘贴时走新高保真路径；其它来源（无 `text/yne-json` MIME）完全不受影响，继续走原 HTML/plain 路径。
 - 有道云附件块插入后会异步 fetch 重传；当 fetch 失败（CORS/鉴权）或上传服务未返回 http(s) URL（如无后端环境返回的 blob: 对象 URL）时保留有道云原 URL，不打断粘贴流程。仅当上传返回最终 http(s) URL 时才替换，避免附件块卡在「上传中」状态（attachment 块以 `url.startsWith('http')` 判定就绪）。
 
 ### Migration Recipe
+
 无需迁移（新增能力，向后兼容）。
 
 ---
@@ -279,16 +13125,19 @@ data migration, no selection/navigation change.
 editable from the floating toolbar, without turning the divider into an editable block.
 
 **Affected ai-skills files**:
+
 - `blockcraft-plugins-toolbar.md` — documented the divider toolbar `文字` tab + alignment.
 - `blockcraft.md` — updated the `DividerExtensionPlugin` row.
 
 ### New APIs / Features
+
 - `DividerBlockModel.props.text?: string` — optional divider label.
 - `DividerBlockModel.props.align?: 'left' | 'center' | 'right'` — label alignment (default `center`).
 - `DividerBlockModel.props.color?: string` — optional label text color (empty = theme default, slightly muted `--bc-color-light`).
 - Divider toolbar `文字装订` tab (text input + alignment + color swatches).
 
 ### Behavior Changes
+
 - A divider with a non-empty `text` prop now renders a label. Existing dividers (no `text`) render exactly as before. HTML/Markdown export still drops divider props (`style` / `size` / `text` / `color`) — unchanged from prior behavior.
 
 ---
@@ -304,11 +13153,13 @@ arbitrary transform — applied once to the snapshot so every clipboard format
 block types, strip styling) without each format diverging.
 
 **Affected ai-skills files**:
+
 - `blockcraft-app.md` — documented `DocConfig.copyFilter` + `registerCopyFilter` + per-call override.
 - `blockcraft-plugin.md` — documented plugins contributing copy filters in `init()` / `destroy()`.
 - `blockcraft.md` — added the copy-filter line to the Doc Services Index area.
 
 ### New APIs / Features
+
 - `DocConfig.copyFilter?: ClipboardCopyFilter` — global filter (seeds the registry).
 - `ClipboardManager.registerCopyFilter(filter): () => void` — composable registration (returns disposer); used by plugins. Multiple filters compose in registration order.
 - `copyFromSelection(sel, data, { filter })` / `copyBlocksModel(snapshots, { filter })` — optional per-call override (`false` = skip filtering for that call).
@@ -322,22 +13173,26 @@ Global (host):
 
 ```typescript
 // before
-const doc = new BlockCraftDoc({ /* … */ })
+const doc = new BlockCraftDoc({
+  /* … */
+});
 
 // after
 const doc = new BlockCraftDoc({
   /* … */
-  copyFilter: { excludeFlavours: ['comment'], stripAttributes: ['s:color'] },
-})
+  copyFilter: { excludeFlavours: ["comment"], stripAttributes: ["s:color"] },
+});
 ```
 
 Plugin:
 
 ```typescript
 // init()
-this._disposeFilter = this.doc.clipboard.registerCopyFilter({ excludeFlavours: ['my-block'] })
+this._disposeFilter = this.doc.clipboard.registerCopyFilter({
+  excludeFlavours: ["my-block"],
+});
 // destroy()
-this._disposeFilter?.()
+this._disposeFilter?.();
 ```
 
 ---
@@ -358,9 +13213,11 @@ structural actions matches user expectation and avoids ambiguous multi-block
 semantics for formatting/conversion items.
 
 **Affected ai-skills files**:
+
 - `blockcraft-plugins-block.md` — documented the multi-block menu reduction.
 
 ### Behavior Changes
+
 - `block-controller`: opening the drag-handle menu while a cross-block selection
   is active now shows only cut / copy / delete (previously the full single-block
   menu for `selection.firstBlock`). No public API signature changed.
@@ -377,6 +13234,7 @@ or table cells) automatically fall back to single-block drag of the hovered
 block.
 
 To support this, the framework adds:
+
 - `InternalDragData` gains an `origin-blocks` variant:
   `{ kind: 'origin-blocks'; blockIds: string[] }`.
 - `DocDndService.onSortBlocks(sources, target, position)` is the bulk-commit
@@ -390,34 +13248,38 @@ cross-block selection was active, forcing users to drop the selection before
 dragging.
 
 **Affected ai-skills files**:
+
 - `blockcraft-plugins-block.md` — documented the multi-drag behavior of
   `block-controller`.
 
 ### New APIs / Features
+
 - `InternalDragData` union now includes `{ kind: 'origin-blocks'; blockIds: string[] }`.
 - `DocDndService.onSortBlocks(sources, target, position)` — bulk-commit
   multi-block drag. Defensive guards: silent no-op when sources are empty,
   target is inside sources, or schema validation fails (warn + return).
 
 ### Behavior Changes
+
 - `block-controller` plugin: cross-block selection no longer hides the drag
   handle. The handle is anchored on `selection.firstBlock` and remains
   draggable. This is the only user-visible behavior change.
 - `dragController.startDrag` silently normalizes `{ kind: 'origin-blocks',
-  blockIds: [] }` (refuses, stays idle) and `{ kind: 'origin-blocks',
-  blockIds: [singleId] }` (downgrades to `origin-block`). Callers do not need
+blockIds: [] }` (refuses, stays idle) and `{ kind: 'origin-blocks',
+blockIds: [singleId] }` (downgrades to `origin-block`). Callers do not need
   to pre-validate the length of `queryBlocksBetween` results.
 
 ### Migration Recipe
+
 For framework consumers who care about the multi-block drag flow, no code
 changes are required. The old single-block path is fully preserved:
 
 ```typescript
 // Old (still works)
-dragController.startDrag(evt, { kind: 'origin-block', blockId: activeId })
+dragController.startDrag(evt, { kind: "origin-block", blockId: activeId });
 
 // New (opt-in, for callers that want bulk drag)
-dragController.startDrag(evt, { kind: 'origin-blocks', blockIds: rangeIds })
+dragController.startDrag(evt, { kind: "origin-blocks", blockIds: rangeIds });
 ```
 
 For consumers who patched `block-controller` to react to its `hidden` state
@@ -435,6 +13297,7 @@ during cross-block selection — that signal is gone. Use
 **Why**: 大表格在文档内空间受限，常常需要临时全屏专注查看 / 编辑。原本只能通过浏览器原生 Fullscreen API 间接达成，但那受 iframe / Safari 限制且会打断协同；这一版选择 CSS-only 原地全屏方案，零 DOM 搬移、零框架内部状态污染、对所有插件透明。
 
 **Affected ai-skills files**:
+
 - `blockcraft-theme.md` — 新增「Table Block Fullscreen View」CSS 变量表 + class 公开契约说明
 - `blockcraft-app.md` — Common Mistakes 表追加一条：BlockCraft 祖先节点避免使用 `transform` / `filter` / `will-change` / `perspective`（否则 `position: fixed` 被困容器内，表格全屏无法真正占满 viewport）
 
@@ -469,16 +13332,17 @@ resetFullscreenZoom(): void               // 回到 100%
 
 新增 CSS 公开契约（写入 `themes/variables.scss`）：
 
-| Variable | Default | 说明 |
-|---|---|---|
-| `--bc-table-fullscreen-z` | `800` | 全屏表格容器 z-index（故意低于 CDK Overlay 默认 1000，让 structure-toolbar / float-toolbar / mention 自然浮在表格之上） |
-| `--bc-table-fullscreen-mask-z` | `799` | 遮罩层 z-index |
-| `--bc-table-fullscreen-overlay-bg` | `rgba(0, 0, 0, 0.55)` | 遮罩色 |
-| `--bc-table-fullscreen-padding` | `40px` | viewport 边距 |
-| `--bc-table-fullscreen-radius` | `8px` | 圆角 |
-| `--bc-table-fullscreen-bg` | `var(--bc-bg-elevated, #fff)` | 背景色 |
+| Variable                           | Default                       | 说明                                                                                                                    |
+| ---------------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `--bc-table-fullscreen-z`          | `800`                         | 全屏表格容器 z-index（故意低于 CDK Overlay 默认 1000，让 structure-toolbar / float-toolbar / mention 自然浮在表格之上） |
+| `--bc-table-fullscreen-mask-z`     | `799`                         | 遮罩层 z-index                                                                                                          |
+| `--bc-table-fullscreen-overlay-bg` | `rgba(0, 0, 0, 0.55)`         | 遮罩色                                                                                                                  |
+| `--bc-table-fullscreen-padding`    | `40px`                        | viewport 边距                                                                                                           |
+| `--bc-table-fullscreen-radius`     | `8px`                         | 圆角                                                                                                                    |
+| `--bc-table-fullscreen-bg`         | `var(--bc-bg-elevated, #fff)` | 背景色                                                                                                                  |
 
 新增 class 名（公开契约）：
+
 - `.table-block.is-fullscreen` — 标记表格 host 处于全屏视图
 - `.bc-table-fullscreen-btn` — 悬浮按钮（hover 显现，全屏态下常显）
 - `body.bc-table-fullscreen-lock` — 锁滚动
@@ -509,6 +13373,7 @@ resetFullscreenZoom(): void               // 回到 100%
 **Why**: 与上一版（2026-05-22 的 EditableBlockComponent 内置实现）对比：基类内置每个 editable block 都订阅 selection/readonly/composition 3 个全局流，N 个块 = 5N 个订阅，大文档下扩展性差。改为 plugin 后单点订阅，且 placeholder 完全可选 / 可继承 / 可定制（runtime override 不需要改 schema）。
 
 **Affected ai-skills files**:
+
 - `blockcraft.md` — 默认 plugin 列表 + 文件结构说明
 - `blockcraft-block.md` — "Editable Block Placeholder (Schema field)" 章节（schema 层视角）
 - `blockcraft-plugins-ref.md` — 索引追加 PlaceholderPlugin
@@ -575,6 +13440,7 @@ metadata: {
 **Why**: HTML5 drag/drop API 在 WKWebView（Tauri、macOS Safari、桌面 Electron-on-WebKit）上比 Chrome 慢一档，根因在底层架构：drag image 必经 `NSDraggingSession` → `NSImage` → IOSurface 跨进程；dragover 经多进程边界；合成层抢主线程。PointerEvents 自实现让 JS 层完全控制，并且首次支持触摸 / 触控笔。
 
 **Affected ai-skills files**:
+
 - `blockcraft-app.md` — 新增 `doc.dragController` 服务介绍
 - `blockcraft.md` — 服务索引表更新
 
@@ -585,19 +13451,21 @@ metadata: {
 旧（HTML5）：
 
 ```ts
-fromEvent<DragEvent>(triggerBtn, 'dragstart').subscribe(evt => {
-  evt.dataTransfer?.setDragImage(hostElement, 0, 0)
-  this.doc.dndService.startDrag(evt, [{ dragDataType: 'origin-block', dragData: blockId }])
-})
+fromEvent<DragEvent>(triggerBtn, "dragstart").subscribe((evt) => {
+  evt.dataTransfer?.setDragImage(hostElement, 0, 0);
+  this.doc.dndService.startDrag(evt, [
+    { dragDataType: "origin-block", dragData: blockId },
+  ]);
+});
 ```
 
 新（PointerEvents）：
 
 ```ts
-fromEvent<PointerEvent>(triggerBtn, 'pointerdown').subscribe(evt => {
-  if (evt.button !== 0) return
-  this.doc.dragController.startDrag(evt, { kind: 'origin-block', blockId })
-})
+fromEvent<PointerEvent>(triggerBtn, "pointerdown").subscribe((evt) => {
+  if (evt.button !== 0) return;
+  this.doc.dragController.startDrag(evt, { kind: "origin-block", blockId });
+});
 ```
 
 调用方还需要：
@@ -638,10 +13506,12 @@ fromEvent<PointerEvent>(triggerBtn, 'pointerdown').subscribe(evt => {
 **Why**: Previously the demo mode hardcoded `--bc-fs: 22px`, `--bc-lh: 30px`, `--bc-segments-gap: 18px` in SCSS, which broke two assumptions: (1) it assumed the source doc was always at the default 16px, so apps that customized the source `--bc-fs` got an inconsistent jump; (2) table `colWidths` are absolute pixels in snapshots, so the column widths did not follow the enlarged font — text in cells visually overflowed or felt cramped relative to the rest of the slide. Users also asked for independent control over line height and block spacing so demo decks can be made denser or more spacious without rebuilding the source document.
 
 **Affected ai-skills files**:
+
 - `blockcraft-plugins-util.md`
 - `MIGRATIONS.md`
 
 ### New APIs / Features
+
 - `DemoConfig.fontScale?: number` — relative magnification of `--bc-fs` vs. source, default `1.5`. Set to `1` to disable enlargement entirely.
 - `DemoConfig.lineHeightScale?: number` — relative scale of `--bc-lh` vs. source. Defaults to `fontScale`, so line height tracks the font size unless overridden.
 - `DemoConfig.segmentsGapScale?: number` — relative scale of `--bc-segments-gap` vs. source. Defaults to `fontScale`, so block spacing tracks the font size unless overridden.
@@ -666,13 +13536,18 @@ If you have custom CSS targeting the old fixed demo variables, they now scale in
 
 ```scss
 /* before (assumed) — fixed values inside .demo-root */
-.demo-root[data-blockcraft-root="true"] { --bc-fs: 22px; --bc-lh: 30px; --bc-segments-gap: 18px; }
+.demo-root[data-blockcraft-root="true"] {
+  --bc-fs: 22px;
+  --bc-lh: 30px;
+  --bc-segments-gap: 18px;
+}
 
 /* after — variables come from sourceValue * scale, injected on .presentation-stage */
 /* For a hard override, set the variable inline on .presentation-stage or pass scales via DemoConfig. */
 ```
 
 ### Behavior Changes
+
 - Demo mode's default font size is now `sourceFs * 1.5` (e.g. 24px for the default 16px source) instead of a hardcoded 22px.
 - Demo mode's default `--bc-lh` is now `sourceLh * fontScale` (e.g. 36px for the default 24px source at default fontScale) instead of fixed 30px.
 - Demo mode's default `--bc-segments-gap` is now `sourceGap * fontScale` (e.g. 15px for the default 10px source at default fontScale) instead of fixed 18px.
@@ -688,6 +13563,7 @@ If you have custom CSS targeting the old fixed demo variables, they now scale in
 **Why**: Pasting a table while focused in a table previously followed the general block paste path, which inserted a new table/block content instead of filling the current table cells. Users expect spreadsheet-style paste to map source cells onto the existing table grid.
 
 **Affected ai-skills files**:
+
 - `blockcraft-plugins-inline.md`
 - `MIGRATIONS.md`
 
@@ -707,6 +13583,7 @@ If you have custom CSS targeting the old fixed demo variables, they now scale in
 **Why**: Snapshot-viewer already handled direct snapshot rendering, but hosts receiving LLM or other progressive Markdown output needed a viewer-native streaming path that does not spin up the full editor runtime.
 
 **Affected ai-skills files**:
+
 - `blockcraft.md`
 - `blockcraft-app.md`
 - `MIGRATIONS.md`
@@ -723,16 +13600,16 @@ If you have custom CSS targeting the old fixed demo variables, they now scale in
 
 ```typescript
 // before: wait for final markdown, then convert to snapshot
-const snapshot = await markdownAdapter.toBlockSnapshot(markdown)
-snapshotRenderer.render(containerEl, snapshot)
+const snapshot = await markdownAdapter.toBlockSnapshot(markdown);
+snapshotRenderer.render(containerEl, snapshot);
 
 // after: progressively render markdown
 const viewer = createMarkdownStreamViewer({
   container: containerEl,
-})
+});
 
-viewer.append(markdownChunk)
-viewer.finish()
+viewer.append(markdownChunk);
+viewer.finish();
 ```
 
 ### Behavior Changes
@@ -749,6 +13626,7 @@ viewer.finish()
 **Why**: The format brush had become keyboard-friendly in behavior but still required pointer access to activate. Adding a direct activation shortcut keeps it aligned with common editor workflows and makes the hint discoverable from the button itself without changing the existing cancel flow.
 
 **Affected ai-skills files**:
+
 - `blockcraft-plugins-formatting.md`
 - `MIGRATIONS.md`
 
@@ -766,6 +13644,7 @@ viewer.finish()
 **Why**: The original version still behaved too much like an immediate selection-change reaction. The adjusted interaction matches the intended workflow better: pick up inline formatting from the current caret/selection, then choose a target range and apply only after that range is fully selected.
 
 **Affected ai-skills files**:
+
 - `blockcraft-plugins-formatting.md`
 - `MIGRATIONS.md`
 
@@ -786,6 +13665,7 @@ viewer.finish()
 **Why**: The fixed toolbar already exposed the main formatting controls, but repeated manual re-application was still slower than common document-editor workflows. A local fixed-toolbar implementation adds the capability without widening the change into shared toolbar/plugin infrastructure.
 
 **Affected ai-skills files**:
+
 - `blockcraft-plugins-formatting.md`
 - `MIGRATIONS.md`
 
@@ -805,6 +13685,7 @@ viewer.finish()
 **Why**: The editor runtime is optimized for interaction. Preview, feed, readonly-card, and lightweight host scenarios needed a cheaper path that can render snapshots quickly without carrying the full editing stack.
 
 **Affected ai-skills files**:
+
 - `blockcraft.md`
 - `blockcraft-app.md`
 - `blockcraft-theme.md`
@@ -826,15 +13707,15 @@ viewer.finish()
 
 ```typescript
 // before: display a snapshot by booting the full editor runtime
-const doc = new BlockCraftDoc(config)
-doc.initBySnapshot(snapshot, containerEl)
-doc.readonlySwitch$.next(true)
+const doc = new BlockCraftDoc(config);
+doc.initBySnapshot(snapshot, containerEl);
+doc.readonlySwitch$.next(true);
 
 // after: display-only snapshot path
 const renderer = createSnapshotRenderer({
-  resourcePolicy: 'eager',
-})
-renderer.render(containerEl, snapshot)
+  resourcePolicy: "eager",
+});
+renderer.render(containerEl, snapshot);
 ```
 
 ```html
@@ -856,6 +13737,7 @@ renderer.render(containerEl, snapshot)
 **Why**: The fixed toolbar already handled table and columns, but other common insert actions still required other entry points. Reusing the shared block-creator and media-creator flows keeps insertion behavior consistent while making the toolbar more complete.
 
 **Affected ai-skills files**:
+
 - `blockcraft-plugins-formatting.md`
 - `MIGRATIONS.md`
 
@@ -874,6 +13756,7 @@ renderer.render(containerEl, snapshot)
 **Why**: The fixed toolbar previously gated too much of its behavior behind text-format selection checks, which made multi-line selections feel weaker than the floating toolbar even though the underlying `TextToolbarHelper` APIs already support multi-block block transforms.
 
 **Affected ai-skills files**:
+
 - `blockcraft-plugins-formatting.md`
 - `MIGRATIONS.md`
 
@@ -892,6 +13775,7 @@ renderer.render(containerEl, snapshot)
 **Why**: The previous implementation conflated "text selection covers full block boundaries" with "the selection endpoints are block/void selections". That caused block-level behaviors to leak into normal text ranges, including the floating text toolbar disappearing for multi-paragraph text selections.
 
 **Affected ai-skills files**:
+
 - `blockcraft-selection.md`
 - `blockcraft.md`
 
@@ -909,7 +13793,7 @@ if (selection.isAllSelected) {
 }
 
 // if you need the old "full text coverage" check explicitly:
-const coversWholeRange = selection.isStartOfBlock && selection.isEndOfBlock
+const coversWholeRange = selection.isStartOfBlock && selection.isEndOfBlock;
 ```
 
 ### Behavior Changes
@@ -926,6 +13810,7 @@ const coversWholeRange = selection.isStartOfBlock && selection.isEndOfBlock
 **Why**: The previous event model assumed text input only happened inside `EditableBlockComponent`. When a `void` or `block` node hosted a native form control, browser events bubbled to the root editor and could accidentally trigger document commands such as Enter-to-split, Backspace merge, mention triggers, slash transforms, or stale toolbar state.
 
 **Affected ai-skills files**:
+
 - `blockcraft.md`
 - `blockcraft-block.md`
 - `blockcraft-event.md`
@@ -971,6 +13856,7 @@ onInput(event: Event) {
 **Why**: External consumers (other Angular apps, AI coding agents working in those apps) need to access the skill pack without checking out the source repo. The new app-integration L1 closes a previously-undocumented gap.
 
 **Affected ai-skills files**:
+
 - `blockcraft.md` — added external usage section, file index, plugin list refresh
 - `blockcraft-app.md` — NEW
 - `SKILL.md` — NEW
@@ -997,21 +13883,22 @@ node node_modules/@ccc/blockcraft/ai-skills/install.mjs
 **Why**: The old `from`/`to`/`index` shape conflated "where I clicked first" with "what's at the start of the document order", and didn't model whole-block selection cleanly. The new model uses true anchor/head (intentional origin vs current cursor) plus a discriminated point type, which makes type narrowing safe and ordering unambiguous.
 
 **Affected ai-skills files**:
+
 - `blockcraft-selection.md` (L2) — major rewrite
 - `blockcraft.md` (L0) — Quick Reference section
 - `blockcraft-block.md` (L1) — `setInlineRange` return type, EditableBlockComponent API
 
 #### Deprecations
 
-| Deprecated | Replacement | Removal version |
-|------------|-------------|------------------|
-| `BlockSelection.isCollapsed` | `BlockSelection.collapsed` | TBD (v0.3.x earliest) |
-| `BlockSelection.getDirection()` | `BlockSelection.direction` | TBD |
-| `INormalizedRange { from, to, collapsed }` | `BlockSelection { anchor, head, ... }` or `INormalizedEndpoints { start, end }` | TBD |
-| `IBlockRange / IBlockTextRange / IBlockSelectedRange` | `ISelectionPoint` | TBD |
-| `IBlockInlineRangeJSON { index, length, ... }` | `ISelectionPointJSON { offset, ... }` | TBD |
-| `IBlockSelectionJSON { from, to, ... }` | `ISelectionJSON { anchor, head, ... }` | TBD |
-| `selection.from.* / selection.to.*` access | `selection.anchor.* / selection.head.*` (or `start/end`) | TBD |
+| Deprecated                                            | Replacement                                                                     | Removal version       |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------- | --------------------- |
+| `BlockSelection.isCollapsed`                          | `BlockSelection.collapsed`                                                      | TBD (v0.3.x earliest) |
+| `BlockSelection.getDirection()`                       | `BlockSelection.direction`                                                      | TBD                   |
+| `INormalizedRange { from, to, collapsed }`            | `BlockSelection { anchor, head, ... }` or `INormalizedEndpoints { start, end }` | TBD                   |
+| `IBlockRange / IBlockTextRange / IBlockSelectedRange` | `ISelectionPoint`                                                               | TBD                   |
+| `IBlockInlineRangeJSON { index, length, ... }`        | `ISelectionPointJSON { offset, ... }`                                           | TBD                   |
+| `IBlockSelectionJSON { from, to, ... }`               | `ISelectionJSON { anchor, head, ... }`                                          | TBD                   |
+| `selection.from.* / selection.to.*` access            | `selection.anchor.* / selection.head.*` (or `start/end`)                        | TBD                   |
 
 #### New APIs
 
@@ -1115,19 +14002,19 @@ Releases before 2026-03-30 do not have entries in this file. For historical chan
 
 ## Severity Reference Card
 
-| Change type | Severity | Example |
-|-------------|----------|---------|
-| Bug fix in framework internals, no public API affected | patch | Fix race in `applyDelta` blot consistency check |
-| Doc-only fix in `ai-skills/` | patch | Typo in `blockcraft-block.md` |
-| Bundled CSS adjustment, no class rename | patch | Tweak callout box-shadow |
-| New optional `DocConfig` field with a default | minor | Add `theme?: string` |
-| New plugin / new block / new embed | minor | `BlockGapCreatorPlugin` |
-| New method on `BaseBlockComponent` | minor | `getChildrenByIndex()` |
-| Mark old API `@deprecated` (still works) | minor | Selection v0.1.37 refactor |
-| Rename / remove an exported symbol | major | Drop `IBlockSelectionJSON` (when actually removed) |
-| Change a method signature in a non-back-compat way | major | `setSelection(point, point)` → `setSelection({anchor, head})` |
-| Behavior reversal users could observe | major | Plugin hook fires before init instead of after |
-| Removal of a previously-deprecated API | major | Drop `selection.isCollapsed` |
+| Change type                                            | Severity | Example                                                       |
+| ------------------------------------------------------ | -------- | ------------------------------------------------------------- |
+| Bug fix in framework internals, no public API affected | patch    | Fix race in `applyDelta` blot consistency check               |
+| Doc-only fix in `ai-skills/`                           | patch    | Typo in `blockcraft-block.md`                                 |
+| Bundled CSS adjustment, no class rename                | patch    | Tweak callout box-shadow                                      |
+| New optional `DocConfig` field with a default          | minor    | Add `theme?: string`                                          |
+| New plugin / new block / new embed                     | minor    | `BlockGapCreatorPlugin`                                       |
+| New method on `BaseBlockComponent`                     | minor    | `getChildrenByIndex()`                                        |
+| Mark old API `@deprecated` (still works)               | minor    | Selection v0.1.37 refactor                                    |
+| Rename / remove an exported symbol                     | major    | Drop `IBlockSelectionJSON` (when actually removed)            |
+| Change a method signature in a non-back-compat way     | major    | `setSelection(point, point)` → `setSelection({anchor, head})` |
+| Behavior reversal users could observe                  | major    | Plugin hook fires before init instead of after                |
+| Removal of a previously-deprecated API                 | major    | Drop `selection.isCollapsed`                                  |
 
 When in doubt, treat the change as one severity higher and note the reasoning in the entry's "Why" field. Conservative is cheap; under-bumping can break consumers silently.
 

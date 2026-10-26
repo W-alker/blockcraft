@@ -2,6 +2,8 @@ import {generateId, NoEditableBlockNative} from "../../framework";
 import {BlockNodeType, IBlockSchemaOptions} from "../../framework";
 import {AudioBlockComponent} from "./audio.block";
 
+export * from './agent'
+
 export interface AudioBlockModel extends NoEditableBlockNative {
   flavour: 'audio',
   nodeType: BlockNodeType.void,
@@ -34,6 +36,7 @@ export const AudioBlockSchema: IBlockSchemaOptions<AudioBlockModel> = {
   },
   metadata: {
     version: 1,
+    virtualization: {viewRetention: 'keep-alive'},
     label: '音频',
     description: '插入音频，支持链接、本地上传',
     svgIcon: 'bc_yinpin',

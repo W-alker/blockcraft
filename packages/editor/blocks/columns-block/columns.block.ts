@@ -1,8 +1,8 @@
 import { ChangeDetectionStrategy, Component } from "@angular/core";
-import { BaseBlockComponent } from "../../framework";
+import { BaseBlockComponent, ORIGIN_SYSTEM_REPAIR } from "../../framework";
 import { ColumnsBlockModel, ColumnBlockSchema } from "./index";
-import { AsyncPipe } from "@angular/common";
-import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
+import { CsTooltipDirective } from '@cses/ui';
+import { takeUntil } from 'rxjs';
 
 /**
  * 多栏布局容器组件
@@ -22,41 +22,94 @@ import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
       </div>
 
       <!-- 列之间的可拖拽分割线 -->
-      @if (!(doc.readonlySwitch$ | async) && dividerArray.length > 0) {
-        @for (i of dividerArray; track i) {
+      @if (!isReadonly) {
+        @for (columnId of dividerColumnIds; track columnId; let i = $index) {
           <div class="column-divider"
                [attr.data-divider-index]="i"
                (mousedown)="startResize($event, i)"
                contenteditable="false">
-            <div class="add-point" nz-tooltip="添加列" (mousedown)="addColumn($event, i + 1)"></div>
+            @if (childrenLength < 8) {
+              <button type="button" class="column-add-point"
+                      [attr.aria-label]="'在第 ' + (i + 1) + ' 栏右侧插入栏'" csTooltip="插入栏"
+                      data-bc-selection-interaction-ignore
+                      (keydown)="$event.stopPropagation()"
+                      (mousedown)="$event.preventDefault(); $event.stopPropagation()"
+                      (click)="addColumnAfter($event, columnId)">
+                <i class="bc_icon bc_plus" aria-hidden="true"></i>
+              </button>
+            }
             <div class="divider-line"></div>
           </div>
         }
-      }
-      @if(dividerArray.length < 7) {
-        <div class="column-divider">
-          <div class="add-point" nz-tooltip="添加列" (mousedown)="addColumn($event)"></div>
-        </div>
+        @if (childrenLength < 8) {
+          <button type="button" class="column-add-point column-add-point--start"
+                  aria-label="在最左侧插入栏" csTooltip="插入栏" contenteditable="false"
+                  data-bc-selection-interaction-ignore
+                  (keydown)="$event.stopPropagation()"
+                  (mousedown)="$event.preventDefault(); $event.stopPropagation()"
+                  (click)="addColumn($event, 0)">
+            <i class="bc_icon bc_plus" aria-hidden="true"></i>
+          </button>
+          <button type="button" class="column-add-point column-add-point--end"
+                  aria-label="在末尾插入栏" csTooltip="插入栏" contenteditable="false"
+                  data-bc-selection-interaction-ignore
+                  (keydown)="$event.stopPropagation()"
+                  (mousedown)="$event.preventDefault(); $event.stopPropagation()"
+                  (click)="addColumn($event)">
+            <i class="bc_icon bc_plus" aria-hidden="true"></i>
+          </button>
+        }
       }
     </div>
   `,
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AsyncPipe, NzTooltipDirective]
+  imports: [CsTooltipDirective],
+  host: {
+    '[class.column-controls-dragging]': 'dragActive',
+    '[class.column-controls-active]': 'columnFocused',
+  },
 })
 export class ColumnsBlockComponent extends BaseBlockComponent<ColumnsBlockModel> {
 
+  protected dragActive = false;
+  protected columnFocused = false;
+
+  protected addColumnAfter(event: MouseEvent, columnId: string) {
+    // 按稳定子栏 ID 重查位置，避免协同插入后使用旧索引。
+    const index = this.childrenIds.indexOf(columnId);
+    if (index >= 0) this.addColumn(event, index + 1);
+  }
+
+  override applyReadonlyViewState() {
+    super.applyReadonlyViewState()
+    this.applyColumnWidths()
+    this.changeDetectorRef.markForCheck()
+  }
+
   /**
-   * 生成分割线数组（列数-1）
+   * 生成栏间分割线的稳定子栏 ID（栏数-1）
    */
-  protected get dividerArray(): number[] {
-    const count = this.childrenLength;
-    if (!count || count < 2) return [];
-    return Array(count - 1).fill(0).map((_, i) => i);
+  protected get dividerColumnIds(): string[] {
+    return this.childrenIds.slice(0, -1);
   }
 
   override ngAfterViewInit() {
     super.ngAfterViewInit();
+    this.doc.selection.selectionChange$.pipe(takeUntil(this.onDestroy$)).subscribe(selection => {
+      let id = selection?.head.blockId;
+      while (id && id !== this.id && this.doc.model.exists(id)) id = this.doc.model.getParentId(id) ?? undefined;
+      const focused = id === this.id;
+      if (this.columnFocused === focused) return;
+      this.columnFocused = focused;
+      this.changeDetectorRef.markForCheck();
+    });
+    this.doc.dragController.state$.pipe(takeUntil(this.onDestroy$)).subscribe(state => {
+      const active = state !== 'idle';
+      if (this.dragActive === active) return;
+      this.dragActive = active;
+      this.changeDetectorRef.markForCheck();
+    });
     // 延迟初始化，确保 DOM 完全渲染
     setTimeout(() => {
       this.applyColumnWidths();
@@ -82,10 +135,14 @@ export class ColumnsBlockComponent extends BaseBlockComponent<ColumnsBlockModel>
     if (widths.length === 0 || widths.length !== actualColumnCount) {
       const avgWidth = parseFloat((100 / actualColumnCount).toFixed(2));
       widths = Array(actualColumnCount).fill(avgWidth);
-      this.updateProps({
-        columnCount: actualColumnCount,
-        columnWidths: widths
-      });
+      if (!this.doc.isReadonly) {
+        this.doc.crud.transact(() => {
+          this.updateProps({
+            columnCount: actualColumnCount,
+            columnWidths: widths
+          })
+        }, ORIGIN_SYSTEM_REPAIR)
+      }
     }
 
     // 设置 CSS 变量
@@ -102,6 +159,14 @@ export class ColumnsBlockComponent extends BaseBlockComponent<ColumnsBlockModel>
    */
   addColumn(event: MouseEvent, index = this.childrenLength) {
     event.preventDefault();
+    event.stopPropagation();
+    this.doc.crud.undoManager.stopCapturing();
+    this.insertColumn(index);
+    this.doc.crud.undoManager.stopCapturing();
+  }
+
+  private insertColumn(index: number) {
+    if (this.isReadonly) return;
     if (this.childrenLength >= 8) {
       this.doc.messageService.warn('最多支持8列');
       return
@@ -122,7 +187,8 @@ export class ColumnsBlockComponent extends BaseBlockComponent<ColumnsBlockModel>
    */
   removeColumn(event: MouseEvent, index = this.childrenLength - 1) {
     event.preventDefault();
-    if (index <= 2 || index >= this.childrenLength) return;
+    if (this.isReadonly) return;
+    if (index < 0 || index >= this.childrenLength) return;
 
     // 获取最后一个column-block并删除
     const lastColumnId = this.childrenIds[index];
@@ -137,6 +203,7 @@ export class ColumnsBlockComponent extends BaseBlockComponent<ColumnsBlockModel>
   startResize(event: MouseEvent, dividerIndex: number) {
     event.preventDefault();
     event.stopPropagation();
+    if (this.isReadonly) return;
 
     const startX = event.clientX;
     const wrapper = this.hostElement.querySelector('.columns-wrapper') as HTMLElement;
@@ -176,6 +243,7 @@ export class ColumnsBlockComponent extends BaseBlockComponent<ColumnsBlockModel>
 
         // 保存到数据模型
         this.doc.ngZone.run(() => {
+          if (this.isReadonly) return
           const newWidths = [...widths];
 
           // 从 CSS 变量读取最终宽度（保留两位小数）

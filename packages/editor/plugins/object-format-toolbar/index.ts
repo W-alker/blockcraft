@@ -1,0 +1,1265 @@
+import {ObjectAnimationToolbarController} from '../object-animation/toolbar-controller';
+import {
+  FlexibleConnectedPositionStrategy,
+  OverlayRef,
+} from "@angular/cdk/overlay";
+import {
+  fromEvent,
+  type Observable,
+  Subject,
+  Subscription,
+  takeUntil,
+} from "rxjs";
+import {
+  closetBlockId,
+  BindHotKey,
+  BLOCK_OBJECT_LAYOUT_OPTIONS,
+  createObjectPaint,
+  DOC_FILE_SERVICE_TOKEN,
+  DocPlugin,
+  getPositionWithOffset,
+  objectEffectsFilter,
+  objectPicturePreserveAspectRatio,
+  type BlockObjectBlockLayout,
+  type BlockObjectLayout,
+  type BlockObjectAlignment,
+  type BlockObjectFormatSelectionState,
+  type BlockObjectPlaneAlignment,
+  type DocFileService,
+  type ObjectFormatPatch,
+  type UIEventStateContext,
+} from "../../framework";
+import { isSelectionAlive } from "../../framework/modules/selection/liveness";
+import { deleteAbsolutePlacementObject } from "../../framework/modules/object/block-placement/delete-command";
+import {
+  ObjectFormatToolbarComponent,
+  type ObjectFormatToolbarAction,
+} from "./object-format-toolbar.component";
+import {
+  ObjectGroupToolbarComponent,
+  type ObjectGroupToolbarAction,
+  type ObjectGroupToolbarMode,
+} from "./object-group-toolbar.component";
+import {
+  hasOpenOwnedSubOverlay,
+  isObjectToolbarOwnedTarget,
+} from "../object-layout/object-toolbar-interaction";
+import { InlineObjectInteractionController } from "../object-layout/inline-object-interaction";
+
+export * from "./object-format-toolbar.component";
+
+const TOOLBAR_GAP = 10;
+
+interface GroupToolbarState {
+  mode: ObjectGroupToolbarMode;
+  anchor: HTMLElement;
+  blockIds: string[];
+  canGroup: boolean;
+  canUngroup: boolean;
+  canDistribute: boolean;
+  objectLayout: BlockObjectBlockLayout;
+  canMoveForward: boolean;
+  canMoveBackward: boolean;
+}
+
+const GROUP_ALIGNMENT_ACTIONS = new Set<BlockObjectAlignment>([
+  "left",
+  "horizontal-center",
+  "right",
+  "top",
+  "vertical-center",
+  "bottom",
+  "center",
+  "horizontal-distribute",
+  "vertical-distribute",
+]);
+
+/** One object toolbar owner for Shape, TextBox, WordArt and mixed selection. */
+export class ObjectFormatToolbarPlugin extends DocPlugin {
+  override name = "object-format-toolbar";
+
+  private animationRail?: ObjectAnimationToolbarController;
+  private panelResizeObserver?: ResizeObserver;
+  private updateToolbarPosition?: () => void;
+  private readonly subscription = new Subscription();
+  private readonly close$ = new Subject<void>();
+  private overlayRef?: OverlayRef;
+  private component?: ObjectFormatToolbarComponent;
+  private toolbarKind: "format" | "group" | null = null;
+  private toolbarKey = "";
+  private activeIds: string[] = [];
+  private toolbarPointerActive = false;
+  private toolbarFocusActive = false;
+  private toolbarPointerGraceUntil = 0;
+  private toolbarPositionFrame: number | null = null;
+  private releaseObjectPresentation?: () => void;
+  private releaseAnimationEditing?: () => void;
+  private selectionWithinGroupHosts = new Set<HTMLElement>();
+  private inlineObjects: InlineObjectInteractionController[] = [];
+  private previewFrame: number | null = null;
+  private pendingPreview?: ObjectFormatPatch;
+  private activeWordArtHost?: HTMLElement;
+  private textBoxResizerGesture?: { blockId: string; pointerId: number };
+
+  init(): void {
+    this.inlineObjects = [
+      new InlineObjectInteractionController(this.doc, "shape", this.close),
+      new InlineObjectInteractionController(this.doc, "word-art", this.close),
+    ];
+    this.inlineObjects.forEach((controller) => controller.init());
+    this.subscription.add(
+      this.doc.selection.selectionChange$.subscribe((selection) => {
+        this.syncSelectionWithinGroupFrames(selection);
+        this.sync(selection);
+      }),
+    );
+    this.subscription.add(
+      this.doc.subscribeReadonlyChange((readonly) => {
+        if (readonly) this.close();
+      }),
+    );
+    this.subscription.add(
+      fromEvent<PointerEvent>(document, "pointerdown", { capture: true })
+        .pipe(takeUntil(this.doc.onDestroy$))
+        .subscribe((event) => {
+          const target = this.resolveElement(event.target);
+          if (
+            (isObjectToolbarOwnedTarget(this.overlayRef?.overlayElement, target) || this.animationRail?.owns(target))
+          ) {
+            this.toolbarPointerActive = true;
+            this.toolbarFocusActive = true;
+            this.toolbarPointerGraceUntil = 0;
+            this.retainObjectChrome();
+            return;
+          }
+          this.toolbarPointerActive = false;
+          this.toolbarFocusActive = false;
+          this.toolbarPointerGraceUntil = 0;
+          if (this.extendAbsoluteSelection(event)) return;
+          if (this.handleObjectGroupPointerDown(event)) return;
+          this.handleExistingObjectPointerDown(event);
+        }),
+    );
+    this.subscription.add(
+      fromEvent<PointerEvent>(document, "pointerup", { capture: true })
+        .pipe(takeUntil(this.doc.onDestroy$))
+        .subscribe((event) => {
+          this.toolbarPointerGraceUntil = this.toolbarPointerActive ? Date.now() + 100 : 0;
+          this.toolbarPointerActive = false;
+          this.finishTextBoxResizerGesture(event.pointerId);
+        }),
+    );
+    this.subscription.add(
+      fromEvent<PointerEvent>(document, "pointercancel", { capture: true })
+        .pipe(takeUntil(this.doc.onDestroy$))
+        .subscribe((event) => {
+          this.toolbarPointerActive = false;
+          this.toolbarPointerGraceUntil = 0;
+          this.finishTextBoxResizerGesture(event.pointerId);
+        }),
+    );
+    this.subscription.add(
+      fromEvent<FocusEvent>(document, "focusin", { capture: true })
+        .pipe(takeUntil(this.doc.onDestroy$))
+        .subscribe((event) => this.handleFocusIn(event)),
+    );
+  }
+
+  destroy(): void {
+    this.inlineObjects.forEach((controller) => controller.destroy());
+    this.inlineObjects = [];
+    this.close();
+    this.clearSelectionWithinGroupFrames();
+    this.subscription.unsubscribe();
+    this.close$.complete();
+  }
+
+  close = (): void => {
+    this.animationRail?.close();
+    this.panelResizeObserver?.disconnect();
+    this.panelResizeObserver = undefined;
+    this.activeWordArtHost?.classList.remove("word-art-block--object-selected");
+    this.activeWordArtHost = undefined;
+    this.restorePreview();
+    this.releaseRetainedObjectChrome();
+    this.close$.next();
+    this.overlayRef?.dispose();
+    const ownerWindow = this.doc.root.hostElement.ownerDocument.defaultView;
+    if (this.toolbarPositionFrame !== null) {
+      ownerWindow?.cancelAnimationFrame(this.toolbarPositionFrame);
+      this.toolbarPositionFrame = null;
+    }
+    this.overlayRef = undefined;
+    this.updateToolbarPosition = undefined;
+    this.component = undefined;
+    this.toolbarKind = null;
+    this.toolbarKey = "";
+    this.activeIds = [];
+    this.toolbarPointerActive = false;
+    this.toolbarFocusActive = false;
+    this.toolbarPointerGraceUntil = 0;
+    this.textBoxResizerGesture = undefined;
+  };
+
+  private sync(selection: BlockCraft.Selection | null): void {
+    if (this.doc.isReadonly) {
+      this.close();
+      return;
+    }
+    if (!selection) {
+      if (this.ownsInteraction()) {
+        this.retainObjectChrome();
+        return;
+      }
+      this.close();
+      return;
+    }
+    if (!isSelectionAlive(selection as never, this.doc)) {
+      this.close();
+      return;
+    }
+    const groupState = this.resolveGroupToolbarState(selection);
+    if (groupState) {
+      this.openGroupToolbar(groupState);
+      this.openAnimationRail(groupState.blockIds);
+      this.retainObjectChrome(true);
+      return;
+    }
+    const state = this.doc.objectFormat.readSelection();
+    const parentId = state && state.blockIds.length > 1
+      ? this.doc.model.getParentId(state.blockIds[0]!)
+      : null;
+    if (!state) {
+      const ids = this.doc.objectAnimation?.getSelectionIds(selection) ?? [];
+      if (ids.length) {
+        if (this.toolbarKind) this.close();
+        this.openAnimationRail(ids);
+        return;
+      }
+    }
+    if (!state || (parentId && this.doc.placement.isObjectGroup(parentId))) {
+      // A live text/gap selection supersedes toolbar focus and pointer grace.
+      // Group-member multi-selection must also close the member's format rail;
+      // absolute object selections already guarantee one shared parent plane.
+      this.close();
+      return;
+    }
+    this.open(state, false);
+    this.retainObjectChrome(true);
+  }
+
+  private openAnimationRail(ids: readonly string[]): void {
+    const anchor = this.doc.vm.get(ids[0])?.instance?.hostElement;
+    if (!anchor) return;
+    this.animationRail ??= new ObjectAnimationToolbarController(this.doc, () => {
+      if (!this.overlayRef) {
+        this.releaseRetainedObjectChrome();
+        this.toolbarPointerActive = false;
+        this.toolbarFocusActive = false;
+        this.toolbarPointerGraceUntil = 0;
+      }
+    });
+    this.animationRail.open(anchor, ids);
+  }
+
+  private open(
+    state: BlockObjectFormatSelectionState,
+    groupSelection: boolean,
+  ): void {
+    const key = state.blockIds.join("\u0000");
+    if (
+      this.overlayRef &&
+      this.toolbarKind === "format" &&
+      this.activeIds.join("\u0000") === key &&
+      this.component?.groupSelection === groupSelection
+    ) {
+      this.componentState(state);
+      return;
+    }
+    this.close();
+    const anchor = state.blockIds
+      .map((id) => this.doc.vm.get(id)?.instance)
+      .find((block) => block?.hostElement.isConnected);
+    if (!anchor) return;
+    if (anchor.flavour === "word-art") {
+      anchor.hostElement.classList.add("word-art-block--object-selected");
+      this.activeWordArtHost = anchor.hostElement;
+    }
+    const surface =
+      anchor.hostElement.querySelector<HTMLElement>(
+        "[data-bc-object-surface]",
+      ) ?? anchor.hostElement;
+    const options = {
+      target: surface,
+      component: ObjectFormatToolbarComponent,
+      positions: [
+        getPositionWithOffset("right-center", TOOLBAR_GAP, 0),
+        getPositionWithOffset("left-center", TOOLBAR_GAP, 0),
+        getPositionWithOffset("right-top", TOOLBAR_GAP, 0),
+        getPositionWithOffset("left-top", TOOLBAR_GAP, 0),
+      ],
+      clampTo: this.doc.scrollContainer ?? undefined,
+    };
+    const toolbar = this.doc.overlayService.createConnectedOverlay<ObjectFormatToolbarComponent>(options, this.close$, this.close);
+    this.overlayRef = toolbar.overlayRef;
+    this.updateToolbarPosition = toolbar.updatePosition;
+    this.component = toolbar.componentRef.instance;
+    this.toolbarKind = "format";
+    this.toolbarKey = key;
+    this.activeIds = [...state.blockIds];
+    toolbar.componentRef.setInput("doc", this.doc);
+    toolbar.componentRef.setInput("state", state);
+    toolbar.componentRef.setInput(
+      "activeLayout",
+      this.resolveCommonObjectLayout(state.blockIds),
+    );
+    toolbar.componentRef.setInput(
+      "supportedLayouts",
+      this.resolveSupportedObjectLayouts(state.blockIds),
+    );
+    toolbar.componentRef.setInput("groupSelection", groupSelection);
+    toolbar.componentRef.instance.animationConfirm.pipe(takeUntil(this.close$)).subscribe(() => {
+      this.close();
+      this.doc.selection.blur();
+    });
+    toolbar.componentRef.instance.action
+      .pipe(takeUntil(this.close$))
+      .subscribe((action) => void this.handleAction(action));
+    toolbar.componentRef.instance.panelChange
+      .pipe(takeUntil(this.close$))
+      .subscribe(() => {
+        // Animation settings can grow past the visible part of the document
+        // scroller (e.g. after Undo restores focus). Keep its controls on screen.
+        options.clampTo = this.component?.activePanel === "animation"
+          ? surface.ownerDocument.documentElement
+          : this.doc.scrollContainer ?? undefined;
+        this.scheduleToolbarPositionUpdate();
+      });
+    const strategy = toolbar.overlayRef.getConfig().positionStrategy;
+    if (strategy instanceof FlexibleConnectedPositionStrategy) {
+      strategy.positionChanges
+        .pipe(takeUntil(this.close$))
+        .subscribe((change) => {
+          const side =
+            change.connectionPair.originX === "start" ? "left" : "right";
+          toolbar.componentRef.setInput("side", side);
+        });
+    }
+    this.panelResizeObserver = new ResizeObserver(() => this.scheduleToolbarPositionUpdate());
+    this.panelResizeObserver.observe(toolbar.overlayRef.overlayElement);
+    this.watchProps(state.blockIds);
+  }
+
+  private watchProps(blockIds: readonly string[]): void {
+    for (const id of blockIds) {
+      const block = this.doc.vm.get(id)?.instance;
+      const propsChange$ = block?.onPropsChange as
+        | Observable<unknown>
+        | undefined;
+      propsChange$
+        ?.pipe(takeUntil(this.close$))
+        .subscribe(() => this.sync(this.doc.selection.value));
+    }
+  }
+
+  private componentState(state: BlockObjectFormatSelectionState): void {
+    if (!this.component) return;
+    this.component.state = state;
+    this.component.activeLayout = this.resolveCommonObjectLayout(
+      state.blockIds,
+    );
+    this.component.supportedLayouts = this.resolveSupportedObjectLayouts(
+      state.blockIds,
+    );
+    this.component.cdr.markForCheck();
+    this.component.reapplyEffectDraftPreview();
+    this.updateToolbarPosition?.();
+  }
+
+  private async handleAction(action: ObjectFormatToolbarAction): Promise<void> {
+    if (action.name === "preview") {
+      this.schedulePreview(action.patch);
+      return;
+    }
+    if (action.name === "patch") {
+      this.restorePreview();
+      this.applyPatch(action.patch);
+      return;
+    }
+    if (action.name === "restore-preview") {
+      this.restorePreview();
+      return;
+    }
+    if (action.name === "upload-picture") {
+      await this.uploadPicture();
+      return;
+    }
+    if (action.name === "layout") {
+      this.handleLayout(action.value);
+      return;
+    }
+    this.deleteTargets();
+  }
+
+  private applyPatch(patch: ObjectFormatPatch): void {
+    const allowDetachedSelection =
+      this.doc.objectFormat.getSelectionIds() === null &&
+      this.ownsInteraction();
+    const result = this.doc.objectFormat.updateSelection(
+      this.activeIds,
+      patch,
+      { allowDetachedSelection },
+    );
+    if (
+      result.reason === "selection-changed" ||
+      result.reason === "target-missing"
+    ) {
+      this.close();
+      return;
+    }
+    if (result.skippedReadonlyIds.length) {
+      this.doc.messageService.warn(
+        `${result.skippedReadonlyIds.length} 个锁定对象未修改`,
+      );
+    }
+    const next = this.doc.objectFormat.readSelection(this.activeIds);
+    if (next) this.componentState(next);
+  }
+
+  private schedulePreview(patch: ObjectFormatPatch): void {
+    this.pendingPreview = patch;
+    if (this.previewFrame !== null) return;
+    const ownerWindow = this.doc.root.hostElement.ownerDocument.defaultView;
+    if (!ownerWindow) return;
+    this.previewFrame = ownerWindow.requestAnimationFrame(() => {
+      this.previewFrame = null;
+      const pending = this.pendingPreview;
+      this.pendingPreview = undefined;
+      if (pending) this.renderPreview(pending);
+    });
+  }
+
+  private restorePreview(): void {
+    const ownerWindow = this.doc.root.hostElement.ownerDocument.defaultView;
+    if (this.previewFrame !== null)
+      ownerWindow?.cancelAnimationFrame(this.previewFrame);
+    this.previewFrame = null;
+    this.pendingPreview = undefined;
+    const state = this.activeIds.length
+      ? this.doc.objectFormat.readSelection(this.activeIds)
+      : null;
+    if (!state) return;
+    for (const target of state.targets) {
+      this.renderPreviewForTarget(
+        target.blockId,
+        {
+          shapeFill: target.format.shapeFill,
+          shapeOutline: target.format.shapeOutline,
+          shapeEffects: target.format.shapeEffects,
+          textStyle: target.format.textStyle,
+        },
+        false,
+      );
+    }
+  }
+
+  private renderPreview(patch: ObjectFormatPatch): void {
+    for (const id of this.activeIds)
+      this.renderPreviewForTarget(id, patch, true);
+  }
+
+  private renderPreviewForTarget(
+    id: string,
+    patch: ObjectFormatPatch,
+    transient: boolean,
+  ): void {
+    const host = this.doc.vm.get(id)?.instance?.hostElement;
+    if (!host?.isConnected) return;
+    if (patch.shapeFill) {
+      const fill = patch.shapeFill;
+      host
+        .querySelectorAll<SVGPathElement>("[data-bc-shape-render-path]")
+        .forEach((path) =>
+          path.setAttribute(
+            "fill-opacity",
+            `${fill.type === "none" ? 0 : fill.opacity}`,
+          ),
+        );
+      if (fill.type === "picture") {
+        host
+          .querySelectorAll<SVGImageElement>("pattern image")
+          .forEach((image) =>
+            image.setAttribute(
+              "preserveAspectRatio",
+              objectPicturePreserveAspectRatio(fill),
+            ),
+          );
+      }
+    }
+    if (patch.shapeOutline) {
+      host
+        .querySelectorAll<SVGPathElement>("[data-bc-shape-render-path]")
+        .forEach((path) =>
+          path.setAttribute("stroke-opacity", `${patch.shapeOutline!.opacity}`),
+        );
+    }
+    if (patch.shapeEffects) {
+      const filter = objectEffectsFilter(patch.shapeEffects);
+      host
+        .querySelectorAll<SVGPathElement>("[data-bc-shape-render-path]")
+        .forEach((path) => {
+          path.style.filter = filter;
+        });
+    }
+    if (patch.textStyle) {
+      const fill = patch.textStyle.fill;
+      host
+        .querySelectorAll<HTMLElement>(
+          ".shape-block__text-frame, .text-box-block__content, .word-art-block__editor",
+        )
+        .forEach((text) => {
+          text.style.backgroundPosition =
+            fill.type === "picture"
+              ? `${fill.positionX}% ${fill.positionY}%`
+              : "";
+          text.style.opacity = transient
+            ? `${fill.type === "none" ? 0 : fill.opacity}`
+            : fill.type === "picture"
+              ? `${fill.opacity}`
+              : "";
+        });
+    }
+  }
+
+  private async uploadPicture(): Promise<void> {
+    const service = this.doc.injector.get<DocFileService | null>(
+      DOC_FILE_SERVICE_TOKEN,
+      null,
+    );
+    if (!service) {
+      this.doc.messageService.warn("当前宿主未配置图片上传服务");
+      return;
+    }
+    try {
+      const files = await service.inputFiles("image/*");
+      const file = files.item(0);
+      if (!file) return;
+      if (service.isOverMaxSize(file.size)) {
+        this.doc.messageService.warn("图片大小超过上传限制");
+        return;
+      }
+      const url = await service.uploadImg(file);
+      const state = this.doc.objectFormat.readSelection(this.activeIds);
+      const fill = state?.targets[0]?.format.shapeFill;
+      if (fill) {
+        const picture =
+          fill.type === "picture" ? fill : createObjectPaint("picture");
+        this.applyPatch({
+          shapeFill: { ...picture, src: url },
+        });
+      }
+    } catch {
+      this.doc.messageService.warn("图片上传失败");
+    }
+  }
+
+  private handleLayout(value: string): void {
+    const ids = [...this.activeIds];
+    const first = ids[0];
+    if (!first) return;
+    if (value === "group") {
+      const groupId = this.doc.placement.group(ids);
+      if (groupId)
+        queueMicrotask(() => this.doc.selection.selectBlock(groupId));
+      return;
+    }
+    if (value === "ungroup") {
+      const children = this.doc.placement.ungroup(first);
+      if (children.length) this.close();
+      return;
+    }
+    const alignment = ALIGNMENTS[value];
+    if (alignment) {
+      if (!this.hasAbsoluteLayout(ids)) return;
+      this.doc.placement.alignObjects(ids, alignment);
+      return;
+    }
+    const planeAlignment = PLANE_ALIGNMENTS[value];
+    if (planeAlignment) {
+      if (!this.hasAbsoluteLayout(ids)) return;
+      this.doc.placement.alignObjectsToPlane(ids, planeAlignment);
+      return;
+    }
+    if (value === "forward" || value === "backward") {
+      if (!this.hasAbsoluteLayout(ids)) return;
+      for (const id of ids) {
+        value === "forward"
+          ? this.doc.placement.moveForward(id)
+          : this.doc.placement.moveBackward(id);
+      }
+      return;
+    }
+    const layout =
+      value === "wrap" ? "inline" : value === "relative" ? "top-bottom" : value;
+    if (
+      layout === "inline" ||
+      layout === "top-bottom" ||
+      layout === "under" ||
+      layout === "over"
+    ) {
+      if (
+        !ids.every((id) => this.doc.placement.supportsObjectLayout(id, layout))
+      ) {
+        return;
+      }
+      for (const id of ids) this.doc.placement.setObjectLayout(id, layout);
+    }
+  }
+
+  private hasAbsoluteLayout(blockIds: readonly string[]): boolean {
+    return blockIds.every((id) => {
+      const layout = this.doc.placement.getObjectLayout(id);
+      return layout === "under" || layout === "over";
+    });
+  }
+
+  private deleteTargets(): void {
+    const targets = [...this.activeIds];
+    this.close();
+    for (const id of targets) {
+      const block = this.doc.vm.get(id)?.instance;
+      if (!block || this.doc.readonlyManager.isReadonly(id)) continue;
+      if (!deleteAbsolutePlacementObject(this.doc, block, "menu")) {
+        void this.doc.chain().deleteById(id).run();
+      }
+    }
+  }
+
+  private ownsInteraction(): boolean {
+    if (this.animationRail?.isOpen && this.animationRail.owns(this.doc.root.hostElement.ownerDocument.activeElement)) return true;
+    if (this.toolbarPointerActive) return true;
+    if (this.toolbarFocusActive) return true;
+    if (Date.now() < this.toolbarPointerGraceUntil) return true;
+    const overlay = this.overlayRef?.overlayElement;
+    if (!overlay) return false;
+    if (hasOpenOwnedSubOverlay(overlay)) return true;
+    const active = overlay.ownerDocument.activeElement;
+    return (
+      active instanceof Element && isObjectToolbarOwnedTarget(overlay, active)
+    );
+  }
+
+  private handleFocusIn(event: FocusEvent): void {
+    if (!this.overlayRef) return;
+    const target = this.resolveElement(event.target);
+    if (isObjectToolbarOwnedTarget(this.overlayRef.overlayElement, target) || this.animationRail?.owns(target)) {
+      this.toolbarFocusActive = true;
+      this.retainObjectChrome();
+      // The browser may collapse a whole-object Range to an empty container
+      // boundary when a toolbar button takes focus. That is toolbar blur,
+      // not new editor intent. Retain presentation before clearing the native
+      // range; formatting already uses activeIds while the toolbar owns focus.
+      this.doc.selection.blur();
+      return;
+    }
+    this.toolbarFocusActive = false;
+    if (
+      target &&
+      this.activeIds.some((id) =>
+        this.doc.vm.get(id)?.instance?.hostElement.contains(target),
+      )
+    )
+      return;
+    if (
+      target === this.doc.root.hostElement &&
+      (sameIds(this.doc.objectFormat.getSelectionIds(), this.activeIds) ||
+        sameIds(
+          this.resolveGroupToolbarSelectionIds(this.doc.selection.value),
+          this.activeIds,
+        ))
+    )
+      return;
+    this.close();
+  }
+
+  private scheduleToolbarPositionUpdate(): void {
+    const ownerWindow = this.doc.root.hostElement.ownerDocument.defaultView;
+    if (!ownerWindow) return;
+    if (this.toolbarPositionFrame !== null) {
+      ownerWindow.cancelAnimationFrame(this.toolbarPositionFrame);
+    }
+    this.toolbarPositionFrame = ownerWindow.requestAnimationFrame(() => {
+      this.toolbarPositionFrame = null;
+      this.updateToolbarPosition?.();
+    });
+  }
+
+  private retainObjectChrome(refresh = false): void {
+    if (refresh || !this.releaseObjectPresentation) {
+      this.releaseObjectPresentation = this.doc.selection.retainPresentation();
+      const releasePrevious = this.releaseAnimationEditing;
+      this.releaseAnimationEditing = this.doc.objectAnimation?.acquireEditingLease(this.activeIds);
+      releasePrevious?.();
+    }
+  }
+
+  private resolveCommonObjectLayout(
+    blockIds: readonly string[],
+  ): BlockObjectLayout | null {
+    const layouts = blockIds.map((id) =>
+      this.doc.placement.getObjectLayout(id),
+    );
+    const first = layouts[0];
+    return first && layouts.every((layout) => layout === first) ? first : null;
+  }
+
+  private resolveSupportedObjectLayouts(
+    blockIds: readonly string[],
+  ): BlockObjectLayout[] {
+    return BLOCK_OBJECT_LAYOUT_OPTIONS.map((option) => option.value).filter(
+      (layout) =>
+        blockIds.every((id) =>
+          this.doc.placement.supportsObjectLayout(id, layout),
+        ),
+    );
+  }
+
+  private resolveGroupToolbarSelectionIds(
+    selection: BlockCraft.Selection | null,
+  ): string[] | null {
+    // A whole group owns its toolbar in both flow and absolute layouts.
+    // Keep the placement-domain absolute-selection gate unchanged: flow groups
+    // still participate in ordinary keyboard, gap cursor and clipboard paths.
+    if (
+      selection?.isInSameBlock &&
+      selection.anchor.type === "selected" &&
+      selection.head.type === "selected" &&
+      selection.anchor.blockId === selection.head.blockId &&
+      this.doc.placement.isObjectGroup(selection.anchor.blockId)
+    ) {
+      return [selection.anchor.blockId];
+    }
+    return this.doc.placement.getAbsoluteObjectSelectionIds(selection);
+  }
+
+  private resolveGroupToolbarState(
+    selection: BlockCraft.Selection,
+  ): GroupToolbarState | null {
+    const blockIds = this.resolveGroupToolbarSelectionIds(selection);
+    if (!blockIds?.length) return null;
+    const first = this.doc.vm.get(blockIds[0]!)?.instance;
+    if (!first?.hostElement.isConnected) return null;
+
+    if (
+      blockIds.length === 1 &&
+      this.doc.placement.isObjectGroup(blockIds[0]!)
+    ) {
+      const layout = this.doc.placement.getObjectLayout(blockIds[0]!);
+      return {
+        mode: "ungroup",
+        anchor: first.hostElement,
+        blockIds,
+        canGroup: false,
+        canUngroup: this.doc.placement.canUngroup(blockIds[0]!),
+        canDistribute: false,
+        objectLayout: layout,
+        canMoveForward: this.doc.placement.canMoveForward(blockIds[0]!),
+        canMoveBackward: this.doc.placement.canMoveBackward(blockIds[0]!),
+      };
+    }
+
+    if (blockIds.length < 2 || !this.doc.placement.canAlignObjects(blockIds)) {
+      return null;
+    }
+    return {
+      mode: "group",
+      anchor: first.hostElement,
+      blockIds,
+      canGroup: this.doc.placement.canGroup(blockIds),
+      canUngroup: false,
+      canDistribute: this.doc.placement.canAlignObjects(
+        blockIds,
+        "horizontal-distribute",
+      ),
+      objectLayout: "over",
+      canMoveForward: false,
+      canMoveBackward: false,
+    };
+  }
+
+  private openGroupToolbar(state: GroupToolbarState): void {
+    const key = [
+      state.mode,
+      state.blockIds.join("\u0000"),
+      state.canGroup,
+      state.canUngroup,
+      state.canDistribute,
+      state.objectLayout,
+      state.canMoveForward,
+      state.canMoveBackward,
+    ].join(":");
+    if (
+      this.overlayRef &&
+      this.toolbarKind === "group" &&
+      this.toolbarKey === key
+    ) {
+      this.overlayRef.updatePosition();
+      return;
+    }
+    this.close();
+    const toolbar =
+      this.doc.overlayService.createConnectedOverlay<ObjectGroupToolbarComponent>(
+        {
+          target: state.anchor,
+          component: ObjectGroupToolbarComponent,
+          positions: [
+            getPositionWithOffset("top-center", 0, 8),
+            getPositionWithOffset("bottom-center", 0, 8),
+          ],
+          clampTo: this.doc.scrollContainer ?? undefined,
+        },
+        this.close$,
+        this.close,
+      );
+    this.overlayRef = toolbar.overlayRef;
+    this.updateToolbarPosition = toolbar.updatePosition;
+    this.toolbarKind = "group";
+    this.toolbarKey = key;
+    this.activeIds = [...state.blockIds];
+    toolbar.componentRef.setInput("mode", state.mode);
+    toolbar.componentRef.setInput("canGroup", state.canGroup);
+    toolbar.componentRef.setInput("canUngroup", state.canUngroup);
+    toolbar.componentRef.setInput("canDistribute", state.canDistribute);
+    toolbar.componentRef.setInput("objectLayout", state.objectLayout);
+    toolbar.componentRef.setInput("canMoveForward", state.canMoveForward);
+    toolbar.componentRef.setInput("canMoveBackward", state.canMoveBackward);
+    toolbar.componentRef.instance.action
+      .pipe(takeUntil(this.close$))
+      .subscribe((action) => this.handleGroupAction(action, state.blockIds));
+  }
+
+  private handleGroupAction(
+    action: ObjectGroupToolbarAction,
+    blockIds: readonly string[],
+  ): void {
+    const selection = this.doc.selection.value;
+    const selectedIds = this.resolveGroupToolbarSelectionIds(selection);
+    const ownsDetachedSelection =
+      selection === null && this.ownsInteraction();
+    if (!sameIds(selectedIds, blockIds) && !ownsDetachedSelection) {
+      this.close();
+      return;
+    }
+    this.close();
+    if (typeof action === "object") {
+      const groupId = blockIds[0];
+      if (!groupId) return;
+      this.doc.placement.setObjectLayout(groupId, action.value);
+      queueMicrotask(() => this.sync(this.doc.selection.value));
+      return;
+    }
+    if (GROUP_ALIGNMENT_ACTIONS.has(action as BlockObjectAlignment)) {
+      this.doc.placement.alignObjects(blockIds, action as BlockObjectAlignment);
+      queueMicrotask(() => this.sync(this.doc.selection.value));
+      return;
+    }
+    if (action === "move-forward" || action === "move-backward") {
+      const groupId = blockIds[0];
+      if (!groupId) return;
+      if (action === "move-forward") this.doc.placement.moveForward(groupId);
+      else this.doc.placement.moveBackward(groupId);
+      queueMicrotask(() => this.sync(this.doc.selection.value));
+      return;
+    }
+    if (action === "group") {
+      const groupId = this.doc.placement.group(blockIds);
+      if (groupId)
+        queueMicrotask(() => this.doc.selection.selectBlock(groupId));
+      return;
+    }
+    const groupId = blockIds[0];
+    if (!groupId) return;
+    const parentId = this.doc.model.getParentId(groupId);
+    const startIndex = parentId
+      ? this.doc.model.getChildrenIds(parentId).indexOf(groupId)
+      : -1;
+    const children = this.doc.placement.ungroup(groupId);
+    if (!parentId || startIndex < 0 || !children.length) return;
+    queueMicrotask(() =>
+      this.selectBoundary(parentId, startIndex, startIndex + children.length),
+    );
+  }
+
+  private selectBoundary(parentId: string, from: number, to: number): void {
+    this.doc.selection.replay({
+      anchor: { blockId: parentId, type: "boundary", index: from },
+      head: { blockId: parentId, type: "boundary", index: to },
+      commonParent: parentId,
+    });
+  }
+
+  private releaseRetainedObjectChrome(): void {
+    this.releaseObjectPresentation?.();
+    this.releaseObjectPresentation = undefined;
+    this.releaseAnimationEditing?.();
+    this.releaseAnimationEditing = undefined;
+  }
+
+  private resolveElement(target: EventTarget | null): Element | null {
+    if (target instanceof Element) return target;
+    return target instanceof Node ? target.parentElement : null;
+  }
+
+  /** Shift-click extends a stable boundary selection inside one object plane. */
+  private extendAbsoluteSelection(event: PointerEvent): boolean {
+    if (!event.shiftKey || event.button !== 0 || this.doc.isReadonly)
+      return false;
+    const target = event.target;
+    if (
+      !(target instanceof Element) ||
+      !this.doc.root.hostElement.contains(target)
+    )
+      return false;
+    if (target.closest('[data-bc-nodrag], [data-block-zero-space="true"]')) return false;
+    if (target.closest("block-resizer, [data-bc-placement-pick-ignore]") &&
+      !target.closest("[data-bc-object-drag-handle]")) return false;
+    const selection = this.doc.selection.value;
+    const groupElement = target.closest<HTMLElement>("[data-bc-object-group]");
+    const groupId = groupElement ? closetBlockId(groupElement) : null;
+    const targetId = groupId && this.selectionTouchesGroup(selection, groupId)
+      ? this.resolveDirectGroupChildId(target, groupId)
+      : this.resolveTopLevelObjectId(target);
+    if (!targetId) return false;
+    const parentId = this.doc.model.getParentId(targetId);
+    if (!parentId || !(this.doc.placement.isPlacementLayout(parentId) ||
+      this.doc.placement.isObjectGroup(parentId)))
+      return false;
+    const siblings = this.doc.model.getChildrenIds(parentId);
+    const targetIndex = siblings.indexOf(targetId);
+    if (targetIndex < 0) return false;
+    let anchorIndex = -1;
+    if (
+      selection?.anchor.type === "boundary" &&
+      selection.head.type === "boundary" &&
+      selection.anchor.blockId === parentId &&
+      selection.head.blockId === parentId
+    ) {
+      anchorIndex = Math.min(selection.anchor.index, selection.head.index);
+    } else if (selection) {
+      let id: string | null = selection.anchor.blockId;
+      while (id && this.doc.model.getParentId(id) !== parentId) {
+        id = this.doc.model.getParentId(id);
+      }
+      if (id) anchorIndex = siblings.indexOf(id);
+    }
+    if (anchorIndex < 0 || anchorIndex === targetIndex) return false;
+    const from = Math.min(anchorIndex, targetIndex);
+    const to = Math.max(anchorIndex, targetIndex) + 1;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    this.doc.selection.replay({
+      anchor: { blockId: parentId, type: "boundary", index: from },
+      head: { blockId: parentId, type: "boundary", index: to },
+      commonParent: parentId,
+    });
+    this.doc.placement.startDrag(event, targetId);
+    return true;
+  }
+
+  private resolveTopLevelObjectId(target: Element): string | null {
+    const closest = target.closest<HTMLElement>("[data-block-id]");
+    let id = closest ? closetBlockId(closest) : null;
+    while (id) {
+      const parentId = this.doc.model.getParentId(id);
+      if (!parentId) return null;
+      if (this.doc.placement.isPlacementLayout(parentId)) return id;
+      id = parentId;
+    }
+    return null;
+  }
+
+  /** Restore the established first-click group, second-click member contract. */
+  private handleObjectGroupPointerDown(event: PointerEvent): boolean {
+    if (event.button !== 0 || this.doc.isReadonly) return false;
+    const target = event.target;
+    if (
+      !(target instanceof Element) ||
+      !this.doc.root.hostElement.contains(target)
+    ) {
+      return false;
+    }
+    const groupElement = target.closest<HTMLElement>("[data-bc-object-group]");
+    if (!groupElement) return false;
+    const groupId = closetBlockId(groupElement);
+    if (!groupId || !this.doc.placement.isObjectGroup(groupId)) return false;
+
+    // 整组缩放器直接拥有手势，不能被首次选组的捕获处理截断。
+    // 成员缩放器仍遵循既有的首次选组、再次选成员规则。
+    if (target.closest("shape-resizer")?.parentElement === groupElement) return false;
+
+    // 多选中的组合是一个整体，点击其成员本体不能把选区降为单组/单成员。
+    const selectedIds = this.doc.placement.getAbsoluteObjectSelectionIds(this.doc.selection.value);
+    if (selectedIds && selectedIds.length > 1 && selectedIds.includes(groupId) &&
+      !target.closest("block-resizer, [data-bc-placement-pick-ignore], [data-bc-nodrag]")) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      this.doc.placement.startDrag(event, groupId);
+      return true;
+    }
+
+    const selectionIsWithinGroup = this.selectionTouchesGroup(
+      this.doc.selection.value,
+      groupId,
+    );
+    const directChildId = this.resolveDirectGroupChildId(target, groupId);
+    // 组合外框移动交给公共入口；本插件只处理组/成员的拾取层级。
+    if (target.closest(".object-group-block__move-edge")) return false;
+    if (selectionIsWithinGroup && directChildId) {
+      return false;
+    }
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    this.doc.selection.selectBlock(groupId);
+    return true;
+  }
+
+  private resolveDirectGroupChildId(
+    target: Element,
+    groupId: string,
+  ): string | null {
+    const closest = target.closest<HTMLElement>("[data-block-id]");
+    let id = closest ? closetBlockId(closest) : null;
+    while (id && id !== groupId) {
+      const parentId = this.doc.model.getParentId(id);
+      if (parentId === groupId) return id;
+      id = parentId;
+    }
+    return null;
+  }
+
+  private selectionTouchesGroup(
+    selection: BlockCraft.Selection | null,
+    groupId: string,
+  ): boolean {
+    if (!selection) return false;
+    return [selection.anchor.blockId, selection.head.blockId].some(
+      (id) => this.resolveOwningGroupId(id) === groupId,
+    );
+  }
+
+  private syncSelectionWithinGroupFrames(
+    selection: BlockCraft.Selection | null,
+  ): void {
+    const nextHosts = new Set<HTMLElement>();
+    if (selection) {
+      const endpointIds = new Set([
+        selection.anchor.blockId,
+        selection.head.blockId,
+      ]);
+      endpointIds.forEach((id) => {
+        const groupId = this.resolveOwningGroupId(id);
+        if (!groupId) return;
+        const group = this.safeGetBlock(groupId);
+        if (group?.hostElement.isConnected) nextHosts.add(group.hostElement);
+      });
+    }
+    this.selectionWithinGroupHosts.forEach((host) => {
+      if (!nextHosts.has(host)) {
+        host.classList.remove("bc-object-group--selection-within");
+      }
+    });
+    nextHosts.forEach((host) => {
+      if (!this.selectionWithinGroupHosts.has(host)) {
+        host.classList.add("bc-object-group--selection-within");
+      }
+    });
+    this.selectionWithinGroupHosts = nextHosts;
+  }
+
+  private clearSelectionWithinGroupFrames(): void {
+    this.selectionWithinGroupHosts.forEach((host) =>
+      host.classList.remove("bc-object-group--selection-within"),
+    );
+    this.selectionWithinGroupHosts.clear();
+  }
+
+  private resolveOwningGroupId(blockId: string): string | null {
+    let currentId: string | null = blockId;
+    const visited = new Set<string>();
+    while (currentId && !visited.has(currentId)) {
+      visited.add(currentId);
+      if (this.doc.placement.isObjectGroup(currentId)) return currentId;
+      currentId = this.doc.model.getParentId(currentId);
+    }
+    return null;
+  }
+
+  private safeGetBlock(id: string): BlockCraft.BlockComponent | null {
+    try {
+      return this.doc.getBlockById(id);
+    } catch {
+      return null;
+    }
+  }
+
+  /** Preserve the three blocks' established object/edit interaction contract. */
+  private handleExistingObjectPointerDown(event: PointerEvent): void {
+    if (event.button !== 0) return;
+    const target = event.target;
+    if (
+      !(target instanceof Element) ||
+      !this.doc.root.hostElement.contains(target)
+    ) {
+      return;
+    }
+
+    const surface = target.closest<HTMLElement>(
+      ".shape-block__shell, .text-box-block__surface, .word-art-block__surface",
+    );
+    if (!surface) return;
+    const flavour = surface.classList.contains("shape-block__shell")
+      ? "shape"
+      : surface.classList.contains("text-box-block__surface")
+        ? "text-box"
+        : "word-art";
+    const block = this.resolveBlockFromSurface(surface, flavour);
+    if (!block) return;
+
+    // 移动区域由 ObjectDragPlugin 统一选中和拖拽，不能落入文字编辑分支。
+    if (target.closest("[data-bc-object-drag-handle]")) return;
+
+    if (target.closest("shape-resizer")) {
+      if (flavour === "text-box") {
+        this.textBoxResizerGesture = {
+          blockId: block.id,
+          pointerId: event.pointerId,
+        };
+        this.queueObjectSelection(block.id);
+      }
+      return;
+    }
+
+    if (flavour === "shape") {
+      if (
+        target.closest(
+          "shape-geometry-editor, shape-adjustment-editor, .shape-text-block",
+        )
+      )
+        return;
+      const selection = this.doc.selection.value;
+      const textFrame = target.closest(".shape-block__text-frame");
+      const textBlock = block.firstChildren;
+      if (
+        textFrame &&
+        textBlock?.flavour === "shape-text" &&
+        selection?.isInSameBlock &&
+        (selection.anchor.blockId === block.id ||
+          selection.anchor.blockId === textBlock?.id) &&
+        !this.doc.readonlyManager.isReadonly(block)
+      ) {
+        // The text frame includes blank space above/below its actual line.
+        // Once selected, an existing text block can be focused from that space.
+        // Empty shapes keep text creation exclusively on double-click.
+        (block as BlockCraft.IBlockComponents["shape"]).onEditText(event);
+        return;
+      }
+      return;
+    }
+
+    // 文本框的普通边框点击仍由 Schema 选区契约处理。
+    if (flavour === "text-box") return;
+    if (this.doc.readonlyManager.isReadonly(block)) {
+      event.preventDefault();
+      event.stopPropagation();
+      this.doc.selection.selectBlock(block);
+      return;
+    }
+    if (this.overlayRef) this.close();
+    const editorTarget = Boolean(target.closest(".word-art-block__editor"));
+    if (editorTarget && this.isEditingWordArt(block.id)) return;
+    if (!editorTarget) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    (block as BlockCraft.IBlockComponents["word-art"]).enterEditing();
+  }
+
+  private resolveBlockFromSurface(
+    surface: Element,
+    flavour: "shape" | "text-box" | "word-art",
+  ): BlockCraft.BlockComponent | null {
+    const blockId = closetBlockId(surface);
+    if (!blockId) return null;
+    try {
+      const block = this.doc.getBlockById(blockId);
+      return block.flavour === flavour && block.hostElement.isConnected
+        ? block
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private finishTextBoxResizerGesture(pointerId: number): void {
+    const gesture = this.textBoxResizerGesture;
+    if (!gesture || gesture.pointerId !== pointerId) return;
+    this.textBoxResizerGesture = undefined;
+    this.queueObjectSelection(gesture.blockId);
+  }
+
+  private queueObjectSelection(blockId: string): void {
+    queueMicrotask(() => {
+      if (this.subscription.closed) return;
+      const block = this.doc.vm.get(blockId)?.instance;
+      if (block?.hostElement.isConnected) this.doc.selection.selectBlock(block);
+    });
+  }
+
+  private isEditingWordArt(blockId: string): boolean {
+    const selection = this.doc.selection.value;
+    return Boolean(
+      selection?.isInSameBlock &&
+      selection.firstBlock.id === blockId &&
+      selection.anchor.type === "text" &&
+      selection.head.type === "text",
+    );
+  }
+
+  @BindHotKey({ key: "Escape" }, { flavour: "shape-text" })
+  onShapeTextEscape(ctx: UIEventStateContext): true | void {
+    const selection = ctx.get("keyboardState").selection;
+    if (!selection.isInSameBlock) return;
+    const parentId = this.doc.model.getParentId(selection.anchor.blockId);
+    if (!parentId || this.doc.model.getFlavour(parentId) !== "shape") return;
+    ctx.preventDefault();
+    this.doc.selection.selectBlock(parentId);
+    return true;
+  }
+}
+
+const ALIGNMENTS: Readonly<Record<string, BlockObjectAlignment>> = {
+  "align-left": "left",
+  "align-center": "horizontal-center",
+  "align-right": "right",
+  "align-top": "top",
+  "align-middle": "vertical-center",
+  "align-bottom": "bottom",
+  "distribute-x": "horizontal-distribute",
+  "distribute-y": "vertical-distribute",
+};
+const PLANE_ALIGNMENTS: Readonly<Record<string, BlockObjectPlaneAlignment>> = {
+  "page-left": "left",
+  "page-center": "horizontal-center",
+  "page-right": "right",
+};
+
+function sameIds(
+  actual: readonly string[] | null,
+  expected: readonly string[],
+): boolean {
+  return (
+    actual?.length === expected.length &&
+    actual.every((id, index) => id === expected[index])
+  );
+}

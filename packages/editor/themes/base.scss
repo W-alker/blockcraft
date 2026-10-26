@@ -10,6 +10,10 @@
 @import "blocks/bullet-block";
 @import "blocks/heading-block";
 @import "blocks/image-block";
+@import "blocks/inline-image";
+@import "blocks/inline-date";
+@import "blocks/inline-weather";
+@import "blocks/inline-person";
 @import "blocks/attachment-block";
 @import "blocks/embed-frame-block";
 @import "blocks/bookmark-block";
@@ -18,10 +22,17 @@
 @import "blocks/blockquote-block";
 @import "blocks/cloumns-block";
 @import "blocks/formula-block";
+@import "blocks/word-art-block";
+@import "blocks/render-unit-block";
+@import "blocks/text-box-block";
+@import "blocks/person-card-block";
+@import "blocks/object-animation";
 
 @import "components/color-picker";
 @import "components/float-toolbar";
 @import "components/snapshot-viewer";
+@import "components/resource-placeholder";
+@import "components/media-object-resizer";
 
 // 内部 block 拖拽期间，源 block 加 .bc-drag-source 标记（由 DocInternalDragController 添加 / 移除）。
 .bc-drag-source {
@@ -30,11 +41,14 @@
 
 [data-blockcraft-root="true"] {
   position: relative;
+  box-sizing: border-box;
+  width: 100%;
   outline: none;
   font-size: var(--bc-fs);
   line-height: var(--bc-lh);
   @include user-select(none);
   color: var(--bc-color);
+  caret-color: var(--bc-caret-color);
 
   > [data-block-zero-space="true"] {
     @include user-select(none);
@@ -87,25 +101,242 @@
   }
 
   [data-block-id] {
+    // Paragraph-spacing variables describe this block's sibling boundary.
+    // Custom properties inherit by default, so an outer Callout/TextBox that
+    // owns the following root paragraph's `psb` would otherwise leak that
+    // value into its nested paragraphs. Inline HostBindings / Snapshot styles
+    // still override these block-local reset values when the block owns one.
+    --bc-block-sb: initial;
+    --bc-block-sa: initial;
+    --bc-next-block-sb: initial;
+    --bc-block-leading-sb: initial;
+    --bc-block-fs-scale: 1;
     position: relative;
-    margin-bottom: var(--bc-segments-gap);
-    caret-color: var(--bc-caret-color);
+    margin-bottom: max(
+      var(--bc-block-sa, var(--bc-segments-gap)),
+      var(--bc-next-block-sb, 0pt)
+    );
+
+    &[data-node-type="editable"][data-bc-block-background] {
+      background-color: var(--bc-block-background-color);
+      background-color: color-mix(
+        in srgb,
+        var(--bc-block-background-color) var(--bc-solid-block-background-opacity, 82%),
+        transparent
+      );
+    }
+
+    &[data-node-type="editable"][data-bc-block-border]:not(.blockquote-block) {
+      outline: 1px solid var(--bc-block-border-color);
+    }
+
+    &[data-node-type="editable"] {
+      border-radius: 4px;
+      line-height: var(--bc-block-lh, var(--bc-lh));
+      // A container's first editable block has no previous sibling on which
+      // to realize its paragraph-before spacing. Keep it in this host's
+      // border-box for stable pagination, while allowing a block theme to
+      // contribute its own intrinsic top inset without competing in cascade.
+      padding-block-start: calc(
+        var(--bc-block-leading-sb, 0pt)
+        + var(--_bc-block-padding-block-start, 0px)
+      );
+    }
+
+    // A flow object at the start of a container owns its authored before gap.
+    // Keep this conditional so object hosts with their own padding are unchanged
+    // until paragraph spacing is explicitly assigned.
+    &[data-bc-block-leading-sb]:not([data-node-type="editable"]):not([data-bc-placement="absolute"]) {
+      padding-block-start: var(--bc-block-leading-sb);
+    }
 
     &.selected {
-      // Editability is controlled via the `contenteditable` attribute toggled
-      // by SelectionSelectedManager — see `_setSelectedClass` /
-      // `_clearAllClass`. CSS here only owns visual feedback.
+      // This class is reserved for explicit/model-owned block interaction
+      // state. Native-backed ranges never reuse its opaque host fill.
       background-color: var(--bc-select-background-color);
 
-      // TODO
       ::selection {
-        background: transparent;
+        background-color: transparent;
+        color: inherit;
+      }
+
+      // Keep this separate from `::selection`: Chromium discards a grouped
+      // selector when it does not recognize one of the pseudo-elements.
+      ::-moz-selection {
+        background-color: transparent;
         color: inherit;
       }
     }
 
     &:last-child {
-      margin-bottom: 0;
+      // Structural default gaps stop at a container boundary, but an explicit
+      // paragraph-after value is authored content and must remain visible on
+      // the final paragraph (including single-paragraph containers).
+      margin-bottom: var(--bc-block-sa, 0pt);
+    }
+
+    &[data-bc-revision-hidden] {
+      display: none !important;
+    }
+
+    &[data-bc-revision-state="pending"][data-bc-revision-kind="insert"] {
+      box-shadow: inset 3px 0 0 var(--bc-revision-insert-color);
+      background-color: var(--bc-revision-insert-bg);
+    }
+
+    &[data-bc-revision-state="pending"][data-bc-revision-kind="delete"] {
+      box-shadow: inset 3px 0 0 var(--bc-revision-delete-color);
+      background-color: var(--bc-revision-delete-bg);
+    }
+
+    &[data-bc-revision-state="conflict"] {
+      outline: 2px solid var(--bc-revision-conflict-color);
+      background-color: var(--bc-revision-conflict-bg);
+    }
+
+    &[data-bc-revision-boundary-before]::before {
+      content: '';
+      position: absolute;
+      inset-inline: 0;
+      top: -2px;
+      border-top: 2px dashed var(--bc-revision-boundary-color);
+      pointer-events: none;
+    }
+
+    &[data-bc-revision-boundary-before="delete"]::before {
+      border-top-color: var(--bc-revision-delete-color);
+    }
+
+    &[data-bc-revision-boundary-before="conflict"]::before {
+      border-top-color: var(--bc-revision-conflict-color);
+      border-top-style: solid;
+    }
+  }
+
+  // Absolute objects often own opaque image/canvas/frame descendants, so a
+  // host background or inset stripe is either invisible or contaminates the
+  // object surface. Keep the placement stack untouched and paint the revision
+  // marker outside the object's own box instead.
+  [data-block-id][data-bc-placement='absolute'][data-bc-revision-state='pending'] {
+    background-color: transparent;
+    box-shadow: none;
+    outline-width: 2px;
+    outline-offset: 3px;
+  }
+
+  [data-block-id][data-bc-placement='absolute'][data-bc-revision-state='pending'][data-bc-revision-kind='insert'] {
+    outline-color: var(--bc-revision-insert-color);
+    outline-style: solid;
+  }
+
+  [data-block-id][data-bc-placement='absolute'][data-bc-revision-state='pending'][data-bc-revision-kind='delete'] {
+    outline-color: var(--bc-revision-delete-color);
+    outline-style: dashed;
+  }
+
+  [data-block-id][data-bc-placement='absolute'][data-bc-revision-state='conflict'] {
+    background-color: transparent;
+    box-shadow: none;
+    outline: 3px double var(--bc-revision-conflict-color);
+    outline-offset: 3px;
+  }
+
+  // Code owns opaque-ish child surfaces. Once a block-level fill is explicit,
+  // let the common host surface paint it instead of compositing another pair
+  // of header/body fills over the selected color.
+  div.code-block[data-bc-block-background] {
+    > .code-block__head,
+    > .edit-container-wrapper {
+      background: transparent;
+    }
+  }
+
+  // The root block is itself the direct-root children placement container;
+  // nested container blocks expose a descendant container. Cover both shapes.
+  &[data-bc-placement-container],
+  [data-bc-placement-container] {
+    position: relative;
+    isolation: isolate;
+
+    // Explicit document-content tier. Absolute placement uses under=0 and
+    // over=2, so flow blocks stay between them regardless of DOM order or
+    // media elements establishing their own compositing layers.
+    > [data-block-id]:not([data-bc-placement='absolute']):not([data-bc-placement-layer-bridge]):not(.is-fullscreen) {
+      z-index: 1;
+    }
+  }
+
+  [data-block-id][data-bc-placement='absolute'] {
+    margin: 0;
+  }
+
+  // 对象宽度契约：浮动（absolute）时宽度完全归用户，不设上限；落回文档流
+  // （上下型）时渲染宽度收敛到内容列（编辑器 - 内边距），存储的宽度 props
+  // 原样保留，再次浮动即恢复。宿主标记由 BaseBlockComponent 按 Schema 的
+  // placement 能力自动打上，承载行内宽度的表面元素由各块模板标
+  // data-bc-object-surface——块自身不要再写第二套 max-width。
+  [data-bc-object]:not([data-bc-placement='absolute']),
+  [data-bc-object]:not([data-bc-placement='absolute']) [data-bc-object-surface] {
+    max-width: 100%;
+  }
+
+  // A native text drag that starts in flow content must keep hit-testing the
+  // flow beneath overlaid objects. Object-originated gestures never set this
+  // transient root attribute, so selection/edit/drag inside the object keeps
+  // its normal pointer behavior.
+  &[data-bc-flow-selection-passthrough] {
+    // In reading mode, local absolute members of a flow group are part of the
+    // visible prose. Only independent overlays (including an absolute group
+    // and all of its descendants) should become pointer-transparent.
+    &:not(.readonly) [data-block-id][data-bc-placement='absolute'],
+    &:not(.readonly) [data-block-id][data-bc-placement='absolute'] *,
+    &.readonly [data-block-id][data-bc-placement='absolute']:not([data-bc-object-group] *),
+    &.readonly [data-block-id][data-bc-placement='absolute']:not([data-bc-object-group] *) * {
+      pointer-events: none !important;
+    }
+  }
+
+  // The root placement layout is an infrastructure surface, not an editable
+  // document block. It must not intercept the pointer, while each positioned
+  // object remains independently interactive.
+  [data-bc-placement-layout] {
+    overflow: visible;
+
+    > [data-block-zero-space],
+    > .children-render-container > [data-block-zero-space] {
+      display: none;
+    }
+
+    > .children-render-container > [data-block-id] {
+      pointer-events: auto;
+    }
+  }
+
+  // Block-level readonly preserves pointer interaction and native selection;
+  // only the caret/editing surface is disabled by the component.
+  [data-bc-readonly] {
+    caret-color: transparent;
+  }
+
+  [data-bc-readonly='self']:not([data-bc-lock-kind='template']),
+  [data-bc-reveal-template-locks] & [data-bc-readonly='self'][data-bc-lock-kind='template'] {
+    outline: 1px solid var(--bc-readonly-border-color);
+    outline-offset: 2px;
+    border-radius: 2px;
+    background-color: var(--bc-readonly-bg);
+
+    &::after {
+      content: '\e6ef';
+      position: absolute;
+      z-index: 1;
+      inset-block-start: 2px;
+      inset-inline-end: 2px;
+      color: var(--bc-readonly-icon-color);
+      font-family: 'bc_icon';
+      font-size: 12px;
+      font-style: normal;
+      line-height: 1;
+      pointer-events: none;
     }
   }
 
@@ -115,21 +346,54 @@
     outline: none;
   }
 
+  .bc-block-gap,
   [data-block-zero-space="true"] {
     position: absolute;
+    z-index: 1;
+    display: inline-block;
+    box-sizing: border-box;
+    width: 1px;
+    min-width: 1px;
+    height: calc(var(--bc-lh) * var(--bc-fs));
+    padding: 0;
     cursor: text;
-    font-size: 0;
-
-    &:first-of-type {
-      left: 0;
-      top: 0;
-    }
-
-    &:last-of-type {
-      right: 0;
-      bottom: 0;
-    }
+    font-size: var(--bc-fs);
+    line-height: var(--bc-lh);
+    caret-color: var(--bc-caret-color);
+    white-space: pre;
   }
+
+  [data-block-zero-space="true"][data-block-gap-side="before"] {
+    top: 0;
+    left: -2px;
+  }
+
+  [data-block-zero-space="true"][data-block-gap-side="after"] {
+    bottom: 0;
+    right: -2px;
+  }
+
+  //[data-block-id]:has(> .bc-block-content) {
+  //  display: flex;
+  //  //flex-direction: column;
+  //
+  //  > .bc-block-gap {
+  //    position: relative;   // in flow; `relative` only so `z-index` applies
+  //    z-index: 1;           // paint OVER the content edge it overlaps, so clicks land on it
+  //    inset: auto;          // neutralise the absolute :first/:last offsets above
+  //    flex: 0 0 auto;
+  //    font-size: var(--bc-fs);
+  //  }
+  //
+  //  > .bc-block-gap:first-of-type {
+  //    align-self: flex-start;
+  //    text-align: left;
+  //  }
+  //  > .bc-block-gap:last-of-type {
+  //    text-align: right;
+  //    align-self: flex-end;
+  //  }
+  //}
 
   [data-node-type="void"] {
     @include user-select(none);
@@ -145,50 +409,72 @@
 
     [data-block-zero-space="true"] {
       @include user-select(text);
+      // Re-show the native caret in the gap filler on void blocks — the parent
+      // `caret-color: transparent` above would otherwise swallow it.
+      caret-color: var(--bc-caret-color);
     }
   }
 
-  [data-node-type="editable"] {
-    //transition: all .1s ease;
-
-    &.empty {
-      // Match both self-as-edit-container (e.g. paragraph: host element has
-      // `.edit-container` class directly) and descendant edit-container
-      // (e.g. bullet/todo/blockquote: host contains a child `.edit-container`).
-      &.edit-container::before,
-      .edit-container::before {
-        content: attr(data-placeholder);
-        color: var(--bc-color);
-        opacity: .3;
-        // Absolute positioning takes the placeholder out of the inline flow,
-        // so the caret stays at the container's start instead of being pushed
-        // to the right of the placeholder text. The positioning context is
-        // the `.edit-container` itself (see `position: relative` rule below),
-        // which sits to the right of any block prefix (bullet/todo checkbox/etc).
-        position: absolute;
-        top: 0;
-        left: 0;
-        pointer-events: none;
-        // `nowrap` prevents the placeholder from collapsing into a vertical
-        // single-character column when the parent `.edit-container` is a
-        // shrink-to-fit flex item (bullet/ordered/todo hosts use
-        // `display: flex`, so an empty edit-container has near-zero width).
-        white-space: nowrap;
-      }
+  .bc-placeholder-empty {
+    &.bc-placeholder-target::before,
+    .bc-placeholder-target::before {
+      content: attr(data-placeholder);
+      color: var(--bc-placeholder-color, var(--bc-color));
+      opacity: .72;
+      position: absolute;
+      inset-block-start: 0;
+      inset-inline-start: 0;
+      pointer-events: none;
+      white-space: nowrap;
     }
+  }
+
+  .bc-placeholder-target {
+    position: relative;
+  }
+
+  :is(.bullet-block, .ordered-block, .todo-block)[data-bc-text-align] > .edit-container {
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
+  }
+
+  [data-bc-text-align] c-element > span[contenteditable='false'] {
+    text-align: start;
+    text-align-last: auto;
+    text-justify: auto;
   }
 
   .edit-container {
     white-space: break-spaces;
-    user-select: text;
+    // The root disables native selection. WebKit needs its prefixed property
+    // explicitly overridden on text containers.
+    @include user-select(text);
     position: relative;
 
     span[contenteditable='false'] {
       margin: 0 2px;
       @include user-select(none);
+
+      // Icon fonts use their own ascent/descent metrics. Align the atomic
+      // inline icon optically with adjacent text without changing paragraph
+      // line-height or the baseline of other embed types.
+      > i[data-icon] {
+        display: inline-block;
+        line-height: 1;
+        vertical-align: -0.15em;
+      }
     }
 
-    c-element {
+    // Native selection does not paint contenteditable=false Embed content.
+    // Mirror the model selection on the atomic c-element without changing its
+    // inline geometry or the converter-owned view inside it.
+    c-element.bc-inline-embed--selected {
+      background-color: var(--bc-select-background-color);
+      border-radius: var(--bc-radius-sm);
+    }
+
+    c-element, [data-bc-paragraph-defaults] {
 
       $bg-r1: .6em;
       $bg-r2: .2em;
@@ -306,6 +592,27 @@
         border-bottom: 4px solid var(--bc-comment-border-color);
       }
 
+
+      &[data-bc-revision-state="pending"][data-bc-revision-kind="insert"] {
+        color: var(--bc-revision-insert-color);
+        background-color: var(--bc-revision-insert-bg);
+        text-decoration: underline;
+        text-decoration-thickness: 2px;
+        text-underline-offset: 2px;
+      }
+
+      &[data-bc-revision-state="pending"][data-bc-revision-kind="delete"] {
+        color: var(--bc-revision-delete-color);
+        background-color: var(--bc-revision-delete-bg);
+        text-decoration: line-through;
+      }
+
+      &[data-bc-revision-state="conflict"] {
+        background-color: var(--bc-revision-conflict-bg);
+        text-decoration-color: var(--bc-revision-conflict-color);
+        outline: 1px solid var(--bc-revision-conflict-color);
+      }
+
       &[mention-placeholder="true"] {
         color: var(--bc-color-light);
       }
@@ -315,6 +622,27 @@
     a {
       word-break: break-all;
       text-wrap: wrap;
+    }
+  }
+
+  &[data-bc-revision-view="final"] {
+    c-element[data-bc-revision-kind] {
+      color: inherit;
+      background: transparent;
+      text-decoration: none;
+      outline: none;
+    }
+
+    [data-block-id][data-bc-revision-state],
+    [data-block-id][data-bc-placement='absolute'][data-bc-revision-state] {
+      box-shadow: none;
+      background: transparent;
+      outline: none;
+      outline-offset: 0;
+    }
+
+    [data-bc-revision-boundary-before]::before {
+      display: none;
     }
   }
 
@@ -349,24 +677,6 @@
       position: absolute;
     }
 
-    &-tag {
-      z-index: 100;
-      position: absolute;
-      top: 0;
-      left: 0;
-      transform: translate(0, calc(-100% - 2px));
-      max-width: 100px;
-      @include text-ellipsis(1);
-      @include user-select(none);
-      font-size: 10px;
-      line-height: 14px;
-      color: var(--bc-color, #fff);
-      background-color: var(--bc-mark-bg-color, rgba(0, 0, 0, 0.8));
-      // 背景取反色
-      box-shadow: var(--bc-shadow-sm);
-      border-radius: var(--bc-radius-sm);
-      padding: 0 2px;
-    }
   }
 
   .bc-scrollable-container {
@@ -374,6 +684,42 @@
   }
 }
 
+.blockcraft-cursor-label-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  z-index: 101;
+  overflow: hidden;
+  pointer-events: none;
+  @include user-select(none);
+  @include user-modify(read-only);
+}
+
+.blockcraft-cursor-tag {
+  z-index: 100;
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translate(0, calc(-100% - 2px));
+  max-width: 100px;
+  @include text-ellipsis(1);
+  @include user-select(none);
+  font-size: 10px;
+  line-height: 14px;
+  color: #fff;
+  background-color: var(--bc-mark-bg-color, rgba(0, 0, 0, 0.8));
+  box-shadow: var(--bc-shadow-sm, 0 2px 8px rgba(0, 0, 0, 0.18));
+  border-radius: var(--bc-radius-sm, 2px);
+  padding: 0 2px;
+}
+
 .bc-scrollable-container {
   @include bc_scrollbar;
 }
+
+@import "blocks/paragraph-decoration";
+
+// 分页样式必须最后载入，以覆盖普通块样式且不污染基础主题职责。
+@import "plugins/pagination";

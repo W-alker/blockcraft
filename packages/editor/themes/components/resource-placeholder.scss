@@ -1,0 +1,116 @@
+.bc-resource-placeholder-frame {
+  position: relative;
+
+  > .bc-resource-placeholder {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    overflow: hidden;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+
+  &[data-bc-resource-state='loading'],
+  &[data-bc-resource-state='error'] {
+    > .bc-resource-placeholder {
+      opacity: 1;
+    }
+  }
+
+  .bc-resource-placeholder__skeleton {
+    position: absolute;
+    inset: 0;
+    background: var(--bc-bg-secondary);
+    opacity: 0;
+    overflow: hidden;
+
+    &::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      transform: translateX(-100%);
+      background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.45),
+        transparent
+      );
+      background: linear-gradient(
+        90deg,
+        transparent,
+        color-mix(in srgb, var(--bc-bg) 72%, transparent),
+        transparent
+      );
+      animation: bc-resource-placeholder-shimmer 1.5s infinite;
+    }
+  }
+
+  &[data-bc-resource-state='loading'] {
+    .bc-resource-placeholder__skeleton {
+      opacity: 1;
+    }
+  }
+
+  .bc-resource-placeholder__error {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    box-sizing: border-box;
+    color: var(--bc-color-secondary);
+    background: var(--bc-bg-secondary);
+    text-align: center;
+    pointer-events: auto;
+
+    > i {
+      font-size: 24px;
+      color: var(--bc-color-light);
+    }
+  }
+
+  &[data-bc-resource-state='error'] {
+    .bc-resource-placeholder__error {
+      display: flex;
+    }
+  }
+
+  .bc-resource-placeholder__retry {
+    min-height: 28px;
+    padding: 4px 12px;
+    border: 1px solid var(--bc-border-color);
+    border-radius: 6px;
+    color: var(--bc-color);
+    background: var(--bc-bg);
+    font: inherit;
+    cursor: pointer;
+
+    &:hover,
+    &:focus-visible {
+      border-color: var(--bc-active-color);
+      color: var(--bc-active-color);
+      outline: none;
+    }
+  }
+}
+
+@keyframes bc-resource-placeholder-shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bc-resource-placeholder-frame {
+    > .bc-resource-placeholder,
+    .bc-resource-placeholder__skeleton::after {
+      transition: none;
+      animation: none;
+    }
+  }
+}

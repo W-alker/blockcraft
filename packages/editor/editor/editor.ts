@@ -1,4 +1,6 @@
-import {Component, ElementRef, Injector, Input, OnDestroy, ViewChild} from "@angular/core";
+import {Component, ElementRef, Injector, Input, OnDestroy, OnInit, ViewChild} from "@angular/core";
+import {MatIconRegistry} from "@angular/material/icon";
+import {DomSanitizer} from "@angular/platform-browser";
 import {
   BLOCK_CREATOR_SERVICE_TOKEN,
   BlockCraftDoc,
@@ -6,70 +8,26 @@ import {
   DOC_FILE_SERVICE_TOKEN,
   DOC_LINK_PREVIEWER_SERVICE_TOKEN,
   DOC_MESSAGE_SERVICE_TOKEN,
+  DOC_WEATHER_SERVICE_TOKEN,
   DocLinkPreviewerService,
-  InlineManager,
-  SchemaManager,
-  generateId
+  DocWeatherService,
+  generateId,
+  PaginationDocumentHeaderOptions
 } from "../framework";
-import {
-  AttachmentBlockSchema,
-  BookmarkBlockSchema,
-  CalloutBlockSchema,
-  CaptionBlockSchema,
-  CodeBlockSchema,
-  ColumnsBlockSchema,
-  DividerBlockSchema,
-  FigmaEmbedBlockSchema,
-  ImageBlockSchema,
-  JuejinEmbedBlockSchema,
-  OrderedBlockSchema,
-  ParagraphBlockSchema,
-  RootBlockSchema,
-  TableBlockSchema,
-  TableCellBlockSchema,
-  TableRowBlockSchema,
-  TodoBlockSchema,
-  VideoBlockSchema,
-  AudioBlockSchema
-} from "../blocks";
 import {ConsoleLogger} from "../global";
-import {BulletBlockSchema} from "../blocks/bullet-block";
-import {FormulaBlockSchema} from "../blocks/formula-block";
 import {FixedTextToolbarComponent} from "../plugins/fixed-toolbar";
-import {BlockTransformerPlugin} from "../plugins/block-transformer";
-import {BlockControllerPlugin, mergeBlockControllerOptions} from "../plugins/block-controller";
-import {ImgToolbarPlugin} from "../plugins/img-toolbar";
 import {MyDocFileService} from "./services/doc-file-service";
 import {MyDocMessageService} from "./services/doc-message.service";
-import {CalloutToolbarPlugin} from "../plugins/callout-toolbar";
-import {AttachmentExtensionPlugin} from "../plugins/attachment-extension";
 import {MyBlockCreatorService} from "./services/block-creator.service";
-import {EmbedFrameExtensionPlugin} from "../plugins/embed-frame-extension";
-import {BookmarkBlockExtensionPlugin} from "../plugins/bookmark-frame-extension";
-import {FormulaBlockExtensionPlugin} from "../plugins/formula-extension";
-import {InlineLinkExtension} from "../plugins/inline-link-extension";
 import {MyCommentService} from "./services/comment.service";
 import {AdapterService} from "./services/adapter.service";
-import {MermaidBlockSchema, MermaidTextareaBlockSchema} from "../blocks/mermaid-block";
-import {BlockquoteBlockSchema} from "../blocks/blockquote-block";
-import katex from 'katex'
-import {MentionPlugin, createDefaultMentionPanel} from "../plugins/mention";
+import {createDefaultMentionPanel} from "../plugins/mention";
 import * as Y from 'yjs'
-import {DividerExtensionPlugin} from "../plugins/divider-toolbar";
-import {
-  CodeInlineEditorBinding,
-  FloatTextToolbarPlugin,
-  TableBlockBinding,
-  OrderedBlockPlugin,
-  TextMarkerPlugin
-} from "../plugins";
-import {FindReplacePlugin} from "../plugins/findReplace/findReplace";
-import {BlockGapCreatorPlugin} from "../plugins/block-gap-creator";
-import {ColumnBlockSchema} from "../blocks/columns-block";
-import {TranslatePlugin} from "../plugins/translate";
 import {MyDocTranslationService} from "./services/doc-translation.service";
-import {PasteFormatSelectorPlugin} from "../plugins/paste-format-selector";
-import {PlaceholderPlugin} from "../plugins/placeholder";
+import {BlockLinkNavigator} from "./block-link-navigator";
+import {createBundledEditorCapabilities} from './bundled-capabilities'
+
+const bundledSvgIconRegistries = new WeakSet<MatIconRegistry>();
 
 const mentionRequest = async (keyword: string, _type?: string) => {
   if (keyword === 'a') {
@@ -88,25 +46,13 @@ const mentionRequest = async (keyword: string, _type?: string) => {
   }
 }
 
-const schemas = new SchemaManager([
-  ParagraphBlockSchema,
-  OrderedBlockSchema, BulletBlockSchema, TodoBlockSchema, CalloutBlockSchema, CodeBlockSchema,
-  CalloutBlockSchema,
-  DividerBlockSchema, ImageBlockSchema,
-  TableBlockSchema, TableRowBlockSchema, TableCellBlockSchema, AttachmentBlockSchema, BookmarkBlockSchema,
-  FigmaEmbedBlockSchema, JuejinEmbedBlockSchema,
-  CaptionBlockSchema, RootBlockSchema,
-  MermaidTextareaBlockSchema, MermaidBlockSchema, BlockquoteBlockSchema,
-  ColumnsBlockSchema, ColumnBlockSchema,
-  FormulaBlockSchema,
-  VideoBlockSchema, AudioBlockSchema
-])
-
 @Component({
   selector: "block-craft-editor",
   template: `
     <section class="editor-shell">
-      <bc-fixed-toolbar [doc]="doc" [stickyTop]="stickyTop"></bc-fixed-toolbar>
+      @if (showFixedToolbar) {
+        <bc-fixed-toolbar [doc]="doc" [stickyTop]="stickyTop"></bc-fixed-toolbar>
+      }
 
       <div
         class="editor-container"
@@ -127,11 +73,11 @@ const schemas = new SchemaManager([
       }
 
       .editor-container {
-        min-height: min(78vh, 960px);
-        max-height: min(78vh, 960px);
+        /* Definite height so the editable root's percentage min-height resolves
+           (a child's % min-height is ignored when the parent height is auto). */
+        height: min(78vh, 960px);
         overflow-x: hidden;
         overflow-y: auto;
-        padding: 48px 56px 64px;
         border-radius: 24px;
         color: var(--bc-color);
         border: 1px solid var(--bc-border-color-light);
@@ -144,7 +90,16 @@ const schemas = new SchemaManager([
       }
 
       ::ng-deep {
+        [data-bc-block-link-target="true"] {
+          outline: 2px solid var(--bc-active-color);
+          outline-offset: 3px;
+        }
+
         [data-blockcraft-root="true"] {
+          box-sizing: border-box;
+          min-height: 100%;
+          padding: 48px 56px 64px;
+
           span[data-mention-id] {
             padding: 0 0.15em;
             color: #4857e2;
@@ -187,32 +142,71 @@ const schemas = new SchemaManager([
       provide: DOC_LINK_PREVIEWER_SERVICE_TOKEN,
       useClass: DocLinkPreviewerService,
     },
+    {
+      provide: DOC_WEATHER_SERVICE_TOKEN,
+      useClass: DocWeatherService,
+    },
     { provide: DOC_ADAPTER_SERVICE_TOKEN, useClass: AdapterService },
     ConsoleLogger,
     MyCommentService,
   ],
 })
-export class EditorComponent implements OnDestroy {
+export class EditorComponent implements OnInit, OnDestroy {
   @ViewChild("container", { read: ElementRef }) container!: ElementRef;
   @Input() stickyTop = 0;
+  @Input() showFixedToolbar = true;
+  @Input() virtualizationEnabled = true;
+  @Input() paginationSparseView = false;
+  /**
+   * 宿主拥有的文档头。它始终位于编辑器 root 之外，分页插件只在分页期间
+   * 把同一个 DOM 节点投影到首页并测量，不会把它写进文档数据。
+   */
+  @Input() paginationDocumentHeader?: PaginationDocumentHeaderOptions;
   constructor(
     private injector: Injector,
     private logger: ConsoleLogger,
-  ) {}
+    private iconRegistry: MatIconRegistry,
+    private sanitizer: DomSanitizer,
+  ) {
+    this.registerBundledSvgIcons();
+  }
 
   docId = "111";
   rootId = "111";
 
-  private readonly translatePlugin = new TranslatePlugin({
-    sourceLang: "auto",
-    defaultTargetLang: "chinese_simplified",
-    targetLangWhenSourceIsChinese: "chinese_simplified",
-    service: new MyDocTranslationService(),
-  });
+  doc!: BlockCraftDoc;
+  private blockLinkNavigator: BlockLinkNavigator | null = null;
 
-  private readonly blockControllerPlugin = new BlockControllerPlugin(
-    mergeBlockControllerOptions(
-      {
+  private registerBundledSvgIcons(): void {
+    if (bundledSvgIconRegistries.has(this.iconRegistry)) {
+      return;
+    }
+
+    const iconSet = document.getElementById('bc_yinpin')?.closest('svg');
+    if (!iconSet) {
+      return;
+    }
+
+    this.iconRegistry.addSvgIconSetLiteral(
+      this.sanitizer.bypassSecurityTrustHtml(iconSet.outerHTML),
+    );
+    bundledSvgIconRegistries.add(this.iconRegistry);
+  }
+
+  private createDoc(): BlockCraftDoc {
+    const capabilities = createBundledEditorCapabilities({
+      mention: {
+        panel: createDefaultMentionPanel({
+          request: mentionRequest,
+        }),
+      },
+      translate: {
+        sourceLang: "auto",
+        defaultTargetLang: "chinese_simplified",
+        targetLangWhenSourceIsChinese: "chinese_simplified",
+        service: new MyDocTranslationService(),
+      },
+      blockController: {
         customTools: [
           {
             type: "tool",
@@ -223,140 +217,87 @@ export class EditorComponent implements OnDestroy {
           },
         ],
         customToolHandler: (item, block) => {
-          switch (item.name) {
-            case "copyBlockLink":
-              this.copyBlockLink(block);
-              return true;
-          }
-          return false;
+          if (item.name !== "copyBlockLink") return false;
+          this.copyBlockLink(block);
+          return true;
         },
       },
-      this.translatePlugin.createBlockControllerOptions(),
-    ),
-  );
-
-  doc = new BlockCraftDoc({
-    yDoc: new Y.Doc({
-      guid: this.docId,
-      gc: false,
-    }),
-    docId: this.docId,
-    schemas: schemas,
-    logger: this.logger,
-    injector: this.injector,
-    embeds: [
-      [
-        "mention",
-        {
-          toView: (embed) => {
-            const span = document.createElement("span");
-            span.textContent = embed.insert["mention"] as string;
-            // InlineManager.setAttrs(span, embed.attributes!)
-            span.setAttribute(
-              "data-mention-id",
-              (embed.attributes!["mentionId"] ||
-                embed.attributes!["d:mentionId"]) as string,
-            );
-            span.setAttribute(
-              "data-mention-type",
-              (embed.attributes!["mentionType"] ||
-                embed.attributes!["d:mentionType"]) as string,
-            );
-            return span;
-          },
-          toDelta: (ele) => {
-            return {
-              insert: { mention: ele.textContent! },
-              attributes: {
-                mentionId: ele.getAttribute("data-mention-id")!,
-                mentionType: ele.getAttribute("data-mention-type"),
-              },
-            };
-          },
-        },
-      ],
-      [
-        "latex",
-        {
-          toView: (embed) => {
-            const span = document.createElement("span");
-            span.classList.add("inline-formula");
-            const latex = (embed.insert["latex"] || "") as string;
-            span.setAttribute("data-latex", latex);
-            try {
-              katex.render(latex, span, {
-                output: "mathml",
-                throwOnError: false,
-              });
-            } catch {
-              span.textContent = latex;
-            }
-            return span;
-          },
-          toDelta: (ele) => {
-            return {
-              insert: {
-                latex: ele.getAttribute("data-latex") || ele.textContent || "",
-              },
-              attributes: InlineManager.getAttrs(ele),
-            };
-          },
-        },
-      ],
-    ],
-    plugins: [
-      new OrderedBlockPlugin(),
-      new CodeInlineEditorBinding(),
-      new FloatTextToolbarPlugin(),
-      new BlockTransformerPlugin(),
-      this.blockControllerPlugin,
-      new TableBlockBinding(),
-      new PasteFormatSelectorPlugin(),
-      new PlaceholderPlugin(),
-      new ImgToolbarPlugin(),
-      new CalloutToolbarPlugin(),
-      new AttachmentExtensionPlugin(),
-      new EmbedFrameExtensionPlugin(),
-      new BookmarkBlockExtensionPlugin(),
-      new FormulaBlockExtensionPlugin(),
-      new InlineLinkExtension((link) => {
-        if (link.startsWith("http://doc-pre.com")) {
-          window.open(
-            link.replace("http://doc-pre.com", "http://localhost:8081/test3"),
-            "_blank",
-          );
-        } else window.open(link, "_blank");
+      openLink: link => {
+        if (!this.blockLinkNavigator?.openBlockLink(link)) {
+          window.open(link, "_blank");
+        }
+      },
+      pagination: {
+        enabled: false,
+        pageSize: 'A4',
+        printShortcut: true,
+        experimentalSparseView: this.paginationSparseView,
+        documentHeader: this.paginationDocumentHeader,
+      },
+    })
+    return new BlockCraftDoc({
+      yDoc: new Y.Doc({
+        guid: this.docId,
+        gc: false,
       }),
-      new MentionPlugin({
-        panel: createDefaultMentionPanel({
-          request: mentionRequest,
-        }),
-      }),
-      new DividerExtensionPlugin(),
-      new FindReplacePlugin(),
-      this.translatePlugin,
-      new BlockGapCreatorPlugin(),
-      // 代码块 / mermaid 源码的仅颜色工具栏：rich text 由上面的 FloatTextToolbarPlugin
-      // 负责（它对 plainTextOnly 块会跳过），这里只补充这些 plainTextOnly 块的颜色覆盖，
-      // 二者互不重叠。('mermaid-textarea' 是 mermaid 块里可编辑的源码子块)
-      new TextMarkerPlugin([], ['code', 'mermaid-textarea']),
-    ],
-  });
+      docId: this.docId,
+      currentUserId: "demo-user",
+      schemas: capabilities.schemas,
+      logger: this.logger,
+      injector: this.injector,
+      virtualization: {
+        enabled: this.virtualizationEnabled,
+        overscanViewports: 1,
+        segmentMergeGap: 2,
+        estimatedHeights: {
+          paragraph: 32,
+          ordered: 32,
+          bullet: 32,
+          todo: 36,
+          divider: 24,
+          callout: 120,
+          code: 160,
+          table: 240,
+          columns: 180,
+          image: 320,
+          shape: 120,
+          "word-art": 96,
+        },
+      },
+      embeds: [...capabilities.embeds],
+      plugins: [...capabilities.plugins],
+    });
+  }
 
-  ngOnDestroy() {}
+  ngOnInit() {
+    this.doc = this.createDoc();
+    this.blockLinkNavigator = new BlockLinkNavigator(this.doc);
+    this.blockLinkNavigator.start();
+  }
+
+  ngOnDestroy() {
+    this.blockLinkNavigator?.destroy();
+    this.blockLinkNavigator = null;
+    this.doc?.destroy();
+  }
 
   copyBlockLink(block: BlockCraft.BlockComponent) {
-    const url = "http://doc-pre.com" + "?blockId=" + block.id;
-    this.doc.clipboard.copyText(url).then(() => {
-      this.doc.messageService.success("已复制链接");
-    });
+    const url = this.blockLinkNavigator?.createBlockLink(block.id);
+    if (!url) return;
+    void this.doc.clipboard.copyText(url)
+      .then(() => {
+        this.doc.messageService.success("已复制链接");
+      })
+      .catch(() => {
+        this.doc.messageService.error("复制链接失败");
+      });
   }
 
   onContainerMousedown(evt: MouseEvent) {
     if (evt.target === evt.currentTarget && evt.eventPhase === evt.AT_TARGET) {
-      evt.preventDefault();
-      evt.stopPropagation();
-      this.appendParagraph();
+      // evt.preventDefault();
+      // evt.stopPropagation();
+      // this.appendParagraph();
     }
   }
 

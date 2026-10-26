@@ -8,7 +8,6 @@ export function createImageEnhancementTask(
   return {
     key,
     target,
-    policy: "eager",
     load: () => src,
     apply: (value) => {
       target.src = value

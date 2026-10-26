@@ -2,14 +2,11 @@
   display: block;
   margin: 8px 0;
   position: relative;
+  //width: fit-content;
+  //min-width: 50px;
 
   &.selected {
     background: unset !important;
-
-    .resizable-container {
-      outline: 2px solid var(--bc-active-color);
-      box-shadow: 0 0 6px var(--bc-active-color-light);
-    }
   }
 }
 
@@ -85,6 +82,29 @@
       pointer-events: none;
     }
   }
+
+  &[data-bc-object-sizing] {
+    .embed-container {
+      height: 100%;
+      padding-bottom: 0;
+    }
+
+    .video-wrapper {
+      width: 100%;
+      height: 100%;
+    }
+  }
+}
+
+.video-block__placeholder-frame {
+  > .upload-hint,
+  > .peer-uploading {
+    position: absolute;
+    inset: 0;
+    box-sizing: border-box;
+    max-width: none;
+    padding: 8px;
+  }
 }
 
 .video-block__container {
@@ -100,6 +120,17 @@
     width: 100%;
     height: 100%;
     object-fit: contain;
+    // WebKit 原生控件会把祖先 zoom 再用于内部坐标。仅隔离播放器的
+    // effective zoom；百分比尺寸仍填满已缩放的外层，保留块布局与拖拽几何。
+    zoom: calc(1 / var(--video-view-scale, 1));
+
+    &:fullscreen {
+      zoom: 1;
+    }
+
+    @media print {
+      zoom: 1;
+    }
   }
 
   .video-wrapper {

@@ -8,5 +8,11 @@
     "assets/**/*",
     "themes/**/*",
     "ai-skills/**/*"
+  ],
+  "allowedNonPeerDependencies": [
+    "@types/hast",
+    "@types/mdast",
+    "collapse-white-space",
+    "lib0"
   ]
 }

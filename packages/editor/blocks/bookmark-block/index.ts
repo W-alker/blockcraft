@@ -3,6 +3,8 @@ import {BlockNodeType} from "../../framework";
 import {BookMarkBlockComponent} from "./book-mark.block";
 import {IBlockSchemaOptions} from "../../framework";
 
+export * from './agent'
+
 export interface BookmarkBlockModel extends NoEditableBlockNative {
   flavour: 'bookmark',
   nodeType: BlockNodeType.void,
@@ -30,6 +32,7 @@ export const BookmarkBlockSchema: IBlockSchemaOptions<BookmarkBlockModel> = {
   metadata: {
     version: 1,
     label: "网页卡片",
+    description: "将网页链接展示为预览卡片",
     svgIcon: "bc_shuqian",
     icon: "bc_icon bc_shuqian"
   }

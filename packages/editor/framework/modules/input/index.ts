@@ -1,4 +1,5 @@
-import { ORIGIN_SKIP_SYNC } from "../../doc";
+import {assertCompositionWriteFootprint, DocumentCompositionMutationError} from '../../doc/composition-guards';
+import {ORIGIN_SKIP_SYNC} from '../../doc/origins';
 import {
   BindHotKey,
   BlockNodeType,
@@ -13,17 +14,54 @@ import {
   STR_LINE_BREAK,
   UIEventStateContext,
 } from "../../block-std";
-import { BlockSelection, INormalizedRange } from "../selection";
-import { endpointsToLegacy } from "../selection/normalize";
+import {
+  BlockSelection,
+  IGapSelectionPoint,
+  INormalizedEndpoints,
+  searchEditableDescendant,
+} from "../selection";
+import { isSelectionAlive } from "../selection/liveness";
+import { normalizeRange as normalizeSelectionRange } from "../selection/normalize";
+import {
+  resolveSelectionScopePolicyForBlockId,
+  SelectionScopePolicy,
+} from "../selection/scope";
+import {
+  focusBlockSelectionEdge,
+  moveGapCaretAway,
+  restoreSelectionAfterBlockDelete,
+} from "../selection/restore";
 import { isNativeInputTarget, isZeroSpace } from "../../utils";
 import {
-  BlockCraftError,
-  ErrorCode,
   getCommonAttributesFromDeltas,
+  nextTick,
   performanceTest,
   sliceDelta,
 } from "../../../global";
-import { CompositionSession } from "./composition-session";
+import {CompositionSession} from "./composition-session";
+import {TypingFormatState} from "./typing-format";
+import {ParagraphFormatManager} from "./paragraph-format";
+import {normalizeParagraphTextDefaults, resolveNextParagraphStyle} from "../../block-std/typography/paragraph-style";
+import {
+  planSelectionEdit,
+  SelectionEditPlan,
+  SelectionEditReader,
+  SelectionEditSource,
+  SelectionReplaceEdge,
+} from "./selection-edit-plan";
+import {buildReadonlyWriteFootprint} from "./readonly-write-footprint";
+import {focusEditingHostForBlock} from "../selection/focus-editing-host";
+import {
+  BlockReadonlyError,
+  BlockReadonlyOperation,
+  BlockReadonlyViolationTrigger,
+} from "../../doc/block-readonly.types";
+import {
+  resolveTableCellSelectionTarget,
+  TableCellSelectionModelTarget,
+} from "../table";
+
+const MAX_TAB_INDENT_DEPTH = 8;
 
 const ALLOW_INPUT_TYPES = new Set([
   "insertText",
@@ -34,14 +72,48 @@ const ALLOW_INPUT_TYPES = new Set([
   "deleteByCut",
 ]);
 
+type BoundarySelectionTarget = {
+  host: BlockCraft.BlockComponent;
+  from: number;
+  to: number;
+  count: number;
+};
+
+function isElementNode(node: unknown): node is HTMLElement {
+  return !!node && typeof (node as Node).nodeType === "number" && (node as Node).nodeType === 1;
+}
+
+type ResolvedReplaceEdge =
+  | {
+    kind: "text";
+    blockId: string;
+    block: EditableBlockComponent;
+    from: number;
+    to: number;
+  }
+  | {
+    kind: "block";
+    blockId: string;
+    block: BlockCraft.BlockComponent;
+  };
+
+type ResolvedBlockRange = {
+  start: BlockCraft.BlockComponent;
+  end: BlockCraft.BlockComponent;
+};
+
+type BoundaryEditPlan = Extract<SelectionEditPlan, {kind: "boundary"}>;
+type BlockRangeEditPlan = Extract<SelectionEditPlan, {kind: "block-range"}>;
+type GapEditPlan = Extract<SelectionEditPlan, {kind: "gap"}>;
+type RangeEditPlan = Extract<SelectionEditPlan, {kind: "range"}>;
+type TableCellEditPlan = Extract<SelectionEditPlan, {kind: "table-cell"}>;
+
 @DocEventRegister
 export class InputTransformer {
   readonly compositionSession: CompositionSession;
-  private _nextInsertAttrs: {
-    blockId: string;
-    index: number;
-    attrs?: DeltaInsert["attributes"];
-  } | null = null;
+  private _compositionUndoGroupActive = false;
+  private readonly _typingFormat = new TypingFormatState(this.doc);
+  private readonly _paragraphFormat = new ParagraphFormatManager(this.doc);
 
   constructor(public readonly doc: BlockCraft.Doc) {
     this.compositionSession = new CompositionSession(doc);
@@ -51,60 +123,52 @@ export class InputTransformer {
     attrs: DeltaInsert["attributes"],
     point: { blockId: string; index: number },
   ) {
-    this._nextInsertAttrs = {
-      blockId: point.blockId,
-      index: point.index,
-      attrs,
-    };
+    if (point.index === 0) this._paragraphFormat.remember(point.blockId, attrs, true);
+    this._typingFormat.set(attrs, point, true);
   }
 
   hasNextInsertAttrs() {
-    return this._nextInsertAttrs !== null;
-  }
-
-  private matchNextInsertPoint(
-    point: { blockId: string; index: number },
-    allowNearby = false,
-  ) {
-    if (!this._nextInsertAttrs) return false;
-    if (this._nextInsertAttrs.blockId !== point.blockId) return false;
-    return allowNearby
-      ? Math.abs(this._nextInsertAttrs.index - point.index) <= 1
-      : this._nextInsertAttrs.index === point.index;
+    return this._typingFormat.active;
   }
 
   peekNextInsertAttrs(
     point: { blockId: string; index: number },
     options?: { allowNearby?: boolean },
   ) {
-    if (!this._nextInsertAttrs) return undefined;
-    if (!this.matchNextInsertPoint(point, !!options?.allowNearby))
-      return undefined;
-    return this._nextInsertAttrs.attrs;
+    return this._typingFormat.get(point, !!options?.allowNearby);
   }
 
   clearNextInsertAttrs() {
-    this._nextInsertAttrs = null;
+    this._typingFormat.clear();
   }
 
   /**
    * `beforeinput.getTargetRanges()` may shrink around read-only void/block
    * nodes, so keep trusting the editor model when the current selection
-   * includes whole-block endpoints.
+   * includes whole-block endpoints, model-owned structural endpoints, or a
+   * text range whose semantic scope policy is model-first.
    */
   private _shouldUseSelectionModelForBeforeInput(
     selection: BlockSelection | null,
   ): selection is BlockSelection {
     return (
       !!selection &&
-      (selection.start.type === "selected" || selection.end.type === "selected")
+      (
+        this._hasWholeBlockEndpoint(selection) ||
+        selection.start.type === "gap" ||
+        selection.end.type === "gap" ||
+        selection.start.type === "boundary" ||
+        selection.end.type === "boundary" ||
+        this._hasTableCellSelection(selection) ||
+        this._shouldUseModelForTextBeforeInput(selection)
+      )
     );
   }
 
   private _resolveBeforeInputRange(
     selection: BlockSelection | null,
-    targetRange: INormalizedRange | null,
-  ) {
+    targetRange: INormalizedEndpoints | null,
+  ): SelectionEditSource | null {
     if (this._shouldUseSelectionModelForBeforeInput(selection)) {
       return selection;
     }
@@ -118,6 +182,179 @@ export class InputTransformer {
       !event.ctrlKey &&
       !event.altKey
     );
+  }
+
+  private _textRangeScopePolicy(selection: BlockSelection | null): SelectionScopePolicy | null {
+    if (!selection || selection.collapsed || selection.start.type !== "text" || selection.end.type !== "text") {
+      return null;
+    }
+    try {
+      return resolveSelectionScopePolicyForBlockId(
+        selection.commonParent,
+        id => this.doc.getBlockById(id) as any,
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  private _shouldUseModelForTextBeforeInput(selection: BlockSelection | null): boolean {
+    return this._textRangeScopePolicy(selection)?.useModelForTextBeforeInput ?? false;
+  }
+
+  private _planSelectionEdit(source: SelectionEditSource): SelectionEditPlan {
+    const tailMode = source instanceof BlockSelection &&
+      this._textRangeScopePolicy(source)?.textRangeTailMode === "preserve"
+      ? "preserve"
+      : "merge";
+
+    return planSelectionEdit(source, {
+      getParentId: blockId => {
+        if (this.doc.model?.exists(blockId)) return this.doc.model.getParentId(blockId);
+        const block = this._getLiveBlockById(blockId);
+        return block ? block.parentId ?? null : undefined;
+      },
+      getChildrenIds: blockId => {
+        if (this.doc.model?.exists(blockId)) return this.doc.model.getChildrenIds(blockId);
+        const block = this._getLiveBlockById(blockId);
+        return block ? block.childrenIds ?? [] : null;
+      },
+      getTextLength: blockId => {
+        if (this.doc.model?.exists(blockId)) return this.doc.model.getTextLength(blockId);
+        const block = this._getLiveBlockById(blockId);
+        return block && this.doc.isEditable(block) ? block.textLength : null;
+      },
+    }, {tailMode});
+  }
+
+  private _readonlyEditReader(): SelectionEditReader {
+    return {
+      getParentId: blockId => {
+        if (this.doc.model?.exists(blockId)) return this.doc.model.getParentId(blockId);
+        const block = this._getLiveBlockById(blockId);
+        return block ? block.parentId ?? null : undefined;
+      },
+      getChildrenIds: blockId => {
+        if (this.doc.model?.exists(blockId)) return this.doc.model.getChildrenIds(blockId);
+        const block = this._getLiveBlockById(blockId);
+        return block ? block.childrenIds ?? [] : null;
+      },
+      getTextLength: blockId => {
+        if (this.doc.model?.exists(blockId)) return this.doc.model.getTextLength(blockId);
+        const block = this._getLiveBlockById(blockId);
+        return block && this.doc.isEditable(block) ? block.textLength : null;
+      },
+      resolveTableCellIds: (tableId, anchorCellId, headCellId) =>
+        resolveTableCellSelectionTarget(this.doc, {
+          tableId,
+          anchorCellId,
+          headCellId,
+        })?.visibleCellIds ?? null,
+    };
+  }
+
+  private _assertPlanWritable(
+    plan: SelectionEditPlan,
+    operation: BlockReadonlyOperation,
+    trigger: BlockReadonlyViolationTrigger = "input",
+  ): void {
+    const manager = this.doc.readonlyManager;
+    if (!manager && !this.doc.config?.contentComposition) return;
+    const footprint = buildReadonlyWriteFootprint(plan, this._readonlyEditReader());
+    footprint.textBlockIds.forEach(blockId =>
+      manager?.assertTextWritable(blockId, operation, trigger));
+
+    const removableIds = plan.kind === "gap" && operation !== BlockReadonlyOperation.Delete
+      ? []
+      : footprint.removableRootIds;
+    if (removableIds.length) {
+      manager?.assertRemovable(removableIds, operation, trigger);
+    }
+
+    const insertParentIds = plan.kind === "gap" && operation === BlockReadonlyOperation.Delete
+      ? []
+      : footprint.insertParentIds;
+    assertCompositionWriteFootprint(this.doc, {
+      textBlockIds: footprint.textBlockIds, removableRootIds: removableIds, insertParentIds,
+    });
+    insertParentIds.forEach(parentId =>
+      manager?.assertInsertable(parentId, operation, trigger));
+  }
+
+  assertSelectionWritable(
+    selection: BlockCraft.Selection,
+    operation: BlockReadonlyOperation,
+    trigger: BlockReadonlyViolationTrigger = "input",
+  ): void {
+    this._assertPlanWritable(this._planSelectionEdit(selection), operation, trigger);
+  }
+
+  private _tryAssertInputPlan(
+    context: {preventDefault(): void},
+    plan: SelectionEditPlan,
+    operation: BlockReadonlyOperation,
+  ): boolean {
+    try {
+      this._assertPlanWritable(plan, operation);
+      return true;
+    } catch (error) {
+      if (!(error instanceof BlockReadonlyError) && !(error instanceof DocumentCompositionMutationError)) throw error;
+      if (error instanceof DocumentCompositionMutationError) this.doc.messageService?.warn(error.message);
+      context.preventDefault();
+      return false;
+    }
+  }
+
+  private _consumeReadonlyTextDeleteKey(
+    context: {preventDefault(): void},
+    selection: BlockCraft.Selection,
+  ): boolean {
+    if (selection.start.type !== "text" || selection.end.type !== "text") {
+      return false;
+    }
+    const manager = this.doc.readonlyManager;
+    const isReadonly = manager
+      ? manager.isSelectionReadonly(selection)
+      : this.doc.isReadonly;
+    if (!isReadonly) return false;
+
+    // WebKit may navigate backward/forward for deletion keys on a protected
+    // text range instead of emitting beforeinput. Keep the ordinary writable
+    // text path in beforeinput and plan only this rare readonly rejection.
+    const plan = this._planSelectionEdit(selection);
+    if (!this._tryAssertInputPlan(
+      context,
+      plan,
+      BlockReadonlyOperation.Delete,
+    )) {
+      return true;
+    }
+    context.preventDefault();
+    return true;
+  }
+
+  private _adjustZeroSpaceDeletePlan(
+    plan: SelectionEditPlan,
+  ): SelectionEditPlan {
+    const point = plan.kind === "text-cursor"
+      ? {blockId: plan.blockId, offset: plan.offset}
+      : plan.kind === "range" && plan.start.kind === "text" && !plan.end
+        ? {blockId: plan.start.blockId, offset: plan.start.from}
+        : null;
+    if (!point || point.offset <= 0) return plan;
+    return {
+      kind: "range",
+      start: {
+        kind: "text",
+        blockId: point.blockId,
+        from: point.offset - 1,
+        to: point.offset,
+      },
+      end: null,
+      insertAt: {blockId: point.blockId, offset: point.offset - 1},
+      stabilizeAt: null,
+      tailMode: "merge",
+    };
   }
 
   /**
@@ -149,13 +386,13 @@ export class InputTransformer {
     if (
       parent &&
       this.doc.schemas.get(parent.flavour)?.metadata.renderUnit &&
-      this.doc.schemas.isValidChildren("paragraph", parent.flavour)
+      ((this.doc as any).canInsertChild?.(parent.id, "paragraph") ?? true)
     ) {
       return { host: parent, mode: "sibling" };
     }
     if (
       this.doc.schemas.get(block.flavour)?.metadata.renderUnit &&
-      this.doc.schemas.isValidChildren("paragraph", block.flavour)
+      ((this.doc as any).canInsertChild?.(block.id, "paragraph") ?? true)
     ) {
       return { host: block, mode: "inside" };
     }
@@ -183,23 +420,40 @@ export class InputTransformer {
     return first && this.doc.isEditable(first) ? first : null;
   }
 
-  private consumeNextInsertAttrs(
+  private _getTypingAttrs(
     blockId: string,
     index: number,
     options?: { allowNearby?: boolean },
   ) {
-    if (!this._nextInsertAttrs) return undefined;
-    const hit = this.matchNextInsertPoint(
-      {
-        blockId,
-        index,
-      },
-      !!options?.allowNearby,
-    );
-    if (!hit) return undefined;
-    const attrs = hit ? this._nextInsertAttrs.attrs : undefined;
-    this._nextInsertAttrs = null;
-    return attrs;
+    return this.peekNextInsertAttrs({blockId, index}, options);
+  }
+
+  private _runRevisionGroup<T>(callback: () => T): T {
+    return this.doc.revisions?.isTracking
+      ? this.doc.revisions.runInGroup(callback)
+      : callback();
+  }
+
+  private _insertTextWithRevision(
+    block: EditableBlockComponent,
+    index: number,
+    text: string,
+    attributes?: DeltaInsert['attributes'],
+    origin: unknown = null,
+    preserveUndefinedAttributes = false,
+  ): void {
+    this._typingFormat.runEdit(() => {
+      if (this.doc.revisions?.isTracking) {
+        this.doc.revisions.insertText(block.id, index, text, attributes, origin);
+        return;
+      }
+      this.doc.crud.transact(() => {
+        if (attributes !== undefined || preserveUndefinedAttributes) {
+          block.yText.insert(index, text, attributes);
+        }
+        else block.yText.insert(index, text);
+      }, origin);
+    });
   }
 
   /**
@@ -224,23 +478,558 @@ export class InputTransformer {
       : undefined;
   }
 
+  /**
+   * Insert a new paragraph adjacent to the void/container block the gap cursor
+   * sits beside, then place the caret into it. The void/container block is KEPT
+   * (gap input never replaces the block, unlike whole-block `selected` input).
+   */
+  private _insertParagraphAtGap(
+    gap: IGapSelectionPoint | GapEditPlan,
+    text: string,
+    reveal = false,
+  ): EditableBlockComponent | null {
+    const block = "kind" in gap
+      ? this._getLiveBlockById(gap.blockId)
+      : gap.block;
+    if (!block?.parentId || typeof block.getIndexOfParent !== "function") {
+      return null;
+    }
+    const index =
+      block.getIndexOfParent() + (gap.side === "after" ? 1 : 0);
+    const newParagraph = this.doc.crud.insertNewParagraph(
+      block.parentId,
+      index,
+      text ? [{ insert: text }] : [],
+    );
+    if (reveal) {
+      this.doc.selection.setCursorAtBlock(newParagraph, false);
+    } else {
+      this.doc.selection.setCursorAt(newParagraph as any, text.length);
+    }
+    return newParagraph as EditableBlockComponent;
+  }
+
+  private _setTextCursor(blockId: string, offset: number): boolean {
+    const block = this._getLiveBlockById(blockId);
+    if (
+      !block ||
+      !this.doc.isEditable(block) ||
+      !Number.isInteger(offset) ||
+      offset < 0 ||
+      offset > block.textLength
+    ) {
+      return false;
+    }
+    try {
+      this.doc.selection.setCursorAt(block as EditableBlockComponent, offset);
+      this.doc.selection.scrollSelectionIntoView?.();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private _syncPlannedRangeSelection(
+    plan: RangeEditPlan,
+    insertedLength = 0,
+  ): boolean {
+    if (!plan.insertAt) {
+      this.doc.selection.blur();
+      return false;
+    }
+    const applied = this._setTextCursor(
+      plan.insertAt.blockId,
+      plan.insertAt.offset + insertedLength,
+    );
+    if (!applied) this.doc.selection.blur();
+    return applied;
+  }
+
+  private _setCompositionTextCursor(
+    block: EditableBlockComponent,
+    offset: number,
+  ): boolean {
+    const safeOffset = Math.max(0, Math.min(offset, block.textLength ?? offset));
+    try {
+      focusEditingHostForBlock(this.doc, block);
+      this.doc.selection.setCursorAt(block as any, safeOffset);
+      const root = (this.doc as any).root?.hostElement as HTMLElement | undefined;
+      const active = root?.ownerDocument.activeElement;
+      if (root && root.isConnected && active && active !== root && !root.contains(active)) {
+        focusEditingHostForBlock(this.doc, block);
+        this.doc.selection.setCursorAt(block as any, safeOffset);
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private _setCommittedCompositionCursor(
+    block: EditableBlockComponent,
+    index: number,
+  ): void {
+    const safeIndex = Math.max(0, Math.min(index, block.textLength ?? index));
+    if (!this._setCompositionTextCursor(block, safeIndex)) {
+      this.doc.selection.blur();
+    } else {
+      this.doc.selection.scrollSelectionIntoView?.();
+    }
+  }
+
+  private _restoreAbortedCompositionSelection(
+    target: {blockId: string; atStart: boolean} | null,
+  ): void {
+    if (target) {
+      try {
+        this.doc.virtualization?.ensureViewMounted?.([target.blockId]);
+        const block = this._getLiveBlockById(target.blockId);
+        if (block && focusBlockSelectionEdge(this.doc, block, target.atStart)) {
+          return;
+        }
+      } catch {
+        // Fall through to the browser's surviving native boundary.
+      }
+    }
+
+    try {
+      if (this.doc.selection.recalculate().value) return;
+    } catch {
+      // No valid native fallback remains.
+    }
+    this.doc.selection.blur();
+  }
+
+  private _captureCompositionCommitUndoSelection(
+    block: EditableBlockComponent,
+    index: number,
+  ): void {
+    const safeIndex = Math.max(0, Math.min(index, block.textLength ?? index));
+    const selection = {
+      anchor: {blockId: block.id, type: "text", offset: safeIndex},
+      head: {blockId: block.id, type: "text", offset: safeIndex},
+      commonParent: block.id,
+    };
+
+    try {
+      focusEditingHostForBlock(this.doc, block);
+      const replay = (this.doc.selection as any).replay;
+      if (typeof replay === "function") {
+        replay.call(this.doc.selection, selection);
+      } else {
+        this.doc.selection.setCursorAt?.(block as any, safeIndex);
+      }
+    } catch {
+      try {
+        this._setCompositionTextCursor(block, safeIndex);
+      } catch {
+        // Best effort only; the undo manager will fall back to its current
+        // selection if the DOM is already gone.
+      }
+    }
+
+    (this.doc.crud as any).undoManager?.captureSelectionBeforeChange?.();
+  }
+
+  private _startCompositionAtEditableBlock(
+    block: BlockCraft.BlockComponent | null | undefined,
+    offset = 0,
+  ): boolean {
+    const isEditable = block ? ((this.doc as any).isEditable?.(block) ?? true) : false;
+    if (!block || !isEditable) {
+      this.doc.selection.blur();
+      return false;
+    }
+    const editableBlock = block as EditableBlockComponent;
+    const safeOffset = Math.max(0, Math.min(offset, editableBlock.textLength ?? offset));
+    if (!this._setCompositionTextCursor(editableBlock, safeOffset)) {
+      this.doc.selection.blur();
+      return false;
+    }
+    this.compositionSession.start(editableBlock, safeOffset);
+    return true;
+  }
+
+  private _abortCompositionStart(context: UIEventStateContext) {
+    context.preventDefault();
+    this.doc.selection.blur();
+    this.compositionSession.abortPendingCommit();
+    this._endCompositionUndoGroup();
+    return true;
+  }
+
+  private _beginCompositionUndoGroup() {
+    if (this._compositionUndoGroupActive) return;
+    this.doc.crud.undoManager?.beginCaptureGroup?.();
+    this._compositionUndoGroupActive = true;
+  }
+
+  private _endCompositionUndoGroup() {
+    if (!this._compositionUndoGroupActive) return;
+    this._compositionUndoGroupActive = false;
+    this.doc.crud.undoManager?.endCaptureGroup?.();
+  }
+
+  private _recoverCompositionSelection(
+    context: UIEventStateContext,
+  ): BlockSelection | null {
+    let curSel = this.doc.selection.value;
+    if (!curSel) {
+      const compositionState = context.has("compositionState")
+        ? context.get("compositionState")
+        : null;
+      let result: { value: BlockSelection | null; next?: () => void } | null = null;
+      try {
+        result = compositionState?.selectionResult ?? null;
+        result?.next?.();
+      } catch {
+        return null;
+      }
+      curSel = result?.value ?? this.doc.selection.value;
+    }
+
+    if (!curSel || isSelectionAlive(curSel, this.doc)) {
+      return curSel;
+    }
+
+    let result: { value: BlockSelection | null; next?: () => void } | null = null;
+    try {
+      result = this.doc.selection.recalculate?.(false, { isComposing: true }) ?? null;
+      result?.next?.();
+    } catch {
+      return null;
+    }
+    const recovered = result ? result.value : this.doc.selection.value;
+    if (!recovered || !isSelectionAlive(recovered, this.doc)) {
+      return null;
+    }
+    return recovered;
+  }
+
+  private _isAbsoluteObjectSelection(
+    selection: BlockCraft.Selection | null | undefined,
+  ): boolean {
+    return this.doc.placement?.isAbsoluteObjectSelection?.(selection) === true;
+  }
+
+  private _resolveBoundarySelection(
+    plan: BoundaryEditPlan,
+  ): BoundarySelectionTarget | null {
+    const host = this._getLiveBlockById(plan.hostId);
+    if (!host) return null;
+    const max = host.childrenLength;
+    const from = Math.max(0, Math.min(plan.fromIndex, plan.toIndex, max));
+    const to = Math.max(from, Math.min(Math.max(plan.fromIndex, plan.toIndex), max));
+    return {
+      host,
+      from,
+      to,
+      count: to - from,
+    };
+  }
+
+  private _canBoundaryHostParagraph(target: BoundarySelectionTarget): boolean {
+    const schema = this.doc.schemas.get(target.host.flavour);
+    return (
+      !!schema?.metadata.renderUnit &&
+      ((this.doc as any).canInsertChild?.(target.host.id, "paragraph") ?? true)
+    );
+  }
+
+  private _replaceBoundarySelectionWithParagraph(
+    source: BoundaryEditPlan,
+    text: string,
+  ): EditableBlockComponent | null {
+    const target = this._resolveBoundarySelection(source);
+    if (!target || !this._canBoundaryHostParagraph(target)) return null;
+
+    this.doc.crud.undoManager.captureSelectionBeforeChange();
+    const paragraph = this.doc.schemas.createSnapshot(
+      "paragraph",
+      text ? [text] : [],
+    );
+
+    this._runRevisionGroup(() => {
+      this.doc.crud.transact(() => {
+        if (target.count > 0) {
+          this.doc.crud.deleteBlocks(target.host.id, target.from, target.count, true);
+        }
+        this.doc.crud.insertBlocks(target.host.id, target.from, [paragraph]);
+      });
+    });
+
+    const block = this.doc.getBlockById(paragraph.id);
+    return block && this.doc.isEditable(block)
+      ? block as EditableBlockComponent
+      : null;
+  }
+
+  private _selectAfterBoundaryDelete(target: BoundarySelectionTarget) {
+    if (!target.host.childrenLength) {
+      this.doc.selection.blur();
+      return;
+    }
+    const nextIndex = Math.min(target.from, target.host.childrenLength - 1);
+    const atStart = target.from < target.host.childrenLength;
+    const childId = target.host.childrenIds[nextIndex];
+    const child = this._getLiveBlockById(childId);
+    if (!child) {
+      this.doc.selection.blur();
+      return;
+    }
+    if (!focusBlockSelectionEdge(this.doc, child, atStart)) {
+      this.doc.selection.blur();
+    }
+  }
+
+  private _deleteBoundarySelection(
+    source: BoundaryEditPlan,
+  ): boolean {
+    const target = this._resolveBoundarySelection(source);
+    if (!target || target.count <= 0) return false;
+    if (!this._canBoundaryHostParagraph(target)) return false;
+
+    this.doc.crud.undoManager.captureSelectionBeforeChange();
+    this.doc.crud.deleteBlocks(target.host.id, target.from, target.count);
+    this._selectAfterBoundaryDelete(target);
+    return true;
+  }
+
+  private _replaceBoundarySelectionWithText(
+    source: BoundaryEditPlan,
+    text: string,
+  ): boolean {
+    const block = this._replaceBoundarySelectionWithParagraph(source, text);
+    if (!block) return false;
+    return this._setTextCursor(block.id, text.length);
+  }
+
+  private _getLiveBlockById<T extends BlockCraft.BlockComponent = BlockCraft.BlockComponent>(
+    id: string,
+  ): T | null {
+    const model = this.doc.model as {exists?: (blockId: string) => boolean} | undefined;
+    if (model?.exists && !model.exists(id)) return null;
+    try {
+      const block = (this.doc.getBlockById(id) as T | null) ?? null;
+      if (model?.exists && !model.exists(id)) return null;
+      return block;
+    } catch {
+      return null;
+    }
+  }
+
+  private _resolveTableCellSelection(
+    tableCellSelection: TableCellEditPlan,
+  ): TableCellSelectionModelTarget | null {
+    return resolveTableCellSelectionTarget(this.doc, tableCellSelection);
+  }
+
+  private _hasTableCellSelection(selection: BlockSelection): boolean {
+    return typeof selection.getTableCellSelection === "function" &&
+      !!selection.getTableCellSelection();
+  }
+
+  private _replaceTableCellWithParagraph(
+    cellId: string,
+    text: string | null,
+  ): string | null {
+    if (
+      this.doc.model.getFlavour(cellId) !== "table-cell" ||
+      this.doc.model.getProps(cellId)?.["display"] === "none"
+    ) {
+      return null;
+    }
+
+    const oldChildrenLength = this.doc.model.getChildrenIds(cellId).length;
+    const paragraph = this.doc.schemas.createSnapshot(
+      "paragraph",
+      text ? [text] : [],
+    );
+    const insertedIds = this.doc.crud.insertBlockSnapshots(cellId, 0, [paragraph]);
+    if (oldChildrenLength > 0) {
+      this.doc.crud.deleteBlocks(cellId, 1, oldChildrenLength, true);
+    }
+    return insertedIds[0] ?? paragraph.id;
+  }
+
+  private _setTextSelectionWhenReady(blockId: string, index: number): void {
+    const replayFromModel = () => {
+      try {
+        this.doc.selection.replay({
+          anchor: {blockId, type: "text", offset: index},
+          head: {blockId, type: "text", offset: index},
+          commonParent: blockId,
+        });
+        const current = this.doc.selection.value?.toJSON();
+        return current?.anchor.blockId === blockId &&
+          current.anchor.type === "text" &&
+          current.anchor.offset === index &&
+          current.head.blockId === blockId &&
+          current.head.type === "text" &&
+          current.head.offset === index;
+      } catch {
+        return false;
+      }
+    };
+    const apply = () => {
+      try {
+        (this.doc as any).root?.hostElement?.focus?.({ preventScroll: true });
+        return this._setTextCursor(blockId, index) || replayFromModel();
+      } catch {
+        return false;
+      }
+    };
+
+    if (apply()) return;
+    void nextTick().then(() => {
+      if (!apply()) {
+        this.doc.logger.warn(`restore text cursor failed: ${blockId}`);
+      }
+    });
+  }
+
+  private _setCursorAtBlockWhenReady(blockId: string, atStart: boolean): void {
+    const apply = () => {
+      try {
+        (this.doc as any).root?.hostElement?.focus?.({ preventScroll: true });
+        this.doc.selection.setCursorAtBlock(blockId, atStart);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    if (apply()) return;
+    void nextTick().then(() => {
+      if (!apply()) {
+        this.doc.logger.warn(`restore table-cell cursor failed: ${blockId}`);
+      }
+    });
+  }
+
+  private _replaceTableCellSelection(
+    source: TableCellEditPlan,
+    text: string | null,
+    mode: "text-cursor" | "table-selection" | "anchor-cursor",
+  ): string | null {
+    if (this.doc.revisions?.isTracking) {
+      return this.doc.revisions.runWithoutTracking(() =>
+        this._replaceTableCellSelection(source, text, mode));
+    }
+    const target = this._resolveTableCellSelection(source);
+    if (!target) return null;
+
+    this.doc.crud.undoManager.captureSelectionBeforeChange();
+    const anchorRef: { blockId: string | null } = { blockId: null };
+
+    this.doc.crud.transact(() => {
+      target.visibleCellIds.forEach(cellId => {
+        const blockId = this._replaceTableCellWithParagraph(
+          cellId,
+          cellId === target.anchorCellId ? text : null,
+        );
+        if (cellId === target.anchorCellId) {
+          anchorRef.blockId = blockId;
+        }
+      });
+    });
+
+    const anchorBlockId = anchorRef.blockId;
+    if (!anchorBlockId) return null;
+
+    if (mode === "text-cursor") {
+      this._setTextSelectionWhenReady(anchorBlockId, text?.length ?? 0);
+    } else if (mode === "anchor-cursor") {
+      this._setCursorAtBlockWhenReady(anchorBlockId, true);
+    } else {
+      this.doc.selection.setTableCellSelection(
+        target.tableId,
+        target.anchorCellId,
+        target.headCellId,
+      );
+    }
+
+    return anchorBlockId;
+  }
+
   @EventListen("compositionStart")
   private _handleCompositionStart(context: UIEventStateContext) {
+    this._endCompositionUndoGroup();
     this.compositionSession.reset();
-    const curSel = this.doc.selection.value!;
-    if (curSel.isAllSelected) {
+    const curSel = this._recoverCompositionSelection(context);
+
+    if (!curSel) {
+      return this._abortCompositionStart(context);
+    }
+    if (this._isAbsoluteObjectSelection(curSel)) {
       context.preventDefault();
-      const resolved = this._resolveBlockSelectionHost(curSel.lastBlock);
-      if (!resolved) {
+      return true;
+    }
+
+    const plan = this._planSelectionEdit(curSel);
+    if (plan.kind === "unsupported") {
+      return this._abortCompositionStart(context);
+    }
+    if (!this._tryAssertInputPlan(context, plan, BlockReadonlyOperation.Replace)) {
+      return this._abortCompositionStart(context);
+    }
+
+    // Handle gap-cursor IME: the gap sits inside a non-editable void/container
+    // block, so we must synchronously materialize a real empty paragraph, move
+    // the caret into it, then let composition proceed in that editable block.
+    // Use a NORMAL transaction (NOT ORIGIN_SKIP_SYNC) for the structural insert;
+    // the OneShotCursorAnchor is captured directly in the NEW paragraph so
+    // compositionEnd resolves its insertion point there even if the browser
+    // native selection jitters during IME startup. The
+    // void/container block is KEPT.
+    if (plan.kind === "gap") {
+      context.preventDefault();
+      this._beginCompositionUndoGroup();
+      const newParagraph = this._insertParagraphAtGap(plan, "");
+      if (!this._startCompositionAtEditableBlock(newParagraph, 0)) {
+        this._endCompositionUndoGroup();
+      }
+      return true;
+    }
+
+    if (plan.kind === "table-cell") {
+      context.preventDefault();
+      this._beginCompositionUndoGroup();
+      const target = this._replaceTableCellSelection(plan, null, "anchor-cursor");
+      if (!target) {
+        this.doc.selection.blur();
+        this._endCompositionUndoGroup();
+        return true;
+      }
+      const block = this.doc.getBlockById(target);
+      if (!this._startCompositionAtEditableBlock(block, 0)) {
+        this._endCompositionUndoGroup();
+      }
+      return true;
+    }
+
+    if (plan.kind === "block-range") {
+      context.preventDefault();
+      const rangeTarget = this._resolveWholeBlockRange(plan);
+      const resolved = rangeTarget
+        ? this._resolveBlockSelectionHost(rangeTarget.end)
+        : null;
+      if (!rangeTarget || !resolved) {
         this.doc.selection.blur();
         return true;
       }
+      this._beginCompositionUndoGroup();
       this.doc.crud.undoManager.captureSelectionBeforeChange();
       if (resolved.mode === "sibling") {
         const p = this.doc.schemas.createSnapshot("paragraph", []);
-        this.doc.crud.insertBlocksAfter(curSel.lastBlock.id, [p]);
-        this._deleteAllSelected(curSel);
+        this.doc.crud.insertBlocksAfter(rangeTarget.end.id, [p]);
+        this._deleteAllSelected(plan);
         this.doc.selection.setCursorAtBlock(p.id, true);
+        const compositionTarget = this.doc.getBlockById(p.id);
+        if (!this._startCompositionAtEditableBlock(compositionTarget, 0)) {
+          this._endCompositionUndoGroup();
+          return true;
+        }
       } else {
         // `inside`: the selected block is a renderUnit container (table-cell /
         // column) whose parent can't host a paragraph. Clear it and drop the
@@ -248,50 +1037,71 @@ export class InputTransformer {
         // composition lands in a real, Y.Text-backed text node instead of an
         // un-modelled container. compositionEnd's rerender() then scrubs any
         // glyph the IME may have raced in. See _resolveBlockSelectionHost.
-        const target = this._clearContainerToEmptyParagraph(resolved.host);
-        if (!target) {
+        const compositionTarget = this._clearContainerToEmptyParagraph(resolved.host);
+        if (!compositionTarget) {
           this.doc.selection.blur();
+          this._endCompositionUndoGroup();
           return true;
         }
-        this.doc.selection.setCursorAtBlock(target.id, true);
+        this.doc.selection.setCursorAtBlock(compositionTarget.id, true);
+        if (!this._startCompositionAtEditableBlock(compositionTarget, 0)) {
+          this._endCompositionUndoGroup();
+          return true;
+        }
       }
-      this.doc.selection.recalculate();
-      this.compositionSession.startFromSelection({ isComposing: true });
       return true;
     }
 
-    if (curSel.start.type !== "text") {
-      if (curSel.isInSameBlock || curSel.end.type !== "text") {
-        throw new BlockCraftError(
-          ErrorCode.InlineEditorError,
-          "compositionStart: last block is not editable",
-        );
+    if (plan.kind === "boundary") {
+      context.preventDefault();
+      this._beginCompositionUndoGroup();
+      const target = this._replaceBoundarySelectionWithParagraph(plan, "");
+      if (!target) {
+        this.doc.selection.blur();
+        this._endCompositionUndoGroup();
+        return true;
       }
+      this.doc.selection.setCursorAtBlock(target.id, true);
+      if (!this._startCompositionAtEditableBlock(target, 0)) {
+        this._endCompositionUndoGroup();
+      }
+      return true;
     }
 
-    if (!curSel.collapsed) {
-      const needsMerge = !curSel.isInSameBlock;
-      const anchorBlock =
-        curSel.start.type === "text"
-          ? curSel.firstBlock
-          : !curSel.isInSameBlock && curSel.end.type === "text"
-            ? curSel.lastBlock
-            : null;
-      const anchorIndex =
-        curSel.start.type === "text" ? curSel.start.offset : 0;
+    if (plan.kind === "range") {
+      const crossesBlocks = plan.end !== null;
+      const hasStructuralEdge = plan.start.kind === "block" ||
+        plan.end?.kind === "block";
+      const hasBoundaryEndpoint = this._hasBoundaryEndpoint(curSel);
+      const needsMerge = crossesBlocks && plan.tailMode === "merge";
+      if (crossesBlocks || hasStructuralEdge || hasBoundaryEndpoint) {
+        context.preventDefault();
+        this._beginCompositionUndoGroup();
+      }
+
+      const anchor = plan.insertAt;
+      const anchorBlock = anchor
+        ? this._getLiveBlockById(anchor.blockId)
+        : null;
+      if (!anchor || !anchorBlock || !this.doc.isEditable(anchorBlock)) {
+        return this._abortCompositionStart(context);
+      }
 
       if (
         needsMerge &&
-        anchorBlock &&
-        curSel.start.type === "text" &&
-        curSel.end.type === "text"
+        !this.doc.revisions?.isTracking &&
+        plan.start.kind === "text" &&
+        plan.end?.kind === "text"
       ) {
         // Composition-specific merge: separate append from delete so the observer's
         // _applyDeltaToView only handles simple deltas. The append uses ORIGIN_SKIP_SYNC
         // + rerender() to avoid DOM patches that the browser's composition setup overrides.
-        const fromBlock = curSel.firstBlock as any;
-        const toBlock = curSel.lastBlock as any;
-        const remainStart = curSel.end.offset;
+        const fromBlock = anchorBlock as EditableBlockComponent;
+        const toBlock = this._getLiveBlockById(plan.end.blockId);
+        if (!toBlock || !this.doc.isEditable(toBlock)) {
+          return this._abortCompositionStart(context);
+        }
+        const remainStart = plan.end.to;
         const remainingDelta =
           remainStart < toBlock.textLength
             ? [
@@ -304,7 +1114,9 @@ export class InputTransformer {
             : null;
 
         // Step 1: delete selected content + delete to block (normal observer path, skip append)
-        this._replaceText(curSel, null, true, true);
+        if (!this._replacePlannedRange(plan, null, true, true)) {
+          return this._abortCompositionStart(context);
+        }
 
         // Step 2: append remaining with ORIGIN_SKIP_SYNC (observer skips _applyDeltaToView)
         if (remainingDelta?.length) {
@@ -318,17 +1130,28 @@ export class InputTransformer {
           fromBlock.rerender();
         }
       } else {
-        this._replaceText(curSel, null, needsMerge);
+        if (!this._replacePlannedRange(plan, null, needsMerge)) {
+          return this._abortCompositionStart(context);
+        }
       }
 
-      if (anchorBlock) {
-        this.doc.selection.setCursorAt(anchorBlock as any, anchorIndex);
-        this.compositionSession.start(anchorBlock as any, anchorIndex);
+      this.doc.selection.setCursorAt(anchorBlock as any, anchor.offset);
+      if (!this._startCompositionAtEditableBlock(anchorBlock, anchor.offset)) {
+        this._endCompositionUndoGroup();
+        return true;
       }
-    } else {
-      this.compositionSession.startFromSelection({ isComposing: true });
+      return true;
     }
-    return true;
+
+    if (plan.kind === "text-cursor") {
+      const block = this._getLiveBlockById(plan.blockId);
+      if (!this._startCompositionAtEditableBlock(block, plan.offset)) {
+        this._endCompositionUndoGroup();
+      }
+      return true;
+    }
+
+    return this._abortCompositionStart(context);
   }
 
   @EventListen("compositionEnd")
@@ -339,63 +1162,128 @@ export class InputTransformer {
     // 此时提交点只能落在 detached Y.Text 或 DOM fallback 出的无关块上，
     // 两者都会造成静默错写，直接丢弃本次组合提交。
     if (this.compositionSession.consumeAbort()) {
+      const recovery = this.compositionSession.consumeAbortRecovery();
+      if (recovery) {
+        this.doc.virtualization?.settleCompositionView?.();
+        this._restoreAbortedCompositionSelection(recovery.target);
+      }
+      this._endCompositionUndoGroup();
+      return;
+    }
+    if (this.compositionSession.isIdle) {
+      this._endCompositionUndoGroup();
       return;
     }
     const compositionState = context.get("compositionState");
     try {
       const text = compositionState.text;
-      const fallbackPoint = compositionState.getFallbackPoint();
       const anchorPoint =
-        this.compositionSession.resolveInsertionPoint(fallbackPoint);
+        this.compositionSession.resolveInsertionPoint(null);
+      const fallbackPoint = anchorPoint
+        ? null
+        : compositionState.getFallbackPoint();
       const commitPoint = compositionState.resolveCommitPoint(
         anchorPoint || fallbackPoint,
       );
       if (!commitPoint) {
-        throw new BlockCraftError(
-          ErrorCode.InlineEditorError,
-          `Invalid inputRange`,
-        );
+        return;
       }
 
       const { block: insertBlock, index: insertIndex } = commitPoint;
+      try {
+        this.doc.readonlyManager?.assertTextWritable(
+          insertBlock.id,
+          BlockReadonlyOperation.Text,
+          "input",
+        );
+      } catch (error) {
+        if (!(error instanceof BlockReadonlyError) && !(error instanceof DocumentCompositionMutationError)) throw error;
+        return;
+      }
+      this._captureCompositionCommitUndoSelection(
+        insertBlock as EditableBlockComponent,
+        insertIndex,
+      );
 
-      const insertAttrs = this.consumeNextInsertAttrs(
+      const insertAttrs = this._getTypingAttrs(
         insertBlock.id,
         insertIndex,
         { allowNearby: true },
       );
       const cursorIndex = insertIndex + text.length;
-      this.doc.crud.transact(() => {
-        insertBlock.yText.insert(insertIndex, text, insertAttrs);
+      this._runRevisionGroup(() => {
+        this._insertTextWithRevision(
+          insertBlock as EditableBlockComponent,
+          insertIndex,
+          text,
+          insertAttrs,
+          ORIGIN_SKIP_SYNC,
+          true,
+        );
         insertBlock.rerender();
+        this.doc.virtualization?.settleCompositionView?.();
         // Set cursor synchronously after rerender to avoid selectionchange race.
         // queueMicrotask would leave a gap where selectionchange fires with
         // invalid DOM selection (isComposing is already false), resetting cursor to 0.
-        insertBlock.setInlineRange(cursorIndex);
-      }, ORIGIN_SKIP_SYNC);
+        this._setCommittedCompositionCursor(insertBlock as EditableBlockComponent, cursorIndex);
+      });
 
       // Drain deferred patches WITHOUT replaying.
       // rerender() already built the blot tree from the full Y.Text model,
       // which includes all remote changes. Replaying would double-apply them.
       this.compositionSession.drainDeferredPatches();
 
-      // Recalculate selection from the final DOM state (after setInlineRange),
-      // not from the stale pre-transaction state captured by compositionState.
-      this.doc.selection.recalculate();
     } finally {
+      this.doc.virtualization?.settleCompositionView?.();
       this.compositionSession.end();
+      this._endCompositionUndoGroup();
     }
   }
 
+  private _resetOrphanedCompositionSession(
+    ev: Pick<InputEvent, "isComposing">,
+  ) {
+    if (
+      ev.isComposing ||
+      this.doc.event.status.isComposing ||
+      this.compositionSession.isIdle
+    ) {
+      return;
+    }
+    this.compositionSession.reset();
+    this._endCompositionUndoGroup();
+  }
+
   @EventListen("beforeInput")
-  private _handleBeforeInput(context: BlockCraft.EventStateContext) {
+  private _handleBeforeInput(context: BlockCraft.EventStateContext): boolean | void {
     const ev = context.get("defaultState").event as InputEvent;
     if (isNativeInputTarget(ev.target)) {
       return;
     }
-    this.compositionSession.updateAnchorFromInputEvent(ev, {
-      isComposing: true,
-    });
+    if (
+      this._isAbsoluteObjectSelection(this.doc.selection.value) &&
+      !ev.inputType.startsWith("delete")
+    ) {
+      ev.preventDefault();
+      return true;
+    }
+    this._resetOrphanedCompositionSession(ev);
+    // Chrome can send the terminal insertText with isComposing=false before
+    // compositionend. Its DOM range still includes uncommitted IME text, so
+    // the accepted session must retain ownership until compositionend commits.
+    const isCompositionInput = ev.isComposing || (
+      ev.inputType === "insertText" &&
+      this.doc.event.status.isComposing &&
+      this.compositionSession.isActive
+    );
+    // compositionStart captures the accepted model/materialized target. During
+    // IME updates, browser target ranges can be transient or stale; do not let
+    // them retarget the commit anchor.
+    if (!isCompositionInput) {
+      this.compositionSession.updateAnchorFromInputEvent(ev, {
+        isComposing: true,
+      });
+    }
 
     if (!ALLOW_INPUT_TYPES.has(ev.inputType)) {
       ev.preventDefault();
@@ -411,101 +1299,155 @@ export class InputTransformer {
       return;
     }
 
-    if (ev.isComposing || ev.defaultPrevented) {
+    if (isCompositionInput || ev.defaultPrevented) {
+      if (isCompositionInput && !this.compositionSession.isActive) {
+        ev.preventDefault();
+      }
       return;
     }
 
     const staticRange = ev.getTargetRanges ? ev.getTargetRanges()[0] : null;
-    const targetRange = staticRange
-      ? this.doc.selection.normalizeRange(staticRange)
-      : null;
+    let targetRange: INormalizedEndpoints | null = null;
+    if (staticRange) {
+      try {
+        targetRange = normalizeSelectionRange(
+          staticRange,
+          id => this.doc.getBlockById(id) as any,
+        );
+      } catch (e) {
+        this.doc.logger?.warn?.("beforeInputNormalizeRangeError: ", e);
+      }
+    }
     const effectiveRange = this._resolveBeforeInputRange(
       this.doc.selection.value,
       targetRange,
     );
     if (!effectiveRange) {
-      return;
+      ev.preventDefault();
+      this.doc.selection.blur();
+      return true;
     }
 
-    const normalizedRange =
-      effectiveRange instanceof BlockSelection
-        ? endpointsToLegacy({
-            start: effectiveRange.start,
-            end: effectiveRange.end,
-          })
-        : effectiveRange;
-
-    const { from, to, collapsed } = normalizedRange;
     const text = getPlainTextFromInputEvent(ev);
-
-    if (from.type === "selected" && (!to || to.type === "selected")) {
+    let plan = this._planSelectionEdit(effectiveRange);
+    if (plan.kind === "unsupported") {
       ev.preventDefault();
-      if (text) {
-        this._replaceSelectedBlocksWithParagraph(effectiveRange, text) ||
-          this.doc.selection.blur();
-      } else {
-        this._deleteAllSelected(effectiveRange);
-      }
-      return;
+      this.doc.selection.blur();
+      return true;
+    }
+    const isDelete = ev.inputType.startsWith("delete");
+    if (
+      isDelete &&
+      staticRange &&
+      staticRange.startContainer === staticRange.endContainer &&
+      isZeroSpace(staticRange.startContainer)
+    ) {
+      plan = this._adjustZeroSpaceDeletePlan(plan);
+    }
+    if (!this._tryAssertInputPlan(
+      ev,
+      plan,
+      text ? BlockReadonlyOperation.Replace : BlockReadonlyOperation.Delete,
+    )) {
+      return true;
     }
 
-    if (to) {
+    if (plan.kind === "gap") {
       ev.preventDefault();
-      this._replaceText(effectiveRange, text, true);
-      const cursorPos =
-        from.type === "text" ? from : to.type === "text" ? to : null;
-      if (!cursorPos) {
-        this.doc.selection.recalculate();
-        return;
-      }
-      this.doc.selection.setSelection({
-        ...cursorPos,
-        index: cursorPos.index + (text?.length || 0),
-        length: 0,
-      });
-      return;
+      if (text && !this._insertParagraphAtGap(plan, text)) this.doc.selection.blur();
+      return true;
     }
 
-    // delete content
-    if (from.type === "text" && ev.inputType.startsWith("delete")) {
+    if (plan.kind === "boundary") {
       ev.preventDefault();
-      let deleteRange: INormalizedRange = normalizedRange;
-      // 要删除的可能是embed节点
-      if (
-        staticRange &&
-        staticRange.startContainer === staticRange.endContainer &&
-        isZeroSpace(staticRange.startContainer) &&
-        normalizedRange.from.type === "text"
-      ) {
-        deleteRange = {
-          ...normalizedRange,
-          from: {
-            ...normalizedRange.from,
-            index: normalizedRange.from.index - 1,
-            length: 1,
-          },
-        };
+      const handled = text
+        ? this._replaceBoundarySelectionWithText(plan, text)
+        : this._deleteBoundarySelection(plan);
+      if (!handled) this.doc.selection.blur();
+      return true;
+    }
+
+    if (plan.kind === "table-cell") {
+      ev.preventDefault();
+      const handled = text
+        ? this._replaceTableCellSelection(plan, text, "text-cursor")
+        : this._replaceTableCellSelection(plan, null, "table-selection");
+      if (!handled) this.doc.selection.blur();
+      return true;
+    }
+
+    if (plan.kind === "block-range") {
+      ev.preventDefault();
+      const handled = text
+        ? this._replaceSelectedBlocksWithParagraph(plan, text)
+        : this._deleteAllSelected(plan);
+      if (!handled) this.doc.selection.blur();
+      return true;
+    }
+
+    if (plan.kind === "range") {
+      ev.preventDefault();
+      if (!this._replacePlannedRange(plan, text, true)) {
+        this.doc.selection.blur();
+        return true;
       }
-      this._replaceText(deleteRange);
-      if (deleteRange.from.type === "text") {
-        this.doc.selection.setCursorAt(
-          deleteRange.from.block as any,
-          deleteRange.from.index,
-        );
+      this._syncPlannedRangeSelection(plan, text?.length ?? 0);
+      return true;
+    }
+
+    if (plan.kind !== "text-cursor") {
+      ev.preventDefault();
+      this.doc.selection.blur();
+      return true;
+    }
+
+    const block = this._getLiveBlockById(plan.blockId);
+    if (
+      !block ||
+      !this.doc.isEditable(block) ||
+      plan.offset < 0 ||
+      plan.offset > block.textLength
+    ) {
+      ev.preventDefault();
+      this.doc.selection.blur();
+      return true;
+    }
+    const editableBlock = block as EditableBlockComponent;
+
+    if (isDelete) {
+      ev.preventDefault();
+      if (!this._setTextCursor(editableBlock.id, plan.offset)) {
+        this.doc.selection.blur();
       }
-      return;
+      return true;
     }
 
     if (!text) return;
 
+    const typingAttrs = this._getTypingAttrs(
+      editableBlock.id,
+      plan.offset,
+      { allowNearby: true },
+    );
+    if (typingAttrs !== undefined) {
+      ev.preventDefault();
+      this._insertTextWithRevision(editableBlock, plan.offset, text, typingAttrs);
+      if (!this._setTextCursor(editableBlock.id, plan.offset + text.length)) {
+        this.doc.selection.blur();
+      }
+      return;
+    }
+    this.clearNextInsertAttrs();
+
     let needsRerender = false;
 
     // in zero text
-    if (staticRange && collapsed && isZeroSpace(staticRange.startContainer)) {
+    if (staticRange && isZeroSpace(staticRange.startContainer)) {
       ev.preventDefault();
       const zeroTextEle = staticRange.startContainer.parentElement!;
+      const ownerDocument = zeroTextEle.ownerDocument;
       const textElement: HTMLElement =
-        document.createElement(INLINE_TEXT_NODE_TAG);
+        ownerDocument.createElement(INLINE_TEXT_NODE_TAG);
       textElement.textContent = text;
       // <c-element><embed></embed><c-zero-text>ZWS;↓</c-zero-text></c-element>
       if (zeroTextEle.parentElement?.localName === INLINE_ELEMENT_TAG) {
@@ -516,7 +1458,7 @@ export class InputTransformer {
         zeroTextEle.parentElement.after(cloneElement);
       } else {
         // <paragraph><c-zero-text>ZWS;↓</c-zero-text></paragraph>
-        const cElement = document.createElement(INLINE_ELEMENT_TAG);
+        const cElement = ownerDocument.createElement(INLINE_ELEMENT_TAG);
         cElement.appendChild(textElement);
         zeroTextEle.after(cElement);
       }
@@ -526,10 +1468,10 @@ export class InputTransformer {
     // in inline end break
     if (
       staticRange &&
-      collapsed &&
-      staticRange.startContainer instanceof HTMLElement &&
+      isElementNode(staticRange.startContainer) &&
       staticRange.startContainer.classList.contains(INLINE_END_BREAK_CLASS)
     ) {
+      const ownerDocument = staticRange.startContainer.ownerDocument;
       const prevElement = staticRange.startContainer.previousElementSibling!;
       const child = prevElement.firstElementChild as HTMLElement | null;
       if (
@@ -540,9 +1482,9 @@ export class InputTransformer {
         (child.firstChild as Text).insertData(len, text);
         ev.preventDefault();
       } else {
-        const cElement = document.createElement(INLINE_ELEMENT_TAG);
+        const cElement = ownerDocument.createElement(INLINE_ELEMENT_TAG);
         const textElement: HTMLElement =
-          document.createElement(INLINE_TEXT_NODE_TAG);
+          ownerDocument.createElement(INLINE_TEXT_NODE_TAG);
         textElement.textContent = text;
         cElement.appendChild(textElement);
         staticRange.startContainer.before(cElement);
@@ -551,65 +1493,25 @@ export class InputTransformer {
       needsRerender = true;
     }
 
-    if (from.type !== "text") return;
-    if (!collapsed) {
-      ev.preventDefault();
-      this.doc.crud.undoManager.captureSelectionBeforeChange();
-      from.block.replaceText(
-        from.index,
-        from.length,
-        text,
-        this._inheritedReplaceAttrs(from.block, from.index, from.length),
-      );
-      this.doc.selection.setSelection({
-        ...from,
-        index: from.index + (text?.length || 0),
-        length: 0,
-      });
-      return;
-    }
-
-    const pendingInsertAttrs = this.consumeNextInsertAttrs(
-      from.block.id,
-      from.index,
-      { allowNearby: true },
-    );
-
-    if (pendingInsertAttrs !== undefined) {
-      ev.preventDefault();
-      this.doc.crud.transact(() => {
-        from.block.yText.insert(from.index, text, pendingInsertAttrs);
-      });
-      this.doc.selection.setSelection({
-        ...from,
-        index: from.index + text.length,
-        length: 0,
-      });
-      return;
-    }
-
-    if (this.hasNextInsertAttrs()) {
-      this.clearNextInsertAttrs();
-    }
-
     if (needsRerender) {
       // Zero-space / end-break: DOM was manually patched above, use ORIGIN_SKIP_SYNC + rerender
-      this.doc.crud.transact(() => {
-        from.block.yText.insert(from.index, text);
-      }, ORIGIN_SKIP_SYNC);
-      from.block.rerender();
-      from.block.setInlineRange(from.index + text.length);
+      this._insertTextWithRevision(
+        editableBlock,
+        plan.offset,
+        text,
+        undefined,
+        ORIGIN_SKIP_SYNC,
+      );
+      editableBlock.rerender();
+      editableBlock.setInlineRange(plan.offset + text.length);
+      this.doc.selection.scrollSelectionIntoView?.();
     } else {
       // Normal input: controlled rendering — preventDefault lets observer sync blot tree
       ev.preventDefault();
-      this.doc.crud.transact(() => {
-        from.block.yText.insert(from.index, text);
-      });
-      this.doc.selection.setSelection({
-        ...from,
-        index: from.index + text.length,
-        length: 0,
-      });
+      this._insertTextWithRevision(editableBlock, plan.offset, text);
+      if (!this._setTextCursor(editableBlock.id, plan.offset + text.length)) {
+        this.doc.selection.blur();
+      }
     }
   }
 
@@ -619,45 +1521,49 @@ export class InputTransformer {
     if (!this._isPrintableKey(ev)) return;
 
     const selection = this.doc.selection.value;
-    if (
-      !selection ||
-      selection.collapsed ||
-      selection.start.type !== "selected"
-      // || selection.commonParent !== this.doc.rootId
-    )
-      return;
 
-    ev.preventDefault();
-
-    if (selection.end.type === "text") {
-      this._replaceText(selection, ev.key, true);
-      this.doc.selection.setSelection({
-        blockId: selection.end.blockId,
-        type: "text",
-        index: ev.key.length,
-        length: 0,
-      });
+    if (!selection) return;
+    if (this._isAbsoluteObjectSelection(selection)) {
+      ev.preventDefault();
       return true;
     }
+    if (
+      !this._hasWholeBlockEndpoint(selection) &&
+      !this._hasBoundaryEndpoint(selection) &&
+      !this._hasTableCellSelection(selection)
+    ) {
+      return;
+    }
 
-    this._replaceSelectedBlocksWithParagraph(selection, ev.key);
-    // || this.doc.selection.blur()
-    return true;
+    try {
+      if (this._handlePrintableModelSelection(selection, ev.key)) {
+        ev.preventDefault();
+        return true;
+      }
+    } catch (error) {
+      if (!(error instanceof BlockReadonlyError) && !(error instanceof DocumentCompositionMutationError)) throw error;
+      ev.preventDefault();
+      return true;
+    }
+    return;
   }
 
   private _replaceSelectedBlocksWithParagraph(
-    range: INormalizedRange | BlockSelection,
+    range: BlockRangeEditPlan,
     text: string,
-  ) {
-    if (range instanceof BlockSelection) {
-      range = endpointsToLegacy({ start: range.start, end: range.end });
-    }
-
-    const { from, to } = range;
-    const target = to || from;
-    const resolved = this._resolveBlockSelectionHost(target.block);
+  ): boolean {
+    const target = this._resolveWholeBlockRange(range);
+    if (!target) return false;
+    const resolved = this._resolveBlockSelectionHost(target.end);
     if (!resolved) {
       return false;
+    }
+    if (
+      this.doc.revisions?.isTracking &&
+      (resolved.mode === "inside" || target.start.parentId !== target.end.parentId)
+    ) {
+      return this.doc.revisions.runWithoutTracking(() =>
+        this._replaceSelectedBlocksWithParagraph(range, text));
     }
 
     this.doc.crud.undoManager.captureSelectionBeforeChange();
@@ -670,208 +1576,497 @@ export class InputTransformer {
       const editable = this._clearContainerToEmptyParagraph(resolved.host);
       if (!editable) return false;
       if (text) {
-        this.doc.crud.transact(() => {
-          editable.yText.insert(0, text);
-        });
+        this._insertTextWithRevision(editable, 0, text);
       }
-      this.doc.selection.setSelection({
-        blockId: editable.id,
-        type: "text",
-        index: text ? text.length : 0,
-        length: 0,
-      });
-      return true;
+      return this._setTextCursor(editable.id, text ? text.length : 0);
     }
 
     const paragraph = this.doc.schemas.createSnapshot("paragraph", [text]);
-    this.doc.crud.transact(() => {
-      this.doc.crud.insertBlocksAfter((to || from).blockId, [paragraph]);
-      if (to) {
-        const throughPath = this.doc.queryBlocksThroughPathDeeply(
-          from.block,
-          to.block,
-        );
-        if (throughPath.length) {
-          throughPath.forEach((through) => {
-            this.doc.crud.deleteBlocks(
-              through.parent,
-              through.index,
-              through.length,
-            );
-          });
+    this._runRevisionGroup(() => {
+      this.doc.crud.transact(() => {
+        this.doc.crud.insertBlocksAfter(target.end.id, [paragraph]);
+        if (target.start.id !== target.end.id) {
+          const throughPath = this.doc.queryBlocksThroughPathDeeply(
+            target.start,
+            target.end,
+          );
+          if (throughPath.length) {
+            throughPath.forEach((through) => {
+              this.doc.crud.deleteBlocks(
+                through.parent,
+                through.index,
+                through.length,
+              );
+            });
+          }
+          this.doc.crud.deleteBlockById(target.end.id);
         }
-        this.doc.crud.deleteBlockById(to.blockId);
-      }
-      this.doc.crud.deleteBlockById(from.blockId);
+        this.doc.crud.deleteBlockById(target.start.id);
+      });
     });
 
-    this.doc.selection.setCursorAtBlock(paragraph.id, false);
+    this._setTextSelectionWhenReady(paragraph.id, text.length);
     return true;
   }
 
-  private _replaceText(
-    range: INormalizedRange | BlockSelection,
+  private _hasBoundaryEndpoint(selection: BlockSelection): boolean {
+    return selection.start?.type === "boundary" || selection.end?.type === "boundary";
+  }
+
+  private _hasWholeBlockEndpoint(selection: BlockSelection): boolean {
+    return selection.start?.type === "selected" || selection.end?.type === "selected";
+  }
+
+  private _resolveWholeBlockRange(
+    range: BlockSelection | BlockRangeEditPlan,
+  ): ResolvedBlockRange | null {
+    const plan = range instanceof BlockSelection
+      ? this._planSelectionEdit(range)
+      : range;
+    if (plan.kind !== "block-range") return null;
+    const start = this._getLiveBlockById(plan.startBlockId);
+    const end = this._getLiveBlockById(plan.endBlockId);
+    return start && end ? {start, end} : null;
+  }
+
+  private _handlePrintableModelSelection(
+    selection: BlockSelection,
+    text: string,
+  ): boolean | undefined {
+    const plan = this._planSelectionEdit(selection);
+    this._assertPlanWritable(plan, BlockReadonlyOperation.Replace);
+
+    switch (plan.kind) {
+      case "table-cell":
+        this._replaceTableCellSelection(plan, text, "text-cursor") ||
+          this.doc.selection.blur();
+        return true;
+      case "boundary":
+        this._replaceBoundarySelectionWithText(plan, text) ||
+          this.doc.selection.blur();
+        return true;
+      case "block-range":
+        this._replaceSelectedBlocksWithParagraph(plan, text) ||
+          this.doc.selection.blur();
+        return true;
+      case "range":
+        if (!this._replacePlannedRange(plan, text, true)) {
+          this.doc.selection.blur();
+          return true;
+        }
+        this._syncPlannedRangeSelection(plan, text.length);
+        return true;
+      default:
+        return;
+    }
+  }
+
+  private _resolveReplaceEdge(
+    edge: SelectionReplaceEdge,
+  ): ResolvedReplaceEdge | null {
+    const block = this._getLiveBlockById(edge.blockId);
+    if (!block) return null;
+    if (edge.kind === "block") return {...edge, block};
+    const textLength = typeof (block as EditableBlockComponent).textLength === "number"
+      ? (block as EditableBlockComponent).textLength
+      : (block as EditableBlockComponent).yText?.length;
+    const isEditable = typeof this.doc.isEditable === "function" &&
+      this.doc.isEditable(block);
+    if (!isEditable || typeof textLength !== "number") return null;
+    if (
+      !Number.isInteger(edge.from) ||
+      !Number.isInteger(edge.to) ||
+      edge.from < 0 ||
+      edge.to < edge.from ||
+      edge.to > textLength
+    ) {
+      return null;
+    }
+    return {...edge, block: block as EditableBlockComponent};
+  }
+
+  private _stabilizePlannedRangeCursor(
+    point: {blockId: string; offset: number} | null,
+  ): void {
+    if (point && this.doc.selection?.replay) {
+      this.doc.selection.replay({
+        anchor: {blockId: point.blockId, type: "text", offset: point.offset},
+        head: {blockId: point.blockId, type: "text", offset: point.offset},
+        commonParent: point.blockId,
+      });
+      return;
+    }
+    this.doc.selection?.blur?.();
+  }
+
+  private _replacePlannedRange(
+    plan: RangeEditPlan,
     text?: string | null,
     merge = false,
     skipAppend = false,
-  ) {
-    if (range instanceof BlockSelection) {
-      range = endpointsToLegacy({ start: range.start, end: range.end });
+  ): boolean {
+    return this._typingFormat.runEdit(() => this._executePlannedRange(plan, text, merge, skipAppend));
+  }
+
+  private _executePlannedRange(
+    plan: Extract<SelectionEditPlan, {kind: "range"}>,
+    text?: string | null,
+    merge = false,
+    skipAppend = false,
+  ): boolean {
+    if (this.doc.revisions?.isTracking) {
+      return this._trackPlannedRange(plan, text, merge);
     }
-    const { from, to, collapsed } = range;
-    if (collapsed) return;
+    const start = this._resolveReplaceEdge(plan.start);
+    const end = plan.end ? this._resolveReplaceEdge(plan.end) : null;
+    if (!start || (plan.end && !end)) return false;
+    const insertionEnd = start.kind === "block" && end?.kind === "text"
+      ? end
+      : null;
+    if (start.kind === "block" && !insertionEnd) return false;
 
-    // Pre-capture selection for undo BEFORE the transaction mutates yText
+    const emptiedTextAttrs = !text && start.kind === "text" && start.from === 0 && start.to === start.block.textLength
+      ? this._typingFormat.getForBlock(start.blockId) ?? this._inheritedReplaceAttrs(start.block, start.from, start.to) ?? {}
+      : undefined;
+
     this.doc.crud.undoManager.captureSelectionBeforeChange();
+    if (plan.stabilizeAt) this._stabilizePlannedRangeCursor(plan.stabilizeAt);
 
-    // Capture remaining delta from to block BEFORE the transaction deletes it
+    const shouldMergeTail = merge && plan.tailMode === "merge";
     let remainingDelta: DeltaOperation[] | null = null;
-    if (merge && to?.type === "text" && from.type === "text") {
-      const remainStart = to.index + to.length;
-      if (remainStart < to.block.textLength) {
+    if (shouldMergeTail && start.kind === "text" && end?.kind === "text") {
+      if (end.to < end.block.textLength) {
         remainingDelta = [
-          ...sliceDelta(
-            to.block.textDeltas(),
-            remainStart,
-            to.block.textLength,
-          ),
+          ...sliceDelta(end.block.textDeltas(), end.to, end.block.textLength),
         ];
       }
     }
 
-    // Inherit the replaced range's shared inline format so typed-over text keeps
-    // its formatting (bold/italic/color/…). Read from the block we insert into,
-    // BEFORE the transaction deletes the slice.
     let insertAttrs: DeltaInsert["attributes"] | undefined;
     if (text) {
-      if (from.type === "text") {
+      const insertionEdge = start.kind === "text"
+        ? start
+        : end?.kind === "text"
+          ? end
+          : null;
+      if (insertionEdge) {
         insertAttrs = this._inheritedReplaceAttrs(
-          from.block,
-          from.index,
-          from.length,
+          insertionEdge.block,
+          insertionEdge.from,
+          insertionEdge.to - insertionEdge.from,
         );
-      } else if (to?.type === "text") {
-        insertAttrs = this._inheritedReplaceAttrs(to.block, to.index, to.length);
       }
     }
 
+    const throughPath = end
+      ? this.doc.queryBlocksThroughPathDeeply(start.block, end.block)
+        .filter(through => through.length > 0)
+      : [];
+    if (throughPath.length) {
+      // Finish structural deletion first. Yjs deep observers update ModelGraph
+      // and component children caches only after this transaction closes; doing
+      // endpoint deletion in the same callback would use stale parent indexes.
+      this.doc.crud.transact(() => {
+        throughPath.forEach(through => {
+          this.doc.crud.deleteBlocks(through.parent, through.index, through.length);
+        });
+      });
+    }
+
     this.doc.crud.transact(() => {
-      if (to) {
-        const throughPath = this.doc.queryBlocksThroughPathDeeply(
-          from.block,
-          to.block,
-        );
-        if (throughPath.length) {
-          throughPath.forEach((through) => {
-            this.doc.crud.deleteBlocks(
-              through.parent,
-              through.index,
-              through.length,
-            );
-          });
+      // A cross-container path may already have removed an endpoint (or one of
+      // its ancestors). Resolve liveness after those structural deletions so the
+      // endpoint is not deleted/mutated a second time against a stale VM ref.
+      const liveStart = this._getLiveBlockById(start.blockId);
+      if (!liveStart) return;
+
+      if (start.kind === "text") {
+        const liveStartText = liveStart as EditableBlockComponent;
+        const deleteLength = start.to - start.from;
+        liveStartText.yText.delete(start.from, deleteLength);
+        if (text) liveStartText.yText.insert(start.from, text, insertAttrs);
+        if (emptiedTextAttrs !== undefined) {
+          this._paragraphFormat.remember(start.blockId, emptiedTextAttrs, true);
+          if (liveStartText.yText.length === 0) {
+            this._typingFormat.set(normalizeParagraphTextDefaults(emptiedTextAttrs), {blockId: start.blockId, index: 0}, true);
+          }
         }
-      }
 
-      if (from.type === "text") {
-        const yText = from.block.yText;
-        yText.delete(from.index, from.length);
-        text && yText.insert(from.index, text, insertAttrs);
-
-        if (to) {
-          if (merge) {
-            // Delete to block entirely; remaining content appended after transaction
-            this.doc.crud.deleteBlockById(to.blockId);
+        // Resolve the endpoint only after the structural transaction and its
+        // observers have settled; the earlier VM reference may now be stale.
+        const liveEnd = end ? this._getLiveBlockById(end.blockId) : null;
+        if (end && liveEnd) {
+          if (shouldMergeTail) {
+            this.doc.crud.deleteBlockById(end.blockId);
           } else if (
-            (to.type === "text" && to.length >= to.block.textLength) ||
-            to.type === "selected"
+            end.kind === "block" ||
+            (end.kind === "text" && end.to >= end.block.textLength)
           ) {
-            this.doc.crud.deleteBlockById(to.blockId);
-          } else if (to.type === "text" && (to.index > 0 || to.length > 0)) {
-            const yText = to.block.yText;
-            yText.delete(to.index, to.length);
+            this.doc.crud.deleteBlockById(end.blockId);
+          } else if (end.kind === "text" && (end.from > 0 || end.to > end.from)) {
+            (liveEnd as EditableBlockComponent).yText.delete(end.from, end.to - end.from);
           }
         }
         return;
       }
 
-      // 无法输入的情况
-      if (to?.type !== "text") return;
-      this.doc.crud.deleteBlockById(from.blockId);
-      to.block.replaceText(to.index, to.length, text, insertAttrs);
+      this.doc.crud.deleteBlockById(start.blockId);
+      const liveEnd = end ? this._getLiveBlockById(end.blockId) : null;
+      if (!liveEnd) return;
+      (liveEnd as EditableBlockComponent).replaceText(
+        insertionEnd!.from,
+        insertionEnd!.to - insertionEnd!.from,
+        text,
+        insertAttrs,
+      );
     });
 
-    // After transaction: append remaining delta from to block to from block.
-    // This is a separate implicit transaction, so the observer gets a simple
-    // append delta (retain + insert) instead of a complex combined delta.
-    if (remainingDelta?.length && from.type === "text" && !skipAppend) {
-      const appendDelta: DeltaOperation[] = [
-        { retain: from.block.yText.length },
+    if (remainingDelta?.length && start.kind === "text" && !skipAppend) {
+      const liveStart = this._getLiveBlockById<EditableBlockComponent>(start.blockId);
+      if (!liveStart) return true;
+      liveStart.applyDeltaOperations([
+        {retain: liveStart.yText.length},
         ...remainingDelta,
-      ];
-      from.block.applyDeltaOperations(appendDelta);
+      ]);
     }
+    return true;
   }
 
-  private _deleteAllSelected(range: INormalizedRange | BlockSelection) {
-    if (range instanceof BlockSelection) {
-      range = endpointsToLegacy({ start: range.start, end: range.end });
-    }
-    const { from, to } = range;
+  private _trackPlannedRange(
+    plan: RangeEditPlan,
+    text?: string | null,
+    merge = false,
+  ): boolean {
+    const start = this._resolveReplaceEdge(plan.start);
+    const end = plan.end ? this._resolveReplaceEdge(plan.end) : null;
+    if (!start || (plan.end && !end)) return false;
 
-    // Pre-capture selection for undo BEFORE deleting blocks
+    const shouldMerge = !!end && merge && plan.tailMode === "merge";
+    if (end && start.block.parentId !== end.block.parentId) {
+      return this.doc.revisions.runWithoutTracking(() =>
+        this._replacePlannedRange(plan, text, merge));
+    }
+
     this.doc.crud.undoManager.captureSelectionBeforeChange();
+    if (plan.stabilizeAt) this._stabilizePlannedRangeCursor(plan.stabilizeAt);
+    const emptiedTextAttrs = !text && start.kind === "text" && start.from === 0 && start.to === start.block.textLength
+      ? this._typingFormat.getForBlock(start.blockId) ?? this._inheritedReplaceAttrs(start.block, start.from, start.to) ?? {}
+      : undefined;
 
-    const prevBlock = this.doc.prevSibling(range.from.block);
-    if (prevBlock) {
-      this.doc.selection.setCursorAtBlock(prevBlock, false);
-    } else {
-      const nextBlock = this.doc.nextSibling(
-        range.to?.block || range.from.block,
-      );
-      if (nextBlock) this.doc.selection.setCursorAtBlock(nextBlock, true);
-      // else {
-      //   const parent = range.from.block.parentBlock
-      //   if (parent) {
-      //     this.doc.selection.selectAllChildren(parent)
-      //   }
-      //   return true
-      // }
-    }
-    this.doc.yDoc.transact(() => {
-      if (!to) {
-        this.doc.crud.deleteBlockById(from.blockId);
-        return;
-      }
-      const throughPath = this.doc.queryBlocksThroughPathDeeply(
-        from.block,
-        to.block,
-      );
-      if (throughPath.length) {
-        throughPath.forEach((through) => {
-          this.doc.crud.deleteBlocks(
-            through.parent,
-            through.index,
-            through.length,
-          );
+    this._runRevisionGroup(() => {
+      const throughPath = end
+        ? this.doc.queryBlocksThroughPathDeeply(start.block, end.block)
+          .filter(through => through.length > 0)
+        : [];
+      throughPath.forEach(through => {
+        this.doc.crud.deleteBlocks(through.parent, through.index, through.length);
+      });
+
+      if (start.kind === "text") {
+        this.doc.crud.transact(() => {
+          if (emptiedTextAttrs !== undefined) this._paragraphFormat.remember(start.blockId, emptiedTextAttrs);
+          this.doc.revisions.deleteText(start.blockId, start.from, start.to - start.from);
         });
+      } else {
+        this.doc.crud.deleteBlockById(start.blockId);
       }
-      this.doc.crud.deleteBlockById(from.blockId);
-      this.doc.crud.deleteBlockById(to.blockId);
+
+      if (end && end.blockId !== start.blockId) {
+        if (end.kind === "text") {
+          this.doc.revisions.deleteText(
+            end.blockId,
+            end.from,
+            end.to - end.from,
+          );
+        } else {
+          this.doc.crud.deleteBlockById(end.blockId);
+        }
+      }
+
+      if (shouldMerge && start.kind === "text" && end?.kind === "text") {
+        this.doc.revisions.recordBoundary(
+          "block-merge",
+          start.block.parentId!,
+          start.blockId,
+          end.blockId,
+        );
+      }
+
+      if (text && plan.insertAt) {
+        const insertBlock = this._getLiveBlockById<EditableBlockComponent>(
+          plan.insertAt.blockId,
+        );
+        if (insertBlock) {
+          const attrs = this._inheritedReplaceAttrs(
+            insertBlock,
+            plan.insertAt.offset,
+            start.kind === "text" && start.blockId === insertBlock.id
+              ? start.to - start.from
+              : 0,
+          );
+          this.doc.revisions.insertText(
+            insertBlock.id,
+            plan.insertAt.offset,
+            text,
+            attrs,
+          );
+        }
+      }
     });
     return true;
   }
 
-  deleteByRange(range: INormalizedRange | BlockSelection, merge = false) {
-    if (range instanceof BlockSelection) {
-      range = endpointsToLegacy({ start: range.start, end: range.end });
-    }
+  private _deleteAllSelected(
+    range: BlockSelection | BlockRangeEditPlan,
+  ): boolean {
+    const target = this._resolveWholeBlockRange(range);
+    if (!target) return false;
     if (
-      range.from.type === "selected" &&
-      (!range.to || range.to.type === "selected")
+      this.doc.revisions?.isTracking &&
+      target.start.parentId !== target.end.parentId
     ) {
-      return this._deleteAllSelected(range);
+      return this.doc.revisions.runWithoutTracking(() =>
+        this._deleteAllSelected(range));
     }
-    return this._replaceText(range, null, merge);
+
+    // Pre-capture selection for undo BEFORE deleting blocks
+    this.doc.crud.undoManager.captureSelectionBeforeChange();
+
+    const parent = target.start.parentBlock;
+    const deletedIndex = this._blockIndexInParent(target.start, parent);
+    const prevBlock = this.doc.prevSibling(target.start);
+    const nextBlock = this.doc.nextSibling(target.end);
+    // 子栏自身没有可见的 gap 光标。先保存相邻栏的内容身份；减为单栏时，
+    // columns/column 容器会在事务尾部销毁，不能在删除后再沿旧组件取落点。
+    const adjacentColumn = parent?.flavour === 'columns' ? prevBlock ?? nextBlock : null;
+    const columnLandingAtStart = !prevBlock;
+    const columnLandingId = adjacentColumn
+      ? (searchEditableDescendant(adjacentColumn, columnLandingAtStart) ??
+        (columnLandingAtStart ? adjacentColumn.firstChildren : adjacentColumn.lastChildren))?.id
+      : undefined;
+    this._runRevisionGroup(() => {
+      this.doc.crud.transact(() => {
+        if (target.start.id === target.end.id) {
+          this.doc.crud.deleteBlockById(target.start.id);
+          return;
+        }
+        const throughPath = this.doc.queryBlocksThroughPathDeeply(
+          target.start,
+          target.end,
+        );
+        if (throughPath.length) {
+          throughPath.forEach((through) => {
+            this.doc.crud.deleteBlocks(
+              through.parent,
+              through.index,
+              through.length,
+            );
+          });
+        }
+        this.doc.crud.deleteBlockById(target.start.id);
+        this.doc.crud.deleteBlockById(target.end.id);
+      });
+    });
+    const columnLanding = columnLandingId && this._getLiveBlockById(columnLandingId);
+    if (columnLanding && focusBlockSelectionEdge(this.doc, columnLanding, columnLandingAtStart)) return true;
+    restoreSelectionAfterBlockDelete(this.doc, parent, deletedIndex, prevBlock, nextBlock, "previous");
+    return true;
+  }
+
+  private _blockIndexInParent(
+    block: BlockCraft.BlockComponent,
+    parent: BlockCraft.BlockComponent | null | undefined,
+  ): number {
+    const index = parent?.childrenIds?.indexOf(block.id) ?? -1;
+    if (index >= 0) return index;
+    return typeof block.getIndexOfParent === "function"
+      ? block.getIndexOfParent()
+      : 0;
+  }
+
+  deleteByRange(range: BlockSelection, merge = false) {
+    const plan = this._planSelectionEdit(range);
+    this._assertPlanWritable(plan, BlockReadonlyOperation.Delete);
+    switch (plan.kind) {
+      case "range":
+        return this._replacePlannedRange(plan, null, merge);
+      case "block-range":
+        return this._deleteAllSelected(plan);
+      case "boundary":
+        return this._deleteBoundarySelection(plan);
+      case "table-cell":
+        return !!this._replaceTableCellSelection(plan, null, "table-selection");
+      case "gap":
+        return this._deleteGapBlockAt(plan, plan.side);
+      default:
+        return false;
+    }
+  }
+
+  private _deleteGapBlockAt(
+    source: GapEditPlan,
+    side: "before" | "after",
+  ): boolean {
+    const block = source.side === side
+      ? this._getLiveBlockById(source.blockId)
+      : null;
+    if (!block) return false;
+    if (
+      block.nodeType !== BlockNodeType.void &&
+      block.nodeType !== BlockNodeType.block
+    ) {
+      return false;
+    }
+
+    const parent = block.parentBlock;
+    const index = block.getIndexOfParent();
+    const prevBlock = this.doc.prevSibling(block);
+    const nextBlock = this.doc.nextSibling(block);
+
+    this.doc.crud.undoManager?.captureSelectionBeforeChange?.();
+    this.doc.crud.deleteBlockById(block.id);
+    restoreSelectionAfterBlockDelete(this.doc, parent, index, prevBlock, nextBlock);
+    return true;
+  }
+
+  private _handleModelDeleteSelection(
+    sel: BlockSelection,
+    gapSide: "before" | "after",
+  ): boolean | null {
+    if (
+      !this._hasWholeBlockEndpoint(sel) &&
+      !this._hasBoundaryEndpoint(sel) &&
+      !this._hasTableCellSelection(sel) &&
+      sel.start.type !== "gap" &&
+      sel.end.type !== "gap"
+    ) {
+      return null;
+    }
+    const plan = this._planSelectionEdit(sel);
+    this._assertPlanWritable(plan, BlockReadonlyOperation.Delete);
+    switch (plan.kind) {
+      case "block-range":
+        return this._deleteAllSelected(plan);
+      case "boundary":
+        this._deleteBoundarySelection(plan) || this.doc.selection.blur();
+        return true;
+      case "range":
+        if (!this._hasBoundaryEndpoint(sel)) return null;
+        if (!this._replacePlannedRange(plan, null, true)) {
+          this.doc.selection.blur();
+          return true;
+        }
+        this._syncPlannedRangeSelection(plan);
+        return true;
+      case "table-cell":
+        this._replaceTableCellSelection(plan, null, "table-selection") ||
+          this.doc.selection.blur();
+        return true;
+      case "gap":
+        return this._deleteGapBlockAt(plan, gapSide) ? true : null;
+      default:
+        return null;
+    }
   }
 
   @BindHotKey({
@@ -884,9 +2079,26 @@ export class InputTransformer {
     const state = context.get("keyboardState");
     const sel = state.selection;
 
-    if (sel.isAllSelected) {
+    if (moveGapCaretAway(this.doc, sel, "before")) {
       context.preventDefault();
-      return this._deleteAllSelected(sel);
+      return true;
+    }
+    if (this._consumeReadonlyTextDeleteKey(context, sel)) return true;
+
+    // Gap-after + Backspace deletes the void/container block next to the caret,
+    // then recalculates synchronously so the next render does not read a stale
+    // selection that still points at the deleted block.
+    let modelDeleteResult: boolean | null;
+    try {
+      modelDeleteResult = this._handleModelDeleteSelection(sel, "after");
+    } catch (error) {
+      if (!(error instanceof BlockReadonlyError) && !(error instanceof DocumentCompositionMutationError)) throw error;
+      context.preventDefault();
+      return true;
+    }
+    if (modelDeleteResult !== null) {
+      context.preventDefault();
+      return modelDeleteResult;
     }
 
     if (!sel.collapsed || sel.start.type !== "text" || sel.start.offset !== 0)
@@ -943,11 +2155,20 @@ export class InputTransformer {
 
         // 如果是第一个空白的文本块，直接删除
         if (!block.textLength && parent.childrenLength > 1) {
-          this.doc.selection.selectOrSetCursorAtBlock(
-            parent.getChildrenByIndex(1),
-            true,
-          );
+          const nextBlock = parent.getChildrenByIndex(1);
+          if (nextBlock.flavour !== "placement-layout") {
+            this.doc.selection.selectOrSetCursorAtBlock(nextBlock, true);
+          }
           this.doc.crud.deleteBlockById(block.id);
+          if (nextBlock.flavour === "placement-layout") {
+            restoreSelectionAfterBlockDelete(
+              this.doc,
+              parent,
+              0,
+              null,
+              nextBlock,
+            );
+          }
           return true;
         }
 
@@ -964,6 +2185,33 @@ export class InputTransformer {
     // 如果前一个兄弟块是可编辑块
     if (this.doc.isEditable(prevBlock)) {
       context.preventDefault();
+      try {
+        this.doc.readonlyManager?.assertTextWritable(
+          prevBlock.id,
+          BlockReadonlyOperation.Text,
+          "input",
+        );
+        this.doc.readonlyManager?.assertRemovable(
+          [block.id],
+          BlockReadonlyOperation.Delete,
+          "input",
+        );
+      } catch (error) {
+        if (!(error instanceof BlockReadonlyError) && !(error instanceof DocumentCompositionMutationError)) throw error;
+        return true;
+      }
+      if (this.doc.revisions?.isTracking) {
+        prevBlock.setInlineRange(prevBlock.textLength);
+        this._runRevisionGroup(() => {
+          this.doc.revisions.recordBoundary(
+            "block-merge",
+            block.parentId!,
+            prevBlock.id,
+            block.id,
+          );
+        });
+        return true;
+      }
       // 「读取本块文本 → 并入前块 → 删除本块」必须是同一个 Yjs 事务：
       // 拆开时协同方会观察到文本已并入但本块仍存在的中间态。选区设置是
       // 纯本地副作用，放在事务外，避免 selectionChange$ 订阅者在事务中途执行。
@@ -974,11 +2222,12 @@ export class InputTransformer {
         prevBlock.applyDeltaOperations(deltas);
         this.doc.crud.deleteBlockById(block.id);
       });
-      this.doc.selection.recalculate();
       return true;
     }
 
-    this.doc.selection.selectBlock(prevBlock);
+    if (!focusBlockSelectionEdge(this.doc, prevBlock, false)) {
+      this.doc.selection.selectBlock(prevBlock);
+    }
     !block.textLength && this.doc.crud.deleteBlockById(block.id);
     context.preventDefault();
     return true;
@@ -989,9 +2238,24 @@ export class InputTransformer {
     const state = context.get("keyboardState");
     const sel = state.selection;
 
-    if (sel.isAllSelected) {
+    if (moveGapCaretAway(this.doc, sel, "after")) {
       context.preventDefault();
-      return this._deleteAllSelected(sel);
+      return true;
+    }
+    if (this._consumeReadonlyTextDeleteKey(context, sel)) return true;
+
+    // Gap-before + Delete mirrors Backspace from gap-after.
+    let modelDeleteResult: boolean | null;
+    try {
+      modelDeleteResult = this._handleModelDeleteSelection(sel, "before");
+    } catch (error) {
+      if (!(error instanceof BlockReadonlyError) && !(error instanceof DocumentCompositionMutationError)) throw error;
+      context.preventDefault();
+      return true;
+    }
+    if (modelDeleteResult !== null) {
+      context.preventDefault();
+      return modelDeleteResult;
     }
 
     const block = sel.firstBlock as any;
@@ -1006,6 +2270,33 @@ export class InputTransformer {
     if (nextBlock) {
       if (this.doc.isEditable(nextBlock)) {
         context.preventDefault();
+        try {
+          this.doc.readonlyManager?.assertTextWritable(
+            block.id,
+            BlockReadonlyOperation.Text,
+            "input",
+          );
+          this.doc.readonlyManager?.assertRemovable(
+            [nextBlock.id],
+            BlockReadonlyOperation.Delete,
+            "input",
+          );
+        } catch (error) {
+          if (!(error instanceof BlockReadonlyError) && !(error instanceof DocumentCompositionMutationError)) throw error;
+          return true;
+        }
+        if (this.doc.revisions?.isTracking) {
+          block.setInlineRange(block.textLength);
+          this._runRevisionGroup(() => {
+            this.doc.revisions.recordBoundary(
+              "block-merge",
+              block.parentId!,
+              block.id,
+              nextBlock.id,
+            );
+          });
+          return true;
+        }
         // 与 Backspace 合并对称：读取、并入、删块放进同一事务，见上方说明。
         block.setInlineRange(block.textLength);
         this.doc.crud.transact(() => {
@@ -1014,10 +2305,11 @@ export class InputTransformer {
           block.applyDeltaOperations(deltas);
           this.doc.crud.deleteBlockById(nextBlock.id);
         });
-        this.doc.selection.recalculate();
         return true;
       } else {
-        this.doc.selection.selectBlock(nextBlock);
+        if (!focusBlockSelectionEdge(this.doc, nextBlock, true)) {
+          this.doc.selection.selectBlock(nextBlock);
+        }
         context.preventDefault();
         return true;
       }
@@ -1029,7 +2321,11 @@ export class InputTransformer {
       context.preventDefault();
       return true;
     }
-    return false;
+    // Navigation already excludes placement-layout. At the root flow end,
+    // native Delete can still target text in that detached layer via DOM order.
+    // Consume the boundary key so beforeinput cannot merge it into body text.
+    context.preventDefault();
+    return true;
   }
 
   @BindHotKey({ key: "Tab", shiftKey: null })
@@ -1038,6 +2334,7 @@ export class InputTransformer {
 
     context.preventDefault();
     const sel = state.selection;
+    if (this._isAbsoluteObjectSelection(sel)) return true;
     const firstBlock = sel.firstBlock;
 
     const prevBlock = this.doc.prevSibling(firstBlock);
@@ -1049,7 +2346,7 @@ export class InputTransformer {
       return true;
     }
 
-    if (!state.raw.shiftKey && _newDepth > _prevDepth + 1) {
+    if (!state.raw.shiftKey && (_newDepth > MAX_TAB_INDENT_DEPTH || _newDepth > _prevDepth + 1)) {
       this.doc.messageService.warn("当前内容块已到最大缩进层级");
       return true;
     }
@@ -1060,6 +2357,14 @@ export class InputTransformer {
         sel.lastBlock,
         true,
       );
+      // Check the entire range before writing so a capped descendant cannot
+      // leave the selection partially indented or change its relative depths.
+      if (!state.raw.shiftKey && blocks.some(id =>
+        (this.doc.getBlockById(id)?.props.depth ?? 0) >= MAX_TAB_INDENT_DEPTH,
+      )) {
+        this.doc.messageService.warn("当前内容块已到最大缩进层级");
+        return true;
+      }
       this.doc.crud.transact(() => {
         for (const id of blocks) {
           const b = this.doc.getBlockById(id);
@@ -1090,47 +2395,94 @@ export class InputTransformer {
     const sel = state.selection;
 
     context.preventDefault();
+    if (this._isAbsoluteObjectSelection(sel)) return true;
+    const plan = this._planSelectionEdit(sel);
+    if (!this._tryAssertInputPlan(context, plan, BlockReadonlyOperation.Insert)) {
+      return true;
+    }
 
-    if (sel.isAllSelected) {
+    // Handle gap-cursor Enter: insert a new empty paragraph at the gap, keep the
+    // void/container block, and move the caret into the new paragraph.
+    if (plan.kind === "gap") {
+      if (!this._insertParagraphAtGap(plan, "", true)) this.doc.selection.blur();
+      return true;
+    }
+
+    if (plan.kind === "block-range") {
+      const target = this._resolveWholeBlockRange(plan);
+      if (!target) {
+        this.doc.selection.blur();
+        return true;
+      }
       const p = this.doc.schemas.createSnapshot("paragraph", [
         [],
-        sel.firstBlock.props,
+        target.start.props,
       ]);
       await (
         state.raw.ctrlKey
-          ? this.doc.chain().insertBeforeSnapshots(sel.firstBlock, [p])
-          : this.doc.chain().insertAfterSnapshots(sel.lastBlock, [p])
+          ? this.doc.chain().insertBeforeSnapshots(target.start, [p])
+          : this.doc.chain().insertAfterSnapshots(target.end, [p])
       )
         .setCursorAtBlock(p.id, true)
         .run();
       return true;
     }
 
-    if (!sel.collapsed) {
-      this._replaceText(sel);
-      if (sel.start.type === "text") {
-        this.doc.selection.setCursorAt(sel.firstBlock as any, sel.start.offset);
-      }
+    if (plan.kind === "boundary") {
+      this._replaceBoundarySelectionWithText(plan, "") ||
+        this.doc.selection.blur();
       return true;
     }
 
-    if (sel.start.type !== "text") return false;
-    const block = sel.firstBlock as any;
-    const offset = sel.start.offset;
+    if (plan.kind === "table-cell") {
+      this._replaceTableCellSelection(plan, null, "anchor-cursor") ||
+        this.doc.selection.blur();
+      return true;
+    }
 
-    // 强制同段换行
-    if (state.raw.shiftKey) {
-      block.insertText(offset, STR_LINE_BREAK);
+    if (plan.kind === "range") {
+      const wordArtLineBreak = plan.start.kind === "text" && !plan.end &&
+        this._getLiveBlockById(plan.start.blockId)?.flavour === "word-art";
+      if (!this._replacePlannedRange(plan, wordArtLineBreak ? STR_LINE_BREAK : undefined)) {
+        this.doc.selection.blur();
+        return true;
+      }
+      this._syncPlannedRangeSelection(plan, wordArtLineBreak ? 1 : 0);
+      return true;
+    }
+
+    if (plan.kind !== "text-cursor") {
+      this.doc.selection.blur();
+      return true;
+    }
+    const block: any = this._getLiveBlockById(plan.blockId);
+    if (!block || !this.doc.isEditable(block)) {
+      this.doc.selection.blur();
+      return true;
+    }
+    const offset = plan.offset;
+    const typingAttrs = this.peekNextInsertAttrs({blockId: block.id, index: offset});
+
+    // 艺术字的 Enter 与 Shift+Enter 均在当前对象的文本内换行。
+    if (state.raw.shiftKey || block.flavour === "word-art") {
+      this._typingFormat.runEdit(() => block.insertText(offset, STR_LINE_BREAK, typingAttrs));
       block.setInlineRange(offset + 1);
+      this.doc.selection.scrollSelectionIntoView?.();
       return true;
     }
 
     // 空段落
     if (!block.textLength) {
-      if (block.props.heading) {
+      const nextStyle = resolveNextParagraphStyle(block.flavour, block.props, true);
+      if (block.props.heading && !nextStyle.continueTextFormat) {
         block.updateProps({
           heading: null,
-        });
+          depth: 0, textAlign: null, fs: null, pfs: null, lh: null, psb: null, psa: null,
+          backColor: null, borderColor: null, decoration: null,
+          textDefaults: null, nextParagraphStyle: null,
+        } as any);
+        this._typingFormat.clear();
+        this._setTextCursor(block.id, 0);
         return true;
       }
 
@@ -1141,41 +2493,48 @@ export class InputTransformer {
         return true;
       }
 
-      const p = this.doc.schemas.createSnapshot("paragraph", [[], block.props]);
+      const defaults = normalizeParagraphTextDefaults(typingAttrs);
+      const style = block.flavour === 'paragraph' || (block.flavour === 'blockquote' && !nextStyle.continueTextFormat) ? nextStyle : {
+        flavour: 'paragraph' as const, props: {...block.props, heading: undefined, depth: 0}, continueTextFormat: true,
+      };
+      const p = this.doc.schemas.createSnapshot(style.flavour, [[], {
+        ...style.props, textDefaults: style.continueTextFormat ? defaults : undefined,
+      }]);
       await (
         block.flavour !== "paragraph"
           ? this.doc.chain().replaceWithSnapshots(block.id, [p])
           : this.doc.chain().insertAfterSnapshots(block, [p])
       )
+        .tap(() => {
+          this.setNextInsertAttrs(style.continueTextFormat ? defaults : {}, {blockId: p.id, index: 0});
+        })
         .selectOrSetCursorAtBlock(p.id, true)
         .run();
       return true;
+    }
+
+    if (this.doc.revisions?.isTracking) {
+      return this._trackParagraphSplit(block, offset);
     }
 
     // 在前面换行
     if (offset === 0) {
       const p = this.doc.schemas.createSnapshot(block.flavour, [
         [],
-        {
-          ...block.props,
-          heading: null,
-        },
+        block.props,
       ]);
       this.doc.crud.insertBlocksBefore(block, [p]);
       return true;
     }
 
     const deltas = sliceDelta(block.textDeltas(), offset);
+    const nextStyle = resolveNextParagraphStyle(block.flavour, block.props, offset === block.textLength);
+    const defaults = nextStyle.continueTextFormat ? normalizeParagraphTextDefaults(typingAttrs) : {};
     const p = this.doc.schemas.createSnapshot(
-      block.textLength && !block.heading && block.flavour !== "blockquote"
-        ? block.flavour
-        : "paragraph",
+      nextStyle.flavour,
       [
         deltas,
-        {
-          ...block.props,
-          heading: null,
-        },
+        {...nextStyle.props, textDefaults: Object.keys(defaults).length ? defaults : undefined},
       ],
     );
     void this.doc
@@ -1184,8 +2543,61 @@ export class InputTransformer {
         block.deleteText(offset);
         this.doc.crud.insertBlocksAfter(block, [p]);
       })
+      .tap(() => {
+        this.setNextInsertAttrs(defaults, {blockId: p.id, index: 0});
+      })
       .selectOrSetCursorAtBlock(p.id, true)
       .run();
+    return true;
+  }
+
+  private _trackParagraphSplit(
+    block: EditableBlockComponent,
+    offset: number,
+  ): true {
+    const parentId = block.parentId;
+    if (!parentId) {
+      this.doc.selection.blur();
+      return true;
+    }
+    const typingAttrs = this.peekNextInsertAttrs({blockId: block.id, index: offset});
+    const nextStyle = resolveNextParagraphStyle(block.flavour, block.props, offset === block.textLength);
+    const defaults = nextStyle.continueTextFormat ? normalizeParagraphTextDefaults(typingAttrs) : {};
+
+    const tail = sliceDelta(block.textDeltas(), offset);
+    const right = offset === 0
+      ? block
+      : null;
+    const paragraph = this.doc.schemas.createSnapshot(
+      nextStyle.flavour,
+      [
+        offset === 0 ? [] : tail,
+        {...nextStyle.props, textDefaults: Object.keys(defaults).length ? defaults : undefined},
+      ],
+    );
+
+    this.doc.crud.undoManager.captureSelectionBeforeChange();
+    this._runRevisionGroup(() => {
+      this.doc.crud.transact(() => {
+        this.doc.revisions.runWithoutTracking(() => {
+          if (offset === 0) {
+            this.doc.crud.insertBlocksBefore(block, [paragraph]);
+          } else {
+            block.yText.delete(offset, block.textLength - offset);
+            this.doc.crud.insertBlocksAfter(block, [paragraph]);
+          }
+        });
+        this.doc.revisions.recordBoundary(
+          "block-split",
+          parentId,
+          offset === 0 ? paragraph.id : block.id,
+          right?.id ?? paragraph.id,
+        );
+      });
+    });
+    const targetId = offset === 0 ? block.id : paragraph.id;
+    this.setNextInsertAttrs(defaults, {blockId: targetId, index: 0});
+    this._setTextSelectionWhenReady(targetId, 0);
     return true;
   }
 }

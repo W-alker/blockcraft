@@ -1,11 +1,10 @@
 {
   "name": "@ccc/blockcraft",
-  "version": "0.2.78",
+  "version": "0.11.22",
   "publishConfig": {
     "registry": "http://npm.runtongqiuben.com"
   },
   "peerDependencies": {
-    "@angular/animations": "^20.0.0",
     "@angular/cdk": "^20.0.0",
     "@angular/common": "^20.0.0",
     "@angular/core": "^20.0.0",
@@ -13,19 +12,16 @@
     "@angular/material": "^20.0.0",
     "@angular/platform-browser": "^20.0.0",
     "@angular/router": "^20.0.0",
-    "dom-to-image-more": "^3.5.0",
-    "hast": "^1.0.0",
+    "@cses/ui": "4.37.3",
     "mermaid": "^11.4.0",
     "nanoid": "^5.1.2",
-    "ng-zorro-antd": "^20.0.0",
-    "pdf-lib": "^1.17.1",
     "shiki": "^3.22.0",
     "katex": "^0.16.28",
     "konva": "^10.2.0",
     "reflect-metadata": "^0.2.2",
-    "rehype": "^13.0.2",
     "rehype-parse": "^9.0.1",
     "rehype-stringify": "^10.0.1",
+    "remark-directive": "^4.0.0",
     "unified": "^11.0.5",
     "mdast-util-gfm-autolink-literal": "^2.0.1",
     "mdast-util-gfm-strikethrough": "^2.0.0",
@@ -43,9 +39,18 @@
     "viewerjs": "^1.11.6",
     "xlsx": "^0.18.5",
     "y-protocols": "^1.0.6",
-    "y-websocket": "^2.1.0",
-    "yjs": "^13.6.18"
+    "yjs": "^13.6.18",
+    "@visimer/core": "1.1.2",
+    "@visimer/dom": "1.1.2"
   },
-  "devDependencies": {},
-  "sideEffects": false
+  "devDependencies": {
+    "remark-directive": "^4.0.0"
+  },
+  "sideEffects": false,
+  "dependencies": {
+    "@types/hast": "^3.0.4",
+    "@types/mdast": "^4.0.4",
+    "collapse-white-space": "^2.1.0",
+    "lib0": "^0.2.108"
+  }
 }

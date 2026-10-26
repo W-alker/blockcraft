@@ -1,0 +1,249 @@
+@use "object-focus-handle" as *;
+
+[data-blockcraft-root="true"] .text-box-block,
+.bc-snapshot-viewer .text-box-block {
+  --bc-text-box-background-color: #ffffff;
+  --bc-text-box-border-color: #000000;
+  --bc-text-box-padding-top: 8px;
+  --bc-text-box-padding-right: 12px;
+  --bc-text-box-padding-bottom: 8px;
+  --bc-text-box-padding-left: 12px;
+  display: block;
+  width: fit-content;
+  background: transparent;
+
+  // 完整缩放边框仅用于整块选中，文本编辑使用浅色聚焦线。
+  // Outrank the generic [data-block-id].selected fill, which base.scss emits
+  // after block themes. The transformed surface owns the frame chrome; a fill
+  // on this untransformed host would remain behind during north/west resizing.
+  &[data-block-id].selected {
+    background: transparent;
+  }
+
+  &.selected {
+    > .text-box-block__surface > shape-resizer {
+      display: block;
+    }
+  }
+
+  .text-box-block__surface {
+    position: relative;
+    isolation: isolate;
+    box-sizing: border-box;
+    transform-origin: center center;
+  }
+
+  .text-box-block__object-handle {
+    @include object-focus-handle;
+  }
+
+  &:hover .text-box-block__object-handle,
+  &:focus-within .text-box-block__object-handle {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  @media (hover: none) {
+    .text-box-block__object-handle {
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
+
+  // Whole-object selection already exposes the full resizer chrome. Keep the
+  // compact entry handle out of that state, including hover-less devices.
+  &.selected .text-box-block__object-handle {
+    display: none;
+  }
+
+  .text-box-block__geometry {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+  }
+
+  .text-box-block__geometry--fill {
+    z-index: 0;
+  }
+
+  .text-box-block__geometry--outline {
+    z-index: 3;
+  }
+
+  // The visible outline remains presentation-only. This transparent stroke is
+  // the frame's explicit interaction plane, so clicking the border selects the
+  // whole text box while the interior continues to belong to native text
+  // editing. `vector-effect` in the template keeps this band stable under
+  // object resizing and document scaling.
+  .text-box-block__frame-hit-target {
+    pointer-events: stroke;
+  }
+
+  .text-box-block__background-image {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: block;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  // The frame's reserve — shape inset plus the block's own `p` — is geometry,
+  // not padding. Padding only works on the two start edges: it offsets where
+  // the first line begins, so top/left always hold. The end edges are trailing
+  // space in the flow, and `overflow` clips at the padding box, so the moment
+  // the text is taller than the frame it paints straight through the bottom
+  // reserve — over a bubble's rim and down its tail. Folding both terms into
+  // the offsets makes the box itself end at the reserve: identical layout while
+  // the text fits, and scrolled or clipped at the reserve line once it doesn't.
+  // Written on all four physical sides rather than patching `bottom` alone,
+  // because a vertical frame is `vertical-rl` and its block flow ends on the
+  // left.
+  .text-box-block__content {
+    position: absolute;
+    z-index: 2;
+    top: calc(var(--bc-text-box-shape-inset-top, 0%) +
+      var(--bc-text-box-padding-top));
+    right: calc(var(--bc-text-box-shape-inset-right, 0%) +
+      var(--bc-text-box-padding-right));
+    bottom: calc(var(--bc-text-box-shape-inset-bottom, 0%) +
+      var(--bc-text-box-padding-bottom));
+    left: calc(var(--bc-text-box-shape-inset-left, 0%) +
+      var(--bc-text-box-padding-left));
+    box-sizing: border-box;
+    width: auto;
+    height: auto;
+    min-width: 0;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    // A fixed-size frame can be taller than its child paragraphs. Give the
+    // remaining block-axis space to the last real child so a click there hits
+    // that paragraph's native editing surface instead of the container's
+    // contenteditable boundary. This is the same ownership model as Callout/
+    // 高亮块: visible content space belongs to a child Block, with no
+    // blank-area click handler or synthetic caret calculation.
+    display: flex;
+    flex-direction: column;
+    // `horizontal-tb` fallback keeps horizontal frames identical: the Block only
+    // emits this variable for vertical ones. `flex-direction: column` and
+    // `text-align` both follow logical axes, so stacking and alignment flip
+    // themselves — no direction-specific rules needed below.
+    writing-mode: var(--bc-text-box-writing-mode, horizontal-tb);
+    outline: none;
+    box-shadow: none;
+    touch-action: auto;
+    user-select: text;
+    -webkit-user-select: text;
+
+    // Paragraph spacing ships as physical `margin-top` / `margin-bottom`
+    // (base.scss), which in a vertical frame lands on the inline axis: the
+    // segments touch and the author's 段前 pushes text sideways instead. Saying
+    // it logically fixes the axis and resolves to those same two physical
+    // properties under `horizontal-tb`, so horizontal frames are untouched.
+    //
+    // Both keep base.scss's own fallback chain. Writing the gap literally here —
+    // as a first pass did — silently outranks `--bc-block-sa` / `--bc-block-sb`,
+    // and the 段落设置 spacing fields stop working inside a text box while they
+    // still work everywhere else in the document.
+    > [data-block-id] {
+      margin-top: 0;
+      margin-bottom: 0;
+      margin-block-start: 0;
+      margin-block-end: max(
+        var(--bc-block-sa, var(--bc-segments-gap)),
+        var(--bc-next-block-sb, 0pt)
+      );
+    }
+
+    > [data-block-id]:last-child {
+      flex: 1 0 auto;
+      // Do not manufacture the theme's default gap at the frame edge, while
+      // still honoring an explicitly authored paragraph-after value.
+      margin-block-end: var(--bc-block-sa, 0pt);
+    }
+
+    // An empty TextBox initially shows the shared paragraph placeholder. The
+    // global placeholder rule uses the document placeholder color, which makes
+    // a white-text preset appear black immediately after insertion. Inside a
+    // TextBox the hint is part of the frame preview, so it follows the frame's
+    // base text paint while retaining the shared placeholder opacity.
+    .bc-placeholder-empty.bc-placeholder-target::before,
+    .bc-placeholder-empty .bc-placeholder-target::before {
+      color: inherit;
+    }
+  }
+
+  &[data-bc-text-box-wm='v'] {
+    // List markers precede text on the vertical inline axis. Their original
+    // physical right margin moves them sideways instead of opening that gap.
+    // Keep the parent's flex-start alignment so the marker stays on the first
+    // (rightmost) column even when long vertical text wraps into several columns.
+    .ordered-block-prefix,
+    .todo-block-button,
+    .bullet-block-prefix {
+      margin-right: 0;
+      margin-inline-end: .25em;
+    }
+  }
+
+  .text-box-block__content--word-art {
+    font-family: var(--bc-text-box-word-art-font-family);
+    font-size: var(--bc-text-box-word-art-font-size);
+    font-weight: var(--bc-text-box-word-art-font-weight);
+    font-style: var(--bc-text-box-word-art-font-style);
+    letter-spacing: var(--bc-text-box-word-art-letter-spacing);
+    line-height: var(--bc-text-box-word-art-line-height);
+    text-align: var(--bc-text-box-word-art-align);
+    justify-content: var(--bc-text-box-word-art-vertical, center);
+    color: var(--bc-text-box-word-art-color);
+    -webkit-text-fill-color: var(--bc-text-box-word-art-color);
+    background-image: var(--bc-text-box-word-art-background);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-stroke: var(--bc-text-box-word-art-stroke);
+    text-shadow: var(--bc-text-box-word-art-shadow);
+    transform: var(--bc-text-box-word-art-transform, none);
+    transform-origin: center;
+
+    // WordArt uses the container's own vertical alignment. Do not let the
+    // ordinary prose whitespace owner consume the alignment space.
+    > [data-block-id]:last-child {
+      flex: 0 0 auto;
+    }
+
+    // Text-box content stays in ordinary rich-text child Blocks. Keep their
+    // structural/inline formatting, but force the shared WordArt paint layer
+    // through descendant wrappers so a legacy inline color cannot repaint
+    // opaque text over the gradient/stroke presentation.
+    [data-node-type="editable"],
+    [data-node-type="editable"] * {
+      color: inherit !important;
+      -webkit-text-fill-color: inherit !important;
+      background-color: transparent !important;
+      -webkit-text-stroke: inherit !important;
+      text-shadow: inherit !important;
+    }
+  }
+}
+
+[data-blockcraft-root="true"].readonly .text-box-block__content,
+[data-blockcraft-root="true"].bc-print-content .text-box-block__content,
+.bc-snapshot-viewer .text-box-block__content {
+  overflow: hidden;
+}
+
+@media screen {
+  [data-blockcraft-root="true"]:not(.readonly):not(.bc-print-content):focus-within
+  .text-box-block:not(.selected):not([data-bc-readonly]):has(.focused:not([data-bc-readonly]))
+  > .text-box-block__surface {
+    @include object-editing-outline;
+  }
+}

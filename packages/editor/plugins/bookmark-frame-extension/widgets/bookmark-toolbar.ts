@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, ChangeDetectorRef, Component, Input } from "@a
 import { BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerDirective } from "../../../components";
 import { AsyncPipe, NgForOf } from "@angular/common";
 import { HostUrlPipe } from "../../../blocks";
-import { isFigmaUrl, isJueJinUrl } from "../../../global";
+import {getEmbedViewFlavour, runLinkViewChange} from '../../link-view-utils';
 
 @Component({
   selector: "div.iframe-toolbar",
@@ -10,7 +10,7 @@ import { isFigmaUrl, isJueJinUrl } from "../../../global";
     <bc-float-toolbar (onItemClick)="onItemClick($event)" direction="row">
       <a class="link" [href]="block.props.url"
          target="_blank">{{ block.props.url | hostUrl }}</a>
-      @if (!(doc.readonlySwitch$ | async)) {
+      @if (!(doc.readonlySwitch$ | async) && !block.isReadonly) {
         <span class="bc-float-toolbar__divider"></span>
         <bc-float-toolbar-item [expandable]="true" [bcOverlayTrigger]="viewModeTpl"
                                [positions]="['bottom-left', 'bottom-right', 'top-right', 'top-left']" [offsetY]="8">
@@ -67,12 +67,7 @@ export class BookmarkBlockToolbar {
   }
 
   ngOnInit() {
-    if (isFigmaUrl(this.block.props.url) && this.doc.schemas.has('figma-embed')) {
-      this.embedType = 'figma-embed'
-    }
-    if (isJueJinUrl(this.block.props.url) && this.doc.schemas.has('juejin-embed')) {
-      this.embedType = 'juejin-embed'
-    }
+    this.embedType = getEmbedViewFlavour(this.block.props.url, this.doc.schemas)
     if (this.embedType) {
       this.BOOKMARK_BLOCK_VIEW_MODE_MAP.set('embed', '嵌入视图')
       this.cdr.markForCheck()
@@ -80,28 +75,31 @@ export class BookmarkBlockToolbar {
   }
 
   switchViewMode($event: BcFloatToolbarItemComponent) {
+    if (this.block.isReadonly || this.doc.getBlockById(this.block.id) !== this.block) return
     switch ($event.value) {
       case 'embed':
+        this.embedType = getEmbedViewFlavour(this.block.props.url, this.doc.schemas)
         if (!this.embedType) return
         const blockParent = this.block.parentBlock!
-        console.log(blockParent)
-        if (!this.doc.schemas.isValidChildren(this.embedType, blockParent.flavour)) {
+        if (!this.doc.canInsertChild(blockParent.id, this.embedType)) {
           this.doc.messageService.warn(`当前位置无法插入嵌入视图`)
           return
         }
-        const embed = this.doc.schemas.createSnapshot(this.embedType, [this.block.props.url, this.block.props])
-        void this.doc.chain()
-          .replaceWithSnapshots(this.block.id, [embed])
-          .run()
+        const embed = this.doc.schemas.createSnapshot(this.embedType, [this.block.props.url])
+        void runLinkViewChange(this.doc, this.block, embed.id, () => this.doc.crud.replaceWithSnapshots(this.block.id, [embed]))
         break
       case 'inline':
+        if (
+          !this.block.parentId ||
+          !this.doc.canInsertChild(this.block.parentId, 'paragraph')
+        ) {
+          this.doc.messageService.warn(`当前位置无法插入行内链接`)
+          return
+        }
         const paragraph = this.doc.schemas.createSnapshot('paragraph', [
           [{ insert: this.block.props.url, attributes: { 'a:link': this.block.props.url } }], this.block.props]
         )
-        void this.doc.chain()
-          .replaceWithSnapshots(this.block.id, [paragraph])
-          .selectOrSetCursorAtBlock(paragraph.id, false)
-          .run()
+        void runLinkViewChange(this.doc, this.block, paragraph.id, () => this.doc.crud.replaceWithSnapshots(this.block.id, [paragraph]))
         break
     }
   }

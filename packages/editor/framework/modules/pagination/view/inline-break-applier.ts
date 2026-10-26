@@ -1,0 +1,479 @@
+import {
+  applyInlinePaginationGaps,
+  clearInlinePaginationGaps,
+  isInlinePaginationProjectionWritable,
+  subscribeInlinePaginationProjectionInvalidated,
+  whenInlinePaginationProjectionWritable,
+} from '../../../block-std/inline/runtime/inline-pagination-access'
+import type {InlinePaginationGap} from '../../../block-std/inline/runtime/inline-pagination-projection'
+import type {PaginationResult} from '@ccc/blockcraft/framework/modules/pagination/engine'
+import {
+  inlineBreakPointAtLayoutOffset,
+  type InlinePaginationBreakPlan,
+} from './inline-break-plan'
+import type {BlockMeta} from './item-builder'
+import {ContainerPaginationProjection, containerPaginationProjection, isSequentialPaginationContainer} from './container-pagination'
+
+export interface InlineBreakUpdate {
+  /** Keep the most recently applied projection as the new stable view. */
+  commit(): void
+  /** Restore the projection that was active before the update began. */
+  rollback(): void
+}
+
+/**
+ * Translate engine continuation fragments back to Y.Text-anchored live gaps.
+ * Only a page whose first slot is a continuation participates: a continuation
+ * can never share its page top with another block in the pure engine.
+ */
+export function computeInlinePaginationGaps(
+  blockId: string,
+  plan: InlinePaginationBreakPlan,
+  result: PaginationResult,
+  sheetHeightPx: number,
+  pageGap: number,
+  contentTop = 0,
+): InlinePaginationGap[] {
+  // The standalone helper keeps its page-only scan; the live applier shares
+  // one fragment index across all blocks in a publication.
+  const continuations: InlineContinuation[] = []
+  for (let pageIndex = 1; pageIndex < result.pages.length; pageIndex++) {
+    const first = result.pages[pageIndex].slots[0]
+    const fragment = first?.id === blockId ? first.fragment : undefined
+    if (fragment && fragment.fromOffset > 0) {
+      continuations.push({
+        fromOffset: fragment.fromOffset,
+        previousUsedHeight: result.pages[pageIndex - 1].usedHeight,
+      })
+    }
+  }
+  return gapsForContinuations(plan, continuations, sheetHeightPx, pageGap, contentTop)
+}
+
+interface InlineContinuation {
+  readonly fromOffset: number
+  readonly previousUsedHeight: number
+}
+
+/** Per-publication data only: no stale anchors or results survive an apply. */
+function indexInlineFragments(result: PaginationResult): {
+  fragmentIds: ReadonlySet<string>
+  continuations: ReadonlyMap<string, readonly InlineContinuation[]>
+} {
+  const fragmentIds = new Set<string>()
+  const continuations = new Map<string, InlineContinuation[]>()
+  for (let pageIndex = 0; pageIndex < result.pages.length; pageIndex++) {
+    const page = result.pages[pageIndex]
+    const slots = page.slots
+    for (let slotIndex = 0; slotIndex < slots.length; slotIndex++) {
+      const slot = slots[slotIndex]
+      const fragment = slot.fragment
+      if (!fragment) continue
+      fragmentIds.add(slot.id)
+      // Only a positive-offset fragment at the head of a later page creates
+      // an inline gap. Other fragments still require materialized anchors.
+      if (pageIndex === 0 || slotIndex !== 0 || !(fragment.fromOffset > 0)) continue
+      let blockContinuations = continuations.get(slot.id)
+      if (!blockContinuations) {
+        blockContinuations = []
+        continuations.set(slot.id, blockContinuations)
+      }
+      blockContinuations.push({
+        fromOffset: fragment.fromOffset,
+        previousUsedHeight: result.pages[pageIndex - 1].usedHeight,
+      })
+    }
+  }
+  return {fragmentIds, continuations}
+}
+
+function gapsForContinuations(
+  plan: InlinePaginationBreakPlan,
+  continuations: readonly InlineContinuation[],
+  sheetHeightPx: number,
+  pageGap: number,
+  contentTop: number,
+): InlinePaginationGap[] {
+  const gaps: InlinePaginationGap[] = []
+  for (const {fromOffset, previousUsedHeight} of continuations) {
+    const point = inlineBreakPointAtLayoutOffset(plan, fromOffset)
+    if (!point) continue
+    const height = sheetHeightPx + pageGap - previousUsedHeight
+    if (!Number.isFinite(height) || height <= 0) continue
+    gaps.push({
+      offset: point.textOffset,
+      ...(point.blockId ? {blockId: point.blockId, layoutOffset: point.layoutOffset} : {}),
+      height,
+      backdropOffset: Math.max(
+        0,
+        Math.min(height, sheetHeightPx - contentTop - previousUsedHeight),
+      ),
+      backdropHeight: Math.max(0, Math.min(pageGap, height)),
+    })
+  }
+  return gaps
+}
+
+function safeInlineRuntime(doc: BlockCraft.Doc, id: string): object | null {
+  let missing = false
+  try {
+    const block = doc.getBlockById(id, () => { missing = true }) as any
+    if (missing || !block) return null
+    return isSequentialPaginationContainer(block.flavour)
+      ? containerPaginationProjection(doc, block)
+      : block.runtime ?? null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Reversible top-level text pagination projection. It owns only zero-model-
+ * length InlineRuntime markers; it never writes Yjs or changes block identity.
+ */
+export class InlineBreakApplier {
+  private _applied = new Map<string, object>()
+  private _gaps = new Map<string, InlinePaginationGap[]>()
+  private _unmaterialized = new Set<string>()
+  private _mountedIds: ReadonlySet<string> | null = null
+  private _suspended = false
+  private _revision = 0
+  private _activeUpdate: number | null = null
+  private readonly _projectionReadyWatches = new Map<
+    string,
+    {runtime: object; release: () => void}
+  >()
+  private readonly _projectionInvalidationWatches = new Map<
+    string,
+    {runtime: object; release: () => void}
+  >()
+
+  constructor(
+    private readonly doc: BlockCraft.Doc,
+    private readonly _onProjectionReady: () => void = () => undefined,
+  ) {}
+
+  /** Defensive snapshot used by the controller's ResizeObserver echo filter. */
+  get layoutOwnedIds(): ReadonlySet<string> {
+    return new Set([...this._gaps.keys(), ...this._applied.keys()])
+  }
+
+  /**
+   * Keep the current stable DOM while an inline float owns a pointer/IME lease.
+   * Sparse mode scans only its mounted window; full mode already measures all
+   * mounted roots in the same pass, so the preflight preserves correctness for
+   * a frozen paragraph that is about to paginate for the first time.
+   */
+  deferUpdateWhileProjectionFrozen(): boolean {
+    let deferred = false
+    const ids = this._mountedIds
+      ?? new Set([...this._gaps.keys(), ...this._applied.keys()])
+    for (const id of ids) {
+      const runtime = this._applied.get(id) ?? safeInlineRuntime(this.doc, id)
+      if (!runtime || projectionWritable(runtime)) continue
+      deferred = true
+      this._watchProjectionReady(id, runtime)
+    }
+    return deferred
+  }
+
+  apply(
+    metas: readonly BlockMeta[],
+    result: PaginationResult,
+    sheetHeightPx: number,
+    pageGap: number,
+    contentTop = 0,
+  ): ReadonlySet<string> {
+    // Outside an explicit update transaction, a freshly computed layout
+    // supersedes every outstanding suspend restore. Inside one, rollback must
+    // remain capable of restoring the previously published projection.
+    if (this._activeUpdate === null) this._revision++
+    this._suspended = false
+    const next = new Map<string, InlinePaginationGap[]>()
+    const unmaterialized = new Set<string>()
+    const failed = new Set<string>()
+    const {fragmentIds, continuations} = indexInlineFragments(result)
+    for (const meta of metas) {
+      const blockContinuations = continuations.get(meta.id) ?? []
+      if (!meta.inlineBreakPlan) {
+        // Sparse estimated geometry may temporarily retain old fragments without
+        // current text anchors. That is valid for offscreen extent only; once the
+        // root is mounted it cannot be published as a materialized live layout.
+        if (
+          fragmentIds.has(meta.id)
+          && meta.flavour !== 'table'
+          && !meta.tableRows
+        ) {
+          unmaterialized.add(meta.id)
+          if (this._isMounted(meta.id)) failed.add(meta.id)
+        }
+        continue
+      }
+      const gaps = gapsForContinuations(
+        meta.inlineBreakPlan,
+        blockContinuations,
+        sheetHeightPx,
+        pageGap,
+        contentTop,
+      )
+      if (gaps.length !== blockContinuations.length) {
+        failed.add(meta.id)
+        continue
+      }
+      if (gaps.length) next.set(meta.id, gaps)
+    }
+    this._gaps = next
+    this._unmaterialized = unmaterialized
+    for (const id of this._reconcile()) failed.add(id)
+    return failed
+  }
+
+  syncMounted(mountedRootIds: readonly string[]): ReadonlySet<string> {
+    this._mountedIds = new Set(mountedRootIds)
+    if (this._suspended) return new Set()
+    const failed = new Set(this._reconcile())
+    for (const id of this._unmaterialized) {
+      if (this._isMounted(id)) failed.add(id)
+    }
+    return failed
+  }
+
+  /** Drop cached anchors for roots whose model content is no longer current. */
+  invalidate(rootIds: Iterable<string>): void {
+    this._revision++
+    this._activeUpdate = null
+    this._suspended = false
+    for (const id of new Set(rootIds)) {
+      this._gaps.delete(id)
+      this._unmaterialized.delete(id)
+      const runtime = this._applied.get(id)
+      this._releaseProjectionReadyWatch(id)
+      this._releaseProjectionInvalidationWatch(id)
+      if (!runtime) continue
+      clearProjection(runtime)
+      this._applied.delete(id)
+    }
+  }
+
+  /**
+   * Temporarily revoke live markers so natural line geometry can be measured.
+   * The returned restore is idempotent. Any newer apply/clear/suspend invalidates
+   * it, so a stale finally block cannot overwrite a newer projection.
+   */
+  suspend(): () => void {
+    const token = ++this._revision
+    this._activeUpdate = null
+    this._suspended = true
+    this._clearApplied()
+    let restored = false
+    return () => {
+      if (restored) return
+      restored = true
+      if (token !== this._revision) return
+      this._suspended = false
+      this._reconcile()
+    }
+  }
+
+  /**
+   * Suspend the published projection while natural geometry is measured, but
+   * retain a rollback snapshot until the controller commits the entire DOM
+   * publication. This keeps stable layout data and live markers transactional
+   * when another view applier throws after measurement.
+   */
+  beginUpdate(): InlineBreakUpdate {
+    const token = ++this._revision
+    const previousGaps = cloneGapMap(this._gaps)
+    const previousUnmaterialized = new Set(this._unmaterialized)
+    this._activeUpdate = token
+    this._suspended = true
+    this._clearApplied()
+    let settled = false
+
+    return {
+      commit: () => {
+        if (settled) return
+        settled = true
+        if (this._activeUpdate !== token) return
+        this._activeUpdate = null
+        this._suspended = false
+        this._revision++
+      },
+      rollback: () => {
+        if (settled) return
+        settled = true
+        if (this._activeUpdate !== token) return
+        this._activeUpdate = null
+        this._revision++
+        this._suspended = false
+        this._clearApplied()
+        this._gaps = previousGaps
+        this._unmaterialized = previousUnmaterialized
+        this._reconcile()
+      },
+    }
+  }
+
+  clear(): void {
+    this._revision++
+    this._activeUpdate = null
+    this._suspended = false
+    this._clearApplied()
+    this._gaps.clear()
+    this._unmaterialized.clear()
+    this._releaseAllProjectionReadyWatches()
+    this._releaseAllProjectionInvalidationWatches()
+  }
+
+  destroy(): void {
+    this.clear()
+  }
+
+  private _reconcile(): ReadonlySet<string> {
+    const failed = new Set<string>()
+    if (this._suspended) return failed
+
+    for (const [id, runtime] of this._applied) {
+      if (this._gaps.has(id) && this._isMounted(id)) continue
+      clearProjection(runtime)
+      this._applied.delete(id)
+      this._releaseProjectionReadyWatch(id)
+      this._releaseProjectionInvalidationWatch(id)
+    }
+
+    for (const [id, gaps] of this._gaps) {
+      if (!this._isMounted(id)) continue
+      const runtime = safeInlineRuntime(this.doc, id)
+      const previous = this._applied.get(id)
+      if (previous && previous !== runtime) {
+        clearProjection(previous)
+        this._applied.delete(id)
+        this._releaseProjectionReadyWatch(id)
+        this._releaseProjectionInvalidationWatch(id)
+      }
+      if (!runtime) {
+        this._releaseProjectionReadyWatch(id)
+        this._releaseProjectionInvalidationWatch(id)
+        failed.add(id)
+        continue
+      }
+      if (!applyProjection(runtime, gaps)) {
+        clearProjection(runtime)
+        this._applied.delete(id)
+        if (!projectionWritable(runtime)) {
+          this._watchProjectionReady(id, runtime)
+        } else {
+          this._releaseProjectionReadyWatch(id)
+        }
+        this._releaseProjectionInvalidationWatch(id)
+        failed.add(id)
+        continue
+      }
+      this._releaseProjectionReadyWatch(id)
+      this._applied.set(id, runtime)
+      this._watchProjectionInvalidation(id, runtime)
+    }
+    return failed
+  }
+
+  private _clearApplied(): void {
+    for (const [id, runtime] of this._applied) {
+      clearProjection(runtime)
+      this._releaseProjectionInvalidationWatch(id)
+    }
+    this._applied.clear()
+  }
+
+  private _watchProjectionReady(id: string, runtime: object): void {
+    const current = this._projectionReadyWatches.get(id)
+    if (current?.runtime === runtime) return
+    current?.release()
+    let release: () => void = () => undefined
+    release = whenProjectionWritable(runtime, () => {
+      if (this._projectionReadyWatches.get(id)?.runtime !== runtime) return
+      this._projectionReadyWatches.delete(id)
+      release()
+      this._onProjectionReady()
+    })
+    this._projectionReadyWatches.set(id, {runtime, release})
+  }
+
+  private _watchProjectionInvalidation(id: string, runtime: object): void {
+    const current = this._projectionInvalidationWatches.get(id)
+    if (current?.runtime === runtime) return
+    current?.release()
+    const release = subscribeProjectionInvalidated(
+      runtime,
+      () => {
+        if (this._applied.get(id) !== runtime) return
+        if (runtime instanceof ContainerPaginationProjection) runtime.clear()
+        this._applied.delete(id)
+        this._releaseProjectionInvalidationWatch(id)
+        this._onProjectionReady()
+      },
+    )
+    this._projectionInvalidationWatches.set(id, {runtime, release})
+  }
+
+  private _releaseProjectionInvalidationWatch(id: string): void {
+    this._projectionInvalidationWatches.get(id)?.release()
+    this._projectionInvalidationWatches.delete(id)
+  }
+
+  private _releaseAllProjectionInvalidationWatches(): void {
+    for (const watch of this._projectionInvalidationWatches.values()) {
+      watch.release()
+    }
+    this._projectionInvalidationWatches.clear()
+  }
+
+  private _releaseProjectionReadyWatch(id: string): void {
+    const current = this._projectionReadyWatches.get(id)
+    if (!current) return
+    this._projectionReadyWatches.delete(id)
+    current.release()
+  }
+
+  private _releaseAllProjectionReadyWatches(): void {
+    for (const {release} of this._projectionReadyWatches.values()) release()
+    this._projectionReadyWatches.clear()
+  }
+
+  private _isMounted(id: string): boolean {
+    return this._mountedIds?.has(id) ?? true
+  }
+}
+
+function cloneGapMap(
+  source: ReadonlyMap<string, readonly InlinePaginationGap[]>,
+): Map<string, InlinePaginationGap[]> {
+  return new Map(Array.from(source, ([id, gaps]) => [
+    id,
+    gaps.map(gap => ({...gap})),
+  ]))
+}
+
+function applyProjection(runtime: object, gaps: readonly InlinePaginationGap[]): boolean {
+  return runtime instanceof ContainerPaginationProjection
+    ? runtime.apply(gaps)
+    : applyInlinePaginationGaps(runtime, gaps)
+}
+function clearProjection(runtime: object): void {
+  if (runtime instanceof ContainerPaginationProjection) runtime.clear()
+  else clearInlinePaginationGaps(runtime)
+}
+function projectionWritable(runtime: object): boolean {
+  return runtime instanceof ContainerPaginationProjection
+    ? runtime.writable()
+    : isInlinePaginationProjectionWritable(runtime)
+}
+function whenProjectionWritable(runtime: object, listener: () => void): () => void {
+  return runtime instanceof ContainerPaginationProjection
+    ? runtime.whenWritable(listener)
+    : whenInlinePaginationProjectionWritable(runtime, listener)
+}
+function subscribeProjectionInvalidated(runtime: object, listener: () => void): () => void {
+  return runtime instanceof ContainerPaginationProjection
+    ? runtime.subscribeInvalidated(listener)
+    : subscribeInlinePaginationProjectionInvalidated(runtime, listener)
+}

@@ -2,13 +2,90 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-06-30
+> Last updated: 2026-10-26
+
+## ObjectDragPlugin
+
+> `plugins/object-drag/` — 通用对象本体选择、浮动移动与可选的正文排序，零构造参数。
+
+`createBundledEditorCapabilities()` 已包含一个实例。手动装配时，每个文档创建一个新实例，
+放在 `ObjectFormatToolbarPlugin` 和 `ImgToolbarPlugin` 之后：
+
+```typescript
+import {ObjectDragPlugin, ObjectFormatToolbarPlugin, ImgToolbarPlugin} from '@ccc/blockcraft';
+const plugins = [
+  new ObjectFormatToolbarPlugin(),
+  new ImgToolbarPlugin(),
+  new ObjectDragPlugin(),
+];
+```
+
+插件读取 Schema 的 `metadata.objectDrag` 声明，不维护块类型名单：
+
+| 值 | 本体交互 |
+|---|---|
+| 省略 / `'placement'` | 默认拾取支持 absolute 的对象，只移动当前 absolute 对象；正文排序使用原有手柄 |
+| `'body'` | 仅拾取标记的可视表面或移动手柄，按当前位置启动正文排序或浮动移动 |
+| `'handles'` | 仅拾取标记的移动手柄，保留本体的文字编辑 |
+| `'custom'` | 通用插件完全避让，供宿主自定义交互使用 |
+
+图片、贴纸、形状使用 `'body'`；文本框、艺术字、组合块使用 `'handles'`。
+`ImgToolbarPlugin` 不再监听块态图片的本体拖拽；`ObjectFormatToolbarPlugin` 保留
+文字编辑、Shift 多选和首次选组/再次选成员的层级判断，移动由本插件统一执行。
+组/成员拾取插件必须先注册，消费的事件不会继续进入公共拖拽入口。
+
+每种移动仍须通过 `doc.placement.supports(block, mode)`，不会突破容器的定位限制。
+文档只读时不拾取；块锁定时可选择但不可拖拽。正文与绝对定位继续使用既有
+`dragController` / `placement`，组合成员保留局部 absolute 坐标及原事务语义。
+
+同一 `placement-layout` 或 `object-group` 内的对象多选，在已有本体/移动手柄上
+拖动任一所选对象时，会保留多选并同步移动全部所选对象。点击未选对象仍切换为单选。
+拖动预览只写临时 transform；释放时批量提交位置，同组成员全部写入后才重算组合边界，
+一次撤销/重做恢复全部位置及组合尺寸。任何目标锁定、移除、换父容器或在手势中改变
+位置/层级都会拒绝整次多选移动；取消时恢复全部 transform 并释放所有视图租约。
+正文组合的多选成员移动保留固定局部原点，组合右/下边界随内容更新；超出左/上边界的
+成员保留负坐标并可见，不通过整体坐标归一化抵消拖动位移。单对象几何修改继续走原路径。
+
+### 自定义块的命中区域
+
+```typescript
+metadata: {
+  version: 1,
+  label: '自定义卡片',
+  objectDrag: 'body',
+  placement: {modes: ['relative', 'absolute']},
+}
+```
+
+```html
+<div data-bc-object-drag-surface>
+  <!-- 可视本体；外围留白不加标记，继续用于普通选区或 gap cursor -->
+  <button data-bc-placement-pick-ignore>独立操作</button>
+</div>
+<button data-bc-object-drag-handle>移动</button>
+```
+
+- `data-bc-object-drag-surface`：`'body'` 模式的可视命中区。
+- `data-bc-object-drag-handle`：显式移动手柄，`'body'` / `'handles'` 均支持。
+- `data-bc-object-drag-label`：可选的实例级拖拽提示（如具体形状名称）；省略则取 Schema label。
+- 命中标记必须属于同一个最近 Block，嵌套文本/对象不会借用外层标记。
+- `block-resizer` 与 `data-bc-placement-pick-ignore` 避让独立控件；其中显式标记的移动
+  边框可接管该区域，未标记的缩放/旋转手柄继续由控件处理。
+- `data-bc-nodrag` 和 `data-block-zero-space="true"` 始终禁止移动拾取。
+
+每个文档只有一个公共 pointerdown 入口；命中后才建立一次临时点击确认会话。
+它抑制原生鼠标选区覆盖，纯点击释放后确认对象选择，真实拖拽后不重置落点选区；
+取消、Escape、窗口失焦、插件卸载和文档销毁均清理监听。无逐块监听、DOM 遍历或尺寸观察器。
+
+宿主升级应删除自有重复入口；bundled 装配已经包含本插件，无需再次注册。
 
 ## BlockControllerPlugin
 
 > `plugins/block-controller/` — Drag handle, context menu, and block-level operations.
 
-Renders a floating trigger button that follows the hovered block. Provides drag-and-drop, a built-in context menu for table operations, and fully extensible custom menu sections.
+Renders a floating trigger button that follows the hovered block. Provides
+drag-and-drop, common editable-block background/outline controls, a built-in context menu
+for table operations, and fully extensible custom menu sections.
 
 ### Configuration
 
@@ -36,24 +113,28 @@ new BlockControllerPlugin(customTools?: IContextMenuItem[], customToolHandler?: 
 | `blockMenuActionHandler` | `(event, ctx) => boolean` | Handle menu item actions; return `true` to consume |
 | `positionResolver` | `BlockControllerPositionResolver` | Custom positioning logic for the trigger button |
 
+`BlockMenuDropdownItem.menuWidth` optionally sets one second-level panel's
+width; omitted dropdowns keep the surrounding menu width.
+
 ### Usage Example
 
 ```typescript
 new BlockControllerPlugin({
   blockMenuResolver: (ctx) => {
-    if (ctx.block.flavour === 'paragraph') {
+    if (ctx.activeBlock.flavour === 'paragraph') {
       return [{
+        key: 'ai',
         title: 'AI 操作',
         items: [
-          { key: 'summarize', label: '总结', icon: 'bc_icon bc_ai' },
-          { key: 'translate', label: '翻译', icon: 'bc_icon bc_fanyi' },
+          { type: 'simple', name: 'summarize', label: '总结', icon: 'bc_icon bc_ai' },
+          { type: 'simple', name: 'inspect', label: '查看', readonlyBehavior: 'allow' },
         ],
       }];
     }
     return [];
   },
   blockMenuActionHandler: (event, ctx) => {
-    if (event.key === 'summarize') {
+    if (event.item.name === 'summarize') {
       // handle...
       return true;
     }
@@ -64,8 +145,63 @@ new BlockControllerPlugin({
 
 ### Notes
 
-- Hidden in readonly mode
+- 单击浮动抓手会通过 Selection 的模型入口完整选中当前块，容器连同内部段落一起覆盖。
+  已有跨块选区且抓手位于该范围内时，点击补齐首尾块，完整选中这些块；点击范围外的抓手
+  则切换为该块。跨列文本范围只补齐首尾段落，不扩大为整列。锁定块仍可选中用于复制。
+  只有在抓手上释放且未进入拖拽时提交选择；
+  Escape、取消、窗口失焦和销毁会清理本次手势。悬停菜单与拖拽的范围、落点规则保持不变。
+
+- The built-in **颜色** second-level menu appears for an eligible editable flow
+  block and whenever a multi-block range contains at least one eligible,
+  writable editable flow block. Multi-block writes resolve stable IDs from the
+  model graph and update that eligible subset in one Yjs transaction, including
+  virtualized middle blocks; selected non-editable or protected blocks remain
+  untouched. Mixed initial colors among the targets show no active swatch until
+  the user picks one. Choosing transparent deletes the prop. The action never
+  cascades to a parent Callout, table or columns container and remains absent
+  when the range has no writable editable target, or for Schema leaf blocks,
+  root/infrastructure blocks and absolute placement objects.
+- Whole-document readonly hides mutation affordances as before. Block readonly
+  keeps the trigger visible so the user can copy or unlock the block, but drag
+  start and protected mutations are blocked.
+- The built-in switch writes the current `DocConfig.currentUserId` to
+  `meta.lock`. An explicit lock can be removed only by its owner or a host
+  `canUnlockBlock` override. Another user's switch is disabled; missing identity
+  disables lock control; an inherited lock must be removed at its source
+  ancestor. Root never exposes a persistent-lock action.
+- For a placement-capable Schema, the built-in **文字环绕** menu exposes
+  **上下型 / 衬于文字下方 / 浮于文字上方**. If the flavour plugin registers
+  a `BlockObjectLayoutAdapter`, it also exposes **嵌入型**. These actions call
+  `doc.placement.setObjectLayout()`; under/over automatically enter absolute
+  placement and top-bottom automatically returns to flow. Once an object enters
+  the root placement layout, BlockController clears its active state and no
+  longer renders or responds for that object. Image/shape-specific toolbars own
+  its layer, return-to-flow, delete, resize and Pointer Events positioning.
+- A whole-block model selection can activate BlockController without hover only
+  for ordinary flow blocks. The `placement-layout` host and all descendants are
+  rejected by the same centralized eligibility check.
+- `svgIcon` values are names registered with Angular Material's
+  `MatIconRegistry` and render through `<mat-icon [svgIcon]="…">` in the
+  trigger and nested block menus. Register the icon set before mounting the
+  editor; no global SVG symbol sprite is required. Use `icon` for single-color
+  iconfont classes.
 - Interacts with `TranslatePlugin` which provides its own `blockMenuResolver`/`blockMenuActionHandler` pair via `createBlockControllerOptions()`
+
+### Readonly-aware custom menu items
+
+`BlockMenuContext.readonly` contains the effective `BlockReadonlyResolution`.
+Every custom item can declare `readonlyBehavior`:
+
+| Value | Protected active block |
+|-------|------------------------|
+| `disable` / omitted | Item remains visible but cannot run |
+| `hide` | Item is omitted |
+| `allow` | Item remains actionable; use only for true read operations |
+
+`allow` does not bypass the data boundary. If the handler attempts a guarded
+mutation, `BlockReadonlyError` is still thrown. Typical allowed actions are
+inspect, copy link, preview and download; translate, replace, delete, format and
+property changes should stay disabled/hidden.
 
 ### Multi-block drag (since v?.?.?)
 
@@ -88,13 +224,19 @@ The drag is dispatched as `{ kind: 'origin-blocks', blockIds: string[] }` to
 ### Multi-block menu
 
 When a cross-block selection covers the active block, the drag-handle menu
-collapses to just **cut / copy / delete**, and those three operate on the whole
-selection range:
+adds **颜色** whenever at least one selected block is an appearance-eligible,
+writable editable flow block. The ordinary multi-block actions remain **cut /
+copy / delete** and operate on the whole selection range:
 
 - **copy** copies whole-block snapshots of every selected block
   (`clipboard.copyBlocksModel`), not an offset-sliced text range.
 - **cut** copies all then deletes every selected block by id in one transaction.
 - **delete** deletes every selected block by id in one transaction.
+
+- **颜色** writes `backColor` / `borderColor` to the selected eligible, writable
+  editable subset in one transaction and skips the other selected block types.
+  The picker fails closed if the selection changes, a target disappears, or any
+  captured target becomes protected before the click is handled.
 
 All other menu items — alignment, heading, block-type conversion, "在下方添加",
 `customTools`, and custom `blockMenuResolver` sections such as the table tools —
@@ -102,15 +244,71 @@ are hidden in multi-block mode. Single-block selection keeps the full menu
 unchanged. The multi/single judgment mirrors the drag dispatch: a cross-block
 selection whose range includes the active block (otherwise the single-block menu
 shows). If the multi-selection collapses to fewer than two blocks between opening
-the menu and clicking, the action falls back to the single-block path.
+the menu and clicking, cut/copy/delete fall back to the single-block path while
+the multi-block color picker performs no write.
+
+When any selected block is effectively readonly, or a selected ancestor
+contains a locked descendant, the range-wide actions keep only **copy**; cut,
+delete and drag cannot partially mutate the range. **颜色** may still appear for
+other selected writable editable blocks and never writes the protected block.
+
+---
+
+## ImgToolbarPlugin
+
+> `plugins/img-toolbar/` — Image alignment, captions, download/copy actions,
+> and block-image conversion.
+
+The built-in **嵌入型** action replaces the selected image block with a
+paragraph whose first delta is the default `image` inline embed. It preserves
+`src` and valid `width` / `height` values. If the image block has a caption, a
+space and the caption's original formatted deltas follow the embed. Block-level
+`align` is intentionally not copied because it has no stable inline equivalent.
+
+The replacement goes through `DocChain.replaceWithSnapshots()` and then places
+the caret at the end of the new paragraph. Empty-source, stale, and effectively
+readonly image blocks are not converted. Undo/Redo treats the replacement as a
+document mutation and restores the original image block structure.
+
+The same plugin also manages the default inline-image shell. A click mounts the
+existing `ResizeContainerComponent` handles and a compact size/conversion
+toolbar. While these controls are active, the shell receives the temporary
+`.bc-inline-image-shell--selected` theme outline; the unified close lifecycle
+removes it without changing Delta attributes. Dragging previews width in the DOM
+and commits `width` / `height` once on mouseup, preserving aspect ratio and
+avoiding high-frequency Yjs writes.
+
+Choosing **上下型** from an inline image splits surrounding rich text into
+same-flavour editable snapshots, inserts a relative image block between them,
+preserves inline attributes and selects the new image. Choosing
+**衬于文字下方** or **浮于文字上方** performs the same split but measures the
+inline image against the target children container first and creates the image
+block directly at that visual position with the matching absolute layer. Empty
+text sides are omitted and no caption is inferred. The action is unavailable
+for readonly content and is rejected with feedback when the parent Schema does
+not accept image blocks. Custom `image` converters without the default shell
+marker remain host-owned.
 
 ---
 
 ## BlockGapCreatorPlugin
 
-> `plugins/block-gap-creator/` — Inserts paragraph when clicking between blocks.
+> `plugins/block-gap-creator/` — Resolves blank-area clicks to a sensible caret (gap cursor / line-end / nearest block).
 
-Detects clicks in the empty gap between blocks. When the gap between two non-editable blocks is clicked, inserts a new empty paragraph. If the adjacent block is editable, moves the cursor to that block instead.
+Detects clicks in blank areas that the browser wouldn't otherwise place a caret in, and routes them via the gap-cursor model:
+
+- **Beside a void/container block** (inside the block's host but outside its `[data-gap-anchor]` content box) → drops a **gap cursor** (`setGapCursor(block, 'before' | 'after')`, side by click position). Typing there inserts an adjacent paragraph and **keeps** the block (it no longer eagerly creates an empty paragraph on click).
+- **Right of a text line** (block padding, outside `.edit-container`) → places a text caret at that line's end (feature-detected `caretRangeFromPoint`).
+- **Root gutter / below all content** → focuses the nearest root-level child: editable → its text end/start; void → its `gap-after`/`gap-before`.
+
+The root `placement-layout` and its absolute descendants are never gap targets.
+The plugin consults `BlockPlacementManager.allowsGapCursor()` and falls back to
+an eligible editable/root-flow neighbor rather than creating a selection beside
+an absolute object. The same policy is shared with host gap rendering and
+keyboard navigation, including dynamic restoration after an object returns to
+relative flow.
+
+Includes a mousedown+click same-target anti-drag guard so a drag-select never drops a gap cursor. Content clicks pass through to native handling unchanged.
 
 ### Configuration
 
@@ -124,29 +322,167 @@ new BlockGapCreatorPlugin()
 
 ## BlockTransformerPlugin
 
+斜杠菜单插入块态图片后落在图片后的 gap 光标，便于继续输入；行内图片仍使用
+既有行内选区配方。其他块类型的插入落点保持各自语义。
+
+块转换保留源填写段落的 `plh` / `plhMode`，仅传给第一个可编辑结果；纯非文本结果保留一个后续提示段落。不会复制源块的锁或区域身份。Markdown、快捷键和 slash 菜单均通过同一提示继承逻辑，仍使用常规 CRUD 权限及 Schema 校验。
+
 > `plugins/block-transformer/` — Slash menu, block-type conversion, and Markdown shortcuts.
 
-Enables slash-command (`/` or `、`) to open a block-type picker, Markdown shortcuts (e.g., `# ` for heading, `- ` for bullet), and `Cmd/Ctrl+0–4` to set heading levels.
+仅 `/` 触发插入菜单；段首直接触发，行内必须紧跟空格（含不换行空格、全角空格）。
+紧贴文字或路径的 `/`、顿号 `、` 和逗号 `，` / `,` 作为普通文本输入。
+
+Enables slash-command (`/`) to open one grouped insertion surface,
+Markdown shortcuts (e.g., `# ` for heading, `- ` for bullet), and
+`Cmd/Ctrl+0–4` to set heading levels. At the start of a paragraph the menu keeps
+the complete block + inline catalog. Inside existing paragraph text it opens an
+inline-only catalog and never offers headings, blocks, media or third-party
+embeds. The command owns only the contiguous `/query` token up to the first
+space or inline Embed, so inserting an inline result preserves text on both
+sides. Filtering reads model Y.Text rather than depending on selection offset
+update order, so the first query character cannot prematurely close the menu.
+Moving the caret outside that token or typing whitespace closes the menu.
+删除查询字会更新筛选，删到只剩 `/` 时恢复未筛选菜单；删除 `/` 则关闭。
+查询最多保留 7 个 Unicode 字符（不含 `/`，已有前后正文不计入），输入第 8 个后
+关闭菜单并保留全部文字。IME 组词期间不关闭，提交后再按最终查询检查。
+文本、选区和 compositionEnd 的刷新在同一微任务内合并，避免退格时旧光标导致误关闭。
+`ArrowUp` / `ArrowDown` move the active item, `Enter` selects it, and `Escape`
+closes the menu without moving the editor caret.
+
+Typing a half-width `:` at any position in rich editable text opens the CSES
+EmojiPicker without its search input. Text committed after `:` stays in the
+editor-owned Y.Text and controls EmojiPicker `csQuery`; choosing a result
+atomically replaces the full `:query` range. Deleting the trigger, entering
+whitespace, moving the caret outside the range, destroying the block, or
+pressing `Escape` closes the panel. This does not change the slash catalogs:
+paragraph-start `/` keeps the complete catalog, while an in-text trigger
+uses the inline-only catalog. The `/emoji` slash command remains available and
+keeps the picker's ordinary search input. Any arrow key
+activates the Emoji grid's virtual selection and is consumed before the
+document can move its caret. Real focus remains in the editor, so subsequent
+text and IME commits continue updating `csQuery`; four-direction navigation and
+`Enter` operate on the virtual active option, `Tab` / `Shift+Tab` cycle Emoji
+categories, and `Escape` closes the picker. These key bindings are owned by
+BlockTransformer; the CSES picker only exposes semantic movement and selection
+methods.
 
 ### Configuration
 
 ```typescript
-new BlockTransformerPlugin(transformList?: IBlockTransformConfig[])
+new BlockTransformerPlugin(
+  config?: readonly IBlockTransformConfig[] | BlockTransformerPluginOptions,
+)
 ```
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `transformList` | `IBlockTransformConfig[]` | `blockTransforms` (built-in list) | Block types available for conversion |
+The legacy transform-array constructor remains supported. Use the options form
+to add host-owned slash commands:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `transformList` | `readonly IBlockTransformConfig[]` | `blockTransforms` | Block types available for conversion and Markdown shortcuts |
+| `commands` | `readonly SlashCommandItem[]` | `[]` | Additional items appended to the grouped slash menu |
+| `enableColonEmoji` | `boolean` | `true` | 是否允许冒号触发 Emoji；不影响斜杠菜单和 Markdown 转换 |
+
+运行时调用 `setColonEmojiEnabled(enabled: boolean)` 更新个人输入偏好。
+关闭时销毁当前冒号浮层并保留正文；已排队的冒号触发也会检查最新配置。
+宿主负责持久化，插件不向 Yjs 写入个人设置。
 
 Each `IBlockTransformConfig`:
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `flavour` | `BlockFlavour` | Target block flavour |
-| `description` | `string` | Display name in the slash menu |
+| `description` | `string` | Optional slash-menu introduction overriding Schema `metadata.description`; do not include shortcut syntax |
+| `keywords` | `readonly string[]` | Additional searchable aliases |
+| `searchAlias` | `string` | Preferred alias displayed as `/alias` and included in search |
 | `hotkey` | `HotkeyConfig` | Optional keyboard shortcut |
 | `markdown` | `RegExp` | Optional Markdown trigger pattern |
+| `markdownHint` | `string` | Human-readable Markdown trigger rendered as a trailing hint |
 | `onConvert` | `(doc, block, text) => void` | Optional custom conversion logic |
+
+Each `SlashCommandItem` has `id`, `label`, `run(context)` and optional `group`,
+`groupLabel`, `description`, `keywords`, `icon`, `svgIcon`, `csIcon`, and
+`when(context)`. `searchAlias` selects the visible `/alias`, while
+`shortcutHint` displays a host-owned shortcut without registering that binding.
+Groups are `basic`, `inline`, `media`, or `embed`. IDs must be stable; a host
+command with the same ID as a built-in command replaces that built-in command
+in place. Search indexes the label, ID, flavour, explicit alias, and `keywords`.
+Chinese labels and keywords also receive pinyin-initial keys, so `/gl` matches
+`高亮块`; descriptions and group labels are presentation-only and cannot create
+accidental search matches.
+
+For Schema block items, introduction resolution is local to this menu:
+
+1. Matching `IBlockTransformConfig.description`.
+2. Schema `metadata.description`.
+3. No introduction row.
+
+The plugin never writes the override back to Schema metadata. Markdown syntax,
+the formatted cross-platform hotkey, and `/searchAlias` are never concatenated
+into `description`. The hotkey and quick-search alias stay at the end of the
+right-hand hint area's first row; the Markdown trigger receives its own second
+row directly below them in the same right-hand area.
+
+`SlashCommandContext` exposes `doc`, `block`, `query`, `triggerIndex`,
+`triggerLength`, and a single-use `replace(deltas)` function. `replace()` keeps
+the slash range as a Yjs relative position while an async picker is open. It
+returns `false` if the range became stale, readonly, or invalid, and otherwise
+replaces `/query` through the editable block model and restores the caret.
+
+### Built-in Slash Commands
+
+The default grouped menu includes all insertable Schema blocks plus:
+
+| Group | Commands |
+|-------|----------|
+| Basic content | Paragraph, heading 1–4, editable block Schemas, and host commands assigned to `basic` |
+| Inline content | Formula, mention (when `MentionPlugin` is registered), Emoji, CSES Icon, link, date, and inline image (when the image Schema is registered) |
+| Media & layout | Non-editable block Schemas |
+| Third-party embed | Schemas whose flavour ends in `-embed` |
+
+Emoji and Icon use `CsEmojiPickerComponent` and `CsIconPickerComponent` from the
+exact CSES UI peer. The `:` type-ahead flow uses EmojiPicker's public `csQuery`
+model while input continues in the editor. Entering picker keyboard navigation
+uses EmojiPicker's preserve-focus keyboard API, so the grid renders an active
+option without taking DOM focus from BlockCraft. The shared CSES Emoji/Icon
+pickers expose `moveActive`, `selectActive`, and `moveCategory`; BlockTransformer
+maps its own four-direction, Enter, Tab / Shift+Tab, and Escape bindings onto
+those methods. Slash-opened Emoji and Icon pickers use the same active picker
+session whether real focus remains in the editor or moves into the picker search
+input. Navigation keys never move the document caret or transfer focus into the
+grid; ordinary search text, Backspace, and IME remain owned by the focused
+input. Both `:` and `/emoji` set the picker locale explicitly to `zh-CN`.
+The selected Icon is stored through the built-in inline
+`icon` embed as a `csicon csicon-<name>` class string; SVG catalogue entries are
+not accepted by this single-colour embed path.
+
+The `date` command (`inline:date`) opens no picker: it freezes the current
+local time straight into a `date` embed, and editing is deferred to
+`DateInlineExtensionPlugin`'s click dialog. Inserting through a picker would
+make the common case — "stamp now" — cost two interactions.
+
+Choosing a block item replaces the slash-command paragraph. Inline commands
+replace the same model-owned `/query` range without moving input ownership into
+the picker.
+
+### Runtime Command API
+
+Commands can also be contributed after construction. Changes appear the next
+time the slash menu opens:
+
+```typescript
+const transformer = new BlockTransformerPlugin()
+const dispose = transformer.registerCommand(command)
+const disposeMany = transformer.registerCommands([commandA, commandB])
+
+dispose()                              // removes only this registration
+disposeMany()                          // removes this batch
+transformer.unregisterCommand('host:command-id') // removes all registrations for the ID
+```
+
+Registrations are stacked per stable ID. The latest registration is visible;
+disposing it reveals the previous registration, which lets independently loaded
+host extensions override and unload without deleting another extension's item.
 
 ### Built-in Hotkeys
 
@@ -173,13 +509,41 @@ new BlockTransformerPlugin([
   ...blockTransforms,  // keep defaults
   {
     flavour: 'note',
-    description: '笔记',
+    description: '记录补充说明或上下文',
     markdown: /^:::$/,  // trigger on typing :::
+    markdownHint: '::: + 空格',
+    searchAlias: 'bj',
     onConvert: (doc, block, text) => {
       // custom conversion logic
     },
   },
 ])
+
+// Keep built-ins and add a host-owned inline command.
+const transformer = new BlockTransformerPlugin({
+  commands: [{
+    id: 'inline:date',
+    label: '日期',
+    group: 'inline',
+    csIcon: 'calendar',
+    keywords: ['date', 'today'],
+    run: async context => {
+      const value = await openDatePicker()
+      if (value) context.replace([{insert: value.label, attributes: {'d:date': value.iso}}])
+    },
+  }],
+})
+
+// A feature module can contribute later and clean up on unload.
+const unregisterApproval = transformer.registerCommand({
+  id: 'host:approval',
+  label: '快捷审批',
+  keywords: ['workflow'],
+  searchAlias: 'sp',
+  shortcutHint: '⌘⇧A', // display only; the host owns the binding
+  run: context => context.replace([{insert: '审批'}]),
+})
+// unregisterApproval()
 ```
 
 ---
@@ -187,8 +551,12 @@ new BlockTransformerPlugin([
 ## OrderedBlockPlugin
 
 > `plugins/ordered-extension/` — Auto-numbering for ordered list blocks.
+> Runtime plugin ID: `ordered-block`.
 
-Maintains correct sequential numbering across ordered list blocks. Recalculates `order` props when blocks are inserted, deleted, or have `depth`/`heading` changed. Also shows a prefix-click toolbar to change list style and start number.
+Maintains correct sequential numbering across ordered list blocks. Recalculates
+`order` props when blocks are inserted, deleted, or have `depth`/`heading`
+changed. Clicking a marker opens the numbering library plus continue / restart
+commands.
 
 ### Configuration
 
@@ -201,9 +569,28 @@ new OrderedBlockPlugin()
 ### Notes
 
 - Subscribes to `doc.onChildrenUpdate$` and `doc.onPropsUpdate$` for automatic renumbering
+- Queues stable parent/block IDs, reads the complete sibling sequence from
+  `BlockModelGraph`, and writes `order` through `DocCRUD.updateBlockProps()`;
+  offscreen root children are renumbered without materializing their components
 - Recalculates the affected parent block as one sibling sequence after local child changes, or after ordered block `depth` / `heading` / `start` prop changes
 - Numbering is grouped by sibling `depth` + `heading`; changing one ordered block's `heading` renumbers following ordered siblings in the same parent
-- Explicit `start` restarts the sequence from that number; following same-depth/same-heading ordered blocks continue from it
-- A `start`-only prop change uses a local recalculation range and stops at the next explicit `start` boundary for the same `depth` + `heading`
+- 普通有序列表与有序标题都默认连续：同父容器、同 `depth` + `heading` 的有序块可跨同层或更深的非有序块续号，普通标题也不截断。不同父容器独立计数。
+- 只有回到更浅缩进、遇到相关有序标题边界或显式正数 `start` 才截断对应编号。普通段落不会自动写入 `start`。
+- `continuePrevious` 保留存储与菜单兼容性，但缺省、false、true 均不再决定跨段能力；跨段续号已是默认策略。“继续编号”仍写入 `{start: 0, continuePrevious: true}` 以清除显式重启，“重新编号”仍写入 `{start: 1, continuePrevious: false}`。
+- 正数 `start` 优先：当前块从指定值开始，后续同组块继续递增。仅修改 `start` 时按同一边界规则局部重算，可跨非有序块，遇到下一个同组显式 `start` 停止，无需因 `continuePrevious` 扫描重算整个父容器。
 - Returning from a nested depth to a shallower depth clears deeper counters, so nested ordered lists restart under the next parent item
 - Shows `OrderedPrefixToolbar` when the list prefix button is clicked
+- The fixed-toolbar split button uses `BcOrderedMarkerPickerComponent`, which
+  offers the automatic depth cycle and 12 explicit `ms` presets. The
+  prefix toolbar remains focused on continue / restart / recalculate and does
+  not duplicate the marker library
+- Marker changes call `applyOrderedMarkerStyle()` with stable IDs. They update
+  the anchor's automatic-numbering group, cross same-level non-ordered siblings,
+  stop at structural counter pruning or an explicit restart, skip readonly
+  blocks, and use one normal Yjs transaction so Undo restores the whole change
+- Marker changes do not schedule or rewrite `order`; automatic counter repair
+  continues to use `ORIGIN_SYSTEM_REPAIR`
+- Newly inserted ordered blocks that omit `ms` inherit the valid preset of the
+  automatic-numbering group they join, including across same-level non-ordered
+  siblings. Existing blocks are not backfilled, explicit styles are preserved,
+  and a positive `start` boundary begins a group without inheritance

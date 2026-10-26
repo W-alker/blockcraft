@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component } from "@angular/core";
-import { DeltaOperation, EditableBlockComponent, ORIGIN_SKIP_SYNC } from "../../framework";
+import { DeltaOperation, EditableBlockComponent, normalizeRange, ORIGIN_SKIP_SYNC } from "../../framework";
 import { MermaidTextareaBlockModel } from "./index";
 import { CodeInlineRuntime } from "../code-block/code-inline-runtime";
 import { debounce, nextTick } from "../../global";
@@ -26,6 +26,15 @@ export class MermaidTextareaBlockComponent extends EditableBlockComponent<Mermai
       lang: 'mermaid',
       withLineBreak: false,
       theme: this.doc.theme.includes('light') ? 'github-light' : 'github-dark',
+      canonicalHost: {
+        readModel: () => ({
+          text: this.textContent(),
+          deltas: this._projectedTextDeltas(),
+        }),
+        hasTextRevisions: () => !!this.doc.revisions?.hasTextRevisions(this.id),
+        isCompositionBusy: () => this._isCompositionProjectionBusy(),
+        readSelection: () => this._readCanonicalSelection(),
+      },
     })
     this._runtime = this._codeRuntime
   }
@@ -54,15 +63,36 @@ export class MermaidTextareaBlockComponent extends EditableBlockComponent<Mermai
       this._codeRuntime.diffHighLight(op, {
         block: this,
         selectionValue: this.doc.selection.value,
-        normalizeRange: (range: Range) => this.doc.selection.normalizeRange(range)
+        normalizeRange: (range: Range) => normalizeRange(
+          range,
+          id => this.doc.getBlockById(id) as any,
+        )
       })
     })
   }, 200)
 
-  override rerender() {
-    super.rerender()
-    queueMicrotask(() => {
-      this._codeRuntime.renderCode(() => this.textContent(), () => this.textDeltas())
-    })
+  private _projectedTextDeltas() {
+    const deltas = this.textDeltas()
+    return this.doc.revisions?.projectInlineDeltas(this.id, deltas) ?? deltas
+  }
+
+  private _isCompositionProjectionBusy() {
+    return this.doc.event.status.isComposing ||
+      !this.doc.inputManger.compositionSession.isIdle
+  }
+
+  private _readCanonicalSelection() {
+    const selection = this.doc.selection.value
+    if (
+      !selection?.isInSameBlock ||
+      selection.anchor.type !== 'text' ||
+      selection.head.type !== 'text' ||
+      selection.anchor.blockId !== this.id ||
+      selection.head.blockId !== this.id
+    ) return null
+    return {
+      anchor: selection.anchor.offset,
+      head: selection.head.offset,
+    }
   }
 }

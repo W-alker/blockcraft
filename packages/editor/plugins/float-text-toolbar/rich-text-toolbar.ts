@@ -1,5 +1,5 @@
 import {BindHotKey, BlockNodeType, DocPlugin, EventListen, UIEventStateContext} from "../../framework";
-import {debounceTime, Subject, Subscription, takeUntil} from "rxjs";
+import {debounceTime, fromEvent, Subject, Subscription, takeUntil} from "rxjs";
 import {ComponentRef, Type} from "@angular/core";
 import {FloatTextToolbarComponent, IToolbarMenuItem} from "./widgets/toolbar.component";
 import {ConnectedPosition, OverlayRef} from "@angular/cdk/overlay";
@@ -7,8 +7,13 @@ import {ITextCommonAttrs, TextToolbarUtils} from "./utils";
 import {debounce} from "../../global";
 import {BcFloatToolbarItemComponent} from "../../components";
 import {calcFloatToolbarPosition} from "./toolbar-position";
+import {isFloatTextToolbarSelection} from "./selection";
+import {isSelectionAlive} from "../../framework/modules/selection/liveness";
+import {isExternalModalOpen} from "./external-modal";
 
 export interface FloatTextToolbarPluginOptions {
+  /** 只控制浮层，保留格式快捷键。默认开启。 */
+  enabled?: boolean;
   /**
    * 追加到工具栏末尾的自定义按钮
    */
@@ -30,6 +35,7 @@ export class FloatTextToolbarPlugin extends DocPlugin {
   private _closeCpr$ = new Subject();
 
   protected utils!: TextToolbarUtils;
+  private enabled: boolean;
   private activeCommonAttrs: ITextCommonAttrs = {
     attrs: new Map(),
     colors: {},
@@ -38,32 +44,69 @@ export class FloatTextToolbarPlugin extends DocPlugin {
 
   constructor(private options?: FloatTextToolbarPluginOptions) {
     super();
+    this.enabled = options?.enabled !== false;
+  }
+
+  setEnabled(enabled: boolean): void {
+    this.enabled = enabled;
+    if (!enabled) this.closeToolbar();
+  }
+
+  private _isSelectionReadonly(selection: BlockCraft.Selection) {
+    return this.doc.readonlyManager?.isSelectionReadonly(selection) ?? this.doc.isReadonly;
   }
 
   init() {
     this.utils = new TextToolbarUtils(this.doc);
 
-    this.doc.subscribeReadonlyChange(() => {
-      this.toolbarOvr && this.closeToolbar();
-    });
+    this._sub.add(fromEvent(this.doc.scrollContainer?.ownerDocument ?? document, 'focusin').subscribe(() => {
+      if (this.toolbarOvr && isExternalModalOpen(this.doc)) this.closeToolbar();
+    }));
 
-    this.doc.selection.changeObserve().subscribe(debounce(sel => {
-      if (this.doc.isReadonly || !sel || sel.collapsed || sel.isAllSelected || sel.isEmpty) return;
-      if (this.toolbarOvr) this.closeToolbar();
-      if (sel.firstBlock['plainTextOnly'] && sel.lastBlock['plainTextOnly']) return;
-      this.openToolbar();
-    }, 350));
+    this._sub.add(
+      this.doc.subscribeReadonlyChange(() => {
+        this.toolbarOvr && this.closeToolbar();
+      })
+    );
+
+    this._sub.add(
+      this.doc.selection.changeObserve().subscribe(debounce(sel => {
+        if (!this.enabled || this.doc.isReadonly
+          || isExternalModalOpen(this.doc)
+          || !isFloatTextToolbarSelection(sel)
+          || !isSelectionAlive(sel as any, this.doc)
+          || this._isSelectionReadonly(sel)) {
+          if (this.toolbarOvr) this.closeToolbar();
+          return;
+        }
+        if (this.toolbarOvr) this.closeToolbar();
+        if ((sel.firstBlock as any).plainTextOnly && (sel.lastBlock as any).plainTextOnly) return;
+        this.openToolbar();
+      }, 350))
+    );
+
+    const stateChange$ = this.doc.readonlyManager?.stateChange$;
+    if (stateChange$) {
+      this._sub.add(stateChange$.subscribe(() => {
+        const selection = this.doc.selection.value;
+        if (selection && this._isSelectionReadonly(selection) && this.toolbarOvr) {
+          this.closeToolbar();
+        }
+      }));
+    }
 
     // Close the toolbar whenever an internal block drag starts. During drag the
     // framework suppresses selection recalculation (see
     // DocInternalDragController.setSuppressRecalculate), so selectionChange$ no
     // longer fires while pointer is held — without this hook the toolbar would
     // linger over the drag ghost.
-    this.doc.dragController.state$
-      .pipe(takeUntil(this.doc.onDestroy$))
-      .subscribe(state => {
-        if (state !== 'idle' && this.toolbarOvr) this.closeToolbar();
-      });
+    this._sub.add(
+      this.doc.dragController.state$
+        .pipe(takeUntil(this.doc.onDestroy$))
+        .subscribe(state => {
+          if (state !== 'idle' && this.toolbarOvr) this.closeToolbar();
+        })
+    );
   }
 
   // @EventListen('selectEnd', { flavour: 'root' })
@@ -73,9 +116,14 @@ export class FloatTextToolbarPlugin extends DocPlugin {
   // }
 
   openToolbar() {
-    const sel = this.doc.selection.value!;
+    if (!this.enabled || isExternalModalOpen(this.doc)) return;
+    const sel = this.doc.selection.value;
+    if (!isFloatTextToolbarSelection(sel) || !isSelectionAlive(sel as any, this.doc)) return;
+    if (this._isSelectionReadonly(sel)) return;
 
-    const { connectElement, connectPositions } = this._calcPosition(sel);
+    const position = this._calcPosition(sel);
+    if (!position) return;
+    const { connectElement, connectPositions } = position;
 
     const { componentRef, overlayRef } = this.doc.overlayService.createConnectedOverlay<FloatTextToolbarComponent>({
       target: connectElement,
@@ -85,7 +133,7 @@ export class FloatTextToolbarPlugin extends DocPlugin {
     this._cpr = componentRef;
     this.toolbarOvr = overlayRef;
 
-    this.activeCommonAttrs = this.utils.getCurrentCommonAttrs(this.doc.selection.value!);
+    this.activeCommonAttrs = this.utils.getCurrentCommonAttrs(sel);
     this._cpr.setInput('doc', this.doc);
     this._cpr.setInput('utils', this.utils);
     this._cpr.setInput('activeAttrs', this.activeCommonAttrs.attrs);
@@ -117,13 +165,15 @@ export class FloatTextToolbarPlugin extends DocPlugin {
   private _calcPosition(selection: BlockCraft.Selection): {
     connectElement: HTMLElement,
     connectPositions: ConnectedPosition[]
-  } {
+  } | null {
     return calcFloatToolbarPosition(this.doc, selection);
   }
 
   closeToolbar() {
     this._closeCpr$.next(true);
     this.toolbarOvr?.dispose();
+    this.toolbarOvr = undefined;
+    this._cpr = undefined;
   }
 
   @BindHotKey({ key: 'b', shortKey: true })
@@ -153,11 +203,15 @@ export class FloatTextToolbarPlugin extends DocPlugin {
 
   toggleFormatAttr = (ctx: UIEventStateContext, attrName: string) => {
     ctx.preventDefault();
+    const selection = this.doc.selection.value;
+    if (!selection || this._isSelectionReadonly(selection)) return true;
+    // Keyboard actions must not depend on the debounced floating toolbar state.
+    this.activeCommonAttrs = this.utils.getCurrentCommonAttrs(selection);
     const value = this.activeCommonAttrs.attrs.has(attrName);
     // @ts-ignore
     this.utils.formatText({ [`a:${attrName}`]: value ? null : true });
     if (this._cpr) {
-      value ? this.activeCommonAttrs.attrs.delete(attrName) : this.activeCommonAttrs.attrs.set(attrName, value);
+      value ? this.activeCommonAttrs.attrs.delete(attrName) : this.activeCommonAttrs.attrs.set(attrName, true);
       this._cpr.setInput('activeAttrs', this.activeCommonAttrs.attrs);
       this._cpr.changeDetectorRef.markForCheck();
     }

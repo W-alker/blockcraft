@@ -1,15 +1,37 @@
 import { ChangeDetectionStrategy, ChangeDetectorRef, ComponentRef, Component, ElementRef, ViewChild, inject } from "@angular/core";
 import {
-  BaseBlockComponent, getPositionWithOffset
+  BaseBlockComponent, EditableBlockComponent, getPositionWithOffset,
+  resolveBlockPolicy,
 } from "../../framework";
+import {
+  planTableCellFlow, TableCellFlowAnchor, TableCellFlowInput,
+  TableCellFlowPlan, TableCellFlowPlanningError, TableCellFlowPoint,
+  TableFlowRowInput,
+} from "../../framework/modules/pagination/engine/table-cell-flow";
+import {
+  applyInlinePaginationGaps,
+  clearInlinePaginationGaps,
+  measureInlinePaginationLineStarts,
+} from "../../framework/block-std/inline/runtime/inline-pagination-access";
+import {
+  registerTablePaginationAccess,
+  TablePaginationGeometry,
+  TablePaginationMeasureOptions,
+} from "../../framework/modules/pagination/view/table-pagination-access";
+import {
+  getTableModelProjection,
+  resolveTableCellSelectionTarget,
+  TableModelGrid,
+  TableModelRectangle,
+} from "../../framework/modules/table";
 import { TableBlockModel } from "./index";
 import { TableCellBlockComponent } from "./table-cell.block";
-import { BehaviorSubject, filter, fromEvent, merge, Subject, take, takeUntil } from "rxjs";
+import { BehaviorSubject, filter, fromEvent, merge, skip, Subject, Subscription, take, takeUntil } from "rxjs";
 import { ColReorderEndEvent, ColReorderMoveEvent, ColReorderStartEvent, TableColBarComponent } from "./widgets/table-col-bar.component";
 import { RowReorderEndEvent, RowReorderMoveEvent, RowReorderStartEvent, TableRowBarComponent } from "./widgets/table-row-bar.component";
 import { TableStructureToolbarComponent } from "./widgets/table-structure-toolbar.component";
 import { preferTableToolbarAbove, resolveTableStructureAnchor } from "./widgets/table-structure-anchor";
-import { adjustSelection, adjustSelectionWithMap, buildCellMasterMap, buildCellMasterMapWithSources, CellMasterMap, RectangleSelection } from "./utils";
+import { adjustSelection, RectangleSelection } from "./utils";
 import { debounce, nextTick, throttle } from "../../global";
 import { addTableCol, addTableRow, buildCellMatrix, CellMatrixEntry, deleteTableCols, deleteTableRows } from "./callback";
 import { attachTableNormalizer } from "./table-normalize";
@@ -18,9 +40,202 @@ import { TableCellsSelection } from "./types";
 import { BlockSelection } from "../../framework/modules/selection/blockSelection";
 import { TableFullscreenController } from "./table-fullscreen-controller";
 
+const TABLE_CELL_SELECTED_CLASS = 'bc-table-cell-selected'
+const TABLE_COL_RESIZE_PREVIEW_ATTR = 'data-bc-table-col-resize-preview'
+const TABLE_MIN_COLUMN_WIDTH = 50
+const TABLE_COL_RESIZE_HIT_WIDTH = 12
+const TABLE_COL_RESIZE_OUTER_TOLERANCE = 2
+const TABLE_COL_RESIZE_ADJACENT_TOLERANCE = 4
+const TABLE_PAGINATION_BOUNDARY_TOLERANCE = 2
+/**
+ * Extreme rich-cell tables must degrade to the existing atomic-row overflow
+ * semantics before live pagination can monopolize the main thread. These are
+ * view-planning budgets, not document/model limits.
+ */
+const TABLE_CELL_FLOW_MAX_PAGES_PER_ROW = 256
+const TABLE_CELL_FLOW_MAX_CONTINUATIONS = 1024
+const TABLE_CELL_FLOW_MAX_SAFE_ANCHORS = 2048
+const TABLE_CELL_FLOW_MIN_LINE_SAMPLES = 64
+const TABLE_CELL_FLOW_LINE_SAMPLES_PER_PAGE = 8
+/**
+ * 分页拆分 rowspan 时，续页段借用模型里的隐藏占位 cell 来承载视图。
+ * 该属性把续页段的命中重新路由到真正的 master cell；不能使用续页 cell
+ * 自身的 data-block-id，否则矩形选区会把模型占位格误当成独立单元格。
+ */
+const PG_CONTINUATION_MASTER_ATTR = 'data-bc-pagination-master-cell-id'
+
 function cssZoomDeclarationSupported(): boolean {
   if (typeof CSS === 'undefined' || typeof CSS.supports !== 'function') return true
   return CSS.supports('zoom', '2')
+}
+
+/** 分页视图行（占位行 / 续页重复表头克隆）：均为视图层注入、不属于数据模型，观测/选区/行栏一律跳过。 */
+function isPaginationViewRow(node: Node): boolean {
+  return node instanceof HTMLElement
+    && (node.classList.contains('bc-pagination-spacer') || node.classList.contains('bc-pagination-header-clone'))
+}
+
+/**
+ * 续页重复表头克隆里 data-block-id 改写用的前缀：保留 [data-block-id] CSS 级联、又不与真实块 id 冲突。
+ */
+const PG_CLONE_ID_PREFIX = '__pgclone__'
+
+/**
+ * 构建「续页重复表头」克隆 `<tr>`：跨页拆分的表格在每个续页顶部重复一份表头（rowHead 行）。
+ * 克隆当前渲染的表头行，去掉 rowspan（克隆只占一行、不向下跨）、不可编辑/点选。纯视图层，不进数据模型。
+ *
+ * data-block-id **不能直接删除**：编辑器的块外边距归一化（base.scss `[data-block-id]{margin-bottom}` +
+ * `[data-block-id]:last-child{margin-bottom:0}`）依赖它。删掉后克隆里的块会回落到浏览器 UA 默认外边距
+ * （`<p>` 1em、标题更大）→ 克隆比原表头高、内容「塌成一坨」。改写成 `__pgclone__` 前缀的非模型 id：
+ * 完整保留 [data-block-id] CSS 级联（外边距/定位/caret），又不与真实块 id 冲突、不会被 getBlockById 命中
+ * （命中也返回 null，所有 closest('[data-block-id]') 调用方均已判空）。克隆全程 inert（pointer-events/
+ * user-select none + contenteditable false + aria-hidden），不会有事件/选区从其内部发起。
+ */
+function buildPaginationHeaderClone(headerRowEl: HTMLElement): HTMLTableRowElement {
+  const clone = headerRowEl.cloneNode(true) as HTMLTableRowElement
+  clone.classList.add('bc-pagination-header-clone')
+  clone.classList.remove('selected')
+  clone.setAttribute('contenteditable', 'false')
+  clone.setAttribute('aria-hidden', 'true')
+  clone.style.pointerEvents = 'none'
+  clone.style.userSelect = 'none'
+  const rescopeBlockId = (el: Element) => {
+    const id = el.getAttribute('data-block-id')
+    if (id != null) el.setAttribute('data-block-id', PG_CLONE_ID_PREFIX + id)
+  }
+  rescopeBlockId(clone)
+  clone.querySelectorAll('[data-block-id]').forEach(rescopeBlockId)
+  clone.querySelectorAll('td, th').forEach(cell => {
+    const c = cell as HTMLElement
+    c.style.pointerEvents = 'none'
+    c.style.userSelect = 'none'
+    c.classList.remove('selected')
+    c.removeAttribute('rowspan') // 克隆表头只占一行，不向下跨（合并表头降级为平表头）
+  })
+  return clone
+}
+
+/**
+ * 构建一个无边框、不可编辑、不响应指针的占位 `<tr>`，撑出页缝高度把后续行推到下一页。
+ *
+ * 关键：表格是 `border-collapse: collapse`，外框 `border-right` 画在 `<table>` 上、左框来自首列 cell。
+ * 占位 cell 用 `border:none` 时，`none` 在边框冲突里优先级最低，会被 `<table>` 的 `border-right` 压过 →
+ * 右侧出现一条贯穿页缝的竖线。改用 **左右 `border-style: hidden`**（collapse 冲突里 `hidden` 优先级最高、
+ * 直接抹掉该段边框），把页缝内的左右竖线都消掉；上下保持 `none`（让相邻数据行的边框赢，
+ * 各页表格部分的上/下沿正常闭合）。
+ */
+function buildPaginationSpacer(gap: number, colspan: number): HTMLTableRowElement {
+  const tr = document.createElement('tr')
+  tr.className = 'bc-pagination-spacer'
+  tr.setAttribute('contenteditable', 'false')
+  tr.setAttribute('aria-hidden', 'true')
+  tr.style.cssText = `height:${gap}px;`
+  const td = document.createElement('td')
+  td.setAttribute('colspan', `${Math.max(1, colspan)}`)
+  td.style.cssText =
+    `height:${gap}px; padding:0; background:transparent; pointer-events:none;` +
+    `user-select:none; -webkit-user-select:none;` +
+    `border-top:none; border-bottom:none; border-left-style:hidden; border-right-style:hidden;`
+  tr.appendChild(td)
+  return tr
+}
+
+interface TableCellFlowRenderGap {
+  cellId: string
+  anchor: TableCellFlowAnchor
+  gap: number
+  backdropOffset: number
+  backdropHeight: number
+}
+
+type TablePaginationBreak =
+  | {beforeRowId: string; gap: number}
+  | {
+      kind: 'cell-flow'
+      rowId: string
+      cells: TableCellFlowRenderGap[]
+      mask: {
+        top: number
+        height: number
+        backdropOffset: number
+        backdropHeight: number
+      }
+    }
+
+interface TableCellFlowMeasurementBudget {
+  continuations: number
+  safeAnchors: number
+}
+
+interface TableCellFlowBlockOffsetSnapshot {
+  value: string
+  priority: string
+}
+
+interface TableCellFlowRuntimeGap {
+  offset: number
+  height: number
+  backdropOffset: number
+  backdropHeight: number
+}
+
+interface TableCellFlowAnchorOwner {
+  rowId: string
+  rowElement: Element | null
+}
+
+function buildTablePaginationMask(
+  mask: Extract<TablePaginationBreak, {kind: 'cell-flow'}>['mask'],
+  table: HTMLElement,
+  localTop: number,
+): HTMLDivElement {
+  const element = document.createElement('div')
+  element.className = 'bc-pagination-table-flow-mask'
+  element.setAttribute('contenteditable', 'false')
+  element.setAttribute('aria-hidden', 'true')
+  element.style.position = 'absolute'
+  element.style.left = `${table.offsetLeft}px`
+  element.style.top = `${localTop}px`
+  element.style.width = `${table.offsetWidth}px`
+  element.style.pointerEvents = 'none'
+  element.style.userSelect = 'none'
+  element.style.webkitUserSelect = 'none'
+  // 保留几何标记供命中排除与投影健康检查；不再盖一层白灰背景模拟纸张。
+  element.style.height = `${Math.max(0, mask.height)}px`
+  return element
+}
+
+function shallowEqualNumberRecord(a: Record<string, number>, b: Record<string, number>): boolean {
+  const ka = Object.keys(a)
+  const kb = Object.keys(b)
+  if (ka.length !== kb.length) return false
+  return ka.every(k => a[k] === b[k])
+}
+
+function elementContentWidth(element: HTMLElement): number {
+  const style = element.ownerDocument.defaultView?.getComputedStyle(element)
+  const paddingLeft = Number.parseFloat(style?.paddingLeft ?? '') || 0
+  const paddingRight = Number.parseFloat(style?.paddingRight ?? '') || 0
+  return Math.max(0, element.clientWidth - paddingLeft - paddingRight)
+}
+
+function equalTableColumnWidths(
+  columnCount: number,
+  containerWidth: number,
+  minWidth: number,
+  horizontalOverhead: number,
+): number[] {
+  const availableWidth = Math.max(
+    columnCount * minWidth,
+    Math.floor(containerWidth - Math.max(0, horizontalOverhead)),
+  )
+  const eachWidth = Math.floor(availableWidth / columnCount)
+  const remainder = availableWidth - eachWidth * columnCount
+
+  return Array.from(
+    {length: columnCount},
+    (_, index) => eachWidth + (index < remainder ? 1 : 0),
+  )
 }
 
 /**
@@ -165,6 +380,21 @@ function styleSizeAppliesZoomInZoomedParent(): boolean {
 export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   protected hoveringCell: TableCellBlockComponent | null = null
   protected resizingCol$ = new BehaviorSubject(false)
+  private _colResizeGesture: {
+    anchorCellId: string
+    startClientX: number
+    startWidth: number
+    width: number
+    actualZoom: number
+    boundaryClientX: number
+    previewLine: HTMLElement
+  } | null = null
+  private _colResizeSubscriptions = new Subscription()
+  /** 当前 overlay 手柄所代表的模型 cell 与实际分页 DOM 投影。 */
+  private _columnResizeHandleAnchor: {
+    cellId: string
+    boundaryCell: HTMLTableCellElement
+  } | null = null
 
   protected _startSelectingCell: TableCellBlockComponent | null = null
   protected _lastSelectingCell: TableCellBlockComponent | null = null
@@ -175,6 +405,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   private toolbarOvr?: OverlayRef
   private toolbarRef?: ComponentRef<TableStructureToolbarComponent>
   private _closeToolbar$ = new Subject()
+  private readonly _tableMenuFrameIds = new Set<number>()
 
   private tableBody!: HTMLElement
 
@@ -215,15 +446,14 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   private _prevAdjustedSelection: TableCellsSelection | null = null
   private _activeCellsRange: { start: [number, number], end: [number, number], anchorId: string } | null = null
   private _suppressFocusSync = false
-  // Precomputed (row, col) → cell map cached for the duration of one drag
-  // session. Building it is O(rows × cols) and we'd otherwise rebuild it on
-  // every mouseover crossing — see `_setRectangleSelected` / `confirmSelection`.
-  private _dragMasterMap: CellMasterMap | null = null
-  // Reverse lookup populated alongside _dragMasterMap: cell → its source
-  // (rowIdx, colIdx). Lets us avoid the O(R + C) `childrenIds.indexOf` walks
-  // inside `_getSelectedCellsCoordinates` on every mouseover crossing.
-  private _dragCellSourceCoord: Map<TableCellBlockComponent, [number, number]> | null = null
+  // Drag intent is resolved against the cached model grid. Pointer hit-testing
+  // still starts from a mounted <td>, but rectangle semantics never depend on
+  // a complete table of row/cell ComponentRefs.
+  private _dragModelGrid: TableModelGrid | null = null
   private _dragStartCoord: [number, number] | null = null
+  /** 高频 pointermove 只保留本帧最后一个目标，避免跨过富文本子节点时重复投影矩形。 */
+  private _pendingDragCell: TableCellBlockComponent | null = null
+  private _dragSelectionFrame: number | null = null
 
   protected _rowReorder: {
     fromIndex: number
@@ -261,28 +491,96 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   } | null = null
 
   private resizeObserver = new ResizeObserver(entries => {
+    let rowsChanged = false
     for (const entry of entries) {
+      // 分页占位行无 data-block-id，不进高度记录、不参与行栏对齐。
+      if (isPaginationViewRow(entry.target)) continue
       const id = entry.target.getAttribute('data-block-id')
-      this._rowHeightsRecord[id!] = entry.borderBoxSize[0].blockSize
-      this.rowBarComponent.changeDetectionRef.markForCheck()
+      if (!id) continue
+      this._rowHeightsRecord[id] = entry.borderBoxSize[0].blockSize
+      rowsChanged = true
+      if (this._columnResizeHandleAnchor?.boundaryCell.closest('tr') === entry.target) {
+        this._invalidateColumnResizeHandle()
+      }
     }
+    // A column insertion can resize every row in one observer delivery. One
+    // OnPush invalidation covers the whole row bar; repeating it per entry only
+    // amplifies large-table structural edits.
+    if (rowsChanged) this.rowBarComponent.changeDetectionRef.markForCheck()
   })
 
   private mutationObserver = new MutationObserver(records => {
     for (const record of records) {
       if (record.addedNodes.length) {
         record.addedNodes.forEach(row => {
+          if (isPaginationViewRow(row)) return // 占位行/表头克隆不观测（高度由分页层管理）
           this.resizeObserver.observe(row as HTMLElement, { box: "border-box" })
         })
       }
       if (record.removedNodes.length) {
         record.removedNodes.forEach(row => {
+          if (isPaginationViewRow(row)) return
           this.resizeObserver.unobserve(row as HTMLElement)
         })
       }
     }
+    if (this._columnResizeHandleAnchor?.boundaryCell.isConnected === false) {
+      this._invalidateColumnResizeHandle()
+    }
     this.rowBarComponent.changeDetectionRef.markForCheck()
   })
+
+  /** 视图层分页断点：rowId → 该行上方需插入的页缝高度（px）。不写 Yjs、不进 Undo。 */
+  protected _pageBreakGaps: Record<string, number> = {}
+  /**
+   * 上次重建占位行/续页表头克隆时的「视图结构签名」（列数 + 表头行 DOM）。占位行 colspan 和表头克隆是
+   * **快照**，依赖列数与表头内容；这些变化不改页缝 gap，若只看 gapsChanged 重建会漏掉——加列后克隆/占位行
+   * 仍是旧列数 → 错位。签名变化时强制重建。
+   */
+  private _pageBreakSig = ''
+  /** 当前超高单元格投影；块锚点用可逆 margin，文字锚点用零模型长度 Inline 投影。 */
+  private _cellFlowSig = ''
+  private _cellFlowBlockOffsets = new Map<HTMLElement, TableCellFlowBlockOffsetSnapshot>()
+  private _cellFlowMasks = new Set<HTMLElement>()
+  private _cellFlowClip?: {element: HTMLElement; value: string; priority: string}
+  private _cellFlowRuntimes = new Set<object>()
+  /** Same-signature health check; bounded by the number of actual continuations. */
+  private _cellFlowRuntimeGaps = new Map<object, TableCellFlowRuntimeGap[]>()
+  private _cellFlowAnchorOwners = new Map<HTMLElement, TableCellFlowAnchorOwner>()
+  private _lastPaginationBreaks: TablePaginationBreak[] = []
+  /**
+   * 全屏是连续表格编辑视角：纸张 backdrop 已被隔离，表格内部的 spacer / inline gap /
+   * flow mask 若继续投影，只会留下没有页面上下文的灰带和错位手柄。暂停期间仍接收并
+   * 记录分页引擎的最新断点，退出全屏后一次性重放，普通流与分页状态均不丢失。
+   */
+  private _paginationProjectionSuspended = false
+  private _appliedPaginationBreakSig = ''
+  private _appliedPaginationGrid: TableModelGrid | null = null
+  private _nestedAtomicLocks = new Set<HTMLElement>()
+  /** rowspan 结构只随 TableModelGrid 冷路径失效；分页重算不再反复构建 Component 矩阵。 */
+  private _paginationRowspanCache: {
+    grid: TableModelGrid
+    spans: Array<{cellId: string; startRow: number; endRow: number}>
+  } | null = null
+  /**
+   * 全屏是纯视图 overlay，不能让 fixed/padding/zoom 后的 DOM 尺寸污染分页 GeometryIndex。
+   * 进入前保留最后一份普通流自然几何；全屏期间所有分页测量复用该快照。
+   */
+  private _normalFlowPaginationGeometry: TablePaginationGeometry | null = null
+  private _releaseTablePaginationAccess = registerTablePaginationAccess(this, {
+    measure: options => this._getPaginationGeometry(options),
+    apply: breaks => this._applyPaginationBreaks(breaks),
+    clear: () => this._applyPaginationBreaks([]),
+  })
+  /** 当前被分页拆分（视图层覆盖 rowspan/display）的单元格，供下一轮整体还原。 */
+  private _splitCells = new Set<TableCellBlockComponent>()
+  /**
+   * 合并源单元格 → 其被 un-hide 的「续段」单元格（视图层跨页拆分产物）。
+   * 用于把 `.selected` 高亮镜像到续段上：否则一个被拆到两页的合并单元格只有上半段
+   * 高亮、下半段（续段）不亮，看起来「半选中」——违反「同一数据同一视觉」。纯视图态，
+   * 每次 applyPaginationBreaks 重建。
+   */
+  private _continuationsOf = new Map<TableCellBlockComponent, TableCellBlockComponent[]>()
 
 
   /**
@@ -296,7 +594,11 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
   override ngAfterViewInit() {
     super.ngAfterViewInit();
-    this.fullscreenController = new TableFullscreenController(this.hostElement)
+    this.fullscreenController = new TableFullscreenController(
+      this.hostElement,
+      () => this.doc.scrollContainer,
+      () => this.doc.viewScale?.value ?? 1,
+    )
     // 进入/退出全屏：
     //  1. 销毁任何 CDK Overlay 形式的结构工具栏（普通态 → 全屏：切换到模板内联渲染；
     //     全屏 → 普通态：丢弃可能残留的 inline，等 _showTableMenuOverlay 重建 CDK 版）
@@ -304,7 +606,11 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     //  3. 根据当前选区重新触发 menu 状态同步，保证切换后 toolbar 立即可见
     this.fullscreenController.state$
       .pipe(takeUntil(this.onDestroy$))
-      .subscribe(() => {
+      .subscribe(isFullscreen => {
+        this._setPaginationProjectionSuspended(isFullscreen)
+        // state$ 在 controller 完成 class/zoom 切换后发出。退出时立即放开快照，
+        // 后续 ResizeObserver 只需提交一次真实普通流几何。
+        if (!isFullscreen) this._normalFlowPaginationGeometry = null
         this._disposeToolbar()
         this.cdrLocal.markForCheck()
         Promise.resolve().then(() => this.refreshTableMenuFromSelection())
@@ -313,9 +619,11 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     this.fullscreenController.zoom$
       .pipe(takeUntil(this.onDestroy$))
       .subscribe(z => {
+        if (this._colResizeGesture) this._finishColumnResize(false)
         if (this.tableWrapper?.nativeElement) {
           this.tableWrapper.nativeElement.style.zoom = String(z)
         }
+        this._invalidateColumnResizeHandle()
         this.cdrLocal.markForCheck()
       })
     // 全屏期间 viewport 尺寸变化也需要重新对齐
@@ -341,18 +649,19 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     // cannot swallow the events. Capture-phase mousedown guarantees we arm
     // selection state before any other handler runs.
     //
-    // The mouseover stream runs OUTSIDE Angular's zone — it fires once per
-    // child-element crossing inside cells (potentially dozens per cell visit
-    // on rich-text content) and every event would otherwise schedule a CD
-    // tick across the entire app. The handler only mutates DOM (classList)
-    // and our own internal state, so no CD is required for the hot drag path.
+    // The idle mousemove stream runs OUTSIDE Angular's zone. `mouseover` is not
+    // reliable after pagination projection/reparenting: the pointer can already
+    // be over the same hit target when the table view is rebuilt, so no new
+    // enter/over event is emitted and the template-owned resize handle remains
+    // orphaned on the table host. Mouse movement repairs that ownership. The
+    // fast path below performs only closest()/identity checks and no layout read.
     fromEvent<MouseEvent>(this.hostElement, 'mousedown', { capture: true })
       .pipe(takeUntil(this.onDestroy$))
       .subscribe(e => this._handleNativeMouseDown(e))
     this.doc.ngZone.runOutsideAngular(() => {
-      fromEvent<MouseEvent>(this.hostElement, 'mouseover')
+      fromEvent<MouseEvent>(this.hostElement, 'mousemove')
         .pipe(takeUntil(this.onDestroy$))
-        .subscribe(e => this._handleNativeMouseOver(e))
+        .subscribe(e => this._handleIdleCellMouseMove(e))
     })
     // Safari 不会为原生 scrollbar 上的点击发 mousedown，因此用排除法：
     // 记录最近一次 wheel 时间戳，scroll 触发时若没有近期 wheel，就视为非滚轮源（滚动条拖拽 / 键盘 / 触摸）。
@@ -367,12 +676,9 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
         this._syncTableFocusUi(selection)
       })
 
-    // 在表格内进行文本编辑（普通打字 / IME 提交）时折叠矩形（行/列）多选高亮。
-    // 多格选区的高亮存在本组件的 _selectedCellSet / _activeCellsRange 里，而
-    // doc.selection 只跟踪 anchor 格——光标进入 anchor 格编辑时 _syncTableFocusUi
-    // 的 keep-alive 分支会保留矩形，导致其它格残留 .selected 样式。这里在真正发生
-    // 文本变更时主动清理（O(1) 预检：无多选直接返回）。Delete 清空内容不插入文本、
-    // 不触发本路径，多选保持不变（符合“清空后仍选中”的预期）。
+    // 在表格内进行文本编辑（普通打字 / IME 提交）时折叠行/列多选高亮。
+    // Model-owned table-cell 选区切换到文本光标时会由 _syncTableFocusUi 同步清理；
+    // 这里保留为本地文本更新的兜底路径，覆盖旧的显式行/列选择和异步渲染交错。
     this.doc.crud.onTextUpdate$
       .pipe(takeUntil(this.onDestroy$))
       .subscribe(e => {
@@ -398,6 +704,15 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
   override ngOnDestroy() {
     super.ngOnDestroy();
+    this._finishColumnResize(false)
+    this._cancelPendingDragSelection()
+    this._releaseTablePaginationAccess()
+    this._releaseTablePaginationAccess = () => undefined
+    this._cancelTableMenuFrames()
+    this._clearCellFlowProjection()
+    this._clearNestedAtomicLocks()
+    this.tableBody?.querySelectorAll(':scope > tr.bc-pagination-spacer, :scope > tr.bc-pagination-header-clone').forEach(el => el.remove())
+    this._clearCellOverrides()
     this.mutationObserver.disconnect()
     this.resizeObserver.disconnect()
     this.fullscreenController?.destroy()
@@ -418,11 +733,13 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
   /** 切换全屏视图。 */
   toggleFullscreen(): void {
+    if (!this.isFullscreen) this._captureNormalFlowPaginationGeometry()
     this.fullscreenController?.toggle()
   }
 
   /** 显式设置全屏视图状态。 */
   setFullscreen(value: boolean): void {
+    if (value && !this.isFullscreen) this._captureNormalFlowPaginationGeometry()
     this.fullscreenController?.set(value)
   }
 
@@ -629,20 +946,22 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   setEqualColumnWidths(minWidth = 50) {
     if (!this.colLength) return
 
-    const containerWidth = (this.tableScrollable?.nativeElement?.clientWidth
+    const normalizedMinWidth = Math.max(1, Math.ceil(minWidth))
+    const containerWidth = this._getParentContentWidth()
+      || this.tableScrollable?.nativeElement?.clientWidth
       || this.hostElement.clientWidth
-      || this.colLength * minWidth) - 6
+      || this.colLength * normalizedMinWidth
     const overhead = this._getTableHorizontalOverhead()
-    const availableWidth = Math.max(this.colLength * minWidth, containerWidth - overhead)
-    const eachWidth = Math.max(minWidth, Math.floor(availableWidth / this.colLength))
-    const nextWidths = Array.from({ length: this.colLength }, () => eachWidth)
+    const nextWidths = equalTableColumnWidths(
+      this.colLength,
+      containerWidth,
+      normalizedMinWidth,
+      overhead,
+    )
 
     this.updateProps({
       colWidths: nextWidths
     })
-
-    // 清理拖拽过程中写入到 <col> 的临时 style.width，避免后续属性宽度被覆盖
-    this._clearColInlineWidths()
 
     // 从超宽表格切换到均分时，重置并钳制滚动位置，避免右侧出现空白区
     this._normalizeHorizontalScroll(true)
@@ -661,6 +980,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   }
 
   private _clearSelectionUiState() {
+    this._cancelPendingDragSelection()
     this._startSelectingCell = this._lastSelectingCell = null
     this._prevAdjustedSelection = null
     this._activeCellsRange = null
@@ -674,8 +994,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     // `-webkit-user-modify: read-only` + `pointer-events: none` mode and the
     // user can no longer focus / edit any cell in the table.
     this.hostElement.classList.remove('is-selecting-cell')
-    this._dragMasterMap = null
-    this._dragCellSourceCoord = null
+    this._dragModelGrid = null
     this._dragStartCoord = null
     this._clearSelected()
     this._clearActiveRanges()
@@ -687,17 +1006,32 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     this.changeDetectorRef.markForCheck()
   }
 
+  private _closestCellElement(event: Event): HTMLTableCellElement | undefined {
+    const target = event.target
+    if (!(target instanceof Node)) return undefined
+    const ele = target instanceof HTMLElement ? target : target.parentElement
+    if (!ele) return undefined
+    return ele.closest<HTMLTableCellElement>('td') ?? undefined
+  }
+
   private _closetCell(event: Event) {
-    const target = event.target as Node
-    const ele = target instanceof HTMLElement ? target : target.parentElement!
-    const closetCell = ele.closest('td')
-    return closetCell?.getAttribute('data-block-id')
+    const closestCell = this._closestCellElement(event)
+    return this._modelCellIdFromElement(closestCell)
+  }
+
+  /**
+   * 分页续段使用 master cell ID；普通单元格使用自己的 block ID。
+   * 这里只解析 DOM 投影身份，不要求对应组件仍挂载。
+   */
+  private _modelCellIdFromElement(cell: Element | null | undefined): string | undefined {
+    return cell?.getAttribute(PG_CONTINUATION_MASTER_ATTR)
+      ?? cell?.getAttribute('data-block-id')
+      ?? undefined
   }
 
   // Armed at capture-phase native mousedown on the table host. Native
   // listeners (not the framework dispatcher) so routing can't swallow events.
   private _handleNativeMouseDown(evt: MouseEvent) {
-    if (this.doc.isReadonly) return
     // Only react to primary (left) button. On Mac WebView / Safari the
     // trackpad's two-finger tap and force-touch can dispatch button=2
     // mousedown during an active left-button drag; on Chrome a stray
@@ -705,30 +1039,51 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     // would null `_startSelectingCell` while the visual lockdown class stays
     // on the table host — locking the entire table as read-only.
     if (evt.button !== 0) return
-    // 列宽 resize bar 现在是 cell 的子节点（CSS-only 定位方案，见
-    // `_handleNativeMouseOver`）。bar 自己的 onColResizerMousedown 走 bubble 阶段
-    // fire；而本 handler 走 capture 阶段，会**先**于 bar handler 启动 cell 选区流程。
-    // 早 bail 一下，让落在 bar 上的 mousedown 只走列宽拖拽，不开启 cell 矩形选择。
-    const target = evt.target as Node | null
-    if (target && this.colResizeBar?.nativeElement.contains(target)) return
-    const id = this._closetCell(evt)
+
+    // Resize owns the gesture at the table's capture boundary. This check must
+    // run before pagination masks and rectangle-selection arming: the handle is
+    // rendered inside a cell and can overlap a cell-flow mask, while its target
+    // phase is too late to stop root/table capture listeners that already ran.
+    const resizeAnchor = this._resolveColumnResizePointerAnchor(evt)
+    if (resizeAnchor) {
+      this.onColResizerMousedown(evt, resizeAnchor)
+      evt.stopImmediatePropagation()
+      return
+    }
+
+    if (this._isInsideCellFlowMask(evt.clientX, evt.clientY)) {
+      evt.preventDefault()
+      evt.stopImmediatePropagation()
+      return
+    }
+    const hitCell = this._closestCellElement(evt)
+    const continuationMasterId = hitCell?.getAttribute(PG_CONTINUATION_MASTER_ATTR)
+    const id = continuationMasterId ?? hitCell?.getAttribute('data-block-id')
     if (!id) return
     const cell = this.doc.getBlockById(id) as TableCellBlockComponent
     if (!cell) return
 
+    // 续页片段没有独立的可编辑模型内容，只是 master cell 的视觉接续。
+    // 让它参与 hit-test，并在 table capture 阶段阻止事件进入占位 cell 的
+    // contenteditable 子树；否则 pointer-events:none 会让 mousedown 落到 tr/table，
+    // 整条表格手势未被武装，浏览器随后的拖动就会创建原生文本 Range。
+    const startsFromContinuation = continuationMasterId !== null
+      && continuationMasterId !== undefined
+    if (startsFromContinuation) {
+      evt.preventDefault()
+      evt.stopPropagation()
+    }
+
     this._clearSelectionUiState()
     this._pendingStart = cell
 
-    // Eagerly precompute the master map during the mousedown idle window.
-    // Building it can cost several milliseconds on large tables and would
-    // otherwise be billed against the FIRST cell crossing (where the user is
-    // expecting instant visual feedback). Doing it here hides the cost
-    // inside the click's natural pause — invisible if the user only clicks,
-    // and a clean handoff if they drag.
-    const built = buildCellMasterMapWithSources(this)
-    this._dragMasterMap = built.masterMap
-    this._dragCellSourceCoord = built.sourceCoords
-    this._dragStartCoord = built.sourceCoords.get(cell) ?? null
+    // Resolve the model projection once for this gesture. Subsequent pointer
+    // crossings are Map/array lookups and do not rebuild a Component matrix.
+    this._dragModelGrid = this._getTableModelGrid()
+    const startCoordinate = this._dragModelGrid?.getCellCoordinate(cell.id)
+    this._dragStartCoord = startCoordinate
+      ? [startCoordinate[0], startCoordinate[1]]
+      : null
 
     const origin = cell
 
@@ -744,11 +1099,55 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     }
     origin.hostElement.addEventListener('mouseleave', onOriginLeave, { once: true })
 
+    // Native text selection can suppress/retarget mouseover + mouseleave in
+    // WebKit (and in Chromium when the drag crosses pagination projection
+    // nodes). Keep one window-level move listener for this gesture only. It
+    // runs outside Angular, promotes the pending cell drag on the first real
+    // cell crossing, and is removed synchronously on release.
+    const dragMoveEvent = typeof PointerEvent === 'undefined'
+      ? 'mousemove'
+      : 'pointermove'
+    const ownerWindow = this.hostElement.ownerDocument.defaultView ?? window
+    const dragMoveSub = this.doc.ngZone.runOutsideAngular(() =>
+      fromEvent<MouseEvent>(ownerWindow, dragMoveEvent, {
+        capture: true,
+        passive: false,
+      }).pipe(takeUntil(this.onDestroy$)).subscribe(event => {
+        this._handleNativeCellDragMove(event)
+      }))
+
+    // Safari may publish another native Range after the initial blur while
+    // the primary button is still down. Guard selectionchange only for the
+    // lifetime of this gesture; idle tables pay no document-listener cost.
+    const nativeSelectionSub = this.doc.ngZone.runOutsideAngular(() =>
+      fromEvent(
+        this.hostElement.ownerDocument,
+        'selectionchange',
+      ).pipe(takeUntil(this.onDestroy$)).subscribe(() => {
+        this._clearNativeSelectionWhileCellDragging()
+      }))
+
+    // selectionchange 是事后通知；WebKit 有时会先扩展并绘制一帧 Range。
+    // 跨格拖拽一旦晋升为模型选区，就在 capture 阶段直接阻止后续 selectstart。
+    const nativeSelectStartSub = this.doc.ngZone.runOutsideAngular(() =>
+      fromEvent<Event>(
+        this.hostElement.ownerDocument,
+        'selectstart',
+        {capture: true, passive: false},
+      ).pipe(takeUntil(this.onDestroy$)).subscribe(event => {
+        if (!this._startSelectingCell) return
+        if (event.cancelable) event.preventDefault()
+        this._clearNativeSelectionWhileCellDragging()
+      }))
+
     let finished = false
     const finishSelection = () => {
       if (finished) return
       finished = true
       origin.hostElement.removeEventListener('mouseleave', onOriginLeave)
+      dragMoveSub.unsubscribe()
+      nativeSelectionSub.unsubscribe()
+      nativeSelectStartSub.unsubscribe()
       releaseSub.unsubscribe()
       this.onEndSelect()
     }
@@ -758,44 +1157,107 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     // drag prematurely. Touchend has no button and always passes through.
     const isPrimaryRelease = (e: PointerEvent | MouseEvent) => e.button === 0
     const releaseSub = merge(
-      fromEvent<PointerEvent>(window, 'pointerup', { capture: true }).pipe(filter(isPrimaryRelease)),
-      fromEvent<MouseEvent>(window, 'mouseup', { capture: true }).pipe(filter(isPrimaryRelease)),
-      fromEvent<TouchEvent>(window, 'touchend', { capture: true }),
-    ).pipe(takeUntil(this.onDestroy$)).subscribe(() => finishSelection())
+      // 手势由 mousedown 启动，鼠标路径必须等兼容 mouseup 才能撤销守卫。
+      // pointerup 更早到达；若在那时结束，随后的 mouseup 默认动作仍可重建文本 Range。
+      fromEvent<MouseEvent>(ownerWindow, 'mouseup', { capture: true }).pipe(filter(isPrimaryRelease)),
+      fromEvent<TouchEvent>(ownerWindow, 'touchend', { capture: true }),
+      fromEvent<PointerEvent>(ownerWindow, 'pointercancel', { capture: true }),
+    ).pipe(takeUntil(this.onDestroy$)).subscribe(event => {
+      // Prevent the browser's release default from restoring the text Range
+      // after `onEndSelect` commits the model-owned table-cell selection.
+      if (this._startSelectingCell) {
+        if (event.cancelable) event.preventDefault()
+        // 必须在 onEndSelect 把 `_startSelectingCell` 置空前清理，并同步消费
+        // 本帧最后一个目标，避免快速甩动时 head 落后一格。
+        this._clearNativeSelectionWhileCellDragging()
+        this._flushPendingDragSelection()
+      }
+      finishSelection()
+    })
+
+    // 普通 cell 仍允许同格内的原生文本选择，跨格后再晋升为矩形选区；
+    // 续页片段本身不可编辑，因此按下时立即由模型选区接管，彻底关闭原生 Range 窗口。
+    if (startsFromContinuation) this._startCellSelection(origin)
+  }
+
+  private _handleNativeCellDragMove(evt: MouseEvent): void {
+    if ((evt.buttons & 1) !== 1) return
+
+    // 同一 cell 内的 pointermove 占绝大多数。先做无布局的 id 判断，避免每帧
+    // 进入 `_isInsideCellFlowMask()` 读取所有分页 mask 的 BCR。
+    const id = this._closetCell(evt)
+    if (!id || id !== this.hoveringCell?.id) this._handleNativeMouseOver(evt)
+    if (!this._startSelectingCell) return
+
+    // Once the gesture has crossed a cell boundary, the table model owns the
+    // selection. Cancel native Range growth before the browser's default
+    // action and clear any Range that WebKit created earlier in the gesture.
+    if (evt.cancelable) evt.preventDefault()
+    this._clearNativeSelectionWhileCellDragging()
+  }
+
+  private _clearNativeSelectionWhileCellDragging(): void {
+    if (!this._startSelectingCell) return
+    const nativeSelection = this.hostElement.ownerDocument.getSelection()
+    if (!nativeSelection?.rangeCount) return
+
+    const wasSuppressingFocusSync = this._suppressFocusSync
+    this._suppressFocusSync = true
+    try {
+      this.doc.selection.blur()
+    } finally {
+      this._suppressFocusSync = wasSuppressingFocusSync
+    }
+  }
+
+  private _handleIdleCellMouseMove(evt: MouseEvent): void {
+    // Active primary-button gestures have their own document-level move path:
+    // resize updates the guide, rectangle selection updates its model head.
+    if ((evt.buttons & 1) === 1 || this.resizingCol$.value) return
+    const hitCellElement = this._closestCellElement(evt)
+    const id = this._modelCellIdFromElement(hitCellElement)
+    const barCellElement = this._columnResizeHandleAnchor?.boundaryCell
+    if (id && hitCellElement && this.hoveringCell?.id === id
+      && barCellElement === hitCellElement) {
+      return
+    }
+    this._handleNativeMouseOver(evt)
   }
 
   private _handleNativeMouseOver(evt: MouseEvent) {
-    if (this.doc.isReadonly) return
-    const id = this._closetCell(evt)
-    if (!id || this.hoveringCell?.id === id) return
+    if (this._isInsideCellFlowMask(evt.clientX, evt.clientY)) return
+    // 列宽拖拽期间命中目标固定在手势起点；mousemove 只移动预览线。
+    // 不更新 hoveringCell，避免松手后 resize bar 的 DOM 归属与内部状态错位。
+    if (this.resizingCol$.value) return
+    const rawHitCellElement = this._closestCellElement(evt)
+    const hitCellElement = rawHitCellElement
+      ? this._resolveCellLeftOfBoundaryHit(evt, rawHitCellElement)
+        ?? rawHitCellElement
+      : undefined
+    const id = this._modelCellIdFromElement(hitCellElement)
+    if (!id || !hitCellElement) return
+    const barElement = this.colResizeBar.nativeElement
+    const barCellElement = this._columnResizeHandleAnchor?.boundaryCell
 
-    // Always refresh `hoveringCell` so the `hoveringCell?.id === id`
-    // early-return at the top of this handler keeps short-circuiting
-    // same-cell events. If we leave it stale during drag, re-entering a
-    // previously crossed cell would falsely match and skip the rectangle
-    // update.
-    this.hoveringCell = this.doc.getBlockById(id) as TableCellBlockComponent
+    // 同一个 model cell 可能有多个分页 DOM 投影（master + continuation）。
+    // 只有模型身份和实际 DOM 归属都相同才短路；否则分页重绘把 bar 放回
+    // table host 后，旧 hoveringCell 会让这里永远无法重新挂载手柄。
+    if (this.hoveringCell?.id === id && barCellElement === hitCellElement) return
 
-    // Resize bar 现在用「把 bar 元素 appendChild 进当前 hover 的 cell」的方案：
-    // bar 是 cell 的 absolute 子节点，CSS `right: -6px; height: 100%` 让它自动贴
-    // 在 cell 右边界。**零 JS 数学** —— 跟 zoom / border-spacing / border-collapse
-    // / padding / 任何浏览器 BCR 语义全部解耦。
-    //
-    // 之前用 BCR / offsetLeft / props.colWidths 累加 + computed border-spacing 的方案
-    // 每加一种边界条件就要补一份计算；这套方案靠浏览器自身的 layout 引擎处理，最稳。
-    //
-    // 唯一权衡：bar 高度 = 当前 cell 高度（不再是全表高度）。这是 Notion / Linear
-    // 等产品的常见做法，UX 上更聚焦。
+    // 模型目标变化时再解析组件；同一模型 cell 的分页投影切换只需移动 bar，
+    // 不重复执行 getBlockById。
+    if (this.hoveringCell?.id !== id) {
+      const hoveringCell = this.doc.getBlockById(id) as TableCellBlockComponent | null
+      if (!hoveringCell) return
+      this.hoveringCell = hoveringCell
+    }
+
+    // 手柄必须是 table-wrapper 的独立 overlay，不能 append 到 td。WebKit 的
+    // collapsed-border painting layer 会让相邻 td 覆盖 cell 内的绝对定位子元素，
+    // 造成视觉线存在、事件 target 却落在右侧 cell。这里只在 hover 投影变化时
+    // 读取一次 BCR，并复用现有 zoom 语义换算；mousemove 同格快路径不读布局。
     if (!this.resizingCol$.value && !this._startSelectingCell) {
-      const cellEl = this.hoveringCell.hostElement
-      const barEl = this.colResizeBar.nativeElement
-      if (barEl.parentElement !== cellEl) {
-        cellEl.appendChild(barEl)
-        // 清掉可能残留的 inline style（旧定位方案的产物 / 拖拽过程的手动 left）
-        // —— 否则会覆盖 CSS 里 `right: -6px` 的自动定位。
-        barEl.style.left = ''
-        barEl.style.right = ''
-      }
+      this._positionColumnResizeHandle(id, hitCellElement)
     }
 
     // Promote pending on first different-cell crossing (belt + suspenders
@@ -808,8 +1270,61 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     if (!this._startSelectingCell || evt.buttons < 1) return
     if ((!this._lastSelectingCell && id === this._startSelectingCell.id)
       || id === this._lastSelectingCell?.id) return
-    this._lastSelectingCell = this.doc.getBlockById(id) as TableCellBlockComponent
+    this._queueDragSelection(this.hoveringCell)
+  }
+
+  private _queueDragSelection(cell: TableCellBlockComponent): void {
+    this._pendingDragCell = cell
+    if (this._dragSelectionFrame !== null) return
+    const view = this.hostElement.ownerDocument.defaultView
+    const callback = () => {
+      this._dragSelectionFrame = null
+      this._flushPendingDragSelection()
+    }
+    this._dragSelectionFrame = view
+      ? view.requestAnimationFrame(callback)
+      : requestAnimationFrame(callback)
+  }
+
+  private _flushPendingDragSelection(): void {
+    if (this._dragSelectionFrame !== null) {
+      const view = this.hostElement.ownerDocument.defaultView
+      if (view) view.cancelAnimationFrame(this._dragSelectionFrame)
+      else cancelAnimationFrame(this._dragSelectionFrame)
+      this._dragSelectionFrame = null
+    }
+    const cell = this._pendingDragCell
+    this._pendingDragCell = null
+    if (!this._startSelectingCell || !cell) return
+    if ((!this._lastSelectingCell && cell.id === this._startSelectingCell.id)
+      || cell.id === this._lastSelectingCell?.id) return
+    this._lastSelectingCell = cell
     this._setRectangleSelected()
+  }
+
+  private _cancelPendingDragSelection(): void {
+    if (this._dragSelectionFrame !== null) {
+      const view = this.hostElement?.ownerDocument?.defaultView
+      if (view) view.cancelAnimationFrame(this._dragSelectionFrame)
+      else cancelAnimationFrame(this._dragSelectionFrame)
+    }
+    this._dragSelectionFrame = null
+    this._pendingDragCell = null
+  }
+
+  private _isInsideCellFlowMask(clientX: number, clientY: number): boolean {
+    for (const mask of this._cellFlowMasks) {
+      const rect = mask.getBoundingClientRect()
+      if (
+        clientX >= rect.left
+        && clientX <= rect.right
+        && clientY >= rect.top
+        && clientY <= rect.bottom
+      ) {
+        return true
+      }
+    }
+    return false
   }
 
   private _startCellSelection(cell: TableCellBlockComponent) {
@@ -819,15 +1334,14 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     // text cursor disappears but the 'selected' class hasn't painted yet.
     this._startSelectingCell = cell
     this._pendingStart = null
-    // Master map + source-coordinate map were precomputed during mousedown
-    // (`_handleNativeMouseDown`) so the first cell crossing pays zero build
-    // cost. If the precompute path didn't run for some reason (e.g., the
-    // promotion fired via a non-standard path), build lazily here.
-    if (!this._dragMasterMap) {
-      const built = buildCellMasterMapWithSources(this)
-      this._dragMasterMap = built.masterMap
-      this._dragCellSourceCoord = built.sourceCoords
-      this._dragStartCoord = built.sourceCoords.get(cell) ?? null
+    // The normal mousedown path preloads the model grid. Non-standard
+    // promotion paths rebuild it lazily without reading row/cell components.
+    if (!this._dragModelGrid) {
+      this._dragModelGrid = this._getTableModelGrid()
+      const coordinate = this._dragModelGrid?.getCellCoordinate(cell.id)
+      this._dragStartCoord = coordinate
+        ? [coordinate[0], coordinate[1]]
+        : null
     }
     this.hostElement.classList.add('is-selecting-cell')
     this.selectCell(cell)
@@ -843,6 +1357,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   }
 
   private onEndSelect = () => {
+    this._flushPendingDragSelection()
     this._pendingStart = null
     // Defence-in-depth: always clear the lockdown class on drag-end, even if
     // the state machine got desynced. `_clearSelectionUiState` also clears it,
@@ -850,11 +1365,11 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     // `_startSelectingCell` was nulled elsewhere, the early-return below would
     // otherwise leave the class on.
     this.hostElement.classList.remove('is-selecting-cell')
-    this._dragMasterMap = null
-    this._dragCellSourceCoord = null
+    this._dragModelGrid = null
     this._dragStartCoord = null
     if (!this._startSelectingCell) return;
     const anchorCell = this._startSelectingCell
+    const headCell = this._lastSelectingCell ?? anchorCell
     this._startSelectingCell = this._lastSelectingCell = null
 
     const isMultiCell = this._selectedCellSet.size > 1 && !!this._prevAdjustedSelection
@@ -881,7 +1396,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     this._suppressFocusSync = true
     try {
       if (isMultiCell) {
-        this.doc.selection.selectBlock(anchorCell)
+        this.doc.selection.setTableCellSelection(this, anchorCell, headCell)
       } else {
         this.doc.selection.setCursorAtBlock(anchorCell, false, false)
       }
@@ -889,23 +1404,33 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       this._suppressFocusSync = false
     }
 
-    const syncSelectionUi = () => {
-      this._syncTableFocusUi(this.doc.selection.recalculate().value)
-    }
-
-    syncSelectionUi()
-    nextTick().then(syncSelectionUi)
+    this._syncTableFocusUi(this.doc.selection.value)
   }
 
   protected selectCell = (cell: TableCellBlockComponent) => {
     if (this._selectedCellSet.has(cell)) return
     this._selectedCellSet.add(cell)
-    cell.hostElement.classList.add('selected')
+    this._toggleCellSelected(cell, true)
   }
 
   protected _clearSelected() {
-    this._selectedCellSet.forEach(cell => cell.hostElement.classList.remove('selected'))
+    this._selectedCellSet.forEach(cell => this._toggleCellSelected(cell, false))
     this._selectedCellSet.clear()
+  }
+
+  /**
+   * 给单元格加/去 `.selected`，并把同样状态镜像到它的分页续段单元格上。
+   * 续段是模型里 display:none、被分页 un-hide 的视觉接续；若不镜像，跨页合并单元格
+   * 只会高亮上半段。选区坐标仍只认模型（master cell），续段纯做视觉同步。
+   */
+  private _toggleCellSelected(cell: TableCellBlockComponent, on: boolean): void {
+    cell.hostElement?.classList.toggle(TABLE_CELL_SELECTED_CLASS, on)
+    const conts = this._continuationsOf?.get(cell)
+    if (conts) {
+      for (const continuation of conts) {
+        continuation.hostElement?.classList.toggle(TABLE_CELL_SELECTED_CLASS, on)
+      }
+    }
   }
 
   // 根据上下坐标设置矩形区间选中
@@ -923,26 +1448,22 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       && this._prevAdjustedSelection?.start[1] === start[1]
       && this._prevAdjustedSelection?.end[1] === end[1]) return
 
+    const previous = this._prevAdjustedSelection
     this._prevAdjustedSelection = selection
-
-    // Compute the next selected-cell set. During an active drag we look up
-    // cells directly via the cached masterMap (O(R×C) Map.get) instead of
-    // walking childrenIds + getBlockById O(R×C) times per mouseover.
-    let nextCells: Set<TableCellBlockComponent>
-    if (start[0] === end[0] && start[1] === end[1]) {
-      nextCells = new Set([this._startSelectingCell!])
-    } else if (this._dragMasterMap) {
-      nextCells = new Set<TableCellBlockComponent>()
-      for (let r = start[0]; r <= end[0]; r++) {
-        for (let c = start[1]; c <= end[1]; c++) {
-          const cell = this._dragMasterMap.get(`${r},${c}`)
-          if (cell) nextCells.add(cell)
-        }
-      }
-    } else {
-      nextCells = new Set(this.getCellsMatrixByCoordinates(start, end).flat(1))
+    const nextRectangle: TableModelRectangle = {
+      start: [start[0], start[1]],
+      end: [end[0], end[1]],
     }
-    this._applySelectedDiff(nextCells)
+    const grid = this._dragModelGrid ?? this._getTableModelGrid()
+    if (previous && grid) {
+      this._applyRectangleSelectionDiff(
+        grid,
+        {start: [previous.start[0], previous.start[1]], end: [previous.end[0], previous.end[1]]},
+        nextRectangle,
+      )
+      return
+    }
+    this._applySelectedDiff(this._getMountedCellsByRectangle(nextRectangle))
   }
 
   // Apply a new selected-cell set by diff'ing against the current one — only
@@ -952,38 +1473,101 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   private _applySelectedDiff(nextCells: Set<TableCellBlockComponent>) {
     this._selectedCellSet.forEach(cell => {
       if (!nextCells.has(cell)) {
-        cell.hostElement.classList.remove('selected')
+        this._toggleCellSelected(cell, false)
       }
     })
     nextCells.forEach(cell => {
       if (!this._selectedCellSet.has(cell)) {
-        cell.hostElement.classList.add('selected')
+        this._toggleCellSelected(cell, true)
       }
     })
     this._selectedCellSet = nextCells
   }
 
+  /**
+   * 两个闭包安全矩形之间只处理变化的边条。向 100×100 选区再扩一列时，
+   * 从重新扫描 10,000 个坐标降为只访问新增的 100 个坐标。
+   */
+  private _applyRectangleSelectionDiff(
+    grid: TableModelGrid,
+    previous: TableModelRectangle,
+    next: TableModelRectangle,
+  ): void {
+    const removedIds = this._masterIdsInRectangleDifference(grid, previous, next)
+    const addedIds = this._masterIdsInRectangleDifference(grid, next, previous)
+
+    for (const cellId of removedIds) {
+      const cell = this._getLiveBlockById<TableCellBlockComponent>(cellId)
+      if (!this._isTableCellBlock(cell) || !this._selectedCellSet.delete(cell)) continue
+      this._toggleCellSelected(cell, false)
+    }
+    for (const cellId of addedIds) {
+      if (typeof this.doc.vm?.isMounted === 'function' && !this.doc.vm.isMounted(cellId)) continue
+      const cell = this._getLiveBlockById<TableCellBlockComponent>(cellId)
+      if (!this._isTableCellBlock(cell) || this._selectedCellSet.has(cell)) continue
+      this._selectedCellSet.add(cell)
+      this._toggleCellSelected(cell, true)
+    }
+  }
+
+  private _masterIdsInRectangleDifference(
+    grid: TableModelGrid,
+    source: TableModelRectangle,
+    subtract: TableModelRectangle,
+  ): Set<string> {
+    const result = new Set<string>()
+    const visit = (startRow: number, endRow: number, startCol: number, endCol: number) => {
+      if (startRow > endRow || startCol > endCol) return
+      for (let row = startRow; row <= endRow; row++) {
+        for (let col = startCol; col <= endCol; col++) {
+          const cellId = grid.getMasterCellIdAt(row, col)
+          if (cellId) result.add(cellId)
+        }
+      }
+    }
+
+    const top = Math.max(source.start[0], subtract.start[0])
+    const left = Math.max(source.start[1], subtract.start[1])
+    const bottom = Math.min(source.end[0], subtract.end[0])
+    const right = Math.min(source.end[1], subtract.end[1])
+    if (top > bottom || left > right) {
+      visit(source.start[0], source.end[0], source.start[1], source.end[1])
+      return result
+    }
+
+    visit(source.start[0], top - 1, source.start[1], source.end[1])
+    visit(bottom + 1, source.end[0], source.start[1], source.end[1])
+    visit(top, bottom, source.start[1], left - 1)
+    visit(top, bottom, right + 1, source.end[1])
+    return result
+  }
+
   protected _getSelectedCellsCoordinates() {
     if (!this._startSelectingCell || !this._lastSelectingCell) {
       const docSelection = this.doc.selection.value
-      if (!docSelection || docSelection.firstBlock.flavour !== 'table-cell') return null
-      this._startSelectingCell = this._lastSelectingCell = docSelection.firstBlock as TableCellBlockComponent
+      let firstBlock: BlockCraft.BlockComponent | null = null
+      try {
+        firstBlock = docSelection?.firstBlock ?? null
+      } catch {
+        return null
+      }
+      if (!firstBlock || firstBlock.flavour !== 'table-cell') return null
+      const liveCell = this._getLiveBlockById<TableCellBlockComponent>(firstBlock.id)
+      if (!this._isTableCellBlock(liveCell) || !this.hostElement.contains(liveCell.hostElement)) return null
+      this._startSelectingCell = this._lastSelectingCell = liveCell
     }
     let startCell = this._startSelectingCell
     let endCell = this._lastSelectingCell
 
-    // Hot path: during an active drag we have a precomputed cell → source
-    // coordinate map (built once in `_startCellSelection`). This avoids
-    // walking `childrenIds.indexOf(...)` O(R + C) times per mouseover —
-    // those toArray()/indexOf walks would otherwise dominate the per-event
-    // budget for large tables.
-    const sourceMap = this._dragCellSourceCoord
-    if (sourceMap && this._dragStartCoord) {
+    // Hot path: model coordinates are stable-ID lookups and remain valid even
+    // when future row virtualization leaves intermediate rows unmounted.
+    const grid = this._dragModelGrid ?? this._getTableModelGrid()
+    if (grid && this._dragStartCoord) {
       const startCoordinate = this._dragStartCoord
       if (startCell === endCell) {
         return { start: startCoordinate, end: startCoordinate }
       }
-      const endCoordinate = sourceMap.get(endCell)
+      const endCoordinate = grid.getCellCoordinate(endCell.id)
       if (endCoordinate) {
         return {
           start: [Math.min(startCoordinate[0], endCoordinate[0]), Math.min(startCoordinate[1], endCoordinate[1])],
@@ -1013,10 +1597,18 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   }
 
   confirmSelection(start: number[], end: number[]) {
-    const rect = new RectangleSelection(start[0], start[1], end[0], end[1])
-    if (this._dragMasterMap) {
-      return adjustSelectionWithMap(rect, this._dragMasterMap, this._dragCellSourceCoord ?? undefined)
+    const grid = this._dragModelGrid ?? this._getTableModelGrid()
+    const adjusted = grid?.adjustSelection(
+      [start[0], start[1]],
+      [end[0], end[1]],
+    )
+    if (adjusted) {
+      return {
+        start: [...adjusted.start],
+        end: [...adjusted.end],
+      }
     }
+    const rect = new RectangleSelection(start[0], start[1], end[0], end[1])
     return adjustSelection(rect, this)
   }
 
@@ -1044,6 +1636,45 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     return this.confirmSelection(cellsSelection.start, cellsSelection.end)
   }
 
+  /**
+   * Return only an explicit table-structure selection (dragged cells, row
+   * range, or column range). Unlike getSelectedCoordinates(), this never falls
+   * back to the current text/block selection's first cell.
+   */
+  getExplicitSelectedCoordinates(): TableCellsSelection | null {
+    if (this._activeColRange[0] > -1 && this._activeColRange[1] > -1) {
+      return {
+        start: [0, this._activeColRange[0]],
+        end: [this.rowLength - 1, this._activeColRange[1]]
+      }
+    }
+    if (this._activeRowRange[0] > -1 && this._activeRowRange[1] > -1) {
+      return {
+        start: [this._activeRowRange[0], 0],
+        end: [this._activeRowRange[1], this.colLength - 1]
+      }
+    }
+    if (this._activeCellsRange) {
+      return {
+        start: [...this._activeCellsRange.start],
+        end: [...this._activeCellsRange.end],
+      }
+    }
+    if (this._selectedCellSet.size <= 1) return null
+
+    const coordinates = [...this._selectedCellSet]
+      .map(cell => this._getCellCoordinate(cell))
+      .filter((coordinate): coordinate is { rowIdx: number, colIdx: number } => !!coordinate)
+    if (coordinates.length <= 1) return null
+
+    const rows = coordinates.map(coordinate => coordinate.rowIdx)
+    const cols = coordinates.map(coordinate => coordinate.colIdx)
+    return this.confirmSelection(
+      [Math.min(...rows), Math.min(...cols)],
+      [Math.max(...rows), Math.max(...cols)],
+    )
+  }
+
   onColHandleHovered(index: number | null) {
     this._hoveredColHandle = index
     this.changeDetectorRef.markForCheck()
@@ -1054,7 +1685,124 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     this.changeDetectorRef.markForCheck()
   }
 
-  private _getCellCoordinate(cell: TableCellBlockComponent) {
+  private _getLiveBlockById<T extends BlockCraft.BlockComponent = BlockCraft.BlockComponent>(id: string): T | null {
+    try {
+      return (this.doc.getBlockById(id) as T | null) ?? null
+    } catch {
+      return null
+    }
+  }
+
+  private _getTableModelGrid(): TableModelGrid | null {
+    try {
+      const grid = getTableModelProjection(this.doc, this.id).grid
+      return grid.isValid ? grid : null
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * 列宽手势只需要目标 cell 当前覆盖的右边界。直接从 model graph 读取它所在
+   * 的 row、物理下标与 colspan，复杂度只与列数有关；不能为了拖一条边界同步
+   * 构建整张长表的严格投影。严格投影不可用时（例如协同历史表里有其他位置的
+   * 孤立 hidden cell）也不应阻断当前这个合法边界。
+   */
+  private _resolveColumnResizeIndex(cellId: string): number | null {
+    const widths = this.props.colWidths ?? []
+    if (!widths.length) return null
+
+    try {
+      const model = this.doc.model
+      if (
+        typeof model?.getParentId === 'function'
+        && typeof model.getChildrenIds === 'function'
+        && typeof model.getFlavour === 'function'
+        && typeof model.getProps === 'function'
+      ) {
+        const rowId = model.getParentId(cellId)
+        const tableId = rowId ? model.getParentId(rowId) : null
+        if (
+          rowId
+          && tableId === this.id
+          && model.getFlavour(rowId) === 'table-row'
+          && model.getFlavour(cellId) === 'table-cell'
+        ) {
+          const physicalIndex = model.getChildrenIds(rowId).indexOf(cellId)
+          if (physicalIndex >= 0) {
+            const rawColspan = model.getProps(cellId)?.['colspan']
+            const colspan = typeof rawColspan === 'number'
+              && Number.isInteger(rawColspan)
+              && rawColspan > 0
+              ? rawColspan
+              : 1
+            const boundaryIndex = physicalIndex + colspan - 1
+            return boundaryIndex >= 0 && boundaryIndex < widths.length
+              ? boundaryIndex
+              : null
+          }
+        }
+      }
+    } catch {
+      // Continue with the projection fallback below. Parent ownership can be
+      // briefly unavailable while a remote structure transaction is settling.
+    }
+
+    // A legacy/corrupted parent edge can make the O(columns) lookup fail while
+    // the table's row order still projects this cell unambiguously. Use the
+    // diagnostic grid's conservative span even when some unrelated cell makes
+    // the whole grid invalid. This is a cold recovery path, not the normal
+    // mousedown path.
+    try {
+      const boundaryIndex = getTableModelProjection(this.doc, this.id)
+        .grid
+        .getSpan(cellId)
+        ?.end[1]
+      if (
+        boundaryIndex !== undefined
+        && boundaryIndex >= 0
+        && boundaryIndex < widths.length
+      ) {
+        return boundaryIndex
+      }
+    } catch {
+      // Compatibility for minimal test Docs without BlockModelGraph.
+    }
+    return this._getTableModelGrid()?.getSpan(cellId)?.end[1] ?? null
+  }
+
+  private _getMountedCellsByRectangle(
+    rectangle: TableModelRectangle,
+  ): Set<TableCellBlockComponent> {
+    const grid = this._dragModelGrid ?? this._getTableModelGrid()
+    if (!grid) {
+      return new Set(this.getCellsMatrixByCoordinates(
+        [...rectangle.start],
+        [...rectangle.end],
+      ).flat(1))
+    }
+
+    const cells = new Set<TableCellBlockComponent>()
+    for (const cellId of grid.getMasterCellIds(rectangle)) {
+      if (typeof this.doc.vm?.isMounted === 'function' && !this.doc.vm.isMounted(cellId)) {
+        continue
+      }
+      const cell = this._getLiveBlockById<TableCellBlockComponent>(cellId)
+      if (this._isTableCellBlock(cell)) cells.add(cell)
+    }
+    return cells
+  }
+
+  private _isTableCellBlock(block: unknown): block is TableCellBlockComponent {
+    return !!block
+      && (block as BlockCraft.BlockComponent).flavour === 'table-cell'
+      && typeof (block as TableCellBlockComponent).getIndexOfParent === 'function'
+  }
+
+  private _getCellCoordinate(cell: TableCellBlockComponent | null | undefined) {
+    if (!this._isTableCellBlock(cell)) return null
+    const coordinate = this._getTableModelGrid()?.getCellCoordinate(cell.id)
+    if (coordinate) return {rowIdx: coordinate[0], colIdx: coordinate[1]}
     const rowIdx = this.childrenIds.indexOf(cell.parentId!)
     const colIdx = cell.getIndexOfParent()
     if (rowIdx < 0 || colIdx < 0) return null
@@ -1063,15 +1811,113 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
   private _resolveCellFromSelection(selection: BlockSelection | null) {
     if (!selection) return null
-    const block = selection.firstBlock
+    let block: BlockCraft.BlockComponent
+    try {
+      block = selection.firstBlock
+    } catch {
+      return null
+    }
+    const liveBlock = this._getLiveBlockById(block.id)
+    if (!liveBlock?.hostElement) return null
+    block = liveBlock
     if (!this.hostElement.contains(block.hostElement)) return null
-    if (block.flavour === 'table-cell') {
+    if (this._isTableCellBlock(block)) {
       return block as TableCellBlockComponent
     }
 
     const cellId = block.hostElement.closest('td[data-block-id]')?.getAttribute('data-block-id')
     if (!cellId) return null
-    return this.doc.getBlockById(cellId) as TableCellBlockComponent
+    const cell = this._getLiveBlockById<TableCellBlockComponent>(cellId)
+    return this._isTableCellBlock(cell) ? cell : null
+  }
+
+  private _syncFromTableCellSelection(selection: BlockSelection | null) {
+    const tableCellSelection = selection?.getTableCellSelection()
+    if (!tableCellSelection || tableCellSelection.tableId !== this.id) return false
+
+    const grid = this._getTableModelGrid()
+    if (grid) {
+      const target = resolveTableCellSelectionTarget(this.doc, tableCellSelection)
+      if (!target) return false
+      const adjusted = target.rectangle
+      const anchorCell = this._getLiveBlockById<TableCellBlockComponent>(target.anchorCellId)
+
+      this._clearActiveRanges()
+      this._activeCellsRange = {
+        start: [adjusted.start[0], adjusted.start[1]],
+        end: [adjusted.end[0], adjusted.end[1]],
+        anchorId: target.anchorCellId,
+      }
+      this._applySelectedDiff(this._getMountedCellsByRectangle(adjusted))
+      this._syncHandleVisibility(this._isTableCellBlock(anchorCell) ? anchorCell : null)
+
+      const colRange: [number, number] = [adjusted.start[1], adjusted.end[1]]
+      const rowRange: [number, number] = [adjusted.start[0], adjusted.end[0]]
+      if (this.colBarComponent) {
+        this.colBarComponent.selectedRange = colRange
+        this.colBarComponent.changeDetectionRef.markForCheck()
+      }
+      if (this.rowBarComponent) {
+        this.rowBarComponent.selectedRange = rowRange
+        this.rowBarComponent.changeDetectionRef.markForCheck()
+      }
+
+      this._showTableMenu({
+        rowIndex: adjusted.start[0],
+        rowCount: adjusted.end[0] - adjusted.start[0] + 1,
+        colIndex: adjusted.start[1],
+        colCount: adjusted.end[1] - adjusted.start[1] + 1,
+        selectionKind: 'cells',
+      })
+      return true
+    }
+
+    const anchorCell = this._getLiveBlockById<TableCellBlockComponent>(tableCellSelection.anchorCellId)
+    const headCell = this._getLiveBlockById<TableCellBlockComponent>(tableCellSelection.headCellId)
+    if (!this._isTableCellBlock(anchorCell) || !this._isTableCellBlock(headCell)) return false
+
+    const anchorCoordinate = this._getCellCoordinate(anchorCell)
+    const headCoordinate = this._getCellCoordinate(headCell)
+    if (!anchorCoordinate || !headCoordinate) return false
+
+    this._clearActiveRanges()
+    const adjusted = this.confirmSelection(
+      [
+        Math.min(anchorCoordinate.rowIdx, headCoordinate.rowIdx),
+        Math.min(anchorCoordinate.colIdx, headCoordinate.colIdx),
+      ],
+      [
+        Math.max(anchorCoordinate.rowIdx, headCoordinate.rowIdx),
+        Math.max(anchorCoordinate.colIdx, headCoordinate.colIdx),
+      ],
+    )
+    this._activeCellsRange = {
+      start: [adjusted.start[0], adjusted.start[1]],
+      end: [adjusted.end[0], adjusted.end[1]],
+      anchorId: anchorCell.id,
+    }
+    this._applySelectedDiff(new Set(this.getCellsMatrixByCoordinates(adjusted.start, adjusted.end).flat(1)))
+    this._syncHandleVisibility(anchorCell)
+
+    const colRange: [number, number] = [adjusted.start[1], adjusted.end[1]]
+    const rowRange: [number, number] = [adjusted.start[0], adjusted.end[0]]
+    if (this.colBarComponent) {
+      this.colBarComponent.selectedRange = colRange
+      this.colBarComponent.changeDetectionRef.markForCheck()
+    }
+    if (this.rowBarComponent) {
+      this.rowBarComponent.selectedRange = rowRange
+      this.rowBarComponent.changeDetectionRef.markForCheck()
+    }
+
+    this._showTableMenu({
+      rowIndex: adjusted.start[0],
+      rowCount: adjusted.end[0] - adjusted.start[0] + 1,
+      colIndex: adjusted.start[1],
+      colCount: adjusted.end[1] - adjusted.start[1] + 1,
+      selectionKind: 'cells',
+    })
+    return true
   }
 
   private _showTableMenu(options: {
@@ -1081,7 +1927,11 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     colCount?: number,
     selectionKind?: 'cell' | 'cells' | 'row' | 'col',
   }) {
-    if (this.doc.isReadonly) {
+    if (!this._isTableUiLive()) {
+      this._disposeToolbar()
+      return
+    }
+    if (this.isReadonly) {
       this._hideTableMenu()
       return
     }
@@ -1122,10 +1972,13 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
     this._tableMenu = {
       visible: true,
-      left: anchor.left,
-      top: anchor.top,
-      width: anchor.width,
-      height: anchor.height,
+      // BCR 是屏幕坐标，锚点 style 属于缩放后的 wrapper；位置和尺寸分别
+      // 使用已有的浏览器能力换算，避免锚点被 CSS zoom 再缩放一次。
+      left: this._stylePositionFromBcrDistance(anchor.left),
+      top: this._stylePositionFromBcrDistance(anchor.top),
+      // width 只用于模板计算中心点偏移，因此按 position 而非 size 换算。
+      width: this._stylePositionFromBcrDistance(anchor.width),
+      height: this._styleSizeFromBcrDistance(anchor.height),
       rowIndex: options.rowIndex,
       rowCount: options.rowCount ?? 1,
       colIndex: options.colIndex,
@@ -1134,14 +1987,16 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     }
     this.hostElement.classList.add('active')
     this.changeDetectorRef.markForCheck()
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
+    this._cancelTableMenuFrames()
+    this._scheduleTableMenuFrame(() => {
+      this._scheduleTableMenuFrame(() => {
         this._showTableMenuOverlay()
       })
     })
   }
 
   private _hideTableMenu() {
+    this._cancelTableMenuFrames()
     // 真正"用户离开了表格"时才走这里：销毁 CDK overlay + 隐藏内联 toolbar。
     // 切换单元格不再触发这里（_clearSelectionUiState 不再 hide），
     // 因此 selection 切换时工具栏只更新位置/内容，不会重建。
@@ -1197,14 +2052,11 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   }
 
   private _syncTableFocusUi(selection: BlockSelection | null) {
-    if (this.doc.isReadonly) {
+    if (this.isReadonly) {
       this._hideTableMenu()
-      this._visibleRowHandle = null
-      this._visibleColHandle = null
-      this._clearSelected()
-      this._activeCellsRange = null
-      return
     }
+
+    if (this._syncFromTableCellSelection(selection)) return
 
     const cell = this._resolveCellFromSelection(selection)
     if (!cell) {
@@ -1231,34 +2083,6 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
     const coordinate = this._getCellCoordinate(cell)
     if (!coordinate) return
-
-    const range = this._activeCellsRange
-    if (range && range.anchorId === cell.id) {
-      this._syncHandleVisibility(cell)
-      // Mirror the rectangle's row/col span onto the bar widgets so the
-      // visible drag handles know the full multi-row/multi-col extent.
-      // Without this, dragging a bar handle inside a cell rectangle would
-      // fall back to single-row/col because the bar's _selectedRange is
-      // still [-1, -1].
-      const colRange: [number, number] = [range.start[1], range.end[1]]
-      const rowRange: [number, number] = [range.start[0], range.end[0]]
-      if (this.colBarComponent) {
-        this.colBarComponent.selectedRange = colRange
-        this.colBarComponent.changeDetectionRef.markForCheck()
-      }
-      if (this.rowBarComponent) {
-        this.rowBarComponent.selectedRange = rowRange
-        this.rowBarComponent.changeDetectionRef.markForCheck()
-      }
-      this._showTableMenu({
-        rowIndex: range.start[0],
-        rowCount: range.end[0] - range.start[0] + 1,
-        colIndex: range.start[1],
-        colCount: range.end[1] - range.start[1] + 1,
-        selectionKind: 'cells',
-      })
-      return
-    }
 
     if (this._activeColRange[0] > -1 && this._activeColRange[1] > -1
       && coordinate.rowIdx === 0
@@ -1325,7 +2149,8 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   }
 
   refreshTableMenuFromSelection() {
-    this._syncTableFocusUi(this.doc.selection.recalculate().value)
+    if (this._isGone()) return
+    this._syncTableFocusUi(this.doc.selection.value)
   }
 
   private _disposeToolbar() {
@@ -1364,7 +2189,11 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   }
 
   private _showTableMenuOverlay() {
-    if (this.doc.isReadonly || !this._tableMenu.visible || !this.tableMenuAnchor) {
+    if (!this._isTableUiLive()) {
+      this._disposeToolbar()
+      return
+    }
+    if (this.isReadonly || !this._tableMenu.visible || !this.tableMenuAnchor) {
       this._disposeToolbar()
       return
     }
@@ -1387,7 +2216,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       // reposition.
       this.toolbarRef.changeDetectorRef.detectChanges()
       const overlay = this.toolbarOvr
-      requestAnimationFrame(() => {
+      this._scheduleTableMenuFrame(() => {
         if (this.toolbarOvr !== overlay) return
         const strategy = overlay.getConfig().positionStrategy as FlexibleConnectedPositionStrategy | undefined
         if (strategy) {
@@ -1426,6 +2255,34 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     this.toolbarOvr = overlayRef
     this.toolbarRef = componentRef
     this._applyToolbarInputs(componentRef)
+
+    // 仅在工具栏存活时订阅。change$ 先于缩放样式写入发出，下一帧再测量，
+    // 连续缩放合并为一次刷新，关闭/销毁后不再触发定位。
+    this.doc.viewScale.change$
+      .pipe(skip(1), takeUntil(merge(this._closeToolbar$, overlayRef.detachments())))
+      .subscribe(() => {
+        this._cancelTableMenuFrames()
+        this._scheduleTableMenuFrame(() => {
+          if (this.toolbarOvr === overlayRef) this.refreshTableMenuFromSelection()
+        })
+      })
+  }
+
+  private _isTableUiLive(): boolean {
+    return this.hostElement.isConnected && this.doc.model.exists(this.id)
+  }
+
+  private _scheduleTableMenuFrame(callback: () => void): void {
+    const frameId = requestAnimationFrame(() => {
+      this._tableMenuFrameIds.delete(frameId)
+      callback()
+    })
+    this._tableMenuFrameIds.add(frameId)
+  }
+
+  private _cancelTableMenuFrames(): void {
+    this._tableMenuFrameIds.forEach(frameId => cancelAnimationFrame(frameId))
+    this._tableMenuFrameIds.clear()
   }
 
   private _applyToolbarInputs(ref: ComponentRef<TableStructureToolbarComponent>) {
@@ -1474,9 +2331,6 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
     this.doc.selection.selectBlock(firstCell)
     applySelection()
-    nextTick().then(() => {
-      this.doc.selection.recalculate()
-    })
 
   }
 
@@ -1521,9 +2375,6 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
     this.doc.selection.selectBlock(firstCell)
     applySelection()
-    nextTick().then(() => {
-      this.doc.selection.recalculate()
-    })
   }
 
   /**
@@ -1548,7 +2399,13 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
   private _actualCssZoom(): number {
     if (!cssZoomDeclarationSupported()) return 1
-    return this.fullscreenController?.zoom$.value ?? 1
+    const fullscreenZoom = this.fullscreenController?.zoom$.value ?? 1
+    const documentZoom = this.doc.viewScale?.value ?? 1
+    // FullscreenController cancels the host document zoom on the fixed table host,
+    // so only the table-local zoom remains in the visual coordinate system.
+    return this.fullscreenController?.isFullscreen
+      ? fullscreenZoom
+      : documentZoom
   }
 
   private _zoomFactorForBcrMeasure(): number {
@@ -1588,7 +2445,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   }
 
   onRowReorderStart(evt: RowReorderStartEvent) {
-    if (this.doc.isReadonly) return
+    if (this.isReadonly) return
     const rows = this._getRowElements()
     if (!rows.length) return
 
@@ -1697,7 +2554,1036 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
   private _getRowElements(): HTMLElement[] {
     if (!this.tableBody) return []
-    return Array.from(this.tableBody.querySelectorAll(':scope > tr')) as HTMLElement[]
+    // 排除分页占位行——行 reorder / 选区 / 几何只认真实数据行。
+    return Array.from(this.tableBody.querySelectorAll(':scope > tr:not(.bc-pagination-spacer):not(.bc-pagination-header-clone)')) as HTMLElement[]
+  }
+
+  // ───────── 分页协作 API（仅屏幕分页子系统调用；普通态 _pageBreakGaps 为空、零行为变化）─────────
+
+  /**
+   * 返回表格的「自然」几何（排除已施加的分页占位行高度），供分页引擎测量与定位行切点。
+   * - `naturalHeight`：host border-box 高度减去所有占位行高度。
+   * - `rows`：每行 host 相对 table host 顶的自然 top/bottom（已扣除其上方累计占位高度）。
+   *
+   * **测量反馈环防护**：占位行（spacer/clone）的影响由 accGap 扣掉，但**合并单元格跨页拆分**的视图覆盖
+   * （`_splitMergedCellsAtBreaks` 把 master rowspan 缩小、un-hide 续段）会真实改变**行高分配**——被拆合并
+   * 单元格的内容塞进首段、首段那几行被撑高，于是测到的行几何**依赖当前拆分结果** → 拆分→行高变→引擎选
+   * 不同切点→重拆→…… 疯狂重算抖动（content 高过行 span 时尤甚）。因此当存在 active 拆分覆盖（`_splitCells`）
+   * 时，先把分页视图态整体清掉、量「真·自然几何」（合并单元格完整、无占位行），量完**恢复原拆分态**
+   * （pure，无净副作用，打印测量路径同样安全）——使引擎输入与当前拆分无关、稳定收敛。
+   */
+  getPaginationGeometry(): {
+    naturalHeight: number
+    headerHeight: number
+    rows: Array<{ id: string; top: number; bottom: number; coveredFromAbove: boolean; coveredByContentMerge: boolean }>
+  } {
+    const geometry = this._getPaginationGeometry()
+    return {
+      naturalHeight: geometry.naturalHeight,
+      headerHeight: geometry.headerHeight,
+      rows: geometry.rows.map(row => ({
+        ...row,
+        coveredByContentMerge: row.coveredByContentMerge ?? false,
+      })),
+    }
+  }
+
+  private _getPaginationGeometry(
+    options?: TablePaginationMeasureOptions,
+  ): TablePaginationGeometry {
+    // 全屏 DOM 的 fixed box、64px padding 和用户 zoom 都不是文档流几何。
+    // 若把它们送进分页引擎，退出时会先恢复分页投影、再恢复 viewport anchor，
+    // 与虚拟化自己的 anchor transaction 形成多帧互相修正。
+    if (this.fullscreenController?.isFullscreen && this._normalFlowPaginationGeometry) {
+      return this._normalFlowPaginationGeometry
+    }
+
+    const geometry = this._measurePaginationGeometryWithoutFullscreen(options)
+    if (!this.fullscreenController?.isFullscreen) {
+      this._normalFlowPaginationGeometry = geometry
+    }
+    return geometry
+  }
+
+  private _captureNormalFlowPaginationGeometry(): void {
+    if (this._normalFlowPaginationGeometry || !this.hostElement?.isConnected) return
+    this._normalFlowPaginationGeometry = this._measurePaginationGeometryWithoutFullscreen()
+  }
+
+  private _measurePaginationGeometryWithoutFullscreen(
+    options?: TablePaginationMeasureOptions,
+  ): TablePaginationGeometry {
+    if (
+      this._splitCells.size > 0
+      || this._cellFlowBlockOffsets.size > 0
+      || this._cellFlowMasks.size > 0
+    ) {
+      const snapshot = [...this._lastPaginationBreaks]
+      this._applyPaginationBreaks([]) // 清空：合并单元格还原成整体、移除占位行/续页表头克隆
+      try {
+        return this._measureNaturalGeometry(options)
+      } finally {
+        this._applyPaginationBreaks(snapshot) // 恢复拆分态（含 spacer/clone/续段高亮镜像）
+      }
+    }
+    return this._measureNaturalGeometry(options)
+  }
+
+  private _measureNaturalGeometry(options?: {
+    contentHeight: number
+    widowOrphanLines: number
+  }, nestedLocksSettled = false): {
+    naturalHeight: number
+    headerHeight: number
+    rows: Array<{ id: string; top: number; bottom: number; coveredFromAbove: boolean; coveredByContentMerge: boolean }>
+    cellFlowPlan?: TableCellFlowPlan
+  } {
+    const host = this.hostElement
+    const hostTop = host.getBoundingClientRect().top
+    const rowBlocks = this.getChildrenBlocks()
+
+    // 逐行判定「是否被上方 rowspan 覆盖」：边界被合并单元格跨越则不可在此切（否则会腰斩合并单元格）。
+    // 并区分覆盖它的合并单元格**有没有内容**：带内容的合并单元格无法跨页拆（内容流不进空续段、必溢出），
+    // 这类边界连 splitOffsets 都不收 → keep-together；空合并单元格仍可拆。
+    const {covered, coveredByContent} = this._getPaginationRowCoverage(rowBlocks)
+
+    // 表头高（rowHead 时 = 首行自然 border-box 高）；无表头为 0。供引擎预留续页重复表头空间。
+    const rowHead = this.props.rowHead && rowBlocks.length > 0
+    const headerHeight = rowHead ? (rowBlocks[0]?.hostElement?.offsetHeight ?? 0) : 0
+
+    // 按 DOM 顺序遍历 tbody 的 <tr>：累计「视图行」（占位行 + 续页表头克隆）的**实际**高度作为 accGap，
+    // 数据行的自然 top/bottom = DOM 位置 − accGap。用实际渲染高（而非估算）保证自然几何稳定、不形成测量反馈环
+    // （估算与克隆实际高有几像素差时，切点会漂移 → computeTableBreaks 的 2px 匹配失败 → 断点反复加/删抖动）。
+    const rows: Array<{ id: string; top: number; bottom: number; coveredFromAbove: boolean; coveredByContentMerge: boolean }> = []
+    let accGap = 0
+    let dataIdx = 0
+    const trList = this.tableBody
+      ? Array.from(this.tableBody.querySelectorAll(':scope > tr')) as HTMLElement[]
+      : []
+    for (const tr of trList) {
+      if (isPaginationViewRow(tr)) { accGap += tr.offsetHeight; continue }
+      const r = tr.getBoundingClientRect()
+      rows.push({
+        id: rowBlocks[dataIdx]?.id ?? (tr.getAttribute('data-block-id') ?? ''),
+        // Pagination geometry is expressed in layout px (offsetHeight,
+        // contentHeight). BCR is visual px under CSS zoom, so mixing it here
+        // shifts cell-flow anchors away from the table mask at non-100% scale.
+        top: this._layoutDistanceFromBcr(r.top - hostTop) - accGap,
+        bottom: this._layoutDistanceFromBcr(r.bottom - hostTop) - accGap,
+        coveredFromAbove: covered[dataIdx] ?? false,
+        coveredByContentMerge: coveredByContent[dataIdx] ?? false,
+      })
+      dataIdx++
+    }
+    const refinedContentCoverage = this._refinePaginationContentMergeCoverage(
+      rows,
+      coveredByContent,
+      hostTop,
+    )
+    rows.forEach((row, index) => {
+      row.coveredByContentMerge = refinedContentCoverage[index] ?? false
+    })
+    const naturalHeight = host.offsetHeight - accGap
+    if (options && naturalHeight > options.contentHeight) {
+      const oversizedRows: BlockCraft.BlockComponent[] = []
+      let previousBottom = 0
+      for (let index = 0; index < rows.length; index++) {
+        const row = rows[index]
+        if (row.bottom - previousBottom > options.contentHeight && rowBlocks[index]) {
+          oversizedRows.push(rowBlocks[index])
+        }
+        previousBottom = row.bottom
+      }
+      // 普通大表的每一行都远小于一页，不应为了极少见的巨大媒体/原子子块
+      // 扫描所有 cell 并触发布局读取。只有已经超页的候选行才需要做局部锁高。
+      // 若锁高改变了行几何，只额外测量一次稳定后的自然布局。
+      const locksChanged = this._syncNestedAtomicLocks(
+        options.contentHeight,
+        oversizedRows,
+      )
+      if (locksChanged && !nestedLocksSettled) {
+        return this._measureNaturalGeometry(options, true)
+      }
+    }
+    const cellFlowPlan = options && naturalHeight > options.contentHeight
+      ? this._buildCellFlowPlan(
+          rows,
+          rowBlocks,
+          naturalHeight,
+          hostTop,
+          options,
+        )
+      : undefined
+    return { naturalHeight, headerHeight, rows, cellFlowPlan }
+  }
+
+  private _getPaginationRowCoverage(rowBlocks: BlockCraft.BlockComponent[]): {
+    covered: boolean[]
+    coveredByContent: boolean[]
+  } {
+    const rowCount = rowBlocks.length
+    const covered = new Array<boolean>(rowCount).fill(false)
+    const coveredByContent = new Array<boolean>(rowCount).fill(false)
+    const grid = this._getTableModelGrid()
+    if (!grid) {
+      const colCount = this.colLength
+      if (colCount <= 0) return {covered, coveredByContent}
+      const matrix = buildCellMatrix(rowBlocks, rowCount, colCount)
+      for (let row = 0; row < rowCount; row++) {
+        for (let col = 0; col < colCount; col++) {
+          const info = matrix[row]?.[col]
+          if (!info || info.sourceRow >= row) continue
+          covered[row] = true
+          if ((info.cell as TableCellBlockComponent)?.hasContent) coveredByContent[row] = true
+        }
+      }
+      return {covered, coveredByContent}
+    }
+
+    let spans = this._paginationRowspanCache?.grid === grid
+      ? this._paginationRowspanCache.spans
+      : null
+    if (!spans) {
+      spans = []
+      for (let row = 0; row < grid.rowCount; row++) {
+        const rowId = grid.rowIds[row]
+        for (const cellId of this.doc.model.getChildrenIds(rowId)) {
+          if (grid.getMasterCellId(cellId) !== cellId) continue
+          const span = grid.getSpan(cellId)
+          // 只收 master source，避免 rowspan/colspan 的隐藏 continuation 重复计入。
+          if (!span || span.start[0] !== row || span.end[0] <= row) continue
+          spans.push({cellId, startRow: row, endRow: span.end[0]})
+        }
+      }
+      this._paginationRowspanCache = {grid, spans}
+    }
+
+    for (const span of spans) {
+      const cell = this._getLiveBlockById<TableCellBlockComponent>(span.cellId)
+      const hasContent = this._isTableCellBlock(cell) && cell.hasContent
+      const end = Math.min(rowCount - 1, span.endRow)
+      for (let row = span.startRow + 1; row <= end; row++) {
+        covered[row] = true
+        if (hasContent) coveredByContent[row] = true
+      }
+    }
+    return {covered, coveredByContent}
+  }
+
+  /**
+   * `rowspan` 有内容不代表它跨过的每个行边界都不可分页。典型分类列只在合并
+   * 单元格顶部放一个短标题，后续几十行仍可在标题之后安全拆开。若把整段都标成
+   * content-covered，分页引擎找不到行切点，只能让整段穿过纸张页缝。
+   *
+   * 这里只收紧 model-grid 路径：边界仍处于 rowspan 内，但仅当 master cell 的
+   * 实际内容底边越过该边界时才禁止拆分。视图拆分会把原内容留在首段、后续段用
+   * 隐藏 continuation cell 承接，因此内容已经结束的边界无需 cell-flow。
+   */
+  private _refinePaginationContentMergeCoverage(
+    rows: Array<{top: number}>,
+    conservative: readonly boolean[],
+    hostTop: number,
+  ): boolean[] {
+    const grid = this._getTableModelGrid()
+    const spans = this._paginationRowspanCache?.grid === grid
+      ? this._paginationRowspanCache.spans
+      : null
+    if (!grid || !spans) return [...conservative]
+
+    const refined = new Array<boolean>(rows.length).fill(false)
+    for (const span of spans) {
+      const cell = this._getLiveBlockById<TableCellBlockComponent>(span.cellId)
+      if (!this._isTableCellBlock(cell) || !cell.hasContent) continue
+
+      const children = cell.getChildrenBlocks()
+      let contentBottom = Number.NEGATIVE_INFINITY
+      for (const child of children) {
+        const element = child.hostElement
+        if (!element) continue
+        const rect = element.getBoundingClientRect()
+        if (!Number.isFinite(rect.bottom)) continue
+        contentBottom = Math.max(
+          contentBottom,
+          this._layoutDistanceFromBcr(rect.bottom - hostTop),
+        )
+      }
+
+      // 缺失/断连 DOM 时保持旧的保守语义，不能凭空允许一个可能腰斩内容的切点。
+      if (!Number.isFinite(contentBottom)) {
+        for (let row = span.startRow + 1; row <= span.endRow; row++) {
+          if (row < refined.length) refined[row] = true
+        }
+        continue
+      }
+
+      const end = Math.min(rows.length - 1, span.endRow)
+      for (let row = span.startRow + 1; row <= end; row++) {
+        if (contentBottom > rows[row].top + TABLE_PAGINATION_BOUNDARY_TOLERANCE) {
+          refined[row] = true
+        }
+      }
+    }
+    return refined
+  }
+
+  private _buildCellFlowPlan(
+    rows: Array<{id: string; top: number; bottom: number}>,
+    rowBlocks: BlockCraft.BlockComponent[],
+    naturalHeight: number,
+    hostTop: number,
+    options: {contentHeight: number; widowOrphanLines: number},
+  ): TableCellFlowPlan | undefined {
+    const inputs: TableFlowRowInput[] = []
+    const budget: TableCellFlowMeasurementBudget = {
+      continuations: 0,
+      safeAnchors: 0,
+    }
+    let previousBottom = 0
+    let hasOversizedRow = false
+
+    for (let index = 0; index < rows.length; index++) {
+      const row = rows[index]
+      const stride = Math.max(0, row.bottom - previousBottom)
+      if (stride > options.contentHeight) {
+        hasOversizedRow = true
+        const cells = this._measureCellFlowInputs(
+          rowBlocks[index],
+          previousBottom,
+          row.bottom,
+          hostTop,
+          options.contentHeight,
+          options.widowOrphanLines,
+          budget,
+        )
+        if (!cells.length) return undefined
+        inputs.push({kind: 'cell-flow', rowId: row.id, cells})
+      } else {
+        inputs.push({kind: 'atomic', rowId: row.id, height: stride})
+      }
+      previousBottom = row.bottom
+    }
+    if (!hasOversizedRow) return undefined
+
+    try {
+      const plan = planTableCellFlow(inputs, options.contentHeight)
+      // table host 可能在最后一行之后还有 collapsed border / padding；把它留在末片段，
+      // 但不制造一个无法映射回真实 rowId 的伪行断点。
+      const trailing = Math.max(0, naturalHeight - previousBottom)
+      if (trailing > 0 && plan.segments.length) {
+        const last = plan.segments[plan.segments.length - 1]
+        last.height += trailing
+        last.toOffset += trailing
+        plan.paginationHeight += trailing
+      }
+      return plan
+    } catch (error) {
+      // 不可拆的巨大原子内容没有安全锚点：保留旧的整行溢出语义，后续由局部锁高降级接管。
+      if (error instanceof TableCellFlowPlanningError) return undefined
+      return undefined
+    }
+  }
+
+  private _measureCellFlowInputs(
+    rowBlock: BlockCraft.BlockComponent | undefined,
+    rowOrigin: number,
+    rowBottom: number,
+    hostTop: number,
+    contentHeight: number,
+    widowOrphanLines: number,
+    budget: TableCellFlowMeasurementBudget,
+  ): TableCellFlowInput[] {
+    if (!rowBlock) return []
+    const rowStride = Math.max(0, rowBottom - rowOrigin)
+    const cells: TableCellBlockComponent[] = []
+    for (const candidate of rowBlock.getChildrenBlocks()) {
+      if (
+        candidate instanceof TableCellBlockComponent
+        && candidate.props.display !== 'none'
+        && candidate.hostElement?.style.display !== 'none'
+      ) {
+        cells.push(candidate as unknown as TableCellBlockComponent)
+      }
+    }
+    const pageCount = Math.max(1, Math.ceil(rowStride / contentHeight))
+    const continuationCost = pageCount * cells.length
+    if (
+      pageCount > TABLE_CELL_FLOW_MAX_PAGES_PER_ROW
+      || budget.continuations + continuationCost > TABLE_CELL_FLOW_MAX_CONTINUATIONS
+    ) {
+      return []
+    }
+    budget.continuations += continuationCost
+
+    const measured: TableCellFlowInput[] = []
+    for (const cell of cells) {
+      const input = this._measureSingleCellFlow(
+        cell,
+        rowOrigin,
+        rowStride,
+        hostTop,
+        contentHeight,
+        widowOrphanLines,
+        budget,
+      )
+      if (!input) return []
+      measured.push(input)
+    }
+    if (!measured.length) return []
+
+    // collapsed table border 会让内容底与行底差少量像素。只把自然最低的那列延长到真实行底，
+    // 其余短列仍可提前结束，不会被空白高度误判成“未完成内容”。
+    let tallestIndex = 0
+    for (let index = 1; index < measured.length; index++) {
+      if (
+        measured[index].points[measured[index].points.length - 1].offset
+        > measured[tallestIndex].points[measured[tallestIndex].points.length - 1].offset
+      ) {
+        tallestIndex = index
+      }
+    }
+    return measured.map((cell, index) => {
+      if (index !== tallestIndex) return cell
+      return {
+        ...cell,
+        points: [
+          ...cell.points.slice(0, -1),
+          {offset: rowStride, anchor: {kind: 'cell-end'} as const},
+        ],
+      }
+    })
+  }
+
+  private _measureSingleCellFlow(
+    cell: TableCellBlockComponent,
+    rowOrigin: number,
+    rowStride: number,
+    hostTop: number,
+    contentHeight: number,
+    widowOrphanLines: number,
+    budget: TableCellFlowMeasurementBudget,
+  ): TableCellFlowInput | null {
+    const points: TableCellFlowPoint[] = []
+    const children = cell.getChildrenBlocks()
+
+    // A visible but empty cell contributes no indivisible content. Mark it as
+    // completed near the row origin; the table-level clip removes page bands
+    // across that column. Treating the whole row stride as its only cell-end
+    // point would make an otherwise splittable oversized row fail closed.
+    if (!children.length) {
+      if (budget.safeAnchors >= TABLE_CELL_FLOW_MAX_SAFE_ANCHORS) return null
+      budget.safeAnchors++
+      return {
+        cellId: cell.id,
+        points: [{
+          offset: Math.min(1, rowStride),
+          anchor: {kind: 'cell-end'},
+        }],
+      }
+    }
+
+    for (let childIndex = 0; childIndex < children.length; childIndex++) {
+      const child = children[childIndex]
+      const childRect = child.hostElement.getBoundingClientRect()
+      const childTop = this._layoutDistanceFromBcr(childRect.top - hostTop)
+      // Keep the first child's top as an explicit boundary too. A short cell
+      // may be vertically centered inside a multi-page row, leaving more than
+      // one page of safe empty prefix before this boundary.
+      if (childIndex > 0 || childTop - rowOrigin > 0.01) {
+        if (budget.safeAnchors >= TABLE_CELL_FLOW_MAX_SAFE_ANCHORS) return null
+        budget.safeAnchors++
+        points.push({
+          offset: childTop - rowOrigin,
+          anchor: {kind: 'block', blockId: child.id},
+        })
+      }
+
+      if (child instanceof EditableBlockComponent) {
+        const requestedLineSamples = Math.max(
+          TABLE_CELL_FLOW_MIN_LINE_SAMPLES,
+          Math.ceil(
+            Math.max(0, this._layoutDistanceFromBcr(childRect.height))
+              / contentHeight,
+          )
+            * TABLE_CELL_FLOW_LINE_SAMPLES_PER_PAGE,
+        )
+        const availableLineSamples = Math.min(
+          requestedLineSamples,
+          TABLE_CELL_FLOW_MAX_SAFE_ANCHORS - budget.safeAnchors,
+        )
+        if (availableLineSamples <= 0) return null
+        const lines = measureInlinePaginationLineStarts(
+          child.runtime,
+          availableLineSamples,
+        )
+        budget.safeAnchors += lines.length
+        const totalLines = lines.length + 1
+        const minimum = Math.max(1, widowOrphanLines)
+        const widowSafe = lines.filter((_line, lineIndex) => {
+          const boundaryLine = lineIndex + 1
+          return !(
+            boundaryLine < minimum
+            || totalLines - boundaryLine < minimum
+          )
+        })
+        // 若严格 widow/orphan 后一个点都不剩，优先放宽排版美观约束，不能退回整行溢出。
+        const usableLines = widowSafe.length ? widowSafe : lines
+        const containerTop = child.containerElement.getBoundingClientRect().top
+        usableLines.forEach(line => {
+          points.push({
+            offset: this._layoutDistanceFromBcr(
+              containerTop + line.top - hostTop,
+            ) - rowOrigin,
+            anchor: {kind: 'text', blockId: child.id, offset: line.offset},
+            requiredTail: this._layoutDistanceFromBcr(
+              line.visualGuardHeight,
+            ),
+          })
+        })
+      }
+    }
+
+    if (budget.safeAnchors >= TABLE_CELL_FLOW_MAX_SAFE_ANCHORS) return null
+    budget.safeAnchors++
+    let contentEnd = Math.min(rowStride, Math.max(0, rowStride))
+    const lastChild = children[children.length - 1]
+    if (lastChild?.hostElement) {
+      const style = getComputedStyle(lastChild.hostElement)
+      const marginBottom = Number.parseFloat(style.marginBottom) || 0
+      contentEnd = Math.max(
+        0.01,
+        Math.min(
+          rowStride,
+          this._layoutDistanceFromBcr(
+            lastChild.hostElement.getBoundingClientRect().bottom - hostTop,
+          )
+            + marginBottom
+            - rowOrigin,
+        ),
+      )
+    }
+
+    const normalized: TableCellFlowPoint[] = []
+    for (const point of points
+      .filter(point => point.offset > 0.01 && point.offset < contentEnd - 0.01)
+      .sort((left, right) => left.offset - right.offset)) {
+      const previous = normalized[normalized.length - 1]
+      if (previous && Math.abs(previous.offset - point.offset) <= 0.5) {
+        // 块边界比同行文字边界稳定，优先用块 id 锚定。
+        if (point.anchor.kind === 'block') normalized[normalized.length - 1] = point
+        continue
+      }
+      normalized.push(point)
+    }
+    normalized.push({offset: contentEnd, anchor: {kind: 'cell-end'}})
+    return {cellId: cell.id, points: normalized}
+  }
+
+  /**
+   * 施加/更新/清除分页断点（视图层占位行 + 行栏对齐间隙）。幂等：与当前一致则不动 DOM。
+   * 传 `[]` 清除全部。占位行无边框、无 data-block-id、不可编辑、不响应指针，纯撑高把后续行推到下一页。
+   */
+  applyPaginationBreaks(breaks: Array<{beforeRowId: string; gap: number}>): void {
+    this._applyPaginationBreaks(breaks)
+  }
+
+  private _applyPaginationBreaks(breaks: TablePaginationBreak[]): void {
+    if (!this.tableBody) return
+    this._lastPaginationBreaks = [...breaks]
+    if (this._paginationProjectionSuspended) return
+    this._renderPaginationBreaks(breaks)
+  }
+
+  /**
+   * 只更新表格 DOM 的分页投影，不改 `_lastPaginationBreaks`。全屏切换用它清除/恢复
+   * 纯视图节点，避免清除动作把待恢复的最新断点覆盖成空数组。
+   */
+  private _renderPaginationBreaks(breaks: TablePaginationBreak[]): void {
+    if (!this.tableBody) return
+    const breakSig = JSON.stringify(breaks)
+    const modelGrid = this._getTableModelGrid()
+    const cellFlowBreaks = breaks.filter(
+      (value): value is Extract<TablePaginationBreak, {kind: 'cell-flow'}> =>
+        'kind' in value && value.kind === 'cell-flow',
+    )
+    // 同一模型投影 + 同一断点的 ResizeObserver 反馈轮次无需再构建 row map、
+    // 拆分矩阵或触碰 DOM。表头克隆目前禁用；若恢复，则 rowHead 仍走完整签名校验。
+    if (
+      !this.props.rowHead
+      && breakSig === this._appliedPaginationBreakSig
+      && modelGrid !== null
+      && modelGrid === this._appliedPaginationGrid
+    ) {
+      // InlineRuntime revokes its zero-model marker before text mutations.
+      // Numeric breaks can remain identical, so the table-level cache still
+      // has to run the bounded cell-flow health check before returning.
+      this._applyCellFlowProjection(cellFlowBreaks)
+      return
+    }
+    this._invalidateColumnResizeHandle()
+    const rowBreaks = breaks.filter(
+      (value): value is {beforeRowId: string; gap: number} =>
+        !('kind' in value),
+    )
+    const next: Record<string, number> = {}
+    for (const b of rowBreaks) {
+      if (b.gap > 0) next[b.beforeRowId] = b.gap
+    }
+    const gapsChanged = !shallowEqualNumberRecord(this._pageBreakGaps, next)
+
+    const rowBlocks = this.getChildrenBlocks()
+    const rowElById = new Map<string, HTMLElement>()
+    const indexById = new Map<string, number>()
+    rowBlocks.forEach((rowBlock, i) => {
+      if (rowBlock.hostElement) rowElById.set(rowBlock.id, rowBlock.hostElement)
+      indexById.set(rowBlock.id, i)
+    })
+
+    const breakIndices: number[] = []
+    for (const rowId of Object.keys(next)) {
+      const idx = indexById.get(rowId)
+      if (idx !== undefined && idx > 0) breakIndices.push(idx)
+    }
+    breakIndices.sort((a, b) => a - b)
+
+    // 合并单元格拆分：每次都按「当前合并结构」重算还原——合并/取消合并可能改了 rowspan 结构
+    // 却没改页缝 gap（不触发 spacer 重建），故不能放进下面的 gap 早退里。开销仅落在真正被拆的表格上。
+    this._clearCellOverrides()
+    const cachedRowspans = this._paginationRowspanCache?.grid === modelGrid
+      ? this._paginationRowspanCache.spans
+      : null
+    if (breakIndices.length > 0 && cachedRowspans?.length !== 0) {
+      this._splitMergedCellsAtBreaks(rowBlocks, breakIndices)
+    }
+
+    // 占位行 + 续页重复表头 DOM：在断点集合（gap）变化时重建——避免每次重算都删/插造成滚动抖动。
+    // 但占位行 colspan / 表头克隆是快照、依赖**列数 + 表头内容**，这些变化不改 gap；故再加一道「视图结构签名」
+    // （列数 + 表头行 innerHTML）：签名变化（加/删列、改表头）时也强制重建，否则克隆/占位行停留在旧列数 → 错位。
+    const headerRowEl = this.props.rowHead ? rowBlocks[0]?.hostElement ?? null : null
+    const viewSig = `${this.colLength}|${headerRowEl ? headerRowEl.innerHTML : ''}`
+    if (gapsChanged || viewSig !== this._pageBreakSig) {
+      this.tableBody.querySelectorAll(':scope > tr.bc-pagination-spacer, :scope > tr.bc-pagination-header-clone')
+        .forEach(el => el.remove())
+      // 带表头（rowHead）的表格：每个续页顶部（占位行之后、断点行之前）重复一份表头克隆。
+      for (const [rowId, gap] of Object.entries(next)) {
+        const rowEl = rowElById.get(rowId)
+        if (!rowEl) continue
+        this.tableBody.insertBefore(buildPaginationSpacer(gap, this.colLength), rowEl)
+        // [临时禁用 2026-06-30] 续页重复表头复制 bug 较多，先关掉。恢复：取消下面三行注释。
+        // if (headerRowEl && headerRowEl !== rowEl) {
+        //   this.tableBody.insertBefore(buildPaginationHeaderClone(headerRowEl), rowEl)
+        // }
+      }
+      this._pageBreakGaps = next
+      this._pageBreakSig = viewSig
+    }
+
+    this._applyCellFlowProjection(cellFlowBreaks)
+    this.rowBarComponent?.changeDetectionRef.markForCheck()
+    this._appliedPaginationBreakSig = breakSig
+    this._appliedPaginationGrid = modelGrid
+  }
+
+  private _setPaginationProjectionSuspended(suspended: boolean): void {
+    if (this._paginationProjectionSuspended === suspended) return
+    this._paginationProjectionSuspended = suspended
+    if (!this.tableBody) return
+    this._renderPaginationBreaks(suspended ? [] : this._lastPaginationBreaks)
+  }
+
+  private _applyCellFlowProjection(
+    breaks: Array<Extract<TablePaginationBreak, {kind: 'cell-flow'}>>,
+  ): void {
+    const signature = JSON.stringify(breaks)
+    if (!breaks.length) {
+      this._clearCellFlowProjection()
+      return
+    }
+
+    // Preserve the old O(continuations) hot path. Inline model mutations revoke
+    // their markers without changing numeric breaks, so a signature match must
+    // still re-apply runtime gaps and verify the small set of published owners.
+    if (signature === this._cellFlowSig) {
+      const projectionStillMatches = [...this._cellFlowBlockOffsets.keys()]
+        .every(target => target.isConnected)
+        && [...this._cellFlowAnchorOwners].every(([cellHost, owner]) => {
+          if (!cellHost.isConnected) return false
+          const currentRow = cellHost.closest('tr')
+          if (currentRow !== owner.rowElement) return false
+          const currentRowId = currentRow?.getAttribute('data-block-id')
+          return !currentRowId || currentRowId === owner.rowId
+        })
+        && this._cellFlowMasks.size === breaks.length
+        && [...this._cellFlowMasks].every(mask =>
+          mask.isConnected && mask.parentElement === this.tableWrapper.nativeElement)
+      if (projectionStillMatches) {
+        for (const [runtime, gaps] of this._cellFlowRuntimeGaps) {
+          if (!applyInlinePaginationGaps(runtime, gaps)) {
+            this._clearCellFlowProjection()
+            return
+          }
+        }
+        return
+      }
+      this._clearCellFlowProjection()
+    }
+
+    const rows = this.getChildrenBlocks()
+    const cellsByRow = new Map<string, Map<string, TableCellBlockComponent>>()
+    for (const row of rows) {
+      const cells = new Map<string, TableCellBlockComponent>()
+      for (const block of row.getChildrenBlocks()) {
+        if (block instanceof TableCellBlockComponent) cells.set(block.id, block)
+      }
+      cellsByRow.set(row.id, cells)
+    }
+    const runtimeGaps = new Map<object, TableCellFlowRuntimeGap[]>()
+    const blockOffsets = new Map<HTMLElement, {
+      offset: number
+      wrapper: HTMLElement
+      previous: HTMLElement | null
+    }>()
+    const anchorOwners = new Map<HTMLElement, TableCellFlowAnchorOwner>()
+
+    for (const pageBreak of breaks) {
+      // A flow mask and every continuation gap are one visual transaction.
+      // Model/DOM updates can temporarily invalidate a measured row or anchor;
+      // publishing only the mask would cover still-unprojected cell content.
+      const rowCells = cellsByRow.get(pageBreak.rowId)
+      if (!rowCells) {
+        this._clearCellFlowProjection()
+        return
+      }
+      for (const gap of pageBreak.cells) {
+        const cell = rowCells.get(gap.cellId)
+        if (!cell) {
+          this._clearCellFlowProjection()
+          return
+        }
+        const cellHost = cell.hostElement
+        if (!(cellHost instanceof HTMLElement) || !cellHost.isConnected) {
+          this._clearCellFlowProjection()
+          return
+        }
+        anchorOwners.set(cellHost, {
+          rowId: pageBreak.rowId,
+          rowElement: cellHost.closest('tr'),
+        })
+        const children = cell.getChildrenBlocks()
+        const anchor = gap.anchor
+
+        if (anchor.kind === 'text') {
+          const editable = children.find(child => child.id === anchor.blockId)
+          if (!(editable instanceof EditableBlockComponent)) {
+            this._clearCellFlowProjection()
+            return
+          }
+          const runtime = editable.runtime
+          const list = runtimeGaps.get(runtime) ?? []
+          list.push({
+            offset: anchor.offset,
+            height: gap.gap,
+            backdropOffset: gap.backdropOffset,
+            backdropHeight: gap.backdropHeight,
+          })
+          runtimeGaps.set(runtime, list)
+          continue
+        }
+
+        if (anchor.kind === 'cell-end') continue
+        const wrapper = cell.hostElement.querySelector<HTMLElement>(
+          ':scope > .table-cell__children-wrapper',
+        )
+        if (!wrapper) {
+          this._clearCellFlowProjection()
+          return
+        }
+        const target = anchor.kind === 'block'
+          ? children.find(child => child.id === anchor.blockId)?.hostElement ?? null
+          : children[0]?.hostElement ?? wrapper.firstElementChild
+        if (!(target instanceof HTMLElement)) {
+          this._clearCellFlowProjection()
+          return
+        }
+        const childIndex = children.findIndex(child => child.hostElement === target)
+        const previous = childIndex > 0
+          ? children[childIndex - 1]?.hostElement ?? null
+          : null
+        const current = blockOffsets.get(target)
+        if (current) {
+          current.offset += gap.gap
+        } else {
+          blockOffsets.set(target, {offset: gap.gap, wrapper, previous})
+        }
+      }
+    }
+
+    this._clearCellFlowProjection()
+
+    // 先批量读取自然 margin，再批量写入，避免 read/write 交错触发布局抖动。
+    // 块边界只需要把锚点及其后续内容下推；直接复用真实块的 margin，不再向
+    // contenteditable 单元格注入可见占位节点。分页占位统一从 table 绘制层扣除。
+    const offsets = [...blockOffsets]
+    const measured = offsets.map(([target, {offset, wrapper, previous}]) => ({
+      target,
+      offset,
+      wrapper,
+      previous,
+      naturalDistance: target.getBoundingClientRect().top - (previous
+        ? previous.getBoundingClientRect().bottom
+        : wrapper.getBoundingClientRect().top),
+      marginTop: Number.parseFloat(
+        target.ownerDocument.defaultView?.getComputedStyle(target).marginTop ?? '',
+      ) || 0,
+    }))
+    for (const {target, offset, marginTop} of measured) {
+      this._cellFlowBlockOffsets.set(target, {
+        value: target.style.getPropertyValue('margin-top'),
+        priority: target.style.getPropertyPriority('margin-top'),
+      })
+      target.style.setProperty('margin-top', `${marginTop + offset}px`, 'important')
+    }
+    // 相邻 Block 的上下 margin 会折叠。仅做 `natural margin + offset` 会吞掉
+    // 原本由前一块 margin-bottom 提供的间距，导致每个 Block 边界少推进几像素，
+    // 多页后累积漂移。统一写完后批量读一次真实位移，再校正到精确 offset。
+    const projectedDistances = measured.map(({target, wrapper, previous}) =>
+      target.getBoundingClientRect().top - (previous
+        ? previous.getBoundingClientRect().bottom
+        : wrapper.getBoundingClientRect().top),
+    )
+    measured.forEach(({target, offset, naturalDistance, marginTop}, index) => {
+      const correction = offset - (projectedDistances[index] - naturalDistance)
+      if (Math.abs(correction) <= 0.01) return
+      target.style.setProperty(
+        'margin-top',
+        `${marginTop + offset + correction}px`,
+        'important',
+      )
+    })
+
+    for (const [runtime, gaps] of runtimeGaps) {
+      if (!applyInlinePaginationGaps(runtime, gaps)) {
+        this._clearCellFlowProjection()
+        return
+      }
+      this._cellFlowRuntimes.add(runtime)
+    }
+
+    const table = this.tableWrapper.nativeElement.querySelector<HTMLElement>('table')
+    if (!table) {
+      this._clearCellFlowProjection()
+      return
+    }
+    const tableTopFromHost = this._stylePositionFromBcrDistance(
+      table.getBoundingClientRect().top
+        - this.hostElement.getBoundingClientRect().top,
+    )
+    // 与填写区相同：扣除完整占位带，透出页眉页脚、页边距及真实纸张阴影。
+    // 有限的视口外轮廓保留边框外侧绘制；行列控件仍在 table 的兄弟层，不参与裁切。
+    const start = '-100vmax'
+    const end = 'calc(100% + 100vmax)'
+    const origin = `${start} ${start}`
+    const clipPoints = [origin, `${end} ${start}`, `${end} ${end}`, `${start} ${end}`, origin]
+    for (const pageBreak of breaks) {
+      const top = pageBreak.mask.top - tableTopFromHost
+      const bottom = top + Math.max(0, pageBreak.mask.height)
+      clipPoints.push(`${start} ${top}px`, `${start} ${bottom}px`,
+        `${end} ${bottom}px`, `${end} ${top}px`, `${start} ${top}px`, origin)
+      const mask = buildTablePaginationMask(
+        pageBreak.mask,
+        table,
+        table.offsetTop + pageBreak.mask.top - tableTopFromHost,
+      )
+      this.tableWrapper.nativeElement.appendChild(mask)
+      this._cellFlowMasks.add(mask)
+    }
+    this._cellFlowClip = {
+      element: table,
+      value: table.style.getPropertyValue('clip-path'),
+      priority: table.style.getPropertyPriority('clip-path'),
+    }
+    table.style.setProperty('clip-path', `polygon(evenodd,${clipPoints.join(',')})`)
+    this._cellFlowRuntimeGaps = new Map(
+      [...runtimeGaps].map(([runtime, gaps]) => [
+        runtime,
+        gaps.map(gap => ({...gap})),
+      ]),
+    )
+    this._cellFlowAnchorOwners = anchorOwners
+    this._cellFlowSig = signature
+  }
+
+  private _clearCellFlowProjection(): void {
+    if (this._cellFlowClip) {
+      const {element, value, priority} = this._cellFlowClip
+      if (value) element.style.setProperty('clip-path', value, priority)
+      else element.style.removeProperty('clip-path')
+      this._cellFlowClip = undefined
+    }
+    for (const runtime of this._cellFlowRuntimes) clearInlinePaginationGaps(runtime)
+    this._cellFlowRuntimes.clear()
+    for (const [target, snapshot] of this._cellFlowBlockOffsets) {
+      if (snapshot.value) {
+        target.style.setProperty('margin-top', snapshot.value, snapshot.priority)
+      } else {
+        target.style.removeProperty('margin-top')
+      }
+    }
+    this._cellFlowBlockOffsets.clear()
+    for (const mask of this._cellFlowMasks) mask.remove()
+    this._cellFlowMasks.clear()
+    this._cellFlowRuntimeGaps.clear()
+    this._cellFlowAnchorOwners.clear()
+    this._cellFlowSig = ''
+  }
+
+  /**
+   * 对每个被 `breakIndices` 跨越的竖向合并单元格做视图层拆分（Word 式）：
+   * 源单元格 rowspan 缩到第一个断点，之后每段在断点行 un-hide 一个续段单元格（空、接续合并）。
+   * 续段单元格 = 该断点行在源列的占位（display:none）单元格——矩形网格里它一定存在。
+   */
+  private _splitMergedCellsAtBreaks(rowBlocks: BlockCraft.BlockComponent[], breakIndices: number[]): void {
+    if (!breakIndices.length) return
+    const colCount = this.colLength
+    if (!colCount) return
+    const matrix = buildCellMatrix(rowBlocks, rowBlocks.length, colCount)
+
+    for (let s = 0; s < rowBlocks.length; s++) {
+      for (let c = 0; c < colCount; c++) {
+        const info = matrix[s]?.[c]
+        if (!info || info.sourceRow !== s || info.sourceCol !== c) continue // 只在合并源处理一次
+        const span = info.cell.props.rowspan || 1
+        if (span <= 1) continue
+        const crossing = breakIndices.filter(b => b > s && b < s + span)
+        if (!crossing.length) continue
+
+        const colspan = info.cell.props.colspan || 1
+        const segStarts = [s, ...crossing]
+        const segEnds = [...crossing, s + span]
+        const master = info.cell as TableCellBlockComponent
+        // 段0：源单元格，rowspan 缩到第一个断点（仍带内容、本页）。缩到 1 行时置 null（移除 rowspan 属性，对齐模型约定）。
+        const srcRowspan = segEnds[0] - s
+        this._setCellOverride(master, { rowspan: srcRowspan > 1 ? srcRowspan : null })
+        // 段1..：每个断点行的占位单元格 un-hide 成续段（空、接续下页）。
+        // 续段是模型里 display:none 的「被覆盖」单元格，纯视觉接续。它保持可命中，
+        // 但通过 master-id 代理 + contenteditable=false 只参与矩形选区，不允许编辑占位模型。
+        const conts: TableCellBlockComponent[] = []
+        for (let i = 1; i < segStarts.length; i++) {
+          const contCell = rowBlocks[segStarts[i]]?.getChildrenByIndex(c) as TableCellBlockComponent | undefined
+          if (!contCell) continue
+          this._setCellOverride(
+            contCell,
+            { display: '', rowspan: segEnds[i] - segStarts[i], colspan },
+            master.id,
+          )
+          conts.push(contCell)
+        }
+        if (conts.length) {
+          this._continuationsOf.set(master, conts)
+          // 若该合并源此刻正被选中，把高亮镜像到刚生成的续段上（分页在选区存活期间重算时）。
+          if (this._selectedCellSet.has(master)) {
+            for (const c2 of conts) c2.hostElement?.classList.add('selected')
+          }
+        }
+      }
+    }
+  }
+
+  private _setCellOverride(
+    cell: TableCellBlockComponent,
+    render: { rowspan?: number | null; colspan?: number | null; display?: string | null },
+    continuationMasterId?: string,
+  ): void {
+    cell.setPaginationRender(render)
+    if (continuationMasterId && cell.hostElement) {
+      // 必须可命中，table capture 才能把手势代理回 master；contenteditable=false
+      // 与 user-select:none 保证代理 cell 本身不会被编辑或产生浏览器文本选区。
+      cell.hostElement.style.pointerEvents = 'auto'
+      cell.hostElement.style.userSelect = 'none'
+      cell.hostElement.style.webkitUserSelect = 'none'
+      cell.hostElement.setAttribute('contenteditable', 'false')
+      cell.hostElement.setAttribute(PG_CONTINUATION_MASTER_ATTR, continuationMasterId)
+    }
+    this._splitCells.add(cell)
+  }
+
+  private _clearCellOverrides(): void {
+    for (const cell of this._splitCells) {
+      const host = cell.hostElement
+      const wasContinuationProxy = host?.hasAttribute(PG_CONTINUATION_MASTER_ATTR) ?? false
+      cell.setPaginationRender(null)
+      if (host && wasContinuationProxy) {
+        host.style.pointerEvents = ''
+        host.style.userSelect = ''
+        host.style.webkitUserSelect = ''
+        host.removeAttribute('contenteditable')
+        host.removeAttribute(PG_CONTINUATION_MASTER_ATTR)
+      }
+    }
+    // 续段重新隐藏（display:none），去掉镜像上去的 `.selected`，避免残留到下次 un-merge。
+    for (const conts of this._continuationsOf.values()) {
+      for (const c of conts) c.hostElement?.classList.remove('selected')
+    }
+    this._continuationsOf.clear()
+    this._splitCells.clear()
+  }
+
+  /** 清除全部分页占位行 + 还原拆分的合并单元格（分页关闭 / 组件销毁时调用）。 */
+  clearPaginationBreaks(): void {
+    this._applyPaginationBreaks([])
+    this._clearNestedAtomicLocks()
+  }
+
+  private _syncNestedAtomicLocks(
+    contentHeight: number,
+    candidateRows: readonly BlockCraft.BlockComponent[],
+  ): boolean {
+    let changed = false
+    if (!Number.isFinite(contentHeight) || contentHeight <= 0) {
+      changed = this._nestedAtomicLocks.size > 0
+      this._clearNestedAtomicLocks()
+      return changed
+    }
+
+    // 已锁元素数量通常为 0 或个位数；只维护这部分，不重新扫描完整表格。
+    for (const element of [...this._nestedAtomicLocks]) {
+      if (element.isConnected && element.scrollHeight > contentHeight) continue
+      element.classList.remove('bc-page-nested-height-locked')
+      this._nestedAtomicLocks.delete(element)
+      changed = true
+    }
+
+    for (const row of candidateRows) {
+      for (const rawCell of row.getChildrenBlocks()) {
+        if (!(rawCell instanceof TableCellBlockComponent)) continue
+        for (const child of rawCell.getChildrenBlocks()) {
+          const policy = resolveBlockPolicy({
+            flavour: child.flavour,
+            nodeType: child.nodeType,
+          })
+          const element = child.hostElement
+          const natural = Math.max(element.offsetHeight, element.scrollHeight)
+          if (natural <= contentHeight) continue
+          const lineHeight = child instanceof EditableBlockComponent
+            ? Number.parseFloat(getComputedStyle(child.containerElement).lineHeight)
+            : 0
+          const isIrreducibleEditable = Number.isFinite(lineHeight)
+            && lineHeight > contentHeight
+          if (!policy.capHeight && !isIrreducibleEditable) continue
+          if (this._nestedAtomicLocks.has(element)) continue
+          element.classList.add('bc-page-nested-height-locked')
+          this._nestedAtomicLocks.add(element)
+          changed = true
+        }
+      }
+    }
+    return changed
+  }
+
+  private _clearNestedAtomicLocks(): void {
+    for (const element of this._nestedAtomicLocks) {
+      element.classList.remove('bc-page-nested-height-locked')
+    }
+    this._nestedAtomicLocks.clear()
   }
 
   /**
@@ -1819,7 +3705,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   }
 
   onColReorderStart(evt: ColReorderStartEvent) {
-    if (this.doc.isReadonly) return
+    if (this.isReadonly) return
     const colCount = this.colLength
     if (!colCount) return
 
@@ -2080,83 +3966,392 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     return { targetIndex, dropLineLeft }
   }
 
-  onColResizerMousedown(evt: MouseEvent) {
+  onColResizerMousedown(
+    evt: MouseEvent,
+    resolvedAnchor = this._resolveColumnResizeAnchor(),
+  ) {
+    if (evt.button !== 0) return
     evt.preventDefault()
     evt.stopPropagation()
 
-    if (!this.hoveringCell) return
+    if (this.isReadonly) return
+    if (!resolvedAnchor) return
+    const resizingColIdx = this._resolveColumnResizeIndex(resolvedAnchor.cellId)
+    if (resizingColIdx === null) return
+    const startWidth = Number(this.props.colWidths?.[resizingColIdx])
+    if (!Number.isFinite(startWidth) || startWidth <= 0) return
+
+    const wrapper = this.tableWrapper?.nativeElement
+    if (!wrapper) return
+    this._finishColumnResize(false)
+    const wrapperRect = wrapper.getBoundingClientRect()
+    const boundaryRect = resolvedAnchor.boundaryCell.getBoundingClientRect()
+    const ownerDocument = this.hostElement.ownerDocument
+    const ownerWindow = ownerDocument.defaultView ?? window
+    const previewLine = this._createColumnResizePreview(
+      ownerDocument,
+      ownerWindow,
+      wrapperRect,
+      boundaryRect,
+    )
+    const gesture = {
+      anchorCellId: resolvedAnchor.cellId,
+      startClientX: evt.clientX,
+      startWidth,
+      width: startWidth,
+      actualZoom: this._actualCssZoom(),
+      boundaryClientX: boundaryRect.right,
+      previewLine,
+    }
+    this._colResizeGesture = gesture
     this.resizingCol$.next(true)
+    this.hostElement.classList.add('is-resizing-col')
+    this._renderColumnResizePreview()
 
-    const resizingColIdx = this.hoveringCell.getIndexOfParent() + (this.hoveringCell.props.colspan || 1) - 1
-    const curCol = this.hostElement.querySelector(`col:nth-child(${resizingColIdx + 1})`) as HTMLElement
-
-    let newWidth = this.props.colWidths[resizingColIdx]
-    let prevClientX = evt.clientX
-    const minWidth = 50
-
-    const resizeSub = fromEvent<MouseEvent>(document, 'mousemove', { capture: true })
-      .pipe(takeUntil(this.resizingCol$.pipe(filter(v => !v))))
-      .subscribe((e) => {
-        if (!this.hoveringCell || !this.resizingCol$.value) {
-          resizeSub.unsubscribe()
-          return
-        }
-
-        // 计算鼠标移动的增量
-        const deltaX = e.clientX - prevClientX
-        prevClientX = e.clientX
-
-        // 应用增量到宽度
-        newWidth += deltaX
-
-        // 最小宽度限制
-        if (newWidth < minWidth) {
-          newWidth = minWidth
-          return
-        }
-
-        // 更新列宽
-        curCol.style.width = newWidth + 'px'
-        this.colBarComponent.colWidths[resizingColIdx] = newWidth
-        this.colBarComponent.changeDetectionRef.markForCheck()
-
-        // 不再手动定位 resize bar：bar 是当前 hover cell 的子节点，CSS `right: -6px`
-        // 让它自动贴在 cell 右边界。cell 宽度跟着 col 宽度变 → bar 自动跟随。
-      })
-
-    fromEvent(document, 'mouseup', { capture: true }).pipe(take(1)).subscribe(() => {
-      if (!this.resizingCol$.value) return
-      this.resizingCol$.next(false)
-      const widths = [...this.props.colWidths]
-      widths[resizingColIdx] = Math.max(minWidth, newWidth)
-      this.updateProps({
-        colWidths: widths
-      })
-
-      // 拖拽结束后清理临时 inline width，改由模型中的 colWidths 统一控制
-      requestAnimationFrame(() => {
-        curCol.style.width = ''
-      })
-      this._normalizeHorizontalScroll()
+    const subscriptions = new Subscription()
+    this._colResizeSubscriptions = subscriptions
+    this.doc.ngZone.runOutsideAngular(() => {
+      subscriptions.add(
+        fromEvent<MouseEvent>(ownerDocument, 'mousemove', {
+          capture: true,
+          passive: false,
+        }).pipe(
+          takeUntil(this.onDestroy$),
+        ).subscribe(event => {
+          if (event.cancelable) event.preventDefault()
+          this._updateColumnResizePreview(event.clientX)
+        }),
+      )
+      subscriptions.add(
+        fromEvent<MouseEvent>(ownerDocument, 'mouseup', {capture: true})
+          .pipe(
+            filter(event => event.button === 0),
+            takeUntil(this.onDestroy$),
+          )
+          .subscribe(event => {
+            if (event.cancelable) event.preventDefault()
+            this._updateColumnResizePreview(event.clientX)
+            this._finishColumnResize(true)
+          }),
+      )
+      subscriptions.add(
+        fromEvent<FocusEvent>(ownerWindow, 'blur', {capture: true})
+          .pipe(takeUntil(this.onDestroy$))
+          .subscribe(() => this._finishColumnResize(false)),
+      )
+      subscriptions.add(
+        fromEvent<KeyboardEvent>(ownerWindow, 'keydown', {capture: true})
+          .pipe(
+            filter(event => event.key === 'Escape'),
+            takeUntil(this.onDestroy$),
+          )
+          .subscribe(event => {
+            event.preventDefault()
+            this._finishColumnResize(false)
+          }),
+      )
+      subscriptions.add(
+        fromEvent<Event>(ownerDocument, 'selectstart', {
+          capture: true,
+          passive: false,
+        }).pipe(takeUntil(this.onDestroy$)).subscribe(event => {
+          if (!this._colResizeGesture) return
+          event.preventDefault()
+        }),
+      )
     })
   }
 
-  private _clearColInlineWidths() {
-    const cols = this.hostElement.querySelectorAll('col')
-    cols.forEach(col => {
-      (col as HTMLElement).style.width = ''
-    })
+  /**
+   * 列宽手势以手柄当前所在的真实 cell DOM 为起点，再把分页 continuation
+   * 映射回稳定的 model cell ID。不能依赖 hoveringCell：Angular/分页重绘可把
+   * 手柄恢复到模板声明位置，而 hover 状态仍保留旧值。
+   */
+  private _resolveColumnResizeAnchor(): {
+    cellId: string
+    boundaryCell: HTMLTableCellElement
+  } | null {
+    const overlayAnchor = this._columnResizeHandleAnchor
+    if (
+      overlayAnchor
+      && overlayAnchor.boundaryCell.isConnected
+      && this.hostElement.contains(overlayAnchor.boundaryCell)
+    ) {
+      return overlayAnchor
+    }
+
+    // Compatibility for tests and hosts that project an older template while
+    // Angular completes a hot-reload pass.
+    const boundaryCell = this.colResizeBar?.nativeElement.parentElement
+      ?.closest<HTMLTableCellElement>('td[data-block-id]')
+    if (!boundaryCell || !this.hostElement.contains(boundaryCell)) return null
+    const cellId = this._modelCellIdFromElement(boundaryCell)
+    if (!cellId || cellId.startsWith(PG_CLONE_ID_PREFIX)) return null
+    return {cellId, boundaryCell}
+  }
+
+  private _positionColumnResizeHandle(
+    cellId: string,
+    boundaryCell: HTMLTableCellElement,
+  ): void {
+    const wrapper = this.tableWrapper?.nativeElement
+    const bar = this.colResizeBar?.nativeElement
+    if (!wrapper || !bar) return
+    const wrapperRect = wrapper.getBoundingClientRect()
+    const cellRect = boundaryCell.getBoundingClientRect()
+    if (cellRect.width <= 0 || cellRect.height <= 0) return
+
+    const boundaryVisual = this._visualDistanceFromBcr(
+      cellRect.right - wrapperRect.left,
+    )
+    const handleVisualWidth = TABLE_COL_RESIZE_HIT_WIDTH
+      * this._zoomFactorForVisualSize()
+    const wrapperVisualWidth = this._visualDistanceFromBcr(wrapperRect.width)
+    // The hit target is normally centred on the column boundary. At the last
+    // column that would leave half of its 12px box outside the wrapper, and an
+    // absolutely positioned descendant still expands the ancestor's
+    // scrollable overflow area. Clamp the whole hit target into the wrapper so
+    // a table that already fits does not gain a 6px horizontal scrollbar.
+    // Geometry-based capture still accepts the pointer just outside the visual
+    // boundary, so this does not narrow Safari's resize ownership seam.
+    const idealHandleVisualLeft = Math.max(
+      0,
+      boundaryVisual - handleVisualWidth / 2,
+    )
+    const maxHandleVisualLeft = Math.max(
+      0,
+      wrapperVisualWidth - handleVisualWidth,
+    )
+    const handleVisualLeft = Math.min(
+      idealHandleVisualLeft,
+      maxHandleVisualLeft,
+    )
+    const handleLeft = this._stylePositionFromVisualDistance(
+      handleVisualLeft,
+    )
+    bar.style.left = `${handleLeft}px`
+    bar.style.right = 'auto'
+    bar.style.top = `${this._stylePositionFromBcrDistance(
+      cellRect.top - wrapperRect.top,
+    )}px`
+    bar.style.height = `${this._styleSizeFromBcrDistance(cellRect.height)}px`
+    // Keep the wide hit target inside the scrollable wrapper, but let its thin
+    // visible line still meet the actual last-column border. Right-aligning the
+    // line also keeps the painted pixels inside the wrapper, so the old
+    // horizontal-overflow regression does not return.
+    const visibleLine = bar.firstElementChild as HTMLElement | null
+    if (visibleLine) {
+      const clampedRight = idealHandleVisualLeft > maxHandleVisualLeft
+      visibleLine.style.left = clampedRight ? '100%' : ''
+      visibleLine.style.transform = clampedRight ? 'translateX(-100%)' : ''
+    }
+    bar.classList.add('is-visible')
+    this._columnResizeHandleAnchor = {cellId, boundaryCell}
+  }
+
+  private _invalidateColumnResizeHandle(): void {
+    this._columnResizeHandleAnchor = null
+    this.colResizeBar?.nativeElement.classList.remove('is-visible')
+  }
+
+  /**
+   * Safari/WebKit can paint an absolutely positioned resize handle inside a
+   * collapsed-border table cell yet hit-test the same point as the td/content
+   * below it (especially with overflow clipping and pagination projection).
+   * Resolve the gesture by geometry at the table capture boundary so resize
+   * ownership does not depend on the browser choosing the handle as target.
+   * This runs only on primary mousedown, never on the move hot path.
+   */
+  private _resolveColumnResizePointerAnchor(evt: MouseEvent): {
+    cellId: string
+    boundaryCell: HTMLTableCellElement
+  } | null {
+    // Fail closed until the resize UI is mounted. Besides protecting early
+    // lifecycle/test paths, this prevents any ordinary cell edge from stealing
+    // rectangle-selection ownership when pagination temporarily detaches the
+    // template-owned handle or wrapper.
+    if (!this.colResizeBar?.nativeElement || !this.tableWrapper?.nativeElement) {
+      return null
+    }
+
+    const isNearRightBoundary = (cell: HTMLTableCellElement) => {
+      const rect = cell.getBoundingClientRect()
+      if (rect.width <= 0 || rect.height <= 0) return false
+      const right = rect.right
+      return evt.clientY >= rect.top - TABLE_COL_RESIZE_OUTER_TOLERANCE
+        && evt.clientY <= rect.bottom + TABLE_COL_RESIZE_OUTER_TOLERANCE
+        && evt.clientX >= right - TABLE_COL_RESIZE_HIT_WIDTH
+        && evt.clientX <= right + TABLE_COL_RESIZE_OUTER_TOLERANCE
+    }
+
+    // Prefer the visual handle's current owner. On WebKit the event target may
+    // be the adjacent td even though the pointer is still over this boundary.
+    const handleAnchor = this._resolveColumnResizeAnchor()
+    const target = evt.target as Node | null
+    if (handleAnchor && target
+      && this.colResizeBar.nativeElement.contains(target)) {
+      return handleAnchor
+    }
+    if (handleAnchor && isNearRightBoundary(handleAnchor.boundaryCell)) {
+      return handleAnchor
+    }
+
+    const hitCell = this._closestCellElement(evt)
+    if (!hitCell || !this.hostElement.contains(hitCell)) {
+      return null
+    }
+    const boundaryCell = isNearRightBoundary(hitCell)
+      ? hitCell
+      : this._resolveCellLeftOfBoundaryHit(evt, hitCell)
+    if (!boundaryCell || !isNearRightBoundary(boundaryCell)) return null
+    const cellId = this._modelCellIdFromElement(boundaryCell)
+    if (!cellId || cellId.startsWith(PG_CLONE_ID_PREFIX)) return null
+    return {cellId, boundaryCell}
+  }
+
+  /**
+   * WebKit assigns an exact collapsed-border pixel to the cell on the right.
+   * Probe a few pixels to the left so the resize boundary keeps its left-cell
+   * ownership even when mousemove/mousedown target the adjacent cell. The
+   * probe is cold (hover/begin only), bounded, and also works for rowspan and
+   * paginated continuation projections because elementFromPoint returns the
+   * cell that actually paints at that y coordinate.
+   */
+  private _resolveCellLeftOfBoundaryHit(
+    evt: MouseEvent,
+    hitCell: HTMLTableCellElement,
+  ): HTMLTableCellElement | null {
+    const hitRect = hitCell.getBoundingClientRect()
+    if (hitRect.width <= 0 || hitRect.height <= 0) return null
+    if (
+      evt.clientX < hitRect.left - TABLE_COL_RESIZE_OUTER_TOLERANCE
+      || evt.clientX > hitRect.left + TABLE_COL_RESIZE_ADJACENT_TOLERANCE
+    ) {
+      return null
+    }
+
+    const ownerDocument = this.hostElement.ownerDocument
+    const probeX = Math.min(
+      evt.clientX - 1,
+      hitRect.left - TABLE_COL_RESIZE_ADJACENT_TOLERANCE,
+    )
+    const probeTarget = ownerDocument.elementFromPoint(probeX, evt.clientY)
+    const leftCell = probeTarget?.closest<HTMLTableCellElement>('td') ?? null
+    if (
+      !leftCell
+      || leftCell === hitCell
+      || !this.hostElement.contains(leftCell)
+    ) {
+      return null
+    }
+    const leftRect = leftCell.getBoundingClientRect()
+    return Math.abs(leftRect.right - hitRect.left)
+      <= TABLE_COL_RESIZE_ADJACENT_TOLERANCE
+      ? leftCell
+      : null
+  }
+
+  private _createColumnResizePreview(
+    ownerDocument: Document,
+    ownerWindow: Window,
+    wrapperRect: DOMRect,
+    boundaryRect: DOMRect,
+  ): HTMLElement {
+    const line = ownerDocument.createElement('div')
+    line.setAttribute(TABLE_COL_RESIZE_PREVIEW_ATTR, '')
+    line.setAttribute('aria-hidden', 'true')
+    line.setAttribute('role', 'presentation')
+    line.setAttribute('inert', '')
+
+    // The preview lives at body level so a rightward drag can cross the current
+    // table/wrapper width. Keeping it inside `.table-wrapper` lets the host's
+    // overflow clipping hide the guide exactly when the last column grows.
+    const viewportHeight = ownerWindow.innerHeight
+    let top = Math.max(0, wrapperRect.top)
+    let bottom = Math.min(viewportHeight, wrapperRect.bottom)
+    if (bottom <= top) {
+      top = Math.max(0, boundaryRect.top)
+      bottom = Math.min(viewportHeight, boundaryRect.bottom)
+    }
+    const activeColor = ownerWindow.getComputedStyle(this.hostElement)
+      .getPropertyValue('--bc-active-color')
+      .trim()
+
+    line.style.position = 'fixed'
+    line.style.top = `${top}px`
+    line.style.left = '0'
+    line.style.width = '2px'
+    line.style.height = `${Math.max(1, bottom - top)}px`
+    line.style.zIndex = '2147483646'
+    line.style.pointerEvents = 'none'
+    line.style.userSelect = 'none'
+    line.style.borderRadius = '1px'
+    line.style.background = activeColor || '#4857e2'
+    line.style.willChange = 'transform'
+    ownerDocument.body.appendChild(line)
+    return line
+  }
+
+  private _updateColumnResizePreview(clientX: number): void {
+    const state = this._colResizeGesture
+    if (!state) return
+    const delta = (clientX - state.startClientX)
+      / Math.max(state.actualZoom, Number.EPSILON)
+    state.width = Math.max(TABLE_MIN_COLUMN_WIDTH, state.startWidth + delta)
+    this._renderColumnResizePreview()
+  }
+
+  private _renderColumnResizePreview(): void {
+    const state = this._colResizeGesture
+    if (!state) return
+    const widthDeltaVisual = (state.width - state.startWidth) * state.actualZoom
+    const clientX = state.boundaryClientX + widthDeltaVisual
+    state.previewLine.style.transform = `translate3d(${clientX - 1}px, 0, 0)`
+  }
+
+  private _finishColumnResize(commit: boolean): void {
+    const state = this._colResizeGesture
+    if (!state) return
+    this._colResizeGesture = null
+    this._colResizeSubscriptions.unsubscribe()
+    this._colResizeSubscriptions = new Subscription()
+    this.resizingCol$.next(false)
+    this.hostElement.classList.remove('is-resizing-col')
+    this._invalidateColumnResizeHandle()
+    state.previewLine.remove()
+    if (!commit || this.isReadonly) return
+
+    // 拖动期间可能收到远端列重排。提交时从稳定 cell ID 重新解析它当前覆盖的
+    // 右边界，避免按手势开始时的旧索引修改另一列；锚点失效则安全取消。
+    const liveColumnIndex = this._resolveColumnResizeIndex(state.anchorCellId)
+    const widths = [...(this.props.colWidths ?? [])]
+    if (
+      liveColumnIndex == null
+      || liveColumnIndex < 0
+      || liveColumnIndex >= widths.length
+    ) {
+      return
+    }
+    widths[liveColumnIndex] = state.width
+    this.updateProps({colWidths: widths})
+    this._normalizeHorizontalScroll()
   }
 
   private _getTableHorizontalOverhead() {
     const table = this.hostElement.querySelector('table') as HTMLElement | null
     if (!table) return 0
-    const colEls = table.querySelectorAll('col')
-    if (!colEls.length) return 0
-    const colsTotal = Array.from(colEls).reduce((sum, col) => {
-      return sum + (col as HTMLElement).getBoundingClientRect().width
-    }, 0)
-    return Math.max(0, Math.ceil(table.getBoundingClientRect().width - colsTotal))
+    const colsTotal = this.props.colWidths.reduce((sum, width) => sum + width, 0)
+    if (!colsTotal) return 0
+    return Math.max(
+      0,
+      Math.ceil(this._layoutDistanceFromBcr(table.getBoundingClientRect().width) - colsTotal),
+    )
+  }
+
+  private _getParentContentWidth() {
+    const parent = this.parentBlock
+    const container = parent?.childrenRenderRef?.containerElement ?? parent?.hostElement
+    return container ? elementContentWidth(container) : 0
   }
 
   private _normalizeHorizontalScroll(resetToStart = false) {

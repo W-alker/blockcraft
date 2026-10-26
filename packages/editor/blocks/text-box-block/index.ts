@@ -1,0 +1,88 @@
+import {
+  BlockNodeType,
+  type DeltaInsert,
+  type IBlockSchemaOptions,
+  NoEditableBlockNative,
+  generateId,
+} from '../../framework'
+import {ParagraphBlockSchema} from '../paragraph-block'
+import {TextBoxBlockComponent} from './text-box.block'
+import {
+  normalizeTextBoxProps,
+  normalizeTextBoxSnapshotProps,
+  TEXT_BOX_OBJECT_FORMAT_CAPABILITY,
+  type TextBoxBlockProps,
+} from './text-box.types'
+
+export * from './text-box.types'
+export * from './agent'
+export * from './text-box.presets'
+export * from './presets/artwork'
+export {TextBoxBlockComponent} from './text-box.block'
+
+export interface TextBoxBlockModel extends NoEditableBlockNative {
+  flavour: 'text-box'
+  nodeType: BlockNodeType.block
+  props: TextBoxBlockProps
+}
+
+export const TextBoxBlockSchema: IBlockSchemaOptions<TextBoxBlockModel> = {
+  flavour: 'text-box',
+  nodeType: BlockNodeType.block,
+  component: TextBoxBlockComponent,
+  createSnapshot: (
+    text: string | DeltaInsert[] = '',
+    props: Partial<TextBoxBlockProps> = {},
+  ) => ({
+    id: generateId(),
+    flavour: 'text-box',
+    nodeType: BlockNodeType.block,
+    props: normalizeTextBoxSnapshotProps(props),
+    meta: {},
+    children: [ParagraphBlockSchema.createSnapshot(text)],
+  }),
+  metadata: {
+    version: 2,
+    label: '文本框',
+    description: '插入可自由放置、缩放和旋转的富文本框',
+    icon: 'bc_icon bc_wenbenkuang',
+    renderUnit: true,
+    includeChildren: [
+      'paragraph',
+      'bullet',
+      'ordered',
+      'todo',
+      'blockquote',
+    ],
+    selectionScope: {
+      relative: 'transparent',
+      absolute: 'container',
+    },
+    selectionInteraction: {
+      frame: 'selectable',
+      escapeToFrame: 'always',
+      editingBoundary: 'absolute',
+    },
+    objectDrag: 'handles',
+    placement: {modes: ['relative', 'absolute']},
+    objectFormat: TEXT_BOX_OBJECT_FORMAT_CAPABILITY,
+    virtualization: {
+      estimateHeight: ({props}) => normalizeTextBoxProps(props).height,
+    },
+  },
+}
+
+declare global {
+  namespace BlockCraft {
+    interface IBlockComponents {
+      'text-box': TextBoxBlockComponent
+    }
+
+    interface IBlockCreateParameters {
+      'text-box': [
+        (string | DeltaInsert[])?,
+        Partial<TextBoxBlockProps>?,
+      ]
+    }
+  }
+}
