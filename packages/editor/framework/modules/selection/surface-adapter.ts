@@ -73,12 +73,20 @@ export class DOMSelectionSurfaceAdapter implements SelectionSurfaceAdapter {
 
   focusEditingHost(blockId?: string): void {
     let block: BlockCraft.BlockComponent | null = null
+    let host: Element | null = null
     try {
       if (blockId) {
         block = this.doc.getBlockById(blockId)
+        host = block?.hostElement.closest('[contenteditable="true"]') ?? null
       }
     } catch {
       // Restored components can mount one frame after their Yjs data returns.
+    }
+    // Returning to root text must leave an active nested editor and retain
+    // the WebKit scroll preservation owned by focusRoot().
+    if (!host || host === this.root) {
+      this.focusRoot()
+      return
     }
     focusEditingHostForBlock(this.doc, block)
   }

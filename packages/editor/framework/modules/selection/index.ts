@@ -1507,6 +1507,17 @@ export class SelectionManager {
     return path?.[0] === rootId ? path[1] ?? null : null
   }
 
+  private _focusSelectionHost(selection: BlockSelection): void {
+    // A text caret belongs to its editing host. Refocusing the root first
+    // blurs nested editors during compositionstart/commit, which can end IME
+    // even when applying the Range immediately returns focus to that editor.
+    if (selection.collapsed && selection.start.type === 'text') {
+      this._surface.focusEditingHost(selection.start.blockId)
+    } else {
+      this._surface.focusRoot()
+    }
+  }
+
   private _commitSelection(
     selectionState: BlockSelection | null,
     options: {scrollIntoView?: boolean; modelOnly?: boolean} = {},
@@ -1521,7 +1532,7 @@ export class SelectionManager {
     this._ensureSelectionViewMounted(selectionState)
     this._publishState(selectionState)
     const projectionVersion = this._projectionVersion
-    this._surface.focusRoot()
+    this._focusSelectionHost(selectionState)
     this._suppressProgrammaticSelectionChange()
 
     // A group and its members own a non-editable object plane. Browsers can
@@ -1715,7 +1726,7 @@ export class SelectionManager {
         return
       }
       if (focusDroppedWithDom) {
-        this._surface.focusRoot()
+        this._focusSelectionHost(current)
       }
       this._suppressProgrammaticSelectionChange()
       if (this._shouldDeferGapDomRange(current)) {

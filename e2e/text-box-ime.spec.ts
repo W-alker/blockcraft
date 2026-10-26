@@ -1,5 +1,9 @@
 import {expect, test} from '@playwright/test'
 
+test.beforeEach(async ({page}) => {
+  await page.routeWebSocket('**', socket => socket.close())
+})
+
 for (const absolute of [false, true]) {
   test(`text-box (${absolute ? 'absolute' : 'flow'}) keeps native IME ownership through rapid commit and Enter/Space`, async ({page, context, browserName}) => {
     test.skip(browserName !== 'chromium', 'uses Chromium native composition commands')
@@ -107,5 +111,142 @@ for (const absolute of [false, true]) {
     } finally {
       await cdp.detach()
     }
+  })
+}
+
+for (const absolute of [false, true]) {
+  test(`text-box (${absolute ? 'absolute' : 'flow'}) preserves its editing host throughout repeated composition and Enter`, async ({page}) => {
+    await page.goto('/')
+    await page.getByRole('button', {name: '初始化', exact: true}).click()
+    await page.waitForFunction(() => (window as any).ng
+      ?.getComponent(document.querySelector('block-craft-editor'))?.doc?.isInitialized)
+
+    const target = await page.evaluate(async absolute => {
+      const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+      const box = doc.schemas.createSnapshot('text-box', ['输入：', {width: 320, height: 260}])
+      const outside = doc.schemas.createSnapshot('paragraph', ['外部正文'])
+      doc.crud.insertBlockSnapshots(doc.rootId, 0, [outside, ...(!absolute ? [box] : [])])
+      if (absolute) doc.placement.insertAbsoluteSnapshot(box)
+      await doc.navigateToBlock(box.id)
+      const paragraph = doc.getBlockById(box.children[0].id)
+      const content = doc.getBlockById(box.id).hostElement.querySelector('.text-box-block__content')
+      content.focus({preventScroll: true})
+      doc.selection.setCursorAt(paragraph, paragraph.textLength)
+      // Observe native ownership throughout the transaction. A final focused
+      // assertion alone misses a root -> nested host round trip that ends IME.
+      const focusouts: string[] = []
+      content.addEventListener('focusout', (event: FocusEvent) => {
+        if (event.target === content) focusouts.push((event.relatedTarget as HTMLElement | null)?.className ?? 'none')
+      })
+      ;(window as any).__textBoxImeFocusouts = focusouts
+      return {boxId: box.id as string, outsideId: outside.id as string}
+    }, absolute)
+
+    const read = () => page.evaluate(({boxId}) => {
+      const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+      const box = doc.getBlockById(boxId)
+      const content = box.hostElement.querySelector('.text-box-block__content')
+      const native = document.getSelection()
+      const model = doc.selection.value?.toJSON() ?? null
+      const node = native?.focusNode ?? null
+      const element = node?.nodeType === Node.ELEMENT_NODE ? node as Element : node?.parentElement
+      const nativeBlock = element?.closest<HTMLElement>('[data-block-id]') ?? null
+      let nativeOffset: number | null = null
+      if (node && nativeBlock && content.contains(node)) {
+        const range = document.createRange()
+        range.selectNodeContents(nativeBlock.querySelector('.edit-container') ?? nativeBlock)
+        range.setEnd(node, native!.focusOffset)
+        nativeOffset = range.toString().replace(/[\u200b\u200c]/g, '').length
+      }
+      return {
+        phase: doc.inputManger.compositionSession.phase,
+        composing: doc.event.status.isComposing,
+        hostFocused: document.activeElement === content,
+        focusouts: [...(window as any).__textBoxImeFocusouts] as string[],
+        nativeCollapsed: native?.isCollapsed,
+        nativeBlockId: nativeBlock?.dataset['blockId'] ?? null,
+        nativeOffset,
+        model,
+        childIds: [...box.childrenIds] as string[],
+        texts: box.childrenIds.map((id: string) => doc.getBlockById(id).textContent()) as string[],
+      }
+    }, target)
+
+    const assertCaret = async (texts: string[], phase = 'idle') => {
+      const state = await read()
+      const blockId = state.childIds.at(-1)!
+      const offset = texts.at(-1)!.length
+      expect(state).toMatchObject({
+        phase, composing: phase === 'active', hostFocused: true, focusouts: [],
+        texts, nativeCollapsed: true, nativeBlockId: blockId, nativeOffset: offset,
+        model: {
+          anchor: {blockId, type: 'text', offset},
+          head: {blockId, type: 'text', offset},
+        },
+      })
+    }
+
+    const texts = ['输入：']
+    await assertCaret(texts)
+    for (let round = 0; round < 6; round++) {
+      // Synthetic CompositionEvents exercise the shared framework lifecycle in
+      // all engines. They do not reproduce a system IME candidate window; the
+      // Chromium CDP test above separately exercises native composition DOM.
+      await page.evaluate(({boxId}) => {
+        const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+        const content = doc.getBlockById(boxId).hostElement.querySelector('.text-box-block__content')
+        content.dispatchEvent(new CompositionEvent('compositionstart', {bubbles: true, cancelable: true}))
+        for (const type of ['keydown', 'keyup']) {
+          content.dispatchEvent(new KeyboardEvent(type, {
+            key: 'Enter', keyCode: 229, isComposing: true, bubbles: true, cancelable: true,
+          }))
+        }
+      }, target)
+      await assertCaret(texts, 'active')
+      await page.evaluate(({boxId, text}) => {
+        const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+        const content = doc.getBlockById(boxId).hostElement.querySelector('.text-box-block__content')
+        content.dispatchEvent(new CompositionEvent('compositionend', {data: text, bubbles: true, cancelable: true}))
+      }, {...target, text: `中文${round}`})
+      texts[texts.length - 1] += `中文${round}`
+      await assertCaret(texts)
+      await page.keyboard.press('Enter')
+      texts.push('')
+      await assertCaret(texts)
+    }
+    await page.keyboard.type('after-ime')
+    texts[texts.length - 1] += 'after-ime'
+    await assertCaret(texts)
+
+    // Explicit navigation must still leave the editing island normally.
+    await page.evaluate(({outsideId}) => {
+      const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+      const outside = doc.getBlockById(outsideId)
+      doc.selection.setCursorAt(outside, outside.textLength)
+    }, target)
+    await page.keyboard.type('!')
+    expect(await page.evaluate(({outsideId}) => {
+      const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+      return {
+        rootFocused: document.activeElement === doc.root.hostElement,
+        text: doc.getBlockById(outsideId).textContent(),
+        point: doc.selection.value?.toJSON().head,
+      }
+    }, target)).toEqual({
+      rootFocused: true, text: '外部正文!',
+      point: {blockId: target.outsideId, type: 'text', offset: 5},
+    })
+    await page.evaluate(({boxId}) => {
+      const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+      doc.selection.selectBlock(doc.getBlockById(boxId))
+    }, target)
+    expect(await page.evaluate(({boxId}) => {
+      const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+      return {
+        rootFocused: document.activeElement === doc.root.hostElement,
+        point: doc.selection.value?.toJSON().head,
+        texts: doc.getBlockById(boxId).childrenIds.map((id: string) => doc.getBlockById(id).textContent()),
+      }
+    }, target)).toEqual({rootFocused: true, point: {blockId: target.boxId, type: 'selected'}, texts})
   })
 }

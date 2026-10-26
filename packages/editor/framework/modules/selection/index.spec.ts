@@ -284,6 +284,63 @@ describe('SelectionManager DOM selection normalization', () => {
     document.querySelectorAll('[data-selection-test-outside]').forEach(el => el.remove());
   });
 
+  it('keeps a nested editing host focused throughout text cursor projection and replay', () => {
+    const {manager, doc, rootHost, editingHost, insideBlock, insideText} = createAbsoluteContainerManager();
+    editingHost.focus();
+    const focusOut = jasmine.createSpy('focusOut');
+    editingHost.addEventListener('focusout', focusOut);
+    const rootFocus = spyOn(rootHost, 'focus').and.callThrough();
+
+    manager.setCursorAt(insideBlock, 2);
+    const selection = manager.value!.toJSON();
+    manager.replay(selection);
+
+    expect(focusOut).not.toHaveBeenCalled();
+    expect(rootFocus).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(editingHost);
+    expect(document.getSelection()!.focusNode).toBe(insideText);
+    expect(document.getSelection()!.focusOffset).toBe(2);
+    expect(manager.value!.toJSON()).toEqual(selection);
+    doc.onDestroy$.next();
+  });
+
+  it('focuses the root when a text cursor explicitly leaves a nested editing host', () => {
+    const {manager, doc, rootHost, insideBlock, outsideText} = createAbsoluteContainerManager();
+    manager.setCursorAt(insideBlock, 2);
+
+    manager.setCursorAt(doc.getBlockById('outside'), 3);
+
+    expect(document.activeElement).toBe(rootHost);
+    expect(document.getSelection()!.focusNode).toBe(outsideText);
+    expect(manager.value!.start.blockId).toBe('outside');
+    doc.onDestroy$.next();
+  });
+
+  it('recovers a nested text projection without focusing the root after native focus drops', () => {
+    const {manager, doc, rootHost, editingHost, insideBlock, insideText} = createAbsoluteContainerManager();
+    manager.setCursorAt(insideBlock, 2);
+    const expected = manager.value!.toJSON();
+    editingHost.blur();
+    document.getSelection()!.removeAllRanges();
+    const surface = (manager as any)._surface;
+    const rootFocus = spyOn(rootHost, 'focus').and.callThrough();
+    let retry!: FrameRequestCallback;
+    spyOn(surface, 'requestFrame').and.callFake((callback: FrameRequestCallback) => {
+      retry = callback;
+      return 1;
+    });
+
+    (manager as any)._retryDomRangeWhenReady(expected, (manager as any)._projectionVersion);
+    retry(performance.now());
+
+    expect(rootFocus).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(editingHost);
+    expect(document.getSelection()!.focusNode).toBe(insideText);
+    expect(document.getSelection()!.focusOffset).toBe(2);
+    expect(manager.value!.toJSON()).toEqual(expected);
+    doc.onDestroy$.next();
+  });
+
   it('constructs remote reconciliation without reading a partially assigned doc.selection', () => {
     const remoteSyncLifecycle$ = new Subject<any>();
 

@@ -75,6 +75,23 @@ describe('DOMSelectionSurfaceAdapter', () => {
     expect(document.activeElement).toBe(root)
   })
 
+  it('returns to the root editing host instead of retaining focus in an unrelated nested host', () => {
+    const frame = document.createElement('div')
+    frame.contentEditable = 'false'
+    const nestedHost = document.createElement('div')
+    nestedHost.contentEditable = 'true'
+    frame.appendChild(nestedHost)
+    root.appendChild(frame)
+    nestedHost.focus()
+    expect(document.activeElement).toBe(nestedHost)
+    const rootFocus = spyOn(surface, 'focusRoot').and.callThrough()
+
+    surface.focusEditingHost('paragraph')
+
+    expect(rootFocus).toHaveBeenCalledTimes(1)
+    expect(document.activeElement).toBe(root)
+  })
+
   it('preserves nested scroll positions when native focus ignores preventScroll', () => {
     const outer = document.createElement('div')
     const inner = document.createElement('div')
