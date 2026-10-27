@@ -43,7 +43,8 @@ export interface IMentionPanel {
 
   /**
    * Called when the keyword (text after trigger char) changes.
-   * The panel uses this to drive its own search / filtering.
+   * Ordinary input is debounced; Tab synchronizes the current model keyword
+   * before onKeydown. The panel owns its search / filtering.
    */
   onKeywordChange(keyword: string): void
 
@@ -74,6 +75,13 @@ export type MentionPanelFactory = (ctx: {
   doc: BlockCraft.Doc
   /** The DOMRect of the '@' character — use as initial position anchor */
   rect: DOMRect
+  /**
+   * Read the current model keyword at an explicit interaction boundary (e.g.
+   * mouse tab switching), without waiting for input debounce or starting a query.
+   * Returns null when the mention range/cursor/session is no longer valid.
+   * Optional for compatibility with factories hosted by an older runtime.
+   */
+  getKeyword?: () => string | null
 }) => IMentionPanel
 
 // ─── Plugin Config ───

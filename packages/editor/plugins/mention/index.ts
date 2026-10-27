@@ -171,14 +171,10 @@ export class MentionPlugin extends DocPlugin {
       return
     }
 
-    // ─ Create panel via factory ─
-    const panel: IMentionPanel = this._config.panel({
-      doc: this.doc,
-      rect: atRect,
-    })
-
     // ─ Keyword extraction ─
+    let active = true
     const getKeyword = (): string | null => {
+      if (!active) return null
       const {block: b, index: i} = resolveAnchor()
       if (this._charAtModelIndex(b, i) !== this._trigger) return null
 
@@ -193,14 +189,26 @@ export class MentionPlugin extends DocPlugin {
       return keyword
     }
 
-    const pushKeyword = () => {
-      if (this.doc.event.status.isComposing) return
+    // Panels can read the model at an explicit interaction boundary, without
+    // waiting for the ordinary input debounce or duplicating range extraction.
+    const panel: IMentionPanel = this._config.panel({
+      doc: this.doc,
+      rect: atRect,
+      getKeyword,
+    })
+    let previousKeyword = ''
+    const pushKeyword = (): boolean => {
+      if (this.doc.event.status.isComposing) return false
       const keyword = getKeyword()
       if (keyword === null) {
         this._close$.next()
-        return
+        return false
       }
-      panel.onKeywordChange(keyword)
+      if (keyword !== previousKeyword) {
+        previousKeyword = keyword
+        panel.onKeywordChange(keyword)
+      }
+      return true
     }
 
     // ─ Keyboard capture: forward to panel ─
@@ -222,6 +230,9 @@ export class MentionPlugin extends DocPlugin {
         this.doc.event.bindHotkey({key}, ctx => {
           if (this.doc.event.status.isComposing) return true
           const e = ctx.getDefaultEvent() as KeyboardEvent
+          // Input may still be inside the 300ms debounce. Tab must observe the
+          // current model keyword before the panel changes its data source.
+          if (key === 'Tab' && !pushKeyword()) return false
           if (panel.onKeydown(e)) {
             ctx.preventDefault()
             return true
@@ -256,6 +267,7 @@ export class MentionPlugin extends DocPlugin {
 
     // ─ Cleanup on close ─
     this._close$.pipe(take(1)).subscribe(() => {
+      active = false
       this._isOpen = false
       tempBindings.forEach(v => v())
       anchor.reset()

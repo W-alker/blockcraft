@@ -4,6 +4,26 @@
 >
 > Last updated: 2026-10-27 | Tracks `@ccc/blockcraft` npm releases.
 
+## 未发布 — 2026-10-27：Mention 切换数据源读取最新关键词
+
+**Severity**: minor（新增可选面板上下文能力；发布版本由用户决定）
+
+**What changed / Why**: `MentionPanelFactory` 上下文新增可选 `getKeyword()`，直接读取当前
+模型中的 mention 关键词；键盘 Tab 转交面板前先同步最新关键词，避免普通输入的 300ms
+防抖使刚输入后切换数据源仍使用旧查询。默认面板同时覆盖鼠标切换，并合并同一轮请求、
+忽略旧响应和销毁后响应。
+
+**Affected ai-skills files**: `blockcraft-plugins-inline.md`。
+
+**New APIs**: `ctx.getKeyword?: () => string | null`，不触发查询；失效范围或关闭后的会话返回 `null`。
+
+**Behavior Changes**: 普通输入保留 300ms 防抖；Tab 前可能同步调用 `onKeywordChange`，
+相同关键词不重复通知。IME 组词期间仍不转交 Tab，不改变 mention 数据格式或确认写入规则。
+
+**Migration Recipe**: 只自定义默认面板 `request` 数据源无需改动。自定义完整面板在鼠标
+切换时先读 `ctx.getKeyword?.()`；旧运行时未提供时可回退到已通知关键词。同步通知与 Tab
+事件可能在同一轮出现，搜索应合并并保护过期响应。包版本号不自动调整。
+
 ## 未发布 — 2026-10-27：富文本块统一支持斜杠菜单
 
 **Severity**: patch（默认交互调整；发布版本由用户决定）

@@ -61,16 +61,26 @@ export function createDefaultMentionPanel(config: DefaultMentionPanelConfig): Me
     const onConfirm = new Subject<IMentionData>()
 
     let lastKeyword = ''
+    let hasKeyword = false
+    let requestSerial = 0
+    let disposed = false
     let currentType: MentionType = 'user'
 
     const doSearch = (keyword: string) => {
-      config.request(keyword, currentType).then(res => {
-        if (!overlayRef.hasAttached()) return
-        dialogRef.setInput('list', res.list)
-        requestAnimationFrame(() => {
-          if (overlayRef.hasAttached()) {
-            overlayRef.updatePosition()
-          }
+      const requestId = ++requestSerial
+      const type = currentType
+      // Tab can synchronously receive a fresh keyword and then change type.
+      // Coalesce that turn so only the final source is queried.
+      Promise.resolve().then(() => {
+        if (disposed || requestId !== requestSerial) return
+        return config.request(keyword, type).then(res => {
+          if (disposed || requestId !== requestSerial || !overlayRef.hasAttached()) return
+          dialogRef.setInput('list', res.list)
+          requestAnimationFrame(() => {
+            if (!disposed && requestId === requestSerial && overlayRef.hasAttached()) {
+              overlayRef.updatePosition()
+            }
+          })
         })
       })
     }
@@ -85,11 +95,21 @@ export function createDefaultMentionPanel(config: DefaultMentionPanelConfig): Me
       .pipe(skip(1), takeUntil(destroy$))
       .subscribe(type => {
         currentType = type
-        doSearch(lastKeyword)
+        const keyword = ctx.getKeyword ? ctx.getKeyword() : lastKeyword
+        if (keyword === null) {
+          ++requestSerial
+          dialogRef.setInput('list', [])
+          return
+        }
+        lastKeyword = keyword
+        hasKeyword = true
+        doSearch(keyword)
       })
 
     const panel: IMentionPanel = {
       onKeywordChange(keyword: string) {
+        if (hasKeyword && lastKeyword === keyword) return
+        hasKeyword = true
         lastKeyword = keyword
         doSearch(keyword)
       },
@@ -119,6 +139,8 @@ export function createDefaultMentionPanel(config: DefaultMentionPanelConfig): Me
       },
 
       dispose() {
+        disposed = true
+        ++requestSerial
         destroy$.next()
         destroy$.complete()
         onConfirm.complete()

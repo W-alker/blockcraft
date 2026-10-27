@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-10-19
+> Last updated: 2026-10-27
 
 ## Inline Extensions
 
@@ -79,7 +79,7 @@ new MentionPlugin(config: MentionPluginConfig)
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `panel` | `MentionPanelFactory` | **required** | `(ctx: { doc, rect }) => IMentionPanel` — provides all UI and search logic |
+| `panel` | `MentionPanelFactory` | **required** | `(ctx: { doc, rect, getKeyword? }) => IMentionPanel` — provides all UI and search logic |
 | `trigger` | `string` | `'@'` | Character that opens the mention panel |
 | `onMentionClick` | `(id, type, event) => void` | — | Callback when a rendered mention embed is clicked |
 | `onConfirm` | `(data, { block }) => boolean \| void` | — | Host opt-out, called after the `@keyword` range is resolved but **before** the embed is inserted. Return `true` to claim the confirm: the plugin removes the `@keyword` and inserts **no** embed (no node, no trailing space) — the host applies its own side-effect instead. Falsy → default embed insertion |
@@ -90,11 +90,22 @@ The `panel` factory must return an object implementing `IMentionPanel`:
 
 | Method / Property | Type | Purpose |
 |-------------------|------|---------|
-| `onKeywordChange(keyword)` | `(string) => void` | Plugin pushes search keyword as user types |
+| `onKeywordChange(keyword)` | `(string) => void` | 普通输入防抖通知；转交 Tab 前同步最新模型关键词，相同关键词不重复通知 |
 | `onKeydown(e)` | `(KeyboardEvent) => boolean` | Plugin forwards nav/confirm keys; return `true` to consume |
 | `onConfirm` | `Observable<IMentionData>` | Panel emits confirmed selection |
 | `updatePosition(rect)` | `(DOMRect) => void` | Plugin calls on scroll to reposition |
 | `dispose()` | `() => void` | Plugin calls when session closes |
+
+面板工厂的 `ctx.getKeyword?.()` 可在鼠标切换数据源时直接读取当前模型关键词，
+不触发请求，也不等待普通输入的 300ms 防抖。返回 `null` 表示会话、触发符或光标范围失效；
+旧运行时可能不提供此方法，兼容面板可回退到最后收到的关键词。
+键盘 Tab（含 Shift+Tab）转交给 `onKeydown` 前，框架会先同步一次最新关键词；
+IME 组词期间不转交，提交后使用最终模型文本。面板无需解析 DOM 或复制提取逻辑。
+
+默认 `createDefaultMentionPanel({request})` 的键盘和鼠标切换均使用上述最新关键词，
+同一轮关键词同步与 Tab 切换合并为一次请求，旧请求响应和销毁后响应不会覆盖新结果。
+自定义完整面板的鼠标 Tab 处理应先读 `ctx.getKeyword?.()` 再切换数据源；
+只替换默认面板的 `request` 数据源无需额外适配，普通输入请求频率保持原有防抖节奏。
 
 #### Public API
 
