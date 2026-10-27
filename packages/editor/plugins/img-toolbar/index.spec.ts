@@ -364,7 +364,7 @@ describe("ImgToolbarPlugin lifecycle", () => {
     rootHost.remove();
   });
 
-  it("opens preview for an absolute image without depending on the wrapper target", () => {
+  it("opens preview when pointer capture retargets an absolute image double click to its host", () => {
     const {
       plugin,
       fileService,
@@ -375,12 +375,25 @@ describe("ImgToolbarPlugin lifecycle", () => {
     placementMode.current = "absolute";
     const img = imageHost.querySelector("img")!;
     const event = new MouseEvent("dblclick", {bubbles: true});
-    Object.defineProperty(event, "target", {value: img});
+    Object.defineProperty(event, "target", {value: imageHost});
 
     expect(plugin.onImageMouseDown({
       getDefaultEvent: () => event,
     } as any)).toBeTrue();
     expect(fileService.previewImg).toHaveBeenCalledOnceWith({el: img});
+    rootHost.remove();
+  });
+
+  it("does not treat a flow image host or caption as the image surface", () => {
+    const {plugin, fileService, rootHost, imageHost} = makeHarness();
+    const caption = document.createElement("div");
+    imageHost.append(caption);
+    for (const target of [imageHost, caption]) {
+      const event = new MouseEvent("dblclick", {bubbles: true});
+      Object.defineProperty(event, "target", {value: target});
+      expect(plugin.onImageMouseDown({getDefaultEvent: () => event} as any)).toBeUndefined();
+    }
+    expect(fileService.previewImg).not.toHaveBeenCalled();
     rootHost.remove();
   });
 

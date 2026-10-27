@@ -174,11 +174,20 @@ export class ImgToolbarPlugin extends DocPlugin {
     ) {
       return;
     }
-    const wrapper = target.closest<HTMLElement>(".img-wrapper");
-    if (!wrapper || !this.doc.root.hostElement.contains(wrapper)) return;
-    const blockId = closetBlockId(wrapper);
+    if (!this.doc.root.hostElement.contains(target)) return;
+    const blockId = closetBlockId(target);
     const block = blockId ? this._getLiveBlockById(blockId) : null;
     if (!block || block.flavour !== "image") return;
+    // Absolute-object pointer capture can retarget dblclick to the block host.
+    // Only that exact host may fall back to its image surface; captions and
+    // other descendants must keep their own double-click behavior.
+    const wrapper = target.closest<HTMLElement>(".img-wrapper") ?? (
+      target === block.hostElement &&
+      this.doc.placement.getState(block).mode === "absolute"
+        ? block.hostElement.querySelector<HTMLElement>(".img-wrapper")
+        : null
+    );
+    if (!wrapper) return;
     const img = wrapper.querySelector("img");
     if (!img || !img.isConnected) return;
 
