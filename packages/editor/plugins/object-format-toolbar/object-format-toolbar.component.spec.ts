@@ -254,7 +254,16 @@ describe("ObjectFormatToolbarComponent", () => {
     component.open("text");
     fixture.detectChanges();
     expect(element.querySelector(".object-format__panel")!.textContent).not.toContain("尺寸适应");
-    for (const unsupported of [state, {...textBoxState, values: {...state.values, textFrame: {mixed: true, value: undefined}}}]) {
+    fixture.componentRef.setInput("state", state);
+    fixture.detectChanges();
+    expect(rail.querySelector('[aria-label="恢复内容自适应"]')).not.toBeNull();
+    expect(component.supportsContentAutoFit).toBeTrue();
+    for (const unsupported of [
+      {...state, targets: state.targets.map(target => ({...target, format: {...target.format, textFrame: undefined}}))},
+      {...state, targets: state.targets.map(target => ({...target, format: {...target.format,
+        textFrame: {...format.textFrame, direction: "rotate-90" as const}}}))},
+      {...textBoxState, values: {...state.values, textFrame: {mixed: true, value: undefined}}},
+    ]) {
       fixture.componentRef.setInput("state", unsupported);
       fixture.detectChanges();
       expect(rail.querySelector(".bc_size-fixed, .bc_size-auto")).toBeNull();

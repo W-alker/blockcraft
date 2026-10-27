@@ -2494,16 +2494,19 @@ export class InputTransformer {
       }
 
       const defaults = normalizeParagraphTextDefaults(typingAttrs);
-      const style = block.flavour === 'paragraph' || (block.flavour === 'blockquote' && !nextStyle.continueTextFormat) ? nextStyle : {
+      // Shape text is already a paragraph inside its dedicated text frame.
+      // Converting an empty one to `paragraph` violates the parent's child schema.
+      const preserveParagraph = block.flavour === 'paragraph' || block.flavour === 'shape-text';
+      const style = preserveParagraph || (block.flavour === 'blockquote' && !nextStyle.continueTextFormat) ? nextStyle : {
         flavour: 'paragraph' as const, props: {...block.props, heading: undefined, depth: 0}, continueTextFormat: true,
       };
       const p = this.doc.schemas.createSnapshot(style.flavour, [[], {
         ...style.props, textDefaults: style.continueTextFormat ? defaults : undefined,
       }]);
       await (
-        block.flavour !== "paragraph"
-          ? this.doc.chain().replaceWithSnapshots(block.id, [p])
-          : this.doc.chain().insertAfterSnapshots(block, [p])
+        preserveParagraph
+          ? this.doc.chain().insertAfterSnapshots(block, [p])
+          : this.doc.chain().replaceWithSnapshots(block.id, [p])
       )
         .tap(() => {
           this.setNextInsertAttrs(style.continueTextFormat ? defaults : {}, {blockId: p.id, index: 0});

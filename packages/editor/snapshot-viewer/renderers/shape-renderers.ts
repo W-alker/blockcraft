@@ -175,8 +175,8 @@ export function createShapeRenderers(): SnapshotBlockRenderer[] {
       text.style.textAlign = format.textFrame!.horizontalAlign
       text.style.whiteSpace = format.textFrame!.wrap ? '' : 'nowrap'
       text.style.justifyContent = format.textFrame!.verticalAlign === 'top'
-        ? 'flex-start'
-        : format.textFrame!.verticalAlign === 'bottom' ? 'flex-end' : 'center'
+        ? 'safe flex-start'
+        : format.textFrame!.verticalAlign === 'bottom' ? 'safe flex-end' : 'safe center'
       if (format.textFrame!.direction === 'vertical-rl') text.style.writingMode = 'vertical-rl'
       const transforms: string[] = []
       if (textFrame.direction === 'rotate-90') transforms.push('rotate(90deg)')

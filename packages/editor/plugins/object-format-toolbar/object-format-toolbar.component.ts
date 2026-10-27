@@ -1996,7 +1996,7 @@ export class ObjectFormatToolbarComponent {
     return !this.state.values.textFrame.mixed && this.state.targets.length > 0 && this.state.targets.every(target => {
       const frame = target.format.textFrame;
       if (!frame) return false;
-      if (target.capability.kind === "text-box")
+      if (target.capability.kind === "text-box" || target.capability.kind === "shape")
         return frame.direction === "horizontal" || frame.direction === "vertical-rl";
       return target.capability.kind === "word-art" && frame.direction === "horizontal" &&
         !["arch-up", "arch-down", "circle", "wave"].includes(target.format.textStyle!.transform);

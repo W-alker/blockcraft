@@ -1,5 +1,6 @@
 import {compactShapeGeometryOverride} from './shape-geometry-storage'
 import {storeBlockPosition} from '../../framework/modules/object/block-placement/state'
+import {ORIGIN_NO_RECORD} from '../../framework/doc/origins'
 import {
   ChangeDetectionStrategy,
   Component,
@@ -179,7 +180,7 @@ const shapeRotationTransform = (rotation: unknown): string => {
         [style.-webkit-background-clip]="'text'"
         [style.-webkit-text-stroke]="textStroke"
         [style.text-align]="shapeProps.shapeTextAlign"
-        [style.justify-content]="verticalJustify"
+        [style.justify-content]="'safe ' + verticalJustify"
         [style.writing-mode]="textWritingMode"
         [style.font-family]="shapeFormat.textStyle?.fontFamily ? resolveObjectTextFontFamily(shapeFormat.textStyle!.fontFamily) : null"
         [style.font-size.px]="shapeFormat.textStyle?.fontSize"
@@ -267,17 +268,24 @@ const shapeRotationTransform = (rotation: unknown): string => {
       flex-direction: column;
       min-width: 0;
       min-height: 0;
-      overflow: hidden;
+      /* One scrolling viewport for all paragraphs; caret/wheel scrolling stays
+         available without showing an inner scrollbar on the drawing. */
+      overflow: auto;
+      scrollbar-width: none;
       pointer-events: auto;
+
+      &::-webkit-scrollbar {
+        display: none;
+      }
     }
 
     .shape-block__text-frame ::ng-deep > .shape-text-block {
-      width: 100%;
-      max-height: 100%;
+      inline-size: 100%;
+      flex: none;
       margin: 0;
       border: 0;
       outline: 0;
-      overflow: auto;
+      overflow: visible;
       box-shadow: none;
       background: transparent;
       color: inherit;
@@ -309,6 +317,7 @@ export class ShapeBlockComponent extends BaseBlockComponent<ShapeBlockModel> {
   @ViewChild('shapeTextFrame', {read: ElementRef})
   private readonly _shapeTextFrame?: ElementRef<HTMLElement>
   private _autoFitObserver?: MutationObserver
+  private _autoFitResizeObserver?: ResizeObserver
   private _autoFitFrame: number | null = null
 
   override ngAfterViewInit(): void {
@@ -323,12 +332,26 @@ export class ShapeBlockComponent extends BaseBlockComponent<ShapeBlockModel> {
       this._autoFitObserver.observe(content, {
         childList: true,
         characterData: true,
+        attributes: true,
+        attributeFilter: ['style', 'class'],
         subtree: true,
       })
+      if (ownerWindow.ResizeObserver) {
+        this._autoFitResizeObserver = new ownerWindow.ResizeObserver(() => this._scheduleAutoFit())
+        this._autoFitResizeObserver.observe(content)
+      }
     })
+    const propsSubscription = this.onPropsChange.subscribe(() => this._scheduleAutoFit())
+    const reattachSubscription = this.onReattach$.subscribe(() => this._scheduleAutoFit())
+    const schedule = () => this._scheduleAutoFit()
+    content.ownerDocument.fonts.addEventListener('loadingdone', schedule)
     this.onDestroy$.subscribe(() => {
       this._autoFitObserver?.disconnect()
       this._autoFitObserver = undefined
+      this._autoFitResizeObserver?.disconnect()
+      propsSubscription.unsubscribe()
+      reattachSubscription.unsubscribe()
+      content.ownerDocument.fonts.removeEventListener('loadingdone', schedule)
       if (this._autoFitFrame !== null) {
         ownerWindow.cancelAnimationFrame(this._autoFitFrame)
       }
@@ -538,38 +561,59 @@ export class ShapeBlockComponent extends BaseBlockComponent<ShapeBlockModel> {
 
   textInset(side: 'top' | 'right' | 'bottom' | 'left'): string {
     const index = {top: 0, right: 1, bottom: 2, left: 3}[side]
+    const inherent = this._textInsets[side] * 100
+    const margin = this.shapeProps.textFrame.margins[index]
+    return `calc(${inherent}% + ${margin}px)`
+  }
+
+  private get _textInsets() {
     const props = this.shapeProps
     const definition = getShapeDefinition(props.shapeType)
-    const inherent = (normalizeCustomShapeGeometry(props.customGeometry)
+    return normalizeCustomShapeGeometry(props.customGeometry)
       ? definition.textInsets
       : resolveAdjustedShapeTextInsets(
           props.shapeType,
           props.adjustments,
           definition.textInsets,
-        ))[side] * 100
-    const margin = props.textFrame.margins[index]
-    return `calc(${inherent}% + ${margin}px)`
+        )
   }
 
   private _scheduleAutoFit(): void {
-    if (this._autoFitFrame !== null || this.isReadonly) return
+    if (this._autoFitFrame !== null || this.isReadonly ||
+      this.shapeFormat.textFrame!.autoFit !== 'resize-shape') return
     const content = this._shapeTextFrame?.nativeElement
     const ownerWindow = content?.ownerDocument.defaultView
     if (!content || !ownerWindow) return
-    this._autoFitFrame = ownerWindow.requestAnimationFrame(() => {
+    this._ngZone.runOutsideAngular(() => this._autoFitFrame = ownerWindow.requestAnimationFrame(() => {
       this._autoFitFrame = null
       const frame = this.shapeFormat.textFrame!
-      if (frame.autoFit !== 'resize-shape') return
+      if (this.isReadonly || !content.isConnected || !content.getClientRects().length ||
+        this.definition.supportsText === false || frame.autoFit !== 'resize-shape' ||
+        !['horizontal', 'vertical-rl'].includes(frame.direction)) return
       const vertical = frame.direction === 'vertical-rl'
       const overflow = vertical
         ? content.scrollWidth - content.clientWidth
         : content.scrollHeight - content.clientHeight
-      if (!Number.isFinite(overflow) || overflow <= .5) return
+      if (!Number.isFinite(overflow) || overflow <= 1) return
       const current = this.shapeProps
-      this.doc.placement.updateObjectGeometry(this, vertical
-        ? {width: Math.ceil(current.width + overflow)}
-        : {height: Math.ceil(current.height + overflow)})
-    })
+      const insets = this._textInsets
+      const availableFraction = 1 - (vertical ? insets.left + insets.right : insets.top + insets.bottom)
+      if (availableFraction <= 0) return
+      // Insets scale with the outer shape. Adding just the overflow would leave
+      // part of the text clipped again in ellipses, arrows and callouts.
+      const growth = Math.ceil(overflow / availableFraction)
+      const surface = this._shapeShell?.nativeElement
+      if (!surface) return
+      // Flow objects can be clamped to their content column. Derive the needed
+      // size from the rendered frame so a capped width cannot grow every RAF.
+      const size = (vertical ? surface.clientWidth : surface.clientHeight) + growth
+      if (size <= (vertical ? current.width : current.height)) return
+      this._ngZone.run(() => this.doc.crud.transact(() => {
+        this.doc.placement.updateObjectGeometry(this, vertical
+          ? {width: size}
+          : {height: size})
+      }, ORIGIN_NO_RECORD))
+    }))
   }
 
   get verticalJustify(): 'flex-start' | 'center' | 'flex-end' {
