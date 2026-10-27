@@ -89,6 +89,15 @@ for (const flavour of ['image', 'video'] as const) {
         await doc.navigateToBlock(mediaId)
       }, scale)
       await expect(page.locator('[data-bc-page-media-fitted]')).toHaveCount(1)
+      if (flavour === 'video') {
+        await expect.poll(() => page.evaluate(() => {
+          const {doc, mediaId} = (window as any).__fittedMediaTest
+          const host = document.querySelector(`[data-block-id="${mediaId}"]`)!
+          const frame = host.querySelector('.video-block__wrapper')!.getBoundingClientRect()
+          const gap = host.querySelector('[data-block-gap-side="after"]')!.getBoundingClientRect()
+          return Math.abs(gap.left - frame.right - doc.viewScale.geometryScale)
+        })).toBeLessThan(.6)
+      }
       await page.evaluate(async () => {
         const {doc, tableId} = (window as any).__fittedMediaTest
         doc.selection.blur()

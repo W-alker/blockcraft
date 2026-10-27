@@ -2,8 +2,9 @@
   display: block;
   margin: 8px 0;
   position: relative;
-  //width: fit-content;
-  //min-width: 50px;
+  // 宿主边界跟随播放器，前后 gap 直接使用宿主定位。
+  width: fit-content;
+  max-width: 100%;
 
   &.selected {
     background: unset !important;
