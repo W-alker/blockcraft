@@ -59,6 +59,7 @@ import {
 import {
   isSlashQueryCursorOwned,
   resolveSlashQueryRange,
+  supportsSlashMenu,
 } from "./slash-query";
 
 const ALLOWED_HEADING_FLAVOURS: BlockCraft.BlockFlavour[] = [
@@ -645,7 +646,7 @@ export class BlockTransformerPlugin extends DocPlugin {
   ): {query: string; triggerLength: number} | null {
     const selection = this.getCurrentSelection();
     if (
-      block.flavour !== "paragraph" ||
+      !supportsSlashMenu(block) ||
       !selection ||
       !isSelectionAlive(selection as any, this.doc) ||
       !selection.collapsed ||
@@ -1465,7 +1466,9 @@ export class BlockTransformerPlugin extends DocPlugin {
     cpr.setInput("doc", this.doc);
     cpr.setInput("triggerIndex", triggerIndex);
     cpr.setInput("queryRange", queryRange);
-    cpr.setInput("items", this.buildMenuItems(block, triggerIndex > 0));
+    // Only paragraph-start slash commands can replace the current block type.
+    const inlineOnly = triggerIndex > 0 || block.flavour !== "paragraph";
+    cpr.setInput("items", this.buildMenuItems(block, inlineOnly));
     this.activeMenu = cpr.instance;
 
     cpr.instance.commandSelected
@@ -1536,7 +1539,9 @@ export class BlockTransformerPlugin extends DocPlugin {
     const block = selection.firstBlock as EditableBlockComponent;
     if (!this.isBlockAlive(block)) return;
     const schema = this.doc.schemas.get(block.flavour)!;
-    if (schema.metadata.isLeaf || block.plainTextOnly) return;
+    if (inputText === "/") {
+      if (!supportsSlashMenu(block)) return;
+    } else if (schema.metadata.isLeaf || block.plainTextOnly) return;
     const triggerIndex = this.findTriggerIndex(
       block,
       inputText,
@@ -1607,7 +1612,7 @@ export class BlockTransformerPlugin extends DocPlugin {
       this.openColonEmojiPicker(block, triggerIndex);
       return;
     }
-    if (block.flavour !== "paragraph") return;
+    if (!supportsSlashMenu(block)) return;
     if (triggerIndex > 0) {
       const previous = modelCharacterAt(block.textDeltas(), triggerIndex - 1);
       // A slash attached to ordinary text (for example a path) is not a trigger.

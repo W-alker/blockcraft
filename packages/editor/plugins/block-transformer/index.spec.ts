@@ -2,7 +2,7 @@ import {Injector, signal} from "@angular/core";
 import { TestBed, fakeAsync, flushMicrotasks } from "@angular/core/testing";
 import { BehaviorSubject, Subject } from "rxjs";
 import * as Y from "yjs";
-import { OneShotCursorAnchor } from "../../framework";
+import { BlockNodeType, OneShotCursorAnchor } from "../../framework";
 import { BlockTransformerPlugin } from "./index";
 import { blockTransforms } from "./const";
 
@@ -157,6 +157,7 @@ describe('BlockTransformerPlugin beforeInput', () => {
       textContent: () => '/',
       textDeltas: () => [{insert: '/'}],
       textLength: 1,
+      nodeType: BlockNodeType.editable,
       plainTextOnly: false,
     }
     plugin.doc.selection.value = {
@@ -190,6 +191,7 @@ describe('BlockTransformerPlugin beforeInput', () => {
       textContent: () => '/',
       textDeltas: () => [{insert: '/'}],
       textLength: 1,
+      nodeType: BlockNodeType.editable,
       plainTextOnly: false,
     }
     plugin.doc.selection.value = {
@@ -229,6 +231,7 @@ describe('BlockTransformerPlugin beforeInput', () => {
       textContent: () => ":",
       textDeltas: () => [{ insert: ":" }],
       textLength: 1,
+      nodeType: BlockNodeType.editable,
       plainTextOnly: false,
     };
     plugin.doc.selection.value = {
@@ -257,6 +260,7 @@ describe('BlockTransformerPlugin beforeInput', () => {
       textContent: () => "abc:",
       textDeltas: () => [{ insert: "abc:" }],
       textLength: 4,
+      nodeType: BlockNodeType.editable,
       plainTextOnly: false,
     };
     plugin.doc.selection.value = {
@@ -287,6 +291,7 @@ describe('BlockTransformerPlugin beforeInput', () => {
       textContent: () => 'before /',
       textDeltas: () => [{insert: 'before /'}],
       textLength: 8,
+      nodeType: BlockNodeType.editable,
       plainTextOnly: false,
     }
     plugin.doc.selection.value = {
@@ -307,33 +312,50 @@ describe('BlockTransformerPlugin beforeInput', () => {
     expect(plugin.openContextMenu).toHaveBeenCalledOnceWith(block, 7)
   }))
 
-  it("does not open the slash menu in an otherwise empty non-paragraph block", fakeAsync(() => {
-    const plugin = createPlugin();
-    const block = {
-      id: 'ordered-slash-block',
-      flavour: 'ordered',
-      textContent: () => '/',
-      textDeltas: () => [{insert: '/'}],
-      textLength: 1,
-      plainTextOnly: false,
+  for (const flavour of ['todo', 'ordered', 'bullet', 'blockquote', 'caption', 'shape-text', 'custom-rich-text']) {
+    for (const prefix of ['', '正文 ', '正文', 'https://example.com']) {
+      it(`opens slash by rich-text capability in ${flavour} only at a valid boundary (${prefix})`, fakeAsync(() => {
+        const plugin = createPlugin();
+        const block = {
+          id: 'rich-text-block', flavour, nodeType: BlockNodeType.editable,
+          textDeltas: () => [{insert: prefix + '/'}],
+          textLength: prefix.length + 1, plainTextOnly: false,
+        };
+        plugin.doc.schemas.get.and.returnValue({metadata: {isLeaf: ['caption', 'shape-text'].includes(flavour)}});
+        plugin.doc.selection.value = {
+          collapsed: true, start: {type: 'text', offset: block.textLength}, firstBlock: block,
+        };
+        spyOn(plugin, 'openContextMenu');
+        stubNextTick();
+        plugin.onKeyDown({get: () => ({raw: {key: '/'}})} as any);
+        flushMicrotasks();
+        if (!prefix || prefix.endsWith(' ')) {
+          expect(plugin.openContextMenu).toHaveBeenCalledOnceWith(block, prefix.length);
+        } else {
+          expect(plugin.openContextMenu).not.toHaveBeenCalled();
+        }
+      }));
     }
-    plugin.doc.selection.value = {
-      collapsed: true,
-      start: {type: 'text', offset: 1},
-      firstBlock: block,
-    }
-    spyOn(plugin, 'openContextMenu')
-    stubNextTick()
+  }
 
-    plugin.onKeyDown({
-      get: () => ({
-        raw: {key: '/', metaKey: false, ctrlKey: false, altKey: false},
-      }),
-    } as any)
-    flushMicrotasks()
-
-    expect(plugin.openContextMenu).not.toHaveBeenCalled()
-  }))
+  for (const flavour of ['code', 'mermaid-textarea', 'word-art', 'custom-plain-text']) {
+    it(`does not open slash in plain-text ${flavour}`, fakeAsync(() => {
+      const plugin = createPlugin();
+      const block = {
+        id: 'plain-text-block', flavour, nodeType: BlockNodeType.editable,
+        textDeltas: () => [{insert: '/'}], textLength: 1, plainTextOnly: true,
+      };
+      plugin.doc.selection.value = {
+        collapsed: true, start: {type: 'text', offset: 1}, firstBlock: block,
+      };
+      spyOn(plugin, 'openContextMenu');
+      stubNextTick();
+      plugin.onKeyDown({get: () => ({raw: {key: '/'}})} as any);
+      flushMicrotasks();
+      expect(plugin.openContextMenu).not.toHaveBeenCalled();
+      expect(plugin.resolveSlashQueryState(block, 0)).toBeNull();
+    }));
+  }
 
   it('lets a later beforeInput trigger replace an earlier keyDown trigger', fakeAsync(() => {
     const plugin = createPlugin()
@@ -422,6 +444,7 @@ describe('BlockTransformerPlugin beforeInput', () => {
       textContent: () => '/',
       textDeltas: () => [{insert: '/'}],
       textLength: 1,
+      nodeType: BlockNodeType.editable,
       plainTextOnly: false,
     }
     plugin.doc.selection.value = {
@@ -534,6 +557,7 @@ describe("BlockTransformerPlugin slash execution", () => {
     const block = {
       id: "source",
       flavour: "paragraph",
+      nodeType: BlockNodeType.editable,
       yText,
       get textLength() {
         return yText.length;
@@ -564,35 +588,38 @@ describe("BlockTransformerPlugin slash execution", () => {
     });
   });
 
-  it("owns only the slash token inside existing paragraph text", () => {
-    const plugin = new BlockTransformerPlugin() as any;
-    const block = {
-      id: "source",
-      flavour: "paragraph",
-      textLength: 18,
-      textDeltas: () => [{insert: "before /icon after"}],
-    };
-    const selection = {
-      collapsed: true,
-      start: {type: "text", blockId: block.id, offset: 12},
-      end: {type: "text", blockId: block.id, offset: 12},
-      firstBlock: block,
-      lastBlock: block,
-    };
-    plugin.doc = {
-      isReadonly: false,
-      getBlockById: (id: string) => id === block.id ? block : undefined,
-      selection: {
-        value: selection,
-        recalculate: () => ({value: selection}),
-      },
-    };
+  for (const flavour of ["paragraph", "todo", "ordered", "bullet", "blockquote", "caption", "shape-text"]) {
+    it(`owns only the slash token inside ${flavour} text`, () => {
+      const plugin = new BlockTransformerPlugin() as any;
+      const block = {
+        id: "source",
+        flavour,
+        nodeType: BlockNodeType.editable,
+        textLength: 18,
+        textDeltas: () => [{insert: "before /icon after"}],
+      };
+      const selection = {
+        collapsed: true,
+        start: {type: "text", blockId: block.id, offset: 12},
+        end: {type: "text", blockId: block.id, offset: 12},
+        firstBlock: block,
+        lastBlock: block,
+      };
+      plugin.doc = {
+        isReadonly: false,
+        getBlockById: (id: string) => id === block.id ? block : undefined,
+        selection: {
+          value: selection,
+          recalculate: () => ({value: selection}),
+        },
+      };
 
-    expect(plugin.resolveSlashQueryState(block, 7)).toEqual({
-      query: "icon",
-      triggerLength: 5,
+      expect(plugin.resolveSlashQueryState(block, 7)).toEqual({
+        query: "icon",
+        triggerLength: 5,
+      });
     });
-  });
+  }
 
   it("closes a secondary command panel when its slash range is deleted", () => {
     const plugin = new BlockTransformerPlugin() as any;

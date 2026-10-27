@@ -14,22 +14,33 @@ async function initialize(page: Page) {
   }, editorSelector);
 }
 
-async function createEmptyParagraphWithCaret(page: Page) {
-  return page.evaluate(async (selector) => {
+async function createEmptyBlockWithCaret(page: Page, flavour = "paragraph") {
+  return page.evaluate(async ({selector, flavour}) => {
     const editor = document.querySelector(selector)!;
     const debug = (window as unknown as {
       ng: {getComponent: (target: Element) => {doc: any}};
     }).ng;
     const doc = debug.getComponent(editor).doc;
-    const snapshot = doc.schemas.createSnapshot("paragraph", [[]]);
-    doc.crud.insertBlockSnapshots(doc.rootId, 0, [snapshot]);
+    const snapshot = doc.schemas.createSnapshot(flavour, [[]]);
+    let root = snapshot;
+    if (flavour === 'caption') {
+      root = doc.schemas.createSnapshot('image', [{src: ''}]);
+      root.children = [snapshot];
+    } else if (flavour === 'shape-text') {
+      root = doc.schemas.createSnapshot('shape', []);
+      root.children = [snapshot];
+    } else if (flavour === 'mermaid-textarea') {
+      root = doc.schemas.createSnapshot('mermaid', ['text']);
+      root.children = [snapshot];
+    }
+    doc.crud.insertBlockSnapshots(doc.rootId, 0, [root]);
     await new Promise<void>(resolve =>
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
     );
     const block = doc.getBlockById(snapshot.id);
     doc.selection.setCursorAt(block, 0);
     return snapshot.id as string;
-  }, editorSelector);
+  }, {selector: editorSelector, flavour});
 }
 
 async function editorSelectionSnapshot(page: Page) {
@@ -47,24 +58,93 @@ async function editorSelectionSnapshot(page: Page) {
   });
 }
 
-async function expectParagraphText(page: Page, blockId: string, expected: string) {
+async function expectBlockText(page: Page, blockId: string, expected: string) {
   await expect.poll(() => page.evaluate(({selector, id}) => {
     const doc = (window as any).ng.getComponent(document.querySelector(selector)).doc;
+    const block = doc.getBlockById(id);
     return {
-      model: doc.getBlockById(id).yText.toString(),
-      // WebKit projects a zero-width placeholder beside the native caret.
-      dom: document.querySelector(`[data-block-id="${id}"]`)?.textContent?.replace(/[\u200B\u200C\uFEFF]/g, ''),
+      model: block.yText.toString(),
+      // Read the editable DOM, excluding list markers and WebKit caret placeholders.
+      dom: block.containerElement.textContent?.replace(/[\u200B\u200C\uFEFF]/g, ''),
     };
   }, {selector: editorSelector, id: blockId})).toEqual({model: expected, dom: expected});
+}
+
+for (const flavour of ['paragraph', 'todo', 'ordered', 'bullet', 'blockquote', 'caption', 'shape-text']) {
+  for (const prefix of ['', '正文 ']) {
+    test(`rich-text ${flavour} opens slash at ${prefix ? 'space' : 'start'} and inserts with undo`, async ({page}) => {
+      await initialize(page);
+      const blockId = await createEmptyBlockWithCaret(page, flavour);
+      await page.evaluate(({id, prefix}) => {
+        const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc;
+        const block = doc.getBlockById(id);
+        block.insertText(0, prefix + '后文', {bold: true});
+        doc.selection.setCursorAt(block, prefix.length);
+      }, {id: blockId, prefix});
+      await page.keyboard.type('/');
+      const menu = page.locator('block-transformer-contextmenu');
+      await expect(menu.getByRole('option', {name: /^日期/})).toBeVisible();
+      if (prefix || flavour !== 'paragraph') {
+        await expect(menu.locator('.list__group')).toHaveText(['行内内容']);
+        await expect(menu.getByRole('option', {name: /一级标题/})).toHaveCount(0);
+      } else {
+        await expect(menu.getByRole('option', {name: /一级标题/})).toBeVisible();
+      }
+      await page.keyboard.type('date');
+      await page.keyboard.press('Backspace');
+      await expect(menu.getByRole('option', {name: /^日期/})).toBeVisible();
+      const snapshot = () => page.evaluate(id => {
+        const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc;
+        const block = doc.getBlockById(id);
+        return {flavour: block.flavour, parentId: block.parentId, props: {...block.props}, deltas: block.textDeltas()};
+      }, blockId);
+      const before = await snapshot();
+      await page.evaluate(() => {
+        (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc.crud.undoManager.stopCapturing();
+      });
+      await menu.getByRole('option', {name: /^日期/}).click();
+      await expect(menu).toHaveCount(0);
+      await expect.poll(async () => (await snapshot()).deltas.some((delta: any) => delta.insert.date)).toBe(true);
+      const after = await snapshot();
+      expect(after).toMatchObject({flavour, parentId: before.parentId, props: before.props});
+      expect(after.deltas.at(-1)).toMatchObject({insert: '后文', attributes: {bold: true}});
+      const block = page.locator(`[data-block-id="${blockId}"]`);
+      await expect(block).toContainText('后文');
+      expect((await editorSelectionSnapshot(page)).blockId).toBe(blockId);
+      await page.evaluate(() => {
+        (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc.crud.undoManager.undo();
+      });
+      await expect.poll(snapshot).toEqual(before);
+      await expect(block).toContainText('/dat');
+      await page.evaluate(() => {
+        (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc.crud.undoManager.redo();
+      });
+      await expect.poll(snapshot).toEqual(after);
+      await expect(block).not.toContainText('/dat');
+    });
+  }
+}
+
+for (const flavour of ['code', 'mermaid-textarea', 'word-art']) {
+  test(`plain-text ${flavour} keeps slash as ordinary text`, async ({page}) => {
+    await initialize(page);
+    const id = await createEmptyBlockWithCaret(page, flavour);
+    await page.keyboard.type('/date /');
+    await expect.poll(() => page.evaluate(id => {
+      const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc;
+      return doc.getBlockById(id).textContent();
+    }, id)).toBe('/date /');
+    await expect(page.locator('block-transformer-contextmenu')).toHaveCount(0);
+  });
 }
 
 for (const prefix of ['正文', 'https://example.com']) {
   test(`slash trigger stays closed immediately after non-space text (${prefix})`, async ({page}) => {
     await initialize(page);
-    const blockId = await createEmptyParagraphWithCaret(page);
+    const blockId = await createEmptyBlockWithCaret(page);
     await page.keyboard.insertText(prefix);
     await page.keyboard.type('/path');
-    await expectParagraphText(page, blockId, prefix + '/path');
+    await expectBlockText(page, blockId, prefix + '/path');
     await page.evaluate(() => new Promise<void>(resolve =>
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
     ));
@@ -75,20 +155,20 @@ for (const prefix of ['正文', 'https://example.com']) {
 for (const [name, space] of [['ASCII', ' '], ['NBSP', '\u00a0'], ['full-width', '\u3000']] as const) {
   test(`slash trigger opens inline commands after ${name} space`, async ({page}) => {
     await initialize(page);
-    const blockId = await createEmptyParagraphWithCaret(page);
+    const blockId = await createEmptyBlockWithCaret(page);
     await page.keyboard.insertText('正文' + space);
     await page.keyboard.type('/');
     const menu = page.locator('block-transformer-contextmenu');
     await expect(menu.getByRole('option', {name: /^日期/})).toBeVisible();
     await expect(menu.getByRole('option', {name: /^emoji/i})).toBeVisible();
     await expect(menu.getByRole('option', {name: /高亮块|一级标题/})).toHaveCount(0);
-    await expectParagraphText(page, blockId, '正文' + space + '/');
+    await expectBlockText(page, blockId, '正文' + space + '/');
   });
 }
 
 test('slash query stays open while backspacing and closes only when the slash is deleted', async ({page}) => {
   await initialize(page);
-  const blockId = await createEmptyParagraphWithCaret(page);
+  const blockId = await createEmptyBlockWithCaret(page);
   await page.keyboard.type('/');
   const menu = page.locator('block-transformer-contextmenu');
   await expect(menu).toBeVisible();
@@ -101,7 +181,7 @@ test('slash query stays open while backspacing and closes only when the slash is
   await expect(menu).toBeVisible();
   await page.keyboard.press('Backspace');
   await expect(menu.getByRole('option')).toHaveCount(initialCount);
-  await expectParagraphText(page, blockId, '/');
+  await expectBlockText(page, blockId, '/');
   await page.keyboard.press('Backspace');
   await expect(menu).toHaveCount(0);
   expect((await editorSelectionSnapshot(page)).blockId).toBe(blockId);
@@ -109,7 +189,7 @@ test('slash query stays open while backspacing and closes only when the slash is
 
 test('slash query can delete a character before the caret and recover matching commands', async ({page}) => {
   await initialize(page);
-  const blockId = await createEmptyParagraphWithCaret(page);
+  const blockId = await createEmptyBlockWithCaret(page);
   await page.keyboard.type('/');
   const menu = page.locator('block-transformer-contextmenu');
   await expect(menu).toBeVisible();
@@ -119,37 +199,39 @@ test('slash query can delete a character before the caret and recover matching c
   await page.keyboard.press('Backspace');
   await expect(menu.getByRole('option', {name: /高亮块/})).toBeVisible();
   await expect(menu.getByRole('option')).toHaveCount(1);
-  await expectParagraphText(page, blockId, '/gl');
+  await expectBlockText(page, blockId, '/gl');
   expect((await editorSelectionSnapshot(page)).blockId).toBe(blockId);
 });
 
-for (const character of ['x', '𠮷']) {
-  test(`slash query closes after seven Unicode characters (${character}) and releases editor keys`, async ({page}) => {
-    await initialize(page);
-    const blockId = await createEmptyParagraphWithCaret(page);
-    await page.keyboard.type('/');
-    const menu = page.locator('block-transformer-contextmenu');
-    await expect(menu).toBeVisible();
-    await page.keyboard.insertText(character.repeat(7));
-    await expect(menu.getByRole('option')).toHaveCount(0);
-    await expect(menu).toBeVisible();
-    await page.keyboard.insertText(character);
-    await expect(menu).toHaveCount(0);
-    await expectParagraphText(page, blockId, '/' + character.repeat(8));
-    await page.keyboard.press('Backspace');
-    await expectParagraphText(page, blockId, '/' + character.repeat(7));
-    await expect(menu).toHaveCount(0);
-    await page.keyboard.type('stilltyping');
-    await expectParagraphText(page, blockId, '/' + character.repeat(7) + 'stilltyping');
-    await page.keyboard.press('Enter');
-    await expect.poll(async () => (await editorSelectionSnapshot(page)).blockId).not.toBe(blockId);
-  });
+for (const flavour of ['paragraph', 'todo', 'ordered']) {
+  for (const character of ['x', '𠮷']) {
+    test(`slash query in ${flavour} closes after seven Unicode characters (${character}) and releases editor keys`, async ({page}) => {
+      await initialize(page);
+      const blockId = await createEmptyBlockWithCaret(page, flavour);
+      await page.keyboard.type('/');
+      const menu = page.locator('block-transformer-contextmenu');
+      await expect(menu).toBeVisible();
+      await page.keyboard.insertText(character.repeat(7));
+      await expect(menu.getByRole('option')).toHaveCount(0);
+      await expect(menu).toBeVisible();
+      await page.keyboard.insertText(character);
+      await expect(menu).toHaveCount(0);
+      await expectBlockText(page, blockId, '/' + character.repeat(8));
+      await page.keyboard.press('Backspace');
+      await expectBlockText(page, blockId, '/' + character.repeat(7));
+      await expect(menu).toHaveCount(0);
+      await page.keyboard.type('stilltyping');
+      await expectBlockText(page, blockId, '/' + character.repeat(7) + 'stilltyping');
+      await page.keyboard.press('Enter');
+      await expect.poll(async () => (await editorSelectionSnapshot(page)).blockId).not.toBe(blockId);
+    });
+  }
 }
 
 test('slash query waits for native IME commit before applying the seven-character limit', async ({page, context, browserName}) => {
   test.skip(browserName !== 'chromium', 'Chromium native composition protocol');
   await initialize(page);
-  const blockId = await createEmptyParagraphWithCaret(page);
+  const blockId = await createEmptyBlockWithCaret(page);
   await page.keyboard.type('/');
   const menu = page.locator('block-transformer-contextmenu');
   await expect(menu).toBeVisible();
@@ -169,7 +251,7 @@ test('slash query waits for native IME commit before applying the seven-characte
       if (withinLimit) await expect(menu.getByRole('option', {name: /^日期/})).toBeVisible();
       else await expect(menu).toHaveCount(0);
     }
-    await expectParagraphText(page, blockId, '/日期这是普通正文');
+    await expectBlockText(page, blockId, '/日期这是普通正文');
     expect((await editorSelectionSnapshot(page)).blockId).toBe(blockId);
   } finally {
     await cdp.detach();
@@ -180,7 +262,7 @@ for (const command of ['icon', 'emoji', 'date'] as const) {
   for (const query of ['', command]) {
     test(`slash ${command} preserves adjacent paragraph text with query ${query || '(empty)'}`, async ({page}) => {
       await initialize(page);
-      const blockId = await createEmptyParagraphWithCaret(page);
+      const blockId = await createEmptyBlockWithCaret(page);
       await page.evaluate(({selector, id}) => {
         const doc = (window as any).ng.getComponent(document.querySelector(selector)).doc;
         const block = doc.getBlockById(id);
@@ -235,7 +317,7 @@ for (const command of ['icon', 'emoji', 'date'] as const) {
 
 test('slash local inline image loads and survives snapshot reconstruction', async ({page}) => {
   await initialize(page);
-  const blockId = await createEmptyParagraphWithCaret(page);
+  const blockId = await createEmptyBlockWithCaret(page);
   await page.keyboard.type('/');
   await page.locator('block-transformer-contextmenu')
     .getByRole('option', {name: /^行内图片/}).click();
@@ -273,7 +355,7 @@ test('slash local inline image loads and survives snapshot reconstruction', asyn
 
 test("slash menu supports arrow navigation and Chinese pinyin-initial search", async ({page}) => {
   await initialize(page);
-  const blockId = await createEmptyParagraphWithCaret(page);
+  const blockId = await createEmptyBlockWithCaret(page);
   const calloutCountBefore = await page.locator(
     `${editorSelector} .callout-block[data-block-id]`,
   ).count();
@@ -354,7 +436,7 @@ for (const picker of [
 ] as const) {
   test(`slash ${picker.query} picker owns arrows, Tab, and Enter`, async ({page}) => {
     await initialize(page);
-    await createEmptyParagraphWithCaret(page);
+    await createEmptyBlockWithCaret(page);
 
     await page.keyboard.type("/");
     const menu = page.locator("block-transformer-contextmenu");
@@ -399,7 +481,7 @@ for (const picker of [
       }
     });
     await initialize(page);
-    const blockId = await createEmptyParagraphWithCaret(page);
+    const blockId = await createEmptyBlockWithCaret(page);
     await page.keyboard.type("/");
     const menu = page.locator("block-transformer-contextmenu");
     await menu.getByRole("option", {
@@ -432,7 +514,7 @@ for (const picker of [
 
 test('colon emoji closes on no match, preserves text and releases editor keys', async ({page}) => {
   await initialize(page);
-  const blockId = await createEmptyParagraphWithCaret(page);
+  const blockId = await createEmptyBlockWithCaret(page);
   await page.keyboard.type(':');
   const panel = page.locator('.cs-emoji-picker__panel');
   await expect(panel.locator('.cs-emoji-picker__option').first()).toBeVisible();
@@ -451,7 +533,7 @@ test('colon emoji closes on no match, preserves text and releases editor keys', 
 
 test('slash emoji keeps its search panel open for no match', async ({page}) => {
   await initialize(page);
-  await createEmptyParagraphWithCaret(page);
+  await createEmptyBlockWithCaret(page);
   await page.keyboard.type('/');
   await page.locator('block-transformer-contextmenu').getByRole('option', {name: /^emoji/i}).click();
   const panel = page.locator('.cs-emoji-picker__panel');
@@ -464,7 +546,7 @@ test('slash emoji keeps its search panel open for no match', async ({page}) => {
 test('colon emoji waits for native IME commit before closing unmatched results', async ({page, context, browserName}) => {
   test.skip(browserName !== 'chromium', 'Chromium native composition protocol');
   await initialize(page);
-  const blockId = await createEmptyParagraphWithCaret(page);
+  const blockId = await createEmptyBlockWithCaret(page);
   const panel = page.locator('.cs-emoji-picker__panel');
   await page.keyboard.type(':');
   await expect(panel.locator('.cs-emoji-picker__option').first()).toBeVisible();

@@ -1,7 +1,7 @@
 import { ElementRef } from "@angular/core";
 import {fakeAsync, flushMicrotasks} from "@angular/core/testing";
 import * as Y from "yjs";
-import {OneShotRangeAnchor} from "../../../framework";
+import {BlockNodeType, OneShotRangeAnchor} from "../../../framework";
 import { BlockTransformContextMenu } from "./contextmenu";
 
 describe("BlockTransformContextMenu keyboard navigation", () => {
@@ -50,6 +50,8 @@ describe("BlockTransformContextMenu keyboard navigation", () => {
     const activeBlockContainer = document.createElement("div");
     component.activeBlock = {
       id: "block-1",
+      nodeType: BlockNodeType.editable,
+      plainTextOnly: false,
       flavour: "paragraph",
       textLength: 5,
       textDeltas: () => [{insert: "/icon"}],
@@ -386,18 +388,21 @@ describe("BlockTransformContextMenu keyboard navigation", () => {
     (component as any)._disarmCaretGuard();
   });
 
-  it("reads the filter query when slash command text occupies the whole paragraph", () => {
-    const block = {id: "block-1"};
-    const {component} = createComponent({
-      collapsed: true,
-      start: {type: "text", offset: 5},
-      firstBlock: block,
+  for (const flavour of ['paragraph', 'todo', 'ordered', 'bullet', 'blockquote', 'caption', 'shape-text']) {
+    it(`keeps filtering in rich-text ${flavour} and rejects a plain-text target`, () => {
+      const {component} = createComponent({
+        collapsed: true, start: {type: 'text', offset: 5}, firstBlock: {id: 'block-1'},
+      });
+      (component.activeBlock as any).flavour = flavour;
+      component.triggerIndex = 0;
+      expect(component.currentQuery()).toBe('icon');
+      component.activeBlock.plainTextOnly = true;
+      expect(component.currentQuery()).toBeNull();
+      component.activeBlock.plainTextOnly = false;
+      (component.activeBlock as any).nodeType = BlockNodeType.block;
+      expect(component.currentQuery()).toBeNull();
     });
-    component.triggerIndex = 0;
-    component.activeBlock.textDeltas = () => [{insert: "/icon"}];
-
-    expect(component.currentQuery()).toBe("icon");
-  });
+  }
 
   it("keeps filtering when Y.Text updates before the canonical selection offset", () => {
     const block = {id: "block-1"};

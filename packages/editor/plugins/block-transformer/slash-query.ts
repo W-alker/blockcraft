@@ -1,7 +1,14 @@
-import type {DeltaInsert} from '../../framework'
+import type {DeltaInsert, EditableBlockComponent} from '../../framework'
+import {BlockNodeType} from '../../framework/block-std/types'
 import {deltaToString, sliceDelta} from '../../global'
 
 const MAX_SLASH_QUERY_LENGTH = 7
+
+export function supportsSlashMenu(
+  block: Pick<EditableBlockComponent, 'nodeType' | 'plainTextOnly'>,
+): boolean {
+  return block.nodeType === BlockNodeType.editable && !block.plainTextOnly
+}
 
 export interface SlashQueryRange {
   query: string

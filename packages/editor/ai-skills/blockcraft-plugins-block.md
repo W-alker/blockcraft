@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-10-26
+> Last updated: 2026-10-27
 
 ## ObjectDragPlugin
 
@@ -329,14 +329,18 @@ new BlockGapCreatorPlugin()
 
 > `plugins/block-transformer/` — Slash menu, block-type conversion, and Markdown shortcuts.
 
-仅 `/` 触发插入菜单；段首直接触发，行内必须紧跟空格（含不换行空格、全角空格）。
+仅 `/` 触发插入菜单；富文本块开头直接触发，行内必须紧跟空格（含不换行空格、全角空格）。
+触发、查询刷新及命令执行统一检查 `nodeType === editable` 且组件 `plainTextOnly === false`，
+支持段落、待办、有序/无序列表、引用及自定义富文本块；代码、Mermaid 源码、艺术字等纯文本块不触发。
+仅普通段落开头提供块转换及完整菜单；其他富文本块（含待办、列表、引用、图注、形状文字）
+无论开头还是行内，都只提供行内命令，保留原块类型与结构。
 紧贴文字或路径的 `/`、顿号 `、` 和逗号 `，` / `,` 作为普通文本输入。
 
 Enables slash-command (`/`) to open one grouped insertion surface,
 Markdown shortcuts (e.g., `# ` for heading, `- ` for bullet), and
 `Cmd/Ctrl+0–4` to set heading levels. At the start of a paragraph the menu keeps
-the complete block + inline catalog. Inside existing paragraph text it opens an
-inline-only catalog and never offers headings, blocks, media or third-party
+the block + inline catalog permitted by its parent. Other rich-text blocks and
+in-text triggers open an inline-only catalog without headings, blocks, media or third-party
 embeds. The command owns only the contiguous `/query` token up to the first
 space or inline Embed, so inserting an inline result preserves text on both
 sides. Filtering reads model Y.Text rather than depending on selection offset
@@ -355,8 +359,8 @@ editor-owned Y.Text and controls EmojiPicker `csQuery`; choosing a result
 atomically replaces the full `:query` range. Deleting the trigger, entering
 whitespace, moving the caret outside the range, destroying the block, or
 pressing `Escape` closes the panel. This does not change the slash catalogs:
-paragraph-start `/` keeps the complete catalog, while an in-text trigger
-uses the inline-only catalog. The `/emoji` slash command remains available and
+paragraph-start `/` keeps the block + inline catalog, while other rich-text blocks
+and in-text triggers use the inline-only catalog. The `/emoji` slash command remains available and
 keeps the picker's ordinary search input. Any arrow key
 activates the Emoji grid's virtual selection and is consumed before the
 document can move its caret. Real focus remains in the editor, so subsequent
@@ -461,7 +465,7 @@ local time straight into a `date` embed, and editing is deferred to
 `DateInlineExtensionPlugin`'s click dialog. Inserting through a picker would
 make the common case — "stamp now" — cost two interactions.
 
-Choosing a block item replaces the slash-command paragraph. Inline commands
+Choosing a block item replaces the slash-command block. Inline commands
 replace the same model-owned `/query` range without moving input ownership into
 the picker.
 

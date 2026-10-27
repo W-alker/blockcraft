@@ -26,6 +26,7 @@ import {
 import {
   isSlashQueryCursorOwned,
   resolveSlashQueryRange,
+  supportsSlashMenu,
 } from "../slash-query";
 
 // 导航后把光标"钉"在原块里的时间窗口（ms）。WKWebView/Tauri 下 AppKit 的
@@ -230,7 +231,7 @@ export class BlockTransformContextMenu {
   currentQuery(): string | null {
     const selection = this.doc.selection.value;
     if (
-      this.activeBlock.flavour !== "paragraph" ||
+      !supportsSlashMenu(this.activeBlock) ||
       !isSelectionAlive(selection as any, this.doc) ||
       !selection?.collapsed ||
       selection.start.type !== "text" ||

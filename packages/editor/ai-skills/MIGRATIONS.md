@@ -2,7 +2,25 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-10-26 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-10-27 | Tracks `@ccc/blockcraft` npm releases.
+
+## 未发布 — 2026-10-27：富文本块统一支持斜杠菜单
+
+**Severity**: patch（默认交互调整；发布版本由用户决定）
+
+**What changed / Why**: 移除斜杠菜单对 `paragraph` 类型的限制，入口、查询刷新和命令执行
+统一按可编辑富文本能力判断，使待办、列表、引用及自定义富文本块获得相同的输入体验。
+
+**Affected ai-skills files**: `blockcraft-plugins-block.md`。
+
+**Behavior Changes**: `nodeType === editable` 且组件 `plainTextOnly === false` 的块可触发；
+代码、Mermaid 源码、艺术字等纯文本场景排除。仅段落开头保留块转换及完整菜单；其他富文本块
+在开头和行内都仅显示行内命令，保留原块类型与结构。块开头直接触发，行内仍须紧跟空格；
+查询仍最多 7 个 Unicode 字符，退格、IME、只读及命令范围校验保持原规则。
+冒号 Emoji 和 Markdown 快捷转换不扩大适用范围。
+
+**Migration Recipe**: 宿主无需修改配置或数据。自定义命令的 `when` / `run` 现在也可能收到
+其他富文本块；若命令仅适用于特定类型，应通过 `when` 声明。不修改包版本号。
 
 ## 未发布 — 2026-10-26：浮动抓手点击完整选择
 
