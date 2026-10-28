@@ -126,6 +126,7 @@ const BUILTIN_TOOL_LIST: IContextMenuItem[] = [
          #menuTrigger="bcOverlayTrigger"
          [bcOverlayTrigger]="contextMenuTpl" [positions]="['bottom-left', 'top-left']"
          [bcOverlayDisabled]="menuDisabled" (open)="setValidBlockList()" [delay]="500"
+         (close)="onMenuClosed()"
          [withBackdrop]="false" activeClass="active"
          style="touch-action: none;">
       <div class="btn">
@@ -274,6 +275,10 @@ export class TriggerBtn {
   @Input()
   set hidden(val: boolean) {
     this._hidden = val
+    if (val) {
+      this.menuPinned = false
+      this.menuTrigger?.closePanel()
+    }
     this.menuDisabled = val
     this.display = val || !this._activeBlock ? 'none' : 'block'
     this.cdr.markForCheck()
@@ -286,6 +291,10 @@ export class TriggerBtn {
   @Input()
   set activeBlock(val: BlockCraft.BlockComponent | null) {
     if (this._activeBlock === val) return
+    if (this.menuPinned) {
+      this.menuPinned = false
+      this.menuTrigger?.closePanel()
+    }
 
     this._activeBlock = val
     this._onDestroySub?.unsubscribe()
@@ -390,6 +399,7 @@ export class TriggerBtn {
   }
 
   menuDisabled = false
+  menuPinned = false
   activeBlockIcon?: {
     icon?: string
     svgIcon?: string
@@ -559,7 +569,29 @@ export class TriggerBtn {
     return snapshots
   }
 
+  openPinnedMenu(select: () => void) {
+    if (this._destroyed || this._hidden || this.menuDisabled || !this.isBlockAlive(this.activeBlock)) return
+    // 先锁定，防止同步 selectionChange 将多选抓手重新锚定到首段。
+    this.menuPinned = true
+    try {
+      select()
+      if (!this.menuPinned) return
+      this.setValidBlockList()
+      this.cdr.detectChanges()
+      this.menuTrigger?.openOverlay(true)
+    } catch (error) {
+      this.menuPinned = false
+      throw error
+    }
+  }
+
+  onMenuClosed() {
+    this.menuPinned = false
+    this.cdr.markForCheck()
+  }
+
   close() {
+    this.menuPinned = false
     this.menuTrigger?.closePanel()
     this.display = 'none'
     this.activeBlock = null

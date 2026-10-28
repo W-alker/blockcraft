@@ -2,7 +2,21 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-10-22
+> Last updated: 2026-10-28
+
+## 模板浮层的点击固定
+
+`BcOverlayTriggerDirective.openOverlay(persistent = false)` 支持显式传入 `true`，
+立即打开并保持浮层；已由悬停打开时复用原浮层，同时取消待执行的离开关闭。
+此模式下鼠标移出不关闭，点击触发器、菜单及同一 binding family 的子菜单均保留浮层。
+点击外部、Escape、窗口失焦、禁用、`closePanel()` 或指令销毁会关闭并清理临时监听。
+默认 `openOverlay()` 和模板悬停入口的延时及离开关闭行为保持不变。
+模板浮层监听根触发器和当前触发器的祖先滚动，不要求容器注册 `CdkScrollable`。
+定位在 Angular 区域外按动画帧合并，子菜单跟随父菜单同步移动；忽略无关区域滚动，
+关闭时移除监听并取消待执行帧。
+
+BlockController 点击完成整块/多段选择后使用此模式，并锁定当前抓手定位。
+菜单关闭、目标失效、文档只读或真正开始拖拽时解除固定；仅按下抓手不关闭菜单。
 
 ## 对象动画设置面板（未发布）
 

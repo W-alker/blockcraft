@@ -4,6 +4,29 @@
 >
 > Last updated: 2026-10-28 | Tracks `@ccc/blockcraft` npm releases.
 
+## 未发布 — 2026-10-28：抓手点击后固定位置并显示菜单
+
+**Severity**: minor（新增可选持久浮层能力；发布版本由用户决定）
+
+**What changed / Why**: BlockController 点击完成块选择后立即打开菜单，并固定当前抓手，
+避免鼠标移向菜单时切换到其他块，以及多段选区中的抓手跳到首段。
+
+**Affected ai-skills files**: `blockcraft-plugins-block.md`、`blockcraft-toolbar.md`。
+
+**New APIs**: `BcOverlayTriggerDirective.openOverlay(persistent = false)` 新增可选参数，
+传入 `true` 可将已打开的悬停浮层转为持久浮层，或立即新建持久浮层。
+
+**Behavior Changes**: 抓手点击后菜单不因鼠标移出而关闭；点击外部、Escape、窗口失焦、
+禁用或销毁会释放持久状态。块目标失效、文档只读或实际开始拖拽也会关闭抓手菜单。
+子菜单点击仍归属于当前菜单，原有块选择范围和拖拽落点规则不变。
+模板浮层同时修复未注册 `CdkScrollable` 的祖先容器滚动跟随，父子菜单按帧更新定位，
+不会固定在旧的视口位置。
+
+**Migration Recipe**: 现有调用方无需改动，默认悬停行为不变。自定义模板浮层需要此行为时
+显式调用 `trigger.openOverlay(true)`；通过既有 `closePanel()` 可主动结束。
+
+**Deprecations**: 无。
+
 ## 未发布 — 2026-10-27：智能调整整表列宽
 
 **Severity**: minor（新增可选操作；发布版本由用户决定）

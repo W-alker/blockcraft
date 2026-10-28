@@ -80,6 +80,26 @@ describe("TriggerBtn multi-selection state", () => {
     rootHost.remove();
   });
 
+  it('pins the handle before selection publication and opens the refreshed menu immediately', () => {
+    const {component, doc, p1, rootHost} = makeHarness();
+    (doc as any).getBlockById = () => p1;
+    (component as any)._activeBlock = p1;
+    const menu = {openOverlay: jasmine.createSpy('openOverlay')};
+    (component as any).menuTrigger = menu;
+    const refresh = spyOn(component, 'setValidBlockList');
+    const select = jasmine.createSpy('select').and.callFake(() => {
+      expect(component.menuPinned).toBeTrue();
+      expect(menu.openOverlay).not.toHaveBeenCalled();
+    });
+    component.openPinnedMenu(select);
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(menu.openOverlay).toHaveBeenCalledOnceWith(true);
+    component.onMenuClosed();
+    expect(component.menuPinned).toBeFalse();
+    rootHost.remove();
+  });
+
   it("treats a boundary range covering multiple blocks as multi-selection", () => {
     const {component, doc, p1, rootHost, selection, queryBlocksBetween} = makeHarness();
     doc.selection.value = selection(0, 2);

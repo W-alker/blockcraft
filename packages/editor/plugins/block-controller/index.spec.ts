@@ -12,6 +12,7 @@ describe("BlockControllerPlugin selection range handling", () => {
     const state$ = new BehaviorSubject<string>("idle");
     const trigger = {
       menuDisabled: false,
+      openPinnedMenu: jasmine.createSpy('openPinnedMenu').and.callFake((select: () => void) => select()),
       cdr: {detectChanges: jasmine.createSpy("detectChanges")},
     };
     const dragController = {
@@ -70,7 +71,7 @@ describe("BlockControllerPlugin selection range handling", () => {
   });
 
   it('selects the whole block only after releasing the handle without dragging', () => {
-    const {plugin, host, block, doc, state$} = makeDragHarness();
+    const {plugin, host, block, doc, state$, trigger} = makeDragHarness();
     document.body.appendChild(host);
     const down = new PointerEvent('pointerdown', {button: 0, pointerId: 1, bubbles: true, cancelable: true});
     host.dispatchEvent(down);
@@ -79,6 +80,7 @@ describe("BlockControllerPlugin selection range handling", () => {
     state$.next('idle');
     host.dispatchEvent(new PointerEvent('pointerup', {pointerId: 1, bubbles: true}));
     expect(doc.selection.selectBlock).toHaveBeenCalledOnceWith(block as any);
+    expect(trigger.openPinnedMenu).toHaveBeenCalledTimes(1);
     expect((plugin as any)._handleClick).toBeUndefined();
     (plugin as any)._sub.unsubscribe();
     host.remove();
@@ -98,7 +100,7 @@ describe("BlockControllerPlugin selection range handling", () => {
 
   for (const reason of ['drag', 'escape', 'cancel', 'blur', 'destroy', 'outside'] as const) {
     it(`does not select the pressed block after ${reason}`, () => {
-      const {plugin, host, doc, state$} = makeDragHarness();
+      const {plugin, host, doc, state$, trigger} = makeDragHarness();
       document.body.appendChild(host);
       host.dispatchEvent(new PointerEvent('pointerdown', {button: 0, pointerId: 1, bubbles: true}));
       if (reason === 'drag') state$.next('dragging');
@@ -109,6 +111,7 @@ describe("BlockControllerPlugin selection range handling", () => {
       const target = reason === 'outside' ? document.body : host;
       target.dispatchEvent(new PointerEvent('pointerup', {pointerId: 1, bubbles: true}));
       expect(doc.selection.selectBlock).not.toHaveBeenCalled();
+      expect(trigger.openPinnedMenu).not.toHaveBeenCalled();
       expect((plugin as any)._handleClick).toBeUndefined();
       (plugin as any)._sub.unsubscribe();
       host.remove();

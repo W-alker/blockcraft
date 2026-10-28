@@ -71,6 +71,16 @@ async function readSelection(page: Page) {
   })
 }
 
+async function readHandleState(page: Page) {
+  return page.locator(`${fixtureSelector} bc-drag-handle`).evaluate(element => {
+    const component = (window as any).ng.getComponent(element)
+    const rect = element.getBoundingClientRect()
+    return {id: component.activeBlock?.id, pinned: component.menuPinned, x: rect.x, y: rect.y}
+  })
+}
+
+const rootMenu = (page: Page) => page.locator('.cdk-overlay-pane[data-float-index="1"] > bc-float-toolbar')
+
 async function readNativeText(page: Page) {
   // Whole-block DOM ranges include the editor's zero-width inline guards.
   return page.evaluate(() => (window.getSelection()?.toString() ?? '').replace(/[\u200b\u200c]/g, '').trim())
@@ -189,14 +199,126 @@ test('锁定段落仍可通过抓手选中且不会启动拖动或生成撤销',
   await expect(page.locator(`${fixtureSelector} [data-block-id="${ids[0]}"]`)).toHaveClass(/\b(focused|selected)\b/)
 })
 
-test('抓手点击选中后悬停菜单仍能应用段落设置', async ({page}) => {
+test('点击立即显示菜单并固定抓手，悬停其他段落不会切换目标', async ({page}) => {
+  const {ids} = await setup(page)
+  const handle = await hoverBlock(page, ids[0])
+  await page.locator(`${fixtureSelector} bc-drag-handle`).evaluate(element => {
+    // 排除悬停延时打开，让断言只验证点击入口。
+    ;(window as any).ng.getComponent(element).menuTrigger.delay = 60_000
+  })
+  await handle.click({trial: true})
+  const before = await readHandleState(page)
+  await handle.click()
+  await expect(rootMenu(page)).toBeVisible()
+  await page.locator(`${fixtureSelector} [data-block-id="${ids[3]}"]`).hover()
+  // 覆盖原有离开菜单后 20ms 自动关闭的时间窗口。
+  await page.waitForTimeout(100)
+  expect(await readHandleState(page)).toEqual({...before, pinned: true})
+  await expect(rootMenu(page)).toBeVisible()
+  await expect.poll(() => readNativeText(page)).toBe(paragraphTexts[0])
+})
+
+test('点击多段选区中间的抓手保留原位置与完整选区', async ({page}) => {
+  const {ids} = await setup(page)
+  await selectPartialParagraphs(page)
+  const handle = await hoverBlock(page, ids[1])
+  await handle.click({trial: true})
+  const before = await readHandleState(page)
+  await handle.click()
+  await expect.poll(() => readHandleState(page)).toEqual({...before, pinned: true})
+  await expect(rootMenu(page)).toBeVisible()
+  await expect(rootMenu(page).locator('.base-list')).toHaveCount(0)
+  await expect.poll(() => readSelection(page)).toMatchObject({
+    anchor: {type: 'selected', blockId: ids[0]}, head: {type: 'selected', blockId: ids[2]},
+    text: paragraphTexts.slice(0, 3).join('\n'),
+  })
+  await page.locator(`${fixtureSelector} [data-block-id="${ids[3]}"]`).hover()
+  await expect(rootMenu(page)).toBeVisible()
+  expect(await readHandleState(page)).toEqual({...before, pinned: true})
+})
+
+test('固定菜单支持子菜单点击，操作不会被当作外部点击', async ({page}) => {
+  const {ids} = await setup(page)
+  await (await hoverBlock(page, ids[0])).click()
+  await rootMenu(page).getByText('对齐方式', {exact: true}).hover()
+  await page.locator('.cdk-overlay-pane').getByText('居中', {exact: true}).click()
+  await expect.poll(() => page.evaluate(() => {
+    const {doc, ids} = (window as any).controllerClickFixture
+    return ids.slice(0, 4).map((id: string) => doc.model.getProps(id)?.textAlign ?? 'left')
+  })).toEqual(['center', 'left', 'left', 'left'])
+  await expect(rootMenu(page)).toBeVisible()
+  await expect.poll(() => readHandleState(page)).toMatchObject({id: ids[0], pinned: true})
+})
+
+for (const nested of [false, true]) {
+  test(`${nested ? '嵌套容器' : '编辑区'}滚动时固定菜单和子菜单跟随抓手`, async ({page}) => {
+    const {ids} = await setup(page)
+    await page.locator(fixtureSelector).evaluate((viewport, nested) => {
+      const mount = viewport.firstElementChild as HTMLElement
+      mount.style.paddingTop = '160px'
+      mount.style.paddingBottom = '1000px'
+      let scroller = viewport
+      if (nested) {
+        scroller = document.createElement('div')
+        ;(scroller as HTMLElement).style.cssText = 'height:600px;overflow:auto'
+        viewport.appendChild(scroller)
+        scroller.appendChild(mount)
+      }
+      scroller.setAttribute('data-controller-test-scroller', '')
+    }, nested)
+    await (await hoverBlock(page, ids[0])).click()
+    await rootMenu(page).getByText('对齐方式', {exact: true}).hover()
+    const submenu = page.locator('.cdk-overlay-pane[data-float-index="3"] > bc-float-toolbar')
+    await submenu.hover()
+    const handleBefore = await readHandleState(page)
+    const menuBefore = (await rootMenu(page).boundingBox())!
+    const submenuBefore = (await submenu.boundingBox())!
+    await page.locator('[data-controller-test-scroller]').evaluate(element => { element.scrollTop += 40 })
+    await expect.poll(async () => (await readHandleState(page)).y).toBeCloseTo(handleBefore.y - 40, 0)
+    await expect.poll(async () => (await rootMenu(page).boundingBox())?.y).toBeCloseTo(menuBefore.y - 40, 0)
+    await expect.poll(async () => (await submenu.boundingBox())?.y).toBeCloseTo(submenuBefore.y - 40, 0)
+    await expect.poll(() => readHandleState(page)).toMatchObject({id: ids[0], pinned: true})
+  })
+}
+
+for (const dismissal of ['Escape', '外部点击'] as const) {
+  test(`${dismissal}关闭固定菜单并恢复抓手跟随`, async ({page}) => {
+    const {ids} = await setup(page)
+    await (await hoverBlock(page, ids[0])).click()
+    await expect(rootMenu(page)).toBeVisible()
+    if (dismissal === 'Escape') await page.keyboard.press('Escape')
+    else await page.locator(`${fixtureSelector} [data-block-id="${ids[3]}"]`).click()
+    await expect(rootMenu(page)).toHaveCount(0)
+    await expect.poll(() => readHandleState(page)).toMatchObject({pinned: false})
+    await hoverBlock(page, ids[2])
+  })
+}
+
+test('固定菜单后仍能开始拖拽，取消拖拽不会重新打开菜单', async ({page}) => {
+  const {ids} = await setup(page)
+  const handle = await hoverBlock(page, ids[0])
+  await handle.click()
+  await expect(rootMenu(page)).toBeVisible()
+  const box = (await handle.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2 + 40, {steps: 5})
+  await expect.poll(() => readSelection(page)).toMatchObject({dragging: 'dragging'})
+  await expect(rootMenu(page)).toHaveCount(0)
+  await expect.poll(() => readHandleState(page)).toMatchObject({pinned: false})
+  await page.keyboard.press('Escape')
+  await page.mouse.up()
+  await expect.poll(() => readSelection(page)).toMatchObject({dragging: 'idle', canUndo: false})
+  await expect(rootMenu(page)).toHaveCount(0)
+})
+
+test('抓手点击选中后菜单能应用段落设置', async ({page}) => {
   const {ids} = await setup(page)
   const handle = await hoverBlock(page, ids[0])
   await handle.click()
   await expect.poll(() => readSelection(page)).toMatchObject({
     anchor: {type: 'selected', blockId: ids[0]}, head: {type: 'selected', blockId: ids[0]},
   })
-  await handle.hover()
   const menu = page.locator('bc-float-toolbar:visible').filter({hasText: '基础'})
   await expect(menu).toBeVisible()
   await menu.locator('.base-list__item[title^="一级标题"]').click()

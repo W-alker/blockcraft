@@ -116,7 +116,7 @@ export class BlockControllerPlugin extends DocPlugin {
       fromEvent<MouseEvent>(this.doc.root.hostElement, 'mouseover')
         .pipe(takeUntil(this.doc.onDestroy$))
         .subscribe(e => {
-          if (this.doc.isReadonly || this.isHidden) return
+          if (this.doc.isReadonly || this.isHidden || this._cpr.instance.menuPinned) return
           this.clearTimer()
 
           const target = e.target as HTMLElement
@@ -144,7 +144,7 @@ export class BlockControllerPlugin extends DocPlugin {
           ) return
 
           this._timer = setTimeout(() => {
-            if (!this.isBlockAlive(block) || !this.isControllerEligible(block)) {
+            if (this._cpr.instance.menuPinned || !this.isBlockAlive(block) || !this.isControllerEligible(block)) {
               this.clearTimer()
               return
             }
@@ -168,6 +168,7 @@ export class BlockControllerPlugin extends DocPlugin {
           ) {
             this.clearActiveBlock()
           }
+          if (this._cpr.instance.menuPinned) return
           // Cross-block selection: anchor the handle on the first selected block so the
           // user can drag the whole range immediately without re-hovering. Single-block
           // selections still rely on hover to pick the active block.
@@ -330,22 +331,25 @@ export class BlockControllerPlugin extends DocPlugin {
         currentIds.length !== blockIds.length ||
         currentIds.some((id, index) => id !== blockIds[index])
       )) return
-      if (blockIds.length === 1) {
-        this.doc.selection.selectBlock(activeBlock)
-      } else if (current?.start.type === 'text' && current.end.type === 'text' &&
-        current.firstBlock.parentId !== current.lastBlock.parentId) {
-        // 跨列等文本范围保留文本边界，整块端点会提升为整列/整个祖先分支。
-        this.doc.selection.replay({
-          anchor: {blockId: current.start.blockId, type: 'text', offset: 0},
-          head: {blockId: current.end.blockId, type: 'text', offset: current.end.block.textLength},
-          commonParent: current.commonParent,
-        })
-      } else {
-        this.doc.selection.setSelection(
-          {blockId: blockIds[0], type: 'selected'},
-          {blockId: blockIds[blockIds.length - 1], type: 'selected'},
-        )
-      }
+      this.clearTimer()
+      this._cpr.instance.openPinnedMenu(() => {
+        if (blockIds.length === 1) {
+          this.doc.selection.selectBlock(activeBlock)
+        } else if (current?.start.type === 'text' && current.end.type === 'text' &&
+          current.firstBlock.parentId !== current.lastBlock.parentId) {
+          // 跨列等文本范围保留文本边界，整块端点会提升为整列/整个祖先分支。
+          this.doc.selection.replay({
+            anchor: {blockId: current.start.blockId, type: 'text', offset: 0},
+            head: {blockId: current.end.blockId, type: 'text', offset: current.end.block.textLength},
+            commonParent: current.commonParent,
+          })
+        } else {
+          this.doc.selection.setSelection(
+            {blockId: blockIds[0], type: 'selected'},
+            {blockId: blockIds[blockIds.length - 1], type: 'selected'},
+          )
+        }
+      })
     }))
     gesture.add(fromEvent<PointerEvent>(view, 'pointercancel', {capture: true}).subscribe(event => {
       if (event.pointerId === startEvent.pointerId) cancel()
