@@ -1777,9 +1777,10 @@ export class SelectionManager {
         : range.setEnd(anchor.node, anchor.offset)
       return
     }
+    // Range element offsets count every child node, including Angular anchors.
     side === 'start'
       ? range.setStart(target.hostElement, 0)
-      : range.setEnd(target.hostElement, target.hostElement.childElementCount)
+      : range.setEnd(target.hostElement, target.hostElement.childNodes.length)
   }
 
   // ── DOM Range construction ──

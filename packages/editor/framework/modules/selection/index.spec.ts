@@ -572,6 +572,28 @@ describe('SelectionManager DOM selection normalization', () => {
     expect(range.endContainer).toBe(trailing.firstChild!);
   });
 
+  it('includes content after comment anchors and trailing text in a whole-block range without gaps', () => {
+    const {manager, block, blockHost} = createManager();
+    const handle = document.createElement('button');
+    handle.contentEditable = 'false';
+    const content = document.createElement('div');
+    content.textContent = '完整正文';
+    blockHost.append(handle, document.createComment('container'), content, document.createTextNode('尾部文本'));
+
+    manager.selectBlock(block as any);
+
+    const selection = document.getSelection()!;
+    const range = selection.getRangeAt(0);
+    expect(manager.value?.isAllSelected).toBeTrue();
+    expect(range.startContainer).toBe(blockHost);
+    expect(range.startOffset).toBe(0);
+    expect(range.endContainer).toBe(blockHost);
+    expect(range.endOffset).toBe(4);
+    expect(range.toString()).toBe('完整正文尾部文本');
+    expect(selection.toString()).toContain('完整正文');
+    expect(selection.toString()).toContain('尾部文本');
+  });
+
   it('materializes a virtual string target before selecting its block view', () => {
     const {manager, block, blockHost, doc} = createManager();
     const leading = createBlockGapSpace('before');

@@ -372,6 +372,48 @@ async function dragColumn(page: Page, sourceId: string, targetId: string, side: 
 }
 
 for (const mode of ['fixed', 'paginated', 'root'] as const) {
+  test(`${mode}: 单击底部抓手仅选中对应子栏，正文仍可继续编辑`, async ({page}) => {
+    const ids = await setup(page, mode)
+    const columnIds = await page.evaluate(id => {
+      const doc = (window as any).columnsFixture
+      const columns = doc.getBlockById(id)
+      columns.getChildrenBlocks().forEach((column: any, index: number) =>
+        column.firstChildren.replaceText(0, 0, `抓手正文 ${index + 1}`))
+      doc.crud.undoManager.clearHistory()
+      return [...columns.childrenIds] as string[]
+    }, ids.columns)
+    await page.getByText('抓手正文 1', {exact: true}).click()
+    for (const [index, columnId] of columnIds.entries()) {
+      const column = page.locator(`[data-block-id="${columnId}"]`)
+      await column.hover()
+      await column.getByRole('button', {name: '拖动子栏', exact: true}).click()
+      await expect.poll(() => page.evaluate(() =>
+        (window as any).columnsFixture.selection.value?.toJSON())).toMatchObject({
+        anchor: {type: 'selected', blockId: columnId},
+        head: {type: 'selected', blockId: columnId},
+      })
+      await expect(column).toHaveClass(/\bselected\b/)
+      await expect(column.locator('.paragraph-block')).not.toHaveCSS('caret-color', 'rgba(0, 0, 0, 0)')
+      // A non-collapsed Range may still stop before the content at an Angular comment.
+      // Check the actual native text, not just the model selection or host intersection.
+      await expect.poll(() => page.evaluate(() => (document.getSelection()?.toString() ?? '')
+        .replace(/[\u200b\u200c]/g, '').trim())).toBe(`抓手正文 ${index + 1}`)
+      await expect(page.locator(`[data-block-id="${ids.columns}"] .column-block.selected`)).toHaveCount(1)
+      expect(await column.evaluate(el => {
+        const selection = document.getSelection()
+        return !!selection?.rangeCount && !selection.isCollapsed && selection.getRangeAt(0).intersectsNode(el)
+      })).toBe(true)
+    }
+    expect(await page.evaluate(() => (window as any).columnsFixture.crud.undoManager.isCanUndo())).toBe(false)
+    await page.getByText('抓手正文 1', {exact: true}).click()
+    await expect.poll(() => page.evaluate(() =>
+      (window as any).columnsFixture.selection.value?.head.type)).toBe('text')
+    await expect(page.locator(`[data-block-id="${ids.columns}"] .column-block.selected`)).toHaveCount(0)
+    await expect(page.locator(`[data-block-id="${ids.paragraph}"]`)).not.toHaveCSS('caret-color', 'rgba(0, 0, 0, 0)')
+    await page.keyboard.type('x')
+    await expect(page.getByText(/抓手正文.*x|x.*抓手正文/)).toBeVisible()
+  })
+
   test(`${mode}: mini 抓手重排整栏且宽度跟随，Undo/Redo 恢复光标与结构`, async ({page}) => {
     const ids = await setup(page, mode)
     const before = await page.evaluate(id => {
@@ -399,6 +441,47 @@ for (const mode of ['fixed', 'paginated', 'root'] as const) {
     }
   })
 }
+
+test('抓手拖回原位不触发单击选择，后续单击和键盘激活仍可选栏', async ({page}) => {
+  const ids = await setup(page, 'fixed')
+  const columnId = await page.evaluate(id => {
+    const doc = (window as any).columnsFixture
+    const column = doc.getBlockById(id).firstChildren
+    column.firstChildren.replaceText(0, 0, '保留正文光标')
+    doc.selection.setCursorAtBlock(column.firstChildren.id, true)
+    doc.crud.undoManager.clearHistory()
+    return column.id as string
+  }, ids.columns)
+  const column = page.locator(`[data-block-id="${columnId}"]`)
+  const handle = column.getByRole('button', {name: '拖动子栏', exact: true})
+  await column.hover()
+  const box = (await handle.boundingBox())!
+  const x = box.x + box.width / 2
+  const y = box.y + box.height / 2
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.mouse.move(x + 12, y)
+  await expect.poll(() => page.evaluate(() => (window as any).columnsFixture.dragController.state)).toBe('dragging')
+  await page.mouse.move(x, y)
+  await page.mouse.up()
+  await expect.poll(() => page.evaluate(() => (window as any).columnsFixture.selection.value?.toJSON())).toMatchObject({
+    head: {type: 'text', blockId: ids.paragraph},
+  })
+  await expect(column).not.toHaveClass(/\bselected\b/)
+  for (const activation of ['click', 'Enter', 'Space']) {
+    await page.getByText('保留正文光标', {exact: true}).click()
+    if (activation === 'click') await handle.click()
+    else {
+      await handle.focus()
+      await handle.press(activation)
+    }
+    await expect.poll(() => page.evaluate(() => (window as any).columnsFixture.selection.value?.toJSON())).toMatchObject({
+      anchor: {type: 'selected', blockId: columnId}, head: {type: 'selected', blockId: columnId},
+    })
+    await expect(column).toHaveClass(/\bselected\b/)
+  }
+  expect(await page.evaluate(() => (window as any).columnsFixture.crud.undoManager.isCanUndo())).toBe(false)
+})
 
 test('拖出当前分栏不显示落点且不移动，原选区和历史保持正确', async ({page}) => {
   const ids = await setup(page, 'fixed')
