@@ -405,6 +405,7 @@ function renderTextBox(
   const content = document.createElement("div")
   content.classList.add("children-render-container", "text-box-block__content")
   const textFrame = format.textFrame!
+  if (textFrame.verticalAlign !== "top") content.setAttribute("data-bc-text-box-aligned", "")
   const textTransforms: string[] = []
   if (textFrame.direction === "rotate-90") textTransforms.push("rotate(90deg)")
   if (textFrame.direction === "rotate-270") textTransforms.push("rotate(270deg)")
@@ -438,8 +439,8 @@ function renderTextBox(
     content.style.justifyContent = textFrame.verticalAlign === "top"
       ? "flex-start"
       : textFrame.verticalAlign === "bottom"
-        ? "flex-end"
-        : "center"
+        ? "safe flex-end"
+        : "safe center"
     if (textStyle.fill.type === "solid") {
       content.style.color = wordArt.textColor
     }

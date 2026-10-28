@@ -562,7 +562,7 @@ describe("SnapshotRenderEngine", () => {
     expect(content.style.letterSpacing).toBe("0.08em")
     expect(content.style.lineHeight).toBe("1.4")
     expect(content.style.textAlign).toBe("right")
-    expect(content.style.justifyContent).toBe("flex-end")
+    expect(content.style.justifyContent).toBe("safe flex-end")
     expect(content.style.color).toBe("rgba(25, 50, 74, 0.8)")
   })
 

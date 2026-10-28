@@ -170,6 +170,12 @@
       margin-block-end: var(--bc-block-sa, 0pt);
     }
 
+    // Center/end alignment needs the remaining space for justify-content.
+    // Only top-aligned prose stretches its last child to own the blank area.
+    &[data-bc-text-box-aligned] > [data-block-id]:last-child {
+      flex-grow: 0;
+    }
+
     // An empty TextBox initially shows the shared paragraph placeholder. The
     // global placeholder rule uses the document placeholder color, which makes
     // a white-text preset appear black immediately after insertion. Inside a
