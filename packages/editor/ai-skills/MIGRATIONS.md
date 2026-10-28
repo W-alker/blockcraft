@@ -2,7 +2,50 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-10-27 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-10-28 | Tracks `@ccc/blockcraft` npm releases.
+
+## 未发布 — 2026-10-27：智能调整整表列宽
+
+**Severity**: minor（新增可选操作；发布版本由用户决定）
+
+**What changed / Why**: 新增按正文宽度预算优化整表的操作，保留短内容，按换行高度收益
+将空间分给长文本，避免单纯按最长文本展开导致表格过宽。测量、纯分配算法和文档写入职责分离。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-block.md`。
+
+**New APIs**: `TableBlockComponent.optimizeColumnWidths(): Promise<boolean>`。
+
+**Behavior Changes**: 结构工具栏和表格块菜单新增“智能调整列宽”（块菜单 action `table-smart-width`），
+均作用于整表。跨列合并内容按总宽约束；无法容纳最小内容宽时保留横向溢出。
+已有最适列宽、双击、均分和拖动不改变语义；没有持续自动重排或新增数据字段。
+
+**Migration Recipe**: 现有调用方无需修改。需要程序化优化时调用 `await table.optimizeColumnWidths()`；
+返回 `false` 表示无变化或取消。支持单步撤销，计算期间内容变化取消写入。
+
+**Deprecations**: 无。
+
+## 未发布 — 2026-10-27：表格最适列宽
+
+**Severity**: minor（新增可选操作；发布版本由用户决定）
+
+**What changed / Why**: 表格增加一次性按内容计算列宽，方便收窄短文本列、展开长文本列，
+同时保留已有固定列宽模型和普通拖动语义。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-block.md`。
+
+**New APIs**: `TableBlockComponent.fitColumnWidths(start?, count?): Promise<boolean>`、
+`menuFitColumnWidths(): Promise<boolean>`。未写入（包括无变化或取消）时返回 `false`。
+
+**Behavior Changes**: 双击列右边界触发最适列宽；显式多列选区内双击作用于整个选区。
+表格结构工具栏的“适应宽度”作用于当前列范围，抓手菜单不提供该项。
+“均分列宽”同时出现在抓手菜单与浮动工具栏，作用于整表；适应宽度使用 `bc_liekuan`，均分使用 `bc_zidongliekuan`。
+最小 50px，最大为文档父容器内容宽度，总宽可横向溢出；跨列合并格跳过，跨行主格去重。
+测量期间文档发生修改会取消，成功写入生成单独撤销项。
+
+**Migration Recipe**: 现有调用方无需改动；无需转换快照或新增配置。
+手动集成菜单可 `await table.fitColumnWidths()`，以返回值判断是否应用新列宽。
+
+**Deprecations**: 无。
 
 ## 未发布 — 2026-10-27：Mention 切换数据源读取最新关键词
 

@@ -39,6 +39,8 @@ import { ConnectedPosition, FlexibleConnectedPositionStrategy, OverlayRef } from
 import { TableCellsSelection } from "./types";
 import { BlockSelection } from "../../framework/modules/selection/blockSelection";
 import { TableFullscreenController } from "./table-fullscreen-controller";
+import {fitTableColumnWidths, measureTableCellWidths, measureTableCellWidthMetrics} from './table-column-fit';
+import {smartTableColumnWidths, TableCellWidthProfile} from './table-smart-width';
 
 const TABLE_CELL_SELECTED_CLASS = 'bc-table-cell-selected'
 const TABLE_COL_RESIZE_PREVIEW_ATTR = 'data-bc-table-col-resize-preview'
@@ -378,6 +380,7 @@ function styleSizeAppliesZoomInZoomedParent(): boolean {
   }
 })
 export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
+  private _columnFitSequence = 0
   protected hoveringCell: TableCellBlockComponent | null = null
   protected resizingCol$ = new BehaviorSubject(false)
   private _colResizeGesture: {
@@ -703,6 +706,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   }
 
   override ngOnDestroy() {
+    this._columnFitSequence++
     super.ngOnDestroy();
     this._finishColumnResize(false)
     this._cancelPendingDragSelection()
@@ -943,6 +947,94 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     return span.index
   }
 
+  /** 按菜单稳定列锚点调整所选列。 */
+  menuFitColumnWidths(): Promise<boolean> {
+    const span = this._resolveMenuColSpan()
+    if (!span) {
+      this._abortMenuAction('col')
+      return Promise.resolve(false)
+    }
+    return this.fitColumnWidths(span.index, span.count)
+  }
+
+  /** 一次性按内容调整列宽；省略范围时处理整表，成功写入返回 true。 */
+  fitColumnWidths(start = 0, count = this.colLength): Promise<boolean> {
+    return this._measureAndFitColumnWidths(start, count)
+  }
+
+  /** 在正文宽度预算内优化整表换行；不改变双击最适列宽的含义。 */
+  optimizeColumnWidths(): Promise<boolean> {
+    return this._measureAndFitColumnWidths(0, this.colLength, true)
+  }
+
+  private async _measureAndFitColumnWidths(start: number, count: number, optimize = false): Promise<boolean> {
+    if (this.isReadonly || this.doc.inputManger.compositionSession.isActive
+      || !Number.isInteger(start) || !Number.isInteger(count)
+      || start < 0 || count < 1 || start + count > this.colLength) return false
+    const sequence = ++this._columnFitSequence
+    let changed = false
+    const invalidate = () => { changed = true }
+    const valid = () => !changed && sequence === this._columnFitSequence
+      && this.hostElement.isConnected && !this.isReadonly
+      && !this.doc.inputManger.compositionSession.isActive
+    const release = this.doc.virtualization.acquireBlockViewLease([this.id])
+    this.doc.yDoc.on('update', invalidate)
+    try {
+      const fonts = this.hostElement.ownerDocument.fonts
+      if (fonts.status === 'loading') await fonts.ready
+      if (!valid()) return false
+      const grid = this._getTableModelGrid()
+      if (!grid?.rowCount) return false
+      const widths = [...this.props.colWidths]
+      const maxWidth = this._getParentContentWidth() - (optimize ? this._getColumnFitBorderWidth() : 0)
+      if (maxWidth <= 0) return false
+      const ids = grid.getMasterCellIds({start: [0, start], end: [grid.rowCount - 1, start + count - 1]})
+        .filter(id => optimize || grid.getMaster(id)?.colspan === 1)
+      const measured = new Map<number, number>()
+      const profiles: TableCellWidthProfile[] = []
+      // 表格后代随 root render unit 挂载。按模型遍历全部行，不只读取可见行。
+      for (let offset = 0; offset < ids.length; offset += 32) {
+        if (!valid()) return false
+        const batch = ids.slice(offset, offset + 32)
+        const cells = batch.map(id => this.doc.getBlockById(id)?.hostElement)
+        // 缺失真实内容时整次取消，不能把部分可见行的宽度当作整列结果。
+        if (cells.some(cell => !cell?.isConnected)) return false
+        this.doc.ngZone.runOutsideAngular(() => {
+          if (optimize) {
+            const metrics = measureTableCellWidthMetrics(cells, maxWidth)
+            batch.forEach((id, index) => {
+              const cell = grid.getMaster(id)!
+              profiles.push({...metrics[index], row: cell.coordinate[0], column: cell.coordinate[1],
+                rowspan: cell.rowspan, colspan: cell.colspan})
+            })
+          } else {
+            const naturalWidths = measureTableCellWidths(cells)
+            batch.forEach((id, index) => {
+              const column = grid.getMaster(id)!.coordinate[1]
+              measured.set(column, Math.max(measured.get(column) ?? 0, naturalWidths[index]))
+            })
+          }
+        })
+        if (offset + 32 < ids.length) {
+          await new Promise<void>(resolve => setTimeout(resolve, 0))
+        }
+      }
+      if (!valid()) return false
+      const next = this.doc.ngZone.runOutsideAngular(() => optimize
+        ? smartTableColumnWidths(widths.length, maxWidth, profiles)
+        : fitTableColumnWidths(widths, measured, TABLE_MIN_COLUMN_WIDTH, maxWidth))
+      if (next.every((width, index) => width === widths[index])) return false
+      // 异步测量期间的本地/协同修改会使整次测量失效；不提交过期列索引或内容。
+      this.doc.crud.undoManager.captureUndoItem(() => this.updateProps({colWidths: next}))
+      this._normalizeHorizontalScroll()
+      this.refreshTableMenuFromSelection()
+      return true
+    } finally {
+      this.doc.yDoc.off('update', invalidate)
+      release()
+    }
+  }
+
   setEqualColumnWidths(minWidth = 50) {
     if (!this.colLength) return
 
@@ -1046,6 +1138,18 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     // phase is too late to stop root/table capture listeners that already ran.
     const resizeAnchor = this._resolveColumnResizePointerAnchor(evt)
     if (resizeAnchor) {
+      if (evt.detail === 2) {
+        evt.preventDefault()
+        evt.stopImmediatePropagation()
+        this._finishColumnResize(false)
+        const index = this._resolveColumnResizeIndex(resizeAnchor.cellId)
+        if (index !== null) {
+          const [from, to] = this._activeColRange
+          const inSelection = index >= from && index <= to && from >= 0
+          void this.fitColumnWidths(inSelection ? from : index, inSelection ? to - from + 1 : 1)
+        }
+        return
+      }
       this.onColResizerMousedown(evt, resizeAnchor)
       evt.stopImmediatePropagation()
       return
@@ -4333,6 +4437,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       return
     }
     widths[liveColumnIndex] = state.width
+    if (widths[liveColumnIndex] === this.props.colWidths[liveColumnIndex]) return
     this.updateProps({colWidths: widths})
     this._normalizeHorizontalScroll()
   }
@@ -4346,6 +4451,25 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       0,
       Math.ceil(this._layoutDistanceFromBcr(table.getBoundingClientRect().width) - colsTotal),
     )
+  }
+
+  /** 内容预算只扣 CSS 边框/间距，不把浏览器撑宽或全屏缩放当作边框开销。 */
+  private _getColumnFitBorderWidth(): number {
+    const table = this.hostElement.querySelector('table')
+    if (!table) return 0
+    const view = table.ownerDocument.defaultView!
+    const style = view.getComputedStyle(table)
+    const number = (value: string) => Number.parseFloat(value) || 0
+    if (style.borderCollapse !== 'collapse') {
+      return Math.ceil(number(style.borderLeftWidth) + number(style.borderRightWidth)
+        + number(style.paddingLeft) + number(style.paddingRight)
+        + number(style.borderSpacing) * (this.colLength + 1))
+    }
+    const cells = this.firstChildren?.getChildrenBlocks().filter(cell => cell.props.display !== 'none') ?? []
+    const left = cells[0] ? view.getComputedStyle(cells[0].hostElement) : style
+    const right = cells.length ? view.getComputedStyle(cells[cells.length - 1].hostElement) : style
+    return Math.ceil((Math.max(number(style.borderLeftWidth), number(left.borderLeftWidth))
+      + Math.max(number(style.borderRightWidth), number(right.borderRightWidth))) / 2)
   }
 
   private _getParentContentWidth() {

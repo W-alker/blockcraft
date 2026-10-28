@@ -168,6 +168,27 @@ export type TableSelectionKind = 'cell' | 'cells' | 'row' | 'col'
       <span class="table-structure-toolbar__divider"></span>
       <button type="button"
               class="table-structure-toolbar__item"
+              aria-label="适应宽度"
+              csTooltip="适应宽度"
+              (click)="fitColumnWidths($event)">
+        <i class="bc_icon bc_liekuan"></i>
+      </button>
+      <button type="button"
+              class="table-structure-toolbar__item"
+              aria-label="均分列宽"
+              csTooltip="均分列宽（整表）"
+              (click)="equalColumnWidths($event)">
+        <i class="bc_icon bc_zidongliekuan"></i>
+      </button>
+      <button type="button"
+              class="table-structure-toolbar__item"
+              aria-label="智能调整列宽"
+              csTooltip="智能调整列宽（整表）"
+              (click)="optimizeColumnWidths($event)">
+        <i class="bc_icon bc_zidongliekuan1"></i>
+      </button>
+      <button type="button"
+              class="table-structure-toolbar__item"
               [class.active]="isFullscreen"
               [csTooltip]="isFullscreen ? '退出全屏' : '全屏'"
               (click)="toggleFullscreen($event)">
@@ -337,6 +358,21 @@ export class TableStructureToolbarComponent implements OnInit, OnChanges, OnDest
   toggleFullscreen(event: MouseEvent) {
     this._consume(event)
     this.table.toggleFullscreen()
+  }
+
+  fitColumnWidths(event: MouseEvent) {
+    this._consume(event)
+    void this.table.menuFitColumnWidths()
+  }
+
+  optimizeColumnWidths(event: MouseEvent) {
+    this._consume(event)
+    void this.table.optimizeColumnWidths()
+  }
+
+  equalColumnWidths(event: MouseEvent) {
+    this._consume(event)
+    this.table.setEqualColumnWidths()
   }
 
   private _syncCellState() {

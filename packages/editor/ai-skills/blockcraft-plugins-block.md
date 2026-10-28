@@ -2,7 +2,18 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-10-27
+> Last updated: 2026-10-28
+
+## 表格列宽入口
+
+表格结构工具栏的“适应宽度”（`bc_liekuan`）调用 `menuFitColumnWidths()`，
+仅调整当前菜单锚定的列范围；全屏和普通模式复用这一入口。抓手菜单不提供该项。
+“均分列宽”（`bc_zidongliekuan`）同时保留在抓手菜单和浮动工具栏，
+调用 `setEqualColumnWidths()` 调整整表，抓手菜单 action 为 `table-equal-width`。
+测量、只读/IME 防护和撤销由表格组件负责，插件不直接修改 Yjs。
+另有 `table-smart-width`（“智能调整列宽”）及结构工具栏同名按钮，均调用
+`optimizeColumnWidths()` 按正文宽度预算优化整表，不使用当前列选区限制范围。
+列宽规则及异步取消契约见 `blockcraft-block.md` 的“表格：一次性适应宽度”。
 
 ## ObjectDragPlugin
 
