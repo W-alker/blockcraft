@@ -4,6 +4,21 @@
 >
 > Last updated: 2026-10-28 | Tracks `@ccc/blockcraft` npm releases.
 
+## 未发布 — 2026-10-28：组合内艺术字同步缩放字号
+
+**Severity**: minor（组合缩放行为补齐；发布版本由用户决定）
+
+**What changed / Why**: 整组等比缩放同步缩放艺术字字号，与艺术字单体角点缩放一致，
+避免框体变大或变小而文字保持原字号。预览同时更新路径艺术字的坐标范围、路径及文字方向布局。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`。
+
+**Behavior Changes**: 组合四角缩放及几何 API 的等比调整会按比例写入艺术字 `textFont`，
+沿用字号 4–512px、字重、斜体及存储精度。四边或非等比调整保持字号，普通文本框保持原生换行规则。
+字号与成员尺寸、自适应转固定状态在一次事务中提交；取消不写入，Undo/Redo 同步恢复。
+
+**Migration Recipe**: 无新数据字段或公开 API 签名变化；已有保存、导出和只读投影继续读取 `textFont`。
+
 ## 未发布 — 2026-10-28：抓手点击后固定位置并显示菜单
 
 **Severity**: minor（新增可选持久浮层能力；发布版本由用户决定）
@@ -24,6 +39,49 @@
 
 **Migration Recipe**: 现有调用方无需改动，默认悬停行为不变。自定义模板浮层需要此行为时
 显式调用 `trigger.openOverlay(true)`；通过既有 `closePanel()` 可主动结束。
+
+**Deprecations**: 无。
+
+## 未发布 — 2026-10-28：统一放宽原生对象尺寸范围
+
+**Severity**: minor（尺寸行为放宽；发布版本由用户决定）
+
+**What changed / Why**: 形状、文本框、艺术字的最小框体从 48×32 放宽为 8×8，
+文本框最大宽高从 2000 提高到 20000，与形状、艺术字既有持久化上限一致。
+归一化、单体拖拽、组合边界、文字自适应、快照和 HTML/Markdown/只读投影共享范围，避免松手或重开后回弹。
+整组手动缩放时暂停成员自适应测量，提交后将自适应成员改为固定宽高，避免测量回写打断预览或覆盖缩放结果。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`。
+
+**Behavior Changes**: `normalizeBlockObjectFormat()` 对三类对象统一限制宽高为 8–20000；
+`preserveResizeAspectRatio()` 在边界保持宽高比。组内任一原生对象达到 20000 时停止放大并提示。
+艺术字缩放的尺寸、位置和字号进入默认可撤销事务。流式正文宽度、锁定、图片、人员卡、
+内容区域及共享手柄默认计算器的原有约束不变。
+组合实际改变尺寸时，成员 `textAutoFit: 'resize-shape'` 与尺寸一起切换为 `'none'` 并清除 `textFit`；
+界面提示转换结果，单次撤销恢复模式与尺寸。取消拖拽、无尺寸变化、仅移动或创建组合保留原模式。
+
+**Migration Recipe**: 无数据格式变化或 API 签名变化；现有合法尺寸不变。
+宿主自行提供的三类对象尺寸输入校验应允许 8–20000，并继续应用其布局宽度约束。
+小尺寸框体可能裁切文字；单体编辑的自适应策略不变，整组手动缩放后可在文字设置中重新开启自适应。
+
+## 未发布 — 2026-10-28：组合缩放边界与禁用提示
+
+**Severity**: minor（新增可选手柄输入；发布版本由用户决定）
+
+**What changed / Why**: 组合拖拽遇到成员尺寸限制时精确停在边界，避免快速拖动时保持旧尺寸。
+组内锁定状态同步到手柄禁用状态和解锁提示，消除手柄看似可用却无响应的情况。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`。
+
+**New APIs**: `ShapeResizerComponent.resizeDisabledReason: string`，可选，缺省 `''`。
+非空时禁用八个尺寸抓手、暴露无障碍原因并取消活动尺寸预览；旋转和移动策略不变。
+
+**Behavior Changes**: 组合抓手按成员原有限制截断缩放，保留比例、固定锚点和一次 Undo。
+尺寸/正文宽度到界时提示原因，持续顶住同一边界时去重，退回有效范围后再次到界或新手势会重新提示；锁定成员或子内容时抓手变灰并提供 Tooltip。
+解锁自动恢复，拖拽中锁定取消预览。直接几何 API 仍拒绝越界请求，无数据格式变更。
+
+**Migration Recipe**: 现有调用方无需改动。自定义对象可绑定 `[resizeDisabledReason]="reason"`，
+并在宿主使用 CSES Tooltip 显示原因；`reason = ''` 恢复默认行为。
 
 **Deprecations**: 无。
 

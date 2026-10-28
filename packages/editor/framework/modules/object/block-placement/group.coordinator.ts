@@ -7,7 +7,7 @@ import {
   type BlockObjectGroupProps,
 } from './types'
 import {BlockPlacementRuntime} from './runtime'
-import {scaleObjectGroupMembers} from './group-resize'
+import {createObjectGroupFontScale, scaleObjectGroupMembers} from './group-resize'
 import {
   type PlacementObjectGeometry,
   resolvePlacementObjectGeometry,
@@ -354,10 +354,13 @@ export class BlockPlacementGroupCoordinator {
     if (objects.some(object => !object)) return false
     const sx = width / oldWidth
     const sy = height / oldHeight
-    const scaled = scaleObjectGroupMembers((objects as PlacementObjectGeometry[]).map(object => ({
+    const resized = width !== oldWidth || height !== oldHeight
+    const members = (objects as PlacementObjectGeometry[]).map(object => ({
       ...object, format: this.doc.schemas.get(object.flavour, false)?.metadata.objectFormat,
-    })), sx, sy)
+    }))
+    const scaled = scaleObjectGroupMembers(members, sx, sy)
     if (!scaled) return false
+    const fonts = createObjectGroupFontScale(members)(sx, sy)
     const updates = scaled.map(object => {
       const memberWidth = object.width
       const memberHeight = object.height
@@ -367,6 +370,8 @@ export class BlockPlacementGroupCoordinator {
           y: object.y,
         }),
       }
+      const font = fonts.get(object.id)
+      if (font) memberPatch['textFont'] = font.textFont
       if (this.doc.objectSizing.getCapability(object.flavour)) {
         const size = deriveObjectSizeFromPixels(memberWidth, memberHeight, width, true)
         if (!size) return null
@@ -374,7 +379,12 @@ export class BlockPlacementGroupCoordinator {
       } else {
         Object.assign(memberPatch, {width: roundPlacementGeometry(memberWidth), height: roundPlacementGeometry(memberHeight)})
       }
-      if (object.props['textAutoFit'] === 'resize-shape') memberPatch['textFit'] = null
+      // A manual composition resize owns both frame axes. Otherwise a new
+      // content measurement immediately overwrites the authored group size.
+      if (resized && object.props['textAutoFit'] === 'resize-shape') {
+        memberPatch['textAutoFit'] = 'none'
+        memberPatch['textFit'] = null
+      }
       if (object.flavour === 'image' && Math.abs(sx - sy) > .0001) memberPatch['fit'] = 'fill'
       return {id: object.id, patch: memberPatch}
     })

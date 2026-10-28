@@ -1,4 +1,6 @@
 import {compactShapeGeometryOverride} from './shape-geometry-storage'
+import {calculateFormattedObjectResize} from './shape-resize'
+import {registerObjectResizePreview} from '../../framework/modules/object/object-resize-preview'
 import {storeBlockPosition} from '../../framework/modules/object/block-placement/state'
 import {ORIGIN_NO_RECORD} from '../../framework/doc/origins'
 import {
@@ -199,6 +201,7 @@ const shapeRotationTransform = (rotation: unknown): string => {
           [target]="shapeShell"
           [maxWidthContainer]="placementContainer"
           [maxWidthResolver]="objectMaxWidthResolver"
+          [resizeCalculator]="resizeCalculator"
           [rotation]="shapeProps.rotation"
           [borderDraggable]="true"
           (resizeCommit)="onResizeCommit($event)"
@@ -305,6 +308,7 @@ const shapeRotationTransform = (rotation: unknown): string => {
   `],
 })
 export class ShapeBlockComponent extends BaseBlockComponent<ShapeBlockModel> {
+  protected readonly resizeCalculator = calculateFormattedObjectResize
   protected readonly resolveObjectTextFontFamily = resolveObjectTextFontFamily
   private readonly _ngZone = inject(NgZone)
 
@@ -319,6 +323,7 @@ export class ShapeBlockComponent extends BaseBlockComponent<ShapeBlockModel> {
   private _autoFitObserver?: MutationObserver
   private _autoFitResizeObserver?: ResizeObserver
   private _autoFitFrame: number | null = null
+  private _groupResizePaused = false
 
   override ngAfterViewInit(): void {
     super.ngAfterViewInit()
@@ -342,10 +347,19 @@ export class ShapeBlockComponent extends BaseBlockComponent<ShapeBlockModel> {
       }
     })
     const propsSubscription = this.onPropsChange.subscribe(() => this._scheduleAutoFit())
+    const unregisterPreview = registerObjectResizePreview(this, paused => {
+      this._groupResizePaused = paused
+      if (paused && this._autoFitFrame !== null) {
+        ownerWindow.cancelAnimationFrame(this._autoFitFrame)
+        this._autoFitFrame = null
+      }
+      if (!paused) this._scheduleAutoFit()
+    })
     const reattachSubscription = this.onReattach$.subscribe(() => this._scheduleAutoFit())
     const schedule = () => this._scheduleAutoFit()
     content.ownerDocument.fonts.addEventListener('loadingdone', schedule)
     this.onDestroy$.subscribe(() => {
+      unregisterPreview()
       this._autoFitObserver?.disconnect()
       this._autoFitObserver = undefined
       this._autoFitResizeObserver?.disconnect()
@@ -579,7 +593,7 @@ export class ShapeBlockComponent extends BaseBlockComponent<ShapeBlockModel> {
   }
 
   private _scheduleAutoFit(): void {
-    if (this._autoFitFrame !== null || this.isReadonly ||
+    if (this._autoFitFrame !== null || this._groupResizePaused || this.isReadonly ||
       this.shapeFormat.textFrame!.autoFit !== 'resize-shape') return
     const content = this._shapeTextFrame?.nativeElement
     const ownerWindow = content?.ownerDocument.defaultView
@@ -587,7 +601,7 @@ export class ShapeBlockComponent extends BaseBlockComponent<ShapeBlockModel> {
     this._ngZone.runOutsideAngular(() => this._autoFitFrame = ownerWindow.requestAnimationFrame(() => {
       this._autoFitFrame = null
       const frame = this.shapeFormat.textFrame!
-      if (this.isReadonly || !content.isConnected || !content.getClientRects().length ||
+      if (this._groupResizePaused || this.isReadonly || !content.isConnected || !content.getClientRects().length ||
         this.definition.supportsText === false || frame.autoFit !== 'resize-shape' ||
         !['horizontal', 'vertical-rl'].includes(frame.direction)) return
       const vertical = frame.direction === 'vertical-rl'

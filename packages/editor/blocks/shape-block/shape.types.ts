@@ -378,8 +378,8 @@ export function normalizeShapeProps(
   return {
     ...props,
     shapeType: objectFormat.shapeType as ShapeKind,
-    width: Math.max(48, objectFormat.width),
-    height: Math.max(32, objectFormat.height),
+    width: objectFormat.width,
+    height: objectFormat.height,
     rotation: objectFormat.rotation,
     lockAspectRatio: objectFormat.lockAspectRatio,
     shapeFill: fill,

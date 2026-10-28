@@ -306,8 +306,8 @@ export function normalizeWordArtProps(
   return {
     ...value,
     depth: 0,
-    width: Math.max(48, objectFormat.width),
-    height: Math.max(32, fitted?.size ?? objectFormat.height),
+    width: objectFormat.width,
+    height: fitted?.size ?? objectFormat.height,
     rotation: objectFormat.rotation,
     lockAspectRatio: objectFormat.lockAspectRatio,
     textFrame: frame,
@@ -373,7 +373,7 @@ export function normalizeWordArtSnapshotProps(
   return {
     depth: 0,
     ...storeBlockObjectFormat({...normalized,
-      width: Math.max(48, authored.width), height: Math.max(32, authored.height),
+      width: authored.width, height: authored.height,
     }, WORD_ART_OBJECT_FORMAT_CAPABILITY, options),
     ...(fitted ? {textFit: fitted.size} : {}),
     ...(normalized.position ? {position: normalized.position} : {}),

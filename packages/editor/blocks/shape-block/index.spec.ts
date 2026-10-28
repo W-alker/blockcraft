@@ -46,7 +46,7 @@ describe('Shape block domain', () => {
         ...ShapeBlockSchema.createSnapshot().props,
         height: -1,
       },
-    } as any)).toBe(32)
+    } as any)).toBe(8)
   })
 
   it('renders a theme-colored SVG icon from the shape geometry path', async () => {
@@ -374,7 +374,7 @@ describe('Shape block domain', () => {
     const normalized = normalizeShapeProps(input)
 
     expect(normalized.shapeType).toBe('rectangle')
-    expect(normalized.width).toBe(48)
+    expect(normalized.width).toBe(8)
     expect(normalized.height).toBe(100)
     expect(normalized.rotation).toBe(270)
     expect(normalized.fillColor).toBe('#93C5FD')

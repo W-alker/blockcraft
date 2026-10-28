@@ -1,4 +1,5 @@
 import {resolveTextFit} from '../../framework/block-std/block/object-format/text-fit'
+import {normalizeFormattedObjectSize} from '../../framework/block-std/block/object-format/geometry-limits'
 import {encodeCssPicture} from '../../framework/block-std/block/object-format/object-picture'
 import {parseBlockPosition, storeBlockPosition} from '../../framework/modules/object/block-placement/state'
 import {
@@ -141,10 +142,6 @@ export const DEFAULT_VERTICAL_TEXT_BOX_SIZE = {
   height: DEFAULT_TEXT_BOX_PROPS.width,
 } as const
 
-const MIN_WIDTH = 48
-const MIN_HEIGHT = 32
-const MAX_DIMENSION = 2_000
-
 export function normalizeTextBoxProps(
   value: Readonly<Partial<TextBoxBlockProps>> | null | undefined,
 ): NormalizedTextBoxBlockProps {
@@ -162,8 +159,8 @@ export function normalizeTextBoxProps(
   const adjustments = normalizeShapeAdjustments(input?.['adjustments'])
 
   return {
-    width: boundedDimension(fitted?.axis === 'width' ? fitted.size : objectFormat.width, DEFAULT_TEXT_BOX_PROPS.width, MIN_WIDTH),
-    height: boundedDimension(fitted?.axis === 'height' ? fitted.size : objectFormat.height, DEFAULT_TEXT_BOX_PROPS.height, MIN_HEIGHT),
+    width: fitted?.axis === 'width' ? fitted.size : objectFormat.width,
+    height: fitted?.axis === 'height' ? fitted.size : objectFormat.height,
     rotation: objectFormat.rotation,
     lockAspectRatio: objectFormat.lockAspectRatio,
     shapeType: normalizeTextBoxShape(objectFormat.shapeType),
@@ -201,8 +198,8 @@ export function normalizeTextBoxSnapshotProps(
   const normalized = normalizeTextBoxProps(value)
   const {rotation: _rotation, ...stored} = storeBlockObjectFormat({
     ...normalized,
-    width: boundedDimension(value?.width, DEFAULT_TEXT_BOX_PROPS.width, MIN_WIDTH),
-    height: boundedDimension(value?.height, DEFAULT_TEXT_BOX_PROPS.height, MIN_HEIGHT),
+    width: normalizeFormattedObjectSize(value?.width, DEFAULT_TEXT_BOX_PROPS.width),
+    height: normalizeFormattedObjectSize(value?.height, DEFAULT_TEXT_BOX_PROPS.height),
   }, TEXT_BOX_OBJECT_FORMAT_CAPABILITY)
   const rotation = storeTextBoxRotation(normalized.rotation)
   const fitted = resolveTextFit(value, TEXT_BOX_OBJECT_FORMAT_CAPABILITY)
@@ -218,15 +215,6 @@ export function normalizeTextBoxSnapshotProps(
       ? {placementLayer: 'under' as const}
       : {}),
   }
-}
-
-function boundedDimension(
-  value: unknown,
-  fallback: number,
-  minimum: number,
-): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
-  return Math.min(MAX_DIMENSION, Math.max(minimum, value))
 }
 
 function paintColor(paint: ObjectPaint): string {

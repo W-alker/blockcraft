@@ -45,6 +45,10 @@ describe('text object fitted size persistence', () => {
     expect(resolveTextFit(props, {...TEXT_BOX_OBJECT_FORMAT_CAPABILITY, kind: 'shape'})).toBeNull()
     for (const textFit of [NaN, Infinity, -5, 0])
       expect(resolveTextFit({...props, textFit}, TEXT_BOX_OBJECT_FORMAT_CAPABILITY)).toBeNull()
-    expect(resolveTextFit({...props, textFit: 3000}, TEXT_BOX_OBJECT_FORMAT_CAPABILITY)?.size).toBe(2000)
+    expect(resolveTextFit({...props, textFit: 3000}, TEXT_BOX_OBJECT_FORMAT_CAPABILITY)?.size).toBe(3000)
+    for (const capability of [TEXT_BOX_OBJECT_FORMAT_CAPABILITY, WORD_ART_OBJECT_FORMAT_CAPABILITY]) {
+      expect(resolveTextFit({...props, textFit: 1}, capability)?.size).toBe(8)
+      expect(resolveTextFit({...props, textFit: 30000}, capability)?.size).toBe(20000)
+    }
   })
 })

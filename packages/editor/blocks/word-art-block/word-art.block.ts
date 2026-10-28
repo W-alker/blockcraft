@@ -1,4 +1,5 @@
 import {NgStyle} from '@angular/common'
+import {MIN_FORMATTED_OBJECT_SIZE, MAX_FORMATTED_OBJECT_SIZE} from '../../framework/block-std/block/object-format/geometry-limits'
 import {wordArtTextLayout} from './word-art-text-layout'
 import {storeBlockPosition} from '../../framework/modules/object/block-placement/state'
 import {
@@ -171,7 +172,7 @@ export class WordArtBlockComponent extends EditableBlockComponent<WordArtBlockMo
         const props = this.wordArtProps
         if (props.textFrame.autoFit !== 'resize-shape' || this.isNonlinear ||
           props.textFrame.direction !== 'horizontal') return null
-        return {axis: 'height', size: props.height, min: 32, max: 20000, inset: 0, padding: 0}
+        return {axis: 'height', size: props.height, min: MIN_FORMATTED_OBJECT_SIZE, max: MAX_FORMATTED_OBJECT_SIZE, inset: 0, padding: 0}
       })
       fromEvent(this.containerElement, 'scroll', {passive: true})
         .pipe(takeUntil(this.onDestroy$))
@@ -344,7 +345,7 @@ export class WordArtBlockComponent extends EditableBlockComponent<WordArtBlockMo
           ).textFont ?? null,
         })
       }
-    }, this)
+    })
     const surface = this._surface?.nativeElement
     if (surface) {
       surface.style.transform = rotationTransform(current.rotation)

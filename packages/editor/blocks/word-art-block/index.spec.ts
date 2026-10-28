@@ -417,7 +417,7 @@ describe("Word art block domain", () => {
     };
     const normalized = normalizeWordArtProps(input);
 
-    expect(normalized.width).toBe(48);
+    expect(normalized.width).toBe(8);
     expect(normalized.height).toBe(96);
     expect(normalized.rotation).toBe(345);
     expect(normalized.fontFamily).toBe("display-sans");

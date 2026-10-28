@@ -1,4 +1,6 @@
 import {storeBlockPosition} from '../../framework/modules/object/block-placement/state'
+import {calculateFormattedObjectResize} from '../shape-block/shape-resize'
+import {MIN_FORMATTED_OBJECT_SIZE, MAX_FORMATTED_OBJECT_SIZE} from '../../framework/block-std/block/object-format/geometry-limits'
 import {TextContentAutoFit} from '../../framework/modules/object/text-content-auto-fit'
 import {
   ChangeDetectionStrategy,
@@ -213,6 +215,7 @@ const rotationTransform = (rotation: number): string =>
           [target]="textBoxSurface"
           [maxWidthContainer]="placementContainer"
           [maxWidthResolver]="objectMaxWidthResolver"
+          [resizeCalculator]="resizeCalculator"
           [rotation]="textBoxProps.rotation"
           [borderDraggable]="true"
           rotationLabel="旋转文本框"
@@ -254,6 +257,7 @@ const rotationTransform = (rotation: number): string =>
   },
 })
 export class TextBoxBlockComponent extends BaseBlockComponent<TextBoxBlockModel> {
+  protected readonly resizeCalculator = calculateFormattedObjectResize
   private readonly _ngZone = inject(NgZone)
 
   @ViewChild('textBoxSurface', {read: ElementRef})
@@ -276,7 +280,7 @@ export class TextBoxBlockComponent extends BaseBlockComponent<TextBoxBlockModel>
         const vertical = frame.direction === 'vertical-rl'
         const axis = vertical ? 'width' : 'height'
         return {
-          axis, size: props[axis], min: vertical ? 48 : 32, max: 2000,
+          axis, size: props[axis], min: MIN_FORMATTED_OBJECT_SIZE, max: MAX_FORMATTED_OBJECT_SIZE,
           inset: (parseFloat(this._shapeInset(vertical ? 'left' : 'top')) +
             parseFloat(this._shapeInset(vertical ? 'right' : 'bottom'))) / 100,
           padding: vertical ? frame.margins[1] + frame.margins[3]

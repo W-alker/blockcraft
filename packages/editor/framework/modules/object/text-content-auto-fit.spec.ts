@@ -1,6 +1,7 @@
 import {Subject} from 'rxjs'
 import {ORIGIN_NO_RECORD} from '../../doc/origins'
 import {TextContentAutoFit} from './text-content-auto-fit'
+import {pauseObjectResizePreview} from './object-resize-preview'
 
 describe('TextContentAutoFit document batches', () => {
   const instances: Array<{helper: TextContentAutoFit; surface: HTMLElement; block: any}> = []
@@ -141,6 +142,30 @@ describe('TextContentAutoFit document batches', () => {
     frame()
     expect(doc.placement.updateObjectGeometry).not.toHaveBeenCalled()
     expect(doc.crud.transact).not.toHaveBeenCalled()
+  })
+
+  it('suspends measurements throughout nested group previews without overriding a standalone pause', () => {
+    const object = makeObject()
+    const resume = pauseObjectResizePreview(object.block)
+    const resumeNested = pauseObjectResizePreview(object.block)
+    object.child.style.height = '90px'
+    object.helper.schedule()
+    frame()
+    expect(object.doc.placement.updateObjectGeometry).not.toHaveBeenCalled()
+    resume()
+    object.helper.setPaused(true)
+    resumeNested()
+    resumeNested()
+    object.helper.schedule()
+    frame()
+    expect(object.doc.placement.updateObjectGeometry).not.toHaveBeenCalled()
+    object.helper.setPaused(false)
+    frame()
+    expect(object.block.size).toBe(90)
+    const resumeAfterDestroy = pauseObjectResizePreview(object.block)
+    object.block.onDestroy$.next()
+    resumeAfterDestroy()
+    expect(callbacks.size).toBe(0)
   })
 
   it('restores all styles if a measurement throws and does not publish partial sizes', () => {

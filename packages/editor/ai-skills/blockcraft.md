@@ -128,6 +128,8 @@ Schema 的 `objectDrag` 和视图区域标记见 `blockcraft-plugins-block.md`�
 组合缩放时，日期和天气块保持原宽高比，按两条轴中较小的倍率等比绘制；
 文本框继续原生重排。日期、天气组件的只读 `contentScale` 返回当前模型推导的内容倍率，
 供预览恢复使用；它不是持久化字段。具体规则见 `blockcraft-block.md` 的 Fixed Object Groups。
+组合四角等比缩放同步艺术字字号，四边调整保留字号；文字、路径预览与持久化共享缩放规则，
+尺寸和字号共同撤销。普通文本框字号保持不变。
 
 ## Core Concepts
 
@@ -785,6 +787,12 @@ is a fixed-pixel object whose direct children always use local absolute
 coordinates. The group as one atomic object can switch between top-bottom flow
 and root under/over placement; individual members still cannot switch to
 relative/inline layout until the group is dissolved.
+整组缩放遇到成员尺寸限制时停在精确边界并提示；组内锁定内容会同步禁用八个抓手，
+悬停说明解锁要求，拖拽中锁定会取消预览。参见 `blockcraft-block.md` 的组合缩放说明。
+整组手动缩放暂停成员自适应测量，实际提交后将自适应成员改为固定尺寸并提示；
+取消保留原模式，单次撤销同时恢复尺寸和自适应模式。
+形状、文本框、艺术字的宽高范围统一为 8–20000px，覆盖独立/组合缩放、保存重开与导出；
+文本自适应沿用相同范围，图片、人员卡和内容区域维持各自规则。
 In paginated live/print views, a direct-root top-bottom `object-group`,
 `text-box`, `word-art` or `shape` is CSS-capped to
 `--bc-page-content-height`, with interaction chrome allowed to overflow. Local

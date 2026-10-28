@@ -767,8 +767,8 @@ describe("TextBoxBlockSchema", () => {
         p: [8, 16, 8, 16],
         bgi: "url(\"/assets/paper.png\") 50% 50% / contain no-repeat",
 
-        width: 48,
-        height: 2_000,
+        width: 8,
+        height: 4_000,
         rotation: 345,
         backColor: "transparent",
         borderColor: "#334155",

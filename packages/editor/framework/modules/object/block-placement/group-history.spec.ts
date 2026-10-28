@@ -1,6 +1,8 @@
 import * as Y from 'yjs'
 import {Subject} from 'rxjs'
 import {BlockPlacementGroupCoordinator} from './group.coordinator'
+import {TEXT_BOX_OBJECT_FORMAT_CAPABILITY} from '../../../../blocks/text-box-block/text-box.types'
+import {WORD_ART_OBJECT_FORMAT_CAPABILITY} from '../../../../blocks/word-art-block/word-art.types'
 
 describe('Group geometry history', () => {
   function setup(flavour = 'text-box', grouped = true) {
@@ -25,7 +27,10 @@ describe('Group geometry history', () => {
         getParentId: () => grouped ? 'group' : 'layout',
         getFlavour: (id: string) => id === 'member' ? flavour : 'shape',
       },
-      schemas: {get: () => ({metadata: {placement: {modes: ['absolute']}}})},
+      schemas: {get: (kind: string) => ({metadata: {placement: {modes: ['absolute']},
+        ...(kind === 'text-box' ? {objectFormat: TEXT_BOX_OBJECT_FORMAT_CAPABILITY} : {}),
+        ...(kind === 'word-art' ? {objectFormat: WORD_ART_OBJECT_FORMAT_CAPABILITY} : {}),
+      }})},
       objectSizing: {rootContentWidth: 800, getCapability: () => null},
       crud: {
         getYBlock: (id: string) => ({get: () => props.get(id)}),
@@ -94,6 +99,69 @@ describe('Group geometry history', () => {
     expect(h.props.toJSON()).toEqual(before)
     h.history.redo()
     expect(h.props.toJSON()).toEqual(after)
+    h.coordinator.destroy()
+    h.yDoc.destroy()
+  })
+
+  it('commits a WordArt font, geometry and fixed mode together and restores all of them in one undo', () => {
+    const h = setup('word-art')
+    h.yDoc.transact(() => {
+      h.props.get('member')!.set('textFont', '40px 700 italic')
+      h.props.get('member')!.set('textAutoFit', 'resize-shape')
+      h.props.get('member')!.set('textFit', 100)
+    }, 'remote')
+    const before = h.props.toJSON()
+    const group: any = {id: 'group', changeDetectorRef: {markForCheck() {}}}
+    expect(h.coordinator.updateObjectGeometry(group, {width: 540, height: 270})).toBeTrue()
+    const after = h.props.toJSON()
+    expect(after['member'].textFont).toBe('60px 700 italic')
+    expect(after['member'].textAutoFit).toBe('none')
+    expect(after['member'].width).toBe(360)
+    expect(after['sibling'].textFont).toBeUndefined()
+    expect(h.history.undoStack.length).toBe(1)
+    h.history.undo()
+    expect(h.props.toJSON()).toEqual(before)
+    h.history.redo()
+    expect(h.props.toJSON()).toEqual(after)
+    h.coordinator.destroy()
+    h.yDoc.destroy()
+  })
+
+  it('freezes the measured member frame with group geometry in one undo, including very small resizes', () => {
+    const h = setup()
+    h.yDoc.transact(() => {
+      h.props.get('member')!.set('textAutoFit', 'resize-shape')
+      h.props.get('member')!.set('textFit', 140)
+    }, 'remote')
+    const before = h.props.toJSON()
+    const group: any = {id: 'group', changeDetectorRef: {markForCheck() {}}}
+    expect(h.coordinator.updateObjectGeometry(group, {width: 360.02, height: 180})).toBeTrue()
+    const after = h.props.toJSON()
+    expect(after['member'].textAutoFit).toBe('none')
+    expect(after['member'].textFit).toBeNull()
+    expect(after['member'].height).toBe(140)
+    expect(h.history.undoStack.length).toBe(1)
+    h.history.undo()
+    expect(h.props.toJSON()).toEqual(before)
+    h.history.redo()
+    expect(h.props.toJSON()).toEqual(after)
+    h.coordinator.destroy()
+    h.yDoc.destroy()
+  })
+
+  it('preserves auto-fit on no-op geometry updates and rejected locked resizes', () => {
+    const h = setup()
+    h.yDoc.transact(() => {
+      h.props.get('member')!.set('textAutoFit', 'resize-shape')
+      h.props.get('member')!.set('textFit', 100)
+    }, 'remote')
+    const group: any = {id: 'group', changeDetectorRef: {markForCheck() {}}}
+    expect(h.coordinator.updateObjectGeometry(group, {width: 360, height: 180})).toBeTrue()
+    expect(h.props.get('member')!.get('textAutoFit')).toBe('resize-shape')
+    expect(h.props.get('member')!.get('textFit')).toBe(100)
+    h.readonlyIds.add('member')
+    expect(h.coordinator.updateObjectGeometry(group, {width: 540, height: 270})).toBeFalse()
+    expect(h.props.get('member')!.get('textAutoFit')).toBe('resize-shape')
     h.coordinator.destroy()
     h.yDoc.destroy()
   })

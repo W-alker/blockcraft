@@ -1,5 +1,6 @@
 import type {Subscription} from 'rxjs'
 import {ORIGIN_NO_RECORD} from '../../doc/origins'
+import {registerObjectResizePreview} from './object-resize-preview'
 
 type FitLayout = {
   axis: 'width' | 'height'
@@ -32,6 +33,8 @@ export class TextContentAutoFit {
   private readonly batch: FitBatch
   private destroyed = false
   private paused = false
+  private groupPaused = false
+  private readonly unregisterPreview: () => void
   private detached = false
   private observing = false
   private readonly inlineSizes = new WeakMap<Element, number>()
@@ -86,6 +89,12 @@ export class TextContentAutoFit {
       this.syncObservation()
       this.schedule()
     }))
+    this.unregisterPreview = registerObjectResizePreview(block, paused => {
+      this.groupPaused = paused
+      this.syncObservation()
+      if (paused) this.cancel()
+      else this.schedule()
+    })
     this.syncObservation()
     void this.fonts.ready.then(this.schedule)
     block.onDestroy$.subscribe(() => this.destroy())
@@ -100,7 +109,7 @@ export class TextContentAutoFit {
   }
 
   readonly schedule = (): void => {
-    if (this.destroyed || this.detached || this.paused || this.block.isReadonly || !this.layout()) return
+    if (this.destroyed || this.detached || this.paused || this.groupPaused || this.block.isReadonly || !this.layout()) return
     this.batch.pending.add(this)
     if (this.batch.frame !== null) return
     this.block.doc.ngZone.runOutsideAngular(() => {
@@ -119,7 +128,7 @@ export class TextContentAutoFit {
   }
 
   private syncObservation(): void {
-    const enabled = !this.detached && !this.paused && !!this.layout()
+    const enabled = !this.detached && !this.paused && !this.groupPaused && !!this.layout()
     if (enabled === this.observing) return
     this.observing = enabled
     if (enabled) {
@@ -144,7 +153,7 @@ export class TextContentAutoFit {
   }
 
   private capture(): FitMeasurement | null {
-    if (this.destroyed || this.detached || this.paused || this.block.isReadonly || !this.surface.isConnected) return null
+    if (this.destroyed || this.detached || this.paused || this.groupPaused || this.block.isReadonly || !this.surface.isConnected) return null
     const layout = this.layout()
     if (!layout || this.surface.getClientRects().length === 0) return null
     return {target: this, layout, style: this.content.getAttribute('style'),
@@ -210,6 +219,7 @@ export class TextContentAutoFit {
 
   private destroy(): void {
     this.destroyed = true
+    this.unregisterPreview()
     this.mutation.disconnect()
     this.resize?.disconnect()
     this.props.unsubscribe()

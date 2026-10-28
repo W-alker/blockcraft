@@ -1,4 +1,5 @@
 import {decodeCssPicture, encodeCssPicture} from './object-picture'
+import {normalizeFormattedObjectSize} from './geometry-limits'
 import {decodeObjectGradient, encodeObjectGradient} from './object-gradient'
 import {quantizeObjectFormatNumber} from './object-format-number'
 import type {IBlockProps} from '@ccc/blockcraft/framework/model'
@@ -763,8 +764,8 @@ export function normalizeBlockObjectFormat(
   capability: Readonly<BlockObjectFormatCapability>,
 ): NormalizedBlockObjectFormat {
   const defaults = capability.defaults
-  const width = bounded(props?.width, defaults.width, 1, 20_000)
-  const height = bounded(props?.height, defaults.height, 1, 20_000)
+  const width = normalizeFormattedObjectSize(props?.width, defaults.width)
+  const height = normalizeFormattedObjectSize(props?.height, defaults.height)
   const rotation = normalizeRotation(props?.rotation, defaults.rotation)
   const shapeType = capability.features.shape
     ? normalizeShapeType(props?.shape, capability, defaults.shapeType)

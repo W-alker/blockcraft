@@ -8,6 +8,7 @@ import {
   Output,
 } from '@angular/core'
 import {normalizeShapeRotation} from './shape.types'
+import {MIN_FORMATTED_OBJECT_SIZE, MAX_FORMATTED_OBJECT_SIZE} from '../../framework/block-std/block/object-format/geometry-limits'
 
 export type ShapeResizeHandle =
   | 'north-west'
@@ -52,8 +53,11 @@ export function preserveResizeAspectRatio(
   } else if (vertical) {
     width = height * ratio
   }
-  width = Math.max(48, width)
-  height = Math.max(32, height)
+  // Clamp a single scale so a locked ratio survives both size boundaries.
+  const scale = Math.min(MAX_FORMATTED_OBJECT_SIZE / Math.max(currentWidth, currentHeight),
+    Math.max(MIN_FORMATTED_OBJECT_SIZE / Math.min(currentWidth, currentHeight), width / currentWidth))
+  width = currentWidth * scale
+  height = currentHeight * scale
   const offsetX = event.handle.includes('west')
     ? currentWidth - width
     : vertical && !horizontal ? (currentWidth - width) / 2 : event.offsetX
@@ -168,6 +172,8 @@ export function calculateShapeResize(
           class="shape-resizer__handle"
           [attr.data-handle]="handle"
           [attr.aria-label]="handle"
+          [disabled]="!!resizeDisabledReason"
+          [attr.aria-description]="resizeDisabledReason || null"
           contenteditable="false"
           (pointerdown)="onPointerDown($event, handle)"
         ></button>
@@ -331,6 +337,11 @@ export function calculateShapeResize(
       .shape-resizer__rotate:active {
         cursor: grabbing;
       }
+
+      .shape-resizer__handle:disabled {
+        opacity: .45;
+        cursor: not-allowed;
+      }
     `,
   ],
 })
@@ -349,6 +360,13 @@ export class ShapeResizerComponent implements OnDestroy {
   @Input() rotationLabel = '旋转形状'
   @Input() borderDraggable = false
   @Input() resizeCalculator: ShapeResizeCalculator = calculateShapeResize
+  private _resizeDisabledReason = ''
+  /** Only disables resizing; rotation and border dragging retain their own policy. */
+  @Input() set resizeDisabledReason(reason: string) {
+    this._resizeDisabledReason = reason
+    if (reason && this._activeGesture?.kind === 'resize') this._cancel(false)
+  }
+  get resizeDisabledReason(): string { return this._resizeDisabledReason }
   /** 可选的无单位内容倍率 CSS 变量；只随角手柄缩放，边手柄保持原值。 */
   @Input() scaleVariable: string | null = null
   @Output() resizeStart = new EventEmitter<ShapeResizeHandle>()
@@ -406,6 +424,11 @@ export class ShapeResizerComponent implements OnDestroy {
   constructor(private readonly ngZone: NgZone) {}
 
   onPointerDown(event: PointerEvent, handle: ShapeResizeHandle): void {
+    if (this.resizeDisabledReason) {
+      event.preventDefault()
+      event.stopPropagation()
+      return
+    }
     this._beginGesture(event, {kind: 'resize', handle})
   }
 
@@ -488,6 +511,8 @@ export class ShapeResizerComponent implements OnDestroy {
     const handleElement = event.currentTarget as HTMLElement
     handleElement.setPointerCapture?.(event.pointerId)
     if (gesture.kind === 'resize') this.resizeStart.emit(gesture.handle)
+    // A resizeStart subscriber may synchronously disable/cancel this gesture.
+    if (this._activePointerId === null) return
 
     this.ngZone.runOutsideAngular(() => {
       window.addEventListener('pointermove', this._onPointerMove, true)
