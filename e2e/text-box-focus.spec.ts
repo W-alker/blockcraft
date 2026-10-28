@@ -361,6 +361,29 @@ test('text-box keeps native focus, visible select-all, and layout-owned scope', 
   await expect(paragraph).toHaveClass(/\bfocused\b/)
   await expect(textBox.locator('shape-resizer')).toBeHidden()
 
+  // 流式文本框沿用正文全选阶梯：当前段落 → 框内全部内容 → 文档。
+  await page.keyboard.press(
+    process.platform === 'darwin' ? 'Meta+A' : 'Control+A',
+  )
+  await expect.poll(() => page.evaluate(selector => {
+    const editor = document.querySelector(selector)!
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    const selection = debug.getComponent(editor).doc.selection.value
+    return {
+      commonParent: selection?.commonParent ?? null,
+      startType: selection?.start?.type ?? null,
+      endType: selection?.end?.type ?? null,
+      nativeText: (document.getSelection()?.toString() ?? '').replace(/[\u200b\u200c]/g, ''),
+    }
+  }, editorSelector)).toEqual({
+    commonParent: inserted.paragraphId,
+    startType: 'text',
+    endType: 'text',
+    nativeText: '第二段',
+  })
+
   await page.keyboard.press(
     process.platform === 'darwin' ? 'Meta+A' : 'Control+A',
   )
@@ -388,7 +411,7 @@ test('text-box keeps native focus, visible select-all, and layout-owned scope', 
     return {
       type: selection?.type ?? null,
       collapsed: selection?.isCollapsed ?? null,
-      text: (selection?.toString() ?? '').replaceAll('\u200b', ''),
+      text: (selection?.toString() ?? '').replace(/[\u200b\u200c]/g, ''),
       startNodeType: range?.startContainer.nodeType ?? null,
       endNodeType: range?.endContainer.nodeType ?? null,
       rectCount: range?.getClientRects().length ?? 0,
@@ -408,12 +431,13 @@ test('text-box keeps native focus, visible select-all, and layout-owned scope', 
   expect(nativeSelection.rectCount).toBeGreaterThan(0)
   expect(nativeSelection.selectionBackground).not.toBe('rgba(0, 0, 0, 0)')
   await expect(
-    textBox.locator('[data-block-id].selected, [data-block-id].focused'),
+    textBox.locator('[data-block-id].selected'),
   ).toHaveCount(0)
   await expect(textBox).not.toHaveClass(/\bselected\b/)
   await expect(textBox).not.toHaveClass(/\bfocused\b/)
   await expect(page.locator('[data-bc-object-format-toolbar]')).toBeHidden()
-  await expect(textBox).toHaveClass(/\btext-box-block--editing\b/)
+  await expect(textBox.locator('shape-resizer')).toBeHidden()
+  await expect(content).toBeFocused()
 
   // A normal-flow container remains part of the document select-all ladder.
   await page.keyboard.press(

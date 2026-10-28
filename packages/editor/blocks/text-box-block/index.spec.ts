@@ -699,8 +699,9 @@ describe("TextBoxBlockSchema", () => {
       expect(
         objectHandle?.hasAttribute("data-bc-selection-interaction-ignore"),
       ).toBeTrue();
+      // 移动按钮由 ObjectDragPlugin 拾取，使用专用手柄标记。
       expect(
-        objectHandle?.hasAttribute("data-bc-placement-pick-ignore"),
+        objectHandle?.hasAttribute("data-bc-object-drag-handle"),
       ).toBeTrue();
       const frameHitTarget = fixture.nativeElement.querySelector(
         ".text-box-block__frame-hit-target",
