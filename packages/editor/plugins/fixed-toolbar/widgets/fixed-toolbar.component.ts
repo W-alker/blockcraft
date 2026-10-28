@@ -987,6 +987,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
       ><div
         csMenu
         aria-label="插入内容"
+        (mousedown)="onToolbarMouseDown($event)"
         (csClick)="onMenuAction($event, insertMoreTrigger)"
       >
         <div
@@ -1162,6 +1163,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string; title: string }
         csMenu
         class="responsive-more-menu"
         aria-label="更多格式"
+        (mousedown)="onToolbarMouseDown($event)"
         (csClick)="onMenuAction($event, responsiveMoreTrigger)"
       >
         <div

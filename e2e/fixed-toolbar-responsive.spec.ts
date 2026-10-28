@@ -52,6 +52,41 @@ async function resizeToolbar(page: Page, width: number) {
   return toolbar;
 }
 
+for (const kind of ['insert', 'more'] as const) {
+  test(`${kind} submenu title click preserves selection until its command runs`, async ({page}) => {
+    const id = await start(page);
+    const toolbar = await resizeToolbar(page, 320);
+    const selectedText = await page.evaluate(() => window.getSelection()?.toString());
+    expect(selectedText).toContain('工具栏响应式');
+    const insert = kind === 'insert';
+    await toolbar.getByRole('button', {name: insert ? '插入' : '更多格式', exact: true}).hover();
+    const menu = page.locator(insert ? '[csMenu][aria-label="插入内容"]' : '.responsive-more-menu');
+    const title = menu.getByText(insert ? '表格' : '文字格式', {exact: true});
+    await title.hover();
+    const panel = page.locator('.bc-fixed-toolbar-submenu:visible');
+    await expect(panel).toBeVisible();
+    // A real press can outlast the toolbar's debounced selection refresh.
+    await title.click({delay: 180});
+    await expect(panel).toBeVisible();
+    await expect.poll(() => page.evaluate(() => window.getSelection()?.toString())).toBe(selectedText);
+    if (insert) {
+      await panel.locator('.bc-table-size-picker-row').nth(1).locator('button').nth(1).click();
+      await expect.poll(() => page.locator('block-craft-editor').evaluate((el, id) => {
+        const doc = (window as any).ng.getComponent(el).doc;
+        const siblings = doc.model.getChildrenIds(doc.rootId);
+        return doc.model.getFlavour(siblings[siblings.indexOf(id) + 1]);
+      }, id)).toBe('table');
+    } else {
+      await panel.locator('bc-float-toolbar-item').filter({hasText: '加粗'}).click();
+      await expect.poll(() => page.locator('block-craft-editor').evaluate((el, id) => {
+        const doc = (window as any).ng.getComponent(el).doc;
+        return doc.model.getTextDeltas(id)[0].attributes?.['a:bold'];
+      }, id)).toBe(true);
+    }
+    await expect(menu).toBeHidden();
+  });
+}
+
 test("direct toolbar actions show tooltips on hover and keyboard focus", async ({
   page,
   browserName,
