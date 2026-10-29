@@ -6,11 +6,19 @@ import {
 import {PaginationPlugin} from './pagination.plugin'
 
 describe('PaginationPlugin', () => {
+  const documentSurfaces = new Set<HTMLElement>()
+  afterEach(() => {
+    documentSurfaces.forEach(surface => surface.remove())
+    documentSurfaces.clear()
+  })
+
   function createDoc() {
     const scrollContainer = document.createElement('div')
     const rootHost = document.createElement('div')
     rootHost.setAttribute('data-blockcraft-root', 'true')
     scrollContainer.appendChild(rootHost)
+    document.body.appendChild(scrollContainer)
+    documentSurfaces.add(scrollContainer)
 
     const exportSnapshot = jasmine.createSpy('exportSnapshot').and.returnValue({
       id: 'root',

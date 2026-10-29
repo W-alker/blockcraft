@@ -351,6 +351,190 @@ describe('PaginatedViewController sparse view', () => {
     }
   })
 
+  for (const suspension of ['detached', 'hidden'] as const) {
+    it(`preserves sparse geometry while the document surface is ${suspension}`, () => {
+      const observers = installResizeObserverDelivery()
+      const harness = createWarmWindowHarness([['a', 1090], ['b', 160]], undefined, 'object-group')
+      const frames = installFrameQueue()
+      const scrollContainer = harness.rootHost.parentElement!
+      const host = harness.rootHost.querySelector<HTMLElement>('[data-block-id="a"]')!
+      scrollContainer.style.cssText = 'height:350px;overflow:auto'
+      host.style.height = '1090px'
+      let measuredHeight = 1090
+      Object.defineProperty(host, 'offsetHeight', {get: () => measuredHeight})
+      Object.defineProperty(host, 'scrollHeight', {get: () => measuredHeight})
+      const measure = spyOn((harness.controller as any)._heightSource, 'measure').and.callThrough()
+      const applyMeasured = spyOn(harness.coordinator, 'applyMeasured').and.callThrough()
+      const compute = spyOn(harness.coordinator, 'compute').and.callThrough()
+
+      try {
+        harness.controller.enable()
+        const previousLayout = harness.controller.captureStableLayout()!
+        scrollContainer.scrollTop = 716
+        const previousScrollTop = scrollContainer.scrollTop
+        const previousExtent = harness.projection.extentAt(0)
+        const previousRevision = harness.projection.revision
+        const previousItems = previousLayout.items
+        expect(previousScrollTop).toBeGreaterThan(0)
+        expect(previousExtent).toBeGreaterThan(0)
+        measure.calls.reset()
+        applyMeasured.calls.reset()
+        compute.calls.reset()
+
+        if (suspension === 'detached') scrollContainer.remove()
+        else scrollContainer.style.display = 'none'
+        measuredHeight = 0
+        observers.deliver(host, 0)
+        observers.deliver(scrollContainer, 0)
+        frames.flush()
+
+        expect(measure).not.toHaveBeenCalled()
+        expect(applyMeasured).not.toHaveBeenCalled()
+        expect(compute).not.toHaveBeenCalled()
+        expect(harness.projection.extentAt(0)).toBe(previousExtent)
+        expect(harness.projection.revision).toBe(previousRevision)
+        expect(frames.pendingCount).toBe(0)
+        expect(harness.controller.captureStableLayout()).toBeNull()
+        expect(harness.controller.computePrintItems()).toEqual(previousItems)
+        expect(harness.controller.canReuseStableLayoutForExport).toBeFalse()
+        expect(measure).not.toHaveBeenCalled()
+        expect(harness.onSparseViewFailure).not.toHaveBeenCalled()
+        expect(harness.releaseProjection).not.toHaveBeenCalled()
+
+        measuredHeight = 1090
+        if (suspension === 'detached') document.body.append(scrollContainer)
+        else scrollContainer.style.removeProperty('display')
+        // The route host restores its saved scroll position when it reattaches.
+        scrollContainer.scrollTop = previousScrollTop
+        observers.deliver(scrollContainer, 350)
+        observers.deliver(host, measuredHeight)
+        frames.flush()
+        frames.flush()
+
+        expect(measure).toHaveBeenCalledTimes(1)
+        expect(applyMeasured).toHaveBeenCalledTimes(1)
+        expect(harness.projection.extentAt(0)).toBe(previousExtent)
+        expect(scrollContainer.scrollTop).toBe(previousScrollTop)
+        expect(harness.onSparseViewFailure).not.toHaveBeenCalled()
+        expect(harness.releaseProjection).not.toHaveBeenCalled()
+        expect(frames.pendingCount).toBe(0)
+      } finally {
+        harness.destroy()
+      }
+    })
+  }
+
+  it('keeps hidden structure and font invalidations pending until one measurable pass', () => {
+    const observers = installResizeObserverDelivery()
+    const harness = createWarmWindowHarness()
+    const frames = installFrameQueue()
+    const scrollContainer = harness.rootHost.parentElement!
+    const compute = spyOn(harness.coordinator, 'compute').and.callThrough()
+
+    try {
+      harness.controller.enable()
+      harness.controller.captureStableLayout()
+      const previousRevision = harness.projection.revision
+      scrollContainer.remove()
+      harness.appendRoot('c', 180)
+      harness.structureChange$.next({
+        revision: 1,
+        reachableAddedIds: ['c'],
+        reachableRemovedIds: [],
+        affectedParentIds: ['root'],
+        affectedRootIds: ['a'],
+      })
+      ;(harness.controller as any)._onFontsLoadingDone()
+      frames.flush()
+
+      expect(harness.registrationHooks.isValidationDeferred()).toBeTrue()
+      expect(harness.projection.revision).toBe(previousRevision)
+      expect(harness.projection.blockIds).toEqual(['a', 'b'])
+      expect(harness.controller.canReuseStableLayoutForExport).toBeFalse()
+      expect(frames.pendingCount).toBe(0)
+      compute.calls.reset()
+
+      document.body.append(scrollContainer)
+      observers.deliver(scrollContainer, 350)
+      frames.flush()
+
+      expect(compute).toHaveBeenCalledTimes(1)
+      expect(harness.registrationHooks.isValidationDeferred()).toBeFalse()
+      expect(harness.projection.revision).toBeGreaterThan(previousRevision)
+      expect(harness.projection.blockIds).toEqual(['a', 'b', 'c'])
+      expect(harness.controller.captureShadowLayout()?.entries[0].source).toBe('measured')
+      expect(harness.onSparseViewFailure).not.toHaveBeenCalled()
+      expect(frames.pendingCount).toBe(0)
+    } finally {
+      harness.destroy()
+    }
+  })
+
+  it('accepts a revision-hidden zero-height block on a measurable document surface', () => {
+    const observers = installResizeObserverDelivery()
+    const harness = createWarmWindowHarness([['a', 160]])
+    const frames = installFrameQueue()
+    const host = harness.rootHost.querySelector<HTMLElement>('[data-block-id="a"]')!
+
+    try {
+      harness.controller.enable()
+      harness.controller.captureStableLayout()
+      host.style.display = 'none'
+      host.style.marginBottom = '24px'
+      observers.deliver(host, 0)
+      frames.flush()
+
+      expect(harness.projection.extentAt(0)).toBe(0)
+      expect(harness.controller.captureShadowLayout()?.entries[0]).toEqual(
+        jasmine.objectContaining({source: 'measured', naturalHeight: 0, effectiveHeight: 0}),
+      )
+      expect(harness.onSparseViewFailure).not.toHaveBeenCalled()
+    } finally {
+      harness.destroy()
+    }
+  })
+
+  it('preserves header geometry while detached and accepts a real zero header on return', () => {
+    const observers = installResizeObserverDelivery()
+    const header = document.createElement('div')
+    let headerHeight = 36
+    Object.defineProperty(header, 'offsetHeight', {get: () => headerHeight})
+    const harness = createWarmWindowHarness([['a', 160]], header)
+    const frames = installFrameQueue()
+    const scrollContainer = harness.rootHost.parentElement!
+
+    try {
+      harness.controller.enable()
+      harness.controller.captureStableLayout()
+      const previousExtent = harness.projection.extentAt(0)
+      expect(harness.rootHost.style.getPropertyValue('--bc-page-root-offset-top')).toBe('62px')
+
+      scrollContainer.remove()
+      headerHeight = 0
+      header.style.display = 'none'
+      observers.deliver(header, 0)
+      observers.deliver(scrollContainer, 0)
+      frames.flush()
+      expect(harness.rootHost.style.getPropertyValue('--bc-page-root-offset-top')).toBe('62px')
+      expect(harness.projection.extentAt(0)).toBe(previousExtent)
+      expect(harness.controller.captureStableLayout()).toBeNull()
+      expect(frames.pendingCount).toBe(0)
+
+      // The header layer already cached zero while detached. It emits no new
+      // height change after reattach, so the controller must sync its measured
+      // return value when the document surface becomes available again.
+      document.body.append(scrollContainer)
+      observers.deliver(scrollContainer, 350)
+      observers.deliver(header, 0)
+      frames.flush()
+      expect(harness.rootHost.style.getPropertyValue('--bc-page-root-offset-top')).toBe('10px')
+      expect(harness.controller.captureStableLayout()?.placementOriginY).toBe(10)
+      expect(harness.onSparseViewFailure).not.toHaveBeenCalled()
+    } finally {
+      harness.destroy()
+    }
+  })
+
   it('publishes one full sparse layout after four idle-prefetch measurements', () => {
     jasmine.clock().install()
     const harness = createWarmWindowHarness([
@@ -786,14 +970,49 @@ function installFrameQueue() {
   }
 }
 
+function installResizeObserverDelivery() {
+  const callbacks = new Map<Element, Set<ResizeObserverCallback>>()
+  spyOn(window, 'ResizeObserver').and.callFake(function(callback) {
+    const observed = new Set<Element>()
+    return {
+      observe(target: Element) {
+        observed.add(target)
+        const listeners = callbacks.get(target) ?? new Set<ResizeObserverCallback>()
+        listeners.add(callback)
+        callbacks.set(target, listeners)
+      },
+      unobserve(target: Element) {
+        observed.delete(target)
+        callbacks.get(target)?.delete(callback)
+      },
+      disconnect() {
+        observed.forEach(target => callbacks.get(target)?.delete(callback))
+        observed.clear()
+      },
+    } as ResizeObserver
+  })
+  return {
+    deliver(target: Element, blockSize: number) {
+      const entry = {
+        target,
+        borderBoxSize: [{blockSize, inlineSize: 400}],
+      } as unknown as ResizeObserverEntry
+      callbacks.get(target)?.forEach(callback => callback([entry], {} as ResizeObserver))
+    },
+  }
+}
+
 function createWarmWindowHarness(
   rootHeights: readonly (readonly [id: string, height: number])[] = [
     ['a', 160],
     ['b', 160],
   ],
+  documentHeader?: HTMLElement,
+  flavour: 'paragraph' | 'object-group' = 'paragraph',
 ) {
   const scrollContainer = document.createElement('div')
   const rootHost = document.createElement('div')
+  const nodeType = flavour === 'object-group' ? BlockNodeType.block : BlockNodeType.editable
   const rootIds = rootHeights.map(([id]) => id)
   const initialRootId = rootIds[0]
   if (!initialRootId) throw new Error('Warm-window harness requires a root')
@@ -802,6 +1021,7 @@ function createWarmWindowHarness(
   ))
   rootHost.setAttribute('data-blockcraft-root', 'true')
   rootHost.append(hosts.get(initialRootId)!)
+  if (documentHeader) scrollContainer.append(documentHeader)
   scrollContainer.append(rootHost)
   document.body.append(scrollContainer)
 
@@ -834,7 +1054,7 @@ function createWarmWindowHarness(
     theme: 'light',
     virtualization: {
       enabled: true,
-      estimatedHeights: {paragraph: 160},
+      estimatedHeights: {[flavour]: 160},
     },
   }
   const doc = {
@@ -848,8 +1068,8 @@ function createWarmWindowHarness(
       structureChange$,
       getChildrenIds: (id: string) => (id === 'root' ? rootIds : []),
       getPath: (id: string) => ['root', id],
-      getFlavour: () => 'paragraph',
-      getNodeType: () => BlockNodeType.editable,
+      getFlavour: () => flavour,
+      getNodeType: () => nodeType,
       getProps: () => ({}),
     },
     config,
@@ -865,8 +1085,8 @@ function createWarmWindowHarness(
       }
       return {
         id,
-        flavour: 'paragraph',
-        nodeType: BlockNodeType.editable,
+        flavour,
+        nodeType,
         hostElement: hosts.get(id),
         heading: false,
       }
@@ -915,7 +1135,13 @@ function createWarmWindowHarness(
     },
     scrollContainer,
     coordinator,
-    {sparseView: true, onSparseViewFailure},
+    {
+      sparseView: true,
+      onSparseViewFailure,
+      ...(documentHeader ? {
+        documentHeader: {element: documentHeader, placement: 'content' as const, gap: 16},
+      } : {}),
+    },
   )
 
   return {
@@ -936,6 +1162,10 @@ function createWarmWindowHarness(
         throw new Error('Sparse projection hooks are not registered')
       }
       return registrationHooks
+    },
+    appendRoot(id: string, height: number) {
+      rootIds.push(id)
+      hosts.set(id, blockHost(id, height))
     },
     setProjectionReleaseError(error: Error | null) {
       projectionReleaseError = error

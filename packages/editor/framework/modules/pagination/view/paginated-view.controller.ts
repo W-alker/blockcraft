@@ -94,6 +94,7 @@ export class PaginatedViewController {
   private _sparseFailureCount = 0;
   private _inlineProjectionFailureCount = 0;
   private _pendingSparseContainerStyles = false;
+  private _surfaceMeasurementDeferred = false;
   /** 上一轮会直接改变根块 border-box 的分页投影，用于覆盖本轮的移除操作。 */
   private _layoutOwnedRootIds = new Set<string>();
   private readonly _onFontsLoadingDone: EventListener = () => {
@@ -367,6 +368,10 @@ export class PaginatedViewController {
    * 供打印复用 → 打印断点 == 屏幕所见（含 embed/媒体块按 live 高度定断点）。
    */
   computePrintItems(): PaginationItem[] {
+    if (!this._hasMeasurableSurface()) {
+      this._deferSurfaceMeasurement();
+      return clonePaginationItems(this._stableLayout?.items ?? []);
+    }
     if (
       this._isCompositionInProgress()
       || this._inlineBreaks.deferUpdateWhileProjectionFrozen()
@@ -393,9 +398,13 @@ export class PaginatedViewController {
    */
   captureStableLayout(): StablePaginationLayout | null {
     if (!this._enabled) return null;
+    if (!this._hasMeasurableSurface()) {
+      this._deferSurfaceMeasurement();
+      return null;
+    }
     // 导出捕获是同步屏障：ResizeObserver 的投递可能仍排在本帧后面，不能让最新
     // documentHeader 高度落在 layout/snapshot 之后。先主动测量，回调会同步刷新 geometry。
-    this._documentHeaderLayer?.measure();
+    this._measureDocumentHeader();
     // 业务块可在不改变 host border-box 的情况下异步改变内部 scrollWidth。
     // ResizeObserver 不会为这类变化投递，因此导出同步屏障必须强制丢弃
     // fit 前快照，在用户确认稳定的当前 DOM 上重读一次自然几何。
@@ -520,6 +529,15 @@ export class PaginatedViewController {
   @performanceTest('pagination view recompute', 16)
   private _recompute(mountedMeasurementOnly = false): StablePaginationLayout | null {
     if (!this._enabled) return null;
+    if (!this._hasMeasurableSurface()) {
+      this._deferSurfaceMeasurement();
+      return this._stableLayout;
+    }
+    if (this._surfaceMeasurementDeferred) {
+      this._surfaceMeasurementDeferred = false;
+      mountedMeasurementOnly = false;
+      this._measureDocumentHeader();
+    }
     if (!mountedMeasurementOnly) {
       this._clearSparseIdlePrefetchMeasurementBatch();
     }
@@ -621,6 +639,26 @@ export class PaginatedViewController {
         ...this._inlineBreaks.layoutOwnedIds,
       ]));
     }
+  }
+
+  private _hasMeasurableSurface(): boolean {
+    const root = this.doc.root.hostElement;
+    // A cached route can retain every block view while its editor DOM is
+    // detached or display:none. Those zero boxes are not document geometry.
+    // Check the shared surface once, not individual roots: revision-hidden
+    // blocks and genuine empty blocks must still contribute valid zero slots.
+    return root.isConnected && this.scrollContainer.isConnected
+      && root.getClientRects().length > 0
+      && this.scrollContainer.getClientRects().length > 0;
+  }
+
+  private _deferSurfaceMeasurement(): void {
+    this._surfaceMeasurementDeferred = true;
+    this._stableLayoutReusableForExport = false;
+    this._pendingRecomputeKind = 'full';
+    // Keep the last projection and any structure/IME handoff pending. The
+    // existing container ResizeObserver resumes us on reattach/show; do not
+    // poll or publish zero measurements while the surface is unavailable.
   }
 
   private _isCompositionInProgress(): boolean {
@@ -1262,7 +1300,18 @@ export class PaginatedViewController {
     this._documentHeaderLayer?.updateLayout(this._documentHeaderLayout());
   }
 
+  private _measureDocumentHeader(): void {
+    if (!this._documentHeaderLayer) return;
+    // The layer may have consumed a hidden zero-size notification already.
+    // Reconcile its return value too, even when its own cache emits no change.
+    this._onDocumentHeaderHeightChange(this._documentHeaderLayer.measure());
+  }
+
   private _onDocumentHeaderHeightChange(height: number): void {
+    if (!this._hasMeasurableSurface()) {
+      this._deferSurfaceMeasurement();
+      return;
+    }
     if (Math.abs(height - this._documentHeaderHeight) < 0.5) return;
     invalidateRootIdlePrefetch(
       this.doc.virtualization,
@@ -1437,6 +1486,7 @@ export class PaginatedViewController {
       this._sparseFailureCount = 0;
       this._inlineProjectionFailureCount = 0;
       this._pendingSparseContainerStyles = false;
+      this._surfaceMeasurementDeferred = false;
       this._layoutOwnedRootIds.clear();
       this._lastShadowMismatchSignature = null;
       this._lastShadowErrorSignature = null;
