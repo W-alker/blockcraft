@@ -70,7 +70,15 @@ import type {TextEdit} from '@visimer/core';
       <div class="graph-container" (mousedown)="onFocus($event)">
         @if (visualLoading || (visualSession && !visualReady && !visualRenderFailed)) { <div class="visual-status" role="status">正在加载图形编辑器…</div> }
         @if (visualError) { <button type="button" class="visual-status" (click)="startVisualEditor()">图形编辑器加载失败，点击重试</button> }
-        @if (visualRenderFailed && !visualReady) { <div class="visual-status" role="status">图表暂时无法渲染，请检查源码</div> }
+        @if ((visualRenderFailed && !visualReady) || (previewRenderFailed && !visualSession)) {
+          <div class="mermaid-render-error" role="status" contenteditable="false">
+            <i class="bc_icon bc_info-circle" aria-hidden="true"></i>
+            <div>
+              <strong>图表暂时无法显示</strong>
+              <p>请检查 Mermaid 语法，修正后将自动更新。</p>
+            </div>
+          </div>
+        }
         <div class="graph-con" [hidden]="visualReady" (mousedown)="onPreviewGraph($event)"></div>
         <div class="visual-con" [class.visual-pending]="!visualReady" [hidden]="!visualSession" contenteditable="false" data-bc-native-input
              (mousedown)="$event.stopPropagation()"></div>
@@ -88,6 +96,7 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
   protected visualReady = false
   protected visualLoading = false
   protected visualError = false
+  protected previewRenderFailed = false
   private visualGeneration = 0
   private previewGeneration = 0
   private textObserverFrame: number | null = null
@@ -300,9 +309,15 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     if (!graphDefinition.trim()) {
       this.graphContainer.replaceChildren()
       this._renderedTextContent = ''
+      this.previewRenderFailed = false
+      this.cdr.markForCheck()
       return
     }
-    if (graphDefinition === this._renderedTextContent && this.graphContainer.querySelector('svg')) return
+    if (graphDefinition === this._renderedTextContent && this.graphContainer.querySelector('svg')) {
+      this.previewRenderFailed = false
+      this.cdr.markForCheck()
+      return
+    }
     try {
       // 不把可见预览容器交给 Mermaid：render 会先清空容器，失败时造成空白。
       const {svg} = await mermaid.render('graph' + generateId(11), graphDefinition)
@@ -310,13 +325,19 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
           graphDefinition !== this.getGraphDefinition()) return
       this.commitPreview(svg, graphDefinition)
     } catch {
-      // 语法输入中或渲染失败时保留上一次成功的预览。
+      if (this.destroyed || this.visualSession || generation !== this.previewGeneration ||
+          graphDefinition !== this.getGraphDefinition()) return
+      // 保留上一次成功的预览，同时让首次失败或无效源码有可见反馈。
+      this.previewRenderFailed = true
+      this.cdr.markForCheck()
     }
   }
 
   private commitPreview(svg: string, code: string): void {
     this.graphContainer.innerHTML = svg
     this._renderedTextContent = code
+    this.previewRenderFailed = false
+    this.cdr.markForCheck()
     const element = this.graphContainer.querySelector('svg')
     const width = parseFloat(element?.style.maxWidth ?? '')
     this.graphMaxWidth = Number.isFinite(width) && width > 0 ? width : 0

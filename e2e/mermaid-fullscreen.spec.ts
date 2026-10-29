@@ -6,9 +6,10 @@ async function waitForEditor(page: Page): Promise<void> {
   await page.waitForFunction((selector) => {
     const element = document.querySelector(selector)
     const debug = (window as unknown as {
-      ng?: {getComponent: (target: Element) => {doc?: {isInitialized?: boolean}}}
+      ng?: {getComponent: (target: Element) => {doc?: {isInitialized?: boolean; scrollContainer?: HTMLElement}}}
     }).ng
-    return !!element && !!debug?.getComponent(element)?.doc?.isInitialized
+    const doc = element && debug?.getComponent(element)?.doc
+    return !!doc?.isInitialized && !!doc.scrollContainer?.isConnected
   }, editorSelector)
 }
 
@@ -265,6 +266,75 @@ test('fullscreen canvas writes source, shares undo, and releases on exit', async
   })
   await expect(block.locator('.graph-con svg')).toBeVisible()
   await expect(block.locator('.graph-con')).toContainText('退出前的输入')
+  await expect(block.getByRole('status')).toContainText('图表暂时无法显示')
+})
+
+test('mermaid syntax errors are visible and recover across preview modes', async ({page}) => {
+  await page.setViewportSize({width: 1280, height: 1000})
+  await page.goto('/')
+  await page.getByRole('button', {name: '初始化', exact: true}).click()
+  await waitForEditor(page)
+  const id = await page.evaluate(async () => {
+    const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
+    const [id] = doc.crud.insertBlockSnapshots(doc.rootId, 0,
+      [doc.schemas.createSnapshot('mermaid', ['default', 'flowchart TD\nA[broken'])])
+    await doc.navigateToBlock(id)
+    return id
+  })
+  const block = page.locator(`.mermaid-block[data-block-id="${id}"]`)
+  const status = block.getByRole('status')
+  await expect(status).toContainText('图表暂时无法显示')
+  await expect(status).toContainText('请检查 Mermaid 语法，修正后将自动更新。')
+  await expect(status).toBeVisible()
+  await expect(block.locator('.graph-con svg')).toHaveCount(0)
+  expect(await status.evaluate(el => getComputedStyle(el).color))
+    .not.toBe(await status.evaluate(el => getComputedStyle(el).backgroundColor))
+  await expect(status).toHaveCSS('display', 'flex')
+  expect(await status.locator('.bc_icon').evaluate(el => getComputedStyle(el, '::before').content))
+    .not.toBe('none')
+  const lightBackground = await status.evaluate(el => getComputedStyle(el).backgroundColor)
+  await block.screenshot({path: test.info().outputPath('mermaid-error-light.png')})
+  await page.evaluate(() => document.body.setAttribute('blockcraft-theme', 'dark'))
+  await expect.poll(() => status.evaluate(el => getComputedStyle(el).backgroundColor))
+    .not.toBe(lightBackground)
+  await block.screenshot({path: test.info().outputPath('mermaid-error-dark.png')})
+  await page.evaluate(() => document.body.removeAttribute('blockcraft-theme'))
+
+  await block.evaluate(host => {
+    const component = (window as any).ng.getComponent(host)
+    component.updateProps({mode: 'graph'})
+    component.doc.toggleReadonly(true)
+  })
+  await expect(status).toBeVisible()
+  await expect(block.locator('.text-container')).toBeHidden()
+  await block.getByRole('button', {name: '全屏', exact: true}).click()
+  await expect(status).toBeVisible()
+  await block.getByRole('button', {name: '退出全屏', exact: true}).click()
+
+  const replaceSource = async (source: string) => block.evaluate((host, source) => {
+    const component = (window as any).ng.getComponent(host)
+    component.doc.toggleReadonly(false)
+    const text = component.firstChildren
+    component.doc.crud.transact(() => text.replaceText(0, text.textLength, source))
+  }, source)
+  const valid = 'flowchart TD\nA[修复成功] --> B[End]'
+  await replaceSource(valid)
+  await expect(status).toHaveCount(0)
+  await expect(block.locator('.graph-con svg')).toBeVisible()
+  await expect(block.locator('.graph-con')).toContainText('修复成功')
+
+  await replaceSource('flowchart TD\nA[broken')
+  await expect(status).toBeVisible()
+  await expect(block.locator('.graph-con')).toContainText('修复成功')
+  await replaceSource(valid)
+  await expect(status).toHaveCount(0)
+  await expect(block.locator('.graph-con')).toContainText('修复成功')
+
+  await replaceSource('flowchart TD\nA[broken')
+  await expect(status).toBeVisible()
+  await replaceSource('')
+  await expect(status).toHaveCount(0)
+  await expect(block.locator('.graph-con svg')).toHaveCount(0)
 })
 
 test('leaving fullscreen during lazy loading keeps the preview and cancels the canvas', async ({page}) => {
@@ -478,10 +548,12 @@ test('disposed canvases release document listeners and observers, including late
     const text = component.firstChildren
     component.doc.crud.transact(() => text.replaceText(0, text.textLength, 'flowchart TD\nA[Changed] --> B[End]'))
   })
-  await page.waitForFunction(() => (window as any).__lateRenderStarted)
+  await expect.poll(() => page.evaluate(() =>
+    (window as any).__lateRenderStarted === true && typeof (window as any).__releaseLateRender === 'function',
+  )).toBe(true)
   await toggle()
   await page.evaluate(() => (window as any).__releaseLateRender())
-  await page.waitForFunction(() => (window as any).__lateRenderFinished)
+  await expect.poll(() => page.evaluate(() => (window as any).__lateRenderFinished)).toBe(true)
   await expect(block.locator('.mw-canvas')).toHaveCount(0)
   await expect.poll(readResources).toEqual(baseline)
   await expect(block.locator('.graph-con')).toContainText('Changed')

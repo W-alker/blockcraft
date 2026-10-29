@@ -228,4 +228,32 @@
     background: var(--bc-bg-muted);
     border: 0;
   }
+  .mermaid-render-error {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--bc-padding-md);
+    margin: var(--bc-padding-lg);
+    padding: var(--bc-padding-lg);
+    border: 1px solid var(--bc-error-background-color);
+    border-radius: var(--bc-radius-lg);
+    background: var(--bc-error-background-color);
+    color: var(--bc-color);
+    font-size: var(--bc-fs-sm);
+    line-height: var(--bc-lh);
+    overflow-wrap: anywhere;
+
+    > .bc_icon {
+      flex: none;
+      color: var(--bc-error-color);
+      font-size: var(--bc-fs);
+    }
+
+    > div { min-width: 0; }
+    strong { font-weight: 600; }
+    p {
+      margin: var(--bc-padding-sm) 0 0;
+      color: var(--bc-color-light);
+      font-size: var(--bc-fs-xs);
+    }
+  }
 }
