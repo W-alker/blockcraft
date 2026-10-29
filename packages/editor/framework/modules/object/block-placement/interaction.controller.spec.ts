@@ -184,6 +184,7 @@ describe('Placement multi-object drag', () => {
       h.blocks.forEach(block => expect(block.hostElement.style.transform).toContain('translate3d(50px, 30px'))
       expect(h.commitBatch).not.toHaveBeenCalled()
       expect(h.doc.selection.blur).not.toHaveBeenCalled()
+      h.blocks.forEach(block => expect(block.hostElement.classList.contains('bc-drag-source')).toBeTrue())
       window.dispatchEvent(pointer('pointerup', 120, 80))
       expect(h.commitBatch).toHaveBeenCalledOnceWith([
         {block: h.blocks[0], position: {x: 50, y: 30}},
@@ -195,16 +196,18 @@ describe('Placement multi-object drag', () => {
       expect(h.releaseLease).toHaveBeenCalledTimes(1)
       expect(h.doc.crud.undoManager.stopCapturing).toHaveBeenCalledTimes(2)
       h.blocks.forEach(block => expect(block.hostElement.style.transform).toBe(''))
+      h.blocks.forEach(block => expect(block.hostElement.classList.contains('bc-drag-source')).toBeFalse())
     } finally {h.controller.destroy(); h.plane.remove()}
   }))
 
-  for (const reason of ['removed', 'locked', 'reparented', 'position', 'Escape', 'pointercancel', 'blur', 'destroy']) {
+  for (const reason of ['removed', 'locked', 'reparented', 'position', 'Escape', 'pointercancel', 'blur', 'readonly', 'destroy']) {
     it(`cancels all previews without a partial commit when ${reason}`, fakeAsync(() => {
       const h = setup()
       try {
         h.controller.startDrag(pointer('pointerdown'), h.blocks[0] as any)
         window.dispatchEvent(pointer('pointermove', 120, 80))
         tick(17)
+        h.blocks.forEach(block => expect(block.hostElement.classList.contains('bc-drag-source')).toBeTrue())
         if (reason === 'removed') h.removed.add('b')
         if (reason === 'locked') h.locked.add('b')
         if (reason === 'reparented') h.blocks[1].parentId = 'elsewhere'
@@ -216,10 +219,12 @@ describe('Placement multi-object drag', () => {
         }
         if (reason === 'pointercancel') window.dispatchEvent(pointer('pointercancel'))
         if (reason === 'blur') window.dispatchEvent(new Event('blur'))
+        if (reason === 'readonly') h.doc.readonlySwitch$.next(true)
         if (reason === 'destroy') h.controller.destroy()
         window.dispatchEvent(pointer('pointerup', 120, 80))
         expect(h.commitBatch).not.toHaveBeenCalled()
         h.blocks.forEach(block => expect(block.hostElement.style.transform).toBe(''))
+        h.blocks.forEach(block => expect(block.hostElement.classList.contains('bc-drag-source')).toBeFalse())
         expect(h.releaseLease).toHaveBeenCalledTimes(1)
         expect(h.doc.selection.setSuppressRecalculate).toHaveBeenCalledWith(false)
       } finally {h.controller.destroy(); h.plane.remove()}

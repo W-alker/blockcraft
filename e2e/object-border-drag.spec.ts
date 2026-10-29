@@ -16,10 +16,10 @@ async function createObject(page: Page, flavour: ObjectFlavour): Promise<string>
       : ['边框拖拽测试', props])
     snapshot.props = {...snapshot.props, ...props}
     doc.crud.insertBlockSnapshots(doc.rootId, 0, [snapshot])
-    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    await doc.navigateToBlock(snapshot.id)
     doc.placement.setMode(doc.getBlockById(snapshot.id), 'absolute')
     doc.placement.updateAbsolute(snapshot.id, {x: 100, y: 100})
-    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    await doc.navigateToBlock(snapshot.id)
     const block = doc.getBlockById(snapshot.id)
     block.hostElement.scrollIntoView({block: 'center'})
     doc.selection.selectBlock(block)

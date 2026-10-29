@@ -34,9 +34,28 @@
 @import "components/resource-placeholder";
 @import "components/media-object-resizer";
 
-// 内部 block 拖拽期间，源 block 加 .bc-drag-source 标记（由 DocInternalDragController 添加 / 移除）。
+// 流式排序和浮动移动共用会话级源标记；正文排序继续淡化原位副本。
 .bc-drag-source {
   opacity: 0.5;
+}
+
+@media screen {
+  [data-blockcraft-root="true"]:not(.readonly):not(.bc-print-content) {
+    // 浮动对象本身就是移动预览，保持原有不透明度。
+    [data-bc-object][data-bc-placement='absolute'].bc-drag-source {
+      opacity: 1;
+    }
+
+    // 拖动会释放模型/原生选区；临时轮廓跟随实际表面的旋转与尺寸，
+    // 不重新唤起缩放控件，也不把组合内部成员一并描边。
+    [data-bc-object].bc-drag-source:not(.selected):not([data-bc-readonly]) {
+      > :is([data-bc-object-surface], [data-bc-print-visual-surface]),
+      &:not(:has(> :is([data-bc-object-surface], [data-bc-print-visual-surface]))) {
+        outline: 2px solid var(--bc-active-color);
+        outline-offset: -1px;
+      }
+    }
+  }
 }
 
 [data-blockcraft-root="true"] {

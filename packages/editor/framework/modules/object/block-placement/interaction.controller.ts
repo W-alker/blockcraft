@@ -278,6 +278,7 @@ export class BlockPlacementInteractionController {
         }
       } catch {}
       restorePreview()
+      targets.forEach(candidate => candidate.host.classList.remove('bc-drag-source'))
       this.doc.placement?.surface?.preview(0)
       try {
         releaseLease()
@@ -311,6 +312,9 @@ export class BlockPlacementInteractionController {
       if (!moved && dx * dx + dy * dy < threshold * threshold) return
       if (!moved) {
         moved = true
+        // Selection is released below to stop native text-range extension.
+        // Keep source feedback owned by the drag session, as flow sorting does.
+        targets.forEach(candidate => candidate.host.classList.add('bc-drag-source'))
         this.stateSubject.next('dragging')
         if (!isMultiSelection) {
           ;(ownerDocument.activeElement as HTMLElement | null)?.blur?.()
