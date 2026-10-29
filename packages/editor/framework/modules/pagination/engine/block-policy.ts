@@ -63,6 +63,10 @@ export function resolveBlockPolicy(input: BlockPolicyInput): BlockPolicy {
       return {breakable: false, keepWithNext: false, capHeight: true};
     case 'table':
       return {breakable: true, keepWithNext: false, capHeight: false};
+    case 'word-art':
+      // 艺术字虽是 editable，但具有固定对象外框；不能按段落行盒拆开。
+      // 根流式页高由对象主题约束，保持与文本框一致，不启用通用裁剪锁高。
+      return {breakable: false, keepWithNext: false, capHeight: false};
     case 'columns':
     case 'column':
     case 'table-row':

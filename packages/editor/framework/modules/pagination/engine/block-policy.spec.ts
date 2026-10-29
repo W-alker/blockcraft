@@ -47,6 +47,15 @@ describe('block-policy', () => {
     expect(resolveBlockPolicy({flavour: 'columns', nodeType: BlockNodeType.block}).breakable).toBe(false);
   });
 
+  it('固定尺寸艺术字整体分页，不套用普通 editable 的拆行策略', () => {
+    expect(resolveBlockPolicy({flavour: 'word-art', nodeType: BlockNodeType.editable}))
+      .toEqual({breakable: false, keepWithNext: false, capHeight: false});
+    for (const flavour of ['object-group', 'text-box', 'shape']) {
+      expect(resolveBlockPolicy({flavour, nodeType: BlockNodeType.block}))
+        .toEqual({breakable: false, keepWithNext: false, capHeight: false});
+    }
+  });
+
   it('未知 editable 默认可拆，未知 block 默认不可拆', () => {
     expect(resolveBlockPolicy({flavour: 'x', nodeType: BlockNodeType.editable}).breakable).toBe(true);
     expect(resolveBlockPolicy({flavour: 'y', nodeType: BlockNodeType.block}).breakable).toBe(false);

@@ -288,54 +288,92 @@ describe('pagination theme block constraints', () => {
     expect(getComputedStyle(nestedImage).overflow).toBe('hidden');
   });
 
-  it('caps root-flow object frames without clipping their interaction chrome', () => {
-    const host = fixture.nativeElement as HTMLElement;
-    const flowObjects = Array.from(host.querySelectorAll<HTMLElement>(
-      '.root-flow-fixed-object',
-    ));
-    const flowSurfaces = Array.from(host.querySelectorAll<HTMLElement>(
-      '.root-flow-fixed-object-surface',
-    ));
-    const groupedMembers = Array.from(host.querySelectorAll<HTMLElement>(
-      '.nested-flow-group-member',
-    ));
-    const groupedSurfaces = Array.from(host.querySelectorAll<HTMLElement>(
-      '.nested-flow-group-member-surface',
-    ));
-    const absoluteObject = host.querySelector<HTMLElement>(
-      '.nested-absolute-fixed-object',
-    )!;
+  for (const stage of ['bc-paginated', 'bc-pagination-print-source', 'bc-print-content']) {
+    for (const contentHeight of [200, 900]) {
+      for (const zoom of [1, 0.6]) {
+        it(`keeps object frames consistent in ${stage}, page height ${contentHeight}, zoom ${zoom}`, () => {
+          const host = fixture.nativeElement as HTMLElement;
+          const root = host.querySelector<HTMLElement>('[data-blockcraft-root="true"]')!;
+          root.className = stage;
+          root.style.setProperty('--bc-page-content-height', `${contentHeight}px`);
+          root.style.zoom = String(zoom);
+          const cap = `${contentHeight}px`;
+          const frameHeight = Math.min(600, contentHeight) * zoom;
+          const flowObjects = Array.from(host.querySelectorAll<HTMLElement>(
+            '.root-flow-fixed-object',
+          ));
+          const flowSurfaces = Array.from(host.querySelectorAll<HTMLElement>(
+            '.root-flow-fixed-object-surface',
+          ));
+          const groupedMembers = Array.from(host.querySelectorAll<HTMLElement>(
+            '.nested-flow-group-member',
+          ));
+          const groupedSurfaces = Array.from(host.querySelectorAll<HTMLElement>(
+            '.nested-flow-group-member-surface',
+          ));
+          const absoluteObject = host.querySelector<HTMLElement>(
+            '.nested-absolute-fixed-object',
+          )!;
 
-    expect(flowObjects.map(element => getComputedStyle(element).maxHeight))
-      .toEqual(['200px', '200px', '200px', '200px']);
-    expect(flowObjects.map(element => getComputedStyle(element).overflow))
-      .toEqual(['visible', 'visible', 'visible', 'visible']);
-    expect(flowSurfaces.map(element => getComputedStyle(element).maxHeight))
-      .toEqual(['200px', '200px', '200px']);
-    expect(flowSurfaces.map(element => getComputedStyle(element).overflow))
-      .toEqual(['visible', 'visible', 'visible']);
-    expect(flowSurfaces.map(element => element.getBoundingClientRect().height))
-      .toEqual([200, 200, 200]);
-    for (const surface of flowSurfaces) {
-      const probe = surface.querySelector<HTMLElement>('.object-control-probe')!;
-      expect(probe.getBoundingClientRect().top)
-        .toBeLessThan(surface.getBoundingClientRect().top);
+          expect(flowObjects.map(element => getComputedStyle(element).maxHeight))
+            .toEqual([cap, cap, cap, cap]);
+          expect(flowObjects.map(element => getComputedStyle(element).overflow))
+            .toEqual(['visible', 'visible', 'visible', 'visible']);
+          expect(flowSurfaces.map(element => getComputedStyle(element).maxHeight))
+            .toEqual([cap, cap, cap]);
+          expect(flowSurfaces.map(element => getComputedStyle(element).overflow))
+            .toEqual(['visible', 'visible', 'visible']);
+          expect(flowSurfaces.map(element => element.getBoundingClientRect().height))
+            .toEqual([frameHeight, frameHeight, frameHeight]);
+          for (const surface of flowSurfaces) {
+            const probe = surface.querySelector<HTMLElement>('.object-control-probe')!;
+            expect(probe.getBoundingClientRect().top)
+              .toBeLessThan(surface.getBoundingClientRect().top);
+          }
+          expect(groupedMembers.map(element => getComputedStyle(element).maxHeight))
+            .toEqual([cap, cap, cap, cap]);
+          expect(groupedMembers.map(element => getComputedStyle(element).overflow))
+            .toEqual(['visible', 'visible', 'visible', 'visible']);
+          expect(groupedSurfaces.map(element => getComputedStyle(element).maxHeight))
+            .toEqual([cap, cap, cap, cap]);
+          expect(groupedSurfaces.map(element => element.getBoundingClientRect().height))
+            .toEqual([frameHeight, frameHeight, frameHeight, frameHeight]);
+          for (const surface of groupedSurfaces) {
+            const probe = surface.querySelector<HTMLElement>('.object-control-probe')!;
+            expect(probe.getBoundingClientRect().top)
+              .toBeLessThan(surface.getBoundingClientRect().top);
+          }
+          expect(getComputedStyle(absoluteObject).maxHeight).toBe('none');
+          expect(getComputedStyle(absoluteObject).overflow).toBe('visible');
+        });
+      }
     }
-    expect(groupedMembers.map(element => getComputedStyle(element).maxHeight))
-      .toEqual(['200px', '200px', '200px', '200px']);
-    expect(groupedMembers.map(element => getComputedStyle(element).overflow))
-      .toEqual(['visible', 'visible', 'visible', 'visible']);
-    expect(groupedSurfaces.map(element => getComputedStyle(element).maxHeight))
-      .toEqual(['200px', '200px', '200px', '200px']);
-    expect(groupedSurfaces.map(element => element.getBoundingClientRect().height))
-      .toEqual([200, 200, 200, 200]);
-    for (const surface of groupedSurfaces) {
-      const probe = surface.querySelector<HTMLElement>('.object-control-probe')!;
-      expect(probe.getBoundingClientRect().top)
-        .toBeLessThan(surface.getBoundingClientRect().top);
+  }
+
+  it('does not cap free objects, ordinary flow or natural measurement blocks', () => {
+    const root = (fixture.nativeElement as HTMLElement)
+      .querySelector<HTMLElement>('[data-blockcraft-root="true"]')!;
+    const flowObjects = Array.from(root.querySelectorAll<HTMLElement>('.root-flow-fixed-object'));
+    for (const stage of ['bc-paginated', 'bc-pagination-print-source', 'bc-print-content']) {
+      root.className = stage;
+      for (const object of flowObjects) {
+        object.dataset['bcPlacement'] = 'absolute';
+        expect(getComputedStyle(object).maxHeight).toBe('none');
+        const frame = object.querySelector<HTMLElement>('.root-flow-fixed-object-surface');
+        if (frame) {
+          expect(frame.getBoundingClientRect().height).toBe(600);
+        }
+        delete object.dataset['bcPlacement'];
+      }
     }
-    expect(getComputedStyle(absoluteObject).maxHeight).toBe('none');
-    expect(getComputedStyle(absoluteObject).overflow).toBe('visible');
+    root.className = '';
+    for (const object of flowObjects) {
+      expect(getComputedStyle(object).maxHeight).toBe('none');
+    }
+    root.className = 'bc-pagination-print-source';
+    const code = root.querySelector<HTMLElement>('[data-block-id="code-1"]')!;
+    expect(getComputedStyle(code).maxHeight).toBe('none');
+    expect(code.getBoundingClientRect().height).toBeGreaterThan(200);
   });
 
   it('constrains the media wrapper without zooming the block coordinate system', () => {

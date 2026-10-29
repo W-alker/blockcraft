@@ -120,8 +120,11 @@ body.bc-table-fullscreen-lock
 
 /* live 与 print 共用同一块约束。图片/视频由分页层直接限制媒体 wrapper，
    其余确认超页的原子块才裁剪。 */
+/* 只读打印源在稳定布局复验前也必须遵守同一对象页高约束，避免关闭
+   live 分页后恢复模型高度，直到搬进最终页盒才重新收窄。 */
 [data-blockcraft-root="true"].bc-paginated,
-[data-blockcraft-root="true"].bc-print-content {
+[data-blockcraft-root="true"].bc-print-content,
+[data-blockcraft-root="true"].bc-pagination-print-source {
   /* Fixed-size object Blocks can participate in ordinary root flow. Their
      persisted frame may be taller than one page, but a flow unit cannot own
      more than one page body. Root absolute objects remain untouched. */
@@ -169,7 +172,11 @@ body.bc-table-fullscreen-lock
       max-block-size: var(--bc-page-content-height);
     }
   }
+}
 
+/* 其余锁高与滚动容器仍由实际分页/页盒负责，测量源不提前锁定自然内容。 */
+[data-blockcraft-root="true"].bc-paginated,
+[data-blockcraft-root="true"].bc-print-content {
   // 区域可嵌套；用自然 flex 高度增长到页高，收缩时也能恢复内容高度。
   // 上限是整个 border-box，内边距/边框由 flex 布局扣除，控件留在滚动层外。
   .render-unit-block {
