@@ -3,6 +3,7 @@ import {calculateFormattedObjectResize} from './shape-resize'
 import {registerObjectResizePreview} from '../../framework/modules/object/object-resize-preview'
 import {storeBlockPosition} from '../../framework/modules/object/block-placement/state'
 import {ORIGIN_NO_RECORD} from '../../framework/doc/origins'
+import {ObjectEdgeControlsComponent} from '../../components/object-edge-controls.component'
 import {
   ChangeDetectionStrategy,
   Component,
@@ -67,6 +68,7 @@ const shapeRotationTransform = (rotation: unknown): string => {
   selector: 'div.shape-block',
   standalone: true,
   imports: [
+    ObjectEdgeControlsComponent,
     ShapeAdjustmentEditorComponent,
     ShapeGeometryEditorComponent,
     ShapeResizerComponent,
@@ -197,6 +199,7 @@ const shapeRotationTransform = (rotation: unknown): string => {
       </div>
 
       @if (!isReadonly) {
+        <bc-object-edge-controls [block]="this" [label]="definition.label" />
         <shape-resizer
           [target]="shapeShell"
           [maxWidthContainer]="placementContainer"
@@ -240,6 +243,9 @@ const shapeRotationTransform = (rotation: unknown): string => {
     :host(.selected) shape-resizer {
       display: block;
     }
+
+    :host(.selected) bc-object-edge-controls,
+    :host(.bc-drag-source) bc-object-edge-controls { display: none; }
 
     :host(.selected) shape-geometry-editor {
       display: block;
@@ -643,7 +649,7 @@ export class ShapeBlockComponent extends BaseBlockComponent<ShapeBlockModel> {
   onEditText(event: MouseEvent): void {
     if (this.isReadonly || this.definition?.supportsText === false) return
     if (event.target instanceof Element && event.target.closest(
-      '.shape-text-block, shape-resizer, shape-geometry-editor, shape-adjustment-editor',
+      '.shape-text-block, bc-object-edge-controls, shape-resizer, shape-geometry-editor, shape-adjustment-editor',
     )) return
     event.preventDefault()
     event.stopPropagation()

@@ -77,7 +77,7 @@ test('deleting the last root paragraph beside an absolute object keeps a text ca
   })
 })
 
-test('flow text-box object handle and Escape select the whole frame', async ({
+test('flow text-box floating handle and Escape select the whole frame', async ({
   page,
 }) => {
   await initialize(page)
@@ -106,8 +106,9 @@ test('flow text-box object handle and Escape select the whole frame', async ({
   const textBox = page.locator(
     `${editorSelector} .text-box-block[data-block-id="${inserted.textBoxId}"]`,
   )
-  const objectHandle = textBox.locator('.text-box-block__object-handle')
+  const objectHandle = textBox.locator('[data-bc-object-floating-handle]')
   await expect(textBox).toBeVisible()
+  await expect(textBox.locator('[data-bc-object-corner]')).toHaveCount(4)
   await expect(objectHandle).toBeVisible()
   await expect(textBox).not.toHaveClass(/\bselected\b/)
   expect(await textBox.evaluate(element => getComputedStyle(element).outlineStyle))

@@ -1,3 +1,4 @@
+import {ObjectCornerControlsComponent} from '../../components/object-corner-controls.component'
 import {applyRegionBorders} from './borders'
 import {ChangeDetectionStrategy, Component} from '@angular/core'
 import {
@@ -36,19 +37,7 @@ import {applyRenderUnitTypography} from './typography'
       (mousedown)="selectEmptyRegion($event)">
     </div>
     @if (!isReadonly) {
-      <button
-        type="button"
-        class="render-unit-block__object-handle"
-        data-bc-print-exclude="true"
-        data-bc-selection-interaction-ignore
-        data-bc-placement-pick-ignore
-        contenteditable="false"
-        aria-label="选中内容区域并调整大小"
-        title="选中内容区域并调整大小"
-        (pointerdown)="focusResizeHandles($event)"
-        (click)="focusResizeHandles($event)">
-        <i class="bc_icon bc_yidong" aria-hidden="true"></i>
-      </button>
+      <bc-object-corner-controls [block]="this" label="内容区域" />
       <shape-resizer
         data-bc-print-exclude="true"
         data-bc-selection-interaction-ignore
@@ -59,7 +48,7 @@ import {applyRenderUnitTypography} from './typography'
     }
   `,
   standalone: true,
-  imports: [ShapeResizerComponent],
+  imports: [ObjectCornerControlsComponent, ShapeResizerComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     'data-bc-render-unit': 'true',
@@ -140,14 +129,6 @@ export class RenderUnitBlockComponent extends BaseBlockComponent<RenderUnitBlock
     fit: NonNullable<ReturnType<typeof resolveBlockSurface>['backgroundImage']>['fit'],
   ) {
     return blockSurfaceImageFitToObjectFit(fit)
-  }
-
-  protected focusResizeHandles(event: MouseEvent): void {
-    if (this.isReadonly || event.button !== 0 ||
-        ('isPrimary' in event && event.isPrimary === false)) return
-    event.preventDefault()
-    event.stopPropagation()
-    this.doc.selection.selectBlock(this)
   }
 
   protected selectEmptyRegion(event: MouseEvent): void {

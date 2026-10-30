@@ -14,7 +14,7 @@ async function initialize(page: Page): Promise<void> {
   }, editorSelector)
 }
 
-test('WordArt object handle, format panel, and Escape keep object focus stable', async ({
+test('WordArt floating handle, format panel, and Escape keep object focus stable', async ({
   page,
 }) => {
   await initialize(page)
@@ -40,16 +40,24 @@ test('WordArt object handle, format panel, and Escape keep object focus stable',
   const wordArt = page.locator(
     `${editorSelector} .word-art-block[data-block-id="${wordArtId}"]`,
   )
-  const objectHandle = wordArt.locator('.word-art-block__object-handle')
+  const objectHandle = wordArt.locator('[data-bc-object-floating-handle]')
   await expect(wordArt).toBeVisible()
   await wordArt.hover()
   await expect(objectHandle).toBeVisible()
-  await expect(objectHandle).toHaveCSS('width', '24px')
-  await expect(objectHandle).toHaveCSS('height', '14px')
+  await expect(wordArt.locator('[data-bc-object-corner]')).toHaveCount(4)
   expect(await wordArt.evaluate(element => getComputedStyle(element).outlineStyle))
     .toBe('none')
 
   await objectHandle.click()
+
+  // 回读浏览器当前 Range，确定性覆盖延迟 selectionchange；整块选中不能退化成全文文本选区。
+  await page.evaluate(selector => {
+    const editor = document.querySelector(selector)!
+    const debug = (window as unknown as {
+      ng: {getComponent: (target: Element) => {doc: any}}
+    }).ng
+    debug.getComponent(editor).doc.selection.recalculate()
+  }, editorSelector)
 
   await expect.poll(() => page.evaluate(selector => {
     const editor = document.querySelector(selector)!

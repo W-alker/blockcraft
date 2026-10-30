@@ -1,4 +1,4 @@
-@use "object-focus-handle" as *;
+@use "object-corner-controls" as *;
 
 [data-blockcraft-root="true"] .text-box-block,
 .bc-snapshot-viewer .text-box-block {
@@ -33,28 +33,7 @@
     transform-origin: center center;
   }
 
-  .text-box-block__object-handle {
-    @include object-focus-handle;
-  }
-
-  &:hover .text-box-block__object-handle,
-  &:focus-within .text-box-block__object-handle {
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  @media (hover: none) {
-    .text-box-block__object-handle {
-      opacity: 1;
-      pointer-events: auto;
-    }
-  }
-
-  // Whole-object selection already exposes the full resizer chrome. Keep the
-  // compact entry handle out of that state, including hover-less devices.
-  &.selected .text-box-block__object-handle {
-    display: none;
-  }
+  @include object-corner-controls("> .text-box-block__surface > bc-object-corner-controls", '.selected');
 
   .text-box-block__geometry {
     position: absolute;
@@ -244,12 +223,4 @@
 [data-blockcraft-root="true"].bc-print-content .text-box-block__content,
 .bc-snapshot-viewer .text-box-block__content {
   overflow: hidden;
-}
-
-@media screen {
-  [data-blockcraft-root="true"]:not(.readonly):not(.bc-print-content):focus-within
-  .text-box-block:not(.selected):not([data-bc-readonly]):has(.focused:not([data-bc-readonly]))
-  > .text-box-block__surface {
-    @include object-editing-outline;
-  }
 }

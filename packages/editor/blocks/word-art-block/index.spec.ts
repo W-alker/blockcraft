@@ -8,6 +8,7 @@ import {
   storeObjectTextStyle,
 } from "../../framework";
 import { ShapeResizerComponent } from "../shape-block";
+import {ObjectCornerControlsComponent} from "../../components/object-corner-controls.component";
 import {
   WORD_ART_FONT_OPTIONS,
   WORD_ART_PRESETS,
@@ -24,15 +25,15 @@ import {
 @Component({
   selector: "word-art-transform-visibility-harness",
   standalone: true,
-  imports: [ShapeResizerComponent],
+  imports: [ShapeResizerComponent, ObjectCornerControlsComponent],
   template: `
-    <div data-blockcraft-root="true">
+    <div data-blockcraft-root="true" style="--bc-active-color: #1677ff; --bc-bg-primary: white">
       <div
         class="word-art-block"
         [class.word-art-block--object-selected]="objectSelected"
       >
         <div #surface class="word-art-block__surface">
-          <button class="word-art-block__object-handle"></button>
+          <bc-object-corner-controls [block]="block" [movable]="true" />
           <shape-resizer [target]="surface"></shape-resizer>
         </div>
       </div>
@@ -43,6 +44,7 @@ import {
 })
 class WordArtTransformVisibilityHarness {
   objectSelected = true;
+  block = {} as BlockCraft.BlockComponent;
 }
 
 @Component({
@@ -181,7 +183,7 @@ describe("Word art block domain", () => {
     ).toBe(9_999);
   });
 
-  it("switches between the compact handle and whole-object transform chrome", async () => {
+  it("switches between lightweight corners and whole-object transform chrome", async () => {
     await TestBed.configureTestingModule({
       imports: [WordArtTransformVisibilityHarness],
     }).compileComponents();
@@ -190,19 +192,25 @@ describe("Word art block domain", () => {
     const resizer = fixture.nativeElement.querySelector(
       "shape-resizer",
     ) as HTMLElement;
-    const objectHandle = fixture.nativeElement.querySelector(
-      ".word-art-block__object-handle",
-    ) as HTMLButtonElement;
+    const corners = fixture.nativeElement.querySelector("bc-object-corner-controls") as HTMLElement;
 
     expect(getComputedStyle(resizer).display).toBe("block");
-    expect(getComputedStyle(objectHandle).display).toBe("none");
+    expect(getComputedStyle(corners).display).toBe("none");
 
     fixture.componentInstance.objectSelected = false;
     fixture.detectChanges();
-    objectHandle.focus();
+    // 模型正文聚焦时入口一同出现，选中缩放控件仍保持隐藏。
+    corners.closest('.word-art-block')!.classList.add('focused');
+    const root = corners.closest('[data-blockcraft-root]') as HTMLElement;
+    root.tabIndex = -1;
+    root.focus();
     expect(getComputedStyle(resizer).display).toBe("none");
-    expect(getComputedStyle(objectHandle).display).toBe("flex");
-    expect(getComputedStyle(objectHandle).pointerEvents).toBe("auto");
+    expect(getComputedStyle(corners).visibility).toBe("visible");
+    expect(getComputedStyle(corners).outlineWidth).toBe("1px");
+    expect(getComputedStyle(corners).pointerEvents).toBe("none");
+    expect(corners.querySelectorAll('[data-bc-object-corner]').length).toBe(4);
+    root.blur();
+    expect(getComputedStyle(corners).visibility).toBe("hidden");
 
     fixture.destroy();
     TestBed.resetTestingModule();
@@ -305,14 +313,15 @@ describe("Word art block domain", () => {
       expect(editor.style.transform).toBe("");
       expect(editor.getAttribute("contenteditable")).toBe("true");
       expect(editor.isContentEditable).toBeTrue();
-      const objectHandle = fixture.nativeElement.querySelector(
-        ".word-art-block__object-handle",
-      ) as HTMLButtonElement | null;
-      expect(objectHandle).not.toBeNull();
-      expect(objectHandle?.getAttribute("aria-label")).toBe("选中艺术字并拖动");
-      expect(
-        objectHandle?.hasAttribute("data-bc-selection-interaction-ignore"),
-      ).toBeTrue();
+      const corners = fixture.nativeElement.querySelector("bc-object-corner-controls") as HTMLElement;
+      expect(corners).not.toBeNull();
+      expect(corners.getAttribute("contenteditable")).toBe("false");
+      expect(corners.hasAttribute("data-bc-selection-interaction-ignore")).toBeTrue();
+      expect(corners.querySelectorAll('[data-bc-object-corner]').length).toBe(4);
+      expect(corners.querySelectorAll('[data-bc-object-entry-edge]').length).toBe(4);
+      expect(corners.querySelector('[data-bc-object-corner="nw"]')?.getAttribute('aria-label'))
+        .toBe('左上角：选中艺术字');
+      expect(fixture.nativeElement.querySelector(".word-art-block__object-handle")).toBeNull();
       expect(
         fixture.nativeElement.querySelectorAll(".shape-resizer__move-edge")
           .length,
@@ -357,7 +366,7 @@ describe("Word art block domain", () => {
         fixture.nativeElement.querySelector(".shape-resizer__move-edge"),
       ).toBeNull();
       expect(
-        fixture.nativeElement.querySelector(".word-art-block__object-handle"),
+        fixture.nativeElement.querySelector("bc-object-corner-controls"),
       ).toBeNull();
     } finally {
       document.getSelection()?.removeAllRanges();

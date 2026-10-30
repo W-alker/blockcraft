@@ -873,9 +873,18 @@ describe('Shape block domain', () => {
       // 浮动状态下拉伸不设上限。
       expect(fixture.componentInstance.objectMaxWidthResolver()).toBeNull()
 
+      const edgeControls = host.querySelector<HTMLElement>('bc-object-edge-controls')!
+      expect(edgeControls.querySelectorAll('[data-bc-object-entry-edge]').length).toBe(4)
+      expect(edgeControls.getAttribute('data-bc-print-exclude')).toBe('true')
+      host.classList.add('selected')
+      expect(getComputedStyle(edgeControls).display).toBe('none')
+      host.classList.remove('selected')
+
       // Absolute drag capture retargets native dblclick to the outer host.
       // Both that target and ordinary shell bubbling must enter editing once.
       const editText = spyOn(fixture.componentInstance, 'onEditText')
+      edgeControls.querySelector('button')!.dispatchEvent(new MouseEvent('dblclick', {bubbles: true}))
+      expect(editText).not.toHaveBeenCalled()
       const hostDoubleClick = new MouseEvent('dblclick', {bubbles: true})
       host.dispatchEvent(hostDoubleClick)
       expect(editText).toHaveBeenCalledOnceWith(hostDoubleClick)

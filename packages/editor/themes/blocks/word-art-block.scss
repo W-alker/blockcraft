@@ -1,11 +1,9 @@
-@use "object-focus-handle" as *;
+@use "object-corner-controls" as *;
 
 @media screen {
   [data-blockcraft-root="true"]:not(.readonly):not(.bc-print-content):focus-within
   .word-art-block.focused:not(.word-art-block--object-selected):not([data-bc-readonly])
   > .word-art-block__surface {
-    @include object-editing-outline;
-
     &.word-art-block__surface--nonlinear .word-art-block__projection {
       opacity: 0;
     }
@@ -43,26 +41,7 @@
     touch-action: none;
   }
 
-  .word-art-block__object-handle {
-    @include object-focus-handle;
-  }
-
-  &:hover .word-art-block__object-handle,
-  &:focus-within .word-art-block__object-handle {
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  @media (hover: none) {
-    .word-art-block__object-handle {
-      opacity: 1;
-      pointer-events: auto;
-    }
-  }
-
-  &.word-art-block--object-selected .word-art-block__object-handle {
-    display: none;
-  }
+  @include object-corner-controls("> .word-art-block__surface > bc-object-corner-controls", '.word-art-block--object-selected');
 
   &.word-art-block--object-selected shape-resizer {
     display: block;

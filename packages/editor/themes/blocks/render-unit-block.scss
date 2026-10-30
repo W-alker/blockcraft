@@ -1,4 +1,4 @@
-@use "object-focus-handle" as *;
+@use "object-corner-controls" as *;
 
 [data-blockcraft-root="true"] {
   .render-unit-block {
@@ -22,21 +22,7 @@
     outline: 1px solid var(--bc-render-unit-border-color);
     outline-offset: -1px;
 
-    > .render-unit-block__object-handle {
-      @include object-focus-handle;
-    }
-    &:hover > .render-unit-block__object-handle,
-    &:focus-within > .render-unit-block__object-handle {
-      opacity: 1;
-      pointer-events: auto;
-    }
-    @media (hover: none) {
-      > .render-unit-block__object-handle {
-        opacity: 1;
-        pointer-events: auto;
-      }
-    }
-    &.selected > .render-unit-block__object-handle { display: none; }
+    @include object-corner-controls("> bc-object-corner-controls", '.selected');
 
     // 与文本框相同：只在整块选中时显示八向手柄。
     &.selected > shape-resizer { display: block; }
@@ -90,16 +76,4 @@
   border-right: var(--bc-region-border-right, none);
   border-bottom: var(--bc-region-border-bottom, none);
   border-left: var(--bc-region-border-left, none);
-}
-
-@media screen {
-  [data-blockcraft-root="true"]:not(.readonly):not(.bc-print-content):focus-within
-  .render-unit-block:not(.selected):not([data-bc-readonly]):has(> .render-unit-content .focused:not([data-bc-readonly])) {
-    @include object-editing-outline;
-
-    // 绝对定位伪元素以 padding box 为基准，向外 1px 正好覆盖边框内沿。
-    &[data-bc-region-borders]::after {
-      outline-offset: 0;
-    }
-  }
 }

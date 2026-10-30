@@ -5,7 +5,7 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-10-28
+> Last updated: 2026-10-30
 
 ## 表格：一次性适应宽度
 
@@ -1104,6 +1104,30 @@ visible child currently materializes all absolute siblings. A materialized
 publishes a whole-block model selection instead of relying on DOM hit testing
 through the content above it.
 
+### 形状边缘选择入口
+
+形状的 `bc-object-edge-controls` 提供四条 8px 边缘命中带：外侧 6px、内侧 2px。
+仅命中边缘或键盘聚焦边缘按钮时显示细框；正文悬停和文字编辑不点亮入口。
+边缘带使用 `data-bc-object-entry-edge` 与 `data-bc-object-drag-handle`，由既有 ObjectDragPlugin 处理点击选择和拖动。
+Enter/Space 激活仅选择。整块选中/拖动时隐藏入口，沿用原有缩放、旋转、路径编辑和调整点。
+文字点击、划选、输入及空形状双击创建文字保持原有语义；只读不创建入口，打印排除入口。
+不修改文字边距、对象层级或持久化数据；嵌套形状优先于外层容器的悬停入口。
+
+### 对象轻量选择入口
+
+文本框、艺术字和填写区共享 `bc-object-corner-controls`：整块悬停或内部聚焦时同步显示
+低对比细边框、四个内侧 8px L 角及顶部 24×14px 浮动抓手，角部悬停或键盘聚焦时才显示 18px 浅色底。
+`data-bc-object-corner` 取值为 `nw/ne/sw/se` 的四个独立按钮，点击或 Enter/Space 激活通过模型选区
+选中整个对象，角按钮的 pointerdown 不启动移动。正文点击、划选和输入仍走原有编辑路径。
+整块选中后隐藏轻量入口，显示既有缩放、旋转和对象工具栏；只读状态不提供该入口。
+
+文本框和艺术字的四边由 `data-bc-object-entry-edge` 的 `north/east/south/west` 值标记，
+复用 `data-bc-object-drag-handle` 及既有对象拖动路径，支持流式排序和浮动移动。
+顶部抓手以 `data-bc-object-floating-handle` 标记，文本框和艺术字复用同一对象拖动路径，点击选择、拖动移动；Enter/Space 只选择。
+抓手沿用顶边位置，不改变对象层叠顺序；紧邻或重叠排布时，内侧四角仍提供选择入口。
+填写区的角部和顶部抓手都仅选择，再沿用既有八向缩放，不新增移动能力。
+入口层和角按钮不进入正文数据；快照、HTML/Markdown、撤销、权限与 Schema 选区契约不变。
+
 ### Render-unit 响应式尺寸
 
 `render-unit` 原生支持可选 `wr/ar`：宽度是正文内容区宽度的百分比，高度为宽度除以宽高比，与流式图片共用 `deriveObjectSizeFromPixels()`。
@@ -1111,7 +1135,7 @@ through the content above it.
 `resetHeight()` 在一个属性事务内清除 `ar/height`，保留 `wr` 或旧 `width`、正文与外观；只读或已经自然高度时不写入。`toggleSizeMode()` 在固定尺寸时调用 `resetHeight()`，自适应时读取未受视图缩放影响的布局宽高并调用 `setSize()`。侧栏按钮始终支持双向切换，图标表示当前模式；再次拖动尺寸沿用 `setSize()` 恢复固定尺寸。
 仅设置有效 `wr` 或旧 `width` 时保留宽度、高度随内容增减；`objectWidth` / `resolveRenderUnitWidth(props, referenceWidth)` 独立解析宽度，无显式宽度时返回 null。Schema、HTML 和只读快照都保留此状态，虚拟估高继续使用子内容。未设置完整有效尺寸时不套用默认宽高比；不自动把旧容器变成固定尺寸。显式尺寸包含内边距，超出内容可滚动。
 分页和打印中的根级填写区及旧快照中已存在的直接嵌套填写区按内容自然展开，超过一页时按子块边界或长文本安全行锚点拆分过页。能放下一页的填写区和短子块仍保持整体；普通表格沿用行边界与内容合并保护。分页只临时覆盖高度与内部滚动，保留宽度、边框、内边距和原始 `wr/ar` 或旧像素尺寸；关闭分页后恢复手动尺寸。页缝不写入 Yjs，不拆出新填写区，也不新增撤销记录。填写区与 Callout 的直接顺序嵌套共享拆分路径；分栏、表格单元格中的填写区仍受外层容器约束。不可拆的超页子对象沿用原有原子策略，不会按文字切点裁开。
-悬停或内部编辑时显示文本框同款顶部抓手聚焦按钮，点击或键盘激活后整块选中并显示八向手柄（无旋转）；整块选中后隐藏聚焦按钮，只读时不创建该按钮。CalloutToolbarPlugin 提供填充、轮廓、内边距和字体入口，不显示宽高输入。
+整块悬停或内部编辑时显示共享细边框、轻量四角与顶部浮动抓手，点击或键盘激活任一选择入口后整块选中并显示八向手柄（无旋转）；整块选中后隐藏轻量入口，只读时不创建该入口。CalloutToolbarPlugin 提供填充、轮廓、内边距和字体入口，不显示宽高输入。
 HTML 通过 `data-bc-wr/ar`（以及旧 `data-bc-width/height`）保留尺寸；私有 Markdown 保留 props。只读、协同、撤销和虚拟估高沿用框架路径。
 背景默认仍透明，业务填写区的白底由宿主传入 `backColor`；框架不识别 `tplRegion` 等业务标记。
 
@@ -1897,9 +1921,10 @@ The interaction is object/edit dual-state. Clicking text or blank space enters
 its direct text surface; normal clicks inside an active editor keep native
 caret placement. `selectionInteraction` declares `editingBoundary: 'always'`
 and `escapeToFrame: 'always'`, so core Selection owns Enter into editing and
-Escape back to whole-object selection. The hover/focus-revealed
-`.word-art-block__object-handle` matches the text-box handle: it selects and
-moves the object without intercepting the editable text surface. Whole-object
+Escape back to whole-object selection. Whole-object hover or internal focus
+reveals the shared thin frame and lightweight corner buttons; clicking or
+keyboard-activating a corner selects the object, while the entry edges retain
+object movement without intercepting the editable text surface. Whole-object
 selection applies the existing `.word-art-block--object-selected` chrome hook,
 which alone exposes the
 resizer and object toolbar; text editing shows neither. Object movement also
@@ -2217,8 +2242,9 @@ the same transparent entry/editing behavior as Mermaid, while
 `escapeToFrame: 'always'` still provides a direct object-selection path.
 Absolute text boxes are closed and capped. Interactive frame controls can add
 `data-bc-selection-interaction-ignore` so Selection does not consume their
-pointer gesture. The built-in `.text-box-block__object-handle` uses that opt-out
-and delegates select/move to `TextBoxToolbarPlugin`. `text-box` declares the
+pointer gesture. The shared `bc-object-corner-controls` uses that opt-out:
+corner buttons select through the model, while the marked entry edges delegate
+movement to the existing object-drag path. `text-box` declares the
 placement-aware capability; `callout`
 deliberately has no selectable-frame interaction even though it uses a static
 `selectionScope: 'container'`.

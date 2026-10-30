@@ -1,0 +1,18 @@
+// 只投影对象自己的入口，不把内部正文变成拖动面。
+@mixin object-corner-controls($path, $selected: '.selected') {
+  &:hover #{$path},
+  &:focus-within #{$path},
+  &:where([data-blockcraft-root="true"]:focus-within *):is(.focused, :has(.focused)) #{$path} {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  // 鼠标/焦点位于内层对象时，由最近对象显示入口。
+  &:has(:is(.text-box-block, .word-art-block, .render-unit-block, .shape-block):is(:hover, :focus-within, .focused), :is(.text-box-block, .word-art-block, .render-unit-block, .shape-block) .focused) #{$path} {
+    opacity: 0;
+    visibility: hidden;
+  }
+
+  &#{$selected} #{$path},
+  &.bc-drag-source #{$path} { display: none; }
+}

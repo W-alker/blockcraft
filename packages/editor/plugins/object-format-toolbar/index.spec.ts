@@ -3,12 +3,37 @@ import { BlockNodeType } from "../../framework/block-std";
 import { ObjectFormatToolbarPlugin } from "./index";
 
 describe("ObjectFormatToolbarPlugin object/edit interaction", () => {
+  for (const readonly of [false, true]) {
+    it(`leaves WordArt corner selection to its click handler without entering text (readonly=${readonly})`, () => {
+      const plugin = new ObjectFormatToolbarPlugin();
+      const root = document.createElement('div');
+      root.innerHTML = '<div class="word-art-block__surface"><bc-object-corner-controls><button data-bc-object-select-handle data-bc-nodrag></button></bc-object-corner-controls></div>';
+      document.body.append(root);
+      try {
+        const surface = root.firstElementChild!;
+        const enterEditing = jasmine.createSpy('enterEditing');
+        const selectBlock = jasmine.createSpy('selectBlock');
+        const block = {id: 'word-art', flavour: 'word-art', hostElement: surface, enterEditing};
+        (plugin as any).doc = {root: {hostElement: root}, selection: {selectBlock, value: null}, readonlyManager: {isReadonly: () => readonly}};
+        spyOn<any>(plugin, 'resolveBlockFromSurface').and.returnValue(block);
+        const event = new PointerEvent('pointerdown', {button: 0, isPrimary: true, cancelable: true});
+        Object.defineProperty(event, 'target', {value: surface.querySelector('button')});
+        (plugin as any).handleExistingObjectPointerDown(event);
+        expect(enterEditing).not.toHaveBeenCalled();
+        expect(selectBlock).not.toHaveBeenCalled();
+        expect(event.defaultPrevented).toBeFalse();
+      } finally {
+        root.remove();
+      }
+    });
+  }
+
   for (const [flavour, surfaceClass, handle] of [
     ["shape", "shape-block__shell", '<shape-resizer><span class="shape-resizer__move-edge" data-bc-object-drag-handle></span></shape-resizer>'],
     ["text-box", "text-box-block__surface", '<shape-resizer><span class="shape-resizer__move-edge" data-bc-object-drag-handle></span></shape-resizer>'],
     ["word-art", "word-art-block__surface", '<shape-resizer><span class="shape-resizer__move-edge" data-bc-object-drag-handle></span></shape-resizer>'],
-    ["text-box", "text-box-block__surface", '<span class="text-box-block__object-handle" data-bc-object-drag-handle></span>'],
-    ["word-art", "word-art-block__surface", '<span class="word-art-block__object-handle" data-bc-object-drag-handle></span>'],
+    ["text-box", "text-box-block__surface", '<span data-bc-object-entry-edge="north" data-bc-object-drag-handle></span>'],
+    ["word-art", "word-art-block__surface", '<span data-bc-object-entry-edge="north" data-bc-object-drag-handle></span>'],
   ]) {
     for (const mode of ["absolute", "relative"]) {
       for (const readonly of [false, true]) {

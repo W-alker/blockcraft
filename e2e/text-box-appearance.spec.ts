@@ -14,7 +14,7 @@ test('文本框字体填充简化为颜色和不透明度，保留效果并同�
   })
   const box = page.locator(`block-craft-editor [data-block-id="${id}"]`)
   await box.hover()
-  await box.locator('.text-box-block__object-handle').click()
+  await box.locator('[data-bc-object-corner="nw"]').click()
   const toolbar = page.locator('[data-bc-object-format-toolbar]')
   await toolbar.getByRole('button', {name: '文本选项', exact: true}).click()
   await toolbar.getByText('外观', {exact: true}).click()

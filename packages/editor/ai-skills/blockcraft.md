@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-10-28 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-10-30 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 
 表格支持一次性 `fitColumnWidths()`、双击列边界和“适应宽度”菜单；`optimizeColumnWidths()` 按正文宽度预算智能调整整表。范围、合并格、缩放与撤销契约见 `blockcraft-block.md`。
 
@@ -15,6 +15,15 @@
 > 3. Read L2 deep dives only when L1 isn't enough or you're modifying framework internals.
 >
 > **External users**: this skill pack is bundled with the npm package. AI agents can discover it via `SKILL.md` (frontmatter present); humans see `README.md` for installation and the one-command installer (`install.mjs`).
+
+## 对象轻量选择入口（未发布）
+
+形状采用边缘悬停：外框 8px 命中带（外侧 6px、内侧 2px）悬停或键盘聚焦时显示细框；
+点击选择、沿边拖动，整块选中后显示既有缩放/旋转/几何控件。正文和空形状双击创建文字沿用原行为。
+
+文本框、艺术字及填写区整块悬停或内部聚焦时，同时显示细边框、内侧四个轻量 L 角和顶部浮动抓手。
+点击角部或用 Enter/Space 激活角按钮可整块选中，随后显示既有缩放与旋转控件；正文继续直接编辑和划选。
+顶部抓手可选中整块；文本框、艺术字还可通过抓手或细边直接拖动，填写区仍只选择和缩放。详见 `blockcraft-block.md` 的“对象轻量选择入口”。
 
 ## 独立区域内容与组合文档（未发布）
 

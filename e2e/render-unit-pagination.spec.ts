@@ -66,7 +66,8 @@ async function samplePixels(page: Page, points: Array<{x: number; y: number}>) {
 
 for (const scale of [0.75, 1.25]) {
   test(`长分割区透明，${scale * 100}% 页缝透出真实纸张阴影`, async ({page}, testInfo) => {
-    await page.setViewportSize({width: 1400, height: 1200})
+    // 为放大的纸张和右侧宿主调试面板分别留出空间。
+    await page.setViewportSize({width: 1800, height: 1200})
     const ids = await createRegion(page, 'large-gap', true)
     await page.evaluate(scale => {
       const {doc, pagination} = (window as any).__regionTest
@@ -106,30 +107,25 @@ for (const scale of [0.75, 1.25]) {
     expect(footer).toEqual(footerReference)
     expect(header).toEqual(headerReference)
 
-    // 外伸的真实抓手仍完整绘制：与临时关闭 透明裁切 时的外侧像素相同。
-    const handle = page.locator(`[data-block-id="${ids.region}"] > .render-unit-block__object-handle`)
-    await page.locator(`[data-block-id="${ids.region}"] .paragraph-block`).first().hover()
-    await expect(handle).toHaveCSS('opacity', '1')
-    await handle.hover()
-    const handlePoints = await handle.evaluate(el => {
-      const r = el.getBoundingClientRect()
-      const top = el.parentElement!.getBoundingClientRect().top
-      return Array.from({length: 16}, (_, x) => ({x: r.left + (x + 1) * r.width / 17, y: top - 2}))
-    })
-    const withMask = await samplePixels(page, handlePoints)
-    const original = await page.evaluate(() => {
-      const {doc, region} = (window as any).__regionTest
-      const style = doc.getBlockById(region).hostElement.style
-      const value = style.getPropertyValue('--bc-region-pagination-clip')
-      style.setProperty('--bc-region-pagination-clip', 'none')
-      return value
-    })
-    const withoutMask = await samplePixels(page, handlePoints)
-    expect(Math.max(...withMask.flatMap((pixel, i) => pixel.map((channel, j) => Math.abs(channel - withoutMask[i][j]))))).toBeLessThanOrEqual(1)
-    await page.evaluate(value => {
-      const {doc, region} = (window as any).__regionTest
-      doc.getBlockById(region).hostElement.style.setProperty('--bc-region-pagination-clip', value)
-    }, original)
+    // 悬停正文时四角入口一起出现，顶部两个角在真实纸张范围内可命中。
+    const region = page.locator(`[data-block-id="${ids.region}"]`)
+    await region.locator('.paragraph-block').first().hover()
+    const corners = region.locator(':scope > bc-object-corner-controls [data-bc-object-corner]')
+    await expect(corners).toHaveCount(4)
+    for (const side of ['nw', 'ne']) {
+      const corner = region.locator(`:scope > bc-object-corner-controls [data-bc-object-corner="${side}"]`)
+      await expect(corner).toBeVisible()
+      const result = await corner.evaluate((el, scale) => {
+        const r = el.getBoundingClientRect()
+        const glyph = getComputedStyle(el, '::after')
+        const x = r.x + parseFloat(glyph.left) * scale
+        const y = r.y + parseFloat(glyph.top) * scale
+        const hit = document.elementFromPoint(x, y)
+        return {matches: el === hit || el.contains(hit), point: {x, y},
+          bounds: r.toJSON(), hit: hit?.outerHTML.slice(0, 220)}
+      }, scale)
+      expect(result.matches, JSON.stringify(result)).toBe(true)
+    }
     await page.mouse.move(0, 0)
     await page.screenshot({path: testInfo.outputPath('region-transparent-gap.png')})
   })

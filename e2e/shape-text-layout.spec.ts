@@ -92,13 +92,15 @@ test('shape keeps Enter paragraphs and Shift+Enter line breaks with undo and sav
     {flavour: 'shape-text', text: 'A'}, {flavour: 'shape-text', text: '\nXB'},
   ])
   const before = await read(page)
-  await page.evaluate(() => {
+  await page.evaluate(async () => {
     const {doc, id} = (window as any).shapeTextFixture
     const saved = JSON.parse(JSON.stringify(doc.model.toSnapshot(id)))
     const copy = doc.schemas.createSnapshot('shape', [saved.props.shape])
     copy.props = saved.props
     copy.children = saved.children.map((child: any) => doc.schemas.createSnapshot('shape-text', [child.children]))
     doc.crud.insertBlockSnapshots(doc.rootId, 0, [copy])
+    // 重建对象可能处于虚拟窗口之外；读组件前先通过公开导航完成挂载。
+    await doc.navigateToBlock(copy.id)
     ;(window as any).shapeTextFixture.id = copy.id
   })
   await expect.poll(async () => (await read(page)).children).toEqual(before.children)

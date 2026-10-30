@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-10-23
+> Last updated: 2026-10-29
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
@@ -597,9 +597,11 @@ the object chrome.
 
 Explicit resizer handles opt out of the generic frame pointer capture and
 remain Plugin-owned so resize and relative reorder gestures still work.
-The hover/focus-revealed `.text-box-block__object-handle` uses the same ownership:
-clicking it selects the whole text box and the pointer gesture moves the object,
-without adding an editing-state outline or intercepting the inner text surface.
+Whole-object hover or internal focus reveals `bc-object-corner-controls`:
+a thin frame and four lightweight inner corner buttons appear together.
+Clicking or keyboard-activating a corner selects the whole text box; only the
+marked entry edges start movement. The inner text surface remains directly
+editable, and whole-object selection replaces the entry with existing controls.
 Within the inner editing host, ordinary prose uses a column layout whose last
 real child owns any remaining block-axis space. Browser caret hit testing can
 therefore resolve fixed-frame whitespace without a Plugin-level blank-area
@@ -694,8 +696,9 @@ new WordArtToolbarPlugin();
 The `word-art` Schema and core Selection own the object/edit dual state. Clicking
 text or blank space enters the direct Y.Text editor without arming object
 movement; once editing, normal text clicks use the browser's native caret
-placement. A compact top `.word-art-block__object-handle`, matching the text-box
-handle, selects the whole object and starts relative reorder or absolute
+placement. Whole-object hover or internal focus reveals the same thin frame
+and lightweight corner buttons as text boxes. Corners select the object through
+click or keyboard activation; the entry edges start relative reorder or absolute
 placement drag. The four invisible selected-border hit regions remain available
 for movement, and the eight resize handles plus rotation handle keep higher hit
 priority. Core Selection handles Enter into editing and Escape back to
@@ -706,8 +709,8 @@ controls.
 Object chrome is exclusive to a whole-object selection. The Plugin applies
 `.word-art-block--object-selected`, opens the connected settings rail and lets
 the bundled theme reveal `ShapeResizerComponent`. A caret or range in WordArt's
-Y.Text closes the rail, removes that class and hides the resizer; no editing-state
-outline is added. Toolbar-owned pointer/focus settling is ignored so opening
+Y.Text closes the rail, removes that class and hides the resizer; only the
+lightweight hover/focus entry remains visible. Toolbar-owned pointer/focus settling is ignored so opening
 **艺术字格式** cannot flash closed on a transient native text Range; an explicit
 pointer back into the WordArt surface still closes object chrome immediately.
 
@@ -984,7 +987,7 @@ new TextMarkerPlugin(
 
 ### Render-unit 外观入口
 
-`CalloutToolbarPlugin` 对 `render-unit` 提供“外观选项”和“文本选项”两个一级按钮，分别包含填充/轮廓、内边距/字体页签，不显示宽高输入。轮廓页的统一值写入 `border`，独立边写入对应的 `borderTop` / `borderRight` / `borderBottom` / `borderLeft`；“恢复统一边框”清除这些覆盖。通过内容区域顶部抓手聚焦按钮整块选中后，尺寸由八向手柄或块的 `setSize()` 调整，继续采用与图片一致的 `wr/ar` 持久化。内边距写入 `p`；字体设置写入 `textFamily`、`textFont`、`textSpacing`、`textFill`，只作为内容区域内文字的默认样式。
+`CalloutToolbarPlugin` 对 `render-unit` 提供“外观选项”和“文本选项”两个一级按钮，分别包含填充/轮廓、内边距/字体页签，不显示宽高输入。轮廓页的统一值写入 `border`，独立边写入对应的 `borderTop` / `borderRight` / `borderBottom` / `borderLeft`；“恢复统一边框”清除这些覆盖。通过内容区域轻量四角按钮或顶部浮动抓手整块选中后，尺寸由八向手柄或块的 `setSize()` 调整，继续采用与图片一致的 `wr/ar` 持久化。内边距写入 `p`；字体设置写入 `textFamily`、`textFont`、`textSpacing`、`textFill`，只作为内容区域内文字的默认样式。
 
 填充页保留纯色选择器，并提供与文本框一致的 0–100% 透明度滑杆和百分比输出，松开滑杆或键盘操作结束时写入 `backOpacity`（0–1）；调回默认的 82% 会清除覆盖。拖动期间只预览样式，避免每一帧都产生 Yjs 历史。缺省值沿用主题的实体块背景透明度，不影响 `bgi/bgo` 图片背景。
 

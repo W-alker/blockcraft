@@ -981,6 +981,13 @@ export class SelectionManager {
       return {value: this.value}
     }
 
+    // An editable object's host Range can also normalize to all of its text.
+    // Preserve the whole-block intent when a delayed selectionchange reports
+    // our exact projection; a new text gesture or different Range still wins.
+    if (this._matchesCurrentWholeBlockProjection(range)) {
+      return {value: this.value}
+    }
+
     if (
       range.collapsed &&
       (range.startContainer === rootHost || range.endContainer === rootHost)
@@ -1593,6 +1600,28 @@ export class SelectionManager {
         range.startOffset === start.offset &&
         range.endContainer === end.node &&
         range.endOffset === end.offset
+    } catch {
+      return false
+    }
+  }
+
+  private _matchesCurrentWholeBlockProjection(range: Range): boolean {
+    const current = this.value
+    if (
+      this._primaryPointerDown ||
+      !current ||
+      current.start.type !== 'selected' ||
+      current.end.type !== 'selected' ||
+      current.start.blockId !== current.end.blockId
+    ) {
+      return false
+    }
+    try {
+      const expected = this._buildDomRange(current.start, current.end)
+      return range.startContainer === expected.startContainer &&
+        range.startOffset === expected.startOffset &&
+        range.endContainer === expected.endContainer &&
+        range.endOffset === expected.endOffset
     } catch {
       return false
     }

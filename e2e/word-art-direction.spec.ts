@@ -108,7 +108,7 @@ test('direction menu, editing, undo/redo and snapshot reload preserve curved eff
   await update(page, id, {textTransform: 'wave'})
   const block = page.locator(`.word-art-block[data-block-id="${id}"]`)
   await block.hover()
-  await block.locator('.word-art-block__object-handle').click()
+  await block.locator('[data-bc-object-corner="nw"]').click()
   const toolbar = page.locator('[data-bc-object-format-toolbar]')
   await toolbar.getByRole('button', {name: '文本选项', exact: true}).click()
   const panel = page.locator('.object-format__panel')

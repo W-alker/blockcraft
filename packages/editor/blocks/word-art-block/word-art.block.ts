@@ -1,3 +1,4 @@
+import {ObjectCornerControlsComponent} from '../../components/object-corner-controls.component'
 import {NgStyle} from '@angular/common'
 import {MIN_FORMATTED_OBJECT_SIZE, MAX_FORMATTED_OBJECT_SIZE} from '../../framework/block-std/block/object-format/geometry-limits'
 import {wordArtTextLayout} from './word-art-text-layout'
@@ -45,7 +46,7 @@ const rotationTransform = (rotation: number): string =>
 @Component({
   selector: 'div.word-art-block',
   standalone: true,
-  imports: [ShapeResizerComponent, NgStyle],
+  imports: [ObjectCornerControlsComponent, ShapeResizerComponent, NgStyle],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @let layout = textLayout;
@@ -69,17 +70,7 @@ const rotationTransform = (rotation: number): string =>
       [style.justify-content]="layout.justifyContent"
     >
       @if (!isReadonly) {
-        <button
-          type="button"
-          class="word-art-block__object-handle"
-          data-bc-object-drag-handle
-          data-bc-print-exclude="true"
-          data-bc-selection-interaction-ignore
-          contenteditable="false"
-          aria-label="选中艺术字并拖动"
-          title="选中艺术字并拖动">
-          <i class="bc_icon bc_yidong" aria-hidden="true"></i>
-        </button>
+        <bc-object-corner-controls [block]="this" label="艺术字" [movable]="true" />
       }
       @if (isNonlinear) {
         <svg class="word-art-block__projection" [attr.viewBox]="layout.viewBox" [ngStyle]="layout.projectionStyle"

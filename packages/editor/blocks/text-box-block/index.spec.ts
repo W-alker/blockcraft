@@ -25,13 +25,14 @@ import {
   type TextBoxBlockProps,
 } from "./index";
 import { ShapeResizerComponent } from "../shape-block";
+import {ObjectCornerControlsComponent} from "../../components/object-corner-controls.component";
 
 @Component({
   selector: "text-box-focus-style-harness",
   standalone: true,
-  imports: [ShapeResizerComponent],
+  imports: [ShapeResizerComponent, ObjectCornerControlsComponent],
   template: `
-    <div data-blockcraft-root="true">
+    <div data-blockcraft-root="true" style="--bc-active-color: #1677ff; --bc-bg-primary: white">
       <div class="text-box-block selected">
         <div
           #surface
@@ -41,7 +42,7 @@ import { ShapeResizerComponent } from "../shape-block";
           <div class="text-box-block__content" contenteditable="true">
             <p style="flex: none; height: 240px; margin: 0">裁剪内容</p>
           </div>
-          <button class="text-box-block__object-handle"></button>
+          <bc-object-corner-controls [block]="block" [movable]="true" />
           <shape-resizer [target]="surface"></shape-resizer>
         </div>
       </div>
@@ -49,7 +50,7 @@ import { ShapeResizerComponent } from "../shape-block";
   `,
   styleUrl: "../../themes/blocks/text-box-block.scss",
 })
-class TextBoxFocusStyleHarness {}
+class TextBoxFocusStyleHarness { block = {} as BlockCraft.BlockComponent; }
 
 /**
  * A frame whose text can never fit, so the reserve is under real pressure.
@@ -345,8 +346,8 @@ describe("TextBoxBlockSchema", () => {
     const resizer = fixture.nativeElement.querySelector(
       "shape-resizer",
     ) as HTMLElement;
-    const objectHandle = fixture.nativeElement.querySelector(
-      ".text-box-block__object-handle",
+    const corners = fixture.nativeElement.querySelector(
+      "bc-object-corner-controls",
     ) as HTMLElement;
 
     try {
@@ -361,15 +362,15 @@ describe("TextBoxBlockSchema", () => {
       expect(style.overflowY).toBe("hidden");
       expect(content.scrollHeight).toBeGreaterThan(content.clientHeight);
       expect(getComputedStyle(resizer).display).toBe("block");
-      expect(getComputedStyle(objectHandle).display).toBe("none");
+      expect(getComputedStyle(corners).display).toBe("none");
 
-      // Text editing shows no frame chrome: without whole-object selection
-      // the resizer must fall back to its hidden default while the compact
-      // object handle becomes available without drawing a frame outline.
+      // 正文聚焦显示轻量边框和四角，完整缩放器仍只用于整对象选中。
       resizer.closest(".text-box-block")!.classList.remove("selected");
       expect(getComputedStyle(resizer).display).toBe("none");
-      expect(getComputedStyle(objectHandle).display).toBe("flex");
-      expect(getComputedStyle(objectHandle).pointerEvents).toBe("auto");
+      expect(getComputedStyle(corners).visibility).toBe("visible");
+      expect(getComputedStyle(corners).outlineWidth).toBe("1px");
+      expect(getComputedStyle(corners).pointerEvents).toBe("none");
+      expect(corners.querySelectorAll('[data-bc-object-corner]').length).toBe(4);
     } finally {
       fixture.destroy();
       TestBed.resetTestingModule();
@@ -691,18 +692,15 @@ describe("TextBoxBlockSchema", () => {
           .querySelector("shape-resizer")
           ?.getAttribute("data-bc-print-exclude"),
       ).toBe("true");
-      const objectHandle = fixture.nativeElement.querySelector(
-        ".text-box-block__object-handle",
-      ) as HTMLButtonElement | null;
-      expect(objectHandle).not.toBeNull();
-      expect(objectHandle?.getAttribute("aria-label")).toBe("选中文本框并拖动");
-      expect(
-        objectHandle?.hasAttribute("data-bc-selection-interaction-ignore"),
-      ).toBeTrue();
-      // 移动按钮由 ObjectDragPlugin 拾取，使用专用手柄标记。
-      expect(
-        objectHandle?.hasAttribute("data-bc-object-drag-handle"),
-      ).toBeTrue();
+      const corners = fixture.nativeElement.querySelector("bc-object-corner-controls") as HTMLElement;
+      expect(corners).not.toBeNull();
+      expect(corners.getAttribute("contenteditable")).toBe("false");
+      expect(corners.hasAttribute("data-bc-selection-interaction-ignore")).toBeTrue();
+      expect(corners.querySelectorAll('[data-bc-object-corner]').length).toBe(4);
+      expect(corners.querySelectorAll('[data-bc-object-entry-edge]').length).toBe(4);
+      expect(corners.querySelector('[data-bc-object-corner="nw"]')?.getAttribute('aria-label'))
+        .toBe('左上角：选中文本框');
+      expect(fixture.nativeElement.querySelector(".text-box-block__object-handle")).toBeNull();
       const frameHitTarget = fixture.nativeElement.querySelector(
         ".text-box-block__frame-hit-target",
       ) as SVGPathElement | null;
@@ -725,7 +723,7 @@ describe("TextBoxBlockSchema", () => {
       expect(content.getAttribute("contenteditable")).toBe("false");
       expect(fixture.nativeElement.querySelector("shape-resizer")).toBeNull();
       expect(
-        fixture.nativeElement.querySelector(".text-box-block__object-handle"),
+        fixture.nativeElement.querySelector("bc-object-corner-controls"),
       ).toBeNull();
     } finally {
       fixture.destroy();

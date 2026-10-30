@@ -278,6 +278,26 @@ describe('SelectionManager DOM selection normalization', () => {
     };
   }
 
+  function makeEditableObject(block: any, blockHost: HTMLElement) {
+    const container = document.createElement('span');
+    container.className = 'edit-container';
+    const text = document.createTextNode('object text');
+    container.append(text);
+    blockHost.append(container);
+    blockHost.dataset['nodeType'] = BlockNodeType.editable;
+    block.nodeType = BlockNodeType.editable;
+    Object.setPrototypeOf(block, EditableBlockComponent.prototype);
+    Object.defineProperties(block, {
+      containerElement: {value: container},
+      textLength: {value: text.length},
+      runtime: {value: {mapper: {
+        domPointToModelPoint: (_container: Node, _node: Node, offset: number) => offset,
+        modelPointToDomPoint: (_container: Node, offset: number) => ({node: text, offset}),
+      }}},
+    });
+    return text;
+  }
+
   afterEach(() => {
     document.getSelection()?.removeAllRanges();
     document.querySelectorAll('[data-block-id="root"]').forEach(el => el.remove());
@@ -631,6 +651,91 @@ describe('SelectionManager DOM selection normalization', () => {
     expect(recalculateSpy).not.toHaveBeenCalled();
     expect(manager.value).toBe(value);
     expect(manager.value?.isAllSelected).toBeTrue();
+  });
+
+  it('keeps an editable whole-block projection after suppression expires and on explicit readback', () => {
+    const {manager, block, blockHost, doc, dispatchSelectionChange} = createManager({bindEvents: true});
+    makeEditableObject(block, blockHost);
+    manager.selectBlock(block as any);
+    const selected = manager.value;
+
+    (manager as any)._suppressProgrammaticSelectionChangeUntil = 0;
+    dispatchSelectionChange();
+
+    expect(manager.value).toBe(selected);
+    expect(manager.recalculate(false).value).toBe(selected);
+    expect(manager.recalculate().value?.start.type).toBe('selected');
+    expect(document.getSelection()!.getRangeAt(0).startContainer).toBe(blockHost);
+    doc.onDestroy$.next();
+  });
+
+  for (const fullText of [false, true]) {
+    it(`reads a new native ${fullText ? 'full-text range' : 'text caret'} after whole-block selection`, () => {
+      const {manager, block, blockHost, doc} = createManager();
+      const text = makeEditableObject(block, blockHost);
+      manager.selectBlock(block as any);
+      const range = document.createRange();
+      range.setStart(text, fullText ? 0 : 2);
+      range.setEnd(text, fullText ? text.length : 2);
+      document.getSelection()!.removeAllRanges();
+      document.getSelection()!.addRange(range);
+
+      const value = manager.recalculate().value;
+
+      expect(value?.start.type).toBe('text');
+      expect(value?.end.type).toBe('text');
+      expect((value?.start as any).offset).toBe(fullText ? 0 : 2);
+      expect((value?.end as any).offset).toBe(fullText ? text.length : 2);
+      doc.onDestroy$.next();
+    });
+  }
+
+  it('lets a primary text gesture replace an identical whole-block host projection', () => {
+    const {manager, block, blockHost, doc, dispatchSelectionChange} = createManager({bindEvents: true});
+    const text = makeEditableObject(block, blockHost);
+    manager.selectBlock(block as any);
+
+    text.parentElement!.dispatchEvent(new PointerEvent('pointerdown', {
+      bubbles: true, button: 0, isPrimary: true,
+    }));
+    dispatchSelectionChange();
+
+    expect(manager.value?.start.type).toBe('text');
+    expect((manager.value?.start as any).offset).toBe(0);
+    expect((manager.value?.end as any).offset).toBe(text.length);
+    window.dispatchEvent(new PointerEvent('pointerup', {isPrimary: true}));
+    doc.onDestroy$.next();
+  });
+
+  it('continues normalizing native endpoints for a cross-block whole selection', () => {
+    const {manager, block, blockHost, rootHost, doc} = createManager();
+    makeEditableObject(block, blockHost);
+    const secondHost = document.createElement('div');
+    secondHost.dataset['blockId'] = 'block-2';
+    rootHost.append(secondHost);
+    const second = {
+      id: 'block-2', hostElement: secondHost, parentId: 'root', parentBlock: doc.root,
+      textContent: () => 'object text',
+    };
+    const secondText = makeEditableObject(second, secondHost);
+    doc.root.childrenIds.push(second.id);
+    doc.root.childrenLength = 2;
+    doc.getBlockById = (id: string) => id === 'root' ? doc.root : id === block.id ? block : second as any;
+    manager.replay({
+      anchor: {blockId: block.id, type: 'selected'},
+      head: {blockId: second.id, type: 'selected'},
+      commonParent: 'root',
+    });
+
+    const value = manager.recalculate().value;
+
+    expect(value?.start.type).toBe('text');
+    expect(value?.start.blockId).toBe(block.id);
+    expect((value?.start as any).offset).toBe(0);
+    expect(value?.end.type).toBe('text');
+    expect(value?.end.blockId).toBe(second.id);
+    expect((value?.end as any).offset).toBe(secondText.length);
+    doc.onDestroy$.next();
   });
 
   it('lets a new primary mousedown end the previous programmatic suppression window', () => {

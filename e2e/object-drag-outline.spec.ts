@@ -43,7 +43,7 @@ for (const flavour of ['text-box', 'word-art', 'shape']) {
       const block = page.locator(`[data-block-id="${id}"]`)
       const surface = block.locator(':scope > [data-bc-object-surface]')
       await block.hover()
-      const handle = flavour === 'shape' ? surface : block.locator('[data-bc-object-drag-handle]').first()
+      const handle = flavour === 'shape' ? surface : block.locator('[data-bc-object-entry-edge="north"]')
       const box = (await handle.boundingBox())!
       const x = box.x + box.width / 2, y = box.y + box.height / 2
       const before = (await surface.boundingBox())!
@@ -103,7 +103,7 @@ test('缩放下拖动轮廓跟随文本框，打印隐藏，释放后可撤销�
   const block = page.locator(`[data-block-id="${id}"]`)
   const surface = block.locator(':scope > [data-bc-object-surface]')
   await block.hover()
-  const handle = (await block.locator('.text-box-block__object-handle').boundingBox())!
+  const handle = (await block.locator('[data-bc-object-entry-edge="north"]').boundingBox())!
   const before = (await surface.boundingBox())!
   await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
   await page.mouse.down()

@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-10-16
+> Last updated: 2026-10-30
 
 ## Theme Structure
 
@@ -324,8 +324,8 @@ outer shell does not clip resize and rotation handles. Live editing may scroll
 overflowing prose, while readonly, Snapshot Viewer and print output clip to the
 persisted frame. Keep exactly one `data-bc-print-visual-surface` on the painted
 object and mark transform handles `data-bc-print-exclude`. While a descendant
-text selection owns the frame, the frame shows no selection chrome at all:
-resize/rotation handles and the active-color outline are exclusive to the
+text selection owns the frame, only the lightweight entry remains visible:
+resize/rotation handles and the stronger selected outline are exclusive to the
 whole-object `.selected` state, matching the shape block convention, and the
 hidden browser focus outline and scrollbar chrome on the editable viewport stay
 suppressed. The intentional nested
@@ -335,14 +335,19 @@ block-axis space, so native caret hit testing reaches the paragraph throughout
 the frame without a blank-area event handler. The WordArt presentation variant
 does not grow its last child because it owns vertical alignment itself.
 
-TextBox and editable WordArt share the internal `object-focus-handle` theme
-mixin, which renders their 24×14 top select/move handles straddling the frame
-edge so the contenteditable root cannot steal their hit target. Neither object
-adds an editing-state frame outline. TextBox hides its handle for `.selected`; WordArt uses the
-Plugin-owned `.word-art-block--object-selected` class because editable Blocks
-otherwise use `.focused` for both caret and whole-block coverage. Only that
-WordArt object class reveals `shape-resizer`; ordinary WordArt text focus keeps
-the resizer hidden.
+形状的边缘入口由 `bc-object-edge-controls` 的局部样式控制，只有四条边缘带和键盘聚焦触发显框；
+中心不拦截文字，命中带外侧 6px、内侧 2px，选中后交给已有形状操作控件。
+该入口不复用整块 hover 的主题 mixin；嵌套形状出现时外层容器入口让位。
+
+文本框、可编辑艺术字和填写区共享内部 `object-corner-controls` 主题 mixin，
+负责显示各自 `bc-object-corner-controls` 的轻量入口。整块悬停或内部聚焦时，
+细边框、内侧四个 8px L 角和顶部 24×14px 浮动抓手同时出现；角部悬停/键盘聚焦才显示 18px 浅底。
+顶部抓手沿对象顶边居中，使用 `bc_yidong` 字体图标，与四角共享显隐和打印排除规则。
+颜色使用 `--bc-active-color` 与背景主题变量，角按钮仅选择，文字编辑区域不作为拖动面。
+文本框、填写区通过 `.selected` 隐藏入口，艺术字使用 Plugin 持有的
+`.word-art-block--object-selected`，因为 editable Block 的 `.focused` 同时用于文字光标与整块覆盖。
+整块选中后显示既有 `shape-resizer`；普通文字聚焦仅显示轻量入口，不显示缩放器。
+嵌套对象只显示最近对象的入口，拖动源隐藏入口；只读不创建，打印排除该控件。
 
 Snapshot Viewer creates the same common or block-specific variables and
 attributes on its block shells.

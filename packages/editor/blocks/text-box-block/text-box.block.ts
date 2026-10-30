@@ -1,3 +1,4 @@
+import {ObjectCornerControlsComponent} from '../../components/object-corner-controls.component'
 import {storeBlockPosition} from '../../framework/modules/object/block-placement/state'
 import {calculateFormattedObjectResize} from '../shape-block/shape-resize'
 import {MIN_FORMATTED_OBJECT_SIZE, MAX_FORMATTED_OBJECT_SIZE} from '../../framework/block-std/block/object-format/geometry-limits'
@@ -59,7 +60,7 @@ const rotationTransform = (rotation: number): string =>
 @Component({
   selector: 'div.text-box-block',
   standalone: true,
-  imports: [ShapeResizerComponent],
+  imports: [ObjectCornerControlsComponent, ShapeResizerComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div
@@ -136,17 +137,7 @@ const rotationTransform = (rotation: number): string =>
       }
 
       @if (!isReadonly) {
-        <button
-          type="button"
-          class="text-box-block__object-handle"
-          data-bc-object-drag-handle
-          data-bc-print-exclude="true"
-          data-bc-selection-interaction-ignore
-          contenteditable="false"
-          aria-label="选中文本框并拖动"
-          title="选中文本框并拖动">
-          <i class="bc_icon bc_yidong" aria-hidden="true"></i>
-        </button>
+        <bc-object-corner-controls [block]="this" label="文本框" [movable]="true" />
       }
 
       <div

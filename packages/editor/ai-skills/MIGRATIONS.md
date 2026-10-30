@@ -2,7 +2,56 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-10-28 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-10-30 | Tracks `@ccc/blockcraft` npm releases.
+
+## 未发布 — 2026-10-30：形状边缘悬停选择入口
+
+**Severity**: minor（形状默认交互入口调整；发布版本由用户决定）
+
+**What changed / Why**: 形状增加边缘悬停入口，解决零边距、文字铺满时难以选中外框的问题。
+
+**Behavior Changes**: 四条 8px 命中带（外侧 6px、内侧 2px）悬停/键盘聚焦时显示细框。
+点击整块选中、沿边拖动；正文悬停和文字编辑不显示该入口。整块选中后使用既有缩放、旋转及几何调整控件。
+空形状双击创建文字、已有文字点击和划选保持原语义；只读与打印不显示入口。
+嵌套形状接管自身边缘交互时，外层容器的轻量入口隐藏。
+
+**New APIs / Deprecations**: 无新增公开 Doc/Schema API。新增内部元素 `bc-object-edge-controls`；沿用已有边缘/拖动标记。
+
+**Migration Recipe**: 文档数据、插件注册和使用方式无需迁移。自动化测试可先悬停形状边缘，再点击或拖动 `[data-bc-object-entry-edge]`。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-theme.md`。
+
+## 未发布 — 2026-10-29：整块悬停、轻量四角与浮动抓手
+
+**Severity**: minor（对象默认交互入口调整；发布版本由用户决定）
+
+**What changed / Why**: 文本框、艺术字和填写区在整块悬停/内部聚焦时显示细边框、
+四个轻量 L 角及顶部浮动抓手，让相邻对象中的选择入口更易找到，并保留明确的移动入口。
+
+**Affected ai-skills files**: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-plugins-toolbar.md`、`blockcraft-theme.md`。
+
+**Behavior Changes**: 边框、四角与顶部抓手同时出现；角部悬停或键盘聚焦才显示浅色底。
+点击或 Enter/Space 激活角按钮仅选中整个对象，不从角部开始拖动。
+文本框和艺术字可从顶部抓手或细边启动流式排序或浮动移动；填写区的所有入口仅选择并沿用八向缩放。
+整块选中后轻量入口隐藏，继续显示既有缩放、旋转和对象工具栏。
+正文点击、划选、输入及 Esc 回到整块选择保持原行为；只读不提供该入口。
+
+**New APIs / Deprecations**: 无新增公开 Doc/Schema API。
+`.text-box-block__object-handle`、`.word-art-block__object-handle`、
+`.render-unit-block__object-handle` 不再生成。
+
+**Migration Recipe**: 文档数据、快照和插件注册无需迁移。定位旧顶部按钮的自动化测试或
+自定义入口应改为先悬停对象，再激活 `bc-object-corner-controls` 内的角按钮或顶部抓手；
+文本框和艺术字的移动测试使用顶部抓手或边缘命中区。
+
+```css
+/* 整块选择：角按钮支持 click、Enter、Space。 */
+[data-bc-object-corner="nw"]
+/* 顶部抓手：点击选择；具备移动能力时可拖动。 */
+[data-bc-object-floating-handle]
+/* 移动：仅限原有移动能力的对象。 */
+[data-bc-object-entry-edge="north"]
+```
 
 ## 未发布 — 2026-10-28：组合内艺术字同步缩放字号
 

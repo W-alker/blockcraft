@@ -1126,8 +1126,8 @@ export class ObjectFormatToolbarPlugin extends DocPlugin {
     const block = this.resolveBlockFromSurface(surface, flavour);
     if (!block) return;
 
-    // 移动区域由 ObjectDragPlugin 统一选中和拖拽，不能落入文字编辑分支。
-    if (target.closest("[data-bc-object-drag-handle]")) return;
+    // 对象操作入口自行处理选择或移动，不能落入文字编辑分支。
+    if (target.closest("[data-bc-object-drag-handle], [data-bc-object-select-handle]")) return;
 
     if (target.closest("shape-resizer")) {
       if (flavour === "text-box") {

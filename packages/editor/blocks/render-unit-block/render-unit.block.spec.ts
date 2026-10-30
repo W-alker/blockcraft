@@ -1,5 +1,9 @@
-import {RenderUnitBlockComponent} from './render-unit.block'
-import {resolveRenderUnitDimensions} from './index'
+import {TestBed} from '@angular/core/testing'
+import {Subject} from 'rxjs'
+import * as Y from 'yjs'
+import {RenderUnitBlockSchema, resolveRenderUnitDimensions} from './index'
+
+const RenderUnitBlockComponent = RenderUnitBlockSchema.component! as typeof import('./render-unit.block').RenderUnitBlockComponent
 
 describe('RenderUnitBlockComponent sizing', () => {
   const fixture = (readonly = false, basis = 800) => ({
@@ -66,37 +70,74 @@ describe('RenderUnitBlockComponent sizing', () => {
 })
 
 
-describe('RenderUnitBlockComponent focus handle', () => {
-  function focus(isReadonly: boolean, event: MouseEvent) {
+describe('RenderUnitBlockComponent corner entry', () => {
+  it('renders four selection corners without adding movement or making content non-editable', async () => {
+    await TestBed.configureTestingModule({imports: [RenderUnitBlockComponent]}).compileComponents()
+    const snapshot = RenderUnitBlockSchema.createSnapshot({}, {width: 300, height: 160})
+    const yDoc = new Y.Doc()
+    const yBlock = new Y.Map<unknown>()
+    const props = new Y.Map<unknown>()
+    for (const [key, value] of Object.entries(snapshot.props)) props.set(key, value)
+    yBlock.set('id', snapshot.id)
+    yBlock.set('flavour', snapshot.flavour)
+    yBlock.set('nodeType', snapshot.nodeType)
+    yBlock.set('props', props)
+    yBlock.set('meta', new Y.Map<unknown>())
+    yBlock.set('children', new Y.Array<string>())
+    yDoc.getMap('blocks').set(snapshot.id, yBlock)
+    let readonly = false
     const selectBlock = jasmine.createSpy('selectBlock')
-    const block = {isReadonly, childrenLength: 1, doc: {selection: {selectBlock}}}
-    const stop = spyOn(event, 'stopPropagation').and.callThrough()
-    ;(RenderUnitBlockComponent.prototype as any).focusResizeHandles.call(block, event)
-    return {block, selectBlock, stop}
-  }
-
-  it('selects a populated region from the handle and consumes the primary pointer event', () => {
-    const event = new PointerEvent('pointerdown', {button: 0, isPrimary: true, cancelable: true})
-    const {block, selectBlock, stop} = focus(false, event)
-    expect(selectBlock).toHaveBeenCalledOnceWith(block)
-    expect(event.defaultPrevented).toBeTrue()
-    expect(stop).toHaveBeenCalled()
+    const widthChange$ = new Subject<void>()
+    const doc = {
+      isReadonly: false,
+      schemas: {get: () => RenderUnitBlockSchema},
+      selection: {selectBlock},
+      placement: {allowsGapCursor: () => false, registerBlockView: () => null},
+      objectSizing: {getReferenceWidth: () => 800, widthChange$, rootContentElement: null},
+      readonlyManager: {isReadonly: () => readonly, resolve: () => ({readonly, source: readonly ? {kind: 'document'} : null})},
+    }
+    const fixture = TestBed.createComponent(RenderUnitBlockComponent)
+    fixture.componentRef.setInput('model', snapshot)
+    fixture.componentRef.setInput('yBlock', yBlock)
+    fixture.componentRef.setInput('doc', doc)
+    const root = document.createElement('div')
+    root.contentEditable = 'true'
+    document.body.append(root)
+    root.append(fixture.nativeElement)
+    try {
+      fixture.detectChanges()
+      const content = fixture.nativeElement.querySelector('.render-unit-content') as HTMLElement
+      const corners = fixture.nativeElement.querySelector('bc-object-corner-controls') as HTMLElement
+      expect(content.isContentEditable).toBeTrue()
+      expect(corners.getAttribute('contenteditable')).toBe('false')
+      expect(corners.querySelectorAll('[data-bc-object-corner]').length).toBe(4)
+      expect(corners.querySelectorAll('[data-bc-object-entry-edge]').length).toBe(0)
+      ;(corners.querySelector('[data-bc-object-corner="nw"]') as HTMLButtonElement).click()
+      expect(selectBlock).toHaveBeenCalledOnceWith(fixture.componentInstance)
+      readonly = true
+      fixture.componentInstance.applyReadonlyViewState()
+      fixture.detectChanges()
+      expect(fixture.nativeElement.querySelector('bc-object-corner-controls')).toBeNull()
+      expect(fixture.nativeElement.querySelector('shape-resizer')).toBeNull()
+    } finally {
+      fixture.destroy()
+      root.remove()
+      yDoc.destroy()
+      widthChange$.complete()
+      TestBed.resetTestingModule()
+    }
   })
 
-  it('supports keyboard-generated button clicks', () => {
-    const {block, selectBlock} = focus(false, new MouseEvent('click', {button: 0, detail: 0}))
-    expect(selectBlock).toHaveBeenCalledOnceWith(block)
-  })
-
-  it('does not select readonly regions, secondary buttons or secondary touch pointers', () => {
-    for (const [readonly, event] of [
-      [true, new MouseEvent('click', {button: 0})],
-      [false, new PointerEvent('pointerdown', {button: 2, isPrimary: true})],
-      [false, new PointerEvent('pointerdown', {button: 0, isPrimary: false})],
-    ] as const) {
-      const {selectBlock, stop} = focus(readonly, event)
-      expect(selectBlock).not.toHaveBeenCalled()
-      expect(stop).not.toHaveBeenCalled()
+  it('preserves empty-region click selection without taking clicks inside populated content', () => {
+    const target = document.createElement('div')
+    for (const [childrenLength, nested] of [[0, false], [1, false], [0, true]] as const) {
+      const selectBlock = jasmine.createSpy('selectBlock')
+      const block = {childrenLength, doc: {selection: {selectBlock}}}
+      const event = new MouseEvent('mousedown', {button: 0, cancelable: true})
+      Object.defineProperties(event, {target: {value: nested ? document.createElement('p') : target}, currentTarget: {value: target}})
+      ;(RenderUnitBlockComponent.prototype as any).selectEmptyRegion.call(block, event)
+      expect(selectBlock.calls.count()).toBe(childrenLength === 0 && !nested ? 1 : 0)
+      expect(event.defaultPrevented).toBe(childrenLength === 0 && !nested)
     }
   })
 })
