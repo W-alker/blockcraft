@@ -7,11 +7,11 @@
 ## Unreleased — 2026-10-30
 
 - Severity: minor（新增可选扩展点；版本由用户决定）。
-- What changed: 导出 `MERMAID_VIEW_HOST`、`MermaidViewHost`、`MermaidViewController`，允许宿主定义 Mermaid 内容区展开和操作名称。
+- What changed: 导出 `BLOCK_EXPANSION_HOST`、`BlockExpansionHost`、`BlockExpansionController`，合同归属框架视图层，允许各块复用宿主内容区展开和操作名称；状态统一为 `isExpanded`，Mermaid 首先接入。
 - Why: 文档宿主拥有内容区及系统窗口边界，框架不应复制宿主选择器或原生按钮间距。
 - Behavior: 配置后由宿主投影视图，块继续持有数据、历史、只读语义及可视化会话；未配置时保持既有全屏行为。
 - Migration: 可选提供 Token，无强制迁移；控制器的 `set(false)` 必须幂等，`destroy()` 必须释放监听与投影。
-- Affected ai-skills files: `blockcraft-app.md`。
+- Affected ai-skills files: `blockcraft-app.md`、`blockcraft.md`。
 
 ## 未发布 — 2026-10-30：形状边缘悬停选择入口
 

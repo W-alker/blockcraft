@@ -169,7 +169,7 @@ describe("MermaidBlockComponent preview selection gate", () => {
       anchor: {blockId: "mermaid-1", type: "selected"},
       head: {blockId: "mermaid-1", type: "selected"},
     }) as MermaidBlockComponent & any;
-    block.fullscreenController = {isFullscreen: true};
+    block.expansionController = {isExpanded: true};
     const event = makeEvent();
 
     await block.onPreviewGraph(event);
@@ -182,13 +182,13 @@ describe("MermaidBlockComponent preview selection gate", () => {
 describe("MermaidBlockComponent fullscreen delegation", () => {
   it("reflects and toggles the shared in-place fullscreen controller", () => {
     const block = Object.create(MermaidBlockComponent.prototype) as MermaidBlockComponent & any;
-    block.fullscreenController = {
-      isFullscreen: true,
+    block.expansionController = {
+      isExpanded: true,
       toggle: jasmine.createSpy("toggle"),
     };
 
     expect(block.isFullscreen).toBe(true);
     block.toggleFullscreen();
-    expect(block.fullscreenController.toggle).toHaveBeenCalledTimes(1);
+    expect(block.expansionController.toggle).toHaveBeenCalledTimes(1);
   });
 });

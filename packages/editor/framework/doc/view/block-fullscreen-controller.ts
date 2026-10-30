@@ -1,4 +1,5 @@
 import { BehaviorSubject } from 'rxjs'
+import type { BlockExpansionController } from './block-expansion-host'
 
 const HOST_CLASS = 'is-fullscreen'
 const BODY_CLASS = 'bc-table-fullscreen-lock'
@@ -52,7 +53,7 @@ type FullscreenModifierWheelMode = 'zoom' | 'block' | 'passthrough'
  * destroy hook to guarantee body-class cleanup (otherwise a destroyed-while-fullscreen
  * component leaks the body scroll lock).
  */
-export class BlockFullscreenController {
+export class BlockFullscreenController implements BlockExpansionController {
   /**
    * Currently-active fullscreen controller (process-wide). WeakRef so that a destroyed
    * component that was the active one does not keep itself alive via this slot.
@@ -136,6 +137,11 @@ export class BlockFullscreenController {
   ) {
     this.host.addEventListener('compositionstart', this.compositionStartHandler, { capture: true })
     this.host.addEventListener('compositionend', this.compositionEndHandler, { capture: true })
+  }
+
+  /** 通用块展开合同；原有表格全屏 API 保留。 */
+  get isExpanded(): boolean {
+    return this.state$.value
   }
 
   /** Current fullscreen state. */

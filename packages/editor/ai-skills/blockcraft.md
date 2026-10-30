@@ -9,6 +9,8 @@
 填写区侧边工具栏支持固定尺寸／内容自适应双向切换：`toggleSizeMode()` 按当前布局冻结尺寸，`resetHeight()` 保留宽度、清除固定高度。
 仅 `wr` 或旧 `width` 的快照保持自然高度；尺寸读取与保存契约见 `blockcraft-block.md` 的“Render-unit 响应式尺寸”。
 >
+宿主可通过框架公共 `BLOCK_EXPANSION_HOST` / `BlockExpansionHost` 为各块提供内容区展开；合同与接入规则见 `blockcraft-app.md` 的“通用块展开策略”。
+
 > **How to use this pack**:
 > 1. Read this file (L0) — get the mental model and find the right sub-skill via the routing table.
 > 2. Read the L1 task guide for your task — copy templates, follow checklists.
