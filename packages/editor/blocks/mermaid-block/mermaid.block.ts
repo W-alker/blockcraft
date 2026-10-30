@@ -16,6 +16,7 @@ import { isFormatOnlyDelta } from "../code-block/color-merge";
 import { BlockFullscreenController } from "../../framework/doc/view/block-fullscreen-controller";
 
 import type {MermaidVisualSession} from './mermaid-visual-session';
+import {MERMAID_VIEW_HOST, type MermaidViewController} from './mermaid-view-host';
 import type {TextEdit} from '@visimer/core';
 
 @Component({
@@ -54,8 +55,8 @@ import type {TextEdit} from '@visimer/core';
               type="button"
               contenteditable="false"
               [class.only-fullscreen]="isReadonly && props.mode === 'text'"
-              [attr.aria-label]="isFullscreen ? '退出全屏' : '全屏'"
-              [csTooltip]="isFullscreen ? '退出全屏 · Esc' : '全屏'"
+              [attr.aria-label]="fullscreenLabel"
+              [csTooltip]="isFullscreen ? fullscreenLabel + ' · Esc' : fullscreenLabel"
               csTooltipPlacement="bottomRight"
               (mousedown)="$event.preventDefault(); $event.stopPropagation()"
               (click)="toggleFullscreen(); $event.stopPropagation()">
@@ -103,7 +104,8 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
   private previewTimer: ReturnType<typeof setTimeout> | null = null
   private destroyed = false
   private readonly zone = inject(NgZone)
-  private fullscreenController?: BlockFullscreenController
+  private readonly viewHost = inject(MERMAID_VIEW_HOST, {optional: true})
+  private fullscreenController?: MermaidViewController
   private releaseFullscreenViewLease: () => void = () => undefined
   private readonly cdr = inject(ChangeDetectorRef)
 
@@ -124,7 +126,7 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
   override ngAfterViewInit() {
     super.ngAfterViewInit();
 
-    this.fullscreenController = new BlockFullscreenController(
+    this.fullscreenController = this.viewHost?.createController(this.hostElement, this.doc) ?? new BlockFullscreenController(
       this.hostElement,
       () => this.doc.scrollContainer,
       () => this.doc.viewScale?.value ?? 1,
@@ -269,6 +271,12 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
     return this.fullscreenController?.isFullscreen ?? false
   }
 
+  protected get fullscreenLabel(): string {
+    return this.isFullscreen
+      ? (this.viewHost?.collapseLabel ?? '退出全屏')
+      : (this.viewHost?.expandLabel ?? '全屏')
+  }
+
   protected toggleFullscreen(): void {
     this.fullscreenController?.toggle()
   }
@@ -281,6 +289,7 @@ export class MermaidBlockComponent extends BaseBlockComponent<MermaidBlockModel>
   }
 
   protected override beforeDetach() {
+    if (this.viewHost) this.fullscreenController?.set(false)
     this.intersectionObserver.unobserve(this.hostElement)
     this.isIntersecting = false
   }

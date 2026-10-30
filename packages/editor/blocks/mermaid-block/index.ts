@@ -9,6 +9,7 @@ import {MermaidBlockComponent} from "./mermaid.block";
 import {MermaidViewMode} from "./types";
 
 export * from './agent'
+export * from './mermaid-view-host'
 
 export interface MermaidBlockModel extends NoEditableBlockNative {
   flavour: 'mermaid',

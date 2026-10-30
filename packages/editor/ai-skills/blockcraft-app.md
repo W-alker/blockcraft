@@ -2,7 +2,7 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-10-23
+> Last updated: 2026-10-30
 
 This guide explains how to **consume** BlockCraft as a library inside an Angular host application. For extending the framework (writing plugins, blocks, embeds), see `blockcraft-plugin.md`, `blockcraft-block.md`, etc. For the bundled reference editor, read `editor/editor.ts` in this repo as a worked example.
 
@@ -2488,3 +2488,13 @@ authorizeStructureTransform: ({purpose}) =>
 ### 天气手动刷新
 
 天气主动刷新会传 `DocWeatherQuery.refresh: true`，宿主应绕过结果缓存（不要取消其他消费者的共享请求）。日期存在时仍查询该日期；缺省查询实时天气。普通挂载不传 refresh。
+
+
+## Mermaid 宿主展开策略
+
+可在 Doc 的 injector 中提供公开的 `MERMAID_VIEW_HOST: MermaidViewHost`。
+`createController(host, doc)` 返回 `MermaidViewController`（`state$`、`isFullscreen`、`toggle/set/destroy`），
+宿主负责区域边界、DOM 投影、键盘与焦点恢复；`expandLabel/collapseLabel` 用于按钮、提示和无障碍名称。
+控制器仅管理本地视图，不写 Yjs，不重新创建块、编辑器或协作会话。
+Mermaid 块仍持有虚拟化 lease、可视化编辑器、只读检查与历史；detach 时收起宿主投影，destroy 时释放控制器。
+未提供此 Token 的编辑器保持既有全屏行为；不得依赖组件私有控制器或篡改已安装包。
