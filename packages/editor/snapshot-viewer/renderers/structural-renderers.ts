@@ -504,7 +504,13 @@ function renderTextBox(
     }
   }
   appendChildren(content, ctx, snapshot.children)
-  surface.append(content, createTextBoxOutlineGeometry(
+  const viewport = document.createElement("div")
+  viewport.setAttribute("data-bc-text-box-viewport", "")
+  if (textFrame.direction === "rotate-90" || textFrame.direction === "rotate-270") {
+    viewport.setAttribute("data-bc-text-box-rotated", "")
+  }
+  viewport.append(content)
+  surface.append(viewport, createTextBoxOutlineGeometry(
     renderDefinition,
     format.shapeOutline!,
   ))

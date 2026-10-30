@@ -84,7 +84,8 @@
   // Written on all four physical sides rather than patching `bottom` alone,
   // because a vertical frame is `vertical-rl` and its block flow ends on the
   // left.
-  .text-box-block__content {
+  .text-box-block__content,
+  [data-bc-text-box-viewport][data-bc-text-box-rotated] {
     position: absolute;
     z-index: 2;
     top: calc(var(--bc-text-box-shape-inset-top, 0%) +
@@ -95,6 +96,32 @@
       var(--bc-text-box-padding-bottom));
     left: calc(var(--bc-text-box-shape-inset-left, 0%) +
       var(--bc-text-box-padding-left));
+  }
+
+  // Keep the existing containing block for horizontal/vertical text and auto-fit.
+  [data-bc-text-box-viewport] {
+    display: contents;
+  }
+
+  [data-bc-text-box-viewport][data-bc-text-box-rotated] {
+    display: block;
+    container-type: size;
+    // Text effects/counter-rotation also stay inside the physical reserve;
+    // clipping must not turn this wrapper into a second caret scroll owner.
+    overflow: clip;
+
+    // The viewport owns physical shape reserves. Its local text axes swap at
+    // 90/270 degrees, including while the resizer only changes the surface DOM.
+    // No layout reads, observers or model writes are needed during dragging.
+    > .text-box-block__content {
+      inset: 50% auto auto 50%;
+      width: 100cqh;
+      height: 100cqw;
+      translate: -50% -50%;
+    }
+  }
+
+  .text-box-block__content {
     box-sizing: border-box;
     width: auto;
     height: auto;

@@ -140,26 +140,29 @@ const rotationTransform = (rotation: number): string =>
         <bc-object-corner-controls [block]="this" label="文本框" [movable]="true" />
       }
 
-      <div
-        #textContent
-        class="text-box-block__content children-render-container"
-        [class.text-box-block__content--word-art]="usesUniformTextPaint"
-        style="font-family: var(--bc-text-box-word-art-font-family)"
-        [style.font-size.px]="textBoxFormat.textStyle?.fontSize"
-        [style.font-weight]="textBoxFormat.textStyle?.fontWeight"
-        [style.font-style]="textBoxFormat.textStyle?.fontStyle"
-        [style.letter-spacing.em]="textBoxFormat.textStyle?.letterSpacingEm"
-        [style.line-height]="textBoxFormat.textStyle?.lineHeight"
-        [style.color]="textPaintColor"
-        [style.text-align]="textBoxFormat.textFrame?.horizontalAlign"
-        [style.justify-content]="textVerticalJustify === 'flex-start' ? 'flex-start' : 'safe ' + textVerticalJustify"
-        [attr.data-bc-text-box-aligned]="textBoxFormat.textFrame?.verticalAlign === 'top' ? null : ''"
-        [style.white-space]="textBoxFormat.textFrame?.wrap ? null : 'nowrap'"
-        [style.transform]="textFrameTransform"
-        [style.background-size]="textPaintBackgroundSize"
-        [style.background-position]="textPaintBackgroundPosition"
-        [style.opacity]="textPictureOpacity"
-        [attr.contenteditable]="isReadonly ? 'false' : 'true'">
+      <div data-bc-text-box-viewport
+        [attr.data-bc-text-box-rotated]="textBoxFormat.textFrame?.direction === 'rotate-90' || textBoxFormat.textFrame?.direction === 'rotate-270' ? '' : null">
+        <div
+          #textContent
+          class="text-box-block__content children-render-container"
+          [class.text-box-block__content--word-art]="usesUniformTextPaint"
+          style="font-family: var(--bc-text-box-word-art-font-family)"
+          [style.font-size.px]="textBoxFormat.textStyle?.fontSize"
+          [style.font-weight]="textBoxFormat.textStyle?.fontWeight"
+          [style.font-style]="textBoxFormat.textStyle?.fontStyle"
+          [style.letter-spacing.em]="textBoxFormat.textStyle?.letterSpacingEm"
+          [style.line-height]="textBoxFormat.textStyle?.lineHeight"
+          [style.color]="textPaintColor"
+          [style.text-align]="textBoxFormat.textFrame?.horizontalAlign"
+          [style.justify-content]="textVerticalJustify === 'flex-start' ? 'flex-start' : 'safe ' + textVerticalJustify"
+          [attr.data-bc-text-box-aligned]="textBoxFormat.textFrame?.verticalAlign === 'top' ? null : ''"
+          [style.white-space]="textBoxFormat.textFrame?.wrap ? null : 'nowrap'"
+          [style.transform]="textFrameTransform"
+          [style.background-size]="textPaintBackgroundSize"
+          [style.background-position]="textPaintBackgroundPosition"
+          [style.opacity]="textPictureOpacity"
+          [attr.contenteditable]="isReadonly ? 'false' : 'true'">
+        </div>
       </div>
 
       <svg

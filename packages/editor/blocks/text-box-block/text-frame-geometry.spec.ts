@@ -55,7 +55,9 @@ describe('shape text rectangles and user margins', () => {
           const shape = ShapeBlockSchema.createSnapshot(item.shape, '文字')
           shape.props = {...shape.props, ...props}
           const expected = item.insets.map((value, index) => value + userMargins[index]!)
-          for (const snapshot of [textBox, shape]) {
+          for (const snapshot of [textBox, ...['rotate-90', 'rotate-270'].map(textDirection => ({
+            ...textBox, props: {...textBox.props, textDirection},
+          })), shape]) {
             const isTextBox = snapshot.flavour === 'text-box'
             const fixture = TestBed.createComponent(isTextBox ? TextBoxBlockComponent : ShapeBlockComponent as any)
             const host = fixture.nativeElement as HTMLElement
@@ -119,6 +121,10 @@ describe('shape text rectangles and user margins', () => {
       const updated = {...snapshot, props: {...snapshot.props, width: 180, height: 320, adjustments: {radius: 300}}}
       renderer.update({...root, children: [updated]} as IBlockSnapshot)
       expectInsets(viewer, '.text-box-block__surface', '.text-box-block__content', [31.11744, 22.81606, 39.11744, 32.81606], 'updated')
+      for (const textDirection of ['rotate-90', 'rotate-270', 'horizontal', 'vertical-rl']) {
+        renderer.update({...root, children: [{...updated, props: {...updated.props, textDirection}}]} as IBlockSnapshot)
+        expectInsets(viewer, '.text-box-block__surface', '.text-box-block__content', [31.11744, 22.81606, 39.11744, 32.81606], textDirection)
+      }
     } finally { renderer.destroy(); viewer.remove(); styles.destroy() }
   })
 
