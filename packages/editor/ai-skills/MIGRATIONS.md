@@ -2,7 +2,17 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-10-30 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-11-02 | Tracks `@ccc/blockcraft` npm releases.
+
+## 未发布 — 2026-11-02：只读划词自定义动作
+
+- Severity: minor（可选扩展点；版本由用户决定）。
+- What changed / Why: 新增 `FloatTextToolbarPluginOptions.readonlyExtraItems`，允许宿主为只读选区提供评论等独立权限动作，复用原浮层的定位与生命周期。
+- New APIs: `readonlyExtraItems?: IToolbarMenuItem[]`；`FloatTextToolbarComponent.readonly` 默认 false；自定义项可渲染已有 `label` 字段。
+- Behavior Changes: 显式配置后只读选区仅展示这些动作；展示和点击均检查 `visible`。`enabled` 仍控制整个浮层，格式快捷键仍禁止只读写入；未配置的消费者行为不变。
+- Deprecations: 无。
+- Migration Recipe: 无强制迁移。宿主可添加 `readonlyExtraItems: [{name: 'comment', value: 'comment', label: '添加评论', visible: () => canComment()}]`，通过现有 `onExtraItemClick` 处理并复核权限；无需新增浮层服务或解除正文只读。
+- Affected ai-skills files: `blockcraft-plugins-toolbar.md`。
 
 ## Unreleased — 2026-10-30
 

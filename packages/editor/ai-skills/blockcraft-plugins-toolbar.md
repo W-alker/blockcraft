@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-10-29
+> Last updated: 2026-11-02
 
 These plugins provide floating toolbars that appear when specific block types are selected.
 
@@ -30,6 +30,25 @@ These plugins provide floating toolbars that appear when specific block types ar
 `FixedTextToolbarComponent` 新增 `toolbarMode: 'simple' | 'full'` 输入（默认 `full`）及
 `toolbarModeChange` 输出。输入更新重新计算布局，但不回发 change；用户切换时才发出输出。
 宿主可用 `[toolbarMode]` 与 `(toolbarModeChange)` 管理个人最近模式；框架不存储账号设置。
+
+## 只读划词自定义动作（未发布）
+
+`FloatTextToolbarPluginOptions.readonlyExtraItems?: IToolbarMenuItem[]` 显式提供只读文档或锁定选区的动作；缺省仍关闭浮层。
+只读时隐藏所有格式控件，仅渲染这些动作；与编辑态 `extraItems` 分开，沿用同一个 `onExtraItemClick` 回调。
+`visible(selection)` 在展示和点击时检查，宿主可读取最新服务端权限；写入业务仍须在宿主提交时校验。
+`enabled` / `setEnabled()` 继续控制全部浮层。无有效动作时不创建浮层；格式快捷键仍受只读保护。
+定位、选区校验与销毁复用原插件，浮层复用现有 `allowReadonly`；不改变通用浮层默认行为。
+`FloatTextToolbarComponent.readonly` 默认 false，true 时只展示 `extraItems`；自定义按钮的 `label` 可显示简短文字。
+
+```typescript
+new FloatTextToolbarPlugin({
+  readonlyExtraItems: [{
+    name: 'comment', value: 'comment', icon: 'bc_huifu', label: '添加评论',
+    visible: selection => selection.isInSameBlock && canComment(),
+  }],
+  onExtraItemClick: item => { /* 宿主复核权限并处理动作 */ return true; },
+});
+```
 
 ## 文本对象尺寸适应（未发布）
 

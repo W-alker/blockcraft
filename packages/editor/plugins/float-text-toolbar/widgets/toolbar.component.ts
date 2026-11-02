@@ -176,6 +176,7 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
   selector: "div.float-text-toolbar",
   template: `
     <bc-float-toolbar (onItemClick)="onItemClicked($event)">
+      @if (!readonly) {
       <bc-float-toolbar-item icon="bc_wenben" [expandable]="true"
                              [bcOverlayTrigger]="formatFloatBar" [offsetX]="8">
         {{ activeHeading.intro }}
@@ -214,14 +215,18 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
                              [style.color]="activeColors['color']"
                              [style.background-color]="activeColors['backColor']"/>
 
+      }
       @if (extraItems.length) {
-        <span class="bc-float-toolbar__divider"></span>
+        @if (!readonly) {
+          <span class="bc-float-toolbar__divider"></span>
+        }
         @for (item of extraItems; track item.name) {
           <bc-float-toolbar-item [name]="item.name" [value]="item.value"
                                  [icon]="item.icon" [title]="item.tip"
                                  [active]="item.active"
                                  [csTooltip]="item.tip ?? ''"
                                  [csTooltipDisabled]="!item.tip">
+            {{ item.label }}
           </bc-float-toolbar-item>
         }
       }
@@ -369,6 +374,10 @@ export class FloatTextToolbarComponent {
   listList: IToolbarMenuItem[] = LIST_LIST
   bgGraphList = BG_GRAPH_LIST
 
+  /** 仅渲染自定义动作；不提供正文格式入口。 */
+  @Input()
+  readonly = false
+
   @Input()
   extraItems: IToolbarMenuItem[] = []
 
@@ -424,6 +433,8 @@ export class FloatTextToolbarComponent {
       return
     }
 
+    if (this.readonly) return
+
     switch (evt.name) {
       case 'heading':
         this.setProps({heading: evt.value as any})
@@ -456,15 +467,18 @@ export class FloatTextToolbarComponent {
   }
 
   setProps(props: Partial<IEditableBlockProps>) {
+    if (this.readonly) return
     this.utils.updateBlockProps(props)
     this.activeProps = {...this.activeProps, ...props}
   }
 
   transformList(flavour: BlockCraft.BlockFlavour) {
+    if (this.readonly) return
     this.utils.transformBlocks(this.activeFlavour === flavour ? 'paragraph' : flavour)
   }
 
   formatText(attrs: IInlineNodeAttrs) {
+    if (this.readonly) return
     this.utils.formatText(attrs)
   }
 
@@ -484,6 +498,7 @@ export class FloatTextToolbarComponent {
   }
 
   onLink() {
+    if (this.readonly) return
     const selection = this.doc.selection.value
     if (!isFloatTextToolbarSelection(selection) || !selection.isInSameBlock || !isSelectionAlive(selection as any, this.doc)) return
     const bookmark = captureRelativeSelectionBookmark(selection, this.doc)
@@ -559,6 +574,7 @@ export class FloatTextToolbarComponent {
   }
 
   onInlineFormula() {
+    if (this.readonly) return
     const selection = this.doc.selection.value
     if (!isFloatTextToolbarSelection(selection) || selection.start.type !== 'text' || !isSelectionAlive(selection as any, this.doc)) return
     const block = selection.firstBlock as any

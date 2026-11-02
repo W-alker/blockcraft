@@ -1,3 +1,4 @@
+import {TestBed} from '@angular/core/testing';
 import {FloatTextToolbarComponent} from "./toolbar.component";
 
 describe("FloatTextToolbarComponent selection replay", () => {
@@ -122,5 +123,44 @@ describe("FloatTextToolbarComponent selection replay", () => {
 
     expect(formatText).toHaveBeenCalledOnceWith({"a:bg": "grid"});
     expect(recalculate).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('FloatTextToolbarComponent readonly surface', () => {
+  it('renders one labeled action with no format controls or divider and dispatches its click', async () => {
+    await TestBed.configureTestingModule({imports: [FloatTextToolbarComponent]}).compileComponents();
+    const fixture = TestBed.createComponent(FloatTextToolbarComponent);
+    fixture.componentRef.setInput('doc', {selection: {value: null}});
+    fixture.componentRef.setInput('utils', {});
+    fixture.componentRef.setInput('readonly', true);
+    fixture.componentRef.setInput('extraItems', [{name: 'comment', value: 'comment', label: '添加评论'}]);
+    const clicked = jasmine.createSpy('clicked');
+    fixture.componentInstance.onExtraItemClick.subscribe(clicked);
+    fixture.detectChanges();
+    const buttons = fixture.nativeElement.querySelectorAll('bc-float-toolbar-item');
+    expect(buttons.length).toBe(1);
+    expect(buttons[0].textContent).toContain('添加评论');
+    expect(fixture.nativeElement.querySelector('.bc-float-toolbar__divider')).toBeNull();
+    const event = new MouseEvent('mousedown', {bubbles: true, cancelable: true});
+    buttons[0].dispatchEvent(event);
+    expect(event.defaultPrevented).toBeTrue();
+    expect(clicked).toHaveBeenCalledTimes(1);
+    fixture.destroy();
+  });
+
+  it('rejects direct format commands when readonly', () => {
+    const component = new FloatTextToolbarComponent();
+    component.readonly = true;
+    component.utils = {formatText: jasmine.createSpy(), updateBlockProps: jasmine.createSpy(), transformBlocks: jasmine.createSpy()} as any;
+    component.onItemClicked({name: 'bold', value: true} as any);
+    component.onColorPicked({type: 'color', color: '#123456', group: {} as any});
+    component.setProps({heading: 1});
+    component.transformList('bullet');
+    component.onLink();
+    component.onInlineFormula();
+    expect(component.utils.formatText).not.toHaveBeenCalled();
+    expect(component.utils.updateBlockProps).not.toHaveBeenCalled();
+    expect(component.utils.transformBlocks).not.toHaveBeenCalled();
   });
 });

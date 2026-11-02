@@ -1,0 +1,125 @@
+import {expect, test, type Page} from '@playwright/test';
+
+// 仅用隔离 fixture 提供宿主权限和插件配置；被测选区与动作均由真实鼠标/键盘触发。
+test.beforeEach(async ({page}) => {
+  await page.goto('/');
+  await page.getByRole('button', {name: '初始化', exact: true}).click();
+  await page.waitForFunction(() => (window as any).ng?.getComponent(document.querySelector('block-craft-editor'))?.doc?.isInitialized);
+  await page.evaluate(() => {
+    const source = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc;
+    const viewport = document.createElement('section');
+    viewport.id = 'readonly-toolbar-fixture';
+    viewport.style.cssText = 'position:fixed;inset:40px;overflow:auto;background:white;color:black;z-index:999;padding:80px 40px';
+    const controls = document.createElement('div');
+    controls.style.cssText = 'position:fixed;top:44px;left:80px;display:flex;gap:12px';
+    const mount = document.createElement('div');
+    viewport.append(controls, mount);
+    document.body.appendChild(viewport);
+    const paragraphs = ['Select this text to add a comment.', 'Another paragraph remains unchanged.'].map(text => source.schemas.createSnapshot('paragraph', [[{insert: text}]]));
+    const snapshot = source.schemas.createSnapshot('root', ['readonly-toolbar', paragraphs]);
+    const Toolbar = source.config.plugins.find((plugin: any) => plugin.name === 'float-text-toolbar').constructor;
+    const probe: any = {allowed: true, clicks: []};
+    const plugin = new Toolbar({
+      extraItems: [{name: 'edit-action', value: 'edit-action', label: '编辑态动作'}],
+      readonlyExtraItems: [{name: 'comment', value: 'comment', icon: 'bc_huifu', label: '添加评论',
+        visible: (selection: any) => probe.allowed && selection.isInSameBlock}],
+      onExtraItemClick: (item: any, doc: any) => {
+        probe.clicks.push({name: item.name, text: doc.selection.getSelectedText()});
+        return true;
+      },
+    });
+    const doc = new source.constructor({...source.config, yDoc: new source.yDoc.constructor(), docId: snapshot.id,
+      plugins: [plugin], readonly: true, scrollContainer: viewport, virtualization: {enabled: false}});
+    doc.initBySnapshot(snapshot, mount);
+    source.destroy();
+    probe.doc = doc;
+    probe.paragraphId = paragraphs[0].id;
+    probe.before = JSON.stringify(doc.exportSnapshot());
+    (window as any).readonlyToolbarProbe = probe;
+    for (const [label, action] of [
+      ['撤回权限', () => {probe.allowed = false;}],
+      ['切换编辑', () => doc.toggleReadonly(false)],
+      ['销毁文档', () => doc.destroy()],
+      ['关闭浮层偏好', () => plugin.setEnabled(false)],
+    ] as const) {
+      const button = document.createElement('button');
+      button.textContent = label;
+      button.addEventListener('click', action);
+      controls.appendChild(button);
+    }
+  });
+});
+
+async function selectText(page: Page) {
+  const text = page.locator('#readonly-toolbar-fixture .paragraph-block c-text').first();
+  await expect(text).toBeVisible();
+  const box = await text.boundingBox();
+  if (!box) throw new Error('missing text');
+  await page.mouse.move(box.x + 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2, {steps: 12});
+  await page.mouse.up();
+  return box;
+}
+const toolbar = (page: Page) => page.locator('.float-text-toolbar');
+
+test('只读拖选显示单个评论动作，点击保留选中文字且不改正文', async ({page}, testInfo) => {
+  const textBox = await selectText(page);
+  await expect(toolbar(page)).toBeVisible();
+  await expect(toolbar(page).locator('bc-float-toolbar-item')).toHaveCount(1);
+  await expect(toolbar(page)).toHaveText('添加评论');
+  const box = await toolbar(page).boundingBox();
+  expect(box!.width).toBeLessThan(200);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(textBox.y + 1);
+  await page.screenshot({path: testInfo.outputPath('readonly-comment-toolbar.png')});
+  await page.keyboard.press('ControlOrMeta+b');
+  await toolbar(page).getByText('添加评论', {exact: true}).click();
+  await expect(toolbar(page)).toHaveCount(0);
+  const result = await page.evaluate(() => {
+    const p = (window as any).readonlyToolbarProbe;
+    return {clicks: p.clicks, unchanged: p.before === JSON.stringify(p.doc.exportSnapshot()), readonly: p.doc.isReadonly};
+  });
+  expect(result.clicks).toHaveLength(1);
+  expect(result.clicks[0].text).toContain('this text');
+  expect(result.unchanged).toBe(true);
+  expect(result.readonly).toBe(true);
+});
+
+test('权限撤回后再次划词不出现按钮', async ({page}) => {
+  await selectText(page);
+  await expect(toolbar(page)).toBeVisible();
+  await page.getByRole('button', {name: '撤回权限', exact: true}).click();
+  await selectText(page);
+  await expect(toolbar(page)).toHaveCount(0);
+});
+
+test('Escape、外部点击、偏好关闭和销毁均释放浮层', async ({page}) => {
+  await selectText(page);
+  await expect(toolbar(page)).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(toolbar(page)).toHaveCount(0);
+  await selectText(page);
+  await expect(toolbar(page)).toBeVisible();
+  await page.mouse.click(55, 55);
+  await expect(toolbar(page)).toHaveCount(0);
+  await selectText(page);
+  await expect(toolbar(page)).toBeVisible();
+  await page.getByRole('button', {name: '关闭浮层偏好', exact: true}).click();
+  await selectText(page);
+  await expect(toolbar(page)).toHaveCount(0);
+  await page.getByRole('button', {name: '销毁文档', exact: true}).click();
+  await expect(toolbar(page)).toHaveCount(0);
+});
+
+test('切回编辑后恢复原有格式与编辑态自定义动作', async ({page}) => {
+  await page.getByRole('button', {name: '切换编辑', exact: true}).click();
+  await selectText(page);
+  await expect(toolbar(page)).toBeVisible();
+  await expect(toolbar(page).getByText('编辑态动作', {exact: true})).toBeVisible();
+  await expect(toolbar(page).getByText('添加评论', {exact: true})).toHaveCount(0);
+  await toolbar(page).locator('bc-float-toolbar-item[title^="加粗"]').click();
+  await expect.poll(() => page.evaluate(() => {
+    const doc = (window as any).readonlyToolbarProbe.doc;
+    return doc.getBlockById((window as any).readonlyToolbarProbe.paragraphId).textDeltas().some((op: any) => op.attributes?.['a:bold']);
+  })).toBe(true);
+});
