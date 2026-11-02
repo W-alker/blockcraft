@@ -2,7 +2,32 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-10-28
+> Last updated: 2026-11-02
+
+## 可滚动弹窗避让锚点
+
+`createConnectedOverlay()` 新增可选 `fitToAvailableSpace: true`：先按调用方候选顺序选择
+能完整容纳面板的一侧；全部放不下时选择可见面积最大的一侧，限制 pane 和组件宿主的
+最大宽高。保留候选的 offset 间距，不再通过整体平移把面板压过锚点。尺寸受编辑区
+（或显式 `clampTo`）与浏览器视口交集约束，支持上下、左右、RTL 和缩放。
+此能力适合可滚动列表；未启用时，固定工具栏、对象侧栏、表单等沿用原有定位与平移兜底。
+组件可保留自身滚动容器；服务每次重新读取原始 CSS 尺寸限制，搜索缩短、恢复列表与
+窗口尺寸改变后都能重新伸展。服务只投影样式，不修改文档数据。
+
+`getOriginRect?: () => DOMRect | null` 提供实时视口坐标矩形，例如模型光标所在行。
+返回 null 时退回 `origin` / `target` 元素；元素仍负责祖先滚动跟随、销毁与视图租约。
+调用方在该几何改变时通过现有 `updatePosition()` 请求更新，高频更新应按帧合并。
+滚动、窗口和元素尺寸变化的监听与回收由服务统一管理。
+
+```typescript
+const overlay = doc.overlayService.createConnectedOverlay({
+  target: block.containerElement,
+  getOriginRect: () => doc.selection.getSelectionRect(),
+  fitToAvailableSpace: true,
+  component: ScrollableMenu,
+  positions: [getPositionWithOffset('top-left', 0, 8), getPositionWithOffset('bottom-left', 0, 8)],
+}, close$);
+```
 
 ## 模板浮层的点击固定
 

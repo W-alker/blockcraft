@@ -2,7 +2,15 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-10-28
+> Last updated: 2026-11-02
+
+## 斜杠菜单输入行避让
+
+`BlockTransformerPlugin` 将模型选区的当前行矩形交给 `DocOverlayService`，并启用
+`fitToAvailableSpace`。菜单保留 8px 间距；上下都放不下时缩短列表并内部滚动，
+不会因编辑区边界平移而压住当前输入行。长段落、缩放和滚动使用同一服务路径。
+搜索、方向键、命令插入、查询相对位置和撤销语义不变；选区几何刷新按动画帧合并。
+公共配置和所有权规则见 `blockcraft-toolbar.md`。
 
 ## 表格列宽入口
 

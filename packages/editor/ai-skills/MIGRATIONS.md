@@ -4,6 +4,16 @@
 >
 > Last updated: 2026-11-02 | Tracks `@ccc/blockcraft` npm releases.
 
+## 未发布 — 2026-11-02：可滚动弹窗的锚点避让
+
+- Severity: minor（新增可选扩展点；版本由用户决定）。
+- What changed / Why: `DocOverlayService` 统一按锚点各侧可用空间选择方向并收缩可滚动面板，避免边界平移使斜杠菜单盖住输入行。
+- New APIs: `IConnectOverlayCreateOptions.fitToAvailableSpace?: boolean`、`getOriginRect?: () => DOMRect | null`。前者默认关闭；后者返回视口坐标，null 回退到元素。
+- Behavior Changes: 斜杠菜单启用此策略，锚定模型选区所在行并保留 8px 间距；其他调用方默认保持原行为。元素仍负责生命周期、祖先滚动及租约。服务可限制组件宿主最大宽高；该策略用于可滚动面板。
+- Deprecations: 无。
+- Migration Recipe: 无强制迁移。已有 `createConnectedOverlay({target, component}, close$)` 保持不变；可滚动菜单可改为 `createConnectedOverlay({target, component, fitToAvailableSpace: true, getOriginRect: () => doc.selection.getSelectionRect()}, close$)`，在模型锚点变化后按帧调用返回的 `updatePosition()`。
+- Affected ai-skills files: `blockcraft-toolbar.md`、`blockcraft-plugins-block.md`。
+
 ## 未发布 — 2026-11-02：只读划词自定义动作
 
 - Severity: minor（可选扩展点；版本由用户决定）。

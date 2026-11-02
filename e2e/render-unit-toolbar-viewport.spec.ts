@@ -3,7 +3,7 @@ import {expect, test} from '@playwright/test'
 test('expanded region border settings remain inside a short viewport', async ({page}) => {
   await page.goto('/template')
   await page.getByRole('button', {name: '内容区域', exact: true}).click()
-  await page.getByRole('button', {name: '选中内容区域并调整大小'}).click({force: true})
+  await page.getByRole('button', {name: '选中内容区域', exact: true}).click({force: true})
   await expect(page.locator('[data-bc-region-format-toolbar]')).toBeVisible()
 
   await page.setViewportSize({width: 400, height: 405})

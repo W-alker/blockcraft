@@ -26,6 +26,7 @@ describe('DocOverlayService', () => {
     const flexiblePosition = {
       get positions() { return positions },
       positionChanges,
+      setOrigin: jasmine.createSpy('setOrigin').and.callFake(() => flexiblePosition),
       withFlexibleDimensions: jasmine.createSpy('withFlexibleDimensions').and.callFake(() => flexiblePosition),
       withGrowAfterOpen: jasmine.createSpy('withGrowAfterOpen').and.callFake(() => flexiblePosition),
       withPush: jasmine.createSpy('withPush').and.callFake(() => flexiblePosition),
@@ -247,6 +248,82 @@ describe('DocOverlayService', () => {
       flexibleHarness.flexiblePosition.withFlexibleDimensions,
     ).toHaveBeenCalledOnceWith(true)
     flexibleHarness.cleanup()
+  })
+
+  it('uses live origin geometry without changing element ownership or post-close updates', () => {
+    const h = createOverlayHarness()
+    let rect: DOMRect | null = new DOMRect(120, 220, 1, 24)
+    const opened = h.service.createConnectedOverlay({
+      target: h.block as any, component: TestOverlayComponent,
+      getOriginRect: () => rect,
+    }, h.close$)
+    expect(h.flexibleConnectedTo).toHaveBeenCalledWith({x: 120, y: 220, width: 1, height: 24})
+    expect(h.virtualization.acquireBlockViewLease).toHaveBeenCalledOnceWith(['block-1'])
+    rect = new DOMRect(160, 260, 1, 24)
+    opened.updatePosition()
+    expect(h.flexiblePosition.setOrigin).toHaveBeenCalledWith({x: 160, y: 260, width: 1, height: 24})
+    spyOn(h.targetElement, 'getBoundingClientRect').and.returnValue(new DOMRect(100, 200, 300, 40))
+    rect = null
+    opened.updatePosition()
+    expect(h.flexiblePosition.setOrigin).toHaveBeenCalledWith({x: 100, y: 200, width: 300, height: 40})
+    h.close$.next()
+    h.flexiblePosition.setOrigin.calls.reset()
+    opened.updatePosition()
+    expect(h.flexiblePosition.setOrigin).not.toHaveBeenCalled()
+    h.cleanup()
+  })
+
+  for (const scenario of [
+    {name: 'short editor chooses the larger lower side', positions: ['top-left', 'bottom-left'],
+      target: [200, 220, 1, 24], panel: [380, 360], expected: 1, width: 484, height: 240},
+    {name: 'short editor chooses the larger upper side', positions: ['bottom-left', 'top-left'],
+      target: [200, 350, 1, 24], panel: [380, 360], expected: 1, width: 484, height: 234},
+    {name: 'a fitting preferred side retains priority', positions: ['top-left', 'bottom-left'],
+      target: [200, 220, 1, 24], panel: [380, 80], expected: 0, width: 484, height: 104},
+    {name: 'a side panel shrinks horizontally', positions: ['left-center', 'right-center'],
+      target: [300, 220, 40, 24], panel: [380, 100], expected: 1, width: 244, height: 384},
+    {name: 'RTL side panels use physical coordinates', positions: ['left-center', 'right-center'], rtl: true,
+      target: [300, 220, 40, 24], panel: [380, 100], expected: 0, width: 244, height: 384},
+  ]) {
+    it(`fits scrollable panels: ${scenario.name}`, () => {
+      const h = createOverlayHarness()
+      const positions = scenario.positions.map(name => {
+        const side = name.startsWith('left') || name.startsWith('right')
+        // In RTL the caller's offset follows the physical connection side.
+        return getPositionWithOffset(name as OverlayPosition, side ? (scenario.rtl ? -8 : 8) : 0, side ? 0 : 8)
+      })
+      h.flexiblePosition.withPositions(positions)
+      h.flexiblePosition.withPositions.calls.reset()
+      h.overlayRef.getDirection.and.returnValue(scenario.rtl ? 'rtl' : 'ltr')
+      const [x, y, width, height] = scenario.target
+      const panel = new DOMRect(0, 0, ...scenario.panel as [number, number])
+      ;(h.service as any)._fitConnectedOverlay(h.overlayRef,
+        {origin: h.targetElement, strategy: h.flexiblePosition},
+        new DOMRect(x, y, width, height), panel,
+        {left: 108, top: 108, right: 592, bottom: 492})
+      expect(h.flexiblePosition.withPositions.calls.first().args[0]).toEqual([positions[scenario.expected]])
+      expect(h.overlayRef.updateSize).toHaveBeenCalledWith({maxWidth: `${scenario.width}px`, maxHeight: `${scenario.height}px`})
+      expect(h.flexiblePosition.positions).toEqual(positions)
+      h.cleanup()
+    })
+  }
+
+  it('accounts for content-box padding and borders when shrinking a scrollable host', () => {
+    const h = createOverlayHarness()
+    const content = document.createElement('div')
+    content.style.cssText = 'box-sizing:content-box;width:200px;height:300px;padding:10px;border:2px solid;overflow:auto'
+    h.overlayElement.append(content)
+    const panel = content.getBoundingClientRect()
+    const positions = [getPositionWithOffset('top-left', 0, 8)]
+    h.flexiblePosition.withPositions(positions)
+    ;(h.service as any)._fitConnectedOverlay(h.overlayRef,
+      {origin: h.targetElement, strategy: h.flexiblePosition, content},
+      new DOMRect(200, 220, 1, 24), panel,
+      {left: 108, top: 108, right: 592, bottom: 492})
+    expect(content.style.maxHeight).toBe('80px')
+    expect(content.getBoundingClientRect().height).toBe(104)
+    expect(content.getBoundingClientRect().width).toBe(224)
+    h.cleanup()
   })
 
   it('releases a BlockComponent target lease when OverlayRef is disposed directly', () => {

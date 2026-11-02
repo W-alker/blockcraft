@@ -2,6 +2,69 @@ import {expect, test, type Page} from "@playwright/test";
 
 const editorSelector = "block-craft-editor";
 
+for (const {zoom, longParagraph} of [1, 1.3].flatMap(zoom =>
+  [false, true].map(longParagraph => ({zoom, longParagraph})),
+)) {
+  test(`slash menu stays outside its input line in a short editor at ${zoom} zoom (long: ${longParagraph})`, async ({page}) => {
+    await initialize(page);
+    const id = await createEmptyBlockWithCaret(page);
+    const text = longParagraph ? '长段落内容 '.repeat(150) : '下方正文应保持可读';
+    const offset = longParagraph ? 120 : 0;
+    await page.evaluate(async ({id, zoom, text, offset}) => {
+      const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc;
+      const block = doc.getBlockById(id);
+      const scroller = doc.scrollContainer as HTMLElement;
+      scroller.style.height = '360px';
+      scroller.style.maxHeight = '360px';
+      scroller.style.flex = 'none';
+      block.hostElement.style.marginTop = '130px';
+      block.hostElement.style.zoom = String(zoom);
+      block.insertText(0, text);
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      doc.selection.setCursorAt(block, offset);
+      const caret = doc.selection.getSelectionRect();
+      scroller.scrollTop += caret.top - scroller.getBoundingClientRect().top - 160;
+    }, {id, zoom, text, offset});
+    await page.keyboard.type('/');
+    const menu = page.locator('block-transformer-contextmenu');
+    await expect(menu).toBeVisible();
+    const geometry = () => page.evaluate(id => {
+      const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc;
+      const target = doc.selection.getSelectionRect();
+      const bounds = doc.scrollContainer.getBoundingClientRect();
+      const menu = document.querySelector('block-transformer-contextmenu') as HTMLElement;
+      const rect = menu.getBoundingClientRect();
+      return {
+        separate: rect.bottom <= target.top - 7 || rect.top >= target.bottom + 7,
+        contained: rect.top >= Math.max(0, bounds.top) + 7 &&
+          rect.bottom <= Math.min(document.documentElement.clientHeight, bounds.bottom) - 7,
+        scrollable: menu.scrollHeight > menu.clientHeight,
+      };
+    }, id);
+    await expect.poll(geometry).toEqual({separate: true, contained: true, scrollable: true});
+    for (let i = 0; i < 10; i++) await page.keyboard.press('ArrowDown');
+    await expect.poll(() => menu.locator('[aria-selected="true"]').evaluate(element => {
+      const item = element.getBoundingClientRect();
+      const panel = element.closest('block-transformer-contextmenu')!.getBoundingClientRect();
+      return item.top >= panel.top - 1 && item.bottom <= panel.bottom + 1;
+    })).toBe(true);
+    await page.evaluate(() => {
+      const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc;
+      doc.scrollContainer.scrollTop += 60;
+    });
+    await expect.poll(geometry).toEqual({separate: true, contained: true, scrollable: true});
+    await page.keyboard.type('date');
+    await expect(menu.getByRole('option', {name: /^日期/})).toBeVisible();
+    await expect.poll(async () => (await geometry()).separate).toBe(true);
+    for (let i = 0; i < 4; i++) await page.keyboard.press('Backspace');
+    await expect.poll(geometry).toEqual({separate: true, contained: true, scrollable: true});
+    await page.keyboard.type('date');
+    await page.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
+    await expectBlockText(page, id, text.slice(0, offset) + '/date' + text.slice(offset));
+  });
+}
+
 async function initialize(page: Page) {
   await page.goto("/");
   await page.getByRole("button", {name: "初始化", exact: true}).click();

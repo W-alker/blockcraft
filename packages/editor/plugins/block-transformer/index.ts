@@ -1,8 +1,10 @@
 import {preserveTransformPlaceholder} from './placeholder';
 import {focusAfterImageInsertion} from '../../framework/modules/selection/after-insertion';
-import {effect} from '@angular/core';
+import {effect, NgZone} from '@angular/core';
 import {
   filter,
+  auditTime,
+  animationFrameScheduler,
   merge,
   skip,
   Subject,
@@ -1449,13 +1451,15 @@ export class BlockTransformerPlugin extends DocPlugin {
     queryRange.capture(block, triggerIndex, 1);
     this.closeMenu$.pipe(take(1)).subscribe(() => queryRange.reset());
 
-    const { componentRef: cpr } =
+    const { componentRef: cpr, updatePosition } =
       this.doc.overlayService.createConnectedOverlay<BlockTransformContextMenu>(
         {
           target: block.containerElement,
+          getOriginRect: () => this.doc.selection.getSelectionRect(),
+          fitToAvailableSpace: true,
           positions: [
-            getPositionWithOffset("top-left"),
-            getPositionWithOffset("bottom-left"),
+            getPositionWithOffset("top-left", 0, 8),
+            getPositionWithOffset("bottom-left", 0, 8),
           ],
           component: BlockTransformContextMenu,
         },
@@ -1470,6 +1474,10 @@ export class BlockTransformerPlugin extends DocPlugin {
     const inlineOnly = triggerIndex > 0 || block.flavour !== "paragraph";
     cpr.setInput("items", this.buildMenuItems(block, inlineOnly));
     this.activeMenu = cpr.instance;
+    this.doc.selection.selectionChange$.pipe(
+      auditTime(0, animationFrameScheduler),
+      takeUntil(this.closeMenu$),
+    ).subscribe(() => this.doc.injector.get(NgZone).runOutsideAngular(updatePosition));
 
     cpr.instance.commandSelected
       .pipe(takeUntil(this.closeMenu$))

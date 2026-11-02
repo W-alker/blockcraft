@@ -129,6 +129,10 @@ export interface IConnectOverlayCreateOptions {
   target: HTMLElement | BlockCraft.BlockComponent;
   /** Optional visual positioning origin; target still owns lifetime and view leases. */
   origin?: HTMLElement;
+  /** Live viewport geometry (e.g. a caret line). Element origin still owns scroll/lifetime tracking. */
+  getOriginRect?: () => DOMRect | null;
+  /** Opt-in scrollable panels: shrink on a candidate side instead of pushing across the origin. */
+  fitToAvailableSpace?: boolean;
   component: ComponentType<any>;
   positions?: ConnectedPosition[];
   backdrop?: boolean;
@@ -171,6 +175,17 @@ export type IGlobalOverlayCreateOptions = {
   end?: string;
 };
 
+type ConnectedOverlayState = {
+  origin: HTMLElement;
+  strategy: FlexibleConnectedPositionStrategy;
+  position?: ConnectedPosition;
+  getOriginRect?: () => DOMRect | null;
+  fitToAvailableSpace?: boolean;
+  content?: HTMLElement;
+  initialMaxWidth?: string;
+  initialMaxHeight?: string;
+};
+
 export class DocOverlayService {
   public readonly overlay = this.doc.injector.get(Overlay);
 
@@ -204,9 +219,10 @@ export class DocOverlayService {
     if ('target' in params) {
       const el = params.origin ?? (params.target instanceof HTMLElement
         ? params.target : params.target.hostElement);
+      const rect = params.getOriginRect?.();
       return this.overlay
         .position()
-        .flexibleConnectedTo(el)
+        .flexibleConnectedTo(rect ? {x: rect.left, y: rect.top, width: rect.width, height: rect.height} : el)
         .withFlexibleDimensions(params.flexibleDimensions ?? false)
         .withGrowAfterOpen(true)
         .withPush(true)
@@ -249,7 +265,7 @@ export class DocOverlayService {
   private _clampConnectedOverlay(
     overlayRef: OverlayRef,
     clampTo?: HTMLElement,
-    connection?: {origin: HTMLElement; strategy: FlexibleConnectedPositionStrategy; position?: ConnectedPosition},
+    connection?: ConnectedOverlayState,
   ) {
     const scrollContainer = this.doc.scrollContainer;
     if (!scrollContainer?.isConnected || !overlayRef.hasAttached()) return;
@@ -291,6 +307,13 @@ export class DocOverlayService {
 
     hostElement.style.transform = '';
 
+    if (connection?.fitToAvailableSpace && connection.content) {
+      // Re-measure the component's own CSS limits, not the previous fit. This
+      // lets filtered lists and resized viewports grow again without stale caps.
+      connection.content.style.maxWidth = connection.initialMaxWidth ?? '';
+      connection.content.style.maxHeight = connection.initialMaxHeight ?? '';
+    }
+
     let overlayRect = overlayElement.getBoundingClientRect();
     const minLeft = containerRect.left + CONNECTED_OVERLAY_MARGIN;
     const maxRight = containerRect.right - CONNECTED_OVERLAY_MARGIN;
@@ -300,11 +323,20 @@ export class DocOverlayService {
     // CDK 按浏览器视口选择候选位置；编辑器可视区可能更小。先尝试能完整
     // 放入该边界的候选，再做平移兜底，避免把上方工具条直接压回目标块上。
     const origin = connection?.origin;
-    if (connection && origin?.isConnected && (overlayRect.left < minLeft || overlayRect.right > maxRight ||
+    if (connection?.fitToAvailableSpace && origin?.isConnected) {
+      const targetRect = connection.getOriginRect?.() ?? origin.getBoundingClientRect();
+      this._fitConnectedOverlay(overlayRef, connection, targetRect, overlayRect, {
+        left: Math.max(minLeft, CONNECTED_OVERLAY_MARGIN),
+        top: Math.max(minTop, CONNECTED_OVERLAY_MARGIN),
+        right: Math.min(maxRight, origin.ownerDocument.documentElement.clientWidth - CONNECTED_OVERLAY_MARGIN),
+        bottom: Math.min(maxBottom, origin.ownerDocument.documentElement.clientHeight - CONNECTED_OVERLAY_MARGIN),
+      });
+      overlayRect = overlayElement.getBoundingClientRect();
+    } else if (connection && origin?.isConnected && (overlayRect.left < minLeft || overlayRect.right > maxRight ||
       overlayRect.top < minTop || overlayRect.bottom > maxBottom)) {
       const strategy = connection.strategy;
       const positions = strategy.positions;
-      const targetRect = origin.getBoundingClientRect();
+      const targetRect = connection.getOriginRect?.() ?? origin.getBoundingClientRect();
       const viewport = origin.ownerDocument.documentElement;
       const rtl = overlayRef.getDirection() === 'rtl';
       const xRatio = (alignment: 'start' | 'center' | 'end') =>
@@ -352,6 +384,67 @@ export class DocOverlayService {
       translateX || translateY
         ? `translate(${translateX}px, ${translateY}px)`
         : '';
+  }
+
+  private _fitConnectedOverlay(
+    overlayRef: OverlayRef,
+    connection: ConnectedOverlayState,
+    target: DOMRect,
+    panel: DOMRect,
+    bounds: {left: number; top: number; right: number; bottom: number},
+  ) {
+    const positions = connection.strategy.positions;
+    const rtl = overlayRef.getDirection() === 'rtl';
+    const physicalX = (value: 'start' | 'center' | 'end') =>
+      value === 'center' ? 'center' : (value === 'start') === rtl ? 'right' : 'left';
+    const candidates = positions.map(position => {
+      const originX = physicalX(position.originX);
+      const overlayX = physicalX(position.overlayX);
+      const dx = position.offsetX ?? 0;
+      const dy = position.offsetY ?? 0;
+      let width = bounds.right - bounds.left;
+      let height = bounds.bottom - bounds.top;
+      if (originX === 'left' && overlayX === 'right') width = target.left + dx - bounds.left;
+      if (originX === 'right' && overlayX === 'left') width = bounds.right - target.right - dx;
+      if (position.originY === 'top' && position.overlayY === 'bottom') height = target.top + dy - bounds.top;
+      if (position.originY === 'bottom' && position.overlayY === 'top') height = bounds.bottom - target.bottom - dy;
+      width = Math.max(0, Math.min(width, bounds.right - bounds.left));
+      height = Math.max(0, Math.min(height, bounds.bottom - bounds.top));
+      return {position, width, height, area: Math.min(width, panel.width) * Math.min(height, panel.height)};
+    });
+    // Preserve caller priority for a complete fit; otherwise maximize the
+    // visible panel area while retaining the selected side's origin clearance.
+    const best = candidates.find(candidate => candidate.width >= panel.width && candidate.height >= panel.height)
+      ?? candidates.reduce<typeof candidates[number] | undefined>((best, candidate) =>
+        !best || candidate.area > best.area ? candidate : best, undefined);
+    if (!best) return;
+
+    const content = connection.content;
+    if (content) {
+      const rect = content.getBoundingClientRect();
+      const scaleX = content.offsetWidth ? rect.width / content.offsetWidth : 1;
+      const scaleY = content.offsetHeight ? rect.height / content.offsetHeight : 1;
+      const styles = content.ownerDocument.defaultView!.getComputedStyle(content);
+      const pixels = (value: string) => parseFloat(value) || 0;
+      const extraWidth = styles.boxSizing === 'border-box' ? 0 :
+        pixels(styles.paddingLeft) + pixels(styles.paddingRight) + pixels(styles.borderLeftWidth) + pixels(styles.borderRightWidth);
+      const extraHeight = styles.boxSizing === 'border-box' ? 0 :
+        pixels(styles.paddingTop) + pixels(styles.paddingBottom) + pixels(styles.borderTopWidth) + pixels(styles.borderBottomWidth);
+      content.style.maxWidth = `${Math.max(0, Math.min(rect.width, best.width) / (scaleX || 1) - extraWidth)}px`;
+      content.style.maxHeight = `${Math.max(0, Math.min(rect.height, best.height) / (scaleY || 1) - extraHeight)}px`;
+    }
+    overlayRef.updateSize({maxWidth: `${best.width}px`, maxHeight: `${best.height}px`});
+    try {
+      connection.strategy.withPositions([best.position]);
+      overlayRef.updatePosition();
+    } finally {
+      connection.strategy.withPositions([...positions]);
+    }
+    // Panels with their own scrolling retain it. Other opt-in components can
+    // still reach overflowing content through the pane.
+    const pane = overlayRef.overlayElement;
+    pane.style.overflowX = pane.scrollWidth > pane.clientWidth ? 'auto' : '';
+    pane.style.overflowY = pane.scrollHeight > pane.clientHeight ? 'auto' : '';
   }
 
   createConnectedOverlay<T>(
@@ -434,10 +527,16 @@ export class DocOverlayService {
       releaseTargetView();
     });
 
-    const connection = 'target' in params ? {
+    const content = componentRef.location?.nativeElement as HTMLElement | undefined;
+    const connection: ConnectedOverlayState | undefined = 'target' in params ? {
       origin: params.origin ?? (params.target instanceof HTMLElement ? params.target : params.target.hostElement),
       strategy: positionStrategy as FlexibleConnectedPositionStrategy,
       position: undefined as ConnectedPosition | undefined,
+      getOriginRect: params.getOriginRect,
+      fitToAvailableSpace: params.fitToAvailableSpace,
+      content,
+      initialMaxWidth: content?.style.maxWidth,
+      initialMaxHeight: content?.style.maxHeight,
     } : undefined;
     if (connection) {
       let clampFrame: number | null = null;
@@ -445,6 +544,10 @@ export class DocOverlayService {
         if (clampFrame !== null || !overlayRef.hasAttached()) return;
         clampFrame = requestAnimationFrame(() => {
           clampFrame = null;
+          if (connection.getOriginRect) {
+            updatePosition();
+            return;
+          }
           this._clampConnectedOverlay(
             overlayRef,
             'target' in params ? params.clampTo : undefined,
@@ -467,6 +570,13 @@ export class DocOverlayService {
         });
         resizeObserver.observe(this.doc.scrollContainer);
         resizeObserver.observe(overlayRef.overlayElement);
+        if (connection.fitToAvailableSpace || connection.getOriginRect) {
+          resizeObserver.observe(connection.origin);
+        }
+      }
+      if ((connection.fitToAvailableSpace || connection.getOriginRect) && connection.origin.ownerDocument.defaultView) {
+        fromEvent(connection.origin.ownerDocument.defaultView, 'resize')
+          .pipe(takeUntil(close$)).subscribe(scheduleClamp);
       }
 
       close$.pipe(take(1)).subscribe(() => {
@@ -490,6 +600,10 @@ export class DocOverlayService {
     // Geometry commits must still re-check the editor's visible boundary.
     const updatePosition = () => {
       if (!overlayRef.hasAttached()) return;
+      if (connection?.getOriginRect) {
+        const rect = connection.getOriginRect() ?? connection.origin.getBoundingClientRect();
+        connection.strategy.setOrigin({x: rect.left, y: rect.top, width: rect.width, height: rect.height});
+      }
       overlayRef.updatePosition();
       if (connection) {
         this._clampConnectedOverlay(overlayRef, 'target' in params ? params.clampTo : undefined, connection);
