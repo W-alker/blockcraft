@@ -586,42 +586,53 @@ export class InlineRangeMeasurer {
     end: number,
     width: number,
   ): boolean {
-    const point = content.points.get(end)
-    if (!point) return false
-    const range = document.createRange()
-    range.setStart(content.root, 0)
-    range.setEnd(point.node, point.offset)
-    const rects = Array.from(range.getClientRects()).filter(
-      rect => rect.width > 0.01 || rect.height > 0.01,
-    )
-    if (!rects.length) return true
-    const firstTop = rects[0].top
-    const rootLeft = content.root.getBoundingClientRect().left
-    return rects.every(
-      rect =>
-        Math.abs(rect.top - firstTop) <= 0.75 &&
-        rect.right - rootLeft <= width + 0.75,
-    )
+    const measured = this._measureFirstLine(content, end)
+    return measured !== undefined &&
+      measured.singleLine && measured.advance <= width + 0.75
   }
 
   private _firstLineAdvance(content: MeasurementContent, end: number): number {
+    return this._measureFirstLine(content, end)?.advance ?? 0
+  }
+
+  private _measureFirstLine(
+    content: MeasurementContent,
+    end: number,
+  ): {singleLine: boolean; advance: number} | undefined {
     const point = content.points.get(end)
-    if (!point) return 0
+    if (!point) return undefined
     const range = document.createRange()
     range.setStart(content.root, 0)
     range.setEnd(point.node, point.offset)
-    const rects = Array.from(range.getClientRects()).filter(
-      rect => rect.width > 0.01 || rect.height > 0.01,
-    )
-    if (!rects.length) return 0
-    const firstTop = rects[0].top
-    const rootLeft = content.root.getBoundingClientRect().left
-    return Math.max(
-      0,
-      ...rects
-        .filter(rect => Math.abs(rect.top - firstTop) <= 0.75)
-        .map(rect => rect.right - rootLeft),
-    )
+    let lineTop: number | undefined
+    let lineBottom = 0
+    let rootLeft = 0
+    let advance = 0
+    for (const rect of Array.from(range.getClientRects())) {
+      if (rect.width <= 0.01 && rect.height <= 0.01) continue
+      if (lineTop === undefined) {
+        lineTop = rect.top
+        lineBottom = rect.bottom
+        rootLeft = content.root.getBoundingClientRect().left
+      } else {
+        // Firefox includes both inline wrapper and glyph boxes. Their tops
+        // differ even on one line, but one vertical interval contains the
+        // other. Mere overlap also occurs across tightly spaced text lines.
+        const containsLine = rect.top <= lineTop + 0.75 &&
+          rect.bottom >= lineBottom - 0.75
+        const insideLine = rect.top >= lineTop - 0.75 &&
+          rect.bottom <= lineBottom + 0.75
+        if (!containsLine && !insideLine) {
+          return {singleLine: false, advance}
+        }
+        // Keep the common band, never its union: a tall embed must not bridge
+        // otherwise separate lines. Disjoint script boxes retain safe fallback.
+        lineTop = Math.max(lineTop, rect.top)
+        lineBottom = Math.min(lineBottom, rect.bottom)
+      }
+      advance = Math.max(advance, rect.right - rootLeft)
+    }
+    return {singleLine: true, advance}
   }
 }
 

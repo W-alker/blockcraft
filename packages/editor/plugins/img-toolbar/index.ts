@@ -11,6 +11,7 @@ import {
   getPositionWithOffset,
   IBlockSnapshot,
   IInlineNodeAttrs,
+  isNativeInputTarget,
   measureObjectPlacement,
   ORIGIN_NO_RECORD,
 } from "../../framework";
@@ -515,6 +516,13 @@ export class ImgToolbarPlugin extends DocPlugin {
 
   private _onInlineImageMouseDown(event: MouseEvent) {
     if (event.button !== 0) return;
+    this._activateInlineImage(event);
+  }
+
+  private _activateInlineImage(
+    event: MouseEvent,
+    wrapOnly = false,
+  ): ActiveInlineImageContext | undefined {
     const target = event.target;
     if (!(target instanceof Element)) return;
     const shell = target.closest<HTMLElement>('.bc-inline-image-shell[data-bc-inline-image]');
@@ -522,6 +530,7 @@ export class ImgToolbarPlugin extends DocPlugin {
       this.closeInlineToolbar();
       return;
     }
+    if (isNativeInputTarget(target)) return;
     const alreadyActive = this._inlineContext?.shell === shell;
 
     const blockId = closetBlockId(shell);
@@ -545,7 +554,7 @@ export class ImgToolbarPlugin extends DocPlugin {
     const data = resolveInlineImageAtOffset(editable.textDeltas(), offset);
     const frame = shell.querySelector<HTMLElement>('.bc-inline-image-frame');
     const image = shell.querySelector<HTMLImageElement>('img.bc-inline-image');
-    if (!data || !frame || !image) return;
+    if (!data || !frame || !image || (wrapOnly && !data.wrap)) return;
 
     event.preventDefault();
     event.stopPropagation();
@@ -569,7 +578,7 @@ export class ImgToolbarPlugin extends DocPlugin {
     }
     // A repeated click must still restore the Embed selection, but does not
     // need to tear down and rebuild the already connected controls.
-    if (alreadyActive) return;
+    if (alreadyActive) return this._inlineContext;
 
     this.closeToolbar();
     this.closeInlineToolbar();
@@ -649,6 +658,7 @@ export class ImgToolbarPlugin extends DocPlugin {
           return;
         }
       });
+    return context;
   }
 
   private _resolveLiveInlineImage(
@@ -725,15 +735,11 @@ export class ImgToolbarPlugin extends DocPlugin {
       target.closest('block-resizer, [data-bc-inline-image-resizer]')
     ) return;
     const frame = target.closest<HTMLElement>('.bc-inline-image-frame');
-    const context = this._inlineContext;
-    if (
-      !frame ||
-      !context ||
-      frame !== context.frame ||
-      !this.doc.root.hostElement.contains(frame)
-    ) {
-      return;
-    }
+    if (!frame || !this.doc.root.hostElement.contains(frame)) return;
+    // Pointer capture runs before compatibility mousedown. Activate the same
+    // model Embed here so the first gesture can use the existing drag path.
+    const context = this._activateInlineImage(event, true);
+    if (!context || frame !== context.frame) return;
     const current = this._resolveLiveInlineImage(context);
     if (!current?.wrap) return;
 
@@ -862,8 +868,10 @@ export class ImgToolbarPlugin extends DocPlugin {
       }
 
       const targetRect = target.block.containerElement.getBoundingClientRect();
+      const visualToLayout = (value: number) =>
+        this.doc.viewScale?.visualToLayout(value) ?? value;
       const targetWidth = target.block.containerElement.clientWidth ||
-        targetRect.width;
+        visualToLayout(targetRect.width);
       if (targetWidth <= 0) {
         releaseDragResources();
         return;
@@ -876,9 +884,9 @@ export class ImgToolbarPlugin extends DocPlugin {
       }
       const placement = resolveInlineImageDragPreview({
         containerWidth: targetWidth,
-        imageWidth: live.width ?? frameRect.width,
-        imageHeight: live.height ?? frameRect.height,
-        imageX: proxyPosition.left - targetRect.left,
+        imageWidth: live.width ?? visualToLayout(frameRect.width),
+        imageHeight: live.height ?? visualToLayout(frameRect.height),
+        imageX: visualToLayout(proxyPosition.left - targetRect.left),
         side: 'auto',
         gap: live.gap,
       });

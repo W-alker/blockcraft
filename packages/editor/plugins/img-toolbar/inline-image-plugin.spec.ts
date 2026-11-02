@@ -336,6 +336,353 @@ describe('ImgToolbarPlugin inline-image interaction', () => {
     h.destroy();
   });
 
+  it('starts the first wrapped-image drag before compatibility mousedown', fakeAsync(() => {
+    const h = makeHarness(false, true);
+    h.plugin.init();
+    try {
+      const down = new PointerEvent('pointerdown', {
+        bubbles: true, cancelable: true, button: 0, isPrimary: true,
+        pointerId: 31, clientX: 245, clientY: 100,
+      });
+      h.image.dispatchEvent(down);
+      const proxy = document.querySelector('[data-bc-inline-image-drag-proxy]');
+      expect(proxy).not.toBeNull();
+      expect(down.defaultPrevented).toBeTrue();
+      expect(h.paragraphBlock.setInlineRange).toHaveBeenCalledOnceWith(1, 1);
+
+      // Some integrations still deliver the compatibility mouse event. It
+      // must not rebuild controls or cancel the gesture started above.
+      h.image.dispatchEvent(new MouseEvent('mousedown', {
+        bubbles: true, cancelable: true, button: 0,
+      }));
+      expect(h.doc.overlayService.createConnectedOverlay).toHaveBeenCalledTimes(1);
+      expect(document.querySelector('[data-bc-inline-image-drag-proxy]')).toBe(proxy);
+      window.dispatchEvent(new PointerEvent('pointermove', {
+        pointerId: 31, clientX: 400, clientY: 130,
+      }));
+      tick(17);
+      expect(h.doc.crud.transact).not.toHaveBeenCalled();
+      window.dispatchEvent(new PointerEvent('pointerup', {
+        pointerId: 31, clientX: 400, clientY: 130,
+      }));
+      expect(h.doc.crud.transact).toHaveBeenCalledTimes(1);
+      expect(h.doc.crud.applyTextDelta).toHaveBeenCalledOnceWith('paragraph-1', [
+        {retain: 1}, {retain: 1, attributes: {x: .56}},
+      ]);
+      expect(document.querySelector('[data-bc-inline-image-drag-proxy]')).toBeNull();
+    } finally {
+      h.destroy();
+    }
+  }));
+
+  it('selects the first wrapped-image click without mutating its model', () => {
+    const h = makeHarness(false, true);
+    h.plugin.init();
+    try {
+      h.image.dispatchEvent(new PointerEvent('pointerdown', {
+        bubbles: true, cancelable: true, button: 0, isPrimary: true,
+        pointerId: 32, clientX: 245, clientY: 100,
+      }));
+      window.dispatchEvent(new PointerEvent('pointerup', {
+        pointerId: 32, clientX: 246, clientY: 100,
+      }));
+      expect(h.paragraphBlock.setInlineRange).toHaveBeenCalledOnceWith(1, 1);
+      expect(h.doc.overlayService.createConnectedOverlay).toHaveBeenCalledTimes(1);
+      expect(h.doc.crud.transact).not.toHaveBeenCalled();
+      expect(h.doc.crud.applyTextDelta).not.toHaveBeenCalled();
+      expect(h.paragraphBlock.formatText).not.toHaveBeenCalled();
+      expect(document.querySelector('[data-bc-inline-image-drag-proxy]')).toBeNull();
+    } finally {
+      h.destroy();
+    }
+  });
+
+  it('reuses active controls when pointerdown and mousedown select the same image', () => {
+    const h = makeHarness(false, true);
+    h.plugin.init();
+    try {
+      h.image.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, button: 0}));
+      const resizer = h.shell.querySelector('inline-image-resizer');
+      h.image.dispatchEvent(new PointerEvent('pointerdown', {
+        bubbles: true, button: 0, isPrimary: true, pointerId: 33,
+      }));
+      h.image.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, button: 0}));
+      expect(h.shell.querySelector('inline-image-resizer')).toBe(resizer);
+      expect(h.doc.overlayService.createConnectedOverlay).toHaveBeenCalledTimes(1);
+      expect(h.overlayRef.dispose).not.toHaveBeenCalled();
+      window.dispatchEvent(new PointerEvent('pointercancel', {pointerId: 33}));
+    } finally {
+      h.destroy();
+    }
+  });
+
+  for (const guard of ['secondary-button', 'non-primary', 'composition'] as const) {
+    it(`does not activate an unselected wrapped image during ${guard}`, () => {
+      const h = makeHarness(false, true);
+      h.doc.event.status.isComposing = guard === 'composition';
+      h.plugin.init();
+      try {
+        h.image.dispatchEvent(new PointerEvent('pointerdown', {
+          bubbles: true, cancelable: true,
+          button: guard === 'secondary-button' ? 2 : 0,
+          isPrimary: guard !== 'non-primary', pointerId: 34,
+        }));
+        expect(h.paragraphBlock.setInlineRange).not.toHaveBeenCalled();
+        expect(h.doc.overlayService.createConnectedOverlay).not.toHaveBeenCalled();
+        expect(h.paragraphBlock.runtime.acquireFloatLayoutFreeze).not.toHaveBeenCalled();
+        expect(h.doc.virtualization.acquireBlockViewLease).not.toHaveBeenCalled();
+        expect(document.querySelector('[data-bc-inline-image-drag-proxy]')).toBeNull();
+      } finally {
+        h.destroy();
+      }
+    });
+  }
+
+  it('excludes a resize handle before activating an unselected wrapped image', () => {
+    const h = makeHarness(false, true);
+    const handle = document.createElement('span');
+    handle.setAttribute('data-bc-inline-image-resizer', '');
+    h.frame.appendChild(handle);
+    h.plugin.init();
+    try {
+      handle.dispatchEvent(new PointerEvent('pointerdown', {
+        bubbles: true, button: 0, isPrimary: true, pointerId: 35,
+      }));
+      expect(h.paragraphBlock.setInlineRange).not.toHaveBeenCalled();
+      expect(h.doc.overlayService.createConnectedOverlay).not.toHaveBeenCalled();
+      expect(h.doc.virtualization.acquireBlockViewLease).not.toHaveBeenCalled();
+      expect(document.querySelector('[data-bc-inline-image-drag-proxy]')).toBeNull();
+    } finally {
+      h.destroy();
+    }
+  });
+
+  it('keeps ordinary inline images on the existing click-only controls path', () => {
+    const h = makeHarness();
+    h.plugin.init();
+    try {
+      const down = new PointerEvent('pointerdown', {
+        bubbles: true, cancelable: true, button: 0, isPrimary: true, pointerId: 36,
+      });
+      h.image.dispatchEvent(down);
+      expect(down.defaultPrevented).toBeFalse();
+      expect(h.paragraphBlock.setInlineRange).not.toHaveBeenCalled();
+      h.image.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, button: 0}));
+      expect(h.paragraphBlock.setInlineRange).toHaveBeenCalledOnceWith(1, 1);
+      expect(h.doc.overlayService.createConnectedOverlay).toHaveBeenCalledTimes(1);
+      expect(h.doc.virtualization.acquireBlockViewLease).not.toHaveBeenCalled();
+      expect(h.paragraphBlock.formatText).not.toHaveBeenCalled();
+      expect(document.querySelector('[data-bc-inline-image-drag-proxy]')).toBeNull();
+    } finally {
+      h.destroy();
+    }
+  });
+
+  for (const scope of ['document', 'block'] as const) {
+    it(`keeps readonly ${scope} images selectable without starting a drag`, () => {
+      const h = makeHarness(scope === 'document', true);
+      h.doc.readonlyManager.isReadonly.and.returnValue(true);
+      h.plugin.init();
+      try {
+        h.image.dispatchEvent(new PointerEvent('pointerdown', {
+          bubbles: true, button: 0, isPrimary: true, pointerId: 37,
+        }));
+        h.image.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, button: 0}));
+        expect(h.paragraphBlock.setInlineRange).toHaveBeenCalledWith(1, 1);
+        expect(h.doc.overlayService.createConnectedOverlay).not.toHaveBeenCalled();
+        expect(h.doc.virtualization.acquireBlockViewLease).not.toHaveBeenCalled();
+        expect(h.doc.crud.transact).not.toHaveBeenCalled();
+        expect(document.querySelector('[data-bc-inline-image-drag-proxy]')).toBeNull();
+      } finally {
+        h.destroy();
+      }
+    });
+  }
+
+  it('does not intercept pointer or mouse activation of a native resource retry control', () => {
+    const h = makeHarness(false, true);
+    const retry = document.createElement('button');
+    retry.setAttribute('data-bc-native-input', '');
+    h.frame.appendChild(retry);
+    const receive = jasmine.createSpy('receiveNativeEvent');
+    retry.addEventListener('pointerdown', receive);
+    retry.addEventListener('mousedown', receive);
+    h.plugin.init();
+    try {
+      const pointer = new PointerEvent('pointerdown', {
+        bubbles: true, cancelable: true, button: 0, isPrimary: true, pointerId: 38,
+      });
+      const mouse = new MouseEvent('mousedown', {
+        bubbles: true, cancelable: true, button: 0,
+      });
+      retry.dispatchEvent(pointer);
+      retry.dispatchEvent(mouse);
+      expect(receive).toHaveBeenCalledTimes(2);
+      expect(pointer.defaultPrevented).toBeFalse();
+      expect(mouse.defaultPrevented).toBeFalse();
+      expect(h.paragraphBlock.setInlineRange).not.toHaveBeenCalled();
+      expect(h.doc.overlayService.createConnectedOverlay).not.toHaveBeenCalled();
+      expect(h.doc.virtualization.acquireBlockViewLease).not.toHaveBeenCalled();
+      expect(h.doc.crud.transact).not.toHaveBeenCalled();
+      expect(document.querySelector('[data-bc-inline-image-drag-proxy]')).toBeNull();
+    } finally {
+      h.destroy();
+    }
+  });
+
+  for (const reason of ['Escape', 'blur'] as const) {
+    it(`cancels a first-pointer drag on ${reason} and releases its resources once`, () => {
+      const h = makeHarness(false, true);
+      h.plugin.init();
+      try {
+        h.image.dispatchEvent(new PointerEvent('pointerdown', {
+          bubbles: true, button: 0, isPrimary: true, pointerId: 39,
+          clientX: 245, clientY: 100,
+        }));
+        const releaseLayout = h.paragraphBlock.runtime.acquireFloatLayoutFreeze
+          .calls.mostRecent().returnValue;
+        const releaseView = h.doc.virtualization.acquireBlockViewLease
+          .calls.mostRecent().returnValue;
+        window.dispatchEvent(new PointerEvent('pointermove', {
+          pointerId: 39, clientX: 300, clientY: 100,
+        }));
+        if (reason === 'Escape') {
+          document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}));
+        } else {
+          window.dispatchEvent(new Event('blur'));
+        }
+        window.dispatchEvent(new PointerEvent('pointerup', {
+          pointerId: 39, clientX: 300, clientY: 100,
+        }));
+        expect(h.doc.crud.transact).not.toHaveBeenCalled();
+        expect(document.querySelector('[data-bc-inline-image-drag-proxy]')).toBeNull();
+        expect(releaseLayout).toHaveBeenCalledTimes(1);
+        expect(releaseView).toHaveBeenCalledTimes(1);
+      } finally {
+        h.destroy();
+      }
+    });
+  }
+
+  for (const changed of ['source', 'readonly', 'block-identity'] as const) {
+    it(`rejects a first-pointer drop after the live ${changed} changes`, () => {
+      const h = makeHarness(false, true);
+      h.plugin.init();
+      try {
+        h.image.dispatchEvent(new PointerEvent('pointerdown', {
+          bubbles: true, button: 0, isPrimary: true, pointerId: 40,
+          clientX: 245, clientY: 100,
+        }));
+        expect(document.querySelector('[data-bc-inline-image-drag-proxy]')).not.toBeNull();
+        if (changed === 'source') {
+          h.paragraphBlock.textDeltas.and.returnValue([
+            {insert: '前'},
+            {insert: {image: 'https://cdn.example.com/replaced.png'},
+              attributes: {wrap: true, side: 'auto', x: .25, gap: 12}},
+            {insert: '后'},
+          ]);
+        } else if (changed === 'readonly') {
+          h.doc.readonlyManager.isReadonly.and.returnValue(true);
+        } else {
+          h.doc.getBlockById.and.returnValue({...h.paragraphBlock});
+        }
+        window.dispatchEvent(new PointerEvent('pointerup', {
+          pointerId: 40, clientX: 400, clientY: 130,
+        }));
+        expect(h.doc.crud.transact).not.toHaveBeenCalled();
+        expect(h.doc.crud.applyTextDelta).not.toHaveBeenCalled();
+        expect(document.querySelector('[data-bc-inline-image-drag-proxy]')).toBeNull();
+      } finally {
+        h.destroy();
+      }
+    });
+  }
+
+  it('closes active image controls when a native input outside the image is clicked', () => {
+    const h = makeHarness(false, true);
+    const input = document.createElement('input');
+    h.rootHost.appendChild(input);
+    const receive = jasmine.createSpy('receiveOutsideInput');
+    input.addEventListener('mousedown', receive);
+    h.plugin.init();
+    try {
+      h.image.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, button: 0}));
+      h.paragraphBlock.setInlineRange.calls.reset();
+      const event = new MouseEvent('mousedown', {
+        bubbles: true, cancelable: true, button: 0,
+      });
+      input.dispatchEvent(event);
+      expect(receive).toHaveBeenCalledTimes(1);
+      expect(event.defaultPrevented).toBeFalse();
+      expect(h.overlayRef.dispose).toHaveBeenCalledTimes(1);
+      expect(h.shell.classList.contains('bc-inline-image-shell--selected')).toBeFalse();
+      expect(h.paragraphBlock.setInlineRange).not.toHaveBeenCalled();
+    } finally {
+      h.destroy();
+    }
+  });
+
+  for (const scale of [0.8, 1.25]) {
+    for (const explicitSize of [true, false]) {
+      it(`commits layout coordinates at ${scale * 100}% with ${explicitSize ? 'model' : 'DOM fallback'} sizes`, () => {
+        const h = makeHarness(false, true);
+        h.doc.viewScale = {
+          visualToLayout: jasmine.createSpy('visualToLayout')
+            .and.callFake((value: number) => value / scale),
+        };
+        setRect(h.rootHost, {
+          left: 100, top: 50, right: 100 + 500 * scale,
+          bottom: 650, width: 500 * scale, height: 600,
+        });
+        setRect(h.paragraphHost, {
+          left: 100, top: 50, right: 100 + 500 * scale,
+          bottom: 250, width: 500 * scale, height: 200,
+        });
+        setRect(h.frame, {
+          left: 100 + 125 * scale, top: 90,
+          right: 100 + 245 * scale, bottom: 90 + 60 * scale,
+          width: 120 * scale, height: 60 * scale,
+        });
+        if (!explicitSize) {
+          Object.defineProperty(h.paragraphHost, 'clientWidth', {value: 0});
+          h.paragraphBlock.textDeltas.and.returnValue([
+            {insert: '前'},
+            {insert: {image: 'https://cdn.example.com/a.png'},
+              attributes: {wrap: true, side: 'auto', x: .25, gap: 12}},
+            {insert: '后'},
+          ]);
+        }
+        h.plugin.init();
+        try {
+          h.image.dispatchEvent(new PointerEvent('pointerdown', {
+            bubbles: true, button: 0, isPrimary: true, pointerId: 41,
+            clientX: 100 + 145 * scale, clientY: 100,
+          }));
+          // The fallback case also clamps at the true layout image edge.
+          const finalLeft = explicitSize ? 225 : 450;
+          window.dispatchEvent(new PointerEvent('pointerup', {
+            pointerId: 41, clientX: 100 + (finalLeft + 20) * scale,
+            clientY: 100,
+          }));
+          expect(h.doc.crud.transact).toHaveBeenCalledTimes(1);
+          expect(h.doc.crud.applyTextDelta).toHaveBeenCalledOnceWith('paragraph-1', [
+            {retain: 1},
+            {retain: 1, attributes: {x: explicitSize ? .45 : .76}},
+          ]);
+          expect(h.doc.viewScale.visualToLayout)
+            .toHaveBeenCalledWith(finalLeft * scale);
+          if (!explicitSize) {
+            expect(h.doc.viewScale.visualToLayout).toHaveBeenCalledWith(500 * scale);
+            expect(h.doc.viewScale.visualToLayout).toHaveBeenCalledWith(120 * scale);
+            expect(h.doc.viewScale.visualToLayout).toHaveBeenCalledWith(60 * scale);
+          }
+        } finally {
+          h.destroy();
+        }
+      });
+    }
+  }
+
   it('commits width and proportional height once when resizing ends', fakeAsync(() => {
     const h = makeHarness();
     h.plugin.init();
@@ -645,7 +992,6 @@ describe('ImgToolbarPlugin inline-image interaction', () => {
   it('cancels pointer dragging without committing and releases layout freeze', () => {
     const h = makeHarness(false, true);
     h.plugin.init();
-    h.image.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, button: 0}));
     h.paragraphBlock.formatText.calls.reset();
     h.doc.crud.transact.calls.reset();
 
@@ -742,7 +1088,6 @@ describe('ImgToolbarPlugin inline-image interaction', () => {
     });
 
     h.plugin.init();
-    h.image.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, button: 0}));
     h.doc.crud.transact.calls.reset();
     h.doc.crud.applyTextDelta.calls.reset();
     h.frame.dispatchEvent(new PointerEvent('pointerdown', {
@@ -794,7 +1139,6 @@ describe('ImgToolbarPlugin inline-image interaction', () => {
   it('cancels a drop whose pointer is outside the editor root', () => {
     const h = makeHarness(false, true);
     h.plugin.init();
-    h.image.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, button: 0}));
     h.doc.crud.transact.calls.reset();
     h.frame.dispatchEvent(new PointerEvent('pointerdown', {
       bubbles: true,
@@ -848,7 +1192,6 @@ describe('ImgToolbarPlugin inline-image interaction', () => {
   it('uses the same idempotent cleanup when the toolbar closes mid-drag', () => {
     const h = makeHarness(false, true);
     h.plugin.init();
-    h.image.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, button: 0}));
     h.frame.dispatchEvent(new PointerEvent('pointerdown', {
       bubbles: true,
       button: 0,

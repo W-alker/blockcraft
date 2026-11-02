@@ -351,6 +351,125 @@ describe('inline fragment layout', () => {
     host.remove()
   })
 
+  it('fits only one real text line when font size exceeds line height', () => {
+    const {container, scroll} = createScroll([{insert: 'abcdefgh'}])
+    container.style.cssText = [
+      'display:block',
+      'width:64px',
+      'font:32px/20px monospace',
+      'white-space:pre-wrap',
+      'word-break:break-all',
+    ].join(';')
+    document.body.appendChild(container)
+    try {
+      const text = (scroll.leaves[0] as TextBlot).textNode
+      const range = document.createRange()
+      range.selectNodeContents(text)
+      const rects = Array.from(range.getClientRects())
+      expect(rects.length).toBeGreaterThan(1)
+      expect(rects[0].bottom).toBeGreaterThan(rects[1].top)
+      const measurer = new InlineRangeMeasurer(container, scroll, () => range)
+      const fit = measurer.fitFragment(0, scroll.textLength, 64)
+      expect(fit.end).toBe(3)
+      expect(fit.advance).toBeCloseTo(rects[0].width, 1)
+    } finally {
+      container.remove()
+    }
+  })
+
+  describe('first-line rectangle measurement', () => {
+    function measureRects(rects: DOMRect[], width = 100) {
+      const {container, scroll} = createScroll([{insert: 'a'}])
+      const text = (scroll.leaves[0] as TextBlot).textNode
+      const content = {
+        root: container,
+        offsets: [0, 1],
+        points: new Map([[1, {node: text, offset: 1}]]),
+      }
+      type Content = typeof content
+      const measurer = new InlineRangeMeasurer(container, scroll, () =>
+        document.createRange(),
+      ) as unknown as {
+        _fitsFirstLine(content: Content, end: number, width: number): boolean
+        _firstLineAdvance(content: Content, end: number): number
+      }
+      spyOn(Range.prototype, 'getClientRects').and.returnValue(
+        rects as unknown as DOMRectList,
+      )
+      spyOn(container, 'getBoundingClientRect').and.returnValue(
+        new DOMRect(100, 0, width, 100),
+      )
+      return {
+        fits: measurer._fitsFirstLine(content, 1, width),
+        advance: measurer._firstLineAdvance(content, 1),
+      }
+    }
+
+    it('accepts Firefox wrapper and glyph boxes with different tops on one line', () => {
+      expect(measureRects([
+        new DOMRect(100, 26, 16, 20),
+        new DOMRect(100, 25, 16, 23),
+        new DOMRect(116, 25, 32, 23),
+      ])).toEqual({fits: true, advance: 48})
+    })
+
+    it('rejects the next visual line and excludes it from first-line advance', () => {
+      expect(measureRects([
+        new DOMRect(100, 26, 16, 20),
+        new DOMRect(100, 25, 16, 23),
+        new DOMRect(100, 49, 80, 23),
+      ])).toEqual({fits: false, advance: 16})
+    })
+
+    it('does not merge lines through a tall overlapping wrapper', () => {
+      expect(measureRects([
+        new DOMRect(100, 0, 20, 80),
+        new DOMRect(100, 10, 20, 20),
+        new DOMRect(120, 25, 20, 20),
+        new DOMRect(100, 34, 80, 20),
+      ])).toEqual({fits: false, advance: 20})
+    })
+
+    it('retains conservative fallback for shifted script boxes without containment', () => {
+      expect(measureRects([
+        new DOMRect(100, 12, 20, 20),
+        new DOMRect(120, 8, 10, 14),
+        new DOMRect(130, 20, 10, 14),
+      ])).toEqual({fits: false, advance: 20})
+    })
+
+    it('rejects tightly spaced adjacent lines even when their glyphs overlap', () => {
+      expect(measureRects([
+        new DOMRect(100, 0, 30, 37),
+        new DOMRect(100, 20, 80, 37),
+      ])).toEqual({fits: false, advance: 30})
+    })
+
+    it('accepts contained mixed-font and bold boxes without changing their widths', () => {
+      expect(measureRects([
+        new DOMRect(100, 0, 20, 36),
+        new DOMRect(120, 12, 15, 20),
+        new DOMRect(135, 11, 17, 22),
+      ])).toEqual({fits: true, advance: 52})
+    })
+
+    it('keeps an ordinary atomic embed width when checking the interval', () => {
+      expect(measureRects([
+        new DOMRect(100, 12, 20, 20),
+        new DOMRect(120, 0, 90, 36),
+      ])).toEqual({fits: false, advance: 110})
+    })
+
+    it('ignores empty float anchor rectangles without ignoring text width', () => {
+      expect(measureRects([
+        new DOMRect(100, 0, 0, 0),
+        new DOMRect(100, 26, 16, 20),
+        new DOMRect(100, 25, 16, 23),
+        new DOMRect(500, 100, 0, 0),
+      ])).toEqual({fits: true, advance: 16})
+    })
+  })
+
   it('moves real Blot nodes and revokes without changing content or semantic boundaries', () => {
     const {container, scroll} = createScroll([
       {insert: 'abcd', attributes: {bold: true}},

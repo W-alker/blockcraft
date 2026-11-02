@@ -1,6 +1,10 @@
 // 装饰伪元素不进入 inline runtime，不接收光标和点击。
 [data-blockcraft-root="true"] .paragraph-block {
-  > .bc-paragraph-text { display: block; min-width: 0; }
+  > .bc-paragraph-text {
+    min-width: 0;
+    // 环绕对象沿用 inline-image 的 flow-root，让图片高度归属本段。
+    &:not([data-bc-inline-float-owner]) { display: block; }
+  }
   &[data-bc-deco-position] {
     position: relative;
     &::before, &::after {

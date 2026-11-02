@@ -51,10 +51,7 @@ export class DocumentHeaderLayer {
     this.updateLayout(layout);
     this.measure();
 
-    this.resizeObserver = new ResizeObserver(entries => {
-      const entry = entries[entries.length - 1];
-      this.setHeight(entry?.borderBoxSize?.[0]?.blockSize ?? element.getBoundingClientRect().height);
-    });
+    this.resizeObserver = new ResizeObserver(() => this.measure());
     this.resizeObserver.observe(element);
   }
 
@@ -75,13 +72,10 @@ export class DocumentHeaderLayer {
   }
 
   measure(): number {
-    // offsetHeight / ResizeObserver borderBoxSize 都是 layout px，不受外层
-    // DocumentViewScaleManager 的视觉缩放影响。
-    const offsetHeight = this.element?.offsetHeight ?? 0;
-    const height = offsetHeight > 0
-      ? offsetHeight
-      : this.element?.getBoundingClientRect().height ?? 0;
-    this.setHeight(height);
+    // 同步捕获和 RO 通知统一读取整数 layout px，避免 borderBoxSize 的小数
+    // 舍入或旧浏览器 BCR 的视觉缩放在两条路径间反复改变首页正文容量。
+    // 隐藏/未挂载时的 0 同样是布局事实，不能用视觉矩形替代。
+    this.setHeight(this.element?.offsetHeight ?? 0);
     return this.height;
   }
 

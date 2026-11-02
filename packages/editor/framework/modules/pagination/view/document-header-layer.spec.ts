@@ -75,3 +75,97 @@ function hitCenter(element: HTMLElement): Element | null {
   const rect = element.getBoundingClientRect();
   return document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
 }
+
+
+describe('DocumentHeaderLayer layout measurement', () => {
+  let surface: HTMLDivElement;
+  let header: HTMLElement;
+  let root: HTMLDivElement;
+  let layer: DocumentHeaderLayer;
+  let originalResizeObserver: typeof ResizeObserver;
+  let deliverResize: (borderBoxSize?: unknown) => void;
+  let heights: number[];
+
+  beforeEach(() => {
+    originalResizeObserver = window.ResizeObserver;
+    window.ResizeObserver = class implements ResizeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        deliverResize = borderBoxSize => callback([
+          {target: header, borderBoxSize} as unknown as ResizeObserverEntry,
+        ], this);
+      }
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    };
+    surface = document.createElement('div');
+    surface.style.cssText = 'position:fixed;left:0;top:0;width:400px;transform-origin:top left';
+    header = document.createElement('header');
+    header.style.height = '100px';
+    root = document.createElement('div');
+    surface.append(header, root);
+    document.body.appendChild(surface);
+    heights = [];
+    layer = new DocumentHeaderLayer(surface, root, {element: header}, height => heights.push(height));
+  });
+
+  afterEach(() => {
+    layer.destroy();
+    surface.remove();
+    window.ResizeObserver = originalResizeObserver;
+  });
+
+  const entryShapes = [
+    {name: 'standard array', size: (height: number) => [{blockSize: height, inlineSize: 360}]},
+    {name: 'legacy single object', size: (height: number) => ({blockSize: height, inlineSize: 360})},
+    {name: 'missing border box', size: (_height: number) => undefined},
+  ];
+
+  for (const shape of entryShapes) {
+    for (const scale of [0.5, 1.5]) {
+      it(`keeps ${shape.name} notifications in layout pixels at ${scale * 100}% zoom`, () => {
+        surface.style.zoom = String(scale);
+        layer.mount({top: 0, width: 360});
+        expect(header.offsetHeight).toBe(100);
+        expect(header.getBoundingClientRect().height).toBeCloseTo(100 * scale, 2);
+
+        deliverResize(shape.size(100));
+        expect(layer.measure()).toBe(100);
+        deliverResize(shape.size(100));
+        expect(heights).toEqual([100]);
+      });
+    }
+
+    it(`keeps half-pixel ${shape.name} measurements stable and reports real changes once`, () => {
+      header.style.height = '100.5px';
+      surface.style.transform = 'scale(1.5)';
+      layer.mount({top: 0, width: 360});
+      const initialHeight = header.offsetHeight;
+      expect(header.getBoundingClientRect().height).toBeCloseTo(150.75, 2);
+
+      deliverResize(shape.size(100.5));
+      expect(layer.measure()).toBe(initialHeight);
+      deliverResize(shape.size(100.5));
+      expect(heights).toEqual([initialHeight]);
+
+      header.style.height = '123.5px';
+      const changedHeight = header.offsetHeight;
+      deliverResize(shape.size(123.5));
+      expect(layer.measure()).toBe(changedHeight);
+      deliverResize(shape.size(123.5));
+      expect(heights).toEqual([initialHeight, changedHeight]);
+    });
+  }
+
+  it('reports a hidden header as zero and restores its layout height when shown', () => {
+    surface.style.zoom = '1.5';
+    layer.mount({top: 0, width: 360});
+    header.style.display = 'none';
+    deliverResize();
+    expect(layer.measure()).toBe(0);
+    header.style.removeProperty('display');
+    deliverResize();
+    expect(layer.measure()).toBe(100);
+    expect(heights).toEqual([100, 0, 100]);
+  });
+});
