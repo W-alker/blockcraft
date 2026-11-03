@@ -2,7 +2,15 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-10-30 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-11-03 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+
+## 应用标题的字号与行高（未发布）
+
+`TextToolbarHelper.applyHeading(level, selection?)` / `applyHeadingToBlocks(level, blockIds)`
+设置标题级别并清除整段、行内、段落默认字符及待输入格式中的字号／缩放／行高覆盖，
+使 1–4 级标题采用现有主题默认样式。其他字符和段落格式保留；取消标题保持原行为。
+工具栏、快捷键与块转换入口采用此规则；低层属性更新和旧快照加载不自动清理。
+命令合同见 `blockcraft-plugins-formatting.md`，转换入口见 `blockcraft-plugins-block.md`。
 
 表格支持一次性 `fitColumnWidths()`、双击列边界和“适应宽度”菜单；`optimizeColumnWidths()` 按正文宽度预算智能调整整表。范围、合并格、缩放与撤销契约见 `blockcraft-block.md`。
 

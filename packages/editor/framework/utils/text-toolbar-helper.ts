@@ -24,6 +24,8 @@ import {resolvedBlockFontSize, resolvedInlineFontSize} from './typography-font-s
 import {getCommonAttributesFromDeltas, sliceDelta} from "../../global";
 import {isSelectionAlive} from "../modules/selection/liveness";
 import {getSelectionFormatBlockIds} from './selection-format-blocks';
+import {HEADING_SIZE_RESET, headingPropsPatch, withoutHeadingSize} from './heading-format';
+import {BlockReadonlyOperation} from '../doc/block-readonly.types';
 
 export interface ITextCommonAttrs {
   attrs: Map<string, any>
@@ -160,7 +162,7 @@ export class TextToolbarHelper {
     ;(this.doc.getBlockById(blockId) as EditableBlockComponent).formatText(index, length, attrs)
   }
 
-  private updateBlockPropsById(blockId: string, props: Partial<IEditableBlockProps>): void {
+  private updateBlockPropsById(blockId: string, props: Partial<IBlockProps>): void {
     if (this.hasModelBlock(blockId) && typeof (this.doc.crud as any).updateBlockProps === 'function') {
       this.doc.crud.updateBlockProps(blockId, props)
       return
@@ -713,6 +715,43 @@ export class TextToolbarHelper {
     if (!selection.collapsed || selection.getTableCellSelection?.()) {
       this.doc.selection.setSelection(s, e)
     }
+  }
+
+  /** Apply a heading to complete selected paragraphs, including partial text selections. */
+  applyHeading(heading: number | null, selection: BlockCraft.Selection | null = this.doc.selection.value): void {
+    if (!selection || !this.isSelectionAlive(selection)) return;
+    this.applyHeadingToBlocks(heading, getSelectionFormatBlockIds(selection, this.doc));
+  }
+
+  /** Model-first heading command shared by toolbar, shortcuts and block menus. */
+  applyHeadingToBlocks(heading: number | null, blockIds: readonly string[]): void {
+    if (heading !== null && (!Number.isInteger(heading) || heading < 1 || heading > 4)) return;
+    const ids = [...new Set(blockIds)].filter(id =>
+      this.blockNodeType(id) === BlockNodeType.editable && !this.isPlainTextBlock(id));
+    if (!ids.length) return;
+    // Preflight the entire target set: a Yjs transaction does not roll back on error.
+    for (const id of ids) {
+      this.doc.readonlyManager?.assertPropsWritable(id, BlockReadonlyOperation.Props);
+      if (heading !== null) this.doc.readonlyManager?.assertTextWritable(id, BlockReadonlyOperation.Format);
+    }
+    const selection = this.doc.selection.value;
+    const point = selection?.collapsed && selection.start.type === 'text' && ids.includes(selection.start.blockId)
+      ? {blockId: selection.start.blockId, index: selection.start.offset} : null;
+    const pending = heading !== null && point
+      ? this.doc.inputManger?.peekNextInsertAttrs(point) : undefined;
+    this.doc.crud.transact(() => {
+      for (const id of ids) {
+        this.updateBlockPropsById(id, headingPropsPatch(this.blockProps(id), heading));
+        if (heading !== null) this.formatBlockText(id, 0, this.blockTextLength(id), HEADING_SIZE_RESET);
+      }
+      // Empty paragraphs persist typing defaults; keep that write in this transaction.
+      if (pending && point && this.blockTextLength(point.blockId) === 0) {
+        this.doc.inputManger.setNextInsertAttrs(withoutHeadingSize(pending), point);
+      }
+    });
+    // Formatting invalidates the typing cache afterTransaction; restore only its
+    // non-size attributes, so subsequent typing cannot reintroduce the old size.
+    if (pending && point) this.doc.inputManger.setNextInsertAttrs(withoutHeadingSize(pending), point);
   }
 
   updateBlockProps(props: Partial<IEditableBlockProps>, selection: BlockCraft.Selection | null = this.doc.selection.value) {

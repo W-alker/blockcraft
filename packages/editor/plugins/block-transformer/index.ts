@@ -1,4 +1,6 @@
 import {preserveTransformPlaceholder} from './placeholder';
+import {TextToolbarHelper} from '../../framework/utils/text-toolbar-helper';
+import {headingPropsPatch} from '../../framework/utils/heading-format';
 import {focusAfterImageInsertion} from '../../framework/modules/selection/after-insertion';
 import {effect, NgZone} from '@angular/core';
 import {
@@ -268,9 +270,9 @@ export class BlockTransformerPlugin extends DocPlugin {
     // once we've confirmed we're actually handling the heading change, to avoid
     // hijacking these keys when the cursor isn't in a heading-capable block.
     evt.preventDefault();
-    block.updateProps({
-      heading: state.raw.key === "0" ? null : parseInt(state.raw.key, 10),
-    });
+    new TextToolbarHelper(this.doc).applyHeadingToBlocks(
+      state.raw.key === "0" ? null : parseInt(state.raw.key, 10), [block.id],
+    );
     return true;
   }
 
@@ -347,9 +349,7 @@ export class BlockTransformerPlugin extends DocPlugin {
       const selIdx = matchedText.length - 1;
       this.doc.crud.transact(() => {
         block.deleteText(0, selIdx + 1);
-        block.updateProps({
-          heading: heading + 1,
-        });
+        new TextToolbarHelper(this.doc).applyHeadingToBlocks(heading + 1, [block.id]);
       });
       // Removing the prefix moves the caret to the start of the remaining text.
       // Commit the model as well as its DOM projection: IME starts from the model
@@ -676,7 +676,7 @@ export class BlockTransformerPlugin extends DocPlugin {
     if (item.kind === "heading") {
       await this.insertBlockAtQuery(context, "paragraph", [
         [],
-        {...context.block.props, heading: item.heading},
+        {...context.block.props, ...headingPropsPatch(context.block.props, item.heading!)},
       ]);
       return;
     }

@@ -2,7 +2,17 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-11-02 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-11-03 | Tracks `@ccc/blockcraft` npm releases.
+
+## 未发布 — 2026-11-03：应用标题时恢复默认字号与行高
+
+- Severity: minor（新增标题命令并调整内置入口行为；版本由用户决定）。
+- What changed / Why: 标题应用命令同时清除段落及文字的字号、缩放和行高覆盖，避免标题样式被原有直接格式遮蔽。
+- New APIs: `TextToolbarHelper.applyHeading(level: number | null, selection?)`、`applyHeadingToBlocks(level: number | null, blockIds: readonly string[])`。
+- Behavior Changes: 应用 1–4 级标题作用于完整目标段落，删除 `fs/pfs/lh` 及行内、段落默认字符、待输入格式的字号与行高覆盖；其他格式保留。工具栏、快捷键、Markdown 与块菜单统一规则，斜杠菜单新建标题同样清理继承的字号覆盖。再次应用同级标题会重置上述覆盖，之后仍可手动修改。取消标题与块菜单同级切回正文保持原语义。
+- Deprecations: 无。
+- Migration Recipe: 自定义标题 UI 原先使用 `helper.updateBlockProps({heading: 1})`，需要统一字号时改为 `helper.applyHeading(1)`；底层属性更新、已有快照加载、导入与普通字体设置保持原语义。无需数据迁移。
+- Affected ai-skills files: `blockcraft.md`、`blockcraft-plugins-formatting.md`、`blockcraft-plugins-block.md`。
 
 ## 未发布 — 2026-11-02：可滚动弹窗的锚点避让
 

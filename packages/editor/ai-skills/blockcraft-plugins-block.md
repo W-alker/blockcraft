@@ -2,7 +2,17 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-11-02
+> Last updated: 2026-11-03
+
+## 标题命令的字号与行高清理
+
+`Cmd/Ctrl+1–4`、Markdown 标题转换和块菜单应用标题时，复用
+`TextToolbarHelper.applyHeadingToBlocks(level, blockIds)` 清除整段的字号／缩放／行高覆盖，
+恢复主题标题大小；空标题的 `textDefaults` 和待输入字号也同步清理。
+斜杠菜单新建标题及块类型转换采用相同的格式清理规则，保留其他文字格式。
+`Cmd/Ctrl+0` 与普通段落入口仍只取消标题；块菜单点击当前激活标题仍切回正文，
+不改变其既有切换语义。低层属性更新和导入快照不自动清理历史格式。
+完整命令合同见 `blockcraft-plugins-formatting.md` 的“应用标题时恢复默认字号与行高”。
 
 ## 斜杠菜单输入行避让
 

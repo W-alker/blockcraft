@@ -2874,9 +2874,7 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
     trigger.close();
     this.runWithSelection(
       () => {
-        this.toolbarHelper.updateBlockProps({
-          heading: item.value || undefined,
-        });
+        this.toolbarHelper.applyHeading((item.value || null) as number | null);
       },
       { allowBlockTransform: true },
     );

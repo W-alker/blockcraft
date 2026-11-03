@@ -2,7 +2,23 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-10-21
+> Last updated: 2026-11-03
+
+## 应用标题时恢复默认字号与行高
+
+固定／浮动工具栏通过 `TextToolbarHelper.applyHeading(level, selection?)` 应用标题，
+对选区覆盖的完整可编辑段落生效，即使只选中其中几个字。`level` 为 1–4；
+`applyHeadingToBlocks(level, blockIds)` 提供同一命令的稳定 ID 入口，支持未挂载段落。
+命令设置 `heading`，删除段落 `fs / pfs / lh`，清除全文及 `textDefaults` 中的
+`t:px / t:fs / s:fontSize / s:font-size / s:lineHeight / s:line-height`，
+并清除当前光标待输入格式中的对应覆盖。字体族、字重、颜色、链接、段落间距等保留。
+重新应用同一级标题也执行清理；随后仍可通过原字号／行高命令建立局部覆盖。
+
+`null` 表示取消标题，保留原有直接格式，不执行上述清理。代码等纯文本块跳过；
+写入前检查全部目标的属性及文字格式权限，在一个事务中修改，不挂载全文或读取布局。
+默认标题字号与行高继续由现有主题定义，本次不增加文档样式配置。
+底层 `updateBlockProps({heading: ...})` / `DocCRUD` 保持原行为，不隐式清除格式；
+自定义 UI 要获得“应用标题”语义，应显式调用新命令。
 
 ## 文本与段落设置入口
 

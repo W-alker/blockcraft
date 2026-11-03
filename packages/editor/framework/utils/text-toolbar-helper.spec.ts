@@ -89,6 +89,38 @@ describe("TextToolbarHelper boundary selections", () => {
     return {helper, doc, root, p1, p2, outside, rootHost, selection, queryBlocksBetween};
   };
 
+  it('applies headings to complete paragraphs in a partial selection and leaves the outside block alone', () => {
+    const h = makeHarness();
+    const range = h.selection(
+      {blockId: 'p1', type: 'text', offset: 1, block: h.p1},
+      {blockId: 'p2', type: 'text', offset: 2, block: h.p2},
+    );
+    h.helper.applyHeading(1, range as any);
+    for (const block of [h.p1, h.p2]) {
+      expect(block.updateProps).toHaveBeenCalledOnceWith({heading: 1, fs: null, pfs: null, lh: null});
+      expect(block.formatText).toHaveBeenCalledOnceWith(0, 3, jasmine.objectContaining({'t:px': null, 't:fs': null, 's:fontSize': null}));
+    }
+    expect(h.outside.updateProps).not.toHaveBeenCalled();
+    expect(h.outside.formatText).not.toHaveBeenCalled();
+    h.rootHost.remove();
+  });
+
+  it('keeps plain-text blocks and low-level heading property updates outside the reset command', () => {
+    const h = makeHarness();
+    h.p1.plainTextOnly = true;
+    h.helper.applyHeadingToBlocks(2, ['p1']);
+    expect(h.p1.updateProps).not.toHaveBeenCalled();
+    expect(h.p1.formatText).not.toHaveBeenCalled();
+    const range = h.selection(
+      {blockId: 'p2', type: 'text', offset: 1, block: h.p2},
+      {blockId: 'p2', type: 'text', offset: 1, block: h.p2},
+    );
+    h.helper.updateBlockProps({heading: 2}, range as any);
+    expect(h.p2.updateProps).toHaveBeenCalledOnceWith({heading: 2});
+    expect(h.p2.formatText).not.toHaveBeenCalled();
+    h.rootHost.remove();
+  });
+
   it("reads mixed and numeric weights and clears numeric overrides through bold commands", () => {
     const h = makeHarness();
     const range = h.selection(

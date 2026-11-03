@@ -1,4 +1,6 @@
 import {PARAGRAPH_ALIGNMENT_OPTIONS} from '../../paragraph-alignment-options';
+import {TextToolbarHelper} from '../../../framework/utils/text-toolbar-helper';
+import {headingPropsPatch, withoutHeadingSize} from '../../../framework/utils/heading-format';
 import {
   ChangeDetectionStrategy,
   ChangeDetectorRef,
@@ -1107,20 +1109,23 @@ export class TriggerBtn {
           && (block.props.heading || '') + '' === (item.value || '') + ''
         const targetHeading = isActiveHeading ? null : item.value
         if (block.flavour === 'ordered' && item.value) {
-          block.updateProps({ heading: targetHeading as any })
+          new TextToolbarHelper(this.doc).applyHeadingToBlocks(targetHeading as number | null, [block.id])
           return;
         }
         if (block.flavour !== 'paragraph') {
-          const p = this.doc.schemas.createSnapshot('paragraph', [block.textDeltas(), {
+          const deltas = targetHeading ? block.textDeltas().map(delta => ({
+            ...delta, attributes: withoutHeadingSize(delta.attributes),
+          })) : block.textDeltas()
+          const p = this.doc.schemas.createSnapshot('paragraph', [deltas, {
             ...block.props,
-            heading: targetHeading
+            ...headingPropsPatch(block.props, targetHeading as number | null)
           }])
           void this.doc.chain()
             .replaceWithSnapshots(block.id, [p])
             .selectOrSetCursorAtBlock(p.id, true)
             .run()
         } else {
-          block.updateProps({ heading: targetHeading as any })
+          new TextToolbarHelper(this.doc).applyHeadingToBlocks(targetHeading as number | null, [block.id])
         }
         break
       }

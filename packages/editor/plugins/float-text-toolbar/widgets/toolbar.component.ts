@@ -437,7 +437,9 @@ export class FloatTextToolbarComponent {
 
     switch (evt.name) {
       case 'heading':
-        this.setProps({heading: evt.value as any})
+        if (this.readonly) return
+        this.utils.applyHeading(evt.value as number | null)
+        this.activeProps = {...this.activeProps, heading: evt.value as any}
         this.activeHeading = HEADING_LIST.find(v => v.value === this.activeProps.heading) || HEADING_LIST[0]
         break
       case 'align':
