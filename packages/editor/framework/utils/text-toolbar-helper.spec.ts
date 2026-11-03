@@ -735,7 +735,7 @@ describe('TextToolbarHelper selected containers', () => {
     host.remove();
   }));
 
-  it('keeps whole selected leaf blocks outside this formatting behavior', () => {
+  it('formats the complete text of a whole selected editable leaf', () => {
     const {host, doc, helper} = makeHarness();
     const paragraph = doc.getBlockById('before');
     const selection = new BlockSelection(
@@ -743,11 +743,29 @@ describe('TextToolbarHelper selected containers', () => {
       {blockId: 'before', type: 'selected', block: paragraph} as any,
       'root', doc.getBlockById, () => 0,
     );
-    expect(helper.getFontScaleTargets(selection as any)).toEqual([]);
+    expect(helper.getFontScaleTargets(selection as any)).toEqual([
+      {blockId: 'before', kind: 'paragraph', start: 0, length: 6},
+    ]);
     helper.formatText({'a:bold': true}, selection as any);
-    expect(doc.crud.formatText).not.toHaveBeenCalled();
+    expect(doc.crud.formatText).toHaveBeenCalledOnceWith(
+      'before', 0, 6, {'a:bold': true, 's:fontWeight': null, 's:font-weight': null},
+    );
+    expect(doc.selection.setSelection).toHaveBeenCalledWith(selection.start, selection.end);
     host.remove();
   });
+
+  for (const id of ['image', 'code']) {
+    it(`does not format the whole selected ${id} leaf`, () => {
+      const {host, doc, helper} = makeHarness();
+      const block = doc.getBlockById(id);
+      const point = {blockId: id, type: 'selected', block} as any;
+      const selection = new BlockSelection(point, point, 'group', doc.getBlockById, () => 0);
+      expect(helper.getFontScaleTargets(selection as any)).toEqual([]);
+      helper.formatText({'a:bold': true}, selection as any);
+      expect(doc.crud.formatText).not.toHaveBeenCalled();
+      host.remove();
+    });
+  }
 });
 
 describe('TextToolbarHelper table cell selections', () => {

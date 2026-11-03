@@ -4433,8 +4433,7 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
   }
 
   private canTransformSelection(selection: BlockCraft.Selection | null) {
-    if (!this.isLiveSelection(selection) ||
-        (selection.isAllSelected && !isSelectedContainer(selection, this.doc)))
+    if (!this.isLiveSelection(selection))
       return false;
     if (this.isReadonlyFormatSelection(selection)) return false;
 
@@ -4447,6 +4446,10 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
       return false;
     }
     if (!between.length || !formatIds.length) return false;
+    // 整块段落选区可转换；对象框选仍不借用内部文本开放结构转换。
+    if (selection.isAllSelected && !isSelectedContainer(selection, this.doc)) {
+      return between.every(id => this.isEditableTextBlockId(id));
+    }
     if (between.some(id => this.doc.model?.exists(id)
       ? this.doc.model.getNodeType(id) === BlockNodeType.block
       : this.doc.getBlockById(id)?.nodeType === BlockNodeType.block)) {
@@ -4505,8 +4508,7 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
   }
 
   private canSetLineHeightForSelection(selection: BlockCraft.Selection | null) {
-    if (!this.isLiveSelection(selection) ||
-        (selection.isAllSelected && !isSelectedContainer(selection, this.doc)))
+    if (!this.isLiveSelection(selection))
       return false;
     if (this.isReadonlyFormatSelection(selection)) return false;
 

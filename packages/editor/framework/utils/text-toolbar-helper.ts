@@ -23,7 +23,7 @@ import {normalizeParagraphTextDefaults} from '../block-std/typography/paragraph-
 import {resolvedBlockFontSize, resolvedInlineFontSize} from './typography-font-size';
 import {getCommonAttributesFromDeltas, sliceDelta} from "../../global";
 import {isSelectionAlive} from "../modules/selection/liveness";
-import {getSelectionFormatBlockIds, isSelectedContainer} from './selection-format-blocks';
+import {getSelectionFormatBlockIds} from './selection-format-blocks';
 
 export interface ITextCommonAttrs {
   attrs: Map<string, any>
@@ -305,8 +305,7 @@ export class TextToolbarHelper {
   getFontScaleTargets(
     selection: BlockCraft.Selection | null = this.doc.selection.value,
   ): IFontScaleTarget[] {
-    if (!selection || !this.isSelectionAlive(selection) ||
-        (selection.isAllSelected && !isSelectedContainer(selection, this.doc))) return []
+    if (!selection || !this.isSelectionAlive(selection)) return []
 
     let coveredIds: string[]
     try {

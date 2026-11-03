@@ -186,6 +186,52 @@ describe("FixedTextToolbarComponent boundary selections", () => {
     return { component, p1, p2, p3, rootHost, selection, queryBlocksBetween };
   };
 
+  for (const multi of [false, true]) {
+    it(`enables text, size, line-height and heading controls for ${multi ? 'multiple' : 'one'} whole selected paragraphs`, () => {
+      const {component, p1, p2, rootHost} = makeHarness();
+      const range = new BlockSelection(
+        {blockId: p1.id, type: 'selected', block: p1} as any,
+        {blockId: multi ? p2.id : p1.id, type: 'selected', block: multi ? p2 : p1} as any,
+        'root', id => component.doc.getBlockById(id) as any,
+        (a, b) => component.doc.getBlockById(a).hostElement.compareDocumentPosition(component.doc.getBlockById(b).hostElement),
+      );
+      (component as any).syncToolbarState(range);
+      expect(component.allEditable).toBeTrue();
+      expect(component.canSetFontScale).toBeTrue();
+      expect(component.canSetLineHeight).toBeTrue();
+      expect(component.canTransformBlocks).toBeTrue();
+      (component.doc as any).readonlyManager = {isSelectionReadonly: () => true};
+      (component as any).syncToolbarState(range);
+      expect(component.allEditable).toBeFalse();
+      expect(component.canSetFontScale).toBeFalse();
+      expect(component.canSetLineHeight).toBeFalse();
+      expect(component.canTransformBlocks).toBeFalse();
+      rootHost.remove();
+    });
+  }
+
+  it('keeps a whole selected paragraph and image range formattable without enabling structural transforms', () => {
+    const {component, p1, p2, rootHost} = makeHarness();
+    p2.nodeType = BlockNodeType.void;
+    const range = new BlockSelection(
+      {blockId: p1.id, type: 'selected', block: p1} as any,
+      {blockId: p2.id, type: 'selected', block: p2} as any,
+      'root', id => component.doc.getBlockById(id) as any,
+      (a, b) => component.doc.getBlockById(a).hostElement.compareDocumentPosition(component.doc.getBlockById(b).hostElement),
+    );
+    (component as any).syncToolbarState(range);
+    expect(component.allEditable).toBeTrue();
+    expect(component.canSetFontScale).toBeTrue();
+    expect(component.canSetLineHeight).toBeTrue();
+    expect(component.canTransformBlocks).toBeFalse();
+    p1.plainTextOnly = true;
+    (component as any).syncToolbarState(range);
+    expect(component.allEditable).toBeFalse();
+    expect(component.canSetFontScale).toBeFalse();
+    expect(component.canSetLineHeight).toBeFalse();
+    rootHost.remove();
+  });
+
   it("does not treat a collapsed boundary cursor as a transformable block range", () => {
     const { component, rootHost, selection, queryBlocksBetween } =
       makeHarness();

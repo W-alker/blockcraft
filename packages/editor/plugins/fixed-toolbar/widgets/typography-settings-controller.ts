@@ -265,8 +265,7 @@ export class TypographySettingsController {
   }
 
   public canFormatTextSelection(selection: BlockCraft.Selection | null) {
-    if (this.readonly || !this.isLiveSelection(selection) ||
-        (selection.isAllSelected && !isSelectedContainer(selection, this.doc)))
+    if (this.readonly || !this.isLiveSelection(selection))
       return false;
     if (this.isReadonlyFormatSelection(selection)) return false;
     if (selection.collapsed && selection.start.type !== "text" && !selection.getTableCellSelection?.()) return false;
@@ -343,8 +342,7 @@ export class TypographySettingsController {
   }
 
   public canSetFontScaleForSelection(selection: BlockCraft.Selection | null) {
-    if (this.readonly || !this.isLiveSelection(selection) ||
-        (selection.isAllSelected && !isSelectedContainer(selection, this.doc)))
+    if (this.readonly || !this.isLiveSelection(selection))
       return false;
     if (this.isReadonlyFormatSelection(selection)) return false;
     return this.toolbarHelper.canFormatFontScale(selection);
