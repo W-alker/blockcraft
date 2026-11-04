@@ -173,6 +173,7 @@ export class AttachmentExtensionPlugin extends DocPlugin {
         const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay<AttachmentBlockToolbar>({
           target: attachmentBlock,
           component: AttachmentBlockToolbar,
+          allowReadonly: this.doc.isReadonly,
           positions: [
             getPositionWithOffset("top-left", 0, 8),
             getPositionWithOffset("bottom-left", 0, 8),
