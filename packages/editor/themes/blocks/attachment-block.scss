@@ -4,11 +4,14 @@
     border: 1px solid var(--bc-border-color);
     border-radius: 4px;
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
     position: relative;
+    min-width: 0;
     max-width: 400px;
-    //overflow: hidden;
+    // 按卡片自身宽度适配，覆盖分栏、表格和快照预览中的窄容器。
+    container: bc-attachment / inline-size;
     background: var(--bc-bg-secondary);
 
     &.selected,
@@ -29,6 +32,7 @@
     &__info {
       padding: 8px 16px;
       flex: 1;
+      min-width: 0;
       white-space: nowrap;
       overflow: hidden;
     }
@@ -50,10 +54,13 @@
       font-size: small;
       line-height: .8lh;
       color: var(--bc-color-light);
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     &__icon-wrapper {
       width: 50px;
+      flex-shrink: 0;
       display: flex;
       justify-content: center;
       align-items: center;
@@ -109,6 +116,7 @@
       color: var(--bc-color-light);
       font-size: 14px;
       width: 100%;
+      min-width: 0;
 
       i {
         font-size: 18px;
@@ -118,6 +126,64 @@
       &:hover {
         color: var(--bc-active-color);
         i { color: var(--bc-active-color); }
+      }
+    }
+
+    @container bc-attachment (max-width: 240px) {
+      &__prefix {
+        display: none;
+      }
+
+      &__info {
+        padding: 8px 0;
+      }
+
+      &__name {
+        white-space: normal;
+        -webkit-line-clamp: 2;
+      }
+
+      &__icon-wrapper {
+        width: 32px;
+
+        mat-icon {
+          font-size: 32px;
+          width: 32px;
+          height: 32px;
+        }
+      }
+
+      &__progress {
+        width: 32px;
+        height: 32px;
+      }
+
+      &__empty {
+        padding: 8px 0;
+      }
+    }
+
+    @container bc-attachment (max-width: 140px) {
+      &__info {
+        flex-basis: 100%;
+        order: 1;
+        padding: 0 0 8px;
+      }
+
+      &__icon-wrapper {
+        flex-basis: 100%;
+        padding-top: 4px;
+      }
+
+      &__empty {
+        flex-direction: column;
+        gap: 4px;
+        text-align: center;
+
+        span {
+          max-width: 100%;
+          overflow-wrap: anywhere;
+        }
       }
     }
   }
