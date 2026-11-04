@@ -486,7 +486,7 @@ export class InputTransformer {
   private _insertParagraphAtGap(
     gap: IGapSelectionPoint | GapEditPlan,
     text: string,
-    reveal = false,
+    options: {reveal?: boolean; inheritIndent?: boolean} = {},
   ): EditableBlockComponent | null {
     const block = "kind" in gap
       ? this._getLiveBlockById(gap.blockId)
@@ -496,12 +496,16 @@ export class InputTransformer {
     }
     const index =
       block.getIndexOfParent() + (gap.side === "after" ? 1 : 0);
-    const newParagraph = this.doc.crud.insertNewParagraph(
-      block.parentId,
-      index,
-      text ? [{ insert: text }] : [],
-    );
-    if (reveal) {
+    const content = text ? [{insert: text}] : [];
+    // Enter continues the surrounding flow indentation, without copying object
+    // properties (image size, callout background, table layout, etc.) to text.
+    const newParagraph = options.inheritIndent
+      ? this.doc.crud.insertBlocks(block.parentId, index, [
+        this.doc.schemas.createSnapshot("paragraph", [content, {depth: block.props.depth ?? 0}]),
+      ])[0]
+      : this.doc.crud.insertNewParagraph(block.parentId, index, content);
+    if (!newParagraph) return null;
+    if (options.reveal) {
       this.doc.selection.setCursorAtBlock(newParagraph, false);
     } else {
       this.doc.selection.setCursorAt(newParagraph as any, text.length);
@@ -2404,7 +2408,7 @@ export class InputTransformer {
     // Handle gap-cursor Enter: insert a new empty paragraph at the gap, keep the
     // void/container block, and move the caret into the new paragraph.
     if (plan.kind === "gap") {
-      if (!this._insertParagraphAtGap(plan, "", true)) this.doc.selection.blur();
+      if (!this._insertParagraphAtGap(plan, "", {reveal: true, inheritIndent: true})) this.doc.selection.blur();
       return true;
     }
 
@@ -2474,6 +2478,7 @@ export class InputTransformer {
     // 空段落
     if (!block.textLength) {
       const nextStyle = resolveNextParagraphStyle(block.flavour, block.props, true);
+      const exitEmptyQuote = block.flavour === 'blockquote' && !nextStyle.continueTextFormat;
       if (block.props.heading && !nextStyle.continueTextFormat) {
         block.updateProps({
           heading: null,
@@ -2486,7 +2491,7 @@ export class InputTransformer {
         return true;
       }
 
-      if (block.props.depth > 0) {
+      if (block.props.depth > 0 && !exitEmptyQuote) {
         block.updateProps({
           depth: block.props.depth - 1,
         });
@@ -2497,12 +2502,15 @@ export class InputTransformer {
       // Shape text is already a paragraph inside its dedicated text frame.
       // Converting an empty one to `paragraph` violates the parent's child schema.
       const preserveParagraph = block.flavour === 'paragraph' || block.flavour === 'shape-text';
-      const style = preserveParagraph || (block.flavour === 'blockquote' && !nextStyle.continueTextFormat) ? nextStyle : {
+      const style = exitEmptyQuote
+        ? {...nextStyle, props: {...nextStyle.props, depth: block.props.depth ?? 0}}
+        : preserveParagraph ? nextStyle : {
         flavour: 'paragraph' as const, props: {...block.props, heading: undefined, depth: 0}, continueTextFormat: true,
       };
       const p = this.doc.schemas.createSnapshot(style.flavour, [[], {
         ...style.props, textDefaults: style.continueTextFormat ? defaults : undefined,
       }]);
+      if (exitEmptyQuote) this.doc.crud.undoManager.captureSelectionBeforeChange();
       await (
         preserveParagraph
           ? this.doc.chain().insertAfterSnapshots(block, [p])

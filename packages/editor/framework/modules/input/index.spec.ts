@@ -3191,12 +3191,17 @@ describe('InputTransformer._insertParagraphAtGap', () => {
     const mockVoidBlock = {
       id: 'void-1',
       parentId: 'parent-1',
+      props: {depth: 2, backColor: '#ffe6cd', wr: 25},
       getIndexOfParent: jasmine.createSpy('getIndexOfParent').and.returnValue(indexOfParent),
       nodeType: 'void',
     }
     const mockNewParagraph = {id: 'paragraph-new', textLength: 0}
+    const snapshot = {id: mockNewParagraph.id}
     const doc = {
       event: eventStub(),
+      schemas: {
+        createSnapshot: jasmine.createSpy('createSnapshot').and.returnValue(snapshot),
+      },
       selection: {
         value: null,
         blur: jasmine.createSpy('blur'),
@@ -3211,6 +3216,7 @@ describe('InputTransformer._insertParagraphAtGap', () => {
       isEditable: jasmine.createSpy('isEditable').and.callFake((block: any) => block?.id === mockNewParagraph.id),
       crud: {
         insertNewParagraph: jasmine.createSpy('insertNewParagraph').and.returnValue(mockNewParagraph),
+        insertBlocks: jasmine.createSpy('insertBlocks').and.returnValue([mockNewParagraph]),
         deleteBlockById: jasmine.createSpy('deleteBlockById'),
       },
     }
@@ -3280,10 +3286,24 @@ describe('InputTransformer._insertParagraphAtGap', () => {
       })
 
       expect(preventDefault).toHaveBeenCalled()
-      expect(doc.crud.insertNewParagraph).toHaveBeenCalledWith('parent-1', side === 'after' ? 2 : 1, [])
+      expect(doc.schemas.createSnapshot).toHaveBeenCalledWith('paragraph', [[], {depth: 2}])
+      expect(doc.crud.insertBlocks).toHaveBeenCalledWith('parent-1', side === 'after' ? 2 : 1, [{id: mockNewParagraph.id}])
+      expect(doc.crud.insertNewParagraph).not.toHaveBeenCalled()
       expect(doc.selection.setCursorAtBlock).toHaveBeenCalledWith(mockNewParagraph, false)
       expect(doc.selection.setCursorAt).not.toHaveBeenCalled()
       expect(doc.crud.deleteBlockById).not.toHaveBeenCalled()
+    })
+  }
+
+  for (const depth of [undefined, 0, 10]) {
+    it(`preserves gap Enter indentation without clamping depth ${depth}`, () => {
+      const {doc, mockVoidBlock} = createTestDoc(1)
+      mockVoidBlock.props.depth = depth as any
+      const transformer = new InputTransformer(doc as any) as any
+
+      transformer['_insertParagraphAtGap'](makeGap('after', mockVoidBlock), '', {inheritIndent: true})
+
+      expect(doc.schemas.createSnapshot).toHaveBeenCalledWith('paragraph', [[], {depth: depth ?? 0}])
     })
   }
 
@@ -3357,6 +3377,7 @@ describe('InputTransformer._insertParagraphAtGap', () => {
 
     expect(preventDefault).toHaveBeenCalled()
     expect(doc.crud.insertNewParagraph).toHaveBeenCalledWith('parent-1', 2, [{insert: 'a'}])
+    expect(doc.schemas.createSnapshot).not.toHaveBeenCalled()
     expect(doc.selection.setCursorAt).toHaveBeenCalledWith(
       doc.crud.insertNewParagraph.calls.mostRecent().returnValue,
       1,
@@ -3387,11 +3408,58 @@ describe('InputTransformer._insertParagraphAtGap', () => {
     expect(result).toBeTrue()
     expect(preventDefault).toHaveBeenCalled()
     expect(doc.crud.insertNewParagraph).toHaveBeenCalledWith('parent-1', 2, [])
+    expect(doc.schemas.createSnapshot).not.toHaveBeenCalled()
     expect(doc.selection.setCursorAt).toHaveBeenCalledWith(mockNewParagraph, 0)
     expect(transformer.compositionSession.start).toHaveBeenCalledWith(mockNewParagraph, 0)
     expect(doc.selection.blur).not.toHaveBeenCalled()
     expect((doc.selection as any).recalculate).not.toHaveBeenCalled()
   })
+})
+
+describe('InputTransformer empty blockquote indentation', () => {
+  for (const depth of [0, 2]) {
+    for (const nextParagraphStyle of [undefined, 'body']) {
+      it(`exits an empty quote at depth ${depth} with ${nextParagraphStyle ?? 'default'} style and captures its cursor`, async () => {
+        const block = {
+          id: 'quote', flavour: 'blockquote', parentId: 'root', textLength: 0,
+          props: {depth, nextParagraphStyle}, updateProps: jasmine.createSpy('updateProps'),
+        }
+        const point = {blockId: block.id, type: 'text', offset: 0, block} as any
+        const selection = new BlockSelection(point, point, 'root', () => block as any, () => 0)
+        const snapshot = {id: 'body'}
+        const captureSelectionBeforeChange = jasmine.createSpy('captureSelectionBeforeChange')
+        const chain: any = {
+          replaceWithSnapshots: jasmine.createSpy('replaceWithSnapshots').and.callFake(() => {
+            expect(captureSelectionBeforeChange).toHaveBeenCalled()
+            return chain
+          }),
+          tap: () => chain,
+          selectOrSetCursorAtBlock: jasmine.createSpy('selectOrSetCursorAtBlock').and.callFake(() => chain),
+          run: () => Promise.resolve(),
+        }
+        const doc = {
+          event: eventStub(),
+          getBlockById: () => block,
+          isEditable: () => true,
+          schemas: {createSnapshot: jasmine.createSpy('createSnapshot').and.returnValue(snapshot)},
+          crud: {undoManager: {captureSelectionBeforeChange}},
+          chain: () => chain,
+        }
+        const transformer = new InputTransformer(doc as any) as any
+        spyOn(transformer, 'peekNextInsertAttrs').and.returnValue(undefined)
+
+        await transformer['_handlerEnter']({
+          preventDefault() {},
+          get: () => ({selection, raw: {}}),
+        })
+
+        expect(block.updateProps).not.toHaveBeenCalled()
+        expect(doc.schemas.createSnapshot).toHaveBeenCalledWith('paragraph', [[], {depth, textDefaults: undefined}])
+        expect(chain.replaceWithSnapshots).toHaveBeenCalledWith(block.id, [snapshot])
+        expect(chain.selectOrSetCursorAtBlock).toHaveBeenCalledWith(snapshot.id, true)
+      })
+    }
+  }
 })
 
 describe('InputTransformer boundary selection editing', () => {
