@@ -362,13 +362,13 @@ describe("BlockGapCreatorPlugin", () => {
     voidHost.getBoundingClientRect = () => rect(100, 100, 420, 180)
     voidHost.replaceChildren()
     const prefix = document.createElement("div")
-    prefix.className = "attachment-block__prefix"
+    prefix.className = "attachment-block__icon-wrapper"
     prefix.getBoundingClientRect = () => rect(120, 120, 150, 160)
     const info = document.createElement("div")
     info.className = "attachment-block__info"
     info.getBoundingClientRect = () => rect(160, 115, 330, 165)
     const icon = document.createElement("div")
-    icon.className = "attachment-block__icon-wrapper"
+    icon.className = "attachment-block__size"
     icon.getBoundingClientRect = () => rect(340, 120, 390, 160)
     voidHost.append(prefix, info, icon)
     spyOn(document, "elementFromPoint").and.returnValue(voidHost)

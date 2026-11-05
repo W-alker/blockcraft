@@ -2,7 +2,33 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-11-03 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-11-05 | Tracks `@ccc/blockcraft` npm releases.
+
+## 未发布 — 2026-11-05：精简浮动文本工具栏默认按钮
+
+- Severity: patch（默认按钮调整；版本由用户决定）。
+- What changed / Why: 浮动文本工具栏移除默认上标、下标和行内公式按钮，缩短常用操作栏。
+- Behavior Changes: 仅移除三个默认可见入口，其他按钮及自定义动作不变；既有格式、公式内容和固定工具栏入口保留。
+- Migration Recipe: 无数据迁移；依赖这三个浮动按钮的自动化操作需使用其他入口。
+- Affected ai-skills files: `blockcraft-plugins-toolbar.md`。
+
+## 未发布 — 2026-11-05：统一通用浮动工具栏外观
+
+- Severity: minor（通用主题默认尺寸调整；版本由用户决定）。
+- What changed / Why: 横向浮动工具栏统一为紧凑方形按钮，附件、文字、图片、链接等复用相同视觉规格。
+- Behavior Changes: 纯图标按钮 28×28px、图标 16px、间距 2px；文字与下拉按钮按内容增宽，长工具条在窄视口换行。浮层 7px 圆角，浅色/深色使用柔和投影；颜色面板共享投影。纵向菜单、固定工具栏嵌套外壳及虚拟滚动选择器布局保留。
+- New APIs: 主题变量 `--bc-float-toolbar-item-size`、`--bc-float-toolbar-icon-size`、`--bc-float-toolbar-gap`、`--bc-float-toolbar-radius`。
+- Migration Recipe: 无文档数据迁移。宿主若覆盖旧的 40px 行高或按钮间距，需检查并改用上述变量；按钮事件和插件配置不变。
+- Affected ai-skills files: `blockcraft-theme.md`、`blockcraft-toolbar.md`。
+
+## 未发布 — 2026-11-04：附件悬停工具栏与组件库文件图标
+
+- Severity: minor（附件默认交互与图标解析名称调整；版本由用户决定）。
+- What changed / Why: 附件工具栏改为悬停触发，附件与快照预览统一复用 `@cses/ui` 文件图标。
+- Behavior Changes: 悬停 200ms 打开，离开附件和工具栏 200ms 后关闭；鼠标/键盘选中附件不再自动打开工具栏，触屏保留点击入口。块悬停增加主题浅底色与边框反馈。悬停不改变选区，上传/重命名/预览/下载及只读权限沿用原逻辑。旧快照的 `icon` 字段保留，显示按 MIME/文件名推导。
+- Layout: 附件改为左侧单图标/文件名、右侧大小的紧凑单行卡片，上传/同步状态保留，极窄容器下大小换行；快照预览同步。移除重复的 `.attachment-block__prefix`，`.attachment-block__icon-wrapper` 移到左侧，`.attachment-block__size` 移到卡片直接子节点；宿主若有相应 DOM/CSS 覆盖需调整。
+- Migration Recipe: 自动化交互先 hover 附件。使用纯 DOM 快照 renderer 并提供 `resolveSvgIcon` 的宿主需支持组件库 `file-*` 名称；Angular `SnapshotViewerComponent` 默认已接入。无数据迁移。
+- Affected ai-skills files: `blockcraft-plugins-toolbar.md`。
 
 ## 未发布 — 2026-11-03：应用标题时恢复默认字号与行高
 

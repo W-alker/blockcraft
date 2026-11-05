@@ -117,9 +117,61 @@ test('切回编辑后恢复原有格式与编辑态自定义动作', async ({pag
   await expect(toolbar(page)).toBeVisible();
   await expect(toolbar(page).getByText('编辑态动作', {exact: true})).toBeVisible();
   await expect(toolbar(page).getByText('添加评论', {exact: true})).toHaveCount(0);
+  await expect(toolbar(page).locator('bc-float-toolbar-item[title="上标"], bc-float-toolbar-item[title="下标"], bc-float-toolbar-item[title="行内公式"]')).toHaveCount(0);
   await toolbar(page).locator('bc-float-toolbar-item[title^="加粗"]').click();
   await expect.poll(() => page.evaluate(() => {
     const doc = (window as any).readonlyToolbarProbe.doc;
     return doc.getBlockById((window as any).readonlyToolbarProbe.paragraphId).textDeltas().some((op: any) => op.attributes?.['a:bold']);
+  })).toBe(true);
+});
+
+test('紧凑浮动工具栏保留文字入口、纵向菜单及窄屏格式操作', async ({page}, testInfo) => {
+  await page.getByRole('button', {name: '切换编辑', exact: true}).click();
+  await selectText(page);
+  const bar = toolbar(page);
+  const wrapper = bar.locator('.bc-float-toolbar__wrapper').first();
+  const bold = bar.locator('bc-float-toolbar-item[title^="加粗"]');
+  await expect(bold).toBeVisible();
+  const square = await bold.boundingBox();
+  expect(square!.width).toBe(28);
+  expect(square!.height).toBe(square!.width);
+  for (const theme of ['dark', 'light']) {
+    await page.evaluate(theme => (window as any).readonlyToolbarProbe.doc.toggleTheme(theme), theme);
+    await expect(wrapper).toHaveCSS('background-color', theme === 'dark' ? 'rgb(42, 42, 42)' : 'rgb(255, 255, 255)');
+    await expect(bold).toHaveCSS('color', theme === 'dark' ? 'rgb(227, 227, 227)' : 'rgb(55, 53, 47)');
+    await bar.screenshot({path: testInfo.outputPath(`compact-toolbar-${theme}.png`)});
+  }
+  const heading = bar.locator('bc-float-toolbar-item').filter({hasText: '正文'});
+  expect((await heading.boundingBox())!.width).toBeGreaterThan(square!.width);
+  await heading.hover();
+  const option = page.locator('bc-float-toolbar[data-direction="column"] bc-float-toolbar-item').filter({hasText: '一级标题'});
+  await expect(option).toBeVisible();
+  expect((await option.boundingBox())!.width).toBeGreaterThan(square!.width * 2);
+  await option.click();
+  await expect.poll(() => page.evaluate(() => {
+    const {doc, paragraphId} = (window as any).readonlyToolbarProbe;
+    return doc.getBlockById(paragraphId).props.heading;
+  })).toBe(1);
+
+  // Only the fixture's surrounding chrome is reduced; toolbar layout stays production CSS.
+  await page.evaluate(() => {
+    const fixture = document.getElementById('readonly-toolbar-fixture')!;
+    fixture.style.inset = '8px';
+    fixture.style.padding = '150px 12px 20px';
+  });
+  await page.setViewportSize({width: 375, height: 760});
+  await selectText(page);
+  await expect(wrapper).toBeVisible();
+  const bounds = await wrapper.boundingBox();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(375);
+  expect(bounds!.height).toBeGreaterThan(36);
+  expect(await wrapper.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+  await expect(bar.getByText('编辑态动作', {exact: true})).toBeVisible();
+  await bar.screenshot({path: testInfo.outputPath('compact-toolbar-mobile.png')});
+  await bold.click();
+  await expect.poll(() => page.evaluate(() => {
+    const {doc, paragraphId} = (window as any).readonlyToolbarProbe;
+    return doc.getBlockById(paragraphId).textDeltas().some((op: any) => op.attributes?.['a:bold']);
   })).toBe(true);
 });

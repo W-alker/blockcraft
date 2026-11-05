@@ -1,62 +1,61 @@
 import {ChangeDetectionStrategy, Component} from "@angular/core";
 import {BaseBlockComponent, DOC_FILE_SERVICE_TOKEN, DocFileService} from "../../framework";
-import {MatIcon} from "@angular/material/icon";
+import {CsIconComponent} from "@cses/ui";
 import {AttachmentBlockModel} from "./index";
 import {FileSizePipe} from "./file-size.pipe";
-import {getAttachmentIcon} from "./icons";
+import {getAttachmentFileIcon, getAttachmentIcon} from "./icons";
 
 @Component({
   selector: 'div.attachment-block',
   template: `
     @if (!props.url) {
       <div class="attachment-block__empty" contenteditable="false">
-        <i class="bc_icon bc_wenjian-color"></i>
+        <cs-icon csType="file-unknown" useSvg />
         <span>上传文件</span>
       </div>
-    } @else if (isPeerUploading) {
-      <div class="attachment-block__prefix">
-        <i class="bc_icon bc_wenjian-color"></i>
-      </div>
-      <div class="attachment-block__info">
-        <div class="attachment-block__name" spellcheck="false">{{ props.name }}</div>
-        <div class="attachment-block__size">同步中...</div>
-      </div>
-      <div class="attachment-block__icon-wrapper">
-        <div class="attachment-block__progress">
-          <div class="attachment-block__spinner"></div>
-        </div>
-      </div>
     } @else {
-      <div class="attachment-block__prefix">
-        <i class="bc_icon bc_wenjian-color"></i>
-      </div>
-      <div class="attachment-block__info">
-        <div class="attachment-block__name" spellcheck="false">{{ props.name }}</div>
-        <div class="attachment-block__size">{{ props.size | fileSize }}</div>
-      </div>
+      @let peerUploading = isPeerUploading;
       <div class="attachment-block__icon-wrapper">
-        @if (uploadProgress === 100) {
-          <mat-icon [svgIcon]="props.icon"></mat-icon>
-        } @else {
+        @if (peerUploading) {
+          <div class="attachment-block__spinner"></div>
+        } @else if (uploadProgress !== 100) {
           <div class="attachment-block__progress">
-            <svg viewBox="0 0 36 36">
-              <circle cx="18" cy="18" r="15.5" fill="none" stroke="var(--bc-border-color, #E9E9E7)" stroke-width="3"/>
-              <circle cx="18" cy="18" r="15.5" fill="none" stroke="var(--bc-active-color, #4857E2)" stroke-width="3"
+            <svg viewBox="0 0 36 36" aria-hidden="true">
+              <circle cx="18" cy="18" r="15.5" fill="none" stroke="var(--bc-border-color)" stroke-width="3"/>
+              <circle cx="18" cy="18" r="15.5" fill="none" stroke="var(--bc-active-color)" stroke-width="3"
                       stroke-dasharray="97.4" [attr.stroke-dashoffset]="97.4 - (97.4 * uploadProgress / 100)"
                       stroke-linecap="round" transform="rotate(-90 18 18)"/>
             </svg>
             <span>{{ uploadProgress }}%</span>
           </div>
+        } @else {
+          <cs-icon [csType]="fileIcon" useSvg />
+        }
+      </div>
+      <div class="attachment-block__info">
+        <div class="attachment-block__name" spellcheck="false" [title]="props.name">{{ props.name }}</div>
+      </div>
+      <div class="attachment-block__size">
+        @if (peerUploading) {
+          同步中...
+        } @else if (uploadProgress !== 100) {
+          上传中...
+        } @else {
+          {{ props.size | fileSize }}
         }
       </div>
     }
   `,
   standalone: true,
-  imports: [MatIcon, FileSizePipe],
+  imports: [CsIconComponent, FileSizePipe],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class AttachmentBlockComponent extends BaseBlockComponent<AttachmentBlockModel> {
   protected uploadProgress = 100;
+
+  protected get fileIcon(): string {
+    return getAttachmentFileIcon(this.props.type, this.props.name);
+  }
 
   private _fileService?: DocFileService;
 

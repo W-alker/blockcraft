@@ -1,3 +1,4 @@
+import {getAttachmentFileIcon} from '../../blocks/attachment-block/icons';
 import {normalizeShapeRotation} from '../../blocks/shape-block/shape.types';
 import {IBlockSnapshot} from "../../framework/block-std/types/block.type";
 import {InlineModel} from "../../framework/block-std/types/inline.type";
@@ -417,8 +418,7 @@ function renderAttachment(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) 
     const empty = document.createElement("div")
     empty.classList.add("attachment-block__empty")
     empty.setAttribute("contenteditable", "false")
-    const emptyIcon = document.createElement("i")
-    emptyIcon.className = "bc_icon bc_wenjian-color"
+    const emptyIcon = createAttachmentIcon("file-unknown", snapshot.id, ctx)
     const emptyLabel = document.createElement("span")
     emptyLabel.textContent = "上传文件"
     empty.append(emptyIcon, emptyLabel)
@@ -426,59 +426,51 @@ function renderAttachment(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) 
     return {element}
   }
 
-  // Match the live attachment order: the small file marker is positioned by
-  // the theme, while the large type icon stays in the trailing wrapper.
-  const prefix = document.createElement("div")
-  prefix.classList.add("attachment-block__prefix")
-  const prefixIcon = document.createElement("i")
-  prefixIcon.className = "bc_icon bc_wenjian-color"
-  prefix.append(prefixIcon)
-
+  const iconName = getAttachmentFileIcon(`${props['type'] || ''}`, `${props['name'] || ''}`)
   const iconWrapper = document.createElement("div")
   iconWrapper.classList.add("attachment-block__icon-wrapper")
-  const iconName = `${props["icon"] || ""}`
-  if (iconName && ctx.options.resolveSvgIcon) {
-    const matIcon = document.createElement("mat-icon")
-    matIcon.setAttribute("svgIcon", iconName)
-    matIcon.setAttribute("role", "img")
-    matIcon.setAttribute("aria-hidden", "true")
-    matIcon.classList.add("mat-icon", "notranslate")
-    iconWrapper.append(matIcon)
-
-    ctx.scheduleEnhancement({
-      key: `attachment-icon:${snapshot.id}:${iconName}`,
-      target: matIcon,
-      policy: "eager",
-      load: (signal: AbortSignal) => ctx.options.resolveSvgIcon!(iconName, signal),
-      apply: (value: SVGElement | null) => {
-        if (!value) {
-          return
-        }
-        matIcon.setAttribute("data-mat-icon-type", "svg")
-        matIcon.setAttribute("data-mat-icon-name", iconName)
-        matIcon.replaceChildren(value.cloneNode(true))
-      },
-    })
-  } else {
-    const icon = document.createElement("i")
-    icon.className = `${props["icon"] || "bc_icon bc_wenjian-color"}`
-    iconWrapper.append(icon)
-  }
+  iconWrapper.append(createAttachmentIcon(iconName, snapshot.id, ctx))
 
   const info = document.createElement("div")
   info.classList.add("attachment-block__info")
 
   const name = document.createElement("div")
   name.classList.add("attachment-block__name")
-  name.textContent = `${props["name"] || "附件"}`
+  name.textContent = name.title = `${props["name"] || "附件"}`
 
   const size = document.createElement("div")
   size.classList.add("attachment-block__size")
   size.textContent = formatFileSize(Number(props["size"] || 0))
 
-  info.append(name, size)
-  element.append(prefix, info, iconWrapper)
+  info.append(name)
+  element.append(iconWrapper, info, size)
   return {element}
+}
+
+function createAttachmentIcon(name: string, id: string, ctx: SnapshotRenderContext): HTMLElement {
+  const icon = document.createElement('span')
+  icon.className = 'cs-icon'
+  icon.setAttribute('aria-hidden', 'true')
+  icon.dataset['fileIcon'] = name
+  const fallback = document.createElement('i')
+  fallback.className = 'csicon csicon-file'
+  icon.append(fallback)
+  if (ctx.options.resolveSvgIcon) {
+    ctx.scheduleEnhancement({
+      key: `attachment-icon:${id}:${name}`,
+      target: icon,
+      policy: 'eager',
+      load: (signal: AbortSignal) => ctx.options.resolveSvgIcon!(name, signal),
+      apply: (value: SVGElement | null) => {
+        if (!value) return
+        const inner = document.createElement('span')
+        inner.className = 'cs-icon-inner'
+        inner.append(value.cloneNode(true))
+        icon.replaceChildren(inner)
+      },
+    })
+  }
+  return icon
 }
 
 function renderFormula(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {

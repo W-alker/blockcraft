@@ -2,7 +2,15 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-11-02
+> Last updated: 2026-11-05
+
+## 通用浮动工具栏外观
+
+`BcFloatToolbarComponent` 横向工具条使用 28px 方形图标按钮、16px 图标、2px 间距，
+外层 4px 内边距、7px 圆角与主题投影。带文字、下拉箭头的按钮自然增宽；视口不足时换行。
+纵向菜单保留整行选项，固定工具栏子菜单不叠加第二层浮层背景。
+不改变按钮事件、选区与 Overlay 生命周期；宿主若曾依赖 40px 行高或宽按钮间距，应移除旧尺寸覆盖，
+改用 `blockcraft-theme.md` 中的 `--bc-float-toolbar-*` 尺寸变量。虚拟滚动选择器尺寸独立管理。
 
 ## 可滚动弹窗避让锚点
 

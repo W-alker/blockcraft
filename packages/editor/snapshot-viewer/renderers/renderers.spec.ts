@@ -159,7 +159,7 @@ describe("snapshot-viewer renderers", () => {
     expect(root.getAttribute("contenteditable")).toBe("false")
     expect(video.querySelector(".video-block__wrapper")?.getAttribute("contenteditable"))
       .toBe("false")
-    expect(attachment.querySelector(":scope > .attachment-block__prefix")).not.toBeNull()
+    expect(attachment.querySelector(":scope > .attachment-block__size")).not.toBeNull()
     expect(attachment.querySelector(":scope > .attachment-block__info")).not.toBeNull()
     expect(attachment.querySelector(":scope > .attachment-block__icon-wrapper")).not.toBeNull()
   })
@@ -431,7 +431,8 @@ describe("snapshot-viewer renderers", () => {
     expect(host.querySelector(".video-block video")).not.toBeNull()
     expect(host.querySelector(".audio-block audio")).not.toBeNull()
     expect(host.querySelector(".attachment-block__name")?.textContent).toContain("Guide.pdf")
-    expect(host.querySelector('.attachment-block__icon-wrapper mat-icon[data-mat-icon-type="svg"]')).not.toBeNull()
+    expect(host.querySelector('.attachment-block__icon-wrapper [data-file-icon="file-pdf"] svg')).not.toBeNull()
+    expect(host.querySelectorAll('.attachment-block [data-file-icon="file-pdf"]').length).toBe(1)
   })
 
   it("renders wr/ar media sizing and preserves legacy pixel sizing", () => {

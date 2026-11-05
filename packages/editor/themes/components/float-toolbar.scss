@@ -3,7 +3,7 @@ bc-virtual-float-toolbar {
   .bc-float-toolbar__wrapper {
     background-color: var(--bc-float-toolbar-bg);
     padding: var(--bc-padding-sm);
-    border-radius: var(--bc-radius-md);
+    border-radius: var(--bc-float-toolbar-radius);
     box-shadow: var(--bc-float-toolbar-shadow);
 
     bc-float-toolbar-item {
@@ -15,7 +15,7 @@ bc-virtual-float-toolbar {
       border-radius: var(--bc-radius-md);
       color: var(--bc-float-toolbar-item-color);
       white-space: nowrap;
-      transition: all var(--bc-transition-fast);
+      transition: background-color var(--bc-transition-fast), color var(--bc-transition-fast);
 
       &.active {
         background: var(--bc-float-toolbar-item-active-bg);
@@ -89,20 +89,45 @@ bc-virtual-float-toolbar {
 
     &[data-direction="row"] {
       display: flex;
-      justify-content: space-between;
-      align-items: stretch;
-      height: 40px;
-      gap: var(--bc-padding-md);
+      box-sizing: border-box;
+      width: max-content;
+      max-width: calc(100vw - 16px);
+      flex-wrap: wrap;
+      justify-content: flex-start;
+      align-items: center;
+      gap: var(--bc-float-toolbar-gap);
 
       bc-float-toolbar-item {
+        box-sizing: border-box;
+        flex: 0 0 auto;
+        min-width: var(--bc-float-toolbar-item-size);
+        height: var(--bc-float-toolbar-item-size);
         justify-content: center;
-        padding: 0 var(--bc-padding-sm);
+        padding: 0 calc((var(--bc-float-toolbar-item-size) - var(--bc-float-toolbar-icon-size)) / 2);
+        font-size: var(--bc-fs-sm);
+        line-height: 1;
+
+        > i,
+        > .bc-toolbar-svg-icon {
+          flex: none;
+          font-size: var(--bc-float-toolbar-icon-size);
+          width: var(--bc-float-toolbar-icon-size);
+          height: var(--bc-float-toolbar-icon-size);
+          line-height: var(--bc-float-toolbar-icon-size);
+          text-align: center;
+        }
+
+        > i.dropdown {
+          font-size: var(--bc-fs-xs);
+          width: var(--bc-fs-xs);
+        }
       }
 
       > span.bc-float-toolbar__divider {
         flex-shrink: 0;
-        height: 32px;
+        height: var(--bc-float-toolbar-icon-size);
         width: 1px;
+        margin-inline: 3px;
         background-color: var(--bc-float-toolbar-divider-color);
       }
     }

@@ -2,9 +2,15 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-11-02
+> Last updated: 2026-11-05
 
 These plugins provide floating toolbars that appear when specific block types are selected.
+
+## 浮动文本工具栏默认按钮（未发布）
+
+`FloatTextToolbarPlugin` 默认不再显示上标、下标和行内公式按钮。
+标题、对齐、加粗、删除线、下划线、斜体、行内代码、链接、颜色与自定义动作入口保留。
+此调整仅影响浮动文本工具栏的默认按钮；上标/下标格式、公式数据与编辑能力、固定工具栏入口不变。
 
 ## 对象侧栏的动画 tab（未发布）
 
@@ -67,6 +73,12 @@ new FloatTextToolbarPlugin({
 > `plugins/attachment-extension/` — Attachment block interactions and toolbar.
 
 Manages click behavior on attachment blocks (file picker for empty blocks, upload-in-progress warnings), shows a connected toolbar with rename/download/preview/delete actions, and handles file paste. Rename mode keeps the attachment visually active with the private `.bc-attachment-renaming` class while the native rename input owns focus; whole-block `.selected` remains owned by `SelectionManager`.
+
+附件工具栏由鼠标/笔悬停 200ms 打开，不再依赖整块选区；移出附件与工具栏后延迟 200ms 关闭，跨越二者间隙时可继续操作。悬停不修改选区；触屏保留点击访问工具栏，点击外部关闭。块 hover 使用主题浅底色和边框，区别于选中态。重命名打开独立输入面板，关闭后保持原有选区恢复。只读模式保留预览/下载与非编辑扩展项，点击空附件上传、上传中提示和文件粘贴沿用原行为。Escape、块/文档销毁清理浮层。
+
+附件工具栏与卡片右侧对齐，空间不足时仍使用既有浮层翻转/边界约束。附件采用单行紧凑卡片：左侧单个文件图标、文件名，右侧仅显示大小；上传/同步时保留进度状态。长文件名省略并可通过 title 查看，极窄容器下大小独立换行。编辑视图与快照采用同一布局，`attachment-block__icon-wrapper` 位于开头，`attachment-block__size` 是卡片直接子节点，不再渲染重复的 `attachment-block__prefix`。
+
+附件编辑视图和快照预览使用 `@cses/ui` 文件图标，按 MIME 类型并以文件名后缀兜底；旧 `props.icon` 保留存储兼容。Angular 快照组件默认从组件库解析 SVG；纯 DOM renderer 的自定义 `resolveSvgIcon` 会收到 `file-pdf` 等组件库名称，无解析器时使用组件库通用文件字体图标。
 
 ### Configuration
 

@@ -130,7 +130,11 @@
 
   // 浮动工具栏相关
   --bc-float-toolbar-bg: #FFFFFF;
-  --bc-float-toolbar-shadow: 0 2px 8px rgba(15, 15, 15, 0.05), 0 0 0 1px rgba(15, 15, 15, 0.1);
+  --bc-float-toolbar-shadow: 0 3px 14px rgba(15, 15, 15, 0.12);
+  --bc-float-toolbar-radius: 7px;
+  --bc-float-toolbar-item-size: 28px;
+  --bc-float-toolbar-icon-size: 16px;
+  --bc-float-toolbar-gap: 2px;
   --bc-float-toolbar-item-color: #37352F;
   --bc-float-toolbar-item-hover-bg: #F1F1EF;
   --bc-float-toolbar-item-active-bg: rgba(72, 87, 226, 0.1);

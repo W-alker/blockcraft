@@ -2,7 +2,25 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-10-30
+> Last updated: 2026-11-05
+
+## 通用浮动工具栏尺寸
+
+`bc-float-toolbar` 的横向图标按钮默认 28×28px，按钮圆角沿用 `--bc-radius-md`（4px），
+图标 16px，按钮间距 2px，外层内边距沿用 `--bc-padding-sm`（4px）。带文字或下拉箭头的
+按钮按内容自然增宽；长工具条在视口边界内换行，纵向文字菜单继续使用整行布局。
+
+可覆盖以下主题变量；尺寸变量定义于 `variables.scss`，浅色和深色共用：
+
+| 变量 | 默认值 | 用途 |
+| --- | --- | --- |
+| `--bc-float-toolbar-item-size` | `28px` | 横向按钮高度与最小宽度 |
+| `--bc-float-toolbar-icon-size` | `16px` | 横向按钮图标大小与分隔线高度 |
+| `--bc-float-toolbar-gap` | `2px` | 横向按钮间距 |
+| `--bc-float-toolbar-radius` | `7px` | 浮层外圆角 |
+
+`--bc-float-toolbar-shadow` 统一为柔和投影，颜色面板沿用此投影变量。
+固定工具栏的嵌套子菜单仍由 CSES 面板提供唯一外壳；虚拟滚动选择器保留自己的 itemSize 与布局。
 
 ## Theme Structure
 

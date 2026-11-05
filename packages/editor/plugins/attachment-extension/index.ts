@@ -8,7 +8,7 @@ import {
 import {UIEventStateContext, IBlockSnapshot} from "../../framework";
 import {BlockCraftError, downloadFile, ErrorCode, nextTick} from "../../global";
 import {checkIncomingContentSize} from '../../framework/doc/incoming-content';
-import {merge, Subject, Subscription, takeUntil} from "rxjs";
+import {fromEvent, merge, Subject, Subscription, takeUntil} from "rxjs";
 import {OverlayRef} from "@angular/cdk/overlay";
 import {AttachmentBlockToolbar, IAttachmentToolbarItem} from "./widgets/attachment-toolbar";
 import {RenameInputPad} from "./widgets/rename-input-pad";
@@ -21,7 +21,6 @@ type AttachmentBlock = BlockCraft.IBlockComponents['attachment']
 const ATTACHMENT_RENAMING_CLASS = 'bc-attachment-renaming'
 const ATTACHMENT_CONTENT_SELECTOR = [
   '.attachment-block__empty',
-  '.attachment-block__prefix',
   '.attachment-block__info',
   '.attachment-block__name',
   '.attachment-block__size',
@@ -74,6 +73,7 @@ export class AttachmentExtensionPlugin extends DocPlugin {
 
   private _sub?: Subscription
   private _timer: number | null = null
+  private _hoveredBlock: AttachmentBlock | null = null
   private _toolbarRef?: OverlayRef
   private _toolbarComponentRef?: ComponentRef<AttachmentBlockToolbar>
 
@@ -140,97 +140,49 @@ export class AttachmentExtensionPlugin extends DocPlugin {
       throw new BlockCraftError(ErrorCode.PluginError, "AttachmentController requires DocFileService")
     }
 
-    this._sub = this.doc.selection.selectionChange$.subscribe(selection => {
-      this.clearTimer()
-
-      if (!selection || !isSelectionAlive(selection as any, this.doc) || !selection.isInSameBlock || selection.firstBlock?.flavour !== 'attachment' || selection.anchor.type !== 'selected' || selection.head.type !== 'selected') {
-        this._toolbarRef && this.closeToolbar()
-        return
-      }
-
-      const attachmentBlock = selection.firstBlock as AttachmentBlock
-      if (this._toolbarRef && this._activeBlock === attachmentBlock) return;
-      this.closeToolbar()
-
-      this._timer = setTimeout(() => {
-        this._timer = null
-        if (this._toolbarRef && this._activeBlock === attachmentBlock) return;
-        const currentSelection = this.doc.selection.value
-        if (
-          !currentSelection ||
-          !isSelectionAlive(currentSelection as any, this.doc) ||
-          !currentSelection.isInSameBlock ||
-          currentSelection.firstBlock?.id !== attachmentBlock.id ||
-          currentSelection.anchor.type !== 'selected' ||
-          currentSelection.head.type !== 'selected'
-        ) {
+    this._sub = new Subscription()
+    // Delegated boundary events avoid a listener per attachment and DOM layout reads.
+    this.doc.ngZone.runOutsideAngular(() => {
+      const root = this.doc.root.hostElement
+      this._sub!.add(fromEvent<PointerEvent>(root, 'pointerover').subscribe(event => {
+        if (event.pointerType === 'touch' || event.buttons) return
+        const target = event.target
+        if (!(target instanceof Element)) return
+        const blockId = closetBlockId(target)
+        const block = blockId ? this._getLiveAttachmentBlockById(blockId) : null
+        if (!block || this._hoveredBlock === block) return
+        if (this._activeBlock === block && this._toolbarRef) {
+          this.clearTimer()
+          this._hoveredBlock = block
           return
         }
-        if (!this._isBlockAlive(attachmentBlock)) return
-
-        this._activeBlock = attachmentBlock
-
-        const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay<AttachmentBlockToolbar>({
-          target: attachmentBlock,
-          component: AttachmentBlockToolbar,
-          allowReadonly: this.doc.isReadonly,
-          positions: [
-            getPositionWithOffset("top-left", 0, 8),
-            getPositionWithOffset("bottom-left", 0, 8),
-          ]
-        }, this._closeToolbar$, this.closeToolbar)
-
-        this._toolbarRef = overlayRef
-        this._toolbarComponentRef = componentRef
-
-        const canUse = this._isCanUse(attachmentBlock)
-        componentRef.setInput('doc', this.doc)
-        componentRef.setInput('canUse', canUse)
-        componentRef.setInput('isReadonly', this._isReadonly(attachmentBlock))
-        componentRef.setInput('showPreview', !!this.options?.onPreview)
-        if (this.options?.previewIcon) {
-          componentRef.setInput('previewIcon', this.options.previewIcon)
-        }
-        if (this.options?.previewLabel) {
-          componentRef.setInput('previewLabel', this.options.previewLabel)
-        }
-        if (this.options?.extraItems?.length) {
-          componentRef.setInput('extraItems', this.options.extraItems)
-        }
-
-        attachmentBlock.onDestroy$.pipe(takeUntil(this._closeToolbar$)).subscribe(() => {
-          this._closeToolbar$.next()
+        this.closeToolbar()
+        this._hoveredBlock = block
+        this._timer = setTimeout(() => {
+          this._timer = null
+          if (this._hoveredBlock !== block || !this._isBlockAlive(block)) return
+          this.doc.ngZone.run(() => this._openToolbar(block))
+        }, 200)
+      }))
+      // Touch has no hover: retain the existing tap-to-access toolbar path.
+      this._sub!.add(fromEvent<PointerEvent>(root, 'pointerup').subscribe(event => {
+        if (event.pointerType !== 'touch' || !(event.target instanceof Element)) return
+        const blockId = closetBlockId(event.target)
+        const block = blockId ? this._getLiveAttachmentBlockById(blockId) : null
+        if (!block?.props.url) return
+        this.doc.ngZone.run(() => {
+          this.closeToolbar()
+          this._openToolbar(block)
         })
-
-        componentRef.instance.onItemClick.pipe(takeUntil(this._closeToolbar$)).subscribe(v => {
-          if (!this._isBlockAlive(attachmentBlock)) {
-            this.closeToolbar()
-            return
-          }
-          const readonly = this._isReadonly(attachmentBlock)
-          switch (v.name) {
-            case 'rename':
-              if (readonly) return
-              this.onRename(attachmentBlock)
-              break
-            case 'download':
-              this.fileService.downloadAttachment(attachmentBlock.props);
-              break
-            case 'preview':
-              this.options?.onPreview?.(attachmentBlock, this.doc)
-              break
-            case 'delete':
-              if (readonly) return
-              this.doc.crud.deleteBlockById(attachmentBlock.id)
-              break
-            default:
-              this.options?.onExtraItemClick?.(v.name, attachmentBlock, this.doc)
-              break
-          }
-        })
-
-      }, 200)
-
+      }))
+      this._sub!.add(fromEvent<PointerEvent>(root, 'pointerout').subscribe(event => {
+        if (event.pointerType === 'touch') return
+        const block = this._hoveredBlock
+        if (!block || !(event.target instanceof Node) || !block.hostElement.contains(event.target)) return
+        if (event.relatedTarget instanceof Node && block.hostElement.contains(event.relatedTarget)) return
+        this._hoveredBlock = null
+        this._scheduleClose()
+      }))
     })
     const stateChange$ = this.doc.readonlyManager?.stateChange$
     if (stateChange$) {
@@ -244,6 +196,95 @@ export class AttachmentExtensionPlugin extends DocPlugin {
         this._toolbarComponentRef.setInput('isReadonly', this._isReadonly(activeBlock))
       }))
     }
+  }
+
+  private _openToolbar(attachmentBlock: AttachmentBlock) {
+    this._activeBlock = attachmentBlock
+    const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay<AttachmentBlockToolbar>({
+      target: attachmentBlock,
+      // Follow card width changes in columns without changing selection or layout.
+      getOriginRect: () => attachmentBlock.hostElement.getBoundingClientRect(),
+      component: AttachmentBlockToolbar,
+      allowReadonly: this.doc.isReadonly,
+      positions: [
+        getPositionWithOffset("top-right", 0, 8),
+        getPositionWithOffset("bottom-right", 0, 8),
+      ]
+    }, this._closeToolbar$, this.closeToolbar)
+
+    this._toolbarRef = overlayRef
+    this._toolbarComponentRef = componentRef
+
+    const canUse = this._isCanUse(attachmentBlock)
+    componentRef.setInput('doc', this.doc)
+    componentRef.setInput('canUse', canUse)
+    componentRef.setInput('isReadonly', this._isReadonly(attachmentBlock))
+    componentRef.setInput('showPreview', !!this.options?.onPreview)
+    if (this.options?.previewIcon) {
+      componentRef.setInput('previewIcon', this.options.previewIcon)
+    }
+    if (this.options?.previewLabel) {
+      componentRef.setInput('previewLabel', this.options.previewLabel)
+    }
+    if (this.options?.extraItems?.length) {
+      componentRef.setInput('extraItems', this.options.extraItems)
+    }
+
+    attachmentBlock.onDestroy$.pipe(takeUntil(this._closeToolbar$)).subscribe(() => {
+      this._closeToolbar$.next()
+    })
+
+    componentRef.instance.onItemClick.pipe(takeUntil(this._closeToolbar$)).subscribe(v => {
+      if (!this._isBlockAlive(attachmentBlock)) {
+        this.closeToolbar()
+        return
+      }
+      const readonly = this._isReadonly(attachmentBlock)
+      switch (v.name) {
+        case 'rename':
+          if (readonly) return
+          this.closeToolbar()
+          this.onRename(attachmentBlock)
+          break
+        case 'download':
+          this.fileService.downloadAttachment(attachmentBlock.props);
+          break
+        case 'preview':
+          this.options?.onPreview?.(attachmentBlock, this.doc)
+          break
+        case 'delete':
+          if (readonly) return
+          this.doc.crud.deleteBlockById(attachmentBlock.id)
+          break
+        default:
+          this.options?.onExtraItemClick?.(v.name, attachmentBlock, this.doc)
+          break
+      }
+    })
+    this.doc.ngZone.runOutsideAngular(() => {
+      fromEvent(overlayRef.overlayElement, 'pointerenter').pipe(takeUntil(this._closeToolbar$))
+        .subscribe(() => this.clearTimer())
+      fromEvent(overlayRef.overlayElement, 'pointerleave').pipe(takeUntil(this._closeToolbar$))
+        .subscribe(() => this._scheduleClose())
+      fromEvent<PointerEvent>(overlayRef.overlayElement.ownerDocument, 'pointerdown')
+        .pipe(takeUntil(this._closeToolbar$)).subscribe(event => {
+          if (!(event.target instanceof Node) || overlayRef.overlayElement.contains(event.target) ||
+            attachmentBlock.hostElement.contains(event.target)) return
+          this.doc.ngZone.run(() => this.closeToolbar())
+        })
+      fromEvent<KeyboardEvent>(overlayRef.overlayElement.ownerDocument, 'keydown')
+        .pipe(takeUntil(this._closeToolbar$)).subscribe(event => {
+          if (event.key === 'Escape') this.doc.ngZone.run(() => this.closeToolbar())
+        })
+    })
+  }
+
+  private _scheduleClose() {
+    this.clearTimer()
+    this._timer = setTimeout(() => {
+      this._timer = null
+      this.doc.ngZone.run(() => this.closeToolbar())
+    }, 200)
   }
 
   /** 附件是否就绪：有 url 且已上传至远端（http(s) 协议） */
@@ -260,6 +301,7 @@ export class AttachmentExtensionPlugin extends DocPlugin {
   }
 
   closeToolbar = () => {
+    this._hoveredBlock = null
     this._closeToolbar$.next()
     this.clearTimer()
     this._toolbarRef?.dispose()

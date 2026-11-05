@@ -140,20 +140,6 @@ const DEFAULT_MENU_LIST: IToolbarMenuItem[] = [
     intro: "行内代码",
     value: true,
     tip: `行内代码：${IS_MAC ? '⌘' : 'Ctrl'}+e`
-  },
-  {
-    name: "sup",
-    icon: "bc_shangbiao",
-    intro: "上标",
-    value: true,
-    tip: `上标`
-  },
-  {
-    name: "sub",
-    icon: "bc_xiabiao",
-    intro: "下标",
-    value: true,
-    tip: `下标`
   }
 ]
 
@@ -203,11 +189,6 @@ const BG_GRAPH_LIST: Array<{ attr: string | null; class: string }> = [
       <bc-float-toolbar-item name="link" [value]="activeAttrs.has('link') ? null : true"
                              [active]="activeAttrs.has('link')"
                              icon="bc_lianjie" title="链接" *ngIf="isLinkAble">
-      </bc-float-toolbar-item>
-
-      <bc-float-toolbar-item name="formula" [value]="true"
-                             icon="bc_gongshi" title="行内公式" *ngIf="isLinkAble"
-                             csTooltip="行内公式">
       </bc-float-toolbar-item>
 
       <span class="bc-float-toolbar__divider"></span>
