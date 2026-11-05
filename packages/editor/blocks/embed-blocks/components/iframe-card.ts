@@ -6,6 +6,7 @@ import {ShapeResizerComponent, type ShapeResizeBox, type ShapeResizeCalculator, 
 import {calculateImageResize} from '../../image-block/image-resize';
 import {deriveObjectSizeFromPixels} from '../../../framework/modules/object/block-object-sizing.manager';
 import {resolveEmbedFrameSize} from './embed-sizing';
+import {isAutoWidthTableMedia} from '../../table-block/table-auto-width-media';
 
 @Component({
   selector: 'embed-frame-card',
@@ -112,7 +113,9 @@ export class IframeCardComponent implements AfterViewInit, OnDestroy {
     this.resizeMaxHeight = Number.isFinite(maxHeight) && maxHeight > verticalInset
       ? maxHeight - verticalInset
       : Infinity
-    return Math.min(this.resizeBasisWidth, containerWidth > 0 ? containerWidth : this.resizeBasisWidth)
+    return isAutoWidthTableMedia(this.block!.hostElement)
+      ? this.resizeBasisWidth
+      : Math.min(this.resizeBasisWidth, containerWidth > 0 ? containerWidth : this.resizeBasisWidth)
   }
 
   onResizeStart() {

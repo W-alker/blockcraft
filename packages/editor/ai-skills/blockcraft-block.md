@@ -5,7 +5,36 @@
 > For inline system internals, see L2: `blockcraft-inline.md`
 > For Yjs data model, see L2: `blockcraft-data.md`
 >
-> Last updated: 2026-10-30
+> Last updated: 2026-11-05
+
+## 表格：持续自动列宽（未发布）
+
+`TableBlockModel.props.columnSizing?: 'auto' | null` 显式启用浏览器原生自动表格布局。
+`TableBlockSchema.createSnapshot()` 新建表格默认写入 `columnSizing: 'auto'`，包括带初始内容的表格。
+旧快照省略/null 仍使用保存的 `colWidths`，不在读取时迁移。需要用固定列宽创建的调用方，应在插入前
+将 `snapshot.props.columnSizing` 设为 null 或删除该字段，并设置 `colWidths`。
+`TableBlockComponent.isAutoColumnWidth` 读取模式，`setAutoColumnWidths(enabled: boolean): void`
+在一次可撤销事务中切换；只读表格不允许切换，但自动模式仍随本地容器和内容排版。
+
+自动表格优先占满正文直接父容器宽度，列宽按真实内容由浏览器分配；每列至少 50px，
+不可压缩的内容或列下限超过预算时保留横向滚动。浏览器之间不保证逐像素相同。
+全屏及文档缩放只改变视图，仍使用正文父容器的布局宽度作为预算。
+
+直接放在自动表格单元格中的图片、视频和网页嵌入，编辑时以媒体请求的宽度参与原生列布局；
+拖宽会实时撑开所在列，缩小后重新分配空间，仍保留自动模式。媒体 `wr` 继续以原正文宽度为基准，
+不以单元格宽度计算，避免尺寸循环依赖。拖拽预览不写 Yjs，松手沿用媒体自身的单次尺寸提交及撤销。
+同一编辑器的只读模式保留该布局；嵌套手动表格、分栏和其他固定容器仍遵守各自限宽。
+独立 Snapshot Viewer 仍沿用原有媒体百分比投影，此处不改变它的尺寸基准。
+
+`colWidths` 在自动模式中保留列数量及手动回退值，不代表当前几何。编辑器以零高度、
+不可交互的 `tfoot.bc-table-column-metrics` 观察实际列轨道，包含合并格时也无需扫描正文。
+ResizeObserver 通知按帧合并，只同步列控制条；不运行一次性自然宽/换行优化器，
+不回写 Yjs、不创建自动尺寸的 Undo 项，离屏卸载/销毁时释放观察。
+
+关闭自动模式、实际拖动列边界、执行 `fitColumnWidths()` / `optimizeColumnWidths()` /
+`setEqualColumnWidths()` 会在同一次操作中保存固定列宽并清除模式；撤销同时恢复模式与原属性。
+拖拽取消或未移动不切换模式。增删/重排列及合并/拆分仍保留自动模式。
+快照、只读预览和默认打印渲染保留此模式；HTML 交换标记见 `blockcraft-adapter.md`。
 
 ## 表格：一次性适应宽度
 

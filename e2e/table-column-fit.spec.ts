@@ -15,6 +15,7 @@ async function setup(page: Page, scale = 1, rows = 3, values?: string[][]) {
     viewport.appendChild(mount)
     document.body.appendChild(viewport)
     const snapshot = source.schemas.createSnapshot('table', [rows, values?.[0].length ?? 3])
+    delete snapshot.props.columnSizing // Exercise the existing fixed-width document path.
     snapshot.props.colWidths = values ? Array(values[0].length).fill(140) : [260, 80, 160]
     snapshot.children.forEach((row: any, r: number) => row.children.forEach((cell: any, c: number) => {
       const text = values?.[r][c] ?? (c === 0 ? '编号' : c === 1 ? 'This column has a considerably longer description' : '第一行\n第二行')
@@ -111,11 +112,22 @@ test('智能调整收紧编号和金额，将正文宽度留给说明并降低�
     const table = doc.getBlockById(tableId)
     table.onColBarSelected([0, 0])
   })
-  await page.getByRole('button', {name: '均分列宽', exact: true}).click()
+  const widthTrigger = page.getByRole('button', {name: '列宽调整', exact: true})
+  const widthMenu = page.locator('.table-structure-toolbar__width-menu')
+  await expect(widthTrigger.locator('.bc_zidongliekuan')).toHaveCount(1)
+  await expect(page.getByRole('button', {name: '自动列宽', exact: true})
+    .locator('.bc_zidongliekuan1')).toHaveCount(1)
+  await widthTrigger.hover()
+  await expect(widthTrigger).toHaveAttribute('aria-expanded', 'true')
+  await expect(widthMenu.locator('.bc_icon')).toHaveCount(0)
+  await page.getByRole('menuitem', {name: '均分列宽', exact: true}).click()
+  await expect(widthMenu).toBeHidden()
   const before = await widths(page)
   const tableElement = page.locator('[data-block-id="column-fit-test"] table').first()
   const initialHeight = (await tableElement.boundingBox())!.height
-  await page.getByRole('button', {name: '智能调整列宽', exact: true}).click()
+  await widthTrigger.hover()
+  await page.getByRole('menuitem', {name: '智能调整列宽', exact: true}).click()
+  await expect(widthMenu).toBeHidden()
   await expect.poll(async () => (await widths(page))[3]).toBeGreaterThan(250)
   const fit = await widths(page)
   expect(fit[0]).toBeLessThan(90)

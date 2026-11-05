@@ -23,6 +23,7 @@ describe('table-converter', () => {
     const t = yneTableToSnapshot(mergedTable);
     expect(t.flavour).toBe('table');
     expect(t.props['colWidths']).toEqual([100, 100]);
+    expect('columnSizing' in t.props).toBeFalse();
     expect(t.children.length).toBe(2);
     expect((t.children[0] as any).props.height).toBe(40);
   });

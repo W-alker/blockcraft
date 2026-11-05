@@ -707,6 +707,8 @@ function renderFrame(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
 
 function renderTable(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   const element = createBlockShell(snapshot)
+  const autoColumnWidth = snapshot.props["columnSizing"] === "auto"
+  element.classList.toggle("is-auto-column-width", autoColumnWidth)
   const scrollable = document.createElement("div")
   scrollable.classList.add("table-scrollable", "bc-scrollable-container")
 
@@ -720,7 +722,7 @@ function renderTable(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
     : []
   widths.forEach((width) => {
     const col = document.createElement("col")
-    col.setAttribute("width", `${width}`)
+    if (!autoColumnWidth) col.setAttribute("width", `${width}`)
     colgroup.append(col)
   })
 
@@ -729,6 +731,17 @@ function renderTable(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   appendChildren(tbody, ctx, snapshot.children)
 
   table.append(colgroup, tbody)
+  if (autoColumnWidth) {
+    // 与编辑视图共用每列的最小宽度约束；仅有跨列合并格时也不能丢失列轨道。
+    const metrics = document.createElement('tfoot')
+    metrics.classList.add('bc-table-column-metrics')
+    metrics.setAttribute('aria-hidden', 'true')
+    metrics.setAttribute('contenteditable', 'false')
+    const row = document.createElement('tr')
+    widths.forEach(() => row.append(document.createElement('td')))
+    metrics.append(row)
+    table.append(metrics)
+  }
   wrapper.append(table)
   scrollable.append(wrapper)
   element.append(scrollable)

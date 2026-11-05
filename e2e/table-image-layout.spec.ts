@@ -89,6 +89,7 @@ async function createTableImage(page: Page): Promise<TableImageTarget> {
       },
     ])
     const table = doc.schemas.createSnapshot('table', [1, 1])
+    delete table.props.columnSizing // This fixture verifies fixed-cell image constraints.
     table.props.colWidths = [100]
     table.children[0].children[0].children = [image]
 

@@ -4,6 +4,19 @@
 >
 > Last updated: 2026-11-05
 
+## 表格自动列宽
+
+`.table-block.is-auto-column-width` 使用 `table-layout:auto` 和正文容器的可用宽度；
+旧表格样式不变。全屏时内部变量 `--bc-table-auto-content-width` 保留正文宽度预算，
+由布局观察器维护，不作为宿主覆盖尺寸的配置入口。
+`tfoot.bc-table-column-metrics` 是 `aria-hidden`、不可编辑、零高度的列轨道，
+不属于模型/分页 tbody，也不应被宿主赋予行高、边框或内容。
+快照渲染采用相同模式 class 与样式。
+
+自动模式的媒体限宽放开仅作用于单元格内容容器的直接图片、视频和 `embed-frame-block`，
+让媒体表面的像素宽度参与浏览器列宽分配；不穿透嵌套表格/分栏，也不改变静态快照媒体的百分比样式。
+不覆盖内部图片填满表面所用的 `max-width:100%`，不添加媒体尺寸观察器。
+
 ## 通用浮动工具栏尺寸
 
 `bc-float-toolbar` 的横向图标按钮默认 28×28px，按钮圆角沿用 `--bc-radius-md`（4px），

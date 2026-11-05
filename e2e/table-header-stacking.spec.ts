@@ -15,6 +15,7 @@ async function createTable(page: Page, headers: boolean) {
   const id = await page.evaluate(async headers => {
     const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
     const table = doc.schemas.createSnapshot('table', [8, 6])
+    delete table.props.columnSizing // Fixed geometry is required for the scrolling fixture.
     table.props = {...table.props, colHead: headers, rowHead: headers, colWidths: [130, 260, 260, 260, 260, 260]}
     table.children.forEach((row: any, r: number) => row.children.forEach((cell: any, c: number) => {
       cell.children = [doc.schemas.createSnapshot('paragraph', [[{

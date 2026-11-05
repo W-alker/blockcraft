@@ -14,6 +14,8 @@ export interface TableBlockModel extends NoEditableBlockNative {
     colHead?: boolean
     rowHead?: boolean
     colWidths: number[]
+    /** 原生持续自适应；缺省/null 使用保存的手动列宽。 */
+    columnSizing?: 'auto' | null
   }
 }
 
@@ -64,6 +66,7 @@ export const TableBlockSchema: IBlockSchemaOptions<TableBlockModel> = {
       flavour: 'table',
       nodeType: BlockNodeType.block,
       props: {
+        columnSizing: 'auto',
         colWidths: Array.from({ length: cells }, () => 100)
       },
       meta: {},

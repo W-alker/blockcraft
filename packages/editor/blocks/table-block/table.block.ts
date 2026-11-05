@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, ChangeDetectorRef, ComponentRef, Component, ElementRef, ViewChild, inject } from "@angular/core";
+import { ChangeDetectionStrategy, ChangeDetectorRef, ComponentRef, Component, ElementRef, QueryList, ViewChild, ViewChildren, inject } from "@angular/core";
 import {
   BaseBlockComponent, EditableBlockComponent, getPositionWithOffset,
   resolveBlockPolicy,
@@ -41,6 +41,7 @@ import { BlockSelection } from "../../framework/modules/selection/blockSelection
 import { TableFullscreenController } from "./table-fullscreen-controller";
 import {fitTableColumnWidths, measureTableCellWidths, measureTableCellWidthMetrics} from './table-column-fit';
 import {smartTableColumnWidths, TableCellWidthProfile} from './table-smart-width';
+import {TableColumnWidthObserver} from './table-column-width-observer';
 
 const TABLE_CELL_SELECTED_CLASS = 'bc-table-cell-selected'
 const TABLE_COL_RESIZE_PREVIEW_ATTR = 'data-bc-table-col-resize-preview'
@@ -371,6 +372,7 @@ function styleSizeAppliesZoomInZoomedParent(): boolean {
   host: {
     '[class.row-head]': 'props.rowHead',
     '[class.col-head]': 'props.colHead',
+    '[class.is-auto-column-width]': 'isAutoColumnWidth',
     '[class.has-col-handle-hover]': '_hoveredColHandle != null',
     '[class.has-row-handle-hover]': '_hoveredRowHandle != null',
     '[class.has-col-handle-visible]': '_visibleColHandle != null',
@@ -381,6 +383,67 @@ function styleSizeAppliesZoomInZoomedParent(): boolean {
 })
 export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   private _columnFitSequence = 0
+  private _autoColumnWidths: number[] = []
+  private _columnWidthObserver?: TableColumnWidthObserver
+  @ViewChildren('columnMetric', {read: ElementRef})
+  private _columnMetricCells!: QueryList<ElementRef<HTMLTableCellElement>>
+
+  get isAutoColumnWidth(): boolean {
+    return this.props.columnSizing === 'auto'
+  }
+
+  /** 仅视图使用。自动尺寸不写入 Yjs，也不进入撤销历史。 */
+  protected get layoutColumnWidths(): number[] {
+    return this.isAutoColumnWidth && this._autoColumnWidths?.length === this.colLength
+      ? this._autoColumnWidths : this.props.colWidths
+  }
+
+  setAutoColumnWidths(enabled: boolean): void {
+    if (this.isReadonly || enabled === this.isAutoColumnWidth) return
+    const props: Partial<TableBlockModel['props']> = enabled
+      ? {columnSizing: 'auto'}
+      : {columnSizing: null, colWidths: this._readLayoutColumnWidths()}
+    this.doc.crud.undoManager.captureUndoItem(() => this.updateProps(props))
+  }
+
+  private _readLayoutColumnWidths(): number[] {
+    // 只在用户冻结布局/开始拖动时同步读取，渲染与输入热路径只用 ResizeObserver。
+    const cells = this._columnMetricCells?.toArray() ?? []
+    if (this.isAutoColumnWidth && cells.length === this.colLength) {
+      const widths = cells.map(cell => this._layoutDistanceFromBcr(cell.nativeElement.getBoundingClientRect().width))
+      if (widths.every(width => Number.isFinite(width) && width > 0)) return widths
+    }
+    return [...this.layoutColumnWidths]
+  }
+
+  private _syncColumnWidthObserver(): void {
+    this._columnWidthObserver?.destroy()
+    this._columnWidthObserver = undefined
+    this._autoColumnWidths = []
+    if (!this.isAutoColumnWidth) {
+      this.hostElement.style.removeProperty('--bc-table-auto-content-width')
+      return
+    }
+    const parent = this.parentBlock
+    const container = parent?.childrenRenderRef?.containerElement ?? parent?.hostElement
+    this.doc.ngZone.runOutsideAngular(() => {
+      this._columnWidthObserver = new TableColumnWidthObserver(
+        this.hostElement.ownerDocument.defaultView!,
+        (widths, parentWidth) => {
+          if (!this.isAutoColumnWidth || !this.hostElement.isConnected) return
+          if (parentWidth > 0) this.hostElement.style.setProperty('--bc-table-auto-content-width', `${parentWidth}px`)
+          if (widths.length === this._autoColumnWidths.length
+            && widths.every((width, index) => Math.abs(width - this._autoColumnWidths[index]) < 0.1)) return
+          this._autoColumnWidths = widths
+          this._invalidateColumnResizeHandle()
+          this.changeDetectorRef.markForCheck()
+        },
+      )
+      this._columnWidthObserver.observe(
+        this._columnMetricCells.toArray().map(cell => cell.nativeElement), container,
+      )
+    })
+  }
   protected hoveringCell: TableCellBlockComponent | null = null
   protected resizingCol$ = new BehaviorSubject(false)
   private _colResizeGesture: {
@@ -644,6 +707,13 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       this.resizeObserver.observe(row as HTMLElement, { box: "border-box" })
     })
     this.mutationObserver.observe(this.tableBody, { childList: true })
+    this._columnMetricCells.changes.pipe(takeUntil(this.onDestroy$))
+      .subscribe(() => this._syncColumnWidthObserver())
+    this.onDetach$.pipe(takeUntil(this.onDestroy$))
+      .subscribe(() => this._columnWidthObserver?.destroy())
+    this.onReattach$.pipe(takeUntil(this.onDestroy$))
+      .subscribe(() => this._syncColumnWidthObserver())
+    this._syncColumnWidthObserver()
     nextTick().then(() => {
       this.rowBarComponent.changeDetectionRef.markForCheck()
     })
@@ -707,6 +777,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
 
   override ngOnDestroy() {
     this._columnFitSequence++
+    this._columnWidthObserver?.destroy()
     super.ngOnDestroy();
     this._finishColumnResize(false)
     this._cancelPendingDragSelection()
@@ -790,20 +861,13 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
   /**
    * 适合宽度：一键让表格视觉宽度填满 viewport（扣除全屏 padding）。
    *
-   * 注意：**不**用 `getBoundingClientRect()` 反推原始宽度。
-   * 浏览器对 CSS `zoom` 下 BCR 的语义不一致：
-   *   - Chrome / Edge：返回 scaled viewport pixels
-   *   - Safari：可能返回 unscaled CSS pixels
-   *   - Firefox：126+ 才支持 zoom，行为也不完全对齐
-   * 反推会在 Safari 下导致每次点击 fit 都以当前 zoom 倍数继续放大（指数爆炸）。
-   *
-   * 改用数据模型 `props.colWidths` 求和——这是 schema 里的真值，
-   * 与 zoom 状态完全无关，跨浏览器恒定。
+   * 手动模式用模型列宽，自动模式用 ResizeObserver 的布局像素；
+   * 不直接累加经过缩放的 BCR，避免重复“适合”时倍率累积。
    * 边框引起的几像素误差忽略不计。
    */
   fullscreenFitToWidth(): void {
     if (!this.isFullscreen) return
-    const colWidths = this.props.colWidths
+    const colWidths = this.layoutColumnWidths
     if (!colWidths || colWidths.length === 0) return
     const tableWidth = colWidths.reduce((sum, w) => sum + w, 0)
     if (tableWidth <= 0) return
@@ -985,7 +1049,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       if (!valid()) return false
       const grid = this._getTableModelGrid()
       if (!grid?.rowCount) return false
-      const widths = [...this.props.colWidths]
+      const widths = this._readLayoutColumnWidths()
       const maxWidth = this._getParentContentWidth() - (optimize ? this._getColumnFitBorderWidth() : 0)
       if (maxWidth <= 0) return false
       const ids = grid.getMasterCellIds({start: [0, start], end: [grid.rowCount - 1, start + count - 1]})
@@ -1023,9 +1087,11 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
       const next = this.doc.ngZone.runOutsideAngular(() => optimize
         ? smartTableColumnWidths(widths.length, maxWidth, profiles)
         : fitTableColumnWidths(widths, measured, TABLE_MIN_COLUMN_WIDTH, maxWidth))
-      if (next.every((width, index) => width === widths[index])) return false
+      if (!this.isAutoColumnWidth && next.every((width, index) => width === widths[index])) return false
       // 异步测量期间的本地/协同修改会使整次测量失效；不提交过期列索引或内容。
-      this.doc.crud.undoManager.captureUndoItem(() => this.updateProps({colWidths: next}))
+      this.doc.crud.undoManager.captureUndoItem(() => this.updateProps({
+        colWidths: next, ...(this.isAutoColumnWidth ? {columnSizing: null} : {}),
+      }))
       this._normalizeHorizontalScroll()
       this.refreshTableMenuFromSelection()
       return true
@@ -1052,7 +1118,8 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     )
 
     this.updateProps({
-      colWidths: nextWidths
+      colWidths: nextWidths,
+      ...(this.isAutoColumnWidth ? {columnSizing: null} : {}),
     })
 
     // 从超宽表格切换到均分时，重置并钳制滚动位置，避免右侧出现空白区
@@ -3814,7 +3881,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     if (!colCount) return
 
     const closure = this._computeColClosure(evt.fromIndex, evt.count)
-    const colWidths = this.props.colWidths || []
+    const colWidths = this._readLayoutColumnWidths()
     const wrapperRect = this.tableWrapper.nativeElement.getBoundingClientRect()
     const tbodyRect = this.tableBody.getBoundingClientRect()
     // 全程用 visual 坐标算位置/尺寸，最后才 / posZ 折成 style 单位——这样跨浏览器统一：
@@ -4029,7 +4096,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     count: number,
     actualZoom: number = 1,
   ): { targetIndex: number, dropLineLeft: number } {
-    const colWidths = this.props.colWidths || []
+    const colWidths = this.layoutColumnWidths || []
     const colCount = colWidths.length
     const tbodyRect = this.tableBody.getBoundingClientRect()
     const tbodyLeft = tbodyRect.left
@@ -4082,7 +4149,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     if (!resolvedAnchor) return
     const resizingColIdx = this._resolveColumnResizeIndex(resolvedAnchor.cellId)
     if (resizingColIdx === null) return
-    const startWidth = Number(this.props.colWidths?.[resizingColIdx])
+    const startWidth = Number(this._readLayoutColumnWidths()[resizingColIdx])
     if (!Number.isFinite(startWidth) || startWidth <= 0) return
 
     const wrapper = this.tableWrapper?.nativeElement
@@ -4428,7 +4495,7 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     // 拖动期间可能收到远端列重排。提交时从稳定 cell ID 重新解析它当前覆盖的
     // 右边界，避免按手势开始时的旧索引修改另一列；锚点失效则安全取消。
     const liveColumnIndex = this._resolveColumnResizeIndex(state.anchorCellId)
-    const widths = [...(this.props.colWidths ?? [])]
+    const widths = this._readLayoutColumnWidths()
     if (
       liveColumnIndex == null
       || liveColumnIndex < 0
@@ -4436,16 +4503,21 @@ export class TableBlockComponent extends BaseBlockComponent<TableBlockModel> {
     ) {
       return
     }
+    if (this.isAutoColumnWidth && Math.abs(state.width - state.startWidth) < 0.01) return
     widths[liveColumnIndex] = state.width
-    if (widths[liveColumnIndex] === this.props.colWidths[liveColumnIndex]) return
-    this.updateProps({colWidths: widths})
+    if (this.isAutoColumnWidth) {
+      this.doc.crud.undoManager.captureUndoItem(() => this.updateProps({colWidths: widths, columnSizing: null}))
+    } else {
+      if (widths[liveColumnIndex] === this.props.colWidths[liveColumnIndex]) return
+      this.updateProps({colWidths: widths})
+    }
     this._normalizeHorizontalScroll()
   }
 
   private _getTableHorizontalOverhead() {
     const table = this.hostElement.querySelector('table') as HTMLElement | null
     if (!table) return 0
-    const colsTotal = this.props.colWidths.reduce((sum, width) => sum + width, 0)
+    const colsTotal = this.layoutColumnWidths.reduce((sum, width) => sum + width, 0)
     if (!colsTotal) return 0
     return Math.max(
       0,

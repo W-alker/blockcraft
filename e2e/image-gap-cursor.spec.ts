@@ -77,6 +77,7 @@ test('narrow column image gaps support clicks, typing, undo and resize previews'
     canvas.height = 120
     const image = doc.schemas.createSnapshot('image', [{src: canvas.toDataURL(), wr: 15, ar: 2}, null, null, '图片说明'])
     const table = doc.schemas.createSnapshot('table', [1, 1])
+    delete table.props.columnSizing // Retain the fixed-cell sizing fixture.
     table.props.colWidths = [260]
     const cell = table.children[0].children[0]
     cell.children = [image]

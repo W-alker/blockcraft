@@ -71,6 +71,8 @@ export function yneTableToSnapshot(block: YneBlock): IBlockSnapshot {
   // TableBlockSchema.createSnapshot(rows, cols) generates its own row/cell children.
   // We override children immediately after to use our converted rows.
   const table = TableBlockSchema.createSnapshot(rowCount, colCount);
+  // Imported tables retain their source widths instead of the new-table mode.
+  delete table.props.columnSizing;
   table.props['colWidths'] = widths.slice();
   // Assign our rows, replacing the schema-generated default rows.
   (table.children as IBlockSnapshot[]) = rows;

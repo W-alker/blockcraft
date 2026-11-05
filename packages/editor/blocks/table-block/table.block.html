@@ -23,7 +23,7 @@
          [style.top.px]="_tableMenu.top"
          [style.height.px]="_tableMenu.height"></div>
 
-    <table-col-bar [colWidths]="props.colWidths"
+    <table-col-bar [colWidths]="layoutColumnWidths"
                    [visibleHandleIndex]="_visibleColHandle"
                    [selectedRange]="_activeColRange"
                    (hoveredHandleChange)="onColHandleHovered($event)"
@@ -36,13 +36,23 @@
     <table>
       <colgroup>
         @for (w of props.colWidths; track $index) {
-          <col [width]="w" />
+          <col [attr.width]="isAutoColumnWidth ? null : w" />
         }
       </colgroup>
 
       <tbody class="children-render-container">
 <!--        <ng-container #childrenContainer></ng-container>-->
       </tbody>
+      @if (isAutoColumnWidth) {
+        <!-- 只读的零高度列轨道；独立于模型 tbody 和分页行。 -->
+        <tfoot class="bc-table-column-metrics" aria-hidden="true" contenteditable="false">
+          <tr>
+            @for (w of props.colWidths; track $index) {
+              <td #columnMetric></td>
+            }
+          </tr>
+        </tfoot>
+      }
     </table>
 
     <!--

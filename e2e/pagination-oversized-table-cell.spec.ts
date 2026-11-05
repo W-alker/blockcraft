@@ -49,6 +49,7 @@ async function createOversizedTable(page: Page, kind: 'cell-flow' | 'rows' = 'ce
       insert: initialText,
     }], {heading: 4}])
     const table = doc.schemas.createSnapshot('table', [kind === 'rows' ? 20 : 1, columns])
+    delete table.props.columnSizing // Preserve the authored pagination geometry.
     table.props.colWidths = Array.from({length: columns}, () => 560 / columns)
     if (kind === 'rows') Object.assign(table.props, {rowHead: true, colHead: true})
     table.children.forEach((row: any, i: number) => row.children.forEach((cell: any, j: number) => {

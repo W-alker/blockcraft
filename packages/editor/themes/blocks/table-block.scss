@@ -437,6 +437,61 @@
       width: fit-content;
     }
 
+    &.is-auto-column-width {
+      > .table-scrollable > .table-wrapper {
+        width: 100%;
+      }
+
+      &.is-fullscreen > .table-scrollable > .table-wrapper {
+        // 全屏只缩放文档布局，仍以正文父容器为宽度预算。
+        width: var(--bc-table-auto-content-width, 100%);
+      }
+
+      > .table-scrollable > .table-wrapper > table {
+        width: 100%;
+        table-layout: auto;
+      }
+
+      // A media surface's requested pixels must contribute to the column's
+      // intrinsic width. Scope to direct cell children so nested fixed tables,
+      // columns and placement planes retain their existing width constraints.
+      > .table-scrollable > .table-wrapper > table > tbody > tr > td > .table-cell__children-wrapper {
+        > .image-block:not(.bc-snapshot-block) {
+          // The ordinary image grid has a zero minimum so it can shrink inside
+          // fixed containers. Here the track must also report its media width
+          // as a minimum, otherwise the image overflows without growing the cell.
+          grid-template-columns: max-content;
+        }
+
+        > .image-block:not(.bc-snapshot-block),
+        > .image-block:not(.bc-snapshot-block) > .image-block__container,
+        > .image-block:not(.bc-snapshot-block) > .image-block__container > .img-wrapper,
+        > .video-block:not(.bc-snapshot-block),
+        > .video-block:not(.bc-snapshot-block) > .video-block__wrapper,
+        > .embed-frame-block:not(.bc-snapshot-block),
+        > .embed-frame-block:not(.bc-snapshot-block) > embed-frame-card {
+          max-width: none;
+        }
+      }
+    }
+
+    .bc-table-column-metrics {
+      visibility: hidden;
+      pointer-events: none;
+
+      &, > tr, > tr > td {
+        height: 0;
+        padding: 0;
+        border: 0;
+        font-size: 0;
+        line-height: 0;
+      }
+
+      > tr > td {
+        min-width: 50px;
+      }
+    }
+
     table {
       border-collapse: collapse;
       border-spacing: 0;

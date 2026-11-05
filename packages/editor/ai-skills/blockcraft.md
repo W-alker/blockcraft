@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-11-03 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-11-05 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 
 ## 应用标题的字号与行高（未发布）
 
@@ -13,6 +13,10 @@
 命令合同见 `blockcraft-plugins-formatting.md`，转换入口见 `blockcraft-plugins-block.md`。
 
 表格支持一次性 `fitColumnWidths()`、双击列边界和“适应宽度”菜单；`optimizeColumnWidths()` 按正文宽度预算智能调整整表。范围、合并格、缩放与撤销契约见 `blockcraft-block.md`。
+
+新建表格默认开启持续“自动列宽”（`props.columnSizing: 'auto'`）；已有表格可通过 `setAutoColumnWidths(true)` 开启。
+原生表格布局随内容与容器变化，派生列宽不写协同数据；手动拖宽或一次性列宽命令固定当前布局。
+旧表格缺省仍使用 `colWidths`，详细边界见 `blockcraft-block.md` 的“持续自动列宽”。
 
 填写区侧边工具栏支持固定尺寸／内容自适应双向切换：`toggleSizeMode()` 按当前布局冻结尺寸，`resetHeight()` 保留宽度、清除固定高度。
 仅 `wr` 或旧 `width` 的快照保持自然高度；尺寸读取与保存契约见 `blockcraft-block.md` 的“Render-unit 响应式尺寸”。

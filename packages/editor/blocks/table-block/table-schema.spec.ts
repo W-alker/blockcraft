@@ -1,15 +1,18 @@
 import {TableBlockSchema} from './index'
 
 describe('TableBlockSchema initial values', () => {
-  it('preserves the existing empty table and default dimensions', () => {
+  it('creates an empty table in auto mode with manual fallback widths', () => {
     const table: any = TableBlockSchema.createSnapshot(3, 3)
     expect(table.children.length).toBe(3)
     expect(table.children[0].children.length).toBe(3)
+    expect(table.props.columnSizing).toBe('auto')
+    expect(table.props.colWidths).toEqual([100, 100, 100])
   })
 
   it('creates editable paragraphs for every value without interpreting HTML', () => {
     const values = [['项目', '数量'], ['<b>材料A</b>', '12']]
     const table: any = TableBlockSchema.createSnapshot(2, 2, values)
+    expect(table.props.columnSizing).toBe('auto')
     const cells = table.children.flatMap((row: any) => row.children)
     const paragraphs = cells.map((cell: any) => cell.children[0])
     expect(paragraphs.map((p: any) => p.flavour)).toEqual(['paragraph', 'paragraph', 'paragraph', 'paragraph'])

@@ -2,7 +2,7 @@
 
 > **Level 1: Plugin Reference** — Read `blockcraft-plugins-ref.md` for the full index.
 >
-> Last updated: 2026-11-03
+> Last updated: 2026-11-05
 
 ## 标题命令的字号与行高清理
 
@@ -24,12 +24,17 @@
 
 ## 表格列宽入口
 
+抓手菜单新增 `table-auto-width` 开关，表格结构工具栏提供同名“自动列宽”切换按钮。
+二者调用 `setAutoColumnWidths(!isAutoColumnWidth)`；开启后持续随内容和容器排版，
+关闭时固定当前宽度，模式切换支持撤销。按钮活动状态随远端属性/Undo 更新，图标为 `bc_zidongliekuan1`。
+
 表格结构工具栏的“适应宽度”（`bc_liekuan`）调用 `menuFitColumnWidths()`，
 仅调整当前菜单锚定的列范围；全屏和普通模式复用这一入口。抓手菜单不提供该项。
-“均分列宽”（`bc_zidongliekuan`）同时保留在抓手菜单和浮动工具栏，
-调用 `setEqualColumnWidths()` 调整整表，抓手菜单 action 为 `table-equal-width`。
+浮动工具栏悬停“列宽调整”按钮（`bc_zidongliekuan`）时展开纯文字二级菜单，提供“均分列宽”和
+“智能调整列宽”；选择后关闭菜单，普通态与全屏共用。抓手菜单继续保留独立菜单项。
+“均分列宽”调用 `setEqualColumnWidths()` 调整整表，抓手菜单 action 为 `table-equal-width`。
 测量、只读/IME 防护和撤销由表格组件负责，插件不直接修改 Yjs。
-另有 `table-smart-width`（“智能调整列宽”）及结构工具栏同名按钮，均调用
+另有 `table-smart-width`（“智能调整列宽”）及结构工具栏同名二级菜单项，均调用
 `optimizeColumnWidths()` 按正文宽度预算优化整表，不使用当前列选区限制范围。
 列宽规则及异步取消契约见 `blockcraft-block.md` 的“表格：一次性适应宽度”。
 

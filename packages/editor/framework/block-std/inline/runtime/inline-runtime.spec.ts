@@ -215,6 +215,84 @@ describe('InlineRuntime inline float lifecycle', () => {
     runtime.destroy()
   })
 
+  it('keeps auto table pagination responsive without changing its natural line width', () => {
+    const host = document.createElement('div')
+    host.dataset['inlineRuntimeTestHost'] = 'true'
+    host.className = 'table-block is-auto-column-width'
+    host.style.width = '640px'
+    host.innerHTML = `
+      <table style="table-layout:auto;width:100%;border-collapse:collapse">
+        <tbody><tr>
+          <td style="padding:12px 8px;border:1px solid">
+            <div style="display:flex">
+              <span style="flex:0 0 30px">1.</span>
+              <div class="edit-container" style="width:fit-content;max-width:100%;font:16px/20px monospace;white-space:break-spaces;word-break:break-all"></div>
+            </div>
+          </td>
+          <td style="padding:12px 8px;border:1px solid;min-width:50px">编号</td>
+        </tr></tbody>
+      </table>`
+    document.body.appendChild(host)
+    const container = host.querySelector<HTMLElement>('.edit-container')!
+    const table = host.querySelector('table')!
+    const runtime = new InlineRuntime(container, new Map())
+    const text = 'abcdefghijklmnopqrstuvwx012345 '.repeat(30)
+    runtime.render([{insert: text}])
+    const naturalWidth = container.getBoundingClientRect().width
+    const naturalHeight = container.getBoundingClientRect().height
+
+    expect(applyInlinePaginationGaps(runtime, [{
+      offset: 15,
+      height: 100,
+      backdropOffset: 70,
+      backdropHeight: 20,
+    }])).toBeTrue()
+
+    expect(container.style.width).toBe('fit-content')
+    expect(container.getBoundingClientRect().width).toBeCloseTo(naturalWidth, 1)
+    expect(container.getBoundingClientRect().height).toBeCloseTo(naturalHeight + 100, 1)
+    host.style.width = '320px'
+    expect(table.getBoundingClientRect().width).toBeLessThanOrEqual(321)
+    expect(container.getBoundingClientRect().width).toBeLessThan(naturalWidth)
+    expect(runtime.textLength).toBe(text.length)
+    clearInlinePaginationGaps(runtime)
+    expect(container.style.width).toBe('fit-content')
+    expect(runtime.scrollBlot.leaves.length).toBe(1)
+    runtime.destroy()
+  })
+
+  it('tracks the nearest table mode when replaying unchanged pagination gaps', () => {
+    const host = document.createElement('div')
+    host.dataset['inlineRuntimeTestHost'] = 'true'
+    host.className = 'table-block is-auto-column-width'
+    const innerTable = document.createElement('div')
+    innerTable.className = 'table-block'
+    const container = document.createElement('div')
+    container.style.cssText = 'width:fit-content;max-width:120px;font:16px/20px monospace;white-space:break-spaces;word-break:break-all;'
+    innerTable.appendChild(container)
+    host.appendChild(innerTable)
+    document.body.appendChild(host)
+    const runtime = new InlineRuntime(container, new Map())
+    runtime.render([{insert: 'abcdefghijklmnopqrstuvwx012345'}])
+    const naturalWidth = container.clientWidth
+
+    const gaps = [{offset: 15, height: 100, backdropOffset: 70, backdropHeight: 20}]
+    applyInlinePaginationGaps(runtime, gaps)
+
+    // 外层自动模式不会改变内部手动表格的宽度保护。
+    expect(container.style.width).toBe(`${naturalWidth}px`)
+    innerTable.classList.add('is-auto-column-width')
+    applyInlinePaginationGaps(runtime, gaps)
+    expect(container.style.width).toBe('fit-content')
+    innerTable.classList.remove('is-auto-column-width')
+    applyInlinePaginationGaps(runtime, gaps)
+    expect(container.style.width).toBe(`${container.clientWidth}px`)
+    expect(runtime.textLength).toBe(30)
+    clearInlinePaginationGaps(runtime)
+    expect(container.style.width).toBe('fit-content')
+    runtime.destroy()
+  })
+
   it('clears a pagination projection before an incremental model patch', () => {
     const container = document.createElement('div')
     const runtime = new InlineRuntime(container, new Map())

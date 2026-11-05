@@ -26,6 +26,7 @@ import {fixTable} from "../../blocks/table-block/callback";
 import {BlockAppearancePickerComponent} from "./widgets/block-appearance-picker";
 
 const TABLE_MENU_NAMES = {
+  autoWidth: 'table-auto-width',
   smartWidth: 'table-smart-width',
   equalWidth: "table-equal-width",
   rowHead: "table-row-head",
@@ -541,6 +542,13 @@ export class BlockControllerPlugin extends DocPlugin {
           },
           {
             type: 'switch',
+            name: TABLE_MENU_NAMES.autoWidth,
+            icon: 'bc_zidongliekuan1',
+            label: '自动列宽',
+            checked: table.isAutoColumnWidth,
+          },
+          {
+            type: 'switch',
             name: TABLE_MENU_NAMES.rowHead,
             icon: 'bc_biaotihang',
             label: '标题行',
@@ -562,6 +570,9 @@ export class BlockControllerPlugin extends DocPlugin {
     const table = ctx.findClosestBlock('table') as BlockCraft.IBlockComponents['table'] | null
     if (!table) return false
     switch (event.item.name) {
+      case TABLE_MENU_NAMES.autoWidth:
+        table.setAutoColumnWidths(!table.isAutoColumnWidth)
+        return true
       case TABLE_MENU_NAMES.smartWidth:
         void table.optimizeColumnWidths()
         return true

@@ -81,6 +81,7 @@ test('窄单元格内的视频 gap 支持点击、前后输入、撤销及实时
     const doc = (window as any).ng.getComponent(document.querySelector('block-craft-editor')).doc
     const video = doc.schemas.createSnapshot('video', [{url: '/gap-video.mp4', sourceType: 'local', wr: 15, ar: 2}])
     const table = doc.schemas.createSnapshot('table', [1, 1])
+    delete table.props.columnSizing // Retain the fixed-cell sizing fixture.
     table.props.colWidths = [260]
     const cell = table.children[0].children[0]
     cell.children = [video]

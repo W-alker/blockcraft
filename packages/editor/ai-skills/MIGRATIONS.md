@@ -4,6 +4,19 @@
 >
 > Last updated: 2026-11-05 | Tracks `@ccc/blockcraft` npm releases.
 
+## 未发布 — 2026-11-05：表格持续自动列宽
+
+- Severity: minor（新增布局模式，新建表格默认开启；版本由用户决定）。
+- What changed / Why: 表格可用浏览器原生布局持续响应内容和正文容器宽度变化，避免重复测量整表正文及运行换行优化器。
+- New APIs: `TableBlockModel.props.columnSizing?: 'auto' | null`、`TableBlockComponent.isAutoColumnWidth`、`setAutoColumnWidths(enabled: boolean): void`。
+- Behavior Changes: `TableBlockSchema.createSnapshot()` 新建默认写入 `columnSizing: 'auto'`，派生列宽不写 Yjs；关闭、实际拖宽或一次性调整命令固定布局，模式与宽度一起撤销。旧快照缺省/null 仍为手动模式，不在读取时迁移。只读/快照同样按保存的模式显示。
+- Layout: 新增 `.is-auto-column-width` 与零高度 `tfoot.bc-table-column-metrics`；内部 `--bc-table-auto-content-width` 维护全屏正文预算。宿主枚举业务行时应继续使用模型 tbody / block ID，不采样度量行。
+- Media: 编辑器中自动单元格的直接图片、视频、网页嵌入在调整尺寸时可撑开所在列，保留原正文 `wr` 基准及媒体 Undo；不穿透嵌套固定容器，不添加逐媒体观察器。独立 Snapshot Viewer 的媒体百分比投影不变。
+- Exchange: HTML 以 `data-bc-table-column-sizing="auto"` 保存模式；普通 HTML 导入及 Markdown 降级规则保持原行为。
+- Deprecations: 无。
+- Migration Recipe: 旧文档无需迁移。调用工厂后需要固定列宽的宿主，应在插入前将 `snapshot.props.columnSizing` 设为 null 或删除，并设置 `colWidths`；存量表格用 `table.setAutoColumnWidths(true)` 开启。自动模式下不要将保存的 `colWidths` 当成当前 DOM 几何。有道导入显式保留来源固定列宽，普通 HTML/Markdown 导入规则不变。
+- Affected ai-skills files: `blockcraft.md`、`blockcraft-block.md`、`blockcraft-adapter.md`、`blockcraft-plugins-block.md`、`blockcraft-theme.md`。
+
 ## 未发布 — 2026-11-05：精简浮动文本工具栏默认按钮
 
 - Severity: patch（默认按钮调整；版本由用户决定）。

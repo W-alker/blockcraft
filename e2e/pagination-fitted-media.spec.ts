@@ -49,6 +49,7 @@ for (const flavour of ['image', 'video'] as const) {
         }, undefined, undefined, '图片说明保持原始字号'])
         : doc.schemas.createSnapshot('video', [{url: '', sourceType: 'local', wr: 100, ar: 0.5}])
       const table = doc.schemas.createSnapshot('table', [12, 3])
+      delete table.props.columnSizing // Preserve the authored pagination geometry.
       table.props.colWidths = [150, 150, 200]
       table.children.forEach((row: any, i: number) => row.children.forEach((cell: any, j: number) => {
         cell.children = [paragraph(`第 ${i + 1} 行，第 ${j + 1} 列`)]

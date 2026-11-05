@@ -174,17 +174,29 @@ export type TableSelectionKind = 'cell' | 'cells' | 'row' | 'col'
         <i class="bc_icon bc_liekuan"></i>
       </button>
       <button type="button"
-              class="table-structure-toolbar__item"
-              aria-label="均分列宽"
-              csTooltip="均分列宽（整表）"
-              (click)="equalColumnWidths($event)">
+              class="table-structure-toolbar__item table-structure-toolbar__item--expandable"
+              aria-label="列宽调整"
+              aria-haspopup="menu"
+              [attr.aria-expanded]="dropdownVisibleMap.width"
+              csDropdown
+              [csDropdownMenu]="widthMenu"
+              csTrigger="hover"
+              csPlacement="bottom"
+              [(csOpen)]="dropdownVisibleMap.width"
+              [class.active]="dropdownVisibleMap.width"
+              csTooltip="列宽调整（整表）"
+              [csTooltipDisabled]="dropdownVisibleMap.width"
+              (click)="$event.preventDefault(); $event.stopPropagation()">
         <i class="bc_icon bc_zidongliekuan"></i>
+        <i class="bc_icon bc_xiajaintou table-structure-toolbar__caret"></i>
       </button>
       <button type="button"
               class="table-structure-toolbar__item"
-              aria-label="智能调整列宽"
-              csTooltip="智能调整列宽（整表）"
-              (click)="optimizeColumnWidths($event)">
+              aria-label="自动列宽"
+              [attr.aria-pressed]="table.isAutoColumnWidth"
+              [class.active]="table.isAutoColumnWidth"
+              [csTooltip]="table.isAutoColumnWidth ? '关闭自动列宽并固定当前宽度' : '自动列宽（随内容和容器调整）'"
+              (click)="toggleAutoColumnWidths($event)">
         <i class="bc_icon bc_zidongliekuan1"></i>
       </button>
       <button type="button"
@@ -197,6 +209,14 @@ export type TableSelectionKind = 'cell' | 'cells' | 'row' | 'col'
            [class.bc_x-circle-contained]="isFullscreen"></i>
       </button>
     </div>
+
+    <cs-dropdown-menu #widthMenu="csDropdownMenu">
+      <div csMenu csMode="vertical" [csSelectable]="false"
+           class="table-structure-toolbar__width-menu" (mousedown)="$event.preventDefault()">
+        <button csMenuItem type="button" (click)="equalColumnWidths($event)">均分列宽</button>
+        <button csMenuItem type="button" (click)="optimizeColumnWidths($event)">智能调整列宽</button>
+      </div>
+    </cs-dropdown-menu>
 
     <cs-dropdown-menu #alignMenu="csDropdownMenu">
       <div csMenu csMode="horizontal" [csSelectable]="false" class="table-structure-toolbar__menu" (mousedown)="$event.preventDefault()">
@@ -294,6 +314,19 @@ export type TableSelectionKind = 'cell' | 'cells' | 'row' | 'col'
       background: var(--bc-float-toolbar-bg);
       box-shadow: var(--bc-float-toolbar-shadow);
     }
+
+    .table-structure-toolbar__width-menu > button {
+      border: 0;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      text-align: left;
+    }
+
+    .table-structure-toolbar__width-menu > button:hover,
+    .table-structure-toolbar__width-menu > button:focus-visible {
+      background: var(--bc-float-toolbar-item-active-bg);
+    }
   `],
 })
 export class TableStructureToolbarComponent implements OnInit, OnChanges, OnDestroy {
@@ -307,7 +340,7 @@ export class TableStructureToolbarComponent implements OnInit, OnChanges, OnDest
   protected readonly HORIZON_ALIGN_LIST = HORIZON_ALIGN_LIST
   protected readonly VERTICAL_ALIGN_LIST = VERTICAL_ALIGN_LIST
 
-  protected dropdownVisibleMap = { align: false, color: false }
+  protected dropdownVisibleMap = { align: false, color: false, width: false }
   protected activeColors: Record<string, string | null> = {}
   protected textAlign: string | undefined = undefined
   protected verticalAlign: string | null = null
@@ -321,6 +354,7 @@ export class TableStructureToolbarComponent implements OnInit, OnChanges, OnDest
 
   private _selectedCells: TableCell[] = []
   private _fullscreenSub?: Subscription
+  private _columnSizingSub?: Subscription
 
   constructor(private readonly cdr: ChangeDetectorRef) {}
 
@@ -331,6 +365,9 @@ export class TableStructureToolbarComponent implements OnInit, OnChanges, OnDest
 
   ngOnInit() {
     this._syncCellState()
+    this._columnSizingSub = this.table.onPropsChange?.subscribe(changes => {
+      if (changes.has('columnSizing')) this.cdr.markForCheck()
+    })
     // OnPush 下需要订阅状态流并 markForCheck，否则全屏切换后图标不会更新
     const stream$ = this.table?.isFullscreen$
     if (stream$) {
@@ -343,6 +380,7 @@ export class TableStructureToolbarComponent implements OnInit, OnChanges, OnDest
 
   ngOnDestroy() {
     this._fullscreenSub?.unsubscribe()
+    this._columnSizingSub?.unsubscribe()
   }
 
   ngOnChanges(changes: SimpleChanges) {
@@ -367,11 +405,18 @@ export class TableStructureToolbarComponent implements OnInit, OnChanges, OnDest
 
   optimizeColumnWidths(event: MouseEvent) {
     this._consume(event)
+    this.dropdownVisibleMap.width = false
     void this.table.optimizeColumnWidths()
+  }
+
+  toggleAutoColumnWidths(event: MouseEvent) {
+    this._consume(event)
+    this.table.setAutoColumnWidths(!this.table.isAutoColumnWidth)
   }
 
   equalColumnWidths(event: MouseEvent) {
     this._consume(event)
+    this.dropdownVisibleMap.width = false
     this.table.setEqualColumnWidths()
   }
 

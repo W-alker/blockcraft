@@ -33,6 +33,7 @@ export class InlinePaginationProjection {
   private _signature = ''
   private _containerWidthSnapshot?: {value: string; priority: string}
   private _containerPaddingSnapshot?: {value: string; priority: string}
+  private _autoTableSizing = false
 
   constructor(private readonly _scroll: ScrollBlot) {}
 
@@ -46,7 +47,10 @@ export class InlinePaginationProjection {
       this._scroll.textLength,
     )
     const signature = JSON.stringify(normalized)
-    if (signature === this._signature && this._isHealthy(normalized.length)) {
+    const autoTableSizing = this._scroll.domNode.closest('.table-block')
+      ?.classList.contains('is-auto-column-width') ?? false
+    if (signature === this._signature && autoTableSizing === this._autoTableSizing
+      && this._isHealthy(normalized.length)) {
       return true
     }
 
@@ -54,6 +58,7 @@ export class InlinePaginationProjection {
     if (!normalized.length) return true
 
     try {
+      this._autoTableSizing = autoTableSizing
       this._freezeContainerWidth()
       for (const offset of [...new Set(normalized.map(gap => gap.offset))]) {
         const split = this._scroll.splitTextForLayout(offset)
@@ -95,6 +100,7 @@ export class InlinePaginationProjection {
     }
     this._splits = []
     this._signature = ''
+    this._autoTableSizing = false
     this._restoreContainerPadding()
     this._restoreContainerWidth()
   }
@@ -106,6 +112,10 @@ export class InlinePaginationProjection {
    */
   private _freezeContainerWidth(): void {
     const container = this._scroll.domNode
+    // 自动列宽由原生 table layout 持续计算。把当前正文宽度固化为 px 会
+    // 反过来成为单元格的内在宽度约束，使表格在父容器缩窄后无法收缩。
+    // 只看最近的表格，嵌套手动表格仍保留原有的分页换行保护。
+    if (this._autoTableSizing) return
     const width = container.clientWidth
       || container.getBoundingClientRect().width
     if (!Number.isFinite(width) || width <= 0) return

@@ -190,6 +190,7 @@ test('soft breaks and single lines keep alignment inside a narrow table cell and
       {insert:'第一行文字\n第二行文字'},
     ],{textAlign}]));
     const table=doc.schemas.createSnapshot('table',[1,1]);
+    delete table.props.columnSizing; // Keep this narrow-cell regression fixed at 280px.
     table.props.colWidths=[280];table.children[0].children[0].children=ps;
     doc.crud.insertBlockSnapshots(doc.rootId,0,[table]);
     await doc.navigateToBlock(table.id);

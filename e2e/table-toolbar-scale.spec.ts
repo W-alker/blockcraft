@@ -15,6 +15,7 @@ async function setup(page: Page, scale: number, wide: boolean) {
     viewport.appendChild(mount)
     document.body.appendChild(viewport)
     const table = source.schemas.createSnapshot('table', [3, wide ? 7 : 3])
+    delete table.props.columnSizing // Keep the authored column geometry under test.
     table.props.colWidths = Array(wide ? 7 : 3).fill(110)
     table.children.forEach((row: any, r: number) => row.children.forEach((cell: any, c: number) => {
       cell.children = [source.schemas.createSnapshot('paragraph', [`单元格 ${r}:${c}`])]

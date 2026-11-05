@@ -16,6 +16,7 @@ import {calculateImageResize} from './image-resize';
 import {BcResourcePlaceholderDirective} from '../../components/resource-placeholder/resource-placeholder.directive';
 import type {ResourceIntrinsicSize} from '@ccc/blockcraft/global/resource-placeholder';
 import {takeUntil} from 'rxjs';
+import {isAutoWidthTableMedia} from '../table-block/table-auto-width-media';
 
 export function deriveInitialImageObjectSize(
   size: ResourceIntrinsicSize,
@@ -239,6 +240,7 @@ export class ImageBlockComponent extends BaseBlockComponent<ImageBlockModel> {
       ? {width, height, offsetX: 0, offsetY: 0}
       : null
     if (this.isAbsolute) return null
+    if (isAutoWidthTableMedia(this.hostElement)) return this._resizeBasisWidth
     return this.doc.placement.isInObjectGroup(this.id)
       ? this.rootContentWidth
       : Math.min(this._resizeBasisWidth, this.resizeMaxWidthContainer.clientWidth)

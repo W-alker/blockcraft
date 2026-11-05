@@ -4,7 +4,15 @@
 >
 > Adapters handle HTML ↔ BlockSnapshot and Markdown ↔ BlockSnapshot conversion.
 >
-> Last updated: 2026-10-19
+> Last updated: 2026-11-05
+
+## 表格自动列宽
+
+`props.columnSizing: 'auto'` 导出为 `<table data-bc-table-column-sizing="auto"
+style="table-layout:auto;width:100%">`，不导出浏览器临时计算的像素列宽。
+导入仅识别该显式标记；普通 HTML 的 `table-layout:auto` 不会自动改变既有导入语义。
+旧手动表格导出保持原行为，未知标记忽略；原生快照保留模式与既有 `colWidths`。
+Markdown 表格继续按内容降级，不保存自动列宽或精确布局，不增加私有语法。
 
 ## 正文数值字重
 

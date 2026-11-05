@@ -186,6 +186,8 @@ function bulbTableToSnapshot(block: BulbNode, ctx: BulbConvertContext): IBlockSn
   }
 
   const table = TableBlockSchema.createSnapshot(rowCount, colCount);
+  // Imported tables retain their source widths instead of the new-table mode.
+  delete table.props.columnSizing;
   table.props.colWidths = colsWidth.slice();
   (table.children as IBlockSnapshot[]) = rows;
   return table;

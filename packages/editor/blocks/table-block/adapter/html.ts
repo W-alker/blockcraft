@@ -27,7 +27,10 @@ export const tableBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
           id: generateId(),
           nodeType: BlockNodeType.block,
           flavour: 'table',
-          props: {},
+          // Only an explicit BlockCraft marker opts in. Ordinary HTML tables
+          // retain the existing fixed-width import behavior.
+          props: o.node.properties?.['dataBcTableColumnSizing'] === 'auto'
+            ? {columnSizing: 'auto'} : {},
           meta: {},
           children: [],
         },
@@ -114,7 +117,10 @@ export const tableBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
           {
             type: 'element',
             tagName: 'table',
-            properties: {},
+            properties: o.node.props['columnSizing'] === 'auto' ? {
+              dataBcTableColumnSizing: 'auto',
+              style: 'table-layout:auto;width:100%',
+            } : {},
             children: [
               {
                 type: 'element',

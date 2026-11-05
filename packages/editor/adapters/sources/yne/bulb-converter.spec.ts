@@ -159,6 +159,7 @@ describe('bulb table grid reconstruction', () => {
     const t = convertBulbBlock(table, makeCtx())[0];
     expect(t.flavour).toBe('table');
     expect(t.props['colWidths']).toEqual([100, 100, 100]);
+    expect('columnSizing' in t.props).toBeFalse();
     expect(t.children.length).toBe(2);
   });
 
