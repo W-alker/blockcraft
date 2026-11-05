@@ -16,7 +16,6 @@
   }
 
   .table-block {
-    padding-bottom: 16px;
     width: fit-content;
     max-width: 100%;
     overflow: hidden;
@@ -384,10 +383,9 @@
       }
 
       // 让 sticky 表头跳出 .table-scrollable 的滚动容器，直接相对外层（viewport / 页面）sticky。
-      //   1. padding-top: 0 — 抹掉 .table-scrollable 默认 16px padding-top 把首行往下推的偏移
-      //   2. overflow-y: clip — `clip` 跟 `hidden` 一样裁切超出，但**不创建滚动容器**；
+      //   overflow-y: clip — `clip` 跟 `hidden` 一样裁切超出，但**不创建滚动容器**；
       //      这样 sticky 不再被 .table-scrollable 困住，而是挂到外层滚动容器（page/viewport）
-      //   3. 浏览器支持：Chrome 90+ / Firefox 81+ / Safari 16+。老浏览器回退到 `visible`，
+      //   浏览器支持：Chrome 90+ / Firefox 81+ / Safari 16+。老浏览器回退到 `visible`，
       //      被 overflow-x: auto 拉成 `auto`，相当于原 hidden 行为（sticky 内嵌行为不变，不炸）
       //
       // ⚠️ 必须用 :not(.is-fullscreen) 限定！全屏模式下 .table-scrollable 自己就是
@@ -395,7 +393,6 @@
       // 如果这里改成 clip，全屏会丢失垂直滚动。
       &:not(.is-fullscreen) {
         .table-scrollable {
-          //padding-top: 0;
           overflow-y: clip;
         }
         // row-bar 的 top: 1px 现在是全局默认（containing block 已改为 wrapper），
@@ -426,7 +423,8 @@
     }
 
     .table-scrollable {
-      padding-top: 16px;
+      // 仅为列手柄向上伸出的抓手保留空间；块间距由通用段落间距处理。
+      padding-top: 8px;
       overflow-x: auto;
       overflow-y: hidden;
       scrollbar-width: thin;
@@ -551,6 +549,14 @@
       table-row-bar {
         display: none !important;
       }
+    }
+  }
+
+  &.readonly .table-block:not(.is-fullscreen),
+  .table-block[data-bc-readonly]:not(.is-fullscreen) {
+    // 只读时没有结构手柄，不需要预留顶部操作空间。
+    .table-scrollable {
+      padding-top: 0;
     }
   }
 

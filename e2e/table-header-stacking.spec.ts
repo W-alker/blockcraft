@@ -96,6 +96,9 @@ test('标题列盖住滚动内容，保留单元格选择、编辑和标题开�
     return (window as any).ng.getComponent(cell.querySelector('.paragraph-block')).textContent()
   })
   await page.mouse.click(selected.x, selected.y)
+  await page.evaluate(() => new Promise<void>(resolve =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  ))
   await page.keyboard.type('HEADER')
   await expect.poll(() => table.evaluate(host => {
     const cell = host.querySelector('td.table-cell-block')!
@@ -143,8 +146,10 @@ test('编辑器只读模式的深色表头沿用相同覆盖顺序', async ({pag
   await expect.poll(() => table.evaluate(host =>
     host.closest('[data-blockcraft-root="true"]')!.classList.contains('readonly'),
   )).toBe(true)
-  await scroll(table)
   for (const row of [0, 1, 3]) {
+    // 收起手柄留白后重新确保被测单元格在宿主滚动视口内，再恢复横向滚动。
+    await table.locator('tr.table-row-block').nth(row).locator('td').first().scrollIntoViewIfNeeded()
+    await scroll(table)
     const hit = await readHeaderHit(table, row, 0, row === 1)
     expect(hit.actual).toBe(hit.expected)
     expect(hit.background).toBe('rgb(37, 37, 37)')
