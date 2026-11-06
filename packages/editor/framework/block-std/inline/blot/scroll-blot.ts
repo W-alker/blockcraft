@@ -7,6 +7,8 @@ import {DeltaInsert, DeltaInsertEmbed, DeltaOperation, IInlineNodeAttrs, InlineM
 import {createZeroSpace} from "../../../utils";
 import type {EmbedConverter} from "../index";
 import {LogicalLineDom} from './logical-line-dom';
+import {LogicalLineIndex} from './logical-line-index';
+import {registerLogicalLineAccess, type LogicalLineAccess, type LogicalSourceLine} from './logical-line-access';
 
 export type EmbedConverterMap = Map<string, EmbedConverter>
 
@@ -40,13 +42,32 @@ export class ScrollBlot implements IScrollBlot {
   private _offsetByBlot: Map<IBlot, number> | null = null
   private readonly _lineDom?: LogicalLineDom
   private _leadingGap: HTMLElement | null = null
+  private _leadingGapText: string | null = null
+  private _lineIndex?: LogicalLineIndex
+  private _lineTrusted = false
+  private _lineIndexNeedsRebuild = true
+  private _mutationDepth = 0
+  private _controlledMutationFailed = false
+  private readonly _lineObserver?: MutationObserver
+  private readonly _lineAccess?: LogicalLineAccess
 
   constructor(
     readonly domNode: HTMLElement,
     private _embedConverters: Map<string, EmbedConverter>,
     options?: {lineContainerTag?: 'c-line'},
   ) {
-    if (options?.lineContainerTag) this._lineDom = new LogicalLineDom(domNode, options.lineContainerTag)
+    if (options?.lineContainerTag) {
+      this._lineDom = new LogicalLineDom(domNode, options.lineContainerTag)
+      this._lineObserver = new MutationObserver(records => this._invalidateExternalMutations(records))
+      this._lineAccess = {
+        sourceLines: () => this._lineIndex!.sourceLines(),
+        locate: line => this._lineIndex?.locate(line),
+        blotFromDom: node => this.domNode.contains(node) ? this._lineIndex?.blotFromDom(node) : undefined,
+        nextLeaf: leaf => this._lineIndex?.nextLeaf(leaf),
+        trustedPlainText: () => this._trustedLineIndex()?.trustedPlainText(),
+      }
+      registerLogicalLineAccess(this, () => this._trustedLineIndex() ? this._lineAccess : undefined)
+    }
   }
 
   /** @internal Exact owned gap, including when it is inside a canonical line. */
@@ -57,6 +78,7 @@ export class ScrollBlot implements IScrollBlot {
 
   /** @internal Projection recovery accepts either canonical DOM topology. */
   hasCanonicalDomOrder(): boolean {
+    if (this._trustedLineIndex()) return true
     if (this._lineDom) return this._lineDom.hasCanonicalOrder(this._children)
     const expected = this._children.map(child => child.domNode)
     const owned = new Set<Node>(expected)
@@ -78,7 +100,12 @@ export class ScrollBlot implements IScrollBlot {
    * Lazily rebuild the leaves cache, prefix-sum array, and _childIndex on each blot.
    */
   private _ensureIndex() {
+    const lines = this._trustedLineIndex()
     if (this._cachedLeaves !== null) return
+    if (lines) {
+      this._cachedLeaves = lines.sourceLines().flatMap(line => line.leaves)
+      return
+    }
     const leaves: (TextBlot | EmbedBlot)[] = []
     const offsetByBlot = new Map<IBlot, number>()
     let offset = 0
@@ -105,8 +132,8 @@ export class ScrollBlot implements IScrollBlot {
    * Fresh filter of leaves from _children — for use inside mutation methods
    * that need a snapshot before modifying _children.
    */
-  private _filterLeaves(): (TextBlot | EmbedBlot)[] {
-    return this._children.filter(
+  private _filterLeaves(children: readonly IBlot[] = this._children): (TextBlot | EmbedBlot)[] {
+    return children.filter(
       (b): b is TextBlot | EmbedBlot => b.type === BlotType.Text || b.type === BlotType.Embed
     )
   }
@@ -116,6 +143,7 @@ export class ScrollBlot implements IScrollBlot {
    * Uses cached _childIndex if the index is still valid, falls back to indexOf.
    */
   private _childIndexOf(blot: IBlot): number {
+    if (!this._lineIndexNeedsRebuild && this._lineTrusted && this._lineIndex) return this._lineIndex.childIndexOf(blot)
     const ci = (blot as any)._childIndex
     if (ci >= 0 && ci < this._children.length && this._children[ci] === blot) {
       return ci
@@ -136,8 +164,10 @@ export class ScrollBlot implements IScrollBlot {
     return this._cachedLeaves!
   }
 
-  /** O(1) via prefix-sum cache. */
+  /** Flat prefix cache O(1); canonical lines use an O(log lines) numeric sum. */
   get textLength(): number {
+    const lines = this._trustedLineIndex()
+    if (lines) return lines.textLength
     this._ensureIndex()
     const sums = this._prefixSums!
     return sums[sums.length - 1]
@@ -147,10 +177,15 @@ export class ScrollBlot implements IScrollBlot {
    * Full rebuild: clear existing children and build from a delta snapshot.
    */
   build(deltas: InlineModel) {
+    this._withControlledMutation(() => this._build(deltas))
+  }
+
+  private _build(deltas: InlineModel) {
     this._invalidateIndex()
     this.detachAll()
     const leadingGap = createZeroSpace()
     this._leadingGap = leadingGap
+    this._leadingGapText = leadingGap.textContent
     const endBreak = new BreakBlot()
     endBreak.parent = this
 
@@ -175,10 +210,19 @@ export class ScrollBlot implements IScrollBlot {
    * operates through the blot abstraction.
    */
   applyDelta(ops: DeltaOperation[]) {
+    this._withControlledMutation(() => {
+      if (this._tryApplySingleLineDelta(ops)) return
+      this._applyDeltaToChildren(ops, this._children)
+      this._invalidateIndex()
+      this._syncLogicalLines()
+    })
+  }
+
+  private _applyDeltaToChildren(ops: DeltaOperation[], children: IBlot[]) {
     let cursor = 0  // model offset cursor
 
     const getLeafAtCursor = (): { leaf: TextBlot | EmbedBlot; localOffset: number; leafIndex: number } | null => {
-      const leaves = this._filterLeaves()
+      const leaves = this._filterLeaves(children)
       let offset = 0
       for (let i = 0; i < leaves.length; i++) {
         if (offset + leaves[i].length > cursor || (offset + leaves[i].length === cursor && i === leaves.length - 1)) {
@@ -197,14 +241,14 @@ export class ScrollBlot implements IScrollBlot {
     for (const op of ops) {
       if (op.retain != null) {
         if (op.attributes) {
-          this._formatRange(cursor, op.retain, op.attributes)
+          this._formatRange(cursor, op.retain, op.attributes, children)
         }
         cursor += op.retain
         continue
       }
 
       if (op.delete != null) {
-        this._deleteRange(cursor, op.delete)
+        this._deleteRange(cursor, op.delete, children)
         continue
       }
 
@@ -219,7 +263,7 @@ export class ScrollBlot implements IScrollBlot {
           }
           // At boundary, check previous leaf
           if (info && info.localOffset === 0 && info.leafIndex > 0) {
-            const prevLeaf = this._filterLeaves()[info.leafIndex - 1]
+            const prevLeaf = this._filterLeaves(children)[info.leafIndex - 1]
             if (prevLeaf instanceof TextBlot && this._attrsMatch(prevLeaf.attrs, op.attributes)) {
               prevLeaf.insertAt(prevLeaf.length, op.insert)
               cursor += op.insert.length
@@ -230,21 +274,21 @@ export class ScrollBlot implements IScrollBlot {
         // Fallback: create new blot (embeds, mismatched attrs, or empty container)
         const delta: DeltaInsert = {insert: op.insert, attributes: op.attributes} as DeltaInsert
         const blot = this._createLeafBlot(delta)
-        this._insertBlotAt(cursor, blot)
+        this._insertBlotAt(cursor, blot, children)
         cursor += blot.length
       }
     }
 
-    this._cleanupEmptyLeaves()
-    this._invalidateIndex()
-    this._syncLogicalLines()
+    this._cleanupEmptyLeaves(children)
   }
 
   /**
    * Find the leaf blot and local offset at the given model character offset.
-   * O(log n) via binary search on prefix sums.
+   * Flat: O(log leaves). Canonical lines: O(log lines + leaves in one line).
    */
   findByOffset(offset: number): { blot: TextBlot | EmbedBlot; localOffset: number } | null {
+    const lines = this._trustedLineIndex()
+    if (lines) return lines.findByOffset(offset)
     this._ensureIndex()
     const leaves = this._cachedLeaves!
     const sums = this._prefixSums!
@@ -266,7 +310,7 @@ export class ScrollBlot implements IScrollBlot {
 
   /**
    * Get the model offset of a given blot.
-   * O(1) through the same lazily rebuilt index used by `findByOffset()`.
+   * Flat: O(1) after its lazy rebuild. Canonical lines: O(log lines).
    *
    * Zero-length blots (CursorBlot, BreakBlot) occupy no model characters;
    * their offset is the cumulative length of the leaves preceding them in
@@ -274,6 +318,8 @@ export class ScrollBlot implements IScrollBlot {
    * Returns -1 only for blots that are not children of this scroll.
    */
   offsetOf(blot: IBlot): number {
+    const lines = this._trustedLineIndex()
+    if (lines) return lines.offsetOf(blot)
     this._ensureIndex()
     return this._offsetByBlot!.get(blot) ?? -1
   }
@@ -282,9 +328,17 @@ export class ScrollBlot implements IScrollBlot {
    * Remove all children and clear the container DOM.
    */
   detachAll() {
+    this._withControlledMutation(() => this._detachAll(), false)
+  }
+
+  private _detachAll() {
+    this._lineObserver?.disconnect()
+    this._lineIndex = undefined
+    this._lineTrusted = false
     const children = this._children
     this._children = []
     this._leadingGap = null
+    this._leadingGapText = null
     this._lineDom?.clear()
     this._invalidateIndex()
     for (const child of children) {
@@ -308,6 +362,10 @@ export class ScrollBlot implements IScrollBlot {
    * If ref is null, inserts before the BreakBlot (end of content).
    */
   insertLeafBefore(newBlot: TextBlot | EmbedBlot, ref: IBlot | null) {
+    this._withControlledMutation(() => this._insertLeafBefore(newBlot, ref))
+  }
+
+  private _insertLeafBefore(newBlot: TextBlot | EmbedBlot, ref: IBlot | null) {
     this._invalidateIndex()
     newBlot.parent = this
 
@@ -336,6 +394,10 @@ export class ScrollBlot implements IScrollBlot {
    * Remove a leaf blot from the tree and detach its DOM.
    */
   removeLeaf(blot: TextBlot | EmbedBlot) {
+    this._withControlledMutation(() => this._removeLeaf(blot))
+  }
+
+  private _removeLeaf(blot: TextBlot | EmbedBlot) {
     const idx = this._childIndexOf(blot)
     if (idx >= 0) {
       this._children.splice(idx, 1)
@@ -353,6 +415,10 @@ export class ScrollBlot implements IScrollBlot {
    * callers must pair every successful split with `mergeLayoutTextSplit()`.
    */
   splitTextForLayout(modelOffset: number): [TextBlot, TextBlot] | null {
+    return this._withControlledMutation(() => this._splitTextForLayout(modelOffset), false)
+  }
+
+  private _splitTextForLayout(modelOffset: number): [TextBlot, TextBlot] | null {
     if (modelOffset <= 0 || modelOffset >= this.textLength) return null
     const info = this.findByOffset(modelOffset)
     if (
@@ -389,6 +455,10 @@ export class ScrollBlot implements IScrollBlot {
    * checks deliberately prevent this from merging unrelated semantic runs.
    */
   mergeLayoutTextSplit(split: readonly [TextBlot, TextBlot]): boolean {
+    return this._withControlledMutation(() => this._mergeLayoutTextSplit(split), false)
+  }
+
+  private _mergeLayoutTextSplit(split: readonly [TextBlot, TextBlot]): boolean {
     const [left, right] = split
     const leftIndex = this._childIndexOf(left)
     if (
@@ -413,6 +483,10 @@ export class ScrollBlot implements IScrollBlot {
    * @internal InlineFragmentProjection only.
    */
   restoreCanonicalDomOrder(): void {
+    this._withControlledMutation(() => this._restoreCanonicalDomOrder())
+  }
+
+  private _restoreCanonicalDomOrder(): void {
     if (this._lineDom) {
       this._syncLogicalLines()
       return
@@ -438,6 +512,13 @@ export class ScrollBlot implements IScrollBlot {
     deleteCount: number,
     newBlots: (TextBlot | EmbedBlot)[]
   ) {
+    this._withControlledMutation(() => {
+      if (this._trySpliceSingleLine(startIdx, deleteCount, newBlots)) return
+      this._spliceLeaves(startIdx, deleteCount, newBlots)
+    })
+  }
+
+  private _spliceLeaves(startIdx: number, deleteCount: number, newBlots: (TextBlot | EmbedBlot)[]) {
     const currentLeaves = this._filterLeaves()
     const toRemove = currentLeaves.slice(startIdx, startIdx + deleteCount)
 
@@ -480,6 +561,10 @@ export class ScrollBlot implements IScrollBlot {
    * If the offset falls inside a TextBlot, the TextBlot is split.
    */
   insertCursorBlot(modelOffset: number, cursor: CursorBlot) {
+    this._withControlledMutation(() => this._insertCursorBlot(modelOffset, cursor))
+  }
+
+  private _insertCursorBlot(modelOffset: number, cursor: CursorBlot) {
     this._invalidateIndex()
     cursor.parent = this
     const info = this.findByOffset(modelOffset)
@@ -528,6 +613,10 @@ export class ScrollBlot implements IScrollBlot {
    * Remove a CursorBlot from the tree.
    */
   removeCursorBlot(cursor: CursorBlot) {
+    this._withControlledMutation(() => this._removeCursorBlot(cursor))
+  }
+
+  private _removeCursorBlot(cursor: CursorBlot) {
     const idx = this._childIndexOf(cursor)
     if (idx >= 0) {
       this._children.splice(idx, 1)
@@ -538,6 +627,195 @@ export class ScrollBlot implements IScrollBlot {
   }
 
   // ─── Internal helpers ───
+
+  private _invalidateExternalMutations(records: readonly MutationRecord[]): void {
+    if (!records.length) return
+    this._lineTrusted = false
+    this._lineIndex = undefined
+    this._lineIndexNeedsRebuild = true
+    this._invalidateIndex()
+  }
+
+  private _trustedLineIndex(): LogicalLineIndex | undefined {
+    if (!this._lineDom) return undefined
+    if (!this._mutationDepth) this._invalidateExternalMutations(this._lineObserver!.takeRecords())
+    return this._lineTrusted && !this._lineIndexNeedsRebuild ? this._lineIndex : undefined
+  }
+
+  private _withControlledMutation<T>(mutation: () => T, canonical = true): T {
+    if (!this._lineDom) return mutation()
+    const outer = this._mutationDepth === 0
+    if (outer) {
+      this._invalidateExternalMutations(this._lineObserver!.takeRecords())
+      this._lineIndexNeedsRebuild = true
+      this._controlledMutationFailed = false
+      this._invalidateIndex()
+    }
+    this._mutationDepth++
+    let completed = false
+    try {
+      const value = mutation()
+      completed = true
+      return value
+    } finally {
+      this._mutationDepth--
+      if (!completed) this._controlledMutationFailed = true
+      if (outer) {
+        try {
+          if (completed && !this._controlledMutationFailed && canonical && this._leadingGap) {
+            if (this._lineIndexNeedsRebuild) this._rebuildLogicalIndex()
+          } else {
+            this._lineTrusted = false
+            this._lineIndex = undefined
+          }
+        } finally {
+          // Everything in this synchronous scope has already been read back from
+          // actual leaves (or trust was revoked on failure). Future native edits
+          // remain observable, including takeRecords() before the callback runs.
+          this._lineObserver!.takeRecords()
+          if (this._leadingGap) {
+            this._lineObserver!.observe(this.domNode, {subtree: true, childList: true, characterData: true, attributes: true})
+          }
+        }
+      }
+    }
+  }
+
+  private _rebuildLogicalIndex(): void {
+    this._lineTrusted = false
+    this._lineIndex = undefined
+    if (!this._lineDom?.hasOnlyManagedNodes(this._leadingGap)) return
+    const gap = this._leadingGap
+    if (!gap || gap.childNodes.length !== 1 || gap.firstChild?.nodeType !== Node.TEXT_NODE ||
+      gap.textContent !== this._leadingGapText || gap.getAttribute('data-zero-space') !== 'true') return
+    for (const child of this._children) {
+      if (child instanceof TextBlot) {
+        const element = child.domNode
+        const text = element.firstChild
+        if (element.childNodes.length !== 1 || !(text instanceof HTMLElement) || text.localName !== 'c-text' ||
+          text.childNodes.length !== 1 || text.firstChild?.nodeType !== Node.TEXT_NODE ||
+          (child.text !== '\n' && child.text.includes('\n'))) return
+      }
+    }
+    this._lineIndex = new LogicalLineIndex(this._children)
+    this._lineIndexNeedsRebuild = false
+    this._lineTrusted = true
+  }
+
+  private _replaceChildRange(start: number, count: number, children: readonly IBlot[]): void {
+    if (children.length <= 4096) this._children.splice(start, count, ...children)
+    else this._children = [...this._children.slice(0, start), ...children, ...this._children.slice(start + count)]
+  }
+
+  private _indexWithin(children: IBlot[], blot: IBlot): number {
+    return children === this._children ? this._childIndexOf(blot) : children.indexOf(blot)
+  }
+
+  private _commitSingleLine(previous: LogicalSourceLine, children: IBlot[], childStart: number): void {
+    // Inserting immediately before LF can reuse its unformatted TextBlot.
+    // Preserve the canonical independent-LF invariant within this row only.
+    children = this._splitLogicalChildren(children)
+    this._replaceChildRange(childStart, previous.children.length, children)
+    this._invalidateIndex()
+    if (!this._lineDom!.syncLine(previous.children, children, this._leadingGap)) {
+      this._syncLogicalLines()
+      return
+    }
+    this._lineIndex!.replaceLine(previous, children)
+    this._lineIndexNeedsRebuild = false
+  }
+
+  private _tryApplySingleLineDelta(ops: DeltaOperation[]): boolean {
+    const index = this._lineTrusted ? this._lineIndex : undefined
+    if (!index) return false
+    let oldCursor = 0
+    let first = Infinity
+    let last = -Infinity
+    for (const op of ops) {
+      if (op.retain != null) {
+        if (op.attributes && op.retain) { first = Math.min(first, oldCursor); last = oldCursor + op.retain }
+        oldCursor += op.retain
+      } else if (op.delete != null) {
+        if (op.delete) { first = Math.min(first, oldCursor); last = oldCursor + op.delete }
+        oldCursor += op.delete
+      } else if (op.insert != null) {
+        if (typeof op.insert !== 'string' || op.insert.includes('\n')) return false
+        first = Math.min(first, oldCursor)
+        last = Math.max(last, oldCursor)
+      }
+    }
+    if (!Number.isFinite(first) || first < 0 || last > index.textLength) return false
+    let line: LogicalSourceLine | undefined
+    if (first === index.textLength) line = index.sourceLines().at(-1)
+    else {
+      const found = index.findByOffset(first)
+      if (found) {
+        const next = found.localOffset === found.blot.length ? index.nextLeaf(found.blot) : undefined
+        line = index.lineOf(next ?? found.blot)
+      }
+    }
+    if (!line || line.leaves.some(leaf => leaf instanceof EmbedBlot)) return false
+    const position = index.locate(line)!
+    const editableEnd = position.modelOffset + line.length - (line.text.endsWith('\n') ? 1 : 0)
+    if (first < position.modelOffset || last > editableEnd) return false
+    const localOps: DeltaOperation[] = []
+    let skip = position.modelOffset
+    for (const op of ops) {
+      if (skip) {
+        if (op.retain == null || op.attributes || op.retain < skip) return false
+        const retain = op.retain - skip
+        skip = 0
+        if (retain) localOps.push({...op, retain})
+      } else localOps.push(op)
+    }
+    const children = [...line.children]
+    this._applyDeltaToChildren(localOps, children)
+    this._commitSingleLine(line, children, position.childStart)
+    return true
+  }
+
+  private _trySpliceSingleLine(startIdx: number, deleteCount: number, newBlots: (TextBlot | EmbedBlot)[]): boolean {
+    const index = this._lineTrusted ? this._lineIndex : undefined
+    if (!index || startIdx < 0 || deleteCount < 0 || newBlots.some(leaf => leaf instanceof EmbedBlot)) return false
+    const line = index.lineAtLeafIndex(startIdx)
+    const position = index.locate(line)!
+    const localStart = startIdx - position.leafStart
+    if (localStart < 0 || localStart + deleteCount > line.leaves.length ||
+      line.leaves.some(leaf => leaf instanceof EmbedBlot)) return false
+    const removed = new Set<IBlot>(line.leaves.slice(localStart, localStart + deleteCount))
+    const children = line.children.filter(child => !removed.has(child))
+    const after = line.leaves[localStart + deleteCount]
+    let insertAt = after ? children.indexOf(after) : children.findIndex(child => child.type === BlotType.Break)
+    if (insertAt < 0) insertAt = children.length
+    const next = [...children.slice(0, insertAt), ...newBlots, ...children.slice(insertAt)]
+    const oldBreak = line.leaves.at(-1)
+    const nextLeaves = this._filterLeaves(next)
+    let breaks = 0
+    for (const child of nextLeaves) {
+      const text = (child as TextBlot).text
+      if (text.includes('\n')) {
+        if (text !== '\n' || child !== nextLeaves.at(-1)) return false
+        breaks++
+      }
+    }
+    const hadBreak = oldBreak instanceof TextBlot && oldBreak.text === '\n'
+    if (breaks !== (hadBreak ? 1 : 0)) return false
+    if (hadBreak && (oldBreak.attrs?.['s:display'] === 'none') !==
+      ((nextLeaves.at(-1) as TextBlot).attrs?.['s:display'] === 'none')) return false
+    // A Cursor at the next source line's start precedes the original global
+    // insertion anchor; preserve that uncommon ordering with the full path.
+    const nextLine = index.sourceLines()[position.lineIndex + 1]
+    if (!after && nextLine && nextLine.children[0] !== nextLine.leaves[0]) return false
+    const anchor = after?.domNode ?? children.find(child => child.type === BlotType.Break)?.domNode
+      ?? nextLine?.leaves[0]?.domNode ?? null
+    for (const child of removed) child.detach()
+    for (const child of newBlots) {
+      child.parent = this
+      ;(anchor?.parentNode ?? this.domNode).insertBefore(child.domNode, anchor)
+    }
+    this._commitSingleLine(line, next, position.childStart)
+    return true
+  }
 
   private _createLeafBlot(delta: DeltaInsert): TextBlot | EmbedBlot {
     if (typeof delta.insert === 'string') {
@@ -553,17 +831,17 @@ export class ScrollBlot implements IScrollBlot {
     return new EmbedBlot(embedView, delta.attributes, converter, delta as DeltaInsertEmbed)
   }
 
-  private _insertBlotAt(modelOffset: number, newBlot: TextBlot | EmbedBlot) {
+  private _insertBlotAt(modelOffset: number, newBlot: TextBlot | EmbedBlot, children: IBlot[]) {
     newBlot.parent = this
-    const leaves = this._filterLeaves()
+    const leaves = this._filterLeaves(children)
 
     if (leaves.length === 0) {
-      const breakIdx = this._children.findIndex(b => b.type === BlotType.Break)
+      const breakIdx = children.findIndex(b => b.type === BlotType.Break)
       if (breakIdx >= 0) {
-        this._children.splice(breakIdx, 0, newBlot)
-        this._children[breakIdx + 1].domNode.parentNode!.insertBefore(newBlot.domNode, this._children[breakIdx + 1].domNode)
+        children.splice(breakIdx, 0, newBlot)
+        children[breakIdx + 1].domNode.parentNode!.insertBefore(newBlot.domNode, children[breakIdx + 1].domNode)
       } else {
-        this._children.push(newBlot)
+        children.push(newBlot)
         this.domNode.appendChild(newBlot.domNode)
       }
       return
@@ -576,24 +854,24 @@ export class ScrollBlot implements IScrollBlot {
         const localOffset = modelOffset - pos
         if (localOffset === 0) {
           leaf.domNode.parentNode!.insertBefore(newBlot.domNode, leaf.domNode)
-          const childIdx = this._childIndexOf(leaf)
-          this._children.splice(childIdx, 0, newBlot)
+          const childIdx = this._indexWithin(children, leaf)
+          children.splice(childIdx, 0, newBlot)
           return
         }
 
         if (leaf.type === BlotType.Text && localOffset < leaf.length) {
           const right = leaf.split(localOffset)
           right.parent = this
-          const childIdx = this._childIndexOf(leaf)
+          const childIdx = this._indexWithin(children, leaf)
           leaf.domNode.parentNode!.insertBefore(newBlot.domNode, leaf.domNode.nextSibling)
           leaf.domNode.parentNode!.insertBefore(right.domNode, newBlot.domNode.nextSibling)
-          this._children.splice(childIdx + 1, 0, newBlot, right)
+          children.splice(childIdx + 1, 0, newBlot, right)
           return
         }
 
         leaf.domNode.parentNode!.insertBefore(newBlot.domNode, leaf.domNode.nextSibling)
-        const childIdx = this._childIndexOf(leaf)
-        this._children.splice(childIdx + 1, 0, newBlot)
+        const childIdx = this._indexWithin(children, leaf)
+        children.splice(childIdx + 1, 0, newBlot)
         return
       }
       pos += leaf.length
@@ -601,14 +879,14 @@ export class ScrollBlot implements IScrollBlot {
 
     const lastLeaf = leaves[leaves.length - 1]
     lastLeaf.domNode.parentNode!.insertBefore(newBlot.domNode, lastLeaf.domNode.nextSibling)
-    const childIdx = this._childIndexOf(lastLeaf)
-    this._children.splice(childIdx + 1, 0, newBlot)
+    const childIdx = this._indexWithin(children, lastLeaf)
+    children.splice(childIdx + 1, 0, newBlot)
   }
 
-  private _deleteRange(startOffset: number, length: number) {
+  private _deleteRange(startOffset: number, length: number, children: IBlot[]) {
     let remaining = length
     let pos = 0
-    const leaves = this._filterLeaves()
+    const leaves = this._filterLeaves(children)
 
     for (let i = 0; i < leaves.length && remaining > 0; i++) {
       const leaf = leaves[i]
@@ -623,9 +901,9 @@ export class ScrollBlot implements IScrollBlot {
       if (localStart === 0 && canDelete >= leaf.length) {
         remaining -= leaf.length
         pos += leaf.length
-        const childIdx = this._childIndexOf(leaf)
+        const childIdx = this._indexWithin(children, leaf)
         if (childIdx >= 0) {
-          this._children.splice(childIdx, 1)
+          children.splice(childIdx, 1)
           leaf.detach()
         }
         continue
@@ -639,10 +917,10 @@ export class ScrollBlot implements IScrollBlot {
     }
   }
 
-  private _formatRange(startOffset: number, length: number, attrs: IInlineNodeAttrs) {
+  private _formatRange(startOffset: number, length: number, attrs: IInlineNodeAttrs, children: IBlot[]) {
     let remaining = length
     let pos = 0
-    for (const leaf of this._filterLeaves()) {
+    for (const leaf of this._filterLeaves(children)) {
       const origLen = leaf.length // capture before potential split
       if (pos + origLen <= startOffset) {
         pos += origLen
@@ -659,9 +937,9 @@ export class ScrollBlot implements IScrollBlot {
       } else if (leaf instanceof TextBlot) {
         const right = leaf.split(localStart)
         right.parent = this
-        const childIdx = this._childIndexOf(leaf)
+        const childIdx = this._indexWithin(children, leaf)
         leaf.domNode.parentNode!.insertBefore(right.domNode, leaf.domNode.nextSibling)
-        this._children.splice(childIdx + 1, 0, right)
+        children.splice(childIdx + 1, 0, right)
 
         if (canFormat >= right.length) {
           right.format(attrs)
@@ -669,9 +947,9 @@ export class ScrollBlot implements IScrollBlot {
         } else {
           const tail = right.split(canFormat)
           tail.parent = this
-          const rightIdx = this._childIndexOf(right)
+          const rightIdx = this._indexWithin(children, right)
           right.domNode.parentNode!.insertBefore(tail.domNode, right.domNode.nextSibling)
-          this._children.splice(rightIdx + 1, 0, tail)
+          children.splice(rightIdx + 1, 0, tail)
           right.format(attrs)
           remaining -= canFormat
         }
@@ -691,22 +969,22 @@ export class ScrollBlot implements IScrollBlot {
     return keysA.every(k => (a as any)[k] === (b as any)[k])
   }
 
-  private _cleanupEmptyLeaves() {
-    for (let i = this._children.length - 1; i >= 0; i--) {
-      const child = this._children[i]
+  private _cleanupEmptyLeaves(children: IBlot[]) {
+    for (let i = children.length - 1; i >= 0; i--) {
+      const child = children[i]
       if (child.type === BlotType.Text && child.length === 0) {
         child.detach()
-        this._children.splice(i, 1)
+        children.splice(i, 1)
       }
     }
     // Merge adjacent TextBlots with matching attributes
-    for (let i = 0; i < this._children.length - 1; i++) {
-      const cur = this._children[i]
-      const next = this._children[i + 1]
+    for (let i = 0; i < children.length - 1; i++) {
+      const cur = children[i]
+      const next = children[i + 1]
       if (cur instanceof TextBlot && next instanceof TextBlot &&
         (!this._lineDom || (!cur.text.includes('\n') && !next.text.includes('\n'))) &&
         (cur as TextBlot).mergeWith(next as TextBlot)) {
-        this._children.splice(i + 1, 1)
+        children.splice(i + 1, 1)
         i--
       }
     }
@@ -714,9 +992,18 @@ export class ScrollBlot implements IScrollBlot {
 
   private _syncLogicalLines(): void {
     if (!this._lineDom) return
+    const children = this._splitLogicalChildren(this._children)
+    if (children !== this._children) {
+      this._children = children
+      this._invalidateIndex()
+    }
+    this._lineDom.sync(this._children, this._leadingGap)
+  }
+
+  private _splitLogicalChildren(input: IBlot[]): IBlot[] {
     const children: IBlot[] = []
     let split = false
-    for (const child of this._children) {
+    for (const child of input) {
       if (!(child instanceof TextBlot) || child.text === '\n' || !child.text.includes('\n')) {
         children.push(child)
         continue
@@ -734,10 +1021,6 @@ export class ScrollBlot implements IScrollBlot {
       }
       split = true
     }
-    if (split) {
-      this._children = children
-      this._invalidateIndex()
-    }
-    this._lineDom.sync(this._children, this._leadingGap)
+    return split ? children : input
   }
 }

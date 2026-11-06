@@ -169,4 +169,102 @@ describe('InlinePositionMapper canonical code lines', () => {
     expect(mapper.domPointToModelPoint(container, point.node, point.offset)).toBe(1)
     expect(mapper.domPointToModelPoint(container, container, 2)).toBe(1)
   })
+
+  it('keeps fragment wrappers and pagination gaps out of model offsets', () => {
+    build([
+      {insert: 'ab', attributes: {color: 'red'}},
+      {insert: 'c', attributes: {color: 'blue'}},
+      {insert: 'de', attributes: {bold: true}},
+    ], false)
+    const [first, second, third] = scroll.leaves as TextBlot[]
+    const group = document.createElement('span')
+    group.setAttribute('data-bc-inline-fragment-group', '')
+    const fragment = document.createElement('span')
+    fragment.setAttribute('data-bc-inline-fragment-side', 'left')
+    container.insertBefore(group, first.domNode)
+    fragment.append(first.domNode, second.domNode)
+    group.appendChild(fragment)
+    const pageGap = document.createElement('span')
+    pageGap.setAttribute('data-bc-inline-pagination-gap', '')
+    container.insertBefore(pageGap, third.domNode)
+
+    expect([0, 1, 2, 3, 4, 5].map(offset => mapper.domPointToModelPoint(container, container, offset)))
+      .toEqual([0, 0, 3, 3, 5, 5])
+    expect(mapper.domPointToModelPoint(container, second.textNode, 1)).toBe(3)
+    expect(mapper.modelPointToDomPoint(container, 3)).toEqual({node: second.textNode, offset: 1})
+    expect(mapper.modelPointToDomPoint(container, 4)).toEqual({node: third.textNode, offset: 1})
+  })
+
+  it('refreshes offsets after text, attribute and line-structure mutations', () => {
+    build([{insert: 'ab\ncd\nef'}])
+    // Warm any derived index before each mutation so stale offsets are exposed.
+    const assertRoundTrips = (text: string) => {
+      for (let index = 0; index <= text.length; index++) {
+        const point = mapper.modelPointToDomPoint(container, index)
+        expect(mapper.domPointToModelPoint(container, point.node, point.offset))
+          .withContext(`${JSON.stringify(text)} at ${index}`).toBe(index)
+      }
+    }
+    assertRoundTrips('ab\ncd\nef')
+    scroll.applyDelta([{retain: 1}, {insert: 'XY'}])
+    assertRoundTrips('aXYb\ncd\nef')
+    scroll.applyDelta([{retain: 2}, {retain: 5, attributes: {color: 'red'}}])
+    assertRoundTrips('aXYb\ncd\nef')
+    scroll.applyDelta([{retain: 3}, {delete: 4}])
+    assertRoundTrips('aXY\nef')
+    scroll.applyDelta([{retain: 3}, {insert: '\n'}])
+    assertRoundTrips('aXY\n\nef')
+  })
+
+  it('maps indexed leaf points without materializing the flat leaf collection', () => {
+    build([{insert: Array.from({length: 64}, (_, index) => `line${index}`).join('\n')}])
+    const last = scroll.leaves.at(-1) as TextBlot
+    const end = scroll.textLength
+    spyOnProperty(scroll, 'leaves', 'get').and.throwError('Unexpected full leaf traversal')
+
+    expect(mapper.modelPointToDomPoint(container, end)).toEqual({node: last.textNode, offset: last.length})
+    expect(mapper.domPointToModelPoint(container, last.textNode, last.length)).toBe(end)
+  })
+
+  it('preserves model identity when native DOM temporarily wraps a canonical leaf', () => {
+    const lines = build([{insert: 'a\nbc'}])
+    const last = scroll.leaves.at(-1) as TextBlot
+    const wrapper = document.createElement('span')
+    lines[1].insertBefore(wrapper, last.domNode)
+    wrapper.appendChild(last.domNode)
+
+    expect(mapper.domPointToModelPoint(container, last.textNode, 1)).toBe(3)
+    expect(mapper.modelPointToDomPoint(container, 3)).toEqual({node: last.textNode, offset: 1})
+    expect(mapper.domPointToModelPoint(container, lines[1], 0)).toBe(2)
+    expect(mapper.domPointToModelPoint(container, lines[1], 1)).toBe(4)
+    const foreign = last.domNode.cloneNode(true)
+    lines[1].appendChild(foreign)
+    expect(() => mapper.domPointToModelPoint(container, foreign, 0)).toThrow()
+  })
+
+  it('preserves indexed embed gaps at logical-line boundaries', () => {
+    const converter: EmbedConverter = {
+      toView: () => document.createElement('span'),
+      toDelta: () => ({insert: {test: 'v'}}),
+    }
+    scroll = new ScrollBlot(container, new Map([['test', converter]]), {lineContainerTag: 'c-line'})
+    scroll.build([{insert: 'a\n'}, {insert: {test: 'v'}}, {insert: '\nb'}])
+    mapper.setScrollBlot(scroll)
+
+    for (let index = 0; index <= 5; index++) {
+      for (const affinity of ['before', 'after'] as const) {
+        const point = mapper.modelPointToDomPoint(container, index, affinity)
+        expect(mapper.domPointToModelPoint(container, point.node, point.offset))
+          .withContext(`embed model index ${index}, affinity ${affinity}`).toBe(index)
+      }
+    }
+  })
+
+  it('rejects offsets beyond the final leaf instead of returning an invalid DOM point', () => {
+    build([{insert: 'a\nb'}])
+
+    expect(() => mapper.modelPointToDomPoint(container, 4)).toThrow()
+    expect(() => mapper.modelPointToDomPoint(container, Number.NaN)).toThrow()
+    expect(() => mapper.modelPointToDomPoint(container, Number.POSITIVE_INFINITY)).toThrow()
+  })
 })

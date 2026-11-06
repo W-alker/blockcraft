@@ -474,6 +474,84 @@ describe("CodeInlineRuntime", () => {
       .toBe('one\rtwo\r\nthree\nfour');
   });
 
+  for (const trailingLF of ['', '\n']) {
+    it(`reuses indexed source lines for an ordinary highlight (tail ${JSON.stringify(trailingLF)})`, async () => {
+      const {runtime, container} = makeRuntime({lang: 'text'});
+      (runtime as any)._tokenize.and.callThrough();
+      const source = Array.from({length: 200}, (_, i) => `line ${i}`).join('\n') + trailingLF;
+      await runtime.renderCode(() => source);
+      const first = container.firstElementChild;
+      const last = container.lastElementChild;
+      const regroup = spyOn<any>(runtime, '_groupBlotsByLine').and.callThrough();
+      const offset = source.indexOf('line 100') + 5;
+      const next = source.slice(0, offset) + '中文😀' + source.slice(offset);
+      runtime.applyDelta([{retain: offset}, {insert: '中文😀'}]);
+
+      await runtime.diffHighLight([], {
+        block: {id: 'code', textContent: () => next, setInlineRange: () => undefined},
+        selectionValue: null,
+        normalizeRange: () => { throw new Error('no selection'); },
+      });
+
+      expect(regroup).not.toHaveBeenCalled();
+      expect(Array.from(container.querySelectorAll('c-text'), node => node.textContent).join('')).toBe(next);
+      expect(runtime.textLength).toBe(next.length);
+      expect(container.firstElementChild).toBe(first);
+      expect(container.lastElementChild).toBe(last);
+    });
+  }
+
+  it('rejects cached source lines after same-length native pollution outside the edited line', async () => {
+    const {runtime, container} = makeRuntime({lang: 'text'});
+    (runtime as any)._tokenize.and.callThrough();
+    const source = 'first\nmiddle\nlast';
+    await runtime.renderCode(() => source);
+    runtime.applyDelta([{retain: 8}, {insert: '!'}]);
+    container.querySelector('c-text')!.firstChild!.textContent = 'wrong';
+    const next = 'first\nmi!ddle\nlast';
+
+    await runtime.diffHighLight([], {
+      block: {id: 'code', textContent: () => next, setInlineRange: () => undefined},
+      selectionValue: null,
+      normalizeRange: () => { throw new Error('no selection'); },
+    });
+
+    expect(Array.from(container.querySelectorAll('c-text'), node => node.textContent).join('')).toBe(next);
+  });
+
+  it('keeps hidden-LF source lines distinct when they share one display row', async () => {
+    const {runtime, container} = makeRuntime({lang: 'text'});
+    (runtime as any)._tokenize.and.callThrough();
+    let model: DeltaInsertText[] = [
+      {insert: 'left'},
+      {insert: '\n', attributes: {'s:display': 'none'}},
+      {insert: 'middle\nlast'},
+    ];
+    await runtime.renderCode(() => 'left\nmiddle\nlast', () => model);
+    const left = container.querySelector('c-text');
+    const firstRow = container.firstElementChild;
+    const lastRow = container.lastElementChild;
+    runtime.applyDelta([{retain: 6}, {insert: '!'}]);
+    model = [...model.slice(0, 2), {insert: 'm!iddle\nlast'}];
+
+    await runtime.diffHighLight([], {
+      block: {
+        id: 'code', textContent: () => 'left\nm!iddle\nlast', textDeltas: () => model,
+        setInlineRange: () => undefined,
+      },
+      selectionValue: null,
+      normalizeRange: () => { throw new Error('no selection'); },
+    });
+
+    expect(container.children.length).toBe(2);
+    expect(container.querySelector('c-text')).toBe(left);
+    expect(container.firstElementChild).toBe(firstRow);
+    expect(container.lastElementChild).toBe(lastRow);
+    expect(Array.from(container.querySelectorAll('c-text'), node => node.textContent).join(''))
+      .toBe('left\nm!iddle\nlast');
+    expect(container.querySelector<HTMLElement>('c-element[style*="display"]')!.style.display).toBe('none');
+  });
+
   it("keeps bare CR text from consuming a later CRLF delimiter", () => {
     const deltas = flatShikiTokens([
       [{content: 'one\rtwo', offset: 0}],

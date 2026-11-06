@@ -59,6 +59,19 @@ class NetworkOracle {
 }
 
 async function prepareTransport(page: Page, room: string): Promise<void> {
+  // 初始化 demo 会启动外链预览；固定该无关响应，避免其延迟跨域错误
+  // 在 demo 已删除后污染代码协同的 pageerror 断言。真实协同传输不拦截。
+  await page.route('https://affine-worker.toeverything.workers.dev/api/worker/link-preview', route =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      headers: {
+        'access-control-allow-origin': '*',
+        'access-control-allow-methods': 'POST, OPTIONS',
+        'access-control-allow-headers': 'Content-Type',
+      },
+      body: '{}',
+    }));
   // 只关闭开发服务 HMR，真实协同连接仍由现有 provider 建立。
   await page.routeWebSocket(url => url.port === '8081', socket => socket.close());
   await page.addInitScript(({port, roomName}) => {

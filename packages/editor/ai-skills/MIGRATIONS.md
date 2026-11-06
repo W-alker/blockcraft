@@ -13,6 +13,15 @@
 - Migration Recipe: 无需迁移。宿主不要调用包内租约或直接修改 CursorBlot；版本号保持用户定义。
 - Affected ai-skills files: `blockcraft-input.md`、`blockcraft-inline.md`。
 
+## 未发布 — 2026-11-06：代码块源逻辑行索引
+
+- Severity: patch（内部索引架构调整，无外部迁移要求；版本由用户决定）。
+- What changed / Why: 代码块在 Inline 内维护源逻辑行及位置索引，普通单行输入和高亮复用未改行记录，减少全量叶子分组、DOM 读取和前缀求和。缓存基于实际叶子，原生 DOM 变动同步使信任失效；未知结构和跨行操作保留完整路径。
+- Architecture: 包内 `logical-line-access.ts` 连接 Mapper、Code 和一致性检查；源行按全部 LF 切分，显示行仍按可见 LF 切分。Blot 所有权、Y.Text、UTF-16 坐标和公开 API 保持，没有虚拟渲染或新的宿主配置。
+- Behavior Changes: 无预期交互或数据行为变化。全文模型一致性比较、IME 异常恢复、协同与撤销重做语义保持；普通段落、embed、Mermaid 平面路径不切换到代码行快速路径。
+- Migration Recipe: 无需迁移。宿主仍通过 runtime mapper 处理位置，不直接依赖包内索引或修改受管 DOM。
+- Affected ai-skills files: `blockcraft-inline.md`。
+
 ## 未发布 — 2026-11-06：代码块 c-line 与逻辑行增量高亮
 
 - Severity: patch（渲染实现调整，版本由用户决定）。

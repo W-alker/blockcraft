@@ -15,6 +15,7 @@ import type {INormalizedEndpoints} from "../../framework/modules/selection/norma
 import {IncrementalCodeTokenizer} from './incremental-code-tokenizer';
 import {CodeTokenProjection, type CodeTokenLine} from './code-token-projection';
 import {CodeLineIntegrity} from './code-line-integrity';
+import {getLogicalLineAccess} from '../../framework/block-std/inline/blot/logical-line-access';
 
 // ─── Token utils ───
 
@@ -599,19 +600,28 @@ export class CodeInlineRuntime extends InlineRuntime {
     newFPs: string[],
     reusable?: (blots: (TextBlot | EmbedBlot)[]) => boolean,
   ) {
-    const blotLines = this._groupBlotsByLine()
+    // Native recovery still checks every actual row. Ordinary highlighting can
+    // reuse the source-line projection while its DOM mutation baseline is valid.
+    const indexed = reusable ? undefined : getLogicalLineAccess(this.scrollBlot)
+    const sourceLines = indexed?.sourceLines()
+    const blotLines = sourceLines ? undefined : this._groupBlotsByLine()
     const oldFPs = this._lineFPs
-    const blotLen = blotLines.length
+    // A trailing LF has a Break-only source row, but no corresponding token row.
+    const blotLen = sourceLines
+      ? sourceLines.length - (sourceLines.at(-1)?.leaves.length === 0 ? 1 : 0)
+      : blotLines!.length
     const newLen = newLines.length
     const oldLen = oldFPs.length
+    const lineText = (index: number) => sourceLines
+      ? sourceLines[index].text : this._blotLineText(blotLines![index])
 
     // Front trim
     const prefixMax = Math.min(blotLen, newLen, oldLen)
     let prefix = 0
     while (prefix < prefixMax) {
       if (oldFPs[prefix] !== newFPs[prefix]) break
-      if (reusable && !reusable(blotLines[prefix])) break
-      if (this._blotLineText(blotLines[prefix]) !== newLines[prefix].text) break
+      if (reusable && !reusable(blotLines![prefix])) break
+      if (lineText(prefix) !== newLines[prefix].text) break
       prefix++
     }
 
@@ -623,22 +633,27 @@ export class CodeInlineRuntime extends InlineRuntime {
       const ni = newLen - 1 - suffix
       const oi = oldLen - 1 - suffix
       if (oldFPs[oi] !== newFPs[ni]) break
-      if (reusable && !reusable(blotLines[bi])) break
-      if (this._blotLineText(blotLines[bi]) !== newLines[ni].text) break
+      if (reusable && !reusable(blotLines![bi])) break
+      if (lineText(bi) !== newLines[ni].text) break
       suffix++
     }
 
     if (prefix + suffix >= blotLen && prefix + suffix >= newLen) return
 
-    // Find the leaf indices in the flat leaves array
-    const flatLeaves = this.scrollBlot.leaves
+    // Resolve the changed range without materializing the flat leaf index.
     let startLeafIdx = 0
-    for (let i = 0; i < prefix; i++) {
-      startLeafIdx += blotLines[i].length
-    }
     let deleteCount = 0
-    for (let i = prefix; i < blotLen - suffix; i++) {
-      deleteCount += blotLines[i].length
+    if (sourceLines?.length) {
+      const leafStart = (index: number) => {
+        const line = sourceLines[Math.min(index, sourceLines.length - 1)]
+        return indexed!.locate(line)!.leafStart +
+          (index === sourceLines.length ? line.leaves.length : 0)
+      }
+      startLeafIdx = leafStart(prefix)
+      deleteCount = leafStart(blotLen - suffix) - startLeafIdx
+    } else {
+      for (let i = 0; i < prefix; i++) startLeafIdx += blotLines![i].length
+      for (let i = prefix; i < blotLen - suffix; i++) deleteCount += blotLines![i].length
     }
 
     // Create new blots from the changed token lines

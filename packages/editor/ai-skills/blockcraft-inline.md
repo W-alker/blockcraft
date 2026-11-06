@@ -98,7 +98,7 @@ unmarked/final projection restores normal syntax colors.
 纯文本无需初始化高亮器；Mermaid 保留原有完整解析与围栏兼容策略。
 缓存不包含用户颜色或修订归因，这些展示属性仍从当前模型按有序区间线性合并。
 
-公开 `InlineModel`、一个块一个 `Y.Text`、扁平 Blot 索引和块内 UTF-16 选区坐标不变。
+公开 `InlineModel`、一个块一个 `Y.Text`、扁平 Blot 所有权和块内 UTF-16 选区坐标不变。
 代码块在 `InlineRuntime` / `ScrollBlot` 的内部选项中启用 `lineContainerTag:'c-line'`，
 由 `LogicalLineDom` 持久包裹每个显示逻辑行；普通段落及 `withLineBreak:false` 的 Mermaid 保持平面 DOM。
 LF 保留为真实文本，不再生成 `d:lineBreak` / `data-line-break` 行号标记。
@@ -107,6 +107,13 @@ LF 保留为真实文本，不再生成 `d:lineBreak` / `data-line-break` 行号
 增量输入及高亮保留未改变的行节点；canonical mutation 和分页撤销识别已注册的行容器，
 不能把它们拆平。代码块仍不可跨页拆分。本选项属于包内实现，宿主不应直接创建或修改行容器。
 `spliceLeaves` 批量更新叶子数组并保留零长 Cursor/Break，大片语法传播不再逐叶执行数组 splice。
+行模式另由 Inline 维护派生的源逻辑行索引；源行按所有 LF 分段，不能与按可见 LF 分段的显示行混用。
+单源行且不改变换行结构的输入和 token 替换，仅更新该行索引及对应显示行；跨行和布局变更保留完整路径。
+包内 `logical-line-access.ts` 为 Mapper、Code 和一致性检查提供可信叶子位置、源行及纯文本投影，
+不属于宿主扩展点，也不写入 Yjs。访问前同步消费 MutationObserver 待处理记录；未知原生文本、属性或结构
+变动使缓存失效并恢复扫描路径，规范恢复后重新建立基线。高亮比较复用可信行文本，原生 IME 完整性恢复仍检查实际 DOM。
+EditableBlock 的一致性检查仍严格比较当前完整 Y.Text 与实际投影全文；纯文本行缓存只减少逐叶读取 DOM，
+不能以相同长度或局部 delta 一致替代全文校验。平面段落、embed 和修订重建沿用原有路径。
 同步模型更新及语言/主题变化会立即使在途高亮任务失效；写回前检查 IME 和生命周期并读取最新双端选区。
 代码块 IME 提交/取消时，若已有语法引擎及行基线，同步 `render()` 按完整模型快照恢复变化范围，
 保留前后未变行和叶子；后续帧检查原生尾部输入，不重复全量重建。复用还要求叶子结构和展示属性一致，

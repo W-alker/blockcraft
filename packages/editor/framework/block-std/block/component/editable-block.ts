@@ -5,6 +5,7 @@ import * as Y from 'yjs'
 import { DeltaInsert, DeltaOperation, IInlineNodeAttrs } from "../../types";
 import { INLINE_CONTAINER_CLASS, InlineManager, TextBlot, BlotType } from "../../inline";
 import { InlineRuntime } from "../../inline/runtime/inline-runtime";
+import {getLogicalLineAccess} from '../../inline/blot/logical-line-access';
 import { Subject, takeUntil } from "rxjs";
 import {normalizeParagraphTextDefaults, paragraphAlignmentStyles} from '../../typography';
 import {BlockReadonlyOperation} from "../../../doc/block-readonly.types";
@@ -322,26 +323,33 @@ export class EditableBlockComponent<Model extends EditableBlockNative = Editable
    * Verify that the blot tree content matches the Yjs delta model.
    * Returns true if consistent, false if mismatch detected.
    *
-   * Uses fast O(1) length comparison. Falls back to full text comparison
-   * only when length matches but content might differ (rare edge case).
+   * Always compares complete content, including same-length divergences.
+   * Plain code lines may supply a trusted projection of their actual leaves;
+   * native DOM changes revoke that cache and retain the existing DOM read path.
    */
   private _verifyBlotConsistency(): boolean {
-    // Fast path: O(1) length comparison covers >99% of real mismatches
-    if (this.yText.length !== this._runtime.scrollBlot.textLength) {
+    const scroll = this._runtime.scrollBlot
+    if (this.yText.length !== scroll.textLength) {
       return false
     }
 
     // Full path: compare text content to catch same-length divergences
     const deltas = this.yText.toDelta() as DeltaInsert[]
-    const leaves = this._runtime.scrollBlot.leaves
 
     let expectedText = ''
     for (const d of deltas) {
       expectedText += typeof d.insert === 'string' ? d.insert : '\ufffc'
     }
 
+    // Revision projections are handled by _applyDeltaToView's full-render
+    // branch before reaching this check. Other inline surfaces keep DOM reads.
+    const trustedText = this.plainTextOnly
+      ? getLogicalLineAccess(scroll)?.trustedPlainText()
+      : undefined
+    if (trustedText !== undefined) return expectedText === trustedText
+
     let actualText = ''
-    for (const leaf of leaves) {
+    for (const leaf of scroll.leaves) {
       if (leaf.type === BlotType.Text) {
         actualText += (leaf as TextBlot).text
       } else if (leaf.type === BlotType.Embed) {

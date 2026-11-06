@@ -5,6 +5,7 @@ import {ScrollBlot} from "../blot/scroll-blot";
 import {TextBlot} from "../blot/text-blot";
 import {EmbedBlot} from "../blot/embed-blot";
 import {BlotType} from "../blot/blot";
+import {getLogicalLineAccess} from "../blot/logical-line-access";
 
 /**
  * Affinity for caret positioning at embed boundaries.
@@ -26,9 +27,9 @@ export interface DomToModelOptions {
  * Bidirectional mapping between model character offsets and DOM points
  * within an inline container.
  *
- * Phase 2 implementation: traverses the ScrollBlot tree instead of
- * querying the DOM with `querySelectorAll`. This makes position resolution
- * independent of transient DOM state and avoids O(n) DOM scans.
+ * Logical-line surfaces use their owned Blot index for leaf lookup and model
+ * offsets. Unindexed surfaces and transient DOM structures retain the tree
+ * traversal paths; container boundaries follow actual DOM ancestry.
  *
  * The mapper holds a reference to its owning ScrollBlot, set at construction
  * time by InlineRuntime.
@@ -86,15 +87,28 @@ export class InlinePositionMapper {
     if (sb.isCanonicalLineContainer(node)) {
       return this._resolveLineOffset(node as HTMLElement, offset)
     }
-    const leaves = sb.leaves
-
     // Find the c-element this node belongs to
     const cElement = this._findCElement(node, container)
     if (!cElement) {
       throw new BlockCraftError(ErrorCode.SelectionError, 'DOM node not within inline container')
     }
 
+    const indexedBlot = getLogicalLineAccess(sb)?.blotFromDom(cElement)
+    if (indexedBlot) {
+      const modelOffset = sb.offsetOf(indexedBlot)
+      if (modelOffset >= 0) {
+        if (indexedBlot.type === BlotType.Cursor) return modelOffset
+        if (indexedBlot.type === BlotType.Break) return sb.textLength
+        if (indexedBlot.type === BlotType.Text || indexedBlot.type === BlotType.Embed) {
+          return modelOffset + this._computeLocalOffset(
+            indexedBlot as TextBlot | EmbedBlot, node, offset, cElement, options,
+          )
+        }
+      }
+    }
+
     // Match c-element to a blot
+    const leaves = sb.leaves
     const leafIndex = leaves.findIndex(b => b.domNode === cElement)
     if (leafIndex < 0) {
       // Might be a CursorBlot — check all children
@@ -126,8 +140,8 @@ export class InlinePositionMapper {
   /**
    * Convert a model character index to a DOM point.
    *
-   * Strategy: iterate blot tree leaves, decrement remaining offset
-   * until we land inside a blot.
+   * Use the logical-line index when available; other surfaces retain the
+   * preceding-leaf boundary convention of the tree traversal.
    */
   modelPointToDomPoint(
     container: HTMLElement,
@@ -142,45 +156,25 @@ export class InlinePositionMapper {
       return { node: container, offset: 0 }
     }
 
+    const sb = this.scrollBlot
+    const access = getLogicalLineAccess(sb)
+    if (access && Number.isFinite(index) && index > 0 && index <= sb.textLength) {
+      const found = sb.findByOffset(index)
+      if (found && found.localOffset >= 0 && found.localOffset <= found.blot.length) {
+        return this._leafPointToDomPoint(
+          found.blot, found.localOffset, _affinity,
+          () => access.nextLeaf(found.blot),
+        )
+      }
+    }
+
     const leaves = this.scrollBlot.leaves
     let remaining = index
 
     for (let leafIndex = 0; leafIndex < leaves.length; leafIndex++) {
       const leaf = leaves[leafIndex]
       if (remaining <= leaf.length) {
-        if (leaf.type === BlotType.Embed) {
-          if (remaining === 1) {
-            // Park after the marker, not before it. Native IME updates replace
-            // text relative to this DOM boundary; placing the caret at offset 0
-            // leaves the zero-width marker on the composing side and WebKit can
-            // append each intermediate composition value instead of replacing it.
-            const gap = (leaf as EmbedBlot).gapNode
-            const marker = gap.firstChild
-            if (marker?.nodeType === Node.TEXT_NODE) {
-              return {
-                node: marker,
-                offset: marker.textContent?.length ?? 0,
-              }
-            }
-            return {node: gap, offset: gap.childNodes.length}
-          }
-          // Before embed (remaining === 0 handled above)
-          const wrapper = (leaf as EmbedBlot).cElement.querySelector('span[contenteditable="false"]')!
-          return { node: wrapper, offset: 0 }
-        }
-
-        // TextBlot
-        if (
-          _affinity === 'after' && remaining === leaf.length &&
-          (leaf as TextBlot).text.endsWith('\n')
-        ) {
-          const nextLineStart = this._nextCanonicalLineStart(leaf as TextBlot, leaves[leafIndex + 1])
-          if (nextLineStart) return nextLineStart
-        }
-        return {
-          node: (leaf as TextBlot).textNode,
-          offset: remaining
-        }
+        return this._leafPointToDomPoint(leaf, remaining, _affinity, () => leaves[leafIndex + 1])
       }
       remaining -= leaf.length
     }
@@ -231,6 +225,34 @@ export class InlinePositionMapper {
   }
 
   // ─── Private helpers ───
+
+  private _leafPointToDomPoint(
+    leaf: TextBlot | EmbedBlot,
+    localOffset: number,
+    affinity: PointAffinity,
+    nextLeaf: () => TextBlot | EmbedBlot | undefined,
+  ): IDomPoint {
+    if (leaf.type === BlotType.Embed) {
+      if (localOffset === 1) {
+        // Keep the marker on the non-composing side of the caret. WebKit can
+        // otherwise append intermediate IME values instead of replacing them.
+        const gap = (leaf as EmbedBlot).gapNode
+        const marker = gap.firstChild
+        if (marker?.nodeType === Node.TEXT_NODE) {
+          return {node: marker, offset: marker.textContent?.length ?? 0}
+        }
+        return {node: gap, offset: gap.childNodes.length}
+      }
+      const wrapper = (leaf as EmbedBlot).cElement.querySelector('span[contenteditable="false"]')!
+      return {node: wrapper, offset: 0}
+    }
+
+    if (affinity === 'after' && localOffset === leaf.length && (leaf as TextBlot).text.endsWith('\n')) {
+      const nextLineStart = this._nextCanonicalLineStart(leaf as TextBlot, nextLeaf())
+      if (nextLineStart) return nextLineStart
+    }
+    return {node: (leaf as TextBlot).textNode, offset: localOffset}
+  }
 
   private _findCElement(node: Node, container: HTMLElement): HTMLElement | null {
     if (node instanceof HTMLElement && node.localName === INLINE_ELEMENT_TAG) {

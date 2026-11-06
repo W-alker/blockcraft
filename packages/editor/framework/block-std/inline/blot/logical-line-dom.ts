@@ -7,6 +7,7 @@ export class LogicalLineDom {
   private _registered = new Set<HTMLElement>()
   private _lineByNode = new WeakMap<Node, HTMLElement>()
   private _lineByEndNode = new WeakMap<Node, HTMLElement>()
+  private _nodesByLine = new Map<HTMLElement, readonly Node[]>()
 
   constructor(private readonly _container: HTMLElement, private readonly _tag: 'c-line') {}
 
@@ -15,6 +16,7 @@ export class LogicalLineDom {
     this._registered.clear()
     this._lineByNode = new WeakMap()
     this._lineByEndNode = new WeakMap()
+    this._nodesByLine.clear()
   }
 
   owns(node: Node): boolean {
@@ -63,6 +65,7 @@ export class LogicalLineDom {
     )
     const retained = new Set(nextLines)
     const nextEndNodes = new WeakMap<Node, HTMLElement>()
+    const nextNodes = new Map<HTMLElement, readonly Node[]>()
     let rootReference = this._container.firstChild
     for (let index = 0; index < groups.length; index++) {
       const line = nextLines[index]
@@ -76,6 +79,7 @@ export class LogicalLineDom {
       else this._container.insertBefore(line, rootReference)
 
       const nodes = groups[index]
+      nextNodes.set(line, nodes.slice())
       const end = nodes.at(-1)
       if (end) nextEndNodes.set(end, line)
       if (index === 0 && leadingGap) nodes.unshift(leadingGap)
@@ -92,6 +96,54 @@ export class LogicalLineDom {
     this._lines = nextLines
     this._registered = retained
     this._lineByEndNode = nextEndNodes
+    this._nodesByLine = nextNodes
+  }
+
+  /** Same source-line boundaries: only its containing display row can change. */
+  syncLine(previous: readonly IBlot[], next: readonly IBlot[], leadingGap: HTMLElement | null): boolean {
+    if (!previous.length) return false
+    const first = previous[0].domNode
+    const line = this._lineByNode.get(first)
+    const nodes = line && this._nodesByLine.get(line)
+    if (!line || !nodes || !this.owns(line)) return false
+    const start = nodes.indexOf(first)
+    if (start < 0 || previous.some((child, index) => nodes[start + index] !== child.domNode)) return false
+    const inserted = next.map(child => child.domNode)
+    const updated = [...nodes.slice(0, start), ...inserted, ...nodes.slice(start + previous.length)]
+    const previousSibling = start ? nodes[start - 1] : line === this._lines[0] ? leadingGap : null
+    let reference = previousSibling ? previousSibling.nextSibling : line.firstChild
+    for (const node of inserted) {
+      if (node === reference) reference = reference.nextSibling
+      else line.insertBefore(node, reference)
+      this._lineByNode.set(node, line)
+    }
+    const retained = new Set(inserted)
+    for (const child of previous) {
+      if (!retained.has(child.domNode)) this._lineByNode.delete(child.domNode)
+    }
+    const oldEnd = nodes.at(-1)
+    if (oldEnd) this._lineByEndNode.delete(oldEnd)
+    const end = updated.at(-1)
+    if (end) this._lineByEndNode.set(end, line)
+    this._nodesByLine.set(line, updated)
+    return true
+  }
+
+  /** Full recovery only: reject native siblings that canonical ordering ignores. */
+  hasOnlyManagedNodes(leadingGap: HTMLElement | null): boolean {
+    if (this._container.childNodes.length !== this._lines.length) return false
+    for (let index = 0; index < this._lines.length; index++) {
+      const line = this._lines[index]
+      if (this._container.childNodes[index] !== line) return false
+      const nodes = this._nodesByLine.get(line)!
+      const gapCount = index === 0 && leadingGap ? 1 : 0
+      if (line.childNodes.length !== nodes.length + gapCount) return false
+      if (gapCount && line.firstChild !== leadingGap) return false
+      for (let i = 0; i < nodes.length; i++) {
+        if (line.childNodes[i + gapCount] !== nodes[i]) return false
+      }
+    }
+    return true
   }
 
   hasCanonicalOrder(children: readonly IBlot[]): boolean {
