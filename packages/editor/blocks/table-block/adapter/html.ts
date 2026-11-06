@@ -4,6 +4,57 @@ import {BlockNodeType, generateId, IBlockSnapshot} from "../../../framework";
 import {TableCellBlockModel, TableCellBlockSchema} from "..";
 import {ParagraphBlockSchema} from "../../paragraph-block";
 import {BlockCraftError, ErrorCode, splitDeltaByLineBreak} from "../../../global";
+import type {Element} from 'hast';
+
+// Parse source hints once during import, without mounting DOM or measuring layout.
+function columnWidth(node: Element, tableWidth?: number): number | undefined {
+  let value = node.properties['width']
+  let important = false
+  for (const declaration of String(node.properties['style'] ?? '').split(';')) {
+    const match = /^\s*width\s*:\s*(.*?)\s*(!important)?\s*$/i.exec(declaration)
+    if (match && (!important || match[2])) {
+      value = match[1]
+      important = !!match[2]
+    }
+  }
+  const match = /^\s*(\d+(?:\.\d*)?|\.\d+)\s*(px|pt|pc|in|cm|mm|%)?\s*$/i.exec(String(value ?? ''))
+  if (!match) return undefined
+  const unit = (match[2] ?? 'px').toLowerCase()
+  const factors: Record<string, number> = {px: 1, pt: 96 / 72, pc: 16, in: 96, cm: 96 / 2.54, mm: 96 / 25.4}
+  const width = Number(match[1]) * (unit === '%' ? (tableWidth ?? NaN) / 100 : factors[unit])
+  return Number.isFinite(width) && width > 0 ? width : undefined
+}
+
+function tableColumnWidths(table: Element, columnCount: number): number[] | undefined {
+  const widths = Array<number>(columnCount).fill(120)
+  const tableWidth = columnWidth(table)
+  let index = 0
+  let hasWidth = false
+  const append = (node: Element, fallback?: number) => {
+    const width = columnWidth(node, tableWidth) ?? fallback
+    const span = Number(node.properties['span'] ?? 1)
+    const count = Math.min(columnCount - index, Number.isSafeInteger(span) && span > 0 ? span : 1)
+    for (let i = 0; i < count; i++, index++) {
+      if (width !== undefined) {
+        widths[index] = width
+        hasWidth = true
+      }
+    }
+  }
+  for (const group of HastUtils.getElementChildren(table)) {
+    if (group.tagName !== 'colgroup' || index >= columnCount) continue
+    const columns = HastUtils.getElementChildren(group).filter(node => node.tagName === 'col')
+    if (!columns.length) append(group)
+    else {
+      const fallback = columnWidth(group, tableWidth)
+      for (const col of columns) {
+        if (index >= columnCount) break
+        append(col, fallback)
+      }
+    }
+  }
+  return hasWidth ? widths : undefined
+}
 
 const createCells = (count = 1, hidden = false) => {
   return Array(count).fill(null).map(() => {
@@ -27,10 +78,7 @@ export const tableBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
           id: generateId(),
           nodeType: BlockNodeType.block,
           flavour: 'table',
-          // Only an explicit BlockCraft marker opts in. Ordinary HTML tables
-          // retain the existing fixed-width import behavior.
-          props: o.node.properties?.['dataBcTableColumnSizing'] === 'auto'
-            ? {columnSizing: 'auto'} : {},
+          props: {},
           meta: {},
           children: [],
         },
@@ -99,11 +147,10 @@ export const tableBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
         }
       }
 
-      //补齐colWidths
-      if (currentNode?.flavour === 'table' && !currentNode.props['colWidths']) {
-        const firstTr = currentNode.children[0] as IBlockSnapshot
-        currentNode.props['colWidths'] = new Array(firstTr.children.length).fill(120)
-      }
+      const widths = tableColumnWidths(o.node, maxColLen)
+      const mode = o.node.properties['dataBcTableColumnSizing']
+      currentNode.props['colWidths'] = widths ?? Array(maxColLen).fill(120)
+      if (mode === 'auto' || (mode !== 'fixed' && !widths)) currentNode.props['columnSizing'] = 'auto'
 
       walkerContext.closeNode();
     }
@@ -111,17 +158,27 @@ export const tableBlockHtmlAdapterMatcher: BlockHtmlAdapterMatcher = {
   fromBlockSnapshot: {
     enter: async (o, context) => {
       const {walkerContext} = context;
+      const auto = o.node.props['columnSizing'] === 'auto'
+      const widths = o.node.props['colWidths']
+      const colgroup: Element[] = !auto && Array.isArray(widths) ? [{
+        type: 'element', tagName: 'colgroup', properties: {},
+        children: widths.map(width => ({
+          type: 'element', tagName: 'col', children: [],
+          properties: {width: typeof width === 'number' && Number.isFinite(width) && width > 0 ? width : 120},
+        })),
+      }] : []
 
       walkerContext
         .openNode(
           {
             type: 'element',
             tagName: 'table',
-            properties: o.node.props['columnSizing'] === 'auto' ? {
+            properties: auto ? {
               dataBcTableColumnSizing: 'auto',
               style: 'table-layout:auto;width:100%',
-            } : {},
+            } : {dataBcTableColumnSizing: 'fixed'},
             children: [
+              ...colgroup,
               {
                 type: 'element',
                 tagName: 'tbody',

@@ -66,7 +66,7 @@ export const tableBlockMarkdownAdapterMatcher: BlockMarkdownAdapterMatcher = {
           id: generateId(),
           nodeType: BlockNodeType.block,
           flavour: 'table',
-          props: {},
+          props: {columnSizing: 'auto'},
           meta: {},
           children: [],
         },

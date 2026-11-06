@@ -76,10 +76,12 @@ export class MarkdownDeltaConverter extends DeltaASTConverter<
     deltas: DeltaInsert[],
     depth = 0
   ): PhrasingContent[] {
-    if (depth > 0) {
-      deltas.unshift({ insert: ' '.repeat(4).repeat(depth) });
+    const content = deltas.map(delta => this.applyTextFormatting(delta));
+    // Keep indentation separate from inline marks and never mutate snapshot deltas.
+    // Remark escapes ambiguous leading tabs so prose does not become a code block.
+    if (Number.isSafeInteger(depth) && depth > 0) {
+      content.unshift({type: 'text', value: '\t'.repeat(Math.min(depth, 100))});
     }
-
-    return deltas.map(delta => this.applyTextFormatting(delta));
+    return content;
   }
 }

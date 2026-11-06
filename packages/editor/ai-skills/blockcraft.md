@@ -2,7 +2,7 @@
 
 > **Level 0: Overview & Router** — Always read this first. Load sub-skills on demand.
 >
-> Last updated: 2026-11-05 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
+> Last updated: 2026-11-06 | Source: `packages/editor/` (also published inside `@ccc/blockcraft/ai-skills/`)
 
 ## 应用标题的字号与行高（未发布）
 
@@ -17,6 +17,9 @@
 新建表格默认开启持续“自动列宽”（`props.columnSizing: 'auto'`）；已有表格可通过 `setAutoColumnWidths(true)` 开启。
 原生表格布局随内容与容器变化，派生列宽不写协同数据；手动拖宽或一次性列宽命令固定当前布局。
 旧表格缺省仍使用 `colWidths`，详细边界见 `blockcraft-block.md` 的“持续自动列宽”。
+普通 HTML 导入优先采用 `colgroup` 的可解析列宽，否则默认自动；Markdown 导入默认自动。显式 HTML 模式与往返规则见 `blockcraft-adapter.md`。
+
+纯文本 `snapshots2Text()` 默认保留 editable block 的 Tab 缩进与 ordered 编号；传 `{includeBlockFormatting: false}` 可提取原始正文。完整块复制与局部文字复制边界见 `blockcraft-adapter.md`。
 
 填写区侧边工具栏支持固定尺寸／内容自适应双向切换：`toggleSizeMode()` 按当前布局冻结尺寸，`resetHeight()` 保留宽度、清除固定高度。
 仅 `wr` 或旧 `width` 的快照保持自然高度；尺寸读取与保存契约见 `blockcraft-block.md` 的“Render-unit 响应式尺寸”。

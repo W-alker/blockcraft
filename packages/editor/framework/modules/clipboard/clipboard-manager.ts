@@ -208,7 +208,7 @@ export class ClipboardManager {
     if (this._hasModelBlock(blockId)) {
       if (visiting.has(blockId)) return ''
       const deltas = this.doc.model.getTextDeltas(blockId)
-      if (deltas) return deltaToString(deltas)
+      if (deltas) return snapshots2Text([this._copyBlockSnapshot(blockId)]).replace(/\n$/, '')
       if (this.doc.model.getNodeType(blockId) === BlockNodeType.void) return ''
 
       visiting.add(blockId)
@@ -218,7 +218,10 @@ export class ClipboardManager {
       visiting.delete(blockId)
       return text
     }
-    return this.doc.getBlockById(blockId).textContent()
+    const block = this.doc.getBlockById(blockId)
+    return block.nodeType === BlockNodeType.editable
+      ? snapshots2Text([block.toSnapshot()]).replace(/\n$/, '')
+      : block.textContent()
   }
 
   private _setClipboardData(clipboardData: DataTransfer, items: Record<string, string>) {
@@ -238,7 +241,7 @@ export class ClipboardManager {
     if (filters.length) {
       snapshot = applyCopyFilters(snapshot, filters, {source: 'selection', readonly: selectionReadonly}, this.doc.logger)
       if (!snapshot.children.length) return // all content filtered out → no-op, don't clobber clipboard
-      plainText = snapshots2Text([snapshot])
+      plainText = this._filteredSelectionText(snapshot, selection)
     }
     snapshot = stripBlockLockMetaDeep(snapshot)
 
@@ -353,6 +356,26 @@ export class ClipboardManager {
     }
   }
 
+  private _filteredSelectionText(snapshot: IBlockSnapshot, selection: BlockCraft.Selection): string {
+    const partialIds = new Set<string>()
+    const start = selection.start, end = selection.end
+    if (start.type === 'text' && start.offset > 0) partialIds.add(start.blockId)
+    if (end.type === 'text' && end.offset < deltaStrLength(this._copyBlockDeltas(end.blockId))) {
+      partialIds.add(end.blockId)
+    }
+    if (!partialIds.size) return snapshots2Text([snapshot])
+    const parts: string[] = []
+    const visit = (node: IBlockSnapshot) => {
+      if (node.nodeType === BlockNodeType.editable) {
+        parts.push(snapshots2Text([node], {includeBlockFormatting: !partialIds.has(node.id)}))
+      } else if (node.nodeType === BlockNodeType.block || node.nodeType === BlockNodeType.root) {
+        node.children.forEach(visit)
+      }
+    }
+    visit(snapshot)
+    return parts.join('')
+  }
+
   private _buildCopyPayload(selection: BlockCraft.Selection): {snapshot: IBlockSnapshot, plainText: string} {
     const boundaryChildIds = selection.getBoundarySelectedChildIds()
     if (boundaryChildIds) {
@@ -373,9 +396,10 @@ export class ClipboardManager {
         const deltas = this._copyBlockDeltas(startId)
         const eOff = e.type === 'text' ? e.offset : deltaStrLength(deltas)
         const sliceDeltas = sliceDelta(deltas, s.offset, eOff)
+        const wholeBlock = s.offset === 0 && eOff === deltaStrLength(deltas)
         return {
           snapshot: this._wrapDeltaByRoot(sliceDeltas),
-          plainText: deltaToString(sliceDeltas),
+          plainText: wholeBlock ? this._copyBlockText(startId) : deltaToString(sliceDeltas),
         }
       }
       return {
@@ -404,7 +428,7 @@ export class ClipboardManager {
         const sn = this._copyBlockSnapshot(startId)
         sn.children = sliceDeltas
         snapshots.push(sn)
-        plainTextParts.push(deltaToString(sliceDeltas))
+        plainTextParts.push(s.offset === 0 ? this._copyBlockText(startId) : deltaToString(sliceDeltas))
       }
     } else {
       pushSnapshot(startId)
@@ -416,11 +440,12 @@ export class ClipboardManager {
 
     if (e.type === 'text') {
       if (e.offset > 0) {
-        const sliceDeltas = sliceDelta(this._copyBlockDeltas(endId), 0, e.offset)
+        const deltas = this._copyBlockDeltas(endId)
+        const sliceDeltas = sliceDelta(deltas, 0, e.offset)
         const sn = this._copyBlockSnapshot(endId)
         sn.children = sliceDeltas
         snapshots.push(sn)
-        plainTextParts.push(deltaToString(sliceDeltas))
+        plainTextParts.push(e.offset === deltaStrLength(deltas) ? this._copyBlockText(endId) : deltaToString(sliceDeltas))
       }
     } else {
       pushSnapshot(endId)
@@ -502,7 +527,7 @@ export class ClipboardManager {
         source: 'selection', readonly: this._isSelectionReadonly(selection),
       }, this.doc.logger)
       if (!snapshot.children.length) return false
-      plainText = snapshots2Text([snapshot])
+      plainText = this._filteredSelectionText(snapshot, selection)
     }
     snapshot = stripBlockLockMetaDeep(snapshot)
     // A delayed write must never delete text that changed while the OS prompt was open.

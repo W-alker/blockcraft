@@ -112,9 +112,7 @@ export const paragraphBlockMarkdownAdapterMatcher: BlockMarkdownAdapterMatcher =
     fromBlockSnapshot: {
       enter: (o, context) => {
         const {walkerContext, deltaConverter} = context;
-        const paragraphDepth = (walkerContext.getGlobalContext(
-          'paragraph:depth'
-        ) ?? 0) as number;
+        const paragraphDepth = Number(o.node.props['depth'] ?? 0);
 
         switch (o.node.flavour) {
           case 'paragraph':
@@ -159,27 +157,13 @@ export const paragraphBlockMarkdownAdapterMatcher: BlockMarkdownAdapterMatcher =
               .openNode(
                 {
                   type: 'paragraph',
-                  children: deltaConverter.deltaToAST(o.node.children as DeltaInsert[]),
+                  children: deltaConverter.deltaToAST(o.node.children as DeltaInsert[], paragraphDepth),
                 },
                 'children'
               )
               .closeNode()
               .closeNode();
         }
-
-
-        walkerContext.setGlobalContext(
-          'paragraph:depth',
-          paragraphDepth + 1
-        );
-      },
-      leave: (_, context) => {
-        const {walkerContext} = context;
-        walkerContext.setGlobalContext(
-          'paragraph:depth',
-          (walkerContext.getGlobalContext('paragraph:depth') as number) -
-          1
-        );
       },
     },
   };

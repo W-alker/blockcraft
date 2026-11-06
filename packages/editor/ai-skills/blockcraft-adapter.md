@@ -4,15 +4,20 @@
 >
 > Adapters handle HTML ↔ BlockSnapshot and Markdown ↔ BlockSnapshot conversion.
 >
-> Last updated: 2026-11-05
+> Last updated: 2026-11-06
 
 ## 表格自动列宽
 
 `props.columnSizing: 'auto'` 导出为 `<table data-bc-table-column-sizing="auto"
 style="table-layout:auto;width:100%">`，不导出浏览器临时计算的像素列宽。
-导入仅识别该显式标记；普通 HTML 的 `table-layout:auto` 不会自动改变既有导入语义。
-旧手动表格导出保持原行为，未知标记忽略；原生快照保留模式与既有 `colWidths`。
-Markdown 表格继续按内容降级，不保存自动列宽或精确布局，不增加私有语法。
+固定模式导出 `data-bc-table-column-sizing="fixed"` 和含列宽的 `colgroup`，确保往返保持模式和宽度。
+HTML 导入时显式 `auto` / `fixed` 标记优先；无有效标记时，优先解析表格直属 `colgroup`：
+存在可用列宽则使用固定模式，否则默认自动列宽。未知标记按普通 HTML 处理。
+支持 `col` / `colgroup` 的 width 属性、内联 width 样式和 span；支持像素、绝对长度单位，
+百分比仅在表格本身具有可解析的绝对宽度时换算。部分列宽缺失时补 120px；全部不可解析时自动布局。
+解析只在导入时执行，不挂载 DOM、不测量布局。外部样式表、相对单位及 calc 不作布局推算。
+Markdown 表格导入默认自动列宽；导出继续按内容降级，不保存模式或精确列宽，不增加私有语法。
+原生快照保留模式与既有 `colWidths`；有道专用导入继续保留来源固定列宽。
 
 ## 正文数值字重
 
@@ -21,6 +26,22 @@ HTML typography 转换器将 `s:fontWeight` 导出为 `font-weight` 样式，并
 快照无须迁移；普通 Markdown 不承载精确数值字重，沿用粗体语义降级，不新增私有 Markdown 语法。
 
 ## 段落格式元数据
+
+纯文本使用 `snapshots2Text(snapshots, options?)`：默认在 editable block 正文前按 depth 添加 Tab，
+ordered 块按保存的 order（缺失时使用 start）和编号样式输出序号文本；复用实时视图的纯编号格式函数，
+不依赖 DOM、不重排整篇编号。纯文本不绘制圆圈等 CSS 装饰。表格和其他容器本身不添加缩进，
+子块按自身属性处理，保持原有换行分隔。Tab 前缀上限 100；异常超大旧罗马编号降级为十进制文本。
+编号工具也可从 `@ccc/blockcraft/global/utils` 引入（如 `resolveOrderedMarker`），原 ordered-block 工具导出保持兼容。
+剪贴板完整块（包含完整文字范围）使用相同规则；首尾部分文字仅提取选中 delta，避免添加未选择的序号。
+`{includeBlockFormatting: false}` 保留原来的正文提取；修订记录使用该选项，不改变原始内容语义。
+
+editable block 的 HTML 导出按 `depth` 保存 `data-bc-depth` 与每级 32px 的 `margin-left`，
+覆盖正文、标题、引用、列表项和代码块；导入读取有效的显式层级，不根据任意外部 margin 猜测层级。
+表格等非 editable block 不添加该缩进。Markdown 的正文、标题、引用读取自身 `props.depth`，
+每级前置一个 Tab；序列化器会将有歧义的行首 Tab 编码为字符实体，防止变成缩进代码块。
+Markdown 的 Tab 属于文本降级，不承诺恢复 `props.depth` 或在所有阅读器中呈现相同宽度；
+列表仍使用既有列表嵌套语法，表格和代码块不追加 Tab。导出不修改快照或正文 delta。
+异常大层级的 Markdown 前缀最多输出 100 个 Tab，避免损坏数据造成巨量字符串分配。
 
 HTML 的 `data-bc-text-defaults` 保存规范化的段落标记字符外观（JSON），
 `data-bc-next-style` 保存 `same` / `body`。导入仅接受字符外观白名单，损坏的元数据忽略。

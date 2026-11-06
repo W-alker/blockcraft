@@ -326,7 +326,7 @@ export class DocumentRevisionManager {
       .map(blockId => {
         if (!this.doc.model.exists(blockId)) return ''
         const snapshot = this.doc.model.toSnapshot(blockId)
-        return snapshot ? snapshots2Text([snapshot]).replace(/\n$/, '') : ''
+        return snapshot ? snapshots2Text([snapshot], {includeBlockFormatting: false}).replace(/\n$/, '') : ''
       })
       .filter(Boolean)
       .join('\n')

@@ -124,6 +124,77 @@ describe("ClipboardManager selection copy", () => {
     return {root, blocks, addBlock, manager, doc, queryBlocksBetween, makeSelection, rootHost};
   };
 
+  it('keeps indentation and ordered markers only for complete selected blocks', () => {
+    const {addBlock, manager, makeSelection, rootHost} = makeHarness();
+    const first = addBlock('first', 'first', BlockNodeType.editable, 'ordered');
+    const middle = addBlock('middle', 'middle', BlockNodeType.editable);
+    const last = addBlock('last', 'last', BlockNodeType.editable, 'ordered');
+    for (const [block, props] of [[first, {depth: 1, order: 4, ms: 'n1'}], [middle, {depth: 2}], [last, {depth: 0, order: 5}]] as const) {
+      const snapshot = block.toSnapshot();
+      snapshot.props = props;
+      block.toSnapshot.and.callFake(() => JSON.parse(JSON.stringify(snapshot)));
+    }
+    const copy = (start: number, end: number) => (manager as any)._buildCopyPayload(makeSelection(
+      {blockId: 'first', type: 'text', offset: start, block: first},
+      {blockId: 'last', type: 'text', offset: end, block: last},
+    )).plainText;
+    expect(copy(0, 4)).toBe('\t5. first\n\t\tmiddle\n6. last');
+    expect(copy(1, 2)).toBe('irst\n\t\tmiddle\nla');
+    const whole = (manager as any)._buildCopyPayload(makeSelection(
+      {blockId: 'first', type: 'selected', block: first},
+      {blockId: 'first', type: 'selected', block: first},
+    ));
+    expect(whole.plainText).toBe('\t5. first');
+    const partial = (manager as any)._buildCopyPayload(makeSelection(
+      {blockId: 'first', type: 'text', offset: 0, block: first},
+      {blockId: 'first', type: 'text', offset: 2, block: first},
+    ));
+    expect(partial.plainText).toBe('fi');
+    const fullText = (manager as any)._buildCopyPayload(makeSelection(
+      {blockId: 'first', type: 'text', offset: 0, block: first},
+      {blockId: 'first', type: 'text', offset: 5, block: first},
+    ));
+    expect(fullText.plainText).toBe('\t5. first');
+    rootHost.remove();
+  });
+
+  it('writes the formatted text/plain payload for complete list selection', async () => {
+    const {root, addBlock, manager, makeSelection, rootHost} = makeHarness();
+    const list = addBlock('item', '正文', BlockNodeType.editable, 'ordered');
+    const snapshot = list.toSnapshot();
+    snapshot.props = {depth: 1, order: 2, ms: 'c1'};
+    list.toSnapshot.and.returnValue(snapshot);
+    const values = new Map<string, string>();
+    const clipboardData = {setData: (type: string, value: string) => values.set(type, value)} as unknown as DataTransfer;
+    try {
+      await manager.copyFromSelection(makeSelection(
+        {blockId: 'root', type: 'boundary', index: 0, block: root},
+        {blockId: 'root', type: 'boundary', index: 1, block: root},
+      ), clipboardData);
+      expect(values.get(ClipboardDataType.TEXT)).toBe('\t三、 正文\n');
+    } finally { rootHost.remove(); }
+  });
+
+  it('keeps partial endpoints unprefixed when copy filters rebuild plain text', async () => {
+    const {addBlock, manager, makeSelection, rootHost} = makeHarness();
+    const first = addBlock('first', 'first', BlockNodeType.editable, 'ordered');
+    const last = addBlock('last', 'last', BlockNodeType.editable, 'ordered');
+    for (const block of [first, last]) {
+      const snapshot = block.toSnapshot();
+      snapshot.props = {depth: 1, order: 4};
+      block.toSnapshot.and.callFake(() => JSON.parse(JSON.stringify(snapshot)));
+    }
+    const values = new Map<string, string>();
+    const clipboardData = {setData: (type: string, value: string) => values.set(type, value)} as unknown as DataTransfer;
+    try {
+      await manager.copyFromSelection(makeSelection(
+        {blockId: 'first', type: 'text', offset: 1, block: first},
+        {blockId: 'last', type: 'text', offset: 2, block: last},
+      ), clipboardData, {filter: {transform: snapshot => snapshot}});
+      expect(values.get(ClipboardDataType.TEXT)).toBe('irst\nla\n');
+    } finally { rootHost.remove(); }
+  });
+
   it("copies a reversed mixed boundary-to-text selection in document order", () => {
     const {root, addBlock, manager, makeSelection, rootHost} = makeHarness();
     const callout = addBlock("callout-1", "callout", BlockNodeType.block);
@@ -445,9 +516,9 @@ describe("ClipboardManager selection copy", () => {
       getTextDeltas: (id: string) => [{insert: texts[id]}],
       toSnapshot: (id: string) => ({
         id,
-        flavour: "paragraph",
+        flavour: id === 'middle' ? 'ordered' : 'paragraph',
         nodeType: BlockNodeType.editable,
-        props: {depth: 0},
+        props: id === 'middle' ? {depth: 1, order: 4, ms: 'n1'} : {depth: 0},
         meta: {},
         children: [{insert: texts[id]}],
       }),
@@ -460,7 +531,7 @@ describe("ClipboardManager selection copy", () => {
 
     const payload = (manager as any)._buildCopyPayload(selection);
 
-    expect(payload.plainText).toBe("ne\nmiddle\nth");
+    expect(payload.plainText).toBe("ne\n\t5. middle\nth");
     expect(payload.snapshot.children.map((snapshot: IBlockSnapshot) => snapshot.id)).toEqual([
       "first",
       "middle",

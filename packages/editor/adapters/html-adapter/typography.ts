@@ -180,6 +180,11 @@ export const editableTypographyToHtmlProperties = (
   const declarations: string[] = []
   const properties: Properties = {}
   const textDefaults = normalizeParagraphTextDefaults(props['textDefaults'])
+  const depth = props['depth']
+  if (typeof depth === 'number' && Number.isSafeInteger(depth) && depth > 0) {
+    properties['dataBcDepth'] = depth
+    declarations.push(`margin-left: ${depth * 32}px`)
+  }
   const nextStyle = normalizeParagraphNextStyle(props['nextParagraphStyle'])
   if (Object.keys(textDefaults).length) properties['dataBcTextDefaults'] = JSON.stringify(textDefaults)
   if (nextStyle) properties['dataBcNextStyle'] = nextStyle
@@ -221,6 +226,9 @@ export const editableTypographyFromHtml = (
 ): Partial<IEditableBlockProps> => {
   const style = parseStyle(element.properties)
   let textDefaults: IInlineNodeAttrs = {}
+  const rawDepth = propertyValue(element.properties, 'dataBcDepth')
+  const depth = typeof rawDepth === 'number' || typeof rawDepth === 'string' && /^\d+$/.test(rawDepth)
+    ? Number(rawDepth) : NaN
   try {
     const raw = propertyValue(element.properties, 'dataBcTextDefaults')
     if (typeof raw === 'string') textDefaults = normalizeParagraphTextDefaults(JSON.parse(raw))
@@ -248,6 +256,7 @@ export const editableTypographyFromHtml = (
     : align === 'center' || align === 'right' ? align : undefined
   return {
     ...(Object.keys(textDefaults).length ? {textDefaults} : {}),
+    ...(Number.isSafeInteger(depth) && depth >= 0 ? {depth} : {}),
     ...(nextStyle ? {nextParagraphStyle: nextStyle} : {}),
     ...(textAlign ? {textAlign} : {}),
     ...(px === null ? {} : {fs: px}),

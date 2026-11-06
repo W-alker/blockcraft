@@ -21,6 +21,8 @@ const exportedNames = [
   'isSimpleTypeEqual', 'isUrl', 'jueJinUrlRegex', 'mimeExtMap', 'nextTick', 'noop',
   'randomColor', 'readImageIntrinsicSize', 'sleep', 'sliceDelta', 'splitDeltaByLineBreak',
   'throttle', 'toCamelCase', 'urlRegex',
+  'number2roman', 'getNumberPrefix', 'ORDERED_MARKER_STYLES', 'isOrderedMarkerStyleId',
+  'formatOrderedMarker', 'resolveOrderedMarker', 'resolveOrderedMarkerDigitScale',
 ];
 
 const entryExports = {

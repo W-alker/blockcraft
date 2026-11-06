@@ -354,6 +354,10 @@ describe('DocumentRevisionManager', () => {
     expect(deletion.manager.readRevisionContent(deletionId)).toBe('b')
 
     const wholeBlock = createHarness('first', 'second')
+    const toSnapshot = wholeBlock.doc.model.toSnapshot
+    wholeBlock.doc.model.toSnapshot = (id: string) => ({
+      ...toSnapshot(id), flavour: 'ordered', props: {depth: 2, order: 8},
+    })
     const blockId = wholeBlock.manager.recordBlockDeletion([FIRST_ID], ROOT_ID)!
     expect(wholeBlock.manager.readRevisionContent(blockId)).toBe('first')
   })

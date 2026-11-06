@@ -136,6 +136,34 @@ describe('MarkdownAdapter', () => {
   // ─── Paragraph tests ──────────────────────────────────────────────
 
   describe('paragraphs', () => {
+    it('exports saved indentation as tabs without changing prose into code or mutating snapshots', async () => {
+      const snapshot = createRootSnapshot([
+        createEditableSnapshot('indented', 'paragraph', [{insert: '带格式正文', attributes: {'a:bold': true}}], {depth: 2}),
+        createEditableSnapshot('heading', 'paragraph', '标题', {depth: 1, heading: 2}),
+        createEditableSnapshot('quote', 'blockquote', '引用正文', {depth: 1}),
+        createEditableSnapshot('normal', 'paragraph', '普通正文', {}),
+      ]);
+      const before = JSON.stringify(snapshot);
+      const markdown = await adapter.toMarkdown(snapshot);
+      expect(await adapter.toMarkdown(snapshot)).toBe(markdown);
+      expect(JSON.stringify(snapshot)).toBe(before);
+      const ast = parseMarkdown(markdown);
+      expect(ast.children.map(node => node.type)).toEqual(['paragraph', 'heading', 'blockquote', 'paragraph']);
+      expect(getNodeText(ast.children[0] as Paragraph)).toBe('\t\t带格式正文');
+      expect(getNodeText(ast.children[1] as Paragraph)).toBe('\t标题');
+      expect(getNodeText(ast.children[2] as Blockquote)).toBe('\t引用正文');
+      expect(getNodeText(ast.children[3] as Paragraph)).toBe('普通正文');
+      expect(markdown).toContain('**带格式正文**');
+    });
+
+    it('ignores invalid indentation values', async () => {
+      for (const depth of [-1, 1.5, NaN, Infinity]) {
+        const markdown = await adapter.toMarkdown(createRootSnapshot([
+          createEditableSnapshot('p', 'paragraph', '正文', {depth}),
+        ]));
+        expect(markdown).toBe('正文\n');
+      }
+    });
     it('exports a single paragraph', async () => {
       const snapshot = createRootSnapshot([
         createEditableSnapshot('p1', 'paragraph', 'Hello world', {}),
@@ -976,6 +1004,15 @@ describe('MarkdownAdapter', () => {
   // ─── Table tests ──────────────────────────────────────────────────
 
   describe('tables', () => {
+    it('does not prefix an indented table with tabs', async () => {
+      const snapshot = await adapter.toBlockSnapshot('| A | B |\n| --- | --- |\n| 1 | 2 |\n');
+      const table = snapshot.children[0] as IBlockSnapshot;
+      table.props['depth'] = 2;
+      const markdown = await adapter.toMarkdown(snapshot);
+      expect(markdown.startsWith('|')).toBeTrue();
+      expect(markdown).not.toContain('\t');
+      expect(parseMarkdown(markdown).children[0].type).toBe('table');
+    });
     const buildTableSnapshot = (rows: IBlockSnapshot[][]): IBlockSnapshot => ({
       id: 't1',
       flavour: 'table',
@@ -1008,6 +1045,8 @@ describe('MarkdownAdapter', () => {
         c => c.flavour === 'table'
       );
       expect(table).toBeDefined();
+      expect(table!.props['columnSizing']).toBe('auto');
+      expect(table!.props['colWidths']).toEqual([120, 120]);
 
       const md = await adapter.toMarkdown(snapshot);
       expect(md).toContain('A');

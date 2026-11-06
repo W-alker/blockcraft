@@ -2,7 +2,34 @@
 
 > **Version adaptation reference.** Each entry documents a framework change that affects external consumers — including breaking API changes, deprecations, removed exports, behavior changes, and any rename/move that downstream code might depend on.
 >
-> Last updated: 2026-11-05 | Tracks `@ccc/blockcraft` npm releases.
+> Last updated: 2026-11-06 | Tracks `@ccc/blockcraft` npm releases.
+
+## 未发布 — 2026-11-06：纯文本缩进与有序编号
+
+- Severity: minor（纯文本导出默认保留块格式；版本由用户决定）。
+- What changed / Why: `snapshots2Text(snapshots, options?)` 默认输出 editable block 的 Tab 缩进与 ordered 序号文本；完整块复制复用该规则，局部文字范围仅输出所选正文。编号格式函数移至 global 纯工具层，保留原 ordered-block 导出路径，避免框架反向依赖块组件。
+- New APIs: 第二参数 `{includeBlockFormatting?: boolean}`；false 保持原始正文提取行为。既有编号工具（含 resolveOrderedMarker / formatOrderedMarker 及相关类型）新增 global/utils 轻量入口，原有导出兼容。
+- Behavior Changes: 按已保存的 order / ms 输出，不在导出时重新计算文档编号；order 缺失时回退 start。圆圈外框不进入纯文本。表格等容器自身不加缩进，既有换行保留；Tab 上限 100，超大旧罗马序号退化为数字。原始 Selection 文本及修订读取行为不变。
+- Deprecations: 无。
+- Migration Recipe: 依赖 `snapshots2Text()` 旧纯正文输出的宿主传入 `{includeBlockFormatting: false}`。无需快照数据迁移，`textContent()`、`getSelectedText()` 不受影响。
+- Affected ai-skills files: `blockcraft.md`、`blockcraft-adapter.md`。
+
+## 未发布 — 2026-11-06：保留 editable block 导出缩进
+
+- Severity: patch（修复导出丢失保存的缩进；版本由用户决定）。
+- What changed / Why: HTML 的 editable typography 保存 `data-bc-depth` 与每级 32px 的 margin-left；显式层级可重新导入。Markdown 正文、标题、引用按块自身 depth 添加 Tab，替代错误的遍历层级；转换器不再修改输入 delta。
+- Behavior Changes: Markdown 序列化器转义有歧义的行首 Tab，保留正文类型；这是文本降级，不保证恢复布局属性。列表沿用原嵌套语法；表格、Markdown 代码块不追加 Tab，避免改变结构或代码内容。非法层级忽略，Markdown 前缀最多 100 个 Tab。
+- Migration Recipe: 无数据迁移。读取 HTML 元数据的宿主可识别 data-bc-depth；需要完整 Markdown 往返布局保真时继续使用原生 Snapshot。
+- Affected ai-skills files: `blockcraft-adapter.md`。
+
+## 未发布 — 2026-11-06：表格导入默认自动列宽
+
+- Severity: minor（调整 HTML / Markdown 导入默认模式；版本由用户决定）。
+- What changed / Why: 普通 HTML 优先读取 `colgroup` 的有效列宽，没有可用列宽时使用浏览器自动布局；Markdown 表格默认自动布局，避免导入后全部固定为 120px。
+- Behavior Changes: HTML 的显式 `data-bc-table-column-sizing="auto"` / `"fixed"` 优先；无有效标记且存在可用列宽时保持固定模式，缺失列宽补 120px。支持 width 属性、内联 width 样式、col / colgroup span 和绝对长度单位；百分比仅在表格有绝对宽度时换算。固定 HTML 导出增加 fixed 标记与 colgroup，自动模式仍不导出测量列宽。Markdown 导出不新增私有语法，重新导入默认自动。
+- New APIs / Deprecations: 无。
+- Migration Recipe: 原生快照和有道专用导入无需迁移。依赖普通 HTML / Markdown 旧固定导入行为的宿主，可在转换后显式将 `props.columnSizing` 设为 null 并设置 `colWidths`；HTML 来源也可声明 fixed 标记或提供可解析的 colgroup。
+- Affected ai-skills files: `blockcraft.md`、`blockcraft-adapter.md`。
 
 ## 未发布 — 2026-11-05：表格持续自动列宽
 
