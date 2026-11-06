@@ -263,6 +263,11 @@ export class InlineRuntime {
     return this._inlineFloatLayout.acquireFreeze()
   }
 
+  /** @internal Optional native preedit anchor, owned and released by CompositionSession. */
+  acquireCompositionCaret(_modelOffset: number): (() => void) | null {
+    return null
+  }
+
   /**
    * @internal Pagination view only. Apply zero-model-length gaps at Y.Text offsets.
    */

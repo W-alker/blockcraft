@@ -2,6 +2,9 @@ import {CodeInlineRuntime, flatShikiTokens} from "./code-inline-runtime";
 import {shikiService} from './shiki-config';
 import {createHighlighter, type Highlighter} from 'shiki';
 import type {DeltaInsertText} from '../../framework/model/delta';
+import {CursorBlot} from '../../framework/block-std/inline/blot/cursor-blot';
+import {TextBlot} from '../../framework/block-std/inline/blot/text-blot';
+import {STR_ZERO_WIDTH_SPACE} from '../../framework/block-std/inline/const';
 
 describe("CodeInlineRuntime", () => {
   const containers: HTMLElement[] = [];
@@ -27,6 +30,142 @@ describe("CodeInlineRuntime", () => {
     for (const container of containers.splice(0)) {
       container.remove();
     }
+  });
+
+  describe('native composition caret lease', () => {
+    const placeCaret = (runtime: CodeInlineRuntime, container: HTMLElement, offset: number) => {
+      const point = runtime.mapper.modelPointToDomPoint(container, offset);
+      document.getSelection()!.setPosition(point.node, point.offset);
+    };
+    const cursors = (runtime: CodeInlineRuntime) => runtime.scrollBlot.children
+      .filter((blot): blot is CursorBlot => blot instanceof CursorBlot);
+
+    for (const source of ['first\nsecond', 'first\n\nlast', 'first\n', 'first\r\nsecond']) {
+      it(`keeps repeated native candidates in their zero-length line prefix for ${JSON.stringify(source)}`, () => {
+        const {runtime, container} = makeRuntime();
+        runtime.render([{insert: source}]);
+        const offset = source.indexOf('\n') + 1;
+        const rows = Array.from(container.children);
+        const leaves = runtime.scrollBlot.leaves.slice();
+        const leafText = leaves.map(leaf => (leaf as TextBlot).text);
+        placeCaret(runtime, container, offset);
+
+        const release = runtime.acquireCompositionCaret(offset);
+        expect(release).not.toBeNull();
+        expect(cursors(runtime).length).toBe(1);
+        const cursor = cursors(runtime)[0];
+        const selection = document.getSelection()!;
+        expect(cursor.domNode.parentNode).toBe(rows[1]);
+        expect<Node | null>(rows[1].firstChild).toBe(cursor.domNode);
+        expect(selection.anchorNode).toBe(cursor.anchorNode);
+        expect(selection.anchorOffset).toBe(STR_ZERO_WIDTH_SPACE.length);
+        expect(selection.isCollapsed).toBeTrue();
+
+        for (const candidate of ['zhong', 'zhongwen', '中文🙂']) {
+          cursor.anchorNode.data = STR_ZERO_WIDTH_SPACE + candidate;
+          selection.setPosition(cursor.anchorNode, cursor.anchorNode.length);
+          expect(runtime.domPointToModel(selection.focusNode!, selection.focusOffset)).toBe(offset);
+          expect(runtime.scrollBlot.offsetOf(cursor)).toBe(offset);
+          expect(runtime.textLength).toBe(source.length);
+          expect(runtime.scrollBlot.leaves).toEqual(leaves);
+          expect(leaves.map(leaf => (leaf as TextBlot).text)).toEqual(leafText);
+          // The canonical text projection excludes preedit text and its sentinel.
+          expect((runtime as any)._getPlainText()).toBe(source);
+          expect(Array.from(container.children)).toEqual(rows);
+          expect(cursor.domNode.parentNode).toBe(rows[1]);
+        }
+
+        release!();
+        release!();
+        expect(cursors(runtime)).toEqual([]);
+        expect(cursor.domNode.isConnected).toBeFalse();
+        expect(runtime.scrollBlot.leaves).toEqual(leaves);
+        expect(Array.from(container.querySelectorAll('c-text')).map(node => node.textContent).join('')).toBe(source);
+        expect(runtime.scrollBlot.hasCanonicalDomOrder()).toBeTrue();
+      });
+    }
+
+    const skipped: Array<{
+      name: string; deltas: DeltaInsertText[]; offset: number; withLineBreak?: boolean;
+    }> = [
+      {name: 'the first line', deltas: [{insert: 'first\nsecond'}], offset: 0},
+      {name: 'the middle of a line', deltas: [{insert: 'first\nsecond'}], offset: 8},
+      {name: 'flat code rendering', deltas: [{insert: 'first\nsecond'}], offset: 6, withLineBreak: false},
+      {name: 'a hidden revision LF', deltas: [
+        {insert: 'first'}, {insert: '\n', attributes: {'s:display': 'none'}}, {insert: 'second'},
+      ], offset: 6},
+    ];
+    for (const entry of skipped) {
+      it(`does not add a native prefix for ${entry.name}`, () => {
+        const {runtime, container} = makeRuntime({lang: 'text', withLineBreak: entry.withLineBreak});
+        runtime.render(entry.deltas);
+        placeCaret(runtime, container, entry.offset);
+        const selection = document.getSelection()!;
+        const node = selection.anchorNode;
+        const offset = selection.anchorOffset;
+        const children = runtime.scrollBlot.children.slice();
+
+        expect(runtime.acquireCompositionCaret(entry.offset)).toBeNull();
+        expect(cursors(runtime)).toEqual([]);
+        expect(runtime.scrollBlot.children).toEqual(children);
+        expect(selection.anchorNode).toBe(node);
+        expect(selection.anchorOffset).toBe(offset);
+      });
+    }
+
+    it('does not let a stale release remove the replacement caret', () => {
+      const {runtime, container} = makeRuntime();
+      runtime.render([{insert: 'first\nsecond'}]);
+      placeCaret(runtime, container, 6);
+      const firstRelease = runtime.acquireCompositionCaret(6)!;
+      const first = cursors(runtime)[0];
+      placeCaret(runtime, container, 6);
+      const secondRelease = runtime.acquireCompositionCaret(6)!;
+      const second = cursors(runtime)[0];
+
+      expect(second).not.toBe(first);
+      expect(first.domNode.isConnected).toBeFalse();
+      firstRelease();
+      expect(cursors(runtime)).toEqual([second]);
+      expect(second.domNode.isConnected).toBeTrue();
+      secondRelease();
+      expect(cursors(runtime)).toEqual([]);
+    });
+
+    it('releases on destroy without letting the old lease affect a remounted runtime', () => {
+      const {runtime, container} = makeRuntime();
+      runtime.render([{insert: 'first\nsecond'}]);
+      placeCaret(runtime, container, 6);
+      const oldRelease = runtime.acquireCompositionCaret(6)!;
+      const oldCursor = cursors(runtime)[0];
+      runtime.destroy();
+      expect(oldCursor.domNode.isConnected).toBeFalse();
+      expect(runtime.acquireCompositionCaret(6)).toBeNull();
+
+      const replacement = new CodeInlineRuntime(container, new Map(), {lang: 'text'});
+      runtimes.push(replacement);
+      replacement.render([{insert: 'first\nsecond'}]);
+      placeCaret(replacement, container, 6);
+      const release = replacement.acquireCompositionCaret(6)!;
+      const current = cursors(replacement)[0];
+      oldRelease();
+      runtime.destroy();
+      expect(cursors(replacement)).toEqual([current]);
+      expect(current.domNode.isConnected).toBeTrue();
+      release();
+    });
+
+    it('removes an inserted prefix if native caret installation fails', () => {
+      const {runtime, container} = makeRuntime();
+      runtime.render([{insert: 'first\nsecond'}]);
+      placeCaret(runtime, container, 6);
+      spyOn(document.getSelection()!, 'setBaseAndExtent').and.throwError('native caret unavailable');
+
+      expect(() => runtime.acquireCompositionCaret(6)).toThrowError('native caret unavailable');
+      expect(cursors(runtime)).toEqual([]);
+      expect((runtime as any)._getPlainText()).toBe('first\nsecond');
+      expect(runtime.scrollBlot.hasCanonicalDomOrder()).toBeTrue();
+    });
   });
 
   it("restores the current native caret after a highlight rebuild", async () => {

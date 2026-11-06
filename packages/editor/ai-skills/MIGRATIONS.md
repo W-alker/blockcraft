@@ -4,6 +4,15 @@
 >
 > Last updated: 2026-11-06 | Tracks `@ccc/blockcraft` npm releases.
 
+## 未发布 — 2026-11-06：代码块行首 IME 临时光标租约
+
+- Severity: patch（包内输入/渲染职责调整，无外部迁移要求；版本由用户决定）。
+- What changed / Why: Chromium 多轮原生预编辑会把上一行 LF 纳入候选替换范围，造成代码块行首临时串行，末尾空行还可能无法结束组合输入。代码行首现在使用零模型长度的 CursorBlot 前缀隔离原生候选范围。
+- Architecture: InlineRuntime 新增包内 `acquireCompositionCaret(offset): (() => void) | null`，默认不创建宿主。CodeInlineRuntime 仅在可见 LF 后的 canonical 行首实现；CompositionSession 在相对锚点捕获后获取，在 prepareCommit 解析提交位置后、模型投影前释放，并在 reset/abort/删除时清理；runtime 销毁提供幂等兜底。
+- Behavior Changes: 选词期间保留原行边界，不在每次候选更新时渲染或写入模型。普通段落、行中、隐藏 LF 和 Mermaid 平面路径保持原行为；提交、取消、协同和撤销仍使用既有 Y.Text 与相对位置协议。
+- Migration Recipe: 无需迁移。宿主不要调用包内租约或直接修改 CursorBlot；版本号保持用户定义。
+- Affected ai-skills files: `blockcraft-input.md`、`blockcraft-inline.md`。
+
 ## 未发布 — 2026-11-06：代码块 c-line 与逻辑行增量高亮
 
 - Severity: patch（渲染实现调整，版本由用户决定）。

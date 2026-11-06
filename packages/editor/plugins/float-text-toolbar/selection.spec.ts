@@ -376,7 +376,7 @@ describe("float text toolbar selection guard", () => {
     plugin.init();
     plugin.destroy();
 
-    expect(removeEvent).toHaveBeenCalledTimes(1);
+    expect(removeEvent).toHaveBeenCalledTimes(2);
     expect(readonlySub.unsubscribe).toHaveBeenCalledTimes(1);
   });
 });

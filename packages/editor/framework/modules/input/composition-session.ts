@@ -83,6 +83,7 @@ export class CompositionSession {
   private _abortRecoveryTarget: CompositionRecoveryTarget | null = null
   private _abortRecoveryPending = false
   private _releaseInlineLayoutFreeze: (() => void) | null = null
+  private _releaseNativeCaret: (() => void) | null = null
   /** 组合期间宿主块被删除（通常来自远端协同）后置位；compositionEnd 据此丢弃本次提交 */
   private _abortedByBlockRemoval = false
 
@@ -121,6 +122,7 @@ export class CompositionSession {
    * and any non-collapsed selection replacement.
    */
   start(block: EditableBlockComponent, anchorIndex: number) {
+    this._releaseCompositionCaret()
     this._releaseLayoutFreeze()
     this._releaseInlineLayoutFreeze =
       block.runtime?.acquireFloatLayoutFreeze?.() ?? null
@@ -133,6 +135,7 @@ export class CompositionSession {
     this._recoveryLevels = this._captureRecoveryLevels(block.id)
     try {
       this._anchor.capture(block, anchorIndex)
+      this._releaseNativeCaret = block.runtime?.acquireCompositionCaret?.(anchorIndex) ?? null
     } catch (error) {
       this.end()
       throw error
@@ -200,8 +203,12 @@ export class CompositionSession {
    * 4. Call `end()` to finalize
    */
   prepareCommit(fallback?: ITextCursorPoint | null): ITextCursorPoint | null {
+    const point = this._anchor.resolve(fallback)
     this._phase = CompositionPhase.Committing
-    return this._anchor.resolve(fallback)
+    // Remove transient native text before the authoritative model is projected.
+    // Resolving first keeps the commit independent of the DOM being detached.
+    this._releaseCompositionCaret()
+    return point
   }
 
   /**
@@ -271,12 +278,19 @@ export class CompositionSession {
    * End the session and return to idle.
    */
   end() {
+    this._releaseCompositionCaret()
     this._phase = CompositionPhase.Idle
     this._activeBlockId = null
     this._deferredPatches = []
     this._recoveryLevels = []
     this._anchor.reset()
     this._releaseLayoutFreeze()
+  }
+
+  private _releaseCompositionCaret(): void {
+    const release = this._releaseNativeCaret
+    this._releaseNativeCaret = null
+    release?.()
   }
 
   /**

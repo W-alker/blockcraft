@@ -1,5 +1,5 @@
-import {DocPlugin} from "../../framework";
-import {fromEvent, Subject, Subscription} from "rxjs";
+import {DocPlugin, type EditableBlockComponent} from "../../framework";
+import {debounceTime, fromEvent, Subject, Subscription, take, takeUntil} from "rxjs";
 import {ComponentRef} from "@angular/core";
 import {OverlayRef} from "@angular/cdk/overlay";
 import {ITextCommonAttrs, TextToolbarUtils} from "./utils";
@@ -16,7 +16,9 @@ export class TextMarkerPlugin extends DocPlugin {
   private _sub: Subscription = new Subscription()
   private toolbarOvr?: OverlayRef
   private _cpr?: ComponentRef<TextMarkerComponent>
-  private _closeCpr$ = new Subject()
+  private _closeCpr$?: Subject<void>
+  private _toolbarRange?: {blockId: string; start: number; end: number}
+  private _destroyed = false
 
   protected utils!: TextToolbarUtils
   private activeCommonAttrs: ITextCommonAttrs = {
@@ -45,13 +47,11 @@ export class TextMarkerPlugin extends DocPlugin {
       if (this.toolbarOvr && isExternalModalOpen(this.doc)) this.closeToolbar()
     }))
 
-    this.markTextBlockFlavours.forEach(flavour => {
+    new Set([...this.markTextBlockFlavours, ...this.colorOnlyFlavours]).forEach(flavour => {
       this._sub.add(this.doc.event.add('selectEnd', this.onSelectEnd, {flavour}))
-    })
-    this.colorOnlyFlavours.forEach(flavour => {
-      // 同一 flavour 若也在 markTextBlockFlavours 里则跳过，避免重复注册 selectEnd 导致开两个 overlay。
-      if (this.markTextBlockFlavours.includes(flavour)) return
-      this._sub.add(this.doc.event.add('selectEnd', this.onSelectEnd, {flavour}))
+      // Scoped handlers run before InputTransformer's global composition owner.
+      // Dismiss presentation only; the existing session still owns all IME input.
+      this._sub.add(this.doc.event.add('compositionStart', () => this.closeToolbar(), {flavour}))
     })
 
     this._sub.add(
@@ -72,55 +72,111 @@ export class TextMarkerPlugin extends DocPlugin {
   }
 
   onSelectEnd = () => {
-    const sel = this.doc.selection.value!
-    if (this.doc.isReadonly || isExternalModalOpen(this.doc) || !isFloatTextToolbarSelection(sel) || !sel.isInSameBlock || !isSelectionAlive(sel as any, this.doc)
-      || this._isSelectionReadonly(sel)
-      // || this.doc.event.status.isSelecting
-    ) {
-      if (this.toolbarOvr) this.closeToolbar()
-      return;
-    }
-    // if (!this.markTextBlockFlavours.includes(sel.firstBlock.flavour)) return;
     this.openToolbar()
   }
 
+  private _canShow(selection: BlockCraft.Selection | null): selection is BlockCraft.Selection {
+    if (this._destroyed || this.doc.isReadonly || isExternalModalOpen(this.doc) ||
+      !isFloatTextToolbarSelection(selection) || !selection.isInSameBlock ||
+      !isSelectionAlive(selection, this.doc) || this._isSelectionReadonly(selection)) return false
+    const session = this.doc.inputManger?.compositionSession
+    return !this.doc.event?.status?.isComposing &&
+      !(session?.activeBlockId === selection.firstBlock.id && !session.isIdle)
+  }
+
+  private _matchesRange(selection: BlockCraft.Selection): boolean {
+    const range = this._toolbarRange
+    return !!range && selection.start.type === 'text' && selection.end.type === 'text' &&
+      selection.start.blockId === range.blockId && selection.end.blockId === range.blockId &&
+      selection.start.offset === range.start && selection.end.offset === range.end
+  }
+
   openToolbar() {
-    if (isExternalModalOpen(this.doc)) return
     const sel = this.doc.selection.value
-    if (!isFloatTextToolbarSelection(sel) || !sel.isInSameBlock || !isSelectionAlive(sel as any, this.doc)) return
-    if (this._isSelectionReadonly(sel)) return
+    if (!this._canShow(sel)) {
+      this.closeToolbar()
+      return
+    }
+    // Native selectionchange and keyup can both finish the same selection.
+    // Reuse its toolbar, including the restored range after a color operation.
+    if (this.toolbarOvr?.hasAttached() && this._matchesRange(sel)) {
+      this._updateToolbar(sel)
+      return
+    }
+    this.closeToolbar()
 
     const position = calcFloatToolbarPosition(this.doc, sel)
     if (!position) return
     const {connectElement, connectPositions} = position
 
+    const close$ = new Subject<void>()
+    this._closeCpr$ = close$
+    this._toolbarRange = {
+      blockId: sel.firstBlock.id,
+      start: sel.start.type === 'text' ? sel.start.offset : 0,
+      end: sel.end.type === 'text' ? sel.end.offset : 0,
+    }
     const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay<TextMarkerComponent>({
       target: connectElement,
       component: TextMarkerComponent,
       positions: connectPositions,
       backdrop: true
-    }, this._closeCpr$)
+    }, close$, () => {
+      // A backdrop, disconnected anchor or document teardown can close the
+      // service-owned overlay without calling the plugin's explicit close.
+      if (this._closeCpr$ !== close$) return
+      this._closeCpr$ = undefined
+      this._toolbarRange = undefined
+      this.toolbarOvr = undefined
+      this._cpr = undefined
+    })
+    if (this._closeCpr$ !== close$) return
     this._cpr = componentRef
     this.toolbarOvr = overlayRef
+    this._updateToolbar(sel)
 
-    this.activeCommonAttrs = this.utils.getCurrentCommonAttrs(sel)
+    overlayRef.detachments().pipe(take(1), takeUntil(close$)).subscribe(() => {
+      if (this._closeCpr$ === close$) this.closeToolbar()
+    })
+    // A format transaction can clear and synchronously restore the same model
+    // range. Inspect its settled value, rather than closing on that transient null.
+    this.doc.selection.changeObserve().pipe(debounceTime(0), takeUntil(close$)).subscribe(() => {
+      const current = this.doc.selection.value
+      if (!this._canShow(current) || !this._matchesRange(current)) this.closeToolbar()
+    })
+    const block = sel.firstBlock as EditableBlockComponent
+    block.onTextChange?.pipe(takeUntil(close$)).subscribe(event => {
+      if (event.op.some(op => op.insert != null || op.delete != null)) this.closeToolbar()
+    })
+  }
+
+  private _updateToolbar(selection: BlockCraft.Selection): void {
+    if (!this._cpr) return
+    this.activeCommonAttrs = this.utils.getCurrentCommonAttrs(selection)
     this._cpr.setInput('doc', this.doc)
     this._cpr.setInput('utils', this.utils)
     this._cpr.setInput('activeAttrs', this.activeCommonAttrs.attrs)
     this._cpr.setInput('activeColors', this.activeCommonAttrs.colors)
-    this._cpr.setInput('colorOnly', this.colorOnlyFlavours.includes(sel.firstBlock.flavour))
-
-    // 不订阅 nextChangeObserve 关闭：本工具栏带 backdrop，点击外部由 backdropClick 关闭即可。
-    // formatText 染色会塌缩+恢复选区（触发一次 selectionchange），若在此关闭会导致染色后
-    // 工具栏消失且不再出现（本插件按 selectEnd 开启，不像 rich-toolbar 那样会自动重开）。
+    this._cpr.setInput('colorOnly', this.colorOnlyFlavours.includes(selection.firstBlock.flavour))
   }
 
   closeToolbar() {
-    this._closeCpr$.next(true)
-    this.toolbarOvr?.dispose()
+    const close$ = this._closeCpr$
+    const overlay = this.toolbarOvr
+    this._closeCpr$ = undefined
+    this._toolbarRange = undefined
+    this.toolbarOvr = undefined
+    this._cpr = undefined
+    if (close$) {
+      close$.next()
+      close$.complete()
+    } else {
+      overlay?.dispose()
+    }
   }
 
   destroy() {
+    this._destroyed = true
     // 插件销毁时必须同时关闭 overlay，否则 CDK overlay 残留泄漏。对齐 ImgToolbar。
     this.closeToolbar()
     this._sub?.unsubscribe()

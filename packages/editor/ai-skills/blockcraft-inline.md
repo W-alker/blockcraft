@@ -115,6 +115,13 @@ LF 保留为真实文本，不再生成 `d:lineBreak` / `data-line-break` 行号
 销毁清理词法缓存，异步旧结果不得重新建立 DOM。输入、协同、Undo 和修订仍由原有模型路径负责。
 这不是块内虚拟化，也未消除模型读取、展示投影与 Blot 对比的全部线性扫描。
 
+包内 `InlineRuntime.acquireCompositionCaret(offset)` 默认返回 null；`CodeInlineRuntime` 只在可见 LF 后的
+逻辑行首提供零模型长度的 `CursorBlot` 及幂等释放函数，原生光标位于零宽前缀之后。
+该前缀将 Chromium 多轮候选替换限制在当前行；候选 DOM 由浏览器维护，不能纳入 Y.Text、高亮或源行长度。
+`CompositionSession` 捕获相对锚点后获取租约，在 prepareCommit 解析位置后、模型重渲前释放；
+取消/reset/abort/删除和 runtime 销毁也必须清理。普通段落、行中、隐藏 LF 和 Mermaid 平面渲染保持原路径。
+当前插入/移除 Cursor 使用受控 Blot 变更，在组合输入首尾同步行结构；每次候选更新不扫描或重建行。
+
 ## Blot Tree Structure
 
 ```

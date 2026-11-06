@@ -9,6 +9,7 @@ import {STR_LINE_BREAK} from "../../framework/block-std/inline/const";
 import {shikiService} from "./shiki-config";
 import type {BundledLanguage, Highlighter, ThemedToken} from 'shiki'
 import {TextBlot} from "../../framework/block-std/inline/blot/text-blot";
+import {CursorBlot} from "../../framework/block-std/inline/blot/cursor-blot";
 import {EmbedBlot} from "../../framework/block-std/inline/blot/embed-blot";
 import type {INormalizedEndpoints} from "../../framework/modules/selection/normalize";
 import {IncrementalCodeTokenizer} from './incremental-code-tokenizer';
@@ -131,6 +132,7 @@ export class CodeInlineRuntime extends InlineRuntime {
   private _canonicalRenderFrame: number | null = null
   private _canonicalRenderGeneration = 0
   private _destroyed = false
+  private _releaseCompositionCaret?: () => void
 
   private readonly _handleNativeInput = () => {
     const host = this._options.canonicalHost
@@ -154,6 +156,41 @@ export class CodeInlineRuntime extends InlineRuntime {
     if (options.canonicalHost) {
       container.addEventListener('input', this._handleNativeInput)
     }
+  }
+
+  /** @internal Isolate native candidate replacement from the preceding line break. */
+  override acquireCompositionCaret(modelOffset: number): (() => void) | null {
+    this._releaseCompositionCaret?.()
+    if (this._destroyed || modelOffset <= 0) return null
+    const previous = this.scrollBlot.findByOffset(modelOffset)
+    if (!(previous?.blot instanceof TextBlot) || previous.localOffset !== 1 ||
+      previous.blot.text !== '\n' || previous.blot.attrs?.['s:display'] === 'none') return null
+    const line = previous.blot.domNode.parentNode
+    if (!line || !this.scrollBlot.isCanonicalLineContainer(line)) return null
+    const native = this.container.ownerDocument.getSelection()
+    if (!native?.isCollapsed || !native.anchorNode || !this.container.contains(native.anchorNode)) return null
+
+    // Blink can expand the second preedit replacement range to include the LF
+    // before a c-line. A zero-model-length prefix gives it a stable start within
+    // this line; all candidate text remains browser-owned until prepareCommit.
+    const cursor = new CursorBlot()
+    let released = false
+    const release = () => {
+      if (released) return
+      released = true
+      if (this._releaseCompositionCaret === release) this._releaseCompositionCaret = undefined
+      runInlineRuntimeCanonicalMutation(this, () => this.scrollBlot.removeCursorBlot(cursor))
+    }
+    this._releaseCompositionCaret = release
+    try {
+      runInlineRuntimeCanonicalMutation(this, () => this.scrollBlot.insertCursorBlot(modelOffset, cursor))
+      const node = cursor.anchorNode
+      native.setBaseAndExtent(node, node.length, node, node.length)
+    } catch (error) {
+      release()
+      throw error
+    }
+    return release
   }
 
   setLang(lang: string) {
@@ -362,6 +399,7 @@ export class CodeInlineRuntime extends InlineRuntime {
 
   override destroy() {
     if (this._destroyed) return
+    this._releaseCompositionCaret?.()
     this._destroyed = true
     this.container.removeEventListener('input', this._handleNativeInput)
     this._cancelCanonicalRender()

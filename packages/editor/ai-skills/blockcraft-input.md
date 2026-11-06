@@ -285,7 +285,14 @@ guard for browser, extension or script anomalies.
 代码块的提交/取消仍经过既有 Yjs、相对锚点、延迟协同和撤销流程。`CodeInlineRuntime` 在语法引擎
 和行基线就绪时，从提交后的完整模型快照同步按行恢复高亮与修订展示，再由原 Input 流程恢复光标。
 后续帧只修复变化范围及原生输入污染，未变行和叶子保留；首次准备或缓存失效时仍允许全量恢复。
-这不改变 `CompositionSession` 协议，也不允许组合输入期间异步高亮写入活动编辑面。
+组合输入期间仍不允许异步高亮写入活动编辑面。
+
+代码块可见逻辑行首的预编辑由 `CompositionSession` 租用 `InlineRuntime.acquireCompositionCaret(offset)`
+提供的临时光标宿主。基础 runtime 返回 null；Code runtime 仅在可见 LF 后插入零模型长度的
+`CursorBlot`，原生光标落在其零宽前缀之后，防止 Chromium 在更新候选时把上一行 LF 纳入替换范围。
+模型相对锚点先捕获，候选文字只存在临时 DOM；每次候选更新不重渲、不写 Y.Text。
+`prepareCommit()` 先解析相对位置，再释放临时宿主，之后仍由 InputTransformer 写入模型、恢复 DOM 和光标。
+取消、reset、abort、块删除及 runtime 销毁均释放同一幂等租约；普通段落、行中和 Mermaid 平面路径不启用。
 
 折叠光标处取消 IME 不预捕获下一次文字修改的撤销选区；只有非空提交才捕获提交前位置。
 取消仍恢复模型 DOM、光标并完成延迟协同与会话清理。已在组合输入开始时产生结构修改的
@@ -294,22 +301,23 @@ guard for browser, extension or script anomalies.
 The most complex input path. CJK input methods (Chinese, Japanese, Korean) require special handling:
 
 ```
-compositionStart → CompositionSession created
-  → CursorBlot inserted (temporary, zero-length blot for IME rendering)
+compositionStart → CompositionSession.start() captures the model-relative anchor
+  → optionally acquires a runtime-owned native caret (code logical-line start only)
   → compositionUpdate (multiple times, browser renders inline)
-  → compositionEnd → CompositionSession.commit()
-    → CursorBlot removed
-    → Final text written to Y.Text
+  → compositionEnd → CompositionSession.prepareCommit()
+    → resolves the relative insertion point and releases the optional caret
+    → InputTransformer writes final text to Y.Text, rerenders and restores the caret
+    → CompositionSession.end()
 ```
 
 ### CompositionSession
 
 Manages the lifecycle of an active IME session:
-- Creates a `CursorBlot` at the cursor position
-- Tracks the composition text
+- Owns an optional runtime-native caret lease; only code logical-line starts currently require a `CursorBlot`
+- Final composition text comes from the existing composition event state, not from transient DOM
 - Uses `OneShotCursorAnchor` (Yjs `RelativePosition`) to maintain cursor position during collaboration
 - Captures the anchor from the accepted model selection/materialized block at `compositionStart`; DOM selection jitter during IME startup must not retarget the eventual commit.
-- On commit: removes CursorBlot, inserts final text into Y.Text
+- On prepareCommit: resolves the relative anchor and releases the native caret before InputTransformer writes final text into Y.Text
 - Restores the committed caret with `setCursorAt()` after rerender; if WebKit drops focus during projection, the editor refocuses and reapplies the same model cursor without reading the DOM back into the model
 - If the active editable block owns wrapped-image line fragments, acquires one idempotent InlineRuntime layout-freeze lease before native composition starts. Resize/content invalidations stay dirty-only until the final Y.Text write, rerender and caret restoration finish; `end()`, abort, block deletion and reset all release the same lease.
 

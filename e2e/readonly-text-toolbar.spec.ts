@@ -51,15 +51,39 @@ test.beforeEach(async ({page}) => {
 });
 
 async function selectText(page: Page) {
+  // A previous selection/heading submenu can survive resize. Close the menu
+  // before measuring, then collapse the old range with a real click so the
+  // following gesture selects text instead of dragging the selected content.
+  await page.keyboard.press('Escape');
   const text = page.locator('#readonly-toolbar-fixture .paragraph-block c-text').first();
   await expect(text).toBeVisible();
-  const box = await text.boundingBox();
-  if (!box) throw new Error('missing text');
-  await page.mouse.move(box.x + 2, box.y + box.height / 2);
+  await text.scrollIntoViewIfNeeded();
+  const readPoints = () => text.evaluate(element => {
+    const range = element.ownerDocument.createRange();
+    range.selectNodeContents(element);
+    const rects = Array.from(range.getClientRects()).filter(rect => rect.width > 0 && rect.height > 0);
+    const first = rects[0];
+    const last = rects.at(-1);
+    if (!first || !last) throw new Error('missing text fragments');
+    const box = range.getBoundingClientRect();
+    return {
+      start: {x: first.left + .5, y: first.top + first.height / 2},
+      end: {x: last.right - .5, y: last.top + last.height / 2},
+      box: {x: box.x, y: box.y, width: box.width, height: box.height},
+      selectedText: element.textContent ?? '',
+    };
+  });
+  let points = await readPoints();
+  await page.mouse.click(points.start.x, points.start.y);
+  // Clicking may reveal the caret through the document scroll container.
+  points = await readPoints();
+  await page.mouse.move(points.start.x, points.start.y);
   await page.mouse.down();
-  await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2, {steps: 12});
+  await page.mouse.move(points.end.x, points.end.y, {steps: 12});
   await page.mouse.up();
-  return box;
+  await expect.poll(() => page.evaluate(() => window.getSelection()?.toString() ?? ''))
+    .toBe(points.selectedText);
+  return points.box;
 }
 const toolbar = (page: Page) => page.locator('.float-text-toolbar');
 
@@ -162,11 +186,16 @@ test('紧凑浮动工具栏保留文字入口、纵向菜单及窄屏格式操�
   await page.setViewportSize({width: 375, height: 760});
   await selectText(page);
   await expect(wrapper).toBeVisible();
-  const bounds = await wrapper.boundingBox();
-  expect(bounds!.x).toBeGreaterThanOrEqual(0);
-  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(375);
-  expect(bounds!.height).toBeGreaterThan(36);
-  expect(await wrapper.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+  // Overlay fitting runs after attachment; assert the settled production
+  // layout instead of reading a single frame before its viewport clamp.
+  await expect(async () => {
+    const bounds = await wrapper.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(375);
+    expect(bounds!.height).toBeGreaterThan(36);
+    expect(await wrapper.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+  }).toPass({timeout: 5000});
   await expect(bar.getByText('编辑态动作', {exact: true})).toBeVisible();
   await bar.screenshot({path: testInfo.outputPath('compact-toolbar-mobile.png')});
   await bold.click();
