@@ -2,12 +2,179 @@ import * as Y from "yjs";
 import {DocUndoManger} from "./undoManger";
 import {BlockNodeType} from "../block-std";
 import {BlockSelection} from "../modules/selection";
-import {resolveRelativeSelectionBookmark} from "../modules/selection/relative-bookmark";
+import {resolveRelativeSelectionBookmark, type RelativeSelectionBookmark} from "../modules/selection/relative-bookmark";
+import {SelectionHistoryRestorer, type SelectionHistoryRestoreHost} from "../modules/selection/history-restorer";
+import type {SelectionSurfaceAdapter} from "../modules/selection/surface-adapter";
+import type {ISelectionJSON} from "../modules/selection/types";
+import {nextTick} from "../../global";
 import {
   BlockReadonlyError,
   BlockReadonlyOperation,
 } from "./block-readonly.types";
 import {ORIGIN_BLOCK_READONLY_CONTROL} from "./origins";
+
+describe('DocUndoManger – synchronous selection history integration', () => {
+  let ydoc: Y.Doc;
+  let yText: Y.Text;
+  let mgr: DocUndoManger;
+  let restorer: SelectionHistoryRestorer;
+  let doc: any;
+  let projected: ISelectionJSON | null;
+  let restored: Array<RelativeSelectionBookmark | null>;
+  let frames: Map<number, FrameRequestCallback>;
+
+  const selection = (anchor: number, head = anchor): ISelectionJSON => ({
+    anchor: {type: 'text', blockId: 'paragraph', offset: anchor},
+    head: {type: 'text', blockId: 'paragraph', offset: head},
+    commonParent: 'paragraph',
+  });
+
+  beforeEach(() => {
+    ydoc = new Y.Doc();
+    const blocks = ydoc.getMap('blocks');
+    const yBlock = new Y.Map();
+    yText = new Y.Text();
+    yBlock.set('children', yText);
+    blocks.set('paragraph', yBlock);
+    yText.insert(0, 'abcdef');
+    const block = {
+      id: 'paragraph', nodeType: BlockNodeType.editable, yText,
+      get textLength() { return yText.length; },
+      hostElement: document.createElement('p'),
+    };
+    projected = null;
+    restored = [];
+    frames = new Map();
+    let frameId = 0;
+    const replay = (value: ISelectionJSON | null) => {
+      doc.selection.value = value;
+      projected = value;
+    };
+    doc = {
+      yDoc: ydoc,
+      root: {hostElement: document.createElement('div')},
+      isEditable: (target: any) => target === block,
+      getBlockById: (id: string) => {
+        if (id !== block.id) throw new Error(`Block not found: ${id}`);
+        return block;
+      },
+      selection: {
+        value: null,
+        replay,
+        restoreBookmark: (bookmark: RelativeSelectionBookmark | null) => {
+          restored.push(bookmark);
+          restorer.restore(bookmark);
+        },
+      },
+    };
+    const host: SelectionHistoryRestoreHost = {
+      replay,
+      readModelSelection: () => doc.selection.value,
+      readDomSelection: () => projected,
+      isProjectionPending: () => false,
+      isSelectionVisible: () => true,
+      ensureViewMounted: () => {},
+      scrollToBlock: () => false,
+      scrollSelectionIntoView: () => {},
+    };
+    const surface = jasmine.createSpyObj<SelectionSurfaceAdapter>('history surface', [
+      'focusEditingHost', 'hasEditorFocus', 'isRootConnected', 'requestFrame', 'cancelFrame',
+    ]);
+    surface.hasEditorFocus.and.returnValue(true);
+    surface.isRootConnected.and.returnValue(true);
+    surface.requestFrame.and.callFake(callback => {
+      frames.set(++frameId, callback);
+      return frameId;
+    });
+    surface.cancelFrame.and.callFake(id => { frames.delete(id); });
+    restorer = new SelectionHistoryRestorer(doc, host, surface);
+    mgr = new DocUndoManger(doc, blocks);
+  });
+
+  afterEach(() => {
+    restorer.destroy();
+    ydoc.destroy();
+  });
+
+  const edit = (before: ISelectionJSON, at: number, text: string, after: ISelectionJSON) => {
+    doc.selection.replay(before);
+    mgr.stopCapturing();
+    mgr.captureSelectionBeforeChange();
+    ydoc.transact(() => yText.insert(at, text));
+    doc.selection.replay(after);
+    mgr.stopCapturing();
+  };
+
+  const assertHistoryState = (text: string, expected: ISelectionJSON) => {
+    expect(yText.toString()).toBe(text);
+    expect(doc.selection.value).toEqual(expected);
+    expect(projected).toEqual(expected);
+    const incoming = restored.at(-1);
+    expect(incoming).not.toBeNull();
+    expect(incoming?.source).toEqual(expected);
+    // 下一次 history 命令捕获的是刚恢复的模型选区，而非 replay(null) 的中间态。
+    const captured = (mgr as any)._captureSelectionSnapshot() as RelativeSelectionBookmark | null;
+    expect(captured).not.toBeNull();
+    expect(captured?.source).toEqual(expected);
+    if (captured) expect(resolveRelativeSelectionBookmark(captured, doc)).toEqual(expected);
+  };
+
+  const flushFrames = () => {
+    for (const [id, callback] of [...frames]) {
+      frames.delete(id);
+      callback(0);
+    }
+  };
+
+  it('round-trips a caret and backward range through multiple history commands in one task', async () => {
+    edit(selection(2), 2, 'X', selection(3));
+    edit(selection(6, 1), 5, 'Y', selection(7, 2));
+    const duringTransactions: Array<ISelectionJSON | null> = [];
+    yText.observe(() => duringTransactions.push(doc.selection.value));
+
+    // 所有六步都在首个 await 前执行，模拟快速历史键重复或程序化历史 burst。
+    mgr.undo();
+    assertHistoryState('abXcdef', selection(6, 1));
+    mgr.redo();
+    assertHistoryState('abXcdYef', selection(7, 2));
+    mgr.undo();
+    assertHistoryState('abXcdef', selection(6, 1));
+    mgr.undo();
+    assertHistoryState('abcdef', selection(2));
+    mgr.redo();
+    assertHistoryState('abXcdef', selection(6, 1));
+    mgr.redo();
+    assertHistoryState('abXcdYef', selection(7, 2));
+
+    expect(restored.length).toBe(6);
+    expect(restored.every(bookmark => bookmark !== null)).toBeTrue();
+    expect(duringTransactions).toEqual([null, null, null, null, null, null]);
+    await nextTick();
+    flushFrames();
+    expect(doc.selection.value).toEqual(selection(7, 2));
+    expect(projected).toEqual(selection(7, 2));
+  });
+
+  it('does not overwrite a newer caret after a synchronous Undo/Redo/Undo burst', async () => {
+    edit(selection(3), 3, '中文🙂', selection(7));
+
+    mgr.undo();
+    assertHistoryState('abcdef', selection(3));
+    mgr.redo();
+    assertHistoryState('abc中文🙂def', selection(7));
+    mgr.undo();
+    assertHistoryState('abcdef', selection(3));
+    // 新导航在同一任务发生，不能被首个 replay 或其验证帧抢回旧 caret。
+    doc.selection.replay(selection(1));
+
+    await nextTick();
+    flushFrames();
+    expect(doc.selection.value).toEqual(selection(1));
+    expect(projected).toEqual(selection(1));
+    expect(restored.length).toBe(3);
+    expect(restored.every(bookmark => bookmark !== null)).toBeTrue();
+  });
+});
 
 /**
  * Regression guard for the "second Ctrl+Z does nothing" bug.

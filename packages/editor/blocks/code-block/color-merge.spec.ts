@@ -37,7 +37,20 @@ describe('mergeColorOverShiki', () => {
     ]);
   });
 
-  it('never tints the d:lineBreak segment', () => {
+  it('keeps unmarked LF revision visibility without inheriting user colors', () => {
+    const result = mergeColorOverShiki([{insert: '\n'}], [{
+      insert: '\n',
+      attributes: {
+        's:color': 'red', 's:background': 'blue', 's:display': 'none',
+        'a:data-bc-revision-kind': 'delete',
+      },
+    }]);
+    expect(result).toEqual([{insert: '\n', attributes: {
+      's:display': 'none', 'a:data-bc-revision-kind': 'delete',
+    }}]);
+  });
+
+  it('never tints the legacy d:lineBreak segment', () => {
     const shiki: DeltaInsertText[] = [
       {insert: 'a', attributes: {'s:color': '#s'}},
       {insert: '\n', attributes: {'d:lineBreak': true}},

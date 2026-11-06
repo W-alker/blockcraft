@@ -2,7 +2,15 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying text input behavior.
 >
-> Last updated: 2026-10-23
+> Last updated: 2026-11-06
+
+代码块使用 `c-line` 逻辑行容器，末尾空行中 BreakBlot 可以没有前置 sibling。
+`beforeInput` 的 end-break 兼容分支必须允许这种合法结构，并沿用既有事务写入、重渲与光标恢复；
+不能依赖根容器平面排列，也不能让首个字符落入浏览器原生写入。
+Firefox 在行首 Backspace 可能报告跨两个 `c-line`、但两端模型 offset 相同的结构范围。
+只有 `deleteContentBackward`、相邻已注册行、前一字符为可见 LF 且两端都映射为当前行首时，
+输入规划才将其转为删除该 LF 的原有范围计划；仍先执行只读检查，再走原有事务/撤销路径。
+普通段落、隐藏 LF、词删除与行删除不使用此兜底。
 
 ## Architecture Overview
 
@@ -273,6 +281,15 @@ type. The InputTransformer rejection remains a last-resort DOM consistency
 guard for browser, extension or script anomalies.
 
 ## IME / Composition
+
+代码块的提交/取消仍经过既有 Yjs、相对锚点、延迟协同和撤销流程。`CodeInlineRuntime` 在语法引擎
+和行基线就绪时，从提交后的完整模型快照同步按行恢复高亮与修订展示，再由原 Input 流程恢复光标。
+后续帧只修复变化范围及原生输入污染，未变行和叶子保留；首次准备或缓存失效时仍允许全量恢复。
+这不改变 `CompositionSession` 协议，也不允许组合输入期间异步高亮写入活动编辑面。
+
+折叠光标处取消 IME 不预捕获下一次文字修改的撤销选区；只有非空提交才捕获提交前位置。
+取消仍恢复模型 DOM、光标并完成延迟协同与会话清理。已在组合输入开始时产生结构修改的
+范围替换、gap 和表格选区继续沿用既有 capture group，保持一次撤销的原子性。
 
 The most complex input path. CJK input methods (Chinese, Japanese, Korean) require special handling:
 

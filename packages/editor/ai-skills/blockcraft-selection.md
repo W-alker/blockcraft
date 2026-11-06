@@ -2,7 +2,15 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying selection behavior or when the L1 quick reference in `blockcraft.md` isn't enough.
 >
-> Last updated: 2026-10-16 | Source of truth: `framework/modules/selection/`
+> Last updated: 2026-11-06 | Source of truth: `framework/modules/selection/`
+
+## 代码块逻辑行 DOM
+
+代码块的 `c-line` 仅是行内视图容器，不是 Block 或模型选区端点。一个代码块仍使用一个
+`Y.Text` 和块内 UTF-16 offset，anchor/head、协同相对位置及撤销快照格式不变。
+`InlinePositionMapper` 识别 ScrollBlot 注册的行容器，支持原生 Range 落在行容器子节点边界；
+首 gap 在首行内，尾 BreakBlot 在末行内，不能再假设编辑容器第一个子节点就是零长 gap。
+行号为 CSS counter，不进入复制文本或模型长度。普通块及 Mermaid 继续使用原有平面 DOM。
 
 ## 选中样式的归属
 
@@ -52,7 +60,8 @@ Remote Yjs transaction
 Undo / redo
   → RelativeSelectionBookmark stored on the matching Yjs StackItem.meta
   → Y.UndoManager pops exactly that StackItem
-  → SelectionHistoryRestorer focuses, resolves and replays after view sync
+  → SelectionHistoryRestorer synchronously resolves/replays available targets after view sync
+  → unavailable targets retain bounded deferred mount/replay
   → bounded frame verification repairs delayed mount, focus loss or DOM mismatch
 
 Browser surface
@@ -393,7 +402,9 @@ Remote reconciliation is relevance-filtered. Direct endpoint/container/table cha
 
 `DocUndoManager` stores each pre-change `RelativeSelectionBookmark` in the same Yjs `StackItem.meta` as the content operation. During undo, the current selection is captured for the redo item Yjs is about to create; redo performs the symmetric capture for the new undo item. A merged stack item keeps its earliest pre-change bookmark. There are no parallel selection arrays to synchronize with Yjs stack operations.
 
-After Yjs pops an item, `SelectionHistoryRestorer` receives that item's bookmark. With root virtualization enabled, it first materializes only the bookmark endpoint block IDs (plus referenced table IDs); retained-but-detached and fully evicted endpoint views can therefore be rebuilt without pinning the selected middle range. It waits for the view microtask, resolves relative positions against the restored model, and measures the resolved head before native Selection replay. It then focuses the relevant editing host synchronously and replays once through the normal model-first path.
+Yjs 弹出历史项后，`SelectionHistoryRestorer` 接收对应的相对书签。当前已经能解析的目标立即走正常的 model-first replay，让紧接着的 Undo/Redo 能捕获刚恢复的模型选区，而非事务同步期间临时清空的 `null`。它仍在 replay 前检查目标是否可见，并沿用原有焦点和滚动规则。
+
+目标尚不可用时，保留 `nextTick()` 和有界帧重试，仅挂载书签端点及引用的表格 ID，不固定中间选区范围。首次延迟尝试、挂载重试和投影失败重试都检查等待期间模型选区是否已有新语义；新光标或范围优先，旧任务不得覆盖或在失败时清空它。新的历史恢复、显式 `restore(null)` 和销毁会取消旧验证帧。事务观察器执行前清空旧选区的顺序、Yjs 书签格式及默认历史合并策略保持。
 
 While that exact Selection projection still has a mount request or animation-frame retry pending, history verification waits instead of publishing the same model selection again. This prevents verification from canceling its own DOM projection. Once projection settles, a small version-guarded frame budget repairs genuine browser focus loss or DOM/model mismatch. If the pre-replay head was fully visible, history leaves the viewport unchanged. If it was offscreen or had no usable geometry, virtualized history delegates once to `RootVirtualizationManager.scrollToBlock(head.blockId)` for bounded center alignment; non-virtualized history uses Selection's minimal geometry scroll. The check must happen before replay because focusing/applying a native Range may itself scroll an offscreen target into view. A newer restore cancels older work; an unresolvable bookmark fails closed to `null`. Model-only table-cell selections skip native DOM verification.
 

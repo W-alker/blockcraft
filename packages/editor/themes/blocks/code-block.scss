@@ -21,9 +21,7 @@
     }
 
     &.focused .edit-container {
-      [data-line-break="true"]::before,
-      c-element:first-of-type::before,
-      c-element[data-line-break]:first-of-type::after {
+      > c-line::before {
         visibility: visible;
       }
     }
@@ -59,28 +57,27 @@
       white-space-collapse: break-spaces;
       min-height: 1.8em;
 
-      counter-set: line;
+      counter-reset: line;
 
-      [data-line-break="true"]::before,
-      c-element:first-of-type::before,
-      c-element[data-line-break]:first-of-type::after {
+      > c-line {
+        display: block;
+        position: relative;
+        min-height: 1.8em;
+        counter-increment: line;
+      }
+
+      > c-line::before {
         visibility: hidden;
         position: absolute;
-        left: .5em;
+        left: calc(.5em - var(--code-padding-left));
+        top: 0;
         content: counter(line);
-        counter-increment: line;
         line-height: 1.8em;
         font-size: 1em;
         opacity: .6;
         color: var(--bc-color-light);
-      }
-
-      [data-line-break="true"]::before {
-        transform: translateY(100%);
-      }
-
-      c-element:first-of-type::before {
-        transform: unset;
+        pointer-events: none;
+        user-select: none;
       }
 
       @include code-highlight-theme();

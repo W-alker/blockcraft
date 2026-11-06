@@ -1,6 +1,5 @@
 import type {BundledLanguage, ThemedToken} from "shiki";
-import {STR_LINE_BREAK} from "../../framework/block-std/inline/const";
-import {DeltaInsertText} from "../../framework/block-std/types/delta.type";
+import {CodeTokenProjection} from '../../blocks/code-block/code-token-projection';
 import {InlineModel} from "../../framework/block-std/types/inline.type";
 import {SHIKI_LANGUAGE_MAP, shikiService} from "../../blocks/code-block/shiki-config";
 
@@ -34,7 +33,7 @@ export async function renderHighlightedCodeModel(
     }
   }
 
-  return flatShikiTokens(tokenLines, text, options.withLineBreak !== false);
+  return new CodeTokenProjection().project(tokenLines, text, options.withLineBreak !== false).deltas;
 }
 
 function resolveLanguage(lang?: string): BundledLanguage {
@@ -73,40 +72,4 @@ function stripMermaidFenceLines(lines: ThemedToken[][]): ThemedToken[][] {
     return [];
   }
   return lines.slice(1, -1);
-}
-
-function getOriginalLineBreaks(text: string): string[] {
-  return text.match(/\r\n|\r|\n/g) || [];
-}
-
-function flatShikiTokens(
-  lines: ThemedToken[][],
-  originalText: string,
-  withLineBreak: boolean
-): DeltaInsertText[] {
-  const result: DeltaInsertText[] = [];
-  const originalLineBreaks = getOriginalLineBreaks(originalText);
-
-  for (let i = 0; i < lines.length; i++) {
-    for (const token of lines[i]) {
-      if (!token.content) continue;
-      result.push({
-        insert: token.content,
-        attributes: token.color ? {"s:color": token.color} : undefined,
-      });
-    }
-
-    if (i < lines.length - 1) {
-      if (originalLineBreaks[i] === "\r\n") {
-        result.push({insert: "\r"});
-      }
-
-      result.push({
-        insert: STR_LINE_BREAK,
-        attributes: withLineBreak ? {"d:lineBreak": true} : undefined,
-      });
-    }
-  }
-
-  return result;
 }

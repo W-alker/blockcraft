@@ -2,7 +2,16 @@
 
 > **Level 1: Task Guide** — Read `blockcraft.md` first for context.
 >
-> Last updated: 2026-11-05
+> Last updated: 2026-11-06
+
+## 代码块行容器
+
+编辑代码块和 Snapshot Viewer 的 `.code-block .edit-container` 使用直接子元素 `c-line`
+包裹逻辑行。`c-line` 递增 CSS `line` counter，`c-line::before` 显示行号；空行同样计数，
+自动折行仍只显示一个行号。行号沿用聚焦时可见的行为，不能选择或编辑，也不进入复制文本。
+旧 `[data-line-break]` 和 `c-element:first-of-type` 行号规则已移除。宿主若自定义代码行号样式，
+应将选择器迁移至 `.code-block .edit-container > c-line::before`，不自行维护数字属性或行号文本。
+Mermaid 及普通富文本不使用该结构；不改变主题颜色变量。
 
 ## 表格自动列宽
 

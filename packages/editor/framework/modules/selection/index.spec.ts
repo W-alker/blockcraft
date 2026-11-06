@@ -1,9 +1,11 @@
 import {Subject} from 'rxjs';
+import * as Y from 'yjs';
 import {BlockNodeType, EditableBlockComponent} from '../../block-std';
 import {createBlockGapSpace} from '../../utils';
 import {nextTick} from '../../../global';
 import {SelectionManager} from './index';
 import {BlockSelection} from './blockSelection';
+import {captureRelativeSelectionBookmark} from './relative-bookmark';
 
 describe('SelectionManager DOM selection normalization', () => {
   function createManager(options?: {
@@ -3359,6 +3361,81 @@ describe('SelectionManager projection mount coordination', () => {
     document.getSelection()?.removeAllRanges();
     document.querySelectorAll('[data-projection-mount-test]').forEach(element => element.remove());
   });
+
+  for (const superseded of [false, true]) {
+    it(`restores a resolvable history bookmark through delayed inline projection (superseded=${superseded})`, () => {
+      const {manager, mountEditable, mountedTextNodes, doc, frames, onDestroy$, logger} = createProjectionMountManager();
+      const block = mountEditable('virtual-p1');
+      const textNode = mountedTextNodes.get(block.id)!;
+      const yDoc = new Y.Doc();
+      const yText = yDoc.getText(block.id);
+      yText.insert(0, textNode.data);
+      Object.assign(doc, {yDoc, isEditable: (candidate: any) => candidate?.nodeType === BlockNodeType.editable});
+      Object.defineProperty(block, 'yText', {value: yText});
+      // Reuse the mounted-view fixture while retaining real DOM normalization
+      // and a real Y.RelativePosition for the history resolver.
+      Object.setPrototypeOf(block, EditableBlockComponent.prototype);
+      Object.assign(block.runtime.mapper, {
+        domPointToModelPoint: (_container: HTMLElement, node: Node, offset: number) => {
+          if (node !== textNode) throw new Error('unexpected native history endpoint');
+          return offset;
+        },
+      });
+      const snapshot = {
+        anchor: {blockId: block.id, type: 'text' as const, offset: 3},
+        head: {blockId: block.id, type: 'text' as const, offset: 3},
+        commonParent: block.id,
+      };
+      const bookmark = captureRelativeSelectionBookmark(manager.createSelection(snapshot), doc as any);
+      expect(bookmark).not.toBeNull();
+      const mapper = block.runtime.mapper;
+      const original = mapper.modelPointToDomPoint;
+      let ready = false;
+      spyOn(mapper, 'modelPointToDomPoint').and.callFake((container, offset) => {
+        if (!ready) throw new Error('inline view is not ready');
+        return original(container, offset);
+      });
+      try {
+        manager.restoreBookmark(bookmark);
+
+        expect(manager.value?.toJSON()).toEqual(snapshot);
+        expect((manager as any)._isDomProjectionPending(snapshot)).toBeTrue();
+        expect(document.getSelection()?.rangeCount).toBe(0);
+        expect(frames.size).toBeGreaterThan(0);
+
+        let expected = snapshot;
+        let expectedTextNode = textNode;
+        if (superseded) {
+          const newer = mountEditable('virtual-p2');
+          manager.setCursorAt(newer as any, 2);
+          expected = {
+            anchor: {blockId: newer.id, type: 'text', offset: 2},
+            head: {blockId: newer.id, type: 'text', offset: 2},
+            commonParent: newer.id,
+          };
+          expectedTextNode = mountedTextNodes.get(newer.id)!;
+        }
+        ready = true;
+        for (const [id, callback] of [...frames]) {
+          if (frames.delete(id)) callback(0);
+        }
+
+        expect(manager.value?.toJSON()).toEqual(expected);
+        expect((manager as any)._isDomProjectionPending(snapshot)).toBeFalse();
+        const native = document.getSelection()!;
+        expect(native.isCollapsed).toBeTrue();
+        expect(native.anchorNode).toBe(expectedTextNode);
+        expect(native.focusNode).toBe(expectedTextNode);
+        expect(native.anchorOffset).toBe(expected.anchor.offset);
+        expect(native.focusOffset).toBe(expected.head.offset);
+        expect(frames.size).toBe(0);
+        expect(logger.warn).not.toHaveBeenCalled();
+      } finally {
+        onDestroy$.next();
+        yDoc.destroy();
+      }
+    });
+  }
 
   for (const reveal of [true, false]) {
     it(`preserves reveal=${reveal} when a new paragraph DOM projection is delayed`, () => {

@@ -6,6 +6,7 @@ import {CursorBlot} from "./cursor-blot";
 import {DeltaInsert, DeltaInsertEmbed, DeltaOperation, IInlineNodeAttrs, InlineModel} from "../../types";
 import {createZeroSpace} from "../../../utils";
 import type {EmbedConverter} from "../index";
+import {LogicalLineDom} from './logical-line-dom';
 
 export type EmbedConverterMap = Map<string, EmbedConverter>
 
@@ -37,11 +38,31 @@ export class ScrollBlot implements IScrollBlot {
   private _cachedLeaves: (TextBlot | EmbedBlot)[] | null = null
   private _prefixSums: number[] | null = null
   private _offsetByBlot: Map<IBlot, number> | null = null
+  private readonly _lineDom?: LogicalLineDom
+  private _leadingGap: HTMLElement | null = null
 
   constructor(
     readonly domNode: HTMLElement,
-    private _embedConverters: Map<string, EmbedConverter>
-  ) {}
+    private _embedConverters: Map<string, EmbedConverter>,
+    options?: {lineContainerTag?: 'c-line'},
+  ) {
+    if (options?.lineContainerTag) this._lineDom = new LogicalLineDom(domNode, options.lineContainerTag)
+  }
+
+  /** @internal Exact owned gap, including when it is inside a canonical line. */
+  get leadingGapNode(): HTMLElement | null { return this._leadingGap }
+
+  /** @internal Distinguishes canonical lines from browser-created wrappers. */
+  isCanonicalLineContainer(node: Node): boolean { return this._lineDom?.owns(node) ?? false }
+
+  /** @internal Projection recovery accepts either canonical DOM topology. */
+  hasCanonicalDomOrder(): boolean {
+    if (this._lineDom) return this._lineDom.hasCanonicalOrder(this._children)
+    const expected = this._children.map(child => child.domNode)
+    const owned = new Set<Node>(expected)
+    const direct = Array.from(this.domNode.childNodes).filter(node => owned.has(node))
+    return direct.length === expected.length && direct.every((node, index) => node === expected[index])
+  }
 
   /**
    * Invalidate the cached leaves, prefix-sum arrays, and child indices.
@@ -129,6 +150,7 @@ export class ScrollBlot implements IScrollBlot {
     this._invalidateIndex()
     this.detachAll()
     const leadingGap = createZeroSpace()
+    this._leadingGap = leadingGap
     const endBreak = new BreakBlot()
     endBreak.parent = this
 
@@ -142,7 +164,8 @@ export class ScrollBlot implements IScrollBlot {
     this._children.push(endBreak)
     nodes.push(endBreak.domNode)
 
-    this.domNode.replaceChildren(...nodes)
+    if (this._lineDom) this._syncLogicalLines()
+    else this.domNode.replaceChildren(...nodes)
   }
 
   /**
@@ -214,6 +237,7 @@ export class ScrollBlot implements IScrollBlot {
 
     this._cleanupEmptyLeaves()
     this._invalidateIndex()
+    this._syncLogicalLines()
   }
 
   /**
@@ -260,6 +284,8 @@ export class ScrollBlot implements IScrollBlot {
   detachAll() {
     const children = this._children
     this._children = []
+    this._leadingGap = null
+    this._lineDom?.clear()
     this._invalidateIndex()
     for (const child of children) {
       child.detach()
@@ -290,7 +316,8 @@ export class ScrollBlot implements IScrollBlot {
       const insertIdx = breakIdx >= 0 ? breakIdx : this._children.length
       this._children.splice(insertIdx, 0, newBlot)
       const refNode = breakIdx >= 0 ? this._children[insertIdx + 1].domNode : null
-      this.domNode.insertBefore(newBlot.domNode, refNode)
+      ;(refNode?.parentNode ?? this.domNode).insertBefore(newBlot.domNode, refNode)
+      this._syncLogicalLines()
       return
     }
 
@@ -302,6 +329,7 @@ export class ScrollBlot implements IScrollBlot {
     }
     this._children.splice(refIdx, 0, newBlot)
     ref.domNode.parentNode!.insertBefore(newBlot.domNode, ref.domNode)
+    this._syncLogicalLines()
   }
 
   /**
@@ -313,6 +341,7 @@ export class ScrollBlot implements IScrollBlot {
       this._children.splice(idx, 1)
       blot.detach()
       this._invalidateIndex()
+      this._syncLogicalLines()
     }
   }
 
@@ -384,6 +413,10 @@ export class ScrollBlot implements IScrollBlot {
    * @internal InlineFragmentProjection only.
    */
   restoreCanonicalDomOrder(): void {
+    if (this._lineDom) {
+      this._syncLogicalLines()
+      return
+    }
     // Do not use BreakBlot as insertBefore's reference. Firefox may detach the
     // trailing <br> while committing a native contenteditable mutation; using
     // that disconnected node as a reference throws before InputTransformer can
@@ -414,26 +447,30 @@ export class ScrollBlot implements IScrollBlot {
       ?? this._children.find(b => b.type === BlotType.Break)?.domNode
       ?? null
 
-    // Remove old blots
-    for (const blot of toRemove) {
-      const idx = this._childIndexOf(blot)
-      if (idx >= 0) this._children.splice(idx, 1)
-      blot.detach()
-    }
+    // Preserve zero-length children between removed leaves. Repeated array
+    // splice/indexOf here makes a large syntax-state change quadratic.
+    const removed = new Set<IBlot>(toRemove)
+    this._children = this._children.filter(child => !removed.has(child))
+    for (const blot of toRemove) blot.detach()
 
     // Compute insert position in _children
     const insertPos = afterBlot
-      ? this._childIndexOf(afterBlot)
+      ? this._children.indexOf(afterBlot)
       : this._children.findIndex(b => b.type === BlotType.Break)
 
-    // Insert new blots (in order)
-    for (let i = 0; i < newBlots.length; i++) {
-      const nb = newBlots[i]
+    // Array spread avoids the argument-count limit of splice(...newBlots).
+    // In a built scroll the anchor is always a retained leaf or the end break.
+    this._children = [
+      ...this._children.slice(0, insertPos),
+      ...newBlots,
+      ...this._children.slice(insertPos),
+    ]
+    for (const nb of newBlots) {
       nb.parent = this
-      this._children.splice(insertPos + i, 0, nb)
-      this.domNode.insertBefore(nb.domNode, refNode)
+      ;(refNode?.parentNode ?? this.domNode).insertBefore(nb.domNode, refNode)
     }
     this._invalidateIndex()
+    this._syncLogicalLines()
   }
 
   // ─── CursorBlot management ───
@@ -459,6 +496,7 @@ export class ScrollBlot implements IScrollBlot {
         this.domNode.appendChild(cursor.domNode)
       }
       this._invalidateIndex()
+      this._syncLogicalLines()
       return
     }
 
@@ -483,6 +521,7 @@ export class ScrollBlot implements IScrollBlot {
       }
     }
     this._invalidateIndex()
+    this._syncLogicalLines()
   }
 
   /**
@@ -494,6 +533,7 @@ export class ScrollBlot implements IScrollBlot {
       this._children.splice(idx, 1)
       cursor.detach()
       this._invalidateIndex()
+      this._syncLogicalLines()
     }
   }
 
@@ -663,10 +703,41 @@ export class ScrollBlot implements IScrollBlot {
     for (let i = 0; i < this._children.length - 1; i++) {
       const cur = this._children[i]
       const next = this._children[i + 1]
-      if (cur instanceof TextBlot && next instanceof TextBlot && (cur as TextBlot).mergeWith(next as TextBlot)) {
+      if (cur instanceof TextBlot && next instanceof TextBlot &&
+        (!this._lineDom || (!cur.text.includes('\n') && !next.text.includes('\n'))) &&
+        (cur as TextBlot).mergeWith(next as TextBlot)) {
         this._children.splice(i + 1, 1)
         i--
       }
     }
+  }
+
+  private _syncLogicalLines(): void {
+    if (!this._lineDom) return
+    const children: IBlot[] = []
+    let split = false
+    for (const child of this._children) {
+      if (!(child instanceof TextBlot) || child.text === '\n' || !child.text.includes('\n')) {
+        children.push(child)
+        continue
+      }
+      // Split once from the original string. Repeated TextBlot.split() would
+      // copy the remaining suffix for every line of a large pasted source.
+      const text = child.text
+      const parts = text.split(/(\n)/).filter(Boolean)
+      child.deleteAt(parts[0].length, text.length - parts[0].length)
+      children.push(child)
+      for (let index = 1; index < parts.length; index++) {
+        const part = new TextBlot(parts[index], child.attrs)
+        part.parent = this
+        children.push(part)
+      }
+      split = true
+    }
+    if (split) {
+      this._children = children
+      this._invalidateIndex()
+    }
+    this._lineDom.sync(this._children, this._leadingGap)
   }
 }

@@ -1,0 +1,111 @@
+import {IBlot} from './blot'
+import {TextBlot} from './text-blot'
+
+/** @internal Persistent canonical line wrappers; never owns model positions. */
+export class LogicalLineDom {
+  private _lines: HTMLElement[] = []
+  private _registered = new Set<HTMLElement>()
+  private _lineByNode = new WeakMap<Node, HTMLElement>()
+  private _lineByEndNode = new WeakMap<Node, HTMLElement>()
+
+  constructor(private readonly _container: HTMLElement, private readonly _tag: 'c-line') {}
+
+  clear(): void {
+    this._lines = []
+    this._registered.clear()
+    this._lineByNode = new WeakMap()
+    this._lineByEndNode = new WeakMap()
+  }
+
+  owns(node: Node): boolean {
+    return this._registered.has(node as HTMLElement) && node.parentNode === this._container
+  }
+
+  sync(children: readonly IBlot[], leadingGap: HTMLElement | null): void {
+    const groups: Node[][] = [[]]
+    for (const child of children) {
+      groups[groups.length - 1].push(child.domNode)
+      // Hidden deletion revisions retain their model LF but visually join the
+      // neighboring text. Only painted line breaks create another DOM row.
+      if (child instanceof TextBlot && child.text === '\n' && child.attrs?.['s:display'] !== 'none') {
+        groups.push([])
+      }
+    }
+
+    // Reserve existing wrappers by stable child identity before assigning new
+    // rows. Inserting a line above the first old row must not steal its wrapper.
+    const reserved = new Set<HTMLElement>()
+    const targets: Array<HTMLElement | undefined> = groups.map(group => {
+      const end = group.at(-1)
+      const oldLine = end && this._lineByEndNode.get(end)
+      if (oldLine && this._registered.has(oldLine) && !reserved.has(oldLine)) {
+        reserved.add(oldLine)
+        return oldLine
+      }
+      return undefined
+    })
+    for (let index = 0; index < groups.length; index++) {
+      if (targets[index]) continue
+      const group = groups[index]
+      for (const node of group) {
+        const oldLine = this._lineByNode.get(node)
+        if (oldLine && this._registered.has(oldLine) && !reserved.has(oldLine)) {
+          reserved.add(oldLine)
+          targets[index] = oldLine
+          break
+        }
+      }
+    }
+    const available = this._lines.filter(line => !reserved.has(line))
+    let availableIndex = 0
+    const nextLines = targets.map(line =>
+      line ?? available[availableIndex++] ?? this._container.ownerDocument.createElement(this._tag),
+    )
+    const retained = new Set(nextLines)
+    const nextEndNodes = new WeakMap<Node, HTMLElement>()
+    let rootReference = this._container.firstChild
+    for (let index = 0; index < groups.length; index++) {
+      const line = nextLines[index]
+      // Retired rows stay connected until their retained leaves have moved.
+      // Skip them as anchors so deleting a row does not reinsert every suffix row.
+      while (rootReference && this._registered.has(rootReference as HTMLElement) &&
+        !retained.has(rootReference as HTMLElement)) {
+        rootReference = rootReference.nextSibling
+      }
+      if (line === rootReference) rootReference = rootReference.nextSibling
+      else this._container.insertBefore(line, rootReference)
+
+      const nodes = groups[index]
+      const end = nodes.at(-1)
+      if (end) nextEndNodes.set(end, line)
+      if (index === 0 && leadingGap) nodes.unshift(leadingGap)
+      let reference = line.firstChild
+      for (const node of nodes) {
+        if (node === reference) reference = reference.nextSibling
+        else line.insertBefore(node, reference)
+        this._lineByNode.set(node, line)
+      }
+    }
+    for (const oldLine of this._lines) {
+      if (!retained.has(oldLine)) oldLine.remove()
+    }
+    this._lines = nextLines
+    this._registered = retained
+    this._lineByEndNode = nextEndNodes
+  }
+
+  hasCanonicalOrder(children: readonly IBlot[]): boolean {
+    const expected = children.map(child => child.domNode)
+    const owned = new Set<Node>(expected)
+    let index = 0
+    let lineIndex = 0
+    for (const direct of Array.from(this._container.childNodes)) {
+      if (!this._registered.has(direct as HTMLElement)) continue
+      if (direct !== this._lines[lineIndex++]) return false
+      for (const node of Array.from(direct.childNodes)) {
+        if (owned.has(node) && node !== expected[index++]) return false
+      }
+    }
+    return lineIndex === this._lines.length && index === expected.length
+  }
+}

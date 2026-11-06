@@ -77,8 +77,9 @@ export class MermaidTextareaBlockComponent extends EditableBlockComponent<Mermai
   }
 
   private _isCompositionProjectionBusy() {
-    return this.doc.event.status.isComposing ||
-      !this.doc.inputManger.compositionSession.isIdle
+    const session = this.doc.inputManger.compositionSession
+    return session.activeBlockId === this.id &&
+      (this.doc.event.status.isComposing || !session.isIdle)
   }
 
   private _readCanonicalSelection() {

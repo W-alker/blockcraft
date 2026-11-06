@@ -30,11 +30,28 @@ export class SelectionHistoryRestorer {
   ) {}
 
   restore(bookmark: RelativeSelectionBookmark | null): void {
+    if (this.destroyed) return
     const version = ++this.restoreVersion
+    this.cancelFrames()
     this.surface.focusEditingHost(bookmark?.anchor.blockId)
+    if (!bookmark) {
+      this.host.replay(null)
+      return
+    }
+
+    // A following Undo/Redo must capture this restored model selection, not
+    // the temporary null used while the preceding transaction updates views.
+    // Existing mounted targets can use the ordinary projection/retry boundary.
+    const selection = resolveRelativeSelectionBookmark(bookmark, this.doc)
+    if (selection) {
+      this.replayResolved(selection, 3, version)
+      return
+    }
+
+    const pendingSelection = this.host.readModelSelection()
     void nextTick().then(() => {
-      if (!this.isCurrent(version)) return
-      this.tryResolveAndReplay(bookmark, 3, version)
+      if (!this.isPendingIntentCurrent(version, pendingSelection)) return
+      this.tryResolveAndReplay(bookmark, 3, version, pendingSelection)
     })
   }
 
@@ -42,20 +59,16 @@ export class SelectionHistoryRestorer {
     if (this.destroyed) return
     this.destroyed = true
     this.restoreVersion += 1
-    this.frames.forEach(frame => this.surface.cancelFrame(frame))
-    this.frames.clear()
+    this.cancelFrames()
   }
 
   private tryResolveAndReplay(
-    bookmark: RelativeSelectionBookmark | null,
+    bookmark: RelativeSelectionBookmark,
     attemptsLeft: number,
     version: number,
+    pendingSelection: ISelectionJSON | null,
   ): void {
-    if (!this.isCurrent(version)) return
-    if (!bookmark) {
-      this.host.replay(null)
-      return
-    }
+    if (!this.isPendingIntentCurrent(version, pendingSelection)) return
 
     let selection: ISelectionJSON | null = null
     try {
@@ -64,9 +77,10 @@ export class SelectionHistoryRestorer {
     } catch {
       // A restored block may not be mounted in the component tree yet.
     }
+    if (!this.isPendingIntentCurrent(version, pendingSelection)) return
     if (!selection) {
       if (attemptsLeft > 0) {
-        this.scheduleFrame(() => this.tryResolveAndReplay(bookmark, attemptsLeft - 1, version))
+        this.scheduleFrame(() => this.tryResolveAndReplay(bookmark, attemptsLeft - 1, version, pendingSelection))
       } else {
         this.host.replay(null)
       }
@@ -82,16 +96,25 @@ export class SelectionHistoryRestorer {
     reveal = true,
   ): void {
     if (!this.isCurrent(version)) return
+    const beforeReplay = this.host.readModelSelection()
     try {
       const wasVisible = reveal && this.host.isSelectionVisible(selection)
       this.surface.focusEditingHost(selection.anchor.blockId)
       this.host.replay(selection)
+      if (!this.isCurrent(version) || !sameSelectionJSON(this.host.readModelSelection(), selection)) return
       if (reveal && !wasVisible && !this.host.scrollToBlock(selection.head.blockId)) {
         this.host.scrollSelectionIntoView()
       }
     } catch {
+      if (!this.isCurrent(version)) return
+      const pendingSelection = this.host.readModelSelection()
+      if (!sameSelectionJSON(pendingSelection, beforeReplay) &&
+        !sameSelectionJSON(pendingSelection, selection)) return
       if (attemptsLeft > 0) {
-        this.scheduleFrame(() => this.replayResolved(selection, attemptsLeft - 1, version, reveal))
+        this.scheduleFrame(() => {
+          if (!this.isPendingIntentCurrent(version, pendingSelection)) return
+          this.replayResolved(selection, attemptsLeft - 1, version, reveal)
+        })
       } else {
         this.host.replay(null)
       }
@@ -144,6 +167,15 @@ export class SelectionHistoryRestorer {
 
   private isCurrent(version: number): boolean {
     return !this.destroyed && version === this.restoreVersion
+  }
+
+  private isPendingIntentCurrent(version: number, expected: ISelectionJSON | null): boolean {
+    return this.isCurrent(version) && sameSelectionJSON(this.host.readModelSelection(), expected)
+  }
+
+  private cancelFrames(): void {
+    this.frames.forEach(frame => this.surface.cancelFrame(frame))
+    this.frames.clear()
   }
 }
 

@@ -2,6 +2,7 @@ import {paragraphAlignmentStyles} from '../../framework/block-std/typography';
 import {applyParagraphDecoration} from '../../blocks/paragraph-block/decoration';
 import {IBlockSnapshot} from "../../framework/block-std/types/block.type";
 import {InlineModel} from "../../framework/block-std/types/inline.type";
+import {splitDeltaByLineBreak} from '../../global/utils/delta';
 import {
   OrderedMarkerStyleId,
   resolveOrderedMarker,
@@ -182,8 +183,9 @@ function renderCode(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
 
   // No `host`: shiki restructures this container, so the always-placeholder
   // contract deliberately does not apply to highlighted code.
-  const content = createEditableContainer(ctx, snapshot, {tag: "pre"})
-  content.append(createCodeEndBreak())
+  const content = document.createElement('pre')
+  content.classList.add('edit-container')
+  content.append(createCodeContent(ctx, snapshot.children as InlineModel))
   scheduleCodeHighlight(content, snapshot, ctx, {
     lang: `${props["lang"] || "PlainText"}`,
     withLineBreak: true,
@@ -237,16 +239,36 @@ function scheduleCodeHighlight(
       // ctx.createInlineContent, not a bare renderInline: it threads
       // inlineEmbeds AND registers resource-placeholder disposables — this
       // apply hook must not be the one inline path that skips either.
-      target.append(ctx.createInlineContent(model as InlineModel))
-      if (options.withLineBreak) target.append(createCodeEndBreak())
+      target.append(options.withLineBreak
+        ? createCodeContent(ctx, model as InlineModel)
+        : ctx.createInlineContent(model as InlineModel))
     },
   })
 }
 
+/** Code-only canonical rows; CSS counters derive numbering from these elements. */
+function createCodeContent(ctx: SnapshotRenderContext, model: InlineModel): DocumentFragment {
+  const fragment = document.createDocumentFragment()
+  let pending: InlineModel = []
+  const appendLine = () => {
+    const line = document.createElement('c-line')
+    line.append(ctx.createInlineContent(pending))
+    fragment.append(line)
+    pending = []
+    return line
+  }
+  for (const parts of splitDeltaByLineBreak(model)) {
+    pending.push(...parts)
+    const tail = parts[parts.length - 1]
+    // A hidden revision newline must not introduce a visible row boundary.
+    if (tail?.insert === '\n' && tail.attributes?.['s:display'] !== 'none') appendLine()
+  }
+  appendLine().append(createCodeEndBreak())
+  return fragment
+}
+
 function createCodeEndBreak(): HTMLElement {
-  // ScrollBlot keeps a terminal break in live code blocks. At narrow widths it
-  // occupies the last visual line after wrapped tokens, so omit it only at the
-  // cost of a shorter snapshot block and shifted following columns.
+  // Match the live ScrollBlot's terminal break inside the final logical row.
   const end = document.createElement('c-element')
   end.className = 'bc-end-break'
   end.append(document.createElement('br'))

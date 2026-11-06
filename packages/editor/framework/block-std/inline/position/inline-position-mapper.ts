@@ -69,17 +69,23 @@ export class InlinePositionMapper {
   ): number {
     // Edge: offset on the container element itself
     if (node === container) {
-      if (offset <= 1) return 0 // leading gap or before
+      if (offset <= 0) return 0
+      // The first direct child can be a whole canonical line. Only a direct
+      // leading gap has zero model length at childOffset=1.
+      if (offset === 1 && container.firstChild === this.scrollBlot.leadingGapNode) return 0
       return this._resolveContainerOffset(container, offset)
     }
 
     // Edge: leading zero-space
     const zeroNode = isZeroSpace(node)
-    if (zeroNode?.parentElement === container) {
+    if (zeroNode && zeroNode === this.scrollBlot.leadingGapNode && container.contains(zeroNode)) {
       return 0
     }
 
     const sb = this.scrollBlot
+    if (sb.isCanonicalLineContainer(node)) {
+      return this._resolveLineOffset(node as HTMLElement, offset)
+    }
     const leaves = sb.leaves
 
     // Find the c-element this node belongs to
@@ -129,9 +135,9 @@ export class InlinePositionMapper {
     _affinity: PointAffinity = 'after'
   ): IDomPoint {
     if (index === 0) {
-      const leadingGap = container.firstElementChild
+      const leadingGap = this.scrollBlot.leadingGapNode
       if (leadingGap?.firstChild) {
-        return { node: leadingGap.firstChild as Text, offset: 0 }
+        return { node: leadingGap.firstChild, offset: 0 }
       }
       return { node: container, offset: 0 }
     }
@@ -139,7 +145,8 @@ export class InlinePositionMapper {
     const leaves = this.scrollBlot.leaves
     let remaining = index
 
-    for (const leaf of leaves) {
+    for (let leafIndex = 0; leafIndex < leaves.length; leafIndex++) {
+      const leaf = leaves[leafIndex]
       if (remaining <= leaf.length) {
         if (leaf.type === BlotType.Embed) {
           if (remaining === 1) {
@@ -163,6 +170,13 @@ export class InlinePositionMapper {
         }
 
         // TextBlot
+        if (
+          _affinity === 'after' && remaining === leaf.length &&
+          (leaf as TextBlot).text.endsWith('\n')
+        ) {
+          const nextLineStart = this._nextCanonicalLineStart(leaf as TextBlot, leaves[leafIndex + 1])
+          if (nextLineStart) return nextLineStart
+        }
         return {
           node: (leaf as TextBlot).textNode,
           offset: remaining
@@ -248,6 +262,48 @@ export class InlinePositionMapper {
       }
     }
     return modelOffset
+  }
+
+  /** Map only registered logical-line boundaries, never arbitrary wrappers. */
+  private _resolveLineOffset(line: HTMLElement, offset: number): number {
+    const boundary = Math.max(0, Math.min(line.childNodes.length, offset))
+    const preceding = new Set<Node>(Array.from(line.childNodes).slice(0, boundary))
+    let modelOffset = 0
+    let foundLine = false
+    for (const blot of this.scrollBlot.children) {
+      const directChild = directChildOf(line, blot.domNode)
+      if (directChild) {
+        foundLine = true
+        if (!preceding.has(directChild)) return modelOffset
+        modelOffset += blot.length
+      } else if (!foundLine) {
+        modelOffset += blot.length
+      } else {
+        return modelOffset
+      }
+    }
+    if (foundLine) return modelOffset
+    throw new BlockCraftError(ErrorCode.SelectionError, 'No blot found for canonical line')
+  }
+
+  private _nextCanonicalLineStart(
+    leaf: TextBlot,
+    nextLeaf: TextBlot | EmbedBlot | undefined,
+  ): IDomPoint | null {
+    const line = leaf.domNode.parentNode
+    if (!line || !this.scrollBlot.isCanonicalLineContainer(line)) return null
+    // Hidden revision newlines keep following text in the same visible line.
+    if (nextLeaf && line.contains(nextLeaf.domNode)) return null
+    let next = (line as HTMLElement).nextElementSibling
+    while (next && !this.scrollBlot.isCanonicalLineContainer(next)) next = next.nextElementSibling
+    if (!next) return null
+    if (nextLeaf instanceof TextBlot && next.contains(nextLeaf.domNode)) {
+      if (nextLeaf.attrs?.['s:display'] === 'none') return {node: next, offset: 0}
+      return {node: nextLeaf.textNode, offset: 0}
+    }
+    // The terminal empty line contains the zero-model-length BreakBlot. A
+    // container boundary before it gives the browser an editable line to enter.
+    return {node: next, offset: 0}
   }
 
   private _computeLocalOffset(

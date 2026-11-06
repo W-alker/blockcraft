@@ -9,6 +9,13 @@ import {
 import {BlockSelection} from "../selection";
 import {CompositionEventState} from "../../block-std/event/state/compositionState";
 import {BlockReadonlyError, BlockReadonlyOperation} from "../../doc";
+import {ScrollBlot} from '../../block-std/inline/blot/scroll-blot';
+import {TextBlot} from '../../block-std/inline/blot/text-blot';
+import {InlinePositionMapper} from '../../block-std/inline/position/inline-position-mapper';
+import * as Y from 'yjs';
+import {DocUndoManger} from '../../doc/undoManger';
+import {resolveRelativeSelectionBookmark, type RelativeSelectionBookmark} from '../selection/relative-bookmark';
+import type {ISelectionJSON} from '../selection/types';
 
 // `@DocEventRegister` validates `doc.event` and registers listeners in the
 // constructor, so every mock doc must expose a minimal event dispatcher stub.
@@ -1359,84 +1366,101 @@ describe('InputTransformer beforeInput range resolution', () => {
     }
   })
 
-  it('materializes iframe end-break input in the block ownerDocument', () => {
-    const iframe = document.createElement('iframe')
-    document.body.appendChild(iframe)
-    const ownerDocument = iframe.contentDocument!
-    const host = ownerDocument.createElement('div')
-    const container = ownerDocument.createElement('div')
-    const previous = ownerDocument.createElement(INLINE_ELEMENT_TAG)
-    const endBreak = ownerDocument.createElement('span')
-    host.dataset['blockId'] = 'p1'
-    host.dataset['nodeType'] = BlockNodeType.editable
-    container.className = 'edit-container'
-    endBreak.className = INLINE_END_BREAK_CLASS
-    container.append(previous, endBreak)
-    host.appendChild(container)
-    ownerDocument.body.appendChild(host)
+  for (const previousKind of ['non-text', 'editable-text', 'missing'] as const) {
+    it(`materializes iframe end-break input with ${previousKind} previous sibling`, () => {
+      const iframe = document.createElement('iframe')
+      document.body.appendChild(iframe)
+      const ownerDocument = iframe.contentDocument!
+      const host = ownerDocument.createElement('div')
+      const container = ownerDocument.createElement('div')
+      const previous = ownerDocument.createElement(INLINE_ELEMENT_TAG)
+      const endBreak = ownerDocument.createElement('span')
+      host.dataset['blockId'] = 'p1'
+      host.dataset['nodeType'] = BlockNodeType.editable
+      container.className = 'edit-container'
+      endBreak.className = INLINE_END_BREAK_CLASS
+      if (previousKind === 'editable-text') {
+        const text = ownerDocument.createElement('c-text')
+        text.contentEditable = 'true'
+        text.textContent = 'base'
+        previous.appendChild(text)
+      }
+      if (previousKind === 'missing') {
+        // A source ending in LF has an empty canonical final line containing
+        // only the end-break, which browsers use as the beforeinput target.
+        const line = ownerDocument.createElement('c-line')
+        line.appendChild(endBreak)
+        container.appendChild(line)
+      } else {
+        container.append(previous, endBreak)
+      }
+      host.appendChild(container)
+      ownerDocument.body.appendChild(host)
 
-    const insert = jasmine.createSpy('insert')
-    const rerender = jasmine.createSpy('rerender')
-    const setInlineRange = jasmine.createSpy('setInlineRange')
-    const block = Object.create(EditableBlockComponent.prototype)
-    Object.defineProperties(block, {
-      id: {value: 'p1'},
-      flavour: {value: 'paragraph'},
-      nodeType: {value: BlockNodeType.editable},
-      hostElement: {value: host},
-      containerElement: {value: container},
-      textLength: {value: 4},
-      parentId: {value: null},
-      childrenIds: {value: []},
-      yText: {value: {insert}},
-      runtime: {value: {mapper: {domPointToModelPoint: jasmine.createSpy('domPointToModelPoint').and.returnValue(4)}}},
-      rerender: {value: rerender},
-      setInlineRange: {value: setInlineRange},
+      const insert = jasmine.createSpy('insert')
+      const rerender = jasmine.createSpy('rerender')
+      const setInlineRange = jasmine.createSpy('setInlineRange')
+      const block = Object.create(EditableBlockComponent.prototype)
+      Object.defineProperties(block, {
+        id: {value: 'p1'},
+        flavour: {value: 'paragraph'},
+        nodeType: {value: BlockNodeType.editable},
+        hostElement: {value: host},
+        containerElement: {value: container},
+        textLength: {value: 4},
+        parentId: {value: null},
+        childrenIds: {value: []},
+        yText: {value: {insert}},
+        runtime: {value: {mapper: {domPointToModelPoint: jasmine.createSpy('domPointToModelPoint').and.returnValue(4)}}},
+        rerender: {value: rerender},
+        setInlineRange: {value: setInlineRange},
+      })
+      const selection = {
+        value: null,
+        setCursorAt: jasmine.createSpy('setCursorAt'),
+        blur: jasmine.createSpy('blur'),
+      }
+      const doc = {
+        event: eventStub(),
+        selection,
+        getBlockById: jasmine.createSpy('getBlockById').and.returnValue(block),
+        isEditable: jasmine.createSpy('isEditable').and.returnValue(true),
+        crud: {transact: jasmine.createSpy('transact').and.callFake((callback: () => void) => callback())},
+      }
+      const preventDefault = jasmine.createSpy('preventDefault')
+      const event = {
+        target: endBreak,
+        inputType: 'insertText',
+        data: 'x',
+        isComposing: false,
+        defaultPrevented: false,
+        getTargetRanges: () => [new StaticRange({
+          startContainer: endBreak,
+          startOffset: 0,
+          endContainer: endBreak,
+          endOffset: 0,
+        })],
+        preventDefault,
+      }
+      const transformer = new InputTransformer(doc as any) as any
+
+      try {
+        transformer['_handleBeforeInput']({get: () => ({event})} as any)
+
+        const materialized = endBreak.previousElementSibling as HTMLElement
+        expect(materialized.localName).toBe(INLINE_ELEMENT_TAG)
+        if (previousKind === 'editable-text') expect(materialized).toBe(previous)
+        else expect(materialized).not.toBe(previous)
+        expect(materialized.ownerDocument).toBe(ownerDocument)
+        expect(materialized.textContent).toBe(previousKind === 'editable-text' ? 'basex' : 'x')
+        expect(insert).toHaveBeenCalledWith(4, 'x')
+        expect(rerender).toHaveBeenCalled()
+        expect(setInlineRange).toHaveBeenCalledWith(5)
+      } finally {
+        iframe.remove()
+      }
     })
-    const selection = {
-      value: null,
-      setCursorAt: jasmine.createSpy('setCursorAt'),
-      blur: jasmine.createSpy('blur'),
-    }
-    const doc = {
-      event: eventStub(),
-      selection,
-      getBlockById: jasmine.createSpy('getBlockById').and.returnValue(block),
-      isEditable: jasmine.createSpy('isEditable').and.returnValue(true),
-      crud: {transact: jasmine.createSpy('transact').and.callFake((callback: () => void) => callback())},
-    }
-    const preventDefault = jasmine.createSpy('preventDefault')
-    const event = {
-      target: endBreak,
-      inputType: 'insertText',
-      data: 'x',
-      isComposing: false,
-      defaultPrevented: false,
-      getTargetRanges: () => [new StaticRange({
-        startContainer: endBreak,
-        startOffset: 0,
-        endContainer: endBreak,
-        endOffset: 0,
-      })],
-      preventDefault,
-    }
-    const transformer = new InputTransformer(doc as any) as any
-
-    try {
-      transformer['_handleBeforeInput']({get: () => ({event})} as any)
-
-      const materialized = endBreak.previousElementSibling as HTMLElement
-      expect(materialized.localName).toBe(INLINE_ELEMENT_TAG)
-      expect(materialized).not.toBe(previous)
-      expect(materialized.ownerDocument).toBe(ownerDocument)
-      expect(materialized.textContent).toBe('x')
-      expect(insert).toHaveBeenCalledWith(4, 'x')
-      expect(rerender).toHaveBeenCalled()
-      expect(setInlineRange).toHaveBeenCalledWith(5)
-    } finally {
-      iframe.remove()
-    }
-  })
+  }
 
   it('materializes a selected-to-text IME range without blurring the composition target', () => {
     const preventDefault = jasmine.createSpy('preventDefault')
@@ -2402,6 +2426,129 @@ describe('InputTransformer typed-over-selection format inheritance', () => {
     })
   })
 
+  describe('canonical line Backspace target ranges', () => {
+    function createHarness(options: {flat?: boolean; hiddenLf?: boolean} = {}) {
+      const host = document.createElement('div')
+      host.dataset['blockId'] = 'code1'
+      host.dataset['nodeType'] = BlockNodeType.editable
+      const container = document.createElement('div')
+      container.className = 'edit-container'
+      host.appendChild(container)
+      const scrollBlot = new ScrollBlot(container, new Map(), options.flat ? undefined : {lineContainerTag: 'c-line'})
+      scrollBlot.build([
+        {insert: 'a'},
+        {insert: '\n', attributes: options.hiddenLf ? {'s:display': 'none'} : undefined},
+        {insert: 'bc'},
+      ])
+      const mapper = new InlinePositionMapper()
+      mapper.setScrollBlot(scrollBlot)
+      const previous = scrollBlot.leaves[1] as TextBlot
+      const next = scrollBlot.leaves[2] as TextBlot
+      const block = Object.create(EditableBlockComponent.prototype)
+      Object.defineProperties(block, {
+        id: {value: 'code1'},
+        flavour: {value: options.flat ? 'paragraph' : 'code'},
+        nodeType: {value: BlockNodeType.editable},
+        hostElement: {value: host},
+        containerElement: {value: container},
+        textLength: {value: 4},
+        parentId: {value: null},
+        runtime: {value: {scrollBlot, mapper}},
+      })
+      const transformer = new InputTransformer({
+        event: eventStub(),
+        getBlockById: () => block,
+        isEditable: () => true,
+        selection: {value: null, blur: jasmine.createSpy('blur')},
+      } as any) as any
+      const range = new StaticRange({
+        startContainer: previous.textNode, startOffset: 1,
+        endContainer: next.textNode, endOffset: 0,
+      })
+      const plan = {kind: 'text-cursor', blockId: 'code1', offset: 2}
+      const event = {
+        inputType: 'deleteContentBackward',
+        isComposing: false,
+        getTargetRanges: () => [range],
+        preventDefault: jasmine.createSpy('preventDefault'),
+      }
+      return {transformer, container, scrollBlot, previous, next, plan, event, range}
+    }
+
+    it('deletes the visible LF when native endpoints straddle the same model offset', () => {
+      const {transformer, plan, event, range} = createHarness()
+
+      expect(transformer['_adjustCanonicalLineBackspacePlan'](plan, event, range)).toEqual({
+        kind: 'range',
+        start: {kind: 'text', blockId: 'code1', from: 1, to: 2},
+        end: null,
+        insertAt: {blockId: 'code1', offset: 1},
+        stabilizeAt: null,
+        tailMode: 'merge',
+      })
+    })
+
+    it('validates the adjusted range before executing the existing deletion path', () => {
+      const {transformer, event} = createHarness()
+      spyOn(transformer.compositionSession, 'updateAnchorFromInputEvent')
+      const assertPlan = spyOn(transformer, '_tryAssertInputPlan').and.returnValue(false)
+      const replace = spyOn(transformer, '_replacePlannedRange')
+
+      transformer['_handleBeforeInput']({get: () => ({event})})
+
+      expect(assertPlan).toHaveBeenCalledWith(event, jasmine.objectContaining({
+        kind: 'range', start: {kind: 'text', blockId: 'code1', from: 1, to: 2},
+      }), BlockReadonlyOperation.Delete)
+      expect(replace).not.toHaveBeenCalled()
+    })
+
+    for (const options of [{flat: true}, {hiddenLf: true}]) {
+      it(`does not adjust ${JSON.stringify(options)} input`, () => {
+        const {transformer, plan, event, range} = createHarness(options)
+        expect(transformer['_adjustCanonicalLineBackspacePlan'](plan, event, range)).toBe(plan)
+      })
+    }
+
+    for (const inputType of ['deleteContentForward', 'deleteWordBackward', 'deleteSoftLineBackward']) {
+      it(`does not adjust ${inputType}`, () => {
+        const {transformer, plan, event, range} = createHarness()
+        expect(transformer['_adjustCanonicalLineBackspacePlan'](plan, {...event, inputType}, range)).toBe(plan)
+      })
+    }
+
+    it('does not adjust a native range extending inside the next line', () => {
+      const {transformer, plan, event, range, next} = createHarness()
+      const insideRange = new StaticRange({
+        startContainer: range.startContainer, startOffset: range.startOffset,
+        endContainer: next.textNode, endOffset: 1,
+      })
+      expect(transformer['_adjustCanonicalLineBackspacePlan'](plan, event, insideRange)).toBe(plan)
+    })
+
+    it('does not adjust a native collapsed caret', () => {
+      const {transformer, plan, event, next} = createHarness()
+      const collapsed = new StaticRange({
+        startContainer: next.textNode, startOffset: 0,
+        endContainer: next.textNode, endOffset: 0,
+      })
+      expect(transformer['_adjustCanonicalLineBackspacePlan'](plan, event, collapsed)).toBe(plan)
+    })
+
+    it('leaves a model-only block without a line runtime unchanged', () => {
+      const {transformer, plan, event, range} = createHarness()
+      transformer.doc.getBlockById = () => ({id: 'code1'})
+      expect(transformer['_adjustCanonicalLineBackspacePlan'](plan, event, range)).toBe(plan)
+    })
+
+    it('rejects an unregistered c-line between the native endpoints', () => {
+      const {transformer, plan, event, range, container, next} = createHarness()
+      const foreignLine = document.createElement('c-line')
+      foreignLine.appendChild(next.domNode)
+      container.appendChild(foreignLine)
+      expect(transformer['_adjustCanonicalLineBackspacePlan'](plan, event, range)).toBe(plan)
+    })
+  })
+
   it('deletes covered structural groups when replacing a cross-column text range', () => {
     const throughPath = [
       {parent: 'column-left', index: 1, length: 2},
@@ -2982,6 +3129,135 @@ describe('InputTransformer block-selection paragraph host resolution', () => {
     const transformer = new InputTransformer(doc as any) as any
     expect(transformer['_resolveBlockSelectionHost'](divider)).toBeNull()
   })
+})
+
+describe('InputTransformer cancelled composition undo selection', () => {
+  let ydoc: Y.Doc
+  let yText: Y.Text
+  let manager: DocUndoManger
+  let transformer: any
+  let doc: any
+  let block: any
+
+  const cursor = (offset: number): ISelectionJSON => ({
+    anchor: {blockId: 'paragraph', type: 'text', offset},
+    head: {blockId: 'paragraph', type: 'text', offset},
+    commonParent: 'paragraph',
+  })
+
+  beforeEach(() => {
+    ydoc = new Y.Doc()
+    const blocks = ydoc.getMap('blocks')
+    const yBlock = new Y.Map()
+    yText = new Y.Text()
+    yBlock.set('children', yText)
+    blocks.set('paragraph', yBlock)
+    yText.insert(0, 'abcdefghi')
+    const host = document.createElement('p')
+    host.textContent = yText.toString()
+    block = {
+      id: 'paragraph', flavour: 'paragraph', nodeType: BlockNodeType.editable,
+      yText, hostElement: host,
+      get textLength() { return yText.length },
+      rerender: jasmine.createSpy('rerender').and.callFake(() => {
+        host.textContent = yText.toString()
+      }),
+    }
+    const replay = jasmine.createSpy('replay').and.callFake((value: ISelectionJSON | null) => {
+      doc.selection.value = value ? new BlockSelection(
+        {...value.anchor, block} as any,
+        {...value.head, block} as any,
+        value.commonParent,
+        () => block,
+        () => 0,
+      ) : null
+    })
+    doc = {
+      event: eventStub(), yDoc: ydoc,
+      isEditable: (target: any) => target === block,
+      getBlockById: (id: string) => id === block.id ? block : null,
+      crud: {
+        transact: (callback: () => void, origin: unknown) => ydoc.transact(callback, origin),
+      },
+      selection: {
+        value: null,
+        replay,
+        setCursorAt: jasmine.createSpy('setCursorAt').and.callFake((_block: unknown, offset: number) => replay(cursor(offset))),
+        restoreBookmark: jasmine.createSpy('restoreBookmark').and.callFake((bookmark: RelativeSelectionBookmark | null) => {
+          replay(bookmark ? resolveRelativeSelectionBookmark(bookmark, doc) : null)
+        }),
+        blur: () => replay(null),
+        recalculate: jasmine.createSpy('recalculate').and.throwError('canonical IME cursor must not read native selection'),
+      },
+    }
+    manager = new DocUndoManger(doc, blocks)
+    doc.crud.undoManager = manager
+    transformer = new InputTransformer(doc)
+    spyOn(manager, 'captureSelectionBeforeChange').and.callThrough()
+    spyOn(manager, 'beginCaptureGroup').and.callThrough()
+    spyOn(manager, 'endCaptureGroup').and.callThrough()
+  })
+
+  afterEach(() => {
+    transformer.compositionSession.reset()
+    ydoc.destroy()
+  })
+
+  const compose = (offset: number, text: string) => {
+    // Explicit test boundaries isolate each edit; normal collapsed IME keeps
+    // the existing 500ms capture policy in production.
+    manager.stopCapturing()
+    doc.selection.setCursorAt(block, offset)
+    transformer['_handleCompositionStart']({
+      preventDefault: jasmine.createSpy('compositionStartPreventDefault'),
+      has: () => false,
+    })
+    expect(transformer.compositionSession.isActive).toBeTrue()
+    block.hostElement.append(document.createTextNode('uncommitted candidate'))
+    transformer.compositionSession.deferPatch(block.id, [{retain: yText.length}])
+    const getFallbackPoint = jasmine.createSpy('getFallbackPoint').and.throwError('session anchor should resolve')
+    transformer['_handleCompositionEnd']({
+      getDefaultEvent: () => ({preventDefault: jasmine.createSpy('compositionEndPreventDefault')}),
+      get: () => ({text, getFallbackPoint, resolveCommitPoint: (point: unknown) => point}),
+    })
+    expect(getFallbackPoint).not.toHaveBeenCalled()
+    expect(block.hostElement.textContent).toBe(yText.toString())
+    expect(doc.selection.value?.toJSON()).toEqual(cursor(offset + text.length))
+    expect(transformer.compositionSession.isIdle).toBeTrue()
+    expect(transformer.compositionSession.hasDeferredPatches).toBeFalse()
+    expect(manager.beginCaptureGroup).not.toHaveBeenCalled()
+    expect(manager.endCaptureGroup).not.toHaveBeenCalled()
+    manager.stopCapturing()
+  }
+
+  for (const cancelledOffsets of [[1], [1, 6, 3]]) {
+    it(`keeps the next paragraph commit's undo cursor after ${cancelledOffsets.length} cancellation(s)`, () => {
+      for (const offset of cancelledOffsets) {
+        compose(offset, '')
+        expect(yText.toString()).toBe('abcdefghi')
+        expect(manager.isCanUndo()).toBeFalse()
+        expect(manager.captureSelectionBeforeChange).not.toHaveBeenCalled()
+        expect((manager as any)._pendingUndoSnapshot).toBeUndefined()
+      }
+
+      compose(7, '中文🙂')
+      expect(yText.toString()).toBe('abcdefg中文🙂hi')
+      expect(manager.captureSelectionBeforeChange).toHaveBeenCalledTimes(1)
+      expect((manager as any)._pendingUndoSnapshot).toBeUndefined()
+      expect(block.rerender).toHaveBeenCalledTimes(cancelledOffsets.length + 1)
+
+      manager.undo()
+      expect(yText.toString()).toBe('abcdefghi')
+      expect(doc.selection.value?.toJSON()).toEqual(cursor(7))
+      expect(manager.isCanUndo()).toBeFalse()
+      const undoBookmark = doc.selection.restoreBookmark.calls.mostRecent().args[0] as RelativeSelectionBookmark
+      expect(undoBookmark.source).toEqual(cursor(7))
+
+      manager.redo()
+      expect(yText.toString()).toBe('abcdefg中文🙂hi')
+      expect(doc.selection.value?.toJSON()).toEqual(cursor(11))
+    })
+  }
 })
 
 describe('InputTransformer composition selection safety', () => {

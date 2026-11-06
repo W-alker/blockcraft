@@ -178,6 +178,8 @@ export class InlineRuntime {
     options?: {
       /** @internal SelectionManager-backed DOM projection guard. */
       beginSelectionProjection?: () => (() => void)
+      /** @internal Opt-in canonical logical lines for code editing surfaces. */
+      lineContainerTag?: 'c-line'
     },
   ) {
     canonicalMutationByRuntime.set(
@@ -185,7 +187,7 @@ export class InlineRuntime {
       mutation => this._runCanonicalMutation(mutation),
     )
     this._paginationOptions = options
-    this._scrollBlot = new ScrollBlot(container, embedConverters)
+    this._scrollBlot = new ScrollBlot(container, embedConverters, {lineContainerTag: options?.lineContainerTag})
     this._mapper = new InlinePositionMapper()
     this._mapper.setScrollBlot(this._scrollBlot)
     this._paginationProjection = new InlinePaginationProjection(this._scrollBlot)

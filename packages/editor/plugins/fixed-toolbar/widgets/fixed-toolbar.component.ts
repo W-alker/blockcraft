@@ -4472,7 +4472,18 @@ export class FixedTextToolbarComponent implements OnInit, AfterViewInit, OnDestr
 
     const ids = this.getSelectedBlockIds(selection);
     if (!ids.length) return null;
-    const blocks = ids.map((id) => this.doc.getBlockById(id));
+    const blocks: BlockCraft.BlockComponent[] = [];
+    for (const id of ids) {
+      let block: BlockCraft.BlockComponent;
+      try {
+        // Undo can restore a model range before all intermediate views mount.
+        block = this.doc.getBlockById(id);
+      } catch {
+        return null;
+      }
+      if (!block) return null;
+      blocks.push(block);
+    }
     const parent = blocks[0]?.parentBlock;
     if (!parent || !this.doc.canInsertChild(parent.id, "columns")) return null;
 

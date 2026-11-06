@@ -56,24 +56,6 @@ function toPresentationRuns(modelDeltas: DeltaInsert[]): PresentationRun[] {
   return runs;
 }
 
-/** 覆盖 abs 的 run（run 升序、不重叠），无则 null。 */
-function runAt(runs: PresentationRun[], abs: number): PresentationRun | null {
-  for (const r of runs) {
-    if (abs < r.start) return null;
-    if (abs < r.end) return r;
-  }
-  return null;
-}
-
-/** 严格大于 abs 的下一个 run 边界（无则 Infinity）。 */
-function nextBoundary(runs: PresentationRun[], abs: number): number {
-  for (const r of runs) {
-    if (abs < r.start) return r.start;
-    if (abs < r.end) return r.end;
-  }
-  return Infinity;
-}
-
 /**
  * Shiki writes foreground/background colors as inline styles. While a code
  * fragment is visibly marked for review those inline declarations would beat
@@ -93,7 +75,7 @@ function letRevisionThemeOwnColors(attrs: IInlineNodeAttrs): IInlineNodeAttrs {
 /**
  * 把模型展示 attr 叠加到 Shiki deltas 之上。
  * 两个输入覆盖「同一份纯文本」；用户色彩和临时修订属性优先。
- * 保留 Shiki deltas 上的 d:lineBreak 等结构性 attr；lineBreak 不继承用户
+ * LF 不依赖行号标记属性，也不继承用户
  * 颜色，但仍保留修订归因与隐藏状态。
  *
  * 契约：modelDeltas 与 shikiDeltas 必须描述同一字符序列、同一偏移空间。
@@ -110,10 +92,18 @@ export function mergeColorOverShiki(
 
   const out: DeltaInsertText[] = [];
   let offset = 0;
+  // Both streams are ordered. Advance each presentation run once instead of
+  // rescanning all preceding revisions/colors for every syntax token.
+  let runIndex = 0;
+  const nextRun = (position: number): PresentationRun | undefined => {
+    while (runIndex < runs.length && runs[runIndex].end <= position) runIndex++;
+    return runs[runIndex];
+  };
   for (const op of shikiDeltas) {
     const text = op.insert;
-    if (op.attributes?.['d:lineBreak']) {
-      const run = runAt(runs, offset);
+    if (text === '\n' || op.attributes?.['d:lineBreak']) {
+      const candidate = nextRun(offset);
+      const run = candidate && candidate.start <= offset ? candidate : undefined;
       const attrs = {...(op.attributes ?? {})};
       if (run) {
         for (const [key, value] of Object.entries(run.attrs)) {
@@ -127,8 +117,10 @@ export function mergeColorOverShiki(
     let i = 0;
     while (i < text.length) {
       const abs = offset + i;
-      const run = runAt(runs, abs);
-      const end = Math.min(text.length, nextBoundary(runs, abs) - offset);
+      const candidate = nextRun(abs);
+      const run = candidate && candidate.start <= abs ? candidate : undefined;
+      const boundary = run?.end ?? candidate?.start ?? Infinity;
+      const end = Math.min(text.length, boundary - offset);
       const slice = text.slice(i, end);
       if (run) {
         out.push({

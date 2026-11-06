@@ -2,7 +2,7 @@
 
 > **Level 2: Mechanism Deep Dive** — Only read this when modifying the inline editing system.
 >
-> Last updated: 2026-10-19
+> Last updated: 2026-11-06
 
 行内图片数据协议及归一化位于 `framework/block-std/inline/image-data.ts`，数值辅助实现位于
 `image-numbers.ts`。浮动排版和虚拟化只依赖数据规则；DOM converter 与资源控制器仍在
@@ -89,6 +89,32 @@ revision presentation after the initial synchronous render. While a token is
 and background inline styles so the `--bc-revision-*` theme wins; the next
 unmarked/final projection restores normal syntax colors.
 
+### 代码块的逻辑行缓存与 c-line（未发布）
+
+`CodeInlineRuntime` 在 Code 领域内部按逻辑行缓存 Shiki tokens 和语法检查点。
+首次按 64 行批次解析并保存段尾状态；编辑从最近检查点逐行解析，同时细化行状态缓存，
+至文本和已知语法状态收敛后复用后缀；多行注释/字符串仍可能影响整块。
+未变 token 行同时复用派生 Delta、行文本与指纹；只有没有模型展示覆盖的结果才使用预计算行。
+纯文本无需初始化高亮器；Mermaid 保留原有完整解析与围栏兼容策略。
+缓存不包含用户颜色或修订归因，这些展示属性仍从当前模型按有序区间线性合并。
+
+公开 `InlineModel`、一个块一个 `Y.Text`、扁平 Blot 索引和块内 UTF-16 选区坐标不变。
+代码块在 `InlineRuntime` / `ScrollBlot` 的内部选项中启用 `lineContainerTag:'c-line'`，
+由 `LogicalLineDom` 持久包裹每个显示逻辑行；普通段落及 `withLineBreak:false` 的 Mermaid 保持平面 DOM。
+LF 保留为真实文本，不再生成 `d:lineBreak` / `data-line-break` 行号标记。
+首个零长 gap 位于第一行，终止 BreakBlot 位于最后一行；空内容和末尾 LF 均有对应空行。
+隐藏修订 LF 保留模型长度但不拆开显示行。行号由 `c-line` 上的 CSS counter 产生，不写入文本或模型。
+增量输入及高亮保留未改变的行节点；canonical mutation 和分页撤销识别已注册的行容器，
+不能把它们拆平。代码块仍不可跨页拆分。本选项属于包内实现，宿主不应直接创建或修改行容器。
+`spliceLeaves` 批量更新叶子数组并保留零长 Cursor/Break，大片语法传播不再逐叶执行数组 splice。
+同步模型更新及语言/主题变化会立即使在途高亮任务失效；写回前检查 IME 和生命周期并读取最新双端选区。
+代码块 IME 提交/取消时，若已有语法引擎及行基线，同步 `render()` 按完整模型快照恢复变化范围，
+保留前后未变行和叶子；后续帧检查原生尾部输入，不重复全量重建。复用还要求叶子结构和展示属性一致，
+不能只比较语法指纹；原生拆分文本、多余节点和被移除的修订属性由 Code 内部完整性检查修复。
+初次加载、语言/主题失效或结构无法恢复时仍走完整投影，Mermaid 平面路径保持。
+销毁清理词法缓存，异步旧结果不得重新建立 DOM。输入、协同、Undo 和修订仍由原有模型路径负责。
+这不是块内虚拟化，也未消除模型读取、展示投影与 Blot 对比的全部线性扫描。
+
 ## Blot Tree Structure
 
 ```
@@ -161,6 +187,10 @@ shape.
 ## InlinePositionMapper
 
 Converts between character offsets (model space) and DOM nodes (DOM space):
+
+代码块允许端点落在已注册 `c-line` 的子节点边界，按行前模型长度及行内叶子长度解析。
+根容器 childOffset 计的是整行，不是 token；offset 0 使用 ScrollBlot 持有的真实 leading gap。
+LF 之后的模型位置定位到下一显示行；未注册的浏览器 wrapper 不获得新的映射语义。
 
 ```
 Model: "Hello |world" (offset=6)

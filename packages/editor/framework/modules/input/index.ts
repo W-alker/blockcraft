@@ -12,6 +12,7 @@ import {
   INLINE_END_BREAK_CLASS,
   INLINE_TEXT_NODE_TAG,
   STR_LINE_BREAK,
+  TextBlot,
   UIEventStateContext,
 } from "../../block-std";
 import {
@@ -355,6 +356,52 @@ export class InputTransformer {
       stabilizeAt: null,
       tailMode: "merge",
     };
+  }
+
+  private _adjustCanonicalLineBackspacePlan(
+    plan: SelectionEditPlan,
+    event: InputEvent,
+    range: StaticRange | null | undefined,
+  ): SelectionEditPlan {
+    if (
+      event.inputType !== 'deleteContentBackward' ||
+      plan.kind !== 'text-cursor' || plan.offset <= 0 ||
+      !range || range.collapsed
+    ) return plan;
+    const block = this._getLiveBlockById(plan.blockId);
+    if (!block || !this.doc.isEditable(block)) return plan;
+    const editableBlock = block as EditableBlockComponent;
+    const runtime = editableBlock.runtime;
+    const scroll = runtime?.scrollBlot;
+    const firstLine = editableBlock.containerElement?.firstElementChild;
+    if (!scroll || !firstLine || !scroll.isCanonicalLineContainer(firstLine)) return plan;
+    const previous = scroll.findByOffset(plan.offset);
+    if (
+      !(previous?.blot instanceof TextBlot) ||
+      previous.blot.text !== STR_LINE_BREAK || previous.localOffset !== 1 ||
+      previous.blot.attrs?.['s:display'] === 'none' ||
+      !previous.blot.domNode.contains(range.startContainer)
+    ) return plan;
+    const previousLine = previous.blot.domNode.parentElement;
+    const endElement = isElementNode(range.endContainer)
+      ? range.endContainer : range.endContainer.parentElement;
+    const nextLine = endElement?.closest('c-line');
+    if (
+      !previousLine || !nextLine ||
+      !scroll.isCanonicalLineContainer(previousLine) ||
+      !scroll.isCanonicalLineContainer(nextLine) ||
+      previousLine.nextElementSibling !== nextLine
+    ) return plan;
+    const {containerElement} = editableBlock;
+    if (
+      runtime.mapper.domPointToModelPoint(containerElement, range.startContainer, range.startOffset) !== plan.offset ||
+      runtime.mapper.domPointToModelPoint(containerElement, range.endContainer, range.endOffset) !== plan.offset ||
+      runtime.mapper.domPointToModelPoint(containerElement, nextLine, 0) !== plan.offset
+    ) return plan;
+    // Firefox reports only the structural boundary between block-level lines.
+    // Both DOM endpoints then represent the same model point; the preceding
+    // visible LF is the one character that Backspace is intended to remove.
+    return this._adjustZeroSpaceDeletePlan(plan);
   }
 
   /**
@@ -1204,10 +1251,14 @@ export class InputTransformer {
         if (!(error instanceof BlockReadonlyError) && !(error instanceof DocumentCompositionMutationError)) throw error;
         return;
       }
-      this._captureCompositionCommitUndoSelection(
-        insertBlock as EditableBlockComponent,
-        insertIndex,
-      );
+      // An empty commit only repairs the composing DOM. Without an insertion,
+      // no undo item consumes this snapshot and it would leak into the next edit.
+      if (text.length > 0) {
+        this._captureCompositionCommitUndoSelection(
+          insertBlock as EditableBlockComponent,
+          insertIndex,
+        );
+      }
 
       const insertAttrs = this._getTypingAttrs(
         insertBlock.id,
@@ -1348,6 +1399,7 @@ export class InputTransformer {
     ) {
       plan = this._adjustZeroSpaceDeletePlan(plan);
     }
+    plan = this._adjustCanonicalLineBackspacePlan(plan, ev, staticRange);
     if (!this._tryAssertInputPlan(
       ev,
       plan,
@@ -1476,10 +1528,10 @@ export class InputTransformer {
       staticRange.startContainer.classList.contains(INLINE_END_BREAK_CLASS)
     ) {
       const ownerDocument = staticRange.startContainer.ownerDocument;
-      const prevElement = staticRange.startContainer.previousElementSibling!;
-      const child = prevElement.firstElementChild as HTMLElement | null;
+      const prevElement = staticRange.startContainer.previousElementSibling;
+      const child = prevElement?.firstElementChild as HTMLElement | null | undefined;
       if (
-        prevElement.localName === INLINE_ELEMENT_TAG &&
+        prevElement?.localName === INLINE_ELEMENT_TAG &&
         child?.isContentEditable
       ) {
         const len = child.textContent!.length;

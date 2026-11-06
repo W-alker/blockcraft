@@ -4,6 +4,18 @@
 >
 > Last updated: 2026-11-06 | Tracks `@ccc/blockcraft` npm releases.
 
+## 未发布 — 2026-11-06：代码块 c-line 与逻辑行增量高亮
+
+- Severity: patch（渲染实现调整，版本由用户决定）。
+- What changed / Why: 代码块使用持久 `c-line` 及 CSS counter，统一普通行、空行和行号；按逻辑行缓存语法计算，复用未变文本及收敛后的语法状态，降低重复高亮开销。用户颜色与修订展示按有序区间线性合并，纯文本跳过高亮器初始化，Mermaid 保留原有围栏兼容路径。
+- Architecture: 缓存属于 Code 派生视图状态；代码块内部启用 canonical `c-line` 行容器，Blot 索引仍为扁平结构。公开 InlineModel、Y.Text 及选区坐标不变，没有块内虚拟化或新的宿主分段 API。普通段落、Mermaid 及代码块不可跨页拆分规则保持。
+- IME: 语法引擎及行基线就绪时，提交/取消同步按完整模型快照恢复变化范围，后续帧修复原生尾部节点与属性污染，保留未变行和叶子；首次准备或缓存失效仍有全量兜底。共享 Input 的事务、相对位置、协同和撤销协议保持。
+- 历史恢复修复：压力测试发现快速连续 Undo/Redo 会在延迟恢复窗口捕获空选区。已有目标现在立即恢复模型选区，未就绪目标继续有界重试，新导航优先于旧任务；保留观察器执行前清选区、相对书签格式及默认历史合并策略。
+- IME 取消修复：空提交不再留下未被事务消费的撤销选区快照，避免下一次在别处输入后，撤销错误回到取消位置；取消清理及结构替换的历史分组保持。
+- Behavior Changes: 输入/模型更新立即使旧异步高亮失效，写回尊重当前双端选区和 IME 状态，避免旧文本覆盖或范围选区塌缩。编辑和只读快照的行号改用 `c-line` CSS counter，删除 `data-line-break` 标记依赖；空行和末尾 LF 拥有独立行容器，编辑修订投影的隐藏换行不切开显示行。
+- Migration Recipe: 无需数据迁移，现有输入、撤销、协同及修订协议保持。自定义行号样式从 `[data-line-break]` / `c-element:first-of-type` 改为 `.code-block .edit-container > c-line::before`；DOM 位置使用 runtime mapper，不假定 token 为根容器直接子节点。
+- Affected ai-skills files: `blockcraft.md`、`blockcraft-inline.md`、`blockcraft-selection.md`、`blockcraft-input.md`、`blockcraft-theme.md`。
+
 ## 未发布 — 2026-11-06：纯文本缩进与有序编号
 
 - Severity: minor（纯文本导出默认保留块格式；版本由用户决定）。

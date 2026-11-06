@@ -352,6 +352,10 @@ packages/editor/
 
 ## Quick Reference: Common APIs
 
+代码块使用 `c-line` 作为显示逻辑行容器，行号由 CSS counter 生成；模型仍是一个 `Y.Text`，
+选区仍使用块内 UTF-16 offset。宿主通过 `block.runtime` 映射位置，不能依赖 token 是编辑容器的
+直接子节点或旧 `data-line-break` 标记。详见 `blockcraft-inline.md` 与 `blockcraft-selection.md`。
+
 ### Model-First Document Reads
 
 ```typescript

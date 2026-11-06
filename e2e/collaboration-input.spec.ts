@@ -36,6 +36,9 @@ type SelectionState = {
 }
 
 async function routeCollaborationSocket(page: Page, room: string): Promise<void> {
+  // Keep the collaboration socket, but do not let development reloads replace
+  // either test document while its remote selection/history is being checked.
+  await page.routeWebSocket('**/ng-cli-ws', socket => socket.close())
   await page.addInitScript(({port, roomName}) => {
     const NativeWebSocket = window.WebSocket
     window.WebSocket = new Proxy(NativeWebSocket, {
@@ -93,7 +96,7 @@ async function waitForEditor(page: Page): Promise<void> {
 
 async function waitForProvider(page: Page): Promise<void> {
   await page.waitForFunction(() => {
-    const root = document.querySelector('bc-root')
+    const root = document.querySelector('playground-home')
     const debug = (window as unknown as {
       ng?: {getComponent: (target: Element) => {provider?: {wsconnected?: boolean}}}
     }).ng
@@ -103,7 +106,7 @@ async function waitForProvider(page: Page): Promise<void> {
 
 async function setProviderConnected(page: Page, connected: boolean): Promise<void> {
   await page.evaluate((shouldConnect) => {
-    const root = document.querySelector('bc-root')
+    const root = document.querySelector('playground-home')
     const debug = (window as unknown as {
       ng: {getComponent: (target: Element) => {
         provider?: {
@@ -123,7 +126,7 @@ async function setProviderConnected(page: Page, connected: boolean): Promise<voi
     return
   }
   await page.waitForFunction(() => {
-    const root = document.querySelector('bc-root')
+    const root = document.querySelector('playground-home')
     const debug = (window as unknown as {
       ng?: {getComponent: (target: Element) => {provider?: {wsconnected?: boolean}}}
     }).ng
@@ -132,7 +135,7 @@ async function setProviderConnected(page: Page, connected: boolean): Promise<voi
 }
 
 async function connectPage(page: Page, initialize: boolean): Promise<void> {
-  await page.goto('/')
+  await page.goto('/', {waitUntil: 'domcontentloaded'})
   if (initialize) {
     await page.getByRole('button', {name: '初始化', exact: true}).click()
     await waitForEditor(page)

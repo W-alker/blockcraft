@@ -246,12 +246,7 @@ export class InlinePaginationProjection {
   }
 
   private _hasCanonicalDomOrder(): boolean {
-    const expected = this._scroll.children.map(child => child.domNode)
-    const owned = new Set<Node>(expected)
-    const direct = Array.from(this._scroll.domNode.childNodes)
-      .filter(node => owned.has(node))
-    return direct.length === expected.length
-      && direct.every((node, index) => node === expected[index])
+    return this._scroll.hasCanonicalDomOrder()
   }
 
 }

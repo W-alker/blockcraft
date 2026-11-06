@@ -1209,6 +1209,58 @@ describe("FixedTextToolbarComponent block insertion placement", () => {
     });
   }
 
+  for (const missingView of ["throw", "undefined"] as const) {
+    it(`disables columns when an intermediate model block has a ${missingView} view, then resolves the complete remounted range`, () => {
+      const {component, rootHost, root, blocks, boxes, range, createSnapshot} = makeTextBoxRange();
+      const middle = {
+        ...boxes[0],
+        id: "pending-middle",
+        hostElement: document.createElement("div"),
+      };
+      blocks[middle.id] = middle;
+      root.childrenIds = [boxes[0].id, middle.id, boxes[1].id];
+      root.childrenLength = 3;
+      // Model coverage is complete after undo; only the intermediate view is
+      // pending. Endpoint liveness must remain independent of that view.
+      (component.doc as any).model = {
+        exists: (id: string) => !!blocks[id],
+        getParentId: (id: string) => blocks[id]?.parentId ?? null,
+        getChildrenIds: (id: string) => blocks[id]?.childrenIds ?? [],
+        getPath: (id: string) => id === root.id ? [root.id] : [root.id, id],
+        indexInParent: (id: string) => root.childrenIds.indexOf(id),
+      };
+      let mounted = false;
+      (component.doc as any).getBlockById = (id: string) => {
+        if (id === middle.id && !mounted) {
+          if (missingView === "throw") throw new Error(`Block not found: ${id}`);
+          return undefined;
+        }
+        return blocks[id];
+      };
+      try {
+        expect((component as any).isLiveSelection(range)).toBeTrue();
+        expect((component as any).canUseColumnPicker(range)).toBeFalse();
+        expect((component as any).resolveColumnConversionTargets(range)).toBeNull();
+        expect((component as any).convertSelectedBlocksToColumns(2, range)).toBeNull();
+        expect(createSnapshot).not.toHaveBeenCalled();
+
+        mounted = true;
+        expect((component as any).canUseColumnPicker(range)).toBeTrue();
+        const targets = (component as any).resolveColumnConversionTargets(range);
+        expect(targets?.blocks).toEqual([boxes[0], middle, boxes[1]]);
+        expect(targets?.parent).toBe(root);
+
+        middle.parentId = "different-parent";
+        expect((component as any).canUseColumnPicker(range)).toBeFalse();
+        middle.parentId = root.id;
+        spyOn<any>(component, "getSelectedBlockIds").and.returnValue([boxes[0].id, boxes[1].id]);
+        expect((component as any).resolveColumnConversionTargets(range)).toBeNull();
+      } finally {
+        rootHost.remove();
+      }
+    });
+  }
+
   it("keeps readonly text boxes and schema-rejected column contents disabled", () => {
     const { component, rootHost, range } = makeTextBoxRange();
     try {

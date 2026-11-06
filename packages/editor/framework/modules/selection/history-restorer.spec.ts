@@ -77,6 +77,8 @@ describe('SelectionHistoryRestorer', () => {
     surface.hasEditorFocus.and.returnValue(true)
     surface.isRootConnected.and.returnValue(true)
     host.isProjectionPending.and.returnValue(false)
+    host.readModelSelection.and.returnValue(null)
+    host.readDomSelection.and.returnValue(null)
     host.isSelectionVisible.and.returnValue(false)
     host.ensureViewMounted.and.stub()
     host.scrollToBlock.and.returnValue(false)
@@ -91,30 +93,32 @@ describe('SelectionHistoryRestorer', () => {
 
   afterEach(() => restorer.destroy())
 
-  it('focuses synchronously and restores the bookmark after the view microtask', async () => {
+  it('restores an already resolvable bookmark synchronously for the next history capture', async () => {
     const expected = selected('first')
 
     restorer.restore(bookmark(expected))
 
     expect(surface.focusEditingHost).toHaveBeenCalledWith('first')
-    expect(host.replay).not.toHaveBeenCalled()
+    expect(host.replay).toHaveBeenCalledOnceWith(expected)
+    expect(host.readModelSelection()).toEqual(expected)
     await nextTick()
-    expect(host.replay).toHaveBeenCalledWith(expected)
+    expect(host.replay).toHaveBeenCalledOnceWith(expected)
     expect(host.scrollToBlock).toHaveBeenCalledOnceWith('first')
     expect(host.scrollSelectionIntoView).toHaveBeenCalledTimes(1)
   })
 
   it('retries until a restored block component becomes available', async () => {
     const expected = selected('late')
-    let attempts = 0
+    let mounted = false
     doc.getBlockById = (id: string) => {
-      if (id !== 'late' || attempts++ === 0) throw new Error('not mounted yet')
+      if (id !== 'late' || !mounted) throw new Error('not mounted yet')
       return blocks['late']
     }
 
     restorer.restore(bookmark(expected))
     await nextTick()
     expect(host.replay).not.toHaveBeenCalled()
+    mounted = true
     await waitFrames(1)
 
     expect(host.replay).toHaveBeenCalledWith(expected)
@@ -205,14 +209,120 @@ describe('SelectionHistoryRestorer', () => {
     expect(host.replay).toHaveBeenCalledOnceWith(expected)
   })
 
-  it('keeps only the newest pending history restore', async () => {
+  it('keeps only the newest history verification after consecutive synchronous restores', async () => {
     restorer.restore(bookmark(selected('first')))
     restorer.restore(bookmark(selected('second')))
 
     await nextTick()
+    await waitFrames(2)
 
-    expect(host.replay).toHaveBeenCalledTimes(1)
+    expect(host.replay).toHaveBeenCalledTimes(2)
     expect(host.replay).toHaveBeenCalledWith(selected('second'))
+    expect(host.readModelSelection()).toEqual(selected('second'))
+  })
+
+  it('does not replay an unresolved bookmark over a newer selection before its first task', async () => {
+    delete blocks['late']
+    restorer.restore(bookmark(selected('late')))
+    const newer = selected('second')
+    host.readModelSelection.and.returnValue(newer)
+    host.readDomSelection.and.returnValue(newer)
+    blocks['late'] = {id: 'late'}
+
+    await nextTick()
+    await waitFrames(2)
+
+    expect(host.replay).not.toHaveBeenCalled()
+    expect(host.ensureViewMounted).not.toHaveBeenCalled()
+    expect(host.readModelSelection()).toEqual(newer)
+  })
+
+  it('does not clear or replace a newer selection during an unresolved mount retry', async () => {
+    delete blocks['late']
+    restorer.restore(bookmark(selected('late')))
+    await nextTick()
+    const newer = selected('second')
+    host.readModelSelection.and.returnValue(newer)
+    host.readDomSelection.and.returnValue(newer)
+    blocks['late'] = {id: 'late'}
+
+    await waitFrames(4)
+
+    expect(host.replay).not.toHaveBeenCalled()
+    expect(host.readModelSelection()).toEqual(newer)
+  })
+
+  it('does not retry a failed projection after a newer model selection', async () => {
+    host.replay.and.throwError('view is rebuilding')
+    restorer.restore(bookmark(selected('first')))
+    const newer = selected('second')
+    host.readModelSelection.and.returnValue(newer)
+    host.readDomSelection.and.returnValue(newer)
+
+    await waitFrames(4)
+
+    expect(host.replay).toHaveBeenCalledOnceWith(selected('first'))
+    expect(host.readModelSelection()).toEqual(newer)
+  })
+
+  it('a newer resolved restore supersedes an unresolved initial task', async () => {
+    delete blocks['late']
+    restorer.restore(bookmark(selected('late')))
+    restorer.restore(bookmark(selected('second')))
+    blocks['late'] = {id: 'late'}
+
+    await nextTick()
+    await waitFrames(2)
+
+    expect(host.replay).toHaveBeenCalledOnceWith(selected('second'))
+  })
+
+  it('restores a genuinely empty bookmark synchronously and cancels prior work', async () => {
+    restorer.restore(bookmark(selected('first')))
+    restorer.restore(null)
+
+    expect(host.replay.calls.allArgs()).toEqual([[selected('first')], [null]])
+    expect(host.readModelSelection()).toBeNull()
+    await nextTick()
+    await waitFrames(2)
+    expect(host.replay).toHaveBeenCalledTimes(2)
+    expect(host.readModelSelection()).toBeNull()
+  })
+
+  it('an empty bookmark cancels an unresolved initial task', async () => {
+    delete blocks['late']
+    restorer.restore(bookmark(selected('late')))
+    restorer.restore(null)
+    blocks['late'] = {id: 'late'}
+
+    await nextTick()
+    await waitFrames(2)
+
+    expect(host.replay).toHaveBeenCalledOnceWith(null)
+  })
+
+  it('destroy cancels unresolved work without clearing a newer selection', async () => {
+    delete blocks['late']
+    restorer.restore(bookmark(selected('late')))
+    restorer.destroy()
+    const newer = selected('second')
+    host.readModelSelection.and.returnValue(newer)
+    blocks['late'] = {id: 'late'}
+
+    await nextTick()
+    await waitFrames(2)
+
+    expect(host.replay).not.toHaveBeenCalled()
+    expect(host.readModelSelection()).toEqual(newer)
+  })
+
+  it('ignores new restore requests after destruction', () => {
+    restorer.destroy()
+    restorer.restore(bookmark(selected('first')))
+    restorer.restore(null)
+
+    expect(host.replay).not.toHaveBeenCalled()
+    expect(surface.focusEditingHost).not.toHaveBeenCalled()
   })
 
   it('fails closed when the bookmark can no longer resolve', async () => {
