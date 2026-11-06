@@ -51,13 +51,13 @@ export interface DemoCoverBlockModel extends NoEditableBlockNative {
       display: flex;
       flex-direction: column;
       justify-content: center;
-      height: 80vh;
+      height: calc(80vh / var(--demo-view-scale, 1));
       width: 100%;
       position: relative;
       background: white;
       transform: none !important;
-      // 给文字 mix-blend-mode 限定混合范围：只与本封面内的 banner / 白底参与差异运算，
-      // 不与外层 .presentation-stage 或更外层的内容混合，避免视觉串扰。
+      /* 给文字 mix-blend-mode 限定混合范围：只与本封面内的 banner / 白底参与差异运算，
+         不与外层 .presentation-stage 或更外层的内容混合，避免视觉串扰。 */
       isolation: isolate;
 
       &.selected {
@@ -65,10 +65,10 @@ export interface DemoCoverBlockModel extends NoEditableBlockNative {
       }
 
       .banner {
-        margin: -10vh 0 0 -10vw;
-        max-height: 100vh;
+        margin: calc(-10vh / var(--demo-view-scale, 1)) 0 0 calc(-10vw / var(--demo-view-scale, 1));
+        max-height: calc(100vh / var(--demo-view-scale, 1));
         overflow: hidden;
-        width: calc(100% + 20vw);
+        width: calc(100% + 20vw / var(--demo-view-scale, 1));
         background-size: cover;
         background-position: center;
         background-repeat: no-repeat;
@@ -103,13 +103,13 @@ export interface DemoCoverBlockModel extends NoEditableBlockNative {
         text-align: center;
       }
 
-      // 文字采用「白色 + mix-blend-mode: difference」+ 多层 text-shadow 兜底：
-      //   * difference 模式下，白色 (1,1,1) 与背景做 |1 - bg| 运算 → 永远是背景的反色，
-      //     白底变黑字、黑底变白字、彩图变互补色，保证最大亮度对比，不需要额外面板。
-      //   * 多层深色阴影构成柔和描边，给文字加体积感；同时也是不支持 difference 的浏览器
-      //     （极少数）的可读性兜底。
-      //   * isolation 放在 :host 上，让混合范围限定在封面内（不污染外部），文本元素本身
-      //     不需要再次创建 stacking context。
+      /* 文字采用「白色 + mix-blend-mode: difference」+ 多层 text-shadow 兜底：
+         * difference 模式下，白色 (1,1,1) 与背景做 |1 - bg| 运算 → 永远是背景的反色，
+           白底变黑字、黑底变白字、彩图变互补色，保证最大亮度对比，不需要额外面板。
+         * 多层深色阴影构成柔和描边，给文字加体积感；同时也是不支持 difference 的浏览器
+           （极少数）的可读性兜底。
+         * isolation 放在 :host 上，让混合范围限定在封面内（不污染外部），文本元素本身
+           不需要再次创建 stacking context。 */
       .title, .auth-info, .current-time {
         color: #ffffff;
         mix-blend-mode: difference;

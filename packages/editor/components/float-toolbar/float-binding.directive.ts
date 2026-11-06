@@ -5,13 +5,13 @@ import {
   TemplateRef,
   ViewContainerRef,
   HostListener,
-  Output, EventEmitter
+  Output, EventEmitter, OnDestroy, NgZone
 } from '@angular/core';
 import {Overlay, OverlayRef} from '@angular/cdk/overlay';
 import {TemplatePortal} from '@angular/cdk/portal';
 import {generateId, getPositionWithOffset, OverlayPosition} from "../../framework";
 import {nextTick} from "../../global";
-import {fromEvent, takeUntil} from "rxjs";
+import {fromEvent, Subscription, takeUntil} from "rxjs";
 
 @Directive({
   selector: '[bcOverlayTrigger]',
@@ -21,7 +21,7 @@ import {fromEvent, takeUntil} from "rxjs";
     '[attr.data-float-binding]': 'true',
   }
 })
-export class BcOverlayTriggerDirective {
+export class BcOverlayTriggerDirective implements OnDestroy {
   @Input('bcOverlayTrigger') contentTemplate!: TemplateRef<any>;
   // 默认值： ['bottom-center', 'top-center']
   @Input() positions: OverlayPosition[] = ['bottom-center', 'top-center'];
@@ -35,7 +35,7 @@ export class BcOverlayTriggerDirective {
   @Input('bcOverlayDisabled')
   set overlayDisabled(disabled: boolean) {
     this._overlayDisabled = disabled
-    if (disabled) this.closeOverlay()
+    if (disabled) this.closePanel()
   }
 
   get overlayDisabled() {
@@ -49,11 +49,14 @@ export class BcOverlayTriggerDirective {
   open = new EventEmitter<boolean>();
 
   private overlayRef: OverlayRef | null = null
+  private persistentListeners?: Subscription
+  private scrollSubscription?: Subscription
 
   constructor(
     private overlay: Overlay,
     private elementRef: ElementRef<HTMLElement>,
-    private viewContainerRef: ViewContainerRef
+    private viewContainerRef: ViewContainerRef,
+    private ngZone: NgZone,
   ) {
   }
 
@@ -76,27 +79,30 @@ export class BcOverlayTriggerDirective {
 
   @HostListener('mouseenter')
   showOverlay() {
-    if (this.overlayRef || !this.contentTemplate || this.overlayDisabled) {
+    if (this.overlayRef || this._openDelayTimer || !this.contentTemplate || this.overlayDisabled) {
       return;
     }
 
     this._openDelayTimer = setTimeout(() => {
-      this.openOverlay()
       this._openDelayTimer = undefined
+      this.openOverlay()
     }, this.delay)
 
     this.elementRef.nativeElement.addEventListener('mouseleave', () => {
-      if (this._openDelayTimer) {
-        clearTimeout(this._openDelayTimer)
-        this._openDelayTimer = undefined
-      }
+      this.clearOpenDelayTimer()
     }, {once: true})
   }
 
   private _openDelayTimer?: number
 
-  openOverlay() {
-    if(this.overlayDisabled || !this.elementRef.nativeElement.isConnected) return
+  openOverlay(persistent = false) {
+    if (
+      this.overlayDisabled ||
+      !this.elementRef.nativeElement.isConnected
+    ) return
+    this.clearOpenDelayTimer()
+    if (persistent) this.retainOverlay()
+    if (this.overlayRef) return
     const positionStrategy = this.overlay.position()
       .flexibleConnectedTo(this.elementRef)
       .withPositions(this.positions.map(position => getPositionWithOffset(position, this.offsetX, this.offsetY)))
@@ -105,7 +111,7 @@ export class BcOverlayTriggerDirective {
       positionStrategy,
       hasBackdrop: this.withBackdrop,
       backdropClass: 'cdk-overlay-transparent-backdrop',
-      scrollStrategy: this.overlay.scrollStrategies.reposition()
+      scrollStrategy: this.overlay.scrollStrategies.noop()
     });
 
     const templatePortal = new TemplatePortal(this.contentTemplate, this.viewContainerRef);
@@ -118,17 +124,76 @@ export class BcOverlayTriggerDirective {
     this.open.emit(true)
     this.elementRef.nativeElement.classList.add(this.activeClass)
 
+    this.observeScroll()
     fromEvent(document, 'pointerover', {capture: true}).pipe(takeUntil(this.close)).subscribe(this.hideOverlay)
   }
 
-  private _timer?: number
-  hideOverlay = (evt: Event) => {
-    if (!this.overlayRef) return
+  private observeScroll() {
+    const host = this.elementRef.nativeElement
+    const ownerDocument = host.ownerDocument
+    const view = ownerDocument.defaultView!
+    // 子菜单位于独立 pane；打开时解析一次根触发器，滚动时不扫描 DOM。
+    const familyHost = ownerDocument.querySelector<HTMLElement>(
+      `[data-float-id="${this._dataFloatBindingId}"][data-float-index="0"]`,
+    ) ?? host
+    let frame: number | undefined
+    this.ngZone.runOutsideAngular(() => {
+      this.scrollSubscription = fromEvent(ownerDocument, 'scroll', {capture: true, passive: true})
+        .subscribe(event => {
+          const target = event.target
+          if (!(target instanceof view.Node) || (!target.contains(host) && !target.contains(familyHost))) return
+          if (frame !== undefined) return
+          // 父菜单先注册，子菜单同帧在父菜单定位后更新。
+          frame = view.requestAnimationFrame(() => {
+            frame = undefined
+            this.overlayRef?.updatePosition()
+          })
+        })
+      this.scrollSubscription.add(() => {
+        if (frame !== undefined) view.cancelAnimationFrame(frame)
+      })
+    })
+  }
 
-    if (this._timer) {
-      clearTimeout(this._timer)
-      this._timer = undefined
-    }
+  private retainOverlay() {
+    this.clearCloseDelayTimer()
+    if (this.persistentListeners) return
+    const host = this.elementRef.nativeElement
+    const ownerDocument = host.ownerDocument
+    const view = ownerDocument.defaultView!
+    const listeners = this.persistentListeners = new Subscription()
+    listeners.add(fromEvent<PointerEvent>(ownerDocument, 'pointerdown', {capture: true}).subscribe(event => {
+      const target = event.target instanceof view.Element ? event.target : null
+      const binding = target?.closest('[data-float-binding]')
+      // 子菜单挂在独立 CDK pane 中，沿用同一 binding family 判断归属。
+      const belongs = binding?.getAttribute('data-float-id') === this._dataFloatBindingId &&
+        (binding === host || Number(binding.getAttribute('data-float-index')) > this._dataFloatIndex)
+      if (!belongs) this.closePanel()
+    }))
+    listeners.add(fromEvent<KeyboardEvent>(ownerDocument, 'keydown', {capture: true}).subscribe(event => {
+      if (event.key === 'Escape') this.closePanel()
+    }))
+    listeners.add(fromEvent(view, 'blur').subscribe(() => this.closePanel()))
+  }
+
+  private _timer?: number
+
+  private clearOpenDelayTimer() {
+    if (!this._openDelayTimer) return
+    clearTimeout(this._openDelayTimer)
+    this._openDelayTimer = undefined
+  }
+
+  private clearCloseDelayTimer() {
+    if (!this._timer) return
+    clearTimeout(this._timer)
+    this._timer = undefined
+  }
+
+  hideOverlay = (evt: Event) => {
+    if (!this.overlayRef || this.persistentListeners) return
+
+    this.clearCloseDelayTimer()
 
     let curTarget = evt.target as Node | null
 
@@ -162,6 +227,12 @@ export class BcOverlayTriggerDirective {
   }
 
   private closeOverlay() {
+    this.clearOpenDelayTimer()
+    this.clearCloseDelayTimer()
+    this.persistentListeners?.unsubscribe()
+    this.persistentListeners = undefined
+    this.scrollSubscription?.unsubscribe()
+    this.scrollSubscription = undefined
     if (!this.overlayRef) return
     this.overlayRef.dispose();
     this.overlayRef = null;
@@ -170,6 +241,10 @@ export class BcOverlayTriggerDirective {
   }
 
   closePanel() {
+    this.closeOverlay()
+  }
+
+  ngOnDestroy() {
     this.closeOverlay()
   }
 

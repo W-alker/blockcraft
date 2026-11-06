@@ -1,10 +1,18 @@
-import {BaseBlockComponent, EditableBlockComponent, HotKeyTrigger, IBlockProps, ORIGIN_SKIP_SYNC} from "../../framework";
-import {IS_MAC, sliceDelta} from "../../global";
+import {preserveTransformPlaceholder} from './placeholder';
+import {EditableBlockComponent, HotKeyTrigger, IBlockProps} from "../../framework";
+import {sliceDelta} from "../../global";
 
 export interface IBlockTransformConfig {
   flavour: string
-  description: string
+  /** Slash-menu introduction overriding Schema `metadata.description`. */
+  description?: string
+  /** Additional searchable aliases owned by this transform. */
+  keywords?: readonly string[]
+  /** Short alias displayed as `/alias` and included in slash search. */
+  searchAlias?: string
   markdown?: RegExp
+  /** Human-readable Markdown trigger rendered separately from the introduction. */
+  markdownHint?: string
   hotkey?: HotKeyTrigger,
   onConvert?: (doc: BlockCraft.Doc, from: EditableBlockComponent, matchedString: string) => void
 }
@@ -12,41 +20,60 @@ export interface IBlockTransformConfig {
 export const headingTransforms: IBlockTransformConfig[] = [
   {
     flavour: 'heading-one',
-    description: `一级标题(${IS_MAC ? '⌘' : 'Ctrl'} + 1)\nMarkdown: # (空格)`,
-    markdown: /^#\s$/
+    description: '用于文档主标题或最高层级章节',
+    searchAlias: 'h1',
+    markdown: /^#\s$/,
+    markdownHint: '# + 空格',
+    hotkey: {key: '1', shortKey: true},
   },
   {
     flavour: 'heading-two',
-    description: `二级标题(${IS_MAC ? '⌘' : 'Ctrl'} + 2)\nMarkdown: ## (空格)`,
-    markdown: /^##\s$/
+    description: '用于组织主要章节',
+    searchAlias: 'h2',
+    markdown: /^##\s$/,
+    markdownHint: '## + 空格',
+    hotkey: {key: '2', shortKey: true},
   },
   {
     flavour: 'heading-three',
-    description: `三级标题(${IS_MAC ? '⌘' : 'Ctrl'} + 3)\nMarkdown: ### (空格)`,
-    markdown: /^###\s$/
+    description: '用于组织章节内的小节',
+    searchAlias: 'h3',
+    markdown: /^###\s$/,
+    markdownHint: '### + 空格',
+    hotkey: {key: '3', shortKey: true},
   },
   {
     flavour: 'heading-four',
-    description: `四级标题(${IS_MAC ? '⌘' : 'Ctrl'} + 4)\nMarkdown: #### (空格)`,
-    markdown: /^####\s$/
+    description: '用于更细粒度的内容层级',
+    searchAlias: 'h4',
+    markdown: /^####\s$/,
+    markdownHint: '#### + 空格',
+    hotkey: {key: '4', shortKey: true},
   },
 ]
 
 export const blockTransforms: IBlockTransformConfig[] = [
   {
+    flavour: 'embed',
+    searchAlias: 'embed',
+    keywords: ['网页', 'HTML', 'iframe', 'Figma', '掘金', 'B站', 'YouTube', 'Miro', 'CodePen'],
+  },
+  {
     flavour: 'bullet',
-    description: `无序列表(${IS_MAC ? '⌘' : 'Ctrl'} + Shift + L)\nMarkdown: -/+ (空格)`,
+    searchAlias: 'wxlb',
     markdown: /^[-+]\s$/,
+    markdownHint: '- 或 + 后空格',
     hotkey: {key: ['l', 'L'], shortKey: true, shiftKey: true}
   },
   {
     flavour: 'ordered',
-    description: `有序列表(${IS_MAC ? '⌘' : 'Ctrl'} + Shift + O)\nMarkdown: (数字/字母). (空格)`,
+    searchAlias: 'yxlb',
     markdown: /^(\d|[a-z])+\.\s$/,
+    markdownHint: '1. + 空格',
     hotkey: {key: ['o', 'O'], shortKey: true, shiftKey: true},
     onConvert: (doc, from, matchedString) => {
       const o = doc.schemas.createSnapshot('ordered', [sliceDelta(from.textDeltas(), matchedString.length), from.props])
-      const prevOrdered = findPreviousOrderedForContinuation(from as unknown as BaseBlockComponent<any>)
+      const prevOrdered = findPreviousOrderedForContinuation(doc, from)
       if (prevOrdered) {
         o.props['order'] = prevOrdered.props['order'] || 0
       } else {
@@ -57,67 +84,94 @@ export const blockTransforms: IBlockTransformConfig[] = [
         o.props['order'] = parsedNum - 1
         // o.props['start'] = parsedNum
       }
+      const replacements = [o]
+      preserveTransformPlaceholder(doc, from, replacements)
       void doc.chain()
-        .replaceWithSnapshots(from.id, [o])
+        .replaceWithSnapshots(from.id, replacements)
+        .nextTick()
         .selectOrSetCursorAtBlock(o.id, true)
+        .recalculateSelection()
         .run()
     }
   },
   {
     flavour: 'todo',
-    description: `待办事项(${IS_MAC ? '⌘' : 'Ctrl'} + Shift + T)\nMarkdown: [] (空格)`,
+    searchAlias: 'db',
     markdown: /^\[\]\s$/,
+    markdownHint: '[] + 空格',
     hotkey: {key: ['t', 'T'], shortKey: true, shiftKey: true}
   },
   {
     flavour: 'callout',
-    description: `高亮块(${IS_MAC ? '⌘' : 'Ctrl'} + Shift + Q)\nMarkdown: ! (空格)`,
+    searchAlias: 'gl',
     markdown: /^!\s$/,
+    markdownHint: '! + 空格',
     hotkey: {key: ['q', 'Q'], shortKey: true, shiftKey: true},
     onConvert: (doc, from, matchedString) => {
       const callout = doc.schemas.createSnapshot('callout', [])
       const p = doc.schemas.createSnapshot('paragraph', [sliceDelta(from.textDeltas(), matchedString.length), from.props])
       callout.children = [p]
+      const replacements = [callout]
+      preserveTransformPlaceholder(doc, from, replacements)
       void doc.chain()
-        .replaceWithSnapshots(from.id, [callout])
+        .replaceWithSnapshots(from.id, replacements)
+        .nextTick()
         .selectOrSetCursorAtBlock(p.id, true)
+        .recalculateSelection()
         .run()
     }
   },
   {
     flavour: 'blockquote',
-    description: `引用块\nMarkdown: > (空格)`,
+    searchAlias: 'yy',
     markdown: /^>\s$/,
+    markdownHint: '> + 空格',
   },
   {
     flavour: 'divider',
-    description: `分割线(${IS_MAC ? '⌘' : 'Ctrl'} + Shift + H)\nMarkdown: --- (空格)`,
-    markdown: /^---\s$/
-  },
-  {
-    flavour: 'divider',
-    description: `分割线(${IS_MAC ? '⌘' : 'Ctrl'} + Shift + H)\nMarkdown: --- (空格)`,
+    searchAlias: 'fgx',
     markdown: /^---\s$/,
+    markdownHint: '--- + 空格',
+  },
+  {
+    flavour: 'divider',
+    searchAlias: 'fgx',
+    markdown: /^---\s$/,
+    markdownHint: '--- + 空格',
     hotkey: {key: ['h', 'H'], shortKey: true, shiftKey: true}
   },
   {
     flavour: 'code',
-    description: `代码块(${IS_MAC ? '⌘' : 'Ctrl'} + Shift + e)\nMarkdown: \`\`\` (空格)`,
+    searchAlias: 'dm',
     markdown: /^```\s$/,
+    markdownHint: '``` + 空格',
     hotkey: {key: ['E', 'e'], shortKey: true, shiftKey: true}
   }
 ]
 
-const findPreviousOrderedForContinuation = (block: BaseBlockComponent<any>) => {
-  const parent = block.parentBlock
-  if (!parent) return null
+type OrderedContinuationBlock = {
+  id: string
+  flavour: string
+  props: IBlockProps
+}
 
-  const siblings = parent.getChildrenBlocks()
-  const index = siblings.indexOf(block)
+const findPreviousOrderedForContinuation = (
+  doc: BlockCraft.Doc,
+  block: OrderedContinuationBlock,
+) => {
+  const parentId = doc.model.getParentId(block.id)
+  if (!parentId) return null
+
+  const siblings = doc.model.getChildrenIds(parentId)
+  const index = siblings.indexOf(block.id)
   if (index === -1) return null
 
   for (let i = index - 1; i >= 0; i--) {
-    const prevBlock = siblings[i]
+    const siblingId = siblings[i]
+    const flavour = doc.model.getFlavour(siblingId)
+    const props = doc.model.getProps(siblingId) as IBlockProps | undefined
+    if (!flavour || !props) continue
+    const prevBlock = {id: siblingId, flavour, props}
     if (isHeadingBoundary(prevBlock)) {
       break
     }
@@ -138,18 +192,21 @@ const findPreviousOrderedForContinuation = (block: BaseBlockComponent<any>) => {
   return null
 }
 
-const getDepth = (block: BlockCraft.BlockComponent) => {
+const getDepth = (block: Pick<OrderedContinuationBlock, 'props'>) => {
   return (block.props['depth'] || 0) as number
 }
 
-const getHeadingLevel = (block: BlockCraft.BlockComponent) => {
+const getHeadingLevel = (block: Pick<OrderedContinuationBlock, 'props'>) => {
   return (block.props['heading'] || 0) as number
 }
 
-const isSameHeadingLevel = (left: BlockCraft.BlockComponent, right: BlockCraft.BlockComponent) => {
+const isSameHeadingLevel = (
+  left: Pick<OrderedContinuationBlock, 'props'>,
+  right: Pick<OrderedContinuationBlock, 'props'>,
+) => {
   return getHeadingLevel(left) === getHeadingLevel(right)
 }
 
-const isHeadingBoundary = (block: BlockCraft.BlockComponent) => {
+const isHeadingBoundary = (block: Pick<OrderedContinuationBlock, 'props'>) => {
   return getHeadingLevel(block) > 0
 }

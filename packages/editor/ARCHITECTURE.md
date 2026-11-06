@@ -1,5 +1,37 @@
 # BlockCraft 框架技术原理文档
 
+> 目录边界更新：2026-09-20。以下机制说明与现有公共 API 配合阅读；源码的当前归属以本节为准。
+
+## 当前领域与装配边界
+
+| 所有权 | 实现位置 | 依赖约束 |
+|---|---|---|
+| 共享内容模型 | `framework/model` | 无 DOM、Angular、Yjs、组件注册表 |
+| 宿主结构化能力 | `framework/ports` | 仅类型；文件与取消操作保留浏览器类型 |
+| 宿主继承/注册契约 | `framework/host` | 原文件/消息基类、Adapter、块创建器；不泛化注册表契约 |
+| Angular 接入 | `framework/angular` | 唯一 Token 与 CDK Overlay；Token 保留旧泛型 |
+| 文档 | `framework/doc`、`doc/view` | 文档树、事务、生命周期及缩放/排版事实/全屏 |
+| 编辑运行时 | `framework/block-std`、`framework/modules` | Block、Inline、Event、Schema 和输入/选区/剪贴板/分页等能力 |
+| 对象与拖放 | `framework/modules/object`、`drag-drop` | 对象布局/尺寸/格式、拖拽状态与提交 |
+| 转换 | `adapters`，具体外部来源在 `adapters/sources` | 通用 codec 不引用来源默认组合；块/Embed 的 matcher 继续就近维护 |
+| 只读投影 | `snapshot-viewer` | DOM 展示与流式解析；不负责编辑事务 |
+| 输出 | `tools/export` | 打印、PDF、资源准备、只读导出装配；复用分页能力 |
+| 产品组合根 | `editor` | 公共 Doc/Clipboard/Builder、内置能力组合、默认宿主实现 |
+
+领域文档的内部 `DocumentRuntime` 显式提供剪贴板工厂和 Embed 组合。公共
+`BlockCraftDoc(config)` / `ClipboardManager(doc)` 由 `editor` 包装装配，旧导入位置导出同一个公共类。
+既有构造参数、provider、默认来源/Embed、事件注册、Schema 与 Yjs 数据格式不变。
+`framework/services`、旧分页 export 与旧 YNE 文件只转导出；内部实现不得经它们或公共聚合 barrel
+重新依赖产品层。`build:editor` 会执行领域与剪贴板边界检查。
+
+npm 入口按可独立使用的契约划分：保留主入口、global 聚合及子入口、model、ports 和已有轻量算法入口。
+本轮不新增 adapters/viewer/export 入口：codec 仍使用注册表快照；流式 viewer 仍装配内置 registry；
+PDF 导出依赖文档和分页插件。只读渲染可独立创建实例，不等于已经是无编辑器声明依赖的 npm 包。
+不通过放宽 flavour、复制类/Token 或全局初始化来规避这些约束。
+
+仓库应用统一归入 `apps/{playground,docs,desktop}`，发布包保留在 `packages/`。
+完整计划、兼容策略和验证记录见 `docs/plans/2026-09-20-ddd-boundaries-and-entrypoints.md`。
+
 ## 一、架构总览
 
 BlockCraft 是一个基于 Angular 的协同文档编辑框架，底层使用 Yjs（CRDT）实现实时协同。核心设计理念：

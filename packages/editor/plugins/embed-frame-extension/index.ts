@@ -1,7 +1,8 @@
-import {DocPlugin, getPositionWithOffset} from "../../framework";
+import {closetBlockId, DocPlugin, EventListen, getPositionWithOffset, UIEventStateContext} from "../../framework";
 import {Subject, Subscription, takeUntil} from "rxjs";
 import {OverlayRef} from "@angular/cdk/overlay";
 import {EmbedFrameBlockToolbar} from "./widgets/iframe-toolbar";
+import {isSelectionAlive} from "../../framework/modules/selection/liveness";
 
 export class EmbedFrameExtensionPlugin extends DocPlugin {
   override name = "EmbedFrameExtensionPlugin";
@@ -11,11 +12,27 @@ export class EmbedFrameExtensionPlugin extends DocPlugin {
   private _toolbarRef?: OverlayRef
   private _closeToolbar$ = new Subject<void>()
 
-  private _activeBlock: BlockCraft.IBlockComponents['attachment'] | null = null
+  private _activeBlock: BlockCraft.BlockComponent | null = null
+
+  @EventListen('mouseDown', {flavour: 'root'})
+  private onReadonlyFrameClick(ctx: UIEventStateContext) {
+    const event = ctx.getDefaultEvent() as MouseEvent
+    if (event.button !== 0 || !(event.target instanceof Element)) return
+    const card = event.target.closest('embed-frame-card')
+    const id = card && closetBlockId(card)
+    if (!id) return
+    let block: BlockCraft.BlockComponent
+    try { block = this.doc.getBlockById(id) }
+    catch { return }
+    if (!block.flavour.endsWith('embed') || !block.isReadonly) return
+    ctx.preventDefault()
+    this.doc.selection.selectBlock(block)
+    return true
+  }
 
   init() {
     this._sub = this.doc.selection.selectionChange$.subscribe(selection => {
-      if (!selection || !selection.isInSameBlock || !selection.firstBlock?.flavour.endsWith('embed')) {
+      if (!selection || !isSelectionAlive(selection as any, this.doc) || !selection.isInSameBlock || !selection.firstBlock?.flavour.endsWith('embed') || selection.anchor.type !== 'selected' || selection.head.type !== 'selected') {
         this._toolbarRef && this.closeToolbar()
         return
       }
@@ -26,13 +43,27 @@ export class EmbedFrameExtensionPlugin extends DocPlugin {
       if (this._toolbarRef && this._activeBlock === frameBlock) return;
       this.closeToolbar()
 
-      setTimeout(() => {
+      this._timer = setTimeout(() => {
+        this._timer = null
         if (this._toolbarRef && this._activeBlock === frameBlock) return;
+        const currentSelection = this.doc.selection.value
+        if (
+          !currentSelection ||
+          !isSelectionAlive(currentSelection as any, this.doc) ||
+          !currentSelection.isInSameBlock ||
+          currentSelection.firstBlock.id !== frameBlock.id ||
+          currentSelection.anchor.type !== 'selected' ||
+          currentSelection.head.type !== 'selected' ||
+          !this._isBlockAlive(frameBlock)
+        ) {
+          return
+        }
 
-        this._activeBlock = frameBlock as any
+        this._activeBlock = frameBlock
 
         const {componentRef, overlayRef} = this.doc.overlayService.createConnectedOverlay({
           target: frameBlock,
+          allowReadonly: frameBlock.isReadonly,
           positions: [
             getPositionWithOffset("top-left", 0, 8),
             getPositionWithOffset("bottom-left", 0, 8),
@@ -44,6 +75,10 @@ export class EmbedFrameExtensionPlugin extends DocPlugin {
         componentRef.setInput('doc', this.doc)
 
         this._toolbarRef = overlayRef
+
+        frameBlock.onDestroy$?.pipe(takeUntil(this._closeToolbar$)).subscribe(() => {
+          this.closeToolbar()
+        })
       }, 200)
 
     })
@@ -66,5 +101,14 @@ export class EmbedFrameExtensionPlugin extends DocPlugin {
 
   destroy() {
     this._sub?.unsubscribe()
+    this.closeToolbar()
+  }
+
+  private _isBlockAlive(block: BlockCraft.BlockComponent): boolean {
+    try {
+      return this.doc.getBlockById(block.id) === block
+    } catch {
+      return false
+    }
   }
 }

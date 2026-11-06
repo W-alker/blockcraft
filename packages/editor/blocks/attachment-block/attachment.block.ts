@@ -79,8 +79,10 @@ export class AttachmentBlockComponent extends BaseBlockComponent<AttachmentBlock
   }
 
   inputLocalFile = async () => {
+    if (this.isReadonly) return;
     try {
       const files = await this.fileService.inputFiles();
+      if (this._isGone() || this.isReadonly) return;
       if (!files || files.length === 0) return;
       const file = files[0];
 
@@ -114,13 +116,13 @@ export class AttachmentBlockComponent extends BaseBlockComponent<AttachmentBlock
 
     this.fileService.uploadAttachment(file, (p) => {
       // 上传期间块可能被本地/远端删除：detectChanges on destroyed view 会抛错
-      if (this._isGone()) return;
+      if (this._isGone() || this.isReadonly) return;
       this.uploadProgress = p;
       this.changeDetectorRef.detectChanges();
     }).then(info => {
       this.fileService.removeObjectURL(url);
       // 块已删：跳过 setInitProps（否则写入 detached Y.Map，undo 时复活孤儿块）
-      if (this._isGone()) return;
+      if (this._isGone() || this.isReadonly) return;
       this.setInitProps({
         url: info.url,
         name: info.name,
@@ -133,7 +135,7 @@ export class AttachmentBlockComponent extends BaseBlockComponent<AttachmentBlock
     }).catch(() => {
       this.fileService.removeObjectURL(url);
       this.doc.messageService.warn('上传失败');
-      if (this._isGone()) return;
+      if (this._isGone() || this.isReadonly) return;
       this.setInitProps({url: '', name: '', size: 0, type: '', icon: ''});
       this.uploadProgress = 100;
       this.changeDetectorRef.markForCheck();

@@ -1,12 +1,10 @@
-import * as Y from 'yjs';
 import {
   BlockNodeType,
   DeltaInsert,
   DeltaOperation,
-  EditableBlockComponent,
   IAdapter,
+  IBlockProps,
   IBlockSnapshot,
-  native2YBlock,
   ORIGIN_NO_RECORD,
 } from "../framework";
 
@@ -135,10 +133,13 @@ const buildDeltaPatch = (current: DeltaInsert[], next: DeltaInsert[]): DeltaOper
 export class MarkdownStreamRenderer {
   private sourceMarkdown = '';
   private renderedMarkdown: string | null = null;
+  private sourceVersion = 0;
   private scheduledFrame: number | null = null;
   private scheduledRender: Promise<void> | null = null;
+  private resolveScheduledRender: (() => void) | null = null;
   private renderInFlight: Promise<void> = Promise.resolve();
   private rerenderRequested = false;
+  private destroyed = false;
 
   constructor(
     private readonly doc: BlockCraft.Doc,
@@ -150,69 +151,174 @@ export class MarkdownStreamRenderer {
   }
 
   replace(markdown: string, options: MarkdownRenderOptions = {}) {
-    this.sourceMarkdown = markdown;
+    if (this.destroyed) {
+      return Promise.resolve();
+    }
+
+    this.updateSource(markdown);
     return options.immediate ? this.flush() : this.schedule();
   }
 
   append(chunk: string, options: MarkdownRenderOptions = {}) {
+    if (this.destroyed) {
+      return Promise.resolve();
+    }
     if (!chunk) {
       return options.immediate ? this.flush() : this.schedule();
     }
 
-    this.sourceMarkdown += chunk;
+    this.updateSource(this.sourceMarkdown + chunk);
     return options.immediate ? this.flush() : this.schedule();
   }
 
   clear(options: MarkdownRenderOptions = {}) {
-    this.sourceMarkdown = '';
+    if (this.destroyed) {
+      return Promise.resolve();
+    }
+
+    this.updateSource('');
     return options.immediate ? this.flush() : this.schedule();
   }
 
   destroy() {
+    if (this.destroyed) {
+      return;
+    }
+
+    this.destroyed = true;
+    this.sourceVersion++;
+    this.rerenderRequested = false;
     if (this.scheduledFrame !== null) {
       cancelAnimationFrame(this.scheduledFrame);
       this.scheduledFrame = null;
     }
+    const resolveScheduledRender = this.resolveScheduledRender;
     this.scheduledRender = null;
+    this.resolveScheduledRender = null;
+    resolveScheduledRender?.();
   }
 
   schedule() {
+    if (this.destroyed) {
+      return Promise.resolve();
+    }
     if (this.scheduledRender) {
       return this.scheduledRender;
     }
 
     this.scheduledRender = new Promise<void>((resolve, reject) => {
-      this.scheduledFrame = requestAnimationFrame(() => {
+      this.resolveScheduledRender = resolve;
+      const runner = () => {
         this.scheduledFrame = null;
-        this.flush()
-          .then(resolve)
-          .catch(reject)
-          .finally(() => {
-            this.scheduledRender = null;
-          });
-      });
+        this.flushScheduledWork()
+          .then(() => this.settleScheduledRender(resolve, reject))
+          .catch((error: unknown) => this.settleScheduledRender(resolve, reject, error));
+      };
+
+      if (typeof requestAnimationFrame === 'function') {
+        this.scheduledFrame = requestAnimationFrame(runner);
+      } else {
+        runner();
+      }
     });
 
     return this.scheduledRender;
   }
 
   flush() {
+    if (this.destroyed) {
+      return Promise.resolve();
+    }
     if (this.sourceMarkdown === this.renderedMarkdown && !this.rerenderRequested) {
-      return this.renderInFlight;
+      return this.renderInFlight.catch(() => undefined);
     }
 
     this.rerenderRequested = true;
-    this.renderInFlight = this.renderInFlight.then(async () => {
-      while (this.rerenderRequested) {
+    this.renderInFlight = this.renderInFlight.catch(() => undefined).then(async () => {
+      while (this.rerenderRequested && !this.destroyed) {
         this.rerenderRequested = false;
         const markdown = this.sourceMarkdown;
-        const rootSnapshot = await this.markdownAdapter.toSnapshot(markdown);
+        const version = this.sourceVersion;
+        let rootSnapshot: IBlockSnapshot;
+        try {
+          rootSnapshot = await this.markdownAdapter.toSnapshot(markdown);
+        } catch (error) {
+          if (this.destroyed) {
+            return;
+          }
+          if (version !== this.sourceVersion) {
+            this.rerenderRequested = true;
+            continue;
+          }
+          throw error;
+        }
+
+        if (this.destroyed) {
+          return;
+        }
+        if (version !== this.sourceVersion) {
+          this.rerenderRequested = true;
+          continue;
+        }
+
         this.applyRootSnapshot(this.normalizeRootSnapshot(rootSnapshot));
         this.renderedMarkdown = markdown;
       }
     });
 
     return this.renderInFlight;
+  }
+
+  private updateSource(markdown: string) {
+    if (markdown === this.sourceMarkdown) {
+      return;
+    }
+
+    this.sourceMarkdown = markdown;
+    this.sourceVersion++;
+    this.rerenderRequested = true;
+  }
+
+  private async flushScheduledWork() {
+    while (!this.destroyed) {
+      try {
+        await this.flush();
+      } catch (error) {
+        if (!this.rerenderRequested || this.destroyed) {
+          throw error;
+        }
+      }
+
+      if (!this.rerenderRequested) {
+        return;
+      }
+    }
+  }
+
+  private settleScheduledRender(
+    resolve: () => void,
+    reject: (reason?: unknown) => void,
+    error?: unknown,
+  ) {
+    this.scheduledRender = null;
+    this.resolveScheduledRender = null;
+
+    if (this.destroyed) {
+      resolve();
+      return;
+    }
+
+    if (this.rerenderRequested) {
+      this.schedule().then(resolve, reject);
+      return;
+    }
+
+    if (error !== undefined) {
+      reject(error);
+      return;
+    }
+
+    resolve();
   }
 
   private normalizeRootSnapshot(snapshot: IBlockSnapshot) {
@@ -237,11 +343,10 @@ export class MarkdownStreamRenderer {
   }
 
   private syncChildren(parentId: string, nextChildren: IBlockSnapshot[]) {
+    const currentIds = [...this.doc.model.getChildrenIds(parentId)];
     let index = 0;
 
     while (true) {
-      const parent = this.doc.getBlockById(parentId);
-      const currentIds = parent.childrenIds;
       const currentId = currentIds[index];
       const nextSnapshot = nextChildren[index];
 
@@ -251,112 +356,104 @@ export class MarkdownStreamRenderer {
 
       if (!currentId && nextSnapshot) {
         this.insertSnapshots(parentId, index, [nextSnapshot]);
+        currentIds.splice(index, 0, nextSnapshot.id);
         index++;
         continue;
       }
 
       if (currentId && !nextSnapshot) {
         this.deleteChildren(parentId, index, 1);
+        currentIds.splice(index, 1);
         continue;
       }
 
-      const currentBlock = this.doc.getBlockById(currentId!);
-      if (this.canPatchInPlace(currentBlock, nextSnapshot!)) {
-        this.patchBlock(currentBlock, nextSnapshot!);
+      if (this.canPatchInPlace(currentId!, nextSnapshot!)) {
+        this.patchBlock(currentId!, nextSnapshot!);
         index++;
         continue;
       }
 
       const nextCurrentId = currentIds[index + 1];
-      if (nextCurrentId) {
-        const nextCurrentBlock = this.doc.getBlockById(nextCurrentId);
-        if (this.canPatchInPlace(nextCurrentBlock, nextSnapshot!)) {
-          this.deleteChildren(parentId, index, 1);
-          continue;
-        }
+      if (nextCurrentId && this.canPatchInPlace(nextCurrentId, nextSnapshot!)) {
+        this.deleteChildren(parentId, index, 1);
+        currentIds.splice(index, 1);
+        continue;
       }
 
       const followingSnapshot = nextChildren[index + 1];
-      if (followingSnapshot && this.canPatchInPlace(currentBlock, followingSnapshot)) {
+      if (followingSnapshot && this.canPatchInPlace(currentId!, followingSnapshot)) {
         this.insertSnapshots(parentId, index, [nextSnapshot!]);
+        currentIds.splice(index, 0, nextSnapshot!.id);
         index++;
         continue;
       }
 
-      this.replaceChild(parentId, index, nextSnapshot!);
+      this.replaceChild(currentId!, nextSnapshot!);
+      currentIds[index] = nextSnapshot!.id;
       index++;
     }
   }
 
-  private canPatchInPlace(block: BlockCraft.BlockComponent, snapshot: IBlockSnapshot) {
-    return block.flavour === snapshot.flavour && block.nodeType === snapshot.nodeType;
+  private canPatchInPlace(blockId: string, snapshot: IBlockSnapshot) {
+    return this.doc.model.getFlavour(blockId) === snapshot.flavour &&
+      this.doc.model.getNodeType(blockId) === snapshot.nodeType;
   }
 
-  private patchBlock(block: BlockCraft.BlockComponent, snapshot: IBlockSnapshot) {
-    this.syncProps(block, snapshot.props);
+  private patchBlock(blockId: string, snapshot: IBlockSnapshot) {
+    this.syncProps(blockId, snapshot.props);
+    const nodeType = this.doc.model.getNodeType(blockId);
 
-    if (block.nodeType === BlockNodeType.editable && snapshot.nodeType === BlockNodeType.editable) {
-      this.patchEditableBlock(block as EditableBlockComponent, snapshot.children);
+    if (nodeType === BlockNodeType.editable && snapshot.nodeType === BlockNodeType.editable) {
+      this.patchEditableBlock(blockId, snapshot.children);
       return;
     }
 
     if (
-      (block.nodeType === BlockNodeType.block || block.nodeType === BlockNodeType.root) &&
+      (nodeType === BlockNodeType.block || nodeType === BlockNodeType.root) &&
       (snapshot.nodeType === BlockNodeType.block || snapshot.nodeType === BlockNodeType.root)
     ) {
-      this.syncChildren(block.id, snapshot.children);
+      this.syncChildren(blockId, snapshot.children);
     }
   }
 
-  private patchEditableBlock(block: EditableBlockComponent, nextDelta: DeltaInsert[]) {
-    const operations = buildDeltaPatch(block.textDeltas(), nextDelta);
+  private patchEditableBlock(blockId: string, nextDelta: DeltaInsert[]) {
+    const operations = buildDeltaPatch(this.doc.model.getTextDeltas(blockId) ?? [], nextDelta);
     if (operations.length === 0) {
       return;
     }
 
-    block.applyDeltaOperations(operations);
+    this.doc.crud.applyTextDelta(blockId, operations);
   }
 
-  private syncProps(block: BlockCraft.BlockComponent, nextProps: IBlockSnapshot['props']) {
-    if (blockPropsEqual(block.props, nextProps)) {
+  private syncProps(blockId: string, nextProps: IBlockSnapshot['props']) {
+    const currentProps = this.doc.model.getProps(blockId) ?? {};
+    if (blockPropsEqual(currentProps as IBlockSnapshot['props'], nextProps)) {
       return;
     }
 
-    const yProps = block.yBlock.get('props') as Y.Map<unknown>;
-    const currentKeys = new Set(Object.keys(block.props));
+    const patch: Partial<IBlockProps> = {};
+    const currentKeys = new Set(Object.keys(currentProps));
 
     Object.entries(nextProps).forEach(([key, value]) => {
       currentKeys.delete(key);
-      if (JSON.stringify(block.props[key]) === JSON.stringify(value)) {
+      if (JSON.stringify(currentProps[key]) === JSON.stringify(value)) {
         return;
       }
-      yProps.set(key, value);
+      patch[key] = value;
     });
 
     currentKeys.forEach((key) => {
-      yProps.delete(key);
+      patch[key] = null;
     });
+    this.doc.crud.updateBlockProps(blockId, patch);
   }
 
   private insertSnapshots(parentId: string, index: number, snapshots: IBlockSnapshot[]) {
-    const parent = this.doc.getBlockById(parentId);
-    const yChildren = parent.yBlock.get('children') as Y.Array<string>;
-    snapshots.forEach((snapshot) => this.mountSnapshot(snapshot));
-    yChildren.insert(index, snapshots.map((snapshot) => snapshot.id));
+    this.doc.crud.insertBlockSnapshots(parentId, index, snapshots);
   }
 
-  private replaceChild(parentId: string, index: number, snapshot: IBlockSnapshot) {
-    const parent = this.doc.getBlockById(parentId);
-    const yChildren = parent.yBlock.get('children') as Y.Array<string>;
-    const currentId = parent.childrenIds[index];
-
-    if (currentId) {
-      this.deleteBlockTree(currentId);
-      yChildren.delete(index, 1);
-    }
-
-    this.mountSnapshot(snapshot);
-    yChildren.insert(index, [snapshot.id]);
+  private replaceChild(blockId: string, snapshot: IBlockSnapshot) {
+    this.doc.crud.replaceBlockSnapshots(blockId, [snapshot]);
   }
 
   private deleteChildren(parentId: string, index: number, count: number) {
@@ -364,46 +461,6 @@ export class MarkdownStreamRenderer {
       return;
     }
 
-    const parent = this.doc.getBlockById(parentId);
-    const yChildren = parent.yBlock.get('children') as Y.Array<string>;
-    const removingIds = parent.childrenIds.slice(index, index + count);
-
-    removingIds.forEach((id) => this.deleteBlockTree(id));
-    yChildren.delete(index, count);
-  }
-
-  private deleteBlockTree(blockId: string) {
-    const yBlock = this.doc.yBlockMap.get(blockId);
-    if (!yBlock) {
-      return;
-    }
-
-    const children = yBlock.get('children');
-    if (children instanceof Y.Array) {
-      children.toArray().forEach((childId) => {
-        this.deleteBlockTree(childId as string);
-      });
-    }
-
-    this.doc.yBlockMap.delete(blockId);
-  }
-
-  private mountSnapshot(snapshot: IBlockSnapshot) {
-    const nativeBlock =
-      snapshot.nodeType === BlockNodeType.editable
-        ? snapshot
-        : {
-          ...snapshot,
-          children: snapshot.children.map((child) => child.id),
-        };
-
-    this.doc.yBlockMap.set(
-      snapshot.id,
-      native2YBlock(nativeBlock as never),
-    );
-
-    if (snapshot.nodeType === BlockNodeType.block || snapshot.nodeType === BlockNodeType.root) {
-      snapshot.children.forEach((child) => this.mountSnapshot(child));
-    }
+    this.doc.crud.deleteBlocks(parentId, index, count, true);
   }
 }

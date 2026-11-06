@@ -1,0 +1,195 @@
+@if (state; as current) {
+  <aside class="revision-panel" aria-label="修订评审面板">
+    <header class="revision-panel__header">
+      <div>
+        <h2>修订</h2>
+        <p>{{ current.items.length }} 组记录 · epoch {{ current.epoch }}</p>
+      </div>
+      <span class="revision-panel__pending">{{ current.pendingItemCount }} 待审</span>
+      @if (closable) {
+        <button
+          cs-button
+          csType="text"
+          csSize="sm"
+          type="button"
+          class="revision-panel__close"
+          aria-label="关闭修订面板"
+          csTooltip="关闭"
+          (click)="close()">
+          <i class="bc_icon bc_x-01" aria-hidden="true"></i>
+        </button>
+      }
+      <div class="revision-panel__filters" role="group" aria-label="筛选修订">
+        <button cs-button csType="text" csSize="sm" type="button" [class.is-active]="filter === 'pending'" (click)="setFilter('pending')">待处理</button>
+        <button cs-button csType="text" csSize="sm" type="button" [class.is-active]="filter === 'resolved'" (click)="setFilter('resolved')">已处理</button>
+      </div>
+    </header>
+
+    @if (current.pendingItemCount > 0) {
+      <div class="revision-panel__batch" aria-label="批量评审">
+        <button type="button" class="cs-btn cs-btn-secondary cs-btn-sm is-revert" [disabled]="actionsDisabled" (click)="intent.emit({type: 'revert-all'})">全部拒绝</button>
+        <button type="button" class="cs-btn cs-btn-secondary cs-btn-sm is-keep" [disabled]="actionsDisabled || current.conflicts.length > 0" (click)="intent.emit({type: 'keep-all'})">全部接收</button>
+      </div>
+    }
+
+    @if (activeConflict; as conflict) {
+      <section class="revision-panel__conflicts" aria-label="结构修订冲突">
+        <header class="revision-panel__conflict-header">
+          <div>
+            <strong>结构修订冲突</strong>
+            <span>{{ conflictCards.length }} 组待处理</span>
+          </div>
+          <nav aria-label="切换结构冲突">
+            <span aria-label="当前冲突位置">{{ activeConflictIndex + 1 }}/{{ conflictCards.length }}</span>
+            <span csTooltip="上一组冲突">
+              <button
+                type="button"
+                aria-label="上一组冲突"
+                [disabled]="conflictCards.length < 2"
+                (click)="navigateConflict(-1)">
+                <i class="bc_icon bc_chevron-left" aria-hidden="true"></i>
+              </button>
+            </span>
+            <span csTooltip="下一组冲突">
+              <button
+                type="button"
+                aria-label="下一组冲突"
+                [disabled]="conflictCards.length < 2"
+                (click)="navigateConflict(1)">
+                <i class="bc_icon bc_chevron-left" aria-hidden="true"></i>
+              </button>
+            </span>
+          </nav>
+        </header>
+        <p>
+          下面两项修订同时影响{{ conflict.conflict.blockIds.length === 1 ? '同一内容块' : conflict.conflict.blockIds.length + ' 个内容块' }}，只能接收其中一项；接收后另一项会被拒绝。
+        </p>
+        <div class="revision-panel__conflict-choices">
+          @for (choice of conflict.choices; track choice.revisionId) {
+            <button
+              type="button"
+              class="revision-panel__conflict-choice"
+              [attr.aria-label]="choice.acceptLabel"
+              [disabled]="actionsDisabled"
+              (click)="keepConflict(conflict.conflict, choice.revisionId)">
+              <span
+                class="revision-panel__conflict-avatar"
+                [style.background-color]="choice.actorColor"
+                aria-hidden="true">{{ choice.actorInitial }}</span>
+              <span class="revision-panel__conflict-body">
+                <span class="revision-panel__conflict-meta">
+                  <strong>{{ choice.actorName }}</strong>
+                  <span>{{ choice.label }} · <time [attr.datetime]="choice.createdAt">{{ choice.createdAt | date:'MM-dd HH:mm' }}</time></span>
+                </span>
+                <span class="revision-panel__conflict-text" [title]="choice.revisionText">{{ choice.revisionText }}</span>
+              </span>
+              <span class="revision-panel__conflict-accept" aria-hidden="true">
+                <i class="bc_icon bc_check-ok"></i>
+                <span>接收此项</span>
+              </span>
+            </button>
+          }
+        </div>
+      </section>
+    }
+
+    <div #listShell class="revision-panel__list-shell">
+      @if (cards.length > 0) {
+        <div class="revision-panel__track">
+          @for (card of cards; track card.item.id) {
+            <div
+              class="revision-panel__row"
+              [style.transform]="'translate3d(0,' + card.top + 'px,0)'">
+              <article
+                class="revision-card"
+                [attr.data-revision-review-item-id]="card.item.id"
+                [class.is-active]="current.activeItemId === card.item.id"
+                [attr.data-status]="card.item.status"
+                [attr.aria-current]="current.activeItemId === card.item.id ? 'true' : null"
+                role="button"
+                tabindex="0"
+                (click)="activate(card.item.id)"
+                (keydown.enter)="activate(card.item.id)"
+                (keydown.space)="$event.preventDefault(); activate(card.item.id)">
+                <header class="revision-card__header">
+                  <div class="revision-card__meta">
+                    <span class="revision-card__avatar" [style.background-color]="card.actorColor" aria-hidden="true">{{ card.actorInitial }}</span>
+                    <span class="revision-card__person">
+                      <strong>{{ card.actorName }}</strong>
+                      <span>
+                        <time [attr.datetime]="card.item.createdAt">{{ card.item.createdAt | date:'MM-dd HH:mm' }}</time>
+                        <span aria-hidden="true"> · </span>
+                        <span class="revision-card__state" [attr.data-status]="card.item.status">{{ card.statusLabel }}</span>
+                      </span>
+                    </span>
+                  </div>
+                  <nav class="revision-card__tools" aria-label="修订操作" (click)="$event.stopPropagation()">
+                    <span class="revision-card__position" aria-label="修订位置">{{ cardPosition(card.item.id) }}/{{ filteredCards.length }}</span>
+                    <span class="revision-card__tooltip-anchor" csTooltip="上一条修订">
+                      <button
+                        type="button"
+                        class="revision-card__icon-button is-previous"
+                        [disabled]="filteredCards.length < 2"
+                        aria-label="上一条修订"
+                        (click)="navigateRelative(card.item.id, -1)">
+                        <i class="bc_icon bc_chevron-left" aria-hidden="true"></i>
+                      </button>
+                    </span>
+                    <span class="revision-card__tooltip-anchor" csTooltip="下一条修订">
+                      <button
+                        type="button"
+                        class="revision-card__icon-button is-next"
+                        [disabled]="filteredCards.length < 2"
+                        aria-label="下一条修订"
+                        (click)="navigateRelative(card.item.id, 1)">
+                        <i class="bc_icon bc_chevron-left" aria-hidden="true"></i>
+                      </button>
+                    </span>
+                    <span class="revision-card__tooltip-anchor" [csTooltip]="card.revertLabel">
+                      <button
+                        type="button"
+                        class="revision-card__icon-button is-revert"
+                        [attr.aria-label]="card.revertLabel"
+                        [disabled]="actionsDisabled || card.item.status === 'rejected'"
+                        (click)="revert(card.item.id)">
+                        <i class="bc_icon bc_x-01" aria-hidden="true"></i>
+                      </button>
+                    </span>
+                    <span class="revision-card__tooltip-anchor" [csTooltip]="card.keepLabel">
+                      <button
+                        type="button"
+                        class="revision-card__icon-button is-keep"
+                        [attr.aria-label]="card.keepLabel"
+                        [disabled]="actionsDisabled || card.item.status === 'accepted' || card.item.overlapConflictIds.length > 0"
+                        (click)="keep(card.item.id)">
+                        <i class="bc_icon bc_check-ok" aria-hidden="true"></i>
+                      </button>
+                    </span>
+                  </nav>
+                </header>
+                <p class="revision-card__content">
+                  <strong>{{ card.label }}：</strong>
+                  <span [title]="card.revisionText">{{ card.revisionText }}</span>
+                </p>
+              </article>
+            </div>
+          }
+        </div>
+      } @else {
+        <div class="revision-panel__empty">
+          <i class="bc_icon bc_xiuding-2" aria-hidden="true"></i>
+          <strong>{{ !current.items.length
+            ? '暂无修订'
+            : (!filteredCards.length ? '当前筛选下没有修订' : '当前视口暂无修订') }}</strong>
+          <span>{{ !current.items.length
+            ? '开启修订模式后，编辑会出现在这里。'
+            : (!filteredCards.length ? '试试切换其他筛选条件。' : '滚动文档以查看对应修订。') }}</span>
+        </div>
+      }
+    </div>
+
+    <footer class="revision-panel__note">
+      卡片只投影当前虚拟窗口中已挂载的修订锚点；滚动文档即可查看其他修订。
+    </footer>
+  </aside>
+}

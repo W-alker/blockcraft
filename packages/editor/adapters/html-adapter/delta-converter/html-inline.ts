@@ -2,6 +2,7 @@ import {HtmlASTToDeltaMatcher} from "../delta-converter";
 import {HtmlAST} from "../../types";
 import type { Element } from 'hast';
 import { collapseWhiteSpace } from 'collapse-white-space';
+import {inlineTypographyFromHtml} from '../typography';
 
 const isElement = (ast: HtmlAST): ast is Element => {
   return ast.type === 'element';
@@ -43,6 +44,28 @@ export const htmlTextLikeElementToDeltaMatcher: HtmlASTToDeltaMatcher = {
     return ast.children.flatMap(child =>
       context.toDelta(child, { trim: false })
     );
+  },
+};
+
+export const htmlTypographyElementToDeltaMatcher: HtmlASTToDeltaMatcher = {
+  name: 'typography-element',
+  match: ast =>
+    isElement(ast) &&
+    textLikeElementTags.includes(ast.tagName) &&
+    inlineTypographyFromHtml(ast) !== null,
+  toDelta: (ast, context) => {
+    if (!isElement(ast)) return []
+    const typography = inlineTypographyFromHtml(ast)
+    if (!typography) {
+      return ast.children.flatMap(child => context.toDelta(child, {trim: false}))
+    }
+    return ast.children.flatMap(child =>
+      context.toDelta(child, {trim: false}).map(delta => {
+        if (typeof delta.insert !== 'string') return delta
+        delta.attributes = {...delta.attributes, ...typography}
+        return delta
+      })
+    )
   },
 };
 
@@ -218,30 +241,9 @@ export const htmlBrElementToDeltaMatcher: HtmlASTToDeltaMatcher = {
   },
 };
 
-export const htmlMathInlineToDeltaMatcher: HtmlASTToDeltaMatcher = {
-  name: 'math-inline',
-  match: ast =>
-    isElement(ast) && (
-      (ast.tagName === 'code' && Array.isArray(ast.properties?.['className']) &&
-        (ast.properties['className'] as string[]).includes('math')) ||
-      (ast.tagName === 'span' && Array.isArray(ast.properties?.['className']) &&
-        (ast.properties['className'] as string[]).some(c => c === 'katex' || c === 'math-inline'))
-    ),
-  toDelta: (ast, context) => {
-    if (!isElement(ast)) return [];
-    const latex = (ast.properties?.['dataLatex'] as string) || '';
-    if (latex) {
-      return [{insert: {latex}}];
-    }
-    const text = ast.children.flatMap(child =>
-      context.toDelta(child, {trim: false})
-    ).map(d => d.insert as string).join('');
-    return text ? [{insert: {latex: text}}] : [];
-  },
-};
-
 export const htmlInlineToDeltaMatchers: HtmlASTToDeltaMatcher[] = [
   htmlTextToDeltaMatcher,
+  htmlTypographyElementToDeltaMatcher,
   htmlTextLikeElementToDeltaMatcher,
   htmlStrongElementToDeltaMatcher,
   htmlItalicElementToDeltaMatcher,
@@ -251,5 +253,4 @@ export const htmlInlineToDeltaMatchers: HtmlASTToDeltaMatcher[] = [
   htmlLinkElementToDeltaMatcher,
   htmlMarkElementToDeltaMatcher,
   htmlBrElementToDeltaMatcher,
-  htmlMathInlineToDeltaMatcher,
 ];

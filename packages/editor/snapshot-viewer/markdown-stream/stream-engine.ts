@@ -1,38 +1,40 @@
 import {BlockNodeType, IBlockSnapshot} from "../../framework/block-std/types/block.type";
 import {createSnapshotRenderer} from "../create-snapshot-renderer";
 import {SnapshotRenderer} from "../types";
-import {planMarkdownStream} from "./stream-planner";
 import {MarkdownStreamSession} from "./stream-session";
-import {MarkdownToSnapshotWindowParser} from "./window-parser";
-import {MarkdownPlannedRange, MarkdownStreamViewer, MarkdownStreamViewerOptions} from "./types";
+import {MarkdownStreamSnapshotParser} from "./stream-parser";
+import {MarkdownStreamViewer, MarkdownStreamViewerOptions} from "./types";
 
 export class SnapshotViewerStreamEngine implements MarkdownStreamViewer {
   private readonly session = new MarkdownStreamSession()
-  private readonly parser = new MarkdownToSnapshotWindowParser()
+  private readonly parser: MarkdownStreamSnapshotParser
   private readonly renderer: SnapshotRenderer
   private readonly container: HTMLElement
+  private readonly onError?: (error: unknown) => void
   private flushChain: Promise<void> = Promise.resolve()
   private rendered = false
-  private renderedSegments: Array<{ range: MarkdownPlannedRange, blocks: IBlockSnapshot[] }> = []
-  private lastProcessedText = ""
-  private renderedKey: string | null = null
+  private renderedVersion: number | null = null
   private rerenderRequested = false
   private scheduledFlush: Promise<void> | null = null
   private scheduledFrameId: number | null = null
   private destroyed = false
 
-  constructor(private readonly options: MarkdownStreamViewerOptions = {}) {
+  constructor(options: MarkdownStreamViewerOptions = {}) {
     this.container = options.container ?? document.createElement("div")
     this.renderer = createSnapshotRenderer(options.viewerOptions ?? {})
+    this.parser = new MarkdownStreamSnapshotParser(options)
+    this.onError = options.onError
   }
 
   append(chunk: string): void {
     this.session.append(chunk)
+    this.rerenderRequested = true
     this.scheduleFlush()
   }
 
   replace(markdown: string): void {
     this.session.replace(markdown)
+    this.rerenderRequested = true
     this.scheduleFlush()
   }
 
@@ -50,13 +52,11 @@ export class SnapshotViewerStreamEngine implements MarkdownStreamViewer {
     this.scheduledFlush = null
     this.renderer.destroy()
     this.session.destroy()
-    this.renderedSegments = []
-    this.lastProcessedText = ""
-    this.renderedKey = null
+    this.renderedVersion = null
   }
 
-  private computeKey(): string {
-    return `${this.session.getText()}|${this.session.isFinalized() ? 1 : 0}`
+  private currentVersion(): number {
+    return this.session.getVersion()
   }
 
   private scheduleFlush(): Promise<void> {
@@ -66,14 +66,17 @@ export class SnapshotViewerStreamEngine implements MarkdownStreamViewer {
     if (this.scheduledFlush) {
       return this.scheduledFlush
     }
-    this.scheduledFlush = new Promise<void>((resolve, reject) => {
+    this.scheduledFlush = new Promise<void>((resolve) => {
       const runner = () => {
         this.scheduledFrameId = null
         this.flush()
-          .then(resolve)
-          .catch(reject)
+          .catch(error => this.reportError(error))
           .finally(() => {
             this.scheduledFlush = null
+            resolve()
+            if (this.rerenderRequested && !this.destroyed) {
+              this.scheduleFlush()
+            }
           })
       }
       if (typeof requestAnimationFrame === "function") {
@@ -89,48 +92,41 @@ export class SnapshotViewerStreamEngine implements MarkdownStreamViewer {
     if (this.destroyed) {
       return this.flushChain
     }
-    const currentKey = this.computeKey()
-    if (this.renderedKey === currentKey && !this.rerenderRequested) {
+    const requestedVersion = this.currentVersion()
+    if (this.renderedVersion === requestedVersion && !this.rerenderRequested) {
       return this.flushChain
     }
     this.rerenderRequested = true
-    this.flushChain = this.flushChain.then(async () => {
+    this.flushChain = this.flushChain.catch(() => undefined).then(async () => {
       while (this.rerenderRequested && !this.destroyed) {
         this.rerenderRequested = false
-        const previousText = this.lastProcessedText
-        const nextText = this.session.getText()
-        await this.process(previousText, nextText)
-        this.lastProcessedText = nextText
-        this.renderedKey = this.computeKey()
-        if (this.renderedKey !== currentKey) {
-          // text changed during async work -- loop again
-          this.rerenderRequested = true
+        const markdown = this.session.getText()
+        const processedVersion = this.currentVersion()
+        const {blocks} = await this.parser.parse({markdown})
+        if (this.destroyed || this.currentVersion() !== processedVersion) {
+          this.rerenderRequested = !this.destroyed
+          continue
         }
+        this.render(blocks)
+        this.renderedVersion = processedVersion
       }
     })
     return this.flushChain
   }
 
-  private async process(previousText: string, nextText: string) {
-    const plan = planMarkdownStream({
-      previousText,
-      nextText,
-      finalized: this.session.isFinalized(),
-    })
+  private reportError(error: unknown): void {
+    if (this.onError) {
+      try {
+        this.onError(error)
+        return
+      } catch (callbackError) {
+        console.error("[BlockCraft Markdown Stream] onError callback failed", callbackError)
+      }
+    }
+    console.error("[BlockCraft Markdown Stream] render failed", error)
+  }
 
-    const ranges = this.session.isFinalized()
-      ? [...plan.readyRanges, ...plan.provisionalRanges, ...plan.pendingRanges]
-      : [...plan.readyRanges, ...plan.provisionalRanges]
-
-    const preservedSegments = this.renderedSegments.filter(
-      (segment) => segment.range.end <= plan.reparseStart && segment.range.state === "stable"
-    )
-    const nextSegments = [
-      ...preservedSegments,
-      ...(await this.parseRanges(ranges)),
-    ]
-    this.renderedSegments = nextSegments
-    const blocks = nextSegments.flatMap((segment) => segment.blocks)
+  private render(blocks: IBlockSnapshot[]) {
     const root = createRootSnapshot(blocks)
 
     if (!this.rendered) {
@@ -140,21 +136,6 @@ export class SnapshotViewerStreamEngine implements MarkdownStreamViewer {
     }
 
     this.renderer.update(root)
-  }
-
-  private async parseRanges(ranges: MarkdownPlannedRange[]) {
-    const segments: Array<{ range: MarkdownPlannedRange, blocks: IBlockSnapshot[] }> = []
-    for (const range of ranges) {
-      const parsed = await this.parser.parse({
-        markdown: range.text,
-        range,
-      })
-      segments.push({
-        range,
-        blocks: parsed.blocks,
-      })
-    }
-    return segments
   }
 }
 

@@ -1,10 +1,15 @@
 import {BlockNodeType, IBlockSnapshot} from "../framework/block-std/types/block.type";
-import {InlineModel} from "../framework/block-std/types/inline.type";
 import {createBlockShell} from "./dom/create-block-shell";
+import {createEditableContainer} from "./dom/editable-container";
 import {createEmbedRenderers} from "./renderers/embed-renderers";
 import {createMediaRenderers} from "./renderers/media-renderers";
 import {createStructuralRenderers} from "./renderers/structural-renderers";
 import {createTextRenderers} from "./renderers/text-renderers";
+import {createWordArtRenderers} from "./renderers/word-art-renderers";
+import {createShapeRenderers} from "./renderers/shape-renderers";
+import {createStickerRenderer} from "./renderers/sticker-renderer";
+import {createMaterialRenderers} from "./renderers/material-renderers";
+import {createPageDividerRenderer} from "./renderers/page-divider-renderer";
 import {SnapshotBlockRenderer, SnapshotRenderContext} from "./types";
 
 const DEFAULT_SNAPSHOT_BLOCK_RENDERER: SnapshotBlockRenderer = {
@@ -13,10 +18,7 @@ const DEFAULT_SNAPSHOT_BLOCK_RENDERER: SnapshotBlockRenderer = {
     const element = createBlockShell(snapshot)
 
     if (snapshot.nodeType === BlockNodeType.editable) {
-      const content = document.createElement("div")
-      content.classList.add("edit-container")
-      content.append(ctx.createInlineContent(snapshot.children as InlineModel))
-      element.append(content)
+      element.append(createEditableContainer(ctx, snapshot, {host: element}))
       return {element}
     }
 
@@ -33,6 +35,11 @@ const DEFAULT_SNAPSHOT_BLOCK_RENDERER: SnapshotBlockRenderer = {
 export function createBuiltinRendererRegistry(): SnapshotBlockRenderer[] {
   return [
     ...createStructuralRenderers(),
+    createPageDividerRenderer(),
+    ...createShapeRenderers(),
+    createStickerRenderer(),
+    ...createMaterialRenderers(),
+    ...createWordArtRenderers(),
     ...createTextRenderers(),
     ...createMediaRenderers(),
     ...createEmbedRenderers(),

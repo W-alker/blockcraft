@@ -1,7 +1,8 @@
 import {
   AfterViewInit, ChangeDetectionStrategy, ChangeDetectorRef, Component,
-  ElementRef, EventEmitter, Input, Output, ViewChild,
+  ElementRef, EventEmitter, Input, OnDestroy, Output, ViewChild,
 } from "@angular/core";
+import {CsButtonComponent} from "@cses/ui";
 // @ts-ignore
 import katex from 'katex';
 
@@ -11,20 +12,21 @@ import katex from 'katex';
     <div class="ft-container">
       <div class="ft-preview" #preview></div>
       <div class="ft-editor">
-        <textarea #latexInput class="ft-input" [value]="latex"
+        <textarea #latexInput class="ft-input" aria-label="LaTeX 公式" [value]="latex"
           (input)="onInput($event)" (keydown.meta.enter)="onConfirm()"
           (keydown.control.enter)="onConfirm()"
           placeholder="输入 LaTeX 公式，如 E = mc^2" rows="3"></textarea>
         <div class="ft-footer">
           <span class="ft-hint">Ctrl + Enter 确认</span>
-          <button class="ft-btn" (click)="onConfirm()">确定</button>
+          <button cs-button csType="primary" csSize="sm" class="ft-btn" (click)="onConfirm()">确定</button>
         </div>
       </div>
     </div>
   `,
   styles: [`
     .ft-container {
-      width: 400px;
+      width: min(400px, calc(100vw - 24px));
+      box-sizing: border-box;
       background: var(--bc-bg-primary);
       border-radius: 8px;
       border: 1px solid var(--bc-border-color);
@@ -75,21 +77,12 @@ import katex from 'katex';
       font-size: 11px;
       color: var(--bc-color-lighter);
     }
-    .ft-btn {
-      padding: 4px 20px;
-      border: none;
-      border-radius: 4px;
-      background: var(--bc-active-color);
-      color: #fff;
-      font-size: 13px;
-      cursor: pointer;
-    }
-    .ft-btn:hover { opacity: 0.85; }
   `],
   standalone: true,
+  imports: [CsButtonComponent],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class FormulaBlockToolbar implements AfterViewInit {
+export class FormulaBlockToolbar implements AfterViewInit, OnDestroy {
   @Input() block!: BlockCraft.IBlockComponents['formula'];
   @Input() doc!: BlockCraft.Doc;
   @Input() initialLatex = '';
@@ -99,18 +92,31 @@ export class FormulaBlockToolbar implements AfterViewInit {
   @ViewChild('latexInput') latexInput!: ElementRef<HTMLTextAreaElement>;
 
   latex = '';
+  private _destroyed = false;
+  private _focusTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private cdr: ChangeDetectorRef) {}
 
   ngAfterViewInit() {
+    this._destroyed = false;
     this.latex = this.initialLatex || this.block?.props?.latex || '';
     this.cdr.detectChanges();
     this.renderPreview();
-    setTimeout(() => {
+    this._focusTimer = setTimeout(() => {
+      this._focusTimer = null;
+      if (this._destroyed) return;
       this.latexInput?.nativeElement.focus();
       const len = this.latexInput?.nativeElement.value.length || 0;
       this.latexInput?.nativeElement.setSelectionRange(len, len);
     });
+  }
+
+  ngOnDestroy() {
+    this._destroyed = true;
+    if (this._focusTimer !== null) {
+      clearTimeout(this._focusTimer);
+      this._focusTimer = null;
+    }
   }
 
   onInput(event: Event) {

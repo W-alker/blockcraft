@@ -8,6 +8,8 @@ import {MermaidTextareaBlockComponent} from "./mermaid-textarea.block";
 import {MermaidBlockComponent} from "./mermaid.block";
 import {MermaidViewMode} from "./types";
 
+export * from './agent'
+
 export interface MermaidBlockModel extends NoEditableBlockNative {
   flavour: 'mermaid',
   nodeType: BlockNodeType.block,
@@ -42,8 +44,11 @@ export const MermaidBlockSchema: IBlockSchemaOptions<MermaidBlockModel> = {
   metadata: {
     version: 1,
     label: '代码绘图',
+    description: '使用 Mermaid 语法创建图表',
     svgIcon: 'bc_mermaid',
     icon: 'bf_icon bc_mermaid',
+    includeChildren: ['mermaid-textarea'],
+    selectionScope: 'transparent',
   }
 }
 
@@ -55,8 +60,11 @@ export const MermaidTextareaBlockSchema: IBlockSchemaOptions<MermaidTextareaBloc
   metadata: {
     version: 1,
     label: "Mermaid输入框",
+    description: "编辑 Mermaid 图表源代码",
     icon: "bc_icon bc_wenben",
-    isLeaf: true
+    isLeaf: true,
+    plainTextOnly: true,
+    selectionScope: 'transparent',
   }
 }
 

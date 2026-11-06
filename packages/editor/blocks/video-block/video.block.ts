@@ -1,26 +1,49 @@
-import {ChangeDetectionStrategy, Component, ElementRef, ViewChild} from '@angular/core';
-import {DomSanitizer, SafeHtml, SafeResourceUrl} from '@angular/platform-browser';
-import {BaseBlockComponent, DOC_FILE_SERVICE_TOKEN, DocFileService} from '../../framework';
-import {VideoBlockModel} from './index';
+import {ChangeDetectionStrategy, Component, inject} from '@angular/core';
 import {AsyncPipe} from '@angular/common';
-import {ResizeContainerComponent} from '../../components/block-resizer';
+import {DomSanitizer, SafeHtml, SafeResourceUrl} from '@angular/platform-browser';
+import {
+  BaseBlockComponent,
+  deriveObjectSizeFromPixels,
+  DOC_FILE_SERVICE_TOKEN,
+  DocFileService,
+} from '../../framework';
+import {VideoBlockModel} from './index';
+// Avoid the components barrel: snapshot-viewer imports the block registry back.
+import {ResizeContainerComponent} from '../../components/block-resizer/resize-container';
+import type {BlockResizeCommit} from '../../components/block-resizer/resize-container';
+import {BcResourcePlaceholderDirective} from '../../components/resource-placeholder/resource-placeholder.directive';
+import type {ResourceIntrinsicSize} from '@ccc/blockcraft/global/resource-placeholder';
+import {takeUntil} from 'rxjs';
+import {getLocalVideoUpload} from './local-video-upload';
 
 @Component({
   selector: 'div.video-block',
   template: `
-    @if (!props.url) {
-      <div class="upload-hint" contenteditable="false" (click)="inputLocalFile()">
-        <i class="bc_icon bc_shipin"></i>
-        <span>点击插入视频</span>
-      </div>
-    } @else if (isPeerUploading) {
-      <div class="peer-uploading" contenteditable="false">
-        <div class="peer-uploading__spinner"></div>
-        <span>同步中...</span>
+    @if (!props.url || isPeerUploading) {
+      <div class="video-block__wrapper resizable-container video-block__placeholder-frame"
+           [style.width.px]="renderedWidth"
+           [style.aspect-ratio]="objectDimensions?.ar ?? 16 / 9">
+        @if (!props.url) {
+          <div class="upload-hint" contenteditable="false" (click)="!isReadonly && inputLocalFile()">
+            <i class="bc_icon bc_shipin"></i>
+            <span>点击插入视频</span>
+          </div>
+        } @else {
+          <div class="peer-uploading" contenteditable="false">
+            <div class="peer-uploading__spinner"></div>
+            <span>同步中...</span>
+          </div>
+        }
       </div>
     } @else {
       <div class="video-block__wrapper resizable-container" contenteditable="false"
-           [style.width.px]="props.width || null" #resizeContainer>
+           bcResourcePlaceholder
+           [resourceKey]="resourcePreviewUrl"
+           (resourceIntrinsicSize)="onResourceIntrinsicSize($event)"
+           [style.width.px]="renderedWidth"
+           [style.aspect-ratio]="renderedAspectRatio"
+           [attr.data-bc-object-sizing]="usesRatioSizing ? '' : null"
+           #resizeContainer>
         <div class="video-block__container">
           @if (isEmbedPlatformUrl) {
             <div class="embed-container" style="background: #1a1a1a;">
@@ -29,36 +52,16 @@ import {ResizeContainerComponent} from '../../components/block-resizer';
                 style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none;"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
                 allowfullscreen="true"
-                referrerpolicy="no-referrer"
-                (load)="onIframeLoad()"
-                (error)="onIframeError()">
+                referrerpolicy="no-referrer">
               </iframe>
-              @if (iframeLoading) {
-                <div class="iframe-loading">
-                  <div class="loading-spinner"></div>
-                  <span>加载中...</span>
-                </div>
-              }
-              @if (iframeError) {
-                <div class="iframe-fallback">
-                  <i class="bc_icon bc_shipin"></i>
-                  <div class="fallback-text">视频无法嵌入播放</div>
-                  <div class="fallback-hint">可能是网络限制或平台不支持嵌入</div>
-                  <a class="fallback-link" [href]="props.url" target="_blank"
-                     rel="noopener noreferrer">
-                    <i class="bc_icon bc_lianjie"></i>
-                    在浏览器中打开
-                  </a>
-                </div>
-              }
             </div>
           } @else if (isDirectVideoUrl) {
             <div class="video-wrapper">
-              <video [src]="props.url"
+              <video [src]="resourcePreviewUrl"
+                     [style.--video-view-scale]="(doc.viewScale.scale$ | async) ?? 1"
                      controls
-                     [poster]="posterUrl"
-                     preload="metadata"
-                     (error)="onVideoError()">
+                     [attr.poster]="props.poster || null"
+                     preload="metadata">
                 您的浏览器不支持视频播放
               </video>
             </div>
@@ -74,15 +77,6 @@ import {ResizeContainerComponent} from '../../components/block-resizer';
               </div>
             </div>
           }
-
-          @if (videoError) {
-            <div class="video-error">
-              <i class="bc_icon bc_jinggao"></i>
-              <span>视频加载失败</span>
-              <a [href]="props.url" target="_blank" rel="noopener noreferrer">在新窗口打开</a>
-            </div>
-          }
-
           @if (uploadProgress < 100 && uploadProgress >= 0) {
             <div class="upload-progress">
               <div class="upload-progress-bar">
@@ -93,10 +87,12 @@ import {ResizeContainerComponent} from '../../components/block-resizer';
           }
         </div>
 
-        @if (!(doc.readonlySwitch$ | async)) {
+        @if (!isReadonly) {
           <block-resizer [container]="resizeContainer"
-                         [maxWidthContainer]="hostElement"
-                         (widthChange)="onResized($event)"
+                         [maxWidthContainer]="sizingContainer"
+                         [maxWidth]="rootContentWidth || undefined"
+                         [referenceWidth]="rootContentWidth || undefined"
+                         (resizeCommit)="onResized($event)"
                          (resizeStart)="resizeContainer.classList.add('is-resizing')"
                          (resizeEnd)="resizeContainer.classList.remove('is-resizing')"/>
         }
@@ -105,7 +101,7 @@ import {ResizeContainerComponent} from '../../components/block-resizer';
   `,
   standalone: true,
   styleUrls: ['./video-block.scss'],
-  imports: [AsyncPipe, ResizeContainerComponent],
+  imports: [AsyncPipe, ResizeContainerComponent, BcResourcePlaceholderDirective],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class VideoBlockComponent extends BaseBlockComponent<VideoBlockModel> {
@@ -114,16 +110,11 @@ export class VideoBlockComponent extends BaseBlockComponent<VideoBlockModel> {
   protected embedUrl: SafeResourceUrl = '';
   protected isEmbedPlatformUrl = false;
   protected isDirectVideoUrl = false;
-  protected iframeLoading = true;
-  protected iframeError = false;
-  protected posterUrl = '';
-  protected videoError = false;
+  private _uploadAttempt?: {url: string};
 
   private _fileService?: DocFileService;
 
-  constructor(private sanitizer: DomSanitizer) {
-    super();
-  }
+  private readonly sanitizer = inject(DomSanitizer);
 
   private get fileService() {
     return this._fileService ??= this.doc.injector.get<DocFileService>(DOC_FILE_SERVICE_TOKEN);
@@ -134,11 +125,46 @@ export class VideoBlockComponent extends BaseBlockComponent<VideoBlockModel> {
     return !!url && this.fileService.isLocalObjectURL(url) && !this.fileService.getFileByObjectURL(url);
   }
 
+  protected get resourcePreviewUrl(): string {
+    const url = this.props.url;
+    return url && this.fileService.isLocalObjectURL(url)
+      ? this.fileService.getFilePreviewURLByObjectURL(url)
+      : url;
+  }
+
+  get objectDimensions() {
+    return this.doc.objectSizing.resolve(this.flavour, this.props)
+  }
+
+  get renderedWidth(): number | null {
+    return this.objectDimensions?.width ?? null
+  }
+
+  get renderedAspectRatio(): string | null {
+    const dimensions = this.objectDimensions
+    return dimensions && dimensions.source !== 'legacy'
+      ? `${dimensions.ar}`
+      : null
+  }
+
+  get usesRatioSizing(): boolean {
+    const dimensions = this.objectDimensions
+    return !!dimensions && dimensions.source !== 'legacy'
+  }
+
+  get rootContentWidth(): number {
+    return this.doc.objectSizing.rootContentWidth
+  }
+
+  get sizingContainer(): HTMLElement {
+    return this.doc.objectSizing.rootContentElement ?? this.hostElement
+  }
+
   override ngOnInit() {
     super.ngOnInit();
     this.processEmbedContent();
 
-    if (this.props.url && this.props.sourceType === 'local') {
+    if (!this.isReadonly && this.props.url && this.props.sourceType === 'local') {
       if (!this.props.url.startsWith('http')) {
         this.uploadFile(this.props.url);
       }
@@ -147,9 +173,39 @@ export class VideoBlockComponent extends BaseBlockComponent<VideoBlockModel> {
     this.changeDetectorRef.markForCheck();
   }
 
-  onResized(width: number) {
-    this.updateProps({width});
+  override ngAfterViewInit() {
+    super.ngAfterViewInit()
+    this.doc.objectSizing.widthChange$
+      .pipe(takeUntil(this.onDestroy$))
+      .subscribe(() => this.changeDetectorRef.markForCheck())
+  }
+
+  onResized(event: BlockResizeCommit) {
+    if (this.isReadonly) return
+    const derived = deriveObjectSizeFromPixels(
+      event.width,
+      event.height,
+      event.basisWidth,
+    )
+    if (!derived) return
+    const currentAr =
+      typeof this.props.ar === 'number' &&
+      Number.isFinite(this.props.ar) &&
+      this.props.ar > 0
+        ? this.props.ar
+        : derived.ar
+    this.updateProps({
+      wr: derived.wr,
+      ar: currentAr,
+      width: null,
+      height: null,
+    });
     this.changeDetectorRef.markForCheck();
+  }
+
+  onResourceIntrinsicSize(size: ResourceIntrinsicSize) {
+    if (this.props.ar != null || this.isReadonly || this._isGone()) return
+    this.setInitProps({ar: size.ar})
   }
 
   processEmbedContent() {
@@ -158,15 +214,6 @@ export class VideoBlockComponent extends BaseBlockComponent<VideoBlockModel> {
 
       if (!this.isEmbedPlatformUrl) {
         this.isDirectVideoUrl = this.checkIsDirectVideoUrl(this.props.url);
-      } else {
-        this.iframeLoading = true;
-        this.iframeError = false;
-        setTimeout(() => {
-          if (this.iframeLoading) {
-            this.iframeLoading = false;
-            this.changeDetectorRef.markForCheck();
-          }
-        }, 10000);
       }
     }
   }
@@ -188,23 +235,6 @@ export class VideoBlockComponent extends BaseBlockComponent<VideoBlockModel> {
     }
 
     return false;
-  }
-
-  onVideoError() {
-    if (!this.props.url.startsWith('http')) return;
-    this.videoError = true;
-    this.changeDetectorRef.markForCheck();
-  }
-
-  onIframeLoad() {
-    this.iframeLoading = false;
-    this.changeDetectorRef.markForCheck();
-  }
-
-  onIframeError() {
-    this.iframeLoading = false;
-    this.iframeError = true;
-    this.changeDetectorRef.markForCheck();
   }
 
   checkAndConvertToEmbed(url: string) {
@@ -352,8 +382,10 @@ export class VideoBlockComponent extends BaseBlockComponent<VideoBlockModel> {
   }
 
   inputLocalFile = async () => {
+    if (this.isReadonly) return;
     try {
       const files = await this.fileService.inputFiles('video/*');
+      if (this._isGone() || this.isReadonly) return;
       if (!files || files.length === 0) return;
       const file = files[0];
 
@@ -369,6 +401,7 @@ export class VideoBlockComponent extends BaseBlockComponent<VideoBlockModel> {
         size: file.size,
         type: file.type,
         sourceType: 'local',
+        poster: undefined,
         url
       });
       this.uploadFile(url);
@@ -377,40 +410,74 @@ export class VideoBlockComponent extends BaseBlockComponent<VideoBlockModel> {
     }
   };
 
-  uploadFile(url: string) {
-    if (!this.fileService.isLocalObjectURL(url)) return;
-
+  async uploadFile(url: string) {
+    if (this.isReadonly || this._isGone() || !this.fileService.isLocalObjectURL(url)) return;
+    if (this._uploadAttempt?.url === url) return;
     const file = this.fileService.getFileByObjectURL(url);
-    if (!file) return; // 协同端上传，不处理
+    if (!file) return; // 协同端没有本地 File，不提帧、不上传
 
-    this.uploadProgress = 0;
-    this.changeDetectorRef.markForCheck();
-
-    this.fileService.uploadVideo(file, (p) => {
-      // 上传期间块可能被本地/远端删除：detectChanges on destroyed view 会抛错
-      if (this._isGone()) return;
-      this.uploadProgress = p;
-      this.changeDetectorRef.detectChanges();
-    }).then(info => {
-      this.fileService.removeObjectURL(url);
-      // 块已删：跳过 setInitProps（否则写入 detached Y.Map，undo 时复活孤儿块）
-      if (this._isGone()) return;
-      this.setInitProps({
-        url: info.url,
-        name: info.name,
-        size: info.size,
-        type: info.type,
-      });
+    const attempt = this._uploadAttempt = {url};
+    const initialPoster = this.props.poster;
+    let expectedUrl = url;
+    let sourceChanged = false;
+    let posterChanged = false;
+    let writingVideo = false;
+    const canApplyVideo = () => !this._isGone() && !this.isReadonly &&
+      this._uploadAttempt === attempt && !sourceChanged && this.props.url === expectedUrl;
+    const canApplyPoster = () => canApplyVideo() && !posterChanged &&
+      this.props.poster === initialPoster && !initialPoster;
+    const changes = this.onPropsChange.subscribe(keys => {
+      if (keys.has('url') && !writingVideo && this.props.url !== expectedUrl) sourceChanged = true;
+      if (keys.has('poster') && this.props.poster !== initialPoster) posterChanged = true;
+    });
+    const task = getLocalVideoUpload(this.fileService, file);
+    // 可选任务与视频上传并行；已指定封面的文件不再提帧。
+    const posterFile = initialPoster ? Promise.resolve(undefined) : task.preparePoster();
+    const unsubscribeProgress = task.subscribeProgress(progress => {
+      if (!canApplyVideo()) return;
+      this.uploadProgress = progress;
+      this.changeDetectorRef.markForCheck();
+    });
+    const destroy = this.onDestroy$.subscribe(() => {
+      unsubscribeProgress();
+      changes.unsubscribe();
+    });
+    try {
+      let info;
+      try {
+        info = await task.video;
+      } catch {
+        if (canApplyVideo()) {
+          this.doc.messageService.warn('视频上传失败');
+          this.setInitProps({url: '', name: '', size: 0, type: ''});
+          this.uploadProgress = 100;
+          this.changeDetectorRef.markForCheck();
+        }
+        return;
+      } finally {
+        this.fileService.removeObjectURL(url);
+        unsubscribeProgress();
+      }
+      if (!canApplyVideo()) return;
+      writingVideo = true;
+      this.setInitProps({url: info.url, name: info.name, size: info.size, type: info.type});
+      expectedUrl = info.url;
+      writingVideo = false;
       this.uploadProgress = 100;
       this.processEmbedContent();
       this.changeDetectorRef.markForCheck();
-    }).catch(() => {
-      this.fileService.removeObjectURL(url);
-      this.doc.messageService.warn('视频上传失败');
-      if (this._isGone()) return;
-      this.setInitProps({url: '', name: '', size: 0, type: ''});
-      this.uploadProgress = 100;
+
+      const poster = await posterFile;
+      if (!poster || !canApplyPoster()) return;
+      const posterUrl = await task.uploadPoster(poster);
+      if (!posterUrl || !canApplyPoster()) return;
+      this.setInitProps({poster: posterUrl});
       this.changeDetectorRef.markForCheck();
-    });
+    } finally {
+      changes.unsubscribe();
+      destroy.unsubscribe();
+      unsubscribeProgress();
+      if (this._uploadAttempt === attempt) this._uploadAttempt = undefined;
+    }
   }
 }

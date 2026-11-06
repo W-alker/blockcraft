@@ -1,9 +1,15 @@
+import {paragraphAlignmentStyles} from '../../framework/block-std/typography';
+import {applyParagraphDecoration} from '../../blocks/paragraph-block/decoration';
 import {IBlockSnapshot} from "../../framework/block-std/types/block.type";
 import {InlineModel} from "../../framework/block-std/types/inline.type";
-import {getNumberPrefix} from "../../blocks/ordered-block/utils/get-number-prefix";
+import {
+  OrderedMarkerStyleId,
+  resolveOrderedMarker,
+  resolveOrderedMarkerDigitScale,
+} from "../../blocks/ordered-block/utils/get-number-prefix";
 import {renderHighlightedCodeModel} from "../highlight/render-highlighted-code";
-import {renderInline} from "../inline/render-inline";
 import {createBlockShell} from "../dom/create-block-shell";
+import {createEditableContainer} from "../dom/editable-container";
 import {SnapshotBlockRenderer, SnapshotRenderContext} from "../types";
 
 const TEXT_FLAVOURS = new Set([
@@ -14,11 +20,22 @@ const TEXT_FLAVOURS = new Set([
   "blockquote",
   "caption",
   "code",
-  "mermaid-textarea",
 ]);
 
 export function createTextRenderers(): SnapshotBlockRenderer[] {
   return [{
+    canRender: snapshot => snapshot.flavour === 'mermaid-textarea',
+    render: (ctx, snapshot) => renderMermaidTextarea(snapshot, ctx),
+    patch(ctx, current, next) {
+      const target = current.element
+      const fresh = createBlockShell(next)
+      fresh.classList.add('edit-container')
+      for (const name of target.getAttributeNames()) target.removeAttribute(name)
+      for (const name of fresh.getAttributeNames()) target.setAttribute(name, fresh.getAttribute(name)!)
+      target.replaceChildren(ctx.createInlineContent(next.children as InlineModel))
+      scheduleCodeHighlight(target, next, ctx, {lang: 'mermaid', withLineBreak: false})
+    },
+  }, {
     canRender: (snapshot) => TEXT_FLAVOURS.has(snapshot.flavour),
     render(ctx, snapshot) {
       switch (snapshot.flavour) {
@@ -30,8 +47,6 @@ export function createTextRenderers(): SnapshotBlockRenderer[] {
           return renderTodo(snapshot, ctx)
         case "code":
           return renderCode(snapshot, ctx)
-        case "mermaid-textarea":
-          return renderMermaidTextarea(snapshot, ctx)
         case "blockquote":
         case "caption":
         case "paragraph":
@@ -45,7 +60,12 @@ export function createTextRenderers(): SnapshotBlockRenderer[] {
 function renderSimpleEditable(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   const element = createBlockShell(snapshot)
   applyEditableProps(element, snapshot)
-  element.append(createEditableContainer(ctx, snapshot))
+  const content = createEditableContainer(ctx, snapshot, {host: element})
+  if (snapshot.flavour === 'paragraph') {
+    content.classList.add('bc-paragraph-text')
+    applyParagraphDecoration(element, snapshot.props['decoration'], snapshot.props['textAlign'])
+  }
+  element.append(content)
   return {element}
 }
 
@@ -61,7 +81,7 @@ function renderBullet(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   marker.classList.add(getBulletClass(snapshot))
   prefix.append(marker)
 
-  element.append(prefix, createEditableContainer(ctx, snapshot))
+  element.append(prefix, createEditableContainer(ctx, snapshot, {host: element}))
   return {element}
 }
 
@@ -69,13 +89,27 @@ function renderOrdered(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   const element = createBlockShell(snapshot)
   applyListAlignment(element, snapshot)
 
-  const props = snapshot.props as Record<string, number>
+  const props = snapshot.props as Record<string, unknown>
+  const marker = resolveOrderedMarker(
+    Number(props["order"] ?? 0),
+    Number(props["depth"] ?? 0),
+    props["ms"] as OrderedMarkerStyleId | null | undefined,
+  )
   const prefix = document.createElement("button")
   prefix.classList.add("ordered-block-prefix")
+  prefix.setAttribute("type", "button")
   prefix.setAttribute("contenteditable", "false")
-  prefix.textContent = `${getNumberPrefix(props["order"] || 0, props["depth"] || 0)}.`
+  if (marker.enclosure) {
+    prefix.setAttribute("data-bc-marker-enclosure", marker.enclosure)
+  }
+  const text = document.createElement("span")
+  text.classList.add("ordered-block-prefix__text")
+  const digitScale = resolveOrderedMarkerDigitScale(marker.text, marker.enclosure)
+  if (digitScale) text.style.fontSize = digitScale
+  text.textContent = marker.text
+  prefix.append(text)
 
-  element.append(prefix, createEditableContainer(ctx, snapshot))
+  element.append(prefix, createEditableContainer(ctx, snapshot, {host: element}))
   return {element}
 }
 
@@ -96,7 +130,7 @@ function renderTodo(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   icon.className = `bc_icon ${props["checked"] ? "bc_xuanzhong-fill" : "bc_weixuanzhong"}`
   button.append(icon)
 
-  element.append(button, createEditableContainer(ctx, snapshot))
+  element.append(button, createEditableContainer(ctx, snapshot, {host: element}))
   return {element}
 }
 
@@ -111,6 +145,12 @@ function renderCode(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   head.classList.add("code-block__head")
   head.setAttribute("contenteditable", "false")
 
+  const collapseButton = document.createElement("span")
+  collapseButton.classList.add("head-btn", "btn-collapse")
+  const collapseIcon = document.createElement("i")
+  collapseIcon.className = "bc_icon bc_a-sanjiao-jinru6"
+  collapseButton.append(collapseIcon)
+
   const blockName = document.createElement("span")
   blockName.classList.add("block-name")
   blockName.textContent = `${props["blockName"] || "代码块"}`
@@ -123,8 +163,16 @@ function renderCode(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   lang.classList.add("lang")
   lang.textContent = `${props["lang"] || "PlainText"}`
   headButton.append(lang)
-  headGroup.append(headButton)
-  head.append(blockName, headGroup)
+
+  const copyButton = document.createElement("div")
+  copyButton.classList.add("head-btn")
+  copyButton.setAttribute("data-bc-print-exclude", "true")
+  const copyIcon = document.createElement("i")
+  copyIcon.className = "bc_icon bc_fuzhi"
+  copyButton.append(copyIcon, document.createTextNode(" 复制"))
+
+  headGroup.append(headButton, copyButton)
+  head.append(collapseButton, blockName, headGroup)
 
   const wrapper = document.createElement("div")
   wrapper.classList.add("edit-container-wrapper", "bc-scrollable-container")
@@ -132,7 +180,10 @@ function renderCode(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
     wrapper.style.height = `${props["h"]}px`
   }
 
-  const content = createEditableContainer(ctx, snapshot, "pre")
+  // No `host`: shiki restructures this container, so the always-placeholder
+  // contract deliberately does not apply to highlighted code.
+  const content = createEditableContainer(ctx, snapshot, {tag: "pre"})
+  content.append(createCodeEndBreak())
   scheduleCodeHighlight(content, snapshot, ctx, {
     lang: `${props["lang"] || "PlainText"}`,
     withLineBreak: true,
@@ -145,26 +196,15 @@ function renderCode(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
 
 function renderMermaidTextarea(snapshot: IBlockSnapshot, ctx: SnapshotRenderContext) {
   const element = createBlockShell(snapshot)
-  element.append(createEditableContainer(ctx, snapshot))
-  scheduleCodeHighlight(element.querySelector(".edit-container") as HTMLElement, snapshot, ctx, {
+  // The live Mermaid textarea is itself the edit-container. An extra inner
+  // wrapper inherits Mermaid padding and shifts the block height by 6px.
+  element.classList.add('edit-container')
+  element.append(ctx.createInlineContent(snapshot.children as InlineModel))
+  scheduleCodeHighlight(element, snapshot, ctx, {
     lang: "mermaid",
     withLineBreak: false,
   })
   return {element}
-}
-
-function createEditableContainer(
-  ctx: SnapshotRenderContext,
-  snapshot: IBlockSnapshot,
-  tagName: "div" | "pre" = "div"
-) {
-  const content = document.createElement(tagName)
-  content.classList.add("edit-container")
-  if (snapshot.flavour !== "code" && snapshot.props.textAlign) {
-    content.style.textAlign = `${snapshot.props.textAlign}`
-  }
-  content.append(ctx.createInlineContent(snapshot.children as InlineModel))
-  return content
 }
 
 function scheduleCodeHighlight(
@@ -194,9 +234,23 @@ function scheduleCodeHighlight(
     }),
     apply: (model) => {
       target.replaceChildren()
-      target.append(renderInline(model as InlineModel))
+      // ctx.createInlineContent, not a bare renderInline: it threads
+      // inlineEmbeds AND registers resource-placeholder disposables — this
+      // apply hook must not be the one inline path that skips either.
+      target.append(ctx.createInlineContent(model as InlineModel))
+      if (options.withLineBreak) target.append(createCodeEndBreak())
     },
   })
+}
+
+function createCodeEndBreak(): HTMLElement {
+  // ScrollBlot keeps a terminal break in live code blocks. At narrow widths it
+  // occupies the last visual line after wrapped tokens, so omit it only at the
+  // cost of a shorter snapshot block and shifted following columns.
+  const end = document.createElement('c-element')
+  end.className = 'bc-end-break'
+  end.append(document.createElement('br'))
+  return end
 }
 
 function applyEditableProps(element: HTMLElement, snapshot: IBlockSnapshot) {
@@ -205,7 +259,7 @@ function applyEditableProps(element: HTMLElement, snapshot: IBlockSnapshot) {
     element.dataset["heading"] = `${props["heading"]}`
   }
   if (props["textAlign"]) {
-    element.style.textAlign = `${props["textAlign"]}`
+    Object.assign(element.style, paragraphAlignmentStyles(snapshot.props.textAlign))
   }
 }
 

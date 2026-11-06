@@ -1,10 +1,11 @@
+import {assertCompositionInsertion} from './composition-guards'
 import {
   BlockNodeType,
+  DeltaInsert,
   DeltaOperation, EditableBlockComponent,
+  IBlockProps,
   IBlockSnapshot,
   InlineModel,
-  native2YBlock,
-  NativeBlockModel,
   YBlock, yBlock2Native
 } from "../block-std";
 import * as Y from "yjs";
@@ -12,12 +13,27 @@ import {BlockCraftError, ErrorCode} from "../../global";
 import {Subject} from "rxjs";
 import {isYArray, isYText} from "../utils/yAbstractType";
 import {DocUndoManger} from "./undoManger";
+import {ColumnStructureNormalizer} from '../modules/columns/column-structure';
 import {ChildrenRepairer} from "./children-repair";
+import {IRemoteDocSyncLifecycleEvent} from "./sync-lifecycle";
 
 // ORIGIN_* 已抽到零依赖叶子文件 ./origins（避免 base-block/reactive 经 doc barrel 成环）。
 // 这里 import 供 crud 内部使用，并 re-export 以保持 `export * from './crud'` 的公共导出面不变。
-import { ORIGIN_SKIP_SYNC, ORIGIN_NO_RECORD } from "./origins";
-export { ORIGIN_SKIP_SYNC, ORIGIN_NO_RECORD };
+import {
+  ORIGIN_BLOCK_READONLY_CONTROL,
+  ORIGIN_SKIP_SYNC,
+  ORIGIN_NO_RECORD,
+  ORIGIN_READONLY_VIEW_PROJECTION,
+  ORIGIN_SYSTEM_REPAIR,
+} from "./origins";
+import {BlockReadonlyOperation} from "./block-readonly.types";
+import {writeSnapshotsToYBlockMap} from './snapshot-yblock'
+export {
+  ORIGIN_BLOCK_READONLY_CONTROL,
+  ORIGIN_SKIP_SYNC,
+  ORIGIN_NO_RECORD,
+  ORIGIN_SYSTEM_REPAIR,
+};
 
 export interface ITextChangeEvent {
   isUndoRedo: boolean,
@@ -56,23 +72,54 @@ export interface IPropsChangeEvent {
   }[]
 }
 
+export interface IMetaChangeEvent {
+  isUndoRedo: boolean
+  origin: unknown
+  local: boolean
+  transactions: {
+    blockId: string
+    changes: Map<string, {
+      oldValue: unknown
+      action: "add" | "update" | "delete"
+    }>
+  }[]
+}
+
 type BlockDeleteRange = {
   index: number,
   length: number
 }
 
+type DeferredChildrenUpdate = {
+  parent: BlockCraft.BlockComponentRef
+  deltas: Y.YEvent<Y.Array<string>>['changes']['delta']
+  previousIds: readonly string[]
+  desiredIds: readonly string[]
+}
+
 export class DocCRUD {
+
+  private readonly _columnStructure = new ColumnStructureNormalizer(this.doc)
+  private _mutationDepth = 0
+  private _columnNormalizationSuppressed = 0
 
   undoManager!: DocUndoManger
   readonly onChildrenUpdate$ = new Subject<IChildrenChangeEvent>()
   readonly onPropsUpdate$ = new Subject<IPropsChangeEvent>()
   readonly onTextUpdate$ = new Subject<ITextChangeEvent>()
+  readonly onMetaUpdate$ = new Subject<IMetaChangeEvent>()
+  private readonly _remoteSyncLifecycle$ = new Subject<IRemoteDocSyncLifecycleEvent>()
+  /** @internal Selection-domain hook around remote model-to-view synchronization. */
+  readonly remoteSyncLifecycle$ = this._remoteSyncLifecycle$.asObservable()
 
   // 保存 observer 引用，doc 销毁时需要 unobserveDeep；否则若宿主复用 yDoc，observer 会堆积
   private _yObserverHandler: ((events: Y.YEvent<any>[], tr: Y.Transaction) => void) | null = null
 
   // 远端 CRDT 合并可能让同一 block ID 重复出现（同父两次 / 跨父两处），仅远端事务触发检测
   private _childrenRepairer!: ChildrenRepairer
+  // The canonical graph can release deferred edges in parents whose Y.Array
+  // did not change. Carry those model invalidations into the same view batch.
+  private readonly _pendingModelParentIds = new Set<string>()
 
   get yDoc() {
     return this.doc.yDoc
@@ -87,30 +134,52 @@ export class DocCRUD {
   ) {
     // 早于 afterInit 构造：ChildrenRepairer 构造函数只允许保存 doc 引用，
     // 不得访问 doc.vm / doc.schemas 等 afterInit 之后才就绪的属性
-    this._childrenRepairer = new ChildrenRepairer(doc)
+    this._childrenRepairer = new ChildrenRepairer(
+      doc,
+      (owners, affectedParentIds) => {
+        this._settleRepairedChildrenViews(owners, affectedParentIds)
+      },
+    )
     this.doc.afterInit(() => {
 
-      this.undoManager = new DocUndoManger(this.doc, this.yBlockMap)
+      const revisionMap = this.doc.revisions?.yRevisionMap
+      this.undoManager = new DocUndoManger(
+        this.doc,
+        revisionMap ? [this.yBlockMap, revisionMap] : this.yBlockMap,
+      )
 
       // 注：children 完整性修复已前移到 initByYBlock 构建组件树【之前】执行
       // （见 repairChildRefsOnLoad）。afterInit 在构建之后，此处再修会让删除的
       // 模型下标 splice 到已错位的 _compRefs，故不在这里做。
 
+      const modelStructureSubscription = this.doc.model.structureChange$.subscribe(change => {
+        change.affectedParentIds.forEach(id => this._pendingModelParentIds.add(id))
+      })
+      this.doc.onDestroy(() => {
+        modelStructureSubscription.unsubscribe()
+        this._pendingModelParentIds.clear()
+      })
+
       this._yObserverHandler = (evt, tr) => {
         this.doc.ngZone.run(() => {
+          const affectedBlockIds = tr.local ? null : this._collectAffectedBlockIds(evt)
+          if (affectedBlockIds) {
+            this._remoteSyncLifecycle$.next({
+              phase: 'before-view-sync',
+              transaction: tr,
+              origin: tr.origin,
+              isUndoRedo: tr.origin instanceof Y.UndoManager,
+              affectedBlockIds,
+            })
+          }
           this._syncYEvent(evt, tr)
-          if (!tr.local) {
-            // 远端改动到达时，只有当它触及本地选区所在的端点 block 才需要重算选区：
-            // 端点 block 的文本/结构变化会让原生 selection 与模型脱节。协同方在其它
-            // block 持续编辑时，若无条件 recalculate，selectionChange$ 会空转（重算出
-            // 逻辑相同的选区却仍 next() 一次），导致 float-text-toolbar 等订阅方被反复
-            // 开关。affected 必须在事务回调内同步采集（YEvent 仅在此刻有效）。
-            const affected = this._collectAffectedBlockIds(evt)
-            requestAnimationFrame(() => {
-              // doc 可能在 rAF 触发前被销毁；isInitialized 在 destroy() 中转为 false
-              if (!this.doc.isInitialized) return
-              if (!this._remoteChangeAffectsSelection(affected)) return
-              this.doc.selection.recalculate()
+          if (affectedBlockIds) {
+            this._remoteSyncLifecycle$.next({
+              phase: 'after-view-sync',
+              transaction: tr,
+              origin: tr.origin,
+              isUndoRedo: tr.origin instanceof Y.UndoManager,
+              affectedBlockIds,
             })
           }
         })
@@ -123,6 +192,7 @@ export class DocCRUD {
         this.yBlockMap.unobserveDeep(this._yObserverHandler)
         this._yObserverHandler = null
       }
+      this._remoteSyncLifecycle$.complete()
     })
   }
 
@@ -145,7 +215,147 @@ export class DocCRUD {
   }
 
   transact(fn: () => void, origin: any = null) {
-    return this.yDoc.transact(fn, origin)
+    const runInternalMutation = this.doc.readonlyManager?.runSystemRepair
+    if (
+      (origin === ORIGIN_SYSTEM_REPAIR || origin === ORIGIN_READONLY_VIEW_PROJECTION) &&
+      typeof runInternalMutation === 'function'
+    ) {
+      return runInternalMutation.call(
+        this.doc.readonlyManager,
+        () => this._transactWithoutColumnNormalization(fn, origin),
+      )
+    }
+    if (origin !== null && origin !== ORIGIN_SKIP_SYNC) return this._transactWithoutColumnNormalization(fn, origin)
+    if (this._columnNormalizationSuppressed) return this.yDoc.transact(fn, origin)
+    const outer = this._mutationDepth === 0
+    let landing: string | undefined
+    const recovery: {selection: ReturnType<BlockCraft.Selection['toJSON']> | null} = {selection: null}
+    try {
+      return this.yDoc.transact(() => {
+        this._mutationDepth++
+        try {
+          fn()
+          if (outer) {
+            landing = this._columnStructure.flush()
+            recovery.selection = this._columnStructure.selection
+            this._columnStructure.clear()
+          }
+        } finally {
+          this._mutationDepth--
+        }
+      }, origin)
+    } finally {
+      if (outer) {
+        const {selection} = recovery
+        this._columnStructure.clear()
+        // 视图已同步后再恢复端点；Undo/Redo 直接回放历史，不进入此本地收尾路径。
+        if (landing && selection) {
+          if (this.doc.model.exists(selection.anchor.blockId) && this.doc.model.exists(selection.head.blockId)) {
+            this.doc.selection.replay(selection)
+          } else this.doc.selection.selectOrSetCursorAtBlock(landing, true)
+        }
+      }
+    }
+  }
+
+  private _transactWithoutColumnNormalization(fn: () => void, origin: unknown) {
+    this._columnNormalizationSuppressed++
+    try {
+      return this.yDoc.transact(fn, origin)
+    } finally {
+      this._columnNormalizationSuppressed--
+    }
+  }
+
+  updateBlockProps(blockId: string, props: Partial<IBlockProps>): void {
+    const yBlock = this.doc.model.getYBlock(blockId)
+    if (!yBlock) {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, `Block not found: ${blockId}`)
+    }
+    const yProps = yBlock.get('props')
+    if (!(yProps instanceof Y.Map)) {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, `Invalid block props: ${blockId}`)
+    }
+    const changedKeys = Object.keys(props).filter(key => {
+      const next = props[key]
+      return next === null ? yProps.has(key) : yProps.get(key) !== next
+    })
+    if (!changedKeys.length) return
+
+    this.doc.readonlyManager.assertPropsWritable(blockId, BlockReadonlyOperation.Props)
+    this.transact(() => {
+      changedKeys.forEach(key => {
+        const next = props[key]
+        if (next === null) {
+          yProps.delete(key)
+        } else {
+          yProps.set(key, next)
+        }
+      })
+    })
+  }
+
+  replaceText(
+    blockId: string,
+    index: number,
+    length: number,
+    text?: string | null,
+    attributes?: DeltaInsert['attributes'],
+  ): void {
+    if (length <= 0 && !text) return
+    const yText = this._getEditableYText(blockId)
+    this.doc.readonlyManager.assertTextWritable(blockId, BlockReadonlyOperation.Replace)
+    if (this.doc.revisions?.isTracking) {
+      this.doc.revisions.replaceText(blockId, index, length, text, attributes)
+      return
+    }
+    const delta: DeltaOperation[] = []
+    if (index > 0) delta.push({retain: index})
+    if (length > 0) delta.push({delete: length})
+    if (text) delta.push({insert: text, attributes})
+    this.transact(() => yText.applyDelta(delta))
+  }
+
+  applyTextDelta(blockId: string, delta: DeltaOperation[]): void {
+    if (!delta.length) return
+    const yText = this._getEditableYText(blockId)
+    this.doc.readonlyManager.assertTextWritable(blockId, BlockReadonlyOperation.Text)
+    if (this.doc.revisions?.isTracking) {
+      this.doc.revisions.applyDelta(blockId, delta)
+      return
+    }
+    this.transact(() => yText.applyDelta(delta))
+  }
+
+  formatText(
+    blockId: string,
+    index: number,
+    length: number,
+    attributes: DeltaInsert['attributes'],
+  ): void {
+    if (!length || !Object.keys(attributes ?? {}).length) return
+    const yText = this._getEditableYText(blockId)
+    this.doc.readonlyManager.assertTextWritable(blockId, BlockReadonlyOperation.Format)
+    if (this.doc.revisions?.isTracking) {
+      const delta: DeltaOperation[] = []
+      if (index > 0) delta.push({retain: index})
+      delta.push({retain: length, attributes})
+      this.doc.revisions.applyDelta(blockId, delta)
+      return
+    }
+    this.transact(() => yText.format(index, length, attributes as Record<string, unknown>))
+  }
+
+  private _getEditableYText(blockId: string): Y.Text {
+    const yBlock = this.doc.model.getYBlock(blockId)
+    if (!yBlock || yBlock.get('nodeType') !== BlockNodeType.editable) {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, `Editable block not found: ${blockId}`)
+    }
+    const children = yBlock.get('children')
+    if (!(children instanceof Y.Text)) {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, `Invalid editable block text: ${blockId}`)
+    }
+    return children
   }
 
   /**
@@ -165,19 +375,9 @@ export class DocCRUD {
     return ids
   }
 
-  /**
-   * 远端改动是否影响当前选区：只要触及选区任一端点 block 即视为影响。
-   * 端点 block 的文本/结构变化才会让原生 selection 与模型脱节、需要重算；
-   * 选区跨越的中间 block 变化不会移动端点 DOM 节点，原生 selection 仍然有效。
-   * 无选区时（本地用户没有选区）远端改动无从影响，直接跳过。
-   */
-  private _remoteChangeAffectsSelection(affected: Set<string>): boolean {
-    const sel = this.doc.selection.value
-    if (!sel) return false
-    return affected.has(sel.anchor.blockId) || affected.has(sel.head.blockId)
-  }
-
   private _syncYEvent = (events: Y.YEvent<any>[], tr: Y.Transaction) => {
+    const modelParentIds = [...this._pendingModelParentIds]
+    this._pendingModelParentIds.clear()
     // local change with skip
     const isUndoRedo = tr.origin instanceof Y.UndoManager
 
@@ -186,8 +386,12 @@ export class DocCRUD {
 
     const propsChanges: IPropsChangeEvent['transactions'] = []
     const textChanges: ITextChangeEvent['transactions'] = []
+    const metaChanges: IMetaChangeEvent['transactions'] = []
 
-    const delay_childrenEvent_handlers: [BlockCraft.BlockComponentRef, Y.YEvent<Y.Array<string>>['changes']['delta']][] = []
+    const delay_childrenEvent_handlers: DeferredChildrenUpdate[] = []
+    const insertedParentById = new Map<string, string | null>()
+    const changedChildrenParentIds = new Set<string>()
+    const repairCandidateInsertedIds = new Set<string>()
 
     // sync to model
     const processEvent = (ev: Y.YEvent<any>) => {
@@ -195,6 +399,13 @@ export class DocCRUD {
       // at top level, it`s mean that block is created or deleted
       // No need handle ORIGIN_SKIP_SYNC
       if (!path.length) {
+        changes.keys.forEach((change, key) => {
+          changedChildrenParentIds.add(key)
+          if (tr.local || change.action === 'delete') return
+          const children = this.getYBlock(key)?.get('children')
+          if (!children || !isYArray(children)) return
+          children.toArray().forEach(id => repairCandidateInsertedIds.add(id))
+        })
         tr.origin !== ORIGIN_SKIP_SYNC && changes.keys.forEach((change, key) => {
           if (change.action === 'delete') {
             deleted.add(key)
@@ -215,11 +426,65 @@ export class DocCRUD {
 
       const blockId = path[0] as string
       const keyProp = path[1]
+      if (keyProp === 'children' && isYArray(target)) {
+        changedChildrenParentIds.add(blockId)
+        changes.delta.forEach(change => {
+          if (!change.insert) return
+          ;(change.insert as string[]).forEach(id => {
+            if (!tr.local) repairCandidateInsertedIds.add(id)
+            if (tr.origin === ORIGIN_SKIP_SYNC) return
+            if (!insertedParentById.has(id)) {
+              insertedParentById.set(id, blockId)
+            } else if (insertedParentById.get(id) !== blockId) {
+              // Concurrent duplicate parents are resolved by ChildrenRepairer.
+              // Do not choose an arbitrary view owner before that repair lands.
+              insertedParentById.set(id, null)
+            }
+          })
+        })
+      }
+      if (keyProp === 'meta') {
+        metaChanges.push({
+          blockId,
+          changes: changes.keys,
+        })
+      }
+      if (keyProp === 'props' && changes.keys.has('psb')) {
+        // Paragraph-before is projected as the previous sibling's effective
+        // margin-bottom. Its own border-box does not resize, so explicitly
+        // refresh the mounted spacing owner when this value changes.
+        const previousId = this.doc.model.getPreviousSiblingId(blockId)
+        const previous = previousId ? this.vm.get(previousId) : null
+        if (previous && !previous.hostView.destroyed) {
+          Promise.resolve().then(() => {
+            if (!previous.hostView.destroyed) {
+              previous.instance.changeDetectorRef.markForCheck()
+            }
+          })
+        }
+      }
       const bm = this.vm.get(blockId)
-      if (!bm) throw new BlockCraftError(ErrorCode.SyncYEventError, `Block ${blockId} not found`)
+      if (!bm) {
+        // Virtualized blocks may be structurally live without a component.
+        // Yjs and BlockModelGraph already own the mutation; the view will be
+        // rebuilt from the current model when the block is mounted.
+        return
+      }
 
       if (keyProp === "children") {
         if (isYArray(target)) {
+          // Yjs already contains the new sequence here. Public childrenIds is
+          // a live query, so delta projection must use the last synced snapshot.
+          // @ts-expect-error internal view snapshot maintained by DocCRUD
+          const previousIds: readonly string[] = [...bm.instance._childrenIds]
+          const desiredIds = (!tr.local || isUndoRedo || tr.origin === ORIGIN_SYSTEM_REPAIR)
+            ? this.doc.model.getChildrenIds(blockId)
+            : target.toArray()
+          this._markParagraphSpacingStructureOwners(
+            previousIds,
+            desiredIds,
+            changes.delta,
+          )
           if (tr.origin !== ORIGIN_SKIP_SYNC) {
             changes.delta.forEach(change => {
               if (change.insert) {
@@ -229,11 +494,16 @@ export class DocCRUD {
               }
             })
 
-            delay_childrenEvent_handlers.push([bm, changes.delta])
+            delay_childrenEvent_handlers.push({
+              parent: bm,
+              deltas: changes.delta,
+              previousIds,
+              desiredIds,
+            })
           }
 
           // @ts-expect-error
-          bm.instance._childrenIds = target.toArray()
+          bm.instance._childrenIds = [...desiredIds]
         } else if (isYText(target)) {
 
           if (!this.doc.isEditable(bm.instance))
@@ -326,16 +596,228 @@ export class DocCRUD {
       })
     }
 
+    if (metaChanges.length) {
+      this.onMetaUpdate$.next({
+        isUndoRedo,
+        origin: tr.origin,
+        transactions: metaChanges,
+        local: tr.local,
+      })
+    }
+
+    const ambiguousInsertedIds = this._childrenRepairer.noteStructureChanges(
+      changedChildrenParentIds,
+      repairCandidateInsertedIds,
+      deleted,
+      !tr.local || isUndoRedo,
+    )
+    ambiguousInsertedIds.forEach(id => {
+      if (insertedParentById.has(id)) insertedParentById.set(id, null)
+    })
+
+    // A top-level YBlock deletion can arrive without a matching mounted-parent
+    // children event (for example a merged delete versus move). Component and
+    // IME cleanup must therefore not depend on the delayed children path.
+    if (deleted.size) {
+      this.vm.deleteByIds([...deleted])
+      this.doc.inputManger?.compositionSession?.handleBlocksDeleted(deleted)
+    }
+
+    if (tr.origin !== ORIGIN_SKIP_SYNC) {
+      // Direct Y.Array changes already have their delta above. Add only mounted
+      // model projections with no direct event; an empty delta routes a changed
+      // projection through the existing batched recovery and notification path.
+      for (const parentId of modelParentIds) {
+        if (changedChildrenParentIds.has(parentId)) continue
+        const parent = this.vm.get(parentId)
+        if (!parent?.instance.childrenRenderRef || !this.doc.model.exists(parentId)) continue
+        // @ts-expect-error internal synchronized view snapshot
+        const previousIds: readonly string[] = parent.instance._childrenIds
+        const desiredIds = this.doc.model.getChildrenIds(parentId)
+        const sparseParent = (this.vm.usesSparseRoot && parentId === this.doc.rootId) ||
+          this.vm._isSparsePlacementParent(parentId)
+        if (this._sameIds(previousIds, desiredIds) &&
+          (sparseParent || this._sameIds(parent.instance.childrenRenderRef.ids, desiredIds))) continue
+        delay_childrenEvent_handlers.push({parent, deltas: [], previousIds, desiredIds})
+      }
+    }
+
     if (delay_childrenEvent_handlers.length) {
-      this._syncYBlockChildrenUpdate(added, deleted, delay_childrenEvent_handlers, tr)
+      this._syncYBlockChildrenUpdate(
+        added,
+        deleted,
+        delay_childrenEvent_handlers,
+        insertedParentById,
+        tr,
+      )
+    } else if (insertedParentById.size) {
+      this._settleInsertedComponentOwnership(insertedParentById)
     }
 
     this.undoManager.undoRedoing$.value && this.undoManager.undoRedoing$.next(false)
   }
 
+  private _settleRepairedChildrenViews(
+    owners: ReadonlyMap<string, string>,
+    affectedParentIds: ReadonlySet<string>,
+  ): void {
+    this._reconcileParentViewsFromModel(affectedParentIds)
+    this._settleInsertedComponentOwnership(owners)
+  }
+
+  /**
+   * A sibling insertion/removal can change the preceding block's projected
+   * `--bc-next-block-sb` without resizing that block. Refresh only the delta
+   * boundaries rather than scanning every child in a large virtualized root.
+   */
+  private _markParagraphSpacingStructureOwners(
+    previousIds: readonly string[],
+    desiredIds: readonly string[],
+    delta: ReadonlyArray<{retain?: number; delete?: number; insert?: unknown}>,
+  ): void {
+    const ids = new Set<string>()
+    const add = (id: string | undefined) => id && ids.add(id)
+    add(previousIds[0])
+    add(desiredIds[0])
+
+    let previousIndex = 0
+    let desiredIndex = 0
+    delta.forEach(change => {
+      if (change.retain) {
+        previousIndex += change.retain
+        desiredIndex += change.retain
+      }
+      if (change.delete) {
+        add(previousIds[previousIndex - 1])
+        add(previousIds[previousIndex + change.delete])
+        add(desiredIds[desiredIndex - 1])
+        add(desiredIds[desiredIndex])
+        previousIndex += change.delete
+      }
+      if (change.insert) {
+        const insertedLength = Array.isArray(change.insert)
+          ? change.insert.length
+          : 1
+        add(previousIds[previousIndex - 1])
+        add(previousIds[previousIndex])
+        add(desiredIds[desiredIndex - 1])
+        add(desiredIds[desiredIndex])
+        add(desiredIds[desiredIndex + insertedLength - 1])
+        add(desiredIds[desiredIndex + insertedLength])
+        desiredIndex += insertedLength
+      }
+    })
+
+    Promise.resolve().then(() => {
+      ids.forEach(id => {
+        const ref = this.vm.get(id)
+        if (ref && !ref.hostView.destroyed) {
+          ref.instance.changeDetectorRef.markForCheck()
+        }
+      })
+    })
+  }
+
+  /**
+   * Rebuild only mounted parents touched by a corruption repair from the
+   * canonical model projection. This is a cold recovery path; ordinary
+   * structural events continue to use their incremental Y.Array delta.
+   */
+  private _reconcileParentViewsFromModel(parentIds: Iterable<string>): void {
+    const parents: Array<{
+      ref: BlockCraft.BlockComponentRef
+      desiredIds: readonly string[]
+    }> = []
+
+    for (const parentId of new Set(parentIds)) {
+      const parent = this.vm.get(parentId)
+      const renderRef = parent?.instance.childrenRenderRef
+      if (!parent || !renderRef) continue
+      const desiredIds = this.doc.model.getChildrenIds(parentId)
+
+      // Sparse root stores only mounted children, so its projection is updated
+      // by the VM without densifying the document.
+      if (this.vm.usesSparseRoot && parentId === this.doc.rootId) {
+        this.vm._reconcileSparseRootChildren(desiredIds)
+        continue
+      }
+
+      if (this.vm._isSparsePlacementParent(parentId)) {
+        this.vm._reconcileSparsePlacementChildren(parentId, desiredIds)
+        continue
+      }
+
+      const current = renderRef.splice(0, renderRef.length)
+      current.forEach(component => {
+        const host = component.instance.hostElement
+        // A destination processed earlier in this transaction may already own
+        // this DOM node. Only detach hosts still inside this parent's renderer.
+        if (host.parentElement === renderRef.containerElement) host.remove()
+      })
+      // @ts-expect-error internal model projection maintained by DocCRUD
+      parent.instance._childrenIds = [...desiredIds]
+      parents.push({ref: parent, desiredIds})
+    }
+
+    // Remove every affected parent first. A single ComponentRef can be present
+    // in two stale render lists during a cross-parent conflict; inserting the
+    // winner before removing the loser would let the loser remove the moved DOM.
+    for (const {ref: parent, desiredIds} of parents) {
+      const components = desiredIds.map(id => {
+        const existing = this.vm.get(id)
+        if (existing) return existing
+        const yBlock = this.doc.model.getYBlock(id)
+        if (!yBlock) return null
+        return this.vm.createComponentByYBlocks({[id]: yBlock})[id] ?? null
+      }).filter((component): component is BlockCraft.BlockComponentRef => !!component)
+      if (components.length) this.vm.insert(parent, 0, components)
+    }
+  }
+
+  private _settleInsertedComponentOwnership(
+    insertedParentById: ReadonlyMap<string, string | null>,
+  ): void {
+    if (!this.vm.usesSparseRoot) return
+
+    const deferredEvictions: {id: string, parentId: string}[] = []
+    insertedParentById.forEach((parentId, id) => {
+      if (!parentId || !this.vm.get(id)) return
+      if (parentId === this.doc.rootId) {
+        if (this.vm.isDeferredSparseRootChild?.(id)) return
+        this.vm.retainRootChild(id)
+        return
+      }
+      if (this.vm._isSparsePlacementParent(parentId)) {
+        this.vm._retainPlacementChild(parentId, id)
+        return
+      }
+      if (this.vm.get(parentId)) return
+
+      const component = this.vm.get(id)!
+      component.instance.hostElement.remove()
+      component.instance.parentId = parentId
+      this.vm.retainComponentSubtree(component)
+      deferredEvictions.push({id, parentId})
+    })
+
+    if (!deferredEvictions.length) return
+    Promise.resolve().then(() => {
+      deferredEvictions.forEach(({id, parentId}) => {
+        const component = this.vm.get(id)
+        if (!component || component.instance.parentId !== parentId) return
+        // A model observer may synchronously mount a leased/keep-alive target
+        // after CRUD view sync. Preserve the adopted component in that case;
+        // otherwise release the one-transaction orphan so the LRU stays bounded.
+        if (this.vm.get(parentId)) return
+        this.vm.destroy(id)
+      })
+    })
+  }
+
   private _syncYBlockChildrenUpdate = (added: Record<string, YBlock>,
                                        deleted: Set<string>,
-                                       events: [BlockCraft.BlockComponentRef, Y.YEvent<Y.Array<string>>['changes']['delta']][],
+                                       events: DeferredChildrenUpdate[],
+                                       insertedParentById: ReadonlyMap<string, string | null>,
                                        tr: Y.Transaction) => {
     const emitEvents: IChildrenChangeEvent = {
       isUndoRedo: tr.origin instanceof Y.UndoManager,
@@ -343,37 +825,83 @@ export class DocCRUD {
       origin: tr.origin,
       transactions: [],
     }
+    // Top-level deletion may destroy a temporary parent while undo moves its
+    // children into a surviving parent. Only the surviving projection owns work.
+    const updates = events.filter(({parent}) => {
+      const id = parent.instance.id
+      return !deleted.has(id) && this.doc.model.exists(id) && this.vm.get(id) === parent
+    })
+    const recoveryParentIds = new Set<string>()
+    updates.forEach(({parent, deltas, previousIds, desiredIds}) => {
+      const isSparseParent = (this.vm.usesSparseRoot && parent.instance.id === this.doc.rootId) ||
+        this.vm._isSparsePlacementParent(parent.instance.id)
+      const viewMatchesPrevious = isSparseParent ||
+        this._sameIds(parent.instance.childrenRenderRef?.ids ?? [], previousIds)
+      // A repaired/missing edge or an already-materialized view cannot consume
+      // this raw delta. Collect all such parents before any view adopts children.
+      if (!viewMatchesPrevious || !this._sameIds(this._projectChildrenIds(previousIds, deltas), desiredIds)) {
+        recoveryParentIds.add(parent.instance.id)
+      }
+    })
+    if (recoveryParentIds.size) this._reconcileParentViewsFromModel(recoveryParentIds)
 
-    this.vm.deleteByIds([...deleted])
-
-    // IME 组合期间宿主块被删（本地或远端）：通知 session abort，
-    // 防止 compositionEnd 把组合文本写进 detached Y.Text。O(1) 集合查找。
-    // best-effort：input 子系统未就绪时无组合可中止，可选链跳过即可。
-    if (deleted.size) {
-      this.doc.inputManger?.compositionSession?.handleBlocksDeleted(deleted)
-    }
-
-    const childComps = this.vm.createComponentByYBlocks(added)
-
-    events.forEach(([bm, deltas]) => {
+    updates.forEach(({parent: bm, deltas, previousIds, desiredIds}) => {
       const _delay_inserts: [number, BlockCraft.BlockComponentRef[]][] = []
       const deletedMap: { index: number, length: number }[] = []
+      const isSparseRootEvent = this.vm.usesSparseRoot && bm.instance.id === this.doc.rootId
+
+      if (recoveryParentIds.has(bm.instance.id)) {
+        bm.instance.onChildrenChange?.(deltas)
+        emitEvents.transactions.push({block: bm.instance})
+        return
+      }
+
+      if (this.vm._isSparsePlacementParent(bm.instance.id)) {
+        this.vm._reconcileSparsePlacementChildren(bm.instance.id, desiredIds)
+        bm.instance.onChildrenChange?.(deltas)
+        emitEvents.transactions.push({block: bm.instance})
+        return
+      }
+
+      if (isSparseRootEvent) {
+        this.vm.applySparseRootChildrenDelta(deltas, {
+          desiredIds,
+          preserveIds: this._composingSparseRootMoveIds(previousIds, desiredIds),
+        })
+      }
 
       let r = 0
       deltas.forEach(d => {
         if (d.retain) {
           r += d.retain
         } else if (d.insert) {
-          // 所有的插入操作需要延迟执行
-          const _insertComps = (d.insert as string[]).map(id => childComps[id])
-          if (!tr.local) {
-            // 跨父重复检测必须在 vm.insert 改写 parentId 之前抓取旧父块
-            this._childrenRepairer.noteRemoteInserts(bm, _insertComps)
+          if (isSparseRootEvent) {
+            r += d.insert.length
+            return
           }
+          // 所有的插入操作需要延迟执行
+          const insertedBlocks = Object.fromEntries(
+            (d.insert as string[])
+              .map(id => [id, added[id] || this.doc.model.getYBlock(id)] as const)
+              .filter((entry): entry is readonly [string, YBlock] =>
+                !!entry[1] && this.doc.model.getParentId(entry[0]) === bm.instance.id,
+              ),
+          )
+          const childComps = this.vm.createComponentByYBlocks(insertedBlocks)
+          const _insertComps = (d.insert as string[])
+            .map(id => childComps[id] || this.vm.get(id))
+            .filter((component): component is BlockCraft.BlockComponentRef => !!component)
           _delay_inserts.push([r, _insertComps])
           this.vm.insert(bm, r, _insertComps)
+          if (!this.vm.isMounted(bm.instance.id)) {
+            _insertComps.forEach(component => this.vm.retainComponentSubtree(component))
+          }
           r += _insertComps.length
         } else if (d.delete) {
+          if (isSparseRootEvent) {
+            deletedMap.push({index: r, length: d.delete})
+            return
+          }
           // 有可能是被移动的元素，此时是不需要销毁再重建的
           const cps = bm.instance.childrenRenderRef!.splice(r, d.delete)
           cps.forEach(c => {
@@ -393,12 +921,62 @@ export class DocCRUD {
       })
     })
 
+    // A move into sparse root has no eager root insertion view step. Wait until
+    // every parent delta is applied, then synchronously release any cached
+    // component from its old container before observers restore selection or
+    // schedule virtualization. A later mount reuses the retained component.
+    this._settleInsertedComponentOwnership(insertedParentById)
+
     this.onChildrenUpdate$.next(emitEvents)
 
-    if (!tr.local) {
-      // 远端结构变更后做同父重复预检（微任务合批，预检 O(children)）
-      this._childrenRepairer.noteRemoteParents(events.map(([pbm]) => pbm.instance.id))
+  }
+
+  private _composingSparseRootMoveIds(
+    previousIds: readonly string[],
+    desiredIds: readonly string[],
+  ): ReadonlySet<string> {
+    if (!this.doc.event?.status?.isComposing) return new Set()
+    const session = this.doc.inputManger?.compositionSession
+    const activeBlockId = session?.isActive ? session.activeBlockId : null
+    if (!activeBlockId) return new Set()
+
+    let path: readonly string[] | null = null
+    try {
+      path = this.doc.model.getPath(activeBlockId)
+    } catch {
+      return new Set()
     }
+    const rootUnitId = path?.[0] === this.doc.rootId ? path[1] : null
+    if (!rootUnitId) return new Set()
+    const previousIndex = previousIds.indexOf(rootUnitId)
+    const desiredIndex = desiredIds.indexOf(rootUnitId)
+    return previousIndex >= 0 && desiredIndex >= 0 && previousIndex !== desiredIndex
+      ? new Set([rootUnitId])
+      : new Set()
+  }
+
+  private _projectChildrenIds(
+    previousIds: readonly string[],
+    deltas: Y.YEvent<Y.Array<string>>['changes']['delta'],
+  ): string[] {
+    const projected = [...previousIds]
+    let index = 0
+    deltas.forEach(delta => {
+      if (delta.retain) {
+        index += delta.retain
+      } else if (delta.insert) {
+        const ids = delta.insert as string[]
+        projected.splice(index, 0, ...ids)
+        index += ids.length
+      } else if (delta.delete) {
+        projected.splice(index, delta.delete)
+      }
+    })
+    return projected
+  }
+
+  private _sameIds(a: readonly string[], b: readonly string[]): boolean {
+    return a.length === b.length && a.every((id, index) => id === b[index])
   }
 
   getFlatIds = (blockIds: string[]) => {
@@ -430,35 +1008,89 @@ export class DocCRUD {
       .filter((block): block is BlockCraft.BlockComponent => !!block)
   }
 
-  private _insertBySnapshots = async (parentComp: BlockCraft.BlockComponentRef, index: number, snapshots: IBlockSnapshot[]) => {
-    const snapshot2YBlock = (snapshot: IBlockSnapshot) => {
-      const _children = snapshot.nodeType === BlockNodeType.editable ? snapshot.children : snapshot.children.map(childSnapshot => childSnapshot.id)
-      const yBlock = native2YBlock({...snapshot, children: _children} as NativeBlockModel)
-      this.yBlockMap.set(snapshot.id, yBlock)
-      if (snapshot.nodeType !== BlockNodeType.editable && snapshot.children.length) {
-        snapshot.children.forEach(childSnapshot => snapshot2YBlock(childSnapshot))
-      }
+  private _insertBySnapshots = (parentYBlock: YBlock, index: number, snapshots: IBlockSnapshot[]) => {
+    const children = parentYBlock.get('children')
+    if (!isYArray(children)) {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, `Block ${parentYBlock.get('id')} cannot contain block children`)
     }
-    snapshots.forEach(snapshot => snapshot2YBlock(snapshot))
-
-    ;(parentComp.instance.yBlock.get('children') as Y.Array<string>).insert(index, snapshots.map(v => v.id))
+    writeSnapshotsToYBlockMap(this.yBlockMap, snapshots)
+    children.insert(index, snapshots.map(v => v.id))
   }
 
-  insertBlocks(parentId: string, index: number, snapshots: IBlockSnapshot[]): BlockCraft.BlockComponent[] {
+  private _readYBlockMeta(yBlock: YBlock): Record<string, unknown> {
+    const meta = yBlock.get('meta')
+    return meta instanceof Y.Map
+      ? meta.toJSON() as Record<string, unknown>
+      : {}
+  }
+
+  /**
+   * Validate root-only and opt-in instance constraints inside a detached snapshot tree.
+   * Other Schema-only trees retain their historical compatibility.
+   */
+  private _isSnapshotInstanceTreeValid(snapshot: IBlockSnapshot): boolean {
+    if (
+      snapshot.nodeType !== BlockNodeType.block &&
+      snapshot.nodeType !== BlockNodeType.root
+    ) {
+      return true
+    }
+
+    const schema = this.doc.schemas.get(snapshot.flavour)
+    if (!schema) return false
+    if (schema.metadata.instanceMeta?.childConstraints) {
+      for (const child of snapshot.children) {
+        if (!this.doc.schemas.isValidChildrenForInstance(
+          child.flavour,
+          schema,
+          snapshot.meta,
+        )) {
+          return false
+        }
+      }
+    }
+
+    return snapshot.children.every(child =>
+      !(this.doc.schemas.get(child.flavour, false)?.metadata.rootOnly && snapshot.flavour !== 'root') &&
+      this._isSnapshotInstanceTreeValid(child),
+    )
+  }
+
+  private _isSnapshotAllowedInParent(
+    parentYBlock: YBlock,
+    snapshot: IBlockSnapshot,
+  ): boolean {
+    const parentSchema = this.doc.schemas.get(parentYBlock.get('flavour'))!
+    return this.doc.schemas.isValidChildrenForInstance(
+      snapshot.flavour,
+      parentSchema,
+      this._readYBlockMeta(parentYBlock),
+    ) && this._isSnapshotInstanceTreeValid(snapshot)
+  }
+
+  /** Insert snapshots through the model layer and return IDs without resolving component views. */
+  insertBlockSnapshots(parentId: string, index: number, snapshots: IBlockSnapshot[]): string[] {
     if (!snapshots.length) return []
     if (index < 0) {
       this.doc.logger.warn(`insertBlocks: index ${index} out of range`)
       return []
     }
-    const parentComp = this.vm.get(parentId)
-    if (!parentComp) {
-      this.doc.logger.warn(`parentComp ${parentId} not found`)
+    // The target may have been created earlier in the caller's outer Yjs
+    // transaction and not be reachable from BlockModelGraph yet.
+    const parentYBlock = this.getYBlock(parentId)
+    if (!parentYBlock) {
+      this.doc.logger.warn(`parent block ${parentId} not found`)
       return []
     }
+    if (!isYArray(parentYBlock.get('children'))) {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, `Block ${parentId} cannot contain block children`)
+    }
+    this.doc.readonlyManager.assertInsertable(parentId, BlockReadonlyOperation.Insert)
 
-    // 过滤不允许的blocks
-    const parentSchema = this.doc.schemas.get(parentComp.instance.flavour)!
-    const validSnapshots = snapshots.filter(s => this.doc.schemas.isValidChildren(s.flavour, parentSchema))
+    const parentSchema = this.doc.schemas.get(parentYBlock.get('flavour'))!
+    const validSnapshots = snapshots.filter(snapshot =>
+      this._isSnapshotAllowedInParent(parentYBlock, snapshot),
+    )
     if (!validSnapshots.length) {
       if (snapshots.length === 1) {
         const snapshot = snapshots[0]
@@ -473,11 +1105,49 @@ export class DocCRUD {
       this.doc.messageService.warn(`已过滤该位置不允许的内容块`)
     }
 
+    assertCompositionInsertion(this.doc, parentId, validSnapshots)
     this.transact(() => {
-      this._insertBySnapshots(parentComp, index, validSnapshots)
+      this._insertBySnapshots(parentYBlock, index, validSnapshots)
+      this.doc.revisions?.recordBlockInsertion(
+        validSnapshots.map(snapshot => snapshot.id),
+        parentId,
+      )
     })
+    return validSnapshots.map(snapshot => snapshot.id)
+  }
 
-    return this._resolveInsertedBlocks(validSnapshots)
+  insertBlocks(parentId: string, index: number, snapshots: IBlockSnapshot[]): BlockCraft.BlockComponent[] {
+    if (!snapshots.length) return []
+    if (index < 0) {
+      this.doc.logger.warn(`insertBlocks: index ${index} out of range`)
+      return []
+    }
+    const parentComp = this.vm.get(parentId)
+    if (!parentComp) {
+      this.doc.logger.warn(`parentComp ${parentId} not found`)
+      return []
+    }
+    const insertedIds = this.insertBlockSnapshots(parentId, index, snapshots)
+
+    this._materializeInsertedSparseChildren(parentId, insertedIds)
+
+    return insertedIds
+      .map(id => this.vm.get(id)?.instance)
+      .filter((block): block is BlockCraft.BlockComponent => !!block)
+  }
+
+  private _materializeInsertedSparseChildren(parentId: string, insertedIds: readonly string[]): void {
+    if (!this.vm.usesSparseRoot) return
+    const isRoot = parentId === this.doc.rootId
+    if (!isRoot && !this.vm._isSparsePlacementParent(parentId)) return
+    if (insertedIds.some(id => !this.doc.model.exists(id))) {
+      this.doc.model.synchronizeParentBeforeView(parentId)
+    }
+    if (isRoot) insertedIds.forEach(id => this.vm.ensureRootChildComponent(id))
+    else {
+      this.vm._reconcileSparsePlacementChildren(parentId, this.doc.model.getChildrenIds(parentId))
+      insertedIds.forEach(id => this.vm._ensurePlacementChildComponent(parentId, id))
+    }
   }
 
   insertBlocksBefore(block: string | BlockCraft.BlockComponent, snapshots: IBlockSnapshot[]) {
@@ -492,96 +1162,314 @@ export class DocCRUD {
     return this.insertBlocks(block.parentId!, index, snapshots)
   }
 
-  private _delete = (parentComp: BlockCraft.BlockComponentRef, index: number, count = 1) => {
-    const sliceIds = parentComp.instance.childrenIds.slice(index, index + count)
+  private _delete = (parentYBlock: YBlock, index: number, count = 1) => {
+    const children = parentYBlock.get('children')
+    if (!isYArray(children)) {
+      throw new BlockCraftError(
+        ErrorCode.ModelCRUDError,
+        `Block ${parentYBlock.get('id')} cannot contain block children`,
+      )
+    }
+    if (this._mutationDepth > 0 && !this._columnNormalizationSuppressed) this._columnStructure.track(parentYBlock.get('id'))
+    const sliceIds = children.toArray().slice(index, index + count)
     const flatIds = this.getFlatIds(sliceIds)
     flatIds.forEach(id => {
       this.yBlockMap.delete(id)
     })
-    ;(parentComp.instance.yBlock.get('children') as Y.Array<string>).delete(index, count)
+    children.delete(index, count)
   }
 
   deleteBlocks(parent: string, index: number, count = 1, force = false): BlockDeleteRange[] {
     if (index < 0) {
-      this.doc.logger.warn(`insertBlocks: index ${index} out of range`)
-      return []
-    }
-
-    if (count === 0) return []
-    const parentComp = this.vm.get(parent)!
-    if (index >= parentComp.instance.childrenLength) {
       this.doc.logger.warn(`deleteBlocks: index ${index} out of range`)
       return []
     }
 
-    if (index === 0 && count >= parentComp.instance.childrenLength && !force) {
-      const parentSchema = this.doc.schemas.get(parentComp.instance.flavour)!
+    if (count === 0) return []
+    const parentYBlock = this.getYBlock(parent)
+    if (!parentYBlock) {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, `Parent block not found: ${parent}`)
+    }
+    const children = parentYBlock.get('children')
+    if (!isYArray(children)) {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, `Block ${parent} cannot contain block children`)
+    }
+    if (index >= children.length) {
+      this.doc.logger.warn(`deleteBlocks: index ${index} out of range`)
+      return []
+    }
+
+    if (index + count > children.length) {
+      count = children.length - index
+    }
+    // Guard the exact range `_delete()` will consume. During a compound local
+    // transaction the ModelGraph observer can still expose the previous sibling
+    // list, while the mounted parent/Y.Array has already advanced to the next
+    // step. Reading the stale model index here can re-check an id deleted by the
+    // preceding step and raise `Block not found` halfway through the operation.
+    const childIds = children.toArray()
+    const removableIds = childIds.slice(index, index + count)
+    this.doc.mutationPolicy?.assert({
+      operation: 'delete',
+      blockIds: removableIds,
+      parentId: parent,
+    })
+    this.doc.readonlyManager.assertRemovable(removableIds, BlockReadonlyOperation.Delete)
+
+    if (this.doc.revisions?.isTracking) {
+      this.undoManager?.captureSelectionBeforeChange?.()
+      this.transact(() => {
+        this.doc.revisions.recordBlockDeletion(removableIds, parent)
+      })
+      return [{index, length: removableIds.length}]
+    }
+
+    // `placement-layout` is root-owned infrastructure for absolute objects,
+    // not a flow editing surface. Deleting the last ordinary root child used
+    // to leave `[placement-layout]`: the document was structurally non-empty,
+    // so the fallback below did not run, but the user had no text caret or
+    // gap where typing could resume. Keep one paragraph before the placement
+    // plane whenever this deletion would leave only that infrastructure.
+    const needsRootFlowLanding = parentYBlock.get('flavour') === 'root' &&
+      !force &&
+      childIds.length > count &&
+      !childIds.some((childId, childIndex) =>
+        (childIndex < index || childIndex >= index + count) &&
+        this.getYBlock(childId)?.get('flavour') !== 'placement-layout',
+      )
+    if (needsRootFlowLanding) {
+      const p = this.doc.schemas.createSnapshot('paragraph', [])
+      this.transact(() => {
+        this._delete(parentYBlock, index, count)
+        this._insertBySnapshots(parentYBlock, 0, [p])
+      })
+      return [{index, length: count}]
+    }
+
+    if (index === 0 && count >= children.length && !force) {
+      const parentSchema = this.doc.schemas.get(parentYBlock.get('flavour'))!
+      if (parentSchema.metadata.allowEmptyChildren) {
+        const deletedLength = children.length
+        this.transact(() => {
+          this._delete(parentYBlock, index, deletedLength)
+          if (parentYBlock.get('flavour') === 'object-group') {
+            this.doc.placement?.reflowAfterMemberDeletion(parent)
+          }
+        })
+        return [{index, length: deletedLength}]
+      }
       // 如果父元素并非是可渲染任意块的元素
       if (!parentSchema.metadata.renderUnit) {
         return this.deleteBlockById(parent)
       }
 
-      const deletedLength = parentComp.instance.childrenLength
+      const deletedLength = children.length
       const p = this.doc.schemas.createSnapshot('paragraph', [])
       this.transact(() => {
-        this._delete(parentComp, index, deletedLength)
-        this._insertBySnapshots(parentComp, 0, [p])
+        this._delete(parentYBlock, index, deletedLength)
+        this._insertBySnapshots(parentYBlock, 0, [p])
       })
-      this.doc.selection.recalculate()
       return [{index, length: deletedLength}]
     }
 
-    if (index + count > parentComp.instance.childrenLength) {
-      count = parentComp.instance.childrenLength - index
-    }
-
     this.transact(() => {
-      this._delete(parentComp, index, count)
+      this._delete(parentYBlock, index, count)
+      // Rebase the surviving members before closing this transaction. An
+      // observer/microtask repair uses an untracked origin and cannot restore
+      // the old local coordinates or responsive-size reference on Undo.
+      if (parentYBlock.get('flavour') === 'object-group') {
+        this.doc.placement?.reflowAfterMemberDeletion(parent)
+      }
     })
     return [{index, length: count}]
   }
 
   deleteBlockById(blockId: string): BlockDeleteRange[] {
-    const block = this.doc.getBlockById(blockId)
-    const index = block.getIndexOfParent()
-    return this.deleteBlocks(block.parentId!, index, 1)
+    if (!this.doc.model.exists(blockId)) {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, `Block not found: ${blockId}`)
+    }
+    // Earlier structural writes in the same transaction have already changed
+    // Y.Array, while ModelGraph still exposes the pre-transaction indexes.
+    // Resolve the live location, as replaceBlockSnapshots does, so deleting by
+    // id cannot leave the target behind or consume an unrelated sibling.
+    const parentId = this.resolveLiveParentId(blockId)
+    const children = parentId ? this.getYBlock(parentId)?.get('children') : null
+    const index = children instanceof Y.Array ? children.toArray().indexOf(blockId) : -1
+    if (!parentId || index < 0) {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, `Cannot delete root or orphan block: ${blockId}`)
+    }
+    return this.deleteBlocks(parentId, index, 1)
+  }
+
+  /** Replace one reachable block through the model layer without resolving component views. */
+  replaceBlockSnapshots(blockId: string, snapshots: IBlockSnapshot[]): string[] {
+    if (!this.doc.model.exists(blockId)) {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, `Block not found: ${blockId}`)
+    }
+    const parentId = this.resolveLiveParentId(blockId)
+    if (!parentId) {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, `Cannot replace root or orphan block: ${blockId}`)
+    }
+    const parentYBlock = this.getYBlock(parentId)
+    if (!parentYBlock) {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, `Parent block not found: ${parentId}`)
+    }
+    const yChildren = parentYBlock.get('children')
+    if (!yChildren || !isYArray(yChildren)) {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, `Block ${parentId} cannot contain block children`)
+    }
+    // Use the live Y.Array rather than the cached model index. A caller may
+    // replace several siblings inside one outer transaction before the graph's
+    // deep observer publishes the new structure.
+    const index = yChildren.toArray().indexOf(blockId)
+    if (index < 0) {
+      throw new BlockCraftError(ErrorCode.ModelCRUDError, `Block ${blockId} is not a child of ${parentId}`)
+    }
+
+    this.doc.mutationPolicy?.assert({
+      operation: 'replace',
+      blockIds: [blockId],
+      parentId,
+    })
+    this.doc.readonlyManager.assertRemovable([blockId], BlockReadonlyOperation.Replace)
+    if (snapshots?.length) {
+      this.doc.readonlyManager.assertInsertable(parentId, BlockReadonlyOperation.Replace)
+      if (!snapshots.every(snapshot =>
+        this._isSnapshotAllowedInParent(parentYBlock, snapshot),
+      )) {
+        throw new BlockCraftError(
+          ErrorCode.ModelCRUDError,
+          `replaceBlocks: invalid child for parent ${parentId}`,
+        )
+      }
+    }
+    assertCompositionInsertion(this.doc, parentId, snapshots)
+    this.transact(() => {
+      if (this.doc.revisions?.isTracking) {
+        this.doc.revisions.runInGroup(() => {
+          if (snapshots?.length) {
+            this._insertBySnapshots(parentYBlock, index + 1, snapshots)
+            this.doc.revisions.recordBlockInsertion(
+              snapshots.map(snapshot => snapshot.id),
+              parentId,
+            )
+          }
+          this.doc.revisions.recordBlockDeletion([blockId], parentId)
+        })
+        return
+      }
+      this._delete(parentYBlock, index, 1)
+      if (snapshots?.length) this._insertBySnapshots(parentYBlock, index, snapshots)
+    })
+    return snapshots.map(snapshot => snapshot.id)
   }
 
   replaceWithSnapshots(blockId: string, snapshots: IBlockSnapshot[]): BlockCraft.BlockComponent[] {
-    const block = this.doc.getBlockById(blockId)
-    const index = block.getIndexOfParent()
-    const parentId = block.parentId!
-    const parentComp = this.vm.get(parentId)
-    if (!parentComp) {
-      throw new BlockCraftError(ErrorCode.ModelCRUDError, `parentComp ${parentId} not found`)
+    // A caller may have moved the block earlier in the same outer transaction.
+    // Use the live tree so sparse-root mounting targets the destination parent
+    // instead of the ModelGraph parent that is stale until transaction commit.
+    const parentId = this.resolveLiveParentId(blockId)
+    const insertedIds = this.replaceBlockSnapshots(blockId, snapshots)
+    if (parentId) {
+      this.doc.virtualization?.ensureViewMounted([parentId])
     }
-    this.transact(() => {
-      const yChildren = parentComp.instance.yBlock.get('children') as Y.Array<string>
-      const flatIds = this.getFlatIds([blockId])
-      flatIds.forEach(id => this.yBlockMap.delete(id))
-      yChildren.delete(index, 1)
-      if (snapshots?.length) {
-        this._insertBySnapshots(parentComp, index, snapshots)
+
+    if (parentId) this._materializeInsertedSparseChildren(parentId, insertedIds)
+
+    return insertedIds
+      .map(id => this.vm.get(id)?.instance)
+      .filter((block): block is BlockCraft.BlockComponent => !!block)
+  }
+
+  private resolveLiveParentId(blockId: string): string | null {
+    const indexedParentId = this.doc.model.getParentId(blockId)
+    if (indexedParentId) {
+      const indexedChildren = this.getYBlock(indexedParentId)?.get('children')
+      if (
+        indexedChildren instanceof Y.Array &&
+        indexedChildren.toArray().includes(blockId)
+      ) {
+        return indexedParentId
       }
-    })
-    return this._resolveInsertedBlocks(snapshots)
+    }
+
+    // Exceptional cold path for a move followed by another structural change
+    // in one outer transaction. ModelGraph publishes its new parent index only
+    // after the transaction commits, while the Y.Arrays already contain the
+    // authoritative structure.
+    for (const [candidateId, candidate] of this.yBlockMap.entries()) {
+      const candidateChildren = candidate.get('children')
+      if (
+        candidateChildren instanceof Y.Array &&
+        candidateChildren.toArray().includes(blockId)
+      ) {
+        return candidateId
+      }
+    }
+    return null
   }
 
   moveBlocks(parentId: string, index: number, count: number, targetId: string, targetIndex: number) {
-    const parentComp = this.vm.get(parentId)
-    const targetComp = this.vm.get(targetId)
-    if (!parentComp || !targetComp) return
+    if (count <= 0) return
+    // Read the live Y.Map directly. A caller may create a target container and
+    // move children into it in the same outer transaction, before ModelGraph's
+    // observer has published the newly reachable node.
+    const parentYBlock = this.getYBlock(parentId)
+    const targetYBlock = this.getYBlock(targetId)
+    if (!parentYBlock || !targetYBlock) return
+    const sourceChildren = parentYBlock.get('children')
+    const targetChildren = targetYBlock.get('children')
+    if (!isYArray(sourceChildren) || !isYArray(targetChildren)) return
+
+    const movingIds = sourceChildren.toArray().slice(index, index + count)
+    if (!movingIds.length) return
+    this.doc.mutationPolicy?.assert({
+      operation: 'move',
+      blockIds: movingIds,
+      parentId,
+      targetId,
+    })
+    const invalidMovingId = movingIds.find(id => {
+      const movingYBlock = this.getYBlock(id)
+      if (!movingYBlock) return true
+      const flavour = movingYBlock.get('flavour') as BlockCraft.BlockFlavour
+      return !this.doc.schemas.isValidChildrenForInstance(
+        flavour,
+        targetYBlock.get('flavour'),
+        this._readYBlockMeta(targetYBlock),
+      )
+    })
+    if (invalidMovingId) {
+      throw new BlockCraftError(
+        ErrorCode.ModelCRUDError,
+        `moveBlocks: block ${invalidMovingId} is not allowed in parent ${targetId}`,
+      )
+    }
+    if (this.doc.model.exists(targetId)) {
+      this.doc.readonlyManager.assertMovable(
+        movingIds,
+        targetId,
+        BlockReadonlyOperation.Move,
+      )
+    } else {
+      // A target created in this transaction has no persisted lock ancestry
+      // yet. Its parent insertion was already guarded by insertBlockSnapshots.
+      this.doc.readonlyManager.assertRemovable(
+        movingIds,
+        BlockReadonlyOperation.Move,
+      )
+    }
 
     this.transact(() => {
-        const sliceIds = parentComp.instance.childrenIds.slice(index, index + count)
-        // const sliceComps = sliceIds.map(id => this.vm.get(id)!)
-        // this.vm.remove(parentComp, index, count)
-        // this.vm.insert(targetComp, targetIndex, sliceComps)
-        parentComp.instance.yBlock.get('children').delete(index, count)
-        ;(targetComp.instance.yBlock.get('children') as Y.Array<string>).insert(targetIndex, sliceIds)
-      },
-      // ORIGIN_SKIP_SYNC
-    )
+      const sliceIds = sourceChildren.toArray().slice(index, index + count)
+      if (!this._columnNormalizationSuppressed) {
+        this._columnStructure.track(parentId)
+        this._columnStructure.track(targetId)
+        this._columnStructure.moved(sliceIds, targetId)
+      }
+      sourceChildren.delete(index, count)
+      targetChildren.insert(targetIndex, sliceIds)
+    })
   }
 
 }

@@ -1,0 +1,75 @@
+{
+  "date": "2026-10-12",
+  "kind": "single-run-development-browser-scale-check",
+  "baseline": null,
+  "gitHead": "638f2a6c35cc893d33679b5e8e41c88f4d68531a",
+  "sourceSha256": {
+    "packages/editor/framework/doc/vm.ts": "e068ecb4fe405fb4a4fc719d6523d6c9673d94660802a1edc37a42c72efcefa9",
+    "packages/editor/framework/doc/crud.ts": "a5eabc8c76b2954c55e0065ab729af623675e84cfdcc218d8e52370584ee0c1e",
+    "packages/editor/framework/modules/virtualization/root-virtualization-manager.ts": "fa3c937f9768cedab30dd5a3a14a54b809505d28330c76850a3031e0d9a69cfd",
+    "packages/editor/framework/modules/virtualization/absolute-placement-visibility-index.ts": "78e2b2166152e04113138b1920ea511b1fc84d155e90ffdda298a5a8d651bc48",
+    "packages/editor/framework/modules/selection/index.ts": "d63ce06c258b24fb296cbd5701681683d64123da783ae172a5a3326d97eab837",
+    "packages/editor/framework/modules/object/text-content-auto-fit.ts": "e2878a0561f354ba4303025eefe77ed6ceff43b3d0ef0fd43a100e194a460c8a",
+    "e2e/text-fit-absolute-visibility.spec.ts": "c0ba8472da096c134e373b1c269f672f22630a6c0ed41fc1a682757367678d83"
+  },
+  "fixture": {
+    "fixedShapes": 1000,
+    "autoFitTextBoxes": 24,
+    "paragraphs": 1600,
+    "viewport": [
+      1000,
+      360
+    ],
+    "scrollSteps": 101,
+    "retainedViewLimit": 0,
+    "idlePrefetch": false
+  },
+  "browsers": {
+    "chromium": {
+      "initMs": 492.2000000476837,
+      "initialFixedMounted": 15,
+      "maxFixedMounted": 23,
+      "finalFixedCached": 15,
+      "autoCount": 24,
+      "fixedCount": 1000,
+      "steps": 101,
+      "frameP95": 16.700000000000728,
+      "maxFrame": 16.800000000000182,
+      "failures": []
+    },
+    "firefox": {
+      "initMs": 746,
+      "initialFixedMounted": 15,
+      "maxFixedMounted": 23,
+      "finalFixedCached": 15,
+      "autoCount": 24,
+      "fixedCount": 1000,
+      "steps": 101,
+      "frameP95": 34.30000000000018,
+      "maxFrame": 82.96000000000004,
+      "failures": []
+    },
+    "webkit": {
+      "initMs": 828,
+      "initialFixedMounted": 15,
+      "maxFixedMounted": 23,
+      "finalFixedCached": 15,
+      "autoCount": 24,
+      "fixedCount": 1000,
+      "steps": 101,
+      "frameP95": 35,
+      "maxFrame": 51,
+      "failures": []
+    }
+  },
+  "logs": {
+    "floating": "/tmp/bc-placement-sparse-complete.log",
+    "unit": "/tmp/bc-placement-sparse-unit-final.log",
+    "build": "/tmp/bc-placement-sparse-build-final.log",
+    "regression": "/tmp/bc-placement-regression.log"
+  },
+  "limitations": [
+    "每浏览器单次运行，无预热或修改前对照；RAF 间隔不是输入延迟或线上 FPS。",
+    "真实独立 Doc/组件/Yjs，宿主插件为空；未验证 CSES/Tauri 或真实协作网络。"
+  ]
+}

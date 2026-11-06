@@ -6,6 +6,27 @@ interface CopyFilterLogger {
   warn(message: string, ...args: unknown[]): void
 }
 
+/** Clone a clipboard tree and remove BlockCraft's persistent block-lock data. */
+export function stripBlockLockMetaDeep(root: IBlockSnapshot): IBlockSnapshot {
+  const cloned = cloneSnapshot(root);
+  const visit = (node: IBlockSnapshot) => {
+    if (node.meta && Object.prototype.hasOwnProperty.call(node.meta, 'lock')) {
+      delete node.meta.lock;
+    }
+    if (node.meta && Object.prototype.hasOwnProperty.call(node.meta, 'lockKind')) {
+      delete node.meta.lockKind;
+    }
+    if (isContainer(node) && Array.isArray(node.children)) {
+      (node.children as IBlockSnapshot[]).forEach(visit);
+    }
+  };
+  visit(cloned);
+  return cloned;
+}
+
+/** @deprecated Use `stripBlockLockMetaDeep`. */
+export const stripReadonlyMetaDeep = stripBlockLockMetaDeep;
+
 /** Resolve the filter pipeline for one copy: `false`→none, object→replace, else→registry. */
 export function resolveCopyFilters(
   registered: readonly ClipboardCopyFilter[],

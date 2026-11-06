@@ -1,0 +1,921 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BlockCraft 浮动对象格式面板 HTML 示例稿</title>
+  <link rel="stylesheet" href="../packages/editor/assets/iconfont/bc-iconfont.css">
+  <style>
+    :root {
+      color-scheme: light;
+      --cs-primary: #1668dc;
+      --cs-primary-hover: #3c82e2;
+      --cs-primary-soft: #eaf3ff;
+      --cs-danger: #d43838;
+      --cs-text: #20242b;
+      --cs-text-secondary: #616b78;
+      --cs-text-tertiary: #89919d;
+      --cs-border: #d9dee7;
+      --cs-border-soft: #eaedf2;
+      --cs-control-bg: #fff;
+      --cs-panel: #fff;
+      --cs-canvas: #e9edf3;
+      --cs-page: #fff;
+      --cs-elevated: 0 14px 40px rgb(29 41 57 / 15%), 0 3px 10px rgb(29 41 57 / 8%);
+      --cs-focus: 0 0 0 3px rgb(22 104 220 / 18%);
+      --object-fill: #d9eaff;
+      --object-stroke: #3477c7;
+      --object-stroke-width: 2px;
+      --object-opacity: 1;
+      --object-radius: 18px;
+      --object-width: 310px;
+      --object-height: 162px;
+      --object-rotation: 0deg;
+      --object-padding-top: 20px;
+      --object-padding-right: 24px;
+      --object-padding-bottom: 20px;
+      --object-padding-left: 24px;
+      font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      --cs-primary: #69a5f5;
+      --cs-primary-hover: #8ab9f7;
+      --cs-primary-soft: #183c67;
+      --cs-danger: #ff7875;
+      --cs-text: #edf2f8;
+      --cs-text-secondary: #b3bdca;
+      --cs-text-tertiary: #8996a7;
+      --cs-border: #455163;
+      --cs-border-soft: #354152;
+      --cs-control-bg: #202a37;
+      --cs-panel: #1a2330;
+      --cs-canvas: #111821;
+      --cs-page: #202a36;
+      --cs-elevated: 0 18px 48px rgb(0 0 0 / 42%), 0 3px 12px rgb(0 0 0 / 30%);
+      --cs-focus: 0 0 0 3px rgb(105 165 245 / 24%);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; }
+    body {
+      margin: 0;
+      overflow-x: hidden;
+      color: var(--cs-text);
+      background: var(--cs-canvas);
+      font-size: 13px;
+    }
+
+    button, input, select { font: inherit; }
+    button, select, input[type="range"], input[type="color"] { cursor: pointer; }
+    button:focus-visible, input:focus-visible, select:focus-visible {
+      outline: 0;
+      box-shadow: var(--cs-focus);
+    }
+
+    .prototype-bar {
+      min-height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 8px 18px;
+      color: #f5f7fa;
+      background: #1f2937;
+      border-bottom: 1px solid rgb(255 255 255 / 8%);
+    }
+    .prototype-title { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+    .prototype-title strong { font-size: 14px; font-weight: 650; white-space: nowrap; }
+    .prototype-title span { overflow: hidden; color: #aeb8c5; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+    .prototype-actions { display: flex; align-items: center; gap: 8px; }
+    .prototype-pill {
+      padding: 4px 8px;
+      color: #c6d0dc;
+      border: 1px solid rgb(255 255 255 / 14%);
+      border-radius: 999px;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .icon-button, .cs-button {
+      min-height: 30px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      color: var(--cs-text);
+      border: 1px solid transparent;
+      border-radius: 6px;
+      background: transparent;
+      transition: color .18s ease, background-color .18s ease, border-color .18s ease, box-shadow .18s ease;
+    }
+    .icon-button { width: 32px; height: 32px; padding: 0; color: inherit; }
+    .icon-button:hover, .cs-button:hover { background: color-mix(in srgb, var(--cs-text) 7%, transparent); }
+    .cs-button { padding: 4px 10px; border-color: var(--cs-border); background: var(--cs-control-bg); }
+    .cs-button.primary { color: #fff; border-color: var(--cs-primary); background: var(--cs-primary); }
+    .cs-button.primary:hover { border-color: var(--cs-primary-hover); background: var(--cs-primary-hover); }
+    .cs-button.text { color: var(--cs-primary); border-color: transparent; background: transparent; }
+    .bc_icon { line-height: 1; }
+
+    .app-shell {
+      width: min(1440px, calc(100vw - 28px));
+      height: calc(100vh - 80px);
+      min-height: 660px;
+      margin: 14px auto;
+      display: grid;
+      grid-template-rows: 44px minmax(0, 1fr);
+      overflow: hidden;
+      background: var(--cs-page);
+      border: 1px solid var(--cs-border);
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgb(26 35 49 / 9%);
+    }
+    .docbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--cs-border-soft);
+    }
+    .doc-meta { display: flex; align-items: center; gap: 9px; min-width: 0; }
+    .doc-mark { width: 24px; height: 24px; display: grid; place-items: center; color: #fff; background: var(--cs-primary); border-radius: 5px; font-weight: 750; }
+    .doc-name { font-weight: 620; white-space: nowrap; }
+    .doc-state { color: var(--cs-text-tertiary); font-size: 11px; white-space: nowrap; }
+    .doc-actions { display: flex; align-items: center; gap: 4px; }
+
+    .workspace {
+      position: relative;
+      min-width: 0;
+      min-height: 0;
+      background: var(--cs-canvas);
+    }
+    .stage {
+      position: relative;
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      place-items: start center;
+      padding: 34px 24px 50px;
+      overflow: auto;
+    }
+    .page {
+      position: relative;
+      width: min(690px, calc(100% - 16px));
+      min-height: 820px;
+      padding: 68px 72px;
+      color: var(--cs-text);
+      background: var(--cs-page);
+      box-shadow: 0 2px 12px rgb(29 41 57 / 15%);
+    }
+    .page-kicker { margin: 0 0 8px; color: var(--cs-primary); font-size: 11px; font-weight: 700; letter-spacing: .12em; }
+    .page h1 { margin: 0 0 13px; font-family: Georgia, "Songti SC", serif; font-size: 29px; font-weight: 500; line-height: 1.25; }
+    .page-copy { margin: 0; color: var(--cs-text-secondary); font-family: Georgia, "Songti SC", serif; font-size: 14px; line-height: 1.82; }
+    .page-copy.bottom { margin-top: 38px; }
+
+    .selection-wrap {
+      position: relative;
+      width: var(--object-width);
+      height: var(--object-height);
+      margin: 60px auto 38px;
+      transform: rotate(var(--object-rotation));
+      transition: width .18s ease, height .18s ease, transform .18s ease;
+    }
+    .selection-wrap::before, .selection-wrap::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      border: 1px solid var(--cs-primary);
+      border-radius: var(--object-radius);
+      background: color-mix(in srgb, var(--object-fill) 45%, var(--cs-page));
+      opacity: 0;
+      transition: opacity .18s ease, transform .18s ease;
+    }
+    .selection-wrap.multi::before { opacity: .78; transform: translate(-24px, 18px) rotate(-3deg); }
+    .selection-wrap.multi::after { opacity: .58; transform: translate(23px, 12px) rotate(2.5deg); }
+    .selected-object {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: var(--object-padding-top) var(--object-padding-right) var(--object-padding-bottom) var(--object-padding-left);
+      overflow: hidden;
+      color: #1e3654;
+      background: color-mix(in srgb, var(--object-fill) calc(var(--object-opacity) * 100%), transparent);
+      border: var(--object-stroke-width) solid var(--object-stroke);
+      border-radius: var(--object-radius);
+      box-shadow: 0 8px 18px rgb(31 65 104 / 12%);
+      clip-path: var(--object-clip, none);
+      transition: background .18s ease, border-color .18s ease, border-width .18s ease, border-radius .18s ease, padding .18s ease, clip-path .18s ease;
+    }
+    .selected-object strong { font-size: 18px; font-weight: 660; }
+    .selected-object span { margin-top: 5px; color: #48627e; font-size: 12px; line-height: 1.5; }
+    .selection-outline { position: absolute; inset: -5px; z-index: 2; border: 1px solid var(--cs-primary); pointer-events: none; }
+    .selection-handle { position: absolute; z-index: 3; width: 8px; height: 8px; background: #fff; border: 1.5px solid var(--cs-primary); border-radius: 50%; transform: translate(-50%, -50%); }
+    .selection-handle.nw { left: -5px; top: -5px; }
+    .selection-handle.ne { left: calc(100% + 5px); top: -5px; }
+    .selection-handle.sw { left: -5px; top: calc(100% + 5px); }
+    .selection-handle.se { left: calc(100% + 5px); top: calc(100% + 5px); }
+    .rotation-stem { position: absolute; left: 50%; bottom: calc(100% + 5px); z-index: 2; width: 1px; height: 24px; background: var(--cs-primary); }
+    .rotation-handle { position: absolute; left: 50%; bottom: calc(100% + 27px); z-index: 3; width: 10px; height: 10px; background: #fff; border: 1.5px solid var(--cs-primary); border-radius: 50%; transform: translateX(-50%); }
+
+    .format-dock {
+      position: absolute;
+      top: 18px;
+      right: 18px;
+      z-index: 20;
+      width: min(374px, calc(100% - 36px));
+      height: min(650px, calc(100% - 36px));
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 46px minmax(0, 1fr);
+      align-items: stretch;
+      background: var(--cs-panel);
+      border: 1px solid var(--cs-border);
+      border-radius: 10px;
+      box-shadow: var(--cs-elevated);
+      overflow: hidden;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(-7px) scale(.985);
+      transform-origin: top right;
+      transition: opacity .18s ease, transform .18s ease;
+    }
+    .format-dock.open { opacity: 1; pointer-events: auto; transform: translateY(0) scale(1); }
+    .rail {
+      position: relative;
+      z-index: 3;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      padding: 10px 6px;
+      background: color-mix(in srgb, var(--cs-panel) 95%, var(--cs-text));
+      border-right: 1px solid var(--cs-border-soft);
+    }
+    .rail-button {
+      position: relative;
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      color: var(--cs-text-secondary);
+      border: 1px solid transparent;
+      border-radius: 7px;
+      background: transparent;
+      transition: color .18s ease, background-color .18s ease, border-color .18s ease;
+    }
+    .rail-button .bc_icon { font-size: 18px; }
+    .rail-button:hover { color: var(--cs-primary); background: var(--cs-primary-soft); }
+    .rail-button.active { color: var(--cs-primary); border-color: color-mix(in srgb, var(--cs-primary) 30%, transparent); background: var(--cs-primary-soft); }
+    .rail-button::after {
+      content: attr(data-label);
+      position: absolute;
+      right: calc(100% + 9px);
+      top: 50%;
+      z-index: 10;
+      padding: 5px 8px;
+      color: #fff;
+      background: #202833;
+      border-radius: 5px;
+      box-shadow: 0 4px 14px rgb(0 0 0 / 18%);
+      font-size: 11px;
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(4px, -50%);
+      transition: opacity .15s ease, transform .15s ease;
+    }
+    .rail-button:hover::after, .rail-button:focus-visible::after { opacity: 1; transform: translate(0, -50%); }
+    .rail-divider { width: 24px; height: 1px; margin: 3px 0; background: var(--cs-border); }
+    .rail-spacer { flex: 1; }
+    .rail-button.danger { color: var(--cs-danger); }
+
+    .format-panel { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+    .panel-header {
+      flex: 0 0 auto;
+      min-height: 58px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 9px 12px 9px 14px;
+      border-bottom: 1px solid var(--cs-border-soft);
+    }
+    .panel-title { min-width: 0; display: grid; gap: 2px; }
+    .panel-title strong { font-size: 14px; font-weight: 650; }
+    .panel-title span { overflow: hidden; color: var(--cs-text-tertiary); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+    .panel-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+    .panel-view { display: none; }
+    .panel-view.active { display: block; }
+
+    .section { border-bottom: 1px solid var(--cs-border-soft); }
+    .section-toggle {
+      width: 100%;
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 8px 14px;
+      color: var(--cs-text);
+      border: 0;
+      background: transparent;
+      text-align: left;
+    }
+    .section-toggle:hover { background: color-mix(in srgb, var(--cs-text) 4%, transparent); }
+    .section-toggle strong { font-size: 12px; font-weight: 650; }
+    .section-toggle .bc_icon { color: var(--cs-text-tertiary); font-size: 11px; transition: transform .18s ease; }
+    .section.collapsed .section-toggle .bc_icon { transform: rotate(-90deg); }
+    .section-body { display: grid; gap: 10px; padding: 2px 14px 14px; }
+    .section.collapsed .section-body { display: none; }
+    .section-caption { margin: -3px 0 0; color: var(--cs-text-tertiary); font-size: 11px; line-height: 1.45; }
+
+    .field { display: grid; grid-template-columns: 88px minmax(0, 1fr); align-items: center; gap: 9px; min-height: 30px; }
+    .field > span:first-child { color: var(--cs-text-secondary); }
+    .field.stack { grid-template-columns: 1fr; gap: 6px; }
+    .field.compact { grid-template-columns: minmax(0, 1fr) auto; }
+    .field-output { min-width: 36px; color: var(--cs-text-tertiary); font-size: 11px; font-variant-numeric: tabular-nums; text-align: right; }
+    .slider-line { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) 37px; align-items: center; gap: 8px; }
+    .control-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .control-row.three { grid-template-columns: repeat(3, 1fr); }
+
+    .cs-input, .cs-select {
+      width: 100%;
+      min-width: 0;
+      height: 30px;
+      padding: 0 9px;
+      color: var(--cs-text);
+      border: 1px solid var(--cs-border);
+      border-radius: 6px;
+      background: var(--cs-control-bg);
+      transition: border-color .18s ease, box-shadow .18s ease;
+    }
+    .cs-input:hover, .cs-select:hover { border-color: color-mix(in srgb, var(--cs-primary) 58%, var(--cs-border)); }
+    .cs-input:focus, .cs-select:focus { border-color: var(--cs-primary); box-shadow: var(--cs-focus); outline: 0; }
+    .input-affix { position: relative; }
+    .input-affix .cs-input { padding-right: 32px; }
+    .input-affix span { position: absolute; right: 9px; top: 50%; color: var(--cs-text-tertiary); font-size: 11px; pointer-events: none; transform: translateY(-50%); }
+
+    .cs-slider { width: 100%; height: 18px; accent-color: var(--cs-primary); }
+    .color-control { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 6px; }
+    .color-control input[type="color"] { width: 30px; height: 30px; padding: 3px; border: 1px solid var(--cs-border); border-radius: 6px; background: var(--cs-control-bg); }
+
+    .cs-switch { position: relative; width: 34px; height: 19px; display: inline-block; }
+    .cs-switch input { position: absolute; opacity: 0; pointer-events: none; }
+    .cs-switch span { position: absolute; inset: 0; background: #aab2be; border-radius: 999px; transition: background .18s ease; }
+    .cs-switch span::after { content: ""; position: absolute; left: 2px; top: 2px; width: 15px; height: 15px; background: #fff; border-radius: 50%; box-shadow: 0 1px 3px rgb(0 0 0 / 22%); transition: transform .18s ease; }
+    .cs-switch input:checked + span { background: var(--cs-primary); }
+    .cs-switch input:checked + span::after { transform: translateX(15px); }
+    .cs-switch input:focus-visible + span { box-shadow: var(--cs-focus); }
+
+    .cs-checkbox { display: inline-flex; align-items: center; gap: 7px; color: var(--cs-text-secondary); }
+    .cs-checkbox input { width: 16px; height: 16px; margin: 0; accent-color: var(--cs-primary); }
+
+    .segmented { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 3px; padding: 3px; background: color-mix(in srgb, var(--cs-text) 7%, transparent); border-radius: 7px; }
+    .segmented button { min-width: 0; height: 27px; padding: 0 7px; overflow: hidden; color: var(--cs-text-secondary); border: 0; border-radius: 5px; background: transparent; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+    .segmented button:hover { color: var(--cs-text); }
+    .segmented button.active { color: var(--cs-primary); background: var(--cs-control-bg); box-shadow: 0 1px 3px rgb(29 41 57 / 13%); }
+
+    .option-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+    .option-card {
+      min-width: 0;
+      min-height: 64px;
+      display: grid;
+      place-items: center;
+      align-content: center;
+      gap: 6px;
+      padding: 7px 4px;
+      color: var(--cs-text-secondary);
+      border: 1px solid var(--cs-border-soft);
+      border-radius: 7px;
+      background: var(--cs-control-bg);
+      font-size: 10px;
+      transition: color .18s ease, border-color .18s ease, background .18s ease;
+    }
+    .option-card:hover { color: var(--cs-primary); border-color: color-mix(in srgb, var(--cs-primary) 45%, var(--cs-border)); }
+    .option-card.active { color: var(--cs-primary); border-color: var(--cs-primary); background: var(--cs-primary-soft); }
+    .option-card .bc_icon { font-size: 20px; }
+    .shape-thumb { width: 32px; height: 22px; background: #9bbce2; border: 1.5px solid #4d78aa; }
+    .shape-thumb.rounded { border-radius: 7px; }
+    .shape-thumb.ellipse { border-radius: 50%; }
+    .shape-thumb.diamond { width: 24px; height: 24px; transform: rotate(45deg) scale(.72); }
+    .shape-thumb.triangle { background: #9bbce2; border: 0; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+    .shape-thumb.hexagon { border: 0; clip-path: polygon(24% 0, 76% 0, 100% 50%, 76% 100%, 24% 100%, 0 50%); }
+
+    .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+    .action-grid .cs-button { min-width: 0; justify-content: flex-start; }
+    .action-grid .bc_icon { color: var(--cs-text-secondary); font-size: 15px; }
+    .reset-link { color: var(--cs-primary); border: 0; background: transparent; font-size: 11px; }
+
+    .fill-details { display: none; gap: 10px; }
+    .fill-details.active { display: grid; }
+    .gradient-preview { height: 30px; border: 1px solid var(--cs-border); border-radius: 6px; background: linear-gradient(90deg, #d9eaff, #4c89d3); }
+    .picture-drop { min-height: 68px; display: grid; place-items: center; gap: 3px; padding: 10px; color: var(--cs-text-secondary); border: 1px dashed var(--cs-border); border-radius: 7px; background: color-mix(in srgb, var(--cs-text) 2%, transparent); }
+    .picture-drop .bc_icon { color: var(--cs-primary); font-size: 18px; }
+
+    .component-note {
+      margin: 12px 14px 16px;
+      padding: 9px 10px;
+      color: var(--cs-text-secondary);
+      background: color-mix(in srgb, var(--cs-primary) 7%, transparent);
+      border: 1px solid color-mix(in srgb, var(--cs-primary) 18%, var(--cs-border));
+      border-radius: 7px;
+      font-size: 10px;
+      line-height: 1.5;
+    }
+
+    .panel-launcher {
+      position: absolute;
+      top: 18px;
+      right: 18px;
+      z-index: 19;
+      box-shadow: var(--cs-elevated);
+    }
+    .panel-launcher[hidden] { display: none; }
+    .multi-only[hidden] { display: none; }
+    .demo-toggle { display: inline-flex; align-items: center; gap: 7px; color: #d6dee8; font-size: 11px; white-space: nowrap; }
+    .demo-toggle input { width: 15px; height: 15px; margin: 0; accent-color: #69a5f5; }
+
+    @media (max-width: 900px) {
+      .page { padding: 54px 44px; }
+      .prototype-pill { display: none; }
+      .format-dock { width: min(360px, calc(100% - 28px)); top: 14px; right: 14px; height: min(620px, calc(100% - 28px)); }
+      .panel-launcher { top: 14px; right: 14px; }
+    }
+
+    @media (max-width: 720px) {
+      .app-shell { width: 100%; height: calc(100vh - 52px); min-height: 600px; margin: 0; border-width: 0; border-radius: 0; }
+      .prototype-bar { min-height: 52px; padding-inline: 12px; }
+      .prototype-title span { display: none; }
+      .workspace { display: block; }
+      .stage { height: 100%; padding: 22px 10px 160px; }
+      .page { min-height: 720px; padding: 46px 26px; }
+      .format-dock { inset: auto 10px 10px 10px; width: auto; height: min(68vh, 560px); transform: translateY(18px) scale(.985); transform-origin: bottom center; }
+      .format-dock.open { transform: translateY(0) scale(1); }
+      .panel-launcher { inset: auto 12px 14px auto; }
+      .rail-button::after { right: auto; left: calc(100% + 9px); transform: translate(-4px, -50%); }
+      .rail-button:hover::after, .rail-button:focus-visible::after { transform: translate(0, -50%); }
+    }
+
+    @media (max-width: 420px) {
+      .doc-state { display: none; }
+      .demo-toggle { display: none; }
+      .page h1 { font-size: 25px; }
+      .selection-wrap { --object-width: 260px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="prototype-bar">
+    <div class="prototype-title">
+      <strong>浮动对象格式面板 · HTML 示例稿</strong>
+      <span>按需展开 · 单选/多选能力分层 · CSES UI 控件语义</span>
+    </div>
+    <div class="prototype-actions">
+      <label class="demo-toggle"><input id="multiSelectDemo" type="checkbox"><span>模拟多选</span></label>
+      <span class="prototype-pill">浮窗 374 × ≤650px · 单外层滚动</span>
+      <button class="icon-button" id="themeToggle" type="button" aria-label="切换深色模式" title="切换深色模式">
+        <i class="bc_icon bc_yueliang" aria-hidden="true"></i>
+      </button>
+    </div>
+  </header>
+
+  <main class="app-shell">
+    <header class="docbar">
+      <div class="doc-meta">
+        <span class="doc-mark">B</span>
+        <span class="doc-name">对象格式系统示例</span>
+        <span class="doc-state">已保存 · 当前选中圆角矩形</span>
+      </div>
+      <div class="doc-actions">
+        <button class="icon-button" type="button" aria-label="撤销" title="撤销"><i class="bc_icon bc_chehui"></i></button>
+        <button class="icon-button" type="button" aria-label="重做" title="重做"><i class="bc_icon bc_huitui"></i></button>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <section class="stage" aria-label="文档画布">
+        <article class="page">
+          <p class="page-kicker">BLOCKCRAFT OBJECT FORMAT</p>
+          <h1>让对象格式能力保持统一，也保持编辑体验稳定</h1>
+          <p class="page-copy">形状、文本框和艺术字共享同一套布局、填充、轮廓、效果与文本框设置；直接文字编辑和整对象聚焦继续沿用已有交互。</p>
+
+          <div class="selection-wrap" id="selectionWrap">
+            <div class="selected-object" id="selectedObject">
+              <strong id="objectTitle">统一对象格式</strong>
+              <span>从浮动面板调整填充、轮廓、文本框与四边内边距。</span>
+            </div>
+            <div class="selection-outline" aria-hidden="true"></div>
+            <i class="selection-handle nw" aria-hidden="true"></i>
+            <i class="selection-handle ne" aria-hidden="true"></i>
+            <i class="selection-handle sw" aria-hidden="true"></i>
+            <i class="selection-handle se" aria-hidden="true"></i>
+            <i class="rotation-stem" aria-hidden="true"></i>
+            <i class="rotation-handle" aria-hidden="true"></i>
+          </div>
+
+          <p class="page-copy bottom">该原型只演示工具面板的视觉、信息架构和可见后果，不修改 BlockCraft 当前的点击、聚焦、拖拽或文字编辑事件链。</p>
+        </article>
+      </section>
+
+      <button class="cs-button primary panel-launcher" id="panelLauncher" type="button" hidden>
+        <i class="bc_icon bc_version_settings"></i>对象格式
+      </button>
+
+      <aside class="format-dock open" id="formatDock" aria-label="设置对象格式">
+        <nav class="rail" aria-label="对象格式分组">
+          <button class="rail-button" type="button" data-panel="layout" data-label="布局与排列" aria-label="布局与排列">
+            <i class="bc_icon bc_buju" aria-hidden="true"></i>
+          </button>
+          <button class="rail-button active" type="button" data-panel="shape" data-label="形状选项" aria-label="形状选项">
+            <i class="bc_icon bc_tuxing" aria-hidden="true"></i>
+          </button>
+          <button class="rail-button" type="button" data-panel="text" data-label="文本选项" aria-label="文本选项">
+            <i class="bc_icon bc_wenben" aria-hidden="true"></i>
+          </button>
+          <span class="rail-divider"></span>
+          <span class="rail-spacer"></span>
+          <button class="rail-button danger" type="button" data-label="删除对象" aria-label="删除对象">
+            <i class="bc_icon bc_shanchu" aria-hidden="true"></i>
+          </button>
+        </nav>
+
+        <div class="format-panel">
+          <header class="panel-header">
+            <div class="panel-title">
+              <strong id="panelTitle">设置形状格式</strong>
+              <span id="panelSubtitle">填充与轮廓</span>
+            </div>
+            <button class="icon-button" id="closePanel" type="button" aria-label="关闭面板" title="关闭面板">
+              <i class="bc_icon bc_guanbi" aria-hidden="true"></i>
+            </button>
+          </header>
+
+          <div class="panel-scroll">
+            <div class="panel-view" data-view="layout">
+              <section class="section">
+                <button class="section-toggle" type="button"><strong>布局与排列</strong><i class="bc_icon bc_xiajaintou"></i></button>
+                <div class="section-body">
+                  <div class="option-grid" id="wrapOptions">
+                    <button class="option-card" type="button"><i class="bc_icon bc_wenben"></i><span>嵌入型</span></button>
+                    <button class="option-card active" type="button"><i class="bc_icon bc_wenbenkuang"></i><span>四周型</span></button>
+                    <button class="option-card" type="button"><i class="bc_icon bc_buju"></i><span>上下型</span></button>
+                    <button class="option-card" type="button"><i class="bc_icon bc_cengji-xia"></i><span>衬于文字下方</span></button>
+                    <button class="option-card" type="button"><i class="bc_icon bc_cengji-shang"></i><span>浮于文字上方</span></button>
+                  </div>
+                  <p class="section-caption">首期沿用当前真实可用的布局能力，不模拟紧密型或穿越型轮廓避让。</p>
+                </div>
+              </section>
+              <section class="section">
+                <button class="section-toggle" type="button"><strong>页面对齐</strong><i class="bc_icon bc_xiajaintou"></i></button>
+                <div class="section-body">
+                  <div class="option-grid">
+                    <button class="option-card" type="button"><i class="bc_icon bc_align2left"></i><span>页面左侧</span></button>
+                    <button class="option-card active" type="button"><i class="bc_icon bc_align2center"></i><span>页面居中</span></button>
+                    <button class="option-card" type="button"><i class="bc_icon bc_align2right"></i><span>页面右侧</span></button>
+                    <button class="option-card" type="button"><i class="bc_icon bc_align2top"></i><span>页面顶端</span></button>
+                    <button class="option-card" type="button"><i class="bc_icon bc_align2middle"></i><span>页面中部</span></button>
+                    <button class="option-card" type="button"><i class="bc_icon bc_align2bottom"></i><span>页面底端</span></button>
+                  </div>
+                </div>
+              </section>
+              <section class="section multi-only" hidden>
+                <button class="section-toggle" type="button"><strong>对象对齐与分布</strong><i class="bc_icon bc_xiajaintou"></i></button>
+                <div class="section-body">
+                  <div class="option-grid">
+                    <button class="option-card" type="button"><i class="bc_icon bc_align2left"></i><span>左对齐</span></button>
+                    <button class="option-card" type="button"><i class="bc_icon bc_align2center"></i><span>水平居中</span></button>
+                    <button class="option-card" type="button"><i class="bc_icon bc_align2right"></i><span>右对齐</span></button>
+                    <button class="option-card" type="button"><i class="bc_icon bc_align2top"></i><span>顶端对齐</span></button>
+                    <button class="option-card" type="button"><i class="bc_icon bc_align2middle"></i><span>垂直居中</span></button>
+                    <button class="option-card" type="button"><i class="bc_icon bc_align2bottom"></i><span>底端对齐</span></button>
+                  </div>
+                  <div class="action-grid">
+                    <button class="cs-button" type="button"><i class="bc_icon bc_hengxiangfenbu"></i>水平分布</button>
+                    <button class="cs-button" type="button"><i class="bc_icon bc_zongxiangfenbu"></i>垂直分布</button>
+                    <button class="cs-button" type="button"><i class="bc_icon bc_combination"></i>组合</button>
+                    <button class="cs-button" type="button"><i class="bc_icon bc_quxiaozuhe"></i>取消组合</button>
+                  </div>
+                </div>
+              </section>
+              <section class="section multi-only" hidden>
+                <button class="section-toggle" type="button"><strong>层级</strong><i class="bc_icon bc_xiajaintou"></i></button>
+                <div class="section-body">
+                  <div class="action-grid">
+                    <button class="cs-button" type="button"><i class="bc_icon bc_cengji-shangyi"></i>上移一层</button>
+                    <button class="cs-button" type="button"><i class="bc_icon bc_cengji-xiayi"></i>下移一层</button>
+                    <button class="cs-button" type="button"><i class="bc_icon bc_cengji-shang"></i>置于顶层</button>
+                    <button class="cs-button" type="button"><i class="bc_icon bc_cengji-xia"></i>置于底层</button>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <div class="panel-view active" data-view="shape">
+              <section class="section collapsed">
+                <button class="section-toggle" type="button"><strong>更改形状</strong><i class="bc_icon bc_xiajaintou"></i></button>
+                <div class="section-body">
+                  <div class="option-grid" id="shapeOptions">
+                    <button class="option-card" type="button" data-shape="rectangle"><i class="shape-thumb"></i><span>矩形</span></button>
+                    <button class="option-card active" type="button" data-shape="rounded"><i class="shape-thumb rounded"></i><span>圆角矩形</span></button>
+                    <button class="option-card" type="button" data-shape="ellipse"><i class="shape-thumb ellipse"></i><span>椭圆</span></button>
+                    <button class="option-card" type="button" data-shape="diamond"><i class="shape-thumb diamond"></i><span>菱形</span></button>
+                    <button class="option-card" type="button" data-shape="triangle"><i class="shape-thumb triangle"></i><span>三角形</span></button>
+                    <button class="option-card" type="button" data-shape="hexagon"><i class="shape-thumb hexagon"></i><span>六边形</span></button>
+                  </div>
+                  <p class="section-caption">更改形状保留内容、大小与通用样式；含文字对象会过滤线条类目标。</p>
+                </div>
+              </section>
+
+              <section class="section">
+                <button class="section-toggle" type="button"><strong>填充</strong><i class="bc_icon bc_xiajaintou"></i></button>
+                <div class="section-body">
+                  <div class="segmented" id="fillTabs" aria-label="填充类型">
+                    <button type="button" data-fill="none">无</button>
+                    <button class="active" type="button" data-fill="solid">纯色</button>
+                    <button type="button" data-fill="gradient">渐变</button>
+                    <button type="button" data-fill="picture">图片</button>
+                  </div>
+                  <div class="fill-details active" data-fill-details="solid">
+                    <label class="field"><span>颜色</span><span class="color-control"><input id="fillColor" type="color" value="#d9eaff"><input class="cs-input" id="fillColorText" value="#D9EAFF"></span></label>
+                  </div>
+                  <div class="fill-details" data-fill-details="gradient">
+                    <div class="gradient-preview" id="gradientPreview"></div>
+                    <div class="control-row">
+                      <input type="color" class="cs-input" id="gradientStart" value="#d9eaff" aria-label="渐变起始颜色">
+                      <input type="color" class="cs-input" id="gradientEnd" value="#4c89d3" aria-label="渐变结束颜色">
+                    </div>
+                    <label class="field"><span>角度</span><span class="input-affix"><input class="cs-input" id="gradientAngle" type="number" min="-360" max="360" value="0"><span>°</span></span></label>
+                  </div>
+                  <div class="fill-details" data-fill-details="picture">
+                    <button class="picture-drop" type="button"><i class="bc_icon bc_shangchuan"></i><span>上传图片或粘贴合法 URL</span></button>
+                    <label class="field"><span>适应</span><select class="cs-select"><option>覆盖</option><option>适应</option><option>拉伸</option></select></label>
+                  </div>
+                  <label class="field"><span>透明度</span><span class="slider-line"><input class="cs-slider" id="fillOpacity" type="range" min="0" max="100" value="0"><output class="field-output" id="fillOpacityOutput">0%</output></span></label>
+                  <div class="field compact"><span></span><button class="reset-link" type="button" data-reset="fill">重置填充</button></div>
+                </div>
+              </section>
+
+              <section class="section">
+                <button class="section-toggle" type="button"><strong>轮廓</strong><i class="bc_icon bc_xiajaintou"></i></button>
+                <div class="section-body">
+                  <label class="field compact"><span>显示轮廓</span><span class="cs-switch"><input id="outlineEnabled" type="checkbox" checked><span></span></span></label>
+                  <div id="outlineFields" class="section-body" style="padding:0">
+                    <label class="field"><span>颜色</span><span class="color-control"><input id="outlineColor" type="color" value="#3477c7"><input class="cs-input" value="#3477C7" readonly></span></label>
+                    <label class="field"><span>宽度</span><span class="slider-line"><input class="cs-slider" id="outlineWidth" type="range" min="0" max="10" step="0.5" value="2"><output class="field-output" id="outlineWidthOutput">2 px</output></span></label>
+                    <label class="field"><span>虚线</span><select class="cs-select"><option>实线</option><option>点线</option><option>短划线</option><option>点划线</option><option>长划线</option></select></label>
+                  </div>
+                  <div class="field compact"><span></span><button class="reset-link" type="button" data-reset="outline">重置轮廓</button></div>
+                </div>
+              </section>
+
+              <section class="section collapsed">
+                <button class="section-toggle" type="button"><strong>阴影与发光</strong><i class="bc_icon bc_xiajaintou"></i></button>
+                <div class="section-body">
+                  <label class="field compact"><span>阴影</span><span class="cs-switch"><input id="shadowEnabled" type="checkbox"><span></span></span></label>
+                  <label class="field compact"><span>发光</span><span class="cs-switch"><input type="checkbox"><span></span></span></label>
+                  <p class="section-caption">首期提供阴影与发光；反射、柔化边缘、材质和 3D 不在本面板中。</p>
+                </div>
+              </section>
+            </div>
+
+            <div class="panel-view" data-view="text">
+              <section class="section">
+                <button class="section-toggle" type="button"><strong>文本框</strong><i class="bc_icon bc_xiajaintou"></i></button>
+                <div class="section-body">
+                  <div class="control-row">
+                    <label class="field stack"><span>上边距</span><span class="input-affix"><input class="cs-input margin-input" data-side="top" type="number" min="0" max="80" value="20"><span>px</span></span></label>
+                    <label class="field stack"><span>右边距</span><span class="input-affix"><input class="cs-input margin-input" data-side="right" type="number" min="0" max="80" value="24"><span>px</span></span></label>
+                    <label class="field stack"><span>下边距</span><span class="input-affix"><input class="cs-input margin-input" data-side="bottom" type="number" min="0" max="80" value="20"><span>px</span></span></label>
+                    <label class="field stack"><span>左边距</span><span class="input-affix"><input class="cs-input margin-input" data-side="left" type="number" min="0" max="80" value="24"><span>px</span></span></label>
+                  </div>
+                  <label class="field"><span>文字方向</span><select class="cs-select"><option>横排</option><option>竖排</option><option>旋转 90°</option><option>旋转 270°</option></select></label>
+                  <label class="field"><span>水平对齐</span><select class="cs-select"><option>左对齐</option><option>居中</option><option>右对齐</option><option>两端对齐</option></select></label>
+                  <label class="field"><span>垂直对齐</span><select class="cs-select"><option>顶端</option><option selected>居中</option><option>底端</option></select></label>
+                  <label class="field compact"><span>随文字增高</span><span class="cs-switch"><input type="checkbox"><span></span></span></label>
+                  <div class="field compact"><span></span><button class="reset-link" type="button">重置文本框</button></div>
+                </div>
+              </section>
+
+              <section class="section collapsed">
+                <button class="section-toggle" type="button"><strong>字体排版</strong><i class="bc_icon bc_xiajaintou"></i></button>
+                <div class="section-body">
+                  <label class="field"><span>字体</span><select class="cs-select"><option>微软雅黑</option><option>宋体</option><option>Inter</option><option>Arial</option></select></label>
+                  <div class="control-row">
+                    <label class="field stack"><span>字号</span><span class="input-affix"><input class="cs-input" type="number" value="18"><span>px</span></span></label>
+                    <label class="field stack"><span>行高</span><input class="cs-input" type="number" step="0.1" value="1.35"></label>
+                  </div>
+                  <div class="segmented" aria-label="字形">
+                    <button class="active" type="button"><i class="bc_icon bc_jiacu"></i> 加粗</button>
+                    <button type="button"><i class="bc_icon bc_xieti"></i> 斜体</button>
+                  </div>
+                  <label class="field"><span>文字填充</span><span class="color-control"><input id="textColor" type="color" value="#1e3654"><input class="cs-input" value="#1E3654" readonly></span></label>
+                </div>
+              </section>
+
+              <section class="section collapsed">
+                <button class="section-toggle" type="button"><strong>文字轮廓与效果</strong><i class="bc_icon bc_xiajaintou"></i></button>
+                <div class="section-body">
+                  <label class="field compact"><span>文字轮廓</span><span class="cs-switch"><input type="checkbox"><span></span></span></label>
+                  <label class="field compact"><span>文字阴影</span><span class="cs-switch"><input type="checkbox"><span></span></span></label>
+                  <label class="field compact"><span>文字发光</span><span class="cs-switch"><input type="checkbox"><span></span></span></label>
+                  <label class="field"><span>Transform</span><select class="cs-select"><option>无转换</option><option>向上弧形</option><option>向下弧形</option><option>圆形</option><option>波浪</option></select></label>
+                </div>
+              </section>
+            </div>
+
+            <div class="component-note">
+              原型映射：Button / Tooltip / Select / Input / InputNumber / ColorPicker / Slider / Checkbox / Switch 使用 CSES UI 语义；Overlay、rail、分组布局和 iconfont 由 BlockCraft 保持所有权。
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <script>
+    const root = document.documentElement;
+    const formatDock = document.getElementById('formatDock');
+    const panelTitle = document.getElementById('panelTitle');
+    const panelSubtitle = document.getElementById('panelSubtitle');
+    const selectedObject = document.getElementById('selectedObject');
+    const objectTitle = document.getElementById('objectTitle');
+    const panelLauncher = document.getElementById('panelLauncher');
+    const selectionWrap = document.getElementById('selectionWrap');
+    const docState = document.querySelector('.doc-state');
+
+    const panelMeta = {
+      layout: ['布局与排列', '布局方式与页面对齐'],
+      shape: ['设置形状格式', '填充与轮廓'],
+      text: ['设置文字格式', '文本框设置'],
+    };
+
+    document.querySelectorAll('.rail-button[data-panel]').forEach(button => {
+      button.addEventListener('click', () => {
+        const panel = button.dataset.panel;
+        document.querySelectorAll('.rail-button[data-panel]').forEach(item => item.classList.toggle('active', item === button));
+        document.querySelectorAll('.panel-view').forEach(view => view.classList.toggle('active', view.dataset.view === panel));
+        panelTitle.textContent = panelMeta[panel][0];
+        panelSubtitle.textContent = panelMeta[panel][1];
+        formatDock.classList.add('open');
+        panelLauncher.hidden = true;
+      });
+    });
+
+    document.getElementById('multiSelectDemo').addEventListener('change', event => {
+      const multiple = event.target.checked;
+      document.querySelectorAll('.multi-only').forEach(section => section.hidden = !multiple);
+      selectionWrap.classList.toggle('multi', multiple);
+      docState.textContent = multiple ? '已保存 · 当前选中 3 个对象' : '已保存 · 当前选中圆角矩形';
+      const activePanel = document.querySelector('.rail-button[data-panel].active')?.dataset.panel;
+      if (activePanel === 'layout') {
+        panelSubtitle.textContent = multiple ? '布局、页面对齐与多对象排列' : panelMeta.layout[1];
+      }
+    });
+
+    document.querySelectorAll('.section-toggle').forEach(button => {
+      button.addEventListener('click', () => button.closest('.section').classList.toggle('collapsed'));
+    });
+
+    document.querySelectorAll('.option-grid').forEach(grid => {
+      grid.addEventListener('click', event => {
+        const card = event.target.closest('.option-card');
+        if (!card) return;
+        grid.querySelectorAll('.option-card').forEach(item => item.classList.toggle('active', item === card));
+      });
+    });
+
+    const shapeStyles = {
+      rectangle: {radius: '0px', clip: 'none', title: '统一对象格式'},
+      rounded: {radius: '18px', clip: 'none', title: '统一对象格式'},
+      ellipse: {radius: '50%', clip: 'none', title: '椭圆文本对象'},
+      diamond: {radius: '0px', clip: 'polygon(50% 0, 100% 50%, 50% 100%, 0 50%)', title: '菱形对象'},
+      triangle: {radius: '0px', clip: 'polygon(50% 0, 100% 100%, 0 100%)', title: '三角形对象'},
+      hexagon: {radius: '0px', clip: 'polygon(24% 0, 76% 0, 100% 50%, 76% 100%, 24% 100%, 0 50%)', title: '六边形对象'},
+    };
+    document.getElementById('shapeOptions').addEventListener('click', event => {
+      const button = event.target.closest('[data-shape]');
+      if (!button) return;
+      const style = shapeStyles[button.dataset.shape];
+      root.style.setProperty('--object-radius', style.radius);
+      root.style.setProperty('--object-clip', style.clip);
+      objectTitle.textContent = style.title;
+    });
+
+    document.getElementById('fillTabs').addEventListener('click', event => {
+      const button = event.target.closest('[data-fill]');
+      if (!button) return;
+      document.querySelectorAll('#fillTabs button').forEach(item => item.classList.toggle('active', item === button));
+      document.querySelectorAll('[data-fill-details]').forEach(detail => detail.classList.toggle('active', detail.dataset.fillDetails === button.dataset.fill));
+      if (button.dataset.fill === 'none') selectedObject.style.background = 'transparent';
+      if (button.dataset.fill === 'solid') selectedObject.style.background = '';
+      if (button.dataset.fill === 'gradient') updateGradient();
+      if (button.dataset.fill === 'picture') selectedObject.style.background = 'linear-gradient(135deg, #dcecff, #a5c7ee 55%, #6c9cd5)';
+    });
+
+    const fillColor = document.getElementById('fillColor');
+    const fillColorText = document.getElementById('fillColorText');
+    fillColor.addEventListener('input', () => {
+      root.style.setProperty('--object-fill', fillColor.value);
+      fillColorText.value = fillColor.value.toUpperCase();
+      selectedObject.style.background = '';
+    });
+    fillColorText.addEventListener('change', () => {
+      if (!/^#[0-9a-f]{6}$/i.test(fillColorText.value)) return;
+      fillColor.value = fillColorText.value;
+      root.style.setProperty('--object-fill', fillColorText.value);
+      selectedObject.style.background = '';
+    });
+
+    function updateGradient() {
+      const start = document.getElementById('gradientStart').value;
+      const end = document.getElementById('gradientEnd').value;
+      const angle = document.getElementById('gradientAngle').value;
+      const gradient = `linear-gradient(${angle}deg, ${start}, ${end})`;
+      document.getElementById('gradientPreview').style.background = gradient;
+      selectedObject.style.background = gradient;
+    }
+    ['gradientStart', 'gradientEnd', 'gradientAngle'].forEach(id => document.getElementById(id).addEventListener('input', updateGradient));
+
+    const fillOpacity = document.getElementById('fillOpacity');
+    fillOpacity.addEventListener('input', () => {
+      root.style.setProperty('--object-opacity', 1 - Number(fillOpacity.value) / 100);
+      document.getElementById('fillOpacityOutput').textContent = `${fillOpacity.value}%`;
+    });
+
+    const outlineEnabled = document.getElementById('outlineEnabled');
+    outlineEnabled.addEventListener('change', () => {
+      document.getElementById('outlineFields').hidden = !outlineEnabled.checked;
+      root.style.setProperty('--object-stroke-width', outlineEnabled.checked ? `${document.getElementById('outlineWidth').value}px` : '0px');
+    });
+    document.getElementById('outlineColor').addEventListener('input', event => root.style.setProperty('--object-stroke', event.target.value));
+    document.getElementById('outlineWidth').addEventListener('input', event => {
+      root.style.setProperty('--object-stroke-width', `${event.target.value}px`);
+      document.getElementById('outlineWidthOutput').textContent = `${event.target.value} px`;
+    });
+
+    document.querySelectorAll('.margin-input').forEach(input => {
+      input.addEventListener('input', () => root.style.setProperty(`--object-padding-${input.dataset.side}`, `${input.value}px`));
+    });
+    document.getElementById('textColor').addEventListener('input', event => selectedObject.style.color = event.target.value);
+
+    document.querySelectorAll('.segmented').forEach(group => {
+      if (group.id === 'fillTabs') return;
+      group.addEventListener('click', event => {
+        const button = event.target.closest('button');
+        if (!button) return;
+        button.classList.toggle('active');
+      });
+    });
+
+    document.querySelectorAll('[data-reset]').forEach(button => {
+      button.addEventListener('click', () => {
+        if (button.dataset.reset === 'fill') {
+          fillColor.value = '#d9eaff';
+          fillColorText.value = '#D9EAFF';
+          fillOpacity.value = '0';
+          document.getElementById('fillOpacityOutput').textContent = '0%';
+          root.style.setProperty('--object-fill', '#d9eaff');
+          root.style.setProperty('--object-opacity', '1');
+          selectedObject.style.background = '';
+        }
+        if (button.dataset.reset === 'outline') {
+          outlineEnabled.checked = true;
+          document.getElementById('outlineColor').value = '#3477c7';
+          document.getElementById('outlineWidth').value = '2';
+          document.getElementById('outlineFields').hidden = false;
+          root.style.setProperty('--object-stroke', '#3477c7');
+          root.style.setProperty('--object-stroke-width', '2px');
+          document.getElementById('outlineWidthOutput').textContent = '2 px';
+        }
+      });
+    });
+
+    document.getElementById('themeToggle').addEventListener('click', event => {
+      const dark = root.dataset.theme !== 'dark';
+      root.dataset.theme = dark ? 'dark' : 'light';
+      const icon = event.currentTarget.querySelector('.bc_icon');
+      icon.className = `bc_icon ${dark ? 'bc_taiyang' : 'bc_yueliang'}`;
+      event.currentTarget.setAttribute('aria-label', dark ? '切换浅色模式' : '切换深色模式');
+    });
+
+    document.getElementById('closePanel').addEventListener('click', () => {
+      formatDock.classList.remove('open');
+      panelLauncher.hidden = false;
+    });
+    panelLauncher.addEventListener('click', () => {
+      formatDock.classList.add('open');
+      panelLauncher.hidden = true;
+    });
+  </script>
+</body>
+</html>

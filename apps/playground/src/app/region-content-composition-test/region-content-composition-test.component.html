@@ -1,0 +1,17 @@
+<main>
+  <header>
+    <h1>共享文档与个人区域 · 用户 {{ user }}</h1>
+    @if (plainMode) { <p>普通文档对照：所有区域均由共享 Yjs 保存。</p> }
+    @else { <p>本机 WebSocket 同步共享正文；个人区域以当前浏览器、当前用户的 JSON 保存。用于框架验证。</p> }
+    <div class="actions">
+      <button type="button" (click)="savePersonalData()" [disabled]="!ready() || plainMode">保存个人数据</button>
+      <button type="button" (click)="reopen()" [disabled]="!ready()">重新打开</button>
+      <button type="button" (click)="toggleConnection()">{{ connected() ? '断开协同' : '重新连接' }}</button>
+    </div>
+    <div class="status" role="status" [attr.data-ready]="ready()" [attr.data-open-count]="openCount()" [attr.data-saved-count]="savedCount()">
+      {{ connected() ? '协同已连接' : '协同未连接' }} · {{ dirty() ? '个人数据待保存' : '个人数据无未保存改动' }} · 共享更新 {{ sharedUpdates() }}
+    </div>
+    @if (error()) { <p role="alert">{{ error() }}</p> }
+  </header>
+  <div #viewport class="viewport"><div #surface class="document-surface"></div></div>
+</main>

@@ -1,0 +1,462 @@
+{
+  "stats": {
+    "startTime": "2026-10-12T06:39:28.699Z",
+    "duration": 343603.77,
+    "expected": 18,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "cases": [
+    {
+      "title": "text-box horizontal renders correctly scrolling upward with recreated views",
+      "browser": "chromium",
+      "status": "passed",
+      "measurements": [
+        {
+          "stage": 1,
+          "input": "scrollTop",
+          "steps": 45,
+          "visible": 8,
+          "anchorChecks": 46,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        },
+        {
+          "stage": 0,
+          "input": "wheel",
+          "steps": 43,
+          "visible": 8,
+          "anchorChecks": 0,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        }
+      ]
+    },
+    {
+      "title": "text-box horizontal renders correctly scrolling upward with retained views",
+      "browser": "chromium",
+      "status": "passed",
+      "measurements": [
+        {
+          "stage": 1,
+          "input": "scrollTop",
+          "steps": 45,
+          "visible": 8,
+          "anchorChecks": 46,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        },
+        {
+          "stage": 0,
+          "input": "wheel",
+          "steps": 43,
+          "visible": 8,
+          "anchorChecks": 0,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        }
+      ]
+    },
+    {
+      "title": "text-box vertical-rl renders correctly scrolling upward with recreated views",
+      "browser": "chromium",
+      "status": "passed",
+      "measurements": [
+        {
+          "stage": 1,
+          "input": "scrollTop",
+          "steps": 42,
+          "visible": 8,
+          "anchorChecks": 43,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        },
+        {
+          "stage": 0,
+          "input": "wheel",
+          "steps": 44,
+          "visible": 8,
+          "anchorChecks": 0,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        }
+      ]
+    },
+    {
+      "title": "text-box vertical-rl renders correctly scrolling upward with retained views",
+      "browser": "chromium",
+      "status": "passed",
+      "measurements": [
+        {
+          "stage": 1,
+          "input": "scrollTop",
+          "steps": 42,
+          "visible": 8,
+          "anchorChecks": 43,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        },
+        {
+          "stage": 0,
+          "input": "wheel",
+          "steps": 44,
+          "visible": 8,
+          "anchorChecks": 0,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        }
+      ]
+    },
+    {
+      "title": "word-art horizontal renders correctly scrolling upward with recreated views",
+      "browser": "chromium",
+      "status": "passed",
+      "measurements": [
+        {
+          "stage": 1,
+          "input": "scrollTop",
+          "steps": 42,
+          "visible": 8,
+          "anchorChecks": 43,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        },
+        {
+          "stage": 0,
+          "input": "wheel",
+          "steps": 41,
+          "visible": 8,
+          "anchorChecks": 0,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        }
+      ]
+    },
+    {
+      "title": "word-art horizontal renders correctly scrolling upward with retained views",
+      "browser": "chromium",
+      "status": "passed",
+      "measurements": [
+        {
+          "stage": 1,
+          "input": "scrollTop",
+          "steps": 42,
+          "visible": 8,
+          "anchorChecks": 43,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        },
+        {
+          "stage": 0,
+          "input": "wheel",
+          "steps": 41,
+          "visible": 8,
+          "anchorChecks": 0,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        }
+      ]
+    },
+    {
+      "title": "text-box horizontal renders correctly scrolling upward with recreated views",
+      "browser": "firefox",
+      "status": "passed",
+      "measurements": [
+        {
+          "stage": 1,
+          "input": "scrollTop",
+          "steps": 45,
+          "visible": 8,
+          "anchorChecks": 46,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        },
+        {
+          "stage": 0,
+          "input": "wheel",
+          "steps": 43,
+          "visible": 8,
+          "anchorChecks": 0,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        }
+      ]
+    },
+    {
+      "title": "text-box horizontal renders correctly scrolling upward with retained views",
+      "browser": "firefox",
+      "status": "passed",
+      "measurements": [
+        {
+          "stage": 1,
+          "input": "scrollTop",
+          "steps": 45,
+          "visible": 8,
+          "anchorChecks": 46,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        },
+        {
+          "stage": 0,
+          "input": "wheel",
+          "steps": 43,
+          "visible": 8,
+          "anchorChecks": 0,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        }
+      ]
+    },
+    {
+      "title": "text-box vertical-rl renders correctly scrolling upward with recreated views",
+      "browser": "firefox",
+      "status": "passed",
+      "measurements": [
+        {
+          "stage": 1,
+          "input": "scrollTop",
+          "steps": 42,
+          "visible": 8,
+          "anchorChecks": 43,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        },
+        {
+          "stage": 0,
+          "input": "wheel",
+          "steps": 44,
+          "visible": 8,
+          "anchorChecks": 0,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        }
+      ]
+    },
+    {
+      "title": "text-box vertical-rl renders correctly scrolling upward with retained views",
+      "browser": "firefox",
+      "status": "passed",
+      "measurements": [
+        {
+          "stage": 1,
+          "input": "scrollTop",
+          "steps": 42,
+          "visible": 8,
+          "anchorChecks": 43,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        },
+        {
+          "stage": 0,
+          "input": "wheel",
+          "steps": 44,
+          "visible": 8,
+          "anchorChecks": 0,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        }
+      ]
+    },
+    {
+      "title": "word-art horizontal renders correctly scrolling upward with recreated views",
+      "browser": "firefox",
+      "status": "passed",
+      "measurements": [
+        {
+          "stage": 1,
+          "input": "scrollTop",
+          "steps": 42,
+          "visible": 8,
+          "anchorChecks": 43,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        },
+        {
+          "stage": 0,
+          "input": "wheel",
+          "steps": 41,
+          "visible": 8,
+          "anchorChecks": 0,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        }
+      ]
+    },
+    {
+      "title": "word-art horizontal renders correctly scrolling upward with retained views",
+      "browser": "firefox",
+      "status": "passed",
+      "measurements": [
+        {
+          "stage": 1,
+          "input": "scrollTop",
+          "steps": 42,
+          "visible": 8,
+          "anchorChecks": 43,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        },
+        {
+          "stage": 0,
+          "input": "wheel",
+          "steps": 41,
+          "visible": 8,
+          "anchorChecks": 0,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        }
+      ]
+    },
+    {
+      "title": "text-box horizontal renders correctly scrolling upward with recreated views",
+      "browser": "webkit",
+      "status": "passed",
+      "measurements": [
+        {
+          "stage": 1,
+          "input": "scrollTop",
+          "steps": 45,
+          "visible": 8,
+          "anchorChecks": 46,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        },
+        {
+          "stage": 0,
+          "input": "wheel",
+          "steps": 43,
+          "visible": 8,
+          "anchorChecks": 0,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        }
+      ]
+    },
+    {
+      "title": "text-box horizontal renders correctly scrolling upward with retained views",
+      "browser": "webkit",
+      "status": "passed",
+      "measurements": [
+        {
+          "stage": 1,
+          "input": "scrollTop",
+          "steps": 45,
+          "visible": 8,
+          "anchorChecks": 46,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        },
+        {
+          "stage": 0,
+          "input": "wheel",
+          "steps": 43,
+          "visible": 8,
+          "anchorChecks": 0,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        }
+      ]
+    },
+    {
+      "title": "text-box vertical-rl renders correctly scrolling upward with recreated views",
+      "browser": "webkit",
+      "status": "passed",
+      "measurements": [
+        {
+          "stage": 1,
+          "input": "scrollTop",
+          "steps": 42,
+          "visible": 8,
+          "anchorChecks": 43,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        },
+        {
+          "stage": 0,
+          "input": "wheel",
+          "steps": 44,
+          "visible": 8,
+          "anchorChecks": 0,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        }
+      ]
+    },
+    {
+      "title": "text-box vertical-rl renders correctly scrolling upward with retained views",
+      "browser": "webkit",
+      "status": "passed",
+      "measurements": [
+        {
+          "stage": 1,
+          "input": "scrollTop",
+          "steps": 42,
+          "visible": 8,
+          "anchorChecks": 43,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        },
+        {
+          "stage": 0,
+          "input": "wheel",
+          "steps": 44,
+          "visible": 8,
+          "anchorChecks": 0,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        }
+      ]
+    },
+    {
+      "title": "word-art horizontal renders correctly scrolling upward with recreated views",
+      "browser": "webkit",
+      "status": "passed",
+      "measurements": [
+        {
+          "stage": 1,
+          "input": "scrollTop",
+          "steps": 42,
+          "visible": 8,
+          "anchorChecks": 43,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        },
+        {
+          "stage": 0,
+          "input": "wheel",
+          "steps": 41,
+          "visible": 8,
+          "anchorChecks": 0,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        }
+      ]
+    },
+    {
+      "title": "word-art horizontal renders correctly scrolling upward with retained views",
+      "browser": "webkit",
+      "status": "passed",
+      "measurements": [
+        {
+          "stage": 1,
+          "input": "scrollTop",
+          "steps": 42,
+          "visible": 8,
+          "anchorChecks": 43,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        },
+        {
+          "stage": 0,
+          "input": "wheel",
+          "steps": 41,
+          "visible": 8,
+          "anchorChecks": 0,
+          "maxAnchorShift": 0,
+          "maxSizeError": 0
+        }
+      ]
+    }
+  ]
+}

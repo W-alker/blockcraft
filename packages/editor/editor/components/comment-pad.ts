@@ -96,7 +96,7 @@ import {MyCommentService} from "../services/comment.service";
   `],
   standalone: true,
   imports: [
-    FormsModule
+    FormsModule,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush
 })

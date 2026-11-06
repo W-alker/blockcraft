@@ -1,12 +1,14 @@
 # BlockCraft AI Skill Pack
 
+> Last updated: 2026-10-08
+
 A progressive-disclosure documentation pack for AI agents (Claude Code, Codex, Cursor, Windsurf, Aider, …) and human developers who want to **build with**, **extend**, or **embed** the BlockCraft editor.
 
 > Source of truth: this folder, shipped inside `@ccc/blockcraft/ai-skills/` on npm and tracked in the BlockCraft repository at `packages/editor/ai-skills/`.
 
 ## What's In The Box
 
-20 files organized in three documentation layers + tooling + migration log:
+Files organized in three documentation layers + tooling + migration log:
 
 ```
 ai-skills/
@@ -42,6 +44,28 @@ L0 → L1 → L2 means: read the L0 router first, jump to one L1 task guide, onl
 | **Angular developers** integrating the editor | A copy-paste-ready integration guide (`blockcraft-app.md`) plus deep references for the parts you customise |
 | **Plugin/block authors** building extensions | Step-by-step templates with ready-to-fill structures and checklists |
 | **Framework contributors** | L2 deep-dives that explain *why* the system is shaped the way it is |
+
+## 独立文档设计技能
+
+`document-design/SKILL.md` 是 `blockcraft-document-design` 的独立发现入口，
+只需该目录及其 `references/`，不依赖 CSES、用户素材或其他个人技能。
+本包 `ng-package.json` 的 `ai-skills/**/*` 会包含它；也可以将 `document-design/`
+整个目录复制到你的技能目录并命名为 `blockcraft-document-design`。
+原 `install.mjs` 的默认安装目标仍为框架开发技能 `blockcraft-editor`。
+
+编辑器内 Agent 的目录只携带五条技能摘要，读取具体 capability 才返回正文。
+Markdown 是唯一指令源，修改后在源码仓库运行：
+
+```bash
+node scripts/sync-document-design-skill.mjs
+node scripts/sync-document-design-skill.mjs --check
+```
+
+这会更新 `packages/blockcraft-agent/src/core/document-design-skills.generated.ts`；
+不要直接修改生成文件。`build:agent` 在构建前检查同源一致性，发现漂移即失败。
+运行时不读取文件或联网，不改变已有写入校验。
+两层分别随 `@ccc/blockcraft` 和 `@ccc/blockcraft-agent` 的下一次构建分发，
+源码变更不代表消费者已升级。
 
 ## Installation
 

@@ -18,6 +18,36 @@ import { ChangeDetectionStrategy, ChangeDetectorRef, Component, EventEmitter, In
         <i class="bc_icon bc_chevron-left"></i>
       </button>
 
+      @if (showZoomControls) {
+        <span class="divider"></span>
+
+        <span class="zoom-controls" aria-label="演示页面缩放">
+          <button
+            (click)="onZoomOut()"
+            [disabled]="zoomPercent <= 50"
+            title="缩小（Ctrl/Cmd+-）"
+            aria-label="缩小演示页面">
+            <i class="bc_icon bc_suoxiao"></i>
+          </button>
+
+          <button
+            class="zoom-value"
+            [class.zoom-value--fit]="fitPageActive"
+            (click)="onFitPage()"
+            title="适合页面（Ctrl/Cmd+0）">
+            {{ zoomPercent }}%
+          </button>
+
+          <button
+            (click)="onZoomIn()"
+            [disabled]="zoomPercent >= 200"
+            title="放大（Ctrl/Cmd++）"
+            aria-label="放大演示页面">
+            <i class="bc_icon bc_fangda"></i>
+          </button>
+        </span>
+      }
+
       <span class="divider"></span>
 
       <button (click)="onToggleDrawing()" title="画笔标注">
@@ -87,6 +117,21 @@ import { ChangeDetectionStrategy, ChangeDetectorRef, Component, EventEmitter, In
         font-weight: 500;
       }
 
+      .zoom-controls {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+      }
+
+      .zoom-value {
+        min-width: 52px;
+        font-variant-numeric: tabular-nums;
+
+        &.zoom-value--fit {
+          background: rgba(255, 255, 255, 0.14);
+        }
+      }
+
       .divider {
         width: 1px;
         height: 20px;
@@ -100,8 +145,14 @@ import { ChangeDetectionStrategy, ChangeDetectorRef, Component, EventEmitter, In
 export class DemoControlBarComponent {
   @Input() currentPage = 1;
   @Input() totalPages = 1;
+  @Input() showZoomControls = false;
+  @Input() zoomPercent = 100;
+  @Input() fitPageActive = false;
   @Output() prev = new EventEmitter<void>();
   @Output() next = new EventEmitter<void>();
+  @Output() zoomIn = new EventEmitter<void>();
+  @Output() zoomOut = new EventEmitter<void>();
+  @Output() fitPage = new EventEmitter<void>();
   @Output() exit = new EventEmitter<void>();
   @Output() toggleDrawing = new EventEmitter<void>();
 
@@ -145,6 +196,24 @@ export class DemoControlBarComponent {
 
   onExit() {
     this.exit.emit();
+  }
+
+  onZoomIn() {
+    this.zoomIn.emit();
+    this.show();
+    this.startHideTimer();
+  }
+
+  onZoomOut() {
+    this.zoomOut.emit();
+    this.show();
+    this.startHideTimer();
+  }
+
+  onFitPage() {
+    this.fitPage.emit();
+    this.show();
+    this.startHideTimer();
   }
 
   onToggleDrawing() {

@@ -1,34 +1,82 @@
-import { AfterViewInit, ChangeDetectorRef, Component, ElementRef, NgZone, OnDestroy, ViewChild, inject } from '@angular/core';
-import { DomSanitizer } from '@angular/platform-browser';
-import { MatIconRegistry } from '@angular/material/icon';
+import {createParagraphAlignmentExamples} from './paragraph-alignment.examples';
+import { AfterViewInit, ChangeDetectorRef, Component, ComponentRef, ElementRef, NgZone, OnDestroy, ViewChild, inject } from '@angular/core';
+import { OverlayRef } from '@angular/cdk/overlay';
 import {
   BlockSelection,
+  BlockNodeType,
   ClipboardDataType,
   DOC_ADAPTER_SERVICE_TOKEN,
   DOC_FILE_SERVICE_TOKEN,
+  EDITOR_ADAPTER_REGISTRY_TOKEN,
   DocExportManager,
+  DocUndoItemToken,
   EditableBlockComponent,
   EditorComponent,
+  FixedTextToolbarComponent,
   IBlockSnapshot,
   ISelectionJSON,
   MarkdownStreamViewer,
   MarkdownStreamRenderer,
+  PaginationPlugin,
   PresentationController,
+  RevisionReviewIntent,
+  RevisionReviewPanelComponent,
+  RevisionReviewPlugin,
+  RevisionReviewUiController,
   SnapshotViewerComponent,
   createMarkdownStreamViewer,
-  generateId
+  downloadFile,
+  generateId,
+  replaceSnapshotsIdDeeply
 } from '@ccc/blockcraft';
+import {checkIncomingContentSize, checkIncomingSourceSize} from '@ccc/blockcraft';
+import {PaginationSettingsComponent} from './pagination-settings.component';
+import {DocumentScaleSettingsComponent} from './document-scale-settings.component';
+import {PersonCardDebugComponent} from './person-card-debug.component';
+import {DateCardDebugComponent} from './date-card-debug.component';
+import {WeatherDebugComponent} from './weather-debug.component';
+import {IdlePrefetchDebugConsoleComponent} from './idle-prefetch-debug-console.component';
 import { debugTableMerge, fixTable } from '@ccc/blockcraft/blocks/table-block/callback';
 import { BlockCraftAwareness } from '@ccc/blockcraft/editor/awa';
-import { Subscription } from 'rxjs';
+import { Subject, Subscription } from 'rxjs';
 import { WebsocketProvider } from 'y-websocket';
 import * as Y from 'yjs';
 import { demoJSON } from './demo.data';
+import { RouterLink } from '@angular/router';
+import { resolveCollaborationRoot } from './collaboration-root';
+import {
+  DocumentAgentContext,
+  DocumentAgentMarkdownRequest,
+  DocumentAgentMarkdownViewerConfig,
+  DocumentAgentPanelComponent,
+  DocumentAgentPlugin,
+  DocumentAgentRequest,
+  DocumentAgentReviewAction,
+  DocumentAgentReviewPrompt,
+  DocumentAgentResult,
+  DocumentAgentRunner,
+  BlockCraftEditorAgent,
+  captureBlockCraftAgentDocumentContext,
+} from '@ccc/blockcraft-agent';
+import { PlaygroundDocumentAgentTransport } from './document-agent-transport';
+import {
+  IME_SCENARIO_LABELS,
+  ImeCollaborationRunnerState,
+  ImeCollaborationScenario,
+  ImeCollaborationScenarioRunner,
+  ShadowCollaborationSession,
+  createInitialImeRunnerState,
+} from './collaboration-simulator';
+
+type CollaborationSimulationMode = 'random-text' | 'ime-race';
 
 type DebugActionId =
   | 'init'
   | 'theme'
   | 'readonly'
+  | 'toggleRevision'
+  | 'toggleRevisionPanel'
+  | 'toggleVirtualization'
   | 'insert'
   | 'undo'
   | 'redo'
@@ -37,15 +85,16 @@ type DebugActionId =
   | 'logSelection'
   | 'listenUpdate'
   | 'test'
+  | 'paragraphAlignment'
   | 'markdownStream'
   | 'logTable'
   | 'fixTable'
   | 'toggleCopyFilter'
   | 'importHtml'
   | 'importMarkdown'
+  | 'importBlockSnapshotTxt'
   | 'exportMarkdown'
   | 'exportPdf'
-  | 'exportImage'
   | 'enterRoom'
   | 'quitRoom'
   | 'demo'
@@ -71,6 +120,147 @@ interface DebugMetaItem {
   value: string;
 }
 
+const BLOCK_SNAPSHOT_NODE_TYPES = new Set(['root', 'block', 'void', 'editable']);
+const MARKDOWN_STREAM_TEST_MIN_CHUNK_SIZE = 4;
+const MARKDOWN_STREAM_TEST_MAX_CHUNKS = 240;
+const MARKDOWN_STREAM_INTERVAL_MS = 90;
+
+const DEFAULT_MARKDOWN_STREAM_TEST_SOURCE = `# BlockCraft Markdown Stream Test
+
+这是第一段，模拟 AI 持续输出内容。
+
+## 列表
+- 第一项
+- 第二项
+- 第三项
+
+## 任务列表
+- [x] 已完成事项
+- [ ] 待处理事项
+
+## 嵌套列表
+1. 第一层
+   1. 第二层 A
+   2. 第二层 B
+2. 另一项
+
+## 代码块
+
+\`\`\`ts
+const message = "hello blockcraft";
+console.log(message);
+\`\`\`
+
+## 表格
+
+| 功能 | 状态 | 说明 |
+| --- | --- | --- |
+| Markdown 流 | 已接入 | 逐块写入 |
+| Diff 渲染 | 已接入 | 块级与文本级 |
+| 表格 | 测试中 | 覆盖 GFM table |
+
+## 引用
+> 差异渲染应该只更新变化的部分。
+
+---
+
+## 公式
+
+$$
+E = mc^2
+$$
+
+## Mermaid
+
+\`\`\`mermaid
+graph TD
+  Source[Markdown source] --> Adapter
+  Adapter --> Mermaid[Mermaid Block]
+\`\`\`
+
+## BlockCraft 专有块
+
+:::bc-callout
+这段内容使用 \`:::\` 容器指令，流式解析与文件导入应得到同一个 Callout Block。
+:::
+
+最后一段：**加粗**、\`inline code\`、以及普通文本。
+`;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function extractFirstJsonObject(source: string): string {
+  const input = source.trim().replace(/^\uFEFF/, '');
+  const start = input.indexOf('{');
+  if (start < 0) {
+    throw new Error('未找到 JSON 对象');
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < input.length; i += 1) {
+    const ch = input[i];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === '\\') {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (ch === '{') {
+      depth += 1;
+      continue;
+    }
+
+    if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return input.slice(start, i + 1);
+      }
+    }
+  }
+
+  throw new Error('JSON 对象未闭合');
+}
+
+function isBlockSnapshotLike(value: unknown): value is IBlockSnapshot {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  if (
+    typeof value['id'] !== 'string' ||
+    typeof value['flavour'] !== 'string' ||
+    typeof value['nodeType'] !== 'string' ||
+    !BLOCK_SNAPSHOT_NODE_TYPES.has(value['nodeType']) ||
+    !isRecord(value['props']) ||
+    !isRecord(value['meta']) ||
+    !Array.isArray(value['children'])
+  ) {
+    return false;
+  }
+
+  if (value['nodeType'] === 'root' || value['nodeType'] === 'block') {
+    return value['children'].every(isBlockSnapshotLike);
+  }
+
+  return true;
+}
+
 const ACTION_SECTIONS: DebugSection[] = [
   {
     title: '文档与编辑',
@@ -78,6 +268,9 @@ const ACTION_SECTIONS: DebugSection[] = [
       { id: 'init', label: '初始化', tone: 'primary' },
       { id: 'theme', label: '主题' },
       { id: 'readonly', label: '只读' },
+      { id: 'toggleRevision', label: '修订模式' },
+      { id: 'toggleRevisionPanel', label: '修订面板' },
+      { id: 'toggleVirtualization', label: '虚拟渲染' },
       { id: 'addData', label: '追加段落' }
     ]
   },
@@ -86,13 +279,15 @@ const ACTION_SECTIONS: DebugSection[] = [
     actions: [
       { id: 'importHtml', label: '导入 HTML' },
       { id: 'importMarkdown', label: '导入 Markdown' },
-      { id: 'exportMarkdown', label: '导出 Markdown' },
-      { id: 'exportImage', label: '导出图片' }
+      { id: 'importBlockSnapshotTxt', label: '导入 TXT' },
+      { id: 'exportMarkdown', label: '导出 MD' },
+      { id: 'exportPdf', label: '导出 PDF' }
     ]
   },
   {
     title: '调试',
     actions: [
+      { id: 'paragraphAlignment', label: '段落对齐案例' },
       { id: 'log', label: '打印数据' },
       { id: 'logSelection', label: '打印选区' },
       { id: 'listenUpdate', label: '监听更新' },
@@ -120,9 +315,21 @@ const ACTION_SECTIONS: DebugSection[] = [
 ];
 
 @Component({
-  selector: 'bc-root',
+  selector: 'playground-home',
   standalone: true,
-  imports: [EditorComponent, SnapshotViewerComponent],
+  imports: [
+    EditorComponent,
+    FixedTextToolbarComponent,
+    SnapshotViewerComponent,
+    PaginationSettingsComponent,
+    DocumentScaleSettingsComponent,
+    IdlePrefetchDebugConsoleComponent,
+    PersonCardDebugComponent,
+    DateCardDebugComponent,
+    WeatherDebugComponent,
+    RevisionReviewPanelComponent,
+    RouterLink,
+  ],
   template: `
     <div class="app-shell">
       <aside class="sidebar">
@@ -157,12 +364,30 @@ const ACTION_SECTIONS: DebugSection[] = [
               <span class="status-item__label">复制过滤</span>
               <span class="status-pill" [class.status-pill--active]="copyFilterActive">{{ copyFilterActive ? '过滤链接' : '关闭' }}</span>
             </div>
+            <div class="status-item">
+              <span class="status-item__label">虚拟渲染</span>
+              <span class="status-pill" [class.status-pill--active]="virtualizationEnabled">
+                {{ virtualizationEnabled ? '开启' : '关闭' }}
+              </span>
+            </div>
+            <div class="status-item">
+              <span class="status-item__label">修订模式</span>
+              <span class="status-pill" [class.status-pill--active]="revisionTrackingEnabled">
+                {{ revisionTrackingEnabled ? '开启' : '关闭' }}
+              </span>
+            </div>
             <div class="status-item status-item--wide">
               <span class="status-item__label">更新监听</span>
               <span class="status-pill" [class.status-pill--active]="isListeningUpdate">{{ updateStatus }}</span>
             </div>
           </div>
         </section>
+
+        <playground-date-card-debug [doc]="editorDoc" (prepare)="initializeEditor()" />
+
+        <playground-person-card-debug [doc]="editorDoc" (prepare)="initializeEditor()" />
+
+        <playground-idle-prefetch-debug-console [doc]="editorDoc" />
 
         <section class="sidebar-card sidebar-card--grow">
           <span class="section-title">调试操作</span>
@@ -177,9 +402,16 @@ const ACTION_SECTIONS: DebugSection[] = [
                       class="nav-button"
                       [class.nav-button--primary]="action.tone === 'primary'"
                       [class.nav-button--danger]="action.tone === 'danger'"
+                      [attr.aria-pressed]="action.id === 'toggleRevision'
+                        ? revisionTrackingEnabled
+                        : (action.id === 'toggleRevisionPanel' ? revisionPanelOpen : null)"
                       (click)="runAction(action.id)"
                     >
-                      {{ action.label }}
+                      {{ action.id === 'toggleRevision'
+                        ? (revisionTrackingEnabled ? '关闭修订' : '开启修订')
+                        : (action.id === 'toggleRevisionPanel'
+                          ? (revisionPanelOpen ? '关闭修订面板' : '打开修订面板')
+                          : action.label) }}
                     </button>
                   }
                 </div>
@@ -187,18 +419,107 @@ const ACTION_SECTIONS: DebugSection[] = [
             }
           </nav>
 
+          <div class="markdown-stream-test-controls">
+            <div class="markdown-stream-test-controls__header">
+              <span class="nav-label">Markdown 流测试文本</span>
+              <span
+                class="status-pill"
+                [class.status-pill--active]="markdownStreamTestRunning"
+                [class.markdown-stream-test-controls__status--error]="!!markdownStreamTestError">
+                {{ markdownStreamTestStatusLabel }}
+              </span>
+            </div>
+            <textarea
+              class="markdown-stream-test-controls__input"
+              aria-label="Markdown 流测试文本"
+              spellcheck="false"
+              [value]="markdownStreamTestSource"
+              (input)="onMarkdownStreamTestSourceInput($event)"></textarea>
+            @if (markdownStreamTestError) {
+              <p class="markdown-stream-test-controls__error">{{ markdownStreamTestError }}</p>
+            }
+            <div class="markdown-stream-test-controls__actions">
+              <button
+                type="button"
+                class="nav-button nav-button--primary"
+                (click)="startMarkdownStreamTest()">
+                开始模拟
+              </button>
+              <button
+                type="button"
+                class="nav-button"
+                [disabled]="!markdownStreamTestRunning"
+                (click)="stopMarkdownStreamTest()">
+                停止
+              </button>
+              <button
+                type="button"
+                class="nav-button"
+                (click)="resetMarkdownStreamTestSource()">
+                恢复示例
+              </button>
+            </div>
+          </div>
+
           <div class="sim-controls">
             <span class="nav-label">模拟参数</span>
-            <div class="sim-row">
-              <span class="sim-label">用户数</span>
-              <input type="range" min="1" max="5" [value]="simUserCount" (input)="onSimSettingChange('users', $event)">
-              <span class="sim-value">{{ simUserCount }}</span>
+            <div class="sim-mode" role="tablist" aria-label="协同模拟模式">
+              <button
+                type="button"
+                class="sim-mode__button"
+                [class.sim-mode__button--active]="simulationMode === 'random-text'"
+                (click)="setSimulationMode('random-text')">
+                随机文本
+              </button>
+              <button
+                type="button"
+                class="sim-mode__button"
+                [class.sim-mode__button--active]="simulationMode === 'ime-race'"
+                (click)="setSimulationMode('ime-race')">
+                IME 竞态
+              </button>
             </div>
-            <div class="sim-row">
-              <span class="sim-label">间隔</span>
-              <input type="range" min="100" max="2000" step="100" [value]="simIntervalMs" (input)="onSimSettingChange('interval', $event)">
-              <span class="sim-value">{{ simIntervalMs }}ms</span>
-            </div>
+            @if (simulationMode === 'random-text') {
+              <div class="sim-row">
+                <span class="sim-label">用户数</span>
+                <input type="range" min="1" max="5" [value]="simUserCount" (input)="onSimSettingChange('users', $event)">
+                <span class="sim-value">{{ simUserCount }}</span>
+              </div>
+              <div class="sim-row">
+                <span class="sim-label">间隔</span>
+                <input type="range" min="100" max="2000" step="100" [value]="simIntervalMs" (input)="onSimSettingChange('interval', $event)">
+                <span class="sim-value">{{ simIntervalMs }}ms</span>
+              </div>
+            } @else {
+              <div class="sim-row">
+                <span class="sim-label">自动</span>
+                <label class="sim-toggle">
+                  <input type="checkbox" [checked]="imeAutoEnabled" (change)="onImeAutoChange($event)">
+                  <span class="sim-toggle__track" aria-hidden="true"></span>
+                  <span>{{ imeAutoEnabled ? '轮换' : '单步' }}</span>
+                </label>
+              </div>
+              <div class="sim-row">
+                <span class="sim-label">延迟</span>
+                <input type="range" min="0" max="2000" step="100" [value]="imeScenarioDelayMs" (input)="onImeDelayChange($event)">
+                <span class="sim-value">{{ imeScenarioDelayMs }}ms</span>
+              </div>
+              <div class="sim-state-grid">
+                <span>当前</span>
+                <strong>{{ imeScenarioLabel(imeRunnerState.pendingScenario ?? imeRunnerState.lastScenario) }}</strong>
+                <span>下一项</span>
+                <strong>{{ imeScenarioLabel(imeRunnerState.nextScenario) }}</strong>
+                <span>结果</span>
+                <strong>{{ imeRunnerState.appliedCount }} / {{ imeRunnerState.skippedCount }} / {{ imeRunnerState.errorCount }}</strong>
+              </div>
+              <div class="sim-message" [title]="imeRunnerState.message">{{ imeRunnerState.message }}</div>
+              <div class="sim-actions">
+                <button type="button" [disabled]="!canRunImeScenario" (pointerdown)="runImeScenario($event, 'remote-text-near-caret')">远端文本</button>
+                <button type="button" [disabled]="!canRunImeScenario" (pointerdown)="runImeScenario($event, 'insert-root-before')">上方插入</button>
+                <button type="button" [disabled]="!canRunImeScenario" (pointerdown)="runImeScenario($event, 'move-root-to-end')">移到末尾</button>
+                <button type="button" class="sim-action--danger" [disabled]="!canRunImeScenario" (pointerdown)="runImeScenario($event, 'delete-selection-scope')">删除 scope</button>
+              </div>
+            }
           </div>
         </section>
 
@@ -227,6 +548,23 @@ const ACTION_SECTIONS: DebugSection[] = [
             }
           </div>
         </section>
+
+        <section class="sidebar-card agent-card">
+          <div class="selection-header">
+            <span class="section-title">文档 Agent</span>
+            <span class="status-pill" [class.status-pill--active]="!!agentContext">{{ agentContext ? (agentContext.scope === 'document' ? '整篇文档' : '当前选区') : '初始化中' }}</span>
+          </div>
+          <p class="agent-card__hint">打开浮动对话框后，选区会被锁定，输入时不会丢失上下文。</p>
+          @if (agentBusy) {
+            <div class="agent-status agent-status--busy">Codex 正在生成建议…</div>
+          }
+          @if (agentResult) {
+            <div class="agent-status">有待应用的修改建议，请点击左上角 Agent 按钮查看。</div>
+          }
+          @if (agentError && !agentDialogOpen) {
+            <div class="agent-status agent-status--error">{{ agentError }}</div>
+          }
+        </section>
       </aside>
 
       <main class="editor-main">
@@ -236,6 +574,29 @@ const ACTION_SECTIONS: DebugSection[] = [
             <p>左侧面板负责调试控制，右侧可在完整编辑器与 snapshot-viewer demo 间切换。</p>
           </div>
           <div class="editor-header__actions">
+            <playground-weather-debug [doc]="editorDoc" (prepare)="initializeEditor()" />
+            @if (activeMainTab === 'editor') {
+              <div class="main-tabs" role="group" aria-label="编辑器布局切换">
+                <button
+                  class="main-tab"
+                  type="button"
+                  [disabled]="!editorInitialized"
+                  [attr.aria-pressed]="!paginationEnabled"
+                  [class.main-tab--active]="!paginationEnabled"
+                  (click)="setPaginationEnabled(false)">
+                  连续布局
+                </button>
+                <button
+                  class="main-tab"
+                  type="button"
+                  [disabled]="!editorInitialized"
+                  [attr.aria-pressed]="paginationEnabled"
+                  [class.main-tab--active]="paginationEnabled"
+                  (click)="setPaginationEnabled(true)">
+                  分页布局
+                </button>
+              </div>
+            }
             <div class="main-tabs" role="tablist" aria-label="主内容切换">
               <button
                 class="main-tab"
@@ -255,6 +616,18 @@ const ACTION_SECTIONS: DebugSection[] = [
                 (click)="setMainTab('viewer')">
                 Snapshot Viewer
               </button>
+              <button
+                class="main-tab"
+                type="button"
+                routerLink="/template">
+                模板装饰 →
+              </button>
+              <button
+                class="main-tab"
+                type="button"
+                routerLink="/tests/floating-text">
+                浮动文字测试 →
+              </button>
             </div>
             <span class="editor-header__hint">
               {{ activeMainTab === 'editor' ? 'Selection 实时刷新' : snapshotViewerSourceLabel }}
@@ -263,9 +636,85 @@ const ACTION_SECTIONS: DebugSection[] = [
         </div>
 
         @if (activeMainTab === 'editor') {
-          <section class="editor-stage">
-            <block-craft-editor #editor [stickyTop]="0"></block-craft-editor>
+          @if (editorDoc; as doc) {
+            <bc-fixed-toolbar
+              class="playground-editor-toolbar"
+              [doc]="doc"
+              [stickyTop]="0">
+            </bc-fixed-toolbar>
+          }
+        }
+        <!-- 展示快照时保留编辑器实例，避免切回后丢失文档和撤销历史。 -->
+        <div
+          class="revision-review-workspace"
+          [style.display]="activeMainTab === 'editor' ? null : 'none'"
+          [class.revision-review-workspace--panel-open]="revisionPanelOpen">
+          <section
+            class="editor-stage"
+            [class.editor-stage--flow]="!paginationEnabled">
+            <article #documentHeader class="playground-document-header">
+              <div class="playground-document-header__eyebrow">宿主文档头 · root 外部</div>
+              <h1>BlockCraft 分页坐标验证文档</h1>
+              <div class="playground-document-header__meta">
+                <span class="playground-document-header__avatar">BC</span>
+                <span>BlockCraft Playground</span>
+                <span class="playground-document-header__divider" aria-hidden="true"></span>
+                <span>连续布局与分页布局复用同一 DOM</span>
+              </div>
+            </article>
+            @if (virtualizationEnabled) {
+              <block-craft-editor
+                #editor
+                [stickyTop]="0"
+                [showFixedToolbar]="false"
+                [virtualizationEnabled]="true"
+                [paginationSparseView]="true"
+                [paginationDocumentHeader]="paginationDocumentHeaderOptions">
+              </block-craft-editor>
+            } @else {
+              <block-craft-editor
+                #editor
+                [stickyTop]="0"
+                [showFixedToolbar]="false"
+                [virtualizationEnabled]="false"
+                [paginationSparseView]="false"
+                [paginationDocumentHeader]="paginationDocumentHeaderOptions">
+              </block-craft-editor>
+            }
           </section>
+          @if (revisionPanelOpen && editorDoc && revisionReviewPlugin) {
+            <bc-revision-review-panel
+              class="playground-revision-review-panel"
+              [doc]="editorDoc!"
+              [review]="revisionReviewPlugin!"
+              [canReview]="true"
+              (intent)="onRevisionReviewIntent($event)">
+            </bc-revision-review-panel>
+          }
+        </div>
+
+        @if (activeMainTab === 'editor' && paginationEnabled && paginationPlugin) {
+          <bc-pagination-settings
+            class="pagination-settings-float"
+            [plugin]="paginationPlugin!">
+          </bc-pagination-settings>
+        }
+
+        @if (
+          activeMainTab === 'editor' &&
+          editorInitialized &&
+          editor &&
+          documentScaleViewport &&
+          documentScaleStage &&
+          documentScaleSurface
+        ) {
+          <bc-document-scale-settings
+            class="document-scale-settings-float"
+            [manager]="editor.doc.viewScale"
+            [viewport]="documentScaleViewport"
+            [stage]="documentScaleStage"
+            [surface]="documentScaleSurface">
+          </bc-document-scale-settings>
         }
 
         @if (activeMainTab === 'viewer') {
@@ -310,10 +759,14 @@ const ACTION_SECTIONS: DebugSection[] = [
 
             <div class="viewer-demo-panel__stage">
               @if (activeViewerMode === 'snapshot') {
-                <bc-snapshot-viewer
-                  [snapshot]="snapshotViewerSnapshot"
-                  [options]="snapshotViewerOptions">
-                </bc-snapshot-viewer>
+                @if (snapshotViewerSnapshot; as snapshot) {
+                  <bc-snapshot-viewer
+                    [snapshot]="snapshot"
+                    [options]="snapshotViewerOptions">
+                  </bc-snapshot-viewer>
+                } @else {
+                  <p>编辑器尚未初始化，请先在编辑器中加载内容。</p>
+                }
               } @else {
                 <div class="markdown-stream-demo">
                   <div class="markdown-stream-demo__controls">
@@ -377,7 +830,11 @@ const ACTION_SECTIONS: DebugSection[] = [
               <span class="section-title">INLINE 一致性</span>
               <span class="monitor-stats">
                 @if (isSimulationRunning) {
-                  <span class="status-pill status-pill--active">{{ simUserCount }}人 · {{ simIntervalMs }}ms · {{ simOpCount }} ops</span>
+                  @if (simulationMode === 'random-text') {
+                    <span class="status-pill status-pill--active">{{ simUserCount }}人 · {{ simIntervalMs }}ms · {{ simOpCount }} ops</span>
+                  } @else {
+                    <span class="status-pill status-pill--active">IME · {{ imeRunnerState.phase }} · {{ imeRunnerState.appliedCount }} ops</span>
+                  }
                 }
                 @switch (monitorStatus) {
                   @case ('ok') { <span class="status-pill status-pill--active">✓ 一致</span> }
@@ -390,6 +847,15 @@ const ACTION_SECTIONS: DebugSection[] = [
           </section>
         }
       </main>
+
+      <button
+        type="button"
+        class="agent-launcher"
+        aria-label="打开文档 Agent"
+        title="打开文档 Agent"
+        (click)="openAgentDialog($event)">
+        Agent
+      </button>
     </div>
   `,
   styles: [`
@@ -424,6 +890,7 @@ const ACTION_SECTIONS: DebugSection[] = [
       backdrop-filter: blur(16px);
       overflow-y: auto;
       overflow-x: hidden;
+      scroll-padding-top: 76px;
       box-sizing: border-box;
     }
 
@@ -759,6 +1226,7 @@ const ACTION_SECTIONS: DebugSection[] = [
 
     .editor-stage {
       flex: 1;
+      min-width: 0;
       min-height: 0;
       overflow: auto;
       padding: 20px;
@@ -766,6 +1234,31 @@ const ACTION_SECTIONS: DebugSection[] = [
       background: var(--bc-bg-elevated);
       border: 1px solid var(--bc-border-color-light);
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+    }
+
+    .revision-review-workspace {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      flex: 1;
+      min-width: 0;
+      min-height: 0;
+      gap: 0;
+      overflow: hidden;
+    }
+
+    .revision-review-workspace--panel-open {
+      grid-template-columns: minmax(0, 1fr) minmax(300px, 340px);
+    }
+
+    .playground-revision-review-panel {
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+      border-radius: 0 20px 20px 0;
+    }
+
+    .revision-review-workspace--panel-open .editor-stage {
+      border-radius: 24px 0 0 24px;
     }
 
     .viewer-demo-panel {
@@ -1098,6 +1591,67 @@ const ACTION_SECTIONS: DebugSection[] = [
       border-top: 1px solid var(--bc-border-color-light);
     }
 
+    .markdown-stream-test-controls {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding-top: 14px;
+      border-top: 1px solid var(--bc-border-color-light);
+    }
+
+    .markdown-stream-test-controls__header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .markdown-stream-test-controls__input {
+      width: 100%;
+      min-height: 180px;
+      padding: 10px 11px;
+      box-sizing: border-box;
+      resize: vertical;
+      border: 1px solid var(--bc-border-color-light);
+      border-radius: 12px;
+      outline: none;
+      background: var(--bc-bg-secondary);
+      color: var(--bc-color);
+      font: 11px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .markdown-stream-test-controls__input:focus {
+      border-color: var(--bc-active-color-light);
+      box-shadow: 0 0 0 3px var(--bc-active-color-lighter);
+    }
+
+    .markdown-stream-test-controls__actions {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .markdown-stream-test-controls__actions .nav-button:disabled {
+      cursor: not-allowed;
+      opacity: 0.5;
+      transform: none;
+    }
+
+    .markdown-stream-test-controls__error {
+      margin: 0;
+      color: #be123c;
+      font-size: 11px;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+
+    .markdown-stream-test-controls__status--error {
+      color: #be123c;
+      border-color: #f43f5e;
+      background: #fff1f2;
+    }
+
     .sim-row {
       display: flex;
       align-items: center;
@@ -1146,6 +1700,10 @@ const ACTION_SECTIONS: DebugSection[] = [
         justify-content: flex-start;
       }
 
+      .revision-review-workspace--panel-open {
+        grid-template-columns: minmax(0, 1fr) 300px;
+      }
+
       .markdown-stream-demo {
         grid-template-columns: 1fr;
       }
@@ -1169,24 +1727,49 @@ const ACTION_SECTIONS: DebugSection[] = [
 })
 export class AppComponent implements AfterViewInit, OnDestroy {
   @ViewChild('editor') editor?: EditorComponent;
+  @ViewChild('documentHeader', {read: ElementRef}) documentHeader?: ElementRef<HTMLElement>;
   @ViewChild('markdownStreamHost') markdownStreamHost?: ElementRef<HTMLElement>;
 
   readonly actionSections = ACTION_SECTIONS;
 
-  private readonly iconRegistry = inject(MatIconRegistry);
-  private readonly sanitizer = inject(DomSanitizer);
   private readonly cdr = inject(ChangeDetectorRef);
   private readonly zone = inject(NgZone);
   private _markdownStreamRenderer?: MarkdownStreamRenderer;
   private _markdownTestTimer: number | null = null;
+  private _markdownTestRunId = 0;
   private _autoInitTimer: number | null = null;
   private _demoController: PresentationController | null = null;
   private _collabInitHandler?: () => void;
+  private _collabSyncHandler?: (isSynced: boolean) => void;
+  private _collabAmbiguousRootLogged = false;
+  private _awareness?: BlockCraftAwareness;
   private _selectionSub?: Subscription;
+  private _agentContextSub?: Subscription;
+  private _agentPlugin?: DocumentAgentPlugin;
+  private _editorAgent?: BlockCraftEditorAgent;
+  private _agentOverlayRef?: OverlayRef;
+  private _agentDialogComponent?: ComponentRef<DocumentAgentPanelComponent>;
+  private _agentDialogClose$?: Subject<void>;
+  private _agentFakeRange?: {destroy: () => void};
+  private _agentReviewUndoToken: DocUndoItemToken | null = null;
+  private _agentChatAbort?: AbortController;
+  private _revisionReviewUi?: RevisionReviewUiController;
+  private _revisionReviewDoc = null as EditorComponent['doc'] | null;
+  private readonly agentRunner = new DocumentAgentRunner(new PlaygroundDocumentAgentTransport());
 
   readonly updateList: Uint8Array[] = [];
   editorInitialized = false;
   isListeningUpdate = false;
+  virtualizationEnabled = true;
+  revisionPanelOpen = false;
+  documentScaleViewport: HTMLElement | null = null;
+  documentScaleStage: HTMLElement | null = null;
+  documentScaleSurface: HTMLElement | null = null;
+  readonly paginationDocumentHeaderOptions = {
+    element: () => this.documentHeader?.nativeElement ?? null,
+    placement: 'content' as const,
+    gap: 24,
+  };
 
   // 临时调试：复制时过滤行内链接属性（a:link），可开关
   copyFilterActive = false;
@@ -1194,10 +1777,16 @@ export class AppComponent implements AfterViewInit, OnDestroy {
   provider?: WebsocketProvider;
   selectionJson: string | null = null;
   selectionMeta: DebugMetaItem[] = [];
+  agentContext: DocumentAgentContext | null = null;
+  agentResult: DocumentAgentResult | null = null;
+  agentReview: DocumentAgentReviewPrompt | null = null;
+  agentError: string | null = null;
+  agentBusy = false;
+  agentDialogOpen = false;
   activeMainTab: 'editor' | 'viewer' = 'editor';
   activeViewerMode: 'snapshot' | 'markdown-stream' = 'snapshot';
-  snapshotViewerSnapshot: IBlockSnapshot = this.createDemoSnapshot();
-  snapshotViewerSource: 'demo' | 'current' = 'demo';
+  snapshotViewerSnapshot: IBlockSnapshot | null = null;
+  snapshotViewerSource: 'demo' | 'current' = 'current';
   readonly snapshotViewerOptions = {
     resourcePolicy: 'eager' as const
   };
@@ -1218,11 +1807,13 @@ graph TD
 | --- | --- |
 | stream | ready |
 `;
-  markdownStreamChunkMode: 'paragraph' | 'random' = 'paragraph';
+  markdownStreamTestSource = DEFAULT_MARKDOWN_STREAM_TEST_SOURCE;
+  markdownStreamTestRunning = false;
+  markdownStreamTestError: string | null = null;
+  markdownStreamChunkMode: 'paragraph' | 'random' = 'random';
   markdownStreamChunks = this.buildMarkdownStreamChunks(this.markdownStreamSource);
   markdownStreamIndex = 0;
   private _markdownStreamPlayTimer: ReturnType<typeof setTimeout> | null = null;
-  private readonly _markdownStreamPlayIntervalMs = 700;
   private _markdownStreamViewer: MarkdownStreamViewer | null = null;
 
   // Monitor — focused block only
@@ -1236,24 +1827,18 @@ graph TD
   simOpCount = 0;
   simUserCount = 1;
   simIntervalMs = 800;
+  simulationMode: CollaborationSimulationMode = 'random-text';
+  imeAutoEnabled = true;
+  imeScenarioDelayMs = 500;
+  imeRunnerState: ImeCollaborationRunnerState = createInitialImeRunnerState();
   private _simTimer: ReturnType<typeof setInterval> | null = null;
-  private _shadowDoc: Y.Doc | null = null;
-  private _shadowCleanup: (() => void) | null = null;
-
-  constructor() {
-    this.iconRegistry.addSvgIconSet(
-      this.sanitizer.bypassSecurityTrustResourceUrl('https://at.alicdn.com/t/c/font_4682833_9f8nqslb5uf.js')
-    );
-  }
-
+  private _shadowSession: ShadowCollaborationSession | null = null;
+  private _imeScenarioRunner: ImeCollaborationScenarioRunner | null = null;
   ngAfterViewInit(): void {
-    // queueMicrotask(() => {
-    //   try {
-    //     this.initializeEditor();
-    //   } catch (error) {
-    //     console.error('Auto init editor failed:', error);
-    //   }
-    // });
+    this.enablePlaygroundIdlePrefetch(this.editor);
+    // 外置工具栏依赖子编辑器在 ngOnInit 中创建的 Doc；ViewChild 就绪后补一轮
+    // 检测，让工具栏从首屏开始位于 .editor-stage 外，而不是等首次用户操作。
+    this.cdr.detectChanges();
   }
 
   ngOnDestroy(): void {
@@ -1266,6 +1851,11 @@ graph TD
     this._demoController?.destroy();
     this.quitRoom();
     this._selectionSub?.unsubscribe();
+    this._agentContextSub?.unsubscribe();
+    this.closeAgentDialog();
+    this._agentPlugin?.destroy();
+    this._agentPlugin = undefined;
+    this._editorAgent = undefined;
     this.stopMonitor();
     this.stopSimulation();
     this.stopMarkdownStreamPlayback();
@@ -1273,10 +1863,49 @@ graph TD
     this._markdownStreamViewer = null;
     this._disposeCopyFilter?.();
     this._disposeCopyFilter = null;
+    this._revisionReviewUi?.destroy();
+    this._revisionReviewUi = undefined;
+    this._revisionReviewDoc = null;
   }
 
   get isReadonly() {
     return this.editor?.doc.isReadonly ?? true;
+  }
+
+  get revisionTrackingEnabled(): boolean {
+    return this.editor?.doc.revisions.mode === 'track';
+  }
+
+  get editorDoc() {
+    return this.editor?.doc ?? null;
+  }
+
+  get revisionReviewPlugin(): RevisionReviewPlugin | null {
+    return this.editor?.doc.plugins.find(
+      plugin => plugin instanceof RevisionReviewPlugin,
+    ) ?? null;
+  }
+
+  get paginationPlugin(): PaginationPlugin | null {
+    return this.editor?.doc.plugins.find(
+      plugin => plugin instanceof PaginationPlugin,
+    ) ?? null;
+  }
+
+  get paginationEnabled(): boolean {
+    return this.paginationPlugin?.enabled ?? false;
+  }
+
+  setPaginationEnabled(enabled: boolean): void {
+    const editor = this.ensureEditorInitialized();
+    const plugin = editor.doc.plugins.find(
+      candidate => candidate instanceof PaginationPlugin,
+    );
+    if (!plugin) {
+      throw new Error('PaginationPlugin is not registered.');
+    }
+    enabled ? plugin.enable() : plugin.disable();
+    this.cdr.markForCheck();
   }
 
   get currentTheme() {
@@ -1311,6 +1940,16 @@ graph TD
     return `${this.markdownStreamIndex}/${this.markdownStreamChunks.length} chunks${this._markdownStreamPlayTimer ? ' · 自动播放中' : ''}`;
   }
 
+  get markdownStreamTestStatusLabel() {
+    if (this.markdownStreamTestError) {
+      return '解析失败';
+    }
+    if (this.markdownStreamTestRunning) {
+      return '流式写入中';
+    }
+    return `${Array.from(this.markdownStreamTestSource).length} 字符`;
+  }
+
   getMarkdownChunkState(index: number) {
     if (index < this.markdownStreamIndex) {
       return '已推送';
@@ -1330,6 +1969,10 @@ graph TD
   }
 
   setMainTab(tab: 'editor' | 'viewer') {
+    if (tab === 'viewer' && this.activeViewerMode === 'snapshot') {
+      this.syncSnapshotViewerFromEditor();
+      return;
+    }
     this.activeMainTab = tab;
     this.cdr.markForCheck();
     if (tab === 'viewer' && this.activeViewerMode === 'markdown-stream') {
@@ -1338,6 +1981,10 @@ graph TD
   }
 
   setViewerMode(mode: 'snapshot' | 'markdown-stream') {
+    if (mode === 'snapshot') {
+      this.syncSnapshotViewerFromEditor();
+      return;
+    }
     this.activeViewerMode = mode;
     this.cdr.markForCheck();
     if (mode === 'markdown-stream') {
@@ -1426,11 +2073,23 @@ graph TD
       case 'init':
         this.initializeEditor();
         return;
+      case 'paragraphAlignment':
+        void this.insertParagraphAlignmentExamples();
+        return;
       case 'theme':
         this.toggleTheme();
         return;
       case 'readonly':
         this.toggleReadonly();
+        return;
+      case 'toggleRevision':
+        this.toggleRevisionMode();
+        return;
+      case 'toggleRevisionPanel':
+        this.toggleRevisionPanel();
+        return;
+      case 'toggleVirtualization':
+        this.toggleVirtualization();
         return;
       case 'insert':
         this.insertTestText();
@@ -1474,14 +2133,23 @@ graph TD
       case 'importMarkdown':
         void this.importMarkdown();
         return;
+      case 'importBlockSnapshotTxt':
+        void this.importBlockSnapshotTxt();
+        return;
       case 'exportMarkdown':
-        this.exportMarkdown();
+        void this.exportMarkdown().catch(error => {
+          const message = error instanceof Error ? error.message : '未知错误';
+          this.ensureEditorInitialized().doc.messageService.error(
+            `Markdown 导出失败：${message}`,
+          );
+        });
         return;
       case 'exportPdf':
-        this.exportPdf();
-        return;
-      case 'exportImage':
-        this.exportImage();
+        void this.exportPdf().catch(error => {
+          const message = error instanceof Error ? error.message : '未知错误';
+          this.ensureEditorInitialized().doc.messageService.error(`PDF 导出失败：${message}`);
+          console.warn('[playground] PDF export failed', error);
+        });
         return;
       case 'enterRoom':
         this.enterRoom();
@@ -1521,35 +2189,433 @@ graph TD
     return editor.container.nativeElement as HTMLElement;
   }
 
+  /**
+   * Playground 的文档缩放面：外层 editorContainer 保持固定并负责滚动，分页
+   * 背景与 root 一起挂在内层 surface，避免缩放时把滚动视口本身也缩小。
+   */
+  private get editorDocumentSurface(): HTMLElement {
+    const editor = this.requireEditor();
+    const viewport = this.editorContainer;
+    let stage = viewport.querySelector<HTMLElement>(':scope > .playground-scale-stage');
+    let surface = stage?.querySelector<HTMLElement>(':scope > .playground-scale-surface') ?? null;
+
+    if (!stage) {
+      stage = viewport.ownerDocument.createElement('div');
+      stage.className = 'playground-scale-stage';
+      stage.style.position = 'relative';
+      stage.style.boxSizing = 'border-box';
+      viewport.appendChild(stage);
+    }
+    if (!surface) {
+      surface = viewport.ownerDocument.createElement('div');
+      surface.className = 'playground-scale-surface';
+      surface.style.position = 'relative';
+      surface.style.boxSizing = 'border-box';
+      stage.appendChild(surface);
+    }
+
+    // 虚拟渲染监听固定视口；分页纸张定位面则跟 root 一起留在 surface。
+    viewport.style.overflowX = 'auto';
+    editor.doc.config.scrollContainer = viewport;
+    this.documentScaleViewport = viewport;
+    this.documentScaleStage = stage;
+    this.documentScaleSurface = surface;
+    return surface;
+  }
+
   private createDemoSnapshot(): IBlockSnapshot {
     return JSON.parse(JSON.stringify(demoJSON)) as IBlockSnapshot;
   }
 
+  /**
+   * Playground 明确开启实验性空闲预热。编辑器公共输入保持不变，且必须在
+   * BlockCraftDoc 初始化前写入 manager 已解析的配置，才能让 init() 创建调度器。
+   */
+  private enablePlaygroundIdlePrefetch(editor: EditorComponent | undefined): void {
+    if (!editor) return;
+    const manager = editor.doc.virtualization as unknown as {
+      config?: {idlePrefetch?: boolean};
+    };
+    if (manager.config) manager.config.idlePrefetch = true;
+  }
+
   private ensureEditorInitialized(snapshot: IBlockSnapshot = this.createDemoSnapshot()) {
     const editor = this.requireEditor();
+    this.enablePlaygroundIdlePrefetch(editor);
+    this.ensureAgentPlugin(editor);
     if (!editor.doc.isInitialized) {
-      editor.doc.initBySnapshot(snapshot, this.editorContainer);
+      editor.doc.initBySnapshot(snapshot, this.editorDocumentSurface);
     }
+    this.ensureRevisionReviewUi(editor);
+    this.ensureSelectionDebugSubscription(editor);
+    this.agentContext = this._agentPlugin?.getContext() ?? this.agentContext;
     return editor;
   }
 
   private ensureEmptyEditorReady() {
     const editor = this.requireEditor();
+    this.enablePlaygroundIdlePrefetch(editor);
+    this.ensureAgentPlugin(editor);
     if (!editor.doc.isInitialized) {
       const rootSnapshot = editor.doc.schemas.createSnapshot('root', [
         editor.rootId,
         [editor.doc.schemas.createSnapshot('paragraph', [])]
       ]);
-      editor.doc.initBySnapshot(rootSnapshot, this.editorContainer);
+      editor.doc.initBySnapshot(rootSnapshot, this.editorDocumentSurface);
     }
+    this.ensureRevisionReviewUi(editor);
+    this.ensureSelectionDebugSubscription(editor);
+    this.agentContext = this._agentPlugin?.getContext() ?? this.agentContext;
     return editor;
+  }
+
+  private ensureSelectionDebugSubscription(editor: EditorComponent): void {
+    if (!editor.doc.isInitialized || this._selectionSub) return;
+    this._subscribeSelection();
+  }
+
+  private ensureAgentPlugin(editor: EditorComponent): void {
+    if (this._agentPlugin) return;
+
+    const plugin = new DocumentAgentPlugin();
+    plugin.register(editor.doc);
+    this._agentPlugin = plugin;
+    const adapterRegistry = editor.doc.injector.get(EDITOR_ADAPTER_REGISTRY_TOKEN);
+    this._editorAgent = new BlockCraftEditorAgent(editor.doc, this.agentRunner, {
+      markdown: {adapterRegistry, profile: 'hybrid'},
+    });
+    this._agentContextSub = plugin.contextChange$.subscribe(context => {
+      this.zone.run(() => {
+        this.agentContext = context;
+        if (context) this.agentError = null;
+        this.syncAgentDialogState();
+        this.cdr.markForCheck();
+      });
+    });
+    this.agentContext = plugin.getContext();
+  }
+
+  openAgentDialog(event?: Event): void {
+    event?.preventDefault();
+    event?.stopPropagation();
+
+    if (this._agentOverlayRef || this._agentDialogComponent) return;
+
+    const editor = this.editor;
+    if (!editor) return;
+    if (!editor.doc.isInitialized) this.ensureEditorInitialized();
+    this.ensureAgentPlugin(editor);
+    const liveContext = this._editorAgent?.getContext() ?? this.agentContext;
+    const context = this._editorAgent?.getContext('document') ?? liveContext;
+    if (!context) {
+      this.agentError = '文档上下文还没有准备好，请稍后再试。';
+      this.cdr.markForCheck();
+      return;
+    }
+
+    if (liveContext?.scope === 'selection') this.renderAgentFakeRange(editor, liveContext);
+    this._agentDialogClose$ = new Subject<void>();
+    const {componentRef, overlayRef} = editor.doc.overlayService.createGlobalOverlay<DocumentAgentPanelComponent>({
+      component: DocumentAgentPanelComponent,
+      backdrop: false,
+      top: '72px',
+      end: '24px',
+    }, this._agentDialogClose$, () => {
+      this.cancelAgentChat();
+      this._agentDialogClose$?.complete();
+      this._agentDialogClose$ = undefined;
+      this.destroyAgentFakeRange();
+      this._agentOverlayRef = undefined;
+      this._agentDialogComponent = undefined;
+      this.agentDialogOpen = false;
+      this.cdr.markForCheck();
+    });
+
+    this._agentOverlayRef = overlayRef;
+    this._agentDialogComponent = componentRef;
+    this.agentDialogOpen = true;
+    componentRef.setInput('context', context);
+    componentRef.setInput('liveContext', liveContext);
+    componentRef.setInput('task', 'rewrite');
+    componentRef.setInput('markdownChat', {
+      adapterRegistry: editor.doc.injector.get(EDITOR_ADAPTER_REGISTRY_TOKEN),
+      markdownProfile: 'hybrid',
+      viewerOptions: {resourcePolicy: 'visible'},
+    } satisfies DocumentAgentMarkdownViewerConfig);
+    this.syncAgentDialogState();
+
+    componentRef.instance.request.subscribe(request => void this.runAgentRequest(request));
+    componentRef.instance.chatRequest.subscribe(request => void this.runAgentChatRequest(request));
+    componentRef.instance.insertMarkdown.subscribe(markdown => void this.insertAgentMarkdown(markdown));
+    componentRef.instance.reviewAction.subscribe(action => this.onAgentReviewAction(action));
+    componentRef.instance.close.subscribe(() => this.closeAgentDialog());
+  }
+
+  closeAgentDialog(): void {
+    this.cancelAgentChat();
+    const overlayRef = this._agentOverlayRef;
+    const close$ = this._agentDialogClose$;
+    this._agentDialogClose$ = undefined;
+    this._agentOverlayRef = undefined;
+    this._agentDialogComponent = undefined;
+    if (close$) {
+      close$.next();
+      close$.complete();
+    }
+    overlayRef?.dispose();
+    this.destroyAgentFakeRange();
+    this.agentDialogOpen = false;
+    this.cdr.markForCheck();
+  }
+
+  private cancelAgentChat(): void {
+    const abortController = this._agentChatAbort;
+    if (!abortController) return;
+    abortController.abort();
+    this._agentChatAbort = undefined;
+    this.agentBusy = false;
+  }
+
+  private renderAgentFakeRange(editor: EditorComponent, context: DocumentAgentContext): void {
+    this.destroyAgentFakeRange();
+    if (!context.selection) return;
+    try {
+      this._agentFakeRange = editor.doc.selection.createFakeRange(context.selection, {
+        bgColor: 'var(--bc-select-background-color)',
+      });
+    } catch (error) {
+      editor.doc.logger.warn(`Agent 伪选区创建失败: ${error}`);
+    }
+  }
+
+  private destroyAgentFakeRange(): void {
+    this._agentFakeRange?.destroy();
+    this._agentFakeRange = undefined;
+  }
+
+  private syncAgentDialogState(): void {
+    const componentRef = this._agentDialogComponent;
+    if (!componentRef) return;
+
+    componentRef.setInput('liveContext', this.agentContext);
+    componentRef.setInput('busy', this.agentBusy);
+    componentRef.setInput('error', this.agentError);
+    componentRef.setInput('result', this.agentResult);
+    if (this.agentReview) {
+      this.agentReview = {
+        ...this.agentReview,
+        canRevertAll: !!this._agentReviewUndoToken &&
+          this.editor?.doc.crud.undoManager.canUndoCapturedItem(this._agentReviewUndoToken) === true,
+      };
+    }
+    componentRef.setInput('review', this.agentReview);
+  }
+
+  async runAgentRequest(request: DocumentAgentRequest): Promise<void> {
+    const context = this._editorAgent?.getContext(request.context.scope) ?? request.context;
+    const editorAgent = this._editorAgent;
+    if (!context || !editorAgent || this.agentBusy) return;
+
+    this.agentBusy = true;
+    this.agentError = null;
+    this.agentResult = null;
+    const applyContext = this.editor
+      ? captureBlockCraftAgentDocumentContext(this.editor.doc)
+      : null;
+    this.syncAgentDialogState();
+    this.cdr.markForCheck();
+
+    try {
+      const result = await editorAgent.run({
+        ...request,
+        context,
+      });
+      this._agentDialogComponent?.instance.addAssistantResult(result);
+
+      if (result.operations.length) {
+        const editor = this.editor;
+        if (!editor || !applyContext) {
+          throw new Error('文档上下文已失效，无法应用 Agent 修改。');
+        }
+        const staged = editorAgent.stageRevisionDiff(applyContext, result);
+        this._agentReviewUndoToken = staged.undoItemToken;
+        this.agentReview = {
+          groupId: staged.groupId,
+          summary: result.summary,
+          operationCount: staged.applied,
+          revisionCount: staged.revisionIds.length,
+          canRevertAll: !!staged.undoItemToken,
+        };
+        if (staged.revisionIds.length) {
+          const revisions = editor.doc.revisions;
+          if (!revisions.currentActor) {
+            revisions.setActor({
+              actorId: `playground-${editor.doc.yDoc.clientID}`,
+              displayName: 'Playground 调试用户',
+            });
+          }
+          revisions.setViewMode('markup');
+          this.ensureRevisionReviewUi(editor);
+          this.revisionReviewPlugin?.activateRevision(staged.revisionIds[0]);
+        }
+        this.syncAgentDialogState();
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Agent 请求失败';
+      this.agentError = message;
+      this._agentDialogComponent?.instance.addAssistantError(message);
+    } finally {
+      this.agentBusy = false;
+      this.syncAgentDialogState();
+      this.cdr.markForCheck();
+    }
+  }
+
+  async runAgentChatRequest(request: DocumentAgentMarkdownRequest): Promise<void> {
+    const editorAgent = this._editorAgent;
+    const panel = this._agentDialogComponent?.instance;
+    if (!editorAgent || !panel || this.agentBusy) return;
+
+    this._agentChatAbort?.abort();
+    const abortController = new AbortController();
+    this._agentChatAbort = abortController;
+    const messageId = panel.beginAssistantMarkdown();
+    this.agentBusy = true;
+    this.agentError = null;
+    this.syncAgentDialogState();
+    this.cdr.markForCheck();
+
+    try {
+      for await (const event of editorAgent.streamMarkdown(request, {
+        signal: abortController.signal,
+      })) {
+        if (abortController.signal.aborted || this._agentChatAbort !== abortController) return;
+        if (event.type === 'delta') {
+          panel.appendAssistantMarkdown(messageId, event.delta);
+        } else {
+          panel.finishAssistantMarkdown(messageId, event.markdown, event.streamed);
+        }
+        this.cdr.markForCheck();
+      }
+    } catch (error) {
+      if (abortController.signal.aborted) return;
+      const message = error instanceof Error ? error.message : 'Agent Markdown 请求失败';
+      this.agentError = message;
+      panel.failAssistantMarkdown(messageId, message);
+    } finally {
+      if (this._agentChatAbort === abortController) {
+        this._agentChatAbort = undefined;
+        this.agentBusy = false;
+        this.syncAgentDialogState();
+        this.cdr.markForCheck();
+      }
+    }
+  }
+
+  async insertAgentMarkdown(markdown: string): Promise<void> {
+    const editor = this.editor;
+    if (!editor?.doc.isInitialized || !markdown.trim()) return;
+    if (editor.doc.isReadonly) {
+      editor.doc.messageService.warn('文档当前为只读状态，无法插入 AI 回复');
+      return;
+    }
+    const selection = editor.doc.selection.value;
+    if (!selection || selection.start.type !== 'text') {
+      editor.doc.messageService.warn('请先在可编辑内容中放置光标');
+      return;
+    }
+    const adapter = editor.doc.injector
+      .get(DOC_ADAPTER_SERVICE_TOKEN)
+      .getAdapter(ClipboardDataType.MARKDOWN);
+    if (!adapter) {
+      editor.doc.messageService.warn('Markdown Adapter 未注册');
+      return;
+    }
+
+    try {
+      const snapshot = await adapter.toSnapshot(markdown);
+      if (!snapshot.children.length) {
+        editor.doc.messageService.warn('AI 回复中没有可插入的 Markdown 内容');
+        return;
+      }
+      const result = await editor.doc.clipboard.applyPasteOption({
+        type: 'markdown',
+        label: 'AI Markdown',
+        payload: {kind: 'snapshot', snapshot},
+      }, selection);
+      if (!result) editor.doc.messageService.warn('当前位置无法插入 AI Markdown');
+    } catch (error) {
+      editor.doc.messageService.error(
+        error instanceof Error ? error.message : 'AI Markdown 插入失败',
+      );
+    }
+  }
+
+  private onAgentReviewAction(action: DocumentAgentReviewAction): void {
+    const reviewPrompt = this.agentReview;
+    const editor = this.editor;
+    if (!reviewPrompt || reviewPrompt.groupId !== action.groupId || !editor) return;
+
+    if (action.type === 'dismiss') {
+      this.closeAgentDialog();
+      return;
+    }
+
+    try {
+      if (action.type === 'review') {
+        if (!reviewPrompt.revisionCount) return;
+        editor.doc.revisions.setViewMode('markup');
+        this.ensureRevisionReviewUi(editor);
+        this.revisionReviewPlugin?.activate(reviewPrompt.groupId);
+        this.revisionPanelOpen = true;
+        this.cdr.markForCheck();
+        return;
+      }
+
+      if (action.type === 'accept-all') {
+        if (reviewPrompt.revisionCount) {
+          this.ensureRevisionReviewUi(editor);
+          this.revisionReviewPlugin?.keep(reviewPrompt.groupId);
+          this.revisionReviewPlugin?.activate(null);
+          this._revisionReviewUi?.close();
+          this.revisionPanelOpen = false;
+        }
+        this._agentReviewUndoToken = null;
+        this.agentReview = null;
+        this._agentDialogComponent?.instance.addAssistantNotice('已接受本次 AI 修改。');
+        this.syncAgentDialogState();
+        this.cdr.markForCheck();
+        return;
+      }
+
+      const undoToken = this._agentReviewUndoToken;
+      if (!undoToken || !editor.doc.crud.undoManager.undoCapturedItem(undoToken)) {
+        this.agentReview = {...reviewPrompt, canRevertAll: false};
+        this._agentDialogComponent?.instance.addAssistantError(
+          '文档在 AI 修改后已有新的本地编辑，无法安全撤回整批修改。你仍可逐条审阅有 Diff 的修订。',
+        );
+        this.syncAgentDialogState();
+        return;
+      }
+
+      this._agentReviewUndoToken = null;
+      this.agentReview = null;
+      this._agentDialogComponent?.instance.addAssistantNotice('已撤回本次 AI 的全部修改。');
+      this.syncAgentDialogState();
+      this.cdr.markForCheck();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '处理 AI 修改失败';
+      this.agentError = message;
+      this._agentDialogComponent?.instance.addAssistantError(message);
+      this.syncAgentDialogState();
+    }
   }
 
   private get markdownStreamRenderer() {
     const editor = this.ensureEmptyEditorReady();
     const adapter = editor.doc.injector
       .get(DOC_ADAPTER_SERVICE_TOKEN)
-      .getAdapter(ClipboardDataType.RTF);
+      .getAdapter(ClipboardDataType.MARKDOWN);
 
     if (!adapter) {
       throw new Error('Markdown adapter is not registered.');
@@ -1580,12 +2646,35 @@ graph TD
     return id ? editor.doc.getBlockById(id) : null;
   }
 
+  async insertParagraphAlignmentExamples(): Promise<void> {
+    const editor = this.ensureEmptyEditorReady();
+    const doc = editor.doc;
+    if (doc.isReadonly) return;
+    const examples = createParagraphAlignmentExamples(doc);
+    doc.crud.undoManager.stopCapturing();
+    doc.crud.insertBlockSnapshots(doc.rootId, 0, examples);
+    doc.crud.undoManager.stopCapturing();
+    this.editorInitialized = true;
+    this.cdr.detectChanges();
+    await doc.navigateToBlock(examples[0].id);
+  }
+
   initializeEditor() {
     const editor = this.ensureEditorInitialized();
     this.editorInitialized = editor.doc.isInitialized;
     this.syncPageTheme();
     this._subscribeSelection();
     this.cdr.markForCheck();
+  }
+
+  toggleVirtualization() {
+    const editor = this.editor;
+    if (this.provider || editor?.doc.isInitialized) {
+      editor?.doc.messageService.warn('虚拟渲染模式只能在文档初始化前切换');
+      return;
+    }
+    this.virtualizationEnabled = !this.virtualizationEnabled;
+    this.cdr.detectChanges();
   }
 
   loadSnapshotViewerDemo() {
@@ -1597,13 +2686,11 @@ graph TD
   }
 
   syncSnapshotViewerFromEditor() {
-    const editor = this.ensureEditorInitialized();
-    const snapshot = editor.doc.exportSnapshot();
-    if (!snapshot) {
-      return;
-    }
-
-    this.snapshotViewerSnapshot = JSON.parse(JSON.stringify(snapshot)) as IBlockSnapshot;
+    const doc = this.editor?.doc;
+    const snapshot = doc?.isInitialized ? doc.exportSnapshot() : null;
+    this.snapshotViewerSnapshot = snapshot
+      ? JSON.parse(JSON.stringify(snapshot)) as IBlockSnapshot
+      : null;
     this.snapshotViewerSource = 'current';
     this.activeMainTab = 'viewer';
     this.activeViewerMode = 'snapshot';
@@ -1751,7 +2838,7 @@ graph TD
       this.markdownStreamIndex += 1;
       this.cdr.markForCheck();
       this.scheduleMarkdownStreamPlayback();
-    }, this._markdownStreamPlayIntervalMs);
+    }, MARKDOWN_STREAM_INTERVAL_MS);
   }
 
   private stopMarkdownStreamPlayback() {
@@ -1775,6 +2862,64 @@ graph TD
   toggleReadonly() {
     const editor = this.ensureEditorInitialized();
     editor.doc.toggleReadonly(!editor.doc.isReadonly);
+  }
+
+  toggleRevisionMode() {
+    const editor = this.ensureEditorInitialized();
+    const revisions = editor.doc.revisions;
+
+    if (revisions.mode === 'track') {
+      revisions.setMode('off');
+    } else {
+      if (!revisions.currentActor) {
+        revisions.setActor({
+          actorId: `playground-${editor.doc.yDoc.clientID}`,
+          displayName: 'Playground 调试用户',
+        });
+      }
+      revisions.setMode('track');
+    }
+
+    this.cdr.markForCheck();
+  }
+
+  toggleRevisionPanel(): void {
+    const editor = this.ensureEditorInitialized();
+    this.ensureRevisionReviewUi(editor);
+    this.revisionPanelOpen = !this.revisionPanelOpen;
+    this.cdr.markForCheck();
+  }
+
+  onRevisionReviewIntent(intent: RevisionReviewIntent): void {
+    if (intent.type === 'close') {
+      this.revisionPanelOpen = false;
+      this.cdr.markForCheck();
+      return;
+    }
+    const editor = this.ensureEditorInitialized();
+    this.ensureRevisionReviewUi(editor);
+    this._revisionReviewUi?.handleIntent(intent);
+  }
+
+  private ensureRevisionReviewUi(editor: EditorComponent): void {
+    if (this._revisionReviewDoc === editor.doc && this._revisionReviewUi) {
+      this._revisionReviewUi.attach();
+      return;
+    }
+    this._revisionReviewUi?.destroy();
+    const review = editor.doc.plugins.find(
+      plugin => plugin instanceof RevisionReviewPlugin,
+    );
+    if (!review) {
+      throw new Error('RevisionReviewPlugin is not registered.');
+    }
+    this._revisionReviewDoc = editor.doc;
+    this._revisionReviewUi = new RevisionReviewUiController(
+      editor.doc,
+      review,
+      {canReview: () => true},
+    );
+    this._revisionReviewUi.attach();
   }
 
   toggleCopyFilter() {
@@ -1814,7 +2959,7 @@ graph TD
     const snapshots = Array.from({ length: 100 }, (_, index) =>
       editor.doc.schemas.createSnapshot('paragraph', [[{ insert: `hello {${index}}` }]])
     );
-    editor.doc.crud.insertBlocks(editor.doc.rootId, 0, snapshots);
+    editor.doc.crud.insertBlockSnapshots(editor.doc.rootId, 0, snapshots);
   }
 
   logDocument() {
@@ -1868,6 +3013,9 @@ graph TD
   }
 
   async renderMarkdown(markdown: string) {
+    // Renderer is reserved for the debug stream preview. File import goes
+    // through ClipboardManager so editor mutations keep normal paste semantics.
+    this.stopMarkdownStreamTest();
     await this.markdownStreamRenderer.replace(markdown, {
       immediate: true
     });
@@ -1887,106 +3035,103 @@ graph TD
     });
   }
 
+  onMarkdownStreamTestSourceInput(event: Event) {
+    this.stopMarkdownStreamTest();
+    this.markdownStreamTestSource = (event.target as HTMLTextAreaElement).value;
+    this.markdownStreamTestError = null;
+  }
+
+  resetMarkdownStreamTestSource() {
+    this.stopMarkdownStreamTest();
+    this.markdownStreamTestSource = DEFAULT_MARKDOWN_STREAM_TEST_SOURCE;
+    this.markdownStreamTestError = null;
+  }
+
   startMarkdownStreamTest() {
     this.stopMarkdownStreamTest();
-    void this.clearMarkdownStream();
-
-    const markdown = `# BlockCraft Markdown Stream Test
-
-这是第一段，模拟 AI 持续输出内容。
-
-## 列表
-- 第一项
-- 第二项
-- 第三项
-
-## 任务列表
-- [x] 已完成事项
-- [ ] 待处理事项
-
-## 嵌套列表
-1. 第一层
-   1. 第二层 A
-   2. 第二层 B
-2. 另一项
-
-## 代码块
-
-\`\`\`ts
-const message = "hello blockcraft";
-console.log(message);
-\`\`\`
-
-## 表格
-
-| 功能 | 状态 | 说明 |
-| --- | --- | --- |
-| Markdown 流 | 已接入 | 逐块写入 |
-| Diff 渲染 | 已接入 | 块级与文本级 |
-| 表格 | 测试中 | 覆盖 GFM table |
-
-## 引用
-> 差异渲染应该只更新变化的部分。
-
----
-
-## 公式
-
-$$
-E = mc^2
-$$
-
-最后一段：**加粗**、\`inline code\`、以及普通文本。
-`;
-
-    const chunkSize = 4;
+    const runId = ++this._markdownTestRunId;
+    const markdown = this.markdownStreamTestSource;
     const chars = Array.from(markdown);
+    const chunkSize = Math.max(
+      MARKDOWN_STREAM_TEST_MIN_CHUNK_SIZE,
+      Math.ceil(chars.length / MARKDOWN_STREAM_TEST_MAX_CHUNKS),
+    );
     const chunks = Array.from(
       { length: Math.ceil(chars.length / chunkSize) },
       (_, index) => chars.slice(index * chunkSize, (index + 1) * chunkSize).join('')
     );
 
+    this.markdownStreamTestRunning = true;
+    this.markdownStreamTestError = null;
+
     let cursor = 0;
     const tick = () => {
+      if (runId !== this._markdownTestRunId) {
+        return;
+      }
       if (cursor >= chunks.length) {
         this._markdownTestTimer = null;
-        void this.flushMarkdownStream();
+        void Promise.resolve()
+          .then(() => this.flushMarkdownStream())
+          .then(() => {
+            if (runId === this._markdownTestRunId) {
+              this.markdownStreamTestRunning = false;
+              this.cdr.markForCheck();
+            }
+          })
+          .catch(error => this.handleMarkdownStreamTestError(runId, error));
         return;
       }
 
-      void this.appendMarkdownChunk(chunks[cursor]!);
+      const chunk = chunks[cursor]!;
       cursor += 1;
-      this._markdownTestTimer = window.setTimeout(tick, 90);
+      void Promise.resolve()
+        .then(() => this.appendMarkdownChunk(chunk))
+        .catch(error => this.handleMarkdownStreamTestError(runId, error));
+      this._markdownTestTimer = window.setTimeout(tick, MARKDOWN_STREAM_INTERVAL_MS);
     };
 
-    tick();
+    void Promise.resolve()
+      .then(() => this.clearMarkdownStream())
+      .then(() => {
+        if (runId === this._markdownTestRunId) {
+          tick();
+        }
+      })
+      .catch(error => this.handleMarkdownStreamTestError(runId, error));
   }
 
-  private stopMarkdownStreamTest() {
-    if (this._markdownTestTimer === null) {
+  stopMarkdownStreamTest() {
+    this._markdownTestRunId += 1;
+    if (this._markdownTestTimer !== null) {
+      clearTimeout(this._markdownTestTimer);
+      this._markdownTestTimer = null;
+    }
+    this.markdownStreamTestRunning = false;
+    this.cdr.markForCheck();
+  }
+
+  private handleMarkdownStreamTestError(runId: number, error: unknown) {
+    if (runId !== this._markdownTestRunId) {
       return;
     }
-
-    clearTimeout(this._markdownTestTimer);
-    this._markdownTestTimer = null;
+    this.stopMarkdownStreamTest();
+    this.markdownStreamTestError = error instanceof Error
+      ? error.message
+      : `${error}`;
+    this.cdr.markForCheck();
   }
 
-  exportPdf() {
+  async exportPdf() {
     const editor = this.ensureEditorInitialized();
-    new DocExportManager(editor.doc).exportToPdf('blockcraft-export-test.pdf', {
-      bgcolor: '#fff',
-      scale: 1,
-      pdfPageSize: 'A2',
-      paging: true
+    const result = await new DocExportManager(editor.doc).exportToPdf('blockcraft-export-test.pdf', {
+      // 不传 pagination：分页启用时复用当前稳定布局；连续布局时复用插件当前配置重新排版。
     });
-  }
-
-  exportImage() {
-    const editor = this.ensureEditorInitialized();
-    new DocExportManager(editor.doc).exportToJpeg('blockcraft-export-test.png', {
-      bgcolor: '#fff',
-      scale: 2
-    });
+    if (result.warnings.length) {
+      editor.doc.messageService.warn(
+        `PDF 打印面包含 ${result.warnings.length} 项降级资源`,
+      );
+    }
   }
 
   async importMarkdown() {
@@ -1997,12 +3142,62 @@ $$
     }
 
     const text = await files[0]!.text();
-    await this.renderMarkdown(text);
+    const adapter = editor.doc.injector
+      .get(DOC_ADAPTER_SERVICE_TOKEN)
+      .getAdapter(ClipboardDataType.MARKDOWN);
+    if (!adapter) {
+      editor.doc.messageService.warn('Markdown adapter 未注册');
+      return;
+    }
+
+    // 文件导入属于编辑操作，不属于流式预览。先停止模拟流，避免旧定时器
+    // 在 Paste 事务完成后继续写入；随后复用 ClipboardManager 的选区、
+    // readonly、事务、Undo 和选区恢复规则。
+    if (!checkIncomingSourceSize(editor.doc, adapter, text)) return;
+    const snapshot = await adapter.toSnapshot(text);
+    if (!snapshot.children.length) {
+      editor.doc.messageService.warn('Markdown 中没有可导入的内容');
+      return;
+    }
+
+    if (!checkIncomingContentSize(editor.doc, {snapshots: snapshot.children as IBlockSnapshot[]})) return;
+    this.stopMarkdownStreamTest();
+    let selection = editor.doc.selection.value;
+    if (!selection || selection.start.type !== 'text') {
+      editor.doc.selection.setCursorAtBlock(editor.doc.root, false, false);
+      selection = editor.doc.selection.value;
+    }
+    if (!selection || selection.start.type !== 'text') {
+      editor.doc.messageService.warn('请先在可编辑内容中放置光标');
+      return;
+    }
+
+    const result = await editor.doc.clipboard.applyPasteOption({
+      type: 'markdown',
+      label: 'Markdown',
+      payload: {kind: 'snapshot', snapshot},
+    }, selection);
+    if (!result) {
+      editor.doc.messageService.warn('当前位置无法导入 Markdown');
+    }
   }
 
-  exportMarkdown() {
+  async exportMarkdown() {
     const editor = this.ensureEditorInitialized();
-    new DocExportManager(editor.doc).exportToMarkdown('blockcraft-export-test.md');
+    const adapter = editor.doc.injector
+      .get(DOC_ADAPTER_SERVICE_TOKEN)
+      .getAdapter(ClipboardDataType.MARKDOWN);
+    if (!adapter) {
+      editor.doc.messageService.warn('Markdown Adapter 未注册');
+      return;
+    }
+    const markdown = await adapter.fromSnapshot(
+      editor.doc.revisions.projectFinalSnapshot(),
+    );
+    await downloadFile(
+      new Blob([markdown], {type: 'text/markdown'}),
+      'blockcraft-export-test.md',
+    );
   }
 
   async importHTML() {
@@ -2018,12 +3213,80 @@ $$
       return;
     }
 
+    if (!checkIncomingSourceSize(editor.doc, adapter, text)) return;
     const snapshot = await adapter.toSnapshot(text);
     if (!snapshot) {
       return;
     }
 
-    editor.doc.crud.insertBlocks(editor.doc.rootId, 0, snapshot.children as IBlockSnapshot[]);
+    if (!checkIncomingContentSize(editor.doc, {snapshots: snapshot.children as IBlockSnapshot[]})) return;
+    editor.doc.crud.insertBlockSnapshots(editor.doc.rootId, 0, snapshot.children as IBlockSnapshot[]);
+  }
+
+  async importBlockSnapshotTxt() {
+    const editor = this.ensureEditorInitialized();
+    const files = await editor.doc.injector.get(DOC_FILE_SERVICE_TOKEN).inputFiles('.txt', false);
+    if (!files?.length) {
+      return;
+    }
+
+    try {
+      const text = await files[0]!.text();
+      const rootSnapshot = this.parseBlockSnapshotText(text);
+      if (!checkIncomingContentSize(editor.doc, {snapshots: rootSnapshot.children as IBlockSnapshot[]})) return;
+      const children = this.prepareImportedSnapshotChildren(rootSnapshot, editor.doc);
+
+      if (!children.length) {
+        editor.doc.messageService.warn('TXT 中没有可导入的 blocks');
+        return;
+      }
+
+      editor.doc.crud.insertBlockSnapshots(editor.doc.rootId, editor.doc.root.childrenLength, children);
+      editor.doc.messageService.success(`已导入 ${children.length} 个 blocks`);
+      this.editorInitialized = true;
+      this.cdr.markForCheck();
+    } catch (error) {
+      console.error('Import block snapshot txt failed:', error);
+      editor.doc.messageService.error(
+        error instanceof Error ? `导入失败：${error.message}` : '导入失败：无法解析 TXT Snapshot'
+      );
+    }
+  }
+
+  private parseBlockSnapshotText(text: string): IBlockSnapshot {
+    const jsonText = extractFirstJsonObject(text);
+    const value = JSON.parse(jsonText) as unknown;
+    if (!isBlockSnapshotLike(value) || value.flavour !== 'root' || value.nodeType !== 'root') {
+      throw new Error('文件内容不是 root BlockSnapshot');
+    }
+
+    return value;
+  }
+
+  private prepareImportedSnapshotChildren(rootSnapshot: IBlockSnapshot, doc: BlockCraft.Doc): IBlockSnapshot[] {
+    const unsupported = this.collectUnsupportedSnapshotFlavours(rootSnapshot, doc);
+    if (unsupported.length) {
+      throw new Error(`存在未注册 block：${unsupported.join(', ')}`);
+    }
+
+    const children = JSON.parse(JSON.stringify(rootSnapshot.children || [])) as IBlockSnapshot[];
+    replaceSnapshotsIdDeeply(children);
+    return children;
+  }
+
+  private collectUnsupportedSnapshotFlavours(rootSnapshot: IBlockSnapshot, doc: BlockCraft.Doc): string[] {
+    const unsupported = new Set<string>();
+    const visit = (snapshot: IBlockSnapshot) => {
+      if (!doc.schemas.has(snapshot.flavour)) {
+        unsupported.add(snapshot.flavour);
+      }
+      if (snapshot.nodeType === 'root' || snapshot.nodeType === 'block') {
+        snapshot.children.forEach(visit);
+      }
+    };
+
+    visit(rootSnapshot);
+    return [...unsupported];
   }
 
   fixTable() {
@@ -2041,32 +3304,77 @@ $$
   }
 
   enterRoom() {
-    const initFn = () => {
-      const yRoot = this.editor?.doc.yBlockMap?.get(this.editor?.docId)
-      if (yRoot) {
-        this.editor?.doc.initByYBlock(yRoot, this.editor?.container.nativeElement)
-        this.editor?.doc.yDoc.off('update', initFn)
-      }
-    }
+    if (this.provider) this.quitRoom();
 
-    this.editor?.doc.yDoc.on('update', initFn)
+    const editor = this.requireEditor();
+    this.enablePlaygroundIdlePrefetch(editor);
+    this._collabAmbiguousRootLogged = false;
 
-    this.provider = new WebsocketProvider(
+    const provider = this.provider = new WebsocketProvider(
       // 'ws://ws-doc-v2.cses7.com/collaboration',
-      "ws://localhost:1234",
+      "ws://196.168.1.153:1234",
       // 'ws://196.168.1.153:1234',
       // 'ws://ws-doc.cses7.com',
       // "ws://ws-doc-pre.cses7.com/collaboration",
       // 'ws://193.168.2.100:30204/collaborate',
-      this.editor!.docId,
-      this.editor!.doc.yDoc,
+      editor.docId,
+      editor.doc.yDoc,
       {
         disableBc: false,
       },
     );
 
+    const initializeFromCollaboration = () => {
+      if (this.provider !== provider) return;
+      if (editor.doc.isInitialized) {
+        this._completeCollaborationInitialization();
+        return;
+      }
+
+      const resolution = resolveCollaborationRoot(editor.doc.yBlockMap, editor.docId);
+      if (resolution.status === 'missing') return;
+      if (resolution.status === 'ambiguous') {
+        if (!this._collabAmbiguousRootLogged) {
+          this._collabAmbiguousRootLogged = true;
+          console.error(
+            'Collaboration room contains multiple root blocks; initialization aborted:',
+            resolution.rootIds,
+          );
+        }
+        return;
+      }
+
+      editor.doc.initByYBlock(resolution.root, this.editorDocumentSurface);
+      this.editorInitialized = editor.doc.isInitialized;
+      this.syncPageTheme();
+      this._subscribeSelection();
+      this.cdr.markForCheck();
+      this._completeCollaborationInitialization();
+    };
+
+    let initializationScheduled = false;
+    const scheduleInitialization = () => {
+      if (initializationScheduled) return;
+      initializationScheduled = true;
+      queueMicrotask(() => {
+        initializationScheduled = false;
+        initializeFromCollaboration();
+      });
+    };
+
+    this._collabInitHandler = scheduleInitialization;
+    editor.doc.yDoc.on('update', scheduleInitialization);
+
+    this._collabSyncHandler = isSynced => {
+      if (isSynced) scheduleInitialization();
+    };
+    provider.on('sync', this._collabSyncHandler);
+
+    // Handles data that was already present before provider listeners were attached.
+    scheduleInitialization();
+
     const uid = generateId(11)
-    const awa = new BlockCraftAwareness(this.editor!.doc, this.provider.awareness)
+    const awa = this._awareness = new BlockCraftAwareness(editor.doc, provider.awareness)
     awa.setLocalUser({
       id: uid,
       name: uid,
@@ -2074,14 +3382,27 @@ $$
   }
 
   quitRoom() {
+    this._clearCollaborationInitializationListeners();
+    this._awareness?.destroy();
+    this._awareness = undefined;
+    this.provider?.destroy();
+    this.provider = undefined;
+  }
+
+  private _completeCollaborationInitialization() {
+    this._clearCollaborationInitializationListeners();
+  }
+
+  private _clearCollaborationInitializationListeners() {
     const editor = this.editor;
     if (editor && this._collabInitHandler) {
       editor.doc.yDoc.off('update', this._collabInitHandler);
-      this._collabInitHandler = undefined;
     }
-
-    this.provider?.destroy();
-    this.provider = undefined;
+    if (this.provider && this._collabSyncHandler) {
+      this.provider.off('sync', this._collabSyncHandler);
+    }
+    this._collabInitHandler = undefined;
+    this._collabSyncHandler = undefined;
   }
 
   startDemo() {
@@ -2253,40 +3574,81 @@ $$
     const val = +(event.target as HTMLInputElement).value;
     if (type === 'users') this.simUserCount = val;
     else this.simIntervalMs = val;
-    if (this.isSimulationRunning) this.restartSimTimer();
+    if (this.isSimulationRunning && this.simulationMode === 'random-text') {
+      this.restartSimTimer();
+    }
+  }
+
+  setSimulationMode(mode: CollaborationSimulationMode) {
+    if (mode === this.simulationMode) return;
+    const shouldRestart = this.isSimulationRunning;
+    if (shouldRestart) this.stopSimulation();
+    this.simulationMode = mode;
+    if (shouldRestart) this.startSimulation();
+  }
+
+  onImeAutoChange(event: Event) {
+    this.imeAutoEnabled = (event.target as HTMLInputElement).checked;
+    this._imeScenarioRunner?.setAutoEnabled(this.imeAutoEnabled);
+  }
+
+  onImeDelayChange(event: Event) {
+    this.imeScenarioDelayMs = +(event.target as HTMLInputElement).value;
+    this._imeScenarioRunner?.setDelayMs(this.imeScenarioDelayMs);
+  }
+
+  get canRunImeScenario() {
+    return this.isSimulationRunning &&
+      this.simulationMode === 'ime-race' &&
+      this.imeRunnerState.hasActiveComposition;
+  }
+
+  imeScenarioLabel(scenario: ImeCollaborationScenario | null) {
+    return scenario ? IME_SCENARIO_LABELS[scenario] : '等待 IME';
+  }
+
+  runImeScenario(event: PointerEvent, scenario: ImeCollaborationScenario) {
+    // Keep the native composition target focused while the sidebar command runs.
+    event.preventDefault();
+    this._imeScenarioRunner?.runNow(scenario);
   }
 
   startSimulation() {
     if (this.isSimulationRunning) return;
-    this.ensureEditorInitialized();
+    const editor = this.ensureEditorInitialized();
+    const session = new ShadowCollaborationSession(
+      editor.doc.yDoc,
+      (direction, error) => console.warn(`[playground] ${direction} bridge failed`, error),
+    );
 
-    const mainDoc = this.editor!.doc.yDoc;
-    this._shadowDoc = new Y.Doc();
-    Y.applyUpdate(this._shadowDoc, Y.encodeStateAsUpdate(mainDoc));
-
-    const syncToShadow = (update: Uint8Array, origin: any) => {
-      if (origin !== 'shadow') {
-        try { Y.applyUpdate(this._shadowDoc!, update, 'main'); } catch {}
-      }
-    };
-    const syncToMain = (update: Uint8Array, origin: any) => {
-      if (origin !== 'main') {
-        try { Y.applyUpdate(mainDoc, update, 'shadow'); } catch {}
-      }
-    };
-    mainDoc.on('update', syncToShadow);
-    this._shadowDoc.on('update', syncToMain);
-
-    this._shadowCleanup = () => {
-      mainDoc.off('update', syncToShadow);
-      this._shadowDoc?.off('update', syncToMain);
-      this._shadowDoc?.destroy();
-      this._shadowDoc = null;
-    };
-
+    this._shadowSession = session;
     this.isSimulationRunning = true;
     this.simOpCount = 0;
-    this.restartSimTimer();
+    try {
+      if (this.simulationMode === 'random-text') {
+        this.restartSimTimer();
+      } else {
+        this.imeRunnerState = createInitialImeRunnerState();
+        this._imeScenarioRunner = new ImeCollaborationScenarioRunner({
+          doc: editor.doc,
+          host: editor.doc.root.hostElement,
+          session,
+          autoEnabled: this.imeAutoEnabled,
+          delayMs: this.imeScenarioDelayMs,
+          onStateChange: state => {
+            this.imeRunnerState = state;
+            this.simOpCount = state.appliedCount;
+            this.cdr.markForCheck();
+          },
+          onError: error => console.warn('[playground] IME scenario failed', error),
+        });
+        this._imeScenarioRunner.start();
+      }
+    } catch (error) {
+      this.stopSimulation();
+      throw error;
+    }
+    this.cdr.markForCheck();
   }
 
   stopSimulation() {
@@ -2295,12 +3657,19 @@ $$
       clearInterval(this._simTimer);
       this._simTimer = null;
     }
-    this._shadowCleanup?.();
-    this._shadowCleanup = null;
+    this._imeScenarioRunner?.stop();
+    this._imeScenarioRunner = null;
+    this._shadowSession?.destroy();
+    this._shadowSession = null;
+    this.cdr.markForCheck();
   }
 
   private restartSimTimer() {
     if (this._simTimer) clearInterval(this._simTimer);
+    if (!this.isSimulationRunning || this.simulationMode !== 'random-text') {
+      this._simTimer = null;
+      return;
+    }
     this._simTimer = setInterval(() => {
       for (let i = 0; i < this.simUserCount; i++) {
         this.performRandomOp();
@@ -2309,11 +3678,26 @@ $$
   }
 
   private performRandomOp() {
-    if (!this._shadowDoc) return;
+    const editor = this.editor;
+    const session = this._shadowSession;
+    if (!session || !editor?.doc.isInitialized) return;
+    const shadowDoc = session.shadowDoc;
 
-    const shadowBlockMap = this._shadowDoc.getMap<Y.Map<any>>('blocks');
+    const activeEditableIds = new Set<string>();
+    const pendingBlockIds = [editor.doc.rootId];
+    while (pendingBlockIds.length) {
+      const blockId = pendingBlockIds.pop()!;
+      if (editor.doc.model.getNodeType(blockId) === BlockNodeType.editable) {
+        activeEditableIds.add(blockId);
+        continue;
+      }
+      pendingBlockIds.push(...editor.doc.model.getChildrenIds(blockId));
+    }
+
+    const shadowBlockMap = shadowDoc.getMap<Y.Map<any>>('blocks');
     const editableEntries: { id: string; yText: Y.Text }[] = [];
     shadowBlockMap.forEach((yBlock, id) => {
+      if (!activeEditableIds.has(id)) return;
       try {
         const children = yBlock.get('children');
         if (children instanceof Y.Text) editableEntries.push({ id, yText: children });
@@ -2334,7 +3718,7 @@ $$
     const textLen = target.yText.length;
     const chars = 'abcdefghij ';
 
-    this._shadowDoc.transact(() => {
+    session.transact(() => {
       if (textLen === 0 || Math.random() < 0.7) {
         const pos = Math.floor(Math.random() * (textLen + 1));
         const len = 1 + Math.floor(Math.random() * 3);

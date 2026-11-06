@@ -17,9 +17,19 @@
 
   .table-block {
     padding-bottom: 16px;
+    width: fit-content;
+    max-width: 100%;
+    overflow: hidden;
 
-    // Fullscreen view feature
     position: relative;
+
+    [data-block-zero-space="true"][data-block-gap-side="before"] {
+      left: 0;
+    }
+
+    [data-block-zero-space="true"][data-block-gap-side="after"] {
+      right: 0;
+    }
 
     .bc-table-fullscreen-btn {
       position: absolute;
@@ -59,13 +69,17 @@
       z-index: var(--bc-table-fullscreen-z);
       background: var(--bc-table-fullscreen-bg);
       padding: 64px 0;
-      // 滚动下放到 .table-scrollable 内部，外层容器只布局不滚。
+      // 横向滚动下放到 .table-scrollable 内部，外层只保留纵向滚动。
       // 这样 top: 12px / bottom: 16px 的 position:absolute 工具栏始终
       // 锚定在 viewport 边缘，不会跟着表格内容滚走。
-      overflow: auto;
+      overflow-x: hidden;
+      overflow-y: auto;
       border-radius: 0;
       box-sizing: border-box;
-      margin: 0;
+      // 分页用内联 margin-top 下推页首块；全屏只临时屏蔽该视图偏移，
+      // 不清除内联值，使退出全屏后最新分页位置自动恢复。
+      margin: 0 !important;
+      width: 100%;
 
       // 全屏视图下小表格在 viewport 内居中显示。
       // 不用 `align-items: safe center`：WKWebView (Safari < 16.5 / iOS < 16.5)
@@ -88,9 +102,6 @@
         right: 12px;
         width: 40px;
         height: 40px;
-        // 全屏态下浮层工具栏统一压到 table-col-bar / table-row-bar (z=100) +
-        // resize-bar (z=102) + drop-line/preview (z=140/150) 之上。
-        // 不然向下滚动时，col-bar 会从下方滑到 viewport 顶部、盖住关闭按钮 / 结构工具栏。
         z-index: 200;
         background: var(--bc-bg-hover, rgba(0, 0, 0, 0.06));
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
@@ -111,6 +122,8 @@
         // scrollTop=0 即对齐表头，避免老版本 WKWebView 上方被裁。
         margin: auto;
         width: 100%;
+        min-width: 0;
+        max-width: 100%;
         overflow-y: hidden;
         padding-top: var(--bc-table-fullscreen-padding-y);
         padding-bottom: var(--bc-table-fullscreen-padding-y);
@@ -121,6 +134,10 @@
       .table-wrapper {
         margin-left: auto;
         margin-right: auto;
+      }
+
+      .table-menu-anchor {
+        display: none;
       }
 
       // row-bar 现在放在 .table-wrapper 内部，containing block 自动是 wrapper，
@@ -276,10 +293,6 @@
       table {
         position: relative;
 
-        td {
-          -webkit-user-modify: read-write;
-        }
-
         &::after {
           content: '';
           position: absolute;
@@ -298,7 +311,7 @@
     }
 
     &:not(.selected) {
-      td.table-cell-block.selected::after {
+      td.table-cell-block.bc-table-cell-selected::after {
         z-index: 200;
         content: '';
         position: absolute;
@@ -313,7 +326,8 @@
     }
 
     &.col-head {
-      td:first-child {
+      // 明确结构行和单元格，避免通用对象布局的正文层级覆盖 sticky 标题列。
+      tr.table-row-block > td.table-cell-block:first-child {
         position: sticky;
         left: -1px;
         z-index: 2;
@@ -347,13 +361,24 @@
       //   - 部分浏览器对 <tr> 的 background 不绘制 painting layer，
       //     导致 sticky tr 透出后面滚动过的内容
       // 改作用在 td 上后两个问题都消除：每个 td 自己是 sticky + 有 background。
-      tr:first-child {
+      tr.table-row-block:first-child {
         font-weight: bold;
 
-        > td {
+        > td.table-cell-block {
           position: sticky;
           top: -1px;
           z-index: 2;
+          background: var(--bc-table-head-bg) !important;
+        }
+      }
+
+      // 续页重复表头克隆：复用表头底色 + 加粗，但**不** sticky（它是流内静态重复行，不是吸顶表头）。
+      // 表头底色/加粗由上面的 `tr:first-child` 提供，克隆插在 tbody 中间不是 first-child、匹配不到，
+      // 故单独补——否则续页重复表头透明、无底色，与原表头视觉不一致。
+      tr.bc-pagination-header-clone {
+        font-weight: bold;
+
+        > td {
           background: var(--bc-table-head-bg) !important;
         }
       }
@@ -376,6 +401,28 @@
         // row-bar 的 top: 1px 现在是全局默认（containing block 已改为 wrapper），
         // 不再需要 :not(.is-fullscreen) 单独覆盖。
       }
+    }
+
+    // 横向滚动时，交叉格盖住其他表头；整表选中的 ::after 仍绘制在它上方。
+    &.col-head.row-head tr.table-row-block:first-child > td.table-cell-block:first-child {
+      z-index: 3;
+    }
+
+    &.col-head,
+    &.row-head {
+      // 标题格需要跨行共享表格层叠上下文，结构行不作为对象层叠平面。
+      // 单元格内部仍由 children wrapper 维持衬底/正文/浮于文字的对象层级。
+      table > tbody.children-render-container > tr.table-row-block[data-block-id][data-bc-placement-container] {
+        isolation: auto;
+        z-index: auto;
+      }
+    }
+
+    // 分页占位行（页缝）始终透明，不继承表头底色，保证页缝透出页间背景。
+    &.col-head tr.bc-pagination-spacer > td,
+    &.row-head tr.bc-pagination-spacer > td,
+    tr.bc-pagination-spacer > td {
+      background: transparent !important;
     }
 
     .table-scrollable {
@@ -420,7 +467,7 @@
 
       //tr.table-row-block,
       td.table-cell-block {
-        &.selected {
+        &.bc-table-cell-selected {
           background: unset;
         }
       }
@@ -439,6 +486,31 @@
           height: 100%;
           user-select: none;
           -webkit-user-select: none;
+
+          // 分页中不可拆的巨大原子子块（媒体/代码/嵌入）局部锁到一页高。
+          // 不改模型；可拆文字仍走单元格流式续排。
+          > .bc-page-nested-height-locked {
+            max-height: var(--bc-page-content-height) !important;
+            overflow: hidden !important;
+          }
+
+          // 代码块不能像媒体一样直接裁掉正文。标题保持可见，正文区域在
+          // 单页上限内滚动；分页关闭后 nested lock 被清除并恢复自然高度。
+          > .bc-page-nested-height-locked.code-block {
+            display: flex;
+            flex-direction: column;
+            overflow: visible !important;
+
+            > .code-block__head {
+              flex: 0 0 auto;
+            }
+
+            > .edit-container-wrapper {
+              flex: 1 1 auto;
+              min-height: 0;
+              overflow-y: auto;
+            }
+          }
 
           &[data-align="center"] {
             text-align: center;
@@ -464,19 +536,46 @@
 
   }
 
+  // Whole-table presentation must not create editable islands in a reading
+  // document (or a protected table); those islands trap native cross-block
+  // selection in Chromium. Preserve the existing editable-table behavior.
+  &:not(.readonly) .table-block.selected:not([data-bc-readonly]) table td {
+    -webkit-user-modify: read-write;
+  }
+
   @at-root #{selector-unify(&, '.readonly')} {
     .table-block {
 
       .table-col-resize-bar,
       table-col-bar,
       table-row-bar {
-        display: none;
+        display: none !important;
       }
+    }
+  }
+
+  // Block-level readonly keeps table content selectable, but structural
+  // controls must match the document-readonly state and expose no write affordance.
+  .table-block[data-bc-readonly] {
+    .table-col-resize-bar,
+    table-col-bar,
+    table-row-bar {
+      display: none !important;
     }
   }
 
   .table-block {
     $ctrlBarSize: 16px;
+
+    // 手柄是 wrapper 内独立于 table painting layer 的 overlay。只有 hover
+    // 已解析到真实模型 cell 后才显示，避免分页重绘时孤立手柄误抢选区。
+    .table-wrapper > .table-col-resize-bar {
+      display: none;
+
+      &.is-visible {
+        display: block;
+      }
+    }
 
     .table-col-resize-bar,
     table-col-bar,
@@ -495,7 +594,7 @@
     &.is-reordering-col {
 
       .table-col-resize-bar {
-        display: none;
+        display: none !important;
       }
     }
 
@@ -511,6 +610,14 @@
       position: absolute;
       z-index: 102;
       cursor: col-resize;
+    }
+
+    &.is-resizing-col {
+      cursor: col-resize;
+
+      .table-col-resize-bar > .bar {
+        opacity: 0;
+      }
     }
 
     .table-menu-anchor {
@@ -566,16 +673,14 @@
       outline: 1px solid var(--bc-active-color);
     }
 
-    // Resize bar 现在是「悬停 cell」的 DOM 子节点（由 JS appendChild 切换归属）。
-    // 用 CSS 自动定位到 cell 右边界，跨浏览器 / 任何 zoom / 任何 border-spacing 都
-    // 不需要 JS 数学计算。详细原因见 TableBlockComponent._handleNativeMouseOver
-    // 旁的注释。
+    // Resize bar 位于 table 之后的 wrapper overlay 层，避免 Safari 在
+    // border-collapse 边界把右侧 td 绘制到手柄之上。
     .table-col-resize-bar {
       top: 0;
-      right: -6px;
+      right: auto;
+      left: 0;
       width: 12px;
-      height: 100%;
-      left: auto;
+      height: 1px;
 
       &:hover {
         > .bar {
@@ -587,11 +692,11 @@
         opacity: 0;
         position: absolute;
         top: 0;
-        // 改用 50% + translateX 居中，让宽度变化时也精确居中在 cell.right 边界上。
+        right: auto;
         left: 50%;
-        transform: translateX(-50%);
         height: 100%;
         width: 3px;
+        transform: translateX(-50%);
         background: var(--bc-active-color);
         border-radius: 1px;
       }
@@ -606,6 +711,7 @@
 
     &:hover,
     &.active,
+    &:has(.bc-table-cell-selected),
     &:has(.selected),
     &:has(.focused) {
 
@@ -764,6 +870,13 @@
       width: 8px;
       flex-direction: column;
 
+      // 屏幕分页页缝：与表格内 .bc-pagination-spacer 等高的占位，撑开手柄列、保持与被下推行对齐。
+      .handle-page-break {
+        flex: 0 0 auto;
+        width: 100%;
+        pointer-events: none;
+      }
+
       .handle {
         width: 8px;
         justify-content: stretch;
@@ -799,22 +912,47 @@
   }
 }
 
-// 表格全屏期间 body 锁滚动 + 全屏遮罩
+// 表格全屏期间锁定 body，并把宿主应用的其余视觉层隔离出去。
 //
-// 遮罩放在 body 层而不是表格内的 ::before，因为表格 .is-fullscreen 自己是
-// position: fixed + z-index: 800 → 会建立独立的 stacking context；
-// 内部的 ::before 即便 z-index 设很低，也只在「该子 context」内排序，
-// 反而会盖到表格内容上。body ::before 是兜底背景，z-index 在全局 stacking
-// 里低于表格容器，所以表格内容能正确地浮在遮罩之上。
+// 不能把宿主应用的顶层祖先直接设为 visibility:hidden：Chromium 会把隐藏祖先下的
+// contenteditable 当成没有活动 editing host，只发原生 input、不发 beforeinput，输入
+// 因而绕过 InputTransformer / Y.Text。BlockFullscreenController 改为仅隐藏活动块
+// DOM 路径两侧的 sibling branches；祖先和 root editing host 始终保持 visible。
+// 路径标记随分页/虚拟化重父更新，CSS 也会自动覆盖全屏期间新插入的 sibling。
+// CDK overlay container 保留，供表格内下拉菜单使用。
 body.bc-table-fullscreen-lock {
   overflow: hidden;
-  //
-  //&::before {
-  //  content: '';
-  //  position: fixed;
-  //  inset: 0;
-  //  background: var(--bc-table-fullscreen-overlay-bg);
-  //  z-index: var(--bc-table-fullscreen-mask-z);
-  //  pointer-events: none;
-  //}
+  background: var(--bc-table-fullscreen-bg);
+
+  // Fullscreen table stays in its Angular-owned tree. Explicit visibility is a
+  // compatibility guard for host themes; no ancestor in BlockCraft's isolation
+  // path is hidden.
+  .table-block.is-fullscreen,
+  .mermaid-block.is-fullscreen {
+    visibility: visible !important;
+  }
+
+  // Safari 的祖先层叠上下文可能继续裁剪 fixed 后代的合成层。
+  // 控制器已隔离路径两侧的分支，此处仅解除祖先层级，保留活动块和 overlay 层级。
+  // 不改 overflow：保留后台滚动锁；纸面等宿主自己的裁剪由宿主样式按此祖先标记解除。
+  .bc-table-fullscreen-isolation-container {
+    isolation: auto !important;
+    z-index: auto !important;
+  }
+
+  // CDK overlays created by table controls must remain usable above the table.
+  > .cdk-overlay-container {
+    visibility: visible !important;
+    z-index: calc(var(--bc-table-fullscreen-z) + 1);
+  }
+}
+
+body.bc-table-fullscreen-lock.bc-table-fullscreen-isolation-container
+  > :not(.bc-table-fullscreen-isolation-branch):not(.cdk-overlay-container):not([data-bc-table-col-resize-preview]),
+body.bc-table-fullscreen-lock
+  .bc-table-fullscreen-isolation-container
+  > :not(.bc-table-fullscreen-isolation-branch):not(.cdk-overlay-container):not([data-bc-table-col-resize-preview]) {
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
 }

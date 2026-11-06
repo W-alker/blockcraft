@@ -7,12 +7,28 @@ import {
 } from "../../framework";
 import {UIEventStateContext, IBlockSnapshot} from "../../framework";
 import {BlockCraftError, downloadFile, ErrorCode, nextTick} from "../../global";
+import {checkIncomingContentSize} from '../../framework/doc/incoming-content';
 import {merge, Subject, Subscription, takeUntil} from "rxjs";
 import {OverlayRef} from "@angular/cdk/overlay";
 import {AttachmentBlockToolbar, IAttachmentToolbarItem} from "./widgets/attachment-toolbar";
 import {RenameInputPad} from "./widgets/rename-input-pad";
+import {isSelectionAlive} from "../../framework/modules/selection/liveness";
+import {ComponentRef} from "@angular/core";
+import {focusAfterImageInsertion} from '../../framework/modules/selection/after-insertion';
 
 type AttachmentBlock = BlockCraft.IBlockComponents['attachment']
+
+const ATTACHMENT_RENAMING_CLASS = 'bc-attachment-renaming'
+const ATTACHMENT_CONTENT_SELECTOR = [
+  '.attachment-block__empty',
+  '.attachment-block__prefix',
+  '.attachment-block__info',
+  '.attachment-block__name',
+  '.attachment-block__size',
+  '.attachment-block__icon-wrapper',
+  '.attachment-block__progress',
+  '.attachment-block__spinner',
+].join(',')
 
 export interface AttachmentExtensionOptions {
   /**
@@ -59,10 +75,15 @@ export class AttachmentExtensionPlugin extends DocPlugin {
   private _sub?: Subscription
   private _timer: number | null = null
   private _toolbarRef?: OverlayRef
+  private _toolbarComponentRef?: ComponentRef<AttachmentBlockToolbar>
 
   private _closeToolbar$ = new Subject<void>()
 
   private _activeBlock: AttachmentBlock | null = null
+
+  private _isReadonly(block: AttachmentBlock) {
+    return this.doc.readonlyManager?.isReadonly(block) ?? this.doc.isReadonly
+  }
 
   constructor(private options?: AttachmentExtensionOptions) {
     super();
@@ -76,15 +97,21 @@ export class AttachmentExtensionPlugin extends DocPlugin {
    */
   @EventListen('mouseDown', {flavour: 'attachment'})
   onClick(state: UIEventStateContext) {
-    const blockId = closetBlockId(state.getDefaultEvent().target as Node)
+    const target = state.getDefaultEvent().target
+    const content = target instanceof Element
+      ? target.closest(ATTACHMENT_CONTENT_SELECTOR)
+      : null
+    if (!content) return
+
+    const blockId = closetBlockId(content)
     if (!blockId) return
-    const block = this.doc.getBlockById(blockId) as AttachmentBlock | null
+    const block = this._getLiveAttachmentBlockById(blockId)
     if (!block) return
 
     // 空附件：编辑模式下打开文件选择
     if (!block.props.url) {
       state.preventDefault()
-      if (!this.doc.isReadonly) {
+      if (!this._isReadonly(block)) {
         block.inputLocalFile()
       }
       return true
@@ -98,7 +125,7 @@ export class AttachmentExtensionPlugin extends DocPlugin {
     }
 
     // 只读模式下：选中块以便预览/下载
-    if (this.doc.isReadonly) {
+    if (this._isReadonly(block)) {
       state.preventDefault()
       this.doc.selection.selectBlock(blockId)
       return true
@@ -116,7 +143,7 @@ export class AttachmentExtensionPlugin extends DocPlugin {
     this._sub = this.doc.selection.selectionChange$.subscribe(selection => {
       this.clearTimer()
 
-      if (!selection || !selection.isInSameBlock || selection.firstBlock?.flavour !== 'attachment') {
+      if (!selection || !isSelectionAlive(selection as any, this.doc) || !selection.isInSameBlock || selection.firstBlock?.flavour !== 'attachment' || selection.anchor.type !== 'selected' || selection.head.type !== 'selected') {
         this._toolbarRef && this.closeToolbar()
         return
       }
@@ -128,6 +155,18 @@ export class AttachmentExtensionPlugin extends DocPlugin {
       this._timer = setTimeout(() => {
         this._timer = null
         if (this._toolbarRef && this._activeBlock === attachmentBlock) return;
+        const currentSelection = this.doc.selection.value
+        if (
+          !currentSelection ||
+          !isSelectionAlive(currentSelection as any, this.doc) ||
+          !currentSelection.isInSameBlock ||
+          currentSelection.firstBlock?.id !== attachmentBlock.id ||
+          currentSelection.anchor.type !== 'selected' ||
+          currentSelection.head.type !== 'selected'
+        ) {
+          return
+        }
+        if (!this._isBlockAlive(attachmentBlock)) return
 
         this._activeBlock = attachmentBlock
 
@@ -141,10 +180,12 @@ export class AttachmentExtensionPlugin extends DocPlugin {
         }, this._closeToolbar$, this.closeToolbar)
 
         this._toolbarRef = overlayRef
+        this._toolbarComponentRef = componentRef
 
         const canUse = this._isCanUse(attachmentBlock)
         componentRef.setInput('doc', this.doc)
         componentRef.setInput('canUse', canUse)
+        componentRef.setInput('isReadonly', this._isReadonly(attachmentBlock))
         componentRef.setInput('showPreview', !!this.options?.onPreview)
         if (this.options?.previewIcon) {
           componentRef.setInput('previewIcon', this.options.previewIcon)
@@ -161,8 +202,14 @@ export class AttachmentExtensionPlugin extends DocPlugin {
         })
 
         componentRef.instance.onItemClick.pipe(takeUntil(this._closeToolbar$)).subscribe(v => {
+          if (!this._isBlockAlive(attachmentBlock)) {
+            this.closeToolbar()
+            return
+          }
+          const readonly = this._isReadonly(attachmentBlock)
           switch (v.name) {
             case 'rename':
+              if (readonly) return
               this.onRename(attachmentBlock)
               break
             case 'download':
@@ -172,6 +219,7 @@ export class AttachmentExtensionPlugin extends DocPlugin {
               this.options?.onPreview?.(attachmentBlock, this.doc)
               break
             case 'delete':
+              if (readonly) return
               this.doc.crud.deleteBlockById(attachmentBlock.id)
               break
             default:
@@ -183,6 +231,18 @@ export class AttachmentExtensionPlugin extends DocPlugin {
       }, 200)
 
     })
+    const stateChange$ = this.doc.readonlyManager?.stateChange$
+    if (stateChange$) {
+      this._sub.add(stateChange$.subscribe(() => {
+        const activeBlock = this._activeBlock
+        if (!activeBlock || !this._toolbarComponentRef) return
+        if (!this._isBlockAlive(activeBlock)) {
+          this.closeToolbar()
+          return
+        }
+        this._toolbarComponentRef.setInput('isReadonly', this._isReadonly(activeBlock))
+      }))
+    }
   }
 
   /** 附件是否就绪：有 url 且已上传至远端（http(s) 协议） */
@@ -201,16 +261,42 @@ export class AttachmentExtensionPlugin extends DocPlugin {
   closeToolbar = () => {
     this._closeToolbar$.next()
     this.clearTimer()
+    this._toolbarRef?.dispose()
+    this._toolbarRef = undefined
+    this._toolbarComponentRef = undefined
     this._activeBlock = null
   }
 
+  private _setRenamingHighlight(block: AttachmentBlock, active: boolean) {
+    block.hostElement.classList.toggle(ATTACHMENT_RENAMING_CLASS, active)
+  }
+
+  private _isBlockAlive(block: AttachmentBlock): boolean {
+    try {
+      return this.doc.getBlockById(block.id) === block
+    } catch {
+      return false
+    }
+  }
+
+  private _getLiveAttachmentBlockById(blockId: string): AttachmentBlock | null {
+    try {
+      const block = this.doc.getBlockById(blockId) as AttachmentBlock | null
+      return block && block.flavour === 'attachment' && this._isBlockAlive(block) ? block : null
+    } catch {
+      return null
+    }
+  }
+
   onRename(block: AttachmentBlock) {
+    if (!this._isBlockAlive(block) || this._isReadonly(block)) return
     const close$ = new Subject<void>()
 
     const close = () => {
       close$.next()
       nextTick().then(() => {
-        block.hostElement.classList.remove('selected')
+        this._setRenamingHighlight(block, false)
+        if (!this._isBlockAlive(block)) return
         this.doc.selection.selectBlock(block)
       })
     }
@@ -227,10 +313,12 @@ export class AttachmentExtensionPlugin extends DocPlugin {
 
     componentRef.setInput('value', block.props.name)
 
-    // 伪造选中
+    // Keep attachment visually active while the native rename input owns focus.
+    // The real selection remains model-owned and is restored on close.
     requestAnimationFrame(() => {
+      if (!this._isBlockAlive(block)) return
       componentRef.instance.focus()
-      block.hostElement.classList.add('selected')
+      this._setRenamingHighlight(block, true)
     })
 
     merge(overlayRef.backdropClick(), componentRef.instance.cancel).pipe(takeUntil(close$)).subscribe(() => {
@@ -239,6 +327,8 @@ export class AttachmentExtensionPlugin extends DocPlugin {
 
     componentRef.instance.valueChange.pipe(takeUntil(close$)).subscribe(v => {
       close()
+      if (!this._isBlockAlive(block)) return
+      if (this._isReadonly(block)) return
       block.updateProps({
         name: v
       })
@@ -250,7 +340,7 @@ export class AttachmentExtensionPlugin extends DocPlugin {
   onPaste(ctx: UIEventStateContext) {
     const state = ctx.get('clipboardState');
     if (!state.dataTypes.includes(ClipboardDataType.FILES)) return false;
-    if (this.doc.selection.value?.isAllSelected) {
+    if (state.selection.isAllSelected) {
       ctx.preventDefault();
       return true;
     }
@@ -258,38 +348,121 @@ export class AttachmentExtensionPlugin extends DocPlugin {
     if (!files?.length) return false;
     ctx.preventDefault();
 
+    if (state.selection.getTableCellSelection?.()) {
+      this.doc.messageService.warn('请先进入单元格内容后再粘贴文件')
+      return true
+    }
+
+    if (!isSelectionAlive(state.selection as any, this.doc)) {
+      this.doc.logger.warn('attachment paste target selection is stale, abort')
+      return true
+    }
+    if (this.doc.readonlyManager?.isSelectionReadonly(state.selection) ?? this.doc.isReadonly) return true
+
     // Create blocks with local object URLs IMMEDIATELY — image / attachment
     // block components detect a non-http(s) src in their `ngOnInit` and kick
     // off the upload themselves, showing in-place upload progress. The
     // previous implementation awaited every upload before inserting, so a
     // pasted screenshot stayed invisible until the network round-trip
     // finished. Matches the drag-and-drop path in `DndService.onInsertFiles`.
-    const depth = state.selection.firstBlock.props.depth || 0;
+    const depth = this._selectionDepth(state.selection);
     const snapshots: IBlockSnapshot[] = [];
-    for (const file of Array.from(files)) {
-      if (this.fileService.isOverMaxSize(file.size)) {
-        this.doc.messageService.warn(
-          file.type.startsWith('image/') ? '图片过大，最大支持 60MB' : '文件过大',
-        );
-        continue;
+    const objectUrls: string[] = [];
+    let inserted = false;
+    try {
+      for (const file of Array.from(files)) {
+        if (this.fileService.isOverMaxSize(file.size)) {
+          this.doc.messageService.warn(
+            file.type.startsWith('image/') ? '图片过大，最大支持 60MB' : '文件过大',
+          );
+          continue;
+        }
+        const url = this.fileService.createObjectURL(file);
+        objectUrls.push(url);
+        const snapshot = file.type.startsWith('image/')
+          ? this.doc.schemas.createSnapshot('image', [url])
+          : this.doc.schemas.createSnapshot('attachment', [{
+              name: file.name,
+              url,
+              type: file.type,
+              size: file.size,
+            }]);
+        snapshot.props.depth = depth;
+        snapshots.push(snapshot);
       }
-      const url = this.fileService.createObjectURL(file);
-      const snapshot = file.type.startsWith('image/')
-        ? this.doc.schemas.createSnapshot('image', [url])
-        : this.doc.schemas.createSnapshot('attachment', [{
-            name: file.name,
-            url,
-            type: file.type,
-            size: file.size,
-          }]);
-      snapshot.props.depth = depth;
-      snapshots.push(snapshot);
+
+      if (!snapshots.length) return true;
+      if (!checkIncomingContentSize(this.doc, {snapshots})) return true;
+      inserted = this._insertFileSnapshotsAtSelection(state.selection, snapshots);
+      if (inserted) focusAfterImageInsertion(this.doc, snapshots[snapshots.length - 1]);
+      return true;
+    } finally {
+      if (!inserted) this._releaseObjectUrls(objectUrls);
+    }
+  }
+
+  private _releaseObjectUrls(urls: readonly string[]): void {
+    for (const url of urls) {
+      try {
+        this.fileService.removeObjectURL(url);
+      } catch (error) {
+        // Cleanup is best-effort and must not mask the original insertion error
+        // or prevent the remaining URLs in this paste batch from being released.
+        this.doc.logger.warn('attachment paste object URL cleanup failed', error);
+      }
+    }
+  }
+
+  private _selectionDepth(selection: BlockCraft.Selection): number {
+    try {
+      if (selection.start.type === 'gap') {
+        return selection.start.block.props.depth || 0
+      }
+      return selection.firstBlock.props.depth || 0
+    } catch {
+      return 0
+    }
+  }
+
+  private _insertFileSnapshotsAtSelection(selection: BlockCraft.Selection, snapshots: IBlockSnapshot[]): boolean {
+    if (!snapshots.length) return false
+
+    if (selection.getTableCellSelection?.()) {
+      return false
     }
 
-    if (!snapshots.length) return true;
-    this.doc.clipboard.deleteContentFromSelection(state.selection);
-    this.doc.crud.insertBlocksAfter(state.selection.firstBlock, snapshots);
-    return true;
+    if (selection.collapsed && selection.start.type === 'gap') {
+      const gap = selection.start
+      if (!gap.block.parentId) return false
+      const index = gap.block.getIndexOfParent() + (gap.side === 'after' ? 1 : 0)
+      this.doc.crud.insertBlocks(gap.block.parentId, index, snapshots)
+      return true
+    }
+
+    if (selection.start.type === 'boundary' && selection.end.type === 'boundary' && selection.start.blockId === selection.end.blockId) {
+      const host = selection.start.block
+      const max = host.childrenLength
+      const from = Math.max(0, Math.min(selection.start.index, selection.end.index, max))
+      const to = Math.max(from, Math.min(Math.max(selection.start.index, selection.end.index), max))
+      this.doc.crud.transact(() => {
+        if (to > from) {
+          this.doc.crud.deleteBlocks(host.id, from, to - from, true)
+        }
+        this.doc.crud.insertBlocks(host.id, from, snapshots)
+      })
+      return true
+    }
+
+    if (selection.start.type === 'text') {
+      const anchorBlock = selection.firstBlock
+      this.doc.crud.transact(() => {
+        this.doc.clipboard.deleteContentFromSelection(selection)
+        this.doc.crud.insertBlocksAfter(anchorBlock, snapshots)
+      })
+      return true
+    }
+
+    return false
   }
 
   destroy() {

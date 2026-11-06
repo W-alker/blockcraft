@@ -1,0 +1,43 @@
+<section
+  class="revision-review-popover"
+  role="toolbar"
+  aria-label="当前修订快捷操作"
+  [attr.title]="readonlyReason()">
+  <span
+    class="revision-review-popover__avatar"
+    [style.background-color]="actor().color || 'var(--bc-active-color)'"
+    aria-hidden="true">
+    {{ actorInitial() }}
+  </span>
+
+  <strong class="revision-review-popover__actor">{{ actorName() }}</strong>
+
+  <time
+    class="revision-review-popover__time"
+    [attr.datetime]="item().createdAt">
+    {{ item().createdAt | date:'MM-dd HH:mm' }}
+  </time>
+
+  <div class="revision-review-popover__actions">
+    <span class="revision-review-popover__action" [csTooltip]="revertLabel()">
+      <button
+        type="button"
+        class="revision-review-popover__button is-revert"
+        [attr.aria-label]="revertLabel()"
+        [disabled]="revertDisabled()"
+        (click)="emit('revert')">
+        <i class="bc_icon bc_x-01" aria-hidden="true"></i>
+      </button>
+    </span>
+    <span class="revision-review-popover__action" [csTooltip]="keepLabel()">
+      <button
+        type="button"
+        class="revision-review-popover__button is-keep"
+        [attr.aria-label]="keepLabel()"
+        [disabled]="keepDisabled()"
+        (click)="emit('keep')">
+        <i class="bc_icon bc_check-ok" aria-hidden="true"></i>
+      </button>
+    </span>
+  </div>
+</section>

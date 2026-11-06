@@ -7,13 +7,18 @@ description: Use when building, extending, or embedding the BlockCraft block-bas
 
 > **AI discovery entry point.** This file exists so AI tools that scan for `SKILL.md` (Claude Code, Codex, etc.) can find this skill pack. Read this file first, then jump into the L0 router.
 >
-> Last updated: 2026-04-08
+> Last updated: 2026-10-08
 
 ## What is BlockCraft?
 
 A block-based rich-text editor built on **Angular 20 (standalone components) + Yjs (CRDT)**. Each document is a tree of typed blocks (paragraph, image, table, callout, …). It supports real-time collaboration, plugin extensibility, custom inline embeds, and HTML/Markdown round-trip via AST adapters.
 
 Source repository: this package, `@ccc/blockcraft`. The skill pack ships inside `node_modules/@ccc/blockcraft/ai-skills/` when consumed via npm.
+
+## 制作美观文档
+
+文档排版、美化或模板设计使用独立的 [blockcraft-document-design](document-design/SKILL.md)，
+它负责文档流、对象块、富文本和段落样式的组合决策。框架接入和扩展继续使用本技能。
 
 ## How to Use This Skill Pack
 

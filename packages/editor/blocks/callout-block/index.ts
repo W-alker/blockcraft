@@ -4,6 +4,8 @@ import { IBlockSchemaOptions } from "../../framework/block-std/schema/block-sche
 import { CalloutBlockComponent } from "./callout.block";
 import { ParagraphBlockSchema } from "../paragraph-block";
 
+export * from './agent'
+
 export interface CalloutBlockModel extends NoEditableBlockNative {
   flavour: 'callout',
   nodeType: BlockNodeType.block,
@@ -22,25 +24,27 @@ export const CalloutBlockSchema: IBlockSchemaOptions<CalloutBlockModel> = {
   createSnapshot: () => {
     return {
       id: generateId(),
-      flavour: 'callout',
+      flavour: "callout",
       nodeType: BlockNodeType.block,
       props: {
-        backColor: '#FFE6CD',
-        color: '#333',
-        borderColor: 'transparent',
-        prefix: '📢'
+        backColor: "#FFE6CD",
+        color: "#333",
+        borderColor: "transparent",
+        prefix: "📢",
       },
       meta: {},
-      children: [ParagraphBlockSchema.createSnapshot()]
-    }
+      children: [ParagraphBlockSchema.createSnapshot()],
+    };
   },
   metadata: {
     version: 1,
     label: "高亮块",
+    description: "突出展示重要信息",
     icon: 'bc_icon bc_gaoliangkuai-color',
     svgIcon: 'bc_gaoliangkuai-color',
     renderUnit: true,
     includeChildren: ['paragraph', 'divider', 'todo', 'bullet', 'ordered', 'heading-*'],
+    selectionScope: 'container',
     // excludeChildren: ['callout', 'table*', 'image', 'code', 'attachment', '*-embed', 'bookmark']
   }
 }

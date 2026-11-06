@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../dist/out-tsc/blockcraft-agent/spec",
+    "types": ["jasmine"],
+    "paths": {
+      "@ccc/blockcraft": ["./dist/editor"],
+      "@ccc/blockcraft/*": ["./dist/editor/*"]
+    }
+  },
+  "include": [
+    "src/**/*.spec.ts",
+    "src/**/*.d.ts"
+  ]
+}

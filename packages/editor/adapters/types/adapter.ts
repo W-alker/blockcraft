@@ -1,4 +1,6 @@
-import {DeltaInsert, DocFileService, IBlockSnapshot, IInlineNodeAttrs} from "../../framework";
+import type {DocFilePort} from '@ccc/blockcraft/framework/ports';
+import {DeltaInsert, IInlineNodeAttrs} from '@ccc/blockcraft/framework/model';
+import {IBlockSnapshot} from '../../framework/block-std/types/block.type';
 import {ASTWalker, NodeProps} from "../base/ast-walker";
 import {ASTWalkerContext} from "../base/context";
 
@@ -9,8 +11,8 @@ export type AdapterContext<
 > = {
   walker: ASTWalker<ONode, TNode>;
   walkerContext: ASTWalkerContext<TNode>;
-  fileManager: DocFileService
-  // configs: Map<string, string>;
+  fileManager: DocFilePort
+  configs?: Map<string, string>;
   // job: Job;
   deltaConverter: TConverter;
   // textBuffer: TextBuffer;
@@ -51,6 +53,15 @@ export type BlockAdapterMatcher<
   TNode extends object = never,
   TConverter extends DeltaASTConverter = DeltaASTConverter,
 > = {
+  /** Higher-priority matchers are evaluated first within one registry. */
+  priority?: number;
+
+  /**
+   * Stop evaluating later Block matchers after this matcher handles a node.
+   * Existing matchers default to the historical non-consuming behaviour.
+   */
+  consumes?: boolean;
+
   /**
    * Function to check if a target node matches this adapter
    * @param o - The target node properties to check

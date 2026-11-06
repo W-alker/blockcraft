@@ -24,7 +24,14 @@ export class CompositionEventState extends UIEventState {
   }
 
   get selectionResult() {
-    return this._selectionResult ||= this.doc.selection.recalculate(false, {isComposing: true})
+    if (!this._selectionResult) {
+      try {
+        this._selectionResult = this.doc.selection.recalculate(false, {isComposing: true})
+      } catch {
+        this._selectionResult = {value: null}
+      }
+    }
+    return this._selectionResult
   }
 
   get selection() {
@@ -47,11 +54,15 @@ export class CompositionEventState extends UIEventState {
     const selection = this.selection
     if (!selection || selection.start.type !== 'text') return null
 
-    const block = selection.firstBlock as any
-    const index = selection.start.offset
-    return {
-      block,
-      index: isEmbedAdjacentPosition(block.textDeltas(), index) ? index : Math.max(0, index - text.length)
+    try {
+      const block = selection.firstBlock as any
+      const index = selection.start.offset
+      return {
+        block,
+        index: isEmbedAdjacentPosition(block.textDeltas(), index) ? index : Math.max(0, index - text.length)
+      }
+    } catch {
+      return null
     }
   }
 

@@ -9,7 +9,7 @@
     --code-font-family: "DM Mono", monospace;
     border-radius: var(--bc-radius-lg);
     caret-color: var(--bc-caret-color);
-    background-color: var(--bc-bg-primary);
+    background-color: transparent;
 
     &.focused {
       border: 1px solid var(--bc-active-color);
@@ -33,6 +33,13 @@
       overflow-y: auto;
       scrollbar-width: thin;
       min-height: 60px;
+      border-radius: 0 0 var(--bc-radius-lg) var(--bc-radius-lg);
+      background-color: var(--bc-bg-primary);
+      background-color: color-mix(
+        in srgb,
+        var(--bc-bg-primary) var(--bc-solid-block-background-opacity, 82%),
+        transparent
+      );
     }
 
     .edit-container {
@@ -119,6 +126,11 @@
       padding: 4px 8px;
       align-items: center;
       background: var(--bc-bg-muted);
+      background: color-mix(
+        in srgb,
+        var(--bc-bg-muted) var(--bc-solid-block-background-opacity, 82%),
+        transparent
+      );
       border-bottom: 1px solid var(--bc-border-color);
       border-radius: var(--bc-radius-lg) var(--bc-radius-lg) 0 0;
       gap: 8px;

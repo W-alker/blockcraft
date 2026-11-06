@@ -23,6 +23,7 @@
       line-height: 1lh;
       font-size: 1em;
       min-width: 1em;
+      min-height: 1lh;
 
       > i {
         pointer-events: none;
@@ -31,6 +32,12 @@
 
     .edit-container {
       width: fit-content;
+
+      &[data-bc-inline-float-owner] {
+        flex: 1 1 auto;
+        width: auto;
+        min-width: 0;
+      }
     }
 
   }

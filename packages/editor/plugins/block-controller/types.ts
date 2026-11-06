@@ -1,14 +1,18 @@
 import { TemplateRef, Type } from "@angular/core";
 import { SimpleValue } from "../../global";
-import { OverlayPosition } from "../../framework";
+import { BlockReadonlyResolution, OverlayPosition } from "../../framework";
+
+export type BlockMenuReadonlyBehavior = 'hide' | 'disable' | 'allow'
 
 export interface IContextMenuItem {
   type: 'tool'
   name: string
   value: SimpleValue
-  icon: string
+  icon?: string
+  svgIcon?: string
   label: string
   desc?: string
+  readonlyBehavior?: BlockMenuReadonlyBehavior
 }
 
 export type customToolHandler = (item: IContextMenuItem, block: BlockCraft.BlockComponent<any> | null, doc: BlockCraft.Doc) => boolean
@@ -17,12 +21,15 @@ interface BlockMenuItemBase {
   name: string
   label?: string
   icon?: string
+  svgIcon?: string
   desc?: string
   value?: SimpleValue
   data?: unknown
   disabled?: boolean
   active?: boolean
   hidden?: boolean
+  /** Defaults to `disable` when the active block is readonly. */
+  readonlyBehavior?: BlockMenuReadonlyBehavior
 }
 
 export interface BlockMenuSimpleItem extends BlockMenuItemBase {
@@ -38,6 +45,7 @@ export interface BlockMenuSortAction {
   key: string
   label?: string
   icon?: string
+  svgIcon?: string
   value?: SimpleValue
   active?: boolean
   disabled?: boolean
@@ -51,6 +59,8 @@ export interface BlockMenuSortItem extends BlockMenuItemBase {
 export interface BlockMenuDropdownItem extends BlockMenuItemBase {
   type: 'dropdown'
   items: BlockMenuItem[]
+  /** Width of this dropdown's second-level panel. Defaults to the menu width. */
+  menuWidth?: number
   positions?: OverlayPosition[]
   offsetX?: number
 }
@@ -67,6 +77,7 @@ export interface BlockMenuDividerItem {
   type: 'divider'
   name: string
   hidden?: boolean
+  readonlyBehavior?: BlockMenuReadonlyBehavior
 }
 
 export type BlockMenuItem =
@@ -86,6 +97,7 @@ export interface BlockMenuSection {
 export interface BlockMenuContext {
   activeBlock: BlockCraft.BlockComponent
   doc: BlockCraft.Doc
+  readonly: BlockReadonlyResolution
   findClosestBlock: (flavour: BlockCraft.BlockFlavour | string) => BlockCraft.BlockComponent | null
 }
 

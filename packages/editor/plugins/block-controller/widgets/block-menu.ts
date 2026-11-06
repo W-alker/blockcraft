@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from "@angular/core";
 import { NgComponentOutlet, NgTemplateOutlet } from "@angular/common";
+import { MatIcon } from "@angular/material/icon";
 import { BcFloatToolbarComponent, BcFloatToolbarItemComponent, BcOverlayTriggerDirective } from "../../../components";
 import {
   BlockMenuActionEvent,
@@ -22,7 +23,9 @@ import {
         @if (item.type === "divider") {
           <span class="bc-float-toolbar__divider"></span>
         } @else if (item.type === "custom") {
-          <bc-float-toolbar-item [disabled]="isDisabled(item)">
+          <bc-float-toolbar-item class="custom-item"
+                                 [class.appearance-picker-item]="item.name === 'block-appearance-colors'"
+                                 [disabled]="isDisabled(item)">
             <div class="custom-content" (mousedown)="$event.stopPropagation()">
               @if (item.template) {
                 <ng-container *ngTemplateOutlet="item.template; context: item.templateContext || {}"></ng-container>
@@ -34,7 +37,8 @@ import {
             </div>
           </bc-float-toolbar-item>
         } @else if (item.type === "dropdown") {
-          <bc-float-toolbar-item [icon]="item.icon" [title]="item.desc || item.label"
+          <bc-float-toolbar-item [icon]="item.icon" [svgIcon]="item.svgIcon" [title]="item.desc || item.label"
+                                 [class.appearance-menu-item]="item.name === 'block-appearance'"
                                  [disabled]="isDisabled(item)"
                                  [bcOverlayDisabled]="isDisabled(item)"
                                  [expandable]="true"
@@ -44,13 +48,13 @@ import {
             <span>{{ item.label }}</span>
           </bc-float-toolbar-item>
           <ng-template #subMenuTpl>
-            <bc-float-toolbar direction="column" [styles]="subMenuStyles">
+            <bc-float-toolbar direction="column" [styles]="getSubMenuStyles(item)">
               <ng-container
                 *ngTemplateOutlet="menuItemsTpl; context: { $implicit: item.items, path: appendPath(path, item) }"></ng-container>
             </bc-float-toolbar>
           </ng-template>
         } @else if (item.type === "switch") {
-          <bc-float-toolbar-item [icon]="item.icon" [title]="item.desc || item.label"
+          <bc-float-toolbar-item [icon]="item.icon" [svgIcon]="item.svgIcon" [title]="item.desc || item.label"
                                  [disabled]="isDisabled(item)"
                                  [active]="item.checked"
                                  (mousedown)="onSwitchItemClick(item, path, $event)">
@@ -58,7 +62,7 @@ import {
             <i class="bc_icon bc_duihao switch-check" [class.checked]="item.checked"></i>
           </bc-float-toolbar-item>
         } @else if (item.type === "sort") {
-          <bc-float-toolbar-item class="sort-item" [icon]="item.icon" [title]="item.desc || item.label"
+          <bc-float-toolbar-item class="sort-item" [icon]="item.icon" [svgIcon]="item.svgIcon" [title]="item.desc || item.label"
                                  [disabled]="isDisabled(item)">
             <span>{{ item.label }}</span>
             <div class="sort-actions">
@@ -68,7 +72,9 @@ import {
                         [class.disabled]="!!action.disabled"
                         [attr.title]="action.label"
                         (mousedown)="onSortActionClick(item, action, path, $event)">
-                  @if (action.icon) {
+                  @if (action.svgIcon) {
+                    <mat-icon class="sort-action-svg" [svgIcon]="action.svgIcon"></mat-icon>
+                  } @else if (action.icon) {
                     <i [class]="['bc_icon', action.icon]"></i>
                   } @else {
                     <span>{{ action.label || action.key }}</span>
@@ -78,7 +84,7 @@ import {
             </div>
           </bc-float-toolbar-item>
         } @else {
-          <bc-float-toolbar-item [icon]="item.icon" [title]="item.desc || item.label"
+          <bc-float-toolbar-item [icon]="item.icon" [svgIcon]="item.svgIcon" [title]="item.desc || item.label"
                                  [disabled]="isDisabled(item)"
                                  [active]="!!item.active"
                                  (mousedown)="onSimpleItemClick(item, path, $event)">
@@ -105,6 +111,23 @@ import {
       flex: 1;
     }
 
+    bc-float-toolbar-item.custom-item {
+      height: auto;
+      padding: 0;
+      cursor: default;
+    }
+
+    bc-float-toolbar-item.custom-item.appearance-picker-item,
+    bc-float-toolbar-item.custom-item.appearance-picker-item:hover {
+      padding: 0;
+      background: transparent;
+    }
+
+    bc-float-toolbar-item.appearance-menu-item:hover,
+    bc-float-toolbar-item.appearance-menu-item.float-children-opened {
+      background: transparent;
+    }
+
     .switch-check {
       color: transparent;
       font-size: 14px;
@@ -128,6 +151,11 @@ import {
       display: inline-flex;
       gap: 2px;
       align-items: center;
+    }
+
+    .sort-action-svg {
+      width: 1em;
+      height: 1em;
     }
 
     .sort-action {
@@ -170,6 +198,7 @@ import {
     BcFloatToolbarComponent,
     BcFloatToolbarItemComponent,
     BcOverlayTriggerDirective,
+    MatIcon,
     NgTemplateOutlet,
     NgComponentOutlet
   ],
@@ -215,8 +244,9 @@ export class BlockMenuComponent {
     return this.menuDisabled || !!("disabled" in item && item.disabled)
   }
 
-  get subMenuStyles() {
-    return `display: block; width: ${this.menuWidth}px; max-height: 70vh; overflow-y: auto;`
+  protected getSubMenuStyles(item: BlockMenuDropdownItem) {
+    const width = item.menuWidth ?? this.menuWidth
+    return `display: block; box-sizing: border-box; width: ${width}px; max-height: 70vh; padding: 0; overflow-x: hidden; overflow-y: auto;`
   }
 
   protected appendPath(path: BlockMenuDropdownItem[], item: BlockMenuDropdownItem) {

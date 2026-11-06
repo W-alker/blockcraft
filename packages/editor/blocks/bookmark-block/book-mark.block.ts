@@ -84,6 +84,7 @@ export class BookMarkBlockComponent extends BaseBlockComponent<BookmarkBlockMode
       const linkPreviewerService = this.doc.injector.get(DOC_LINK_PREVIEWER_SERVICE_TOKEN)
       linkPreviewerService.query(this.props.url)
         .then((res) => {
+          if (this._isGone() || this.isReadonly) return
           console.log('%c[BookMarkBlockComponent] query', 'color: #00b0ff', res)
 
           this.setInitProps({
@@ -96,6 +97,7 @@ export class BookMarkBlockComponent extends BaseBlockComponent<BookmarkBlockMode
         })
         .catch(() => {
           this.doc.messageService.error('获取网页信息失败')
+          if (this._isGone() || this.isReadonly) return
           this.setInitProps({
             title: this.props.url,
           })

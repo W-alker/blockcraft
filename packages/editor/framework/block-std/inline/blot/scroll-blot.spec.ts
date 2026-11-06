@@ -134,4 +134,121 @@ describe('ScrollBlot offsetOf', () => {
       expect(scroll.offsetOf(breakBlot)).toBe(scroll.textLength);
     });
   });
+
+  describe('detachAll', () => {
+    it('removes retained DOM and destroys embeds exactly once', () => {
+      const onDestroy = jasmine.createSpy('onDestroy');
+      converters.set('test', {...testConverter, onDestroy});
+      const scroll = createScroll([
+        {insert: 'Hello'},
+        {insert: {test: 'v'}},
+      ]);
+
+      scroll.detachAll();
+      scroll.detachAll();
+
+      expect(container.childNodes.length).toBe(0);
+      expect(scroll.children.length).toBe(0);
+      expect(scroll.textLength).toBe(0);
+      expect(onDestroy).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('reversible layout splits', () => {
+    it('splits at a model offset without changing model length and rolls back exactly', () => {
+      const scroll = createScroll([
+        {insert: 'Hello world', attributes: {bold: true}},
+      ]);
+      const original = scroll.leaves[0] as TextBlot;
+
+      const split = scroll.splitTextForLayout(5);
+
+      expect(split).not.toBeNull();
+      expect(scroll.textLength).toBe(11);
+      expect(scroll.leaves.map(leaf => leaf instanceof TextBlot ? leaf.text : '')).toEqual([
+        'Hello',
+        ' world',
+      ]);
+      expect((scroll.leaves[0] as TextBlot).attrs).toEqual({bold: true});
+      expect((scroll.leaves[1] as TextBlot).attrs).toEqual({bold: true});
+
+      expect(scroll.mergeLayoutTextSplit(split!)).toBeTrue();
+      expect(scroll.leaves).toEqual([original]);
+      expect(original.text).toBe('Hello world');
+      expect(scroll.textLength).toBe(11);
+    });
+
+    it('does not split at an existing text or embed boundary', () => {
+      const scroll = createScroll([
+        {insert: 'Hello'},
+        {insert: {test: 'v'}},
+        {insert: 'world'},
+      ]);
+
+      expect(scroll.splitTextForLayout(0)).toBeNull();
+      expect(scroll.splitTextForLayout(5)).toBeNull();
+      expect(scroll.splitTextForLayout(6)).toBeNull();
+      expect(scroll.splitTextForLayout(scroll.textLength)).toBeNull();
+      expect(scroll.textLength).toBe(11);
+    });
+
+    it('restores projected Blot nodes to canonical child order', () => {
+      const scroll = createScroll([
+        {insert: 'left'},
+        {insert: {test: 'v'}},
+        {insert: 'right'},
+      ]);
+      const layoutWrapper = document.createElement('span');
+      container.insertBefore(layoutWrapper, scroll.children[0].domNode);
+      for (const leaf of scroll.leaves) layoutWrapper.appendChild(leaf.domNode);
+
+      scroll.restoreCanonicalDomOrder();
+
+      const directBlotNodes = Array.from(container.children)
+        .filter(element => element.localName === 'c-element');
+      expect(directBlotNodes.length).toBe(scroll.children.length);
+      directBlotNodes.forEach((node, index) => {
+        expect(node).toBe(scroll.children[index].domNode as Element);
+      });
+      expect(layoutWrapper.childNodes.length).toBe(0);
+    });
+
+    it('reparents a detached trailing break before restoring canonical order', () => {
+      const scroll = createScroll([
+        {insert: 'left'},
+        {insert: {test: 'v'}},
+        {insert: 'right'},
+      ]);
+      const canonical = scroll.children.map(child => child.domNode);
+      const breakBlot = scroll.children.find(child => child.type === 'break')!;
+      // Build the lazy prefix index before simulating Firefox's native
+      // contenteditable mutation, which may disconnect the trailing <br>.
+      expect(scroll.textLength).toBe(10);
+      breakBlot.domNode.parentNode?.removeChild(breakBlot.domNode);
+
+      expect(() => scroll.restoreCanonicalDomOrder()).not.toThrow();
+
+      const directCanonical = Array.from(container.childNodes)
+        .filter(node => canonical.includes(node as HTMLElement));
+      expect(directCanonical.length).toBe(canonical.length);
+      directCanonical.forEach((node, index) => {
+        expect(node).toBe(canonical[index] as ChildNode);
+      });
+      expect(canonical.every(node => node.parentNode === container)).toBeTrue();
+      expect(scroll.textLength).toBe(10);
+      expect(scroll.offsetOf(breakBlot)).toBe(10);
+    });
+
+    it('refuses to merge a stale or non-adjacent split record', () => {
+      const scroll = createScroll([{insert: 'abcdef'}]);
+      const first = scroll.splitTextForLayout(2)!;
+      const second = scroll.splitTextForLayout(1)!;
+
+      expect(scroll.mergeLayoutTextSplit(first)).toBeFalse();
+      expect(scroll.textLength).toBe(6);
+      expect(scroll.mergeLayoutTextSplit(second)).toBeTrue();
+      expect(scroll.mergeLayoutTextSplit(first)).toBeTrue();
+      expect(scroll.textLength).toBe(6);
+    });
+  });
 });

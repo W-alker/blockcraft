@@ -1,4 +1,5 @@
 import {ChangeDetectionStrategy, Component} from "@angular/core";
+import {takeUntilDestroyed} from '@angular/core/rxjs-interop';
 import {BaseBlockComponent, NativeBlockModel} from "../../framework";
 
 export interface IBaseEmbedBlockProps {
@@ -21,6 +22,11 @@ export class BaseEmbedBlockComponent<Model extends NativeBlockModel & {
   override ngOnInit() {
     super.ngOnInit();
     this._iframeUrl = this.getValidUrl()
+    this.onPropsChange.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(changes => {
+      if (!changes.has('url')) return
+      this._iframeUrl = this.getValidUrl()
+      this.changeDetectorRef.markForCheck()
+    })
   }
 
   override ngAfterViewInit() {
