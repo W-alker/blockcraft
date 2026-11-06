@@ -445,6 +445,15 @@
       inset-inline-start: 0;
       pointer-events: none;
       white-space: nowrap;
+      max-inline-size: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-family: var(--_bc-placeholder-font-family, inherit);
+      font-size: var(--_bc-placeholder-font-size, inherit);
+      font-weight: var(--_bc-placeholder-font-weight, inherit);
+      font-style: var(--_bc-placeholder-font-style, inherit);
+      letter-spacing: var(--_bc-placeholder-letter-spacing, inherit);
+      text-decoration: var(--_bc-placeholder-text-decoration, inherit);
     }
   }
 
@@ -452,7 +461,9 @@
     position: relative;
   }
 
-  :is(.bullet-block, .ordered-block, .todo-block)[data-bc-text-align] > .edit-container {
+  // Empty list containers otherwise shrink to the zero-width caret, leaving no
+  // room for a bounded placeholder. Populated lists retain their own sizing.
+  :is(.bullet-block, .ordered-block, .todo-block):is([data-bc-text-align], .bc-placeholder-empty) > .edit-container {
     flex: 1 1 0;
     width: auto;
     min-width: 0;

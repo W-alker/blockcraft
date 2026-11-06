@@ -11,6 +11,7 @@ import {
 } from '../../framework/block-std/schema/block-schema'
 import {EditableBlockComponent} from '../../framework/block-std/block/component/editable-block'
 import {BlockSelection} from '../../framework/modules/selection/blockSelection'
+import projectPlaceholderStyle from '../../framework/utils/placeholder-style'
 
 /**
  * Per-flavour placeholder overrides. Takes precedence over each Schema's
@@ -113,6 +114,12 @@ export class PlaceholderPlugin extends DocPlugin {
     this._subs.add(
       this.doc.crud.onPropsUpdate$.subscribe(event => {
         event.transactions.forEach(transaction => {
+          if (transaction.changes.has('textDefaults') && this._lastTextById.get(transaction.block.id)) {
+            const block = transaction.block
+            if (this.doc.isEditable(block) && !block.plainTextOnly) {
+              projectPlaceholderStyle(block.containerElement, block.props['textDefaults'])
+            }
+          }
           if (transaction.changes.has('heading')) {
             this._syncBlock(transaction.block)
           }
@@ -361,6 +368,7 @@ export class PlaceholderPlugin extends DocPlugin {
   private _writeDOM(block: BlockCraft.BlockComponent, text: string): void {
     if (!this.doc.isEditable(block)) return
     const target = block.containerElement
+    projectPlaceholderStyle(target, text && !block.plainTextOnly ? block.props['textDefaults'] : undefined)
     if (text) {
       target.setAttribute('data-placeholder', text)
       target.classList.add('bc-placeholder-target')

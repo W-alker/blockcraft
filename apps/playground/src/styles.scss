@@ -338,13 +338,14 @@ template-edit-surface [data-bc-render-unit].selected{
 /* 环绕物料旁的空段占位提示（「输入 / 唤起命令」）：框架默认 absolute + left:0，钉在段落盒左缘——
    段落盒在 float 图旁是全宽的，提示就压到图上，而光标(行盒)尊重 float 让位，两者错位。
    不能用 left:auto 取"静态位置"兜：规范允许浏览器计算 abspos 静态位置时忽略 float，Chrome 正是如此。
-   改用零高左浮动（Tiptap 空段占位同款）：float 脱离行内流所以不把光标顶开（框架原设计意图保留），
-   height:0 不撑行高不挡后续行盒，而后来的左浮动必须排在先前左浮动（环绕图）右侧 → 提示与光标同落点。
+   左浮动避让环绕物料；保留一行真实高度供 overflow:hidden 绘制和截断文字，
+   用负的行高外边距抵消占位，不撑高段落或把光标顶开。
+   不能再用 height:0，否则框架的限宽裁剪会同时把提示文字裁掉。
    只兜模板页，不动框架。 */
 /* 多叠一层 .editor-container：框架规则前缀带 [data-blockcraft-root]，特异性 (0,4,1) 和两层写法打平、
    后加载者胜——加到 (0,5,1) 才能稳赢，不靠加载顺序。 */
 .tpl-page .editor-container [data-node-type="editable"].empty{
-  &.edit-container::before, .edit-container::before{ position:static; float:left; height:0 }
+  &.edit-container::before, .edit-container::before{ position:static; float:left; height:auto; margin-bottom:-1lh }
 }
 
 /* 分栏宿主建立 BFC：环绕物料（float）在分栏上方时，分栏内部的 flex 布局(.columns-layout)会避让浮动、

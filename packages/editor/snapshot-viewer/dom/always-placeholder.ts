@@ -1,5 +1,6 @@
 import {BlockNodeType, IBlockSnapshot} from "../../framework/block-std/types/block.type";
 import {DeltaInsert} from "../../framework/block-std/types/delta.type";
+import projectPlaceholderStyle from '../../framework/utils/placeholder-style';
 
 /**
  * "Always" placeholders in the snapshot viewer.
@@ -43,6 +44,7 @@ export function projectAlwaysPlaceholder(
   }
   container.setAttribute("data-placeholder", alwaysPlaceholderText(snapshot)!)
   container.classList.add("bc-placeholder-target")
+  projectPlaceholderStyle(container, snapshot.props['textDefaults'])
   host.classList.add("empty", "bc-placeholder-empty")
   // The hint itself is an absolutely-positioned ::before (it must not take part
   // in layout), so the empty container needs a real line box behind it — the
