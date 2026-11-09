@@ -155,7 +155,7 @@ export class LogicalLineDom {
       if (!this._registered.has(direct as HTMLElement)) continue
       if (direct !== this._lines[lineIndex++]) return false
       for (const node of Array.from(direct.childNodes)) {
-        if (owned.has(node) && node !== expected[index++]) return false
+        if (owned.has(node) && (node !== expected[index++] || this._lineByNode.get(node) !== direct)) return false
       }
     }
     return lineIndex === this._lines.length && index === expected.length

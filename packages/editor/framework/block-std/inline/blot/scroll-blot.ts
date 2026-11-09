@@ -12,6 +12,11 @@ import {registerLogicalLineAccess, type LogicalLineAccess, type LogicalSourceLin
 
 export type EmbedConverterMap = Map<string, EmbedConverter>
 
+type TextMutationRecovery = {
+  index: LogicalLineIndex
+  leaves: Map<TextBlot, {node: Text; text: string}>
+}
+
 /**
  * ScrollBlot is the root of an inline blot tree for a single editable block.
  *
@@ -44,6 +49,8 @@ export class ScrollBlot implements IScrollBlot {
   private _leadingGap: HTMLElement | null = null
   private _leadingGapText: string | null = null
   private _lineIndex?: LogicalLineIndex
+  // Untrusted offsets are kept separate and are never published to the mapper.
+  private _textRecovery?: TextMutationRecovery
   private _lineTrusted = false
   private _lineIndexNeedsRebuild = true
   private _mutationDepth = 0
@@ -335,6 +342,7 @@ export class ScrollBlot implements IScrollBlot {
   private _detachAll() {
     this._lineObserver?.disconnect()
     this._lineIndex = undefined
+    this._textRecovery = undefined
     this._lineTrusted = false
     this._cursorAnchors = new WeakMap()
     const children = this._children
@@ -689,9 +697,49 @@ export class ScrollBlot implements IScrollBlot {
     // contribution. Any structural/attribute/other-leaf record revokes the whole
     // batch, even if it arrived alongside otherwise valid native preedit text.
     if (records.every(record => this._isCursorTextMutation(record))) return
+    const index = this._lineTrusted ? this._lineIndex : this._textRecovery?.index
+    const recovery = index ? this._textRecovery ?? {index, leaves: new Map()} : undefined
+    this._textRecovery = recovery && records.every(record => this._rememberTextMutation(record, recovery))
+      ? recovery : undefined
     this._lineTrusted = false
     this._lineIndex = undefined
     this._lineIndexNeedsRebuild = true
+    this._invalidateIndex()
+  }
+
+  private _rememberTextMutation(record: MutationRecord, recovery: TextMutationRecovery): boolean {
+    if (record.type !== 'characterData' || !(record.target instanceof Text)) return false
+    const node = record.target
+    const element = node.parentElement?.parentElement
+    if (!element?.parentNode || !this.isCanonicalLineContainer(element.parentNode)) return false
+    const blot = recovery.index.blotFromDom(element)
+    if (!(blot instanceof TextBlot) || blot.parent !== this ||
+      !this._isCanonicalTextBlot(blot) || blot.textNode !== node) return false
+    const known = recovery.leaves.get(blot)
+    if (known) return known.node === node && !node.data.includes('\n')
+    const line = recovery.index.lineOf(blot)!
+    if (line.leaves.some(leaf => leaf instanceof EmbedBlot)) return false
+    // Read the old run from cached source text and offsets, never from the
+    // browser-mutated TextBlot getter. LF leaves and LF changes stay full recovery.
+    const start = recovery.index.locate(line)!.modelOffset
+    const next = recovery.index.nextLeaf(blot)
+    const end = next && recovery.index.lineOf(next) === line
+      ? recovery.index.offsetOf(next) - start : line.length
+    const text = line.text.slice(recovery.index.offsetOf(blot) - start, end)
+    if (text.includes('\n') || node.data.includes('\n')) return false
+    recovery.leaves.set(blot, {node, text})
+    return true
+  }
+
+  private _recoverReturnedText(): void {
+    const recovery = this._textRecovery
+    if (!recovery || ![...recovery.leaves.values()].every(({node, text}) => node.data === text)) return
+    // Whole-line equality is insufficient: text can move between two leaves
+    // without changing the concatenated line while invalidating leaf offsets.
+    this._lineIndex = recovery.index
+    this._textRecovery = undefined
+    this._lineTrusted = true
+    this._lineIndexNeedsRebuild = false
     this._invalidateIndex()
   }
 
@@ -710,7 +758,10 @@ export class ScrollBlot implements IScrollBlot {
 
   private _trustedLineIndex(): LogicalLineIndex | undefined {
     if (!this._lineDom) return undefined
-    if (!this._mutationDepth) this._invalidateExternalMutations(this._lineObserver!.takeRecords())
+    if (!this._mutationDepth) {
+      this._invalidateExternalMutations(this._lineObserver!.takeRecords())
+      this._recoverReturnedText()
+    }
     return this._lineTrusted && !this._lineIndexNeedsRebuild ? this._lineIndex : undefined
   }
 
@@ -739,6 +790,7 @@ export class ScrollBlot implements IScrollBlot {
           } else {
             this._lineTrusted = false
             this._lineIndex = undefined
+            this._textRecovery = undefined
           }
         } finally {
           // Everything in this synchronous scope has already been read back from
@@ -756,22 +808,25 @@ export class ScrollBlot implements IScrollBlot {
   private _rebuildLogicalIndex(): void {
     this._lineTrusted = false
     this._lineIndex = undefined
+    this._textRecovery = undefined
     if (!this._lineDom?.hasOnlyManagedNodes(this._leadingGap)) return
     const gap = this._leadingGap
     if (!gap || gap.childNodes.length !== 1 || gap.firstChild?.nodeType !== Node.TEXT_NODE ||
       gap.textContent !== this._leadingGapText || gap.getAttribute('data-zero-space') !== 'true') return
     for (const child of this._children) {
-      if (child instanceof TextBlot) {
-        const element = child.domNode
-        const text = element.firstChild
-        if (element.childNodes.length !== 1 || !(text instanceof HTMLElement) || text.localName !== 'c-text' ||
-          text.childNodes.length !== 1 || text.firstChild?.nodeType !== Node.TEXT_NODE ||
-          (child.text !== '\n' && child.text.includes('\n'))) return
-      }
+      if (child instanceof TextBlot && !this._isCanonicalTextBlot(child)) return
     }
     this._lineIndex = new LogicalLineIndex(this._children)
     this._lineIndexNeedsRebuild = false
     this._lineTrusted = true
+  }
+
+  private _isCanonicalTextBlot(blot: TextBlot): boolean {
+    const element = blot.domNode
+    const text = element.firstChild
+    return element.childNodes.length === 1 && text instanceof HTMLElement && text.localName === 'c-text' &&
+      text.childNodes.length === 1 && text.firstChild?.nodeType === Node.TEXT_NODE &&
+      (blot.text === '\n' || !blot.text.includes('\n'))
   }
 
   private _replaceChildRange(start: number, count: number, children: readonly IBlot[]): void {
@@ -847,7 +902,8 @@ export class ScrollBlot implements IScrollBlot {
   }
 
   private _trySpliceSingleLine(startIdx: number, deleteCount: number, newBlots: (TextBlot | EmbedBlot)[]): boolean {
-    const index = this._lineTrusted ? this._lineIndex : undefined
+    const recovery = this._mutationDepth === 1 && !this._lineTrusted ? this._textRecovery : undefined
+    const index = this._lineTrusted ? this._lineIndex : recovery?.index
     if (!index || startIdx < 0 || deleteCount < 0 || newBlots.some(leaf => leaf instanceof EmbedBlot)) return false
     const line = index.lineAtLeafIndex(startIdx)
     const position = index.locate(line)!
@@ -855,6 +911,8 @@ export class ScrollBlot implements IScrollBlot {
     if (localStart < 0 || localStart + deleteCount > line.leaves.length ||
       line.leaves.some(leaf => leaf instanceof EmbedBlot)) return false
     const removed = new Set<IBlot>(line.leaves.slice(localStart, localStart + deleteCount))
+    if (recovery && ([...recovery.leaves.keys()].some(leaf => !removed.has(leaf)) ||
+      newBlots.some(leaf => !(leaf instanceof TextBlot) || !this._isCanonicalTextBlot(leaf)))) return false
     const children = line.children.filter(child => !removed.has(child))
     const after = line.leaves[localStart + deleteCount]
     let insertAt = after ? children.indexOf(after) : children.findIndex(child => child.type === BlotType.Break)
@@ -885,7 +943,12 @@ export class ScrollBlot implements IScrollBlot {
       child.parent = this
       ;(anchor?.parentNode ?? this.domNode).insertBefore(child.domNode, anchor)
     }
+    if (recovery) this._lineIndex = index
     this._commitSingleLine(line, next, position.childStart)
+    if (recovery && !this._lineIndexNeedsRebuild) {
+      this._textRecovery = undefined
+      this._lineTrusted = true
+    }
     return true
   }
 

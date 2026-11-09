@@ -117,6 +117,8 @@ export class CodeInlineRuntime extends InlineRuntime {
   private readonly _tokenizer = new IncrementalCodeTokenizer()
   private readonly _tokenProjection = new CodeTokenProjection()
   private readonly _lineIntegrity = new CodeLineIntegrity()
+  private readonly _integrityObserver?: MutationObserver
+  private _integrityClean = false
   private _readySyntax?: {lang: BundledLanguage; theme: string; highlighter: Highlighter}
   private _preparedLines = new WeakMap<DeltaInsertText[], TokenLine[]>()
   private _options: IRenderOptions
@@ -154,6 +156,9 @@ export class CodeInlineRuntime extends InlineRuntime {
       lineContainerTag: options.withLineBreak === false ? undefined : 'c-line',
     })
     this._options = options
+    if (options.withLineBreak !== false) {
+      this._integrityObserver = new MutationObserver(records => this._recordIntegrityMutations(records))
+    }
     if (options.canonicalHost) {
       container.addEventListener('input', this._handleNativeInput)
     }
@@ -180,10 +185,15 @@ export class CodeInlineRuntime extends InlineRuntime {
       if (released) return
       released = true
       if (this._releaseCompositionCaret === release) this._releaseCompositionCaret = undefined
+      this._integrityClean = false
+      this._lineIntegrity.invalidateBaseline()
       runInlineRuntimeCanonicalMutation(this, () => this.scrollBlot.removeCursorBlot(cursor))
     }
     this._releaseCompositionCaret = release
     try {
+      // Cursor insertion changes row structure; recheck all rows after IME.
+      this._integrityClean = false
+      this._lineIntegrity.invalidateBaseline()
       runInlineRuntimeCanonicalMutation(this, () => this.scrollBlot.insertCursorBlot(modelOffset, cursor))
       const node = cursor.anchorNode
       native.setBaseAndExtent(node, node.length, node, node.length)
@@ -402,6 +412,7 @@ export class CodeInlineRuntime extends InlineRuntime {
     if (this._destroyed) return
     this._releaseCompositionCaret?.()
     this._destroyed = true
+    this._integrityObserver?.disconnect()
     this.container.removeEventListener('input', this._handleNativeInput)
     this._cancelCanonicalRender()
     this._canonicalRenderGeneration++
@@ -413,6 +424,8 @@ export class CodeInlineRuntime extends InlineRuntime {
   // ─── Internal ───
 
   private _clearSyntaxCache() {
+    this._integrityClean = false
+    this._integrityObserver?.disconnect()
     this._tokenizer.clear()
     this._tokenProjection.clear()
     this._lineIntegrity.clear()
@@ -588,21 +601,69 @@ export class CodeInlineRuntime extends InlineRuntime {
    * and replaces only the changed lines.
    */
   private _patchLinesByBlot(newLines: TokenLine[], newFPs: string[], repairNativeDom = false) {
-    runInlineRuntimeCanonicalMutation(this, () => {
-      const reusable = repairNativeDom ? this._lineIntegrity.inspect(this.scrollBlot, this.container) : undefined
-      this._patchCanonicalLinesByBlot(newLines, newFPs, reusable)
-      if (repairNativeDom) this._lineIntegrity.repair(this.scrollBlot, this.container)
-    })
+    try {
+      runInlineRuntimeCanonicalMutation(this, () => {
+        this._consumeIntegrityMutations()
+        const alreadyClean = repairNativeDom && this._integrityClean && !!getLogicalLineAccess(this.scrollBlot)
+        const reusable = repairNativeDom && !alreadyClean
+          ? this._lineIntegrity.inspect(this.scrollBlot, this.container) : undefined
+        this._patchCanonicalLinesByBlot(newLines, newFPs, reusable)
+        if (repairNativeDom && !alreadyClean) {
+          let repairedOwned = this._lineIntegrity.repair(this.scrollBlot, this.container)
+          // Unknown native nodes may have prevented the earlier index rebuild;
+          // revalidate the complete canonical topology after removing them.
+          if (this._integrityObserver && !getLogicalLineAccess(this.scrollBlot)) {
+            this.scrollBlot.restoreCanonicalDomOrder()
+            // Canonical restoration can replace Blot members; rebuild ownership
+            // instead of retaining the map captured before that restoration.
+            repairedOwned = undefined
+          }
+          // Only the complete inspection/repair can establish this baseline.
+          // The outer float-layout sync runs afterwards and remains observable.
+          this._integrityObserver?.takeRecords()
+          this._integrityClean = !!this._integrityObserver && !!getLogicalLineAccess(this.scrollBlot)
+          if (this._integrityClean) {
+            this._lineIntegrity.captureBaseline(this.scrollBlot, this.container, repairedOwned)
+            // Observe only once there is a verified snapshot to protect, avoiding
+            // a second set of mutation records during the initial full mount.
+            this._integrityObserver!.observe(this.container, {
+              subtree: true, childList: true, characterData: true, characterDataOldValue: true, attributes: true,
+            })
+          } else {
+            this._lineIntegrity.invalidateBaseline()
+          }
+        }
+      })
+    } catch (error) {
+      this._integrityClean = false
+      this._lineIntegrity.invalidateBaseline()
+      throw error
+    } finally {
+      // A fast patch or the outer layout sync may have changed DOM after the
+      // snapshot was checked; do not treat those writes as a fresh full repair.
+      this._consumeIntegrityMutations()
+    }
+  }
+
+  private _consumeIntegrityMutations(): void {
+    const records = this._integrityObserver?.takeRecords()
+    if (records) this._recordIntegrityMutations(records)
+  }
+
+  private _recordIntegrityMutations(records: readonly MutationRecord[]): void {
+    if (!records.length) return
+    this._integrityClean = false
+    this._lineIntegrity.recordMutations(records)
   }
 
   private _patchCanonicalLinesByBlot(
     newLines: TokenLine[],
     newFPs: string[],
-    reusable?: (blots: (TextBlot | EmbedBlot)[]) => boolean,
+    reusable?: (blots: readonly (TextBlot | EmbedBlot)[]) => boolean,
   ) {
-    // Native recovery still checks every actual row. Ordinary highlighting can
-    // reuse the source-line projection while its DOM mutation baseline is valid.
-    const indexed = reusable ? undefined : getLogicalLineAccess(this.scrollBlot)
+    // A trusted source projection avoids regrouping leaves; native recovery still
+    // checks actual row structure and attributes through the supplied predicate.
+    const indexed = getLogicalLineAccess(this.scrollBlot)
     const sourceLines = indexed?.sourceLines()
     const blotLines = sourceLines ? undefined : this._groupBlotsByLine()
     const oldFPs = this._lineFPs
@@ -620,7 +681,7 @@ export class CodeInlineRuntime extends InlineRuntime {
     let prefix = 0
     while (prefix < prefixMax) {
       if (oldFPs[prefix] !== newFPs[prefix]) break
-      if (reusable && !reusable(blotLines![prefix])) break
+      if (reusable && !reusable(sourceLines?.[prefix].leaves ?? blotLines![prefix])) break
       if (lineText(prefix) !== newLines[prefix].text) break
       prefix++
     }
@@ -633,7 +694,7 @@ export class CodeInlineRuntime extends InlineRuntime {
       const ni = newLen - 1 - suffix
       const oi = oldLen - 1 - suffix
       if (oldFPs[oi] !== newFPs[ni]) break
-      if (reusable && !reusable(blotLines![bi])) break
+      if (reusable && !reusable(sourceLines?.[bi].leaves ?? blotLines![bi])) break
       if (lineText(bi) !== newLines[ni].text) break
       suffix++
     }

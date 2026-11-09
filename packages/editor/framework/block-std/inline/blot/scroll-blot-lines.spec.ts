@@ -478,6 +478,215 @@ describe('ScrollBlot canonical logical lines', () => {
     expect(access.nextLeaf(access.sourceLines()[1].leaves.at(-1)!)).toBe(suffix)
   })
 
+  describe('character-data recovery', () => {
+    function recoveryFixture() {
+      const source = Array.from({length: 128}, (_, index) => `value${index}`).join('\n')
+      scroll.build([{insert: source}])
+      const access = getLogicalLineAccess(scroll)!
+      const lines = [...access.sourceLines()]
+      const target = access.locate(lines[64])!
+      const suffix = access.locate(lines[65])!
+      return {source, lines, target, suffix, leaf: lines[64].leaves[0] as TextBlot}
+    }
+
+    function forbidUnrelatedTextReads(lines: readonly LogicalSourceLine[]) {
+      for (const line of [lines[0], lines.at(-1)!]) {
+        const leaf = line.leaves[0] as TextBlot
+        spyOnProperty(leaf, 'text', 'get').and.throwError('unrelated recovery text read')
+        spyOnProperty(leaf, 'length', 'get').and.throwError('unrelated recovery length read')
+      }
+    }
+
+    for (const delivered of [false, true]) {
+      it(`replaces a completely covered dirty source line without rereading other lines (${delivered ? 'delivered' : 'pending'} records)`, async () => {
+        const {source, lines, target, suffix, leaf} = recoveryFixture()
+        const domRows = rows()
+        leaf.textNode.data = 'native candidate'
+        if (delivered) await Promise.resolve()
+        expect(getLogicalLineAccess(scroll)).toBeUndefined()
+        forbidUnrelatedTextReads(lines)
+
+        scroll.spliceLeaves(target.leafStart, lines[64].leaves.length, [
+          new TextBlot('value64中文'), new TextBlot('\n'),
+        ])
+
+        const access = getLogicalLineAccess(scroll)!
+        expect(access).toBeDefined()
+        expect(access.sourceLines()[0]).toBe(lines[0])
+        expect(access.sourceLines()[63]).toBe(lines[63])
+        expect(access.sourceLines()[65]).toBe(lines[65])
+        expect(access.sourceLines()[64].text).toBe('value64中文\n')
+        expect(access.locate(lines[65])!.leafStart).toBe(suffix.leafStart)
+        expect(access.locate(lines[65])!.modelOffset).toBe(suffix.modelOffset + 2)
+        expect(access.trustedPlainText()).toBe(source.replace('value64', 'value64中文'))
+        expect(rows()).toEqual(domRows)
+        expect(leaf.domNode.isConnected).toBeFalse()
+      })
+
+      it(`recovers a cancelled character-data change by checking only its original source line (${delivered ? 'delivered' : 'pending'} records)`, async () => {
+        const {source, lines, leaf} = recoveryFixture()
+        leaf.textNode.data = 'native candidate'
+        expect(getLogicalLineAccess(scroll)).toBeUndefined()
+        expect(leaf.text).toBe('native candidate')
+        leaf.textNode.data = 'value64'
+        if (delivered) await Promise.resolve()
+        forbidUnrelatedTextReads(lines)
+
+        const access = getLogicalLineAccess(scroll)!
+
+        expect(access).toBeDefined()
+        expect(access.sourceLines()[0]).toBe(lines[0])
+        expect(access.sourceLines()[64]).toBe(lines[64])
+        expect(access.sourceLines()[65]).toBe(lines[65])
+        expect(access.trustedPlainText()).toBe(source)
+        expect(scroll.textLength).toBe(source.length)
+        expect(leaf.text).toBe('value64')
+      })
+    }
+
+    it('does not trust a cancelled line until each original leaf text is restored', () => {
+      scroll.build([
+        {insert: 'head\n'}, {insert: 'ab', attributes: {'s:color': 'red'}},
+        {insert: 'cd', attributes: {'s:color': 'blue'}}, {insert: '\ntail'},
+      ])
+      const before = [...getLogicalLineAccess(scroll)!.sourceLines()]
+      const [left, right] = before[1].leaves as readonly TextBlot[]
+      left.textNode.data = 'a'
+      right.textNode.data = 'bcd'
+      expect(left.text + right.text).toBe('abcd')
+
+      expect(getLogicalLineAccess(scroll)).toBeUndefined()
+      expect(scroll.offsetOf(right)).toBe('head\na'.length)
+      left.textNode.data = 'ab'
+      expect(getLogicalLineAccess(scroll)).toBeUndefined()
+      right.textNode.data = 'cd'
+
+      const access = getLogicalLineAccess(scroll)!
+      expect(access).toBeDefined()
+      expect(access.sourceLines()[1]).toBe(before[1])
+      expect(access.trustedPlainText()).toBe('head\nabcd\ntail')
+      expect(scroll.offsetOf(right)).toBe('head\nab'.length)
+    })
+
+    it('recovers locally when every dirty text leaf in the source line is replaced', () => {
+      const {source, target} = recoveryFixture()
+      scroll.spliceLeaves(target.leafStart, 2, [
+        new TextBlot('val', {'s:color': 'red'}), new TextBlot('ue64', {'s:color': 'blue'}), new TextBlot('\n'),
+      ])
+      const lines = [...getLogicalLineAccess(scroll)!.sourceLines()]
+      const [left, right] = lines[64].leaves as readonly TextBlot[]
+      left.textNode.data = '中文'
+      right.textNode.data = '候选'
+      expect(getLogicalLineAccess(scroll)).toBeUndefined()
+      forbidUnrelatedTextReads(lines)
+
+      scroll.spliceLeaves(target.leafStart, 3, [new TextBlot('final'), new TextBlot('\n')])
+
+      const access = getLogicalLineAccess(scroll)!
+      expect(access.sourceLines()[0]).toBe(lines[0])
+      expect(access.sourceLines()[65]).toBe(lines[65])
+      expect(access.trustedPlainText()).toBe(source.replace('value64', 'final'))
+    })
+
+    for (const pollution of ['attributes', 'childList'] as const) {
+      it(`does not resurrect the old text index after separately delivered ${pollution} pollution`, async () => {
+        scroll.build([{insert: 'left\nmiddle\nright'}])
+        const cached = getLogicalLineAccess(scroll)!
+        const leaf = cached.sourceLines()[1].leaves[0] as TextBlot
+        leaf.textNode.data = 'candidate'
+        await Promise.resolve()
+        expect(getLogicalLineAccess(scroll)).toBeUndefined()
+        if (pollution === 'attributes') leaf.cElement.setAttribute('data-native', 'polluted')
+        else leaf.textNode.parentNode!.appendChild(document.createTextNode('unmanaged'))
+        await Promise.resolve()
+        leaf.textNode.data = 'middle'
+
+        expect(getLogicalLineAccess(scroll)).toBeUndefined()
+        expect(cached.trustedPlainText()).toBeUndefined()
+        scroll.build([{insert: 'left\nmiddle\nright'}])
+        expect(getLogicalLineAccess(scroll)!.trustedPlainText()).toBe('left\nmiddle\nright')
+      })
+    }
+
+    it('revokes recovery state when local line synchronization throws and permits a complete rebuild', () => {
+      scroll.build([{insert: 'left\nmiddle\nright'}])
+      const cached = getLogicalLineAccess(scroll)!
+      const line = cached.sourceLines()[1]
+      const start = cached.locate(line)!.leafStart
+      ;(line.leaves[0] as TextBlot).textNode.data = 'candidate'
+      expect(getLogicalLineAccess(scroll)).toBeUndefined()
+      spyOn((scroll as any)._lineDom, 'syncLine').and.throwError('local line sync failed')
+
+      expect(() => scroll.spliceLeaves(start, line.leaves.length, [new TextBlot('fixed'), new TextBlot('\n')]))
+        .toThrowError('local line sync failed')
+
+      expect(getLogicalLineAccess(scroll)).toBeUndefined()
+      expect(cached.trustedPlainText()).toBeUndefined()
+      scroll.build([{insert: 'restored\nmodel'}])
+      expect(getLogicalLineAccess(scroll)!.trustedPlainText()).toBe('restored\nmodel')
+      expect(rows().map(lineText)).toEqual(['restored\n', 'model'])
+      expect(scroll.hasCanonicalDomOrder()).toBeTrue()
+    })
+
+    for (const pollution of ['unreplaced text', 'another line', 'LF change', 'unknown node'] as const) {
+      it(`uses the complete recovery path for ${pollution} outside the replaceable dirty text`, () => {
+        scroll.build([
+          {insert: 'left\n'}, {insert: 'one', attributes: {'s:color': 'red'}},
+          {insert: 'two', attributes: {'s:color': 'blue'}}, {insert: '\nlast'},
+        ])
+        const access = getLogicalLineAccess(scroll)!
+        const lines = access.sourceLines()
+        const start = access.locate(lines[1])!.leafStart
+        const first = lines[0].leaves[0] as TextBlot
+        const target = lines[1].leaves as readonly TextBlot[]
+        target[0].textNode.data = 'ONE'
+        let expected = 'left\nfixedtwo\nlast'
+        let unknown: Text | undefined
+        if (pollution === 'unreplaced text') {
+          target[1].textNode.data = 'TWO'
+          expected = 'left\nfixedTWO\nlast'
+        } else if (pollution === 'another line') {
+          first.textNode.data = 'LEFT'
+          expected = 'LEFT\nfixedtwo\nlast'
+        } else if (pollution === 'LF change') {
+          target[2].textNode.data = '\n\n'
+          expected = 'left\nfixedtwo\n\nlast'
+        } else {
+          unknown = document.createTextNode('unmanaged')
+          rows()[2].appendChild(unknown)
+        }
+        const readFirst = spyOnProperty(first, 'text', 'get').and.callThrough()
+
+        scroll.spliceLeaves(start, 1, [new TextBlot('fixed')])
+
+        expect(readFirst).toHaveBeenCalled()
+        expect(modelText()).toBe(expected)
+        if (unknown) {
+          expect(getLogicalLineAccess(scroll)).toBeUndefined()
+          expect(unknown.isConnected).toBeTrue()
+        } else expect(getLogicalLineAccess(scroll)!.trustedPlainText()).toBe(expected)
+      })
+    }
+  })
+
+  it('restores a moved LF to its owned row when revoking an inactive projection', () => {
+    scroll.build([{insert: 'first\nsecond\nlast'}])
+    const domRows = rows()
+    const newline = scroll.leaves[1] as TextBlot
+    domRows[1].insertBefore(newline.domNode, domRows[1].firstChild)
+    expect(modelText()).toBe('first\nsecond\nlast')
+    expect(scroll.hasCanonicalDomOrder()).toBeFalse()
+    const projection = new InlinePaginationProjection(scroll)
+
+    projection.revoke()
+
+    expect(newline.domNode.parentNode).toBe(domRows[0])
+    expect(rows()).toEqual(domRows)
+    expect(rows().map(lineText)).toEqual(['first\n', 'second\n', 'last'])
+    expect(scroll.hasCanonicalDomOrder()).toBeTrue()
+    expect(projection.active).toBeFalse()
+  })
+
   it('keeps source lines independent when hidden LF joins their display row', () => {
     scroll.build([
       {insert: 'left'}, {insert: '\n', attributes: {'s:display': 'none'}},

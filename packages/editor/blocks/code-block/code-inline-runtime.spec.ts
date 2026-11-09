@@ -5,6 +5,7 @@ import type {DeltaInsertText} from '../../framework/model/delta';
 import {CursorBlot} from '../../framework/block-std/inline/blot/cursor-blot';
 import {TextBlot} from '../../framework/block-std/inline/blot/text-blot';
 import {STR_ZERO_WIDTH_SPACE} from '../../framework/block-std/inline/const';
+import {getLogicalLineAccess} from '../../framework/block-std/inline/blot/logical-line-access';
 
 describe("CodeInlineRuntime", () => {
   const containers: HTMLElement[] = [];
@@ -646,6 +647,364 @@ describe("CodeInlineRuntime", () => {
       return {runtime, container, state, build, expectOuterIdentity};
     }
 
+    const collectDeepChecks = (runtime: CodeInlineRuntime) => {
+      const integrity = (runtime as any)._lineIntegrity;
+      const check = integrity._isTextIntact.bind(integrity);
+      const rows = new Set<Node | null>();
+      const deep = spyOn<any>(integrity, '_isTextIntact').and.callFake((leaf: TextBlot) => {
+        rows.add(leaf.domNode.parentNode);
+        return check(leaf);
+      });
+      return {rows, deep};
+    };
+
+    describe('line-start composition recovery', () => {
+      async function caretHarness() {
+        const initial = Array.from({length: 64}, (_, index) => `const row${index} = ${index};`).join('\n');
+        const h = await createReadyHarness([{insert: initial}]);
+        await h.runtime.renderCode();
+        const rows = Array.from(h.container.children);
+        const offset = initial.indexOf('const row16 =');
+        const start = () => {
+          const point = h.runtime.modelPointToDom(offset);
+          document.getSelection()!.setPosition(point.node, point.offset);
+          h.state.busy = true;
+          const release = h.runtime.acquireCompositionCaret(offset)!;
+          expect(release).not.toBeNull();
+          const cursor = h.runtime.scrollBlot.children.find(blot => blot instanceof CursorBlot) as CursorBlot;
+          expect(cursor).toBeDefined();
+          return {release, cursor, anchor: cursor.anchorNode};
+        };
+        return {...h, initial, rows, offset, start};
+      }
+
+      for (const commit of [false, true]) {
+        it(`preserves the current line through native caret ${commit ? 'commit' : 'cancel'}`, async () => {
+          const h = await caretHarness();
+          const checked = collectDeepChecks(h.runtime);
+          const previousText = h.rows[15].textContent;
+          const previousLF = h.rows[15].lastChild!;
+          const {release, cursor, anchor} = h.start();
+          const selection = document.getSelection()!;
+          expect(selection.anchorNode).toBe(anchor);
+          expect(selection.anchorOffset).toBe(STR_ZERO_WIDTH_SPACE.length);
+          for (const candidate of ['zhong', 'zhongwen', '中文\n🙂']) {
+            anchor.data = STR_ZERO_WIDTH_SPACE + candidate;
+            selection.setPosition(anchor, anchor.length);
+            if (commit) await Promise.resolve();
+            expect(cursor.anchorNode).toBe(anchor);
+            expect(cursor.domNode.parentNode).toBe(h.rows[16]);
+            expect(h.runtime.domPointToModel(selection.focusNode!, selection.focusOffset)).toBe(h.offset);
+            expect(h.rows[15].lastChild).toBe(previousLF);
+            expect(h.rows[15].textContent).toBe(previousText);
+            expect(h.runtime.textLength).toBe(h.initial.length);
+          }
+
+          release();
+          release();
+          const expected = commit ? h.initial.slice(0, h.offset) + '中文🙂' + h.initial.slice(h.offset) : h.initial;
+          h.state.model = [{insert: expected}];
+          h.runtime.render(h.state.model);
+
+          // Structural Cursor insertion/removal conservatively invalidates the
+          // integrity snapshot, including when cancellation leaves text intact.
+          if (!commit) expect(checked.rows).toEqual(new Set(h.rows));
+          expect(textOf(h.container)).toBe(expected);
+          expect(h.container.querySelector('[data-cursor-blot]')).toBeNull();
+          const point = h.runtime.modelPointToDom(h.offset + (commit ? '中文🙂'.length : 0));
+          expect(h.rows[16].contains(point.node)).toBeTrue();
+          expect(h.runtime.domPointToModel(point.node, point.offset)).toBe(h.offset + (commit ? '中文🙂'.length : 0));
+          h.expectOuterIdentity();
+          const count = checked.deep.calls.count();
+          h.state.busy = false;
+          await flushRecoveryFrame();
+          expect(checked.deep.calls.count()).toBe(count);
+          expect(textOf(h.container)).toBe(expected);
+        });
+      }
+
+      for (const pollution of ['other-row text', 'other-row attributes', 'unknown child'] as const) {
+        it(`repairs ${pollution} alongside line-start composition`, async () => {
+          const h = await caretHarness();
+          const foreign = h.rows[48].querySelector('c-element') as HTMLElement;
+          const style = foreign.getAttribute('style');
+          const {release, anchor} = h.start();
+          anchor.data = STR_ZERO_WIDTH_SPACE + '候选';
+          if (pollution === 'other-row text') {
+            const text = foreign.querySelector('c-text')!.firstChild as Text;
+            text.data = 'X'.repeat(text.length);
+          } else if (pollution === 'other-row attributes') foreign.removeAttribute('style');
+          else h.rows[48].appendChild(document.createTextNode('unmanaged-during-composition'));
+
+          release();
+          h.runtime.render(h.state.model);
+
+          expect(textOf(h.container)).toBe(h.initial);
+          expect(h.container.textContent).not.toContain('unmanaged-during-composition');
+          expect(h.container.children[48].querySelector('c-element')!.getAttribute('style')).toBe(style);
+          expect(h.container.querySelector('[data-cursor-blot]')).toBeNull();
+          h.state.busy = false;
+          await flushRecoveryFrame();
+          expect(textOf(h.container)).toBe(h.initial);
+        });
+      }
+
+      for (const pollution of ['replaced anchor', 'external cursor roundtrip'] as const) {
+        it(`repairs ${pollution} during line-start composition`, async () => {
+          const h = await caretHarness();
+          const {release, cursor, anchor} = h.start();
+          anchor.data = STR_ZERO_WIDTH_SPACE + '候选';
+          if (pollution === 'replaced anchor') {
+            anchor.replaceWith(document.createTextNode(STR_ZERO_WIDTH_SPACE + '新候选'));
+            await Promise.resolve();
+          } else {
+            cursor.domNode.parentNode!.removeChild(cursor.domNode);
+            h.rows[16].insertBefore(cursor.domNode, h.rows[16].firstChild);
+          }
+
+          release();
+          h.runtime.render(h.state.model);
+
+          expect(textOf(h.container)).toBe(h.initial);
+          expect(h.container.querySelector('[data-cursor-blot]')).toBeNull();
+          h.state.busy = false;
+          await flushRecoveryFrame();
+        });
+      }
+
+      for (const structural of [false, true]) {
+        it(`detects late ${structural ? 'structure' : 'same-length text'} after an owned lease has ended`, async () => {
+          const h = await caretHarness();
+          const {release, anchor} = h.start();
+          anchor.data = STR_ZERO_WIDTH_SPACE + '取消';
+          release();
+          h.runtime.render(h.state.model);
+          const checked = collectDeepChecks(h.runtime);
+          if (structural) h.rows[48].appendChild(document.createTextNode('late-native-node'));
+          else {
+            const text = h.rows[48].querySelector('c-text')!.firstChild as Text;
+            text.data = 'X'.repeat(text.length);
+          }
+          h.state.busy = false;
+
+          await flushRecoveryFrame();
+
+          expect(checked.rows.has(h.rows[48])).toBeTrue();
+          if (structural) expect(checked.rows.has(h.rows[0])).toBeTrue();
+          else expect(checked.rows).toEqual(new Set([h.rows[48]]));
+          expect(textOf(h.container)).toBe(h.initial);
+          expect(h.container.textContent).not.toContain('late-native-node');
+          expect(h.container.querySelector('[data-cursor-blot]')).toBeNull();
+        });
+      }
+
+      it('recovers from failed native caret installation and accepts a later composition', async () => {
+        const h = await caretHarness();
+        const checked = collectDeepChecks(h.runtime);
+        const selection = document.getSelection()!;
+        const point = h.runtime.modelPointToDom(h.offset);
+        selection.setPosition(point.node, point.offset);
+        const install = spyOn(selection, 'setBaseAndExtent').and.throwError('native caret unavailable');
+        h.state.busy = true;
+
+        expect(() => h.runtime.acquireCompositionCaret(h.offset)).toThrowError('native caret unavailable');
+        install.and.callThrough();
+        expect(h.container.querySelector('[data-cursor-blot]')).toBeNull();
+        h.runtime.render(h.state.model);
+        expect(checked.rows.has(h.rows[0])).toBeTrue();
+        expect(checked.rows.has(h.rows.at(-1)!)).toBeTrue();
+        expect(textOf(h.container)).toBe(h.initial);
+        h.state.busy = false;
+        await flushRecoveryFrame();
+
+        const {release, anchor} = h.start();
+        anchor.data = STR_ZERO_WIDTH_SPACE + '再次候选';
+        release();
+        h.runtime.render(h.state.model);
+        expect(h.container.querySelector('[data-cursor-blot]')).toBeNull();
+        expect(textOf(h.container)).toBe(h.initial);
+        h.state.busy = false;
+        await flushRecoveryFrame();
+      });
+
+      for (const action of ['insert', 'remove'] as const) {
+        it(`invalidates the integrity baseline when Scroll cursor ${action} throws after its DOM mutation`, async () => {
+          const h = await caretHarness();
+          const checked = collectDeepChecks(h.runtime);
+          const scroll = h.runtime.scrollBlot;
+          const message = `cursor ${action} failed`;
+          if (action === 'insert') {
+            const insert = scroll.insertCursorBlot.bind(scroll);
+            const failing = spyOn(scroll, 'insertCursorBlot').and.callFake((offset, cursor) => {
+              insert(offset, cursor);
+              throw new Error(message);
+            });
+            expect(() => h.start()).toThrowError(message);
+            failing.and.callThrough();
+          } else {
+            const {release, anchor} = h.start();
+            anchor.data = STR_ZERO_WIDTH_SPACE + '候选';
+            const remove = scroll.removeCursorBlot.bind(scroll);
+            const failing = spyOn(scroll, 'removeCursorBlot').and.callFake(cursor => {
+              remove(cursor);
+              throw new Error(message);
+            });
+            expect(release).toThrowError(message);
+            failing.and.callThrough();
+          }
+
+          h.runtime.render(h.state.model);
+
+          expect(checked.rows.has(h.rows[0])).toBeTrue();
+          expect(checked.rows.has(h.rows.at(-1)!)).toBeTrue();
+          expect(textOf(h.container)).toBe(h.initial);
+          expect(h.container.querySelector('[data-cursor-blot]')).toBeNull();
+          h.state.busy = false;
+          await flushRecoveryFrame();
+        });
+      }
+
+      it('renders the complete deferred remote snapshot after releasing an owned caret', async () => {
+        const h = await caretHarness();
+        const {release, anchor} = h.start();
+        anchor.data = STR_ZERO_WIDTH_SPACE + '中文';
+        await Promise.resolve();
+        const expected = (h.initial.slice(0, h.offset) + '中文' + h.initial.slice(h.offset))
+          .replace('const row48 = 48;', 'const row48 = "remote";');
+        h.state.model = [{insert: expected}];
+
+        release();
+        h.runtime.render(h.state.model);
+
+        const expectedTokens = flatShikiTokens(highlighter.codeToTokens(expected, {
+          lang: 'typescript', theme: 'github-light',
+        }).tokens, expected);
+        const expectedColors = expectedTokens.flatMap(delta => [...delta.insert].map(char => [char, delta.attributes?.['s:color']]));
+        const actualColors = h.runtime.scrollBlot.leaves.flatMap(leaf => [...(leaf as TextBlot).text]
+          .map(char => [char, (leaf as TextBlot).attrs?.['s:color']]));
+        expect(actualColors).toEqual(expectedColors);
+        expect(textOf(h.container)).toBe(expected);
+        expect(h.runtime.textLength).toBe(expected.length);
+        h.expectOuterIdentity();
+        h.state.busy = false;
+        await flushRecoveryFrame();
+        expect(textOf(h.container)).toBe(expected);
+      });
+    });
+
+    for (const scenario of [
+      {name: 'pending cancellation', commit: false, delivered: false, dirty: [16]},
+      {name: 'delivered multi-row cancellation', commit: false, delivered: true, dirty: [16, 48]},
+      {name: 'pending commit', commit: true, delivered: false, dirty: [16]},
+    ]) {
+      it(`bounds native text integrity checks to dirty display rows during ${scenario.name}`, async () => {
+        const initial = Array.from({length: 64}, (_, index) => `const row${index} = ${index};`).join('\n');
+        const {runtime, container, state, expectOuterIdentity} = await createReadyHarness([{insert: initial}]);
+        await runtime.renderCode(); // Establish a complete verified integrity baseline.
+        const beforeRows = Array.from(container.children);
+        const checked = collectDeepChecks(runtime);
+        state.busy = true;
+        for (const index of scenario.dirty) {
+          const text = beforeRows[index].querySelector('c-text')!.firstChild as Text;
+          text.data = text.data.toUpperCase(); // Same length must still mark this row dirty.
+        }
+        if (scenario.delivered) await Promise.resolve();
+        const expected = scenario.commit ? initial.replace('row16', 'row16中文') : initial;
+        state.model = [{insert: expected}];
+
+        runtime.render(state.model);
+
+        const dirtyRows = new Set(scenario.dirty.map(index => beforeRows[index]));
+        expect([...checked.rows].every(row => dirtyRows.has(row as Element))).toBeTrue();
+        if (!scenario.commit) expect(checked.rows).toEqual(dirtyRows);
+        // A changed fingerprint can replace the committed row before its
+        // predicate is needed; zero deep checks are valid in that case.
+        expect(checked.rows.has(beforeRows[0])).toBeFalse();
+        expect(checked.rows.has(beforeRows.at(-1)!)).toBeFalse();
+        expect(textOf(container)).toBe(expected);
+        expectOuterIdentity();
+        const checksAfterCommit = checked.deep.calls.count();
+        state.busy = false;
+        await flushRecoveryFrame();
+        expect(checked.deep.calls.count()).toBe(checksAfterCommit);
+        expect(textOf(container)).toBe(expected);
+      });
+    }
+
+    it('checks a late native text change arriving after synchronous recovery and before its queued frame', async () => {
+      const {runtime, container, state} = await createReadyHarness();
+      await runtime.renderCode();
+      const firstRow = container.firstElementChild!;
+      state.busy = true;
+      state.model = [{insert: source.replace('middle', 'middle中文')}];
+      (container.children[1].querySelector('c-text')!.firstChild as Text).data += '候选';
+      runtime.render(state.model);
+      const checked = collectDeepChecks(runtime);
+      state.busy = false;
+      const lateText = firstRow.querySelector('c-text')!.firstChild as Text;
+      lateText.data = 'X'.repeat(lateText.length);
+
+      await flushRecoveryFrame();
+
+      expect(checked.rows).toEqual(new Set([firstRow]));
+      expect(textOf(container)).toBe(state.model[0].insert);
+      expect(runtime.textLength).toBe(state.model[0].insert.length);
+    });
+
+    it('invalidates native-row eligibility after a structural model delta and preserves the complete remote snapshot', async () => {
+      const {runtime, container, state} = await createReadyHarness();
+      await runtime.renderCode();
+      const firstRow = container.firstElementChild!;
+      const checked = collectDeepChecks(runtime);
+      const offset = source.indexOf('const last');
+      const remote = '// remote\n';
+      runtime.applyDelta([{retain: offset}, {insert: remote}]);
+      const complete = (source.slice(0, offset) + remote + source.slice(offset)).replace('middle', 'middle中文');
+      state.model = [{insert: complete}];
+      state.busy = true;
+      const nativeText = container.children[1].querySelector('c-text')!.firstChild as Text;
+      nativeText.data += '候选';
+
+      runtime.render(state.model);
+
+      expect(checked.rows.has(firstRow)).toBeTrue();
+      expect(textOf(container)).toBe(complete);
+      const expectedTokens = flatShikiTokens(highlighter.codeToTokens(complete, {
+        lang: 'typescript', theme: 'github-light',
+      }).tokens, complete);
+      const expectedColors = expectedTokens.flatMap(delta => [...delta.insert].map(char => [char, delta.attributes?.['s:color']]));
+      const actualColors = runtime.scrollBlot.leaves.flatMap(leaf => [...(leaf as TextBlot).text]
+        .map(char => [char, (leaf as TextBlot).attrs?.['s:color']]));
+      expect(actualColors).toEqual(expectedColors);
+      state.busy = false;
+      await flushRecoveryFrame();
+      expect(textOf(container)).toBe(complete);
+    });
+
+    it('drops the previous row baseline after a native integrity check throws', async () => {
+      const {runtime, container, state} = await createReadyHarness();
+      await runtime.renderCode();
+      const integrity = (runtime as any)._lineIntegrity;
+      const deep = spyOn<any>(integrity, '_isTextIntact').and.throwError('native integrity failure');
+      const error = spyOn(console, 'error');
+      state.busy = true;
+      const nativeText = container.children[1].querySelector('c-text')!.firstChild as Text;
+      nativeText.data += '候选';
+
+      runtime.render(state.model);
+
+      expect(error).toHaveBeenCalled();
+      expect(textOf(container)).toBe(source);
+      deep.and.callThrough();
+      state.busy = false;
+      await flushRecoveryFrame();
+      deep.calls.reset();
+      await runtime.renderCode();
+      expect(deep.calls.allArgs().some(args => (args[0] as TextBlot).domNode.parentNode === container.firstElementChild)).toBeTrue();
+      expect(deep.calls.allArgs().some(args => (args[0] as TextBlot).domNode.parentNode === container.lastElementChild)).toBeTrue();
+      expect(textOf(container)).toBe(source);
+    });
+
     it('commits synchronously without rebuilding untouched lines or their leaves', async () => {
       const {runtime, container, state, expectOuterIdentity} = await createReadyHarness();
       state.busy = true;
@@ -661,6 +1020,96 @@ describe("CodeInlineRuntime", () => {
       await flushRecoveryFrame();
       expect(textOf(container)).toBe(next);
       expectOuterIdentity();
+    });
+
+    for (const commit of [false, true]) {
+      it(`skips a second complete integrity pass after a clean IME ${commit ? 'commit' : 'cancel'}`, async () => {
+        const {runtime, container, state, expectOuterIdentity} = await createReadyHarness();
+        const inspect = spyOn((runtime as any)._lineIntegrity, 'inspect').and.callThrough();
+        const repair = spyOn((runtime as any)._lineIntegrity, 'repair').and.callThrough();
+        state.busy = true;
+        const nativeText = container.children[1].querySelector('c-text')!.firstChild as Text;
+        nativeText.data += '未提交候选';
+        const expected = commit ? source.replace('middle', 'middle中文') : source;
+        state.model = [{insert: expected}];
+
+        runtime.render(state.model);
+
+        expect(inspect).toHaveBeenCalledTimes(1);
+        expect(repair).toHaveBeenCalledTimes(1);
+        expect(textOf(container)).toBe(expected);
+        expectOuterIdentity();
+        state.busy = false;
+        await flushRecoveryFrame();
+        await runtime.renderCode();
+        expect(inspect).toHaveBeenCalledTimes(1);
+        expect(repair).toHaveBeenCalledTimes(1);
+        expect(textOf(container)).toBe(expected);
+        expectOuterIdentity();
+      });
+    }
+
+    for (const pollution of ['same-length text in another line', 'style attribute', 'unknown child'] as const) {
+      it(`invalidates a healthy recovery snapshot for new ${pollution}`, async () => {
+        const {runtime, container, state} = await createReadyHarness();
+        state.busy = true;
+        const nativeText = container.children[1].querySelector('c-text')!.firstChild as Text;
+        nativeText.data += '候选';
+        runtime.render(state.model);
+        state.busy = false;
+        await flushRecoveryFrame();
+        const inspect = spyOn((runtime as any)._lineIntegrity, 'inspect').and.callThrough();
+        const repair = spyOn((runtime as any)._lineIntegrity, 'repair').and.callThrough();
+        const lastRow = container.lastElementChild;
+        const first = container.children[0].querySelector('c-element') as HTMLElement;
+        const expectedStyle = first.getAttribute('style');
+        if (pollution === 'same-length text in another line') {
+          const text = first.querySelector('c-text')!.firstChild as Text;
+          text.data = 'X'.repeat(text.length);
+        } else if (pollution === 'style attribute') {
+          expect(expectedStyle).not.toBeNull();
+          first.removeAttribute('style');
+          // Scroll can rebuild its text/topology index without repairing the
+          // presentation attributes. Runtime integrity must retain its own dirtiness.
+          runtime.scrollBlot.restoreCanonicalDomOrder();
+          expect(getLogicalLineAccess(runtime.scrollBlot)).toBeDefined();
+          expect(first.getAttribute('style')).toBeNull();
+        } else container.children[0].appendChild(document.createTextNode('unmanaged tail'));
+
+        await runtime.renderCode();
+
+        expect(inspect).toHaveBeenCalledTimes(1);
+        expect(repair).toHaveBeenCalledTimes(1);
+        expect(textOf(container)).toBe(source);
+        expect(container.textContent).not.toContain('unmanaged tail');
+        expect(container.children[0].querySelector('c-element')!.getAttribute('style')).toBe(expectedStyle);
+        expect(container.lastElementChild).toBe(lastRow);
+        await runtime.renderCode();
+        expect(inspect).toHaveBeenCalledTimes(1);
+        expect(repair).toHaveBeenCalledTimes(1);
+      });
+    }
+
+    it('restores LF row ownership even when native movement preserves flat leaf order and model text', async () => {
+      const {runtime, container, state, expectOuterIdentity} = await createReadyHarness();
+      const rows = Array.from(container.children);
+      const newline = runtime.scrollBlot.leaves.find(leaf => leaf instanceof TextBlot && leaf.text === '\n')!;
+      rows[1].insertBefore(newline.domNode, rows[1].firstChild);
+      expect(textOf(container)).toBe(source);
+      expect(runtime.scrollBlot.hasCanonicalDomOrder()).toBeFalse();
+      state.busy = true;
+
+      runtime.render(state.model);
+
+      expect(newline.domNode.parentNode).toBe(rows[0]);
+      expect(rows[0].textContent!.endsWith('\n')).toBeTrue();
+      expect(rows[1].textContent).toBe('const middle = 2;\n');
+      expect(runtime.scrollBlot.hasCanonicalDomOrder()).toBeTrue();
+      expectOuterIdentity();
+      state.busy = false;
+      await flushRecoveryFrame();
+      expect(newline.domNode.parentNode).toBe(rows[0]);
+      expect(textOf(container)).toBe(source);
     });
 
     for (const pollution of ['extra-text', 'extra-element', 'split-text'] as const) {

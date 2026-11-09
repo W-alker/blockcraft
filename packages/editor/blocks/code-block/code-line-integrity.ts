@@ -17,29 +17,102 @@ const GAP_ATTRIBUTES: AttributeProjection = [['data-zero-space', 'true']]
 const BREAK_ATTRIBUTES: AttributeProjection = [['class', INLINE_END_BREAK_CLASS]]
 const ATTRIBUTE_CACHE_LIMIT = 512
 
+type IntegrityBaseline = {
+  scroll: ScrollBlot
+  container: HTMLElement
+  owned: Map<Node, IBlot>
+  dirtyRows: Set<HTMLElement>
+}
+
 /** @internal Code-only reconciliation of browser-mutated canonical rows. */
 export class CodeLineIntegrity {
   private _attributeCache = new Map<string, AttributeProjection>()
   private _scratch: HTMLElement | undefined
+  private _baseline?: IntegrityBaseline
 
   clear(): void {
+    this.invalidateBaseline()
     this._attributeCache.clear()
     this._scratch = undefined
+  }
+
+  invalidateBaseline(): void {
+    this._baseline = undefined
+  }
+
+  /**
+   * Called only after complete repair and validation of the Scroll index.
+   * Reuse ownership only from that repair, without another canonical restoration.
+   */
+  captureBaseline(scroll: ScrollBlot, container: HTMLElement, repairedOwned?: Map<Node, IBlot>): void {
+    this.invalidateBaseline()
+    if (scroll.domNode !== container) return
+    this._baseline = {scroll, container, owned: repairedOwned ?? this._ownedNodes(scroll), dirtyRows: new Set()}
+  }
+
+  /** Non-text changes inside the managed subtree revoke the entire baseline. */
+  recordMutations(records: readonly MutationRecord[]): void {
+    const baseline = this._baseline
+    if (!baseline) return
+    for (const record of records) {
+      // Host classes/styles belong to block/selection presentation. Inspection
+      // has never validated them; only descendant attributes affect this cache.
+      if (record.type === 'attributes' && record.target === baseline.container) continue
+      const node = record.target
+      const textElement = node.parentElement
+      const element = textElement?.parentElement
+      const blot = element ? baseline.owned.get(element) : undefined
+      const row = element?.parentElement
+      // With no intervening structural record, these are still the original
+      // node identities. oldValue also detects LF added and removed in one batch.
+      if (record.type !== 'characterData' || !(node instanceof Text) || record.oldValue === null ||
+        record.oldValue.includes('\n') || node.data.includes('\n') || !(blot instanceof TextBlot) ||
+        !element || !textElement || !row || element.childNodes.length !== 1 || element.firstChild !== textElement ||
+        textElement.childNodes.length !== 1 || textElement.firstChild !== node ||
+        blot.parent !== baseline.scroll || row.parentNode !== baseline.container ||
+        !baseline.scroll.isCanonicalLineContainer(row) ||
+        (!baseline.dirtyRows.has(row) && !this._isPureTextRow(row, baseline))) {
+        this.invalidateBaseline()
+        return
+      }
+      baseline.dirtyRows.add(row)
+    }
+  }
+
+  private _isPureTextRow(row: HTMLElement, baseline: IntegrityBaseline): boolean {
+    for (const node of Array.from(row.childNodes)) {
+      if (node === baseline.scroll.leadingGapNode) continue
+      const blot = baseline.owned.get(node)
+      if (!blot || blot.parent !== baseline.scroll) return false
+      if (blot instanceof TextBlot) {
+        const text = blot.text
+        if (text.includes('\n') && (text !== '\n' || blot.attrs?.['s:display'] === 'none')) return false
+      } else if (blot.type !== BlotType.Break) return false
+    }
+    return true
+  }
+
+  private _ownedNodes(scroll: ScrollBlot): Map<Node, IBlot> {
+    const owned = new Map<Node, IBlot>()
+    for (const blot of scroll.children) owned.set(blot.domNode, blot)
+    return owned
   }
 
   /** The returned predicate is a snapshot: discard it after any DOM mutation. */
   inspect(
     scroll: ScrollBlot,
     container: HTMLElement,
-  ): (blots: (TextBlot | EmbedBlot)[]) => boolean {
-    const owned = new Map<Node, IBlot>(scroll.children.map(blot => [blot.domNode, blot]))
+  ): (blots: readonly (TextBlot | EmbedBlot)[]) => boolean {
+    const baseline = this._baseline?.scroll === scroll && this._baseline.container === container
+      ? this._baseline : undefined
+    const owned = baseline?.owned ?? this._ownedNodes(scroll)
     const gap = scroll.leadingGapNode
     const checkedRows = new Map<HTMLElement, boolean>()
     const checkRow = (row: HTMLElement): boolean => {
       const cached = checkedRows.get(row)
       if (cached !== undefined) return cached
       let healthy = row.parentNode === container && scroll.isCanonicalLineContainer(row)
-      if (healthy) {
+      if (healthy && (!baseline || baseline.dirtyRows.has(row))) {
         for (const node of Array.from(row.childNodes)) {
           if (node === gap) continue
           const blot = owned.get(node)
@@ -58,34 +131,37 @@ export class CodeLineIntegrity {
       if (scroll.domNode !== container) return false
       for (const blot of blots) {
         const row = blot.domNode.parentElement
-        if (owned.get(blot.domNode) !== blot || !row || !checkRow(row)) return false
+        if (owned.get(blot.domNode) !== blot || blot.parent !== scroll || !row || !checkRow(row)) return false
       }
       return true
     }
   }
 
   /** Run after canonical mutation has moved managed nodes out of native wrappers. */
-  repair(scroll: ScrollBlot, container: HTMLElement): void {
+  repair(scroll: ScrollBlot, container: HTMLElement): Map<Node, IBlot> | undefined {
     if (scroll.domNode !== container) return
     const gap = scroll.leadingGapNode
     const firstLine = container.firstElementChild
     // The gap is not a Blot child, so canonical leaf-order checks cannot detect
     // its native removal or relocation when a cancelled composition changes no text.
-    if (gap && (!firstLine || !scroll.isCanonicalLineContainer(firstLine) || firstLine.firstChild !== gap)) {
+    if (!scroll.hasCanonicalDomOrder() ||
+      (gap && (!firstLine || !scroll.isCanonicalLineContainer(firstLine) || firstLine.firstChild !== gap))) {
       scroll.restoreCanonicalDomOrder()
     }
-    const owned = new Set<Node>(scroll.children.map(blot => blot.domNode))
-    if (gap) owned.add(gap)
+    const owned = this._ownedNodes(scroll)
     // A malformed/native wrapper must never take a managed leaf with it, even
     // if a caller has not restored the canonical topology yet.
-    const protectedNodes = new Set(owned)
-    for (const node of owned) {
+    const protectedNodes = new Set(owned.keys())
+    if (gap) protectedNodes.add(gap)
+    const protectAncestors = (node: Node) => {
       let parent = node.parentNode
       while (parent && parent !== container && !protectedNodes.has(parent)) {
         protectedNodes.add(parent)
         parent = parent.parentNode
       }
     }
+    for (const node of owned.keys()) protectAncestors(node)
+    if (gap) protectAncestors(gap)
     for (const row of Array.from(container.childNodes)) {
       if (scroll.isCanonicalLineContainer(row)) {
         for (const child of Array.from(row.childNodes)) {
@@ -114,6 +190,7 @@ export class CodeLineIntegrity {
       }
       this._restoreSingleChild(element, br, protectedNodes)
     }
+    return owned
   }
 
   private _isTextIntact(blot: TextBlot): boolean {

@@ -39,6 +39,8 @@ const report = {
     'legacy-ime-path bypasses only _renderCompositionSnapshot, exercising the existing synchronous full render and subsequent full renderCode with current lexer, line DOM, observer and scheduling.',
     'Modes have separate equally initialized contexts and alternate by round. Report median/min/max for measured samples only; no P95 or fixed timing assertion.',
     'Each isolated document contains only the measured code block; bringToFront and two preparatory animation frames run outside each measurement.',
+    'profile records inclusive method durations and call counts in start, syncEnd and postEnd (through frame settlement) buckets. Nested values must not be added. Correctness reads are excluded.',
+    'Integrity inspect creation and its returned per-line predicate are measured separately. Profiling adds timer/wrapper overhead, especially to per-line predicates; before/after must use the same script.',
   ], results: [],
 };
 
@@ -81,8 +83,62 @@ async function setup(lines, action, mode, position) {
     if (textInDom() !== source || block.textContent() !== source) throw new Error('Initial DOM/model mismatch');
     const lineNodes = () => [...block.containerElement.querySelectorAll(':scope > c-line')];
     if (lineNodes().length !== lines) throw new Error('Logical line container count mismatch');
-    const state = {active: null, pending: 0, action, mode};
+    const state = {active: null, pending: 0, action, mode, profileMuted: false};
     const session = doc.inputManger.compositionSession;
+    const profileHooks = [];
+    const phaseOf = sample => {
+      if (!sample || state.profileMuted || sample.profileClosed) return null;
+      if (sample.inStart) return 'start';
+      if (sample.inCommit) return 'syncEnd';
+      return sample.commitStart === undefined ? null : 'postEnd';
+    };
+    const recordProfile = (sample, phase, key, duration) => {
+      const bucket = sample.profile[phase];
+      const metric = bucket[key] ?? (bucket[key] = {ms: 0, calls: 0});
+      metric.ms += duration;
+      metric.calls++;
+    };
+    const profileCall = (key, method, receiver, args) => {
+      const sample = state.active;
+      const phase = phaseOf(sample);
+      if (!phase) return method.apply(receiver, args);
+      const start = performance.now();
+      try { return method.apply(receiver, args); }
+      finally { recordProfile(sample, phase, key, performance.now() - start); }
+    };
+    const profileMethod = (owner, method, key, predicateKey) => {
+      const original = owner?.[method];
+      profileHooks.push({key, available: typeof original === 'function'});
+      if (typeof original !== 'function') return;
+      if (predicateKey) profileHooks.push({key: predicateKey, available: true});
+      owner[method] = function(...args) {
+        const result = profileCall(key, original, this, args);
+        if (!predicateKey || typeof result !== 'function') return result;
+        return function(...values) { return profileCall(predicateKey, result, this, values); };
+      };
+    };
+    for (const [owner, method, key, predicateKey] of [
+      [runtime, '_groupBlotsByLine', 'groupBlots'],
+      [runtime, '_reconcileHighlightedLines', 'reconcileLines'],
+      [runtime, '_patchLinesByBlot', 'patchLines'],
+      [runtime, '_patchCanonicalLinesByBlot', 'patchCanonicalLines'],
+      [runtime._lineIntegrity, 'inspect', 'integrityInspect', 'integrityPredicate'],
+      [runtime._lineIntegrity, 'repair', 'integrityRepair'],
+      [runtime.scrollBlot, '_syncLogicalLines', 'syncLogicalLines'],
+      [runtime.scrollBlot, '_rebuildLogicalIndex', 'rebuildLogicalIndex'],
+      [runtime.scrollBlot, 'spliceLeaves', 'spliceLeaves'],
+      [runtime.scrollBlot, 'restoreCanonicalDomOrder', 'restoreCanonicalDomOrder'],
+      [runtime._tokenizer, 'tokenize', 'tokenize'],
+      [runtime, '_projectTokens', 'projectTokens'],
+      [runtime, '_captureHighlightSelection', 'captureHighlightSelection'],
+      [runtime, '_restoreNativeSelection', 'restoreNativeSelection'],
+      [runtime.mapper, 'modelPointToDomPoint', 'modelPointToDomPoint'],
+      [runtime, 'domPointToModel', 'domPointToModel'],
+      [doc.selection, 'setCursorAt', 'setCursorAt'],
+      [runtime._inlineFloatLayout, 'beforeMutation', 'floatBeforeMutation'],
+      [runtime._inlineFloatLayout, 'sync', 'floatSync'],
+      [runtime._inlineFloatLayout, 'refresh', 'floatRefresh'],
+    ]) profileMethod(owner, method, key, predicateKey);
     const targetLine = Math.floor(lines / 2);
     const targetStart = source.split('\n').slice(0, targetLine).reduce((offset, line) => offset + line.length + 1, 0);
     const caret = () => {
@@ -170,6 +226,7 @@ async function setup(lines, action, mode, position) {
         const end = await nextFrame();
         if (generation !== runtime._renderToken || state.pending || runtime._canonicalRenderFrame !== null ||
             !doc.inputManger.compositionSession.isIdle) continue;
+        sample.profileClosed = true;
         if (block.textContent() !== sample.expected || textInDom() !== sample.expected || caret() !== sample.caret) {
           throw new Error(`Final DOM/model/caret mismatch (${mode}/${action}; caret ${caret()} vs ${sample.caret})`);
         }
@@ -206,6 +263,7 @@ async function setup(lines, action, mode, position) {
           afterTwoFramesMs: end - sample.commitStart, buildMs: sample.buildMs, builds: sample.builds,
           identity, validRecoveries: sample.recoveries.filter(item => item.valid).length,
           staleRecoveries: sample.recoveries.filter(item => !item.valid).length,
+          profile: sample.profile,
           modelDomCaretValid: true};
         return result;
       }
@@ -216,8 +274,9 @@ async function setup(lines, action, mode, position) {
       const sample = state.active;
       if (name === 'compositionStart' && sample) {
         sample.startTime = performance.now();
+        sample.inStart = true;
         try { return originalRun.call(this, name, ...args); }
-        finally { sample.syncStartMs += performance.now() - sample.startTime; }
+        finally { sample.syncStartMs += performance.now() - sample.startTime; sample.inStart = false; }
       }
       if (name !== 'compositionEnd' || !sample) return originalRun.call(this, name, ...args);
       sample.commitStart = performance.now();
@@ -246,10 +305,13 @@ async function setup(lines, action, mode, position) {
           offset, targetRow: rows[targetLine], previousRow: rows[targetLine - 1], previousHTML: rows[targetLine - 1].innerHTML,
           syncStartMs: 0, sessionStartMs: 0, acquireCaretMs: 0, prepareCommitMs: 0, releaseCaretMs: 0,
           sessionEndMs: 0, acquiredCarets: 0, releasedCarets: 0,
+          profile: {start: {}, syncEnd: {}, postEnd: {}},
           runtimeRenderMs: 0, syncHighlightMs: 0, buildMs: 0, builds: 0, recoveries: []};
         return before;
       },
       composing(before) {
+        state.profileMuted = true;
+        try {
         if (!doc.inputManger.compositionSession.isActive || block.textContent() !== before) {
           throw new Error('Native IME did not enter an uncommitted composition');
         }
@@ -260,6 +322,7 @@ async function setup(lines, action, mode, position) {
         if (rows.length !== lines || rows[targetLine] !== sample.targetRow || rows[targetLine - 1] !== sample.previousRow ||
             rows[targetLine - 1].innerHTML !== sample.previousHTML || actual !== expected ||
             session.resolveInsertionPoint()?.index !== sample.offset) throw new Error('Preedit line/model/caret lease mismatch');
+        } finally { state.profileMuted = false; }
       },
       finish() {
         const sample = state.active;
@@ -267,7 +330,7 @@ async function setup(lines, action, mode, position) {
         return sample.done.then(result => { state.active = null; return result; });
       },
     };
-    return {lines, characters: source.length, action, mode, position,
+    return {lines, characters: source.length, action, mode, position, profileHooks,
       coldCheckpoints: runtime._tokenizer._lines.filter(line => line.state).length,
       lineContainers: lineNodes().length, initialNodes: block.containerElement.querySelectorAll('*').length};
   }, {lines, action, mode, position});
@@ -298,6 +361,18 @@ const summarize = rows => Object.fromEntries([
   return [key, {median: sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2,
     min: sorted[0], max: sorted.at(-1)}];
 }));
+const summarizeValues = values => {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return {median: sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2,
+    min: sorted[0], max: sorted.at(-1)};
+};
+const summarizeProfile = (rows, hooks) => Object.fromEntries(['start', 'syncEnd', 'postEnd'].map(phase => [phase,
+  Object.fromEntries(hooks.filter(hook => hook.available).map(({key}) => [key, {
+    ms: summarizeValues(rows.map(row => row.profile[phase][key]?.ms ?? 0)),
+    calls: summarizeValues(rows.map(row => row.profile[phase][key]?.calls ?? 0)),
+  }])),
+]));
 
 try {
   for (const [sizeIndex, lines] of sizes.entries()) {
@@ -319,8 +394,10 @@ try {
         }
         for (const {context, page, cdp, ...result} of targets) {
           result.summary = summarize(result.samples);
+          result.profileSummary = summarizeProfile(result.samples, result.profileHooks);
           report.results.push(result);
-          console.log(JSON.stringify({lines, position, action, mode: result.mode, summary: result.summary}));
+          console.log(JSON.stringify({lines, position, action, mode: result.mode, summary: result.summary,
+            profileSummary: result.profileSummary}));
         }
       } finally {
         for (const target of targets) await target.context.close();
